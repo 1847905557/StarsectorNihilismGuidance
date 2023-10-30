@@ -31,32 +31,32 @@ export default defineUserConfig({
               collapsible: true,
               children: [
                 {
-                    text: 'Stage 1',
+                    text: '小节 1',
                     link: '/stage1/phase1/',
                     children: [],
                 },
                 {
-                    text: 'Stage 2',
+                    text: '小节 2',
                     link: '/stage1/phase2/',
                     children: [],
                 },
                 {
-                    text: 'Stage 3',
+                    text: '小节 3',
                     link: '/stage1/phase3/',
                     children: [],
                 },
                 {
-                    text: 'Stage 4',
+                    text: '小节 4',
                     link: '/stage1/phase4/',
                     children: [],
                 },
                 {
-                    text: 'Stage 5',
+                    text: '小节 5',
                     link: '/stage1/phase5/',
                     children: [],
                 },
                 {
-                    text: 'Stage 6',
+                    text: '小节 6',
                     link: '/stage1/phase6/',
                     children: [],
                 },
@@ -68,27 +68,27 @@ export default defineUserConfig({
                 collapsible: true,
                 children: [
                     {
-                        text: 'Stage 1',
+                        text: '小节 1',
                         link: '/stage2/phase1/',
                         children: [],
                     },
                     {
-                        text: 'Stage 2',
+                        text: '小节 2',
                         link: '/stage2/phase2/',
                         children: [],
                     },
                     {
-                        text: 'Stage 3',
+                        text: '小节 3',
                         link: '/stage2/phase3/',
                         children: [],
                     },
                     {
-                        text: 'Stage 4',
+                        text: '小节 4',
                         link: '/stage2/phase4/',
                         children: [],
                     },
                     {
-                        text: 'Stage 5',
+                        text: '小节 5',
                         link: '/stage2/phase5/',
                         children: [],
                     },
@@ -100,32 +100,32 @@ export default defineUserConfig({
                 collapsible: true,
                 children: [
                     {
-                        text: 'Stage 1',
+                        text: '小节 1',
                         link: '/stage3/phase1/',
                         children: [],
                     },
                     {
-                        text: 'Stage 2',
+                        text: '小节 2',
                         link: '/stage3/phase2/',
                         children: [],
                     },
                     {
-                        text: 'Stage 3',
+                        text: '小节 3',
                         link: '/stage3/phase3/',
                         children: [],
                     },
                     {
-                        text: 'Stage 4',
+                        text: '小节 4',
                         link: '/stage3/phase4/',
                         children: [],
                     },
                     {
-                        text: 'Stage 5',
+                        text: '小节 5',
                         link: '/stage3/phase5/',
                         children: [],
                     },
                     {
-                        text: 'Stage 6',
+                        text: '小节 6',
                         link: '/stage3/phase6/',
                         children: [],
                     },
@@ -137,32 +137,32 @@ export default defineUserConfig({
                 collapsible: true,
                 children: [
                     {
-                        text: 'Stage 1',
+                        text: '小节 1',
                         link: '/stage4/phase1/',
                         children: [],
                     },
                     {
-                        text: 'Stage 2',
+                        text: '小节 2',
                         link: '/stage4/phase2/',
                         children: [],
                     },
                     {
-                        text: 'Stage 3',
+                        text: '小节 3',
                         link: '/stage4/phase3/',
                         children: [],
                     },
                     {
-                        text: 'Stage 4',
+                        text: '小节 4',
                         link: '/stage4/phase4/',
                         children: [],
                     },
                     {
-                        text: 'Stage 5',
+                        text: '小节 5',
                         link: '/stage4/phase5/',
                         children: [],
                     },
                     {
-                        text: 'Stage 6',
+                        text: '小节 6',
                         link: '/stage4/phase6/',
                         children: [],
                     },
@@ -174,42 +174,42 @@ export default defineUserConfig({
                 collapsible: true,
                 children: [
                     {
-                        text: 'Stage 1',
+                        text: '小节 1',
                         link: '/stage5/phase1/',
                         children: [],
                     },
                     {
-                        text: 'Stage 2',
+                        text: '小节 2',
                         link: '/stage5/phase2/',
                         children: [],
                     },
                     {
-                        text: 'Stage 3',
+                        text: '小节 3',
                         link: '/stage5/phase3/',
                         children: [],
                     },
                     {
-                        text: 'Stage 4',
+                        text: '小节 4',
                         link: '/stage5/phase4/',
                         children: [],
                     },
                     {
-                        text: 'Stage 5',
+                        text: '小节 5',
                         link: '/stage5/phase5/',
                         children: [],
                     },
                     {
-                        text: 'Stage 6',
+                        text: '小节 6',
                         link: '/stage5/phase6/',
                         children: [],
                     },
                     {
-                        text: 'Stage 7',
+                        text: '小节 7',
                         link: '/stage5/phase7/',
                         children: [],
                     },
                     {
-                        text: 'Stage 8',
+                        text: '小节 8',
                         link: '/stage5/phase8/',
                         children: [],
                     },
@@ -221,32 +221,32 @@ export default defineUserConfig({
                 collapsible: true,
                 children: [
                     {
-                        text: 'Stage 1',
+                        text: '小节 1',
                         link: '/stage6/phase1/',
                         children: [],
                     },
                     {
-                        text: 'Stage 2',
+                        text: '小节 2',
                         link: '/stage6/phase2/',
                         children: [],
                     },
                     {
-                        text: 'Stage 3',
+                        text: '小节 3',
                         link: '/stage6/phase3/',
                         children: [],
                     },
                     {
-                        text: 'Stage 4',
+                        text: '小节 4',
                         link: '/stage6/phase4/',
                         children: [],
                     },
                     {
-                        text: 'Stage 5',
+                        text: '小节 5',
                         link: '/stage6/phase5/',
                         children: [],
                     },
                     {
-                        text: 'Stage 6',
+                        text: '小节 6',
                         link: '/stage6/phase6/',
                         children: [],
                     },
@@ -258,37 +258,37 @@ export default defineUserConfig({
                 collapsible: true,
                 children: [
                     {
-                        text: 'Stage 1',
+                        text: '小节 1',
                         link: '/stage7/phase1/',
                         children: [],
                     },
                     {
-                        text: 'Stage 2',
+                        text: '小节 2',
                         link: '/stage7/phase2/',
                         children: [],
                     },
                     {
-                        text: 'Stage 3',
+                        text: '小节 3',
                         link: '/stage7/phase3/',
                         children: [],
                     },
                     {
-                        text: 'Stage 4',
+                        text: '小节 4',
                         link: '/stage7/phase4/',
                         children: [],
                     },
                     {
-                        text: 'Stage 5',
+                        text: '小节 5',
                         link: '/stage7/phase5/',
                         children: [],
                     },
                     {
-                        text: 'Stage 6',
+                        text: '小节 6',
                         link: '/stage7/phase6/',
                         children: [],
                     },
                     {
-                        text: 'Stage 7',
+                        text: '小节 7',
                         link: '/stage7/phase7/',
                         children: [],
                     },
@@ -300,32 +300,32 @@ export default defineUserConfig({
                 collapsible: true,
                 children: [
                     {
-                        text: 'Stage 1',
+                        text: '小节 1',
                         link: '/stage8/phase1/',
                         children: [],
                     },
                     {
-                        text: 'Stage 2',
+                        text: '小节 2',
                         link: '/stage8/phase2/',
                         children: [],
                     },
                     {
-                        text: 'Stage 3',
+                        text: '小节 3',
                         link: '/stage8/phase3/',
                         children: [],
                     },
                     {
-                        text: 'Stage 4',
+                        text: '小节 4',
                         link: '/stage8/phase4/',
                         children: [],
                     },
                     {
-                        text: 'Stage 5',
+                        text: '小节 5',
                         link: '/stage8/phase5/',
                         children: [],
                     },
                     {
-                        text: 'Stage 6',
+                        text: '小节 6',
                         link: '/stage8/phase6/',
                         children: [],
                     },
@@ -337,32 +337,32 @@ export default defineUserConfig({
                 collapsible: true,
                 children: [
                     {
-                        text: 'Stage 1',
+                        text: '小节 1',
                         link: '/stage9/phase1/',
                         children: [],
                     },
                     {
-                        text: 'Stage 2',
+                        text: '小节 2',
                         link: '/stage9/phase2/',
                         children: [],
                     },
                     {
-                        text: 'Stage 3',
+                        text: '小节 3',
                         link: '/stage9/phase3/',
                         children: [],
                     },
                     {
-                        text: 'Stage 4',
+                        text: '小节 4',
                         link: '/stage9/phase4/',
                         children: [],
                     },
                     {
-                        text: 'Stage 5',
+                        text: '小节 5',
                         link: '/stage9/phase5/',
                         children: [],
                     },
                     {
-                        text: 'Stage 6',
+                        text: '小节 6',
                         link: '/stage9/phase6/',
                         children: [],
                     },

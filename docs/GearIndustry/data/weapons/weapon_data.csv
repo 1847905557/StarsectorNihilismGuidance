@@ -1,0 +1,11 @@
+name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn rate,OPs,ammo,ammo/sec,reload size,type,energy/shot,energy/second,chargeup,chargedown,burst size,burst delay,min spread,max spread,spread/shot,spread decay/sec,beam speed,proj speed,launch speed,flight time,proj hitpoints,autofireAccBonus,extraArcForAI,hints,tags,groupTag,tech/manufacturer,for weapon tooltip>>,primaryRoleStr,speedStr,trackingStr,turnRateStr,accuracyStr,customPrimary,customPrimaryHL,customAncillary,customAncillaryHL,noDPSInTooltip,number
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+#Light Machine Gun,lightmg,0,,100,300,,25,,1,50,3,,,,KINETIC,3,,0,0.4,5,0.1,0,5,1,15,,600,,,10,,,PD,"pd6, kinetic3, SR, base_bp",,,,Point Defense,,,,,,,,,,0.5
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+#Phase Lance,phasebeam,1,,1500,600,1000,,,0,20,10,,,,ENERGY,,1200,0.25,0.5,1,4,,,,,3200,,,,,,,,"energy14, beam10, rare_bp, merc",,,,General,,,,,,,,,,20
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+#Cyclone Reaper Launcher,cyclone,2,,5000,1200,,4000,,75,20,26,20,,,HIGH_EXPLOSIVE,0,,0,9,2,1,0,0,0,0,,400,100,3.5,500,,,STRIKE,"strike18, rocket14, rare_bp, merc",,,,Torpedo,Fast,None,,,,,,,TRUE,15
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+都林自动炮,GearIn_durin,1,,300,600,,35,,3,40,4,,,,HIGH_EXPLOSIVE,35,,0,0.14,1,,0,5,1,5,,800,,,30,,,,"he6, lowtech_bp, GearIn_bp",,,,反装甲,,,,,,,,,,3
+乌里光束,GearIn_uri,2,,1500,1000,175,,,,15,9,,,,ENERGY,,200,0.1,0.1,,,,,,,2400,,,,,,,,"beam12, energy11, LR, hightech_bp, GearIn_bp",,,,压制,,,,,,,,,,21
+德瓦林 发射架,GearIn_dwalin,2,,4000,2500,,600,,15,20,20,100,,,HIGH_EXPLOSIVE,0,,0,10,10,0.5,0,0,0,0,,600,100,4.75,300,,,"DO_NOT_AIM, CONSERVE_3, STRIKE, USE_VS_FRIGATES, MISSILE_SPREAD","missile19, strike15, GearIn_bp",,,,压制,非常快,特殊,,,瞄准后失去制导能力。,,,,,16.2

@@ -1,0 +1,48 @@
+Arguments: 
+  C:\Program Files\nodejs\node.exe C:\Program Files (x86)\Yarn\bin\yarn.js add -D vuepress
+
+PATH: 
+  C:\Program Files (x86)\VMware\VMware Workstation\bin\;C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\ProgramData\Oracle\Java\javapath;C:\cmder;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\Program Files (x86)\Python37-32;C:\Program Files (x86)\Python37-32\Scripts;C:\Program Files\Intel\WiFi\bin\;C:\Program Files\Common Files\Intel\WirelessCommon\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Program Files (x86)\Pandoc\;C:\Registry Workshop;C:\Program Files\Java\jdk1.7.0_80\bin;C:\Program Files\Java\jdk1.7.0_80\jre\bin;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\dotnet\;C:\ffmpeg-20191016-29dac29-win64-static\bin;C:\Program Files\Git\cmd;C:\Program Files (x86)\Microsoft SQL Server\150\DTS\Binn\;C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\;C:\Program Files (x86)\Microsoft SQL Server\150\Tools\Binn\;C:\Program Files\Microsoft SQL Server\150\Tools\Binn\;C:\Program Files\Microsoft SQL Server\150\DTS\Binn\;C:\MinGW\bin;C:\apache-tomcat-8.5.64\bin;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files (x86)\Tencent\微信web开发者工具\dll;C:\Program Files\nodejs\;C:\Program Files (x86)\Yarn\bin\;C:\Users\DELL\AppData\Local\Microsoft\WindowsApps;C:\Program Files (x86)\Nmap;C:\Users\DELL\AppData\Local\GitHubDesktop\bin;C:\Users\DELL\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\DELL\AppData\Local\Microsoft\WindowsApps;C:\Users\DELL\.dotnet\tools;C:\Users\DELL\AppData\Roaming\npm;C:\Users\DELL\AppData\Local\Yarn\bin;
+
+Yarn version: 
+  1.22.19
+
+Node version: 
+  16.17.0
+
+Platform: 
+  win32 x64
+
+Trace: 
+  Error: %27https://registry.npm.taobao.org%27/vuepress: Invalid URI "%27https://registry.npm.taobao.org%27/vuepress"
+      at Request.module.exports.Request.init (C:\Program Files (x86)\Yarn\lib\cli.js:140978:31)
+      at new Request (C:\Program Files (x86)\Yarn\lib\cli.js:140832:8)
+      at request (C:\Program Files (x86)\Yarn\lib\cli.js:137738:10)
+      at RequestManager.execute (C:\Program Files (x86)\Yarn\lib\cli.js:66197:15)
+      at RequestManager.shiftQueue (C:\Program Files (x86)\Yarn\lib\cli.js:66235:10)
+      at C:\Program Files (x86)\Yarn\lib\cli.js:65905:13
+      at new Promise (<anonymous>)
+      at new F (C:\Program Files (x86)\Yarn\lib\cli.js:5305:28)
+      at RequestManager.request (C:\Program Files (x86)\Yarn\lib\cli.js:65903:19)
+      at NpmRegistry.<anonymous> (C:\Program Files (x86)\Yarn\lib\cli.js:31751:42)
+
+npm manifest: 
+  {
+    "name": "nihilism_guidance",
+    "version": "1.0.0",
+    "description": "Nihilism Guidance By Nihilist",
+    "main": "index.js",
+    "author": "Nihilist",
+    "license": "MIT",
+  
+    "scripts": {
+      "docs:dev": "vuepress dev docs",
+      "docs:build": "vuepress build docs"
+    }
+  }
+
+yarn manifest: 
+  No manifest
+
+Lockfile: 
+  No lockfile

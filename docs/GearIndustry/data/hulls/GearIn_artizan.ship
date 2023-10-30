@@ -1,0 +1,144 @@
+{
+  "hullName": "GearIn_artizan",
+  "hullId": "GearIn_artizan",
+  "hullSize": "DESTROYER",
+  "spriteName": "graphics/ships/GearIn_artizan.png",
+  "style": "GEAR_TECH",
+  "height": 164,
+  "width": 108,
+  "center": [54, 82],
+  "collisionRadius": 141.5,
+  "shieldCenter": [0, 0],
+  "shieldRadius": 109,
+  "viewOffset": 0,
+    "builtInWeapons": {
+        "WS0003": "GearIn_durin",
+        "WS0004": "GearIn_durin"
+    },
+  "weaponSlots": [
+    {
+      "id": "WS0001",
+      "size": "MEDIUM",
+      "type": "UNIVERSAL",
+      "mount": "TURRET",
+      "arc": 10,
+      "angle": 0,
+      "locations": [70, 22]
+    },
+    {
+      "id": "WS0002",
+      "size": "MEDIUM",
+      "type": "UNIVERSAL",
+      "mount": "TURRET",
+      "arc": 10,
+      "angle": -0,
+      "locations": [70, -22]
+    },
+    {
+      "id": "WS0003",
+      "size": "SMALL",
+      "type": "BUILT_IN",
+      "mount": "HARDPOINT",
+      "arc": 10,
+      "angle": 0,
+      "locations": [59, 45]
+    },
+    {
+      "id": "WS0004",
+      "size": "SMALL",
+      "type": "BUILT_IN",
+      "mount": "HARDPOINT",
+      "arc": 10,
+      "angle": -0,
+      "locations": [59, -45]
+    },
+    {
+      "id": "WS0005",
+      "size": "SMALL",
+      "type": "BALLISTIC",
+      "mount": "TURRET",
+      "arc": 270,
+      "angle": 60,
+      "locations": [-28, 39]
+    },
+    {
+      "id": "WS0006",
+      "size": "SMALL",
+      "type": "BALLISTIC",
+      "mount": "TURRET",
+      "arc": 270,
+      "angle": -60,
+      "locations": [-28, -39]
+    }
+  ],
+  "engineSlots": [
+    {
+      "location": [-79, 14],
+      "length": 53.5,
+      "width": 11,
+      "angle": 180,
+      "contrailSize": 11,
+      "style": "GEAR_TECH"
+    },
+    {
+      "location": [-79, -14],
+      "length": 53.5,
+      "width": 11,
+      "angle": -180,
+      "contrailSize": 11,
+      "style": "GEAR_TECH"
+    },
+    {
+      "location": [-80, 27],
+      "length": 43,
+      "width": 15,
+      "angle": 180,
+      "contrailSize": 15,
+      "style": "GEAR_TECH"
+    },
+    {
+      "location": [-80, -27],
+      "length": 43,
+      "width": 15,
+      "angle": -180,
+      "contrailSize": 15,
+      "style": "GEAR_TECH"
+    },
+    {
+      "location": [-81, 39],
+      "length": 33,
+      "width": 11,
+      "angle": 180,
+      "contrailSize": 11,
+      "style": "GEAR_TECH"
+    },
+    {
+      "location": [-81, -39],
+      "length": 33,
+      "width": 11,
+      "angle": -180,
+      "contrailSize": 11,
+      "style": "GEAR_TECH"
+    }
+  ],
+  "bounds": [
+    74, -26,
+    60, -50,
+    40.5, -47.5,
+    30.5, -14,
+    0.5, -10.5,
+    -22, -47,
+    -77.5, -38.5,
+    -75, -13.5,
+    -41.5, -8.5,
+    -41.5, 8.5,
+    -75, 13.5,
+    -77.5, 38.5,
+    -22, 47,
+    0.5, 10.5,
+    30.5, 14,
+    40.5, 47.5,
+    60, 50,
+    74, 26
+  ]
+}

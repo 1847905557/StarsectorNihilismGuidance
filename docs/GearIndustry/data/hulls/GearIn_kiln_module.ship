@@ -1,0 +1,42 @@
+{
+  "hullName": "GearIn_kiln_module",
+  "hullId": "GearIn_kiln_module",
+  "hullSize": "FRIGATE",
+  "spriteName": "graphics/ships/GearIn_kiln_module.png",
+  "style": "GEAR_TECH",
+  "height": 98,
+  "width": 48,
+  "center": [24, 49],
+  "collisionRadius": 65.5,
+  "shieldCenter": [0, 0],
+  "shieldRadius": 54.5,
+  "viewOffset": 0,
+  "weaponSlots": [
+    {
+      "id": "WS0001",
+      "size": "MEDIUM",
+      "type": "UNIVERSAL",
+      "mount": "TURRET",
+      "arc": 210,
+      "angle": -30,
+      "locations": [-25, -6]
+    },
+    {
+      "id": "WS0002",
+      "size": "SMALL",
+      "type": "BALLISTIC",
+      "mount": "TURRET",
+      "arc": 240,
+      "angle": 0,
+      "locations": [12, 5]
+    }
+  ],
+  "engineSlots": [],
+  "bounds": [
+    -43.5, 17.5,
+    31.5, 19,
+    45, 8.5,
+    -8.5, -20,
+    -42.5, -15
+  ]
+}

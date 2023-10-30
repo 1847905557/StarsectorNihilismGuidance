@@ -1,0 +1,33 @@
+{
+    "displayName": "Assault",
+    "fluxCapacitors": 15,
+    "fluxVents": 12,
+    "hullId": "GearIn_furnaceman",
+    "hullMods": ["expanded_deck_crew"],
+    "permaMods": [],
+    "sMods": [],
+    "variantId": "GearIn_furnaceman_assault",
+    "goalVariant": true,
+    "weaponGroups": [
+        {
+            "autofire": true,
+            "mode": "LINKED",
+            "weapons": {
+                "WS0001": "vulcan",
+                "WS0002": "vulcan"
+            }
+        },
+        {
+            "autofire": true,
+            "mode": "LINKED",
+            "weapons": {
+                "WS0005": "vulcan",
+                "WS0006": "vulcan"
+            }
+        }
+    ],
+    "wings": [
+        "hoplon_wing",
+        "hoplon_wing"
+    ]
+}

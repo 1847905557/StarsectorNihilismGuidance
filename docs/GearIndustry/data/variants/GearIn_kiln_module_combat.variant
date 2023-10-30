@@ -1,0 +1,31 @@
+{
+    "displayName": "Combat",
+    "fluxCapacitors": 0,
+    "fluxVents": 7,
+    "hullId": "GearIn_kiln_module",
+    "hullMods": [
+        "missleracks",
+        "heavyarmor",
+        "reinforcedhull",
+        "solar_shielding",
+        "autorepair",
+        "turretgyros",
+        "armoredweapons",
+        "hardened_subsystems"
+    ],
+    "permaMods": [],
+    "sMods": [],
+    "variantId": "GearIn_kiln_module_combat",
+    "weaponGroups": [
+        {
+            "autofire": true,
+            "mode": "LINKED",
+            "weapons": {"WS0002": "GearIn_durin"}
+        },
+        {
+            "autofire": true,
+            "mode": "LINKED",
+            "weapons": {"WS0001": "phasecl"}
+        }
+    ]
+}

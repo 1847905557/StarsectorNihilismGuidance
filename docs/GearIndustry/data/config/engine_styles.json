@@ -1,0 +1,14 @@
+{
+	"GEAR_TECH":{
+		"engineColor":[255,155,25,255],
+		"engineCampaignColor":[200,120,70,255],
+		"contrailParticleSizeMult":2,
+		"contrailParticleDuration":3,
+		"contrailParticleFinalSizeMult":2.5,
+		"contrailMaxSpeedMult":0.5,
+		"contrailAngularVelocityMult":0.5,
+		"contrailColor":[50,50,50,50],
+		"contrailCampaignColor":[200,120,70,75],
+		"type":"SMOKE" # GLOW or SMOKE
+	}
+}

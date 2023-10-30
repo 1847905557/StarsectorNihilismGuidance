@@ -1,0 +1,131 @@
+{
+	# should be a copy of "combatSmall", minus variants that are annoying to fight in low numbers
+	# for example, no Hyperions or fast beam-based kiting loadouts, or ships with damper field
+	"combatSmallForSmallFleet":{
+
+	},
+	
+	"combatSmall":{
+
+	},
+
+	"combatMedium":{
+		"GearIn_artizan_assault": 5,
+		"GearIn_artizan_combat": 5,
+	},
+
+	"combatLarge":{
+
+	},
+
+	"combatCapital":{
+
+	},
+	
+	# hybrid ships with good combat and cargo capacity
+	"combatFreighterSmall":{
+
+	},
+
+	"combatFreighterMedium":{
+
+	},
+
+	"combatFreighterLarge":{
+
+	},
+	
+	"civilianRandom":{
+
+	},
+
+	# carriers
+	"carrierSmall":{
+
+	},
+
+	"carrierMedium":{
+		"GearIn_furnaceman_assault": 5,
+		"GearIn_furnaceman_combat": 5,
+	},
+
+	"carrierLarge":{
+
+	},
+
+	# phase ships
+	"phaseSmall":{
+		"GearIn_forging_assault": 5,
+		"GearIn_forging_combat": 5,
+	},
+
+	"phaseMedium":{
+
+	},
+	"phaseLarge":{
+
+	},
+	"phaseCapital":{
+
+	},
+
+	# freighters and such
+	"freighterSmall":{
+
+	},
+
+	"freighterMedium":{
+
+	},
+
+	"freighterLarge":{
+
+	},
+	
+	"tankerSmall":{
+
+	},
+
+	"tankerMedium":{
+
+	},
+
+	"tankerLarge":{
+
+	},
+	
+	"personnelSmall":{
+
+	},
+
+	"personnelMedium":{
+
+	},
+	"personnelLarge":{
+
+	},
+	
+	"linerSmall":{
+	},
+
+	"linerMedium":{
+
+	},
+
+	"linerLarge":{
+
+	},
+	
+	# utility ships
+	"tug":{
+
+	},
+	
+	"crig":{
+
+	},
+
+	"utility":{
+
+	}
+}

@@ -4,7 +4,7 @@
   "description": "Nihilism Guidance By Nihilist",
   "main": "index.js",
   "author": "Nihilist",
-  "license": "MIT",
+  "license": "GPL",
   "scripts": {
     "docs:dev": "vuepress dev docs",
     "docs:build": "vuepress build docs",

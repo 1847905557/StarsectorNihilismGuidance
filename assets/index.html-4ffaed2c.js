@@ -1,0 +1,1 @@
+import{_ as t,o as a,c,a as e,b as r}from"./app-78621c03.js";const s={},i=e("h1",{id:"graphiclib-使用建议",tabindex:"-1"},[e("a",{class:"header-anchor",href:"#graphiclib-使用建议","aria-hidden":"true"},"#"),r(" GraphicLib 使用建议")],-1),n=e("p",null,"test",-1),o=[i,n];function _(d,h){return a(),c("div",null,o)}const f=t(s,[["render",_],["__file","index.html.vue"]]);export{f as default};

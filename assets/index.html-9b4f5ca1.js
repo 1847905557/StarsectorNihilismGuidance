@@ -1,0 +1,1 @@
+import{_ as t,o as a,c as s,a as e,b as c}from"./app-78621c03.js";const n={},o=e("h1",{id:"lazylib-使用建议",tabindex:"-1"},[e("a",{class:"header-anchor",href:"#lazylib-使用建议","aria-hidden":"true"},"#"),c(" LazyLib 使用建议")],-1),r=e("p",null,"test",-1),_=[o,r];function i(d,l){return a(),s("div",null,_)}const f=t(n,[["render",i],["__file","index.html.vue"]]);export{f as default};

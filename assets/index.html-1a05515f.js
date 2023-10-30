@@ -1,0 +1,1 @@
+import{_ as t,o as a,c,a as e,b as s}from"./app-78621c03.js";const i={},n=e("h1",{id:"magiclib-使用建议",tabindex:"-1"},[e("a",{class:"header-anchor",href:"#magiclib-使用建议","aria-hidden":"true"},"#"),s(" MagicLib 使用建议")],-1),o=e("p",null,"test",-1),r=[n,o];function _(d,l){return a(),c("div",null,r)}const f=t(i,[["render",_],["__file","index.html.vue"]]);export{f as default};

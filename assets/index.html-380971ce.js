@@ -1,0 +1,1 @@
+import{_ as t,o as a,c,a as e,b as o}from"./app-78621c03.js";const s={},r=e("h1",{id:"sectorapi-精确聚焦",tabindex:"-1"},[e("a",{class:"header-anchor",href:"#sectorapi-精确聚焦","aria-hidden":"true"},"#"),o(" SectorAPI 精确聚焦")],-1),n=e("p",null,"test",-1),_=[r,n];function d(i,l){return a(),c("div",null,_)}const f=t(s,[["render",d],["__file","index.html.vue"]]);export{f as default};

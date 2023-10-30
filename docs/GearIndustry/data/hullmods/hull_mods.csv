@@ -1,2 +1,0 @@
-name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sprite
-稳定化推进器,GearIn_stable_injector,0,,,"engines, merc",引擎,2500,TRUE,,,5,10,15,25,data.hullmods.GearIn_StableInjector,"提高舰船最大速度 %s/%s/%s/%s ，不兼容 不稳定推进器。","提高舰船最大速度。",graphics/hullmods/GearIn_stable_injector.png

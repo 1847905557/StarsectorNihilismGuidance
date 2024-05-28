@@ -4,10 +4,11 @@
 set -e
 
 # Install vuepress
-yarn add -D vuepress@next
+pnpm add -D vuepress@next vue
+pnpm add -D @vuepress/bundler-vite@next @vuepress/theme-default@next
 
 # Build file
-npm run docs:build
+pnpm run docs:build
 
 # Into dir and deploy
 cd docs/.vuepress/dist

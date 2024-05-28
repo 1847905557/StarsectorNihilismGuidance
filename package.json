@@ -1,19 +1,20 @@
 {
-  "name": "nihilism_guidance",
+  "name": "StarsectorNihilismGuidance",
   "version": "1.0.0",
   "description": "Nihilism Guidance By Nihilist",
   "main": "index.js",
-  "author": "Nihilist",
-  "license": "GPL",
   "scripts": {
     "docs:dev": "vuepress dev docs",
     "docs:build": "vuepress build docs",
     "deploy-gh": "GH=1 yarn docs:build && bash deploy-gh.sh"
   },
+  "keywords": [],
+  "author": "Nihilist",
+  "license": "GPL",
   "devDependencies": {
-    "vuepress": "2.0.0-beta.61"
-  },
-  "devDependencies_backup": {
-    "vuepress": "^2.0.0-beta.61"
+    "@vuepress/bundler-vite": "2.0.0-rc.12",
+    "@vuepress/theme-default": "2.0.0-rc.32",
+    "vue": "^3.4.27",
+    "vuepress": "2.0.0-rc.12"
   }
 }

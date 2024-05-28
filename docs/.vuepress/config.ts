@@ -1,6 +1,10 @@
-import { defineUserConfig, defaultTheme } from 'vuepress';
+import { viteBundler } from '@vuepress/bundler-vite'
+import { defaultTheme } from '@vuepress/theme-default'
+import { defineUserConfig } from 'vuepress'
 
 export default defineUserConfig({
+    bundler: viteBundler(),
+
     lang: 'zh-CN',
     title: 'Starsector Nihilism Guidance',
     description: '虚无主义教程 - Starsector Nihilism Guidance',

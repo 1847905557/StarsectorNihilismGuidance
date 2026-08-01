@@ -1,61 +1,66 @@
 name: docs
 
 on:
-  # 每当 push 到 main 分支时触发部署
   push:
     branches: [main]
-  # 手动触发部署
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
-# 设置权限
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 jobs:
-  docs:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # “最近更新时间” 等 git 日志相关信息，需要拉取全部提交记录
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
-          # 选择要使用的 pnpm 版本
-          version: 7
-          # 使用 pnpm 安装依赖
-          run_install: true
+          version: 11.18.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          # 选择要使用的 node 版本
-          node-version: 18
-          # 缓存 pnpm 依赖
+          node-version-file: .node-version
           cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-      # 安装前置
-      - name: Make dependencies
-        run: pnpm add -D vuepress@next @vuepress/client@next vue
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      # 运行构建脚本
       - name: Build VuePress site
         run: pnpm docs:build
 
-      # 查看 workflow 的文档来获取更多信息
-      # @see https://github.com/crazy-max/ghaction-github-pages
-      - name: Deploy to GitHub Pages
-        uses: crazy-max/ghaction-github-pages@v2
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          # 部署到 gh-pages 分支
-          target_branch: gh-pages
-          # 部署目录为 VuePress 的默认输出目录
-          build_dir: docs/.vuepress/dist
-        env:
-          # @see https://docs.github.com/cn/actions/reference/authentication-in-a-workflow#about-the-github_token-secret
-          GITHUB_TOKEN: ${{ secrets.ACTION_TOKEN }}
+          path: docs/.vuepress/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

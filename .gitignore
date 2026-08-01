@@ -5,4 +5,3 @@
 /docs/.vuepress/.cache
 node_modules/
 sample/
-pnpm-lock.yaml

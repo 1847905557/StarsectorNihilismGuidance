@@ -1,137 +1,145 @@
-# ModPlugin 精确聚焦
+# OGG 音频资源准备
+本节只处理声音文件本身：格式、声道、响度、循环边界、目录和许可证。把文件注册为 sound ID，以及接入武器、系统、UI、环境和音乐使用方的工作，由后续单元完成。
 
-*本节预期阅读时间：~5 分钟。*
+*本节预期阅读时间：~8 分钟。*
 
-*本节预期操作时间：~5 分钟。*
+*本节预期操作时间：~25 分钟。*
 
-## 在一切之前...
+## 学习目标
 
-**再次强调**，编者默认您已经在[此处](https://www.runoob.com/java/java-tutorial.html)或类似的地方学习了`基本 Java 语法`并安装了一种叫`IDEA`的工具，且包括编译、封装等基础操作。编者将默认您对于各类 Java 基础概念均拥有一定程度上的理解，并不再提及诸如类名调整等简单修改。如果您并不了解上述内容，请去学习它。
+完成后，您将能够：
 
-## 重新审视 ModPlugin
+- 把合法 OGG 放入 MOD，并让文件路径与命名约定保持一致；
+- 区分一次性音效、循环音效和音乐，按各自的声道与循环要求准备素材；
+- 在注册前排除最常见的编码问题：无法识别、削波、爆音、循环接缝。
 
-ModPlugin 是目前接触地较为频繁的类，也是一个关键类。ModPlugin 应当继承了 BaseModPlugin，它的主要作用是**为生涯模式的新建、存档、读档相关步骤插入新的自定义步骤，以及用于设置各类舰船、导弹、武器开火的默认 AI**。通常来说，ModPlugin 不会频繁修改。
+## 前置知识
 
-```java
-    // 几个必须解析且常用的方法
+本页是声音链路的资源层，前置知识包括：
 
-	// 在游戏保存时调用
-	public void beforeGameSave() {
-		
-	}
+- 已完成 S01-P01（MOD 目录、`mod_info.json` 与日志基础）。
+- 准备一个能导出 Ogg Vorbis 的音频编辑器。
+- 示例 MOD 根目录为 `Starsector\mods\GearIndustry`，本页路径均以它为基准。
 
-	// 在游戏读档完毕时调用
-	public void onGameLoad(boolean newGame) {
-		
-	}
+## 文件与 API 链路
 
-	// 在远行星号这个程序刚启动时调用
-	public void onApplicationLoad() throws Exception {
-		
-	}
+本节的声音文件位于链路的资源层，注册和消费由后续单元完成：
 
-	// 在新建一局生涯时调用
-	public void onNewGame() {
-		
-	}
-
-	// 在此自定义舰船默认 AI，返回 null 时则为原版舰船 AI。注意传入的是 FleetMemberAPI
-	public PluginPick<ShipAIPlugin> pickShipAI(FleetMemberAPI member, ShipAPI ship) {
-		return null;
-	}
-
-	// 在此自定义武器开火默认 AI，返回 null 时则为原版武器开火 AI
-	public PluginPick<AutofireAIPlugin> pickWeaponAutofireAI(WeaponAPI weapon) {
-		return null;
-	}
-
-	// 在此自定义导弹默认 AI，返回 null 时则为原版导弹 AI
-	public PluginPick<MissileAIPlugin> pickMissileAI(MissileAPI missile,
-			ShipAPI launchingShip) {
-		return null;
-	}
-
-	// 其余方法请自行 ctrl+左键 检查
+```text
+sounds/.../*.ogg          资源层（本页）：合法 OGG、首尾无缝、路径稳定、许可清楚
+        ↓ 相对于 MOD 根目录的路径
+data/config/sounds.json   注册层（S05-P02）：sound ID → OGG 路径与播放参数
+        ↓ sound ID
+SoundPlayerAPI            消费层（S05-P03）：Global.getSoundPlayer() 按 ID 播放
 ```
 
-现在详细回顾`齿轮工业`的 ModPlugin 到底做了什么事情：
+两个事实决定素材必须在本页做好：
 
-```java
-package data.scripts;
+- 循环是消费层的运行时行为。`SoundPlayerAPI.playLoop(id, ...)`（S05-P03）会连续重播同一个 OGG；0.98a-RC8 原版 `sounds.json` 没有 loop 开关字段，注册层无法补救循环接缝。
+- 注册层只提供路径和播放参数，不能修复错误编码、削波或循环接缝。
 
-import com.fs.starfarer.api.BaseModPlugin;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.impl.campaign.shared.SharedData;
+## 目录与 ID
 
-public class GearIn_ModPlugin extends BaseModPlugin {
+游戏按 `sounds.json` 中相对于 MOD 根目录的路径读取音频，子目录名称由 MOD 自己组织。统一结构能让使用方容易追踪：
 
-	@Override
-	public void onGameLoad(boolean newGame) {
-
-	}
-
-	@Override
-	public void beforeGameSave() {
-
-	}
-
-	@Override
-	public void onApplicationLoad() {
-
-	}
-	
-	@Override
-	public void onNewGame() {
-
-		if (NEX()) {
-
-		} else {
-			// 在此准备生成星系
-
-			new GearIn_NormalGenerate().generate(Global.getSector());
-		}
-
-		SharedData.getData().getPersonBountyEventData().addParticipatingFaction("gear_industry");
-	}
-
-	public static boolean NEX() {
-		return Global.getSettings().getModManager().isModEnabled("nexerelin");
-	}
-}
+```text
+GearIndustry\
+└── sounds\
+    └── gear_in\
+        ├── music\
+        │   └── GearIn_market_theme.ogg
+        ├── sfx_system\
+        │   └── GearIn_system_loop.ogg
+        └── sfx_weapon\
+            └── GearIn_weapon_fire.ogg
 ```
 
-很显然，它在 onNewGame 处添加了检测，当没有开启势力争霸时生成星系。然后用 SharedData 将势力注册到支持赏金机制的列表中。这是一个非常原始且简单的例子，但随着后续的开发，ModPlugin 将变得越来越复杂。
+文件名使用 ASCII 字母、数字和下划线。sound ID 与文件名可以不同，但教程让两者共享 `GearIn_` 前缀和同一语义名，方便从使用方反查资源。
 
-## 完全支持势力争霸
+## 为什么使用 OGG
 
-不过既然都以势力争霸作为例子了，那么就直接在此做它的完全支持。在前文 前缀名\_NormalGenerate 的同目录下新建 前缀名\_NEXGenerate，然后导入：
+本教程接入 Starsector 的声音资源**必须使用 Ogg Vorbis**。原版 `Starsector\starsector-core\sounds` 只包含 `.ogg` 音频，`sounds.json` 引用的资源也全部是 `.ogg`。
 
-```java
-package data.scripts;
+::: caution 必须真正转码
 
-import com.fs.starfarer.api.campaign.SectorAPI;
-import exerelin.campaign.SectorManager;
+把 WAV、MP3 改扩展名不会完成转码；必须通过音频编辑器或转换器真正导出 `.ogg`，否则资源加载失败、游戏内没有声音。
 
-public class GearIn_NEXGenerate extends PLSP_NormalGenerate {
-	
-	@Override
-	public void generate(SectorAPI sector) {
-		if (SectorManager.getManager().isCorvusMode()) { // 检测 nex 是否为原版地图模式
-			super.generate(sector);
-		}
-	}
-}
-```
+:::
 
-并修改 ModPlugin：
+建议导出设置：
 
-```java
-			if (NEX()) {
-				new GearIn_NEXGenerate().generate(Global.getSector());
-			} else {
-				new GearIn_NormalGenerate().generate(Global.getSector());
-			}
-```
+| 用途 | 声道 | 关注点 |
+|---|---|---|
+| 短促 UI/武器音效 | mono 或 stereo | 文件短、起音清晰、末尾没有多余静音 |
+| 引擎/系统循环 | mono 或 stereo | 首尾波形和相位连续，避免循环点击声 |
+| 环境与音乐 | stereo | 保留动态，避免过度压限和削波 |
 
-即可完成完整的势力争霸支持。
+原版素材统一为 44100 Hz 采样率（武器音效为 mono，音乐为 stereo）；教程不强制采样率，但同一 sound ID 的多个差分文件（可互换的变体素材）应使用相同采样率、声道数和相近响度，避免随机切换时音色突变。
 
+## 资产形态与生成规格
+
+本页没有图片资产，资产形态为三个 OGG 声音文件，由您按下列规格生成：
+
+| 文件 | 分类 | 声道 | 循环 | 生成关注点 |
+|---|---|---|---|---|
+| `GearIn_market_theme.ogg` | 音乐（市场主题）| stereo | 由音乐播放器循环 | 保留动态，避免过度压限与削波 |
+| `GearIn_system_loop.ogg` | 系统持续音效 | mono 或 stereo | 必须首尾无缝 | 波形与相位连续，10 次重复无接缝 |
+| `GearIn_weapon_fire.ogg` | 一次性武器音效 | mono 或 stereo | 否 | 起音清晰、文件短、末尾无多余静音 |
+
+三个文件都使用 ASCII 小写文件名，路径与本页目录结构一致。本页只声明这三个 ID 的所有权与规格；注册与播放接入由后续单元完成。
+
+## 音频准备与自检
+
+本页的例即上一节「资产形态与生成规格」表中的三个 OGG 文件，本页没有可启动的游戏内容，验证在外部播放器完成。基于本例，生成 `GearIn_weapon_fire.ogg` 后先完成以下检查：
+
+1. 播放器能识别为 Ogg Vorbis，而不是只看扩展名。
+2. 从开始到结束完整播放，没有削波、爆音或异常静音。
+3. 峰值留有余量；游戏中的最终音量还会受 `sounds.json`、使用方和用户设置共同影响。
+4. 文件路径大小写与计划注册路径完全一致。
+
+循环文件还需在音频编辑器中连续重复播放至少 10 次。首尾有直流偏移、相位跳变或结束采样值未归零时，会在每轮边界产生点击声；应移动剪切点并做极短交叉淡化。
+
+::: tip 修接缝的操作技巧
+
+移动剪切点并做极短交叉淡化后重新导出，再循环试听直到边界无点击声；每修一次就重复一次 10 次连播检查。
+
+:::
+
+## 版权与许可
+
+记录每个音频的作者、来源 URL、许可证、是否修改和署名要求。
+
+::: caution 随 MOD 发布须有许可
+
+仅"可以在线播放"不构成随 MOD 发布的许可；能否随 MOD 发布由作者声明的许可证决定。
+
+:::
+
+最终压缩包应包含许可证要求的署名或文本。
+
+成熟 MOD 实例把音频放在 MOD 自己的命名空间下，并由各自 `data/config/sounds.json` 消费；这种目录隔离避免与原版和其他 MOD 的同名资源混淆。
+
+## 预期结果
+
+本节结束时，三类 OGG 都能在外部播放器正常播放，路径稳定，循环文件连续播放没有明显接缝，并具备可追溯的许可证记录。游戏内还不会播放它们：注册与播放接入由后续单元完成。
+
+## 故障分析
+
+- 文件无法播放：内容不是 Ogg Vorbis，或导出中断；重新从源工程导出并检查文件头（前 4 字节应为 `OggS`）。
+- 游戏以后报告找不到文件：注册路径与实际大小写不一致，或路径错误地从磁盘根目录开始；应使用 MOD 根目录相对路径。
+- 循环时有咔哒声：首尾波形不连续；调整剪切点和交叉淡化后重新导出。
+- 同一 ID 的多个差分之间音量跳变：母带响度或 `sounds.json` 参数不一致；先统一素材响度，再在注册层做小幅调整。
+- 音效浑浊或失真：源文件已经削波，降低 `volume` 只能让失真变小声；回到源工程降低增益并重新导出。
+
+## 总结
+
+声音链的第一层是合法、可循环、路径稳定且许可清楚的 OGG。注册层只提供路径和播放参数，不能修复错误编码、削波或循环接缝；消费层只负责按 ID 播放。
+
+这意味着素材质量是整条声音链的硬前提：后续的注册与消费环节都以“文件本身正确”为默认前提，任何编码、接缝或许可缺陷都无法在这些环节补救，只能回到本页的自检清单重新验证。
+
+## 建议参考项
+
+- `com.fs.starfarer.api.Global`：`getSoundPlayer()` 获取声音播放器（消费层入口）。
+- `com.fs.starfarer.api.SoundPlayerAPI`：按 sound ID 播放的公开接口，含 `playLoop(id, ...)` 等循环播放方法。
+- `Starsector\starsector-core\sounds`：原版声音目录，音频全部为 `.ogg`（`sounds\music\music.bin` 为音乐容器）。
+- `Starsector\starsector-core\data\config\sounds.json`：原版注册表，`file` 值全部指向 `.ogg`，无 loop 字段。

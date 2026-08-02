@@ -1,24 +1,60 @@
 # 制作火炮、光束与导弹
 
-*本节预期阅读时间：~15 分钟。*
+本节建立武器的完整数据链：`weapon_data.csv` 注册性能，`.wpn` 定义贴图和开火表现，`.proj` 定义射弹或导弹。开始前您应已完成基础 MOD 搭建，并能稳定使用 `gear_in`/`GearIn_` 前缀。
 
-*本节预期操作时间：~20 分钟。*
+*本节预期阅读时间：~20 分钟。*
+
+*本节预期操作时间：~30 分钟。*
+
+## 学习目标
+
+完成后，您将能够：
+- 制作一门射弹武器、一门光束武器与一门导弹武器，覆盖贴图准备、武器文件、数据行与弹体文件。
+- 追踪武器 ID、弹体 ID、资源路径与声音 ID 的完整链路，明确每一环对应的文件。
+- 在装配界面与战斗中定位错误，判断问题出在 CSV、武器文件还是弹体文件。
+
+## 前置知识
+
+开始本节前，您需要具备以下基础：
+- 已完成基础 MOD 搭建（S01-P01），能创建可加载的 `gear_in` MOD，并理解 `GearIn_` 数据前缀。
+- 已安装 Starsector `0.98a-RC8`，并使用能明确显示扩展名、以 UTF-8 无 BOM 保存的文本编辑器。
+- 拥有一艘能安装武器的测试舰船：可以使用此前制作的舰船（S01-P02），或任意原版舰船。
 
 ## 获取贴图
 
 武器的贴图和舰船相比略有不同。
 
-**远行星号 的武器表现形式根据槽位不同而分为`炮塔`和`固定槽位`，它们各自需要一套贴图**。一般来说，`固定槽位`的武器贴图比`炮塔`的更细更长。且`炮塔`武器的重心往往就在贴图中央，而`固定槽位`武器的重心则往往偏向于图片底部。
+::: info 为什么炮塔与固定槽位需要两套贴图
+
+**远行星号的武器表现形式根据槽位不同而分为`炮塔`和`固定槽位`，它们各自需要一套贴图**。一般来说，`固定槽位`的武器贴图比`炮塔`的更细更长。且`炮塔`武器的重心往往就在贴图中央，而`固定槽位`武器的重心则往往偏向于图片底部。
 
 **而除了武器本身之外，还包括`光效`、`炮管`、`底座`这三个可选补充**。绝大多数武器至少有`光效`或`炮管`中的一种，而少数武器可能拥有两种，甚至全部三种。
 
-本例将制作一个小型带炮管射弹武器，一个中型带光效光束武器，与一个大型不带炮管也不带光效的导弹武器。所以先准备它们的贴图：
+:::
 
-![](./GearIn_durin_turret_base.png)![](./GearIn_durin_turret_recoil.png)![](./GearIn_durin_hardpoint_base.png)![](./GearIn_durin_hardpoint_recoil.png)
+本例将制作一个小型带炮管射弹武器，一个中型带光效光束武器，与一个大型不带炮管也不带光效的导弹武器。
 
-![](./GearIn_uri_turret_base.png)![](./GearIn_uri_turret_glow.png)![](./GearIn_uri_hardpoint_base.png)![](./GearIn_uri_hardpoint_glow.png)
+所以先准备它们的贴图：
 
-![](./GearIn_dwalin_turret_base.png)![](./GearIn_dwalin_hardpoint_base.png)
+![](./GearIn_durin_turret_base.png)
+
+![](./GearIn_durin_turret_recoil.png)
+
+![](./GearIn_durin_hardpoint_base.png)
+
+![](./GearIn_durin_hardpoint_recoil.png)
+
+![](./GearIn_uri_turret_base.png)
+
+![](./GearIn_uri_turret_glow.png)
+
+![](./GearIn_uri_hardpoint_base.png)
+
+![](./GearIn_uri_hardpoint_glow.png)
+
+![](./GearIn_dwalin_turret_base.png)
+
+![](./GearIn_dwalin_hardpoint_base.png)
 
 耗时约 45 秒。
 
@@ -30,7 +66,9 @@
 
 而武器各个贴图则是在基础名称的基础上继续扩写。
 
-首先扩写它是`炮塔`或`固定插槽`，如果是`炮塔`则在后面加上`_turret`，否则加上`_hardpoint`。然后扩写它的可选补充，如果是武器本身，则加上`_base`；如果是炮管，则加上`_recoil`；如果是光效，则加上`_glow`；如果是底座，则加上`_under`。
+首先扩写它是`炮塔`或`固定插槽`：如果是`炮塔`则在后面加上`_turret`，否则加上`_hardpoint`。
+
+然后扩写它的可选补充：如果是武器本身，则加上`_base`；如果是炮管，则加上`_recoil`；如果是光效，则加上`_glow`；如果是底座，则加上`_under`。
 
 **听上去有些复杂，但是见过例子之后只需要不断地复制粘贴即可**。
 
@@ -44,7 +82,9 @@
 
 ### 制作火炮武器
 
-编者设想的`都林自动炮`是一种发射高爆弹药的近距离速射武器，类似于`轻型突击炮`的低配版本，所以直接进入原版储存武器文件的`data/weapons`文件夹内，将它的`lightag.wpn`复制到 MOD 中`data/weapons`文件夹内，文件名改为`GearIn_durin.wpn`，然后准备修改：
+编者设想的`都林自动炮`是一种发射高爆弹药的近距离速射武器，类似于`轻型突击炮`的低配版本。
+
+直接进入原版储存武器文件的`data/weapons`文件夹内，将它的`lightag.wpn`复制到 MOD 中`data/weapons`文件夹内，文件名改为`GearIn_durin.wpn`，然后准备修改：
 
 ```json
 {
@@ -56,7 +96,7 @@
 	"turretSprite":"graphics/weapons/light_assault_gun_turret_base.png",
 	"turretGunSprite":"graphics/weapons/light_assault_gun_turret_recoil.png",
 	"hardpointSprite":"graphics/weapons/light_assault_gun_hardpoint_base.png",
-	"hardpointGunSprite":"graphics/weapons/light_assault_gun_hardpoint_recoil.png",	
+	"hardpointGunSprite":"graphics/weapons/light_assault_gun_hardpoint_recoil.png",
 	"visualRecoil":5.0,  # the gun sprites are only used if this is non-0
 	"renderHints":[RENDER_BARREL_BELOW],
 	"turretOffsets":[10, 0],
@@ -73,7 +113,7 @@
 					   "particleCount":12,
 					  "particleColor":[255,155,105,185]},
 	"projectileSpecId":"lightag_shot",  # projectile that will be fired
-	"fireSoundTwo":"light_assault_gun_fire",	
+	"fireSoundTwo":"light_assault_gun_fire",
 }
 ```
 
@@ -86,8 +126,8 @@
 | size                                                         | 武器的型号，在本例中表示这是`小型`武器，不变                 |
 | turretSprite`、`turretGunSprite`、`hardpointSprite`、`hardpointGunSprite | 炮塔主体贴图、炮塔炮管贴图、固定槽位主体贴图、固定槽位炮管贴图，在本例中分别替换为前文贴图的路径 |
 | visualRecoil                                                 | 炮管缩退距离，不变                                           |
-| renderHints                                                  | 武器渲染模式，本例中表示这门武器将炮管渲染在主体的下方，不变。 |
-| turretOffsets`、`turretAngleOffsets`、`hardpointOffsets`、`hardpointAngleOffsets | 炮塔开火点、炮塔开火角度、固定槽位开火点、固定槽位开火角度。因为本例的武器是双管自动炮，所以需要进行对应调整——每 2 个开火点数字表示 1 个坐标并对应 1 个开火角度数字。**开火点的坐标原点是贴图中心，第一个数字正/负是贴图的上/下，第二个数字正/负是贴图的左/右** |
+| renderHints                                                  | 武器渲染模式，本例中表示这门武器将炮管渲染在主体的下方，不变。|
+| turretOffsets`、`turretAngleOffsets`、`hardpointOffsets`、`hardpointAngleOffsets | 炮塔开火点、炮塔开火角度、固定槽位开火点、固定槽位开火角度。因为本例的武器是双管自动炮，所以需要进行对应调整——每 2 个开火点数字表示 1 个坐标并对应 1 个开火角度数字。**开火点的坐标原点是武器的旋转枢轴：炮塔贴图的中心，固定槽位贴图底部约 1/4 高度处。第一个数字正/负沿炮口方向（正数为朝炮口），第二个数字正/负是贴图的左/右** |
 | barrelMode                                                   | 炮管射击模式，在本例中为交替射击，不变                       |
 | animationType、muzzleFlashSpec                               | 开火烟雾的视觉属性，不变。若您有兴趣可以自行百度翻译。       |
 | projectileSpecId                                             | 武器所发射的弹体 ID，暂时不变，之后调整                      |
@@ -107,7 +147,7 @@
 	"turretSprite":"graphics/weapons/GearIn_durin_turret_base.png",
 	"turretGunSprite":"graphics/weapons/GearIn_durin_turret_recoil.png",
 	"hardpointSprite":"graphics/weapons/GearIn_durin_hardpoint_base.png",
-	"hardpointGunSprite":"graphics/weapons/GearIn_durin_hardpoint_recoil.png",	
+	"hardpointGunSprite":"graphics/weapons/GearIn_durin_hardpoint_recoil.png",
 	"visualRecoil":5.0,  # the gun sprites are only used if this is non-0
 	"renderHints":[RENDER_BARREL_BELOW],
 	"turretOffsets":[15, 3, 15, -3],
@@ -124,13 +164,15 @@
 					   "particleCount":12,
 					  "particleColor":[255,155,105,185]},
 	"projectileSpecId":"lightag_shot",  # projectile that will be fired
-	"fireSoundTwo":"light_assault_gun_fire",	
+	"fireSoundTwo":"light_assault_gun_fire",
 }
 ```
 
 ### 制作光束武器
 
-编者设想的`乌里光束`是一种造成远距离能量伤害的光束武器，类似于`引力子束`的能量版本，所以直接将它的`gravitonbeam.wpn`复制到 MOD 中`data/weapons`文件夹内，文件名改为`GearIn_uri.wpn`，然后准备修改：
+编者设想的`乌里光束`是一种造成远距离能量伤害的光束武器，类似于`引力子束`的能量版本。
+
+直接将它的`gravitonbeam.wpn`复制到 MOD 中`data/weapons`文件夹内，文件名改为`GearIn_uri.wpn`，然后准备修改：
 
 ```json
 {
@@ -159,6 +201,12 @@
 	"fireSoundTwo":"graviton_beam_loop",
 }
 ```
+
+::: warning 复制原版武器文件时，先删去专属特效行
+
+原文件在 `id` 之后还有一行 `beamEffect`，指向引力子束专属的特效类（推开目标并干扰护盾）。乌里光束是普通光束，不需要这个效果，所以这一行直接删去。
+
+:::
 
 实际上要改的依然不多。
 
@@ -209,9 +257,11 @@
 
 ### 制作导弹武器
 
-编者设想的`德瓦林 发射架`是一种远距离持续发射高爆导弹的武器，类似于`暴风 MLRS`的高爆版本，所以直接将它的`squall.wpn`复制到 MOD 中`data/weapons`文件夹内，文件名改为`GearIn_dwalin.wpn`，然后准备修改：
+编者设想的`德瓦林 发射架`是一种远距离持续发射高爆导弹的武器，类似于`暴风 MLRS`的高爆版本。
 
-``` json
+直接将它的`squall.wpn`复制到 MOD 中`data/weapons`文件夹内，文件名改为`GearIn_dwalin.wpn`，然后准备修改：
+
+```json
 {
 	"id":"squall",
 	"specClass":"projectile",
@@ -226,7 +276,7 @@
 	#"hardpointAngleOffsets":[0, 0],
 	#"turretAngleOffsets":[0, 0],
 	"hardpointAngleOffsets":[0, 0, 0, 0, 0],
-	"turretAngleOffsets":[0, 0, 0, 0, 0],		
+	"turretAngleOffsets":[0, 0, 0, 0, 0],
 	"barrelMode":"ALTERNATING",
 	"animationType":"SMOKE",
 	"renderHints":[RENDER_LOADED_MISSILES],
@@ -235,7 +285,7 @@
 							 "particleSizeRange":14.0,
 							 "cloudParticleCount":3,
 							 "cloudDuration":1.5,
-							 "cloudRadius":12.0,
+							 "cloudRadius":12.0;
 							 "blowbackParticleCount":3,
 							 "blowbackDuration":0.45,
 							 "blowbackLength":20.0,
@@ -263,7 +313,7 @@
 	#"hardpointAngleOffsets":[0, 0],
 	#"turretAngleOffsets":[0, 0],
 	"hardpointAngleOffsets":[0, 0],
-	"turretAngleOffsets":[0, 0],		
+	"turretAngleOffsets":[0, 0],
 	"barrelMode":"ALTERNATING",
 	"animationType":"SMOKE",
 	"renderHints":[RENDER_LOADED_MISSILES],
@@ -290,7 +340,7 @@
 | id                           | 武器的 ID                                                    |
 | specClass                    | 武器发射弹体亦或是光束，弹体为`projectile`，光束为`beam`。导弹也是弹体的一种，因此也是`projectile` |
 | beamEffect                   | 光束本身的每帧特效路径，仅对光束武器有效                     |
-| type                         | 武器的类型，可以是槽位类型中的任何一种，但只有`BALLISTIC`、`ENERGY`和`MISSILE`表现正常 |
+| type                         | 武器的类型。可开火的武器类型只有`BALLISTIC`、`ENERGY`、`MISSILE`；原版还用`DECORATIVE`制作纯装饰物（不能开火），其余类型不要用于武器文件 |
 | size                         | 武器的型号，可以是`SMALL`、`MEDIUM`或`LARGE`                 |
 | everyFrameEffect             | 武器的每帧特效代码路径                                       |
 | 各类 sprite                  | 武器在`炮塔`、`固定槽位`模式下的各类组件贴图，部分可适当留空 |
@@ -299,8 +349,8 @@
 | coreColor                    | 光束核心部分的颜色，仅对光束武器有效                         |
 | glowColor                    | 武器开火时光效贴图的颜色                                     |
 | width                        | 光束宽度，仅对光束武器有效                                   |
-| renderHints                  | 武器渲染模式，可以是`RENDER_BARREL_BELOW`、`RENDER_LOADED_MISSILES`、`RENDER_LOADED_MISSILES_UNLESS_HIDDEN`、`RENDER_ADDITIVE`、`SUSPEND_RECOIL`中有逻辑的排列组合，分别是将炮管渲染在主体底部、渲染导弹、非隐藏槽位时渲染导弹、以叠加模式渲染、炮管默认不移动 |
-| 各类 offsets 和 angleOffsets | 炮塔开火点、炮塔开火角度、固定槽位开火点、固定槽位开火角度。因为本例的武器是双管自动炮，所以需要进行对应调整——每 2 个开火点数字表示 1 个坐标并对应 1 个开火角度数字。**开火点的坐标原点是贴图中心，第一个数字正/负是贴图的上/下，第二个数字正/负是贴图的左/右** |
+| renderHints                  | 武器渲染模式，可以是`RENDER_BARREL_BELOW`、`RENDER_LOADED_MISSILES`、`RENDER_LOADED_MISSILES_UNLESS_HIDDEN`、`RENDER_ADDITIVE`、`SUSPEND_RECOIL`、`NEVER_RENDER_IN_CAMPAIGN`中有逻辑的排列组合，分别是将炮管渲染在主体底部、渲染导弹、非隐藏槽位时渲染导弹、以叠加模式渲染、炮管默认不移动、生涯界面中不渲染 |
+| 各类 offsets 和 angleOffsets | 炮塔开火点、炮塔开火角度、固定槽位开火点、固定槽位开火角度。因为本例的武器是双管自动炮，所以需要进行对应调整——每 2 个开火点数字表示 1 个坐标并对应 1 个开火角度数字。**开火点的坐标原点是武器的旋转枢轴：炮塔贴图的中心，固定槽位贴图底部约 1/4 高度处。第一个数字正/负沿炮口方向（正数为朝炮口），第二个数字正/负是贴图的左/右** |
 | barrelMode                   | 炮管射击模式，可以是`LINKED`、`ALTERNATING`、`ALTERNATING_BURST`或`DUAL`，分别是齐射、轮流发射、每炮管波次发射、每次发射 2 发 |
 | autocharge                   | 设为 true 时，按下左键即可自动完成前摇，否则必须按住左键直到前摇完成为止。仅对非光束武器有效 |
 | beamFireOnlyOnFullCharge     | 设为 true 时，光束在渐入阶段不会产生光束也不会造成伤害。仅对光束武器有效 |
@@ -312,8 +362,8 @@
 | textureScrollSpeed           | 光束材质的滚动速率，仅对光束武器有效                         |
 | pixelsPerTexel               | 光束材质的拉伸程度，仅对光束武器有效                         |
 | pierceSet                    | 光束可以穿透的碰撞类型，仅对光束武器有效                     |
-| fireSoundOne                 | 武器持续发射时循环播放的音效                                 |
-| fireSoundTwo                 | 武器开火音效                                                 |
+| fireSoundOne                 | 武器开火前摇（chargeup）时播放一次的音效；对光束武器是光束渐入时的一次性音效（如`graviton_beam_intro`）|
+| fireSoundTwo                 | 武器开火音效；对光束武器是持续播放的循环音效（如`graviton_beam_loop`）|
 
 ## 制作武器数据
 
@@ -321,73 +371,61 @@
 
 ### 制作火炮武器数据
 
-将`轻型自动炮`的数据复制到 MOD 中`weapons_data.csv`内，然后修改：
+将`轻型突击炮`的数据复制到 MOD 中`weapon_data.csv`内，然后修改：
 
-```csv {9}
+```csv {2}
 name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn rate,OPs,ammo,ammo/sec,reload size,type,energy/shot,energy/second,chargeup,chargedown,burst size,burst delay,min spread,max spread,spread/shot,spread decay/sec,beam speed,proj speed,launch speed,flight time,proj hitpoints,autofireAccBonus,extraArcForAI,hints,tags,groupTag,tech/manufacturer,for weapon tooltip>>,primaryRoleStr,speedStr,trackingStr,turnRateStr,accuracyStr,customPrimary,customPrimaryHL,customAncillary,customAncillaryHL,noDPSInTooltip,number
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-#Light Machine Gun,lightmg,0,,100,300,,25,,1,50,3,,,,KINETIC,3,,0,0.4,5,0.1,0,5,1,15,,600,,,10,,,PD,"pd6, kinetic3, SR, base_bp",,,,Point Defense,,,,,,,,,,0.5
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-#Phase Lance,phasebeam,1,,1500,600,1000,,,0,20,10,,,,ENERGY,,1200,0.25,0.5,1,4,,,,,3200,,,,,,,,"energy14, beam10, rare_bp, merc",,,,General,,,,,,,,,,20
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-#Cyclone Reaper Launcher,cyclone,2,,5000,1200,,4000,,75,20,26,20,,,HIGH_EXPLOSIVE,0,,0,9,2,1,0,0,0,0,,400,100,3.5,500,,,STRIKE,"strike18, rocket14, rare_bp, merc",,,,Torpedo,Fast,None,,,,,,,TRUE,15
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-都林自动炮,GearIn_durin,1,,300,600,,35,,3,40,4,,,,HIGH_EXPLOSIVE,35,,0,0.14,1,,0,5,1,5,,800,,,30,,,,"he6, lowtech_bp, midline_bp, merc",,,,反装甲,,,,,,,,,,3
-
+都林自动炮,GearIn_durin,1,,300,600,,35,,3,40,4,,,,HIGH_EXPLOSIVE,35,,0,0.14,1,,0,5,1,5,,800,,,30,,,,"he6, lowtech_bp, GearIn_bp",,,,反装甲,,,,,,,,,,3
 ```
 
 **一门武器最重要的特征同样是要有趣**。
 
-在本例中，`都林自动炮`作为`轻型突击炮`的低配版本，拥有更低的基础射程和更低的装配消耗。但仅仅如此是无法抵消它 100 射程削弱带来的劣势，所以为它提供了极强的射速增益。射速增益似乎让它加强过头了，所以再次降低单发伤害与幅能产生，来让这门武器变成绝佳的近距离泼水炮，低 DPH 让它不会造成高到过分的伤害。
+在本例中，`都林自动炮`作为`轻型突击炮`的低配版本，拥有更低的基础射程和更低的装配消耗。
+
+但仅仅如此是无法抵消它 100 射程削弱带来的劣势，所以为它提供了极强的射速增益。
+
+射速增益似乎让它加强过头了，所以再次降低单发伤害与幅能产生，来让这门武器变成绝佳的近距离泼水炮，低 DPH 让它不会造成高到过分的伤害。
 
 ### 制作光束武器数据
 
-将`引力子束`的数据复制到 MOD 中`weapons_data.csv`内，然后修改：
+将`引力子束`的数据复制到 MOD 中`weapon_data.csv`内，然后修改：
 
-```csv {10}
+```csv {3}
 name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn rate,OPs,ammo,ammo/sec,reload size,type,energy/shot,energy/second,chargeup,chargedown,burst size,burst delay,min spread,max spread,spread/shot,spread decay/sec,beam speed,proj speed,launch speed,flight time,proj hitpoints,autofireAccBonus,extraArcForAI,hints,tags,groupTag,tech/manufacturer,for weapon tooltip>>,primaryRoleStr,speedStr,trackingStr,turnRateStr,accuracyStr,customPrimary,customPrimaryHL,customAncillary,customAncillaryHL,noDPSInTooltip,number
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-#Light Machine Gun,lightmg,0,,100,300,,25,,1,50,3,,,,KINETIC,3,,0,0.4,5,0.1,0,5,1,15,,600,,,10,,,PD,"pd6, kinetic3, SR, base_bp",,,,Point Defense,,,,,,,,,,0.5
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-#Phase Lance,phasebeam,1,,1500,600,1000,,,0,20,10,,,,ENERGY,,1200,0.25,0.5,1,4,,,,,3200,,,,,,,,"energy14, beam10, rare_bp, merc",,,,General,,,,,,,,,,20
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-#Cyclone Reaper Launcher,cyclone,2,,5000,1200,,4000,,75,20,26,20,,,HIGH_EXPLOSIVE,0,,0,9,2,1,0,0,0,0,,400,100,3.5,500,,,STRIKE,"strike18, rocket14, rare_bp, merc",,,,Torpedo,Fast,None,,,,,,,TRUE,15
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-都林自动炮,GearIn_durin,1,,300,600,,35,,3,40,4,,,,HIGH_EXPLOSIVE,35,,0,0.14,1,,0,5,1,5,,800,,,30,,,,"he6, lowtech_bp, midline_bp, merc",,,,反装甲,,,,,,,,,,3
-乌里光束,GearIn_uri,2,,1500,1000,175,,,,15,9,,,,ENERGY,,200,0.1,0.1,,,,,,,2400,,,,,,,,"beam12, energy11, LR, hightech_bp, midline_bp, merc",,,,压制,,,,,,,,,,21
-
+都林自动炮,GearIn_durin,1,,300,600,,35,,3,40,4,,,,HIGH_EXPLOSIVE,35,,0,0.14,1,,0,5,1,5,,800,,,30,,,,"he6, lowtech_bp, GearIn_bp",,,,反装甲,,,,,,,,,,3
+乌里光束,GearIn_uri,2,,1500,1000,175,,,,15,9,,,,ENERGY,,200,0.1,0.1,,,,,,,2400,,,,,,,,"beam12, energy11, LR, GearIn_bp",,,,压制,,,,,,,,,,21
 ```
 
-在本例中，`乌里光束`作为`引力子束`的另一个版本，事实上更像两门绑在一起的`战术激光炮`。它的装配点让它足以支持两倍的 DPS，不过编者打算进一步提高一些，然后用稍高的幅能产生作为相应的代价。最后删除它`impact`里的数据和额外描述。
+在本例中，`乌里光束`作为`引力子束`的另一个版本，事实上更像两门绑在一起的`战术激光炮`。
+
+它的装配点让它足以支持两倍的 DPS，不过编者打算进一步提高一些，然后用稍高的幅能产生作为相应的代价。
+
+最后删除它`impact`里的数据和额外描述。
 
 ### 制作导弹武器数据
 
-将`暴风 MLRS`的数据复制到 MOD 中`weapons_data.csv`内，然后修改：
+将`暴风 MLRS`的数据复制到 MOD 中`weapon_data.csv`内，然后修改：
 
-```csv {11}
+```csv {4}
 name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn rate,OPs,ammo,ammo/sec,reload size,type,energy/shot,energy/second,chargeup,chargedown,burst size,burst delay,min spread,max spread,spread/shot,spread decay/sec,beam speed,proj speed,launch speed,flight time,proj hitpoints,autofireAccBonus,extraArcForAI,hints,tags,groupTag,tech/manufacturer,for weapon tooltip>>,primaryRoleStr,speedStr,trackingStr,turnRateStr,accuracyStr,customPrimary,customPrimaryHL,customAncillary,customAncillaryHL,noDPSInTooltip,number
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-#Light Machine Gun,lightmg,0,,100,300,,25,,1,50,3,,,,KINETIC,3,,0,0.4,5,0.1,0,5,1,15,,600,,,10,,,PD,"pd6, kinetic3, SR, base_bp",,,,Point Defense,,,,,,,,,,0.5
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-#Phase Lance,phasebeam,1,,1500,600,1000,,,0,20,10,,,,ENERGY,,1200,0.25,0.5,1,4,,,,,3200,,,,,,,,"energy14, beam10, rare_bp, merc",,,,General,,,,,,,,,,20
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-#Cyclone Reaper Launcher,cyclone,2,,5000,1200,,4000,,75,20,26,20,,,HIGH_EXPLOSIVE,0,,0,9,2,1,0,0,0,0,,400,100,3.5,500,,,STRIKE,"strike18, rocket14, rare_bp, merc",,,,Torpedo,Fast,None,,,,,,,TRUE,15
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 都林自动炮,GearIn_durin,1,,300,600,,35,,3,40,4,,,,HIGH_EXPLOSIVE,35,,0,0.14,1,,0,5,1,5,,800,,,30,,,,"he6, lowtech_bp, GearIn_bp",,,,反装甲,,,,,,,,,,3
 乌里光束,GearIn_uri,2,,1500,1000,175,,,,15,9,,,,ENERGY,,200,0.1,0.1,,,,,,,2400,,,,,,,,"beam12, energy11, LR, GearIn_bp",,,,压制,,,,,,,,,,21
 德瓦林 发射架,GearIn_dwalin,2,,4000,2500,,600,,15,20,20,100,,,HIGH_EXPLOSIVE,0,,0,10,10,0.5,0,0,0,0,,600,100,4.75,300,,,"DO_NOT_AIM, CONSERVE_3, STRIKE, USE_VS_FRIGATES, MISSILE_SPREAD","missile19, strike15, GearIn_bp",,,,压制,非常快,特殊,,,瞄准后失去制导能力。,,,,,16.2
-
 ```
 
-因为需要在发射次数与总效果之间考虑，所以大型导弹并不那么好设计，要设计得有趣就更难了。在本例中，`德瓦林 发射架`作为高爆`暴风`，需要提高 DPH 来取得对装甲的有效打击效果，然后降低一些单波次发射量和总备弹量来与修改过的贴图匹配。EMP 因为意义不明被移除，这有助于提高设计的**纯粹性**。
+因为需要在发射次数与总效果之间考虑，所以大型导弹并不那么好设计，要设计得有趣就更难了。
+
+在本例中，`德瓦林 发射架`作为高爆`暴风`，需要提高 DPH 来取得对装甲的有效打击效果，然后降低一些单波次发射量和总备弹量来与修改过的贴图匹配。
+
+EMP 保持留空（原版暴风的 EMP 本就为空），这有助于提高设计的**纯粹性**。
 
 ::: tip 提前准备
 
-将新船的`tag`中诸如`xx_bp`的内容修改为`前缀名_bp`，在本例中为`GearIn_bp`。日后将会有用。
+将新武器的`tag`中不希望保留的原版蓝图 tag（如`midline_bp`）替换为`前缀名_bp`，在本例中为`GearIn_bp`；仍然希望保留的原版蓝图来源（如`lowtech_bp`）可以留下。日后将会有用。
 
 除非它是您不希望大量出现的武器或它是内置武器——在这种情况下，您可以将`tag`中的内容清空。
 
-::: 
+:::
 
 ### 实用武器数据速查表
 
@@ -397,7 +435,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 | ----------------- | ------------------------------------------------------------ |
 | name              | 武器名称                                                     |
 | id                | 武器 ID                                                      |
-| tier              | 科技等级，正常范围是 0~3，大于 3 将导致不会市场上正常出现。科技等级越大则越稀有且购买所需关系越高。 |
+| tier              | 科技等级，正常范围是 0~3，大于 3 将导致不会市场上正常出现。科技等级越大则越稀有且购买所需关系越高。|
 | rarity            | 稀有度，数字越小越罕见，大于 1 时被视为 1，小于 0 时被视为 0 |
 | base value        | 武器的成本价                                                 |
 | range             | 对于非导弹武器而言是武器的射程，对于导弹武器而言是 AI 理解中的武器射程 |
@@ -405,7 +443,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 | damage/shot       | 单发伤害，仅对非光束武器有效                                 |
 | emp               | 对于非光束武器而言是单发 EMP，对于光束武器而言是每秒 EMP     |
 | impact            | 对于非光束武器而言几乎无作用，对于光束武器而言是可以偏转、固定目标的偏转力 |
-| turn rate         | 武器转速，单位是 圈/分钟                                     |
+| turn rate         | 武器转速，单位是度/秒                                     |
 | OPs               | 装配点数需求                                                 |
 | ammo              | 弹药限制，留空则为无限弹药                                   |
 | ammo/sec          | 每秒弹药恢复量，留空则为无法恢复弹药                         |
@@ -415,23 +453,23 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 | energy/second     | 每秒产生幅能，仅对光束武器有效                               |
 | chargeup          | 对于非光束武器而言是开火前摇，对于光束武器而言是光束从不存在渐入为存在的时间 |
 | chargedown        | 对于非光束武器而言是开火后摇，对于光束武器而言是光束从存在渐出为不存在的时间 |
-| burst size        | 对于非光束武器而言是每波发射弹数，对于光束光束而言，填写了此数据后武器变为爆发光束，是爆发光束的爆发时长 |
-| burst delay       | 对于非光束武器而言是波内每发射弹的间隔时间，对于光束光束而言，填写了此数据后武器变为爆发光束，是爆发光束的冷却时长 |
-| min spread        | 最小弹道散布，单位是 度，仅对非光束武器有效                  |
-| max spread        | 最大弹道散布，单位是 度，仅对非光束武器有效                  |
-| spread/shot       | 每发射一次所导致的弹道散布增加量，单位是 度，仅对非光束武器有效 |
-| spread decay/sec  | 武器停火时弹道散布的衰减，单位是 度/秒，仅对非光束武器有效   |
+| burst size        | 对于非光束武器而言是每波发射弹数，对于光束武器而言，填写了此数据后武器变为爆发光束，是爆发光束的爆发时长 |
+| burst delay       | 对于非光束武器而言是波内每发射弹的间隔时间，对于光束武器而言，填写了此数据后武器变为爆发光束，是爆发光束的冷却时长 |
+| min spread        | 最小弹道散布，单位是度，仅对非光束武器有效                  |
+| max spread        | 最大弹道散布，单位是度，仅对非光束武器有效                  |
+| spread/shot       | 每发射一次所导致的弹道散布增加量，单位是度，仅对非光束武器有效 |
+| spread decay/sec  | 武器停火时弹道散布的衰减，单位是度/秒，仅对非光束武器有效   |
 | beam speed        | 光束飞行速率，仅对光束武器有效                               |
 | proj speed        | 弹体飞行速率或导弹最大速率，仅对非光束武器有效               |
 | launch speed      | 导弹初速，仅对导弹武器有效                                   |
-| flight time       | 导弹飞行时间，仅对导弹武器有效。导弹武器的真实射程是 导弹速度 * 导弹飞行时间，而不是前文的`range` |
+| flight time       | 导弹飞行时间，仅对导弹武器有效。导弹武器的真实射程是导弹速度 * 导弹飞行时间，而不是前文的`range` |
 | proj hitpoints    | 弹体血量，仅对非光束武器有效，且仅对导弹武器有作用           |
 | autofireAccBonus  | 自动开火的精确度补正，非常建议为空                           |
 | extraArcForAI     | 开火判断 AI 的角度补正，非常建议为空                         |
 | hints             | 进阶内容，不可随意编纂，后文详细解释                         |
 | tags              | 进阶内容，可随意编纂，后文详细解释                           |
 | groupTag          | 如果本项不为空，则本项相同的武器将优先编入同一组，且优先在本组不编入其它武器 |
-| tech/manufacturer | 科技类型，原版包括诸如 核心纪元、主宰纪元 等，可随意填写     |
+| tech/manufacturer | 科技类型，原版包括诸如核心纪元、主宰纪元等，可随意填写     |
 | primaryRoleStr    | 武器类型，文字描述                                           |
 | speedStr          | 导弹飞行速度，文字描述，非导弹武器建议留空                   |
 | trackingStr       | 导弹跟踪能力，文字描述，非导弹武器建议留空                   |
@@ -443,17 +481,22 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 | customAncillaryHL | 次要说明文本的高亮部分，多个高亮文本用`|`隔开                |
 | noDPSInTooltip    | 设为 true 时，武器数据界面不会显示 DPS，仅适合不可恢复弹药且弹药量较少的武器 |
 
-## 武器测试
+## 验证方案（基于本例）
 
-使用`控制台`的`Addweapon [您的武器 ID]`来获取它，或在各类战役里使用它。
+三门武器全部制作完成后，通过战斗验证数据与表现的完整流程。
 
-为新船安装新的武器。
+- 前置数据：`gear_in` MOD（S01-P01）与测试舰船（S01-P02 或任意原版舰船）。
+- 启动入口：dev 控制台（`Addweapon [武器 ID]`）或测试任务。
+- 操作步骤：使用控制台的`Addweapon [您的武器 ID]`获取三门武器，或在各类战役里使用它们；为新船安装新的武器；分别验证持续射击、停止射击、过载目标、耗尽弹药与导弹被拦截。
 
 ![](./weapon_test_1.png)
 
 ![](./weapon_test_2.png)
 
 ![](./weapon_test_3.png)
+
+- 通过信号：装配面板数值与 `weapon_data.csv` 一致；开火表现与 `.wpn`/`.proj` 一致；`starsector.log` 中三个 GearIn ID 均无加载或运行时错误。
+- 清理：移除测试舰船与测试武器。
 
 ## 新弹体与新导弹
 
@@ -463,7 +506,9 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 
 **能复制粘贴就绝不硬写。**
 
-编者认为`都林自动炮`的弹体颜色应当设定为红色，但其它方面不会和`轻型突击炮`的弹体相比有太多差距。将`light_ag_shot.proj`复制到`data/weapons/proj`这个弹体目录下，然后将文件名改为`GearIn_durin_shot.proj`，开始修改：
+编者认为`都林自动炮`的弹体颜色应当设定为红色，但其它方面不会和`轻型突击炮`的弹体相比有太多差距。
+
+将`lightag_shot.proj`复制到`data/weapons/proj`这个弹体目录下，然后将文件名改为`GearIn_durin_shot.proj`，开始修改：
 
 ```json
 {
@@ -479,7 +524,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 	#"fringeColor":[255,125,125,255],
 	#"coreColor":[255,200,200,150],
 	"fringeColor":[255,200,70,235],
-	"coreColor":[255,200,200,180],	
+	"coreColor":[255,200,200,180],
 	"textureScrollSpeed":64.0,
 	"pixelsPerTexel":5.0,
 	"bulletSprite":"graphics/missiles/shell_large_yellow.png"
@@ -495,7 +540,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 | spawnType               | 生成类型，对于`projectile`而言仅允许`BALLISTIC`和`BALLISTIC_AS_BEAM`，其它类型会产生各类意料之外的 BUG |
 | onHitEffect             | 弹体的命中特效代码路径，不填默认为无特效                     |
 | onFireEffect            | 弹体的开火特效代码路径，不填默认为无特效                     |
-| collisionClass          | 弹体的碰撞类型，除去某些不合理的设置之外，`BALLISTIC`类型的弹体可以是`PROJECTILE_FF`或`PROJECTILE_NO_FF`，前者有友伤，后者没有。`BALLISTIC_AS_BEAM`类型的弹体可以是`RAY`或`RAY_FIGHTER`，但都有友伤。全部碰撞类型会在后文列出 |
+| collisionClass          | 弹体的碰撞类型。`BALLISTIC`类型的弹体用`PROJECTILE_FF`（能命中包括友方在内的舰船，有友伤）或`PROJECTILE_NO_FF`（只命中敌方，无友伤）。`BALLISTIC_AS_BEAM`类型的弹体用`RAY`（能命中包括友方在内的舰船）或`RAY_FIGHTER`（只命中敌方舰船与战机）。全部碰撞类型：`NONE`、`RAY`、`RAY_FIGHTER`、`FIGHTER`、`SHIP`、`PROJECTILE_NO_FF`、`PROJECTILE_FF`、`MISSILE_NO_FF`、`MISSILE_FF`、`HITS_SHIPS_AND_ASTEROIDS`、`HITS_SHIPS_ONLY_FF`、`HITS_SHIPS_ONLY_NO_FF`、`PROJECTILE_FIGHTER`、`ASTEROID`、`PLANET`、`GAS_CLOUD`、`STAR`（后几类用于实体，弹体不会用到）|
 | collisionClassByFighter | 若这个弹体是由战机发射的，则它使用这个碰撞类型。一般来说根据类型而分别使用`PROJECTILE_FIGHTER`或`RAY_FIGHTER`来与舰船发射的弹体做区分 |
 | length                  | 弹体长度                                                     |
 | width                   | 弹体宽度                                                     |
@@ -526,7 +571,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 	#"fringeColor":[255,125,125,255],
 	#"coreColor":[255,200,200,150],
 	"fringeColor":[255,70,70,235],
-	"coreColor":[255,200,200,180],	
+	"coreColor":[255,200,200,180],
 	"textureScrollSpeed":64.0,
 	"pixelsPerTexel":5.0,
 	"bulletSprite":"graphics/missiles/shell_large_yellow.png"
@@ -545,7 +590,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 	"turretSprite":"graphics/weapons/GearIn_durin_turret_base.png",
 	"turretGunSprite":"graphics/weapons/GearIn_durin_turret_recoil.png",
 	"hardpointSprite":"graphics/weapons/GearIn_durin_hardpoint_base.png",
-	"hardpointGunSprite":"graphics/weapons/GearIn_durin_hardpoint_recoil.png",	
+	"hardpointGunSprite":"graphics/weapons/GearIn_durin_hardpoint_recoil.png",
 	"visualRecoil":5.0,  # the gun sprites are only used if this is non-0
 	"renderHints":[RENDER_BARREL_BELOW],
 	"turretOffsets":[15, 3, 15, -3],
@@ -562,7 +607,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 					   "particleCount":12,
 					  "particleColor":[255,155,105,185]},
 	"projectileSpecId":"GearIn_durin_shot",  # projectile that will be fired
-	"fireSoundTwo":"light_assault_gun_fire",	
+	"fireSoundTwo":"light_assault_gun_fire",
 }
 ```
 
@@ -574,15 +619,21 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 
 **能复制粘贴就绝不硬写。**
 
-::: danger 务必为新导弹武器制作新导弹弹体
+::: caution 务必为新导弹武器制作新导弹弹体
 
-如果一个导弹武器直接调用原版弹体，那么对它 CSV 设置的`flight time`、`proj hitpoints`可能被此原版所属的武器数据覆盖。
+CSV 的导弹行会直接修改它引用的弹体 spec：当原版`暴风 MLRS`和您的`德瓦林 发射架`都引用同一个`squall_rocket`弹体时，
+
+两个武器行都会往同一个弹体 spec 写入`flight time`、`proj hitpoints`等数值。
+
+后加载的 MOD 行会把原版行的设定覆盖掉，导致两个武器的射程、血量互相污染，表现与装配面板不一致。
 
 为避免意料之外的 BUG，请务必为新导弹武器制作新导弹弹体。
 
 :::
 
-编者认为`德瓦林 发射架`的弹体过小，且颜色并不合适，但其它方面不会和`暴风 MLRS`的弹体相比有太多差距。将`squall_rocket.proj`复制到`data/weapons/proj`这个弹体目录下，然后将文件名改为`GearIn_dwalin_rocket.proj`，开始修改：
+编者认为`德瓦林 发射架`的弹体过小，且颜色并不合适，但其它方面不会和`暴风 MLRS`的弹体相比有太多差距。
+
+将`squall_rocket.proj`复制到`data/weapons/proj`这个弹体目录下，然后将文件名改为`GearIn_dwalin_rocket.proj`，开始修改：
 
 ```json
 {
@@ -591,7 +642,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 	#"missileType":"ROCKET",
 	"missileType":"MISSILE_TWO_STAGE_SECOND_UNGUIDED",
 	"sprite":"graphics/missiles/missile_squall.png",
-	"size":[6,20],	
+	"size":[6,20],
 	"center":[3,10],
 	"collisionRadius":15,
 	"collisionClass":"MISSILE_NO_FF",
@@ -599,7 +650,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 	"explosionRadius":85, # purely visual
 	"flameoutTime":1, # total time from flameout to full fadeout
 	"noEngineGlowTime":0.5, # time spent without the engine glow being rendered
-	"fadeTime":0.5, # fadeout duration	
+	"fadeTime":0.5, # fadeout duration
 	"engineSpec":{"turnAcc":360,
 				  "turnRate":180,
 				  "acc":1000,
@@ -626,7 +677,13 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 }
 ```
 
-### 实用非导弹弹体文件速查表
+::: warning 复制原版弹体文件时，先删去专属特效行
+
+原文件在 `missileType` 之后还有一行 `onFireEffect`，指向暴风专属的开火特效类。德瓦林的导弹不需要它，所以这一行直接删去。
+
+:::
+
+### 实用导弹弹体文件速查表
 
 **不在本表上的数据均为上文提及过且无歧义的数据。**
 
@@ -637,21 +694,21 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 | size                        | 导弹的大小，前一个数字为宽，后一个为高。如果和贴图大小不同则会进行拉伸 |
 | center                      | 导弹的中心位置，影响碰撞判定，数值一般各设置为导弹大小的一半 |
 | collisionRadius             | 导弹的碰撞圈大小，与舰船的`黄圈`性质相同                     |
-| collisionClass              | 导弹的碰撞类型，除去某些不合理的设置之外，可以是`MISSILE_FF`或`MISSILE_NO_FF`，前者有友伤，后者没有。 |
+| collisionClass              | 导弹的碰撞类型，除去某些不合理的设置之外，可以是`MISSILE_FF`或`MISSILE_NO_FF`，前者有友伤，后者没有。|
 | explosionColor              | 导弹爆炸产生的光效颜色                                       |
 | explosionRadius             | 导弹爆炸产生的光效大小，不影响伤害溅射范围                   |
 | explosionSpec               | 导弹爆炸的溅射伤害设置。不填默认为无伤害溅射                 |
 | armingTime                  | 导弹的引信时间，在引信时间到达之前不会爆炸。不填默认为 0     |
-| flameoutTime                | 导弹超出距离后需要的熄火时间。导弹在熄火过程中可以造成伤害   |
-| noEngineGlowTime            | 导弹熄火后自爆需要的时间。导弹熄火后不造成伤害               |
-| fadeTime                    | 导弹自爆光效消失的时间。                                     |
+| flameoutTime                | 导弹的飞行时间耗尽（超出射程）后，从引擎熄火到完全淡出消失的总时长。熄火后导弹仍凭惯性飞行，且仍能碰撞并造成伤害 |
+| noEngineGlowTime            | 熄火淡出阶段的末尾，引擎光效停止渲染的时间段；只影响视觉，与伤害无关 |
+| fadeTime                    | 熄火淡出阶段的末尾淡出（贴图渐隐）时长；若`noCollisionWhileFading`为 true，淡出期间不再有碰撞判定 |
 | useHitGlowWhenDestroyed     | 如果设为 true，则导弹自爆或被拦截时不会产生导弹型爆炸特效，而是产生非导弹型命中光效。不填默认为否 |
 | noDebrisWhenDestroyed       | 如果设为 true，则导弹自爆或被拦截时不会产生残骸碎片。不填默认为否 |
-| useHitGlowWhenDealingDamage | 如果设为 true，则爆炸时不会产生导弹型爆炸特效，而是产生非导弹型命中光效。不填默认为否 |
+| useHitGlowWhenDealingDamage | 若弹体没有`explosionSpec`，命中造成伤害时产生命中光效；设为 false 则命中时没有任何爆炸/光效特效。不填默认为是（true）|
 | noCollisionWhileFading      | 如果设为 true，则引擎熄火后不再有撞击判定。不填默认为否      |
 | renderTargetIndicator       | 如果设为 false，则导弹被敌方发射时下方不会出现红色棱形指示标。不填默认为是 |
 | engineSpec                  | 导弹的机动性设置，在本例顺序分别是`转向加速度`、`最大转向速度`、`加速度`和`减速度` |
-| engineSlots                 | 导弹的引擎设置，一个导弹可以有多个引擎，它们的`id`必须不同。引擎的`styleSpec`属性与后文介绍的`引擎风格`相似。 |
+| engineSlots                 | 导弹的引擎设置，一个导弹可以有多个引擎，它们的`id`必须不同。引擎的`styleSpec`属性与后文介绍的`引擎风格`相似。|
 
 据此修改它的弹体 ID、贴图和爆炸颜色等属性：
 
@@ -662,7 +719,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 	#"missileType":"ROCKET",
 	"missileType":"MISSILE_TWO_STAGE_SECOND_UNGUIDED",
 	"sprite":"graphics/missiles/GearIn_dwalin_rocket.png",
-	"size":[6,20],	
+	"size":[6,20],
 	"center":[3,10],
 	"collisionRadius":15,
 	"collisionClass":"MISSILE_NO_FF",
@@ -670,7 +727,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 	"explosionRadius":85, # purely visual
 	"flameoutTime":1, # total time from flameout to full fadeout
 	"noEngineGlowTime":0.5, # time spent without the engine glow being rendered
-	"fadeTime":0.5, # fadeout duration	
+	"fadeTime":0.5, # fadeout duration
 	"engineSpec":{"turnAcc":360,
 				  "turnRate":180,
 				  "acc":1000,
@@ -720,7 +777,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 	#"hardpointAngleOffsets":[0, 0],
 	#"turretAngleOffsets":[0, 0],
 	"hardpointAngleOffsets":[0, 0],
-	"turretAngleOffsets":[0, 0],		
+	"turretAngleOffsets":[0, 0],
 	"barrelMode":"ALTERNATING",
 	"animationType":"SMOKE",
 	"renderHints":[RENDER_LOADED_MISSILES],
@@ -744,7 +801,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 
 ## 命中特效？开火特效？每帧插件？
 
-弹体的命中特效将不可避免地涉及基础代码。由于命中特效对于一个基本弹体而言不是必要的，因此在后文进阶部分再涉及。
+弹体的命中特效将不可避免地涉及基础代码。由于命中特效对于一个基本弹体而言不是必要的，本教程将在涉及代码的进阶主题中再展开。
 
 ## 实用武器 Hints 速查表
 
@@ -767,7 +824,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 | DO_NOT_CONSERVE              | 仅对弹药有限的武器有效，让 AI 不保留任何弹药完全倾泻         |
 | EXTRA_RANGE_ON_FIGHTER       | 让 AI 认为这种武器被安装在战机上时有 500 额外射程(仅影响 AI，不代表射程真的增加) |
 | FIRE_WHEN_INEFFICIENT        | 让 AI 认为这种武器可以不分场合地使用，例如`离子束`           |
-| HEATSEEKER                   | 仅对未自定义过导弹 AI 的导弹武器有效，让导弹的 AI 追踪目标舰船的**正后方**(而不是引擎) |
+| HEATSEEKER                   | 仅对未自定义过导弹 AI 的导弹武器有效，让导弹的 AI 持续追踪目标舰船（带随机航线偏移，接近时切换为拦截航向）|
 | MISSILE_SPREAD               | 仅对未自定义过导弹 AI 的导弹武器有效，让导弹的 AI 在即将命中目标时倾向于分散 |
 | NO_TURN_RATE_BOOST_WHEN_IDLE | 武器在不开火时转速大幅提高，带有此 Hint 的武器在不开火时不会提高转速 |
 | PD                           | 武器将自动且优先瞄准导弹，且被游戏机制理解为点防御武器       |
@@ -776,7 +833,7 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 | SYSTEM                       | 让这个武器不出现在数据库中，且无法在战后被打捞               |
 | SHOW_IN_CODEX                | 必须与`SYSTEM`共同使用，让这个武器出现在数据库中             |
 | STRIKE                       | 让 AI 认为这种武器是一种极长冷却、大伤害的武器，应该被谨慎考虑使用，且不建议对护卫舰使用。面对它的舰船也会认为这种武器有极大威胁 |
-| DANGERUS                     | 与`STRIKE`互斥，相当于`STRIKE`的仅后一句                     |
+| DANGEROUS                    | 标记会被 AI 视为高威胁的武器；是否与其他 hint 组合应以原版同类武器为依据 |
 | USE_VS_FRIGATES              | 必须与`STRIKE`共同使用，取消`不建议对护卫舰使用`             |
 
 ## 实用武器 tags 速查表
@@ -799,3 +856,45 @@ name,id,tier,rarity,base value,range,damage/second,damage/shot,emp,impact,turn r
 | SR       | 当一艘舰船使用了带有 SR 的武器，那么自动装配会倾向于给它装满带有 SR 的武器 |
 | LR       | 当一艘舰船使用了带有 LR 的武器，那么自动装配会倾向于给它装满带有 LR 的武器 |
 |          | **以上 2 条互斥**                                            |
+
+## 文件链与预期结果
+
+- 火炮：`weapon_data.csv:GearIn_durin` → `GearIn_durin.wpn` → `GearIn_durin_shot.proj` → 武器/弹体贴图和开火音效。
+- 光束：`weapon_data.csv:GearIn_uri` → `GearIn_uri.wpn` → 光束颜色、材质和循环音效。
+- 导弹：`weapon_data.csv:GearIn_dwalin` → `GearIn_dwalin.wpn` → `GearIn_dwalin_rocket.proj` → 导弹贴图、引擎和爆炸表现。
+
+对应的加载后接口：`WeaponSpecAPI`（`.wpn` 与 `weapon_data.csv` 的合并结果）、`ProjectileSpecAPI`（`.proj` 射弹）、 `MissileSpecAPI`（`.proj` 导弹）。
+
+数据读取入口是 `SettingsAPI.getMergedSpreadsheetData(...)`（按 id 列合并 CSV）与 `SettingsAPI.getMergedJSON(...)`（按 MOD 合并语义读取 JSON）。
+
+加载成功时，三门武器能在装配界面找到并安装；战斗中的伤害类型、射程、弹速/光束、导弹寿命、贴图和声音与对应数据一致。
+
+## 故障分析
+
+- 装配界面找不到武器：检查 `weapon_data.csv` 文件名、行首注释、ID 和 tags；先确认日志没有 CSV 列错位。
+- 武器显示但贴图缺失：`.wpn` 的 sprite 路径大小写或文件名不一致；从 `turretSprite`/`hardpointSprite` 逐个核对。
+- 武器不发射或发射错误弹体：`.wpn` 的 `projectileSpecId` 没有对应 `.proj`，或弹体 `id` 不一致。
+- 导弹数据似乎沿用原版：多个武器共用原版弹体 ID；为本武器提供独立 `.proj` 并同步 `projectileSpecId`。
+- 声音缺失：`fireSoundOne`/`fireSoundTwo` 是 sound ID；声音文件的制作与注册将在声音主题的章节中展开（OGG 文件与 `sounds.json`）。
+
+## 总结
+
+武器排错从 `weapon_data.csv` 的武器 ID 开始，再沿 `.wpn`、弹体 ID、`.proj`、资源和声音逐层追踪。
+
+CSV 决定战斗数值，`.wpn` 与 `.proj` 决定大部分表现和行为，两者需要共同成立。
+
+这条纯数据链路也是后续代码主题的落点：命中特效、开火特效与每帧逻辑都挂在链路的对应字段上，届时只需把字段的值替换为代码路径。
+
+## 建议参考项
+
+- `com.fs.starfarer.api.SettingsAPI`：数据加载入口。
+- `getMergedSpreadsheetData(...)` 按 id 列合并读取 CSV；`getMergedJSON(...)` 按 MOD 合并语义读取 JSON。
+- `com.fs.starfarer.api.loading.WeaponSpecAPI`：武器数据接口（`.wpn` 与 `weapon_data.csv` 的合并结果）。
+- `com.fs.starfarer.api.loading.ProjectileSpecAPI`：射弹数据接口（`.proj` 射弹）。
+- `com.fs.starfarer.api.loading.MissileSpecAPI`：导弹数据接口（`.proj` 导弹）。
+- `data/weapons/weapon_data.csv`：武器数据表，按 id 列合并加载。
+- `data/weapons/`：武器文件目录（`.wpn`）。
+- `data/weapons/proj/`：弹体目录（`.proj`）。
+- `graphics/weapons/`：武器贴图目录。
+- `graphics/missiles/`：弹体贴图目录（含本例的导弹弹体贴图）。
+- `data/config/sounds.json`：声音 ID 注册表；`fireSoundOne`/`fireSoundTwo` 的最终落点。

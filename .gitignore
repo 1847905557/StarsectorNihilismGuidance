@@ -5,3 +5,5 @@
 /docs/.vuepress/.cache
 node_modules/
 sample/
+.cursor/
+tutorial-fixtures/gradle.properties

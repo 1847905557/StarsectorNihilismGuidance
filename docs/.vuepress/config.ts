@@ -2,6 +2,9 @@ import { viteBundler } from '@vuepress/bundler-vite'
 import { defaultTheme } from '@vuepress/theme-default'
 import { defineUserConfig } from 'vuepress'
 
+import { spLinkPlugin } from './markdown-splink.js'
+import { phaseListPlugin } from './markdown-phaselist.js'
+import { devEditPlugin, devEditVitePlugin } from './plugin-dev-edit.js'
 import { createSidebar, sidebarDiscoveryPlugin } from './sidebar.js'
 
 const REPO_URL =
@@ -11,13 +14,21 @@ const BASE = '/StarsectorNihilismGuidance/'
 const SITE_URL = `${HOSTNAME}${BASE}`
 
 export default defineUserConfig({
-  bundler: viteBundler(),
-  plugins: [sidebarDiscoveryPlugin()],
+  bundler: viteBundler({
+    viteOptions: {
+      plugins: [devEditVitePlugin()],
+    },
+  }),
+  plugins: [sidebarDiscoveryPlugin(), devEditPlugin()],
 
   lang: 'zh-CN',
   title: 'Starsector Nihilism Guidance',
   description: '虚无主义教程 - Starsector Nihilism Guidance',
   base: BASE,
+  extendsMarkdown: (md, app) => {
+    md.use(spLinkPlugin, { base: app.options.base })
+    md.use(phaseListPlugin, { base: app.options.base, docsDir: app.dir.source() })
+  },
   theme: defaultTheme({
     hostname: HOSTNAME,
     themePlugins: {

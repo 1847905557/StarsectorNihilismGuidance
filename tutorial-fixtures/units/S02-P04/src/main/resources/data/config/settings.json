@@ -1,0 +1,5 @@
+{
+    "plugins": {
+        "gearInPauseAwarePlugin": "data.scripts.gearin.combat.GearInPauseAwarePlugin"
+    }
+}

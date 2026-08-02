@@ -1,3 +1,48 @@
-[TODO]
+# 虚无主义教程（Nihilism Guidance）
 
-[虚无主义教程(Nihilism Guidance) (1847905557.github.io)](https://1847905557.github.io/StarsectorNihilismGuidance/)
+**面向远行星号（Starsector 0.98a-RC8）MOD 制作的完整中文教程文档站**，从零开始带读者做出一个可运行的、包含舰船、武器、船插、战术系统、势力、星系与生涯内容的 MOD。
+
+- 在线阅读：<https://1847905557.github.io/StarsectorNihilismGuidance/>
+
+## 这是什么
+
+一份按阶段组织的教程，共 14 章（`docs/stage1` – `docs/stage14`）、67 个小节页（`stageN/phaseM/README.md`）：
+
+1. 基础：舰船、武器、船插、战术系统、战役数据、音频
+2. 进阶：模拟战、模块船、Java 工程、全局服务
+3. 战斗与生涯编程：战斗 API、生涯对象、人物技能、rules、监听器与任务
+4. 依赖库：LazyLib / GraphicsLib / MagicLib / LunaLib / BoxUtil 接入，以及 Nexerelin 等软依赖兼容
+
+配套仓库内还有一个 **`tutorial-fixtures`** 工程——50 个按单元隔离、可直接编译的示例 Java 类，与教程页面代码块逐字对应，作为「照着写就能跑」的权威示例。
+
+## 技术栈
+
+| 部分 | 技术 |
+|---|---|
+| 文档站 | VuePress 2（Vite bundler）+ TypeScript 配置（`docs/.vuepress/`） |
+| 侧边栏 | 自研 `sidebarDiscoveryPlugin`：自动读取各页 H1 生成导航，**无需手工维护目录** |
+| 自动跳转 | 自研 markdown-it 插件 `markdown-splink`：正文中的 `Sxx-Pyy` 单元编号自动变为站内链接 |
+| 章索引 | 自研 `markdown-phaselist`：章索引页的 phase 列表由文件系统自动生成（占位符 `<!-- AUTO:PHASE-LIST -->`），标题与侧边栏同取各页 H1 |
+| 示例工程 | Gradle 多 sourceSet、Java 17；49 个单元编译任务 + GLSL 着色器校验 |
+| 部署 | GitHub Pages（`gh-pages` 分支 + Actions 自动发布） |
+
+## 编辑须知（重要）
+
+- **H1 即导航**：侧边栏从每页第一行 H1 自动生成。改 H1 前先想好；H1 必须保持为文件首个非空行。
+- **单元编号写法**：正文引用单元编号一律**裸写** `Sxx-Pyy`（如 `S06-P02`），构建时自动变成可点击的 `[Sxx-Pyy]` 链接。**不要**加反引号或手写方括号；代码围栏内保持原样。
+- **章索引页**：`stageN/README.md` 的「本章小节」下放占位符 `<!-- AUTO:PHASE-LIST -->`，phase 列表自动生成——**不要手写链接列表**。
+- **页面代码块与 fixture 逐字一致**：` ```java ` 围栏里的示例代码必须与 `tutorial-fixtures/units/Sxx-Pyy/` 下源码完全相同，改了 fixture 必须同步页面（反之亦然），并跑 `gradle compileAllFixtures validateShaders` 验证。
+- **验收**：改完跑 `npx vuepress build docs` 确认可构建；页面代码块改动后跑 `gradle compileAllFixtures validateShaders` 回归。仓库内另有更严格的机械扫描（痕迹/术语/格式）作为内部编辑流程的一部分，不随仓库分发。
+
+## 本地开发
+
+```bash
+pnpm install
+pnpm docs:dev     # 本地预览（H1 改动会自动刷新侧边栏）
+pnpm docs:build   # 生产构建
+cd tutorial-fixtures && gradle compileAllFixtures validateShaders   # 示例工程回归
+```
+
+## 许可
+
+内容版权归 **Nihilist** 所有；代码示例遵循仓库 LICENSE（GPL）。

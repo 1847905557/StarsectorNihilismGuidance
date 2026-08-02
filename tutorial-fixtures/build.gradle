@@ -1,0 +1,96 @@
+plugins {
+	id "java"
+}
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+def starsectorRootProp = providers.gradleProperty("starsectorRoot")
+if (!starsectorRootProp.present) {
+	throw new GradleException("未配置 starsectorRoot：请在 tutorial-fixtures/gradle.properties 中补充 starsectorRoot=<你的 Starsector 游戏安装根目录>（该文件被 .gitignore 忽略，需自行创建）")
+}
+def gameRoot = file(starsectorRootProp.get())
+def modsRoot = file("${gameRoot}/mods")
+def javaUnitIds = [
+	"S02-P01", "S02-P02", "S02-P03", "S02-P04",
+	"S03-P01", "S03-P03", "S03-P05",
+	"S06-P01", "S06-P02", "S06-P03", "S06-P04",
+	"S07-P01", "S07-P02", "S07-P03", "S07-P04", "S07-P05", "S07-P06", "S07-P07", "S07-P08",
+	"S08-P01", "S08-P02", "S08-P03", "S08-P04", "S08-P05", "S08-P06", "S08-P07",
+	"S09-P01", "S09-P02", "S09-P03", "S09-P04",
+	"S10-P01", "S10-P02", "S10-P03", "S10-P04", "S10-P05", "S10-P06",
+	"S11-P03", "S11-P04",
+	"S12-P01", "S12-P02", "S12-P03", "S12-P04", "S12-P05", "S12-P06",
+	"S13-P01", "S13-P02", "S13-P03",
+	"S14-P02", "S14-P03", "S14-P04"
+]
+def shaderUnitIds = ["S14-P01", "S14-P02", "S14-P03", "S14-P04"]
+
+def fixtureJars = files(
+	fileTree(dir: "${gameRoot}/starsector-core", include: ["*.jar"]),
+	fileTree(dir: "${modsRoot}/LazyLib/jars", include: ["*.jar"]),
+	fileTree(dir: "${modsRoot}/LazyLib/jars/internal", include: ["*.jar"]),
+	fileTree(dir: "${modsRoot}/GraphicsLib/jars", include: ["*.jar"]),
+	fileTree(dir: "${modsRoot}/MagicLib/jars", include: ["*.jar"]),
+	fileTree(dir: "${modsRoot}/Lunalib/jars", include: ["*.jar"]),
+	fileTree(dir: "${modsRoot}/BoxUtil/jars", include: ["*.jar"]),
+	fileTree(dir: "${modsRoot}/BoxUtil/jars/backends", include: ["*.jar"]),
+	fileTree(dir: "${modsRoot}/Nexerelin/jars", include: ["*.jar"])
+)
+
+sourceSets {
+	main {
+		java.setSrcDirs([])
+		resources.setSrcDirs([])
+	}
+	javaUnitIds.each { unitId ->
+		def sourceSetName = unitId.toLowerCase().replace("-", "")
+		create(sourceSetName) {
+			java.srcDir "units/${unitId}/src/main/java"
+			resources.srcDir "units/${unitId}/src/main/resources"
+			compileClasspath = fixtureJars
+		}
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = "UTF-8"
+	options.release = 17
+}
+
+def compileTasks = javaUnitIds.collect { unitId ->
+	def sourceSetName = unitId.toLowerCase().replace("-", "")
+	tasks.named("compile${sourceSetName.capitalize()}Java")
+}
+
+tasks.register("compileAllFixtures") {
+	group = "verification"
+	description = "Compiles all 50 isolated tutorial Java fixtures."
+	dependsOn compileTasks
+}
+
+tasks.register("validateShaders") {
+	group = "verification"
+	description = "Checks the four shader fixture resource sets."
+	doLast {
+		shaderUnitIds.each { unitId ->
+			def shaderDir = file("units/${unitId}/src/main/resources")
+			if (!shaderDir.isDirectory()) {
+				throw new GradleException("Missing shader fixture directory: ${shaderDir}")
+			}
+			def shaders = fileTree(shaderDir) { include "**/*.vert", "**/*.frag" }.files
+			if (shaders.any { it.length() == 0 }) {
+				throw new GradleException("Empty shader resource in ${unitId}")
+			}
+		}
+	}
+}
+
+tasks.register("verifyTutorialFixtures") {
+	group = "verification"
+	description = "Runs Java and shader fixture verification."
+	dependsOn "compileAllFixtures", "validateShaders"
+}

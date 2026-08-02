@@ -10,11 +10,11 @@ import type {
 import type { Plugin } from 'vuepress/core'
 
 const DOCS_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
-const STAGE_PATTERN = /^stage([1-9]\d*)$/u
-const PHASE_PATTERN = /^phase([1-9]\d*)$/u
-const STAGE_README_PATTERN = /^stage[1-9]\d*\/README\.md$/u
+const STAGE_PATTERN = /^chapter([1-9]\d*)$/u
+const PHASE_PATTERN = /^section([1-9]\d*)$/u
+const STAGE_README_PATTERN = /^chapter[1-9]\d*\/README\.md$/u
 const SIDEBAR_README_PATTERN =
-  /^stage[1-9]\d*\/(?:phase[1-9]\d*\/)?README\.md$/u
+  /^chapter[1-9]\d*\/(?:section[1-9]\d*\/)?README\.md$/u
 const RESTART_DEBOUNCE_MS = 100
 
 interface NumberedDirectory {
@@ -64,7 +64,7 @@ const extractTitle = (readmePath: string): string | null => {
   }
 }
 
-const readTitle = (readmePath: string, kind: '章节' | '小节'): string | null => {
+const readTitle = (readmePath: string, kind: '章' | '节'): string | null => {
   const title = extractTitle(readmePath)
 
   if (!title) {
@@ -78,32 +78,32 @@ const readTitle = (readmePath: string, kind: '章节' | '小节'): string | null
 }
 
 const discoverSidebar = (): SidebarArrayOptions => {
-  const stageGroups: SidebarGroupOptions[] = []
+  const chapterGroups: SidebarGroupOptions[] = []
 
-  for (const stage of getNumberedDirectories(DOCS_DIR, STAGE_PATTERN)) {
-    const stageTitle = readTitle(join(stage.path, 'README.md'), '章节')
+  for (const chapter of getNumberedDirectories(DOCS_DIR, STAGE_PATTERN)) {
+    const chapterTitle = readTitle(join(chapter.path, 'README.md'), '章')
 
-    if (!stageTitle) continue
+    if (!chapterTitle) continue
 
     const children: string[] = []
 
-    for (const phase of getNumberedDirectories(stage.path, PHASE_PATTERN)) {
-      if (readTitle(join(phase.path, 'README.md'), '小节')) {
-        children.push(`${phase.name}/`)
+    for (const section of getNumberedDirectories(chapter.path, PHASE_PATTERN)) {
+      if (readTitle(join(section.path, 'README.md'), '节')) {
+        children.push(`${section.name}/`)
       }
     }
 
-    const stageLink = `/${stage.name}/`
-    stageGroups.push({
-      text: stageTitle,
-      link: stageLink,
-      prefix: stageLink,
+    const chapterLink = `/${chapter.name}/`
+    chapterGroups.push({
+      text: chapterTitle,
+      link: chapterLink,
+      prefix: chapterLink,
       collapsible: true,
       children,
     })
   }
 
-  return [{ text: '首页', link: '/' }, ...stageGroups]
+  return [{ text: '首页', link: '/' }, ...chapterGroups]
 }
 
 const sidebar = discoverSidebar()
@@ -120,9 +120,9 @@ export const sidebarDiscoveryPlugin = (): Plugin => ({
     const readmeValidity = new Map<string, boolean>()
     let restartTimer: ReturnType<typeof setTimeout> | undefined
 
-    for (const stage of getNumberedDirectories(DOCS_DIR, STAGE_PATTERN)) {
-      for (const phase of getNumberedDirectories(stage.path, PHASE_PATTERN)) {
-        const readmePath = join(phase.path, 'README.md')
+    for (const chapter of getNumberedDirectories(DOCS_DIR, STAGE_PATTERN)) {
+      for (const section of getNumberedDirectories(chapter.path, PHASE_PATTERN)) {
+        const readmePath = join(section.path, 'README.md')
         const relativePath = toPosixPath(relative(DOCS_DIR, readmePath))
         readmeValidity.set(relativePath, extractTitle(readmePath) !== null)
       }

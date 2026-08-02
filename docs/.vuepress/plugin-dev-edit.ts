@@ -82,9 +82,9 @@ const plainText = (src: string): string =>
     .replace(/<br\s*\/?>/gi, '')
     .trim()
 
-/** 块转换后把 S-P 绝对链接还原为契约裸编号 */
+/** 块转换后把 C-S 绝对链接还原为契约裸编号 */
 const restoreSpLinks = (mdText: string): string =>
-  mdText.replace(/\[(S\d{1,2}-P\d{1,2})\]\([^)]*stage\d+\/phase\d+\/\)/g, '$1')
+  mdText.replace(/\[(C\d{1,2}-S\d{1,2})\]\([^)]*chapter\d+\/section\d+\/\)/g, '$1')
 
 const mdParser = new MarkdownIt()
 const turndown = new TurndownService({ codeBlockStyle: 'fenced', headingStyle: 'atx' })

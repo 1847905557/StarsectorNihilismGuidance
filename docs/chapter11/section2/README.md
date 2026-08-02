@@ -1,0 +1,564 @@
+# Rules trigger 场景：对话、市场与任务
+
+场景 trigger（scene trigger）是 `rules.csv` 最常见的挂接方式：原版派发点在固定时机以固定字符串发起匹配，MOD 只需向自己的 `data/campaign/rules.csv` 追加规则行，即可把内容挂进对话、市场、舰队、酒吧与任务五类生涯场景。本节按这五类场景逐一讲清每个 trigger 的触发时机、可用变量、派发点（Java 侧使用方）与场景组合写法，并给出覆盖市场、酒吧、舰队、新游戏四个场景的完整最小例（示例 ID 统一采用本节所有权的 `GearIn_rules_scene_*` 语义命名）。
+
+*本节预期阅读时间：~20 分钟。*
+
+*本节预期操作时间：~40 分钟。*
+
+## 学习目标
+
+完成后，您将能够：
+
+- 说出五类场景各自的核心 trigger，以及各自的触发时机、派发点与主要可用变量：
+  - 对话：`OpenInteractionDialog` / `PopulateOptions` / `DialogOptionSelected` / `PickGreeting` / `OpenCommLink`；
+  - 市场：`MarketPostOpen` / `MarketPostDock` / `TradePanelFlavorText`；
+  - 舰队：`BeginFleetEncounter` / `OpenCommLink` / `PickGreeting`；
+  - 酒吧：`AddBarEvents` / `BarPrintDesc` / `ReturnFromBar` / `BarHighRepCrewGain`；
+  - 任务：`MHOpenText` / `<前缀>_blurb` / `<前缀>_option` / `<前缀>_blurbBar` / `<前缀>_optionBar` / `AddMHCloseOption` / `NewGameOptionSelected` / `AddNewGameChoices`；
+- 说出场景组合写法：`$menuState` / `$tradeMode` 状态记忆守卫菜单、`$option` 回流 `DialogOptionSelected` 形成选项完整流程、`FireAll` 填充菜单与 `FireBest` 叙述/转场的分层、`score:` 竞争纪律、以及"进入/退出配对"的转场模式；
+- 说出覆盖原版规则时的职责纪律：`FireBest` 只执行一条规则，覆盖者必须复刻被覆盖规则的结果职责（最典型的：`MarketPostDock` 的 `$menuState = main 0` + `FireAll PopulateOptions`），否则市场菜单不会出现；
+- 从症状定位场景故障（见"实例驱动故障分析"节），并沿着**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核（沿用规则基础页的最小任务链）。
+
+## 前置知识
+
+本节假设您已完成以下单元的学习：
+
+- `rules.csv` 的七列语义、加载与合并（同文件重复 id 崩溃 / 跨文件先到先得静默跳过）
+  - 匹配流程（`FireBest` 分数竞争、同分随机、`FireAll` 全执行与 `FireAllIntercept` 拦截）
+  - 条件与脚本语法、`$option` 回流 `DialogOptionSelected`
+  - 内置命令 （`DismissDialog` / `ShowDefaultVisual` / `SetShortcut` / `FireBest` / `FireAll` / `RollProbability`）
+  - 文本 token 替换链（C11-S01）。
+  - 本节的场景 trigger 全部建立在"注册 = 写行"之上：**没有任何场景需要 MOD 侧注册文件**，把行写进自己的 `data/campaign/rules.csv` 即完成注册。
+- `showInteractionDialog(plugin, target)` 与 `InteractionDialogPlugin` 生命周期（`init` → `optionSelected` → `advance`）（C08-S09）
+  - 本节所有对话场景的使用方 `RuleBasedInteractionDialogPluginImpl` 与 `NewGameDialogPluginImpl` 都是它的实现。
+- `addScript` 与 persistent data 守卫（C08-S01 / C06-S02）
+- Rules 内存（`MemoryAPI`）的过期与持久化语义（C11-S04）——本节只消费 `$option` 回流、场景事实键（`$hasMarket` / `$menuState` / `$tradeMode` / `$hailing` / `$mh_count` 等）与一次性演示 flag，不展开生命周期。
+- `BaseCommandPlugin` 规则命令（C11-S03）
+  - 本节只消费内置命令与现成 rulecmd：`AddBarEvent` / `BarCMD` / `EndConversation` / `OpenComms` / `FleetDesc` / `HailPlayer`
+  - 以及 `NGCAddCredits` / `MissionHubCMD` / `SetActiveMission` / `ClearActiveMission` 等，不写自定义 rulecmd。
+
+## 术语
+
+按术语约定，本节首次完整讲解以下词（后续页面继续使用；API 类名保留源码大小写）：
+
+- **场景 trigger（scene trigger）**：`rules.csv` 中按"生涯场景"分组的标准触发器名。
+  - 场景 trigger 的候选池由原版派发点（Java 插件）以固定字符串发起匹配；MOD 向其中添加规则即挂接该场景。
+  - 与规则基础页的自定义 trigger 相对：自定义 trigger 只能由 `RuleBasedInteractionDialogPluginImpl` 构造器或 `FireBest`/`FireAll` 主动调用，场景 trigger 由原版使用方在固定时机调用。
+- **场景事实键（scene fact key）**：`CoreCampaignPluginImpl` 的 `update*Facts` 钩子与规则脚本共同维护的记忆键（如 `$hasMarket`、`$menuState`、`$tradeMode`、`$hailing`、`$mh_count`、`$mHub`）。
+  - 它们是场景规则的"上下文开关"，条件列必须引用它们才能把规则限定在正确的场景与状态下。
+- **临时 bar 选项（temp bar option）**：由 `AddBarEvents` 规则经 `AddBarEvent` rulecmd 写入市场记忆 `$core_tempBarEvents` 的酒吧选项。`BarCMD.showOptions` 每次进酒吧先清空再重建——临时选项不跨进入保留。
+- **任务 trigger 前缀（mission trigger prefix）**：任务（`HubMission`）的 `getTriggerPrefix()`（如原版 `hijack`、`smug`、`sitm`）。任务对话规则以 `前缀_blurb` / `前缀_option`（对话列表）与 `前缀_blurbBar` / `前缀_optionBar`（酒吧包装）为 trigger 名。
+- **流程场景（flow scene）**：非实体交互对象驱动的规则场景，本节唯一例子是主菜单新游戏对话框（`NewGameDialogPluginImpl`）。它的 `$option` 回流 trigger 是 `NewGameOptionSelected`，不是 `DialogOptionSelected`。
+
+## 文件与 API 链路
+
+### 五类场景总览
+
+RC8 原版 `rules.csv`（`Starsector\starsector-core\data\campaign\rules.csv`）中，本节五类场景的核心 trigger 与派发点如下。
+
+规则基础页已统计的 `DialogOptionSelected`（6050）、`PopulateOptions`（334）、`OpenInteractionDialog`（121）不再重复，只补充场景归属与派发点。
+
+| 场景 | trigger | 条数 | 派发点（使用方）| 触发时机 |
+|---|---|---|---|---|
+| 对话 | `OpenInteractionDialog` | 121 | `RuleBasedInteractionDialogPluginImpl.init` 的 `fireBest(initialTrigger)`（默认 trigger，规则基础页已证）；`AbandonMarketPluginImpl` 的 `FireAll` | 交互对话框初始化；弃档后回到停靠对话 |
+| 对话 | `PopulateOptions` | 334 | 规则脚本 `FireAll`（如 `marketDock`、`greetingDefaultFriendly`）；`EndConversation`；`BaseMissionHub.listMissions` | 填充选项菜单 |
+| 对话 | `DialogOptionSelected` | 6050 | `RuleBasedInteractionDialogPluginImpl.optionSelected`；`BarCMD.optionSelected` | 用户点选任意选项（`$option` 回流）|
+| 对话 | `PickGreeting` | 199 | 规则脚本 `FireBest`（`OpenCDE` → `convDefault`；`DialogOptionSelected` → `npcCommsAccept`）；`RuleBasedInteractionDialogPluginImpl` 构造器可指定 `PickGreeting` 为初始 trigger | 人物通讯连接被接受时的问候 |
+| 对话 | `OpenCommLink` | 183 | `FleetInteractionDialogPluginImpl` 的 `fireBest`；规则脚本 `FireBest`（如 `greetingCGRweirdHM` 等势力特殊问候）| 打开舰队通讯链接 |
+| 市场 | `MarketPostOpen` | 22 | `marketOpen` 规则（`OpenInteractionDialog`）脚本 `FireBest`；`EndConversation` | 停靠后进入市场对话；对话结束仍在市场时 |
+| 市场 | `MarketPostDock` | 32 | `MarketPostOpen` 规则脚本 `FireBest` | 停靠流程收尾（`$menuState = main` + 菜单）|
+| 市场 | `TradePanelFlavorText` | 23 | 交易面板的 `FireBest` 调用（假 dialog）| 每次打开交易面板 |
+| 舰队 | `BeginFleetEncounter` | 61 | `FleetInteractionDialogPluginImpl.reinit` 预检 + `reinitPostContinue` / `optionSelected` 的 `fireBest` | 舰队遭遇对话初始与 Continue 之后 |
+| 舰队 | `OpenCommLink` / `PickGreeting` | 183 / 199 | 见"对话"行 | 打开通讯 / 人物问候 |
+| 酒吧 | `AddBarEvents` | 16 | `BarCMD.showOptions`（先清空再 `FireAll`）| 每次展示酒吧选项 |
+| 酒吧 | `BarPrintDesc` | 10 | `bar_optionSel` 规则（`$option == marketVisitBar`）脚本 `FireBest` | 进入酒吧 |
+| 酒吧 | `ReturnFromBar` | 5 | `BarCMD.leaveBar` 的 `FireBest` | 离开酒吧（还原插件后）|
+| 酒吧 | `BarHighRepCrewGain` | 6 | `BarHRESpeechB` 规则脚本 `FireAll` | 高声望酒吧事件演讲结束 |
+| 任务 | `MHOpenText` | 2 | `openMhubOptionSel` 规则脚本 `FireBest` | 任务列表文本之前 |
+| 任务 | `<前缀>_blurb` / `<前缀>_option` | 每条任务各 1 | `BaseMissionHub.listMissions`（`FireBest`，带 keepOptions）| 任务列表展开 |
+| 任务 | `AddMHCloseOption` | 5 | `BaseMissionHub.listMissions`（`FireBest`）| 任务列表收尾 |
+| 任务 | `MHPostMissionListText` | 2 | `BaseMissionHub.listMissions`（`FireBest`）| 任务列表文本之后 |
+| 任务 | `<前缀>_blurbBar` / `<前缀>_optionBar` | 每条任务各 1 | `HubMissionBarEventWrapper.addPromptAndOption`（`FireBest`）| 任务以酒吧事件展示 |
+| 任务 | `NewGameOptionSelected` / `AddNewGameChoices` | 15 / 8 | `NewGameDialogPluginImpl` 的 `fireBest`；`InitNewGameChoices` → `AddNewGameChoices` 链 | 主菜单新游戏对话框 |
+
+计数口径：原版 `rules.csv` 非注释行统计（与规则基础页相同口径），数字见上表；
+- `BeginFleetEncounter2` 另有 1 条；
+- `BarShuttleDownPrintDesc` 1 条；
+- `ContactPreMissionListText` 4 条；
+- `AsebPreMissionListText` 3 条；
+- `ContactPostAccept` 8 条；
+- `ContactPrintAcceptText` 10 条；
+- `ContactPrintDeclineText` 1 条；
+- `InitNewGameChoices` / `BeginNewGameCreation` 各 1 条。
+
+::: info 条数口径说明
+
+上表条数为 RC8 原版 `rules.csv` 非注释行的本地统计，仅用于帮助您估量各 trigger 在原版中的使用密度与竞争烈度，不构成任何 API 承诺，随游戏版本可能变化。
+
+:::
+
+### 场景事实键的写入方
+
+规则条件里最常见的场景事实键由 `CoreCampaignPluginImpl`（`com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`）的 `update*Facts` 钩子在规则匹配前写入实体/市场/人物/势力记忆：
+
+- `updateEntityFacts`：`$tag:<tag>`、`$isHostile`（按声望档位）、`$hasMarket`（非纯条件市场）、`$hasStation`、`$marketSize`、`$stability`、`$planetType`；
+- `updateMarketFacts`：`$tag:<tag>`、`$mc:<条件id>`、`$ind:<产业id>`、`$id`（市场 id）等；
+- `updatePersonFacts`：`$id`（人物 id）、`$isPerson`、`$isContact`、`$name` / `$personName`、`$rel` / `$relName`、`$rank` / `$post`、`$importance*`、`$level`、`$personality`、`$tag:<tag>` 等；
+- `updateFactionFacts`：`$id`、`$friendlyToPlayer` / `$hostileToPlayer` / `$neutralToPlayer`、`$isHostile`。
+
+`$menuState` / `$tradeMode` / `$hailing` 等**状态**键不由 facts 钩子写，而是由规则脚本与原版 rulecmd 维护（见各场景小节）。规则基础页的结论仍然成立：`$tag:` 类条件的前提是目标实体/市场/人物确实带该 tag。
+
+### 对话场景（OpenInteractionDialog / PopulateOptions / DialogOptionSelected / PickGreeting / OpenCommLink）
+
+- **`OpenInteractionDialog`（121 条）**：交互对话框的默认初始 trigger（`RuleBasedInteractionDialogPluginImpl` 构造器默认值，规则基础页已证）。
+  - 原版规则分成两组：无条件/实体类回退规则（`defaultOpenDialog`： `ShowDefaultVisual` + `PrintDescription 3` + `SetShortcut defaultLeave "ESCAPE"` + `defaultLeave:Leave`）。
+  - 实体条件类 （`beaconOpenDialog`：`$tag:warning_beacon`；`marketOpen`：`$hasMarket` → `ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`，即市场场景的入口）。
+- **`PopulateOptions`（334 条）**：菜单填充器，由规则脚本 `FireAll` 调用（不是插件直接触发）。
+  - 所有选项规则必须用状态条件守卫，否则菜单永远/不显示该选项
+  - 市场菜单用 `$menuState == main` + `$hasMarket` + `$tradeMode != NONE` （如 `marketCommDir`、`marketOptBar`、`marketOptTradeMulti`、`marketAddOptionLeave`）
+  - 舰队对话菜单用 `$menuState == fleetConvMain`
+  - 人物对话用 `$isPerson`（`convOptionLeave`：`cutCommLink:Cut the comm link`）
+- **`DialogOptionSelected`（6050 条）**：选项回流唯一使用方（`RuleBasedInteractionDialogPluginImpl.optionSelected`：本地记忆写 `$option`、`expire 0`、`fireBest("DialogOptionSelected")`）。
+  - 规则基础页已证全部 6050 条都带 `$option ==` 条件。
+  - 本节补充两个非默认回流方：`BarCMD.optionSelected` 对酒吧字符串选项同样写 `$option` 并 `FireBest "DialogOptionSelected"`； `NewGameDialogPluginImpl.optionSelected` 写 `$option` 后触发的是 **`NewGameOptionSelected`**（见任务场景）。
+- **`PickGreeting`（199 条）**：人物通讯问候。
+  - 派发链：通讯目录点选人物 → 通讯面板触发 `FireBest "OpenCDE"` → `OpenCDE` 规则 `convDefault` 脚本 `FireBest PickGreeting`
+    - 问候规则按 `$isContact`、`$id`（人物）、声望等条件选一条，展示 `ShowPersonVisual` + 问候文本 + 选项（`FireAll PopulateOptions` 或直接列选项）。
+  - `NPCCommsRequest` 触发器（`npcCommsAccept` 规则脚本 `FireBest`）处理 NPC 主动通讯请求。
+  - 以问候 trigger 为初始 trigger、或自定义问候子 trigger（`FireBest` 分派 + `score:` 加分）都是常见扩展写法。
+- **`OpenCommLink`（183 条）**：舰队通讯对话。
+  - 派发：`FleetInteractionDialogPluginImpl` 开通讯（`OPEN_COMM`）时创建 embedded `RuleBasedInteractionDialogPluginImpl` （`setEmbeddedMode(true)`、`setActivePerson(对方指挥官)`）并 `fireBest("OpenCommLink")`
+    - 无匹配时文本面板显示"You try to establish a comm link, but get only static."。
+  - 原版问候规则族按关系与状态分派：
+    - `$faction.friendlyToPlayer`（友好→`$menuState = fleetConvMain 0` + `FireAll PopulateOptions`）
+    - `$faction.neutralToPlayer`
+    - `$entity.isHostile` + `$entity.relativeStrength`（敌舰强弱）
+    - `!$player.transponderOn` （应答器关闭→"Turn your transponder on"选项）
+    - `$entity.ignorePlayerCommRequests score:10000`（拒绝通讯）
+    - 无条件 `greetingFallthrough` 回退规则（1 分）
+
+### 市场场景（MarketPostOpen / MarketPostDock / TradePanelFlavorText）
+
+市场对话是规则场景中"进入 → 状态 → 菜单 → 退出"的最完整流程：
+
+1. **进入**：停靠市场实体 → 默认对话初始化 `fireBest("OpenInteractionDialog")` → `marketOpen` 规则（条件 `$hasMarket`，1 分）命中：`ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`。
+2. **停靠许可**：`MarketPostOpen`（22 条）按条件选一条（`$hasMarket` + `$player.transponderOn` + 关系分派；
+   - `marketPostOpenDefault` 打印停靠许可文本、`$tradeMode = OPEN 0`、`FireBest MarketPostDock`）。
+    - **应答器关闭时**，`marketPostOpenDefault` 等要求 `$player.transponderOn` 的规则不匹配，但原版有专门的应答器关闭规则族接管：
+      - `marketPostOpenToOffIsFine`（`$hasMarket` + `!$player.transponderOn`，2 分，`$tradeMode = OPEN 0`）
+      - `marketPostOpenToOffSneak`（另需 `!$faction.c:allowsTransponderOffTrade` + `!$market.mc:free_market`，4 分， `$tradeMode = SNEAK 0`）
+      - `marketPostOpenToOffPatrols`（另需 `IsSeenByPatrols $faction.id true`，5 分， `$tradeMode = NONE 0`）
+      - `marketPostOpenNoTradeHostile`（`$market.playerHostileTimeout score:100`）
+      - 停靠流程继续 （`FireBest MarketPostDock` 照常），只是贸易模式不同，不会"无停靠文本、不进市场菜单"。
+   - 中立势力市场由 `marketPostOpenDefaultNeutral` 回退规则接管（条件只有 `$hasMarket` + `$faction.isNeutralFaction score:100`，无应答器条件）——停靠流程继续但无许可文本。
+3. **停靠收尾**：`MarketPostDock`（32 条）中 `marketDock`（无条件，1 分）是回退规则：`$menuState = main 0` + `FireAll PopulateOptions`。
+   - 其余 31 条是场景附加（任务交付检查 `DeliveryMission checkCompletion score:100`、债务/雇佣兵检查 `MarketCMD checkDebtEffect score:1000`、`MarketCMD checkMercsLeaving score:500`、特殊势力检查等）。
+   - `FireBest` 只执行一条——覆盖者必须自担 `marketDock` 的结果职责（见"规则强度"与故障分析 1）。
+4. **市场菜单**：`PopulateOptions` 中 `$menuState == main` + `$hasMarket` 的规则加选项：
+   - `marketCommDir`（通讯目录，`!$faction.isNeutralFaction`）
+   - `marketVisitBar`（酒吧， `$tradeMode != NONE` + `!$faction.isNeutralFaction` + `!$market.noBar`）
+   - `marketOpenCoreUI`（交易/整备）
+   - `marketRepair`（`$tradeMode == OPEN` + `Repair*` 命令条件）
+   - `marketConsiderHostile`（军事选项）
+   - `marketAddOptionLeave` （`marketLeave:Leave`）
+5. **退出/再进入**：`EndConversation` rulecmd：对话插件不是 `FleetInteractionDialogPluginImpl` 时，若 `$hasMarket` 且本地记忆无 `$menuState` → `FireBest MarketPostOpen`（重新走停靠许可）；否则 `FireAll PopulateOptions`。
+   - `AbandonMarketPluginImpl`（弃档）复位 `$menuState = main`、`$tradeMode = NONE`、 `unset $hasMarket` 后 `FireAll "OpenInteractionDialog"`。
+6. **交易面板**：
+   - 交易面板每次打开面板时以 `FireBest` 发起 `"TradePanelFlavorText"` 匹配（传入假 dialog 与记忆槽位）
+   - memoryMap 由交易面板在更新 flavor 文本时自建（槽位与规则匹配用的槽位结构一致： `local` / `faction` / `global` / `player` / `market` / `sourceMarket`）
+   - `$tradePanelMode`（MARKET/CARGO/SALVAGE）由面板按自身模式写入 sector 记忆（与 `$tradeMode` 无关；这些槽位的一个实际使用例是势力关系描述文本的生成，规则基础页已述）
+   - 原版 23 条按 `$global.tradePanelMode`、`$marketSize`、`$stability` 分派文本。
+
+::: warning 交易面板的 dialog 是假 dialog
+
+交易面板制造假 dialog 来匹配 `TradePanelFlavorText`：
+
+flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，视觉面板、`DismissDialog` 等依赖真实对话上下文的命令会异常或静默无效（与规则基础页所讲的假 dialog 限制同类）。
+
+:::
+
+::: caution 覆盖 FireBest 目标必须复刻结果职责
+
+`FireBest` 只执行一条规则：命中本 MOD 的规则，被覆盖的原版回退规则就不再执行。
+
+因此覆盖 `MarketPostDock` 的 `marketDock` 时，必须把它的结果职责复刻进自己的脚本（`$menuState = main 0` + `FireAll PopulateOptions`）；
+
+覆盖 `OpenInteractionDialog` 的 `marketOpen` 时同理 （`ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`）。
+
+否则市场菜单不会出现（选项面板空、只剩 failsafe/Leave），停靠后卡在对话（见故障分析 1）。
+
+:::
+
+### 舰队场景（BeginFleetEncounter / OpenCommLink / PickGreeting）
+
+- **`BeginFleetEncounter`（61 条）**：舰队遭遇对话。两次匹配时机（`FleetInteractionDialogPluginImpl`）：
+  - `reinit(withContinueOnRuleFound)`：`getBestMatching(null, "BeginFleetEncounter", ...)` **预检**——命中则只显示 "Continue"（`REINIT_CONTINUE`）
+  - 用户点击后 `reinitPostContinue` `fireBest("BeginFleetEncounter")` （本地记忆 `$fidpi_addContinue` 为真时改走 `BeginFleetEncounter2`）
+  - 初次遭遇（`optionSelected`）：创建 embedded 对话后同样 `fireBest("BeginFleetEncounter")`；规则脚本置 `$fidpi_addContinue` 则清空选项只留 "Continue"。
+  - 规则模式（原版实证）：
+    - 脚本 `AddText "You're being hailed by the $faction $otherShipOrFleet." $faction.baseColor` + `$hailing = true 0`（如 `LPTitheCheck`、`mpm_pirateEncounter`）
+      - `customsInspectionScan` 只 `AddText` 不写 `$hailing`
+      - `tOffPatrolBegin` 以 `OpenComms` 直接进入通讯
+    - 或 `FleetDesc` + `$shownFleetDescAlready = true 0` （`initial_AnyFleet` 回退规则，1 分）
+    - 文本经 `FireBest` 的 `addText` 显示。
+    - **BeginFleetEncounter 规则不依赖 `options` 列**——选项面板随后由舰队主菜单接管（`INIT` 路径清空选项）。
+  - `$hailing` 的可观察效果：舰队主菜单里"Open a comm link"选项高亮并改名"Accept the comm request"（随后 `unset $hailing`）。
+    - `OpenComms` rulecmd 置 `FleetInteractionDialogPluginImpl.directToComms = true` 直接进入通讯。
+    - `HailPlayer` rulecmd 是写 `$hailing` 的正式途径。
+- **`OpenCommLink`**：见对话场景。
+  - 通讯内规则把 `$menuState = fleetConvMain 0` + `FireAll PopulateOptions` 切换成舰队对话菜单
+    - `shrineFleetConvOption`、 `academyFleetConvOption` 等按 `$entity.<flag>` 条件加选项
+    - `convOptionLeave` 按 `$isPerson` 加 `cutCommLink`
+  - `cutCommLink` 选项由 `DialogOptionSelected` 规则 `convEnd` 等处理：`ShowDefaultVisual` + `EndConversation` → 回舰队主菜单。
+- **`PickGreeting`**：人物通讯（见对话场景）。舰队侧经通讯目录/接触人入口进入。
+- **可用变量**：
+  - `$entity.relativeStrength`（正=对方更强）
+  - `$entity.isHostile`
+  - `$faction.id` / `$faction.friendlyToPlayer`
+  - `$player.transponderOn`
+  - `$entity.<自定义 flag>`（记忆键）
+  - `$isPatrol` / `$sourceMarket.mc:<条件>`（应答器检查规则族）
+
+### 酒吧场景（AddBarEvents / BarPrintDesc / ReturnFromBar / BarHighRepCrewGain）
+
+酒吧场景是"市场菜单 → 临时选项 → 事件对话 → 返回"的完整流程（`BarCMD` 既是 rulecmd 也是对话插件， `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`）：
+
+1. **进入**：市场菜单 `marketVisitBar`（`marketOptBar` 规则，选项 order 5）→ `bar_optionSel` 规则（`$option == marketVisitBar`）
+   - `FireBest BarShuttleDownPrintDesc` + `FireBest BarPrintDesc`（10 条，`ShowImageVisual space_bar` + 描述文本）
+   - `BarCMD showOptions`。
+2. **展示选项**：`BarCMD.showOptions`：
+   - `dialog.getOptionPanel().clearOptions()`
+   - `AddBarEvent.clearTempEvents(market)` + `FireAll.fire(null, dialog, memoryMap, "AddBarEvents")`
+   - 把 `$core_tempBarEvents` 中的临时选项（`blurb` 进文本面板、`option` 进选项面板、可带颜色）
+   - 再追加 `PortsideBarData` 的 active 事件 （Java `BaseBarEvent` / `HubMissionBarEventWrapper`）
+   - 末尾加 `"Leave the bar"`（id `barLeave`，ESC 快捷键）
+   - `dialog.setPlugin(this)`（BarCMD 接管对话）
+3. **临时选项**：`AddBarEvents`（16 条）规则用 `AddBarEvent <optionId> <选项文本> <描述文本> [颜色]` rulecmd 写临时选项
+   - 存储：`com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent` 用 `KEY = "$core_tempBarEvents"` 存市场记忆，`getTempEvents` / `clearTempEvents` 维护
+   - 选项文本与描述做 token 替换。
+   - 原版 16 条按 `$market.id == <市场>` + 剧情 flag 条件添加（如 `gaMeetHegLieutenantOnCoatl`、 `goToTheGABarEventOption` 带 `RollProbability 0.2`）。
+   - **临时选项每轮重建**：每次进酒吧 `BarCMD` 先 `clearTempEvents` 再 `FireAll AddBarEvents`，跨进入不保留。
+4. **点选**：`BarCMD.optionSelected`：
+   - `PortsideBarEvent` 选项 → `BarEventDialogPlugin`（事件对话，Java）
+   - `"barLeave"` →`leaveBar()`
+   - `"barContinue"` → `showOptions(true)`
+    - 字符串选项（含临时选项与 mission 包装选项）→ `dialog.setPlugin(originalPlugin)` 还原规则对话
+      - `mem.set("$option", optionData, 0)` + `FireBest "DialogOptionSelected"`——与 `RuleBasedInteractionDialogPluginImpl` 的回流完全一致
+      - 本节最小例的酒吧规则正是消费这里。
+5. **返回/退出**：`BarCMD.returnFromEvent [true|false]`（从事件对话返回酒吧；true 时给 "Continue"）与 `leaveBar`（停掉酒吧环境音、`dialog.setPlugin(originalPlugin)`、`ShowDefaultVisual`、`FireBest "ReturnFromBar"`）。
+   - `ReturnFromBar`（5 条）中 `marketReturnFromBar`： `$menuState = main 0` + `FireAll PopulateOptions` + 文本"You leave the bar and take a shuttle back to your $shipOrFleet."——**退出转场把市场菜单状态复位**。
+6. **奖励**：`BarHighRepCrewGain`（6 条）由高声望酒吧事件演讲规则 `BarHRESpeechB` 脚本 `FireAll` 触发（`AddCommodity crew N`，按 `$player.fleetPoints` / `RollProbability` / `score:2` 分档）。
+
+::: warning 临时 bar 选项的三个边界
+
+- 临时选项不能当长期状态（每轮清空重建）；
+- `RemoveBarEvent` 只删市场记忆中的临时选项、不碰 `PortsideBarData` 的 active 事件；
+- `HubMissionBarEventWrapper` 的选项 id 以任务前缀开头，`getWrapperFor` 用 `startsWith` 识别、 `abortMissions` 会中止**其它** mission 包装——自定义临时选项不要使用与已注册任务相同的前缀。
+
+:::
+
+### 任务场景（MHOpenText / 任务前缀 trigger / AddMHCloseOption / 新游戏流程场景）
+
+生涯任务对话（联系人任务）是规则 + Java 任务插件（`BaseMissionHub` / `HubMission`，属生涯对象体系）的协作：
+
+1. **入口**：人物对话菜单 `PopulateOptions` 规则 `addMHubOption`（条件 `$isPerson` + `MissionHubCMD hasHub` + `Call $mHub setMHOptionText`）加 `5:mh_open:$mh_openOptionText` （"Do you have any work for me?"）。
+   - `$mHub` = `BaseMissionHub.KEY`，`setMHOptionText` 写 `$mh_openOptionText`。
+2. **列表**：点 `mh_open` → `openMhubOptionSel` 规则：`Call $mHub prepare` → `FireBest MHOpenText` →`Call $mHub listMissions` → `SetEnabled mh_open false`。
+   - `MHOpenText`（2 条：`contactMHOpenText` / `asebMHOpenText`）→ `FireBest ContactPreMissionListText`（4 条，按 `$mh_count` / `$mh_firstInlineBlurb` / `$mHub_contactSuspended` 打印列表前文本）。
+3. **展开**：`BaseMissionHub.listMissions` 对每份 offered mission：
+   - `FireBest <前缀>_blurb true` / `FireBest <前缀>_option true`（每条任务各 1 条规则，如 `hijack_blurb` / `hijack_option`）
+   - 随后 `FireBest AddMHCloseOption true`（5 条：`mh_close` 选项 + `SetShortcut mh_close "ESCAPE"`）
+   - `withBlurbs` 时 `FireBest MHPostMissionListText`（2 条："So, how about it?" 等）
+   - **`FireBest` 的第二个参数 `true` 是 keepOptions**（`FireBest.fire` 把参数字符串 tokenize）。
+4. **接受/拒绝**：任务选项（如 `hijack_start`）经 `DialogOptionSelected` 回流到任务规则
+   - 接受类规则 `contactMissionAcceptGeneric`（`$option == contact_accept`）：`FireBest ContactPrintAcceptText` + `Call $mHub accept $missionId` + `FireBest ContactPostAccept` + `Call $mHub returnToList`
+   - `BaseMissionHub.callEvent` 分派 `prepare` / `listMissions` / `returnToList` / `accept` / `doCleanup` 动作； `accept` 调 `mission.accept(dialog, memoryMap)`。
+   - 任务规则可读 `$missionId` 与 `$mission` 记忆（`MemKeys.MISSION`）
+   - 写入方：`SetActiveMission` / `ClearActiveMission` rulecmd，或插件 `setActiveMission`（`RuleBasedInteractionDialogPluginImpl` / `FleetInteractionDialogPluginImpl`）
+5. **酒吧任务包装**：任务也可以出现在酒吧
+   - `HubMissionBarEventWrapper.addPromptAndOption` 把 `LOCAL` 临时换成任务人物记忆（`ENTITY` / `PERSON_FACTION` 一并换）
+   - 调 `mission.updateInteractionData(dialog, memoryMap)`，然后 `FireBest <前缀>_blurbBar true` + `FireBest <前缀>_optionBar true`，再恢复记忆
+   - 原版对应 `hijack_blurbBar` / `hijack_optionBar` 等。
+   - 用户点选后由 `BarCMD.optionSelected` 进入任务对话（`abortMissions` 中止未选中的包装）。
+6. **对照：任务板**：通讯面板的 missions 页签是 **Java** 任务板（`MissionBoardAPI` / `MissionAvailability.playerAccept`），不走规则——本节只把它作为"非规则场景"的边界。
+7. **流程场景：新游戏对话框**：主菜单新游戏 → `NewGameDialogPluginImpl`（`com.fs.starfarer.api.impl.campaign.NewGameDialogPluginImpl`）
+   - `init` 组装 memoryMap（`LOCAL` = 角色数据实体记忆、 `GLOBAL`，devMode 时 `$global.isDevMode`）
+   - 选项回流：`memory.set("$option", ...)` + `expire 0` + `fireBest("NewGameOptionSelected")`
+   - `CONTINUE_CHOICES` → `fireBest("BeginNewGameCreation")`
+   - 规则链：`BeginNewGameCreation` → `onNewGameCreationStart`（`NGCAddCredits 2000` + `FireAll InitNewGameChoices`）→ `InitNewGameChoices` → `initNewGameChoices`（`FireAll AddNewGameChoices`）
+   - `AddNewGameChoices`（8 条）加起始选项（`ngcWolf` / `ngcWayfarer` / dev 选项用 `$global.isDevMode` 守卫）
+   - `NewGameOptionSelected`（15 条）处理器（`$option == ngcX` → `NGC*` 命令族：`NGCAddShip` / `NGCAddCredits` / `NGCSetDifficulty` / `NGCDone` 等）
+   - **注意 `NewGameOptionSelected` 是主菜单对话框的专属回流 trigger**，在生涯对话里写它永不触发。
+
+### 场景组合写法
+
+- **状态机模式**：`$menuState`（`main` / `fleetConvMain`）与 `$tradeMode`（`OPEN` / `NONE` / `SNEAK`）是场景状态记忆
+  - `PopulateOptions` 菜单规则以它们为守卫
+  - 转场必须成对——进入时赋值（`marketDock`：`$menuState = main 0`；`greetingDefaultFriendly`： `$menuState = fleetConvMain 0`）
+  - 退出时复位（`ReturnFromBar` → `$menuState = main`；`AbandonMarketPluginImpl` → `$tradeMode = NONE`）
+- **分层模式**：`FireAll` 填充（`PopulateOptions` / `AddNewGameChoices` / `AddBarEvents`——候选规则全部执行、全部添加选项）
+  - `FireBest` 叙述与转场（`MarketPostOpen` / `MarketPostDock` / `BarPrintDesc` / `MHOpenText` / `PickGreeting`—— 只取分数最高一条）
+- **回流完整流程**：`options` 列 id ↔ `DialogOptionSelected`（或 `NewGameOptionSelected`）规则 `$option == <id>` 逐字一致（大小写敏感）。
+- **竞争纪律**：默认条件 1 分；原版剧情规则常用 `score:1000`（`$tag:xxx score:1000` 等）；MOD 覆盖回退规则用 100 级即可（100–103 分恒胜 1–3 分的回退规则、输给 1000 级剧情规则——见最小例）。
+
+::: tip 一次性演示 flag 的写法
+
+条件列写 `!$player.<flag>`、脚本列写 `$player.<flag> = true 0`（`expire 0`）：第一次命中后 flag 置位，第二次进入自动回退原版行为。
+
+需要重新演示时换一个新 flag 名即可（原版没有"清记忆"的 rulecmd，devMode 下可用 `DumpMemory` 查看记忆键）。
+
+:::
+
+## 规则强度
+
+本节必须遵守的规则清单（违反后的可观察结果均附上；规则基础页已列的加载期致命错误与跨文件重复 id 语义在本节所有场景继续有效，不重复）：
+
+| 规则 | 强度 | 违反后的可观察结果 |
+|---|---|---|
+| 覆盖 `FireBest` 目标规则时必须复刻被覆盖规则的结果职责（市场场景：`MarketPostDock` 的 `$menuState = main 0` + `FireAll PopulateOptions`；`OpenInteractionDialog` 的 `ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`）| 必须 | `FireBest` 只执行一条规则：市场菜单不出现（选项面板空、只剩 failsafe/Leave），停靠后卡在对话 |
+| `options` 列选项 id 与 `DialogOptionSelected` / `NewGameOptionSelected` 规则的 `$option == <id>` 逐字一致（大小写敏感）| 必须 | 点选后无规则匹配：对话文本面板出现 `ERROR: no rule found for option <id>` + failsafe |
+| 任务规则 trigger 名必须等于 `mission.getTriggerPrefix() + "_blurb" / "_option" / "_blurbBar" / "_optionBar"` | 必须 | `BaseMissionHub.listMissions` 文本面板打印 `No blurb found for <prefix>`、`FireBest` 返回 false、任务选项缺失 |
+| 临时 bar 选项必须经 `AddBarEvents` 规则 + `AddBarEvent` rulecmd 添加；它每轮被清空重建，不是持久状态 | 事实 | 跨进酒吧不保留；`BarCMD.showOptions` 先 `clearTempEvents` 再 `FireAll AddBarEvents` |
+| 自定义临时 bar 选项 id 不得使用与任何已注册任务相同的前缀 | 事实 | `BarCMD.getWrapperFor` / `abortMissions` 按 `optionId.startsWith(mission.getTriggerPrefix())` 识别，同前缀选项被当作 mission 包装处理、其余包装被中止 |
+| `BeginFleetEncounter` 规则不依赖 `options` 列（交互经 `$hailing` / `OpenComms` / 主菜单转场）| 事实 | `reinitPostContinue` / `INIT` 路径在规则执行后接管选项面板，`options` 列内容被清空 |
+| `TradePanelFlavorText` 规则的 dialog 是假 dialog | 事实 | 依赖真实对话上下文的命令（视觉面板、`DismissDialog` 等）异常或无效（交易面板的假 dialog 机制）|
+| `NewGameOptionSelected` 只在主菜单新游戏对话框回流 `$option`；`DialogOptionSelected` 只在生涯对话回流 | 必须 | 写错场景的回流 trigger 规则永不触发且无报错 |
+| `$menuState` / `$tradeMode` 由场景脚本维护，进入与退出必须配对 | 必须 | 未复位时市场/对话菜单选项残留或消失（如不设 `$menuState` 的市场菜单永不显示）|
+| `PopulateOptions` / `AddBarEvents` / `AddNewGameChoices` 菜单规则必须以状态或场景条件守卫（`$menuState == ...`、`$market.id == ...`、`$global.isDevMode` 等）| 必须 | 无守卫的规则在每个匹配场景都添加选项（如进任何市场都出现本 MOD 的酒吧选项）|
+| 条件列命令副作用与跨文件重复 id 静默跳过（规则基础页已列）| 必须/事实 | 见规则基础页规则强度表 |
+
+强度核对说明：规则基础页迁移的硬措辞在 RC8 全部有效，本节没有软化任何条目；本节新增的"必须"条目均按当前基线行为书写，未做强度调整。
+
+## 完整最小例
+
+在规则基础页的 MOD 布局（`Starsector\mods\GearIndustry\`，含 `data\campaign\rules.csv` 与 `GearInRulesIntro` 类）之上，**只追加规则行**。
+
+本节五个场景的使用方全是原版插件 （`RuleBasedInteractionDialogPluginImpl` / `FleetInteractionDialogPluginImpl` / `BarCMD` / `NewGameDialogPluginImpl` / 交易面板），MOD 侧不需要新增 Java 类：
+
+```text
+Starsector\mods\GearIndustry\
+├── build.gradle
+├── mod_info.json
+├── data\
+│   └── campaign\
+│       └── rules.csv                     # 追加本节拥有的 GearIn_rules_scene_* 行（与规则基础页的 GearIn_rules_intro_* 同文件共存）
+└── jars\
+```
+
+### data\campaign\rules.csv（追加行，全部为本节示例所有权 `GearIn_rules_scene_*`）
+
+```csv
+GearIn_rules_scene_market,MarketPostDock,"$market.id == jangala score:100
+!$player.gearInSceneMarketSeen","$player.gearInSceneMarketSeen = true 0
+$menuState = main 0
+FireAll PopulateOptions",GearIn 市场场景：首次停靠 jangala 时本规则以 101 分胜过原版 marketDock（1 分）。FireBest 只执行一条规则，所以脚本必须复刻原版职责（$menuState + FireAll PopulateOptions），否则市场菜单不会出现。,,
+GearIn_rules_scene_bar_add,AddBarEvents,$market.id == jangala,,AddBarEvent GearIn_rules_scene_bar "和 GearIn 演示员聊聊" "一个穿着测试连体服的 GearIn 演示员朝您招手，示意您过去坐坐。",,
+GearIn_rules_scene_bar_pick,DialogOptionSelected,$option == GearIn_rules_scene_bar,,GearIn 酒吧场景：临时 bar 选项被点选后，BarCMD 写入 $option 并触发 DialogOptionSelected。选项与描述来自 AddBarEvent，存储在市场记忆 $core_tempBarEvents；每次进入酒吧 BarCMD 先清空再 FireAll AddBarEvents 重建。,GearIn_rules_scene_bar_back:回吧台,
+GearIn_rules_scene_bar_back,DialogOptionSelected,$option == GearIn_rules_scene_bar_back,"BarCMD showOptions",,,
+GearIn_rules_scene_fleet_hail,BeginFleetEncounter,"$faction.id == independent score:100
+!$entity.isHostile
+!$player.gearInSceneHailed","$player.gearInSceneHailed = true 0
+FleetDesc
+$shownFleetDescAlready = true 0
+AddText ""GearIn 舰队场景：一支独立势力舰队呼叫了您；请在菜单中选择接受通讯请求。""
+$hailing = true 0",,,
+GearIn_rules_scene_comm,OpenCommLink,"$faction.id == independent score:100
+$player.transponderOn
+!$entity.isHostile
+!$player.gearInSceneCommed","$player.gearInSceneCommed = true 0
+$menuState = fleetConvMain 0
+FireAll PopulateOptions",GearIn 对话场景（OpenCommLink）：对独立势力舰队的问候语。脚本把菜单状态置为 fleetConvMain 并 FireAll PopulateOptions 填充对话菜单。,,
+GearIn_rules_scene_conv,PopulateOptions,"$menuState == fleetConvMain
+$faction.id == independent",,GearIn 对话场景（PopulateOptions）：舰队对话菜单选项——点选后经 DialogOptionSelected 回流执行 EndConversation 回到舰队菜单。,"GearIn_rules_scene_conv_end:结束通讯",,
+GearIn_rules_scene_conv_end,DialogOptionSelected,$option == GearIn_rules_scene_conv_end,EndConversation,,,
+GearIn_rules_scene_ngc_add,AddNewGameChoices,$global.isDevMode,,,6:GearIn_rules_scene_ngc:GearIn 演示起点：额外 5000 星币 (dev),,
+GearIn_rules_scene_ngc_pick,NewGameOptionSelected,"$option == GearIn_rules_scene_ngc
+$global.isDevMode",NGCAddCredits 5000,,,
+```
+
+对应关系：
+
+- **`GearIn_rules_scene_market`（市场场景，trigger `MarketPostDock`）**：条件 `$market.id == jangala score:100` + `!$player.gearInSceneMarketSeen`，总分 101，恒胜原版回退规则 `marketDock`（1 分）
+  - 原版高优先规则（`MarketCMD checkDebtEffect score:1000`、`checkMercsLeaving score:500`、 `DeliveryMission checkCompletion score:100`）在激活时仍然获胜——演示"竞争分层"
+  - 脚本**复刻** `marketDock` 职责（`$menuState = main 0` + `FireAll PopulateOptions`）并置一次性 flag——第二次停靠 jangala 自动回退原版行为。
+  - `FireBest` 先 `addText` 显示本规则文本、后 `runScript` 填充菜单。
+- **`GearIn_rules_scene_bar_add` / `_pick` / `_back`（酒吧场景）**：`AddBarEvents` 规则条件 `$market.id == jangala`，脚本 `AddBarEvent <id> <文本> <描述>`。
+  - 进 jangala 酒吧（市场菜单"Take a shuttle down to visit a dockside bar"）→ `bar_optionSel` 打印描述并 `BarCMD showOptions` → 清空重建临时选项
+  - 用户点选 `GearIn_rules_scene_bar` → `BarCMD.optionSelected` 写 `$option` 并 `FireBest "DialogOptionSelected"` → `_pick` 显示文本 + `_back` 选项
+  - 点 `_back` → `BarCMD showOptions` 重新显示酒吧选项
+  - "Leave the bar"（`barLeave`，原版 BarCMD 提供）→ `ReturnFromBar` → `$menuState = main` + 市场菜单复位。
+- **`GearIn_rules_scene_fleet_hail`（舰队场景，trigger `BeginFleetEncounter`）**：条件 `$faction.id == independent score:100` + `!$entity.isHostile` + `!$player.gearInSceneHailed`，总分 102
+  - 恒胜原版回退规则 `initial_AnyFleet`（1 分）、输给 1000 级剧情规则（优雅降级）
+  - 脚本按原版模式：置一次性 flag、`FleetDesc` + `$shownFleetDescAlready = true 0`（**复刻 `initial_AnyFleet` 职责**）、`AddText` 呼叫文本、 `$hailing = true 0`。
+  - 可观察：遭遇独立舰队时主菜单出现高亮"Accept the comm request"。
+- **`GearIn_rules_scene_comm` / `_conv` / `_conv_end`（对话场景，trigger `OpenCommLink` + `PopulateOptions` + `DialogOptionSelected`）**
+  - 接受通讯请求 → `fireBest("OpenCommLink")` → 本规则（103 分）胜过原版问候回退规则（1–3 分；`$entity.ignorePlayerCommRequests score:10000` 时仍由原版拒绝）
+  - 问候文本 + `$menuState = fleetConvMain` + `FireAll PopulateOptions` → `_conv` 加菜单选项 → 点选 → `_conv_end` 执行 `EndConversation`
+  - `FleetInteractionDialogPluginImpl.reinit` 预检（`BeginFleetEncounter` 无匹配）→ 回舰队主菜单
+  - 原版 `convOptionLeave`（`$isPerson`）仍提供 `cutCommLink` 选项。
+- **`GearIn_rules_scene_ngc_add` / `_pick`（任务/流程场景，trigger `AddNewGameChoices` + `NewGameOptionSelected`）**
+  - devMode（`$global.isDevMode`，`NewGameDialogPluginImpl.init` 写入）下新游戏对话框出现演示起点选项（顺序 6，排在原版 ngc 选项之后）
+  - 点选 → `NewGameOptionSelected` 回流 → `NGCAddCredits 5000`（脚本列）——之后继续选择原版起始即可，两者叠加
+  - **`NGCAddCredits` 放在回流处理器而非 `AddNewGameChoices` 规则里**：`FireAll` 会执行命中规则的全部脚本，写在 `_add` 里会在列表阶段就加钱。
+- **为什么不新增 Java**：规则基础页的最小例需要 Java 是因为它用了自定义 trigger（`GearInRulesIntro`，没有原版派发点）；本节全部使用原版场景 trigger，派发点（使用方）是原版插件，规则行本身就是完整的注册与消费流程。需要自定义 trigger 对话时沿用规则基础页的 `GearInRulesIntro` / `REGISTER_MARK` 模式。
+- **共享文件纪律**：`data/campaign/rules.csv` 是跨单元共享文件：规则基础页拥有 `GearIn_rules_intro_*`、本节拥有 `GearIn_rules_scene_*`；同前缀内 id 唯一，跨文件重复 id 先到先得的纪律见规则基础页规则强度表。
+
+构建命令（在 `Starsector\mods\GearIndustry\` 执行，与规则基础页一致）：
+
+```text
+gradle jar
+```
+
+本节只改了数据文件：`rules.csv` 是 MOD 数据文件，随 MOD 目录被加载器读取（无需进 jar）。 `jar tf jars\GearIndustry.jar` 不应也不需要包含本节新内容。
+
+### 验证方案（基于本例）
+
+**前置数据**：规则基础页的 MOD 布局（前置：C11-S01；`GearInRulesIntro` 类可保留，本节不依赖它）+ 追加本节 10 条 `GearIn_rules_scene_*` 规则行；启动器勾选 Dev Mode（验证新游戏场景与 dev 选项）。
+
+**操作步骤**：
+
+1. 规则注册：启动游戏，`starsector.log` 出现本节 10 条 `Loading rule: GearIn_rules_scene_*` 行（市场 1 + 酒吧 3 + 舰队 1 + 通讯 3 + 新游戏 2；注意 `_conv_end` 与 `_ngc_pick` 也在其中）。
+2. 市场场景：新建生涯，停靠 jangala：停靠许可文本后出现 `GearIn 市场场景：首次停靠 jangala...`，市场菜单完整（通讯目录/酒吧/交易/Leave）；再次停靠 jangala：本节文本不再出现、菜单照常。
+3. 酒吧场景：在 jangala 市场菜单点"Take a shuttle down to visit a dockside bar"：酒吧描述文本 + "和 GearIn 演示员聊聊"；点选 →本节酒吧文本 + "回吧台"；点"回吧台" → 选项重现；"Leave the bar"（ESC）→ 回市场菜单。
+4. 舰队场景：超空间或星系内找一支非敌对独立舰队（拾荒/商队）并遭遇：出现呼叫文本；通讯选项高亮"Accept the comm request"；接受 →本节问候语 + "结束通讯"/"Cut the comm link"；点"结束通讯" → 回舰队主菜单。
+5. 任务/流程场景：主菜单新建游戏：角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)`（顺序 6）；点选后选 `ngcWolf` 等原版起始；开局确认星币 = 原版初始 + 5000。非 devMode 启动时该选项不出现。
+6. 故障注入 1（覆盖职责）：把 `GearIn_rules_scene_market` 脚本里的 `$menuState = main 0` + `FireAll PopulateOptions` 两行删掉重建：首次停靠 jangala 显示本节文本但**市场菜单消失**（对应故障分析 1）；恢复后菜单回归。
+7. 故障注入 2（分数竞争）：
+   - 把 `GearIn_rules_scene_fleet_hail` 的 `score:100` 删掉（总分 2，仍恒胜 `initial_AnyFleet` 的 1 分，结果不变）
+   - 再把条件精简为只剩 `$faction.id == independent`（总分 1，与 `initial_AnyFleet` 同分：两条规则随机竞争，重复遭遇出现随机文本，对应规则基础页的同分随机语义）
+   - 恢复 `score:100` 后确定性
+8. 故障注入 3（回流 trigger 写错）：把 `GearIn_rules_scene_ngc_pick` 的 trigger 改成 `DialogOptionSelected`：devMode 下点选演示选项后无反应、无报错（`NewGameOptionSelected` 才是主菜单回流，对应故障分析 8）；恢复。
+9. 故障注入 4（任务前缀）：在 `GearIn_rules_scene_bar_add` 中把选项 id 改成 `hijack_barEvent`（与任务 `hijack` 同前缀）
+   - 进入酒吧后该选项被 `BarCMD.abortMissions` / `getWrapperFor` 当作 mission 包装处理或行为异常（对应规则强度表的任务前缀条目）
+   - 恢复为 `GearIn_rules_scene_bar`
+10. 退出复位：在 `ReturnFromBar` 场景中若 `$menuState` 未复位为 `main`：离开酒吧后市场菜单选项消失（对应故障分析 10；原版 `marketReturnFromBar` 已复位，注入方式是临时注释掉该行脚本）；恢复。
+
+**通过信号**：操作 1–5 全部符合预期；6–10 注入与恢复全部符合预期；全程无 `gear_in` 引起的 `ERROR`。
+
+**清理**：取消勾选测试 MOD；确认没有对共享文件（`tutorial-fixtures\build.gradle` 等）做过修改。
+
+## 预期结果
+
+1. **规则注册（加载期）**：启动日志 `starsector.log` 出现本节 10 条 `Loading rule:` 行
+   - `GearIn_rules_scene_market` / `..._bar_add` / `..._bar_pick` / `..._bar_back` / `..._fleet_hail` / `..._comm` / `..._conv` / `..._conv_end` / `..._ngc_add` / `..._ngc_pick`（日志路径与加载行为在规则基础页已证）
+   - 标准输出可能出现单次使用变量 WARNING（`System.out.println`，正常现象，非错误）。
+2. **市场场景（新档，首次停靠 jangala）**：停靠许可文本之后出现 `GearIn 市场场景：首次停靠 jangala...` 文本，市场菜单照常出现（`marketCommDir` / 酒吧 / 交易 / Leave）。
+   - 第二次及以后停靠 jangala：无本节文本、菜单照常（一次性 flag 生效）。
+   - 若用户当时背负债务/雇佣兵离队事件，原版 1000/500 分规则获胜、本节文本不显示（竞争分层，非故障）。
+3. **酒吧场景（jangala 市场菜单 → 酒吧）**：进入酒吧显示 `BarPrintDesc` 描述文本 + 选项"和 GearIn 演示员聊聊"（描述文本进文本面板）
+   - 点选 →`GearIn 酒吧场景：临时 bar 选项...` 文本 + "回吧台"选项
+   - 点"回吧台" → 酒吧选项重新出现
+   - "Leave the bar"（ESC）→ "You leave the bar..." 文本 + 市场菜单复位
+4. **舰队场景**：找到一支非敌对的独立势力舰队（如拾荒舰队）并接近 → 遭遇对话出现 `GearIn 舰队场景：一支独立势力舰队呼叫了您...` 文本
+   - 舰队主菜单通讯选项高亮为"Accept the comm request"
+   - 接受 → `GearIn 对话场景（OpenCommLink）：对独立势力舰队的问候语。` + 菜单选项"结束通讯" （另有原版"Cut the comm link"）
+   - 点"结束通讯" → 回舰队主菜单
+5. **任务/流程场景（devMode）**：启动器勾选 Dev Mode 后新建游戏 → 角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)` 选项；点选后继续选任一原版起始 →开局星币 = 原版初始 + 5000。非 devMode 时该选项不出现（`$global.isDevMode` 守卫）。
+6. **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志；加载期无 `Duplicate key` / `Command [...] not found` / 赋值/比较操作符错位等规则加载异常（规则基础页规则强度表的加载期五连）。
+
+静态自查：
+- 所有选项 id （`GearIn_rules_scene_bar` / `GearIn_rules_scene_bar_back` / `GearIn_rules_scene_conv_end` / `GearIn_rules_scene_ngc`）与 `$option ==` 条件逐字一致（大小写敏感）；
+- `AddBarEvent` 参数顺序为 id / 文本 / 描述；
+- `BeginFleetEncounter` 规则没有使用 `options` 列；
+- 临时 bar 选项 id 不以任何任务前缀开头；
+- 没有把写作工作单元编号写进任何运行时名称（规则 id、trigger、选项 id、记忆键均不含工作单元编号变体）。
+
+## 实例驱动故障分析
+
+1. **市场菜单消失了（选项面板只剩 Leave）**。
+   - 触发：覆盖了 `MarketPostDock`（FireBest 取胜）但没有复刻 `marketDock` 的结果职责。
+   - 可观察：停靠文本（本 MOD 的）显示了，但 `PopulateOptions` 菜单选项一个都没有——因为原版 `marketDock` 的 `$menuState = main 0` + `FireAll PopulateOptions` 没被执行，`FireBest` 只执行了本 MOD 这一条。
+   - 修正：脚本必须包含 `$menuState = main 0` + `FireAll PopulateOptions`（本节最小例 `GearIn_rules_scene_market` 的写法）
+   - 同类问题出现在覆盖 `OpenInteractionDialog` 的 `marketOpen` （职责为 `ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`）
+2. **第二次停靠 jangala 没有本节文本**。
+   - 触发：一次性 flag `$player.gearInSceneMarketSeen` 已置位（正确行为）。
+   - 可观察：第一次有文本、第二次没有、无任何报错。
+   - 修正：这不是故障——重新验证时改用一个新 flag 名（原版没有"清记忆"的 rulecmd，devMode 下可用 `DumpMemory` 查看记忆键），或临时删掉条件里的 `!$player.<flag>` （并承担每次覆盖原版行为的后果）。
+3. **酒吧里看不到"和 GearIn 演示员聊聊"**。
+   - 触发：`AddBarEvents` 规则条件不满足（`$market.id` 写错、在别的市场看）、或 `BarCMD` 没走 `showOptions`。
+   - 可观察：酒吧只有原版描述 + "Leave the bar"；`$core_tempBarEvents` 为空。
+   - 修正：确认市场 id 逐字一致；注意临时选项只在本市场、本轮有效（先清空再重建）。把临时选项当持久状态跨市场读是错误预期。
+4. **点选酒吧临时选项后文本出现，但选项面板空白**。
+   - 触发：`BarCMD.optionSelected` 把插件还原为 `originalPlugin` 后，本 MOD 的 `DialogOptionSelected` 规则没有提供后续选项。
+   - 可观察：`FireBest` 只显示文本，选项面板空。
+   - 修正：回调规则必须带 `options` 列或再触发 `FireBest`/`FireAll` 填充 （本节最小例用 `GearIn_rules_scene_bar_back` 选项 + `BarCMD showOptions`）。
+5. **舰队遭遇时没有本节呼叫文本**。
+   - 触发：`BeginFleetEncounter` 分数竞争失败（对方是剧情舰队、`$entity.isHostile` 为真、对方 `$faction.id` 不是 independent），或预期了"遭遇瞬间"而实际要看主菜单。
+   - 可观察：原版文本（剧情/`initial_AnyFleet`）出现；本节文本不出现。
+   - 修正：核对条件与分数（本节 102 分 vs 剧情 1000 分）；注意 `BeginFleetEncounter` 有两次匹配时机（`reinit` 预检与 `fireBest` 路径），文本只在 `fireBest` 路径显示。
+6. **接受通讯请求后问候语还是原版**。
+   - 触发：`OpenCommLink` 竞争失败——`$entity.ignorePlayerCommRequests`（10000 分）时原版拒绝规则必然获胜
+   - 或用户应答器关闭 （本节规则条件要求 `$player.transponderOn`，关闭时原版 `greetingDefaultTOff*` 规则族接管——注意本节规则 103 分仍高于它们，若您不想要这个行为就删掉该条件或把分数降为 1 级）
+   - 可观察：本节文本不出现 / 出现但违背预期场景。
+   - 修正：按期望调整条件与分数（`score:` 只改当前条件行，总分 = 各行之和）。
+7. **任务列表出现 "No blurb found for <前缀>"**。
+   - 触发：规则 trigger 名与 `mission.getTriggerPrefix()` 不一致（拼写、大小写、后缀）。
+   - 可观察：`BaseMissionHub.listMissions` 文本面板红字提示；`FireBest` 返回 false。
+   - 修正：trigger 必须等于 `前缀_blurb` / `前缀_option` / `前缀_blurbBar` / `前缀_optionBar` （原版 `hijack_blurb` / `hijack_option` 参照）；任务插件本身归生涯对象体系，本节只消费触发约定。
+8. **新游戏对话框里演示选项不出现**。
+   - 触发：没开 Dev Mode（`$global.isDevMode` 守卫不满足），或把规则写成了 `DialogOptionSelected` / 生涯 trigger。
+   - 可观察：主菜单对话框只有原版选项；无报错。
+   - 修正：`NewGameDialogPluginImpl.optionSelected` 的回流 trigger 是 `NewGameOptionSelected`，选项由 `AddNewGameChoices` 链添加；devMode 选项必须用 `$global.isDevMode` 守卫。
+9. **交易面板文本规则报错/无效**。
+   - 触发：`TradePanelFlavorText` 规则里用了依赖真实对话的命令。
+   - 可观察：异常或静默无效果——dialog 是交易面板制造的假 dialog。
+   - 修正：flavor 规则只用 `AddText` 与 `$global.tradePanelMode` 等变量判断（与规则基础页所讲的假 dialog 限制同类）。
+10. **对话只有文本没有选项，卡住**。
+   - 触发：`FireAll PopulateOptions` 无匹配（`$menuState` 未设或拼错、守卫条件不满足）。
+   - 可观察：选项面板空；`FireAll` 返回 false。
+   - 修正：检查 `$menuState == main` / `fleetConvMain` 与事实键；`convOptionLeave`（`$isPerson`）是人物对话的回退选项来源。
+11. **规则"不触发且无报错"**。
+   - 触发：跨文件重复 id（先到先得静默跳过）或 trigger 拼写错误。
+   - 可观察：`starsector.log` 无对应 `Loading rule:` 行；无异常。
+   - 修正：换唯一前缀（本节 `GearIn_rules_scene_*` 即为此设计）；trigger 拼写与派发点字符串逐字核对 （如 `BeginFleetEncounter` 与 `BeginFleetEncounter2` 是两个 trigger）。
+12. **`$option` 读不到**。
+   - 触发：在非回流 trigger（如 `OpenCommLink`、`MarketPostDock`）里用 `$option` 条件。
+   - 可观察：变量解析回落 `local` 记忆后取 null，条件恒假。
+   - 修正：`$option` 只在 `DialogOptionSelected` / `NewGameOptionSelected`（以及 `BarCMD` 点选后的同一回流）里由插件写入 （`RuleBasedInteractionDialogPluginImpl` / `NewGameDialogPluginImpl` / `BarCMD` 的选项回流实现）。
+
+## 总结
+
+本节把规则系统按五个场景讲成五条"派发点 → trigger → 规则 → 可观察结果"链：
+
+- **对话场景**：`OpenInteractionDialog`（默认入口）→ `PopulateOptions`（菜单）→ `DialogOptionSelected`（`$option` 回流，6050 条唯一使用方）→ `PickGreeting`（人物问候，经 `OpenCDE`）→ `OpenCommLink`（舰队通讯，183 条按关系/状态分派）。
+- **市场场景**：`marketOpen`（`OpenInteractionDialog`，`$hasMarket`）→ `FireBest MarketPostOpen`（停靠许可，`$tradeMode = OPEN`）→ `FireBest MarketPostDock`（`$menuState = main` + `FireAll PopulateOptions`）→ 市场菜单
+  - `TradePanelFlavorText`（假 dialog）独立于对话链
+  - `EndConversation` 负责非舰队对话的退出转场
+- **舰队场景**：`BeginFleetEncounter`（预检 + `fireBest` 双时机；`$hailing` / `OpenComms` 转场到通讯）→ `OpenCommLink`（问候 + `$menuState = fleetConvMain`）→ `PopulateOptions`（对话菜单）→ `EndConversation` 回主菜单。
+- **酒吧场景**：`marketVisitBar` → `BarPrintDesc` + `BarCMD showOptions`（先清空再 `FireAll AddBarEvents` 重建临时选项）→点选经 `$option` 回流 `DialogOptionSelected` → `ReturnFromBar` 复位市场菜单。
+- **任务场景**：`mh_open` → `prepare` + `MHOpenText` + `listMissions`（`<前缀>_blurb` / `<前缀>_option` / `AddMHCloseOption` / `MHPostMissionListText`）→ `accept` / `returnToList`
+  - 酒吧任务走 `<前缀>_blurbBar` / `<前缀>_optionBar`
+  - 主菜单新游戏是流程场景（`BeginNewGameCreation` → `InitNewGameChoices` → `AddNewGameChoices` → `NewGameOptionSelected` + `NGC*` 命令）
+
+记忆要点：
+
+- 场景 trigger 由原版派发点触发，MOD 只需写行；自定义 trigger 才需要 Java 入口（规则基础页已述）。
+- `FireBest` 单选：覆盖原版规则必须复刻其职责；`FireAll` 全执行：菜单类 trigger（`PopulateOptions` / `AddBarEvents` / `AddNewGameChoices`）全部添加选项。
+- 状态键 `$menuState` / `$tradeMode` 成对维护；`$option` 回流只在 `DialogOptionSelected` / `NewGameOptionSelected`。
+- 临时 bar 选项每轮清空重建；任务 trigger 前缀必须与 `getTriggerPrefix()` 一致；`TradePanelFlavorText` 是假 dialog。
+- 故障四步：`Loading rule:` 日志 → trigger 拼写 → 分数竞争 → 职责复刻/状态复位。
+
+从逻辑上看，这五条链的后续延伸是三块：
+- 规则命令体系（自定义 rulecmd 可替代 `BarCMD` / `EndConversation` 等现成使用方式）；
+- 记忆语义 （本节一次性 flag 与 `$menuState` 的过期与持久化由此完整展开）；
+- 对话插件生命周期（市场/舰队/酒吧场景的 Java 侧底座）。
+
+## 建议参考项
+
+- `data/campaign/rules.csv`（MOD 侧）：本节示例追加行所在文件，规则 id 前缀 `GearIn_rules_scene_*`。
+- `Starsector\starsector-core\data\campaign\rules.csv`（原版）：五类场景 trigger 的平台规则表
+  - 本节引用的回退规则（`marketOpen` / `marketDock` / `marketPostOpenDefault` / `greetingFallthrough` / `initial_AnyFleet` / `marketReturnFromBar` 等）的参照来源
+- `com.fs.starfarer.api.impl.campaign.rulecmd.RuleBasedInteractionDialogPluginImpl`：交互对话框插件，对话场景 trigger 的主要派发点与 `$option` 回流实现。
+- `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`：舰队遭遇与通讯对话插件，`BeginFleetEncounter` / `OpenCommLink` 的派发点。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`：酒吧场景的 rulecmd 与对话插件，`AddBarEvents` / `ReturnFromBar` 派发与字符串选项回流。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent`：写临时 bar 选项的 rulecmd（`$core_tempBarEvents` 记忆键）。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.BaseMissionHub`：任务列表与任务对话 trigger（`<前缀>_blurb` / `<前缀>_option` / `AddMHCloseOption`）的使用方。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionBarEventWrapper`：任务以酒吧事件展示时的 `<前缀>_blurbBar` / `<前缀>_optionBar` trigger 使用方。
+- `com.fs.starfarer.api.impl.campaign.NewGameDialogPluginImpl`：主菜单新游戏对话框（流程场景），回流 trigger 为 `NewGameOptionSelected`。
+- `com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`：场景事实键（`$hasMarket` / `$isHostile` / `$isContact` 等）的写入方。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.EndConversation`：对话退出转场 rulecmd。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.OpenComms` / `com.fs.starfarer.api.impl.campaign.rulecmd.HailPlayer`：舰队通讯转场与 `$hailing` 写入 rulecmd。
+- `com.fs.starfarer.api.impl.campaign.AbandonMarketPluginImpl`：弃档时的市场状态复位（`$menuState` / `$tradeMode` / `$hasMarket`）。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.FireBest`：单选派发与 keepOptions（第二参）语义。
+- `com.fs.starfarer.api.campaign.rules.MemKeys`：规则记忆键常量（`MISSION` 等）。

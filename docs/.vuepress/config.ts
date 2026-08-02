@@ -3,7 +3,7 @@ import { defaultTheme } from '@vuepress/theme-default'
 import { defineUserConfig } from 'vuepress'
 
 import { spLinkPlugin } from './markdown-splink.js'
-import { phaseListPlugin } from './markdown-phaselist.js'
+import { sectionListPlugin } from './markdown-sectionlist.js'
 import { devEditPlugin, devEditVitePlugin } from './plugin-dev-edit.js'
 import { createSidebar, sidebarDiscoveryPlugin } from './sidebar.js'
 
@@ -27,7 +27,7 @@ export default defineUserConfig({
   base: BASE,
   extendsMarkdown: (md, app) => {
     md.use(spLinkPlugin, { base: app.options.base })
-    md.use(phaseListPlugin, { base: app.options.base, docsDir: app.dir.source() })
+    md.use(sectionListPlugin, { base: app.options.base, docsDir: app.dir.source() })
   },
   theme: defaultTheme({
     hostname: HOSTNAME,
@@ -50,7 +50,7 @@ export default defineUserConfig({
     contributorsText: '贡献者',
     tip: '提示',
     warning: '注意',
-    danger: '警告',
+    caution: '警告',
     important: '重要',
     note: '注释',
     notFound: ['页面不存在'],

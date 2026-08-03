@@ -1,288 +1,331 @@
-# 战斗对象描述与首次静态验证
+# 为舰船加入内置武器、船插与战机
 
-本节为第一章前四节建立的舰船、战机与武器补上描述文本（`descriptions.csv`），并完成第一次覆盖全部既有数据链的静态验证。描述文本缺行时游戏不报错、界面只显示占位文本，而 `type` 列写错或同一文件内键重复会让游戏在加载阶段直接失败。
+本节把三张 "永远焊死在船体上" 的配置写进 `.ship` 文件：内置武器（`builtInWeapons`）、内置舰船插件（船插，`builtInMods`）和内置战机（`builtInWings`）；它们由船体定义直接提供，不占用装配点，也无法在装配界面拆卸或更换，适用于必须随船体存在、与船体强绑定的内容（主炮、信号灯、相位立场、专属护航机等）。
 
-*本节预期阅读时间：~15 分钟。*
+*本节预期阅读时间：~12 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~15 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 说出 `descriptions.csv` 的列结构、`id + type` 键规则与 `Description.Type` 的全部枚举值，并解释缺行与键错误的可观察结果差异（占位文本 vs 启动失败）；
-- 按对象类型说出描述查找键（舰船 = hullId 或 `.ship` 的 `descriptionId`、武器 = 武器 ID、战术系统 = 系统 ID），并说出 text1–text5 各自的主要使用方；
-- 为既有 GearIn 对象编写描述行，并用 `.ship` 的 `descriptionId` 字段把舰船描述挂到本节专属键上；
-- 执行首次静态验证：不启动游戏，对舰船、战机、武器与内置件的全部数据链做一遍交叉检查；
-- 从 "占位文本、启动报错、数据库（codex）显示降级" 三类症状反推描述数据错误。
+- 在 `.ship` 文件中声明 `builtInWeapons`、`builtInMods`、`builtInWings` 三组键，并说出读取并应用它们的使用方；
+- 说出内置内容与普通装配内容的区别（不占装配点、不可拆卸、内置战机占据前几个甲板）；
+- 解释为什么战机不应该设置内置武器，并给出可观察结果；
+- 从日志报错和战斗表现反推三组键的常见错误。
 
 ## 前置知识
 
-本节在第一章前四节建立的 GearIn 数据之上工作，要求您已掌握以下内容：
+本节把三组 "内置" 配置写进 `.ship` 文件，直接使用前置章节建立的舰船、武器与战机数据，先确认以下基础：
 
-- 舰船贴图 → `.ship` → `ship_data.csv` 的贴图与数据链（C01-S02）
-- 战机 hull/variant/wing 三层结构与 `wing_data.csv`（C01-S03）
-- 武器 `.wpn` → `weapon_data.csv` → `.proj` 数据链（C01-S04）
-- 内置武器、内置船插与内置机联的三件套装配（C01-S05）
-- 能稳定使用 `gear_in` MOD 与 `GearIn_` 数据前缀（C01-S01）
-- CSV 基础：行首 `#` 的整行被忽略、逗号分割、含逗号的字段用引号包裹（C01-S02）
-- 术语：战术系统（ship system）；数据库（codex，生涯界面中的图鉴界面）
+- `.ship` 结构、武器槽位（`mount`/`type`/`size`）、`ship_data.csv` 注册链、控制台 `Addship`（C01-S02）。
+- 航母甲板、战机 hull/variant/wing 三层结构，以及 `GearIn_slag_wing` 等战机 ID（C01-S03）。
+- `weapon_data.csv` 与武器 ID、`.wpn` 的 `id` 字段（C01-S04）。
+- 术语：hullmod 写作 "舰船插件（船插）"，正文沿用简称 "船插"；本节只涉及 "内置" 这一安装方式（船插的完整讲解见 C02-S02）。
 
-## 文件/API 链路
+## 三组键与文件/API 链路
 
-数据文件是 MOD 内的 `data/strings/descriptions.csv`。
+三种内置内容都写在 `.ship` 文件**顶层**，与 `weaponSlots`、`engineSlots`、`center` 同级。
 
-::: info
-这个路径本身就是注册入口 —— 加载器按固定路径遍历原版与全部已启用 MOD 的同名文件并合并，MOD 不需要任何额外注册。
+原版 `onslaught.ship` 中，`builtInMods` 与 `builtInWeapons` 紧邻 `weaponSlots` 数组之后：
+
+| 键 | JSON 类型 | 含义 | 原版参考 |
+|---|---|---|---|
+| `builtInWeapons` | 对象（槽位 ID → 武器 ID）| 随船安装的武器，不占装配点、不可拆卸 | `onslaught.ship`：`"WS 016": "tpc"` |
+| `builtInMods` | 数组（船插 ID）| 随船安装的船插，不占装配点、不可移除 | `shade.ship`：`["phasefield", "delicate"]` |
+| `builtInWings` | 数组（战机 ID）| 占据前几个甲板的战机联队，不可更换、不占装配点 | `tempest.ship`：`["terminator_wing"]` |
+
+使用这三组键的完整链路为：
+
+1. `data/hulls/<hullId>.ship`：声明三组键（数据入口）。
+2. 加载期把 `.ship` 的声明读入 `ShipHullSpecAPI` 的 `builtInWeapons`/`builtInMods`/`builtInWings` 三个字段。
+3. 装配构建时把三组内置内容应用到**每一个**装配 —— 包括游戏按船体自动生成的 `<hullId>_Hull` 空装配。
+4. 使用方：装配点计算（`computeWeaponOPCost`/`computeHullModOPCost`）、战斗部署（舰船生成时）、装配界面（refit 的武器槽/船插列表/甲板列表）。
+
+公开 API 面（`com.fs.starfarer.api.*`）中，只读访问入口在 `com.fs.starfarer.api.combat.ShipHullSpecAPI`：
+
+- `getBuiltInWeapons()`、`getBuiltInMods()`、`getBuiltInWings()`；
+- `isBuiltIn(String slotId)`、`isBuiltInMod(String modId)`、`isBuiltInWing(int index)`；
+- 槽位类型枚举 `com.fs.starfarer.api.combat.WeaponAPI.WeaponType` 含 `BUILT_IN` 与 `DECORATIVE`。
+- 槽位访问入口为 `com.fs.starfarer.api.loading.WeaponSlotAPI.getWeaponType()`。
+
+::: info 为什么要在设计舰船时就把内置槽位规划好
+
+**内置槽位应该在设计舰船的时候就提前设计、设置好**。舰船编辑器（前置章节的按键流程）可以设置槽位类型，但 `builtInWeapons` 等三组键位于编辑器流程之外，后期手动修改会略显麻烦。
+
 :::
 
-加载与查询共三步：
+## 内置武器（builtInWeapons）
 
-1. 加载期以 `id`、`type` 两列为键读取全部行；`type` 必须能解析为 `Description.Type` 枚举；每行以 `id + "_" + type` 为 UID 存入描述注册表。
-2. 运行期查询入口是公开 API：`Global.getSettings().getDescription(id, type)`（`com.fs.starfarer.api.SettingsAPI`，公开 API），返回 `com.fs.starfarer.api.loading.Description` 对象。
-3. 使用方先按 "对象 → 查找键"（下表）取描述，再按展示位置取 text1–text5 之一。
+为舰船加入内置武器需要先有对应的内置槽位。内置槽位在 `.ship` 文件中看上去大概是这样的（本例为 `GearIn_artizan.ship` 的两门内置武器槽位，来自前置章节制作的工匠-级）：
 
-| 对象 | 描述键（`id` 列）| 依据 |
-|---|---|---|
-| 舰船 | `.ship` 文件的 `descriptionId` 字段；未填写时回退为 `hullId` | `ShipHullSpecAPI.getDescriptionId()` 的回退；加载器读取 `.ship` 可选字段 |
-| 战机（联队）| 复用其 hull 的舰船描述。装配界面的战机选择器按 hull 的 `descriptionId` 查询；数据库的战机详情直接按 `hullId` 查询（RC8 的数据库详情界面）| 为避免两处键不一致，战机 hull 建议不写 `descriptionId` |
-| 武器 | 武器 ID（`weapon_data.csv` 的 `id`，与 `.wpn` 的 `id` 相同）| 全部武器使用方都用 `getWeaponId()`，没有替代键 |
-| 战术系统 | 系统 ID（`ship_systems.csv` 的 `id` / `.system` 的 `id`）| 系统使用方用系统 spec 的 id，没有替代键 |
-
-## descriptions.csv 结构与最小示例
-
-### 列结构与键规则
-
-表头固定为 8 列（RC8 原版 `descriptions.csv`）：
-
-```csv
-id,type,text1,text2,text3,text4,text5,notes
+```json {3,4,5,6}
+    {
+      "id": "WS0003",
+      "size": "SMALL",
+      "type": "BUILT_IN",
+      "mount": "HARDPOINT",
+      "arc": 10,
+      "angle": 0,
+      "locations": [59, 45]
+    },
+    {
+      "id": "WS0004",
+      "size": "SMALL",
+      "type": "BUILT_IN",
+      "mount": "HARDPOINT",
+      "arc": 10,
+      "angle": 0,
+      "locations": [59, -45]
+    },
 ```
 
-- `id` 与 `type` 两列合成查找键（例如 `GearIn_durin_WEAPON`），`type` 必须是 `Description.Type` 的枚举名，**区分大小写**：
+槽位与普通槽位一样有三个关键维度：`mount`（形态：TURRET/HARDPOINT/HIDDEN）、`type`（类型：`BUILT_IN` 表示内置槽位）、`size`（大小，与所装武器一致）。
 
-| 枚举值 | 用途 | 本教程范围 |
-|---|---|---|
-| `SHIP` | 舰船与战机 hull 的描述 | 本节 |
-| `WEAPON` | 武器描述 | 本节 |
-| `SHIP_SYSTEM` | 战术系统描述 | 本节（观察原版行，不新建）|
-| `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 | 后续章节 |
+`mount` 与 `type` 相互独立：原版攻势的两门内置 TPC 槽位是 `"mount": "HARDPOINT"`、`"arc": 5`（武器固定朝向），守卫者的内置槽位则是 `"mount": "TURRET"`。
 
-- `text1`–`text5` 的默认值与主要使用方：
+装饰槽位同理，例如原版 `buffalo.ship` 是 `"mount": "TURRET"` 配 `"type": "DECORATIVE"`。
 
-| 字段 | 默认值 | 语义与主要使用方（加载器与公开 API）|
-|---|---|---|
-| `text1` | `No description... yet` | 长描述，可多段（空行分隔）。数据库详情页完整显示；蓝图物品 tooltip、货舱 tooltip 只显示第一段（`getText1FirstPara`）|
-| `text2` | `No description... yet` | 一句话短描述。装配界面武器列表副标题（`weapon_data.csv` 的 `primaryRoleStr` 非空时优先）；舰队界面成员 tooltip 引言（text3 为空时）；数据库系统列表的类型标签（无 text2 时显示 `Special`）；战情室部署界面的信息标题 |
-| `text3` | `No description... yet` | 短描述。装配界面的战术系统/相位系统行（有 text3 用 text3，否则用 text1）；战情室信息正文；舰队 tooltip 中 text3 非空时引言改用 text1 第一段 |
-| `text4` | 空 | 以 `|` 分隔的高亮片段，装配界面系统行渲染时按片段高亮 |
-| `text5` | 空 | 战术系统的效果行，支持 `{{内容}}` 高亮标记；数据库系统详情的 `Effects` 节逐行渲染 |
-| `notes` | 空 | 备忘录列，加载器不读取 |
+::: caution 槽位类型
 
-- `id` 或 `type` 为空的行会被静默跳过；text1–3 为空或被省略时显示占位文本 `No description... yet`。
-- 这是缺描述不报错的原因：查询入口在找不到键时返回一个填充占位文本的新描述对象。
+`type` 写成 `BUILT_IN` 的槽位**不能**在装配界面手动安装武器 ——`isWeaponSlot()` 只认 `BALLISTIC`、`ENERGY`、`MISSILE`、`UNIVERSAL`、`HYBRID`、`SYNERGY`、`COMPOSITE` 七种类型（`WeaponSlotAPI.isWeaponSlot()`）。
 
-::: warning
-对象缺描述行时游戏不报错，界面只显示 `No description... yet` 占位文本。
+内置武器只能由 `builtInWeapons` 提供。
 
-不要把它当成 bug 去翻启动日志 —— 日志里什么都不会有；排查方向是 "查找键是否与对象键逐字符一致"。
 :::
 
-::: caution
-必须避免三类会让加载阶段直接失败的错误 ——`type` 列不是枚举名（拼写、大小写或多余空格）、同一文件内出现相同 `id + type` 组合、文件带 BOM 导致表头首列键名被污染。
+::: tip 操作方式
 
-三类错误在本节故障分析中均有对应症状与修正。
+增加内置武器建议手动打开 `.ship` 文件进行修改，但**能复制粘贴修改就不手写**。
+
 :::
 
-### 完整最小例
+本例将对 `GearIn_artizan.ship` 加入两门内置武器。
 
-以下内容全部放在虚构示例 MOD（`gear_in`，第一章首节建立）中。先建立 `data/strings/descriptions.csv`，表头之后依次是本节拥有的描述行：
+从原版攻势的 `onslaught.ship` 文件中抄出如下内容：
 
-```csv {1}
-id,type,text1,text2,text3,text4,text5,notes
-GearIn_durin,WEAPON,"都林自动炮是一门口径小、射速极快的近距实弹炮。密集的破片在短距离内对护盾有不错的压制效果，但离开射程就毫无用处。",反装甲,,,,,
-GearIn_uri,WEAPON,"乌里光束在中距离持续照射目标，产生稳定的能量伤害与幅能负担。光束本身没有击退力，需要持续瞄准。",压制,,,,,
-GearIn_dwalin,WEAPON,"德瓦林发射架向远距离目标倾泻高爆火箭。备弹有限，装填缓慢，但每一发都对装甲构成实质威胁。",压制,,,,,
-GearIn_combat_desc_artizan,SHIP,"工匠-级是一艘以导弹见长的驱逐舰。它把锤头-级的中实弹槽位换成了中通用，可以安装强力的导弹武器。",中坚驱逐舰,,,,,
-GearIn_combat_desc_furnaceman,SHIP,"守炉人-级轻型航母以两座甲板提供持续空中掩护, 自身保留可观的结构。",轻型航母,,,,,
-GearIn_slag,SHIP,"炉渣-级是一款廉价的重型战机，装备双管轻型自动炮。",重型战机,,,,,
-GearIn_combat_desc_forging,SHIP,"锻件-级相位护卫舰围绕一门中型实弹槽位设计，用相位机动躲避火力。",相位护卫舰,,,,,
+```json
+    "builtInWeapons": {
+        "WS 016": "tpc",
+        "WS 017": "tpc"
+    },
 ```
 
-要点：
+修改为所需武器（`GearIn_durin` 是前置章节制作的都林自动炮）。
 
-- 武器的描述行 `id` **必须**等于武器 ID（此前建立的 `GearIn_durin` 等），这是查找键，无法另起别名。
-- 三条舰船描述使用本节专属键 `GearIn_combat_desc_*`，需要靠 `.ship` 的 `descriptionId` 字段挂接（见下文）。
-- `GearIn_slag` 是战机 hull，按 "战机建议不写 `descriptionId`" 的规则使用默认键 `GearIn_slag`。
-- 武器 `text2` 与 `weapon_data.csv` 的 `primaryRoleStr` 保持一致（反装甲/压制）：装配列表副标题优先显示 `primaryRoleStr`，`text2` 是它在留空时的备用值。
-- `GearIn_combat_desc_furnaceman` 的 text1 内含英文逗号，因此必须用引号包裹（中文逗号 "，" 不是分隔符，无需包裹）；`text4`/`text5` 在示例中留空，其用法见原版参考行。
+::: warning 槽位 ID 必须逐字符一致
 
-然后给三个舰船 `.ship` 文件加入 `descriptionId` 字段（以 `GearIn_artizan.ship` 为例，字段与 `hullId` 同级）：
+**反复确定槽位 ID 的正确**——`builtInWeapons` 的键必须与 `.ship` 中 `weaponSlots` 数组里的槽位 `id` 完全一致。
+
+:::
+
+然后插入到 `.ship` 文件内的对应位置：
 
 ```json {2,3}
-    "descriptionId": "GearIn_combat_desc_artizan",
-    "descriptionPrefix": "由编者制作的第一艘示例舰船",
+    "builtInWeapons": {
+        "WS0003": "GearIn_durin",
+        "WS0004": "GearIn_durin"
+    },
 ```
 
-`GearIn_furnaceman.ship` 与 `GearIn_forging.ship` 分别写 `GearIn_combat_desc_furnaceman`、`GearIn_combat_desc_forging`。
+![](./built_weapon.png)
 
-`descriptionPrefix` 是可选字段，写在任何描述文本之前（使用方用 `前缀 + "\n\n"` 拼接）；**它不以句号结尾时加载器会自动补一个句号**。
+### 内置武器的行为
 
-### 文本字段的书写规则
-
-- **引号**：字段含英文逗号、换行或引号时**必须**用 `"` 包裹；字段内部的引号写成两个 `""`；换行会保留为段落分隔（text1 的多段之间用空行）。
-- **注释**：行首是 `#` 的整行被忽略，可以用它暂时注释掉某条描述。
-- **编码**：加载器按 UTF-8 读取（文本读取工具 `readText`）。
-- 中文内容必须以 UTF-8 无 BOM 保存，否则显示乱码或加载异常（见故障分析）。
-- **弯引号**：加载时会把弯引号（" " ' '）替换为直引号（`replaceSmartQuotes`），所以不要依赖弯引号保留原样（RC8 原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步归一化）。
-- **键唯一**：`id + type` 在同一文件内**必须**唯一，否则加载期抛异常（见故障分析）。
-- 也不要重定义原版或其他 MOD 已存在的 `id + type` 组合：跨文件合并时先被枚举到的文件的行生效，后到的同键行被**静默跳过**（读 CSV 时的去重分支），覆盖顺序不是可以依赖的约定。
-- 需要整体替换某个数据文件时，RC8 支持在 `mod_info.json` 的 `replace` 数组里声明（加载器内部映射为 fullOverrides），整体替换的细节见后续专题。
-
-原版参考行（`Starsector/starsector-core/data/strings/descriptions.csv`，仅观察不修改）：
-
-```csv
-hammerhead,SHIP,"A midline destroyer from the golden age of the Domain, the Hammerhead is respected for its staying power in battle as well as its ballistic capabilities.",,,,,
-maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship's maneuverability. Also provides a slight boost to the ship's top speed.,Movement,Provides a brief boost to maneuverability and top speed.,,The ship's top speed is increased by {{50}}.,
-```
-
-`maneuveringjets` 行展示了系统描述的标准结构：text1 长描述、text2 一句话类型名（数据库系统列表用它当类型标签）、text3 短描述（装配界面系统行）、text5 效果行（含 `{{50}}` 高亮标记）。
-
-`hammerhead` 行则说明：舰船通常只写 text1，text2/text3 留空即可。
+- **不占装配点**：`computeWeaponOPCost` 跳过内置槽位（`!hullSpec.isBuiltIn(slotId)`），装配界面显示 OP 只按非内置武器计算。
+- **不可拆卸**：装配界面的 "清空武器/返还货舱" 只处理 `getNonBuiltInWeaponSlots()`，内置武器永远留在装配里。
+- `.variant` 文件也无法覆盖内置槽位（`addWeapon(..., false)` 对内置槽位直接拒绝写入）。
+- **自动开火**：普通舰船会自动生成武器组（`autoGenerateWeaponGroupsV2`）。
+- 内置武器只要不是装饰槽就会并入武器组，随 AI 自动开火。
+- **武器 ID 必须真实存在**：`setHullSpec` 按武器 ID 查询武器注册表，未知 ID 会在装配构建时抛 `Weapon spec [<id>] not found!`（见故障分析）。
+- **建议清空掉落标签**：内置武器通常不希望出现在市场和打捞中。
+- 此前武器数据章节给出的提示同样适用：清空或精简 `weapon_data.csv` 行的 `tags`。
+- 需要彻底隐藏时可用 `SYSTEM` hint（原版 `tpc` 就是 `SYSTEM, SHOW_IN_CODEX`，默认不出现在数据库、不掉落）。
 
 ### 验证方案（基于本例）
 
-前置数据：`gear_in` MOD（C01-S01）与第一章前四节（C01-S02 至 C01-S05）建立的全部数据，加上本节的 `data/strings/descriptions.csv` 与三个 `.ship` 文件的 `descriptionId` 修改（即本节前述示例内容）。
+前置数据：`gear_in` MOD（C01-S01）+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_artizan`（C01-S02）与武器 `GearIn_durin`（C01-S04）。
 
-操作：
+操作：用 dev 控制台 `Addship GearIn_artizan` 生成测试舰船，在装配界面确认两门内置都林自动炮已安装；随后进入任意战斗，观察它们是否随 AI 自动开火。
 
-1. 启动游戏进入生涯界面，确认日志出现 `Loading descriptions` 且 `starsector.log` 无 `ERROR`。
-2. 用 dev 控制台输入 `Addship GearIn_artizan`、`Addship GearIn_forging`、`Addwing GearIn_slag_wing`。
-3. 进入装配界面：核对三门 GearIn 武器的副标题、工匠-级的战术系统行、锻件-级的相位系统行。
-4. 回到舰队界面悬停工匠-级：引言应为 `descriptionPrefix + text2`（"由编者制作的第一艘示例舰船。中坚驱逐舰"）。
-5. 打开数据库（codex）：核对船体详情、武器详情、系统列表（类型标签）与系统详情（`Effects` 节）、战机详情。
-6. 悬停舰船/武器蓝图与货舱物品：核对 tooltip 的 text1 第一段。
-7. 修改某一行的 text1 后重启游戏，确认对应位置文本随之变化，再改回（最小任务链的单向验证）。
-8. 临时把某行 `type` 改成非法值（如 `SHIP` → `Ship`）启动，确认加载期报错后恢复（故障复现）。
+通过信号：装配点数与未安装时相同（不占 OP）；两门内置武器无法拆卸或替换；战斗中自动开火正常；`starsector.log` 中 `GearIn_artizan` 无 `ERROR`。
 
-通过信号：上述各位置的文本与 CSV 内容一致；日志无 `ERROR`。
+清理：移除测试舰船。
 
-清理：移除测试舰船；恢复临时改动的描述行。
+## 内置装饰性武器
+
+装饰性武器的安装方式和通常的内置武器几乎完全一样，只是需要将槽位类型改为 `DECORATIVE` 即可。装饰武器**不会**出现在武器组或舰船数据列表中：
+
+- **不进武器组**：`autoGenerateWeaponGroupsV2` 与 `hasUnassignedWeapons` 都跳过装饰槽，AI 不会把它们纳入自动开火判定。
+- **不计入舰船数据面板**：装配界面的舰船数据面板统计 "武器幅能消耗/秒" 时跳过装饰武器。
+- **不被 AI 瞄准开火**：进攻机动、侧舷压制和各战术系统 AI 的武器选择都跳过装饰武器。
+- **不会被永久损坏**：装饰槽武器不会因损坏而失效。
+- **仍然渲染**：战斗中和生涯舰船界面都会显示装饰武器。
+
+装饰武器适合纯视觉内容。原版例子：`buffalo.ship` 的红色/绿色信号灯 ——`builtInWeapons` 里装 `blinker_red`/`blinker_green`
+
+（`data/weapons/blinker_red.wpn`、`blinker_green.wpn`，`.wpn` 的 `"type": "DECORATIVE"`），
+
+信号灯槽位为 `"type": "DECORATIVE"` 的 TURRET 槽。
+
+## 战机的内置武器？
+
+战机**不应该**设置内置武器，而应该设置正常的槽位、在装配文件里设置武器（前置章节已建立的战机装配流程）。
+
+::: caution 有什么不好？
+
+战机设置内置武器可能导致武器无法追踪目标、导弹类内置武器转速归零。这是数据路径决定的确定性行为，不是偶发问题：
+
+- 战机**不会**自动生成或补全武器组。
+- 舰船生成时只为非战机执行 `autoGenerateWeaponGroups`/`assignUnassignedWeapons`。
+- 战机只使用 `.variant` 装配文件里显式写出的 `weaponGroups`。
+- 舰船 AI 只给 "当前选中武器组" 内的武器设置瞄准目标。
+- 内置武器的槽位如果没有写进装配文件的 `weaponGroups`，它就不属于任何武器组，永远得不到瞄准目标，只能停在槽位朝向，不追踪、不转动。
+- 更直接的情况：内置槽位若按常见做法用 `HARDPOINT` 挂载，导弹武器装在固定槽位上时最大转速被直接设为 0（除非船体带 `MISSILE_HARDPOINTS_ROTATE` 提示且槽位角小于 90 度）。
+- 无论 `mount` 是哪种，未进武器组的内置武器都拿不到瞄准目标。
+- 可观察结果：战机内置武器只朝固定方向开火、无法追踪目标；`HARDPOINT` 挂载的导弹类内置武器完全不转动。
+
+因此战机请保持正常槽位 + `.variant` 装配文件的 `weaponGroups` 方案。内置三件套是为舰船准备的。
+
+:::
+
+## 内置船插（builtInMods）
+
+增加内置船插也建议手动打开 `.ship` 文件进行修改，但**能复制粘贴修改就不手写**。本例将对 `GearIn_forging.ship`（前置章节的锻件-级相位护卫舰）加入相位对应内置船插。
+
+从原版阴影的 `shade.ship` 文件中抄出如下内容：
+
+```json
+    "builtInMods": [
+        "phasefield",
+        "delicate"
+    ],
+```
+
+由于无需精密机械，因此简单修改后插入到 `.ship` 文件内的对应位置：
+
+```json {2}
+    "builtInMods": [
+        "phasefield"
+    ],
+```
+
+![](./built_hullmod.png)
+
+`builtInMods` 数组里的每个元素是**船插 ID**，取值来自 `hull_mods.csv` 的 `id` 列。
+
+例如 `phasefield` 是原版 "Phase Field" 船插，`delicate` 是 "Delicate Machinery"。
+
+### 内置船插的行为
+
+- **不占装配点**：`computeHullModOPCost` 跳过内置船插（`!hullSpec.isBuiltInMod(id)`）。
+- **不可移除**：`removeMod` 对内置船插直接返回；船插选择器把内置船插排除在可装卸列表之外；清空装配时 `clear(false)` 会把内置船插重新加回。
+- **船插 ID 必须真实存在**：装配构建阶段不校验，但舰船部署时 `getAllMods()` 会解析每个船插 ID，未知 ID 抛 `Hullmod <id> not found!`（见故障分析）。
+- 船插的完整讲解（effect 脚本、S-mod 等）在后续章节展开；本节只涉及 "内置" 这一安装方式。
+
+### 验证方案（基于本例）
+
+前置数据：`gear_in` MOD（C01-S01）+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_forging`（C01-S03）。
+
+操作：用 dev 控制台 `Addship GearIn_forging` 生成测试舰船，在装配界面确认船插列表出现 `phasefield`（原版 Phase Field）；随后进入任意战斗，观察相位立场效果是否生效。
+
+通过信号：`phasefield` 无法移除；其余装配不受影响；相位立场正常降低探测范围；`starsector.log` 中 `GearIn_forging` 无 `ERROR`。
+
+清理：移除测试舰船。
+
+## 内置战机（builtInWings）
+
+增加内置战机也建议手动打开 `.ship` 文件进行修改，但**能复制粘贴修改就不手写**。本例将对 `GearIn_furnaceman.ship`（前置章节的守炉人-级航母，2 个甲板）加入一甲板对应内置战机。
+
+从原版暴雨的 `tempest.ship` 文件中抄出如下内容：
+
+```json
+"builtInWings": [
+    "terminator_wing"
+],
+```
+
+修改为所需的战机 ID 后插入到 `.ship` 文件内的对应位置：
+
+```json {2}
+"builtInWings": [
+    "GearIn_slag_wing"
+],
+```
+
+![](./built_wing.png)
+
+### 内置战机行为
+
+- **占据前几个甲板**：`setHullSpec` 按顺序把内置战机填入甲板 0、1、2……（`setWingId(i, ...)` 对内置甲板索引强制使用内置战机）。
+- 本例中 `GearIn_slag_wing` 占据守炉人的第一个甲板，第二个甲板仍可在装配界面正常装配。
+- **不可更换**：`setWingId` 对内置甲板索引强制覆盖；装配界面的 "清空战机槽" 按 `isBuiltInWing` 判断、跳过内置甲板。
+- **不占装配点**：`computeWeaponOPCost` 的战机循环跳过内置战机；舰队成员的造价与 CR 计算也使用 `getNonBuiltInWings()` 排除内置战机。
+- **战机 ID 必须真实存在**（`wing_data.csv` 的 `id` 列）：未知 ID 不会报错，而是该甲板**静默不生成联队**（见故障分析）。
+
+### 验证方案（基于本例）
+
+前置数据：`gear_in` MOD（C01-S01）+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_furnaceman` 与战机 `GearIn_slag_wing`（C01-S03）。
+
+操作：用 dev 控制台 `Addship GearIn_furnaceman` 生成测试舰船，在装配界面确认第一个甲板固定为 `GearIn_slag_wing`（炉渣联队）；随后进入任意战斗，观察联队出动、返航与补充。
+
+通过信号：第二个甲板空置、可正常装配其它战机；内置联队无法在装配界面更换；`starsector.log` 中 `GearIn_furnaceman` 与 `GearIn_slag_wing` 无 `ERROR`。
+
+清理：移除测试舰船。如需复测 "内置战机甲板静默为空" 的故障模式，可临时把 `builtInWings` 改成不存在的 ID，验证后改回。
 
 ## 预期结果
 
-启动游戏到生涯界面（此前启用的 dev 控制台此时可用），按以下位置核对：
+按前文完成三处修改后，进入任意战斗验证整体表现：
 
-- **启动日志**：出现 `Loading descriptions` 的加载日志，`starsector.log` 无 `ERROR`。
-- **装配界面**（`Addship GearIn_artizan` 后进入）：武器选择列表里三门 GearIn 武器的副标题显示 `反装甲, range 600` 之类的内容。
-- 副标题文本由 `primaryRoleStr + ", range"` 拼出（`text2` 是备用值）。
-- 战术系统行显示 text3（例如锻件-级的相位系统行显示对应描述），没有 text3 时显示完整 text1。
-- text4 非空时其中片段被高亮。
-- **舰队界面**：悬停工匠-级舰船成员，tooltip 引言显示 `descriptionPrefix + text2`（`GearIn_combat_desc_artizan` 行是 "由编者制作的第一艘示例舰船。中坚驱逐舰"）。
-- 没有 text2 的对象显示 text1 第一段。
-- **数据库（codex）**：船体详情显示 text1；武器详情显示 text1；战机详情显示其 hull 的 text1。
-- 舰船系统列表每个条目都列出（`HIDE_IN_CODEX` 除外），类型标签取 text2、缺 text2 时显示 `Special`。
-- 系统详情除 text1 外还有 `Effects` 节（text5 逐行渲染，`{{...}}` 处高亮）。
-- **蓝图与货舱**：悬停舰船/武器蓝图或货舱里的物品，tooltip 显示 text1 第一段（舰船带 `descriptionPrefix` 前缀）。
-- **最小任务链的验证流程**：修改某一行的 text1 后重启游戏，对应位置文本随之变化；改回后恢复。
-- 这证明该行确实被使用方读取，而不是碰巧显示别的文本。
+- 内置武器正常开火（普通舰船）；
+- 内置船插效果生效（相位立场降低探测范围）；
+- 内置战机从对应甲板出动、返航与补充正常。
 
-## 首次静态验证
-
-第一章前四节建立的内容此前都是 "做完就进游戏看效果"；本节要求先不启动游戏，把整条数据链交叉检查一遍。按以下顺序执行：
-
-1. **编码**：所有数据文件 UTF-8 无 BOM（编辑器状态栏确认；含中文的 CSV 尤其关键）。
-2. **CSV 结构**：表头列名与列数正确；每行列数与表头一致；含英文逗号/换行/引号的字段已加引号；行首 `#` 注释行不影响数据行。
-3. **键唯一性与类型**：`descriptions.csv` 的 `id + type` 全文件唯一、`type` 是枚举名（大小写敏感）。可以直接用下面的脚本从 MOD 根目录检查：
-4. **ID 交叉检查**（沿既有链逐项核对，全部为逐字符匹配、大小写敏感）：
-   - `.ship` 的 `hullId` == `ship_data.csv` 的 `id` == 装配 `.variant` 的 `hullId` == `wing_data.csv` 的 `variant` 对应 hull；
-   - `builtInWeapons` 的键 == `.ship` 槽位 `id`、值 == `weapon_data.csv` 的 `id`；
-   - `builtInMods` 的值 == `hull_mods.csv` 的 `id`；`builtInWings` 的值 == `wing_data.csv` 的 `id`；
-   - `weapon_data.csv` 的 `id` == `.wpn` 的 `id`；`.wpn` 的 `projectileSpecId` == `.proj` 的 `id`；
-   - 描述行键：`WEAPON` 行的 `id` == 武器 ID；`SHIP` 行的 `id` == `hullId` 或 `.ship` 的 `descriptionId`；系统行 `id` == 系统 ID。
-5. **资源路径**：`.ship`/`.wpn`/`.proj` 里的 sprite 与声音路径按原样（含大小写）能在对应 `graphics`/`sounds` 目录找到。
-6. **启动日志收尾**：启动一次游戏，`starsector.log` 无 `ERROR`—— 这是静态检查的运行时确认。
-
-```python
-import csv
-from collections import Counter
-
-VALID = {"SHIP", "WEAPON", "SHIP_SYSTEM", "RESOURCE", "ACTION_TOOLTIP",
-         "PLANET", "ASTEROID", "FACTION", "TERRAIN", "GALLERY", "CUSTOM"}
-
-rows = []
-with open("data/strings/descriptions.csv", encoding="utf-8", errors="replace") as f:
-    for r in csv.DictReader(f):
-        if (r["id"] or "").strip() and (r["type"] or "").strip():
-            rows.append(r)
-
-keys = [r["id"] + " | " + r["type"] for r in rows]
-dups = {k for k, n in Counter(keys).items() if n > 1}
-bad = {r["id"] for r in rows if r["type"] not in VALID}
-print("rows:", len(rows))
-print("duplicate keys:", sorted(dups) or "none")
-print("invalid types:", sorted(bad) or "none")
-```
-
-脚本输出 `duplicate keys: none` 与 `invalid types: none` 即通过。
-
-::: tip
-脚本要放在 MOD 根目录（与 `data/` 同级）运行，因为它读取的是相对路径 `data/strings/descriptions.csv`。
-
-如果文件带了 BOM，脚本会在 `r["id"]` 处抛 `KeyError('id')`—— 这正是游戏内会发生的表头污染问题，见故障分析。
-:::
+`starsector.log` 中三个船体 ID（`GearIn_artizan`、`GearIn_forging`、`GearIn_furnaceman`）与 `GearIn_slag_wing` 均无 `ERROR`。
 
 ## 实例驱动故障分析
 
-按 "症状 → 原因 → 修正" 逐条排查；每条症状都是本节示例数据可以实际复现的。
-
-- **启动即失败，日志含 `Invalid type of description: [null]`**：某行 `type` 列不是枚举名（拼写、大小写或多余空格）。
-- 描述加载对每一行做枚举解析，解析失败立即抛 `RuntimeException`。
-- 修正：与 `Type` 枚举名逐字符一致，重启。
-- **启动即失败，日志含 `Duplicate key [...] while loading [data/strings/descriptions.csv ...]`**：同一文件内出现相同 `id + type` 组合（键串形如 `id | type |`）。
-- 读 CSV 时对每个文件内部做重复键检查并抛异常。
-- 修正：保证 `id + type` 全文件唯一，重启。
-- **启动即失败，日志含 `JSONObject["id"] not found` 一类异常**：文件带 BOM 或表头被污染。
-- BOM 字符会粘在表头第一列的列名上（`id` 变成 `\ufeffid`），加载器按 `id` 取键失败。
-- 修正：以 UTF-8 **无 BOM** 重新保存。
-- **对象缺描述行，界面显示 `No description... yet`**：这是设计行为而非报错 —— 查询缺行时得到占位描述对象（text1–3 为占位文本）。
-- 典型场景：武器行 `id` 写错、`.ship` 的 `descriptionId` 指向不存在的行、或该对象根本没有描述行。
-- 修正：补行或改正键；注意大小写敏感。
-- **改了描述但游戏里没变化**：先确认改的是会被读取的行 —— 键与任何对象都不匹配的未挂接行永远不会被读取，且不报错。
-- 用 "键唯一性脚本 + ID 交叉检查" 定位。
-- **舰船 tooltip 引言与 text2 不一致**：tooltip 生成的规则是 text3 非空或 text2 缺失/为占位时改用 text1 第一段。
-- 想用 text2 当引言，就不要填 text3。
-- **数据库系统列表的类型标签显示 `Special`**：该系统的 `SHIP_SYSTEM` 行缺 text2。
-- 条目本身仍会列出（系统列表不依赖描述行），只是类型标签降级；缺整行时详情正文显示占位文本。
-- 修正：为自定义系统提供描述行，text1 必填、text2 建议填。
-- **装配界面系统行显示整段长文**：系统描述缺 text3，界面回退到 text1。
-- 若希望行内文本短而精，补 text3；text4 的 `|` 分隔片段会作为高亮渲染。
-- **战机详情显示占位文本但装配界面正常**：战机的 hull 写了 `descriptionId`—— 装配界面的战机选择器按它查询，数据库战机详情却直接按 `hullId` 查询，两处键不一致。
-- 修正：战机 hull 不写 `descriptionId`（本例 `GearIn_slag` 的用法）。
-- **文本错位、截断或串到别的列**：某字段内含未加引号的英文逗号或换行，按列切分后错位 —— 键可能因此改变（变成占位文本或没被使用的行），或列数异常。
-- 修正：含这些字符的字段加引号，重新跑结构检查。
-- **重定义原版或其他 MOD 已有的 `id + type` 后没有任何效果**：跨文件合并时先被枚举到的文件的行生效，后到的同键行被静默跳过。
-- 不要重定义既有键；确有整体替换需要时使用 `replace`（fullOverrides 整文件替换）。
+- **游戏加载阶段报 `Weapon spec [<id>] not found!`**：`builtInWeapons` 里的武器 ID 不在武器注册表（`weapon_data.csv` 无此行、拼写或大小写错误）。
+- 装配构建会立即解析武器 ID，因此该错误在启动/装配构建阶段就会出现。
+- 修正：核对 `weapon_data.csv` 的 `id` 列，统一两边写法。
+- **部署时报 `slot id [<槽位>] not found for weapon [<武器>]`**：`builtInWeapons` 的键不是真实槽位 ID，或槽位片段与 `builtInWeapons` 键不一致。
+- 舰船生成时挂载每个已装配槽位都会检查槽位存在性。
+- 修正：**反复确定槽位 ID 的正确**，让两处 `id` 逐字符一致。
+- **部署时抛 `Hullmod <id> not found!`**：`builtInMods` 里的船插 ID 不存在（`hull_mods.csv` 无此行）。
+- 装配构建阶段不校验，错误在舰船生成时由 `getAllMods()` 抛出。
+- 修正：核对 `hull_mods.csv` 的 `id` 列。
+- **内置战机甲板静默为空**：`builtInWings` 里的战机 ID 不存在（`wing_data.csv` 无此行）。
+- 联队 ID 解析失败时该甲板不生成联队，**没有任何报错**。
+- 排查：核对 `wing_data.csv` 的 `id` 列；日志中应能看到翼 ID 缺失但不会指向本船体。
+- **内置武器可以拆卸或计入 OP**：不会发生。
+- 内置三件套在 OP 计算与装配界面均有专门排除逻辑（见上文行为小节）。
+- 若出现此现象，检查 `.ship` 键名是否拼错（例如写成 `builtInWeapon` 而非 `builtInWeapons`），键名不匹配时内容会被静默忽略。
+- **战机内置武器不转动/不追踪**：见 "战机的内置武器？" 一节，按数据路径修正：取消内置槽位，改为正常槽位 + `.variant` 装配。
+- **装饰武器仍然被 AI 开火或计入面板**：检查槽位 `type` 是否真的是 `DECORATIVE`（而非 `BUILT_IN`），以及武器 `.wpn` 的 `"type": "DECORATIVE"` 是否一致。
+- 装饰判定同时看槽位类型（武器组/面板/AI 跳过）与武器类型（`isDecorative()`）。
 
 ## 总结
 
-描述文本的键规则由对象类型决定：武器与战术系统的键锁定在对象 ID 上，舰船则可以用 `.ship` 的 `descriptionId` 换成任意键，缺省回退 `hullId`。
+内置三件套是船体对装配的强制约束：`builtInWeapons` 按槽位挂武器、`builtInMods` 按 ID 挂船插、`builtInWings` 按顺序填甲板。
 
-缺行永远不报错，只表现为占位文本或显示降级；会让游戏在加载阶段直接失败的只有三类问题 ——`type` 列非法、同一文件内键重复、带 BOM 的表头污染。
+三者都不占装配点、不可在装配界面改动，且各自有独立的失败模式：武器 ID 错→加载期报错，槽位 ID 错→部署期报错，船插 ID 错→部署期报错，战机 ID 错→静默无联队。
 
-首次静态验证把第一章前四节建立的全部数据链收拢成一张交叉检查清单：编码 → 结构 → 键唯一 → ID 逐字符一致 → 资源路径 → 启动日志，此后每新增一类数据，都可以先跑清单再进游戏。
-
-从逻辑上延伸，本节的结论不止适用于描述文本：任何键控 CSV 都遵循 "键唯一 + 使用方按查找键精确匹配" 的同一套规则，加载期硬失败与静默降级的二分法也一以贯之。
-
-`descriptions.csv` 与界面字符串入口是两套独立的文本体系，掌握占位与降级机制之后，排查其他文本数据的方式是相通的。
+排错时先确认键名正确，再从 `.ship` 三组键沿 ID 追到对应的 CSV 注册行。
 
 ## 建议参考项
 
-- `data/strings/descriptions.csv`（MOD 内相对路径）：描述文本注册入口，路径即注册、无需额外声明。
-- 原版参考文件位于 `Starsector/starsector-core/data/strings/descriptions.csv`（仅观察不修改）
-- `com.fs.starfarer.api.SettingsAPI`：`getDescription(String id, Type type)` 公开查询入口
-- `com.fs.starfarer.api.loading.Description`：`Type` 枚举与 text1–text5 的默认值/占位行为
-- `com.fs.starfarer.api.combat.ShipHullSpecAPI`：`getDescriptionId()` 缺省回退 `hullId`
-- `com.fs.starfarer.api.impl.codex.CodexDataV2`：数据库系统列表的类型标签与 `Special` 回退
-- `com.fs.starfarer.api.campaign.impl.items.ShipBlueprintItemPlugin`、`WeaponBlueprintItemPlugin`、`FighterBlueprintItemPlugin`：蓝图 tooltip 取 text1 第一段
-- `data/strings/strings.json`：界面字符串入口，与描述文本相对照的独立文本体系
+- `com.fs.starfarer.api.combat.ShipHullSpecAPI`：内置武器/船插/战机的只读访问入口。
+- 访问方法：`getBuiltInWeapons()`/`getBuiltInMods()`/`getBuiltInWings()` 与 `isBuiltIn(...)` 系列。
+- `com.fs.starfarer.api.combat.WeaponAPI`：`WeaponType` 枚举，含 `BUILT_IN` 与 `DECORATIVE` 两种类型。
+- `com.fs.starfarer.api.loading.WeaponSlotAPI`：槽位类型访问入口 `getWeaponType()`。
+- `data/hulls/onslaught.ship`：原版 `builtInMods`/`builtInWeapons` 与 BUILT_IN 槽位示例。
+- `data/hulls/shade.ship`：原版 `builtInMods` 示例（`phasefield`/`delicate`）。
+- `data/hulls/tempest.ship`：原版 `builtInWings` 示例（`terminator_wing`）。
+- `data/hulls/buffalo.ship`：装饰槽位与信号灯 `builtInWeapons` 示例。
+- `data/weapons/blinker_red.wpn`、`data/weapons/blinker_green.wpn`：装饰武器 `.wpn` 示例（`"type": "DECORATIVE"`）。
+- `data/hullmods/hull_mods.csv`：船插 ID 注册表（`phasefield`/`delicate`）。
+- `data/weapons/weapon_data.csv`：武器 ID 注册表（`tpc` 行、`tags`/`hints` 列）。
+- `data/hulls/wing_data.csv`：战机 ID 注册表（`terminator_wing`）。
+- `data/hulls/GearIn_artizan.ship`、`data/hulls/GearIn_forging.ship`、`data/hulls/GearIn_furnaceman.ship`：本节三个例子修改的文件。
+- 以上均为 MOD 内相对路径。

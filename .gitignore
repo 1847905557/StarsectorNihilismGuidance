@@ -7,3 +7,5 @@ node_modules/
 sample/
 .zcode/
 tutorial-fixtures/gradle.properties
+tutorial-fixtures/build/
+tutorial-fixtures/.gradle/

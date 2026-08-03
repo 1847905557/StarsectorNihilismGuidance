@@ -1,4 +1,4 @@
-# 武器特效：命中与光束回调
+# 为武器加入命中与光束特效
 
 本节为武器添加第一组效果类：弹体命中（OnHit）与光束武器每帧（BeamEffect）两类回调，以及它们在数据文件中的注册方式。完整机制（实例模型、全部注册列）在 C07-S04、C07-S09 展开，本节只覆盖到能运行的程度。
 
@@ -13,23 +13,23 @@
 - 说出武器调用代码的两个注册列：弹体文件 `.proj` 的 `onHitEffect`、光束武器文件 `.wpn` 的 `beamEffect`；
 - 按模板写一个 OnHit 效果类：射弹命中时写日志、在命中点生成光点；
 - 按模板写一个 BeamEffect 效果类：光束激活期间每秒写一行日志；
-- 用类名三处一致（武器版）核对注册，独立解决"效果未触发"与"`Problem loading class`"。
+- 用类名三处一致（武器版）核对注册，独立解决 "效果未触发" 与 "`Problem loading class`"。
 
 ## 前置知识
 
-- 武器数据链：`weapon_data.csv` / `.wpn` / `.proj`（C01-S04）——本节给其中的 `.proj` 与 `.wpn` 加键；
+- 武器数据链：`weapon_data.csv` / `.wpn` / `.proj`（C01-S04）—— 本节给其中的 `.proj` 与 `.wpn` 加键；
 - 模板与参数、类名三处一致（C02-S01、C02-S02）。
 
 ## 武器调用效果类的机制
 
-与船插相同，游戏不会自动加载未注册的类——需要在数据文件里写类名。武器侧有两个注册列：
+与船插相同，游戏不会自动加载未注册的类 —— 需要在数据文件里写类名。武器侧有两个注册列：
 
 | 注册列 | 写在哪个文件 | 调用时机 |
 |---|---|---|
 | `onHitEffect` | 弹体文件 `.proj` | 该弹体**命中**目标时 |
 | `beamEffect` | 武器文件 `.wpn`（仅光束武器） | 光束武器**激活期间**每帧 |
 
-`beamEffect` 只在 `specClass: "beam"` 的光束武器上被读取——写到火炮、导弹的 `.wpn` 上静默无效。这两列的值都是完整类名（包名.类名），游戏在需要时创建实例并调用。建议始终把效果类与对应武器放在同一 MOD 内，避免跨 MOD 依赖。
+`beamEffect` 只在 `specClass: "beam"` 的光束武器上被读取 —— 写到火炮、导弹的 `.wpn` 上静默无效。这两列的值都是完整类名（包名.类名），游戏在需要时创建实例并调用。建议始终把效果类与对应武器放在同一 MOD 内，避免跨 MOD 依赖。
 
 ## OnHit：射弹命中时
 
@@ -68,7 +68,7 @@ public class GearInHitLogger implements OnHitEffectPlugin {
 
 两类内容，与船插同构：
 
-- **`implements OnHitEffectPlugin` + `onHit(...)` 方法**：按模板使用。`onHit` 的方法签名有六个参数，实际需要修改的只有一行。游戏调用时会把"射弹、目标、命中点、是否打在护盾上"等信息传入，本节只使用其中两个：
+- **`implements OnHitEffectPlugin` + `onHit(...)` 方法**：按模板使用。`onHit` 的方法签名有六个参数，实际需要修改的只有一行。游戏调用时会把 "射弹、目标、命中点、是否打在护盾上" 等信息传入，本节只使用其中两个：
   - 日志文字（引号内）：命中时写入 `starsector.log`，`shieldHit` 显示这次打在护盾还是船体；
   - `addHitParticle(...)` 一行：在命中点生成一个光点（大小、颜色为数字参数，可修改）。粒子机制本节不展开，只需知道这一行在命中点生成光点。
 - **`package` / `import` / 类名**：按模板使用。
@@ -130,7 +130,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 }
 ```
 
-新增的一个概念：**`advance(float amount, ...)` 在光束激活期间每帧被调用**，`amount` 是距上一帧的秒数（正常约 0.017）。字段 `timeSinceLastReport` 每帧累加 `amount`，达到 `REPORT_INTERVAL`（参数，默认 1 秒）时输出一行日志、生成一个光点并归零——这是"每秒执行一次"的固定写法，后续编写光束持续伤害、每帧修正都会用到。其余按模板使用。
+新增的一个概念：**`advance(float amount, ...)` 在光束激活期间每帧被调用**，`amount` 是距上一帧的秒数（正常约 0.017）。字段 `timeSinceLastReport` 每帧累加 `amount`，达到 `REPORT_INTERVAL`（参数，默认 1 秒）时输出一行日志、生成一个光点并归零 —— 这是 "每秒执行一次" 的固定写法，后续编写光束持续伤害、每帧修正都会用到。其余按模板使用。
 
 ### 第二步：注册到武器
 
@@ -156,7 +156,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 | 文件内 `public class` 后 | `GearInHitLogger` |
 | 注册列值 | `data.scripts.gearin.combat.GearInHitLogger` |
 
-`package` 行与目录对应、前两处拼起来等于第三处——与船插同一套规则，只是注册列从 `hull_mods.csv` 的 `script` 换成了 `.proj` 的 `onHitEffect` / `.wpn` 的 `beamEffect`。
+`package` 行与目录对应、前两处拼起来等于第三处 —— 与船插同一套规则，只是注册列从 `hull_mods.csv` 的 `script` 换成了 `.proj` 的 `onHitEffect` / `.wpn` 的 `beamEffect`。
 
 ## 错误对照表
 
@@ -184,7 +184,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 给武器添加效果类 = 在数据文件里写类名：弹体 `.proj` 的 `onHitEffect`（命中时）、光束 `.wpn` 的 `beamEffect`（激活期间每帧）。效果类 = 按模板使用的接口方法 + 可修改的参数（日志文字、间隔、粒子数值）。
 
-这两个接口的完整机制——每种注册列的实例模型、`onFireEffect`/`everyFrameEffect` 等其余注册列、光束结算细节——在 C07-S04（武器开火流与射弹/光束运行态）与 C07-S09（武器动画与效果回调）展开。
+这两个接口的完整机制 —— 每种注册列的实例模型、`onFireEffect`/`everyFrameEffect` 等其余注册列、光束结算细节 —— 在 C07-S04（武器开火流与射弹/光束运行态）与 C07-S09（武器动画与效果回调）展开。
 
 ## 建议参考项
 

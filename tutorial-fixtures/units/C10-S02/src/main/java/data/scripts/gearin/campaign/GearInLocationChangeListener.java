@@ -15,14 +15,14 @@ import com.fs.starfarer.api.campaign.listeners.CurrentLocationChangedListener;
  * （本类对应 CurrentLocationChangedListener，派发点在生涯引擎的 advance
  * 检测到当前地点变化时）。
  *
- * 注册入口：onGameLoad（调用点片段见页面正文），用 transient=true 注册——
+ * 注册入口：onGameLoad（调用点片段见页面正文），用 transient=true 注册 ——
  * transient 监听器不随存档保存（ListenerManagerAPI 的 transientListeners 仓库读档时
  * 重建为空），因此读档后必须重新注册；调用点用 hasListenerOfClass 判空
  * 再补注册即可覆盖旧档。
  *
  * 演示点：
  * 1. reportCurrentLocationChanged(prev, curr)：玩家当前地点变化（进出超空间、进入星系）时触发；
- * 2. 自移除：触发满 reportsLeft 次后 removeListener(this) 并打日志——监听器在不再需要时
+ * 2. 自移除：触发满 reportsLeft 次后 removeListener(this) 并打日志 —— 监听器在不再需要时
  *    必须在合适时机移除，否则事件持续派发（硬规则）；
  * 3. 全部字段可随存档序列化；本类字段不涉及瞬态句柄。
  */

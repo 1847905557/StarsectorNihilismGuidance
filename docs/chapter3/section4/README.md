@@ -1,6 +1,6 @@
 # 描述文本：descriptions.csv 与转义规则
 
-战斗对象（舰船、武器、战术系统）的描述行、键规则与首次静态验证已在前置讲解中给出，本节在此之上把 `descriptions.csv` 讲完整：RC8 的全部 11 个 `Description.Type` 枚举、每个类型的查找键与主要使用方、CSV 转义的每一条必须遵守的规则及其违反后果，以及"哪些描述不在 descriptions.csv 里"的边界。这份数据"缺了能运行、错了会分裂"：多数格式问题只表现为文本错位、截断或未挂接行，少数（引号不配对、`type` 非法、同文件键重复、BOM 表头污染）会直接在加载期让游戏无法启动。
+战斗对象（舰船、武器、战术系统）的描述行、键规则与首次静态验证已在前置讲解中给出，本节在此之上把 `descriptions.csv` 讲完整：RC8 的全部 11 个 `Description.Type` 枚举、每个类型的查找键与主要使用方、CSV 转义的每一条必须遵守的规则及其违反后果，以及 "哪些描述不在 descriptions.csv 里" 的边界。这份数据 "缺了能运行、错了会分裂"：多数格式问题只表现为文本错位、截断或未挂接行，少数（引号不配对、`type` 非法、同文件键重复、BOM 表头污染）会直接在加载期让游戏无法启动。
 
 *本节预期阅读时间：~15 分钟。*
 
@@ -14,7 +14,7 @@
 - 逐条说出 CSV 转义必须遵守的规则（含双引号的字段用 `""` 转义并整体加引号、含英文逗号的字段必须加引号、多行字段必须加引号、行首 `#` 是注释），并说出违反每条规则时可观察的结果；
 - 解释战机联队、船插（hullmod）、市场条件、特殊物品为什么不在 `Description.Type` 里，以及它们各自的描述所在文件；
 - 为 `gear_in` 的 `descriptions.csv` 新增 `GearIn_description_*` 演示行，并通过静态检查（键唯一、`type` 合法、UTF-8 无 BOM）；
-- 从"加载期异常、文本错位/截断、未挂接行不显示"三类症状反推描述数据错误。
+- 从 "加载期异常、文本错位/截断、未挂接行不显示" 三类症状反推描述数据错误。
 
 ## 前置知识
 
@@ -34,7 +34,7 @@
 
 1. CSV spec 加载期的描述行读取（本地核对）：以 `id`、`type` 两列为键读取全部行；`type` 必须能解析为 `Description.Type` 枚举，解析失败立即抛 `RuntimeException`；每行先经 `replaceSmartQuotes` 归一化弯引号，再以 UID = `id + "_" + type` 存入注册表。text1–text3 缺省为占位文本 `No description... yet`，text4/text5 缺省为空。
 2. 运行期查询入口是公开 API：`Global.getSettings().getDescription(id, type)`（`SettingsAPI`，RC8 API 解包），返回 `com.fs.starfarer.api.loading.Description`；找不到键时返回一个填充占位文本的新描述对象（不报错）。
-3. 使用方先按"对象 → 查找键"取描述，再按展示位置取 text1–text5 之一。
+3. 使用方先按 "对象 → 查找键" 取描述，再按展示位置取 text1–text5 之一。
 
 ### 全类型键与使用方总览（RC8）
 
@@ -57,15 +57,15 @@ RC8 的 `Description.Type` 共有 **11 个枚举值**，全部可以在 MOD 的 
 要点：
 
 - **`id + type` 两列合成查找键**，`type` 是枚举名、区分大小写；`id` 或 `type` 为空的行被静默跳过。
-- **没有"战机联队（FIGHTER_WING）"类型**：战机复用其 hull 的 `SHIP` 行（战斗对象描述的基础讲解已详述）。
-- **船插、市场条件、特殊物品不在 descriptions.csv 里**：它们的描述写在各自 CSV 的 `desc` 列（见"不属于 descriptions.csv 的描述"）。
+- **没有 "战机联队（FIGHTER_WING）" 类型**：战机复用其 hull 的 `SHIP` 行（战斗对象描述的基础讲解已详述）。
+- **船插、市场条件、特殊物品不在 descriptions.csv 里**：它们的描述写在各自 CSV 的 `desc` 列（见 "不属于 descriptions.csv 的描述"）。
 - `RESOURCE`/`PLANET`/`FACTION`/`TERRAIN`/`ASTEROID`/`ACTION_TOOLTIP`/`GALLERY` 与武器、系统一样，键**锁定在对象 ID 上，无法另起别名**；只有 `SHIP`（经 `.ship` 的 `descriptionId`）与 `CUSTOM`（键完全自取）可以自由命名。
 
 ## CSV 转义规则（必须遵守的规则）
 
 `descriptions.csv` 由 CSV 解析器 `parseCsv`（本地核对）解析：先把全文的 `\r\n` 归一为 `\n`，首行按逗号切分得到表头，其后逐字符扫描数据行。以下规则在 RC8 全部有效，**违反时必然出现所述的可观察结果**。
 
-1. **字段内含有英文逗号（半角 `,`）时，必须用一对双引号把整个字段包起来。** 违反后果：字段被按列切分，该行后续所有列整体错位一格——文本串到别的列，`id`/`type` 键值被污染（变成未挂接行或显示占位文本），列数异常。中文逗号"，"不是分隔符，无需处理。
+1. **字段内含有英文逗号（半角 `,`）时，必须用一对双引号把整个字段包起来。** 违反后果：字段被按列切分，该行后续所有列整体错位一格 —— 文本串到别的列，`id`/`type` 键值被污染（变成未挂接行或显示占位文本），列数异常。中文逗号 "，" 不是分隔符，无需处理。
 
 ```csv
 # 错误：text1 未加引号，含英文逗号，被切成两列
@@ -85,7 +85,7 @@ GearIn_description_esc_quote,SHIP,这艘船被称为"工坊之锤"。,,,,,
 GearIn_description_esc_quote,SHIP,"这艘船被称为""工坊之锤""。",,,,,
 ```
 
-3. **字段内含有换行（多行文本）时，必须用一对双引号把整个字段包起来。** 引号内的换行会被保留（text1 的段落之间习惯用空行分隔，消费端按 `\n` 分段）。违反后果：换行被当作行结束符，该行被拦腰截断、后续列错位，断出来的"新行"要么成为未挂接数据，要么直接触发加载期异常。
+3. **字段内含有换行（多行文本）时，必须用一对双引号把整个字段包起来。** 引号内的换行会被保留（text1 的段落之间习惯用空行分隔，消费端按 `\n` 分段）。违反后果：换行被当作行结束符，该行被拦腰截断、后续列错位，断出来的 "新行" 要么成为未挂接数据，要么直接触发加载期异常。
 
 ```csv
 # 错误：多行未加引号，第二行被当作新的一行
@@ -102,11 +102,11 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 4. **行首是 `#` 的整行被忽略**（注释）。可以用它暂时注释掉某条描述，或给文件写分节说明；`#` 必须位于行首第一列，行内其他位置的 `#` 是普通字符。
 
 5. **键必须唯一**：同一文件内 `id + type` 组合重复时，加载期抛 `RuntimeException("Duplicate key [...] while loading [data/strings/descriptions.csv from [<路径>]]")`；跨文件（原版与其他 MOD 之间）重复时不报错，先被枚举到的文件的行生效，后到的同键行被静默跳过。
-   - **不要重定义原版或其他 MOD 已有的 `id + type` 组合**——覆盖顺序不是可以依赖的约定。
+   - **不要重定义原版或其他 MOD 已有的 `id + type` 组合**—— 覆盖顺序不是可以依赖的约定。
 
-6. **文件必须 UTF-8 无 BOM**：加载器按 UTF-8 读取；BOM 字符会粘在表头第一列的列名上（`id` 变成 `\ufeffid`），加载期抛 `JSONObject["id"] not found` 一类异常。含中文的文件尤其要确认保存为 UTF-8 无 BOM。弯引号（“ ” ‘ ’）会在加载时被 `replaceSmartQuotes` 归一为直引号（RC8 原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步清洗），所以**不要依赖弯引号原样保留**。
+6. **文件必须 UTF-8 无 BOM**：加载器按 UTF-8 读取；BOM 字符会粘在表头第一列的列名上（`id` 变成 `\ufeffid`），加载期抛 `JSONObject["id"] not found` 一类异常。含中文的文件尤其要确认保存为 UTF-8 无 BOM。弯引号（" " ' '）会在加载时被 `replaceSmartQuotes` 归一为直引号（RC8 原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步清洗），所以**不要依赖弯引号原样保留**。
 
-7. **表头固定 8 列**：`id,type,text1,text2,text3,text4,text5,notes`。数据行缺列时对应键缺失；**比表头多的列被静默丢弃**——多写一列不会报错，只会让文本"消失"，是排查文本丢失时容易漏掉的点。
+7. **表头固定 8 列**：`id,type,text1,text2,text3,text4,text5,notes`。数据行缺列时对应键缺失；**比表头多的列被静默丢弃**—— 多写一列不会报错，只会让文本 "消失"，是排查文本丢失时容易漏掉的点。
 
 ::: tip 稳定性建议
 
@@ -121,14 +121,14 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 这三个类型的键规则、列语义与主要使用方已在前置讲解中给出，本节只补充两点此前未展开的使用方细节：
 
 - **武器 text2 的署名规则**：货舱武器 tooltip 与数据库武器详情中，若 text2 以 `-` 开头（原版惯例为署名，如欧米伽武器），text1 第一段渲染为斜体，并把 `-` 开头的 text2 作为署名行附加；text2 不以 `-` 开头时正常显示。装配列表副标题仍然优先取 `weapon_data.csv` 的 `primaryRoleStr`，text2 只是备用值。
-- **舰船 text3 的"未知条目"用途**：数据库船体详情中，hull 带 `ship_limited_tooltip` tag（原版欧米伽舰船一类未注册条目）时，详情正文显示 text3；缺 text3 时显示默认的 `UNKNOWN ENTRY` 文本。
+- **舰船 text3 的 "未知条目" 用途**：数据库船体详情中，hull 带 `ship_limited_tooltip` tag（原版欧米伽舰船一类未注册条目）时，详情正文显示 text3；缺 text3 时显示默认的 `UNKNOWN ENTRY` 文本。
 
 ### RESOURCE：货物描述
 
 - 键：`data/campaign/commodities.csv` 的 `id`（如 `supplies`、`fuel`）。
 - 使用方：货舱与交易界面的货物 tooltip 取 text1 段落，正文较长时 tooltip 可展开。
 - 原版参考行：`supplies,RESOURCE,"Assorted supplies required by ships and crew, ..."`（text1 单段）。
-- 注意：commodities.csv 自身也有 `desc` 列，但 RC8 的 `loadCommodities` 不读取它——**商品的显示文本一律以 `RESOURCE` 行为准**。
+- 注意：commodities.csv 自身也有 `desc` 列，但 RC8 的 `loadCommodities` 不读取它 ——**商品的显示文本一律以 `RESOURCE` 行为准**。
 
 ### PLANET：行星类型描述
 
@@ -140,7 +140,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 ### ASTEROID：小行星描述
 
 - 键：固定字符串 `asteroid`（tooltip 管理器直接查询 `getDescription("asteroid", Type.ASTEROID)`）。原版只有 1 行，MOD 通常不需要添加。
-- 使用方：小行星 tooltip——标题取 text2（缺省显示 `Asteroid`），正文取 text1。
+- 使用方：小行星 tooltip—— 标题取 text2（缺省显示 `Asteroid`），正文取 text1。
 
 ### FACTION：势力描述
 
@@ -171,14 +171,14 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
   - text2：详情页正文，按段落渲染；用 `"` 成对包裹的段落渲染为斜体（引文），其后的 `-` 开头段落渲染为灰色署名；
   - text3：小写后含 `HIDE_IN_CODEX` 的条目不列出；含 `unlocked` 的条目默认解锁，否则保持锁定直到玩家在游戏中见过该插图。
 - 原版参考行：`ai_core_uninstall,GALLERY,AI Core Cradle,"The AI administrator control bunker ..."`。
-- 注意：键必须与插图贴图键逐字符一致；行键没有对应贴图时是合法未挂接行——不报错、图库不显示。
+- 注意：键必须与插图贴图键逐字符一致；行键没有对应贴图时是合法未挂接行 —— 不报错、图库不显示。
 
 ### CUSTOM：生涯实体自定义描述
 
-- 键：任意字符串，由代码挂接：`SectorEntityToken.setCustomDescriptionId(id)`（公开 API）。行星、跳跃点、空间站、自定义实体等 `SectorEntityToken` 都可以挂。**这是 11 个类型中唯一"键完全自取"的类型**。
+- 键：任意字符串，由代码挂接：`SectorEntityToken.setCustomDescriptionId(id)`（公开 API）。行星、跳跃点、空间站、自定义实体等 `SectorEntityToken` 都可以挂。**这是 11 个类型中唯一 "键完全自取" 的类型**。
 - 使用方与列语义：
   - text1：实体 tooltip 正文、自定义实体详情、`PrintDescription` 规则命令的第 1 段；
-  - text2：实体的默认标题/名称——实体 tooltip 的标题优先取它（空间站与带自定义描述的小行星：`hasText2() ? getText2() : 实体名`）；
+  - text2：实体的默认标题/名称 —— 实体 tooltip 的标题优先取它（空间站与带自定义描述的小行星：`hasText2() ? getText2() : 实体名`）；
   - text3：行星接触后显示的文本（`PlanetInteractionDialogPluginImpl` 进入对话时若 `hasText3()` 先显示 text3）；
   - text4/text5：`PrintDescription` 命令的第 4/5 段，无使用方时无作用。
 - 优先级：行星/实体的 tooltip 与详情面板中，`customDescriptionId` 非空时 `CUSTOM` 行**覆盖** `PLANET` 行。
@@ -266,7 +266,7 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
 
 启动游戏到生涯界面，按以下位置核对：
 
-- **启动日志**：出现 `Loading descriptions` 与 `Loading CSV data from [mod: .../descriptions.csv]` 日志，`starsector.log` 无 `ERROR`。新增的 `GearIn_description_*` 演示行不产生任何报错——它们目前是合法未挂接行（不显示、不报错），这本身就是预期状态。
+- **启动日志**：出现 `Loading descriptions` 与 `Loading CSV data from [mod: .../descriptions.csv]` 日志，`starsector.log` 无 `ERROR`。新增的 `GearIn_description_*` 演示行不产生任何报错 —— 它们目前是合法未挂接行（不显示、不报错），这本身就是预期状态。
 - **原版行的使用方观察**（验证各类型使用方链路，不修改原版文件）：
   - 货舱/交易界面悬停 `supplies`：tooltip 正文等于 `supplies` 的 `RESOURCE` 行 text1；
   - 悬停行星（如任一宜居行星）与打开行星详情：正文等于该行星类型键的 `PLANET` 行 text1；
@@ -278,18 +278,18 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
   - 悬停空间站：tooltip 标题取 `CUSTOM` 行的 text2（无自定义描述的行显示站名）。
 - **武器署名规则回归**：悬停任意 text2 以 `-` 开头的原版武器（如欧米伽武器），tooltip 的 text1 第一段为斜体且带署名行；GearIn 三门武器（text2 无 `-` 前缀）tooltip 正常显示。
 - **既有描述回归**：GearIn 舰船/武器/系统描述照旧显示，证明新增行没有破坏既有键。
-- **最小任务链验证**：修改 `GearIn_description_custom_test` 的 text1 后重启，加载依旧成功（未挂接行修改无可视变化）；随后把 `GearIn_description_esc_quote` 行的一处 `""` 临时改成 `"` 启动，确认加载期报 `Mismatched quotes`，改回后恢复——证明该行确实被解析器读取。
+- **最小任务链验证**：修改 `GearIn_description_custom_test` 的 text1 后重启，加载依旧成功（未挂接行修改无可视变化）；随后把 `GearIn_description_esc_quote` 行的一处 `""` 临时改成 `"` 启动，确认加载期报 `Mismatched quotes`，改回后恢复 —— 证明该行确实被解析器读取。
 
 ## 实例驱动故障分析
 
-按"症状 → 原因 → 修正"逐条排查；每条都可以用本节示例数据复现。
+按 "症状 → 原因 → 修正" 逐条排查；每条都可以用本节示例数据复现。
 
 - **启动失败，日志含 `Mismatched quotes in the string; last quote: [...]`**：某个字段的引号不成对（例如把示例行的 `""` 只写了一个）。CSV 解析器解析结束时检测到引号未闭合，直接抛 `JSONException`。修正：保证引号成对，重启。
 - **启动失败，日志含 `Key [type] has invalid value [...]`**：某行 `type` 列不是枚举名（拼写、大小写或多余空格）。修正：与 11 个枚举名逐字符一致，重启。
 - **启动失败，日志含 `Duplicate key [...] while loading [data/strings/descriptions.csv from [...]`**：同一文件内出现相同 `id + type` 组合（键串形如 `id | type |`）。修正：保证键全文件唯一，重启。
 - **启动失败，日志含 `JSONObject["id"] not found` 一类异常**：文件带 BOM 或表头被污染。BOM 字符粘在表头第一列列名上（`id` 变成 `\ufeffid`）。修正：UTF-8 无 BOM 重新保存。
-- **文本错位、截断或串到别的列**：字段内含未加引号的英文逗号或换行，按列切分后错位；键列被污染时表现为未挂接行或占位文本；比表头多的列被静默丢弃，表现为"文本消失"。修正：按转义规则补引号，重跑前置讲解中的键检查脚本。
-- **新增行没有任何显示效果（未挂接行）**：键与任何对象都不匹配——本节的 `GearIn_description_*` 演示行就是这种状态，**不报错也不显示**。修正：等待或创建对应对象把键挂上（`CUSTOM` 行用 `setCustomDescriptionId`、`PLANET` 行用行星类型键、`GALLERY` 行用插图贴图键、`RESOURCE`/`FACTION` 行用对象 ID）。
+- **文本错位、截断或串到别的列**：字段内含未加引号的英文逗号或换行，按列切分后错位；键列被污染时表现为未挂接行或占位文本；比表头多的列被静默丢弃，表现为 "文本消失"。修正：按转义规则补引号，重跑前置讲解中的键检查脚本。
+- **新增行没有任何显示效果（未挂接行）**：键与任何对象都不匹配 —— 本节的 `GearIn_description_*` 演示行就是这种状态，**不报错也不显示**。修正：等待或创建对应对象把键挂上（`CUSTOM` 行用 `setCustomDescriptionId`、`PLANET` 行用行星类型键、`GALLERY` 行用插图贴图键、`RESOURCE`/`FACTION` 行用对象 ID）。
 - **重定义原版或其他 MOD 已有键后没有任何效果**：跨文件同键先到先得、后到的同键行被静默跳过。修正：不要重定义既有键。
 - **图库没有新增条目**：`GALLERY` 行缺 text1（`hasText1()` 为假不列出），或键与 `graphics/illustrations` 的贴图键不一致。
 - **行星描述显示的是别的行**：行星类型经 `planets.json` 的 `descriptionId` 共享了另一个键，或行星被设置了 `customDescriptionId`（`CUSTOM` 行优先于 `PLANET` 行）。修正：核对类型键与覆盖链。
@@ -303,7 +303,7 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
 - 锁定在对象 ID 上（`WEAPON`、`SHIP_SYSTEM`、`RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`）
 - 由对象显式挂接（`SHIP` 经 `.ship` 的 `descriptionId`、`CUSTOM` 经 `setCustomDescriptionId`）
 
-CSV 转义必须遵守的规则只有四条：含引号/逗号/换行的字段必须加引号、字段内引号写双份、行首 `#` 是注释、键全文件唯一——违反的后果分别是文本错位与加载期失败，全部可观察。
+CSV 转义必须遵守的规则只有四条：含引号/逗号/换行的字段必须加引号、字段内引号写双份、行首 `#` 是注释、键全文件唯一 —— 违反的后果分别是文本错位与加载期失败，全部可观察。
 
 战机联队、船插、市场条件、特殊物品不在这个文件里，各自的描述写在自己所属的数据文件里。由此，连同战斗对象描述的基础部分， `descriptions.csv` 这条文本链路已经完整讲完。
 

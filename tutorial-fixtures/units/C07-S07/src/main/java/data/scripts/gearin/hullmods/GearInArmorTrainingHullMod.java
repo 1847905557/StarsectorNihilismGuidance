@@ -18,7 +18,7 @@ import com.fs.starfarer.api.util.IntervalUtil;
  * 完整最小例：HullMod 生命周期、tooltip、S-mod 与监听器接入。
  *
  * 主题：装甲训练。效果类扩展 BaseHullMod（HullModEffect 的空实现基类）；
- * 效果类是会话级单例（HullModEffect javadoc 原文），本类不持有任何跨船字段——
+ * 效果类是会话级单例（HullModEffect javadoc 原文），本类不持有任何跨船字段 ——
  * 每艘船自己的状态（周期计时、抵消计数）放在 applyEffectsAfterShipCreation
  * 里注册的监听器实例中（每艘船一个实例，随舰船实体一起销毁）。
  *
@@ -129,7 +129,7 @@ public class GearInArmorTrainingHullMod extends BaseHullMod {
      * - HullDamageAboutToBeTakenListener：舰体结构伤害结算前回调，返回 true 即抵消
      *   （API javadoc 原文："if true is returned, the hull damage to be taken is negated."）；
      * - AdvanceableListener：舰船级每帧推进（Ship.advance 仅对 amount>0 派发，即暂停时不调用），
-     *   这里用它做 5 秒一次的状态输出——周期计时器是单船状态，合法放在本实例。
+     *   这里用它做 5 秒一次的状态输出 —— 周期计时器是单船状态，合法放在本实例。
      */
     public static class ArmorTrainingListener implements HullDamageAboutToBeTakenListener, AdvanceableListener {
 

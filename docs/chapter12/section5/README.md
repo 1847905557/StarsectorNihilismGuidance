@@ -15,22 +15,22 @@
 - 说出用户设置文件的位置、创建时机与更新时机：首次加载设置时由 LunaLib 用默认值创建，之后在设置界面点保存按钮更新（底层是 LazyLib `CommonDataJSONObject.save()`，唯一写盘入口）； `Header` / `Text` 类型不落盘、缺失键自动补默认值；
 - 用 `LunaSettings.getBoolean / getInt / getFloat / getDouble / getString / getColor(modId, fieldId)` 读取设置，说出三条约定：返回值是 boxed 值且**可为 null**、缺失时写 `ERROR` 日志并返回 null、未加载时懒触发整份加载。
 - 说出 `getFloat`（从保存的 double 转 float）与 `getColor`（十六进制字符串，`#` 前缀可省略）的转换规则；
-- 用 `LunaSettings.addSettingsListener` 注册 `LunaSettingsListener`，写出按**自己的 MOD id 过滤**的 `settingsChanged(modId)`，说出通知触发时机（设置界面保存后）与"单个监听器抛异常被隔离、不影响其他监听器"；
+- 用 `LunaSettings.addSettingsListener` 注册 `LunaSettingsListener`，写出按**自己的 MOD id 过滤**的 `settingsChanged(modId)`，说出通知触发时机（设置界面保存后）与 "单个监听器抛异常被隔离、不影响其他监听器"；
 - 说出 LunaLib 未启用时引用 `lunalib.**` 的后果（`NoClassDefFoundError`）与 `isModEnabled("lunalib")` 守卫回退写法（与硬依赖检测专题一致，成熟实例同款）；
-- 从设置界面、用户设置文件、`starsector.log`、代码读取值四个可观察位置复核设置完整流程，并把"设置没生效"定位到定义链、保存链、读取链还是通知链。
+- 从设置界面、用户设置文件、`starsector.log`、代码读取值四个可观察位置复核设置完整流程，并把 "设置没生效" 定位到定义链、保存链、读取链还是通知链。
 
 ## 前置知识
 
 本节建立在既有教程工程与前面各节的机制之上，主要涉及以下主题：
 
-- 硬依赖声明与运行时检测——本节示例把 LunaLib 当作**可选**前置：不修改 `mod_info.json` 的 `dependencies`（保持硬依赖检测专题的声明）。
+- 硬依赖声明与运行时检测 —— 本节示例把 LunaLib 当作**可选**前置：不修改 `mod_info.json` 的 `dependencies`（保持硬依赖检测专题的声明）。
 - 调用任何 `lunalib.**` 前先 `isModEnabled("lunalib")` 守卫，未启用时回退代码内默认值（成熟实例的 LunaSettings 用法同款）（C12-S01）。
 - LazyLib `CommonDataJSONObject`——`save()` 是唯一写盘入口（官方 MUST），LunaLib 保存链的底层就是它（C12-S02）。
-- `loadCSV(path, modId)` 的 modId 限定读取——LunaLib 用它在每个启用 MOD 的目录里找各自的 `LunaSettings.csv`；common 文件与 `/` 路径规则（C06-S04）。
-- `modPlugin` 回调与 `onGameLoad` 时机——本节示例的注册/读取接入点（C06-S02）。
-- `Global` 生命周期——`getSettings()` 全程非 null（守卫与日志的前提）（C06-S03）。
-- `MagicSettings` 设置链——对照：两套设置的读取入口与 ID 归属不同，本节设置项使用 `GearIn_` 前缀，不进入 `modSettings.json` 的 `gear_in` 段（C12-S04）。
-- MOD id `gear_in` 与命名约定——数据 key 用 `GearIn_` 前缀（C01-S01）。
+- `loadCSV(path, modId)` 的 modId 限定读取 ——LunaLib 用它在每个启用 MOD 的目录里找各自的 `LunaSettings.csv`；common 文件与 `/` 路径规则（C06-S04）。
+- `modPlugin` 回调与 `onGameLoad` 时机 —— 本节示例的注册/读取接入点（C06-S02）。
+- `Global` 生命周期 ——`getSettings()` 全程非 null（守卫与日志的前提）（C06-S03）。
+- `MagicSettings` 设置链 —— 对照：两套设置的读取入口与 ID 归属不同，本节设置项使用 `GearIn_` 前缀，不进入 `modSettings.json` 的 `gear_in` 段（C12-S04）。
+- MOD id `gear_in` 与命名约定 —— 数据 key 用 `GearIn_` 前缀（C01-S01）。
 
 ## LunaLib 2.0.3 概览
 
@@ -85,7 +85,7 @@ LunaLib 的设置项不是注册到某个全局文件，而是**每个已启用 
 - `LunaSettingsLoader.load()` = `loadDefault()` + `saveDefaultsToFile()` + `loadSettings()` （`lunalib.backend.ui.settings.LunaSettingsLoader`）。
 - `loadDefault()` 遍历 `Global.getSettings().getModManager().getEnabledModsCopy()`，对每个启用 MOD 执行 `Global.getSettings().loadCSV("data/config/LunaSettings.csv", mod.id)`。
   - 这是 `loadCSV(path, modId)` 的 modId 限定读取，只会读到该 MOD 自己的目录。
-- 没有这个文件的 MOD 读取抛异常被静默吞掉（`catch (_: Throwable) { continue }`），即"没写 CSV 的 MOD 没有设置项"。
+- 没有这个文件的 MOD 读取抛异常被静默吞掉（`catch (_: Throwable) { continue }`），即 "没写 CSV 的 MOD 没有设置项"。
 - 懒加载备用机制：任何 `LunaSettings.getX(...)` 在 `hasLoaded == false` 时先执行一次 `LunaSettingsLoader.load()`（`lunalib.lunaSettings.LunaSettings` 各 getter）。
 - 因此使用方在 `onApplicationLoad` 读设置也不需要等 LunaLib 自己的回调顺序（跨 MOD `onApplicationLoad` 顺序按显示名排序）。
 
@@ -117,7 +117,7 @@ LunaLib 的设置项不是注册到某个全局文件，而是**每个已启用 
 | `Color` | 原样十六进制字符串（如 `#f22e6e`）| `getColor` |
 | `Radio` | 原样字符串；选项列表来自 `secondaryValue`，默认选中项 = `defaultValue` | `getString` |
 
-设置界面（`LunaSettingsUIMainPanel` / `LunaSettingsUIModsPanel` / `LunaSettingsUISettingsPanel`）按"已加载设置项的 MOD"列出条目，按 `tab` 分页渲染控件：
+设置界面（`LunaSettingsUIMainPanel` / `LunaSettingsUIModsPanel` / `LunaSettingsUISettingsPanel`）按 "已加载设置项的 MOD" 列出条目，按 `tab` 分页渲染控件：
 - `Boolean` 是开关按钮
 - `Int`/`Double` 是文本框 + 滑条
 - `Color` 是颜色选择器
@@ -130,17 +130,17 @@ LunaLib 的设置项不是注册到某个全局文件，而是**每个已启用 
 默认键位定义在 LunaLib 自己的设置项 `luna_SettingsKeybind_new`（默认值 61，键码与 `org.lwjgl.input.Keyboard` 一致），**`Shift+F2` 组合始终可用**（官方 CSV 描述原文）。
 
 ::: tip 打开设置界面的技巧
-默认键位（61）可以在设置界面里被改掉，但 **`Shift+F2` 组合键始终可用**——排查"设置界面打不开"时直接按 `Shift+F2`。
+默认键位（61）可以在设置界面里被改掉，但 **`Shift+F2` 组合键始终可用**—— 排查 "设置界面打不开" 时直接按 `Shift+F2`。
 :::
 
 规则（`data/config/LunaSettings.csv`）：
 
 1. **必须**：`fieldID` 与运行时读取 key 逐字一致（大小写敏感）。违反的可观察结果：`getX` 返回 null 并写 `ERROR` 日志（见读取节），设置界面有该项但代码读不到。
 2. **必须**：`defaultValue` 能被 `fieldType` 解析。
-   - 违反的可观察结果：`Int` / `Double` / `Keycode` 写非数字 → `NumberFormatException` 从加载链直接上抛——要么 LunaLib 应用加载期失败、要么首个读取调用点抛异常（错误堆栈在 `starsector.log`），该 MOD 全部设置加载中断。
+   - 违反的可观察结果：`Int` / `Double` / `Keycode` 写非数字 → `NumberFormatException` 从加载链直接上抛 —— 要么 LunaLib 应用加载期失败、要么首个读取调用点抛异常（错误堆栈在 `starsector.log`），该 MOD 全部设置加载中断。
    - `Boolean` 写 `"1"` / `"0"` **不报错**，但被静默解析成 `false`（Kotlin `toBoolean` 只认忽略大小写的 `"true"`），开关语义反转且无任何日志。
 3. **必须**：`fieldType` 使用上表列出的类型名。未列出的类型名不执行任何默认值转换（官方 `when` 无 else 分支），`defaultValue` 保持字符串，界面控件与读取语义不可预期。
-4. **必须**：文件路径固定为 `data/config/LunaSettings.csv`，遵循 `loadCSV` 的 `/` 路径规则。放错位置或大小写不一致 → 读取异常被静默吞掉，设置界面里没有您的 MOD，且没有任何报错——"设置项整个消失"的首选排查方向。
+4. **必须**：文件路径固定为 `data/config/LunaSettings.csv`，遵循 `loadCSV` 的 `/` 路径规则。放错位置或大小写不一致 → 读取异常被静默吞掉，设置界面里没有您的 MOD，且没有任何报错 ——"设置项整个消失" 的首选排查方向。
 5. 建议：`Radio` 的 `defaultValue` 出现在 `secondaryValue` 选项列表里；缺席时 UI 默认选中与运行时读取会错位。
 
 ::: warning `Boolean` 默认值只认 `"true"`
@@ -156,7 +156,7 @@ Kotlin `toBoolean()` 只把忽略大小写的 `"true"` 解析为 true，`"1"` / 
   - 文件缺失时创建并落盘，初始内容来自该 MOD 自己的 `data/config/LunaSettingsDefault.default`（可选文件；不提供则从空对象开始）。
 - **补默认值**：随后逐项检查，`fieldType` 为 `Text` / `Header` 的跳过，其余键缺失时 `put(fieldID, defaultValue)`；`data.length() > 0` 时 `data.save()` 写盘。
 - 因此：用户文件里没有 `Header`/`Text` 键；删除某键后下次启动会以默认值补回。
-- **更新**：设置界面点保存按钮（`lunalib.backend.ui.settings.LunaSettingsUIModsPanel`）——把界面收集的 `ChangedSetting` 逐项 `put` 进 `CommonDataJSONObject`，然后依次执行：
+- **更新**：设置界面点保存按钮（`lunalib.backend.ui.settings.LunaSettingsUIModsPanel`）—— 把界面收集的 `ChangedSetting` 逐项 `put` 进 `CommonDataJSONObject`，然后依次执行：
 
 ```kotlin
 data.save()                                    // LazyLib CommonDataJSONObject.save()：唯一写盘入口
@@ -168,11 +168,11 @@ if (!newGame) LunaSettings.reportSettingsChanged(mod)  // 变更通知
 
 **不点保存按钮直接关面板不会写盘、不会通知**（保存按钮有 5 帧的保存延迟，`saveDelay = 5`）。
 
-::: info 为什么"界面保存、代码只读"
-LunaLib 的设置保存是"界面保存、代码只读"的设计：改设置只能走设置界面，写盘入口是 LazyLib `CommonDataJSONObject.save()`，代码侧没有"写设置"的 API——这正是用户设置文件由 LunaLib 独占管理、MOD 不应自己读写它的原因。
+::: info 为什么 "界面保存、代码只读"
+LunaLib 的设置保存是 "界面保存、代码只读" 的设计：改设置只能走设置界面，写盘入口是 LazyLib `CommonDataJSONObject.save()`，代码侧没有 "写设置" 的 API—— 这正是用户设置文件由 LunaLib 独占管理、MOD 不应自己读写它的原因。
 :::
 
-可选：`data/config/LunaSettingsConfig.json` 给设置界面配 MOD 图标——顶层键 = 自己的 MOD id，值含 `iconPath` （相对 MOD 根的贴图路径，正方形最佳）；
+可选：`data/config/LunaSettingsConfig.json` 给设置界面配 MOD 图标 —— 顶层键 = 自己的 MOD id，值含 `iconPath` （相对 MOD 根的贴图路径，正方形最佳）；
 
 LunaLib 用 `getMergedJSONForMod("data/config/LunaSettingsConfig.json", "lunalib")` 合并读取。
 
@@ -195,15 +195,15 @@ LunaLib 用 `getMergedJSONForMod("data/config/LunaSettingsConfig.json", "lunalib
 
 三条约定（官方源码 `lunalib.lunaSettings.LunaSettings` 各 getter）：
 
-1. **懒加载**：`if (!LunaSettingsLoader.hasLoaded) LunaSettingsLoader.load()`——首次调用会触发整份 "解析全部启用 MOD 的 CSV + 落盘默认值 + 读入运行时表"。
+1. **懒加载**：`if (!LunaSettingsLoader.hasLoaded) LunaSettingsLoader.load()`—— 首次调用会触发整份 "解析全部启用 MOD 的 CSV + 落盘默认值 + 读入运行时表"。
    - 因此任何一个已启用 MOD 的 `LunaSettings.csv` 损坏，都会让**所有 MOD** 的首次读取抛异常（见故障分析第 4 条）。
 2. **可 null**：MOD 不存在 → `log.error("LunaSettings: Could not find mod $ModID")` 并返回 null。
    - 字段缺失或类型不符 → `log.error("LunaSettings: Value $FieldID of type ... not found in JSONObject (ModID: $ModID)")` 并返回 null。
    - **必须判空后再拆箱**，直接拆箱 null 抛 NPE。
-3. **每次现读运行时表**：getter 不做进程级缓存，保存后运行时表已被 `Settings.put` 更新，同一 JVM 内再读取即新值——"读取点自己缓存旧值"才是设置不生效的常见原因（故障分析第 6 条）。
+3. **每次现读运行时表**：getter 不做进程级缓存，保存后运行时表已被 `Settings.put` 更新，同一 JVM 内再读取即新值 ——"读取点自己缓存旧值" 才是设置不生效的常见原因（故障分析第 6 条）。
 
-::: warning "设置没生效"先查读取点的缓存
-`LunaSettings.getX` 每次现读运行时表、不做进程级缓存——"设置界面改了、游戏里不变"的常见根因是读取点自己把值缓存进了字段，且没注册监听器。需要热更新的缓存放进 `settingsChanged` 里重读。
+::: warning "设置没生效" 先查读取点的缓存
+`LunaSettings.getX` 每次现读运行时表、不做进程级缓存 ——"设置界面改了、游戏里不变" 的常见根因是读取点自己把值缓存进了字段，且没注册监听器。需要热更新的缓存放进 `settingsChanged` 里重读。
 :::
 
 规则：
@@ -218,13 +218,13 @@ LunaLib 用 `getMergedJSONForMod("data/config/LunaSettingsConfig.json", "lunalib
 `lunalib.lunaSettings.LunaSettingsListener` 是单方法接口（官方源码）：`void settingsChanged(String modId)` ——"gets called whenever settings are saved"（官方 javadoc 原文）。
 
 - **注册**：`LunaSettings.addSettingsListener(listener)`（`@JvmStatic`）；`removeSettingsListener(listener)`；幂等查询 `hasSettingsListenerOfClass(Class)`。
-- 注意：**不要用 `addListener` / `removeListener` / `hasListenerOfClass`**——官方源码标注 `@Deprecated("Deprecated due to not being JvmStatic, please use addSettingsListener() instead.")`。
+- 注意：**不要用 `addListener` / `removeListener` / `hasListenerOfClass`**—— 官方源码标注 `@Deprecated("Deprecated due to not being JvmStatic, please use addSettingsListener() instead.")`。
 - 这三个不是静态方法，Java 侧调用走对象实例（`LunaSettings.INSTANCE`），且语义被官方明确废弃。
-- **触发时机**：设置界面保存按钮流程的最后一步 `if (!newGame) LunaSettings.reportSettingsChanged(mod)`（`lunalib.backend.ui.settings.LunaSettingsUIModsPanel`）——即**用户在设置界面改动并保存后**回调。
-- 代码侧没有任何写设置入口（LunaLib 的设计就是"界面保存，代码只读"）。
+- **触发时机**：设置界面保存按钮流程的最后一步 `if (!newGame) LunaSettings.reportSettingsChanged(mod)`（`lunalib.backend.ui.settings.LunaSettingsUIModsPanel`）—— 即**用户在设置界面改动并保存后**回调。
+- 代码侧没有任何写设置入口（LunaLib 的设计就是 "界面保存，代码只读"）。
 - **遍历与隔离**：`reportSettingsChanged(modID)` 遍历监听器列表，**每个监听器的调用包在 `try/catch (Throwable)` 里**。
 - 单个监听器抛异常只写一条 `debug` 日志（"Failed to call LunaSettings listener for $modID"），不影响其他监听器（`lunalib.lunaSettings.LunaSettings`）。
-- **不去重**：`addSettingsListener` 直接 `listeners.add(listener)`，没有去重——同一实例注册两次，回调执行两次。重复注册是"回调执行多次"的根因，用 `hasSettingsListenerOfClass` 先查实现幂等。
+- **不去重**：`addSettingsListener` 直接 `listeners.add(listener)`，没有去重 —— 同一实例注册两次，回调执行两次。重复注册是 "回调执行多次" 的根因，用 `hasSettingsListenerOfClass` 先查实现幂等。
 - **官方做法**：LunaLib 自己的 `LoadedSettings` 监听器（`lunalib.backend.scripts.LoadedSettings`）在 `settingsChanged(modID)` 里先 `if (modID == "lunalib")` 过滤，再重读键位缓存。
 - **必须按自己的 MOD id 过滤**，否则任何一个 MOD 保存设置都会触发您的刷新逻辑。
 
@@ -232,7 +232,7 @@ LunaLib 用 `getMergedJSONForMod("data/config/LunaSettingsConfig.json", "lunalib
 
 8. **必须**：`settingsChanged(modId)` 先按自己的 MOD id 过滤（如 `MOD_ID.equals(modId)`），再刷新缓存/执行逻辑。违反的可观察结果：其他 MOD 的保存动作触发您的重载/重算，行为随其他 MOD 的用户操作而变化。
 9. **必须**：注册幂等（`hasSettingsListenerOfClass` 先查或只在一个回调里注册一次）。违反的可观察结果：同一次保存触发多次回调（日志出现多条 `reloaded`）。
-10. **必须**：注册入口要保证 LunaLib 存在——注册本身也走第 7 条的守卫。违反的可观察结果：LunaLib 未启用时 `NoClassDefFoundError`。
+10. **必须**：注册入口要保证 LunaLib 存在 —— 注册本身也走第 7 条的守卫。违反的可观察结果：LunaLib 未启用时 `NoClassDefFoundError`。
 
 ## 文件与 API 链路
 
@@ -298,7 +298,7 @@ GearIn_label_text,标签文本,String,GearIn,,"面板标题栏显示的文本。
 
 ### GearInLunaSettingsDefs（设置定义角色）
 
-职责：设置定义角色——持有 MOD id（`gear_in`）、LunaLib 的 MOD id（`lunalib`）与五个 `KEY_*` / 五个 `DEFAULT_*` 常量。
+职责：设置定义角色 —— 持有 MOD id（`gear_in`）、LunaLib 的 MOD id（`lunalib`）与五个 `KEY_*` / 五个 `DEFAULT_*` 常量。
 
 它们逐字镜像 `data/config/LunaSettings.csv` 的 `fieldID` / `defaultValue` 列（规则 1、2）。
 
@@ -346,7 +346,7 @@ public class GearInLunaSettingsDefs {
 
 ### GearInLunaSettingsReader（运行时读取角色）
 
-职责：运行时读取角色——`isLunaLibEnabled()` 守卫 + 五个三段式 getter （先守卫，再 `LunaSettings.getX(MOD_ID, KEY_*)`，判空回退 `DEFAULT_*`；规则 6、7）。
+职责：运行时读取角色 ——`isLunaLibEnabled()` 守卫 + 五个三段式 getter （先守卫，再 `LunaSettings.getX(MOD_ID, KEY_*)`，判空回退 `DEFAULT_*`；规则 6、7）。
 
 绑定位置：无注册入口，静态工具类；由 `GearInLunaSettingsListener.logCurrentValues` 与接入片段消费。
 
@@ -427,13 +427,13 @@ public class GearInLunaSettingsReader {
 
 ### GearInLunaSettingsListener（变更通知角色）
 
-职责：变更通知角色——幂等注册/注销监听器（`registerListener` / `unregisterListener`：守卫 + `hasSettingsListenerOfClass` 先查）， `settingsChanged` 按 `MOD_ID` 过滤后输出 `reloaded` 日志并重读当前值；
+职责：变更通知角色 —— 幂等注册/注销监听器（`registerListener` / `unregisterListener`：守卫 + `hasSettingsListenerOfClass` 先查）， `settingsChanged` 按 `MOD_ID` 过滤后输出 `reloaded` 日志并重读当前值；
 
 `logCurrentValues` / `toHex` 随本角色持有（接入片段进档时调用一次，对照用）。
 
 绑定位置：`registerListener()` 接入 `GearInModPlugin.onGameLoad`（C06-S02 所有，fixture 例不含此片段）。
 
-行为纪律：监听器实例（匿名 `LunaSettingsListener`）在 `registerListener()` 方法体内、守卫通过**之后**才创建，而不是放在静态字段初始化器里——
+行为纪律：监听器实例（匿名 `LunaSettingsListener`）在 `registerListener()` 方法体内、守卫通过**之后**才创建，而不是放在静态字段初始化器里 ——
 
 类加载路径零 `lunalib.**` 引用，LunaLib 未启用时（硬依赖检测专题场景）调用本类不会抛 `NoClassDefFoundError`。
 
@@ -454,7 +454,7 @@ import lunalib.lunaSettings.LunaSettingsListener;
  * 重读输出当前生效值。addSettingsListener 不去重，注册前必须用
  * hasSettingsListenerOfClass 幂等查询（重复注册会让同一次保存触发多次回调）。
  *
- * 监听器实例在门控通过之后才创建——类加载路径不触碰 lunalib.**，LunaLib 未启用
+ * 监听器实例在门控通过之后才创建 —— 类加载路径不触碰 lunalib.**，LunaLib 未启用
  * 时（C12-S01 场景）调用本类不会抛 NoClassDefFoundError，门控纪律见硬规则 7、10。
  */
 public class GearInLunaSettingsListener {
@@ -520,7 +520,7 @@ public class GearInLunaSettingsListener {
 ```
 
 ::: caution 守卫必须先于任何 `lunalib.**` 引用
-"调用前先守卫"对类加载同样成立：监听器实例的创建、`LunaSettings` 的静态调用等一切 `lunalib.**` 引用都必须发生在 `isLunaLibEnabled()` 守卫通过之后——不要在静态初始化器或字段初始化里触碰 `lunalib` 类型。
+"调用前先守卫" 对类加载同样成立：监听器实例的创建、`LunaSettings` 的静态调用等一切 `lunalib.**` 引用都必须发生在 `isLunaLibEnabled()` 守卫通过之后 —— 不要在静态初始化器或字段初始化里触碰 `lunalib` 类型。
 
 违反的可观察结果：LunaLib 未启用时首次解析到该类 → `NoClassDefFoundError` 直接冒泡（`Error` 不被捕获包装）。
 :::
@@ -529,16 +529,16 @@ public class GearInLunaSettingsListener {
 
 - `GearInLunaSettingsDefs.MOD_ID = "gear_in"`：CSV 归属与用户设置文件的文件名键（`LunaSettings/gear_in.json`）。
 - `LUNA_LIB_MOD_ID = "lunalib"` 逐字来自 `Starsector\mods\Lunalib\mod_info.json` 的 `id`。
-- Defs 的五个 `KEY_*` 常量与 CSV 的 `fieldID` 列逐字一致（规则 1）；五个 `DEFAULT_*` 与 CSV 的 `defaultValue` 一致（规则 2 的"代码内回退与 CSV 默认值保持一致"）。
-- Reader 每个 getter 先过 `isLunaLibEnabled()` 守卫（规则 7），再调用 `LunaSettings.getX`，再判空回退（规则 6）——三段式是读取侧标准写法。
-- `getPulseDelay` 用 `getFloat`：演示"CSV 类型 Double、读取转 float"；`getMarkerColor` 用 `getColor`：演示十六进制颜色读取。
+- Defs 的五个 `KEY_*` 常量与 CSV 的 `fieldID` 列逐字一致（规则 1）；五个 `DEFAULT_*` 与 CSV 的 `defaultValue` 一致（规则 2 的 "代码内回退与 CSV 默认值保持一致"）。
+- Reader 每个 getter 先过 `isLunaLibEnabled()` 守卫（规则 7），再调用 `LunaSettings.getX`，再判空回退（规则 6）—— 三段式是读取侧标准写法。
+- `getPulseDelay` 用 `getFloat`：演示 "CSV 类型 Double、读取转 float"；`getMarkerColor` 用 `getColor`：演示十六进制颜色读取。
 - Listener 的匿名监听器按 `MOD_ID.equals(modId)` 过滤（规则 8），回调里重读并输出一行日志（`reloaded` + 当前值）。
 - Listener 的 `registerListener` 用 `hasSettingsListenerOfClass` 幂等（规则 9）；LunaLib 未启用时写 warn 跳过（与守卫同一纪律）。
 - Listener 的 `logCurrentValues` 输出格式与页面预期结果一致；`toHex` 把 `Color` 转回 `#rrggbb` 便于对照用户设置文件。
 
 ### 接入片段（在既有 GearInModPlugin 中追加两行）
 
-接入片段（工程片段——`GearInModPlugin` 归 C06-S02 所有，本节不改动那些文件；fixture 例不含此片段）：
+接入片段（工程片段 ——`GearInModPlugin` 归 C06-S02 所有，本节不改动那些文件；fixture 例不含此片段）：
 
 ```java
     // GearInModPlugin（C06-S02 所有）onGameLoad(boolean newGame) 内新增两行
@@ -558,7 +558,7 @@ gradle jar
 
 三个条目：`GearInLunaSettingsDefs.class`、`GearInLunaSettingsReader.class`、`GearInLunaSettingsListener.class`。
 
-本节三个示例类源码与 fixture 逐字一致（fixture 位于 `tutorial-fixtures/units/C12-S05/src/main/java/data/scripts/gearin/lib/`），fixture 编译验收命令见"预期结果"。
+本节三个示例类源码与 fixture 逐字一致（fixture 位于 `tutorial-fixtures/units/C12-S05/src/main/java/data/scripts/gearin/lib/`），fixture 编译验收命令见 "预期结果"。
 
 ### 验证方案（基于本例）
 
@@ -577,16 +577,16 @@ gradle jar
    - `GearIn luna settings: listener registered`
    - `GearIn luna settings: trails=true maxEntries=12 pulseDelay=1.5 markerColor=#f22e6e labelText=GearIn`
    - 二次进档为 `listener already registered`。
-5. （设置界面）生涯中按设置键位（默认 61；或 `Shift+F2`）打开设置界面：左侧有"齿轮工业"，页签 `GearIn` 下有分组标题与五项设置，控件类型与 CSV 对应。
+5. （设置界面）生涯中按设置键位（默认 61；或 `Shift+F2`）打开设置界面：左侧有 "齿轮工业"，页签 `GearIn` 下有分组标题与五项设置，控件类型与 CSV 对应。
 6. （变更与通知）把 `GearIn_pulse_delay` 改为 `3.0` 点保存：日志出现 `GearIn luna settings: reloaded` + `pulseDelay=3.0` 的当前值行；`gear_in.json` 同步为 `3.0`。
 7. （持久化）重启游戏再进档，`pulseDelay=3.0` 仍在。
 8. （补缺键）删除 `gear_in.json` 的 `GearIn_max_entries` 键后重启，确认以 `12` 补回。
 9. （故障注入·fieldID）把 `GearInLunaSettingsDefs.KEY_TRAILS` 临时改为 `GearIn_trails`（与 CSV 不一致）后进档。
    - 日志出现 `ERROR LunaSettings: Value GearIn_trails of type Boolean not found in JSONObject (ModID: gear_in)`，`trails` 回退 `true`。
    - 改回后恢复。
-10. （故障注入·CSV 默认值）把 `GearIn_pulse_delay` 的 `defaultValue` 临时改为 `abc` 后重启—— 首次读取调用点抛 `NumberFormatException`（或 LunaLib 应用加载期失败），该 MOD 设置中断；改回后恢复。
-11. （故障注入·Boolean）把 `GearIn_trails_enabled` 的 `defaultValue` 临时改为 `1` 后重启——界面默认关、读取 `false`、无任何报错；改回后恢复。
-12. （故障注入·未启用）取消勾选 LunaLib 后启动—— warn `GearIn luna settings: LunaLib not enabled, listener not registered`，读取全回退代码默认值，无 `NoClassDefFoundError`；重新勾选后恢复。
+10. （故障注入·CSV 默认值）把 `GearIn_pulse_delay` 的 `defaultValue` 临时改为 `abc` 后重启 —— 首次读取调用点抛 `NumberFormatException`（或 LunaLib 应用加载期失败），该 MOD 设置中断；改回后恢复。
+11. （故障注入·Boolean）把 `GearIn_trails_enabled` 的 `defaultValue` 临时改为 `1` 后重启 —— 界面默认关、读取 `false`、无任何报错；改回后恢复。
+12. （故障注入·未启用）取消勾选 LunaLib 后启动 —— warn `GearIn luna settings: LunaLib not enabled, listener not registered`，读取全回退代码默认值，无 `NoClassDefFoundError`；重新勾选后恢复。
 
 通过信号：操作 1–8 全部符合；操作 9–12 的注入与恢复都符合预期。
 
@@ -597,13 +597,13 @@ gradle jar
 1. **fixture 编译（验收 J）**：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC12s05Java --no-daemon` （gradle 可执行文件按本机安装路径调用），以 `BUILD SUCCESSFUL` 结束（退出码 0）。
 2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束。
    - `jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/lib/GearInLunaSettingsDefs.class`、`GearInLunaSettingsReader.class`、`GearInLunaSettingsListener.class`。
-3. **首次启动（定义 + 保存链）**：勾选 LunaLib（`lunalib`）与"齿轮工业"启动。首次加载设置后（主菜单阶段即可，不晚于首个读取调用点）`starsector.log` 无 `gear_in` 引起的 `ERROR`；用户设置文件 `<存档目录>\common\LunaSettings\gear_in.json` 生成，内容含五个数据键的默认值、**不含** `GearIn_visual_header`（`Header` 不落盘）：
+3. **首次启动（定义 + 保存链）**：勾选 LunaLib（`lunalib`）与 "齿轮工业" 启动。首次加载设置后（主菜单阶段即可，不晚于首个读取调用点）`starsector.log` 无 `gear_in` 引起的 `ERROR`；用户设置文件 `<存档目录>\common\LunaSettings\gear_in.json` 生成，内容含五个数据键的默认值、**不含** `GearIn_visual_header`（`Header` 不落盘）：
 
 ```json
 { "GearIn_trails_enabled": true, "GearIn_max_entries": 12, "GearIn_pulse_delay": 1.5, "GearIn_marker_color": "#f22e6e", "GearIn_label_text": "GearIn" }
 ```
 4. **设置界面（定义链可见）**：进生涯后按设置键位（默认 61，`Shift+F2` 组合始终可用）打开 LunaLib 设置界面。
-   - 左侧出现"齿轮工业"条目（未配 `LunaSettingsConfig.json` 时用默认图标）。
+   - 左侧出现 "齿轮工业" 条目（未配 `LunaSettingsConfig.json` 时用默认图标）。
    - 页签 `GearIn` 下有分组标题 `GearIn 显示设置` 与五项设置，控件类型与 CSV 对应（开关 / 滑条+数字框 / 颜色选择器 / 文本输入框）。
 5. **进档日志（读取链）**：进档时 `starsector.log` 出现
 
@@ -611,7 +611,7 @@ gradle jar
 GearIn luna settings: listener registered GearIn luna settings: trails=true maxEntries=12 pulseDelay=1.5 markerColor=#f22e6e labelText=GearIn
 ```
 
-（第二次进档 `listener already registered`——幂等生效）。
+（第二次进档 `listener already registered`—— 幂等生效）。
 6. **变更验证（保存 + 通知链）**：在设置界面把 `GearIn_pulse_delay` 改为 `3.0` 并点保存：日志出现
 
 ```text
@@ -619,8 +619,8 @@ GearIn luna settings: reloaded GearIn luna settings: trails=true maxEntries=12 p
 ```
 
 （监听器收到通知并重读）；`gear_in.json` 中 `GearIn_pulse_delay` 变为 `3.0`。
-7. **持久化验证**：重启游戏再进档——`logCurrentValues` 仍读到 `pulseDelay=3.0`（用户设置文件跨启动生效）。
-8. **默认值补写**：手动删除 `gear_in.json` 里的 `GearIn_max_entries` 键后重启——该键以默认值 `12` 补回（`saveDefaultsToFile` 补缺键语义）。
+7. **持久化验证**：重启游戏再进档 ——`logCurrentValues` 仍读到 `pulseDelay=3.0`（用户设置文件跨启动生效）。
+8. **默认值补写**：手动删除 `gear_in.json` 里的 `GearIn_max_entries` 键后重启 —— 该键以默认值 `12` 补回（`saveDefaultsToFile` 补缺键语义）。
 9. **LunaLib 未启用对照（守卫）**：取消勾选 LunaLib 启动。
    - `starsector.log` 出现 warn `GearIn luna settings: LunaLib not enabled, listener not registered`。
    - `logCurrentValues` 全部回退代码默认值（`trails=true ... pulseDelay=1.5 ...`），无 `NoClassDefFoundError`、无 `ERROR`。
@@ -640,7 +640,7 @@ Java 源码与数据文件为 UTF-8 无 BOM、CRLF 换行。
   - 可观察：NPE 发生在拆箱赋值时（返回的 `Boolean` 对象为 null）。
   - 修正：判空回退（本节 getter 的三段式）；先看 `starsector.log` 有无 `LunaSettings:` 前缀的 `ERROR` 行判断根因。
 2. **`ERROR LunaSettings: Could not find mod <xxx>`，读取恒为默认值**。
-  - 触发：`getX` 的 modId 传错——最常见是传了显示名（`LunaLib`、`齿轮工业`）或把 `mod_info.json` 的 `id` 拼错/大小写不符。
+  - 触发：`getX` 的 modId 传错 —— 最常见是传了显示名（`LunaLib`、`齿轮工业`）或把 `mod_info.json` 的 `id` 拼错/大小写不符。
   - 可观察：每条读取一条 `ERROR`，值全部回退。
   - 修正：modId 用 `mod_info.json` 的 `id` 逐字（`gear_in`、`lunalib`）。
 3. **`ERROR LunaSettings: Value <key> of type ... not found in JSONObject (ModID: ...)`**。
@@ -649,11 +649,11 @@ Java 源码与数据文件为 UTF-8 无 BOM、CRLF 换行。
   - 修正：`KEY_*` 常量与 CSV `fieldID` 列逐字对照；类型对照读取方法表。
 4. **首次读取调用点抛 `NumberFormatException`（或 LunaLib 应用加载期失败）**。
   - 触发：某个**已启用** MOD（不一定是自己的）的 `LunaSettings.csv` 里 `defaultValue` 与 `fieldType` 不匹配 （如 `Int` 写 `abc`、`Double` 写空串）。
-  - 可观察：异常沿 `loadDefault` → `load()` 上抛——LunaLib 的 `onApplicationLoad` 失败，或所有 MOD 的首次 `getX` 都抛异常； `starsector.log` 的异常堆栈指向类型转换行。
-  - 修正：修好所有启用 MOD 的 CSV 默认值；这是"自己设置正常、别人一读就炸"的隐蔽方向。
+  - 可观察：异常沿 `loadDefault` → `load()` 上抛 ——LunaLib 的 `onApplicationLoad` 失败，或所有 MOD 的首次 `getX` 都抛异常； `starsector.log` 的异常堆栈指向类型转换行。
+  - 修正：修好所有启用 MOD 的 CSV 默认值；这是 "自己设置正常、别人一读就炸" 的隐蔽方向。
 5. **`Boolean` 开关语义反转**。
   - 触发：CSV `defaultValue` 写 `1` / `0`（或 `TRUE` 之外的非 `"true"` 拼写）。
-  - 可观察：不报错、无日志，设置界面默认是关、代码读到 false——与 CSV 意图相反。
+  - 可观察：不报错、无日志，设置界面默认是关、代码读到 false—— 与 CSV 意图相反。
   - 原因：Kotlin `toBoolean()` 只认忽略大小写的 `"true"`，其余全部 false（官方源码）。
   - 修正：`defaultValue` 写 `true` / `false`。
 6. **设置界面改了并保存，游戏里读取值不变**。
@@ -671,7 +671,7 @@ Java 源码与数据文件为 UTF-8 无 BOM、CRLF 换行。
 9. **`NoClassDefFoundError`，堆栈指向 `lunalib.lunaSettings.LunaSettings`**。
   - 触发：LunaLib 未启用/未安装，代码没守卫直接调用 `lunalib.**`（或守卫写在 `LunaSettings` 引用之后）。
   - 可观察：`Error` 直接冒泡（脚本加载的错误处理只包装 `Exception`，与硬依赖检测专题一致），启动或调用点崩溃。
-  - 修正：守卫必须发生在任何 `lunalib.**` 引用之前（本节 `GearInLunaSettingsReader.isLunaLibEnabled()` 三段式的第一段）；"守卫先于引用"对类加载同样成立——未启用的类首次解析即抛。
+  - 修正：守卫必须发生在任何 `lunalib.**` 引用之前（本节 `GearInLunaSettingsReader.isLunaLibEnabled()` 三段式的第一段）；"守卫先于引用" 对类加载同样成立 —— 未启用的类首次解析即抛。
 10. **`getColor` 返回 null，日志 `Value <key> of type String not found`**。
   - 触发：用户设置文件里该键存了非法十六进制（如 `hello`）——`Color.decode` 抛异常被捕获转 null。
   - 可观察：颜色回退代码默认值，一条 `ERROR`。
@@ -680,10 +680,10 @@ Java 源码与数据文件为 UTF-8 无 BOM、CRLF 换行。
   - 触发：绕过 LunaLib 保存链（比如用 `writeJSONToCommon` 直接改用户设置文件）。
   - 可观察：文件改了但运行时表没更新（`LunaSettingsLoader.Settings` 是旧对象），代码读到旧值直到下次 `load()`；反过来直接改运行时表则保存时被 `data.save()` 覆盖。
   - 原因：用户设置文件由 LunaLib 独占管理（`saveDefaultsToFile` + 界面保存）。
-  - 修正：不要自己读写该文件——需要"代码改设置"的场景用 `SettingsCreator` 的运行时定义（`LunaSettings.SettingsCreator.addX(...)` + `refresh(modId)`）。
+  - 修正：不要自己读写该文件 —— 需要 "代码改设置" 的场景用 `SettingsCreator` 的运行时定义（`LunaSettings.SettingsCreator.addX(...)` + `refresh(modId)`）。
   - 官方注释："Has to be called after Settings have been added, otherwise they will not load."。
   - 让用户在界面里保存；本节示例不覆盖该场景。
-12. **设置界面里没有"齿轮工业"条目**。
+12. **设置界面里没有 "齿轮工业" 条目**。
   - 触发：CSV 路径/文件名错（如放在 `data/config/GearIn_luna_settings.csv` 或大小写不一致）、或 `fieldID` 列全空。
   - 可观察：无任何报错（`loadCSV` 异常被吞），界面列表缺本 MOD。
   - 修正：核对 `data/config/LunaSettings.csv` 路径与九列表头（`loadCSV` 路径规则：`/` 分隔符、无 `..`）。
@@ -696,7 +696,7 @@ LunaLib 设置完整流程共四段：
 - **读取**（`LunaSettings.getX(modId, fieldId)` 静态读取，懒加载、可 null、缺失写 `ERROR` 日志，`getFloat` 从 double 转、`getColor` 补 `#`）
 - **通知**（`addSettingsListener` 注册 `LunaSettingsListener`，设置界面保存后 `reportSettingsChanged(modId)` 逐个回调，单监听器异常被隔离；回调必须按自己的 modId 过滤、注册必须幂等）
 
-排查"设置没生效"的顺序：
+排查 "设置没生效" 的顺序：
 - 先看设置界面有没有自己的 MOD 与页签（定义链，问题在 CSV 路径/类型）
 - 再核对 `gear_in.json` 内容（保存链，问题在是否点了保存）
 - 再看 `starsector.log` 的 `LunaSettings:` `ERROR` 行与代码读取值（读取链，问题在 modId/fieldID/判空）
@@ -704,7 +704,7 @@ LunaLib 设置完整流程共四段：
 
 无论哪一段，调用 `lunalib.**` 前先过 `isModEnabled("lunalib")` 守卫并回退代码默认值（与硬依赖检测专题一致；成熟实例同款做法）。
 
-逻辑上的后续有两支：一是本节的使用写法（守卫 + 判空 + 幂等注册）是通用骨架，可原样平移到其他可选依赖库的接入上——对照另一套 `MagicSettings` 设置链即可看到同一套"定义—保存—读取—通知"完整流程；
+逻辑上的后续有两支：一是本节的使用写法（守卫 + 判空 + 幂等注册）是通用骨架，可原样平移到其他可选依赖库的接入上 —— 对照另一套 `MagicSettings` 设置链即可看到同一套 "定义—保存—读取—通知" 完整流程；
 
 二是 `SettingsCreator` 的运行时定义（代码侧动态增删设置项）与本节的静态 CSV 定义互补，适合需要按用户进度动态出设置的场景。
 
@@ -717,7 +717,7 @@ LunaLib 设置完整流程共四段：
 - `lunalib.lunaSettings.LunaSettingsListener`：单方法变更通知接口，`settingsChanged(modId)`。
 - `lunalib.backend.ui.settings.LunaSettingsLoader`：设置链加载器 （`loadDefault` / `saveDefaultsToFile` / `loadSettings`），本节行为事实的来源。
 - `lunalib.backend.ui.settings.LunaSettingsConfigLoader`：设置界面图标读取（`getIconPath(modId)`），可选功能。
-- `lunalib.backend.scripts.LoadedSettings`：官方监听器写法——`settingsChanged` 先按自己的 MOD id 过滤。
+- `lunalib.backend.scripts.LoadedSettings`：官方监听器写法 ——`settingsChanged` 先按自己的 MOD id 过滤。
 - `lunalib.backend.scripts.KeybindsScript`：设置界面键位入口（默认键位 + `Shift+F2` 备用键位）。
 - `com.fs.starfarer.api.Global`：`getSettings().getModManager().isModEnabled(...)` 守卫入口。
 - `data/scripts/gearin/lib`：本节三个示例类 （`GearInLunaSettingsDefs` / `GearInLunaSettingsReader` / `GearInLunaSettingsListener`）所在包。

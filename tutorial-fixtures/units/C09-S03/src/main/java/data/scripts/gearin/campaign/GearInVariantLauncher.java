@@ -9,7 +9,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），注册前用 sector persistent
  * data 键 REGISTER_MARK 做一次性门控（C06-S02 的 CLASS_MARK 模式，模式同 C08-S01
  * 的 GearInSectorClockScript）。每个角色脚本首次 advance() 后 isDone() 置 true，
- * 引擎下一帧自动移除——整套演示在首个生涯帧内顺序完成，读档后不再重复。
+ * 引擎下一帧自动移除 —— 整套演示在首个生涯帧内顺序完成，读档后不再重复。
  */
 public final class GearInVariantLauncher {
 

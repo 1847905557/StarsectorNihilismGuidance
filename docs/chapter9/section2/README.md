@@ -1,6 +1,6 @@
 # 技能：效果作用域、等级与 fleet total
 
-本节把"技能"（skill）讲透：`SkillSpecAPI` 与技能数据的三件套（`skill_data.csv`、`.skill` JSON、效果脚本）、`SkillEffectType` 决定的效果作用域（人物 / 舰队 / 战斗）、技能等级（0 / 1 / 2）与 `requiredSkillLevel` 门槛，以及整备界面（refit）的 fleet total 汇总（`FleetTotalSource` / `FleetTotalItem`）。读完本节，您应能回答"技能怎么注册、效果作用到谁、等级怎么判、数值写进哪里"这四件事。
+本节把 "技能"（skill）讲透：`SkillSpecAPI` 与技能数据的三件套（`skill_data.csv`、`.skill` JSON、效果脚本）、`SkillEffectType` 决定的效果作用域（人物 / 舰队 / 战斗）、技能等级（0 / 1 / 2）与 `requiredSkillLevel` 门槛，以及整备界面（refit）的 fleet total 汇总（`FleetTotalSource` / `FleetTotalItem`）。读完本节，您应能回答 "技能怎么注册、效果作用到谁、等级怎么判、数值写进哪里" 这四件事。
 
 *本节预期阅读时间：~25 分钟。*
 
@@ -22,8 +22,8 @@
   - `effectBasedOnLevel` 只影响 tooltip 的每级描述渲染；
 - 复述 effect id 的组成 `<技能id>_<类型后缀>_<效果序号>`，并把它当作 modifier ID 使用（稳定 ID 规则在技能域的直接延伸），`unapply` 必须用同一个 id；
 - 说出 fleet total 管道：效果脚本类实现 `FleetTotalSource` → `getFleetTotals()` 按 `label+value` 去重、按 `sortOrder` 排序 → 整备界面（refit）舰队构成表展示（全库唯一使用方）
-  - 并解释"两个技能返回相同 label+value 会合并成一行"；
-- 从症状定位典型故障：技能在技能树里不出现、效果完全无效、应用时报类型异常、数值残留、战机加成"看不到"、fleet total 行消失。
+  - 并解释 "两个技能返回相同 label+value 会合并成一行"；
+- 从症状定位典型故障：技能在技能树里不出现、效果完全无效、应用时报类型异常、数值残留、战机加成 "看不到"、fleet total 行消失。
 
 ## 前置知识
 
@@ -32,7 +32,7 @@
 - 命名约定（C01-S01）：MOD ID `gear_in`、数据 / 资源 key 前缀 `GearIn_`、包 `data.scripts.gearin.<domain>`、类 `GearIn<Subject>`。
 - 编译 JAR 链路与脚本类加载（C06-S01）：`.skill` 的 `script` 类与普通脚本一样按类名解析，`loadSkills` 会对每个 effect class 调 `registerScriptClass`。
 - `Global` 生命周期与阶段判断（C06-S03）：读 `Global.getSector().getPlayerStats()` 前要确认处于生涯状态。
-- `MutableStat` 的 modifier ID 稳定性（C07-S03）：三规则与 `(base + base*percent/100 + flat) * mult` 公式——本节效果脚本全部沿用：用引擎传入的 effect id 做 modifier id、`unapply` 原样解除。
+- `MutableStat` 的 modifier ID 稳定性（C07-S03）：三规则与 `(base + base*percent/100 + flat) * mult` 公式 —— 本节效果脚本全部沿用：用引擎传入的 effect id 做 modifier id、`unapply` 原样解除。
 - `FleetMemberAPI` 与成员 stats（C08-S03）：本节 SHIP / ALL_SHIPS_IN_FLEET 效果的生涯侧落点。
 - 人物 / captain / officer（C09-S01）：`MutableCharacterStatsAPI` 挂在人物上，技能等级与刷新入口（`setSkillLevel` / `refreshCharacterStatsEffects`）都在这里；旗舰舰长是玩家人物，所以玩家的 SHIP 技能作用到旗舰。
 
@@ -43,7 +43,7 @@
 - **技能（skill）**：API 名保留 `SkillSpecAPI`。挂在人物 `MutableCharacterStatsAPI` 上的可学习能力；由 `skill_data.csv` 注册行 + `.skill` JSON + 效果脚本三件套组成。
 - **技能等级（skill level）**：0 / 1 / 2 三个值（2 仅精英技能可达）；`requiredSkillLevel` 是每个效果组的生效门槛。
 - **效果作用域（effect type / scope）**：API 名保留 `SkillEffectType`。决定每个 effect 作用于哪个对象集合（被驾驶舰船 / 全舰队舰船 / 战机 / 角色数值 / 舰队数值 / 市场 / 描述 / 解锁）；`.skill` 里的 `scope` 字段只是 UI 文本，不是作用域。
-- **fleet total**：整备界面（refit）舰队构成表里的一行"舰队汇总"（如原版的 "All ships"、自动化点数行）；由实现 `FleetTotalSource` 的效果脚本提供 `FleetTotalItem`。
+- **fleet total**：整备界面（refit）舰队构成表里的一行 "舰队汇总"（如原版的 "All ships"、自动化点数行）；由实现 `FleetTotalSource` 的效果脚本提供 `FleetTotalItem`。
 
 ## 文件与 API 链路
 
@@ -79,7 +79,7 @@ skill_data.csv（按 id 读行，收集全部注册 id）
 ```
 
 ::: warning 技能被静默跳过时不报错
-两个"跳过"分支都只写日志、**不报错**——技能在技能树里不出现且没有任何 ERROR 时，先到日志里查这两行，再动手改代码。
+两个 "跳过" 分支都只写日志、**不报错**—— 技能在技能树里不出现且没有任何 ERROR 时，先到日志里查这两行，再动手改代码。
 :::
 
 ### 效果接口族（按作用域）
@@ -100,7 +100,7 @@ skill_data.csv（按 id 读行，收集全部注册 id）
 | `HULLMOD_UNLOCK` / `ABILITY_UNLOCK` | 无脚本接口（数据声明）| 解锁集合 | effect 内 `hullmods` / `abilities` 键；使用方 `getUnlockedHullMods(level)`、`MutableCharacterStatsAPI.getGrantedAbilityIds` / `isHullModAvailable` |
 
 ::: warning 生效范围只看 type，别信 scope
-`ALL_SHIPS_IN_FLEET` 与 `SHIP` 的**接口相同**（都是 `ShipSkillEffect`），作用对象集合完全由 `type` 决定——这是本节最容易被 `scope` 字段误导的一点： `scope` 只是 UI 文本，写 `"scope":"FLEET"` 不会把 SHIP 效果变成全舰队加成。
+`ALL_SHIPS_IN_FLEET` 与 `SHIP` 的**接口相同**（都是 `ShipSkillEffect`），作用对象集合完全由 `type` 决定 —— 这是本节最容易被 `scope` 字段误导的一点： `scope` 只是 UI 文本，写 `"scope":"FLEET"` 不会把 SHIP 效果变成全舰队加成。
 :::
 
 ### 等级管道
@@ -124,7 +124,7 @@ skill_data.csv（按 id 读行，收集全部注册 id）
 - 接口：`FleetTotalSource.getFleetTotalItem()` → `FleetTotalItem`（字段 `label` / `value` / `valueColor` / `labelColor` / `sortOrder` / `tooltipCreator`）。
 - 汇总：`getFleetTotals()`遍历已学技能的全部效果，凡 `level >= requiredSkillLevel` 且脚本实例 `instanceof FleetTotalSource`，就取 `getFleetTotalItem()`
   - **按 `label + "_" + value` 去重**（两个技能 / 效果返回相同 label+value 只保留一行），按 `sortOrder` 升序排成舰队构成表的行数据（附 `skillLevels`，供 tooltip 列出贡献技能）。
-- 使用方：整备界面（refit）的舰队构成表——界面把 `getPlayerStats().getFleetTotals()` 渲染成构成表行，`tooltipCreator` 挂可展开 tooltip；全库对 `getFleetTotals()` 的消费点只有这一处（技能面板 tooltip 不消费它）。
+- 使用方：整备界面（refit）的舰队构成表 —— 界面把 `getPlayerStats().getFleetTotals()` 渲染成构成表行，`tooltipCreator` 挂可展开 tooltip；全库对 `getFleetTotals()` 的消费点只有这一处（技能面板 tooltip 不消费它）。
 - 原版聚合做法：`BaseSkillEffectDescription.getOPTotal()` / `getCombatOPTotal()` / `getAutomatedPointsTotal()`（`com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription`）
   - 对舰队成员逐艘收集贡献（`FleetMemberPointContrib`）再汇总
   - 本节示例只演示最小管道（静态值 + 自定义 tooltip）。
@@ -146,13 +146,13 @@ skill_data.csv（按 id 读行，收集全部注册 id）
 | effect 的 `type` **必须**与脚本类实现的接口族匹配（SHIP → `ShipSkillEffect`、FLEET → `FleetStatsSkillEffect`、CHARACTER_STATS → `CharacterStatsSkillEffect`、市场 → `MarketSkillEffect`、DESCRIPTION → `DescriptionSkillEffect`）| 必须 | 效果实例化时 `getAsXxxEffect()` 强转抛 `ClassCastException`（如舰船 stats 重放 / 起飞 / tooltip 渲染处），游戏画面报错或加载失败 |
 | 效果脚本类 **必须**无参可实例化（不写构造器或显式无参构造器；脚本类加载流程 `loadScriptInstance` 用 `newInstance()`）| 必须 | `InstantiationException` 包装为 `RuntimeException "Problem loading class [<类名>]"`，在效果被实例化的时刻（不是加载期）抛出 |
 | 效果脚本 **必须**把引擎传入的 `id` 原样用作 modifier id，`unapply` 用同一个 id 解除 | 必须 | 数值残留 / 累计或解除不生效（稳定 ID 规则在技能域的直接应用，前置知识已引用；引擎给的 id 形如 `GearIn_gunnery_ship_1`）|
-| 生效范围**必须**按 `SkillEffectType` 判断；`.skill` 的 `scope` / `scopeStr` 只是 UI 文本 | 必须 | 把 `scope:FLEET` 的 SHIP 效果当"全舰队加成"排查，实际它只作用于被驾驶舰船，舰队其它船"没变化" |
-| 战机效果（SHIP_FIGHTERS / ALL_FIGHTERS_IN_FLEET）只在战斗起飞时应用 | 必须 | 在生涯侧读战机 stats 期望已生效，读不到；战机加成"部署前看不到"属正常语义 |
-| 非精英技能（`elite` 缺省 / false）经 UI 加点最高到 1 级，`requiredSkillLevel:2` 的效果组永不激活 | 必须 | 2 级门槛的效果"不生效"；精英加成必须配 `"elite":true` |
-| fleet total 的 `label` + `value` 必须能区分不同的汇总行 | 必须 | 两个技能返回相同 label+value 时 `getFleetTotals()` 去重合并成一行，其中一行的汇总"消失" |
+| 生效范围**必须**按 `SkillEffectType` 判断；`.skill` 的 `scope` / `scopeStr` 只是 UI 文本 | 必须 | 把 `scope:FLEET` 的 SHIP 效果当 "全舰队加成" 排查，实际它只作用于被驾驶舰船，舰队其它船 "没变化" |
+| 战机效果（SHIP_FIGHTERS / ALL_FIGHTERS_IN_FLEET）只在战斗起飞时应用 | 必须 | 在生涯侧读战机 stats 期望已生效，读不到；战机加成 "部署前看不到" 属正常语义 |
+| 非精英技能（`elite` 缺省 / false）经 UI 加点最高到 1 级，`requiredSkillLevel:2` 的效果组永不激活 | 必须 | 2 级门槛的效果 "不生效"；精英加成必须配 `"elite":true` |
+| fleet total 的 `label` + `value` 必须能区分不同的汇总行 | 必须 | 两个技能返回相同 label+value 时 `getFleetTotals()` 去重合并成一行，其中一行的汇总 "消失" |
 | 技能 `icon` 列 **必须**指向可加载的纹理 | 必须 | `loadSkills` 末尾 `queueResource(TEXTURE, ...)` 排队纹理，缺失时资源加载阶段报错（TEXTURE 无 try/catch）|
 | 技能 id 使用 MOD 专属前缀（`GearIn_`），数据 id、`.skill` 文件名、脚本类名三处一致 | 建议 | 撞原版 / 其它 MOD id 时被先加载者覆盖，行为随 MOD 启用顺序漂移 |
-| 效果脚本在 `.skill` 里按"外层类 `$` 嵌套类"书写类名（如 `...GearInGunnerySkill$Level1`）| 建议 | 类名拼写错误 → 效果实例化时 `Problem loading class` |
+| 效果脚本在 `.skill` 里按 "外层类 `$` 嵌套类" 书写类名（如 `...GearInGunnerySkill$Level1`）| 建议 | 类名拼写错误 → 效果实例化时 `Problem loading class` |
 
 强度调整记录：本节为新建页面，无迁移原文，硬措辞全部来自 RC8 权威来源（CSV spec 加载期 `loadSkills` 的两条跳过日志、`SkillEffectSpecAPI` 的强转、脚本类加载流程 `loadScriptInstance` 的 `newInstance` 与包装异常、`MutableCharacterStatsAPI` 的等级钳制与去重），未对任何来源做软化。
 
@@ -215,7 +215,7 @@ Starsector\mods\GearIndustry\
 
 要点：
 
-- `elite:true` 允许技能到 2 级；第 2 个 effectGroup（`requiredSkillLevel:2`，`name:"Elite"`）在 2 级才激活——与 `gunnery_implants.skill` 同款结构。
+- `elite:true` 允许技能到 2 级；第 2 个 effectGroup（`requiredSkillLevel:2`，`name:"Elite"`）在 2 级才激活 —— 与 `gunnery_implants.skill` 同款结构。
 - 五个 effect 平铺后的序号：Level0=0、Level1=1、LevelShipFighters=2、LevelFleet=3、LevelStats=4、Level1A=5。由此引擎组合的 effect id：
   - `GearIn_gunnery_ship_1`、`GearIn_gunnery_ship_fighters_2`、`GearIn_gunnery_stats_3`（FLEET）、 `GearIn_gunnery_stats_4`（CHARACTER_STATS）、`GearIn_gunnery_ship_5`（精英）
   - 效果脚本必须原样使用。
@@ -520,16 +520,16 @@ public class GearInGunnerySkill {
 
 对应关系：
 
-- 外层类只是容器：嵌套类名（`Level0` / `Level1` / `Level1A` / `LevelShipFighters` / `LevelFleet` / `LevelStats`）与 `.skill` 的 `script` 值（`GearInGunnerySkill$Level1` 等）逐字对应——原版 `GunneryImplants` 同款做法。
-- `Level1 implements ShipSkillEffect, FleetTotalSource`：同一个脚本类被两处消费——`SHIP` 效果重放时经 `getAsShipEffect()` 强转，`getFleetTotals()` 时经 `getAsFleetTotalSource()` 检查 `instanceof`
+- 外层类只是容器：嵌套类名（`Level0` / `Level1` / `Level1A` / `LevelShipFighters` / `LevelFleet` / `LevelStats`）与 `.skill` 的 `script` 值（`GearInGunnerySkill$Level1` 等）逐字对应 —— 原版 `GunneryImplants` 同款做法。
+- `Level1 implements ShipSkillEffect, FleetTotalSource`：同一个脚本类被两处消费 ——`SHIP` 效果重放时经 `getAsShipEffect()` 强转，`getFleetTotals()` 时经 `getAsFleetTotalSource()` 检查 `instanceof`
   - 两处都是**每次按类名重新实例化**（脚本类加载流程 `loadScriptInstance` → `newInstance()`），效果类不能有带参构造器。
-- `apply` 里的 modifier id 全部用传入的 `id`：`modifyPercent(id, ...)` / `modifyFlat(id, ...)`，`unapply` 用同一个 `id` 调 `unmodify(id)` / `unmodifyFlat(id)`——稳定 ID 规则的直接应用（规则见前置知识；引擎每次重放传入的 id 逐字相同）。
+- `apply` 里的 modifier id 全部用传入的 `id`：`modifyPercent(id, ...)` / `modifyFlat(id, ...)`，`unapply` 用同一个 `id` 调 `unmodify(id)` / `unmodifyFlat(id)`—— 稳定 ID 规则的直接应用（规则见前置知识；引擎每次重放传入的 id 逐字相同）。
 - `Level1.getFleetTotalItem()` 返回 `label="Gunnery damage bonus"`、`value="+15%"`、`sortOrder=50` 与自定义 tooltip：这是 fleet total 行的最小完整形态；`TOOLTIP_WIDTH` 继承自 `BaseSkillEffectDescription`（450）。
-- `LevelFleet` / `LevelStats` 的 `getScopeDescription()` 返回 `FLEET`：这只是 tooltip 的"作用范围"文本；实际生效对象由 `type`（FLEET / CHARACTER_STATS）决定。
-- 五个 `apply` 各打一行 `GearIn gunnery ...` 日志：`id` 与 `level` 直接可见，是"效果作用域 + 等级"的现场表现。
+- `LevelFleet` / `LevelStats` 的 `getScopeDescription()` 返回 `FLEET`：这只是 tooltip 的 "作用范围" 文本；实际生效对象由 `type`（FLEET / CHARACTER_STATS）决定。
+- 五个 `apply` 各打一行 `GearIn gunnery ...` 日志：`id` 与 `level` 直接可见，是 "效果作用域 + 等级" 的现场表现。
 - `getEffectPerLevelDescription()` 返回 null：`.skill` 里 `effectBasedOnLevel:false`，tooltip 不渲染每级描述行（本节不演示 per-level 描述）。
 
-### 消费与调用点（工程片段——方法所在类归 C06-S02 所有，本节只演示调用，不改动那些文件）
+### 消费与调用点（工程片段 —— 方法所在类归 C06-S02 所有，本节只演示调用，不改动那些文件）
 
 ```java
     // 读取（消费者，任何生涯代码）：
@@ -637,7 +637,7 @@ GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damag
      - 修正：补注册行，三处 id 逐字一致（规则强度第 1 条）。
 2. **技能 id 与原版 / 其它 MOD 撞车，自己的版本静默失效**。触发：用了 `gunnery_implants` 之类的通用 id。可观察：加载期日志 `Skipping skill [<id>], was already loaded`（后加载者被跳过），技能显示的是别人的定义。修正：MOD 专属前缀（`GearIn_`），规则强度第 2 条。
   3. **type 与脚本类接口不匹配 → 类型异常**。触发：`.skill` 里 `{"type":"SHIP", "script":"...$LevelFleet"}`（LevelFleet 实现的是 `FleetStatsSkillEffect`）
-     - 可观察：`getAsShipEffect()` 强转抛 `ClassCastException`——在 stats 重放 / 起飞 / tooltip 的实例化点报错，而不是加载期
+     - 可观察：`getAsShipEffect()` 强转抛 `ClassCastException`—— 在 stats 重放 / 起飞 / tooltip 的实例化点报错，而不是加载期
      - 修正：type 与接口族一一对应（规则强度第 3 条）。
   4. **效果类没有无参构造器（或类名拼错）→ "Problem loading class"**。触发：`Level1` 写了 `Level1(float x)` 构造器，或 `script` 类名与包路径不符
        - 可观察：脚本类加载流程 `loadScriptInstance` 的 `newInstance()` 抛 `InstantiationException` / `ClassNotFoundException`
@@ -645,12 +645,12 @@ GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damag
        - 在效果首次被实例化时抛出
      - 修正：只留无参构造器；类名逐字核对（规则强度第 4 条）。
   5. **modifier id 不按引擎传入值使用，解除不生效**。触发：`apply` 里自己写死 `modifyPercent("GearIn_damage", ...)`，`unapply` 用 `unmodify("GearIn_damage")`
-     - 可观察：第一次重放后数值残留——引擎重放顺序是"先 unapply 再 apply"，而引擎传入的 id 是 `GearIn_gunnery_ship_1`，与自造 id 对不上，旧条目永远清不掉；多个角色 / 存档叠加后数值膨胀
+     - 可观察：第一次重放后数值残留 —— 引擎重放顺序是 "先 unapply 再 apply"，而引擎传入的 id 是 `GearIn_gunnery_ship_1`，与自造 id 对不上，旧条目永远清不掉；多个角色 / 存档叠加后数值膨胀
      - 修正：`apply` / `unapply` 都用传入的 `id`（规则强度第 5 条；稳定 ID 规则见前置知识）。
-6. **把 `scope` 当生效范围，效果"没作用到预期对象"**。触发：`.skill` 写 `"scope":"FLEET"` 但 `type` 是 `SHIP`，期待全舰队加成。可观察：只有玩家旗舰（被驾驶舰船）吃到加成，舰队其它船毫无变化；tooltip 的作用范围文本却是 FLEET——文本与行为不一致。修正：生效范围只看 `type`（规则强度第 6 条）。
-7. **战机加成"看不到"**。触发：学了技能后在生涯侧读战机 stats 找 `SHIP_FIGHTERS` 效果。可观察：生涯侧战机没有 stats 实体（战机 stats 在战斗内生成），`FighterLaunchBayAPI` 只在起飞时应用；战前看不到属于正常语义。修正：在战斗内观察（规则强度第 7 条）。
+6. **把 `scope` 当生效范围，效果 "没作用到预期对象"**。触发：`.skill` 写 `"scope":"FLEET"` 但 `type` 是 `SHIP`，期待全舰队加成。可观察：只有玩家旗舰（被驾驶舰船）吃到加成，舰队其它船毫无变化；tooltip 的作用范围文本却是 FLEET—— 文本与行为不一致。修正：生效范围只看 `type`（规则强度第 6 条）。
+7. **战机加成 "看不到"**。触发：学了技能后在生涯侧读战机 stats 找 `SHIP_FIGHTERS` 效果。可观察：生涯侧战机没有 stats 实体（战机 stats 在战斗内生成），`FighterLaunchBayAPI` 只在起飞时应用；战前看不到属于正常语义。修正：在战斗内观察（规则强度第 7 条）。
 8. **精英加成永不生效**。触发：`.skill` 写了 `requiredSkillLevel:2` 的组但没写 `"elite":true`。可观察：UI 加点最多到 1 级（`increaseSkill` 钳制），`level` 恒为 1，2 级门槛组永不进入应用列表。修正：配 `"elite":true`（规则强度第 8 条）。
-9. **fleet total 行消失**。触发：两个技能的效果返回相同的 `label` + `value`。可观察：`getFleetTotals()` 按 `label_value` 去重，两行合并成一行，其中一个技能的汇总"消失"（`MutableCharacterStatsAPI`）。修正：label 或 value 区分（规则强度第 9 条）。
+9. **fleet total 行消失**。触发：两个技能的效果返回相同的 `label` + `value`。可观察：`getFleetTotals()` 按 `label_value` 去重，两行合并成一行，其中一个技能的汇总 "消失"（`MutableCharacterStatsAPI`）。修正：label 或 value 区分（规则强度第 9 条）。
   10. **加了技能但 SHIP 效果日志迟迟不出现**。触发：只执行 `setSkillLevel`，不开舰队界面也不部署。可观察：`GearIn gunnery stats apply` / `fleet apply` 立即出现，`ship apply` 要等 `FleetMemberAPI.updateStats` 重建（开舰队界面 / 舰队同步）或战斗舰船构造（部署）。
       - 修正：理解 FLEET / CHARACTER_STATS 即时、SHIP 族随 stats 重建生效的时序（「消费与调用点」小节）。
 11. **icon 缺失导致启动失败**。触发：`icon` 列指向不存在的 PNG。可观察：`loadSkills` 末尾 `queueResource(TEXTURE, ...)` 排队纹理，资源加载阶段报错（TEXTURE 无 try/catch），游戏无法正常启动。修正：icon 指向真实存在的纹理；本单元冒烟期间先复用原版图标（规则强度第 10 条）。
@@ -669,7 +669,7 @@ GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damag
 - **fleet total**：效果类实现 `FleetTotalSource.getFleetTotalItem()` → `getFleetTotals()` 按 `label+value` 去重、`sortOrder` 排序 → 整备界面舰队构成表展示；`BaseSkillEffectDescription` 提供原版聚合做法（OP / 自动化点数）。
 - **时序**：FLEET / CHARACTER_STATS 在 `refreshCharacterStatsEffects` 即时重放；SHIP 族随成员 stats 重建 / 舰船构造 / 战机起飞应用。
 
-本节建立的"type → 作用域 → 应用入口"模型，逻辑上的延续在生涯数值链的下游：装配侧（`ShipVariantAPI` 代表的舰船装配与 stats 数值来源）与"人物 → 成员 → 装配 → stats"的完整交接——本节的 SHIP / ALL_SHIPS_IN_FLEET 效果正是其中"人物技能到达成员 stats"的关键一跳，这套模型会在生涯域数值链路里被反复消费。
+本节建立的 "type → 作用域 → 应用入口" 模型，逻辑上的延续在生涯数值链的下游：装配侧（`ShipVariantAPI` 代表的舰船装配与 stats 数值来源）与 "人物 → 成员 → 装配 → stats" 的完整交接 —— 本节的 SHIP / ALL_SHIPS_IN_FLEET 效果正是其中 "人物技能到达成员 stats" 的关键一跳，这套模型会在生涯域数值链路里被反复消费。
 
 ## 建议参考项
 

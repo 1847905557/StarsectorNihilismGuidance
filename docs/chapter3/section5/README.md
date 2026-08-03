@@ -1,6 +1,6 @@
 # strings.json 本地化：分类与代码取值
 
-对象风味文本（`descriptions.csv`）已在前置讲解中讲完，本节补上文本链路的最后一环：`data/strings/strings.json`——**代码驱动的界面文本**入口，用两级键（分类 → 键名）组织、由代码经 `Global.getSettings().getString(category, id)` 取值、跨 MOD 按键合并，并以 `GearIn_text_*` 演示键走完"文件 → 合并 → 取值 → 可观察结果"的完整流程。与 `descriptions.csv` 不同，strings.json 的错误绝大多数**不炸启动**：键写错只表现为界面/日志出现 `Missing string: [...]` 字面量；只有 JSON 语法错误（括号不配对、引号不闭合）和 BOM 污染才会在加载期中止启动。
+对象风味文本（`descriptions.csv`）已在前置讲解中讲完，本节补上文本链路的最后一环：`data/strings/strings.json`——**代码驱动的界面文本**入口，用两级键（分类 → 键名）组织、由代码经 `Global.getSettings().getString(category, id)` 取值、跨 MOD 按键合并，并以 `GearIn_text_*` 演示键走完 "文件 → 合并 → 取值 → 可观察结果" 的完整流程。与 `descriptions.csv` 不同，strings.json 的错误绝大多数**不炸启动**：键写错只表现为界面/日志出现 `Missing string: [...]` 字面量；只有 JSON 语法错误（括号不配对、引号不闭合）和 BOM 污染才会在加载期中止启动。
 
 *本节预期阅读时间：~12 分钟。*
 
@@ -12,7 +12,7 @@
 
 - 说出 RC8 `strings.json` 的两级结构（分类 → 键名）与全部 4 个原版分类，以及每个分类的主要使用方；
 - 用 `Global.getSettings().getString(category, id)` 取值，并说清它与单参 `getString(key)`（读取 `settings.json`）的区别；
-- 说出跨 MOD 合并语义（对象按键合并、标量后者覆盖、数组追加）与"不要重定义既有键"的原因；
+- 说出跨 MOD 合并语义（对象按键合并、标量后者覆盖、数组追加）与 "不要重定义既有键" 的原因；
 - 说出缺失键的可观察结果：返回字面量 `Missing string: [<id>]` 并在 `starsector.log` 记 ERROR，**不抛异常、不崩溃**；
 - 说清 `$token` 不会被引擎自动替换、`%s` 需要取值侧自行 `String.format`；
 - 为 `gear_in` 组织 `GearIn_text_*` 键（分类 `GearIn_ui` / `GearIn_dialog`），并通过日志与界面观察验证完整流程。
@@ -22,36 +22,36 @@
 本节建立在以下基础上：
 
 - **MOD 目录结构、`mod_info.json` 与 JSON 文件加载规则**（C01-S01）：`#` 注释与尾逗号被接受、UTF-8 无 BOM 必须；日志锚点的读法。
-- **`descriptions.csv` 的键规则与使用方**（C01-S06、C03-S04）：对象风味文本——本节是它的对照面。
+- **`descriptions.csv` 的键规则与使用方**（C01-S06、C03-S04）：对象风味文本 —— 本节是它的对照面。
 - **术语约定**：生涯（campaign）；交互对话（interaction dialog，如舰队遭遇、跳跃点、行星接近时的对话界面）；令牌（token，指 `$xxx` 形式的占位符）；规则命令（rule command）。
 
 ## 文件/API 链路
 
 ### 文件与注册入口
 
-数据文件是 MOD 内的 `data/strings/strings.json`。**这个路径本身就是注册入口**：不需要 `mod_info.json` 里的任何字段，也不需要代码注册——启动加载时游戏自动遍历原版与全部已启用 MOD 的同名文件并合并。
+数据文件是 MOD 内的 `data/strings/strings.json`。**这个路径本身就是注册入口**：不需要 `mod_info.json` 里的任何字段，也不需要代码注册 —— 启动加载时游戏自动遍历原版与全部已启用 MOD 的同名文件并合并。
 
 加载发生在启动资源加载状态内、数据表加载之前（本地核对）：
 
 1. 启动资源加载状态的初始化流程触发字符串表加载；
-2. 字符串表加载先打日志 `Loading strings`，然后用 JSON 读取工具读取 `data/strings/tooltips.json` 与 `data/strings/strings.json`，最后读取 `data/strings/tips.json`（三个文件属于同一加载点，见"边界"）；
+2. 字符串表加载先打日志 `Loading strings`，然后用 JSON 读取工具读取 `data/strings/tooltips.json` 与 `data/strings/strings.json`，最后读取 `data/strings/tips.json`（三个文件属于同一加载点，见 "边界"）；
 3. `readJSON` 即 `readJSONMerged`：每个被读取的文件（原版与各 MOD 各一份）在日志里各出现一行 `Loading JSON from [...]`，路径片段包含 `data/strings/strings.json`。
 
 ### 合并语义（跨 MOD）
 
 `readJSONMerged` 的规则（本地核对）：
 
-- 第一个非排除文件（即原版）作为"主档"，其后每个 MOD 的文件依次合并进主档；
-- **对象值**递归按键合并——每个键单独处理；
-- **标量值**（字符串等）后来者覆盖前者——MOD 可以覆盖原版或其他 MOD 的同一个键；
+- 第一个非排除文件（即原版）作为 "主档"，其后每个 MOD 的文件依次合并进主档；
+- **对象值**递归按键合并 —— 每个键单独处理；
+- **标量值**（字符串等）后来者覆盖前者 ——MOD 可以覆盖原版或其他 MOD 的同一个键；
 - **数组值**默认追加；键名小写以 `music_` 开头、键名含 `color`/`button` 且数组长度为 4、或数组首元素为 `"core_clearArray"` 时整体替换；
 - `mod_info.json` 的 `fullOverrides` 可以整体替换某个文件（细节由后续文件加载相关单元讲解）。
 
-对 MOD 的含义：**只需要在文件里写自己的键**，原版与其余 MOD 的键自动保留；反过来，"覆盖"顺序取决于 MOD 启用顺序，**不是约定**。
+对 MOD 的含义：**只需要在文件里写自己的键**，原版与其余 MOD 的键自动保留；反过来，"覆盖" 顺序取决于 MOD 启用顺序，**不是约定**。
 
 ::: caution 禁止重定义既有键
 
-不要重定义原版或其他 MOD 已有的 `(category, id)` 组合：重定义键的文本会被启用顺序靠后的文件静默覆盖，没有任何报错（症状与排查见实例驱动故障分析的"取到的是别的 MOD 的文本"条目）。
+不要重定义原版或其他 MOD 已有的 `(category, id)` 组合：重定义键的文本会被启用顺序靠后的文件静默覆盖，没有任何报错（症状与排查见实例驱动故障分析的 "取到的是别的 MOD 的文本" 条目）。
 
 :::
 
@@ -67,13 +67,13 @@
 
 1. **文件必须 UTF-8 无 BOM。** 违反后果：`readText` 不剥离 BOM，`\ufeff` 粘在文件开头使整个文件解析失败，启动在加载状态中止，日志出现带文件路径的 JSONException。
 2. **JSON 语法必须正确**（括号配对、字符串引号闭合）。违反后果：加载期抛 JSONException（异常消息会拼上文件路径），启动中止。注意 `#` 注释只剥引号外的，引号内的 `#` 是普通字符。
-3. **键与分类名必须逐字符一致（大小写敏感）。** 违反后果：取不到值，见下一条"缺失行为"——不报错，但界面与日志出现 `Missing string: [...]`。
+3. **键与分类名必须逐字符一致（大小写敏感）。** 违反后果：取不到值，见下一条 "缺失行为"—— 不报错，但界面与日志出现 `Missing string: [...]`。
 
 ### 取值 API
 
 运行期取值入口是公开 API：`Global.getSettings().getString(String category, String id)`（`SettingsAPI`，RC8 API 解包，方法 javadoc 原文："Gets a string from a given category in strings.json"）。
 
-实现链（本地核对）：`SettingsAPI` 实现最终从合并后的字符串表取值——先取 `category` 分类对象，再取其中的 `id` 键。
+实现链（本地核对）：`SettingsAPI` 实现最终从合并后的字符串表取值 —— 先取 `category` 分类对象，再取其中的 `id` 键。
 
 **缺失行为（必须遵守的规则）**：分类或键任一不存在，内部捕获 `JSONException`，先打日志 `logger.error("Missing string: [" + id + "]")`，再**返回字面量 `Missing string: [<id>]`**。也就是说：
 
@@ -85,7 +85,7 @@
 
 `SettingsAPI` 里还有一个单参 `getString(String key)`，它读取的是 `data/config/settings.json`，与 strings.json 无关。
 
-**想读 strings.json 必须用双参重载**；误用单参会取到 settings.json 里的同名配置，表现为"取到的值完全不对"。
+**想读 strings.json 必须用双参重载**；误用单参会取到 settings.json 里的同名配置，表现为 "取到的值完全不对"。
 
 :::
 
@@ -94,7 +94,7 @@
 strings.json 的值里有两种占位符，**引擎对两者都不做代换**：
 
 - `$token` 形式（如 `$faction`、`$fleetName`、`$planetName`、`$yourForcesWereOrYourSideWas`）：由**使用方**负责替换。原版 `FleetInteractionDialogPluginImpl.getString` 取到文本后逐个执行 `str.replaceAll("\\$faction", faction)` 手工替换（公开 API 解包）。MOD 自己的 `$token` 文本如果没人替换，界面会原样显示 `$faction`。
-- `%s` 形式：由**取值侧**负责 `String.format`。游戏引擎不做格式化；不匹配时运行期抛 `IllegalFormatException`（成熟实例以 try/catch 捕获后返回 `[NULL]`，见"本地化组织"）。
+- `%s` 形式：由**取值侧**负责 `String.format`。游戏引擎不做格式化；不匹配时运行期抛 `IllegalFormatException`（成熟实例以 try/catch 捕获后返回 `[NULL]`，见 "本地化组织"）。
 
 ### RC8 原版分类总览
 
@@ -109,8 +109,8 @@ strings.json 的值里有两种占位符，**引擎对两者都不做代换**：
 
 要点：
 
-- **`(category, id)` 两级键都区分大小写、逐字符匹配**；分类和键名都不存在"模糊匹配"。
-- 原版键可以被 MOD 覆盖（标量后者覆盖），但依赖启用顺序的覆盖不是约定——教程一律要求**不重定义既有键**。
+- **`(category, id)` 两级键都区分大小写、逐字符匹配**；分类和键名都不存在 "模糊匹配"。
+- 原版键可以被 MOD 覆盖（标量后者覆盖），但依赖启用顺序的覆盖不是约定 —— 教程一律要求**不重定义既有键**。
 - 对话类值靠 `$token` 注入动态内容；帮助类值里是 `\n` 多段文本。
 - 这四个分类是原版的自有分类；MOD 完全可以（且更建议）使用自己的分类名（见下）。
 
@@ -158,7 +158,7 @@ strings.json 的值里有两种占位符，**引擎对两者都不做代换**：
 - `#` 注释与尾逗号（`GearIn_text_unknown` 与 `GearIn_text_dock` 后的逗号）都是加载器接受的；注释不进入运行期。**严格 JSON 工具不接受这两者**，用工具静态检查时要注意。
 - 所有键为 `GearIn_text_*`（本节所有权）；分类 `GearIn_ui` / `GearIn_dialog` 为语义命名；任何地方都不出现工作单元编号。
 - 三种值形态各演示一条：纯文本、含 `%s`、含 `$token`。
-- 该文件不依赖任何注册入口——放对路径即被读取并合并。
+- 该文件不依赖任何注册入口 —— 放对路径即被读取并合并。
 
 代码侧是取值封装（完整源码，与本单元 fixture 中的 `GearInI18n` 类逐字一致）：
 
@@ -237,11 +237,11 @@ public final class GearInI18n {
 - **操作**：
   1. 启动游戏进入生涯，确认日志出现 `Loading strings` 且无 ERROR；随后应看到包含 `data/strings/strings.json` 的 `Loading JSON from [...]` 行（原版与 gear_in 各一行）。
   2. 在 gear_in 的 `modPlugin`（C01-S01）临时加日志探针：`Global.getLogger(GearInI18n.class).info(GearInI18n.ui("GearIn_text_hello"));`，进生涯后核对输出为 `你好，工坊。`。
-  3. 把探针键名改为 `GearIn_TEXT_hello` 重启：日志出现 ERROR `Missing string: [GearIn_TEXT_hello]`，探针打印字面量 `Missing string: [...]`——确认缺失行为不崩溃；改回后恢复。
-  4. 修改 `GearIn_text_hello` 的值后重启，探针输出随之变化——证明文件确实被读取并合并（不是缓存）。
+  3. 把探针键名改为 `GearIn_TEXT_hello` 重启：日志出现 ERROR `Missing string: [GearIn_TEXT_hello]`，探针打印字面量 `Missing string: [...]`—— 确认缺失行为不崩溃；改回后恢复。
+  4. 修改 `GearIn_text_hello` 的值后重启，探针输出随之变化 —— 证明文件确实被读取并合并（不是缓存）。
   5. 故障复现（语法）：把 `GearIn_text_hello` 的值去掉一个引号后启动，确认加载在启动状态中止、日志出现带文件路径的 JSONException；改回后恢复。再把文件加 UTF-8 BOM 保存后启动，确认同类解析失败；恢复无 BOM。
-  6. 回归：`descriptions.csv` 的对象风味文本照旧显示——两套文本互不干扰。
-- **通过信号**：日志与界面文本与文件内容一致；日志无 ERROR；键缺失与语法两种故障均能复现出所述结果；探针输出与"调用示例与预期返回值"表一致。
+  6. 回归：`descriptions.csv` 的对象风味文本照旧显示 —— 两套文本互不干扰。
+- **通过信号**：日志与界面文本与文件内容一致；日志无 ERROR；键缺失与语法两种故障均能复现出所述结果；探针输出与 "调用示例与预期返回值" 表一致。
 - **清理**：删除探针行；strings.json 恢复原状（含 UTF-8 无 BOM）。
 
 ## 预期结果
@@ -249,7 +249,7 @@ public final class GearInI18n {
 启动游戏进入生涯，按以下位置核对：
 
 - **启动日志**：出现 `Loading strings`；随后出现包含 `data/strings/strings.json` 的 `Loading JSON from [...]` 行（原版与 gear_in 各一行）；`starsector.log` 无 ERROR。
-- **探针取值**：按"验证方案"接入探针后，取值输出与"调用示例与预期返回值"表一致；把键名改为大小写错误的 `GearIn_TEXT_hello` 后，日志出现 ERROR `Missing string: [GearIn_TEXT_hello]`，探针打印字面量 `Missing string: [...]`——"键写错不报错、只给字面量"的直接证明。
+- **探针取值**：按 "验证方案" 接入探针后，取值输出与 "调用示例与预期返回值" 表一致；把键名改为大小写错误的 `GearIn_TEXT_hello` 后，日志出现 ERROR `Missing string: [GearIn_TEXT_hello]`，探针打印字面量 `Missing string: [...]`——"键写错不报错、只给字面量" 的直接证明。
 - **原版使用方观察**（不修改原版文件）：
   - 生涯中与舰队遭遇：对话文本里的 `$faction`/`$fleetName`/`$fleetOrShip` 等已被替换成实际值；
   - 悬停或接近跳跃点：`jumpPointInteractionDialog` 的 `approach` 文本（含 `$fleetOrShip` 替换结果）；
@@ -258,11 +258,11 @@ public final class GearInI18n {
 
 ## 实例驱动故障分析
 
-按"症状 → 原因 → 修正"逐条排查；前三条可用本节示例数据直接复现。
+按 "症状 → 原因 → 修正" 逐条排查；前三条可用本节示例数据直接复现。
 
 - **界面/日志出现 `Missing string: [xxx]` 字面量**：分类或键拼写/大小写与文件不一致，或文件没放在 `data/strings/strings.json`，或 MOD 未启用。取值不抛异常、不崩溃，界面把字面量原样渲染，日志同时有 ERROR（只含 id 不含 category）。修正：核对 `(category, id)` 逐字符一致，确认路径与启用状态。
 - **取到的是别的 MOD 的文本**：`(category, id)` 与其他 MOD（或原版）冲突，标量值被启用顺序靠后的文件覆盖。修正：**不要重定义既有键**；自己的键保持 MOD 前缀（`GearIn_text_*`），分类保持语义命名。
-- **启动中止，日志含 JSONException（消息带文件路径）**：strings.json 语法错误——括号不配对、字符串引号不闭合。`#` 注释只在引号外被剥离，引号内的 `#` 是普通字符。修正：对照原版文件结构修语法，重启。
+- **启动中止，日志含 JSONException（消息带文件路径）**：strings.json 语法错误 —— 括号不配对、字符串引号不闭合。`#` 注释只在引号外被剥离，引号内的 `#` 是普通字符。修正：对照原版文件结构修语法，重启。
 - **启动中止，日志提示文本必须以 `{` 开头一类**：文件带 BOM（`readText` 不剥离，`\ufeff` 粘在开头）。修正：UTF-8 无 BOM 重新保存。
 - **界面出现 `$faction` 等原样令牌**：使用方没有做令牌替换。修正：取值后自行 `replace`/`replaceAll`（本节 `GearInI18n.replaceToken` 即此职责）。
 - **运行期 `IllegalFormatException`**：`%s` 占位符与 `String.format` 实参个数/类型不匹配。修正：对齐模板与实参；拿不准时先打印模板原文核对。
@@ -282,7 +282,7 @@ strings.json 的全部机制可以收成一张表：
 | 组织 | 分类按功能域语义命名，键带 MOD 前缀（`GearIn_text_*`）；本地化只改值不改键 |
 | 边界 | `tooltips.json`/`tips.json` 同加载点但键空间独立；对象风味文本走 `descriptions.csv`（C01-S06/C03-S04）|
 
-至此，两条文本链路全部讲完：`descriptions.csv` 管"对象"的文本，strings.json 管"代码"的文本。
+至此，两条文本链路全部讲完：`descriptions.csv` 管 "对象" 的文本，strings.json 管 "代码" 的文本。
 
 就逻辑上的后续而言，这套两级键机制是后续一切代码驱动文本的共同底座：交互对话、弹窗按钮、提示文本都可以先到 strings.json 定义键、再用双参取值；本节的键组织约定（分类按功能域、键带 MOD 前缀、只改值不改键）会在这些场景里直接复用，而 `$token` 与 `%s` 的职责划分决定了取值侧必须承担的替换与格式化责任。
 

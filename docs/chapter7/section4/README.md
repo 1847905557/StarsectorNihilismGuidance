@@ -1,6 +1,6 @@
 # 武器开火流与射弹/光束运行态
 
-本节把"武器触发 → 射弹 / 光束"的对象流讲透：武器开火流（每帧回调顺序、弹药/冷却/充能、射弹生成、`onFire` 回调）、射弹生命周期（生成、飞行、命中、淡出）、导弹特殊行为（装填、熄火、EMP 电弧抗性、制导与 flare）、光束语义（逐帧射线、DPS 结算、`didDamageThisFrame`）以及事件监听器（fire / damage 两类）。必须先纠正一个现状：**RC8 公开 API 中不存在独立的 `ProjectileAPI` 接口**，射弹运行态接口就是 `DamagingProjectileAPI`（`MissileAPI extends DamagingProjectileAPI`，`CombatEngineAPI.getProjectiles()` 返回 `List<DamagingProjectileAPI>`），本节所有"射弹"论述都指它。
+本节把 "武器触发 → 射弹 / 光束" 的对象流讲透：武器开火流（每帧回调顺序、弹药/冷却/充能、射弹生成、`onFire` 回调）、射弹生命周期（生成、飞行、命中、淡出）、导弹特殊行为（装填、熄火、EMP 电弧抗性、制导与 flare）、光束语义（逐帧射线、DPS 结算、`didDamageThisFrame`）以及事件监听器（fire / damage 两类）。必须先纠正一个现状：**RC8 公开 API 中不存在独立的 `ProjectileAPI` 接口**，射弹运行态接口就是 `DamagingProjectileAPI`（`MissileAPI extends DamagingProjectileAPI`，`CombatEngineAPI.getProjectiles()` 返回 `List<DamagingProjectileAPI>`），本节所有 "射弹" 论述都指它。
 
 *本节预期阅读时间：~25 分钟。*
 
@@ -10,8 +10,8 @@
 
 完成后，您将能够：
 
-- 说出 RC8 射弹/导弹/光束的三个对象集合语义：`getProjectiles()` **包含**导弹（API javadoc 原文 "Includes missiles."）与光束脉冲射线，`getMissiles()` 是导弹子集，`getBeams()` 只含光束武器实体——并解释为什么同时遍历前两个会重复统计；
-- 背出武器开火流的回调顺序：`EveryFrameWeaponEffectPlugin.advance`（本帧转向/开火**之前**）→ 本帧核心操作 → `EveryFrameWeaponEffectPluginWithAdvanceAfter.advanceAfter`（**之后**），以及 `fireShot` 内部"先扣弹药、失败则不生成射弹、生成后再回调 `onFire`"的次序；
+- 说出 RC8 射弹/导弹/光束的三个对象集合语义：`getProjectiles()` **包含**导弹（API javadoc 原文 "Includes missiles."）与光束脉冲射线，`getMissiles()` 是导弹子集，`getBeams()` 只含光束武器实体 —— 并解释为什么同时遍历前两个会重复统计；
+- 背出武器开火流的回调顺序：`EveryFrameWeaponEffectPlugin.advance`（本帧转向/开火**之前**）→ 本帧核心操作 → `EveryFrameWeaponEffectPluginWithAdvanceAfter.advanceAfter`（**之后**），以及 `fireShot` 内部 "先扣弹药、失败则不生成射弹、生成后再回调 `onFire`" 的次序；
 - 列出射弹生命周期的关键状态（`getElapsed` / `isFading` / `didDamage` / `getDamageTarget` / `getWeapon` 可为 null / 射弹不能命中 source）与可观察结果；
 - 说出导弹五项特殊行为：
   - 装填判定（未装填碰撞不结算伤害）
@@ -27,10 +27,10 @@
 本节的运行态论述建立在以下既有知识上，需要时回到对应小节查阅：
 
 - 武器 CSV、`.wpn`、`.proj` 数据面（C01-S04）：本节的运行态消费这些 spec；`fireSoundOne`/`fireSoundTwo`、`flameoutTime` 等字段语义已在数据侧讲过。
-- 战斗插件模型（C07-S01）：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调、暂停守卫——本节示例插件建立在这个模型上。
+- 战斗插件模型（C07-S01）：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调、暂停守卫 —— 本节示例插件建立在这个模型上。
 - 编译 JAR 链路（C06-S01）：本节示例编入同一个 `jars\GearIndustry.jar`。
 - `Global` 生命周期与禁止跨战斗缓存引擎引用（C06-S03）：本节把同一条纪律延伸到射弹/光束/武器实例。
-- `CombatEngineAPI` 读取侧（C07-S02）：`getShips()` 遍历纪律、`getPlayerShip()` 永不 null、`isEntityInPlay`、暂停语义——本节的插件与监听器观察建立在这些判据上。
+- `CombatEngineAPI` 读取侧（C07-S02）：`getShips()` 遍历纪律、`getPlayerShip()` 永不 null、`isEntityInPlay`、暂停语义 —— 本节的插件与监听器观察建立在这些判据上。
 - `MutableStat`（C07-S03）：`damage.getModifier()` 与 `getTimeMult()` 的返回类型；本节只消费。
 
 ## 文件与 API 链路
@@ -63,7 +63,7 @@
 ### RC8 接口现状：三个集合与一条继承链
 
 - `engine.getProjectiles()` 返回 `List<DamagingProjectileAPI>`（`com.fs.starfarer.api.combat.CombatEngineAPI`，javadoc "Includes missiles."）
-  - 导弹（`MissileAPI`）与光束脉冲射线（`spawnType` 为 `BEAM` / `BALLISTIC_AS_BEAM` 的射线，它也实现 `DamagingProjectileAPI`）都算"射弹"。
+  - 导弹（`MissileAPI`）与光束脉冲射线（`spawnType` 为 `BEAM` / `BALLISTIC_AS_BEAM` 的射线，它也实现 `DamagingProjectileAPI`）都算 "射弹"。
 - `engine.getMissiles()` 返回 `List<MissileAPI>`，是射弹集合的导弹子集。
 - `engine.getBeams()` 返回 `List<BeamAPI>`，只含光束武器实体，与光束脉冲射线是两类东西。
 - 三者都是引擎对象表的类型查询（`objects.getList(...)`）。
@@ -82,7 +82,7 @@
 
 武器实例由引擎随舰船创建，每帧推进一次。回调顺序（弹丸类武器与光束武器同构）：
 
-1. `EveryFrameWeaponEffectPlugin.advance(amount, engine, weapon)`——本帧转向、开火等核心操作**之前**（API javadoc 原文 "Called before this frame's operations for the weapon - turning, firing, etc."）。
+1. `EveryFrameWeaponEffectPlugin.advance(amount, engine, weapon)`—— 本帧转向、开火等核心操作**之前**（API javadoc 原文 "Called before this frame's operations for the weapon - turning, firing, etc."）。
 2. 本帧核心操作：转向、充能/爆发、开火判定、冷却、弹药装填、禁用状态。
 3. 若效果对象实现了 `EveryFrameWeaponEffectPluginWithAdvanceAfter`，`advanceAfter(amount, engine, weapon)` 在本帧操作**之后**调用。
 
@@ -94,9 +94,9 @@
 
 开火判定通过后，武器按炮管模式调用 `fireShot(barrel, angle)`，内部顺序固定：
 
-1. **先扣弹药**：`deductOneAmmo()` 失败（弹药武器弹尽）→ 本次不发射，不生成射弹、不开火音、无后坐力。可观察结果：弹尽后"点击开火无任何反应"，但没有报错。
+1. **先扣弹药**：`deductOneAmmo()` 失败（弹药武器弹尽）→ 本次不发射，不生成射弹、不开火音、无后坐力。可观察结果：弹尽后 "点击开火无任何反应"，但没有报错。
 2. 后坐力（`recoilTracker.applyRecoil()`）、开火音（`fireSoundTwo` 声集在炮口位置播放）。
-3. 引擎生成射弹实体——按 `.proj` 的 `spawnType` / spec 类型分别创建：
+3. 引擎生成射弹实体 —— 按 `.proj` 的 `spawnType` / spec 类型分别创建：
    - `BALLISTIC` → 弹道弹体
    - `PLASMA` → 等离子弹体
    - `BEAM` / `BALLISTIC_AS_BEAM` → 光束脉冲射线
@@ -116,15 +116,15 @@
 1. **修改武器数值前必须 `ensureClonedSpec()`**。`getSpec()` 返回的是所有同类武器共享的 spec 对象，直接改它会污染同 id 的所有武器实例（`WeaponAPI.getSpec()`）。
    - `ensureClonedSpec()` 把当前实例切到私有克隆并保存 `getOriginalSpec()`
    - 违反的可观察结果：多艘舰的同名武器数值一起变化，且跨战斗持续。
-2. **`onFire` / `onHit` 回调参数只在本回调内消费，禁止跨发/跨帧缓存**。`onFire` 的 `projectile` 参数属于"本发射弹"；把 `projectile`、`target` 或 `damageResult` 存进字段跨命中复用，会污染命中状态归属。
+2. **`onFire` / `onHit` 回调参数只在本回调内消费，禁止跨发/跨帧缓存**。`onFire` 的 `projectile` 参数属于 "本发射弹"；把 `projectile`、`target` 或 `damageResult` 存进字段跨命中复用，会污染命中状态归属。
    - 违反的可观察结果：下一次开火/命中覆盖字段后，旧逻辑对已移除实体继续操作，或第二场战斗引用失效（与 C06-S03 / C07-S02 的跨战斗缓存禁令同一条纪律）。
 
 ## 射弹生命周期（DamagingProjectileAPI）
 
 - **生成**：`engine.spawnProjectile(ship, weapon, weaponId, point, angle, shipVelocity)`
   - `weaponId` 按 id 查武器 spec 并取其弹体 spec；第四参 `projSpecId` 可直接覆盖弹体 spec
-  - `ship` 传 null 时引擎用"转移穿梭机"假舰作 source；返回 `CombatEntityAPI`（可为 null）
-- **飞行与射程**：弹道弹的射程换算为飞行时间——`maxRange` 先经舰船统计修正（额外射程倍率/平值），再除以弹速（弹道弹创建时）
+  - `ship` 传 null 时引擎用 "转移穿梭机" 假舰作 source；返回 `CombatEntityAPI`（可为 null）
+- **飞行与射程**：弹道弹的射程换算为飞行时间 ——`maxRange` 先经舰船统计修正（额外射程倍率/平值），再除以弹速（弹道弹创建时）
   - 弹体在飞行末尾淡出（淡出进度驱动 `damage.setMultiplier`）；`isFading()` 为 true 后伤害转软辐能（`setSoftFlux(true)`）
   - 可观察结果：射程即将耗尽时弹丸变淡、命中伤害下降，不再产生硬辐能。
 - **命中**：碰撞判定 → 目标实体 `applyDamage`（碰撞处理器把射弹写入目标的 `paramAboutToApplyDamage`，作为伤害监听器的 `param` 参数）→ 引擎回调 `notifyDealtDamage`
@@ -139,13 +139,13 @@
    - 违反/误解的可观察结果：贴脸开火不会打到自己；熄火后的导弹可能回砸发射舰（命中判定按熄火瞬间的舰船包围盒）。
 4. **从导弹生成的 `BALLISTIC` / `BALLISTIC_AS_BEAM` / `PLASMA` 射弹必须 `setFromMissile(true)`**。
    - `setFromMissile` javadoc 原文："Should be set to true for BALLISTIC, BALLISTIC_AS_BEAM, and PLASMA_SHOT projectiles spawned from a missile. Needed for incoming damage evaluation AI to function properly."
-   - 违反的可观察结果：敌方"评估来袭伤害"的 AI 不把这批射弹当作导弹对待，点防御/规避行为异常（无报错，静默失效）。
+   - 违反的可观察结果：敌方 "评估来袭伤害" 的 AI 不把这批射弹当作导弹对待，点防御/规避行为异常（无报错，静默失效）。
 
 ## 导弹特殊行为（MissileAPI）
 
 - **装填（arming）**：`isArmed()` = `forceAlwaysArmed || (elapsed >= armingTime && (!isFizzling() || armedWhileFizzling))` （`armingTime` 来自 `MissileSpecAPI.getArmingTime()`）
   - **未装填的导弹碰撞不结算伤害**：碰撞处理器遇到未装填导弹（或两枚都未装填的导弹对撞）直接走物理碰撞处理并返回
-  - 可观察结果：导弹在装填时间内撞上目标——无伤害、无命中粒子，只弹开或消失。
+  - 可观察结果：导弹在装填时间内撞上目标 —— 无伤害、无命中粒子，只弹开或消失。
 - **哑弹概率**：`armedWhileFizzling = random > dudProbabilityOnFlameout`——`dudProbabilityOnFlameout > 0` 的导弹熄火后可能保持未装填（哑弹），撞击无伤害。
 - **熄火（fizzle）流程**：
   - `flameOut()` = `flightTime = maxFlightTime + 1`；
@@ -153,7 +153,7 @@
   - `fizzleOnReachingWeaponRange`（`MissileSpecAPI.isFizzleOnReachingWeaponRange()`）：从 `getStart()` 到当前位置距离超过 `getMaxRange()` 即 `flameOut()`——`getMaxRange()` 默认取发射武器的 `getRange()`；
   - 熄火期间：`isFizzling()`（`timeSinceFizzling > 0`）、`isFading()`（`timeSinceFizzling > fizzleTime - fadeTime`）；`noCollisionWhileFading` → 碰撞类置 `NONE` ；`reduceDamageWhileFading` → 伤害乘数按剩余淡出比例下降且转软辐能；
   - 过期条件：`timeSinceFizzling >= fizzleTime` 或血量归零。
-- **射程/寿命换算**：`maxFlightTime = spec.maxFlightTime * 额外射程倍率 + 额外射程 / maxSpeed`；`useProjectileRangeCalculation` 则按"修正后射程 / 最大速度"折算。可观察结果：给武器挂射程加成后导弹飞得更远。
+- **射程/寿命换算**：`maxFlightTime = spec.maxFlightTime * 额外射程倍率 + 额外射程 / maxSpeed`；`useProjectileRangeCalculation` 则按 "修正后射程 / 最大速度" 折算。可观察结果：给武器挂射程加成后导弹飞得更远。
 - **EMP 电弧抗性**：`setEmpResistance(int)` javadoc 原文："Number of times a missile will ignore being hit by an system EMP *arc* (not emp damage) instead of flaming out."
   - EMP 电弧命中导弹时，`empResistance <= 0` 直接 `flameOut()`，否则只递减
   - 可观察结果：`empResistance=0`（默认）的导弹被 EMP 电弧击中立即熄火坠落；有抗性时电弧命中只减计数。
@@ -182,7 +182,7 @@
 
 必须遵守的规则：
 
-5. **`didDamageThisFrame()` / `getDamageTarget()` 只对本帧结算语义有效，禁止缓存跨帧使用**。光束实体每帧更新 from/to 与命中状态，上一帧的目标可能已经死亡、离开射线或换了目标。违反的可观察结果：把上一帧目标当本帧目标继续施加逻辑——对已死目标操作、射线已转向仍引用旧目标。
+5. **`didDamageThisFrame()` / `getDamageTarget()` 只对本帧结算语义有效，禁止缓存跨帧使用**。光束实体每帧更新 from/to 与命中状态，上一帧的目标可能已经死亡、离开射线或换了目标。违反的可观察结果：把上一帧目标当本帧目标继续施加逻辑 —— 对已死目标操作、射线已转向仍引用旧目标。
 
 ## 事件监听器（fire / damage）
 
@@ -201,7 +201,7 @@
 ::: info 类实现了接口 ≠ 实例被引擎调用
 `OnFireEffectPlugin` / `OnHitEffectPlugin` / `EveryFrameWeaponEffectPlugin` 这些接口的实现类，只有类名被写进 `.proj` / `.wpn` 的数据字段时，引擎才会在创建射弹 / 武器时通过脚本加载器实例化并回调；用 `addPlugin` 注册成战斗插件，只让插件回调（`advance` 等）生效。
 
-两类实例由完全不同的机制创建（脚本类加载器每次创建新实例），互相收不到对方的回调——"类实现了接口"不等于"实例被引擎调用"。
+两类实例由完全不同的机制创建（脚本类加载器每次创建新实例），互相收不到对方的回调 ——"类实现了接口" 不等于 "实例被引擎调用"。
 :::
 
 必须遵守的规则：
@@ -209,7 +209,7 @@
 6. **伤害修改只能通过 `damage.getModifier()` 完成，并按 javadoc 返回修改 id（或 null）**。`DamageDealtModifier` javadoc 原文："Modifications to damage should ONLY be made using damage.getModifier()."
    - 引擎在结算前应用监听器的修改、结算后按返回的 id 从 `damage.getModifier()` 还原
    - `DamageAPI.getDamage()` 由乘数（射弹淡出/光束亮度每帧重设）与 `getModifier()` 返回的修正统计相乘得出
-   - 违反的可观察结果：直接 `damage.setDamage(...)` 会覆盖射弹的淡出乘数（淡出中的射弹恢复全额伤害）或被光束的每帧乘数重设覆盖（修改不生效），且不参与"结算后还原"，多监听器并存时残留污染下一条伤害。
+   - 违反的可观察结果：直接 `damage.setDamage(...)` 会覆盖射弹的淡出乘数（淡出中的射弹恢复全额伤害）或被光束的每帧乘数重设覆盖（修改不生效），且不参与 "结算后还原"，多监听器并存时残留污染下一条伤害。
 
 ## 对象流速查表
 
@@ -370,7 +370,7 @@ import com.fs.starfarer.api.combat.listeners.DamageTakenModifier;
 
 /**
  * 引擎级伤害监听器（结算前修改 + 结算后报告）：由 GearInFlowObserverPlugin.init()
- * 接入 engine.getListenerManager()，每次伤害结算都会回调。本类不改数值——
+ * 接入 engine.getListenerManager()，每次伤害结算都会回调。本类不改数值 ——
  * 要修改只能走 damage.getModifier() 并返回修改 id（硬规范 6），修改方法一律返回 null。
  */
 public class GearInDamageObserverListener
@@ -486,7 +486,7 @@ public class GearInWeaponFlowEffect implements EveryFrameWeaponEffectPluginWithA
 
 `onFire` 收到的就是刚生成的那一个射弹对象（`fireShot` 生成后回调）。
 
-参数都是"本次事件上下文"，禁止跨发缓存（规则 2）。可观察信号：`GearIn onFire ...`。
+参数都是 "本次事件上下文"，禁止跨发缓存（规则 2）。可观察信号：`GearIn onFire ...`。
 
 ```java
 package data.scripts.gearin.combat;
@@ -522,7 +522,7 @@ public class GearInShotOnFireEffect implements OnFireEffectPlugin {
 
 ### GearInShotOnHitEffect（射弹命中回调，.proj onHitEffect 绑定）
 
-只有把本类类名写进 `.proj` 的 `onHitEffect` 字段时才会被调用（射弹 / 导弹 / 光束脉冲命中结算时触发）。参数都是"本次命中上下文"，禁止跨命中缓存（规则 2）。可观察信号：`GearIn onHit ...`。
+只有把本类类名写进 `.proj` 的 `onHitEffect` 字段时才会被调用（射弹 / 导弹 / 光束脉冲命中结算时触发）。参数都是 "本次命中上下文"，禁止跨命中缓存（规则 2）。可观察信号：`GearIn onHit ...`。
 
 ```java
 package data.scripts.gearin.combat;
@@ -565,7 +565,7 @@ public class GearInShotOnHitEffect implements OnHitEffectPlugin {
 三个静态方法只做观察、不修改任何游戏数值，由 `GearInFlowObserverPlugin` 按 3 秒节奏调用：
 
 - `logWeapons` 打印玩家舰全部武器的弹药 / 冷却 / 充能 / 开火状态与光束实体数；
-- `logProjectiles` 演示"`getProjectiles()` 包含导弹"—— `total` 与 `missiles` 两列并排，导弹还逐枚打印装填 / 制导 / 熄火 / 寿命 / EMP 抗性状态；
+- `logProjectiles` 演示 "`getProjectiles()` 包含导弹"—— `total` 与 `missiles` 两列并排，导弹还逐枚打印装填 / 制导 / 熄火 / 寿命 / EMP 抗性状态；
 - `logBeams` 演示光束 DPS 语义与命中状态（`dps` / `dmg` / `brightness` / `didDamageThisFrame` / `target`）。
 
 可观察信号：周期 `GearIn weapon ...`、`GearIn projectiles: total=... missiles=...`、`GearIn missile ...`、`GearIn beam ...`。
@@ -654,7 +654,7 @@ public class GearInStateReport {
 
 ### 注册与接入片段
 
-注册片段（工程片段——本节不修改任何既有文件，只演示注册调用的写法）：
+注册片段（工程片段 —— 本节不修改任何既有文件，只演示注册调用的写法）：
 
 ```java
     // 已有战斗插件的 init() 内新增一行
@@ -665,7 +665,7 @@ public class GearInStateReport {
     }
 ```
 
-数据接入片段（工程片段——本单元不创建数据文件；接入后武器逐帧效果与射弹回调才生效。以下 ID 由本节声明，路径在 `Starsector\mods\GearIndustry\` 下自洽）：
+数据接入片段（工程片段 —— 本单元不创建数据文件；接入后武器逐帧效果与射弹回调才生效。以下 ID 由本节声明，路径在 `Starsector\mods\GearIndustry\` 下自洽）：
 
 ```text
 data\weapons\GearIn_test_gun.wpn        # 片段：弹丸武器，绑定 everyFrameEffect
@@ -739,7 +739,7 @@ gradle jar
 8. **数据绑定角色（可选）**：按数据接入片段自建 `GearIn_test_gun.wpn` / `GearIn_test_shot.proj` 并装到测试舰
    - 核对 `GearIn weapon init ...` / `GearIn weapon ... started firing (before-frame callback)` / `GearIn onFire ...` / `GearIn onHit ...`
    - 持续射击时每 2 秒一条 `GearIn weapon ... after-frame: ...`。
-9. **故障注入**：把 `GearInFlowObserverPlugin.advance` 里的暂停守卫注释掉——暂停期间周期报告照常输出；改回后确认恢复。
+9. **故障注入**：把 `GearInFlowObserverPlugin.advance` 里的暂停守卫注释掉 —— 暂停期间周期报告照常输出；改回后确认恢复。
 
 通过信号：操作 1–7 全部符合；操作 8 在接入片段后符合；操作 9 的注入与恢复都符合预期。
 
@@ -786,7 +786,7 @@ gradle -p tutorial-fixtures compileC07s04Java --no-daemon
 
 1. **导弹被数两次**。触发：`n = engine.getProjectiles().size() + engine.getMissiles().size()` 之类叠加统计。
    - 可观察：导弹同时出现在两个集合里（`getProjectiles()` javadoc "Includes missiles."），计数虚高；光束脉冲（`spawnType=BEAM`）也可能混入 `getProjectiles()`
-   - 修正：统计只用一个入口——总数用 `getProjectiles()`，需要导弹专用字段再查 `getMissiles()`。
+   - 修正：统计只用一个入口 —— 总数用 `getProjectiles()`，需要导弹专用字段再查 `getMissiles()`。
 2. **武器数值全局漂移**。触发：`weapon.getSpec().setMaxAmmo(...)` 不先 `ensureClonedSpec()`。可观察：所有同 id 武器一起变（共享 spec 对象），跨战斗持续。修正：`ensureClonedSpec()` 后再改；`getOriginalSpec()` 是克隆前的原始 spec。
 3. **`onFire` / `onHit` "不触发"**。触发：类实现了 `OnFireEffectPlugin` / `OnHitEffectPlugin`（如 `GearInShotOnFireEffect` / `GearInShotOnHitEffect`），但 `.proj` 里没绑 `onFireEffect` / `onHitEffect`
    - 可观察：方法**永远不执行**，无任何报错（静默）—— 类实现了接口不等于实例被引擎调用（数据绑定实例与战斗插件实例是两类实例，由脚本类加载器分别创建）
@@ -794,14 +794,14 @@ gradle -p tutorial-fixtures compileC07s04Java --no-daemon
 4. **导弹命中无伤害**。触发：导弹在 `armingTime` 内命中目标，或熄火后 `armedWhileFizzling=false`（dud 概率生效），或 `reduceDamageWhileFading` 期间伤害被乘到接近 0
    - 可观察：撞击有物理效果但伤害与命中粒子都不出现（未装填路径）
    - 修正：核对 spec 的 `armingTime` / `dudProbabilityOnFlameout` 与命中时刻；`MissileAPI.isArmed()` 逐帧验证。
-5. **导弹被 EMP 电弧"秒杀"**。触发：默认 `empResistance=0`，没做抗性设计。可观察：EMP 电弧（非 EMP 伤害）命中导弹即熄火，导弹失去制导坠落。修正：需要抗 EMP 时 `setEmpResistance(n)`；注意它只免疫 EMP **电弧**，不免疫 EMP 伤害。
+5. **导弹被 EMP 电弧 "秒杀"**。触发：默认 `empResistance=0`，没做抗性设计。可观察：EMP 电弧（非 EMP 伤害）命中导弹即熄火，导弹失去制导坠落。修正：需要抗 EMP 时 `setEmpResistance(n)`；注意它只免疫 EMP **电弧**，不免疫 EMP 伤害。
 6. **光束目标错乱**。触发：把 `beam.getDamageTarget()` 存进字段跨帧使用。可观察：上一帧目标已死/已离开射线，本帧逻辑仍按旧目标处理（`didDamageThisFrame` / `getDamageTarget` 只对本帧结算有效）。修正：只在 `BeamEffectPlugin.advance` 本帧内消费命中状态（规则 5）。
 7. **伤害修改不生效或残留**。触发：`modifyDamageDealt` 里直接 `damage.setDamage(x)` 或修改后返回 `null` 之外不匹配的 id
    - 可观察：弹道弹淡出乘数被覆盖（淡出中的射弹恢复全额伤害）或光束每帧重设乘数把修改冲掉；返回 id 与 `getModifier()` 实际未修改不匹配时引擎按 id 还原出错
    - 修正：只能 `damage.getModifier().modify*(id, ...)` 并返回该 id（规则 6）。
-8. **贴脸开火"打到自己"的误解**。触发：以为射弹可以命中发射舰，或反过来给射弹设了 `HITS_SHIPS_AND_ASTEROIDS`
+8. **贴脸开火 "打到自己" 的误解**。触发：以为射弹可以命中发射舰，或反过来给射弹设了 `HITS_SHIPS_AND_ASTEROIDS`
    - 可观察：正常射弹永远不命中 source（`DamagingProjectileAPI.getSource()` javadoc），而 `HITS_SHIPS_AND_ASTEROIDS` 碰撞类与熄火导弹走豁免路径可能砸回发射舰
-   - 修正：按碰撞类设计命中关系，需要"回砸"效果时明确使用豁免条件。
+   - 修正：按碰撞类设计命中关系，需要 "回砸" 效果时明确使用豁免条件。
 
 ## 总结
 
@@ -826,7 +826,7 @@ gradle -p tutorial-fixtures compileC07s04Java --no-daemon
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.WeaponAPI`：武器运行时接口——`getSpec` / `ensureClonedSpec` / `getOriginalSpec`、弹药 / 冷却 / 充能 / 开火状态、`getBeams` / `getEffectPlugin` / `getDerivedStats`。
+- `com.fs.starfarer.api.combat.WeaponAPI`：武器运行时接口 ——`getSpec` / `ensureClonedSpec` / `getOriginalSpec`、弹药 / 冷却 / 充能 / 开火状态、`getBeams` / `getEffectPlugin` / `getDerivedStats`。
 - `com.fs.starfarer.api.combat.DamagingProjectileAPI`：射弹运行态接口（RC8 无独立 `ProjectileAPI`）
   - `getSource`（射弹不能命中 source）、`setFromMissile`、`didDamage` / `getDamageTarget`
   - `isFading`、`getSpawnType`、 `getWeapon`（可为 null）、`getTailEnd`
@@ -838,19 +838,19 @@ gradle -p tutorial-fixtures compileC07s04Java --no-daemon
   - `getFrom` / `getTo` / `getLength` / `getBrightness`
   - `didDamageThisFrame` / `getDamageTarget`（只对本帧有效）
   - `getRayEndPrevFrame` / `getLengthPrevFrame`、`getDamage`
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：战斗引擎入口——`getProjectiles`（含导弹）、`getMissiles`、`getBeams`、`spawnProjectile`、`getListenerManager`。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：战斗引擎入口 ——`getProjectiles`（含导弹）、`getMissiles`、`getBeams`、`spawnProjectile`、`getListenerManager`。
 - `com.fs.starfarer.api.combat.ShipAPI`：`getAllWeapons`、`getListenerManager`。
-- `com.fs.starfarer.api.combat.listeners.CombatListenerManagerAPI`：监听器注册表——`addListener` / `removeListener` / `removeListenerOfClass` / `hasListener` / `getListeners`。
+- `com.fs.starfarer.api.combat.listeners.CombatListenerManagerAPI`：监听器注册表 ——`addListener` / `removeListener` / `removeListenerOfClass` / `hasListener` / `getListeners`。
 - `com.fs.starfarer.api.combat.listeners.DamageDealtModifier` / `DamageTakenModifier` / `DamageListener` / `ApplyDamageResultAPI`：伤害事件监听器族
   - 挂造成伤害方 / 承受伤害方舰船（能挂舰船就不挂引擎）；修改只能走 `damage.getModifier()` 并返回 id
   - 结果对象含 `getDamageToHull` / `getTotalDamageToArmor` / `getDamageToShields` / `getEmpDamage`
 - `com.fs.starfarer.api.combat.listeners.CombatListenerUtil`：引擎级与舰船级监听器的查找与调用顺序。
-- `com.fs.starfarer.api.combat.OnFireEffectPlugin` / `OnHitEffectPlugin`：`.proj` 数据绑定的一次性回调——`onFire` / `onHit` 参数只在本回调内消费。
+- `com.fs.starfarer.api.combat.OnFireEffectPlugin` / `OnHitEffectPlugin`：`.proj` 数据绑定的一次性回调 ——`onFire` / `onHit` 参数只在本回调内消费。
 - `com.fs.starfarer.api.combat.EveryFrameWeaponEffectPlugin` / `EveryFrameWeaponEffectPluginWithAdvanceAfter` / `WeaponEffectPluginWithInit`：武器逐帧效果接口族
   - 操作前 `advance` / 操作后 `advanceAfter` / 实例初始化 `init(WeaponAPI)`
 - `com.fs.starfarer.api.combat.BeamEffectPlugin` / `BeamEffectPluginWithReset`：光束逐帧效果与实体创建 / 销毁重置。
-- `com.fs.starfarer.api.combat.MissileAIPlugin` / `GuidedMissileAI`：导弹每帧导航——不实现 `GuidedMissileAI` 的自定义 AI 不受 flare 影响。
-- `com.fs.starfarer.api.combat.DamageAPI`：单次伤害对象——`getModifier`（`MutableStat`）、`getBaseDamage`、`isDps`、`getDpsDuration`、`setSoftFlux`。
+- `com.fs.starfarer.api.combat.MissileAIPlugin` / `GuidedMissileAI`：导弹每帧导航 —— 不实现 `GuidedMissileAI` 的自定义 AI 不受 flare 影响。
+- `com.fs.starfarer.api.combat.DamageAPI`：单次伤害对象 ——`getModifier`（`MutableStat`）、`getBaseDamage`、`isDps`、`getDpsDuration`、`setSoftFlux`。
 - `com.fs.starfarer.api.loading.MissileSpecAPI`：导弹数据 spec
   - `getArmingTime` / `getFlameoutTime` / `getAfterFlameoutCollisionClass` / `getDudProbabilityOnFlameout`
   - `isFizzleOnReachingWeaponRange` / `isNoCollisionWhileFading` / `isReduceDamageWhileFading` / `isUseProjectileRangeCalculation`

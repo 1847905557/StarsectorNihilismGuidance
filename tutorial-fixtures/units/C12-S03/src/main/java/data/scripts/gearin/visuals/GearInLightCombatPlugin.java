@@ -20,7 +20,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
  *   并注册一个覆盖全部层的分层渲染钩子；LightShader 声明在
  *   ABOVE_SHIPS_AND_MISSILES_LAYER 层渲染（ShaderAPI.isCombat() == true）；
  * - LightShader.addLight 只在光源 shader 已启用且战斗 LocalData 已存在时把光源写进
- *   当前战斗的光源列表，其余情况静默跳过——动态光源必须在战斗内添加；
+ *   当前战斗的光源列表，其余情况静默跳过 —— 动态光源必须在战斗内添加；
  * - 光源列表随战斗销毁；未永久化的光源在 superLifetime（60 秒）耗尽后被 failsafe
  *   移除；advance 返回 true（size 或 intensity 归零）的光源由 LightShader.advance
  *   逐帧移除，fadeOut 是标准自灭姿势；

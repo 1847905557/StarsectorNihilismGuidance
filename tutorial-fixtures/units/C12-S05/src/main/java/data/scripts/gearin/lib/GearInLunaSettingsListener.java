@@ -14,7 +14,7 @@ import lunalib.lunaSettings.LunaSettingsListener;
  * 重读输出当前生效值。addSettingsListener 不去重，注册前必须用
  * hasSettingsListenerOfClass 幂等查询（重复注册会让同一次保存触发多次回调）。
  *
- * 监听器实例在门控通过之后才创建——类加载路径不触碰 lunalib.**，LunaLib 未启用
+ * 监听器实例在门控通过之后才创建 —— 类加载路径不触碰 lunalib.**，LunaLib 未启用
  * 时（C12-S01 场景）调用本类不会抛 NoClassDefFoundError，门控纪律见硬规则 7、10。
  */
 public class GearInLunaSettingsListener {

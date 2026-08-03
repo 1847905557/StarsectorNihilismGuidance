@@ -15,7 +15,7 @@ import com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent;
 import com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager;
 
 /**
- * 完整最小例：酒吧事件（PortsideBarEvent）——酒吧选项、事件对话与生命周期收尾。
+ * 完整最小例：酒吧事件（PortsideBarEvent）—— 酒吧选项、事件对话与生命周期收尾。
  *
  * 事件 ID：BaseBarEvent.getBarEventId() 默认返回类简单名，本示例不覆写，
  * 事件 ID 为 "GearInBarEvent"。该 ID 的消费者：BarEventManager 抽取时按
@@ -27,14 +27,14 @@ import com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager;
  * 1. 抽取与入列：creator.createBarEvent() 创建实例；BarEventManager 把它加入
  *    active 跟踪器（时长 = getBarEventActiveDuration()）并写入 PortsideBarData 活动列表；
  * 2. 显示：玩家进入酒吧时 BarCMD.showOptions() 遍历活动列表，经
- *    shouldShowAtMarket() 过滤、addPromptAndOption() 写入提示与选项——
+ *    shouldShowAtMarket() 过滤、addPromptAndOption() 写入提示与选项 ——
  *    选项的 optionData 必须是事件自身（this），BarCMD.optionSelected() 只对
  *    optionData instanceof PortsideBarEvent 进入 BarEventDialogPlugin 事件对话；
  * 3. 对话：BarEventDialogPlugin.init() 调 event.init() 接管对话面板；每次点选
  *    经 event.optionSelected()；isDialogFinished() 返回 true 时回到酒吧
  *    （endWithContinue() 决定是否先显示 "Continue"）；
  * 4. 收尾：玩家与事件交互后必须调 BarEventManager.getInstance()
- *    .notifyWasInteractedWith(this)——把事件从活动列表与 active 跟踪器移除，
+ *    .notifyWasInteractedWith(this)—— 把事件从活动列表与 active 跟踪器移除，
  *    并把 creator 置入 accepted 超时（默认 60-90 游戏天），否则事件会在
  *    active 时长内继续出现在同一市场、creator 也只能拿到普通超时。
  *

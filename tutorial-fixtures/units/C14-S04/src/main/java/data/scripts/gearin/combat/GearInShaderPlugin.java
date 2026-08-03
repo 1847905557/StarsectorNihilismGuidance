@@ -33,18 +33,18 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   之后渲染，成熟实例同款）；渲染剔除依据是承载实体位置
  *   与 getRenderRadius()（C07-S05 硬规则 4），位置在 advance 里同步；
  * - 资源释放：GL 资源（program/VBO）在 cleanup() 释放并复位句柄（幂等，重复调用安全）；
- *   战斗结束 destroyInstance 不调 cleanup()——常驻插件必须在 advance() 里判
+ *   战斗结束 destroyInstance 不调 cleanup()—— 常驻插件必须在 advance() 里判
  *   engine.isCombatOver()（= 结束标志 && 淡出完成）
  *   主动失效（isExpired() -> true）驱动引擎移除，否则 program/VBO 随每场战斗泄漏；
  *   淡出期间 viewport.getAlphaMult() 下降，本示例把它送进 intensity uniform 实现视觉
  *   淡出（成熟实例同款姿势）；共享贴图（引擎启动期加载的
- *   particlealpha32sq.png）不卸载——
+ *   particlealpha32sq.png）不卸载 ——
  *   SettingsAPI.unloadTexture 按文件名从全局纹理管理器移除，卸载共享贴图会伤及所有消费方；
  * - 开关：BoxConfigs.isShaderEnable() && ShaderCore.isValid() 是 BoxUtil shader 路径
  *   可用性判据（K06/C12-S06），必须在 GL 上下文就绪后的 init 里重新判定，禁止缓存进
  *   类加载期 static final 字段（此时无 GL 上下文，isValid() 不可评估）；render 每帧
  *   复核（成熟实例每个使用点读取 BoxConfigs.isShaderEnable() 的姿势）；本示例另有运行时开关
- *   setRuntimeEnabled——只改变渲染路径与显示成本，不改变玩法状态（实例规范
+ *   setRuntimeEnabled—— 只改变渲染路径与显示成本，不改变玩法状态（实例规范
  *   "图形开关只改变渲染路径和显示成本"），关闭时 render 零 GL 提交；
  * - 性能：一次 glDrawArrays = 一个 draw call，本示例每帧恰好 1 个（frames/drawCalls
  *   计数在 cleanup 日志输出）；uniform location 创建后保存、FloatBuffer 复用
@@ -106,7 +106,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         super.init(entity);
         engine = Global.getCombatEngine();
         // 门禁：BoxUtil shader 路径可用性判据（K06/C12-S06）。必须在 GL 上下文就绪后的
-        // init 里重新判定，禁止缓存进类加载期 static final 字段——类加载期无 GL 上下文，
+        // init 里重新判定，禁止缓存进类加载期 static final 字段 —— 类加载期无 GL 上下文，
         // ShaderCore.isValid() 不可评估（C14-S03 硬规则 1 延续）
         if (!BoxConfigs.isShaderEnable() || !ShaderCore.isValid()) {
             LOG.info("GearIn shader plugin: BoxUtil shader path unavailable (shaderEnable="
@@ -219,7 +219,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         entity.getLocation().set(engine.getPlayerShip().getLocation());
         // 战斗结束收尾：isCombatOver() = 结束标志 && 淡出完成。
         // 常驻插件必须在 advance 里主动失效驱动引擎移除并调用
-        // cleanup()——战斗结束 destroyInstance 不调 cleanup()，等它等于每场泄漏
+        // cleanup()—— 战斗结束 destroyInstance 不调 cleanup()，等它等于每场泄漏
         // （C07-S05 硬规则 3 的常驻版）
         if (engine.isCombatOver()) {
             valid = false;
@@ -253,7 +253,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         if (program == null || sprite == null || vboId == 0) {
             return;
         }
-        // 运行时开关：每次使用点读取（不缓存）——关闭 → 零 GL 提交（开关只改变渲染路径
+        // 运行时开关：每次使用点读取（不缓存）—— 关闭 → 零 GL 提交（开关只改变渲染路径
         // 与显示成本；实例规范与陷阱"关闭后仍走昂贵路径"）
         if (!runtimeEnabled) {
             return;

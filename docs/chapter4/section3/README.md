@@ -1,6 +1,6 @@
 # 制作模块船：hull、槽位与运行态
 
-一艘模块船由**主体**与若干**模块**组成，两者各自都是一艘完整舰船，各有贴图、`.ship` 船体定义与 `ship_data.csv` 注册行；组装靠主体 `.ship` 里的 `STATION_MODULE` 槽位（声明"哪里可以挂模块"）与主体装配 `.variant` 里的 `modules` 字段（声明"每个槽位挂哪个模块装配"），部署战斗时游戏为每个槽位生成独立的模块战斗实体，并逐帧把它"钉"在主体槽位上。本节沿用示例 MOD 的舰船 ID，制作一艘`窑-级(Kiln)`模块巡洋舰（主体 `GearIn_kiln`）与它的一个模块（`GearIn_kiln_module`），走完贴图 → hull → 槽位 → 装配 → 运行态的完整流程。
+一艘模块船由**主体**与若干**模块**组成，两者各自都是一艘完整舰船，各有贴图、`.ship` 船体定义与 `ship_data.csv` 注册行；组装靠主体 `.ship` 里的 `STATION_MODULE` 槽位（声明 "哪里可以挂模块"）与主体装配 `.variant` 里的 `modules` 字段（声明 "每个槽位挂哪个模块装配"），部署战斗时游戏为每个槽位生成独立的模块战斗实体，并逐帧把它 "钉" 在主体槽位上。本节沿用示例 MOD 的舰船 ID，制作一艘`窑-级(Kiln)`模块巡洋舰（主体 `GearIn_kiln`）与它的一个模块（`GearIn_kiln_module`），走完贴图 → hull → 槽位 → 装配 → 运行态的完整流程。
 
 *本节预期阅读时间：~10 分钟。*
 
@@ -20,9 +20,9 @@
 
 本节建立在以下内容之上：
 
-- 舰船制作全流程——贴图、`.ship` 几何定义、槽位、`ship_data.csv` 注册与 `GearIn_artizan`（C01-S02）：模块和主体同样按该流程制作。
+- 舰船制作全流程 —— 贴图、`.ship` 几何定义、槽位、`ship_data.csv` 注册与 `GearIn_artizan`（C01-S02）：模块和主体同样按该流程制作。
 - `GearIn_durin` 武器（C01-S04）：本节装配示例会引用它。
-- 测试战役、装配导出与 `.variant` 字段表（C03-S01）：该页字段表中 `modules` 一行写着"本节不展开"——本节就是它的展开。
+- 测试战役、装配导出与 `.variant` 字段表（C03-S01）：该页字段表中 `modules` 一行写着 "本节不展开"—— 本节就是它的展开。
 - 可选：`GearIn_slag`、`GearIn_forging`、`GearIn_furnaceman`（C01-S03）与 `GearIn_artizan`（C02-S03）会作为示例 `ship_data.csv` 的上下文行出现，不认识它们不影响本节内容。
 
 ## 文件与 API 链路
@@ -46,7 +46,7 @@
 
 **两类模块船的 hint 分界**：可驾驶的模块船主体（原版 `onslaught_mk1`、`station_small`）用 `SHIP_WITH_MODULES`；空间站（原版 `station1`–`station3`、`remnant_station2`）用 `STATION`。
 
-部署时两者都会生成模块，但 `STATION` 另有"无法手动操控"的 AI 语义（hints 各取值的完整含义在舰船制作知识中有讲解）。
+部署时两者都会生成模块，但 `STATION` 另有 "无法手动操控" 的 AI 语义（hints 各取值的完整含义在舰船制作知识中有讲解）。
 
 ## 完整最小例
 
@@ -82,7 +82,7 @@
 
 ::: caution 护盾中心与护盾范围必须保留
 
-哪怕模块设计上无盾（`shield type: NONE`），`shieldCenter` 与 `shieldRadius` 也不能删：`.ship` 加载器无条件读取 `shieldCenter`（`getVector2f`）与 `shieldRadius`（`getInt`），缺失会让该船体加载失败——日志抛 JSONException，启动阶段中断。
+哪怕模块设计上无盾（`shield type: NONE`），`shieldCenter` 与 `shieldRadius` 也不能删：`.ship` 加载器无条件读取 `shieldCenter`（`getVector2f`）与 `shieldRadius`（`getInt`），缺失会让该船体加载失败 —— 日志抛 JSONException，启动阶段中断。
 
 :::
 
@@ -123,23 +123,23 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 ::: caution 船体行的 hints 必须写对
 
 - 模块行的 `hints` 必须带 `UNBOARDABLE` 和 `HIDE_IN_CODEX`：前者保证它不可被打捞，后者保证它不出现在数据库中（原版模块行全部带这两个值）。原版模块还带 `MODULE`，标记模块身份，交易界面等列表会按模块处理它。
-- **主体行的 `hints` 必须带 `SHIP_WITH_MODULES`**，否则模块会在某些场合丢失：战斗部署时根本不生成模块（详见"运行态"与故障分析第 1 条）。
+- **主体行的 `hints` 必须带 `SHIP_WITH_MODULES`**，否则模块会在某些场合丢失：战斗部署时根本不生成模块（详见 "运行态" 与故障分析第 1 条）。
 
 :::
 
 ::: tip 模块的数据可以精简
 
 - 模块的舰级名（`designation`）可以不填。
-- 模块的后勤数据应当尽可能接近于"无"：0 船员、0 货舱、0 燃料，`supplies/rec` 与 `supplies/mo` 为 0。
-- 模块行的 `tags` 不应该包含任何诸如 `x_bp` 或 `merc` 之类的蓝图/销售 tag——模块不是通过蓝图或市场渠道获得的舰船。原版模块行（如 `platform1`）的 tags 为空。模块的行为类 tag（`module_unselectable` 等）见下文运行态一节。
+- 模块的后勤数据应当尽可能接近于 "无"：0 船员、0 货舱、0 燃料，`supplies/rec` 与 `supplies/mo` 为 0。
+- 模块行的 `tags` 不应该包含任何诸如 `x_bp` 或 `merc` 之类的蓝图/销售 tag—— 模块不是通过蓝图或市场渠道获得的舰船。原版模块行（如 `platform1`）的 tags 为空。模块的行为类 tag（`module_unselectable` 等）见下文运行态一节。
 
 :::
 
-测试战役模板会自动把本 MOD 所有非战机装配加入用户舰队，因此 `GearIn_kiln` 与 `GearIn_kiln_module` 都会出现。此时部署主体，可以看到它没有模块——这正是下一步要解决的。
+测试战役模板会自动把本 MOD 所有非战机装配加入用户舰队，因此 `GearIn_kiln` 与 `GearIn_kiln_module` 都会出现。此时部署主体，可以看到它没有模块 —— 这正是下一步要解决的。
 
 ### 第五步：在测试战役里为主体与模块制作装配
 
-**因为模块只能通过装配文件的 `modules` 字段挂载，游戏内没有任何正常方法为它添加模块，必须要有一个"带模块的主体装配"**，这艘船才会默认带有模块。
+**因为模块只能通过装配文件的 `modules` 字段挂载，游戏内没有任何正常方法为它添加模块，必须要有一个 "带模块的主体装配"**，这艘船才会默认带有模块。
 
 使用测试战役分别为主体和模块制作一个装配（模块的自动空装配也在舰队列表里，直接改装它即可）：
 
@@ -233,7 +233,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 - `modules` 的对象写法是 `"槽位 ID": "模块装配 ID"`；装配 JSON 解析也接受**数组写法**：`[{"WS 024": "remnant_armour3_Standard"}]`，原版 `remnant_station2_Standard.variant` 就用数组写法，且数组条目之间可以写 `#` 注释（游戏的装配解析会剥离注释）。
 - 槽位 ID 必须逐字等于主体 `.ship` 里 `STATION_MODULE` 槽位的 id；模块装配 ID 必须逐字等于模块装配文件的 `variantId`。两者都是大小写敏感字符串。
-- 如果一个有模块槽位的 hull 不想挂模块，`modules` 可以写成空数组 `"modules": []`——主体部署时不会有模块，但加载完全合法。
+- 如果一个有模块槽位的 hull 不想挂模块，`modules` 可以写成空数组 `"modules": []`—— 主体部署时不会有模块，但加载完全合法。
 
 `窑-级`模块巡洋舰现在默认带有模块了：
 
@@ -241,7 +241,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ### 验证方案（基于本例）
 
-**前置数据**：本节制作的全部文件——
+**前置数据**：本节制作的全部文件 ——
 - `GearIn_kiln.ship`（含 `MODULE_0` 的 `STATION_MODULE` 槽位）
 - `GearIn_kiln_module.ship`
 - `ship_data.csv` 两行
@@ -256,12 +256,12 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 3. 在装配界面选中模块，改装其武器并确认改动生效；把主体的 `goalVariant` 装配加入自动装配候选。
 4. 在战斗中击毁模块，确认主体仍能作战；退出后重新部署，确认模块按战斗记录的状态呈现（不完整）。
 5. 故障注入（可选，验证后恢复）：
-   - 删除主体行的 `SHIP_WITH_MODULES` 后重新部署——战斗里没有模块但舰队列表有（对应故障分析第 1 条）；
+   - 删除主体行的 `SHIP_WITH_MODULES` 后重新部署 —— 战斗里没有模块但舰队列表有（对应故障分析第 1 条）；
    - 把 `modules` 的 `MODULE_0` 改成不存在的槽位 ID，部署观察异常或模块缺失（对应第 2 条）；
    - 把值改成未注册的装配 ID，部署观察报错（对应第 3 条）；
    - 把模块装配的 `hullId` 改成别的 ID，观察装配加载期 `Ship hull spec` 报错（对应第 4 条）。
 
-**通过信号**：以上各步观察均与预期一致——日志两条 `Loading variant [...]` 无异常；主体与模块实体同现且模块随动、可改装、可被击毁且按记录状态恢复；故障注入各组出现所述异常/缺失现象。
+**通过信号**：以上各步观察均与预期一致 —— 日志两条 `Loading variant [...]` 无异常；主体与模块实体同现且模块随动、可改装、可被击毁且按记录状态恢复；故障注入各组出现所述异常/缺失现象。
 
 可检查 `Starsector/starsector-core/starsector.log`，无 `GearIn_kiln` / `GearIn_kiln_module` 相关异常。
 
@@ -278,7 +278,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 3. 新实体被放置到 `槽位.computePosition(主体, 模块锚点)`，朝向设为 `槽位.computeMidArcAngle(主体)`（即槽位的中间角），随后 `setParentStation(主体)`、`setStationSlot(槽位)`，并加入主体的 `getChildModules()`。
 4. 模块实体和主体一样是完整的 `ShipAPI`：有自己的装甲格、幅能、武器组、战术系统和 AI（`pickShipAIPlugin` 为它挑选 AI）。
 
-如果主体装配里根本没有 `modules` 字段，或模块 ID 无法解析，这一步会得到"没有模块的主体"或部署报错（详见故障分析）。
+如果主体装配里根本没有 `modules` 字段，或模块 ID 无法解析，这一步会得到 "没有模块的主体" 或部署报错（详见故障分析）。
 
 ### 每帧：模块被钉在槽位上
 
@@ -290,8 +290,8 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ### 战斗外的模块
 
-- 舰队列表与船体预览会显示模块：舰队列表界面直接读取装配的模块槽位渲染模块贴图，`getSizeWithModules()` 会把模块计入舰船整体预览尺寸。所以**即使主体缺 `SHIP_WITH_MODULES`，舰队列表里也看得到模块**——这正是"某些场合模块丢失"的反差来源。
-- 模块的损伤状态按槽位记录在主体的 `FleetMemberStatusAPI` 里，部署时按槽位恢复；模块在战斗中被摧毁或脱离后，下次部署时按记录的状态呈现，而不只是"满血复活"。
+- 舰队列表与船体预览会显示模块：舰队列表界面直接读取装配的模块槽位渲染模块贴图，`getSizeWithModules()` 会把模块计入舰船整体预览尺寸。所以**即使主体缺 `SHIP_WITH_MODULES`，舰队列表里也看得到模块**—— 这正是 "某些场合模块丢失" 的反差来源。
+- 模块的损伤状态按槽位记录在主体的 `FleetMemberStatusAPI` 里，部署时按槽位恢复；模块在战斗中被摧毁或脱离后，下次部署时按记录的状态呈现，而不只是 "满血复活"。
 
 ### 装配界面里的模块
 
@@ -320,10 +320,10 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 1. **主体没有 `SHIP_WITH_MODULES`。** 触发：CSV 行 hints 漏写或拼错（如只写 `HIDE_IN_CODEX`）。
    - 机制：`Ship` 构造器把该 hint 映射为 `isShipWithModules`，而部署分支只在 `isStation() || isShipWithModules()` 时才调用 `spawnStationModules`。
-   - 可观察：**战斗中模块完全不生成**，主体单独作战；但舰队列表与预览仍显示模块（那一路只读装配数据，不看 hint）。这正是"模块在有些场合出现、有些场合丢失"的原因。
+   - 可观察：**战斗中模块完全不生成**，主体单独作战；但舰队列表与预览仍显示模块（那一路只读装配数据，不看 hint）。这正是 "模块在有些场合出现、有些场合丢失" 的原因。
    - 修正：主体行 hints 必须带 `SHIP_WITH_MODULES`。
 2. **`modules` 的槽位 ID 与 `.ship` 不一致。** 触发：键名拼写错误、大小写错误。
-   - 机制：部署时按键查 `getHullSpec().getWeaponSlot(id)`——键对应的是真实槽位但不是 `STATION_MODULE` 时被静默跳过（模块不生成，无任何报错）；键在 hull 上根本不存在时取回 null，模块生成处抛空引用异常（部署期）。
+   - 机制：部署时按键查 `getHullSpec().getWeaponSlot(id)`—— 键对应的是真实槽位但不是 `STATION_MODULE` 时被静默跳过（模块不生成，无任何报错）；键在 hull 上根本不存在时取回 null，模块生成处抛空引用异常（部署期）。
    - 修正：键逐字等于 `.ship` 里 `STATION_MODULE` 槽位的 id，用编辑器确认后再写。
 3. **`modules` 的模块装配 ID 不存在。** 触发：值拼错，或 `GearIn_kiln_module_combat.variant` 没放进 `data/variants`。
    - 机制：`modules` 只是字符串映射，**装配加载期不校验**；部署时 `getModuleVariant` 查不到装配返回 null， `spawnStationModules` 用空装配创建模块成员，部署期抛异常（空引用或 `Ship hull variant` 相关路径）。
@@ -331,30 +331,30 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
    - 修正：确认模块装配文件已注册且 `variantId` 逐字一致（装配注册规则）。
 4. **模块装配的 `hullId` 与注册船体不一致。** 触发：改文件名时把 `hullId` 也改错。
    - 机制：装配解析时用 `hullId` 查船体注册，未注册船体抛 `Ship hull spec [...] not found!`。
-   - 可观察：**装配加载期直接失败**，日志在 `Loading variant [...]` 后抛异常（与故障 3 的"加载正常、部署报错"不同）。
+   - 可观察：**装配加载期直接失败**，日志在 `Loading variant [...]` 后抛异常（与故障 3 的 "加载正常、部署报错" 不同）。
    - 修正：`hullId` 必须等于模块 `.ship` 与 `ship_data.csv` 的 ID（船体 ID 的三处一致性）。
 5. **模块在装配界面无法选中。** 触发：模块船体的 `ordnance points` 为 0，或模块 tags 含 `module_unselectable`。
    - 可观察：装配界面里模块按钮点击无效。这是设计行为而非错误：需要用户改装模块时给模块留装配点；要禁止改装（纯装饰/纯内置模块）才用 `module_unselectable`。
-6. **模块 `.ship` 缺 `shieldCenter`/`shieldRadius`。** 触发：为了"无盾"把护盾字段整个删掉。
+6. **模块 `.ship` 缺 `shieldCenter`/`shieldRadius`。** 触发：为了 "无盾" 把护盾字段整个删掉。
    - 机制：`.ship` 加载器无条件读取 `shieldCenter`（`getVector2f`）与 `shieldRadius`（`getInt`）。
    - 可观察：该船体加载失败，日志抛 JSONException，启动阶段中断（与船体文件的加载期硬失败一致）。
    - 修正：保留编辑器写出的 `shieldCenter` 与 `shieldRadius`（无盾时它们仍是 0 附近的值），只把 `shield type` 设为 `NONE`。
 
 ## 总结
 
-模块船是"船中船"：主体与模块各自走完完整的舰船制作链（贴图 → `.ship` → `ship_data.csv` 注册），再通过两个文件组装——主体 `.ship` 的 `STATION_MODULE` 槽位声明挂载点，主体装配的 `modules` 字段声明"槽位 → 模块装配 ID"的映射。
+模块船是 "船中船"：主体与模块各自走完完整的舰船制作链（贴图 → `.ship` → `ship_data.csv` 注册），再通过两个文件组装 —— 主体 `.ship` 的 `STATION_MODULE` 槽位声明挂载点，主体装配的 `modules` 字段声明 "槽位 → 模块装配 ID" 的映射。
 
 运行态上，模块不是主体的一部分渲染，而是部署时由 `spawnStationModules` 生成的独立 `ShipAPI` 实体，被逐帧钉在槽位上并随主体移动。
 
-调试模块船时按三层排查：加载期（`modules` 是字符串映射，**不校验**——所以加载期错误几乎都来自 `hullId` 或 `.ship` 本身）、部署期（槽位 ID 错 → 静默跳过或抛异常；模块装配 ID 错 → 部署报错）、运行期（`SHIP_WITH_MODULES` 缺失 → 战斗里根本没有模块，但列表里看得到）。
+调试模块船时按三层排查：加载期（`modules` 是字符串映射，**不校验**—— 所以加载期错误几乎都来自 `hullId` 或 `.ship` 本身）、部署期（槽位 ID 错 → 静默跳过或抛异常；模块装配 ID 错 → 部署报错）、运行期（`SHIP_WITH_MODULES` 缺失 → 战斗里根本没有模块，但列表里看得到）。
 
 测试战役配合 `starsector.log` 足够覆盖这三层，后续遇到模块相关的加载或部署异常，都可以按这条链路分层定位到具体文件。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.ShipVariantAPI`：`getModuleSlots()`、`getStationModules()`、`getModuleVariant(slotId)` / `setModuleVariant(slotId, variant)`——模块槽位与模块装配映射的读写入口。
-- `com.fs.starfarer.api.combat.ShipAPI`：`isShipWithModules()`、`getParentStation()` / `getStationSlot()`、`getChildModulesCopy()`、`getModuleOffset()`、`isStation()` / `isStationModule()`——主体与模块实体的运行态关系。
-- `com.fs.starfarer.api.loading.WeaponSlotAPI`：`isStationModule()`、`computePosition()`、`computeMidArcAngle()`——模块槽位的判定与挂载几何。
+- `com.fs.starfarer.api.combat.ShipVariantAPI`：`getModuleSlots()`、`getStationModules()`、`getModuleVariant(slotId)` / `setModuleVariant(slotId, variant)`—— 模块槽位与模块装配映射的读写入口。
+- `com.fs.starfarer.api.combat.ShipAPI`：`isShipWithModules()`、`getParentStation()` / `getStationSlot()`、`getChildModulesCopy()`、`getModuleOffset()`、`isStation()` / `isStationModule()`—— 主体与模块实体的运行态关系。
+- `com.fs.starfarer.api.loading.WeaponSlotAPI`：`isStationModule()`、`computePosition()`、`computeMidArcAngle()`—— 模块槽位的判定与挂载几何。
 - `com.fs.starfarer.api.combat.ShipHullSpecAPI`：`getModuleAnchor()` 与 `ShipTypeHints` 枚举（`STATION`、`SHIP_WITH_MODULES`、`MODULE`、`UNDER_PARENT`、`INDEPENDENT_ROTATION`）。
 - `data/hulls/GearIn_kiln.ship` 与 `data/hulls/GearIn_kiln_module.ship`：主体的 `STATION_MODULE` 槽位与模块船体（含可选 `moduleAnchor`）。
 - `data/hulls/ship_data.csv`：主体行（`SHIP_WITH_MODULES`）与模块行（`UNBOARDABLE, HIDE_IN_CODEX, MODULE`）的 hints/tags。

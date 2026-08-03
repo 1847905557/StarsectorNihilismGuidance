@@ -12,13 +12,13 @@
 
 - 说出 RC8 人物对象链：`Global.getFactory().createPerson()` / `FactionAPI.createRandomPerson()` → `PersonAPI`（身份、关系、记忆、角色数值、归属）
   - 以及人物对象的默认值（personality `steady`、空姓名、rank/post 默认、faction `neutral`、默认头像、importance `MEDIUM`）；
-- 读写人物的身份与档案：姓名/性别、rank/post（经势力解析，回退 `default_ranks.json`）、势力、头像、personality、importance/voice、tags、memory——并区分 `getMemory()`（触发全部插件 `updatePersonFacts`）与 `getMemoryWithoutUpdate()`（纯读取）；
+- 读写人物的身份与档案：姓名/性别、rank/post（经势力解析，回退 `default_ranks.json`）、势力、头像、personality、importance/voice、tags、memory—— 并区分 `getMemory()`（触发全部插件 `updatePersonFacts`）与 `getMemoryWithoutUpdate()`（纯读取）；
 - 说出关系三族：势力对势力 / 势力对玩家（`FactionAPI` 关系族）、人物对玩家（`RelationshipAPI`），以及 `RepLevel` 九档与阈值（0.09 / 0.24 / 0.49 / 0.74）的档位判定；
-- 用 `setRelationship` / `adjustRelationship`（含 limit 版本）/ `ensureAtBest` / `ensureAtWorst` 修改关系，说出"数值连续、档位分段、limit 只是单次调整边界、数值恒钳制在 [-1, 1]"四件事；
+- 用 `setRelationship` / `adjustRelationship`（含 limit 版本）/ `ensureAtBest` / `ensureAtWorst` 修改关系，说出 "数值连续、档位分段、limit 只是单次调整边界、数值恒钳制在 [-1, 1]" 四件事；
 - 分配 captain：`FleetMemberAPI.setCaptain(person)`（生涯侧）、`ShipAPI.setCaptain(person)`（战斗侧），说出玩家旗舰 `getCaptain()` 返回玩家人物的特例、舰长 personality 决定战斗 AI、舰长个人技能经 `applyPersonalToStats` 作用于舰船统计；
 - 分配 officer：`Global.getFactory().createOfficerData(person)` → `FleetDataAPI.addOfficer(...)` → XP/技能/升级（`officerLevelUp` 插件，`officerMaxLevel` 5）→ 再 `setCaptain` 上舰
   - 说出 `makeSkillPicks()` 重掷、`$isMercenary` 佣兵不加 XP 两个陷阱；
-- 说出人物持久归属四入口（成员 captain、市场 people + 通信目录、important people、officer roster），并解释"只存在于局部变量的人物不会被保存"；
+- 说出人物持久归属四入口（成员 captain、市场 people + 通信目录、important people、officer roster），并解释 "只存在于局部变量的人物不会被保存"；
 - 从症状定位十三类典型故障：人物读档后消失、非法 personality 保存时 NPE、`adjustRelationship` 返回值 false、档位与数值不一致、市场有人物但通信目录没有、军官不加 XP、技能选项被重掷、checkout 未归还影响选人、演示中断残留、人物关系与势力关系混用、旗舰舰长读回玩家、`getMemory()` 回调风暴、读档后默认舰长消失。
 
 ## 前置知识
@@ -36,7 +36,7 @@
 
 按术语约定，本节首次完整讲解以下词（后续页面继续使用）：
 
-- **人物（person）**：API 名保留 `PersonAPI`。生涯里代表一个"人"的对象，承载身份（姓名/性别/rank/post/头像/势力）、记忆、标签、对玩家关系、角色数值与归属（captain、officer、市场、important people）。
+- **人物（person）**：API 名保留 `PersonAPI`。生涯里代表一个 "人" 的对象，承载身份（姓名/性别/rank/post/头像/势力）、记忆、标签、对玩家关系、角色数值与归属（captain、officer、市场、important people）。
 - **关系（relationship）**：两两之间的声望数值与档位。势力之间/势力对玩家走 `FactionAPI` 关系族；人物对玩家走 `RelationshipAPI`。数值范围 [-1, 1]，档位由 `RepLevel` 分段。
 - **声誉档位（RepLevel）**：API 名保留 `RepLevel`。
   - 九档枚举：`VENGEFUL` / `HOSTILE` / `INHOSPITABLE` / `SUSPICIOUS` / `NEUTRAL` / `FAVORABLE` / `WELCOMING` / `FRIENDLY` / `COOPERATIVE`
@@ -55,7 +55,7 @@
 | `Global.getFactory().createPerson()` | 创建空白人物（默认值见下表）|
 | `FactionAPI.createRandomPerson()`（含 Gender / Random 变体）| 按势力生成随机人物：随机性别（默认各半）、势力肖像、随机姓名（姓名池）、随机 voice（`FactionAPI.createRandomPerson`）|
 
-另有包装入口 `Global.getFactory().createOfficerData(PersonAPI)`——把人物包装成 `OfficerDataAPI`（见"officer"节）。
+另有包装入口 `Global.getFactory().createOfficerData(PersonAPI)`—— 把人物包装成 `OfficerDataAPI`（见 "officer" 节）。
 
 `SettingsAPI` 也有同签名 `createPerson`（同样返回空白人物），习惯用 `Global.getFactory()`。
 
@@ -87,13 +87,13 @@
 | rank/post | `getRankId()` / `setRankId(String)`、`getPostId()` / `setPostId(String)`、`getRank()` / `getPost()`、`getRankArticle()` / `getPostArticle()` | id 是存储值；显示名经势力解析（见下）|
 | 头像 | `getPortraitSprite()` / `setPortraitSprite(String)` | 资源路径字符串（不校验存在性）|
 | 势力 | `getFaction()`、`setFaction(String factionId)` | `getFaction()` 延迟解析势力对象（按 id 从全局势力表解析）；`setFaction` 只写 id |
-| 关系 | `getRelToPlayer()` | 人物对玩家关系（见"关系"节）|
-| 记忆 | `getMemory()` / `getMemoryWithoutUpdate()` | 见"记忆"小节 |
+| 关系 | `getRelToPlayer()` | 人物对玩家关系（见 "关系" 节）|
+| 记忆 | `getMemory()` / `getMemoryWithoutUpdate()` | 见 "记忆" 小节 |
 | 标签 | `hasTag` / `addTag` / `removeTag` / `getTags` / `clearTags` | 运行时标签集合（`getTags()` 缺省返回空集）|
-| personality | `getPersonalityAPI()`、`setPersonality(String)` | 由 `personalities.csv` 注册（见"故障分析"第 2 条）|
+| personality | `getPersonalityAPI()`、`setPersonality(String)` | 由 `personalities.csv` 注册（见 "故障分析" 第 2 条）|
 | importance/voice | `getImportance()` / `setImportance(PersonImportance)`、`setImportanceAndVoice(PersonImportance, Random)`、`getVoice()` / `setVoice(String)` | voice 存储在 memory `$voice`；`setImportanceAndVoice` 只在 voice 未被显式覆写时写 voice |
 | AI core | `getAICoreId()` / `setAICoreId(String)`、`isAICore()` | `aiCoreId != null` 即 AI 核心人物 |
-| 归属 | `getFleet()` / `setFleet(CampaignFleetAPI)`、`getMarket()` / `setMarket(MarketAPI)` | officer 所在舰队、当前市场（见"归属"小节）|
+| 归属 | `getFleet()` / `setFleet(CampaignFleetAPI)`、`getMarket()` / `setMarket(MarketAPI)` | officer 所在舰队、当前市场（见 "归属" 小节）|
 | 角色数值 | `getStats()`、`setStats(MutableCharacterStatsAPI)`、`getFleetCommanderStats()` | 等级/XP/技能/故事点；`getFleetCommanderStats()` = `fleet.getCommanderStats()`，无舰队时 null |
 | 联系 | `wantsToContactPlayer()` / `incrWantsToContactReasons()` / `decrWantsToContactReasons()`、`getContactWeight()` / `setContactWeight(float)` | 联系人与权重（`wantsToContactReasonsCount`）|
 
@@ -119,7 +119,7 @@ voice 即 memory `$voice`。
 
 ::: info 为什么记忆读取要分两条路径
 
-`getMemory()` 先跑一遍全部插件的 `updatePersonFacts` 回调，让各插件在读取前按最新事实刷新记忆——这是"读前更新"的设计；但高频读取（如每帧）也走这条路径就会变成回调风暴，其他插件还可能改写内存值。
+`getMemory()` 先跑一遍全部插件的 `updatePersonFacts` 回调，让各插件在读取前按最新事实刷新记忆 —— 这是 "读前更新" 的设计；但高频读取（如每帧）也走这条路径就会变成回调风暴，其他插件还可能改写内存值。
 
 纯读取用 `getMemoryWithoutUpdate()`：同样延迟创建记忆对象，但没有回调。
 
@@ -139,7 +139,7 @@ voice 即 memory `$voice`。
 
 势力关系按 `"<id1>_<id2>"` 键存储，**双向插入同一对象**；读取时延迟创建：默认 `0.0F`，**同势力之间恒 `1.0F` **。
 
-写入时值被钳制在 [-1, 1]——关系数值不可能越界。
+写入时值被钳制在 [-1, 1]—— 关系数值不可能越界。
 
 人物对玩家关系存在人物字段 `relToPlayer`（延迟创建），`RelationshipAPI.setRel` 同样钳制 [-1 , 1]。
 
@@ -173,11 +173,11 @@ voice 即 memory `$voice`。
 | `isAtBest` / `isAtWorst`、`isHostileTo(String)` | 档位比较；`isHostileTo` = `isAtBest(HOSTILE)` |
 | `getRelToPlayer()` | 玩家视角关系包装（内部转发 `adjustRelationship` 到自己 id）|
 
-::: warning limit 只是"本次调整的方向边界"
+::: warning limit 只是 "本次调整的方向边界"
 
-`adjustRelationship(delta, limit)` 的 limit 不是"目标档位"——从 1.00 减 0.5（limit `VENGEFUL`）落在 0.50（`FRIENDLY`），而不是 `HOSTILE`。
+`adjustRelationship(delta, limit)` 的 limit 不是 "目标档位"—— 从 1.00 减 0.5（limit `VENGEFUL`）落在 0.50（`FRIENDLY`），而不是 `HOSTILE`。
 
-"设置档位"用 `setRelationship(id, RepLevel)`，"确保不低于/不高于某档"用 `ensureAtBest` / `ensureAtWorst`。
+"设置档位" 用 `setRelationship(id, RepLevel)`，"确保不低于/不高于某档" 用 `ensureAtBest` / `ensureAtWorst`。
 
 :::
 
@@ -197,14 +197,14 @@ voice 即 memory `$voice`。
 
 #### 生涯侧 captain（FleetMemberAPI）
 
-- 默认舰长：成员自带默认舰长 `steady`（前序页面已记录"自动补默认舰长"）。保存压缩时，**steady + 空姓名 + level ≤ 1 的默认舰长不落盘**——"读档后默认舰长消失"是正常语义。
-- `FleetMemberAPI.getCaptain()`：**玩家旗舰特例**——成员是玩家舰队旗舰时返回玩家人物。
+- 默认舰长：成员自带默认舰长 `steady`（前序页面已记录 "自动补默认舰长"）。保存压缩时，**steady + 空姓名 + level ≤ 1 的默认舰长不落盘**——"读档后默认舰长消失" 是正常语义。
+- `FleetMemberAPI.getCaptain()`：**玩家旗舰特例**—— 成员是玩家舰队旗舰时返回玩家人物。
   - 否则返回缓存的 `captain` 字段（null 时延迟创建默认舰长并设势力）
   - `FleetMemberAPI.setCaptain(PersonAPI)` 写回并触发成员 stats 重算。
 
 ::: warning 玩家旗舰的舰长读回恒是玩家人物
 
-成员是玩家舰队旗舰时 `getCaptain()` 直接返回玩家人物，读路径覆盖写入——把自定义舰长挂到旗舰再读回，读到的仍是玩家人物。自定义舰长请放非旗舰成员（本节示例即如此）。
+成员是玩家舰队旗舰时 `getCaptain()` 直接返回玩家人物，读路径覆盖写入 —— 把自定义舰长挂到旗舰再读回，读到的仍是玩家人物。自定义舰长请放非旗舰成员（本节示例即如此）。
 
 :::
 
@@ -235,11 +235,11 @@ voice 即 memory `$voice`。
   - XP 达到下一级阈值 （`TOTAL_XP_PER_LEVEL × officerXPRequiredMult(4)`，`com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`）且等级 ≤ `officerMaxLevel(5)`（settings）时可升级
   - `canLevelUp()` 满足时 `addXP` 自动 `makeSkillPicks()`；`makeSkillPicks()` **每次调用都重掷选项**
   - `levelUp(skillId)` 等级 +1、技能 +1 级并清空重掷。
-- 军官上舰 = 把 officer 的人物 `setCaptain` 到成员（原版军官面板的"命令舰船"即此语义）。
+- 军官上舰 = 把 officer 的人物 `setCaptain` 到成员（原版军官面板的 "命令舰船" 即此语义）。
 
 #### 归属四入口（持久化边界）
 
-人物只随"引用它的持久集合"保存：
+人物只随 "引用它的持久集合" 保存：
 
 1. **成员舰长**：`FleetMemberAPI.setCaptain(person)`（成员在 `FleetDataAPI` 里）；
 2. **市场人物**：`MarketAPI.addPerson(person)`（同时写 `person.setMarket(market)`），**通信目录条目必须另行 `getCommDirectory().addPerson(person)` 维护**（`MarketAPI.addPerson` 不会自动建目录条目）；
@@ -247,11 +247,11 @@ voice 即 memory `$voice`。
    - `checkOutPerson(person, reasonId)` / `returnPerson(person, reasonId)`；
 4. **officer roster**：`FleetDataAPI.addOfficer`（见上）。
 
-只存在于局部变量、未被任何持久集合引用的人物，帧结束后即被回收——**不会被保存，也不会报错**。
+只存在于局部变量、未被任何持久集合引用的人物，帧结束后即被回收 ——**不会被保存，也不会报错**。
 
 ::: warning 市场人物不等于通信目录联系人
 
-`MarketAPI.addPerson` 只把人物放进市场 roster，不会自动建通信目录条目——人物在市场人物列表与存档里，但通信目录/联系人 UI 不出现。
+`MarketAPI.addPerson` 只把人物放进市场 roster，不会自动建通信目录条目 —— 人物在市场人物列表与存档里，但通信目录/联系人 UI 不出现。
 
 要人物作为联系人可见，必须另行 `getCommDirectory().addPerson(person)` 维护；移除可见联系人时先移 comm entry 再移 roster。
 
@@ -259,7 +259,7 @@ voice 即 memory `$voice`。
 
 ### 注册入口
 
-本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)` + 各自 persistent data 键守卫模式（不要把注册键挂进插件既有的 `CLASS_MARK` 门内）。注册见"完整最小例"的调用点片段。
+本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)` + 各自 persistent data 键守卫模式（不要把注册键挂进插件既有的 `CLASS_MARK` 门内）。注册见 "完整最小例" 的调用点片段。
 
 ## 规则强度
 
@@ -269,7 +269,7 @@ voice 即 memory `$voice`。
 |---|---|---|
 | 纯读取人物记忆用 `getMemoryWithoutUpdate()`；`getMemory()` 触发全部插件 `updatePersonFacts` | 必须 | 每次调用触发全部插件回调（`PersonAPI.getMemory`），高频读取时回调风暴，其他插件可能改写内存值 |
 | 人物要成为市场可见联系人，`MarketAPI.addPerson` 之后必须另行 `getCommDirectory().addPerson(person)` 维护目录条目 | 必须 | 人物在市场人物列表与存档里，但通信目录/联系人 UI 不出现 |
-| "设置档位"用 `setRelationship(id, RepLevel)`（或 `ensureAtBest`/`ensureAtWorst`）；`adjustRelationship(delta, limit)` 的 limit 只是单次调整的方向边界 | 必须 | 数值落在限位内但档位与预期不符（1.00 − 0.5 落 0.50 = `FRIENDLY` 而非 `HOSTILE`）|
+| "设置档位" 用 `setRelationship(id, RepLevel)`（或 `ensureAtBest`/`ensureAtWorst`）；`adjustRelationship(delta, limit)` 的 limit 只是单次调整的方向边界 | 必须 | 数值落在限位内但档位与预期不符（1.00 − 0.5 落 0.50 = `FRIENDLY` 而非 `HOSTILE`）|
 | `adjustRelationship` 的 delta 为 0 时（三参版）不产生任何修改并返回 false | 必须 | 返回值 false、值不变，误以为调用成功 |
 | 关系数值恒被钳制在 [-1, 1]（`RelationshipAPI.setRel` 等写入方法均钳制）| 必须 | 写入越界值后读回被截断（如写 1.5 读回 1.0）|
 | personality id 必须来自 `personalities.csv` 注册表（原版 5 个：`timid`/`cautious`/`steady`/`aggressive`/`reckless`）| 必须 | 未知 id 使 `getPersonalityAPI()` 返回 null（CSV spec 加载期的查询静默返回 null），保存时写档失败（`NullPointerException`）|
@@ -279,7 +279,7 @@ voice 即 memory `$voice`。
 | 跨存档保留人物必须挂入至少一个持久集合（成员 captain / 市场 people+comm / important people / officer roster）| 必须 | 读档后人物不存在、无任何报错 |
 | 玩家旗舰 `getCaptain()` 恒返回玩家人物（特例），不要把自定义舰长挂到旗舰再读回 | 必须 | 读回结果与写入不一致（`FleetMemberAPI.getCaptain`）|
 | 佣兵人物（memory `$isMercenary`）不获得军官 XP | 必须 | `addXP` 后 XP 不变（`OfficerDataAPI.addXP`）|
-| 演示/临时人物修改关系后应同帧回滚，且回滚用"快照原值 + `setRelationship`" | 建议 | 中断残留的修改随存档保存 |
+| 演示/临时人物修改关系后应同帧回滚，且回滚用 "快照原值 + `setRelationship`" | 建议 | 中断残留的修改随存档保存 |
 | 创建人物优先用 `Global.getFactory().createPerson()` / `FactionAPI.createRandomPerson()`，不依赖实现类构造器 | 建议 | 实现类不在公开 API 面，换版本可能失效 |
 
 ## 完整最小例
@@ -309,7 +309,7 @@ mods/GearIndustry/
 
 全部修改在当帧回滚，不遗留任何持久状态。
 
-**演示纪律**：演示/临时人物修改后必须同帧回滚，回滚用"快照原值 + `setRelationship`"（见规则强度表）；先 `add` 后立刻 `remove` 的配对顺序不要调换——演示帧中途抛异常会留下随存档保存的残留，且 `REGISTER_MARK` 已置位后读档不重放，残留无法自动清理（最坏形态见故障分析第 9 条）。
+**演示纪律**：演示/临时人物修改后必须同帧回滚，回滚用 "快照原值 + `setRelationship`"（见规则强度表）；先 `add` 后立刻 `remove` 的配对顺序不要调换 —— 演示帧中途抛异常会留下随存档保存的残留，且 `REGISTER_MARK` 已置位后读档不重放，残留无法自动清理（最坏形态见故障分析第 9 条）。
 
 ### GearInPersonScript（协调器）
 
@@ -442,11 +442,11 @@ public class GearInBaseline {
 
 ### GearInPersonIdentity
 
-人物创建与身份（`PersonAPI`）：`Global.getFactory().createPerson()` 创建人物 A 并逐字段读回默认值（id、`steady`、空名、`spaceCommander`/ `fleetCommander`、`neutral`、默认头像、`MEDIUM`，对应"人物对象与创建入口"的默认值表）；
+人物创建与身份（`PersonAPI`）：`Global.getFactory().createPerson()` 创建人物 A 并逐字段读回默认值（id、`steady`、空名、`spaceCommander`/ `fleetCommander`、`neutral`、默认头像、`MEDIUM`，对应 "人物对象与创建入口" 的默认值表）；
 
 随后写入姓名/性别/势力/rank/post/personality/importance+voice 并读回（`rank=Commander`、`post=Fleet Commander` 经势力解析）；
 
-标签与内存写入读取——纯读只用 `getMemoryWithoutUpdate()`（对应规则强度第 1 条）。
+标签与内存写入读取 —— 纯读只用 `getMemoryWithoutUpdate()`（对应规则强度第 1 条）。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -509,7 +509,7 @@ public class GearInPersonIdentity {
 - `setLevel(HOSTILE)` 落 `-0.50`（`min+0.01` / `-min-0.01` 语义）；
 - `setRel(0)` 复位。
 
-五步日志覆盖"数值连续、档位分段"。
+五步日志覆盖 "数值连续、档位分段"。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -728,7 +728,7 @@ public class GearInOfficer {
 
 ### GearInFactionRelation
 
-势力间关系（`FactionAPI` 关系族，hegemony vs tritachyon）：确定性序列 + 同帧回滚——
+势力间关系（`FactionAPI` 关系族，hegemony vs tritachyon）：确定性序列 + 同帧回滚 ——
 - `setRelationship(0)` 归一；
 - `adjustRelationship(+0.15)` 落 `0.15 FAVORABLE`；
 - `adjustRelationship(+0.9, COOPERATIVE)` 封顶 `1.00 changed=true`；
@@ -792,11 +792,11 @@ public class GearInFactionRelation {
 }
 ```
 
-**协作关系**：协调器持有共享对象（人物 A、wolf、hammerhead），角色小类以 `run(...)` 参数接收（包内协作，不跨单元），保持"同一人物对象贯穿身份 → 关系 → 注册 → 舰长"的演示语义；
+**协作关系**：协调器持有共享对象（人物 A、wolf、hammerhead），角色小类以 `run(...)` 参数接收（包内协作，不跨单元），保持 "同一人物对象贯穿身份 → 关系 → 注册 → 舰长" 的演示语义；
 
 日志前缀统一为 `GearIn person lesson`；人物 A 的标签与 memory key 为 `GearIn_personLesson` / `$GearIn_personLesson`。
 
-调用点（工程片段——方法所在类归插件生命周期页所有，本节只演示调用，不改动那些文件）：
+调用点（工程片段 —— 方法所在类归插件生命周期页所有，本节只演示调用，不改动那些文件）：
 
 ```java
     // GearInModPlugin（插件生命周期页所有）onGameLoad(boolean newGame) 内新增本节注册块。
@@ -815,7 +815,7 @@ gradle jar
 
 产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类（可用 `jar tf` 核对）。
 
-本节源码与 fixture 逐字一致（fixture 位于 `tutorial-fixtures/units/C09-S01/src/main/java/data/scripts/gearin/campaign/`），fixture 编译验收命令见"预期结果"。
+本节源码与 fixture 逐字一致（fixture 位于 `tutorial-fixtures/units/C09-S01/src/main/java/data/scripts/gearin/campaign/`），fixture 编译验收命令见 "预期结果"。
 
 ### 验证方案（基于本例）
 
@@ -823,18 +823,18 @@ gradle jar
 - **操作**：
   1. fixture 编译（验收 J）：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC09s01Java --no-daemon`，确认 `BUILD SUCCESSFUL`。
   2. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
-  3. 新建生涯：确认 `starsector.log` 按"预期结果"第 3 条顺序出现全部 `GearIn person lesson` 日志行：
+  3. 新建生涯：确认 `starsector.log` 按 "预期结果" 第 3 条顺序出现全部 `GearIn person lesson` 日志行：
      - 含 `start` / `flagship` / `members` / `personA defaults` / `personA identity` / `tagsMemory` / 五条 `relToPlayer` / `market` / `importantPeople`
      - 含 `captain default` / `captain set` / `personB random` / `officer add` / `officer xp` / `officer levelUp` / `officer captain` / `officer remove` / 七条 `factionRel` / `done`
      - 关键核对：`captainIsPlayerPerson=true`、 `personA defaults` 六项默认值、`rank=Commander`、`post=Fleet Commander`、`relToPlayer` 五步 0.00→0.30→0.75→-0.50→0.00
      - `factionRel` 序列 0.00→0.15→1.00→-0.50→-0.70→0.49→原值、`done` 行成员数与 `start` 一致
      - 全程无 `gear_in` 引起的 `ERROR`。
-  4. 界面核对：演示日志出现时打开舰队界面（F 键），确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成（"预期结果"第 4 条）。
-  5. 只执行一次：等待若干游戏日后日志无新增 `GearIn person lesson` 行；保存并读档后仍无新增（`REGISTER_MARK` 门已关）；读档后势力关系面板中 hegemony 与 tritachyon 的数值与演示前一致（同帧回滚，"预期结果"第 5 条）。
-  6. 故障注入 1：注释掉调用点片段的 `addScript` 行，重启新档：无任何 `GearIn person lesson` 日志（对应"实例驱动故障分析"第 1 条的前半——注册缺失）；改回后确认恢复。
-  7. 故障注入 2：把 `GearInPersonIdentity` 里的 `personA.setPersonality("reckless")` 改为 `"bogus"`，重启新档后保存：`starsector.log` 出现保存时的 `NullPointerException`（对应"实例驱动故障分析"第 2 条）；改回后确认恢复。
+  4. 界面核对：演示日志出现时打开舰队界面（F 键），确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成（"预期结果" 第 4 条）。
+  5. 只执行一次：等待若干游戏日后日志无新增 `GearIn person lesson` 行；保存并读档后仍无新增（`REGISTER_MARK` 门已关）；读档后势力关系面板中 hegemony 与 tritachyon 的数值与演示前一致（同帧回滚，"预期结果" 第 5 条）。
+  6. 故障注入 1：注释掉调用点片段的 `addScript` 行，重启新档：无任何 `GearIn person lesson` 日志（对应 "实例驱动故障分析" 第 1 条的前半 —— 注册缺失）；改回后确认恢复。
+  7. 故障注入 2：把 `GearInPersonIdentity` 里的 `personA.setPersonality("reckless")` 改为 `"bogus"`，重启新档后保存：`starsector.log` 出现保存时的 `NullPointerException`（对应 "实例驱动故障分析" 第 2 条）；改回后确认恢复。
     8. 故障注入 3：注释掉 `GearInFactionRelation` 里的 `setRelationship("tritachyon", originalRel)` 恢复行，重启新档并读档
-       - 势力关系面板中 hegemony 对 tritachyon 的数值停在 `0.49`（`ensureAtBest` 的残留），证明回滚必要（对应规则强度表"演示同帧回滚"与"实例驱动故障分析"第 9 条）
+       - 势力关系面板中 hegemony 对 tritachyon 的数值停在 `0.49`（`ensureAtBest` 的残留），证明回滚必要（对应规则强度表 "演示同帧回滚" 与 "实例驱动故障分析" 第 9 条）
        - 改回后确认恢复。
 - **通过信号**：操作 1–5 全部符合；操作 6–8 的注入与恢复都符合预期。
 - **清理**：取消勾选测试 MOD；确认没有对共享文件（如 fixture 构建脚本）做过修改。
@@ -860,14 +860,14 @@ GearIn person lesson start: members=<N> playerFaction=player playerPerson=<玩�
 
 ## 实例驱动故障分析
 
-1. **人物"凭空消失"（读档后不存在）**。触发：人物只存在于演示/事件脚本的局部变量里，没挂进任何持久集合。可观察：同会话内一切正常（人物对象仍可达），保存并读档后人物不见了，无任何报错。修正：跨存档人物必须挂入至少一个持久集合（成员 captain / 市场 people+comm / important people / officer roster，见"归属四入口"）。
+1. **人物 "凭空消失"（读档后不存在）**。触发：人物只存在于演示/事件脚本的局部变量里，没挂进任何持久集合。可观察：同会话内一切正常（人物对象仍可达），保存并读档后人物不见了，无任何报错。修正：跨存档人物必须挂入至少一个持久集合（成员 captain / 市场 people+comm / important people / officer roster，见 "归属四入口"）。
   2. **非法 personality id → 保存时 NPE**。触发：`setPersonality("bogus")`（`personalities.csv` 没有的 id）
      - 可观察：`getPersonalityAPI()` 返回 null；保存时写档失败（`NullPointerException`）
      - 修正：只用注册表内的 id（原版 5 个：`timid`/`cautious`/`steady`/`aggressive`/`reckless`）；CSV spec 加载期的查询对未知 id 静默返回 null、不报错，所以问题延迟到使用点。
-3. **`adjustRelationship` 没效果（返回值 false、值不变）**。触发：`adjustRelationship(id, 0f, level)` 想"确认档位"，或 delta 方向与当前值方向相反且被 limit 挡住。可观察：返回值 false，关系值不变（三参版 delta 为 0 直接返回 false，`FactionAPI.adjustRelationship`）。
-   - 修正："设档位"用 `setRelationship(id, RepLevel)`；"确保档位"用 `ensureAtBest` / `ensureAtWorst`。
-4. **档位与数值对不上**。触发：`setRelationship(id, HOSTILE)` 落 `-0.50` 后 `adjustRelationship(id, -0.2f, VENGEFUL)`，期待档位"更敌对"。可观察：值变 `-0.70`，但档位仍是 `HOSTILE`（`-0.70` 未越过 0.74 边界；`RepLevel.getLevelFor` 按百分制整数分段）。
-   - 修正：理解"数值连续、档位分段"；档位跳变点只在 0.09 / 0.24 / 0.49 / 0.74（负向对称）。
+3. **`adjustRelationship` 没效果（返回值 false、值不变）**。触发：`adjustRelationship(id, 0f, level)` 想 "确认档位"，或 delta 方向与当前值方向相反且被 limit 挡住。可观察：返回值 false，关系值不变（三参版 delta 为 0 直接返回 false，`FactionAPI.adjustRelationship`）。
+   - 修正："设档位" 用 `setRelationship(id, RepLevel)`；"确保档位" 用 `ensureAtBest` / `ensureAtWorst`。
+4. **档位与数值对不上**。触发：`setRelationship(id, HOSTILE)` 落 `-0.50` 后 `adjustRelationship(id, -0.2f, VENGEFUL)`，期待档位 "更敌对"。可观察：值变 `-0.70`，但档位仍是 `HOSTILE`（`-0.70` 未越过 0.74 边界；`RepLevel.getLevelFor` 按百分制整数分段）。
+   - 修正：理解 "数值连续、档位分段"；档位跳变点只在 0.09 / 0.24 / 0.49 / 0.74（负向对称）。
 5. **市场有人物但通信目录/联系人界面查不到**。触发：只 `market.addPerson(person)`。可观察：`getPeopleCopy()` 包含该人物，通信目录没有条目（`MarketAPI.addPerson` 不自动建目录条目；前序页面已记录同一规则）。
    - 修正：`market.getCommDirectory().addPerson(person)` 另行维护；移除可见联系人时先移 comm entry 再移 roster。
 6. **军官/佣兵不加 XP**。触发：给 memory `$isMercenary` 为 true 的人物 `addXP`。可观察：XP 不变（`OfficerDataAPI.addXP` 直接返回）。修正：确认人物不是佣兵（`com.fs.starfarer.api.util.Misc.isMercenary` 读 `$isMercenary`）；解除佣兵标记再给 XP。
@@ -882,7 +882,7 @@ GearIn person lesson start: members=<N> playerFaction=player playerPerson=<玩�
 11. **给玩家旗舰换舰长读回还是玩家**。触发：`playerFleet.getFlagship().setCaptain(myPerson)` 后读 `getCaptain()`。可观察：读回仍是玩家人物（旗舰特例覆盖读路径，`FleetMemberAPI.getCaptain`）。修正：自定义舰长放非旗舰成员（本节演示即如此）；旗舰身份由玩家人物固定。
 12. **`getMemory()` 高频调用导致插件回调风暴**。触发：每帧用 `person.getMemory()` 读记忆。可观察：每次调用触发全部插件的 `updatePersonFacts`（`PersonAPI.getMemory`），日志量/性能异常，其他插件可能改写内存值。
     - 修正：纯读取用 `getMemoryWithoutUpdate()`（本节 `GearInPersonIdentity` 即此写法）。
-13. **读档后"默认舰长没了"**。触发：以为每个成员都恒定有一个舰长对象。可观察：`steady + 空姓名 + level ≤ 1` 的默认舰长在保存时被压缩（不落盘），读档后 `getCaptain()` 延迟重建新默认舰长——每次读档默认舰长都是新对象。
+13. **读档后 "默认舰长没了"**。触发：以为每个成员都恒定有一个舰长对象。可观察：`steady + 空姓名 + level ≤ 1` 的默认舰长在保存时被压缩（不落盘），读档后 `getCaptain()` 延迟重建新默认舰长 —— 每次读档默认舰长都是新对象。
     - 修正：需要稳定身份就显式 `setCaptain` 自定义人物（会随成员保存）。
 
 ## 总结
@@ -904,20 +904,20 @@ GearIn person lesson start: members=<N> playerFaction=player playerPerson=<玩�
 记忆要点：
 
 - 人物默认值表是调试基准：`personality=steady`、`name=''`、`rankId=spaceCommander`、`postId=fleetCommander`、`faction=neutral`、`portraitIsDefault=true`、`importance=MEDIUM`。
-- 关系四件事：数值连续、档位分段、limit 只是单次调整边界、数值恒钳 [-1, 1]；"设档位"用 `setRelationship(id, RepLevel)`。
+- 关系四件事：数值连续、档位分段、limit 只是单次调整边界、数值恒钳 [-1, 1]；"设档位" 用 `setRelationship(id, RepLevel)`。
 - 持久归属四入口（成员 captain / 市场 people+comm / important people / officer roster）；局部变量人物不保存、不报错。
-- 三个"每次都会发生"的陷阱：`getMemory()` 触发全插件回调、`makeSkillPicks()` 重掷、默认舰长保存时压缩。
+- 三个 "每次都会发生" 的陷阱：`getMemory()` 触发全插件回调、`makeSkillPicks()` 重掷、默认舰长保存时压缩。
 - 玩家旗舰的 captain 是玩家人物（特例），不要试图覆盖读回。
 
 人物对象链到这里已经走通完整流程。
 
-顺着它继续向前：人物是任务、贸易与通信系统的共同实体——任务与事件的选人规则建立在 important people 的 checkout 机制上，市场侧的联系人体系建立在人物归属之上。
+顺着它继续向前：人物是任务、贸易与通信系统的共同实体 —— 任务与事件的选人规则建立在 important people 的 checkout 机制上，市场侧的联系人体系建立在人物归属之上。
 
-本节的身份、关系与归属语义是这些使用端的共同底座，后续遇到"造一个人、调整它与玩家或势力的关系、把它挂进某个持久集合"的需求时，都可以回到本节的四条链上定位。
+本节的身份、关系与归属语义是这些使用端的共同底座，后续遇到 "造一个人、调整它与玩家或势力的关系、把它挂进某个持久集合" 的需求时，都可以回到本节的四条链上定位。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.characters.PersonAPI`：人物接口全貌——身份、rank/post、头像、势力、记忆、标签、personality、importance/voice、AI core、归属、角色数值与联系。
+- `com.fs.starfarer.api.characters.PersonAPI`：人物接口全貌 —— 身份、rank/post、头像、势力、记忆、标签、personality、importance/voice、AI core、归属、角色数值与联系。
 - `com.fs.starfarer.api.FactoryAPI`：人物创建入口（`createPerson` / `createOfficerData`）。
 - `com.fs.starfarer.api.campaign.FactionAPI`：势力关系族（`adjustRelationship` 两版 / `setRelationship` 两版 / `ensureAtBest` / `ensureAtWorst` / `getRelationshipLevel` / `isHostileTo`）与 `createRandomPerson`。
 - `com.fs.starfarer.api.campaign.RepLevel`：九档声誉档位枚举与阈值判定（`getLevelFor` / `getMin` / `getMax` / `isAtWorst` / `isPositive` / `isNegative`）。

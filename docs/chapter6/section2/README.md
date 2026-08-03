@@ -41,7 +41,7 @@
 | 实例化（特例）| 启用状态通知 | `onEnabled` 触发时**每次都新建一个实例**再调用，与上面缓存的实例不是同一个对象 |
 
 ::: info `modPlugin` 缺失不是错误
-MOD 正常启用，但 `getEnabledModPlugins` 对 `null` 类名直接跳过——**没有任何生命周期回调，且没有任何报错**。这是「回调不执行」的首选排查方向。
+MOD 正常启用，但 `getEnabledModPlugins` 对 `null` 类名直接跳过 ——**没有任何生命周期回调，且没有任何报错**。这是「回调不执行」的首选排查方向。
 :::
 
 读链路时的另一个关键结论：除 `onEnabled` 外，全部回调（含 picker）都在**同一个缓存实例**上调用，且该实例跨存档复用。跨存档的状态**必须**放 persistent data，不能放实例字段。
@@ -145,7 +145,7 @@ if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
 ```
 
 ::: caution 「每个存档只做一次」的初始化必须用 persistent data 守卫
-违反的可观察结果：**每次读档都重复执行初始化**——实体/星系重复生成、`addScript`/`registerPlugin` 重复挂载、`SharedData` 赏金参与势力重复注册。日志里表现为每次读档都出现「首次进入」日志。
+违反的可观察结果：**每次读档都重复执行初始化**—— 实体/星系重复生成、`addScript`/`registerPlugin` 重复挂载、`SharedData` 赏金参与势力重复注册。日志里表现为每次读档都出现「首次进入」日志。
 :::
 
 - 守卫键的取值：常见做法是用类名字符串，与存档共存亡；旧存档缺键 = 视为首次进入，正好覆盖「中途启用 MOD」的场景。
@@ -279,8 +279,8 @@ gradle jar
 2. 启动游戏勾选「齿轮工业」，进入主菜单后退出；`starsector.log` 确认出现 `GearIn lifecycle: onApplicationLoad`，且无 `gear_in` 引起的 `ERROR`。
 3. 新建生涯，确认日志顺序为 `onNewGame` → `onEnabled wasEnabledBefore=false` → `first-entry initialization (CLASS_MARK gate opened)` → `onGameLoad newGame=true` → `beforeGameSave` → `afterGameSave`（新档末尾自动存档）。
 4. 读档并手动保存，确认日志为 `onGameLoad newGame=false`（无 `onEnabled` 行、无 `first-entry` 行），随后 `beforeGameSave` → `afterGameSave`。
-5. 故障注入 1：注释掉 `mod_info.json` 的 `modPlugin` 行，重启并新建生涯——MOD 一切正常但没有任何 `GearIn lifecycle:` 日志（对应故障分析第 3 条）；改回后确认恢复。
-6. 故障注入 2：注释掉 `onGameLoad` 里的 `getPersistentData().put(CLASS_MARK, true)`，重启读档——每次读档 `first-entry initialization` 日志重现（对应故障分析第 5 条）；改回后确认恢复。
+5. 故障注入 1：注释掉 `mod_info.json` 的 `modPlugin` 行，重启并新建生涯 ——MOD 一切正常但没有任何 `GearIn lifecycle:` 日志（对应故障分析第 3 条）；改回后确认恢复。
+6. 故障注入 2：注释掉 `onGameLoad` 里的 `getPersistentData().put(CLASS_MARK, true)`，重启读档 —— 每次读档 `first-entry initialization` 日志重现（对应故障分析第 5 条）；改回后确认恢复。
 
 通过信号：操作 2–4 的日志行与顺序全部符合；操作 5、6 的注入与恢复都符合预期。
 
@@ -295,7 +295,7 @@ gradle jar
 GearIn lifecycle: onNewGame GearIn lifecycle: onEnabled wasEnabledBefore=false GearIn lifecycle: first-entry initialization (CLASS_MARK gate opened) GearIn lifecycle: onGameLoad newGame=true GearIn lifecycle: beforeGameSave GearIn lifecycle: afterGameSave
 ```
 4. **读档**：日志只出现 `GearIn lifecycle: onGameLoad newGame=false`（MOD 本就在存档启用列表，不触发 `onEnabled`；
-`first-entry` 行不再出现——门已开）。若这个存档是「中途启用」本 MOD 建出来的，则首次读它时 `onEnabled wasEnabledBefore=false` 会先于 `onGameLoad` 出现。
+`first-entry` 行不再出现 —— 门已开）。若这个存档是「中途启用」本 MOD 建出来的，则首次读它时 `onEnabled wasEnabledBefore=false` 会先于 `onGameLoad` 出现。
 5. **保存**（读档后手动保存）：日志依次出现 `beforeGameSave` → `afterGameSave`。
 
 静态自查：`mod_info.json` 为 UTF-8 无 BOM；`modPlugin` 值与类包路径逐字一致 （`data.scripts.gearin.GearInModPlugin` ↔ `data/scripts/gearin/GearInModPlugin.class`）；旧包类已删除。
@@ -307,7 +307,7 @@ GearIn lifecycle: onNewGame GearIn lifecycle: onEnabled wasEnabledBefore=false G
 2. **启动失败：`ClassCastException`**。触发：`modPlugin` 指向的类没有继承 `BaseModPlugin` 也没有实现 `ModPlugin`。
 可观察：`getEnabledModPlugins` 的 `(ModPlugin)` 强制转换失败，启动中止。修正：让类 `extends BaseModPlugin`。
 3. **启动正常、游戏正常，但没有任何 `GearIn lifecycle:` 日志**。触发：`mod_info.json` 漏写 `modPlugin`（字段可选），或写在了未启用的分支。
-可观察：无报错、无回调——`getEnabledModPlugins` 对 `null` 类名直接跳过。修正：补上 `modPlugin` 并核对类名。
+可观察：无报错、无回调 ——`getEnabledModPlugins` 对 `null` 类名直接跳过。修正：补上 `modPlugin` 并核对类名。
 4. **启动失败：`NullPointerException`，堆栈指向 `onApplicationLoad`**。触发：在 `onApplicationLoad` 里访问
 `Global.getSector()`（此时为 `null`）。可观察：启动中止，日志 NPE。修正：应用级数据放这里，生涯状态全部移到 `onGameLoad`/`onNewGame`。
 5. **每次读档都重复「首次进入」日志、实体/势力注册重复**。触发：一次性初始化没有 persistent data 守卫，直接写在 `onGameLoad` 里。
@@ -325,27 +325,27 @@ GearIn lifecycle: onNewGame GearIn lifecycle: onEnabled wasEnabledBefore=false G
 
 本节把新档生成阶段的最小入口补全为完整生命周期：`mod_info.json` 的 `modPlugin` 声明入口类（可选字段，缺失 = 无回调且无报错），启动资源加载期实例化并缓存，新档/读档/保存各节点按固定顺序回调全部已启用 MOD（原版 `CoreLifecyclePluginImpl` 恒在最前）。读时序时依次问：`modPlugin` 声明了吗、类继承 `BaseModPlugin` 吗、回调属于哪个阶段（启动/新档链/读档/保存/战斗）、一次性初始化有没有 persistent data 守卫。跨存档状态放 `getPersistentData()`，不要放实例字段； `onEnabled` 只在 MOD 进入已有存档时触发且运行在独立新实例上。AI picker 返回 `null` 保留原版，返回 `PluginPick` 时按 `PickPriority` 竞争； `onGameSaveFailed` 只在保存失败时回调，`afterGameSave` 只在成功时回调。
 
-从逻辑上看，生命周期回调回答的是「游戏进程何时调用 MOD」，本节已把这条固定约定完整走通；它的自然延伸，是回调中登记的内容如何随存档持久化、读档时如何恢复—— persistent data 与 XStream 序列化正是这条线上的下一环。
+从逻辑上看，生命周期回调回答的是「游戏进程何时调用 MOD」，本节已把这条固定约定完整走通；它的自然延伸，是回调中登记的内容如何随存档持久化、读档时如何恢复 —— persistent data 与 XStream 序列化正是这条线上的下一环。
 
 ## 建议参考项
 
 - Java API（包路径）：
   - `com.fs.starfarer.api.ModPlugin`——RC8 全部 19 个生命周期回调的签名与 javadoc
 （`onEnabled` 触发条件与 `wasEnabledBefore` 语义、`onGameLoad` 双重含义、建议继承 `BaseModPlugin` 的 NOTE）
-  - `com.fs.starfarer.api.BaseModPlugin`——全部回调的空实现，继承它只需覆写用到的回调
+  - `com.fs.starfarer.api.BaseModPlugin`—— 全部回调的空实现，继承它只需覆写用到的回调
   - `com.fs.starfarer.api.PluginPick` 与 `com.fs.starfarer.api.campaign.CampaignPlugin`（`PickPriority` 枚举）——
 AI picker 的返回值与多 MOD 竞争时的优先级
   - `com.fs.starfarer.api.campaign.SectorAPI`——`getPersistentData()`（随存档保存的 `Map<String, Object>`）、
 `addScript`、`registerPlugin`
   - `com.fs.starfarer.api.SettingsAPI`——`getGameVersion()`（版本门检查）、`getModManager()`
   - `com.fs.starfarer.api.ModManagerAPI`——`isModEnabled`
-  - `com.fs.starfarer.api.impl.campaign.CoreLifecyclePluginImpl`——原版生命周期插件，作为回调列表第一个参与全部回调
+  - `com.fs.starfarer.api.impl.campaign.CoreLifecyclePluginImpl`—— 原版生命周期插件，作为回调列表第一个参与全部回调
   - `com.fs.starfarer.api.impl.campaign.shared.SharedData`——`getPersonBountyEventData().addParticipatingFaction(...)`
 赏金参与势力注册
 - 原版数据（以游戏安装根为基准）：
   - `data/config/settings.json`——`coreLifecyclePlugin` 字段 → 原版生命周期插件类名
-  - `starsector-core/starsector.log`——回调日志与故障定位
+  - `starsector-core/starsector.log`—— 回调日志与故障定位
 - 示例 MOD 内（以 MOD 根目录为基准）：
-  - `data/scripts/gearin/`——本节入口类 `GearInModPlugin`（含存档持久化标记 `CLASS_MARK`）所在源目录
-  - `jars/GearIndustry.jar`——编译产物，含 `data/scripts/gearin/GearInModPlugin.class`
+  - `data/scripts/gearin/`—— 本节入口类 `GearInModPlugin`（含存档持久化标记 `CLASS_MARK`）所在源目录
+  - `jars/GearIndustry.jar`—— 编译产物，含 `data/scripts/gearin/GearInModPlugin.class`
   - `mod_info.json`——`modPlugin` 注册字段

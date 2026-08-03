@@ -16,7 +16,7 @@ import com.fs.starfarer.api.util.Misc;
  *
  * 契约要点：getIcon() 返回 null 时 Intel 页面使用默认图标（IntelInfoPlugin javadoc：
  * "40x40, no icon if null."）；getIntelTags(map) 必须处理 map 为 null
- * （javadoc："Method NEEDS to handle map being null gracefully."）——本类先调
+ * （javadoc："Method NEEDS to handle map being null gracefully."）—— 本类先调
  * super.getIntelTags(map)，基类默认实现内部已做 null 判断，再追加自定义 tag。
  */
 public class GearInServicesIntel extends BaseIntelPlugin {

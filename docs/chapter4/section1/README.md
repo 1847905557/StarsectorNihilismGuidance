@@ -10,10 +10,10 @@
 
 完成后，您将能够：
 
-- 用 `data/campaign/sim_opponents.csv` 设置模拟战对手，说出"模拟战对手列表"从注册到使用的完整链路；
+- 用 `data/campaign/sim_opponents.csv` 设置模拟战对手，说出 "模拟战对手列表" 从注册到使用的完整链路；
 - 用 `data/config/title_screen_variants.csv` 设置标题画面演示舰船，说出它随机展示的机制；
 - 说明这两个文件共同的合并语义（按行合并、`#` 注释、`replace` 整文件替换、表头逐字 `variant id`）；
-- 区分两种"无效装配 ID"的失败表现：模拟战回退成星云-级并留下日志堆栈，标题画面直接抛异常。
+- 区分两种 "无效装配 ID" 的失败表现：模拟战回退成星云-级并留下日志堆栈，标题画面直接抛异常。
 
 ## 前置知识
 
@@ -35,18 +35,18 @@
 2. 注册入口：CSV spec 加载期调用 `loadCampaignData()`，它读取 `data/campaign/sim_opponents.csv`，把每行的 `variant id` 追加进 `simOpponentVariantIds`。
    - 这个调用在装配（`loadVariants`）之后执行，所以清单里可以引用任何已注册装配。
 3. 合并语义：文件在核心与所有启用 MOD 之间**按行合并**，而且本文件**不按键去重**（`readCSVMerged(null, ...)` 不传键列表，它的键检查分支整体跳过）。由此推出三条必须遵守的规则：
-   - **不要**把原版整份 `sim_opponents.csv` 复制进 MOD——原版 30 个对手会逐行追加、全部重复出现（敌方舰队直接翻倍），且没有任何报错；
+   - **不要**把原版整份 `sim_opponents.csv` 复制进 MOD—— 原版 30 个对手会逐行追加、全部重复出现（敌方舰队直接翻倍），且没有任何报错；
    - 以 `#` 开头（行首第一个字符）的行整行跳过，可以当注释或分区标题（成熟实例常用 `#战列舰`、`#巡洋舰` 这类分区标题）；空行同样跳过；`#` 前有空格就不算注释；
    - 表头必须逐字是 `variant id`（含空格）：加载时每行执行 `getString("variant id")`，拼错（如 `Variant id`）会抛 JSON 键缺失异常，加载直接中断、进不了主菜单。
 4. 整文件替换：在 `mod_info.json` 的 `replace` 数组里列出 `data/campaign/sim_opponents.csv`，该文件会整份替换合并结果（`ModManagerAPI` 把 `replace` 条目按整文件替换处理，`readCSV` 只保留替换源）。
-   - 常规做法是"只写自己的行"，`replace` 是特殊情况。
+   - 常规做法是 "只写自己的行"，`replace` 是特殊情况。
 
 ### 使用方（这份列表被谁使用）
 
 - 公开 API：`SettingsAPI.getSimOpponents()`（`com.fs.starfarer.api.SettingsAPI`）返回该列表；`getSimOpponentsDev()` 返回开发列表。
 - 装配界面模拟战：装配界面点 "Run simulation" → 创建模拟战任务时，把列表中的每个 ID 加进敌方舰队。
   - ID 以 `_wing` 结尾的按战机联队（`FleetMemberType.FIGHTER_WING`）加入，否则按舰船（`SHIP`）加入。
-- 模拟器插件：`settings.json` 的 `"simulatorPlugin":"com.fs.starfarer.api.impl.SimulatorPluginImpl"`——模拟战部署界面的 "Default" 对手类别正是这份列表。
+- 模拟器插件：`settings.json` 的 `"simulatorPlugin":"com.fs.starfarer.api.impl.SimulatorPluginImpl"`—— 模拟战部署界面的 "Default" 对手类别正是这份列表。
 - 生涯舰队面板：生涯界面的舰队教条面板在创建模拟战任务定义时使用同一列表。
 - 开发列表 `sim_opponents_dev.csv`：与主文件同格式、同合并规则，独立成 `simOpponentDevVariantIds`，只通过 `getSimOpponentsDev()` 暴露，模拟器插件在 DevMode 类别里展示。常规 MOD 不需要它。
 
@@ -73,11 +73,11 @@ GearIn_artizan_combat
 模拟战构建敌方舰队时，每个 ID 都要构造一个 `FleetMemberAPI`。装配 ID 查不到时会发生两件事：
 
 1. 打印堆栈 `[ID] is not a valid ship variant id`（`printStackTrace`，不中止战斗）；
-2. 回退到 `settings.json` 的 `"errorShipVariant":"nebula_Standard"`——一艘星云-级（Nebula 级）运输船。
+2. 回退到 `settings.json` 的 `"errorShipVariant":"nebula_Standard"`—— 一艘星云-级（Nebula 级）运输船。
 
-因此迁移原文"填错 ID 会导致它变成一艘星云-级"在 RC8 依然成立，且机制如上：**日志里能同时搜到该堆栈和这艘星云-级**。
+因此迁移原文 "填错 ID 会导致它变成一艘星云-级" 在 RC8 依然成立，且机制如上：**日志里能同时搜到该堆栈和这艘星云-级**。
 
-所有经 `FleetMemberAPI` 加载装配 ID 的路径——模拟战对手、战役舰队、`MissionDefinitionAPI.addToFleet`（C03-S01）——都走这个回退，所以"这一条在以后几乎一切需要加载装配的情况下都适用"。
+所有经 `FleetMemberAPI` 加载装配 ID 的路径 —— 模拟战对手、战役舰队、`MissionDefinitionAPI.addToFleet`（C03-S01）—— 都走这个回退，所以 "这一条在以后几乎一切需要加载装配的情况下都适用"。
 
 **唯一例外是标题画面演示**（见下节），它不走 `FleetMemberAPI`，失败表现完全不同。
 
@@ -90,8 +90,8 @@ GearIn_artizan_combat
 2. 注册入口：CSV spec 加载期调用 `loadTitleScreenVariants()`，读取后把每行追加进 `titleScreenVariantIds`。合并、注释、表头规则与模拟战清单完全相同。
 3. 使用方：标题画面背景战斗的插件：
    - 每次构建背景场景时，从整份列表**随机取一个 ID** 作为旗舰；`_wing` 结尾的按战机联队生成，其余按舰船生成；
-   - 场景每约 1 秒检查一次（`spawnIntervalTracker`）；旗舰飞出视口且距上次构建超过 10 秒才重建场景——这就是"刷新是随机的"的机制来源：展示的船不是每次都在；
-   - 首次构建还会额外生成若干战机联队，以及第一艘非战机条目的一艘"受创"演示船（被施加 2 倍最大血量的高爆伤害）。
+   - 场景每约 1 秒检查一次（`spawnIntervalTracker`）；旗舰飞出视口且距上次构建超过 10 秒才重建场景 —— 这就是 "刷新是随机的" 的机制来源：展示的船不是每次都在；
+   - 首次构建还会额外生成若干战机联队，以及第一艘非战机条目的一艘 "受创" 演示船（被施加 2 倍最大血量的高爆伤害）。
 
 ### 装配清单（本例）
 
@@ -118,7 +118,7 @@ GearIn_artizan_combat
 
 可观察结果是标题画面背景战斗的场景构建中断，`starsector.log` 出现该异常。
 
-因此标题演示的 ID 必须保证有效，"星云-级"预期只适用于 `FleetMemberAPI` 路径。
+因此标题演示的 ID 必须保证有效，"星云-级" 预期只适用于 `FleetMemberAPI` 路径。
 
 ### 验证方案（基于本例）
 
@@ -166,7 +166,7 @@ GearIn_artizan_combat
 6. **标题画面背景战斗报错。** 触发：`title_screen_variants.csv` 放了无效 ID。
    - 可观察：场景构建抛 `Ship hull variant [...] not found!`（无星云回退），日志出现异常。
    - 修正：删除无效行。
-7. **以 `_wing` 结尾的条目建不出来。** 触发：`_wing` 结尾的 ID 会被当**战机联队 ID**（不是装配 ID）解析——若装配 ID 恰好以 `_wing` 结尾，或填的联队 ID 不存在。
+7. **以 `_wing` 结尾的条目建不出来。** 触发：`_wing` 结尾的 ID 会被当**战机联队 ID**（不是装配 ID）解析 —— 若装配 ID 恰好以 `_wing` 结尾，或填的联队 ID 不存在。
    - 可观察：模拟战按 `FIGHTER_WING` 加入、标题画面按 `FighterWingSpecAPI` 查询，找不到时报错。
    - 修正：装配 ID 不要以 `_wing` 结尾；要加战机对手就填已在战机联队注册中登记的真实联队 ID（C01-S03）。
 
@@ -174,11 +174,11 @@ GearIn_artizan_combat
 
 本节完成了两张清单的完整走查：把装配 ID（或 `_wing` 联队 ID）填进 `data/campaign/sim_opponents.csv` 与 `data/config/title_screen_variants.csv`，分别供给模拟战敌方舰队与标题画面背景战斗随机展示。
 
-两个文件共享同一套合并语义——按行合并、不按键去重、`#` 行首注释、表头逐字 `variant id`、文件 UTF-8 无 BOM（带 BOM 的表头会让键解析失败）；
+两个文件共享同一套合并语义 —— 按行合并、不按键去重、`#` 行首注释、表头逐字 `variant id`、文件 UTF-8 无 BOM（带 BOM 的表头会让键解析失败）；
 
 关键区别在无效 ID 的失败表现：经 `FleetMemberAPI` 的路径（模拟战、战役）回退成 `nebula_Standard` 星云-级并打印堆栈，标题画面直接抛 `Ship hull variant [...] not found!`。
 
-这套"装配 → 展示"的思路会继续延伸：装配注册之后，样式与声音等观感要素同样沿类似的注册与挂载链路落到船体上，渲染层最终呈现的正是这些注册成果的组合。
+这套 "装配 → 展示" 的思路会继续延伸：装配注册之后，样式与声音等观感要素同样沿类似的注册与挂载链路落到船体上，渲染层最终呈现的正是这些注册成果的组合。
 
 ## 建议参考项
 

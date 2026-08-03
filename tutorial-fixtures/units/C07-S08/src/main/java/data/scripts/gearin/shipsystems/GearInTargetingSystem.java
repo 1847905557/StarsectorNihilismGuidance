@@ -17,7 +17,7 @@ import com.fs.starfarer.api.plugins.ShipSystemStatsScript;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 完整最小例：战术系统运行态——Stats 脚本、状态机、目标锁定与系统 AI 的完整流程。
+ * 完整最小例：战术系统运行态 ——Stats 脚本、状态机、目标锁定与系统 AI 的完整流程。
  *
  * 一个类身兼两个角色，两个角色由数据绑定各自实例化一次：
  * 1. Stats 脚本角色（ShipSystemStatsScriptAdvanced）：.system 的 statsScript 字段挂载。
@@ -35,7 +35,7 @@ import com.fs.starfarer.api.util.IntervalUtil;
  *   每次 newInstance），实例字段互不共享；共享逻辑必须走静态方法（本类全部目标逻辑都是静态的）；
  * - TARGET_FOR_SHIP_SYSTEM 由舰船 AI 每帧在调用系统 AI 前写入（时长 1 秒），
  *   本类 AI 角色也会把验证过的目标写进去；flag 有持续时间，消费前必须再验证一次；
- * - 玩家舰没有舰船 AI，AI 角色不会运行，flag 也无人写入——玩家侧目标回退
+ * - 玩家舰没有舰船 AI，AI 角色不会运行，flag 也无人写入 —— 玩家侧目标回退
  *   到 ship.getShipTarget()（瞄准镜锁定的目标）；
  * - 目标 ShipAPI 属于本场战斗实体，禁止跨战斗缓存（与战斗实体同一纪律）。
  */
@@ -103,7 +103,7 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 
 	/**
 	 * 读取 AI 写入的目标：TARGET_FOR_SHIP_SYSTEM 的 custom 数据。
-	 * 玩家舰没有舰船 AI，本类 AI 角色也不会运行，flag 无人写入——返回 null。
+	 * 玩家舰没有舰船 AI，本类 AI 角色也不会运行，flag 无人写入 —— 返回 null。
 	 */
 	public static ShipAPI readAITarget(ShipAPI source) {
 		if (source == null || source.getShipAI() == null) {
@@ -150,7 +150,7 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 
 	/**
 	 * IN/ACTIVE 期间每帧调用：锁定有效时按 effectLevel 施加最大速度倍率，
-	 * 锁定失效或进入 OUT 立即撤销——目标是"启动侧再验证，验证不过不加成"。
+	 * 锁定失效或进入 OUT 立即撤销 —— 目标是"启动侧再验证，验证不过不加成"。
 	 */
 	@Override
 	public void apply(MutableShipStatsAPI stats, String id, State state, float effectLevel) {

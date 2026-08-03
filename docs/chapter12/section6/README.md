@@ -26,11 +26,11 @@
 本节建议在完成前置单元后阅读，您需要已经理解：
 
 - 硬依赖（hard dependency）声明与运行时检测（C12-S01）：引用依赖库的类前 `dependencies` 必须声明对应 MOD，否则启动期 `NoClassDefFoundError`；
-- 战斗图层层序与渲染回调纪律（C07-S06）：GL 原语只在渲染回调内使用——本节 `setLayer(CombatEngineLayers)` 与 `directDraw()` 的时机约束延续同一条纪律；
+- 战斗图层层序与渲染回调纪律（C07-S06）：GL 原语只在渲染回调内使用 —— 本节 `setLayer(CombatEngineLayers)` 与 `directDraw()` 的时机约束延续同一条纪律；
 - settings `plugins` 段注册与战斗插件模型、暂停守卫（C07-S01）：BoxUtil 自己的 `BUtil_CombatEFS` 就是按这个模型每场战斗实例化；
 - `modPlugin` 与 `onApplicationLoad()` 时机（C06-S02）：`initPre()` 的接入点；
 - `Global` 生命周期（C06-S03）：禁止跨战斗缓存引擎引用与渲染对象（本节文本实体每场战斗重建）；
-- 战斗插件生命周期与"战斗结束没有清理回调"（C07-S05）：BoxUtil 实体靠计时到期 / 显式 `delete()` 收尾，不赌战斗结束回调；
+- 战斗插件生命周期与 "战斗结束没有清理回调"（C07-S05）：BoxUtil 实体靠计时到期 / 显式 `delete()` 收尾，不赌战斗结束回调；
 - 战役（mission）与生涯（campaign）概念、`GearIn_test` 测试战役（C03-S01）：本节用它做验证；
 - 对照 GraphicsLib（C12-S03）：同为 GPU 渲染依赖库，但本节只讲 BoxUtil 的战斗渲染队列；生涯侧 `CampaignRenderingManager` 只记录边界（对照结论：战役画面不经过本节链路）。
 
@@ -48,11 +48,11 @@ BoxUtil 是 utility 类 MOD（`mod_info.json` 的 `utility: true`，自身不含
 |---|---|
 | `mod_info.json` | `id` `BoxUtil`、`version` 1.5.4、`gameVersion` `0.98a-RC8`、`jars` 两件（`jars/BoxUtilMod.jar` + `jars/backends/BoxUtilImpl.jar`）、`modPlugin` `org.boxutil.BoxUtilModPlugin`、`utility: true` |
 | `data\config\settings.json` | `plugins` 段注册 `BoxConfigGUI`（配置界面，`org.boxutil.config.BoxConfigGUI`）与 `BUtil_CombatEFS`（战斗插件，`org.boxutil.backends.core.BUtil_CombatEFS`）；`graphics.fonts` 段注册字体（如 `BUtil_IS` → `graphics/fonts/insignia15LTaa_0.png`）|
-| `data\config\custom_entities.json` | `BUtil_CampaignRenderingManager` 生涯侧承载实体（`org.boxutil.backends.core.BUtil_CampaignRenderingPlugin`）——生涯侧边界，本节不展开 |
+| `data\config\custom_entities.json` | `BUtil_CampaignRenderingManager` 生涯侧承载实体（`org.boxutil.backends.core.BUtil_CampaignRenderingPlugin`）—— 生涯侧边界，本节不展开 |
 | `data\missions\mission_list.csv` + `data\missions\BUtilTestMission\descriptor.json` | 自带测试战役 "BoxUtil Test"，可用来核对 BoxUtil 后端自身是否正常 |
 | `<saves>\common\BUtil_Configs.json.data` | BoxUtil 配置的持久化文件 |
 
-`BUtil_CombatEFS` 按 settings `plugins` 段登记的战斗插件模型每场战斗实例化并附加到战斗引擎； `CombatRenderingManager` 的实体队列由 BoxUtil 后端消费，本节示例只负责"创建 → 入队 → 生命周期"，不自己写分层渲染插件。
+`BUtil_CombatEFS` 按 settings `plugins` 段登记的战斗插件模型每场战斗实例化并附加到战斗引擎； `CombatRenderingManager` 的实体队列由 BoxUtil 后端消费，本节示例只负责 "创建 → 入队 → 生命周期"，不自己写分层渲染插件。
 
 BoxUtil API 按能力域划分边界：实体族归属 `CombatRenderingManager`（战斗渲染队列）、`CampaignRenderingManager` 归属生涯渲染队列、`ShaderCore` / `PublicFBO` / `ShaderProgram` 归属自定义 shader 状态。
 
@@ -81,7 +81,7 @@ BoxUtil 的初始化分两段：`BoxUtilModPlugin.initPre()` 先于配置、GL s
 
 初始化状态查询（公开签名）：`isPreInitialized()` / `isGlobalInitialized()`。
 
-本节示例在战斗插件 `init` 里用 `isGlobalInitialized()` 守卫调用一次 `initLater()`，效果与成熟实例"常驻渲染插件 init 里直接调用"同为"OpenGL context 创建后的初始化"。
+本节示例在战斗插件 `init` 里用 `isGlobalInitialized()` 守卫调用一次 `initLater()`，效果与成熟实例 "常驻渲染插件 init 里直接调用" 同为 "OpenGL context 创建后的初始化"。
 
 ### 可用性判据
 
@@ -97,7 +97,7 @@ ShaderCore.isValid()          —— program / FBO / VAO / 矩阵程序是否全
 
 必须提供降级分支（成熟实例回退 `engine.addSmoothParticle` / `addSmokeParticle` / `spawnExplosion` 原版粒子并返回 null）。
 
-`ShaderCore.isValid()` 覆盖的是"所有主程序是否有效"。
+`ShaderCore.isValid()` 覆盖的是 "所有主程序是否有效"。
 
 `BoxConfigs.isBaseGL43Supported()` 只是 GL 能力探测（是否支持 GL 4.3 基线），用它代替 `ShaderCore.isValid()` 会漏掉 program、FBO、VAO 或 matrix program 初始化失败。
 
@@ -105,7 +105,7 @@ ShaderCore.isValid()          —— program / FBO / VAO / 矩阵程序是否全
 
 示例在 `init` 里输出 `GearIn box init: shaderEnable=… shaderCoreValid=… available=… font=…`：前两项分别对应配置开关与 GPU 资源有效性，`available` 是两者的合取，`font` 附带实际字号。
 
-出问题时先看这一行，能直接区分"配置关闭""初始化失败""字体加载失败"三类原因。
+出问题时先看这一行，能直接区分 "配置关闭""初始化失败""字体加载失败" 三类原因。
 
 :::
 
@@ -122,7 +122,7 @@ BoxUtil 渲染实体全部实现 `RenderDataAPI`（`org.boxutil.base.api`），�
 | `CurveEntity` / `TrailEntity` / `SegmentEntity` | 曲线 / 尾迹 / 线段节点渲染（`NodeData` + `submitNodes()`）|
 | `DistortionEntity` | 局部扭曲（size / power in-full-out / inner ratio / ring hardness）|
 | `CommonEntity` | 3D 模型渲染（OBJ 导入，`graphics\objs\BUtil_*.obj` 与 `BUtil_obj_data.csv`）|
-| `TextFieldEntity` | 位图字体文本（见"字体"节）|
+| `TextFieldEntity` | 位图字体文本（见 "字体" 节）|
 
 `org.boxutil.units.standard.misc` 下的 `ArcObject` / `LineObject` / `QuadObject` / `NumberObject` / `TextFieldObject` 等是 immediate draw 对象。
 
@@ -154,7 +154,7 @@ new SpriteEntity(SpriteAPI 或贴图路径)
 
 提交链：`entity.setInstanceData(list)` → `setInstanceDataRefreshAllFromCurrentIndex()` → `submitInstanceData()`（正式提交点）→ `setRenderingCount(n)` →（需要持续刷新时）`setAlwaysRefreshInstanceData(true)`。
 
-**把 `addInstanceData(...)` 成功当成 GPU 已上传会漏掉 refresh、submit 和 rendering count**——实例字段只写客户端状态，提交链才是数据真正到达 GPU 的路径。
+**把 `addInstanceData(...)` 成功当成 GPU 已上传会漏掉 refresh、submit 和 rendering count**—— 实例字段只写客户端状态，提交链才是数据真正到达 GPU 的路径。
 
 ## 字体：FontDataManager 与 TextFieldEntity
 
@@ -179,7 +179,7 @@ FontDataManager.tryFont("graphics/fonts/insignia15LTaa.fnt")
 要点（成熟实例写法）：
 
 - `FontDataManager.tryFont(path)` 解析 `.fnt` 并登记字体表；返回的 `FontMapData` 用 `isValid()` 核对，失败必须判空处理；
-- 文本程序可用性：`ShaderCore.isInitialized()` 与 `ShaderCore.getTextProgram()`（`BaseShaderData`，`isValid()`）——文本实体创建前先核对，不可用时禁用文本而不是创建无效实体；
+- 文本程序可用性：`ShaderCore.isInitialized()` 与 `ShaderCore.getTextProgram()`（`BaseShaderData`，`isValid()`）—— 文本实体创建前先核对，不可用时禁用文本而不是创建无效实体；
 - `TextFieldEntity` 构造后可 `setFieldSize(w, h)`、`addText(text, size, color, ...)`、`setGlobalColor(color)`；
 - **文本修改后必须重新提交**：改 `TextData.text` → `setTextDataRefreshIndex(0)` + `setTextDataRefreshAllFromCurrentIndex()` → `submitText()`。
 - `submitText()` 返回非 `BoxEnum.STATE_SUCCESS` 时置 `setShouldRenderingCharCount(0)`（"把 node 或 text 数据修改后直接绘制，会漏掉 submitNodes() 或 submitText()"）。
@@ -199,7 +199,7 @@ FontDataManager.tryFont("graphics/fonts/insignia15LTaa.fnt")
 
 返回语义为 `BoxEnum` 的 `STATE_SUCCESS` / `STATE_FAILED` / `STATE_FAILED_OTHER`（"STATE_SUCCESS、STATE_FAILED 和 STATE_FAILED_OTHER 是 manager 与 submit 类入口的正式返回语义"）。
 
-**返回非 `STATE_SUCCESS` 时本地对象必须 `delete()`**——忽略 `STATE_FAILED` 会让本地对象继续按已入队状态推进。`containsEntity(layer, entity)` 可查入队状态。
+**返回非 `STATE_SUCCESS` 时本地对象必须 `delete()`**—— 忽略 `STATE_FAILED` 会让本地对象继续按已入队状态推进。`containsEntity(layer, entity)` 可查入队状态。
 
 ### 图层与混合
 
@@ -211,11 +211,11 @@ FontDataManager.tryFont("graphics/fonts/insignia15LTaa.fnt")
 
 `TextFieldEntity.directDraw()` 与 misc 立即绘制对象（`ArcObject` 等）**只能在渲染回调内调用**（`renderInUICoords` / `renderInWorldCoords` 等）。
 
-这是"GL 原语只在渲染阶段"纪律在 BoxUtil 侧的同一形态；`directDraw` 后的 `delete()` 或 cleanup 由调用方负责。
+这是 "GL 原语只在渲染阶段" 纪律在 BoxUtil 侧的同一形态；`directDraw` 后的 `delete()` 或 cleanup 由调用方负责。
 
 ::: caution 禁止在渲染回调之外调用 directDraw()
 
-`directDraw()` 与 misc 立即绘制对象只能在渲染回调内使用。可观察结果：GL 命令在渲染阶段之外执行——内容不显示、错帧或污染后续绘制。调用方对 `directDraw` 之后的生命周期（`delete()` 或 cleanup）负责。
+`directDraw()` 与 misc 立即绘制对象只能在渲染回调内使用。可观察结果：GL 命令在渲染阶段之外执行 —— 内容不显示、错帧或污染后续绘制。调用方对 `directDraw` 之后的生命周期（`delete()` 或 cleanup）负责。
 
 :::
 
@@ -242,7 +242,7 @@ FontDataManager.tryFont("graphics/fonts/insignia15LTaa.fnt")
 
 状态集为 `TIMER_IN` / `TIMER_FULL` / `TIMER_OUT` / `TIMER_ONCE` / `TIMER_INVALID`；`isGlobalTimerOver()` / `isGlobalTimerOnce()` 可查终态。
 
-实体在计时走完（timer out）后由 BoxUtil 回收并调用 `controlRemove`——这是"实体自动结束"的标准路径。
+实体在计时走完（timer out）后由 BoxUtil 回收并调用 `controlRemove`—— 这是 "实体自动结束" 的标准路径。
 
 ### 删除与失效
 
@@ -253,7 +253,7 @@ FontDataManager.tryFont("graphics/fonts/insignia15LTaa.fnt")
 
 ::: warning 把上一场战斗的文本实体留给下一场是常见坑
 
-文本实体与引擎引用每场战斗重新创建。继续使用上一场的旧文本实体时，其 `hasDelete()` 已为 true，绘制被守卫跳过——画面表现为"文本消失且无报错"。已删除的实体不得继续作为 active 对象使用。
+文本实体与引擎引用每场战斗重新创建。继续使用上一场的旧文本实体时，其 `hasDelete()` 已为 true，绘制被守卫跳过 —— 画面表现为 "文本消失且无报错"。已删除的实体不得继续作为 active 对象使用。
 
 :::
 
@@ -263,7 +263,7 @@ FontDataManager.tryFont("graphics/fonts/insignia15LTaa.fnt")
 |---|---|---|---|
 | 1 | **必须** | 引用 `org.boxutil.**` 前在 `mod_info.json` 的 `dependencies` 声明 `BoxUtil`（继承硬依赖规则）| 用户缺依赖时启动报 `NoClassDefFoundError`（加载直接失败，不会静默忽略）|
 | 2 | **必须** | 初始化两段式：`initPre()` 在 `onApplicationLoad` 调用；`initLater()` 在 OpenGL context 创建后调用一次（成熟实例在常驻渲染插件 `init`；本节示例用 `isGlobalInitialized()` 守卫）| `initLater()` 未调用或初始化失败 → `ShaderCore.isValid()` 为 false → 可用性判据不成立，所有实体入口走降级，画面没有任何 BoxUtil 输出 |
-| 3 | **必须** | 可用性判据 = `BoxConfigs.isShaderEnable() && ShaderCore.isValid()`；不得用 `isBaseGL43Supported()` 代替后者 | GL 能力探测通过但 program / FBO / VAO 初始化失败时，判据误判为可用——实体照常入队但画面无渲染，且无报错 |
+| 3 | **必须** | 可用性判据 = `BoxConfigs.isShaderEnable() && ShaderCore.isValid()`；不得用 `isBaseGL43Supported()` 代替后者 | GL 能力探测通过但 program / FBO / VAO 初始化失败时，判据误判为可用 —— 实体照常入队但画面无渲染，且无报错 |
 | 4 | **必须** | `BoxConfigs.isShaderEnable()` 为 false 时，BoxUtil shader 实体不能作为唯一视觉输出，必须提供降级分支 | 用户在 BoxUtil 配置界面关闭 shader 后，所有视觉效果全空 |
 | 5 | **必须** | 实例数据必须走完整提交链：`setInstanceData` → `setInstanceDataRefreshAllFromCurrentIndex` → `submitInstanceData` → `setRenderingCount` | `addInstanceData` 成功 ≠ GPU 已上传：实体不显示或数量/状态与预期不符，日志无任何报错 |
 | 6 | **必须** | `CombatRenderingManager.addEntity` 返回码必须检查（`== BoxEnum.STATE_SUCCESS`），失败显式 `delete()` | 忽略 `STATE_FAILED` → 本地对象继续按已入队状态推进（计时/控制数据照跑），画面却没有实体；重复入队 → 双重绘制 |
@@ -398,7 +398,7 @@ public class GearInBoxEntity extends BaseEveryFrameCombatPlugin {
 
 ### GearInBoxSpawner：实体生成与实例数据提交
 
-方框实体生成（Entity / 实例数据工具族）：按"创建 → 材质/层/混合 → 实例提交链 → 控制数据/计时 → 入队"顺序执行。
+方框实体生成（Entity / 实例数据工具族）：按 "创建 → 材质/层/混合 → 实例提交链 → 控制数据/计时 → 入队" 顺序执行。
 
 实例提交链为 `setInstanceData` → `setInstanceDataRefreshAllFromCurrentIndex` → `submitInstanceData` → `setRenderingCount(1)` → `setAlwaysRefreshInstanceData(true)`（规则 5）。
 
@@ -674,11 +674,11 @@ public class GearInFollowControlData extends BaseControlData {
 
 `advance` 每 2 秒触发一次 `spawnBox`；`spawnBox` 创建并提交方框实体、挂上 `GearInFollowControlData`，入队成功后让文本实体显示 `box #N`。
 
-`renderInUICoords` 委托 `drawAt` 完成屏幕文本的 GL 绘制。`GearInBoxSpawner` 与 `GearInTextField` 只被入口类引用，`GearInFollowControlData` 只被生成器引用——四个类合起来就是完整示例的全部行为。
+`renderInUICoords` 委托 `drawAt` 完成屏幕文本的 GL 绘制。`GearInBoxSpawner` 与 `GearInTextField` 只被入口类引用，`GearInFollowControlData` 只被生成器引用 —— 四个类合起来就是完整示例的全部行为。
 
 日志前缀 `GearIn box ...` 不是 strings key，只进 `starsector.log`。
 
-### 接入片段（工程片段——本节不改动所有者文件）
+### 接入片段（工程片段 —— 本节不改动所有者文件）
 
 ```java
     // 接入 1：在 GearInModPlugin.onApplicationLoad() 内追加一行（BoxUtil 预初始化）
@@ -707,7 +707,7 @@ gradle jar
 
 本节四个代码块与磁盘 fixture 逐字一致（fixture 位于 `tutorial-fixtures/units/C12-S06/src/main/java/data/scripts/gearin/lib/`）。
 
-`dependencies` 的 `id` 与 BoxUtil 发行 `mod_info.json` 的 `id` 逐字一致；fixture 编译验收命令见"预期结果"。
+`dependencies` 的 `id` 与 BoxUtil 发行 `mod_info.json` 的 `id` 逐字一致；fixture 编译验收命令见 "预期结果"。
 
 ### 验证方案（基于本例）
 
@@ -721,15 +721,15 @@ gradle jar
   - 没有 `gear_in` 引起的 `ERROR`。
 - 操作 4（画面）：观察每 2 秒玩家舰位置出现青色方框：跟随移动、旋转放大、约 2.2 秒淡出；`GearIn box: #N hull=<船体名> layer=ABOVE_PARTICLES_LOWER` 日志同步递增。
 - 操作 5（文本）：确认屏幕顶部靠左白色文本 `box #1` → `box #2` → `box #3`……递增；记录文本的实际屏幕位置与字号是否符合预期（以观察记录为准）。
-- 操作 6（暂停）：按空格暂停约 10 秒——无新方框与新日志；已存在方框静止、文本不变；恢复后继续。
-- 操作 7（失效）：击毁玩家舰——方框停止生成，已存在方框快速淡出。
+- 操作 6（暂停）：按空格暂停约 10 秒 —— 无新方框与新日志；已存在方框静止、文本不变；恢复后继续。
+- 操作 7（失效）：击毁玩家舰 —— 方框停止生成，已存在方框快速淡出。
 - 操作 8（降级注入）：在 BoxUtil 配置界面（`BoxConfigGUI`，BoxUtil 发行注册）关闭 shader 渲染相关选项（或直接编辑 `<saves>\common\BUtil_Configs.json.data` 对应项）后重启进战斗。
   - `init` 日志 `shaderEnable=false`、`available=false`，画面只有青色原版平滑粒子、无方框无文本。
   - 日志每 2 秒一行 `box unavailable, vanilla fallback particle`；改回后恢复。
-- 操作 9（漏提交注入）：注释 `box.submitInstanceData();` 后重编译进战斗——`GearIn box: #N` 日志照常、方框不出现；恢复后确认方框回来。
-- 操作 10（漏刷新注入）：注释 `GearInTextField.setText` 里的 `textEntity.submitText();` 后进战斗——文本停留在 `box #1`；恢复后确认递增。
-- 操作 11（跨战斗）：退出战斗再进一场——`GearIn box init:` 重新出现，计数从 `#1` 重新开始。
-- 操作 12（辅助）：在启动器勾选 BoxUtil 自带的 `BoxUtil Test` 测试战役并进入，确认 BoxUtil 后端自身渲染正常（区分"BoxUtil 能力问题"与"示例代码问题"）。
+- 操作 9（漏提交注入）：注释 `box.submitInstanceData();` 后重编译进战斗 ——`GearIn box: #N` 日志照常、方框不出现；恢复后确认方框回来。
+- 操作 10（漏刷新注入）：注释 `GearInTextField.setText` 里的 `textEntity.submitText();` 后进战斗 —— 文本停留在 `box #1`；恢复后确认递增。
+- 操作 11（跨战斗）：退出战斗再进一场 ——`GearIn box init:` 重新出现，计数从 `#1` 重新开始。
+- 操作 12（辅助）：在启动器勾选 BoxUtil 自带的 `BoxUtil Test` 测试战役并进入，确认 BoxUtil 后端自身渲染正常（区分 "BoxUtil 能力问题" 与 "示例代码问题"）。
 - 通过信号：操作 1–7、11、12 全部符合；操作 8–10 的注入与恢复都符合预期。
 - 清理：取消勾选测试 MOD；恢复代码与 BoxUtil 配置为原值。
 
@@ -752,15 +752,15 @@ GearIn box: #1 hull=Wolf layer=ABOVE_PARTICLES_LOWER
 ```
 `#N` 递增、`hull` 为玩家舰船体名（示例用 `GearIn_test` 战役的玩家舰，如 `Wolf`）。
 5. **屏幕文本**：战斗画面顶部靠左出现 `box #1`，之后随每次生成递增为 `box #2`、`box #3`……文本为白色屏幕空间文字（窗口正交矩阵 + `directDraw`，不受镜头缩放影响）；文本刷新与方框生成同步（规则 7 的正面）。
-6. **暂停行为**：按空格暂停——没有新的 `GearIn box:` 生成日志与方框（`advance` 暂停守卫）；屏幕上已存在的方框静止（渲染不暂停），文本保持最后内容；恢复后继续生成。
-7. **舰船失效**：击毁玩家舰——不再生成新方框（`spawnBox` 判 `isAlive`）；已存在的方框在下一帧起被 `GearInFollowControlData` 压计时，快速淡出消失。
+6. **暂停行为**：按空格暂停 —— 没有新的 `GearIn box:` 生成日志与方框（`advance` 暂停守卫）；屏幕上已存在的方框静止（渲染不暂停），文本保持最后内容；恢复后继续生成。
+7. **舰船失效**：击毁玩家舰 —— 不再生成新方框（`spawnBox` 判 `isAlive`）；已存在的方框在下一帧起被 `GearInFollowControlData` 压计时，快速淡出消失。
 8. **变更验证（降级）**：在 BoxUtil 配置界面（`BoxConfigGUI`，BoxUtil 发行注册）关闭 shader 渲染相关选项（或直接编辑 `<saves>\common\BUtil_Configs.json.data` 对应项）后重启进战斗。
    - `init` 日志 `shaderEnable=false`、`available=false`，方框分支每 2 秒输出 `GearIn box: box unavailable, vanilla fallback particle`，画面上出现原版平滑粒子（青色）而非方框。
    - 屏幕文本不显示（文本程序不可用分支）；改回后恢复。
-9. **变更验证（文本）**：把 `TEXT_SIZE` 改为 `24f` 重编译进战斗——文本放大一倍（`fontScale` 从 0.8 变 1.6）；改回后恢复。
-10. **故障注入（漏提交）**：注释 `box.submitInstanceData();` 一行后进战斗——`GearIn box: #N` 日志照常输出，但方框不出现 （实例数据只写了客户端字段，没有提交到 GPU；规则 5 的注入验证）；恢复后方框回来。
-11. **故障注入（漏刷新文本）**：注释 `GearInTextField.setText` 里的 `textEntity.submitText();` 一行后进战斗——文本停留在 `box #1` 不再更新（规则 7 的注入验证）；恢复后递增。
-12. **跨战斗**：退出战斗再进一场——`GearIn box init:` 重新出现，方框与文本从 `#1` 重新开始（每场战斗全新实例）；无 `ERROR`。
+9. **变更验证（文本）**：把 `TEXT_SIZE` 改为 `24f` 重编译进战斗 —— 文本放大一倍（`fontScale` 从 0.8 变 1.6）；改回后恢复。
+10. **故障注入（漏提交）**：注释 `box.submitInstanceData();` 一行后进战斗 ——`GearIn box: #N` 日志照常输出，但方框不出现 （实例数据只写了客户端字段，没有提交到 GPU；规则 5 的注入验证）；恢复后方框回来。
+11. **故障注入（漏刷新文本）**：注释 `GearInTextField.setText` 里的 `textEntity.submitText();` 一行后进战斗 —— 文本停留在 `box #1` 不再更新（规则 7 的注入验证）；恢复后递增。
+12. **跨战斗**：退出战斗再进一场 ——`GearIn box init:` 重新出现，方框与文本从 `#1` 重新开始（每场战斗全新实例）；无 `ERROR`。
 
 ## 实例驱动故障分析
 
@@ -775,13 +775,13 @@ GearIn box: #1 hull=Wolf layer=ABOVE_PARTICLES_LOWER
   - 原因：GL 能力探测 ≠ 初始化结果。
   - 修正：判据改为 `isShaderEnable() && ShaderCore.isValid()`。
 3. **方框不出现，但 `GearIn box: #N` 日志与 `available=true` 都正常**。
-  - 触发：实例提交链缺环——最常见是漏 `submitInstanceData()` 或漏 `setRenderingCount(...)`。
+  - 触发：实例提交链缺环 —— 最常见是漏 `submitInstanceData()` 或漏 `setRenderingCount(...)`。
   - 可观察：实体入队成功（返回码没查或返回成功），客户端字段写了不少，GPU 侧没有数据可画。
   - 原因：`addInstanceData` / `setInstanceData` 成功 ≠ GPU 已上传（规则 5）。
-  - 修正：按"提交链"逐环核对（预期结果第 10 条就是这条的注入验证）。
+  - 修正：按 "提交链" 逐环核对（预期结果第 10 条就是这条的注入验证）。
 4. **画面没有实体，但日志显示实体已入队、控制数据照跑**。
   - 触发：`addEntity` 返回 `STATE_FAILED` 被忽略。
-  - 可观察：本地对象计时/控制数据继续推进（对象还"活着"），画面没有对应绘制；对同一实体再次 `addEntity` 还会双重入队。
+  - 可观察：本地对象计时/控制数据继续推进（对象还 "活着"），画面没有对应绘制；对同一实体再次 `addEntity` 还会双重入队。
   - 原因：返回码语义未处理（规则 6）。
   - 修正：返回码必须 `== BoxEnum.STATE_SUCCESS`，失败显式 `delete()`。
 5. **文本停留在旧内容，画面与日志不同步**。
@@ -796,7 +796,7 @@ GearIn box: #1 hull=Wolf layer=ABOVE_PARTICLES_LOWER
   - 修正：文本实体每场战斗在 `init` 重建，绘制前判 `hasDelete()`。
 7. **在 `advance()` 里调 `textEntity.directDraw()`**。
   - 触发：把直接绘制当成普通方法调用。
-  - 可观察：GL 命令在渲染阶段之外执行——文本不出现、错帧或污染后续绘制。
+  - 可观察：GL 命令在渲染阶段之外执行 —— 文本不出现、错帧或污染后续绘制。
   - 修正：`directDraw()` 只在 `renderInUICoords` / `renderInWorldCoords` 等渲染回调内调用（规则 8）。
 8. **在 `controlAdvance` 里创建/入队实体**。
   - 触发：把 `spawnBox` 的调用放进控制数据回调。
@@ -813,7 +813,7 @@ GearIn box: #1 hull=Wolf layer=ABOVE_PARTICLES_LOWER
 11. **BoxUtil 自己的测试战役也异常/黑屏**。
   - 触发：显卡或驱动不支持 BoxUtil 要求的 GL 能力（配置界面的能力检测项）。
   - 可观察：`available=false` 且 BoxUtil 测试战役渲染异常。
-  - 原因：BoxUtil 是 GPU 渲染库，能力不足时无法提供 shader 渲染入口（这是"不能作为唯一视觉输出"要降级的原因）。
+  - 原因：BoxUtil 是 GPU 渲染库，能力不足时无法提供 shader 渲染入口（这是 "不能作为唯一视觉输出" 要降级的原因）。
   - 修正：关掉 shader 选项走原版降级，或按 BoxUtil 发行说明调整渲染设置。
 
 ## 总结
@@ -823,13 +823,13 @@ GearIn box: #1 hull=Wolf layer=ABOVE_PARTICLES_LOWER
 - **初始化两段式**：`initPre()`（`onApplicationLoad` 接入）→ `initLater()`（OpenGL context 创建后；示例用 `isGlobalInitialized()` 守卫）。
 - 可用性判据 `BoxConfigs.isShaderEnable() && ShaderCore.isValid()` 共同决定 shader 渲染入口，`isBaseGL43Supported()` 只是能力探测。
 - **实体**：`SpriteEntity` 等实现 `RenderDataAPI` 的实体，设置后经 `CombatRenderingManager.addEntity` 入队。
-- 实例数据（`Instance2Data`）必须走"set → refresh → `submitInstanceData` → `setRenderingCount`"提交链；返回码 `STATE_*` 必须检查。
+- 实例数据（`Instance2Data`）必须走 "set → refresh → `submitInstanceData` → `setRenderingCount`" 提交链；返回码 `STATE_*` 必须检查。
 - **字体**：`FontDataManager.tryFont` 解析 `.fnt` → `FontMapData`；`TextFieldEntity` 以窗口正交矩阵 + `directDraw()` 在渲染回调内画屏幕文本；改文本后必须 refresh + `submitText()`。
 - **绘制**：`setLayer(CombatEngineLayers)` 声明层、`setAdditiveBlend` 等设置混合；`directDraw` 与 misc 立即对象只能在渲染回调内使用。
 - **生命周期**：`setControlData` → `controlInit` → 每帧 `controlAdvance`（逻辑线程，同步/判定）→计时到期或删除时 `controlRemove`。
 - 全局计时 `in/full/out` 是自动结束的主路径，`delete()` / `hasDelete()` 是显式路径；跨战斗禁止缓存。
 
-依赖有强弱之分：硬依赖缺了就不能启动，而本节的降级分支（`boxAvailable=false` 回退原版粒子）已经演示了"按运行期能力走不同路径"的形态。
+依赖有强弱之分：硬依赖缺了就不能启动，而本节的降级分支（`boxAvailable=false` 回退原版粒子）已经演示了 "按运行期能力走不同路径" 的形态。
 
 把依赖声明为可选、在加载与渲染两处按可用性分支适配，是同一决策面的自然延伸：依赖的强弱声明与检测时机，决定了一个 MOD 在依赖缺席时是整体不可用，还是仅失去一部分效果。
 

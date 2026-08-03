@@ -14,7 +14,7 @@ public final class GearInMemoryKeys {
     public static final String KEY_TAG = "$GearIn_memory_tag";
     /** sector 内存：1000 游戏天过期键（三参 set）。 */
     public static final String KEY_COUNTER = "$GearIn_memory_counter";
-    /** sector 内存：expire 0 键——下一个未暂停推进帧被移除（rules.csv 用它演示判真）。 */
+    /** sector 内存：expire 0 键 —— 下一个未暂停推进帧被移除（rules.csv 用它演示判真）。 */
     public static final String KEY_PROBE = "$GearIn_memory_probe";
     /** sector 内存：expire() 重设与两参 set 清除过期演示键。 */
     public static final String KEY_REARM = "$GearIn_memory_rearm";

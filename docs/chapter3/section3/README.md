@@ -1,6 +1,6 @@
 # 制作新星系与生成入口
 
-本节是生涯篇的第一份 Java 内容：您将编写一个最小但完整的 MOD 生成器，让游戏在新建生涯时，把您自己定义的星系、恒星、行星、稳定点、跳跃点和市场放进星区。本节会接触少量代码——**若想把 MOD 做好，之后还会接触更多、更难的代码**——但每一行都会拆开讲清楚：谁创建实例、谁调用方法、每个参数是什么、数据文件如何与代码构成完整流程。
+本节是生涯篇的第一份 Java 内容：您将编写一个最小但完整的 MOD 生成器，让游戏在新建生涯时，把您自己定义的星系、恒星、行星、稳定点、跳跃点和市场放进星区。本节会接触少量代码 ——**若想把 MOD 做好，之后还会接触更多、更难的代码**—— 但每一行都会拆开讲清楚：谁创建实例、谁调用方法、每个参数是什么、数据文件如何与代码构成完整流程。
 
 *本节预期阅读时间：~25 分钟。*
 
@@ -13,7 +13,7 @@
 - 说出新建生涯的完整生成时序与四个注册入口（`settings.json` 的 `newGameCreationEntryPoint` / `newGameSectorProcGen`、`data/world/generators.csv`、`mod_info.json` 的 `modPlugin` → `onNewGame()`），并说出 MOD 的星系为什么放在 `onNewGame()` 里；
 - 用 `SectorAPI.createStarSystem`、`StarSystemAPI.initStar` / `addPlanet`、`LocationAPI.addCustomEntity`、`JumpPointAPI` 与 `autogenerateHyperspaceJumpPoints` 建出带恒星、行星、稳定点、跳跃点、超空间入口的星系；
 - 说出 `starmap.json` 的 `starSystemLocations` 键、`initStar` 的恒星 id 与市场文件（market.json）的 `starSystem` 字段三者必须一致的坐标完整流程；
-- 用两条路径之一给实体建市场：数据路径（`economy.json` + market.json）或代码路径（`FactoryAPI.createMarket` + `EconomyAPI.addMarket` + `SectorEntityToken.setMarket`），并说出两条路径各自的强制校验与"二选一"规则；
+- 用两条路径之一给实体建市场：数据路径（`economy.json` + market.json）或代码路径（`FactoryAPI.createMarket` + `EconomyAPI.addMarket` + `SectorEntityToken.setMarket`），并说出两条路径各自的强制校验与 "二选一" 规则；
 - 说出本节每条必须遵守的规则被违反时的结果：星系不生成、星系不可达、市场缺失、加载中断或静默错乱。
 
 ## 前置知识
@@ -23,11 +23,11 @@
 - MOD 目录、`mod_info.json` 与 JSON 合并规则、UTF-8 无 BOM（C01-S01）；
 - 注册与回调心智模型："注册入口 → 游戏创建实例 → 生命周期回调"（C02-S01）；
 - 生涯与装配（C03-S01）；
-- 势力 `gear_industry` 的注册，以及"关系不是文件数据、只能由代码播种"（C03-S02）——本节会正式给出关系代码的挂载点。
+- 势力 `gear_industry` 的注册，以及 "关系不是文件数据、只能由代码播种"（C03-S02）—— 本节会正式给出关系代码的挂载点。
 
 行星的自定义描述（`setCustomDescriptionId` 与 `descriptions.csv`）不在本节范围，本节只用行星类型的默认描述（该主题在描述文件单元讲解，C03-S04）。
 
-市场的完整语义（稳定度、供需、移民、殖民）也不在本节范围（市场语义单元讲解，C08-S05），本节只建立"市场挂在实体上、注册进经济集合"的基础。
+市场的完整语义（稳定度、供需、移民、殖民）也不在本节范围（市场语义单元讲解，C08-S05），本节只建立 "市场挂在实体上、注册进经济集合" 的基础。
 
 ## 术语
 
@@ -48,15 +48,15 @@
 先看新建生涯（New Game）的生成时序：
 
 1. `SectorProcGenPlugin.prepare(data)`：`settings.json` 的 `plugins` 段 `newGameSectorProcGen` 键登记类名的实例（原版是 `com.fs.starfarer.api.impl.campaign.procgen.SectorProcGen`），先做准备；
-2. 入口生成器：`settings.json` 的 `plugins` 段 `newGameCreationEntryPoint` 键登记的类（原版是 `data.scripts.world.SectorGen`），以 `SectorGeneratorPlugin` 身份调用 `generate(sector)`——原版的核心星系（Corvus、Askonia、Naraka……）与势力关系播种都在这一步；
+2. 入口生成器：`settings.json` 的 `plugins` 段 `newGameCreationEntryPoint` 键登记的类（原版是 `data.scripts.world.SectorGen`），以 `SectorGeneratorPlugin` 身份调用 `generate(sector)`—— 原版的核心星系（Corvus、Askonia、Naraka……）与势力关系播种都在这一步；
 3. `data/world/generators.csv` 的插件：这个 CSV 只有一列 `className`，加载期按 spec 键 `sectorConfig` 读入生成器加载器，新档时逐个 `generate(sector)`；
 4. **所有已启用 MOD 的 `ModPlugin.onNewGame()`**：`mod_info.json` 的 `modPlugin` 字段指向的类在游戏启动时被创建为实例，新档时回调 `onNewGame()`；
-5. 程序化生成：`SectorProcGen.generate(data, progress)`——随机星系、星云、边缘世界等；
+5. 程序化生成：`SectorProcGen.generate(data, progress)`—— 随机星系、星云、边缘世界等；
 6. 所有 MOD 的 `onNewGameAfterProcGen()`；
-7. 经济加载：读取 `data/campaign/econ/economy.json`——市场数据路径（market.json）在这里被读取；
+7. 经济加载：读取 `data/campaign/econ/economy.json`—— 市场数据路径（market.json）在这里被读取；
 8. 所有 MOD 的 `onNewGameAfterEconomyLoad()`。
 
-把这张时序表记住，后面所有"为什么"都从它来。由此得出三条结论，前两条是事实，第三条是必须遵守的规则：
+把这张时序表记住，后面所有 "为什么" 都从它来。由此得出三条结论，前两条是事实，第三条是必须遵守的规则：
 
 - **MOD 的星系放在 `ModPlugin.onNewGame()`**。`ModPlugin` 接口的 API 注释明确写着：`onNewGame()` "is the preferred way to generate the contents of the Sector, and is meant to replace generators.csv (which remains used for backwards compatibility)"——`generators.csv` 只是历史兼容入口。
 - **本 MOD 的实体必须在这个时序的第 7 步之前存在**：market.json 的 `entities` 按实体 id 查找实体，查不到就抛异常（见链路三）。
@@ -77,7 +77,7 @@
 StarSystemAPI system = sector.createStarSystem("GearIn");
 ```
 
-- `createStarSystem(name)` 由生涯引擎创建一个 `StarSystemAPI` 并登记进星区的星系集合；参数是**基名（base name）**，游戏显示为"`<基名> Star System`"。
+- `createStarSystem(name)` 由生涯引擎创建一个 `StarSystemAPI` 并登记进星区的星系集合；参数是**基名（base name）**，游戏显示为 "`<基名> Star System`"。
 - 查询入口：`SectorAPI.getStarSystem(name)` 把名字转小写后，与每个星系的 `optionalUniqueId`（若设置了）或基名小写比较，**大小写不敏感**。所以 `getStarSystem("GearIn")` 和 `getStarSystem("gearin")` 都能取到本节的星系。
 - 星系在超空间中的位置：原版机制是 `initStar` 用**恒星 id** 去 `data/campaign/starmap.json` 的 `starSystemLocations` 里查坐标，查到就把 `system.getLocation()` 设为该坐标。这是本节最重要的数据完整流程之一：
 
@@ -85,9 +85,9 @@ StarSystemAPI system = sector.createStarSystem("GearIn");
 initStar 的恒星 id  ==  starmap.json 的 starSystemLocations 键  ==  market.json 的 starSystem 值
 ```
 
-三者必须一致（不一致的后果见"实例驱动故障分析"第 4、5 条）。
+三者必须一致（不一致的后果见 "实例驱动故障分析" 第 4、5 条）。
 
-不想用 `starmap.json` 的话，也可以在 `initStar` **之前**显式 `system.getLocation().set(x, y)`——恒星不在原版 starmap.json 里的 MOD 可以这样定位（查不到键就不会被覆盖）。
+不想用 `starmap.json` 的话，也可以在 `initStar` **之前**显式 `system.getLocation().set(x, y)`—— 恒星不在原版 starmap.json 里的 MOD 可以这样定位（查不到键就不会被覆盖）。
 
 两条路二选一；什么都不做时星系会定位在超空间原点 `(0,0)`。
 
@@ -108,7 +108,7 @@ PlanetAPI prime = system.addPlanet("GearIn_planet1", star, "GearIn Prime", "terr
 
 `addPlanet(id, focus, name, type, angle, radius, orbitRadius, orbitDays)`：
 
-- `id`：行星实体 id（唯一）；`focus`：轨道焦点（通常为恒星，也可以是另一颗行星——焦点行星成为"卫星/月亮"）；`name`：显示名；`type`：`planets.json` 里的行星类型键（`terran`、`barren`、`arid`、`lava`、`gas_giant`……）；`angle`：起始轨道角（度）；`radius`：行星半径；`orbitRadius`：轨道半径；`orbitDays`：公转周期（天）。
+- `id`：行星实体 id（唯一）；`focus`：轨道焦点（通常为恒星，也可以是另一颗行星 —— 焦点行星成为 "卫星/月亮"）；`name`：显示名；`type`：`planets.json` 里的行星类型键（`terran`、`barren`、`arid`、`lava`、`gas_giant`……）；`angle`：起始轨道角（度）；`radius`：行星半径；`orbitRadius`：轨道半径；`orbitDays`：公转周期（天）。
 
 #### 自定义实体与轨道
 
@@ -120,7 +120,7 @@ stable.setCircularOrbitPointingDown(star, 90, 2200, 100);
 `LocationAPI.addCustomEntity(id, name, type, factionId)`：
 
 - `type` 是 `data/config/custom_entities.json` 里的实体类型键：`stable_location`（稳定点）、`comm_relay`（通信中继）、`sensor_array`（传感器阵列）、`nav_buoy`（导航浮标）、`station_side00`（空间站）等；`factionId` 缺省为 `neutral`；`id` 传 `null` 时自动生成。
-- 轨道：`setCircularOrbit(focus, angle, orbitRadius, orbitDays)`；空间站这类"脸朝焦点"的实体用 `setCircularOrbitPointingDown(...)`（效果相同，但实体朝向焦点）。
+- 轨道：`setCircularOrbit(focus, angle, orbitRadius, orbitDays)`；空间站这类 "脸朝焦点" 的实体用 `setCircularOrbitPointingDown(...)`（效果相同，但实体朝向焦点）。
 
 #### 跳跃点
 
@@ -144,17 +144,17 @@ system.autogenerateHyperspaceJumpPoints(true, true);
 第一个参数为 `true` 时还在气态巨行星旁生成单向入口，第二个参数为 `true` 时在星系边缘生成一个双向跳跃点。
 
 ::: caution 必须打通超空间入口
-**不调用这一步（又不使用带超空间坐标的 `initStar` 重载），星系就没有任何超空间入口，用户无法到达**——星系照常生成、日志没有任何报错。
+**不调用这一步（又不使用带超空间坐标的 `initStar` 重载），星系就没有任何超空间入口，用户无法到达**—— 星系照常生成、日志没有任何报错。
 :::
 
 #### 还能加什么
 
 一切创作的本质，不过是对现有元素的再次排列组合。上面只是最小骨架；原版 `data/scripts/world/corvus/`（Corvus 星系）与 `data/scripts/world/systems/`（几乎所有其它星系）的生成文件里，可以找到陨石带、碎片带、环带、极光、空间站、星门等物体的添加方法：
 
-- `system.addAsteroidBelt(focus, numAsteroids, orbitRadius, width, minOrbitDays, maxOrbitDays)`——小行星带；
-- `system.addRingBand(focus, category, key, bandWidthInEngine, bandAngleDiff, color, coreRadiusMult, bandRadiusInEngine, bandDaysPerOrbit, terrainId, name)`——行星环带（地形版还返回 terrain 实体）；
-- `system.addTerrain(Terrain.MAGNETIC_FIELD, new MagneticFieldParams(...))`——磁层/极光等地形；
-- `StarSystemGenerator.addOrbitingEntities(system, star, StarAge.AVERAGE, min, max, startRadius, nameOffset, withSpecialNames, allowHabitable)`——按程序化规则批量补行星、`StarSystemGenerator.addSystemwideNebula(system, StarAge.OLD)`——星系级星云。
+- `system.addAsteroidBelt(focus, numAsteroids, orbitRadius, width, minOrbitDays, maxOrbitDays)`—— 小行星带；
+- `system.addRingBand(focus, category, key, bandWidthInEngine, bandAngleDiff, color, coreRadiusMult, bandRadiusInEngine, bandDaysPerOrbit, terrainId, name)`—— 行星环带（地形版还返回 terrain 实体）；
+- `system.addTerrain(Terrain.MAGNETIC_FIELD, new MagneticFieldParams(...))`—— 磁层/极光等地形；
+- `StarSystemGenerator.addOrbitingEntities(system, star, StarAge.AVERAGE, min, max, startRadius, nameOffset, withSpecialNames, allowHabitable)`—— 按程序化规则批量补行星、`StarSystemGenerator.addSystemwideNebula(system, StarAge.OLD)`—— 星系级星云。
 
 把上面任意组合复制进您自己的 `generate()` 里，再按需微调即可。
 
@@ -172,7 +172,7 @@ system.autogenerateHyperspaceJumpPoints(true, true);
 
 #### 路径 A：数据路径（market.json，原版方式）
 
-原版所有市场的"出生证"都是数据文件。加载链是：
+原版所有市场的 "出生证" 都是数据文件。加载链是：
 
 ```
 data/campaign/econ/economy.json（starSystems 数组）
@@ -182,7 +182,7 @@ data/campaign/econ/economy.json（starSystems 数组）
 
 `economy.json` 的字段（RC8，本地 `Starsector\starsector-core\data\campaign\econ\economy.json`）：`starSystems`（数组，每项是一个市场文件的相对路径）、`initialStepsToRun`、`defaultTariff`（0.3）、`map`（指向 `../starmap.json`）。
 
-这个文件跨来源合并读取（`readJSONMerged`），**数组追加、对象按键合并、标量后写覆盖**——所以 MOD 只需要提交自己的 `starSystems` 数组项和自己的市场文件，**不要**复制整份原版文件，也不要写 `map` / `initialStepsToRun` / `defaultTariff` 键（标量会覆盖原版值，原版经济会被破坏）。
+这个文件跨来源合并读取（`readJSONMerged`），**数组追加、对象按键合并、标量后写覆盖**—— 所以 MOD 只需要提交自己的 `starSystems` 数组项和自己的市场文件，**不要**复制整份原版文件，也不要写 `map` / `initialStepsToRun` / `defaultTariff` 键（标量会覆盖原版值，原版经济会被破坏）。
 
 每个市场文件的字段（RC8 经济数据加载流程）：
 
@@ -199,7 +199,7 @@ data/campaign/econ/economy.json（starSystems 数组）
 | `industries` | 否 | `getJSONArray` | 每项是产业 id，或 `[产业id, 参数...]` 数组（如 `["orbitalworks", "corrupted_nanoforge"]`，见原版 `askonia.json`）|
 | `submarkets` | 否 | `getJSONArray` | **缺省自动加** `open_market`、`black_market`、`storage`，若市场有 `militarybase` / `highcommand` 产业还加 `generic_military` |
 
-市场数据路径只在**新建生涯**时读取（时序第 7 步）；读档时市场从存档恢复。完整示例见"完整最小例"里的数据路径小节。
+市场数据路径只在**新建生涯**时读取（时序第 7 步）；读档时市场从存档恢复。完整示例见 "完整最小例" 里的数据路径小节。
 
 #### 路径 B：代码路径（常见做法）
 
@@ -234,7 +234,7 @@ createMarket(id, name, size)
 
 市场**必须**带 `population_*` 人口条件：原版 `economy.json` 的 `starSystems` 列出的全部 20 个市场文件，其市场无一例外都带 `population_N`（本地数据核对）；代码路径的通用写法也是从 `population_` 条件解析市场规模。
 
-缺少人口条件的市场在本节可核对范围内没有正常使用方，人口与移民机制会偏离预期——保持带 `population_N`。
+缺少人口条件的市场在本节可核对范围内没有正常使用方，人口与移民机制会偏离预期 —— 保持带 `population_N`。
 
 ## 完整最小例
 
@@ -266,7 +266,7 @@ data/campaign/starmap.json                         # 本节新增（星系坐标
 
 保存为 `data/scripts/gearin/campaign/GearInSystemGenPlugin`（`data/scripts` 目录可能不存在，需要新建）。
 
-它只做两件事：新档时调用星系生成器；挂载"关系只能由代码设置"的关系播种代码（该规则在势力注册单元讲清）。
+它只做两件事：新档时调用星系生成器；挂载 "关系只能由代码设置" 的关系播种代码（该规则在势力注册单元讲清）。
 
 本类是本节的生成入口类；`ModPlugin` 各回调的完整生命周期由 ModPlugin 所有权单元讲解（其所有权示例类 `GearInModPlugin` 位于 `data.scripts.gearin` 包），本节只用到 `onNewGame()` 这一个生成入口。
 
@@ -313,10 +313,10 @@ public class GearInSystemGenPlugin extends BaseModPlugin {
 要点：
 
 - `modPlugin` 指向的类**必须继承 `BaseModPlugin`**（或实现 `ModPlugin`）；类名写错、包名写错时启动器报加载失败（加载失败的原因在 MOD 基础单元讲清）。
-- `onNewGame()` 是"新档时生成星区内容"的推荐入口（API 注释原文），"关系只能由代码设置"在这里正式挂载。不调用 `seedRelations` 的可观察结果：齿轮工业对所有人 0.0 中立，无任何报错。
+- `onNewGame()` 是 "新档时生成星区内容" 的推荐入口（API 注释原文），"关系只能由代码设置" 在这里正式挂载。不调用 `seedRelations` 的可观察结果：齿轮工业对所有人 0.0 中立，无任何报错。
 
 ::: warning 中途启用只影响新档
-如果您在用户存档中途**启用**了这个 MOD，`onNewGame()` 不会为已存在的旧档运行——旧档里不会出现本星系（新档专属内容）。
+如果您在用户存档中途**启用**了这个 MOD，`onNewGame()` 不会为已存在的旧档运行 —— 旧档里不会出现本星系（新档专属内容）。
 :::
 
 ### 第三步：GearInSystemGenerator
@@ -325,7 +325,7 @@ public class GearInSystemGenPlugin extends BaseModPlugin {
 
 这是本节的星系布局类：生成星系、恒星、两颗行星、稳定点与跳跃点，并把市场构建委托给 `GearInMarketFactory`（见第四步）。
 
-**绑定位置：星系生成链**——由 `GearInSystemGenPlugin.onNewGame()` 调用 `generate(sector)`；实现 `SectorGeneratorPlugin` 只是采用生成器的"约定"写法（原版 `data.scripts.world.SectorGen` 就是 `SectorGeneratorPlugin`）。
+**绑定位置：星系生成链**—— 由 `GearInSystemGenPlugin.onNewGame()` 调用 `generate(sector)`；实现 `SectorGeneratorPlugin` 只是采用生成器的 "约定" 写法（原版 `data.scripts.world.SectorGen` 就是 `SectorGeneratorPlugin`）。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -398,7 +398,7 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 
 这是代码路径建市场的入口类（角色：市场工厂）：每个实体一行 `createMarket(...)`，即可完成市场规模推导（`population_` 条件）、条件/产业/子市场填充与注册三步收尾（`economy.addMarket` / `entity.setMarket` / `entity.setFaction`）。
 
-**绑定位置：市场构建链**——由 `GearInSystemGenerator.generate()` 对每颗行星调用一次（对应链路三的代码路径）。
+**绑定位置：市场构建链**—— 由 `GearInSystemGenerator.generate()` 对每颗行星调用一次（对应链路三的代码路径）。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -480,7 +480,7 @@ public class GearInMarketFactory {
 
 ![](./system_in.png)
 
-虽然它现在内容不多，但恒星、行星、稳定点、跳跃点与市场都已经就位。想加更多星球与实体，参考"链路二：还能加什么"从原版星系文件复制粘贴即可：![](./system_raw.png)
+虽然它现在内容不多，但恒星、行星、稳定点、跳跃点与市场都已经就位。想加更多星球与实体，参考 "链路二：还能加什么" 从原版星系文件复制粘贴即可：![](./system_raw.png)
 
 ![](./system_full.png)
 
@@ -490,11 +490,11 @@ public class GearInMarketFactory {
 
 如果您愿意走原版的数据路径，把 `GearInSystemGenerator.generate()` 里对 `GearInMarketFactory` 的两次 `createMarket(...)` 调用删掉，换成下面的两个数据文件（`data/campaign/econ/gearin.json` 与 `data/campaign/econ/economy.json`）。
 
-**注意：这是与代码路径互斥的替代方案，不要同时保留**——同一颗行星上会出现两个同名市场。
+**注意：这是与代码路径互斥的替代方案，不要同时保留**—— 同一颗行星上会出现两个同名市场。
 
 新建 `data/campaign/econ/gearin.json`（文件名随意，但建议与星系对应；`starSystem` 必须等于 starmap 键 `gearin`）。
 
-注意：**不要**在这个文件里写 `tariff`——真实新档的税率来自势力文件的 `tariffFraction`，该键只在模拟模式读取；想调税率请改势力注册单元的 faction 文件或改用代码路径的 `modifyFlat`）：
+注意：**不要**在这个文件里写 `tariff`—— 真实新档的税率来自势力文件的 `tariffFraction`，该键只在模拟模式读取；想调税率请改势力注册单元的 faction 文件或改用代码路径的 `modifyFlat`）：
 
 ```json
 {
@@ -602,8 +602,8 @@ public class GearInMarketFactory {
 - 启动到主菜单：`starsector.log` 没有任何 `ERROR`（星系生成代码不参与加载阶段，错误只会出现在新建生涯时）。
 - 新建生涯，生成完成无异常。星图上出现 `GearIn` 星系（位置在 `[12000,14000]` 附近），超空间里能看到通向它的跳跃点/虫洞（`system_out.png`）。
 - 进入星系（`system_in.png`）：白色恒星带日冕，`GearIn Prime`（terran）与 `GearIn Second`（barren）绕行，稳定点与跳跃点各就各位，星系有背景与光照。
-- 沿跳跃点航行：星系内跳跃点与超空间跳跃点双向可用；未接近任何实体时星系呈"空"状态（`system_raw.png`）。
-- 市场（代码路径）：靠近 `GearIn Prime` / `GearIn Second` 出现市场交互——势力为齿轮工业、税率 0.35、四个子市场（开放市场/军事/黑市/仓储）可用，条件与产业生效（`system_full.png`）。
+- 沿跳跃点航行：星系内跳跃点与超空间跳跃点双向可用；未接近任何实体时星系呈 "空" 状态（`system_raw.png`）。
+- 市场（代码路径）：靠近 `GearIn Prime` / `GearIn Second` 出现市场交互 —— 势力为齿轮工业、税率 0.35、四个子市场（开放市场/军事/黑市/仓储）可用，条件与产业生效（`system_full.png`）。
 - 市场（数据路径）：日志出现 `Loading economy data from data/campaign/econ/economy.json`、`Loading star system: gearin.json`，市场表现与代码路径一致。
 - 关系：情报里齿轮工业与海盗 `HOSTILE`、与霸主 `FRIENDLY`、与速子科技 `HOSTILE`、与用户 0.0 中立（挂载点在 `onNewGame`）。
 
@@ -630,7 +630,7 @@ public class GearInMarketFactory {
 5. **新档生成中断：`Star system id [X] not found in <starmap路径>`。**
    - 触发（数据路径）：`gearin.json` 的 `starSystem` 值与 `starmap.json` 的 `starSystemLocations` 键不一致或缺失。
    - 可观察：经济数据加载抛该异常，新档生成失败。
-   - 修正：让三处一致——`initStar` 恒星 id = `starmap.json` 键 = market 文件 `starSystem`。
+   - 修正：让三处一致 ——`initStar` 恒星 id = `starmap.json` 键 = market 文件 `starSystem`。
 6. **新档生成中断：`Market condition [X] not found` / `Industry [X] not found`。**
    - 触发：条件 id 不在 `market_conditions.csv`、产业 id 不在 `industries.csv`（两条路径都会触发；代码路径在 `MarketAPI.addCondition` 与 `MarketAPI.addIndustry` 处抛，数据路径在经济数据加载时抛）。
    - 可观察：异常堆栈指向对应的 id，新档生成失败。
@@ -681,7 +681,7 @@ public class GearInMarketFactory {
 
 ## 总结
 
-本节走通了"星系 + 实体 + 市场 + 生成入口"四条链：
+本节走通了 "星系 + 实体 + 市场 + 生成入口" 四条链：
 
 - **生成入口**：新建生涯的时序是入口生成器（`settings.json` 的 `newGameCreationEntryPoint`）→ `generators.csv` 插件 → 各 MOD 的 `ModPlugin.onNewGame()` → 程序化生成（`newGameSectorProcGen`）→ 经济加载（market.json）。MOD 星系放 `onNewGame()`（API 注释钦定的推荐入口）；`newGameCreationEntryPoint` / `newGameSectorProcGen` 两个 settings 键禁止覆盖。
 - **星系与实体**：`createStarSystem` 建容器 → `initStar` / `addPlanet` 放恒星与行星（类型 id 来自 `planets.json`）→ `addCustomEntity` 放稳定点/中继/空间站（类型 id 来自 `custom_entities.json`）→ `createJumpPoint` + `addEntity` 放跳跃点 → `autogenerateHyperspaceJumpPoints(true, true)` 打通超空间。星系位置由 `starmap.json` 的 `starSystemLocations` 键（= 恒星 id）决定。
@@ -692,32 +692,32 @@ public class GearInMarketFactory {
 
 从逻辑上看，本节的星系还只是骨架：行星用类型默认描述、市场只完成注册。
 
-这条链的自然延伸，是给行星配自定义描述、把市场推进到完整的经济语义（稳定度、供需、移民、殖民）；生成入口这半边，则由 `ModPlugin` 的完整生命周期承接——本节只用了 `onNewGame()` 一个回调，完整的回调族与示例 MOD 的最终编译形态（JAR）是它的逻辑后续。
+这条链的自然延伸，是给行星配自定义描述、把市场推进到完整的经济语义（稳定度、供需、移民、殖民）；生成入口这半边，则由 `ModPlugin` 的完整生命周期承接 —— 本节只用了 `onNewGame()` 一个回调，完整的回调族与示例 MOD 的最终编译形态（JAR）是它的逻辑后续。
 
 ## 建议参考项
 
 - Java API（包路径）：
-  - `com.fs.starfarer.api.ModPlugin` / `com.fs.starfarer.api.BaseModPlugin`——生成入口约定与默认实现（`onNewGame()` 是新档生成星区内容的推荐入口）
+  - `com.fs.starfarer.api.ModPlugin` / `com.fs.starfarer.api.BaseModPlugin`—— 生成入口约定与默认实现（`onNewGame()` 是新档生成星区内容的推荐入口）
   - `com.fs.starfarer.api.campaign.SectorAPI`——`createStarSystem` / `getStarSystem` 星系容器
   - `com.fs.starfarer.api.campaign.StarSystemAPI`——`initStar` / `addPlanet` / `autogenerateHyperspaceJumpPoints` / `setLightColor`
   - `com.fs.starfarer.api.campaign.LocationAPI`——`addCustomEntity` / `addEntity` / `addAsteroidBelt` / `addRingBand` / `addTerrain`
   - `com.fs.starfarer.api.campaign.SectorEntityToken`——`setCircularOrbit` / `setCircularOrbitPointingDown` / `setMarket` / `setFaction`
   - `com.fs.starfarer.api.campaign.JumpPointAPI`——`setRelatedPlanet` / `setStandardWormholeToHyperspaceVisual`
-  - `com.fs.starfarer.api.campaign.SectorGeneratorPlugin` / `com.fs.starfarer.api.campaign.SectorProcGenPlugin`——生成器约定
+  - `com.fs.starfarer.api.campaign.SectorGeneratorPlugin` / `com.fs.starfarer.api.campaign.SectorProcGenPlugin`—— 生成器约定
   - `com.fs.starfarer.api.FactoryAPI`——`createMarket` / `createJumpPoint`
   - `com.fs.starfarer.api.Global`——`getFactory` / `getSector`
-  - `com.fs.starfarer.api.campaign.econ.MarketAPI` / `com.fs.starfarer.api.campaign.econ.EconomyAPI` / `com.fs.starfarer.api.campaign.econ.MarketConditionAPI`——市场对象、经济集合与市场条件
-  - `com.fs.starfarer.api.impl.campaign.procgen.StarSystemGenerator` / `com.fs.starfarer.api.impl.campaign.procgen.ProcgenUsedNames`——按程序化规则批量补行星 / 名称登记
+  - `com.fs.starfarer.api.campaign.econ.MarketAPI` / `com.fs.starfarer.api.campaign.econ.EconomyAPI` / `com.fs.starfarer.api.campaign.econ.MarketConditionAPI`—— 市场对象、经济集合与市场条件
+  - `com.fs.starfarer.api.impl.campaign.procgen.StarSystemGenerator` / `com.fs.starfarer.api.impl.campaign.procgen.ProcgenUsedNames`—— 按程序化规则批量补行星 / 名称登记
 - 原版数据（以游戏安装根为基准）：
   - `data/config/settings.json`——`plugins` 段（`newGameCreationEntryPoint` / `newGameSectorProcGen`）与 `economyExceptionOnMissingMarketEntity`
-  - `data/world/generators.csv`——历史兼容的生成器注册表
+  - `data/world/generators.csv`—— 历史兼容的生成器注册表
   - `data/campaign/starmap.json`——`starSystemLocations` 星系坐标注册
-  - `data/campaign/econ/economy.json` 与 `data/campaign/econ/`——市场数据路径
-  - `data/campaign/market_conditions.csv` / `data/campaign/industries.csv` / `data/campaign/submarkets.csv`——条件/产业/子市场 id
-  - `data/config/planets.json` / `data/config/custom_entities.json`——行星/恒星类型与实体类型
-  - `data/scripts/world/corvus/` / `data/scripts/world/systems/`——原版星系生成文件（扩充素材）
-  - `graphics/backgrounds/background2.jpg`——示例星系背景
+  - `data/campaign/econ/economy.json` 与 `data/campaign/econ/`—— 市场数据路径
+  - `data/campaign/market_conditions.csv` / `data/campaign/industries.csv` / `data/campaign/submarkets.csv`—— 条件/产业/子市场 id
+  - `data/config/planets.json` / `data/config/custom_entities.json`—— 行星/恒星类型与实体类型
+  - `data/scripts/world/corvus/` / `data/scripts/world/systems/`—— 原版星系生成文件（扩充素材）
+  - `graphics/backgrounds/background2.jpg`—— 示例星系背景
 - 示例 MOD 内（以 MOD 根目录为基准）：
-  - `data/scripts/gearin/campaign/`——本节三个类（`GearInSystemGenPlugin` / `GearInSystemGenerator` / `GearInMarketFactory`）所在目录
-  - `data/campaign/starmap.json` / `data/campaign/econ/gearin.json` / `data/campaign/econ/economy.json`——本节新增数据文件
+  - `data/scripts/gearin/campaign/`—— 本节三个类（`GearInSystemGenPlugin` / `GearInSystemGenerator` / `GearInMarketFactory`）所在目录
+  - `data/campaign/starmap.json` / `data/campaign/econ/gearin.json` / `data/campaign/econ/economy.json`—— 本节新增数据文件
   - `mod_info.json`——`modPlugin` 注册字段

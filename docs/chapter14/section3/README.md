@@ -22,11 +22,11 @@
 本节内容建立在以下前置知识之上，建议先掌握：
 
 - GLSL 110/430 方言、`attribute`/`uniform`/`varying`、编译/链接检查链与能力门禁（C14-S01）：本节把 430 方言与 BoxUtil 的 GL 4.3 基线连接起来；其「uniform 名/类型必须一致」这条必须遵守的规则在本节延续为提交纪律。
-- `.vert/.frag` 路径约定（`data/shaders/`、`/` 分隔、UTF-8 无 BOM）、加载与编译日志、资源生命周期四环节（C14-S02）：本节沿用——每场战斗 `init` 内创建、`cleanup()` 内释放、禁止跨战斗缓存。
+- `.vert/.frag` 路径约定（`data/shaders/`、`/` 分隔、UTF-8 无 BOM）、加载与编译日志、资源生命周期四环节（C14-S02）：本节沿用 —— 每场战斗 `init` 内创建、`cleanup()` 内释放、禁止跨战斗缓存。
 - BoxUtil 初始化两段式（`initPre` → `initLater`）与可用性判据 `BoxConfigs.isShaderEnable() && ShaderCore.isValid()`（C12-S06）：本节的创建门禁直接复用；`isBaseGL43Supported()` 只是 GL 能力探测，不能替代 `ShaderCore.isValid()`。
 - 硬依赖（C12-S01）：GearIndustry 对 BoxUtil 的硬依赖声明（`mod_info.json` 的 `dependencies`，C12-S06）。
-- 分层渲染插件通道（C07-S06）：本节渲染所属对象——`render(layer, viewport)` 回调内绘制、`advance()` 主动失效、`cleanup()` 释放 GL 资源。
-- `Global` 生命周期（C06-S03）：禁止跨战斗缓存引擎引用与渲染对象——本节的 `ShaderProgram`/VBO 同规。
+- 分层渲染插件通道（C07-S06）：本节渲染所属对象 ——`render(layer, viewport)` 回调内绘制、`advance()` 主动失效、`cleanup()` 释放 GL 资源。
+- `Global` 生命周期（C06-S03）：禁止跨战斗缓存引擎引用与渲染对象 —— 本节的 `ShaderProgram`/VBO 同规。
 
 ## 文件与 API 链路
 
@@ -67,7 +67,7 @@
 
 本节换用 BoxUtil 的 `ShaderProgram`：它封装 GL program 句柄、uniform/UBO location 查询、`active()/close()` 状态与 valid 状态（实例规范），此前手工做的四件事（编译、链接、取 location、状态跟踪）都收敛到这一个对象上；
 
-投影矩阵也不再手工设置——由 BoxUtil 的全局矩阵 UBO（`BUtilGlobalData` 块）供给。
+投影矩阵也不再手工设置 —— 由 BoxUtil 的全局矩阵 UBO（`BUtilGlobalData` 块）供给。
 
 BoxUtil 是依赖库，本节按成熟实例的消费侧用法陈述其公开消费形状（见「实例对照」）。
 
@@ -102,10 +102,10 @@ bladeProgram.uboLocation = new int[] {
 
 ### 使用与收尾
 
-- 渲染前检查 `program.isValid()`——程序创建失败（GPU 不支持、编译失败等）时 `isValid()` 为 false，直接跳过绘制。
+- 渲染前检查 `program.isValid()`—— 程序创建失败（GPU 不支持、编译失败等）时 `isValid()` 为 false，直接跳过绘制。
 - 提交段夹在 `program.active()` 与 `program.close()` 之间；实例规范原文「`ShaderProgram.active()` 后必须按 `ShaderProgram.close()` 关闭 program 状态」。
 - `cleanup()` 里 `program.delete()`，句柄置空；每场战斗 `init` 重新创建，禁止跨战斗缓存（沿用跨战斗缓存禁令）。
-- 前页的编译/链接状态检查与 InfoLog 职责在 BoxUtil 封装内，MOD 侧不再逐行检查——**失败可见性取决于 `isValid()` 检查与 BoxUtil 自己的日志**；本节示例把「程序无效」写成 ERROR 日志并自废（规则 3）。
+- 前页的编译/链接状态检查与 InfoLog 职责在 BoxUtil 封装内，MOD 侧不再逐行检查 ——**失败可见性取决于 `isValid()` 检查与 BoxUtil 自己的日志**；本节示例把「程序无效」写成 ERROR 日志并自废（规则 3）。
 
 ::: caution 不得以 `isBaseGL43Supported()` 替代 `ShaderCore.isValid()`
 
@@ -179,7 +179,7 @@ uniform 是「一次绘制内所有顶点/片元共享」的常量（数据流�
 
 - **名称与类型必须与 GLSL 声明一致**（大小写敏感）：名称拼错 → `getUniformIndex` 返回 -1 → `glUniform*` 被静默忽略（GL 错误不报）——uniform 不生效且无日志；
 - 类型不匹配（如 GLSL 声明 `float` 却提交 `glUniform2f`）→ 赋值失败/未定义，同样是静默路径；
-- 提交时机在 `program.active()` 之后、`glDrawArrays` 之前（绘制内的状态在 `close()` 后失效——这也解释了为什么每帧都要重新提交）。
+- 提交时机在 `program.active()` 之后、`glDrawArrays` 之前（绘制内的状态在 `close()` 后失效 —— 这也解释了为什么每帧都要重新提交）。
 
 ::: warning 名称/类型不匹配是静默失败
 
@@ -207,8 +207,8 @@ SettingsAPI.getSprite(路径) → SpriteAPI.getTextureId()
 
 要点：
 
-- 纹理来源：`SettingsAPI.getSprite` 两个形态——单参 `getSprite(String filename)` 要求「文件必须已加载」（javadoc），双参 `getSprite(String category, String key)` 读 settings.json 的 `graphics` 分类。本节示例用单参 + 引擎启动期必载的 `graphics/fx/particlealpha32sq.png`（引擎启动期把该纹理加入加载队列，与既有示例同款做法），不引入新纹理资产。
-- `SpriteAPI.getTextureId()` 返回 GL 纹理 id；`bindTexture()` 等价于 `glBindTexture(GL_TEXTURE_2D, getTextureId())`——两种提交做法都见诸实例（`sprite.bindTexture()` 与 `getTextureId()` + `glBindTexture` 两条等价链）。
+- 纹理来源：`SettingsAPI.getSprite` 两个形态 —— 单参 `getSprite(String filename)` 要求「文件必须已加载」（javadoc），双参 `getSprite(String category, String key)` 读 settings.json 的 `graphics` 分类。本节示例用单参 + 引擎启动期必载的 `graphics/fx/particlealpha32sq.png`（引擎启动期把该纹理加入加载队列，与既有示例同款做法），不引入新纹理资产。
+- `SpriteAPI.getTextureId()` 返回 GL 纹理 id；`bindTexture()` 等价于 `glBindTexture(GL_TEXTURE_2D, getTextureId())`—— 两种提交做法都见诸实例（`sprite.bindTexture()` 与 `getTextureId()` + `glBindTexture` 两条等价链）。
 - shader 程序不吃固定管线纹理状态：`GL_TEXTURE_2D` 的当前绑定由我们自己设置；绘制结束后把绑定解回 0，避免影响后续绘制者的纹理状态。
 - 片元侧采样：`texture(tex, uv)`（GLSL 1.30+ 语法；110 方言是 `texture2D`）。
 
@@ -218,7 +218,7 @@ SettingsAPI.getSprite(路径) → SpriteAPI.getTextureId()
 
 `GL20.glUniformMatrix4(int location, boolean transpose, FloatBuffer matrix)`（LWJGL 2.x 签名）：
 
-- **`transpose` 必须传 `false`**（规则 8）：`true` 表示上传前转置——非列主序缓冲配 `true` 才等价于正确结果，配合列主序数据会得到转置矩阵，位置/旋转全部错乱；
+- **`transpose` 必须传 `false`**（规则 8）：`true` 表示上传前转置 —— 非列主序缓冲配 `true` 才等价于正确结果，配合列主序数据会得到转置矩阵，位置/旋转全部错乱；
 - 缓冲是**列主序 16 个 float**（OpenGL 约定），即第 0、4、8、12 个元素是第一列……（`m00, m10, m20, m30, m01, ...`）；
 - `FloatBuffer` 每帧复用：`clear()` → `put` 16 个值 → `flip()`，避免每帧分配（成熟实例 `maintainAnchoredFloatBuffer` 同款）。
 
@@ -241,7 +241,7 @@ SettingsAPI.getSprite(路径) → SpriteAPI.getTextureId()
 
 顶点着色器把它乘到局部坐标上（`modelMatrix * local`），再交给 `gameViewport`（UBO）做世界 → 屏幕。
 
-**shader 程序不吃固定管线矩阵**：`gl_ModelViewProjectionMatrix` 那套固定管线状态在本节不再使用——模型矩阵是显式 uniform，投影来自 UBO。
+**shader 程序不吃固定管线矩阵**：`gl_ModelViewProjectionMatrix` 那套固定管线状态在本节不再使用 —— 模型矩阵是显式 uniform，投影来自 UBO。
 
 ## 必须遵守的规则汇总
 
@@ -353,7 +353,7 @@ void main() {
 ```
 
 - `fract(fragUV.y + time * 0.25)` 是纹理滚动：`time` 每秒 +0.25 个 V 周期，`fract` 保证滚动循环（贴图区域外不越界采样）；
-- `mix(fringeColor.rgb, coreColor.rgb, texSample.r)` 用贴图红通道在边缘色与核心色之间插值（贴图是白色渐变，`texSample.r` 从中心 1 衰减到边缘 0——中心偏核心色、边缘偏边缘色，配合加法混合成「外蓝内橙」的发光贴片）；
+- `mix(fringeColor.rgb, coreColor.rgb, texSample.r)` 用贴图红通道在边缘色与核心色之间插值（贴图是白色渐变，`texSample.r` 从中心 1 衰减到边缘 0—— 中心偏核心色、边缘偏边缘色，配合加法混合成「外蓝内橙」的发光贴片）；
 - 透明度低于 `DISCARD_ALPHA` 的片元 `discard`（实例同款写法）。
 
 ### GearInShaderVisual（Java 接入）
@@ -666,13 +666,13 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
 
 对应关系：
 
-- **门禁（init）**：`BoxConfigs.isShaderEnable() && ShaderCore.isValid()`（规则 1）失败 → INFO 日志 + `valid = false` 自废，不创建任何 GL 对象——「关闭 shader 路径后示例干净退出」。
+- **门禁（init）**：`BoxConfigs.isShaderEnable() && ShaderCore.isValid()`（规则 1）失败 → INFO 日志 + `valid = false` 自废，不创建任何 GL 对象 ——「关闭 shader 路径后示例干净退出」。
 - **程序创建（init）**：`createShaderVFFormPath` → `new ShaderProgram` → `location`/`uboLocation` 保存 （规则 5/10）→ `isValid()` 失败则 `delete()` 并返回 false（规则 3）。
 - **提交（render）**：`program.active()`（规则 2）→ `glUniformMatrix4`（矩阵，规则 8）→ `glUniform2f/1f`（向量/标量，规则 7）→ `glActiveTexture(GL_TEXTURE0)` + `glBindTexture` + `glUniform1i(texLoc, 0)`（纹理，规则 6）→ `glUniform4f` 颜色 → `glDrawArrays` → `program.close()`。
 - **清理（cleanup）**：`glDeleteBuffers` 删 VBO、`program.delete()` 删程序（规则 9）；`advance` 在 `LIFETIME` 秒后主动失效驱动引擎移除。
-- 顶点数据沿用既有的自建 VBO 做法（本节主题不含几何对象，不引入 BoxUtil `QuadObject`——它是 BoxUtil 提供的等价矩形几何，顶点范围属 BoxUtil 内部不可读，教程不依赖其语义；成熟实例用它配合同款 430 shader）。
+- 顶点数据沿用既有的自建 VBO 做法（本节主题不含几何对象，不引入 BoxUtil `QuadObject`—— 它是 BoxUtil 提供的等价矩形几何，顶点范围属 BoxUtil 内部不可读，教程不依赖其语义；成熟实例用它配合同款 430 shader）。
 
-注册片段（工程片段——本节不改动战斗生命周期插件的任何文件，只演示使用方调用；把下面一行加进 `GearInCombatLifecyclePlugin.init(CombatEngineAPI engine)` 末尾）：
+注册片段（工程片段 —— 本节不改动战斗生命周期插件的任何文件，只演示使用方调用；把下面一行加进 `GearInCombatLifecyclePlugin.init(CombatEngineAPI engine)` 末尾）：
 
 ```java
     // 工程片段：战斗生命周期插件 GearInCombatLifecyclePlugin.init(CombatEngineAPI engine) 内追加
@@ -708,11 +708,11 @@ gradle jar
 3. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/shaders/GearIn_shader_visual.vert`、 `data/shaders/GearIn_shader_visual.frag`、 `data/scripts/gearin/combat/GearInShaderVisual.class`。
 4. 战役冒烟：进入 `GearIn_test` 一场战斗，`starsector.log` 核对 init 行（含 `vert=`/`frag=` 路径与六个 `u_*` location、`ubo=`）；`ubo=<loc>` 非 -1；没有 `gear_in` 引起的 `ERROR`。
 5. 画面：观察玩家舰船位置 160×80 世界单位的发光四边形：中心偏橙、边缘偏蓝、柔和光晕；跟随舰船移动并随舰船朝向旋转；纹理沿 V 方向滚动（约 4 秒一周期）。
-6. 暂停：按空格暂停约 10 秒——纹理滚动冻结、四边形静止但可见；恢复后继续。
+6. 暂停：按空格暂停约 10 秒 —— 纹理滚动冻结、四边形静止但可见；恢复后继续。
 7. 寿命清理：约 30 秒后四边形消失且 `starsector.log` 出现 `GearIn shader visual cleanup`。
-8. 跨战斗：退出战斗再进一场——init 行重新出现，无 ERROR。
-9. 门禁降级：在 `LunaSettings`/`BoxConfigs` 把 shader 路径关闭后进战斗——`starsector.log` 出现 `GearIn shader visual: BoxUtil shader path unavailable (...), visual disabled`，无画面、无 ERROR（shader 路径干净降级）。
-10. 故障注入：a) Java 侧把 `getUniformIndex("time")` 拼成 `"Time"`——纹理滚动停止且无日志（init 行 `u_time=-1`）；b) 把 `glUniformMatrix4` 的 `false` 改成 `true`——四边形位置/朝向错乱；c) 把 `glUniform1i(texLoc, 0)` 的 `0` 改成 `1`——四边形颜色错误/变黑；d) 把 `#version 430` 改成 `#version 110`——编译失败、无画面（BoxUtil 侧日志）；e) 改回后确认恢复。
+8. 跨战斗：退出战斗再进一场 ——init 行重新出现，无 ERROR。
+9. 门禁降级：在 `LunaSettings`/`BoxConfigs` 把 shader 路径关闭后进战斗 ——`starsector.log` 出现 `GearIn shader visual: BoxUtil shader path unavailable (...), visual disabled`，无画面、无 ERROR（shader 路径干净降级）。
+10. 故障注入：a) Java 侧把 `getUniformIndex("time")` 拼成 `"Time"`—— 纹理滚动停止且无日志（init 行 `u_time=-1`）；b) 把 `glUniformMatrix4` 的 `false` 改成 `true`—— 四边形位置/朝向错乱；c) 把 `glUniform1i(texLoc, 0)` 的 `0` 改成 `1`—— 四边形颜色错误/变黑；d) 把 `#version 430` 改成 `#version 110`—— 编译失败、无画面（BoxUtil 侧日志）；e) 改回后确认恢复。
 
 **通过信号**：操作 1–8 全部符合；操作 9 的门禁降级与操作 10 的注入/恢复都符合预期。
 
@@ -724,7 +724,7 @@ gradle jar
 ```text
 gradle -p tutorial-fixtures compileC14s03Java --no-daemon
 ```
-以 `BUILD SUCCESSFUL` 结束（退出码 0）。该任务编译 `units/C14-S03/src/main/java`，编译类路径已含 BoxUtil jars（`tutorial-fixtures/build.gradle` 的 `fixtureJars`）——本节 Java 代码的 `ShaderUtil`/`ShaderProgram`/`ShaderCore`/`BoxConfigs` 调用由此完成编译核对。
+以 `BUILD SUCCESSFUL` 结束（退出码 0）。该任务编译 `units/C14-S03/src/main/java`，编译类路径已含 BoxUtil jars（`tutorial-fixtures/build.gradle` 的 `fixtureJars`）—— 本节 Java 代码的 `ShaderUtil`/`ShaderProgram`/`ShaderCore`/`BoxConfigs` 调用由此完成编译核对。
 2. **fixture 资源（验收 G）**：在 Git Bash 执行
 ```text
 gradle -p tutorial-fixtures validateShaders --no-daemon
@@ -736,14 +736,14 @@ gradle -p tutorial-fixtures validateShaders --no-daemon
 GearIn shader visual init: u_model=<loc>, u_size=<loc>, u_time=<loc>, u_tex=<loc>, u_core=<loc>, u_fringe=<loc>, ubo=<loc>, vert=data/shaders/GearIn_shader_visual.vert, frag=data/shaders/GearIn_shader_visual.frag
 ```
 其中 `vert=`/`frag=` 与资源文件路径一致（四位置完整流程）；`ubo=<loc>` 非 -1（UBO 块绑定成功）；没有由 `gear_in` 引起的 `ERROR`。若 BoxUtil 未初始化/被关闭，则出现 `GearIn shader visual: BoxUtil shader path unavailable (...), visual disabled` 且无画面（门禁生效）。
-5. **画面（提交生效）**：玩家舰船位置出现一个 160×80 世界单位的发光四边形——中心偏橙（`coreColor`）、边缘偏蓝（`fringeColor`），加法混合、柔和光晕（`particlealpha32sq` 的径向渐变 + `discard` 剔除透明片元）；四边形跟随舰船移动并随舰船朝向旋转（`modelMatrix` 提交）；纹理沿 V 方向向下滚动（`time` 驱动，约 4 秒一个周期）；四边形位于舰船与导弹之上（分层渲染通道层序）。
-6. **暂停行为**：按空格暂停——纹理滚动冻结（`getTotalElapsedTime(false)` 不累计）、四边形静止但可见（与分层渲染插件同款）；恢复后继续滚动。
+5. **画面（提交生效）**：玩家舰船位置出现一个 160×80 世界单位的发光四边形 —— 中心偏橙（`coreColor`）、边缘偏蓝（`fringeColor`），加法混合、柔和光晕（`particlealpha32sq` 的径向渐变 + `discard` 剔除透明片元）；四边形跟随舰船移动并随舰船朝向旋转（`modelMatrix` 提交）；纹理沿 V 方向向下滚动（`time` 驱动，约 4 秒一个周期）；四边形位于舰船与导弹之上（分层渲染通道层序）。
+6. **暂停行为**：按空格暂停 —— 纹理滚动冻结（`getTotalElapsedTime(false)` 不累计）、四边形静止但可见（与分层渲染插件同款）；恢复后继续滚动。
 7. **寿命与清理**：约 30 秒后四边形消失，`starsector.log` 出现一行
 ```text
 GearIn shader visual cleanup
 ```
 即主动失效 → 引擎移除 → `cleanup()` 的正常链（规则 9 的可观察面）。同一场战斗内不再出现。
-8. **跨战斗**：退出战斗再进一场——init 行重新出现且 location 值重新查询（每场战斗重建程序与 VBO，遵循既有生命周期纪律）；无 ERROR。
+8. **跨战斗**：退出战斗再进一场 ——init 行重新出现且 location 值重新查询（每场战斗重建程序与 VBO，遵循既有生命周期纪律）；无 ERROR。
 9. **故障注入**：见「实例驱动故障分析」第 1、2、3、4、5、6、8 条对应的注入动作与恢复。
 
 静态自查：
@@ -757,20 +757,20 @@ GearIn shader visual cleanup
 
 ## 实例驱动故障分析
 
-1. **门禁判据用错（`isBaseGL43Supported` 代替 `ShaderCore.isValid()`）**。触发：把判据改成 `BoxConfigs.isShaderEnable() && BoxConfigs.isBaseGL43Supported()`。可观察：GL 能力探测通过但 BoxUtil 内部初始化失败（program/FBO/VAO/matrix 初始化失败，实例陷阱）时判据仍为真——程序创建后不渲染、无报错（静默失败）。修正：用 `BoxConfigs.isShaderEnable() && ShaderCore.isValid()`（规则 1）。
-2. **漏 `isValid()` 检查**。触发：注释掉 `render` 里的 `if (!program.isValid()) return;`。可观察：程序创建失败（如 GPU 不支持 430）时仍继续绑定——渲染输出错位或 OpenGL 状态污染（实例陷阱原话），且失败原因不可见。修正：渲染前检查（规则 3）。
-3. **UBO 块名拼错**。触发：把 `UBO_BLOCK_NAME` 改成 `"BUtilGlobalDataX"`（GLSL 声明不改）。可观察：`getUBOIndex` 查不到块，块未绑定——`gameViewport` 未定义，四边形不出现或位置错乱，且无日志（GL 错误不报）。修正：块名与 GLSL 逐字一致（规则 5），对照「名称一致性完整核对」核对。
+1. **门禁判据用错（`isBaseGL43Supported` 代替 `ShaderCore.isValid()`）**。触发：把判据改成 `BoxConfigs.isShaderEnable() && BoxConfigs.isBaseGL43Supported()`。可观察：GL 能力探测通过但 BoxUtil 内部初始化失败（program/FBO/VAO/matrix 初始化失败，实例陷阱）时判据仍为真 —— 程序创建后不渲染、无报错（静默失败）。修正：用 `BoxConfigs.isShaderEnable() && ShaderCore.isValid()`（规则 1）。
+2. **漏 `isValid()` 检查**。触发：注释掉 `render` 里的 `if (!program.isValid()) return;`。可观察：程序创建失败（如 GPU 不支持 430）时仍继续绑定 —— 渲染输出错位或 OpenGL 状态污染（实例陷阱原话），且失败原因不可见。修正：渲染前检查（规则 3）。
+3. **UBO 块名拼错**。触发：把 `UBO_BLOCK_NAME` 改成 `"BUtilGlobalDataX"`（GLSL 声明不改）。可观察：`getUBOIndex` 查不到块，块未绑定 ——`gameViewport` 未定义，四边形不出现或位置错乱，且无日志（GL 错误不报）。修正：块名与 GLSL 逐字一致（规则 5），对照「名称一致性完整核对」核对。
 4. **GLSL 版本与上下文不匹配**。触发：把 `#version 430` 改成 `#version 140`（保留 uniform block，删掉 `layout (location = N)` 改回 110 式 attribute 声明是另一处修改）。可观察：在 140 下 `layout (location = N)` 非法 → 编译失败，InfoLog 报语法错误；反过来在 GL 2.0 上下文声明 430 → 编译失败，InfoLog 含 version 错误。修正：目标上下文匹配的版本声明（规则 4，版本声明纪律的延续）。
-5. **uniform 名拼错**。触发：把 Java 侧 `getUniformIndex("time")` 改成 `getUniformIndex("Time")`。可观察：location 为 -1，`glUniform1f` 被静默忽略——纹理滚动停止（`time` 恒 0）、画面其余正常，**没有任何日志**。修正：名称/类型与 GLSL 一致（规则 7）；init 日志里的 location 值能直接看出 -1。
-6. **采样器与纹理单元不配对**。触发：把 `glUniform1i(program.location[3], 0)` 改成 `glUniform1i(program.location[3], 1)`（`glActiveTexture(GL_TEXTURE0)` 不改）。可观察：采样器指向单元 1，单元 1 上没有绑定贴图——四边形颜色错误或变黑，无日志。修正：采样器值必须等于纹理单元号（规则 6）。
-7. **矩阵 `transpose=true` 或非列主序**。触发：把 `glUniformMatrix4(..., false, matrixBuffer)` 改成 `true`。可观察：矩阵被转置上传——旋转方向反转、平移落到矩阵上部，四边形位置/朝向错乱（舰船移动时四边形按错误方向漂移）。修正：`transpose=false` + 列主序 16 float（规则 8）。
-8. **漏 `active()/close()` 配对**。触发：注释掉 `program.close()`。可观察：本程序在 `glDrawArrays` 后仍保持 active——后续绘制者（原版管线或其他 MOD）继续使用本程序状态，渲染输出错位或 OpenGL 状态污染（实例规范）。修正：active/close 配对（规则 2）。
-9. **跨战斗缓存程序**。触发：把 `program` 存进静态字段，第二场战斗不重建。可观察：第二场战斗引用已删句柄——渲染异常/未定义行为（跨战斗缓存禁令）。修正：每场战斗 `init` 重建（规则 9）。
+5. **uniform 名拼错**。触发：把 Java 侧 `getUniformIndex("time")` 改成 `getUniformIndex("Time")`。可观察：location 为 -1，`glUniform1f` 被静默忽略 —— 纹理滚动停止（`time` 恒 0）、画面其余正常，**没有任何日志**。修正：名称/类型与 GLSL 一致（规则 7）；init 日志里的 location 值能直接看出 -1。
+6. **采样器与纹理单元不配对**。触发：把 `glUniform1i(program.location[3], 0)` 改成 `glUniform1i(program.location[3], 1)`（`glActiveTexture(GL_TEXTURE0)` 不改）。可观察：采样器指向单元 1，单元 1 上没有绑定贴图 —— 四边形颜色错误或变黑，无日志。修正：采样器值必须等于纹理单元号（规则 6）。
+7. **矩阵 `transpose=true` 或非列主序**。触发：把 `glUniformMatrix4(..., false, matrixBuffer)` 改成 `true`。可观察：矩阵被转置上传 —— 旋转方向反转、平移落到矩阵上部，四边形位置/朝向错乱（舰船移动时四边形按错误方向漂移）。修正：`transpose=false` + 列主序 16 float（规则 8）。
+8. **漏 `active()/close()` 配对**。触发：注释掉 `program.close()`。可观察：本程序在 `glDrawArrays` 后仍保持 active—— 后续绘制者（原版管线或其他 MOD）继续使用本程序状态，渲染输出错位或 OpenGL 状态污染（实例规范）。修正：active/close 配对（规则 2）。
+9. **跨战斗缓存程序**。触发：把 `program` 存进静态字段，第二场战斗不重建。可观察：第二场战斗引用已删句柄 —— 渲染异常/未定义行为（跨战斗缓存禁令）。修正：每场战斗 `init` 重建（规则 9）。
 10. **纹理路径取不到**。触发：把 `SPRITE_PATH` 改成未加载文件的路径（如 `"graphics/fx/not_loaded.png"`）。可观察：`getSprite` 单参形态返回 null → `loadSprite` 记 ERROR `sprite not loaded:` 并自废，无画面（getSprite javadoc："File must already have been loaded"）。修正：用已加载文件（引擎启动期入队列的贴图），或改用双参形态并确认 settings.json `graphics` 分类注册。
 
 ## 总结
 
-- **程序对象**：BoxUtil `ShaderProgram` 收敛前两页的裸 GL20 流程——`ShaderUtil.createShaderVFFormPath(名称, vert 路径, frag 路径)` 创建 → `new ShaderProgram(programId)` 包装 → 创建后立即查询并保存 `location`/`uboLocation`（实例规范）→ 渲染前 `isValid()`（规则 3）→ `active()/close()` 配对（规则 2）→ `cleanup()` 里 `delete()`（规则 9）。两个成熟实例的消费代码逐行同构。
+- **程序对象**：BoxUtil `ShaderProgram` 收敛前两页的裸 GL20 流程 ——`ShaderUtil.createShaderVFFormPath(名称, vert 路径, frag 路径)` 创建 → `new ShaderProgram(programId)` 包装 → 创建后立即查询并保存 `location`/`uboLocation`（实例规范）→ 渲染前 `isValid()`（规则 3）→ `active()/close()` 配对（规则 2）→ `cleanup()` 里 `delete()`（规则 9）。两个成熟实例的消费代码逐行同构。
 - **UBO**：GLSL 侧 `layout(std140) uniform BUtilGlobalData { mat4 gameViewport; vec4 gameScreenBorder; }`（两个实例同款声明），Java 侧 `getUBOIndex("BUtilGlobalData", ShaderCore.getMatrixUBOBinding())` 绑定；`gameViewport` 是世界→屏幕矩阵，取代手工 `glOrtho`；uniform block 需要 GLSL 1.40+/GL 3.1+，`#version 430` 需要 GL 4.3（BoxUtil 全管线基线），块名必须逐字一致（规则 4/5）。
 - **uniform 三形态**：标量/向量（`glUniform1f/2f/4f`）、采样器（`glUniform1i` + 纹理单元）、矩阵（`glUniformMatrix4`）；名称/类型与 GLSL 声明一致，-1 静默（规则 7）。
 - **纹理**：`SettingsAPI.getSprite` → `SpriteAPI.getTextureId()` → `glActiveTexture(GL_TEXTURE0)` + `glBindTexture(GL_TEXTURE_2D, id)` + `glUniform1i(texLoc, 0)` → 片元 `texture(tex, uv)`；采样器值必须等于单元号（规则 6）；示例用引擎必载的 `graphics/fx/particlealpha32sq.png`，不引入新资产。
@@ -779,7 +779,7 @@ GearIn shader visual cleanup
 
 把「创建 → 保存 location → 门禁检查 → active/提交/close → 清理」的完整流程放在依赖库使用方一侧，意味着 shader 视觉插件的接入面已经收敛为一段可复用的样板；
 
-从本节出发，下一步的逻辑延伸是把这段样板接入渲染层的常驻开关与生命周期管理——让程序对象从一次性演示走向随配置启停的常驻渲染资源，并为多程序复用与性能取舍留出空间。
+从本节出发，下一步的逻辑延伸是把这段样板接入渲染层的常驻开关与生命周期管理 —— 让程序对象从一次性演示走向随配置启停的常驻渲染资源，并为多程序复用与性能取舍留出空间。
 
 ## 建议参考项
 
@@ -789,7 +789,7 @@ GearIn shader visual cleanup
 - `com.fs.starfarer.api.combat.CombatEngineAPI`：`getTotalElapsedTime(boolean)`、`getPlayerShip()`、`addLayeredRenderingPlugin(...)`。
 - `com.fs.starfarer.api.combat.CombatLayeredRenderingPlugin` / `BaseCombatLayeredRenderingPlugin`：分层渲染插件接口与基类。
 - `org.boxutil.util.ShaderUtil`：`createShaderVFFormPath(...)` 按路径创建程序（BoxUtil 消费形状）。
-- `org.boxutil.units.standard.ShaderProgram`：程序句柄封装——`getUniformIndex`/`getUBOIndex`/`isValid`/`active`/`close`/`delete` 与公共字段 `location`/`uboLocation`。
+- `org.boxutil.units.standard.ShaderProgram`：程序句柄封装 ——`getUniformIndex`/`getUBOIndex`/`isValid`/`active`/`close`/`delete` 与公共字段 `location`/`uboLocation`。
 - `org.boxutil.manager.ShaderCore`：`getMatrixUBOBinding()`、`isValid()`（全局矩阵 UBO 绑定点与库可用性）。
 - `org.boxutil.config.BoxConfigs`：`isShaderEnable()`（shader 路径开关）。
 - `data/shaders/GearIn_shader_visual.vert` / `data/shaders/GearIn_shader_visual.frag`：本节新增的两个 shader 资源（MOD 根目录相对路径）。

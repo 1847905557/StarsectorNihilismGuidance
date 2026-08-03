@@ -15,7 +15,7 @@ import com.fs.starfarer.api.mission.FleetSide;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 完整最小例：战斗状态读取——引擎状态、时间语义与舰队/舰船遍历。
+ * 完整最小例：战斗状态读取 —— 引擎状态、时间语义与舰队/舰船遍历。
  *
  * 本插件由战斗上下文注册（C07-S01 的插件模型），只在本场战斗内有效：
  * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存（C06-S03）；
@@ -23,7 +23,7 @@ import com.fs.starfarer.api.util.IntervalUtil;
  *   状态推进前必须先检查 engine.isPaused()；
  * - getShips() 包含残骸与等待移除的舰船，遍历必须用 isAlive() 过滤；
  * - 战机停在甲板时 isAlive() 仍为 true，但不在 getShips() 的列表里；
- * - getPlayerShip() 在没有玩家舰时返回惰性创建的“Command Shuttle”假舰，
+ * - getPlayerShip() 在没有玩家舰时返回惰性创建的 "Command Shuttle" 假舰，
  *   永远非 null，不能拿它判断玩家部署状态。
  */
 public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {

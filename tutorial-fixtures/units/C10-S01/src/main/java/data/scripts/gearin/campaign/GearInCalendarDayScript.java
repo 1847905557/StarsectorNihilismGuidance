@@ -10,7 +10,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
 /**
  * 每日/周期脚本模式 A：日历跨日检测。dateKey = cycle * 10000 + month * 100 + day，
  * 把日历日期折叠为整数键，与上次比较，变化即"新的一天"；每个游戏日恰好触发一次
- * （首帧只初始化不打印）。单帧跨多个游戏日（加速、新档推进）时一帧只报一次——
+ * （首帧只初始化不打印）。单帧跨多个游戏日（加速、新档推进）时一帧只报一次 ——
  * 日历事件一帧至多一次是正常行为，需要逐日补触发的逻辑请改用天数累加器
  * （本单元 GearInDayAccumulatorScript）。runWhilePaused() 返回 false；字段只有
  * int，可随存档序列化（XStream 存档边界），脚本随存档保存、读档后继续。

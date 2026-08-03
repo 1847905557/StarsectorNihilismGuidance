@@ -1,6 +1,6 @@
 # 全局服务与资源读取
 
-`Global` 门面交出的四个服务对象里，`SettingsAPI`（`Global.getSettings()`）是 MOD 代码中除了 `SectorAPI` 之外最高频的对象——它既是 `data/config/settings.json` 与 `data/strings/strings.json` 的取值入口，也是文本 / JSON / CSV / 合并数据的读取入口，还是各类 spec 的读取入口。前置页面已把 `Global` 门面本身讲透，本节按服务主题校订这四个服务对象：`SettingsAPI` 是主体（取值语义与资源读取），`Logger` 与 `SoundPlayerAPI` 给出用法约定；spec 族由武器、船体、技能等主题章节按主题消费，本节只交代取值语义与通用资源读取。
+`Global` 门面交出的四个服务对象里，`SettingsAPI`（`Global.getSettings()`）是 MOD 代码中除了 `SectorAPI` 之外最高频的对象 —— 它既是 `data/config/settings.json` 与 `data/strings/strings.json` 的取值入口，也是文本 / JSON / CSV / 合并数据的读取入口，还是各类 spec 的读取入口。前置页面已把 `Global` 门面本身讲透，本节按服务主题校订这四个服务对象：`SettingsAPI` 是主体（取值语义与资源读取），`Logger` 与 `SoundPlayerAPI` 给出用法约定；spec 族由武器、船体、技能等主题章节按主题消费，本节只交代取值语义与通用资源读取。
 
 *本节预期阅读时间：~30 分钟。*
 
@@ -11,12 +11,12 @@
 完成后，您将能够：
 
 - 说出 `SettingsAPI` 的三大职责面：取值（合并后的 settings.json）、资源读取（文本/JSON/CSV/合并/common 文件）、spec 读取入口，并说出每个读取方法抛什么异常、缺失键时什么行为；
-- 区分 `getString(String key)` 与 `getString(String category, String id)`：前者读 settings.json、键缺失抛 `RuntimeException`，后者读 strings.json、键缺失**不抛异常**而是返回占位文本 `Missing string: [...]` 并打一条 `ERROR` 日志——并解释"双参第一参是默认值"为什么是误解；
-- 说出 settings.json 的合并模型：核心与全部启用 MOD 的对象键合并、启动器关键键被排除、MOD 只提交自己的键；以及 `getInt` 的截断语义（`(int) getFloat(key)`）与 `setFloat`/`setBoolean` 的"只改内存不落盘"语义；
+- 区分 `getString(String key)` 与 `getString(String category, String id)`：前者读 settings.json、键缺失抛 `RuntimeException`，后者读 strings.json、键缺失**不抛异常**而是返回占位文本 `Missing string: [...]` 并打一条 `ERROR` 日志 —— 并解释 "双参第一参是默认值" 为什么是误解；
+- 说出 settings.json 的合并模型：核心与全部启用 MOD 的对象键合并、启动器关键键被排除、MOD 只提交自己的键；以及 `getInt` 的截断语义（`(int) getFloat(key)`）与 `setFloat`/`setBoolean` 的 "只改内存不落盘" 语义；
 - 用 `loadText` / `loadJSON` / `loadCSV` 读单文件（含 `modId` 限定与 `withMods=false` 只读核心），用 `getMergedJSON` / `getMergedJSONForMod` / `getMergedSpreadsheetData` / `getMergedSpreadsheetDataForMod` 做合并读取，说出两者适用场景的区别；
 - 用 `readTextFileFromCommon` / `writeTextFileToCommon` / `readJSONFromCommon` / `writeJSONToCommon` 读写 common 文件，说出缺失文件返回空串、单次写入 1MB 上限与跨文件总量上限的失败行为；
 - 复述资源路径必须遵守的规则：**必须**使用 `/` 分隔符，**禁止** `..`、`\`、`:` 与首字符 `/`，违反在调用点抛 `RuntimeException`；
-- 用 `Global.getLogger(Class)` 记录日志、用 `Global.getSoundPlayer()` 播放声音（消费 C06-S03 的约定与 `S05` 系列注册的 ID），并定位"settings 键缺失"与"字符串键缺失"两类截然不同的故障症状。
+- 用 `Global.getLogger(Class)` 记录日志、用 `Global.getSoundPlayer()` 播放声音（消费 C06-S03 的约定与 `S05` 系列注册的 ID），并定位 "settings 键缺失" 与 "字符串键缺失" 两类截然不同的故障症状。
 
 ## 前置知识
 
@@ -92,9 +92,9 @@ settings.json 与声音注册页的 sounds.json 一样是对象键合并：核�
 
 这是 SettingsAPI 上最容易踩的两条歧义：
 
-1. **来源不同**：单参 `getString(key)` 读 `data/config/settings.json`；双参 `getString(category, id)` 读 `data/strings/strings.json` （API javadoc 原文 "Gets a string from a given category in strings.json"）。把两条链混为一谈，会在"settings.json 里有这个键"的直觉下读 strings.json 而拿到 `Missing string: [...]`。
-2. **失败行为相反**：单参缺失**抛 `RuntimeException`**（调用点崩溃）；双参缺失**不抛异常**，返回 `Missing string: [<id>]` 字面文本并打一条 `ERROR` 日志。双参的"失败"是最阴险的一种：流程继续、UI 上直接显示占位文本，只有日志里有痕迹。
-3. **双参第一参是 category，不是默认值**：新手常把它当 `getString(key, defaultValue)` 的"带默认值版本"使用，把默认值写进第一参——例如 `getString("0.8", "loop_volume_text")` 实际是查 strings.json 里名为 `0.8` 的分类，必然返回 `Missing string: [0.8]`。RC8 的 `SettingsAPI` **没有** `getString(key, defaultValue)` 重载；要带默认值，用 `optBoolean` 或者先 `getSettingsJSON().has(key)` 再取。
+1. **来源不同**：单参 `getString(key)` 读 `data/config/settings.json`；双参 `getString(category, id)` 读 `data/strings/strings.json` （API javadoc 原文 "Gets a string from a given category in strings.json"）。把两条链混为一谈，会在 "settings.json 里有这个键" 的直觉下读 strings.json 而拿到 `Missing string: [...]`。
+2. **失败行为相反**：单参缺失**抛 `RuntimeException`**（调用点崩溃）；双参缺失**不抛异常**，返回 `Missing string: [<id>]` 字面文本并打一条 `ERROR` 日志。双参的 "失败" 是最阴险的一种：流程继续、UI 上直接显示占位文本，只有日志里有痕迹。
+3. **双参第一参是 category，不是默认值**：新手常把它当 `getString(key, defaultValue)` 的 "带默认值版本" 使用，把默认值写进第一参 —— 例如 `getString("0.8", "loop_volume_text")` 实际是查 strings.json 里名为 `0.8` 的分类，必然返回 `Missing string: [0.8]`。RC8 的 `SettingsAPI` **没有** `getString(key, defaultValue)` 重载；要带默认值，用 `optBoolean` 或者先 `getSettingsJSON().has(key)` 再取。
 
 strings.json 本身是 `{分类: {键: 文本}}` 两层结构（原版实例：`fleetInteractionDialog` 分类），且与 settings.json 一样跨 MOD 对象键合并，MOD 只需提交自己的分类，不要复制原版分类。
 
@@ -122,23 +122,23 @@ JSONObject json = Global.getSettings().loadJSON("data/config/gear_in/services.js
 JSONArray rows  = Global.getSettings().loadCSV("data/config/gear_in/service_entries.csv"); // 列名作 key 的对象数组
 ```
 
-- 三个方法都在**合并资源命名空间**里按相对路径找文件（核心与全部启用 MOD 都参与收集）。当多个来源提供同名文件时，单文件读取取哪一份由资源加载器决定，教程不保证—— 因此自己的数据文件**必须**放在自己的命名空间路径（如 `data/config/gear_in/...`），不要使用原版路径或通用路径。违反的可观察结果：读取结果随 MOD 加载组合变化、文件可能被其他 MOD 同名文件顶掉。
+- 三个方法都在**合并资源命名空间**里按相对路径找文件（核心与全部启用 MOD 都参与收集）。当多个来源提供同名文件时，单文件读取取哪一份由资源加载器决定，教程不保证 —— 因此自己的数据文件**必须**放在自己的命名空间路径（如 `data/config/gear_in/...`），不要使用原版路径或通用路径。违反的可观察结果：读取结果随 MOD 加载组合变化、文件可能被其他 MOD 同名文件顶掉。
 - `loadJSON(path, modId)` / `loadCSV(path, modId)` / `loadText(path, modId)`：把读取范围**限定在指定 MOD 的目录** （`ModManagerAPI.getModSpec(modId).getDirName()` 设置资源过滤）。 `modId` 必须与 `mod_info.json` 的 `id` 完全一致；写错 → `getModSpec` 返回 null → 调用点 NPE。
 - `loadJSON(path, false)` / `loadCSV(path, false)`：只读核心，跳过全部 MOD 资源（`ResourceLoader.suppressCustomResources`）。
 - 三个方法都声明 `throws IOException, JSONException`（受检异常，**必须**处理：捕获或向上声明）。
-- `loadJSON` 的解析器会剥离 `#` 注释与尾逗号（`parseJSONStrippingComments`），但**不**剥离 BOM——文件必须 UTF-8 无 BOM（C01-S01），带 BOM 首字符进入解析器，解析失败。
+- `loadJSON` 的解析器会剥离 `#` 注释与尾逗号（`parseJSONStrippingComments`），但**不**剥离 BOM—— 文件必须 UTF-8 无 BOM（C01-S01），带 BOM 首字符进入解析器，解析失败。
 - `openStream(filename)`：直接返回 `InputStream`，同样是相对路径、同样受路径必须遵守的规则约束。
 
 ### 合并读取：getMerged 系列
 
 | 方法 | 语义 | 适用场景 |
 |---|---|---|
-| `getMergedJSON(path)` | 全部来源对象键合并（`mergeJSON` 规则同 settings.json）| 需要"所有 MOD 的键都进来"的聚合配置 |
+| `getMergedJSON(path)` | 全部来源对象键合并（`mergeJSON` 规则同 settings.json）| 需要 "所有 MOD 的键都进来" 的聚合配置 |
 | `getMergedJSONForMod(path, masterMod)` | 以 `masterMod` 的文件为基底，其余来源合并进基底 | 自己拥有主配置、允许他人追加键 |
 | `getMergedSpreadsheetData(idColumn, path)` | CSV 行合并：跨文件同 id 行**先到先得**（后加载者跳过）；**同一文件内**重复 id 抛 `RuntimeException("Duplicate key [...] while loading [...]")` | 聚合多来源的表格数据 |
-| `getMergedSpreadsheetDataForMod(idColumn, path, masterMod)` | `masterMod` 的行是基底，非 master 来源的**同 id 行替换基底行**（API javadoc 原文："rows with matching ids get replaced by non-master rows. If multiple non-master rows have the same id, one will be picked in an undefined manner"）| **"允许其他 MOD 覆盖自己的数据"的正式做法** |
+| `getMergedSpreadsheetDataForMod(idColumn, path, masterMod)` | `masterMod` 的行是基底，非 master 来源的**同 id 行替换基底行**（API javadoc 原文："rows with matching ids get replaced by non-master rows. If multiple non-master rows have the same id, one will be picked in an undefined manner"）| **"允许其他 MOD 覆盖自己的数据" 的正式做法** |
 
-`getMergedSpreadsheetDataForMod` 是"自己的表 + 别人按 id 覆盖行"的标准做法，正式 MOD 的成熟用法都是把自己的 MOD id 传作 `masterMod`，
+`getMergedSpreadsheetDataForMod` 是 "自己的表 + 别人按 id 覆盖行" 的标准做法，正式 MOD 的成熟用法都是把自己的 MOD id 传作 `masterMod`，
 
 例如 `getMergedSpreadsheetDataForMod("id", "data/config/<mod-id>/xxx.csv", "<mod-id>")` 加载可被社区覆盖的数据表（特长表、地形改造条件表等）。
 
@@ -151,7 +151,7 @@ JSONArray rows  = Global.getSettings().loadCSV("data/config/gear_in/service_entr
 common 文件位于存档目录旁的 `common/` 目录（启动器按 `com.fs.starfarer.settings.paths.saves` 指定），文件名规则：`readTextFileFromCommon("GearIn_services_state")` 对应 `<存档目录>/common/GearIn_services_state.data`。
 
 - `readTextFileFromCommon(filename)`：文件（含写入期的 `.data.inprogress`）不存在时**返回空串，不抛异常**。
-- `writeTextFileToCommon(filename, data)`：**单次内容上限 1MB**（API javadoc 原文 "Max size 1mb"；超出抛 `RuntimeException("Max text file string length: ...")`）；另有跨文件**写入总量上限**（超出抛 `RuntimeException("Write limit of [...] characters across multiple files exceeded.")`）；写入走"先写 `.data.inprogress` 再改名"的原子流程。
+- `writeTextFileToCommon(filename, data)`：**单次内容上限 1MB**（API javadoc 原文 "Max size 1mb"；超出抛 `RuntimeException("Max text file string length: ...")`）；另有跨文件**写入总量上限**（超出抛 `RuntimeException("Write limit of [...] characters across multiple files exceeded.")`）；写入走 "先写 `.data.inprogress` 再改名" 的原子流程。
 - `fileExistsInCommon(filename)` / `deleteTextFileFromCommon(filename)`：存在性检查与删除。
 - `readJSONFromCommon(filename, putInWriteCache)` / `writeJSONToCommon(filename, JSONObject, onlyIfChanged)`：JSON 形态的 common 持久化；`onlyIfChanged=true` 时内容未变则跳过、写入在后台线程执行（`SettingsWriterThread`）； `putInWriteCache` 只在配合 `onlyIfChanged=true` 的写入对象上设 `true`（javadoc 原文，否则浪费内存）。
 
@@ -184,7 +184,7 @@ common 文件是跨存档、跨启动的通用存储（如玩家配置、统计�
 
 ::: tip 排查做法
 
-日志行是"故障注入验证"的最直接证明（本节预期结果与故障分析都依赖日志行）。
+日志行是 "故障注入验证" 的最直接证明（本节预期结果与故障分析都依赖日志行）。
 
 :::
 
@@ -501,9 +501,9 @@ public class GearInUiSoundPlayer {
 
 ### 对应关系
 
-- `GearInServiceLogger.logServiceState`：`Global.getLogger(GearInServiceLogger.class)` 类内缓存一份日志器（"Logger"节）。
-- `GearInSettingsReader.readLoopVolume` / `readServiceName`：单参取值，settings.json 键缺失即抛 `RuntimeException`——故障分析第 1 条。
-- `GearInStringTable.getLoopVolumeText`：双参取值，strings.json 键缺失返回占位文本——故障分析第 2、3 条。
+- `GearInServiceLogger.logServiceState`：`Global.getLogger(GearInServiceLogger.class)` 类内缓存一份日志器（"Logger" 节）。
+- `GearInSettingsReader.readLoopVolume` / `readServiceName`：单参取值，settings.json 键缺失即抛 `RuntimeException`—— 故障分析第 1 条。
+- `GearInStringTable.getLoopVolumeText`：双参取值，strings.json 键缺失返回占位文本 —— 故障分析第 2、3 条。
 - `GearInConfigLoader.loadServiceConfig`：`loadJSON` 单文件读取（`#` 注释与尾逗号可写，BOM 不可）。
 - `GearInConfigLoader.loadServiceEntries`：`getMergedSpreadsheetDataForMod("id", ...)` 合并读取，`masterMod` 用本 MOD id `gear_in`；数据文件必须存在，否则抛 `IOException`/`JSONException`。
 - `GearInCommonStateStore.readCommonState` / `writeCommonState`：common 文件往返；缺失返回空串。
@@ -546,7 +546,7 @@ public class GearInUiSoundPlayer {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含六个新类（可用 `jar tf` 核对）。本节六段源码与 fixture 逐字一致，fixture 编译验收命令见"预期结果"。
+产物 `jars\GearIndustry.jar` 应包含六个新类（可用 `jar tf` 核对）。本节六段源码与 fixture 逐字一致，fixture 编译验收命令见 "预期结果"。
 
 ### 验证方案（基于本例）
 
@@ -554,11 +554,11 @@ gradle jar
 
 - 操作 1（fixture 编译）：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC06s04Java --no-daemon`，确认 `BUILD SUCCESSFUL`。
 - 操作 2（游戏构建）：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含六个新类；确认 `data\config\gear_in\services.json`、`service_entries.csv`、`data\strings\strings.json` 均已随 MOD 打包。
-- 操作 3（启动）：勾选"齿轮工业"启动到主菜单后退出；`starsector.log` 核对 `GearIn services: settings=true soundPlayer=true`，无 `gear_in` 引起的 `ERROR`。
+- 操作 3（启动）：勾选 "齿轮工业" 启动到主菜单后退出；`starsector.log` 核对 `GearIn services: settings=true soundPlayer=true`，无 `gear_in` 引起的 `ERROR`。
 - 操作 4（新档/读档）：新建生涯，日志出现 `GearIn entries=2 visits=1 name=齿轮工业服务`；退出并读档，`visits=2`（common 文件落盘往返成功）；重复读档 visits 递增。
-- 操作 5（故障对照 A——双参缺失）：把 `GearInStringTable.STRINGS_KEY` 临时改成不存在的键，调用 `GearInStringTable.getLoopVolumeText()`：无异常、返回 `Missing string: [...]`、日志一条 `ERROR`；改回后确认恢复。
-- 操作 6（故障对照 B——单参缺失）：把 `GearInSettingsReader.KEY_SERVICE_NAME` 临时改错并调用 `GearInSettingsReader.readServiceName()`：调用点抛 `RuntimeException`；改回后确认恢复。
-- 操作 7（故障对照 C——路径违规）：把 `GearInConfigLoader.CONFIG_PATH` 临时改成 `data\config\gear_in\services.json`（反斜杠）：读取调用点抛 `RuntimeException`（路径校验）；改回后确认恢复。
+- 操作 5（故障对照 A—— 双参缺失）：把 `GearInStringTable.STRINGS_KEY` 临时改成不存在的键，调用 `GearInStringTable.getLoopVolumeText()`：无异常、返回 `Missing string: [...]`、日志一条 `ERROR`；改回后确认恢复。
+- 操作 6（故障对照 B—— 单参缺失）：把 `GearInSettingsReader.KEY_SERVICE_NAME` 临时改错并调用 `GearInSettingsReader.readServiceName()`：调用点抛 `RuntimeException`；改回后确认恢复。
+- 操作 7（故障对照 C—— 路径违规）：把 `GearInConfigLoader.CONFIG_PATH` 临时改成 `data\config\gear_in\services.json`（反斜杠）：读取调用点抛 `RuntimeException`（路径校验）；改回后确认恢复。
 - 操作 8（UI 音效）：接入 `GearInUiSoundPlayer.playFireUISound` 的 UI 事件触发时听到 `GearIn_weapon_fire`；把 `GearInUiSoundPlayer.SOUND_ID_UI` 改错后触发 → 调用点抛 `Sound set with id [...] not found`，改回后确认恢复。
 
 通过信号：操作 1–4 全部符合；操作 5–8 的注入与恢复都符合预期。
@@ -574,7 +574,7 @@ gradle jar
 3. **启动（资源加载期）**：进入主菜单前 `starsector.log` 出现一行
 ```text GearIn services: settings=true soundPlayer=true ``` （`onApplicationLoad` 里调用；`settings`/`soundPlayer` 在此阶段已非 null，`C06-S03` 规则 1）；启动正常完成，没有 `gear_in` 引起的 `ERROR`。
 4. **新档 / 读档（生涯回调）**：`onGameLoad` 里资源读取与 common 往返执行成功，日志出现
-```text GearIn entries=2 visits=1 name=齿轮工业服务 ``` （首次进档 `visits=1`；第二次读档 `visits=2`——证明 common 文件落盘并被再次读回）。`data\config\gear_in\services.json` 存在但无人消费时报 `ERROR`。
+```text GearIn entries=2 visits=1 name=齿轮工业服务 ``` （首次进档 `visits=1`；第二次读档 `visits=2`—— 证明 common 文件落盘并被再次读回）。`data\config\gear_in\services.json` 存在但无人消费时报 `ERROR`。
 5. **双参缺失的对照**：临时把 `GearInStringTable.STRINGS_KEY` 改成不存在的键并调用 `GearInStringTable.getLoopVolumeText()`：
 **不抛异常**，方法返回 `Missing string: [不存在的键]`，日志出现一条 `ERROR Missing string: [不存在的键]`；改回后消失。这是故障分析第 2 条的现场证明。
 6. **单参缺失的对照**：临时把 `GearInSettingsReader.KEY_SERVICE_NAME` 改错并调用 `GearInSettingsReader.readServiceName()`：
@@ -620,14 +620,14 @@ gradle jar
 - **内存修改**：`getSettingsJSON()` 直接改后必须 `resetCached()`；`setFloat`/`setBoolean` 不落盘。
 - 所有读取方法都抛受检的 `IOException`/`JSONException`，调用方必须处理；数据文件必须 UTF-8 无 BOM。
 
-四个服务对象的可用阶段与声音约定已由前置章节给出；本节把它们接到取值、资源读取与 common 持久化上。逻辑上的后续是两条主线：其一，settings 作为规则系统的数据源——规则段从这里取值，规则的消费语义属于规则系统主题；其二，两条持久化路径（common 落盘与随存档的 persistent data）在具体功能中的取舍。
+四个服务对象的可用阶段与声音约定已由前置章节给出；本节把它们接到取值、资源读取与 common 持久化上。逻辑上的后续是两条主线：其一，settings 作为规则系统的数据源 —— 规则段从这里取值，规则的消费语义属于规则系统主题；其二，两条持久化路径（common 落盘与随存档的 persistent data）在具体功能中的取舍。
 
 ## 建议参考项
 
 - `com.fs.starfarer.api.SettingsAPI`：取值（`getString(String)`/`getString(String,String)`/`getFloat`/`getBoolean`/
-`optBoolean`/`getInt`/`getColor`/ `getJSONObject`/`getJSONArray`）、内存修改（`getSettingsJSON`/`resetCached`/`setFloat`/`setBoolean`）、资源读取（`loadText`/`loadJSON`/`loadCSV` 及 `(path, modId)` 与 `(path, withMods)` 重载、`openStream`、 `getMergedJSON`/`getMergedJSONForMod`/`getMergedSpreadsheetData`/`getMergedSpreadsheetDataForMod`、 `readTextFileFromCommon`/`writeTextFileToCommon`/`fileExistsInCommon`/ `deleteTextFileFromCommon`/`readJSONFromCommon`/`writeJSONToCommon`）、脚本与插件（`getInstanceOfScript`/`getScriptClassLoader`/`getPlugin`）——本节取值与资源读取主体。
-- `com.fs.starfarer.api.Global`：`getSettings()`/`getLogger(Class)`/`getSoundPlayer()`——四个服务对象的门面入口。
-- `com.fs.starfarer.api.SoundPlayerAPI`：`playUISound`/`playSound`/`playLoop`——三条播放方法
+`optBoolean`/`getInt`/`getColor`/ `getJSONObject`/`getJSONArray`）、内存修改（`getSettingsJSON`/`resetCached`/`setFloat`/`setBoolean`）、资源读取（`loadText`/`loadJSON`/`loadCSV` 及 `(path, modId)` 与 `(path, withMods)` 重载、`openStream`、 `getMergedJSON`/`getMergedJSONForMod`/`getMergedSpreadsheetData`/`getMergedSpreadsheetDataForMod`、 `readTextFileFromCommon`/`writeTextFileToCommon`/`fileExistsInCommon`/ `deleteTextFileFromCommon`/`readJSONFromCommon`/`writeJSONToCommon`）、脚本与插件（`getInstanceOfScript`/`getScriptClassLoader`/`getPlugin`）—— 本节取值与资源读取主体。
+- `com.fs.starfarer.api.Global`：`getSettings()`/`getLogger(Class)`/`getSoundPlayer()`—— 四个服务对象的门面入口。
+- `com.fs.starfarer.api.SoundPlayerAPI`：`playUISound`/`playSound`/`playLoop`—— 三条播放方法
 （素材 stereo "should"、mono "must"、循环每帧续期、`playingEntity` 必填）。
 - `org.json.JSONObject` / `org.json.JSONArray` / `org.json.JSONException`：`loadJSON`/合并读取的返回类型与受检异常（org.json 运行时提供）。
 - `org.apache.log4j.Logger`：`Global.getLogger(Class)` 的返回类型（log4j 运行时提供）。

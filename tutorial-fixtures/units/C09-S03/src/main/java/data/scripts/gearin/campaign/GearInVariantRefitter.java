@@ -9,7 +9,7 @@ import com.fs.starfarer.api.combat.ShipVariantAPI;
 import com.fs.starfarer.api.loading.VariantSource;
 
 /**
- * 角色：克隆改装。演示 clone() 的深拷贝语义——修改克隆（换武器、改幅能、改船插、
+ * 角色：克隆改装。演示 clone() 的深拷贝语义 —— 修改克隆（换武器、改幅能、改船插、
  * 改来源、重新生成武器组）不影响注册表原变体；并给出 stock 与 refit 的 OP 对照
  * （computeOPCost = 武器 OP + 船插 OP + vents + caps；getUnusedOP = 船体 OP - 已用 OP）。
  *

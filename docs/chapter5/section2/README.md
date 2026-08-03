@@ -48,7 +48,7 @@ SoundPlayerAPI / .wpn     消费层（C05-S03）：代码按 ID 播放、数据�
 启动时，游戏收集核心与所有启用 MOD 的 `data/config/sounds.json`，按加载顺序合并成一个声音定义，并预载声音文件（日志出现 `Loading sound sets`）。结构规则如下：
 
 1. 顶层 `music` 对象是音乐分类：每个键是一个音乐 ID，值是条目数组。
-2. 顶层其余键是普通音效 ID，一次性音效与循环音效都按普通条目注册，值同样是条目数组；也可以使用带 `sounds` 数组和 hull size 映射的复合对象——复合对象必须带 `sounds` 数组，缺失时启动解析报错。复合对象的 hull size 分档结构随消费层讲解。
+2. 顶层其余键是普通音效 ID，一次性音效与循环音效都按普通条目注册，值同样是条目数组；也可以使用带 `sounds` 数组和 hull size 映射的复合对象 —— 复合对象必须带 `sounds` 数组，缺失时启动解析报错。复合对象的 hull size 分档结构随消费层讲解。
 3. 每个条目的 `file`（或音乐条目的 `source` + `file`）解析为 MOD 根目录下的相对路径，游戏在启动阶段预载这些 OGG；任一文件缺失或损坏都会让启动中止（可观察结果见故障分析）。
 4. `sounds.json` 条目本身没有 `loop` 字段：文件是否循环播放由使用方决定，循环播放的 API 用法在消费层给出。
 
@@ -91,7 +91,7 @@ SoundPlayerAPI / .wpn     消费层（C05-S03）：代码按 ID 播放、数据�
 音乐必须放在根对象的 `music` 分类中，否则音乐播放器不会识别它。普通音效直接以 sound ID 作为根对象字段。音乐条目使用 `source` 加 `file`；普通音效条目直接写 MOD 根目录相对路径。
 
 ::: caution 必须：路径一律使用 / 分隔符
-不要使用 Windows 反斜杠——反斜杠路径会破坏跨平台路径语义，后果同样是 OGG 定位失败。
+不要使用 Windows 反斜杠 —— 反斜杠路径会破坏跨平台路径语义，后果同样是 OGG 定位失败。
 :::
 
 ### 验证方案（基于本例）
@@ -104,7 +104,7 @@ SoundPlayerAPI / .wpn     消费层（C05-S03）：代码按 ID 播放、数据�
 
 通过信号：
 
-- 日志出现 `Loading sound sets`；搜索三个 GearIn sound ID、`sounds.json` 和 `.ogg`，必须没有解析、合并或缺失资源错误——出现 `Sound with filename`、`must be a JSON array`、`must be a JSON object` 或 Fatal 错误即失败，按故障分析回查。
+- 日志出现 `Loading sound sets`；搜索三个 GearIn sound ID、`sounds.json` 和 `.ogg`，必须没有解析、合并或缺失资源错误 —— 出现 `Sound with filename`、`must be a JSON array`、`must be a JSON object` 或 Fatal 错误即失败，按故障分析回查。
 - 负向对照（可选）：故意把 `GearIn_weapon_fire.ogg` 的注册路径改错一次，确认启动中止且日志出现 `Sound with filename [...] not found or failed to load`。
 
 清理：
@@ -184,7 +184,7 @@ SoundPlayerAPI / .wpn     消费层（C05-S03）：代码按 ID 播放、数据�
 - 启动阶段报错，日志出现 `Value for key %s must be a JSON array` 或 `must be a JSON object`：该 ID 与其他 MOD 或原版同时存在，且一侧是数组、另一侧是复合对象。必须改用 GearIn 专属 ID，或让两侧保持同构。
 - 启动中止，日志出现 `Sound with filename [...] not found or failed to load`（普通音效条目），或音乐条目 `source + file` 无法打开时抛出的对应异常：路径无法定位 OGG。按 MOD 根目录逐段检查目录名与大小写。
 - 运行期抛出异常 `Sound set with id [...] not found`：使用方引用了未注册 ID，或大小写不同。必须同步 ID。
-- 音乐不播放但普通音效正常：音乐条目没有放入 `music`。未放入 `music` 的条目会被注册成普通音效——若 `file` 是裸文件名，游戏会按 MOD 根目录相对路径找文件，找不到会启动中止；即使找得到，音乐播放器也不会识别该 ID。另一种可能是当前场景没有使用方引用该音乐 ID。
+- 音乐不播放但普通音效正常：音乐条目没有放入 `music`。未放入 `music` 的条目会被注册成普通音效 —— 若 `file` 是裸文件名，游戏会按 MOD 根目录相对路径找文件，找不到会启动中止；即使找得到，音乐播放器也不会识别该 ID。另一种可能是当前场景没有使用方引用该音乐 ID。
 - 播放音量异常：素材本身响度与 `volume` 共同作用。素材削波必须回源修复，不能只降低注册音量。
 
 ## 总结

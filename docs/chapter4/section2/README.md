@@ -1,6 +1,6 @@
 # 舰船风格与引擎风格
 
-hull style（舰船风格）与 engine style（引擎风格）决定一艘船在战斗、大地图和超空间里“看起来是什么阵营”：护盾颜色、V 排粒子、爆炸颜色、损伤贴花、武器盖板、引擎火焰与航迹，以及引擎与护盾的声音。本节为 `GearIn_artizan` 注册 `GEAR_TECH` 一组风格，并把 `GearIn_artizan.ship` 接到这组风格上。
+hull style（舰船风格）与 engine style（引擎风格）决定一艘船在战斗、大地图和超空间里 "看起来是什么阵营"：护盾颜色、V 排粒子、爆炸颜色、损伤贴花、武器盖板、引擎火焰与航迹，以及引擎与护盾的声音。本节为 `GearIn_artizan` 注册 `GEAR_TECH` 一组风格，并把 `GearIn_artizan.ship` 接到这组风格上。
 
 *本节预期阅读时间：~10 分钟。*
 
@@ -37,13 +37,13 @@ hull style（舰船风格）与 engine style（引擎风格）决定一艘船在
 
 因此 `hull_styles.json`、`engine_styles.json`、`sounds.json` 都只需提交自己新增的键，不要复制整份原版文件。
 
-风格**不直接挂在势力上**。势力数据（`data/world/factions/`）不声明风格；势力舰队的整体观感来自它的每一艘船在 `.ship` 里引用同一组风格 ID。因此“做一个势力风格”，实际是让本 MOD 势力舰船统一引用本 MOD 的风格 ID。
+风格**不直接挂在势力上**。势力数据（`data/world/factions/`）不声明风格；势力舰队的整体观感来自它的每一艘船在 `.ship` 里引用同一组风格 ID。因此 "做一个势力风格"，实际是让本 MOD 势力舰船统一引用本 MOD 的风格 ID。
 
 ## 设置舰船风格
 
 舰船风格文件位于 `data/config` 文件夹内的 `hull_styles.json`。它控制护盾颜色、V 排粒子、各类音效与贴图材质。
 
-**最稳妥的做法是复制粘贴修改原版的舰船风格**——原版条目保留了 RC8 读取的完整字段，不容易漏字段。
+**最稳妥的做法是复制粘贴修改原版的舰船风格**—— 原版条目保留了 RC8 读取的完整字段，不容易漏字段。
 
 本例以 `LOW_TECH` 为底，把配色改成齿轮工业的黄铜色系：
 
@@ -103,7 +103,7 @@ hull style（舰船风格）与 engine style（引擎风格）决定一艘船在
 
 RC8 的舰船风格读取器对以下 9 个颜色字段**缺键时不抛异常**，而是静默回退为白色（读取颜色的工具方法在键缺失时返回 `Color.white`）： `hyperspaceJitterColor`、`baseCampaignExplosionColor`、`baseCombatExplosionColor`、`fighterRepairFlickerColor`、 `weaponDisabledExplosionColor`、`shieldRingColor`、`shieldInnerColor`、`fluxVentCoreColor`、`fluxVentFringeColor`。
 
-后果：漏掉某个颜色键，游戏照常加载、**不会**中断，但对应的护盾/爆炸/V 排颜色会变成白色，观感与原版色系不一致且没有任何报错。真正会让 `loadEngineAndHullStyles()` 阶段抛错的是**值格式非法**：颜色数组不足 4 个元素抛 `Color array with id [...] has less than 4 elements`，JSON 语法错误抛对应解析异常——游戏在加载进度条阶段直接失败，无法进入主菜单。所以**请复制原版条目再改数值，不要手写精简版**（漏键虽不报错，但观感会静默劣化）。
+后果：漏掉某个颜色键，游戏照常加载、**不会**中断，但对应的护盾/爆炸/V 排颜色会变成白色，观感与原版色系不一致且没有任何报错。真正会让 `loadEngineAndHullStyles()` 阶段抛错的是**值格式非法**：颜色数组不足 4 个元素抛 `Color array with id [...] has less than 4 elements`，JSON 语法错误抛对应解析异常 —— 游戏在加载进度条阶段直接失败，无法进入主菜单。所以**请复制原版条目再改数值，不要手写精简版**（漏键虽不报错，但观感会静默劣化）。
 
 :::
 
@@ -111,7 +111,7 @@ RC8 的舰船风格读取器对以下 9 个颜色字段**缺键时不抛异常**
 
 `hull_styles.json` 文件头声明了禁止使用的保留 ID：`"sounds"`、`"DEFAULT"`、`"FIGHTER"`、`"FRIGATE"`、 `"DESTROYER"`、`"CRUISER"`、`"CAPITAL_SHIP"`；`engine_styles.json` 保留 `"CUSTOM"`。
 
-违反后的可观察结果：声音集按“风格 ID 与船体分级名”共用同一张键表分档（声音集查找时先用风格 ID、再用 `FRIGATE` 等分级名查同一个表），风格 ID 取 `FRIGATE`、`DESTROYER` 这类名字会与分级分档键冲突，引擎与护盾声音的档位选择错乱；`"CUSTOM"` 是引擎槽“内联风格”的标记值，用它做风格 ID 会让引擎槽解析走内联分支。请用 `GEAR_TECH` 这类带前缀的自定义名。
+违反后的可观察结果：声音集按 "风格 ID 与船体分级名" 共用同一张键表分档（声音集查找时先用风格 ID、再用 `FRIGATE` 等分级名查同一个表），风格 ID 取 `FRIGATE`、`DESTROYER` 这类名字会与分级分档键冲突，引擎与护盾声音的档位选择错乱；`"CUSTOM"` 是引擎槽 "内联风格" 的标记值，用它做风格 ID 会让引擎槽解析走内联分支。请用 `GEAR_TECH` 这类带前缀的自定义名。
 
 :::
 
@@ -150,7 +150,7 @@ RC8 的舰船风格读取器对以下 9 个颜色字段**缺键时不抛异常**
 
 ::: caution 引擎风格的必填字段
 
-RC8 的引擎风格读取器必填：`type`（只能填 `GLOW` 或 `SMOKE`；缺键抛 `Key [type] is required`，枚举之外的值如手误写成 `GLOWW` 抛 `Key [type] has invalid value`）、`contrailMaxSpeedMult`、`contrailAngularVelocityMult`；在 `PARTICLES` 模式下还必填 `contrailParticleSizeMult`、`contrailParticleDuration`。`engineColor` 与 `contrailColor` **不是必填**——缺键不抛异常，与舰船风格的颜色同理静默回退为白色。
+RC8 的引擎风格读取器必填：`type`（只能填 `GLOW` 或 `SMOKE`；缺键抛 `Key [type] is required`，枚举之外的值如手误写成 `GLOWW` 抛 `Key [type] has invalid value`）、`contrailMaxSpeedMult`、`contrailAngularVelocityMult`；在 `PARTICLES` 模式下还必填 `contrailParticleSizeMult`、`contrailParticleDuration`。`engineColor` 与 `contrailColor` **不是必填**—— 缺键不抛异常，与舰船风格的颜色同理静默回退为白色。
 
 违反后的可观察结果：缺失/非法必填键会让条目解析失败、游戏在加载阶段整体失败，无法进入主菜单 （`starsector.log` 记录 `Key [...] is required`、`JSONObject[...] not found.` 或 `invalid value`）。
 
@@ -234,18 +234,18 @@ RC8 的引擎风格读取器必填：`type`（只能填 `GLOW` 或 `SMOKE`；缺
 
 保存即可生效。顶层 `style` 与引擎槽 `style` 是两个独立的解析路径：前者查 `hull_styles.json`，后者查 `engine_styles.json`，不要混用。
 
-搭配舰船编辑器：在设置完舰船风格和引擎风格后，可以在舰船编辑器的“导入 MOD”功能中把 `GearIndustry` 导入，直接在编辑器内选择自定义风格。
+搭配舰船编辑器：在设置完舰船风格和引擎风格后，可以在舰船编辑器的 "导入 MOD" 功能中把 `GearIndustry` 导入，直接在编辑器内选择自定义风格。
 
 ## 声音与材质的完整关联流程
 
-hull style 是“声音与材质的总线”：
+hull style 是 "声音与材质的总线"：
 
 - 声音：风格里的 9 个 `*Set` 字段都是 `sounds.json` 的声音集 ID。
   - 战斗生成舰船时，`ShipEngineControllerAPI` 用 `engineLoopSet`/`engineAccelerateSet`、`Shield` 用 `shieldRaiseSet`/`shieldLowerSet`、`FluxTrackerAPI` 用 `shieldBurnoutSet`（过载音）、爆炸音效播放器用 `explosionShipSet` 等去取对应的声音集。
 - 材质：`damageDecal*`（损伤贴花）、`slotCover*`（武器盖板）、`dHullOverlay*`（D 插覆盖）、`fluxVent*`（V 排粒子）、`glowSprite`/`glowOutline`（光带）等路径在加载阶段全部进入贴图资源队列。
 - 战役：生涯引擎用 `hyperspaceJitterColor` 画超空间光芒，战役爆炸用 `baseCampaignExplosionColor`，战斗爆炸用 `baseCombatExplosionColor`。
 
-因此“让声音也换掉”需要三步完整流程：**① `sounds.json` 注册声音集 → ② hull style 的 `*Set` 字段引用该声音集 ID → ③ 声音集内的 `.ogg` 文件真实存在**。
+因此 "让声音也换掉" 需要三步完整流程：**① `sounds.json` 注册声音集 → ② hull style 的 `*Set` 字段引用该声音集 ID → ③ 声音集内的 `.ogg` 文件真实存在**。
 
 最小例第 ② 步引用了原版声音集（`engine_loop` 等），第 ①③ 步都由原版提供，所以零资产也能出声。
 
@@ -303,17 +303,17 @@ hull style 是“声音与材质的总线”：
   - 修正：注册对应声音集，或改回原版声音集 ID。
 - **启动时声音资源加载失败**：`sounds.json` 中注册的 `.ogg` 路径不存在。修正：核对 `file` 相对 MOD 根目录的路径与大小写。
 - **势力舰队出现加载报错**：根因多半是舰队装配引用的舰船 `.ship` 风格引用损坏（见上两条），先沿 `.ship` → 风格 ID → 声音集 ID 的链路排查。
-- **护盾、引擎声音“不像自己的风格”**：这不是错误。未注册自定义声音集时回落到原版通用声音；按“声音与材质的完整关联流程”一节注册并引用自定义声音集即可。
+- **护盾、引擎声音 "不像自己的风格"**：这不是错误。未注册自定义声音集时回落到原版通用声音；按 "声音与材质的完整关联流程" 一节注册并引用自定义声音集即可。
 
 ## 总结
 
 本节完成了一条从数据到观感的完整流程：`.ship` 顶层 `style` 查 `hull_styles.json`，`engineSlots[].style` 查 `engine_styles.json`，两个文件都在加载早期注册、按对象键合并，势力通过其舰船间接获得统一观感；
 
-hull style 是声音与材质的总线——9 个声音字段指向 `sounds.json` 的声音集，材质字段指向贴图资源，任何一环缺失都会带来可定位的失败（加载期崩溃或战斗期 NPE）。
+hull style 是声音与材质的总线 ——9 个声音字段指向 `sounds.json` 的声音集，材质字段指向贴图资源，任何一环缺失都会带来可定位的失败（加载期崩溃或战斗期 NPE）。
 
-最小例零资产可用，自定义声音则必须完成“注册声音集 → 风格引用 → `.ogg` 存在”三步完整流程。
+最小例零资产可用，自定义声音则必须完成 "注册声音集 → 风格引用 → `.ogg` 存在" 三步完整流程。
 
-从逻辑上看，这套“注册 → 引用 → 资产存在”的机制也是后续一切自定义视觉与声音数据的共同底座：新增舰船变体、势力配色或自定义音效时，只要沿同一条链路补齐数据文件，本节的加载期与战斗期排查方法即可复用。
+从逻辑上看，这套 "注册 → 引用 → 资产存在" 的机制也是后续一切自定义视觉与声音数据的共同底座：新增舰船变体、势力配色或自定义音效时，只要沿同一条链路补齐数据文件，本节的加载期与战斗期排查方法即可复用。
 
 ## 建议参考项
 

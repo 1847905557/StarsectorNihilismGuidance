@@ -1,6 +1,6 @@
 # 音频使用方：武器、引擎与 UI
 
-声音链分「准备、注册、消费」三层；前两层已在前置单元完成，三个 OGG 与 `sounds.json` 条目均已就绪。本节只负责消费——把 `GearIn_weapon_fire`、`GearIn_system_loop`、`GearIn_market_theme` 接入武器、战术系统、UI、环境与音乐五类使用方，并给出一个可操作的最小例与验证方案。
+声音链分「准备、注册、消费」三层；前两层已在前置单元完成，三个 OGG 与 `sounds.json` 条目均已就绪。本节只负责消费 —— 把 `GearIn_weapon_fire`、`GearIn_system_loop`、`GearIn_market_theme` 接入武器、战术系统、UI、环境与音乐五类使用方，并给出一个可操作的最小例与验证方案。
 
 *本节预期阅读时间：~25 分钟。*
 
@@ -12,8 +12,8 @@
 
 - 说出声音消费层的五个入口族：`.wpn`/`.system` 数据引用、`Global.getSoundPlayer()` 代码调用、hull style 声音集、`terrain.json` 地形循环与 `MusicPlayerPlugin` 音乐选曲；
 - 用 `.wpn` 的 `fireSoundOne`/`fireSoundTwo` 把 `GearIn_weapon_fire` 接到武器开火；
-- 用 `.system` 的 `loopSound` 或代码 `playLoop` 把 `GearIn_system_loop` 接到战术系统持续音效，说清循环音效"必须每帧续期、素材首尾无缝"的语义；
-- 用 `playUISound` 播放 UI 音效，并定位"未注册 ID"的运行期异常；
+- 用 `.system` 的 `loopSound` 或代码 `playLoop` 把 `GearIn_system_loop` 接到战术系统持续音效，说清循环音效 "必须每帧续期、素材首尾无缝" 的语义；
+- 用 `playUISound` 播放 UI 音效，并定位 "未注册 ID" 的运行期异常；
 - 用自定义 `MusicPlayerPlugin` 或 `playCustomMusic` 把 `GearIn_market_theme` 接入市场音乐；
 - 说出地形环境循环的注册与消费机制；
 - 从日志与游戏内行为定位五类使用方的常见故障。
@@ -104,9 +104,9 @@ data/config/sounds.json          注册层（C05-S02）：sound ID → 路径与
 
 - 武器构造时按 `fireSoundOne`/`fireSoundTwo` 取已注册的对应声音集；
 - 实弹/导弹：前摇阶段 `playSoundAtLocation` 播 `fireSoundOne`，开火瞬间播 `fireSoundTwo`；`stopPreviousFireSound`/`fadePreviousFireSound` 控制连发重叠；
-- 光束：开火时播一次 `fireSoundOne`（`playFullFireSoundOne` 控制中断行为），持续期间每帧 `playSoundLoop` 播 `fireSoundTwo`——所以光束循环音素材必须满足资源层规定的"首尾无缝"规格；
+- 光束：开火时播一次 `fireSoundOne`（`playFullFireSoundOne` 控制中断行为），持续期间每帧 `playSoundLoop` 播 `fireSoundTwo`—— 所以光束循环音素材必须满足资源层规定的 "首尾无缝" 规格；
 - 无弹药开火时周期性播 `gun_out_of_ammo` 声音集（导弹与实弹武器都会触发，属原版通用声音集）；
-- 命中音由冲击音播放器按伤害类型播 `hit_*`/`collision_*`/`explosion_*` 固定声音集——武器侧只有 `noImpactSounds` 等开关，命中音集本身不能在 `.wpn` 里换。
+- 命中音由冲击音播放器按伤害类型播 `hit_*`/`collision_*`/`explosion_*` 固定声音集 —— 武器侧只有 `noImpactSounds` 等开关，命中音集本身不能在 `.wpn` 里换。
 
 代码位置音效（非数据引用）：武器特效脚本、导弹 AI 等用 `Global.getSoundPlayer().playSound(id, pitch, volume, loc, vel)`，把声音放在实体位置并随距离衰减。
 
@@ -156,14 +156,14 @@ ID 大小写不一致同样触发。
 	"outOfUsesSound":"engine_disabled",
 ```
 
-`GearIn_system_loop` 是资源层规格的"必须首尾无缝"循环素材——这正是 `loopSound` 需要的形态：系统开启期间被每帧重播，素材有接缝就会每轮咔哒一次。
+`GearIn_system_loop` 是资源层规格的 "必须首尾无缝" 循环素材 —— 这正是 `loopSound` 需要的形态：系统开启期间被每帧重播，素材有接缝就会每轮咔哒一次。
 
 ### 代码使用方：playLoop 与循环语义
 
-任何"持续音效"也可由代码播放。`SoundPlayerAPI.playLoop` 的注释与运行期行为说明了四条循环语义：
+任何 "持续音效" 也可由代码播放。`SoundPlayerAPI.playLoop` 的注释与运行期行为说明了四条循环语义：
 
-1. **必须每帧调用，否则淡出。** 循环管理器每帧把"本帧未续期"的循环加入淡出列表（默认 0.5 秒淡入/淡出）。
-2. **`playingEntity` 必填且用于去重。** 同一实体对同一循环只保留一个实例（循环管理器按所属实体合并去重）。不传或每帧传新对象，会失去"同实体同循环只播一个"的保证。
+1. **必须每帧调用，否则淡出。** 循环管理器每帧把 "本帧未续期" 的循环加入淡出列表（默认 0.5 秒淡入/淡出）。
+2. **`playingEntity` 必填且用于去重。** 同一实体对同一循环只保留一个实例（循环管理器按所属实体合并去重）。不传或每帧传新对象，会失去 "同实体同循环只播一个" 的保证。
 3. **距离衰减与上限。** 距监听点超过 2500 不播放；活动循环数达到上限时替换最远的一个。
 4. **素材建议 mono**（API 注释），位置循环在空间中有声像。
 
@@ -206,7 +206,7 @@ hull style 里写入自定义声音集 ID 后，该 ID 必须存在于 `sounds.j
 
 规则命令 `PlaySound`（`com.fs.starfarer.api.impl.campaign.rulecmd.PlaySound`）可播放任意已注册 ID。
 
-接入示例——在 `GearInBurstDriveSystem.apply` 的系统激活瞬间加一次 UI 音效。这演示"同一已注册 ID 可被多个使用方引用"：`GearIn_weapon_fire` 已接入 `.wpn`，这里作为 UI 用途再消费一次（差分池与播放互不影响）：
+接入示例 —— 在 `GearInBurstDriveSystem.apply` 的系统激活瞬间加一次 UI 音效。这演示 "同一已注册 ID 可被多个使用方引用"：`GearIn_weapon_fire` 已接入 `.wpn`，这里作为 UI 用途再消费一次（差分池与播放互不影响）：
 
 ```java
 if (state == ShipSystemStatsScript.State.IN && effectLevel < 0.05f) {
@@ -248,7 +248,7 @@ MOD 接入环境音的路径是自定义地形类型（实现 `CampaignTerrainPl
 
 ### 自动选曲链
 
-音乐不像音效那样按 ID 直接播放，而是由"选曲插件"按游戏状态返回音乐集 ID，播放器再按 ID 从 `music` 分类取条目：
+音乐不像音效那样按 ID 直接播放，而是由 "选曲插件" 按游戏状态返回音乐集 ID，播放器再按 ID 从 `music` 分类取条目：
 
 1. **注册选曲插件**：`data/config/settings.json` 的 `plugins` 段默认 `"musicPlugin":"com.fs.starfarer.api.impl.MusicPlayerPluginImpl"`。
    - `Misc.getMusicPlayerPlugin()`（公开 API `com.fs.starfarer.api.util.Misc`）用 `Global.getSettings().getNewPluginInstance("musicPlugin")` 实例化并缓存为单例。
@@ -269,11 +269,11 @@ MOD 接入环境音的路径是自定义地形类型（实现 `CampaignTerrainPl
 
 未注册的音乐集 ID 在播放请求时解析为 `null` 后抛 NPE（音乐播放线程）。
 
-因此**音乐 ID 必须注册在 `music` 分类**——普通音效条目不会被音乐播放器识别（注册层已述）。
+因此**音乐 ID 必须注册在 `music` 分类**—— 普通音效条目不会被音乐播放器识别（注册层已述）。
 
 ### 接入示例
 
-`GearIn_market_theme` 走"市场音乐"语义，最稳的接入是继承原版选曲插件并覆写市场分支（完整文件见「完整最小例」）：
+`GearIn_market_theme` 走 "市场音乐" 语义，最稳的接入是继承原版选曲插件并覆写市场分支（完整文件见「完整最小例」）：
 
 ```java
 public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
@@ -312,7 +312,7 @@ public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
 | `GearIn_system_loop` | `data/shipsystems/GearIn_burstdrive.system` | `loopSound` 改为 `GearIn_system_loop` |
 | `GearIn_market_theme` | `data/config/settings.json` + 新类 `GearInMusicPlayerPlugin` | `plugins.musicPlugin` 指向新类 |
 
-（可选代码路：`GearInBurstDriveSystem` 中每帧 `playLoop` 播 `GearIn_system_loop`——数据路与代码路二选一即可，不要同时开。）
+（可选代码路：`GearInBurstDriveSystem` 中每帧 `playLoop` 播 `GearIn_system_loop`—— 数据路与代码路二选一即可，不要同时开。）
 
 `GearIn_burstdrive.system` 的声音段（其余字段不动）：
 
@@ -381,7 +381,7 @@ public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
 }
 ```
 
-可选代码路——`GearInBurstDriveSystem`（战术系统效果脚本全文，新增 `playLoop` 调用与 `stats.getEntity()` 取船）：
+可选代码路 ——`GearInBurstDriveSystem`（战术系统效果脚本全文，新增 `playLoop` 调用与 `stats.getEntity()` 取船）：
 
 ```java
 package data.scripts.gearin.shipsystems;
@@ -466,7 +466,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 1. **开火完全无声，其他音效正常。** 检查链：`.wpn` 的 `fireSoundTwo` 与注册层条目逐字一致（大小写敏感）→ `sounds.json` 条目存在 → OGG 路径存在。`.wpn` 写错 ID 会在开火时报 NPE 而不是静默（见下条）。
 2. **开火瞬间抛 NPE，堆栈指向武器开火实现。** `fireSoundOne`/`fireSoundTwo` 引用了未注册 ID：声音集查找返回空后解引用。修正：同步注册 ID，或改回原版 ID。
-3. **系统激活无循环声。** `.system` 的 `loopSound` 未注册 → 系统实现构造时取到 `null`，激活时报 NPE；已注册但无声 → 区分"激活音有、循环音无"（说明 `useSound` 正常、`loopSound` 或素材有问题）与"全无"（`useSound` 也查一遍），再核对资源层的循环素材规格（首尾无缝、音量合理）。
+3. **系统激活无循环声。** `.system` 的 `loopSound` 未注册 → 系统实现构造时取到 `null`，激活时报 NPE；已注册但无声 → 区分 "激活音有、循环音无"（说明 `useSound` 正常、`loopSound` 或素材有问题）与 "全无"（`useSound` 也查一遍），再核对资源层的循环素材规格（首尾无缝、音量合理）。
 4. **代码 `playLoop` 不响或断断续续。** 每帧未调用（循环淡出）、`playingEntity` 每帧传新对象（去重失效）、距离超 2500、音量 `volume <= 0`、内部静音开关生效（静音时不报错）。修正：把调用放在每帧回调里，用一个稳定实体对象作 `playingEntity`。
 5. **`playUISound` 抛 `Sound set with id [...] not found`。** 未注册或大小写不符。这是运行期异常，不是加载期错误。修正：核对注册 ID。
 6. **部署舰船抛 NPE，堆栈指向 `ShipEngineControllerAPI`。** hull style 引用了未注册声音集（风格声音部分已述的同类故障）。本节三个 ID 均不用于引擎声音，出现此错先查风格文件。
@@ -475,13 +475,13 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ## 总结
 
-本节把声音链的最后一层——消费层——补齐：`GearIn_weapon_fire` 接入武器开火（`.wpn` 数据引用）、`GearIn_system_loop` 接入战术系统 （`.system` 的 `loopSound` 或代码 `playLoop`）、`GearIn_market_theme` 接入市场音乐（选曲插件），并交代了引擎声音集、UI 与地形循环其余三类使用方；
+本节把声音链的最后一层 —— 消费层 —— 补齐：`GearIn_weapon_fire` 接入武器开火（`.wpn` 数据引用）、`GearIn_system_loop` 接入战术系统 （`.system` 的 `loopSound` 或代码 `playLoop`）、`GearIn_market_theme` 接入市场音乐（选曲插件），并交代了引擎声音集、UI 与地形循环其余三类使用方；
 
 三个 ID 与资源与注册层声明逐字一致，完整流程走通。
 
 所有 ID 引用必须指向已注册条目，未注册的后果全部在运行期（武器/系统 NPE、UI 抛 `Sound set with id not found`、音乐播放 NPE），加载期不校验引用。
 
-逻辑上的后续：同一套「注册 → 引用 → 素材存在」的完整流程可平移到任何新声音—— 自定义引擎声沿用「注册分档复合集 → hull style 引用 → `.ogg` 存在」，自定义地形环境音沿用「`terrain.json` 注册 → 地形插件播放」。
+逻辑上的后续：同一套「注册 → 引用 → 素材存在」的完整流程可平移到任何新声音 —— 自定义引擎声沿用「注册分档复合集 → hull style 引用 → `.ogg` 存在」，自定义地形环境音沿用「`terrain.json` 注册 → 地形插件播放」。
 
 排查无声故障始终从注册存在、路径存在、ID 一致三件事入手，打包 MOD 时保持 `sounds/` 资源、`sounds.json` 条目、数据字段与代码调用四者一致。
 

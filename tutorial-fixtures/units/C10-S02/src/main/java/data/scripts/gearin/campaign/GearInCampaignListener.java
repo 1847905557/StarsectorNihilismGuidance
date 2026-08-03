@@ -17,7 +17,7 @@ import com.fs.starfarer.api.combat.EngagementResultAPI;
 /**
  * 完整最小例：Sector 级生涯事件监听器（CampaignEventListener 角色）。
  * 注册入口：onGameLoad 门控块（页面调用点片段，REGISTER_MARK 一次性门控）。
- * 注册与自停由配对脚本 GearInListenerLifecycleScript 管理——脚本到期后显式
+ * 注册与自停由配对脚本 GearInListenerLifecycleScript 管理 —— 脚本到期后显式
  * removeListener：脚本结束不等于监听器移除（硬规则）。BaseCampaignEventListener
  * 提供全接口 21 方法的空实现，本类只覆写关心的事件边界（市场/贸易/战斗/舰队/声望）。
  */

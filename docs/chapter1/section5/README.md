@@ -1,6 +1,6 @@
 # 为舰船加入内置武器、船插与战机
 
-本节把三张“永远焊死在船体上”的配置写进 `.ship` 文件：内置武器（`builtInWeapons`）、内置舰船插件（船插，`builtInMods`）和内置战机（`builtInWings`）；它们由船体定义直接提供，不占用装配点，也无法在装配界面拆卸或更换，适用于必须随船体存在、与船体强绑定的内容（主炮、信号灯、相位立场、专属护航机等）。
+本节把三张 "永远焊死在船体上" 的配置写进 `.ship` 文件：内置武器（`builtInWeapons`）、内置舰船插件（船插，`builtInMods`）和内置战机（`builtInWings`）；它们由船体定义直接提供，不占用装配点，也无法在装配界面拆卸或更换，适用于必须随船体存在、与船体强绑定的内容（主炮、信号灯、相位立场、专属护航机等）。
 
 *本节预期阅读时间：~12 分钟。*
 
@@ -17,12 +17,12 @@
 
 ## 前置知识
 
-本节把三组“内置”配置写进 `.ship` 文件，直接使用前置章节建立的舰船、武器与战机数据，先确认以下基础：
+本节把三组 "内置" 配置写进 `.ship` 文件，直接使用前置章节建立的舰船、武器与战机数据，先确认以下基础：
 
 - `.ship` 结构、武器槽位（`mount`/`type`/`size`）、`ship_data.csv` 注册链、控制台 `Addship`（C01-S02）。
 - 航母甲板、战机 hull/variant/wing 三层结构，以及 `GearIn_slag_wing` 等战机 ID（C01-S03）。
 - `weapon_data.csv` 与武器 ID、`.wpn` 的 `id` 字段（C01-S04）。
-- 术语：hullmod 写作“舰船插件（船插）”，正文沿用简称“船插”；本节只涉及“内置”这一安装方式（船插的完整讲解见 C02-S02）。
+- 术语：hullmod 写作 "舰船插件（船插）"，正文沿用简称 "船插"；本节只涉及 "内置" 这一安装方式（船插的完整讲解见 C02-S02）。
 
 ## 三组键与文件/API 链路
 
@@ -40,7 +40,7 @@
 
 1. `data/hulls/<hullId>.ship`：声明三组键（数据入口）。
 2. 加载期把 `.ship` 的声明读入 `ShipHullSpecAPI` 的 `builtInWeapons`/`builtInMods`/`builtInWings` 三个字段。
-3. 装配构建时把三组内置内容应用到**每一个**装配——包括游戏按船体自动生成的 `<hullId>_Hull` 空装配。
+3. 装配构建时把三组内置内容应用到**每一个**装配 —— 包括游戏按船体自动生成的 `<hullId>_Hull` 空装配。
 4. 使用方：装配点计算（`computeWeaponOPCost`/`computeHullModOPCost`）、战斗部署（舰船生成时）、装配界面（refit 的武器槽/船插列表/甲板列表）。
 
 公开 API 面（`com.fs.starfarer.api.*`）中，只读访问入口在 `com.fs.starfarer.api.combat.ShipHullSpecAPI`：
@@ -89,7 +89,7 @@
 
 ::: caution 槽位类型
 
-`type` 写成 `BUILT_IN` 的槽位**不能**在装配界面手动安装武器——`isWeaponSlot()` 只认 `BALLISTIC`、`ENERGY`、`MISSILE`、`UNIVERSAL`、`HYBRID`、`SYNERGY`、`COMPOSITE` 七种类型（`WeaponSlotAPI.isWeaponSlot()`）。
+`type` 写成 `BUILT_IN` 的槽位**不能**在装配界面手动安装武器 ——`isWeaponSlot()` 只认 `BALLISTIC`、`ENERGY`、`MISSILE`、`UNIVERSAL`、`HYBRID`、`SYNERGY`、`COMPOSITE` 七种类型（`WeaponSlotAPI.isWeaponSlot()`）。
 
 内置武器只能由 `builtInWeapons` 提供。
 
@@ -134,7 +134,7 @@
 ### 内置武器的行为
 
 - **不占装配点**：`computeWeaponOPCost` 跳过内置槽位（`!hullSpec.isBuiltIn(slotId)`），装配界面显示 OP 只按非内置武器计算。
-- **不可拆卸**：装配界面的“清空武器/返还货舱”只处理 `getNonBuiltInWeaponSlots()`，内置武器永远留在装配里。
+- **不可拆卸**：装配界面的 "清空武器/返还货舱" 只处理 `getNonBuiltInWeaponSlots()`，内置武器永远留在装配里。
 - `.variant` 文件也无法覆盖内置槽位（`addWeapon(..., false)` 对内置槽位直接拒绝写入）。
 - **自动开火**：普通舰船会自动生成武器组（`autoGenerateWeaponGroupsV2`）。
 - 内置武器只要不是装饰槽就会并入武器组，随 AI 自动开火。
@@ -158,12 +158,12 @@
 装饰性武器的安装方式和通常的内置武器几乎完全一样，只是需要将槽位类型改为 `DECORATIVE` 即可。装饰武器**不会**出现在武器组或舰船数据列表中：
 
 - **不进武器组**：`autoGenerateWeaponGroupsV2` 与 `hasUnassignedWeapons` 都跳过装饰槽，AI 不会把它们纳入自动开火判定。
-- **不计入舰船数据面板**：装配界面的舰船数据面板统计“武器幅能消耗/秒”时跳过装饰武器。
+- **不计入舰船数据面板**：装配界面的舰船数据面板统计 "武器幅能消耗/秒" 时跳过装饰武器。
 - **不被 AI 瞄准开火**：进攻机动、侧舷压制和各战术系统 AI 的武器选择都跳过装饰武器。
 - **不会被永久损坏**：装饰槽武器不会因损坏而失效。
 - **仍然渲染**：战斗中和生涯舰船界面都会显示装饰武器。
 
-装饰武器适合纯视觉内容。原版例子：`buffalo.ship` 的红色/绿色信号灯——`builtInWeapons` 里装 `blinker_red`/`blinker_green`
+装饰武器适合纯视觉内容。原版例子：`buffalo.ship` 的红色/绿色信号灯 ——`builtInWeapons` 里装 `blinker_red`/`blinker_green`
 
 （`data/weapons/blinker_red.wpn`、`blinker_green.wpn`，`.wpn` 的 `"type": "DECORATIVE"`），
 
@@ -180,7 +180,7 @@
 - 战机**不会**自动生成或补全武器组。
 - 舰船生成时只为非战机执行 `autoGenerateWeaponGroups`/`assignUnassignedWeapons`。
 - 战机只使用 `.variant` 装配文件里显式写出的 `weaponGroups`。
-- 舰船 AI 只给“当前选中武器组”内的武器设置瞄准目标。
+- 舰船 AI 只给 "当前选中武器组" 内的武器设置瞄准目标。
 - 内置武器的槽位如果没有写进装配文件的 `weaponGroups`，它就不属于任何武器组，永远得不到瞄准目标，只能停在槽位朝向，不追踪、不转动。
 - 更直接的情况：内置槽位若按常见做法用 `HARDPOINT` 挂载，导弹武器装在固定槽位上时最大转速被直接设为 0（除非船体带 `MISSILE_HARDPOINTS_ROTATE` 提示且槽位角小于 90 度）。
 - 无论 `mount` 是哪种，未进武器组的内置武器都拿不到瞄准目标。
@@ -215,14 +215,14 @@
 
 `builtInMods` 数组里的每个元素是**船插 ID**，取值来自 `hull_mods.csv` 的 `id` 列。
 
-例如 `phasefield` 是原版“Phase Field”船插，`delicate` 是“Delicate Machinery”。
+例如 `phasefield` 是原版 "Phase Field" 船插，`delicate` 是 "Delicate Machinery"。
 
 ### 内置船插的行为
 
 - **不占装配点**：`computeHullModOPCost` 跳过内置船插（`!hullSpec.isBuiltInMod(id)`）。
 - **不可移除**：`removeMod` 对内置船插直接返回；船插选择器把内置船插排除在可装卸列表之外；清空装配时 `clear(false)` 会把内置船插重新加回。
 - **船插 ID 必须真实存在**：装配构建阶段不校验，但舰船部署时 `getAllMods()` 会解析每个船插 ID，未知 ID 抛 `Hullmod <id> not found!`（见故障分析）。
-- 船插的完整讲解（effect 脚本、S-mod 等）在后续章节展开；本节只涉及“内置”这一安装方式。
+- 船插的完整讲解（effect 脚本、S-mod 等）在后续章节展开；本节只涉及 "内置" 这一安装方式。
 
 ### 验证方案（基于本例）
 
@@ -260,7 +260,7 @@
 
 - **占据前几个甲板**：`setHullSpec` 按顺序把内置战机填入甲板 0、1、2……（`setWingId(i, ...)` 对内置甲板索引强制使用内置战机）。
 - 本例中 `GearIn_slag_wing` 占据守炉人的第一个甲板，第二个甲板仍可在装配界面正常装配。
-- **不可更换**：`setWingId` 对内置甲板索引强制覆盖；装配界面的“清空战机槽”按 `isBuiltInWing` 判断、跳过内置甲板。
+- **不可更换**：`setWingId` 对内置甲板索引强制覆盖；装配界面的 "清空战机槽" 按 `isBuiltInWing` 判断、跳过内置甲板。
 - **不占装配点**：`computeWeaponOPCost` 的战机循环跳过内置战机；舰队成员的造价与 CR 计算也使用 `getNonBuiltInWings()` 排除内置战机。
 - **战机 ID 必须真实存在**（`wing_data.csv` 的 `id` 列）：未知 ID 不会报错，而是该甲板**静默不生成联队**（见故障分析）。
 
@@ -272,7 +272,7 @@
 
 通过信号：第二个甲板空置、可正常装配其它战机；内置联队无法在装配界面更换；`starsector.log` 中 `GearIn_furnaceman` 与 `GearIn_slag_wing` 无 `ERROR`。
 
-清理：移除测试舰船。如需复测“内置战机甲板静默为空”的故障模式，可临时把 `builtInWings` 改成不存在的 ID，验证后改回。
+清理：移除测试舰船。如需复测 "内置战机甲板静默为空" 的故障模式，可临时把 `builtInWings` 改成不存在的 ID，验证后改回。
 
 ## 预期结果
 
@@ -301,7 +301,7 @@
 - **内置武器可以拆卸或计入 OP**：不会发生。
 - 内置三件套在 OP 计算与装配界面均有专门排除逻辑（见上文行为小节）。
 - 若出现此现象，检查 `.ship` 键名是否拼错（例如写成 `builtInWeapon` 而非 `builtInWeapons`），键名不匹配时内容会被静默忽略。
-- **战机内置武器不转动/不追踪**：见“战机的内置武器？”一节，按数据路径修正：取消内置槽位，改为正常槽位 + `.variant` 装配。
+- **战机内置武器不转动/不追踪**：见 "战机的内置武器？" 一节，按数据路径修正：取消内置槽位，改为正常槽位 + `.variant` 装配。
 - **装饰武器仍然被 AI 开火或计入面板**：检查槽位 `type` 是否真的是 `DECORATIVE`（而非 `BUILT_IN`），以及武器 `.wpn` 的 `"type": "DECORATIVE"` 是否一致。
 - 装饰判定同时看槽位类型（武器组/面板/AI 跳过）与武器类型（`isDecorative()`）。
 

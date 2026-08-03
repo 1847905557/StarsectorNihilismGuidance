@@ -43,7 +43,7 @@ import com.fs.starfarer.api.util.Misc;
  *    $gearInHub_delivered + Call $gearInHub_ref updateStage，走 MemoryBooleanChecker
  *    连接）、帧推进轮询（tracker 每 0.09-0.11 游戏天查连接）、时限
  *    （setTimeLimit(Stage.FAILED, 60, null) 到期切失败）；
- * 4. 事件链：两个一次性触发器——进入 RETURN 阶段时写全局内存标记
+ * 4. 事件链：两个一次性触发器 —— 进入 RETURN 阶段时写全局内存标记
  *    （AlwaysTrueChecker），任务进行满 30 游戏天时写半程标记（DaysElapsedChecker）；
  * 5. 奖励：信用点（按距离与质量折算）与双声望（人物 MEDIUM / 势力 LOW）。
  */

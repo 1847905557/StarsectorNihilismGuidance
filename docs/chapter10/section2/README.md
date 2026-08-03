@@ -22,8 +22,8 @@
 
 本节把两条监听器通道、事件边界与生命周期规则建立在以下既有知识之上：
 
-- 生涯引擎结构（C08-S01）：`SectorAPI` 挂监听器子容器、`EveryFrameScript`、persistent data `CLASS_MARK` 守卫、暂停语义——本节的注册守卫与配对模式从这里继续。
-- 脚本序列化边界与真实秒换算（C10-S01）：`scripts` 随档、`transientScripts` 读档清空、`advance(amount)` 入参是上一帧真实秒——本节的监听器与生命周期脚本配对复用这两条结论。
+- 生涯引擎结构（C08-S01）：`SectorAPI` 挂监听器子容器、`EveryFrameScript`、persistent data `CLASS_MARK` 守卫、暂停语义 —— 本节的注册守卫与配对模式从这里继续。
+- 脚本序列化边界与真实秒换算（C10-S01）：`scripts` 随档、`transientScripts` 读档清空、`advance(amount)` 入参是上一帧真实秒 —— 本节的监听器与生命周期脚本配对复用这两条结论。
 - MOD 插件生命周期与阶段判断（C06-S02、C06-S03）：`modPlugin` 生命周期回调与 persistent data 守卫模式；`Global.getSector()` 的 null 语义与「用 `getCurrentState()` 判断阶段」。
 - 市场、贸易与声望（C08-S05、C08-S08）：`reportPlayerMarketTransaction` 的实体是市场交易；声望事件回调的对象由 `SectorAPI.adjustPlayerReputation` 触发。
 - 战斗域（C07-S02）：`reportPlayerEngagement` 的 `EngagementResultAPI` 来自战斗结算。
@@ -36,7 +36,7 @@
   - 在生涯域中，监听器是「对生涯事件感兴趣、事件发生时被引擎回调」的对象。
   - 它与生涯脚本（每帧被推进）互补：脚本是轮询式（每帧 `advance`），监听器是事件驱动式（事件发生才回调）。
   - 两者可以绑定在同一对象上（API 侧的 `BaseCampaignEventListenerAndScript` 即此形态），也可以拆成两个对象配对协作（本节示例即拆分形态），但两条机制的生命周期互不通用。
-- **事件边界（event boundary）**：一个生涯事件从「游戏逻辑发生」到「全部已注册监听器被回调」的完整链路——触发点（谁在什么条件下发起）、派发者（Sector 级通道由引擎侧 `reportXxx` 方法族遍历、类型化通道由 `ListenerUtil.reportXxx` 遍历）、回调签名。排查「回调没触发」时必须沿着这条链逐段核对。
+- **事件边界（event boundary）**：一个生涯事件从「游戏逻辑发生」到「全部已注册监听器被回调」的完整链路 —— 触发点（谁在什么条件下发起）、派发者（Sector 级通道由引擎侧 `reportXxx` 方法族遍历、类型化通道由 `ListenerUtil.reportXxx` 遍历）、回调签名。排查「回调没触发」时必须沿着这条链逐段核对。
 
 ## 文件与 API 链路
 
@@ -63,11 +63,11 @@ RC8 的**公开**生涯事件监听器接口名是 `CampaignEventListener`（`co
 存储与持久性（生涯引擎侧）：
 
 - `listeners` 非 `transient` → **随存档保存**：常驻监听器跨读档继续有效，其非 `transient` 字段原样恢复。
-- `transientListeners` 是 `transient` → **不随存档保存**，读档时重建为空列表——transient 监听器读档后必然消失。
+- `transientListeners` 是 `transient` → **不随存档保存**，读档时重建为空列表 ——transient 监听器读档后必然消失。
 - `listenersWithTimeout` 用 `TimeoutTracker`（公开 API `com.fs.starfarer.api.util.TimeoutTracker`）承载；`items` 随档保存、`set` 读档时重建。
 - `listenerManager` 是 `ListenerManagerAPI` 实例（通道二），读档时若为 null 会重建默认实例。
 
-去重：`addListener` / `addTransientListener` 在写入前用 `contains` 去重——列表按 `equals` 判等，监听器普遍不覆写 `equals`，此时即按对象同一性； `addListenerWithTimeout` 同样以 `contains` 判重。
+去重：`addListener` / `addTransientListener` 在写入前用 `contains` 去重 —— 列表按 `equals` 判等，监听器普遍不覆写 `equals`，此时即按对象同一性； `addListenerWithTimeout` 同样以 `contains` 判重。
 
 派发：生涯引擎的 `reportXxx(...)` 方法族逐事件遍历 `getAllListeners()`（三列表并集的新列表快照）调用回调。
 
@@ -82,7 +82,7 @@ if (!this.isPaused()) {
 }
 ```
 
-**`daysToKeep` 的单位是游戏天**（不是真实秒）；每帧按本帧折合的游戏天数扣减，且**只在未暂停时扣减**——暂停期间超时冻结。扣减到 0 后由 `TimeoutTracker.advance` 自动移除。
+**`daysToKeep` 的单位是游戏天**（不是真实秒）；每帧按本帧折合的游戏天数扣减，且**只在未暂停时扣减**—— 暂停期间超时冻结。扣减到 0 后由 `TimeoutTracker.advance` 自动移除。
 
 ::: warning 常见坑：超时单位误用
 
@@ -112,7 +112,7 @@ if (!this.isPaused()) {
 | `boolean hasListenerOfClass(Class<?> c)` | 两仓库任一生效 |
 | `<T> List<T> getListeners(Class<T> c)` | 返回持久 + transient 并集的**新列表副本** |
 
-实现（`ListenerManagerAPI`）：内部由两个仓库构成——`listeners`（持久）与 `transientListeners`（transient，读档时重建）。语义要点：
+实现（`ListenerManagerAPI`）：内部由两个仓库构成 ——`listeners`（持久）与 `transientListeners`（transient，读档时重建）。语义要点：
 
 - `addListener` / `addListener(listener, true)` 直接写入对应仓库，**`ListenerManagerAPI` 自身没有任何去重检查**（与通道一的 `contains` 去重不同；仓库内部语义本节不展开验证，不要依赖「重复注册会被自动去重」）。
 - `removeListener` 同时清两个仓库；`removeListenerOfClass` 遍历两个仓库的**快照**逐个移除（安全改列表）；`getListeners` 返回两仓库并集的新列表，派发侧遍历的是这份副本。
@@ -171,7 +171,7 @@ if (!this.isPaused()) {
 | 市场开启/关闭 | 打开市场交互对话框时 `reportPlayerOpenedMarket`，对话框关闭时 `reportPlayerClosedMarket`；打开贸易面板时 `reportPlayerOpenedMarketAndCargoUpdated` |
 | 贸易结算 | 贸易面板与整备界面（舰船、武器、战机）结算后 `reportPlayerMarketTransaction`；倾倒货物、未取走战利品也经贸易面板触发 |
 | 战斗发生/结束 | 自动结算轮结算出胜者后 `reportBattleOccurred`、战斗结束 `reportBattleFinished`；API javadoc：AI vs AI 每个自动结算轮一次、玩家遭遇战一次；玩家战斗结算生成 `EngagementResultAPI` 后 `reportPlayerEngagement`（`com.fs.starfarer.api.impl.campaign.FleetEncounterContext`）；战利品生成 `reportEncounterLootGenerated`（`com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`）|
-| 舰队入地 | 舰队加入地点且未上报过（`isReportedSpawned` 标志）时 `reportFleetSpawned`——每支舰队只上报一次 |
+| 舰队入地 | 舰队加入地点且未上报过（`isReportedSpawned` 标志）时 `reportFleetSpawned`—— 每支舰队只上报一次 |
 | 舰队离场 | `CampaignFleetAPI.despawn(FleetDespawnReason, Object)` 内 `reportFleetDespawned`——reason 与 param 由调用方决定 |
 | 舰队跳跃/到达 | 超空间跳跃处理上报 `reportFleetJumped`（devmode 跳跃同样触发）；舰队 AI 到达 assignment 目标时上报 `reportFleetReachedEntity` |
 | 声望变更 | 声望行动处理插件结算后 `reportPlayerReputationChange`（`com.fs.starfarer.api.impl.campaign.CoreReputationPlugin`）|
@@ -179,7 +179,7 @@ if (!this.isPaused()) {
 | 当前位置变化 | 引擎检测到当前地点变化时经 `ListenerUtil.reportCurrentLocationChanged` 派发（类型化通道 `CurrentLocationChangedListener`）|
 | 对话框 | 打开交互对话框后上报 `reportShowInteractionDialog`（`SectorAPI`），随后回调 `CampaignEventListener.reportShownInteractionDialog` |
 | 遭遇开始 | 玩家舰队与实体接触形成遭遇时，引擎内部开始遭遇处理（非公开 API，MOD 观察不到）；玩家侧后续以交互对话框/战斗事件体现 |
-| 能力开关 | 公开 API 有派发方法，具体触发点在引擎内部（本节不展开验证）——语义：玩家激活/停用能力时回调 |
+| 能力开关 | 公开 API 有派发方法，具体触发点在引擎内部（本节不展开验证）—— 语义：玩家激活/停用能力时回调 |
 
 ### 生命周期规则（规则强度）
 
@@ -189,7 +189,7 @@ if (!this.isPaused()) {
    - `Global.getSector()` 在资源加载期为 null，在 `onApplicationLoad` 里注册的解引用即 NPE、启动中止。
    - 注册入口：`onNewGame` / `onGameLoad`。
 2. **必须**：一次性注册用随存档保存的 persistent data 守卫（`CLASS_MARK` 模式，本节示例用各自键）。
-   - 通道一 `addListener` 虽然自带 `contains` 去重，但配对的生命周期脚本半身 `addScript` 不去重——守卫缺失的可观察结果是读档次数越多日志越成双、行为叠加。
+   - 通道一 `addListener` 虽然自带 `contains` 去重，但配对的生命周期脚本半身 `addScript` 不去重 —— 守卫缺失的可观察结果是读档次数越多日志越成双、行为叠加。
 3. **必须**：监听器在不再需要时必须在合适时机移除（`removeListener` / `removeListenerOfClass`）。
    - 监听器一旦注册就持续被派发：常驻注册表的对象还随存档用 XStream 序列化。
    - 违反的可观察结果：事件日志持续出现、行为持续叠加；监听器字段里的瞬态句柄或不可序列化状态拖进存档导致存档异常膨胀、保存/读档异常或读档后行为错乱。
@@ -199,7 +199,7 @@ if (!this.isPaused()) {
    - 违反的可观察结果：读档后事件静默不触发、无任何报错。
    - 成熟实例：用 `addListener(epGen, true)` 注册 transient 遭遇点生成器。
 5. **必须**：配对类「脚本结束 ≠ 监听器移除」。
-   - `isDone() == true` 只让引擎从脚本列表清理脚本半身，**监听器注册表不会自动移除**——必须显式 `removeListener(this)`。
+   - `isDone() == true` 只让引擎从脚本列表清理脚本半身，**监听器注册表不会自动移除**—— 必须显式 `removeListener(this)`。
    - 违反的可观察结果：脚本自停日志出现后事件回调仍持续（「僵尸监听器」）。
 
 :::
@@ -254,7 +254,7 @@ import com.fs.starfarer.api.combat.EngagementResultAPI;
 /**
  * 完整最小例：Sector 级生涯事件监听器（CampaignEventListener 角色）。
  * 注册入口：onGameLoad 门控块（页面调用点片段，REGISTER_MARK 一次性门控）。
- * 注册与自停由配对脚本 GearInListenerLifecycleScript 管理——脚本到期后显式
+ * 注册与自停由配对脚本 GearInListenerLifecycleScript 管理 —— 脚本到期后显式
  * removeListener：脚本结束不等于监听器移除（硬规则）。BaseCampaignEventListener
  * 提供全接口 21 方法的空实现，本类只覆写关心的事件边界（市场/贸易/战斗/舰队/声望）。
  */
@@ -375,7 +375,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * 与 GearInCampaignListener（监听器角色）配对：原组合类拆分出的脚本半身。
  * 注册入口：onGameLoad 门控块内与监听器一同注册（sector.addScript(this)）。
  * 职责：按游戏天累计挂载时长，daysToLive >= 0 且到期时显式
- * sector.removeListener(listener) 并自停——isDone() 只清理脚本列表，
+ * sector.removeListener(listener) 并自停 ——isDone() 只清理脚本列表，
  * 监听器注册表必须单独移除，否则事件继续派发且实例随存档序列化（硬规则）。
  */
 public class GearInListenerLifecycleScript implements EveryFrameScript {
@@ -438,7 +438,7 @@ public class GearInListenerLifecycleScript implements EveryFrameScript {
 - `implements EveryFrameScript`：脚本半身提供 `isDone` / `runWhilePaused` / `advance`，按游戏天累计挂载时长，是本节「生命周期脚本」角色。
 - 构造器持有受管监听器引用；`setDaysToLive(int)` 是**本节演示参数，归属脚本类**——`< 0` 常驻、`>= 0` 到期自停并移除监听器。
 - `advance` 里 `clock.convertToDays(amount)`：`amount` 是上一帧真实秒数，游戏天累加必须经时钟换算（10 真实秒 = 1 游戏日）。
-- `sector.removeListener(listener)`：脚本半身 `done=true` 的同时显式移除监听器——规则 5 的演示（脚本结束 ≠ 监听器移除）。
+- `sector.removeListener(listener)`：脚本半身 `done=true` 的同时显式移除监听器 —— 规则 5 的演示（脚本结束 ≠ 监听器移除）。
 - 注册入口：调用点守卫块内 `sector.addScript(script)`（脚本列表）；`addScript` 不去重，注册块整体守卫的缘由之一。
 
 ### GearInLocationChangeListener（通道二：类型化监听器）
@@ -461,14 +461,14 @@ import com.fs.starfarer.api.campaign.listeners.CurrentLocationChangedListener;
  * （本类对应 CurrentLocationChangedListener，派发点在生涯引擎的 advance
  * 检测到当前地点变化时）。
  *
- * 注册入口：onGameLoad（调用点片段见页面正文），用 transient=true 注册——
+ * 注册入口：onGameLoad（调用点片段见页面正文），用 transient=true 注册 ——
  * transient 监听器不随存档保存（ListenerManagerAPI 的 transientListeners 仓库读档时
  * 重建为空），因此读档后必须重新注册；调用点用 hasListenerOfClass 判空
  * 再补注册即可覆盖旧档。
  *
  * 演示点：
  * 1. reportCurrentLocationChanged(prev, curr)：玩家当前地点变化（进出超空间、进入星系）时触发；
- * 2. 自移除：触发满 reportsLeft 次后 removeListener(this) 并打日志——监听器在不再需要时
+ * 2. 自移除：触发满 reportsLeft 次后 removeListener(this) 并打日志 —— 监听器在不再需要时
  *    必须在合适时机移除，否则事件持续派发（硬规则）；
  * 3. 全部字段可随存档序列化；本类字段不涉及瞬态句柄。
  */
@@ -508,7 +508,7 @@ public class GearInLocationChangeListener implements CurrentLocationChangedListe
 - transient 注册 + `hasListenerOfClass` 判空补注册：规则 4（读档后重新注册）的演示。
 - 注册入口：调用点片段里 `getListenerManager().addListener(new GearInLocationChangeListener(), true)`（通道二 transient 仓库）。
 
-调用点（工程片段——方法所在类属既有 MOD 插件工程，本节只演示调用，不改动原文件）：
+调用点（工程片段 —— 方法所在类属既有 MOD 插件工程，本节只演示调用，不改动原文件）：
 
 ```java
     // GearInModPlugin.onGameLoad(boolean newGame) 内新增本节注册块。
@@ -574,21 +574,21 @@ gradle jar
 
 1. **fixture 编译（验收 J）**：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC10s02Java --no-daemon`，以 `BUILD SUCCESSFUL` 结束（退出码 0）。
 2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到三个类的 `.class`。
-3. **新建生涯**：正常游玩无任何 `GearIn listener` 日志（监听器是事件驱动，不产生周期日志）——这本身是「注册成功且无副作用」的判据；随后按下列操作序列逐个验证事件边界：
+3. **新建生涯**：正常游玩无任何 `GearIn listener` 日志（监听器是事件驱动，不产生周期日志）—— 这本身是「注册成功且无副作用」的判据；随后按下列操作序列逐个验证事件边界：
    - 靠近任意市场（行星/空间站）打开市场交互：`GearIn listener: market opened: <市场名> (size N)`；关闭：`GearIn listener: market closed: <市场名>`。
    - 在市场买入/卖出（或整备界面购买舰船/武器/战机）：每次结算出现 `GearIn listener: trade at <市场名>, credit value <数值>`。
    - 遭遇战（与敌对舰队交战）：战斗阶段出现 `GearIn listener: battle occurred, player involved=true, winner=...` 与 `GearIn listener: battle finished, ...`（玩家遭遇战各一次）；战斗结算后出现 `GearIn listener: player engagement resolved, didPlayerWin=<true/false>`；出现战利品时 `GearIn listener: encounter loot generated, N stacks`。
    - 改变与势力的声望（完成任务、送礼、攻击势力目标）：`GearIn listener: reputation change vs faction <id> by +X.XX`。
-   - 任何舰队入地/离场（包括 AI 舰队）：`fleet spawned` / `fleet despawned, reason=<REASON>`——活动星区里这类日志会比较频繁，属正常。
+   - 任何舰队入地/离场（包括 AI 舰队）：`fleet spawned` / `fleet despawned, reason=<REASON>`—— 活动星区里这类日志会比较频繁，属正常。
 4. **位置变化监听器**：玩家舰队在星系间跳跃、进出超空间时出现 `GearIn listener: current location changed: <地点A> -> <地点B>`；累计 5 次后出现 `GearIn listener: location listener removed itself after 5 reports`，之后位置变化不再有日志（监听器已移除）。
-5. **读档**：不重复注册——无 `trade at` 成双（`REGISTER_MARK` 守卫 + `addListener` 去重）；位置监听器因 transient 读档清空、由 `hasListenerOfClass` 判空重新注册（读档后继续出现位置变化日志且不叠加，新计数从 5 次重新开始）。
+5. **读档**：不重复注册 —— 无 `trade at` 成双（`REGISTER_MARK` 守卫 + `addListener` 去重）；位置监听器因 transient 读档清空、由 `hasListenerOfClass` 判空重新注册（读档后继续出现位置变化日志且不叠加，新计数从 5 次重新开始）。
 6. **`daysToLive = 30`**：挂载约 300 真实秒后出现：
 
    ```text
    GearIn listener: removed itself after 30.0 game days (isDone()=true)
    ```
 
-   之后所有 `GearIn listener` 事件日志停止——脚本半身被引擎从脚本列表移除（`hasScript(GearInListenerLifecycleScript.class)` 为 `false`），监听器被 `removeListener` 移除（事件不再派发）。这同时验证了规则 5 的修正路径。
+   之后所有 `GearIn listener` 事件日志停止 —— 脚本半身被引擎从脚本列表移除（`hasScript(GearInListenerLifecycleScript.class)` 为 `false`），监听器被 `removeListener` 移除（事件不再派发）。这同时验证了规则 5 的修正路径。
 7. **暂停**：监听器不受暂停影响（事件驱动，暂停中打开市场仍会触发 `market opened`）；若用 `addListenerWithTimeout` / `reRegister` 演示超时，暂停期间超时不计时（游戏天不前进），恢复后继续。
 8. **退出到主菜单**：生涯引擎停止，日志停止；再进档（读档）按第 5、6 条继续。
 
@@ -608,7 +608,7 @@ gradle jar
    - 修正：`hasListenerOfClass` 判空补注册（本节调用点片段的通道二写法）。
 4. **脚本自停后事件仍在触发（僵尸监听器）**。
    - 触发：生命周期脚本只置 `done = true`，没有在到期路径里 `removeListener(listener)`。
-   - 可观察：`removed itself ... (isDone()=true)` 日志出现后，`market opened` 等事件日志继续出现——脚本半身被清理了，监听器还在注册表里。
+   - 可观察：`removed itself ... (isDone()=true)` 日志出现后，`market opened` 等事件日志继续出现 —— 脚本半身被清理了，监听器还在注册表里。
    - 修正：在到期路径内显式 `removeListener(listener)`（本节示例即如此）。
 5. **超时监听器「永不超时」或超时过慢**。
    - 触发：把 `addListenerWithTimeout` 的 `daysToKeep` 当成真实秒，或以为暂停也计时间。
@@ -616,14 +616,14 @@ gradle jar
    - 修正：按「游戏天、仅未暂停时扣减」理解并使用。
 6. **`isDone()` 恒返回 true**。
    - 触发：完成标记写反或占位返回 `true`。
-   - 可观察：引擎第一帧先查 `isDone` 就移除脚本，`advance` 一次都不执行，`removeListener` 自然也没机会执行——脚本半身消失、监听器半身残留（又是僵尸监听器，且无自停日志）。
+   - 可观察：引擎第一帧先查 `isDone` 就移除脚本，`advance` 一次都不执行，`removeListener` 自然也没机会执行 —— 脚本半身消失、监听器半身残留（又是僵尸监听器，且无自停日志）。
    - 修正：`done` 初始 `false`，仅在条件满足时置 `true`。
 7. **事件日志过频刷屏**。
    - 触发：`reportFleetSpawned` / `reportFleetDespawned` 覆盖所有 AI 舰队，活动星区每帧多条。
    - 可观察：日志被无关舰队淹没，找不到玩家相关事件。
    - 修正：回调内过滤（如 `fleet.isPlayerFleet()` 或按势力 id），把玩家关心的事件单独归类。
 8. **战斗计数偏高**。
-   - 触发：用 `reportBattleOccurred` 统计「玩家战斗次数」——它只对 AI vs AI 每个自动结算轮调用一次、对玩家遭遇战一次（API javadoc），但玩家舰队**在战斗中**若包含多轮自动结算（如玩家脱战后 AI 继续互打）不会产生 player 标记。
+   - 触发：用 `reportBattleOccurred` 统计「玩家战斗次数」—— 它只对 AI vs AI 每个自动结算轮调用一次、对玩家遭遇战一次（API javadoc），但玩家舰队**在战斗中**若包含多轮自动结算（如玩家脱战后 AI 继续互打）不会产生 player 标记。
    - 可观察：计数与预期不符。
    - 修正：玩家战斗统计用 `reportPlayerEngagement`（`EngagementResultAPI.didPlayerWin()`），战斗过程观察用 `reportBattleOccurred` 且以 `battle.isPlayerInvolved()` 过滤。
 9. **双通道混淆导致业务重复**。

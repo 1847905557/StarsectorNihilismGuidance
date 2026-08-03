@@ -40,7 +40,7 @@ MOD ID 与势力 ID 互不相关，只是本例恰好同源。原版里 MOD 名�
 
 - **势力（faction）**：生涯里的政治实体。API 名保留源码大小写：`FactionAPI`、`FactionSpecAPI`。一个势力拥有身份信息（名称、颜色、旗帜）、舰船池、舰队学说、声望关系与随机人物生成数据。
 - **舰队学说（doctrine）**：决定势力舰队组成倾向的一组数值。API 名保留：`FactionDoctrineAPI`。
-- **舰船池（ship pool）**：势力"知道"的舰船、武器、战机、船插集合（`knownShips` 等），是舰队生成与蓝图分配的依据。
+- **舰船池（ship pool）**：势力 "知道" 的舰船、武器、战机、船插集合（`knownShips` 等），是舰队生成与蓝图分配的依据。
 - **声望等级（RepLevel）**：把关系数值（float，-1 到 1）映射成的离散等级，从 `VENGEFUL`（复仇）到 `COOPERATIVE`（合作）。API 名保留源码大小写。
 
 ## 文件与 API 链路
@@ -71,7 +71,7 @@ spec 加载流程对每个 faction 文件按固定顺序解析字段。**必填*
 - `crest`、`shipNamePrefix`（默认 `ISS`）、`shipNameSources`（缺省回退为 `ALL` 一项权重 1）、`displayNameLong` / `displayNameLongWithArticle`（回退显示名）、`entityNamePrefix` / `personNamePrefix` / `personNamePrefixAOrAn` / `displayNameIsOrAre`、`barSound`（默认 `bar_ambience`）、`internalComms`、`tariffFraction`（默认取 `data/campaign/econ/economy.json` 的 `defaultTariff`，RC8 为 0.3）、`tollFraction`（0.1）、`fineFraction`（0.25）、 `color`（缺失回退白色）、`baseUIColor` / `darkUIColor` / `gridUIColor` / `brightUIColor` / `secondaryUIColor`、`music`
 - `factionDoctrine`、`variantOverrides`、`voices`、四个 `*SellFrequency`、`hullFrequency`、`shipsWhenImporting` / `known*` / `priority*`、`fleetCompositions`、`flags`、`illegalCommodities`、`traits`、`custom`
 
-加载期就会校验（不只是"存下来"）的字段：
+加载期就会校验（不只是 "存下来"）的字段：
 
 - `illegalCommodities` 数组里的每个 ID 必须在 `data/campaign/commodities.csv` 中存在，否则抛 `Invalid illegal commodity id: [X]`，加载中断。**不要**把武器、补给这类商品之外的物品写进去。
 - `variantOverrides` 的每个键是装配 ID，加载期就查装配并记下它所属的船体（`getOverriddenHulls`），装配不存在同样加载失败。
@@ -81,21 +81,21 @@ spec 加载流程对每个 faction 文件按固定顺序解析字段。**必填*
 
 ### 链路三：舰船池（known* 与装配角色）
 
-1. 加载期 `loadFactionList` 处理每个 `known*` / `priority*` 块：`tags` 数组里的每个 tag，遍历对应注册表（`knownShips` 遍历全部船体、`knownWeapons` 遍历全部武器、`knownFighters` 遍历全部战机联队、`knownHullMods` 遍历全部船插），凡对象带任一 tag 即加入集合；`hulls` / `weapons` / `fighters` / `hullMods` 数组则把 ID 直接加入集合。**拼错的 tag 或 ID 不会报错**——只是匹配不到任何对象，静默得到一个更小的舰船池。
+1. 加载期 `loadFactionList` 处理每个 `known*` / `priority*` 块：`tags` 数组里的每个 tag，遍历对应注册表（`knownShips` 遍历全部船体、`knownWeapons` 遍历全部武器、`knownFighters` 遍历全部战机联队、`knownHullMods` 遍历全部船插），凡对象带任一 tag 即加入集合；`hulls` / `weapons` / `fighters` / `hullMods` 数组则把 ID 直接加入集合。**拼错的 tag 或 ID 不会报错**—— 只是匹配不到任何对象，静默得到一个更小的舰船池。
 2. 装配角色的来源有两层。第一层是**全 MOD 共享**的 `data/world/factions/default_ship_roles.json`：这是合并读取的 JSON（`readJSONMerged`），角色对象按键逐层合并、装配条目按 variant ID 覆盖，因此 **MOD 只提交自己的角色条目，不要整份复制原版文件**（复制会覆盖原版的角色对象，让所有原版势力失去对应角色的装配条目）。每个角色是一个对象： `variantId → 权重`，另有三个特殊键：`includeDefault: true`（把原版同名角色的条目复制进来）、`fallback` / `fallback2`（角色回退）。角色条目（`RoleEntryAPI`）创建时**立即按 ID 查装配**（`_wing` 结尾的 ID 走联队查找的历史兼容路径，原版数据不使用它）；装配查不到抛 `Ship hull variant [X] not found!`，加载中断。
 3. 第二层是势力文件自己的 `shipRoles`（对象结构与 default_ship_roles.json 相同；内部 `doctrine` 键是旧版遗留，本节不展开）。`FactionAPI.pickShip(role, params)` 在选择时优先用势力自己的角色；角色缺失或为空时回退到共享的 `default_ship_roles.json`（`FactionSpecAPI.getDefaultShipRoles()`）。
-4. **舰船池完整流程**：`pickShip` 内部对每个角色条目做过滤——条目装配的船体必须在该势力的 `knownShips` 里（`knowsShip`），再乘上 `hullFrequency` 里该船体的倍率；`variantOverrides` 命中的装配按覆盖权重参与。这就是"势力只出自己舰船池里的船"的机制。过滤结果按权重随机抽取，`ShipPickMode` 控制范围（`ALL` / `PRIORITY_ONLY` / `PRIORITY_THEN_ALL` / `IMPORTED`），`priorityShips` / `priorityWeapons` / `priorityFighters` 在优先级模式下优先被抽取。权重结果带缓存，运行时改动舰船池后要调 `clearShipRoleCache()` 才会反映（常见陷阱：缓存不会自动失效，改动池后容易漏调）。
+4. **舰船池完整流程**：`pickShip` 内部对每个角色条目做过滤 —— 条目装配的船体必须在该势力的 `knownShips` 里（`knowsShip`），再乘上 `hullFrequency` 里该船体的倍率；`variantOverrides` 命中的装配按覆盖权重参与。这就是 "势力只出自己舰船池里的船" 的机制。过滤结果按权重随机抽取，`ShipPickMode` 控制范围（`ALL` / `PRIORITY_ONLY` / `PRIORITY_THEN_ALL` / `IMPORTED`），`priorityShips` / `priorityWeapons` / `priorityFighters` 在优先级模式下优先被抽取。权重结果带缓存，运行时改动舰船池后要调 `clearShipRoleCache()` 才会反映（常见陷阱：缓存不会自动失效，改动池后容易漏调）。
 5. 其它只读入口：`getNumAvailableForRole(role, mode)`、`getApproximateMaxFPPerFleet(mode)`、`knowsShip / knowsWeapon / knowsFighter / knowsHullMod`。
 
 ::: warning 拼错的 tag 或 ID 只会静默缩小舰船池
 
-`known*` / `priority*` 里的 tag 或 ID 拼错时，加载期不会有任何报错：匹配不到任何对象，舰船池（或优先级）只是变小。排查"势力缺船"问题时，先对照各注册表的 tags 列逐字核对。
+`known*` / `priority*` 里的 tag 或 ID 拼错时，加载期不会有任何报错：匹配不到任何对象，舰船池（或优先级）只是变小。排查 "势力缺船" 问题时，先对照各注册表的 tags 列逐字核对。
 
 :::
 
 ### 链路四：舰队学说（factionDoctrine）
 
-1. 加载期 `factionDoctrine` 对象（存在时）解析为 `FactionDoctrineAPI`：`warships`、`carriers`、`phaseShips`、`officerQuality`、`shipQuality`、`numShips` 六个键用 `getInt` **必读**——写了 `factionDoctrine` 块却漏掉其中任何一个，加载中断（`JSONObject["<键>"] not found`）；`shipSize` / `aggression` / `fleets` 是 `optInt`，默认 3； `autofitRandomizeProbability` 默认 0.25；`strictComposition` 默认 false；`commanderSkills` / `officerSkills` 数组与各自的 `*ShuffleProbability` 可选。
+1. 加载期 `factionDoctrine` 对象（存在时）解析为 `FactionDoctrineAPI`：`warships`、`carriers`、`phaseShips`、`officerQuality`、`shipQuality`、`numShips` 六个键用 `getInt` **必读**—— 写了 `factionDoctrine` 块却漏掉其中任何一个，加载中断（`JSONObject["<键>"] not found`）；`shipSize` / `aggression` / `fleets` 是 `optInt`，默认 3； `autofitRandomizeProbability` 默认 0.25；`strictComposition` 默认 false；`commanderSkills` / `officerSkills` 数组与各自的 `*ShuffleProbability` 可选。
 2. 加载后成为 `FactionDoctrineAPI`，运行时可经 `FactionAPI.getDoctrine()` 读写。
 3. **玩家势力编辑器与文件是同一组字段**：游戏内玩家自定义势力时用的**势力编辑器界面**把前两组各三条的总和固定为 7、每一条取值 1–5（每行是五档按钮），`shipSize` / `aggression` 各 1–5 且不受总和约束。势力文件本身不校验这些范围，但建议按编辑器的值域填写，使势力观感与用户习惯一致。
 4. 行为使用方（舰队生成、军官生成）读取这些值决定编队组成、船型倾向、军官质量与性格分布；`getShipQualityContribution()` 按 `(shipQuality - 1) * doctrineFleetQualityPerPoint` 计算，RC8 的 `settings.json` 里该系数为 0.125。
@@ -112,7 +112,7 @@ spec 加载流程对每个 faction 文件按固定顺序解析字段。**必填*
 
 ### 第一步：注册 factions.csv
 
-在 MOD 中新建 `data/world/factions/factions.csv`，写入表头与一行路径。**不要**复制整份原版 `factions.csv`——这个文件按行合并，您只需要自己的行：
+在 MOD 中新建 `data/world/factions/factions.csv`，写入表头与一行路径。**不要**复制整份原版 `factions.csv`—— 这个文件按行合并，您只需要自己的行：
 
 ```csv
 faction
@@ -315,7 +315,7 @@ data/world/factions/gear_industry.faction
 
 ### 第三步：把装配引入生涯舰队（default_ship_roles.json）
 
-faction 文件只决定"势力知道哪些船"，舰队生成时按角色（`combatSmall`、`combatMedium`、`combatLarge`、`combatCapital`、`carrierSmall` 等）从角色表里抽装配。
+faction 文件只决定 "势力知道哪些船"，舰队生成时按角色（`combatSmall`、`combatMedium`、`combatLarge`、`combatCapital`、`carrierSmall` 等）从角色表里抽装配。
 
 角色表就是共享的 `default_ship_roles.json`：没有它（或没有本 MOD 的条目），装配就不会出现在生涯舰队里，势力只能回退到原版装配。
 
@@ -331,13 +331,13 @@ faction 文件只决定"势力知道哪些船"，舰队生成时按角色（`com
 
 ::: caution 只提交自己的角色条目，禁止整份复制原版文件
 
-`default_ship_roles.json` 跨来源按角色对象合并：整份复制原版文件会覆盖原版角色对象，让所有原版势力失去对应角色的装配条目——没有报错，很难察觉。MOD 只提交自己的角色条目。
+`default_ship_roles.json` 跨来源按角色对象合并：整份复制原版文件会覆盖原版角色对象，让所有原版势力失去对应角色的装配条目 —— 没有报错，很难察觉。MOD 只提交自己的角色条目。
 
 :::
 
 每个条目是 `装配 ID → 权重`。**查不到装配会当场抛 `Ship hull variant [X] not found!` 并中断加载**。`includeDefault: true` 可把原版同名角色的条目复制进来再叠加自己的条目（参考原版文件里各角色的写法；本例不需要）。
 
-注意角色表里只放**舰船装配**：航母角色（`carrierSmall` 等）的条目是航母船体的装配，战机联队不进角色表——联队经由舰船装配的 `wings` 数组（C03-S01）与 `knownFighters` 池进入舰队。
+注意角色表里只放**舰船装配**：航母角色（`carrierSmall` 等）的条目是航母船体的装配，战机联队不进角色表 —— 联队经由舰船装配的 `wings` 数组（C03-S01）与 `knownFighters` 池进入舰队。
 
 角色条目（`RoleEntryAPI`）对 `_wing` 结尾的 ID 有按联队 ID 查找的历史兼容路径，原版数据不使用它，本教程也不建议使用。
 
@@ -360,7 +360,7 @@ gear.setRelationship(hegemony.getId(), 0.25f);                  // 或直接写�
 gear.adjustRelationship(pirates.getId(), -0.1f, RepLevel.HOSTILE); // 增减并钳制到等级
 ```
 
-把这段代码挂进 MOD 的哪个回调（`ModPlugin` 的生涯生成钩子），属于 ModPlugin 主题，本节不展开。不设置任何关系的可观察结果：所有势力对这个新势力都是 0.0 中立——包括那些看起来应该敌对的势力，且没有任何报错。
+把这段代码挂进 MOD 的哪个回调（`ModPlugin` 的生涯生成钩子），属于 ModPlugin 主题，本节不展开。不设置任何关系的可观察结果：所有势力对这个新势力都是 0.0 中立 —— 包括那些看起来应该敌对的势力，且没有任何报错。
 
 ::: warning 关系是运行时状态，不是文件数据
 
@@ -398,7 +398,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 
 ## 实用势力包(bp)与其它生成型 tags 速查表（RC8 核对）
 
-下表全部经 RC8 数据核对（tag 存在性来自 `data/weapons/weapon_data.csv`、`data/hulls/ship_data.csv`、`data/hulls/wing_data.csv`、 `data/hullmods/hull_mods.csv`；"引用它的势力文件"来自 `data/world/factions/*.faction`）。
+下表全部经 RC8 数据核对（tag 存在性来自 `data/weapons/weapon_data.csv`、`data/hulls/ship_data.csv`、`data/hulls/wing_data.csv`、 `data/hullmods/hull_mods.csv`；"引用它的势力文件" 来自 `data/world/factions/*.faction`）。
 
 **不在本表上的数据均为与势力包(bp)和生成均无关的 tags。**
 
@@ -463,7 +463,7 @@ RC8 中这些 tag 仍然存在，但霸主等正规势力已经在 `hulls` 数�
 2. **游戏加载中断，进不了主菜单。**
    - 触发：必填字段缺失（`id`、`logo`、`displayName`、`displayNameWithArticle`、`names`、`portraits` 任一）、faction 文件 JSON 语法错误、`factionDoctrine` 六个 `getInt` 键缺失、`illegalCommodities` 引用非商品 ID。
    - 可观察：加载流程在 `Loading factions` 之后抛 `JSONException` 或 `RuntimeException`（`JSONObject["<键>"] not found`、`Invalid illegal commodity id: [...]`），无保护地中断。
-   - 修正：对照"必须遵守的规则"表补齐字段与商品 ID；商品 ID 参考 `data/campaign/commodities.csv`。
+   - 修正：对照 "必须遵守的规则" 表补齐字段与商品 ID；商品 ID 参考 `data/campaign/commodities.csv`。
 3. **势力 ID 与其它来源冲突。**
    - 触发：两份 faction 文件（或同一文件在合并后的 CSV 里出现两次）产生相同 `id`。
    - 可观察：加载中断，日志出现 `Spec of class com.fs.starfarer.loading.FactionSpecAPI with id [X] already exists`。
@@ -473,12 +473,12 @@ RC8 中这些 tag 仍然存在，但霸主等正规势力已经在 `hulls` 数�
    - 可观察：角色表里没有本 MOD 的条目时，`pickShip` 回退到共享默认角色表，这些船体虽然 `knowsShip` 但没有角色条目可抽，舰队只能抽原版装配。
    - 修正：只提交自己的角色条目并核对装配 ID 与 `data/variants` 里的一致；角色表只放舰船装配，联队不进角色表（经航母装配的 `wings` 数组进入舰队，见 C03-S01）。
 5. **加载中断，日志出现 `Ship hull variant [X] not found!`。**
-   - 触发：`default_ship_roles.json`（或势力文件 `shipRoles`）里的某个 ID 查不到装配——角色条目（`RoleEntryAPI`）创建时立即校验（`_wing` 结尾的 ID 按联队查，属历史兼容路径）。
+   - 触发：`default_ship_roles.json`（或势力文件 `shipRoles`）里的某个 ID 查不到装配 —— 角色条目（`RoleEntryAPI`）创建时立即校验（`_wing` 结尾的 ID 按联队查，属历史兼容路径）。
    - 可观察：加载期直接抛 `Ship hull variant [X] not found!`。
    - 修正：删掉或改正该条目；核对 `data/variants` 与联队注册（C01-S03）。
 6. **势力出现，但某些船永远不出现（无报错）。**
    - 触发：`hullFrequency` 里倍率写成 0、该船不在 `knownShips`（tags 拼错或漏列）、或在 `priorityShips` 之外的池子里被概率淹没。
-   - 可观察：完全静默——没有日志，只是生成结果里没有这些船。
+   - 可观察：完全静默 —— 没有日志，只是生成结果里没有这些船。
    - 修正：把倍率改回 >0；核对 `knownShips.tags` 与船体 `ship_data.csv` 的 tags 列逐字一致（ID 匹配区分大小写）；想强制出现就加进 `priorityShips`。
 7. **关系错乱：该敌对的势力互相中立。**
    - 触发：只在 faction 文件里写了 `custom` 之类的键，以为关系是数据；或关系代码没挂进游戏回调。
@@ -491,7 +491,7 @@ RC8 中这些 tag 仍然存在，但霸主等正规势力已经在 `hulls` 数�
 9. **情报里势力的颜色/名称不对。**
    - 触发：`color` 数组少于 4 个元素（抛 `Color array with id [color] has less than 4 elements`，加载中断），或 `displayName` 与 `displayNameWithArticle` 不一致（显示带冠词变体）。
    - 修正：`color` 写满 RGBA 四项；中文环境两个名称写同一个字符串。
-10. **势力突然变"穷"：蓝图/打捞层面缺组件。**
+10. **势力突然变 "穷"：蓝图/打捞层面缺组件。**
     - 触发：给组件打了 `rare_bp` / `restricted` 却期待它出现在本势力的默认池或掉落里。
     - 可观察：掉落池（`drop_groups.csv`）只挑 `rare_bp` 且排除 `!no_drop` / `!restricted`，组件不会出现在掉落中（无报错）。
     - 修正：想让组件可掉落就打 `rare_bp`，不想让组件在任何场合出现才打 `restricted`。
@@ -512,7 +512,7 @@ RC8 中这些 tag 仍然存在，但霸主等正规势力已经在 `hulls` 数�
 
 调试时先问四个问题：势力注册了吗（日志里有没有 `Loading gear_industry faction`）、必填字段齐吗（有没有 JSON 异常）、装配在角色表里吗（有没有 `Ship hull variant not found`）、关系设置了吗（没有就全中立，且无报错）。
 
-逻辑上，关系的代码播种需要一个运行时挂载点（`ModPlugin` 的生涯生成钩子），挂载点与星系生成同属一个主题——那是势力注册之后的自然落点：本节的势力与关系 API 就绪后，相关代码即可在那里搬入生效。
+逻辑上，关系的代码播种需要一个运行时挂载点（`ModPlugin` 的生涯生成钩子），挂载点与星系生成同属一个主题 —— 那是势力注册之后的自然落点：本节的势力与关系 API 就绪后，相关代码即可在那里搬入生效。
 
 ## 建议参考项
 

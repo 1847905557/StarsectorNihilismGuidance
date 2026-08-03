@@ -1,6 +1,6 @@
-# 最小战术系统：数据注册与效果脚本
+# 制作最小战术系统
 
-船插是安装后持续的加成；战术系统是按下按键后触发的一段行为——爆发加速、护盾强化、相位隐身。本节从原版 `burn drive` 复制改造一个最小战术系统，覆盖 `.system`、`ship_systems.csv`、`ship_data.csv` 与效果脚本四段链路，并通过调整参数观察游戏内行为变化。后半部分给出常见错误的排查方法。
+船插是安装后持续的加成；战术系统是按下按键后触发的一段行为 —— 爆发加速、护盾强化、相位隐身。本节从原版 `burn drive` 复制改造一个最小战术系统，覆盖 `.system`、`ship_systems.csv`、`ship_data.csv` 与效果脚本四段链路，并通过调整参数观察游戏内行为变化。后半部分给出常见错误的排查方法。
 
 *本节预期阅读时间：~20 分钟。*
 
@@ -12,7 +12,7 @@
 
 - 说出战术系统的四段链路：`.system` 文件（类型与脚本）→ `ship_systems.csv`（名称与数值）→ `ship_data.csv`（挂载到舰船）→ 效果脚本类；
 - 说出时间类参数各管什么：`charge up`（前摇）、`active`（全功率）、`down`（后摇）、`cooldown`（冷却）；
-- 用"效果强度"理解效果脚本：前摇期间加成从 0 平滑升至满值，后摇期间回落；
+- 用 "效果强度" 理解效果脚本：前摇期间加成从 0 平滑升至满值，后摇期间回落；
 - 通过修改三个参数（时长、加成数值、冷却）在模拟战中观察到行为差异。
 
 ## 前置知识
@@ -66,7 +66,7 @@
 - **`type`**：系统运作方式。`ENGINE_MOD` 是引擎类系统（引擎焰视觉、撞击熄火由引擎处理）；纯属性类系统用 `STAT_MOD`。本节示例与第二个例子各演示一种。
 - **`statsScript`**：效果脚本完整类名（三处一致的又一处：`statsScript`、`package` 行、文件路径）。
 
-其余字段是视觉（引擎焰）、声音与物理细节，按需保留。文件中的 `aiType` 字段属于系统 AI 配置，本教程在 C07 讲解——示例用 `NONE`（无 AI 行为），玩家按键不受影响。
+其余字段是视觉（引擎焰）、声音与物理细节，按需保留。文件中的 `aiType` 字段属于系统 AI 配置，本教程在 C07 讲解 —— 示例用 `NONE`（无 AI 行为），玩家按键不受影响。
 
 ## 第二步：注册行（数值参数）
 
@@ -94,7 +94,7 @@ name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u 
 
 - **`toggle`**：`TRUE` = 开关式，再按一次才关闭（本系统如此）；留空 = 按时开、松手关。
 - **`max uses`**：充能次数，留空 = 无限。
-- **`noAccel`/`noFiring`/`noTurning` 等 `no*` 列**：激活期间禁止的行为，`TRUE` = 禁止。本行禁止了开火、转向、平移与加速——激活期间无法进行这些操作。
+- **`noAccel`/`noFiring`/`noTurning` 等 `no*` 列**：激活期间禁止的行为，`TRUE` = 禁止。本行禁止了开火、转向、平移与加速 —— 激活期间无法进行这些操作。
 
 `f/s`、`f/u` 系列与 `cr/u` 等列按模板使用，涉及幅能费率的细节后续章节展开。复制原版行时保留表头与 `#` 注释行，只改目标行的 `name` 与 `id`。
 
@@ -144,11 +144,11 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 **① 效果强度 `effectLevel`**
 
-游戏在前摇期间把一个名为 `effectLevel` 的值从 **0 平滑升至 1**，全功率段保持 1，后摇期间从 1 落回 0。效果脚本中的所有数值都乘以它：`SPEED_BONUS * effectLevel` = 200 × 0.5 = 100——因此前摇那两秒里速度加成从 0 平滑爬到 200。**参数是 `SPEED_BONUS` 与 `ACCELERATION_BONUS` 两个数字**，修改它们即修改爆发强度。
+游戏在前摇期间把一个名为 `effectLevel` 的值从 **0 平滑升至 1**，全功率段保持 1，后摇期间从 1 落回 0。效果脚本中的所有数值都乘以它：`SPEED_BONUS * effectLevel` = 200 × 0.5 = 100—— 因此前摇那两秒里速度加成从 0 平滑爬到 200。**参数是 `SPEED_BONUS` 与 `ACCELERATION_BONUS` 两个数字**，修改它们即修改爆发强度。
 
 **② 三个回调各管一件事**
 
-- `apply`：效果期间每帧被调用，按当前 `effectLevel` 写入速度与加速度加成。`state == OUT`（后摇）时**撤销**速度加成——让船在后摇期间按基础速度减速，而不是带着加成跑完整个后摇。
+- `apply`：效果期间每帧被调用，按当前 `effectLevel` 写入速度与加速度加成。`state == OUT`（后摇）时**撤销**速度加成 —— 让船在后摇期间按基础速度减速，而不是带着加成跑完整个后摇。
 - `unapply`：效果结束时由游戏调用一次，撤销 `apply` 写入的每一项（`modifyFlat` 与 `unmodify` 必须成对，用同一个 `id`）。
 - `getStatusData`：左下角状态栏文字（`false` = 增益显示，`true` = 红色减益）。
 
@@ -177,15 +177,15 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 三个实验，每次只改一个地方，重启进模拟战观察差异：
 
-1. **调整爆发强度**：`SPEED_BONUS` 从 `200f` 改 `350f`——前摇爬升更陡，全功率速度更高；
-2. **调整持续时间**：CSV 的 `active` 从 `5` 改 `2`——全功率段明显缩短；改 `10` 则长时间维持；
-3. **调整冷却节奏**：`cooldown` 从 `10` 改 `3`——激活间隔明显缩短，可连续使用。
+1. **调整爆发强度**：`SPEED_BONUS` 从 `200f` 改 `350f`—— 前摇爬升更陡，全功率速度更高；
+2. **调整持续时间**：CSV 的 `active` 从 `5` 改 `2`—— 全功率段明显缩短；改 `10` 则长时间维持；
+3. **调整冷却节奏**：`cooldown` 从 `10` 改 `3`—— 激活间隔明显缩短，可连续使用。
 
-把 `cooldown` 从 10 改到 3，激活间隔明显缩短——参数改变行为，本节到此为止的结论也就这些。爆发类系统通常用短 `charge up` + 高 `SPEED_BONUS` 做出快速弹射；持续类系统通常用长 `active` + 较低数值维持稳定输出。后续章节制作自己的系统时，这些数字就是调整行为的全部工具。
+把 `cooldown` 从 10 改到 3，激活间隔明显缩短 —— 参数改变行为，本节到此为止的结论也就这些。爆发类系统通常用短 `charge up` + 高 `SPEED_BONUS` 做出快速弹射；持续类系统通常用长 `active` + 较低数值维持稳定输出。后续章节制作自己的系统时，这些数字就是调整行为的全部工具。
 
 ## 第二个例子：右键系统（抵抗力场）
 
-右键系统与主系统是同一套机制，只是由 `ship_data.csv` 的另一列挂载（`shield type` 为 `PHASE` 时，`defense id` 列填写的系统 ID 就是右键系统）。把原版 `damper.system` 复制为 `GearIn_resistfield.system`，改 `id` 与 `statsScript`（`type` 用 `STAT_MOD`——纯属性类系统；其余字段按模板使用）：
+右键系统与主系统是同一套机制，只是由 `ship_data.csv` 的另一列挂载（`shield type` 为 `PHASE` 时，`defense id` 列填写的系统 ID 就是右键系统）。把原版 `damper.system` 复制为 `GearIn_resistfield.system`，改 `id` 与 `statsScript`（`type` 用 `STAT_MOD`—— 纯属性类系统；其余字段按模板使用）：
 
 ```json
 {
@@ -227,7 +227,7 @@ name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u 
 抵抗力场,GearIn_resistfield,1,,,,,,,2,0.05,0.25,3,0.25,0,,,,,TRUE,,,,TRUE,TRUE,,"uses_damper_ai, defensive",graphics/icons/hullsys/damper_field.png
 ```
 
-效果脚本 `GearInResistFieldSystem` 与燃烧驱动同构——`apply` 按 `effectLevel` 写入四类减伤倍率，`unapply` 逐一撤销，`getStatusData` 返回状态文字（`modifyMult` 是"乘以多少"的句式：`1f - 75% × effectLevel` = 满效果时受伤 ×0.25）：
+效果脚本 `GearInResistFieldSystem` 与燃烧驱动同构 ——`apply` 按 `effectLevel` 写入四类减伤倍率，`unapply` 逐一撤销，`getStatusData` 返回状态文字（`modifyMult` 是 "乘以多少" 的句式：`1f - 75% × effectLevel` = 满效果时受伤 ×0.25）：
 
 ```java
 package data.scripts.gearin.shipsystems;
@@ -300,9 +300,9 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
 战术系统 = 四段链路：`.system`（类型与脚本）→ `ship_systems.csv`（名称与数值）→ `ship_data.csv`（挂载）→ 效果脚本（响应状态回调）。
 
-脚本侧只需要掌握"效果强度"一个概念：`effectLevel` 从 0 升至 1 再落回 0，所有数值乘以它；`apply`/`unapply` 成对撤销是唯一的纪律。
+脚本侧只需要掌握 "效果强度" 一个概念：`effectLevel` 从 0 升至 1 再落回 0，所有数值乘以它；`apply`/`unapply` 成对撤销是唯一的纪律。
 
-这四段链路是后续所有系统的共同骨架——武器类、护盾类、相位类系统都只是更换数据与脚本内容。系统 AI（`aiType`）与自定义使用时机在本教程 C07 展开。
+这四段链路是后续所有系统的共同骨架 —— 武器类、护盾类、相位类系统都只是更换数据与脚本内容。系统 AI（`aiType`）与自定义使用时机在本教程 C07 展开。
 
 ## 建议参考项
 

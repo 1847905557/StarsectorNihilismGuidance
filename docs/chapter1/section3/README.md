@@ -97,7 +97,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ```
 
-在本例中，`守炉人-级`航母的战术系统被替换为`苍鹭-级`的同款，来提供一种类似的"命令式"操作感。因为它的槽位大多数都被替换为防御型小型实弹槽位，因此为它提供更高的结构与更低的部署点作为幅度恰当的补偿。
+在本例中，`守炉人-级`航母的战术系统被替换为`苍鹭-级`的同款，来提供一种类似的 "命令式" 操作感。因为它的槽位大多数都被替换为防御型小型实弹槽位，因此为它提供更高的结构与更低的部署点作为幅度恰当的补偿。
 
 航母需要填写`甲板数量`，此处为 2。
 
@@ -105,7 +105,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 将新舰船与新战机的`tag`中的蓝图 tag 替换为`前缀名_bp`，在本例中为`GearIn_bp`（战机示例同时清掉了`merc, ind`）。日后将会有用。
 
-除非某个单位是您不希望大量出现的——在这种情况下，您可以将`tag`中的内容清空或适当清理。
+除非某个单位是您不希望大量出现的 —— 在这种情况下，您可以将`tag`中的内容清空或适当清理。
 
 :::
 
@@ -120,7 +120,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ## 制作战机舰船文件
 
-按照与寻常舰船无异的过程，制作`炉渣-级`战机的舰船文件。虽然"战机舰船文件"听上去很奇怪。
+按照与寻常舰船无异的过程，制作`炉渣-级`战机的舰船文件。虽然 "战机舰船文件" 听上去很奇怪。
 
 ::: warning 战机制作注意点
 
@@ -128,7 +128,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 战机的武器**不应该选用`内置`**，因为后文需要对其进行装配。
 
-不要选错`hullSize`——游戏以 `hullSize == FIGHTER` 判定战机身份（`ShipAPI.isFighter()`），选错时该单位不会被分配战机 AI，也不会被计入联队成员、返航与补充。
+不要选错`hullSize`—— 游戏以 `hullSize == FIGHTER` 判定战机身份（`ShipAPI.isFighter()`），选错时该单位不会被分配战机 AI，也不会被计入联队成员、返航与补充。
 
 :::
 
@@ -136,7 +136,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ## 制作战机舰船的数据
 
-"战机舰船的数据"听上去更奇怪了。
+"战机舰船的数据" 听上去更奇怪了。
 
 继续复制黏贴。打开原版的`ship_data.csv`，将`阔剑-级`战机的数据复制过来，然后稍作修改：
 
@@ -248,7 +248,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ## 制作战机的战机数据
 
-"战机的战机数据"听上去比前两个还更奇怪。
+"战机的战机数据" 听上去比前两个还更奇怪。
 
 打开`wing_data.csv`，继续复制粘贴。编者认为，既然`炉渣-级`是从`阔剑-级`修改而来的，那么就直接修改到底，战机数据也从`阔剑-级`里复制并修改：
 
@@ -431,7 +431,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 本节在普通舰船链的基础上完成了三种专用约束的完整流程：航母通过甲板与港口投放战机，战机必须走完 hull、variant、wing 三段注册，相位舰必须同时满足 CSV 防御字段与命名资源约定。
 
-三者都适合从最终生成 ID 反向追到注册与资源——凡是同时涉及多个注册环节的内容（舰船、装配、联队乃至模块船），都可以沿这条反向链路定位问题。
+三者都适合从最终生成 ID 反向追到注册与资源 —— 凡是同时涉及多个注册环节的内容（舰船、装配、联队乃至模块船），都可以沿这条反向链路定位问题。
 
 ## 建议参考项
 
@@ -444,6 +444,6 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 - `data/weapons/weapon_data.csv`（原版）：武器 ID 查询（`lightdualac` 等）。
 - `Starsector/starsector-core/starsector.log`：游戏日志，排查加载错误与最终 ID 报错。
 - `Starsector/mods/Console Commands/data/console/commands.csv`：`Addship`/`Addwing` 控制台命令条目。
-- `com.fs.starfarer.api.combat.ShipAPI`：`isFighter()`——以 `hullSize == FIGHTER` 判定战机身份。
+- `com.fs.starfarer.api.combat.ShipAPI`：`isFighter()`—— 以 `hullSize == FIGHTER` 判定战机身份。
 - `com.fs.starfarer.api.impl.campaign.graid.ShipWeaponsGroundRaidObjectivePluginImpl`：地面突袭掠夺生成，按 tier 过滤战机，并以 rarity/tier 参与抽选权重。
 - `com.fs.starfarer.api.loading.FormationType`、`com.fs.starfarer.api.loading.WingRole`：联队队形与战机角色枚举全集。

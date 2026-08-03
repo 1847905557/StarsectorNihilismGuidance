@@ -16,7 +16,7 @@ import com.fs.starfarer.api.util.Misc;
  * 数据所有权：本节新增条件 id {@code GearIn_ore_deposits}，只由本节定义；页面正文
  * 的 CSV 行与本类逐字配套。
  *
- * 行为：apply(id) 以传入的实例 token 为 modifier source 写入两条市场修饰——
+ * 行为：apply(id) 以传入的实例 token 为 modifier source 写入两条市场修饰 ——
  *   1. hazard +0.15（MutableStat，getHazard()）；
  *   2. accessibility +0.10（StatBonus，getAccessibilityMod()，默认值可由
  *      addCondition(id, param) 的 param 覆盖，setParam 在 apply 之前被调用）。

@@ -1,6 +1,6 @@
 # MagicLib 工具：设置与 HUD
 
-本节讲解硬依赖外部库 MagicLib 1.5.1 的四件事——设置接入（`data/config/modSettings.json` 的合并读取与 `MagicSettings` 类型化访问）、FakeBeam（`MagicFakeBeam.spawnFakeBeam` 瞬时伤害伪光束与碰撞助手）、HUD 工具（`MagicUI` 战斗 HUD 状态条与文本/条绘制）与生涯工具（`MagicCampaign` 残骸、碎片场、跳跃点、市场、人物、舰队与目标选取）——并给出一个同时使用四族的完整最小例（五个小类，一角色一文件）。MagicBounty 数据赏金系统、`MagicTrailPlugin` 完整尾迹 API 与 `MagicRenderPlugin` 的精灵渲染（`addBattlespace` / `addObjectspace` / `addScreenspace`）不在本节范围。
+本节讲解硬依赖外部库 MagicLib 1.5.1 的四件事 —— 设置接入（`data/config/modSettings.json` 的合并读取与 `MagicSettings` 类型化访问）、FakeBeam（`MagicFakeBeam.spawnFakeBeam` 瞬时伤害伪光束与碰撞助手）、HUD 工具（`MagicUI` 战斗 HUD 状态条与文本/条绘制）与生涯工具（`MagicCampaign` 残骸、碎片场、跳跃点、市场、人物、舰队与目标选取）—— 并给出一个同时使用四族的完整最小例（五个小类，一角色一文件）。MagicBounty 数据赏金系统、`MagicTrailPlugin` 完整尾迹 API 与 `MagicRenderPlugin` 的精灵渲染（`addBattlespace` / `addObjectspace` / `addScreenspace`）不在本节范围。
 
 *本节预期阅读时间：~25 分钟。*
 
@@ -12,12 +12,12 @@
 
 - 写出 `data/config/modSettings.json` 的段与键（段名 = 自己的 MOD id）。
 - 说出 MagicLib 的合并加载链（`Magic_modPlugin.onApplicationLoad` → `MagicSettings.loadModSettings` → `getMergedJSONForMod`）与读取时机；
-- 背出 `MagicSettings` 各类型读取方法的缺省值 （boolean `false` / string `""` / float、integer `0` / color `Color.RED` / list、map 空集合）与三类 warn 日志位置，识别"设置没生效"的隐蔽症状；
-- 用 `MagicFakeBeam.spawnFakeBeam` 写出从任意坐标射向目标的最小调用，说出三条语义边界——伤害瞬时结算、光束不可被中途物体截断、HIGH_EXPLOSIVE 对装甲全额伤害——以及各自的可观察结果；
+- 背出 `MagicSettings` 各类型读取方法的缺省值 （boolean `false` / string `""` / float、integer `0` / color `Color.RED` / list、map 空集合）与三类 warn 日志位置，识别 "设置没生效" 的隐蔽症状；
+- 用 `MagicFakeBeam.spawnFakeBeam` 写出从任意坐标射向目标的最小调用，说出三条语义边界 —— 伤害瞬时结算、光束不可被中途物体截断、HIGH_EXPLOSIVE 对装甲全额伤害 —— 以及各自的可观察结果；
 - 说出 `getShipCollisionPoint` / `getCollisionPointOnCircumference` 的返回值约定（null / 起点 / 偏移点）与判空要求；
-- 用 `MagicUI.drawInterfaceStatusBar`（带 key 重载）注册战斗 HUD 状态条，说出完整渲染链 （谁绘制、什么时候绘制）、约 5 秒刷新纪律（含暂停时间）、key 唯一性与"只在玩家舰 + HUD 可见时输出"的守卫；
-- 说出 `MagicCampaign` 生涯工具族（残骸 / 碎片场 / 跳跃点 / 市场 / 人物 / 舰队 / 目标选取）与"生涯上下文"要求，用 `createDerelict` / `loadVariant` 写出写侧与读侧写法及判空要求；
-- 从 `starsector.log`、战斗 HUD、战斗画面、生涯存档四个可观察位置复核调用是否真的发生，并把"设置 → 战斗特效 → HUD → 生涯"的调用链走通。
+- 用 `MagicUI.drawInterfaceStatusBar`（带 key 重载）注册战斗 HUD 状态条，说出完整渲染链 （谁绘制、什么时候绘制）、约 5 秒刷新纪律（含暂停时间）、key 唯一性与 "只在玩家舰 + HUD 可见时输出" 的守卫；
+- 说出 `MagicCampaign` 生涯工具族（残骸 / 碎片场 / 跳跃点 / 市场 / 人物 / 舰队 / 目标选取）与 "生涯上下文" 要求，用 `createDerelict` / `loadVariant` 写出写侧与读侧写法及判空要求；
+- 从 `starsector.log`、战斗 HUD、战斗画面、生涯存档四个可观察位置复核调用是否真的发生，并把 "设置 → 战斗特效 → HUD → 生涯" 的调用链走通。
 
 ## 前置知识
 
@@ -96,10 +96,10 @@ public static void loadModSettings() {
 - 读取时机：**MagicLib 的 `onApplicationLoad` 时读一次**，结果缓存在静态字段 `modSettings`；dev 模式下 F8 重载（`onDevModeF8Reload`）会重新读取。
 - 改 `modSettings.json` 后**重启游戏**（或 dev 模式 F8 重载 + 重进战斗）才生效。
 - 若合并解析失败（文件损坏等），`loadModSettings` 写 `fatal` 日志且 `modSettings` 保持 null，`Magic_modPlugin.onApplicationLoad` 随后抛 `ClassNotFoundException`——**启动中止**。
-- dev 模式下（`Global.getSettings().isDevMode()`）`MagicVariables.verbose = true`，各 `getX` 成功读到值时会额外输出 `INFO` 日志 `<modId> , <id> : <value>`——这是核对读取链的第一个日志位置。
+- dev 模式下（`Global.getSettings().isDevMode()`）`MagicVariables.verbose = true`，各 `getX` 成功读到值时会额外输出 `INFO` 日志 `<modId> , <id> : <value>`—— 这是核对读取链的第一个日志位置。
 
-::: tip "设置没生效"的排查顺序
-先看 `starsector.log` 里的 warn 行——三类文案分别对应段缺失、键缺失、类型错误，据此定位写错的段名或键名；再对照下面的缺省值表确认哪些参数正在走缺省。dev 模式下可 F8 重载设置并重进战斗，不必每次都重启游戏。
+::: tip "设置没生效" 的排查顺序
+先看 `starsector.log` 里的 warn 行 —— 三类文案分别对应段缺失、键缺失、类型错误，据此定位写错的段名或键名；再对照下面的缺省值表确认哪些参数正在走缺省。dev 模式下可 F8 重载设置并重进战斗，不必每次都重启游戏。
 :::
 
 ### 读取 API 速查
@@ -125,7 +125,7 @@ public static void loadModSettings() {
 
 `modSettings.json` 是**全局合并**的：段名（第一参）必须用自己 `mod_info.json` 的 id（本节示例 `gear_in`），不要用别人 MOD 的 id 段，也不要在段内使用会被其他 MOD 覆盖的通用键名。
 
-违反的可观察结果：段名写错（如 `gear_industry`）时读取的是那个段的合并结果，本 MOD 的键全部落到"缺省值"分支，每键一条 warn；与别人共用段名时，本 MOD 的键可能与对方同名键互相覆盖——设置"时灵时不灵"且没有任何报错。
+违反的可观察结果：段名写错（如 `gear_industry`）时读取的是那个段的合并结果，本 MOD 的键全部落到 "缺省值" 分支，每键一条 warn；与别人共用段名时，本 MOD 的键可能与对方同名键互相覆盖 —— 设置 "时灵时不灵" 且没有任何报错。
 
 修正：段名与 `mod_info.json` 的 `id` 逐字一致，段内键加 MOD 专属前缀（示例 `beam_width` 等在 `gear_in` 段内即天然隔离）。
 
@@ -137,11 +137,11 @@ public static void loadModSettings() {
 - 段存在但键不存在：`unable to find <id> within <modId> in modSettings.json`
 - 取值抛 `JSONException`（类型不匹配，如把 `[255,0,0]` 字符串当 `getFloat`）：`unable to read content of <modId> in modSettings.json`
 
-**必须**认识到缺省值会参与后续运行语义：`getBoolean` 缺省 `false`、`getColorRGB` 缺省 `Color.RED`、`getFloat` 缺省 `0`。依赖"键存在才有功能"的业务逻辑，在键缺失时会以缺省值静默运行——光束变成红色、状态条消失、开关关闭，日志里只有 warn 行。
+**必须**认识到缺省值会参与后续运行语义：`getBoolean` 缺省 `false`、`getColorRGB` 缺省 `Color.RED`、`getFloat` 缺省 `0`。依赖 "键存在才有功能" 的业务逻辑，在键缺失时会以缺省值静默运行 —— 光束变成红色、状态条消失、开关关闭，日志里只有 warn 行。
 
-违反的可观察结果：漏写一个键，功能照常"运行"但参数是缺省值（颜色 `(255,0,0)`、数值 `0`、布尔 `false`）， `starsector.log` 出现对应 warn 行，没有 ERROR。
+违反的可观察结果：漏写一个键，功能照常 "运行" 但参数是缺省值（颜色 `(255,0,0)`、数值 `0`、布尔 `false`）， `starsector.log` 出现对应 warn 行，没有 ERROR。
 
-修正：对照缺省值表检查 warn 行；业务开关显式写进文件或对缺省结果做显式处理，不要把"缺省值"当真实配置。
+修正：对照缺省值表检查 warn 行；业务开关显式写进文件或对缺省结果做显式处理，不要把 "缺省值" 当真实配置。
 
 ### 规则 3：颜色必须写成 "[r,g,b]" / "[r,g,b,a]" 字符串
 
@@ -149,11 +149,11 @@ public static void loadModSettings() {
 
 写成 JSON 数字数组（`[255,0,0]` 会被 JSON 解析器读成 `JSONArray`）或写成分量数字，都会在 `reqSettings.getString(id)` 处抛 `JSONException` → warn + `Color.RED`。
 
-违反的可观察结果：颜色配置"永远不生效"，读取结果恒为红；日志有 `unable to read content of ...` 或 `unable to find ...` warn 行。修正：值必须是带引号的字符串 `"[210,240,255]"`。
+违反的可观察结果：颜色配置 "永远不生效"，读取结果恒为红；日志有 `unable to read content of ...` 或 `unable to find ...` warn 行。修正：值必须是带引号的字符串 `"[210,240,255]"`。
 
 ### 建议 1：不要在每帧解析，init 时读取一次缓存到字段
 
-`MagicSettings` 的 javadoc 原文警告：虽然方法很快，但"I would advise against trying to parse a JSON file every frame"。
+`MagicSettings` 的 javadoc 原文警告：虽然方法很快，但 "I would advise against trying to parse a JSON file every frame"。
 
 每次调用都做 `modSettings.has(modId)` → `getJSONObject` → `has(id)` → 类型转换的完整链路。
 
@@ -168,7 +168,7 @@ public static void loadModSettings() {
 - 与**原版光束不同，对装甲造成全额伤害** （"Unlike vanilla, it deals full damage to armor, be careful when using HIGH_EXPLOSIVE damage type"）。
 
 ::: info 三条语义边界的共同根源
-伪光束是一条调用内完成的闭合过程：候选查询 → 命中点 → 瞬时结算 → 视觉注册，之后没有任何逐帧机制接管它。因此伤害只能瞬时结算、视觉只能是一段固定直线、伤害类型不经光束折减——三条边界来自同一种"无持续状态"的实现，理解这一点就无需逐条死记。
+伪光束是一条调用内完成的闭合过程：候选查询 → 命中点 → 瞬时结算 → 视觉注册，之后没有任何逐帧机制接管它。因此伤害只能瞬时结算、视觉只能是一段固定直线、伤害类型不经光束折减 —— 三条边界来自同一种 "无持续状态" 的实现，理解这一点就无需逐条死记。
 :::
 
 ### spawnFakeBeam 签名速查
@@ -185,7 +185,7 @@ public static void spawnFakeBeam(
 |---|---|
 | `from` | 光束起点（世界坐标）|
 | `range` / `angle` | 最大射程与方向（度；`MathUtils.getPoint(from, range, angle)` 生成默认终点）|
-| `width` / `full` / `fading` | 视觉宽度、全亮时长、淡出时长（秒）——只影响视觉 |
+| `width` / `full` / `fading` | 视觉宽度、全亮时长、淡出时长（秒）—— 只影响视觉 |
 | `impactSize` | 命中光斑大小 |
 | `core` / `fringe` | 光束核心色 / 边缘色 |
 | `normalDamage` / `type` / `emp` | 伤害量与类型、EMP |
@@ -197,26 +197,26 @@ public static void spawnFakeBeam(
 2. 过滤：`CollisionClass.NONE`（相位等）跳过；舰船分支排除 `source` 自身、`getParentStation() == 自身` 的模块、同 owner 且未熄火的战机；小行星与**敌方**导弹也参与命中。
 3. 命中点：舰船用 `getShipCollisionPoint`（护盾弧感知），其余用 `getCollisionPointOnCircumference`；取**最近**命中点替换光束终点。
 4. 结算：命中时 `engine.applyDamage(target, end, damage, type, emp, false, true, source)` （`bypassShields=false`、`dealsSoftFlux=true`）+ 两枚 `addHitParticle` 命中光斑。
-5. 视觉：`MagicFakeBeamPlugin.addBeam(full, fading, width, from, angle, 距离+10, core, fringe)`——注册光束 sprite。
+5. 视觉：`MagicFakeBeamPlugin.addBeam(full, fading, width, from, angle, 距离+10, core, fringe)`—— 注册光束 sprite。
    - 光束 sprite 由 MagicFakeBeamPlugin 在 `renderInWorldCoords` 里逐帧渲染（`org.magiclib.plugins.MagicFakeBeamPlugin`）。
 
 ### 规则 4：伤害在调用内瞬时结算，持续视觉时间 ≠ 持续伤害时间
 
 `spawnFakeBeam` 的 `applyDamage` 在**调用返回前**已经完成；`full` / `fading` 只控制光束 sprite 的可见时长 （`MagicFakeBeamPlugin` 按 `FULL` 倒计时淡出）。
 
-违反的可观察结果：光束"看起来还在"的 0.5 秒里敌人已经承受完全部伤害——把伪光束当持续伤害光束用，伤害节奏完全错误 （每 2 秒一发 60 伤害的伪光束 DPS 是 30 而不是视觉暗示的数值）。修正：需要持续伤害用真光束武器（原版 `BeamAPI`），伪光束只用于 burst / FX。
+违反的可观察结果：光束 "看起来还在" 的 0.5 秒里敌人已经承受完全部伤害 —— 把伪光束当持续伤害光束用，伤害节奏完全错误 （每 2 秒一发 60 伤害的伪光束 DPS 是 30 而不是视觉暗示的数值）。修正：需要持续伤害用真光束武器（原版 `BeamAPI`），伪光束只用于 burst / FX。
 
 ### 规则 5：光束视觉不可被中途物体截断，适合短促使用
 
-伪光束是**单段直线** sprite，没有"被遮挡物截断"的概念；官方 javadoc 因此建议短时长。
+伪光束是**单段直线** sprite，没有 "被遮挡物截断" 的概念；官方 javadoc 因此建议短时长。
 
-违反的可观察结果：一发长视觉时长（如 `full=2`）的伪光束，舰船从中间穿过时光束视觉不中断、也没有二次命中 ——与玩家对原版光束的直觉冲突。修正：视觉时长保持短促（示例 `full=0.15` / `fading=0.4`）；需要可截断的持续光束用真光束。
+违反的可观察结果：一发长视觉时长（如 `full=2`）的伪光束，舰船从中间穿过时光束视觉不中断、也没有二次命中 —— 与玩家对原版光束的直觉冲突。修正：视觉时长保持短促（示例 `full=0.15` / `fading=0.4`）；需要可截断的持续光束用真光束。
 
 ### 规则 6：HIGH_EXPLOSIVE 对装甲全额伤害
 
-原版光束对装甲有伤害折减，`spawnFakeBeam` 的 `applyDamage` 不折减——官方 javadoc 明确警告 HE 类型要小心。
+原版光束对装甲有伤害折减，`spawnFakeBeam` 的 `applyDamage` 不折减 —— 官方 javadoc 明确警告 HE 类型要小心。
 
-违反的可观察结果：同一门标称 DPS 的 HE 伪光束比原版 HE 光束对重甲舰船的剥甲速度快得多（装甲段被更快击穿）；用 HE 伪光束做"看起来像光束"的武器会明显超模。修正：伪光束尽量用 ENERGY / KINETIC，或用 HE 时把标称伤害压到与设计 DPS 匹配。
+违反的可观察结果：同一门标称 DPS 的 HE 伪光束比原版 HE 光束对重甲舰船的剥甲速度快得多（装甲段被更快击穿）；用 HE 伪光束做 "看起来像光束" 的武器会明显超模。修正：伪光束尽量用 ENERGY / KINETIC，或用 HE 时把标称伤害压到与设计 DPS 匹配。
 
 ::: warning 两大常见误用
 **把伪光束当持续伤害光束**：视觉还在、伤害已全部结算，DPS 与视觉暗示不符（规则 4）。**把伪光束当可截断光束**：光束被舰船穿过时视觉不中断、也无二次命中，与直觉冲突（规则 5）。需要持续伤害或可截断视觉时，改用原版真光束（`BeamAPI`）。
@@ -265,7 +265,7 @@ public static void spawnFakeBeam(
 
 - **纹理要求**：`MagicTrailPlugin` 类 javadoc 要求参与尾迹的 sprite 宽高都必须是 2 的倍数（16 / 32 / 64 / 128 等），且是垂直方向的贴图。
 - **ID 复用纪律（规则 9）**：`getUniqueID()` 返回的 ID 必须在同一条尾迹生命周期内**保存并复用**—— 每帧生成新 ID → 每条都是独立的 1 片段尾迹，**表现为多条无法连接的短条**；同一条 trail 中途更换 sprite 会拆成不同的 texture tracker。
-- `spawnAdvancedFakeBeam` 内部对每条光束取两次 `getUniqueID()`（核心与边缘各一），不需要自己管理 ID——但若您直接用 `MagicTrailPlugin` 做尾迹，必须自己遵守上述纪律。
+- `spawnAdvancedFakeBeam` 内部对每条光束取两次 `getUniqueID()`（核心与边缘各一），不需要自己管理 ID—— 但若您直接用 `MagicTrailPlugin` 做尾迹，必须自己遵守上述纪律。
 
 ## MagicUI：战斗 HUD 工具
 
@@ -273,7 +273,7 @@ public static void spawnFakeBeam(
 
 它基于 LazyLib 的 `LazyFont`（Victor 字体，静态块加载 `graphics/fonts/victor14.fnt` / `victor10.fnt`）。
 
-### 状态条渲染链（先记住"谁在画"）
+### 状态条渲染链（先记住 "谁在画"）
 
 `drawInterfaceStatusBar`（带 key 重载）**只注册数据**：把 `StatusBarData` 写进静态表 `statusBars`。真正的绘制由 MagicLib 的另一条链完成：
 
@@ -283,7 +283,7 @@ public static void spawnFakeBeam(
 3. `drawStatusBarMap` 遍历 `statusBars`，绘制属于当前玩家舰的条，并**移除未刷新的条**。
    - 移除判据：`data.getShip() != playerShip || getTotalElapsedTime(true) - data.getLastRefreshed() >= 5f`。
 
-`MagicRenderPlugin.advance` 是 `EveryFrameCombatPlugin.advance`（暂停时也照常调用），且移除判据用 `getTotalElapsedTime(true)`（含暂停的时间）——所以**暂停期间时间照算**。
+`MagicRenderPlugin.advance` 是 `EveryFrameCombatPlugin.advance`（暂停时也照常调用），且移除判据用 `getTotalElapsedTime(true)`（含暂停的时间）—— 所以**暂停期间时间照算**。
 
 ### 速查表
 
@@ -307,17 +307,17 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 
 "This must be called every couple of seconds to remain active" （`drawStatusBarMap` 的实际移除阈值为 `getTotalElapsedTime(true)` 差值 ≥ 5 秒）。
 
-违反的可观察结果：key 与其他 MOD 撞车 → 两条数据互相覆盖，数字/填充"互相打架"；停止刷新（或暂停守卫把刷新挡掉）约 5 秒后状态条**消失**，恢复刷新才回来——暂停 10 秒再恢复，条已经没了。
+违反的可观察结果：key 与其他 MOD 撞车 → 两条数据互相覆盖，数字/填充 "互相打架"；停止刷新（或暂停守卫把刷新挡掉）约 5 秒后状态条**消失**，恢复刷新才回来 —— 暂停 10 秒再恢复，条已经没了。
 
 修正：key 用本 MOD 专属前缀（示例 `gear_in_beam_charge`）；刷新调用放在暂停守卫**之前**（示例 `advance` 写法），暂停期间也保持刷新。
 
-::: warning 状态条"过一会儿消失"
+::: warning 状态条 "过一会儿消失"
 最常见的触发是刷新调用被暂停守卫挡住：暂停超过约 5 秒（含暂停的游戏时间）后 `drawStatusBarMap` 把该条移除，恢复刷新才回来（规则 10）。
 
-另一个常见触发是 key 撞车——两条数据共用同一 key，后写覆盖先写。修正：刷新调用放在暂停守卫**之前**（示例写法）；key 用本 MOD 专属前缀。
+另一个常见触发是 key 撞车 —— 两条数据共用同一 key，后写覆盖先写。修正：刷新调用放在暂停守卫**之前**（示例写法）；key 用本 MOD 专属前缀。
 :::
 
-### 规则 11：绘制方法只在"ship 是玩家舰且 HUD 可见"时输出，非玩家舰静默跳过
+### 规则 11：绘制方法只在 "ship 是玩家舰且 HUD 可见" 时输出，非玩家舰静默跳过
 
 `drawInterfaceStatusBar` / `drawSystemBar` / `drawHUDStatusBar` / `addStatusText` 等开头都有双重守卫：
 
@@ -325,7 +325,7 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 
 `getCombatUI() == null || !isUIShowingHUD()` → 直接 return （如 `drawInterfaceStatusBar`；只在玩家舰且 HUD 可见时输出）。
 
-违反的可观察结果：给非玩家舰传 `ship`，状态条/系统条完全不出现，**没有任何报错**——"别人舰上画了条"是不可能的。修正：只对玩家舰调用；需要给敌方舰显示信息时，用 `drawHUDStatusBar` 的 offset 参数锚定在玩家舰屏位置（示例没有这个需求）。
+违反的可观察结果：给非玩家舰传 `ship`，状态条/系统条完全不出现，**没有任何报错**——"别人舰上画了条" 是不可能的。修正：只对玩家舰调用；需要给敌方舰显示信息时，用 `drawHUDStatusBar` 的 offset 参数锚定在玩家舰屏位置（示例没有这个需求）。
 
 ### 规则 12：自管 OpenGL 栈的入口必须成对使用
 
@@ -335,13 +335,13 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 
 `setViewportOpenGLCalls(true)` 后必须复位 `false` （javadoc 原话 "Remember to UNSET THIS after your rendering"）。
 
-违反的可观察结果：开栈后没有关闭，后续 HUD 或世界渲染的投影/混合状态被污染——画面出现错位、全屏闪烁或异常混合的"脏渲染"，且只在某些界面状态下出现。修正：一律成对使用；优先用方法内自管栈的重载（示例只用 `drawInterfaceStatusBar`，不需要手动开栈）。
+违反的可观察结果：开栈后没有关闭，后续 HUD 或世界渲染的投影/混合状态被污染 —— 画面出现错位、全屏闪烁或异常混合的 "脏渲染"，且只在某些界面状态下出现。修正：一律成对使用；优先用方法内自管栈的重载（示例只用 `drawInterfaceStatusBar`，不需要手动开栈）。
 
 ## MagicCampaign：生涯工具
 
 `MagicCampaign`（`org.magiclib.util.MagicCampaign`）提供生涯层的辅助工具族。
 
-所有写侧入口都以 `Global.getSector()` 与**已加入星区**的实体为操作对象，因此**只能在生涯（campaign）上下文调用**——战役（mission）战斗与主菜单没有生涯数据 （`Global` 生命周期：生涯启动/读档后才非 null）。
+所有写侧入口都以 `Global.getSector()` 与**已加入星区**的实体为操作对象，因此**只能在生涯（campaign）上下文调用**—— 战役（mission）战斗与主菜单没有生涯数据 （`Global` 生命周期：生涯启动/读档后才非 null）。
 
 ### 速查表
 
@@ -349,7 +349,7 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 |---|---|---|
 | `createFleetBuilder()` | `MagicFleetBuilder` 链式生成舰队（`setFleetName` / `setFleetFaction` / `setFlagshipVariant` / `setCaptain` / `setAssignment` / `create()` 等）| 需要 sector（生成后 `spawnFleet` 式加入）|
 | `createCaptainBuilder(String factionId)` | `MagicCaptainBuilder` 链式生成人物（`setFirstName` / `setGender` / `setRankId` / `setPostId` / `create()` 等）| 无硬性 sector 依赖，但产物供生涯对象使用 |
-| `loadVariant(String path)` | 从 `.variant` 文件解析 `ShipVariantAPI`（用于"需要不同 MOD 加载"的变体）；解析失败 → **warn 日志 + 返回 null**；成功时自动加 `Tags.VARIANT_ALWAYS_RETAIN_SMODS_ON_SALVAGE` | 只依赖 `SettingsAPI`，任意场景可调 |
+| `loadVariant(String path)` | 从 `.variant` 文件解析 `ShipVariantAPI`（用于 "需要不同 MOD 加载" 的变体）；解析失败 → **warn 日志 + 返回 null**；成功时自动加 `Tags.VARIANT_ALWAYS_RETAIN_SMODS_ON_SALVAGE` | 只依赖 `SettingsAPI`，任意场景可调 |
 | `spawnFleet(fleet, spawnLocation, assignment, target, isImportant, transponderOn, verbose)` | 舰队入点 + 任务 + 重要/应答机标记（verbose 时打印两行日志）| sector 必选 |
 | `hyperspaceCleanup(StarSystemAPI)` | 清除星系周围超空间云（`NebulaEditor.clearArc`）| 星系存在即可 |
 | `placeOnStableOrbit(object, spin)` | 就近匹配已有轨道（无参照时绕星系中心）；超空间内退化为固定位置 | sector 实体 |
@@ -379,9 +379,9 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 
 九参重载的 `recoverable` 参数控制**打捞 special** 是否写入（能否在打捞面板回收舰船）；十参重载追加的 `isRecoverable == false` 会 `addTag(Tags.UNRECOVERABLE)`。
 
-违反的可观察结果：想生成"不可打捞"的残骸只传 `recoverable=false` 时，舰船本体不可回收但可能仍保留其他可打捞内容； `isRecoverable=false` 的残骸在打捞流程中按原版 `UNRECOVERABLE` 语义处理（不可作为舰船回收）。
+违反的可观察结果：想生成 "不可打捞" 的残骸只传 `recoverable=false` 时，舰船本体不可回收但可能仍保留其他可打捞内容； `isRecoverable=false` 的残骸在打捞流程中按原版 `UNRECOVERABLE` 语义处理（不可作为舰船回收）。
 
-修正：两个布尔分清——`recoverable` 控制打捞 special 写入，`isRecoverable` 控制不可回收 tag。
+修正：两个布尔分清 ——`recoverable` 控制打捞 special 写入，`isRecoverable` 控制不可回收 tag。
 
 ### 规则 15：loadVariant 解析失败返回 null，使用前必须判空
 
@@ -418,17 +418,17 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 
 | # | 强度 | 规则 | 违反的可观察结果 |
 |---|---|---|---|
-| 1 | **必须** | `modSettings.json` 段名必须是自己 MOD 的 id，段内键不与他人冲突（文件是全局合并的）| 段名写错 → 键全部缺省值 + 每键一条 warn；与他段共用 → 键互相覆盖、设置"时灵时不灵"，无报错 |
+| 1 | **必须** | `modSettings.json` 段名必须是自己 MOD 的 id，段内键不与他人冲突（文件是全局合并的）| 段名写错 → 键全部缺省值 + 每键一条 warn；与他段共用 → 键互相覆盖、设置 "时灵时不灵"，无报错 |
 | 2 | **必须** | 键/段缺失或类型错误不抛异常，返回类型缺省值并写 warn；缺省值会参与运行语义，不得依赖缺省值表达业务意图 | 漏键时功能以缺省值静默运行（颜色红、数值 0、布尔 false），日志只有 warn 行 |
 | 3 | **必须** | 颜色值必须是 `"[r,g,b]"` / `"[r,g,b,a]"` 字符串 | 写成数字数组 → `JSONException` → warn + 恒为 `Color.RED` |
-| 4 | **必须** | `spawnFakeBeam` 伤害在调用内瞬时结算；持续视觉时间 ≠ 持续伤害时间 | 光束"还在"时伤害已全部结算，持续伤害预期落空 |
+| 4 | **必须** | `spawnFakeBeam` 伤害在调用内瞬时结算；持续视觉时间 ≠ 持续伤害时间 | 光束 "还在" 时伤害已全部结算，持续伤害预期落空 |
 | 5 | **必须** | 伪光束视觉不可被中途物体截断，适合短促 burst / FX | 长视觉时长光束被穿过时不中断、无二次命中，与直觉冲突 |
 | 6 | **必须** | HIGH_EXPLOSIVE 对装甲全额伤害（官方 javadoc 警告）| HE 伪光束剥甲速度显著高于同标称原版光束，容易超模 |
 | 7 | **必须** | 视觉由 MagicLib 注册的 `MagicFakeBeamPlugin` 渲染；使用方 MOD 不得重复注册同名插件 | 插件未实例化时伤害照常、光束视觉缺失；覆盖 settings 键后渲染异常 |
 | 8 | **必须** | `getShipCollisionPoint` / `getCollisionPointOnCircumference` 可能返回 null，使用前必须判空 | 线段不命中时 NPE（`MathUtils.getPoint(null, ...)`）或 NaN 坐标 |
 | 9 | **必须** | `MagicTrailPlugin.getUniqueID()` 的 ID 必须跨帧复用；同一条 trail 不得中途换 sprite | 每帧新 ID → 多条无法连接的短条；换 sprite → 拆成两条 trail |
 | 10 | **必须** | 状态条 key 对本 MOD 唯一；必须约 5 秒内刷新一次（含暂停时间，`getTotalElapsedTime(true)`）| 撞 key → 数据互相覆盖；停止刷新（含暂停守卫挡住）约 5 秒后条消失 |
-| 11 | **必须** | HUD 绘制只在"玩家舰 + HUD 可见"时输出，非玩家舰静默跳过 | 非玩家舰上状态条/系统条不出现，无任何报错 |
+| 11 | **必须** | HUD 绘制只在 "玩家舰 + HUD 可见" 时输出，非玩家舰静默跳过 | 非玩家舰上状态条/系统条不出现，无任何报错 |
 | 12 | **必须** | 自管 OpenGL 栈入口（`openGL11ForText` / `openGLForMiscWithinViewport` / `setViewportOpenGLCalls(true)`）必须成对/复位 | 后续 HUD 与世界渲染投影/混合状态被污染，画面错位或异常混合 |
 | 13 | **必须** | 生涯工具只能在生涯上下文调用，先判 `Global.getSector() == null` | 战役/主菜单调用 `findSuitableTarget` / `createDerelict` → NPE |
 | 14 | **必须** | `createDerelict` 十参重载 `isRecoverable=false` → 追加 `Tags.UNRECOVERABLE`（recoverable 与 isRecoverable 是两个布尔）| 只传 `recoverable=false` 时残骸仍可被回收/语义错位 |
@@ -438,7 +438,7 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 
 ## 完整最小例
 
-本节示例由五个小类组成：原混装多个职责的类按"一文件一角色"约定拆分为设置接入、伪光束、状态条、生涯工具与薄入口类接入五份（全部位于包 `data.scripts.gearin.lib`，归本节所有）。
+本节示例由五个小类组成：原混装多个职责的类按 "一文件一角色" 约定拆分为设置接入、伪光束、状态条、生涯工具与薄入口类接入五份（全部位于包 `data.scripts.gearin.lib`，归本节所有）。
 
 新增数据文件 `data/config/modSettings.json`（归本节所有，段 `gear_in`）；新增战斗 HUD 状态条 key `gear_in_beam_charge`（归本节所有）。不新增 PNG 资产。
 
@@ -489,7 +489,7 @@ MagicLib 按已启用 MOD 合并同路径文件，本 MOD 只提交自己的 `ge
 
 ### GearInMagicSettings：设置接入（MagicSettings）
 
-职责：从 `data/config/modSettings.json` 的 `gear_in` 段读取光束与 HUD 配置，构造时缓存一次、不在每帧解析（建议 1）；键缺失返回类型缺省值并写 warn 日志，不抛异常——缺省值会参与后续运行语义。
+职责：从 `data/config/modSettings.json` 的 `gear_in` 段读取光束与 HUD 配置，构造时缓存一次、不在每帧解析（建议 1）；键缺失返回类型缺省值并写 warn 日志，不抛异常 —— 缺省值会参与后续运行语义。
 
 绑定：由接入类在字段初始化时创建（`new GearInMagicSettings()`），不需要注册入口；设置读取发生在 MagicLib 的 `onApplicationLoad` 之后（游戏启动时已缓存），因此构造期读取与战斗 `init` 时序等价。
 
@@ -507,7 +507,7 @@ import com.fs.starfarer.api.Global;
 /** 设置接入（MagicSettings）：从 data/config/modSettings.json 的 "gear_in" 段读取
  * 光束与 HUD 配置，构造时缓存一次、不在每帧解析（MagicSettings javadoc 建议）。
  * 键缺失返回类型缺省值（false / 0 / Color.RED / 空集合）并写 warn 日志，不抛
- * 异常——缺省值会参与后续运行语义，业务开关不要依赖缺省值。 */
+ * 异常 —— 缺省值会参与后续运行语义，业务开关不要依赖缺省值。 */
 public class GearInMagicSettings {
 
     private static final Logger LOG = Global.getLogger(GearInMagicSettings.class);
@@ -558,7 +558,7 @@ public class GearInMagicSettings {
 
 ### GearInBeamCaster：伪光束发射（MagicFakeBeam）
 
-职责：每 `BEAM_INTERVAL` 秒向最近可见敌舰发射一条伪光束——伤害在调用内瞬时结算，视觉时长独立（规则 4）；持有充能进度与发射计数，供状态条读取。
+职责：每 `BEAM_INTERVAL` 秒向最近可见敌舰发射一条伪光束 —— 伤害在调用内瞬时结算，视觉时长独立（规则 4）；持有充能进度与发射计数，供状态条读取。
 
 绑定：由接入类创建并注入引擎（`beam.init(engine)`），`advance(amount)` 由接入类在暂停守卫之后每帧转发；发射目标用 `AIUtils.getNearestEnemy` 并判空。
 
@@ -647,7 +647,7 @@ public class GearInBeamCaster {
 
 ### GearInHudBar：HUD 状态条（MagicUI）
 
-职责：用固定 key `gear_in_beam_charge` 刷新玩家舰状态条——只注册数据，绘制由 MagicLib 的渲染链完成 （`MagicRenderPlugin` → `drawStatusBarMap`）；填充进度 = 光束充能，颜色复用光束颜色（改配置 → 光束与状态条一起变色）。
+职责：用固定 key `gear_in_beam_charge` 刷新玩家舰状态条 —— 只注册数据，绘制由 MagicLib 的渲染链完成 （`MagicRenderPlugin` → `drawStatusBarMap`）；填充进度 = 光束充能，颜色复用光束颜色（改配置 → 光束与状态条一起变色）。
 
 绑定：由接入类创建（持有光束发射器与设置的引用），`refresh(engine)` 由接入类在暂停守卫**之前**每帧调用（规则 10 的正面写法）。
 
@@ -697,7 +697,7 @@ public class GearInHudBar {
 
 ### GearInCampaignTools：生涯工具消费（MagicCampaign）
 
-职责：静态生涯工具消费面——`logCampaignInfo` 是查询面演示 （先判 `Global.getSector()`，战役场景输出 `no sector (not in campaign)`）；
+职责：静态生涯工具消费面 ——`logCampaignInfo` 是查询面演示 （先判 `Global.getSector()`，战役场景输出 `no sector (not in campaign)`）；
 
 `spawnDerelictExample` 是写侧参考写法（`createDerelict` 九参，`recoverable=true` 写打捞 special，判空 + warn 而非抛错）。
 
@@ -765,9 +765,9 @@ public class GearInCampaignTools {
 
 ### GearInMagicWiring：薄入口类接入
 
-职责：把设置、伪光束与 HUD 状态条三个工具族接进一场战斗——创建三个工具类、把引擎注入光束发射器、按帧转发 `advance` 并执行暂停守卫；生涯工具不在这里接入（调用方是生涯脚本）。
+职责：把设置、伪光束与 HUD 状态条三个工具族接进一场战斗 —— 创建三个工具类、把引擎注入光束发射器、按帧转发 `advance` 并执行暂停守卫；生涯工具不在这里接入（调用方是生涯脚本）。
 
-绑定：注册入口——由既有战斗插件在 `init()` 中 `engine.addPlugin(new GearInMagicWiring())` 注册（战斗插件模型）；
+绑定：注册入口 —— 由既有战斗插件在 `init()` 中 `engine.addPlugin(new GearInMagicWiring())` 注册（战斗插件模型）；
 
 `init` 里同时把引擎注入光束发射器并调用 `GearInCampaignTools.logCampaignInfo()`； `advance` 中先刷新状态条（暂停守卫之前）、再执行暂停守卫、最后转发光束充能。
 
@@ -817,15 +817,15 @@ public class GearInMagicWiring extends BaseEveryFrameCombatPlugin {
 
 数据流完整流程：`GearInMagicSettings` 构造期读设置（设置链）；
 
-`GearInBeamCaster` 每 2 秒向最近敌舰发射伪光束（FakeBeam 链，`full` / `fading` 来自设置——伤害瞬时、视觉时长独立，规则 4；`source` 传玩家舰）；
+`GearInBeamCaster` 每 2 秒向最近敌舰发射伪光束（FakeBeam 链，`full` / `fading` 来自设置 —— 伤害瞬时、视觉时长独立，规则 4；`source` 传玩家舰）；
 
 `GearInHudBar` 用固定 key 刷新状态条，填充进度 = 充能值、颜色复用光束颜色，刷新在暂停守卫之前（规则 10 的正面写法）；
 
-`GearInCampaignTools.logCampaignInfo` 先判 `Global.getSector()`（规则 13）——战役场景输出 `no sector (not in campaign)`； `spawnDerelictExample` 是写侧参考写法，由生涯脚本调用，战斗插件本身不调用。
+`GearInCampaignTools.logCampaignInfo` 先判 `Global.getSector()`（规则 13）—— 战役场景输出 `no sector (not in campaign)`； `spawnDerelictExample` 是写侧参考写法，由生涯脚本调用，战斗插件本身不调用。
 
 日志前缀 `GearIn magic ...` 不是 strings key，只进 `starsector.log`。
 
-### 绑定与接入片段（工程片段——本节不改动所有者文件）
+### 绑定与接入片段（工程片段 —— 本节不改动所有者文件）
 
 ```java
     // 战斗侧：在测试战役的战斗入口中（或既有战斗插件 init() 里）追加：
@@ -858,7 +858,7 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/lib/` 下的五个类（可用 `jar tf` 核对）。
 
-本节源码与 fixture 逐字一致（`tutorial-fixtures/units/C12-S04/` 下五个类），fixture 编译验收命令见"预期结果"。
+本节源码与 fixture 逐字一致（`tutorial-fixtures/units/C12-S04/` 下五个类），fixture 编译验收命令见 "预期结果"。
 
 ### 验证方案（基于本例）
 
@@ -875,16 +875,16 @@ gradle jar
    - 核对 `starsector.log` 的 `GearIn magic settings: ...`（与 `modSettings.json` 一致）。
    - 核对 `GearIn magic campaign: no sector (not in campaign)`，无 `gear_in` 引起的 `ERROR`。
 4. 光束与 HUD：观察每 2 秒一条蓝色光束射向最近敌舰（约 0.55 秒内消失）、命中光斑；HUD 出现 `Beam charge` 状态条，填充 0→1 循环、右侧数字递增；`GearIn magic beam: #N ...` 日志同步。
-5. 暂停：按空格暂停 10 秒——无新光束日志，状态条保持可见（暂停中也刷新）；恢复后充能与发射继续。
-6. 变更验证·设置：改 `beam_width` / `beam_color_core` / `beam_color_fringe` 后重启进战斗—— 光束粗细/颜色、状态条颜色、`settings` 日志同步变化；改回后恢复（改设置必须重启游戏）。
-7. 变更验证·HUD 开关：`hud_enabled=false` 重启进战斗——状态条消失、光束照常；改回后恢复。
+5. 暂停：按空格暂停 10 秒 —— 无新光束日志，状态条保持可见（暂停中也刷新）；恢复后充能与发射继续。
+6. 变更验证·设置：改 `beam_width` / `beam_color_core` / `beam_color_fringe` 后重启进战斗 —— 光束粗细/颜色、状态条颜色、`settings` 日志同步变化；改回后恢复（改设置必须重启游戏）。
+7. 变更验证·HUD 开关：`hud_enabled=false` 重启进战斗 —— 状态条消失、光束照常；改回后恢复。
 8. 敌全灭：清空敌方后输出 `GearIn magic beam: no enemy in sight`，无 `ERROR`。
-9. 生涯查询：新开一局生涯或读档——`starsector.log` 出现 `GearIn magic campaign: sectorSize=... systems=... markets=...`。
-10. 生涯写侧（可选）：接入生成器片段后新档——`GearIn` 星系 `GearIn Prime` 轨道出现 `hound` 残骸（可打捞回收），日志 `GearIn magic campaign: derelict ... orbiting GearIn_planet1`。
+9. 生涯查询：新开一局生涯或读档 ——`starsector.log` 出现 `GearIn magic campaign: sectorSize=... systems=... markets=...`。
+10. 生涯写侧（可选）：接入生成器片段后新档 ——`GearIn` 星系 `GearIn Prime` 轨道出现 `hound` 残骸（可打捞回收），日志 `GearIn magic campaign: derelict ... orbiting GearIn_planet1`。
 11. 故障注入·段名：`modSettings.json` 段名改为 `gear_industry` 后重启进战斗。
    - 11 条 warn + `settings` 行全缺省值（`hud=false`、`width=0.0`、`core=(255,0,0)`、`tags=[]`），状态条消失、光束变红变细。
    - 改回后恢复。
-12. 故障注入·不刷新：注释接入类中的 `hud.refresh(...)` 调用后进战斗——状态条约 5 秒后消失；改回后恢复。
+12. 故障注入·不刷新：注释接入类中的 `hud.refresh(...)` 调用后进战斗 —— 状态条约 5 秒后消失；改回后恢复。
 
 **通过信号**
 
@@ -911,22 +911,22 @@ GearIn magic settings: hud=true width=12.0 range=900.0 damage=60.0 emp=25.0 full
    - 画面上从玩家舰到最近敌舰出现一条蓝色（210,240,255 核心 / 60,120,255 边缘）光束，命中点有光斑。
    - 光束在约 0.55 秒内（0.15 全亮 + 0.4 淡出）消失。
 5. **HUD 状态条**：HUD 上出现一条 `Beam charge` 状态条（左侧文字 + 右侧递增数字），填充从 0 平滑涨到 1 后归零（每次光束发射）；填充色与边框色与光束颜色一致。
-6. **暂停行为**：按空格暂停——**没有**新的 `GearIn magic beam:` 日志（充能停摆），状态条**仍然可见** （示例在暂停时也刷新；与 LazyLib 主题示例的"暂停即停摆"姿态相反，这里是"暂停保持刷新"的刻意设计）；恢复后充能与发射继续。
+6. **暂停行为**：按空格暂停 ——**没有**新的 `GearIn magic beam:` 日志（充能停摆），状态条**仍然可见** （示例在暂停时也刷新；与 LazyLib 主题示例的 "暂停即停摆" 姿态相反，这里是 "暂停保持刷新" 的刻意设计）；恢复后充能与发射继续。
 7. **变更验证（设置）**：把 `modSettings.json` 的 `beam_width` 改为 `24.0`、`beam_color_core` 改为 `"[255,0,0]"`、`beam_color_fringe` 改为 `"[200,0,0]"`，重启游戏进战斗。
    - `settings` 日志行的 `width=24.0`、`core=(255,0,0)`，光束变粗变红，状态条填充/边框变红。
    - 改回后恢复。
    - 注意：设置只在 MagicLib 的 `onApplicationLoad` 读取，**必须重启游戏**（或 dev 模式 F8 重载 + 重进战斗）。
-8. **变更验证（HUD 开关）**：把 `hud_enabled` 改为 `false` 重启进战斗——状态条消失，但光束照常发射（`hud_enabled` 只控制状态条，`fireBeam` 不受它影响）；改回后恢复。
+8. **变更验证（HUD 开关）**：把 `hud_enabled` 改为 `false` 重启进战斗 —— 状态条消失，但光束照常发射（`hud_enabled` 只控制状态条，`fireBeam` 不受它影响）；改回后恢复。
 9. **敌全灭**：清空敌方后 `GearIn magic beam: no enemy in sight`，无 `ERROR`；状态条仍在（填充照常循环）。
 10. **生涯查询**：新开一局生涯或读档，`starsector.log` 出现一行 `GearIn magic campaign: sectorSize=<星区范围> systems=<星系数> markets=<市场数>`（数值随存档变化）。
    - 战役场景没有这行（只有 `no sector (not in campaign)`）。
-11. **生涯写侧（可选接入后）**：接入生成器片段后新档——`GearIn` 星系 `GearIn Prime` 轨道上出现一艘 `hound` 残骸。
+11. **生涯写侧（可选接入后）**：接入生成器片段后新档 ——`GearIn` 星系 `GearIn Prime` 轨道上出现一艘 `hound` 残骸。
    - `starsector.log` 有 `GearIn magic campaign: derelict <id> orbiting GearIn_planet1`；靠近残骸可打捞回收。
 12. **故障注入（段名）**：把 `modSettings.json` 的段名 `gear_in` 改成 `gear_industry` 后重启进战斗。
    - 日志出现 11 条 warn（每键一条 `unable to find <id> within gear_industry in modSettings.json`）。
    - `settings` 行输出全缺省值（`hud=false`、`width=0.0`、`core=(255,0,0)`、`tags=[]`），状态条消失（`hudEnabled=false`）、光束变红变细（width 0）。
    - 改回后恢复（规则 1/2 的注入验证）。
-13. **故障注入（不刷新）**：注释接入类中的 `hud.refresh(...)` 调用后进战斗——状态条出现后约 5 秒消失（`drawStatusBarMap` 超时移除），恢复调用后条回来（规则 10 的注入验证）。
+13. **故障注入（不刷新）**：注释接入类中的 `hud.refresh(...)` 调用后进战斗 —— 状态条出现后约 5 秒消失（`drawStatusBarMap` 超时移除），恢复调用后条回来（规则 10 的注入验证）。
 
 静态自查：`modSettings.json` 为 UTF-8 无 BOM；
 
@@ -947,26 +947,26 @@ GearIn magic settings: hud=true width=12.0 range=900.0 damage=60.0 emp=25.0 full
 
 1. **设置没生效，但没有任何报错**。
   - 触发：`modSettings.json` 的段名或键名拼错。
-  - 可观察：功能照常"运行"，但参数是缺省值（光束红色、宽度 0、`hud=false` 状态条消失）。
+  - 可观察：功能照常 "运行"，但参数是缺省值（光束红色、宽度 0、`hud=false` 状态条消失）。
   - 可观察：`starsector.log` 有 warn 行 `unable to find <id> within <modId> in modSettings.json`（段名错时是 `unable to find <modId> in modSettings.json`）。
   - 原因：`MagicSettings` 缺键不抛异常、返回类型缺省值（规则 2）。
   - 修正：先看 warn 行定位段/键，再对照缺省值表确认哪些参数在走缺省。
-2. **颜色配置"永远不生效"，读取结果恒为红**。
+2. **颜色配置 "永远不生效"，读取结果恒为红**。
   - 触发：颜色值写成 JSON 数字数组（`[210,240,255]` 不带引号）或写成多个键。
   - 可观察：`settings` 日志行 `core=(255,0,0)`，warn 行 `unable to read content of gear_in in modSettings.json` 或 `unable to find ...`。
   - 原因：`getColorRGB` 用 `getString` 读、`toColor3` 按 `"[r,g,b]"` 字符串解析（规则 3，`org.magiclib.util.MagicSettings`）。
   - 修正：写成带引号的 `"[210,240,255]"`。
 3. **光束视觉还在，但敌人已经吃完了全部伤害**。
   - 触发：把伪光束当持续伤害光束用（长 `full`/`fading`）。
-  - 可观察：0.5 秒的光束"持续期"里伤害在发射瞬间全部结算，后续帧没有伤害。
+  - 可观察：0.5 秒的光束 "持续期" 里伤害在发射瞬间全部结算，后续帧没有伤害。
   - 原因：`spawnFakeBeam` 在调用内 `applyDamage` 一次（规则 4；`org.magiclib.util.MagicFakeBeam`）。
   - 修正：伪光束只用于 burst / FX；持续伤害用原版真光束（`BeamAPI`）。
-4. **HE 伪光束打装甲"太猛"**。
+4. **HE 伪光束打装甲 "太猛"**。
   - 触发：`DamageType.HIGH_EXPLOSIVE` + 高伤害。
   - 可观察：重甲敌舰被快速剥甲，装甲伤害明显高于同标称原版光束。
   - 原因：伪光束对装甲全额伤害、无原版折减（规则 6，官方 javadoc 警告）。
   - 修正：用 ENERGY / KINETIC，或用 HE 时压低标称伤害。
-5. **光束被穿过的舰船"截断"，与预期不符**。
+5. **光束被穿过的舰船 "截断"，与预期不符**。
   - 触发：长视觉时长光束 + 敌我舰船横穿。
   - 可观察：光束视觉不中断，穿过物体不产生二次命中。
   - 原因：伪光束是单段直线 sprite，没有截断语义（规则 5）。
@@ -978,7 +978,7 @@ GearIn magic settings: hud=true width=12.0 range=900.0 damage=60.0 emp=25.0 full
   - 修正：每帧（含暂停）刷新；刷新放在暂停守卫之前（示例写法）。
 7. **状态条 key 撞车，两条数据互相覆盖**。
   - 触发：直接抄别的 MOD 示例的 key，或用了通用词（如 `"bar"`）。
-  - 可观察：两条状态条共用同一 key 时后写覆盖先写，数字/填充"打架"或其中一条消失。
+  - 可观察：两条状态条共用同一 key 时后写覆盖先写，数字/填充 "打架" 或其中一条消失。
   - 原因：`statusBars` 是全局静态表、按 key 去重。
   - 修正：key 用本 MOD 专属前缀（`gear_in_beam_charge`）。
 8. **给非玩家舰传 ship，状态条不出现**。
@@ -991,7 +991,7 @@ GearIn magic settings: hud=true width=12.0 range=900.0 damage=60.0 emp=25.0 full
   - 可观察：`ERROR` + NPE 堆栈（第一行 `Global.getSector()` 为 null）。
   - 原因：生涯工具以 sector 为所属对象（规则 13；`Global` 生命周期）。
   - 修正：调用前判 `Global.getSector() == null`；写侧入口只在生涯脚本调用。
-10. **残骸"不可打捞"预期落空，或反过来**。
+10. **残骸 "不可打捞" 预期落空，或反过来**。
   - 触发：十参重载的 `isRecoverable=false` 与九参的 `recoverable=false` 混用。
   - 可观察：`recoverable=false` 只影响打捞 special 写入；`isRecoverable=false` 追加 `Tags.UNRECOVERABLE` （规则 14，`org.magiclib.util.MagicCampaign`）。
   - 修正：两个布尔分开使用，语义见速查表。
@@ -1009,19 +1009,19 @@ GearIn magic settings: hud=true width=12.0 range=900.0 damage=60.0 emp=25.0 full
 
 ## 总结
 
-本节把 MagicLib 1.5.1 的四族工具走了一个完整流程：`MagicSettings` 的合并加载链、缺省值表与三类 warn 文案构成"设置没生效"的排查入口；
+本节把 MagicLib 1.5.1 的四族工具走了一个完整流程：`MagicSettings` 的合并加载链、缺省值表与三类 warn 文案构成 "设置没生效" 的排查入口；
 
 `MagicFakeBeam` 的瞬时结算、不可截断与 HE 全额伤害三条边界，加上碰撞助手的 null 约定，定义了伪光束能做什么、不能做什么；
 
-`MagicUI` 状态条的"注册—绘制"分离、key 唯一与约 5 秒刷新（含暂停）纪律，说明 HUD 数据谁注册、谁绘制、何时被移除；
+`MagicUI` 状态条的 "注册—绘制" 分离、key 唯一与约 5 秒刷新（含暂停）纪律，说明 HUD 数据谁注册、谁绘制、何时被移除；
 
 `MagicCampaign` 的生涯上下文要求与写侧双布尔 / null 约定，划定了生涯工具的调用边界。
 
 示例以五个小类分别承载四族与接入，`starsector.log`、战斗 HUD、战斗画面、生涯存档四个可观察位置验证调用真的发生。
 
-在逻辑上，本节有两条延伸线：设置链上，另一套设置系统（LunaLib 的读取、保存与通知链）将与本节的 `MagicSettings` 形成对照—— 两套链的合并入口与 ID 归属不同，`gear_in` 段已在本节定义，后续设置主题不得重复定义该段；
+在逻辑上，本节有两条延伸线：设置链上，另一套设置系统（LunaLib 的读取、保存与通知链）将与本节的 `MagicSettings` 形成对照 —— 两套链的合并入口与 ID 归属不同，`gear_in` 段已在本节定义，后续设置主题不得重复定义该段；
 
-战斗效果链上，伪光束与真光束（`BeamAPI`）的"瞬时 vs 持续"边界、生涯工具与生涯对象链的衔接，是后续武器与生涯内容设计的直接基础。
+战斗效果链上，伪光束与真光束（`BeamAPI`）的 "瞬时 vs 持续" 边界、生涯工具与生涯对象链的衔接，是后续武器与生涯内容设计的直接基础。
 
 ## 建议参考项
 

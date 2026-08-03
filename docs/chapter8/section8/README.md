@@ -157,7 +157,7 @@ Starsector\mods\GearIndustry\
 
 ### GearInOneShotScript（抽象基类）
 
-**职责**：一次性演示脚本骨架——封装 `EveryFrameScript` 三方法（`isDone` / `runWhilePaused` / `advance`），首次 `advance()` 执行一次子类实现的 `runDemo()` 后自停。
+**职责**：一次性演示脚本骨架 —— 封装 `EveryFrameScript` 三方法（`isDone` / `runWhilePaused` / `advance`），首次 `advance()` 执行一次子类实现的 `runDemo()` 后自停。
 
 **绑定注册入口**：不参与任何注册；两个服务演示脚本继承它，各自负责自己的注册。
 
@@ -209,7 +209,7 @@ public abstract class GearInOneShotScript implements EveryFrameScript {
 
 ### GearInFactionServicesScript（势力段脚本）
 
-**职责**：`FactionAPI` 常用入口演示——读取玩家势力身份/颜色与对霸主、海盗、独立势力的关系（数值、等级、敌对判定、`getRelToPlayer` 包装）；对霸主执行一次 `adjustRelationship(+0.05)` 并立即 `setRelationship` 精确回滚；
+**职责**：`FactionAPI` 常用入口演示 —— 读取玩家势力身份/颜色与对霸主、海盗、独立势力的关系（数值、等级、敌对判定、`getRelToPlayer` 包装）；对霸主执行一次 `adjustRelationship(+0.05)` 并立即 `setRelationship` 精确回滚；
 
 读取 tariff/toll/fine、非法商品、已知资源集合规模、`isShowInIntelTab`。
 
@@ -298,7 +298,7 @@ public class GearInFactionServicesScript extends GearInOneShotScript {
 
 ### GearInCargoServicesScript（货物段脚本）
 
-**职责**：`CargoAPI` 常用入口演示——读取玩家舰队补给/燃料/陆战队员/信用/空间/栈数基线；`addSupplies(100)` / `addFuel(50)` / `addMarines(10)` 后读取中间值，再同量 remove 回滚并读取终值（验证数值精确复原）；
+**职责**：`CargoAPI` 常用入口演示 —— 读取玩家舰队补给/燃料/陆战队员/信用/空间/栈数基线；`addSupplies(100)` / `addFuel(50)` / `addMarines(10)` 后读取中间值，再同量 remove 回滚并读取终值（验证数值精确复原）；
 
 读取重型机械商品量与栈列表前三条（`CargoStackAPI` 的 type/data/size/isNull）。
 
@@ -397,8 +397,8 @@ public class GearInCargoServicesScript extends GearInOneShotScript {
 
 ### 行为要点
 
-- `extends GearInOneShotScript`：沿用脚本节的一次性演示模式——首帧 `advance()` 执行一次 `runDemo()`，`isDone()` 置位后引擎下一帧自动移除。
-- `REGISTER_MARK`：persistent data 守卫键——两个脚本各自独立（`GearIn_FactionServices` / `GearIn_CargoServices`）。
+- `extends GearInOneShotScript`：沿用脚本节的一次性演示模式 —— 首帧 `advance()` 执行一次 `runDemo()`，`isDone()` 置位后引擎下一帧自动移除。
+- `REGISTER_MARK`：persistent data 守卫键 —— 两个脚本各自独立（`GearIn_FactionServices` / `GearIn_CargoServices`）。
   - **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入既有插件的 `CLASS_MARK` 守卫。
 - 势力段：`getFaction(id)` / `getPlayerFaction()` 入口；关系写入演示 `adjustRelationship(+0.05)` → `setRelationship(原值)` 同帧精确回滚。
   - 关系写入有 `[-1,1]` 钳位，原值必在 `[-1,1]` 内，回滚必然精确；`getRelToPlayer()` 对玩家势力自己返回 `1.0`（同势力对默认值）。
@@ -524,17 +524,17 @@ GearIn campaign services cargo stack[0..2]: type=<Type> data=<Data> size=<Size> 
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global`——全局入口：`getSector()`、`getLogger()`
-- `com.fs.starfarer.api.campaign.SectorAPI`——生涯引擎入口。
+- `com.fs.starfarer.api.Global`—— 全局入口：`getSector()`、`getLogger()`
+- `com.fs.starfarer.api.campaign.SectorAPI`—— 生涯引擎入口。
   - 关系与货物入口都能从这里进入：`getFaction` / `getAllFactions` / `getPlayerFaction` / `getPlayerFleet` / `adjustPlayerReputation` / `getPersistentData` / `addScript`。
-- `com.fs.starfarer.api.campaign.FactionAPI`——势力接口：身份、颜色、关系读写、已知资源集合、经济字段与 doctrine/production/spec
-- `com.fs.starfarer.api.characters.RelationshipAPI`——关系值包装：`getRel()` / `getLevel()`
-- `com.fs.starfarer.api.campaign.CargoAPI`——货物容器：分族读写、容量统计、`getStacksCopy()`、`removeEmptyStacks()`
-- `com.fs.starfarer.api.campaign.CargoStackAPI`——货物单栈：类型、数据、大小与 `isNull()` 占位判定
+- `com.fs.starfarer.api.campaign.FactionAPI`—— 势力接口：身份、颜色、关系读写、已知资源集合、经济字段与 doctrine/production/spec
+- `com.fs.starfarer.api.characters.RelationshipAPI`—— 关系值包装：`getRel()` / `getLevel()`
+- `com.fs.starfarer.api.campaign.CargoAPI`—— 货物容器：分族读写、容量统计、`getStacksCopy()`、`removeEmptyStacks()`
+- `com.fs.starfarer.api.campaign.CargoStackAPI`—— 货物单栈：类型、数据、大小与 `isNull()` 占位判定
 - `com.fs.starfarer.api.util.MutableValue`——credits 的可变值容器：`get` / `set` / `add` / `subtract`
-- `com.fs.starfarer.api.campaign.RepLevel`——关系等级枚举与阈值：`getLevelFor`、`getMin` / `getMax` 边界语义
+- `com.fs.starfarer.api.campaign.RepLevel`—— 关系等级枚举与阈值：`getLevelFor`、`getMin` / `getMax` 边界语义
 - `com.fs.starfarer.api.campaign.SectorEntityToken`、`CampaignFleetAPI`——`getCargo()` 货物入口
-- `com.fs.starfarer.api.util.Misc`——文本与高亮颜色常量（`getTextColor` / `getGrayColor` 等）
+- `com.fs.starfarer.api.util.Misc`—— 文本与高亮颜色常量（`getTextColor` / `getGrayColor` 等）
 - `com.fs.starfarer.api.impl.campaign.ids.Factions`、`Commodities`——id 常量：势力 / 商品
-- `com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`——原版声望 action rulecmd：`adjustPlayerReputation` 的原版调用参考
-- `data/scripts/gearin/campaign/`——本节三个示例类所在目录（MOD 内相对路径）
+- `com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`—— 原版声望 action rulecmd：`adjustPlayerReputation` 的原版调用参考
+- `data/scripts/gearin/campaign/`—— 本节三个示例类所在目录（MOD 内相对路径）

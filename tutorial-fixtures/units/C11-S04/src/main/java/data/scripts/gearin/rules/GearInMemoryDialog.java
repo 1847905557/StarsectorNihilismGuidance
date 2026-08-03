@@ -11,7 +11,7 @@ import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
 
 /**
  * 规则对话打开脚本（EveryFrameScript）：记忆写入与过期验证完成（KEY_TAG 存在、
- * probe 已被移除）后，打开初始 trigger 为 GearInMemoryDialog 的对话——对话文本、
+ * probe 已被移除）后，打开初始 trigger 为 GearInMemoryDialog 的对话 —— 对话文本、
  * 条件与选项全部来自 rules.csv 中本节拥有的 GearIn_memory_* 规则（$global. /
  * $player. / 无点号回落 local 三种读法 + $player. 赋值 0 天过期）。
  */
@@ -58,6 +58,6 @@ public class GearInMemoryDialog implements EveryFrameScript {
                     + " (initial trigger GearInMemoryDialog; 对话内容全部来自 rules.csv)");
             done = true;
         }
-        // shown=false：正有其它对话/界面排队——不置 done，下一个未暂停帧重试
+        // shown=false：正有其它对话/界面排队 —— 不置 done，下一个未暂停帧重试
     }
 }

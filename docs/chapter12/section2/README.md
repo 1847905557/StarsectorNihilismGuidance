@@ -10,20 +10,20 @@
 
 完成后，您将能够：
 
-- 说出 LazyLib 3.0.0 工具类的四个分组，以及每个分组的"无状态"或"快照"性质；
+- 说出 LazyLib 3.0.0 工具类的四个分组，以及每个分组的 "无状态" 或 "快照" 性质；
 - 用 `MathUtils` / `VectorUtils` 写出距离、范围、角度、最短旋转、向量定长/限长/旋转的最小代码，背出度/弧度分工（`FastTrig` 用弧度，其余用度）及违反后果；
-- 用 `CombatUtils` / `AIUtils` 做范围查询、可见性查询与拦截点计算，说出"结果按当前帧快照处理、禁止跨战斗缓存"与 `@Nullable` 判空要求；
+- 用 `CombatUtils` / `AIUtils` 做范围查询、可见性查询与拦截点计算，说出 "结果按当前帧快照处理、禁止跨战斗缓存" 与 `@Nullable` 判空要求；
 - 用 `JSONUtils.loadCommonJSON` + `CommonDataJSONObject` 读写 `<saves>\common` 下的 JSON，说出 `save()` 的强制语义（不调用不落盘）；
 - 区分 `ModUtils.isClassPresent` 与 `ModUtils.isModEnabled` 的语义分工，用 `LazyLib.MOD_ID` 常量而不是手写 id 做运行时检测；
-- 从 `starsector.log` 与 common 文件两个位置复核工具调用是否真的发生，并把"数学→查询→持久化"的调用链走通。
+- 从 `starsector.log` 与 common 文件两个位置复核工具调用是否真的发生，并把 "数学→查询→持久化" 的调用链走通。
 
 ## 前置知识
 
 本节假设您已熟悉下列主题：
 
-- 硬依赖声明与运行时检测（C12-S01）——本节是教程工程第一次**真正调用** LazyLib 的 API；`mod_info.json` 的 `dependencies` 必须已声明 `lw_lazylib`。
+- 硬依赖声明与运行时检测（C12-S01）—— 本节是教程工程第一次**真正调用** LazyLib 的 API；`mod_info.json` 的 `dependencies` 必须已声明 `lw_lazylib`。
 - 战斗状态读取（C07-S02）——`getShips()` 含残骸、`isAlive()` 过滤、暂停守卫、实体与列表禁止跨战斗缓存（本节把同一条纪律延伸到 LazyLib 的查询结果）。
-- `Global` 生命周期（C06-S03）——战斗引擎只在战斗运行期"有效"，查询入口只在战斗内消费。
+- `Global` 生命周期（C06-S03）—— 战斗引擎只在战斗运行期 "有效"，查询入口只在战斗内消费。
 - 战斗插件模型（C07-S01）——`addPlugin` 注册与 `advance` 每帧回调（本节示例插件的骨架）。
 - 测试战役（C03-S01）——`GearIn_test` 是本节示例的验证入口。
 - settings 合并与 common 文件语义（C06-S04）——`<saves>\common\<name>.data` 与 LazyLib `JSONUtils` 的落盘位置是同一个目录，两处对照。
@@ -49,7 +49,7 @@ Starsector\mods\LazyLib\
 
 ::: caution 引用 LazyLib 前必须先声明依赖
 
-`mod_info.json` 的 `dependencies` 必须包含 `lw_lazylib`——声明与启动器把关体系在前置依赖章已建立；缺声明时用户运行期抛 `NoClassDefFoundError`。本节从"已声明"直接进入"真正调用"。
+`mod_info.json` 的 `dependencies` 必须包含 `lw_lazylib`—— 声明与启动器把关体系在前置依赖章已建立；缺声明时用户运行期抛 `NoClassDefFoundError`。本节从 "已声明" 直接进入 "真正调用"。
 
 :::
 
@@ -57,13 +57,13 @@ Starsector\mods\LazyLib\
 
 `getVersion()` 返回 float 版本（3.0 发行返回 `3.0`）；`getSupportedGameVersion()` 返回本发行声明支持的游戏版本字符串；
 
-`isCachingEnabled()` 读取 `lazylib_settings.json` 的 `enableCaching`（缓存只加速"当前帧结果不变"的昂贵查询，不得把缓存结果升级为业务持久状态）。
+`isCachingEnabled()` 读取 `lazylib_settings.json` 的 `enableCaching`（缓存只加速 "当前帧结果不变" 的昂贵查询，不得把缓存结果升级为业务持久状态）。
 
 `getLogLevel()` / `setLogLevel(...)` 控制 LazyLib 各工具类的日志级别，`onDeprecatedMethodUsage()` 由库在检测到弃用方法调用时内部调用 （策略由 `logDeprecated` / `crashOnDeprecated` 决定，仅调试用途）。
 
 ::: info 为什么按四分组讲？
 
-四个分组对应四种状态边界：数学与几何是纯静态无状态，战斗查询返回当前帧快照，JSON 与文件接触磁盘，通用工具反映库与 MOD 元信息。工具不会自动持有任何业务状态——需要跨帧保留什么由您的代码显式持有（数值、id），不要持有工具返回的实体引用。
+四个分组对应四种状态边界：数学与几何是纯静态无状态，战斗查询返回当前帧快照，JSON 与文件接触磁盘，通用工具反映库与 MOD 元信息。工具不会自动持有任何业务状态 —— 需要跨帧保留什么由您的代码显式持有（数值、id），不要持有工具返回的实体引用。
 
 :::
 
@@ -118,7 +118,7 @@ Starsector\mods\LazyLib\
 
 不带 `dest` 的重载（`resize` / `clampLength` / `rotate` / `rotateAroundPivot`）**原地修改传入向量并返回同一个对象**，不是纯值函数；带 `dest` 的重载把结果写入 dest。禁止把返回值当纯值对象复用、同时继续依赖传入向量的旧值。
 
-违反的可观察结果：`Vector2f speed = missile.getVelocity(); Vector2f turned = VectorUtils.rotate(speed, 90f);` ——这行代码把**导弹自己的速度向量**转了 90°，导弹在飞行中突然改向，而不是得到一个新向量；
+违反的可观察结果：`Vector2f speed = missile.getVelocity(); Vector2f turned = VectorUtils.rotate(speed, 90f);` —— 这行代码把**导弹自己的速度向量**转了 90°，导弹在飞行中突然改向，而不是得到一个新向量；
 
 `VectorUtils.resize(vel, 100f)` 同理把源向量长度改写。
 
@@ -128,10 +128,10 @@ Starsector\mods\LazyLib\
 
 - `EllipseUtils`：`getPointOnEllipse` / `getRandomPointInEllipse` / `getRandomPointOnEllipse` / `isPointWithinEllipse` （椭圆取点、随机点、包含判定，全部按角度参数、允许 null 中心）。
 - `ShapeUtils`：`createCircle` / `createEllipse` / `createArc` 返回顶点数组（3.0 从 `DrawUtils` 拆分而来，只算顶点不绘制）。
-- `CollisionUtils`：线段与碰撞边界查询——
-  - `getCollisionPoint(lineStart, lineEnd, CombatEntityAPI)` 返回线段与目标碰撞边界相交的点（**不是命中结算**——伤害、护盾、碰撞类处理仍走战斗引擎）。
+- `CollisionUtils`：线段与碰撞边界查询 ——
+  - `getCollisionPoint(lineStart, lineEnd, CombatEntityAPI)` 返回线段与目标碰撞边界相交的点（**不是命中结算**—— 伤害、护盾、碰撞类处理仍走战斗引擎）。
   - `isPointWithinBounds` / `isPointWithinCollisionCircle` / `getNearestPointOnBounds` / `getCollides` / `isPointOnSegment`。
-- `CollectionUtils`：集合工具——
+- `CollectionUtils`：集合工具 ——
   - `combinedList` / `combinedSet` 合并多集合；`filter(collection, CollectionFilter)` 按过滤器挑元素；`implode(collection, separator)` 拼字符串。
   - `SortEntitiesByDistance` / `SortTokensByDistance` 按距离排序的 `Comparator`（构造参数是基准点）。
 
@@ -173,9 +173,9 @@ Starsector\mods\LazyLib\
 
 开火决策与伤害结算仍归武器状态与战斗引擎。
 
-::: warning 直接拿查询结果数当"存活数"会偏
+::: warning 直接拿查询结果数当 "存活数" 会偏
 
-`CombatUtils.getShipsWithinRange(...)` 的结果是引擎对象表的当前帧快照，可能含残骸（LazyLib 只保证排除 Command Shuttle）。需要"存活"语义时按 `isAlive()` 过滤（建议级，示例的 `alive` 计数写法）；需要含残骸时明确表达意图。
+`CombatUtils.getShipsWithinRange(...)` 的结果是引擎对象表的当前帧快照，可能含残骸（LazyLib 只保证排除 Command Shuttle）。需要 "存活" 语义时按 `isAlive()` 过滤（建议级，示例的 `alive` 计数写法）；需要含残骸时明确表达意图。
 
 :::
 
@@ -185,7 +185,7 @@ Starsector\mods\LazyLib\
 
 把 `getNearestEnemy(...)` / `getShipsWithinRange(...)` 的结果存进字段跨帧、尤其**跨战斗**复用，与战斗状态内容的缓存禁令同一条纪律：战斗结束后引擎销毁重建，旧实体判定恒失效。
 
-违反的可观察结果：第二场战斗起，缓存的引用"数据还在但全部判定失效"（`isAlive()` / 距离全部按新引擎/新位置计算或返回 false），且**没有任何报错**；跨帧持有也常在实体被击毁后读到陈旧状态。
+违反的可观察结果：第二场战斗起，缓存的引用 "数据还在但全部判定失效"（`isAlive()` / 距离全部按新引擎/新位置计算或返回 false），且**没有任何报错**；跨帧持有也常在实体被击毁后读到陈旧状态。
 
 修正：每次需要时重新查询，只把查询结果用于当帧决策；跨帧业务状态由调用方显式持有（数值、id 等），不持有实体引用。
 
@@ -211,7 +211,7 @@ Starsector\mods\LazyLib\
 | `toColor(JSONArray)` | 把 ≥3 个 int 的 JSONArray 转为 `Color`（配合 settings 合并处的文件加载方法读颜色配置）|
 | `CommonDataJSONObject` | `extends JSONObject implements AutoCloseable`：构造器与 `loadCommonJSON` 的返回类型，`save()` 落盘 |
 
-`CommonDataJSONObject` 的 javadoc 原文： `save() Saves this JSONObject's contents to common data. You MUST call this if you want your data to persist!` ——这是官方文档里的**必须**。
+`CommonDataJSONObject` 的 javadoc 原文： `save() Saves this JSONObject's contents to common data. You MUST call this if you want your data to persist!` —— 这是官方文档里的**必须**。
 
 `save()` 把内容写到 `saves/common`（"persist between saves (and presumably survive Starsector updates)"），读取侧每次 `loadCommonJSON` 重新加载磁盘内容。
 
@@ -221,19 +221,19 @@ Starsector\mods\LazyLib\
 
 写完 `CommonDataJSONObject` 后**必须**调用 `save()`，否则改动只存在于内存对象，`close()` 不会自动写盘。
 
-违反的可观察结果：战斗内 `put(...)` 后没有 `save()`，本场战斗读到的还是旧值；退出游戏/重进后新增键完全消失，`<saves>\common` 下文件内容不变——表现为"计数器归零 / 设置丢失"，且没有任何报错。
+违反的可观察结果：战斗内 `put(...)` 后没有 `save()`，本场战斗读到的还是旧值；退出游戏/重进后新增键完全消失，`<saves>\common` 下文件内容不变 —— 表现为 "计数器归零 / 设置丢失"，且没有任何报错。
 
 修正：写操作末尾调用 `save()`；读取失败与写盘失败都要 catch（`IOException` / `JSONException`），不要让异常中断战斗循环。
 
 `defaultJSONPath` 的语义边界：它只用于**首次创建**时填充默认值（2.4b 起：若默认文件存在且目标文件不存在，立即创建并保存）。
 
-**禁止**把 `loadCommonJSON(filename, defaultJSONPath)` 读到的内容当作用户显式配置——文件一旦创建，后续读取都以磁盘内容为准，默认值不再参与。
+**禁止**把 `loadCommonJSON(filename, defaultJSONPath)` 读到的内容当作用户显式配置 —— 文件一旦创建，后续读取都以磁盘内容为准，默认值不再参与。
 
-需要"用户配置 + 默认值"分层时，读取后自行判断键是否存在（示例的 `has(key)` 写法），不要依赖默认文件覆盖。
+需要 "用户配置 + 默认值" 分层时，读取后自行判断键是否存在（示例的 `has(key)` 写法），不要依赖默认文件覆盖。
 
-::: warning 默认值不是"用户配置"的备用值
+::: warning 默认值不是 "用户配置" 的备用值
 
-`defaultJSONPath` 只在**文件不存在**的首次创建时填充并立即保存；文件一旦存在，后续读取都以磁盘内容为准。把默认内容当用户配置反复写回，会覆盖用户对 common 文件的修改（表现为"用户改了配置，下次进游戏被默认值覆盖"）。
+`defaultJSONPath` 只在**文件不存在**的首次创建时填充并立即保存；文件一旦存在，后续读取都以磁盘内容为准。把默认内容当用户配置反复写回，会覆盖用户对 common 文件的修改（表现为 "用户改了配置，下次进游戏被默认值覆盖"）。
 
 :::
 
@@ -259,21 +259,21 @@ LazyLib 路径的优势是 `CommonDataJSONObject` 本身就是一个 `JSONObject
 
 ### 规则 6：isClassPresent 与 isModEnabled 语义分工必须分清
 
-`isClassPresent(...)` 表达 **classpath 存在性**，`isModEnabled(...)` 表达 **MOD 启用状态**：前者用于"这个类能不能调"（API 可用性），后者用于"这个 MOD 开着没有"（功能开关）。
+`isClassPresent(...)` 表达 **classpath 存在性**，`isModEnabled(...)` 表达 **MOD 启用状态**：前者用于 "这个类能不能调"（API 可用性），后者用于 "这个 MOD 开着没有"（功能开关）。
 
-违反的可观察结果：用 `isClassPresent("org.lazywizard.lazylib.combat.CombatUtils")` 判断"LazyLib 已启用" ——classpath 上的类可能由**其他已启用 MOD 间接携带**
+违反的可观察结果：用 `isClassPresent("org.lazywizard.lazylib.combat.CombatUtils")` 判断 "LazyLib 已启用" ——classpath 上的类可能由**其他已启用 MOD 间接携带**
 
 （某个 MOD 把 LazyLib 类打进自己的 jar），此时 `isClassPresent` 为 true 而 `isModEnabled("lw_lazylib")` 为 false，功能分支错误开启；
 
-反过来用 `isModEnabled` 判断"类可用"也会在类缺失时误判。
+反过来用 `isModEnabled` 判断 "类可用" 也会在类缺失时误判。
 
 修正：API 可用性用 `isClassPresent`，启用状态用 `isModEnabled`，需要两者同时成立时显式 AND。
 
 硬依赖的声明与启动器把关仍按前置依赖章建立的 `ModManagerAPI` 体系（本节的 `ModUtils` 是 LazyLib 提供的便捷入口，语义分工一致）。
 
-`StringUtils`：`wrapString(String, int)` 按固定行宽换行、`indent(String, String)` 逐行缩进。`LazyLib` 元信息与设置见"概览"节。
+`StringUtils`：`wrapString(String, int)` 按固定行宽换行、`indent(String, String)` 逐行缩进。`LazyLib` 元信息与设置见 "概览" 节。
 
-`data\console\commands.csv` 在 3.0.0 中全部以 `#` 注释（LazyLib 自带的控制台测试命令未启用），不要把"LazyLib 提供控制台命令"当作可用现状。
+`data\console\commands.csv` 在 3.0.0 中全部以 `#` 注释（LazyLib 自带的控制台测试命令未启用），不要把 "LazyLib 提供控制台命令" 当作可用现状。
 
 ## 文件与 API 链路
 
@@ -292,11 +292,11 @@ LazyLib 路径的优势是 `CommonDataJSONObject` 本身就是一个 `JSONObject
 
 在既有累计工程布局上追加一个薄入口类战斗插件与四个工具族用法片段类（不新增任何游戏资源），五个类同在 `data.scripts.gearin.lib` 包内协作：
 
-- `GearInLazyPlugin`：薄入口类战斗插件——只做接入与节奏控制（暂停守卫 + 报告周期），按序调用四个用法片段，不含任何工具调用细节；
-- `GearInLazyMathUsage`：数学与几何工具族片段——`MathUtils` / `VectorUtils` 的距离、范围、角度、最短旋转、向量定长与圆周取点 （`AIUtils.getNearestEnemy` 仅用于取演示目标）；
-- `GearInLazyCombatQuery`：战斗查询工具族片段——`CombatUtils` / `AIUtils` 的范围列表（`isAlive()` 过滤）、可见性统计与拦截点；
-- `GearInLazyJsonStore`：JSON 与文件工具族片段——`JSONUtils.loadCommonJSON` + `CommonDataJSONObject` 读写 `<saves>\common\GearIn_lazy_demo`，写后必须 `save()`；
-- `GearInLazyRuntimeProbe`：通用工具族片段——`LazyLib.MOD_ID` 常量 + `ModUtils` 运行时检测。
+- `GearInLazyPlugin`：薄入口类战斗插件 —— 只做接入与节奏控制（暂停守卫 + 报告周期），按序调用四个用法片段，不含任何工具调用细节；
+- `GearInLazyMathUsage`：数学与几何工具族片段 ——`MathUtils` / `VectorUtils` 的距离、范围、角度、最短旋转、向量定长与圆周取点 （`AIUtils.getNearestEnemy` 仅用于取演示目标）；
+- `GearInLazyCombatQuery`：战斗查询工具族片段 ——`CombatUtils` / `AIUtils` 的范围列表（`isAlive()` 过滤）、可见性统计与拦截点；
+- `GearInLazyJsonStore`：JSON 与文件工具族片段 ——`JSONUtils.loadCommonJSON` + `CommonDataJSONObject` 读写 `<saves>\common\GearIn_lazy_demo`，写后必须 `save()`；
+- `GearInLazyRuntimeProbe`：通用工具族片段 ——`LazyLib.MOD_ID` 常量 + `ModUtils` 运行时检测。
 
 ```text
 Starsector\mods\GearIndustry\
@@ -379,7 +379,7 @@ public class GearInLazyPlugin extends BaseEveryFrameCombatPlugin {
 
 入口类只维护引擎引用、周期计时器与两个计数，不直接调用任何 LazyLib 工具。
 
-- **暂停守卫**：`advance` 开头 `if (engine.isPaused()) return;`，暂停期间报告停摆——沿用前置章节建立的暂停守卫纪律。
+- **暂停守卫**：`advance` 开头 `if (engine.isPaused()) return;`，暂停期间报告停摆 —— 沿用前置章节建立的暂停守卫纪律。
 - **日志前缀**：`GearIn lazy init:` / `GearIn lazy math:` / `GearIn lazy combat:` / `GearIn lazy json:` 四条前缀由四个类各自输出，逐字保留，作为预期结果与故障分析的核对信号。
 
 ### GearInLazyMathUsage：数学与几何工具族片段
@@ -518,7 +518,7 @@ public final class GearInLazyCombatQuery {
 要点：
 
 - `CombatUtils.getShipsWithinRange` 返回 2000 范围列表；按战斗状态内容的纪律用 `isAlive()` 过滤后计数（快照可能含残骸），再按 `CombatUtils.isVisibleToSide(ship, player.getOwner())` 统计可见数。
-- `AIUtils.getNearestEnemy` 判空后，`getBestInterceptPoint` 以 400 速度求拦截点，`point == null` 时输出 `intercept=none` ——两次判空同一条纪律（规则 4）。
+- `AIUtils.getNearestEnemy` 判空后，`getBestInterceptPoint` 以 400 速度求拦截点，`point == null` 时输出 `intercept=none` —— 两次判空同一条纪律（规则 4）。
 
 ### GearInLazyJsonStore：JSON 与文件工具族片段
 
@@ -619,9 +619,9 @@ public final class GearInLazyRuntimeProbe {
 要点：
 
 - `LazyLib.getVersion()` / `getSupportedGameVersion()` 打印库版本与支持的游戏版本；`ModUtils.isModEnabled(LazyLib.MOD_ID)` 用库常量做启用检测（不手写 `"lw_lazylib"`）。
-- `ModUtils.isClassPresent("org.lazywizard.lazylib.combat.CombatUtils")` 单独表达"类在不在 classpath" ——两条信息分别回答"LazyLib 开着没"与"这个类能调没"（规则 6）。
+- `ModUtils.isClassPresent("org.lazywizard.lazylib.combat.CombatUtils")` 单独表达 "类在不在 classpath" —— 两条信息分别回答 "LazyLib 开着没" 与 "这个类能调没"（规则 6）。
 
-### 注册片段（工程片段——本节不改动既有战斗插件所有者文件）
+### 注册片段（工程片段 —— 本节不改动既有战斗插件所有者文件）
 
 ```java
     // 既有战斗插件（前置章节的所有者类）的 init() 内新增一行
@@ -679,8 +679,8 @@ GearIn lazy init: version=3.0 supported=0.98a-RC5 modEnabled=true classPresent=t
 5. **暂停语义**：按空格暂停约 10 秒，暂停期间**没有**报告输出；恢复后报告继续。
 6. **空目标分支**：敌方全灭后，`math` 行变为 `GearIn lazy math: no enemy in sight`，无 `ERROR`；`combat` 行的 `intercept=none`。
 7. **common JSON 持久化**：退出战役再进入一场战斗，init 行 `battleCount` 递增（1 → 2）；`<saves>\common\` 下出现以 `GearIn_lazy_demo` 开头的文件，内容含 `battles` 键，战斗内 `reports` 键随报告周期增长。
-8. **变更验证（单位分工）**：把示例的 `MathUtils.clampAngle(angleTo + 360f)` 换成 `FastTrig.sin(angleTo)` 输出——数值不再等于 `angleTo` （度被当弧度用）；改回后恢复。
-9. **变更验证（save）**：把 `GearInLazyJsonStore.writeInt` 里的 `jsonObject.save()` 注释掉，重启游戏进入战斗—— `battleCount` 从 1 重新开始（上次的 1 没有落盘）；改回后恢复。
+8. **变更验证（单位分工）**：把示例的 `MathUtils.clampAngle(angleTo + 360f)` 换成 `FastTrig.sin(angleTo)` 输出 —— 数值不再等于 `angleTo` （度被当弧度用）；改回后恢复。
+9. **变更验证（save）**：把 `GearInLazyJsonStore.writeInt` 里的 `jsonObject.save()` 注释掉，重启游戏进入战斗 —— `battleCount` 从 1 重新开始（上次的 1 没有落盘）；改回后恢复。
 
 静态自查：Java 源码与 fixture 逐字一致（包括 import 顺序与注释）；
 
@@ -697,59 +697,59 @@ GearIn lazy init: version=3.0 supported=0.98a-RC5 modEnabled=true classPresent=t
   - 可观察：转向量、圆周取点、最短旋转全部偏移；差值恰为弧度/度的换算比例（90° 写成弧度会差约 38.4°）。
   - 原因：两个域没有自动转换（规则 1）。
   - 修正：各自域内用各自单位，互转显式 `Math.toRadians` / `Math.toDegrees`。
-2. **common JSON 改了但重进游戏又"归零"**。
+2. **common JSON 改了但重进游戏又 "归零"**。
   - 触发：`put(...)` 后忘了 `save()`。
   - 可观察：本场战斗内读到的还是旧值；退出重进后键值丢失，文件内容不变，无任何报错。
   - 原因：`CommonDataJSONObject.save()` 是唯一写盘入口（规则 5，javadoc "You MUST call this if you want your data to persist!"）。
-  - 修正：写操作末尾调用 `save()`；把"读-改-写"封装成示例的 `GearInLazyJsonStore.writeInt` 单一入口。
+  - 修正：写操作末尾调用 `save()`；把 "读-改-写" 封装成示例的 `GearInLazyJsonStore.writeInt` 单一入口。
 3. **敌方全灭后日志出现 NPE 堆栈**。
   - 触发：`AIUtils.getNearestEnemy(player)` 的返回值直接 `.getLocation()`，没有判空。
   - 可观察：敌方全部被击毁后的下一个报告周期抛 NPE，`ERROR` + 堆栈，本帧流程中止。
   - 原因：`getNearestEnemy` / `getBestInterceptPoint` 标注 `@Nullable`（规则 4）。
   - 修正：判空并输出 `no enemy in sight` / `intercept=none` 日志。
-4. **第二场战斗起查询全部"失效"却无报错**。
+4. **第二场战斗起查询全部 "失效" 却无报错**。
   - 触发：把 `CombatUtils.getShipsWithinRange(...)` / `AIUtils.getNearestEnemy(...)` 的结果存进字段，跨战斗复用。
-  - 可观察：第二场战斗里缓存的实体引用判定恒 false / 位置陈旧，逻辑静默失效——与战斗状态内容的实体缓存禁令同一条纪律。
+  - 可观察：第二场战斗里缓存的实体引用判定恒 false / 位置陈旧，逻辑静默失效 —— 与战斗状态内容的实体缓存禁令同一条纪律。
   - 原因：查询结果是当前帧快照，实体归战斗引擎管理（规则 3）；战斗结束引擎销毁重建。
   - 修正：每帧重新查询，不缓存实体引用。
-5. **导弹/舰船方向被"算出来的向量"改掉了**。
-  - 触发：`Vector2f vel = ship.getVelocity(); VectorUtils.rotate(vel, 90f);` 想"算出转向后的新方向"。
-  - 可观察：`ship.getVelocity()` 本身被旋转——`getVelocity()` 返回的是引擎内部的同一个向量对象，实体飞行方向突变。
+5. **导弹/舰船方向被 "算出来的向量" 改掉了**。
+  - 触发：`Vector2f vel = ship.getVelocity(); VectorUtils.rotate(vel, 90f);` 想 "算出转向后的新方向"。
+  - 可观察：`ship.getVelocity()` 本身被旋转 ——`getVelocity()` 返回的是引擎内部的同一个向量对象，实体飞行方向突变。
   - 原因：`VectorUtils` 不带 `dest` 的重载原地修改并返回同一引用（规则 2）。
   - 修正：先 `new Vector2f(old)` 再变换，或使用带 `dest` 的重载。
 6. **`isClassPresent(...)` 为 true 但 LazyLib 没勾选，功能分支错误开启**。
-  - 触发：用 `ModUtils.isClassPresent("org.lazywizard.lazylib.combat.CombatUtils")` 当"LazyLib 已启用"判据。
-  - 可观察：某个其他已启用 MOD 把 LazyLib 类打进了自己的 jar（间接携带），classpath 上存在类但 `isModEnabled("lw_lazylib")` 为 false，分支按"可用"执行后调用缺失的功能。
+  - 触发：用 `ModUtils.isClassPresent("org.lazywizard.lazylib.combat.CombatUtils")` 当 "LazyLib 已启用" 判据。
+  - 可观察：某个其他已启用 MOD 把 LazyLib 类打进了自己的 jar（间接携带），classpath 上存在类但 `isModEnabled("lw_lazylib")` 为 false，分支按 "可用" 执行后调用缺失的功能。
   - 原因：`isClassPresent` 表达 classpath 存在性、`isModEnabled` 表达启用状态（规则 6）。
   - 修正：API 可用性用 `isClassPresent`、启用状态用 `isModEnabled`，需要同时成立时显式 AND。
-7. **用户改了 common 配置，下次进游戏却被"默认值"覆盖**。
+7. **用户改了 common 配置，下次进游戏却被 "默认值" 覆盖**。
   - 触发：`JSONUtils.loadCommonJSON("GearIn_settings", "data/config/gear_defaults.json")` 每次读取后把默认文件的内容整体写回。
   - 可观察：用户对 `GearIn_settings` 的修改丢失，文件内容回到默认值。
   - 原因：`defaultJSONPath` 只在**文件不存在**的首次创建时填充并立即保存（2.4b 起），一旦文件存在就以磁盘为准；把默认值当用户配置反复写回属于误用。
   - 修正：默认值只用于初始化；读取后按 `has(key)` 判断键是否存在（示例写法）。
-8. **范围查询统计含残骸，计数"不对"**。
-  - 触发：`CombatUtils.getShipsWithinRange(...).size()` 直接当"存活舰船数"。
+8. **范围查询统计含残骸，计数 "不对"**。
+  - 触发：`CombatUtils.getShipsWithinRange(...).size()` 直接当 "存活舰船数"。
   - 可观察：击毁敌舰后计数不减或延迟减少。
-  - 原因：查询结果是引擎对象表的当前帧快照（引擎对象表含残骸与待移除舰；LazyLib 只保证排除 Command Shuttle）。修正（建议）：需要"存活"语义时按 `isAlive()` 过滤（示例的 `alive` 计数写法）；需要含残骸时明确表达意图。
+  - 原因：查询结果是引擎对象表的当前帧快照（引擎对象表含残骸与待移除舰；LazyLib 只保证排除 Command Shuttle）。修正（建议）：需要 "存活" 语义时按 `isAlive()` 过滤（示例的 `alive` 计数写法）；需要含残骸时明确表达意图。
 
 ## 总结
 
 - **四个分组**：
-  - 数学/几何（`MathUtils` / `VectorUtils` / `FastTrig` / `EllipseUtils` / `ShapeUtils` / `CollisionUtils` / `CollectionUtils`）——纯静态无状态
-  - 战斗查询（`CombatUtils` / `AIUtils` / `WeaponUtils` / `DefenseUtils`）——当前帧快照
+  - 数学/几何（`MathUtils` / `VectorUtils` / `FastTrig` / `EllipseUtils` / `ShapeUtils` / `CollisionUtils` / `CollectionUtils`）—— 纯静态无状态
+  - 战斗查询（`CombatUtils` / `AIUtils` / `WeaponUtils` / `DefenseUtils`）—— 当前帧快照
   - JSON/文件（`JSONUtils` / `IOUtils`）——`<saves>\common` 读写
   - 通用（`ModUtils` / `StringUtils` / `LazyLib`）——MOD 检测、文本与库元信息
 - **六条规则**：单位分工（`FastTrig` 弧度、其余度）；`VectorUtils` 原地修改语义；战斗查询结果禁止跨战斗缓存；`@Nullable` 判空；`CommonDataJSONObject.save()` 必须显式调用；`isClassPresent` 与 `isModEnabled` 语义分工。每条都有对应的可观察失败结果（角度偏移、向量被改写、NPE、静默失效、数据归零、分支误开）。
 - **复用既有纪律**：暂停守卫、`isAlive()` 过滤、禁止跨战斗缓存与战斗状态内容、战斗插件模型章节完全同源；依赖声明与运行时检测复用前置依赖章；common 文件位置与 settings 合并内容对照。
-- **最简流程**：薄入口类 + 四个用法片段一次覆盖四组工具——入口类 `init` 经 `GearInLazyRuntimeProbe` 用 `LazyLib.MOD_ID` + `ModUtils` 检测、经 `GearInLazyJsonStore` 读写 `battles` 计数；报告周期经 `GearInLazyMathUsage` 算距离角度与取点、经 `GearInLazyCombatQuery` 查范围与拦截点、经 `GearInLazyJsonStore` 写 `reports` 计数； `starsector.log` 与 `<saves>\common` 两个可观察位置验证调用真的发生。
+- **最简流程**：薄入口类 + 四个用法片段一次覆盖四组工具 —— 入口类 `init` 经 `GearInLazyRuntimeProbe` 用 `LazyLib.MOD_ID` + `ModUtils` 检测、经 `GearInLazyJsonStore` 读写 `battles` 计数；报告周期经 `GearInLazyMathUsage` 算距离角度与取点、经 `GearInLazyCombatQuery` 查范围与拦截点、经 `GearInLazyJsonStore` 写 `reports` 计数； `starsector.log` 与 `<saves>\common` 两个可观察位置验证调用真的发生。
 
 战役侧工具（`campaign` 包）与渲染侧工具（`opengl` / `ui` 包）不在本节范围，由后续内容接续；教程工程对 LazyLib 的依赖声明已在前置依赖章建立，本节开始真正消费它的 API。
 
 ## 建议参考项
 
-- `org.lazywizard.lazylib.MathUtils`：数学工具——钳制、距离、范围、最短旋转、随机取点（度）。
-- `org.lazywizard.lazylib.VectorUtils`：向量工具——朝向、夹角、定向、定长/限长/旋转（原地修改语义，度）。
-- `org.lazywizard.lazylib.FastTrig`：三角工具——`sin` / `cos` / `atan` / `atan2`（弧度）。
+- `org.lazywizard.lazylib.MathUtils`：数学工具 —— 钳制、距离、范围、最短旋转、随机取点（度）。
+- `org.lazywizard.lazylib.VectorUtils`：向量工具 —— 朝向、夹角、定向、定长/限长/旋转（原地修改语义，度）。
+- `org.lazywizard.lazylib.FastTrig`：三角工具 ——`sin` / `cos` / `atan` / `atan2`（弧度）。
 - `org.lazywizard.lazylib.EllipseUtils` / `ShapeUtils` / `CollisionUtils` / `CollectionUtils`：椭圆几何、顶点生成、碰撞查询与集合工具。
 - `org.lazywizard.lazylib.combat.CombatUtils`：战斗范围与可见性查询（当前帧快照）。
 - `org.lazywizard.lazylib.combat.AIUtils`：最近目标与拦截点计算（`@Nullable` 判空）。

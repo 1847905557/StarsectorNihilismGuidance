@@ -24,7 +24,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
  * - 数据：尾迹 sprite 必须是 settings.json "fx" 分类注册的键（MagicLib 自带
  *   base_trail_smooth / base_trail_contrail 等 12 张，宽高为 2 的倍数、垂直长条）；
  *   本示例不新增 PNG 资产；
- * - 创建：每条尾迹从 MagicTrailPlugin.getUniqueID() 取一次 ID，此后每帧复用——
+ * - 创建：每条尾迹从 MagicTrailPlugin.getUniqueID() 取一次 ID，此后每帧复用 ——
  *   每帧新 ID 会变成多条无法连接的短条（硬规则 5）；同一条 trail 中途换 sprite
  *   会拆成两条；段不足 2 段不渲染（硬规则 7，首帧无画面是正常现象）；
  * - 推进：addTrailMember* 只负责登记段，段的移动/淡出/移除由 MagicTrailPlugin.

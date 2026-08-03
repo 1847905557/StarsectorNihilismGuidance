@@ -22,7 +22,7 @@
 本节建立在以下基础上：
 
 - **MOD 目录结构、`mod_info.json` 与 JSON 文件加载规则**（C01-S01）：`#` 注释与尾逗号被接受、UTF-8 无 BOM 必须；日志锚点的读法。
-- **`descriptions.csv` 的键规则与使用方**（C01-S06、C03-S04）：对象风味文本 —— 本节是它的对照面。
+- **`descriptions.csv` 的键规则与使用方**（C01-S07、C03-S04）：对象风味文本 —— 本节是它的对照面。
 - **术语约定**：生涯（campaign）；交互对话（interaction dialog，如舰队遭遇、跳跃点、行星接近时的对话界面）；令牌（token，指 `$xxx` 形式的占位符）；规则命令（rule command）。
 
 ## 文件/API 链路
@@ -129,7 +129,7 @@ strings.json 的值里有两种占位符，**引擎对两者都不做代换**：
   - 这些实例都没有使用原版分类名，也没有重定义原版键。
 - **gear_in 的组织**：分类用 `GearIn_ui`（界面文本）与 `GearIn_dialog`（对话文本），键统一 `GearIn_text_*`（本节所有权）。新文本只往这两个分类加键。
 - **键是约定，值是内容**：本地化只改值，永不改键。代码里的 `getString(category, id)` 参数是编译期约定，改名必须代码与文件同步改。
-- **与 `descriptions.csv` 的分工**：对象风味文本（舰船/武器/行星/势力……）走 `descriptions.csv`（C01-S06、C03-S04）；代码驱动的界面标签、按钮、弹窗、对话行走 strings.json。同一段文本如果既按对象查又按代码查，两者各放各的文件。
+- **与 `descriptions.csv` 的分工**：对象风味文本（舰船/武器/行星/势力……）走 `descriptions.csv`（C01-S07、C03-S04）；代码驱动的界面标签、按钮、弹窗、对话行走 strings.json。同一段文本如果既按对象查又按代码查，两者各放各的文件。
 
 ## 完整最小例
 
@@ -280,7 +280,7 @@ strings.json 的全部机制可以收成一张表：
 | 缺失 | 返回字面量 `Missing string: [<id>]` + 日志 ERROR，不崩溃；键/分类大小写敏感 |
 | 占位符 | `$token` 由使用方替换；`%s` 由取值侧 `String.format`；引擎两者都不代换 |
 | 组织 | 分类按功能域语义命名，键带 MOD 前缀（`GearIn_text_*`）；本地化只改值不改键 |
-| 边界 | `tooltips.json`/`tips.json` 同加载点但键空间独立；对象风味文本走 `descriptions.csv`（C01-S06/C03-S04）|
+| 边界 | `tooltips.json`/`tips.json` 同加载点但键空间独立；对象风味文本走 `descriptions.csv`（C01-S07/C03-S04）|
 
 至此，两条文本链路全部讲完：`descriptions.csv` 管 "对象" 的文本，strings.json 管 "代码" 的文本。
 

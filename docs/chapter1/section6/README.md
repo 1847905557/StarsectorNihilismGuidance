@@ -21,7 +21,7 @@
 
 - `.ship` 结构、武器槽位（`mount`/`type`/`size`）、`ship_data.csv` 注册链、控制台 `Addship`（C01-S02）。
 - 航母甲板、战机 hull/variant/wing 三层结构，以及 `GearIn_slag_wing` 等战机 ID（C01-S03）。
-- `weapon_data.csv` 与武器 ID、`.wpn` 的 `id` 字段（C01-S04）。
+- `weapon_data.csv` 与武器 ID、`.wpn` 的 `id` 字段（C01-S05）。
 - 术语：hullmod 写作 "舰船插件（船插）"，正文沿用简称 "船插"；本节只涉及 "内置" 这一安装方式（船插的完整讲解见 C02-S02）。
 
 ## 三组键与文件/API 链路
@@ -145,7 +145,7 @@
 
 ### 验证方案（基于本例）
 
-前置数据：`gear_in` MOD（C01-S01）+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_artizan`（C01-S02）与武器 `GearIn_durin`（C01-S04）。
+前置数据：`gear_in` MOD（C01-S01）+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_artizan`（C01-S02）与武器 `GearIn_durin`（C01-S05）。
 
 操作：用 dev 控制台 `Addship GearIn_artizan` 生成测试舰船，在装配界面确认两门内置都林自动炮已安装；随后进入任意战斗，观察它们是否随 AI 自动开火。
 
@@ -226,7 +226,7 @@
 
 ### 验证方案（基于本例）
 
-前置数据：`gear_in` MOD（C01-S01）+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_forging`（C01-S03）。
+前置数据：`gear_in` MOD（C01-S01）+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_forging`（C01-S04）。
 
 操作：用 dev 控制台 `Addship GearIn_forging` 生成测试舰船，在装配界面确认船插列表出现 `phasefield`（原版 Phase Field）；随后进入任意战斗，观察相位立场效果是否生效。
 

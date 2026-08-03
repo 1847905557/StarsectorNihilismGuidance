@@ -24,7 +24,7 @@
 - MOD 目录、`mod_info.json` 与数据合并规则（C01-S01）；
 - 船体注册：`GearIn_artizan`（C01-S02）；
 - 战机与航母注册：`GearIn_slag_wing`、`GearIn_furnaceman`（C01-S03）；
-- 武器注册：`GearIn_durin`、`GearIn_dwalin`（C01-S04）；
+- 武器注册：`GearIn_durin`、`GearIn_dwalin`（C01-S05）；
 - 船插注册：`GearIn_stable_injector`（C02-S02）；
 - 战役与装配：装配 `GearIn_artizan_combat` 等（C03-S01）。
 
@@ -375,7 +375,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 - C01-S01 的 `mod_info.json`
 - C01-S02 的船体（`GearIn_artizan`）
 - C01-S03 的联队与航母（`GearIn_slag_wing`、`GearIn_furnaceman`）
-- C01-S04 的武器（`GearIn_durin`、`GearIn_dwalin`）
+- C01-S05 的武器（`GearIn_durin`、`GearIn_dwalin`）
 - C02-S02 的船插（`GearIn_stable_injector`）
 - C03-S01 的装配（`GearIn_artizan_combat` 等）
 - 本节的 `factions.csv`、`gear_industry.faction`、`default_ship_roles.json`
@@ -430,7 +430,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 | `hist1t` / `hist2t` / `hist3t` | 是（20/3/2 处）| 无 | 与历史学家相关的蓝图筛选 tag，池内稀有度依次降低（使用方在生涯代码）|
 | `standard` | 是（船插 tags 列大量使用，如 armoredweapons）| 11 个势力文件 | 通用船插 tag：`knownHullMods` 用它作为基础船插的默认来源，等价于武器侧的 `base_bp` |
 
-如何给自家组件打 tag：船体在 `ship_data.csv` 的 `tags` 列、武器在 `weapon_data.csv` 的 `tags` 列、战机联队在 `wing_data.csv`、船插在 `hull_mods.csv` 的 `tags` 列（C01-S02 / C01-S04 / C02-S02 各自的注册页）。
+如何给自家组件打 tag：船体在 `ship_data.csv` 的 `tags` 列、武器在 `weapon_data.csv` 的 `tags` 列、战机联队在 `wing_data.csv`、船插在 `hull_mods.csv` 的 `tags` 列（C01-S02 / C01-S05 / C02-S02 各自的注册页）。
 
 打出 `GearIn_bp` 后，本节 `knownShips` 等块里写上 `"GearIn_bp"` 即自动导入。
 

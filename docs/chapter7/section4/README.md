@@ -26,7 +26,7 @@
 
 本节的运行态论述建立在以下既有知识上，需要时回到对应小节查阅：
 
-- 武器 CSV、`.wpn`、`.proj` 数据面（C01-S04）：本节的运行态消费这些 spec；`fireSoundOne`/`fireSoundTwo`、`flameoutTime` 等字段语义已在数据侧讲过。
+- 武器 CSV、`.wpn`、`.proj` 数据面（C01-S05）：本节的运行态消费这些 spec；`fireSoundOne`/`fireSoundTwo`、`flameoutTime` 等字段语义已在数据侧讲过。
 - 战斗插件模型（C07-S01）：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调、暂停守卫 —— 本节示例插件建立在这个模型上。
 - 编译 JAR 链路（C06-S01）：本节示例编入同一个 `jars\GearIndustry.jar`。
 - `Global` 生命周期与禁止跨战斗缓存引擎引用（C06-S03）：本节把同一条纪律延伸到射弹/光束/武器实例。

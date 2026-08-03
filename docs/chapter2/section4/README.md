@@ -17,7 +17,7 @@
 
 ## 前置知识
 
-- 武器数据链：`weapon_data.csv` / `.wpn` / `.proj`（C01-S04）—— 本节给其中的 `.proj` 与 `.wpn` 加键；
+- 武器数据链：`weapon_data.csv` / `.wpn` / `.proj`（C01-S05）—— 本节给其中的 `.proj` 与 `.wpn` 加键；
 - 模板与参数、类名三处一致（C02-S01、C02-S02）。
 
 ## 武器调用效果类的机制
@@ -75,7 +75,7 @@ public class GearInHitLogger implements OnHitEffectPlugin {
 
 ### 第二步：注册到武器
 
-打开 C01-S04 制作的火炮的弹体文件（`data/weapons/GearIn_durin_shot.proj` 之类），在 JSON 中加一行：
+打开 C01-S05 制作的火炮的弹体文件（`data/weapons/GearIn_durin_shot.proj` 之类），在 JSON 中加一行：
 
 ```json
 "onHitEffect": "data.scripts.gearin.combat.GearInHitLogger",
@@ -134,7 +134,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ### 第二步：注册到武器
 
-打开 C01-S04 制作的**光束武器**的 `.wpn`，在 JSON 中加一行：
+打开 C01-S05 制作的**光束武器**的 `.wpn`，在 JSON 中加一行：
 
 ```json
 "beamEffect": "data.scripts.gearin.combat.GearInBeamLogger",

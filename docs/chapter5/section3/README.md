@@ -25,7 +25,7 @@
 - 三个 OGG 的路径、声道与循环规格（`sounds/gear_in/music/GearIn_market_theme.ogg`、`sounds/gear_in/sfx_system/GearIn_system_loop.ogg`、`sounds/gear_in/sfx_weapon/GearIn_weapon_fire.ogg`），三个 sound ID 的所有权属于资源准备单元（C05-S01）
 - `data/config/sounds.json` 注册层：`GearIn_market_theme` 位于 `music` 分类，`GearIn_system_loop`、`GearIn_weapon_fire` 为普通音效条目；追加/替换合并规则与 `Loading sound sets` 日志（C05-S02）
 - hull style 的 9 个声音字段与声音集分档（`engineLoopSet` 等）；GearIn 舰船当前挂在 `GEAR_TECH` 风格上（C04-S02）
-- `GearIn_durin.wpn` 武器规格文件与 `fireSoundTwo` 字段（C01-S04）
+- `GearIn_durin.wpn` 武器规格文件与 `fireSoundTwo` 字段（C01-S05）
 - `GearIn_burstdrive.system` 与效果脚本 `GearInBurstDriveSystem`；源码由游戏按类名从 MOD 根目录 `data/scripts/...` 即时编译，自 C06-S01 起教程改为编译 JAR，类名规则不变（C02-S03）
 - 每帧回调模型与暂停语义（C07-S01）
 - `GearIn_test` 测试战役，本节验证方案使用（C03-S01）
@@ -442,7 +442,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 - 三个 OGG（C05-S01）
 - `data/config/sounds.json`（C05-S02）
-- `data/weapons/GearIn_durin.wpn`（C01-S04）
+- `data/weapons/GearIn_durin.wpn`（C01-S05）
 - `data/shipsystems/GearIn_burstdrive.system`（C02-S03）
 - 测试战役 `GearIn_test`（C03-S01）
 - 本节的 `settings.json` 与新类 `GearInMusicPlayerPlugin`

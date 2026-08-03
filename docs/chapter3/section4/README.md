@@ -20,8 +20,8 @@
 
 本节建立在以下基础上：
 
-- **`descriptions.csv` 的基础结构与静态检查**（前置单元 C01-S06）：RC8 为 8 列 `id,type,text1,text2,text3,text4,text5,notes`、`id + type` 键规则、舰船/武器/战术系统的查找键、缺行占位与加载期硬失败、首次静态验证脚本（含 11 个合法 `type` 的键检查）。
-- **各数据链对象 ID 的出处**（前置单元 C01-S02 至 C01-S05）：能识别各数据链的对象 ID（`hullId`、武器 ID、系统 ID），知道商品、势力、行星类型等对象的 ID 来自哪些文件。
+- **`descriptions.csv` 的基础结构与静态检查**（前置单元 C01-S07）：RC8 为 8 列 `id,type,text1,text2,text3,text4,text5,notes`、`id + type` 键规则、舰船/武器/战术系统的查找键、缺行占位与加载期硬失败、首次静态验证脚本（含 11 个合法 `type` 的键检查）。
+- **各数据链对象 ID 的出处**（前置单元 C01-S02 至 C01-S06）：能识别各数据链的对象 ID（`hullId`、武器 ID、系统 ID），知道商品、势力、行星类型等对象的 ID 来自哪些文件。
 - **术语约定**：生涯（campaign）；数据库（codex，生涯界面中的图鉴界面）；C2 命令（战斗指挥命令，如攻击、护航、撤退）；地形（terrain，星系中的星云、小行星带、日冕等）。
 
 ## 文件/API 链路
@@ -42,7 +42,7 @@ RC8 的 `Description.Type` 共有 **11 个枚举值**，全部可以在 MOD 的 
 
 | Type 枚举 | `id` 列怎么写 | 主要使用方（界面位置）| 原版行数 |
 |---|---|---|---|
-| `SHIP` | `.ship` 的 `descriptionId`，未填则回退 `hullId`（C01-S06）| 数据库船体详情、舰队 tooltip、装配界面、蓝图/货舱 tooltip | 178 |
+| `SHIP` | `.ship` 的 `descriptionId`，未填则回退 `hullId`（C01-S07）| 数据库船体详情、舰队 tooltip、装配界面、蓝图/货舱 tooltip | 178 |
 | `WEAPON` | 武器 ID（`weapon_data.csv` 的 `id`）| 装配武器列表副标题、武器 tooltip、数据库武器详情 | 129 |
 | `SHIP_SYSTEM` | 系统 ID（`ship_systems.csv` / `.system` 的 `id`）| 装配界面系统行、数据库系统列表与详情 | 56 |
 | `RESOURCE` | 商品 ID（`data/campaign/commodities.csv` 的 `id`）| 货舱/交易界面货物 tooltip | 30 |
@@ -248,7 +248,7 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
 
 验证入口为生涯界面（货舱/交易、行星与小行星悬停、通讯、数据库、图库）与战斗（C2 命令 tooltip）。
 
-- **前置数据**：`gear_in` MOD（C01-S01）与 C01-S02 至 C01-S06 的全部数据已就绪，本节 `GearIn_description_*` 演示行已按上文添加。
+- **前置数据**：`gear_in` MOD（C01-S01）与 C01-S02 至 C01-S07 的全部数据已就绪，本节 `GearIn_description_*` 演示行已按上文添加。
 - **操作**：
   1. 启动游戏进入生涯，确认日志出现 `Loading descriptions` 且无 `ERROR`；新增演示行不产生任何报错（合法未挂接行，不显示、不报错，这本身就是预期状态）。
   2. 货舱/交易界面悬停 `supplies` 与任意 GearIn 武器：核对 `RESOURCE` 行 text1、武器署名斜体规则。

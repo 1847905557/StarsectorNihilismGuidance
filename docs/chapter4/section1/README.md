@@ -22,7 +22,7 @@
 - 装配注册与 `GearIn_artizan_combat` 的制作、持有（C03-S01）
 - 船体注册，含 `GearIn_artizan` 与自动生成的 `<hullId>_Hull` 空装配（C01-S02）
 - 战机联队注册与 `_wing` 后缀（C01-S03）
-- 武器注册（C01-S04）
+- 武器注册（C01-S05）
 - CSV 跨 MOD 合并语义（C02-S02）
 
 所有文件路径都相对 MOD 根目录（本教程示例 MOD 位于 `\Starsector\mods\GearIndustry`，路径自洽即可）。

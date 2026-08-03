@@ -23,7 +23,7 @@
 - MOD 目录、`mod_info.json` 与数据合并规则（C01-S01）
 - 船体注册，`GearIn_artizan`（C01-S02）
 - 战机装配文件与战机三段注册（C01-S03）
-- 武器注册，`GearIn_durin`（C01-S04）
+- 武器注册，`GearIn_durin`（C01-S05）
 - 船插注册（C02-S02）
 
 ## 术语：战役与生涯
@@ -229,7 +229,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 前置数据（来自前置知识与本节内容）：
 
-- `mod_info.json`（C01-S01）、船体 `GearIn_artizan`（C01-S02）、武器 `GearIn_durin`（C01-S04）；
+- `mod_info.json`（C01-S01）、船体 `GearIn_artizan`（C01-S02）、武器 `GearIn_durin`（C01-S05）；
 - 本节的 `data/missions/mission_list.csv`、`data/missions/GearIn_test/`（descriptor.json、mission_text.txt、icon、`MissionDefinition` 类源文件）与 `data/variants/GearIn_artizan_combat.variant`。
 
 操作：
@@ -397,7 +397,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
    - 修正：剪贴（不复制）导出文件，`variantId` 改为 `GearIn_artizan_combat` 这类唯一 ID 且与文件名一致；如果之前已经放过同 ID 文件，先删掉旧的。
 7. **装配里的武器不出现或报错。**
    - 触发：`weapons` 里的槽位 ID 不是该船体真实槽位（部署期报 `slot id not found`），或武器 ID 不存在（装配构建期报 `Weapon spec not found`），或 `hullId` 与船体注册不一致。
-   - 修正：只改您确定拥有的槽位与已注册武器（C01-S02 槽位、C01-S04 的 `GearIn_durin`），不确定时回到测试战役重新装配导出。
+   - 修正：只改您确定拥有的槽位与已注册武器（C01-S02 槽位、C01-S05 的 `GearIn_durin`），不确定时回到测试战役重新装配导出。
 8. **装配加载直接失败。**
    - 触发：`weaponGroups` 里某组的 `mode` 拼错（不是 `LINKED` / `ALTERNATING`），或必填字段缺失。
    - 可观察：`Loading variant [...]` 之后抛 `Key [mode] has invalid value [...]`（枚举解析抛异常），加载中断。

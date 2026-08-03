@@ -5,5 +5,5 @@
 /docs/.vuepress/.cache
 node_modules/
 sample/
-.cursor/
+.zcode/
 tutorial-fixtures/gradle.properties

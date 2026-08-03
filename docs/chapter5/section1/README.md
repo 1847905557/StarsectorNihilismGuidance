@@ -17,7 +17,7 @@
 
 本节是声音链路的资源层，前置知识包括：
 
-- 已完成 C01-S01（MOD 目录、`mod_info.json` 与日志基础）。
+- 已完成 C01-S01(MOD 目录、`mod_info.json` 与日志基础)。
 - 准备一个能导出 Ogg Vorbis 的音频编辑器。
 - 示例 MOD 根目录为 `Starsector\mods\GearIndustry`，本节路径均以它为基准。
 
@@ -35,7 +35,7 @@ SoundPlayerAPI            消费层（C05-S03）：Global.getSoundPlayer() 按 I
 
 两个事实决定素材必须在本节做好：
 
-- 循环是消费层的运行时行为。`SoundPlayerAPI.playLoop(id, ...)`（C05-S03）会连续重播同一个 OGG；0.98a-RC8 原版 `sounds.json` 没有 loop 开关字段，注册层无法补救循环接缝。
+- 循环是消费层的运行时行为。`SoundPlayerAPI.playLoop(id, ...)`(C05-S03) 会连续重播同一个 OGG；0.98a-RC8 原版 `sounds.json` 没有 loop 开关字段，注册层无法补救循环接缝。
 - 注册层只提供路径和播放参数，不能修复错误编码、削波或循环接缝。
 
 ## 目录与 ID
@@ -74,7 +74,7 @@ GearIndustry\
 | 引擎/系统循环 | mono 或 stereo | 首尾波形和相位连续，避免循环点击声 |
 | 环境与音乐 | stereo | 保留动态，避免过度压限和削波 |
 
-原版素材统一为 44100 Hz 采样率（武器音效为 mono，音乐为 stereo）；教程不强制采样率，但同一 sound ID 的多个差分文件（可互换的变体素材）应使用相同采样率、声道数和相近响度，避免随机切换时音色突变。
+原版素材统一为 44100 Hz 采样率 (武器音效为 mono，音乐为 stereo)；教程不强制采样率，但同一 sound ID 的多个差分文件 (可互换的变体素材) 应使用相同采样率、声道数和相近响度，避免随机切换时音色突变。
 
 ## 资产形态与生成规格
 
@@ -82,7 +82,7 @@ GearIndustry\
 
 | 文件 | 分类 | 声道 | 循环 | 生成关注点 |
 |---|---|---|---|---|
-| `GearIn_market_theme.ogg` | 音乐（市场主题）| stereo | 由音乐播放器循环 | 保留动态，避免过度压限与削波 |
+| `GearIn_market_theme.ogg` | 音乐 (市场主题)| stereo | 由音乐播放器循环 | 保留动态，避免过度压限与削波 |
 | `GearIn_system_loop.ogg` | 系统持续音效 | mono 或 stereo | 必须首尾无缝 | 波形与相位连续，10 次重复无接缝 |
 | `GearIn_weapon_fire.ogg` | 一次性武器音效 | mono 或 stereo | 否 | 起音清晰、文件短、末尾无多余静音 |
 
@@ -90,7 +90,7 @@ GearIndustry\
 
 ## 音频准备与自检
 
-本节的例即上一节「资产形态与生成规格」表中的三个 OGG 文件，本节没有可启动的游戏内容，验证在外部播放器完成。基于本例，生成 `GearIn_weapon_fire.ogg` 后先完成以下检查：
+本节的例即上一节 "资产形态与生成规格" 表中的三个 OGG 文件，本节没有可启动的游戏内容，验证在外部播放器完成。基于本例，生成 `GearIn_weapon_fire.ogg` 后先完成以下检查：
 
 1. 播放器能识别为 Ogg Vorbis，而不是只看扩展名。
 2. 从开始到结束完整播放，没有削波、爆音或异常静音。
@@ -125,7 +125,7 @@ GearIndustry\
 
 ## 故障分析
 
-- 文件无法播放：内容不是 Ogg Vorbis，或导出中断；重新从源工程导出并检查文件头（前 4 字节应为 `OggS`）。
+- 文件无法播放：内容不是 Ogg Vorbis，或导出中断；重新从源工程导出并检查文件头 (前 4 字节应为 `OggS`)。
 - 游戏以后报告找不到文件：注册路径与实际大小写不一致，或路径错误地从磁盘根目录开始；应使用 MOD 根目录相对路径。
 - 循环时有咔哒声：首尾波形不连续；调整剪切点和交叉淡化后重新导出。
 - 同一 ID 的多个差分之间音量跳变：母带响度或 `sounds.json` 参数不一致；先统一素材响度，再在注册层做小幅调整。
@@ -139,7 +139,7 @@ GearIndustry\
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global`：`getSoundPlayer()` 获取声音播放器（消费层入口）。
+- `com.fs.starfarer.api.Global`：`getSoundPlayer()` 获取声音播放器 (消费层入口)。
 - `com.fs.starfarer.api.SoundPlayerAPI`：按 sound ID 播放的公开接口，含 `playLoop(id, ...)` 等循环播放方法。
-- `Starsector\starsector-core\sounds`：原版声音目录，音频全部为 `.ogg`（`sounds\music\music.bin` 为音乐容器）。
+- `Starsector\starsector-core\sounds`：原版声音目录，音频全部为 `.ogg`(`sounds\music\music.bin` 为音乐容器)。
 - `Starsector\starsector-core\data\config\sounds.json`：原版注册表，`file` 值全部指向 `.ogg`，无 loop 字段。

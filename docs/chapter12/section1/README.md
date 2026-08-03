@@ -1,6 +1,6 @@
 # 依赖声明、硬依赖语义与运行时检测
 
-本节把 MOD 之间的依赖从 "口头约定" 变成启动器强制检查的约定：在 `mod_info.json` 声明 `dependencies` 数组（硬依赖），观察启动器的检查、勾选联动与自动禁用行为，并用 `ModManagerAPI` 在代码里做运行时检测。
+本节把 MOD 之间的依赖从 "口头约定" 变成启动器强制检查的约定：在 `mod_info.json` 声明 `dependencies` 数组 (硬依赖)，观察启动器的检查、勾选联动与自动禁用行为，并用 `ModManagerAPI` 在代码里做运行时检测。
 
 *本节预期阅读时间：~15 分钟。*
 
@@ -11,8 +11,8 @@
 完成后，您将能够：
 
 - 写出 `mod_info.json` 的 `dependencies` 数组，说出 `id`、`name`、`version` 三个字段的必需性与缺失后果；
-- 解释硬依赖（hard dependency）的完整语义：谁检查、检查什么、失败时启动器做什么；
-- 说出 `getDependencies()` 与 `getAllDependencies()` 的差别（直接依赖 vs 递归展开的依赖的依赖）；
+- 解释硬依赖 (hard dependency) 的完整语义：谁检查、检查什么、失败时启动器做什么；
+- 说出 `getDependencies()` 与 `getAllDependencies()` 的差别 (直接依赖 vs 递归展开的依赖的依赖)；
 - 用 `Global.getSettings().getModManager()` 在运行时读取依赖与启用状态，区分 `isModEnabled`、`getModSpec`、`getAvailableModsCopy` 的语义；
 - 从启动器行的颜色与文案、自动禁用弹窗、`starsector.log` 三个位置定位依赖问题的环节。
 
@@ -20,19 +20,19 @@
 
 本节建立在既有教程工程与前面各节的机制之上，主要涉及三块基础：
 
-- MOD 目录与 `mod_info.json` 必填字段、`enabled_mods.json` 启用列表、启动器与日志（C01-S01）
-- 编译 JAR 链路与 `jars` 声明；依赖 MOD 的类同样只可能来自它自己的 JAR 或 `.java` 脚本（C06-S01）
-- `modPlugin` 入口与 `onApplicationLoad()` 时机（资源加载完成后、主菜单前）；本节的运行时检测示例从这个回调接入（C06-S02）
+- MOD 目录与 `mod_info.json` 必填字段、`enabled_mods.json` 启用列表、启动器与日志 (C01-S01)。
+- 编译 JAR 链路与 `jars` 声明；依赖 MOD 的类同样只可能来自它自己的 JAR 或 `.java` 脚本 (C06-S01)。
+- `modPlugin` 入口与 `onApplicationLoad()` 时机 (资源加载完成后、主菜单前)；本节的运行时检测示例从这个回调接入 (C06-S02)。
 
-`dependencies` 声明是在既有 manifest 上的累积追加。软依赖（optional dependency）的运行时分支检测、类加载隔离与降级适配属于软依赖专题，本节只覆盖声明式硬依赖与基础运行时检测。
+`dependencies` 声明是在既有 manifest 上的累积追加。软依赖 (optional dependency) 的运行时分支检测、类加载隔离与降级适配属于软依赖专题，本节只覆盖声明式硬依赖与基础运行时检测。
 
-## 硬依赖语义（0.98a-RC8）
+## 硬依赖语义 (0.98a-RC8)
 
 硬依赖 = 在 `mod_info.json` 的 `dependencies` 数组里声明的、**必须已安装**的 MOD。
 
 它的强制力来自启动器：依赖缺失或版本不符时，启动器不允许勾选本 MOD；此前已勾选的会在启动器主界面初始化时被自动禁用并弹窗。
 
-这是 "声明式" 的：启动器只核对声明，不检查代码里是否真的引用 —— 引用与声明的一致性由 MOD 作者负责（见故障分析第 6 条）。
+这是 "声明式" 的：启动器只核对声明，不检查代码里是否真的引用 —— 引用与声明的一致性由 MOD 作者负责 (见故障分析第 6 条)。
 
 ### 声明：mod_info.json 的 dependencies 数组
 
@@ -54,38 +54,38 @@
 
 | 字段 | 必需性 | 作用与缺失后果 |
 |---|---:|---|
-| `id` | 必须 | 依赖 MOD 的 `mod_info.json` 的 `id` 字段值，大小写敏感、逐字匹配。缺失或不是字符串 → manifest 解析失败，整个 MOD 目录被跳过（日志 `Error loading mod from [...]`）|
+| `id` | 必须 | 依赖 MOD 的 `mod_info.json` 的 `id` 字段值，大小写敏感、逐字匹配。缺失或不是字符串 → manifest 解析失败，整个 MOD 目录被跳过 (日志 `Error loading mod from [...]`)|
 | `name` | 可选 | 启动器 "Required mods:" 列表的显示名；缺失时回退为 `id` 本身 |
-| `version` | 可选 | 声明的最低要求版本，字符串（如 `"3.0.0"`）或对象（`{"major":3,"minor":0,"patch":0}`）均可；缺失 → 只检查依赖 MOD 是否安装，不比较版本 |
+| `version` | 可选 | 声明的最低要求版本，字符串 (如 `"3.0.0"`) 或对象 (`{"major":3,"minor":0,"patch":0}`) 均可；缺失 → 只检查依赖 MOD 是否安装，不比较版本 |
 
-解析细节（启动器解析 `mod_info.json` 时）：`id` 用 `getString`，缺字段抛 `JSONException` 并上抛为解析失败；
+解析细节 (启动器解析 `mod_info.json` 时)：`id` 用 `getString`，缺字段抛 `JSONException` 并上抛为解析失败；
 
 `name` 用 `optString("name", id)`；`version` 与顶层 `version` 字段共用同一套版本解析，写成对象时 `major` 必填，缺失同样导致解析失败。
 
 ::: caution 依赖项 `id` 必须逐字一致
-`id` 必须与依赖 MOD 的 `mod_info.json` 的 `id` 字段逐字匹配、大小写敏感；启动器按 `equals` 逐字比对，拼错或大小写不符一律按 "该 MOD 未安装" 处理（`MODULE_MISSING`），错误文案指向 "没装" 而不是 "没拼对"。
+`id` 必须与依赖 MOD 的 `mod_info.json` 的 `id` 字段逐字匹配、大小写敏感；启动器按 `equals` 逐字比对，拼错或大小写不符一律按 "该 MOD 未安装" 处理 (`MODULE_MISSING`)，错误文案指向 "没装" 而不是 "没拼对"。
 :::
 
 ::: warning 声明与引用要一致
-`dependencies` 数组只应列出本 MOD 代码**真实引用**的 MOD。两条错误方向：声明了但代码不用，只是给用户增加启动器强制安装的摩擦；代码用了但没声明，启动器无法自动发现，用户缺依赖时在运行期才炸（见故障分析第 6 条）。
+`dependencies` 数组只应列出本 MOD 代码**真实引用**的 MOD。两条错误方向：声明了但代码不用，只是给用户增加启动器强制安装的摩擦；代码用了但没声明，启动器无法自动发现，用户缺依赖时在运行期才炸 (见故障分析第 6 条)。
 :::
 
 ### 加载器检查：谁在什么时候检查
 
 - 检查入口：启动器的兼容性检查。启动器每次构建 MOD 行、刷新信息面板、初始化主界面时都会执行。
-- 检查对象：`getAllDependencies()` —— 按已安装 MOD 的 manifest 递归展开依赖的依赖（`LinkedHashSet` 防环）。因此间接依赖（依赖项的依赖）失效同样产生硬错误。
-- 判定级别（从轻到重）：
+- 检查对象：`getAllDependencies()` —— 按已安装 MOD 的 manifest 递归展开依赖的依赖 (`LinkedHashSet` 防环)。因此间接依赖 (依赖项的依赖) 失效同样产生硬错误。
+- 判定级别 (从轻到重)：
 
 | 级别 | 触发条件 | 启动器处理 |
 |---|---|---|
-| `COMPATIBLE` | 依赖已安装且版本相符（或未声明版本）| 正常 |
+| `COMPATIBLE` | 依赖已安装且版本相符 (或未声明版本)| 正常 |
 | `PATCH_MISMATCH` | 依赖已安装，patch 不同 | 黄色警告，可勾选 |
 | `MINOR_MISMATCH` | 依赖已安装，minor 不同 | 黄色警告，可勾选 |
 | `MAJOR_MISMATCH` | 依赖已安装，major 不同；或依赖项声明了版本、而已安装依赖 MOD 自身 `gameVersion` 的 major 不符当前游戏 | 红色，不可勾选 |
 | `VERSION_UNSPECIFIED` | 依赖项声明了版本但已安装 MOD 无版本信息；或已安装依赖 MOD 未声明 `gameVersion` | 红色，不可勾选 |
-| `MODULE_MISSING` | 依赖 MOD 未安装（不在 `Starsector\mods\` 下）| 红色，不可勾选 |
+| `MODULE_MISSING` | 依赖 MOD 未安装 (不在 `Starsector\mods\` 下)| 红色，不可勾选 |
 
-版本比较规则：major 不同 → `MAJOR_MISMATCH`；minor 不同 → `MINOR_MISMATCH`（依赖项与已安装 MOD 的版本都是 RC 编号时跳过 minor 比较）；
+版本比较规则：major 不同 → `MAJOR_MISMATCH`；minor 不同 → `MINOR_MISMATCH`(依赖项与已安装 MOD 的版本都是 RC 编号时跳过 minor 比较)；
 
 patch 不同 → `PATCH_MISMATCH`；全部相同 → `COMPATIBLE`。
 
@@ -93,29 +93,29 @@ patch 不同 → `PATCH_MISMATCH`；全部相同 → `COMPATIBLE`。
 
 ### 启动器消费端：可观察结果
 
-1. **红色 + 不可勾选**：整体级别为 `MODULE_MISSING` / `MAJOR_MISMATCH` / `VERSION_UNSPECIFIED` 的 MOD 行以红色绘制，点击勾选无反应（启动器 MOD 列表的行面板）。
-2. **描述面板**：选中 MOD 时列出 "Required mods:" 段，逐项显示 `<name> <version>`（红或黄着色），并追加错误行：
-  - 依赖缺失显示 `Error: this mod requires another mod that you don't have installed.`
-  - 依赖版本 major 不符显示 `Error: this mod requires a different version of a mod that you have installed.`
-  - 依赖版本 minor/patch 不符显示黄色 `Warning: this mod requires a different version of a mod that you have installed, but might run with this one.`
-3. **勾选联动**：勾选一个 MOD 会**自动勾选**它的全部依赖行（含间接依赖）；取消一个 MOD 的勾选会**级联取消**声明它为依赖的 MOD。
-4. **自动禁用 + 弹窗**：启动器主界面初始化时，已启用 MOD 中整体级别为硬错误（`MODULE_MISSING` / `MAJOR_MISMATCH` / `VERSION_UNSPECIFIED`）的会被移出启用列表，并立即保存 `Starsector\mods\enabled_mods.json`。
-  - 弹窗：随后弹出 `Some of the enabled mods have unmet requirements or are not compatible with this version of the game and have been disabled.`（启动器）。
+1. **红色 + 不可勾选**：整体级别为 `MODULE_MISSING` / `MAJOR_MISMATCH` / `VERSION_UNSPECIFIED` 的 MOD 行以红色绘制，点击勾选无反应 (启动器 MOD 列表的行面板)。
+2. **描述面板**：选中 MOD 时列出 "Required mods:" 段，逐项显示 `<name> <version>`(红或黄着色)，并追加错误行：
+  - 依赖缺失显示 `Error: this mod requires another mod that you don't have installed.`；
+  - 依赖版本 major 不符显示 `Error: this mod requires a different version of a mod that you have installed.`；
+  - 依赖版本 minor/patch 不符显示黄色 `Warning: this mod requires a different version of a mod that you have installed, but might run with this one.`。
+3. **勾选联动**：勾选一个 MOD 会**自动勾选**它的全部依赖行 (含间接依赖)；取消一个 MOD 的勾选会**级联取消**声明它为依赖的 MOD。
+4. **自动禁用 + 弹窗**：启动器主界面初始化时，已启用 MOD 中整体级别为硬错误 (`MODULE_MISSING` / `MAJOR_MISMATCH` / `VERSION_UNSPECIFIED`) 的会被移出启用列表，并立即保存 `Starsector\mods\enabled_mods.json`。
+  - 弹窗：随后弹出 `Some of the enabled mods have unmet requirements or are not compatible with this version of the game and have been disabled.`(启动器)。
   - 不可绕过：手动改写 `enabled_mods.json` 无法绕过这一道检查。
 
 ### 代码侧：运行时检测 API
 
-运行时读取依赖状态的标准入口：`Global.getSettings().getModManager()`（`SettingsAPI.getModManager()`）→ `ModManagerAPI`：
+运行时读取依赖状态的标准入口：`Global.getSettings().getModManager()`(`SettingsAPI.getModManager()`)→ `ModManagerAPI`：
 
 | 方法 | 语义 |
 |---|---|
-| `isModEnabled(String id)` | id 是否在启用列表（大小写敏感、逐字比较）|
+| `isModEnabled(String id)` | id 是否在启用列表 (大小写敏感、逐字比较)|
 | `getModSpec(String id)` | 只查**已启用** MOD；未启用或未安装 → `null` |
 | `getAvailableModsCopy()` | 全部已安装 MOD 的副本，不区分启用状态 |
 | `getEnabledModsCopy()` | 当前启用列表的快照 |
-| `ModSpecAPI.getDependencies()` / `getAllDependencies()` | 直接依赖 / 递归展开（含依赖的依赖）|
+| `ModSpecAPI.getDependencies()` / `getAllDependencies()` | 直接依赖 / 递归展开 (含依赖的依赖)|
 
-`ModSpecAPI.getVersionInfo()` 返回已安装 MOD **自己**的版本对象（`VersionInfoAPI.getString()` 输出 `3.0.0` 形式）；
+`ModSpecAPI.getVersionInfo()` 返回已安装 MOD **自己**的版本对象 (`VersionInfoAPI.getString()` 输出 `3.0.0` 形式)；
 
 `ModDependencyAPI` 只有 `getId()` / `getName()` / `getVersionInfo()`。
 
@@ -125,7 +125,7 @@ patch 不同 → `PATCH_MISMATCH`；全部相同 → `COMPATIBLE`。
 
 依赖缺失时这些类不在脚本类路径上，JVM 在首次解析或初始化相关类时抛 `NoClassDefFoundError`；
 
-若入口类（`modPlugin`）的初始化链引用缺失类，启动阶段即失败（`Error` 不被包装，直接冒泡）。
+若入口类 (`modPlugin`) 的初始化链引用缺失类，启动阶段即失败 (`Error` 不被包装，直接冒泡)。
 
 这正是 "声明式硬依赖由启动器把关" 的原因。
 
@@ -146,13 +146,13 @@ patch 不同 → `PATCH_MISMATCH`；全部相同 → `COMPATIBLE`。
 | 展示 | 启动器 Mods 列表 | 红/黄着色、不可勾选、"Required mods:" 列表与错误文案 |
 | 联动 | 启动器勾选事件 | 勾选自动带出依赖、取消级联取消依赖者 |
 | 强制 | 启动器主界面初始化 | 移除硬错误级别 MOD、保存 `enabled_mods.json`、弹窗 |
-| 运行时读取 | `Global.getSettings().getModManager()` → `ModManagerAPI` | `isModEnabled` / `getModSpec` / `getAvailableModsCopy` / `getEnabledModsCopy`（API `com.fs.starfarer.api.SettingsAPI`、`com.fs.starfarer.api.ModManagerAPI`）|
+| 运行时读取 | `Global.getSettings().getModManager()` → `ModManagerAPI` | `isModEnabled` / `getModSpec` / `getAvailableModsCopy` / `getEnabledModsCopy`(API `com.fs.starfarer.api.SettingsAPI`、`com.fs.starfarer.api.ModManagerAPI`)|
 | 代码引用 | 依赖 MOD 的 JAR / 脚本类 | 脚本类加载器：类缺失 → `NoClassDefFoundError` / `Problem loading class` |
 | 日志 | `starsector-core\starsector.log` | `Found mod:` 扫描行、`Running with the following mods` 启动行、本节示例的 `GearIn dependency check:` 行 |
 
 ## 完整最小例
 
-在既有累计工程的布局上追加（MOD 根目录 `Starsector\mods\GearIndustry`）；本节不新增任何数据 ID 或资源，只新增一个 Java 类：
+在既有累计工程的布局上追加 (MOD 根目录 `Starsector\mods\GearIndustry`)；本节不新增任何数据 ID 或资源，只新增一个 Java 类：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -170,7 +170,7 @@ Starsector\mods\GearIndustry\
 └── jars\
 ```
 
-### mod_info.json（在既有 manifest 上追加 dependencies）
+### mod_info.json(在既有 manifest 上追加 dependencies)
 
 ```json
 {
@@ -202,8 +202,8 @@ Starsector\mods\GearIndustry\
 
 要点：
 
-- `id` 必须与依赖 MOD 自己的 `id` 逐字一致：LazyLib 的 id 是 `lw_lazylib`，MagicLib 的 id 是 `MagicLib` （打开对方的 `mod_info.json` 复制，不要凭印象写）。
-- `name` 只影响启动器显示；LazyLib 一项省略 `version`（只检查存在性 ——MagicLib 官方注释 "Remove the specific version for future-proofing." 推荐的做法），MagicLib 一项带 `version` 演示版本比较。
+- `id` 必须与依赖 MOD 自己的 `id` 逐字一致：LazyLib 的 id 是 `lw_lazylib`，MagicLib 的 id 是 `MagicLib` (打开对方的 `mod_info.json` 复制，不要凭印象写)。
+- `name` 只影响启动器显示；LazyLib 一项省略 `version`(只检查存在性 ——MagicLib 官方注释 "Remove the specific version for future-proofing." 推荐的做法)，MagicLib 一项带 `version` 演示版本比较。
 - 示例声明这两个依赖仅用于演示启动器把关与运行时检测，本教程代码没有调用它们的 API；您自己的 MOD 只声明真实引用的依赖。
 
 ### GearInDependencyCheck
@@ -275,10 +275,10 @@ public class GearInDependencyCheck {
 - `self.getDependencies()`：直接依赖列表，与 manifest 的 `dependencies` 数组一一对应。
 - `modManager.isModEnabled(dep.getId())`：依赖是否在启用列表；依赖已安装但未勾选时返回 false。
 - `modManager.getModSpec(dep.getId())`：只在 `enabled` 为 true 时调用 ——`getModSpec` 未启用即 null，null 上调用方法会 NPE。
-- `installed.getVersionInfo().getString()`：读的是**已安装** MOD 自己的版本（如 LazyLib 的 `3.0.0`），与声明项里有没有写 `version` 无关。
+- `installed.getVersionInfo().getString()`：读的是**已安装** MOD 自己的版本 (如 LazyLib 的 `3.0.0`)，与声明项里有没有写 `version` 无关。
 - `Global.getLogger(GearInDependencyCheck.class)`：log4j 记录器，输出到 `starsector-core\starsector.log`。
 
-### 接入片段（在既有 `GearInModPlugin` 中追加一行）
+### 接入片段 (在既有 `GearInModPlugin` 中追加一行)
 
 ```java
 @Override
@@ -289,7 +289,7 @@ public void onApplicationLoad() {
 }
 ```
 
-`GearInModPlugin` 类定义于既有教程工程（不归本节所有），本节只消费它；示例工程不含此片段（示例工程只含本节所有的 `GearInDependencyCheck`）。
+`GearInModPlugin` 类定义于既有教程工程 (不归本节所有)，本节只消费它；示例工程不含此片段 (示例工程只含本节所有的 `GearInDependencyCheck`)。
 
 ### 构建
 
@@ -297,23 +297,23 @@ public void onApplicationLoad() {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/modcompat/GearInDependencyCheck.class`（可用 `jar tf` 核对）。
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/modcompat/GearInDependencyCheck.class`(可用 `jar tf` 核对)。
 
-### 验证方案（基于本例）
+### 验证方案 (基于本例)
 
-- 前置数据：既有累计工程（C06-S02 的累计成果）——`mod_info.json` 已追加本节 `dependencies`、已新增 `GearInDependencyCheck` 类、`GearInModPlugin` 内已追加一行调用；本机已安装 LazyLib 与 MagicLib。
+- 前置数据：既有累计工程 (C06-S02 的累计成果)——`mod_info.json` 已追加本节 `dependencies`、已新增 `GearInDependencyCheck` 类、`GearInModPlugin` 内已追加一行调用；本机已安装 LazyLib 与 MagicLib。
 
 操作步骤：
 
 1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
    - 核对产物：`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/modcompat/GearInDependencyCheck.class`。
 2. 启动器声明检查：打开启动器 Mods 列表，选中 "齿轮工业"，确认描述面板出现 "Required mods:" 并列出 `LazyLib` 与 `MagicLib 1.5.1`；勾选 "齿轮工业"，确认 LazyLib、MagicLib 被自动勾选。
-3. 运行时检测：启动游戏进入主菜单后退出；`starsector.log` 出现两行 `GearIn dependency check: ...` （`enabled=true`、`installedVersion=3.0.0` 与 `1.5.1`），且没有由 `gear_in` 引起的 `ERROR`。
+3. 运行时检测：启动游戏进入主菜单后退出；`starsector.log` 出现两行 `GearIn dependency check: ...` (`enabled=true`、`installedVersion=3.0.0` 与 `1.5.1`)，且没有由 `gear_in` 引起的 `ERROR`。
 4. 故障注入·版本：把 MagicLib 项的 `version` 改为 `"2.0.0"`，重启启动器。
    - 确认 "齿轮工业" 行变红、不可勾选，描述面板出现 "Error: this mod requires a different version of a mod that you have installed."。
    - 恢复：改回 `1.5.1` 后恢复。
    - 恢复：改回 `1.5.1` 后恢复。
-5. 故障注入·缺失：先确认 "齿轮工业" 处于勾选状态，把 `Starsector\mods\LazyLib` 目录临时改名（如 `LazyLib.off`），重启启动器。
+5. 故障注入·缺失：先确认 "齿轮工业" 处于勾选状态，把 `Starsector\mods\LazyLib` 目录临时改名 (如 `LazyLib.off`)，重启启动器。
    - 弹窗：确认弹窗 "Some of the enabled mods have unmet requirements or are not compatible with this version of the game and have been disabled."。
    - 勾选态："齿轮工业" 行变红不可勾选，错误文案为 "Error: this mod requires another mod that you don't have installed."。
    - 落盘：`Starsector\mods\enabled_mods.json` 的 `enabledMods` 中已无 `gear_in`。
@@ -330,19 +330,19 @@ gradle jar
 ## 预期结果
 
 1. **构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束。
-2. **声明生效（启动器）**：Mods 列表中 "齿轮工业" 行正常、可勾选；选中后描述面板出现 "Required mods:"，列出 `LazyLib` 与 `MagicLib 1.5.1`。
-3. **勾选联动**：勾选 "齿轮工业" 时，LazyLib 与 MagicLib 被自动勾选；取消 LazyLib 的勾选，"齿轮工业" 的勾选被级联取消（依赖仍安装时它仍可重新勾选 —— 启动器要求的是 "已安装"，不是 "必须同时启用"）。
+2. **声明生效 (启动器)**：Mods 列表中 "齿轮工业" 行正常、可勾选；选中后描述面板出现 "Required mods:"，列出 `LazyLib` 与 `MagicLib 1.5.1`。
+3. **勾选联动**：勾选 "齿轮工业" 时，LazyLib 与 MagicLib 被自动勾选；取消 LazyLib 的勾选，"齿轮工业" 的勾选被级联取消 (依赖仍安装时它仍可重新勾选 —— 启动器要求的是 "已安装"，不是 "必须同时启用")。
 4. **运行时检测**：启动游戏进入主菜单后退出，`starsector.log` 出现：
 
 ```text
 GearIn dependency check: LazyLib (lw_lazylib) enabled=true installedVersion=3.0.0 GearIn dependency check: MagicLib (MagicLib) enabled=true installedVersion=1.5.1
 ```
 
-`installedVersion` 是已安装 MOD 的真实版本（`getVersionInfo`），LazyLib 声明项里没写 `version` 也能查出 `3.0.0`。
-5. **变更验证（版本）**：把 MagicLib 项的 `version` 改为 `"2.0.0"`，重启启动器。
+`installedVersion` 是已安装 MOD 的真实版本 (`getVersionInfo`)，LazyLib 声明项里没写 `version` 也能查出 `3.0.0`。
+5. **变更验证 (版本)**：把 MagicLib 项的 `version` 改为 `"2.0.0"`，重启启动器。
    - "齿轮工业" 行变红且不可勾选，描述面板出现 `Error: this mod requires a different version of a mod that you have installed.`。
    - 恢复：改回 `1.5.1` 后恢复。
-6. **变更验证（缺失）**：把 `Starsector\mods\LazyLib` 目录临时改名（如 `LazyLib.off`）后重启启动器。
+6. **变更验证 (缺失)**：把 `Starsector\mods\LazyLib` 目录临时改名 (如 `LazyLib.off`) 后重启启动器。
    - 表现："齿轮工业" 行变红且不可勾选，描述面板出现 `Error: this mod requires another mod that you don't have installed.`。
    - 联动：若 "齿轮工业" 此前处于勾选状态，启动器自动把它从 `enabledMods` 移除并弹窗。
      - 弹窗文案："Some of the enabled mods have unmet requirements or are not compatible with this version of the game and have been disabled."。
@@ -350,14 +350,14 @@ GearIn dependency check: LazyLib (lw_lazylib) enabled=true installedVersion=3.0.
 
 静态自查：`mod_info.json` 为 UTF-8 无 BOM；
 
-依赖 `id` 与 `Starsector\mods\LazyLib\mod_info.json`（`lw_lazylib`）、 `Starsector\mods\MagicLib\mod_info.json`（`MagicLib`）的 `id` 逐字一致；
+依赖 `id` 与 `Starsector\mods\LazyLib\mod_info.json`(`lw_lazylib`)、`Starsector\mods\MagicLib\mod_info.json`(`MagicLib`) 的 `id` 逐字一致；
 
 Java 源码为 UTF-8 无 BOM、CRLF 换行。
 
 ## 实例驱动故障分析
 
 1. **"Error: this mod requires another mod that you don't have installed." 但依赖明明装了**。
-  - 触发：依赖项 `id` 拼错或大小写不符（如把 `lw_lazylib` 写成 `LazyLib`）。
+  - 触发：依赖项 `id` 拼错或大小写不符 (如把 `lw_lazylib` 写成 `LazyLib`)。
   - 可观察：MOD 行红色、不可勾选，错误文案指向 "没装"。
   - 原因：兼容性检查按 `equals` 逐字比对 id，大小写敏感。
   - 修正：打开依赖 MOD 自己的 `mod_info.json`，复制 `id` 字段值。
@@ -368,23 +368,23 @@ Java 源码为 UTF-8 无 BOM、CRLF 换行。
   - 原因：启动器主界面初始化时对硬错误级别 MOD 执行移除并保存。
   - 修正：恢复依赖或修正声明。这是设计行为，不是 bug；也是 "已勾选 MOD 悄悄消失" 的首选排查方向。
 3. **勾选一个 MOD 却带出一串从没勾过的 MOD**。
-  - 触发：该 MOD 声明了间接依赖（依赖的依赖）。
+  - 触发：该 MOD 声明了间接依赖 (依赖的依赖)。
   - 可观察：勾选后多行自动变为勾选态。
   - 原因：启动器 MOD 列表按 `getAllDependencies()` 递归自动勾选。
   - 修正：无，属预期行为；若某个依赖不应被连带启用，应把它降级为软依赖 —— 软依赖的声明与检测在软依赖专题中展开。
 4. **`isModEnabled(...)` 返回 false 但启动器里明明勾着**。
-  - 触发：把 `name` 当 `id` 传（如 `isModEnabled("LazyLib")`）。
+  - 触发：把 `name` 当 `id` 传 (如 `isModEnabled("LazyLib")`)。
   - 可观察：运行时分支错误、日志显示依赖 "未启用"。
   - 原因：`isModEnabled` 只认 `id` 且逐字比较。
-  - 修正：代码里永远使用对方 manifest 的 `id`（如 `lw_lazylib`），不用显示名。
+  - 修正：代码里永远使用对方 manifest 的 `id`(如 `lw_lazylib`)，不用显示名。
 5. **`getModSpec(id)` 返回 null 导致 NPE**。
   - 触发：目标 MOD 已安装但未启用，或未安装，代码未判空直接调用返回对象的方法。
   - 可观察：NPE 堆栈，日志 `ERROR`。
   - 原因：`getModSpec` 只查启用列表。
-  - 修正：先 `isModEnabled` 判断，或改用 `getAvailableModsCopy()` 枚举安装态（不区分启用）。
+  - 修正：先 `isModEnabled` 判断，或改用 `getAvailableModsCopy()` 枚举安装态 (不区分启用)。
 6. **代码引用了依赖 MOD 的类，用户没装那个依赖，启动或运行报错**。
-  - 触发：用了 `org.lazywizard.lazylib` 之类的类，但 `dependencies` 没声明（或声明了但依赖未被启用且类确实缺失）。
-  - 可观察：入口类初始化链引用缺失类 → 启动阶段日志出现 `NoClassDefFoundError` 或 `Problem loading class [...]`（脚本类加载器不包装 `Error`，直接冒泡）。
+  - 触发：用了 `org.lazywizard.lazylib` 之类的类，但 `dependencies` 没声明 (或声明了但依赖未被启用且类确实缺失)。
+  - 可观察：入口类初始化链引用缺失类 → 启动阶段日志出现 `NoClassDefFoundError` 或 `Problem loading class [...]`(脚本类加载器不包装 `Error`，直接冒泡)。
   - 可观察：战斗或回调期首次调用 → 该处抛 `NoClassDefFoundError`，流程中止。
   - 原因：依赖 MOD 的类不在脚本类路径上；启动器只核对声明，无法替代码检查引用。
   - 修正：把用到的 MOD 加入 `dependencies`—— 这是玩家侧把关的唯一依据。
@@ -402,16 +402,16 @@ Java 源码为 UTF-8 无 BOM、CRLF 换行。
 ## 总结
 
 硬依赖完整流程共四段：
-- **声明**（`mod_info.json` 的 `dependencies` 数组，`id` 必填、`name`/`version` 可选）
-- **检查**（兼容性检查递归展开依赖并按 major/minor/patch 逐档比较，`MODULE_MISSING` 是最重的一档）
-- **强制**（启动器红色不可勾选、勾选联动、自动禁用 + 弹窗，改写 `enabled_mods.json` 也无法绕过）
-- **运行时**（`Global.getSettings().getModManager()` 读取启用状态与真实版本，把声明与事实对齐并写日志）
+- **声明**(`mod_info.json` 的 `dependencies` 数组，`id` 必填、`name`/`version` 可选)。
+- **检查**(兼容性检查递归展开依赖并按 major/minor/patch 逐档比较，`MODULE_MISSING` 是最重的一档)。
+- **强制**(启动器红色不可勾选、勾选联动、自动禁用 + 弹窗，改写 `enabled_mods.json` 也无法绕过)。
+- **运行时**(`Global.getSettings().getModManager()` 读取启用状态与真实版本，把声明与事实对齐并写日志)。
 
 排查依赖问题时先看启动器行的颜色与文案判断是哪一档级别，再看 `starsector.log` 的 `GearIn dependency check:` 行，最后核对 `id` 的大小写与 `enabled_mods.json`。
 
 代码里引用了什么 MOD 的类，`dependencies` 就必须声明什么 —— 启动器拦得住 "没装/版本不符"，拦不住 "没声明"。
 
-依赖话题的下一步是软依赖（可选依赖）：运行时分支检测、类加载隔离与降级适配，把 "缺了依赖也能降级运行" 的策略留给代码侧，与声明式硬依赖形成互补。
+依赖话题的下一步是软依赖 (可选依赖)：运行时分支检测、类加载隔离与降级适配，把 "缺了依赖也能降级运行" 的策略留给代码侧，与声明式硬依赖形成互补。
 
 ## 建议参考项
 

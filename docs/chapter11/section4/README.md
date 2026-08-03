@@ -1,6 +1,6 @@
 # Rules 内存：记忆键、过期与持久数据
 
-Rules 内存（memory）是规则系统与所有交互对象共用的键值状态容器：键必须以 `$` 开头，过期以游戏天计并在生涯推进时衰减，槽位由 `MemKeys` 决定，值随所属对象序列化进存档。本节从 `MemoryAPI` 的公开面讲起，覆盖过期语义、required 依赖清理、memoryMap 组装与变量解析、`getMemory()` 与 `getMemoryWithoutUpdate()` 的差异、`PersistentData` 的责任边界，最后用六个职责单一的小类组成完整最小例，把 set / 过期 / 持久化的完整流程一次跑通。
+Rules 内存 (memory) 是规则系统与所有交互对象共用的键值状态容器：键必须以 `$` 开头，过期以游戏天计并在生涯推进时衰减，槽位由 `MemKeys` 决定，值随所属对象序列化进存档。本节从 `MemoryAPI` 的公开面讲起，覆盖过期语义、required 依赖清理、memoryMap 组装与变量解析、`getMemory()` 与 `getMemoryWithoutUpdate()` 的差异、`PersistentData` 的责任边界，最后用六个职责单一的小类组成完整最小例，把 set / 过期 / 持久化的完整流程一次跑通。
 
 *本节预期阅读时间：~30 分钟。*
 
@@ -10,32 +10,32 @@ Rules 内存（memory）是规则系统与所有交互对象共用的键值状�
 
 完成后，您将能够：
 
-- 说出 `MemoryAPI` 的全方法面（`set` / `get` 族 / `contains` / `unset` / `expire` / `is` / `between` / `getExpire` / `getKeys` / required 族 / `clear`）与**记忆键必须以 `$` 开头**这一必须遵守的规则及其违反后果；
-- 说出过期语义：`expire` 单位是**游戏天**（10 真实秒 = 1 游戏天）、只在生涯非暂停时推进、`0` 天 = 下一个未暂停推进帧移除（"会话内 flag"）、负值 = 取消过期、两参 `set` 清除该键未决过期、`getExpire` 返回剩余天数（无过期返回 -1）；
-- 说出 `memoryMap` 的结构（`MemKeys` 槽位：`global` / `player` / `local` / `market` / `sourceMarket` / `faction` / `entity` / `personFaction` / `mission`）与 `$memkey.name` 变量解析规则（无点号或槽位缺失回落 `local`）、文本 token 替换对值类型的限制；
-- 说出 `getMemory()` 与 `getMemoryWithoutUpdate()` 的差异（前者触发全部插件 `update*Facts`，后者只读写），以及写键/高频读取应使用哪个；
-- 说出保存与恢复：记忆随所属对象序列化进存档，实体/市场引用存档时转为 `enRef_<id>` / `mRef_<id>`，读档解析不到时**键被删除**；`PersistentData` 是随存档保存的全局 `Map<String, Object>`（键无需 `$`），与记忆的责任边界；
-- 从症状定位故障（见 "实例驱动故障分析" 节）。结果必须沿着**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核（沿用本节草稿的最小任务链；注意 memory 没有数据文件，数据文件一侧是规则表与记忆键声明）。
+- 说出 `MemoryAPI` 的全方法面 (`set` / `get` 族 / `contains` / `unset` / `expire` / `is` / `between` / `getExpire` / `getKeys` / required 族 / `clear`) 与**记忆键必须以 `$` 开头**这一必须遵守的规则及其违反后果；
+- 说出过期语义：`expire` 单位是**游戏天**(10 真实秒 = 1 游戏天)、只在生涯非暂停时推进、`0` 天 = 下一个未暂停推进帧移除 ("会话内 flag")、负值 = 取消过期、两参 `set` 清除该键未决过期、`getExpire` 返回剩余天数 (无过期返回 -1)；
+- 说出 `memoryMap` 的结构 (`MemKeys` 槽位：`global` / `player` / `local` / `market` / `sourceMarket` / `faction` / `entity` / `personFaction` / `mission`) 与 `$memkey.name` 变量解析规则 (无点号或槽位缺失回落 `local`)、文本 token 替换对值类型的限制；
+- 说出 `getMemory()` 与 `getMemoryWithoutUpdate()` 的差异 (前者触发全部插件 `update*Facts`，后者只读写)，以及写键/高频读取应使用哪个；
+- 说出保存与恢复：记忆随所属对象序列化进存档，实体/市场引用存档时转为 `enRef_<id>` / `mRef_<id>`，读档解析不到时**键被删除**；`PersistentData` 是随存档保存的全局 `Map<String, Object>`(键无需 `$`)，与记忆的责任边界；
+- 从症状定位故障 (见 "实例驱动故障分析" 节)。结果必须沿着**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核 (沿用本节草稿的最小任务链；注意 memory 没有数据文件，数据文件一侧是规则表与记忆键声明)。
 
 ## 前置知识
 
 本节建立在以下前置知识之上：规则脚本的变量语法与判真规则、状态机与一次性 flag 模式、rulecmd 执行面、持久数据注册纪律、脚本注册与对话框生命周期。
 
-- rules.csv 条件/脚本/文本里的 `$memkey.name` 变量解析与回落 `local`、判真规则、`=` 赋值与 `++` / `--` 的第三 token 过期天数（`$x = value days`）。本节给出这些语法背后的内存层全貌：槽位从哪来、键什么时候消失、值怎么保存（C11-S01）。
-- 一次性 flag 模式（条件 `!$player.<flag>` + 脚本 `$player.<flag> = true 0`）与 `$menuState` / `$tradeMode` 状态机记忆、`$hailing` 等场景事实键。
-  - 本节解释这些模式为什么成立："0 天过期" 让 flag 在对话内生效、对话关闭后的第一个推进帧消失；`$player.` 与 `$global.` 的槽位选择决定键的可见范围（C11-S02）。
-- rulecmd 的 `execute(ruleId, dialog, params, memoryMap)` 与 `BaseCommandPlugin.getEntityMemory(memoryMap)`（`MemKeys.ENTITY` 优先、`MemKeys.LOCAL` 回退）。本节给出 memoryMap 的完整槽位表与组装点（C11-S03）。
-- `modPlugin` 的 `onGameLoad` 回调与 "每个注册项用各自 persistent data 键" 的纪律 —— 本节的 `PersistentData` 完整流程沿用该纪律（本演示故意不加一次性守卫，原因见 "完整最小例"）（C06-S02）。
-- `addScript` 注册脚本（本节演示入口沿用）（C08-S01）。
-- 对话框生命周期与 `getInteractionTarget()`——`RuleBasedInteractionDialogPluginImpl` 把交互目标记忆装入 `MemKeys.LOCAL`（本节 "使用方完整流程"）（C08-S09）。
+- rules.csv 条件/脚本/文本里的 `$memkey.name` 变量解析与回落 `local`、判真规则、`=` 赋值与 `++` / `--` 的第三 token 过期天数 (`$x = value days`)。本节给出这些语法背后的内存层全貌：槽位从哪来、键什么时候消失、值怎么保存 (C11-S01)。
+- 一次性 flag 模式 (条件 `!$player.<flag>` + 脚本 `$player.<flag> = true 0`) 与 `$menuState` / `$tradeMode` 状态机记忆、`$hailing` 等场景事实键。
+  - 本节解释这些模式为什么成立："0 天过期" 让 flag 在对话内生效、对话关闭后的第一个推进帧消失；`$player.` 与 `$global.` 的槽位选择决定键的可见范围 (C11-S02)。
+- rulecmd 的 `execute(ruleId, dialog, params, memoryMap)` 与 `BaseCommandPlugin.getEntityMemory(memoryMap)`(`MemKeys.ENTITY` 优先、`MemKeys.LOCAL` 回退)。本节给出 memoryMap 的完整槽位表与组装点 (C11-S03)。
+- `modPlugin` 的 `onGameLoad` 回调与 "每个注册项用各自 persistent data 键" 的纪律 —— 本节的 `PersistentData` 完整流程沿用该纪律 (本演示故意不加一次性守卫，原因见 "完整最小例")(C06-S02)。
+- `addScript` 注册脚本 (本节演示入口沿用)(C08-S01)。
+- 对话框生命周期与 `getInteractionTarget()`——`RuleBasedInteractionDialogPluginImpl` 把交互目标记忆装入 `MemKeys.LOCAL`(本节 "使用方完整流程")(C08-S09)。
 
 ## 术语
 
-按术语约定，本节首次完整讲解以下词（后续页面继续使用；API 类名保留源码大小写）：
+按术语约定，本节首次完整讲解以下词 (后续页面继续使用；API 类名保留源码大小写)：
 
-- **Rules 内存（memory）**：API 名保留 `MemoryAPI`。规则系统、交互对象、实体、人物、舰队、市场和势力共用的键值状态容器；`memory` 是运行时对象 —— 没有数据文件、没有注册表，靠 `getMemory()` / `getMemoryWithoutUpdate()` 取到实例，随所属对象序列化进存档。
-- **记忆键（memory key）**：`MemoryAPI` 里的键名，**必须以 `$` 开头**（如 `$GearIn_memory_tag`、原版的 `$option`、`$menuState`、`$hailing`）。
-- **memoryMap**：`Map<String, MemoryAPI>`，槽位名由 `MemKeys` 常量定义（`global` / `player` / `local` 等）；规则匹配、文本替换与 rulecmd 执行共享同一个 memoryMap（`RulesAPI.getAllMatching` / `getBestMatching` 第四参）。
+- **Rules 内存 (memory)**：API 名保留 `MemoryAPI`。规则系统、交互对象、实体、人物、舰队、市场和势力共用的键值状态容器；`memory` 是运行时对象 —— 没有数据文件、没有注册表，靠 `getMemory()` / `getMemoryWithoutUpdate()` 取到实例，随所属对象序列化进存档。
+- **记忆键 (memory key)**：`MemoryAPI` 里的键名**，必须以 `$` 开头**(如 `$GearIn_memory_tag`、原版的 `$option`、`$menuState`、`$hailing`)。
+- **memoryMap**：`Map<String, MemoryAPI>`，槽位名由 `MemKeys` 常量定义 (`global` / `player` / `local` 等)；规则匹配、文本替换与 rulecmd 执行共享同一个 memoryMap(`RulesAPI.getAllMatching` / `getBestMatching` 第四参)。
 - **PersistentData**：`Global.getSector().getPersistentData()` 返回的 `Map<String, Object>`，随存档保存与恢复；键**不需要** `$` 前缀，与记忆键的命名约束不同。
 
 ## 文件与 API 链路
@@ -46,25 +46,25 @@ Rules 内存（memory）是规则系统与所有交互对象共用的键值状�
 
 | 方法 | 语义 |
 |---|---|
-| `set(key, value)` | 写入永不过期键（javadoc："Never expires."）；**清除该键未决过期** |
-| `set(key, value, expire)` | 写入键并设置剩余寿命（游戏天）|
+| `set(key, value)` | 写入永不过期键 (javadoc："Never expires.")；**清除该键未决过期** |
+| `set(key, value, expire)` | 写入键并设置剩余寿命 (游戏天)|
 | `expire(key, days)` | 重设键的剩余寿命；`days < 0` = 取消过期 |
-| `unset(key)` | 主动移除键（含 required 级联，见下）|
+| `unset(key)` | 主动移除键 (含 required 级联，见下)|
 | `contains(key)` | 区分 "键缺失" 与 "值为 null/false" 的唯一可靠入口 |
 | `get(key)` / `getString` / `getFloat` / `getBoolean` / `getLong` / `getInt` | 按类型读取；缺失键默认值见下表 |
 | `getVector2f` / `getEntity` / `getFleet` | 类型化读取，非该类型返回 null |
-| `is(key, value)` | `contains` 且值相等（float 精确比较）|
+| `is(key, value)` | `contains` 且值相等 (float 精确比较)|
 | `between(key, min, max)` | 闭区间 `[min, max]`；缺失返回 false |
-| `getKeys()` / `getExpire(key)` | 全部键集合 / 剩余游戏天（无过期 -1）|
-| `advance(amount)` | **引擎驱动**（见 "谁推进记忆"），MOD 代码不要手动调用 |
-| `addRequired` / `removeRequired` / `getRequired` / `removeAllRequired` | required 依赖清理（见下）|
-| `clear()` / `isEmpty()` | 清空全部键（含过期与依赖表）/ 判空 |
+| `getKeys()` / `getExpire(key)` | 全部键集合 / 剩余游戏天 (无过期 -1)|
+| `advance(amount)` | **引擎驱动**(见 "谁推进记忆")，MOD 代码不要手动调用 |
+| `addRequired` / `removeRequired` / `getRequired` / `removeAllRequired` | required 依赖清理 (见下)|
+| `clear()` / `isEmpty()` | 清空全部键 (含过期与依赖表)/ 判空 |
 
-缺失键的读取默认值（`Memory` 类）：
+缺失键的读取默认值 (`Memory` 类)：
 - `getString` → null；
 - `getFloat` → 0；
 - `getInt`/`getLong` → 0；
-- `getBoolean` → false （值转小写去空白后等于 `"true"` 才为真）；
+- `getBoolean` → false (值转小写去空白后等于 `"true"` 才为真)；
 - `getEntity`/`getFleet`/`getVector2f` → null；
 - `between`/`is` → false。
 
@@ -82,13 +82,13 @@ Rules 内存（memory）是规则系统与所有交互对象共用的键值状�
 
 - **单位是游戏天**。`Memory.advance` 接收真实秒的推进量，按 `CampaignClockAPI` 换算成游戏天消耗寿命 —— 基准是 **10 真实秒 = 1 游戏天**。
 - **只在生涯非暂停时推进**：`Memory.advance` 自身有 `!isPaused()` 守卫，生涯暂停时引擎不把推进量传入记忆。战斗期间生涯不推进，记忆不消耗寿命。
-- `expire(key, days)`：键已有过期条目 → 覆盖 `timeLeft`；`days < 0` → 移除过期条目（键转为永不过期）；否则新增条目。
+- `expire(key, days)`：键已有过期条目 → 覆盖 `timeLeft`；`days < 0` → 移除过期条目 (键转为永不过期)；否则新增条目。
 - **两参 `set` 清除未决过期**：先写值、再删该键的过期条目。可观察：`getExpire(key)` 从正数变 -1。想 "改成永久" 就调两参 `set`；想 "改回有过期" 必须再调三参 `set` 或 `expire`。
 - **`0` 天过期 = 会话内 flag**：`timeLeft = 0`，下一个未暂停推进帧 `timeLeft -= days` 小于 0 → `unset`。
   - 对话打开期间生涯暂停、不推进，所以 `expire 0` 的键在整个对话内可读；对话关闭后的第一个推进帧被移除。
-  - 原版范式：`$option` （`RuleBasedInteractionDialogPluginImpl.optionSelected` 中 `memory.set("$option", optionId); memory.expire("$option", 0)`）与一次性 flag `$player.<flag> = true 0`。
-- `getExpire(key)` 返回剩余**游戏天**；无过期条目返回 -1。devMode 的 `DumpMemory` 规则命令按此显示 `(e=<剩余天数>)`（`com.fs.starfarer.api.impl.campaign.rulecmd.DumpMemory`）， `(e=0)` 表示 "下一个推进帧移除"。
-- rules 侧的过期语法：`=` / `++` / `--` 的第三 token 是过期天数 —— 先 `set`（清过期）再 `expire(days)`；不带第三 token 的赋值是**永久键**。
+  - 原版范式：`$option` (`RuleBasedInteractionDialogPluginImpl.optionSelected` 中 `memory.set("$option", optionId); memory.expire("$option", 0)`) 与一次性 flag `$player.<flag> = true 0`。
+- `getExpire(key)` 返回剩余**游戏天**；无过期条目返回 -1。devMode 的 `DumpMemory` 规则命令按此显示 `(e=<剩余天数>)`(`com.fs.starfarer.api.impl.campaign.rulecmd.DumpMemory`)，`(e=0)` 表示 "下一个推进帧移除"。
+- rules 侧的过期语法：`=` / `++` / `--` 的第三 token 是过期天数 —— 先 `set`(清过期) 再 `expire(days)`；不带第三 token 的赋值是**永久键**。
 
 ::: tip 排障从 `DumpMemory` 与 `getExpire` 开始。
 devMode 下 `DumpMemory` 显示键列表与 `(e=<剩余天数>)`；`getExpire` 是剩余寿命的第一核对入口 —— 先看键在不在、剩多少天，再核对槽位与单位。
@@ -104,74 +104,74 @@ devMode 下 `DumpMemory` 显示键列表与 `(e=<剩余天数>)`；`getExpire` �
 典型用途：A 键只在 B 键存在时有意义 ——`addRequired(A, B)` 后 B 一消失 A 自动清理，不需要自己轮询。
 ### MemKeys 与 memoryMap
 
-`MemKeys`（`com.fs.starfarer.api.campaign.rules.MemKeys`）定义 memoryMap 槽位名：
+`MemKeys`(`com.fs.starfarer.api.campaign.rules.MemKeys`) 定义 memoryMap 槽位名：
 
 | 常量 | 值 | 归属 |
 |---|---|---|
-| `MemKeys.GLOBAL` | `"global"` | Sector 全局记忆（`Global.getSector().getMemory()`）|
-| `MemKeys.PLAYER` | `"player"` | 玩家记忆（`getCharacterData().getMemory()`）|
-| `MemKeys.LOCAL` | `"local"` | 当前交互局部记忆（默认 = 交互目标记忆；活动人物对话 = 人物记忆）|
+| `MemKeys.GLOBAL` | `"global"` | Sector 全局记忆 (`Global.getSector().getMemory()`)|
+| `MemKeys.PLAYER` | `"player"` | 玩家记忆 (`getCharacterData().getMemory()`)|
+| `MemKeys.LOCAL` | `"local"` | 当前交互局部记忆 (默认 = 交互目标记忆；活动人物对话 = 人物记忆)|
 | `MemKeys.MARKET` | `"market"` | 当前市场记忆 |
-| `MemKeys.SOURCE_MARKET` | `"sourceMarket"` | 来源市场记忆（local 里 `MemFlags.MEMORY_KEY_SOURCE_MARKET` 指定的市场）|
+| `MemKeys.SOURCE_MARKET` | `"sourceMarket"` | 来源市场记忆 (local 里 `MemFlags.MEMORY_KEY_SOURCE_MARKET` 指定的市场)|
 | `MemKeys.FACTION` | `"faction"` | 当前规则上下文势力记忆 |
 | `MemKeys.ENTITY` | `"entity"` | 活动人物对话时的交互目标记忆 |
 | `MemKeys.PERSON_FACTION` | `"personFaction"` | 活动人物所属势力记忆 |
 | `MemKeys.MISSION` | `"mission"` | 任务上下文记忆 |
 
-组装点（memoryMap 从哪来）：
+组装点 (memoryMap 从哪来)：
 
-- **对话框**：`RuleBasedInteractionDialogPluginImpl.updateMemory`：`LOCAL` = 交互目标记忆、`FACTION`（null 时用 `createMemory()` 空记忆）、`GLOBAL`、`PLAYER`、`MARKET`、`SOURCE_MARKET`（按 local 的 `$sourceMarket` 查市场）；活动人物时 `updatePersonMemory` 把 `LOCAL` 换成人物记忆、`ENTITY` = 目标记忆、`PERSON_FACTION` = 人物势力记忆；任务上下文时 `setActiveMission` 补 `MISSION` 槽位。
-- **非对话面板**：面板的 memoryMap 组装与规则执行（`local` / `faction` / `global` / `player` / `market` / `sourceMarket` 槽位），用于贸易面板 `TradePanelFlavorText` 等非对话场景。
+- **对话框**：`RuleBasedInteractionDialogPluginImpl.updateMemory`：`LOCAL` = 交互目标记忆、`FACTION`(null 时用 `createMemory()` 空记忆)、`GLOBAL`、`PLAYER`、`MARKET`、`SOURCE_MARKET`(按 local 的 `$sourceMarket` 查市场)；活动人物时 `updatePersonMemory` 把 `LOCAL` 换成人物记忆、`ENTITY` = 目标记忆、`PERSON_FACTION` = 人物势力记忆；任务上下文时 `setActiveMission` 补 `MISSION` 槽位。
+- **非对话面板**：面板的 memoryMap 组装与规则执行 (`local` / `faction` / `global` / `player` / `market` / `sourceMarket` 槽位)，用于贸易面板 `TradePanelFlavorText` 等非对话场景。
 - **主菜单新游戏对话框**：`NewGameDialogPluginImpl`：`LOCAL` = 角色数据实体记忆、`GLOBAL`，devMode 时写入 `$global.isDevMode`。
 
-变量解析（`Misc.Token.getVarNameAndMemory`，`com.fs.starfarer.api.util.Misc`）：
+变量解析 (`Misc.Token.getVarNameAndMemory`，`com.fs.starfarer.api.util.Misc`)：
 
-1. `$memkey.name`（点号存在且不在首尾）→ 从 `memoryMap` 取 `memkey` 槽位的记忆，读其中的 `$name` 键；
-2. 无点号（如 `$option`、`$GearIn_memory_fleetKey`）→ 槽位为 null → **回落 `local`**；
+1. `$memkey.name`(点号存在且不在首尾)→ 从 `memoryMap` 取 `memkey` 槽位的记忆，读其中的 `$name` 键；
+2. 无点号 (如 `$option`、`$GearIn_memory_fleetKey`)→ 槽位为 null → **回落 `local`**；
 3. 槽位名不在 memoryMap 里 → **同样回落 `local`**，用原始串 `$memkey.name` 作键名；
 4. `local` 也不存在 → `RuleException("No memory found for keys: ...")`。
 
-**槽位选择决定键的可见范围**：`$global.xxx` 与 `$xxx`（local）可能同时存在同名字段，规则读到的是槽位解析的结果 ——`$global.xxx` 拼成 `$xxx` 不报错，只会 "静默读错槽位" （见故障分析 5）。
+**槽位选择决定键的可见范围**：`$global.xxx` 与 `$xxx`(local) 可能同时存在同名字段，规则读到的是槽位解析的结果 ——`$global.xxx` 拼成 `$xxx` 不报错，只会 "静默读错槽位" (见故障分析 5)。
 
-文本 token 替换（`Misc.replaceTokensFromMemory`）同样按 memoryMap 槽位展开：`local` 优先、各记忆键按长度降序，替换 `$<memkey>.<key>` 与 `$<key>` 两种形态；
+文本 token 替换 (`Misc.replaceTokensFromMemory`) 同样按 memoryMap 槽位展开：`local` 优先、各记忆键按长度降序，替换 `$<memkey>.<key>` 与 `$<key>` 两种形态；
 
 **只替换 String / Boolean / Float / Integer 值**，其它对象值原样留下。
 
 ### getMemory() 与 getMemoryWithoutUpdate()
 
-`SectorEntityToken.getMemory()` = 用到时才建记忆 + **遍历全部已注册 `CampaignPlugin` 调 `updateEntityFacts`** （`$tag:` 等 facts 键就是由 `CoreCampaignPluginImpl` 的 `update*Facts` 写入，前置章节已述）；
+`SectorEntityToken.getMemory()` = 用到时才建记忆 + **遍历全部已注册 `CampaignPlugin` 调 `updateEntityFacts`** (`$tag:` 等 facts 键就是由 `CoreCampaignPluginImpl` 的 `update*Facts` 写入，前置章节已述)；
 
 `getMemoryWithoutUpdate()` 只读不刷 facts。
 
 市场同款：`Market.getMemory()` 触发 `updateMarketFacts`，`getMemoryWithoutUpdate()` 不触发。
 
-- 写键不需要 facts——`getMemory()` 会在每次调用时把全部插件刷一遍（副作用 + 性能损耗）。
-- 读取时如果需要最新 facts（如 `$tag:` 条件依赖的键），用 `getMemory()`；纯读自写键用 `getMemoryWithoutUpdate()`。
-- `Global.getSector().getMemory()`（sector 记忆）**同样有** facts 钩子 —— 遍历全部注册 `CampaignPlugin` 调 `updateGlobalFacts`（`CoreCampaignPluginImpl.updateGlobalFacts` 写入 `$isDevMode` / `$isInTutorial` / `$playerCanUseGates` / `$daysSinceStart`），两入口不等价；`getMemoryWithoutUpdate()` 只读写； `SectorAPI.getPlayerMemoryWithoutUpdate()` 与 `getCharacterData().getMemoryWithoutUpdate()` 等价。
+- 写键不需要 facts——`getMemory()` 会在每次调用时把全部插件刷一遍 (副作用 + 性能损耗)。
+- 读取时如果需要最新 facts(如 `$tag:` 条件依赖的键)，用 `getMemory()`；纯读自写键用 `getMemoryWithoutUpdate()`。
+- `Global.getSector().getMemory()`(sector 记忆)**同样有** facts 钩子 —— 遍历全部注册 `CampaignPlugin` 调 `updateGlobalFacts`(`CoreCampaignPluginImpl.updateGlobalFacts` 写入 `$isDevMode` / `$isInTutorial` / `$playerCanUseGates` / `$daysSinceStart`)，两入口不等价；`getMemoryWithoutUpdate()` 只读写；`SectorAPI.getPlayerMemoryWithoutUpdate()` 与 `getCharacterData().getMemoryWithoutUpdate()` 等价。
 
 ::: caution 写入与高频读取一律用 `getMemoryWithoutUpdate()`。
-否则每次调用都触发全部插件 `update*Facts`：性能损耗 + facts 副作用在意外时机发生。这是必须级纪律（见 "规则强度" 表）。
+否则每次调用都触发全部插件 `update*Facts`：性能损耗 + facts 副作用在意外时机发生。这是必须级纪律 (见 "规则强度" 表)。
 :::
 
-### 谁推进记忆（过期推进者）
+### 谁推进记忆 (过期推进者)
 
-所有记忆的过期都由 `Memory.advance` 处理，引擎在各推进点调用（单位换算与暂停守卫都在 `Memory.advance` 内部）：
+所有记忆的过期都由 `Memory.advance` 处理，引擎在各推进点调用 (单位换算与暂停守卫都在 `Memory.advance` 内部)：
 
 | 记忆 | 推进点 |
 |---|---|
 | sector 记忆 | 生涯引擎推进 |
-| 玩家记忆（characterData）| 生涯引擎推进 |
+| 玩家记忆 (characterData)| 生涯引擎推进 |
 | 势力记忆 | 生涯引擎推进，势力自身同步 |
-| 实体记忆 | 所属实体推进（由地点推进驱动）|
+| 实体记忆 | 所属实体推进 (由地点推进驱动)|
 | 地点记忆 | 地点自身推进 |
 | 市场记忆 | 市场自身推进 |
 | 人物记忆 | 人物自身推进 |
 
 ::: info 为什么推进是引擎的责任。
-记忆是运行时对象，没有集中的 "时钟循环"——sector、玩家、势力、实体、地点、市场、人物各有各的推进点，只是全部汇聚到同一个 `Memory.advance`。MOD 代码既不需要也不应手动驱动（见 "规则强度" 表的必须级条目）。
+记忆是运行时对象，没有集中的 "时钟循环"——sector、玩家、势力、实体、地点、市场、人物各有各的推进点，只是全部汇聚到同一个 `Memory.advance`。MOD 代码既不需要也不应手动驱动 (见 "规则强度" 表的必须级条目)。
 :::
 
-另外：记忆是延迟创建的 ——`getMemory()` / `getMemoryWithoutUpdate()` 首次调用才创建实例（如实体记忆），此后该对象序列化时记忆一并入库。
+另外：记忆是延迟创建的 ——`getMemory()` / `getMemoryWithoutUpdate()` 首次调用才创建实例 (如实体记忆)，此后该对象序列化时记忆一并入库。
 
 **"读记忆会创建记忆"**：只为判空而调用 `getMemoryWithoutUpdate()` 也会让空记忆开始随存档保存。
 ### 保存与恢复：enRef/mRef 与 PersistentData
@@ -180,13 +180,13 @@ devMode 下 `DumpMemory` 显示键列表与 `(e=<剩余天数>)`；`getExpire` �
 
 `Memory.writeReplace` 把两类引用换成字符串占位：存活的 `SectorEntityToken` → `"enRef_" + id`、`Market` → `"mRef_" + id`；
 
-`readResolve` 延迟重建，首次访问（`get` / `contains` / `advance`，`restored` 标志）时 `replaceIdsWithEntities` 把占位解析回对象 ——**解析不到 （实体已销毁/移除）→ 该键被删除**。
+`readResolve` 延迟重建，首次访问 (`get` / `contains` / `advance`，`restored` 标志) 时 `replaceIdsWithEntities` 把占位解析回对象 ——**解析不到 (实体已销毁/移除)→ 该键被删除**。
 
 可观察结果：读档后 "键还在但值变了" 或 "键整个消失"，都没有任何报错。
 
-`PersistentData`（`SectorAPI.getPersistentData()`，`com.fs.starfarer.api.campaign.SectorAPI`）：随存档保存的全局 `Map<String, Object>`。
+`PersistentData`(`SectorAPI.getPersistentData()`，`com.fs.starfarer.api.campaign.SectorAPI`)：随存档保存的全局 `Map<String, Object>`。
 
-javadoc 明确它 "可被不属于存档的类（`ModPlugin` 或 transient `CampaignPlugin` 实现）用于跨会话保存数据"——`modPlugin` 回调实例是进程级缓存的、 `onEnabled` 每次换新实例（持久数据注册纪律见前置章节），跨回调状态只能放这里。
+javadoc 明确它 "可被不属于存档的类 (`ModPlugin` 或 transient `CampaignPlugin` 实现) 用于跨会话保存数据"——`modPlugin` 回调实例是进程级缓存的、`onEnabled` 每次换新实例 (持久数据注册纪律见前置章节)，跨回调状态只能放这里。
 
 键**不需要** `$` 前缀。
 
@@ -194,41 +194,41 @@ javadoc 明确它 "可被不属于存档的类（`ModPlugin` 或 transient `Camp
 
 | 需求 | 用记忆 | 用 PersistentData |
 |---|---|---|
-| 绑定到实体/市场/人物的状态（舰队 AI flag、`$sourceMarket`、任务状态）| 所属对象的记忆 | 不适用 |
-| 全局跨对象状态（规则场景状态机 `$menuState`、`$hailing`）| sector / player 记忆 | 少用 |
-| 跨存档、跨 `ModPlugin` 实例、注册守卫（`REGISTER_MARK` 等）| 不适用 | 是 |
+| 绑定到实体/市场/人物的状态 (舰队 AI flag、`$sourceMarket`、任务状态)| 所属对象的记忆 | 不适用 |
+| 全局跨对象状态 (规则场景状态机 `$menuState`、`$hailing`)| sector / player 记忆 | 少用 |
+| 跨存档、跨 `ModPlugin` 实例、注册守卫 (`REGISTER_MARK` 等)| 不适用 | 是 |
 | 值类型 | 任意可序列化对象；实体/市场引用走 enRef/mRef 白名单 | 存**可序列化值**；存运行时实体引用会在读档恢复边界污染状态 |
 
-纪律（延续前置章节的持久数据键约定）：**每个注册项用各自 persistent data 键**—— 多个演示/系统共用一键会互相覆盖；把新注册项挂进插件已有的 CLASS_MARK 门会让旧档永不注册。
+纪律 (延续前置章节的持久数据键约定)：**每个注册项用各自 persistent data 键**—— 多个演示/系统共用一键会互相覆盖；把新注册项挂进插件已有的 CLASS_MARK 门会让旧档永不注册。
 
 ::: caution `PersistentData` 不得存运行时实体/脚本引用。
-读档恢复边界上引用对象状态过期或反序列化异常；只存可序列化值。这是必须级纪律（见 "规则强度" 表）。
+读档恢复边界上引用对象状态过期或反序列化异常；只存可序列化值。这是必须级纪律 (见 "规则强度" 表)。
 :::
 
 ## 规则强度
 
-本节必须遵守的规则清单（违反后的可观察结果均附上）：
+本节必须遵守的规则清单 (违反后的可观察结果均附上)：
 
 | 规则 | 强度 | 违反后的可观察结果 |
 |---|---|---|
-| 记忆键必须以 `$` 开头（`Memory.set` 强制校验）| 必须 | Java 侧 `set` 抛 `RuntimeException("Key ... should start with $")`：脚本/命令调用点异常（对话红字段落或日志堆栈），写入不生效 |
-| `set(key, value, expire)` 的 `expire` 单位是**游戏天**（`CampaignClockAPI`，10 真实秒 = 1 游戏天）| 必须 | 把真实秒当天数：键以 10 倍速过期，`getExpire` / `DumpMemory` 显示与直觉不符 |
+| 记忆键必须以 `$` 开头 (`Memory.set` 强制校验)| 必须 | Java 侧 `set` 抛 `RuntimeException("Key ... should start with $")`：脚本/命令调用点异常 (对话红字段落或日志堆栈)，写入不生效 |
+| `set(key, value, expire)` 的 `expire` 单位是**游戏天**(`CampaignClockAPI`，10 真实秒 = 1 游戏天)| 必须 | 把真实秒当天数：键以 10 倍速过期，`getExpire` / `DumpMemory` 显示与直觉不符 |
 | 两参 `set` 清除该键未决过期 | 事实 | `getExpire(key)` 变 -1，键转为永不过期 ——"顺手改成永久" 是特性，不是 bug |
 | `expire(key, 负值)` 取消过期 | 事实 | 键永不过期；`getExpire` 返回 -1 |
-| 过期只在生涯非暂停时推进 | 事实 | 对话打开（生涯暂停）期间 `expire 0` 的键不消失；对话关闭后的第一个推进帧才移除 |
-| 一次性 flag 必须用 `= true 0` / `expire 0` 形态（`RuleBasedInteractionDialogPluginImpl` 写 `$option` 的实现；C11-S02 模式）| 建议 | 不带第三 token 的赋值是永久键：flag 跨会话残留，`!$player.<flag>` 条件永假 |
+| 过期只在生涯非暂停时推进 | 事实 | 对话打开 (生涯暂停) 期间 `expire 0` 的键不消失；对话关闭后的第一个推进帧才移除 |
+| 一次性 flag 必须用 `= true 0` / `expire 0` 形态 (`RuleBasedInteractionDialogPluginImpl` 写 `$option` 的实现；C11-S02 模式)| 建议 | 不带第三 token 的赋值是永久键：flag 跨会话残留，`!$player.<flag>` 条件永假 |
 | `getBoolean` 缺失键与显式 false 无法区分 | 事实 | `!$flag` 在 flag 从未写过时判真 false—— 条件 "不命中且无报错" |
-| memoryMap 槽位缺失/无点号时变量回落 `local`（`Misc` 的 `Token` 解析）| 事实 | `$global.xxx` 拼成 `$xxx` 不报错：读的是 local 槽位的同名键 —— 条件静默变假或读错值 |
+| memoryMap 槽位缺失/无点号时变量回落 `local`(`Misc` 的 `Token` 解析)| 事实 | `$global.xxx` 拼成 `$xxx` 不报错：读的是 local 槽位的同名键 —— 条件静默变假或读错值 |
 | 实体/市场引用入记忆存档转 `enRef_`/`mRef_`，解析不到删键 | 事实 | 读档后实体已销毁 → 键整体消失且无报错；不要用记忆判断 "实体是否还活着" |
-| PersistentData 键无需 `$` 前缀、随存档保存（`SectorAPI`）| 事实 | 无错误 —— 与记忆键的命名约束差异是设计，不是 bug |
-| 每个注册项用各自 persistent data 键（C06-S02 / C08-S01 延续）| 必须 | 共用一键互相覆盖；新注册项挂进既有 CLASS_MARK 门 → 旧档永不注册 |
+| PersistentData 键无需 `$` 前缀、随存档保存 (`SectorAPI`)| 事实 | 无错误 —— 与记忆键的命名约束差异是设计，不是 bug |
+| 每个注册项用各自 persistent data 键 (C06-S02 / C08-S01 延续)| 必须 | 共用一键互相覆盖；新注册项挂进既有 CLASS_MARK 门 → 旧档永不注册 |
 | PersistentData 不得存运行时实体/脚本引用 | 必须 | 读档恢复边界污染：引用对象状态过期或反序列化异常；只存可序列化值 |
 | 写入/高频读取用 `getMemoryWithoutUpdate()` | 必须 | 每帧 `getMemory()` 触发全部插件 `update*Facts`：性能损耗 + facts 副作用在意外时机发生 |
-| `Memory.advance` 由引擎驱动（`MemoryAPI`）| 必须 | MOD 手动调用 advance 会与实际推进脱节（多推进/漏推进），不要调用 |
+| `Memory.advance` 由引擎驱动 (`MemoryAPI`)| 必须 | MOD 手动调用 advance 会与实际推进脱节 (多推进/漏推进)，不要调用 |
 
 ## 完整最小例
 
-在既有 MOD 布局（前置章节 C06-S01）之上新增：六个 Java 类（本节所有，见 "六类结构与注册位置"）与 `data\campaign\rules.csv` 追加本节前缀 `GearIn_memory_*` 的规则行（跨单元共享文件，只追加自己的行，同前缀内 id 唯一）。
+在既有 MOD 布局 (前置章节 C06-S01) 之上新增：六个 Java 类 (本节所有，见 "六类结构与注册位置") 与 `data\campaign\rules.csv` 追加本节前缀 `GearIn_memory_*` 的规则行 (跨单元共享文件，只追加自己的行，同前缀内 id 唯一)。
 
 不新增其它资源、不修改任何既有文件：
 
@@ -250,7 +250,7 @@ Starsector\mods\GearIndustry\
 └── jars\
 ```
 
-### data\campaign\rules.csv（追加行，只写本节拥有的前缀）
+### data\campaign\rules.csv(追加行，只写本节拥有的前缀)
 
 ```csv
 id,trigger,conditions,script,text,options,notes
@@ -266,19 +266,19 @@ GearIn_memory_leave,DialogOptionSelected,$option == GearIn_memory_leave,DismissD
 
 对应关系：
 
-- **welcome**（trigger `GearInMemoryDialog`）：文本演示三种读法 ——`$global.GearIn_memory_tag`（显式槽位，Java 两参 set 写入、无过期）、`$global.GearIn_memory_counter`（三参 set、1000 游戏天过期）、`$GearIn_memory_fleetKey`（无点号 → 回落 `local` = 交互目标记忆 = 玩家舰队记忆）。
+- **welcome**(trigger `GearInMemoryDialog`)：文本演示三种读法 ——`$global.GearIn_memory_tag`(显式槽位，Java 两参 set 写入、无过期)、`$global.GearIn_memory_counter`(三参 set、1000 游戏天过期)、`$GearIn_memory_fleetKey`(无点号 → 回落 `local` = 交互目标记忆 = 玩家舰队记忆)。
   - 选项 "验证内存键"/"结束"。
-- **verify**（trigger `DialogOptionSelected`）：`$option ==` 回流。脚本演示 rules 侧过期语法：`$player.GearIn_memory_lastAction = verify 0`（写玩家内存 + 0 天过期），再 `FireBest GearInMemoryResult` 进入结果分派。
-- **result_expired / result_alive**（trigger `GearInMemoryResult`）：FireBest 分数竞争的对照 ——expired 的条件 `$global.GearIn_memory_probe` 判真（probe 已被 Java 侧 expire 0 移除）恒 false，永不命中；alive 的条件 `$global.GearIn_memory_counter >= 1` + `!$global.GearIn_memory_probe` 两条都过（2 分）恒胜。
+- **verify**(trigger `DialogOptionSelected`)：`$option ==` 回流。脚本演示 rules 侧过期语法：`$player.GearIn_memory_lastAction = verify 0`(写玩家内存 + 0 天过期)，再 `FireBest GearInMemoryResult` 进入结果分派。
+- **result_expired / result_alive**(trigger `GearInMemoryResult`)：FireBest 分数竞争的对照 ——expired 的条件 `$global.GearIn_memory_probe` 判真 (probe 已被 Java 侧 expire 0 移除) 恒 false，永不命中；alive 的条件 `$global.GearIn_memory_counter >= 1` + `!$global.GearIn_memory_probe` 两条都过 (2 分) 恒胜。
   - alive 的文本里 `$player.GearIn_memory_lastAction` 会被 token 替换成 "verify"。
-- **leave**（trigger `DialogOptionSelected`）：`DismissDialog` 关闭对话。
-- 记忆键所有权：`$GearIn_memory_*` 全部由本节定义；原版与其它示例的既有键（`$option`、`$player.gearInScene*` 等）只消费不改写。
+- **leave**(trigger `DialogOptionSelected`)：`DismissDialog` 关闭对话。
+- 记忆键所有权：`$GearIn_memory_*` 全部由本节定义；原版与其它示例的既有键 (`$option`、`$player.gearInScene*` 等) 只消费不改写。
 
 ### 六类结构与注册位置
 
-六个类之间不互相引用、不依赖注册顺序：全部以**键状态门**对齐（见各类的时序门说明与 "跨类时序"）。每个类的代码与磁盘 fixture 逐字一致。
+六个类之间不互相引用、不依赖注册顺序：全部以**键状态门**对齐 (见各类的时序门说明与 "跨类时序")。每个类的代码与磁盘 fixture 逐字一致。
 
-#### GearInMemoryKeys（键常量数据类）
+#### GearInMemoryKeys(键常量数据类)
 
 ```java
 package data.scripts.gearin.rules;
@@ -313,10 +313,10 @@ public final class GearInMemoryKeys {
 
 对应关系：
 
-- 职责：本节 8 个记忆键常量的数据所有权 —— 写入、验证、解析、对话各脚本共用；键值与 rules.csv 条件/文本逐字一致（含 `$` 前缀与大小写）。
+- 职责：本节 8 个记忆键常量的数据所有权 —— 写入、验证、解析、对话各脚本共用；键值与 rules.csv 条件/文本逐字一致 (含 `$` 前缀与大小写)。
 - 注册位置：无注册入口 ——final 工具类 + 私有构造器，同包五个脚本直接引用常量。
-- 联动：`KEY_TAG`（`$GearIn_memory_tag`）是跨类时序门的基准键（见 "跨类时序"）；`KEY_PROBE` 的 "写入后立即读回" 约束见写入脚本。
-#### GearInMemoryWriter（记忆写入与读回脚本）
+- 联动：`KEY_TAG`(`$GearIn_memory_tag`) 是跨类时序门的基准键 (见 "跨类时序")；`KEY_PROBE` 的 "写入后立即读回" 约束见写入脚本。
+#### GearInMemoryWriter(记忆写入与读回脚本)
 
 ```java
 package data.scripts.gearin.rules;
@@ -403,12 +403,12 @@ public class GearInMemoryWriter implements EveryFrameScript {
 
 对应关系：
 
-- 职责：读档首个未暂停帧写入全部记忆键并立即读回验证（contains / is / between / getExpire / getString / getRequired），覆盖 sector / player / fleet 三个槽位。
-- 注册位置：`GearInModPlugin.onGameLoad` 内 `addScript` 注册（调用点片段见下）。
-- 时序角色：首批写入者，无前置门；probe 键（expire 0）的「写入后立即读回」必须留在本方法内 —— 跨脚本同帧执行顺序未定义，独立读回可能错过 probe 的存在状态。
+- 职责：读档首个未暂停帧写入全部记忆键并立即读回验证 (contains / is / between / getExpire / getString / getRequired)，覆盖 sector / player / fleet 三个槽位。
+- 注册位置：`GearInModPlugin.onGameLoad` 内 `addScript` 注册 (调用点片段见下)。
+- 时序角色：首批写入者，无前置门；probe 键 (expire 0) 的 "写入后立即读回" 必须留在本方法内 —— 跨脚本同帧执行顺序未定义，独立读回可能错过 probe 的存在状态。
 - 值联动：tag 值 `"GearInReady"` 与 "预期结果" 的日志行、对话文本替换逐字一致。
 
-#### GearInPersistentDataCounter（PersistentData 跨存档计数脚本）
+#### GearInPersistentDataCounter(PersistentData 跨存档计数脚本)
 
 ```java
 package data.scripts.gearin.rules;
@@ -464,10 +464,10 @@ public class GearInPersistentDataCounter implements EveryFrameScript {
 
 对应关系：
 
-- 职责：每档一次累加 run N 并记录上次值 ——PersistentData 随存档保存与恢复的直接可观察证明（新档 run 1、读档 run N 递增）。
+- 职责：每档一次累加 run N 并记录上次值 ——PersistentData 随存档保存与恢复的直接可观察证明 (新档 run 1、读档 run N 递增)。
 - 注册位置：`GearInModPlugin.onGameLoad` 内 `addScript` 注册。
-- 故意不加一次性 `REGISTER_MARK` 守卫：每次读档都重跑才能看到递增；持久键 `GearIn_memory_runs` 与记忆键不同，不需要 `$` 前缀，且各注册项独立（持久数据键纪律，前置章节）。
-#### GearInMemoryMapAssembler（memoryMap 组装与变量解析脚本）
+- 故意不加一次性 `REGISTER_MARK` 守卫：每次读档都重跑才能看到递增；持久键 `GearIn_memory_runs` 与记忆键不同，不需要 `$` 前缀，且各注册项独立 (持久数据键纪律，前置章节)。
+#### GearInMemoryMapAssembler(memoryMap 组装与变量解析脚本)
 
 ```java
 package data.scripts.gearin.rules;
@@ -554,12 +554,12 @@ public class GearInMemoryMapAssembler implements EveryFrameScript {
 
 对应关系：
 
-- 职责：落键后按 `MemKeys` 槽位组装与对话框插件同构的 memoryMap（global / player / local = 玩家舰队记忆），解析 `$global.` / `$player.` / 无点号三种变量形态。
+- 职责：落键后按 `MemKeys` 槽位组装与对话框插件同构的 memoryMap(global / player / local = 玩家舰队记忆)，解析 `$global.` / `$player.` / 无点号三种变量形态。
 - 注册位置：`GearInModPlugin.onGameLoad` 内 `addScript` 注册。
-- 时序门：`KEY_TAG` 存在才执行 —— 等写入脚本落键（同帧顺序未定义，用键状态对齐）。
-- `resolveVariable`：以最小代码复现 `Misc.Token.getVarNameAndMemory`（`com.fs.starfarer.api.util.Misc`）的解析规则 —— 演示 memoryMap 槽位语义，不等价于引擎实现，只用于教学对照。
+- 时序门：`KEY_TAG` 存在才执行 —— 等写入脚本落键 (同帧顺序未定义，用键状态对齐)。
+- `resolveVariable`：以最小代码复现 `Misc.Token.getVarNameAndMemory`(`com.fs.starfarer.api.util.Misc`) 的解析规则 —— 演示 memoryMap 槽位语义，不等价于引擎实现，只用于教学对照。
 
-#### GearInMemoryExpiryVerifier（过期与依赖清理验证脚本）
+#### GearInMemoryExpiryVerifier(过期与依赖清理验证脚本)
 
 ```java
 package data.scripts.gearin.rules;
@@ -620,10 +620,10 @@ public class GearInMemoryExpiryVerifier implements EveryFrameScript {
 
 对应关系：
 
-- 职责：probe（expire 0）被 `Memory.advance` 移除后记录移除结果；再 unset 一个 required 子键验证父键被递归移除。
+- 职责：probe(expire 0) 被 `Memory.advance` 移除后记录移除结果；再 unset 一个 required 子键验证父键被递归移除。
 - 注册位置：`GearInModPlugin.onGameLoad` 内 `addScript` 注册。
-- 时序门：`KEY_TAG` 存在 && probe 不存在 ——probe 每次读档都被写入脚本重新写入并在下一推进帧被移除，所以「tag 存在 && probe 不存在」是稳定的验证时机。
-#### GearInMemoryDialog（规则对话打开脚本）
+- 时序门：`KEY_TAG` 存在 && probe 不存在 ——probe 每次读档都被写入脚本重新写入并在下一推进帧被移除，所以 "tag 存在 && probe 不存在" 是稳定的验证时机。
+#### GearInMemoryDialog(规则对话打开脚本)
 
 ```java
 package data.scripts.gearin.rules;
@@ -693,10 +693,10 @@ public class GearInMemoryDialog implements EveryFrameScript {
 
 对应关系：
 
-- 职责：写入与过期验证完成（`KEY_TAG` 存在、probe 已移除）后，打开初始 trigger 为 `GearInMemoryDialog` 的对话 —— 文本、条件与选项全部来自 rules.csv 本节 `GearIn_memory_*` 规则。
+- 职责：写入与过期验证完成 (`KEY_TAG` 存在、probe 已移除) 后，打开初始 trigger 为 `GearInMemoryDialog` 的对话 —— 文本、条件与选项全部来自 rules.csv 本节 `GearIn_memory_*` 规则。
 - 注册位置：`GearInModPlugin.onGameLoad` 内 `addScript` 注册。
 - 时序门：`KEY_TAG` 存在 && probe 不存在；`INITIAL_TRIGGER = "GearInMemoryDialog"` 与 rules.csv welcome 行 trigger 列逐字一致。
-- 重试语义：`showInteractionDialog` 返回 false（正有其它对话/界面排队）时不置 done，下一个未暂停帧重试；交互目标非 null（`init` 的 `LOCAL` 依赖它）。
+- 重试语义：`showInteractionDialog` 返回 false(正有其它对话/界面排队) 时不置 done，下一个未暂停帧重试；交互目标非 null(`init` 的 `LOCAL` 依赖它)。
 
 #### 跨类时序
 
@@ -704,7 +704,7 @@ public class GearInMemoryDialog implements EveryFrameScript {
 
 因此任意注册顺序、任意存档时机下行为确定：写入帧的下一帧起 probe 消失，验证与对话脚本在该帧越门；若该帧正有其它对话/界面，对话脚本自动顺延重试。
 
-调用点（工程片段 —— 方法所在类归前置 modPlugin 章节所有，本节只演示调用，不改动那些文件）：
+调用点 (工程片段 —— 方法所在类归前置 modPlugin 章节所有，本节只演示调用，不改动那些文件)：
 
 ```java
     // GearInModPlugin（C06-S02 所有）onGameLoad(boolean newGame) 内新增本节注册块。
@@ -718,85 +718,85 @@ public class GearInMemoryDialog implements EveryFrameScript {
     Global.getSector().addScript(new GearInMemoryDialog());
 ```
 
-构建命令（在 `Starsector\mods\GearIndustry\` 执行，沿用前置章节）：
+构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用前置章节)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/rules/` 下六个类的 `.class` 文件（可用 `jar tf` 核对）； `data\campaign\rules.csv` 是 MOD 数据文件，随 MOD 目录被加载器读取。
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/rules/` 下六个类的 `.class` 文件 (可用 `jar tf` 核对)；`data\campaign\rules.csv` 是 MOD 数据文件，随 MOD 目录被加载器读取。
 
 注意示例路径 `Starsector\mods\GearIndustry` 是教程虚构路径，页面内路径互相自洽即可。
 
-### 验证方案（基于本例）
+### 验证方案 (基于本例)
 
-前置数据：既有 MOD 布局（C06-S01）+ `GearInModPlugin`（C06-S02，含本节调用点片段）、`data\campaign\rules.csv` 本节 5 行、本节六个类。
+前置数据：既有 MOD 布局 (C06-S01)+ `GearInModPlugin`(C06-S02，含本节调用点片段)、`data\campaign\rules.csv` 本节 5 行、本节六个类。
 
-- 操作 1（游戏构建）：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/rules/` 下六个类的 `.class`。
-- 操作 2（规则注册）：启动游戏，`starsector.log` 出现本节 5 条 `Loading rule: GearIn_memory_*` 行。
-- 操作 3（写入与计数完整流程）：新建生涯，按 "预期结果"3–5 核对日志（run 1、contains/is/between、getExpire=1000、rearmed 30 / cleared -1、required 依赖、sector 键列表、memoryMap 槽位与三个解析结果、probe 下一帧消失、required 级联）。
-- 操作 4（规则消费完整流程）：对话弹出（`dialog shown=true`），文本替换出 `GearInReady` / `1.0` / `fleet-local`；点 "验证内存键" → 追加 alive 文本（含 `verify` 字样）；点 "结束" 关闭。
-- 操作 5（devMode 观察）：devMode 下对话内出现 `(dev) dump memory` 选项，展开后可见 `$GearIn_memory_*` 键、`$player.GearIn_memory_lastAction = verify (e=0)` 与关闭对话后再查已消失。
-- 操作 6（持久化完整流程）：保存后读档，日志 `run 2（...读档恢复上次值 = 1）`；对话再次弹出；记忆键重新写入。
-- 操作 7（故障注入 1—— 漏 `$`）：把 `GearInMemoryKeys.KEY_TAG` 的值改成 `"GearIn_memory_tag"` 重建：写入脚本调用 `set` 抛 `RuntimeException("Key GearIn_memory_tag should start with $")`，`KEY_TAG` 永不落键、对话不弹出（对应故障分析 1）；恢复后正常。
-- 操作 8（故障注入 2—— 两参覆盖过期）：在写入脚本的 `set(KEY_COUNTER, 1f, 1000f)` 后追加一行两参 `set(KEY_COUNTER, 2f)`：日志 `getExpire` 变 -1、`getFloat` 变 2.0（对应故障分析 2）；恢复后 `getExpire=1000`。
-- 操作 9（故障注入 3—— 槽位错位）：把 welcome 文本的 `$global.GearIn_memory_tag` 改成 `$GearIn_memory_tag`（无点号，回落 local=舰队记忆）：文本 token 不替换（舰队记忆里没有该键）且无报错（对应故障分析 5）；恢复后替换正常。
-- 操作 10（故障注入 4——persistent data 撞键）：把 `GearInPersistentDataCounter.PERSIST_KEY_RUNS` 临时改成与另一注册项相同的键：`run N` 计数互相覆盖、读档恢复值错乱（对应故障分析 8）；恢复后独立。
+- 操作 1(游戏构建)：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/rules/` 下六个类的 `.class`。
+- 操作 2(规则注册)：启动游戏，`starsector.log` 出现本节 5 条 `Loading rule: GearIn_memory_*` 行。
+- 操作 3(写入与计数完整流程)：新建生涯，按 "预期结果"3–5 核对日志 (run 1、contains/is/between、getExpire=1000、rearmed 30 / cleared -1、required 依赖、sector 键列表、memoryMap 槽位与三个解析结果、probe 下一帧消失、required 级联)。
+- 操作 4(规则消费完整流程)：对话弹出 (`dialog shown=true`)，文本替换出 `GearInReady` / `1.0` / `fleet-local`；点 "验证内存键" → 追加 alive 文本 (含 `verify` 字样)；点 "结束" 关闭。
+- 操作 5(devMode 观察)：devMode 下对话内出现 `(dev) dump memory` 选项，展开后可见 `$GearIn_memory_*` 键、`$player.GearIn_memory_lastAction = verify (e=0)` 与关闭对话后再查已消失。
+- 操作 6(持久化完整流程)：保存后读档，日志 `run 2（...读档恢复上次值 = 1）`；对话再次弹出；记忆键重新写入。
+- 操作 7(故障注入 1—— 漏 `$`)：把 `GearInMemoryKeys.KEY_TAG` 的值改成 `"GearIn_memory_tag"` 重建：写入脚本调用 `set` 抛 `RuntimeException("Key GearIn_memory_tag should start with $")`，`KEY_TAG` 永不落键、对话不弹出 (对应故障分析 1)；恢复后正常。
+- 操作 8(故障注入 2—— 两参覆盖过期)：在写入脚本的 `set(KEY_COUNTER, 1f, 1000f)` 后追加一行两参 `set(KEY_COUNTER, 2f)`：日志 `getExpire` 变 -1、`getFloat` 变 2.0(对应故障分析 2)；恢复后 `getExpire=1000`。
+- 操作 9(故障注入 3—— 槽位错位)：把 welcome 文本的 `$global.GearIn_memory_tag` 改成 `$GearIn_memory_tag`(无点号，回落 local=舰队记忆)：文本 token 不替换 (舰队记忆里没有该键) 且无报错 (对应故障分析 5)；恢复后替换正常。
+- 操作 10(故障注入 4——persistent data 撞键)：把 `GearInPersistentDataCounter.PERSIST_KEY_RUNS` 临时改成与另一注册项相同的键：`run N` 计数互相覆盖、读档恢复值错乱 (对应故障分析 8)；恢复后独立。
 - 通过信号：操作 1–6、7–10 的注入与恢复全部符合预期；全程无 `gear_in` 引起的 `ERROR`。
-- 清理：取消勾选测试 MOD；确认没有对共享文件（`tutorial-fixtures\build.gradle` 等）做过修改。
+- 清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
 ## 预期结果
 
-1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/` 下 `GearInMemoryKeys`、`GearInMemoryWriter`、 `GearInPersistentDataCounter`、`GearInMemoryMapAssembler`、`GearInMemoryExpiryVerifier`、 `GearInMemoryDialog` 六个类的 `.class`。
-2. **规则注册（加载期）**：启动日志出现本节 5 条 `Loading rule: GearIn_memory_welcome` / `..._verify` / `..._result_expired` / `..._result_alive` / `..._leave`—— 规则行确实被读进内存的静态证明。
-3. **新档首次进入生涯（首个未暂停推进帧）**：`starsector.log` 出现 `GearInPersistentDataCounter: PersistentData 运行计数 run 1（新档首次 = 1；读档恢复上次值 = null）`；随后写入脚本输出：
+1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/` 下 `GearInMemoryKeys`、`GearInMemoryWriter`、`GearInPersistentDataCounter`、`GearInMemoryMapAssembler`、`GearInMemoryExpiryVerifier`、`GearInMemoryDialog` 六个类的 `.class`。
+2. **规则注册 (加载期)**：启动日志出现本节 5 条 `Loading rule: GearIn_memory_welcome` / `..._verify` / `..._result_expired` / `..._result_alive` / `..._leave`—— 规则行确实被读进内存的静态证明。
+3. **新档首次进入生涯 (首个未暂停推进帧)**：`starsector.log` 出现 `GearInPersistentDataCounter: PersistentData 运行计数 run 1（新档首次 = 1；读档恢复上次值 = null）`；随后写入脚本输出：
    - `GearInMemoryWriter: contains(KEY_TAG)=true getString=GearInReady is(key,"GearInReady")=true`；
    - `getFloat(KEY_COUNTER)=1.0 is(key,1f)=true between(0,2)=true getExpire=1000.0（游戏天）`；
    - `KEY_PROBE（expire 0）contains=true getBoolean=true getExpire=0.0`；
    - `expire(KEY_REARM, 30f) 重设后 getExpire=30.0；两参 set 清除未决过期后 getExpire=-1.0（-1 = 永不过期）`；
    - `required 依赖 getRequired(KEY_REQUIRED_PARENT)=[$GearIn_memory_required_child]`；
-   - `sector 内存键 = [$GearIn_memory_counter, $GearIn_memory_probe, $GearIn_memory_rearm, $GearIn_memory_required_child, $GearIn_memory_required_parent, $GearIn_memory_tag]`（全部 `$` 前缀）。
-4. **`KEY_TAG` 落键后的未暂停帧（写入同帧或下一帧，取决于同帧脚本顺序）**：`GearInMemoryMapAssembler: memoryMap 槽位 = [global, local, player]`；三个解析结果：`$global.GearIn_memory_tag = GearInReady`、`$player.GearIn_memory_player = true`、 `$GearIn_memory_fleetKey（无点号回落 local）= fleet-local`。
-5. **probe 被移除后的第一个未暂停帧**：`GearInMemoryExpiryVerifier: 下一推进帧后 contains(KEY_PROBE)=false getString=null（expire 0 的键已被 Memory.advance 移除）`； `unset(KEY_REQUIRED_CHILD) 后 contains(child)=false contains(parent)=false（required 依赖：…父键被递归移除）`；同时 `GearInMemoryDialog: dialog shown=true`，对话弹出：
-   - 文本三行分别替换出 `GearInReady`、`1.0`、`fleet-local`（`$global.` / 无点号回落 local 两种 token 替换路径）；
+   - `sector 内存键 = [$GearIn_memory_counter, $GearIn_memory_probe, $GearIn_memory_rearm, $GearIn_memory_required_child, $GearIn_memory_required_parent, $GearIn_memory_tag]`(全部 `$` 前缀)。
+4. **`KEY_TAG` 落键后的未暂停帧 (写入同帧或下一帧，取决于同帧脚本顺序)**：`GearInMemoryMapAssembler: memoryMap 槽位 = [global, local, player]`；三个解析结果：`$global.GearIn_memory_tag = GearInReady`、`$player.GearIn_memory_player = true`、`$GearIn_memory_fleetKey（无点号回落 local）= fleet-local`。
+5. **probe 被移除后的第一个未暂停帧**：`GearInMemoryExpiryVerifier: 下一推进帧后 contains(KEY_PROBE)=false getString=null（expire 0 的键已被 Memory.advance 移除）`；`unset(KEY_REQUIRED_CHILD) 后 contains(child)=false contains(parent)=false（required 依赖：…父键被递归移除）`；同时 `GearInMemoryDialog: dialog shown=true`，对话弹出：
+   - 文本三行分别替换出 `GearInReady`、`1.0`、`fleet-local`(`$global.` / 无点号回落 local 两种 token 替换路径)；
    - 选项面板按声明顺序显示 "验证内存键" 与 "结束"。
-   - 若该帧正有其它对话/界面排队，弹窗顺延到后续未暂停帧（对话脚本不置 done，自动重试）。
-6. **点 "验证内存键"**：`$player.GearIn_memory_lastAction = verify 0` 写入玩家内存（`DumpMemory` 可见 `$player.GearIn_memory_lastAction = verify (e=0)`）； `FireBest GearInMemoryResult` 命中 `result_alive` （条件 `$global.GearIn_memory_counter >= 1` + `!$global.GearIn_memory_probe` 两条 1 分全过）； `result_expired` 的条件 `$global.GearIn_memory_probe` 判真 false 不命中 —— 文本面板追加 alive 的文本，其中 `$player.GearIn_memory_lastAction` 已替换为 `verify`。
-7. **点 "结束"（或按 ESC）**：`DismissDialog` 关闭对话；对话关闭后的第一个推进帧 `$player.GearIn_memory_lastAction` 被移除（此后 `DumpMemory` 无该键）——"会话内 flag" 语义的完整流程得到可观察验证。
+   - 若该帧正有其它对话/界面排队，弹窗顺延到后续未暂停帧 (对话脚本不置 done，自动重试)。
+6. **点 "验证内存键"**：`$player.GearIn_memory_lastAction = verify 0` 写入玩家内存 (`DumpMemory` 可见 `$player.GearIn_memory_lastAction = verify (e=0)`)；`FireBest GearInMemoryResult` 命中 `result_alive` (条件 `$global.GearIn_memory_counter >= 1` + `!$global.GearIn_memory_probe` 两条 1 分全过)；`result_expired` 的条件 `$global.GearIn_memory_probe` 判真 false 不命中 —— 文本面板追加 alive 的文本，其中 `$player.GearIn_memory_lastAction` 已替换为 `verify`。
+7. **点 "结束"(或按 ESC)**：`DismissDialog` 关闭对话；对话关闭后的第一个推进帧 `$player.GearIn_memory_lastAction` 被移除 (此后 `DumpMemory` 无该键)——"会话内 flag" 语义的完整流程得到可观察验证。
 8. **保存后读档**：日志 `PersistentData 运行计数 run 2（新档首次 = 1；读档恢复上次值 = 1）`；写入/组装/验证/对话脚本重跑、对话再次弹出；记忆键被重新写入。
 9. **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR`；加载期无 `Duplicate key` / 重复规则 id 报错。
 
 静态自查：
 - 六个类无未使用 import；
-- 记忆键常量（`GearInMemoryKeys`）与 rules.csv 条件/文本里的键逐字一致（含 `$` 前缀与大小写）；
-- `GearInPersistentDataCounter.PERSIST_KEY_RUNS`（`GearIn_memory_runs`）与调用点片段一致且不含 `$`；
+- 记忆键常量 (`GearInMemoryKeys`) 与 rules.csv 条件/文本里的键逐字一致 (含 `$` 前缀与大小写)；
+- `GearInPersistentDataCounter.PERSIST_KEY_RUNS`(`GearIn_memory_runs`) 与调用点片段一致且不含 `$`；
 - `GearInMemoryDialog.INITIAL_TRIGGER` 与 rules.csv welcome 行 trigger 列逐字一致；
-- 没有把工作单元编号写进任何运行时名称（记忆键、规则 id、触发器、类名、包名、persistent data 键均不含 C11-S04 变体）；
+- 没有把工作单元编号写进任何运行时名称 (记忆键、规则 id、触发器、类名、包名、persistent data 键均不含 C11-S04 变体)；
 - `data\campaign\rules.csv` 内本节 id 与既有 MOD 无冲突。
 
 ## 实例驱动故障分析
 
 1. **`set` 抛 `RuntimeException("Key ... should start with $")`，写入不生效**。
-   - 触发：Java 侧写键漏了 `$`（如 `"GearIn_memory_tag"`）。
+   - 触发：Java 侧写键漏了 `$`(如 `"GearIn_memory_tag"`)。
    - 可观察：调用点异常 —— 脚本/命令上下文是对话红字段落或日志堆栈，`contains` 恒 false。
-   - 修正：记忆键一律 `$` 开头；只有 `PersistentData` 键不需要（见故障 8）。
+   - 修正：记忆键一律 `$` 开头；只有 `PersistentData` 键不需要 (见故障 8)。
 2. **过期不生效，键一直存在**。
-   - 触发：先三参 `set` 后又两参 `set` 覆盖（两参 set 清除未决过期）；或生涯一直暂停（对话开着）。
-   - 可观察：`getExpire(key)` 返回 -1；对话期间 `expire 0` 键不消失（暂停语义）。
+   - 触发：先三参 `set` 后又两参 `set` 覆盖 (两参 set 清除未决过期)；或生涯一直暂停 (对话开着)。
+   - 可观察：`getExpire(key)` 返回 -1；对话期间 `expire 0` 键不消失 (暂停语义)。
    - 修正：写过期键用三参 `set` 或先两参 `set` 再 `expire(days)`；会话内 flag 用 0 天。
 3. **键 "提前消失" 或 "迟迟不消失"**。
-   - 触发：把真实秒当游戏天传（`expire` 单位是游戏天，10 真实秒 = 1 游戏天）；或以为 `expire 0` 是 "永不过期"。
+   - 触发：把真实秒当游戏天传 (`expire` 单位是游戏天，10 真实秒 = 1 游戏天)；或以为 `expire 0` 是 "永不过期"。
    - 可观察：`DumpMemory` 显示 `(e=0)` 或剩余天数与直觉差 10 倍；键在预期时间内被移除/残留。
    - 修正：单位换算；0 = 下一个推进帧移除，永久键用两参 `set`。
-4. **一次性 flag 第二次进入还有效（`!$player.<flag>` 条件没拦住）**。
-   - 触发：flag 写进了别的槽位（无点号 `$flag` 落到 local，而条件读 `$player.flag`）；或赋值漏了第三 token `0`（`$player.flag = true` 是永久键）。
+4. **一次性 flag 第二次进入还有效 (`!$player.<flag>` 条件没拦住)**。
+   - 触发：flag 写进了别的槽位 (无点号 `$flag` 落到 local，而条件读 `$player.flag`)；或赋值漏了第三 token `0`(`$player.flag = true` 是永久键)。
    - 可观察：`DumpMemory` 里键在 local 槽位而不在 player；键没有 `(e=...)` 标记。
-   - 修正：条件与写入用同一槽位写法（`$player.<flag> = true 0` 逐字一致）。
+   - 修正：条件与写入用同一槽位写法 (`$player.<flag> = true 0` 逐字一致)。
 5. **条件 "静默不命中"**。
-   - 触发：`$global.xxx` 拼成 `$xxx`（回落 local 读错槽位）；或键名大小写/拼写不符（比较大小写敏感）。
-   - 可观察：规则不触发且无报错（`$memkey.name` 槽位缺失回落 local 是特性，见 "MemKeys 与 memoryMap"）；`DumpMemory` 能看到实际键。
+   - 触发：`$global.xxx` 拼成 `$xxx`(回落 local 读错槽位)；或键名大小写/拼写不符 (比较大小写敏感)。
+   - 可观察：规则不触发且无报错 (`$memkey.name` 槽位缺失回落 local 是特性，见 "MemKeys 与 memoryMap")；`DumpMemory` 能看到实际键。
    - 修正：对照 `DumpMemory` 输出核对槽位名与键名；用 `$global.` 读的键必须写在 sector 记忆。
 6. **读档后实体相关记忆键消失**。
-   - 触发：记忆里存了实体/市场引用（`set(key, entity)`），读档后实体已销毁或不在星区。
+   - 触发：记忆里存了实体/市场引用 (`set(key, entity)`)，读档后实体已销毁或不在星区。
    - 可观察：`enRef_`/`mRef_` 解析失败 → 键被删除，无任何报错。
    - 修正：不要用记忆持久化 "实体是否存活"；读档后用 `Global.getSector().getEntityById` 等现查实体。
 7. **`getBoolean` 把 "键缺失" 当 false 用**。
@@ -804,55 +804,55 @@ gradle jar
    - 可观察：`!$flag` 条件在键缺失时判真 false，分支永不进入且无报错。
    - 修正：需要区分 "缺失" 与 "false" 时先 `contains`；或接受 "缺失即假" 语义并显式初始化。
 8. **PersistentData 状态互相覆盖 / 读档恢复错乱**。
-   - 触发：两个注册项共用同一个 persistent data 键；或把记忆键（`$` 前缀）直接当 persistent data 键用。
-   - 可观察：A 项写入被 B 项覆盖；键带 `$` 在 persistent data 里也能工作（没有报错）但语义混乱。
-   - 修正：每个注册项独立键（持久数据键纪律）；persistent data 键无需 `$`，用语义名（本节 `GearIn_memory_runs`）。
-9. **规则读不到 Java 写的键（槽位错位）**。
-   - 触发：Java 把键写进对话交互目标记忆（local），规则却用 `$global.` 读；或反过来。
+   - 触发：两个注册项共用同一个 persistent data 键；或把记忆键 (`$` 前缀) 直接当 persistent data 键用。
+   - 可观察：A 项写入被 B 项覆盖；键带 `$` 在 persistent data 里也能工作 (没有报错) 但语义混乱。
+   - 修正：每个注册项独立键 (持久数据键纪律)；persistent data 键无需 `$`，用语义名 (本节 `GearIn_memory_runs`)。
+9. **规则读不到 Java 写的键 (槽位错位)**。
+   - 触发：Java 把键写进对话交互目标记忆 (local)，规则却用 `$global.` 读；或反过来。
    - 可观察：规则条件恒假 / 文本 token 不被替换，无报错。
-   - 修正：明确键的归属槽位 ——sector 记忆配 `$global.`、玩家记忆配 `$player.`、交互目标记忆配无点号或 `$local.`（`MemKeys` 表见 "文件与 API 链路"）。
-10. **memoryMap 上下文错传（读/写槽位错位）**。
-   - 触发：rulecmd 收到错误 memoryMap（如面板上下文传了对话 memoryMap）。
-   - 可观察：同一个键在不同槽位读到不同值；`getEntityMemory` 的 ENTITY/LOCAL 选择改变状态归属（C11-S03）。
+   - 修正：明确键的归属槽位 ——sector 记忆配 `$global.`、玩家记忆配 `$player.`、交互目标记忆配无点号或 `$local.`(`MemKeys` 表见 "文件与 API 链路")。
+10. **memoryMap 上下文错传 (读/写槽位错位)**。
+   - 触发：rulecmd 收到错误 memoryMap(如面板上下文传了对话 memoryMap)。
+   - 可观察：同一个键在不同槽位读到不同值；`getEntityMemory` 的 ENTITY/LOCAL 选择改变状态归属 (C11-S03)。
    - 修正：rulecmd 用 `BaseCommandPlugin.getEntityMemory(memoryMap)` 取实体记忆；对话外上下文不要假定 `ENTITY` 存在。
 11. **每帧 `getMemory()` 造成性能/副作用**。
    - 触发：高频循环里用 `getMemory()` 而不是 `getMemoryWithoutUpdate()`。
-   - 可观察：全部插件的 `updateEntityFacts`/`updateMarketFacts` 每帧执行（日志噪音、性能损耗）。
+   - 可观察：全部插件的 `updateEntityFacts`/`updateMarketFacts` 每帧执行 (日志噪音、性能损耗)。
    - 修正：写入与高频读取用 `getMemoryWithoutUpdate()`；需要最新 facts 的读取才用 `getMemory()`。
 ## 总结
 
 本节把 Rules 内存讲成四条链，并在完整最小例里组合使用：
 
-- **API 面链**：`MemoryAPI`（`com.fs.starfarer.api.campaign.rules.MemoryAPI`）——`set`（两/三参）/ `get` 族 / `contains` / `unset` / `expire` / `is` / `between` / `getExpire` / `getKeys` / required 族 / `clear`；记忆键必须以 `$` 开头（违反 = `RuntimeException`）；缺失键读取有确定的默认值（`getString` → null、`getFloat` → 0、`getBoolean` → false）。
-- **过期链**：单位是游戏天（10 真实秒 = 1 游戏天）；只在生涯非暂停时推进（引擎在各推进点调 `Memory.advance`）；`0` 天 = 下一个推进帧移除（会话内 flag，`$option` 与一次性 flag 都靠它）；负值 = 取消过期；两参 `set` 清除未决过期；`getExpire` 是排障第一入口（`DumpMemory` 的 `(e=...)`）。
-- **memoryMap 链**：`MemKeys` 槽位（`global` / `player` / `local` / `market` / `sourceMarket` / `faction` / `entity` / `personFaction` / `mission`）；`$memkey.name` 解析、无点号回落 `local`；token 替换只消费 String/Boolean/Float/Integer； `getMemory()` 刷 facts vs `getMemoryWithoutUpdate()` 只读写。
-- **持久化链**：记忆随所属对象序列化（实体/市场引用转 `enRef_`/`mRef_`，解析不到删键）；`PersistentData` 是随存档保存的全局 `Map<String, Object>`（键无需 `$`），负责跨存档、跨 `ModPlugin` 实例、注册守卫 —— 每个注册项独立键。
+- **API 面链**：`MemoryAPI`(`com.fs.starfarer.api.campaign.rules.MemoryAPI`)——`set`(两/三参)/ `get` 族 / `contains` / `unset` / `expire` / `is` / `between` / `getExpire` / `getKeys` / required 族 / `clear`；记忆键必须以 `$` 开头 (违反 = `RuntimeException`)；缺失键读取有确定的默认值 (`getString` → null、`getFloat` → 0、`getBoolean` → false)。
+- **过期链**：单位是游戏天 (10 真实秒 = 1 游戏天)；只在生涯非暂停时推进 (引擎在各推进点调 `Memory.advance`)；`0` 天 = 下一个推进帧移除 (会话内 flag，`$option` 与一次性 flag 都靠它)；负值 = 取消过期；两参 `set` 清除未决过期；`getExpire` 是排障第一入口 (`DumpMemory` 的 `(e=...)`)。
+- **memoryMap 链**：`MemKeys` 槽位 (`global` / `player` / `local` / `market` / `sourceMarket` / `faction` / `entity` / `personFaction` / `mission`)；`$memkey.name` 解析、无点号回落 `local`；token 替换只消费 String/Boolean/Float/Integer；`getMemory()` 刷 facts vs `getMemoryWithoutUpdate()` 只读写。
+- **持久化链**：记忆随所属对象序列化 (实体/市场引用转 `enRef_`/`mRef_`，解析不到删键)；`PersistentData` 是随存档保存的全局 `Map<String, Object>`(键无需 `$`)，负责跨存档、跨 `ModPlugin` 实例、注册守卫 —— 每个注册项独立键。
 
 记忆要点：
 
 - memory 是**运行时对象**：没有数据文件、没有注册表；`getMemory()` / `getMemoryWithoutUpdate()` 取实例，延迟创建。
-- 过期三问：单位（游戏天）？谁推进（引擎，非暂停）？值怎么改（`expire` 重设、负值取消、两参 set 清除）？
+- 过期三问：单位 (游戏天)？谁推进 (引擎，非暂停)？值怎么改 (`expire` 重设、负值取消、两参 set 清除)？
 - 槽位决定可见范围：`$global.`、`$player.`、无点号 local—— 拼错不报错，只会静默读错。
-- 排障顺序：`DumpMemory`（devMode）看实际键与 `(e=...)` → 核对槽位与键名 → 核对过期单位 → 核对调用时机（暂停/对话）。
-- 持久化二选一：实体/对象绑定状态用记忆；跨存档/跨实例状态用 `PersistentData`（独立键、只存可序列化值）。
+- 排障顺序：`DumpMemory`(devMode) 看实际键与 `(e=...)` → 核对槽位与键名 → 核对过期单位 → 核对调用时机 (暂停/对话)。
+- 持久化二选一：实体/对象绑定状态用记忆；跨存档/跨实例状态用 `PersistentData`(独立键、只存可序列化值)。
 
-前置章节的变量语法与状态机/一次性 flag 模式在本节获得内存层解释 ——`$` 前缀、槽位与过期机制正是它们能成立的原因；规则脚本侧的实体记忆取用写法（实体优先、局部回退）与本节槽位表一一对应。
+前置章节的变量语法与状态机/一次性 flag 模式在本节获得内存层解释 ——`$` 前缀、槽位与过期机制正是它们能成立的原因；规则脚本侧的实体记忆取用写法 (实体优先、局部回退) 与本节槽位表一一对应。
 
 本节定义并持有的 `$GearIn_memory_*` 键、`GearIn_memory_runs` 持久键与六个类遵循示例所有权约定：其他内容按需消费，不改写既有语义。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.rules.MemoryAPI` — Rules 内存接口：`set`（两/三参）/ `get` 族 / `contains` / `unset` / `expire` / `is` / `between` / `getExpire` / `getKeys` / required 族 / `clear`
-- `com.fs.starfarer.api.campaign.rules.HasMemory` — `getMemory()` / `getMemoryWithoutUpdate()` 取实例入口
-- `com.fs.starfarer.api.campaign.rules.MemKeys` — memoryMap 槽位常量（`global` / `player` / `local` / `market` / `sourceMarket` / `faction` / `entity` / `personFaction` / `mission`）
-- `com.fs.starfarer.api.campaign.rules.RulesAPI` —`getAllMatching` / `getBestMatching` 的 memoryMap 第四参与 `performTokenReplacement`
-- `com.fs.starfarer.api.campaign.SectorAPI` —`getPersistentData()` / `getMemory()` / `getMemoryWithoutUpdate()` / `getPlayerMemoryWithoutUpdate()`
-- `com.fs.starfarer.api.campaign.SectorEntityToken` — 实体记忆入口（`getMemory()` / `getMemoryWithoutUpdate()`）
-- `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl` — 对话框插件：memoryMap 组装与 `$option` 写 `expire 0` 的原版范式
-- `com.fs.starfarer.api.impl.campaign.rulecmd.DumpMemory` — devMode 记忆转储（键列表与 `(e=<剩余天数>)`）
-- `com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin` — `getEntityMemory()`（`ENTITY` 优先、`LOCAL` 回退）
-- `com.fs.starfarer.api.impl.campaign.ids.MemFlags` — 原版记忆键常量惯例（`MEMORY_KEY_SOURCE_MARKET` 等）
-- `com.fs.starfarer.api.util.Misc` — `Token.getVarNameAndMemory` 变量解析与 `replaceTokensFromMemory` 文本替换
-- `data/campaign/rules.csv` — 本节 5 条 `GearIn_memory_*` 规则行所在（MOD 数据文件，追加行）
-- `data/scripts/gearin/rules/` — 本节六个示例类所在目录（MOD 内路径）
-- `tutorial-fixtures/units/C11-S04/src/main/java/data/scripts/gearin/rules/` — 本节 fixture 源码目录（仓库相对路径）
+- `com.fs.starfarer.api.campaign.rules.MemoryAPI` —— Rules 内存接口：`set`(两/三参)/ `get` 族 / `contains` / `unset` / `expire` / `is` / `between` / `getExpire` / `getKeys` / required 族 / `clear`。
+- `com.fs.starfarer.api.campaign.rules.HasMemory` —— `getMemory()` / `getMemoryWithoutUpdate()` 取实例入口；
+- `com.fs.starfarer.api.campaign.rules.MemKeys` —— memoryMap 槽位常量 (`global` / `player` / `local` / `market` / `sourceMarket` / `faction` / `entity` / `personFaction` / `mission`)。
+- `com.fs.starfarer.api.campaign.rules.RulesAPI` ——`getAllMatching` / `getBestMatching` 的 memoryMap 第四参与 `performTokenReplacement`。
+- `com.fs.starfarer.api.campaign.SectorAPI` ——`getPersistentData()` / `getMemory()` / `getMemoryWithoutUpdate()` / `getPlayerMemoryWithoutUpdate()`。
+- `com.fs.starfarer.api.campaign.SectorEntityToken` —— 实体记忆入口 (`getMemory()` / `getMemoryWithoutUpdate()`)。
+- `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl` —— 对话框插件：memoryMap 组装与 `$option` 写 `expire 0` 的原版范式。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.DumpMemory` —— devMode 记忆转储 (键列表与 `(e=<剩余天数>)`)。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin` —— `getEntityMemory()`(`ENTITY` 优先、`LOCAL` 回退)。
+- `com.fs.starfarer.api.impl.campaign.ids.MemFlags` —— 原版记忆键常量惯例 (`MEMORY_KEY_SOURCE_MARKET` 等)。
+- `com.fs.starfarer.api.util.Misc` —— `Token.getVarNameAndMemory` 变量解析与 `replaceTokensFromMemory` 文本替换。
+- `data/campaign/rules.csv` —— 本节 5 条 `GearIn_memory_*` 规则行所在 (MOD 数据文件，追加行)。
+- `data/scripts/gearin/rules/` —— 本节六个示例类所在目录 (MOD 内路径)。
+- `tutorial-fixtures/units/C11-S04/src/main/java/data/scripts/gearin/rules/` —— 本节 fixture 源码目录 (仓库相对路径)。

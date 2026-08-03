@@ -15,7 +15,7 @@
 
 ## 前置知识
 
-本节假设您已完成普通舰船的完整制作流程（C01-S02）：
+本节假设您已完成普通舰船的完整制作流程 (C01-S02)：
 
 - 在舰船编辑器中制作一艘普通舰船；
 - 在 `ship_data.csv` 中填写不至于让游戏报错的数据；
@@ -31,13 +31,13 @@
 
 ::: tip 位置建议
 
-所有相位相关舰船都应该被放入`phase`文件夹，有助于后续维护。
+所有相位相关舰船都应该被放入 `phase` 文件夹，有助于后续维护。
 
 :::
 
 ![](./storage.png)
 
-`锻件-级(Forging)`相位护卫舰，ID 为`GearIn_forging`。
+`锻件-级(Forging)` 相位护卫舰，ID 为 `GearIn_forging`。
 
 ## 制作相位舰船文件
 
@@ -49,7 +49,7 @@
 
 ## 制作相位舰船的数据
 
-天下数据一大抄。相信您已经能熟练地复制`小精灵-级`相位舰的数据，然后稍作修改：
+天下数据一大抄。相信您已经能熟练地复制 `小精灵-级` 相位舰的数据，然后稍作修改：
 
 ```csv
 name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
@@ -70,17 +70,17 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ```
 
-在本例中，`锻件-级`相位护卫舰全船上下只有一个中型实弹武器槽位，因此它将专注于疯狂的实弹火力。
+在本例中，`锻件-级` 相位护卫舰全船上下只有一个中型实弹武器槽位，因此它将专注于疯狂的实弹火力。
 
-为了加强手感，它的战术系统被替换为`加速填弹器`来在需要的时候提供超级输出，同时也弥补失去小型导弹的爆发不足。
+为了加强手感，它的战术系统被替换为 `加速填弹器` 来在需要的时候提供超级输出，同时也弥补失去小型导弹的爆发不足。
 
-不过为了让这个过程显得更加紧张刺激，它的幅能耗散被直接砍到 100 ，来让它必须斟酌何时使用突击链炮。
+不过为了让这个过程显得更加紧张刺激，它的幅能耗散被直接砍到 100，来让它必须斟酌何时使用突击链炮。
 
 最后再略微抬升一些相位产生幅能，一艘相当有驾驶手感的相位船就做好了。
 
 相位舰船的 `shield type` **必须填写 `PHASE`**，`defense id` 必须填写实际右键相位系统，例如原版 `phasecloak`。CSV 中的相位激活与维持幅能字段也必须填写。
 
-该行的 `tags` 同样按 C01-S03「提前准备」的建议填写为 `GearIn_bp`。
+该行的 `tags` 同样按 C01-S03"提前准备" 的建议填写为 `GearIn_bp`。
 
 ## 设置相位光效贴图
 
@@ -100,7 +100,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 光效贴图文件**必须**位于和相位舰船同一位置。
 
-光效贴图文件的文件名**必须**是`相位舰船的贴图文件名+_glow1`和`相位舰船的贴图文件名+_glow2`
+光效贴图文件的文件名**必须**是 `相位舰船的贴图文件名+_glow1` 和 `相位舰船的贴图文件名+_glow2`。
 
 光效贴图文件**应当**是纯白色的，否则将出现影响观感的颜色异常。
 
@@ -110,7 +110,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 1. 使用控制台命令 `Addship GearIn_forging` 获取该相位护卫舰。
 2. 进入战斗部署它，右键进入/退出相位，确认外观为相位而非护盾，右键激活的是相位系统。
-3. 通过信号：资源加载阶段无缺图报错；日志（`starsector.log`）中 `GearIn_forging` 无错误。
+3. 通过信号：资源加载阶段无缺图报错；日志 (`starsector.log`) 中 `GearIn_forging` 无错误。
 
 预期结果：
 
@@ -133,7 +133,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ## 建议参考项
 
-- `data/hulls/ship_data.csv`（原版蓝本，本 MOD 同路径）：舰船数据表，相位舰行需填写 `PHASE`/`phasecloak` 与相位幅能字段。
-- `data/shipsystems/phasecloak.system`（原版）：相位系统定义，`phaseHighlight`/`phaseDiffuse` 提供光效后缀（`_glow1`/`_glow2`）。
+- `data/hulls/ship_data.csv`(原版蓝本，本 MOD 同路径)：舰船数据表，相位舰行需填写 `PHASE`/`phasecloak` 与相位幅能字段。
+- `data/shipsystems/phasecloak.system`(原版)：相位系统定义，`phaseHighlight`/`phaseDiffuse` 提供光效后缀 (`_glow1`/`_glow2`)。
 - `Starsector/starsector-core/starsector.log`：游戏日志，排查加载错误与最终 ID 报错。
 - `Starsector/mods/Console Commands/data/console/commands.csv`：`Addship` 控制台命令条目。

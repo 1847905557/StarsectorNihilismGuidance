@@ -118,7 +118,7 @@ MOD ID:       gear_in
 Java 包前缀:  data.scripts.gearin.<domain>
 ```
 
-`<domain>` 按语义域组织（`combat`、`campaign`、`rules` 等），类名形如 `GearIn<Subject>`。
+`<domain>` 按语义域组织 (`combat`、`campaign`、`rules` 等)，类名形如 `GearIn<Subject>`。
 
 例如 `data.scripts.gearin.combat.GearInShipStatsProbe`；这一命名约定会在后续涉及数据注册的页面中沿用。
 
@@ -133,7 +133,7 @@ MOD ID `gear_in` 使用小写 ASCII、数字和下划线，可以减少路径大
 
 ::: caution 页面编号不是运行时标识
 
-页面编号（如 C01-S01）只用于文档导航，永远不进入 MOD ID、数据 ID、包名或类名。
+页面编号 (如 C01-S01) 只用于文档导航，永远不进入 MOD ID、数据 ID、包名或类名。
 
 :::
 
@@ -152,7 +152,7 @@ MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用�
 
 :::
 
-这套目录与 ID 约定会继续用于舰船（C01-S02）、武器（C01-S05）、船插（C02-S02）和战术系统（C02-S03），届时可以沿各自的数据链找到精确使用方。
+这套目录与 ID 约定会继续用于舰船 (C01-S02)、武器 (C01-S05)、船插 (C02-S02) 和战术系统 (C02-S03)，届时可以沿各自的数据链找到精确使用方。
 
 ## 日志
 
@@ -183,7 +183,7 @@ MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用�
 
 ## 故障分析
 
-### 启动器中没有 MOD（manifest 缺失）
+### 启动器中没有 MOD(manifest 缺失)
 
 - 触发条件：`mod_info.json` 不在 MOD 的直接根目录，或文件实际名为 `mod_info.json.txt`。
 - 可观察结果：Mods 列表没有 "齿轮工业"。
@@ -192,18 +192,18 @@ MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用�
 
 ### manifest 解析失败
 
-- 触发条件：JSON 语法错误（引号、逗号或花括号缺失）、文件带 BOM 或非 UTF-8 编码，或缺少 `id`/`name`/`description` 之一。
-- 可观察结果：MOD 不出现在列表中（而不是显示错误行）；`starsector.log` 记录 `Error loading mod from [MOD 目录]` 以及解析异常的堆栈。
+- 触发条件：JSON 语法错误 (引号、逗号或花括号缺失)、文件带 BOM 或非 UTF-8 编码，或缺少 `id`/`name`/`description` 之一。
+- 可观察结果：MOD 不出现在列表中 (而不是显示错误行)；`starsector.log` 记录 `Error loading mod from [MOD 目录]` 以及解析异常的堆栈。
 - 原因：manifest 没有形成可解析对象，或缺少必需字段。
 - 修正：先恢复本节的标准 JSON，再逐字段修改；保持 UTF-8 无 BOM。
 
 ### 游戏版本提示不匹配
 
-- 触发条件：`gameVersion` 缺失，或仍是旧教程中的版本号（major 与当前不符，如 `0.95a-RC15`）。
+- 触发条件：`gameVersion` 缺失，或仍是旧教程中的版本号 (major 与当前不符，如 `0.95a-RC15`)。
 - 可观察结果：启动器把 MOD 行显示为红色并提示 "Error: this mod requires a different version of the game."，且无法勾选。
 - 如果此前已勾选，启动器下次启动时会自动取消勾选，并弹窗提示不兼容 MOD 已被禁用。
 - 原因：manifest 声明与当前游戏版本不兼容。
-- 仅 RC 编号或小版本不同（如 `0.98a-RC6`）会被视为兼容，最多显示黄色警告。
+- 仅 RC 编号或小版本不同 (如 `0.98a-RC6`) 会被视为兼容，最多显示黄色警告。
 - 修正：使用本教程范例的 `0.98a-RC8` 版本。
 
 ### 添加数据后出现别人的内容或重复条目

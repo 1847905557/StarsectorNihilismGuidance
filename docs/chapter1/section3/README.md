@@ -16,7 +16,7 @@
 
 ## 前置知识
 
-本节假设您已完成普通舰船的完整制作流程（C01-S02）：
+本节假设您已完成普通舰船的完整制作流程 (C01-S02)：
 
 - 在舰船编辑器中制作一艘普通舰船；
 - 在 `ship_data.csv` 中填写不至于让游戏报错的数据；
@@ -58,7 +58,7 @@
 
 ::: caution 甲板设置
 
-每个甲板**必须设置至少 2 个港口(Port)**。港口数为 0 或 1 的甲板可能会让战机直接从舰船中心生成。
+每个甲板**必须设置至少 2 个港口 (Port)**。港口数为 0 或 1 的甲板可能会让战机直接从舰船中心生成。
 
 建议每个甲板至少拥有 4 个港口。
 
@@ -66,7 +66,7 @@
 
 ![舰船编辑器中的航母甲板港口设置](./carrier_port.png)
 
-**每一个图标右下角的数字说明它属于第 x 个甲板**，由于 `守炉人-级` 航母只有 2 个甲板，所以右下角最大数字为 2。**而图标的数量则说明这个甲板有多少个港口**。
+**每一个图标右下角的数字说明它属于第 x 个甲板**，由于 `守炉人-级` 航母只有 2 个甲板，所以右下角最大数字为 2**。而图标的数量则说明这个甲板有多少个港口**。
 
 其它属性设置完毕后，按 V 保存。
 
@@ -102,7 +102,7 @@ tag 也作了与 `工匠-级` 相似的处理。
 前置数据：已经完成 `GearIn_furnaceman` 的船体文件和 `ship_data.csv` 登记，并准备一套可搭载战机联队的测试装配。
 
 1. 使用控制台命令 `Addship GearIn_furnaceman` 获取该航母。
-2. 进入任意战斗并部署它，观察战机是否从甲板港口生成（而非舰体中心），以及联队补充与返航是否正常。
+2. 进入任意战斗并部署它，观察战机是否从甲板港口生成 (而非舰体中心)，以及联队补充与返航是否正常。
 
 预期结果：
 
@@ -122,7 +122,7 @@ tag 也作了与 `工匠-级` 相似的处理。
 
 战机的武器**不应该选用 `内置`**，因为战机的装配是基于装配文件的，而对内置槽位进行装配可能会产生一些问题。
 
-不要选错 `hullSize`—— 游戏以 `hullSize == FIGHTER` 判定战机身份（`ShipAPI.isFighter()`），选错时该单位不会被分配战机 AI，也不会被计入联队成员、返航与补充。
+不要选错 `hullSize`—— 游戏以 `hullSize == FIGHTER` 判定战机身份 (`ShipAPI.isFighter()`)，选错时该单位不会被分配战机 AI，也不会被计入联队成员、返航与补充。
 
 :::
 
@@ -234,7 +234,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 }
 ```
 
-**再次强调：一定要注意那些武器槽(`WSxxx`)是否存在于战机的船体文件里。**
+**再次强调：一定要注意那些武器槽 (`WSxxx`) 是否存在于战机的船体文件里。**
 
 ## 制作战机的战机数据
 
@@ -257,7 +257,7 @@ id,variant,tags,tier,rarity,fleet pts,op cost,formation,range,attackRunRange,att
 GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V,4000,500,,3,FIGHTER,重型战机,12,6000,,,,,,,,,,,,,1
 ```
 
-该行的 `tags` 已按上文「提前准备」的建议处理：蓝图 tag 被替换为 `GearIn_bp`，并清掉了 `merc, ind`。
+该行的 `tags` 已按上文 "提前准备" 的建议处理：蓝图 tag 被替换为 `GearIn_bp`，并清掉了 `merc, ind`。
 
 ::: warning 战机的 wing id 绝对不能和 ship id 一致
 
@@ -269,7 +269,7 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 
 ### 实用战机数据速查表
 
-**不在本表上的数据均为本教程用不到的数据(如 fleet pts)或不重要数据(如 number)，照抄原版样本即可。**
+**不在本表上的数据均为本教程用不到的数据 (如 fleet pts) 或不重要数据 (如 number)，照抄原版样本即可。**
 
 | 英文                 | 实际意义                                                     |
 | -------------------- | ------------------------------------------------------------ |
@@ -300,7 +300,7 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 | bomber*                | 当进行自动装配时，优先使用 * 所处的位置较高的战机。例如 bomber2 总是会替代 bomber1 |
 | support*               | 当进行自动装配时，优先使用 * 所处的位置较高的战机。例如 support2 总是会替代 support1 |
 |                        | **以上 4 条只应当包含 1 条**                                 |
-| fighter                | 与 `role` 列 FIGHTER 同义的分类 tag。                          |
+| fighter                | 与 `role` 列 FIGHTER 同义的分类 tag。|
 | interceptor            | 与 `role` 列 INTERCEPTOR 同义的分类 tag，同上                     |
 | bomber                 | 与 `role` 列 BOMBER 同义的分类 tag，同上                          |
 |                        | **以上 3 条只应当包含 1 条**                                  |
@@ -344,15 +344,15 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 
 本节在普通舰船链的基础上完成了两种专用约束的完整流程：航母通过甲板与港口投放战机，战机必须走完 hull、variant、wing 三段注册。
 
-二者都适合从最终生成 ID 反向追到注册与资源 —— 凡是同时涉及多个注册环节的内容（舰船、装配、联队乃至模块船），都可以沿这条反向链路定位问题。
+二者都适合从最终生成 ID 反向追到注册与资源 —— 凡是同时涉及多个注册环节的内容 (舰船、装配、联队乃至模块船)，都可以沿这条反向链路定位问题。
 
 ## 建议参考项
 
-- `data/hulls/ship_data.csv`（原版蓝本，本 MOD 同路径）：舰船数据表，航母行需填写 `fighter bays` 与 `CARRIER` hint。
-- `data/hulls/wing_data.csv`（原版蓝本，本 MOD 同路径）：联队数据表，`GearIn_slag_wing` 行落点。
-- `data/variants/fighters/`（本 MOD）：战机装配文件（`GearIn_slag_normal.variant`）的落点。
-- `data/variants/fighters/broadsword_Fighter.variant`（原版）：战机装配基线，本例装配由它修改而来。
-- `data/weapons/weapon_data.csv`（原版）：武器 ID 查询（`lightdualac` 等）。
+- `data/hulls/ship_data.csv`(原版蓝本，本 MOD 同路径)：舰船数据表，航母行需填写 `fighter bays` 与 `CARRIER` hint。
+- `data/hulls/wing_data.csv`(原版蓝本，本 MOD 同路径)：联队数据表，`GearIn_slag_wing` 行落点。
+- `data/variants/fighters/`(本 MOD)：战机装配文件 (`GearIn_slag_normal.variant`) 的落点。
+- `data/variants/fighters/broadsword_Fighter.variant`(原版)：战机装配基线，本例装配由它修改而来。
+- `data/weapons/weapon_data.csv`(原版)：武器 ID 查询 (`lightdualac` 等)。
 - `Starsector/starsector-core/starsector.log`：游戏日志，排查加载错误与最终 ID 报错。
 - `Starsector/mods/Console Commands/data/console/commands.csv`：`Addship`/`Addwing` 控制台命令条目。
 - `com.fs.starfarer.api.loading.FormationType`、`com.fs.starfarer.api.loading.WingRole`：联队队形与战机角色枚举全集。

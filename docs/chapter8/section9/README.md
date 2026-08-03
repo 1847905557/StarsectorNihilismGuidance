@@ -1,6 +1,6 @@
 # 情报与交互对话框
 
-本节把生涯侧两个高频服务入口讲透：情报（`IntelManagerAPI` / `IntelInfoPlugin` / `BaseIntelPlugin` / `MessageIntel`）与交互对话框（`InteractionDialogAPI` / `InteractionDialogPlugin`），并给出组合两个入口的完整最小例。势力（`FactionAPI`）与货物（`CargoAPI`）在上一节（C08-S08）讲解。
+本节把生涯侧两个高频服务入口讲透：情报 (`IntelManagerAPI` / `IntelInfoPlugin` / `BaseIntelPlugin` / `MessageIntel`) 与交互对话框 (`InteractionDialogAPI` / `InteractionDialogPlugin`)，并给出组合两个入口的完整最小例。势力 (`FactionAPI`) 与货物 (`CargoAPI`) 在上一节 (C08-S08) 讲解。
 
 *本节预期阅读时间：~12 分钟。*
 
@@ -13,29 +13,29 @@
 - 说出两个服务入口的进入方式：
   - `SectorAPI.getIntelManager()`；`CampaignUIAPI.showInteractionDialog(plugin, target)`；
 - 说出情报的创建→登记→可见→推进→移除全链：
-  - `addIntel`（绕过通信中继可见性检查、直接置可见时间戳）与 `queueIntel`（走中继可见性检查）的差别；
+  - `addIntel`(绕过通信中继可见性检查、直接置可见时间戳) 与 `queueIntel`(走中继可见性检查) 的差别；
   - `removeAllThatShouldBeRemoved()` 每帧清理、intel 集合随存档保存；
   - 并会写一个 `BaseIntelPlugin` 子类与一条 `MessageIntel` 纯消息；
-- 说出交互对话框的插件生命周期（`init` → `optionSelected` → `advance` → `backFromEngagement` → `dismiss`）与常用入口（`setOptionOnEscape` / `makeOptionOpenCore` / `showCargoPickerDialog` / `addOptionSelectedText`）。
+- 说出交互对话框的插件生命周期 (`init` → `optionSelected` → `advance` → `backFromEngagement` → `dismiss`) 与常用入口 (`setOptionOnEscape` / `makeOptionOpenCore` / `showCargoPickerDialog` / `addOptionSelectedText`)。
   - 并记住 `showInteractionDialog` 可能返回 `false`；
-- 从症状定位故障（见「实例驱动故障分析」节），排查时沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核（沿用本节完整最小例的任务链）。
+- 从症状定位故障 (见 "实例驱动故障分析" 节)，排查时沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核 (沿用本节完整最小例的任务链)。
 
 ## 前置知识
 
 本节建立在前置单元的基础上。
 
-- **星区入口与脚本守卫**（C08-S01）：`SectorAPI` 星区结构（本节两个入口都从 `getSector()` 下的 getter 进入）、`onGameLoad` 注册守卫（persistent data 各自键的 `REGISTER_MARK` 模式）。
-- **势力与货舱**（C08-S08）：本节的两个脚本沿用其一次性演示模式（`GearInOneShotScript` 基类）与 `REGISTER_MARK` 注册写法。
-- **全局对象与阶段判断**（C06-S03）：`Global.getSector()` 的 null 语义与「用 `getCurrentState()` 判断阶段」；本节所有读取与注册都发生在生涯引擎建立之后。
-- **MOD 插件生命周期**（C06-S02）：`modPlugin` 生命周期与 `CLASS_MARK` 一次性注册守卫。
+- **星区入口与脚本守卫**(C08-S01)：`SectorAPI` 星区结构 (本节两个入口都从 `getSector()` 下的 getter 进入)、`onGameLoad` 注册守卫 (persistent data 各自键的 `REGISTER_MARK` 模式)。
+- **势力与货舱**(C08-S08)：本节的两个脚本沿用其一次性演示模式 (`GearInOneShotScript` 基类) 与 `REGISTER_MARK` 注册写法。
+- **全局对象与阶段判断**(C06-S03)：`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；本节所有读取与注册都发生在生涯引擎建立之后。
+- **MOD 插件生命周期**(C06-S02)：`modPlugin` 生命周期与 `CLASS_MARK` 一次性注册守卫。
 
 ## 术语
 
-按术语约定，本节首次完整讲解两个词（后续页面继续使用；API 类名保留源码大小写）：
+按术语约定，本节首次完整讲解两个词 (后续页面继续使用；API 类名保留源码大小写)：
 
-- **情报（intel）**：API 名保留 `IntelInfoPlugin`（单条情报约定）与 `IntelManagerAPI`（登记集合）。
-  - 一条情报 = 一个实现了 `IntelInfoPlugin` 的插件实例，同时承载 Intel 页 UI 描述、消息更新与每帧推进（`BaseIntelPlugin` 兼为 `EveryFrameScript`）。
-- **交互对话框（interaction dialog）**：API 名保留 `InteractionDialogAPI`（对话框本体）与 `InteractionDialogPlugin`（对话框内容插件）。生涯 UI 承载的模态对话：文本面板 + 选项面板 + 视觉面板。
+- **情报 (intel)**：API 名保留 `IntelInfoPlugin`(单条情报约定) 与 `IntelManagerAPI`(登记集合)。
+  - 一条情报 = 一个实现了 `IntelInfoPlugin` 的插件实例，同时承载 Intel 页 UI 描述、消息更新与每帧推进 (`BaseIntelPlugin` 兼为 `EveryFrameScript`)。
+- **交互对话框 (interaction dialog)**：API 名保留 `InteractionDialogAPI`(对话框本体) 与 `InteractionDialogPlugin`(对话框内容插件)。生涯 UI 承载的模态对话：文本面板 + 选项面板 + 视觉面板。
 
 ## 文件与 API 链路
 
@@ -46,70 +46,70 @@
 | 情报 | `Global.getSector().getIntelManager()` | `IntelManagerAPI` / `IntelInfoPlugin` |
 | 交互对话框 | `Global.getSector().getCampaignUI().showInteractionDialog(plugin, target)` | `InteractionDialogAPI` / `InteractionDialogPlugin` |
 
-### 情报（IntelManagerAPI / IntelInfoPlugin / BaseIntelPlugin / MessageIntel）
+### 情报 (IntelManagerAPI / IntelInfoPlugin / BaseIntelPlugin / MessageIntel)
 
-**入口**：`SectorAPI.getIntelManager()` → `IntelManagerAPI`（`com.fs.starfarer.api.campaign.comm.IntelManagerAPI`）。intel 集合随存档保存，读档后仍然可用。
+**入口**：`SectorAPI.getIntelManager()` → `IntelManagerAPI`(`com.fs.starfarer.api.campaign.comm.IntelManagerAPI`)。intel 集合随存档保存，读档后仍然可用。
 
 ::: info 为什么情报集合随存档保存
 
-intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗口、结束倒计时都要跨存档存活，所以情报集合随存档一起保存。这也是「演示情报必须当帧移除」的原因 —— `addIntel` 进去不删，就会永远留在存档里。
+intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗口、结束倒计时都要跨存档存活，所以情报集合随存档一起保存。这也是 "演示情报必须当帧移除" 的原因 —— `addIntel` 进去不删，就会永远留在存档里。
 
 :::
 
 **创建与登记两条链**：
 
-1. **`addIntel(plugin)`**（`IntelManagerAPI`）直接加入已知集合：置玩家可见时间戳、调 `reportMadeVisibleToPlayer()`、`autoAddCampaignMessage()`（默认 true）时经 `CampaignUIAPI.addMessage` 弹左下消息（`IntelManagerAPI.addIntel`）。
+1. **`addIntel(plugin)`**(`IntelManagerAPI`) 直接加入已知集合：置玩家可见时间戳、调 `reportMadeVisibleToPlayer()`、`autoAddCampaignMessage()`(默认 true) 时经 `CampaignUIAPI.addMessage` 弹左下消息 (`IntelManagerAPI.addIntel`)。
    - **`addIntel` 绕过通信中继可见性检查**——`IntelInfoPlugin.canMakeVisibleToPlayer` javadoc 原文："Only checked if adding using IntelManager.queueIntel(). addIntel() bypasses this and all other checks."。
    - `addIntel(plugin, forceNoMessage)` / `addIntel(plugin, forceNoMessage, textPanel)` 控制消息行为。
-2. **`queueIntel(plugin[, maxCommQueueDays])`**（`IntelManagerAPI`）加入通信队列；玩家进入通信中继范围或 `forceAddNextFrame()` 时，转为可见 intel 并出队。
+2. **`queueIntel(plugin[, maxCommQueueDays])`**(`IntelManagerAPI`) 加入通信队列；玩家进入通信中继范围或 `forceAddNextFrame()` 时，转为可见 intel 并出队。
    - 同批最多 3 条、第 4 条起合并为一条 "New messages" 汇总。
 
 **每帧推进与清理**：未暂停且有玩家舰队时，情报管理器每帧推进 —— 通信队列的可见性检查与 `removeAllThatShouldBeRemoved()` 都在这条路径；
 
 `shouldRemoveIntel()` 返回 true 的情报被移除并调 `reportRemovedIntel()`；`IntelManagerAPI.removeIntel` 会同时移除并出队。
 
-**`BaseIntelPlugin`**（`com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`）是自带的完整默认实现（同时实现 `IntelInfoPlugin` / `EveryFrameScript` / `CallableEvent` / `CommSnifferReadableIntel`），MOD 自定义情报的标准父类。
+**`BaseIntelPlugin`**(`com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`) 是自带的完整默认实现 (同时实现 `IntelInfoPlugin` / `EveryFrameScript` / `CallableEvent` / `CommSnifferReadableIntel`)，MOD 自定义情报的标准父类。
 
 常用默认行为：
 
 | 成员 | 语义 |
 |---|---|
 | `advance(amount)` | 把秒数换算成游戏日推进 ending 倒计时；`isDone()` = `isEnded()` |
-| `runWhilePaused()` | 默认 `false`（暂停不推进）|
+| `runWhilePaused()` | 默认 `false`(暂停不推进)|
 | `endImmediately()` / `endAfterDelay()` / `endAfterDelay(days)` | 结束流程；`getBaseDaysAfterEnd()` 默认 **3 游戏日** |
 | `createIntelInfo` / `getName()` | 列表条目 = 名称 + 子弹行；`getName()` 返回 null 则不显示 |
-| `createSmallDescription` | 小描述（默认「请覆写」）；`hasSmallDescription()` 默认 true |
-| `getIcon()` | null = 无图标（`IntelInfoPlugin` javadoc："40x40, no icon if null."）|
-| `getIntelTags(map)` | 默认含 `INTEL_IMPORTANT` / `INTEL_NEW` / 中继范围内的 `INTEL_LOCAL`；**map 为 null 时安全返回**（基类内部已做 null 判断）|
+| `createSmallDescription` | 小描述 (默认 "请覆写")；`hasSmallDescription()` 默认 true |
+| `getIcon()` | null = 无图标 (`IntelInfoPlugin` javadoc："40x40, no icon if null.")|
+| `getIntelTags(map)` | 默认含 `INTEL_IMPORTANT` / `INTEL_NEW` / 中继范围内的 `INTEL_LOCAL`；**map 为 null 时安全返回**(基类内部已做 null 判断)|
 | `sendUpdate` / `sendUpdateIfPlayerHasIntel` | 更新消息；后者要求已有玩家可见时间戳 |
-| `BUTTON_DELETE` / `addDeleteButton` / `buttonPressConfirmed` | 删除按钮（确认框 + `endImmediately`）|
-| `getCommMessageSound` | 发布/更新音效（`ui_intel_something_posted` / `ui_intel_update` 等常量）|
+| `BUTTON_DELETE` / `addDeleteButton` / `buttonPressConfirmed` | 删除按钮 (确认框 + `endImmediately`)|
+| `getCommMessageSound` | 发布/更新音效 (`ui_intel_something_posted` / `ui_intel_update` 等常量)|
 
-**`MessageIntel`**（`com.fs.starfarer.api.impl.campaign.intel.MessageIntel`）：左下消息区的**纯消息**类，javadoc 原文：
+**`MessageIntel`**(`com.fs.starfarer.api.impl.campaign.intel.MessageIntel`)：左下消息区的**纯消息**类，javadoc 原文：
 
 "For campaign messages that show up in the lower-left corner, but are not tied to an actual piece of intel."——
 
 `new MessageIntel(text[, color[, highlights]])`、`addLine(...)` 多行追加、`getCommMessageSound` 默认 `ui_intel_minor_message`；用 `CampaignUIAPI.addMessage(IntelInfoPlugin)` 发送。
 
-**`IntelInfoPlugin` 约定要点**（`com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`）： `getIntelTags(map)` **必须处理 map 为 null**（javadoc："Method NEEDS to handle map being null gracefully."）；
+**`IntelInfoPlugin` 约定要点**(`com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`)：`getIntelTags(map)` **必须处理 map 为 null**(javadoc："Method NEEDS to handle map being null gracefully.")；
 
-`NEW_DAYS = 5`（新情报「NEW」标记窗口）；`IntelSortTier` 排序档；
+`NEW_DAYS = 5`(新情报 "NEW" 标记窗口)；`IntelSortTier` 排序档；
 
-`getMapLocation(map)` 与 `getArrowData(map)` 控制地图定位与箭头； `isHidden()` 让已可见情报在 UI 与消息中隐藏（`BaseIntelPlugin` 默认实现含教程状态判断）。
+`getMapLocation(map)` 与 `getArrowData(map)` 控制地图定位与箭头；`isHidden()` 让已可见情报在 UI 与消息中隐藏 (`BaseIntelPlugin` 默认实现含教程状态判断)。
 
-### 交互对话框（InteractionDialogAPI / InteractionDialogPlugin）
+### 交互对话框 (InteractionDialogAPI / InteractionDialogPlugin)
 
-**打开**：`CampaignUIAPI.showInteractionDialog(plugin, interactionTarget)`（`CampaignUIAPI`）——javadoc 原文：
+**打开**：`CampaignUIAPI.showInteractionDialog(plugin, interactionTarget)`(`CampaignUIAPI`)——javadoc 原文：
 
 "Returns true if dialog was actually shown, false otherwise (if, for example, UI is already showing another dialog)."、
 
 "interactionTarget can be null."。
 
-**插件生命周期（`InteractionDialogPlugin`）**：`init(dialog)` → `optionSelected(optionText, optionData)` / `optionMousedOver` → 每帧 `advance(amount)` → 战斗返回 `backFromEngagement(result)`。
+**插件生命周期 (`InteractionDialogPlugin`)**：`init(dialog)` → `optionSelected(optionText, optionData)` / `optionMousedOver` → 每帧 `advance(amount)` → 战斗返回 `backFromEngagement(result)`。
 
-`getContext()` / `getMemoryMap()`（Rules 侧用）。
+`getContext()` / `getMemoryMap()`(Rules 侧用)。
 
-对话框本体（`InteractionDialogAPI`）常用入口分组：
+对话框本体 (`InteractionDialogAPI`) 常用入口分组：
 
 | 分组 | 成员 | 语义 |
 |---|---|---|
@@ -123,39 +123,39 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 
 ::: warning 选项分支判断用 `optionData`，不要用 `optionText`
 
-`optionSelected(optionText, optionData)` 的第一个参数是用户看到的显示文本（可随 UI 文案变化），第二个才是 `addOption` 时传入的 id。按 `optionText` 做分支会在文案改动后静默失效（见故障分析第 6 条）。
+`optionSelected(optionText, optionData)` 的第一个参数是用户看到的显示文本 (可随 UI 文案变化)，第二个才是 `addOption` 时传入的 id。按 `optionText` 做分支会在文案改动后静默失效 (见故障分析第 6 条)。
 
 :::
 
 ::: tip 把 `showInteractionDialog` 的返回值写进日志
 
-对话框在已有对话框显示时会静默返回 `false`—— 不记录返回值，故障就只剩「对话框没弹出来」这个没有报错的现象。本节演示正是把 `shown` 布尔值记入日志，`shown=false` 时其余演示不受影响。
+对话框在已有对话框显示时会静默返回 `false`—— 不记录返回值，故障就只剩 "对话框没弹出来" 这个没有报错的现象。本节演示正是把 `shown` 布尔值记入日志，`shown=false` 时其余演示不受影响。
 
 :::
 
-**面板常用成员**：`OptionPanelAPI`（`com.fs.starfarer.api.campaign.OptionPanelAPI`）——`addOption(text, data[, tooltip])`、 `addOption(text, data, color, tooltip)`、`clearOptions`。
+**面板常用成员**：`OptionPanelAPI`(`com.fs.starfarer.api.campaign.OptionPanelAPI`)——`addOption(text, data[, tooltip])`、`addOption(text, data, color, tooltip)`、`clearOptions`。
 
-`setEnabled(data, enabled)`（javadoc："Only works for options, not selectors."）。
+`setEnabled(data, enabled)`(javadoc："Only works for options, not selectors.")。
 
-`setShortcut`、`addSelector`、 `addOptionConfirmation`、`removeOption`、`setStoryOptionParams`。
+`setShortcut`、`addSelector`、`addOptionConfirmation`、`removeOption`、`setStoryOptionParams`。
 
-`TextPanelAPI`（`com.fs.starfarer.api.campaign.TextPanelAPI`）——`addPara(text[, color])`、 `addPara(format, hl, highlights)`、`addParagraph`、`highlightInLastPara`、`setHighlightColorsInLastPara`、`clear`。
+`TextPanelAPI`(`com.fs.starfarer.api.campaign.TextPanelAPI`)——`addPara(text[, color])`、`addPara(format, hl, highlights)`、`addParagraph`、`highlightInLastPara`、`setHighlightColorsInLastPara`、`clear`。
 
 另有 `getDialog`、`beginTooltip`/`addTooltip`。
 
 ## 规则强度
 
-本节必须遵守的规则清单（违反后的可观察结果均附上）：
+本节必须遵守的规则清单 (违反后的可观察结果均附上)：
 
 | 规则 | 强度 | 违反后的可观察结果 |
 |---|---|---|
-| `getIntelTags(SectorMapAPI map)` 必须处理 map 为 null（`IntelInfoPlugin` javadoc："Method NEEDS to handle map being null gracefully."）| 必须 | 地图 tooltip / Intel 页地图渲染路径 NPE |
-| `addIntel` 绕过 `canMakeVisibleToPlayer` 检查（`IntelInfoPlugin` javadoc 原文）| 事实 | `addIntel` 立即可见并弹消息；`queueIntel` 才走通信中继可见性检查 |
-| `showInteractionDialog` 在已有对话框显示时返回 false（`CampaignUIAPI` javadoc 原文）| 事实 | 调用方不检查返回值时对话框「没弹出来」且无报错 |
+| `getIntelTags(SectorMapAPI map)` 必须处理 map 为 null(`IntelInfoPlugin` javadoc："Method NEEDS to handle map being null gracefully.")| 必须 | 地图 tooltip / Intel 页地图渲染路径 NPE |
+| `addIntel` 绕过 `canMakeVisibleToPlayer` 检查 (`IntelInfoPlugin` javadoc 原文)| 事实 | `addIntel` 立即可见并弹消息；`queueIntel` 才走通信中继可见性检查 |
+| `showInteractionDialog` 在已有对话框显示时返回 false(`CampaignUIAPI` javadoc 原文)| 事实 | 调用方不检查返回值时对话框 "没弹出来" 且无报错 |
 
 ## 完整最小例
 
-在既有 MOD 工程（布局与插件入口 `GearInModPlugin`）之上新增五个类：一个抽象基类、两个服务演示脚本与两个插件类。一文件一角色，不新增任何资源文件；两个脚本在 `onGameLoad` 各自注册，首个 `advance()` 各执行一次演示并自停：
+在既有 MOD 工程 (布局与插件入口 `GearInModPlugin`) 之上新增五个类：一个抽象基类、两个服务演示脚本与两个插件类。一文件一角色，不新增任何资源文件；两个脚本在 `onGameLoad` 各自注册，首个 `advance()` 各执行一次演示并自停：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -173,9 +173,9 @@ Starsector\mods\GearIndustry\
 └── jars\
 ```
 
-### GearInOneShotScript（抽象基类）
+### GearInOneShotScript(抽象基类)
 
-**职责**：一次性演示脚本骨架 —— 封装 `EveryFrameScript` 三方法（`isDone` / `runWhilePaused` / `advance`），首次 `advance()` 执行一次子类实现的 `runDemo()` 后自停。
+**职责**：一次性演示脚本骨架 —— 封装 `EveryFrameScript` 三方法 (`isDone` / `runWhilePaused` / `advance`)，首次 `advance()` 执行一次子类实现的 `runDemo()` 后自停。
 
 **绑定注册入口**：不参与任何注册；两个服务演示脚本继承它，各自负责自己的注册。
 
@@ -225,11 +225,11 @@ public abstract class GearInOneShotScript implements EveryFrameScript {
 }
 ```
 
-### GearInIntelServicesScript（情报段脚本）
+### GearInIntelServicesScript(情报段脚本)
 
-**职责**：`IntelManagerAPI` 常用入口演示 —— 创建自定义情报 `GearInServicesIntel`（`BaseIntelPlugin` 子类）`addIntel` 登记、`hasIntel` 验证、 `removeIntel` 移除（不留存档残留）；再用 `MessageIntel` 发一条纯消息（左下消息区）。
+**职责**：`IntelManagerAPI` 常用入口演示 —— 创建自定义情报 `GearInServicesIntel`(`BaseIntelPlugin` 子类)`addIntel` 登记、`hasIntel` 验证、`removeIntel` 移除 (不留存档残留)；再用 `MessageIntel` 发一条纯消息 (左下消息区)。
 
-**绑定注册入口**：onGameLoad 的 persistent data 守卫 `addScript` 注册，守卫键 `REGISTER_MARK = "GearIn_IntelServices"`（与调用点片段逐字一致）。
+**绑定注册入口**：onGameLoad 的 persistent data 守卫 `addScript` 注册，守卫键 `REGISTER_MARK = "GearIn_IntelServices"`(与调用点片段逐字一致)。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -288,11 +288,11 @@ public class GearInIntelServicesScript extends GearInOneShotScript {
 }
 ```
 
-### GearInDialogServicesScript（对话框段脚本）
+### GearInDialogServicesScript(对话框段脚本)
 
-**职责**：`InteractionDialogAPI` 常用入口演示 —— 用 `CampaignUIAPI.showInteractionDialog(plugin, null)` 打开演示对话框（`GearInServicesDialog`），记录返回的 `shown` 布尔值（已有对话框显示时返回 false）。
+**职责**：`InteractionDialogAPI` 常用入口演示 —— 用 `CampaignUIAPI.showInteractionDialog(plugin, null)` 打开演示对话框 (`GearInServicesDialog`)，记录返回的 `shown` 布尔值 (已有对话框显示时返回 false)。
 
-**绑定注册入口**：onGameLoad 的 persistent data 守卫 `addScript` 注册，守卫键 `REGISTER_MARK = "GearIn_DialogServices"`（与调用点片段逐字一致）。
+**绑定注册入口**：onGameLoad 的 persistent data 守卫 `addScript` 注册，守卫键 `REGISTER_MARK = "GearIn_DialogServices"`(与调用点片段逐字一致)。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -330,11 +330,11 @@ public class GearInDialogServicesScript extends GearInOneShotScript {
 }
 ```
 
-### GearInServicesIntel（情报插件）
+### GearInServicesIntel(情报插件)
 
-**职责**：自定义情报插件（`BaseIntelPlugin` 子类）—— 实现名称/图标/小描述/Intel 标签；`getIcon()` 返回 null 走默认图标； `getIntelTags(map)` 先调 `super.getIntelTags(map)`（基类默认实现内部已做 null 判断）再追加自定义 tag。
+**职责**：自定义情报插件 (`BaseIntelPlugin` 子类)—— 实现名称/图标/小描述/Intel 标签；`getIcon()` 返回 null 走默认图标；`getIntelTags(map)` 先调 `super.getIntelTags(map)`(基类默认实现内部已做 null 判断) 再追加自定义 tag。
 
-**绑定注册入口**：由 `GearInIntelServicesScript` 经 `IntelManagerAPI.addIntel(plugin)` 登记（`addIntel` 绕过可见性检查，立即置玩家可见时间戳并弹出左下消息）。
+**绑定注册入口**：由 `GearInIntelServicesScript` 经 `IntelManagerAPI.addIntel(plugin)` 登记 (`addIntel` 绕过可见性检查，立即置玩家可见时间戳并弹出左下消息)。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -387,11 +387,11 @@ public class GearInServicesIntel extends BaseIntelPlugin {
 }
 ```
 
-### GearInServicesDialog（对话框插件）
+### GearInServicesDialog(对话框插件)
 
-**职责**：演示对话框插件（`InteractionDialogPlugin`）——`init` 写入文本面板与三个选项（查看势力关系 / 查看舰队货物 / 关闭演示）并绑定 ESC； `optionSelected` 按 `optionData` 分支展示对应信息，关闭选项与 ESC 走 `dismiss()`；未使用的回调保留空实现。
+**职责**：演示对话框插件 (`InteractionDialogPlugin`)——`init` 写入文本面板与三个选项 (查看势力关系 / 查看舰队货物 / 关闭演示) 并绑定 ESC；`optionSelected` 按 `optionData` 分支展示对应信息，关闭选项与 ESC 走 `dismiss()`；未使用的回调保留空实现。
 
-**绑定注册入口**：由 `GearInDialogServicesScript` 经 `CampaignUIAPI.showInteractionDialog(plugin, null)` 打开（target 传 null，`getInteractionTarget()` 返回 null）。
+**绑定注册入口**：由 `GearInDialogServicesScript` 经 `CampaignUIAPI.showInteractionDialog(plugin, null)` 打开 (target 传 null，`getInteractionTarget()` 返回 null)。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -488,20 +488,20 @@ public class GearInServicesDialog implements InteractionDialogPlugin {
 | `GearInOneShotScript` | 抽象基类：一次性演示脚本骨架 | 不参与注册 |
 | `GearInIntelServicesScript` | 情报段演示脚本 | onGameLoad `addScript`，守卫键 `GearIn_IntelServices` |
 | `GearInDialogServicesScript` | 对话框段演示脚本 | onGameLoad `addScript`，守卫键 `GearIn_DialogServices` |
-| `GearInServicesIntel` | 自定义情报插件（`BaseIntelPlugin` 子类）| `IntelManagerAPI.addIntel(plugin)`（由情报段脚本调用）|
-| `GearInServicesDialog` | 演示对话框插件（`InteractionDialogPlugin`）| `CampaignUIAPI.showInteractionDialog(plugin, null)`（由对话框段脚本调用）|
+| `GearInServicesIntel` | 自定义情报插件 (`BaseIntelPlugin` 子类)| `IntelManagerAPI.addIntel(plugin)`(由情报段脚本调用)|
+| `GearInServicesDialog` | 演示对话框插件 (`InteractionDialogPlugin`)| `CampaignUIAPI.showInteractionDialog(plugin, null)`(由对话框段脚本调用)|
 
 ### 行为要点
 
 - `extends GearInOneShotScript`：沿用脚本节的一次性演示模式 —— 首帧 `advance()` 执行一次 `runDemo()`，`isDone()` 置位后引擎下一帧自动移除。
-- `REGISTER_MARK`：persistent data 守卫键 —— 两个脚本各自独立（`GearIn_IntelServices` / `GearIn_DialogServices`）。
+- `REGISTER_MARK`：persistent data 守卫键 —— 两个脚本各自独立 (`GearIn_IntelServices` / `GearIn_DialogServices`)。
   - **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入既有插件的 `CLASS_MARK` 守卫。
-- 情报段：`addIntel` → `hasIntel` → `removeIntel` 同帧形成完整流程，不留存档残留；`addIntel` 触发 `autoAddCampaignMessage()`（左下消息）；`MessageIntel` 走 `CampaignUIAPI.addMessage` 发纯消息。
-- 对话框段：`showInteractionDialog(plugin, null)` 返回 `shown`；对话框由用户点选驱动（`optionSelected` 写文本与日志），`OPTION_CLOSE` 调 `dismiss()` 关闭。
+- 情报段：`addIntel` → `hasIntel` → `removeIntel` 同帧形成完整流程，不留存档残留；`addIntel` 触发 `autoAddCampaignMessage()`(左下消息)；`MessageIntel` 走 `CampaignUIAPI.addMessage` 发纯消息。
+- 对话框段：`showInteractionDialog(plugin, null)` 返回 `shown`；对话框由用户点选驱动 (`optionSelected` 写文本与日志)，`OPTION_CLOSE` 调 `dismiss()` 关闭。
 
 ### 调用点片段
 
-在既有 MOD 插件的 `onGameLoad(boolean newGame)` 内新增本节注册块（该插件类归前置单元所有，本节只演示调用，不改动那个文件）：
+在既有 MOD 插件的 `onGameLoad(boolean newGame)` 内新增本节注册块 (该插件类归前置单元所有，本节只演示调用，不改动那个文件)：
 
 ```java
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
@@ -523,37 +523,37 @@ public class GearInServicesDialog implements InteractionDialogPlugin {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含五个类的 `.class` 条目（可用 `jar tf` 核对）。本节五个类的源码与对应 fixture 逐字一致（fixture 位于 `tutorial-fixtures/units/C08-S09` 的 `data/scripts/gearin/campaign` 包内），fixture 编译验收命令见下方「验证方案」。
+产物 `jars\GearIndustry.jar` 应包含五个类的 `.class` 条目 (可用 `jar tf` 核对)。本节五个类的源码与对应 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C08-S09` 的 `data/scripts/gearin/campaign` 包内)，fixture 编译验收命令见下方 "验证方案"。
 
-### 验证方案（基于本例）
+### 验证方案 (基于本例)
 
-前置数据（来自前置知识与本节内容）：
+前置数据 (来自前置知识与本节内容)：
 
-- 既有 MOD 工程：`mod_info.json`、构建脚本与插件入口 `GearInModPlugin`（C06-S02），以及脚本守卫模式（C08-S01）；
-- 本节五个类与调用点片段中的两个 `addScript` 注册块（各带独立的 `REGISTER_MARK` 键）。
+- 既有 MOD 工程：`mod_info.json`、构建脚本与插件入口 `GearInModPlugin`(C06-S02)，以及脚本守卫模式 (C08-S01)；
+- 本节五个类与调用点片段中的两个 `addScript` 注册块 (各带独立的 `REGISTER_MARK` 键)。
 
 操作：
 
-1. **fixture 编译**：在仓库根执行 `gradle -p tutorial-fixtures compileC08s09Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束（退出码 0）。
+1. **fixture 编译**：在仓库根执行 `gradle -p tutorial-fixtures compileC08s09Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
 2. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含五个类的 `.class` 条目。
-3. **新建生涯（首次进入存档后第一帧）**：确认 `starsector.log` 按「预期结果」的日志序列顺序出现两个脚本的日志行（情报段 ×3、对话框段 1 行），且**没有**旧复合演示的收尾 `done` 行。
+3. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按 "预期结果" 的日志序列顺序出现两个脚本的日志行 (情报段 ×3、对话框段 1 行)，且**没有**旧复合演示的收尾 `done` 行。
    - 全程无 `gear_in` 引起的 `ERROR`。
-4. **消息区**：演示帧后左下消息区出现两条 `GearIn` 消息 —— 点击第一条跳转 Intel 页签（`addIntel` 的自动发布消息）、点击第二条无跳转（`MessageIntel` 纯消息）。
-5. **对话框**：游戏暂停并弹出演示对话框；依次点「查看势力关系」（文本面板追加关系行、日志 `option selected: faction`）、「查看舰队货物」（追加货物行、日志 `option selected: cargo`）。
-   - 「关闭演示」或按 ESC（日志 `option selected: close`、对话框关闭、游戏恢复）。
-6. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志（两个 `REGISTER_MARK` 守卫均已置位），无对话框/消息残留。
-7. **故障注入 1（可选）**：注释掉调用点片段中的某个 `addScript` 块，重启新档：只有该段日志缺失、其余一段正常（对应故障分析第 7 条前半）；改回后确认恢复。
-8. **故障注入 2（可选）**：把 `intelManager.addIntel(intel)` 改为 `intelManager.queueIntel(intel)`：`hasIntel` 返回 false（情报在通信队列等待）、对话框段不受影响。
-   - 提前置 `setForceAddNextFrame(true)` 则当帧转正（对应故障分析第 2 条）。
-9. **故障注入 3（可选）**：把 `getIntelTags` 的 `super.getIntelTags(map)` 改成先解引用 `map.getPlayerFleet()`：打开 Intel 页或地图 tooltip 时 NPE（对应故障分析第 4 条）；改回后确认恢复。
+4. **消息区**：演示帧后左下消息区出现两条 `GearIn` 消息 —— 点击第一条跳转 Intel 页签 (`addIntel` 的自动发布消息)、点击第二条无跳转 (`MessageIntel` 纯消息)。
+5. **对话框**：游戏暂停并弹出演示对话框；依次点 "查看势力关系"(文本面板追加关系行、日志 `option selected: faction`)、"查看舰队货物"(追加货物行、日志 `option selected: cargo`)。
+   - "关闭演示" 或按 ESC(日志 `option selected: close`、对话框关闭、游戏恢复)。
+6. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 守卫均已置位)，无对话框/消息残留。
+7. **故障注入 1(可选)**：注释掉调用点片段中的某个 `addScript` 块，重启新档：只有该段日志缺失、其余一段正常 (对应故障分析第 7 条前半)；改回后确认恢复。
+8. **故障注入 2(可选)**：把 `intelManager.addIntel(intel)` 改为 `intelManager.queueIntel(intel)`：`hasIntel` 返回 false(情报在通信队列等待)、对话框段不受影响。
+   - 提前置 `setForceAddNextFrame(true)` 则当帧转正 (对应故障分析第 2 条)。
+9. **故障注入 3(可选)**：把 `getIntelTags` 的 `super.getIntelTags(map)` 改成先解引用 `map.getPlayerFleet()`：打开 Intel 页或地图 tooltip 时 NPE(对应故障分析第 4 条)；改回后确认恢复。
 
 通过信号：操作 1–6 全部符合；7–9 的注入与恢复都符合预期。
 
-清理：取消勾选测试 MOD；确认没有对共享文件（fixture 构建脚本等）做过修改。
+清理：取消勾选测试 MOD；确认没有对共享文件 (fixture 构建脚本等) 做过修改。
 
 ## 预期结果
 
-**新建生涯（首次进入存档后第一帧）**：`starsector.log` 依次出现
+**新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
 
 ```text
 GearIn campaign services intel: added present=true count=1 (campaign message posted)
@@ -562,19 +562,19 @@ GearIn campaign services intel: message-only intel posted
 GearIn campaign services dialog: shown=true (interactionTarget=null; 玩家在对话框内点选选项后由选项回调关闭)
 ```
 
-日志段的顺序与调用点片段的注册顺序一致（情报 → 对话框），两个脚本各自只执行一次。
+日志段的顺序与调用点片段的注册顺序一致 (情报 → 对话框)，两个脚本各自只执行一次。
 
 对话框打开时插件 `init` 还会写入一条 `GearIn campaign services dialog init: interactionTarget=null（本演示未绑定交互目标）`，出现在 `dialog: shown=true` 一行之后。
 
-**左下消息区**：演示帧弹出两条消息 —— `addIntel` 触发的 `autoAddCampaignMessage` 发布消息（点击跳转 Intel 页签，对应 `MessageClickAction.INTEL_TAB`）与 `MessageIntel` 的两行纯消息（不跳转）。
+**左下消息区**：演示帧弹出两条消息 —— `addIntel` 触发的 `autoAddCampaignMessage` 发布消息 (点击跳转 Intel 页签，对应 `MessageClickAction.INTEL_TAB`) 与 `MessageIntel` 的两行纯消息 (不跳转)。
 
-**交互对话框**：演示帧后游戏暂停并弹出演示对话框，文本首段含「交互目标=null（本演示未绑定交互目标）」；日志出现 `dialog init: interactionTarget=null（本演示未绑定交互目标）`。用户依次点选三个选项：
+**交互对话框**：演示帧后游戏暂停并弹出演示对话框，文本首段含 "交互目标=null(本演示未绑定交互目标)"；日志出现 `dialog init: interactionTarget=null（本演示未绑定交互目标）`。用户依次点选三个选项：
 
-- 点「查看势力关系」：文本面板追加一行 `势力关系：霸主 ... 海盗 ... 独立 ...`，日志出现 `dialog option selected: faction`；
-- 点「查看舰队货物」：文本面板追加 `舰队货物：补给 ...` 行，日志出现 `dialog option selected: cargo`；
-- 点「关闭演示」（或按 ESC）：对话框关闭，日志出现 `dialog option selected: close`。
+- 点 "查看势力关系"：文本面板追加一行 `势力关系：霸主 ... 海盗 ... 独立 ...`，日志出现 `dialog option selected: faction`；
+- 点 "查看舰队货物"：文本面板追加 `舰队货物：补给 ...` 行，日志出现 `dialog option selected: cargo`；
+- 点 "关闭演示"(或按 ESC)：对话框关闭，日志出现 `dialog option selected: close`。
 
-**读档**：不出现任何 `GearIn campaign services` 日志（两个 `REGISTER_MARK` 守卫均已置位、脚本不再注册）；演示遗留的对话框与消息不会随存档保存。
+**读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 守卫均已置位、脚本不再注册)；演示遗留的对话框与消息不会随存档保存。
 
 **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
 
@@ -582,64 +582,64 @@ GearIn campaign services dialog: shown=true (interactionTarget=null; 玩家在�
 
 下面每条都给出触发条件、可观察结果和修正。
 
-1. **`showInteractionDialog` 返回 false，对话框没弹出来且无报错**。触发：在已有对话框显示时再调（例如演示脚本与某个 bar 事件/教程对话框撞车）。
-   - 可观察：`shown=false` 日志、游戏无任何对话框、无报错（`CampaignUIAPI` javadoc 原文）。
+1. **`showInteractionDialog` 返回 false，对话框没弹出来且无报错**。触发：在已有对话框显示时再调 (例如演示脚本与某个 bar 事件/教程对话框撞车)。
+   - 可观察：`shown=false` 日志、游戏无任何对话框、无报错 (`CampaignUIAPI` javadoc 原文)。
    - 修正：把对话框作为唯一入口或先判 `CampaignUIAPI.isShowingDialog()`；本节演示记录了返回值，`shown=false` 时其余演示不受影响。
-2. **情报没出现在 Intel 页（日志有、页面没有）**。触发：用 `queueIntel` 而用户舰队不在通信中继范围内，又没设 `forceAddNextFrame`。
+2. **情报没出现在 Intel 页 (日志有、页面没有)**。触发：用 `queueIntel` 而用户舰队不在通信中继范围内，又没设 `forceAddNextFrame`。
    - 可观察：情报在通信队列等待，`getIntel()` 里查不到；无报错。
-   - 修正：需要立即登记用 `addIntel`（绕过可见性检查，`IntelInfoPlugin` javadoc 原文）；需要「进中继才可见」的时序用 `queueIntel` + `setPostingLocation` / `setPostingRangeLY`（`BaseIntelPlugin`）。
-3. **情报一直不消失，`shouldRemoveIntel()` 恒 false**。触发：自定义 `IntelInfoPlugin` 没实现结束语义（直接 implements 接口而非继承 `BaseIntelPlugin`）。
-   - 可观察：情报永久留在 Intel 页与存档（intel 集合随存档保存）。
+   - 修正：需要立即登记用 `addIntel`(绕过可见性检查，`IntelInfoPlugin` javadoc 原文)；需要 "进中继才可见" 的时序用 `queueIntel` + `setPostingLocation` / `setPostingRangeLY`(`BaseIntelPlugin`)。
+3. **情报一直不消失，`shouldRemoveIntel()` 恒 false**。触发：自定义 `IntelInfoPlugin` 没实现结束语义 (直接 implements 接口而非继承 `BaseIntelPlugin`)。
+   - 可观察：情报永久留在 Intel 页与存档 (intel 集合随存档保存)。
    - 修正：继承 `BaseIntelPlugin`，结束用 `endAfterDelay()` / `endImmediately()`，`shouldRemoveIntel()` 默认 = `isEnded()` 即自动清理。
 4. **`getIntelTags(map)` 抛 NPE**。触发：覆写时直接 `map.getPlayerFleet()` 之类解引用。
-   - 可观察：地图 tooltip / Intel 页渲染路径 NPE（`IntelInfoPlugin` javadoc："Method NEEDS to handle map being null gracefully."）。
-   - 修正：先判 null 或调 `super.getIntelTags(map)`（基类内部已判）。
-5. **对话框选项点了没反应**。触发：`optionSelected` 里比较的是 `optionText`（显示文本）而不是 `optionData`。
-   - 可观察：文本渲染正常但选择分支永不命中、日志缺失（`InteractionDialogPlugin.optionSelected(optionText, optionData)`——`optionText` 是用户看到的文本，`optionData` 是 `addOption` 时传入的 id）。
-   - 修正：用 `OPTION_FACTION.equals(optionData)` 这类 data 比较（本节演示写法）。
-6. **对话框关闭不了（ESC 无效、无关闭选项）**。触发：没设置关闭选项也没设 `setOptionOnEscape`。
+   - 可观察：地图 tooltip / Intel 页渲染路径 NPE(`IntelInfoPlugin` javadoc："Method NEEDS to handle map being null gracefully.")。
+   - 修正：先判 null 或调 `super.getIntelTags(map)`(基类内部已判)。
+5. **对话框选项点了没反应**。触发：`optionSelected` 里比较的是 `optionText`(显示文本) 而不是 `optionData`。
+   - 可观察：文本渲染正常但选择分支永不命中、日志缺失 (`InteractionDialogPlugin.optionSelected(optionText, optionData)`——`optionText` 是用户看到的文本，`optionData` 是 `addOption` 时传入的 id)。
+   - 修正：用 `OPTION_FACTION.equals(optionData)` 这类 data 比较 (本节演示写法)。
+6. **对话框关闭不了 (ESC 无效、无关闭选项)**。触发：没设置关闭选项也没设 `setOptionOnEscape`。
    - 可观察：ESC 默认关闭行为缺失或点关闭无回调。
-   - 修正：`setOptionOnEscape(text, optionId)` 绑定 ESC（`InteractionDialogAPI`）；注意 `setOptionOnEscape(null, optionId)` 会让 ESC 不执行关闭；关闭回调里调 `dismiss()`。
-7. **演示日志出现但游戏内没有任何可观察内容**。触发：在错误生命周期阶段注册（如 `onApplicationLoad` 里 `Global.getSector()` 为 null 即 NPE），或 `addIntel` / `addMessage` / `showInteractionDialog` 的返回值被忽略。
+   - 修正：`setOptionOnEscape(text, optionId)` 绑定 ESC(`InteractionDialogAPI`)；注意 `setOptionOnEscape(null, optionId)` 会让 ESC 不执行关闭；关闭回调里调 `dismiss()`。
+7. **演示日志出现但游戏内没有任何可观察内容**。触发：在错误生命周期阶段注册 (如 `onApplicationLoad` 里 `Global.getSector()` 为 null 即 NPE)，或 `addIntel` / `addMessage` / `showInteractionDialog` 的返回值被忽略。
    - 可观察：注册点放错 → 启动中止或脚本永不推进；返回 false 被忽略 → 对话框静默缺失。
-   - 修正：注册放 `onGameLoad` 守卫块内（沿用脚本守卫模式）；对 `showInteractionDialog` 的布尔返回值做日志（本节演示写法）。
-8. **`MessageIntel` 消息点击后跳转到奇怪页面**。触发：把纯消息当 intel 用（绑定 `MessageClickAction` 或加入情报管理器）。
-   - 可观察：消息显示异常或点击行为不符合「纯消息」预期。
-   - 修正：`MessageIntel` 的用途是左下消息区纯消息（javadoc 原文），走 `CampaignUIAPI.addMessage(intel)`；要出现在 Intel 页请用 `BaseIntelPlugin` 子类 + `addIntel`。
+   - 修正：注册放 `onGameLoad` 守卫块内 (沿用脚本守卫模式)；对 `showInteractionDialog` 的布尔返回值做日志 (本节演示写法)。
+8. **`MessageIntel` 消息点击后跳转到奇怪页面**。触发：把纯消息当 intel 用 (绑定 `MessageClickAction` 或加入情报管理器)。
+   - 可观察：消息显示异常或点击行为不符合 "纯消息" 预期。
+   - 修正：`MessageIntel` 的用途是左下消息区纯消息 (javadoc 原文)，走 `CampaignUIAPI.addMessage(intel)`；要出现在 Intel 页请用 `BaseIntelPlugin` 子类 + `addIntel`。
 
 ## 总结
 
 本节把两个生涯服务入口讲成两条链，并在完整最小例里组合使用：
 
-- **情报链**：`SectorAPI.getIntelManager()` → 创建 `BaseIntelPlugin` 子类（或 `MessageIntel`）→ `addIntel`（立即登记 + 弹消息，绕过可见性检查）或 `queueIntel`（通信中继可见性）。
-  - 情报管理器每帧推进（未暂停时）→ `shouldRemoveIntel` / `removeAllThatShouldBeRemoved` 清理 → intel 集合随存档保存。
-- **对话框链**：`CampaignUIAPI.showInteractionDialog(plugin, target)`（可能返回 false）→ `InteractionDialogPlugin` 生命周期（`init` → `optionSelected` → `advance` → `backFromEngagement`）。
-  - `InteractionDialogAPI` 面板与入口（`getTextPanel` / `getOptionPanel` / `setOptionOnEscape` / `dismiss` / picker 族 / `makeOptionOpenCore`）。
+- **情报链**：`SectorAPI.getIntelManager()` → 创建 `BaseIntelPlugin` 子类 (或 `MessageIntel`)→ `addIntel`(立即登记 + 弹消息，绕过可见性检查) 或 `queueIntel`(通信中继可见性)。
+  - 情报管理器每帧推进 (未暂停时)→ `shouldRemoveIntel` / `removeAllThatShouldBeRemoved` 清理 → intel 集合随存档保存。
+- **对话框链**：`CampaignUIAPI.showInteractionDialog(plugin, target)`(可能返回 false)→ `InteractionDialogPlugin` 生命周期 (`init` → `optionSelected` → `advance` → `backFromEngagement`)。
+  - `InteractionDialogAPI` 面板与入口 (`getTextPanel` / `getOptionPanel` / `setOptionOnEscape` / `dismiss` / picker 族 / `makeOptionOpenCore`)。
 
 记忆要点：
 
-- `addIntel` 立即登记（弹消息、绕过中继检查）；`queueIntel` 才走可见性链路；intel 随存档保存。
+- `addIntel` 立即登记 (弹消息、绕过中继检查)；`queueIntel` 才走可见性链路；intel 随存档保存。
 - `showInteractionDialog` 可能返回 `false`；对话框选项比较用 `optionData` 不用 `optionText`。
 - `getIntelTags(map)` 必须处理 map 为 null。
 
-脚本守卫与 `Global` 阶段语义是本节底座；`REGISTER_MARK` 注册模式沿用既有脚本节「每个注册项用各自的键」的惯例。
+脚本守卫与 `Global` 阶段语义是本节底座；`REGISTER_MARK` 注册模式沿用既有脚本节 "每个注册项用各自的键" 的惯例。
 
-本节只覆盖两个入口的「常用高频面」：Rules 侧对话框、 `BarEventPlugin` 对话框入口与任务类情报（`BaseMissionIntel`）在逻辑上属于更深的主题，本节不展开。
+本节只覆盖两个入口的 "常用高频面"：Rules 侧对话框、`BarEventPlugin` 对话框入口与任务类情报 (`BaseMissionIntel`) 在逻辑上属于更深的主题，本节不展开。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global`—— 全局入口：`getSector()`、`getLogger()`
+- `com.fs.starfarer.api.Global`—— 全局入口：`getSector()`、`getLogger()`。
 - `com.fs.starfarer.api.campaign.SectorAPI`—— 生涯引擎入口。
   - 情报与对话框入口都能从这里进入：`getIntelManager` / `getCampaignUI` / `getPersistentData` / `addScript`。
-- `com.fs.starfarer.api.campaign.comm.IntelManagerAPI`—— 情报登记集合：`addIntel` / `queueIntel` / `removeIntel` / `removeAllThatShouldBeRemoved`
-- `com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`—— 单条情报约定：`getIntelTags(map)` 必须容忍 null map
-- `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`——MOD 自定义情报标准父类：结束倒计时、删除按钮、更新消息、默认图标语义
-- `com.fs.starfarer.api.impl.campaign.intel.MessageIntel`—— 左下消息区纯消息类：`new MessageIntel(...)` + `addLine(...)`
-- `com.fs.starfarer.api.campaign.InteractionDialogAPI`—— 对话框本体：面板、选项行为（ESC/确认/回显）、picker 族、`dismiss()`
-- `com.fs.starfarer.api.campaign.InteractionDialogPlugin`—— 对话框内容插件：七方法生命周期（`init` → `optionSelected` → `advance` → `backFromEngagement`）
-- `com.fs.starfarer.api.campaign.OptionPanelAPI`—— 选项面板：`addOption` / `setEnabled` / `addSelector` / `addOptionConfirmation`
-- `com.fs.starfarer.api.campaign.TextPanelAPI`—— 文本面板：`addPara` / `highlightInLastPara` / `clear`
-- `com.fs.starfarer.api.campaign.CampaignUIAPI`—— 生涯 UI：`showInteractionDialog` / `addMessage` / `isShowingDialog`
-- `com.fs.starfarer.api.util.Misc`—— 文本与高亮颜色常量（`getTextColor` / `getGrayColor` 等）
-- `com.fs.starfarer.api.impl.campaign.ids.Tags`——intel 标签常量
-- `data/scripts/gearin/campaign/`—— 本节五个示例类所在目录（MOD 内相对路径）
+- `com.fs.starfarer.api.campaign.comm.IntelManagerAPI`—— 情报登记集合：`addIntel` / `queueIntel` / `removeIntel` / `removeAllThatShouldBeRemoved`。
+- `com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`—— 单条情报约定：`getIntelTags(map)` 必须容忍 null map。
+- `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`——MOD 自定义情报标准父类：结束倒计时、删除按钮、更新消息、默认图标语义。
+- `com.fs.starfarer.api.impl.campaign.intel.MessageIntel`—— 左下消息区纯消息类：`new MessageIntel(...)` + `addLine(...)`。
+- `com.fs.starfarer.api.campaign.InteractionDialogAPI`—— 对话框本体：面板、选项行为 (ESC/确认/回显)、picker 族、`dismiss()`。
+- `com.fs.starfarer.api.campaign.InteractionDialogPlugin`—— 对话框内容插件：七方法生命周期 (`init` → `optionSelected` → `advance` → `backFromEngagement`)。
+- `com.fs.starfarer.api.campaign.OptionPanelAPI`—— 选项面板：`addOption` / `setEnabled` / `addSelector` / `addOptionConfirmation`。
+- `com.fs.starfarer.api.campaign.TextPanelAPI`—— 文本面板：`addPara` / `highlightInLastPara` / `clear`。
+- `com.fs.starfarer.api.campaign.CampaignUIAPI`—— 生涯 UI：`showInteractionDialog` / `addMessage` / `isShowingDialog`。
+- `com.fs.starfarer.api.util.Misc`—— 文本与高亮颜色常量 (`getTextColor` / `getGrayColor` 等)。
+- `com.fs.starfarer.api.impl.campaign.ids.Tags`——intel 标签常量；
+- `data/scripts/gearin/campaign/`—— 本节五个示例类所在目录 (MOD 内相对路径)。

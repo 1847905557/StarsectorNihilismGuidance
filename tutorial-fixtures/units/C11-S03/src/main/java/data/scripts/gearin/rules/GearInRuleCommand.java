@@ -19,7 +19,7 @@ import com.fs.starfarer.api.util.Misc.Token;
  * "GearInRuleCommand GearInRuleCmdResult 2 true"），类经 ruleCommandPackages
  * （data/config/settings.json 追加的 data.scripts.gearin.rules）定位。
  *
- * 生命周期（0.98a-RC8）：规则加载期 getCommandClass 用 Class.forName + newInstance
+ * 生命周期：规则加载期 getCommandClass 用 Class.forName + newInstance
  * 校验一次；每次执行经脚本类加载器的 loadScriptInstance 重新 newInstance 后调用
  * execute(ruleId, dialog, params, memoryMap) —— 实例字段不可跨调用使用。
  *

@@ -8,7 +8,7 @@ import com.fs.starfarer.api.campaign.RepLevel;
 import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
- * 势力间关系（FactionAPI 关系族）：setRelationship / adjustRelationship / ensureAtBest 确定性序列 + 同帧回滚。
+ * 势力间关系（FactionAPI 关系族）：setRelationship / adjustRelationship / ensureAtWorst 确定性序列 + 同帧回滚。
  */
 public class GearInFactionRelation {
 
@@ -40,7 +40,7 @@ public class GearInFactionRelation {
         LOG.info(String.format(
                 "GearIn person lesson factionRel vengefulCap: value=%.2f level=%s",
                 hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon")));
-        boolean ensured = hegemony.ensureAtBest("tritachyon", RepLevel.WELCOMING);
+        boolean ensured = hegemony.ensureAtWorst("tritachyon", RepLevel.WELCOMING);
         LOG.info(String.format(
                 "GearIn person lesson factionRel ensure: value=%.2f level=%s ensured=%s",
                 hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon"), ensured));

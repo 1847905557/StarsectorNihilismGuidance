@@ -14,7 +14,7 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 完整最小例：战斗插件与引擎级监听器的生命周期、移除与状态归属。
  *
- * 生命周期事实（0.98a-RC8）：
+ * 生命周期事实：
  * - init() 已废弃：不保证在 advance() 前被调用（CombatEnginePlugin 的 API 注释），
  *   advance() 必须先判 engine == null；
  * - advance() 在暂停时仍会被调用，状态推进前必须先检查 engine.isPaused()（C02-S01）；

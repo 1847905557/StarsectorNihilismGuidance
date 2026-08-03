@@ -10,7 +10,7 @@
 
 完成后，您将能够：
 
-- 说出 RC8 `strings.json` 的两级结构 (分类 → 键名) 与全部 4 个原版分类，以及每个分类的主要使用方；
+- 说出 `strings.json` 的两级结构 (分类 → 键名) 与全部 4 个原版分类，以及每个分类的主要使用方；
 - 用 `Global.getSettings().getString(category, id)` 取值，并说清它与单参 `getString(key)`(读取 `settings.json`) 的区别；
 - 说出跨 MOD 合并语义 (对象按键合并、标量后者覆盖、数组追加) 与 "不要重定义既有键" 的原因；
 - 说出缺失键的可观察结果：返回字面量 `Missing string: [<id>]` 并在 `starsector.log` 记 ERROR，**不抛异常、不崩溃**；
@@ -57,7 +57,7 @@
 
 ### 语法与编码 (必须遵守的规则)
 
-加载前文本先经 `parseJSONStrippingComments`(本地核对) 处理：**引号之外的 `#` 到行尾整段剥离**(原版文件本身就大量使用 `#` 注释块)，随后交给 JSON 解析器**；尾逗号被接受**(RC8 原版 `campaignHelp` 分类最后一个键后面就有逗号)。
+加载前文本先经 `parseJSONStrippingComments`(本地核对) 处理：**引号之外的 `#` 到行尾整段剥离**(原版文件本身就大量使用 `#` 注释块)，随后交给 JSON 解析器**；尾逗号被接受**(原版 `campaignHelp` 分类最后一个键后面就有逗号)。
 
 ::: caution 文件必须 UTF-8 无 BOM，JSON 语法必须正确
 
@@ -71,7 +71,7 @@
 
 ### 取值 API
 
-运行期取值入口是公开 API：`Global.getSettings().getString(String category, String id)`(`SettingsAPI`，RC8 API 解包，方法 javadoc 原文："Gets a string from a given category in strings.json")。
+运行期取值入口是公开 API：`Global.getSettings().getString(String category, String id)`(`SettingsAPI`，方法 javadoc 原文："Gets a string from a given category in strings.json")。
 
 实现链 (本地核对)：`SettingsAPI` 实现最终从合并后的字符串表取值 —— 先取 `category` 分类对象，再取其中的 `id` 键。
 
@@ -96,7 +96,7 @@ strings.json 的值里有两种占位符，**引擎对两者都不做代换**：
 - `$token` 形式 (如 `$faction`、`$fleetName`、`$planetName`、`$yourForcesWereOrYourSideWas`)：由**使用方**负责替换。原版 `FleetInteractionDialogPluginImpl.getString` 取到文本后逐个执行 `str.replaceAll("\\$faction", faction)` 手工替换 (公开 API 解包)。MOD 自己的 `$token` 文本如果没人替换，界面会原样显示 `$faction`。
 - `%s` 形式：由**取值侧**负责 `String.format`。游戏引擎不做格式化；不匹配时运行期抛 `IllegalFormatException`(成熟实例以 try/catch 捕获后返回 `[NULL]`，见 "本地化组织")。
 
-### RC8 原版分类总览
+### 原版分类总览
 
 键数统计自 `Starsector/starsector-core/data/strings/strings.json`(该文件共 4 个顶层分类)：
 
@@ -170,7 +170,7 @@ import com.fs.starfarer.api.Global;
 /**
  * strings.json 的两级取值封装（示例 MOD gear_in 的完整最小例）。
  *
- * 事实依据（Starsector 0.98a-RC8）：
+ * 事实依据：
  * - Global.getSettings().getString(category, id) 读取 data/strings/strings.json；
  * - 分类或键不存在时返回字面量 "Missing string: [<id>]" 并在 starsector.log 记
  *   ERROR，不抛异常、不崩溃；
@@ -272,7 +272,7 @@ public final class GearInI18n {
 
 strings.json 的全部机制可以收成一张表：
 
-| 环节 | 规则 (RC8)|
+| 环节 | 规则|
 |---|---|
 | 注册入口 | 路径 `data/strings/strings.json` 本身，无需任何注册 |
 | 合并 | 跨 MOD 按键合并：对象递归合并、标量后者覆盖、数组追加 (`music_*`/`color`/`button`/`core_clearArray` 例外)|

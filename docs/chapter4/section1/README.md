@@ -75,7 +75,7 @@ GearIn_artizan_combat
 1. 打印堆栈 `[ID] is not a valid ship variant id`(`printStackTrace`，不中止战斗)；
 2. 回退到 `settings.json` 的 `"errorShipVariant":"nebula_Standard"`—— 一艘星云-级 (Nebula 级) 运输船。
 
-因此迁移原文 "填错 ID 会导致它变成一艘星云-级" 在 RC8 依然成立，且机制如上：**日志里能同时搜到该堆栈和这艘星云-级**。
+因此迁移原文 "填错 ID 会导致它变成一艘星云-级" 依然成立，且机制如上：**日志里能同时搜到该堆栈和这艘星云-级**。
 
 所有经 `FleetMemberAPI` 加载装配 ID 的路径 —— 模拟战对手、战役舰队、`MissionDefinitionAPI.addToFleet`(C03-S01)—— 都走这个回退，所以 "这一条在以后几乎一切需要加载装配的情况下都适用"。
 

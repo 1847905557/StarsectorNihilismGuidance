@@ -180,17 +180,17 @@ data/campaign/econ/economy.json（starSystems 数组）
         └─> 实体 id 在代码生成的实体里查找（时序第 7 步，早于一切市场操作）
 ```
 
-`economy.json` 的字段 (RC8，本地 `Starsector\starsector-core\data\campaign\econ\economy.json`)：`starSystems`(数组，每项是一个市场文件的相对路径)、`initialStepsToRun`、`defaultTariff`(0.3)、`map`(指向 `../starmap.json`)。
+`economy.json` 的字段 (本地 `Starsector\starsector-core\data\campaign\econ\economy.json`)：`starSystems`(数组，每项是一个市场文件的相对路径)、`initialStepsToRun`、`defaultTariff`(0.3)、`map`(指向 `../starmap.json`)。
 
 这个文件跨来源合并读取 (`readJSONMerged`)，**数组追加、对象按键合并、标量后写覆盖**—— 所以 MOD 只需要提交自己的 `starSystems` 数组项和自己的市场文件**，不要**复制整份原版文件，也不要写 `map` / `initialStepsToRun` / `defaultTariff` 键 (标量会覆盖原版值，原版经济会被破坏)。
 
-每个市场文件的字段 (RC8 经济数据加载流程)：
+每个市场文件的字段 (经济数据加载流程)：
 
 | 字段 | 必填 | 读取方式 | 缺失/错误结果 |
 |---|---|---|---|
 | `starSystem` | 是 | `getString` | 该值必须存在于 `starmap.json` 的 `starSystemLocations`，否则抛 `Star system id [X] not found in <starmap路径>`，新档生成中断 |
 | `markets` | 是 | `getJSONArray` | `JSONObject["markets"] not found`，中断 |
-| `entities` | 是 | `getJSONArray` | 首项即主实体：市场 id = 首项、名称 = 实体名称 (实体不存在时回退为首项 `ucFirst`)；实体查不到且 `economyExceptionOnMissingMarketEntity` 为 true(RC8 `settings.json` 默认 true) 抛 `Market in <星系> system refers to invalid entity <id>`，中断；其余项成为关联实体并绑定同一市场 |
+| `entities` | 是 | `getJSONArray` | 首项即主实体：市场 id = 首项、名称 = 实体名称 (实体不存在时回退为首项 `ucFirst`)；实体查不到且 `economyExceptionOnMissingMarketEntity` 为 true(`settings.json` 默认 true) 抛 `Market in <星系> system refers to invalid entity <id>`，中断；其余项成为关联实体并绑定同一市场 |
 | `faction` | 是 | `getString` | `JSONObject["faction"] not found`，中断 |
 | `size` | 是 | `getInt` | 同上 |
 | `startingConditions` | 是 | `getJSONArray` | 同上；每个条件会被 `setSurveyed(true)`(新档即已勘探)|
@@ -223,7 +223,7 @@ createMarket(id, name, size)
 **两条路径二选一，不要同时启用**。一个实体至多注册一个市场；同时启用时同一实体出现两个同名市场，经济与市场界面错乱，且无加载报错。
 :::
 
-#### 两路径共用的 ID 对照 (RC8 数据核对)
+#### 两路径共用的 ID 对照 (原版数据核对)
 
 | ID | 出处 | 本节使用 |
 |---|---|---|
@@ -625,7 +625,7 @@ public class GearInMarketFactory {
    - 修正：调用 `system.autogenerateHyperspaceJumpPoints(true, true)`。
 4. **新档生成中断：`Market in <星系> system refers to invalid entity <id>`。**
    - 触发 (数据路径)：`gearin.json` 的 `entities` 里的 id 与 Java 里 `addPlanet` / `addCustomEntity` 的 id 不一致 (拼写、大小写)。
-   - 可观察：`economyExceptionOnMissingMarketEntity` 在 RC8 `settings.json` 里默认 `true`，经济数据加载直接抛该异常，新档生成失败。
+   - 可观察：`economyExceptionOnMissingMarketEntity` 在 `settings.json` 里默认 `true`，经济数据加载直接抛该异常，新档生成失败。
    - 修正：让 `entities` 与实体 id 逐字一致 (实体 id 匹配区分大小写)。
 5. **新档生成中断：`Star system id [X] not found in <starmap路径>`。**
    - 触发 (数据路径)：`gearin.json` 的 `starSystem` 值与 `starmap.json` 的 `starSystemLocations` 键不一致或缺失。

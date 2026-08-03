@@ -1,6 +1,6 @@
 # 渲染生命周期、性能与故障实例
 
-本节把渲染接入的**架构面**讲透：渲染层接入的两种入口与常驻/一次性选择、GL 资源的释放纪律与战斗结束收尾、开关的三层语义与读取时机、性能开销来源与度量做法，以及一组可注入的故障案例。示例所有权为常驻渲染插件 `GearInShaderPlugin`，配套两个 shader 资源 (`data/shaders/GearIn_field_shader.vert/.frag`)。
+前几节的着色器 (shader) 视觉都是按寿命失效的一次性形态，而常驻形态的战斗结束收尾 —— 资源泄漏的高发点 —— 还没有覆盖；本节把这一环补齐，制作常驻渲染插件 `GearInShaderPlugin` 与配套的两个 shader 资源。完成后，您将得到一套可注入十个故障案例的对照实验，以及从日志与画面症状定位渲染故障的核对方法。
 
 *本节预期阅读时间：~20 分钟。*
 
@@ -10,27 +10,29 @@
 
 完成后，您将能够：
 
-- 说出渲染层接入的两种入口与取舍：分层渲染插件自绘 (`engine.addLayeredRenderingPlugin`，前几节搭建的完整链路) 与 BoxUtil 渲染实体队列 (`CombatRenderingManager.addEntity`)，并说出 "常驻插件 vs 一次性视觉" 的注册入口、生命周期与层选择差异；
-- 说出资源释放的完整纪律：只释放自己创建的 GL 资源 (实例规范 "资源清理归创建者")、`cleanup()` 释放并复位句柄 (幂等)、共享贴图不卸载 (`unloadTexture` 按文件名从全局纹理管理器移除)、常驻插件用 `engine.isCombatOver()` 主动失效驱动 `cleanup()`(战斗结束 `destroyInstance` 不调 `cleanup()`)；
-- 说出开关的三层语义：能力门禁 (`BoxConfigs.isShaderEnable() && ShaderCore.isValid()`) 在 GL 上下文就绪后重新判定、运行时开关在每次使用点读取、开关只改变渲染路径与显示成本不改变玩法状态，以及 "关闭后仍走昂贵 shader 路径" 的失败模式；
-- 说出绘制开销的五个来源与对应优化：draw call 数与合并 (`glMultiDrawArrays` / BoxUtil instance 批量)、剔除半径、每帧查询/分配、纹理状态切换、失效对象回收，并会用本节示例的 `drawCalls` 计数做前后对比；
-- 从症状定位典型故障：常驻插件不判战斗结束导致泄漏、门禁缓存进 `static final`、运行时开关只读 init 快照、跨战斗缓存、render 内做重活、draw call 爆炸、共享纹理被卸载。
+- 区分两条渲染入口 (分层渲染插件自绘与 BoxUtil 渲染实体队列)，并解释常驻与一次性形态的生命周期差异；
+- 设置常驻插件的资源释放链路：创建者清理、`cleanup()` 幂等复位、战斗结束主动失效、共享贴图不卸载；
+- 解释开关的三层语义与读取时机，并验证 "关闭后仍走昂贵 shader 路径" 的失败模式；
+- 定位绘制开销的五个来源，并用示例的 `drawCalls` 计数完成前后对比；
+- 从日志与画面症状定位常驻渲染插件的典型故障。
 
 ## 前置知识
 
-本节收束渲染接入的架构面，建议先熟悉以下主题：
+本节把前几节逐个搭起的片段接到常驻形态上，请先熟悉以下既有成果：
 
-- GLSL 110/430 方言、attribute/uniform/varying 与编译/链接检查链、能力门禁 (C14-S01)—— 本节的 430 方言与 `#version 430` 文件延续。
-- `.vert/.frag` 路径约定、加载与编译日志、资源生命周期四环节 (C14-S02)—— 本节的资源释放是它 "清理与重载" 环节的架构化。
-- BoxUtil `ShaderProgram` 创建与 location 保存、`active()/close()/delete()`、UBO `BUtilGlobalData`、uniform 三形态、纹理与矩阵提交 (C14-S03)—— 本节示例直接复用它的提交段；`GearInShaderPlugin` 是 `GearInShaderVisual` 的常驻形态。
-- 分层渲染插件通道、层序、剔除与 `cleanup()` 时机 (C07-S06)—— 本节的层接入与清理纪律直接承接，并补常驻插件的战斗结束收尾。
-- 战斗插件生命周期 (C07-S05)—— 本节常驻插件的注册片段所在。
-- BoxUtil 初始化两段式、可用性判据、渲染实体入队与 `delete()`(C12-S06)—— 本节 "开关" 与 "对照入口" 直接复用。
-- `Global` 生命周期，禁止跨战斗缓存引擎引用与渲染对象 (C06-S03)—— 本节的 program/engine 同规。
-- 战役概念与 `GearIn_test` 测试战役 (C03-S01)—— 本节验证方案用它承载战斗观察。
-- MOD 目录结构与 `starsector.log`(C01-S01)—— 本节所有日志可观察结果都落在它里面。
+- GLSL 110/430 方言、attribute/uniform/varying 与编译/链接检查链、能力门禁 (C14-S01)；
+- `.vert/.frag` 路径约定、加载与编译日志、资源生命周期四环节 (C14-S02)；
+- BoxUtil `ShaderProgram` 创建与 location 保存、`active()/close()/delete()`、UBO `BUtilGlobalData`、uniform 三形态、纹理与矩阵提交 (C14-S03)；
+- 分层渲染插件通道、层序、剔除与 `cleanup()` 时机 (C07-S06)；
+- 战斗插件生命周期与注册 (C07-S05)；
+- BoxUtil 初始化两段式、可用性判据、渲染实体入队与 `delete()`(C12-S06)；
+- `Global` 生命周期，禁止跨战斗缓存引擎引用与渲染对象 (C06-S03)；
+- 战役概念与 `GearIn_test` 测试战役 (C03-S01)；
+- MOD 目录结构与 `starsector.log`(C01-S01)。
 
 ## 文件与 API 链路
+
+本节的所有对象都落在两条链上：shader 文件链与 Java 接入链。先把全图铺开，之后各节再按任务展开其中的每一环。
 
 | 环节 | 文件 / API | 说明 |
 |---|---|---|
@@ -38,7 +40,7 @@
 | 常驻注册 | C07-S05 的 `GearInCombatLifecyclePlugin.init(CombatEngineAPI)` 内 `engine.addLayeredRenderingPlugin(new GearInShaderPlugin())` | 每场战斗注册一次；成熟实例同款做法：在生命周期插件的 `init` 里 `engine.addLayeredRenderingPlugin(new 常驻渲染插件())` |
 | 渲染插件 | `BaseCombatLayeredRenderingPlugin`(`CombatLayeredRenderingPlugin` 接口，C07-S06 通道)| `init` / `advance` / `render` / `isExpired` / `cleanup` / `getActiveLayers` / `getRenderRadius` 七个回调 |
 | 层声明 | `CombatEngineLayers.ABOVE_PARTICLES_LOWER`(顶层三图层，粒子系统之后渲染)| 本节示例层；成熟实例同款 |
-| 战斗结束判定 | `CombatEngineAPI.isCombatOver()` | 结束标志成立且淡出完成后才转 true—— 结束标志与淡出完成共同成立 |
+| 战斗结束判定 | `CombatEngineAPI.isCombatOver()` | 结束标志成立且淡出完成后才转 true |
 | 淡出强度 | `ViewportAPI.getAlphaMult()` | 战斗结束淡出期间下降；本节示例把它送进 `intensity` uniform 实现视觉淡出 (成熟实例同款做法)|
 | 程序创建 | `org.boxutil.util.ShaderUtil.createShaderVFFormPath` → `org.boxutil.units.standard.ShaderProgram` | C14-S03 全部延续 (location 保存、`isValid()`、`active()/close()`、`delete()`)|
 | 门禁/开关 | `org.boxutil.config.BoxConfigs.isShaderEnable()`、`org.boxutil.manager.ShaderCore.isValid()` | 可用性判据 (C12-S06)；本节规定读取时机与缓存禁令 |
@@ -76,7 +78,7 @@
 
 `addLayeredRenderingPlugin` 的调用点决定插件生命周期：
 
-- **一次性视觉**：由效果、武器、战术系统等代码在需要时创建 (按需 `engine.addLayeredRenderingPlugin(visual)`；用 `if (simulator == null)` 守卫防重复生成，注册调用在守卫内)。失效靠寿命或承载实体死亡 (`advance()` 里 `isExpired()` 转 true)。前几节的示例都是这个形态。
+- **一次性视觉**：由效果、武器、战术系统等代码在需要时创建 (按需 `engine.addLayeredRenderingPlugin(visual)`；用 `if (simulator == null)` 判断防重复生成，注册调用在该判断通过后执行)。失效靠寿命或承载实体死亡 (`advance()` 里 `isExpired()` 转 true)。前几节的示例都是这个形态。
 - **常驻插件**：每场战斗注册一次，不按寿命/单个实体失效，跟随玩家舰船或全局常驻 (常驻模板：`init` 取引擎 + `advance(0f)`、`getActiveLayers` 返回全层 `EnumSet.allOf(...)`、`getRenderRadius` 返回 `Float.MAX_VALUE`)。成熟实例的常驻模板不持有 GL 资源 (`render` 体为空)，而**持有 GL 资源的常驻插件必须自己处理战斗结束收尾**—— 这正是本节示例要演示的 (见 "资源释放")。
 
 两个注册做法都指向同一个事实：`addLayeredRenderingPlugin` 返回承载实体、`init` 保证在渲染与推进前执行，插件随后作为普通战斗实体参与推进与渲染。
@@ -104,6 +106,8 @@
 
 ## 资源释放
 
+渲染入口选定后，接下来的决定是 GL 资源归谁创建、何时释放 —— 一次性形态按寿命失效即可，常驻形态必须自己处理战斗结束收尾，差异就在这里。
+
 ### 所有权
 
 实例规范：**"资源清理归持有 shader program、四边形网格对象、VAO、SDF、FBO 或渲染实体的创建者"**。推论：谁创建谁释放，共享资源不释放。本节示例的资源清单：
@@ -120,7 +124,7 @@
 
 对一次性视觉，正解是 `advance()` 里按寿命/存活主动失效；对**常驻插件**，正解是 `advance()` 里判 `engine.isCombatOver()`：
 
-- `isCombatOver()` 在结束标志成立且淡出完成后才转 true—— 结束标志与淡出完成共同成立；淡出默认约 5 秒；
+- `isCombatOver()` 在结束标志成立且淡出完成后才转 true；淡出默认约 5 秒；
 - 淡出窗口内 `isCombatOver()` 仍为 false：`advance()` 照常被调用 (实体推进循环不按 `combatOver` 分支)，渲染照常执行且 `viewport.getAlphaMult()` 持续下降 —— 把 `alphaMult` 送进 `intensity` uniform，能量场就随战斗结束淡出 (成熟实例 `alphaMult * getAlphaLevel() * extraAlphaMult` 同款做法)；
 - 淡出完成后 `isCombatOver()` 转 true：`valid = false` → 引擎下一轮移除实体 → `cleanup()` 释放 GL 资源。资源在战斗内被释放，而不是随 `destroyInstance` 静默丢失。
 
@@ -149,6 +153,8 @@
 
 ## 开关
 
+资源释放回答 "什么时候消失"，开关回答 "要不要画" —— 以及关闭之后是否真的不画。
+
 ### 三层语义
 
 | 层 | 内容 | 读取时机 |
@@ -160,8 +166,8 @@
 ### 读取时机与缓存陷阱
 
 - **门禁禁止缓存进类加载期 `static final` 字段**：MOD 类加载发生在资源加载期/主菜单前，此时没有战斗 GL 上下文，`ShaderCore.isValid()` 不可评估 —— 缓存值恒错 (要么所有战斗都 `plugin idle`，要么低能力环境也创建程序)，且配置变更永远不生效 (运行期状态判据的语义)。必须在每场战斗 `init` 里重新判定 (规则 1)。
-- **运行时开关每次使用点读取**：成熟实例的消费做法是每个使用点调用 `BoxConfigs.isShaderEnable()`(成熟实例每个粒子/爆炸 helper 每次调用先查开关，失败即回退原版粒子 `engine.addSmoothParticle`/`addSmokeParticle`/`spawnExplosion` 并返回 null)。本节示例的 `render` 每帧复核 `BoxConfigs.isShaderEnable() && ShaderCore.isValid()`，再检查 `runtimeEnabled`—— 任何一层关闭都走零提交路径。
-- **失败模式**：开关结果被缓存 (init 快照或 static 字段) 后，运行时关闭不再生效 ——"图形开关关闭后仍走昂贵 shader 路径，会让关闭设置失去实际效果"(实例陷阱原话)。
+- **运行时开关每次使用点读取**：成熟实例的做法是每个使用点调用 `BoxConfigs.isShaderEnable()`(每个粒子/爆炸 helper 每次调用先查开关，失败即回退原版粒子 `engine.addSmoothParticle`/`addSmokeParticle`/`spawnExplosion` 并返回 null)。本节示例的 `render` 每帧复核 `BoxConfigs.isShaderEnable() && ShaderCore.isValid()`，再检查 `runtimeEnabled`—— 任何一层关闭都走零提交路径。
+- **失败模式**：开关结果被缓存 (init 快照或 static 字段) 后，运行时关闭不再生效 ——"图形开关关闭后仍走昂贵 shader 路径，会让关闭设置失去实际效果"(实例陷阱原话)。没有报错、没有日志，只有 `drawCalls` 计数还在安静地增长。
 
 ::: caution 门禁判定禁止缓存进类加载期 static final 字段
 
@@ -178,6 +184,8 @@
 两条降级线共同点：**shader 实体不能作为唯一视觉输出**(实例规范)。
 
 ## 性能
+
+开关保证不画的时候不画；真正画的时候，成本从哪来、如何度量，是本节要回答的问题。
 
 ::: info 为什么常驻插件是每帧固定成本
 
@@ -215,6 +223,8 @@
 
 ## 必须遵守的规则汇总
 
+上述约束在本节示例中全部落成了代码。按强度汇总如下，每条附违反后的可观察结果；故障分析按同一编号展开注入实验。
+
 | # | 强度 | 规则 | 违反的可观察结果 |
 |---|---|---|---|
 | 1 | **必须** | 门禁判定 (`BoxConfigs.isShaderEnable() && ShaderCore.isValid()`) 在 GL 上下文就绪后的每场战斗 `init` 重新执行；禁止缓存进类加载期 `static final` 字段 (延续既有门禁纪律 + 读取时机)| 类加载期无 GL 上下文，`isValid()` 不可评估 → 缓存值恒错 (所有战斗禁用或低能力环境也创建程序)；配置变更永不生效 |
@@ -230,7 +240,7 @@
 
 ## 完整最小例
 
-在既有 MOD 布局与战斗生命周期、分层渲染插件之上新增两个 shader 资源与一个插件类 (不新增任何注册项、不改动任何既有文件)。本节示例对 BoxUtil 的硬依赖沿用既有声明 (`mod_info.json` 的 `dependencies` 含 BoxUtil)：
+规则与原理就位后，把它们落成文件：本节只新增两个 shader 资源与一个插件类，不新增注册项、不改动既有文件。本节示例对 BoxUtil 的硬依赖沿用既有声明 (`mod_info.json` 的 `dependencies` 含 BoxUtil)：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -288,9 +298,9 @@ void main() {
 
 片元着色器绘制 "能量场"：
 
-- `tex` 采样粒子贴图 (`particlealpha32sq.png`，白色径向渐变)，。
-- `edgeFade` 把四边形外沿 (UV 距离 > 0.5) 羽化到零，。
-- `pulse` 是随 `time` 呼吸、随 `d` 向外传播的脉冲 (周期约 π 秒)，。
+- `tex` 采样粒子贴图 (`particlealpha32sq.png`，白色径向渐变)；
+- `edgeFade` 把四边形外沿 (UV 距离 > 0.5) 羽化到零；
+- `pulse` 是随 `time` 呼吸、随 `d` 向外传播的脉冲 (周期约 π 秒)；
 - `intensity` 是总强度系数 (Java 侧送 `viewport.getAlphaMult()`，实现战斗结束淡出)：
 
 ```glsl
@@ -358,7 +368,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
 /**
  * 完整最小例：常驻渲染插件的渲染层接入、资源释放、开关与性能。
  *
- * 事实（0.98a-RC8，BoxUtil 1.5.4 pinned commit d0423e5...，全部经成熟实例消费侧核验）：
+ * 事实（BoxUtil pinned commit d0423e5...，全部经成熟实例消费侧核验）：
  * - 渲染层接入：常驻插件每场战斗注册一次（成熟实例同款姿势：生命周期插件 init 内
  *   addLayeredRenderingPlugin(常驻渲染插件)），不按承载实体或
  *   寿命失效，跟随玩家舰船；层声明用顶层三图层之一的 ABOVE_PARTICLES_LOWER（粒子系统
@@ -711,17 +721,19 @@ gradle jar
 
 成熟实例与本节描述同构的做法：
 
-- 常驻注册 (生命周期插件 `init` 内 `addLayeredRenderingPlugin(常驻渲染插件)`)、。
-- 全层承载模板 (`EnumSet.allOf(...)` + `Float.MAX_VALUE`，代价是永不离屏剔除)、。
-- 顶层三图层层选择 (`ABOVE_PARTICLES_LOWER`)、；
-- 淡出强度 (`alphaMult` 合成)、；
-- 开关使用点读取与降级、；
-- 清理释放并复位句柄、；
+- 常驻注册 (生命周期插件 `init` 内 `addLayeredRenderingPlugin(常驻渲染插件)`)；
+- 全层承载模板 (`EnumSet.allOf(...)` + `Float.MAX_VALUE`，代价是永不离屏剔除)；
+- 顶层三图层层选择 (`ABOVE_PARTICLES_LOWER`)；
+- 淡出强度 (`alphaMult` 合成)；
+- 开关使用点读取与降级；
+- 清理释放并复位句柄；
 - `glMultiDrawArrays` 批处理。
 
-### 验证方案 (基于本例)
+## 验证方案
 
-以本节 `GearInShaderPlugin` 与两个 shader 资源为对象，验证从常驻注册到战斗结束清理的完整链路。
+以本节 `GearInShaderPlugin` 与两个 shader 资源为对象，验证从常驻注册到战斗结束清理的完整链路。您按下列顺序执行，预期结果对应编号列在下方；运行验证需在 Starsector 环境中执行：以下步骤与预期结果已完整保留，实际表现以游戏内为准。
+
+入口：`GearIn_test` 测试战役中的战斗 (C03-S01)；观察位置为 `starsector.log` 与战斗画面。
 
 **前置数据**
 
@@ -730,33 +742,18 @@ gradle jar
 - 本节新增：`GearInShaderPlugin` 与 `data\shaders\GearIn_field_shader.vert/.frag`；
 - 测试战役 `GearIn_test`(C03-S01)；环境需满足 BoxUtil 的 GL 4.3 能力基线 (`ShaderCore.isValid()` 为 true)。
 
-**操作**
+**操作步骤**
 
-1. fixture 编译：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC14s04Java --no-daemon`，确认 `BUILD SUCCESSFUL`(退出码 0)。
-2. fixture 资源：在 Git Bash 执行 `gradle -p tutorial-fixtures validateShaders --no-daemon`，确认 `BUILD SUCCESSFUL`(退出码 0)。
-3. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个 shader 与 `GearInShaderPlugin.class`。
-4. 战役冒烟：进入 `GearIn_test` 一场战斗，`starsector.log` 核对 init 行 (含 `layers=[ABOVE_PARTICLES_LOWER]`、`vert=`/`frag=` 路径与七个 `u_*` location、`ubo=`)；`ubo=<loc>` 非 -1；没有 `gear_in` 引起的 `ERROR`。
-5. 画面：观察玩家舰船周围 220×220 世界单位能量场：外橙内蓝、柔和光晕、外沿羽化、亮度呼吸脉冲、纹理滚动；位于所有粒子之上；跟随舰船移动。
-6. 常驻：战斗持续 60 秒以上 —— 能量场全程存在 (对比一次性视觉的寿命)；按空格暂停约 10 秒 —— 能量场冻结但可见，恢复后继续。
-7. 开关：战斗中调用 `GearInShaderPlugin.setRuntimeEnabled(false)`—— 日志 `GearIn shader plugin: runtime switch off`，能量场立即消失；战斗中继续推进若干秒后调回 `true`——`runtime switch on`，能量场恢复。
-8. 剔除度量：镜头拉远使舰船离开视口外扩 220 单位范围 —— 能量场消失；拉回出现。
-9. 淡出清理：打出胜负判定 —— 能量场随淡出约 5 秒消失，`starsector.log` 出现 `GearIn shader plugin cleanup: frames=<n>, drawCalls=<n>`(两者相等或接近)。
-10. 跨战斗：退出战斗再进一场 ——init 行重新出现、句柄全新；每场战斗结束都有 cleanup 行 (无泄漏)；连续 5 场后游戏无卡顿/报错。
-11. 门禁降级：在 BoxUtil 配置关闭 shader 路径后进战斗 ——`starsector.log` 出现 `GearIn shader plugin: BoxUtil shader path unavailable (...), plugin idle`，无画面、无 ERROR、无资源创建 (shader 路径干净降级)。
-12. 故障注入：a) 注释掉 `advance` 里的 `isCombatOver()` 分支 —— 战斗结束无 cleanup 行 (泄漏，对应故障 1)；b) 把门禁结果存 `static final`——init 行不再随环境变化 (对应故障 2)；c) 把 `cleanup()` 的句柄复位删掉并手动触发 init 失败路径 —— 二次删除风险 (对应故障 9)；d) `cleanup()` 加 `unloadTexture(SPRITE_PATH)`—— 共享贴图黑图/异常 (对应故障 10)；e) 改回后确认恢复。
+1. fixture 编译与资源：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC14s04Java --no-daemon` 与 `gradle -p tutorial-fixtures validateShaders --no-daemon`，均确认 `BUILD SUCCESSFUL`(退出码 0)。
+2. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个 shader 与 `GearInShaderPlugin.class`。
+3. 战役冒烟与画面：进入 `GearIn_test` 一场战斗，`starsector.log` 核对 init 行 (含 `layers=[ABOVE_PARTICLES_LOWER]`、`vert=`/`frag=` 路径与七个 `u_*` location、`ubo=`)；`ubo=<loc>` 非 -1；没有 `gear_in` 引起的 `ERROR`；画面观察玩家舰船周围 220×220 世界单位能量场：外橙内蓝、柔和光晕、外沿羽化、亮度呼吸脉冲、纹理滚动；位于所有粒子之上；跟随舰船移动。
+4. 常驻与开关：战斗持续 60 秒以上 —— 能量场全程存在 (对比一次性视觉的寿命)；按空格暂停约 10 秒 —— 能量场冻结但可见，恢复后继续；调用 `GearInShaderPlugin.setRuntimeEnabled(false)`—— 日志 `GearIn shader plugin: runtime switch off`，能量场立即消失；继续推进若干秒后调回 `true`——`runtime switch on`，能量场恢复。
+5. 剔除、淡出与清理：镜头拉远使舰船离开视口外扩 220 单位范围 —— 能量场消失；拉回出现；打出胜负判定 —— 能量场随淡出约 5 秒消失，`starsector.log` 出现 `GearIn shader plugin cleanup: frames=<n>, drawCalls=<n>`(两者相等或接近)。
+6. 跨战斗：退出战斗再进一场 ——init 行重新出现、句柄全新；每场战斗结束都有 cleanup 行 (无泄漏)；连续 5 场后游戏无卡顿/报错。
+7. 门禁降级：在 BoxUtil 配置界面 (`BoxConfigGUI`，BoxUtil 发行注册，C12-S06) 关闭 shader 选项 (或直接编辑 `<saves>\common\BUtil_Configs.json.data` 对应项) 后进战斗 ——`starsector.log` 出现 `GearIn shader plugin: BoxUtil shader path unavailable (...), plugin idle`，无画面、无 ERROR、无资源创建 (shader 路径干净降级)。
+8. 故障注入：a) 注释掉 `advance` 里的 `isCombatOver()` 分支 —— 战斗结束无 cleanup 行 (泄漏，对应故障 1)；b) 把门禁结果存 `static final`——init 行不再随环境变化 (对应故障 2)；c) 把 `cleanup()` 的句柄复位删掉并手动触发 init 失败路径 —— 二次删除风险 (对应故障 9)；d) `cleanup()` 加 `unloadTexture(SPRITE_PATH)`—— 共享贴图黑图/异常 (对应故障 10)；e) 改回后确认恢复。
 
-**通过信号**
-
-- 操作 1–11 全部符合；
-- 操作 12 的注入与恢复都符合预期。
-
-**清理**
-
-- 取消勾选测试 MOD；
-- 恢复代码与 shader 为原值；
-- 确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
-
-## 预期结果
+**预期结果：**
 
 1. **fixture 编译**：在 Git Bash 执行。
 ```text
@@ -773,9 +770,9 @@ gradle -p tutorial-fixtures validateShaders --no-daemon
 ```text
 GearIn shader plugin init: layers=[ABOVE_PARTICLES_LOWER], u_model=<loc>, u_size=<loc>, u_time=<loc>, u_tex=<loc>, u_intensity=<loc>, u_core=<loc>, u_fringe=<loc>, ubo=<loc>, vert=data/shaders/GearIn_field_shader.vert, frag=data/shaders/GearIn_field_shader.frag
 ```
-其中 `layers=` 与 `getActiveLayers()` 一致、`vert=`/`frag=` 与资源文件路径一致 (四位置完整流程)、`ubo=<loc>` 非 -1；没有由 `gear_in` 引起的 `ERROR`。若 BoxUtil 未初始化/被关闭，则出现 `GearIn shader plugin: BoxUtil shader path unavailable (...), plugin idle` 且无画面 (门禁生效、零资源)。
+其中 `layers=` 与 `getActiveLayers()` 一致、`vert=`/`frag=` 与资源文件路径一致 (四位置完整流程)、`ubo=<loc>` 非 -1；没有由 `gear_in` 引起的 `ERROR`。若 BoxUtil 未初始化，或在 BoxUtil 配置界面 (`BoxConfigGUI`) 关闭了 shader 选项，则出现 `GearIn shader plugin: BoxUtil shader path unavailable (...), plugin idle` 且无画面 (门禁生效、零资源)。
 5. **画面 (常驻效果)**：玩家舰船周围出现一个 220×220 世界单位的能量场 —— 中心偏橙 (`coreColor`)、边缘偏蓝 (`fringeColor`)、柔和光晕 (径向渐变 + `discard` 剔除透明片元)、外沿羽化无硬边 (`edgeFade`)、亮度呼吸脉冲 (约 π 秒周期) 并伴随纹理滚动；能量场位于**所有粒子之上**(`ABOVE_PARTICLES_LOWER` 顶层三图层，层选择见 "渲染层接入")；舰船移动时能量场跟随。
-6. **常驻语义**：能量场**不按寿命消失**(对比前几节一次性视觉示例的 20–30 秒寿命)—— 战斗持续多久它就在多久；`advance` 暂停守卫下按空格暂停 —— 能量场冻结但可见，恢复后继续。
+6. **常驻语义**：能量场**不按寿命消失**(对比前几节一次性视觉示例的 20–30 秒寿命)—— 战斗持续多久它就在多久；按空格暂停时能量场冻结但可见，恢复后继续。
 7. **淡出与清理 (战斗结束收尾)**：胜负判定后能量场随 `viewport.getAlphaMult()` 约 5 秒淡出 (`isCombatOver()` 在淡出完成前为 false，渲染继续、强度收缩)；淡出完成后 `starsector.log` 出现一行。
 ```text
 GearIn shader plugin cleanup: frames=<n>, drawCalls=<n>
@@ -784,7 +781,7 @@ GearIn shader plugin cleanup: frames=<n>, drawCalls=<n>
 8. **跨战斗**：退出战斗再进一场 ——init 行重新出现且 location 值重新查询、句柄全新 (每场战斗重建 program/VBO，与既有 `Global` 生命周期纪律同规)；无 ERROR、无泄漏迹象 (每场战斗结束都有 cleanup 行)。
 9. **开关 (运行时)**：战斗中调用 `GearInShaderPlugin.setRuntimeEnabled(false)`——`starsector.log` 出现 `GearIn shader plugin: runtime switch off`，能量场立即消失且 `drawCalls` 停止增长 (零提交)；调回 `true` 出现 `runtime switch on`，能量场恢复。
 10. **剔除 (性能度量)**：把镜头拉远使玩家舰船 (连同 220 单位半径) 离开视口 —— 能量场消失且 `drawCalls` 停止增长 (`isNearViewport` 剔除生效)；拉回后恢复增长。
-11. **故障注入**：见 "实例驱动故障分析" 第 1、2、3、4、7、8、9、10 条对应的注入动作与恢复。
+11. **故障注入**：见 "故障分析" 第 1、2、9、10 条对应的注入动作与恢复。
 
 静态自查：
 
@@ -795,7 +792,20 @@ GearIn shader plugin cleanup: frames=<n>, drawCalls=<n>
 - 任何包名、类名、资源名或字符串 key 中都不含单元编号 (包 `data.scripts.gearin.combat`、类 `GearInShaderPlugin`、资源 `data/shaders/GearIn_field_shader.vert/.frag`、日志前缀 `GearIn shader plugin`)；
 - 除本节目录与 fixture 目录外没有改动任何共享文件。
 
-## 实例驱动故障分析
+**通过信号**
+
+- 操作 1–7 全部符合；
+- 操作 8 的注入与恢复都符合预期。
+
+**清理**
+
+- 取消勾选测试 MOD；
+- 恢复代码与 shader 为原值；
+- 确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
+
+## 故障分析
+
+十个故障以症状命名，编号与规则表对应；每条按注入改动、可观察结果、原因与修正的顺序展开，与验证方案操作 8 的注入实验一一对应。
 
 1. **常驻插件不判战斗结束 (资源随战斗泄漏)**。触发：注释掉 `advance` 里的 `if (engine.isCombatOver()) { valid = false; }`。可观察：战斗结束时 `cleanup()` **永不执行**(`destroyInstance` 只清空对象表、不调 `cleanup()`)—— 每场战斗泄漏一个 program + VBO；多场战斗后驱动报错、渲染异常或卡顿；`starsector.log` 里没有对应的 `cleanup` 行。修正：`advance()` 里判 `isCombatOver()` 主动失效 (规则 2)。
 2. **门禁结果缓存进 `static final`**。触发：在类加载期求值 `private static final boolean GATE_OK = BoxConfigs.isShaderEnable() && ShaderCore.isValid();` 并在 `init` 里只用 `GATE_OK`。可观察：类加载发生在资源加载期/主菜单前，此时没有战斗 GL 上下文 ——`ShaderCore.isValid()` 不可评估，缓存值恒错：所有战斗都 `plugin idle`(值恒 false)，或低能力环境也照常创建程序 (值恒 true)；且此后 BoxUtil 初始化/配置的任何变化都不再影响本插件。修正：每场战斗 `init` 重新判定 (规则 1)。
@@ -810,11 +820,9 @@ GearIn shader plugin cleanup: frames=<n>, drawCalls=<n>
 
 ## 总结
 
-本节把渲染接入的架构面收成完整流程：两条渲染入口与常驻/一次性选择决定生命周期归属；资源释放纪律 (创建者清理、`cleanup()` 幂等复位、战斗结束主动失效、共享贴图不卸载) 保证 GL 资源不泄漏；开关的三层语义与读取时机避免 "关了等于没关"；五个开销来源与 `drawCalls` 计数让性能问题可量化；十个故障案例把每条必须遵守的规则的违反路径变成可注入、可观察、可修正的对照实验。
+本节把渲染接入的架构面收成一条完整流程：两条渲染入口决定生命周期归属，创建者清理与 `cleanup()` 幂等复位保证资源不泄漏，战斗结束主动失效补上常驻形态最容易被跳过的一环，开关读取时机避免 "关了等于没关"，`drawCalls` 计数让性能问题可量化。
 
-从 GLSL 数据流到常驻生命周期，渲染接入的完整设计在此收束。
-
-逻辑层面的展望：这套 "注册 → 层声明 → 提交 → 推进/失效 → 清理" 五环节框架不限于本节形态 —— 批量 instance 渲染、后期处理、UI 覆盖等更复杂的视觉形态，同样落在这套 "入口选择 → 资源归属 → 性能度量" 的坐标系上，可以直接套用本节的判据与度量做法。
+排错时先看症状落在哪一环：战斗结束没有 cleanup 行就查失效路径，关闭后仍在绘制就查读取时机，共享贴图黑图就查 `unloadTexture` 调用。这套 "注册 → 层声明 → 提交 → 推进/失效 → 清理" 的判断方式不限于本节形态，批量 instance 渲染、后期处理、UI 覆盖等更复杂的视觉同样落在 "入口选择 → 资源归属 → 性能度量" 的坐标上，可以直接套用本节的判据与度量做法。
 
 ## 建议参考项
 

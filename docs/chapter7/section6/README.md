@@ -1,6 +1,6 @@
 # 分层渲染、视口与清理
 
-本节把战斗域的 "分层渲染" 讲透：`CombatLayeredRenderingPlugin` 的注册与回调模型 (`init` / `advance` / `render` / `isExpired` / `cleanup`)、`CombatEngineLayers` 的层级顺序与引擎渲染管线、`ViewportAPI` 的视口坐标与缩放语义，以及分层渲染插件的清理纪律 (`cleanup()` 的调用时机与战斗结束的差异)。本节的分层渲染插件是**另一条独立的插件通道**：由 `engine.addLayeredRenderingPlugin(...)` 注册、以战斗实体为承载、按层渲染，推进语义与清理时机都和前置单元已讲解的 `EveryFrameCombatPlugin` 不同。
+本节让您给战斗画面加上第一层自绘内容：注册 `CombatLayeredRenderingPlugin`，在 `CombatEngineLayers` 指定的层级上以世界坐标绘制，并在战斗结束时把资源干净地交还。它与前置单元的 `EveryFrameCombatPlugin` 走的是两条不同的插件通道，注册方式、暂停时的推进行为与清理时机都不一样 —— 这两处差异正是渲染类功能最容易出错的位置；完成后，您将得到一个可直接运行的分层渲染最小例，以及一套从日志与画面症状定位问题的核对方法。
 
 *本节预期阅读时间：~25 分钟。*
 
@@ -22,7 +22,7 @@
 阅读本节前，建议先掌握以下既有内容：
 
 - MOD 目录结构、`starsector.log`(C01-S01)：本节所有可观察结果都落在日志与画面里。
-- 插件模型与暂停守卫 (C07-S01)：本节的分层渲染插件同款 `engine.isPaused()` 守卫做法，但推进语义不同 —— 见 "推进与暂停"。
+- 插件模型与暂停判断 (C07-S01)：本节的分层渲染插件沿用 `engine.isPaused()` 判断做法，但推进语义不同 —— 见 "推进与暂停"。
 - 战役 (mission) 与生涯 (campaign) 概念、`GearIn_test` 测试战役 (C03-S01)：本节用它做验证。
 - 编译 JAR 链路 (C06-S01)：本节示例编入同一个 `jars\GearIndustry.jar`。
 - `Global` 生命周期 —— 禁止跨战斗缓存引擎引用 (C06-S03)：本节把同一条纪律延伸到渲染插件与它持有的舰船引用。
@@ -44,7 +44,7 @@
 | `CombatEntityAPI` | `init` 的参数与承载实体 (位置同步、存活/失效判定)| 引擎把插件包装成战斗实体 |
 | `LayeredRenderer` | 引擎内部按层渲染器 (`com.fs.graphics`)| 引擎构造时创建，`renderer.add / remove / renderExcluding / renderOnly` |
 
-### 注册与回调速查 (RC8)
+### 注册与回调速查
 
 | 回调 | 时机 | 说明 |
 |---|---|---|
@@ -117,6 +117,8 @@ JUST_BELOW_WIDGETS       ─┘
 
 ## 渲染管线与生命周期
 
+接口形状已经列全，接下来按注册、推进、渲染与清理四个环节，看引擎在每个环节如何使用它们。
+
 ### 注册与承载
 
 `engine.addLayeredRenderingPlugin(plugin)` 在内部把插件包装成战斗实体并作为战斗对象加入引擎。
@@ -137,10 +139,10 @@ JUST_BELOW_WIDGETS       ─┘
 
 由此得到两条对照事实：
 
-- `EveryFrameCombatPlugin.advance` 暂停时仍被调用 (前置单元必须遵守的规则：必须自行守卫 `engine.isPaused()`)；
+- `EveryFrameCombatPlugin.advance` 暂停时仍被调用 (前置单元必须遵守的规则：必须自行判断 `engine.isPaused()`)；
 - `CombatLayeredRenderingPlugin.advance` 暂停时**不被调用**(引擎暂停分支不推进实体)，但渲染照常执行 —— 暂停时画面上的自绘内容静止但可见。
 
-成熟实例的 `advance` 仍保留 `engine.isPaused()` 守卫：在 RC8 下这是防御性写法，本教程不作必须遵守的规则，但建议保留以抵抗基线变动。`advance` 里也照例判 `engine == null`(`init` 虽然保证先执行，成熟实例一致做法是判空)。
+成熟实例的 `advance` 仍保留 `engine.isPaused()` 判断：这是防御性写法，本教程不作必须遵守的规则，但建议保留以抵抗基线变动。`advance` 里也照例判 `engine == null`(`init` 虽然保证先执行，成熟实例一致做法是判空)。
 
 ### 渲染与剔除
 
@@ -163,7 +165,7 @@ if (viewport.isNearViewport(this.getLocation(), this.plugin.getRenderRadius())) 
 `render` 对**每个激活层各调用一次**(成熟实例声明多个层时，回调内按 `layer` 参数分支绘制)。一个插件声明多层时，同一帧会收到多次 `render` 调用，必须在回调内按 `layer` 参数分支，而不是每次都画全套。
 
 ::: tip 图形 "凭空消失" 时查两处
-图形在视口内 "凭空消失"(或被画到战场原点) 时，先查两处：承载实体位置是否每帧同步到 `entity.getLocation()`、`getRenderRadius()` 是否覆盖绘制范围 —— 这两处正是 `isNearViewport` 剔除判定的输入 (规则 4 的可观察面)。
+图形在视口内 "凭空消失"(或被画到战场原点) 时，先查两处：承载实体位置是否每帧同步到 `entity.getLocation()`、`getRenderRadius()` 是否覆盖绘制范围 —— 这两处正是 `isNearViewport` 剔除判定的输入 (规则 4 的可观察表现)。
 :::
 
 ### 清理
@@ -191,13 +193,13 @@ if (viewport.isNearViewport(this.getLocation(), this.plugin.getRenderRadius())) 
 | 4 | **必须** | 渲染位置同步到承载实体 `entity.getLocation()`，且 `getRenderRadius()` 覆盖绘制范围 | 位置不同步 → 图形画在战场原点或旧位置；半径过小 → 图形在视口内 "凭空消失"(`isNearViewport` 剔除)；半径过大 → 离屏仍绘制，性能损耗 |
 | 5 | **必须** | `getActiveLayers()` 精确声明需要的层，`render` 回调内按 `layer` 参数分支 | 漏层 → 图形不出现或被下层遮挡；多激活层不分支 → 同一图形每帧重复绘制 (叠加变亮/闪烁)，同帧多图层内容互相污染 |
 | 6 | **必须** | 插件、引擎与舰船引用禁止跨战斗缓存 (前置单元的跨战斗缓存纪律同规；每场战斗用 `init` 里 `Global.getCombatEngine()` 取引擎)| 第二场战斗起引用全部失效且无报错：旧引擎已被 `destroyInstance` 丢弃、旧舰 `isAlive()` 恒为 false，插件被自己的失效逻辑立刻清掉或绘制异常 |
-| 7 | 建议 | `advance()` 保留 `engine == null` 与 `engine.isPaused()` 守卫 (成熟实例一致做法)| 无功能错误 (RC8 下 init 保证先执行、暂停分支不推进实体)；守卫是防基线变动的防御 |
+| 7 | 建议 | `advance()` 保留 `engine == null` 与 `engine.isPaused()` 判断 (成熟实例一致做法)| 无功能错误 (init 保证先执行、暂停分支不推进实体)；判断是防基线变动的防御 |
 | 8 | 建议 | `render()` 开头设置自己需要的 GL 状态 (如 `GL_BLEND` 与混合函数)；结束时解除 VAO / VBO 绑定、关闭自己激活的程序 | 不解除绑定会让后续图元沿用插件设置的状态；本教程不把 "引擎每层重置 GL 状态" 当作承诺，成熟实例全部自己收尾 |
 | 9 | 建议 | `getRenderRadius()` 按实际覆盖范围取值；需要全局常驻时才用 `Float.MAX_VALUE`(调试用途)| 无功能错误，只有性能成本 |
 
 ## 完整最小例
 
-在前置单元建立的 MOD 布局与战斗插件之上新增一个插件类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Subject>`)：
+规则只说明约束，下面用一个完整最小例把注册、推进、渲染与清理全部落进代码。在前置单元建立的 MOD 布局与战斗插件之上新增一个插件类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Subject>`)：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -239,7 +241,7 @@ import com.fs.starfarer.api.combat.ViewportAPI;
 /**
  * 完整最小例：分层渲染插件（CombatLayeredRenderingPlugin）的层级、视口与清理。
  *
- * 渲染管线事实（0.98a-RC8）：
+ * 渲染管线事实：
  * - engine.addLayeredRenderingPlugin(plugin) 用自定义战斗实体包装插件并加入引擎；
  *   executeAdds 时调用 plugin.init(entity) 并按 getActiveLayers() 注册进 LayeredRenderer；
  * - 每帧（非暂停分支）推进 entity.advance(amount)，随后 isExpired() 为 true 的实体
@@ -254,7 +256,7 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  *   不做任何绘制；
  * - 暂停时引擎不推进实体（advanceInner 的暂停分支只 advance 地形与玩家舰船），
  *   但渲染循环照常执行（渲染不暂停）；isPaused() 守卫为防御性写法（成熟实例一致做法）；
- * - 插件、引擎与舰船引用禁止跨战斗缓存（C06-S03 / C07-S05 同规）。
+ * - 插件、引擎与舰船引用禁止跨战斗缓存（C06-S03 / C07-S04 同规）。
  */
 public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 
@@ -302,7 +304,7 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
             return; // 防御：init() 先于 advance() 被引擎调用，保留与成熟实例一致的判空
         }
         if (engine.isPaused()) {
-            return; // 暂停守卫（防御性；RC8 引擎的暂停分支本就不推进实体）
+            return; // 暂停守卫（防御性；引擎的暂停分支本就不推进实体）
         }
         if (!engine.isEntityInPlay(trackedShip) || !trackedShip.isAlive()) {
             valid = false; // 失效：下一轮 executeRemoves 移除实体并调用 cleanup()
@@ -359,7 +361,7 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 - `render`：**只在这里**用 GL 原语绘制 (规则 1)；开头设置 `GL_BLEND` 与混合函数 (建议 8 的开启侧)；`viewport.getAlphaMult()` 参与透明度 (战斗结束淡出时方框跟着淡出)；顶点直接提交世界坐标。
 - `cleanup()`：本最小例没有分配 GL 资源 (立即模式无句柄)，所以 cleanup 只留日志；有 VAO/VBO/程序资源的插件在这里释放并复位句柄 (规则 2)。
 
-注册片段 (工程片段 —— 本节不改动战斗生命周期插件单元的任何文件，只演示使用方如何调用；把下面两行加进部署监听器 `GearInDeploymentListener.reportFleetMemberDeployed` 的末尾)：
+注册片段 (工程片段 —— 本节不改动战斗生命周期插件单元的任何文件，只演示使用方如何调用；在部署监听器 `GearInDeploymentListener.reportFleetMemberDeployed` 内追加。追加时注意：示例监听器的方法体里已经声明过 `ShipAPI ship = member.getShip()`，不要重复声明；片段里的 `engine` 与 `Color` 也需按您的监听器上下文自行提供和导入)：
 
 ```java
     // 工程片段：在部署监听器 GearInDeploymentListener.reportFleetMemberDeployed 内追加
@@ -377,11 +379,11 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`(可用 `jar tf` 核对)。
 
-本节源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C07-S06` 的 `data/scripts/gearin/combat` 包内)，fixture 编译验收命令见 "预期结果"。
+本节源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C07-S06` 的 `data/scripts/gearin/combat` 包内)，fixture 编译验收命令见下方验证方案。
 
-### 验证方案 (基于本例)
+## 验证方案
 
-前置数据：C06-S01 的 MOD 布局 + C02-S01 战斗插件接入 + C07-S05 的战斗生命周期插件 (其部署监听器已含本节注册片段两行)+ 本节的 `GearInLayeredRenderer` + C03-S01 的 `GearIn_test` 测试战役。
+前置数据：C06-S01 的 MOD 布局 + C07-S01 的战斗插件接入 + C07-S05 的战斗生命周期插件 (其部署监听器已加入本节注册片段) + 本节的 `GearInLayeredRenderer` + C03-S01 的 `GearIn_test` 测试战役。
 
 操作步骤：
 
@@ -395,15 +397,7 @@ gradle jar
 8. **跨战斗**：退出战斗再进一场 ——`GearIn layered renderer init:` 重新出现，新方框从零开始跟随。
 9. **故障注入**：把 `advance()` 里的 `entity.getLocation().set(trackedShip.getLocation());` 注释掉 —— 方框画在战场原点 (对应故障 2)；把 `valid = false;` 注释掉 —— 舰船被击毁后方框残留到战斗结束且无 `cleanup` 日志 (对应故障 3)；改回后确认恢复。
 
-通过信号：操作 1–8 全部符合；操作 9 的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures` 构建配置等) 做过修改。
-
-::: tip 日志核对技巧
-在 `Starsector/starsector-core/starsector.log` 中按 `GearIn layered renderer` 前缀检索即可定位本插件的全部输出行 (只有 init / cleanup 两处打日志)；出现 `ERROR` 时优先查看 `gear_in` 包相关的堆栈。
-:::
-
-## 预期结果
+预期结果：
 
 1. **fixture 编译 (验收 J)**：在 Git Bash 执行：
 
@@ -422,7 +416,7 @@ gradle jar
    没有 `ERROR`。
 4. **画面结果**：每个被注册的已部署成员身上出现一个半透明青色方框 (120 世界单位边长)，跟随舰船移动；方框画在舰船与导弹之上、粒子之下 ——`ABOVE_SHIPS_AND_MISSILES_LAYER` 位于粒子系统之前 (层序表)。
 5. **暂停行为**：按空格暂停约 10 秒再恢复 —— 暂停期间方框静止不动 (`advance` 不被调用，位置不更新) 但**仍然可见**(渲染不暂停)；恢复后继续跟随。
-6. **视口剔除**：把镜头拉远到方框边缘超出可见区外扩 120 单位之外 —— 方框消失；拉回后重新出现 (`isNearViewport` 剔除，规则 4 的可观察面)。战斗中正常推进时不会产生 `GearIn layered renderer` 的推进日志 (render 与推进都不打日志，只有 init/cleanup 打)。
+6. **视口剔除**：把镜头拉远到方框边缘超出可见区外扩 120 单位之外 —— 方框消失；拉回后重新出现 (`isNearViewport` 剔除，规则 4 的可观察表现)。战斗中正常推进时不会产生 `GearIn layered renderer` 的推进日志 (render 与推进都不打日志，只有 init/cleanup 打)。
 7. **失效与清理**：击毁被追踪的舰船 —— 方框立即消失 (下一帧起)，`Starsector/starsector-core/starsector.log` 出现一行：
 
    ```text
@@ -432,20 +426,28 @@ gradle jar
    此后该舰的方框不再出现；同一场战斗内其他舰船的方框不受影响。
 8. **战斗结束**：胜负判定后淡出期间方框随 `viewport.getAlphaMult()` 淡出；退出战斗再进一场 ——`GearIn layered renderer init:` 重新出现，第二场战斗每艘新部署成员都有新方框 (每场战斗全新实例，规则 6)。
 
-静态自查：`GearInLayeredRenderer` 与 fixture 逐字一致 (包括 import 顺序与注释)。
+通过信号：操作 1–8 全部符合；操作 9 的注入与恢复都符合预期。
 
-没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInLayeredRenderer`)；除本节目录与 fixture 目录外没有改动任何共享文件。
+清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures` 构建配置等) 做过修改。
 
-## 实例驱动故障分析
+静态自查：`GearInLayeredRenderer` 与 fixture 逐字一致 (包括 import 顺序与注释)；没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInLayeredRenderer`)，除本节目录与 fixture 目录外没有改动任何共享文件。
 
-1. **在 `advance()` 里绘制**。触发：把 `GL11.glBegin(...)` 等绘制调用放进 `advance()`。可观察：`advance()` 属于推进阶段，不在渲染阶段执行 —— 发出的 GL 命令随后被渲染阶段的状态切换与清屏覆盖，绘制内容不出现、错帧或出现在错误图层。修正：绘制只放 `render()` 回调 (规则 1)；`advance()` 只推进状态与同步位置。
-2. **位置不同步到承载实体**。触发：`advance()` 里更新自己的坐标字段，但不 `entity.getLocation().set(...)`；或 `getRenderRadius()` 小于绘制范围。可观察：方框画在战场原点 (承载实体的默认位置) 而不是舰船位置；半径过小时方框在视口内 "凭空消失"—— `render` 转发前先判 `isNearViewport(entity.getLocation(), getRenderRadius())`。修正：每次 `advance` 同步实体位置，半径覆盖绘制范围 (规则 4)。
-3. **`isExpired()` 恒为 false**。触发：失效逻辑缺失或 `valid` 从不置 false。可观察：舰船被击毁后方框继续渲染到战斗结束；战斗结束时 `cleanup()` **永不执行**——`destroyInstance` 只 `objects.clear()` 不调 `cleanup()`。修正：`advance()` 里判 `isEntityInPlay` / `isAlive`，失效即置 `valid = false`(规则 3)。
-4. **`cleanup()` 漏释放 GL 资源**。触发：插件分配了 VAO / VBO / 着色器程序，`cleanup()` 不删。可观察：句柄与显存随每场战斗泄漏；多场战斗后渲染异常、卡顿或驱动报错。修正：`cleanup()` 里删除并把句柄置回哨兵值 (规则 2)。
-5. **声明多个激活层但不按 `layer` 分支**。触发：`getActiveLayers()` 返回两层 (如 `UNDER_SHIPS_LAYER` + `ABOVE_SHIPS_LAYER`)，`render` 里无视 `layer` 参数每帧画全套。可观察：同一图形每帧绘制两次，画面叠加变亮或闪烁；层间关系被破坏 (该在舰船下的内容画到舰船上)。修正：`render` 内按 `layer` 分支 (规则 5)。
-6. **跨战斗缓存插件实例**。触发：把 `GearInLayeredRenderer` 存进静态字段或生涯侧对象，第二场战斗继续引用。可观察：旧实例的 `trackedShip` 是上一场的舰船，`isAlive()` 恒为 false(跨战斗引用失效的表现)，插件被自己的失效逻辑立刻清掉，第二场战斗没有任何方框且无报错。修正：每场战斗从部署/推进处新建并 `addLayeredRenderingPlugin`(规则 6)。
-7. **把 `EveryFrameCombatPlugin` 的暂停语义套到渲染插件上**。触发：认为 `advance` 暂停时也会被调用，不加守卫直接推进累计时间；或反过来认为暂停时渲染也停。可观察：前者在暂停后恢复时计时多出暂停时长 (实际 RC8 暂停分支不推进实体)；后者以为画面停了 —— 渲染循环照常执行，自绘内容静止但可见。修正：按本节 "推进与暂停" 的对照表理解两条通道 (战斗生命周期插件的 `advance` 暂停时调用、本节插件的 `advance` 暂停时不调用；两者渲染回调都不随暂停停摆)。
-8. **视口转换方向搞反**。触发：想在屏幕上画固定大小的 UI 元素，却用 `convertWorldXtoScreenX` 拿到的值当顶点坐标，或在世界坐标绘制里漏乘/多乘 `getViewMult()`。可观察：元素尺寸随镜头缩放错误变化、位置偏移。修正：世界坐标绘制直接提交世界坐标 (渲染器已应用视口变换)；只有需要屏幕空间时才用转换方法，方向为 world→screen。
+::: tip 日志核对技巧
+在 `Starsector/starsector-core/starsector.log` 中按 `GearIn layered renderer` 前缀检索即可定位本插件的全部输出行 (只有 init / cleanup 两处打日志)；出现 `ERROR` 时优先查看 `gear_in` 包相关的堆栈。
+:::
+
+## 故障分析
+
+验证中任一预期结果没有出现时，按症状从下面八类里定位。每个条目依次给出症状、触发、原因与修正。
+
+1. **在 `advance()` 里绘制**。症状：绘制内容不出现、错帧或出现在错误图层。触发：把 `GL11.glBegin(...)` 等绘制调用放进 `advance()`。原因：`advance()` 属于推进阶段，发出的 GL 命令随后被渲染阶段的状态切换与清屏覆盖，且不参与本层的层序。修正：绘制只放 `render()` 回调 (规则 1)，`advance()` 只推进状态与同步位置。
+2. **位置不同步到承载实体**。症状：方框画在战场原点 (承载实体的默认位置)，或图形在视口内 "凭空消失"。触发：`advance()` 里只更新自己的坐标字段，没有 `entity.getLocation().set(...)`；或 `getRenderRadius()` 小于绘制范围。原因：`render` 转发前先判 `isNearViewport(entity.getLocation(), getRenderRadius())`，剔除依据是承载实体的位置与渲染半径。修正：每次 `advance` 同步实体位置，半径覆盖绘制范围 (规则 4)。
+3. **`isExpired()` 恒为 false**。症状：舰船被击毁后方框继续渲染到战斗结束，战斗结束时也没有 `cleanup` 日志。触发：失效逻辑缺失或 `valid` 从不置 false。原因：引擎只对 `isExpired()` 返回 true 的实体走移除路径，而战斗结束的 `destroyInstance` 只 `objects.clear()` 不调 `cleanup()`。修正：`advance()` 里判 `isEntityInPlay` / `isAlive`，失效即置 `valid = false`(规则 3)。
+4. **`cleanup()` 漏释放 GL 资源**。症状：多场战斗后渲染异常、卡顿或驱动报错。触发：插件分配了 VAO / VBO / 着色器程序，`cleanup()` 不删。原因：句柄与显存随每场战斗累积泄漏。修正：`cleanup()` 里删除并把句柄置回哨兵值 (规则 2)。
+5. **声明多个激活层但不按 `layer` 分支**。症状：同一图形每帧绘制两次，画面叠加变亮或闪烁；该在舰船下的内容画到舰船上。触发：`getActiveLayers()` 返回两层 (如 `UNDER_SHIPS_LAYER` + `ABOVE_SHIPS_LAYER`)，`render` 里无视 `layer` 参数每帧画全套。原因：`render` 对每个激活层各调用一次。修正：`render` 内按 `layer` 参数分支 (规则 5)。
+6. **跨战斗缓存插件实例**。症状：第二场战斗没有任何方框且无报错。触发：把 `GearInLayeredRenderer` 存进静态字段或生涯侧对象，第二场战斗继续引用。原因：旧实例的 `trackedShip` 是上一场的舰船，`isAlive()` 恒为 false (跨战斗引用失效的表现)，插件被自己的失效逻辑立刻清掉。修正：每场战斗从部署/推进处新建并 `addLayeredRenderingPlugin`(规则 6)。
+7. **把 `EveryFrameCombatPlugin` 的暂停语义套到渲染插件上**。症状：暂停恢复后计时多出暂停时长，或误以为暂停时自绘内容已经停住。触发：认为 `advance` 暂停时也会被调用，不加判断直接推进累计时间；或反过来认为暂停时渲染也停。原因：暂停分支不推进实体，但渲染循环照常执行 —— 自绘内容静止但可见。修正：按 "推进与暂停" 一节对照两条通道 (战斗生命周期插件的 `advance` 暂停时调用、本节插件的 `advance` 暂停时不调用；两者渲染回调都不随暂停停摆)。
+8. **视口转换方向搞反**。症状：元素尺寸随镜头缩放错误变化、位置偏移。触发：想在屏幕上画固定大小的 UI 元素，却用 `convertWorldXtoScreenX` 拿到的值当顶点坐标，或在世界坐标绘制里漏乘/多乘 `getViewMult()`。原因：渲染回调里的顶点直接以世界坐标提交，视口变换已由渲染器应用。修正：世界坐标绘制直接提交世界坐标；只有需要屏幕空间时才用转换方法，方向为 world→screen。
 
 ## 总结
 

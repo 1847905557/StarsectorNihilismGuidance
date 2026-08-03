@@ -12,7 +12,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
 /**
  * 完整最小例：GraphicsLib 光源与纹理的最小消费面（战斗内）的接线插件。
  *
- * 适用边界（0.98a-RC8，GraphicsLib 1.10.0）：
+ * 适用边界：
  * - GraphicsLib 的初始化与 LightData/TextureData CSV 注册发生在 onApplicationLoad
  *   （本 MOD 的接入片段见页面正文，fixture 不含该片段）；
  * - ShaderHook（settings plugins 注册的 EveryFrameCombatPlugin）在每场战斗开始时
@@ -47,10 +47,10 @@ public class GearInLightCombatPlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine == null) {
-            return; // 防御性判空（C02-S01 同款姿势）
+            return; // 防御性判空（C07-S01 同款姿势）
         }
         if (engine.isPaused()) {
-            return; // 暂停守卫（C02-S01）：暂停时 advance 仍会被调用，光源静止但保持可见
+            return; // 暂停守卫（C07-S01）：暂停时 advance 仍会被调用，光源静止但保持可见
         }
         ShipAPI player = engine.getPlayerShip();
         shipLight.update(player);

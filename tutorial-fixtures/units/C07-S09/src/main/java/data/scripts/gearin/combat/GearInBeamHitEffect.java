@@ -49,7 +49,7 @@ public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWi
         }
         if (didDamage) {
             // 纯视觉命中火花：以本帧射线端点（上一帧端点）为基准撒粒子，不造成伤害。
-            // 光束伤害按 0.1 秒间隔结算（C07-S03）；IonBeamEffect 的替代写法是用
+            // 光束伤害按 0.1 秒间隔结算（C07-S04）；IonBeamEffect 的替代写法是用
             // beam.getDamage().getDpsDuration() 推进节流器，让粒子节奏跟随真实结算。
             sparkInterval.advance(amount);
             if (sparkInterval.intervalElapsed()) {

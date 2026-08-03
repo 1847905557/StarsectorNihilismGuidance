@@ -35,7 +35,7 @@ SoundPlayerAPI            消费层（C05-S03）：Global.getSoundPlayer() 按 I
 
 两个事实决定素材必须在本节做好：
 
-- 循环是消费层的运行时行为。`SoundPlayerAPI.playLoop(id, ...)`(C05-S03) 会连续重播同一个 OGG；0.98a-RC8 原版 `sounds.json` 没有 loop 开关字段，注册层无法补救循环接缝。
+- 循环是消费层的运行时行为。`SoundPlayerAPI.playLoop(id, ...)`(C05-S03) 会连续重播同一个 OGG；注册层无法补救循环接缝。
 - 注册层只提供路径和播放参数，不能修复错误编码、削波或循环接缝。
 
 ## 目录与 ID

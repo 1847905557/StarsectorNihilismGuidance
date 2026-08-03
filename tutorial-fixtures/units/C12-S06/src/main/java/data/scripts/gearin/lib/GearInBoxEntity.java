@@ -16,7 +16,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
 /**
  * 完整最小例的接线载体：BoxUtil 初始化（initLater 守卫）、可用性判据与生成
  * 计时在这里，实体生成与字体文本分别委托给 GearInBoxSpawner / GearInTextField；
- * 由既有战斗插件在 init() 中 addPlugin 注册（C02-S01 模型），只在本场战斗内有效。
+ * 由既有战斗插件在 init() 中 addPlugin 注册（C07-S01 模型），只在本场战斗内有效。
  */
 public class GearInBoxEntity extends BaseEveryFrameCombatPlugin {
 

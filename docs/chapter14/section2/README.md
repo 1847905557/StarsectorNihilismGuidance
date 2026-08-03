@@ -1,6 +1,6 @@
 # 着色器文件：路径、加载与编译
 
-shader 源码的**搬运与存续**是接入 shader 的第一步：`.vert/.frag` 放在哪里、用什么路径约定、经什么入口读进 Java、编译/链接失败的信息日志 (InfoLog) 落在哪里，以及从加载、使用、清理到重载的完整资源生命周期。GLSL 类型、坐标与数据流已在基础主题讲过，uniform/纹理/矩阵提交与渲染层接入、开关、性能由后续主题展开，本节示例只保留最小使用面；依赖库的 `ShaderUtil.createShaderVFFormPath(...)` 是另一条加载入口，本节只陈述其消费形状，内部行为留待后续主题展开，生命周期纪律与依赖库生命周期讲解同源。
+本节把着色器 (shader) 从源码接入战斗画面：确定 `.vert/.frag` 在 MOD 中的存放路径，走通读取、编译、链接与日志记录，再按加载、使用、清理、重载四个环节维护程序对象。上一节讲透的 GLSL 语法与编译检查链还停留在源码层面，磁盘上的 shader 不会自己进入游戏 —— 本节补上这条从文件到画面的路径。完成后，您将得到一个显示扩散脉冲环的渲染插件，并能在 `starsector.log` 里核对它的每一步加载与失败。
 
 *本节预期阅读时间：~20 分钟。*
 
@@ -19,19 +19,21 @@ shader 源码的**搬运与存续**是接入 shader 的第一步：`.vert/.frag`
 
 ## 前置知识
 
-本节建立在以下主题之上：
+本节把上一节的 shader 能力接到文件与生命周期上，先确认以下基础：
 
-- MOD 目录结构与 `starsector.log`(C01-S01)：本节所有日志可观察结果都落在它里面。
-- 战役 (mission) 概念与 `GearIn_test` 测试战役 (C03-S01)：本节用它做验证。
-- 编译 JAR 链路 (C06-S01)：shader 文本作为资源进入构建；本节沿用松散文件 + jar 副本的交付形态。
+- MOD 目录结构与 `starsector.log` 的读取 (C01-S01)：本节所有日志观察结果都落在它里面。
+- 战役 (mission) 概念与 `GearIn_test` 测试战役 (C03-S01)：本节用它做游戏内验证。
+- 编译 JAR 链路 (C06-S01)：shader 文本作为资源进入构建，本节沿用松散文件 + jar 副本的交付形态。
 - `Global` 生命周期 (C06-S03)：禁止跨战斗缓存引擎引用与渲染对象，本节的程序/VBO 同规。
 - `SettingsAPI` 资源读取三族与 `validateFileName` 必须遵守的规则 (C06-S04)：本节的 `loadText` 语义直接承接。
-- 战斗插件生命周期 (C07-S05)：注册片段所在。
+- 战斗插件生命周期 (C07-S05)：本节的注册片段加在它的 `init` 末尾。
 - 分层渲染插件与 GL 资源清理必须遵守的规则 (C07-S06)：本节的 "加载/清理/失效" 环节直接复用。
 - BoxUtil 初始化/实体/生命周期 (C12-S06)：对照的另一条加载入口 `ShaderUtil` 与同源的生命周期纪律。
 - GLSL 110 方言、编译/链接检查链、OpenGL 2.0 能力门禁 (C14-S01)：本节的加载与日志环节是它的延续。
 
 ## 文件与 API 链路
+
+从磁盘文件到战斗画面一共经过五类环节，下表先给每个环节的落点，再逐段解释为什么这样接：
 
 | 环节 | 文件 / API | 说明 |
 |---|---|---|
@@ -44,10 +46,10 @@ shader 源码的**搬运与存续**是接入 shader 的第一步：`.vert/.frag`
 | 日志 | `Global.getLogger(...)`(log4j `Logger`)→ `starsector.log` | 编译/链接 InfoLog 与加载/重载/清理事件都由 MOD 侧写入 (游戏侧对 `loadText` 零日志)|
 | 运行使用方 | `GearInPulseRenderer`(C07-S06 分层渲染通道)| 每场战斗 `init` 加载程序、`render` 内使用、`cleanup` 内删除、`advance` 内定时重载 |
 | 实例对照 (加载入口 A)| GraphicsLib `org.dark.shaders.post.PostProcessShader` | `loadText("data/shaders/post/pre.vert")` → `ShaderLib.loadShader` → 失败置 `enabled = false` 并 ERROR |
-| 实例对照 (加载入口 B)| `ShaderUtil.createShaderVFFormPath(类名, vert 路径, frag 路径)` | BoxUtil 封装入口的消费侧 (内部行为留给 C14-S03)|
+| 实例对照 (加载入口 B)| `ShaderUtil.createShaderVFFormPath(类名, vert 路径, frag 路径)` | BoxUtil 封装的使用入口 (内部行为留给 C14-S03)|
 | 可观察结果 | `starsector.log` + 战斗画面 | init/reload/cleanup/compile failed 日志行；玩家舰中心脉冲环 |
 
-### 四位置完整流程 (验收 D 做法)
+### 四位置完整流程
 
 shader 是**无注册表 ID**的资源：它不经过任何 CSV/JSON 注册链 (与武器、战术系统、船插不同)，`data/shaders/...` 的路径与文件名就是它的身份。因此静态核对沿四个位置进行，四处必须一致：
 
@@ -62,9 +64,11 @@ shader 是**无注册表 ID**的资源：它不经过任何 CSV/JSON 注册链 (
 
 ## 路径约定
 
+四个位置的第一处是资源文件本身，先解决它放在哪里、怎么书写。
+
 ### 目录与命名
 
-- 引擎对 `.vert/.frag` **没有任何内置路径**—— 目录约定是**实例惯例而非引擎强制**：GraphicsLib 用 `data/shaders/post/pre.vert`、现代 430 实例用 `data/shaders/` 下的语义命名文件，实例知识规范把 `data/shaders/` 定义为 "GLSL 顶点与片元资源的目录级入口"。教程沿用该惯例 (建议 10)。
+- 引擎对 `.vert/.frag` 没有任何内置路径 —— 目录约定是**实例惯例而不是引擎强制**：GraphicsLib 用 `data/shaders/post/pre.vert`，现代 430 实例在 `data/shaders/` 下用语义命名文件，实例知识规范把 `data/shaders/` 定义为 "GLSL 顶点与片元资源的目录级入口"。教程沿用该惯例 (建议 10)。
 - 文件命名语义化且同基名成对：`GearIn_pulse_shader.vert` 与 `GearIn_pulse_shader.frag` 是一对 (顶点/片元)，基名同时出现在 Java 的两个路径常量里。
 - 本单元不注册任何游戏运行时 ID；工作单元编号不得进入资源名 (示例所有权 `GearIn_pulse_shader.vert/.frag`)。
 
@@ -108,6 +112,8 @@ MOD 根目录下的松散文件 (`data\shaders\...`) 是交付形态 (GraphicsLi
 
 ## 加载链路
 
+路径正确只保证文件能被找到；文本能不能被编译，取决于读取端把它解码成什么。`loadText` 的行为由此成为第一条决定成败的规则。
+
 ### 读取端行为
 
 `loadText` 的调用链：`validateFileName` → 文本读取工具的 `readString`(打开资源流 → `readText`)→ `readText` 按 **UTF-8** 解码并把全部 `\r` 字符剥除 (`replaceAll("\\r", "")`)**，不剥离 BOM**。
@@ -137,6 +143,8 @@ glCreateProgram → glAttachShader → glBindAttribLocation(链接前固定) →
 ```
 
 ## 编译日志 (InfoLog)
+
+编译与链接失败的信息只存在于 InfoLog，而游戏侧不会把它写进任何日志 —— 省略记录，失败就不可见。这一节先确认谁负责写日志，再看 InfoLog 里能读到什么。
 
 ### 谁写日志
 
@@ -173,6 +181,8 @@ init 日志行携带 `vert=`/`frag=` 路径：多对 shader 并存时，靠它�
 
 ## 资源生命周期
 
+程序对象建好之后还不是终点：它绑定在战斗的 GL 上下文上，必须随战斗加载、使用、清理，并支持修改源文件后重载。
+
 四个环节，全部可观察：
 
 ```text
@@ -193,6 +203,8 @@ init 日志行携带 `vert=`/`frag=` 路径：多对 shader 并存时，靠它�
 
 ## 必须遵守的规则汇总
 
+前几节的事实按强度收拢成下表，完整最小例会逐条兑现其中的必须项。
+
 | # | 强度 | 规则 | 违反的可观察结果 |
 |---|---|---|---|
 | 1 | **必须** | shader 资源路径用 MOD 根目录相对路径 + `/` 分隔 (`SettingsAPI.loadText` javadoc；`validateFileName` 实证)| `\`、盘符冒号、`..`、首字符 `/` → `loadText` 前 `validateFileName` 抛 `RuntimeException`(所有平台)；其余错写 → `IOException`(找不到资源)|
@@ -210,7 +222,7 @@ init 日志行携带 `vert=`/`frag=` 路径：多对 shader 并存时，靠它�
 
 ## 完整最小例
 
-在既有 MOD 布局与战斗插件体系之上新增两个 shader 资源与一个插件类 (不新增任何注册项、不改动任何既有文件)：
+规则是散的，下面用一个类把路径、加载、日志与生命周期四件事串成一个可运行的最小例。在既有 MOD 布局与战斗插件体系之上新增两个 shader 资源与一个插件类 (不新增任何注册项、不改动任何既有文件)：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -284,7 +296,7 @@ void main() {
 
 ### GearInPulseRenderer
 
-Java 接入：在分层渲染插件通道上完成加载 (init)、使用 (render)、清理 (cleanup) 与重载 (advance 内定时)。
+Java 接入：在分层渲染插件通道上，四个环节各有一个落点 —— `init` 加载、`render` 使用、`cleanup` 清理、`advance` 内定时重载。
 
 源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C14-S02/src/main/java/data/scripts/gearin/combat/`，页面代码块与磁盘文件逐字一致)：
 
@@ -312,7 +324,7 @@ import com.fs.starfarer.api.combat.ViewportAPI;
 /**
  * 完整最小例：.vert/.frag 的路径、加载、编译日志与资源生命周期。
  *
- * 路径与加载事实（0.98a-RC8）：
+ * 路径与加载事实：
  * - shader 没有注册表 ID（区别于 CSV/JSON/spec 注册链）：.vert/.frag 以 MOD 根目录
  *   相对路径为身份，约定放在 data/shaders/（GraphicsLib data/shaders/post/pre.vert、
  *   data/shaders/ 同款布局），路径必须用 / 分隔（SettingsAPI.loadText javadoc
@@ -561,7 +573,7 @@ public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
             return;
         }
         // 世界→屏幕正交投影：按 GraphicsLib renderForeground 姿势自行设置
-        // （glOrtho(viewport) 以世界单位建投影，org.dark.shaders.util.ShaderLib 第 1485-1489 行），
+        // （glOrtho(viewport) 以世界单位建投影，org.dark.shaders.util.ShaderLib.renderForeground() 同款姿势），
         // 顶点着色器用 gl_ModelViewProjectionMatrix 应用它；矩阵成对 push/pop 复原
         GL11.glMatrixMode(GL11.GL_PROJECTION);
         GL11.glPushMatrix();
@@ -632,7 +644,7 @@ gradle jar
 
 本节源码与 fixture 逐字一致 (shader 两个文件在 `tutorial-fixtures/units/C14-S02/src/main/resources/data/shaders/`，Java 类在 `tutorial-fixtures/units/C14-S02/src/main/java/data/scripts/gearin/combat/`)。
 
-### 验证方案 (基于本例)
+## 验证方案
 
 前置数据：编译链路建立的 MOD 布局 (C06-S01)、`GearIn_test` 测试战役 (C03-S01)、战斗插件体系 (C07-S05，含本节注册片段一行)、分层渲染插件 (C07-S06)、本节新增的 `GearInPulseRenderer` 类与 `data\shaders\GearIn_pulse_shader.vert/.frag`。
 
@@ -644,59 +656,35 @@ gradle jar
    gradle -p tutorial-fixtures compileC14s02Java --no-daemon
    ```
 
-   确认 `BUILD SUCCESSFUL`(退出码 0)。
+   确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
 2. fixture 资源：在 Git Bash 执行：
 
    ```text
    gradle -p tutorial-fixtures validateShaders --no-daemon
    ```
 
-   确认 `BUILD SUCCESSFUL`(退出码 0)。
-3. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/shaders/GearIn_pulse_shader.vert`、`data/shaders/GearIn_pulse_shader.frag`、`data/scripts/gearin/combat/GearInPulseRenderer.class`。
-4. 战役冒烟：进入 `GearIn_test` 一场战斗，`starsector.log` 核对 init 行 (含 `vert=`/`frag=` 路径与 `program=`/`vbo=`/`u_offset=`/`u_time=`)；没有 `gear_in` 引起的 `ERROR`。
-5. 画面：观察玩家舰中心 120 世界单位四边形：橙色脉冲环亮度起伏、波纹由中心向外扩散；四边形跟随舰船移动；位于舰船与导弹之上。
-6. 重载：约 10 秒与 20 秒时各出现一行 `GearIn pulse shader reload: program=<新 id>`，id 与 init 行不同且两次之间也不同；无 ERROR。
-7. 暂停：按空格暂停约 10 秒 —— 脉冲波纹冻结、四边形静止但可见；恢复后继续。
-8. 寿命清理：约 30 秒后四边形消失且 `starsector.log` 出现 `GearIn pulse shader cleanup`。
-9. 跨战斗：退出战斗再进一场 ——init 行重新出现，`program=<id>` 全新，无 ERROR。
-10. 故障注入：a) 把 `.vert` 路径改成反斜杠写法 —— 读取前 `RuntimeException`(`validateFileName` 拒绝)；b) 给 `.frag` 加 BOM 或删一行分号 —— 编译失败，日志 `compile failed:` 带行号 (BOM 报首行)；c) Java 侧把 `"u_time"` 拼错 —— 脉冲静止且无日志；d) 把 `reloadProgram` 改成先删后建并破坏 `.frag`—— 画面中断 (无回退)；e) 改回后确认恢复。
+   确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
+3. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对产物清单。
+4. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中核对 init 行。
+5. 画面：观察玩家舰船中心 120 世界单位见方的四边形。
+6. 重载与暂停：记录战斗开始约 10 秒与 20 秒时的日志；按空格暂停约 10 秒，再恢复。
+7. 寿命与跨战斗：等待约 30 秒；随后退出战斗，再进一场。
+8. 故障注入：a) 把 `.vert` 路径改成反斜杠写法；b) 给 `.frag` 加 BOM 或删一行分号；c) Java 侧把 `"u_time"` 拼错；d) 把 `reloadProgram` 改成先删后建并破坏 `.frag`；e) 全部改回，确认恢复。
 
-通过信号：操作 1–9 全部符合 (详细可观察结果见 "预期结果" 各条)；操作 10 的注入与恢复都符合预期。
+预期结果：
 
-清理：取消勾选测试 MOD；恢复代码与 shader 为原值；确认没有对共享文件 (`tutorial-fixtures/build.gradle` 等) 做过修改。
-
-## 预期结果
-
-1. **fixture 编译 (验收 J)**：在 Git Bash 执行：
-
-   ```text
-   gradle -p tutorial-fixtures compileC14s02Java --no-daemon
-   ```
-
-   以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **fixture 资源 (验收 G)**：在 Git Bash 执行：
-
-   ```text
-   gradle -p tutorial-fixtures validateShaders --no-daemon
-   ```
-
-   以 `BUILD SUCCESSFUL` 结束 (退出码 0)。该任务检查 `units/C14-S02/src/main/resources` 下的所有 `.vert/.frag` 非空。
+1. **fixture 编译 (验收 J)**：以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
+2. **fixture 资源 (验收 G)**：以 `BUILD SUCCESSFUL` 结束 (退出码 0)。该任务检查 `units/C14-S02/src/main/resources` 下的所有 `.vert/.frag` 非空。
 3. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_pulse_shader.vert`、`data/shaders/GearIn_pulse_shader.frag` 与 `data/scripts/gearin/combat/GearInPulseRenderer.class`。
-4. **战斗初始化 (加载 + 日志)**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行：
+4. **战斗初始化 (加载 + 日志)**：`starsector.log` 出现一行：
 
    ```text
    GearIn pulse shader init: program=<id>, vbo=<id>, u_offset=<loc>, u_time=<loc>, vert=data/shaders/GearIn_pulse_shader.vert, frag=data/shaders/GearIn_pulse_shader.frag
    ```
 
    其中 `vert=`/`frag=` 与资源文件路径一致 (四位置完整流程)；没有由 `gear_in` 引起的 `ERROR`。
-5. **画面 (使用)**：玩家舰船中心出现一个 120 世界单位见方的四边形，内部有一个橙色脉冲环 —— 亮度随时间起伏，且起伏呈 "从中心向外扩散" 的波纹 (`u_time * 4.0 - d * 24.0` 行波)；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，分层渲染层序)；舰船移动时四边形跟随 (`u_offset` 每帧更新)。
-6. **重载循环 (生命周期)**：战斗开始约 10 秒与 20 秒时，`starsector.log` 各出现一行：
-
-   ```text
-   GearIn pulse shader reload: program=<新 id>
-   ```
-
-   两次的 `program=<id>` 与 init 行不同 (旧程序已被 `glDeleteProgram` 删除、按同一路径重建)；期间没有 ERROR。
+5. **画面 (使用)**：玩家舰船中心出现一个 120 世界单位见方的四边形，内部橙色脉冲环亮度随时间起伏，起伏呈 "从中心向外扩散" 的波纹 (`u_time * 4.0 - d * 24.0` 行波)；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，分层渲染层序)；舰船移动时四边形跟随 (`u_offset` 每帧更新)。
+6. **重载循环 (生命周期)**：约 10 秒与 20 秒时各出现一行 `GearIn pulse shader reload: program=<新 id>`，两次的 `program=<id>` 都与 init 行不同、彼此也不同 (旧程序已被 `glDeleteProgram` 删除、按同一路径重建)；期间没有 ERROR。
 7. **暂停行为**：按空格暂停 —— 脉冲波纹冻结 (`getTotalElapsedTime(false)` 不累计)、四边形静止但可见 (与分层渲染主题同款)；恢复后继续。
 8. **寿命与清理**：约 30 秒后四边形消失，`starsector.log` 出现一行：
 
@@ -704,45 +692,41 @@ gradle jar
    GearIn pulse shader cleanup
    ```
 
-   即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 7 的可观察面)。同一场战斗内不再出现。
-9. **跨战斗**：退出战斗再进一场 ——init 行重新出现且 `program=<id>` 全新 (每场战斗重建，跨战斗缓存禁令)；无 ERROR。
-10. **故障注入**：见 "实例驱动故障分析" 第 1、2、3、6、8、9 条对应的注入动作与恢复。
+   即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 7 的可观察面)，同一场战斗内不再出现。
+9. **跨战斗**：退出战斗再进一场 —— init 行重新出现且 `program=<id>` 全新 (每场战斗重建，跨战斗缓存禁令)；无 ERROR。
+10. **故障注入**：a 注入后 `loadText` 读取前抛 `RuntimeException` (`validateFileName` 拒绝，对应故障分析第 1 条)；b 注入后 `compile failed:` 带行号 (BOM 报首行，对应第 2、3 条)；c 注入后脉冲静止且无日志 (对应第 6 条)；d 注入后画面中断、无回退 (对应第 8 条)；e 全部改回后重新观察，结果与注入前一致。
 
 静态自查：
 
 - `GearInPulseRenderer` 类源码与 fixture 逐字一致 (包括 import 顺序与注释)；
 - `GearIn_pulse_shader.vert/.frag` 与 fixture 逐字一致；
 - 四位置完整流程中资源文件、加载入口 (Java 常量) 与使用方日志三处路径逐字一致；
-- 没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInPulseRenderer`、资源 `data/shaders/GearIn_pulse_shader.vert/.frag`、日志前缀 `GearIn pulse shader`)；
+- 没有把工作单元编号写进任何包名、类名、资源名或字符串 key (包 `data.scripts.gearin.combat`、类 `GearInPulseRenderer`、资源 `data/shaders/GearIn_pulse_shader.vert/.frag`、日志前缀 `GearIn pulse shader`)；
 - 除本节目录与 fixture 目录外没有改动任何共享文件。
 
-## 实例驱动故障分析
+清理：取消勾选测试 MOD；恢复代码与 shader 为原值；确认没有对共享文件 (`tutorial-fixtures/build.gradle` 等) 做过修改。
 
-1. **路径语法写错**。触发：把 `VERT_PATH` 改成 `"data\\shaders\\GearIn_pulse_shader.vert"`(反斜杠) 或盘符前缀的路径 (盘符)。可观察：`loadText` 在读取前被 `validateFileName` 拒绝 ——`RuntimeException`(所有平台，不只是 OS X/Linux)，异常从 `init` 传播；把路径改成 `"data/GearIn_pulse_shader.vert"`(漏目录) 则 `loadText` 抛 `IOException`，日志出现 `GearIn pulse shader: loadText failed:`。修正：MOD 根相对 + `/` 分隔 (规则 1)，对照四位置完整流程核对路径。
-2. **源文件带 BOM**。触发：用带 BOM 的编辑器保存 `.frag`。可观察：编译失败 ——`starsector.log` 出现 `GearIn pulse shader: compile failed: ERROR: 0:1: ...`(首行 token/字符错误，驱动相关)，init 后无画面。原因：读取端按 UTF-8 解码但不剥 BOM，`\uFEFF` 进入 GLSL 源码。修正：保存为 UTF-8 无 BOM(规则 2；CRLF 则安全)。
-3. **GLSL 语法错误**。触发：删掉 `.frag` 某行分号。可观察：编译失败，InfoLog 含行号与原因，如 `ERROR: 0:5: 'xxx' : syntax error`—— 行号直接指向出错行；init 后无画面，但**游戏不崩溃**(状态检查生效，规则 5)。修正：按 InfoLog 行号定位；这是 "编译日志" 环节最直接的正面演示。
-4. **方言版本与硬件不匹配**。触发：把 `#version 110` 改成 `#version 130` 或更高。可观察：GL 2.0 基线上下文编译失败，InfoLog 含 version 错误。修正：基线用 `#version 110`(方言基线规则)。
-5. **不检查编译/链接状态**。触发：注释掉 `compileShader` 里的 `GL_COMPILE_STATUS` 检查。可观察：错误程序继续使用 —— 内容不出现且失败原因不可见 (与基础主题同类)。修正：状态检查 + InfoLog + 删除对象三连 (规则 5)。
-6. **uniform 名拼错**。触发：把 `"u_time"` 改成 `"uTime"`。可观察：`glGetUniformLocation` 返回 -1，`glUniform1f` 被静默忽略 —— 画面出现但脉冲完全静止，且没有任何日志 (GL 错误不报)。修正：核对名称/类型 (uniform 命名与类型规则)，保留判 -1(建议 11)。
-7. **varying 两侧不一致**。触发：把 `.frag` 的 `v_uv` 改名而 `.vert` 不改。可观察：链接警告 (不失败)，片元读到未定义值 —— 环带颜色恒为 0/黑 (与基础主题同类故障)。修正：两侧同名同类型 (varying 匹配规则)。
-8. **重载先删后建**。触发：把 `reloadProgram` 改成 "先 `glDeleteProgram(program)` 再 `buildProgram()`"。可观察：构建失败 (如源文件此时被改坏) 时旧程序已被删除 —— 画面中断 (四边形消失) 且无回退；本节的 build-then-swap 版本则画面保持 + `reload failed: keeping old program=<id>` ERROR 日志。修正：重建成功才替换 (规则 8)。
-9. **重载后继续绑定旧句柄**。触发：`reloadProgram` 成功后渲染仍 `glUseProgram` 旧的 program id。可观察：渲染输出错位或 OpenGL 状态污染 (实例陷阱原话)，且随每次重载恶化。修正：重载后统一从字段取新 id(规则 7)。
-10. **跨战斗缓存程序**。触发：把 `program` 存进静态字段，第二场战斗不重建。可观察：第二场战斗引用已删句柄 —— 渲染异常/未定义行为 (跨战斗缓存禁令)。修正：每场战斗 `init` 重建 (规则 9)。
-11. **双参 loadText 的 modId 写错**。触发：把 `loadText(path, "gear_in_typo")`。可观察：`getModSpec` 返回 null → 调用点 NPE(与资源读取规则同规)。修正：modId 与 `mod_info.json` 的 `id` 逐字一致 (规则 4)。
+## 故障分析
+
+1. **路径语法写错**：`loadText` 在读取前被 `validateFileName` 拒绝，抛 `RuntimeException` (所有平台，不只是 OS X/Linux)，异常从 `init` 传播；把路径改成 `"data/GearIn_pulse_shader.vert"` (漏目录) 则抛 `IOException`，日志出现 `GearIn pulse shader: loadText failed:`。触发条件：把 `VERT_PATH` 改成 `"data\\shaders\\GearIn_pulse_shader.vert"` (反斜杠) 或盘符前缀的路径。原因：`validateFileName` 对含 `\`、盘符冒号、`..` 或首字符 `/` 的路径直接拒绝 (规则 1)。修正：恢复 MOD 根相对 + `/` 分隔，对照四位置完整流程核对路径。
+2. **源文件带 BOM**：编译失败，`starsector.log` 出现 `GearIn pulse shader: compile failed: ERROR: 0:1: ...` (首行 token/字符错误，驱动相关)，init 后无画面。触发条件：用带 BOM 的编辑器保存 `.frag`。原因：读取端按 UTF-8 解码但不剥 BOM，`\uFEFF` 进入 GLSL 源码。修正：保存为 UTF-8 无 BOM (规则 2；CRLF 换行则安全)。
+3. **GLSL 语法错误**：编译失败，InfoLog 含行号与原因，如 `ERROR: 0:5: 'xxx' : syntax error` —— 行号直接指向出错行；init 后无画面，但游戏不崩溃 (状态检查生效，规则 5)。触发条件：删掉 `.frag` 某行分号。修正：按 InfoLog 行号定位出错行。
+4. **方言版本与硬件不匹配**：GL 2.0 基线上下文编译失败，InfoLog 含 version 错误。触发条件：把 `#version 110` 改成 `#version 130` 或更高。修正：基线用 `#version 110` (方言基线规则)。
+5. **不检查编译/链接状态**：错误程序继续使用 —— 内容不出现且失败原因不可见 (与基础主题同类)。触发条件：注释掉 `compileShader` 里的 `GL_COMPILE_STATUS` 检查。修正：状态检查 + InfoLog + 删除对象三连 (规则 5)。
+6. **uniform 名拼错**：画面出现但脉冲完全静止，且没有任何日志 (GL 错误不报)。触发条件：把 `"u_time"` 改成 `"uTime"`。原因：`glGetUniformLocation` 返回 -1，`glUniform1f` 被静默忽略。修正：核对名称与类型 (uniform 命名与类型规则)，保留判 -1 (建议 11)。
+7. **varying 两侧不一致**：链接只给警告而不失败，片元读到未定义值 —— 环带颜色恒为 0/黑 (与基础主题同类故障)。触发条件：把 `.frag` 的 `v_uv` 改名而 `.vert` 不改。修正：两侧同名同类型 (varying 匹配规则)。
+8. **重载先删后建**：构建失败 (如源文件此时被改坏) 时旧程序已被删除 —— 画面中断 (四边形消失) 且无回退；本节的 build-then-swap 版本则画面保持，日志出现 `reload failed: keeping old program=<id>` ERROR。触发条件：把 `reloadProgram` 改成先 `glDeleteProgram(program)` 再 `buildProgram()`。修正：重建成功才替换 (规则 8)。
+9. **重载后继续绑定旧句柄**：渲染输出错位或 OpenGL 状态污染 (实例陷阱原话)，且随每次重载恶化。触发条件：`reloadProgram` 成功后渲染仍 `glUseProgram` 旧的 program id。修正：重载后统一从字段取新 id (规则 7)。
+10. **跨战斗缓存程序**：第二场战斗引用已删句柄 —— 渲染异常/未定义行为 (跨战斗缓存禁令)。触发条件：把 `program` 存进静态字段，第二场战斗不重建。修正：每场战斗 `init` 重建 (规则 9)。
+11. **双参 loadText 的 modId 写错**：调用点直接 NPE。触发条件：把 `loadText(path, "gear_in_typo")`。原因：`getModSpec` 返回 null (与资源读取规则同规)。修正：modId 与 `mod_info.json` 的 `id` 逐字一致 (规则 4)。
 
 ## 总结
 
-本节把 shader 资源的五条线收拢：
+本节把 shader 从磁盘文件接到了战斗画面，整条链可以用一句话收拢：shader 没有注册表 ID，路径就是身份。排错时先沿四个位置核对路径 (资源文件、加载入口常量、使用方、日志)，再看 `starsector.log`：init 行证明文件被读到，`compile failed` / `link failed` 带行号直接指向源文件问题；画面异常但日志干净时，才需要怀疑 uniform 拼写、varying 匹配这类不报错的问题。
 
-- 路径即身份 (`data/shaders/` 目录约定、MOD 根相对 + `/` 分隔，`\`/盘符/`..`/首字符 `/` 在读取前被拒)；
-- 读取端行为 (UTF-8 解码、剥 `\r`、不剥 BOM，故源文件必须 UTF-8 无 BOM)；
-- 编译日志 (游戏侧零日志，失败 InfoLog 必须由 MOD 侧以 ERROR 写入 `starsector.log`)；
-- 生命周期四环节 (加载 → 使用 → 清理 → 重载，build-then-swap 与禁止跨战斗缓存)；
-- 最简流程 ——`GearInPulseRenderer` 一次覆盖四环节，`starsector.log` 与战斗画面两个可观察位置互相印证。
+生命周期的判断同样可以复用：程序对象随战斗加载与清理，重载按同一路径重建，且只在新程序构建成功后才替换旧程序。按这个顺序检查，改坏 shader 时损失的是效果而不是画面，跨战斗也不会带着已删句柄继续绘制。
 
-从逻辑上看，本节停在 "程序建好、按生命周期维护" 这一环，接下来的展开必然落在两处：一是把数据送进程序 ——uniform、纹理与矩阵的提交 (含依赖库 `ShaderProgram` 封装与另一条加载入口的完整讲解)；二是把渲染插件放进更大的工程结构 —— 渲染层接入、资源释放、开关与性能。
-
-二者都建立在本节 "路径即身份、生命周期完整流程" 的底座上。
+从逻辑上看，本节停在 "程序建好、按生命周期维护" 这一环。要让程序承担更完整的视觉效果，剩下两件事：把数据送进程序 (uniform、纹理与矩阵提交)，以及把渲染插件放进更大的工程结构 (渲染层接入、资源释放、开关与性能)。二者都建立在本节 "路径即身份、生命周期完整流程" 的底座上。
 
 ## 建议参考项
 
@@ -758,5 +742,5 @@ gradle jar
 - `starsector.log`：本节所有日志可观察结果 (游戏安装根相对)。
 - `tutorial-fixtures/units/C14-S02/`：本单元 fixture(Java 类与 shader 资源；页面代码块与磁盘逐字一致)。
 - `org.dark.shaders.util.ShaderLib` / `org.dark.shaders.post.PostProcessShader`(GraphicsLib)：加载/链接失败做法的实例对照。
-- `org.boxutil.util.ShaderUtil`：另一条加载入口 `createShaderVFFormPath(...)`(依赖库消费侧)。
+- `org.boxutil.util.ShaderUtil`：另一条加载入口 `createShaderVFFormPath(...)`(依赖库使用入口)。
 - `tutorial-fixtures/build.gradle`：`javaUnitIds` / `shaderUnitIds` 的单元注册 (fixture 编译与 shader 校验任务)。

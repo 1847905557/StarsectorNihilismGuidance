@@ -20,7 +20,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
 /**
  * 完整最小例：MagicLib 1.5.1 MagicTrailPlugin 的数据、创建、推进、渲染与清理。
  *
- * 由既有战斗插件在 init() 中 addPlugin 注册（C02-S01 模型），只在本场战斗内有效：
+ * 由既有战斗插件在 init() 中 addPlugin 注册（C07-S01 模型），只在本场战斗内有效：
  * - 数据：尾迹 sprite 必须是 settings.json "fx" 分类注册的键（MagicLib 自带
  *   base_trail_smooth / base_trail_contrail 等 12 张，宽高为 2 的倍数、垂直长条）；
  *   本示例不新增 PNG 资产；
@@ -30,7 +30,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
  * - 推进：addTrailMember* 只负责登记段，段的移动/淡出/移除由 MagicTrailPlugin.
  *   advance 完成（暂停时整条冻结，硬规则 8）；每段总寿命 = in + main + out；
  * - 渲染：渲染由 MagicTrailPlugin.init 注册的 MagicTrailRenderer（分层渲染插件，
- *   C07-S05 通道）完成；本示例两条尾迹分别用默认 CONTRAILS_LAYER 与显式
+ *   C07-S06 通道）完成；本示例两条尾迹分别用默认 CONTRAILS_LAYER 与显式
  *   ABOVE_SHIPS_AND_MISSILES_LAYER；
  * - 清理：舰船死亡/战斗结束时 cutTrailsOnEntity 切断旧段（旧段按自身寿命淡出，
  *   新段不再与之相连，硬规则 9）；战斗内全部状态随战斗结束释放，禁止跨战斗缓存

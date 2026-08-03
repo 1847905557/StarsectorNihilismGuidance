@@ -47,7 +47,7 @@ public class GearInLocationSystemBuilder {
 
 		// addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)；
 		// 非恒星行星会被自动挂一个 condition-only 市场（Misc.initConditionMarket），
-		// 因此 addPlanet 之后 getMarket() 立即非 null（正式市场流程归 C08-S04）。
+		// 因此 addPlanet 之后 getMarket() 立即非 null（正式市场流程归 C08-S05）。
 		PlanetAPI planet = system.addPlanet(PLANET_ID, star, "GearIn Demo Prime", "terran", 55, 150, 3200, 120);
 
 		// 自定义实体：type 是 data/config/custom_entities.json 里的键（"stable_location" 为原版键），

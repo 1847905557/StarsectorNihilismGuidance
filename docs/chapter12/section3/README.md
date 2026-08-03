@@ -1,6 +1,6 @@
 # GraphicsLib 初始化、光源、纹理与适用边界
 
-本节讲解硬依赖外部库 GraphicsLib 1.10.0 的四件事：初始化 (`onApplicationLoad` 接入与能力门禁)、光源 (`LightShader` / `LightAPI` / `StandardLight` 动态光源与 `LightData` CSV 自动光源)、纹理 (`TextureData` / `TextureEntry` 材质、法线与表面贴图) 与适用边界 (哪些能力是会话级的、哪些是战斗级的、与分层渲染的关系)。着色器 (shader) 本身的 GLSL 语法与编写由着色器专题完整讲解，本节不展开；硬依赖 (hard dependency) 的声明与运行时检测见前置的硬依赖主题。
+本节将带您接通 GraphicsLib 的初始化与战斗内消费面：从 `onApplicationLoad` 接入、动态光源与自动光源数据，到材质、法线与表面贴图的注册和查询。为什么现在做：您的 MOD 已在 C12-S01 声明了硬依赖，从这里开始它才能在战斗里真正发光。完成后，您会得到四个可编译的示例类、一份能核对到日志与画面的验证流程，以及一套定位光源故障的排查顺序。
 
 *本节预期阅读时间：~25 分钟。*
 
@@ -10,35 +10,36 @@
 
 完成后，您将能够：
 
-- 说出 GraphicsLib 1.10.0 的初始化完整流程：
+- 解释 GraphicsLib 的初始化完整流程：
   - `ShaderModPlugin.onApplicationLoad` → `ShaderLib.init()`(幂等、能力检测)；
   - `areShadersAllowed()` / `areBuffersAllowed()` 双门禁；
   - `LightData` / `TextureData` CSV 注册 → `ShaderAPI` 实例注册。
-  - 每场战斗 `ShaderHook` 挂接。
-- 说出使用方 MOD 为什么**必须**在自己的 `onApplicationLoad` 里先调 `ShaderLib.init()` 再读能力门禁 (`onApplicationLoad` 按 MOD 显示名排序执行，"zz GraphicsLib" 几乎总是最后)。
-- 说出不这么做时可观察的结果："自己的 CSV 静默不注册"。
-- 用 `StandardLight` + `LightShader.addLight()` 在战斗内创建点光源 (point)，说出 line / cone / directional 三种其他类型与挂接、`fadeOut`、`setLifetime`、`makePermanent` 的语义；
-- 说出光源的适用边界：动态光源只在战斗内有效 (战斗 `LocalData` 不存在时 `addLight` 静默跳过)、光源列表随战斗销毁、未永久化的光源 60 秒 failsafe、每帧上限 (默认 100、硬上限 372)、暂停时不推进；
-- 说出 `LightData` / `TextureData` CSV 的注册与查询面：两套读入方法 (覆盖式 vs 先到先得)、行字段、key 组成 (`id + type + frame`)、`TextureEntry.magnitude`。
-- 说出贴图三遍 (material / normal / surface) 如何被 `LightShader` 在战斗内消费；
-- 从症状定位典型故障：启动抗锯齿中止、光源不出现且无报错、挂接光源一分钟后消失、舰船死后残光驻留、自己的 CSV 不生效、大场面光效 pop-in/out、贴图查询返回 none。
+  - 每场战斗 `ShaderHook` 重新实例化并挂载。
+- 解释使用方 MOD 为什么**必须**在自己的 `onApplicationLoad` 里先调 `ShaderLib.init()` 再读能力门禁 (`onApplicationLoad` 按 MOD 显示名排序执行，"zz GraphicsLib" 几乎总是最后)。
+- 解释不这么做时可观察的结果："自己的 CSV 静默不注册"。
+- 用 `StandardLight` + `LightShader.addLight()` 在战斗内创建点光源 (point)，解释 line / cone / directional 三种其他类型与挂载、`fadeOut`、`setLifetime`、`makePermanent` 的语义；
+- 解释光源的适用边界：动态光源只在战斗内有效 (战斗 `LocalData` 不存在时 `addLight` 静默跳过)、光源列表随战斗销毁、未永久化的光源 60 秒 failsafe、每帧上限 (默认 100、硬上限 372)、暂停时不推进；
+- 解释 `LightData` / `TextureData` CSV 的注册与查询面：两套读入方法 (覆盖式 vs 先到先得)、行字段、key 组成 (`id + type + frame`)、`TextureEntry.magnitude`。
+- 解释贴图三遍 (material / normal / surface) 如何被 `LightShader` 在战斗内消费；
+- 从症状定位典型故障：启动抗锯齿中止、光源不出现且无报错、挂载光源一分钟后消失、舰船死后残光驻留、自己的 CSV 不生效、大场面光效 pop-in/out、贴图查询返回 none。
 
 ## 前置知识
 
-本节建立在以下前置内容之上：
+本节直接使用硬依赖库的 Java 接口，并沿用战斗插件与分层渲染的既有通道，请先熟悉以下内容：
 
-- 硬依赖声明与运行时检测 (C12-S01)：本节在 `mod_info.json` 追加 `shaderLib` 依赖，代码里消费 `org.dark.shaders.**` 类；
-- 分层渲染插件通道 (C07-S06)：本节 `ShaderHook` 用 `engine.addLayeredRenderingPlugin(...)` 注册全层钩子、`LightShader` 声明在 `ABOVE_SHIPS_AND_MISSILES_LAYER` 渲染。
-- 两条通道的推进/清理语义同页适用。
-- 战斗插件模型与暂停守卫 (C07-S01)：本节示例是 `EveryFrameCombatPlugin`，用 `engine.isPaused()` 守卫；
-- `modPlugin` 与 `onApplicationLoad()` 时机 (C06-S02)：资源加载完成后、主菜单前；本节接入片段从这里进；
+- 硬依赖声明与运行时检测 (C12-S01)：`mod_info.json` 的 `dependencies` 写法与运行时自检流程；
+- 分层渲染插件通道 (C07-S06)：`engine.addLayeredRenderingPlugin(...)` 的注册方式、`ABOVE_SHIPS_AND_MISSILES_LAYER` 在层序中的位置；
+- 战斗插件模型与暂停检查 (C07-S01)：`EveryFrameCombatPlugin` 的 `advance` 生命周期与 `engine.isPaused()` 的用法；
+- `modPlugin` 与 `onApplicationLoad()` 时机 (C06-S02)：资源加载完成后、主菜单前调用；
 - `Global` 生命周期与战斗外引擎判空 (C06-S03)：战斗外 `getCombatEngine()` 是非 null 空引擎，"战斗内" 判据以 `LocalData` 是否存在为准；
 - MOD 目录与 `mod_info.json`(C01-S01)；
-- GLSL 与 shader 语法 (C14-S01)：完整讲解在着色器专题，本节只描述 GraphicsLib 的接入与消费面，不写 shader 源码。
+- GLSL 语法 (C14-S01)：着色器专题负责 shader 源码，本节只调用 GraphicsLib 的 Java 接口，不编写 GLSL。
 
 `GearInModPlugin` 由前置的 modPlugin 主题单元持有。
 
 ## 适用边界速览 (先记住边界再读细节)
+
+本节的所有入口都以战斗引擎为所属对象。先把两类生命周期分清，后面读初始化与光源细节时才有参照：
 
 | 能力 | 生命周期 | 所属对象 | 说明 |
 |---|---|---|---|
@@ -52,11 +53,13 @@
 
 ## GraphicsLib 初始化 (onApplicationLoad 接入)
 
+边界已经建立：注册是会话级的，而初始化链就是注册发生的唯一位置。先看 GraphicsLib 自己在启动阶段做了什么，再看您的 MOD 应该在哪一步插入。
+
 ### GraphicsLib 自己的初始化链
 
-GraphicsLib 1.10.0 是 utility MOD(`Starsector\mods\GraphicsLib\mod_info.json`：`id` `shaderLib`、`name` `"zz GraphicsLib"`)。
+GraphicsLib 是 utility MOD(`Starsector\mods\GraphicsLib\mod_info.json`：`id` `shaderLib`、`name` `"zz GraphicsLib"`)。
 
-其 `modPlugin` 为 `org.dark.shaders.ShaderModPlugin`、依赖 `lw_lazylib` 3.0.0。
+其 `modPlugin` 为 `org.dark.shaders.ShaderModPlugin`、依赖 `lw_lazylib`。
 
 它的 `ShaderModPlugin.onApplicationLoad()` 依次做：
 
@@ -119,7 +122,7 @@ if (ShaderLib.areShadersAllowed() && ShaderLib.areBuffersAllowed()) {
 
 GraphicsLib 的显示名是 `"zz GraphicsLib"`，几乎必然排在最后 —— 也就是说**本 MOD 的 `onApplicationLoad` 几乎总是先于 GraphicsLib 执行**。
 
-此时若没有先调 `ShaderLib.init()`，`areShadersAllowed()` / `areBuffersAllowed()` 读到的是初始值 false，守卫把 CSV 读取跳过；等 GraphicsLib 初始化完成后，数据也回不来了。
+此时若没有先调 `ShaderLib.init()`，`areShadersAllowed()` / `areBuffersAllowed()` 读到的是初始值 false，CSV 读取被跳过；等 GraphicsLib 初始化完成后，数据也回不来了。
 
 **违反的可观察结果：shader 能力完全正常的机器上，自己的 light/texture CSV 静默未注册**—— 战斗里自动光源/贴图不生效，日志没有任何报错，只有 "查询返回 not registered / none" 这类痕迹。
 
@@ -128,16 +131,16 @@ GraphicsLib 的显示名是 `"zz GraphicsLib"`，几乎必然排在最后 ——
 ::: caution 先 `ShaderLib.init()` 再读能力门禁 (规则 1)
 使用方 MOD 在 `onApplicationLoad` 里读取任何能力门禁或注册 `LightData` / `TextureData` 之前，**必须先调用 `ShaderLib.init()`**。
 
-不先调用时守卫读到初始 false，自己的 CSV 静默不注册 —— 能力全开的机器上自动光源/贴图不生效，且没有任何报错。
+不先调用时能力判断读到初始 false，自己的 CSV 静默不注册 —— 能力全开的机器上自动光源/贴图不生效，且没有任何报错。
 
 `ShaderLib.init()` 幂等，先调无副作用。
 :::
 
-**为什么 CSV 读取要放在能力守卫内**：`LightData` / `TextureData` 的读入方法本身不检查能力 (无条件读入、行非法只打 ERROR 日志不抛出)，但数据只会在 shader 能力具备时被消费；
+**为什么 CSV 读取要放在能力判断内**：`LightData` / `TextureData` 的读入方法本身不检查能力 (无条件读入、行非法只打 ERROR 日志不抛出)，但数据只会在 shader 能力具备时被消费；
 
 `TextureData` 的纹理加载还受 `GRAPHICS_OPTIONS.ini` 的 `loadMaterial` / `enableNormal` / `loadSurface` 门禁控制 (`org.dark.shaders.util.TextureData` 静态初始化块与加载门禁)。
 
-守卫是成熟实例的一致做法，语义是 "不做注定不会被消费的注册"。
+把 CSV 读取放进能力判断是成熟实例的一致做法，语义是 "不做注定不会被消费的注册"。
 
 ### 能力门禁 API(规则 2)
 
@@ -158,6 +161,8 @@ GraphicsLib 的显示名是 `"zz GraphicsLib"`，几乎必然排在最后 ——
 `enableLights:false` 时 `isEnabled()` 为 false，此后所有 `LightShader.addLight` 调用全部静默无效。
 
 ## 光源 (LightShader / LightAPI / StandardLight)
+
+初始化与能力判断就绪后，进入战斗内最常用的消费面：光源。`LightShader` 既负责渲染也充当光源注册中心，先认识四种类型，再学注册与移除，最后看生命周期与上限。
 
 ### 类型速查 (LightAPI)
 
@@ -183,11 +188,11 @@ GraphicsLib 的显示名是 `"zz GraphicsLib"`，几乎必然排在最后 ——
 
 构造器族覆盖四型 (点：location+velocity+offset+attach；线：双端点+双速度+beamAttach；锥：location+velocity+arc；方向：Vector3f 方向)。
 
-**挂接语义**：光源挂接到实体后，`setLocation` / `setVelocity` 不再生效 (javadoc 原文 "Has no effect if the light is attached to something")。
+**挂载语义**：光源挂载到实体后，`setLocation` / `setVelocity` 不再生效 (javadoc 原文 "Has no effect if the light is attached to something")。
 
 位置每帧取自实体 (有非零 offset 时按实体朝向旋转 offset 再叠加，即 `computeOffset` 的逻辑)。
 
-挂接是 "光源跟随舰船/武器" 的标准做法。
+挂载是 "光源跟随舰船/武器" 的标准做法。
 
 ### 注册与移除：LightShader.addLight / removeLight
 
@@ -210,7 +215,7 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 
 ### 推进、生命周期与清理 (规则 5、6)
 
-`LightShader.advance(amount, events)` 在**非暂停**时对列表逐个调 `light.advance(amount)`，返回 true 的光源被移除 (推进循环带 `if (!engine.isPaused())` 守卫)。
+`LightShader.advance(amount, events)` 在**非暂停**时对列表逐个调 `light.advance(amount)`，返回 true 的光源被移除 (推进循环先做 `if (!engine.isPaused())` 检查)。
 
 暂停时光源不推进 (静止但可见)，与分层渲染插件的暂停语义一致。
 
@@ -221,11 +226,11 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 - **未永久化的光源有 60 秒 failsafe**：`superLifetime` 默认 60 秒，耗尽即移除 ——javadoc 原文 "By default, lights disappear after one minute to avoid 'light leaks'"。
 - 需要长期存在的光源 (如常驻的舰船灯、引擎灯)**必须 `makePermanent()`**(lifetime 与 superLifetime 均置 -1)。
 - 违反的可观察结果：光源的 size/intensity 一切正常，却在约 60 秒后消失。
-- **挂接实体的光源不会因实体死亡自动清理**：`LightShader` 只对 projectile 与 beam 维护附着关系清理，对普通 `CombatEntityAPI` 挂接没有任何生命周期跟踪。
+- **挂载在实体上的光源不会因实体死亡自动清理**：`LightShader` 只对 projectile 与 beam 维护附着关系清理，对普通 `CombatEntityAPI` 挂载没有任何生命周期跟踪。
 - 实体死亡后必须自己 `fadeOut` 或 `removeLight`，否则残光留在原地 (这正是 failsafe 存在的理由)。规则 6。
 
 ::: caution 常驻必须 makePermanent，实体死亡必须自己清理 (规则 5、6)
-未永久化的光源 60 秒后会被 failsafe 移除；挂接在普通实体上的光源，实体死亡后引擎不会自动清理。需要长期存在的光源**必须 `makePermanent()`**；实体死亡后**必须自己 `fadeOut` / `removeLight`**，否则残光驻留原地 ("光泄漏")。
+未永久化的光源 60 秒后会被 failsafe 移除；挂载在普通实体上的光源，实体死亡后引擎不会自动清理。需要长期存在的光源**必须 `makePermanent()`**；实体死亡后**必须自己 `fadeOut` / `removeLight`**，否则残光驻留原地 ("光泄漏")。
 :::
 
 ::: tip 短命光源的标准写法
@@ -269,6 +274,8 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 
 ## 纹理 (TextureData / TextureEntry)
 
+光源决定了哪里亮，纹理三遍则决定亮起来像什么：材质、法线与表面贴图分别在 `LightShader` 同一渲染回调里被消费。先看注册与查询面，再看三遍如何发生。
+
 `org.dark.shaders.util.TextureData` 维护 material(材质)、normal(法线)、surface(表面) 三张贴图表，供 `LightShader` 战斗内的三遍光照渲染消费，也可以由 MOD 代码查询 (本节示例的消费面)。
 
 ### 注册与查询速查
@@ -293,7 +300,7 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
   - `ShaderLib.getShipTexture(ship, type)` 按 hullId → D-parent hullId → base hullId 三级回退解析；`ShaderLib.getWeaponTexture(weapon, type, objType, frame)`(1.10.0 新增，含 weapon skin 解析)。
   - `ShaderLib.overrideShipTexture(ship, id)` / `overrideWeaponTexture(weapon, id)` 改写解析源 (引擎 customData 键 `SL_shipTexOvd` / `SL_wpnTexOvd`)。
 
-### 消费遍 (与分层渲染的关系)
+### 消费面 (与分层渲染的关系)
 
 `LightShader.renderInWorldCoords`(`ABOVE_SHIPS_AND_MISSILES_LAYER` 层，经 `ShaderCombatLayerHook` 派发) 内部跑三遍：
 
@@ -314,6 +321,8 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 
 ## 文件与 API 链路
 
+上面各小节的机制分散在正文里，把整条链收进一张表，方便回查与核对：
+
 | 环节 | 文件或 API | 使用方 / 行为 |
 |---|---|---|
 | 依赖声明 | `mod_info.json` 的 `dependencies` 追加 `{"id":"shaderLib","name":"GraphicsLib"}` | 硬依赖自检 (C12-S01) 的启动器检查 (缺装即红色不可勾选)|
@@ -330,6 +339,8 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 
 ## 规则汇总
 
+机制讲完，把必须遵守的边界整理成规则表。必须级条目都带违反后的可观察结果；建议级两条是编者的取舍判断：
+
 | # | 强度 | 规则 | 违反的可观察结果 |
 |---|---|---|---|
 | 1 | **必须** | 使用方 MOD 在 `onApplicationLoad` 里读取任何能力门禁或注册 `LightData` / `TextureData` 前，必须先调用 `ShaderLib.init()`(幂等；`onApplicationLoad` 按 MOD 显示名排序，"zz GraphicsLib" 几乎总是最后执行)| 能力正常的环境里自己的 CSV 静默未注册：自动光源/贴图不生效、查询返回 not registered / none，无任何报错 |
@@ -337,7 +348,7 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 | 3 | **必须** | 启动器抗锯齿开启且 `aaCompatMode` 未开时游戏无法启动 (GraphicsLib 自己的 `onApplicationLoad` 抛异常)| 加载末段中止，日志出现 "GraphicsLib shaders are not fully compatible with antialiasing!"；三选项 (关 AA / `aaCompatMode:true` / `enableShaders:false`)|
 | 4 | **必须** | 动态光源只能在战斗内、战斗 `LocalData` 创建后添加 (`addLight` 静默跳过其余情况)| 战役画面/战斗早期调用 `addLight`：光源不出现且无任何报错 |
 | 5 | **必须** | 需要长期存在的光源必须 `makePermanent()`(否则 60 秒 superLifetime failsafe 移除)| 光源一切参数正常却在约 1 分钟后消失 |
-| 6 | **必须** | 挂接实体的光源在实体死亡后必须自己 `fadeOut` / `removeLight`(`LightShader` 只自动清理 projectile / beam 附着)| 残光驻留在尸体位置 ("光泄漏")|
+| 6 | **必须** | 挂载在实体上的光源在实体死亡后必须自己 `fadeOut` / `removeLight`(`LightShader` 只自动清理 projectile / beam 附着)| 残光驻留在尸体位置 ("光泄漏")|
 | 7 | **必须** | 光源 / `TextureEntry` 引用禁止跨战斗缓存 (`LocalData` 随战斗重建；会话级对象禁止跨战斗缓存)| 第二场战斗起引用静默失效 |
 | 8 | **必须** | `LightData` 行 `type` 只接受 `projectile` / `beam`；`TextureData` 行 `type` / `map` 必须是合法枚举名；两套 CSV 行缺必填字段都静默跳过 | 行未注册：该 id 的光源/贴图不生效，无报错 |
 | 9 | **必须** | `LightData` 覆盖式加载是整行替换：覆盖行未写的组 (standard / hit / flash) 会变成 "无此组" | 用只写 standard 组的行覆盖原行后，命中/闪光光效丢失 |
@@ -347,7 +358,7 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 
 ## 完整最小例
 
-在累计工程布局 (前文的 MOD 骨架与战斗演示) 上追加 (MOD 根目录 `Starsector\mods\GearIndustry`)：
+规则有了，还需要一个能编译、能运行、能观察的落点。您将在累计工程上追加一个 CSV 与四个类，全部挂在既有工程布局 (MOD 骨架与战斗演示) 上，根目录为 `Starsector\mods\GearIndustry`：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -371,6 +382,8 @@ Starsector\mods\GearIndustry\
 │           └── GearInLightReporter      # 本节新增：门禁与数据查询报告
 └── jars\
 ```
+
+四个类里，`GearInLightCombatPlugin` 是唯一需要注册的入口；编者把查询与日志单独拆给 `GearInLightReporter`，让您不看画面也能核对状态。按顺序追加：
 
 ### mod_info.json(在既有 dependencies 上追加一项)
 
@@ -425,7 +438,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
 /**
  * 完整最小例：GraphicsLib 光源与纹理的最小消费面（战斗内）的接线插件。
  *
- * 适用边界（0.98a-RC8，GraphicsLib 1.10.0）：
+ * 适用边界：
  * - GraphicsLib 的初始化与 LightData/TextureData CSV 注册发生在 onApplicationLoad
  *   （本 MOD 的接入片段见页面正文，fixture 不含该片段）；
  * - ShaderHook（settings plugins 注册的 EveryFrameCombatPlugin）在每场战斗开始时
@@ -460,7 +473,7 @@ public class GearInLightCombatPlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine == null) {
-            return; // 防御性判空（C02-S01 同款姿势）
+            return; // 防御性判空（C07-S01 同款姿势）
         }
         if (engine.isPaused()) {
             return; // 暂停守卫（C07-S01）：暂停时 advance 仍会被调用，光源静止但保持可见
@@ -473,11 +486,11 @@ public class GearInLightCombatPlugin extends BaseEveryFrameCombatPlugin {
 ```
 
 - **职责**：战斗侧的薄接入入口类。`init` 时驱动 `GearInLightReporter` 的三面报告 (能力门禁、两行 `LightData` 查询、`TextureData` 贴图查询)。
-- `advance` 先做防御性判空与暂停守卫，再把玩家舰船分别交给 `GearInShipLight` 与 `GearInFlashSpawner` 逐帧推进。自己不创建光源，也不直接查询数据。
-- **协作**：包内协作三个类 ——`GearInShipLight`(挂接光源实体)、`GearInFlashSpawner`(周期闪光生成)、`GearInLightReporter`(门禁与数据查询报告)；无跨单元引用。
-- **绑定位置**：战斗引擎插件注册 (`engine.addPlugin(new GearInLightCombatPlugin())`，见下文注册片段)—— 四个类中唯一被外部挂接的入口。插件实例每场战斗新建，`flash` 计数等状态随实例自然重置。
+- `advance` 先做防御性判空与暂停检查，再把玩家舰船分别交给 `GearInShipLight` 与 `GearInFlashSpawner` 逐帧推进。自己不创建光源，也不直接查询数据。
+- **协作**：包内协作三个类 ——`GearInShipLight`(挂载光源实体)、`GearInFlashSpawner`(周期闪光生成)、`GearInLightReporter`(门禁与数据查询报告)；无跨单元引用。
+- **绑定位置**：战斗引擎插件注册 (`engine.addPlugin(new GearInLightCombatPlugin())`，见下文注册片段)—— 四个类中唯一由外部注册的入口。插件实例每场战斗新建，`flash` 计数等状态随实例自然重置。
 
-### 例 2：GearInShipLight—— 挂接光源实体
+### 例 2：GearInShipLight—— 挂载光源实体
 
 ```java
 package data.scripts.gearin.visuals;
@@ -542,11 +555,11 @@ public class GearInShipLight {
 }
 ```
 
-- **职责**：玩家舰船常驻暖色点光源的生命周期。每帧 `update`：战斗首帧 (`added` 标志) 创建挂接光源。
+- **职责**：玩家舰船常驻暖色点光源的生命周期。每帧 `update`：战斗首帧 (`added` 标志) 创建挂载光源。
 - 创建写法：`StandardLight(location, velocity, offset, attach, intensity, size)` 六参构造 + `setColor` + `makePermanent()`(规则 5)+ `LightShader.addLight`。
-- 挂接后光源位置每帧取自舰船，offset 按朝向旋转，`setLocation` 对挂接光源无效。
+- 挂载后光源位置每帧取自舰船，offset 按朝向旋转，`setLocation` 对挂载光源无效。
 - 玩家舰船死亡后 `fadeOut(1f)` 自灭 (规则 6)。
-- **协作**：由 `GearInLightCombatPlugin.advance` 在暂停守卫之后驱动。
+- **协作**：由 `GearInLightCombatPlugin.advance` 在暂停检查之后驱动。
 - **绑定位置**：无独立注册入口 —— 普通实体类，由接入插件持有并驱动。
 
 ### 例 3：GearInFlashSpawner—— 周期闪光生成器
@@ -608,7 +621,7 @@ public class GearInFlashSpawner {
 ```
 
 - **职责**：按固定间隔 (2 秒) 在玩家舰船周围随机位置生成一盏 `fadeOut(0.5f)` 自灭的淡蓝短命点光源并计数 (`GearIn light flash: #N` 日志；计数随插件实例每场战斗从 `#1` 重置，规则 7 的观察面)。
-- **协作**：由 `GearInLightCombatPlugin.advance` 在暂停守卫之后驱动 (暂停时不推进、间隔不累计)。
+- **协作**：由 `GearInLightCombatPlugin.advance` 在暂停检查之后驱动 (暂停时不推进、间隔不累计)。
 - **绑定位置**：无独立注册入口 —— 普通实体类，由接入插件持有并驱动。
 
 ### 例 4：GearInLightReporter—— 门禁与数据查询报告
@@ -712,7 +725,7 @@ public class GearInLightReporter {
   - 命中时格式 `standard=<b> size=<f> intensity=<f> chance=<f> fighterDim=<b>`；未注册时 `not registered`。
 - `GearIn light texture:` —— 由 `GearInLightReporter.reportShipTextures(...)` 输出，格式 `hull=<id> material=<m> normal=<m> surface=<m> shipTex=<m>`；
 - `GearIn light ship:` —— 由 `GearInShipLight` 输出两处：
-  - 挂接成功：`attached light added offset=(0.0, 60.0) size=150.0 intensity=1.0`。
+  - 挂载成功：`attached light added offset=(0.0, 60.0) size=150.0 intensity=1.0`。
   - 玩家舰船死亡：`player destroyed, fading out attached light`。
 - `GearIn light flash:` —— 由 `GearInFlashSpawner` 每次生成输出，格式 `#<n> at (<x>, <y>)`(编号随插件实例每场战斗从 `#1` 重置)。
 
@@ -751,139 +764,118 @@ public class GearInLightReporter {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/visuals` 下的四个新类 (可用 `jar tf` 核对)。本节代码块与 fixture 逐字一致，fixture 编译验收命令见 "预期结果"。
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/visuals` 下的四个新类 (可用 `jar tf` 核对)。本节代码块与 fixture 逐字一致，fixture 编译验收命令见 "验证方案"。
 
-### 验证方案 (基于本例)
+### 验证方案
 
-- 前置数据：累计工程 (C12-S02)+ `mod_info.json` 追加 `shaderLib` 依赖 + `data\lights\GearIn_light_data.csv` + 四个示例类。
-  - 接入：`GearInModPlugin.onApplicationLoad` 内追加本节接入片段 (C06-S02)+ 测试战役 `GearIn_test`(C03-S01，含本节注册片段一行)。
-  - 本机已安装 GraphicsLib 1.10.0(启动器勾选)。
-- 操作 1(fixture 编译)：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC12s03Java --no-daemon`，确认 `BUILD SUCCESSFUL`(退出码 0)。
-- 操作 2(游戏构建)：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/visuals` 下四个新类。
-- 操作 3(启动检查)：确认启动器抗锯齿为 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`) 后启动游戏进入主菜单 —— 无 "not fully compatible with antialiasing" 中止。
-- 操作 4(战斗冒烟)：进入 `GearIn_test` 一场战斗，`starsector.log` 核对五个报告行 (`capabilities` / 两行 `light data` / `texture` / `ship`)，无 `gear_in` 引起的 `ERROR`。
-- 操作 5(画面)：观察玩家舰船暖色光晕 (跟随移动、随朝向偏移)、每 2 秒淡蓝闪光 (约 0.5 秒自灭)、轻型自动炮暖白曳光与点防御光束光晕 (覆盖行生效)。
-- 操作 6(暂停)：按空格暂停约 10 秒 —— 光源静止但可见；恢复后继续 (暂停期间不产生新闪光)。
-- 操作 7(生命期)：把 `makePermanent()` 注释掉后进战斗 —— 挂接光晕约 60 秒后消失 (failsafe)；改回后确认光晕长期存在。
-- 操作 8(死亡清理)：击毁玩家舰船 —— 日志出现 `GearIn light ship: player destroyed, fading out attached light`，光晕约 1 秒淡出消失。
-- 操作 9(跨战斗)：退出再进一场 —— 报告行重现、`flash` 编号从 `#1` 重置、无显存/画面异常累积。
-- 操作 10(故障注入·初始化顺序)：注释接入片段里的 `ShaderLib.init();` 后重启 —— `capabilities` 仍 true 但两行 `light data` 变 `not registered`(对应故障 5)；改回后恢复。
-- 操作 11(故障注入·覆盖语义)：把 CSV 的 `lightac_shot` 行删掉 hit 组三列 (`hit size` 等留空) 后重启 —— 命中爆炸光消失 (对应故障 7)；改回后恢复。
-- 操作 12(故障注入·能力门禁，可选)：把 `GRAPHICS_OPTIONS.ini` 的 `enableShaders` 改 `false` 后重启 ——`capabilities` 全 false、光源全无；改回后恢复。
-- 补充：改 `enableLights` 只影响 `lightShaderEnabled` 与光源，不影响 CSV 注册行，两者可观察结果不同。
-- 通过信号：操作 1–9 全部符合；操作 10–12 的注入与恢复都符合预期。
-- 清理：取消勾选测试 MOD；恢复 `GRAPHICS_OPTIONS.ini` 与 CSV 为原值；确认没有对共享文件 (如 `tutorial-fixtures\build.gradle`) 做过修改。
+前置数据：确认以下内容已就绪 —— 累计工程 (C12-S02)、`mod_info.json` 追加 `shaderLib` 依赖、`data\lights\GearIn_light_data.csv` 与四个示例类；`GearInModPlugin.onApplicationLoad` 内追加本节接入片段 (C06-S02)；测试战役 `GearIn_test`(C03-S01) 含本节注册片段一行；本机已安装 GraphicsLib(启动器勾选)。
 
-## 预期结果
+操作步骤：
 
-1. **fixture 编译 (验收 J)**：在 Git Bash 执行。
+1. 构建与产物核对：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC12s03Java --no-daemon`，确认 `BUILD SUCCESSFUL`(退出码 0)；随后在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/visuals` 下四个新类。
+2. 启动检查：确认启动器抗锯齿为 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`) 后启动游戏进入主菜单 —— 无 "not fully compatible with antialiasing" 中止。
+3. 战斗冒烟与画面：进入 `GearIn_test` 一场战斗，`starsector.log` 核对五个报告行 (`capabilities` / 两行 `light data` / `texture` / `ship`)，无 `gear_in` 引起的 `ERROR`；随后观察玩家舰船暖色光晕 (跟随移动、随朝向偏移)、每 2 秒淡蓝闪光 (约 0.5 秒自灭)、轻型自动炮暖白曳光与点防御光束光晕 (覆盖行生效)。
+4. 暂停：按空格暂停约 10 秒 —— 光源静止但可见；恢复后继续 (暂停期间不产生新闪光)。
+5. 生命周期：把 `makePermanent()` 注释掉后进战斗 —— 挂载光晕约 60 秒后消失 (failsafe)，改回后确认光晕长期存在；随后击毁玩家舰船 —— 日志出现 `GearIn light ship: player destroyed, fading out attached light`，光晕约 1 秒淡出消失。
+6. 跨战斗：退出再进一场 —— 报告行重现、`flash` 编号从 `#1` 重置、无显存/画面异常累积。
+7. 故障注入·初始化顺序与覆盖语义：① 注释接入片段里的 `ShaderLib.init();` 后重启 —— `capabilities` 仍 true 但两行 `light data` 变 `not registered`(对应故障 5)，改回后恢复；② 把 CSV 的 `lightac_shot` 行删掉 hit 组三列 (`hit size` 等留空) 后重启 —— 命中爆炸光消失 (对应故障 7)，改回后恢复。
+8. 故障注入·能力门禁，可选：把 `GRAPHICS_OPTIONS.ini` 的 `enableShaders` 改 `false` 后重启 —— `capabilities` 全 false、光源全无；改回后恢复。
+
+补充：改 `enableLights` 只影响 `lightShaderEnabled` 与光源，不影响 CSV 注册行，两者可观察结果不同。
+
+预期结果：
+
+1. **构建与产物**：fixture 编译 (验收 J)：在 Git Bash 执行
 ```text
 gradle -p tutorial-fixtures compileC12s03Java --no-daemon
 ```
-以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/visuals/GearInLightCombatPlugin.class` 等四个新类。
-3. **启动检查**：启动器抗锯齿处于 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`)；游戏正常进入主菜单，`starsector.log` 没有 "GraphicsLib shaders are not fully compatible with antialiasing!"(规则 3 的正面)。
-4. **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 依次出现：
+以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/visuals/GearInLightCombatPlugin.class` 等四个新类。
+2. **启动检查**：启动器抗锯齿处于 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`)；游戏正常进入主菜单，`starsector.log` 没有 "GraphicsLib shaders are not fully compatible with antialiasing!"(规则 3 的正面)。
+3. **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 依次出现：
 ```text
 GearIn light capabilities: shaders=true buffers=true lightShaderEnabled=true GearIn light data: lightac_shot (projectile) standard=true size=90.0 intensity=0.4 chance=1.0 fighterDim=true GearIn light data: pdlaser (beam) standard=true size=50.0 intensity=0.7 chance=1.0 fighterDim=true GearIn light texture: hull=<玩家船体id> material=mag=<m> tex=<id> normal=mag=<m> tex=<id> surface=... shipTex=mag=<m> tex=<id> GearIn light ship: attached light added offset=(0.0, 60.0) size=150.0 intensity=1.0
 ```
 没有 `gear_in` 引起的 `ERROR`。`texture` 行的 `material` / `normal` 取决于核心 `core_texture_data.csv` 是否注册了该船体 (原版船体通常都有)；`surface` 可能为 `none`(surface 表覆盖较少且依赖 `loadSurface` 门禁)。
-5. **画面结果**：玩家舰船被暖色 (255,210,130) 光晕笼罩，光晕随舰船移动、随朝向偏移。
+4. **画面结果**：玩家舰船被暖色 (255,210,130) 光晕笼罩，光晕随舰船移动、随朝向偏移。
    - 每 2 秒舰船周围随机位置闪一次淡蓝 (120,220,255) 闪光并在约 0.5 秒内消失。
    - 轻型自动炮 (lightac) 飞行中带持续的暖白曳光、命中点出现爆炸光 (核心行无 hit 组，覆盖行新增；核心原有 flash 组被整行替换丢弃)。
    - 点防御光束 (pdlaser) 带暖色光晕。
-6. **覆盖生效**：把本节 CSV 的 `lightac_shot` 行 `size` 改回 `50`(与核心一致) 再对比 —— 曳光明显变小；`90` 时更大。注意 `readLightDataCSV` 是**覆盖式**：改 CSV 后重启游戏即可 (数据在 `onApplicationLoad` 注册)。
-7. **暂停行为**：按空格暂停 —— 光源静止 (闪光停在原地、光晕不随舰船淡出变化) 但**仍然可见**；恢复后继续。
-8. **生命期**：闪光每次都在约 0.5 秒内消失 (fadeOut 自灭)；挂接光晕持续存在 —— 等待超过 60 秒仍在 (`makePermanent` 生效，规则 5 的正面)。若把 `makePermanent()` 注释掉 (故障注入)，光晕在第 60 秒附近消失。
-9. **失效与清理**：击毁玩家舰船 ——`starsector.log` 出现 `GearIn light ship: player destroyed, fading out attached light`，光晕约 1 秒内淡出消失 (规则 6)；闪光停止产生 (`player.isAlive()` 守卫)。
-10. **战斗结束**：退出战斗再进一场 —— 五个日志行重新出现、`flash` 编号从 `#1` 重新开始 (每场战斗全新 `LocalData`，规则 7 的正面)；连续多场战斗后画面与显存无异常累积。
-11. **变更验证 (能力门禁注入)**：把 `GRAPHICS_OPTIONS.ini` 的 `enableShaders` 改为 `false` 后重启游戏。
-   - `capabilities` 行变 `shaders=false buffers=false lightShaderEnabled=false`，两行 `light data` 变 `not registered`(接入片段里的守卫把 CSV 读取跳过了)，战斗中无任何光源。
-   - 恢复：改回 `true` 后恢复。
-   - 对照：`enableLights:false` 时 `lightShaderEnabled=false`、光源全无，但 CSV 仍注册 (守卫只查 shaders/buffers)—— 两条门禁的可观察结果不同，注意区分。
-12. **变更验证 (初始化顺序注入)**：把接入片段里的 `ShaderLib.init();` 注释掉后重启游戏。
-   - `capabilities` 行**仍然** `lightShaderEnabled=true`(战斗时 GraphicsLib 早已初始化)，但两行 `light data` 变 `not registered`(本 MOD 的 CSV 在守卫 false 时被跳过)。
-   - "能力全开但自己的数据没注册" 正是规则 1 描述的迷惑症状；改回后恢复。
+5. **覆盖生效与暂停**：把本节 CSV 的 `lightac_shot` 行 `size` 改回 `50`(与核心一致) 再对比 —— 曳光明显变小；`90` 时更大。注意 `readLightDataCSV` 是**覆盖式**：改 CSV 后重启游戏即可 (数据在 `onApplicationLoad` 注册)。按空格暂停 —— 光源静止 (闪光停在原地、光晕不随舰船淡出变化) 但**仍然可见**；恢复后继续。
+6. **生命期与失效清理**：闪光每次都在约 0.5 秒内消失 (fadeOut 自灭)；挂载光晕持续存在 —— 等待超过 60 秒仍在 (`makePermanent` 生效，规则 5 的正面)。若把 `makePermanent()` 注释掉 (故障注入)，光晕在第 60 秒附近消失。击毁玩家舰船 ——`starsector.log` 出现 `GearIn light ship: player destroyed, fading out attached light`，光晕约 1 秒内淡出消失 (规则 6)；闪光停止产生 (`player.isAlive()` 检查)。
+7. **战斗结束 (跨战斗)**：退出战斗再进一场 —— 五个日志行重新出现、`flash` 编号从 `#1` 重新开始 (每场战斗全新 `LocalData`，规则 7 的正面)；连续多场战斗后画面与显存无异常累积。
+8. **变更验证 (故障注入)**：
+   - **能力门禁注入**：把 `GRAPHICS_OPTIONS.ini` 的 `enableShaders` 改为 `false` 后重启游戏。`capabilities` 行变 `shaders=false buffers=false lightShaderEnabled=false`，两行 `light data` 变 `not registered`(接入片段里的能力判断把 CSV 读取跳过了)，战斗中无任何光源。恢复：改回 `true` 后恢复。对照：`enableLights:false` 时 `lightShaderEnabled=false`、光源全无，但 CSV 仍注册 (能力判断只查 shaders/buffers)—— 两条门禁的可观察结果不同，注意区分。
+   - **初始化顺序注入**：把接入片段里的 `ShaderLib.init();` 注释掉后重启游戏。`capabilities` 行**仍然** `lightShaderEnabled=true`(战斗时 GraphicsLib 早已初始化)，但两行 `light data` 变 `not registered`(本 MOD 的 CSV 在能力判断 false 时被跳过)。"能力全开但自己的数据没注册" 正是规则 1 描述的迷惑症状；改回后恢复。
 
-静态自查：`GearIn_light_data.csv` 为 UTF-8 无 BOM；
+通过信号：步骤 1–6 全部符合；步骤 7–8 的注入与恢复都符合预期。
 
-两行 id 与原版 `data\weapons\proj\lightac_shot.proj`、`data\weapons\weapon_data.csv` 的 `pdlaser` 行一致；
+清理：取消勾选测试 MOD；恢复 `GRAPHICS_OPTIONS.ini` 与 CSV 为原值；确认没有对共享文件 (如 `tutorial-fixtures\build.gradle`) 做过修改。
 
-四个示例类与 fixture 逐字一致 (包括 import 顺序与注释)；
+静态自查：
 
-没有把工作单元编号写进任何包名、类名、资源名或字符串 key：
-- 包 `data.scripts.gearin.visuals`；
-- 类 `GearInLightCombatPlugin` / `GearInShipLight` / `GearInFlashSpawner` / `GearInLightReporter`。
-- 日志前缀 `GearIn light ...`。
+- `GearIn_light_data.csv` 为 UTF-8 无 BOM；
+- 两行 id 与原版 `data\weapons\proj\lightac_shot.proj`、`data\weapons\weapon_data.csv` 的 `pdlaser` 行一致；
+- 四个示例类与 fixture 逐字一致 (包括 import 顺序与注释)；
+- 没有把工作单元编号写进任何包名、类名、资源名或字符串 key：包 `data.scripts.gearin.visuals`；类 `GearInLightCombatPlugin` / `GearInShipLight` / `GearInFlashSpawner` / `GearInLightReporter`；日志前缀 `GearIn light ...`；
+- 除本节目录与 fixture 目录外没有改动任何共享文件。
 
-除本节目录与 fixture 目录外没有改动任何共享文件。
+## 故障分析
 
-## 实例驱动故障分析
+以下故障按您在日志和画面上看到的症状组织，每条给出触发条件、断链原因和核对顺序。
 
 1. **光源不出现，代码看起来完全没问题**。
   - 触发：`GRAPHICS_OPTIONS.ini` 的 `enableLights:false`(或 `enableShaders:false` / GPU 不支持 FBO)。
-  - 可观察：`capabilities` 行 `lightShaderEnabled=false`，`addLight` 全部静默无效 (`org.dark.shaders.light.LightShader`)。
+  - 原因：`LightShader` 构造器读入 `enableLights`，关闭时 `isEnabled()` 为 false，此后所有 `addLight` 调用全部静默无效；`capabilities` 行会显示 `lightShaderEnabled=false`。
   - 修正：开 `enableLights` / `enableShaders`；GPU 不支持时无解 (门禁本意)。排查入口永远是先看 `capabilities` 行。
 2. **战役画面 (或战斗初始化前) 调 `addLight` 没反应**。
   - 触发：在 `onApplicationLoad`、战役脚本、战斗 `MissionDefinitionAPI.defineMission` 早期调用 `addLight`。
-  - 可观察：光源不出现、无报错 ——`LocalData` 是 `ShaderHook.init` 在战斗初始化阶段才创建的 (`LightShader.initCombat`)，不存在时 `addLight` 直接返回。
+  - 原因：`LocalData` 由 `ShaderHook.init` 在战斗初始化阶段才创建 (`LightShader.initCombat`)，光源列表不存在时 `addLight` 直接返回，没有任何报错。
   - 修正：光源创建放到战斗推进回调 (`EveryFrameCombatPlugin.advance` / 部署监听器 / 武器效果)，本节示例延迟到战斗首帧 (规则 4)。
-3. **挂接光源一分钟后消失**。
+3. **挂载光源一分钟后消失**。
   - 触发：没调 `makePermanent()`。
-  - 可观察：第 60 秒附近光源消失，`size` / `intensity` 一切正常 (superLifetime failsafe，`org.dark.shaders.light.StandardLight`)。
+  - 原因：`StandardLight` 的 `superLifetime` 默认 60 秒，耗尽即被 failsafe 移除；此时 `size` / `intensity` 一切正常，最容易误判。
   - 修正：常驻光源 `makePermanent()`(规则 5)。
 4. **舰船被击毁后残光驻留原地**。
-  - 触发：挂接光源没在舰船死亡时清理。
-  - 可观察：光晕留在残骸位置继续渲染 ——`LightShader` 只自动清理 projectile / beam 的附着，普通实体挂接无人管。
+  - 触发：挂载光源没在舰船死亡时清理。
+  - 原因：`LightShader` 只自动清理 projectile / beam 的附着，普通实体挂载没有生命周期跟踪，残光继续在原地渲染。
   - 修正：自己的 `advance` 里判 `isAlive()` 并 `fadeOut` / `removeLight`(规则 6，本节示例 `GearInShipLight.update`)。
 5. **自己的 light CSV 不生效，但 `capabilities` 全 true**。
   - 触发：`onApplicationLoad` 里没先调 `ShaderLib.init()` 就读能力门禁。
-  - 可观察：`light data` 行 `not registered`，战斗内该武器无自动光源，无任何报错 —— `onApplicationLoad` 按 MOD 显示名排序，"zz GraphicsLib" 几乎总是最后执行，门禁先读到初始 false。
+  - 原因：`onApplicationLoad` 按 MOD 显示名排序执行，"zz GraphicsLib" 几乎总是最后；本 MOD 先执行时门禁读到初始 false，CSV 读取被跳过，等 GraphicsLib 初始化完成后数据也回不来了。
+  - 可观察：`light data` 行 `not registered`，战斗内该武器无自动光源，无任何报错。
   - 修正：接入片段先 `ShaderLib.init()`(幂等) 再读门禁 (规则 1)。
 6. **CSV 行写了但没注册**。
   - 触发：`type` 拼错 (如 `projectile` 写成 `Projectile`)、行缺 `id` / `type`、standard 组缺 `size` / `intensity` / `color` 之一。
-  - 可观察：该行静默跳过 (`org.dark.shaders.light.LightData` 的行校验)，日志只有读入函数捕获异常时的 ERROR(一般没有)。
+  - 原因：`LightData` 的行校验不通过时该行静默跳过，日志通常只有读入函数捕获异常时的 ERROR(一般没有)。
   - 修正：对照核心 `core_light_data.csv` 的表头与格式逐列核对 (规则 8)。
 7. **覆盖式加载后命中/闪光光效丢了**。
   - 触发：用只写 standard 组的行覆盖了一个原本有 hit / flash 组的 id。
-  - 可观察：武器的命中爆炸光/闪光消失 —— 覆盖式是整行替换，未写组就是 "无此组"(`LightEntry.hasHit / hasFlash` 为 false)。
+  - 原因：覆盖式加载是整行替换，未写的组就是 "无此组"(`LightEntry.hasHit` / `hasFlash` 为 false)，武器的命中爆炸光/闪光随之消失。
   - 修正：覆盖行带上想保留的全部组 (规则 9，本节示例行的写法)。
 8. **贴图查询全部返回 none**。
   - 触发：`GRAPHICS_OPTIONS.ini` 的 `loadMaterial` / `enableNormal` / `loadSurface` 被关，或 id 确实未注册。
-  - 可观察：`texture` 行 `material=none ...`，渲染里该船没有材质/法线效果，无报错 (`org.dark.shaders.util.TextureData`)。
-  - 修正：先开对应门禁再确认 id 是否注册；两种原因都返回 null，用 `GRAPHICS_OPTIONS.ini` 状态区分 (建议 11)。
+  - 原因：两种原因都返回 null 且无报错，`texture` 行 `material=none ...`，渲染里该船没有材质/法线效果；从返回值无法区分。
+  - 修正：先开对应门禁再确认 id 是否注册，用 `GRAPHICS_OPTIONS.ini` 状态区分 (建议 11)。
 9. **大混战时光效忽隐忽现**。
   - 触发：单帧光源数超过 `maximumLights`(默认 100，硬上限 372) 或超出屏外剔除范围。
-  - 可观察：部分光源被静默跳过 (`org.dark.shaders.light.LightShader` 的光源数上限)，光效 pop-in/out。
-  - 修正：调高 `maximumLights`(≤372) 或接受设计行为 (建议 10)；离屏光源本身就不渲染，不算故障。
+  - 原因：超限光源被静默跳过 (设计行为)，离屏光源本就不渲染，不算故障。
+  - 修正：调高 `maximumLights`(≤372) 或接受设计行为 (建议 10)。
 10. **启动到加载末段中止，日志有 "not fully compatible with antialiasing"**。
   - 触发：启动器开了抗锯齿且 `aaCompatMode` 未开。
-  - 可观察：`ShaderModPlugin.onApplicationLoad` 抛 `RuntimeException` (`org.dark.shaders.ShaderModPlugin` 的抗锯齿检查)，游戏启动失败。
-  - 修正：按异常文案三选项之一处理 (规则 3)。
+  - 原因：`ShaderModPlugin.onApplicationLoad` 的抗锯齿检查发现 `getAASamples() > 1` 且未开兼容模式，抛 `RuntimeException`，游戏启动失败。
+  - 修正：按异常文案三选项之一处理：关 AA / `aaCompatMode:true` / `enableShaders:false`(规则 3)。
 11. **跨战斗引用光源/贴图对象**。
   - 触发：把 `StandardLight` 或 `TextureEntry` 存进静态字段跨战斗复用。
-  - 可观察：第二场战斗起静默失效 (`LocalData` 随战斗重建，`LightShader.initCombat`)。
+  - 原因：`LocalData` 随战斗重建 (`LightShader.initCombat`)，第二场战斗起引用全部失效，静默无报错。
   - 修正：每场战斗重新创建 (规则 7)。
 
 ## 总结
 
-- **初始化完整流程**：
-  - `mod_info.json` 声明 `shaderLib` 依赖 → `ShaderModPlugin.onApplicationLoad` 调幂等 `ShaderLib.init()`(能力检测 + 设置读取)。
-  - 抗锯齿检查 (不符即启动中止)；
-  - 能力双通过后以 NoOverwrite 注册核心 `LightData` / `TextureData` CSV 并注册 `LightShader` 等 `ShaderAPI`。
-  - 每场战斗 `CombatEngineAPI.setCombatMap` 实例化 settings `plugins` 的 `ShaderHook`。
-  - `ShaderHook.initCombat()` 建 `LocalData`、`addLayeredRenderingPlugin` 注册全层钩子 (分层渲染注册通道)、`LightShader` 在 `ABOVE_SHIPS_AND_MISSILES_LAYER` 渲染。
-- **使用方写法**：`onApplicationLoad` 里**先 `ShaderLib.init()` 再读门禁**，在 `areShadersAllowed() && areBuffersAllowed()` 内注册自己的 CSV(成熟实例同款)。
-- 否则 "zz GraphicsLib" 排序靠后导致自己的数据静默不注册。
-- **光源**：`LightAPI` 四型 (point/line/cone/directional)、`StandardLight` 全套 setter 与挂接语义。
-- `LightShader.addLight` 只在战斗内有效且静默跳过其余情况；`fadeOut` 自灭、`makePermanent` 关 60 秒 failsafe、实体死亡自己清理。
-- 光源列表战斗级、上限 `min(maximumLights, 372)`；暂停不推进。
-- **自动光源与贴图**：`LightData` / `TextureData` 两套 CSV(覆盖式 vs NoOverwrite、行字段、key = `id + type + frame`、静默跳过)。
-- `LightShader` 战斗内按 `.proj` / 武器 id 自动建光、三遍 (material/normal/surface) 贴图渲染。
-- `TextureData.getTextureData` / `ShaderLib.getShipTexture` 是查询面；`DO_NOT_RENDER` customData 键可整体跳过某实体。
-- **适用边界一句话**：注册会话级、渲染战斗级；战役画面不经过本节链路；光源与贴图渲染由 `LightShader` 完成，本节消费面不直接碰 GL。
+本节把 GraphicsLib 的消费面从启动阶段走到战斗画面：`onApplicationLoad` 里先 `ShaderLib.init()` 再读能力门禁，会话级完成 `LightData` / `TextureData` 的 CSV 注册；每场战斗由 `ShaderHook` 重建光源列表，`LightShader` 按射弹与武器 id 自动建光，并用 material / normal / surface 三遍替换贴图。整条链可以用一句话收住：注册是会话级的，渲染是战斗级的；战役画面不经过这条链路。
 
-更上层的视觉库 (如 MagicLib) 把同一套 "初始化 → 门禁 → 生命周期内消费" 模式推广到设置、HUD 与生涯工具等场景 —— 本节确立的边界判断与排查顺序 (先看能力日志、再查注册状态、最后核对生命周期) 可以直接迁移。
+可复用的判断有三条。第一，初始化顺序是零成本规则：`ShaderLib.init()` 幂等，先调再读门禁，能直接避开 "能力全开但自己的 CSV 静默未注册" 这种最迷惑的症状。第二，光源生命周期由调用方负责：短命用 `fadeOut` 自灭，常驻用 `makePermanent()` 关掉 60 秒 failsafe，挂载在实体上的光源在实体死亡后自己清理。第三，覆盖式 CSV 是整行替换，想保留的组必须一起带上，否则命中与闪光光效会静默丢失。
+
+排查顺序也可以带走：先看 `capabilities` 日志行确定能力与开关，再查注册状态区分 "没注册" 与 "门禁未开"，最后核对生命周期 (暂停、60 秒、战斗边界)。更上层的视觉库如 MagicLib 把同一套 "初始化 → 门禁 → 生命周期内消费" 的模式推广到设置、HUD 与生涯工具，这套判断顺序可以原样迁移。
 
 ## 建议参考项
 

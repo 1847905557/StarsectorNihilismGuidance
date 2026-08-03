@@ -1,6 +1,6 @@
-# 可选依赖检测、类加载隔离与降级适配
+# 可选依赖检测、调用隔离与降级适配
 
-本节讲解软依赖 (可选依赖，optional dependency) 的完整处理链：如何在代码里检测一个可选 MOD 是否可用、脚本类加载链如何决定 "类在不在"、为什么适配器要收敛直接引用，以及缺少依赖时 MOD 必须降级到什么行为。
+本节让您的 MOD 接入可选依赖 (软依赖，optional dependency) 的能力：LunaLib 在时读取它的设置，缺失时自动降级、照常启动。硬依赖 (C12-S01) 的启动器拦截只回答 "依赖在不在"，软依赖要由代码自己回答 "对方能不能用"。主流做法是两句话：代码型软依赖用 `isModEnabled` 判断启用状态、把引用收敛进适配器 (调用隔离)；数据型软依赖按约定位置放配置文件、本 MOD 零代码引用对方。类存在性检测 (如 `Class.forName`) 属进阶手段，特殊场景才需要，本节不鼓励默认使用但不禁止。本节走通检测、隔离、降级三段，交付一个可直接复用的适配器示例。
 
 *本节预期阅读时间：~15 分钟。*
 
@@ -10,11 +10,12 @@
 
 完成后，您将能够：
 
-- 说出软依赖 (可选依赖) 与硬依赖的三点分界 (声明、检查、失败结果)，并区分数据型软依赖与代码型软依赖；
-- 画出脚本类加载链的父子关系 (Janino 源码加载器 → jar URLClassLoader → 脚本安全过滤器 → 游戏核心)，说出 "jar 类优先于同名 `.java`"、"全部启用 MOD 的 jar 平铺在同一个类加载器"、"只有启用 MOD 的 jar 在类路径上" 三个结论；
-- 解释脚本层的安全过滤器：为什么脚本代码禁止驱动 `java.lang.reflect`(`Method`/`Field`/`Constructor`/`Proxy`) 与 `java.io.File`，以及 `Class.forName` 为什么不受影响；
-- 用两个判据组合检测软依赖：`isModEnabled(id)`(MOD 启用状态，逐字比较) 与类存在性检测 (`Class.forName` 或 LazyLib `ModUtils.isClassPresent`)，并说出把后者当作启用判断时的误判场景；
-- 写出 "直接引用收敛在适配器类、守卫分支内懒解析、缺依赖回落默认值" 的适配器 (`GearInCompatBridge` 模式)，并从日志与行为定位 "未启用分支 / 类缺失 / 反射受限" 三类症状。
+- 解释软依赖 (可选依赖) 与硬依赖的三点分界 (声明、检查、失败结果)，并区分数据型软依赖与代码型软依赖；
+- 解释脚本类加载链的父子关系 (Janino 源码加载器 → jar URLClassLoader → 脚本安全过滤器 → 游戏核心)，并说明 "jar 类优先于同名 `.java`"、"全部启用 MOD 的 jar 平铺在同一个类加载器"、"只有启用 MOD 的 jar 在类路径上" 三个结论；
+- 解释脚本层的安全过滤器：为什么脚本代码禁止驱动 `java.lang.reflect`(`Method`/`Field`/`Constructor`/`Proxy`) 与 `java.io.File`；
+- 用 `isModEnabled(id)`(MOD 启用状态，逐字比较) 做主判据做调用隔离，识别把显示名当 id 传的误判场景；解释数据型软依赖 "约定位置放配置文件" 的形态；
+- 说出类存在性检测 (`Class.forName` / LazyLib `ModUtils.isClassPresent`) 属进阶手段、默认不需要，及其适用场景 (类被其他 MOD 间接携带等)；
+- 写出 "直接引用收敛在适配器类、检查分支内懒解析、缺依赖回落默认值" 的适配器 (`GearInCompatBridge` 模式)，并从日志与行为定位 "未启用分支 / 类缺失 / 反射受限" 三类症状。
 
 ## 前置知识
 
@@ -25,11 +26,11 @@
 - `modPlugin` 入口与 `onApplicationLoad()` 时机；本节的运行时检测接入沿用该入口 (C06-S02)。
 - 硬依赖 (hard dependency) 声明、`CompatLevel` 检查、`isModEnabled`/`getModSpec`/`getAvailableModsCopy` 的运行时语义 (C12-S01)；软依赖是本节首次完整讲解。
 - LazyLib `ModUtils.isModEnabled`/`isClassPresent` 的语义分工 (C12-S02)。
-- LunaLib 设置 (`LunaSettings.csv`、`LunaSettings.getBoolean` 等) 的读取与保存细节 (C12-S05)；本节只消费其结论。
+- LunaLib 设置 (`LunaSettings.csv`、`LunaSettings.getBoolean` 等) 的读取与保存细节 (C13-S03)；本节只采用其结论，设置项 `GearIn_fullGraphicEffect` 的定义在 C13-S03 的 `LunaSettings.csv` 中，本节只消费。
 
 ## 软依赖：定义与分界
 
-软依赖 (可选依赖，optional dependency)= 本 MOD 的代码或数据引用了另一个 MOD 的能力，但那个 MOD 缺失或未启用时，本 MOD **仍然可以启动并降级运行**。与硬依赖对照：
+C12-S01 的硬依赖由启动器把关，缺失时 MOD 直接不可用。本节处理相反的约定：本 MOD 的代码或数据引用了另一个 MOD 的能力，但那个 MOD 缺失或未启用时，本 MOD **仍然可以启动并降级运行**，这就是软依赖 (可选依赖，optional dependency)。与硬依赖对照：
 
 | 维度 | 硬依赖 (C12-S01)| 软依赖 (本节)|
 |---|---|---|
@@ -41,11 +42,11 @@
 
 1. **数据型软依赖 (微型兼容)**：对方 MOD 按约定路径读取您的 CSV/JSON(`Global.getSettings().getMergedSpreadsheetDataForMod(...)` / `getMergedJSONForMod(...)`)，本 MOD 的代码零引用对方 —— 天然兼容，只要把数据文件放在约定目录。规范 (成熟实例规范原文)：微型兼容入口**不允许**出现在 `mod_info.json` 的 `dependencies` 中 —— 它没有代码引用，声明硬依赖只会给用户增加无谓的强制安装。
 2. **代码型软依赖**：本 MOD 代码要调用对方 API 类 (如 `lunalib.lunaSettings.LunaSettings`)。
-  - 这是本节主体：检测 + 隔离 + 降级三段缺一不可。代码引用了对方类却不做任何处理，等于把软依赖写成了隐式硬依赖 —— 缺失时运行期 `NoClassDefFoundError`(硬依赖故障分析中的同款症状)。
+  - 这是本节主体：检测、隔离、降级三段缺一不可。代码引用了对方类却不做任何处理，等于把软依赖写成了隐式硬依赖 —— 缺失时运行期 `NoClassDefFoundError`(硬依赖故障分析中的同款症状)。
 
-## 类加载隔离：脚本类加载链的父子关系
+## 脚本类加载链与安全过滤器
 
-"隔离" 从何而来，取决于类加载链。启动资源加载期，脚本类加载器建立的脚本类加载链共三节 (脚本加载入口与启动加载线程同构)：
+代码型软依赖的风险来自类路径：对方类在不在脚本类路径上，由脚本类加载链决定，所以先看清这条链。启动资源加载期，脚本类加载器建立的脚本类加载链共三节 (脚本加载入口与启动加载线程同构)：
 
 ```text
 Janino JavaSourceClassLoader（子，编译 data/scripts 下的 .java）
@@ -87,17 +88,23 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 
 抛 `Exception` 包装成 `RuntimeException("Problem loading class [...]")`，而 `NoClassDefFoundError`/`ExceptionInInitializerError` 是 `Error`，不包装直接冒泡 (硬依赖讲解中已证)。
 
-## 检测判据：isModEnabled 与类存在性
+这条链能回答两个问题：MOD 勾没勾、类在不在。主流判据只用前者；"类在不在" 属进阶探测，见下。
 
-### 判据一：MOD 启用状态 (isModEnabled)
+## 检测判据与调用隔离
 
-`Global.getSettings().getModManager().isModEnabled(id)`：id 是否在启用列表，**逐字比较、大小写敏感**(`ModManagerAPI.isModEnabled` 逐字比较语义)。语义 = "这个 MOD 被勾选了"。
+### 判据一（主线）：MOD 启用状态 (isModEnabled)
+
+代码型软依赖的主判据。`Global.getSettings().getModManager().isModEnabled(id)`：id 是否在启用列表，**逐字比较、大小写敏感**(`ModManagerAPI.isModEnabled` 逐字比较语义)。语义 = "这个 MOD 被勾选了"。
 
 - **必须**传对方 `mod_info.json` 的 `id` 字段值，不是显示名：LunaLib 的 id 是 `lunalib`，不是 `LunaLib`。
   - 用显示名当 id 的可观察结果：`isModEnabled` 恒返回 `false`，功能永远降级，且日志查不出任何报错。
 - 成熟实例：只用 `isModEnabled` 判断软依赖是否可用；`lunalib` 没有出现在这些 MOD 的 `dependencies` 里 —— 这就是软依赖的实证。
 
-### 判据二：类存在性 (Class.forName / ModUtils.isClassPresent)
+### 判据二（数据型）：约定位置配置文件
+
+数据型软依赖 (微型兼容) 的判据不是代码检测：把数据文件放到对方约定读取的位置 (如 `data/config/...` 固定路径)，本 MOD 零代码引用对方。对方缺失时文件不被读取，功能自然降级，不需要任何运行期判断 —— "约定位置" 本身即判据 (完整实例见 C13-S03 的 `LunaSettings.csv`)。
+
+### 进阶：类存在性检测 (Class.forName / ModUtils.isClassPresent)
 
 语义 = "这个类在不在脚本类路径上"。两种写法：
 
@@ -112,26 +119,30 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 本节示例用单参 (成熟社区惯用)，两种写法的判据语义相同。
 :::
 
+为什么默认不需要：启用列表语义下，已启用 MOD 的 jar 必然在脚本类路径上 (见 "脚本类加载链")，`isModEnabled` 一个判据已覆盖绝大多数场景；类存在性检测只在 "类可能被其他 MOD 间接携带"、"启用但 jar 损坏/版本漂移" 等特殊场景才需要补上。不鼓励默认使用，但不禁止 —— 需要时与启用判据组合使用是安全写法。
+
 ### 分工与误用 (必须遵守的规则)
 
-- `isModEnabled` 表达**启用状态**，类存在性表达**类路径存在性**，两个判据**必须**按各自语义使用 (成熟实例规范原文)。
-- 把类存在性检测**当作**启用判断 (只查 `isClassPresent`，不查 `isModEnabled`) 的可观察结果：某类被其他 MOD 间接携带、或类在路径上而所属 MOD 未启用时，检测误报 "可用"，守卫失效，调用可选 API 的代码在无依赖环境下被放行并崩溃 (成熟实例陷阱原文)。
-- 组合判据是安全写法：`启用 && 类在路径上` 才允许调用可选 API(本节示例即此写法)。
+- `isModEnabled` 表达**启用状态**，是代码型软依赖的主判据；类存在性检测表达**类路径存在性**，属进阶手段，两个判据**必须**按各自语义使用 (成熟实例规范原文)。
 - 版本判断 (补充判据，可选)：需要按可选 MOD 版本分支时，用 `getModSpec(id).getVersionInfo()` 读已安装版本 (`getModSpec` 只查启用列表，调用前必须先过 `isModEnabled`)。
+- (进阶) 把类存在性检测**当作**启用判断 (只查 `isClassPresent`，不查 `isModEnabled`) 的可观察结果：某类被其他 MOD 间接携带、或类在路径上而所属 MOD 未启用时，检测误报 "可用"，检查失效，调用可选 API 的代码在无依赖环境下被放行并崩溃 (成熟实例陷阱原文)。
+- 组合判据是进阶安全写法：`启用 && 类在路径上` 才允许调用可选 API。
 
 ::: warning 判据用错的两个常见坑
 两个误用场景都没有显式报错，只能从日志降级行或崩溃点反推：一是把显示名当 `id` 传 (如 `LunaLib` 而非 `lunalib`)，`isModEnabled` 恒返回 `false`，功能永久降级，日志查不出任何报错；
 
-二是把类存在性检测当作启用判断，某类被其他 MOD 间接携带、或类在路径上而所属 MOD 未启用时，检测误报 "可用"，守卫放行后调用可选 API 的代码在无依赖环境下崩溃。
+二是 (进阶) 把类存在性检测当作启用判断，某类被其他 MOD 间接携带、或类在路径上而所属 MOD 未启用时，检测误报 "可用"，检查通过后被放行，调用可选 API 的代码在无依赖环境下崩溃。
 :::
 
 ## 适配器模式与反射边界
 
+判据只回答 "能不能用"，调用可选 API 的代码必须落在某处。先看一个常见但不成立的做法，再看正确形态。
+
 ### 为什么 "反射桥接" 不是可选手段
 
-任务清单常见的 "反射桥接" 思路 —— 运行时用 `Class.forName` + `getMethod`/`invoke` 调可选 API—— 在 RC8 脚本链上**不可行**：
+任务清单常见的 "反射桥接" 思路 —— 运行时用 `Class.forName` + `getMethod`/`invoke` 调可选 API—— 在脚本链上**不可行**：
 
-`java.lang.reflect.Method` 等驱动反射的类型被脚本类加载器的过滤器拦截 (见 "类加载隔离")。
+`java.lang.reflect.Method` 等驱动反射的类型被脚本类加载器的过滤器拦截 (见 "脚本类加载链与安全过滤器")。
 
 `Class.forName` 只能回答 "类在不在"；一旦代码索取 `Method`/`Field`/`Constructor`，立即抛 `SecurityException: File access and reflection are not allowed to scripts.`。
 
@@ -144,33 +155,33 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 1. **直接引用**：可选 API 的编译期引用 (如 `LunaSettings.getBoolean(...)`) 写进一个专用适配器类 (`GearInCompatBridge`；与成熟实例同构)。
 2. **收敛**：全工程只有适配器这一处出现 `lunalib.*` 类名；使用方只 import 适配器类。
   - 编译期类路径上有可选 jar(`compileOnly` 或 fixture 类路径含 Lunalib jar)，运行期才谈得上缺失。
-3. **懒解析**：JVM 按需解析常量池引用 —— 适配器类本身在可选依赖缺失时**可以正常加载**(类加载不触发方法体内引用的解析)；`LunaSettings` 的符号引用只在守卫分支**第一次执行**时才解析。
+3. **懒解析**：JVM 按需解析常量池引用 —— 适配器类本身在可选依赖缺失时**可以正常加载**(类加载不触发方法体内引用的解析)；`LunaSettings` 的符号引用只在检查分支**第一次执行**时才解析。
   - 无依赖时检测返回 false，分支不执行，引用永不解析，`NoClassDefFoundError` 不会出现。这正是 "缺依赖也能启动" 的机制基础。
 
 ::: info 为什么 "缺依赖也能启动"
 类的加载与方法体引用的解析是两个时刻：加载适配器类本身不需要解析 `LunaSettings` 的符号引用，只有执行到持有该引用的那行代码时才解析。
 
-守卫分支在无依赖时永远不执行，引用就永远不被解析 ——`NoClassDefFoundError` 只在 "引用被实际解析但类不在" 时出现。
+检查分支在无依赖时永远不执行，引用就永远不被解析 ——`NoClassDefFoundError` 只在 "引用被实际解析但类不在" 时出现。
 
-这就是 "适配器 + 守卫分支" 能同时满足编译期强引用与运行期可缺失的原因。
+这就是 "适配器 + 检查分支" 能同时满足编译期强引用与运行期可缺失的原因。
 :::
 
 ::: caution 适配器必须遵守的规则
-- 可选 API 的直接引用**必须**全部收敛在守卫分支内 (`if (可用) { ... }` 的 then 分支)。
+- 可选 API 的直接引用**必须**全部收敛在检查分支内 (`if (可用) { ... }` 的 then 分支)。
   - 字段初始化、静态块、构造器、无检测的公开方法体里出现可选类引用 → 适配器类加载/首次调用时 `NoClassDefFoundError` 或 `ExceptionInInitializerError`(`Error` 冒泡，不包装，启动或运行中止)。
-- 适配器入口**必须**先过组合判据再碰可选 API(只查 `isModEnabled` 不查类存在性，遇到 "启用但 jar 损坏/类缺失" 时同样崩；只查类存在性不查启用，落入误判场景)。
-  - 推荐组合判据：`启用 && 类在路径上`。
+- 适配器入口**必须**先过启用判据 (`isModEnabled`) 再碰可选 API；无检测的直接调用在缺依赖时 `NoClassDefFoundError`。
+  - 推荐判据：`isModEnabled(id)`(主线)；类存在性检测属进阶加固，特殊场景再叠加 (组合判据 `启用 && 类在路径上`)。
 :::
 
 适配器类**不要**注册进引擎按名实例化的列表 (`settings.json` 的 `plugins`、`modPlugin`、rules 脚本列等)—— 那些入口在加载期就 `newInstance`，任何构造路径上的引用都会立即解析，懒解析保护失效 (脚本类加载器的加载行为)。
 
 适配器是普通工具类，由本 MOD 自己的代码按名调用。
 
-脚本链上**禁止**驱动 `java.lang.reflect` 与 `java.io.File`(见 "类加载隔离")，适配器同样适用。
+脚本链上**禁止**驱动 `java.lang.reflect` 与 `java.io.File`(见 "脚本类加载链与安全过滤器")，适配器同样适用。
 
 ## 降级边界：无依赖时的行为
 
-降级边界 = 可选依赖缺失时，适配器返回的默认值/默认动作，以及日志里可观测的降级记录。两条原则 (成熟实例归纳)：
+引用收敛之后还差最后一段：缺依赖时返回什么、日志怎么记。降级边界 = 可选依赖缺失时，适配器返回的默认值/默认动作，以及日志里可观测的降级记录。两条原则 (成熟实例归纳)：
 
 1. **缺依赖 ≠ 报错**：检测失败走默认分支，写一行 INFO 日志说明降级原因 (如 `GearIn compat: LunaLib unavailable, degrading to fallback=true`)。
   - 用户在 `starsector.log` 里能看到 "这个功能为什么没接上"。
@@ -184,12 +195,14 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 
 ## 文件与 API 链路
 
+以上各节把处理链拆开了，先用一张表收拢每个环节的落点；下一节的最小例逐项实现它们。
+
 | 环节 | 文件或 API | 使用方 / 行为 |
 |---|---|---|
 | 声明 (不写)| 可选 MOD 的 `mod_info.json`(`id`: `lunalib`)| 软依赖**不**出现在 `dependencies` 数组里；代码侧用 `isModEnabled("lunalib")` 运行期自检 |
 | 检测 1 | `Global.getSettings().getModManager().isModEnabled(id)` | `ModManagerAPI` 启用列表逐字比较、大小写敏感 |
-| 检测 2 | `Class.forName(...)` / LazyLib `ModUtils.isClassPresent(...)` | 脚本类路径存在性；`java.lang.Class` 不在安全过滤器拦截范围 |
-| 设置数据 | 可选 MOD 读 `data/config/LunaSettings.csv`(fieldID `GearIn_fullGraphicEffect`)| LunaLib 的 `LunaSettingsLoader` 加载默认值；文件只有 LunaLib 启用时被消费 (C12-S05)|
+| 检测 2 (进阶) | `Class.forName(...)` / LazyLib `ModUtils.isClassPresent(...)` | 脚本类路径存在性；默认不需要，特殊场景 (类被间接携带、jar 损坏防御) 才用 |
+| 设置数据 | 可选 MOD 读 `data/config/LunaSettings.csv`(fieldID `GearIn_fullGraphicEffect`；定义在 C13-S03)| LunaLib 的 `LunaSettingsLoader` 加载默认值；文件只有 LunaLib 启用时才会被读取 (C13-S03)|
 | 适配 | `lunalib.lunaSettings.LunaSettings.getBoolean(modId, fieldId)` | 返回可空 `Boolean`，mod/字段缺失时记录 ERROR 日志并返回 `null` |
 | 类加载 | 启动器收集 → 脚本类加载器加载 | 启用 MOD 的 jar 平铺进单一 `URLClassLoader`；未启用 MOD 的 jar 不在路径上 |
 | 过滤器 | 脚本安全过滤器的加载检查 | `java.io.*`/`java.lang.reflect.*`(白名单除外)→ `SecurityException` |
@@ -198,11 +211,11 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 
 ## 完整最小例
 
-在累计工程布局 (前序阶段建立) 上追加 (MOD 根目录 `Starsector\mods\GearIndustry`)：
+在前序累计工程 (C06-S01) 的布局上追加两处 (MOD 根目录 `Starsector\mods\GearIndustry`)：一个适配器类、一行接入调用。
 
-本节示例新增：类 `data.scripts.gearin.modcompat.GearInCompatBridge`(归本节所有) 与设置项 ID `GearIn_fullGraphicEffect`(LunaLib 设置 fieldID，归本节所有)。
+本节示例新增：类 `data.scripts.gearin.modcompat.GearInCompatBridge`(归本节所有)；设置项 `GearIn_fullGraphicEffect` 的定义在 C13-S03 的 `LunaSettings.csv` 中 (第 7 行)，本节只消费。
 
-`GearInModPlugin` 归前序单元所有，本节只消费它。
+`GearInModPlugin` 归前序单元所有，本节只调用它。
 
 `Starsector\mods\GearIndustry` 是教程虚构工程路径，本节内部引用保持自洽。
 
@@ -213,7 +226,7 @@ Starsector\mods\GearIndustry\
 ├── mod_info.json                # 不加 lunalib 依赖（软依赖不声明）
 ├── data\
 │   └── config\
-│       └── LunaSettings.csv     # 可选数据文件，只有 LunaLib 启用时被消费
+│       └── LunaSettings.csv     # C13-S03 定义；只有 LunaLib 启用时被消费
 ├── src\
 │   └── data\scripts\gearin\
 │       ├── GearInModPlugin                     # 前序单元所有，本节追加一行调用
@@ -222,12 +235,7 @@ Starsector\mods\GearIndustry\
 └── jars\
 ```
 
-`data/config/LunaSettings.csv`(虚构工程配套数据，本节内部自洽；列为 LunaLib 约定字段)：
-
-```csv
-fieldID,fieldName,fieldType,defaultValue,fieldDescription
-GearIn_fullGraphicEffect,Full Graphic Effect,Boolean,true,是否启用生涯全屏转场特效
-```
+`data/config/LunaSettings.csv` 的完整定义 (含本节消费的 `GearIn_fullGraphicEffect` 行) 在 C13-S03，本节不新增文件。
 
 ### GearInCompatBridge
 
@@ -241,42 +249,29 @@ import lunalib.lunaSettings.LunaSettings;
  * 软依赖适配器（兼容层）：把对可选依赖 LunaLib 的全部直接引用收敛在本类，
  * 工程里只有这一处出现 lunalib.* 类；其余代码只消费本类的静态方法。
  *
- * 调用链：isModEnabled 判定 MOD 启用状态，Class.forName 判定 API 类是否在
- * 脚本类路径上，两者都通过才进入持有 LunaSettings 直接引用的分支；LunaLib
- * 缺失或设置字段缺失时回落到调用方传入的默认值（降级边界）。
+ * 调用链：isModEnabled 判定 MOD 启用状态，通过才进入持有 LunaSettings 直接
+ * 引用的分支；LunaLib 缺失或设置字段缺失时回落到调用方传入的默认值（降级边界）。
+ * 类存在性检测属进阶手段（见本节"进阶"小节），默认不需要。
  */
 public class GearInCompatBridge {
 
     /** LunaLib 的 MOD id，与 Starsector\mods\Lunalib\mod_info.json 的 id 字段逐字一致。 */
     public static final String LUNA_MOD_ID = "lunalib";
 
-    /** 可选 API 类全名（类存在性检测用，不直接 import 也能探测）。 */
-    public static final String LUNA_SETTINGS_CLASS = "lunalib.lunaSettings.LunaSettings";
-
-    /** 本 MOD 在 data/config/LunaSettings.csv 中登记的设置项 fieldID。 */
+    /** 本 MOD 在 data/config/LunaSettings.csv 中登记的设置项 fieldID（文件由 C13-S03 定义）。 */
     public static final String FULL_GRAPHIC_FIELD = "GearIn_fullGraphicEffect";
 
     private GearInCompatBridge() {
     }
 
-    /** 判据一：LunaLib 是否在启用列表（启动器 MOD 管理器按 id 逐字比较，大小写敏感）。 */
+    /** 判据：LunaLib 是否在启用列表（启动器 MOD 管理器按 id 逐字比较，大小写敏感）。 */
     public static boolean isLunaLibEnabled() {
         return Global.getSettings().getModManager().isModEnabled(LUNA_MOD_ID);
     }
 
-    /** 判据二：LunaSettings 类是否在脚本类路径上；缺类返回 false，不抛异常。 */
-    public static boolean isLunaSettingsClassPresent() {
-        try {
-            Class.forName(LUNA_SETTINGS_CLASS);
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
-        }
-    }
-
-    /** 组合判据：MOD 已启用且 API 类在类路径上，此时才能安全调用 LunaSettings。 */
+    /** 可用性判据：MOD 已启用即认为可选 API 可用（类存在性检测属进阶手段，默认不启用）。 */
     public static boolean isLunaSettingsUsable() {
-        return isLunaLibEnabled() && isLunaSettingsClassPresent();
+        return isLunaLibEnabled();
     }
 
     /**
@@ -304,9 +299,8 @@ public class GearInCompatBridge {
 对应关系：
 
 - `LUNA_MOD_ID = "lunalib"`：对方 `mod_info.json` 的 `id` 字段值，逐字一致 (不是显示名 `LunaLib`)；这是 `isModEnabled` 判据的输入。
-- `LUNA_SETTINGS_CLASS` + `Class.forName`：类存在性判据；`catch (ClassNotFoundException)` 缺类回落，不把异常抛出 (`java.lang.Class` 不在安全过滤器拦截范围)。
-- `isLunaSettingsUsable()`：组合判据 `启用 && 类在路径上`，适配入口的唯一放行条件。
-- `LunaSettings.getBoolean(LUNA_MOD_ID, FULL_GRAPHIC_FIELD)`：唯一持有可选 API 直接引用的语句，位于守卫分支内；依赖缺失时该分支不执行，符号引用永不解析，`NoClassDefFoundError` 不会出现 (懒解析)。
+- `isLunaSettingsUsable()`：启用判据 (`isLunaLibEnabled()` 的别名)，适配入口的唯一放行条件；类存在性检测属进阶加固，示例不默认启用。
+- `LunaSettings.getBoolean(LUNA_MOD_ID, FULL_GRAPHIC_FIELD)`：唯一持有可选 API 直接引用的语句，位于检查分支内；依赖缺失时该分支不执行，符号引用永不解析，`NoClassDefFoundError` 不会出现 (懒解析)。
 - `Boolean value` + 判空：`getBoolean` 返回可空 `Boolean`，字段缺失时 LunaLib 打 ERROR 日志并返回 `null`；判空失败再回落默认值，避免拆箱 NPE。
 - `Global.getLogger(GearInCompatBridge.class)`：降级/缺失日志走 `starsector-core\starsector.log`。
 - 全类只有 `import lunalib.lunaSettings.LunaSettings` 一处可选依赖引用：这就是 "收敛"。
@@ -322,7 +316,7 @@ public void onGameLoad(boolean newGame) {
 }
 ```
 
-`GearInModPlugin` 类归前序单元所有，本节只消费它；fixture 例不含此片段 (fixture 只含本节所有的 `GearInCompatBridge`)。
+`GearInModPlugin` 类归前序单元所有，本节只调用它；fixture 例不含此片段 (fixture 只含本节所有的 `GearInCompatBridge`)。
 
 ### 构建
 
@@ -334,79 +328,88 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/modcompat/GearInCompatBridge.class`(可用 `jar tf` 核对)。
 
-### 验证方案 (基于本例)
+## 验证方案
 
-前置数据：前序累计工程 (C06-S01) 基础上追加本节内容 (`data/config/LunaSettings.csv`、`GearInCompatBridge`、`GearInModPlugin.onGameLoad` 内一行调用)；本机已安装 Lunalib。
+前置数据：前序累计工程 (C06-S01) 基础上追加本节内容 (沿用 C13-S03 的 `data/config/LunaSettings.csv`、新增 `GearInCompatBridge`、`GearInModPlugin.onGameLoad` 内一行调用)；本机已安装 Lunalib。
 
-- 操作 1(构建核对)：在 MOD 根目录执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/modcompat/GearInCompatBridge.class`。
-- 操作 2(无 LunaLib 降级路径)：启动器**不**勾选 Lunalib，勾选 "齿轮工业" 启动并进入生涯；`starsector.log` 出现 `GearIn compat: LunaLib unavailable, degrading to fallback=true`，游戏正常无 `gear_in` 引起的 `ERROR`。
-- 操作 3(有 LunaLib 完整路径)：勾选 Lunalib 重启进入生涯；`starsector.log` 无降级行；打开 LunaLib 设置界面确认 `GearIn_fullGraphicEffect` 项存在，改值为 `false` 保存后重读存档，确认行为变为 `false`(设置生效)。
-- 操作 4(故障注入·字段缺失)：从 `LunaSettings.csv` 删除 `GearIn_fullGraphicEffect` 行重启：确认 LunaLib ERROR 行 `LunaSettings: Value GearIn_fullGraphicEffect of type Boolean not found in JSONObject` 与适配器降级行成对出现，无 NPE；恢复后确认复原。
-- 操作 5(故障注入·引用泄漏)：把 `getFullGraphicEffect` 里的 `LunaSettings.getBoolean(...)` 移到 `isLunaSettingsUsable()` 检查之前，不勾选 Lunalib 重启：确认抛 `NoClassDefFoundError`(对应故障分析第 1 条)；改回后确认恢复。
-- 通过信号：操作 2 的降级日志、操作 3 的设置生效、操作 4/5 的注入与恢复全部符合。
-- 清理：取消勾选测试 MOD；删除测试期间改动 (恢复 `LunaSettings.csv` 与适配器源码)。
+1. 构建核对：在 MOD 根目录执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；用 `jar tf jars\GearIndustry.jar` 查看 `data/scripts/gearin/modcompat/GearInCompatBridge.class` 是否在产物内。
+2. 降级路径：启动器**不**勾选 Lunalib，勾选 "齿轮工业" 启动并进入生涯。
+3. 完整路径：勾选 Lunalib 重启进入生涯，打开 LunaLib 设置界面。
+4. 故障注入·字段缺失：从 `LunaSettings.csv` 删除 `GearIn_fullGraphicEffect` 行，重启游戏。
+5. 故障注入·引用泄漏：把 `getFullGraphicEffect` 里的 `LunaSettings.getBoolean(...)` 移到 `isLunaSettingsUsable()` 检查之前，不勾选 Lunalib 重启。
 
-## 预期结果
+观察位置：`starsector.log` 中的 `GearIn compat:` 与 `LunaSettings:` 行；LunaLib 设置界面中的 `GearIn_fullGraphicEffect` 项。
 
-1. **构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/modcompat/GearInCompatBridge.class`。
-2. **无 LunaLib(降级路径)**：启动器不勾选 Lunalib，启动游戏进入生涯。
-  - `starsector.log` 出现一行 `GearIn compat: LunaLib unavailable, degrading to fallback=true`，`getFullGraphicEffect(true)` 返回 `true`(全特效默认行为)，游戏正常无 `ERROR`。
-3. **有 LunaLib(完整路径)**：勾选 Lunalib 重启进入生涯。
-  - `starsector.log` 无降级行；LunaLib 设置界面出现 `GearIn_fullGraphicEffect` 项 (默认 `true`)，改值为 `false` 后存档重读，`getFullGraphicEffect(true)` 返回 `false`—— 设置值生效。
-4. **字段缺失**：`LunaSettings.csv` 里删掉 `GearIn_fullGraphicEffect` 行后重启：LunaLib 打 `LunaSettings: Value GearIn_fullGraphicEffect of type Boolean not found in JSONObject`(ERROR)，适配器打 `GearIn compat: field [GearIn_fullGraphicEffect] missing in LunaSettings, fallback=true`，返回默认值，无 NPE。
-5. **类存在性**：`isLunaSettingsClassPresent()` 在 LunaLib 启用时返回 `true`、未启用时返回 `false`(未启用 MOD 的 jar 不在脚本类路径上，启动器只收集启用 MOD)。
+**预期结果：**
+
+- 构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/modcompat/GearInCompatBridge.class`。
+- 降级路径：`starsector.log` 出现 `GearIn compat: LunaLib unavailable, degrading to fallback=true`，`getFullGraphicEffect(true)` 返回 `true`(全特效默认行为)，游戏正常且没有由 `gear_in` 引起的 `ERROR`。
+- 完整路径：`starsector.log` 无降级行；LunaLib 设置界面出现 `GearIn_fullGraphicEffect` 项 (默认 `true`)，改值为 `false` 保存后重读存档，行为变为 `false` —— 设置值生效。
+- 字段缺失：LunaLib 打 `LunaSettings: Value GearIn_fullGraphicEffect of type Boolean not found in JSONObject`(ERROR)，适配器打 `GearIn compat: field [GearIn_fullGraphicEffect] missing in LunaSettings, fallback=true`，两行成对出现，返回默认值且无 NPE；恢复删除的行后确认复原。
+- 引用泄漏：抛 `NoClassDefFoundError`(对应故障分析第 1 条)；改回后确认恢复。
+- 类存在性 (进阶，可选验证)：类存在性检测属进阶手段，本节示例不包含该判据；需要验证时按 "进阶" 小节写法在启用/未启用两种状态下分别探测。
 
 静态自查：`mod_info.json` 不含 `lunalib` 依赖项；`LUNA_MOD_ID` 与 `Starsector\mods\Lunalib\mod_info.json` 的 `id` 逐字一致；Java 源码为 UTF-8 无 BOM、CRLF 换行。
 
-## 实例驱动故障分析
+清理：取消勾选测试 MOD；删除测试期间改动 (恢复 `LunaSettings.csv` 与适配器源码)。
 
-1. **无 LunaLib 时启动正常，但调用 `LunaSettings.getBoolean` 的代码抛 `NoClassDefFoundError`**。
-  - 触发：可选类引用泄漏到了守卫分支之外 —— 字段初始化、静态块、构造器，或某个无检测的公开方法体里直接出现 `lunalib.*` 类。
-  - 可观察：`NoClassDefFoundError`/`ExceptionInInitializerError` 冒泡 (`Error` 不包装，由脚本类加载器按名实例化时直接冒出)，启动中止或运行中止。
-  - 修正：全工程搜索 `lunalib` 引用，除适配器守卫分支外一律移除；把可选引用收敛进 `if (isLunaSettingsUsable())` 的 then 分支。
-2. **`isModEnabled("lunalib")` 恒为 false，但启动器里明明勾着 Lunalib**。
-  - 触发：把显示名 `LunaLib` 当 id 传。
-  - 可观察：功能永久降级，日志只有降级行、无任何报错 (`isModEnabled` 逐字比较，大小写敏感)。
-  - 修正：复制对方 `mod_info.json` 的 `id` 字段值。
-3. **`isClassPresent` 返回 true 但功能没有接上，或反过来误放行崩溃**。
-  - 触发：用类存在性判据代替启用判据。
-  - 可观察 (误放行)：可选类被其他 MOD 间接携带、而所属 MOD 未启用时，检测返回 true，守卫放行，调用可选 API 的代码在缺依赖环境下运行并崩溃。
-  - 修正：组合判据 `启用 && 类在路径上`(成熟实例陷阱原文)。
-4. **运行期 `SecurityException: File access and reflection are not allowed to scripts.`**。
-  - 触发：脚本链代码驱动 `java.lang.reflect`(`getMethod`/`getField`/`newProxyInstance` 等) 或 `java.io.File`。
-  - 可观察：加载被拦截类型时抛 SecurityException，崩溃 (脚本类加载器的过滤行为)。
-  - 修正：改用本节适配器形态 (编译期直接引用 + 守卫)；`Class.forName` 只用于存在性检测，不索取 `Method`/`Field`。
-5. **`NullPointerException`，堆栈指向拆箱 `LunaSettings.getBoolean(...)` 返回值**。
-  - 触发：字段未定义或 mod 未登记时 `getBoolean` 返回 `null`，代码直接拆箱。
-  - 可观察：运行期 NPE(LunaLib 先打一条 ERROR)。
-  - 修正：判空后回落默认值 (成熟实例陷阱原文)。
-6. **两个 MOD 提供同一个全限定类名，行为时而正确时而错乱**。
-  - 触发：共享同一个 `URLClassLoader`，同名类按 URL 顺序先到先得 (脚本类加载器的加载行为)。
-  - 可观察：启用顺序/优先级变化后，`Class.forName` 返回的可能是对方实现，功能表现随启用组合漂移。
-  - 修正：这是 MOD 之间不隔离的固有现象 —— 本 MOD 的类名保持唯一前缀 (`GearIn*`)，可选 API 一律通过对方的正式类访问。
-7. **把软依赖误写进 `dependencies`，用户缺 LunaLib 时 MOD 直接被启动器拦截**。
-  - 触发：适配器已经做好降级，却仍把 `lunalib` 声明为硬依赖。
-  - 可观察：LunaLib 缺失时 "齿轮工业" 行红色不可勾选/自动禁用 (硬依赖的启动器拦截语义)，用户无法选择降级运行。
-  - 修正：代码型软依赖**不**写 `dependencies`；只有真正的强制引用才写 (硬依赖讲解)。
-8. **降级日志缺失，功能悄悄变了行为**。
-  - 触发：检测失败分支不写日志，或降级值写死在适配器里。
-  - 可观察：用户与编者都无法从日志判断 "设置没接上" 还是 "被关闭"。
-  - 修正：降级分支写 INFO 日志 (`GearIn compat: ...`)，降级值由调用方传入 (业务默认语义明确)。
+## 故障分析
+
+### 无 LunaLib 时启动正常，但调用 `LunaSettings.getBoolean` 的代码抛 `NoClassDefFoundError`
+
+- 触发：可选类引用泄漏到了检查分支之外 —— 字段初始化、静态块、构造器，或某个无检测的公开方法体里直接出现 `lunalib.*` 类。
+- 原因：这些位置的符号引用在类加载或首次调用时就被解析，类不在脚本类路径上时 `NoClassDefFoundError`/`ExceptionInInitializerError` 冒泡 (`Error` 不包装，由脚本类加载器按名实例化时直接冒出)，启动或运行中止。
+- 修正：全工程搜索 `lunalib` 引用，除适配器检查分支外一律移除；把可选引用收敛进 `if (isLunaSettingsUsable())` 的 then 分支，重启后确认降级行正常出现。
+
+### `isModEnabled("lunalib")` 恒为 false，但启动器里明明勾着 Lunalib
+
+- 触发：把显示名 `LunaLib` 当 id 传。
+- 原因：`isModEnabled` 按 id 逐字比较、大小写敏感，显示名与对方 `mod_info.json` 的 `id` 字段不一致，所以恒返回 false。
+- 修正：复制对方 `mod_info.json` 的 `id` 字段值；重启后确认降级行消失。
+
+### (进阶) `isClassPresent` 返回 true 但功能没有接上，或反过来误放行崩溃
+
+- 触发：把类存在性判据 (进阶手段) 当作启用判据使用。
+- 原因：类存在性只回答 "类在不在脚本类路径上"，不回答所属 MOD 是否启用；可选类被其他 MOD 间接携带、而所属 MOD 未启用时，检测返回 true，检查通过后被放行，调用可选 API 的代码在缺依赖环境下运行并崩溃。
+- 修正：回退到主线判据 `isModEnabled`，或使用进阶组合判据 `启用 && 类在路径上`(成熟实例陷阱原文)，改后分别用启用与未启用两种状态复验。
+
+### 运行期 `SecurityException: File access and reflection are not allowed to scripts.`
+
+- 触发：脚本链代码驱动 `java.lang.reflect`(`getMethod`/`getField`/`newProxyInstance` 等) 或 `java.io.File`。
+- 原因：脚本安全过滤器在父加载器上拦截这些类型，jar 类与 `.java` 类同等受限，没有绕过途径。
+- 修正：改用本节适配器形态 (编译期直接引用 + 检查分支)；`Class.forName` 只用于存在性检测，不索取 `Method`/`Field`。
+
+### `NullPointerException`，堆栈指向拆箱 `LunaSettings.getBoolean(...)` 返回值
+
+- 触发：字段未定义或 mod 未登记时 `getBoolean` 返回 `null`，代码直接拆箱。
+- 原因：`getBoolean` 返回可空 `Boolean`，缺值时 LunaLib 先打一条 ERROR 再返回 `null`；对 `null` 拆箱即抛 NPE。
+- 修正：判空后回落默认值 (成熟实例陷阱原文)，再用删除字段场景复验无 NPE。
+
+### 两个 MOD 提供同一个全限定类名，行为时而正确时而错乱
+
+- 触发：两个 MOD 共享同一个 `URLClassLoader`，同名类按 URL 顺序先到先得 (脚本类加载器的加载行为)。
+- 原因：启用顺序或优先级变化后，`Class.forName` 返回的可能是对方实现，功能表现随启用组合漂移。
+- 修正：这是 MOD 之间不隔离的固有现象 —— 本 MOD 的类名保持唯一前缀 (`GearIn*`)，可选 API 一律通过对方的正式类访问。
+
+### 把软依赖误写进 `dependencies`，用户缺 LunaLib 时 MOD 直接被启动器拦截
+
+- 触发：适配器已经做好降级，却仍把 `lunalib` 声明为硬依赖。
+- 原因：`dependencies` 里的条目走硬依赖的启动器拦截语义，LunaLib 缺失时 "齿轮工业" 行红色不可勾选或自动禁用，用户无法选择降级运行。
+- 修正：代码型软依赖**不**写 `dependencies`；只有真正的强制引用才写 (硬依赖讲解)。
+
+### 降级日志缺失，功能悄悄变了行为
+
+- 触发：检测失败分支不写日志，或降级值写死在适配器里。
+- 原因：没有日志，用户与编者都无法从日志判断 "设置没接上" 还是 "被关闭"。
+- 修正：降级分支写 INFO 日志 (`GearIn compat: ...`)，降级值由调用方传入 (业务默认语义明确)。
 
 ## 总结
 
-本节完整走通了软依赖的处理链：
+本节走通了软依赖的三段处理链：判据 (`isModEnabled`，主线) 决定能不能碰可选 API，适配器决定引用在哪里被解析，降级决定缺依赖时返回什么。三条边界独立失效 —— 判据用错会静默误判，引用泄漏会直接崩溃，降级值或日志缺失会让行为悄悄偏离，因此验证要覆盖无依赖、有依赖和故障注入三条路径。
 
-- **检测**：`isModEnabled` 判启用、`Class.forName`/`ModUtils.isClassPresent` 判类路径存在性，组合判据 "启用 && 类在路径上" 才放行。
-- **隔离**：可选 API 的直接引用收敛进适配器 `GearInCompatBridge` 的守卫分支，懒解析保证缺依赖时类仍可加载。
-- **降级**：缺依赖或字段缺值回落调用方默认值，INFO 日志可观测，判空后再拆箱可空返回值。
-- **验证**：无依赖启动走降级、有依赖读设置、故障注入核对日志。
+脚本链的安全过滤器拦截 `java.lang.reflect` 驱动与 `java.io.File`，决定了 "反射桥接" 不可行，可选 API 只能以编译期直接引用收敛进适配器，再靠懒解析保住缺依赖时的启动。
 
-脚本链安全过滤器拦截 `java.lang.reflect` 驱动与 `java.io.File`，决定了 "反射桥接" 不可行，适配器只能收敛编译期直接引用。
-
-逻辑上的后续：这套 "检测——隔离——降级" 骨架与组合判据不绑定 LunaLib，可以原样复用到对其他可选 MOD 的能力接入 —— 适配器按目标 API 换形、降级默认值按业务语义传入；需要按版本分支时，再在组合判据上补 `getVersionInfo()` 一层。
-
-排查既有软依赖问题时也按同一顺序问：判据用对没有、引用是否全部在守卫分支内、降级分支有没有日志、`dependencies` 里有没有误写。
+这套骨架不绑定 LunaLib。接入其他可选 MOD 时，适配器按目标 API 换形、降级默认值按业务语义传入、需要版本分支时在启用判据上补 `getVersionInfo()` 一层 (类存在性检测属进阶，特殊场景再叠加)；排查既有软依赖问题时按同一顺序核对：判据是否用对、引用是否全部在检查分支内、降级分支是否写日志、`dependencies` 是否误写。
 
 ## 建议参考项
 
@@ -416,7 +419,7 @@ gradle jar
 - `com.fs.starfarer.api.ModSpecAPI`：`getVersionInfo()` 读已安装版本 (版本判断用)。
 - `lunalib.lunaSettings.LunaSettings`：可选依赖 API，`getBoolean(modId, fieldId)` 返回可空 `Boolean`。
 - `data.scripts.gearin.modcompat`：本节示例包，软依赖适配器 `GearInCompatBridge` 所在。
-- `data/config/LunaSettings.csv`(MOD 根目录起)：本节设置项 `GearIn_fullGraphicEffect` 的默认值登记处。
+- `data/config/LunaSettings.csv`(MOD 根目录起；定义在 C13-S03)：本节消费的设置项 `GearIn_fullGraphicEffect` 的默认值登记处。
 - `Starsector/mods/Lunalib/mod_info.json`(游戏安装根起)：`id` 字段逐字比对对象。
 - `Starsector/starsector-core/starsector.log`(游戏安装根起)：降级/缺失日志的核对位置。
 - `tutorial-fixtures/units/C13-S01/src/main/java/data/scripts/gearin/modcompat`：`GearInCompatBridge` 源码目录 (页面代码块的磁盘对照)。

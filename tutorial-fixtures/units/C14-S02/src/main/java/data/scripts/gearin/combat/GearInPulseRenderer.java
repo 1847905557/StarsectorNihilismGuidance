@@ -21,7 +21,7 @@ import com.fs.starfarer.api.combat.ViewportAPI;
 /**
  * 完整最小例：.vert/.frag 的路径、加载、编译日志与资源生命周期。
  *
- * 路径与加载事实（0.98a-RC8）：
+ * 路径与加载事实：
  * - shader 没有注册表 ID（区别于 CSV/JSON/spec 注册链）：.vert/.frag 以 MOD 根目录
  *   相对路径为身份，约定放在 data/shaders/（GraphicsLib data/shaders/post/pre.vert、
  *   data/shaders/ 同款布局），路径必须用 / 分隔（SettingsAPI.loadText javadoc
@@ -38,7 +38,7 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  * - 生命周期四环节：加载（每场战斗 init 内执行，不跨战斗缓存）-> 使用（render 回调内
  *   glUseProgram + glUniform* + glDrawArrays）-> 清理（cleanup() 内 glDeleteProgram，
  *   战斗结束 destroyInstance 不调 cleanup()，由 advance() 主动失效驱动引擎移除，
- *   C07-S05 硬规则延续）-> 重载（按同一路径删除后重建；本节采用"重建成功才替换"：
+ *   C07-S06 硬规则延续）-> 重载（按同一路径删除后重建；本节采用"重建成功才替换"：
  *   新程序构建失败时保留旧程序、画面不中断，ERROR 日志给出 InfoLog 作为第一证据）。
  */
 public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
@@ -79,7 +79,7 @@ public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
             valid = false; // 初始化失败：不渲染，等引擎正常移除
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C07-S05 同款姿势）
+        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C07-S06 同款姿势）
         LOG.info("GearIn pulse shader init: program=" + program + ", vbo=" + vboId
                 + ", u_offset=" + uOffsetLocation + ", u_time=" + uTimeLocation
                 + ", vert=" + VERT_PATH + ", frag=" + FRAG_PATH);
@@ -233,7 +233,7 @@ public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
         }
         elapsed += amount;
         if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()（C07-S05 硬规则 3）
+            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()（C07-S06 硬规则 3）
             return;
         }
         // 重载循环：按同一路径删除并重建 program（资源生命周期闭环）
@@ -242,7 +242,7 @@ public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
             reloadTimer = 0f;
             reloadProgram();
         }
-        // 剔除依据是承载实体的位置（C07-S05 硬规则 4）：跟随玩家舰船
+        // 剔除依据是承载实体的位置（C07-S06 硬规则 4）：跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
     }
 
@@ -270,7 +270,7 @@ public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
             return;
         }
         // 世界→屏幕正交投影：按 GraphicsLib renderForeground 姿势自行设置
-        // （glOrtho(viewport) 以世界单位建投影，org.dark.shaders.util.ShaderLib 第 1485-1489 行），
+        // （glOrtho(viewport) 以世界单位建投影，org.dark.shaders.util.ShaderLib.renderForeground() 同款姿势），
         // 顶点着色器用 gl_ModelViewProjectionMatrix 应用它；矩阵成对 push/pop 复原
         GL11.glMatrixMode(GL11.GL_PROJECTION);
         GL11.glPushMatrix();

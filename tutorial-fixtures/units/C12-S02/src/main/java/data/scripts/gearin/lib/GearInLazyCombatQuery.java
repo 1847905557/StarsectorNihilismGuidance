@@ -15,7 +15,7 @@ import com.fs.starfarer.api.combat.ShipAPI;
  * 战斗查询工具族的用法片段：CombatUtils / AIUtils 的最小消费面。
  *
  * 查询结果是当前帧引擎状态快照，实体仍归战斗引擎管理，结果禁止跨战斗
- * 缓存（C07-S01 同规）；@Nullable 返回值（getNearestEnemy /
+ * 缓存（C07-S02 同规）；@Nullable 返回值（getNearestEnemy /
  * getBestInterceptPoint）使用前必须判空。
  */
 public final class GearInLazyCombatQuery {
@@ -37,7 +37,7 @@ public final class GearInLazyCombatQuery {
         int visible = 0;
         for (ShipAPI ship : ships) {
             if (ship.isAlive()) {
-                alive++; // 快照可能含残骸，按 C07-S01 的 isAlive() 纪律过滤
+                alive++; // 快照可能含残骸，按 C07-S02 的 isAlive() 纪律过滤
             }
             if (CombatUtils.isVisibleToSide(ship, player.getOwner())) {
                 visible++;

@@ -68,7 +68,7 @@ spec 加载流程对每个 faction 文件按固定顺序解析字段。**必填*
 
 **可选**(带默认值或缺省行为)：
 
-- `crest`、`shipNamePrefix`(默认 `ISS`)、`shipNameSources`(缺省回退为 `ALL` 一项权重 1)、`displayNameLong` / `displayNameLongWithArticle`(回退显示名)、`entityNamePrefix` / `personNamePrefix` / `personNamePrefixAOrAn` / `displayNameIsOrAre`、`barSound`(默认 `bar_ambience`)、`internalComms`、`tariffFraction`(默认取 `data/campaign/econ/economy.json` 的 `defaultTariff`，RC8 为 0.3)、`tollFraction`(0.1)、`fineFraction`(0.25)、`color`(缺失回退白色)、`baseUIColor` / `darkUIColor` / `gridUIColor` / `brightUIColor` / `secondaryUIColor`、`music`。
+- `crest`、`shipNamePrefix`(默认 `ISS`)、`shipNameSources`(缺省回退为 `ALL` 一项权重 1)、`displayNameLong` / `displayNameLongWithArticle`(回退显示名)、`entityNamePrefix` / `personNamePrefix` / `personNamePrefixAOrAn` / `displayNameIsOrAre`、`barSound`(默认 `bar_ambience`)、`internalComms`、`tariffFraction`(默认取 `data/campaign/econ/economy.json` 的 `defaultTariff`，为 0.3)、`tollFraction`(0.1)、`fineFraction`(0.25)、`color`(缺失回退白色)、`baseUIColor` / `darkUIColor` / `gridUIColor` / `brightUIColor` / `secondaryUIColor`、`music`。
 - `factionDoctrine`、`variantOverrides`、`voices`、四个 `*SellFrequency`、`hullFrequency`、`shipsWhenImporting` / `known*` / `priority*`、`fleetCompositions`、`flags`、`illegalCommodities`、`traits`、`custom`。
 
 加载期就会校验 (不只是 "存下来") 的字段：
@@ -98,7 +98,7 @@ spec 加载流程对每个 faction 文件按固定顺序解析字段。**必填*
 1. 加载期 `factionDoctrine` 对象 (存在时) 解析为 `FactionDoctrineAPI`：`warships`、`carriers`、`phaseShips`、`officerQuality`、`shipQuality`、`numShips` 六个键用 `getInt` **必读**—— 写了 `factionDoctrine` 块却漏掉其中任何一个，加载中断 (`JSONObject["<键>"] not found`)；`shipSize` / `aggression` / `fleets` 是 `optInt`，默认 3；`autofitRandomizeProbability` 默认 0.25；`strictComposition` 默认 false；`commanderSkills` / `officerSkills` 数组与各自的 `*ShuffleProbability` 可选。
 2. 加载后成为 `FactionDoctrineAPI`，运行时可经 `FactionAPI.getDoctrine()` 读写。
 3. **玩家势力编辑器与文件是同一组字段**：游戏内玩家自定义势力时用的**势力编辑器界面**把前两组各三条的总和固定为 7、每一条取值 1–5(每行是五档按钮)，`shipSize` / `aggression` 各 1–5 且不受总和约束。势力文件本身不校验这些范围，但建议按编辑器的值域填写，使势力观感与用户习惯一致。
-4. 行为使用方 (舰队生成、军官生成) 读取这些值决定编队组成、船型倾向、军官质量与性格分布；`getShipQualityContribution()` 按 `(shipQuality - 1) * doctrineFleetQualityPerPoint` 计算，RC8 的 `settings.json` 里该系数为 0.125。
+4. 行为使用方 (舰队生成、军官生成) 读取这些值决定编队组成、船型倾向、军官质量与性格分布；`getShipQualityContribution()` 按 `(shipQuality - 1) * doctrineFleetQualityPerPoint` 计算，`settings.json` 里该系数为 0.125。
 
 ### 链路五：关系 (关系不在文件里)
 
@@ -302,7 +302,7 @@ data/world/factions/gear_industry.faction
 }
 ```
 
-由于 faction 文件很长，无法逐字段列表，上文用注释注解了所有在本节有意义的字段。下面只总结必须遵守的规则 (RC8，均来自 spec 加载期解析 faction 文件的实现)：
+由于 faction 文件很长，无法逐字段列表，上文用注释注解了所有在本节有意义的字段。下面只总结必须遵守的规则 (均来自 spec 加载期解析 faction 文件的实现)：
 
 | 规则 | 违反后的可观察结果 |
 |---|---|
@@ -396,13 +396,13 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 
 **清理**：恢复所有注入的故障；发布前确认 `factions.csv` 无 `#` 注释行、势力 ID 不与任何 MOD 冲突。
 
-## 实用势力包 (bp) 与其它生成型 tags 速查表 (RC8 核对)
+## 实用势力包 (bp) 与其它生成型 tags 速查表 (原版数据核对)
 
-下表全部经 RC8 数据核对 (tag 存在性来自 `data/weapons/weapon_data.csv`、`data/hulls/ship_data.csv`、`data/hulls/wing_data.csv`、`data/hullmods/hull_mods.csv`；"引用它的势力文件" 来自 `data/world/factions/*.faction`)。
+下表全部经原版数据核对 (tag 存在性来自 `data/weapons/weapon_data.csv`、`data/hulls/ship_data.csv`、`data/hulls/wing_data.csv`、`data/hullmods/hull_mods.csv`；"引用它的势力文件" 来自 `data/world/factions/*.faction`)。
 
 **不在本表上的数据均为与势力包 (bp) 和生成均无关的 tags。**
 
-| tag | RC8 数据中存在性 | 引用它的原版势力文件 | 实际意义 |
+| tag | 原版数据中存在性 | 引用它的原版势力文件 | 实际意义 |
 |---|---|---|---|
 | `base_bp` | 是 (20 船体、16 武器、2 联队)| 海盗、卢德左径、derelict、余晖、欧米伽、玩家势力 | 通用默认池 tag，构成上述势力的舰船/武器池主体；玩家势力的 known* 也引用它 |
 | `lowtech_bp` / `midline_bp` / `hightech_bp` / `missile_bp` | 是 (低科/中科/高科/导弹各若干)| 海盗、卢德左径、余晖 | 科技线 tag。注意：**不是所有对应科技的组件都在其中**；RC8 的多数正规势力 (霸主、自由联盟、英仙座联盟、辛达强权、卢德教会等) 不再依赖这些 tag，而是在 `hulls` 数组里显式列出舰船 |
@@ -410,7 +410,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 | `LP_bp` | 是 | 卢德左径 | 左径安超 (LP) 型改造包，只有卢德左径拥有它 |
 | `XIV_bp` / `heg_aux_bp` | 否 (不在数据 CSV，只作势力内 tag)| 霸主 | 第十四军团 (XIV) / 霸主辅助军 (A) 型改造包，只有霸主拥有它 |
 | `hegemony` | 是 | 霸主 | 霸主势力专属 tag |
-| `ind` / `independent` | 是 | 自由联盟、mercenary、拾荒者 | 自由联盟势力 tag(拾荒者的文件也用它，RC8 没有独立的 `scavenger` tag)|
+| `ind` / `independent` | 是 | 自由联盟、mercenary、拾荒者 | 自由联盟势力 tag(拾荒者的文件也用它)|
 | `persean` | 是 | 英仙座联盟 | 英仙座联盟势力 tag |
 | `tritachyon` | 是 | 速子科技 | 速子科技势力 tag |
 | `luddic_church` | 是 | 卢德教会 | 卢德教会势力 tag |
@@ -438,7 +438,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 
 旧版教程示例给 `knownShips` 写了 `base_bp`、`lowtech_bp` 等一串 tag。
 
-RC8 中这些 tag 仍然存在，但霸主等正规势力已经在 `hulls` 数组里显式列出全部舰船；势力专属 tag(`hegemony`、`GearIn_bp`、`gear_industry`) 仍然是舰队池的推荐入口。
+这些 tag 仍然存在，但霸主等正规势力已经在 `hulls` 数组里显式列出全部舰船；势力专属 tag(`hegemony`、`GearIn_bp`、`gear_industry`) 仍然是舰队池的推荐入口。
 
 **给自家舰船打上专属 tag 并从 tags 导入，永远比逐个列举船体更省事。**
 
@@ -526,9 +526,9 @@ RC8 中这些 tag 仍然存在，但霸主等正规势力已经在 `hulls` 数�
 - `data/world/factions/default_ship_roles.json` —— 共享装配角色表 (跨来源合并读取)；
 - `data/world/factions/hegemony.faction` —— 原版势力文件结构参考；
 - `SectorGen`(原版生涯生成脚本类)—— 关系播种的权威示例写法。
-- `data/campaign/econ/economy.json` —— `defaultTariff`(RC8 为 0.3)；
+- `data/campaign/econ/economy.json` —— `defaultTariff`(取值为 0.3)；
 - `data/campaign/commodities.csv` —— `illegalCommodities` 的 ID 校验对象；
 - `data/campaign/channels.json` —— 内部频道注册表 (`hegemony_internal`)；
 - `data/campaign/procgen/drop_groups.csv` —— 蓝图掉落池 (`rare_bp` / `restricted` 使用方)。
-- `data/config/settings.json` —— `doctrineFleetQualityPerPoint`(RC8 为 0.125)；
+- `data/config/settings.json` —— `doctrineFleetQualityPerPoint`(取值为 0.125)；
 - `data/hulls/ship_data.csv` / `data/weapons/weapon_data.csv` / `data/hulls/wing_data.csv` / `data/hullmods/hull_mods.csv` —— 各组件注册表 (tags 列与 tag 存在性)。

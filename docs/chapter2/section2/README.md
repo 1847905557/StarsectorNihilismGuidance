@@ -140,7 +140,7 @@ CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四�
 
 **③ 安装限制 (`isApplicableToShip` + `getUnapplicableReason`)**
 
-"与不稳定推进器互斥" 由这两个方法实现：前者返回能否安装 (`false` = 不能)，后者返回拒绝原因 (装配界面上显示的文字)。`hasHullMod("unstable_injector")` 检查舰船是否已装原版不稳定推进器 (原版 id，可在原版 `hull_mods.csv` 里查到)。这是 0.98a-RC8 原版互斥船插的标准写法。
+"与不稳定推进器互斥" 由这两个方法实现：前者返回能否安装 (`false` = 不能)，后者返回拒绝原因 (装配界面上显示的文字)。`hasHullMod("unstable_injector")` 检查舰船是否已装原版不稳定推进器 (原版 id，可在原版 `hull_mods.csv` 里查到)。这是 原版互斥船插的标准写法。
 
 ::: info 三个方法各管一件事
 

@@ -1,6 +1,6 @@
 # 描述文本：descriptions.csv 与转义规则
 
-战斗对象 (舰船、武器、战术系统) 的描述行、键规则与首次静态验证已在前置讲解中给出，本节在此之上把 `descriptions.csv` 讲完整：RC8 的全部 11 个 `Description.Type` 枚举、每个类型的查找键与主要使用方、CSV 转义的每一条必须遵守的规则及其违反后果，以及 "哪些描述不在 descriptions.csv 里" 的边界。这份数据 "缺了能运行、错了会分裂"：多数格式问题只表现为文本错位、截断或未挂接行，少数 (引号不配对、`type` 非法、同文件键重复、BOM 表头污染) 会直接在加载期让游戏无法启动。
+战斗对象 (舰船、武器、战术系统) 的描述行、键规则与首次静态验证已在前置讲解中给出，本节在此之上把 `descriptions.csv` 讲完整：全部 11 个 `Description.Type` 枚举、每个类型的查找键与主要使用方、CSV 转义的每一条必须遵守的规则及其违反后果，以及 "哪些描述不在 descriptions.csv 里" 的边界。这份数据 "缺了能运行、错了会分裂"：多数格式问题只表现为文本错位、截断或未挂接行，少数 (引号不配对、`type` 非法、同文件键重复、BOM 表头污染) 会直接在加载期让游戏无法启动。
 
 *本节预期阅读时间：~15 分钟。*
 
@@ -10,7 +10,7 @@
 
 完成后，您将能够：
 
-- 说出 RC8 `Description.Type` 的全部 11 个枚举值，以及每个类型的查找键 (`id` 列怎么写) 与主要使用方；
+- 说出 `Description.Type` 的全部 11 个枚举值，以及每个类型的查找键 (`id` 列怎么写) 与主要使用方；
 - 逐条说出 CSV 转义必须遵守的规则 (含双引号的字段用 `""` 转义并整体加引号、含英文逗号的字段必须加引号、多行字段必须加引号、行首 `#` 是注释)，并说出违反每条规则时可观察的结果；
 - 解释战机联队、船插 (hullmod)、市场条件、特殊物品为什么不在 `Description.Type` 里，以及它们各自的描述所在文件；
 - 为 `gear_in` 的 `descriptions.csv` 新增 `GearIn_description_*` 演示行，并通过静态检查 (键唯一、`type` 合法、UTF-8 无 BOM)；
@@ -20,7 +20,7 @@
 
 本节建立在以下基础上：
 
-- **`descriptions.csv` 的基础结构与静态检查**(前置单元 C01-S07)：RC8 为 8 列 `id,type,text1,text2,text3,text4,text5,notes`、`id + type` 键规则、舰船/武器/战术系统的查找键、缺行占位与加载期硬失败、首次静态验证脚本 (含 11 个合法 `type` 的键检查)。
+- **`descriptions.csv` 的基础结构与静态检查**(前置单元 C01-S07)：共 8 列 `id,type,text1,text2,text3,text4,text5,notes`、`id + type` 键规则、舰船/武器/战术系统的查找键、缺行占位与加载期硬失败、首次静态验证脚本 (含 11 个合法 `type` 的键检查)。
 - **各数据链对象 ID 的出处**(前置单元 C01-S02 至 C01-S06)：能识别各数据链的对象 ID(`hullId`、武器 ID、系统 ID)，知道商品、势力、行星类型等对象的 ID 来自哪些文件。
 - **术语约定**：生涯 (campaign)；数据库 (codex，生涯界面中的图鉴界面)；C2 命令 (战斗指挥命令，如攻击、护航、撤退)；地形 (terrain，星系中的星云、小行星带、日冕等)。
 
@@ -28,17 +28,17 @@
 
 数据文件是 MOD 内的 `data/strings/descriptions.csv`。**这个路径本身就是注册入口**：加载器按固定路径遍历原版与全部已启用 MOD 的同名文件并合并 (由文本读取工具读入)，MOD 不需要任何额外注册。
 
-需要整体替换某个文件时，RC8 支持在 `mod_info.json` 里声明 `fullOverrides`(该机制属于文件加载配置主题，此处不展开)。
+需要整体替换某个文件时，支持在 `mod_info.json` 里声明 `fullOverrides`(该机制属于文件加载配置主题，此处不展开)。
 
 加载与查询共三步：
 
 1. CSV spec 加载期的描述行读取 (本地核对)：以 `id`、`type` 两列为键读取全部行；`type` 必须能解析为 `Description.Type` 枚举，解析失败立即抛 `RuntimeException`；每行先经 `replaceSmartQuotes` 归一化弯引号，再以 UID = `id + "_" + type` 存入注册表。text1–text3 缺省为占位文本 `No description... yet`，text4/text5 缺省为空。
-2. 运行期查询入口是公开 API：`Global.getSettings().getDescription(id, type)`(`SettingsAPI`，RC8 API 解包)，返回 `com.fs.starfarer.api.loading.Description`；找不到键时返回一个填充占位文本的新描述对象 (不报错)。
+2. 运行期查询入口是公开 API：`Global.getSettings().getDescription(id, type)`(`SettingsAPI`)，返回 `com.fs.starfarer.api.loading.Description`；找不到键时返回一个填充占位文本的新描述对象 (不报错)。
 3. 使用方先按 "对象 → 查找键" 取描述，再按展示位置取 text1–text5 之一。
 
-### 全类型键与使用方总览 (RC8)
+### 全类型键与使用方总览
 
-RC8 的 `Description.Type` 共有 **11 个枚举值**，全部可以在 MOD 的 `descriptions.csv` 中添加。原版行数统计自 `Starsector/starsector-core/data/strings/descriptions.csv`：
+`Description.Type` 共有 **11 个枚举值**，全部可以在 MOD 的 `descriptions.csv` 中添加。原版行数统计自 `Starsector/starsector-core/data/strings/descriptions.csv`：
 
 | Type 枚举 | `id` 列怎么写 | 主要使用方 (界面位置)| 原版行数 |
 |---|---|---|---|
@@ -63,7 +63,7 @@ RC8 的 `Description.Type` 共有 **11 个枚举值**，全部可以在 MOD 的 
 
 ## CSV 转义规则 (必须遵守的规则)
 
-`descriptions.csv` 由 CSV 解析器 `parseCsv`(本地核对) 解析：先把全文的 `\r\n` 归一为 `\n`，首行按逗号切分得到表头，其后逐字符扫描数据行。以下规则在 RC8 全部有效，**违反时必然出现所述的可观察结果**。
+`descriptions.csv` 由 CSV 解析器 `parseCsv`(本地核对) 解析：先把全文的 `\r\n` 归一为 `\n`，首行按逗号切分得到表头，其后逐字符扫描数据行。以下规则全部有效，**违反时必然出现所述的可观察结果**。
 
 1. **字段内含有英文逗号 (半角 `,`) 时，必须用一对双引号把整个字段包起来。** 违反后果：字段被按列切分，该行后续所有列整体错位一格 —— 文本串到别的列，`id`/`type` 键值被污染 (变成未挂接行或显示占位文本)，列数异常。中文逗号 "，" 不是分隔符，无需处理。
 
@@ -104,7 +104,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 5. **键必须唯一**：同一文件内 `id + type` 组合重复时，加载期抛 `RuntimeException("Duplicate key [...] while loading [data/strings/descriptions.csv from [<路径>]]")`；跨文件 (原版与其他 MOD 之间) 重复时不报错，先被枚举到的文件的行生效，后到的同键行被静默跳过。
    - **不要重定义原版或其他 MOD 已有的 `id + type` 组合**—— 覆盖顺序不是可以依赖的约定。
 
-6. **文件必须 UTF-8 无 BOM**：加载器按 UTF-8 读取；BOM 字符会粘在表头第一列的列名上 (`id` 变成 `\ufeffid`)，加载期抛 `JSONObject["id"] not found` 一类异常。含中文的文件尤其要确认保存为 UTF-8 无 BOM。弯引号 (" " ' ') 会在加载时被 `replaceSmartQuotes` 归一为直引号 (RC8 原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步清洗)，所以**不要依赖弯引号原样保留**。
+6. **文件必须 UTF-8 无 BOM**：加载器按 UTF-8 读取；BOM 字符会粘在表头第一列的列名上 (`id` 变成 `\ufeffid`)，加载期抛 `JSONObject["id"] not found` 一类异常。含中文的文件尤其要确认保存为 UTF-8 无 BOM。弯引号 (" " ' ') 会在加载时被 `replaceSmartQuotes` 归一为直引号 (原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步清洗)，所以**不要依赖弯引号原样保留**。
 
 7. **表头固定 8 列**：`id,type,text1,text2,text3,text4,text5,notes`。数据行缺列时对应键缺失**；比表头多的列被静默丢弃**—— 多写一列不会报错，只会让文本 "消失"，是排查文本丢失时容易漏掉的点。
 
@@ -128,7 +128,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 - 键：`data/campaign/commodities.csv` 的 `id`(如 `supplies`、`fuel`)。
 - 使用方：货舱与交易界面的货物 tooltip 取 text1 段落，正文较长时 tooltip 可展开。
 - 原版参考行：`supplies,RESOURCE,"Assorted supplies required by ships and crew, ..."`(text1 单段)。
-- 注意：commodities.csv 自身也有 `desc` 列，但 RC8 的 `loadCommodities` 不读取它 ——**商品的显示文本一律以 `RESOURCE` 行为准**。
+- 注意：commodities.csv 自身也有 `desc` 列，但 `loadCommodities` 不读取它 ——**商品的显示文本一律以 `RESOURCE` 行为准**。
 
 ### PLANET：行星类型描述
 
@@ -186,7 +186,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 
 ### 不属于 descriptions.csv 的描述 (边界)
 
-常被误认为描述类型的几类对象，RC8 全部**不走 descriptions.csv**：
+常被误认为描述类型的几类对象，全部**不走 descriptions.csv**：
 
 | 对象 | 描述所在文件 | 使用方 |
 |---|---|---|

@@ -5,7 +5,7 @@ import com.fs.starfarer.api.Global;
 /**
  * strings.json 的两级取值封装（示例 MOD gear_in 的完整最小例）。
  *
- * 事实依据（Starsector 0.98a-RC8）：
+ * 事实依据：
  * - Global.getSettings().getString(category, id) 读取 data/strings/strings.json；
  * - 分类或键不存在时返回字面量 "Missing string: [<id>]" 并在 starsector.log 记
  *   ERROR，不抛异常、不崩溃；

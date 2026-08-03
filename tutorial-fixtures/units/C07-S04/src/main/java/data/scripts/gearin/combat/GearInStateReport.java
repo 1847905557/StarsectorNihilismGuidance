@@ -24,7 +24,7 @@ public class GearInStateReport {
 
     /** 武器运行态：弹药、冷却、充能、开火与光束实体数。 */
     public static void logWeapons(CombatEngineAPI engine) {
-        ShipAPI player = engine.getPlayerShip(); // 战斗内永不 null（C07-S01）；部署前是转移穿梭机假舰
+        ShipAPI player = engine.getPlayerShip(); // 战斗内永不 null（C07-S02）；部署前是转移穿梭机假舰
         for (WeaponAPI weapon : player.getAllWeapons()) {
             LOG.info("GearIn weapon " + weapon.getId()
                     + " type=" + weapon.getType() + " size=" + weapon.getSize()

@@ -1,6 +1,6 @@
 # 武器动画与效果回调：数据绑定与语义
 
-本节把武器 / 射弹 / 光束的效果与视觉层讲透：`.wpn` 的 `everyFrameEffect` / `beamEffect` 与 `.proj` 的 `onFireEffect` / `onHitEffect` 四个注册列的使用方、实例模型与回调时机，动画数据字段与帧贴图命名规则，内置视觉与 `AnimationAPI` 程序化控制。核心前提是数据绑定效果类与战斗插件 / 监听器是两类回调对象 ——"类实现了接口" 不等于 "实例被引擎调用"，每个角色都由注册列按类名创建实例；完整最小例由四个单角色效果类组成，各自绑定一个注册列，逐个演示实例归属与回调时机。
+本节在武器开火流 (C07-S04) 之后处理效果层：`.wpn` 的 `everyFrameEffect` / `beamEffect` 与 `.proj` 的 `onFireEffect` / `onHitEffect` 四个注册列如何按类名创建实例，动画数据、帧贴图与内置视觉如何驱动渲染。核心前提是数据绑定效果类与战斗插件是两类回调对象 ——"类实现了接口" 不等于 "实例被引擎调用"。完成本节后，您将得到四个单角色效果类，并在战斗中用日志与视口粒子逐项核对实例归属与回调时机。
 
 *本节预期阅读时间：~20 分钟。*
 
@@ -10,12 +10,12 @@
 
 完成后，您将能够：
 
-- 说出 `.wpn` 的 `everyFrameEffect` / `beamEffect` 与 `.proj` 的 `onFireEffect` / `onHitEffect` 四个注册列的使用方与实例模型：每武器、每光束射线、每射弹独立实例，效果类必须可无参实例化；
-- 背出弹丸与光束武器上 `EveryFrameWeaponEffectPlugin.advance` 的调用时机 (本帧转向 / 开火之前)、`advanceAfter`(本帧操作之后)、`WeaponEffectPluginWithInit.init`(武器构造时)，以及暂停时这些回调全部停摆；
-- 说出武器贴图动画的播放条件 (开火 / 充能 / `alwaysAnimate` 才推进、`animateWhileFiring:false` 时开火中冻结、`frameRate` 为帧 / 秒、帧环绕播放)，并背出帧贴图命名规则 (基路径以 `00.png` 结尾、帧文件顺序编号)；
-- 用 `weapon.getAnimation()` 的 `AnimationAPI`(`play` / `pause` / `setFrame` / `setFrameRate`) 程序化控制动画，并说出两条渲染硬约束：`getAnimation()` 对非动画武器返回 null、`getSprite()` 上设置的 alpha 与角度会被渲染前覆盖；
-- 说出 `animationType` 四种内置视觉 (`NONE` / `GLOW` / `MUZZLE_FLASH` / `GLOW_AND_FLASH` / `SMOKE`) 与 `muzzleFlashSpec` / `smokeSpec` / `visualRecoil` 的角色、触发条件与可观察结果；
-- 说出 `BeamEffectPlugin` 的每帧回调与 `BeamEffectPluginWithReset.reset()` 的调用窗口 (射线创建与销毁)，并只消费本帧光束状态 (`didDamageThisFrame` / `getDamageTarget`)；
+- 区分 `.wpn` 的 `everyFrameEffect` / `beamEffect` 与 `.proj` 的 `onFireEffect` / `onHitEffect` 四个注册列的使用方与实例模型：每武器、每光束射线、每射弹独立实例，效果类必须可无参实例化；
+- 解释弹丸与光束武器上 `EveryFrameWeaponEffectPlugin.advance` 的调用时机 (本帧转向 / 开火之前)、`advanceAfter`(本帧操作之后)、`WeaponEffectPluginWithInit.init`(武器构造时)，并验证暂停时这些回调全部停摆；
+- 判断武器贴图动画的播放条件 (开火 / 充能 / `alwaysAnimate` 才推进、`animateWhileFiring:false` 时开火中冻结、`frameRate` 为帧 / 秒、帧环绕播放)，并列出帧贴图命名规则 (基路径以 `00.png` 结尾、帧文件顺序编号)；
+- 使用 `weapon.getAnimation()` 的 `AnimationAPI`(`play` / `pause` / `setFrame` / `setFrameRate`) 程序化控制动画，并说明两条渲染约束：`getAnimation()` 对非动画武器返回 null、`getSprite()` 上设置的 alpha 与角度会被渲染前覆盖；
+- 区分 `animationType` 的取值 (`NONE` / `GLOW` / `MUZZLE_FLASH` / `GLOW_AND_FLASH` / `SMOKE`) 与 `muzzleFlashSpec` / `smokeSpec` / `visualRecoil` 的角色、触发条件与可观察结果；
+- 解释 `BeamEffectPlugin` 的每帧回调与 `BeamEffectPluginWithReset.reset()` 的调用窗口 (射线创建与销毁)，并只消费本帧光束状态 (`didDamageThisFrame` / `getDamageTarget`)；
 - 用 `starsector.log` 与视口粒子从症状定位本节列出的八类典型故障。
 
 ## 前置知识
@@ -32,7 +32,7 @@
 
 ## 文件与 API 链路
 
-本节涉及的接口在 `com.fs.starfarer.api.combat`(`AnimationAPI` 在 `com.fs.starfarer.api`，数据对象在 `com.fs.starfarer.api.loading`)：
+先确认四个注册列与动画、视觉对象各落在哪个接口，再进入字段与时机。本节涉及的接口在 `com.fs.starfarer.api.combat`(`AnimationAPI` 在 `com.fs.starfarer.api`，数据对象在 `com.fs.starfarer.api.loading`)：
 
 | 接口 / 类型 | 本节角色 | 注册列 / 获取入口 |
 |---|---|---|
@@ -60,7 +60,7 @@
 
 加载期：四个键都在加载武器 / 弹体 spec 时把类名登记给脚本类加载器，类在首次被实例化时才真正加载。
 
-### .wpn 动画与视觉字段 (RC8 现状)
+### .wpn 动画与视觉字段
 
 加载器读取 (缺省值即默认)：
 
@@ -85,6 +85,8 @@
 - `blinker_red.wpn`(`numFrames:2`、`frameRate:1`、`alwaysAnimate:"false"`，配 `BlinkerEffect` 人工切帧)。
 
 ## 武器贴图动画
+
+注册列回答了 "哪个类被调用"，动画数据回答 "贴图怎么动"。
 
 ### 数据驱动动画：四个字段的播放条件
 
@@ -130,7 +132,7 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 
 ## 内置视觉：animationType、visualRecoil 与炮口粒子
 
-弹丸武器开火时，在视口 100 单位内且舰船允许炮口闪光 (`ShipAPI.isNoMuzzleFlash()` 为 false) 时按 `animationType` 分派：
+动画解决帧的推进，开火瞬间的光、烟与炮管后坐由内置视觉字段承担。弹丸武器开火时，在视口 100 单位内且舰船允许炮口闪光 (`ShipAPI.isNoMuzzleFlash()` 为 false) 时按 `animationType` 分派：
 
 | `animationType` | 开火视觉 | 数据来源 |
 |---|---|---|
@@ -143,18 +145,18 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 `muzzleFlashSpec` 字段 (`com.fs.starfarer.api.loading.MuzzleFlashSpec`)：
 
 - `length`(粒子射程)；
-- `spread`(散度，度)。
+- `spread`(散度，度)；
 - `particleSizeMin` / `particleSizeRange`(粒子尺寸区间)；
-- `particleDuration`(寿命，秒)。
+- `particleDuration`(寿命，秒)；
 - `particleCount`(数量；`<= 0` 生成空 spec)；
-- `particleColor`
+- `particleColor`。
 
 `smokeSpec` 字段 (`.wpn` 数据键)：
 
-- `particleSizeMin` / `particleSizeRange`
+- `particleSizeMin` / `particleSizeRange`；
 - `cloudParticleCount` / `cloudDuration` / `cloudRadius`(烟云)；
-- `blowbackParticleCount` / `blowbackDuration` / `blowbackLength` / `blowbackSpread`(后喷)。
-- `particleColor`
+- `blowbackParticleCount` / `blowbackDuration` / `blowbackLength` / `blowbackSpread`(后喷)；
+- `particleColor`。
 
 `visualRecoil` 非 0 且基贴图存在时启用炮管贴图与后坐位移：`turretGunSprite` / `hardpointGunSprite` 作为炮管层渲染。
 
@@ -165,6 +167,8 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 注意 `visualRecoil` 是视觉后坐，与散布相关的实际后坐由 `minSpread` / `maxSpread` / `spreadBuildup` / `spreadDecayRate` 控制，两者独立。
 
 ## 效果回调：注册列 → 实例 → 时机
+
+数据字段与渲染字段已经看完，现在回到四个注册列本身：实例何时创建、每帧何时被调用。
 
 ::: info 为什么每个注册列都要独立实例化
 
@@ -214,6 +218,8 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 
 ## 必须遵守的规则
 
+从实例模型与回调时机中提炼出的约束集中在这里，本节示例逐条对应。
+
 1. **效果类必须可无参实例化**。所有效果注册列都由脚本类加载器按类名创建实例 (要求无参构造器)。违反的可观察结果：绑定的类缺失、类名写错或无无参构造器时，武器 / 射线 / 射弹创建点抛 `Problem loading class [...]`(`RuntimeException`)—— 部署舰船即报错，或武器 / 射弹创建失败。
 2. **回调参数只在本回调内消费，禁止跨发 / 跨帧 / 跨实例缓存**。`onFire` 的 `projectile`、`onHit` 的 `target` / `damageResult`、光束的 `didDamageThisFrame` / `getDamageTarget` 都只在对应回调与对应帧有效 (与 C07-S04 规则 2、5 同一条纪律)。违反的可观察结果：把上一帧目标当本帧目标继续操作 —— 对已死实体施加逻辑；或跨发射复用射弹引用 —— 旧引用失效或被下一次覆盖。
 3. **动画武器帧贴图必须按命名规则放置**：基贴图路径以 `00.png` 结尾，帧文件按 `00, 01, ..., N-1` 顺序编号。违反的可观察结果：基路径不以 `00.png` 结尾时帧 0 路径推导错位 (拼出错误文件名)，帧文件缺失在武器构造时加载失败 —— 部署舰船即报错。
@@ -224,9 +230,9 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 
 ## 完整最小例
 
-在编译 JAR 链路的 MOD 布局 (C06-S01) 与武器开火流单元 (C07-S04) 的 `GearInWeaponFlowEffect` 之上新增四个 Java 类 (不新增资源：任务包 "资产：无")。
+规则需要落到可编译的类上。在编译 JAR 链路的 MOD 布局 (C06-S01) 与武器开火流单元 (C07-S04) 的 `GearInWeaponFlowEffect` 之上新增四个 Java 类，本节不新增任何资源文件。
 
-`.wpn` / `.proj` 接入片段与帧贴图清单见下文，仅演示挂载点，本单元不创建数据文件。
+`.wpn` / `.proj` 接入片段与帧贴图清单见下文，仅演示挂载点，本节不创建数据文件。
 
 包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Role>`)。
 
@@ -486,7 +492,7 @@ public class GearInOnHitEffect implements OnHitEffectPlugin {
 
 ### 数据接入片段
 
-(工程片段 —— 本单元不创建数据文件；接入后四个效果类才生效。以下 ID 由本节声明，路径在 `Starsector\mods\GearIndustry\` 下自洽)
+(工程片段 —— 本节不创建数据文件；接入后四个效果类才生效。以下 ID 由本节声明，路径在 `Starsector\mods\GearIndustry\` 下自洽)
 
 ```text
 data\weapons\GearIn_test_rotor.wpn         # 弹丸武器：GearInWeaponFrameEffect（everyFrameEffect）+ 动画 / 内置视觉字段
@@ -601,73 +607,85 @@ gradle jar
 - `GearInOnFireEffect.class`
 - `GearInOnHitEffect.class`
 
-本节四个示例类与 fixture 逐字一致，fixture 编译验收命令见 "预期结果"。
+本节四个示例类与 fixture 源码逐字一致，fixture 编译验收命令见下文的 "验证方案"。
 
-### 验证方案 (基于本例)
+## 验证方案
 
-- 前置数据：编译 JAR 链路的 MOD 布局 (C06-S01)+ 本节数据接入片段 (三个数据文件 + 帧贴图清单)+ 四个效果类；测试舰装 `GearIn_test_rotor` 与 `GearIn_test_beam`。
-- 操作 1(fixture 编译)：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC07s09Java --no-daemon`，确认 `BUILD SUCCESSFUL`。
-- 操作 2(游戏构建)：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含四个效果类的 class。
-- 操作 3(初始化)：进入 `GearIn_test` 战役 (C03-S01) 部署测试舰，核对 `GearIn weapon fx init GearIn_test_rotor ... animated=true frames=4 rate=12.0` 与 `GearIn weapon fx init GearIn_test_beam ... animated=false`(预期结果 3)。
-- 操作 4(动画)：用 `GearIn_test_rotor` 射击，核对帧号 0→3 循环 (预期结果 4)；停火后核对 `idle -> frame 0 (programmatic)`。
-- 操作 5(回调时机)：核对 `started firing (before-frame callback)` 与每秒一条 `after-frame:`(预期结果 5)。
-- 操作 6(onFire / onHit)：核对每发一条 `GearIn onFire ...`，命中时 `GearIn onHit ...`(预期结果 6)。
-- 操作 7(光束)：用 `GearIn_test_beam` 照射目标，核对 `GearIn beam fx reset ...` 两次 (创建 / 销毁)、`hit start` 与端点上蓝色火花 (预期结果 7)。
-- 操作 8(暂停)：空格暂停，全部日志停更，恢复后继续 (预期结果 8)。
-- 操作 9(故障注入 1)：把 `.wpn` 的 `everyFrameEffect` 类名改错 → 部署报错 `Problem loading class [...]`(故障 2)；改回恢复。
-- 操作 10(故障注入 2)：把 `beamEffect` 从 `GearIn_test_beam.wpn` 移到 `GearIn_test_rotor.wpn` → 光束回调不执行且无报错 (故障 3)；改回恢复。
-- 通过信号：操作 1–8 全部符合；操作 9、10 的注入与恢复符合预期。
-- 清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
+前置数据：编译 JAR 链路的 MOD 布局 (C06-S01)、本节数据接入片段 (三个数据文件与帧贴图清单) 与四个效果类；测试舰装 `GearIn_test_rotor` 与 `GearIn_test_beam`。
 
-## 预期结果
+### fixture 编译与游戏构建
 
-1. **fixture 编译 (验收 J)**：在 Git Bash 执行。
-```text
-gradle -p tutorial-fixtures compileC07s09Java --no-daemon
-```
-以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/` 下的 `GearInWeaponFrameEffect.class` / `GearInBeamHitEffect.class` / `GearInOnFireEffect.class` / `GearInOnHitEffect.class`。
-3. **数据接入初始化**：装好三个数据片段与帧贴图并给测试舰装上两把武器后，部署舰船时 `starsector.log` 出现 `GearIn weapon fx init GearIn_test_rotor ... animated=true frames=4 rate=12.0` 与 `GearIn weapon fx init GearIn_test_beam ... animated=false`(光束武器无 `numFrames`，动画为 null—— 规则 4 的判空生效)。
-4. **动画自动播放 (GearInWeaponFrameEffect)**：开火时 `GearIn weapon fx ... frame=0/4 ... firing=true ...` 之后帧号按 `frameRate` 节奏递增环绕 (0→1→2→3→0)；停火且冷却结束后出现一次 `idle -> frame 0 (programmatic)`，帧号停 0；改 `.wpn` 的 `animateWhileFiring:false` 后，开火中帧号不再变化 (冻结)。
-5. **回调时机 (GearInWeaponFrameEffect)**：每次开火在生成射弹前出现 `started firing (before-frame callback)`(操作前)；持续射击每 1 秒一条 `after-frame: ammo=... cooldown=...`(操作后)。
-6. **onFire / onHit(.proj 绑定)**：开火后每发一条 `GearIn onFire GearIn_test_shot weapon=GearIn_test_rotor spawnType=BALLISTIC speed=...`；命中目标时 `GearIn onHit GearIn_test_shot target=Ship shieldHit=... hull=... armor=... shields=... emp=...`。
-7. **光束 (GearInBeamHitEffect)**：光束武器照射期间出现 `GearIn beam fx reset (ray created or destroyed)`(射线创建与停火销毁各一次)；命中目标后出现一次 `GearIn beam fx hit start: target=Ship brightness=...`，照射期间在射线端点上持续出现蓝色火花粒子 (每 0.15 秒一批)；停火后射线与粒子消失。
-8. **暂停语义**：按空格暂停，上述全部日志停更 (武器不推进 → 所有数据绑定回调停摆)，恢复后继续。
-9. **帧贴图命名违规**：把 `turretSprite` 的 `_base00.png` 改名为 `_base.png`(或删掉任一帧文件) 后部署，武器创建报错 (规则 3)。
+1. 在 Git Bash 执行 `gradle -p tutorial-fixtures compileC07s09Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
+2. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，再用 `jar tf jars\GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下的四个类。
 
-静态自查：四个示例类与 fixture 逐字一致 (包括 import 顺序与注释)。
+预期结果：
 
-没有把工作单元编号写进任何包名、类名、资源名或字符串 key：
+- fixture 编译以 `BUILD SUCCESSFUL` 结束；
+- `jars\GearIndustry.jar` 包含 `GearInWeaponFrameEffect.class` / `GearInBeamHitEffect.class` / `GearInOnFireEffect.class` / `GearInOnHitEffect.class`。
+
+### 战斗内验证 (动画 / 回调时机 / onFire / onHit / 光束 / 暂停)
+
+3. 进入 `GearIn_test` 战役 (C03-S01) 部署测试舰，核对 `GearIn weapon fx init` 两行日志。
+4. 用 `GearIn_test_rotor` 射击，核对帧号 0→3 循环；停火后核对 `idle -> frame 0 (programmatic)`。
+5. 持续射击，核对 `started firing (before-frame callback)` 与每秒一条 `after-frame:`。
+6. 核对每发一条 `GearIn onFire ...`，命中时 `GearIn onHit ...`。
+7. 用 `GearIn_test_beam` 照射目标，核对 `GearIn beam fx reset ...` 两次 (创建 / 销毁)、`hit start` 与射线端点的蓝色火花。
+8. 按空格暂停，确认全部日志停更，恢复后继续。
+
+预期结果：
+
+- 部署时 `starsector.log` 出现 `GearIn weapon fx init GearIn_test_rotor ... animated=true frames=4 rate=12.0` 与 `GearIn weapon fx init GearIn_test_beam ... animated=false`(光束武器无 `numFrames`，动画为 null—— 规则 4 的判空生效)；
+- 开火时帧号按 `frameRate` 节奏递增环绕 (0→1→2→3→0)；停火且冷却结束后出现一次 `idle -> frame 0 (programmatic)`，帧号停 0；改 `.wpn` 的 `animateWhileFiring:false` 后，开火中帧号不再变化 (冻结)；
+- 每次开火在生成射弹前出现 `started firing (before-frame callback)`(操作前)；持续射击每 1 秒一条 `after-frame: ammo=... cooldown=...`(操作后)；
+- 开火后每发一条 `GearIn onFire GearIn_test_shot weapon=GearIn_test_rotor spawnType=BALLISTIC speed=...`；命中目标时 `GearIn onHit GearIn_test_shot target=Ship shieldHit=... hull=... armor=... shields=... emp=...`；
+- 光束武器照射期间出现 `GearIn beam fx reset (ray created or destroyed)`(射线创建与停火销毁各一次)；命中目标后出现一次 `GearIn beam fx hit start: target=Ship brightness=...`，照射期间在射线端点上每 0.15 秒一批蓝色火花粒子；停火后射线与粒子消失；
+- 暂停期间上述全部日志停更 (武器不推进 → 所有数据绑定回调停摆)，恢复后继续。
+
+### 故障注入
+
+9. 把 `GearIn_test_rotor.wpn` 的 `everyFrameEffect` 类名改错 → 部署报错 `Problem loading class [...]`(对应故障分析 2)；改回恢复。
+10. 把 `beamEffect` 从 `GearIn_test_beam.wpn` 移到 `GearIn_test_rotor.wpn` → 光束回调不执行且无报错 (对应故障分析 3)；改回恢复。
+11. 把 `turretSprite` 的 `_base00.png` 改名为 `_base.png`，或删掉任一帧文件，部署后核对武器创建报错 (规则 3)；恢复后复验。
+
+预期结果：
+
+- 类名改错后部署舰船即报错；`beamEffect` 错绑到弹丸武器后静默无回调；帧贴图违规后武器创建报错；全部改回并重启游戏后，3–8 步的观察结果恢复。
+
+通过信号：操作 1–8 全部符合；操作 9–11 的注入与恢复符合预期；四个效果类与 fixture 源码逐字一致 (含 import 顺序与注释)。
+
+清理：取消勾选测试 MOD；确认没有对共享文件 (如 `tutorial-fixtures\build.gradle`) 做过修改。
+
+本节没有把页面编号写进任何包名、类名、资源名或字符串 key：
 
 - 包 `data.scripts.gearin.combat`；
 - 类 `GearInWeaponFrameEffect` / `GearInBeamHitEffect` / `GearInOnFireEffect` / `GearInOnHitEffect`。
 
-## 实例驱动故障分析
+## 故障分析
 
-1. **效果 "不触发"**。触发：类实现了 `EveryFrameWeaponEffectPlugin` / `BeamEffectPlugin` / `OnFireEffectPlugin` / `OnHitEffectPlugin`，也注册成了战斗插件，但 `.wpn` / `.proj` 里没绑对应注册列。可观察：对应回调**永远不执行**，无任何报错 (静默)—— 战斗插件实例与数据绑定实例是两类实例 (脚本类加载器每次按类名创建新实例)。修正：在对应文件绑完整类名 (`everyFrameEffect` / `beamEffect` 在 `.wpn`，`onFireEffect` / `onHitEffect` 在 `.proj`)。
-2. **效果类加载失败**。触发：类名写错、类缺失、或类没有无参构造器。可观察：武器 / 射线 / 射弹创建点抛 `Problem loading class [...]`(`RuntimeException`)，部署舰船即报错。修正：核对完整类名 (含包名) 与无参构造器；检查 `jar tf` 里 class 路径与包名一致。
-3. **`beamEffect` 不生效**。触发：把 `beamEffect` 写进弹丸武器的 `.wpn`。可观察：无任何报错，光束回调不执行 (静默)—— 注册列只在 `specClass: beam` 时被读取。修正：确认 `.wpn` 是光束武器 (或改绑 `everyFrameEffect`)。
-4. **`getAnimation()` NPE**。触发：对静态贴图武器 (`numFrames:1`) 直接 `weapon.getAnimation().setFrame(...)`。可观察：武器效果回调首帧 NPE(非动画武器返回 null)。修正：判空后再操作 (本节示例 `init` / `advance` 的写法)。
-5. **动画不转 / 停在 0 帧**。触发一：`numFrames` 未设 (保持 1)—— 不是动画武器，帧永远 0；触发二：`alwaysAnimate:false` 且武器闲置 —— 引擎本来就不推进，这是数据默认行为，不是 bug；触发三：效果类调过 `pause()` 后没有 `play()`——`Animation.paused` 后引擎不再推进 (含开火期间)，可观察：开火中帧号也不动。修正：按播放条件核对 `.wpn` 字段；`pause()` / `play()` 成对使用。
-6. **帧错位或帧文件加载失败**。触发：基贴图路径不以 `00.png` 结尾 (如 `..._base.png`)，或帧文件缺失。可观察：帧 0 路径推导错位 (替换不命中，帧文件拼错名) 或构造期加载失败 —— 部署舰船即报错 (规则 3)。修正：按命名规则放置帧文件，基路径以 `00.png` 结尾。
-7. **命中火花不出现**。触发一：`didDamageThisFrame()` 为 false—— 射线没截短目标 (没命中) 或伤害乘数为 0(起手充能期)；触发二：视口外 —— 粒子只在视口附近有意义 (`addHitParticle` 离视口过远不渲染)；触发三：节流器用 `beam.getDamage().getDpsDuration()` 推进而结算帧外 `dpsDuration` 为 0，`IntervalUtil.advance(0)` 永不触发 (`IonBeamEffect` 为此专门处理 `wasZero` 边沿)。修正：先核对光束确实命中 (`hit start` 日志)，节流推进改用 `amount` 或按 `IonBeamEffect` 的写法。
-8. **回调状态污染 / 引用失效**。触发：把 `onFire` 的 `projectile`、`onHit` 的 `target` 或光束的 `getDamageTarget()` 存进字段跨帧 / 跨发射 / 跨战斗复用。可观察：旧实体已移除仍被操作 (对已死目标施加逻辑)，或第二场战斗引用失效 (与 C06-S03 / C07-S02 跨战斗缓存禁令同一条纪律)。修正：参数只在本回调内消费；需要跨帧状态时用本帧重新查询 (如 `weapon.getBeams()`、`engine.getProjectiles()`)。
+1. **效果 "不触发"**。症状：类实现了对应接口，但回调从不执行，日志里也没有任何报错。触发：类还注册成了战斗插件，而 `.wpn` / `.proj` 里没绑对应注册列。原因：战斗插件实例与数据绑定实例是两类实例 —— 脚本类加载器每次按类名创建新实例，实例归属完全由绑定位置决定。修正：在对应文件绑完整类名 (`everyFrameEffect` / `beamEffect` 在 `.wpn`，`onFireEffect` / `onHitEffect` 在 `.proj`)，重启游戏后复验日志。
+2. **效果类加载失败**。症状：部署舰船即报错，武器 / 射线 / 射弹创建点抛 `Problem loading class [...]`(`RuntimeException`)。触发：类名写错、类缺失，或类没有无参构造器。原因：注册列按类名实例化，类必须可无参构造；任何一个条件不满足都会在创建点直接抛异常。修正：核对完整类名 (含包名) 与无参构造器，再用 `jar tf jars\GearIndustry.jar` 检查 class 路径与包名一致。
+3. **`beamEffect` 不生效**。症状：光束武器没有任何效果日志，且无任何报错 (静默)。触发：把 `beamEffect` 写进弹丸武器的 `.wpn`。原因：注册列只在 `specClass: beam` 的 `.wpn` 上被读取，写到弹丸武器上被忽略。修正：确认 `.wpn` 是光束武器，或改绑 `everyFrameEffect`。
+4. **`getAnimation()` 抛 NPE**。症状：武器效果回调首帧直接 NPE。触发：对静态贴图武器 (`numFrames:1`) 直接调用 `weapon.getAnimation().setFrame(...)`。原因：非动画武器 `getAnimation()` 返回 null。修正：判空后再操作 (本节示例 `init` / `advance` 的写法)。
+5. **动画不转 / 停在 0 帧**。症状：开火或闲置时帧号不动。触发与原因：
+   - `numFrames` 未设 (保持 1)—— 不是动画武器，帧永远 0；
+   - `alwaysAnimate:false` 且武器闲置 —— 引擎本来就不推进，这是数据默认行为，不是 bug；
+   - 效果类调过 `pause()` 后没有 `play()` —— `Animation.paused` 后引擎不再推进 (含开火期间)，开火中帧号也不动。
+   修正：按播放条件核对 `.wpn` 字段；`pause()` / `play()` 成对使用，改回后复验帧号随开火循环。
+6. **帧错位或帧文件加载失败**。症状：部署舰船即报错，或动画帧画面错位。触发：基贴图路径不以 `00.png` 结尾 (如 `..._base.png`)，或帧文件缺失。原因：帧路径由基路径推导，替换不命中会拼出错误文件名；帧文件缺失在武器构造时加载失败。修正：按命名规则放置帧文件，基路径以 `00.png` 结尾 (规则 3)。
+7. **命中火花不出现**。症状：光束持续照射，但射线端点始终没有粒子。触发与原因：
+   - `didDamageThisFrame()` 为 false —— 射线没截短目标 (没命中)，或伤害乘数为 0(起手充能期)；
+   - 视口外 —— `addHitParticle` 离视口过远不渲染；
+   - 节流器用 `beam.getDamage().getDpsDuration()` 推进，而结算帧外 `dpsDuration` 为 0，`IntervalUtil.advance(0)` 永不触发 (`IonBeamEffect` 为此专门处理 `wasZero` 边沿)。
+   修正：先核对光束确实命中 (`hit start` 日志)，节流推进改用 `amount` 或按 `IonBeamEffect` 的写法。
+8. **回调状态污染 / 引用失效**。症状：对已死亡或已离场实体继续施加逻辑，或第二场战斗引用失效。触发：把 `onFire` 的 `projectile`、`onHit` 的 `target` 或光束的 `getDamageTarget()` 存进字段跨帧 / 跨发射 / 跨战斗复用。原因：回调参数是本次事件上下文，只在本回调内有效；跨战斗实例全部重建 (与 C06-S03 / C07-S02 跨战斗缓存禁令同一条纪律)。修正：参数只在本回调内消费；需要跨帧状态时在本帧重新查询 (如 `weapon.getBeams()`、`engine.getProjectiles()`)。
 
 ## 总结
 
-本节把效果注册列的实例模型与回调时机串成一条链：`.wpn` 的 `everyFrameEffect` / `beamEffect` 与 `.proj` 的 `onFireEffect` / `onHitEffect` 声明 "绑哪个类"。
+本节把四个注册列串成一条完整的链：`.wpn` 的 `everyFrameEffect` / `beamEffect` 与 `.proj` 的 `onFireEffect` / `onHitEffect` 声明 "绑哪个类"，对应实体创建时由脚本类加载器按类名实例化 (每武器、每光束射线、每射弹独立实例，必须可无参实例化)，之后由引擎按角色、按时机调用。动画数据面与帧贴图命名构成效果层的数据支柱，`AnimationAPI` 程序化控制与内置视觉构成渲染支柱，四个单角色示例类各对应一个注册列。
 
-对应实体创建时由脚本类加载器按类名实例化 (每武器、每光束射线、每射弹独立实例，必须可无参实例化)，之后由引擎按角色、按时机调用。
+排错时先分清 "类实现了接口" 与 "实例被引擎调用"：回调不执行先查注册列有没有绑，再查类名与无参构造器；动画与视觉异常先核对 `.wpn` 数据字段与帧贴图命名，再检查程序化控制是否成对 (`pause()` / `play()`)。
 
-动画数据面 (`numFrames` / `frameRate` / `alwaysAnimate` / `animateWhileFiring`) 与帧贴图命名规则构成效果层的数据支柱。
-
-`AnimationAPI` 程序化控制与内置视觉 (`animationType` / `visualRecoil` / 炮口粒子) 构成效果层的渲染支柱。
-
-四个单角色示例类各对应一个注册列，是 "注册列 → 接口 → 实例" 的最简流程。
-
-逻辑上的后续自然落在组合与扩展：一类多角色时每个注册列各创建实例、跨角色传状态需显式通道 (`weapon.setCustom` / `getCustom`)。
-
-本节的四条必须遵守的规则 (回调参数只在本回调内消费、`getAnimation()` 判空、帧贴图命名、`getSprite()` 不可设 alpha / 角度) 是叠加自定义粒子与贴图层时的检查清单 —— 凡超出内置 `animationType` 的视觉，都要回到这两条渲染约束与视口语义上核对。
+一类多角色时每个注册列仍各创建实例，跨角色传状态需要显式通道 (`weapon.setCustom` / `getCustom`)；四条规则 (回调参数只在本回调内消费、`getAnimation()` 判空、帧贴图命名、`getSprite()` 不可设 alpha / 角度) 是叠加自定义视觉时的检查清单。
 
 ## 建议参考项
 
@@ -681,4 +699,4 @@ gradle -p tutorial-fixtures compileC07s09Java --no-daemon
 - `com.fs.starfarer.api.loading.ProjectileWeaponSpecAPI`(`getMuzzleFlashSpec` / `getVisualRecoil` / `getHardpointGunSpriteName` / `getTurretGunSpriteName`)、`com.fs.starfarer.api.loading.BeamWeaponSpecAPI`(`getBeamEffect`)、`com.fs.starfarer.api.loading.ProjectileSpecAPI`(`getOnFireEffect` / `getOnHitEffect` / `isApplyOnHitEffectWhenPassThrough`)：spec 读取侧与注册列数据挂载点；`com.fs.starfarer.api.loading.MuzzleFlashSpec`：炮口粒子参数；`.wpn` 的 `smokeSpec` 键：烟尘参数。
 - `com.fs.starfarer.api.impl.combat.BlinkerEffect`(`setFrame` 人工切帧做法)、`com.fs.starfarer.api.impl.combat.RealityDisruptorEffect`(一类多角色实例模式)、`com.fs.starfarer.api.impl.combat.IonBeamEffect`(`getDpsDuration` 推进节流器)、`com.fs.starfarer.api.impl.combat.RiftBeamEffect`(everyFrameEffect 轮询 `weapon.getBeams()`)：原版实现参考。
 - `data/weapons/*.wpn` 与 `data/weapons/proj/*.proj`：四个注册列的数据挂载点 (MOD 根目录相对路径)。
-- `tutorial-fixtures/units/C07-S09/src/main/java/data/scripts/gearin/combat/`：本单元四个效果类所在 fixture 目录。
+- `tutorial-fixtures/units/C07-S09/src/main/java/data/scripts/gearin/combat/`：本节四个效果类所在 fixture 目录。

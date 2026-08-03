@@ -26,7 +26,7 @@ import com.fs.starfarer.api.util.Misc;
  * mission ref 键 $gearInHub_ref）。本节所有权，不含工作单元编号变体。
  *
  * 注册入口：data/campaign/bar_events.csv 一行（plugin 列 = 本类全名）+ rules.csv
- * 四条规则（blurbBar / optionBar / startBar / 交付收尾），见页面正文。
+ * 六条规则（blurbBar / optionBar / startBar / 任务文本 / 数据收讫 / 交付结算），见页面正文。
  * 展示链路：BarEventManager -> SpecBarEventCreator（isMission 判定）->
  * HubMissionBarEventWrapper -> shouldShowAtMarket / createAndAbortIfFailed(true)
  * -> updateInteractionData -> FireBest gearInHub_blurbBar / gearInHub_optionBar。
@@ -83,7 +83,7 @@ public class GearInHubMission extends HubMissionWithBarEvent {
             setGiverImportance(pickImportance());
             setGiverFaction(Factions.INDEPENDENT);
             setGiverTags(Tags.CONTACT_TRADE);
-            findOrCreateGiver(createdAt, false, false);
+            findOrCreateGiver(createdAt, true, false);
         }
 
         giver = getPerson();
@@ -124,7 +124,7 @@ public class GearInHubMission extends HubMissionWithBarEvent {
 
         // ---- 地图目标标记：进入对应阶段时点亮 ----
         makeImportant(sourceContact, "$gearInHub_hasData", Stage.CONTACT);
-        makeImportant(giver, "$gearInHub_delivered", Stage.RETURN);
+        makeImportant(giver, "$gearInHub_returnMark", Stage.RETURN);
 
         // ---- 事件链：一次性触发器 ----
         // 进入 RETURN 阶段即写全局标记（AlwaysTrueChecker 恒真，进阶段即触发）。
@@ -151,7 +151,7 @@ public class GearInHubMission extends HubMissionWithBarEvent {
 
     @Override
     protected void updateInteractionDataImpl() {
-        // 写规则变量（expire=0 的 LOCAL 内存；$gearInHub_stage 由基类自动写）。
+        // 写规则变量（LOCAL 人物内存，随档持久；$gearInHub_stage 由基类自动写）。
         set("$gearInHub_reward", Misc.getWithDGS(reward));
         set("$gearInHub_targetMarketName", targetMarket.getName());
         set("$gearInHub_dist", getDistanceLY(targetMarket));

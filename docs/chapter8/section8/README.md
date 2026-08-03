@@ -1,6 +1,6 @@
 # 势力与货舱
 
-本节把生涯侧两个高频服务入口讲透：势力 (`FactionAPI`) 与货物 (`CargoAPI`)，并给出组合两个入口的完整最小例。情报 (`IntelManagerAPI`) 与交互对话框 (`InteractionDialogAPI`) 在下一节 (C08-S09) 讲解。
+本节补上生涯侧两个最高频的服务入口：势力 (`FactionAPI`) 与货物 (`CargoAPI`)。前几节已经建立了舰队、成员与市场这些实体，本节把它们背后最常被脚本触碰的两类读写 —— 改关系、动货舱 —— 讲透，并给出组合使用两者的完整最小例。
 
 *本节预期阅读时间：~12 分钟。*
 
@@ -10,24 +10,25 @@
 
 完成后，您将能够：
 
-- 说出两个服务入口的进入方式：
+- 解释两个服务入口的进入方式：
   - `SectorAPI.getFaction(id)` / `getAllFactions()` / `getPlayerFaction()`；
   - `SectorEntityToken.getCargo()`(玩家舰队 `CampaignFleetAPI.getCargo()`、子市场 `SubmarketAPI.getCargo()`)；
-- 说出 `FactionAPI` 的分组 (身份、显示与颜色、关系、资源集合、经济字段、随机人物、doctrine/production/spec) 与关系语义：
+- 区分 `FactionAPI` 的分组 (身份、显示与颜色、关系、资源集合、经济字段、随机人物、doctrine/production/spec) 与关系语义：
   - 全局对表、`-1..1` 钳位、`adjustRelationship` 直接加、`setRelationship` 直写；
   - `isHostileTo` = 关系等级 ≤ `HOSTILE`、`getRelToPlayer()` 包装；
-- 说出 `CargoAPI` 的栈模型 (stack 集合 + credits + 容量统计)、四类写入入口 (资源 / 武器 / 战机芯片 / 特殊物品)、`removeItems` 的 NULL 占位栈语义，以及 `getMothballedShips()` 必须先 `initMothballedShips(factionId)` 的必须遵守的规则；
-- 从症状定位故障 (见 "实例驱动故障分析" 节)，排查时沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核 (沿用本节完整最小例的任务链)。
+- 解释 `CargoAPI` 的栈模型 (stack 集合 + credits + 容量统计)、四类写入入口 (资源 / 武器 / 战机芯片 / 特殊物品) 与 `removeItems` 的 NULL 占位栈语义，
+  并遵守 `getMothballedShips()` 必须先 `initMothballedShips(factionId)` 的必须规则；
+- 从症状定位故障 (见 "故障分析" 节)，并沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核 (沿用本节完整最小例的任务链)。
 
 ## 前置知识
 
 本节建立在前置单元的基础上。
 
-- **星区入口与脚本守卫**(C08-S01)：`SectorAPI` 星区结构 (本节两个入口都从 `getSector()` 下的 getter 进入)、`onGameLoad` 注册守卫 (persistent data 各自键的 `REGISTER_MARK` 模式)。
+- **星区入口与脚本注册标记**(C08-S01)：`SectorAPI` 星区结构 (本节两个入口都从 `getSector()` 下的 getter 进入)、`onGameLoad` 注册判断 (persistent data 各自键的 `REGISTER_MARK` 模式)。
 - **玩家舰队与成员**(C08-S03)：玩家舰队 (`getPlayerFleet().getCargo()` 的货物归属)、`FleetDataAPI`(`getMothballedShips()` 返回类型)、`CampaignFleetAPI.getCargo()` 链路。
 - **市场与子市场货物**(C08-S06)：子市场 cargo(`getCargo()` 用到时才创建 / `getCargoNullOk()` 可能 null)、商品 id 族 (`Commodities`)。
 - **全局对象与阶段判断**(C06-S03)：`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；本节所有读取与注册都发生在生涯引擎建立之后。
-- **MOD 插件生命周期**(C06-S02)：`modPlugin` 生命周期与 `CLASS_MARK` 一次性注册守卫。
+- **MOD 插件生命周期**(C06-S02)：`modPlugin` 生命周期与 `CLASS_MARK` 一次性注册标记。
 - **静态字段与 `MutableStat` 的区分**(C07-S03)：注意 `FactionAPI.getTariffFraction()` 取的是势力规格 (`FactionSpecAPI`) 里的普通数值，不是 `MutableStat`(与 C08-S06 的 `MarketAPI.getTariff()` 不同)。
 
 ## 术语
@@ -41,6 +42,8 @@
 
 ### 服务入口总览
 
+两个入口的进入方式与核心接口先列成总表：
+
 | 服务 | 进入方式 | 核心接口 |
 |---|---|---|
 | 势力 | `Global.getSector().getFaction(id)` / `getAllFactions()` / `getPlayerFaction()` | `FactionAPI` |
@@ -48,7 +51,7 @@
 
 ### 势力 (FactionAPI)
 
-`FactionAPI`(`com.fs.starfarer.api.campaign.FactionAPI`) 是纯接口，势力集合由引擎统一管理。RC8 的成员按功能分组：
+`FactionAPI`(`com.fs.starfarer.api.campaign.FactionAPI`) 是纯接口，势力集合由引擎统一管理。成员按功能分组：
 
 | 分组 | 成员 | 语义 |
 |---|---|---|
@@ -70,17 +73,18 @@
 3. `adjustRelationship(id, delta)` **直接相加**并经 `setValue` 钳位，不触发任何监听；`adjustRelationship(id, delta, limit)` 按 `limit` 等级封顶/封底 (正方向默认 `COOPERATIVE`、负方向默认 `VENGEFUL`)。
    - `setRelationship(id, float)` 直写；`setRelationship(id, RepLevel)` 写到等级边界：`NEUTRAL` = 0、正级 = `getMin()+0.01`、负级 = `-getMin()-0.01`。
 4. `isHostileTo(id)` = `isAtBest(id, HOSTILE)`：关系等级 ≤ `HOSTILE` 即敌对。
-5. 玩家视角包装：`getRelToPlayer()` 返回 `RelationshipAPI`(`com.fs.starfarer.api.characters.RelationshipAPI`：`getRel()`、`getLevel()`)；玩家势力对玩家自己 = 同势力对默认 `1.0`。
+5. 玩家视角包装：`getRelToPlayer()` 返回 `RelationshipAPI`(`com.fs.starfarer.api.characters.RelationshipAPI`：`getRel()`、`getLevel()`)；玩家势力对玩家自己 = 同势力对默认 `1.0`。至少在这张对表里，每个势力与自己永远是满分关系。
 6. **玩家声望 action 的正规路径**是 `SectorAPI.adjustPlayerReputation(action, factionId/person)`(javadoc："This method will pick the highest-priority ReputationActionResponsePlugin and call its handlePlayerReputationAction() method"；原版 `AdjustRep` rulecmd 同款调用，`com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`)。
    - `FactionAPI` 的关系写入是**原始写入**，不经过 response plugin 的 delta 计算，也不产生声望监听通知。
 
 ### 货物 (CargoAPI)
 
-`CargoAPI`(`com.fs.starfarer.api.campaign.CargoAPI`) 是纯接口。结构三件套：**栈集合**(`stacks`，`getStacksCopy()` 返回副本)、
+势力入口管身份与关系，货物的存取则归 `CargoAPI`。与势力不同，货物容器不挂在星区根对象上，而是挂在实体上 —— 玩家舰队、战利品、子市场和市场各自持有自己的容器。
 
-**信用**(`credits` 字段，`getCredits()` 返回 `MutableValue`——`com.fs.starfarer.api.util.MutableValue`：`get()` / `set()` / `add()` / `subtract()`)、
-
-**容量统计**(`maxCapacity` / `maxFuel` / `maxPersonnel` / `spaceUsed`)。
+`CargoAPI`(`com.fs.starfarer.api.campaign.CargoAPI`) 是纯接口，结构分三块：- **栈集合**：`stacks` 字段，`getStacksCopy()` 返回副本；
+- **信用**：`credits` 字段，`getCredits()` 返回 `MutableValue`——`com.fs.starfarer.api.util.MutableValue`：
+  `get()` / `set()` / `add()` / `subtract()`；
+- **容量统计**：`maxCapacity` / `maxFuel` / `maxPersonnel` / `spaceUsed`。
 
 读写分族 (方法均位于 `CargoAPI`)：
 
@@ -96,7 +100,6 @@
 | 通用汇总 | `addItems` / `removeItems`(返回是否完成)| `getQuantity` / `getStacksCopy` | 栈模型 |
 
 **栈语义 (`CargoStackAPI`，`com.fs.starfarer.api.campaign.CargoStackAPI`)**：`getType()`(`CargoItemType`：`RESOURCES` / `WEAPONS` / `FIGHTER_CHIP` / `SPECIAL` / `NULL`)、`getData()`(通常是 String 资源 id)、
-
 `getSize()` / `getFree()` / `getMaxSize()` / `isFull()`、`getCargoSpace()`。
 
 `isNull()`(**空占位栈**，javadoc："If true, it's an empty cargo stack. These get created for spacing, a result of the player moving cargo around.")。资源的小数部分会累计 (`addItems` 内部路径)；
@@ -105,7 +108,7 @@
 
 ::: warning 回滚后栈数量对不上，不是 bug
 
-"数值回滚了，`getStacksCopy().size()` 却没变回原样" 是 `removeItems` 的占位语义而不是错误：减空的栈被原地替换为 `NULL_STACK` 占位 (`isNull()` 为 true)，要多出来的占位清掉，必须调 `removeEmptyStacks()`。
+"数值回滚了，`getStacksCopy().size()` 却没变回原样" 是 `removeItems` 的占位语义而不是错误：减空的栈被原地替换为 `NULL_STACK` 占位 (`isNull()` 为 true)。空栈不会自己消失，要清掉多出来的占位，必须调 `removeEmptyStacks()`。
 
 :::
 
@@ -127,7 +130,7 @@
 
 ## 规则强度
 
-本节必须遵守的规则清单 (违反后的可观察结果均附上)：
+两条链上需要强记的约束集中成下面的清单，每条都附上违反后的可观察结果，验证与排错时直接对照：
 
 | 规则 | 强度 | 违反后的可观察结果 |
 |---|---|---|
@@ -139,7 +142,8 @@
 
 ## 完整最小例
 
-在既有 MOD 工程 (布局与插件入口 `GearInModPlugin`) 之上新增三个类：一个抽象基类与两个服务演示脚本。一文件一角色，不新增任何资源文件；两个脚本在 `onGameLoad` 各自注册，首个 `advance()` 各执行一次演示并自停：
+两条链的约束已经列全，现在把它们放进同一个可运行的最小例，每个语义都有可观察的落点。您在既有 MOD 工程 (布局与插件入口 `GearInModPlugin`) 之上新增三个类：一个抽象基类与两个服务演示脚本。
+一文件一角色，不新增任何资源文件；两个脚本在 `onGameLoad` 各自注册，首个 `advance()` 各执行一次演示并自停：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -213,7 +217,7 @@ public abstract class GearInOneShotScript implements EveryFrameScript {
 
 读取 tariff/toll/fine、非法商品、已知资源集合规模、`isShowInIntelTab`。
 
-**绑定注册入口**：onGameLoad 的 persistent data 守卫 `addScript` 注册，守卫键 `REGISTER_MARK = "GearIn_FactionServices"`(与调用点片段逐字一致)。
+**绑定注册入口**：在 onGameLoad 的 persistent data 判断块内调用 `addScript` 注册，标记键 `REGISTER_MARK = "GearIn_FactionServices"`(与调用点片段逐字一致)。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -302,7 +306,7 @@ public class GearInFactionServicesScript extends GearInOneShotScript {
 
 读取重型机械商品量与栈列表前三条 (`CargoStackAPI` 的 type/data/size/isNull)。
 
-**绑定注册入口**：onGameLoad 的 persistent data 守卫 `addScript` 注册，守卫键 `REGISTER_MARK = "GearIn_CargoServices"`(与调用点片段逐字一致)。
+**绑定注册入口**：在 onGameLoad 的 persistent data 判断块内调用 `addScript` 注册，标记键 `REGISTER_MARK = "GearIn_CargoServices"`(与调用点片段逐字一致)。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -392,14 +396,14 @@ public class GearInCargoServicesScript extends GearInOneShotScript {
 | 类 | 角色 | 绑定注册入口 |
 |---|---|---|
 | `GearInOneShotScript` | 抽象基类：一次性演示脚本骨架 | 不参与注册 |
-| `GearInFactionServicesScript` | 势力段演示脚本 | onGameLoad `addScript`，守卫键 `GearIn_FactionServices` |
-| `GearInCargoServicesScript` | 货物段演示脚本 | onGameLoad `addScript`，守卫键 `GearIn_CargoServices` |
+| `GearInFactionServicesScript` | 势力段演示脚本 | onGameLoad `addScript`，标记键 `GearIn_FactionServices` |
+| `GearInCargoServicesScript` | 货物段演示脚本 | onGameLoad `addScript`，标记键 `GearIn_CargoServices` |
 
 ### 行为要点
 
 - `extends GearInOneShotScript`：沿用脚本节的一次性演示模式 —— 首帧 `advance()` 执行一次 `runDemo()`，`isDone()` 置位后引擎下一帧自动移除。
-- `REGISTER_MARK`：persistent data 守卫键 —— 两个脚本各自独立 (`GearIn_FactionServices` / `GearIn_CargoServices`)。
-  - **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入既有插件的 `CLASS_MARK` 守卫。
+- `REGISTER_MARK`：persistent data 标记键 —— 两个脚本各自独立 (`GearIn_FactionServices` / `GearIn_CargoServices`)。
+  - **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入既有插件的 `CLASS_MARK` 标记。
 - 势力段：`getFaction(id)` / `getPlayerFaction()` 入口；关系写入演示 `adjustRelationship(+0.05)` → `setRelationship(原值)` 同帧精确回滚。
   - 关系写入有 `[-1,1]` 钳位，原值必在 `[-1,1]` 内，回滚必然精确；`getRelToPlayer()` 对玩家势力自己返回 `1.0`(同势力对默认值)。
 - 货物段：`addSupplies(100)` / `addFuel(50)` / `addMarines(10)` 后同量 remove 回滚，`supplies/fuel/marines` 终值恒等于初值。
@@ -431,28 +435,24 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含三个类的 `.class` 条目 (可用 `jar tf` 核对)。本节三个类的源码与对应 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C08-S08` 的 `data/scripts/gearin/campaign` 包内)，fixture 编译验收命令见下方 "验证方案"。
 
-### 验证方案 (基于本例)
+### 验证方案
 
-前置数据 (来自前置知识与本节内容)：
+构建通过只说明能编译，下面的验证让您看到脚本在游戏里实际跑出的日志。前置数据 (来自前置知识与本节内容)：
 
-- 既有 MOD 工程：`mod_info.json`、构建脚本与插件入口 `GearInModPlugin`(C06-S02)，以及脚本守卫模式 (C08-S01)；
+- 既有 MOD 工程：`mod_info.json`、构建脚本与插件入口 `GearInModPlugin`(C06-S02)，以及脚本注册标记模式 (C08-S01)；
 - 本节三个类与调用点片段中的两个 `addScript` 注册块 (各带独立的 `REGISTER_MARK` 键)。
 
 操作：
 
 1. **fixture 编译**：在仓库根执行 `gradle -p tutorial-fixtures compileC08s08Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
 2. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含三个类的 `.class` 条目。
-3. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按 "预期结果" 的日志序列顺序出现两个脚本的日志行 (势力段 ×4、货物段 ×2 组)，且**没有**旧复合演示的收尾 `done` 行。
+3. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按下方预期结果的日志序列顺序出现两个脚本的日志行 (势力段 ×4、货物段 ×2 组)，且**没有**旧复合演示的收尾 `done` 行。
    - `write-rollback` 行的中间值分别比初值高 `0.05` / `100` / `50` / `10`，终值与初值相等；全程无 `gear_in` 引起的 `ERROR`。
-4. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 守卫均已置位)。
-5. **故障注入 1(可选)**：注释掉调用点片段中的某个 `addScript` 块，重启新档：只有该段日志缺失、其余一段正常 (对应故障分析第 6 条前半)；改回后确认恢复。
+4. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位)。
+5. **故障注入 1 (可选)**：注释掉调用点片段中的某个 `addScript` 块，重启新档：只有该段日志缺失、其余一段正常 (对应故障分析第 6 条前半)；改回后确认恢复。
 6. **参数演示 (可选)**：把势力段 `adjustRelationship(Factions.PLAYER, 0.05f)` 的 delta 改成 `0.2f` 重新构建：`write-rollback` 行中间值比初值高 `0.20`，终值仍与初值相等 (回滚精确性验证)。
 
-通过信号：操作 1–4、6 全部符合；5 的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD；确认没有对共享文件 (fixture 构建脚本等) 做过修改。
-
-## 预期结果
+预期结果：
 
 **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
 
@@ -468,59 +468,55 @@ GearIn campaign services cargo stack[0..2]: type=<Type> data=<Data> size=<Size> 
 
 `<带冠词显示名>` 是 `getDisplayNameWithArticle()` 的返回 (新档玩家势力为 `player` 的显示名变体，以实际值为准)；`k` 是本演示新增的栈数 (0–3)：若演示前玩家货舱已有补给/燃料/陆战队员栈则 `k` 更小；`nullAfter` 恒等于 `k`。
 
-关系/货物核对：`write-rollback` 行的第二段恒比第一段高 `0.05`(起始关系接近 `1.0` 时被钳位则例外，新档霸主关系不会)，第三段与第一段相等。
+其余预期：
 
-`drugsIllegal=false`、`illegalCount=0`(新档玩家势力无非法商品声明)、`relToPlayer=1.00(Cooperative)`(玩家势力对玩家自己 = 同势力对默认 `1.0`)。
+- **关系/货物核对**：`write-rollback` 行的第二段恒比第一段高 `0.05`(起始关系接近 `1.0` 时被钳位则例外，新档霸主关系不会)，第三段与第一段相等。
+- **固定值**：`drugsIllegal=false`、`illegalCount=0`(新档玩家势力无非法商品声明)、`relToPlayer=1.00(Cooperative)`(玩家势力对玩家自己 = 同势力对默认 `1.0`)。
+- **执行次数**：日志段的顺序与调用点片段的注册顺序一致 (势力 → 货物)，两个脚本各自只执行一次。
+- **读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位、脚本不再注册)。
+- **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
+- **其余数值**：以实际存档为准。
 
-其余数值以实际存档为准。
+通过信号：操作 1–4、6 全部符合；5 的注入与恢复都符合预期。任一预期结果没有出现，验证即判定为失败，核对路径见故障分析。
 
-日志段的顺序与调用点片段的注册顺序一致 (势力 → 货物)，两个脚本各自只执行一次。
+清理：取消勾选测试 MOD；确认没有对共享文件 (fixture 构建脚本等) 做过修改。
 
-**读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 守卫均已置位、脚本不再注册)。
+## 故障分析
 
-**全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
+每条先看症状，再给触发与原因，最后是核对与修正路径。
 
-## 实例驱动故障分析
-
-下面每条都给出触发条件、可观察结果和修正。
-
-1. **`getMothballedShips()` NPE**。触发：没调 `initMothballedShips(factionId)` 直接取。
-   - 可观察：`NullPointerException`，堆栈指向取用点 (该字段可为 null)。
-   - 修正：使用前先 `initMothballedShips(factionId)`(`CargoAPI` javadoc)；`addMothballedShip` 内部会自动初始化，不需要自己先 init。
-2. **货物回滚后数量对但栈数量对不上**。触发：把 `getStacksCopy().size()` 当 "货物条目数" 核对。
-   - 可观察：回滚后 `stacks` 数量比回滚前多 `k`，多出的栈 `isNull()==true`(`removeItems` 把减空的栈原地替换为 `NULL_STACK` 占位；`CargoStackAPI.isNull()` javadoc)。
-   - 修正：核对数量读 `getSupplies()` / `getFuel()` 等数值接口；栈是存储细节，清理占位用 `removeEmptyStacks()`。
-3. **关系写入 "没生效" 或 "生效过头"**。触发：把 `adjustRelationship(id, delta)` 当带监听的声望系统用，或忘了写入时的 `[-1,1]` 钳位。
-   - 可观察：直接写入不弹声望变化消息、不触发监听；值超界被钳位。
-   - 修正：玩家声望 action 走 `SectorAPI.adjustPlayerReputation`；直接写关系时自行回滚并接受 "无监听" 语义 (本节演示写法)。
-4. **读档后蓝图/已知资源 "回来了"**。触发：调了 `removeKnownShip` 以为永久移除。
-   - 可观察：读档后 `.faction` 文件定义的蓝图重新加入已知集合 (`FactionAPI` javadoc 原文)。
-   - 修正：把 "要移除的清单" 存 persistent data，每次读档重新 `removeKnown*`；改完集合后调 `clearShipRoleCache()` 让 role 选择用新缓存。
-5. **演示日志出现但游戏内没有任何可观察内容**。触发：在错误生命周期阶段注册 (如 `onApplicationLoad` 里 `Global.getSector()` 为 null 即 NPE)，或关系/货物的写入被静默忽略。
-   - 可观察：注册点放错 → 启动中止或脚本永不推进。
-   - 修正：注册放 `onGameLoad` 守卫块内 (沿用脚本守卫模式)。
-6. **演示脚本只执行一段**。触发：注释掉调用点片段里的某个 `addScript` 块，或 `REGISTER_MARK` 键与调用点不一致。
-   - 可观察：该段日志缺失、其余段正常；或脚本每读档重复执行 (键不一致时守卫失效)。
-   - 修正：注册块与 `REGISTER_MARK` 键逐字一致 (本节演示写法)。
+1. **调用 `getMothballedShips()` 直接抛 NPE**。症状：代码里取 `getMothballedShips()` 后立刻解引用，抛 `NullPointerException`，堆栈指向取用点。
+   触发与原因：该字段可能为 null，而使用前没有先调 `initMothballedShips(factionId)`(`CargoAPI` javadoc 的要求)。
+   修正：使用前先 `initMothballedShips(factionId)`；`addMothballedShip` 内部会自动初始化，不需要自己先 init。
+2. **货物回滚后数量对但栈数量对不上**。症状：数值已经复原，`getStacksCopy().size()` 却比回滚前多 `k`。
+   触发与原因：把栈数量当 "货物条目数" 核对 —— `removeItems` 把减空的栈原地替换为 `NULL_STACK` 占位，
+   多出的栈 `isNull()==true`(`CargoStackAPI.isNull()` javadoc)。
+   修正：核对数量读 `getSupplies()` / `getFuel()` 等数值接口；栈是存储细节，清理占位用 `removeEmptyStacks()`。
+3. **关系写入 "没生效" 或 "生效过头"**。症状：直接写关系后界面没有声望变化提示，或数值超出预期。
+   触发与原因：把 `adjustRelationship(id, delta)` 当带监听的声望系统用，或忘了写入时的 `[-1,1]` 钳位 —— 直接写入不弹声望变化消息、不触发监听，值超界被钳位。
+   修正：玩家声望 action 走 `SectorAPI.adjustPlayerReputation`；直接写关系时自行回滚并接受 "无监听" 语义 (本节演示写法)。
+4. **读档后蓝图/已知资源 "回来了"**。症状：读档后 `.faction` 文件定义的蓝图重新加入已知集合。
+   触发与原因：调了 `removeKnownShip` 以为永久移除 —— 移除清单不随存档保存，读档时 `.faction` 定义重新生效 (`FactionAPI` javadoc 原文)。
+   修正：把 "要移除的清单" 存 persistent data，每次读档重新 `removeKnown*`；改完集合后调 `clearShipRoleCache()` 让 role 选择用新缓存。
+5. **演示日志出现但游戏内没有任何可观察内容**。症状：日志照常输出，游戏内没有对应效果。
+   触发与原因：注册点放在错误生命周期阶段 (如 `onApplicationLoad` 里 `Global.getSector()` 为 null 即 NPE)，或关系/货物的写入被静默忽略；
+   注册点放错时启动中止或脚本永不推进。修正：注册放进 `onGameLoad` 的 persistent data 判断块内 (沿用一次性注册标记模式)。
+6. **演示脚本只执行一段**。症状：只有一段日志出现。
+   触发与原因：注释掉调用点片段里的某个 `addScript` 块，或 `REGISTER_MARK` 键与调用点不一致 —— 键不一致时判断失效，脚本每读档重复执行。
+   修正：注册块与 `REGISTER_MARK` 键逐字一致 (本节演示写法)。
 
 ## 总结
 
-本节把两个生涯服务入口讲成两条链，并在完整最小例里组合使用：
+本节把两个服务入口讲成两条链，并在完整最小例里组合使用：
+势力链从 `SectorAPI.getFaction(id)` / `getPlayerFaction()` 进入 `FactionAPI`，关系读写经过全局对表 (双向共享、`-1..1` 钳位、对条目用到时才建)；
+货物链从 `SectorEntityToken.getCargo()` 进入 `CargoAPI`，读写按分族进行，栈是存储细节而不是数量真相。
 
-- **势力链**：`SectorAPI.getFaction(id)` / `getPlayerFaction()` → `FactionAPI`(身份 / 颜色 / 关系 / 资源 / 经济字段 / 规格)→ 关系对表 (`-1..1` 钳位、双向共享、对条目用到时才建)。
-  - `getRelationship` / `getRelationshipLevel` / `isHostileTo` 读取，`adjustRelationship` / `setRelationship` / `ensureAtBest/Worst` 写入。
-  - 玩家声望 action 的正规路径是 `SectorAPI.adjustPlayerReputation`。
-- **货物链**：`SectorEntityToken.getCargo()`(玩家舰队 / 子市场同源)→ `CargoAPI`(栈集合 + credits + 容量)→ 按分族读写 (资源 / 武器 / 战机芯片 / 特殊物品 / mothballed ships)。
-  - 栈细节 (`removeItems` 留 NULL 占位、容量需 `updateSpaceUsed`、mothballed ships 必须先 init)。
+排错时先记住两条判断：关系写入是**原始写入**(无监听、钳位 `[-1,1]`)，玩家声望 action 走 `adjustPlayerReputation`；
+`getMothballedShips()` 必须先 `initMothballedShips`，`getStacksCopy()` 含 NULL 占位栈。本节演示的 "写入后立即精确回滚" 写法，
+让验证可以在不遗留任何持久状态的前提下完成。
 
-记忆要点：
-
-- 关系写入是**原始写入**(无监听、钳位 `[-1,1]`)；玩家声望 action 走 `adjustPlayerReputation`。
-- `getMothballedShips()` 必须先 `initMothballedShips`；`getStacksCopy()` 含 NULL 占位栈。
-
-脚本守卫与 `Global` 阶段语义是本节底座；`REGISTER_MARK` 注册模式沿用既有脚本节 "每个注册项用各自的键" 的惯例。
-
-本节只覆盖两个入口的 "常用高频面"：势力关系监听与任务类势力逻辑在逻辑上属于更深的主题，本节不展开。情报与交互对话框两个入口在 C08-S09 讲解。
+脚本注册标记与 `Global` 阶段语义是本节底座；`REGISTER_MARK` 注册模式沿用既有脚本节 "每个注册项用各自的键" 的惯例。
+本节只覆盖两个入口的常用高频面：势力关系监听与任务类势力逻辑在逻辑上属于更深的主题，本节不展开；情报与交互对话框两个入口在 C08-S09 讲解。
 
 ## 建议参考项
 

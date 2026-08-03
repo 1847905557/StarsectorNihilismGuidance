@@ -14,7 +14,7 @@ import com.fs.starfarer.api.combat.ShipAPI;
  * 数学与几何工具族的用法片段：MathUtils / VectorUtils 的最小消费面。
  *
  * 无持久状态的纯静态工具，角度一律使用度（degrees）；AIUtils 只用于
- * 获取演示目标（最近可见敌舰），查询结果按当前帧快照使用（C07-S01 同规）。
+ * 获取演示目标（最近可见敌舰），查询结果按当前帧快照使用（C07-S02 同规）。
  */
 public final class GearInLazyMathUsage {
 
@@ -28,7 +28,7 @@ public final class GearInLazyMathUsage {
     public static void report(CombatEngineAPI engine) {
         ShipAPI player = engine.getPlayerShip();
         if (player == null) {
-            return; // 防御性判空：getPlayerShip() 战斗内实际永不返回 null（C07-S01）
+            return; // 防御性判空：getPlayerShip() 战斗内实际永不返回 null（C07-S02）
         }
         Vector2f playerLoc = player.getLocation();
         ShipAPI enemy = AIUtils.getNearestEnemy(player);

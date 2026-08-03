@@ -10,7 +10,7 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 薄载体：把四个工具族用法片段接成完整最小例的战斗插件。
  *
- * 由既有战斗插件在 init() 中 addPlugin 注册（C02-S01 模型），只在本场
+ * 由既有战斗插件在 init() 中 addPlugin 注册（C07-S01 模型），只在本场
  * 战斗内有效；每个工具族一个用法片段类（GearInLazyMathUsage /
  * GearInLazyCombatQuery / GearInLazyJsonStore / GearInLazyRuntimeProbe），
  * 本类只做接线与节奏控制（暂停守卫 + 报告周期），不含工具调用细节。
@@ -34,7 +34,7 @@ public class GearInLazyPlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine.isPaused()) {
-            return; // 暂停守卫（C02-S01）：暂停时 advance 仍会被调用
+            return; // 暂停守卫（C07-S01）：暂停时 advance 仍会被调用
         }
         reportInterval.advance(amount);
         if (reportInterval.intervalElapsed()) {

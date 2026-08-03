@@ -1,6 +1,6 @@
 # 人物：身份、关系与舰长/军官
 
-本节把人物 (`PersonAPI`) 讲透：人物对象怎么创建、身份与档案字段怎么读写、关系 (`RepLevel` 与 `adjustRelationship`) 的数值/档位语义、captain 与 officer 怎么分配、人物在舰队/市场/全局集合里的归属。生涯舰队的成员层与市场人物规则是本节的两块底座，前置知识节列有完整导航。
+本节引导您创建并操作人物对象：从 `PersonAPI` 的创建入口、身份与档案字段、关系三族，到 captain 与 officer 的分配和四个持久归属入口，最后用一个 8 类演示脚本在生涯里把整条链跑通并验证。人物是任务、贸易与通信系统的共同实体，它的创建、关系与归属语义讲透之后，后续使用端可以直接沿用。
 
 *本节预期阅读时间：~30 分钟。*
 
@@ -10,27 +10,24 @@
 
 完成后，您将能够：
 
-- 说出 RC8 人物对象链：`Global.getFactory().createPerson()` / `FactionAPI.createRandomPerson()` → `PersonAPI`(身份、关系、记忆、角色数值、归属)：
-  - 以及人物对象的默认值 (personality `steady`、空姓名、rank/post 默认、faction `neutral`、默认头像、importance `MEDIUM`)；
-- 读写人物的身份与档案：姓名/性别、rank/post(经势力解析，回退 `default_ranks.json`)、势力、头像、personality、importance/voice、tags、memory—— 并区分 `getMemory()`(触发全部插件 `updatePersonFacts`) 与 `getMemoryWithoutUpdate()`(纯读取)；
-- 说出关系三族：势力对势力 / 势力对玩家 (`FactionAPI` 关系族)、人物对玩家 (`RelationshipAPI`)，以及 `RepLevel` 九档与阈值 (0.09 / 0.24 / 0.49 / 0.74) 的档位判定；
-- 用 `setRelationship` / `adjustRelationship`(含 limit 版本)/ `ensureAtBest` / `ensureAtWorst` 修改关系，说出 "数值连续、档位分段、limit 只是单次调整边界、数值恒钳制在 [-1, 1]" 四件事；
-- 分配 captain：`FleetMemberAPI.setCaptain(person)`(生涯侧)、`ShipAPI.setCaptain(person)`(战斗侧)，说出玩家旗舰 `getCaptain()` 返回玩家人物的特例、舰长 personality 决定战斗 AI、舰长个人技能经 `applyPersonalToStats` 作用于舰船统计；
-- 分配 officer：`Global.getFactory().createOfficerData(person)` → `FleetDataAPI.addOfficer(...)` → XP/技能/升级 (`officerLevelUp` 插件，`officerMaxLevel` 5)→ 再 `setCaptain` 上舰：
-  - 说出 `makeSkillPicks()` 重掷、`$isMercenary` 佣兵不加 XP 两个陷阱；
-- 说出人物持久归属四入口 (成员 captain、市场 people + 通信目录、important people、officer roster)，并解释 "只存在于局部变量的人物不会被保存"；
-- 从症状定位十三类典型故障：人物读档后消失、非法 personality 保存时 NPE、`adjustRelationship` 返回值 false、档位与数值不一致、市场有人物但通信目录没有、军官不加 XP、技能选项被重掷、checkout 未归还影响选人、演示中断残留、人物关系与势力关系混用、旗舰舰长读回玩家、`getMemory()` 回调风暴、读档后默认舰长消失。
+- 创建人物 (空白与势力随机两个入口)，并核对人物对象的默认值表；
+- 读写人物的身份与档案字段，区分 `getMemory()` 与 `getMemoryWithoutUpdate()` 两条记忆读取路径；
+- 解释关系三族的存储方式、`RepLevel` 九档阈值与档位判定；
+- 用 `setRelationship` / `adjustRelationship` / `ensureAtBest` / `ensureAtWorst` 修改关系，并核对返回值与数值落点；
+- 分配 captain 与 officer，说明舰长对战斗 AI 与成员统计的作用；
+- 把人物挂入四个持久归属入口，并解释局部变量人物不被保存的后果；
+- 从日志与界面症状定位人物相关的典型故障。
 
 ## 前置知识
 
-本节需要以下前置知识，按主题列出：
+本节的人物演示要跑在生涯引擎里，并沿用前序页面的注册与工厂入口，请先熟悉以下内容：
 
-- **生涯时钟与脚本注册守卫**(C08-S01)：生涯脚本注册守卫 (persistent data `CLASS_MARK` 模式)。
-- **舰队成员与舰长**(C08-S03)：`FactoryAPI.createFleetMember` / `FleetDataAPI.addFleetMember`(演示成员创建与入队)、`FleetMemberAPI.getCaptain` / `setCaptain`(本节 captain 的生涯侧入口)、旗舰语义、`getMemberWithCaptain`。
-- **市场人物与通信目录**(C08-S05)：`MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`、通信目录 `getCommDirectory().addPerson`(人物在市场侧的归属规则)。
-- **工厂入口与阶段判断**(C06-S03)：`Global.getFactory()` 是创建生涯对象的正式途径；`getCurrentState()` 阶段判断。
-- **插件生命周期回调与守卫键**(C06-S02)：`GearInModPlugin` 生命周期与 `CLASS_MARK` 门；本节注册块挂进 `onGameLoad`。
-- **生涯与战役的区别**(C03-S01)：生涯 (campaign) 与战役 (mission) 的区别。
+- 生涯时钟脚本与一次性注册判断 (C08-S01)：persistent data `CLASS_MARK` 模式。
+- 舰队成员与舰长 (C08-S03)：`FactoryAPI.createFleetMember` / `FleetDataAPI.addFleetMember`、`FleetMemberAPI.getCaptain` / `setCaptain`、旗舰语义、`getMemberWithCaptain`。
+- 市场人物与通信目录 (C08-S05)：`MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`、通信目录 `getCommDirectory().addPerson`。
+- 工厂入口与阶段判断 (C06-S03)：`Global.getFactory()` 是创建生涯对象的正式途径；`getCurrentState()` 判断当前阶段。
+- 插件生命周期回调 (C06-S02)：`GearInModPlugin` 生命周期与 `CLASS_MARK` 门。
+- 生涯与战役的区别 (C03-S01)：生涯 (campaign) 与战役 (mission) 的区别。
 
 ## 术语
 
@@ -44,7 +41,7 @@
 - **captain(舰长)**：舰队成员的指挥官。决定该成员/战斗舰船的统计修正与战斗 AI personality。
 - **officer(军官)**：`OfficerDataAPI` 包装的人物，带 XP、等级与技能选择；隶属舰队 roster(`FleetDataAPI` 军官集合)，被 `setCaptain` 到某个成员上时指挥该船。
 
-## 文件与 API 链路
+## 人物对象与 API 面
 
 ### 人物对象与创建入口
 
@@ -78,6 +75,8 @@
 玩家人物同样以 `steady` 起步，新档创建时人物势力为 `"player"`。
 
 ### 身份与档案 (PersonAPI)
+
+创建之后的人物只有一组默认值，身份与档案字段按功能分组如下。
 
 `PersonAPI`(`com.fs.starfarer.api.characters.PersonAPI`) 按功能分组：
 
@@ -135,9 +134,11 @@ voice 即 memory `$voice`。
 
 ### 关系
 
+身份字段之外，人物之间以及人物与玩家之间还有一套数值体系。关系分三族、两套存储，先看存储与钳制，再看档位与写入方法。
+
 #### 存储与钳制
 
-势力关系按 `"<id1>_<id2>"` 键存储，**双向插入同一对象**；读取时延迟创建：默认 `0.0F`**，同势力之间恒 `1.0F` **。
+势力关系按 `"<id1>_<id2>"` 键存储，**双向插入同一对象**；读取时延迟创建：默认 `0.0F`，**同势力之间恒 `1.0F`**。
 
 写入时值被钳制在 [-1, 1]—— 关系数值不可能越界。
 
@@ -177,7 +178,7 @@ voice 即 memory `$voice`。
 
 `adjustRelationship(delta, limit)` 的 limit 不是 "目标档位"—— 从 1.00 减 0.5(limit `VENGEFUL`) 落在 0.50(`FRIENDLY`)，而不是 `HOSTILE`。
 
-"设置档位" 用 `setRelationship(id, RepLevel)`，"确保不低于/不高于某档" 用 `ensureAtBest` / `ensureAtWorst`。
+"设置档位" 用 `setRelationship(id, RepLevel)`，"确保不高于/不低于某档" 用 `ensureAtBest` / `ensureAtWorst`。
 
 :::
 
@@ -194,6 +195,8 @@ voice 即 memory `$voice`。
 接近零的人物对玩家关系在保存时不落盘，读档后恢复默认值。
 
 ### captain 与 officer
+
+关系决定声望，岗位决定行为。接下来把人物放上舰长与军官两个实际岗位。
 
 #### 生涯侧 captain(FleetMemberAPI)
 
@@ -239,6 +242,8 @@ voice 即 memory `$voice`。
 
 #### 归属四入口 (持久化边界)
 
+岗位分配完之后，真正要紧的问题是：人物到底随什么保存？四个持久归属入口给出答案。
+
 人物只随 "引用它的持久集合" 保存：
 
 1. **成员舰长**：`FleetMemberAPI.setCaptain(person)`(成员在 `FleetDataAPI` 里)；
@@ -259,7 +264,9 @@ voice 即 memory `$voice`。
 
 ### 注册入口
 
-本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)` + 各自 persistent data 键守卫模式 (不要把注册键挂进插件既有的 `CLASS_MARK` 门内)。注册见 "完整最小例" 的调用点片段。
+归属决定保存，注册决定何时执行。本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)`，用各自的 persistent data 键做一次注册判断 (不要把注册键挂进插件既有的 `CLASS_MARK` 门内)。具体代码见 "完整最小例" 的调用点片段。
+
+API 面里最反直觉的几处已经标了容器警告，下面把必须遵守的约束连同违反后果收成一张表。
 
 ## 规则强度
 
@@ -281,6 +288,8 @@ voice 即 memory `$voice`。
 | 佣兵人物 (memory `$isMercenary`) 不获得军官 XP | 必须 | `addXP` 后 XP 不变 (`OfficerDataAPI.addXP`)|
 | 演示/临时人物修改关系后应同帧回滚，且回滚用 "快照原值 + `setRelationship`" | 建议 | 中断残留的修改随存档保存 |
 | 创建人物优先用 `Global.getFactory().createPerson()` / `FactionAPI.createRandomPerson()`，不依赖实现类构造器 | 建议 | 实现类不在公开 API 面，换版本可能失效 |
+
+规则只是约束，示例才是落地。下面用 8 个类把上面的 API 与规则串成一条可运行、可同帧回滚的演示链。
 
 ## 完整最小例
 
@@ -317,7 +326,7 @@ mods/GearIndustry/
 
 职责：记录基线 (交由 GearInBaseline)、创建并挂载演示成员 wolf / hammerhead 供后续小节使用、依序调用各角色小类、末尾清理恢复初始舰队。
 
-`REGISTER_MARK`(`"GearIn_PersonLesson"`) 是存档持久化守卫键，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
+`REGISTER_MARK`(`"GearIn_PersonLesson"`) 是存档持久化的注册标记键，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -734,7 +743,7 @@ public class GearInOfficer {
 - `adjustRelationship(+0.9, COOPERATIVE)` 封顶 `1.00 changed=true`；
 - `setRelationship(HOSTILE)` 落 `-0.50`、`isHostileTo=true`；
 - `adjustRelationship(-0.2, VENGEFUL)` 落 `-0.70` **但档位仍 HOSTILE**(数值连续、档位分段)；
-- `ensureAtBest(WELCOMING)` 落 `0.49 ensured=true`；
+- `ensureAtWorst(WELCOMING)` 落 `0.25 ensured=true`(抬高关系用 `ensureAtWorst`；`ensureAtBest` 只拉低不抬高，此刻调用它返回 false、值不变)；
 - `setRelationship(原值)` 精确恢复。
 
 ```java
@@ -748,7 +757,7 @@ import com.fs.starfarer.api.campaign.RepLevel;
 import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
- * 势力间关系（FactionAPI 关系族）：setRelationship / adjustRelationship / ensureAtBest 确定性序列 + 同帧回滚。
+ * 势力间关系（FactionAPI 关系族）：setRelationship / adjustRelationship / ensureAtWorst 确定性序列 + 同帧回滚。
  */
 public class GearInFactionRelation {
 
@@ -780,7 +789,7 @@ public class GearInFactionRelation {
         LOG.info(String.format(
                 "GearIn person lesson factionRel vengefulCap: value=%.2f level=%s",
                 hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon")));
-        boolean ensured = hegemony.ensureAtBest("tritachyon", RepLevel.WELCOMING);
+        boolean ensured = hegemony.ensureAtWorst("tritachyon", RepLevel.WELCOMING);
         LOG.info(String.format(
                 "GearIn person lesson factionRel ensure: value=%.2f level=%s ensured=%s",
                 hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon"), ensured));
@@ -815,9 +824,11 @@ gradle jar
 
 产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类 (可用 `jar tf` 核对)。
 
-本节源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C09-S01/src/main/java/data/scripts/gearin/campaign/`)，fixture 编译验收命令见 "预期结果"。
+本节源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C09-S01/src/main/java/data/scripts/gearin/campaign/`)，fixture 编译验收命令见 "验证方案" 的预期结果。
 
-### 验证方案 (基于本例)
+演示链已经落地，下面按步骤编译、进档并核对日志与界面。
+
+## 验证方案
 
 - **前置数据**：`gear_in` MOD 布局与插件生命周期类 (C06-S01 / C06-S02，含本节调用点片段)、本节 8 个类 (与 fixture 同源)、生涯时钟脚本 (C08-S01，非必需)。
 - **操作**：
@@ -827,19 +838,19 @@ gradle jar
      - 含 `start` / `flagship` / `members` / `personA defaults` / `personA identity` / `tagsMemory` / 五条 `relToPlayer` / `market` / `importantPeople`。
      - 含 `captain default` / `captain set` / `personB random` / `officer add` / `officer xp` / `officer levelUp` / `officer captain` / `officer remove` / 七条 `factionRel` / `done`。
      - 关键核对：`captainIsPlayerPerson=true`、`personA defaults` 六项默认值、`rank=Commander`、`post=Fleet Commander`、`relToPlayer` 五步 0.00→0.30→0.75→-0.50→0.00。
-     - `factionRel` 序列 0.00→0.15→1.00→-0.50→-0.70→0.49→原值、`done` 行成员数与 `start` 一致。
+     - `factionRel` 序列 0.00→0.15→1.00→-0.50→-0.70→0.25→原值、`done` 行成员数与 `start` 一致。
      - 全程无 `gear_in` 引起的 `ERROR`。
   4. 界面核对：演示日志出现时打开舰队界面 (F 键)，确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成 ("预期结果" 第 4 条)。
   5. 只执行一次：等待若干游戏日后日志无新增 `GearIn person lesson` 行；保存并读档后仍无新增 (`REGISTER_MARK` 门已关)；读档后势力关系面板中 hegemony 与 tritachyon 的数值与演示前一致 (同帧回滚，"预期结果" 第 5 条)。
-  6. 故障注入 1：注释掉调用点片段的 `addScript` 行，重启新档：无任何 `GearIn person lesson` 日志 (对应 "实例驱动故障分析" 第 1 条的前半 —— 注册缺失)；改回后确认恢复。
-  7. 故障注入 2：把 `GearInPersonIdentity` 里的 `personA.setPersonality("reckless")` 改为 `"bogus"`，重启新档后保存：`starsector.log` 出现保存时的 `NullPointerException`(对应 "实例驱动故障分析" 第 2 条)；改回后确认恢复。
-    8. 故障注入 3：注释掉 `GearInFactionRelation` 里的 `setRelationship("tritachyon", originalRel)` 恢复行，重启新档并读档：
-       - 势力关系面板中 hegemony 对 tritachyon 的数值停在 `0.49`(`ensureAtBest` 的残留)，证明回滚必要 (对应规则强度表 "演示同帧回滚" 与 "实例驱动故障分析" 第 9 条)。
-       - 改回后确认恢复。
+  6. 故障注入 1：注释掉调用点片段的 `addScript` 行，重启新档：无任何 `GearIn person lesson` 日志 (对应 "故障分析" 第 1 条的前半 —— 注册缺失)；改回后确认恢复。
+  7. 故障注入 2：把 `GearInPersonIdentity` 里的 `personA.setPersonality("reckless")` 改为 `"bogus"`，重启新档后保存：`starsector.log` 出现保存时的 `NullPointerException`(对应 "故障分析" 第 2 条)；改回后确认恢复。
+  8. 故障注入 3：注释掉 `GearInFactionRelation` 里的 `setRelationship("tritachyon", originalRel)` 恢复行，重启新档并读档：
+     - 势力关系面板中 hegemony 对 tritachyon 的数值停在 `0.25`(`ensureAtWorst` 的残留)，证明回滚必要 (对应规则强度表 "演示同帧回滚" 与 "故障分析" 第 9 条)。
+     - 改回后确认恢复。
 - **通过信号**：操作 1–5 全部符合；操作 6–8 的注入与恢复都符合预期。
 - **清理**：取消勾选测试 MOD；确认没有对共享文件 (如 fixture 构建脚本) 做过修改。
 
-## 预期结果
+预期结果：
 
 1. **fixture 编译 (验收 J)**：在 Git Bash 执行。
 ```text
@@ -849,71 +860,38 @@ gradle -p tutorial-fixtures compileC09s01Java --no-daemon
 2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
 3. **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现。
 ```text
-GearIn person lesson start: members=<N> playerFaction=player playerPerson=<玩家名> GearIn person lesson flagship: name=<旗舰船名> captainIsPlayerPerson=true GearIn person lesson members: added wolf=<船名> hammerhead=<船名> count=<N+2> GearIn person lesson personA defaults: id=p_<uid> personality=steady name='' rankId=spaceCommander postId=fleetCommander faction=neutral portraitIsDefault=true importance=MEDIUM GearIn person lesson personA identity: name=Aster Vance female=true rank=Commander post=Fleet Commander personality=reckless faction=hegemony voice=<soldier|official|aristo 之一> GearIn person lesson tagsMemory: hasTag=true tags=1 memory=42 GearIn person lesson relToPlayer default: rel=0.00 level=NEUTRAL hostile=false GearIn person lesson relToPlayer adjust: rel=0.30 level=WELCOMING GearIn person lesson relToPlayer cooperative: rel=0.75 level=COOPERATIVE GearIn person lesson relToPlayer hostile: rel=-0.50 level=HOSTILE hostile=true GearIn person lesson relToPlayer reset: rel=0.00 level=NEUTRAL GearIn person lesson market: id=jangala inAfterAdd=true personMarketLinked=true inAfterRemove=false GearIn person lesson importantPeople: containsAfterAdd=true dataLinked=true containsAfterRemove=false GearIn person lesson captain default: personality=steady name='' level=1 GearIn person lesson captain set: sameCaptain=true memberWithCaptainFound=true GearIn person lesson personB random: name=<随机名> female=<true|false> faction=hegemony personality=steady portraitIsDefault=false GearIn person lesson officer add: count=<M+1> fleetLinked=true GearIn person lesson officer xp: xp=<X> -> <X+100000> canLevelUp=true picks=4 GearIn person lesson officer levelUp: level=2 skill=<技能id> skillLevel=1.0 GearIn person lesson officer captain: sameCaptain=true memberWithCaptainFound=true officerInRoster=true GearIn person lesson officer remove: count=<M> fleetLinked=true GearIn person lesson factionRel start: original=<O> normalized=0.00 level=NEUTRAL GearIn person lesson factionRel adjust: value=0.15 level=FAVORABLE GearIn person lesson factionRel cap: value=1.00 level=COOPERATIVE changed=true GearIn person lesson factionRel hostile: value=-0.50 level=HOSTILE hostileTo=true GearIn person lesson factionRel vengefulCap: value=-0.70 level=HOSTILE GearIn person lesson factionRel ensure: value=0.49 level=WELCOMING ensured=true GearIn person lesson factionRel restore: value=<O> level=<原档位> GearIn person lesson done: members=<N> (initial <N>)
+GearIn person lesson start: members=<N> playerFaction=player playerPerson=<玩家名> GearIn person lesson flagship: name=<旗舰船名> captainIsPlayerPerson=true GearIn person lesson members: added wolf=<船名> hammerhead=<船名> count=<N+2> GearIn person lesson personA defaults: id=p_<uid> personality=steady name='' rankId=spaceCommander postId=fleetCommander faction=neutral portraitIsDefault=true importance=MEDIUM GearIn person lesson personA identity: name=Aster Vance female=true rank=Commander post=Fleet Commander personality=reckless faction=hegemony voice=<soldier|official|aristo 之一> GearIn person lesson tagsMemory: hasTag=true tags=1 memory=42 GearIn person lesson relToPlayer default: rel=0.00 level=NEUTRAL hostile=false GearIn person lesson relToPlayer adjust: rel=0.30 level=WELCOMING GearIn person lesson relToPlayer cooperative: rel=0.75 level=COOPERATIVE GearIn person lesson relToPlayer hostile: rel=-0.50 level=HOSTILE hostile=true GearIn person lesson relToPlayer reset: rel=0.00 level=NEUTRAL GearIn person lesson market: id=jangala inAfterAdd=true personMarketLinked=true inAfterRemove=false GearIn person lesson importantPeople: containsAfterAdd=true dataLinked=true containsAfterRemove=false GearIn person lesson captain default: personality=steady name='' level=1 GearIn person lesson captain set: sameCaptain=true memberWithCaptainFound=true GearIn person lesson personB random: name=<随机名> female=<true|false> faction=hegemony personality=steady portraitIsDefault=false GearIn person lesson officer add: count=<M+1> fleetLinked=true GearIn person lesson officer xp: xp=<X> -> <X+100000> canLevelUp=true picks=4 GearIn person lesson officer levelUp: level=2 skill=<技能id> skillLevel=1.0 GearIn person lesson officer captain: sameCaptain=true memberWithCaptainFound=true officerInRoster=true GearIn person lesson officer remove: count=<M> fleetLinked=true GearIn person lesson factionRel start: original=<O> normalized=0.00 level=NEUTRAL GearIn person lesson factionRel adjust: value=0.15 level=FAVORABLE GearIn person lesson factionRel cap: value=1.00 level=COOPERATIVE changed=true GearIn person lesson factionRel hostile: value=-0.50 level=HOSTILE hostileTo=true GearIn person lesson factionRel vengefulCap: value=-0.70 level=HOSTILE GearIn person lesson factionRel ensure: value=0.25 level=WELCOMING ensured=true GearIn person lesson factionRel restore: value=<O> level=<原档位> GearIn person lesson done: members=<N> (initial <N>)
 ```
-其中 `<N>` 是初始成员数、`<M>` 是初始军官数、`<O>` 是存档里 hegemony 对 tritachyon 的关系原值、`<X>` 是人物 B 初始 XP(新档为 0)，均以实际日志为准；`voice` 是 hegemony `HIGH` 声音池三选一；`picks=4` 是新档典型值 (以日志为准，≥1)；`skill` 是重掷后的第一个军官技能候选。关系序列各行的数值/档位是**确定性**的：`0.15→FAVORABLE`、`1.00→COOPERATIVE changed=true`、`-0.50→HOSTILE hostileTo=true`、`-0.70 档位仍 HOSTILE`、`0.49→WELCOMING ensured=true`、`restore` 与原值一致。演示只执行一次，之后无任何 `GearIn person lesson` 日志。
+其中 `<N>` 是初始成员数、`<M>` 是初始军官数、`<O>` 是存档里 hegemony 对 tritachyon 的关系原值、`<X>` 是人物 B 初始 XP(新档为 0)，均以实际日志为准；`voice` 是 hegemony `HIGH` 声音池三选一；`picks=4` 是新档典型值 (以日志为准，≥1)；`skill` 是重掷后的第一个军官技能候选。关系序列各行的数值/档位是**确定性**的：`0.15→FAVORABLE`、`1.00→COOPERATIVE changed=true`、`-0.50→HOSTILE hostileTo=true`、`-0.70 档位仍 HOSTILE`、`0.25→WELCOMING ensured=true`、`restore` 与原值一致。演示只执行一次，之后无任何 `GearIn person lesson` 日志。
 4. **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
 5. **读档**：不出现任何 `GearIn person lesson` 日志 (`REGISTER_MARK` 门已关、脚本不再注册)；玩家舰队与演示前一致；`hegemony` 与 `tritachyon` 的关系面板数值与演示前一致 (同帧回滚生效)。
 6. **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
 
 静态自查：全部 8 个类源码与 fixture 逐字一致 (包括 import 顺序)；`REGISTER_MARK` 与调用点片段的键逐字一致；没有把工作单元编号写进任何运行时名称 (类名、包名、persistent data 键、tag、memory key 均不含 C09-S01 变体)；示例只消费既有 GearIn ID 与原版 ID(无新增资源 ID)。
 
-## 实例驱动故障分析
+## 故障分析
 
-1. **人物 "凭空消失"(读档后不存在)**。触发：人物只存在于演示/事件脚本的局部变量里，没挂进任何持久集合。可观察：同会话内一切正常 (人物对象仍可达)，保存并读档后人物不见了，无任何报错。修正：跨存档人物必须挂入至少一个持久集合 (成员 captain / 市场 people+comm / important people / officer roster，见 "归属四入口")。
-  2. **非法 personality id → 保存时 NPE**。触发：`setPersonality("bogus")`(`personalities.csv` 没有的 id)：
-     - 可观察：`getPersonalityAPI()` 返回 null；保存时写档失败 (`NullPointerException`)。
-     - 修正：只用注册表内的 id(原版 5 个：`timid`/`cautious`/`steady`/`aggressive`/`reckless`)；CSV spec 加载期的查询对未知 id 静默返回 null、不报错，所以问题延迟到使用点。
-3. **`adjustRelationship` 没效果 (返回值 false、值不变)**。触发：`adjustRelationship(id, 0f, level)` 想 "确认档位"，或 delta 方向与当前值方向相反且被 limit 挡住。可观察：返回值 false，关系值不变 (三参版 delta 为 0 直接返回 false，`FactionAPI.adjustRelationship`)。
-   - 修正："设档位" 用 `setRelationship(id, RepLevel)`；"确保档位" 用 `ensureAtBest` / `ensureAtWorst`。
-4. **档位与数值对不上**。触发：`setRelationship(id, HOSTILE)` 落 `-0.50` 后 `adjustRelationship(id, -0.2f, VENGEFUL)`，期待档位 "更敌对"。可观察：值变 `-0.70`，但档位仍是 `HOSTILE`(`-0.70` 未越过 0.74 边界；`RepLevel.getLevelFor` 按百分制整数分段)。
-   - 修正：理解 "数值连续、档位分段"；档位跳变点只在 0.09 / 0.24 / 0.49 / 0.74(负向对称)。
-5. **市场有人物但通信目录/联系人界面查不到**。触发：只 `market.addPerson(person)`。可观察：`getPeopleCopy()` 包含该人物，通信目录没有条目 (`MarketAPI.addPerson` 不自动建目录条目；前序页面已记录同一规则)。
-   - 修正：`market.getCommDirectory().addPerson(person)` 另行维护；移除可见联系人时先移 comm entry 再移 roster。
-6. **军官/佣兵不加 XP**。触发：给 memory `$isMercenary` 为 true 的人物 `addXP`。可观察：XP 不变 (`OfficerDataAPI.addXP` 直接返回)。修正：确认人物不是佣兵 (`com.fs.starfarer.api.util.Misc.isMercenary` 读 `$isMercenary`)；解除佣兵标记再给 XP。
-7. **军官技能选项被重掷**。触发：玩家已看到 `getSkillPicks()` 列表后再次调用 `makeSkillPicks()`。可观察：列表内容变化，与展示给玩家的选项不一致 (`OfficerDataAPI.makeSkillPicks`：清空后重掷)。修正：只在需要生成选项时调用一次；展示期间维持同一 `OfficerDataAPI` 对象状态。
-  8. **checkout 未归还影响按条件选人**。触发：`checkOutPerson(person, "permanent_staff")` 后不配对 `returnPerson`：
-     - 可观察：`ImportantPeopleAPI.getPerson(...)` / `getMatching(...)` 按同 reason 过滤时该人物不再被选中 (`MarketPostPersonFilter.accept` → `canCheckOutPerson` 拒绝)，任务/事件生成总是选不到它。
-     - 修正：用完必须 `returnPerson(person, reasonId)`。
-9. **演示中断残留**。触发：演示帧中途抛异常 (例如把市场段挪到重要人物段之后且市场查询失败)，`addPerson` 与 `removePerson` 未配对。可观察：人物残留在 important people / 市场列表里并**随存档保存**；`REGISTER_MARK` 已置位，读档不重放、残留无法自动清理。
-   - 修正：保持同帧配对顺序 (先 add 后立刻 remove)；演示类不要随意调换段序；失败重试可手动清 `REGISTER_MARK` 键。
-10. **人物对玩家关系与势力对玩家关系混用**。触发：用 `person.getRelToPlayer()` 推断势力声望，或用 `faction.getRelationship("player")` 推断人物好感。可观察：两者是不同存储 (人物字段 `relToPlayer` 与势力侧的关系存储是两套)，数值互不同步。
-    - 修正：人物→`RelationshipAPI`；势力→`FactionAPI` 关系族 (`getRelToPlayer()` 是势力侧包装，目标仍是势力关系)。
-11. **给玩家旗舰换舰长读回还是玩家**。触发：`playerFleet.getFlagship().setCaptain(myPerson)` 后读 `getCaptain()`。可观察：读回仍是玩家人物 (旗舰特例覆盖读路径，`FleetMemberAPI.getCaptain`)。修正：自定义舰长放非旗舰成员 (本节演示即如此)；旗舰身份由玩家人物固定。
-12. **`getMemory()` 高频调用导致插件回调风暴**。触发：每帧用 `person.getMemory()` 读记忆。可观察：每次调用触发全部插件的 `updatePersonFacts`(`PersonAPI.getMemory`)，日志量/性能异常，其他插件可能改写内存值。
-    - 修正：纯读取用 `getMemoryWithoutUpdate()`(本节 `GearInPersonIdentity` 即此写法)。
-13. **读档后 "默认舰长没了"**。触发：以为每个成员都恒定有一个舰长对象。可观察：`steady + 空姓名 + level ≤ 1` 的默认舰长在保存时被压缩 (不落盘)，读档后 `getCaptain()` 延迟重建新默认舰长 —— 每次读档默认舰长都是新对象。
-    - 修正：需要稳定身份就显式 `setCaptain` 自定义人物 (会随成员保存)。
+1. **读档后人物消失**：保存并读档后人物不见了，全程没有报错；同会话内人物对象仍可用。触发：人物只存在于演示或事件脚本的局部变量里，没挂进任何持久集合。原因：人物只随引用它的持久集合保存，局部变量在帧结束后即被回收。修正：需要跨存档的人物必须挂入至少一个持久集合 (成员 captain / 市场 people+comm / important people / officer roster，见 "归属四入口" 小节)。
+2. **非法 personality id 导致保存时 NPE**：保存时写档失败，`starsector.log` 出现 `NullPointerException`。触发：`setPersonality("bogus")` 用了 `personalities.csv` 没有的 id。原因：CSV spec 加载期的查询对未知 id 静默返回 null、不报错，`getPersonalityAPI()` 拿到 null 后，问题延迟到保存写档时才爆发。修正：只用注册表内的 id (原版 5 个：`timid` / `cautious` / `steady` / `aggressive` / `reckless`)。
+3. **`adjustRelationship` 返回值 false、值不变**：调用后关系值没有变化，返回值 false。触发：三参版 delta 为 0 (例如想用 `adjustRelationship(id, 0f, level)` "确认档位")，或 delta 方向与当前值方向相反且被 limit 挡住。原因：`FactionAPI.adjustRelationship` 三参版 delta 为 0 时直接返回 false，不产生任何修改。修正："设档位" 用 `setRelationship(id, RepLevel)`；"确保档位" 用 `ensureAtBest` / `ensureAtWorst`。
+4. **档位与数值对不上**：关系值到了预期位置，档位却停在上一个档。触发：`setRelationship(id, HOSTILE)` 落 `-0.50` 后，又用 `adjustRelationship(id, -0.2f, VENGEFUL)` 期待档位更敌对。原因：值变 `-0.70`，但未越过 0.74 边界；`RepLevel.getLevelFor` 按百分制整数分段，跳变点只在 0.09 / 0.24 / 0.49 / 0.74 (负向对称)。修正：接受 "数值连续、档位分段"；需要档位结果时直接用 `setRelationship(id, RepLevel)`。
+5. **市场有人物但通信目录/联系人界面查不到**：`getPeopleCopy()` 包含该人物，通信目录和联系人 UI 里却没有。触发：只调了 `market.addPerson(person)`。原因：`MarketAPI.addPerson` 只把人物放进市场 roster，不会自动建通信目录条目 (前序页面已记录同一规则)。修正：另行 `market.getCommDirectory().addPerson(person)` 维护；移除可见联系人时先移 comm entry 再移 roster。
+6. **军官/佣兵不加 XP**：`addXP` 之后 XP 数值不变。触发：给 memory `$isMercenary` 为 true 的人物调用 `addXP`。原因：`OfficerDataAPI.addXP` 对佣兵直接返回 (`Misc.isMercenary` 读 memory `$isMercenary`)。修正：先确认人物不是佣兵；确需给 XP 时先解除佣兵标记。
+7. **军官技能选项被重掷**：玩家看到的可选技能列表与展示不一致。触发：玩家已经看到 `getSkillPicks()` 列表后，又调用了 `makeSkillPicks()`。原因：`OfficerDataAPI.makeSkillPicks()` 每次调用都清空并重掷选项。修正：只在需要生成选项时调用一次；展示期间维持同一个 `OfficerDataAPI` 对象状态。
+8. **checkout 未归还，按条件选人总选不到**：任务或事件生成时，某个人物总是不会被选中。触发：`checkOutPerson(person, "permanent_staff")` 之后没有配对 `returnPerson`。原因：`ImportantPeopleAPI.getPerson(...)` / `getMatching(...)` 按同 reason 过滤时，未归还人物被 `MarketPostPersonFilter.accept` → `canCheckOutPerson` 拒绝。修正：用完必须 `returnPerson(person, reasonId)`。
+9. **演示中断残留**：人物残留在 important people / 市场列表里并随存档保存，读档后仍在。触发：演示帧中途抛异常 (例如把市场段挪到重要人物段之后且市场查询失败)，`addPerson` 与 `removePerson` 未配对。原因：`REGISTER_MARK` 已置位，读档不重放，残留无法自动清理。修正：保持同帧配对顺序 (先 add 后立刻 remove)；不要随意调换段序；需要重试时手动清 `REGISTER_MARK` 键。
+10. **人物对玩家关系与势力对玩家关系混用**：读到的关系值与界面或另一侧不一致。触发：用 `person.getRelToPlayer()` 推断势力声望，或用 `faction.getRelationship("player")` 推断人物好感。原因：人物字段 `relToPlayer` 与势力侧的关系存储是两套，数值互不同步。修正：人物走 `RelationshipAPI`；势力走 `FactionAPI` 关系族 (`getRelToPlayer()` 是势力侧包装，目标仍是势力关系)。
+11. **给玩家旗舰换舰长，读回仍是玩家**：`playerFleet.getFlagship().setCaptain(myPerson)` 之后读 `getCaptain()`，返回的还是玩家人物。触发：把自定义舰长挂到旗舰成员。原因：旗舰特例 —— `FleetMemberAPI.getCaptain()` 对旗舰直接返回玩家人物，读路径覆盖写入。修正：自定义舰长放非旗舰成员 (本节演示即如此)；旗舰身份由玩家人物固定。
+12. **`getMemory()` 高频调用引发插件回调风暴**：日志量与帧耗时异常，或内存值被其他插件改写。触发：每帧用 `person.getMemory()` 读记忆。原因：`getMemory()` 每次调用都触发全部插件的 `updatePersonFacts` 回调 (`PersonAPI.getMemory`)。修正：纯读取用 `getMemoryWithoutUpdate()` (本节 `GearInPersonIdentity` 即此写法)。
+13. **读档后默认舰长消失**：读档后成员 `getCaptain()` 不再是上次会话见到的舰长对象。触发：以为每个成员恒定有一个舰长对象，且从未显式设置。原因：`steady + 空姓名 + level ≤ 1` 的默认舰长在保存时被压缩 (不落盘)，读档后 `getCaptain()` 延迟重建新默认舰长 —— 每次读档都是新对象。修正：需要稳定身份就显式 `setCaptain` 自定义人物 (会随成员保存)。
 
 ## 总结
 
-本节把人物讲成四条链：
+本节把人物走通为四条链：创建链 (空白或势力随机 → 默认值 → 身份写入)、关系链 (数值连续、档位分段、limit 只是单次调整边界、数值恒钳制在 [-1, 1])、captain 链 (生涯侧与战斗侧，玩家旗舰恒返回玩家人物)、officer 链 (包装 → roster → XP/升级 → 上舰)。人物默认值表是调试基准，人物持久化依赖四个归属入口。
 
-- **创建链**：`Global.getFactory().createPerson()`(空白)/ `FactionAPI.createRandomPerson()`(势力随机)→ `PersonAPI` 默认值 (`steady`、空名、`spaceCommander`/`fleetCommander`、`neutral`、默认头像、`MEDIUM`)：
-  - 身份写入 (姓名/性别/rank/post/势力/头像 /personality/importance+voice/tags/memory)。
-  - rank/post 显示名经势力解析、回退 `default_ranks.json`；记忆读取必须分 `getMemory()`(触发全插件回调) 与 `getMemoryWithoutUpdate()`(纯读)。
-- **关系链**：数值存储 (势力间关系延迟创建、默认 0、同势力 1、恒钳 [-1,1]；人物对玩家 `relToPlayer` 延迟创建)：
-  - 写入族 (`setRelationship` 按档位落点 / `adjustRelationship` 加减与 limit 边界 / `ensureAtBest` / `ensureAtWorst`)。
-  - 读取族 (`getRelationship` / `getRelationshipLevel` / `isHostileTo` / `getRelToPlayer`)。
-  - `RepLevel` 九档阈值 0.09 / 0.24 / 0.49 / 0.74，边界含于高位档。
-- **captain 链**：`FleetMemberAPI.setCaptain(person)`(生涯侧，成员 stats 重算；默认舰长 `steady` 保存时压缩**；玩家旗舰特例返回玩家人物**)：
-  - 部署时 captain 与 fleet commander 传入战斗舰船 → `ShipAPI.getCaptain()` / `getOriginalCaptain()` / `setCaptain()`(战斗侧换舰长即换统计与 AI personality)。
-- **officer 链**：`createOfficerData(person)` → `FleetDataAPI.addOfficer`(roster + `person.setFleet`)：
-  - `addXP`(`officerLevelUp` 插件；佣兵不加 XP)→ `canLevelUp` / `makeSkillPicks`(每次重掷)→ `levelUp(skillId)` → `setCaptain` 上舰 → `removeOfficer`。
+排错时先问 "人物是否挂在持久集合"：局部变量人物不保存也不报错，这是多数 "消失" 类问题的共同起点；关系类问题先分清人物侧与势力侧，再对照关系四件事判断。三个 "每次都会发生" 的陷阱值得记牢：`getMemory()` 触发全插件回调、`makeSkillPicks()` 重掷选项、默认舰长保存时压缩。
 
-记忆要点：
-
-- 人物默认值表是调试基准：`personality=steady`、`name=''`、`rankId=spaceCommander`、`postId=fleetCommander`、`faction=neutral`、`portraitIsDefault=true`、`importance=MEDIUM`。
-- 关系四件事：数值连续、档位分段、limit 只是单次调整边界、数值恒钳 [-1, 1]；"设档位" 用 `setRelationship(id, RepLevel)`。
-- 持久归属四入口 (成员 captain / 市场 people+comm / important people / officer roster)；局部变量人物不保存、不报错。
-- 三个 "每次都会发生" 的陷阱：`getMemory()` 触发全插件回调、`makeSkillPicks()` 重掷、默认舰长保存时压缩。
-- 玩家旗舰的 captain 是玩家人物 (特例)，不要试图覆盖读回。
-
-人物对象链到这里已经走通完整流程。
-
-顺着它继续向前：人物是任务、贸易与通信系统的共同实体 —— 任务与事件的选人规则建立在 important people 的 checkout 机制上，市场侧的联系人体系建立在人物归属之上。
-
-本节的身份、关系与归属语义是这些使用端的共同底座，后续遇到 "造一个人、调整它与玩家或势力的关系、把它挂进某个持久集合" 的需求时，都可以回到本节的四条链上定位。
+人物对象链到这里已经走通完整流程。顺着它继续向前：人物是任务、贸易与通信系统的共同实体 —— 任务与事件的选人规则建立在 important people 的 checkout 机制上，市场侧的联系人体系建立在人物归属之上。后续遇到 "造一个人、调整它与玩家或势力的关系、把它挂进某个持久集合" 的需求，都可以回到本节的四条链上定位。
 
 ## 建议参考项
 

@@ -45,7 +45,7 @@
 | 对象 | 描述键 (`id` 列)| 依据 |
 |---|---|---|
 | 舰船 | `.ship` 文件的 `descriptionId` 字段；未填写时回退为 `hullId` | `ShipHullSpecAPI.getDescriptionId()` 的回退；加载器读取 `.ship` 可选字段 |
-| 战机 (联队)| 复用其 hull 的舰船描述。装配界面的战机选择器按 hull 的 `descriptionId` 查询；数据库的战机详情直接按 `hullId` 查询 (RC8 的数据库详情界面)| 为避免两处键不一致，战机 hull 建议不写 `descriptionId` |
+| 战机 (联队)| 复用其 hull 的舰船描述。装配界面的战机选择器按 hull 的 `descriptionId` 查询；数据库的战机详情直接按 `hullId` 查询 (数据库详情界面)| 为避免两处键不一致，战机 hull 建议不写 `descriptionId` |
 | 武器 | 武器 ID(`weapon_data.csv` 的 `id`，与 `.wpn` 的 `id` 相同)| 全部武器使用方都用 `getWeaponId()`，没有替代键 |
 | 战术系统 | 系统 ID(`ship_systems.csv` 的 `id` / `.system` 的 `id`)| 系统使用方用系统 spec 的 id，没有替代键 |
 
@@ -53,7 +53,7 @@
 
 ### 列结构与键规则
 
-表头固定为 8 列 (RC8 原版 `descriptions.csv`)：
+表头固定为 8 列 (原版 `descriptions.csv`)：
 
 ```csv
 id,type,text1,text2,text3,text4,text5,notes
@@ -134,10 +134,10 @@ GearIn_combat_desc_forging,SHIP,"锻件-级相位护卫舰围绕一门中型实�
 - **注释**：行首是 `#` 的整行被忽略，可以用它暂时注释掉某条描述。
 - **编码**：加载器按 UTF-8 读取 (文本读取工具 `readText`)。
 - 中文内容必须以 UTF-8 无 BOM 保存，否则显示乱码或加载异常 (见故障分析)。
-- **弯引号**：加载时会把弯引号 (" " ' ') 替换为直引号 (`replaceSmartQuotes`)，所以不要依赖弯引号保留原样 (RC8 原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步归一化)。
+- **弯引号**：加载时会把弯引号 (" " ' ') 替换为直引号 (`replaceSmartQuotes`)，所以不要依赖弯引号保留原样 (原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步归一化)。
 - **键唯一**：`id + type` 在同一文件内**必须**唯一，否则加载期抛异常 (见故障分析)。
 - 也不要重定义原版或其他 MOD 已存在的 `id + type` 组合：跨文件合并时先被枚举到的文件的行生效，后到的同键行被**静默跳过**(读 CSV 时的去重分支)，覆盖顺序不是可以依赖的约定。
-- 需要整体替换某个数据文件时，RC8 支持在 `mod_info.json` 的 `replace` 数组里声明 (加载器内部映射为 fullOverrides)，整体替换的细节见后续专题。
+- 需要整体替换某个数据文件时，支持在 `mod_info.json` 的 `replace` 数组里声明 (加载器内部映射为 fullOverrides)，整体替换的细节见后续专题。
 
 原版参考行 (`Starsector/starsector-core/data/strings/descriptions.csv`，仅观察不修改)：
 

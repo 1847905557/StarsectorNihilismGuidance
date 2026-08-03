@@ -1,6 +1,6 @@
 # 战斗引擎：状态读取、遍历与时间语义
 
-本节把战斗域的 "读取" 侧讲透：`CombatEngineAPI` 的状态访问器 (战斗上下文、玩家舰、战斗结果)、`CombatFleetManagerAPI` 的舰队名单与已部署成员遍历，以及 `ShipAPI` / `CombatEntityAPI` 的实体状态过滤、战斗时间与暂停语义 (含暂停计时的两种累计、当前帧 `dt`、时间倍率)。写侧 API(伤害、生成、粒子、音效) 由既有页面负责，本节只在需要核对状态时消费。
+本节将引导您完成战斗域的读取侧：认识 `CombatEngineAPI` 的状态访问器、用 `CombatFleetManagerAPI` 遍历两侧舰队名单、掌握战斗时间的四种语义，并把这些知识落成一个每 2 秒向 `starsector.log` 报告状态的示例插件。战斗写侧 (伤害、生成、粒子、音效) 由既有页面负责；写操作同样要先核对状态与时间，这正是读取侧值得现在做扎实的原因。
 
 *本节预期阅读时间：~20 分钟。*
 
@@ -10,31 +10,31 @@
 
 完成后，您将能够：
 
-- 背出 RC8 `CombatEngineAPI` 的状态访问器分组 (战斗上下文 / 玩家与实体 / 战斗结果 / 时间)，并说出每个代表方法的返回类型与语义；
-- 用 `getShips()` 正确遍历 "在场" 舰船，说出 `isAlive()` / `isShipAlive()` / `isEntityInPlay()` 的关系，以及为什么遍历**必须**过滤残骸；
-- 用 `CombatFleetManagerAPI` 的五份名单 (部署 / 后备 / 瘫痪 / 击毁 / 撤退) 与 `getDeployedCopyDFM()` 读取两侧舰队的部署状态；
-- 说出战斗时间的四种语义 (不含暂停累计、含暂停累计、当前帧 `dt`、与敌接触时间)，并解释暂停时 `advance()` 仍被调用而 `getElapsedInLastFrame()` 不为 0；
-- 解释为什么 `getPlayerShip()` 永远非 null(用到时才创建的 "Command Shuttle" 假舰)，以及正确的玩家部署判据；
-- 从症状定位六类典型故障：残骸统计错误、暂停期间状态累计、玩家舰判据失效、跨战斗缓存实体引用、两种累计时间选错、时间倍率二次缩放。
+- 列出 `CombatEngineAPI` 状态访问器的四个分组，并说出代表方法的返回类型与语义；
+- 用 `getShips()` 配合 `isAlive()` 正确遍历在场舰船，并解释残骸与停驻战机需要专门处理的原因；
+- 用 `CombatFleetManagerAPI` 的五份名单与 `getDeployedCopyDFM()` 读取两侧舰队的部署状态；
+- 区分战斗时间的四种语义，并解释暂停时 `advance()` 仍被调用而 `getElapsedInLastFrame()` 不为 0 的原因；
+- 识别 `getPlayerShip()` 返回的 "Command Shuttle" 假舰，并用正确判据确认玩家部署状态；
+- 从日志症状定位七类典型故障：残骸统计错误、暂停期间状态累计、玩家舰判据失效、跨战斗缓存实体引用、两种累计时间选错、时间倍率二次缩放、误用 `getWinningSideId()` 判断结束。
 
 ## 前置知识
 
-以下既有知识是本节的前提：
+本节直接建立在以下既有知识上：
 
 - MOD 目录结构与 `starsector.log` 日志 (C01-S01)：本节所有可观察结果都落在日志里。
-- 战斗插件模型与每帧回调 (C07-S01)：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调与暂停守卫 —— 本节的示例插件建立在这个模型上。
+- 战斗插件模型与每帧回调 (C07-S01)：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调与暂停检查 —— 本节的示例插件建立在这个模型上。
 - 战役 (mission) 与生涯 (campaign) 概念，以及 `GearIn_test` 测试战役 (C03-S01)。
 - 编译 JAR 链路 (C06-S01)：本节示例编入同一个 `jars\GearIndustry.jar`。
 - `Global` 生命周期 —— 战斗引擎每场战斗结束销毁后立即重建、战斗外是非 null 空引擎、禁止跨战斗缓存引擎引用 (C06-S03)：本节把同一条纪律延伸到引擎返回的舰船与列表。
-- `MutableStat`——`getTimeMult()` 的返回类型 (C07-S03)：本节只消费 `getModifiedValue()`，完整讲解见该单元。
+- `MutableStat`——`getTimeMult()` 的返回类型 (C07-S03)：本节只读取它的 `getModifiedValue()`，完整讲解见该单元。
 
 ## 文件与 API 链路
 
-本节涉及的接口都在 `com.fs.starfarer.api.combat`(`FleetSide` 在 `com.fs.starfarer.api.mission`)：
+示例插件要回答三个问题：这场战斗属于哪一类、两侧舰队各处于什么状态、时间推进了多少。答案分别来自三个接口家族，本节先认识它们。涉及的接口都在 `com.fs.starfarer.api.combat`(`FleetSide` 在 `com.fs.starfarer.api.mission`)：
 
 | 接口 / 类型 | 本节角色 | 链路 |
 |---|---|---|
-| `CombatEngineAPI` | 状态 / 时间 / 遍历入口 | `Global.getCombatEngine()` 取得 (C06-S03 讲生命周期)；本节讲状态读取；写侧 (音效与粒子) 由后续节消费 |
+| `CombatEngineAPI` | 状态 / 时间 / 遍历入口 | `Global.getCombatEngine()` 取得 (C06-S03 讲生命周期)；本节讲状态读取；写侧 (音效与粒子) 由后续节使用 |
 | `CombatFleetManagerAPI` | 舰队名单与部署状态 | `engine.getFleetManager(FleetSide)` / `getFleetManager(int owner)` 取得 |
 | `ShipAPI` / `CombatEntityAPI` | 单舰状态访问器 | `getShips()` 与 `DeployedFleetMemberAPI.getShip()` 的返回元素 |
 | `DeployedFleetMemberAPI` | 已部署成员 (舰或战机联队)| `manager.getDeployedCopyDFM()` 的元素；`getMember()` 指向 `FleetMemberAPI`(完整讲解在 C08-S03)|
@@ -51,6 +51,8 @@
 | 战斗结果 | `isCombatOver()` / `getWinningSideId()` / `getCombatNotOverFor()` | 战斗是否结束、胜者 (详见 "战斗结果")|
 | 时间 | `getTotalElapsedTime(boolean)` / `getElapsedInLastFrame()` / `getTimeMult()` / `getElapsedInContactWithEnemy()` / `isFleetsInContact()` / `isPaused()` / `setPaused(boolean)` | 战斗时间四种语义与暂停 (详见 "时间语义")|
 
+接口签名只是起点，语义才是本节的重点。最容易踩空的三处是战斗上下文判断、`getPlayerShip()` 的返回语义与战斗结束判定，先从它们开始。
+
 ## 战斗上下文与玩家舰
 
 ### 战斗上下文
@@ -61,7 +63,7 @@
 
 ### 玩家舰：getPlayerShip() 永远非 null
 
-RC8 中 `CombatEngineAPI.getPlayerShip()` 在玩家舰尚未设置时**不会**返回 null，而是用到时才创建一艘 "Command Shuttle" 假舰 (`shuttlepod_xfer` 装配的克隆，owner 0) 并返回。
+`CombatEngineAPI.getPlayerShip()` 在玩家舰尚未设置时**不会**返回 null，而是用到时才创建一艘 "Command Shuttle" 假舰 (`shuttlepod_xfer` 装配的克隆，owner 0) 并返回。
 
 可观察结果：生涯战斗的部署阶段 (玩家还没部署任何舰船)`getPlayerShip()` 返回 `shuttlepod_xfer` 假舰；战役 (mission) 开局即设置玩家舰，通常观察不到假舰。
 
@@ -76,6 +78,8 @@ RC8 中 `CombatEngineAPI.getPlayerShip()` 在玩家舰尚未设置时**不会**�
 - `getWinningSideId()`：API javadoc 原文 "0 = player, 1 = enemy, 2 = player allies, no player ships left."；胜负未定时返回 -1(初始默认值)。因此**禁止**把 `getWinningSideId() != -1` 当作 "战斗已结束" 判据 —— 它代表的是 "胜者侧"，结束判定必须用 `isCombatOver()`。
 - `setCombatNotOverFor(float)` / `getCombatNotOverFor()`：把战斗强制延续一段时间 (防止按败北条件提前收场)；结束判定对 "败北" 还要求战斗时间累计超过 30 秒 —— 战斗开始 30 秒内不会因一方 "被击败" 而结束。
 
+战斗类型与结束条件清楚了，接下来读取场上到底有哪些舰船 —— 引擎对象表和舰队管理器提供两条互补的路径。
+
 ## 舰队与舰船遍历
 
 ### 引擎对象表：getShips()
@@ -86,7 +90,7 @@ RC8 中 `CombatEngineAPI.getPlayerShip()` 在玩家舰尚未设置时**不会**�
 - 已标记移除、尚未执行移除的舰船也还在表里；
 - 停在甲板 (机库) 里的战机**不在**对象表里，但 `isAlive()` 仍为 `true`。
 
-实体存活性三个入口的 RC8 语义：
+实体存活性三个入口的语义：
 
 | 方法 | 语义 |
 |---|---|
@@ -125,12 +129,14 @@ RC8 中 `CombatEngineAPI.getPlayerShip()` 在玩家舰尚未设置时**不会**�
 遍历 `getDeployedCopyDFM()` 时跳过 `isFighterWing()` 与 `isStationModule()`、只处理主力舰，是已部署成员遍历的成熟做法。
 
 ::: caution 禁止跨战斗缓存实体引用
-从名单 (`getShips()` / `getDeployedCopyDFM()` 等) 拿到的 `ShipAPI` / 列表**禁止**跨战斗缓存 —— 战斗结束后引擎销毁重建，旧实体的 `isAlive()` 委托给**新**引擎实例判定，在新引擎里任何旧舰都不在对象表中，`isAlive()` / `isEntityInPlay()` 恒为 `false`；列表本身也只反映获取那一刻的状态。可观察结果：第二场战斗起缓存引用 "数据还在但全部判定失效"，且无任何报错 (与既有引擎引用禁令同一条纪律的实体侧)。
+从名单 (`getShips()` / `getDeployedCopyDFM()` 等) 拿到的 `ShipAPI` / 列表**禁止**跨战斗缓存 —— 战斗结束后引擎销毁重建，旧实体的 `isAlive()` 委托给**新**引擎实例判定，在新引擎里任何旧舰都不在对象表中，`isAlive()` / `isEntityInPlay()` 恒为 `false`；列表本身也只反映获取那一刻的状态。可观察结果：第二场战斗起缓存引用 "数据还在但全部判定失效"，且无任何报错 (与既有引擎引用禁令同一条纪律的实体侧)。这里的 "销毁" 即 `destroyInstance`：它属于引擎内部方法 (非公开 API)，本节用作 "战斗结束销毁" 的简称，插件自身没有该方法。
 :::
+
+名单告诉您谁在场，时间则告诉您这一帧推进了多少。战斗时间的四种语义是最后一处容易选错的地方。
 
 ## 时间语义
 
-RC8 的战斗时间语义：
+战斗时间语义：
 
 | 方法 | 语义 | 暂停时行为 |
 |---|---|---|
@@ -143,14 +149,16 @@ RC8 的战斗时间语义：
 
 两个关键事实：
 
-1. **暂停时 `advance()` 仍被调用**：暂停不中断战斗引擎对 `EveryFrameCombatPlugin` 的每帧回调 ——`advance()` 在暂停时照常被调用**。必须**在推进状态前检查 `engine.isPaused()`(C07-S01 已立此规)。违反的可观察结果：暂停期间自己的计时 / 状态照常累计，解除暂停后数值已偏移。
-2. **插件收到的 `amount` 与 `getElapsedInLastFrame()` 是同一个数**：引擎按 `timeMult` 与 `combatSpeedMult` 缩放后得到本帧 `dt`，同时写入 `getElapsedInLastFrame()` 并作为 `amount` 传给每帧回调，暂停时也照常传入。默认两个倍率都是 1，`amount` 即真实帧长。做 "按推进时间累计" 直接用 `amount` 或 `getElapsedInLastFrame()`**，不要**再乘 `engine.getTimeMult().getModifiedValue()`—— 那会二次缩放，游戏内时间倍率一改 (慢动作等) 自己的计时就比战斗时间快/慢。违反的可观察结果：默认倍率下看不出来，一旦有 `timeMult` 修正 (技能、慢动作效果)，累计计时与 `getTotalElapsedTime(false)` 的差值按倍率扩大。
+1. **暂停时 `advance()` 仍被调用**：暂停不中断战斗引擎对 `EveryFrameCombatPlugin` 的每帧回调 ——`advance()` 在暂停时照常被调用。**必须**在推进状态前检查 `engine.isPaused()`(C07-S01 已立此规)。违反的可观察结果：暂停期间自己的计时 / 状态照常累计，解除暂停后数值已偏移。
+2. **插件收到的 `amount` 与 `getElapsedInLastFrame()` 是同一个数**：引擎按 `timeMult` 与 `combatSpeedMult` 缩放后得到本帧 `dt`，同时写入 `getElapsedInLastFrame()` 并作为 `amount` 传给每帧回调，暂停时也照常传入。默认两个倍率都是 1，`amount` 即真实帧长。做 "按推进时间累计" 直接用 `amount` 或 `getElapsedInLastFrame()`，**不要**再乘 `engine.getTimeMult().getModifiedValue()`—— 那会二次缩放，游戏内时间倍率一改 (慢动作等) 自己的计时就比战斗时间快/慢。违反的可观察结果：默认倍率下看不出来，一旦有 `timeMult` 修正 (技能、慢动作效果)，累计计时与 `getTotalElapsedTime(false)` 的差值按倍率扩大。
 
 选哪种累计时间的决策：
 
 - 需要 "战斗推进了多少" 用 `getTotalElapsedTime(false)`(败北判定的 30 秒门槛用的就是这条累计)；
 - 需要 "玩家实际经历了多久"(含暂停发呆) 用 `getTotalElapsedTime(true)`；
 - 逐帧推进用 `amount` / `getElapsedInLastFrame()`。
+
+语义齐全之后，把它们写进一个可运行的插件，让日志替您说出这些状态。
 
 ## 完整最小例
 
@@ -292,7 +300,7 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 对应关系：
 
 - `init` 里的 `battle init` 行：读战斗上下文四标志 + `getMissionId()`，用 `GearIn_test` 战役验证 "这场是 mission"。
-- `advance` 的 `if (engine.isPaused()) return;`：暂停守卫 (规则 1)；守卫还顺带让报告节奏在暂停时停摆 —— 恢复后 `total` 与 `totalWithPause` 的差值就是暂停时长的现场证明。
+- `advance` 的 `if (engine.isPaused()) return;`：把时间语义的第 1 条落成代码 —— 暂停时不推进状态，报告节奏也随之停摆；恢复后 `total` 与 `totalWithPause` 的差值就是暂停时长的现场证明。
 - `logEngineTime`：把 "时间语义" 表变成日志 ——`total` / `totalWithPause` / `lastFrame` / `timeMult` / `contact` / `fleetsInContact` / `combatOver` / `winner` 一次打印。
 - `logFleetManagers`：两侧管理器的五份名单大小 + `getDeployedCopyDFM()` 遍历 (跳过 `isFighterWing()` / `isStationModule()`，只数存活主力舰 —— 已部署成员遍历的成熟做法)。
 - `logShips`：`getShips()` + `isAlive()` 过滤分成 alive / notAlive 两堆 (残骸与刚移除的舰计入 notAlive)；`playerShip` 行核对 `getPlayerShip()` 永不 null 的判据 (部署阶段显示 `shuttlepod_xfer` 假舰、`playerInPlay=false`)。
@@ -317,69 +325,111 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInCombatStatePlugin.class`(可用 `jar tf` 核对)。
 
-本节代码块与 fixture 源码逐字一致 (fixture 位于 `tutorial-fixtures/units/C07-S02/src/main/java`)，fixture 编译验收命令见 "预期结果"。
+本节代码块与 fixture 源码逐字一致 (fixture 位于 `tutorial-fixtures/units/C07-S02/src/main/java`)，fixture 编译验收命令见下方验证方案。
 
-### 验证方案 (基于本例)
+## 验证方案
 
-前置数据：既有 MOD 布局 (C06-S01) 与战斗插件接入 (C07-S01，含注册片段)、`GearInCombatStatePlugin` 类、`GearIn_test` 测试战役 (C03-S01)。
+本节成果是一个插件类，验证按工程、时间语义、遍历与判据四组展开。前置数据：既有 MOD 布局 (C06-S01) 与战斗插件接入 (C07-S01，含注册片段)、`GearInCombatStatePlugin` 类、`GearIn_test` 测试战役 (C03-S01)。入口为 Git Bash 构建与 `GearIn_test` 战役 (玩家舰判据用生涯遭遇战)；观察位置统一为 `Starsector/starsector-core/starsector.log` 中的 `GearIn` 条目。
 
-1. **fixture 编译**：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC07s02Java --no-daemon`，确认 `BUILD SUCCESSFUL`。
-2. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInCombatStatePlugin.class`。
-3. **战役冒烟**：进入 `GearIn_test` 一场战斗，`starsector.log` 核对 `GearIn battle init: ... mission=true missionId=GearIn_test`，随后每 2 秒三条周期报告；没有 `gear_in` 引起的 `ERROR`。
-4. **暂停语义**：战斗内按空格暂停约 10 秒再恢复，暂停期间无报告；恢复后 `totalWithPause` 增长约 10 秒而 `total` 基本不变 (对应预期结果 5)。
-5. **残骸过滤**：击毁一艘敌方舰，`GearIn ships:` 的 `alive` 减 1、`notAlive` 加 1(对应预期结果 6)。
-6. **玩家舰判据**：生涯战斗中在部署阶段观察 `playerShip=shuttlepod_xfer playerInPlay=false`，部署后变玩家舰 (对应预期结果 7)。
-7. **战斗结束**：清空一侧舰队，确认 `combatOver=true`、`winner=0/1` 与结束动画的先后关系 (对应预期结果 8)。
-8. **故障注入**：把 `advance` 里的 `if (engine.isPaused()) return;` 注释掉 —— 暂停期间报告照常打印且 `total` 照常增长 (对应故障 2)；改回后确认恢复。
+**1. fixture 编译**
 
-通过信号：操作 1–7 全部符合；操作 8 的注入与恢复都符合预期。
+- 操作：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC07s02Java --no-daemon`。
+- 预期结果：以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (如 `tutorial-fixtures/build.gradle`) 做过修改。
+**2. 游戏构建**
 
-## 预期结果
+- 操作：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，并核对 `jar tf jars\GearIndustry.jar` 的内容。
+- 预期结果：`BUILD SUCCESSFUL`；`jar tf` 能看到 `data/scripts/gearin/combat/GearInCombatStatePlugin.class`。
 
-1. **fixture 编译 (验收 J)**：在 Git Bash 执行。
-```text
-gradle -p tutorial-fixtures compileC07s02Java --no-daemon
-```
-以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInCombatStatePlugin.class`。
-3. **战斗初始化**：进入 `GearIn_test` 战役一场战斗，`starsector.log` 出现一行。
+**3. 战役冒烟**
+
+- 操作：进入 `GearIn_test` 战役一场战斗，让插件运行数秒。
+- 预期结果：`starsector.log` 出现一行：
+
 ```text
 GearIn battle init: campaign=false campaignSim=false simulation=false mission=true missionId=GearIn_test
 ```
-生涯遭遇战则对应 `campaign=true` 其余为 false。没有 `ERROR`。
-4. **周期报告**：战斗 (未暂停) 中每 2 秒出现三条 `GearIn time:` / `GearIn fleet ...:`(含两条 `GearIn deployed ...:`)/ `GearIn ships:` 日志；`time` 行的 `total` 稳步增长、`winner=-1`、`combatOver=false`。
-5. **暂停语义**：按空格暂停约 10 秒再恢复，暂停期间**没有**报告输出 (守卫生效)；恢复后的下一条 `GearIn time:` 里 `totalWithPause` 比暂停前约多 10 秒，而 `total` 增长远小于 10 秒 —— 两条累计的差值就是暂停时长。
-6. **残骸过滤**：击毁一艘敌方舰船后，下一条 `GearIn ships:` 的 `alive` 减 1、`notAlive` 加 1(残骸计入 notAlive 而不是消失)。
-7. **玩家舰判据**：生涯战斗的部署阶段 (玩家尚未部署任何舰船)`playerShip=shuttlepod_xfer`、`playerAlive=true`、`playerInPlay=false`；部署玩家舰后 `playerShip` 变为玩家舰的 hull id、`playerInPlay=true`。战役开局即设置玩家舰，通常直接看到玩家舰。
-8. **战斗结束**：战斗收尾时 `combatOver=true`、`winner=0`(玩家胜) 或 `1`(敌方胜)；结束动画期间 `combatOver` 已为 true 但画面尚未淡出到结算。
 
-静态自查：`GearInCombatStatePlugin` 类源码与 fixture 逐字一致 (包括 import 顺序与注释)。
+生涯遭遇战则对应 `campaign=true` 其余为 false。随后每 2 秒出现三条周期报告 —— `GearIn time:` / `GearIn fleet ...:`(含两条 `GearIn deployed ...:`)/ `GearIn ships:`，其中 `time` 行的 `total` 稳步增长、`winner=-1`、`combatOver=false`；全程没有 `gear_in` 引起的 `ERROR`。
 
-没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInCombatStatePlugin`)。
+**4. 暂停语义**
 
-## 实例驱动故障分析
+- 操作：战斗内按空格暂停约 10 秒再恢复。
+- 预期结果：暂停期间**没有**报告输出 (暂停检查生效)；恢复后的下一条 `GearIn time:` 里 `totalWithPause` 比暂停前约多 10 秒，而 `total` 增长远小于 10 秒 —— 两条累计的差值就是暂停时长。
 
-1. **"存活舰船" 统计含残骸**。触发：`int n = 0; for (ShipAPI s : engine.getShips()) n++;` 直接数列表。可观察：击毁一艘敌舰后计数不降 —— 残骸仍在对象表里 (`isHulk()`)，要等移除才消失；死亡当帧的舰还会被多算一次。修正：`if (!s.isAlive()) continue;`(必须遵守的规则：遍历必须过滤)；需要残骸本身时用 `!isHulk()` 明确表达意图。
-2. **暂停期间状态照常累计**。触发：`advance()` 里没有 `engine.isPaused()` 守卫，直接做计时/进度累计。可观察：暂停 10 秒后解除，自己的累计比 `getTotalElapsedTime(false)` 多出约 10 秒 —— 战斗根本没推进，数值已经偏了。修正：状态推进前检查 `engine.isPaused()`；需要 "含暂停的真实经历时间" 才用 `getTotalElapsedTime(true)`(C07-S01 对同一纪律有另一个视角)。
-3. **`getPlayerShip()` 判据失效**。触发：`if (engine.getPlayerShip() == null) return;` 想跳过 "玩家未部署" 阶段。可观察：分支**永远不执行**——RC8 在玩家舰未设置时用到时才返回 `shuttlepod_xfer`"Command Shuttle" 假舰，`getPlayerShip()` 战斗内永不返回 null；后果是部署阶段代码把假舰当玩家舰处理。修正：部署判断读 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()`；战斗内外判断用 `Global.getCurrentState()`。
-4. **跨战斗缓存 `ShipAPI` 或 `getShips()` 列表**。触发：把某艘舰或整个列表存进字段，下一场战斗继续用。可观察：第二场战斗起 `isAlive()` / `isEntityInPlay()` 恒为 `false`——`Ship.isAlive()` 委托给**当前**引擎实例判定，旧舰不在新引擎的对象表里；没有任何报错，逻辑静默失效。修正：每次需要时从 `engine.getShips()` / 管理器名单现取，禁止缓存 (与既有引擎引用禁令同一条纪律)。
-5. **两种累计时间选错**。触发：做 "战斗推进了多久" 的判定却用 `getTotalElapsedTime(true)`。可观察：玩家频繁暂停后判定值偏大 (把暂停发呆时间也算成战斗时间)；反过来需要 "真实经历时间"(如演出计时) 却用 `false` 版本，玩家暂停时演出提前结束。修正：推进语义用 `false`、经历语义用 `true`、逐帧用 `amount` / `getElapsedInLastFrame()`。
-6. **时间倍率二次缩放**。触发：`advance(amount)` 里写 `amount * engine.getTimeMult().getModifiedValue()` 再累计自己的计时。可观察：默认 `timeMult=1` 时与 `getTotalElapsedTime(false)` 一致；一旦有倍率修正 (技能、慢动作)，自己的计时比战斗时间快/慢 —— 因为插件收到的 `amount` 已按 `getTimeMult()` 与 settings `combatSpeedMult`(默认 1f) 缩放。修正：直接用 `amount` 或 `getElapsedInLastFrame()`，不重复乘倍率。
-7. **用 `getWinningSideId()` 判断战斗结束**。触发：`if (engine.getWinningSideId() != -1) { 结算逻辑 }`。可观察：胜负已定时 `winner` 已非 -1(胜者侧确定)，但 `isCombatOver()` 仍为 `false`(结束淡出动画未完成)，结算逻辑提前执行、界面还在战斗中。修正：结束判定用 `isCombatOver()`；`getWinningSideId()` 只回答 "胜者是谁"。
+**5. 残骸过滤**
+
+- 操作：击毁一艘敌方舰船，观察下一条 `GearIn ships:` 日志。
+- 预期结果：`alive` 减 1、`notAlive` 加 1(残骸计入 notAlive 而不是消失)。
+
+**6. 玩家舰判据**
+
+- 操作：在生涯战斗中先后观察部署阶段与部署玩家舰后的日志。
+- 预期结果：部署阶段 (玩家尚未部署任何舰船)`playerShip=shuttlepod_xfer`、`playerAlive=true`、`playerInPlay=false`；部署玩家舰后 `playerShip` 变为玩家舰的 hull id、`playerInPlay=true`。战役开局即设置玩家舰，通常直接看到玩家舰。
+
+**7. 战斗结束**
+
+- 操作：清空一侧舰队，观察战斗收尾与结束动画的先后关系。
+- 预期结果：战斗收尾时 `combatOver=true`、`winner=0`(玩家胜) 或 `1`(敌方胜)；结束动画期间 `combatOver` 已为 true 但画面尚未淡出到结算。
+
+**8. 故障注入**
+
+- 操作：把 `advance` 里的 `if (engine.isPaused()) return;` 注释掉，重新构建并再次暂停；改回后确认恢复。
+- 预期结果：暂停期间报告照常打印且 `total` 照常增长 (对应故障分析第 2 条)；改回后恢复。
+
+通过信号：操作 1–7 全部符合；操作 8 的注入与恢复都符合预期。
+
+静态自查：`GearInCombatStatePlugin` 类源码与 fixture 逐字一致 (包括 import 顺序与注释)。没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInCombatStatePlugin`)。
+
+清理：取消勾选测试 MOD；确认没有对共享文件 (如 `tutorial-fixtures/build.gradle`) 做过修改。
+
+## 故障分析
+
+七个故障按症状组织：每个故障先写您实际看到的现象，再给触发条件、断链位置与核对顺序。验证方案的故障注入 (操作 8) 对应第 2 条。
+
+1. **"存活舰船" 统计含残骸**
+   - 症状：击毁一艘敌舰后计数不降；死亡当帧的舰还会被多算一次。
+   - 触发：`int n = 0; for (ShipAPI s : engine.getShips()) n++;` 直接数列表。
+   - 原因：`getShips()` 返回引擎对象表，残骸 (`isHulk()`) 仍在表内，要等移除才消失。
+   - 修正：`if (!s.isAlive()) continue;`(遍历必须过滤)；需要残骸本身时用 `!isHulk()` 明确表达意图。
+2. **暂停期间状态照常累计**
+   - 症状：暂停 10 秒后解除，自己的累计比 `getTotalElapsedTime(false)` 多出约 10 秒 —— 战斗根本没推进，数值已经偏了。
+   - 触发：`advance()` 里没有 `engine.isPaused()` 判断，直接做计时/进度累计。
+   - 原因：暂停不中断每帧回调，`advance()` 照常被调用。
+   - 修正：状态推进前检查 `engine.isPaused()`；需要 "含暂停的真实经历时间" 才用 `getTotalElapsedTime(true)`(C07-S01 对同一纪律有另一个视角)。
+3. **`getPlayerShip()` 判据失效**
+   - 症状：依赖 null 判断的分支**永远不执行**，部署阶段代码把假舰当玩家舰处理 (静默失效，无报错)。
+   - 触发：`if (engine.getPlayerShip() == null) return;` 想跳过 "玩家未部署" 阶段。
+   - 原因：玩家舰未设置时用到才返回 `shuttlepod_xfer` "Command Shuttle" 假舰，`getPlayerShip()` 战斗内永不返回 null。
+   - 修正：部署判断读 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()`；战斗内外判断用 `Global.getCurrentState()`。
+4. **跨战斗缓存 `ShipAPI` 或 `getShips()` 列表**
+   - 症状：第二场战斗起 `isAlive()` / `isEntityInPlay()` 恒为 `false`，没有任何报错，逻辑静默失效。
+   - 触发：把某艘舰或整个列表存进字段，下一场战斗继续用。
+   - 原因：`Ship.isAlive()` 委托给**当前**引擎实例判定，旧舰不在新引擎的对象表里；列表本身也只反映获取那一刻的状态。
+   - 修正：每次需要时从 `engine.getShips()` / 管理器名单现取，禁止缓存 (与既有引擎引用禁令同一条纪律)。
+5. **两种累计时间选错**
+   - 症状：玩家频繁暂停后判定值偏大，把暂停发呆时间也算成了战斗时间；或需要 "真实经历时间" 时进度提前结束。
+   - 触发：做 "战斗推进了多久" 的判定却用 `getTotalElapsedTime(true)`，或需要 "真实经历时间"(如演出计时) 却用 `false` 版本。
+   - 原因：`true` 含暂停累计、`false` 不含，两个版本的边界不同。
+   - 修正：推进语义用 `false`、经历语义用 `true`、逐帧用 `amount` / `getElapsedInLastFrame()`。
+6. **时间倍率二次缩放**
+   - 症状：默认 `timeMult=1` 时与 `getTotalElapsedTime(false)` 一致；一旦有倍率修正 (技能、慢动作)，自己的计时比战斗时间快/慢。
+   - 触发：`advance(amount)` 里写 `amount * engine.getTimeMult().getModifiedValue()` 再累计自己的计时。
+   - 原因：插件收到的 `amount` 已按 `getTimeMult()` 与 settings `combatSpeedMult`(默认 1f) 缩放。
+   - 修正：直接用 `amount` 或 `getElapsedInLastFrame()`，不重复乘倍率。
+7. **用 `getWinningSideId()` 判断战斗结束**
+   - 症状：结算逻辑提前执行、界面还在战斗中。
+   - 触发：`if (engine.getWinningSideId() != -1) { 结算逻辑 }`。
+   - 原因：胜负已定时 `winner` 已非 -1(胜者侧确定)，但 `isCombatOver()` 仍为 `false`(结束淡出动画未完成)。
+   - 修正：结束判定用 `isCombatOver()`；`getWinningSideId()` 只回答 "胜者是谁" —— 结算逻辑再着急，也得等退场动画播完。
 
 ## 总结
 
-本节把战斗域的 "读取" 侧讲成一个完整流程：`CombatEngineAPI` 状态访问器分四组 (战斗上下文、玩家与实体、战斗结果、时间)，`getShips()` 遍历必须用 `isAlive()` 过滤。
+本节把战斗域的读取侧讲成一个完整流程：`CombatEngineAPI` 状态访问器分四组 (战斗上下文、玩家与实体、战斗结果、时间)，`getShips()` 遍历必须用 `isAlive()` 过滤，舰队管理器五份名单与 `getDeployedCopyDFM()` 读部署状态，战斗时间的四种语义与暂停时 `advance()` 的行为都落到可观察的日志表现上。
 
-舰队管理器五份名单与 `getDeployedCopyDFM()` 读部署状态，战斗时间四种语义与暂停时 `advance()` 的行为都落到可观察的日志表现上。
+两个 "永不 null" 入口 (`getPlayerShip()` 用到时才创建的假舰、`getFleetManager(int)` 新建的空管理器) 与实体、列表的跨战斗缓存禁令，是写侧代码同样要遵守的边界 —— 写操作同样需要先核对状态与时间语义，本节的读取做法是它们的共同前提。
 
-两个 "永不 null" 入口 (`getPlayerShip()` 的用到时才创建的假舰、`getFleetManager(int)` 的新建空管理器) 与实体 / 列表的跨战斗缓存禁令，是写侧代码同样要遵守的边界。
-
-逻辑上，本节的读取做法是战斗写侧 (伤害、生成、粒子、音效) 的前提：写操作同样需要先核对状态与时间语义。
-
-`getTimeMult()` 返回的 `MutableStat` 属于时间倍率主题，本节只消费其修正值；`getMember()` 指向的 `FleetMemberAPI` 携带生涯侧身份，其成员属性由生涯主题完整讲解。
+`getTimeMult()` 返回的 `MutableStat` 属于时间倍率主题，本节只读取其修正值；`getMember()` 指向的 `FleetMemberAPI` 携带生涯侧身份，其成员属性由生涯主题完整讲解。
 
 ## 建议参考项
 
@@ -393,6 +443,6 @@ GearIn battle init: campaign=false campaignSim=false simulation=false mission=tr
 - `com.fs.starfarer.api.mission.FleetSide`(公开 API)：`PLAYER` / `ENEMY` 两侧。
 - `com.fs.starfarer.api.Global`(公开 API)：`getCombatEngine()` / `getCurrentState()` / `getLogger()` 入口。
 - `data/config/settings.json`：`combatSpeedMult` 帧 dt 全局倍率配置。
-- `docs/chapter7/section1/README.md`：战斗插件模型、注册入口与暂停守卫。
+- `docs/chapter7/section1/README.md`：战斗插件模型、注册入口与暂停检查。
 - `docs/chapter6/section3/README.md`：引擎生命周期、阶段判据与跨战斗缓存禁令。
 - `tutorial-fixtures/units/C07-S02/src/main/java`：本节示例源码 (fixture)。

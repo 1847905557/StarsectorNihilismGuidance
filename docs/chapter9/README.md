@@ -2,7 +2,7 @@
 
 本章技术基线：Starsector `0.98a-RC8`，只描述当前基线。
 
-掌握人物身份与关系、技能效果作用域与 fleet total、变体操作，以及 PersonAPI/FleetMemberAPI/ShipVariantAPI/MutableStat 之间的状态交接。
+本章从人物入手，逐层搭起生涯与战斗之间的状态交接链：人物确定身份、关系与归属，技能把效果作用到成员与 fleet total，变体讲清装配与保存边界，最后用演示类把装配、技能、成员与战斗舰船之间的交接在日志里跑通。
 
 ## 本章各节
 

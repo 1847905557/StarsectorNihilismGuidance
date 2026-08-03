@@ -18,7 +18,7 @@ import com.fs.starfarer.api.combat.ViewportAPI;
 /**
  * 完整最小例：分层渲染插件（CombatLayeredRenderingPlugin）的层级、视口与清理。
  *
- * 渲染管线事实（0.98a-RC8）：
+ * 渲染管线事实：
  * - engine.addLayeredRenderingPlugin(plugin) 用自定义战斗实体包装插件并加入引擎；
  *   executeAdds 时调用 plugin.init(entity) 并按 getActiveLayers() 注册进 LayeredRenderer；
  * - 每帧（非暂停分支）推进 entity.advance(amount)，随后 isExpired() 为 true 的实体
@@ -81,7 +81,7 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
             return; // 防御：init() 先于 advance() 被引擎调用，保留与成熟实例一致的判空
         }
         if (engine.isPaused()) {
-            return; // 暂停守卫（防御性；RC8 引擎的暂停分支本就不推进实体）
+            return; // 暂停守卫（防御性；引擎的暂停分支本就不推进实体）
         }
         if (!engine.isEntityInPlay(trackedShip) || !trackedShip.isAlive()) {
             valid = false; // 失效：下一轮 executeRemoves 移除实体并调用 cleanup()

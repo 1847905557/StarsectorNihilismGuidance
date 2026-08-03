@@ -43,7 +43,7 @@ hull style(舰船风格) 与 engine style(引擎风格) 决定一艘船在战斗
 
 舰船风格文件位于 `data/config` 文件夹内的 `hull_styles.json`。它控制护盾颜色、V 排粒子、各类音效与贴图材质。
 
-**最稳妥的做法是复制粘贴修改原版的舰船风格**—— 原版条目保留了 RC8 读取的完整字段，不容易漏字段。
+**最稳妥的做法是复制粘贴修改原版的舰船风格**—— 原版条目保留了读取所需的完整字段，不容易漏字段。
 
 本例以 `LOW_TECH` 为底，把配色改成齿轮工业的黄铜色系：
 
@@ -101,7 +101,7 @@ hull style(舰船风格) 与 engine style(引擎风格) 决定一艘船在战斗
 
 ::: warning 舰船风格的 9 个颜色字段：缺键不报错
 
-RC8 的舰船风格读取器对以下 9 个颜色字段**缺键时不抛异常**，而是静默回退为白色 (读取颜色的工具方法在键缺失时返回 `Color.white`)：`hyperspaceJitterColor`、`baseCampaignExplosionColor`、`baseCombatExplosionColor`、`fighterRepairFlickerColor`、`weaponDisabledExplosionColor`、`shieldRingColor`、`shieldInnerColor`、`fluxVentCoreColor`、`fluxVentFringeColor`。
+舰船风格读取器对以下 9 个颜色字段**缺键时不抛异常**，而是静默回退为白色 (读取颜色的工具方法在键缺失时返回 `Color.white`)：`hyperspaceJitterColor`、`baseCampaignExplosionColor`、`baseCombatExplosionColor`、`fighterRepairFlickerColor`、`weaponDisabledExplosionColor`、`shieldRingColor`、`shieldInnerColor`、`fluxVentCoreColor`、`fluxVentFringeColor`。
 
 后果：漏掉某个颜色键，游戏照常加载、**不会**中断，但对应的护盾/爆炸/V 排颜色会变成白色，观感与原版色系不一致且没有任何报错。真正会让 `loadEngineAndHullStyles()` 阶段抛错的是**值格式非法**：颜色数组不足 4 个元素抛 `Color array with id [...] has less than 4 elements`，JSON 语法错误抛对应解析异常 —— 游戏在加载进度条阶段直接失败，无法进入主菜单。所以**请复制原版条目再改数值，不要手写精简版**(漏键虽不报错，但观感会静默劣化)。
 
@@ -150,7 +150,7 @@ RC8 的舰船风格读取器对以下 9 个颜色字段**缺键时不抛异常**
 
 ::: caution 引擎风格的必填字段
 
-RC8 的引擎风格读取器必填：`type`(只能填 `GLOW` 或 `SMOKE`；缺键抛 `Key [type] is required`，枚举之外的值如手误写成 `GLOWW` 抛 `Key [type] has invalid value`)、`contrailMaxSpeedMult`、`contrailAngularVelocityMult`；在 `PARTICLES` 模式下还必填 `contrailParticleSizeMult`、`contrailParticleDuration`。`engineColor` 与 `contrailColor` **不是必填**—— 缺键不抛异常，与舰船风格的颜色同理静默回退为白色。
+引擎风格读取器必填：`type`(只能填 `GLOW` 或 `SMOKE`；缺键抛 `Key [type] is required`，枚举之外的值如手误写成 `GLOWW` 抛 `Key [type] has invalid value`)、`contrailMaxSpeedMult`、`contrailAngularVelocityMult`；在 `PARTICLES` 模式下还必填 `contrailParticleSizeMult`、`contrailParticleDuration`。`engineColor` 与 `contrailColor` **不是必填**—— 缺键不抛异常，与舰船风格的颜色同理静默回退为白色。
 
 违反后的可观察结果：缺失/非法必填键会让条目解析失败、游戏在加载阶段整体失败，无法进入主菜单 (`starsector.log` 记录 `Key [...] is required`、`JSONObject[...] not found.` 或 `invalid value`)。
 
@@ -276,7 +276,7 @@ hull style 是 "声音与材质的总线"：
 
 ::: caution 自定义风格的声音：必须遵守
 
-**若没有为自定义 hull style 注册并引用自定义声音集，风格会静默回落到原版通用声音**：RC8 的舰船风格数据对 9 个声音字段都有默认值 (`engine_loop`、`engine_accelerate`、`emp_loop`、`flux_loop`、`vent_flux`、`shield_burnout`、`shield_lower`、`shield_raise`、`explosion_ship`)，所有原版风格共享这一套。这不是报错，但引擎声、护盾声会听上去与原版一致，观感与自定义配色不一致。
+**若没有为自定义 hull style 注册并引用自定义声音集，风格会静默回落到原版通用声音**：舰船风格数据对 9 个声音字段都有默认值 (`engine_loop`、`engine_accelerate`、`emp_loop`、`flux_loop`、`vent_flux`、`shield_burnout`、`shield_lower`、`shield_raise`、`explosion_ship`)，所有原版风格共享这一套。这不是报错，但引擎声、护盾声会听上去与原版一致，观感与自定义配色不一致。
 
 一旦风格里写入了自定义声音集 ID(例如 `"engineLoopSet": "GearIn_engine_loop"`)，该 ID **必须**存在于 `sounds.json`。违反后的可观察结果：加载阶段不报错，但舰船进入战斗、创建引擎控制器时抛 `NullPointerException`(`starsector.log` 记录指向 `ShipEngineControllerAPI` 的堆栈)，舰船无法正常部署；声音集里注册的 `.ogg` 路径不存在时，加载阶段直接失败 (声音资源加载任务报错)，游戏无法进入主菜单。
 

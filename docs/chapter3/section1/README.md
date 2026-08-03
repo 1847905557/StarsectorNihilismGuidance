@@ -13,7 +13,7 @@
 - 用 `data/missions/mission_list.csv` 注册战役，并说出战役注册与启动的完整链路；
 - 搭建一个自动列出本 MOD 所有舰船的测试战役，并从它的装配界面导出装配；
 - 把导出的 `.variant` 文件放回 MOD 的 `data/variants`，改名、改 ID 后成为正式装配；
-- 对照 RC8 的字段表修改装配 JSON，并设置自动装配目标 (`goalVariant`)；
+- 对照字段表修改装配 JSON，并设置自动装配目标 (`goalVariant`)；
 - 从原版战役复制出一个常规战役，并逐处替换内容。
 
 ## 前置知识
@@ -310,7 +310,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 其余字段无需修改：武器和船插已经在测试战役里装配好了，`hullId` 指向 `GearIn_artizan`(与 C01-S02 的船体注册一致)。
 
-### 装配 JSON 字段速查表 (RC8)
+### 装配 JSON 字段速查表
 
 | 字段 | 是否必需 | 实际意义 |
 |---|---:|---|
@@ -318,7 +318,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 | `hullId` | 是 | 指向已注册船体 (C01-S02)，必须与 `.ship`、`ship_data.csv` 一致 |
 | `displayName` | 是 | 装配显示名，出现在装配界面与舰队面板 |
 | `fluxVents` / `fluxCapacitors` | 是 | 幅散 / 幅容数量 |
-| `weaponGroups` | 是 | 武器组数组；每组含 `mode`(只能是 `LINKED` 或 `ALTERNATING`，RC8 `WeaponGroupType` 枚举仅这两个值)、`autofire`(可选，默认 `false`)、`weapons`(槽位 ID → 武器 ID 的对象)|
+| `weaponGroups` | 是 | 武器组数组；每组含 `mode`(只能是 `LINKED` 或 `ALTERNATING`，`WeaponGroupType` 枚举仅这两个值)、`autofire`(可选，默认 `false`)、`weapons`(槽位 ID → 武器 ID 的对象)|
 | `hullMods` | 否 | 已安装船插 ID 数组 (C02-S02)|
 | `permaMods` / `sMods` | 否 | 永久船插 / S 插数组，常规装配通常留空 |
 | `wings` | 否 | 航母的机库装配，按甲板顺序列出战机 wing ID |

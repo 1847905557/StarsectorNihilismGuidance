@@ -1,6 +1,6 @@
 # GLSL 基础：类型、坐标与数据流
 
-本节把 "着色器 (shader)" 讲透 —— 这是教程对 shader 术语的首次完整讲解；GLSL(OpenGL Shading Language) 是 shader 的编程语言，在 Starsector `0.98a-RC8` 里，MOD 用游戏自带的 LWJGL 绑定 (`org.lwjgl.opengl`) 编译、链接和提交 GLSL 程序，渲染所属对象是分层渲染专题页确立的分层渲染插件通道。本节覆盖 GLSL 基本类型、顶点/片元两端的坐标语义，以及从顶点数据到片元输出的一条完整数据流 (attribute / uniform / varying)；shader 的**路径、加载与编译日志**、**uniform / 纹理 / 矩阵提交**、**渲染层接入与资源释放**由后续单元展开，本节只保留最简流程。
+本节将引导您建立 GLSL 的基础：GLSL 是着色器 (shader) 的编程语言，在 Starsector 中由 MOD 通过游戏自带的 LWJGL 绑定 (`org.lwjgl.opengl`) 编译、链接和提交，渲染所属对象是分层渲染专题页确立的分层渲染插件通道。您将沿 attribute / uniform / varying 三条数据通道走通从顶点数据到片元输出的完整数据流，最终得到一个能编译、能链接、能出画面的最小 shader 渲染插件 —— 这也是全教程对 shader 术语的首次完整讲解，后续的路径加载、uniform 提交与渲染层接入都在这条数据流上展开。
 
 *本节预期阅读时间：~20 分钟。*
 
@@ -10,16 +10,16 @@
 
 完成后，您将能够：
 
-- 说出 GLSL 1.10/1.20 方言的基本类型 (标量、向量、矩阵、采样器) 与构造器、swizzle、分量级运算，并指认本地成熟实例里的对应用法；
-- 说出顶点与片元两端的坐标语义：attribute 位置数据的世界/裁剪/屏幕三种约定、`gl_Position` 的裁剪空间含义、`gl_FragCoord` 的窗口像素坐标、纹理坐标 [0,1] 约定；
-- 说出顶点到片元的三条数据通道 ——attribute(每顶点)、uniform(每绘制)、varying(逐片元插值)，以及 `gl_Position` → `gl_FragCoord` 这条特殊通道；
-- 说出 Starsector 中 shader 的加载与使用上下文：游戏自带 LWJGL、OpenGL 2.0 能力门禁 (GraphicsLib 硬措辞)、`SettingsAPI.loadText` 读取源文本、编译/链接状态检查与信息日志；
-- 说出 GLSL 110 方言与 430 方言 (现代 430 实例内部标准) 的关键差异 (`attribute`/`varying`/`gl_FragColor` vs `in`/`out`/`layout`/`fragColor`) 与各自的硬件前提；
+- 区分 GLSL 1.10/1.20 方言的基本类型 (标量、向量、矩阵、采样器) 与构造器、swizzle、分量级运算，并指出本地成熟实例里的对应用法；
+- 解释顶点与片元两端的坐标语义：attribute 位置数据的三种约定、`gl_Position` 的裁剪空间含义、`gl_FragCoord` 的窗口像素坐标、纹理坐标 [0,1] 约定；
+- 描述顶点到片元的三条数据通道 —— attribute(每顶点)、uniform(每绘制)、varying(逐片元插值)，以及 `gl_Position` → `gl_FragCoord` 这条特殊通道；
+- 说明 Starsector 中 shader 的加载与使用上下文：游戏自带 LWJGL、OpenGL 2.0 能力门禁 (GraphicsLib 硬措辞)、`SettingsAPI.loadText` 读取源文本、编译/链接状态检查与信息日志；
+- 对比 GLSL 110 方言与 430 方言 (现代 430 实例内部标准) 的关键差异 (`attribute`/`varying`/`gl_FragColor` vs `in`/`out`/`layout`/`fragColor`) 与各自的硬件前提；
 - 从症状定位典型故障：不写 `gl_Position`、attribute 位置未固定、varying 两侧不一致、uniform 名拼错、漏查编译/链接状态、方言版本与硬件不匹配。
 
 ## 前置知识
 
-本节在既有 MOD 布局、战斗渲染与 shader 门禁上下文之上展开，以下先修内容请先就绪：
+本节在既有 MOD 布局、战斗渲染与 shader 能力基线之上展开，以下先修内容请先就绪：
 
 - MOD 目录结构与 `starsector.log` 的读取 (C01-S01)：本节所有可观察结果都落在日志与画面里。
 - 战役 (mission) 与生涯 (campaign) 概念、`GearIn_test` 测试战役 (C03-S01)：本节用它做游戏内验证。
@@ -27,12 +27,12 @@
 - `Global` 生命周期 (C06-S03)：禁止跨战斗缓存引擎引用，本节的渲染插件同规。
 - 战斗状态读取 (C07-S02)：`getPlayerShip()` 与实体存活判定，本节用玩家舰船做演示锚点。
 - 战斗插件生命周期 (C07-S05)：本节的注册片段所在。
-- 分层渲染插件 (C07-S06)：世界坐标提交与 GL 资源清理必须遵守的规则，本节直接复用；shader 程序是其中 "着色器 (shader) 程序" 资源的一种。
+- 分层渲染插件 (C07-S06)：世界坐标提交、GL 资源清理与渲染回调纪律，本节直接复用。
 - GraphicsLib 初始化与能力门禁 (C12-S03)：`ShaderLib.init()` / `areShadersAllowed()` 的完整上下文。
 
 ## 文件与 API 链路
 
-本节涉及的文件与调用链如下：
+动手之前，先把本节涉及的每一环文件与 API 落到一处 —— 后面的类型、坐标与数据流解释都沿这张表展开：
 
 | 环节 | 文件 / API | 说明 |
 |---|---|---|
@@ -48,7 +48,7 @@
 
 ## GLSL 类型速查
 
-以下类型全部能在本地成熟实例的 shader 文件里直接指认：
+链路两端已经清楚，接下来认识 GLSL 自己 —— 类型是声明一切变量的基础，以下类型全部能在本地成熟实例的 shader 文件里直接指认：
 
 | 类别 | 类型 | 实例用法 |
 |---|---|---|
@@ -69,9 +69,11 @@
 
 ## 坐标语义
 
+类型负责声明变量，坐标决定这些变量在渲染两端的含义 —— 顶点与片元看到的是完全不同的坐标系，这是 shader 最常见的困惑来源。
+
 ### 顶点坐标：从 attribute 到 gl_Position
 
-attribute 里的位置数据**没有固有语义**—— 它是什么坐标，取决于提交方与投影约定。RC8 的本地实例里可见三种约定：
+attribute 里的位置数据**没有固有语义**—— 它是什么坐标，取决于提交方与投影约定。本地实例里可见三种约定：
 
 | 约定 | 含义 | 本地实例 |
 |---|---|---|
@@ -93,6 +95,8 @@ attribute 里的位置数据**没有固有语义**—— 它是什么坐标，�
 - 纹理坐标约定 [0,1]：GraphicsLib `drawScreenQuad` 的 tex coords 是 0..1 (`org.dark.shaders.util.ShaderLib`)；430 实例把 [-1,1] 顶点映射到 [0,1] (`fragUV = vertex * 0.5 + vec2(0.5, 0.5)`)。
 
 ## 顶点到片元的数据流
+
+坐标语义确定了顶点往哪站，数据流决定这些值怎么到达片元 —— 顶点着色器与片元着色器之间有两条显式通道和一条特殊通道：
 
 ```
 Java 侧                                   GPU 管线
@@ -125,7 +129,7 @@ Java 侧                                   GPU 管线
 
 ::: tip uniform 名拼错时，返回值判 -1 是唯一早期诊断入口
 
-`glGetUniformLocation` 拼错名字会返回 -1，后续 `glUniform*` 被静默忽略且没有任何日志 (见故障分析 4)。给返回值做一次 -1 判断，成本极低、诊断价值高。
+`glGetUniformLocation` 拼错名字会返回 -1，后续 `glUniform*` 被静默忽略且没有任何日志 —— 游戏用最安静的方式宣布您的赋值无效 (见故障分析 4)。给返回值做一次 -1 判断，成本极低、诊断价值高。
 
 :::
 
@@ -137,6 +141,8 @@ Java 侧                                   GPU 管线
 - 输出通道：GLSL 110 方言里片元着色器**必须写 `gl_FragColor`**；430 方言实例固定输出名为 `fragColor`。
 
 ## Starsector 中 shader 的加载与使用上下文
+
+数据流在 GPU 内部成立，但让它跑起来还需要 Java 侧把源文本读进来、编译、链接并提交 —— 游戏自带的 LWJGL 与 OpenGL 2.0 能力基线，决定了您能用哪些 API 和哪个 GLSL 方言：
 
 - **LWJGL**：游戏自带 `Starsector\starsector-core\lwjgl.jar` 与 `lwjgl_util.jar`，MOD 代码直接调用 `org.lwjgl.opengl.GL20` 等 (GraphicsLib 的 import 全部来自这两个 jar)。`glShaderSource` 可直接传 String(GraphicsLib `org.dark.shaders.util.ShaderLib` 同款调用)。
 - **能力基线**：OpenGL 2.0 是 GLSL 可用下限。GraphicsLib `ShaderLib.init()` 检测 `GLContext.getCapabilities().OpenGL20`，不满足时置 `shadersAllowed = false` 并打 ERROR `GPU does not support OpenGL 2.0! Shaders disabled!`(`org.dark.shaders.util.ShaderLib`)。MOD 插件在 `onApplicationLoad` 里 `ShaderLib.init()` 后先查门禁再注册光效数据。
@@ -159,7 +165,9 @@ GLSL 版本与 OpenGL 版本绑定：`#version 110` 是 GL 2.0 上下文的标�
 
 :::
 
-## 必须遵守的规则汇总
+## 规则汇总
+
+前面的章节已经逐条给出机制，这里把决定 shader 能否运行、能否诊断的约束集中成一张表：标为必须的规则违反后有明确的失败结果，标为建议的规则关乎可维护性与诊断性。正文与故障分析按编号引用：
 
 | # | 强度 | 规则 | 违反的可观察结果 |
 |---|---|---|---|
@@ -180,7 +188,7 @@ GLSL 版本与 OpenGL 版本绑定：`#version 110` 是 GL 2.0 上下文的标�
 
 ## 完整最小例
 
-在既有 MOD 布局与战斗插件体系之上，本节新增两个 shader 资源与一个插件类 (不新增任何注册项、不改动任何既有文件)：
+规则是约束，现在把它们连同前面的类型、坐标与数据流一起落进代码。在既有 MOD 布局与战斗插件体系之上，本节新增两个 shader 资源与一个插件类 (不新增任何注册项、不改动任何既有文件)：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -272,25 +280,24 @@ import com.fs.starfarer.api.combat.ViewportAPI;
 /**
  * 完整最小例：GLSL 顶点到片元数据流（attribute / uniform / varying / gl_Position / gl_FragColor）。
  *
- * 数据流事实（0.98a-RC8）：
+ * 数据流事实：
  * - 顶点着色器输入分两类：attribute（每顶点，Java 侧 VBO + glVertexAttribPointer
  *   喂入，位置必须在 glLinkProgram 前用 glBindAttribLocation 固定）与 uniform（本次
  *   绘制内所有顶点共享，Java 侧 glGetUniformLocation + glUniform* 提交）；
  * - 顶点着色器输出 gl_Position（裁剪空间坐标）与 varying（每顶点写出、光栅化时在
  *   片元间插值）；片元着色器读插值后的 varying 并写 gl_FragColor（GLSL 1.10 方言）；
- * - 本节 render() 里按 GraphicsLib renderForeground 的姿势（org.dark.shaders.util.ShaderLib 第
- *   1485-1489 行）用 glOrtho(viewport) 设置世界→屏幕正交投影，顶点着色器用
+ * - 本节 render() 里按 GraphicsLib renderForeground() 的同款姿势（org.dark.shaders.util.ShaderLib）
+ *   用 glOrtho(viewport) 设置世界→屏幕正交投影，顶点着色器用
  *   gl_ModelViewProjectionMatrix 应用它；
  * - 顶点数据走 VBO + long 偏移：游戏自带 LWJGL 的 GL20.glVertexAttribPointer
  *   没有 FloatBuffer client 指针重载（本单元用游戏 API jar 编译实证），必须
  *   glBindBuffer(GL_ARRAY_BUFFER, vbo) 后用 long 偏移；
- * - 能力基线：GLSL 需要 OpenGL 2.0 上下文（GraphicsLib ShaderLib.init() 以
- *   capabilities.OpenGL20 作为 shader 门禁，第 602-607 行；areShadersAllowed() 的
- *   javadoc 硬措辞 "Do not use shader code if this returns false! Otherwise the
- *   game will crash!"，第 197-198 行）；
+ * - 能力基线：GLSL 需要 OpenGL 2.0 上下文（GraphicsLib ShaderLib.init() 的 OpenGL20
+ *   门禁；areShadersAllowed() 的 javadoc 硬措辞 "Do not use shader code if this
+ *   returns false! Otherwise the game will crash!"）；
  * - 编译/链接失败检查：GL_COMPILE_STATUS / GL_LINK_STATUS 为 FALSE 时读取
- *   glGetShaderInfoLog / glGetProgramInfoLog 并删除对象（GraphicsLib createShader
- *   第 1020-1041 行、loadShader 第 808-846 行同款姿势）；
+ *   glGetShaderInfoLog / glGetProgramInfoLog 并删除对象（GraphicsLib createShader() /
+ *   loadShader() 同款姿势）；
  * - 资源生命周期沿用 C07-S06 硬规则 2/3：GL 资源在 cleanup() 释放；战斗结束
  *   destroyInstance 不调用 cleanup()，插件在 advance() 里主动失效（isExpired() ->
  *   true）驱动引擎移除；本示例设 LIFETIME 秒寿命后自清；
@@ -485,8 +492,8 @@ public class GearInBasicShaderRenderer extends BaseCombatLayeredRenderingPlugin 
         if (program == 0 || vboId == 0) {
             return;
         }
-        // 世界→屏幕正交投影：按 GraphicsLib renderForeground 姿势自行设置
-        // （glOrtho(viewport) 以世界单位建投影，org.dark.shaders.util.ShaderLib 第 1485-1489 行），
+        // 世界→屏幕正交投影：按 GraphicsLib renderForeground() 同款姿势自行设置
+        // （glOrtho(viewport) 以世界单位建投影，org.dark.shaders.util.ShaderLib），
         // 顶点着色器用 gl_ModelViewProjectionMatrix 应用它；矩阵成对 push/pop 复原
         GL11.glMatrixMode(GL11.GL_PROJECTION);
         GL11.glPushMatrix();
@@ -556,49 +563,45 @@ gradle jar
 
 本节源码与 fixture 逐字一致 (shader 两个文件在 `tutorial-fixtures\units\C14-S01\src\main\resources\data\shaders\`，Java 在 `tutorial-fixtures\units\C14-S01\src\main\java\data\scripts\gearin\combat\`)。
 
-### 验证方案 (基于本例)
+## 验证方案
+
+插件已经写完，最后在测试战役里验证整条链 —— 本节只有一个成果，以下集中核对：资源、构建、战斗冒烟、画面、uniform 数据流、寿命清理、暂停与故障注入。
 
 前置数据：既有 MOD 布局与编译链路 (C06-S01)、`GearIn_test` 测试战役 (C03-S01)、战斗生命周期与分层渲染插件 (C07-S05、C07-S06)，加上本节的 `GearInBasicShaderRenderer` 与 `data\shaders\GearIn_basic_shader.vert/.frag`。
 
-- 操作 1(fixture 资源校验)：在 Git Bash 执行。
+1. 资源校验 (fixture)：在 Git Bash 执行：
 ```text
 gradle -p tutorial-fixtures validateShaders --no-daemon
 ```
 以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-- 操作 2(游戏构建)：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag`、`data/scripts/gearin/combat/GearInBasicShaderRenderer.class`。
-- 操作 3(战役冒烟)：进入 `GearIn_test` 一场战斗，`starsector.log` 核对 `GearIn basic shader init: program=<id>, vbo=<id>, u_offset=<loc>`；没有由 `gear_in` 引起的 `ERROR`。
-- 操作 4(画面)：观察玩家舰船中心 120 世界单位的红→绿渐变四边形：颜色连续、位于舰船与导弹之上。
-- 操作 5(uniform 数据流)：移动舰船 —— 四边形跟随；四边形内渐变样式不随移动改变。
-- 操作 6(寿命与清理)：约 20 秒后四边形消失，`starsector.log` 出现 `GearIn basic shader cleanup`。
-- 操作 7(暂停)：按空格暂停约 10 秒 —— 四边形静止但可见；恢复后继续跟随。
-- 操作 8(故障注入)：a) 删掉 `.vert` 的 `gl_Position` 行 —— 四边形不出现或位置错乱 (故障 1)；b) 把 `.vert` 的 uniform 名 `u_offset` 在 Java 侧拼错 —— 四边形不跟随移动且无日志 (故障 4)；c) 把 `#version 110` 改成 `#version 130`—— 编译失败，日志出现 `GearIn basic shader: compile failed:` 与 version 错误 (故障 6)；d) 改回后确认恢复。
+2. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag`、`data/scripts/gearin/combat/GearInBasicShaderRenderer.class`。
+3. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 核对初始化日志行；没有由 `gear_in` 引起的 `ERROR`。
+4. 画面：观察玩家舰船中心 120 世界单位的红→绿渐变四边形：颜色连续、位于舰船与导弹之上。
+5. uniform 数据流：移动舰船 —— 四边形跟随；四边形内渐变样式不随移动改变。
+6. 寿命与清理：约 20 秒后四边形自行消失 —— 这不是故障，只是寿命到了；`starsector.log` 出现 `GearIn basic shader cleanup`。
+7. 暂停：按空格暂停约 10 秒 —— 四边形静止但可见；恢复后继续跟随。
+8. 故障注入：a) 删掉 `.vert` 的 `gl_Position` 行 —— 四边形不出现或位置错乱 (故障 1)；b) 把 `.vert` 的 uniform 名 `u_offset` 在 Java 侧拼错 —— 四边形不跟随移动且无日志 (故障 4)；c) 把 `#version 110` 改成 `#version 130`—— 编译失败，日志出现 `GearIn basic shader: compile failed:` 与 version 错误 (故障 6)；d) 改回后确认恢复。
 
-通过信号：操作 1–7 全部符合；操作 8 的注入与恢复都符合预期。
+**预期结果：**
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
-
-## 预期结果
-
-1. **fixture 资源 (验收 G)**：在 Git Bash 执行。
-```text
-gradle -p tutorial-fixtures validateShaders --no-daemon
-```
-以 `BUILD SUCCESSFUL` 结束 (退出码 0)。该任务检查 `units/C14-S01/src/main/resources` 下的所有 `.vert/.frag` 非空。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag` 与 `data/scripts/gearin/combat/GearInBasicShaderRenderer.class`。
-3. **战斗初始化**：进入 `GearIn_test` 战役 (C03-S01) 一场战斗，`starsector.log` 出现一行。
+1. `gradle -p tutorial-fixtures validateShaders --no-daemon` 以 `BUILD SUCCESSFUL` 结束 (退出码 0)；该任务检查 `units/C14-S01/src/main/resources` 下的所有 `.vert/.frag` 非空。
+2. `gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag` 与 `data/scripts/gearin/combat/GearInBasicShaderRenderer.class`。
+3. `starsector.log` 出现一行：
 ```text
 GearIn basic shader init: program=<id>, vbo=<id>, u_offset=<loc>
 ```
 没有由 `gear_in` 引起的 `ERROR` (编译/链接失败会在此处打 `GearIn basic shader: compile failed:` 或 `link failed:` 的 ERROR 行)。
-4. **画面**：玩家舰船中心出现一个 120 世界单位见方的四边形，颜色从左下角到右上角红/绿渐变 —— 四边形内颜色连续变化 (红分量随水平位置、绿分量随垂直位置)，这是 `v_uv` 逐片元插值的直接表现；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，C07-S06 层序)。
-5. **uniform 数据流**：舰船移动时四边形跟着移动 (`u_offset` 每帧更新)；移动过程中四边形内的渐变样式不变 (`varying` 相对局部坐标插值)。
-6. **寿命与清理**：约 20 秒后四边形消失，`starsector.log` 出现一行。
+4. 玩家舰船中心出现一个 120 世界单位见方的四边形，颜色从左下角到右上角红/绿渐变 —— 四边形内颜色连续变化 (红分量随水平位置、绿分量随垂直位置)，这是 `v_uv` 逐片元插值的直接表现；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，C07-S06 层序)。
+5. 舰船移动时四边形跟着移动 (`u_offset` 每帧更新)；移动过程中四边形内的渐变样式不变 (`varying` 相对局部坐标插值)。
+6. 约 20 秒后四边形消失，`starsector.log` 出现一行：
 ```text
 GearIn basic shader cleanup
 ```
 即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 10 的可观察面)。同一场战斗内不再出现。
-7. **暂停行为**：按空格暂停 —— 四边形静止但可见 (`advance` 不推进、渲染不暂停，C07-S06 同款)；恢复后继续跟随。
-8. **故障注入**：见 "实例驱动故障分析" 第 1、4、6、9 条对应的注入动作与恢复。
+7. 按空格暂停 —— 四边形静止但可见 (`advance` 不推进、渲染不暂停，C07-S06 同款)；恢复后继续跟随。
+8. 见故障分析第 1、4、6 条对应的注入动作与恢复。
+
+以上预期结果全部出现即通过；任一缺失即失败，排查方向见故障分析。
 
 静态自查：
 
@@ -607,26 +610,30 @@ GearIn basic shader cleanup
 - 没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInBasicShaderRenderer`、资源 `data/shaders/GearIn_basic_shader.vert/.frag`、日志前缀 `GearIn basic shader`)；
 - 除本节目录与 fixture 目录外没有改动任何共享文件。
 
-## 实例驱动故障分析
+清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
 
-1. **顶点着色器不写 `gl_Position`**。触发：把 `gl_Position = ...` 一行删掉或注释掉。可观察：顶点位置未定义 (GLSL 规范)，四边形不出现或出现在随机/错乱位置。修正：必须写 `gl_Position`，且值是裁剪空间坐标 (规则 2)。
-2. **attribute 位置未固定**。触发：删掉 `glBindAttribLocation` 两行，只留 `glVertexAttribPointer`。可观察：链接器自由分配位置 —— 位置与 UV 数据喂错属性，四边形形状错乱、拉伸或空白；且部分驱动正常、部分驱动花屏 (分配结果实现相关)，是最隐蔽的一类故障。修正：链接前固定位置，指针用同一位置 (规则 3)。
-3. **varying 两侧不一致**。触发：把 `.frag` 里的 `v_uv` 改名 (如 `v_uv2`) 而 `.vert` 不改。可观察：片元读到未定义值 (链接器警告)，渐变消失、颜色恒为 0/黑或花屏。修正：两侧同名同类型 (规则 4)。
-4. **uniform 名拼错**。触发：把 `"u_offset"` 改成 `"uOffset"`。可观察：`glGetUniformLocation` 返回 -1，`glUniform2f` 被静默忽略 (GL 错误不报)—— 四边形不跟随舰船移动、停在初始位置，且**没有任何日志**。修正：核对名称/类型 (规则 6)，建议判 -1(建议 13)。
-5. **不检查编译/链接状态**。触发：注释掉 `compileShader` 里的 `GL_COMPILE_STATUS` 检查与日志读取。可观察：错误程序继续使用 —— 内容不出现，失败原因完全不可见；而检查日志时，语法错误的行号与原因 (如 `ERROR: 0:5: 'xxx' : syntax error`) 就在 `starsector.log` 里。修正：编译/链接后必查状态与日志 (规则 7)；完整日志处理在后续专题展开。
-6. **方言版本与硬件不匹配**。触发：把 `#version 110` 改成 `#version 130` 或更高。可观察：在 GL 2.0 基线上下文编译失败 ——`GL_COMPILE_STATUS = FALSE`，信息日志含 version 错误 (GLSL 版本与 GL 版本绑定)。修正：教程基线用 `#version 110`；需要 430 特性 (`layout`/`std140`/UBO) 时按目标硬件声明 (430 方言做法，规则 9)。
-7. **GL 资源不释放**。触发：`cleanup()` 里不删 program，或指望 "战斗结束自动清理"。可观察：程序对象随战斗泄漏 (`destroyInstance` 不调 `cleanup()`，C07-S06 规则 3)；多场战斗后驱动报错、渲染异常或卡顿。修正：`advance()` 主动失效 + `cleanup()` 里 `glDeleteProgram` 并复位句柄 (规则 10，同款做法)。
-8. **在 `advance()` 里提交 GL 命令**。触发：把 `glUseProgram` / `glDrawArrays` 放进 `advance()`。可观察：`advance()` 属于推进阶段 (C07-S06)，命令在渲染阶段之外执行 —— 内容不出现、错帧或层序错乱。修正：GL 命令只在 `render()` 回调 (规则 11)。
-9. **投影依赖 "引擎已设置好" 的矩阵**。触发：用 `ftransform()` 或 `gl_ModelViewProjectionMatrix` 但不自行设置投影矩阵。可观察：分层渲染专题页只实证了固定管线提交路径，未承诺 shader 下的引擎矩阵状态 —— 四边形位置/缩放错误或消失。修正：按本节做法自行 `glOrtho(viewport)`(建议 12，GraphicsLib `renderForeground` 同款)。
-10. **把 430 方言写法直接搬进 110**。触发：把 430 方言的 `in vec2 fragUV; out vec4 fragColor;` 写法抄进 `#version 110` 文件。可观察：编译失败 (`in`/`out` 不是 110 关键字，信息日志报语法错误)。修正：110 方言用 `varying` 与 `gl_FragColor`；要搬 430 写法就连同版本声明与硬件前提一起搬 (规则 9)。
+## 故障分析
+
+以下故障按症状组织 —— 症状是您在画面或日志里实际看到的结果；触发与修正所用的规则编号见规则汇总：
+
+1. **四边形不出现或出现在随机/错乱位置**。症状：图形缺失，或顶点堆在随机/错乱位置；触发：把 `gl_Position = ...` 一行删掉或注释掉；原因：顶点位置未定义 (GLSL 规范)，光栅化没有可用的裁剪坐标；修正：写回 `gl_Position`，且值是裁剪空间坐标 (规则 2)。
+2. **四边形形状错乱、拉伸或空白，且驱动间表现不同**。症状：位置与 UV 数据被喂错属性，形状错乱、拉伸或空白，部分驱动正常、部分驱动花屏 (分配结果实现相关)，是最隐蔽的一类故障；触发：删掉 `glBindAttribLocation` 两行，只留 `glVertexAttribPointer`；原因：链接器自由分配 attribute 位置；修正：链接前固定位置，`glVertexAttribPointer` 用同一位置 (规则 3)。
+3. **渐变消失、颜色恒为 0/黑或花屏**。症状：片元读到未定义值 (链接器警告)，渐变消失、颜色恒为 0/黑或花屏；触发：把 `.frag` 里的 `v_uv` 改名 (如 `v_uv2`) 而 `.vert` 不改；原因：varying 两侧声明不一致，插值通道在片元侧断开；修正：两侧同名同类型 (规则 4)。
+4. **四边形不跟随舰船移动且没有任何日志**。症状：四边形停在初始位置，移动舰船没有反应，日志里也没有任何错误；触发：把 `"u_offset"` 改成 `"uOffset"`；原因：`glGetUniformLocation` 返回 -1，`glUniform2f` 被静默忽略 (GL 错误不报)；修正：核对名称与类型 (规则 6)，并判 -1(建议 13)。
+5. **内容不出现且失败原因不可见**。症状：图形不出现，`starsector.log` 里看不到失败线索；触发：注释掉 `compileShader` 里的 `GL_COMPILE_STATUS` 检查与日志读取；原因：错误程序继续使用，编译错误被吞掉；而检查日志时，语法错误的行号与原因 (如 `ERROR: 0:5: 'xxx' : syntax error`) 就在 `starsector.log` 里；修正：编译/链接后必查状态与日志 (规则 7)；完整日志处理在后续专题展开。
+6. **编译失败，信息日志含 version 错误**。症状：`GL_COMPILE_STATUS = FALSE`，信息日志含 version 错误 (GLSL 版本与 GL 版本绑定)；触发：把 `#version 110` 改成 `#version 130` 或更高；原因：GL 2.0 基线上下文不支持 GLSL 130+ 声明；修正：教程基线用 `#version 110`；需要 430 特性 (`layout`/`std140`/UBO) 时按目标硬件声明 (430 方言做法，规则 9)。
+7. **多场战斗后渲染异常、卡顿或驱动报错**。症状：程序对象随战斗泄漏，多场战斗后驱动报错、渲染异常或卡顿；触发：`cleanup()` 里不删 program，或指望 "战斗结束自动清理"；原因：`destroyInstance` 不调 `cleanup()` (C07-S06 规则 3)，句柄与显存每场累积；修正：`advance()` 主动失效 + `cleanup()` 里 `glDeleteProgram` 并复位句柄 (规则 10，同款做法)。
+8. **内容不出现、错帧或层序错乱**。症状：绘制内容不出现、错帧或层序错乱；触发：把 `glUseProgram` / `glDrawArrays` 放进 `advance()`；原因：`advance()` 属于推进阶段 (C07-S06)，命令在渲染阶段之外执行；修正：GL 命令只在 `render()` 回调 (规则 11)。
+9. **四边形位置/缩放错误或消失**。症状：位置/缩放错误或图形消失；触发：用 `ftransform()` 或 `gl_ModelViewProjectionMatrix` 但不自行设置投影矩阵；原因：分层渲染专题页只实证了固定管线提交路径，未承诺 shader 下的引擎矩阵状态；修正：按本节做法自行 `glOrtho(viewport)`(建议 12，GraphicsLib `renderForeground` 同款)。
+10. **把 430 方言写法搬进 110 文件后编译失败**。症状：编译失败，信息日志报语法错误 (`in`/`out` 不是 110 关键字)；触发：把 430 方言的 `in vec2 fragUV; out vec4 fragColor;` 写法抄进 `#version 110` 文件；原因：版本声明与语言关键字绑定；修正：110 方言用 `varying` 与 `gl_FragColor`；要搬 430 写法就连同版本声明与硬件前提一起搬 (规则 9)。
 
 ## 总结
 
-本节建立了 GLSL 的最简流程：从 `#version 110` 的类型与限定符体系，到 attribute / uniform / varying 三条数据通道，再到顶点坐标三种约定与 `gl_Position` → `gl_FragCoord` 的变换链，最后落在一个能编译、能链接、能出画面的四边形渲染插件上；
+本节把 GLSL 的最简流程完整建立起来：`#version 110` 的类型与限定符体系决定数据怎么声明，attribute / uniform / varying 决定数据怎么流动，坐标约定决定顶点与片元各自看到什么，最终全部落进一个能编译、能链接、能出画面的四边形渲染插件。
 
-能力门禁、编译/链接状态检查、`/` 路径与资源清理这几条必须遵守的规则，决定了这个完整流程在游戏内是否可观察、可诊断。
+画面出错时，沿数据链往回核对通常最快：先确认顶点着色器写了 `gl_Position`、attribute 位置在链接前固定、varying 两侧同名同类型、uniform 名称与类型一致，再确认编译/链接状态被检查过 —— 这几处是规则表全部硬约束的高发点，也是 shader 故障最集中的位置。
 
-这个完整流程的每一环 —— 类型、坐标、数据流、加载做法 —— 都是后续更复杂 shader 工作的地基：加载与编译日志的完整处理、uniform 与纹理/矩阵的提交方式、渲染层接入与性能设计，都只是在本节这一条数据流上补充实现细节与工程化手段。
+这套数据流还是后续更复杂 shader 工作的地基：加载与编译日志的完整处理、uniform 与纹理/矩阵的提交方式、渲染层接入与性能设计，都只是在本节这条数据流上补充实现细节与工程化手段。
 
 ## 建议参考项
 

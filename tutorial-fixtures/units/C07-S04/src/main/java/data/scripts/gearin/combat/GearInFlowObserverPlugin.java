@@ -14,7 +14,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 战斗插件观察者：由战斗上下文 addPlugin 注册（C02-S01 模型）。
+ * 战斗插件观察者：由战斗上下文 addPlugin 注册（C07-S01 模型）。
  * init() 把伤害监听器接入引擎，每帧识别新生成的射弹，并按 3 秒节奏
  * 触发武器 / 射弹 / 导弹 / 光束的运行态报告（实现见 GearInStateReport）。
  * 暂停守卫：暂停时武器 / 射弹 / 光束都不推进，只有插件 advance 仍被调用（C07-S01）。

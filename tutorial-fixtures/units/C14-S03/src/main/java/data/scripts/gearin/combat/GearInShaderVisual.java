@@ -26,7 +26,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
 /**
  * 完整最小例：ShaderProgram、UBO、uniform、纹理与矩阵提交。
  *
- * 事实（0.98a-RC8，BoxUtil 1.5.4 pinned commit d0423e5...，全部经成熟实例消费侧核验）：
+ * 事实（BoxUtil pinned commit d0423e5...，全部经成熟实例消费侧核验）：
  * - 程序对象：ShaderUtil.createShaderVFFormPath(名称, vert 路径, frag 路径) 按路径创建
  *   程序（成熟实例消费实证），包装进 org.boxutil.units.standard.ShaderProgram；创建后立即用
  *   getUniformIndex / getUBOIndex 查询并保存 location（实例规范
@@ -54,7 +54,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   不创建程序；
  * - 生命周期：每场战斗 init 创建程序与 VBO（GL 上下文就绪），render 内 active()/
  *   close() 配对提交（实例规范"active() 后必须按 close() 关闭"），
- *   cleanup() 内 program.delete() + glDeleteBuffers，禁止跨战斗缓存（C06-S03/C07-S05
+ *   cleanup() 内 program.delete() + glDeleteBuffers，禁止跨战斗缓存（C06-S03/C07-S06
  *   延续；实例规范"资源清理归创建者"）；isValid() 使用前检查
  *   （实例陷阱：失效程序继续绑定 → 输出错位或状态污染）。
  */
@@ -107,7 +107,7 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
             valid = false; // 初始化失败：不渲染，等引擎正常移除
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C07-S05 同款姿势）
+        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C07-S06 同款姿势）
         LOG.info("GearIn shader visual init: u_model=" + program.location[0]
                 + ", u_size=" + program.location[1]
                 + ", u_time=" + program.location[2]
@@ -198,10 +198,10 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
         }
         elapsed += amount;
         if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()（C07-S05 硬规则 3）
+            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()（C07-S06 硬规则 3）
             return;
         }
-        // 剔除依据是承载实体的位置（C07-S05 硬规则 4）：跟随玩家舰船
+        // 剔除依据是承载实体的位置（C07-S06 硬规则 4）：跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
     }
 

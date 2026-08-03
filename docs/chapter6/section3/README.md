@@ -1,6 +1,6 @@
 # Global 静态访问器与全局服务
 
-本节把 `Global`(`com.fs.starfarer.api.Global`) 讲透：RC8 的完整访问器清单、各 getter 在 "资源加载期 / 主菜单 / 生涯 / 战斗" 四阶段的可用性与 null 语义，以及日志与声音入口。`Global` 是进程级静态中枢，几乎所有 MOD 入口都会用到它；modPlugin 生命周期主题已消费 `getSector()` / `getSettings()` / `getLogger()` 的结论，本节给出它们的精确约定。
+本节把 `Global`(`com.fs.starfarer.api.Global`) 讲透：完整访问器清单、各 getter 在资源加载期 / 主菜单 / 生涯 / 战斗四个阶段的可用性与 null 语义，以及日志与声音入口。`Global` 是进程级静态中枢，几乎所有 MOD 入口都会用到它；C06-S02 的 modPlugin 生命周期主题已经用上 `getSector()` / `getSettings()` / `getLogger()`，本节给出这些入口的精确约定。读完本节，您将能正确判断当前阶段、记录日志并播放三类声音。
 
 *本节预期阅读时间：~20 分钟。*
 
@@ -10,11 +10,11 @@
 
 完成后，您将能够：
 
-- 背出 RC8 `Global` 的完整访问器清单 (七个 getter、两个 `@Deprecated` 别名、两个静态标志、一组 setter)，并说出每个成员的返回类型与用途；
-- 按 "资源加载期 / 主菜单 / 生涯 / 战斗" 四个阶段说出各 getter 的 null 语义，并解释为什么 RC8 中 "用 `getSector()` / `getCombatEngine()` 是否为 null 判断当前阶段" 不可靠；
+- 列出 `Global` 的完整访问器清单 (七个 getter、两个 `@Deprecated` 别名、两个静态标志、一组 setter)，并说出每个成员的返回类型与用途；
+- 按 "资源加载期 / 主菜单 / 生涯 / 战斗" 四个阶段说出各 getter 的 null 语义，并解释为什么 "用 `getSector()` / `getCombatEngine()` 是否为 null 判断当前阶段" 不可靠；
 - 用 `Global.getCurrentState()`(返回 `GameState`) 正确判断当前阶段，并说出 `LOADING_SAVE` 标志的置位窗口；
 - 用 `Global.getLogger(Class)` 记录日志并说出输出位置；
-- 用 `Global.getSoundPlayer()` 播放 UI 音效、位置音效与循环音效，复述声道约定、`loc`/`vel` 非 null 约定与循环 "每帧续期" 约定；
+- 用 `Global.getSoundPlayer()` 播放 UI 音效、位置音效与循环音效，解释声道约定、`loc`/`vel` 非 null 约定与循环 "每帧续期" 约定；
 - 从症状定位六类典型故障：加载期空指针、战斗外引擎误用、跨战斗缓存引用、退出主菜单后使用旧生涯引用、`vel` 为 null 的空指针、未注册 sound ID 的运行期异常。
 
 ## 前置知识
@@ -25,8 +25,8 @@
 - 战斗插件与每帧回调模型 —— 战斗域的代码入口 (C07-S01)。
 - 生涯概念：`SectorAPI` 属于生涯域；`GearIn_test` 测试战役 (C03-S01)。
 - 三个 GearIn 声音 ID 的资产规格、注册层与完整使用方讲解 (C05-S01 / C05-S02 / C05-S03)。
-- 编译 JAR 链路 —— 本节示例编入同一个 `jars\GearIndustry.jar`(C06-S01)。
-- `modPlugin` 生命周期回调与 `onApplicationLoad` 禁令 (C06-S02)；本节从 `Global` 视角给出该禁令的精确 null 语义 ——"此刻 sector 尚未建立" 到底意味着什么。
+- 编译 JAR 的工程链路与 `jars\GearIndustry.jar` 产物 (C06-S01)。
+- `modPlugin` 生命周期回调与 `onApplicationLoad` 禁令 (C06-S02)。
 
 ## 文件与 API 链路
 
@@ -34,8 +34,8 @@
 
 | `Global` 入口 | 返回 | 链路下游 (本教程页面)|
 |---|---|---|
-| `getSettings()` | `SettingsAPI` | 设置、规则与静态数据 (C06-S04 精确聚焦；`S11` 系列消费规则)|
-| `getSector()` | `SectorAPI` | 生涯域 (C03-S01、`S08` 系列)|
+| `getSettings()` | `SettingsAPI` | 设置、规则与静态数据 (C06-S04 精确聚焦；C11 系列消费规则)|
+| `getSector()` | `SectorAPI` | 生涯域 (C03-S01、C08 系列)|
 | `getCombatEngine()` | `CombatEngineAPI` | 战斗域 (C07-S01 起的战斗插件)|
 | `getSoundPlayer()` | `SoundPlayerAPI` | 声音注册链 (C05-S02) 与使用方 (C05-S03)|
 | `getFactory()` | `FactoryAPI` | 生涯对象工厂 (本节)|
@@ -56,7 +56,7 @@ Global 的引用由内核在固定的时机登记 (调用点详见 "生命周期
 游戏管理器.loadGame             → Global.LOADING_SAVE = true / false     （读档窗口）
 ```
 
-## 访问器完整清单 (0.98a-RC8)
+## 访问器完整清单
 
 以 `com.fs.starfarer.api.Global` 为准，公开成员共 16 项 (getter 7 个、`@Deprecated` 别名 2 个、静态标志 2 个、setter 5 个；下表把 setter 组合并为一行，共 12 行)：
 
@@ -77,10 +77,10 @@ Global 的引用由内核在固定的时机登记 (调用点详见 "生命周期
 
 两个注意点：
 
-1. RC8 的 `Global` **没有** `getModManager()`、`getEngine()`、`getRules()` 之类的 "便利总线"—— 规则、战斗设置、经济等全部从 `getSettings()` 或 `getSector()` 往下走 (settings 的精确聚焦与规则消费在各自主题展开)。缺 getter 时先想 "这个对象属于哪个域"，再决定从 `settings`、`sector` 还是 `combatEngine` 取。
-2. 旧教程曾建议 "`getFactory()` 可以无视"。RC8 中 `FactoryAPI` 是创建生涯对象的正式途径 (`createFleetMember`、`createCargo`、`createPerson`、`createMemory` 等)，成熟实例确实在用 (赏金奖励与剧情事件等场景)；它只在生涯域可用 (javadoc 原文)，战斗域不需要它。
+1. 规则、战斗设置、经济等对象全部从 `getSettings()` 或 `getSector()` 往下走 (settings 的精确聚焦与规则消费在各自主题展开)。缺 getter 时先想 "这个对象属于哪个域"，再决定从 `settings`、`sector` 还是 `combatEngine` 取。
+2. 旧教程曾建议 "`getFactory()` 可以无视"。`FactoryAPI` 是创建生涯对象的正式途径 (`createFleetMember`、`createCargo`、`createPerson`、`createMemory` 等)，成熟实例确实在用 (赏金奖励与剧情事件等场景)；它只在生涯域可用 (javadoc 原文)，战斗域不需要它。
 
-## 生命周期与 null 语义 (0.98a-RC8)
+## 生命周期与 null 语义
 
 四个阶段的可用性一览 (★ = 返回 `null`，● = 非 null)：
 
@@ -91,7 +91,7 @@ Global 的引用由内核在固定的时机登记 (调用点详见 "生命周期
 | 生涯 (`CAMPAIGN`)| ● | ● | ● 当前生涯引擎 | ● 可用 | ●(空引擎)|
 | 战斗 (`COMBAT`)| ● | ● | ● 当前生涯引擎 | ● 可用 | ● 当前战斗引擎 |
 
-以下每条都是 RC8 现状：
+以下每条都是当前基线的现状：
 
 1. **`getSettings()` 与 `getSoundPlayer()` 在游戏循环开始前就已就位**：内核在游戏循环启动前完成 `Global.setSettings(...)`，游戏启动入口再在注册各阶段状态之前完成 `Global.setSoundPlayer(...)`。因此任何 MOD 入口 —— 包括资源加载期的 `onApplicationLoad`—— 拿到两者都**非 null**。
 2. **`getSector()` / `getFactory()` 只在第一个生涯引擎创建之前为 null**，即资源加载期 (`onApplicationLoad` 阶段，即 modPlugin 生命周期禁令所辖的窗口)；一旦创建，`Global` 的引用**只会被替换、不会被置回 null**。
@@ -99,7 +99,7 @@ Global 的引用由内核在固定的时机登记 (调用点详见 "生命周期
    - 可观察结果：退出到主菜单后 `getSector()` 仍返回**旧生涯引擎对象 (非 null)**，其数据已随存档关闭而失效。
    - 因此 "是否在生涯中"**必须**用 `Global.getCurrentState() == GameState.CAMPAIGN` 判断，不能依赖 `getSector() == null`。
 3. **`getCombatEngine()` 的战斗外取值不是 null，而是空引擎**：战斗引擎的首次创建发生在主菜单初始化阶段 —— 首次初始化生涯引擎时会一并创建；每场战斗结束后，内核先销毁旧引擎 (用 `Global.setCombatEngine(null)` 清空引用)**再立即重建**一个新引擎。
-   - 可观察结果：战斗外 `getCombatEngine()` 非 null 而是刚重建的空引擎；战斗结束后缓存的旧引用是已清空的死对象 (`getShips()` 为空；`getPlayerShip()` 也不是 null——RC8 中它**永不返回 null**，`playerShip` 未设置时延迟创建 "Command Shuttle" 假舰)。
+   - 可观察结果：战斗外 `getCombatEngine()` 非 null 而是刚重建的空引擎；战斗结束后缓存的旧引用是已清空的死对象 (`getShips()` 为空；`getPlayerShip()` 也不是 null——它**永不返回 null**，`playerShip` 未设置时延迟创建 "Command Shuttle" 假舰)。
    - 因此：**禁止**跨战斗缓存引擎引用，每次需要时现取；"是否在战斗中" 用 `getCurrentState() == GameState.COMBAT` 判断；"用户是否已部署"**禁止**用 `getPlayerShip() == null` 判断 (战斗内该表达式恒为 `false`，依赖它的分支永远不执行、静默失效)，应读 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()` 是否非空 (判据细则见战斗域部署判断主题)。
 4. **`getCurrentState()` 由当前所处阶段实时计算**：处于战斗状态 → `COMBAT`，处于生涯状态 → `CAMPAIGN`，处于主菜单 → `TITLE`，其余状态 (资源加载等)→ `null`。它是阶段判断的唯一可靠入口。
 
@@ -110,7 +110,7 @@ Global 的引用由内核在固定的时机登记 (调用点详见 "生命周期
 :::
 
 5. **`LOADING_SAVE` 的置位窗口**：读档流程开始时置 `true`，读档流程结束置 `false`(错误路径与 finally 都会复位)；`onEnabled` / `onGameLoad` 回调位于该窗口内，因此这两个回调里 `LOADING_SAVE == true`。常用于跳过读档期间不合适的 UI/动画逻辑。
-6. **setter 禁令**：五个 setter 的唯一调用点都在内核生命周期内部 (游戏启动、生涯引擎初始化、战斗引擎创建与销毁)，MOD 代码没有任何正当调用场景**，禁止**调用。可观察结果：手动改写 Global 引用后，所有依赖 `Global` 的代码 (包括原版) 读到与引擎实际状态不符的对象 —— 例如战斗外 `setCombatEngine(...)` 后 `getCombatEngine()` 指向一个不被推进的空壳，行为未定义。
+6. **setter 禁令**：五个 setter 的唯一调用点都在内核生命周期内部 (游戏启动、生涯引擎初始化、战斗引擎创建与销毁)，MOD 代码没有任何正当调用场景，**禁止**调用。可观察结果：手动改写 Global 引用后，所有依赖 `Global` 的代码 (包括原版) 读到与引擎实际状态不符的对象 —— 例如战斗外 `setCombatEngine(...)` 后 `getCombatEngine()` 指向一个不被推进的空壳，行为未定义。
 
 ::: caution 本节三条必须遵守的规则
 
@@ -154,7 +154,7 @@ Global.getLogger(GearInGlobalAccess.class).info("任意内容");
 
 未注册 ID 的行为：引用未注册的 sound ID 时，播放调用抛 `RuntimeException`，消息为 `Sound set with id [...] not found`—— 这是运行期异常，在调用点抛出 (声音消费主题的故障分析有完整定位流程)。
 
-注意声音播放实现对 `null` ID 是宽容的 (`playUISound`/`playSound` 返回 `null`、`playLoop` 忽略)，但这不是可用性，ID 拼错/未注册照样抛异常。
+注意声音播放实现对 `null` ID 是宽容的 (`playUISound`/`playSound` 返回 `null`、`playLoop` 忽略)，但宽容不是可以依赖的行为：ID 拼错或未注册照样抛异常。
 
 ::: warning 声音入口的两个经典坑
 
@@ -326,7 +326,7 @@ public class GearInSoundPlayer {
 
 ```java
     // GearInFrameLogger（战斗每帧日志类）的 advance() 内加一段（沿用每帧回调模型）
-    // 战斗内 getPlayerShip() 永不返回 null（RC8 延迟重建"Command Shuttle"假舰），无需判空
+    // 战斗内 getPlayerShip() 永不返回 null（延迟重建"Command Shuttle"假舰），无需判空
     if (GearInGlobalAccess.isInCombat()) {
         GearInSoundPlayer.playLoopSound(engine, engine.getPlayerShip());
     }
@@ -340,9 +340,9 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`(可用 `jar tf` 核对)。
 
-两个代码块与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures\units\C06-S03\src\main\java\data\scripts\gearin\`)，编译验收见 "预期结果"。
+两个代码块与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures\units\C06-S03\src\main\java\data\scripts\gearin\`)，编译验收见下方验证方案的预期结果。
 
-### 验证方案 (基于本例)
+### 验证方案
 
 前置数据：
 
@@ -379,49 +379,35 @@ GearIn state=CAMPAIGN settings=true soundPlayer=true sector=true engine=true loa
 
 :::
 
-通过信号：步骤 1–4 的日志与表现全部符合 (日志字符串逐字匹配)；步骤 5、6 的注入与恢复都符合预期。
+预期结果：
+
+- 步骤 1–4 的日志字符串逐字匹配，各阶段表现符合对应步骤的描述；步骤 5、6 的故障注入与恢复都符合预期。
+- fixture 编译 (验收 J)：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC06s03Java --no-daemon`，以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
+- 游戏构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`。
+- 静态自查：页面两个代码块与 fixture 逐字一致 (含 import 顺序与注释)；`SOUND_ID_*` 与既有声音注册的 ID 逐字一致；没有把工作单元编号写进任何运行时名称。
 
 清理：取消勾选测试 MOD；删除临时加上的故障注入行；确认没有对共享文件 (如 `tutorial-fixtures\build.gradle`) 做过修改。
 
-## 预期结果
+## 故障分析
 
-1. **fixture 编译 (验收 J)**：在 Git Bash 执行。
-```text
-gradle -p tutorial-fixtures compileC06s03Java --no-daemon
-```
-以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；
-`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`。
-3. **静态自查**：页面两个代码块与 fixture 逐字一致 (含 import 顺序与注释)；`SOUND_ID_*` 与既有声音注册的 ID 逐字一致；没有把工作单元编号写进任何运行时名称。
+以下九类故障覆盖本节两个工具类的典型失败模式，每项按症状、触发、原因、修正的顺序展开：
 
-## 实例驱动故障分析
-
-1. **启动中止：`NullPointerException`，堆栈指向 `onApplicationLoad`**。触发：在资源加载期访问 `Global.getSector()` 或。
-`Global.getCombatEngine()`(此刻两者为 null) 并解引用。可观察：启动中止，日志 NPE。修正：生涯/战斗数据一律延后到 `onGameLoad` / 战斗上下文；资源加载期只读 `getSettings()` / `getSoundPlayer()` / `getLogger()`。
-2. **战斗外调用引擎方法 "没有效果" 但不报错**。触发：在生涯脚本里用 `Global.getCombatEngine()` 拿引擎后调 `getPlayerShip()` / `addPlugin(...)` 等。
-可观察：`getPlayerShip()` 返回 "Command Shuttle" 假舰 (非 null，延迟创建)、`getShips()` 为空集合、`addPlugin` 静默无效 —— 因为战斗外拿到的是空引擎而不是 null(生命周期规则 3)。修正：先用 `isInCombat()`(`getCurrentState() == GameState.COMBAT`) 守卫，只在战斗上下文操作引擎。
-3. **跨战斗缓存战斗引擎，第二场战斗后一切静默失效**。触发：把 `Global.getCombatEngine()` 的返回值存入字段跨战斗复用。
-可观察：战斗结束后旧引擎被销毁并立即重建，缓存引用是已清空的死对象 ——`getShips()` 恒空、`isPaused()` 无意义、`addPlugin` 不生效，且无任何报错。修正：每帧 / 每次需要时现取，不缓存 (成熟实例在 `advance()` 里对缓存引擎判空也是同一防御做法)。
-4. **退出到主菜单后继续使用旧生涯引擎**。触发：把 `Global.getSector()` 缓存进字段 (或认为 "退出后 sector 为 null" 而在退出后无条件重取/复用)。
-可观察：退出生涯后 `getSector()` 仍返回旧对象 (`Global` 的引用不被清空)，其上实体、市场、持久数据已随存档关闭失效，行为错乱且难排查。修正：跨存档状态放持久数据，阶段判断用 `getCurrentState()`；生涯引用每次从 `Global.getSector()` 现取。
-5. **`playSound` 调用点抛 `NullPointerException`**。触发：`loc` 或 `vel` 传了 null。
-可观察：异常在播放调用点直接抛出 (声音播放内部直接解引用 `loc.x` / `vel.x`)。修正：位置音效永远传实体的 `getLocation()` 与一个非 null 速度向量 (如拷贝 `getVelocity()` 或 `new Vector2f()`)。
-6. **循环音效 "自己停了"**。触发：`playLoop` 没有在每帧回调里续期 (比如只在 `init` 里调了一次)。
-可观察：循环播放约一帧后淡出停止 (API 约定 "Must be called every frame or the loop will fade out")。修正：把 `playLoop` 放进 `advance` 每帧调用 (示例的 `playLoopSound` 调用点)。
-7. **`playSound` 用双声道素材 / `playUISound` 用单声道素材**。触发：无视声道约定。
-可观察：双声道素材在引擎内无法正确播放 (定位与衰减错误)，UI 音效用单声道素材表现异常。修正：按资产规格准备素材 (`playUISound` 双声道、`playSound` mono)；声音消费主题有完整排查。
-8. **播放调用点抛 `RuntimeException: Sound set with id [...] not found`**。触发：引用了未注册或拼错的 sound ID(含大小写不一致)。
-可观察：异常在调用点抛出，日志定位到播放行。修正：核对既有声音注册的 ID 逐字一致 (含大小写)；声音消费主题有完整故障定位流程。
-9. **代码里出现 `Global.setCombatEngine(...)` / `Global.setSector(...)` 等 setter 调用**。触发：误以为可以手动 "注入" 对象 (常见于照抄老代码或测试代码)。
-可观察：Global 引用与引擎实际状态脱钩，依赖 `Global` 的原版与 MOD 代码读到错误对象，行为未定义。修正：删除 setter 调用，改用正确入口 ——settings 类注册走注册主题的流程，跨存档状态走持久数据。
+1. **启动中止：`NullPointerException`，堆栈指向 `onApplicationLoad`**。触发：在资源加载期访问 `Global.getSector()` 或 `Global.getCombatEngine()` 并解引用。原因：此刻两者为 null —— 生涯与战斗引擎尚未建立，`onApplicationLoad` 里任何解引用都会在调用点抛 NPE。修正：生涯/战斗数据一律延后到 `onGameLoad` / 战斗上下文；资源加载期只读 `getSettings()` / `getSoundPlayer()` / `getLogger()`。
+2. **战斗外调用引擎方法 "没有效果" 但不报错**。触发：在生涯脚本里用 `Global.getCombatEngine()` 拿引擎后调 `getPlayerShip()` / `addPlugin(...)` 等。原因：战斗外拿到的是空引擎而不是 null(生命周期规则 3) ——`getPlayerShip()` 返回 "Command Shuttle" 假舰 (非 null，延迟创建)、`getShips()` 为空集合、`addPlugin` 静默无效。修正：先用 `isInCombat()`(`getCurrentState() == GameState.COMBAT`) 判断是否在战斗，只在战斗上下文操作引擎。
+3. **跨战斗缓存战斗引擎，第二场战斗后一切静默失效**。触发：把 `Global.getCombatEngine()` 的返回值存入字段跨战斗复用。原因：每场战斗结束后旧引擎被销毁并立即重建，缓存引用成为已清空的死对象 ——`getShips()` 恒空、`isPaused()` 无意义、`addPlugin` 不生效，且无任何报错。修正：每帧 / 每次需要时现取，不缓存 (成熟实例在 `advance()` 里对缓存引擎判空也是同一防御做法)。
+4. **退出到主菜单后继续使用旧生涯引擎**。触发：把 `Global.getSector()` 缓存进字段 (或认为 "退出后 sector 为 null" 而在退出后无条件重取/复用)。原因：退出生涯时 `Global` 对生涯引擎的引用不被清空，`getSector()` 仍返回旧对象，其上实体、市场、持久数据已随存档关闭失效。修正：跨存档状态放持久数据，阶段判断用 `getCurrentState()`；生涯引用每次从 `Global.getSector()` 现取。
+5. **`playSound` 调用点抛 `NullPointerException`**。触发：`loc` 或 `vel` 传了 null。原因：声音播放内部直接解引用 `loc.x` / `vel.x`，异常在播放调用点直接抛出。修正：位置音效永远传实体的 `getLocation()` 与一个非 null 速度向量 (如拷贝 `getVelocity()` 或 `new Vector2f()`)。
+6. **循环音效 "自己停了"**。触发：`playLoop` 没有在每帧回调里续期 (比如只在 `init` 里调了一次)。原因：循环音依赖每帧续期，缺帧即淡出 (API 约定 "Must be called every frame or the loop will fade out")。修正：把 `playLoop` 放进 `advance` 每帧调用 (示例的 `playLoopSound` 调用点)。
+7. **`playSound` 用双声道素材 / `playUISound` 用单声道素材**。触发：无视声道约定。原因：引擎只对 mono 素材正确计算位置与衰减，双声道素材无法正确播放；UI 音效的素材约定相反。修正：按资产规格准备素材 (`playUISound` 双声道、`playSound` mono)；声音消费主题有完整排查。
+8. **播放调用点抛 `RuntimeException: Sound set with id [...] not found`**。触发：引用了未注册或拼错的 sound ID(含大小写不一致)。原因：sound ID 不在注册表中，播放调用在调用点抛出运行期异常。修正：核对既有声音注册的 ID 逐字一致 (含大小写)；声音消费主题有完整故障定位流程。
+9. **代码里出现 `Global.setCombatEngine(...)` / `Global.setSector(...)` 等 setter 调用**。触发：误以为可以手动 "注入" 对象 (常见于照抄老代码或测试代码)。原因：五个 setter 是内核生命周期专用入口，MOD 调用后全局引用与引擎实际状态脱钩，依赖 `Global` 的原版与 MOD 代码读到错误对象，行为未定义。修正：删除 setter 调用，改用正确入口 ——settings 类注册走注册主题的流程，跨存档状态走持久数据。
 
 ## 总结
 
-`Global` 是进程级静态中枢，RC8 提供七个 getter、两个弃用别名、两个静态标志与一组 setter。记忆要点：
+`Global` 是进程级静态中枢，提供七个 getter、两个弃用别名、两个静态标志与一组 setter。记忆要点：
 
 - **全程可用**：`getSettings()`、`getSoundPlayer()`、`getLogger()`(游戏循环启动前就已就位)。
-- **资源加载期为 null**：`getSector()`、`getFactory()`、`getCombatEngine()`、`getCurrentState()`——。
-`onApplicationLoad` 里访问生涯/战斗对象就是空指针 (modPlugin 生命周期禁令的精确语义)。
+- **资源加载期为 null**：`getSector()`、`getFactory()`、`getCombatEngine()`、`getCurrentState()`；`onApplicationLoad` 里访问生涯/战斗对象就是空指针 (modPlugin 生命周期禁令的精确语义)。
 - **创建后不再回到 null**：sector/factory 只被替换；combatEngine 每场战斗结束销毁后立即重建。因此阶段判断**必须**用 `getCurrentState()`，引用**禁止**跨存档/跨战斗缓存。
 - **`getPlayerShip()` 永不返回 null**：`playerShip` 未设置时延迟创建 "Command Shuttle" 假舰；
 判断 "用户是否已部署" 用 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()`，**禁止**用 `getPlayerShip() == null`(判据细则见战斗域部署判断主题)。

@@ -181,7 +181,7 @@ if (ship != null && effectLevel > 0f) {
 
 ### 引擎与风格声音 (同机制的另一族)
 
-GearIn 舰船已接到 `GEAR_TECH` 风格；风格里 9 个 `*Set` 字段是引擎与护盾声音的声音集 ID。0.98a-RC8 的消费链：
+GearIn 舰船已接到 `GEAR_TECH` 风格；风格里 9 个 `*Set` 字段是引擎与护盾声音的声音集 ID。消费链：
 
 - `ShipEngineControllerAPI` 构造时按 `engineLoopSet` 取声音集，按 `getSoundSpec(hullStyle, hullSize)` 分档，每帧按引擎出力 `playSoundLoop`；零幅能推进激活瞬间用 `engineAccelerateSet` 播一次性音。
 - `ShieldAPI` 用 `shieldRaiseSet`/`shieldLowerSet`；`FluxTrackerAPI` 用 `shieldBurnoutSet`(过载)、`ventFluxSet`(V 排)、`fluxLoopSet`/`empLoopSet` 分档循环；冲击音播放器用 `explosionShipSet`(舰船爆炸)。

@@ -23,14 +23,14 @@ import com.fs.starfarer.api.util.IntervalUtil;
  * 里注册的监听器实例中（每艘船一个实例，随舰船实体一起销毁）。
  *
  * 生命周期覆盖：
- * - applyEffectsBeforeShipCreation：生涯与战斗都会调用的 stats 入口（C07-S02）；
+ * - applyEffectsBeforeShipCreation：生涯与战斗都会调用的 stats 入口（C07-S03）；
  *   这里同时演示 S-mod 分支：isSMod(stats) 为 true 时把同一 id 的修饰覆盖为更大值；
  * - applyEffectsAfterShipCreation：战斗侧舰船实体创建后调用（含装配界面预览舰），
  *   注册监听器的正式位置；不承担 stats 修改（API javadoc 原文）；
  * - applyEffectsAfterShipAddedToCombatEngine：每艘船加入战斗引擎只回调一次
  *   （API javadoc 原文 "Only called once."）；
  * - advanceInCombat：战斗每帧调用，暂停时不调用（API javadoc 原文）；
- *   演示每帧幂等写 StatBonus（同 ID 覆盖，不累积，C07-S02 规则 6）；
+ *   演示每帧幂等写 StatBonus（同 ID 覆盖，不累积，C07-S03 规则 6）；
  * - advanceInCampaign：生涯每帧调用；舰队数据重同步时以 amount=0 调用
  *   （API javadoc 原文），这里只在该时机输出一行作为生命周期证明。
  *
@@ -52,7 +52,7 @@ public class GearInArmorTrainingHullMod extends BaseHullMod {
 
     @Override
     public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAPI stats, String id) {
-        // S-mod 分支：同一 id 同类型只保留一条条目，S-mod 时直接覆盖为合计值（C07-S02 覆盖语义）。
+        // S-mod 分支：同一 id 同类型只保留一条条目，S-mod 时直接覆盖为合计值（C07-S03 覆盖语义）。
         float bonus = ARMOR_BONUS_PERCENT + (isSMod(stats) ? SMOD_ADDITIONAL_PERCENT : 0f);
         stats.getArmorBonus().modifyPercent(id, bonus);           // 面板/生涯可见的护甲评级
         stats.getEffectiveArmorBonus().modifyPercent(id, bonus);  // 命中结算时的有效护甲

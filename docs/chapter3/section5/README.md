@@ -1,6 +1,6 @@
-# strings.json 本地化：分类与代码取值
+# 为代码加入本地化文本
 
-对象风味文本 (`descriptions.csv`) 已在前置讲解中讲完，本节补上文本链路的最后一环：`data/strings/strings.json`——**代码驱动的界面文本**入口，用两级键 (分类 → 键名) 组织、由代码经 `Global.getSettings().getString(category, id)` 取值、跨 MOD 按键合并，并以 `GearIn_text_*` 演示键走完 "文件 → 合并 → 取值 → 可观察结果" 的完整流程。与 `descriptions.csv` 不同，strings.json 的错误绝大多数**不炸启动**：键写错只表现为界面/日志出现 `Missing string: [...]` 字面量；只有 JSON 语法错误 (括号不配对、引号不闭合) 和 BOM 污染才会在加载期中止启动。
+本节使用 `data/strings/strings.json` 为代码驱动的界面文本加入本地化内容，并从代码按分类与键名取值。键写错通常会显示 `Missing string: [...]`，JSON 语法错误或 BOM 污染则可能中止加载。
 
 *本节预期阅读时间：~12 分钟。*
 

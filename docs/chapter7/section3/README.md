@@ -1,6 +1,6 @@
-# 舰船数值与修饰体系
+# 修改舰船数值
 
-本节把战斗域的 "数值" 侧讲透：`ShipAPI` 的 stats 访问入口与实体绑定、`MutableShipStatsAPI` 的 modifier 体系 (flat / percent / mult 三张修饰表、加算优先级、延迟重算)，以及 `MutableStat` 的 modifier ID 稳定性语义与 `applyEffects` 的调用时机 (生涯侧 stats 重建与战斗侧部署链)。读完本节，您应能回答 "改一个舰船属性，改哪里、用什么 ID、什么时候生效、不生效时看哪里"。
+本节使用 `MutableShipStatsAPI` 修改舰船数值，并确认修饰值的计算顺序、生效时机与稳定 ID。相同改动放在生涯重建和战斗部署阶段会产生不同结果，因此需要先确定修改所属的生命周期。
 
 *本节预期阅读时间：~20 分钟。*
 

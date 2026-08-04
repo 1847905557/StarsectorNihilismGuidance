@@ -1,6 +1,6 @@
-# Java 工具链：IDE、Gradle 与依赖
+# 搭建 Java 工具链
 
-本节把 Java 从 "游戏启动时即时编译源码" 切换到 "先编译成 JAR 再交给游戏加载"：编译期就能暴露错误，产物也能按包路径稳定交付。您将建立 Java 17 工具链，用 Gradle 把游戏侧公开 API(`com.fs.starfarer.api.*`) 作为编译依赖，产出 `jars/` 目录下的运行 JAR，在 `mod_info.json` 的 `jars` 字段声明它，最后从日志与游戏内行为验证整条链路。
+本节搭建 Java 17 与 Gradle 工具链，把 MOD 源码预先编译成游戏能够加载的 JAR。编译会提前暴露代码错误，产物则通过 `mod_info.json` 进入游戏。
 
 *本节预期阅读时间：~15 分钟。*
 

@@ -1,6 +1,6 @@
-# LunaLib 设置：定义、读取与保存
+# 使用 LunaLib 制作设置界面
 
-本节把 LunaLib 设置链作为非强制性依赖的完整实例接入既有工程：LunaLib 从未在 `mod_info.json` 中声明为硬依赖，本节沿用 C13-S01 的守卫式做法 (调用前 `isModEnabled` 判断、缺值回退默认值)，并用 `data/config/LunaSettings.csv` 定义设置项，在设置界面和用户设置文件 `<存档目录>/common/LunaSettings/<modId>.json` 之间完成保存，再通过 `LunaSettings` 静态 API 读取并监听变更。完成后，您的 MOD 将拥有一套可持久化的设置链，也能把"设置没生效"快速定位到定义、保存、读取或通知链。硬依赖语义在硬依赖检测专题中定义，另一套设置链 `MagicSettings`(`modSettings.json`) 在设置链对照专题中介绍，LunaLib 其余功能不在本节范围。
+本节为既有 MOD 接入 LunaLib 设置：用 CSV 定义设置项，在界面中保存，再从代码读取并监听变化。LunaLib 缺失时，已有的可选依赖判断会让 MOD 继续运行。
 
 *本节预期阅读时间：~20 分钟。*
 

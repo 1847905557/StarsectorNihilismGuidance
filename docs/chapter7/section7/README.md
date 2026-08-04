@@ -1,6 +1,6 @@
-# 船插生命周期：tooltip、S-mod 与监听器
+# 为船插加入提示、S-mod 与监听器
 
-前置单元已经把 stats 修饰与监听器注册表面讲透，本节把船插从 "数据行 + 效果类" 扩展成完整对象：`HullModEffect` 的全部生命周期回调、tooltip 方法族、S-mod(稳定性改造) 语义与监听器接入。您将用一个完整示例船插 `GearInArmorTrainingHullMod` 走通全部机制，读完能回答一个船插在游戏里被哪些时机调用、tooltip 文本从哪来、S-mod 如何让效果变强、战斗监听器挂在哪。
+本节扩展既有船插，为它加入提示文本、S-mod 效果与战斗监听器。示例 `GearInArmorTrainingHullMod` 会展示这些能力分别在哪个生命周期阶段接入。
 
 *本节预期阅读时间：~25 分钟。*
 

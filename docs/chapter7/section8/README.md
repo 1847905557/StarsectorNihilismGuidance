@@ -624,46 +624,39 @@ gradle jar
 
 ## 验证方案
 
-验证对象为本例的数据接入片段与 `GearInTargetingSystem` 类，验证入口为 `GearIn_test` 战役与 `starsector.log`。
+前置数据：既有 MOD 布局 (C06-S01)、战术系统数据面 (C02-S03)；本节数据接入片段 (`GearIn_targetingsystem.system`、`ship_systems.csv` 注册行、`GearIn_artizan` 的 `system id` 挂载)；`GearInTargetingSystem` 类实现已编入 `jars\GearIndustry.jar`。
 
-- **前置数据**：既有 MOD 布局 (C06-S01)、战术系统数据面 (C02-S03)；本节数据接入片段 (`GearIn_targetingsystem.system`、`ship_systems.csv` 注册行、`GearIn_artizan` 的 `system id` 挂载)；`GearInTargetingSystem` 类实现已编入 `jars\GearIndustry.jar`。
-- **操作步骤**：
-  1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
-  2. **数据接入**：启动游戏，日志核对 `Loading ship system [data/shipsystems/GearIn_targetingsystem.system]` 与 `Applying data from ship_systems.csv to [GearIn_targetingsystem]`：没有与 `GearIn_targetingsystem` 相关的 `ERROR`。
-  3. **用户侧**：进入 `GearIn_test` 战役，无目标按 U 确认无反应 (`isUsable` 返回 false)；右键锁定敌舰后按 U，核对四行 stats 状态日志与 `unapply effect (id=GearIn_targetingsystem effect)`，观察 1.5 倍速度与 `target locked` 状态文字；击毁目标确认加成立即撤销。
-  4. **AI 侧**：把挂载该系统的舰船放入敌方，进入战斗后核对 `GearIn targeting AI init`、`lock` 日志与五态状态机日志；观察敌方舰船实际使用系统；击毁其目标后确认不再出现 `lock`。
-  5. **暂停**：战斗内按空格暂停约 10 秒，确认 AI 决策与状态机日志停更，恢复后继续。
-  6. **故障注入 1**：把 `.system` 的 `aiType` 从 `CUSTOM` 改成 `NONE`——AI 舰船不再主动使用系统 (无 `lock` 日志)，用户侧行为不变；改回后恢复 (对应故障 2 的定位练习)。
-  7. **故障注入 2**：把 `advance` 里激活中只刷新 flag 的分支注释掉 (激活后不再写 flag)——`ACTIVE` 段约 1 秒后加成消失 (若 stats 侧不回退 `getShipTarget()` 则必现，对应故障 3 触发二)；改回后确认恢复。
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
+2. **数据接入**：启动游戏，在日志中观察 `GearIn_targetingsystem` 的系统加载与数据应用记录。
+3. **用户侧无目标**：进入 `GearIn_test` 战役，无目标按 U，观察系统反应 (`isUsable` 返回 false)。
+4. **用户侧有目标**：右键锁定敌舰后按 U，核对四行 stats 状态日志与 `unapply effect (id=GearIn_targetingsystem effect)`，观察 1.5 倍速度与 `target locked` 状态文字。
+5. 击毁锁定目标，观察加成撤销。
+6. **AI 侧**：把挂载该系统的舰船放入敌方，进入战斗后核对 `GearIn targeting AI init`、`lock` 日志与五态状态机日志，并观察敌方舰船使用系统。
+7. 击毁 AI 的目标，观察后续 `lock` 日志。
+8. **暂停**：战斗内按空格暂停约 10 秒，确认 AI 决策与状态机日志停更，恢复后继续。
 
-- **预期结果**：
-  以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-  8. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
-  9. **数据接入**：按数据接入片段接入后启动游戏，日志出现 `Loading ship system [data/shipsystems/GearIn_targetingsystem.system]` 与 `Applying data from ship_systems.csv to [GearIn_targetingsystem]`：没有与 `GearIn_targetingsystem` 相关的 `ERROR`。
-  10. **用户侧手动激活 (`GearIn_test` 战役或模拟战，`GearIn_artizan` 已挂载)**：无目标时按 U——**没有任何反应**(`isUsable` 返回 false，规则 1；日志无状态变化)；连续空按约 2 秒后出现失败音。鼠标右键锁定一艘敌舰 (`getShipTarget()` 非 null) 后按 U—— 系统正常进入 `IN`，日志出现。
+预期结果：
+
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
+- **数据接入**：按数据接入片段接入后启动游戏，日志出现 `Loading ship system [data/shipsystems/GearIn_targetingsystem.system]` 与 `Applying data from ship_systems.csv to [GearIn_targetingsystem]`：没有与 `GearIn_targetingsystem` 相关的 `ERROR`。
+- **用户侧手动激活 (`GearIn_test` 战役或模拟战，`GearIn_artizan` 已挂载)**：无目标时按 U——**没有任何反应**(`isUsable` 返回 false，规则 1；日志无状态变化)；连续空按约 2 秒后出现失败音。鼠标右键锁定一艘敌舰 (`getShipTarget()` 非 null) 后按 U—— 系统正常进入 `IN`，日志出现。
   ```text
-  GearIn targeting stats: state null -> IN effectLevel=0.0 GearIn targeting stats: state IN -> ACTIVE effectLevel=1.0 GearIn targeting stats: state ACTIVE -> OUT effectLevel=1.0 GearIn targeting stats: unapply effect (id=GearIn_targetingsystem effect)
+    GearIn targeting stats: state null -> IN effectLevel=0.0 GearIn targeting stats: state IN -> ACTIVE effectLevel=1.0 GearIn targeting stats: state ACTIVE -> OUT effectLevel=1.0 GearIn targeting stats: unapply effect (id=GearIn_targetingsystem effect)
   ```
   期间用户舰最大速度约为基础 1.5 倍 (`GearIn_artizan` 基础 80 → 120)，左下角状态栏显示 `target locked`(绿色)。目标被击毁或脱离射程后，加成**立即**撤销 (`unmodify`)，状态文字变 `no target`(红色样式)。
-  11. **AI 侧自动激活**：把挂载了该系统的舰船放进敌方 (生涯遭遇战或模拟战对手)，其 AI 进入用户视野 (`target` 非 null) 且目标有效时，日志出现。
+- **AI 侧自动激活**：把挂载了该系统的舰船放进敌方 (生涯遭遇战或模拟战对手)，其 AI 进入用户视野 (`target` 非 null) 且目标有效时，日志出现。
   ```text
-  GearIn targeting AI init: ship=<敌方hullId> system=GearIn_targetingsystem GearIn targeting AI: lock <目标hullId> range=800.0
+    GearIn targeting AI init: ship=<敌方hullId> system=GearIn_targetingsystem GearIn targeting AI: lock <目标hullId> range=800.0
   ```
   随后敌方舰船实际使用系统 (速度提升)；`logStateTransition` 输出完整五态：
   ```text
-  GearIn targeting AI: state null -> IDLE ... GearIn targeting AI: state IDLE -> IN ... GearIn targeting AI: state IN -> ACTIVE ... GearIn targeting AI: state ACTIVE -> OUT ... GearIn targeting AI: state OUT -> COOLDOWN cooldownRemaining=... GearIn targeting AI: state COOLDOWN -> IDLE ...
+    GearIn targeting AI: state null -> IDLE ... GearIn targeting AI: state IDLE -> IN ... GearIn targeting AI: state IN -> ACTIVE ... GearIn targeting AI: state ACTIVE -> OUT ... GearIn targeting AI: state OUT -> COOLDOWN cooldownRemaining=... GearIn targeting AI: state COOLDOWN -> IDLE ...
   ```
   冷却结束后若目标仍有效，重复该循环。激活期间每 0.2–0.3 秒 `writeAITarget` 刷新 flag(ACTIVE 全程锁定不断)。
-  12. **目标过期**：AI 的目标被击毁后，不再出现 `lock` 日志 (`clearAITarget` 生效)；目标复活/换目标后恢复。
-  13. **暂停语义**：按空格暂停，暂停期间 AI 决策日志与状态机日志停更；恢复后继续 (与前置单元的时间语义同规)。
-  14. **状态栏与信息文字**：用户舰在 `IDLE` 态把鼠标悬停系统图标，`getInfoText` 显示 `NO TARGET`(有锁定目标时 `READY`)；`IN`/`ACTIVE` 段状态栏显示锁定状态。
+- **目标过期**：AI 的目标被击毁后，不再出现 `lock` 日志 (`clearAITarget` 生效)；目标复活/换目标后恢复。
+- **暂停语义**：按空格暂停，暂停期间 AI 决策日志与状态机日志停更；恢复后继续 (与前置单元的时间语义同规)。
+- **状态栏与信息文字**：用户舰在 `IDLE` 态把鼠标悬停系统图标，`getInfoText` 显示 `NO TARGET`(有锁定目标时 `READY`)；`IN`/`ACTIVE` 段状态栏显示锁定状态。
   没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.shipsystems`、类 `GearInTargetingSystem`、系统 ID `GearIn_targetingsystem`)。
-- **通过信号**：操作 1–5 全部符合；操作 6、7 的注入与恢复都符合预期。
-- **清理**：取消勾选测试 MOD
-
-::: tip 日志核对技巧
-在 `Starsector/starsector-core/starsector.log` 中按 `GearIn targeting` 前缀检索即可定位本示例的全部输出行 (stats 侧 `GearIn targeting stats:`、AI 侧 `GearIn targeting AI:` 分开)；出现 `ERROR` 时优先查看 `gear_in` 包相关的堆栈。
-:::
 
 ## 故障分析
 

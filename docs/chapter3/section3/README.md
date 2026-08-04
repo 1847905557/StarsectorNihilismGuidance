@@ -85,7 +85,7 @@ StarSystemAPI system = sector.createStarSystem("GearIn");
 initStar 的恒星 id  ==  starmap.json 的 starSystemLocations 键  ==  market.json 的 starSystem 值
 ```
 
-三者必须一致 (不一致的后果见 "实例驱动故障分析" 第 4、5 条)。
+三者必须一致 (不一致的后果见 "故障分析" 第 4、5 条)。
 
 不想用 `starmap.json` 的话，也可以在 `initStar` **之前**显式 `system.getLocation().set(x, y)`—— 恒星不在原版 starmap.json 里的 MOD 可以这样定位 (查不到键就不会被覆盖)。
 
@@ -567,47 +567,28 @@ public class GearInMarketFactory {
 
 新档生成时，经济数据加载会在日志里打出 `Loading economy data from data/campaign/econ/economy.json` 与 `Loading star system: gearin.json`，然后按 `entities` 的 id 找到在 `onNewGame` 里生成的实体并绑定市场。
 
-### 验证方案 (基于本例)
+### 验证方案
 
-本方案以完整最小例的最终形态为对象 (代码路径建市场 + `starmap.json` 坐标注册)。
+前置数据：`mod_info.json`(含本节的 `modPlugin` 字段，见 C01-S01)、势力文件 (`factions.csv` 与 `gear_industry.faction`，见 C03-S02，市场势力)、本节的 `GearInSystemGenPlugin`、`GearInSystemGenerator`、`GearInMarketFactory`、`data/campaign/starmap.json`。
 
-前置数据：
+1. 启动游戏到主菜单，检查 `Starsector\starsector-core\starsector.log`。
+2. 新建生涯 (本节内容只在新档生成时出现，读旧档不会触发)，生成完成后按 `M` 打开星图，观察 `GearIn` 星系是否出现在 `[12000,14000]` 附近，以及超空间通向它的跳跃点。
+3. 航行到星系并进入，观察恒星、`GearIn Prime`、`GearIn Second`、稳定点与跳跃点。
+4. 通过跳跃点往返超空间一次。
+5. 接近 `GearIn Prime`，观察市场交互、四个子市场和产业状态。
+6. 打开情报 (`F`)，观察齿轮工业与海盗、霸主、速子和用户的关系。
 
-- `mod_info.json`(含本节的 `modPlugin` 字段，见 C01-S01)。
-- 势力文件 (`factions.csv` 与 `gear_industry.faction`，见 C03-S02，市场势力)。
-- 本节的 `GearInSystemGenPlugin`、`GearInSystemGenerator`、`GearInMarketFactory`；
-- `data/campaign/starmap.json`
-
-操作：
-
-1. 启动游戏到主菜单，检查 `Starsector\starsector-core\starsector.log` 无 `ERROR`。
-2. 新建生涯 (本节内容只在新档生成时出现，读旧档不会触发)，生成完成后按 `M` 打开星图：`GearIn` 星系出现在 `[12000,14000]` 附近 (`system_out.png`)，超空间有通向它的跳跃点。
-3. 航行到星系并进入 (`system_in.png`)：确认恒星有日冕与光照，`GearIn Prime` / `GearIn Second` 在轨道上，稳定点与跳跃点存在；通过跳跃点往返超空间一次。
-4. 接近 `GearIn Prime`：出现市场交互 (齿轮工业、税率 0.35、开放/军事/黑市/仓储四个子市场)，条件与产业生效 (`system_full.png`)。
-5. 情报 (`F`) 里确认齿轮工业与海盗 `HOSTILE`、霸主 `FRIENDLY`、速子 `HOSTILE`、用户 0.0。
-
-故障注入 (逐项做完恢复)：
-
-1. 注释掉 `mod_info.json` 的 `modPlugin` 行，重启新建生涯：星系不出现、无报错 (对应故障分析第 1 条)；
-2. 删掉 `starmap.json`，重启新建生涯：星系出现在超空间原点附近 (对应第 2 条)；
-3. 注释掉 `system.autogenerateHyperspaceJumpPoints(true, true);`，重启新建生涯：超空间无入口，星系无法进入 (对应第 3 条)；
-4. 若使用数据路径：把 `gearin.json` 的 `entities` 改为 `["GearIn_planetX"]`，重启新建生涯：生成中断，日志出现 `Market in gearin system refers to invalid entity GearIn_planetX`(对应第 4 条)；
-5. 若使用数据路径：把 `gearin.json` 的 `starSystem` 改为 `"gearin2"`，重启新建生涯：生成中断，日志出现 `Star system id [gearin2] not found`(对应第 5 条)；
-6. 把任一 `addCondition` 的条件 id 改错 (如 `population_4` → `population_40`)，重启新建生涯：生成中断，日志出现 `Market condition [population_40] not found`(对应第 6 条)。
-
-清理：恢复所有注入的故障；发布前确认代码路径与数据路径没有同时启用 (对应故障分析第 8 条)。
-
-## 预期结果
+预期结果：
 
 - 启动到主菜单：`starsector.log` 没有任何 `ERROR`(星系生成代码不参与加载阶段，错误只会出现在新建生涯时)。
-- 新建生涯，生成完成无异常。星图上出现 `GearIn` 星系 (位置在 `[12000,14000]` 附近)，超空间里能看到通向它的跳跃点/虫洞 (`system_out.png`)。
-- 进入星系 (`system_in.png`)：白色恒星带日冕，`GearIn Prime`(terran) 与 `GearIn Second`(barren) 绕行，稳定点与跳跃点各就各位，星系有背景与光照。
-- 沿跳跃点航行：星系内跳跃点与超空间跳跃点双向可用；未接近任何实体时星系呈 "空" 状态 (`system_raw.png`)。
-- 市场 (代码路径)：靠近 `GearIn Prime` / `GearIn Second` 出现市场交互 —— 势力为齿轮工业、税率 0.35、四个子市场 (开放市场/军事/黑市/仓储) 可用，条件与产业生效 (`system_full.png`)。
+- 新建生涯，生成完成无异常。星图上出现 `GearIn` 星系 (位置在 `[12000,14000]` 附近)，超空间里能看到通向它的跳跃点/虫洞。
+- 进入星系：白色恒星带日冕，`GearIn Prime`(terran) 与 `GearIn Second`(barren) 绕行，稳定点与跳跃点各就各位，星系有背景与光照。
+- 沿跳跃点航行：星系内跳跃点与超空间跳跃点双向可用；未接近任何实体时星系呈 "空" 状态。
+- 市场 (代码路径)：靠近 `GearIn Prime` / `GearIn Second` 出现市场交互 —— 势力为齿轮工业、税率 0.35、四个子市场 (开放市场/军事/黑市/仓储) 可用，条件与产业生效。
 - 市场 (数据路径)：日志出现 `Loading economy data from data/campaign/econ/economy.json`、`Loading star system: gearin.json`，市场表现与代码路径一致。
 - 关系：情报里齿轮工业与海盗 `HOSTILE`、与霸主 `FRIENDLY`、与速子科技 `HOSTILE`、与用户 0.0 中立 (挂载点在 `onNewGame`)。
 
-## 实例驱动故障分析
+## 故障分析
 
 下面每条都给出触发条件、可观察结果和修正。
 

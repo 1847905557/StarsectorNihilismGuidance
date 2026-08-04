@@ -377,15 +377,12 @@ gradle jar
 
 前置数据：已有 MOD 布局 (C06-S01)、`GearInModPlugin` (C06-S02，含本节调用点片段) 与两个脚本类。
 
-操作步骤 (按顺序执行)：
-
 1. 构建游戏 MOD：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，并核对 `jar tf jars\GearIndustry.jar` 含两个脚本类的 class 条目。
-2. 新建生涯：确认 `starsector.log` 出现两条日志线，随后每 10 真实秒各出现一次；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
+2. 新建生涯，在 `starsector.log` 中观察两个脚本的周期记录。
 3. 暂停与加速对照：生涯中按空格暂停 20 秒以上，再按住 Shift 约 10 秒。
 4. 保存并读档：确认注册不重复、累计值从存档继续。
 5. 进入任意遭遇战再返回：确认战斗期间日志停止、回生涯后继续。
 6. 自停演示：把 `daysToRun` 设为 30 重新构建，挂载约 300 真实秒。
-7. 故障注入：按故障分析第 1 条注释调用点片段的 `addScript` 行；按第 9 条注释两处 `put(REGISTER_MARK, true)` (保留 `addScript`)；各验证一次后改回。
 
 预期结果：
 
@@ -396,10 +393,10 @@ gradle jar
 - **读档**：不重复注册 (两个 `REGISTER_MARK` 标记已置位、`hasScript` 命中)；`since mount` / `routine #` 从存档时的累计值继续 (字段随档)，不出现新的 `routine #1`。
 - **战斗**：进入战斗期间无任何日志 (生涯引擎冻结)；回生涯后继续。
 - **自停 (`daysToRun = 30`)**：挂载约 300 真实秒后出现 `GearIn daily: done, isDone()=true after 30.0 game days`；之后不再有日志 —— 引擎在置位后的下一帧从 `scripts` 列表移除了该脚本 (可验证 `Global.getSector().hasScript(GearInDayAccumulatorScript.class)` 为 `false`)。
-- **故障注入**：注释 `addScript` 后重启新档无任何日志，改回后确认恢复；注释两处 `put(REGISTER_MARK, true)` 后读档两次，日志与例程逐次叠加，改回后确认恢复。
 - **退出到主菜单**：脚本停止推进 (生涯状态不再运行)；回到主菜单后再进档 (读档)，行为与读档一行相同。
+- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
-清理：取消勾选测试 MOD
+清理：把 `daysToRun` 恢复为 `-1`，使脚本保持常驻。
 
 ## 故障分析
 

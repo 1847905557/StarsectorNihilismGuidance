@@ -493,59 +493,23 @@ gradle jar
 
 ## 验证方案
 
-前置数据：
-
-- 既有 MOD 工程：`mod_info.json`、构建脚本与插件入口 `GearInModPlugin`(C06-S02)，以及脚本注册判断模式 (C08-S01)；
-- 本节五个类与调用点片段中的两个 `addScript` 注册块 (各带独立的 `REGISTER_MARK` 键)。
-
-操作步骤：
+前置数据：既有 MOD 工程：`mod_info.json`、构建脚本与插件入口 `GearInModPlugin`(C06-S02)，以及脚本注册判断模式 (C08-S01)、本节五个类与调用点片段中的两个 `addScript` 注册块 (各带独立的 `REGISTER_MARK` 键)。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含五个类的 `.class` 条目。
-2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按下方预期结果列出的日志序列顺序出现两个脚本的日志行 (情报段 ×3、对话框段 1 行)，且**没有**旧复合演示的收尾 `done` 行。
+2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按顺序出现两个脚本的日志行 (情报段 ×3、对话框段 1 行)，且**没有**旧复合演示的收尾 `done` 行。
 3. **消息区**：演示帧后左下消息区出现两条 `GearIn` 消息 —— 点击第一条跳转 Intel 页签 (`addIntel` 的自动发布消息)、点击第二条无跳转 (`MessageIntel` 纯消息)。
 4. **对话框**：游戏暂停并弹出演示对话框；依次点 "查看势力关系"(文本面板追加关系行、日志 `option selected: faction`)、"查看舰队货物"(追加货物行、日志 `option selected: cargo`)。
    - "关闭演示" 或按 ESC(日志 `option selected: close`、对话框关闭、游戏恢复)。
-5. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位)，无对话框/消息残留。
-
-可选故障注入 (每项验证后改回，确认恢复)：
-
-6. **注入 1**：注释掉调用点片段中的某个 `addScript` 块，重启新档：只有该段日志缺失、其余一段正常 (对应故障分析第 7 条前半)；改回后确认恢复。
-7. **注入 2**：把 `intelManager.addIntel(intel)` 改为 `intelManager.queueIntel(intel)`：`hasIntel` 返回 false(情报在通信队列等待)、对话框段不受影响。
-   - 提前置 `setForceAddNextFrame(true)` 则当帧转正 (对应故障分析第 2 条)。
-8. **注入 3**：把 `getIntelTags` 的 `super.getIntelTags(map)` 改成先解引用 `map.getPlayerFleet()`：打开 Intel 页或地图 tooltip 时 NPE(对应故障分析第 4 条)；改回后确认恢复。
-
-观察位置：`starsector.log`、左下消息区、Intel 页签、交互对话框文本面板。
 
 预期结果：
-
-**新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
-
-```text
-GearIn campaign services intel: added present=true count=1 (campaign message posted)
-GearIn campaign services intel: removed absent=true count=0
-GearIn campaign services intel: message-only intel posted
-GearIn campaign services dialog: shown=true (interactionTarget=null; 玩家在对话框内点选选项后由选项回调关闭)
-```
-
-日志段的顺序与调用点片段的注册顺序一致 (情报 → 对话框)，两个脚本各自只执行一次。
-
-对话框打开时插件 `init` 还会写入一条 `GearIn campaign services dialog init: interactionTarget=null（本演示未绑定交互目标）`，出现在 `dialog: shown=true` 一行之后。
-
-**左下消息区**：演示帧弹出两条消息 —— `addIntel` 触发的 `autoAddCampaignMessage` 发布消息 (点击跳转 Intel 页签，对应 `MessageClickAction.INTEL_TAB`) 与 `MessageIntel` 的两行纯消息 (不跳转)。
-
-**交互对话框**：演示帧后游戏暂停并弹出演示对话框，文本首段含 "交互目标=null(本演示未绑定交互目标)"；日志出现 `dialog init: interactionTarget=null（本演示未绑定交互目标）`。用户依次点选三个选项：
 
 - 点 "查看势力关系"：文本面板追加一行 `势力关系：霸主 ... 海盗 ... 独立 ...`，日志出现 `dialog option selected: faction`；
 - 点 "查看舰队货物"：文本面板追加 `舰队货物：补给 ...` 行，日志出现 `dialog option selected: cargo`；
 - 点 "关闭演示"(或按 ESC)：对话框关闭，日志出现 `dialog option selected: close`。
 
-**读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位、脚本不再注册)；演示遗留的对话框与消息不会随存档保存。
+  **读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位、脚本不再注册)；演示遗留的对话框与消息不会随存档保存。
 
-**全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
-
-通过信号：操作 1–5 全部符合；6–8 的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD
+  **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
 
 ## 故障分析
 

@@ -143,15 +143,20 @@
 - 此前武器数据章节给出的提示同样适用：清空或精简 `weapon_data.csv` 行的 `tags`。
 - 需要彻底隐藏时可用 `SYSTEM` hint(原版 `tpc` 就是 `SYSTEM, SHOW_IN_CODEX`，默认不出现在数据库、不掉落)。
 
-### 验证方案 (基于本例)
+### 验证方案
 
 前置数据：`gear_in` MOD(C01-S01)+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_artizan`(C01-S02) 与武器 `GearIn_durin`(C01-S05)。
 
-操作：用 dev 控制台 `Addship GearIn_artizan` 生成测试舰船，在装配界面确认两门内置都林自动炮已安装；随后进入任意战斗，观察它们是否随 AI 自动开火。
+1. 用 dev 控制台 `Addship GearIn_artizan` 生成测试舰船。
+2. 在装配界面确认两门内置都林自动炮已安装。
+3. 进入任意战斗，观察两门内置武器是否随 AI 自动开火。
 
-通过信号：装配点数与未安装时相同 (不占 OP)；两门内置武器无法拆卸或替换；战斗中自动开火正常；`starsector.log` 中 `GearIn_artizan` 无 `ERROR`。
+预期结果：
 
-清理：移除测试舰船。
+- 装配点数与未安装时相同 (不占 OP)。
+- 两门内置武器无法拆卸或替换。
+- 战斗中自动开火正常。
+- `starsector.log` 中 `GearIn_artizan` 无 `ERROR`。
 
 ## 内置装饰性武器
 
@@ -224,15 +229,20 @@
 - **船插 ID 必须真实存在**：装配构建阶段不校验，但舰船部署时 `getAllMods()` 会解析每个船插 ID，未知 ID 抛 `Hullmod <id> not found!`(见故障分析)。
 - 船插的完整讲解 (effect 脚本、S-mod 等) 在后续章节展开；本节只涉及 "内置" 这一安装方式。
 
-### 验证方案 (基于本例)
+### 验证方案
 
 前置数据：`gear_in` MOD(C01-S01)+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_forging`(C01-S04)。
 
-操作：用 dev 控制台 `Addship GearIn_forging` 生成测试舰船，在装配界面确认船插列表出现 `phasefield`(原版 Phase Field)；随后进入任意战斗，观察相位立场效果是否生效。
+1. 用 dev 控制台 `Addship GearIn_forging` 生成测试舰船。
+2. 在装配界面确认船插列表出现 `phasefield`(原版 Phase Field)。
+3. 进入任意战斗，观察相位立场效果。
 
-通过信号：`phasefield` 无法移除；其余装配不受影响；相位立场正常降低探测范围；`starsector.log` 中 `GearIn_forging` 无 `ERROR`。
+预期结果：
 
-清理：移除测试舰船。
+- `phasefield` 无法移除。
+- 其余装配不受影响。
+- 相位立场正常降低探测范围。
+- `starsector.log` 中 `GearIn_forging` 无 `ERROR`。
 
 ## 内置战机 (builtInWings)
 
@@ -264,27 +274,21 @@
 - **不占装配点**：`computeWeaponOPCost` 的战机循环跳过内置战机；舰队成员的造价与 CR 计算也使用 `getNonBuiltInWings()` 排除内置战机。
 - **战机 ID 必须真实存在**(`wing_data.csv` 的 `id` 列)：未知 ID 不会报错，而是该甲板**静默不生成联队**(见故障分析)。
 
-### 验证方案 (基于本例)
+### 验证方案
 
 前置数据：`gear_in` MOD(C01-S01)+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_furnaceman` 与战机 `GearIn_slag_wing`(C01-S03)。
 
-操作：用 dev 控制台 `Addship GearIn_furnaceman` 生成测试舰船，在装配界面确认第一个甲板固定为 `GearIn_slag_wing`(炉渣联队)；随后进入任意战斗，观察联队出动、返航与补充。
+1. 用 dev 控制台 `Addship GearIn_furnaceman` 生成测试舰船。
+2. 在装配界面确认第一个甲板固定为 `GearIn_slag_wing`(炉渣联队)。
+3. 进入任意战斗，观察联队出动、返航与补充。
 
-通过信号：第二个甲板空置、可正常装配其它战机；内置联队无法在装配界面更换；`starsector.log` 中 `GearIn_furnaceman` 与 `GearIn_slag_wing` 无 `ERROR`。
-
-清理：移除测试舰船。如需复测 "内置战机甲板静默为空" 的故障模式，可临时把 `builtInWings` 改成不存在的 ID，验证后改回。
-
-## 预期结果
-
-按前文完成三处修改后，进入任意战斗验证整体表现：
+预期结果：
 
 - 内置武器正常开火 (普通舰船)；
-- 内置船插效果生效 (相位立场降低探测范围)；
+- 内置船插效果生效 (相位立场降低生涯探测范围)；
 - 内置战机从对应甲板出动、返航与补充正常。
 
-`starsector.log` 中三个船体 ID(`GearIn_artizan`、`GearIn_forging`、`GearIn_furnaceman`) 与 `GearIn_slag_wing` 均无 `ERROR`。
-
-## 实例驱动故障分析
+## 故障分析
 
 - **游戏加载阶段报 `Weapon spec [<id>] not found!`**：`builtInWeapons` 里的武器 ID 不在武器注册表 (`weapon_data.csv` 无此行、拼写或大小写错误)。
 - 装配构建会立即解析武器 ID，因此该错误在启动/装配构建阶段就会出现。
@@ -307,11 +311,9 @@
 
 ## 总结
 
-内置三件套是船体对装配的强制约束：`builtInWeapons` 按槽位挂武器、`builtInMods` 按 ID 挂船插、`builtInWings` 按顺序填甲板。
+本节在普通舰船链的基础上强化了船体对装配的强制约束：`builtInWeapons` 按槽位挂武器、`builtInMods` 按 ID 挂船插、`builtInWings` 按顺序填甲板。
 
-三者都不占装配点、不可在装配界面改动，且各自有独立的失败模式：武器 ID 错→加载期报错，槽位 ID 错→部署期报错，船插 ID 错→部署期报错，战机 ID 错→静默无联队。
-
-排错时先确认键名正确，再从 `.ship` 三组键沿 ID 追到对应的 CSV 注册行。
+不过，虽然和技术本身无关，但编者必须指出的是，滥用内置插件 (是的，单独点名内置插件，因为这种例子已经太多了) 可能并不会显得您的舰船如何牛逼，而更只可能令人觉得 "不过是又一个插件列表堆成墙的东西"。
 
 ## 建议参考项
 

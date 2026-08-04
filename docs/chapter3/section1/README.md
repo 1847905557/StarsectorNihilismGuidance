@@ -223,28 +223,25 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 ![](./mission_test.png)
 
-### 验证方案 (基于本例)
+### 验证方案
 
-以 `GearIn_test` 测试战役为对象，把 "注册 → 部署 → 导出 → 回写" 整条流程走一遍。
+前置数据：`mod_info.json`(C01-S01)、船体 `GearIn_artizan`(C01-S02)、武器 `GearIn_durin`(C01-S05)、本节的 `data/missions/mission_list.csv`、`data/missions/GearIn_test/`(descriptor.json、mission_text.txt、icon、`MissionDefinition` 类源文件) 与 `data/variants/GearIn_artizan_combat.variant`。
 
-前置数据 (来自前置知识与本节内容)：
-
-- `mod_info.json`(C01-S01)、船体 `GearIn_artizan`(C01-S02)、武器 `GearIn_durin`(C01-S05)；
-- 本节的 `data/missions/mission_list.csv`、`data/missions/GearIn_test/`(descriptor.json、mission_text.txt、icon、`MissionDefinition` 类源文件) 与 `data/variants/GearIn_artizan_combat.variant`。
-
-操作：
-
-1. 启动游戏，主菜单 Missions 应出现 "一次好买卖"；点击后详情页显示图标、背景、文本与 `TEST` 简报条目。
-2. 部署：用户舰队列出所有 `GearIn_` 船体 (未制作装配的以空装配形态出现)，敌方为余烬空间站；地图含点位与星云。
+1. 启动游戏，打开主菜单 Missions 列表。
+2. 点击测试战役并部署，观察用户舰队、敌方空间站和地图。
 3. 返回主菜单前在装配界面修改一艘船的武器，检查 `Starsector\saves\missions\GearIn_test\mission_GearIn_test_ship_0.variant` 已生成且内容与修改一致。
-4. 把导出文件剪贴为 `data/variants\GearIn_artizan_combat.variant` 并改 `variantId` / `displayName`，加 `"goalVariant": true`；重启后确认日志出现 `Loading variant [data/variants/GearIn_artizan_combat.variant]`，并在任意装配界面确认自动装配列表出现该目标。
-5. 检查 `Starsector\starsector-core\starsector.log` 有 `Loading missions` 且无 `ERROR`。
+4. 把导出文件剪贴为 `data/variants\GearIn_artizan_combat.variant`，修改 `variantId` / `displayName`，加入 `"goalVariant": true`，然后重启游戏并打开任意装配界面。
+5. 检查 `Starsector\starsector-core\starsector.log` 的任务加载记录。
 
-通过信号：以上各步的可观察结果全部满足即通过 ——Missions 列表出现条目、部署后舰队列出全部船体、导出文件生成且内容一致、重启后日志出现 `Loading variant [...]` 且自动装配出现目标、日志无 `ERROR`。
+预期结果：
 
-故障注入 (可选)：临时删除 `descriptor.json` 的 `difficulty` 字段，重启观察加载中断与日志堆栈 (对应故障分析第 2 条)；把 `MissionDefinition` 类包名改错，重启后点击战役观察 `Problem loading class`(对应第 3 条)；完成后恢复。
+- 启动游戏后，主菜单 Missions 列表出现 "一次好买卖"(`GearIn_test`) 条目；点击后详情页显示图标、背景、`mission_text.txt` 文本与 "Tactical Objectives" 下的 `TEST` 条目；日志出现 `Loading missions`，且没有相关 `ERROR`。
+- 部署后用户舰队列出本 MOD 所有船体 (每个 hull 至少一个条目，尚未制作装配的以空装配形态出现)，敌方为余烬空间站；地图含星云、传感器阵列、通讯中继、导航信标和小行星带。
+- 在装配界面修改任何一艘船并返回后，`Starsector\saves\missions\GearIn_test\` 出现 `mission_GearIn_test_ship_0.variant`，内容即该船当前装配。
+- 把导出文件剪贴到 `data/variants`、改名并改 `variantId` 后重启游戏：日志出现 `Loading variant [data/variants/GearIn_artizan_combat.variant]`；设置 `goalVariant: true` 后，该装配出现在装配界面的自动装配列表。
+- 常规战役按同样方式注册后出现在 Missions 列表，且使用您自己的装配与文案。
 
-清理：取消勾选测试 MOD；删除 `Starsector\saves\missions\GearIn_test\`(启动时会读回其中的装配)；发布前在 `mission_list.csv` 中注释掉测试战役。
+清理：删除 `Starsector\saves\missions\GearIn_test\`(启动时会读回其中的装配)。
 
 ## 在测试战役中导出装配
 
@@ -361,15 +358,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 发布 MOD 时，建议把测试战役从 `mission_list.csv` 中注释或移除 (`#`)，否则用户也会在 Missions 列表里看到您的调试战役。
 
-## 预期结果
-
-- 启动游戏后，主菜单 Missions 列表出现 "一次好买卖"(`GearIn_test`) 条目；点击后详情页显示图标、背景、`mission_text.txt` 文本与 "Tactical Objectives" 下的 `TEST` 条目。
-- 部署后用户舰队列出本 MOD 所有船体 (每个 hull 至少一个条目，尚未制作装配的以空装配形态出现)，敌方为余烬空间站；地图含星云、传感器阵列、通讯中继、导航信标和小行星带。
-- 在装配界面修改任何一艘船并返回后，`Starsector\saves\missions\GearIn_test\` 出现 `mission_GearIn_test_ship_0.variant`，内容即该船当前装配。
-- 把导出文件剪贴到 `data/variants`、改名并改 `variantId` 后重启游戏：日志出现 `Loading variant [data/variants/GearIn_artizan_combat.variant]`；设置 `goalVariant: true` 后，该装配出现在装配界面的自动装配列表。
-- 常规战役按同样方式注册后出现在 Missions 列表，且使用您自己的装配与文案。
-
-## 实例驱动故障分析
+## 故障分析
 
 下面每条都给出触发条件、可观察结果和修正。
 

@@ -609,52 +609,27 @@ gradle jar
 
 ## 验证方案
 
-前置数据：编译 JAR 链路的 MOD 布局 (C06-S01)、本节数据接入片段 (三个数据文件与帧贴图清单) 与四个效果类；测试舰装 `GearIn_test_rotor` 与 `GearIn_test_beam`。
+前置数据：编译 JAR 流程的 MOD 布局 (C06-S01)、本节三个数据文件与帧贴图清单、四个效果类，以及装有 `GearIn_test_rotor` 与 `GearIn_test_beam` 的测试舰。
 
-### 构建与游戏验证
-
-1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，再用 `jar tf jars\GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下的四个类。
-
-预期结果：
-
-- `jars\GearIndustry.jar` 包含 `GearInWeaponFrameEffect.class` / `GearInBeamHitEffect.class` / `GearInOnFireEffect.class` / `GearInOnHitEffect.class`。
-
-### 战斗内验证 (动画 / 回调时机 / onFire / onHit / 光束 / 暂停)
-
-3. 进入 `GearIn_test` 战役 (C03-S01) 部署测试舰，核对 `GearIn weapon fx init` 两行日志。
-4. 用 `GearIn_test_rotor` 射击，核对帧号 0→3 循环；停火后核对 `idle -> frame 0 (programmatic)`。
-5. 持续射击，核对 `started firing (before-frame callback)` 与每秒一条 `after-frame:`。
-6. 核对每发一条 `GearIn onFire ...`，命中时 `GearIn onHit ...`。
-7. 用 `GearIn_test_beam` 照射目标，核对 `GearIn beam fx reset ...` 两次 (创建 / 销毁)、`hit start` 与射线端点的蓝色火花。
-8. 按空格暂停，确认全部日志停更，恢复后继续。
+1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下的四个类。
+2. 进入 `GearIn_test` 战役部署测试舰，查看 `starsector.log` 中的两行初始化日志。
+3. 用 `GearIn_test_rotor` 射击并停火，观察动画帧；再把 `.wpn` 的 `animateWhileFiring` 设为 `false`，重启后重复射击。
+4. 持续射击，核对 `started firing (before-frame callback)` 与每秒一次的 `after-frame:` 日志。
+5. 核对每次开火的 `GearIn onFire ...` 日志与命中时的 `GearIn onHit ...` 日志。
+6. 用 `GearIn_test_beam` 照射目标，观察射线创建、命中、端点粒子与停火后的销毁。
+7. 按空格暂停，再恢复战斗并观察上述日志。
 
 预期结果：
 
-- 部署时 `starsector.log` 出现 `GearIn weapon fx init GearIn_test_rotor ... animated=true frames=4 rate=12.0` 与 `GearIn weapon fx init GearIn_test_beam ... animated=false`(光束武器无 `numFrames`，动画为 null—— 规则 4 的判空生效)；
-- 开火时帧号按 `frameRate` 节奏递增环绕 (0→1→2→3→0)；停火且冷却结束后出现一次 `idle -> frame 0 (programmatic)`，帧号停 0；改 `.wpn` 的 `animateWhileFiring:false` 后，开火中帧号不再变化 (冻结)；
-- 每次开火在生成射弹前出现 `started firing (before-frame callback)`(操作前)；持续射击每 1 秒一条 `after-frame: ammo=... cooldown=...`(操作后)；
-- 开火后每发一条 `GearIn onFire GearIn_test_shot weapon=GearIn_test_rotor spawnType=BALLISTIC speed=...`；命中目标时 `GearIn onHit GearIn_test_shot target=Ship shieldHit=... hull=... armor=... shields=... emp=...`；
-- 光束武器照射期间出现 `GearIn beam fx reset (ray created or destroyed)`(射线创建与停火销毁各一次)；命中目标后出现一次 `GearIn beam fx hit start: target=Ship brightness=...`，照射期间在射线端点上每 0.15 秒一批蓝色火花粒子；停火后射线与粒子消失；
-- 暂停期间上述全部日志停更 (武器不推进 → 所有数据绑定回调停摆)，恢复后继续。
+- `jars\GearIndustry.jar` 包含 `GearInWeaponFrameEffect.class`、`GearInBeamHitEffect.class`、`GearInOnFireEffect.class` 与 `GearInOnHitEffect.class`。
+- 部署时出现 `GearIn weapon fx init GearIn_test_rotor ... animated=true frames=4 rate=12.0` 与 `GearIn weapon fx init GearIn_test_beam ... animated=false`；光束武器没有 `numFrames`，动画对象为 null。
+- 开火时帧号按 0→1→2→3→0 循环；停火且冷却结束后出现一次 `idle -> frame 0 (programmatic)` 并停在第 0 帧；`animateWhileFiring:false` 时开火期间帧号冻结。
+- 每次开火在生成射弹前出现 `started firing (before-frame callback)`；持续射击时每秒出现一条 `after-frame: ammo=... cooldown=...`。
+- 每发射弹出现 `GearIn onFire GearIn_test_shot weapon=GearIn_test_rotor spawnType=BALLISTIC speed=...`；命中时出现 `GearIn onHit GearIn_test_shot target=Ship shieldHit=... hull=... armor=... shields=... emp=...`。
+- 光束创建与销毁时各出现一次 `GearIn beam fx reset (ray created or destroyed)`；命中后出现 `GearIn beam fx hit start: target=Ship brightness=...`，照射期间射线端点每 0.15 秒出现一批蓝色火花，停火后射线与粒子消失。
+- 暂停期间上述日志全部停止更新，恢复后继续。
 
-### 故障注入
-
-9. 把 `GearIn_test_rotor.wpn` 的 `everyFrameEffect` 类名改错 → 部署报错 `Problem loading class [...]`(对应故障分析 2)；改回恢复。
-10. 把 `beamEffect` 从 `GearIn_test_beam.wpn` 移到 `GearIn_test_rotor.wpn` → 光束回调不执行且无报错 (对应故障分析 3)；改回恢复。
-11. 把 `turretSprite` 的 `_base00.png` 改名为 `_base.png`，或删掉任一帧文件，部署后核对武器创建报错 (规则 3)；恢复后复验。
-
-预期结果：
-
-- 类名改错后部署舰船即报错；`beamEffect` 错绑到弹丸武器后静默无回调；帧贴图违规后武器创建报错；全部改回并重启游戏后，3–8 步的观察结果恢复。
-
-通过信号：操作 1–7 全部符合；操作 8–10 的注入与恢复符合预期。
-
-清理：取消勾选测试 MOD
-
-本节没有把页面编号写进任何包名、类名、资源名或字符串 key：
-
-- 包 `data.scripts.gearin.combat`；
-- 类 `GearInWeaponFrameEffect` / `GearInBeamHitEffect` / `GearInOnFireEffect` / `GearInOnHitEffect`。
+清理：把 `GearIn_test_rotor.wpn` 的 `animateWhileFiring` 恢复为 `true`。
 
 ## 故障分析
 

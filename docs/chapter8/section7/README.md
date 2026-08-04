@@ -624,75 +624,67 @@ gradle jar
 
 前置数据：既有 MOD 布局与 `GearInModPlugin` 注册结构 (含本节调用点片段，C06-S01、C06-S02 已确立)、`market_conditions.csv` 追加行、两个 Java 类。
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个 class，然后启动游戏确认加载日志出现 `Loading condition: GearIn_ore_deposits`。
-2. **新建生涯**：确认 `starsector.log` 出现 `start`、`add` ×2、`applied`、`tokens`、`multi` ×2、`removeAll`、`reapplyOne`、`suppress`、`unsuppress`、`removeOne`、`surveyGate`、`vanillaSurvey`、`final`、`done` 全部日志，且全程无 `gear_in` 引起的 `ERROR`。
-3. **数值核对**：`add` 行 `plugin=GearInOreCondition`、`planetary=true`、`surveyed=true`、`genSpec=null`、`icon=graphics/hullmods/generic_mod.png`；`applied` 行 `hazardModSource` 等于 `token`、`accModValue=0.10`；`multi` 行 `distinct=true`、`accMod1=0.10 accMod2=0.20`(各行的完整核对见预期结果第 3、3条)。
-4. **不对称性**：`removeAll` 后 `conditions` 回到基线，`removeOne` 后同样回到基线。
-5. **suppression 时序**：`suppress` 行 `hazardBeforeReapply` 带修饰、`hazardAfterReapply` 回到基线、`conditions` 多一个；`unsuppress` 行恢复。
-6. **survey 检查与原版对照**：`surveyGate` 行 `afterAdd` 与 `afterSurveyedReapply` 相等、`afterUnsurveyedReapply` 回到基线；`vanillaSurvey` 行存在 (具体行星与条件以存档生成结果为准，`none found` 分支也属预期)。
-7. **故障注入与参数演示**：先注释掉调用点片段的 `addScript` 行，重启新档，确认无任何 `GearIn condition lifecycle` 日志 (注册缺失的对照)，改回后确认恢复；再把 id 改成 `"GearIn_ore_deposits_typo"`，确认 `add` 步抛 `Market condition [GearIn_ore_deposits_typo] not found`(对应故障分析第 2 条)，改回后确认恢复；然后把 `GearInOreCondition.apply` 的 modifier source 从 `id` 改成 `condition.getId()`，重新构建，确认 `multi` 行 `accMod1` 与 `accMod2` 都是后写入的值 `0.20`(修饰互相覆盖，对应故障分析第 7 条)，改回后确认恢复；最后注册前 `script.setTargetMarketId("asheru")` → `abort` 行，改 `"asharu"` → `start` 行 `market=asharu`。
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个 class。
+2. 启动游戏，查看 `Loading condition: GearIn_ore_deposits` 加载日志。
+3. **新建生涯**：在 `starsector.log` 中观察 `GearIn condition lifecycle` 相关记录。
+4. **数值核对**：`add` 行 `plugin=GearInOreCondition`、`planetary=true`、`surveyed=true`、`genSpec=null`、`icon=graphics/hullmods/generic_mod.png`；`applied` 行 `hazardModSource` 等于 `token`、`accModValue=0.10`；`multi` 行 `distinct=true`、`accMod1=0.10 accMod2=0.20`。
+5. **不对称性**：`removeAll` 后 `conditions` 回到基线，`removeOne` 后同样回到基线。
+6. **suppression 时序**：`suppress` 行 `hazardBeforeReapply` 带修饰、`hazardAfterReapply` 回到基线、`conditions` 多一个；`unsuppress` 行恢复。
+7. **survey 检查与原版对照**：`surveyGate` 行 `afterAdd` 与 `afterSurveyedReapply` 相等、`afterUnsurveyedReapply` 回到基线；`vanillaSurvey` 行存在 (具体行星与条件以存档生成结果为准，`none found` 分支也属预期)。
 
 预期结果：
 
-以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到两个 class。加载期 `starsector.log` 出现 `Loading market conditions` 与 `Loading condition: GearIn_ore_deposits`(加载器的既有日志格式；原版每行条件同样各打一条)。
-2. **新建生涯**：`starsector.log` 依次出现。
-```text
-GearIn condition lifecycle start: market=jangala conditions=6 hazard=1.25 accessibilityFlat=1.00
-```
-(`conditions` 数、`hazard`、`accessibilityFlat` 以实际存档为准；Jangala 原版 6 条件、hazard 1.25)。
-3. **add 与 applied**(token 随机后缀以日志为准)：
-```text
-GearIn condition lifecycle add: id=GearIn_ore_deposits token=GearIn_ore_deposits_xxxxx plugin=GearInOreCondition planetary=true surveyed=true reqSurvey=false genSpec=null specOrder=50 icon=graphics/hullmods/generic_mod.png GearIn condition lifecycle add: desc=Rich, dense ore veins run deep beneath the surface of Jangala, hinting at profitable mining opportunities. GearIn condition lifecycle applied: hazard=1.40 hazardModSource=GearIn_ore_deposits_xxxxx hazardModValue=0.15 accessibilityFlat=1.10 accModValue=0.10 GearIn condition lifecycle tokens: $marketName=Jangala $marketFaction=Hegemony
-```
-核对：`plugin=GearInOreCondition`(script 列生效)；`planetary=true`(CSV 列生效)；`surveyed=true`、`reqSurvey=false`、`genSpec=null`(无 procgen 行 → 默认已勘测)；`icon` 是回退的 `graphics/hullmods/generic_mod.png`(icon 列留空)；`hazardModSource` 与 `token` 相同 (modifier source = 实例 token)；`desc` 里的 `$marketName` 已由 token 替换链填充 (替换发生在 tooltip 创建时，`$marketName` 值等于市场名)。
-4. **多实例 + param**：
-```text
-GearIn condition lifecycle multi: token1=GearIn_ore_deposits_xxxxx token2=GearIn_ore_deposits_yyyyy distinct=true firstConditionIsToken1=true hasCondition=true hasSpecific=true GearIn condition lifecycle multi: hazard=1.40 accessibilityFlat=1.30 accMod1=0.10 accMod2=0.20
-```
-核对：两个 token 不同；`getFirstCondition(id)` 是首个实例 (token1)；accessibility 平值叠加 `0.10 + 0.20`，且 `accMod1` / `accMod2` 各自按 token 独立可取 (修饰隔离)。
-5. **removeCondition(id) 删同 id 全部 (不对称性 A)**：
-```text
-GearIn condition lifecycle removeAll: conditions=6 hazard=1.25 accessibilityFlat=1.00
-```
-`conditions` 回到基线 (两个实例一起消失)、hazard / accessibility 全部回滚。
-6. **reapplyCondition(token) 单实例重算**：
-```text
-GearIn condition lifecycle reapplyOne: hazardBefore=1.40 hazardAfter=1.40 unchanged=true
-```
-先 unapply(回落) 再 apply(恢复)，终值不变 —— 单实例重算是 "刷一遍"，不是叠加。
-7. **suppression(先不生效、重算后休眠)**：
-```text
-GearIn condition lifecycle suppress: suppressed=true conditions=7 hazardBeforeReapply=1.40 hazardAfterReapply=1.25 (effect dormant) GearIn condition lifecycle unsuppress: suppressed=false hazard=1.40 (effect restored)
-```
-核对：suppress 后实例仍在 (`conditions=7`)、效果未变 (`hazardBeforeReapply` 仍带修饰)；`reapplyConditions()` 后效果消失 (unapply 执行、apply 被跳过)；配对 `unsuppressCondition` 后重算恢复。
-8. **removeSpecificCondition(token) 只删一个 (不对称性 B)**：
-```text
-GearIn condition lifecycle removeOne: conditions=6 hazard=1.25 accessibilityFlat=1.00
-```
-9. **survey 检查**：
-```text
-GearIn condition lifecycle surveyGate: afterAdd=1.40 afterUnsurveyedReapply=1.25 afterSurveyedReapply=1.40
-```
-核对：新添加实例当帧生效 (apply 不查 surveyed)；`setSurveyed(false)` 后重算效果消失；`setSurveyed(true)` 后重算恢复 —— 重算只对 surveyed 的条件 apply。
-10. **原版对照 (只读)**：
-```text
-GearIn condition lifecycle vanillaSurvey: market=market_corvus_IIIa surveyLevel=NONE condition=ore_sparse surveyed=false
-```
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到两个 class。加载期 `starsector.log` 出现 `Loading market conditions` 与 `Loading condition: GearIn_ore_deposits`(加载器的既有日志格式；原版每行条件同样各打一条)。
+- **新建生涯**：`starsector.log` 依次出现。
+  ```text
+  GearIn condition lifecycle start: market=jangala conditions=6 hazard=1.25 accessibilityFlat=1.00
+  ```
+  (`conditions` 数、`hazard`、`accessibilityFlat` 以实际存档为准；Jangala 原版 6 条件、hazard 1.25)。
+- **add 与 applied**(token 随机后缀以日志为准)：
+  ```text
+  GearIn condition lifecycle add: id=GearIn_ore_deposits token=GearIn_ore_deposits_xxxxx plugin=GearInOreCondition planetary=true surveyed=true reqSurvey=false genSpec=null specOrder=50 icon=graphics/hullmods/generic_mod.png GearIn condition lifecycle add: desc=Rich, dense ore veins run deep beneath the surface of Jangala, hinting at profitable mining opportunities. GearIn condition lifecycle applied: hazard=1.40 hazardModSource=GearIn_ore_deposits_xxxxx hazardModValue=0.15 accessibilityFlat=1.10 accModValue=0.10 GearIn condition lifecycle tokens: $marketName=Jangala $marketFaction=Hegemony
+  ```
+  核对：`plugin=GearInOreCondition`(script 列生效)；`planetary=true`(CSV 列生效)；`surveyed=true`、`reqSurvey=false`、`genSpec=null`(无 procgen 行 → 默认已勘测)；`icon` 是回退的 `graphics/hullmods/generic_mod.png`(icon 列留空)；`hazardModSource` 与 `token` 相同 (modifier source = 实例 token)；`desc` 里的 `$marketName` 已由 token 替换链填充 (替换发生在 tooltip 创建时，`$marketName` 值等于市场名)。
+- **多实例 + param**：
+  ```text
+  GearIn condition lifecycle multi: token1=GearIn_ore_deposits_xxxxx token2=GearIn_ore_deposits_yyyyy distinct=true firstConditionIsToken1=true hasCondition=true hasSpecific=true GearIn condition lifecycle multi: hazard=1.40 accessibilityFlat=1.30 accMod1=0.10 accMod2=0.20
+  ```
+  核对：两个 token 不同；`getFirstCondition(id)` 是首个实例 (token1)；accessibility 平值叠加 `0.10 + 0.20`，且 `accMod1` / `accMod2` 各自按 token 独立可取 (修饰隔离)。
+- **removeCondition(id) 删同 id 全部 (不对称性 A)**：
+  ```text
+  GearIn condition lifecycle removeAll: conditions=6 hazard=1.25 accessibilityFlat=1.00
+  ```
+  `conditions` 回到基线 (两个实例一起消失)、hazard / accessibility 全部回滚。
+- **reapplyCondition(token) 单实例重算**：
+  ```text
+  GearIn condition lifecycle reapplyOne: hazardBefore=1.40 hazardAfter=1.40 unchanged=true
+  ```
+  先 unapply(回落) 再 apply(恢复)，终值不变 —— 单实例重算是 "刷一遍"，不是叠加。
+- **suppression(先不生效、重算后休眠)**：
+  ```text
+  GearIn condition lifecycle suppress: suppressed=true conditions=7 hazardBeforeReapply=1.40 hazardAfterReapply=1.25 (effect dormant) GearIn condition lifecycle unsuppress: suppressed=false hazard=1.40 (effect restored)
+  ```
+  核对：suppress 后实例仍在 (`conditions=7`)、效果未变 (`hazardBeforeReapply` 仍带修饰)；`reapplyConditions()` 后效果消失 (unapply 执行、apply 被跳过)；配对 `unsuppressCondition` 后重算恢复。
+- **removeSpecificCondition(token) 只删一个 (不对称性 B)**：
+  ```text
+  GearIn condition lifecycle removeOne: conditions=6 hazard=1.25 accessibilityFlat=1.00
+  ```
+- **survey 检查**：
+  ```text
+  GearIn condition lifecycle surveyGate: afterAdd=1.40 afterUnsurveyedReapply=1.25 afterSurveyedReapply=1.40
+  ```
+  核对：新添加实例当帧生效 (apply 不查 surveyed)；`setSurveyed(false)` 后重算效果消失；`setSurveyed(true)` 后重算恢复 —— 重算只对 surveyed 的条件 apply。
+- **原版对照 (只读)**：
+  ```text
+  GearIn condition lifecycle vanillaSurvey: market=market_corvus_IIIa surveyLevel=NONE condition=ore_sparse surveyed=false
+  ```
 
-(具体行星与条件以存档生成结果为准；只要存在任意 `requiresSurveying()==true` 且 `surveyed=false` 的条件即通过；若新档所有条件市场都已勘测，则出现 `none found` 一行，也属预期分支。)
-11. **收尾与读档**：
-```text
-GearIn condition lifecycle final: conditions=6 hazard=1.25 accessibilityFlat=1.00 (baseline restored) GearIn condition lifecycle done
-```
-无任何 `gear_in` 引起的 `ERROR`。读档不重复执行 (`REGISTER_MARK` 已置位)，也不出现 `GearIn condition lifecycle start` 日志。
-12. **参数演示**：把调用点片段改为 `script.setTargetMarketId("asheru")`(不存在的 id)→ 出现 `GearIn condition lifecycle abort: market asheru not found`；改为 `"asharu"` → `start` 行 `market=asharu`。
-
-没有把页面编号写进任何运行时名称 (类名、包名、persistent data 键、条件 id、modifier source 均不含 C08-S07 变体)。
-
-**通过信号**：操作 1–7 全部符合，故障注入与参数演示的注入、恢复分支都符合预期。
-
-**清理**：取消勾选测试 MOD
+  (具体行星与条件以存档生成结果为准；只要存在任意 `requiresSurveying()==true` 且 `surveyed=false` 的条件即通过；若新档所有条件市场都已勘测，则出现 `none found` 一行，也属预期分支。)
+- **收尾与读档**：
+  ```text
+  GearIn condition lifecycle final: conditions=6 hazard=1.25 accessibilityFlat=1.00 (baseline restored) GearIn condition lifecycle done
+  ```
+  无任何 `gear_in` 引起的 `ERROR`。读档不重复执行 (`REGISTER_MARK` 已置位)，也不出现 `GearIn condition lifecycle start` 日志。
 
 ## 故障分析
 

@@ -331,45 +331,30 @@ gradle jar
 
 前置数据：既有 MOD 工程布局与插件生命周期注册回调 (C06-S01、C06-S02 建立)、本节的 `data\campaign\rules.csv` 规则表与 `GearInRulesIntro` 使用入口。验证入口为启动器与新建生涯，观察位置是 `starsector.log`、启动器控制台标准输出与对话界面。
 
-操作步骤：
-
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
-2. **规则注册**：启动游戏，`starsector.log` 出现 `Loading CSV data from [...]` 与本节 7 条 `Loading rule: GearIn_rules_intro_*` 行；启动器控制台标准输出出现 `$GearIn_rules_intro_skip`、`$GearIn_rules_intro_last` 两条单次使用变量 WARNING(正常现象，原版同样大量存在)。
-3. **对话完整流程**：新建生涯，日志出现 `GearIn rules intro dialog shown=true`，对话弹出；文本为两条欢迎变体之一且含玩家名；选项为 "查看详情" / "结束"；按 ESC 等效点选 "结束"。
-4. **结果链**：点 "查看详情"→ 追加 `FireAll 附加文本` 与 `高分规则` 两段文本，选项只剩 "结束"；点 "结束" 关闭对话，无 ERROR。
-5. **读档**：保存后读档，不再出现 `shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关)。
-6. **故障注入与恢复** (每项注入后核对对应故障现象，再改回并确认恢复)：
-   - trigger 不匹配：把 Java 侧 `"GearInRulesIntro"` 改为 `"GearInRulesIntroX"` 并重建 → 对话只剩 failsafe "Leave"(对应故障分析 1)；
-   - 加载期致命错误：把 `GearIn_rules_intro_open` 的条件临时改成 `$x = 1` → 启动中止，报 `has = ('assignment') operator in its conditions`(对应故障分析 2)；把脚本列 `FireAll GearInRulesIntroAdd` 改成 `$x == 1` → 报 `has == ('equals') operator in its script`；
-   - 选项 id 大小写：把 leave 规则条件改为 `$option == GearIn_rules_intro_Leave` → 点 "结束" 后出现 `ERROR: no rule found for option GearIn_rules_intro_leave` + failsafe(对应故障分析 4)；
-   - 分数竞争：临时删掉 `!$GearIn_rules_intro_skip score:100` 的 `score:100` → 仍确定性选中 high(2 > 1)；再把 low 也改成两条 1 分条件使两规则同分 → 反复点 "查看详情" 两条文本随机交替 (对应故障分析 8)；
-   - OR 分隔：把 welcome 文本的 `OR` 与上文合并到同一行 → 对话只显示合并后的整段文本、不再随机 (对应故障分析 6)。
+2. **规则注册**：启动游戏，查看 `starsector.log` 中的 `Loading CSV data from [...]` 与本节 7 条 `Loading rule: GearIn_rules_intro_*` 行。
+3. 查看启动器控制台标准输出中的 `$GearIn_rules_intro_skip`、`$GearIn_rules_intro_last` 两条单次使用变量 WARNING(正常现象，原版同样大量存在)。
+4. **对话完整流程**：新建生涯，日志出现 `GearIn rules intro dialog shown=true`，对话弹出；文本为两条欢迎变体之一且含玩家名；选项为 "查看详情" / "结束"；按 ESC 等效点选 "结束"。
+5. **结果链**：点 "查看详情"→ 追加 `FireAll 附加文本` 与 `高分规则` 两段文本，选项只剩 "结束"；点 "结束" 关闭对话。
+6. **读档**：保存后读档，不再出现 `shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关)。
 
 预期结果：
 
-1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
-2. **规则注册 (加载期)**：
-   - 启动日志 `starsector.log` 出现 `Loading CSV data from [...data/campaign/rules.csv]` 与逐条 `Loading rule: GearIn_rules_intro_welcome` / `..._add_a` / `..._add_b` / `..._open` / `..._detail_low` / `..._detail_high` / `..._leave`—— 注册入口完整流程的静态证明。
-   - 标准输出 (启动器控制台) 出现两条变量警告 (`System.out.println`，非日志)：`WARNING: variable [$GearIn_rules_intro_skip] only used once; rule id: [GearIn_rules_intro_detail_high]` 与 `...[$GearIn_rules_intro_last] only used once; rule id: [GearIn_rules_intro_detail_high]`—— 单次使用变量属正常现象 (原版同样大量存在)，不是错误。
-3. **对话弹出 (新档首次进入生涯后第一帧)**：`starsector.log` 出现 `GearIn rules intro dialog shown=true`；游戏暂停并弹出对话：
-   - 文本面板显示两条欢迎变体之一 (每次随机)：含玩家名的句子 (`$playerName` 已替换)；
-   - 选项面板按 order 显示 "查看详情"(order 0) 与 "结束"(order 5)；
-   - 按 ESC 等于点选 "结束"(`SetShortcut` 生效)。
-4. **点 "查看详情"**：文本面板按顺序追加三段：
-   - `FireAll 附加文本：条件为空，必然追加。`(`add_a` 命中；`add_b` 的 `RollProbability 0.0` 恒假不触发)；
-   - `高分规则：条件总分 102（1 + 1 + 100），FireBest 必然选中。`(`detail_high` 总分 102 恒胜 `detail_low` 的 1 分，确定性)；
-   - 选项面板被替换为单个 "结束"(`detail_high` 的选项；`FireBest` 非 keepOptions 时先清空再添加)。
-5. **点 "结束"(或按 ESC)**：`DismissDialog` 关闭对话，游戏恢复；日志无新增 `ERROR`。
-6. **读档**：不出现 `GearIn rules intro dialog shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关)；对话本身不随存档保存。
-7. **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志；加载期无 `Duplicate key` / `Duplicate rule id` / `Command [...] not found` / `has = ('assignment')` / `has == ('equals')` / `Option id starts with $` 等规则加载异常。
-
-通过信号：操作 1–5 全部符合预期；操作 6 每次注入都观察到对应故障现象，全部改回后恢复；全程无 `gear_in` 引起的 `ERROR` 日志。
-
-> 定位规则没被读进来的问题时，按三个可观察表现依次核对：启动日志 `Loading rule: <id>` (数据文件侧)→ `shown=true` 日志 (代码侧)→ 对话表现 (运行侧)。
-
-> 单次使用变量 WARNING 只打印到启动器标准输出、不进 `starsector.log`，不是错误 —— 它只肯说给启动器控制台听。
-
-清理：取消勾选测试 MOD
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
+- **规则注册 (加载期)**：
+  - 启动日志 `starsector.log` 出现 `Loading CSV data from [...data/campaign/rules.csv]` 与逐条 `Loading rule: GearIn_rules_intro_welcome` / `..._add_a` / `..._add_b` / `..._open` / `..._detail_low` / `..._detail_high` / `..._leave`—— 注册入口完整流程的静态证明。
+  - 标准输出 (启动器控制台) 出现两条变量警告 (`System.out.println`，非日志)：`WARNING: variable [$GearIn_rules_intro_skip] only used once; rule id: [GearIn_rules_intro_detail_high]` 与 `...[$GearIn_rules_intro_last] only used once; rule id: [GearIn_rules_intro_detail_high]`—— 单次使用变量属正常现象 (原版同样大量存在)，不是错误。
+- **对话弹出 (新档首次进入生涯后第一帧)**：`starsector.log` 出现 `GearIn rules intro dialog shown=true`；游戏暂停并弹出对话：
+  - 文本面板显示两条欢迎变体之一 (每次随机)：含玩家名的句子 (`$playerName` 已替换)；
+  - 选项面板按 order 显示 "查看详情"(order 0) 与 "结束"(order 5)；
+  - 按 ESC 等于点选 "结束"(`SetShortcut` 生效)。
+- **点 "查看详情"**：文本面板按顺序追加三段：
+  - `FireAll 附加文本：条件为空，必然追加。`(`add_a` 命中；`add_b` 的 `RollProbability 0.0` 恒假不触发)；
+  - `高分规则：条件总分 102（1 + 1 + 100），FireBest 必然选中。`(`detail_high` 总分 102 恒胜 `detail_low` 的 1 分，确定性)；
+  - 选项面板被替换为单个 "结束"(`detail_high` 的选项；`FireBest` 非 keepOptions 时先清空再添加)。
+- **点 "结束"(或按 ESC)**：`DismissDialog` 关闭对话，游戏恢复。
+- **读档**：不出现 `GearIn rules intro dialog shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关)；对话本身不随存档保存。
+- **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志；加载期无 `Duplicate key` / `Duplicate rule id` / `Command [...] not found` / `has = ('assignment')` / `has == ('equals')` / `Option id starts with $` 等规则加载异常。
 
 ## 故障分析
 

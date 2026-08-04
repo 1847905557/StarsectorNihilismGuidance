@@ -693,43 +693,33 @@ gradle jar
 
 ## 验证方案
 
-本节只有一个待验证成果：`GearInShaderVisual` 接入后的完整渲染链。它同时覆盖 Java 编译与 shader 资源两处校验，因此先跑构建侧，再进战斗看画面。
-
 前置数据：既有 MOD 布局 (`mod_info.json` 硬依赖 BoxUtil)+ 战斗生命周期插件 (含本节注册片段一行)+ 分层渲染插件 + 上一页的脉冲渲染插件 + 本节的 `GearInShaderVisual`、`data/shaders/GearIn_shader_visual.vert/.frag` + `GearIn_test` 测试战役 (C03-S01)。
 
-环境需满足 BoxUtil 的 GL 4.3 能力基线 (`ShaderCore.isValid()` 为 true)。
-
-**操作步骤**：
-
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/shaders/GearIn_shader_visual.vert`、`data/shaders/GearIn_shader_visual.frag`、`data/scripts/gearin/combat/GearInShaderVisual.class`。
-2. 战役冒烟：进入 `GearIn_test` 一场战斗，`starsector.log` 核对 init 行 (含 `vert=`/`frag=` 路径与六个 `u_*` location、`ubo=`)；`ubo=<loc>` 非 -1；没有 `gear_in` 引起的 `ERROR`。
+2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察 init 行的路径、location 与 `ubo` 信息。
 3. 画面：观察玩家舰船位置 160×80 世界单位的发光四边形：中心偏橙、边缘偏蓝、柔和光晕；跟随舰船移动并随舰船朝向旋转；纹理沿 V 方向滚动 (约 4 秒一周期)。
 4. 暂停与寿命清理：按空格暂停约 10 秒 —— 纹理滚动冻结、四边形静止但可见；恢复后继续；约 30 秒后四边形消失且 `starsector.log` 出现 `GearIn shader visual cleanup`。
-5. 跨战斗：退出战斗再进一场 ——init 行重新出现，无 ERROR。
-6. 门禁降级：在 `LunaSettings`/`BoxConfigs` 把 shader 路径关闭后进战斗 ——`starsector.log` 出现 `GearIn shader visual: BoxUtil shader path unavailable (...), visual disabled`，无画面、无 ERROR(shader 路径干净降级)。
-7. 故障注入：a) Java 侧把 `getUniformIndex("time")` 拼成 `"Time"`—— 纹理滚动停止且无日志 (init 行 `u_time=-1`)；b) 把 `glUniformMatrix4` 的 `false` 改成 `true`—— 四边形位置/朝向错乱；c) 把 `glUniform1i(texLoc, 0)` 的 `0` 改成 `1`—— 四边形颜色错误/变黑；d) 把 `#version 430` 改成 `#version 140`—— 编译失败、无画面 (BoxUtil 侧日志)；e) 改回后确认恢复。
+5. 跨战斗：退出战斗再进一场，观察第二场战斗的 init 行。
+6. 门禁降级：在 `LunaSettings`/`BoxConfigs` 把 shader 路径关闭后进战斗，观察日志与画面。
 
-**预期结果**：
+预期结果：
 
-8. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_shader_visual.vert`、`data/shaders/GearIn_shader_visual.frag` 与 `data/scripts/gearin/combat/GearInShaderVisual.class`。
-9. **战斗初始化 (可用性判断 + 程序创建)**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行。
-```text
-GearIn shader visual init: u_model=<loc>, u_size=<loc>, u_time=<loc>, u_tex=<loc>, u_core=<loc>, u_fringe=<loc>, ubo=<loc>, vert=data/shaders/GearIn_shader_visual.vert, frag=data/shaders/GearIn_shader_visual.frag
-```
-其中 `vert=`/`frag=` 与资源文件路径一致 (四位置完整流程)；`ubo=<loc>` 非 -1(UBO 块绑定成功)；没有由 `gear_in` 引起的 `ERROR`。若 BoxUtil 未初始化/被关闭，则出现 `GearIn shader visual: BoxUtil shader path unavailable (...), visual disabled` 且无画面 (可用性判断生效)。
-10. **画面 (提交生效)**：玩家舰船位置出现一个 160×80 世界单位的发光四边形 —— 中心偏橙 (`coreColor`)、边缘偏蓝 (`fringeColor`)，加法混合、柔和光晕 (`particlealpha32sq` 的径向渐变 + `discard` 剔除透明片元)；四边形跟随舰船移动并随舰船朝向旋转 (`modelMatrix` 提交)；纹理沿 V 方向向下滚动 (`time` 驱动，约 4 秒一个周期)；四边形位于舰船与导弹之上 (分层渲染通道层序)。
-11. **暂停行为**：按空格暂停 —— 纹理滚动冻结 (`getTotalElapsedTime(false)` 不累计)、四边形静止但可见 (与分层渲染插件同款)；恢复后继续滚动。
-12. **寿命与清理**：约 30 秒后四边形消失，`starsector.log` 出现一行。
-```text
-GearIn shader visual cleanup
-```
-即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 9 的可观察面)。同一场战斗内不再出现。
-13. **跨战斗**：退出战斗再进一场 ——init 行重新出现且 location 值重新查询 (每场战斗重建程序与 VBO，遵循既有生命周期纪律)；无 ERROR。
-14. **故障注入**：见故障分析第 4、4、5、6 条对应的注入动作与恢复。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_shader_visual.vert`、`data/shaders/GearIn_shader_visual.frag` 与 `data/scripts/gearin/combat/GearInShaderVisual.class`。
+- **战斗初始化 (可用性判断 + 程序创建)**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行。
+  ```text
+  GearIn shader visual init: u_model=<loc>, u_size=<loc>, u_time=<loc>, u_tex=<loc>, u_core=<loc>, u_fringe=<loc>, ubo=<loc>, vert=data/shaders/GearIn_shader_visual.vert, frag=data/shaders/GearIn_shader_visual.frag
+  ```
+  其中 `vert=`/`frag=` 与资源文件路径一致 (四位置完整流程)；`ubo=<loc>` 非 -1(UBO 块绑定成功)；没有由 `gear_in` 引起的 `ERROR`。若 BoxUtil 未初始化/被关闭，则出现 `GearIn shader visual: BoxUtil shader path unavailable (...), visual disabled` 且无画面 (可用性判断生效)。
+- **画面 (提交生效)**：玩家舰船位置出现一个 160×80 世界单位的发光四边形 —— 中心偏橙 (`coreColor`)、边缘偏蓝 (`fringeColor`)，加法混合、柔和光晕 (`particlealpha32sq` 的径向渐变 + `discard` 剔除透明片元)；四边形跟随舰船移动并随舰船朝向旋转 (`modelMatrix` 提交)；纹理沿 V 方向向下滚动 (`time` 驱动，约 4 秒一个周期)；四边形位于舰船与导弹之上 (分层渲染通道层序)。
+- **暂停行为**：按空格暂停 —— 纹理滚动冻结 (`getTotalElapsedTime(false)` 不累计)、四边形静止但可见 (与分层渲染插件同款)；恢复后继续滚动。
+- **寿命与清理**：约 30 秒后四边形消失，`starsector.log` 出现一行。
+  ```text
+  GearIn shader visual cleanup
+  ```
+  即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 9 的可观察面)。同一场战斗内不再出现。
+- **跨战斗**：退出战斗再进一场 ——init 行重新出现且 location 值重新查询 (每场战斗重建程序与 VBO，遵循既有生命周期纪律)；无 ERROR。
 
-**通过信号**：操作 1–5 全部符合；操作 6 的降级与操作 7 的注入/恢复都符合预期。
-
-**清理**：取消勾选测试 MOD；恢复代码与 shader 为原值
+清理：把 BoxUtil 的 shader 路径设置恢复为启用状态。
 
 ## 故障分析
 

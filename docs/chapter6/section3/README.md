@@ -342,47 +342,30 @@ gradle jar
 
 ### 验证方案
 
-前置数据：
+前置数据：MOD 工程布局与编译链路 (C06-S01)、`GearInModPlugin` 生命周期类与持久数据门 (C06-S02)，并已接入本节两个调用点片段、`GearInGlobalAccess` / `GearInSoundPlayer` 两个工具类 (本节，代码见上)、声音资产与注册 (C05-S01 / C05-S02)：`GearIn_system_loop`、`GearIn_weapon_fire`、`GearIn_test` 测试战役 (C03-S01)。
 
-- MOD 工程布局与编译链路 (C06-S01)。
-- `GearInModPlugin` 生命周期类与持久数据门 (C06-S02)，并已接入本节两个调用点片段。
-- `GearInGlobalAccess` / `GearInSoundPlayer` 两个工具类 (本节，代码见上)。
-- 声音资产与注册 (C05-S01 / C05-S02)：`GearIn_system_loop`、`GearIn_weapon_fire`。
-- `GearIn_test` 测试战役 (C03-S01)。
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，再用 `jar tf jars\GearIndustry.jar` 核对两个工具类。
+2. **启动 (资源加载期)**：勾选 "齿轮工业" 启动。进入主菜单前 `starsector.log` 出现一行。
 
-操作步骤：
+   ```text
+   GearIn state=null settings=true soundPlayer=true sector=false engine=false loadingSave=false
+   ```
 
-1. **启动 (资源加载期)**：勾选 "齿轮工业" 启动。进入主菜单前 `starsector.log` 出现一行。
+   同时观察紧随其后的两条 `GearIn getSector() is null: 资源加载期访问生涯对象会空指针` / `GearIn getCombatEngine() is null: 资源加载期访问战斗对象会空指针` 的 `WARN`。
+3. **新建生涯 / 读档 (生涯回调)**：新建生涯，`onGameLoad` 回调日志出现。
 
-```text
-GearIn state=null settings=true soundPlayer=true sector=false engine=false loadingSave=false
-```
+   ```text
+   GearIn state=CAMPAIGN settings=true soundPlayer=true sector=true engine=true loadingSave=true
+   ```
 
-并紧接两条 `GearIn getSector() is null: 资源加载期访问生涯对象会空指针` / `GearIn getCombatEngine() is null: 资源加载期访问战斗对象会空指针` 的 `WARN` (只有这一阶段才有这两条警告)；启动正常完成，没有 `ERROR`。
-2. **新建生涯 / 读档 (生涯回调)**：新建生涯，`onGameLoad` 回调日志出现。
-
-```text
-GearIn state=CAMPAIGN settings=true soundPlayer=true sector=true engine=true loadingSave=true
-```
-
-(读档与新建都经过 `onGameLoad`；`loadingSave=true` 证明回调位于读档窗口内) 且没有步骤 1 的两条 `WARN`；读档重复确认。
-3. **战斗**：进入 `GearIn_test` 测试战役的一场战斗，日志出现 `GearIn state=COMBAT ...`；若已接入 `playLoopSound` 调用点，战斗内持续听到 `GearIn_system_loop` 循环音，战斗结束 (回到生涯) 后循环淡出停止，日志回到 `state=CAMPAIGN`。
-4. **退出到主菜单**：生涯中退出到主菜单，日志出现 `GearIn state=TITLE ...`，且 `sector=true` 仍成立 ——`getSector()` 返回的是已弃用的旧生涯引擎 (非 null)，与 `getCurrentState() == TITLE` 一起确认阶段，这正是 "不能靠 null 判断阶段" 的现场证明。
-5. **故障注入 1(对应故障 1)**：在 `GearInModPlugin.onApplicationLoad` 里加一行 `Global.getSector().getClock();` 后重启：启动中止、日志 NPE；改回后确认恢复。
-6. **故障注入 2(对应故障 6)**：把 `playLoopSound` 的调用从 `advance` 移到 `init`(只调一次)：战斗中循环音约一帧后淡出；改回后确认恢复。
-
-::: tip 分阶段验证，隔离信号
-
-先只接入 `logAccessorState()`，把四个阶段的日志逐条确认后，再接声音调用点 ——"阶段日志" 与 "声音行为" 两类信号分开验证，问题出现时能立刻定位是哪一半。
-
-:::
+   (读档与新建都经过 `onGameLoad`；`loadingSave=true` 证明回调位于读档窗口内) 且没有步骤 1 的两条 `WARN`；读档重复确认。
+4. **战斗**：进入 `GearIn_test` 测试战役的一场战斗，日志出现 `GearIn state=COMBAT ...`；若已接入 `playLoopSound` 调用点，战斗内持续听到 `GearIn_system_loop` 循环音，战斗结束 (回到生涯) 后循环淡出停止，日志回到 `state=CAMPAIGN`。
+5. **退出到主菜单**：生涯中退出到主菜单，日志出现 `GearIn state=TITLE ...`，且 `sector=true` 仍成立 ——`getSector()` 返回的是已弃用的旧生涯引擎 (非 null)，与 `getCurrentState() == TITLE` 一起确认阶段，这正是 "不能靠 null 判断阶段" 的现场证明。
 
 预期结果：
 
-- 步骤 1–4 的日志字符串逐字匹配，各阶段表现符合对应步骤的描述；步骤 5、6 的故障注入与恢复都符合预期。
 - 游戏构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`。
-
-清理：取消勾选测试 MOD；删除临时加上的故障注入行
+- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
 ## 故障分析
 

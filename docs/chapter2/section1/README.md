@@ -117,13 +117,24 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 | 修改参数后无变化 | 未重启游戏，或改的不是游戏加载的那份文件 | 确认文件路径；重启游戏 |
 | 船插已装但数值无变化 | 观察对象错误 (tooltip 已是 50% 但船本身基础速度低) | 用装配界面的速度数值对比安装前后 |
 
-## 预期结果
+## 验证方案
+
+前置数据：C01-S02 建立的舰船、本节注册的 `GearIn_speed_booster` 船插与 `GearInSpeedBooster.java`。
+
+1. 从装配界面、模拟战与 `Starsector/starsector-core/starsector.log`开始验证。
+2. 把 `SPEED_PERCENT` 改为 `50f`，保存并重启游戏。
+3. 在装配界面为测试舰船安装 "加速器"，核对 tooltip 与速度数值。
+4. 进入模拟战观察舰船速度，退出后在日志中搜索 `GearIn_speed_booster`。
+
+预期结果：
 
 - 装配界面出现 "加速器"，tooltip 显示 "提高舰船最大速度 50%"(修改参数后)；
 - `starsector.log` 出现一行 `GearIn_speed_booster applied`；
 - 模拟战里舰船速度明显高于未安装时。
 
-## 实例驱动故障分析
+清理：把 `SPEED_PERCENT` 恢复为 `10f`。
+
+## 故障分析
 
 1. **类能编译但没有效果**。触发：`hull_mods.csv` 里没有这一行，或 `script` 列写错。可观察：游戏内无任何反应，日志也没有本船插相关行。修正：确认 CSV 路径与 `script` 列类名。
 2. **`Problem loading class`**。触发：`script` 列类名、`package` 行、`class` 行三者不一致。可观察：启动或第一次使用船插时日志报错。修正：三处逐一对照 (下一节给出系统化核对法)。

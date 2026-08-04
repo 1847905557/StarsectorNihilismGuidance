@@ -352,15 +352,10 @@ gradle jar
 
 前置数据：既有 MOD 布局与战斗插件接入 (含本节注册片段)、`GearInShipStatsProbe` 源码、`GearIn_test` 测试战役 (C03-S01，玩家舰 `GearIn_artizan`)。
 
-操作步骤：
-
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
-2. **战役运行**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 核对 `GearIn stats probe init: engine ready`，随后每 2 秒两条 `GearIn stats read:` / `GearIn stats flux:`：
-   - 没有 `gear_in` 引起的 `ERROR`。
-3. **三阶段数值**：战斗时间 2–12 秒看 `maxSpeed modified=165.0` (entries 各 1)、12–22 秒看 `modified=111.0` (percent=-20.0)、22 秒后看 `modified=80.0 unmodified=true` (数值推导见下文预期结果)。同屏按速度对比：施加阶段玩家舰明显更快。
+2. **战役运行**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 观察 `GearIn stats probe` 相关记录。
+3. **三阶段数值**：战斗时间 2–12 秒看 `maxSpeed modified=165.0` (entries 各 1)、12–22 秒看 `modified=111.0` (percent=-20.0)、22 秒后看 `modified=80.0 unmodified=true`。同屏按速度对比：施加阶段玩家舰明显更快。
 4. **暂停语义**：战斗内按空格暂停约 10 秒再恢复，暂停期间无报告；恢复后阶段仍按战斗时间推进 (暂停不计入 `getTotalElapsedTime(false)`)。
-5. **故障注入 1**：把 `PROBE_VOLATILE_ID_FAULT` 改为 `true` 重新构建进战斗：`entries percent` 每帧增长、`percent` 合计与 `modified` 持续漂移、`unmodify` 之后 `entries` 仍残留 (对应故障分析 1)；改回 `false` 后确认恢复。
-6. **故障注入 2**：把 `applyModifiers` 里的 `modifyPercent(MOD_SPEED_PERCENT, 25f)` 换成 `modifyPercent(MOD_SPEED_PERCENT + "_x", 25f)` 且 `unapplyModifiers` 不变：解除阶段 `modified` 不回 80 (ID 不一致，对应故障分析 2)；改回后确认恢复。
 
 预期结果：
 
@@ -374,22 +369,9 @@ gradle jar
 - 步骤 4 覆盖阶段 (12–22 秒)：`maxSpeed modified=111.0 percent=-20.0`，`entries` 仍为 1—— 同 ID 不同值覆盖旧条目 (规则 1、3)：`(80 - 80*20/100 + 10) * 1.5 = 111`。
 - 步骤 4 解除阶段 (22 秒后)：`maxSpeed base=80.0 modified=80.0 flat=0.0 percent=0.0 mult=1.0 entries flat=0 percent=0 mult=0 unmodified=true`—— `unmodify(source)` 一次清三类 (规则 4)；速度回到基础值。
 - 步骤 5：暂停期间没有报告输出 (检查生效)；恢复后阶段仍按战斗时间推进 (暂停不计入 `getTotalElapsedTime(false)`)。
-- 步骤 6：`entries percent` 每帧增长、`percent` 合计与 `modified` 持续漂移、`unmodify` 之后 `entries` 仍残留；改回 `false` 后恢复。
-- 步骤 7：解除阶段 `modified` 不回 80；改回后恢复。
-
 - 包 `data.scripts.gearin.combat`；
 - 类 `GearInShipStatsProbe`；
 - modifier ID 前缀 `GearIn_ship_stats_probe_`。
-
-通过信号：步骤 1–5 全部符合；步骤 6、7 的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD
-
-::: tip 日志核对技巧
-在 `Starsector/starsector-core/starsector.log` 中按时间戳检索 `GearIn stats` 前缀即可定位本插件的全部输出行；出现 `ERROR` 时优先查看 `gear_in` 包相关的堆栈。
-:::
-
-任一预期结果没有出现，验证即判定失败，按故障分析的对应条目核对。
 
 ## 故障分析
 

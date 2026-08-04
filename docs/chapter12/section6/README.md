@@ -681,39 +681,33 @@ gradle jar
 
 前置数据：C06-S01 的 MOD 布局 + C12-S01 的 `dependencies` (追加 `BoxUtil` 项) + 本节四个类 + 两处接入片段 (`GearInModPlugin.onApplicationLoad` 一行 `initPre`、战斗插件 `init` 一行 `addPlugin`)；C03-S01 的 `GearIn_test` 测试战役；本机已安装并勾选 BoxUtil。
 
-操作步骤：
-
 1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` (退出码 0)；用 `jar tf jars\GearIndustry.jar` 核对四个类的 `.class` 条目。
-2. 战斗冒烟：进入 `GearIn_test` 一场战斗，`starsector.log` 核对 `GearIn box init:` 一行与 `gear_in` 相关 `ERROR` 情况。
+2. 战斗冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察 `GearIn box` 相关记录。
 3. 画面：观察每 2 秒玩家舰位置出现的青色方框，以及 `GearIn box: #N hull=... layer=ABOVE_PARTICLES_LOWER` 日志的同步递增。
-4. 文本：确认屏幕顶部靠左白色文本 `box #1` → `box #2` → `box #3`... 递增，并记录文本的实际屏幕位置与字号；随后把 `TEXT_SIZE` 改为 `24f` 重编译再对比字号。
-5. 暂停与失效：按空格暂停约 10 秒，再击毁玩家舰，分别观察生成停止与既有方框的淡出。
-6. 降级注入：在 BoxUtil 配置界面 (`BoxConfigGUI`，BoxUtil 发行注册) 关闭 shader 渲染相关选项 (或直接编辑 `<saves>\common\BUtil_Configs.json.data` 对应项) 后重启进战斗。
-7. 提交链注入：先注释 `box.submitInstanceData();` 重编译进战斗，恢复后注释 `GearInTextField.setText` 里的 `textEntity.submitText();` 再进战斗；每轮验证后恢复代码重编译。
-8. 跨战斗与后端自检：退出战斗再进一场；随后在启动器勾选 BoxUtil 自带的 `BoxUtil Test` 测试战役并进入，确认 BoxUtil 后端自身渲染正常 (区分 "BoxUtil 能力问题" 与 "示例代码问题")。
+4. 文本：确认屏幕顶部靠左白色文本 `box #1` → `box #2` → `box #3`... 递增，并记录文本的实际屏幕位置与字号。
+5. 把 `TEXT_SIZE` 改为 `24f`，重新构建并进入战斗，对比文本字号。
+6. 暂停与失效：按空格暂停约 10 秒，再击毁玩家舰，分别观察生成停止与既有方框的淡出。
+7. 跨战斗：退出战斗再进一场，观察初始化、方框和文本计数。
+8. 后端自检：在启动器勾选 BoxUtil 自带的 `BoxUtil Test` 测试战役并进入，确认 BoxUtil 后端自身渲染正常 (区分 "BoxUtil 能力问题" 与 "示例代码问题")。
 
 预期结果：
 
-1. **构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/lib/` 下四个类的条目 (`GearInBoxEntity`、`GearInBoxSpawner`、`GearInTextField`、`GearInFollowControlData`)。
-2. **战斗初始化**：`starsector.log` 出现：
-```text
-GearIn box init: shaderEnable=true shaderCoreValid=true available=true font=graphics/fonts/insignia15LTaa.fnt/15
-```
-`fontSize=15` 与 `insignia15LTaa.fnt` 的 `info` 行 `size=15` 一致；没有 `gear_in` 引起的 `ERROR`。若 BoxUtil 的 `BUtil_CombatEFS` 已按 settings plugins 注册 (BoxUtil 发行自带)，战斗中同时能看到 BoxUtil 后端正常工作的其他迹象 (如 BoxUtil 自带测试战役可用)。
-3. **周期方框**：战斗 (未暂停) 中每 2 秒在玩家舰位置出现一个青色方框 (`ABOVE_PARTICLES_LOWER` 层，粒子系统之上)，跟随玩家舰移动、缓慢旋转并放大 (实例数据 facing/turnRate/scaleRate 驱动)，约 2.2 秒 (0.2 in + 1.5 full + 0.5 out) 内淡出消失；`starsector.log` 同步出现：
-```text
-GearIn box: #1 hull=Wolf layer=ABOVE_PARTICLES_LOWER
-```
-`#N` 递增、`hull` 为玩家舰船体名 (示例用 `GearIn_test` 战役的玩家舰，如 `Wolf`)。
-4. **屏幕文本**：战斗画面顶部靠左出现 `box #1`，之后随每次生成递增为 `box #2`、`box #3`... 文本为白色屏幕空间文字 (窗口正交矩阵 + `directDraw`，不受镜头缩放影响)；文本刷新与方框生成同步 (规则 7 的正面)。把 `TEXT_SIZE` 改为 `24f` 后文本放大一倍 (`fontScale` 从 0.8 变 1.6)；改回后恢复。
-5. **暂停与失效**：按空格暂停 —— 没有新的 `GearIn box:` 生成日志与方框 (`advance` 暂停判断)；屏幕上已存在的方框静止 (渲染不暂停)，文本保持最后内容；恢复后继续生成。击毁玩家舰 —— 不再生成新方框 (`spawnBox` 判 `isAlive`)；已存在的方框在下一帧起被 `GearInFollowControlData` 压计时，快速淡出消失。
-6. **降级注入**：`init` 日志 `shaderEnable=false`、`available=false`，方框分支每 2 秒输出 `GearIn box: box unavailable, vanilla fallback particle`，画面上出现原版平滑粒子 (青色) 而非方框；屏幕文本不显示 (文本程序不可用分支)；改回后恢复。
-7. **提交链注入**：注释 `box.submitInstanceData();` 后 —— `GearIn box: #N` 日志照常输出，但方框不出现 (实例数据只写了客户端字段，没有提交到 GPU；规则 5 的注入验证)；恢复后方框回来。注释 `textEntity.submitText();` 后 —— 文本停留在 `box #1` 不再更新 (规则 7 的注入验证)；恢复后递增。
-8. **跨战斗与后端自检**：退出战斗再进一场 —— `GearIn box init:` 重新出现，方框与文本从 `#1` 重新开始 (每场战斗全新实例)；无 `ERROR`。`BoxUtil Test` 战役渲染正常，说明后端自身可用。
+- **构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/lib/` 下四个类的条目 (`GearInBoxEntity`、`GearInBoxSpawner`、`GearInTextField`、`GearInFollowControlData`)。
+- **战斗初始化**：`starsector.log` 出现：
+  ```text
+  GearIn box init: shaderEnable=true shaderCoreValid=true available=true font=graphics/fonts/insignia15LTaa.fnt/15
+  ```
+  `fontSize=15` 与 `insignia15LTaa.fnt` 的 `info` 行 `size=15` 一致；没有 `gear_in` 引起的 `ERROR`。若 BoxUtil 的 `BUtil_CombatEFS` 已按 settings plugins 注册 (BoxUtil 发行自带)，战斗中同时能看到 BoxUtil 后端正常工作的其他迹象 (如 BoxUtil 自带测试战役可用)。
+- **周期方框**：战斗 (未暂停) 中每 2 秒在玩家舰位置出现一个青色方框 (`ABOVE_PARTICLES_LOWER` 层，粒子系统之上)，跟随玩家舰移动、缓慢旋转并放大 (实例数据 facing/turnRate/scaleRate 驱动)，约 2.2 秒 (0.2 in + 1.5 full + 0.5 out) 内淡出消失；`starsector.log` 同步出现：
+  ```text
+  GearIn box: #1 hull=Wolf layer=ABOVE_PARTICLES_LOWER
+  ```
+  `#N` 递增、`hull` 为玩家舰船体名 (示例用 `GearIn_test` 战役的玩家舰，如 `Wolf`)。
+- **屏幕文本**：战斗画面顶部靠左出现 `box #1`，之后随每次生成递增为 `box #2`、`box #3`... 文本为白色屏幕空间文字 (窗口正交矩阵 + `directDraw`，不受镜头缩放影响)；文本刷新与方框生成同步 (规则 7 的正面)。把 `TEXT_SIZE` 改为 `24f` 后文本放大一倍 (`fontScale` 从 0.8 变 1.6)。
+- **暂停与失效**：按空格暂停 —— 没有新的 `GearIn box:` 生成日志与方框 (`advance` 暂停判断)；屏幕上已存在的方框静止 (渲染不暂停)，文本保持最后内容；恢复后继续生成。击毁玩家舰 —— 不再生成新方框 (`spawnBox` 判 `isAlive`)；已存在的方框在下一帧起被 `GearInFollowControlData` 压计时，快速淡出消失。
+- **跨战斗与后端自检**：退出战斗再进一场 —— `GearIn box init:` 重新出现，方框与文本从 `#1` 重新开始 (每场战斗全新实例)；无 `ERROR`。`BoxUtil Test` 战役渲染正常，说明后端自身可用。
 
-通过信号：操作 1–8 全部符合；其中注入类步骤 (6、7) 的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD；恢复代码与 BoxUtil 配置为原值。
+清理：把 `TEXT_SIZE` 恢复为 `12f`。
 
 ## 故障分析
 

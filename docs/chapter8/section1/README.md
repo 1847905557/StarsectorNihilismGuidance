@@ -340,40 +340,36 @@ gradle jar
 
 1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；用 `jar tf jars\GearIndustry.jar` 核对产物。
 2. 新建生涯：启动游戏进入新档，持续观察 `starsector.log`，直到确认脚本挂载与跨日日志。
-3. 暂停 (预期结果 3)：生涯中按空格暂停，等待 20 秒以上，再恢复。
-4. 加速 (预期结果 4)：按住 Shift 约 10 秒，再松开。
-5. 读档 (预期结果 5)：保存后读档，继续观察日志。
-6. 战斗 (预期结果 6)：进入前置战役 `GearIn_test` 或任意遭遇战，观察战斗期间的日志；退出战斗回生涯后继续观察。
-7. 故障注入 (预期结果 7)：先注释掉调用点片段的 `addScript` 行，重启新档观察，改回后确认恢复；再注释掉写入标记的 `put(REGISTER_MARK, true)` 行 (保留 `addScript`)，读档两次观察，改回后确认恢复。
-8. 参数演示 (预期结果 8)：把 `daysToRun` 设为 30 重新构建，观察自停行为；改回 -1 恢复常驻。
+3. 暂停：生涯中按空格暂停，等待 20 秒以上，再恢复。
+4. 加速：按住 Shift 约 10 秒，再松开。
+5. 读档：保存后读档，继续观察日志。
+6. 战斗：进入前置战役 `GearIn_test` 或任意遭遇战，观察战斗期间的日志；退出战斗回生涯后继续观察。
+7. 参数演示：把 `daysToRun` 设为 30 重新构建，观察自停行为。
 
 预期结果：
 
-1. 游戏构建以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInSectorClockScript.class`。
-2. 新建生涯：`starsector.log` 依次出现。
+- 游戏构建以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInSectorClockScript.class`。
+- 新建生涯：`starsector.log` 依次出现。
 
-```text
-GearIn clock script mounted at Mar 2, c206 GearIn clock day change: Mar 2, c206 (short=206.3.2) | this frame=0.0017 game days | since mount=0.0 game days
-```
+  ```text
+  GearIn clock script mounted at Mar 2, c206 GearIn clock day change: Mar 2, c206 (short=206.3.2) | this frame=0.0017 game days | since mount=0.0 game days
+  ```
 
-随后**每 10 真实秒**(未暂停、未加速) 出现一条新的跨日日志，日期逐日前进、`since mount` 逐日 +1.0。挂载日期约 206.3.2 —— 新档时间推进约 60.2 游戏日 (约两个月) 后才是玩家开始游玩的时间点；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
-3. 暂停 (空格)：跨日日志停止 (脚本冻结、时钟冻结)；恢复后继续，`since mount` 不因暂停丢失进度。
-4. 加速 (按住 Shift)：跨日频率约翻倍 (`campaignSpeedupMult = 2`，每帧推进两次)，约每 5 真实秒一条。
-5. 读档：不出现 `mounted` 日志 (`startTimestamp` 随存档恢复)；不重复注册 (`REGISTER_MARK` 标记已置位、`hasScript` 命中)；跨日日志从存档时刻继续。
-6. 战斗：进入战斗期间无任何跨日日志 (生涯引擎冻结)；回生涯后继续。
-7. 注入 1 (去掉 `addScript`)：新档无任何 `GearIn clock` 日志 (对应故障分析第 1 条)；改回后恢复。注入 2 (去掉标记、保留 `addScript`)：读档两次后跨日日志逐次成双 (对应故障分析第 2 条)；改回后恢复。
-8. `daysToRun = 30`：挂载约 300 真实秒后出现。
+  随后**每 10 真实秒**(未暂停、未加速) 出现一条新的跨日日志，日期逐日前进、`since mount` 逐日 +1.0。挂载日期约 206.3.2 —— 新档时间推进约 60.2 游戏日 (约两个月) 后才是玩家开始游玩的时间点；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
+- 暂停 (空格)：跨日日志停止 (脚本冻结、时钟冻结)；恢复后继续，`since mount` 不因暂停丢失进度。
+- 加速 (按住 Shift)：跨日频率约翻倍 (`campaignSpeedupMult = 2`，每帧推进两次)，约每 5 真实秒一条。
+- 读档：不出现 `mounted` 日志 (`startTimestamp` 随存档恢复)；不重复注册 (`REGISTER_MARK` 标记已置位、`hasScript` 命中)；跨日日志从存档时刻继续。
+- 战斗：进入战斗期间无任何跨日日志 (生涯引擎冻结)；回生涯后继续。
+- `daysToRun = 30`：挂载约 300 真实秒后出现。
 
-```text
-GearIn clock script done: 30 game days elapsed, isDone()=true
-```
+  ```text
+  GearIn clock script done: 30 game days elapsed, isDone()=true
+  ```
 
-之后不再有跨日日志 —— 引擎在置位后的下一帧从 `scripts` 列表移除了脚本 (可验证 `Global.getSector().hasScript(GearInSectorClockScript.class)` 为 `false`)。
-9. 退出到主菜单：脚本停止推进 (生涯引擎不再推进)；回到主菜单后再进档 (读档) 按第 5 条继续。
+  之后不再有跨日日志 —— 引擎在置位后的下一帧从 `scripts` 列表移除了脚本 (可验证 `Global.getSector().hasScript(GearInSectorClockScript.class)` 为 `false`)。
+- 退出到主菜单：脚本停止推进 (生涯引擎不再推进)；回到主菜单后再进档 (读档) 按第 5 条继续。
 
-通过信号：操作 1–6 全部符合；操作 7、8 的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD
+清理：把 `daysToRun` 恢复为 `-1`，使脚本保持常驻。
 
 ## 故障分析
 

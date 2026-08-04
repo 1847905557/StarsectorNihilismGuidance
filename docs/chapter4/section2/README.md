@@ -115,15 +115,16 @@
 
 :::
 
-### 验证方案 (基于本例)
+### 验证方案
 
-- 前置数据：前导的 `mod_info.json`(C01-S01)、`GearIn_artizan.ship` 与 `ship_data.csv`(C01-S02)、本节的 `hull_styles.json`。
-- 操作：
-  - 勾选 `gear_in` 启动游戏，进入主菜单；
-  - 打开 `Starsector/starsector-core/starsector.log` 检查加载记录。
-- 通过信号：日志出现 `Loading hull style data`，无 `ERROR`，没有与 `GEAR_TECH` 相关的异常。
-- 失败对照：把 `shieldRingColor` 的颜色数组改成 3 个元素，重启后应在加载阶段失败，日志出现 `Color array with id [...] has less than 4 elements`；改回原值后恢复。
-- 清理：将 `hull_styles.json` 保持为本节最终内容。
+前置数据：前导的 `mod_info.json`(C01-S01)、`GearIn_artizan.ship` 与 `ship_data.csv`(C01-S02)、本节的 `hull_styles.json`。
+
+1. 勾选 `gear_in` 启动游戏，进入主菜单。
+2. 打开 `Starsector/starsector-core/starsector.log` 检查加载记录。
+
+预期结果：
+
+- 日志出现 `Loading hull style data`，无 `ERROR`，没有与 `GEAR_TECH` 相关的异常。
 
 ## 设置引擎风格
 
@@ -194,20 +195,24 @@
 
 :::
 
-### 验证方案 (基于本例)
+### 验证方案
 
-- 前置数据：本节的 `engine_styles.json`；已按 "接入舰船" 一节完成接入的 `GearIn_artizan.ship`(顶层与引擎槽 `style` 均指向 `GEAR_TECH`)。
-- 操作：
-  - 勾选 `gear_in` 启动游戏进入主菜单，确认 `starsector.log` 出现 `Loading engine style data`；
-  - 控制台 `Addship GearIn_artizan` 并部署进模拟战；
-  - 给船装推进并全速航行；
-  - 开启/关闭护盾；
-  - 触发 V 排与过载；
-  - 打爆一艘船；
-  - 退出后进入大地图观察超空间光芒与舰队爆炸颜色。
-- 通过信号：护盾外圈/内圈、引擎火焰与航迹、V 排粒子、爆炸颜色与 `GEAR_TECH` 取值一致；护盾开合与引擎有声音；`starsector.log` 无 NPE。
-- 失败对照：故意把 `.ship` 顶层 `style` 改成一个不存在的 ID，重启后应看到加载阶段报错；把它改回 `GEAR_TECH` 后恢复。
-- 清理：将 `data/config` 保持为本节最终内容。
+前置数据：本节的 `engine_styles.json`；已按 "接入舰船" 一节完成接入的 `GearIn_artizan.ship`(顶层与引擎槽 `style` 均指向 `GEAR_TECH`)。
+
+1. 勾选 `gear_in` 启动游戏进入主菜单，确认 `starsector.log` 出现 `Loading engine style data`。
+2. 用控制台执行 `Addship GearIn_artizan`，并部署进模拟战。
+3. 给舰船装推进并全速航行。
+4. 开启并关闭护盾。
+5. 触发 V 排与过载。
+6. 击毁一艘舰船。
+7. 退出战斗后进入大地图，观察超空间光芒与舰队爆炸颜色。
+
+预期结果：
+
+- 游戏启动无 `ERROR`，`starsector.log` 出现 `Loading hull style data`、`Loading engine style data`、`Loading sound sets`，没有与 `GEAR_TECH` 相关的异常。
+- 控制台 `Addship GearIn_artizan` 部署进模拟战：护盾外圈/内圈为黄铜色，开启与关闭护盾有声音；引擎火焰与航迹为黄铜色烟雾；V 排粒子颜色与纹理符合 `GEAR_TECH`；过载与爆炸颜色为黄铜色系；声音为原版通用引擎声 (未注册自定义声音集时)。
+- 大地图：超空间光芒与爆炸颜色为 `GEAR_TECH` 的取值。
+- 舰船编辑器导入 `GearIndustry` 后可直接选择 `GEAR_TECH` 风格。
 
 ## 接入舰船
 
@@ -282,14 +287,7 @@ hull style 是 "声音与材质的总线"：
 
 :::
 
-## 预期结果
-
-- 游戏启动无 `ERROR`，`starsector.log` 出现 `Loading hull style data`、`Loading engine style data`、`Loading sound sets`，没有与 `GEAR_TECH` 相关的异常。
-- 控制台 `Addship GearIn_artizan` 部署进模拟战：护盾外圈/内圈为黄铜色，开启与关闭护盾有声音；引擎火焰与航迹为黄铜色烟雾；V 排粒子颜色与纹理符合 `GEAR_TECH`；过载与爆炸颜色为黄铜色系；声音为原版通用引擎声 (未注册自定义声音集时)。
-- 大地图：超空间光芒与爆炸颜色为 `GEAR_TECH` 的取值。
-- 舰船编辑器导入 `GearIndustry` 后可直接选择 `GEAR_TECH` 风格。
-
-## 实例驱动故障分析
+## 故障分析
 
 - **游戏在加载进度条阶段失败，日志有 `Key [...] is required`、`invalid value` 或 `Color array with id [...] has less than 4 elements`**：
   - `engine_styles.json` 中的条目缺少必填键 (数值键缺键报 `JSONObject[...] not found.`)，或任一风格条目的颜色数组不足 4 个元素，或 `type` 填了 `GLOW`/`SMOKE` 之外的值。

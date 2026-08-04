@@ -727,37 +727,24 @@ gradle jar
 
 ### 验证方案
 
-前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段；C06-S01、C06-S02)、本节四个演示类。
+前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段；C06-S01、C06-S02)、本节四个演示类、观察 `speedAfterRebuild` 语义同样成立 (界面触发同步 = 重建 = 丢弃；对应规则强度第 1 条与故障分析第 1 条)。
 
-1. 操作 1(游戏构建)：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含四个类的 class 条目。
-2. 操作 2(新建生涯)：确认 `starsector.log` 按注册顺序依次出现四个类的日志组 (`GearIn variantToStats ...` / `GearIn captainToMember ...` / `GearIn commanderToMember ...` / `GearIn statsRebuild ...`)；关键核对见下方预期结果第 2条。
-3. 操作 3(战斗交叉验证)：给玩家旗舰学 `gunnery_implants`(技能树 C 键) 后进入一场战斗部署旗舰，确认武器后坐力与自动瞄准符合技能描述 (生涯 stats 预览与战斗 stats 的一致性；对应故障分析第 4 条)；战内用技能/命令换旗舰舰长，确认加成即时变化 (对应环节三与故障分析第 5 条)。
-4. 操作 4(只执行一次)：等待若干游戏日后日志无新增四个演示类的日志行；保存并读档后仍无新增 (四个 `REGISTER_MARK` 键已关)；读档后玩家舰队构成与演示前一致。
-5. 操作 5(故障注入 1—— 重建丢弃)：把 `GearInStatsRebuild` 里 `modifyFlat("GearIn_transient_speed", 25f)` 之后的 `updateStats()` 去掉，改为等下一次舰队同步 (例如按一次 F 键开舰队界面再关)：
-    - 观察 `speedAfterRebuild` 语义同样成立 (界面触发同步 = 重建 = 丢弃；对应规则强度第 1 条与故障分析第 1 条)。
-6. 操作 6(故障注入 2—— 保留 ID 冲突)：把 `GearInStatsRebuild` 的 transient modifier 来源 ID 临时改成 `flux_capacitors`，重启新档：`GearIn variantToStats refit` 的 `+1000` 核对不再成立 (此写入与引擎写入同 ID 互踩；对应规则强度第 6 条)；改回后确认恢复。
-7. 操作 7(故障注入 3—— 未入队不生效)：把 `GearInCaptainToMember` 中的 `fleetData.addFleetMember(wolf);` 调用注释掉再运行：`joined` 日志不出现、`preJoin` 之后直接是 `swap`，且所有技能相关数值保持 `1.000/0.000`(对应规则强度第 2 条与故障分析第 2 条)；改回后确认恢复。
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含四个类的 class 条目。
+2. **新建生涯**：查看 `starsector.log` 中按注册顺序出现的四组日志：`GearIn variantToStats ...`、`GearIn captainToMember ...`、`GearIn commanderToMember ...`、`GearIn statsRebuild ...`。
+3. **只执行一次**：等待若干游戏日，继续观察四个演示类的日志。
+4. 保存并读档，再次观察四个演示类的日志和玩家舰队构成。
 
 预期结果：
 
-以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInVariantToStats.class` 等四个类的 class 条目。
-2. **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 按注册顺序依次出现以下日志 (`<N>` 为初始成员数；数值以实际为准，但标出的关系是确定性的)：
-```text
-GearIn variantToStats baseline: hull=wolf specId=wolf_Assault caps=9 vents=10 fluxCap base=2250 mod=<2250+1800+fluxdistributor贡献> fluxDiss base=150 mod=<150+100+fluxdistributor贡献> speed=<150.0> maxCR=<0.200~0.700 视船员> variantShared=true memberLinked=true GearIn variantToStats refit: caps 9->14 vents 10->15 fluxCap <a>-><a+1000> (+1000) fluxDiss <b>-><b+50> (+50) sharedVariant=true specId=wolf_Assault GearIn captainToMember start: members=<N> GearIn captainToMember preJoin: recoil=1.000 aim=0.000 (skills not applied, member not in fleet) GearIn captainToMember joined: count=<N+1> recoil=0.750 aim=1.000 ballisticRange=15.0 energyRange=15.0 GearIn captainToMember swap: recoil 0.750 -> 1.000 (restored) GearIn captainToMember done: members=<N> (initial <N>) GearIn commanderToMember start: members=<N> GearIn commanderToMember: maxCR <c> -> <c+crewTraining加成> (crewTraining) -> <c> (reset) GearIn commanderToMember done: members=<N> (initial <N>) GearIn statsRebuild start: members=<N> GearIn statsRebuild transient: speed <150.0> -> <175.0> (with transient), rebuiltNewObject=true speedAfterRebuild=<150.0> GearIn statsRebuild lazy: sameObjectAsBefore=false GearIn statsRebuild done: members=<N> (initial <N>)
-```
-要点核对：`variantToStats baseline` 的 `variantShared=true`/`memberLinked=true`(stats 与变体、成员双向绑定)；`captainToMember preJoin` 的 `1.000/0.000`(未入队不应用技能)；`captainToMember joined` 的 `0.750/1.000/15.0/15.0`(入队后技能生效，`gunnery_implants` L1 的 recoil/aim/range)；`statsRebuild transient` 的 `rebuiltNewObject=true` 与 `speedAfterRebuild` 回落 (重建即丢弃)；`variantToStats refit` 的 `+1000/+50` 与 `sharedVariant=true`(装配 → stats 交接与引用共享)；`captainToMember swap` 的 `0.750 -> 1.000`(换人立即重算并恢复)；`commanderToMember` 的 "中间值 > 前后值且恢复值 == 初始值"(舰队指挥官 → 成员 stats 交接)；四个 `done` 行成员数均与各自 `start` 行一致 (无残留)。类间顺序以注册顺序为准，类内顺序确定。
-3. **报错定位**：若日志出现某个演示类的 ERROR 堆栈 (前缀 `GearIn variantToStats / captainToMember / commanderToMember / statsRebuild`)，说明该步抛错 —— 按堆栈对照 "规则强度" 节定位 (最常见的是引用了不存在的技能 id 或装配 id)。
-4. **读档**：不重复执行演示 (四个 `REGISTER_MARK` 键已关)；玩家舰队构成与演示前一致。
-5. **退出到主菜单**：脚本停止 (生涯状态不再运行)；回主菜单后再进档按第 5 条继续。
-
-通过信号：操作 1–4 全部符合；操作 5–7 的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD
-
-::: tip 用增量核对，不要依赖绝对数值
-若存档已学 ALL_SHIPS_IN_FLEET 技能，步骤 3–7 的基线会含玩家舰队向加成；四个类的核对项都是增量 / 方向比较 (`+1000/+50`、`0.750 -> 1.000`、恢复值 == 初始值)，不受影响。核对绝对数值建议用新建生涯。
-:::
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInVariantToStats.class` 等四个类的 class 条目。
+- **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 按注册顺序依次出现以下日志 (`<N>` 为初始成员数；数值以实际为准，但标出的关系是确定性的)：
+  ```text
+  GearIn variantToStats baseline: hull=wolf specId=wolf_Assault caps=9 vents=10 fluxCap base=2250 mod=<2250+1800+fluxdistributor贡献> fluxDiss base=150 mod=<150+100+fluxdistributor贡献> speed=<150.0> maxCR=<0.200~0.700 视船员> variantShared=true memberLinked=true GearIn variantToStats refit: caps 9->14 vents 10->15 fluxCap <a>-><a+1000> (+1000) fluxDiss <b>-><b+50> (+50) sharedVariant=true specId=wolf_Assault GearIn captainToMember start: members=<N> GearIn captainToMember preJoin: recoil=1.000 aim=0.000 (skills not applied, member not in fleet) GearIn captainToMember joined: count=<N+1> recoil=0.750 aim=1.000 ballisticRange=15.0 energyRange=15.0 GearIn captainToMember swap: recoil 0.750 -> 1.000 (restored) GearIn captainToMember done: members=<N> (initial <N>) GearIn commanderToMember start: members=<N> GearIn commanderToMember: maxCR <c> -> <c+crewTraining加成> (crewTraining) -> <c> (reset) GearIn commanderToMember done: members=<N> (initial <N>) GearIn statsRebuild start: members=<N> GearIn statsRebuild transient: speed <150.0> -> <175.0> (with transient), rebuiltNewObject=true speedAfterRebuild=<150.0> GearIn statsRebuild lazy: sameObjectAsBefore=false GearIn statsRebuild done: members=<N> (initial <N>)
+  ```
+  要点核对：`variantToStats baseline` 的 `variantShared=true`/`memberLinked=true`(stats 与变体、成员双向绑定)；`captainToMember preJoin` 的 `1.000/0.000`(未入队不应用技能)；`captainToMember joined` 的 `0.750/1.000/15.0/15.0`(入队后技能生效，`gunnery_implants` L1 的 recoil/aim/range)；`statsRebuild transient` 的 `rebuiltNewObject=true` 与 `speedAfterRebuild` 回落 (重建即丢弃)；`variantToStats refit` 的 `+1000/+50` 与 `sharedVariant=true`(装配 → stats 交接与引用共享)；`captainToMember swap` 的 `0.750 -> 1.000`(换人立即重算并恢复)；`commanderToMember` 的 "中间值 > 前后值且恢复值 == 初始值"(舰队指挥官 → 成员 stats 交接)；四个 `done` 行成员数均与各自 `start` 行一致 (无残留)。类间顺序以注册顺序为准，类内顺序确定。
+- **报错定位**：若日志出现某个演示类的 ERROR 堆栈 (前缀 `GearIn variantToStats / captainToMember / commanderToMember / statsRebuild`)，说明该步抛错 —— 按堆栈对照 "规则强度" 节定位 (最常见的是引用了不存在的技能 id 或装配 id)。
+- **读档**：不重复执行演示 (四个 `REGISTER_MARK` 键已关)；玩家舰队构成与演示前一致。
+- **退出到主菜单**：脚本停止 (生涯状态不再运行)；回主菜单后再进档按第 5 条继续。
 
 ## 故障分析
 

@@ -571,86 +571,41 @@ gradle jar
 
 ## 验证方案
 
-前置数据：前置知识所列累计工程 (C12-S01 / C12-S04)+ `data\config\LunaSettings.csv`(本节新增)；三个示例类 (`GearInLunaSettingsDefs` / `GearInLunaSettingsReader` / `GearInLunaSettingsListener`)；接入片段两行 (`GearInModPlugin.onGameLoad`)；本机已安装并勾选 LunaLib。
+前置数据：C12-S01 与 C12-S04 的累计工程、本节的 `data\config\LunaSettings.csv`、三个示例类、`GearInModPlugin.onGameLoad` 中的两行接入代码，以及已安装并勾选的 LunaLib。
 
-### 构建验证
-
-1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
-2. 用 `jar tf jars\GearIndustry.jar` 核对三个类条目，并确认 `data\config\LunaSettings.csv` 随 MOD 一起打包。
-
-预期结果：
-
-- 两个构建都以 `BUILD SUCCESSFUL` 结束。
-- `jar tf` 能看到 `data/scripts/gearin/lib/GearInLunaSettingsDefs.class`、`GearInLunaSettingsReader.class`、`GearInLunaSettingsListener.class`。
-
-### 首次启动与进档验证：定义、保存与读取链
-
-1. 勾选 LunaLib(`lunalib`) 与 "齿轮工业" 启动，到主菜单后退出。
-2. 打开 `starsector.log`，确认没有 `gear_in` 引起的 `ERROR`。
-3. 打开 `<存档目录>\common\LunaSettings\gear_in.json`，确认已生成且含五个默认键。
-4. 新建或读取生涯进档，确认日志出现注册与取值两段日志；再次进档确认幂等。
+1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对三个类与 `data\config\LunaSettings.csv`。
+2. 勾选 LunaLib 与 "齿轮工业" 启动游戏，到主菜单后退出。
+3. 打开 `<存档目录>\common\LunaSettings\gear_in.json`，核对五个数据键。
+4. 新建或读取生涯存档，查看注册与取值日志；再次进入存档，核对监听器注册状态。
+5. 进入生涯后按设置键位 (默认 61，`Shift+F2` 始终可用) 打开 LunaLib 设置界面。
+6. 打开 `GearIn` 页签，核对分组标题、五项设置和控件类型。
+7. 把 `GearIn_pulse_delay` 改为 `3.0` 并保存，查看日志与用户设置文件。
+8. 重启游戏后再次进入存档，核对 `pulseDelay`。
+9. 手动删除 `gear_in.json` 中的 `GearIn_max_entries` 键，再重启游戏。
 
 预期结果：
 
-- 用户设置文件含五个数据键的默认值、不含 `GearIn_visual_header`(`Header` 不落盘)，预期内容如下。
+- 构建以 `BUILD SUCCESSFUL` 结束；`jar tf` 能看到 `GearInLunaSettingsDefs.class`、`GearInLunaSettingsReader.class`、`GearInLunaSettingsListener.class` 与 `data/config/LunaSettings.csv`。
+- 启动过程没有由 `gear_in` 引起的 `ERROR`，用户设置文件生成五个数据键，不含 `GearIn_visual_header`，其初始内容为：
 
-```json
-{ "GearIn_trails_enabled": true, "GearIn_max_entries": 12, "GearIn_pulse_delay": 1.5, "GearIn_marker_color": "#f22e6e", "GearIn_label_text": "GearIn" }
-```
+  ```json
+  { "GearIn_trails_enabled": true, "GearIn_max_entries": 12, "GearIn_pulse_delay": 1.5, "GearIn_marker_color": "#f22e6e", "GearIn_label_text": "GearIn" }
+  ```
 
-- 进档时 `starsector.log` 出现注册与取值两段日志，内容如下。
+- 进入存档时出现监听器注册与当前值日志：
 
-```text
-GearIn luna settings: listener registered GearIn luna settings: trails=true maxEntries=12 pulseDelay=1.5 markerColor=#f22e6e labelText=GearIn
-```
+  ```text
+  GearIn luna settings: listener registered
+  GearIn luna settings: trails=true maxEntries=12 pulseDelay=1.5 markerColor=#f22e6e labelText=GearIn
+  ```
 
-- 二次进档时注册日志变为 `listener already registered`(幂等生效)。
+- 再次进入存档时注册日志变为 `listener already registered`，没有重复监听器。
+- 设置界面左侧出现 "齿轮工业"；`GearIn` 页签显示分组标题 `GearIn 显示设置` 和五项设置，控件分别为开关、滑条与数字框、颜色选择器和文本输入框。
+- 保存后出现 `reloaded` 与 `pulseDelay=3.0` 的当前值日志，`gear_in.json` 中 `GearIn_pulse_delay` 变为 `3.0`。
+- 重启并进入存档后，`logCurrentValues` 仍读到 `pulseDelay=3.0`。
+- 删除 `GearIn_max_entries` 后重启，该键以 `12` 补回，`pulseDelay=3.0` 继续保留。
 
-### 设置界面与变更通知验证：保存与通知链
-
-1. 进生涯后按设置键位 (默认 61；`Shift+F2` 组合始终可用) 打开 LunaLib 设置界面。
-2. 确认左侧出现 "齿轮工业" 条目 (未配 `LunaSettingsConfig.json` 时用默认图标)。
-3. 在页签 `GearIn` 下核对分组标题 `GearIn 显示设置` 与五项设置，控件类型与 CSV 对应。
-4. 把 `GearIn_pulse_delay` 改为 `3.0` 并点保存，然后检查日志与用户设置文件。
-
-预期结果：
-
-- 控件类型与 CSV 对应 (开关 / 滑条+数字框 / 颜色选择器 / 文本输入框)。
-- 保存后日志出现 `reloaded` 与 `pulseDelay=3.0` 的当前值行，内容如下。
-
-```text
-GearIn luna settings: reloaded GearIn luna settings: trails=true maxEntries=12 pulseDelay=3.0 markerColor=#f22e6e labelText=GearIn
-```
-
-- `gear_in.json` 中 `GearIn_pulse_delay` 变为 `3.0`。
-
-### 持久化与补缺键验证
-
-1. 重启游戏再进档，确认 `logCurrentValues` 仍读到 `pulseDelay=3.0`。
-2. 手动删除 `gear_in.json` 里的 `GearIn_max_entries` 键后重启。
-
-预期结果：
-
-- 重启后 `pulseDelay=3.0` 仍在 (用户设置文件跨启动生效)。
-- `GearIn_max_entries` 以默认值 `12` 补回 (`saveDefaultsToFile` 补缺键语义)。
-
-### 故障注入验证：fieldID、默认值与启用判断
-
-1. (fieldID) 把 `GearInLunaSettingsDefs.KEY_TRAILS` 临时改为 `GearIn_trails`(与 CSV 不一致) 后进档，确认日志与回退值；改回后恢复。
-2. (CSV 默认值) 把 `GearIn_pulse_delay` 的 `defaultValue` 临时改为 `abc` 后重启，确认异常表现；改回后恢复。
-3. (Boolean) 把 `GearIn_trails_enabled` 的 `defaultValue` 临时改为 `1` 后重启，确认界面与读取表现；改回后恢复。
-4. (未启用) 取消勾选 LunaLib 后启动，确认 warn 与回退表现；重新勾选后恢复。
-
-预期结果：
-
-- fieldID 不一致：日志出现 `ERROR LunaSettings: Value GearIn_trails of type Boolean not found in JSONObject (ModID: gear_in)`，`trails` 回退 `true`。
-- `defaultValue` 写 `abc`：首次读取调用点抛 `NumberFormatException`(或 LunaLib 应用加载期失败)，该 MOD 设置中断。
-- `Boolean` 默认值写 `1`：界面默认关、读取 `false`、无任何报错。
-- LunaLib 未启用：日志出现 warn `GearIn luna settings: LunaLib not enabled, listener not registered`，读取全回退代码默认值，无 `NoClassDefFoundError`、无 `ERROR`。
-
-任一预期结果没有出现，本次验证即判定为失败；对应症状、原因与修正见下方故障分析。
-
-清理：取消勾选测试 MOD；恢复 CSV 与代码为原值。
+清理：在设置界面把 `GearIn_pulse_delay` 恢复为 `1.5`。
 
 ## 故障分析
 

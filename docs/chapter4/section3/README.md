@@ -239,33 +239,22 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ![](./module_done.png)
 
-### 验证方案 (基于本例)
+### 验证方案
 
-**前置数据**：本节制作的全部文件 ——
-- `GearIn_kiln.ship`(含 `MODULE_0` 的 `STATION_MODULE` 槽位)；
-- `GearIn_kiln_module.ship`
-- `ship_data.csv` 两行；
-- `data/variants/GearIn_kiln_combat.variant`(含 `modules`) 与 `GearIn_kiln_module_combat.variant`。
+前置数据：本节制作的全部文件 ——、`GearIn_kiln.ship`(含 `MODULE_0` 的 `STATION_MODULE` 槽位)、`GearIn_kiln_module.ship`、`ship_data.csv` 两行、`data/variants/GearIn_kiln_combat.variant`(含 `modules`) 与 `GearIn_kiln_module_combat.variant`。
 
-启动入口为主菜单 Missions 列表中的 `GearIn_test` 测试战役 (C03-S01)。
+1. 启动游戏，在日志中观察两条 `Loading variant [...]` 记录。
+2. 进入测试战役，观察舰队列表中的 `窑-级`，然后部署该舰船。
+3. 在装配界面选中模块并改装其武器，再把主体的 `goalVariant` 装配加入自动装配候选。
+4. 在战斗中击毁模块，退出战斗后重新部署并观察主体与模块状态。
 
-**操作**：
+预期结果：
 
-1. 启动游戏，确认日志出现两条 `Loading variant [...]` 且无相关 `ERROR`。
-2. 进入测试战役：舰队列表里 `窑-级` 的预览包含模块贴图；部署后主体与模块实体同时出现，模块挂在槽位位置并随主体移动/转向。
-3. 在装配界面选中模块，改装其武器并确认改动生效；把主体的 `goalVariant` 装配加入自动装配候选。
-4. 在战斗中击毁模块，确认主体仍能作战；退出后重新部署，确认模块按战斗记录的状态呈现 (不完整)。
-5. 故障注入 (可选，验证后恢复)：
-   - 删除主体行的 `SHIP_WITH_MODULES` 后重新部署 —— 战斗里没有模块但舰队列表有 (对应故障分析第 1 条)；
-   - 把 `modules` 的 `MODULE_0` 改成不存在的槽位 ID，部署观察异常或模块缺失 (对应第 2 条)；
-   - 把值改成未注册的装配 ID，部署观察报错 (对应第 3 条)；
-   - 把模块装配的 `hullId` 改成别的 ID，观察装配加载期 `Ship hull spec` 报错 (对应第 4 条)。
-
-**通过信号**：以上各步观察均与预期一致 —— 日志两条 `Loading variant [...]` 无异常；主体与模块实体同现且模块随动、可改装、可被击毁且按记录状态恢复；故障注入各组出现所述异常/缺失现象。
-
-可检查 `Starsector/starsector-core/starsector.log`，无 `GearIn_kiln` / `GearIn_kiln_module` 相关异常。
-
-**清理**：删除全部故障注入改动；发布前按测试战役惯例注释掉测试战役。
+- 启动后日志出现 `Loading variant [data/variants/GearIn_kiln_combat.variant]` 与 `Loading variant [data/variants/GearIn_kiln_module_combat.variant]`，没有相关 `ERROR`。
+- 测试战役的舰队列表里 `窑-级` 的预览包含模块 (整体尺寸由 `getSizeWithModules` 计算)；部署后主体与模块实体同时出现，模块位置在槽位处、朝向沿槽位角，随主体平移旋转而移动。
+- 装配界面里点击模块可以改装它的武器与船插 (本例模块 `ordnance points` 为 60，可选中)；`goalVariant: true` 让主体装配出现在自动装配候选里。
+- 模块被摧毁后主体仍可继续作战；返回舰队后模块按战斗记录的状态呈现。
+- 战场中模块与主体各自显示独立的血条与状态 (默认都显示；需要隐藏时用 `module_no_status_bar` / `module_hull_bar_only`)。
 
 ## 运行态：模块如何生成与绑定
 
@@ -306,15 +295,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 | `module_no_status_bar` | 模块在战斗中不显示状态属性条 | 战斗瞄准环渲染器 |
 | `module_hull_bar_only` | 模块在战斗中不显示幅能属性条 | 战斗瞄准环渲染器 |
 
-## 预期结果
-
-- 启动后日志出现 `Loading variant [data/variants/GearIn_kiln_combat.variant]` 与 `Loading variant [data/variants/GearIn_kiln_module_combat.variant]`，没有相关 `ERROR`。
-- 测试战役的舰队列表里 `窑-级` 的预览包含模块 (整体尺寸由 `getSizeWithModules` 计算)；部署后主体与模块实体同时出现，模块位置在槽位处、朝向沿槽位角，随主体平移旋转而移动。
-- 装配界面里点击模块可以改装它的武器与船插 (本例模块 `ordnance points` 为 60，可选中)；`goalVariant: true` 让主体装配出现在自动装配候选里。
-- 模块被摧毁后主体仍可继续作战；返回舰队后模块按战斗记录的状态呈现。
-- 战场中模块与主体各自显示独立的血条与状态 (默认都显示；需要隐藏时用 `module_no_status_bar` / `module_hull_bar_only`)。
-
-## 实例驱动故障分析
+## 故障分析
 
 下面每条都给出触发条件、可观察结果和修正。
 

@@ -868,39 +868,28 @@ gradle jar
 
 ## 验证方案
 
-以本节五个类 + `data/config/modSettings.json` + 两处接入片段 (战斗 `addPlugin`、`GearInModPlugin.onGameLoad` 一行，可选加生成器残骸两行) 为对象，按 8 组步骤逐项确认调用真的发生。运行验证需在 Starsector 环境中执行：以下步骤与预期结果已完整保留，实际表现以游戏内为准。
-
 前置数据：既有累计工程 + `GearIn_test` 测试战役 (C03-S01)；本机已安装 MagicLib(启动器勾选)。
 
-**操作与预期结果**
+1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对五个类的条目。
+2. 进入 `GearIn_test` 一场战斗，打开 `starsector.log` 并观察战斗画面与 HUD。
+3. 按空格暂停 10 秒，再恢复并观察 HUD。
+4. 把 `modSettings.json` 中的 `beam_width` 改为 `24.0`、`beam_color_core` 改为 `"[255,0,0]"`、`beam_color_fringe` 改为 `"[200,0,0]"`，重启进入战斗并观察画面。
+5. 把 `hud_enabled` 改为 `false`，重启进入战斗并观察 HUD。
+6. 清空敌方舰队，观察无目标时的日志与 HUD。
+7. 新开一局生涯或读档；可选接入生成器片段后新档，观察战役日志与 `GearIn Prime` 轨道上的残骸。
 
-1. **编译与构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`。
-   预期结果：两个构建都以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/lib/GearInMagicWiring.class` 等五个类。
-2. **战斗初始化**：进入 `GearIn_test` 一场战斗，核对 `starsector.log`。
-   预期结果：出现 `GearIn magic settings: hud=true width=12.0 range=900.0 damage=60.0 emp=25.0 full=0.15 fading=0.4 impact=40.0 core=(210,240,255) tags=[gear_in, demo]`，与 `modSettings.json` 的 `"[210,240,255]"` 一致；随后出现 `GearIn magic campaign: no sector (not in campaign)`(战役场景下 `sector` 为 null → `not in campaign` 分支，规则 13 的正面)。没有 `gear_in` 引起的 `ERROR`。
-3. **光束与 HUD**：观察战斗画面与 HUD，核对 `GearIn magic beam: #N ...` 日志。
-   预期结果：未暂停时每 2 秒出现一行 `GearIn magic beam: #N damage=60.0 emp=25.0 width=12.0 range=900.0 tags=[gear_in, demo]`，`#N` 递增；画面上从玩家舰到最近敌舰出现一条蓝色 (210,240,255 核心 / 60,120,255 边缘) 光束，命中点有光斑，光束在约 0.55 秒内 (0.15 全亮 + 0.4 淡出) 消失；HUD 出现一条 `Beam charge` 状态条 (左侧文字 + 右侧递增数字)，填充从 0 平滑涨到 1 后归零，填充色与边框色与光束颜色一致。
-4. **暂停行为**：按空格暂停 10 秒。
-   预期结果：没有新的 `GearIn magic beam:` 日志 (充能停摆)，状态条仍然可见 (示例在暂停时也刷新，与 C12-S02 的暂停即停摆相反，这是暂停保持刷新的刻意设计)；恢复后充能与发射继续。
-5. **变更验证**：把 `modSettings.json` 的 `beam_width` 改为 `24.0`、`beam_color_core` 改为 `"[255,0,0]"`、`beam_color_fringe` 改为 `"[200,0,0]"` 后重启进战斗；随后把 `hud_enabled` 改为 `false` 再重启进战斗。
-   预期结果：`settings` 日志行变为 `width=24.0`、`core=(255,0,0)`，光束变粗变红，状态条填充/边框变红；`hud_enabled=false` 时状态条消失但光束照常发射 (`hud_enabled` 只控制状态条，`fireBeam` 不受它影响)。设置只在 MagicLib 的 `onApplicationLoad` 读取，必须重启游戏 (或 dev 模式 F8 重载 + 重进战斗)。改回后恢复。
-6. **敌全灭**：清空敌方。
-   预期结果：输出 `GearIn magic beam: no enemy in sight`，无 `ERROR`；状态条仍在 (填充照常循环)。
-7. **生涯验证**：新开一局生涯或读档；可选接入生成器片段后新档。
-   预期结果：`starsector.log` 出现一行 `GearIn magic campaign: sectorSize=<星区范围> systems=<星系数> markets=<市场数>`(数值随存档变化)，战役场景没有这行；接入生成器片段后，`GearIn` 星系 `GearIn Prime` 轨道上出现一艘 `hound` 残骸，日志 `GearIn magic campaign: derelict <id> orbiting GearIn_planet1`，靠近残骸可打捞回收。
-8. **故障注入**：先注入段名错误，再注入不刷新，分别重启进战斗。
-   - 段名：把 `modSettings.json` 的段名 `gear_in` 改成 `gear_industry`。
-   - 不刷新：注释接入类中的 `hud.refresh(...)` 调用。
-   预期结果：段名错误时日志出现 11 条 warn(每键一条 `unable to find <id> within gear_industry in modSettings.json`)，`settings` 行输出全缺省值 (`hud=false`、`width=0.0`、`core=(255,0,0)`、`tags=[]`)，状态条消失 (`hudEnabled=false`)、光束变红变细 (width 0)(规则 1/2 的注入验证)；不刷新时状态条出现后约 5 秒消失 (`drawStatusBarMap` 超时移除)(规则 10 的注入验证)。两种注入改回后都恢复。
+预期结果：
 
-**通过信号**
+- `BUILD SUCCESSFUL`，`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/lib/GearInMagicWiring.class` 等五个类。
+- `GearIn magic settings: hud=true width=12.0 range=900.0 damage=60.0 emp=25.0 full=0.15 fading=0.4 impact=40.0 core=(210,240,255) tags=[gear_in, demo]`，与 `modSettings.json` 的 `"[210,240,255]"` 一致；随后出现 `GearIn magic campaign: no sector (not in campaign)`，战役场景下 `sector` 为 null。
+- 未暂停时每 2 秒出现 `GearIn magic beam: #N damage=60.0 emp=25.0 width=12.0 range=900.0 tags=[gear_in, demo]`，`#N` 递增；画面上出现蓝色光束与命中光斑，光束约 0.55 秒内消失，HUD 状态条从 0 平滑涨到 1 后归零。
+- 按空格暂停后没有新的 `GearIn magic beam:` 日志，状态条仍可见；恢复后充能与发射继续。
+- 设置改为 `beam_width=24.0`、核心色 `255,0,0`、边缘色 `200,0,0` 后，日志、光束和状态条变粗变红；`hud_enabled=false` 时状态条消失但光束照常发射。设置读取发生在 `onApplicationLoad`，需要重启游戏。
+- 清空敌方后输出 `GearIn magic beam: no enemy in sight`，状态条仍在循环。
+- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
+- 生涯日志出现 `GearIn magic campaign: sectorSize=<星区范围> systems=<星系数> markets=<市场数>`；战役场景没有这行；接入生成器片段后，`GearIn Prime` 轨道出现 `hound` 残骸并可打捞。
 
-操作 1–8 全部符合预期；注入与恢复也符合预期。
-
-**清理**
-
-取消勾选测试 MOD；恢复 `modSettings.json` 与代码为原值
-
+清理：把 `beam_width` 恢复为 `12.0`、`beam_color_core` 恢复为 `"[210,240,255]"`、`beam_color_fringe` 恢复为 `"[60,120,255]"`，并把 `hud_enabled` 恢复为 `true`。
 ## 故障分析
 
 1. **设置没生效，但没有任何报错**

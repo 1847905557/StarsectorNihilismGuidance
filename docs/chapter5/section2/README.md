@@ -94,23 +94,15 @@ SoundPlayerAPI / .wpn     消费层（C05-S03）：代码按 ID 播放、数据�
 不要使用 Windows 反斜杠 —— 反斜杠路径会破坏跨平台路径语义，后果同样是 OGG 定位失败。
 :::
 
-### 验证方案 (基于本例)
-
-操作步骤：
+### 验证方案
 
 1. 把本例 JSON 保存为 MOD 根目录下的 `data/config/sounds.json`，并确认前置知识中的三个 OGG 已按目录树就位。
 2. 启用 MOD，启动游戏到主菜单后退出。
-3. 打开 `Starsector/starsector-core/starsector.log` 核对通过信号。
+3. 打开 `Starsector/starsector-core/starsector.log`，查看音频加载记录。
 
-通过信号：
+预期结果：
 
-- 日志出现 `Loading sound sets`；搜索三个 GearIn sound ID、`sounds.json` 和 `.ogg`，必须没有解析、合并或缺失资源错误 —— 出现 `Sound with filename`、`must be a JSON array`、`must be a JSON object` 或 Fatal 错误即失败，按故障分析回查。
-- 负向对照 (可选)：故意把 `GearIn_weapon_fire.ogg` 的注册路径改错一次，确认启动中止且日志出现 `Sound with filename [...] not found or failed to load`。
-
-清理：
-
-- 恢复负向对照中改动的路径，把 `data/config/sounds.json` 保持为本例状态 (后续消费单元将按同一 ID 引用)。
-- 本节只验证注册成功与启动无错；实际播放测试在消费单元 (C05-S03) 完成。
+- 前置知识中的三个 OGG 已按目录树就位。
 
 ## 字段与多差分
 

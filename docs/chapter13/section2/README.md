@@ -564,15 +564,12 @@ gradle jar
 
 前置数据：势力注册页 (C03-S02) 的 `gear_industry` 势力；生成入口页 (C03-S03) 的 `GearInSystemGenPlugin`/`GearInSystemGenerator`(含本节接入片段改造)；本节四个数据文件与两个 Java 类；本机已安装 Nexerelin(`Starsector\mods\Nexerelin`)。
 
-操作步骤：
-
 1. 游戏构建：`gradle jar` 成功；用 `jar tf jars\GearIndustry.jar` 确认两个 `.class` 都在。
 2. 降级路径：不勾选 Nexerelin 开新档，观察 `GearIn` 星系、日志与命名器加载情况。
 3. Corvus 路径：勾选 Nexerelin，新档选 Corvus 模式并选择齿轮工业开局，观察 NGC 势力目录、出生位置与日志。
 4. 随机星域路径：新档选随机星域模式 (不开 Corvus)，观察日志、`GearIn` 星系与市场分布 (可把 `marketSpawnWeight` 改大/改小对比)。
 5. 特遣队：持续游玩至齿轮工业特遣队出现，观察舰队名与日志。
 6. 地面战：入侵齿轮工业市场并触发地面战，观察 `orbitalworks` 条目与修正列表。
-7. 故障注入 (逐项做完恢复)：(a) 删 `mod_factions.csv` 的 `gear_industry` 行，重启新档：NGC 无齿轮工业、无报错 (对应故障 1)；(b) 把 `corvus_spawnpoints.csv` 的 `entityID` 改成 `GearIn_planet1` 的显示名或市场 id：出生点回退、无报错 (故障 2)；(c) 把 `isNexCorvusMode()` 换成未判空的 `SectorManager.getManager().isCorvusMode()`：新档生成 NPE 中断 (故障 3，改回恢复)；(d) 把 `specialForcesNamerClass` 改成不存在的类：特遣队名字为 `error` + ERROR 日志 (故障 5)；(e) 把命名器返回固定字符串：两个特遣队后重名 (故障 6，改回恢复)；(f) 把 `groundBattleDefs.json` 的 `industries` 改成数组：地面战配置加载失败 (故障 7，改回恢复)。
 
 预期结果：
 
@@ -582,11 +579,7 @@ gradle jar
 - 特遣队：舰队名形如 `1st GearIn Prime Forgeguard`(命名器输出，`origin` = 起源市场名)；两个以上特遣队不重名；`starsector.log` 无 `Failed to load special forces namer`。
 - 地面战：`orbitalworks` 产业条目生效 (`strengthMult=1.5`、`heavy 0.3` 兵种、`resistBombard` 标签在对应产业上可见)；势力修正 `attackMult=1.05` 出现在地面战修正列表；日志无 `Failed to load ground battle defs`。
 
-通过信号：操作 1–6 全部符合；操作 7 的注入与恢复都符合预期。
-
-清理：恢复全部注入；发布前确认 `mod_info.json` 的 `dependencies` 不含 `nexerelin`
-
-注：运行验证需在 Starsector 环境中执行（需安装 Nexerelin）：第 3–8 步与对应预期结果已完整保留，实际表现以游戏内为准。
+清理：如果调整过 `marketSpawnWeight`，将其恢复为 `1`。
 
 ## 故障分析
 

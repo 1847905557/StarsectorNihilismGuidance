@@ -390,56 +390,41 @@ gradle jar
 
 ## 验证方案
 
-以本节两个类为对象，把 "构建 → 部署 → 收尾 → 跨战斗" 整条链路走一遍。
-
-入口：`GearIn_test` 测试战役的一场比赛。观察位置：`Starsector/starsector-core/starsector.log`。
-
-前置数据：
-
-- MOD 布局与编译链路 (C06-S01)、战斗插件接入与注册片段 (C07-S01)、`GearIn_test` 测试战役 (C03-S01)；
-- 本节两个类，随编译进入 `jars\GearIndustry.jar`。
-
-操作步骤：
+前置数据：MOD 布局与编译链路 (C06-S01)、战斗插件接入与注册片段 (C07-S01)、`GearIn_test` 测试战役 (C03-S01)、本节两个类，随编译进入 `jars\GearIndustry.jar`。
 
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个类的 `.class`。
-2. 战斗初始化：进入 `GearIn_test` 一场战斗，`starsector.log` 出现 `GearIn lifecycle init: deployment listener registered`，没有 `gear_in` 引起的 `ERROR`。若已有战斗注册片段则每场战斗出现一次 (每场战斗都是新实例，必须遵守的规则：不跨战斗缓存)。
+2. 战斗初始化：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察生命周期初始化记录。
 3. 周期报告：战斗 (未暂停) 中每 2 秒出现一行 `GearIn lifecycle: total=<秒数> combatOver=false`，`total` 稳步增长；暂停约 10 秒再恢复，暂停期间没有输出 (暂停判断生效)。
 4. 部署事件：任意成员部署时 (敌方 AI 自动部署、用户从后备手动部署都算) 出现一行 `GearIn deployed: ally=... fighterWing=... ship=<hullId>`；每场战斗的 `deployments=` 计数等于该场部署日志条数 (监听器状态随战斗归属)。
 5. 收尾与移除：清空一侧舰队，胜负判定后 (结束动画期间) 出现 `GearIn lifecycle finalize: deployments=<n> listener removed, plugin removed`，此后战斗淡出期间**不再有**周期报告与部署日志 —— 插件已 `removePlugin`、监听器已 `removeListener`(收尾不依赖任何 "战斗结束回调"，规则 3)。
 6. 跨战斗实例：退出战斗再进一场，`init` 日志重现、`deployments=` 从头计数 —— 每场战斗新实例，旧引用全部作废 (规则 1)。
-7. 故障注入：临时注释掉 `finalizeBattle()` 里的 `engine.getListenerManager().removeListener(deploymentListener);`—— 战斗结束前的淡出窗口内再次部署仍会打印 `GearIn deployed:`(对应故障 2 的残留)；改回后确认恢复。
-
-通过信号：操作 1–5 的可观察结果全部符合，操作 6 的注入与恢复符合预期。
 
 预期结果：
 
-以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class` 与 `data/scripts/gearin/combat/GearInDeploymentListener.class`。
-2. **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行。
-```text
-GearIn lifecycle init: deployment listener registered
-```
-没有 `ERROR`。若已有战斗注册片段则每场战斗出现一次 (每场战斗都是新实例，必须遵守的规则：不跨战斗缓存)。
-3. **周期报告**：战斗 (未暂停) 中每 2 秒出现一行。
-```text
-GearIn lifecycle: total=<秒数> combatOver=false
-```
-`total` 稳步增长 (暂停期间无输出)。
-4. **部署监听器**：任意成员部署时 (敌方 AI 自动部署、用户从后备手动部署都算) 出现一行。
-```text
-GearIn deployed: ally=false fighterWing=false ship=<hullId>
-```
-每场战斗的 `deployments=` 计数等于该场部署日志条数 (监听器状态随战斗归属)。
-5. **战斗结束收尾**：胜负判定后 (结束动画期间) 出现一行。
-```text
-GearIn lifecycle finalize: deployments=<n> listener removed, plugin removed
-```
-此后**不再有**周期报告与部署日志 —— 插件已 `removePlugin`、监听器已 `removeListener`；战斗淡出与结算照常进行 (收尾不依赖任何 "战斗结束回调"，规则 3)。
-6. **跨战斗实例**：退出战斗再进一场，日志再次出现 `GearIn lifecycle init:`，且 `deployments=` 从头计数 —— 每场战斗新实例，旧引用全部作废 (规则 1)。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class` 与 `data/scripts/gearin/combat/GearInDeploymentListener.class`。
+- **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行。
+  ```text
+  GearIn lifecycle init: deployment listener registered
+  ```
+  没有 `ERROR`。若已有战斗注册片段则每场战斗出现一次 (每场战斗都是新实例，必须遵守的规则：不跨战斗缓存)。
+- **周期报告**：战斗 (未暂停) 中每 2 秒出现一行。
+  ```text
+  GearIn lifecycle: total=<秒数> combatOver=false
+  ```
+  `total` 稳步增长 (暂停期间无输出)。
+- **部署监听器**：任意成员部署时 (敌方 AI 自动部署、用户从后备手动部署都算) 出现一行。
+  ```text
+  GearIn deployed: ally=false fighterWing=false ship=<hullId>
+  ```
+  每场战斗的 `deployments=` 计数等于该场部署日志条数 (监听器状态随战斗归属)。
+- **战斗结束收尾**：胜负判定后 (结束动画期间) 出现一行。
+  ```text
+  GearIn lifecycle finalize: deployments=<n> listener removed, plugin removed
+  ```
+  此后**不再有**周期报告与部署日志 —— 插件已 `removePlugin`、监听器已 `removeListener`；战斗淡出与结算照常进行 (收尾不依赖任何 "战斗结束回调"，规则 3)。
+- **跨战斗实例**：退出战斗再进一场，日志再次出现 `GearIn lifecycle init:`，且 `deployments=` 从头计数 —— 每场战斗新实例，旧引用全部作废 (规则 1)。
 
-没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInCombatLifecyclePlugin` / `GearInDeploymentListener`)。
-
-清理：取消勾选测试 MOD
+  没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInCombatLifecyclePlugin` / `GearInDeploymentListener`)。
 
 ## 故障分析
 

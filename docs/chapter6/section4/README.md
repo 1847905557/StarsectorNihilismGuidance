@@ -558,35 +558,19 @@ gradle jar
 
 ### 验证方案
 
-前置数据：
-
-- 既有 MOD 布局与编译链路 (C06-S01)。
-- 生命周期插件 `GearInModPlugin`(C06-S02)，已接入本节三个调用点片段。
-- 本节六个工具类与四个数据文件 (代码见上)。
-- 声音注册 (C05-S01 / C05-S02)：`GearIn_weapon_fire`。
-- `GearIn_test` 测试战役 (C03-S01)。
-
-操作步骤：
+前置数据：既有 MOD 布局与编译链路 (C06-S01)、生命周期插件 `GearInModPlugin`(C06-S02)，已接入本节三个调用点片段、本节六个工具类与四个数据文件 (代码见上)、声音注册 (C05-S01 / C05-S02)：`GearIn_weapon_fire`、`GearIn_test` 测试战役 (C03-S01)。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认以 `BUILD SUCCESSFUL` 结束，且 `jar tf jars\GearIndustry.jar` 含六个新类；确认 `data\config\gear_in\services.json`、`service_entries.csv`、`data\strings\strings.json` 均已随 MOD 打包。
-2. **启动 (资源加载期)**：勾选 "齿轮工业" 启动到主菜单后退出；在 `starsector.log` 核对 `GearIn services: settings=true soundPlayer=true`，并确认没有 `gear_in` 引起的 `ERROR`。
-3. **新档 / 读档 (生涯回调)**：新建生涯，日志出现 `GearIn entries=2 visits=1 name=齿轮工业服务`；退出并读档，`visits=2`(common 文件落盘往返成功)；重复读档 visits 递增。
-4. **故障注入 A(双参缺失)**：把 `GearInStringTable.STRINGS_KEY` 临时改成不存在的键，调用 `GearInStringTable.getLoopVolumeText()`：无异常、返回 `Missing string: [...]`、日志一条 `ERROR`；改回后确认恢复。
-5. **故障注入 B(单参缺失)**：把 `GearInSettingsReader.KEY_SERVICE_NAME` 临时改错并调用 `GearInSettingsReader.readServiceName()`：调用点抛 `RuntimeException`；改回后确认恢复。
-6. **故障注入 C(路径违规)**：把 `GearInConfigLoader.CONFIG_PATH` 临时改成 `data\config\gear_in\services.json`(反斜杠)：读取调用点抛 `RuntimeException`(路径校验)；改回后确认恢复。
-7. **UI 音效**：接入 `GearInUiSoundPlayer.playFireUISound` 的 UI 事件触发时听到 `GearIn_weapon_fire`；把 `GearInUiSoundPlayer.SOUND_ID_UI` 改错后触发，调用点抛 `Sound set with id [...] not found`，改回后确认恢复。
+2. **启动 (资源加载期)**：勾选 "齿轮工业" 启动到主菜单后退出；在 `starsector.log` 观察 `GearIn services:` 相关记录。
+3. **新档 / 读档 (生涯回调)**：新建生涯，查看 `GearIn entries=2 visits=1 name=齿轮工业服务` 日志。
+4. 退出并读档，观察 `visits=2`，然后重复读档并观察 visits 递增。
 
 预期结果：
 
-- 操作 1–3 全部符合；操作 3–7 的注入与恢复都符合预期。任一预期结果没有出现即判定验证失败，对应症状与修正见故障分析。
 - 游戏构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/GearInServiceLogger.class` 等六个新类。
-- 启动 (资源加载期)：进入主菜单前 `starsector.log` 出现一行 `GearIn services: settings=true soundPlayer=true`(`onApplicationLoad` 里调用；`settings`/`soundPlayer` 在此阶段已非 null，C06-S03 规则 1)；启动正常完成，没有 `gear_in` 引起的 `ERROR`。
+- 启动 (资源加载期)：进入主菜单前 `starsector.log` 出现一行 `GearIn services: settings=true soundPlayer=true`(`onApplicationLoad` 里调用；`settings`/`soundPlayer` 在此阶段已非 null，C06-S03 规则 1)；启动正常完成。
 - 新档 / 读档 (生涯回调)：`onGameLoad` 里资源读取与 common 往返执行成功，日志出现 `GearIn entries=2 visits=1 name=齿轮工业服务`(首次进档 `visits=1`；第二次读档 `visits=2`，证明 common 文件落盘并被再次读回)。删除/注释消费代码后，`services.json` 不再被打开——启动与读档全程日志无 `ERROR`，且没有 `Loading JSON from [data/config/gear_in/services.json]` 行；只有路径指向缺失或损坏的文件时才出现 `ERROR`。
-- 双参缺失的对照：临时把 `GearInStringTable.STRINGS_KEY` 改成不存在的键并调用 `GearInStringTable.getLoopVolumeText()`：**不抛异常**，方法返回 `Missing string: [不存在的键]`，日志出现一条 `ERROR Missing string: [不存在的键]`；改回后消失。这是故障分析第 2 条的现场证明。
-- 单参缺失的对照：临时把 `GearInSettingsReader.KEY_SERVICE_NAME` 改错并调用 `GearInSettingsReader.readServiceName()`：调用点抛 `RuntimeException`(堆栈指向该行)，流程中止或由调用方 catch；改回后恢复。与双参缺失的对照合起来，就是 "单参抛异常、双参占位文本"。
 - UI 音效：接入 `GearInUiSoundPlayer.playFireUISound` 的 UI 事件触发时听到 `GearIn_weapon_fire`(与 C05-S03 已接的武器开火音同一 ID，互不影响)。
-
-清理：取消勾选测试 MOD
 
 ## 故障分析
 

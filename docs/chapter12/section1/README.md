@@ -312,54 +312,32 @@ gradle jar
 
 ## 验证方案
 
-入口：启动器 (`starsector.exe`) 与游戏主菜单；观察位置为启动器 Mods 列表、弹窗与 `starsector-core\starsector.log`。
-
 前置数据：既有累计工程 (C06-S02 的累计成果) —— `mod_info.json` 已追加本节 `dependencies`、已新增 `GearInDependencyCheck` 类、`GearInModPlugin` 内已追加一行调用；本机已安装 LazyLib 与 MagicLib。
-
-操作步骤：
 
 1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
    - 核对产物：`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/modcompat/GearInDependencyCheck.class`。
 2. 启动器声明检查：打开启动器 Mods 列表，选中 "齿轮工业"，确认描述面板出现 "Required mods:" 并列出 `LazyLib` 与 `MagicLib 1.5.1`；勾选 "齿轮工业"，确认 LazyLib、MagicLib 被自动勾选。
-3. 运行时检测：启动游戏进入主菜单后退出；`starsector.log` 出现两行 `GearIn dependency check: ...` (`enabled=true`、`installedVersion=3.0.0` 与 `1.5.1`)，且没有由 `gear_in` 引起的 `ERROR`。
-4. 故障注入·版本：把 MagicLib 项的 `version` 改为 `"2.0.0"`，重启启动器。
-   - 确认 "齿轮工业" 行变红、不可勾选，描述面板出现 "Error: this mod requires a different version of a mod that you have installed."。
-   - 恢复：改回 `1.5.1` 后恢复。
-5. 故障注入·缺失：先确认 "齿轮工业" 处于勾选状态，把 `Starsector\mods\LazyLib` 目录临时改名 (如 `LazyLib.off`)，重启启动器。
-   - 弹窗：确认弹窗 "Some of the enabled mods have unmet requirements or are not compatible with this version of the game and have been disabled."。
-   - 勾选态："齿轮工业" 行变红不可勾选，错误文案为 "Error: this mod requires another mod that you don't have installed."。
-   - 落盘：`Starsector\mods\enabled_mods.json` 的 `enabledMods` 中已无 `gear_in`。
-   - 恢复：把目录名改回后恢复勾选。
-
-::: tip 注入技巧
-复现 `MODULE_MISSING` 用 "目录改名" 而不是 "取消勾选"：取消勾选只触发级联联动，不会触发缺失判定。
-:::
+3. 运行时检测：启动游戏进入主菜单后退出，在 `starsector.log` 中观察依赖检查记录。
+4. 把 MagicLib 依赖项的 `version` 改为 `"2.0.0"`，重启启动器，观察 "齿轮工业" 行与描述面板。
 
 预期结果：
 
-1. **构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束。
-2. **声明生效 (启动器)**：Mods 列表中 "齿轮工业" 行正常、可勾选；选中后描述面板出现 "Required mods:"，列出 `LazyLib` 与 `MagicLib 1.5.1`。
-3. **勾选联动**：勾选 "齿轮工业" 时，LazyLib 与 MagicLib 被自动勾选；取消 LazyLib 的勾选，"齿轮工业" 的勾选被级联取消 (依赖仍安装时它仍可重新勾选 —— 启动器要求的是 "已安装"，不是 "必须同时启用")。
-4. **运行时检测**：启动游戏进入主菜单后退出，`starsector.log` 出现：
+- **构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束。
+- **声明生效 (启动器)**：Mods 列表中 "齿轮工业" 行正常、可勾选；选中后描述面板出现 "Required mods:"，列出 `LazyLib` 与 `MagicLib 1.5.1`。
+- **勾选联动**：勾选 "齿轮工业" 时，LazyLib 与 MagicLib 被自动勾选；取消 LazyLib 的勾选，"齿轮工业" 的勾选被级联取消 (依赖仍安装时它仍可重新勾选 —— 启动器要求的是 "已安装"，不是 "必须同时启用")。
+- **运行时检测**：启动游戏进入主菜单后退出，`starsector.log` 出现：
 
-   ```text
-   GearIn dependency check: LazyLib (lw_lazylib) enabled=true installedVersion=3.0.0
-GearIn dependency check: MagicLib (MagicLib) enabled=true installedVersion=1.5.1
-   ```
+  ```text
+     GearIn dependency check: LazyLib (lw_lazylib) enabled=true installedVersion=3.0.0
+  GearIn dependency check: MagicLib (MagicLib) enabled=true installedVersion=1.5.1
+  ```
 
-   `installedVersion` 是已安装 MOD 的真实版本 (`getVersionInfo`)，LazyLib 声明项里没写 `version` 也能查出 `3.0.0`。
-5. **变更验证 (版本)**：把 MagicLib 项的 `version` 改为 `"2.0.0"`，重启启动器。
-   - "齿轮工业" 行变红且不可勾选，描述面板出现 `Error: this mod requires a different version of a mod that you have installed.`。
-   - 恢复：改回 `1.5.1` 后恢复。
-6. **变更验证 (缺失)**：把 `Starsector\mods\LazyLib` 目录临时改名 (如 `LazyLib.off`) 后重启启动器。
-   - 表现："齿轮工业" 行变红且不可勾选，描述面板出现 `Error: this mod requires another mod that you don't have installed.`。
-   - 联动：若 "齿轮工业" 此前处于勾选状态，启动器自动把它从 `enabledMods` 移除并弹窗。
-     - 弹窗文案："Some of the enabled mods have unmet requirements or are not compatible with this version of the game and have been disabled."。
-   - 恢复：把目录名改回后恢复。
+  `installedVersion` 是已安装 MOD 的真实版本 (`getVersionInfo`)，LazyLib 声明项里没写 `version` 也能查出 `3.0.0`。
+- 启动期间没有由 `gear_in` 引起的 `ERROR`。
+- **变更验证 (版本)**：把 MagicLib 项的 `version` 改为 `"2.0.0"`，重启启动器。
+  - "齿轮工业" 行变红且不可勾选，描述面板出现 `Error: this mod requires a different version of a mod that you have installed.`。
 
-以上 1 到 6 项逐一核对，全部符合即验证通过。
-
-清理：取消勾选测试 MOD；恢复 `dependencies` 为原值。
+清理：把 MagicLib 依赖项的 `version` 恢复为 `1.5.1`。
 
 ## 故障分析
 

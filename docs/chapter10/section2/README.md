@@ -561,63 +561,34 @@ gradle jar
 
 ### 验证方案
 
-本节成果分四组验证：工程编译与构建、事件边界、读档与自停、故障注入。前置数据：既有 MOD 布局 (C06-S01)、`GearInModPlugin`(C06-S02，含本节调用点片段) 与本节三个类。入口依次为新建生涯、市场、战斗、声望、跳跃与读档；观察位置统一为游戏日志 (`Starsector/starsector-core/starsector.log`) 中的 `GearIn listener` 条目。
+前置数据：既有 MOD 布局 (C06-S01)、`GearInModPlugin`(C06-S02，含本节调用点片段) 与本节三个类。
 
-**1. 游戏构建**
+1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`。
+2. 新建生涯，正常游玩，再按事件边界逐个触发：打开/关闭市场、买卖货物、与敌对舰队交战、改变声望。
+3. 连续跳跃 5 次，进出超空间或星系。
+4. 保存后读档，再次跳跃并打开市场；随后退出到主菜单，再进档一次。
+5. 把 `daysToLive` 设为 30 重新构建，进档等待约 300 真实秒。
+6. 暂停游戏中打开市场。
+7. 打开游戏日志 (`Starsector/starsector-core/starsector.log`)，查看 `GearIn listener` 条目。
 
-- 操作：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`。
-- 预期结果：`BUILD SUCCESSFUL`；`jar tf jars/GearIndustry.jar` 能看到三个类的 `.class` 条目。
+预期结果：
 
-**2. 新建生涯与事件边界**
-
-- 操作：新建生涯，正常游玩，再按事件边界逐个触发：打开/关闭市场、买卖货物、与敌对舰队交战、改变声望。
-- 预期结果：未触发事件时日志不出现周期性的 `GearIn listener` 输出 (监听器是事件驱动，不产生周期日志)—— 这本身是 "注册成功且无副作用" 的判据。触发后的日志按事件核对：
-  - 打开市场交互：`GearIn listener: market opened: <市场名> (size N)`；关闭：`GearIn listener: market closed: <市场名>`。
+- **游戏构建**：`BUILD SUCCESSFUL`；`jar tf jars/GearIndustry.jar` 能看到三个类的 `.class` 条目
+- **新建生涯与事件边界**：未触发事件时日志不出现周期性的 `GearIn listener` 输出 (监听器是事件驱动，不产生周期日志)—— 这本身是 "注册成功且无副作用" 的判据。触发后的日志按事件核对：
+- 打开市场交互：`GearIn listener: market opened: <市场名> (size N)`；关闭：`GearIn listener: market closed: <市场名>`。
   - 市场买入/卖出 (或整备界面购买舰船/武器/战机)：每次结算出现 `GearIn listener: trade at <市场名>, credit value <数值>`。
   - 遭遇战：战斗阶段出现 `GearIn listener: battle occurred, player involved=true, winner=...` 与 `GearIn listener: battle finished, ...`(玩家遭遇战各一次)；战斗结算后出现 `GearIn listener: player engagement resolved, didPlayerWin=<true/false>`；出现战利品时 `GearIn listener: encounter loot generated, N stacks`。
   - 改变与势力的声望 (完成任务、送礼、攻击势力目标)：`GearIn listener: reputation change vs faction <id> by +X.XX`。
   - 任何舰队入地/离场 (包括 AI 舰队)：`fleet spawned` / `fleet despawned, reason=<REASON>`—— 活动星区里这类日志会比较频繁，属正常。
   - 启动与游玩全程无 `gear_in` 引起的 `ERROR`。
 
-**3. 位置监听器**
-
-- 操作：连续跳跃 5 次，进出超空间或星系。
-- 预期结果：前 5 次出现 `current location changed`；第 5 次后出现 `location listener removed itself after 5 reports`，第 6 次起不再出现。
-
-**4. 读档**
-
-- 操作：保存后读档，再次跳跃并打开市场；随后退出到主菜单，再进档一次。
-- 预期结果：无重复注册 —— 无 `trade at` 成双 (`REGISTER_MARK` 注册标记 + `addListener` 去重)；位置监听器因 transient 读档清空、由 `hasListenerOfClass` 判空重新注册 (读档后继续出现位置变化日志且不叠加，计数从 5 次重新开始)；退出到主菜单后生涯引擎停止、日志停止，再进档按第 3、3 项继续。
-
-**5. 自停演示**
-
-- 操作：把 `daysToLive` 设为 30 重新构建，进档等待约 300 真实秒；演示完改回 -1 恢复常驻。
-- 预期结果：挂载约 300 真实秒后出现：
-
-   ```text
-   GearIn listener: removed itself after 30.0 game days (isDone()=true)
-   ```
-
-   之后所有 `GearIn listener` 事件日志停止 —— 脚本半身被引擎从脚本列表移除 (`hasScript(GearInListenerLifecycleScript.class)` 为 `false`)，监听器被 `removeListener` 移除 (事件不再派发)。这同时验证了规则 5 的修正路径。
-
-**6. 暂停语义**
-
-- 操作：暂停游戏中打开市场。
-- 预期结果：监听器不受暂停影响 (事件驱动，暂停中打开市场仍会触发 `market opened`)；若用 `addListenerWithTimeout` / `reRegister` 演示超时，暂停期间超时不计时 (游戏天不前进)，恢复后继续。
-
-**7. 故障注入**
-
-- 操作 7a：注释掉调用点片段的 `addListener` 行 (保留 `addScript`)，重启新档。
-  - 预期结果：`market opened` 等事件日志全部缺失、无报错 (对应故障分析第 1 条)；改回后确认恢复。
+- **位置监听器**：前 5 次出现 `current location changed`；第 5 次后出现 `location listener removed itself after 5 reports`，第 6 次起不再出现
+- **读档**：无重复注册 —— 无 `trade at` 成双 (`REGISTER_MARK` 注册标记 + `addListener` 去重)；位置监听器因 transient 读档清空、由 `hasListenerOfClass` 判空重新注册 (读档后继续出现位置变化日志且不叠加，计数从 5 次重新开始)；退出到主菜单后生涯引擎停止、日志停止，再进档按第 3、3 项继续
+- **自停演示**：挂载约 300 真实秒后出现：
+- **暂停语义**：监听器不受暂停影响 (事件驱动，暂停中打开市场仍会触发 `market opened`)；若用 `addListenerWithTimeout` / `reRegister` 演示超时，暂停期间超时不计时 (游戏天不前进)，恢复后继续
 - 操作 7b：把通道二的 `addListener(..., true)` 改为不加 `hasListenerOfClass` 判空并去掉 transient 参数，读档两次。
-  - 预期结果：位置变化日志逐次叠加 (对应故障分析第 2、2 条)；改回后确认恢复。
-- 操作 7c：注释掉脚本 `advance` 里的 `sector.removeListener(listener)`(保留 `done = true`)，`daysToLive = 30`。
-  - 预期结果：自停日志出现后事件日志继续出现 (僵尸监听器，对应故障分析第 4 条)；改回后确认恢复。
 
-通过信号：操作 1–6 全部符合；操作 7 的三组注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD
-
+清理：把 `daysToLive` 恢复为 `-1`，并恢复通道二的 `hasListenerOfClass` 判断与 transient 参数。
 ## 故障分析
 
 十个故障按症状组织：每个故障先写您实际看到的现象，再给触发条件、断链位置与核对顺序。验证方案的故障注入 8a–8c 分别对应第 1、1/3、3 条。

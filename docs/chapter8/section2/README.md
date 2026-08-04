@@ -686,70 +686,50 @@ gradle jar
 
 ## 验证方案
 
-本方案以完整最小例的最终形态为对象 (五个协作类 + 调用点片段)。前置数据：既有 MOD 布局与插件类 (C06-S01 / C06-S02，含本节调用点片段)、本节五个示例类、累计工程的引擎级时钟脚本 (C08-S01) 与星系生成器 (C03-S03，非必需)。
+前置数据：既有 MOD 布局与插件类 (C06-S01 / C06-S02，含本节调用点片段)、本节五个示例类、累计工程的引擎级时钟脚本 (C08-S01) 与星系生成器 (C03-S03，非必需)。
 
-操作：
-
-1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含五个类的 class 条目 (预期结果第 1条)。
+1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含五个类的 class 条目。
 2. 新建生涯：确认 `starsector.log` 首帧依次出现两条 token 日志与 `GearIn loc: created system ... | anchor=true | hyperJumpPoints=1 | hyperLoc=(7500, 8500)`。
-   - 时序 token created → token added → created system(预期结果第 2条)；随后约每 10 秒一条 `GearIn loc: state | ... | entities=6 planets=2 terrains=2 custom=1`(预期结果第 3条)；全程无 `gear_in` 引起的 `ERROR`。
-3. 超空间地图：确认存在 `GearIn Demo Star System` 跳跃点 (预期结果第 9条)；未进入时摘要 `daysSinceVisit=never`、`enteredByPlayer=false`。
+   - 观察 token 创建、添加、系统创建与周期状态日志的先后顺序。
+3. 超空间地图：确认存在 `GearIn Demo Star System` 跳跃点；未进入时摘要 `daysSinceVisit=never`、`enteredByPlayer=false`。
 4. 跳入演示星系：确认 `player location change | ... -> gearin demo [...isCurrentLocation=true, activeThisFrame=true]`、`demo system entered | isEnteredByPlayer=true ...` 与一次性 remove/add 核对日志。
-   - 核对 alive/byId 全链路 true→false→true(预期结果第 5条)；星系内周期摘要 `demoSystem.isCurrentLocation=true ... daysSinceVisit=0.0`；地图上信标出现在 (1400, 900) 附近。
-5. 暂停：星系内按空格暂停 20 秒以上 —— 无新日志；恢复后继续 (预期结果第 6条)。
-6. 读档：保存后读档 —— 无 `created system`、无重复注册、无重复星系；周期摘要从存档时刻继续；再次进入演示星系不重复执行 remove/add 核对 (预期结果第 7条)。
-7. 战斗：进入任意遭遇战 —— 战斗期间无 `GearIn loc` 日志；回生涯后继续 (预期结果第 8条)。
-
-故障注入 (逐项做完恢复，对应故障分析第 1 条的两个侧面)：
-
-8. 注释调用点片段的 `addScript` 行，重启新档 —— 无任何 `GearIn loc` 日志、超空间也没有 `GearIn Demo Star System` 入口 ("不注册就不建")。
-9. 把 `GearInLocationSystemBuilder` 里 6 参数 `initStar` 换成 7 参数版本且不调 `autogenerateHyperspaceJumpPoints`。
-   - 星系仍创建 (`created system ... anchor=false hyperJumpPoints=0`)，但超空间无入口、`getHyperspaceAnchor()` 为 null，玩家无法到达。
-
-::: tip 故障注入要改源码、要重构建
-故障注入需要注释/改回示例类源码后重新 `gradle jar`，再重启游戏新档验证。改前先备份 (或抄下原代码)，验证后立即还原并再次构建，确认恢复后再进行下一项。
-:::
+   - 核对 alive/byId 全流程 true→false→true；星系内周期摘要 `demoSystem.isCurrentLocation=true ... daysSinceVisit=0.0`；地图上信标出现在 (1400, 900) 附近。
+5. 暂停：星系内按空格暂停 20 秒以上 —— 无新日志；恢复后继续。
+6. 读档：保存后读档 —— 无 `created system`、无重复注册、无重复星系；周期摘要从存档时刻继续；再次进入演示星系不重复执行 remove/add 核对。
+7. 战斗：进入任意遭遇战 —— 战斗期间无 `GearIn loc` 日志；回生涯后继续。
 
 预期结果：
 
-以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInLocationScript.class`。
-2. **新建生涯 (脚本首帧)**：`starsector.log` 依次出现两条 token 日志与一条创建日志：
-```text
-GearIn loc: token created | id=<十六进制id> | inList before add=false | isAlive before add=true GearIn loc: token added | inList after add=true | byId found=true GearIn loc: created system id=gearin demo name=GearIn Demo Star System | star=GearIn Demo planet=GearIn Demo Prime | anchor=true | hyperJumpPoints=1 | hyperLoc=(7500, 8500)
-```
-随后一帧出现 `GearIn loc: player location change | first observed: <玩家出生地点 id>`。说明：`hyperJumpPoints=1` 来自 autogen 逻辑 (恒星 → 1 个超空间跳跃点；非气态巨行星 → nascent gravity well 而不是跳跃点)；`anchor=true` 证明 6 参数 `initStar` 自动生成了超空间锚点。
-3. **周期摘要**：此后约每 10 真实秒一条 (未暂停)：
-```text
-GearIn loc: state | current=<当前地点名> (id=<id>) | demoSystem.isCurrentLocation=false activeThisFrame=<不定> enteredByPlayer=false daysSinceVisit=never | entities=6 planets=2 terrains=2 custom=1 | beacon isAlive=true inList=true
-```
-实体计数构成：恒星 + 行星 + 信标 + 小行星带 + 位置 token + 日冕地形 = 6；`planets=2`(恒星与行星都是 `PlanetAPI`)、`terrains=2`(日冕 + 小行星带)、`custom=1`(信标)。若计数不同，先排查其他 MOD 是否向新建星系追加了实体。
-4. **跳跃进入演示星系**：在超空间地图飞到 `GearIn Demo Star System` 跳跃点跳入，日志出现：
-```text
-GearIn loc: player location change | <旧地点 id> -> gearin demo [name=GearIn Demo Star System, isHyperspace=false, isCurrentLocation=true, activeThisFrame=true] GearIn loc: demo system entered | isEnteredByPlayer=true | daysSinceLastVisit=<never 或 ≈0.0> | beacon.isInCurrentLocation=true | beacon.isAlive=true
-```
-`isEnteredByPlayer=true`：玩家舰队跳跃进入时置位 (`CoreScript.reportFleetJumped` → `markSystemAsEntered`)；`daysSinceLastVisit` 由 `never`(从未访问) 变为接近 `0.0`(成为当前地点后逐帧刷新时间戳)。玩家在星系内时周期摘要变为 `demoSystem.isCurrentLocation=true activeThisFrame=true daysSinceVisit=0.0`。
-5. **移除/重新加入演示 (首次进入时只执行一次)**：
-```text
-GearIn loc: enter demo system first time - remove/add demo GearIn loc: beacon | alive before=true | byId before=true | alive after remove=false | byId after remove=false | sector byId after remove=false | inList after remove=false | alive after re-add=true | byId after re-add=true
-```
-`removeEntity` 后普通实体 `isAlive()` 立即变 `false`、地点级与星区级 `getEntityById` 都返回 null；`addEntity` 后全部恢复。
-6. **暂停 (空格)**：周期摘要与地点变化日志全部停止 (引擎级脚本默认暂停冻结)；恢复后继续。
-7. **读档**：不出现 `created system`(`setupDone` 随存档序列化，不重跑 `setup`)；无重复注册 (`REGISTER_MARK` 已置位)；周期摘要从存档时刻继续，星系与实体原样恢复。若在旧档首次启用本 MOD(注册判断未置位、脚本字段为空)，首帧走 "复用" 分支打出 `GearIn loc: demo system already exists, reusing id=gearin demo`—— 星系幂等复用，不会重复创建。
-8. **战斗**：进入战斗期间无任何 `GearIn loc` 日志 (生涯引擎冻结)；回生涯后继续。
-9. **超空间侧入口**：超空间地图可见通往 `GearIn Demo Star System` 的跳跃点 (autogen 产物)，这是玩家到达演示星系的唯一通道 —— 对应故障分析第 1 条的对照。
-
-通过信号：操作 1–7 全部符合；两处故障注入的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD
-
-没有把工作单元编号写进任何运行时名称 (类名、包名、persistent data 键、实体 id 均不含 C08-S02 变体)。
-
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInLocationScript.class`。
+- **新建生涯 (脚本首帧)**：`starsector.log` 依次出现两条 token 日志与一条创建日志：
+  ```text
+  GearIn loc: token created | id=<十六进制id> | inList before add=false | isAlive before add=true GearIn loc: token added | inList after add=true | byId found=true GearIn loc: created system id=gearin demo name=GearIn Demo Star System | star=GearIn Demo planet=GearIn Demo Prime | anchor=true | hyperJumpPoints=1 | hyperLoc=(7500, 8500)
+  ```
+  随后一帧出现 `GearIn loc: player location change | first observed: <玩家出生地点 id>`。说明：`hyperJumpPoints=1` 来自 autogen 逻辑 (恒星 → 1 个超空间跳跃点；非气态巨行星 → nascent gravity well 而不是跳跃点)；`anchor=true` 证明 6 参数 `initStar` 自动生成了超空间锚点。
+- **周期摘要**：此后约每 10 真实秒一条 (未暂停)：
+  ```text
+  GearIn loc: state | current=<当前地点名> (id=<id>) | demoSystem.isCurrentLocation=false activeThisFrame=<不定> enteredByPlayer=false daysSinceVisit=never | entities=6 planets=2 terrains=2 custom=1 | beacon isAlive=true inList=true
+  ```
+  实体计数构成：恒星 + 行星 + 信标 + 小行星带 + 位置 token + 日冕地形 = 6；`planets=2`(恒星与行星都是 `PlanetAPI`)、`terrains=2`(日冕 + 小行星带)、`custom=1`(信标)。若计数不同，先排查其他 MOD 是否向新建星系追加了实体。
+- **跳跃进入演示星系**：在超空间地图飞到 `GearIn Demo Star System` 跳跃点跳入，日志出现：
+  ```text
+  GearIn loc: player location change | <旧地点 id> -> gearin demo [name=GearIn Demo Star System, isHyperspace=false, isCurrentLocation=true, activeThisFrame=true] GearIn loc: demo system entered | isEnteredByPlayer=true | daysSinceLastVisit=<never 或 ≈0.0> | beacon.isInCurrentLocation=true | beacon.isAlive=true
+  ```
+  `isEnteredByPlayer=true`：玩家舰队跳跃进入时置位 (`CoreScript.reportFleetJumped` → `markSystemAsEntered`)；`daysSinceLastVisit` 由 `never`(从未访问) 变为接近 `0.0`(成为当前地点后逐帧刷新时间戳)。玩家在星系内时周期摘要变为 `demoSystem.isCurrentLocation=true activeThisFrame=true daysSinceVisit=0.0`。
+- **移除/重新加入演示 (首次进入时只执行一次)**：
+  ```text
+  GearIn loc: enter demo system first time - remove/add demo GearIn loc: beacon | alive before=true | byId before=true | alive after remove=false | byId after remove=false | sector byId after remove=false | inList after remove=false | alive after re-add=true | byId after re-add=true
+  ```
+  `removeEntity` 后普通实体 `isAlive()` 立即变 `false`、地点级与星区级 `getEntityById` 都返回 null；`addEntity` 后全部恢复。
+- **暂停 (空格)**：周期摘要与地点变化日志全部停止 (引擎级脚本默认暂停冻结)；恢复后继续。
+- **读档**：不出现 `created system`(`setupDone` 随存档序列化，不重跑 `setup`)；无重复注册 (`REGISTER_MARK` 已置位)；周期摘要从存档时刻继续，星系与实体原样恢复。若在旧档首次启用本 MOD(注册判断未置位、脚本字段为空)，首帧走 "复用" 分支打出 `GearIn loc: demo system already exists, reusing id=gearin demo`—— 星系幂等复用，不会重复创建。
+- **战斗**：进入战斗期间无任何 `GearIn loc` 日志 (生涯引擎冻结)；回生涯后继续。
+- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 ## 故障分析
 
 以下故障按读者能看到的症状列出，每项给出触发、原因与修正顺序；日志对照统一看 `starsector.log`。
 
-1. **超空间里没有入口，玩家无法到达。**触发：只调 4/7 参数 `initStar`，忘了 `autogenerateHyperspaceJumpPoints`(星系创建主题的知识；无参版本等价 `(false, false)`，而 4/7 参数 `initStar` 明确不生成锚点，javadoc 原文 "Will not automatically generate a hyperspace anchor")。原因：入口只由 autogen 逻辑生成，这一步缺失时 `getAllLocations()` / `getStarSystems()` 里有星系，但超空间地图没有它的跳跃点，`getHyperspaceAnchor()` 为 null(没调用 6 参数变体时)。修正：**必须**调用 `autogenerateHyperspaceJumpPoints(true, false)`(或用带超空间坐标的 6 参数 `initStar` 变体，它会 `generateAnchorIfNeeded`)，并按预期结果第 9条验证入口。
+1. **超空间里没有入口，玩家无法到达。**触发：只调 4/7 参数 `initStar`，忘了 `autogenerateHyperspaceJumpPoints`(星系创建主题的知识；无参版本等价 `(false, false)`，而 4/7 参数 `initStar` 明确不生成锚点，javadoc 原文 "Will not automatically generate a hyperspace anchor")。原因：入口只由 autogen 逻辑生成，这一步缺失时 `getAllLocations()` / `getStarSystems()` 里有星系，但超空间地图没有它的跳跃点，`getHyperspaceAnchor()` 为 null(没调用 6 参数变体时)。修正：**必须**调用 `autogenerateHyperspaceJumpPoints(true, false)`(或用带超空间坐标的 6 参数 `initStar` 变体，它会 `generateAnchorIfNeeded`)，并在超空间地图核对入口。
 2. **实体创建后 "查得到但地图上不显示"，或堆在原点。**触发：`addCustomEntity` 后没放置 —— 创建时位置是 (0,0)。原因：实体已经在容器里 (`getEntityById` 能查到)，但位置从未被设置，星系地图原点一堆图标叠着；既有示例星系同样显式放置。修正：创建后立即 `setFixedLocation` / `setCircularOrbit`(普通实体两者都有效)。
 3. **token 用 `setFixedLocation` 位置完全不动，且无报错。**触发：把 `createToken` 的返回值当普通实体用 `setFixedLocation`。原因：`LocationToken.setFixedLocation` 是空实现，调用无异常、无日志，token 坐标始终是创建时的值 —— 这类失败最隐蔽，连一句报错都不给。修正：token 写坐标**必须用 `setLocation`**；需要轨道时 `addEntity` 后 `setCircularOrbit`。
 4. **`isAlive()` 误判容器状态。**触发：拿 `isAlive()` 当 "在不在玩家当前地点" 或当 token 的容器判据。原因：它只回答 "还挂在某个容器里"：普通实体在**别的**地点时仍为 `true`；token 被 `removeEntity` 后仍为 `true`(`LocationToken` 恒 true)。修正：访问状态用 `isInCurrentLocation()` / `getContainingLocation()`；容器持有才用 `isAlive()`(普通实体)。

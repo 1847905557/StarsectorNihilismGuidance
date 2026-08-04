@@ -436,33 +436,23 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 `effectLevel > 0` 覆盖 `IN`/`ACTIVE`/`OUT` 的有效期，与 `.system` 数据路的播放窗口一致。
 
-### 验证方案 (基于本例)
+### 验证方案
 
-前置数据：
+前置数据：三个 OGG(C05-S01)、`data/config/sounds.json`(C05-S02)、`data/weapons/GearIn_durin.wpn`(C01-S05)、`data/shipsystems/GearIn_burstdrive.system`(C02-S03)、测试战役 `GearIn_test`(C03-S01)、本节的 `settings.json` 与新类 `GearInMusicPlayerPlugin`。
 
-- 三个 OGG(C05-S01)；
-- `data/config/sounds.json`(C05-S02)；
-- `data/weapons/GearIn_durin.wpn`(C01-S05)；
-- `data/shipsystems/GearIn_burstdrive.system`(C02-S03)；
-- 测试战役 `GearIn_test`(C03-S01)；
-- 本节的 `settings.json` 与新类 `GearInMusicPlayerPlugin`；
+1. 启用 `gear_in` 启动到主菜单，检查 `Starsector\starsector-core\starsector.log` 中的声音注册记录。
+2. 进入 `GearIn_test` 测试战役，使用装有 `GearIn_durin` 的舰船开火，听取武器开火音。
+3. 激活 `GearIn_burstdrive`，听取系统有效期间的循环音与结束后的淡出；接入 UI 示例时，同时听取激活瞬间的 UI 音。
+4. 进入任意生涯市场，听取市场音乐；离开市场后继续听取音乐变化。
 
-1. **启动与注册检查**。启用 `gear_in` 启动到主菜单，检查 `Starsector\starsector-core\starsector.log`。
-   - 通过信号：出现 `Loading sound sets`；搜索三个 GearIn sound ID、`sounds.json`、`.ogg` 与 `musicPlugin`，必须没有解析、合并、缺失资源或类加载错误 (`Sound with filename`、`must be a JSON array`、`must be a JSON object`、`Problem loading class` 或 Fatal 即失败)。
-2. **市场音乐验证**。进入生涯，前往任意有市场的星系并停靠市场。通过信号：播放 `GearIn_market_theme`；离开市场后恢复默认音乐。若没有变化，按故障分析第 7 条检查。
-3. **战斗音效验证**。打开模拟战 (或测试战役 `GearIn_test`)，控制台 `Addship GearIn_artizan`，装配 `GearIn_durin` 部署。
-   - 通过信号：开火听到 `GearIn_weapon_fire`；激活燃烧驱动持续听到 `GearIn_system_loop`，系统结束后淡出；若加了 UI 示例，激活瞬间一次 UI 音。
-4. **距离与音量对照**。把船开到战场边缘 (超过 2500) 再开火。通过信号：声音随距离衰减；在设置里把音量调小/静音，静音时无声音且不报错。
-5. **失败对照与清理**。把 `GearIn_durin.wpn` 的 `fireSoundTwo` 改成一个不存在的 ID，重启进模拟战开火，应看到开火 NPE 与指向武器开火实现的堆栈；把 `settings.json` 的 `musicPlugin` 类名改错，进市场应无自定义音乐 (默认音乐或选曲异常)。验证结束后立即把两处改动恢复原值。
-
-## 预期结果
+预期结果：
 
 - 启动：`starsector.log` 出现 `Loading sound sets`，无 `sounds.json` 解析、合并或 OGG 加载错误；`settings.json` 合并后 `musicPlugin` 指向 `GearInMusicPlayerPlugin`(无日志行，用行为验证)。
 - 模拟战 (测试战役 `GearIn_test`，或控制台 `Addship GearIn_artizan` 装配 `GearIn_durin` 后部署)：都林自动炮开火播放 `GearIn_weapon_fire`(不再是原版 `light_assault_gun_fire`)；激活燃烧驱动后持续播放 `GearIn_system_loop`，系统结束后淡出；若加了 UI 示例，激活瞬间播放一次 `GearIn_weapon_fire` 的 UI 音。
 - 生涯：进入任意市场，市场音乐切换为 `GearIn_market_theme`；离开市场恢复当前状态的默认音乐。
 - 引擎/护盾声音仍为原版声音集 (本节未改风格声音，`GearIn_system_loop` 只服务战术系统)。
 
-## 实例驱动故障分析
+## 故障分析
 
 1. **开火完全无声，其他音效正常。** 检查链：`.wpn` 的 `fireSoundTwo` 与注册层条目逐字一致 (大小写敏感)→ `sounds.json` 条目存在 → OGG 路径存在。`.wpn` 写错 ID 会在开火时报 NPE 而不是静默 (见下条)。
 2. **开火瞬间抛 NPE，堆栈指向武器开火实现。** `fireSoundOne`/`fireSoundTwo` 引用了未注册 ID：声音集查找返回空后解引用。修正：同步注册 ID，或改回原版 ID。

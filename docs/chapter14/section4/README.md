@@ -729,61 +729,41 @@ gradle jar
 
 ## 验证方案
 
-以本节 `GearInShaderPlugin` 与两个 shader 资源为对象，验证从常驻注册到战斗结束清理的完整链路。您按下列顺序执行，预期结果对应编号列在下方；运行验证需在 Starsector 环境中执行：以下步骤与预期结果已完整保留，实际表现以游戏内为准。
-
-入口：`GearIn_test` 测试战役中的战斗 (C03-S01)；观察位置为 `starsector.log` 与战斗画面。
-
-**前置数据**
-
-- 既有 MOD 布局与硬依赖声明：`mod_info.json` 的 `dependencies` 含 BoxUtil(C12-S06)；
-- 既有插件与注册片段：战斗生命周期插件 (含本节注册片段一行，C07-S05)、分层渲染插件 (C07-S06)、前两节的 shader 视觉插件 (C14-S02、C14-S03)；
-- 本节新增：`GearInShaderPlugin` 与 `data\shaders\GearIn_field_shader.vert/.frag`；
-- 测试战役 `GearIn_test`(C03-S01)；环境需满足 BoxUtil 的 GL 4.3 能力基线 (`ShaderCore.isValid()` 为 true)。
-
-**操作步骤**
-
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个 shader 与 `GearInShaderPlugin.class`。
-2. 战役冒烟与画面：进入 `GearIn_test` 一场战斗，`starsector.log` 核对 init 行 (含 `layers=[ABOVE_PARTICLES_LOWER]`、`vert=`/`frag=` 路径与七个 `u_*` location、`ubo=`)；`ubo=<loc>` 非 -1；没有 `gear_in` 引起的 `ERROR`；画面观察玩家舰船周围 220×220 世界单位能量场：外橙内蓝、柔和光晕、外沿羽化、亮度呼吸脉冲、纹理滚动；位于所有粒子之上；跟随舰船移动。
-3. 常驻与开关：战斗持续 60 秒以上 —— 能量场全程存在 (对比一次性视觉的寿命)；按空格暂停约 10 秒 —— 能量场冻结但可见，恢复后继续；调用 `GearInShaderPlugin.setRuntimeEnabled(false)`—— 日志 `GearIn shader plugin: runtime switch off`，能量场立即消失；继续推进若干秒后调回 `true`——`runtime switch on`，能量场恢复。
-4. 剔除、淡出与清理：镜头拉远使舰船离开视口外扩 220 单位范围 —— 能量场消失；拉回出现；打出胜负判定 —— 能量场随淡出约 5 秒消失，`starsector.log` 出现 `GearIn shader plugin cleanup: frames=<n>, drawCalls=<n>`(两者相等或接近)。
-5. 跨战斗：退出战斗再进一场 ——init 行重新出现、句柄全新；每场战斗结束都有 cleanup 行 (无泄漏)；连续 5 场后游戏无卡顿/报错。
-6. 门禁降级：在 BoxUtil 配置界面 (`BoxConfigGUI`，BoxUtil 发行注册，C12-S06) 关闭 shader 选项 (或直接编辑 `<saves>\common\BUtil_Configs.json.data` 对应项) 后进战斗 ——`starsector.log` 出现 `GearIn shader plugin: BoxUtil shader path unavailable (...), plugin idle`，无画面、无 ERROR、无资源创建 (shader 路径干净降级)。
-7. 故障注入：a) 注释掉 `advance` 里的 `isCombatOver()` 分支 —— 战斗结束无 cleanup 行 (泄漏，对应故障 1)；b) 把门禁结果存 `static final`——init 行不再随环境变化 (对应故障 2)；c) 把 `cleanup()` 的句柄复位删掉并手动触发 init 失败路径 —— 二次删除风险 (对应故障 9)；d) `cleanup()` 加 `unloadTexture(SPRITE_PATH)`—— 共享贴图黑图/异常 (对应故障 10)；e) 改回后确认恢复。
+2. 战役冒烟与画面：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察 init 行，在画面中观察玩家舰船周围的能量场。
+3. 常驻：让战斗持续 60 秒以上，观察能量场寿命。
+4. 暂停：按空格暂停约 10 秒，观察能量场；恢复后继续观察。
+5. 运行时关闭：调用 `GearInShaderPlugin.setRuntimeEnabled(false)`，观察 `GearIn shader plugin: runtime switch off` 日志和能量场。
+6. 继续推进若干秒后调回 `true`，观察 `runtime switch on` 日志和能量场。
+7. 剔除：镜头拉远使舰船离开视口外扩 220 单位范围，再拉回镜头观察能量场。
+8. 淡出与清理：打出胜负判定，观察约 5 秒淡出和 `GearIn shader plugin cleanup: frames=<n>, drawCalls=<n>` 日志。
+9. 跨战斗：退出战斗再进一场，观察 init、句柄和 cleanup；连续进行 5 场战斗。
+10. 门禁降级：在 BoxUtil 配置界面 (`BoxConfigGUI`，BoxUtil 发行注册，C12-S06) 关闭 shader 选项 (或直接编辑 `<saves>\common\BUtil_Configs.json.data` 对应项) 后进战斗，观察日志、画面与资源创建情况。
 
-**预期结果：**
+预期结果：
 
-以 `BUILD SUCCESSFUL` 结束 (退出码 0)。该任务检查 `units/C14-S04/src/main/resources` 下的所有 `.vert/.frag` 非空。
-8. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_field_shader.vert`、`data/shaders/GearIn_field_shader.frag` 与 `data/scripts/gearin/combat/GearInShaderPlugin.class`。
-9. **战斗初始化 (常驻注册 + 门禁 + 资源创建)**：进入测试战役 `GearIn_test` 一场战斗，`starsector.log` 出现一行。
-```text
-GearIn shader plugin init: layers=[ABOVE_PARTICLES_LOWER], u_model=<loc>, u_size=<loc>, u_time=<loc>, u_tex=<loc>, u_intensity=<loc>, u_core=<loc>, u_fringe=<loc>, ubo=<loc>, vert=data/shaders/GearIn_field_shader.vert, frag=data/shaders/GearIn_field_shader.frag
-```
-其中 `layers=` 与 `getActiveLayers()` 一致、`vert=`/`frag=` 与资源文件路径一致 (四位置完整流程)、`ubo=<loc>` 非 -1；没有由 `gear_in` 引起的 `ERROR`。若 BoxUtil 未初始化，或在 BoxUtil 配置界面 (`BoxConfigGUI`) 关闭了 shader 选项，则出现 `GearIn shader plugin: BoxUtil shader path unavailable (...), plugin idle` 且无画面 (门禁生效、零资源)。
-10. **画面 (常驻效果)**：玩家舰船周围出现一个 220×220 世界单位的能量场 —— 中心偏橙 (`coreColor`)、边缘偏蓝 (`fringeColor`)、柔和光晕 (径向渐变 + `discard` 剔除透明片元)、外沿羽化无硬边 (`edgeFade`)、亮度呼吸脉冲 (约 π 秒周期) 并伴随纹理滚动；能量场位于**所有粒子之上**(`ABOVE_PARTICLES_LOWER` 顶层三图层，层选择见 "渲染层接入")；舰船移动时能量场跟随。
-11. **常驻语义**：能量场**不按寿命消失**(对比前几节一次性视觉示例的 20–30 秒寿命)—— 战斗持续多久它就在多久；按空格暂停时能量场冻结但可见，恢复后继续。
-12. **淡出与清理 (战斗结束收尾)**：胜负判定后能量场随 `viewport.getAlphaMult()` 约 5 秒淡出 (`isCombatOver()` 在淡出完成前为 false，渲染继续、强度收缩)；淡出完成后 `starsector.log` 出现一行。
-```text
-GearIn shader plugin cleanup: frames=<n>, drawCalls=<n>
-```
-即 `isCombatOver()` → 主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 2 的可观察面)；`frames` 与 `drawCalls` 相等 (每帧恰好 1 个 draw call)。
-13. **跨战斗**：退出战斗再进一场 ——init 行重新出现且 location 值重新查询、句柄全新 (每场战斗重建 program/VBO，与既有 `Global` 生命周期纪律同规)；无 ERROR、无泄漏迹象 (每场战斗结束都有 cleanup 行)。
-14. **开关 (运行时)**：战斗中调用 `GearInShaderPlugin.setRuntimeEnabled(false)`——`starsector.log` 出现 `GearIn shader plugin: runtime switch off`，能量场立即消失且 `drawCalls` 停止增长 (零提交)；调回 `true` 出现 `runtime switch on`，能量场恢复。
-15. **剔除 (性能度量)**：把镜头拉远使玩家舰船 (连同 220 单位半径) 离开视口 —— 能量场消失且 `drawCalls` 停止增长 (`isNearViewport` 剔除生效)；拉回后恢复增长。
-16. **故障注入**：见 "故障分析" 第 1、1、8、9 条对应的注入动作与恢复。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_field_shader.vert`、`data/shaders/GearIn_field_shader.frag` 与 `data/scripts/gearin/combat/GearInShaderPlugin.class`。
+- **战斗初始化 (常驻注册 + 门禁 + 资源创建)**：进入测试战役 `GearIn_test` 一场战斗，`starsector.log` 出现一行。
+  ```text
+  GearIn shader plugin init: layers=[ABOVE_PARTICLES_LOWER], u_model=<loc>, u_size=<loc>, u_time=<loc>, u_tex=<loc>, u_intensity=<loc>, u_core=<loc>, u_fringe=<loc>, ubo=<loc>, vert=data/shaders/GearIn_field_shader.vert, frag=data/shaders/GearIn_field_shader.frag
+  ```
+  其中 `layers=` 与 `getActiveLayers()` 一致、`vert=`/`frag=` 与资源文件路径一致 (四位置完整流程)、`ubo=<loc>` 非 -1；没有由 `gear_in` 引起的 `ERROR`。若 BoxUtil 未初始化，或在 BoxUtil 配置界面 (`BoxConfigGUI`) 关闭了 shader 选项，则出现 `GearIn shader plugin: BoxUtil shader path unavailable (...), plugin idle` 且无画面 (门禁生效、零资源)。
+- **画面 (常驻效果)**：玩家舰船周围出现一个 220×220 世界单位的能量场 —— 中心偏橙 (`coreColor`)、边缘偏蓝 (`fringeColor`)、柔和光晕 (径向渐变 + `discard` 剔除透明片元)、外沿羽化无硬边 (`edgeFade`)、亮度呼吸脉冲 (约 π 秒周期) 并伴随纹理滚动；能量场位于**所有粒子之上**(`ABOVE_PARTICLES_LOWER` 顶层三图层，层选择见 "渲染层接入")；舰船移动时能量场跟随。
+- **常驻语义**：能量场**不按寿命消失**(对比前几节一次性视觉示例的 20–30 秒寿命)—— 战斗持续多久它就在多久；按空格暂停时能量场冻结但可见，恢复后继续。
+- **淡出与清理 (战斗结束收尾)**：胜负判定后能量场随 `viewport.getAlphaMult()` 约 5 秒淡出 (`isCombatOver()` 在淡出完成前为 false，渲染继续、强度收缩)；淡出完成后 `starsector.log` 出现一行。
+  ```text
+  GearIn shader plugin cleanup: frames=<n>, drawCalls=<n>
+  ```
+  即 `isCombatOver()` → 主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 2 的可观察面)；`frames` 与 `drawCalls` 相等 (每帧恰好 1 个 draw call)。
+- **跨战斗**：退出战斗再进一场 ——init 行重新出现且 location 值重新查询、句柄全新 (每场战斗重建 program/VBO，与既有 `Global` 生命周期纪律同规)；无 ERROR、无泄漏迹象 (每场战斗结束都有 cleanup 行)。
+- **开关 (运行时)**：战斗中调用 `GearInShaderPlugin.setRuntimeEnabled(false)`——`starsector.log` 出现 `GearIn shader plugin: runtime switch off`，能量场立即消失且 `drawCalls` 停止增长 (零提交)；调回 `true` 出现 `runtime switch on`，能量场恢复。
+- **剔除 (性能度量)**：把镜头拉远使玩家舰船 (连同 220 单位半径) 离开视口 —— 能量场消失且 `drawCalls` 停止增长 (`isNearViewport` 剔除生效)；拉回后恢复增长。
 
-**通过信号**
-
-- 操作 1–6 全部符合；
-- 操作 7 的注入与恢复都符合预期。
-
-**清理**
-
-- 取消勾选测试 MOD；
-- 恢复代码与 shader 为原值；
+清理：把 BoxUtil 的 shader 选项恢复为启用状态。
 
 ## 故障分析
 
-十个故障以症状命名，编号与规则表对应；每条按注入改动、可观察结果、原因与修正的顺序展开，与验证方案操作 7 的注入实验一一对应。
+十个故障以症状命名，编号与规则表对应；每条按注入改动、可观察结果、原因与修正的顺序展开。
 
 1. **常驻插件不判战斗结束 (资源随战斗泄漏)**。触发：注释掉 `advance` 里的 `if (engine.isCombatOver()) { valid = false; }`。可观察：战斗结束时 `cleanup()` **永不执行**(`destroyInstance` 只清空对象表、不调 `cleanup()`)—— 每场战斗泄漏一个 program + VBO；多场战斗后驱动报错、渲染异常或卡顿；`starsector.log` 里没有对应的 `cleanup` 行。修正：`advance()` 里判 `isCombatOver()` 主动失效 (规则 2)。
 2. **门禁结果缓存进 `static final`**。触发：在类加载期求值 `private static final boolean GATE_OK = BoxConfigs.isShaderEnable() && ShaderCore.isValid();` 并在 `init` 里只用 `GATE_OK`。可观察：类加载发生在资源加载期/主菜单前，此时没有战斗 GL 上下文 ——`ShaderCore.isValid()` 不可评估，缓存值恒错：所有战斗都 `plugin idle`(值恒 false)，或低能力环境也照常创建程序 (值恒 true)；且此后 BoxUtil 初始化/配置的任何变化都不再影响本插件。修正：每场战斗 `init` 重新判定 (规则 1)。

@@ -110,7 +110,6 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 1. 使用控制台命令 `Addship GearIn_forging` 获取该相位护卫舰。
 2. 进入战斗部署它，右键进入/退出相位，确认外观为相位而非护盾，右键激活的是相位系统。
-3. 通过信号：资源加载阶段无缺图报错；日志 (`starsector.log`) 中 `GearIn_forging` 无错误。
 
 预期结果：
 
@@ -129,7 +128,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 本节在普通舰船链的基础上完成了一种专用约束的完整流程：相位舰必须同时满足 CSV 防御字段与命名资源约定。
 
-它同样适合从最终生成 ID 反向追到注册与资源 —— 凡是同时涉及多个注册环节的内容，都可以沿这条反向链路定位问题。
+虽然相位舰给人一种非常酷炫的感觉，但它的本质和常规带盾舰船一样简单，甚至严格来说它还更那么不稳定一些。另外，相位舰船最好内置 `phasefield` 插件，但后续小节才会提到如何进行处理。
 
 ## 建议参考项
 

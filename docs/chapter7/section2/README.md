@@ -327,53 +327,23 @@ gradle jar
 
 ## 验证方案
 
-本节成果是一个插件类，验证按工程、时间语义、遍历与判据四组展开。前置数据：既有 MOD 布局 (C06-S01) 与战斗插件接入 (C07-S01，含注册片段)、`GearInCombatStatePlugin` 类、`GearIn_test` 测试战役 (C03-S01)。入口为 Git Bash 构建与 `GearIn_test` 战役 (玩家舰判据用生涯遭遇战)；观察位置统一为 `Starsector/starsector-core/starsector.log` 中的 `GearIn` 条目。
+前置数据：既有 MOD 布局 (C06-S01) 与战斗插件接入 (C07-S01，含注册片段)、`GearInCombatStatePlugin` 类、`GearIn_test` 测试战役 (C03-S01)。
 
-**1. 游戏构建**
+1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，并核对 `jar tf jars\GearIndustry.jar` 的内容。
+2. 进入 `GearIn_test` 战役一场战斗，让插件运行数秒。
+3. 战斗内按空格暂停约 10 秒再恢复。
+4. 击毁一艘敌方舰船，观察下一条 `GearIn ships:` 日志。
+5. 在生涯战斗中先后观察部署阶段与部署玩家舰后的日志。
+6. 清空一侧舰队，观察战斗收尾与结束动画的先后关系。
 
-- 操作：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，并核对 `jar tf jars\GearIndustry.jar` 的内容。
-- 预期结果：`BUILD SUCCESSFUL`；`jar tf` 能看到 `data/scripts/gearin/combat/GearInCombatStatePlugin.class`。
+预期结果：
 
-**2. 战役冒烟**
-
-- 操作：进入 `GearIn_test` 战役一场战斗，让插件运行数秒。
-- 预期结果：`starsector.log` 出现一行：
-
-```text
-GearIn battle init: campaign=false campaignSim=false simulation=false mission=true missionId=GearIn_test
-```
-
-生涯遭遇战则对应 `campaign=true` 其余为 false。随后每 2 秒出现三条周期报告 —— `GearIn time:` / `GearIn fleet ...:`(含两条 `GearIn deployed ...:`)/ `GearIn ships:`，其中 `time` 行的 `total` 稳步增长、`winner=-1`、`combatOver=false`；全程没有 `gear_in` 引起的 `ERROR`。
-
-**3. 暂停语义**
-
-- 操作：战斗内按空格暂停约 10 秒再恢复。
-- 预期结果：暂停期间**没有**报告输出 (暂停检查生效)；恢复后的下一条 `GearIn time:` 里 `totalWithPause` 比暂停前约多 10 秒，而 `total` 增长远小于 10 秒 —— 两条累计的差值就是暂停时长。
-
-**4. 残骸过滤**
-
-- 操作：击毁一艘敌方舰船，观察下一条 `GearIn ships:` 日志。
-- 预期结果：`alive` 减 1、`notAlive` 加 1(残骸计入 notAlive 而不是消失)。
-
-**5. 玩家舰判据**
-
-- 操作：在生涯战斗中先后观察部署阶段与部署玩家舰后的日志。
-- 预期结果：部署阶段 (玩家尚未部署任何舰船)`playerShip=shuttlepod_xfer`、`playerAlive=true`、`playerInPlay=false`；部署玩家舰后 `playerShip` 变为玩家舰的 hull id、`playerInPlay=true`。战役开局即设置玩家舰，通常直接看到玩家舰。
-
-**6. 战斗结束**
-
-- 操作：清空一侧舰队，观察战斗收尾与结束动画的先后关系。
-- 预期结果：战斗收尾时 `combatOver=true`、`winner=0`(玩家胜) 或 `1`(敌方胜)；结束动画期间 `combatOver` 已为 true 但画面尚未淡出到结算。
-
-**7. 故障注入**
-
-- 操作：把 `advance` 里的 `if (engine.isPaused()) return;` 注释掉，重新构建并再次暂停；改回后确认恢复。
-- 预期结果：暂停期间报告照常打印且 `total` 照常增长 (对应故障分析第 2 条)；改回后恢复。
-
-通过信号：操作 1–6 全部符合；操作 7 的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD
-
+- **游戏构建**：`BUILD SUCCESSFUL`；`jar tf` 能看到 `data/scripts/gearin/combat/GearInCombatStatePlugin.class`
+- **战役冒烟**：`starsector.log` 出现一行：
+- **暂停语义**：暂停期间**没有**报告输出 (暂停检查生效)；恢复后的下一条 `GearIn time:` 里 `totalWithPause` 比暂停前约多 10 秒，而 `total` 增长远小于 10 秒 —— 两条累计的差值就是暂停时长
+- **残骸过滤**：`alive` 减 1、`notAlive` 加 1(残骸计入 notAlive 而不是消失)
+- **玩家舰判据**：部署阶段 (玩家尚未部署任何舰船)`playerShip=shuttlepod_xfer`、`playerAlive=true`、`playerInPlay=false`；部署玩家舰后 `playerShip` 变为玩家舰的 hull id、`playerInPlay=true`。战役开局即设置玩家舰，通常直接看到玩家舰
+- **战斗结束**：战斗收尾时 `combatOver=true`、`winner=0`(玩家胜) 或 `1`(敌方胜)；结束动画期间 `combatOver` 已为 true 但画面尚未淡出到结算
 ## 故障分析
 
 七个故障按症状组织：每个故障先写您实际看到的现象，再给触发条件、断链位置与核对顺序。验证方案的故障注入 (操作 7) 对应第 2 条。

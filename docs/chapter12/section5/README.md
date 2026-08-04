@@ -611,21 +611,17 @@ gradle jar
 
 ## 验证方案
 
-以本节示例 (`GearInMagicTrail` + `data/trails/trail_data.csv` 一行) 为对象，验证 "数据 → 创建 → 推进 → 渲染 → 清理" 完整流程。运行验证需在 Starsector 环境中执行：以下步骤与预期结果已完整保留，实际表现以游戏内为准。
-
-**前置数据**：C12-S04 的累计工程 + `data\trails\trail_data.csv`(本节新增)+ `GearInMagicTrail` + 注册片段一行 + C03-S01 的 `GearIn_test` 测试战役；本机已安装 MagicLib(启动器勾选)。
-
-**操作步骤**：
+前置数据：C12-S04 的累计工程 + `data\trails\trail_data.csv`(本节新增)+ `GearInMagicTrail` + 注册片段一行 + C03-S01 的 `GearIn_test` 测试战役；本机已安装 MagicLib(启动器勾选)。
 
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/visuals/GearInMagicTrail.class`。
-2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 核对 `GearIn trail init: ...` 与每 1 秒一行的 `GearIn trail: segments=<n> elapsed=<秒数>`，且没有 `gear_in` 引起的 `ERROR`。
+2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察 `GearIn trail` 相关记录。
 3. 画面：观察玩家舰尾部两条尾迹 (青色主体条在 `CONTRAILS_LAYER`、蓝色泛光条在舰船与导弹之上)，泛光宽度脉动两次、纹理滚动；首帧无画面、第 2 段起成条。
 4. 暂停：按空格暂停约 10 秒 —— 两条尾迹静止、无周期报告行；恢复后继续生长。
 5. 切断：击毁玩家舰或等战斗结束 ——`GearIn trail cut: segments=<n>` 出现，尾迹不再变长、旧段在约 1.1–1.7 秒内淡出消失。
-6. 跨战斗与数据变更：退出再进一场 ——`init` 重新出现、ID 重新分配、尾迹从零开始；随后把 `trail_data.csv` 的 `opacity` 改为 `1.0`、`sizeIn` 改为 `20`，重启游戏 (或 dev F8 重载 + 重进战斗)，发射 `GearIn_test_shot` 武器观察弹体尾迹。
-7. 故障注入与恢复：把 `spawnSegments()` 改为每帧新 ID—— 尾部出现点状毛刺；注释 `cutTrailsOnEntity`—— 死亡/瞬移时尾迹被拉伸；`colorIn` 去掉引号 —— 数据行整行消失 (dev 日志 `Invalid line, skipping`)；全部改回后确认恢复。
+6. 跨战斗：退出再进一场，观察 `init`、ID 分配与新尾迹。
+7. 数据变更：把 `trail_data.csv` 的 `opacity` 改为 `1.0`、`sizeIn` 改为 `20`，重启游戏 (或 dev F8 重载 + 重进战斗)，发射 `GearIn_test_shot` 武器观察弹体尾迹。
 
-**预期结果**：
+预期结果：
 
 - `gradle jar` 以 `BUILD SUCCESSFUL` 结束，`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/visuals/GearInMagicTrail.class`。
 - 战斗初始化：进入 `GearIn_test` 战役 (C03-S01) 一场战斗，`starsector.log` 出现一行 `GearIn trail init: body=base_trail_smooth glow=base_trail_contrail bodyID=<id> glowID=<id>`；`bodyID` / `glowID` 是两个不同的正数 (`getUniqueID()` 计数，规则 5 的观察面)；没有 `gear_in` 引起的 `ERROR`。
@@ -636,12 +632,8 @@ gradle jar
 - 切断与清理 (规则 9)：击毁玩家舰 (或战斗结束)——`starsector.log` 出现一行 `GearIn trail cut: segments=<n>`；随后两条尾迹**不再变长**，旧段在各自总寿命 (主体 1.7 秒 / 泛光 1.1 秒) 内淡出消失，尾部不会出现 "新段拖着旧段" 的延伸；战斗结束淡出期间旧段照常淡出 (渲染不暂停)。
 - 跨战斗 (规则 10)：退出战斗再进一场 ——`GearIn trail init:` 重新出现且 `bodyID` 重新从计数起点分配 (每场战斗 `usedIDs` 重置为 1f)；新战斗的尾迹从零开始。
 - 数据变更 (规则 3 的观察面)：`opacity=1.0`、`sizeIn=20` 重启后弹体尾迹变粗变亮；把 `colorIn` 写成 `[255,0,0]`(无引号数字数组) 后重启 —— 该行尾迹**消失**(整行跳过，dev 模式日志 `Invalid line, skipping`)，Java 侧两条尾迹不受影响。
-- 故障注入 (ID 不复用)：`spawnSegments()` 换每帧新 ID 后，舰船尾部出现大量无法连接的短横条/毛刺，而不是连续尾迹 (规则 5 的注入验证，C12-S04 陷阱条同款)；改回后恢复。
-- 故障注入 (传送不切断)：注释 `cutTrails()` 里的 `MagicTrailPlugin.cutTrailsOnEntity(ship);` 后，玩家舰瞬移 (或击毁) 时旧位置与新位置之间被一条直线强行连接 ("拉伸")，直到旧段寿命结束 (规则 9 的注入验证)；改回后恢复。
 
-任一预期结果没有出现，验证即判定失败；对应症状、原因与修正见故障分析。
-
-**清理**：取消勾选测试 MOD；恢复 `trail_data.csv` 与代码为原值
+清理：把 `trail_data.csv` 的 `opacity` 恢复为 `0.6`、`sizeIn` 恢复为 `10`，并把 `colorIn` 恢复为带引号的 `"[120,220,255]"`。
 
 ## 故障分析
 

@@ -120,39 +120,22 @@ GearIn_artizan_combat
 
 因此标题演示的 ID 必须保证有效，"星云-级" 预期只适用于 `FleetMemberAPI` 路径。
 
-### 验证方案 (基于本例)
+### 验证方案
 
 前置数据：装配注册单元的 `data/variants/GearIn_artizan_combat.variant`(C03-S01)，以及本节新建的两个 CSV——`data/campaign/sim_opponents.csv` 与 `data/config/title_screen_variants.csv` (保持本例内容，UTF-8 无 BOM)。
 
-操作：
+1. 启动游戏 (启用测试 MOD)，进入主菜单。
+2. 查看 `\Starsector\starsector-core\starsector.log`。
+3. 在主菜单停留 10 秒以上，观察背景战斗中的舰船；必要时多等几次或重启几次。
+4. 读取或新建生涯存档，进入任意舰船装配界面，点 "Run simulation"，观察部署界面的敌方舰队。
 
-1. 启动游戏 (启用测试 MOD)：确认正常进入主菜单 (无加载中断)。
-2. 查看 `\Starsector\starsector-core\starsector.log`：出现 `Loading CSV data from [...] sim_opponents.csv` 与 `... title_screen_variants.csv`(核心与 MOD 各一条)。
-3. 主菜单停留 10 秒以上：观察背景战斗是否随机出现 GearIn 的船 (首次构建时第一艘非战机条目以受创形态出现)；多等几次或重启几次。
-4. 读取或新建生涯存档，进入任意舰船装配界面，点 "Run simulation"：部署界面敌方包含原版 30 个对手与 `GearIn_artizan_combat`。
-5. (可选) 故障注入，对应 "实例驱动故障分析" 条目：
-   - 把 `sim_opponents.csv` 表头改成 `Variant id`，重启观察加载中断 (条目 1)；
-   - 追加一行 `GearIn_no_such_ship`，重启后进模拟战观察星云-级回退与日志堆栈 (条目 2)；
-   - 在 `title_screen_variants.csv` 追加同一行，重启观察标题画面报错与 `Ship hull variant` 异常 (条目 6)。完成后逐个恢复。
-
-通过信号：
-
-- 正常进入主菜单，日志中两个文件各出现两条加载记录 (核心 + MOD)；
-- 模拟战敌方舰队包含原版 30 个对手与 `GearIn_artizan_combat`；
-- 标题画面背景战斗随机出现 GearIn 的船；
-- 日志无 `is not a valid ship variant id`、无 `Ship hull variant` 异常。
-
-清理：确认两个 CSV 恢复为本例内容；取消勾选测试 MOD 后可重新勾选。
-
-## 预期结果
+预期结果：
 
 - 启动游戏 (启用测试 MOD)：正常进入主菜单 (没有加载中断)；
 - `starsector.log` 出现 `Loading CSV data from [...] sim_opponents.csv` 与 `... title_screen_variants.csv`(核心与 MOD 各一条)。
 - 进入生涯，打开任意舰船的装配界面，点 "Run simulation"：敌方舰队包含原版 30 个对手与 `GearIn_artizan_combat`；日志**没有** `is not a valid ship variant id`。
 - 回到主菜单停留一段时间 (或多次重启)：背景战斗的舰船池会随机出现 GearIn 的船 (首次构建时第一艘非战机条目以受创形态出现)。
-- 故障注入完成后恢复文件，一切如常。
-
-## 实例驱动故障分析
+## 故障分析
 
 1. **模拟战里没有您的船。** 触发：文件没放进 `data/campaign`、或表头不是逐字的 `variant id`。
    - 可观察：路径放错时无任何报错、列表里就是没有您的船；表头拼错时加载直接中断 (`getString("variant id")` 抛 JSON 键缺失异常，进不了主菜单)。

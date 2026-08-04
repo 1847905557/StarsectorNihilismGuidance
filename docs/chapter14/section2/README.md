@@ -646,42 +646,34 @@ gradle jar
 
 前置数据：编译链路建立的 MOD 布局 (C06-S01)、`GearIn_test` 测试战役 (C03-S01)、战斗插件体系 (C07-S05，含本节注册片段一行)、分层渲染插件 (C07-S06)、本节新增的 `GearInPulseRenderer` 类与 `data\shaders\GearIn_pulse_shader.vert/.frag`。
 
-操作：
-
-   确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-
-   确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对产物清单。
 2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中核对 init 行。
 3. 画面：观察玩家舰船中心 120 世界单位见方的四边形。
 4. 重载与暂停：记录战斗开始约 10 秒与 20 秒时的日志；按空格暂停约 10 秒，再恢复。
 5. 寿命与跨战斗：等待约 30 秒；随后退出战斗，再进一场。
-6. 故障注入：a) 把 `.vert` 路径改成反斜杠写法；b) 给 `.frag` 加 BOM 或删一行分号；c) Java 侧把 `"u_time"` 拼错；d) 把 `reloadProgram` 改成先删后建并破坏 `.frag`；e) 全部改回，确认恢复。
 
 预期结果：
 
-1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_pulse_shader.vert`、`data/shaders/GearIn_pulse_shader.frag` 与 `data/scripts/gearin/combat/GearInPulseRenderer.class`。
-2. **战斗初始化 (加载 + 日志)**：`starsector.log` 出现一行：
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_pulse_shader.vert`、`data/shaders/GearIn_pulse_shader.frag` 与 `data/scripts/gearin/combat/GearInPulseRenderer.class`。
+- **战斗初始化 (加载 + 日志)**：`starsector.log` 出现一行：
 
-   ```text
-   GearIn pulse shader init: program=<id>, vbo=<id>, u_offset=<loc>, u_time=<loc>, vert=data/shaders/GearIn_pulse_shader.vert, frag=data/shaders/GearIn_pulse_shader.frag
-   ```
+  ```text
+     GearIn pulse shader init: program=<id>, vbo=<id>, u_offset=<loc>, u_time=<loc>, vert=data/shaders/GearIn_pulse_shader.vert, frag=data/shaders/GearIn_pulse_shader.frag
+  ```
 
-   其中 `vert=`/`frag=` 与资源文件路径一致 (四位置完整流程)；没有由 `gear_in` 引起的 `ERROR`。
-3. **画面 (使用)**：玩家舰船中心出现一个 120 世界单位见方的四边形，内部橙色脉冲环亮度随时间起伏，起伏呈 "从中心向外扩散" 的波纹 (`u_time * 4.0 - d * 24.0` 行波)；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，分层渲染层序)；舰船移动时四边形跟随 (`u_offset` 每帧更新)。
-4. **重载循环 (生命周期)**：约 10 秒与 20 秒时各出现一行 `GearIn pulse shader reload: program=<新 id>`，两次的 `program=<id>` 都与 init 行不同、彼此也不同 (旧程序已被 `glDeleteProgram` 删除、按同一路径重建)；期间没有 ERROR。
-5. **暂停行为**：按空格暂停 —— 脉冲波纹冻结 (`getTotalElapsedTime(false)` 不累计)、四边形静止但可见 (与分层渲染主题同款)；恢复后继续。
-6. **寿命与清理**：约 30 秒后四边形消失，`starsector.log` 出现一行：
+  其中 `vert=`/`frag=` 与资源文件路径一致 (四位置完整流程)；没有由 `gear_in` 引起的 `ERROR`。
+- **画面 (使用)**：玩家舰船中心出现一个 120 世界单位见方的四边形，内部橙色脉冲环亮度随时间起伏，起伏呈 "从中心向外扩散" 的波纹 (`u_time * 4.0 - d * 24.0` 行波)；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，分层渲染层序)；舰船移动时四边形跟随 (`u_offset` 每帧更新)。
+- **重载循环 (生命周期)**：约 10 秒与 20 秒时各出现一行 `GearIn pulse shader reload: program=<新 id>`，两次的 `program=<id>` 都与 init 行不同、彼此也不同 (旧程序已被 `glDeleteProgram` 删除、按同一路径重建)。
+- **暂停行为**：按空格暂停 —— 脉冲波纹冻结 (`getTotalElapsedTime(false)` 不累计)、四边形静止但可见 (与分层渲染主题同款)；恢复后继续。
+- **寿命与清理**：约 30 秒后四边形消失，`starsector.log` 出现一行：
 
-   ```text
-   GearIn pulse shader cleanup
-   ```
+  ```text
+     GearIn pulse shader cleanup
+  ```
 
-   即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 7 的可观察面)，同一场战斗内不再出现。
-7. **跨战斗**：退出战斗再进一场 —— init 行重新出现且 `program=<id>` 全新 (每场战斗重建，跨战斗缓存禁令)；无 ERROR。
-8. **故障注入**：a 注入后 `loadText` 读取前抛 `RuntimeException` (`validateFileName` 拒绝，对应故障分析第 1 条)；b 注入后 `compile failed:` 带行号 (BOM 报首行，对应第 2、3 条)；c 注入后脉冲静止且无日志 (对应第 6 条)；d 注入后画面中断、无回退 (对应第 8 条)；e 全部改回后重新观察，结果与注入前一致。
-
-清理：取消勾选测试 MOD；恢复代码与 shader 为原值
+  即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 7 的可观察面)，同一场战斗内不再出现。
+- **跨战斗**：退出战斗再进一场 —— init 行重新出现且 `program=<id>` 全新 (每场战斗重建，跨战斗缓存禁令)。
+- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
 ## 故障分析
 

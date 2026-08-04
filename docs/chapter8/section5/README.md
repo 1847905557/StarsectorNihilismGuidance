@@ -779,79 +779,70 @@ gradle jar
 
 ## 验证方案
 
-单一成果 (七类巡检脚本) 在正文后集中验证：编译、构建、运行与故障注入共用同一套前置数据与日志观察点。复核时沿用本系列的最小任务链做法，沿 **数据文件 → 注册入口 → 运行使用方 → 可观察结果** 四个位置核对。
-
 前置数据：既有 MOD 布局 (C06-S01) 与 `GearInModPlugin`(C06-S02，含本节调用点片段)、七个巡检类。
 
-1. 操作 1(游戏构建)：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/` 下的七个类。
-2. 操作 2(新建生涯)：确认 `starsector.log` 出现 `GearIn market inspection start`、`structure`、`conditions`、`industries`、三条 `GearIn submarket`、两条 `GearIn commodity`、`people`、`econGroup`、`GearIn tariff probe`、`registered economy update listener`、`done` 日志；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
-3. 操作 3(结构核对)：`structure` 行 `id=jangala`、`inEconomy=true`、`freePort=false`、`onOrAt=on`；三条 `submarket` 行 tariff 依次约 `0.300` / `0.000` / `0.000`，black 的 `faction=pirates`、storage 的 `freeTransfer=true`(预期结果第 2–4条)。
-4. 操作 4(经济监听器)：注册日志后保持未暂停游玩，几十真实秒内应出现 `GearIn economy listener first commodityUpdated` 与 `GearIn economy listener economyUpdated (expiring)`；继续观察该日志不重复出现 (自过期，预期结果第 8条)；暂停 (空格) 期间不出现；恢复后出现。
-5. 操作 5(读档)：保存后读档，确认无 `inspection start` 日志 (`REGISTER_MARK` 标记已置位)；若监听器在保存前未触发，读档后继续等待下一个经济步 (预期结果第 9条)。
-6. 操作 6(故障注入 1)：注释掉调用点片段的 `addScript` 行，重启新档：无任何 `GearIn market` 日志 (对应故障分析第 1 条的一半 —— 注册缺失)；改回后确认恢复。
-7. 操作 7(故障注入 2)：把 `setTargetMarketId` 设为 `"asheru"`(不存在)：`structure` 行回退到第一个有开放市场的市场，不报错 (预期结果第 10条)；改回 `"asharu"` 确认 `id=asharu`。
-8. 操作 8(故障注入 3)：把 `GearInSubmarketLog.log` 中 `getCargoNullOk()` 判空删掉直接解引用，重启新档：`GearIn submarket` 日志行抛 NPE(对应故障分析第 3 条)；改回后确认恢复。
-9. 操作 9(参数演示)：注册前 `inspector.setTargetMarketId("asharu")` 重新构建：`structure` 行 `id=asharu ... faction=independent`；`GearIn commodity drugs` 行 `illegal` 值随市场势力变化 (pirate/自由港市场为 false)。
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/` 下的七个类。
+2. **新建生涯**：在 `starsector.log` 中观察 `GearIn market inspection` 相关记录。
+3. **结构核对**：`structure` 行 `id=jangala`、`inEconomy=true`、`freePort=false`、`onOrAt=on`；三条 `submarket` 行 tariff 依次约 `0.300` / `0.000` / `0.000`，black 的 `faction=pirates`、storage 的 `freeTransfer=true`。
+4. **经济监听器**：注册日志后保持未暂停游玩，几十真实秒内应出现 `GearIn economy listener first commodityUpdated` 与 `GearIn economy listener economyUpdated (expiring)`；继续观察该日志不重复出现；暂停 (空格) 期间不出现；恢复后出现。
+5. **读档**：保存后读档，确认无 `inspection start` 日志 (`REGISTER_MARK` 标记已置位)；若监听器在保存前未触发，读档后继续等待下一个经济步。
+6. **参数演示**：注册前 `inspector.setTargetMarketId("asharu")` 重新构建：`structure` 行 `id=asharu ... faction=independent`；`GearIn commodity drugs` 行 `illegal` 值随市场势力变化 (pirate/自由港市场为 false)。
 
 预期结果：
 
-   以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下的七个类 (`GearInMarketInspector` 等)。
-2. **新建生涯**：`starsector.log` 依次出现：
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下的七个类 (`GearInMarketInspector` 等)。
+- **新建生涯**：`starsector.log` 依次出现：
 
-   ```text
-   GearIn market inspection start: markets=NN commodities=33
-   ```
+  ```text
+     GearIn market inspection start: markets=NN commodities=33
+  ```
 
-   (`NN` 是存档市场数，以日志为准；`commodities=33` 是 原版商品规格数，`getAllCommodityIds()` 来自 CSV spec 加载期的 `CommoditySpecAPI` 集合)。随后出现：
+  (`NN` 是存档市场数，以日志为准；`commodities=33` 是 原版商品规格数，`getAllCommodityIds()` 来自 CSV spec 加载期的 `CommoditySpecAPI` 集合)。随后出现：
 
-   ```text
-   GearIn market structure: id=jangala name=Jangala size=6 faction=hegemony inEconomy=true survey=FULL playerOwned=false freePort=false hidden=false onOrAt=on primaryEntity=Jangala
-   ```
+  ```text
+     GearIn market structure: id=jangala name=Jangala size=6 faction=hegemony inEconomy=true survey=FULL playerOwned=false freePort=false hidden=false onOrAt=on primaryEntity=Jangala
+  ```
 
-   `Jangala` 是 corvus 星系核心市场 (`econ/corvus.json`：faction `hegemony`、size 6)，`onOrAt=on`(主实体是行星，无 `station` tag)；`survey` 以实际存档为准。
-3. **条件与产业**：
+  `Jangala` 是 corvus 星系核心市场 (`econ/corvus.json`：faction `hegemony`、size 6)，`onOrAt=on`(主实体是行星，无 `station` tag)；`survey` 以实际存档为准。
+- **条件与产业**：
 
-   ```text
-   GearIn market conditions: count=6 ids=[population_6, inimical_biosphere, organics_plentiful, farmland_adequate, extreme_weather, habitable] GearIn market industries: count=7 ids=[population, farming, spaceport, mining, heavybatteries, militarybase, starfortress_mid]
-   ```
+  ```text
+     GearIn market conditions: count=6 ids=[population_6, inimical_biosphere, organics_plentiful, farmland_adequate, extreme_weather, habitable] GearIn market industries: count=7 ids=[population, farming, spaceport, mining, heavybatteries, militarybase, starfortress_mid]
+  ```
 
-   (与 `econ/corvus.json` 的 `startingConditions` / `industries` 数组一致，以日志为准；其他市场看各自条目。)
-4. **三种子市场**：
+  (与 `econ/corvus.json` 的 `startingConditions` / `industries` 数组一致，以日志为准；其他市场看各自条目。)
+- **三种子市场**：
 
-   ```text
-   GearIn submarket open_market: present=true name=Open Market tariff=0.300 faction=hegemony plugin=OpenMarketPlugin cargoNullOk=null supplies=0.0 open=true black=false freeTransfer=false GearIn submarket black_market: present=true name=Black Market tariff=0.000 faction=pirates plugin=BlackMarketPlugin cargoNullOk=null supplies=0.0 open=false black=true freeTransfer=false GearIn submarket storage: present=true name=Storage tariff=0.000 faction=player plugin=StoragePlugin cargoNullOk=null supplies=0.0 open=false black=false freeTransfer=true
-   ```
+  ```text
+     GearIn submarket open_market: present=true name=Open Market tariff=0.300 faction=hegemony plugin=OpenMarketPlugin cargoNullOk=null supplies=0.0 open=true black=false freeTransfer=false GearIn submarket black_market: present=true name=Black Market tariff=0.000 faction=pirates plugin=BlackMarketPlugin cargoNullOk=null supplies=0.0 open=false black=true freeTransfer=false GearIn submarket storage: present=true name=Storage tariff=0.000 faction=player plugin=StoragePlugin cargoNullOk=null supplies=0.0 open=false black=false freeTransfer=true
+  ```
 
-   核对：open 税率 = 市场税率 (原版默认 `0.3`，`FactionSpecAPI.tariffFraction` 默认值)；black 与 storage 恒 `0.000`；black 的势力是 `pirates`(`submarkets.csv`)、storage 是 `player`；`cargoNullOk=null` 表示该子市场 cargo 尚未被创建 (用到时才创建语义)—— 若某个市场曾被交互过则为 `created` 并带 supplies 数量；`freeTransfer=true` 只出现在 storage。
-5. **商品**(数值随存档经济状态浮动，方向核对不变)：
+  核对：open 税率 = 市场税率 (原版默认 `0.3`，`FactionSpecAPI.tariffFraction` 默认值)；black 与 storage 恒 `0.000`；black 的势力是 `pirates`(`submarkets.csv`)、storage 是 `player`；`cargoNullOk=null` 表示该子市场 cargo 尚未被创建 (用到时才创建语义)—— 若某个市场曾被交互过则为 `created` 并带 supplies 数量；`freeTransfer=true` 只出现在 storage。
+- **商品**(数值随存档经济状态浮动，方向核对不变)：
 
-   ```text
-   GearIn commodity supplies: stockpile=NNNN.N available=NNN maxSupply=NNN maxDemand=NNN illegal=false demandPrice(100)=NNN supplyPrice(100)=NNN GearIn commodity drugs: stockpile=NN.N available=N maxSupply=N maxDemand=N illegal=true demandPrice(100)=NNN supplyPrice(100)=NNN
-   ```
+  ```text
+     GearIn commodity supplies: stockpile=NNNN.N available=NNN maxSupply=NNN maxDemand=NNN illegal=false demandPrice(100)=NNN supplyPrice(100)=NNN GearIn commodity drugs: stockpile=NN.N available=N maxSupply=N maxDemand=N illegal=true demandPrice(100)=NNN supplyPrice(100)=NNN
+  ```
 
-   `supplies` 的市场买入/卖出价在库存充足时接近基础价区间；`drugs` 对 hegemony 市场 `illegal=true`(非自由港)，开放市场不备货、黑市可交易 (`BlackMarketPlugin.isIllegalOnSubmarket` 恒 false)。
-6. **人物与经济组**：`GearIn market people: count=N`(Jangala 的 NPC 人物数，以日志为准)；`GearIn market econGroup: group=null sameGroupMarkets=1`(默认 null 自成一组，`getMarketsWithSameGroup` 至少包含自己)。
-7. **税率回滚**：
+  `supplies` 的市场买入/卖出价在库存充足时接近基础价区间；`drugs` 对 hegemony 市场 `illegal=true`(非自由港)，开放市场不备货、黑市可交易 (`BlackMarketPlugin.isIllegalOnSubmarket` 恒 false)。
+- **人物与经济组**：`GearIn market people: count=N`(Jangala 的 NPC 人物数，以日志为准)；`GearIn market econGroup: group=null sameGroupMarkets=1`(默认 null 自成一组，`getMarketsWithSameGroup` 至少包含自己)。
+- **税率回滚**：
 
-   ```text
-   GearIn tariff probe: before=0.300 during=0.350 after=0.300
-   ```
+  ```text
+     GearIn tariff probe: before=0.300 during=0.350 after=0.300
+  ```
 
-   `during` 恒比 `before` 高 `0.05`，`after` 与 `before` 相等 —— 修改已被当帧回滚。
-8. **经济监听器**(商品流通知的观察窗口)：注册日志后，在**下一个经济步**(每月 10 次迭代，间隔最多约当月剩余天数/10 个游戏日，未暂停时几十真实秒内) 出现：
+  `during` 恒比 `before` 高 `0.05`，`after` 与 `before` 相等 —— 修改已被当帧回滚。
+- **经济监听器**(商品流通知的观察窗口)：注册日志后，在**下一个经济步**(每月 10 次迭代，间隔最多约当月剩余天数/10 个游戏日，未暂停时几十真实秒内) 出现：
 
-   ```text
-   GearIn economy listener first commodityUpdated: <某个商品 id> GearIn economy listener economyUpdated (expiring)
-   ```
+  ```text
+     GearIn economy listener first commodityUpdated: <某个商品 id> GearIn economy listener economyUpdated (expiring)
+  ```
 
-   之后不再出现 —— 监听器在整轮通知后由引擎自动移除 (`isEconomyListenerExpired()` 为 true)。暂停期间经济不推进，监听器日志会推迟到恢复后。
-9. **读档**：不重复执行 (`REGISTER_MARK` 标记已置位)，也不出现 `inspection start` 日志；经济监听器若在读档前未触发，读档后继续等待下一个经济步 (监听器只持 boolean，随存档恢复无副作用)。
-10. **参数演示**：注册前 `setTargetMarketId("asheru")`(不存在于原版的 id)→ 回退扫描生效，`structure` 行打印第一个有开放市场的市场而不是 `asheru`；改成 `"asharu"` → `structure` 行打印 `id=asharu ... faction=independent`。
-
-通过信号：操作 1–6、9 全部符合；操作 7、8 的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD
+  之后不再出现 —— 监听器在整轮通知后由引擎自动移除 (`isEconomyListenerExpired()` 为 true)。暂停期间经济不推进，监听器日志会推迟到恢复后。
+- **读档**：不重复执行 (`REGISTER_MARK` 标记已置位)，也不出现 `inspection start` 日志；经济监听器若在读档前未触发，读档后继续等待下一个经济步 (监听器只持 boolean，随存档恢复无副作用)。
+- **参数演示**：注册前 `setTargetMarketId("asheru")`(不存在于原版的 id)→ 回退扫描生效，`structure` 行打印第一个有开放市场的市场而不是 `asheru`；改成 `"asharu"` → `structure` 行打印 `id=asharu ... faction=independent`。
+- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
 ## 故障分析
 

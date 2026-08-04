@@ -256,21 +256,18 @@ gradle jar
 
 ## 验证方案
 
-验证入口：启动器 (勾选 MOD) 与模拟战，观察位置为 `Starsector\starsector-core\starsector.log`。前置数据：`mod_info.json`(C01-S01，追加本节 `jars` 字段)、本节 `build.gradle`、`settings.gradle`、`data\config\settings.json` 与 `GearInFrameLogger` 类。
+前置数据：`mod_info.json`(C01-S01，追加本节 `jars` 字段)、本节 `build.gradle`、`settings.gradle`、`data\config\settings.json` 与 `GearInFrameLogger` 类。
 
 1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jars\GearIndustry.jar` 生成。
-2. 启动启动器，勾选 "齿轮工业"，进入主菜单后退出；打开 `Starsector\starsector-core\starsector.log`，确认出现 `Getting ready to load jar file [Starsector\mods\GearIndustry\jars\GearIndustry.jar]` 与 `Loading jar files`，且没有由 `gear_in` 引起的 `ERROR`。
+2. 启动启动器，勾选 "齿轮工业"，进入主菜单后退出；打开 `Starsector\starsector-core\starsector.log`，观察 jar 加载记录。
 3. 进入游戏 → 模拟战，等待 3 秒以上，确认日志出现 `GearIn FrameLogger tick at battle time ...`。
-4. 故障注入：把 `jars` 声明改为 `["jars/NotExist.jar"]`，重启进模拟战，确认报 `Problem loading class [...]`；改回后再确认恢复。
+4. 打开 `Starsector\starsector-core\starsector.log`，查看 `GearInFrameLogger` 的 tick 记录。
 
 预期结果：
 
 - 步骤 2：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jars\GearIndustry.jar` 存在。
 - 步骤 3：`starsector.log` 出现 jar 加载两行 —— `Getting ready to load jar file [Starsector\mods\GearIndustry\jars\GearIndustry.jar]` 与 `Loading jar files`，且没有由 `gear_in` 引起的 `ERROR`。
 - 步骤 4：运行 3 秒以上后，日志每隔约 3 秒出现一行 `GearIn FrameLogger tick at battle time ...`。这条日志只可能在类被成功加载并实例化后产生，证明 jar 内容、`jars` 声明、`plugins` 登记三段链路全部打通。
-- 步骤 5：注入 `["jars/NotExist.jar"]` 时出现 `Problem loading class [...]`，改回后恢复；把 `TICK_INTERVAL` 改成 `5f` 重新 `gradle jar` 并重启，tick 间隔随之变为 5 秒。若间隔没有变化，说明游戏加载的不是刚构建的 jar (检查缓存目录、是否还有残留源码文件，见故障分析第 6 条)。
-
-清理：取消勾选测试 MOD；删除测试期间写入的源码文件 (若按故障分析第 6 条做过实验)。
 
 ## 故障分析
 

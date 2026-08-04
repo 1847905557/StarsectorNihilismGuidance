@@ -283,31 +283,23 @@ gradle jar
 
 前置数据：编译 JAR 链路建立的 MOD 布局 (C06-S01)——`mod_info.json`(追加本节 `modPlugin` 字段)、`build.gradle`、`settings.gradle`、入口类 `GearInModPlugin`(累计工程另含新档生成页的补全片段，C03-S03)。
 
-操作步骤：
-
 1. 在 MOD 根目录 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/GearInModPlugin.class`。
-2. 启动游戏勾选 "齿轮工业"，进入主菜单后退出；`starsector.log` 确认出现 `GearIn lifecycle: onApplicationLoad`，且无 `gear_in` 引起的 `ERROR`。
+2. 启动游戏勾选 "齿轮工业"，进入主菜单后退出；在 `starsector.log` 中观察生命周期记录。
 3. 新建生涯，确认日志顺序为 `onNewGame` → `onEnabled wasEnabledBefore=false` → `first-entry initialization (CLASS_MARK gate opened)` → `onGameLoad newGame=true` → `beforeGameSave` → `afterGameSave`(新档末尾自动存档)。
 4. 读档并手动保存，确认日志为 `onGameLoad newGame=false`(无 `onEnabled` 行、无 `first-entry` 行)，随后 `beforeGameSave` → `afterGameSave`。
-5. 故障注入 1：注释掉 `mod_info.json` 的 `modPlugin` 行，重启并新建生涯 ——MOD 一切正常但没有任何 `GearIn lifecycle:` 日志 (对应故障分析第 3 条)；改回后确认恢复。
-6. 故障注入 2：注释掉 `onGameLoad` 里的 `getPersistentData().put(CLASS_MARK, true)`，重启读档 —— 每次读档 `first-entry initialization` 日志重现 (对应故障分析第 5 条)；改回后确认恢复。
 
 预期结果：
 
 - **构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/GearInModPlugin.class`。
-- **启动**：启动游戏勾选 "齿轮工业"，进入主菜单前 `starsector.log` 出现一行 `GearIn lifecycle: onApplicationLoad`。没有这行 → 见故障分析第 3 条。
+- **启动**：`starsector.log` 出现 `GearIn lifecycle: onApplicationLoad`，且没有由 `gear_in` 引起的 `ERROR`。
 - **新建生涯**：日志按顺序出现 (新档流程，`onEnabled` 在新档必触发，之后自动存档)：
 
-```text
-GearIn lifecycle: onNewGame GearIn lifecycle: onEnabled wasEnabledBefore=false GearIn lifecycle: first-entry initialization (CLASS_MARK gate opened) GearIn lifecycle: onGameLoad newGame=true GearIn lifecycle: beforeGameSave GearIn lifecycle: afterGameSave
-```
+  ```text
+  GearIn lifecycle: onNewGame GearIn lifecycle: onEnabled wasEnabledBefore=false GearIn lifecycle: first-entry initialization (CLASS_MARK gate opened) GearIn lifecycle: onGameLoad newGame=true GearIn lifecycle: beforeGameSave GearIn lifecycle: afterGameSave
+  ```
 
 - **读档**：日志只出现 `GearIn lifecycle: onGameLoad newGame=false`(MOD 本就在存档启用列表，不触发 `onEnabled`；`first-entry` 行不再出现，门已开)。若这个存档是 "中途启用" 本 MOD 建出来的，则首次读它时 `onEnabled wasEnabledBefore=false` 会先于 `onGameLoad` 出现。
 - **保存** (读档后手动保存)：日志依次出现 `beforeGameSave` → `afterGameSave`。
-
-通过信号：操作 2–4 的日志行与顺序全部符合；操作 5、6 的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD；删除测试期间残留的旧入口类 `GearInSystemGenPlugin`(`data.scripts.gearin.campaign` 包)。
 
 ## 故障分析
 

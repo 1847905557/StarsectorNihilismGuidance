@@ -426,32 +426,19 @@ gradle jar
 
 前置数据：规则基础页的 MOD 布局 (前置：C11-S01；`GearInRulesIntro` 类可保留，本节不依赖它)，追加本节 10 条 `GearIn_rules_scene_*` 规则行；启动器勾选 Dev Mode (验证新游戏场景与 dev 选项)。
 
-操作步骤：
-
 1. 规则注册：启动游戏，在 `starsector.log` 中找到本节 10 条 `Loading rule: GearIn_rules_scene_*` 行 (市场 1 + 酒吧 3 + 舰队 1 + 通讯 3 + 新游戏 2；注意 `_conv_end` 与 `_ngc_pick` 也在其中)。
 2. 市场场景：新建生涯，停靠 jangala：停靠许可文本后出现 `GearIn 市场场景：首次停靠 jangala...`，市场菜单完整 (通讯目录/酒吧/交易/Leave)；再次停靠 jangala：本节文本不再出现、菜单照常。
 3. 酒吧场景：在 jangala 市场菜单点 "Take a shuttle down to visit a dockside bar"：出现酒吧描述文本与 "和 GearIn 演示员聊聊"；点选后出现本节酒吧文本与 "回吧台"；点 "回吧台" 选项重现；"Leave the bar"(ESC) 回到市场菜单。
 4. 舰队场景：在超空间或星系内找一支非敌对独立舰队 (拾荒/商队) 并遭遇：出现呼叫文本；通讯选项高亮 "Accept the comm request"；接受后出现本节问候语与 "结束通讯"/"Cut the comm link"；点 "结束通讯" 回到舰队主菜单。
 5. 任务/流程场景：主菜单新建游戏：角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)`(顺序 6)；点选后选 `ngcWolf` 等原版起始；开局确认星币 = 原版初始 + 5000。非 devMode 启动时该选项不出现。
-6. 故障注入与恢复 (每个注入完成后恢复原规则行)：
-   - 注入 1 (覆盖职责)：把 `GearIn_rules_scene_market` 脚本里的 `$menuState = main 0` + `FireAll PopulateOptions` 两行删掉重建：首次停靠 jangala 显示本节文本但**市场菜单消失**(对应故障分析 1)；恢复后菜单回归。
-   - 注入 2 (分数竞争)：把 `GearIn_rules_scene_fleet_hail` 的 `score:100` 删掉 (总分 3，仍恒胜 `initial_AnyFleet` 的 1 分，结果不变)；再把条件精简为只剩 `$faction.id == independent`(总分 1，与 `initial_AnyFleet` 同分，两条规则随机竞争，重复遭遇出现随机文本，对应规则基础页的同分随机语义)；恢复 `score:100` 后确定性。
-   - 注入 3 (回流 trigger 写错)：把 `GearIn_rules_scene_ngc_pick` 的 trigger 改成 `DialogOptionSelected`：devMode 下点选演示选项后无反应、无报错 (`NewGameOptionSelected` 才是主菜单回流，对应故障分析 8)；恢复。
-   - 注入 4 (任务前缀)：在 `GearIn_rules_scene_bar_add` 中把选项 id 改成 `hijack_barEvent`(与任务 `hijack` 同前缀)：进入酒吧后该选项被 `BarCMD.abortMissions` / `getWrapperFor` 当作 mission 包装处理或行为异常 (对应规则强度表的任务前缀条目)；恢复为 `GearIn_rules_scene_bar`。
-   - 注入 5 (退出复位)：在 `ReturnFromBar` 场景中若 `$menuState` 未复位为 `main`：离开酒吧后市场菜单选项消失 (对应故障分析 10；原版 `marketReturnFromBar` 已复位，注入方式是临时注释掉该行脚本)；恢复。
 
 预期结果：
 
-1. 规则注册 (加载期)：`starsector.log` 出现本节 10 条 `Loading rule:` 行：`GearIn_rules_scene_market` / `..._bar_add` / `..._bar_pick` / `..._bar_back` / `..._fleet_hail` / `..._comm` / `..._conv` / `..._conv_end` / `..._ngc_add` / `..._ngc_pick`(日志路径与加载行为在规则基础页已证)。标准输出可能出现单次使用变量 WARNING(`System.out.println`，正常现象，非错误)。
-2. 市场场景 (新档，首次停靠 jangala)：停靠许可文本之后出现 `GearIn 市场场景：首次停靠 jangala...` 文本，市场菜单照常出现 (`marketCommDir` / 酒吧 / 交易 / Leave)。第二次及以后停靠 jangala：无本节文本、菜单照常 (一次性 flag 生效)。若用户当时背负债务/雇佣兵离队事件，原版 1000/500 分规则获胜、本节文本不显示 (竞争分层，非故障)。
-3. 酒吧场景 (jangala 市场菜单 → 酒吧)：进入酒吧显示 `BarPrintDesc` 描述文本 + 选项 "和 GearIn 演示员聊聊"(描述文本进文本面板)：点选后出现 `GearIn 酒吧场景：临时 bar 选项...` 文本 + "回吧台" 选项；点 "回吧台" 酒吧选项重新出现；"Leave the bar"(ESC) 出现 "You leave the bar..." 文本 + 市场菜单复位。
-4. 舰队场景：找到一支非敌对的独立势力舰队 (如拾荒舰队) 并接近，遭遇对话出现 `GearIn 舰队场景：一支独立势力舰队呼叫了您...` 文本：舰队主菜单通讯选项高亮为 "Accept the comm request"；接受后出现 `GearIn 对话场景（OpenCommLink）：对独立势力舰队的问候语。` + 菜单选项 "结束通讯" (另有原版 "Cut the comm link")；点 "结束通讯" 回到舰队主菜单。
-5. 任务/流程场景 (devMode)：启动器勾选 Dev Mode 后新建游戏，角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)` 选项；点选后继续选任一原版起始，开局星币 = 原版初始 + 5000。非 devMode 时该选项不出现 (`$global.isDevMode` 条件限定)。
-6. 全程无 ERROR：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志；加载期无 `Duplicate key` / `Command [...] not found` / 赋值/比较操作符错位等规则加载异常 (规则基础页规则强度表的加载期五连)。
-
-通过信号：操作 1–5 全部符合预期，故障注入 6 的五个子项注入与恢复全部符合预期；全程无 `gear_in` 引起的 `ERROR`。
-
-清理：取消勾选测试 MOD
+- 规则注册 (加载期)：`starsector.log` 出现本节 10 条 `Loading rule:` 行：`GearIn_rules_scene_market` / `..._bar_add` / `..._bar_pick` / `..._bar_back` / `..._fleet_hail` / `..._comm` / `..._conv` / `..._conv_end` / `..._ngc_add` / `..._ngc_pick`(日志路径与加载行为在规则基础页已证)。标准输出可能出现单次使用变量 WARNING(`System.out.println`，正常现象，非错误)。
+- 酒吧场景 (jangala 市场菜单 → 酒吧)：进入酒吧显示 `BarPrintDesc` 描述文本 + 选项 "和 GearIn 演示员聊聊"(描述文本进文本面板)：点选后出现 `GearIn 酒吧场景：临时 bar 选项...` 文本 + "回吧台" 选项；点 "回吧台" 酒吧选项重新出现；"Leave the bar"(ESC) 出现 "You leave the bar..." 文本 + 市场菜单复位。
+- 舰队场景：找到一支非敌对的独立势力舰队 (如拾荒舰队) 并接近，遭遇对话出现 `GearIn 舰队场景：一支独立势力舰队呼叫了您...` 文本：舰队主菜单通讯选项高亮为 "Accept the comm request"；接受后出现 `GearIn 对话场景（OpenCommLink）：对独立势力舰队的问候语。` + 菜单选项 "结束通讯" (另有原版 "Cut the comm link")；点 "结束通讯" 回到舰队主菜单。
+- 任务/流程场景 (devMode)：启动器勾选 Dev Mode 后新建游戏，角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)` 选项；点选后继续选任一原版起始，开局星币 = 原版初始 + 5000。非 devMode 时该选项不出现 (`$global.isDevMode` 条件限定)。
+- 全程无 ERROR：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志；加载期无 `Duplicate key` / `Command [...] not found` / 赋值/比较操作符错位等规则加载异常 (规则基础页规则强度表的加载期五连)。
 
 ## 故障分析
 

@@ -186,15 +186,24 @@ CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四�
 | 互斥失效，两个都能装 | 只写了数据行，没写 `isApplicableToShip` | 补 `isApplicableToShip` 返回 `false` + `getUnapplicableReason` 给原因 |
 | tooltip 出现空位或未替换的 `%s` | `desc` 的 `%s` 数量与 `getDescriptionParam` 返回值不一致 | 每个 `%s` 都有对应 `index` 返回非 null |
 
-## 预期结果
+## 验证方案
 
-1. 装配界面出现 "稳定化推进器"，`unlocked=TRUE` 无需蓝图；
-2. 护卫舰 tooltip 显示 `提高舰船最大速度 15/10/5/5 单位/秒，随舰船大小变化。不兼容 不稳定推进器。`，四个数字高亮；
-3. 舰船最大速度 +15(护卫舰档)；生涯舰队面板与战斗数值一致；
-4. 与 "不稳定推进器" 互斥，安装被拒并显示原因；
-5. `starsector.log` 有 `Loading hullmod [稳定化推进器]` 且无 `ERROR`。
+前置数据：本节的 `hull_mods.csv` 注册行与 `GearInStableInjectorHullMod` 效果类。
 
-## 实例驱动故障分析
+1. 重启游戏并进入生涯装配界面，找到 "稳定化推进器"。
+2. 把它安装到护卫舰上，观察 tooltip、最大速度和互斥提示。
+3. 进入模拟战比较安装前后的最大速度。
+4. 退出战斗，在 `starsector.log` 中观察船插加载记录。
+
+预期结果：
+
+- 装配界面出现 "稳定化推进器"，`unlocked=TRUE` 时无需蓝图。
+- 护卫舰 tooltip 显示 `提高舰船最大速度 15/10/5/5 单位/秒，随舰船大小变化。不兼容 不稳定推进器。`，四个数字高亮。
+- 舰船最大速度增加 15(护卫舰档)，生涯舰队面板与战斗数值一致。
+- "稳定化推进器" 与 "不稳定推进器" 互斥，安装被拒并显示原因。
+- `starsector.log` 出现 `Loading hullmod [稳定化推进器]`，且没有相关 `ERROR`。
+
+## 故障分析
 
 1. **装配界面找不到船插**。触发：CSV 行未写入、`id` 与其他来源重复 (跨文件重复是静默跳过，日志无报错)、`unlocked` 缺失、`script` 类名写错。修正：确认文件路径；`GearIn_` 前缀唯一；调试期 `unlocked=TRUE`；核对类名。
 2. **加载中断，`JSONException` 或 `Duplicate key`**。触发：`cost_*` 之一留空、必填列缺失、同一文件内两行 `id` 相同。修正：四档 cost 填数字；同文件内不重复 `id`。

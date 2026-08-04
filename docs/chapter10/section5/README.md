@@ -713,62 +713,31 @@ gradle jar
 
 ## 验证方案
 
-本节成果分三层验收：先构建示例 MOD，再进游戏走完任务链，最后用注入用例复现故障分析的结论。运行验证需在 Starsector 环境中执行：以下步骤与预期结果已完整保留，实际表现以游戏内为准。
+前置数据：既有 MOD 布局与 `GearInModPlugin`(C06-S01 / C06-S02)、本节 `GearInHubMission`、`bar_events.csv` 行、`rules.csv` 片段、既有 MOD 布局与 `GearInModPlugin`、本节任务类与两行数据 (同上)、同上，每次改动后重建。
 
-### 构建与游戏验证
+1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`；
+2. 执行 `jar tf jars\GearIndustry.jar` 核对类文件。
+3. 跳过/完成教程后进入酒吧，核对日志与酒吧提示/选项 (事件不是每次都在，受酒吧调度影响，可多进几个市场或等待)；
+4. 点 "Ask about the missing shipment"，核对文本后选 "Accept"；
+5. 前往目标市场与联系人 `$gearInHub_contactName` 对话并走交付规则；
+6. 回任务人市场与其对话并走收尾规则；
+7. 接受后挂机 600 真实秒，观察失败路径；
+8. 接受后保存并读档，任务完成后再次读档核对清理。
+9. 把 `setStageOnMemoryFlag(Stage.COMPLETED, giver, "$gearInHub_delivered")` 的目标改成 `sourceContact`，交付后核对阶段；
+10. 删掉 `endTrigger()` 后重建，核对创建期异常；
+11. 把 `MISSION_DAYS` 改成 10 重建，接受后挂机核对失败路径。
+12. 查看 `starsector.log`、对话流程和 Intel 状态。
 
-- 入口：Git Bash 命令行。
-- 前置数据：既有 MOD 布局与 `GearInModPlugin`(C06-S01 / C06-S02)、本节 `GearInHubMission`、`bar_events.csv` 行、`rules.csv` 片段。
-- 操作步骤：
-  1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`；
-  2. 执行 `jar tf jars\GearIndustry.jar` 核对类文件。
-- 观察位置：命令行输出与 jar 内容列表。
-- 预期结果：
-  - `gradle jar` 以 `BUILD SUCCESSFUL` 结束，`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInHubMission.class`。
+预期结果：
 
-### 酒吧任务完整流程
+- `gradle jar` 以 `BUILD SUCCESSFUL` 结束，`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInHubMission.class`。
 
-- 入口：生涯游戏，任一有太空港市场的酒吧。
-- 前置数据：既有 MOD 布局与 `GearInModPlugin`、本节任务类与两行数据 (同上)。
-- 操作步骤：
-  1. 跳过/完成教程后进入酒吧，核对日志与酒吧提示/选项 (事件不是每次都在，受酒吧调度影响，可多进几个市场或等待)；
-  2. 点 "Ask about the missing shipment"，核对文本后选 "Accept"；
-  3. 前往目标市场与联系人 `$gearInHub_contactName` 对话并走交付规则；
-  4. 回任务人市场与其对话并走收尾规则；
-  5. 接受后挂机 600 真实秒，观察失败路径；
-  6. 接受后保存并读档，任务完成后再次读档核对清理。
-- 观察位置：`starsector.log`、通信面板、Intel 界面、地图标记、全局内存 (控制台)。
-- 预期结果：
-  - 日志出现 `GearIn hub mission: created at <市场名>, target <目标市场名>, reward <金额>`；酒吧面板出现 "An independent trader at the bar is complaining loudly..." 与选项 "Ask about the missing shipment"(抽取受酒吧调度的权重/时长影响，不是每次进酒吧都在；同一时间每个任务 ID 至多一个活跃实例)。
-  - 点 "Ask about the missing shipment" 后文本显示目标市场与报酬 (`$gearInHub_reward` / `$gearInHub_targetMarketName` 已由 `updateInteractionData` 写入)；选 "Accept" 后日志出现 `GearIn hub mission: accepted, currentStage=CONTACT`，通信面板出现新消息 (`addIntel` 默认 `autoAddCampaignMessage`)，Intel 界面出现任务条目 "Lost Shipment Data"，地图上目标市场出现任务标记 (`makeImportant(sourceContact, ..., Stage.CONTACT)`)。
-  - 交付规则写 `$gearInHub_dataReceived = true` 并 `Call $gearInHub_ref updateStage` 后阶段切到 RETURN：Intel 更新为 "Return to <来源市场>..."，地图标记切到任务人市场 (`makeImportant(giver, ..., Stage.RETURN)`)，全局内存 `$gearInHub_enteredReturn` 变为 true(`AlwaysTrueChecker` 触发器已执行)；RETURN 阶段停留，直到玩家回来源市场触发交付规则。
-  - 交付规则写 `$gearInHub_delivered = true` + `Call $gearInHub_ref updateStage` 后连接 RETURN→COMPLETED 命中：信用点增加 `$gearInHub_reward`、人物与势力声望上调、Intel 显示成功结算文案并保留约 3 游戏日后消失 (`getBaseDaysAfterEnd`)、`starsector.log` 无 `gear_in` 引起的 ERROR。
-  - 接受后 60 游戏天 (600 真实秒) 内未完成：Intel 显示失败文案、人物声望下调 (`setRepPersonChangesMedium` 的失败侧)、约 3 游戏日后消失；`$gearInHub_halfTime` 在任务进行满 30 游戏天时被写 true(半程触发器)。
-  - 读档后 Intel 条目仍在、阶段/`elapsed` 从存档继续 (`StageData.elapsed` 是普通字段)；`$gearInHub_*` 写在人物内存 (随档持久)，任务结束由 `abort()` 统一清理；联系人随任务结束清理 (REMOVE_ON_MISSION_OVER tag)，任务人保留在市场 (与 vanilla cheapCom 一致)，标志与地图标记由 `abort()` 统一清理。
+  ### 酒吧任务完整流程
 
-### 故障注入与参数演示
+- 三组方案的预期结果全部出现。
+- 全程无 `gear_in` 引起的 `ERROR`。
 
-- 入口：Git Bash 命令行 + 生涯游戏。
-- 前置数据：同上，每次改动后重建。
-- 操作步骤：
-  1. 注释掉 `setStartingStage(Stage.CONTACT)` 调用，重建后接受任务并核对异常；改回后确认恢复；
-  2. 把 `setStageOnMemoryFlag(Stage.COMPLETED, giver, "$gearInHub_delivered")` 的目标改成 `sourceContact`，交付后核对阶段；改回后确认恢复；
-  3. 删掉 `endTrigger()` 后重建，核对创建期异常；改回后确认恢复；
-  4. 把 `MISSION_DAYS` 改成 10 重建，接受后挂机核对失败路径；改回后确认恢复。
-- 观察位置：`starsector.log`、对话流程、Intel 状态。
-- 预期结果：
-  - 注入 1 对应故障分析 2：接受任务时抛 `RuntimeException("startingStage can not be null...")`。
-  - 注入 2 对应故障分析 3：交付后阶段不推进到 COMPLETED、任务卡在 RETURN。
-  - 注入 3 对应故障分析 5：创建期抛 "Already began a trigger..."。
-  - 参数演示：`MISSION_DAYS = 10` 时接受后 100 真实秒内未完成即失败 (高频参数修改验证最小任务链第 4 步)。
-
-::: tip 高频调试技巧
-把 `MISSION_DAYS` 从 60 改成 10 重建，失败路径压缩到约 100 真实秒内即可复现 (对应上文参数演示)；`starsector.log` 里 `GearIn hub mission` 前缀的日志覆盖创建与接受两个阶段，是核对任务走完 `create` → `accept` 的快捷观察点。
-:::
-
-通过信号：三组方案的预期结果全部出现；注入用例恢复后回到正常路径；全程无 `gear_in` 引起的 `ERROR`。
-
-清理：取消勾选测试 MOD
+清理：把完成阶段连接的目标恢复为 `giver`，补回 `endTrigger()`，并把 `MISSION_DAYS` 恢复为 `60f`。
 
 ## 故障分析
 

@@ -770,42 +770,29 @@ gradle jar
 
 前置数据：确认以下内容已就绪 —— 累计工程 (C12-S02)、`mod_info.json` 追加 `shaderLib` 依赖、`data\lights\GearIn_light_data.csv` 与四个示例类；`GearInModPlugin.onApplicationLoad` 内追加本节接入片段 (C06-S02)；测试战役 `GearIn_test`(C03-S01) 含本节注册片段一行；本机已安装 GraphicsLib(启动器勾选)。
 
-操作步骤：
-
 1. 构建与产物核对：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/visuals` 下四个新类。
 2. 启动检查：确认启动器抗锯齿为 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`) 后启动游戏进入主菜单 —— 无 "not fully compatible with antialiasing" 中止。
-3. 战斗冒烟与画面：进入 `GearIn_test` 一场战斗，`starsector.log` 核对五个报告行 (`capabilities` / 两行 `light data` / `texture` / `ship`)，无 `gear_in` 引起的 `ERROR`；随后观察玩家舰船暖色光晕 (跟随移动、随朝向偏移)、每 2 秒淡蓝闪光 (约 0.5 秒自灭)、轻型自动炮暖白曳光与点防御光束光晕 (覆盖行生效)。
-4. 暂停：按空格暂停约 10 秒 —— 光源静止但可见；恢复后继续 (暂停期间不产生新闪光)。
-5. 生命周期：把 `makePermanent()` 注释掉后进战斗 —— 挂载光晕约 60 秒后消失 (failsafe)，改回后确认光晕长期存在；随后击毁玩家舰船 —— 日志出现 `GearIn light ship: player destroyed, fading out attached light`，光晕约 1 秒淡出消失。
-6. 跨战斗：退出再进一场 —— 报告行重现、`flash` 编号从 `#1` 重置、无显存/画面异常累积。
-7. 故障注入·初始化顺序与覆盖语义：① 注释接入片段里的 `ShaderLib.init();` 后重启 —— `capabilities` 仍 true 但两行 `light data` 变 `not registered`(对应故障 5)，改回后恢复；② 把 CSV 的 `lightac_shot` 行删掉 hit 组三列 (`hit size` 等留空) 后重启 —— 命中爆炸光消失 (对应故障 7)，改回后恢复。
-8. 故障注入·能力门禁，可选：把 `GRAPHICS_OPTIONS.ini` 的 `enableShaders` 改 `false` 后重启 —— `capabilities` 全 false、光源全无；改回后恢复。
-
-补充：改 `enableLights` 只影响 `lightShaderEnabled` 与光源，不影响 CSV 注册行，两者可观察结果不同。
+3. 战斗冒烟与画面：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察五个报告行，在画面中观察舰船、火炮与光束的光效。
+4. 覆盖对比：把本节 CSV 的 `lightac_shot` 行 `size` 改为 `50`，重启游戏并观察曳光。
+5. 暂停：按空格暂停约 10 秒，再恢复战斗并观察光源。
+6. 跨战斗：退出再进一场，观察报告行、`flash` 编号与画面状态。
 
 预期结果：
 
-1. **启动检查**：启动器抗锯齿处于 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`)；游戏正常进入主菜单，`starsector.log` 没有 "GraphicsLib shaders are not fully compatible with antialiasing!"(规则 3 的正面)。
-2. **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 依次出现：
-```text
-GearIn light capabilities: shaders=true buffers=true lightShaderEnabled=true GearIn light data: lightac_shot (projectile) standard=true size=90.0 intensity=0.4 chance=1.0 fighterDim=true GearIn light data: pdlaser (beam) standard=true size=50.0 intensity=0.7 chance=1.0 fighterDim=true GearIn light texture: hull=<玩家船体id> material=mag=<m> tex=<id> normal=mag=<m> tex=<id> surface=... shipTex=mag=<m> tex=<id> GearIn light ship: attached light added offset=(0.0, 60.0) size=150.0 intensity=1.0
-```
-没有 `gear_in` 引起的 `ERROR`。`texture` 行的 `material` / `normal` 取决于核心 `core_texture_data.csv` 是否注册了该船体 (原版船体通常都有)；`surface` 可能为 `none`(surface 表覆盖较少且依赖 `loadSurface` 门禁)。
-3. **画面结果**：玩家舰船被暖色 (255,210,130) 光晕笼罩，光晕随舰船移动、随朝向偏移。
-   - 每 2 秒舰船周围随机位置闪一次淡蓝 (120,220,255) 闪光并在约 0.5 秒内消失。
-   - 轻型自动炮 (lightac) 飞行中带持续的暖白曳光、命中点出现爆炸光 (核心行无 hit 组，覆盖行新增；核心原有 flash 组被整行替换丢弃)。
-   - 点防御光束 (pdlaser) 带暖色光晕。
-4. **覆盖生效与暂停**：把本节 CSV 的 `lightac_shot` 行 `size` 改回 `50`(与核心一致) 再对比 —— 曳光明显变小；`90` 时更大。注意 `readLightDataCSV` 是**覆盖式**：改 CSV 后重启游戏即可 (数据在 `onApplicationLoad` 注册)。按空格暂停 —— 光源静止 (闪光停在原地、光晕不随舰船淡出变化) 但**仍然可见**；恢复后继续。
-5. **生命期与失效清理**：闪光每次都在约 0.5 秒内消失 (fadeOut 自灭)；挂载光晕持续存在 —— 等待超过 60 秒仍在 (`makePermanent` 生效，规则 5 的正面)。若把 `makePermanent()` 注释掉 (故障注入)，光晕在第 60 秒附近消失。击毁玩家舰船 ——`starsector.log` 出现 `GearIn light ship: player destroyed, fading out attached light`，光晕约 1 秒内淡出消失 (规则 6)；闪光停止产生 (`player.isAlive()` 检查)。
-6. **战斗结束 (跨战斗)**：退出战斗再进一场 —— 五个日志行重新出现、`flash` 编号从 `#1` 重新开始 (每场战斗全新 `LocalData`，规则 7 的正面)；连续多场战斗后画面与显存无异常累积。
-7. **变更验证 (故障注入)**：
-   - **能力门禁注入**：把 `GRAPHICS_OPTIONS.ini` 的 `enableShaders` 改为 `false` 后重启游戏。`capabilities` 行变 `shaders=false buffers=false lightShaderEnabled=false`，两行 `light data` 变 `not registered`(接入片段里的能力判断把 CSV 读取跳过了)，战斗中无任何光源。恢复：改回 `true` 后恢复。对照：`enableLights:false` 时 `lightShaderEnabled=false`、光源全无，但 CSV 仍注册 (能力判断只查 shaders/buffers)—— 两条门禁的可观察结果不同，注意区分。
-   - **初始化顺序注入**：把接入片段里的 `ShaderLib.init();` 注释掉后重启游戏。`capabilities` 行**仍然** `lightShaderEnabled=true`(战斗时 GraphicsLib 早已初始化)，但两行 `light data` 变 `not registered`(本 MOD 的 CSV 在能力判断 false 时被跳过)。"能力全开但自己的数据没注册" 正是规则 1 描述的迷惑症状；改回后恢复。
+- **启动检查**：启动器抗锯齿处于 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`)；游戏正常进入主菜单，`starsector.log` 没有 "GraphicsLib shaders are not fully compatible with antialiasing!"(规则 3 的正面)。
+- **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 依次出现：
+  ```text
+  GearIn light capabilities: shaders=true buffers=true lightShaderEnabled=true GearIn light data: lightac_shot (projectile) standard=true size=90.0 intensity=0.4 chance=1.0 fighterDim=true GearIn light data: pdlaser (beam) standard=true size=50.0 intensity=0.7 chance=1.0 fighterDim=true GearIn light texture: hull=<玩家船体id> material=mag=<m> tex=<id> normal=mag=<m> tex=<id> surface=... shipTex=mag=<m> tex=<id> GearIn light ship: attached light added offset=(0.0, 60.0) size=150.0 intensity=1.0
+  ```
+  没有 `gear_in` 引起的 `ERROR`。`texture` 行的 `material` / `normal` 取决于核心 `core_texture_data.csv` 是否注册了该船体 (原版船体通常都有)；`surface` 可能为 `none`(surface 表覆盖较少且依赖 `loadSurface` 门禁)。
+- **画面结果**：玩家舰船被暖色 (255,210,130) 光晕笼罩，光晕随舰船移动、随朝向偏移。
+  - 每 2 秒舰船周围随机位置闪一次淡蓝 (120,220,255) 闪光并在约 0.5 秒内消失。
+  - 轻型自动炮 (lightac) 飞行中带持续的暖白曳光、命中点出现爆炸光 (核心行无 hit 组，覆盖行新增；核心原有 flash 组被整行替换丢弃)。
+  - 点防御光束 (pdlaser) 带暖色光晕。
+- **覆盖生效与暂停**：`size=50`(与核心一致) 时曳光明显变小，`size=90` 时更大。`readLightDataCSV` 采用覆盖式读取，数据在 `onApplicationLoad` 注册。按空格暂停后，光源静止 (闪光停在原地、光晕不随舰船淡出变化) 但**仍然可见**；恢复后继续。
+- **战斗结束 (跨战斗)**：退出战斗再进一场 —— 五个日志行重新出现、`flash` 编号从 `#1` 重新开始 (每场战斗全新 `LocalData`，规则 7 的正面)；连续多场战斗后画面与显存无异常累积。
 
-通过信号：步骤 1–6 全部符合；步骤 7–8 的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD；恢复 `GRAPHICS_OPTIONS.ini` 与 CSV 为原值
-
+清理：把 `GearIn_light_data.csv` 中 `lightac_shot` 行的 `size` 恢复为 `90`。
 ## 故障分析
 
 以下故障按您在日志和画面上看到的症状组织，每条给出触发条件、断链原因和核对顺序。

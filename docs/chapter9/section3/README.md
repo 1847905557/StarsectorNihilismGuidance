@@ -747,36 +747,26 @@ gradle jar
 
 前置数据：既有 MOD 布局 (C06-S01)+ `GearInModPlugin`(C06-S02，含本节调用点片段)、本节七个类；生涯时钟脚本 `GearInSectorClockScript` (C08-S01，可选)。
 
-1. 操作 1(游戏构建)：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含七个类的 class 条目。
-2. 操作 2(新建生涯)：确认 `starsector.log` 出现 "预期结果" 第 2条列出的全部 `GearIn ...` 日志：
-   - 逐行核对：`brawler_Hull` 的 `isStockVariant=false`/ `isEmptyHullVariant=true`、refit 变体来源 REFIT、克隆隔离、`from empty` 补组、OP 对照、模块覆盖 `overrideSource=REFIT`、JSON 与注册表总数。
-   - 全程无 `gear_in` 引起的 `ERROR`(除预期结果第 3条的注入场景)。
-3. 操作 3(读档)：保存后读档，确认脚本不重复执行 (无第二组 `GearIn stock:` 日志)；进入任意有 station1 的市场看空间站是否正常生成 (模块语义未被破坏)。
-4. 操作 4(故障注入 1—— 共享污染)：把 `GearInVariantRefitter` 改成直接改 `getVariant("brawler_Assault")` 返回值而不 `clone`，重启新档：确认此后所有 brawler 装配都带改动 (对应故障分析第 5 条)；改回后确认恢复。
-5. 操作 5(故障注入 2—— 缺键加载失败)：复制 `brawler_Assault.variant` 到 MOD `data/variants`，删掉 `weaponGroups` 键，重启：启动加载失败，日志 `Loading variant [...]` 后是 JSONException(对应规则强度第 1 条)；恢复后确认启动正常。
-6. 操作 6(故障注入 3—— 坏槽位部署失败)：把 `GearInVariantRefitter` 或 `GearInWeaponGroupBuilder` 里的 `addWeapon("WS 003", "railgun")` 改成 `addWeapon("WS 999", "railgun")`，构建后新档：
-   - 装配阶段无报错，把该变体赋给舰队成员并部署时报 `slot id [WS 999] not found`(对应故障分析第 4 条)；改回后确认恢复。
-
-通过信号：操作 1–3 全部符合；操作 4–6 的注入与恢复都符合预期。
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含七个类的 class 条目。
+2. **新建生涯**：查看 `starsector.log` 中本节七个类输出的全部 `GearIn ...` 日志。
+3. **读档**：保存后读档，观察本节脚本是否重复执行。
+4. 进入任意有 `station1` 的市场，观察空间站模块是否正常生成。
 
 预期结果：
 
-以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下七个类的 class 条目。
-2. **新建生涯**：`starsector.log` 按注册顺序出现以下日志 (数值以实际游戏为准)：
-```text
-GearIn stock: id=brawler_Assault displayName=Assault hull=brawler source=STOCK isStockVariant=true isEmptyHullVariant=false weapons=[WS 001, WS 002, WS 003, WS 004] mods=[fluxbreakers, reinforcedhull] wings=[] vents=10 caps=8 op=... unused=... GearIn hull empty variant: id=brawler_Hull source=HULL isStockVariant=false isEmptyHullVariant=true displayName=Custom GearIn refit clone: id=brawler_Assault displayName=GearIn Refit hull=brawler source=REFIT isStockVariant=false isEmptyHullVariant=false weapons=[...] mods=[fluxbreakers, hardenedsubsystems] wings=[] vents=14 caps=10 op=... unused=... GearIn clone isolation: stock WS 003=annihilator vents=10 caps=8 hasReinforcedHull=true GearIn from empty: groups=0 hasUnassignedWeapons=true GearIn from empty groups after autoGenerateWeaponGroups: LINKED[[WS 003, WS 004]] GearIn OP: stock=... refit=... hullOP=... unusedRefit=... GearIn modules: stationModules={WS 006=module_armour3_Standard, ...} module WS 009=module_large1_lowtech_Standard override=module_large1_lowtech_Standard overrideSource=REFIT GearIn refit JSON: { "displayName": "GearIn Refit", "hullId": "brawler", "variantId": "brawler_Assault", ... } GearIn registered variant count: 900+
-```
-要点核对：`brawler_Hull` 的 `isStockVariant=false` 且 `isEmptyHullVariant=true`(来源是 HULL 不是 STOCK)；`refit clone` 的来源是 REFIT、`reinforcedhull` 已被移除、`hardenedsubsystems` 已加入、vents/caps 变成 14/10；`clone isolation` 一行证明原注册表变体未被污染 (WS 003 仍是 `annihilator`、幅能 10/8)；`overrideSource=REFIT` 证明非 STOCK 覆盖已挂上。
-3. **各脚本错误行**：若日志出现任一脚本角色的 ERROR 行 (含堆栈)：
-   - `GearIn variant reader failed` / `GearIn variant refitter failed` / `GearIn weapon group builder failed`
-   - `GearIn module overrider failed` 或 `GearIn variant serializer failed`；
-   - 说明对应角色脚本某一步抛错；
-   - 按堆栈对照 "规则强度" 节定位 (最常见的是引用了不存在的 id)。
-4. **读档**：不重复执行演示 (`REGISTER_MARK` 门已关、`hasScript` 命中)；`onGameLoad` 里新档与读档各执行一次演示是设计行为 (每个角色脚本只跑一次即自停)。
-5. **退出到主菜单**：脚本停止 (生涯场景不再推进)；回主菜单后再进档按第 5 条继续。
-
-清理：取消勾选测试 MOD
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下七个类的 class 条目。
+- **新建生涯**：`starsector.log` 按注册顺序出现以下日志 (数值以实际游戏为准)：
+  ```text
+  GearIn stock: id=brawler_Assault displayName=Assault hull=brawler source=STOCK isStockVariant=true isEmptyHullVariant=false weapons=[WS 001, WS 002, WS 003, WS 004] mods=[fluxbreakers, reinforcedhull] wings=[] vents=10 caps=8 op=... unused=... GearIn hull empty variant: id=brawler_Hull source=HULL isStockVariant=false isEmptyHullVariant=true displayName=Custom GearIn refit clone: id=brawler_Assault displayName=GearIn Refit hull=brawler source=REFIT isStockVariant=false isEmptyHullVariant=false weapons=[...] mods=[fluxbreakers, hardenedsubsystems] wings=[] vents=14 caps=10 op=... unused=... GearIn clone isolation: stock WS 003=annihilator vents=10 caps=8 hasReinforcedHull=true GearIn from empty: groups=0 hasUnassignedWeapons=true GearIn from empty groups after autoGenerateWeaponGroups: LINKED[[WS 003, WS 004]] GearIn OP: stock=... refit=... hullOP=... unusedRefit=... GearIn modules: stationModules={WS 006=module_armour3_Standard, ...} module WS 009=module_large1_lowtech_Standard override=module_large1_lowtech_Standard overrideSource=REFIT GearIn refit JSON: { "displayName": "GearIn Refit", "hullId": "brawler", "variantId": "brawler_Assault", ... } GearIn registered variant count: 900+
+  ```
+  要点核对：`brawler_Hull` 的 `isStockVariant=false` 且 `isEmptyHullVariant=true`(来源是 HULL 不是 STOCK)；`refit clone` 的来源是 REFIT、`reinforcedhull` 已被移除、`hardenedsubsystems` 已加入、vents/caps 变成 14/10；`clone isolation` 一行证明原注册表变体未被污染 (WS 003 仍是 `annihilator`、幅能 10/8)；`overrideSource=REFIT` 证明非 STOCK 覆盖已挂上。
+- **各脚本错误行**：若日志出现任一脚本角色的 ERROR 行 (含堆栈)：
+  - `GearIn variant reader failed` / `GearIn variant refitter failed` / `GearIn weapon group builder failed`
+  - `GearIn module overrider failed` 或 `GearIn variant serializer failed`；
+  - 说明对应角色脚本某一步抛错；
+  - 按堆栈对照 "规则强度" 节定位 (最常见的是引用了不存在的 id)。
+- **读档**：不重复执行演示 (`REGISTER_MARK` 门已关、`hasScript` 命中)；`onGameLoad` 里新档与读档各执行一次演示是设计行为 (每个角色脚本只跑一次即自停)。
+- **退出到主菜单**：脚本停止 (生涯场景不再推进)；回主菜单后再进档按第 5 条继续。
 
 ## 故障分析
 

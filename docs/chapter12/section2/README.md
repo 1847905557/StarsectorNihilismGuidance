@@ -652,38 +652,24 @@ gradle jar
 3. 周期报告：战斗 (未暂停) 中观察报告输出；按空格暂停约 10 秒后恢复。
 4. 空目标：清空敌方后继续观察报告行。
 5. 持久化：退出战役再进入一场战斗，核对 init 行与 `<saves>\common\` 下的文件。
-6. 故障注入·save：注释 `GearInLazyJsonStore.writeInt` 里的 `jsonObject.save()`，重启游戏进入战斗后核对；改回后确认恢复。
-7. 故障注入·判空：删除 `GearInLazyMathUsage.report` 里的 `if (enemy == null)` 分支，清空敌方后核对日志；改回后确认恢复。
-
-观察位置：`starsector.log` 中的 `GearIn lazy ...` 行、`<saves>\common\` 下的 `GearIn_lazy_demo` 文件、`jar tf` 输出的类条目。
 
 预期结果：
 
 - `jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/lib/` 下五个类的条目：`GearInLazyPlugin` / `GearInLazyMathUsage` / `GearInLazyCombatQuery` / `GearInLazyJsonStore` / `GearInLazyRuntimeProbe`。
 - 首次进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行：
 
-```text
-GearIn lazy init: version=3.0 supported=0.98a-RC5 modEnabled=true classPresent=true battleCount=1
-```
+  ```text
+  GearIn lazy init: version=3.0 supported=0.98a-RC5 modEnabled=true classPresent=true battleCount=1
+  ```
 
   `version` 是 `LazyLib.getVersion()` 的 float 输出；`supported` 应与 `Starsector\mods\LazyLib\mod_info.json` 的 `gameVersion`(`0.98a-RC5`) 一致；`battleCount` 首次为 1。
 - 战斗 (未暂停) 中每 2 秒出现 `GearIn lazy math:` 与 `GearIn lazy combat:` 各一行；`math` 行的 `dist` 随敌舰距离变化、`clampAngle` 与 `angleTo` 数值一致 (角度归一到 `[0,360)`)、`shortest` 的绝对值不超过 180(最短旋转)、`spot` 与玩家距离约 100(`resize` 定长 + 平移)；`combat` 行的 `inRange2000` 覆盖 2000 范围内的舰船 (含残骸时 `alive` 小于 `inRange2000`)。
 - 按空格暂停约 10 秒，暂停期间**没有**报告输出；恢复后报告继续。
 - 敌方全灭后，`math` 行变为 `GearIn lazy math: no enemy in sight`，无 `ERROR`；`combat` 行的 `intercept=none`。
 - 退出战役再进入一场战斗，init 行 `battleCount` 递增 (1 → 2)；`<saves>\common\` 下出现以 `GearIn_lazy_demo` 开头的文件，内容含 `battles` 键，战斗内 `reports` 键随报告周期增长。
-- 变更验证 (单位分工)：把示例的 `MathUtils.clampAngle(angleTo + 360f)` 换成 `FastTrig.sin(angleTo)` 输出 —— 数值不再等于 `angleTo` (度被当弧度用)；改回后恢复。
-- 故障注入·save：`battleCount` 从 1 重新开始 (上次的 1 没有落盘)；改回后恢复递增。
-- 故障注入·判空：下一个报告周期日志出现 NPE 堆栈；改回后恢复。
+- 变更验证 (单位分工)：把示例的 `MathUtils.clampAngle(angleTo + 360f)` 换成 `FastTrig.sin(angleTo)` 输出 —— 数值不再等于 `angleTo` (度被当弧度用)。
 
-通过信号：操作 1–5 全部符合；操作 6/7 的注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD；删除 `GearIn_lazy_demo` 测试文件 (如需)
-
-::: tip 只看本节日志行
-
-`starsector.log` 混有大量其他日志，核对时可只过滤前缀：`grep 'GearIn lazy' Starsector\starsector-core\starsector.log`。
-
-:::
+清理：保留测试类时，把 `FastTrig.sin(angleTo)` 恢复为 `MathUtils.clampAngle(angleTo + 360f)`；无需保留测试数据时，删除 `GearIn_lazy_demo` 测试文件。
 
 ## 故障分析
 

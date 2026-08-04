@@ -420,11 +420,7 @@ gradle jar
 
 ## 验证方案
 
-入口：新建生涯后第一帧 (对话弹出)；观察位置为 `starsector.log`、启动器控制台标准输出与对话的文本/选项面板。
-
 前置数据：编译工具链的 MOD 布局 (C06-S01)；`GearInModPlugin` 与 persistent data 一次性注册检查 (C06-S02，含本节调用点片段)；规则系统页的 `data/campaign/rules.csv` 与 `GearInRulesIntro` (C11-S01)；本节 `data/config/settings.json` 追加键、`GearIn_rules_cmd_*` 行、`GearInRuleCommand` 与 `GearInRuleCmdOpener`。
-
-操作步骤：
 
 1. 游戏构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，随后用 `jar tf jars/GearIndustry.jar` 核对产物。
 2. 规则注册 (加载期)：启动游戏，检查 `starsector.log` 与启动器控制台标准输出。
@@ -432,23 +428,16 @@ gradle jar
 4. FireBest 再入：点击 "FireBest 再入"，核对追加文本与日志行。
 5. FireAll 再入：点击 "FireAll 再入"，核对追加文本与日志行。
 6. 结束与读档：点击 "结束"(或按 ESC) 关闭对话；保存后读档。
-7. 故障注入 (注册与参数类)：依次完成三项注入与恢复 —— 把 `data/config/settings.json` 的 `ruleCommandPackages` 数组临时改名；把 welcome 脚本列的 `true` 改成 `1`；把 `more` 规则的脚本改成 `GearInRuleCommand GearInRuleCmdResult x false`。每项注入后重建启动，观察对应症状，再改回恢复。
-8. 故障注入 (再入不终止)：临时加一条规则 `GearIn_rules_cmd_loop1,GearInRuleCmdResult,,FireBest GearInRuleCmdOpener,,,`(`result` 触发器命中后反向 `FireBest` 回演示触发器，而 welcome 又会再入 `result`...形成循环)；注入后立即退出游戏、恢复规则表并重建，确认操作 3–5 恢复正常。
 
 预期结果：
 
-- 操作 1：`BUILD SUCCESSFUL`；`jar tf` 列出 `data/scripts/gearin/rules/GearInRuleCommand.class` 与 `data/scripts/gearin/rules/GearInRuleCmdOpener.class`。
-- 操作 2：`starsector.log` 出现 `Loading CSV data from [...rules.csv]` 与本节 5 条 `Loading rule: GearIn_rules_cmd_*` 行 (由 `Rules.loadRules` 打印)；标准输出出现 `WARNING: variable [$GearIn_rulecmd_last] only used once; rule id: [GearIn_rules_cmd_result]`(`System.out.println`，非日志；单次使用变量属正常现象)；加载期无 `Command [...] not found in packages` / `Duplicate key` 等规则加载异常。
-- 操作 3：日志出现 `GearIn rulecmd opener dialog shown=true`，对话弹出；文本面板按顺序显示两段：welcome 文本 (含玩家名) 与 "再入命中文本：命令把 amount=2 写入 $GearIn_rulecmd_last，FireBest 再入本触发器后条件成立。"(welcome 的 `FireBest` 再入在 `applyRule` 的 `addText` 之后、`runScript` 阶段执行)；选项面板按 order 显示 "FireBest 再入"(order 0) 与 "FireAll 再入"(order 5)；日志出现 `GearInRuleCommand: ruleId=GearIn_rules_cmd_welcome trigger=GearInRuleCmdResult amount=2.0 keepOptions=true fired=true`；按 ESC 等效 "结束"(`SetShortcut` 生效)。
-- 操作 4：`$option` 回流 `DialogOptionSelected`，`more` 规则命中，其脚本列再次调用命令 (amount=3) 再入同一触发器，`result` 规则再次命中追加一段 "再入命中文本"；日志出现 `GearInRuleCommand: ruleId=GearIn_rules_cmd_more trigger=GearInRuleCmdResult amount=3.0 keepOptions=false fired=true`。
-- 操作 5：`all` 规则命中；`FireAll GearInRuleCmdResult` 再入执行全部命中规则，`result` 规则再次命中追加一段 "再入命中文本"；日志无 `GearInRuleCommand` 行 (FireAll 是内置命令)。
-- 操作 6：`DismissDialog` 关闭对话，游戏恢复，无新增 `ERROR`；读档后不出现 `GearIn rulecmd opener dialog shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关；对话本身不随存档保存)。
-- 操作 7：注入 A → 加载期中止并报 `Command [GearInRuleCommand] not found in packages:`(对应故障分析第 1 条)；注入 B → 日志 keepOptions 恒为 false(`Token.getBoolean` 只认 `"true"`，对应故障分析第 7 条)；注入 C → 点击 "FireBest 再入" 后文本面板出现 `NumberFormatException: ...` 红字段落 (`getFloat` 解析 `x` 失败，对应故障分析第 3 条)；三项改回后均恢复。
-- 操作 8：游戏卡死/栈溢出，无红字 (对应故障分析第 5 条)；恢复并重建后操作 3–5 正常。
-
-通过信号：操作 1–8 的注入、观察与恢复全部符合预期；全程无 `gear_in` 引起的 `ERROR` 日志。
-
-清理：取消勾选测试 MOD
+- **游戏构建**：`BUILD SUCCESSFUL`；`jar tf` 列出 `data/scripts/gearin/rules/GearInRuleCommand.class` 与 `data/scripts/gearin/rules/GearInRuleCmdOpener.class`。
+- **规则注册**：`starsector.log` 出现 `Loading CSV data from [...rules.csv]` 与本节 5 条 `Loading rule: GearIn_rules_cmd_*` 行 (由 `Rules.loadRules` 打印)；标准输出出现 `WARNING: variable [$GearIn_rulecmd_last] only used once; rule id: [GearIn_rules_cmd_result]`(`System.out.println`，非日志；单次使用变量属正常现象)；加载期无 `Command [...] not found in packages` / `Duplicate key` 等规则加载异常。
+- **对话完整流程**：日志出现 `GearIn rulecmd opener dialog shown=true`，对话弹出；文本面板按顺序显示两段：welcome 文本 (含玩家名) 与 "再入命中文本：命令把 amount=2 写入 $GearIn_rulecmd_last，FireBest 再入本触发器后条件成立。"(welcome 的 `FireBest` 再入在 `applyRule` 的 `addText` 之后、`runScript` 阶段执行)；选项面板按 order 显示 "FireBest 再入"(order 0) 与 "FireAll 再入"(order 5)；日志出现 `GearInRuleCommand: ruleId=GearIn_rules_cmd_welcome trigger=GearInRuleCmdResult amount=2.0 keepOptions=true fired=true`；按 ESC 等效 "结束"(`SetShortcut` 生效)。
+- **FireBest 再入**：`$option` 回流 `DialogOptionSelected`，`more` 规则命中，其脚本列再次调用命令 (amount=3) 再入同一触发器，`result` 规则再次命中追加一段 "再入命中文本"；日志出现 `GearInRuleCommand: ruleId=GearIn_rules_cmd_more trigger=GearInRuleCmdResult amount=3.0 keepOptions=false fired=true`。
+- **FireAll 再入**：`all` 规则命中；`FireAll GearInRuleCmdResult` 再入执行全部命中规则，`result` 规则再次命中追加一段 "再入命中文本"；日志无 `GearInRuleCommand` 行 (FireAll 是内置命令)。
+- **结束与读档**：`DismissDialog` 关闭对话，游戏恢复；读档后不出现 `GearIn rulecmd opener dialog shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关；对话本身不随存档保存)。
+- 全程无 `gear_in` 引起的 `ERROR` 日志。
 
 ## 故障分析
 

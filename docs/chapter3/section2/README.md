@@ -368,33 +368,22 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 
 :::
 
-### 验证方案 (基于本例)
+### 验证方案
 
-前置数据：
+前置数据：C01-S01 的 `mod_info.json`、C01-S02 的船体 (`GearIn_artizan`)、C01-S03 的联队与航母 (`GearIn_slag_wing`、`GearIn_furnaceman`)、C01-S05 的武器 (`GearIn_durin`、`GearIn_dwalin`)、C02-S02 的船插 (`GearIn_stable_injector`)、C03-S01 的装配 (`GearIn_artizan_combat` 等)、本节的 `factions.csv`、`gear_industry.faction`、`default_ship_roles.json`。
 
-- C01-S01 的 `mod_info.json`；
-- C01-S02 的船体 (`GearIn_artizan`)；
-- C01-S03 的联队与航母 (`GearIn_slag_wing`、`GearIn_furnaceman`)。
-- C01-S05 的武器 (`GearIn_durin`、`GearIn_dwalin`)；
-- C02-S02 的船插 (`GearIn_stable_injector`)；
-- C03-S01 的装配 (`GearIn_artizan_combat` 等)；
-- 本节的 `factions.csv`、`gear_industry.faction`、`default_ship_roles.json`。
+1. 启动游戏，加载到主菜单，检查 `Starsector\starsector-core\starsector.log`。
+2. 进入生涯 (或读取已有生涯存档)，按 `F` 打开情报。
+3. 在星区里遭遇或靠近齿轮工业的巡逻队/贸易队。
+4. (可选) 与齿轮工业的市场互动 (若有其殖民地，本节未建殖民地时可跳过)。
 
-**操作与通过信号**：
+预期结果：
 
-1. 启动游戏，加载到主菜单，检查 `Starsector\starsector-core\starsector.log`。**通过信号**：出现 `Loading factions`、`Loading default_ship_roles.json`、`Loading gear_industry faction`，且无 `ERROR`。
-2. 进入生涯 (或读取已有生涯存档)，按 `F` 打开情报。**通过信号**：齿轮工业出现在势力列表，名称、颜色、大旗 (logo) 与小旗 (crest) 与 faction 文件一致；若按第四步挂了关系代码，关系表显示设定值。
-3. 在星区里遭遇或靠近齿轮工业的巡逻队/贸易队。**通过信号**：舰队由 `knownShips` 的船体组成，`GearIn_artizan` / `GearIn_furnaceman` 使用 `default_ship_roles.json` 里的装配；`hullFrequency` 为 0 的船体不出现。
-4. (可选) 与齿轮工业的市场互动 (若有其殖民地，本节未建殖民地时可跳过)。**通过信号**：税率默认 0.3(`tariffFraction`)，违禁品列表生效。
-
-**故障注入**(可选，逐项做完恢复，用于反向确认通过信号)：
-
-1. 注释掉 `factions.csv` 的行，重启确认 `Loading gear_industry faction` 消失、势力不出现 (对应故障分析第 1 条)；
-2. 删掉 faction 文件里 `displayName`，重启确认加载中断与 `JSONObject["displayName"] not found`(对应第 2 条)；
-3. 把 `default_ship_roles.json` 的一个装配 ID 改错，重启确认 `Ship hull variant [X] not found!`(对应第 5 条)；
-4. 把 `knownShips.tags` 里的 `GearIn_bp` 改成 `GearIn_bp2`，重启确认 `GearIn_` 舰船从势力舰队中消失且无报错 (对应第 6 条)。
-
-**清理**：恢复所有注入的故障；发布前确认 `factions.csv` 无 `#` 注释行、势力 ID 不与任何 MOD 冲突。
+- 启动游戏加载到势力阶段时，`starsector.log` 出现 `Loading factions`、`Loading default_ship_roles.json` 与 `Loading gear_industry faction`，之后没有任何 `ERROR`。
+- 进入生涯 (或任意读取生涯的存档) 后，按 `F` 打开情报 (intel)，齿轮工业出现在势力列表里，显示名、颜色、大旗 (logo) 与小旗 (crest) 与 faction 文件一致。
+- 齿轮工业生成的巡逻队、贸易队使用 `knownShips` 里的舰船，组成符合 `factionDoctrine`(战舰/航母比例、船型大小、军官质量)；`GearIn_artizan` / `GearIn_furnaceman` 及其在 `default_ship_roles.json` 里的装配出现在其舰队中；`hullFrequency` 里倍率为 0 的船体永不出现。
+- 未设置关系时，齿轮工业与所有势力的关系都是 0.0 中立；按第四步设置后，情报里对应关系显示为设定值 (例如与海盗 `HOSTILE`)，且海盗对该势力同样敌视 (关系是对称存储、按对读取的)。
+- 市场蓝图与打捞层面：带 `rare_bp` 的组件不出现在本势力默认池里，符合掉落池规则 (本节不展开市场)。
 
 ## 实用势力包 (bp) 与其它生成型 tags 速查表 (原版数据核对)
 
@@ -444,15 +433,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 
 :::
 
-## 预期结果
-
-- 启动游戏加载到势力阶段时，`starsector.log` 出现 `Loading factions`、`Loading default_ship_roles.json` 与 `Loading gear_industry faction`，之后没有任何 `ERROR`。
-- 进入生涯 (或任意读取生涯的存档) 后，按 `F` 打开情报 (intel)，齿轮工业出现在势力列表里，显示名、颜色、大旗 (logo) 与小旗 (crest) 与 faction 文件一致。
-- 齿轮工业生成的巡逻队、贸易队使用 `knownShips` 里的舰船，组成符合 `factionDoctrine`(战舰/航母比例、船型大小、军官质量)；`GearIn_artizan` / `GearIn_furnaceman` 及其在 `default_ship_roles.json` 里的装配出现在其舰队中；`hullFrequency` 里倍率为 0 的船体永不出现。
-- 未设置关系时，齿轮工业与所有势力的关系都是 0.0 中立；按第四步设置后，情报里对应关系显示为设定值 (例如与海盗 `HOSTILE`)，且海盗对该势力同样敌视 (关系是对称存储、按对读取的)。
-- 市场蓝图与打捞层面：带 `rare_bp` 的组件不出现在本势力默认池里，符合掉落池规则 (本节不展开市场)。
-
-## 实例驱动故障分析
+## 故障分析
 
 下面每条都给出触发条件、可观察结果和修正。
 

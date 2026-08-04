@@ -153,12 +153,13 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 
 ## 验证方案
 
-本节成果是单个插件类，验证集中在一处进行。前置数据：`GearInPauseAwarePlugin` 已写入 `data/config/settings.json` 的 `plugins` 段，`jars\GearIndustry.jar` 已按 C06-S01 的流程构建并在启动器启用本 MOD。入口为 Git Bash 构建与模拟战 (有玩家舰船)；观察位置统一为 `Starsector/starsector-core/starsector.log` 的 `GearIn:` 条目与玩家舰船附近的画面。
+前置数据：`GearInPauseAwarePlugin` 已写入 `data/config/settings.json` 的 `plugins` 段，`jars\GearIndustry.jar` 已按 C06-S01 的流程构建并在启动器启用本 MOD。
 
 1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
 2. 启动游戏，进入模拟战 (有玩家舰船)，正常跑约 15 秒。
 3. 打开 `starsector.log`，搜索 `GearIn`，核对报告行与数字。
 4. 按 ESC 暂停约 20 秒再恢复，再次核对报告行。
+
 
 预期结果：
 

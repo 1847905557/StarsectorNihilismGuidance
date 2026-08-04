@@ -437,37 +437,13 @@ gradle jar
 
 ### 验证方案
 
-构建通过只说明能编译，下面的验证让您看到脚本在游戏里实际跑出的日志。前置数据 (来自前置知识与本节内容)：
-
-- 既有 MOD 工程：`mod_info.json`、构建脚本与插件入口 `GearInModPlugin`(C06-S02)，以及脚本注册标记模式 (C08-S01)；
-- 本节三个类与调用点片段中的两个 `addScript` 注册块 (各带独立的 `REGISTER_MARK` 键)。
-
-操作：
-
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含三个类的 `.class` 条目。
-2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按下方预期结果的日志序列顺序出现两个脚本的日志行 (势力段 ×4、货物段 ×2 组)，且**没有**旧复合演示的收尾 `done` 行。
-   - `write-rollback` 行的中间值分别比初值高 `0.05` / `100` / `50` / `10`，终值与初值相等；全程无 `gear_in` 引起的 `ERROR`。
+2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按顺序出现两个脚本的日志行 (势力段 ×4、货物段 ×2 组)，且**没有**旧复合演示的收尾 `done` 行。
+   - 观察 `write-rollback` 行的初值、中间值与终值。
 3. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位)。
-4. **故障注入 1 (可选)**：注释掉调用点片段中的某个 `addScript` 块，重启新档：只有该段日志缺失、其余一段正常 (对应故障分析第 6 条前半)；改回后确认恢复。
-5. **参数演示 (可选)**：把势力段 `adjustRelationship(Factions.PLAYER, 0.05f)` 的 delta 改成 `0.2f` 重新构建：`write-rollback` 行中间值比初值高 `0.20`，终值仍与初值相等 (回滚精确性验证)。
+4. **参数演示 (可选)**：把势力段 `adjustRelationship(Factions.PLAYER, 0.05f)` 的 delta 改成 `0.2f` 重新构建：`write-rollback` 行中间值比初值高 `0.20`，终值仍与初值相等 (回滚精确性验证)。
 
 预期结果：
-
-**新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
-
-```text
-GearIn campaign services faction: player=player(<带冠词显示名>) baseColor=<Color> darkColor=<Color> | hegemony=Hegemony pirates=Pirates
-GearIn campaign services faction relations: hegemony=<R1>(<L1>) hostile=<H1> | pirates=<R2>(<L2>) hostile=<H2> | independent=<R3>(<L3>) hostile=<H3>
-GearIn campaign services faction rel write-rollback: <R> -> <R+0.05> -> <R> (rolled back)
-GearIn campaign services faction misc: relToPlayer=1.00(Cooperative) tariff=<T> toll=<T> fine=<F> drugsIllegal=false illegalCount=0 knownShips=<N> knownWeapons=<N> knownFighters=<N> showInIntelTab=<B>
-GearIn campaign services cargo write-rollback: supplies <S> -> <S+100> -> <S> | fuel <F> -> <F+50> -> <F> | marines <M> -> <M+10> -> <M> | machinery <Q> | credits <C> | space <U>/<Cap>
-GearIn campaign services cargo stacks: before=<N> during=<N+k> after=<N+k> nullAfter=<k>
-GearIn campaign services cargo stack[0..2]: type=<Type> data=<Data> size=<Size> null=<B>
-```
-
-`<带冠词显示名>` 是 `getDisplayNameWithArticle()` 的返回 (新档玩家势力为 `player` 的显示名变体，以实际值为准)；`k` 是本演示新增的栈数 (0–3)：若演示前玩家货舱已有补给/燃料/陆战队员栈则 `k` 更小；`nullAfter` 恒等于 `k`。
-
-其余预期：
 
 - **关系/货物核对**：`write-rollback` 行的第二段恒比第一段高 `0.05`(起始关系接近 `1.0` 时被钳位则例外，新档霸主关系不会)，第三段与第一段相等。
 - **固定值**：`drugsIllegal=false`、`illegalCount=0`(新档玩家势力无非法商品声明)、`relToPlayer=1.00(Cooperative)`(玩家势力对玩家自己 = 同势力对默认 `1.0`)。
@@ -476,9 +452,7 @@ GearIn campaign services cargo stack[0..2]: type=<Type> data=<Data> size=<Size> 
 - **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
 - **其余数值**：以实际存档为准。
 
-通过信号：操作 1–3、5 全部符合；4 的注入与恢复都符合预期。任一预期结果没有出现，验证即判定为失败，核对路径见故障分析。
-
-清理：取消勾选测试 MOD
+清理：把 `adjustRelationship(Factions.PLAYER, 0.2f)` 恢复为 `adjustRelationship(Factions.PLAYER, 0.05f)`。
 
 ## 故障分析
 

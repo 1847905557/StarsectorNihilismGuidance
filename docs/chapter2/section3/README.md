@@ -280,15 +280,24 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 | 系统结束后效果残留 | `unapply` 漏掉了 `apply` 里的某项 `unmodify` | `apply` 里每个 `modify` 都有对应 `unmodify` |
 | `Problem loading class [...]` | `statsScript`、包声明、文件路径不一致 | 按类名三处一致核对 |
 
-## 预期结果
+## 验证方案
 
-1. 日志出现 `Loading ship system [data/shipsystems/GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，无 `ERROR`；
-2. 模拟战按 U：前摇约 2 秒内速度与加速度平滑升至 +200；左下角状态栏出现 `engine power increased`；开关式 (`toggle=TRUE`) 再按 U 关闭；
-3. 关闭后约 1 秒后摇内按基础速度减速；随后约 10 秒冷却，冷却结束可再次激活；
-4. 参数实验 (`SPEED_BONUS`、`active`、`cooldown`) 各自产生可感知的行为差异；
-5. 右键抵抗力场：状态文字、时长与减伤数值 (高爆/EMP 最高 75%、动能/能量最高 50%) 符合预期。
+前置数据：本节注册并挂载的 `GearIn_burstdrive` 与 `GearIn_resistfield` 战术系统。
 
-## 实例驱动故障分析
+1. 重启游戏，在 `starsector.log` 中观察战术系统加载记录。
+2. 进入模拟战，按 U 激活和关闭燃烧驱动，观察前摇、后摇与冷却。
+3. 调整 `SPEED_BONUS`、`active` 或 `cooldown` 后重启，比较行为差异。
+4. 使用右键抵抗力场，观察状态文字、持续时间与减伤效果。
+
+预期结果：
+
+- 日志出现 `Loading ship system [data/shipsystems/GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，且没有相关 `ERROR`。
+- 前摇约 2 秒内速度与加速度平滑升至 +200；左下角状态栏出现 `engine power increased`；开关式 (`toggle=TRUE`) 再按 U 关闭。
+- 关闭后约 1 秒后摇内按基础速度减速；随后约 10 秒冷却，冷却结束可再次激活。
+- 参数实验 (`SPEED_BONUS`、`active`、`cooldown`) 各自产生可感知的行为差异。
+- 状态文字、时长与减伤数值 (高爆/EMP 最高 75%、动能/能量最高 50%) 符合预期。
+
+## 故障分析
 
 1. **游戏加载直接失败 (`Fatal: ship_systems.csv is missing systems`)**。触发：`.system` 已建但 CSV 无对应行，或行首残留 `#`。可观察：`Ship system [GearIn_burstdrive] not found in ship_systems.csv` 后跟 Fatal。修正：CSV 补行、去 `#`。
 2. **系统表现异常 (数值全 0)**。触发：CSV 行 `id` 与 `.system` `id` 不一致。可观察：警告 `not found in store`，系统时长全 0、按键瞬间结束。修正：两处 `id` 逐字符一致。

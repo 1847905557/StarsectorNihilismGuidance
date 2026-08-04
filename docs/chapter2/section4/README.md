@@ -167,13 +167,23 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 | 光束无日志 | `beamEffect` 写到了非光束武器，或键名拼错 | 确认 `.wpn` 的 `specClass` 是 `"beam"`，键名 `beamEffect` |
 | 日志有但光点不出现 | 光点尺寸或持续时间过小 | 调整 `addHitParticle` 的 size 与 duration 参数 |
 
-## 预期结果
+## 验证方案
 
-1. 火炮命中：`starsector.log` 每发一行 `GearIn hit! shieldHit=...`，命中点橙色光点；
-2. 光束照射：激活期间每秒一行 `GearIn beam tick`，光束末端青色光点，停火即停；
-3. 修改日志文字后重启，日志内容随之变化。
+前置数据：已经绑定 `GearInHitLogger` 的弹体武器和已经绑定 `GearInBeamLogger` 的光束武器。
 
-## 实例驱动故障分析
+1. 从模拟战与 `starsector.log`开始验证。
+2. 重启游戏并进入模拟战，用弹体武器命中敌舰。
+3. 用光束武器持续照射敌舰，然后停止开火。
+4. 修改一处日志文字，重启后重复对应攻击。
+
+预期结果：
+
+- `starsector.log` 每发一行 `GearIn hit! shieldHit=...`，命中点出现橙色光点。
+- 激活期间每秒出现一行 `GearIn beam tick`，光束末端出现青色光点，停火后停止输出。
+
+清理：把临时修改的日志文字恢复为 `GearIn hit! shieldHit=` 或 `GearIn beam tick`。
+
+## 故障分析
 
 1. **效果类不触发**。触发：注册列写错文件 (`onHitEffect` 写到 `.wpn`)、键名拼错、`beamEffect` 挂到非光束武器。可观察：无日志、无报错 (静默)。修正：核对注册列位置与键名。
 2. **`Problem loading class [...]`**。触发：类名三处不一致或类不存在。修正：按类名三处一致 (武器版) 核对。

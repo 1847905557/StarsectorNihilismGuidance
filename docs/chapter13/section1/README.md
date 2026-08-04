@@ -333,23 +333,18 @@ gradle jar
 前置数据：前序累计工程 (C06-S01) 基础上追加本节内容 (沿用 C13-S03 的 `data/config/LunaSettings.csv`、新增 `GearInCompatBridge`、`GearInModPlugin.onGameLoad` 内一行调用)；本机已安装 Lunalib。
 
 1. 构建核对：在 MOD 根目录执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；用 `jar tf jars\GearIndustry.jar` 查看 `data/scripts/gearin/modcompat/GearInCompatBridge.class` 是否在产物内。
-2. 降级路径：启动器**不**勾选 Lunalib，勾选 "齿轮工业" 启动并进入生涯。
-3. 完整路径：勾选 Lunalib 重启进入生涯，打开 LunaLib 设置界面。
-4. 故障注入·字段缺失：从 `LunaSettings.csv` 删除 `GearIn_fullGraphicEffect` 行，重启游戏。
-5. 故障注入·引用泄漏：把 `getFullGraphicEffect` 里的 `LunaSettings.getBoolean(...)` 移到 `isLunaSettingsUsable()` 检查之前，不勾选 Lunalib 重启。
+2. 降级路径：启动器**不**勾选 Lunalib，勾选 "齿轮工业" 启动并进入生涯，查看 `starsector.log` 中的 `GearIn compat:` 与 `LunaSettings:` 行。
+3. 完整路径：勾选 Lunalib 重启进入生涯，打开 LunaLib 设置界面，观察 `GearIn_fullGraphicEffect` 项并查看日志。
 
-观察位置：`starsector.log` 中的 `GearIn compat:` 与 `LunaSettings:` 行；LunaLib 设置界面中的 `GearIn_fullGraphicEffect` 项。
-
-**预期结果：**
+预期结果：
 
 - 构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/modcompat/GearInCompatBridge.class`。
 - 降级路径：`starsector.log` 出现 `GearIn compat: LunaLib unavailable, degrading to fallback=true`，`getFullGraphicEffect(true)` 返回 `true`(全特效默认行为)，游戏正常且没有由 `gear_in` 引起的 `ERROR`。
 - 完整路径：`starsector.log` 无降级行；LunaLib 设置界面出现 `GearIn_fullGraphicEffect` 项 (默认 `true`)，改值为 `false` 保存后重读存档，行为变为 `false` —— 设置值生效。
-- 字段缺失：LunaLib 打 `LunaSettings: Value GearIn_fullGraphicEffect of type Boolean not found in JSONObject`(ERROR)，适配器打 `GearIn compat: field [GearIn_fullGraphicEffect] missing in LunaSettings, fallback=true`，两行成对出现，返回默认值且无 NPE；恢复删除的行后确认复原。
-- 引用泄漏：抛 `NoClassDefFoundError`(对应故障分析第 1 条)；改回后确认恢复。
+- 字段缺失：LunaLib 打 `LunaSettings: Value GearIn_fullGraphicEffect of type Boolean not found in JSONObject`(ERROR)，适配器打 `GearIn compat: field [GearIn_fullGraphicEffect] missing in LunaSettings, fallback=true`，两行成对出现，返回默认值且无 NPE。
 - 类存在性 (进阶，可选验证)：类存在性检测属进阶手段，本节示例不包含该判据；需要验证时按 "进阶" 小节写法在启用/未启用两种状态下分别探测。
 
-清理：取消勾选测试 MOD；删除测试期间改动 (恢复 `LunaSettings.csv` 与适配器源码)。
+清理：恢复 `LunaSettings.csv` 中临时删除的 `GearIn_fullGraphicEffect` 行。
 
 ## 故障分析
 

@@ -737,50 +737,36 @@ gradle jar
 
 ### 验证方案
 
-入口：`gradle jar` 构建、新档生涯、对话界面与 devMode 控制台。
-
 前置数据：既有 MOD 布局 (C06-S01)+ `GearInModPlugin`(C06-S02，含本节调用点片段)、`data\campaign\rules.csv` 本节 5 行、本节六个类。
-
-操作步骤：
 
 1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/rules/` 下六个类的 `.class`。
 2. 启动游戏，确认 `starsector.log` 出现本节 5 条 `Loading rule: GearIn_memory_*` 行。
-3. 新建生涯，核对预期结果 3 的写入与计数日志 (run 1、contains/is/between、getExpire=1000、rearmed 30 / cleared -1、required 依赖、sector 键列表)。
-4. 核对预期结果 4 的 memoryMap 槽位与三个解析结果。
-5. 核对预期结果 5 的 probe 移除、required 级联与对话弹出。
-6. 在对话中点 "验证内存键"，核对预期结果 6；devMode 下展开 "(dev) dump memory" 选项，核对预期结果 7。
-7. 保存后读档，核对预期结果 8。
-8. 依次执行四个故障注入并恢复，核对预期结果 9 的对应表现：漏 `$` 前缀、两参覆盖过期、槽位错位、persistent data 撞键。
-
-观察位置：`starsector.log`、对话文本面板与选项、devMode `DumpMemory` 输出、读档后的日志与对话行为。
+3. 新建生涯，观察写入与计数日志：run 1、contains/is/between、getExpire=1000、rearmed 30 / cleared -1、required 依赖和 sector 键列表。
+4. 观察 memoryMap 槽位和三个解析结果。
+5. 观察 probe 移除、required 级联和对话弹出。
+6. 在对话中点 "验证内存键"，观察文本和选项；devMode 下展开 "(dev) dump memory" 选项并查看输出。
+7. 保存后读档，观察计数日志、内存状态和对话行为。
 
 预期结果：
 
-1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/` 下 `GearInMemoryKeys`、`GearInMemoryWriter`、`GearInPersistentDataCounter`、`GearInMemoryMapAssembler`、`GearInMemoryExpiryVerifier`、`GearInMemoryDialog` 六个类的 `.class`。
-2. **规则注册 (加载期)**：启动日志出现本节 5 条 `Loading rule: GearIn_memory_welcome` / `..._verify` / `..._result_expired` / `..._result_alive` / `..._leave`—— 规则行确实被读进内存的静态证明。
-3. **新档首次进入生涯 (首个未暂停推进帧)**：`starsector.log` 出现 `GearInPersistentDataCounter: PersistentData 运行计数 run 1（新档首次 = 1；读档恢复上次值 = null）`；随后写入脚本输出：
-   - `GearInMemoryWriter: contains(KEY_TAG)=true getString=GearInReady is(key,"GearInReady")=true`；
-   - `getFloat(KEY_COUNTER)=1.0 is(key,1f)=true between(0,2)=true getExpire=1000.0（游戏天）`；
-   - `KEY_PROBE（expire 0）contains=true getBoolean=true getExpire=0.0`；
-   - `expire(KEY_REARM, 30f) 重设后 getExpire=30.0；两参 set 清除未决过期后 getExpire=-1.0（-1 = 永不过期）`；
-   - `required 依赖 getRequired(KEY_REQUIRED_PARENT)=[$GearIn_memory_required_child]`；
-   - `sector 内存键 = [$GearIn_memory_counter, $GearIn_memory_probe, $GearIn_memory_rearm, $GearIn_memory_required_child, $GearIn_memory_required_parent, $GearIn_memory_tag]`(全部 `$` 前缀)。
-4. **memoryMap 组装与解析 (`KEY_TAG` 落键后的未暂停帧，写入同帧或下一帧，取决于同帧脚本顺序)**：`GearInMemoryMapAssembler: memoryMap 槽位 = [global, local, player]`；三个解析结果：`$global.GearIn_memory_tag = GearInReady`、`$player.GearIn_memory_player = true`、`$GearIn_memory_fleetKey（无点号回落 local）= fleet-local`。
-5. **probe 移除与对话弹出 (probe 被移除后的第一个未暂停帧)**：`GearInMemoryExpiryVerifier: 下一推进帧后 contains(KEY_PROBE)=false getString=null（expire 0 的键已被 Memory.advance 移除）`；`unset(KEY_REQUIRED_CHILD) 后 contains(child)=false contains(parent)=false（required 依赖：…父键被递归移除）`；同时 `GearInMemoryDialog: dialog shown=true`，对话弹出：
-   - 文本三行分别替换出 `GearInReady`、`1.0`、`fleet-local`(`$global.` / 无点号回落 local 两种 token 替换路径)；
-   - 选项面板按声明顺序显示 "验证内存键" 与 "结束"。
-   - 若该帧正有其它对话/界面排队，弹窗顺延到后续未暂停帧 (对话脚本不置 done，自动重试)。
-6. **点 "验证内存键"**：`$player.GearIn_memory_lastAction = verify 0` 写入玩家内存 (`DumpMemory` 可见 `$player.GearIn_memory_lastAction = verify (e=0)`)；`FireBest GearInMemoryResult` 命中 `result_alive` (条件 `$global.GearIn_memory_counter >= 1` + `!$global.GearIn_memory_probe` 两条 1 分全过)；`result_expired` 的条件 `$global.GearIn_memory_probe` 判真 false 不命中 —— 文本面板追加 alive 的文本，其中 `$player.GearIn_memory_lastAction` 已替换为 `verify`。
-7. **点 "结束"(或按 ESC)**：`DismissDialog` 关闭对话；对话关闭后的第一个推进帧 `$player.GearIn_memory_lastAction` 被移除 (此后 `DumpMemory` 无该键)——"会话内 flag" 语义的完整流程得到可观察验证。
-8. **保存后读档**：日志 `PersistentData 运行计数 run 2（新档首次 = 1；读档恢复上次值 = 1）`；写入/组装/验证/对话脚本重跑、对话再次弹出；记忆键被重新写入。
-9. **故障注入与恢复**：四项注入各有对应表现，恢复后全部回到注入前状态：
-   - 漏 `$`：把 `GearInMemoryKeys.KEY_TAG` 的值改成 `"GearIn_memory_tag"` 重建，写入脚本调用 `set` 抛 `RuntimeException("Key GearIn_memory_tag should start with $")`，`KEY_TAG` 永不落键、对话不弹出 (对应故障分析 1)；
-   - 两参覆盖过期：在写入脚本的 `set(KEY_COUNTER, 1f, 1000f)` 后追加一行两参 `set(KEY_COUNTER, 2f)`，日志 `getExpire` 变 -1、`getFloat` 变 2.0 (对应故障分析 2)；
-   - 槽位错位：把 welcome 文本的 `$global.GearIn_memory_tag` 改成 `$GearIn_memory_tag`(无点号，回落 local=舰队记忆)，文本 token 不替换 (舰队记忆里没有该键) 且无报错 (对应故障分析 5)；
-   - persistent data 撞键：把 `GearInPersistentDataCounter.PERSIST_KEY_RUNS` 临时改成与另一注册项相同的键，`run N` 计数互相覆盖、读档恢复值错乱 (对应故障分析 8)。
-10. **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR`；加载期无 `Duplicate key` / 重复规则 id 报错。
-
-清理：取消勾选测试 MOD
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/` 下 `GearInMemoryKeys`、`GearInMemoryWriter`、`GearInPersistentDataCounter`、`GearInMemoryMapAssembler`、`GearInMemoryExpiryVerifier`、`GearInMemoryDialog` 六个类的 `.class`。
+- **规则注册 (加载期)**：启动日志出现本节 5 条 `Loading rule: GearIn_memory_welcome` / `..._verify` / `..._result_expired` / `..._result_alive` / `..._leave`—— 规则行确实被读进内存的静态证明。
+- **新档首次进入生涯 (首个未暂停推进帧)**：`starsector.log` 出现 `GearInPersistentDataCounter: PersistentData 运行计数 run 1（新档首次 = 1；读档恢复上次值 = null）`；随后写入脚本输出：
+  - `GearInMemoryWriter: contains(KEY_TAG)=true getString=GearInReady is(key,"GearInReady")=true`；
+  - `getFloat(KEY_COUNTER)=1.0 is(key,1f)=true between(0,2)=true getExpire=1000.0（游戏天）`；
+  - `KEY_PROBE（expire 0）contains=true getBoolean=true getExpire=0.0`；
+  - `expire(KEY_REARM, 30f) 重设后 getExpire=30.0；两参 set 清除未决过期后 getExpire=-1.0（-1 = 永不过期）`；
+  - `required 依赖 getRequired(KEY_REQUIRED_PARENT)=[$GearIn_memory_required_child]`；
+  - `sector 内存键 = [$GearIn_memory_counter, $GearIn_memory_probe, $GearIn_memory_rearm, $GearIn_memory_required_child, $GearIn_memory_required_parent, $GearIn_memory_tag]`(全部 `$` 前缀)。
+- **memoryMap 组装与解析 (`KEY_TAG` 落键后的未暂停帧，写入同帧或下一帧，取决于同帧脚本顺序)**：`GearInMemoryMapAssembler: memoryMap 槽位 = [global, local, player]`；三个解析结果：`$global.GearIn_memory_tag = GearInReady`、`$player.GearIn_memory_player = true`、`$GearIn_memory_fleetKey（无点号回落 local）= fleet-local`。
+- **probe 移除与对话弹出 (probe 被移除后的第一个未暂停帧)**：`GearInMemoryExpiryVerifier: 下一推进帧后 contains(KEY_PROBE)=false getString=null（expire 0 的键已被 Memory.advance 移除）`；`unset(KEY_REQUIRED_CHILD) 后 contains(child)=false contains(parent)=false（required 依赖：…父键被递归移除）`；同时 `GearInMemoryDialog: dialog shown=true`，对话弹出：
+  - 文本三行分别替换出 `GearInReady`、`1.0`、`fleet-local`(`$global.` / 无点号回落 local 两种 token 替换路径)；
+  - 选项面板按声明顺序显示 "验证内存键" 与 "结束"。
+  - 若该帧正有其它对话/界面排队，弹窗顺延到后续未暂停帧 (对话脚本不置 done，自动重试)。
+- **点 "验证内存键"**：`$player.GearIn_memory_lastAction = verify 0` 写入玩家内存 (`DumpMemory` 可见 `$player.GearIn_memory_lastAction = verify (e=0)`)；`FireBest GearInMemoryResult` 命中 `result_alive` (条件 `$global.GearIn_memory_counter >= 1` + `!$global.GearIn_memory_probe` 两条 1 分全过)；`result_expired` 的条件 `$global.GearIn_memory_probe` 判真 false 不命中 —— 文本面板追加 alive 的文本，其中 `$player.GearIn_memory_lastAction` 已替换为 `verify`。
+- **点 "结束"(或按 ESC)**：`DismissDialog` 关闭对话；对话关闭后的第一个推进帧 `$player.GearIn_memory_lastAction` 被移除 (此后 `DumpMemory` 无该键)——"会话内 flag" 语义的完整流程得到可观察验证。
+- **保存后读档**：日志 `PersistentData 运行计数 run 2（新档首次 = 1；读档恢复上次值 = 1）`；写入/组装/验证/对话脚本重跑、对话再次弹出；记忆键被重新写入。
+- **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR`；加载期无 `Duplicate key` / 重复规则 id 报错。
 
 ## 故障分析
 

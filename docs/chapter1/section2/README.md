@@ -371,9 +371,9 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 本节完成了从一张贴图到一艘可玩舰船的完整流程：命名与归位决定 ID 和外观，`.ship` 决定几何与表现，`ship_data.csv` 决定性能与生成入口，三者构成一条完整的数据链。
 
-排错时从 CSV 的 ID 沿链逐项追到资源文件，比凭空臆测更可靠。
+作为对您 (或许是新人？) 的建议，编者必须强调的是：排错时从 CSV 的 ID 沿链逐项追到资源文件，这比凭空臆测更可靠。Java 不承认猜。
 
-本节登记的 `GearIn_artizan` ID 与 `GearIn_bp` 标签还会用于蓝图、装配和销售规则等机制。保持这些标识稳定，后续数据才能继续沿同一条所有权链使用它们。
+本节登记的 `GearIn_artizan` ID 与 `GearIn_bp` 标签还会用于蓝图、装配和市场销售等机制。保持这些标识稳定，后续数据才能继续沿同一条所有权链使用它们。
 
 ## 建议参考项
 

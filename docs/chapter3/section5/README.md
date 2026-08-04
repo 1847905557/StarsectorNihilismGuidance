@@ -51,7 +51,7 @@
 
 ::: caution 禁止重定义既有键
 
-不要重定义原版或其他 MOD 已有的 `(category, id)` 组合：重定义键的文本会被启用顺序靠后的文件静默覆盖，没有任何报错 (症状与排查见实例驱动故障分析的 "取到的是别的 MOD 的文本" 条目)。
+不要重定义原版或其他 MOD 已有的 `(category, id)` 组合：重定义键的文本会被启用顺序靠后的文件静默覆盖，没有任何报错 (症状与排查见故障分析的 "取到的是别的 MOD 的文本" 条目)。
 
 :::
 
@@ -229,34 +229,28 @@ public final class GearInI18n {
 
 静态验证 (写完后、进游戏前)：键全文件唯一 (`GearIn_text_*` 前缀天然保证)、JSON 语法用严格工具检查时剔除注释与尾逗号、文件保存为 UTF-8 无 BOM。
 
-### 验证方案 (基于本例)
+### 验证方案
 
-验证入口为生涯 (舰队遭遇对话、跳跃点/行星接近文本、`campaignHelp` 提示弹窗) 与 `starsector.log`，对象为本节的 `GearIn_text_*` 键与 `GearInI18n` 类。
+前置数据：`gear_in` MOD(C01-S01) 与对象风味文本数据已就绪；本节 `data/strings/strings.json`(`GearIn_text_*` 键) 与 `GearInI18n` 已放置就位。
 
-- **前置数据**：`gear_in` MOD(C01-S01) 与对象风味文本数据已就绪；本节 `data/strings/strings.json`(`GearIn_text_*` 键) 与 `GearInI18n` 已放置就位。
-- **操作**：
-  1. 启动游戏进入生涯，确认日志出现 `Loading strings` 且无 ERROR；随后应看到包含 `data/strings/strings.json` 的 `Loading JSON from [...]` 行 (原版与 gear_in 各一行)。
-  2. 在 gear_in 的 `modPlugin`(C01-S01) 临时加日志探针：`Global.getLogger(GearInI18n.class).info(GearInI18n.ui("GearIn_text_hello"));`，进生涯后核对输出为 `你好，工坊。`。
-  3. 把探针键名改为 `GearIn_TEXT_hello` 重启：日志出现 ERROR `Missing string: [GearIn_TEXT_hello]`，探针打印字面量 `Missing string: [...]`—— 确认缺失行为不崩溃；改回后恢复。
-  4. 修改 `GearIn_text_hello` 的值后重启，探针输出随之变化 —— 证明文件确实被读取并合并 (不是缓存)。
-  5. 故障复现 (语法)：把 `GearIn_text_hello` 的值去掉一个引号后启动，确认加载在启动状态中止、日志出现带文件路径的 JSONException；改回后恢复。再把文件加 UTF-8 BOM 保存后启动，确认同类解析失败；恢复无 BOM。
-  6. 回归：`descriptions.csv` 的对象风味文本照旧显示 —— 两套文本互不干扰。
-- **通过信号**：日志与界面文本与文件内容一致；日志无 ERROR；键缺失与语法两种故障均能复现出所述结果；探针输出与 "调用示例与预期返回值" 表一致。
-- **清理**：删除探针行；strings.json 恢复原状 (含 UTF-8 无 BOM)。
+1. 启动游戏进入生涯，观察 `Loading strings` 和包含 `data/strings/strings.json` 的加载日志。
+2. 在 gear_in 的 `modPlugin`(C01-S01) 临时加入日志探针：`Global.getLogger(GearInI18n.class).info(GearInI18n.ui("GearIn_text_hello"));`，然后进入生涯并查看日志。
+3. 修改 `GearIn_text_hello` 的值后重启，再次查看探针输出。
+4. 回归：观察 `descriptions.csv` 的对象风味文本，确认两套文本互不干扰。
 
-## 预期结果
-
-启动游戏进入生涯，按以下位置核对：
+预期结果：
 
 - **启动日志**：出现 `Loading strings`；随后出现包含 `data/strings/strings.json` 的 `Loading JSON from [...]` 行 (原版与 gear_in 各一行)；`starsector.log` 无 ERROR。
-- **探针取值**：按 "验证方案" 接入探针后，取值输出与 "调用示例与预期返回值" 表一致；把键名改为大小写错误的 `GearIn_TEXT_hello` 后，日志出现 ERROR `Missing string: [GearIn_TEXT_hello]`，探针打印字面量 `Missing string: [...]`——"键写错不报错、只给字面量" 的直接证明。
+- **探针取值**：按验证方案接入探针后，取值输出与调用示例与预期返回值表一致。
 - **原版使用方观察**(不修改原版文件)：
-  - 生涯中与舰队遭遇：对话文本里的 `$faction`/`$fleetName`/`$fleetOrShip` 等已被替换成实际值；
-  - 悬停或接近跳跃点：`jumpPointInteractionDialog` 的 `approach` 文本 (含 `$fleetOrShip` 替换结果)；
-  - 接近行星：`planetInteractionDialog` 的 `approach` 文本 (含行星名)；
-  - 首次进入生涯或首次触发低 CR/低补给等条件：弹出 `campaignHelp` 的 `chm*` 提示，按钮文本来自对应 `_dismiss`/`_action` 键。
+- 生涯中与舰队遭遇：对话文本里的 `$faction`/`$fleetName`/`$fleetOrShip` 等已被替换成实际值；
+- 悬停或接近跳跃点：`jumpPointInteractionDialog` 的 `approach` 文本 (含 `$fleetOrShip` 替换结果)；
+- 接近行星：`planetInteractionDialog` 的 `approach` 文本 (含行星名)；
+- 首次进入生涯或首次触发低 CR/低补给等条件：弹出 `campaignHelp` 的 `chm*` 提示，按钮文本来自对应 `_dismiss`/`_action` 键。
 
-## 实例驱动故障分析
+清理：删除探针行；strings.json 恢复原状 (含 UTF-8 无 BOM)。
+
+## 故障分析
 
 按 "症状 → 原因 → 修正" 逐条排查；前三条可用本节示例数据直接复现。
 

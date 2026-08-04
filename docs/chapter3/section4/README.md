@@ -236,7 +236,7 @@ orbital_dockyard,CUSTOM,"An orbital dockyard, with enormous gantries and other e
 asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space. Mainly significant for being a navigational hazard.",,,,,
 ```
 
-下面三张截图分别示意武器 (`desc_weapon.png`)、舰船 (`desc_ship.png`) 与行星/生涯实体 (`desc_planet.png`) 描述在界面中的显示位置 (旧版界面截图，仅作位置示意)：
+下面三张截图依次示意武器、舰船与行星/生涯实体描述在界面中的显示位置 (旧版界面截图，仅作位置示意)：
 
 ![](./desc_weapon.png)
 
@@ -244,43 +244,37 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
 
 ![](./desc_planet.png)
 
-### 验证方案 (基于本例)
+### 验证方案
 
-验证入口为生涯界面 (货舱/交易、行星与小行星悬停、通讯、数据库、图库) 与战斗 (C2 命令 tooltip)。
+前置数据：`gear_in` MOD(C01-S01) 与 C01-S02 至 C01-S07 的全部数据已就绪，本节 `GearIn_description_*` 演示行已按上文添加。
 
-- **前置数据**：`gear_in` MOD(C01-S01) 与 C01-S02 至 C01-S07 的全部数据已就绪，本节 `GearIn_description_*` 演示行已按上文添加。
-- **操作**：
-  1. 启动游戏进入生涯，确认日志出现 `Loading descriptions` 且无 `ERROR`；新增演示行不产生任何报错 (合法未挂接行，不显示、不报错，这本身就是预期状态)。
-  2. 货舱/交易界面悬停 `supplies` 与任意 GearIn 武器：核对 `RESOURCE` 行 text1、武器署名斜体规则。
-  3. 悬停行星与小行星：核对 `PLANET` 行 text1 与小行星 `ASTEROID` 行 (标题 `Asteroid`)。
-  4. 通讯 → 势力信息面板、数据库 → 势力详情：核对 `FACTION` 行 text1。
-  5. 数据库 → 图库：核对 `GALLERY` 行标题与详情正文 (斜体段落)。
-  6. 悬停超空间地形；进入战斗悬停 C2 命令：核对 `TERRAIN` 与 `ACTION_TOOLTIP` 行。
-  7. 悬停空间站：核对 `CUSTOM` 行 text2 出现在标题位置。
-  8. 故障复现：把 `GearIn_description_esc_quote` 行的一处 `""` 改成 `"` 后启动，确认 `Mismatched quotes` 加载失败，改回后恢复。
-  9. 回归：GearIn 舰船/武器/系统描述照旧显示，证明既有键未被破坏。
-- **通过信号**：上述位置的文本与 CSV 内容一致；日志无 `ERROR`。
-- **清理**：恢复临时改动的描述行 (`""` 改回)，确认文件仍为 UTF-8 无 BOM。
+1. 启动游戏进入生涯，观察 `Loading descriptions` 日志和新增演示行的加载情况。
+2. 货舱/交易界面悬停 `supplies` 与任意 GearIn 武器：核对 `RESOURCE` 行 text1、武器署名斜体规则。
+3. 悬停行星与小行星：核对 `PLANET` 行 text1 与小行星 `ASTEROID` 行 (标题 `Asteroid`)。
+4. 通讯 → 势力信息面板、数据库 → 势力详情：核对 `FACTION` 行 text1。
+5. 数据库 → 图库：核对 `GALLERY` 行标题与详情正文 (斜体段落)。
+6. 悬停超空间地形；进入战斗悬停 C2 命令：核对 `TERRAIN` 与 `ACTION_TOOLTIP` 行。
+7. 悬停空间站：核对 `CUSTOM` 行 text2 出现在标题位置。
+8. 回归：观察 GearIn 舰船、武器和系统描述。
 
-## 预期结果
-
-启动游戏到生涯界面，按以下位置核对：
+预期结果：
 
 - **启动日志**：出现 `Loading descriptions` 与 `Loading CSV data from [mod: .../descriptions.csv]` 日志，`starsector.log` 无 `ERROR`。新增的 `GearIn_description_*` 演示行不产生任何报错 —— 它们目前是合法未挂接行 (不显示、不报错)，这本身就是预期状态。
 - **原版行的使用方观察**(验证各类型使用方链路，不修改原版文件)：
-  - 货舱/交易界面悬停 `supplies`：tooltip 正文等于 `supplies` 的 `RESOURCE` 行 text1；
-  - 悬停行星 (如任一宜居行星) 与打开行星详情：正文等于该行星类型键的 `PLANET` 行 text1；
-  - 悬停小行星：tooltip 标题为 `Asteroid`，正文等于 `asteroid` 的 `ASTEROID` 行 text1；
-  - 通讯 → 势力信息面板与数据库 → 势力详情：`luddic_church` 等 `FACTION` 行 text1 逐段显示；
-  - 悬停超空间星云、环带等地形：`TERRAIN` 行 text1 显示；
-  - 进入战斗悬停 C2 命令 (攻击/护航/撤退等)：tooltip 正文等于对应 `ACTION_TOOLTIP` 行 text1；
-  - 数据库 → 图库：条目标题等于 `GALLERY` 行 text1，详情页正文为 text2 段落 (`"…"` 包裹段斜体)；
-  - 悬停空间站：tooltip 标题取 `CUSTOM` 行的 text2(无自定义描述的行显示站名)。
+- 货舱/交易界面悬停 `supplies`：tooltip 正文等于 `supplies` 的 `RESOURCE` 行 text1；
+- 悬停行星 (如任一宜居行星) 与打开行星详情：正文等于该行星类型键的 `PLANET` 行 text1；
+- 悬停小行星：tooltip 标题为 `Asteroid`，正文等于 `asteroid` 的 `ASTEROID` 行 text1；
+- 通讯 → 势力信息面板与数据库 → 势力详情：`luddic_church` 等 `FACTION` 行 text1 逐段显示；
+- 悬停超空间星云、环带等地形：`TERRAIN` 行 text1 显示；
+- 进入战斗悬停 C2 命令 (攻击/护航/撤退等)：tooltip 正文等于对应 `ACTION_TOOLTIP` 行 text1；
+- 数据库 → 图库：条目标题等于 `GALLERY` 行 text1，详情页正文为 text2 段落 (`"…"` 包裹段斜体)；
+- 悬停空间站：tooltip 标题取 `CUSTOM` 行的 text2(无自定义描述的行显示站名)。
 - **武器署名规则回归**：悬停任意 text2 以 `-` 开头的原版武器 (如欧米伽武器)，tooltip 的 text1 第一段为斜体且带署名行；GearIn 三门武器 (text2 无 `-` 前缀)tooltip 正常显示。
-- **既有描述回归**：GearIn 舰船/武器/系统描述照旧显示，证明新增行没有破坏既有键。
-- **最小任务链验证**：修改 `GearIn_description_custom_test` 的 text1 后重启，加载依旧成功 (未挂接行修改无可视变化)；随后把 `GearIn_description_esc_quote` 行的一处 `""` 临时改成 `"` 启动，确认加载期报 `Mismatched quotes`，改回后恢复 —— 证明该行确实被解析器读取。
+- **既有描述回归与最小任务链验证**：GearIn 舰船、武器和系统描述照旧显示，证明新增行没有破坏既有键；修改 `GearIn_description_custom_test` 的 text1 后重启，加载依旧成功 (未挂接行修改无可视变化)；随后把 `GearIn_description_esc_quote` 行的一处 `""` 临时改成 `"` 启动，加载期报告 `Mismatched quotes`，证明该行确实被解析器读取。
 
-## 实例驱动故障分析
+清理：恢复临时改动的描述行 (`""` 改回)，确认文件仍为 UTF-8 无 BOM。
+
+## 故障分析
 
 按 "症状 → 原因 → 修正" 逐条排查；每条都可以用本节示例数据复现。
 

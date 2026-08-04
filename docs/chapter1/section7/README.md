@@ -150,28 +150,19 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 `hammerhead` 行则说明：舰船通常只写 text1，text2/text3 留空即可。
 
-### 验证方案 (基于本例)
+### 验证方案
 
 前置数据：`gear_in` MOD(C01-S01) 与第一章前五节 (C01-S02 至 C01-S06) 建立的全部数据，加上本节的 `data/strings/descriptions.csv` 与三个 `.ship` 文件的 `descriptionId` 修改 (即本节前述示例内容)。
 
-操作：
-
-1. 启动游戏进入生涯界面，确认日志出现 `Loading descriptions` 且 `starsector.log` 无 `ERROR`。
+1. 启动游戏进入生涯界面，观察 `starsector.log` 的描述文本加载记录。
 2. 用 dev 控制台输入 `Addship GearIn_artizan`、`Addship GearIn_forging`、`Addwing GearIn_slag_wing`。
 3. 进入装配界面：核对三门 GearIn 武器的副标题、工匠-级的战术系统行、锻件-级的相位系统行。
-4. 回到舰队界面悬停工匠-级：引言应为 `descriptionPrefix + text2`("由编者制作的第一艘示例舰船。中坚驱逐舰")。
+4. 回到舰队界面悬停工匠-级，观察舰船引言。
 5. 打开数据库 (codex)：核对船体详情、武器详情、系统列表 (类型标签) 与系统详情 (`Effects` 节)、战机详情。
 6. 悬停舰船/武器蓝图与货舱物品：核对 tooltip 的 text1 第一段。
-7. 修改某一行的 text1 后重启游戏，确认对应位置文本随之变化，再改回 (最小任务链的单向验证)。
-8. 临时把某行 `type` 改成非法值 (如 `SHIP` → `Ship`) 启动，确认加载期报错后恢复 (故障复现)。
+7. 修改某一行的 text1 后重启游戏，在对应位置观察文本变化。
 
-通过信号：上述各位置的文本与 CSV 内容一致；日志无 `ERROR`。
-
-清理：移除测试舰船；恢复临时改动的描述行。
-
-## 预期结果
-
-启动游戏到生涯界面 (此前启用的 dev 控制台此时可用)，按以下位置核对：
+预期结果：
 
 - **启动日志**：出现 `Loading descriptions` 的加载日志，`starsector.log` 无 `ERROR`。
 - **装配界面**(`Addship GearIn_artizan` 后进入)：武器选择列表里三门 GearIn 武器的副标题显示 `反装甲, range 600` 之类的内容。
@@ -184,8 +175,9 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 - 舰船系统列表每个条目都列出 (`HIDE_IN_CODEX` 除外)，类型标签取 text2、缺 text2 时显示 `Special`。
 - 系统详情除 text1 外还有 `Effects` 节 (text5 逐行渲染，`{{...}}` 处高亮)。
 - **蓝图与货舱**：悬停舰船/武器蓝图或货舱里的物品，tooltip 显示 text1 第一段 (舰船带 `descriptionPrefix` 前缀)。
-- **最小任务链的验证流程**：修改某一行的 text1 后重启游戏，对应位置文本随之变化；改回后恢复。
-- 这证明该行确实被使用方读取，而不是碰巧显示别的文本。
+- **最小任务链的验证流程**：修改某一行的 text1 后重启游戏，对应位置文本随之变化，证明该行确实被使用方读取，而不是碰巧显示别的文本。
+
+清理：恢复 `data/strings/descriptions.csv` 中临时改动的描述行。
 
 ## 首次静态验证
 
@@ -232,7 +224,7 @@ print("invalid types:", sorted(bad) or "none")
 如果文件带了 BOM，脚本会在 `r["id"]` 处抛 `KeyError('id')`—— 这正是游戏内会发生的表头污染问题，见故障分析。
 :::
 
-## 实例驱动故障分析
+## 故障分析
 
 按 "症状 → 原因 → 修正" 逐条排查；每条症状都是本节示例数据可以实际复现的。
 
@@ -266,11 +258,7 @@ print("invalid types:", sorted(bad) or "none")
 
 ## 总结
 
-描述文本的键规则由对象类型决定：武器与战术系统的键锁定在对象 ID 上，舰船则可以用 `.ship` 的 `descriptionId` 换成任意键，缺省回退 `hullId`。
-
-缺行永远不报错，只表现为占位文本或显示降级；会让游戏在加载阶段直接失败的只有三类问题 ——`type` 列非法、同一文件内键重复、带 BOM 的表头污染。
-
-首次静态验证把第一章前五节建立的全部数据链收拢成一张交叉检查清单：编码 → 结构 → 键唯一 → ID 逐字符一致 → 资源路径 → 启动日志，此后每新增一类数据，都可以先跑清单再进游戏。
+本节完成了对于 `descriptions.csv` 的解析，且把本章前几节建立的全部数据链收拢成一张交叉检查清单：编码 → 结构 → 键唯一 → ID 逐字符一致 → 资源路径 → 启动日志，此后每新增一类数据，都可以先跑清单再进游戏。
 
 从逻辑上延伸，本节的结论不止适用于描述文本：任何键控 CSV 都遵循 "键唯一 + 使用方按查找键精确匹配" 的同一套规则，加载期硬失败与静默降级的二分法也一以贯之。
 

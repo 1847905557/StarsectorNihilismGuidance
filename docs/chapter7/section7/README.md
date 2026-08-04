@@ -427,36 +427,26 @@ gradle jar
 
 ### 验证方案
 
-验证对象为本例的 `hull_mods.csv` 行与 `GearInArmorTrainingHullMod` 类，验证入口为生涯装配界面与 `GearIn_test` 测试战役。
+前置数据：MOD 布局与编译链路 (C06-S01)、本节 `hull_mods.csv` 行 (含 `sModDesc`)、示例类 `GearInArmorTrainingHullMod` 已编入 `jars/GearIndustry.jar`、测试战役 `GearIn_test`(C03-S01，用户舰 `GearIn_artizan`)。
 
-- **前置数据**：MOD 布局与编译链路 (C06-S01)、本节 `hull_mods.csv` 行 (含 `sModDesc`)、示例类 `GearInArmorTrainingHullMod` 已编入 `jars/GearIndustry.jar`、测试战役 `GearIn_test`(C03-S01，用户舰 `GearIn_artizan`)。
-- **操作步骤**：
-  1. 构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`。
-  2. 注册与 tooltip：启动到生涯，在装配界面找到 "装甲训练"，悬停核对 desc 与 "S-mod bonus" 段落；搜索 `starsector.log` 中的注册行与错误。
-  3. 数值：给 `GearIn_artizan` 安装，记录装甲评级；再用 1 个故事点把它内置，记录内置后的评级与 tooltip 的 S-mod 段。
-  4. 生命周期：进入 `GearIn_test` 一场战斗，观察 `starsector.log` 的部署与周期日志行；按空格暂停约 10 秒，再恢复。
-  5. 抵消：让敌人集中攻击同一装甲点直到出现结构伤害判定，观察抵消日志与舰体结构值；继续攻击到平均装甲低于 50%，观察抵消是否停止。
-  6. S-mod 动态加成：S-mod 状态下对比满甲与半甲时的掉甲速度；把 `DYNAMIC_ID` 换成 `id` 复现覆盖故障 (数值乱跳 / 面板与战斗不一致)，改回后恢复。
-  7. 生涯同步：在舰队界面移动一次成员，观察 `campaign sync` 行。
-  8. 上限：对同一驱逐舰尝试故事点内置第 3 个普通船插，确认被拒绝。
-- **预期结果**：
-  1. 构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/hullmods/GearInArmorTrainingHullMod.class`。
-  2. 注册与 tooltip：启动时 `starsector.log` 出现 `Loading hullmod [装甲训练] (source: [.../hull_mods.csv])`(与前置数据行讲解同款)，无 `ERROR`；`desc` 显示 `提高舰船的有效护甲评级与命中结算护甲 10%。装甲平均比例高于 50% 时，抵消即将发生的舰体结构伤害。`(`10%` 与 `50%` 高亮)，"S-mod bonus" 段落 (黄色标题) 显示 `S-mod 将有效护甲加成提高至 25%，战斗中按装甲比例至多再获得 15%。`。
-  3. 数值：装甲评级 500(前置单元 ship_data.csv 中的定义)→ 装配界面 / 生涯面板显示 550(+10%)；故事点内置 (S-mod) 后显示 625(+25%)。
-  4. 生命周期日志 (用户舰 `GearIn_artizan`)：`GearIn armor training: listener attached to 工匠`(部署时；若用户舰是自动生成的预览实体，装配界面阶段可能已出现过一次同款行)；`GearIn armor training combat-ready: 工匠 (once per engine add)` 只出现一次，即使舰船被打掉重新部署也不会再次出现；每 5 秒一条 `GearIn armor training tick: 工匠 rating=550.0 armorFraction=1.00 negations=0`；按空格暂停期间没有 tick(`advanceInCombat` / `AdvanceableListener` 都暂停不派发)。
-  5. 抵消：出现结构伤害判定时日志有 `GearIn armor training: hull damage negated amount=... armorFraction=0.7x negations=N`，舰体结构值不下降；平均比例低于 50% 后抵消停止、结构正常掉血。
-  6. S-mod 动态加成：装甲平均比例随战斗下降时，命中结算的有效护甲逐击降低 (动态修饰 `DYNAMIC_ID` 每帧重写)；未装 / 已装 S-mod 在同一受击点的掉甲速度可对比。
-  7. 生涯同步：日志出现 `GearIn armor training campaign sync: 工匠 variant=...`(`advanceInCampaign` 以 `amount=0` 调用)。
-  8. 上限：界面显示 `2 / 2`(`maxPermanentHullmods: 2`)，第 3 个普通船插无法内置。
-- **通过信号**：操作 1–8 全部符合预期；没有 `gear_in` 引起的 `ERROR`。
-- **清理**：取消勾选测试 MOD
+1. 构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`。
+2. 注册与 tooltip：启动到生涯，在装配界面找到 "装甲训练"，悬停核对 desc 与 "S-mod bonus" 段落；搜索 `starsector.log` 中的注册行与错误。
+3. 数值：给 `GearIn_artizan` 安装，记录装甲评级；再用 1 个故事点把它内置，记录内置后的评级与 tooltip 的 S-mod 段。
+4. 生命周期：进入 `GearIn_test` 一场战斗，观察 `starsector.log` 的部署与周期日志行；按空格暂停约 10 秒，再恢复。
+5. 抵消：让敌人集中攻击同一装甲点直到出现结构伤害判定，观察抵消日志与舰体结构值；继续攻击到平均装甲低于 50%，观察抵消是否停止。
+6. 生涯同步：在舰队界面移动一次成员，观察 `campaign sync` 行。
+7. 上限：对同一驱逐舰尝试故事点内置第 3 个普通船插，确认被拒绝。
 
-没有把工作单元编号写进任何包名、类名、资源名或字符串 key：
+预期结果：
 
-- 包 `data.scripts.gearin.hullmods`；
-- 类 `GearInArmorTrainingHullMod`；
-- 修饰 ID `GearIn_armor_training_dynamic`；
-- 数据 ID `GearIn_armor_training`。
+- 构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/hullmods/GearInArmorTrainingHullMod.class`。
+- 注册与 tooltip：启动时 `starsector.log` 出现 `Loading hullmod [装甲训练] (source: [.../hull_mods.csv])`(与前置数据行讲解同款)，无 `ERROR`；`desc` 显示 `提高舰船的有效护甲评级与命中结算护甲 10%。装甲平均比例高于 50% 时，抵消即将发生的舰体结构伤害。`(`10%` 与 `50%` 高亮)，"S-mod bonus" 段落 (黄色标题) 显示 `S-mod 将有效护甲加成提高至 25%，战斗中按装甲比例至多再获得 15%。`。
+- 数值：装甲评级 500(前置单元 ship_data.csv 中的定义)→ 装配界面 / 生涯面板显示 550(+10%)；故事点内置 (S-mod) 后显示 625(+25%)。
+- 生命周期日志 (用户舰 `GearIn_artizan`)：`GearIn armor training: listener attached to 工匠`(部署时；若用户舰是自动生成的预览实体，装配界面阶段可能已出现过一次同款行)；`GearIn armor training combat-ready: 工匠 (once per engine add)` 只出现一次，即使舰船被打掉重新部署也不会再次出现；每 5 秒一条 `GearIn armor training tick: 工匠 rating=550.0 armorFraction=1.00 negations=0`；按空格暂停期间没有 tick(`advanceInCombat` / `AdvanceableListener` 都暂停不派发)。
+- 抵消：出现结构伤害判定时日志有 `GearIn armor training: hull damage negated amount=... armorFraction=0.7x negations=N`，舰体结构值不下降；平均比例低于 50% 后抵消停止、结构正常掉血。
+- S-mod 动态加成：装甲平均比例随战斗下降时，命中结算的有效护甲逐击降低 (动态修饰 `DYNAMIC_ID` 每帧重写)；未装 / 已装 S-mod 在同一受击点的掉甲速度可对比。
+- 生涯同步：日志出现 `GearIn armor training campaign sync: 工匠 variant=...`(`advanceInCampaign` 以 `amount=0` 调用)。
+- 上限：界面显示 `2 / 2`(`maxPermanentHullmods: 2`)，第 3 个普通船插无法内置。
 
 ## 故障分析
 

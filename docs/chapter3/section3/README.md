@@ -20,14 +20,14 @@
 
 本节是生涯篇的第一份 Java 内容，需要您先具备以下基础：
 
-- MOD 目录、`mod_info.json` 与 JSON 合并规则、UTF-8 无 BOM(C01-S01)；
-- 注册与回调心智模型："注册入口 → 游戏创建实例 → 生命周期回调"(C02-S01)；
-- 生涯与装配 (C03-S01)；
-- 势力 `gear_industry` 的注册，以及 "关系不是文件数据、只能由代码播种"(C03-S02)—— 本节会正式给出关系代码的挂载点。
+- MOD 目录、`mod_info.json` 与 JSON 合并规则、UTF-8 无 BOM[C1-S1]；
+- 注册与回调心智模型："注册入口 → 游戏创建实例 → 生命周期回调"[C2-S1]；
+- 生涯与装配 [C3-S1]；
+- 势力 `gear_industry` 的注册，以及 "关系不是文件数据、只能由代码播种"[C3-S2]—— 本节会正式给出关系代码的挂载点。
 
-行星的自定义描述 (`setCustomDescriptionId` 与 `descriptions.csv`) 不在本节范围，本节只用行星类型的默认描述 (该主题在描述文件单元讲解，C03-S04)。
+行星的自定义描述 (`setCustomDescriptionId` 与 `descriptions.csv`) 不在本节范围，本节只用行星类型的默认描述 (该主题在描述文件单元讲解，[C3-S4])。
 
-市场的完整语义 (稳定度、供需、移民、殖民) 也不在本节范围 (市场语义单元讲解，C08-S05)，本节只建立 "市场挂在实体上、注册进经济集合" 的基础。
+市场的完整语义 (稳定度、供需、移民、殖民) 也不在本节范围 (市场语义单元讲解，[C8-S5])，本节只建立 "市场挂在实体上、注册进经济集合" 的基础。
 
 ## 术语
 
@@ -37,7 +37,7 @@
 | 实体 entity | 星系/超空间里的物体，恒星、行星、跳跃点、稳定点、空间站都是实体；API 名保留 `SectorEntityToken` |
 | 跳跃点 jump point | 星系内或超空间里的航行出入口；API 名保留 `JumpPointAPI` |
 | 轨道 orbit | 实体绕焦点的运行轨迹；`setCircularOrbit(focus, angle, orbitRadius, orbitDays)` 设置圆形轨道 |
-| 市场 market | 挂在实体上的经济体 (人口、条件、产业、子市场)；API 名保留 `MarketAPI`。首次完整讲解在市场语义单元 (C08-S05)，本节只讲注册 |
+| 市场 market | 挂在实体上的经济体 (人口、条件、产业、子市场)；API 名保留 `MarketAPI`。首次完整讲解在市场语义单元 [C8-S5]，本节只讲注册 |
 | 生成器 generator | 在生涯生成阶段往星区里放东西的插件；接口 `SectorGeneratorPlugin`(只有 `generate(SectorAPI)` 一个方法)|
 | 程序化生成 procgen | 游戏自己随机生成星系、星云等内容的阶段，对应 `SectorProcGenPlugin` 与 settings 里的 `newGameSectorProcGen` |
 
@@ -194,7 +194,7 @@ data/campaign/econ/economy.json（starSystems 数组）
 | `faction` | 是 | `getString` | `JSONObject["faction"] not found`，中断 |
 | `size` | 是 | `getInt` | 同上 |
 | `startingConditions` | 是 | `getJSONArray` | 同上；每个条件会被 `setSurveyed(true)`(新档即已勘探)|
-| `tariff` | 否 | 只在模拟模式读取 | 正常新档的税率来自市场所属势力的 `tariffFraction`(faction 文件可选字段，缺省取 `economy.json` 的 `defaultTariff` 0.3，见 C03-S02)；该键在真实新档中被忽略 |
+| `tariff` | 否 | 只在模拟模式读取 | 正常新档的税率来自市场所属势力的 `tariffFraction`(faction 文件可选字段，缺省取 `economy.json` 的 `defaultTariff` 0.3，见 [C3-S2])；该键在真实新档中被忽略 |
 | `freePort` | 否 | `optBoolean` | 缺省 false；true 时设为自由贸易港 |
 | `industries` | 否 | `getJSONArray` | 每项是产业 id，或 `[产业id, 参数...]` 数组 (如 `["orbitalworks", "corrupted_nanoforge"]`，见原版 `askonia.json`)|
 | `submarkets` | 否 | `getJSONArray` | **缺省自动加** `open_market`、`black_market`、`storage`，若市场有 `militarybase` / `highcommand` 产业还加 `generic_military` |
@@ -210,7 +210,7 @@ createMarket(id, name, size)
   -> setFactionId(factionId)      # 势力归属
   -> setPrimaryEntity(entity)     # 主实体
   -> setSurveyLevel(FULL)         # 市场勘探状态
-  -> getTariff().modifyFlat("generator", tariff)   # 税率（MutableStat，见 C07-S03）
+  -> getTariff().modifyFlat("generator", tariff)   # 税率（MutableStat，见 C7-S3）
   -> addCondition(condition)      # 无效 id 抛 Market condition [X] not found
   -> addIndustry(industry)        # 无效 id 抛 Industry [X] not found
   -> addSubmarket(submarket)      # 子市场
@@ -230,7 +230,7 @@ createMarket(id, name, size)
 | `population_4` / `thin_atmosphere` / `hot` / `ore_rich` / `rare_ore_abundant` / `no_atmosphere` / `meteor_impacts` | `data/campaign/market_conditions.csv` | 条件 |
 | `population` / `spaceport` / `mining` / `refining` / `heavybatteries` / `orbitalworks` / `heavyindustry` / `militarybase` / `grounddefenses` | `data/campaign/industries.csv` | 产业 |
 | `open_market` / `generic_military` / `black_market` / `storage` | `data/campaign/submarkets.csv` | 子市场 |
-| `gear_industry` | C03-S02 定义的势力 id | 市场势力 |
+| `gear_industry` | [C3-S2] 定义的势力 id | 市场势力 |
 
 市场**必须**带 `population_*` 人口条件：原版 `economy.json` 的 `starSystems` 列出的全部 20 个市场文件，其市场无一例外都带 `population_N`；代码路径的通用写法也是从 `population_` 条件解析市场规模。
 
@@ -284,7 +284,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
 /**
  * 本节示例：最小形态的 ModPlugin，本节的生成入口类。
  * mod_info.json 的 modPlugin 字段指向本类；游戏在新建生涯时调用 onNewGame()。
- * ModPlugin 各回调的完整生命周期由 C06-S02 讲解（其所有权示例类 GearInModPlugin
+ * ModPlugin 各回调的完整生命周期由 C6-S2 讲解（其所有权示例类 GearInModPlugin
  * 位于 data.scripts.gearin 包），本节只保留 onNewGame() 这一个生成入口。
  */
 public class GearInSystemGenPlugin extends BaseModPlugin {
@@ -569,7 +569,7 @@ public class GearInMarketFactory {
 
 ### 验证方案
 
-前置数据：`mod_info.json`(含本节的 `modPlugin` 字段，见 C01-S01)、势力文件 (`factions.csv` 与 `gear_industry.faction`，见 C03-S02，市场势力)、本节的 `GearInSystemGenPlugin`、`GearInSystemGenerator`、`GearInMarketFactory`、`data/campaign/starmap.json`。
+前置数据：`mod_info.json`(含本节的 `modPlugin` 字段，见 [C1-S1])、势力文件 (`factions.csv` 与 `gear_industry.faction`，见 [C3-S2]，市场势力)、本节的 `GearInSystemGenPlugin`、`GearInSystemGenerator`、`GearInMarketFactory`、`data/campaign/starmap.json`。
 
 1. 启动游戏到主菜单，检查 `Starsector\starsector-core\starsector.log`。
 2. 新建生涯 (本节内容只在新档生成时出现，读旧档不会触发)，生成完成后按 `M` 打开星图，观察 `GearIn` 星系是否出现在 `[12000,14000]` 附近，以及超空间通向它的跳跃点。
@@ -652,13 +652,13 @@ public class GearInMarketFactory {
 
 消费的既有 ID(本节不定义)：
 
-- 势力 `gear_industry`(C03-S02)；
+- 势力 `gear_industry`[C3-S2]；
 - 行星/恒星类型 `star_white`、`terran`、`barren`(原版 `planets.json`)。
 - 实体类型 `stable_location`(原版 `custom_entities.json`)；
 - 条件、产业、子市场 ID(原版三张 CSV)；
 - 背景 `graphics/backgrounds/background2.jpg`(原版资源)。
 
-行星自定义描述 ID 留给描述文件单元 (C03-S04) 的 `descriptions.csv`，本节未使用 `setCustomDescriptionId`。
+行星自定义描述 ID 留给描述文件单元 [C3-S4] 的 `descriptions.csv`，本节未使用 `setCustomDescriptionId`。
 
 ## 总结
 

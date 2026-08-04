@@ -22,22 +22,22 @@
 
 本节在以下既有知识之上展开：
 
-- 交互对话框生命周期 (C08-S09)：`showInteractionDialog(plugin, target)` (可能返回 `false`)、`InteractionDialogPlugin` 的生命周期 (`init` → `optionSelected` → `advance`)；
-- 脚本注册判断 (C08-S01)：`addScript` 与 persistent data 的一次性注册判断，每个注册项使用各自独立的 persistent data 键；
-- 插件生命周期回调 (C06-S02)：`onGameLoad` 回调的注册时机；
-- Rules 内存语义 (C11-S04)：`MemoryAPI` 的过期、持久化与记忆键维护语义 —— `$memkey.name` 这类变量按记忆分组解析，写条件表达式前需要先了解这个前提；
-- Rules 命令 (C11-S03)：`BaseCommandPlugin` 的职责与原版内置命令集 (`DismissDialog`、`ShowDefaultVisual`、`SetShortcut`、`FireBest`、`FireAll`、`RollProbability` 等)。
+- 交互对话框生命周期 [C8-S9]：`showInteractionDialog(plugin, target)` (可能返回 `false`)、`InteractionDialogPlugin` 的生命周期 (`init` → `optionSelected` → `advance`)；
+- 脚本注册判断 [C8-S1]：`addScript` 与 persistent data 的一次性注册判断，每个注册项使用各自独立的 persistent data 键；
+- 插件生命周期回调 [C6-S2]：`onGameLoad` 回调的注册时机；
+- Rules 内存语义 [C11-S4]：`MemoryAPI` 的过期、持久化与记忆键维护语义 —— `$memkey.name` 这类变量按记忆分组解析，写条件表达式前需要先了解这个前提；
+- Rules 命令 [C11-S3]：`BaseCommandPlugin` 的职责与原版内置命令集 (`DismissDialog`、`ShowDefaultVisual`、`SetShortcut`、`FireBest`、`FireAll`、`RollProbability` 等)。
 
 ## 术语
 
-本节先固定规则系统的六个核心词，后续页面沿用同一套写法；API 类名保留源码大小写。其中规则命令与 Rules 内存只在此约定读法，完整语义分别在 C11-S03、C11-S04 展开：
+本节先固定规则系统的六个核心词，后续页面沿用同一套写法；API 类名保留源码大小写。其中规则命令与 Rules 内存只在此约定读法，完整语义分别在 [C11-S3]、[C11-S4] 展开：
 
 - **规则 (rule)**：API 名保留 `RuleAPI`。`rules.csv` 中的一行就是一条规则：id、trigger、条件列表、脚本列表、文本变体列表、选项列表。
 - **触发器 (trigger)**：规则的字符串分组 key (`trigger` 列)。同一触发器的规则构成一个候选池；对话插件以触发器名为入口发起匹配。
 - **条件 (condition)**：API 名保留 `ExpressionAPI`。规则命中前必须全部为真的表达式行 (`conditions` 列)；条件也在匹配阶段被求值。
 - **结果 (result)**：规则命中后发生的事，由三列共同描述 —— `script` (脚本表达式)、`text` (对话文本)、`options` (对话选项)。
-- **规则命令 (rule command)**：类名保留 `BaseCommandPlugin`；本节把它们当作内置命令使用，自定义命令的编写与注册属于 C11-S03。
-- **Rules 内存 (memory)**：API 名保留 `MemoryAPI`；本节只使用记忆键语法，内存生命周期属于 C11-S04。
+- **规则命令 (rule command)**：类名保留 `BaseCommandPlugin`；本节把它们当作内置命令使用，自定义命令的编写与注册属于 [C11-S3]。
+- **Rules 内存 (memory)**：API 名保留 `MemoryAPI`；本节只使用记忆键语法，内存生命周期属于 [C11-S4]。
 
 ## 文件与 API 链路
 
@@ -101,7 +101,7 @@ token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` �
 | 纯变量 (判真)| `$tag:warning_beacon` | `IS` 语义：记忆值 null → false；字符串 `"true"`(去空白、忽略大小写) 或 `Boolean.TRUE` → true；其余 (含 `"1"`、`"false"`)→ false |
 | 比较 | `$option == GearIn_rules_intro_leave`、`$entity.relativeStrength >= 0`、`$faction.id == independent` | `==`/`!=`/`<`/`<=`/`>`/`>=`；字符串比较大小写敏感；数值经 `Memory.parseFloat`；`==` 双侧都 null → true、null 与字面量 `"null"` 互等、`0` 与 `"false"`/`"null"` 互等 |
 | 取反 | `!$var`、`!Command args` | 变量判反 / 命令结果取反；`!` 的运算对象必须是变量或命令 |
-| 赋值 | `$menuState = fleetConvMain 0` | `=` 只能出现在**脚本列** (条件列出现 → 加载崩溃)；第三 token 为过期天数 (可选，`0` = 立即过期语义；过期天数的完整语义属 C11-S04)|
+| 赋值 | `$menuState = fleetConvMain 0` | `=` 只能出现在**脚本列** (条件列出现 → 加载崩溃)；第三 token 为过期天数 (可选，`0` = 立即过期语义；过期天数的完整语义属 [C11-S4])|
 | 增减 | `$GearIn_rules_intro_visits++`、`$x--` | 浮点自增/自减；第三 token 为过期天数 (原版脚本列含 595 处 `++`、16 处 `--`)|
 | 命令 | `RollProbability 0.5`、`FireAll PopulateOptions`、`SetShortcut beaconLeave "ESCAPE"` | 首 token 非变量即命令：按 `ruleCommandPackages`(`data/config/settings.json`，5 个包，默认回退 `com.fs.starfarer.api.impl.campaign.rulecmd`) 逐个 `Class.forName` 定位；找不到 → 加载崩溃 `Command [...] not found in packages`；命令执行异常在对话内显示红字段落 (`<异常类>: <消息>`)，dialog 为 null 时重抛 |
 | 分数 | `$temporarilyIgnoreYou score:10` | 行尾字面量 `score:N` 改写该条件分数 (默认 1)，参与 `FireBest` 竞争 |
@@ -230,8 +230,8 @@ GearIn_rules_intro_leave,DialogOptionSelected,$option == GearIn_rules_intro_leav
   - 两规则条件都成立，但 high 总分 102(两条 1 分 + `!$GearIn_rules_intro_skip score:100`) 恒大于 low 的 1 分，结果确定性选中 high。
   - high 的 `script` 演示赋值并携带选项。
 - **leave** (trigger `DialogOptionSelected`)：`$option == GearIn_rules_intro_leave` → 内置命令 `DismissDialog` 关闭对话。
-- 内置命令 (`ShowDefaultVisual` / `SetShortcut` / `DismissDialog` / `FireBest` / `FireAll` / `RollProbability`) 都是 `BaseCommandPlugin` 子类 (`com.fs.starfarer.api.impl.campaign.rulecmd`)，本节只使用不实现；自定义规则命令的编写与注册属于 C11-S03。
-- 记忆键 `$option` / `$GearIn_rules_intro_opens` / `$GearIn_rules_intro_skip` / `$GearIn_rules_intro_last` 的过期、持久化与维护语义属于 C11-S04；本节只保证演示流程内的取值逻辑。
+- 内置命令 (`ShowDefaultVisual` / `SetShortcut` / `DismissDialog` / `FireBest` / `FireAll` / `RollProbability`) 都是 `BaseCommandPlugin` 子类 (`com.fs.starfarer.api.impl.campaign.rulecmd`)，本节只使用不实现；自定义规则命令的编写与注册属于 [C11-S3]。
+- 记忆键 `$option` / `$GearIn_rules_intro_opens` / `$GearIn_rules_intro_skip` / `$GearIn_rules_intro_last` 的过期、持久化与维护语义属于 [C11-S4]；本节只保证演示流程内的取值逻辑。
 - `rules.csv` 是跨单元共享文件：本节只拥有 `GearIn_rules_intro_*` 前缀；后续主题将以各自前缀追加行 (同前缀内 id 唯一，跨文件重复 id 先到先得的纪律见规则强度节)。
 
 ### GearInRulesIntro
@@ -250,7 +250,7 @@ import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
  * 完整最小例：rules.csv 数据驱动对话的 Java 消费入口。
  *
  * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），persistent data 键 REGISTER_MARK
- * 一次性门控（沿用 C08-S01 / C08-S08 的既有模式，每个注册项用各自的键）。
+ * 一次性门控（沿用 C8-S1 / C8-S8 的既有模式，每个注册项用各自的键）。
  *
  * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个初始
  * trigger 为 GearInRulesIntro 的对话；对话的文本、脚本与选项全部来自 data/campaign/rules.csv
@@ -309,7 +309,7 @@ public class GearInRulesIntro implements EveryFrameScript {
 调用点 (工程片段 —— 该方法属于插件生命周期主题所持有的类，本节只演示调用，不改动那些文件)：
 
 ```java
-    // GearInModPlugin（C06-S02 所有）onGameLoad(boolean newGame) 内新增本节注册块。
+    // GearInModPlugin（C6-S2 所有）onGameLoad(boolean newGame) 内新增本节注册块。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
     if (!Global.getSector().getPersistentData().containsKey(GearInRulesIntro.REGISTER_MARK)) {
         Global.getSector().getPersistentData().put(GearInRulesIntro.REGISTER_MARK, true);
@@ -329,7 +329,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 工程布局与插件生命周期注册回调 (C06-S01、C06-S02 建立)、本节的 `data\campaign\rules.csv` 规则表与 `GearInRulesIntro` 使用入口。验证入口为启动器与新建生涯，观察位置是 `starsector.log`、启动器控制台标准输出与对话界面。
+前置数据：既有 MOD 工程布局与插件生命周期注册回调 ([C6-S1]、[C6-S2] 建立)、本节的 `data\campaign\rules.csv` 规则表与 `GearInRulesIntro` 使用入口。验证入口为启动器与新建生涯，观察位置是 `starsector.log`、启动器控制台标准输出与对话界面。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
 2. **规则注册**：启动游戏，查看 `starsector.log` 中的 `Loading CSV data from [...]` 与本节 7 条 `Loading rule: GearIn_rules_intro_*` 行。
@@ -410,8 +410,8 @@ gradle jar
    - 修正：在生涯阶段 (`Global.getCurrentState()` 为 CAMPAIGN 状态) 注册；首次进入生涯后由 `advance` 触发；若与新档引导冲突，等引导结束后再触发 (扩展写法不在本节范围)。
 13. **`$option` 之外的记忆在对话结束后变了**。
    - 触发：把演示脚本写进了局部记忆但误以为会随对话一起消失。
-   - 原因：记忆键过期语义由 `expire` 天数决定 (`0` 天过期的具体行为属 C11-S04)；`$option` 由插件写 `expire 0` (`RuleBasedInteractionDialogPluginImpl`)。
-   - 修正：需要跨对话保留的状态显式设过期天数或接受持久化；深度语义属于 C11-S04。
+   - 原因：记忆键过期语义由 `expire` 天数决定 (`0` 天过期的具体行为属 [C11-S4])；`$option` 由插件写 `expire 0` (`RuleBasedInteractionDialogPluginImpl`)。
+   - 修正：需要跨对话保留的状态显式设过期天数或接受持久化；深度语义属于 [C11-S4]。
 
 ## 总结
 
@@ -419,7 +419,7 @@ gradle jar
 
 排错判断可以浓缩成几条：注册看 `Loading rule:` 日志而不是找报错；加载期致命错误全部是启动中止级 (条件列 `=`、脚本列 `==`、`$` 开头选项 id、命令找不到、同文件重复 id)；跨文件重复 id 静默跳过是规则不触发且无报错的首要原因；`FireBest` 只取一条而 `FireAll` 执行全部；判真只有 `"true"` 与 `Boolean.TRUE` 为真，比较大小写敏感；文本变体靠独占一行的 `OR`，选项文本里不能有冒号，选项 id 与 `$option ==` 必须逐字一致。
 
-对话框生命周期与脚本注册判断是本节的两个底座。规则命令与内存的完整语义分别在 C11-S03、C11-S04 展开 —— 它们都会继续使用这份 `GearIn_rules_intro_*` 规则表与 `$option` 回流约定。
+对话框生命周期与脚本注册判断是本节的两个底座。规则命令与内存的完整语义分别在 [C11-S3]、[C11-S4] 展开 —— 它们都会继续使用这份 `GearIn_rules_intro_*` 规则表与 `$option` 回流约定。
 
 ## 建议参考项
 

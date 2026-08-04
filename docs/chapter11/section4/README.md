@@ -21,12 +21,12 @@
 
 本节要解释规则脚本背后的内存层，需要您已经掌握变量语法、flag 模式与脚本注册，这些知识来自以下页面：
 
-- rules.csv 条件/脚本/文本里的 `$memkey.name` 变量解析、判真规则，以及 `=` / `++` / `--` 赋值中的过期天数写法 (C11-S01)；
-- 一次性 flag 模式 (条件 `!$player.<flag>` + 脚本 `$player.<flag> = true 0`)，`$menuState` / `$tradeMode` 状态机记忆与 `$hailing` 等场景事实键，以及 `$player.` / `$global.` 槽位选择对键可见范围的影响 (C11-S02)；
-- rulecmd 的 `execute(ruleId, dialog, params, memoryMap)` 执行面与 `BaseCommandPlugin.getEntityMemory(memoryMap)` 的实体优先、局部回退 (C11-S03)；
-- `modPlugin` 的 `onGameLoad` 回调与 "每个注册项用各自 persistent data 键" 的注册纪律 (C06-S02)；
-- `addScript` 注册脚本的方法 (C08-S01)；
-- 对话框生命周期与 `getInteractionTarget()`——`RuleBasedInteractionDialogPluginImpl` 会把交互目标记忆装入 `MemKeys.LOCAL` (C08-S09)。
+- rules.csv 条件/脚本/文本里的 `$memkey.name` 变量解析、判真规则，以及 `=` / `++` / `--` 赋值中的过期天数写法 [C11-S1]；
+- 一次性 flag 模式 (条件 `!$player.<flag>` + 脚本 `$player.<flag> = true 0`)，`$menuState` / `$tradeMode` 状态机记忆与 `$hailing` 等场景事实键，以及 `$player.` / `$global.` 槽位选择对键可见范围的影响 [C11-S2]；
+- rulecmd 的 `execute(ruleId, dialog, params, memoryMap)` 执行面与 `BaseCommandPlugin.getEntityMemory(memoryMap)` 的实体优先、局部回退 [C11-S3]；
+- `modPlugin` 的 `onGameLoad` 回调与 "每个注册项用各自 persistent data 键" 的注册纪律 [C6-S2]；
+- `addScript` 注册脚本的方法 [C8-S1]；
+- 对话框生命周期与 `getInteractionTarget()`——`RuleBasedInteractionDialogPluginImpl` 会把交互目标记忆装入 `MemKeys.LOCAL` [C8-S9]。
 
 ## 术语
 
@@ -223,19 +223,19 @@ javadoc 明确它 "可被不属于存档的类 (`ModPlugin` 或 transient `Campa
 | 两参 `set` 清除该键未决过期 | 事实 | `getExpire(key)` 变 -1，键转为永不过期 ——"顺手改成永久" 是特性，不是 bug |
 | `expire(key, 负值)` 取消过期 | 事实 | 键永不过期；`getExpire` 返回 -1 |
 | 过期只在生涯非暂停时推进 | 事实 | 对话打开 (生涯暂停) 期间 `expire 0` 的键不消失；对话关闭后的第一个推进帧才移除 |
-| 一次性 flag 必须用 `= true 0` / `expire 0` 形态 (`RuleBasedInteractionDialogPluginImpl` 写 `$option` 的实现；C11-S02 模式)| 建议 | 不带第三 token 的赋值是永久键：flag 跨会话残留，`!$player.<flag>` 条件永假 |
+| 一次性 flag 必须用 `= true 0` / `expire 0` 形态 (`RuleBasedInteractionDialogPluginImpl` 写 `$option` 的实现；[C11-S2] 模式)| 建议 | 不带第三 token 的赋值是永久键：flag 跨会话残留，`!$player.<flag>` 条件永假 |
 | `getBoolean` 缺失键与显式 false 无法区分 | 事实 | `!$flag` 在 flag 从未写过时判真 false—— 条件 "不命中且无报错" |
 | memoryMap 槽位缺失/无点号时变量回落 `local`(`Misc` 的 `Token` 解析)| 事实 | `$global.xxx` 拼成 `$xxx` 不报错：读的是 local 槽位的同名键 —— 条件静默变假或读错值 |
 | 实体/市场引用入记忆存档转 `enRef_`/`mRef_`，解析不到删键 | 事实 | 读档后实体已销毁 → 键整体消失且无报错；不要用记忆判断 "实体是否还活着" |
 | PersistentData 键无需 `$` 前缀、随存档保存 (`SectorAPI`)| 事实 | 无错误 —— 与记忆键的命名约束差异是设计，不是 bug |
-| 每个注册项用各自 persistent data 键 (C06-S02 / C08-S01 延续)| 必须 | 共用一键互相覆盖；新注册项并入既有 CLASS_MARK 检查 → 旧档永不注册 |
+| 每个注册项用各自 persistent data 键 ([C6-S2] / [C8-S1] 延续)| 必须 | 共用一键互相覆盖；新注册项并入既有 CLASS_MARK 检查 → 旧档永不注册 |
 | PersistentData 不得存运行时实体/脚本引用 | 必须 | 读档恢复边界污染：引用对象状态过期或反序列化异常；只存可序列化值 |
 | 写入/高频读取用 `getMemoryWithoutUpdate()` | 必须 | 每帧 `getMemory()` 触发全部插件 `update*Facts`：性能损耗 + facts 副作用在意外时机发生 |
 | `Memory.advance` 由引擎驱动 (`MemoryAPI`)| 必须 | MOD 手动调用 advance 会与实际推进脱节 (多推进/漏推进)，不要调用 |
 
 ## 完整最小例
 
-规则面建立后，把它落成可运行的最小例。在既有 MOD 布局 (前置章节 C06-S01) 之上新增：六个 Java 类 (本节所有，见 "六类结构与注册位置") 与 `data\campaign\rules.csv` 追加本节前缀 `GearIn_memory_*` 的规则行 (跨单元共享文件，只追加自己的行，同前缀内 id 唯一)。
+规则面建立后，把它落成可运行的最小例。在既有 MOD 布局 (前置章节 [C6-S1]) 之上新增：六个 Java 类 (本节所有，见 "六类结构与注册位置") 与 `data\campaign\rules.csv` 追加本节前缀 `GearIn_memory_*` 的规则行 (跨单元共享文件，只追加自己的行，同前缀内 id 唯一)。
 
 不新增其它资源、不修改任何既有文件：
 
@@ -431,7 +431,7 @@ import com.fs.starfarer.api.Global;
  * PersistentData 跨存档计数脚本（EveryFrameScript）：每档一次累加运行计数并记录
  * 上次值 —— 直接可观察 PersistentData 随存档保存与恢复（新档 run 1、读档 run N
  * 递增）。故意不加一次性 REGISTER_MARK 门控：每次读档都重跑才能看到递增；
- * 注册项使用各自的 persistent data 键（C06-S02 纪律）。
+ * 注册项使用各自的 persistent data 键（C6-S2 纪律）。
  */
 public class GearInPersistentDataCounter implements EveryFrameScript {
 
@@ -714,7 +714,7 @@ public class GearInMemoryDialog implements EveryFrameScript {
 调用点 (工程片段 —— 方法所在类归前置 modPlugin 章节所有，本节只演示调用，不改动那些文件)：
 
 ```java
-    // GearInModPlugin（C06-S02 所有）onGameLoad(boolean newGame) 内新增本节注册块。
+    // GearInModPlugin（C6-S2 所有）onGameLoad(boolean newGame) 内新增本节注册块。
     // 故意不加一次性门控：五个脚本每次读档都重跑（run N 递增、键重写），才能观察
     // PersistentData 跨存档恢复与内存键重写；持久数据键使用各自的注册项键
     // （GearIn_memory_runs），不挂进插件已有的 CLASS_MARK 门。
@@ -737,7 +737,7 @@ gradle jar
 
 ### 验证方案
 
-前置数据：既有 MOD 布局 (C06-S01)+ `GearInModPlugin`(C06-S02，含本节调用点片段)、`data\campaign\rules.csv` 本节 5 行、本节六个类。
+前置数据：既有 MOD 布局 [C6-S1]+ `GearInModPlugin`([C6-S2]，含本节调用点片段)、`data\campaign\rules.csv` 本节 5 行、本节六个类。
 
 1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/rules/` 下六个类的 `.class`。
 2. 启动游戏，确认 `starsector.log` 出现本节 5 条 `Loading rule: GearIn_memory_*` 行。
@@ -820,7 +820,7 @@ gradle jar
 10. **memoryMap 上下文错传 (读/写槽位错位)**。
    - 症状：同一个键在不同槽位读到不同值，状态归属与预期不符。
    - 触发：rulecmd 收到错误的 memoryMap (如面板上下文传了对话 memoryMap)。
-   - 原因：`getEntityMemory` 的 ENTITY/LOCAL 选择决定状态归属，错误上下文会改变读取槽位 (C11-S03)。
+   - 原因：`getEntityMemory` 的 ENTITY/LOCAL 选择决定状态归属，错误上下文会改变读取槽位 [C11-S3]。
    - 修正：rulecmd 用 `BaseCommandPlugin.getEntityMemory(memoryMap)` 取实体记忆；对话外上下文不要假定 `ENTITY` 存在。
 11. **每帧 `getMemory()` 造成性能/副作用**。
    - 症状：全部插件的 `updateEntityFacts`/`updateMarketFacts` 每帧执行，日志噪音与性能损耗。

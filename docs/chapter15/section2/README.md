@@ -21,15 +21,15 @@
 
 本节把上一节的 shader 能力接到文件与生命周期上，先确认以下基础：
 
-- MOD 目录结构与 `starsector.log` 的读取 (C01-S01)：本节所有日志观察结果都落在它里面。
-- 战役 (mission) 概念与 `GearIn_test` 测试战役 (C03-S01)：本节用它做游戏内验证。
-- 编译 JAR 链路 (C06-S01)：shader 文本作为资源进入构建，本节沿用松散文件 + jar 副本的交付形态。
-- `Global` 生命周期 (C06-S03)：禁止跨战斗缓存引擎引用与渲染对象，本节的程序/VBO 同规。
-- `SettingsAPI` 资源读取三族与 `validateFileName` 必须遵守的规则 (C12-S01)：本节的 `loadText` 语义直接承接。
-- 战斗插件生命周期 (C07-S05)：本节的注册片段加在它的 `init` 末尾。
-- 分层渲染插件与 GL 资源清理必须遵守的规则 (C07-S06)：本节的 "加载/清理/失效" 环节直接复用。
-- BoxUtil 初始化/实体/生命周期 (C13-S06)：对照的另一条加载入口 `ShaderUtil` 与同源的生命周期纪律。
-- GLSL 110 方言、编译/链接检查链、OpenGL 2.0 能力门禁 (C15-S01)：本节的加载与日志环节是它的延续。
+- MOD 目录结构与 `starsector.log` 的读取 [C1-S1]：本节所有日志观察结果都落在它里面。
+- 战役 (mission) 概念与 `GearIn_test` 测试战役 [C3-S1]：本节用它做游戏内验证。
+- 编译 JAR 链路 [C6-S1]：shader 文本作为资源进入构建，本节沿用松散文件 + jar 副本的交付形态。
+- `Global` 生命周期 [C6-S3]：禁止跨战斗缓存引擎引用与渲染对象，本节的程序/VBO 同规。
+- `SettingsAPI` 资源读取三族与 `validateFileName` 必须遵守的规则 [C12-S1]：本节的 `loadText` 语义直接承接。
+- 战斗插件生命周期 [C7-S5]：本节的注册片段加在它的 `init` 末尾。
+- 分层渲染插件与 GL 资源清理必须遵守的规则 [C7-S6]：本节的 "加载/清理/失效" 环节直接复用。
+- BoxUtil 初始化/实体/生命周期 [C13-S6]：对照的另一条加载入口 `ShaderUtil` 与同源的生命周期纪律。
+- GLSL 110 方言、编译/链接检查链、OpenGL 2.0 能力门禁 [C15-S1]：本节的加载与日志环节是它的延续。
 
 ## 文件与 API 链路
 
@@ -44,9 +44,9 @@
 | 编译 | LWJGL `GL20.glCreateShader` / `glShaderSource` / `glCompileShader` / `glGetShaderi(GL_COMPILE_STATUS)` / `glGetShaderInfoLog` | GraphicsLib `ShaderLib.createShader`(编译失败抛 `"Error creating shader: " + 日志`)|
 | 链接 | `GL20.glCreateProgram` / `glAttachShader` / `glBindAttribLocation` / `glLinkProgram` / `glGetProgrami(GL_LINK_STATUS)` / `glGetProgramInfoLog` | GraphicsLib `ShaderLib.loadShader`(链接失败删 program 返回 0)|
 | 日志 | `Global.getLogger(...)`(log4j `Logger`)→ `starsector.log` | 编译/链接 InfoLog 与加载/重载/清理事件都由 MOD 侧写入 (游戏侧对 `loadText` 零日志)|
-| 运行使用方 | `GearInPulseRenderer`(C07-S06 分层渲染通道)| 每场战斗 `init` 加载程序、`render` 内使用、`cleanup` 内删除、`advance` 内定时重载 |
+| 运行使用方 | `GearInPulseRenderer`([C7-S6] 分层渲染通道)| 每场战斗 `init` 加载程序、`render` 内使用、`cleanup` 内删除、`advance` 内定时重载 |
 | 实例对照 (加载入口 A)| GraphicsLib `org.dark.shaders.post.PostProcessShader` | `loadText("data/shaders/post/pre.vert")` → `ShaderLib.loadShader` → 失败置 `enabled = false` 并 ERROR |
-| 实例对照 (加载入口 B)| `ShaderUtil.createShaderVFFormPath(类名, vert 路径, frag 路径)` | BoxUtil 封装的使用入口 (内部行为留给 C15-S03)|
+| 实例对照 (加载入口 B)| `ShaderUtil.createShaderVFFormPath(类名, vert 路径, frag 路径)` | BoxUtil 封装的使用入口 (内部行为留给 [C15-S3])|
 | 可观察结果 | `starsector.log` + 战斗画面 | init/reload/cleanup/compile failed 日志行；玩家舰中心脉冲环 |
 
 ### 四位置完整流程
@@ -57,7 +57,7 @@ shader 是**无注册表 ID**的资源：它不经过任何 CSV/JSON 注册链 (
 |---|---|
 | 资源文件 | MOD 内 `data\shaders\GearIn_pulse_shader.vert` / `.frag` |
 | 加载入口 | `Global.getSettings().loadText("data/shaders/GearIn_pulse_shader.vert")`(Java 常量 `VERT_PATH` / `FRAG_PATH`，与资源文件路径逐字一致)|
-| 运行使用方 | `GearInPulseRenderer`(C07-S06 通道注册，`render` 内 `glUseProgram` + 绘制)|
+| 运行使用方 | `GearInPulseRenderer`([C7-S6] 通道注册，`render` 内 `glUseProgram` + 绘制)|
 | 可观察结果 | 日志行含 `vert=data/shaders/GearIn_pulse_shader.vert`、`frag=...`(与前面三处一致)；画面出现脉冲环 |
 
 页面与 Java 常量两处路径必须逐字一致。
@@ -333,7 +333,7 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  * - 读取端行为（文本读取工具的 readText）：按 UTF-8 解码并把全部 \r 剥除，不剥离
  *   BOM—— 源文件必须 UTF-8 无 BOM（BOM 字符会进入 GLSL 源码导致编译失败），CRLF 安全；
  *   loadText 本身不打日志，编译/链接日志由 MOD 侧写入 starsector.log；
- * - 编译/链接链（延续 C15-S01）：glCreateShader -> glShaderSource -> glCompileShader ->
+ * - 编译/链接链（延续 C15-S1）：glCreateShader -> glShaderSource -> glCompileShader ->
  *   glGetShaderi(GL_COMPILE_STATUS)；glCreateProgram -> glAttachShader ->
  *   glBindAttribLocation（链接前固定）-> glLinkProgram -> glGetProgrami(GL_LINK_STATUS)；
  *   失败时读取 glGetShaderInfoLog / glGetProgramInfoLog（含行号与原因）并以 ERROR 写入
@@ -341,7 +341,7 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  * - 生命周期四环节：加载（每场战斗 init 内执行，不跨战斗缓存）-> 使用（render 回调内
  *   glUseProgram + glUniform* + glDrawArrays）-> 清理（cleanup() 内 glDeleteProgram，
  *   战斗结束 destroyInstance 不调 cleanup()，由 advance() 主动失效驱动引擎移除，
- *   C07-S06 硬规则延续）-> 重载（按同一路径删除后重建；本节采用"重建成功才替换"：
+ *   C7-S6 硬规则延续）-> 重载（按同一路径删除后重建；本节采用"重建成功才替换"：
  *   新程序构建失败时保留旧程序、画面不中断，ERROR 日志给出 InfoLog 作为第一证据）。
  */
 public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
@@ -382,7 +382,7 @@ public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
             valid = false; // 初始化失败：不渲染，等引擎正常移除
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C07-S06 同款姿势）
+        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C7-S6 同款姿势）
         LOG.info("GearIn pulse shader init: program=" + program + ", vbo=" + vboId
                 + ", u_offset=" + uOffsetLocation + ", u_time=" + uTimeLocation
                 + ", vert=" + VERT_PATH + ", frag=" + FRAG_PATH);
@@ -536,7 +536,7 @@ public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
         }
         elapsed += amount;
         if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()（C07-S06 硬规则 3）
+            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()（C7-S6 硬规则 3）
             return;
         }
         // 重载循环：按同一路径删除并重建 program（资源生命周期闭环）
@@ -545,7 +545,7 @@ public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
             reloadTimer = 0f;
             reloadProgram();
         }
-        // 剔除依据是承载实体的位置（C07-S06 硬规则 4）：跟随玩家舰船
+        // 剔除依据是承载实体的位置（C7-S6 硬规则 4）：跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
     }
 
@@ -644,7 +644,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：编译链路建立的 MOD 布局 (C06-S01)、`GearIn_test` 测试战役 (C03-S01)、战斗插件体系 (C07-S05，含本节注册片段一行)、分层渲染插件 (C07-S06)、本节新增的 `GearInPulseRenderer` 类与 `data\shaders\GearIn_pulse_shader.vert/.frag`。
+前置数据：编译链路建立的 MOD 布局 [C6-S1]、`GearIn_test` 测试战役 [C3-S1]、战斗插件体系 ([C7-S5]，含本节注册片段一行)、分层渲染插件 [C7-S6]、本节新增的 `GearInPulseRenderer` 类与 `data\shaders\GearIn_pulse_shader.vert/.frag`。
 
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对产物清单。
 2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中核对 init 行。

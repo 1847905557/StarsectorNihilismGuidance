@@ -20,10 +20,10 @@
 
 本节建立在前置单元的基础上。
 
-- **星区入口与脚本注册**(C08-S01)：`SectorAPI` 星区结构 (本节两个入口都从 `getSector()` 下的 getter 进入)、`onGameLoad` 的一次性注册判断 (persistent data 各自键的 `REGISTER_MARK` 模式)。
-- **修改势力关系与货舱** (C08-S08)：`FactionAPI` 与 `CargoAPI` 的常用入口；本节对话框的两个信息选项直接读取玩家势力的关系数值与玩家舰队货物。
-- **全局对象与阶段判断**(C06-S03)：`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；本节所有读取与注册都发生在生涯引擎建立之后。
-- **MOD 插件生命周期**(C06-S02)：`modPlugin` 生命周期与 `CLASS_MARK` 一次性注册标记。
+- **星区入口与脚本注册**[C8-S1]：`SectorAPI` 星区结构 (本节两个入口都从 `getSector()` 下的 getter 进入)、`onGameLoad` 的一次性注册判断 (persistent data 各自键的 `REGISTER_MARK` 模式)。
+- **修改势力关系与货舱** [C8-S8]：`FactionAPI` 与 `CargoAPI` 的常用入口；本节对话框的两个信息选项直接读取玩家势力的关系数值与玩家舰队货物。
+- **全局对象与阶段判断**[C6-S3]：`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；本节所有读取与注册都发生在生涯引擎建立之后。
+- **MOD 插件生命周期**[C6-S2]：`modPlugin` 生命周期与 `CLASS_MARK` 一次性注册标记。
 
 ## 术语
 
@@ -121,7 +121,7 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 
 ## 完整最小例
 
-在既有 MOD 工程 (布局与插件入口 `GearInModPlugin`) 之上，沿用 C08-S08 定义的抽象基类 `GearInOneShotScript`，本节在其上新增两个服务演示脚本与两个插件类，共五个类。一文件一角色，不新增任何资源文件；两个脚本在 `onGameLoad` 各自注册，首个 `advance()` 各执行一次演示并自停：
+在既有 MOD 工程 (布局与插件入口 `GearInModPlugin`) 之上，沿用 [C8-S8] 定义的抽象基类 `GearInOneShotScript`，本节在其上新增两个服务演示脚本与两个插件类，共五个类。一文件一角色，不新增任何资源文件；两个脚本在 `onGameLoad` 各自注册，首个 `advance()` 各执行一次演示并自停：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -131,7 +131,7 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\campaign\
-│       ├── GearInOneShotScript          # 沿用 C08-S08 的抽象基类（不参与注册）
+│       ├── GearInOneShotScript          # 沿用 C8-S8 的抽象基类（不参与注册）
 │       ├── GearInIntelServicesScript    # 本节新增（情报段脚本）
 │       ├── GearInDialogServicesScript   # 本节新增（对话框段脚本）
 │       ├── GearInServicesIntel          # 本节新增（情报插件）
@@ -139,7 +139,7 @@ Starsector\mods\GearIndustry\
 └── jars\
 ```
 
-### GearInOneShotScript(抽象基类，沿用 C08-S08)
+### GearInOneShotScript(抽象基类，沿用 [C8-S8])
 
 **职责**：一次性演示脚本骨架 —— 封装 `EveryFrameScript` 三方法 (`isDone` / `runWhilePaused` / `advance`)，首次 `advance()` 执行一次子类实现的 `runDemo()` 后自停。
 
@@ -451,7 +451,7 @@ public class GearInServicesDialog implements InteractionDialogPlugin {
 
 | 类 | 角色 | 绑定注册入口 |
 |---|---|---|
-| `GearInOneShotScript` | 抽象基类：一次性演示脚本骨架 (沿用 C08-S08) | 不参与注册 |
+| `GearInOneShotScript` | 抽象基类：一次性演示脚本骨架 (沿用 [C8-S8]) | 不参与注册 |
 | `GearInIntelServicesScript` | 情报段演示脚本 | onGameLoad `addScript`，persistent data 键 `GearIn_IntelServices` |
 | `GearInDialogServicesScript` | 对话框段演示脚本 | onGameLoad `addScript`，persistent data 键 `GearIn_DialogServices` |
 | `GearInServicesIntel` | 自定义情报插件 (`BaseIntelPlugin` 子类)| `IntelManagerAPI.addIntel(plugin)`(由情报段脚本调用)|
@@ -493,7 +493,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 工程：`mod_info.json`、构建脚本与插件入口 `GearInModPlugin`(C06-S02)，以及脚本注册判断模式 (C08-S01)、本节五个类与调用点片段中的两个 `addScript` 注册块 (各带独立的 `REGISTER_MARK` 键)。
+前置数据：既有 MOD 工程：`mod_info.json`、构建脚本与插件入口 `GearInModPlugin`[C6-S2]，以及脚本注册判断模式 [C8-S1]、本节五个类与调用点片段中的两个 `addScript` 注册块 (各带独立的 `REGISTER_MARK` 键)。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含五个类的 `.class` 条目。
 2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按顺序出现两个脚本的日志行 (情报段 ×3、对话框段 1 行)，且**没有**旧复合演示的收尾 `done` 行。

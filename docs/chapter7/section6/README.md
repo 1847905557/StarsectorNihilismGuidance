@@ -21,14 +21,14 @@
 
 阅读本节前，建议先掌握以下既有内容：
 
-- MOD 目录结构、`starsector.log`(C01-S01)：本节所有可观察结果都落在日志与画面里。
-- 插件模型与暂停判断 (C07-S01)：本节的分层渲染插件沿用 `engine.isPaused()` 判断做法，但推进语义不同 —— 见 "推进与暂停"。
-- 战役 (mission) 与生涯 (campaign) 概念、`GearIn_test` 测试战役 (C03-S01)：本节用它做验证。
-- 编译 JAR 链路 (C06-S01)：本节示例编入同一个 `jars\GearIndustry.jar`。
-- `Global` 生命周期 —— 禁止跨战斗缓存引擎引用 (C06-S03)：本节把同一条纪律延伸到渲染插件与它持有的舰船引用。
-- 战斗状态读取 —— 实体存活性、`isCombatOver()`(C07-S02)：本节消费存活判定做失效。
-- 战斗插件生命周期与清理纪律 (C07-S05)：本节把 "战斗结束没有清理回调" 拓展到渲染插件侧，并指出两条插件通道的差异。
-- shader 与 GLSL(C14-S01)：完整讲解在该单元；本节只用 `GL11` 立即模式原语，不涉及 shader 资源。
+- MOD 目录结构、`starsector.log`[C1-S1]：本节所有可观察结果都落在日志与画面里。
+- 插件模型与暂停判断 [C7-S1]：本节的分层渲染插件沿用 `engine.isPaused()` 判断做法，但推进语义不同 —— 见 "推进与暂停"。
+- 战役 (mission) 与生涯 (campaign) 概念、`GearIn_test` 测试战役 [C3-S1]：本节用它做验证。
+- 编译 JAR 链路 [C6-S1]：本节示例编入同一个 `jars\GearIndustry.jar`。
+- `Global` 生命周期 —— 禁止跨战斗缓存引擎引用 [C6-S3]：本节把同一条纪律延伸到渲染插件与它持有的舰船引用。
+- 战斗状态读取 —— 实体存活性、`isCombatOver()`[C7-S2]：本节消费存活判定做失效。
+- 战斗插件生命周期与清理纪律 [C7-S5]：本节把 "战斗结束没有清理回调" 拓展到渲染插件侧，并指出两条插件通道的差异。
+- shader 与 GLSL[C14-S1]：完整讲解在该单元；本节只用 `GL11` 立即模式原语，不涉及 shader 资源。
 
 ## 文件与 API 链路
 
@@ -209,11 +209,11 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\
-│       ├── GearInModPlugin            # C06-S02 所有；本节不改动
-│       ├── GearInGlobalAccess         # C06-S03 所有；本节只消费
+│       ├── GearInModPlugin            # C6-S2 所有；本节不改动
+│       ├── GearInGlobalAccess         # C6-S3 所有；本节只消费
 │       └── combat\
-│           ├── GearInCombatStatePlugin      # C07-S02 所有；本节只消费
-│           ├── GearInCombatLifecyclePlugin  # C07-S05 所有；本节只消费
+│           ├── GearInCombatStatePlugin      # C7-S2 所有；本节只消费
+│           ├── GearInCombatLifecyclePlugin  # C7-S5 所有；本节只消费
 │           └── GearInLayeredRenderer        # 本节新增
 └── jars\
 ```
@@ -256,7 +256,7 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  *   不做任何绘制；
  * - 暂停时引擎不推进实体（advanceInner 的暂停分支只 advance 地形与玩家舰船），
  *   但渲染循环照常执行（渲染不暂停）；isPaused() 守卫为防御性写法（成熟实例一致做法）；
- * - 插件、引擎与舰船引用禁止跨战斗缓存（C06-S03 / C07-S04 同规）。
+ * - 插件、引擎与舰船引用禁止跨战斗缓存（C6-S3 / C7-S4 同规）。
  */
 public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 
@@ -381,7 +381,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：C06-S01 的 MOD 布局 + C07-S01 的战斗插件接入 + C07-S05 的战斗生命周期插件 (其部署监听器已加入本节注册片段) + 本节的 `GearInLayeredRenderer` + C03-S01 的 `GearIn_test` 测试战役。
+前置数据：[C6-S1] 的 MOD 布局 + [C7-S1] 的战斗插件接入 + [C7-S5] 的战斗生命周期插件 (其部署监听器已加入本节注册片段) + 本节的 `GearInLayeredRenderer` + [C3-S1] 的 `GearIn_test` 测试战役。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
 2. **战役验证**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 中观察分层渲染初始化记录。

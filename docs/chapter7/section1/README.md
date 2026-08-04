@@ -19,10 +19,10 @@
 
 本节的可观察结果全部落在日志与战斗画面里，示例还要编进 JAR、遵守引擎生命周期，请先确认以下既有知识：
 
-- MOD 目录结构与 `starsector.log` 日志 (C01-S01)：本节所有可观察结果都落在日志里。
-- 战役 (mission) 与生涯 (campaign) 概念，以及 `GearIn_test` 测试战役 (C03-S01)。
-- 编译 JAR 链路 (C06-S01)：本节示例编入同一个 `jars\GearIndustry.jar`。
-- `Global` 生命周期 —— 战斗引擎每场战斗结束销毁后立即重建、战斗外是非 null 空引擎、禁止跨战斗缓存引擎引用 (C06-S03)：本节把同一条纪律延伸到插件实例，实例字段随战斗生灭。
+- MOD 目录结构与 `starsector.log` 日志 [C1-S1]：本节所有可观察结果都落在日志里。
+- 战役 (mission) 与生涯 (campaign) 概念，以及 `GearIn_test` 测试战役 [C3-S1]。
+- 编译 JAR 链路 [C6-S1]：本节示例编入同一个 `jars\GearIndustry.jar`。
+- `Global` 生命周期 —— 战斗引擎每场战斗结束销毁后立即重建、战斗外是非 null 空引擎、禁止跨战斗缓存引擎引用 [C6-S3]：本节把同一条纪律延伸到插件实例，实例字段随战斗生灭。
 
 ## 每帧是什么
 
@@ -32,7 +32,7 @@
 advance(float amount, List<InputEventAPI> events)
 ```
 
-`amount` 是距上一帧经过的秒数 (正常约 `0.017`)，`events` 是本帧的输入事件列表。插件收到的 `amount` 与 `getElapsedInLastFrame()` 是同一个数 (时间语义见 C07-S03)。
+`amount` 是距上一帧经过的秒数 (正常约 `0.017`)，`events` 是本帧的输入事件列表。插件收到的 `amount` 与 `getElapsedInLastFrame()` 是同一个数 (时间语义见 [C7-S3])。
 
 ## 注册：settings.json 的 plugins 段
 
@@ -51,7 +51,7 @@ advance(float amount, List<InputEventAPI> events)
 - **key 唯一**：`gearInPauseAwarePlugin` 全局唯一，带 `GearIn_` 前缀的可读命名同理。key 与其他来源重复时后读覆盖先读 —— 您的插件可能被别人的覆盖，通常还没报错。
 - **值是完整类名**：包名.类名，必须与文件里的 `package` + `class` 完全一致。
 
-游戏启动时读取这个类名并注册；**每场战斗开始时为它创建一个新实例**，之后每帧调用实例的 `advance`；战斗结束实例销毁。`engine.addPlugin(...)` 是战斗内的另一种注册方式 (本节示例之外的插件用它)，注册路径汇总在 C07-S06。
+游戏启动时读取这个类名并注册；**每场战斗开始时为它创建一个新实例**，之后每帧调用实例的 `advance`；战斗结束实例销毁。`engine.addPlugin(...)` 是战斗内的另一种注册方式 (本节示例之外的插件用它)，注册路径汇总在 [C7-S6]。
 
 ## 完整示例：GearInPauseAwarePlugin
 
@@ -153,7 +153,7 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 
 ## 验证方案
 
-前置数据：`GearInPauseAwarePlugin` 已写入 `data/config/settings.json` 的 `plugins` 段，`jars\GearIndustry.jar` 已按 C06-S01 的流程构建并在启动器启用本 MOD。
+前置数据：`GearInPauseAwarePlugin` 已写入 `data/config/settings.json` 的 `plugins` 段，`jars\GearIndustry.jar` 已按 [C6-S1] 的流程构建并在启动器启用本 MOD。
 
 1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
 2. 启动游戏，进入模拟战 (有玩家舰船)，正常跑约 15 秒。
@@ -206,7 +206,7 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 
 排错时沿注册条目、构建产物、状态推进的顺序核对，比对着画面猜测更快。暂停语义是本节的核心判断：游戏不会替您跳过暂停帧，凡是推进状态、累计时间的代码，都要先过 `engine.isPaused()` 这一道检查。
 
-插件注册的完整生命周期 (三条注册路径、`addPlugin` / `removePlugin`、战斗结束无清理回调) 与监听器系统，都在 C07-S06 展开。
+插件注册的完整生命周期 (三条注册路径、`addPlugin` / `removePlugin`、战斗结束无清理回调) 与监听器系统，都在 [C7-S6] 展开。
 
 ## 建议参考项
 

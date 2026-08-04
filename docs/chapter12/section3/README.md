@@ -18,10 +18,10 @@
 
 ## 前置知识
 
-- C01-S02 的 CSV 表头、引号和 ID 规则；
-- C03-S04 的描述表键与合并语义；
-- C12-S01 的 MOD 相对路径和 `modId` 限定读取；
-- C12-S02 的 JSON 单文件读取。
+- [C1-S2] 的 CSV 表头、引号和 ID 规则；
+- [C3-S4] 的描述表键与合并语义；
+- [C12-S1] 的 MOD 相对路径和 `modId` 限定读取；
+- [C12-S2] 的 JSON 单文件读取。
 
 ## 单文件与合并入口
 
@@ -36,7 +36,7 @@ JSONArray master = Global.getSettings().getMergedSpreadsheetDataForMod(
 
 ### JSON 合并
 
-`getMergedJSON` 递归合并对象键，标量由后加载来源覆盖，数组按引擎规则追加或整体替换。需要自己的文件只提供自己的分类或键；需要读取单一 MOD 的 JSON 时使用 `loadJSON(path, modId)`，基础见 C12-S02。
+`getMergedJSON` 递归合并对象键，标量由后加载来源覆盖，数组按引擎规则追加或整体替换。需要自己的文件只提供自己的分类或键；需要读取单一 MOD 的 JSON 时使用 `loadJSON(path, modId)`，基础见 [C12-S2]。
 
 ### 选择入口
 

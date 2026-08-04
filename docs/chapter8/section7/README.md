@@ -22,14 +22,14 @@
 
 理解本节需要以下既有基础：
 
-- MOD 目录结构、`starsector.log`(C01-S01)。
-- CSV 合并语义 (C02-S02)：同文件重复 id 抛 `Duplicate key`、跨文件先到先得、空 id 行跳过；本节 `market_conditions.csv` 走同一读取器。
-- `GearInModPlugin` 与 `onGameLoad` 的一次性注册模式 (C06-S02)。
-- `loadJSON` 与 `getMergedSpreadsheetData` 的资源读取入口 (C12-S02、C12-S03)：本节只依赖 `market_conditions.csv` 自身的合并语义。
-- `MutableStat` 与 `StatBonus` 的 modifier 写入 (C07-S03)：`getHazard()` / `getAccessibilityMod()` 都是它们。
-- 一次性 `EveryFrameScript` 演示模式 (C08-S01)：`executed` 置位后 `isDone()` 返回 true。
-- `addPlanet` 自动为行星挂条件市场 (C08-S02)：`market_<planetId>`，survey 的实体侧。
-- `MarketAPI` 条件访问入口 (C08-S05)：`addCondition` 返回 token、`removeCondition` / `removeSpecificCondition` 不对称；本节展开实现与检查。
+- MOD 目录结构、`starsector.log`[C1-S1]。
+- CSV 合并语义 [C2-S2]：同文件重复 id 抛 `Duplicate key`、跨文件先到先得、空 id 行跳过；本节 `market_conditions.csv` 走同一读取器。
+- `GearInModPlugin` 与 `onGameLoad` 的一次性注册模式 [C6-S2]。
+- `loadJSON` 与 `getMergedSpreadsheetData` 的资源读取入口 [C12-S2]、[C12-S3]：本节只依赖 `market_conditions.csv` 自身的合并语义。
+- `MutableStat` 与 `StatBonus` 的 modifier 写入 [C7-S3]：`getHazard()` / `getAccessibilityMod()` 都是它们。
+- 一次性 `EveryFrameScript` 演示模式 [C8-S1]：`executed` 置位后 `isDone()` 返回 true。
+- `addPlanet` 自动为行星挂条件市场 [C8-S2]：`market_<planetId>`，survey 的实体侧。
+- `MarketAPI` 条件访问入口 [C8-S5]：`addCondition` 返回 token、`removeCondition` / `removeSpecificCondition` 不对称；本节展开实现与检查。
 
 ## 术语
 
@@ -622,7 +622,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与 `GearInModPlugin` 注册结构 (含本节调用点片段，C06-S01、C06-S02 已确立)、`market_conditions.csv` 追加行、两个 Java 类。
+前置数据：既有 MOD 布局与 `GearInModPlugin` 注册结构 (含本节调用点片段，[C6-S1]、[C6-S2] 已确立)、`market_conditions.csv` 追加行、两个 Java 类。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个 class。
 2. 启动游戏，查看 `Loading condition: GearIn_ore_deposits` 加载日志。

@@ -22,12 +22,12 @@
 
 本节的人物演示要跑在生涯引擎里，并沿用前序页面的注册与工厂入口，请先熟悉以下内容：
 
-- 生涯时钟脚本与一次性注册判断 (C08-S01)：persistent data `CLASS_MARK` 模式。
-- 舰队成员与舰长 (C08-S03)：`FactoryAPI.createFleetMember` / `FleetDataAPI.addFleetMember`、`FleetMemberAPI.getCaptain` / `setCaptain`、旗舰语义、`getMemberWithCaptain`。
-- 市场人物与通信目录 (C08-S05)：`MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`、通信目录 `getCommDirectory().addPerson`。
-- 工厂入口与阶段判断 (C06-S03)：`Global.getFactory()` 是创建生涯对象的正式途径；`getCurrentState()` 判断当前阶段。
-- 插件生命周期回调 (C06-S02)：`GearInModPlugin` 生命周期与 `CLASS_MARK` 门。
-- 生涯与战役的区别 (C03-S01)：生涯 (campaign) 与战役 (mission) 的区别。
+- 生涯时钟脚本与一次性注册判断 [C8-S1]：persistent data `CLASS_MARK` 模式。
+- 舰队成员与舰长 [C8-S3]：`FactoryAPI.createFleetMember` / `FleetDataAPI.addFleetMember`、`FleetMemberAPI.getCaptain` / `setCaptain`、旗舰语义、`getMemberWithCaptain`。
+- 市场人物与通信目录 [C8-S5]：`MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`、通信目录 `getCommDirectory().addPerson`。
+- 工厂入口与阶段判断 [C6-S3]：`Global.getFactory()` 是创建生涯对象的正式途径；`getCurrentState()` 判断当前阶段。
+- 插件生命周期回调 [C6-S2]：`GearInModPlugin` 生命周期与 `CLASS_MARK` 门。
+- 生涯与战役的区别 [C3-S1]：生涯 (campaign) 与战役 (mission) 的区别。
 
 ## 术语
 
@@ -828,7 +828,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：`gear_in` MOD 布局与插件生命周期类 (C06-S01 / C06-S02，含本节调用点片段)、本节 8 个类、生涯时钟脚本 (C08-S01，非必需)。
+前置数据：`gear_in` MOD 布局与插件生命周期类 ([C6-S1] / [C6-S2]，含本节调用点片段)、本节 8 个类、生涯时钟脚本 ([C8-S1]，非必需)。
 
 1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
 2. 新建生涯：确认 `starsector.log` 按顺序出现全部 `GearIn person lesson` 日志行：

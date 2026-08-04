@@ -25,12 +25,12 @@
 
 本节假设您已具备以下基础：
 
-- MOD 目录结构、`starsector.log`(C01-S01)。
-- 生涯 (campaign) 概念：星区是生涯模式的运行对象，战役 mission 是另一个域 (C03-S01)。
-- 每帧回调模型 (战斗域)：本节的 `EveryFrameScript` 是它的生涯域对应物，两边的暂停语义不同 —— 战斗的 `advanceInner` 暂停分支仍推进地图，生涯的脚本循环在暂停时默认完全跳过 (C07-S01)。
-- `modPlugin` 生命周期回调与 "首次进入存档" 的 `CLASS_MARK` 标记；本节的脚本注册沿用同一个标记模式 (C06-S02)。
-- `Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；本节所有注册与读取都发生在生涯引擎建立之后 (C06-S03)。
-- settings 与 common 文件机制分别见 C06-S04 和 C12-S04；本节不新增任何资源文件。
+- MOD 目录结构、`starsector.log`[C1-S1]。
+- 生涯 (campaign) 概念：星区是生涯模式的运行对象，战役 mission 是另一个域 [C3-S1]。
+- 每帧回调模型 (战斗域)：本节的 `EveryFrameScript` 是它的生涯域对应物，两边的暂停语义不同 —— 战斗的 `advanceInner` 暂停分支仍推进地图，生涯的脚本循环在暂停时默认完全跳过 [C7-S1]。
+- `modPlugin` 生命周期回调与 "首次进入存档" 的 `CLASS_MARK` 标记；本节的脚本注册沿用同一个标记模式 [C6-S2]。
+- `Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；本节所有注册与读取都发生在生涯引擎建立之后 [C6-S3]。
+- settings 与 common 文件机制分别见 [C6-S4] 和 [C12-S4]；本节不新增任何资源文件。
 
 ## 术语
 
@@ -211,7 +211,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * 完整最小例：SectorAPI 注册的生涯每帧脚本（EveryFrameScript）。
  *
  * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），注册前用 hasScript() 查重，
- * 并用 sector persistent data 键 REGISTER_MARK 做一次性门控（C06-S02 的 CLASS_MARK 模式）。
+ * 并用 sector persistent data 键 REGISTER_MARK 做一次性门控（C6-S2 的 CLASS_MARK 模式）。
  *
  * 行为：每个游戏日跨日时打印一行日志（当前日期、本帧折合的游戏天数、挂载以来经过的游戏天数）；
  * 默认 runWhilePaused() 返回 false：引擎暂停时脚本不推进、生涯时钟也不前进；
@@ -336,7 +336,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 (C06-S01)、`GearInModPlugin`(C06-S02，含本节调用点片段) 与本节类 `GearInSectorClockScript`。累计工程的 `GearInSystemGenerator`(C03-S03) 非必需。
+前置数据：既有 MOD 布局 [C6-S1]、`GearInModPlugin`([C6-S2]，含本节调用点片段) 与本节类 `GearInSectorClockScript`。累计工程的 `GearInSystemGenerator`[C3-S3] 非必需。
 
 1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；用 `jar tf jars\GearIndustry.jar` 核对产物。
 2. 新建生涯：启动游戏进入新档，持续观察 `starsector.log`，直到确认脚本挂载与跨日日志。

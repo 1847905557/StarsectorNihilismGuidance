@@ -27,13 +27,13 @@
 
 本节直接使用硬依赖库的 Java 接口，并沿用战斗插件与分层渲染的既有通道，请先熟悉以下内容：
 
-- 硬依赖声明与运行时检测 (C13-S01)：`mod_info.json` 的 `dependencies` 写法与运行时自检流程；
-- 分层渲染插件通道 (C07-S06)：`engine.addLayeredRenderingPlugin(...)` 的注册方式、`ABOVE_SHIPS_AND_MISSILES_LAYER` 在层序中的位置；
-- 战斗插件模型与暂停检查 (C07-S01)：`EveryFrameCombatPlugin` 的 `advance` 生命周期与 `engine.isPaused()` 的用法；
-- `modPlugin` 与 `onApplicationLoad()` 时机 (C06-S02)：资源加载完成后、主菜单前调用；
-- `Global` 生命周期与战斗外引擎判空 (C06-S03)：战斗外 `getCombatEngine()` 是非 null 空引擎，"战斗内" 判据以 `LocalData` 是否存在为准；
-- MOD 目录与 `mod_info.json`(C01-S01)；
-- GLSL 语法 (C15-S01)：着色器专题负责 shader 源码，本节只调用 GraphicsLib 的 Java 接口，不编写 GLSL。
+- 硬依赖声明与运行时检测 [C13-S1]：`mod_info.json` 的 `dependencies` 写法与运行时自检流程；
+- 分层渲染插件通道 [C7-S6]：`engine.addLayeredRenderingPlugin(...)` 的注册方式、`ABOVE_SHIPS_AND_MISSILES_LAYER` 在层序中的位置；
+- 战斗插件模型与暂停检查 [C7-S1]：`EveryFrameCombatPlugin` 的 `advance` 生命周期与 `engine.isPaused()` 的用法；
+- `modPlugin` 与 `onApplicationLoad()` 时机 [C6-S2]：资源加载完成后、主菜单前调用；
+- `Global` 生命周期与战斗外引擎判空 [C6-S3]：战斗外 `getCombatEngine()` 是非 null 空引擎，"战斗内" 判据以 `LocalData` 是否存在为准；
+- MOD 目录与 `mod_info.json`[C1-S1]；
+- GLSL 语法 [C15-S1]：着色器专题负责 shader 源码，本节只调用 GraphicsLib 的 Java 接口，不编写 GLSL。
 
 `GearInModPlugin` 由前置的 modPlugin 主题单元持有。
 
@@ -325,7 +325,7 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 
 | 环节 | 文件或 API | 使用方 / 行为 |
 |---|---|---|
-| 依赖声明 | `mod_info.json` 的 `dependencies` 追加 `{"id":"shaderLib","name":"GraphicsLib"}` | 硬依赖自检 (C13-S01) 的启动器检查 (缺装即红色不可勾选)|
+| 依赖声明 | `mod_info.json` 的 `dependencies` 追加 `{"id":"shaderLib","name":"GraphicsLib"}` | 硬依赖自检 [C13-S1] 的启动器检查 (缺装即红色不可勾选)|
 | 初始化 | `ShaderModPlugin.onApplicationLoad` → `ShaderLib.init()`(幂等)| 读 `GRAPHICS_OPTIONS.ini`、检测 OpenGL 2.0 / FBO、建内部纹理与 FBO(`org.dark.shaders.util.ShaderLib`)|
 | 启动检查 | AA 检查 (`getAASamples()>1 && !aaCompatMode`)| 抛 `RuntimeException`，启动中止 (`org.dark.shaders.ShaderModPlugin`)|
 | 能力门禁 | `ShaderLib.areShadersAllowed()` / `areBuffersAllowed()` | 所有 shader / FBO 入口的必须前置检查 (javadoc 明确违反会崩溃)|
@@ -335,7 +335,7 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 | 光源推进 | `LightShader.advance` → 每个 `LightAPI.advance` | 非暂停推进；返回 true 即移除；failsafe 60 秒 (`org.dark.shaders.light.StandardLight`)|
 | 自动光源 | `LightData` 表 → `renderInWorldCoords` | 射弹按 `.proj` id、光束按武器 id 查表自动建光 (`org.dark.shaders.light.LightShader`)|
 | 贴图消费 | `TextureData` 表 → material / normal / surface 三遍 | 命中替换 `entry.sprite` 参与光照 (`org.dark.shaders.light.LightShader`)|
-| 渲染层 | `LightShader.getCombatLayer()` = `ABOVE_SHIPS_AND_MISSILES_LAYER` | 分层渲染层序：粒子系统之前 (C07-S06)|
+| 渲染层 | `LightShader.getCombatLayer()` = `ABOVE_SHIPS_AND_MISSILES_LAYER` | 分层渲染层序：粒子系统之前 [C7-S6]|
 
 ## 规则汇总
 
@@ -473,10 +473,10 @@ public class GearInLightCombatPlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine == null) {
-            return; // 防御性判空（C07-S01 同款姿势）
+            return; // 防御性判空（C7-S1 同款姿势）
         }
         if (engine.isPaused()) {
-            return; // 暂停守卫（C07-S01）：暂停时 advance 仍会被调用，光源静止但保持可见
+            return; // 暂停守卫（C7-S1）：暂停时 advance 仍会被调用，光源静止但保持可见
         }
         ShipAPI player = engine.getPlayerShip();
         shipLight.update(player);
@@ -768,7 +768,7 @@ gradle jar
 
 ### 验证方案
 
-前置数据：确认以下内容已就绪 —— 累计工程 (C13-S02)、`mod_info.json` 追加 `shaderLib` 依赖、`data\lights\GearIn_light_data.csv` 与四个示例类；`GearInModPlugin.onApplicationLoad` 内追加本节接入片段 (C06-S02)；测试战役 `GearIn_test`(C03-S01) 含本节注册片段一行；已安装 GraphicsLib(启动器勾选)。
+前置数据：确认以下内容已就绪 —— 累计工程 [C13-S2]、`mod_info.json` 追加 `shaderLib` 依赖、`data\lights\GearIn_light_data.csv` 与四个示例类；`GearInModPlugin.onApplicationLoad` 内追加本节接入片段 [C6-S2]；测试战役 `GearIn_test`[C3-S1] 含本节注册片段一行；已安装 GraphicsLib(启动器勾选)。
 
 1. 构建与产物核对：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/visuals` 下四个新类。
 2. 启动检查：确认启动器抗锯齿为 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`) 后启动游戏进入主菜单 —— 无 "not fully compatible with antialiasing" 中止。

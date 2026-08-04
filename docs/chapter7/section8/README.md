@@ -22,12 +22,12 @@
 
 本节继续使用战术系统的数据面与战斗实体判据，建议先掌握以下既有内容：
 
-- 船体注册与 `system id` 挂载 (C01-S02)：`ship_data.csv` 的 `system id` 列与 `GearIn_artizan` 示例行。
-- 战术系统数据面四段完整流程 (C02-S03)：`.system` / `ship_systems.csv` / `ship_data.csv` / 效果脚本与 `effectLevel` 概念。
+- 船体注册与 `system id` 挂载 [C1-S2]：`ship_data.csv` 的 `system id` 列与 `GearIn_artizan` 示例行。
+- 战术系统数据面四段完整流程 [C2-S3]：`.system` / `ship_systems.csv` / `ship_data.csv` / 效果脚本与 `effectLevel` 概念。
 - 原版 AI 基线：不写任何代码时，舰船自动使用原版默认 AI(转向、目标选择、开火、规避)；`ModPlugin.pickShipAI(...)` 返回 `null` 即保持原版 AI；`.system` 的 `aiType` 字段决定战术系统的 AI 行为 (此前示例写的 `NONE` = 无 AI 行为，玩家按键不受影响)。
-- 实体判据与暂停语义 (C07-S02)：`getPlayerShip()` 永不 null、`isAlive()` / `isEntityInPlay()` 实体判据、暂停语义。
-- `MutableStat` 的 modifier ID 纪律 (C07-S03)：modifier ID 稳定性与 `modifyMult` / `unmodify` 纪律。
-- `Global` 生命周期与跨战斗缓存禁令 (C06-S03)：禁止跨战斗缓存引擎/实体引用。
+- 实体判据与暂停语义 [C7-S2]：`getPlayerShip()` 永不 null、`isAlive()` / `isEntityInPlay()` 实体判据、暂停语义。
+- `MutableStat` 的 modifier ID 纪律 [C7-S3]：modifier ID 稳定性与 `modifyMult` / `unmodify` 纪律。
+- `Global` 生命周期与跨战斗缓存禁令 [C6-S3]：禁止跨战斗缓存引擎/实体引用。
 
 ## 文件与 API 链路
 
@@ -598,7 +598,7 @@ name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u 
 ```
 
 ::: warning 测试舰挂载要还原
-挂载到测试舰 (C02-S03 示例行的 `system id` 是 `GearIn_burstdrive`；接入本节系统后要恢复原状，改回即可)。
+挂载到测试舰 ([C2-S3] 示例行的 `system id` 是 `GearIn_burstdrive`；接入本节系统后要恢复原状，改回即可)。
 :::
 
 ```csv {5}
@@ -624,7 +624,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 (C06-S01)、战术系统数据面 (C02-S03)；本节数据接入片段 (`GearIn_targetingsystem.system`、`ship_systems.csv` 注册行、`GearIn_artizan` 的 `system id` 挂载)；`GearInTargetingSystem` 类实现已编入 `jars\GearIndustry.jar`。
+前置数据：既有 MOD 布局 [C6-S1]、战术系统数据面 [C2-S3]；本节数据接入片段 (`GearIn_targetingsystem.system`、`ship_systems.csv` 注册行、`GearIn_artizan` 的 `system id` 挂载)；`GearInTargetingSystem` 类实现已编入 `jars\GearIndustry.jar`。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
 2. **数据接入**：启动游戏，在日志中观察 `GearIn_targetingsystem` 的系统加载与数据应用记录。

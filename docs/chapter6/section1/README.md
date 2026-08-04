@@ -21,9 +21,9 @@
 
 开始本节前，您需要熟悉以下概念：
 
-- MOD 目录结构、`mod_info.json`、启动器与日志；`src/` 不是游戏查找源码的前缀 (C01-S01)。
-- 注册、回调与类名一致概念；`settings.json` 的 `plugins` 段、`BaseEveryFrameCombatPlugin`；暂停语义 (C07-S01)。
-- 完整类名如何被数据文件引用，`Problem loading class [...]` 异常的含义 (C02-S02)。
+- MOD 目录结构、`mod_info.json`、启动器与日志；`src/` 不是游戏查找源码的前缀 [C1-S1]。
+- 注册、回调与类名一致概念；`settings.json` 的 `plugins` 段、`BaseEveryFrameCombatPlugin`；暂停语义 [C7-S1]。
+- 完整类名如何被数据文件引用，`Problem loading class [...]` 异常的含义 [C2-S2]。
 
 ## 工具链基线
 
@@ -94,7 +94,7 @@
 
 ## 完整最小例
 
-任务链的每一环都需要一个具体文件。下面在 `Starsector\mods\GearIndustry\` 中逐个建立 (`data/`、`graphics/`、`sounds/` 沿用 C01-S01 建立的目录)：
+任务链的每一环都需要一个具体文件。下面在 `Starsector\mods\GearIndustry\` 中逐个建立 (`data/`、`graphics/`、`sounds/` 沿用 [C1-S1] 建立的目录)：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -149,7 +149,7 @@ tasks.named("jar") {
 }
 ```
 
-要点：`srcDirs = ["src"]` 让 Gradle 从 `src\data\scripts\...` 编译 (与 C02-S02 既有的源码位置一致)；
+要点：`srcDirs = ["src"]` 让 Gradle 从 `src\data\scripts\...` 编译 (与 [C2-S2] 既有的源码位置一致)；
 
 `compileOnly` 声明 API 依赖但不打包；`jar` 任务把产物直接放进 `jars\`，文件名与 `mod_info.json` 声明一致。
 
@@ -163,7 +163,7 @@ rootProject.name = "gear_in"
 
 ### mod_info.json
 
-在 MOD manifest(C01-S01 建立) 上追加 `jars` 字段：
+在 MOD manifest([C1-S1] 建立) 上追加 `jars` 字段：
 
 ```json
 {
@@ -237,9 +237,9 @@ public class GearInFrameLogger extends BaseEveryFrameCombatPlugin {
 
 对应关系：
 
-- `extends BaseEveryFrameCombatPlugin`：提供全部 `EveryFrameCombatPlugin` 方法的空实现，只需覆写 `advance`；直接实现接口则要写满 4 个方法 (C02-S01)。
+- `extends BaseEveryFrameCombatPlugin`：提供全部 `EveryFrameCombatPlugin` 方法的空实现，只需覆写 `advance`；直接实现接口则要写满 4 个方法 [C7-S1]。
 - `Global.getLogger(GearInFrameLogger.class)`：log4j 记录器，输出到 `starsector-core\starsector.log`；全程不需要在编译期直接 import log4j。
-- `engine.isPaused()` 判断：暂停帧不累计 (C02-S01 的暂停语义)。
+- `engine.isPaused()` 判断：暂停帧不累计 ([C7-S1] 的暂停语义)。
 - `engine.getTotalElapsedTime(false)`：战斗内累计秒数，不含暂停；`amount` 是本帧经过秒数。
 
 构建命令 (在 `Starsector\mods\GearIndustry\` 目录执行)：
@@ -256,7 +256,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：`mod_info.json`(C01-S01，追加本节 `jars` 字段)、本节 `build.gradle`、`settings.gradle`、`data\config\settings.json` 与 `GearInFrameLogger` 类。
+前置数据：`mod_info.json`([C1-S1]，追加本节 `jars` 字段)、本节 `build.gradle`、`settings.gradle`、`data\config\settings.json` 与 `GearInFrameLogger` 类。
 
 1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jars\GearIndustry.jar` 生成。
 2. 启动启动器，勾选 "齿轮工业"，进入主菜单后退出；打开 `Starsector\starsector-core\starsector.log`，观察 jar 加载记录。
@@ -277,7 +277,7 @@ gradle jar
 2. **构建成功但日志没有 jar 加载行**：`starsector.log` 里找不到 `Getting ready to load jar file`，被引用的类在战斗开始时抛 `Problem loading class [data.scripts.gearin.combat.GearInFrameLogger]`(由 `ClassNotFoundException` 引起)。触发：`mod_info.json` 缺失 `jars` 字段、MOD 未勾选、或 jar 声明在未启用的 MOD 上。原因：jar 从未被加入脚本类加载器，缺失要等类被按名引用时才暴露。修正：确认 manifest 含 `"jars": ["jars/GearIndustry.jar"]` 且 MOD 已勾选，重启游戏复验。
 3. **jar 路径拼错**：日志**仍会**打印 `Getting ready to load jar file [<MOD 根>/<声明值>]`，错误要等类被引用才暴露，表现为第 2 条的 `Problem loading class`。触发：`jars` 声明成绝对路径，或相对路径与实际布局不符。原因：`URLClassLoader` 构造时不校验文件存在性 —— 它对您写的路径抱有无条件的信任；缺文件的事实要等首次按名加载该类时才发作。修正：把声明值改成相对路径并核对文件名，重启复验。
 4. **字节码版本过高**：加载该类时日志出现 `UnsupportedClassVersionError`(含 `class file has wrong version`)，启动或战斗阶段弹 Fatal 提示。触发：用 JDK 21+ 的默认 target 编译 (漏掉 `options.release`)，或 IDE 输出语言级别高于 17。原因：class 文件版本号超过游戏自带 JRE (Java 17) 能接受的上限。修正：`toolchain 17` 与 `options.release = 17` 同时保留，重编译后复验。
-5. **类在 jar 里但游戏没有任何行为**：无报错、无日志、`data/scripts/plugins` 目录扫描**不**会扫 jar—— 它只按源码扩展名注册脚本类。触发：类没有被任何注册入口按名引用。原因：类只有被用到时才加载，没人按名找它就永远不会被加载。修正：沿 `settings.json` 的 `plugins`、`mod_info.json` 的 `modPlugin`(C06-S02) 或数据文件的 `script` 列 (C02-S02) 引用它。
+5. **类在 jar 里但游戏没有任何行为**：无报错、无日志、`data/scripts/plugins` 目录扫描**不**会扫 jar—— 它只按源码扩展名注册脚本类。触发：类没有被任何注册入口按名引用。原因：类只有被用到时才加载，没人按名找它就永远不会被加载。修正：沿 `settings.json` 的 `plugins`、`mod_info.json` 的 `modPlugin`[C6-S2] 或数据文件的 `script` 列 [C2-S2] 引用它。
 6. **改了源码重启后行为没变**：即使修改源码里的日志文本，输出仍是 jar 里的旧文本。触发：MOD 根下残留同名源码文件 (旧工作流在 `data\scripts\gearin\combat\` 留下的同名类)。原因：jar 类加载器是 Janino 源码编译器的父加载器，父加载器优先，jar 类永远盖过即时编译的源码。修正：删除 MOD 根下残留源码文件，以 jar 为唯一事实来源；构建前确认 `gradle jar` 已重新执行。
 7. **`Problem loading class` 且日志确认 jar 已加载**：`Getting ready to load jar file` 存在，但类加载抛 `Problem loading class [...]`。触发：jar 内容与声明类名不匹配 (包名或类名拼写不一致、类打进了别的 jar)。原因：注册入口按名引用类时，jar 里找不到对应的完整类名。修正：用 `jar tf` 核对类路径，与 settings 里的完整类名逐段对照。
 
@@ -287,7 +287,7 @@ gradle jar
 
 排查时依次问：jar 有没有被声明 (看日志加载行)、类名有没有被注册入口引用、字节码版本是否低于等于 17、jar 里是否真的有这个类。任何一环缺失，最终都表现为 `Problem loading class` 或 "没有任何行为"，区别只在日志哪一段先断。
 
-"编译为类、按名引用" 的机制同样适用于 MOD 入口类：从 jar 实例化入口类、在游戏应用生命周期回调 (如 `onApplicationLoad`) 中做初始化，是本节链路的直接延续 (C06-S02)。
+"编译为类、按名引用" 的机制同样适用于 MOD 入口类：从 jar 实例化入口类、在游戏应用生命周期回调 (如 `onApplicationLoad`) 中做初始化，是本节链路的直接延续 [C6-S2]。
 
 ## 建议参考项
 

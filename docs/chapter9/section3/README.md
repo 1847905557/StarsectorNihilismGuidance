@@ -23,13 +23,13 @@
 本节直接引用舰船、船插、战役、模块船与生涯脚本的既有成果，请先掌握以下内容：
 
 - 舰船船体 (hull)、`.ship` 文件与内置三件套 (内置武器/船插/联队随 `setHullSpec` 应用到每个装配)、`<hullId>_Hull` 空装配：
-  - "武器 ID 错 → 装配构建期 `Weapon spec not found`、槽位 ID 错 → 部署期 `slot id not found`、船插 ID 错 → 部署期 `Hullmod not found`" 的失败时机表 (C01-S02)。
-- 船插 (hullmod) 概念与 `hull_mods.csv`；效果类为会话级单例 (C02-S02)。
-- 战役 (mission) 装配的构造方式、`variantId`/`hullId`/`displayName`/`fluxVents`/`fluxCapacitors`/ `weaponGroups` 必填、任务导出完整流程 (`mission_<id>_ship_<n>.variant`)(C03-S01)。
-- 模块船：`modules` 字段加载期不校验、模块在部署期按该字段生成、模块是独立 `ShipAPI` 实体 (C04-S03)。
-- 生涯每帧脚本 (`EveryFrameScript`) 的注册模式 (C08-S01)。
-- 舰队成员 (`FleetMemberAPI`)：`getVariant()` / `setVariant(variant, withRefit, withStatsUpdate)`，传入引用不克隆 (C08-S03)。
-- `GearInModPlugin` 的所有权与 `onGameLoad` 回调 (C06-S02)。
+  - "武器 ID 错 → 装配构建期 `Weapon spec not found`、槽位 ID 错 → 部署期 `slot id not found`、船插 ID 错 → 部署期 `Hullmod not found`" 的失败时机表 [C1-S6]。
+- 船插 (hullmod) 概念与 `hull_mods.csv`；效果类为会话级单例 [C2-S2]。
+- 战役 (mission) 装配的构造方式、`variantId`/`hullId`/`displayName`/`fluxVents`/`fluxCapacitors`/ `weaponGroups` 必填、任务导出完整流程 (`mission_<id>_ship_<n>.variant`)[C3-S1]。
+- 模块船：`modules` 字段加载期不校验、模块在部署期按该字段生成、模块是独立 `ShipAPI` 实体 [C4-S3]。
+- 生涯每帧脚本 (`EveryFrameScript`) 的注册模式 [C8-S1]。
+- 舰队成员 (`FleetMemberAPI`)：`getVariant()` / `setVariant(variant, withRefit, withStatsUpdate)`，传入引用不克隆 [C8-S3]。
+- `GearInModPlugin` 的所有权与 `onGameLoad` 回调 [C6-S2]。
 
 ## 术语
 
@@ -263,7 +263,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * 把本节五个角色脚本（读取 / 克隆改装 / 武器组 / 模块覆盖 / 序列化）逐一挂进生涯。
  *
  * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），注册前用 sector persistent
- * data 键 REGISTER_MARK 做一次性门控（C06-S02 的 CLASS_MARK 模式，模式同 C08-S01
+ * data 键 REGISTER_MARK 做一次性门控（C6-S2 的 CLASS_MARK 模式，模式同 C8-S1
  * 的 GearInSectorClockScript）。每个角色脚本首次 advance() 后 isDone() 置 true，
  * 引擎下一帧自动移除 —— 整套演示在首个生涯帧内顺序完成，读档后不再重复。
  */
@@ -745,7 +745,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 (C06-S01)+ `GearInModPlugin`(C06-S02，含本节调用点片段)、本节七个类；生涯时钟脚本 `GearInSectorClockScript` (C08-S01，可选)。
+前置数据：既有 MOD 布局 [C6-S1]+ `GearInModPlugin`([C6-S2]，含本节调用点片段)、本节七个类；生涯时钟脚本 `GearInSectorClockScript` ([C8-S1]，可选)。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含七个类的 class 条目。
 2. **新建生涯**：查看 `starsector.log` 中本节七个类输出的全部 `GearIn ...` 日志。

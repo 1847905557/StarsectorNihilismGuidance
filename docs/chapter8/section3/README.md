@@ -21,15 +21,15 @@
 
 本节要继续使用生涯脚本、工厂入口与插件生命周期回调，请先熟悉以下主题：
 
-- **生涯时钟与脚本注册判断** (C08-S01)：`SectorAPI`、生涯时钟、`EveryFrameScript` 的注册时机，以及 persistent data `CLASS_MARK` 一次性判断模式。
-- **生涯与战役、装配与共享注册表** (C03-S01)：生涯 (campaign) 与战役 (mission) 的区别；装配 (variant) 与舰船共享注册表。
-- **无效装配 ID 的两条分流** (C04-S01)：`FleetMemberAPI` 路径日志 + `errorShipVariant` 回退 (本节 "成员创建" 直接使用该结论)。
-- **工厂入口与阶段判断** (C06-S03)：`Global.getFactory()` 是创建生涯对象的正式途径；`getCurrentState()` 阶段判断。
-- **插件生命周期回调与注册判断** (C06-S02)：`GearInModPlugin` 的生命周期回调与 `CLASS_MARK` 一次性判断键。
+- **生涯时钟与脚本注册判断** [C8-S1]：`SectorAPI`、生涯时钟、`EveryFrameScript` 的注册时机，以及 persistent data `CLASS_MARK` 一次性判断模式。
+- **生涯与战役、装配与共享注册表** [C3-S1]：生涯 (campaign) 与战役 (mission) 的区别；装配 (variant) 与舰船共享注册表。
+- **无效装配 ID 的两条分流** [C4-S1]：`FleetMemberAPI` 路径日志 + `errorShipVariant` 回退 (本节 "成员创建" 直接使用该结论)。
+- **工厂入口与阶段判断** [C6-S3]：`Global.getFactory()` 是创建生涯对象的正式途径；`getCurrentState()` 阶段判断。
+- **插件生命周期回调与注册判断** [C6-S2]：`GearInModPlugin` 的生命周期回调与 `CLASS_MARK` 一次性判断键。
 
 ## 术语
 
-按术语约定，本节首次完整讲解一个词 (C08-S05 起继续使用)：
+按术语约定，本节首次完整讲解一个词 ([C8-S5] 起继续使用)：
 
 - **舰队成员 (fleet member)**：API 名保留 `FleetMemberAPI`。一艘舰船或一个战机联队在生涯侧的保存态对象。
   - 成员不是战斗实体 (`ShipAPI`)—— 战斗实体由成员在部署时实例化；成员承载船体 id、装配 (variant)、舰长、船体状态、CR、维修状态与后勤数值。
@@ -436,7 +436,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：`gear_in` MOD 布局与插件生命周期类 (C06-S01 / C06-S02，含本节调用点片段)、本节脚本类、生涯时钟脚本 (C08-S01，非必需)。
+前置数据：`gear_in` MOD 布局与插件生命周期类 ([C6-S1] / [C6-S2]，含本节调用点片段)、本节脚本类、生涯时钟脚本 ([C8-S1]，非必需)。
 
 1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
 2. 新建生涯：确认 `starsector.log` 按顺序出现 `GearIn fleet member` 各日志行 (`start` / `created` / `added` / `iterate` / `damage` / `repair` / `CR` / `mothball` / `variant swap` / `variant restore` / `done`)。

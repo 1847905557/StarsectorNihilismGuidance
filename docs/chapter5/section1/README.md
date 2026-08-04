@@ -17,7 +17,7 @@
 
 本节是声音链路的资源层，前置知识包括：
 
-- 已完成 C01-S01(MOD 目录、`mod_info.json` 与日志基础)。
+- 已完成 [C1-S1] (MOD 目录、`mod_info.json` 与日志基础)。
 - 准备一个能导出 Ogg Vorbis 的音频编辑器。
 - 示例 MOD 根目录为 `Starsector\mods\GearIndustry`，本节路径均以它为基准。
 
@@ -28,14 +28,14 @@
 ```text
 sounds/.../*.ogg          资源层（本节）：合法 OGG、首尾无缝、路径稳定、许可清楚
         ↓ 相对于 MOD 根目录的路径
-data/config/sounds.json   注册层（C05-S02）：sound ID → OGG 路径与播放参数
+data/config/sounds.json   注册层（C5-S2）：sound ID → OGG 路径与播放参数
         ↓ sound ID
-SoundPlayerAPI            消费层（C05-S03）：Global.getSoundPlayer() 按 ID 播放
+SoundPlayerAPI            消费层（C5-S3）：Global.getSoundPlayer() 按 ID 播放
 ```
 
 两个事实决定素材必须在本节做好：
 
-- 循环是消费层的运行时行为。`SoundPlayerAPI.playLoop(id, ...)`(C05-S03) 会连续重播同一个 OGG；注册层无法补救循环接缝。
+- 循环是消费层的运行时行为。`SoundPlayerAPI.playLoop(id, ...)`[C5-S3] 会连续重播同一个 OGG；注册层无法补救循环接缝。
 - 注册层只提供路径和播放参数，不能修复错误编码、削波或循环接缝。
 
 ## 目录与 ID

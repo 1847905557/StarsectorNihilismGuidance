@@ -21,12 +21,12 @@
 
 本节在以下先修与相邻内容之上展开，按需回查：
 
-- rules.csv 规则系统 (C11-S01)：七列语义、`getAllMatching` / `getBestMatching` 匹配流程、条件表达式语法 (命令调用、`score:`、判真规则)、结果执行链 (`FireBest`/`FireAll` 收集选项、`pickText` 变体、`runScript`)、`$option` 回流 `DialogOptionSelected`。
+- rules.csv 规则系统 [C11-S1]：七列语义、`getAllMatching` / `getBestMatching` 匹配流程、条件表达式语法 (命令调用、`score:`、判真规则)、结果执行链 (`FireBest`/`FireAll` 收集选项、`pickText` 变体、`runScript`)、`$option` 回流 `DialogOptionSelected`。
   - 本节在其之上只讲 "命令" 这一层：命令类怎么写、参数怎么解析、再入边界在哪。
-- 编译 JAR 工具链 (C06-S01)：`gradle jar`、`mod_info.json` 的 `jars` 声明、`compileOnly` 依赖提供 `com.fs.starfarer.api` 各包的 API jar。
+- 编译 JAR 工具链 [C6-S1]：`gradle jar`、`mod_info.json` 的 `jars` 声明、`compileOnly` 依赖提供 `com.fs.starfarer.api` 各包的 API jar。
   - 本节的命令类编译进同一个 jar，jar 类对脚本类加载器可见 (解析命令类时，在其父加载器里做 `Class.forName` 查找)。
-- modPlugin 回调与 persistent data 一次性注册检查 (C06-S02)：`onGameLoad` 回调与 "每个注册项用各自的键" 的一次性注册检查。本节的对话入口沿用规则系统页的 `REGISTER_MARK` 模式 (调用点片段见 "完整最小例")。
-- Rules 内存语义 (C11-S04)：`MemoryAPI` 的过期、持久化与记忆键维护。本节的命令只使用 `set(key, value)` 与条件读取，不展开内存生命周期；过期语义一律归该单元。
+- modPlugin 回调与 persistent data 一次性注册检查 [C6-S2]：`onGameLoad` 回调与 "每个注册项用各自的键" 的一次性注册检查。本节的对话入口沿用规则系统页的 `REGISTER_MARK` 模式 (调用点片段见 "完整最小例")。
+- Rules 内存语义 [C11-S4]：`MemoryAPI` 的过期、持久化与记忆键维护。本节的命令只使用 `set(key, value)` 与条件读取，不展开内存生命周期；过期语义一律归该单元。
 
 ## 术语
 
@@ -265,7 +265,7 @@ import com.fs.starfarer.api.util.Misc.Token;
  * 行为（参数 <trigger> [<amount>] [<keepOptions>]）：
  * - params.get(0).getString：触发器名（字面量或变量皆可）；
  * - params.get(1).getFloat：浮点参数，写入实体记忆 $GearIn_rulecmd_last（无过期，
- *   过期/持久化语义归 C11-S04），供条件列 $GearIn_rulecmd_last >= 2 读取；
+ *   过期/持久化语义归 C11-S4），供条件列 $GearIn_rulecmd_last >= 2 读取；
  * - params.get(2).getBoolean：布尔参数（Token.getBoolean = Boolean.parseBoolean，
  *   只有 "true" 为真），透传给 FireBest 的 keepOptions；
  * - 再入：FireBest.fire(ruleId, dialog, memoryMap, trigger) 用同一 dialog 与
@@ -279,7 +279,7 @@ import com.fs.starfarer.api.util.Misc.Token;
  */
 public class GearInRuleCommand extends BaseCommandPlugin {
 
-    /** 命令写入的记忆键（无过期；深度语义归 C11-S04）。 */
+    /** 命令写入的记忆键（无过期；深度语义归 C11-S4）。 */
     public static final String MEM_KEY_LAST = "$GearIn_rulecmd_last";
 
     private static final Logger LOG = Global.getLogger(GearInRuleCommand.class);
@@ -332,7 +332,7 @@ import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
  * 完整最小例：对话入口（支撑类，示例所有权主类为 GearInRuleCommand）。
  *
  * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），persistent data 键
- * REGISTER_MARK 一次性门控（沿用 C08-S01 / C11-S01 的模式，每个注册项用各自的键）。
+ * REGISTER_MARK 一次性门控（沿用 C8-S1 / C11-S1 的模式，每个注册项用各自的键）。
  *
  * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个
  * 初始 trigger 为 GearInRuleCmdOpener 的对话；对话的文本、脚本与选项全部来自
@@ -420,7 +420,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：编译工具链的 MOD 布局 (C06-S01)；`GearInModPlugin` 与 persistent data 一次性注册检查 (C06-S02，含本节调用点片段)；规则系统页的 `data/campaign/rules.csv` 与 `GearInRulesIntro` (C11-S01)；本节 `data/config/settings.json` 追加键、`GearIn_rules_cmd_*` 行、`GearInRuleCommand` 与 `GearInRuleCmdOpener`。
+前置数据：编译工具链的 MOD 布局 [C6-S1]；`GearInModPlugin` 与 persistent data 一次性注册检查 ([C6-S2]，含本节调用点片段)；规则系统页的 `data/campaign/rules.csv` 与 `GearInRulesIntro` [C11-S1]；本节 `data/config/settings.json` 追加键、`GearIn_rules_cmd_*` 行、`GearInRuleCommand` 与 `GearInRuleCmdOpener`。
 
 1. 游戏构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，随后用 `jar tf jars/GearIndustry.jar` 核对产物。
 2. 规则注册 (加载期)：启动游戏，检查 `starsector.log` 与启动器控制台标准输出。

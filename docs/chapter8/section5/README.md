@@ -23,15 +23,15 @@
 
 开始本节前，您需要具备以下基础：
 
-- MOD 目录结构与 `starsector.log` 的定位 (C01-S01)。
-- 新档生成时序与 `economy.json`(`econ/*.json`) 市场加载链、代码路径建市场三步收尾、`tariff` 键仅模拟模式生效 (C03-S03)。
-- `modPlugin` 生命周期与 `CLASS_MARK` 一次性注册标记 (C06-S02)。
-- `Global.getSector()` 的 null 语义：资源加载期为 null，生涯期非 null(C06-S03)。
-- `settings.json` 的读取 (本节引用的经济参数键)(C06-S04)。
-- `MutableStat`(`getTariff()` / `getHazard()` / `getAccessibilityMod()` 都是它)(C07-S03)。
-- `SectorAPI.getEconomy()` 是经济入口；`getClock()` 用于把 `amount` 换算成游戏日 (C08-S01)。
-- `SectorEntityToken` 挂载与地点容器 (`setMarket` 的实体侧)(C08-S02)。
-- 生涯对象族写法：一次性 `EveryFrameScript` 演示 + `REGISTER_MARK` 标记 (C08-S03)。
+- MOD 目录结构与 `starsector.log` 的定位 [C1-S1]。
+- 新档生成时序与 `economy.json`(`econ/*.json`) 市场加载链、代码路径建市场三步收尾、`tariff` 键仅模拟模式生效 [C3-S3]。
+- `modPlugin` 生命周期与 `CLASS_MARK` 一次性注册标记 [C6-S2]。
+- `Global.getSector()` 的 null 语义：资源加载期为 null，生涯期非 null[C6-S3]。
+- `settings.json` 的读取 (本节引用的经济参数键)[C6-S4]。
+- `MutableStat`(`getTariff()` / `getHazard()` / `getAccessibilityMod()` 都是它)[C7-S3]。
+- `SectorAPI.getEconomy()` 是经济入口；`getClock()` 用于把 `amount` 换算成游戏日 [C8-S1]。
+- `SectorEntityToken` 挂载与地点容器 (`setMarket` 的实体侧)[C8-S2]。
+- 生涯对象族写法：一次性 `EveryFrameScript` 演示 + `REGISTER_MARK` 标记 [C8-S3]。
 
 ## 术语
 
@@ -779,7 +779,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 (C06-S01) 与 `GearInModPlugin`(C06-S02，含本节调用点片段)、七个巡检类。
+前置数据：既有 MOD 布局 [C6-S1] 与 `GearInModPlugin`([C6-S2]，含本节调用点片段)、七个巡检类。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/` 下的七个类。
 2. **新建生涯**：在 `starsector.log` 中观察 `GearIn market inspection` 相关记录。

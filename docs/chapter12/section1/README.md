@@ -18,9 +18,9 @@
 
 ## 前置知识
 
-- C01-S01 的 MOD 目录、`mod_info.json` 和 UTF-8 无 BOM 要求；
-- C06-S01 的 Java 构建与入口类；
-- C06-S03 的 `Global.getSettings()` 和日志入口。
+- [C1-S1] 的 MOD 目录、`mod_info.json` 和 UTF-8 无 BOM 要求；
+- [C6-S1] 的 Java 构建与入口类；
+- [C6-S3] 的 `Global.getSettings()` 和日志入口。
 
 ## 为什么先读取文本
 
@@ -83,7 +83,7 @@ GearIn file loading is ready.
 
 ## 总结
 
-文件读取先确定资源空间和相对路径，再把文件内容交给代码。`loadText` 返回字符串；路径校验、编码和 `modId` 决定能否取得目标文件。JSON 对象的读取与固定公开入口在 C12-S02 继续处理。
+文件读取先确定资源空间和相对路径，再把文件内容交给代码。`loadText` 返回字符串；路径校验、编码和 `modId` 决定能否取得目标文件。JSON 对象的读取与固定公开入口在 [C12-S2] 继续处理。
 
 ## 建议参考项
 

@@ -20,11 +20,11 @@
 
 本节建立在既有教程工程与前面各节的机制之上，主要涉及三块基础：
 
-- MOD 目录与 `mod_info.json` 必填字段、`enabled_mods.json` 启用列表、启动器与日志 (C01-S01)。
-- 编译 JAR 链路与 `jars` 声明；依赖 MOD 的类同样只可能来自它自己的 JAR 或 `.java` 脚本 (C06-S01)。
-- `modPlugin` 入口与 `onApplicationLoad()` 时机 (资源加载完成后、主菜单前)；本节的运行时检测示例从这个回调接入 (C06-S02)。
+- MOD 目录与 `mod_info.json` 必填字段、`enabled_mods.json` 启用列表、启动器与日志 [C1-S1]。
+- 编译 JAR 链路与 `jars` 声明；依赖 MOD 的类同样只可能来自它自己的 JAR 或 `.java` 脚本 [C6-S1]。
+- `modPlugin` 入口与 `onApplicationLoad()` 时机 (资源加载完成后、主菜单前)；本节的运行时检测示例从这个回调接入 [C6-S2]。
 
-`dependencies` 声明是在既有 manifest 上的累积追加。软依赖 (optional dependency) 的运行时分支检测、调用隔离与降级适配属于软依赖专题 (C14-S01)，本节只覆盖声明式硬依赖与基础运行时检测。
+`dependencies` 声明是在既有 manifest 上的累积追加。软依赖 (optional dependency) 的运行时分支检测、调用隔离与降级适配属于软依赖专题 [C14-S1]，本节只覆盖声明式硬依赖与基础运行时检测。
 
 ## 硬依赖语义
 
@@ -312,7 +312,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有累计工程 (C06-S02 的累计成果) —— `mod_info.json` 已追加本节 `dependencies`、已新增 `GearInDependencyCheck` 类、`GearInModPlugin` 内已追加一行调用；已安装 LazyLib 与 MagicLib。
+前置数据：既有累计工程 ([C6-S2] 的累计成果) —— `mod_info.json` 已追加本节 `dependencies`、已新增 `GearInDependencyCheck` 类、`GearInModPlugin` 内已追加一行调用；已安装 LazyLib 与 MagicLib。
 
 1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
    - 核对产物：`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/modcompat/GearInDependencyCheck.class`。
@@ -392,7 +392,7 @@ gradle jar
 
 代码里引用了什么 MOD 的类，`dependencies` 就必须声明什么 —— 启动器拦得住没装和版本不符，拦不住漏声明，这是声明式依赖的固有边界，只能由代码侧补齐。
 
-依赖话题的下一步是软依赖 (可选依赖，C14-S01)：运行时分支检测、调用隔离与降级适配，把缺了依赖也能降级运行的策略留给代码侧，与声明式硬依赖形成互补。
+依赖话题的下一步是软依赖 (可选依赖，[C14-S1])：运行时分支检测、调用隔离与降级适配，把缺了依赖也能降级运行的策略留给代码侧，与声明式硬依赖形成互补。
 
 ## 建议参考项
 

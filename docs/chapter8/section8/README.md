@@ -24,12 +24,12 @@
 
 本节建立在前置单元的基础上。
 
-- **星区入口与脚本注册标记**(C08-S01)：`SectorAPI` 星区结构 (本节两个入口都从 `getSector()` 下的 getter 进入)、`onGameLoad` 注册判断 (persistent data 各自键的 `REGISTER_MARK` 模式)。
-- **玩家舰队与成员**(C08-S03)：玩家舰队 (`getPlayerFleet().getCargo()` 的货物归属)、`FleetDataAPI`(`getMothballedShips()` 返回类型)、`CampaignFleetAPI.getCargo()` 链路。
-- **市场与子市场货物**(C08-S06)：子市场 cargo(`getCargo()` 用到时才创建 / `getCargoNullOk()` 可能 null)、商品 id 族 (`Commodities`)。
-- **全局对象与阶段判断**(C06-S03)：`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；本节所有读取与注册都发生在生涯引擎建立之后。
-- **MOD 插件生命周期**(C06-S02)：`modPlugin` 生命周期与 `CLASS_MARK` 一次性注册标记。
-- **静态字段与 `MutableStat` 的区分**(C07-S03)：注意 `FactionAPI.getTariffFraction()` 取的是势力规格 (`FactionSpecAPI`) 里的普通数值，不是 `MutableStat`(与 C08-S06 的 `MarketAPI.getTariff()` 不同)。
+- **星区入口与脚本注册标记**[C8-S1]：`SectorAPI` 星区结构 (本节两个入口都从 `getSector()` 下的 getter 进入)、`onGameLoad` 注册判断 (persistent data 各自键的 `REGISTER_MARK` 模式)。
+- **玩家舰队与成员**[C8-S3]：玩家舰队 (`getPlayerFleet().getCargo()` 的货物归属)、`FleetDataAPI`(`getMothballedShips()` 返回类型)、`CampaignFleetAPI.getCargo()` 链路。
+- **市场与子市场货物**[C8-S6]：子市场 cargo(`getCargo()` 用到时才创建 / `getCargoNullOk()` 可能 null)、商品 id 族 (`Commodities`)。
+- **全局对象与阶段判断**[C6-S3]：`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；本节所有读取与注册都发生在生涯引擎建立之后。
+- **MOD 插件生命周期**[C6-S2]：`modPlugin` 生命周期与 `CLASS_MARK` 一次性注册标记。
+- **静态字段与 `MutableStat` 的区分**[C7-S3]：注意 `FactionAPI.getTariffFraction()` 取的是势力规格 (`FactionSpecAPI`) 里的普通数值，不是 `MutableStat`(与 [C8-S6] 的 `MarketAPI.getTariff()` 不同)。
 
 ## 术语
 
@@ -47,7 +47,7 @@
 | 服务 | 进入方式 | 核心接口 |
 |---|---|---|
 | 势力 | `Global.getSector().getFaction(id)` / `getAllFactions()` / `getPlayerFaction()` | `FactionAPI` |
-| 货物 | `SectorEntityToken.getCargo()`(玩家舰队 `CampaignFleetAPI.getCargo()` 经 `SectorEntityToken` 实现；子市场 `SubmarketAPI.getCargo()` 见前置知识 C08-S06)| `CargoAPI` / `CargoStackAPI` |
+| 货物 | `SectorEntityToken.getCargo()`(玩家舰队 `CampaignFleetAPI.getCargo()` 经 `SectorEntityToken` 实现；子市场 `SubmarketAPI.getCargo()` 见前置知识 [C8-S6])| `CargoAPI` / `CargoStackAPI` |
 
 ### 势力 (FactionAPI)
 
@@ -489,7 +489,7 @@ gradle jar
 让验证可以在不遗留任何持久状态的前提下完成。
 
 脚本注册标记与 `Global` 阶段语义是本节底座；`REGISTER_MARK` 注册模式沿用既有脚本节 "每个注册项用各自的键" 的惯例。
-本节只覆盖两个入口的常用高频面：势力关系监听与任务类势力逻辑在逻辑上属于更深的主题，本节不展开；制作情报与交互对话框的方法在 C08-S09 讲解。
+本节只覆盖两个入口的常用高频面：势力关系监听与任务类势力逻辑在逻辑上属于更深的主题，本节不展开；制作情报与交互对话框的方法在 [C8-S9] 讲解。
 
 ## 建议参考项
 

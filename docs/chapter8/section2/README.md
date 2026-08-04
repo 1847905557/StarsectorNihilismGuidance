@@ -22,9 +22,9 @@
 本节需要以下既有的引擎级脚本、星系创建与插件生命周期知识：
 
 - 星区 (`SectorAPI`) 是生涯引擎根对象，`getStarSystem` / `getAllLocations` / `getCurrentLocation` / `getEntityById` / `getEntitiesWithTag` 提供地点与实体查询入口。
-  - 引擎级 `EveryFrameScript` 的推进语义：`isDone` / `runWhilePaused` / 暂停冻结 / 战斗期不推进，以及用 persistent data 各自键做一次性注册 (C08-S01)。
-- 星系创建 API 的第一次使用：`createStarSystem` / `initStar` / `addPlanet` / `addCustomEntity` / `autogenerateHyperspaceJumpPoints` (C03-S03)。
-- `modPlugin` 生命周期回调与 `CLASS_MARK` 一次性注册判断模式 (C06-S02)；`Global.getSector()` 的阶段语义 —— 生涯引擎建立后星区才可用 (C06-S03)。
+  - 引擎级 `EveryFrameScript` 的推进语义：`isDone` / `runWhilePaused` / 暂停冻结 / 战斗期不推进，以及用 persistent data 各自键做一次性注册 [C8-S1]。
+- 星系创建 API 的第一次使用：`createStarSystem` / `initStar` / `addPlanet` / `addCustomEntity` / `autogenerateHyperspaceJumpPoints` [C3-S3]。
+- `modPlugin` 生命周期回调与 `CLASS_MARK` 一次性注册判断模式 [C6-S2]；`Global.getSector()` 的阶段语义 —— 生涯引擎建立后星区才可用 [C6-S3]。
 
 ## 术语
 
@@ -63,8 +63,8 @@
 | 创建入口 | `addPlanet` / `addCustomEntity` / `addTerrain` / `addAsteroidBelt` / `addAsteroid` / `addCorona` / `addRingBand` / `addOrbitalJunk` / `createToken` / `addRadioChatter` / `spawnFleet` | 创建并加入容器 (`createToken` 例外，见 "实体与放置" 节)|
 | 脚本 | `addScript` / `removeScript` / `removeScriptsOfClass` / `getScripts` | 地点级每帧脚本，推进节奏跟随地点 (见 "访问状态" 节)|
 | 状态 | `isCurrentLocation` / `activeThisFrame` / `isHyperspace` / `isNebula` / `isDeepSpace` / `getLastPlayerVisitTimestamp` / `getDaysSinceLastPlayerVisit` | 访问状态 (见 "访问状态" 节)|
-| 数据 | `getPersistentData` / `getMemoryWithoutUpdate` | 地点级持久 Map 与 memory(memory 归 C11-S04)|
-| 背景 | `getBackgroundTextureFilename` / `setBackgroundTextureFilename` / `setBackgroundOffset` / `getBackgroundColorShifter` | 背景贴图与偏移 (星系创建主题已用，C03-S03)|
+| 数据 | `getPersistentData` / `getMemoryWithoutUpdate` | 地点级持久 Map 与 memory(memory 归 [C11-S4])|
+| 背景 | `getBackgroundTextureFilename` / `setBackgroundTextureFilename` / `setBackgroundOffset` / `getBackgroundColorShifter` | 背景贴图与偏移 (星系创建主题已用，[C3-S3])|
 | 星系特化 | `isInConstellation` / `getConstellation` | 恒星系实现为星座成员判断，超空间恒为 false / null |
 
 容器关键行为：
@@ -105,7 +105,7 @@
 | 签名 | 超空间坐标 | 超空间锚点 | 其他 |
 |---|---|---|---|
 | `initStar(id, type, radius, coronaSize)` | 不设置 | 不生成 | 默认日冕参数 `windBurnLevel=10` / `flareProbability=0.25` / `crLossMult=3` |
-| `initStar(id, type, radius, coronaSize, windBurn, flare, crLoss)` | 用恒星 id 查 starmap.json 的 `starSystemLocations`(查不到保持 (0,0)，C03-S03 知识)| **不生成** | 完整日冕参数；C03-S03 的 `GearIn` 星系用此变体 |
+| `initStar(id, type, radius, coronaSize, windBurn, flare, crLoss)` | 用恒星 id 查 starmap.json 的 `starSystemLocations`(查不到保持 (0,0)，[C3-S3] 知识)| **不生成** | 完整日冕参数；[C3-S3] 的 `GearIn` 星系用此变体 |
 | `initStar(id, type, radius, hyperX, hyperY, coronaSize)` | 显式设置 | **自动生成**("automatically creates a wormhole/jump point leading to the star from hyperspace")| 本节示例用此变体 |
 
 `initStar` 内部：移除旧星、创建新恒星实体并加入容器、按变体查 starmap 或写坐标、`addCorona`。
@@ -267,7 +267,7 @@ import com.fs.starfarer.api.campaign.StarSystemAPI;
 /**
  * 完整最小例：LocationAPI / StarSystemAPI 实体容器与访问状态（日志前缀 "GearIn loc"）。
  * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），REGISTER_MARK 一次性门控
- * （C06-S02 的 CLASS_MARK 模式）。编排：星系创建/复用、访问状态记录、容器核验与
+ * （C6-S2 的 CLASS_MARK 模式）。编排：星系创建/复用、访问状态记录、容器核验与
  * 周期摘要，分别委托给 GearInLocationSystemBuilder / GearInAccessStateLogger / GearInContainerCheck。
  */
 public class GearInLocationScript implements EveryFrameScript {
@@ -367,7 +367,7 @@ import com.fs.starfarer.api.campaign.StarSystemAPI;
 public class GearInLocationSystemBuilder {
 	/** 演示星系查询键：SectorAPI.getStarSystem 用 optionalUniqueId 或基名小写匹配。 */
 	public static final String SYSTEM_UNIQUE_ID = "GearIn_demo";
-	/** 本单元专属实体 ID（与 C03-S03 的 GearIn 星系既有 ID 互不冲突）。 */
+	/** 本单元专属实体 ID（与 C3-S3 的 GearIn 星系既有 ID 互不冲突）。 */
 	public static final String STAR_ID = "GearIn_demo_star";
 	public static final String PLANET_ID = "GearIn_demo_planet1";
 	public static final String BEACON_ID = "GearIn_demo_beacon";
@@ -399,7 +399,7 @@ public class GearInLocationSystemBuilder {
 
 		// addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)；
 		// 非恒星行星会被自动挂一个 condition-only 市场（Misc.initConditionMarket），
-		// 因此 addPlanet 之后 getMarket() 立即非 null（正式市场流程归 C08-S05）。
+		// 因此 addPlanet 之后 getMarket() 立即非 null（正式市场流程归 C8-S5）。
 		PlanetAPI planet = system.addPlanet(PLANET_ID, star, "GearIn Demo Prime", "terran", 55, 150, 3200, 120);
 
 		// 自定义实体：type 是 data/config/custom_entities.json 里的键（"stable_location" 为原版键），
@@ -686,7 +686,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与插件类 (C06-S01 / C06-S02，含本节调用点片段)、本节五个示例类、累计工程的引擎级时钟脚本 (C08-S01) 与星系生成器 (C03-S03，非必需)。
+前置数据：既有 MOD 布局与插件类 ([C6-S1] / [C6-S2]，含本节调用点片段)、本节五个示例类、累计工程的引擎级时钟脚本 [C8-S1] 与星系生成器 ([C3-S3]，非必需)。
 
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含五个类的 class 条目。
 2. 新建生涯：确认 `starsector.log` 首帧依次出现两条 token 日志与 `GearIn loc: created system ... | anchor=true | hyperJumpPoints=1 | hyperLoc=(7500, 8500)`。

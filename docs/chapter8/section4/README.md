@@ -22,12 +22,12 @@
 
 本节建立在以下既有主题之上；成员对象的保存态读写、变体来源语义、人物与 captain/officer、地点容器与实体分别属于舰队数据、变体、人物与地点容器主题，本节只给最小定义并交叉引用：
 
-- 生涯引擎级脚本的一次性注册判断 (C08-S01)：persistent data `REGISTER_MARK` 各自键模式。
-- 地点容器与实体 (C08-S02)：`LocationAPI`、`market.getContainingLocation()` / `market.getPrimaryEntity()`、`addEntity`/`removeEntity` 的容器语义 (本节投放环节直接使用)。
-- 舰队成员与 `FleetDataAPI`(C08-S03)：`getMembersListCopy` / `getFlagship` / `setFlagship` 副作用 / `getCommander` / `getOfficersCopy`、成员变体读写 (本节旗舰与指挥官环节直接使用)。
-- 人物与 captain/officer(C09-S01)：指挥官与军官都是人物；`setCaptain`、`getStats().getLevel()`、personality。
-- 变体 (C09-S03)：`VariantSource.REFIT`、`setVariant(variant, false, true)`、`originalVariant`—— 膨胀结果变体的来源语义本节使用。
-- `GearInModPlugin` 的 `onGameLoad` 与 `Global.getSector()` 阶段语义 (C06-S02 / C06-S03)。
+- 生涯引擎级脚本的一次性注册判断 [C8-S1]：persistent data `REGISTER_MARK` 各自键模式。
+- 地点容器与实体 [C8-S2]：`LocationAPI`、`market.getContainingLocation()` / `market.getPrimaryEntity()`、`addEntity`/`removeEntity` 的容器语义 (本节投放环节直接使用)。
+- 舰队成员与 `FleetDataAPI`[C8-S3]：`getMembersListCopy` / `getFlagship` / `setFlagship` 副作用 / `getCommander` / `getOfficersCopy`、成员变体读写 (本节旗舰与指挥官环节直接使用)。
+- 人物与 captain/officer[C9-S1]：指挥官与军官都是人物；`setCaptain`、`getStats().getLevel()`、personality。
+- 变体 [C9-S3]：`VariantSource.REFIT`、`setVariant(variant, false, true)`、`originalVariant`—— 膨胀结果变体的来源语义本节使用。
+- `GearInModPlugin` 的 `onGameLoad` 与 `Global.getSector()` 阶段语义 [C6-S2] / [C6-S3]。
 
 ## 术语
 
@@ -568,7 +568,7 @@ gradle jar
 ## 故障分析
 
 1. **舰队 "凭空生成" 但战力奇低 (满船 D 插、武器全是低档)**：用 `new FleetParamsV3(locInHyper, ...)` 无市场版本且没设 `qualityOverride` 时，来源市场从未设置，`params.quality` 停在默认 0 → 有效质量 0 → 平均 D 插 5 个/船、tier 概率触底 (`getTierProbability`)；与同势力原版舰队对比战力悬殊。修正：用 market 构造器或 `setSource(market, true)`，或显式 `qualityOverride`。
-2. **舰队生成在错误生命周期阶段**：在 `onApplicationLoad` 里调 `createFleet` 时，`Global.getSector()` 为 null → NPE 启动中止；economy 未加载时 `getMarketsCopy()` 为空 → `pickMarket` 返回 null → 以 fake market 作备用方案。修正：注册放 `onGameLoad` 的一次性判断块内 (C08-S01 判断模式)。
+2. **舰队生成在错误生命周期阶段**：在 `onApplicationLoad` 里调 `createFleet` 时，`Global.getSector()` 为 null → NPE 启动中止；economy 未加载时 `getMarketsCopy()` 为空 → `pickMarket` 返回 null → 以 fake market 作备用方案。修正：注册放 `onGameLoad` 的一次性判断块内 ([C8-S1] 判断模式)。
 3. **指定了 `flagshipVariantId` 但旗舰没换**：id 拼错 (`SettingsAPI.getVariant` 抛 `Ship hull variant [...] not found!`，变体主题讲过)、舰队为空成员 (`getFlagship()` 为 null，旗舰变体应用条件不成立)，或 `flagshipVariantId` 与 `flagshipVariant` 同时设置 (前者优先)。可观察：异常中断或旗舰仍是抽选 hull。修正：id 用 `getAllVariantIds()` 核对；检查生成成员数非 0。
 4. **指挥官/军官完全不生成**：`withOfficers=false` 时 `createFleet` 跳过该步；成员列表为空时 `addCommanderAndOfficersV2` 对空成员直接返回。可观察：`getCommander()` 是默认指挥官、`getOfficersCopy()` 空。修正：确认 `withOfficers` 默认 true；先排查角色缺货导致的空舰队 (故障 10)。
 5. **生成后读成员装配，发现 "没装武器"**：膨胀是延迟的，`createFleet` 不膨胀 (`CampaignFleetAPI.inflateIfNeeded` 内部实现)—— 在 `inflateIfNeeded()` 之前读 `member.getVariant()`，拿到的是角色变体原样 (STOCK/生成时来源、无 D 插、武器未按质量调整)。修正：需要完整装配先 `fleet.inflateIfNeeded()`；引擎在 AI/工具提示/战斗前会自动触发，不要自己在错误时机核对装配内容。

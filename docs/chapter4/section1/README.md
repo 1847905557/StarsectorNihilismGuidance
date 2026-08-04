@@ -19,11 +19,11 @@
 
 本节是装配使用页：不新增任何装配 ID，只把已注册的装配填进两张清单。建议先掌握以下基础：
 
-- 装配注册与 `GearIn_artizan_combat` 的制作、持有 (C03-S01)。
-- 船体注册，含 `GearIn_artizan` 与自动生成的 `<hullId>_Hull` 空装配 (C01-S02)。
-- 战机联队注册与 `_wing` 后缀 (C01-S03)；
-- 武器注册 (C01-S05)；
-- CSV 跨 MOD 合并语义 (C02-S02)。
+- 装配注册与 `GearIn_artizan_combat` 的制作、持有 [C3-S1]。
+- 船体注册，含 `GearIn_artizan` 与自动生成的 `<hullId>_Hull` 空装配 [C1-S2]。
+- 战机联队注册与 `_wing` 后缀 [C1-S3]；
+- 武器注册 [C1-S5]；
+- CSV 跨 MOD 合并语义 [C2-S2]。
 
 所有文件路径都相对 MOD 根目录 (本教程示例 MOD 位于 `\Starsector\mods\GearIndustry`，路径自洽即可)。
 
@@ -77,7 +77,7 @@ GearIn_artizan_combat
 
 因此迁移原文 "填错 ID 会导致它变成一艘星云-级" 依然成立，且机制如上：**日志里能同时搜到该堆栈和这艘星云-级**。
 
-所有经 `FleetMemberAPI` 加载装配 ID 的路径 —— 模拟战对手、战役舰队、`MissionDefinitionAPI.addToFleet`(C03-S01)—— 都走这个回退，所以 "这一条在以后几乎一切需要加载装配的情况下都适用"。
+所有经 `FleetMemberAPI` 加载装配 ID 的路径 —— 模拟战对手、战役舰队、`MissionDefinitionAPI.addToFleet`[C3-S1]—— 都走这个回退，所以 "这一条在以后几乎一切需要加载装配的情况下都适用"。
 
 **唯一例外是标题画面演示**(见下节)，它不走 `FleetMemberAPI`，失败表现完全不同。
 
@@ -122,7 +122,7 @@ GearIn_artizan_combat
 
 ### 验证方案
 
-前置数据：装配注册单元的 `data/variants/GearIn_artizan_combat.variant`(C03-S01)，以及本节新建的两个 CSV——`data/campaign/sim_opponents.csv` 与 `data/config/title_screen_variants.csv` (保持本例内容，UTF-8 无 BOM)。
+前置数据：装配注册单元的 `data/variants/GearIn_artizan_combat.variant`[C3-S1]，以及本节新建的两个 CSV——`data/campaign/sim_opponents.csv` 与 `data/config/title_screen_variants.csv` (保持本例内容，UTF-8 无 BOM)。
 
 1. 启动游戏 (启用测试 MOD)，进入主菜单。
 2. 查看 `\Starsector\starsector-core\starsector.log`。
@@ -140,7 +140,7 @@ GearIn_artizan_combat
 1. **模拟战里没有您的船。** 触发：文件没放进 `data/campaign`、或表头不是逐字的 `variant id`。
    - 可观察：路径放错时无任何报错、列表里就是没有您的船；表头拼错时加载直接中断 (`getString("variant id")` 抛 JSON 键缺失异常，进不了主菜单)。
    - 修正：确认路径与表头。
-2. **对手变成星云-级运输船。** 触发：装配 ID 填错或引用未注册装配 (含 C03-S01 的重复 ID 静默跳过情形)。
+2. **对手变成星云-级运输船。** 触发：装配 ID 填错或引用未注册装配 (含 [C3-S1] 的重复 ID 静默跳过情形)。
    - 可观察：敌方出现 `nebula_Standard`(星云-级)，`starsector.log` 有 `[ID] is not a valid ship variant id` 堆栈。
    - 修正：核对 ID 与 `data/variants` 实际注册一致 (ID 匹配区分大小写)。
 3. **敌方舰队对手数量翻倍。** 触发：把原版 `sim_opponents.csv` 整份复制进 MOD。可观察：原版 30 个对手每个出现两次，且无报错 (本文件按行合并、不按键去重)。修正：只保留自己的行。
@@ -151,7 +151,7 @@ GearIn_artizan_combat
    - 修正：删除无效行。
 7. **以 `_wing` 结尾的条目建不出来。** 触发：`_wing` 结尾的 ID 会被当**战机联队 ID**(不是装配 ID) 解析 —— 若装配 ID 恰好以 `_wing` 结尾，或填的联队 ID 不存在。
    - 可观察：模拟战按 `FIGHTER_WING` 加入、标题画面按 `FighterWingSpecAPI` 查询，找不到时报错。
-   - 修正：装配 ID 不要以 `_wing` 结尾；要加战机对手就填已在战机联队注册中登记的真实联队 ID(C01-S03)。
+   - 修正：装配 ID 不要以 `_wing` 结尾；要加战机对手就填已在战机联队注册中登记的真实联队 ID[C1-S3]。
 
 ## 总结
 

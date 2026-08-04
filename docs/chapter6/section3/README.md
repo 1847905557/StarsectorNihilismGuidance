@@ -21,12 +21,12 @@
 
 开始本节前，您应已掌握以下基础：
 
-- MOD 目录结构与 `starsector.log`(C01-S01)。
-- 战斗插件与每帧回调模型 —— 战斗域的代码入口 (C07-S01)。
-- 生涯概念：`SectorAPI` 属于生涯域；`GearIn_test` 测试战役 (C03-S01)。
-- 三个 GearIn 声音 ID 的资产规格、注册层与完整使用方讲解 (C05-S01 / C05-S02 / C05-S03)。
-- 编译 JAR 的工程链路与 `jars\GearIndustry.jar` 产物 (C06-S01)。
-- `modPlugin` 生命周期回调与 `onApplicationLoad` 禁令 (C06-S02)。
+- MOD 目录结构与 `starsector.log`[C1-S1]。
+- 战斗插件与每帧回调模型 —— 战斗域的代码入口 [C7-S1]。
+- 生涯概念：`SectorAPI` 属于生涯域；`GearIn_test` 测试战役 [C3-S1]。
+- 三个 GearIn 声音 ID 的资产规格、注册层与完整使用方讲解 [C5-S1] / [C5-S2] / [C5-S3]。
+- 编译 JAR 的工程链路与 `jars\GearIndustry.jar` 产物 [C6-S1]。
+- `modPlugin` 生命周期回调与 `onApplicationLoad` 禁令 [C6-S2]。
 
 ## 文件与 API 链路
 
@@ -34,12 +34,12 @@
 
 | `Global` 入口 | 返回 | 链路下游 (本教程页面)|
 |---|---|---|
-| `getSettings()` | `SettingsAPI` | 设置、规则与静态数据 (C06-S04 精确聚焦；C11 系列消费规则)|
-| `getSector()` | `SectorAPI` | 生涯域 (C03-S01、C08 系列)|
-| `getCombatEngine()` | `CombatEngineAPI` | 战斗域 (C07-S01 起的战斗插件)|
-| `getSoundPlayer()` | `SoundPlayerAPI` | 声音注册链 (C05-S02) 与使用方 (C05-S03)|
+| `getSettings()` | `SettingsAPI` | 设置、规则与静态数据 ([C6-S4] 精确聚焦；C11 系列消费规则)|
+| `getSector()` | `SectorAPI` | 生涯域 ([C3-S1]、C08 系列)|
+| `getCombatEngine()` | `CombatEngineAPI` | 战斗域 ([C7-S1] 起的战斗插件)|
+| `getSoundPlayer()` | `SoundPlayerAPI` | 声音注册链 [C5-S2] 与使用方 [C5-S3]|
 | `getFactory()` | `FactoryAPI` | 生涯对象工厂 (本节)|
-| `getLogger(Class)` | log4j `Logger` | `starsector.log`(C01-S01)|
+| `getLogger(Class)` | log4j `Logger` | `starsector.log`[C1-S1]|
 | `getCurrentState()` | `GameState` | 阶段判断 (本节)|
 
 Global 的引用由内核在固定的时机登记 (调用点详见 "生命周期与 null 语义")：
@@ -174,7 +174,7 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\
-│       ├── GearInModPlugin      # 既有 modPlugin 生命周期类（C06-S02）；本节只在其回调里调用示例方法
+│       ├── GearInModPlugin      # 既有 modPlugin 生命周期类（C6-S2）；本节只在其回调里调用示例方法
 │       ├── GearInGlobalAccess   # 本节新增：访问器观测与阶段判断
 │       └── GearInSoundPlayer    # 本节新增：声音播放入口（三契约）
 └── jars\
@@ -200,12 +200,12 @@ import com.fs.starfarer.api.combat.CombatEngineAPI;
  * 角色：Global 静态访问器观测与阶段判断工具。
  *
  * 全部方法是静态工具，可从任何已注册的脚本/插件调用：
- * - 资源加载期（C06-S02 的 onApplicationLoad）：getSector()/getCombatEngine() 为 null，
+ * - 资源加载期（C6-S2 的 onApplicationLoad）：getSector()/getCombatEngine() 为 null，
  *   只能读 getSettings()/getSoundPlayer()/getLogger()；
  * - 生涯回调与生涯脚本：getSector() 可用；
  * - 战斗插件：getCombatEngine() 是当前战斗引擎，必须每帧现取，不得跨战斗缓存。
  *
- * 声音播放入口见 GearInSoundPlayer（声音 ID 由 C05-S01 声明、C05-S02 注册，本单元只消费）。
+ * 声音播放入口见 GearInSoundPlayer（声音 ID 由 C5-S1 声明、C5-S2 注册，本单元只消费）。
  */
 public class GearInGlobalAccess {
 
@@ -270,8 +270,8 @@ import com.fs.starfarer.api.combat.CombatEntityAPI;
  * 全部方法是静态工具，可从任何已注册的脚本/插件调用；getSoundPlayer() 在
  * 任何阶段都非 null（Global 生命周期规则 1），因此无需判空。
  *
- * 声音 ID GearIn_system_loop / GearIn_weapon_fire 由 C05-S01 声明、C05-S02 注册，
- * 本单元只消费（完整消费者族谱见 C05-S03）。
+ * 声音 ID GearIn_system_loop / GearIn_weapon_fire 由 C5-S1 声明、C5-S2 注册，
+ * 本单元只消费（完整消费者族谱见 C5-S3）。
  */
 public class GearInSoundPlayer {
 
@@ -342,7 +342,7 @@ gradle jar
 
 ### 验证方案
 
-前置数据：MOD 工程布局与编译链路 (C06-S01)、`GearInModPlugin` 生命周期类与持久数据门 (C06-S02)，并已接入本节两个调用点片段、`GearInGlobalAccess` / `GearInSoundPlayer` 两个工具类 (本节，代码见上)、声音资产与注册 (C05-S01 / C05-S02)：`GearIn_system_loop`、`GearIn_weapon_fire`、`GearIn_test` 测试战役 (C03-S01)。
+前置数据：MOD 工程布局与编译链路 [C6-S1]、`GearInModPlugin` 生命周期类与持久数据门 [C6-S2]，并已接入本节两个调用点片段、`GearInGlobalAccess` / `GearInSoundPlayer` 两个工具类 (本节，代码见上)、声音资产与注册 [C5-S1] / [C5-S2]：`GearIn_system_loop`、`GearIn_weapon_fire`、`GearIn_test` 测试战役 [C3-S1]。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，再用 `jar tf jars\GearIndustry.jar` 核对两个工具类。
 2. **启动 (资源加载期)**：勾选 "齿轮工业" 启动。进入主菜单前 `starsector.log` 出现一行。

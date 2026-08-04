@@ -15,7 +15,7 @@
 
 ## 前置知识
 
-本节假设您已完成普通舰船的完整制作流程 (C01-S02)：
+本节假设您已完成普通舰船的完整制作流程 [C1-S2]：
 
 - 在舰船编辑器中制作一艘普通舰船；
 - 在 `ship_data.csv` 中填写不至于让游戏报错的数据；
@@ -80,7 +80,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 相位舰船的 `shield type` **必须填写 `PHASE`**，`defense id` 必须填写实际右键相位系统，例如原版 `phasecloak`。CSV 中的相位激活与维持幅能字段也必须填写。
 
-该行的 `tags` 同样按 C01-S03"提前准备" 的建议填写为 `GearIn_bp`。
+该行的 `tags` 同样按 [C1-S3]"提前准备" 的建议填写为 `GearIn_bp`。
 
 ## 设置相位光效贴图
 

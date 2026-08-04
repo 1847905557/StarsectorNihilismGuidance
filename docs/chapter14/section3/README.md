@@ -24,13 +24,13 @@
 本节建立在既有教程工程与前面各节的机制之上，主要涉及以下主题：
 
 - 硬依赖声明与运行时检测 —— 本节示例把 LunaLib 当作**可选**前置：不修改 `mod_info.json` 的 `dependencies`(保持硬依赖检测专题的声明)。
-- 调用任何 `lunalib.**` 前先 `isModEnabled("lunalib")` 判断是否启用，未启用时回退代码内默认值 (成熟实例的 LunaSettings 用法同款)(C13-S01)。
-- LazyLib `CommonDataJSONObject`——`save()` 是唯一写盘入口 (官方 MUST)，LunaLib 保存链的底层就是它 (C13-S02)。
-- `loadCSV(path, modId)` 的 modId 限定读取 ——LunaLib 用它在每个启用 MOD 的目录里找各自的 `LunaSettings.csv`；CSV 读取见 C12-S03，MOD 文件与 `/` 路径规则见 C12-S01，common 文件读写见 C12-S04。
-- `modPlugin` 回调与 `onGameLoad` 时机 —— 本节示例的注册/读取接入点 (C06-S02)。
-- `Global` 生命周期 ——`getSettings()` 全程非 null(启用判断与日志的前提)(C06-S03)。
-- `MagicSettings` 设置链 —— 对照：两套设置的读取入口与 ID 归属不同，本节设置项使用 `GearIn_` 前缀，不进入 `modSettings.json` 的 `gear_in` 段 (C13-S04)。
-- MOD id `gear_in` 与命名约定 —— 数据 key 用 `GearIn_` 前缀 (C01-S01)。
+- 调用任何 `lunalib.**` 前先 `isModEnabled("lunalib")` 判断是否启用，未启用时回退代码内默认值 (成熟实例的 LunaSettings 用法同款)[C13-S1]。
+- LazyLib `CommonDataJSONObject`——`save()` 是唯一写盘入口 (官方 MUST)，LunaLib 保存链的底层就是它 [C13-S2]。
+- `loadCSV(path, modId)` 的 modId 限定读取 ——LunaLib 用它在每个启用 MOD 的目录里找各自的 `LunaSettings.csv`；CSV 读取见 [C12-S3]，MOD 文件与 `/` 路径规则见 [C12-S1]，common 文件读写见 [C12-S4]。
+- `modPlugin` 回调与 `onGameLoad` 时机 —— 本节示例的注册/读取接入点 [C6-S2]。
+- `Global` 生命周期 ——`getSettings()` 全程非 null(启用判断与日志的前提)[C6-S3]。
+- `MagicSettings` 设置链 —— 对照：两套设置的读取入口与 ID 归属不同，本节设置项使用 `GearIn_` 前缀，不进入 `modSettings.json` 的 `gear_in` 段 [C13-S4]。
+- MOD id `gear_in` 与命名约定 —— 数据 key 用 `GearIn_` 前缀 [C1-S1]。
 
 ## LunaLib 概览
 
@@ -253,7 +253,7 @@ LunaLib 用 `getMergedJSONForMod("data/config/LunaSettingsConfig.json", "lunalib
 | 变更通知 | `LunaSettingsListener.settingsChanged(modId)` | `addSettingsListener` 注册 (不去重)；`reportSettingsChanged` 逐个回调 (try/catch Throwable 隔离，`lunalib.lunaSettings.LunaSettings`)|
 | 界面入口 | `KeybindsScript`(生涯 transient 脚本)| 默认键位 `luna_SettingsKeybind_new`(61)+ `Shift+F2` 备用键位；`openLunaCustomPanel(LunaSettingsUIMainPanel(false))` |
 | 图标 (可选)| `data/config/LunaSettingsConfig.json` | `LunaSettingsConfigLoader`：`getMergedJSONForMod(..., "lunalib")` 读顶层键 `modId` 的 `iconPath` |
-| 运行时检测 | `Global.getSettings().getModManager().isModEnabled("lunalib")` | 启用判断：LunaLib 未启用时回退代码默认值 (C13-S01)|
+| 运行时检测 | `Global.getSettings().getModManager().isModEnabled("lunalib")` | 启用判断：LunaLib 未启用时回退代码默认值 [C13-S1]|
 
 把前面分散在各节的十条规则集中列出，便于自查。
 
@@ -282,13 +282,13 @@ LunaLib 用 `getMergedJSONForMod("data/config/LunaSettingsConfig.json", "lunalib
 Starsector\mods\GearIndustry\
 ├── build.gradle
 ├── settings.gradle
-├── mod_info.json                # C01-S01/C13-S01 累积；本节不改动 dependencies
+├── mod_info.json                # C1-S1/C13-S1 累积；本节不改动 dependencies
 ├── data\
 │   └── config\
 │       └── LunaSettings.csv     # 本节新增：设置项定义表（文件名由 LunaLib 固定）
 ├── src\
 │   └── data\scripts\gearin\
-│       ├── GearInModPlugin      # C06-S02 所有；本节追加两行接入
+│       ├── GearInModPlugin      # C6-S2 所有；本节追加两行接入
 │       └── lib\
 │           ├── GearInLunaSettingsDefs      # 本节新增：设置定义角色（常量）
 │           ├── GearInLunaSettingsReader    # 本节新增：运行时读取角色（门控 getter）
@@ -306,7 +306,7 @@ GearIn_max_entries,最大条目数,Int,12,,"面板最多同时显示的条目数
 GearIn_pulse_delay,脉冲间隔（秒）,Double,1.5,,"两次脉冲之间的间隔秒数；运行时用 getFloat 读取。",0.1,10.0,GearIn
 GearIn_marker_color,标记颜色,Color,#f22e6e,,"轨迹标记的颜色；十六进制字符串，读取时 # 前缀可省略。",,,GearIn
 GearIn_label_text,标签文本,String,GearIn,,"面板标题栏显示的文本。",,,GearIn
-GearIn_fullGraphicEffect,Full Graphic Effect,Boolean,true,,"是否启用生涯全屏转场特效；由 C14-S01 的可选依赖示例消费。",,,GearIn
+GearIn_fullGraphicEffect,Full Graphic Effect,Boolean,true,,"是否启用生涯全屏转场特效；由 C14-S1 的可选依赖示例消费。",,,GearIn
 ```
 
 ### GearInLunaSettingsDefs(设置定义角色)
@@ -331,7 +331,7 @@ import java.awt.Color;
  */
 public class GearInLunaSettingsDefs {
 
-    /** 本 MOD 的 id（C01-S01 命名契约）：也是 LunaSettings.csv 归属与用户设置文件的键。 */
+    /** 本 MOD 的 id（C1-S1 命名契约）：也是 LunaSettings.csv 归属与用户设置文件的键。 */
     public static final String MOD_ID = "gear_in";
 
     /** LunaLib 的 MOD id（逐字来自其 mod_info.json，大小写敏感）。 */
@@ -376,7 +376,7 @@ import lunalib.lunaSettings.LunaSettings;
 
 /**
  * 运行时读取角色：门控读取 LunaLib 设置（LunaSettings 静态读取 API）。
- * 每个 getter 都是三段式：先过 isModEnabled("lunalib") 门（C13-S01），
+ * 每个 getter 都是三段式：先过 isModEnabled("lunalib") 门（C13-S1），
  * 再调用 LunaSettings.getX，返回 null 时回退代码内默认值（Defs）。
  * 类自身不引用 lunalib.** 于类加载路径，未启用时可直接安全调用。
  */
@@ -386,7 +386,7 @@ public class GearInLunaSettingsReader {
         // 工具类：不实例化
     }
 
-    /** LunaLib 是否已启用：调用任何 lunalib.** 之前必须先通过这道门（C13-S01）。 */
+    /** LunaLib 是否已启用：调用任何 lunalib.** 之前必须先通过这道门（C13-S1）。 */
     public static boolean isLunaLibEnabled() {
         return Global.getSettings().getModManager().isModEnabled(GearInLunaSettingsDefs.LUNA_LIB_MOD_ID);
     }
@@ -444,7 +444,7 @@ public class GearInLunaSettingsReader {
 
 `logCurrentValues` / `toHex` 随本角色持有 (接入片段进档时调用一次，对照用)。
 
-绑定位置：`registerListener()` 接入 `GearInModPlugin.onGameLoad`(C06-S02 所有，本节示例类不含该片段)。
+绑定位置：`registerListener()` 接入 `GearInModPlugin.onGameLoad`([C6-S2] 所有，本节示例类不含该片段)。
 
 行为纪律：监听器实例 (匿名 `LunaSettingsListener`) 在 `registerListener()` 方法体内、启用判断通过**之后**才创建，而不是放在静态字段初始化器里 —— 类加载路径零 `lunalib.**` 引用，LunaLib 未启用时 (硬依赖检测专题场景) 调用本类不会抛 `NoClassDefFoundError`。
 
@@ -466,7 +466,7 @@ import lunalib.lunaSettings.LunaSettingsListener;
  * hasSettingsListenerOfClass 幂等查询（重复注册会让同一次保存触发多次回调）。
  *
  * 监听器实例在门控通过之后才创建 —— 类加载路径不触碰 lunalib.**，LunaLib 未启用
- * 时（C13-S01 场景）调用本类不会抛 NoClassDefFoundError，门控纪律见硬规则 7、10。
+ * 时（C13-S1 场景）调用本类不会抛 NoClassDefFoundError，门控纪律见硬规则 7、10。
  */
 public class GearInLunaSettingsListener {
 
@@ -549,10 +549,10 @@ public class GearInLunaSettingsListener {
 
 ### 接入片段 (在既有 GearInModPlugin 中追加两行)
 
-接入片段 (工程片段 ——`GearInModPlugin` 归 C06-S02 所有，本节不改动那些文件；本节示例类不含该片段)：
+接入片段 (工程片段 ——`GearInModPlugin` 归 [C6-S2] 所有，本节不改动那些文件；本节示例类不含该片段)：
 
 ```java
-    // GearInModPlugin（C06-S02 所有）onGameLoad(boolean newGame) 内新增两行
+    // GearInModPlugin（C6-S2 所有）onGameLoad(boolean newGame) 内新增两行
     GearInLunaSettingsListener.registerListener();   // 幂等注册；LunaLib 未启用时自动跳过并写 warn
     GearInLunaSettingsListener.logCurrentValues();  // 每次进档输出当前生效值（对照用）
 ```
@@ -571,7 +571,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：C13-S01 与 C13-S04 的累计工程、本节的 `data\config\LunaSettings.csv`、三个示例类、`GearInModPlugin.onGameLoad` 中的两行接入代码，以及已安装并勾选的 LunaLib。
+前置数据：[C13-S1] 与 [C13-S4] 的累计工程、本节的 `data\config\LunaSettings.csv`、三个示例类、`GearInModPlugin.onGameLoad` 中的两行接入代码，以及已安装并勾选的 LunaLib。
 
 1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对三个类与 `data\config\LunaSettings.csv`。
 2. 勾选 LunaLib 与 "齿轮工业" 启动游戏，到主菜单后退出。

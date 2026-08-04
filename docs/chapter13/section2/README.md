@@ -21,12 +21,12 @@
 
 本节直接调用 LazyLib 的 API，调用发生在哪里、能读到什么状态、结果落在哪里，都由既有章节决定。请先熟悉下列主题：
 
-- 硬依赖声明与运行时检测 (C13-S01)—— LazyLib 是硬依赖外部库，调用它的 API 前，`mod_info.json` 的 `dependencies` 必须已声明 `lw_lazylib`。
-- 战斗状态读取 (C07-S02)——`getShips()` 含残骸、`isAlive()` 过滤、暂停检查、实体与列表禁止跨战斗缓存 (本节把同一条纪律延伸到 LazyLib 的查询结果)。
-- `Global` 生命周期 (C06-S03)—— 战斗引擎只在战斗运行期 "有效"，查询入口只在战斗内消费。
-- 战斗插件模型 (C07-S01)——`addPlugin` 注册与 `advance` 每帧回调 (本节示例插件的骨架)。
-- 测试战役 (C03-S01)——`GearIn_test` 是本节示例的验证入口。
-- common 文件语义 (C12-S04)——`<saves>\common\<name>.data` 与 LazyLib `JSONUtils` 的读取和写入位置是同一个目录；settings 合并仍由 C06-S04 负责。
+- 硬依赖声明与运行时检测 [C13-S1]—— LazyLib 是硬依赖外部库，调用它的 API 前，`mod_info.json` 的 `dependencies` 必须已声明 `lw_lazylib`。
+- 战斗状态读取 [C7-S2]——`getShips()` 含残骸、`isAlive()` 过滤、暂停检查、实体与列表禁止跨战斗缓存 (本节把同一条纪律延伸到 LazyLib 的查询结果)。
+- `Global` 生命周期 [C6-S3]—— 战斗引擎只在战斗运行期 "有效"，查询入口只在战斗内消费。
+- 战斗插件模型 [C7-S1]——`addPlugin` 注册与 `advance` 每帧回调 (本节示例插件的骨架)。
+- 测试战役 [C3-S1]——`GearIn_test` 是本节示例的验证入口。
+- common 文件语义 [C12-S4]——`<saves>\common\<name>.data` 与 LazyLib `JSONUtils` 的读取和写入位置是同一个目录；settings 合并仍由 [C6-S4] 负责。
 
 ## LazyLib 概览
 
@@ -281,7 +281,7 @@ LazyLib 路径的优势是 `CommonDataJSONObject` 本身就是一个 `JSONObject
 
 | 环节 | 文件或 API | 使用方 / 行为 |
 |---|---|---|
-| 依赖声明 | `mod_info.json` 的 `dependencies`(`lw_lazylib`)| 启动器 `ModManagerAPI` 强制检查 (C13-S01)；LazyLib 侧 id 常量 `LazyLib.MOD_ID` |
+| 依赖声明 | `mod_info.json` 的 `dependencies`(`lw_lazylib`)| 启动器 `ModManagerAPI` 强制检查 [C13-S1]；LazyLib 侧 id 常量 `LazyLib.MOD_ID` |
 | 库加载 | `Starsector\mods\LazyLib\jars\LazyLib.jar`(+ `LazyLib-Kotlin.jar`；`jars\internal\` 不用于 MOD 依赖)| 脚本类路径；`ModUtils.isClassPresent` 反映 classpath 存在性 |
 | 数学 / 几何 | `MathUtils` / `VectorUtils` / `FastTrig` / `EllipseUtils` / `ShapeUtils` / `CollisionUtils` / `CollectionUtils` | 纯静态无状态；度/弧度分工 (规则 1)、原地修改语义 (规则 2)|
 | 战斗查询 | `CombatUtils` / `AIUtils` / `WeaponUtils` / `DefenseUtils` | 当前帧引擎状态快照 (规则 3)；`@Nullable` 判空 (规则 4)|
@@ -336,7 +336,7 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 薄载体：把四个工具族用法片段接成完整最小例的战斗插件。
  *
- * 由既有战斗插件在 init() 中 addPlugin 注册（C07-S01 模型），只在本场
+ * 由既有战斗插件在 init() 中 addPlugin 注册（C7-S1 模型），只在本场
  * 战斗内有效；每个工具族一个用法片段类（GearInLazyMathUsage /
  * GearInLazyCombatQuery / GearInLazyJsonStore / GearInLazyRuntimeProbe），
  * 本类只做接线与节奏控制（暂停守卫 + 报告周期），不含工具调用细节。
@@ -360,7 +360,7 @@ public class GearInLazyPlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine.isPaused()) {
-            return; // 暂停守卫（C07-S01）：暂停时 advance 仍会被调用
+            return; // 暂停守卫（C7-S1）：暂停时 advance 仍会被调用
         }
         reportInterval.advance(amount);
         if (reportInterval.intervalElapsed()) {
@@ -403,7 +403,7 @@ import com.fs.starfarer.api.combat.ShipAPI;
  * 数学与几何工具族的用法片段：MathUtils / VectorUtils 的最小消费面。
  *
  * 无持久状态的纯静态工具，角度一律使用度（degrees）；AIUtils 只用于
- * 获取演示目标（最近可见敌舰），查询结果按当前帧快照使用（C07-S02 同规）。
+ * 获取演示目标（最近可见敌舰），查询结果按当前帧快照使用（C7-S2 同规）。
  */
 public final class GearInLazyMathUsage {
 
@@ -417,7 +417,7 @@ public final class GearInLazyMathUsage {
     public static void report(CombatEngineAPI engine) {
         ShipAPI player = engine.getPlayerShip();
         if (player == null) {
-            return; // 防御性判空：getPlayerShip() 战斗内实际永不返回 null（C07-S02）
+            return; // 防御性判空：getPlayerShip() 战斗内实际永不返回 null（C7-S2）
         }
         Vector2f playerLoc = player.getLocation();
         ShipAPI enemy = AIUtils.getNearestEnemy(player);
@@ -474,7 +474,7 @@ import com.fs.starfarer.api.combat.ShipAPI;
  * 战斗查询工具族的用法片段：CombatUtils / AIUtils 的最小消费面。
  *
  * 查询结果是当前帧引擎状态快照，实体仍归战斗引擎管理，结果禁止跨战斗
- * 缓存（C07-S02 同规）；@Nullable 返回值（getNearestEnemy /
+ * 缓存（C7-S2 同规）；@Nullable 返回值（getNearestEnemy /
  * getBestInterceptPoint）使用前必须判空。
  */
 public final class GearInLazyCombatQuery {
@@ -496,7 +496,7 @@ public final class GearInLazyCombatQuery {
         int visible = 0;
         for (ShipAPI ship : ships) {
             if (ship.isAlive()) {
-                alive++; // 快照可能含残骸，按 C07-S02 的 isAlive() 纪律过滤
+                alive++; // 快照可能含残骸，按 C7-S2 的 isAlive() 纪律过滤
             }
             if (CombatUtils.isVisibleToSide(ship, player.getOwner())) {
                 visible++;
@@ -645,7 +645,7 @@ gradle jar
 
 ### 验证方案
 
-前置数据：既有 MOD 布局 (C06-S01)；`dependencies` 已声明 `lw_lazylib`(C13-S01)；既有战斗插件接入本节注册片段 (C07-S01 模型)；`GearIn_test` 测试战役 (C03-S01)。
+前置数据：既有 MOD 布局 [C6-S1]；`dependencies` 已声明 `lw_lazylib`[C13-S1]；既有战斗插件接入本节注册片段 ([C7-S1] 模型)；`GearIn_test` 测试战役 [C3-S1]。
 
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，并用 `jar tf jars\GearIndustry.jar` 列出类条目。
 2. 初始化：进入 `GearIn_test` 一场战斗，在 `starsector.log` 找到 `GearIn lazy init: ...` 行。
@@ -690,7 +690,7 @@ gradle jar
 
 六条规则都对应一个具体的失败表现：度/弧度混用让角度偏移，原地修改改写实体速度，跨战斗缓存让查询静默失效，`@Nullable` 不判空抛 NPE，`save()` 漏调让数据归零，`isClassPresent` / `isModEnabled` 混用让功能分支误开。核对任何库工具调用时先问三件事：它读的是哪个状态 (当前帧快照还是磁盘内容)，它改的是谁的对象 (引擎实体还是自己的数据)，漏掉必要调用会看到什么 (报错还是静默) —— 这三问也适用于后续所有库工具页面。
 
-既有纪律在本节全部复用：暂停检查、`isAlive()` 过滤、禁止跨战斗缓存与战斗插件模型章节完全同源；依赖声明与运行时检测复用 C13-S01；common 文件位置与 settings 合并处对照。战役侧 (`campaign` 包) 与渲染侧 (`opengl` / `ui` 包) 工具不在本节范围，由后续内容接续，本节完成的是教程工程对 LazyLib 的第一次真正调用。
+既有纪律在本节全部复用：暂停检查、`isAlive()` 过滤、禁止跨战斗缓存与战斗插件模型章节完全同源；依赖声明与运行时检测复用 [C13-S1]；common 文件位置与 settings 合并处对照。战役侧 (`campaign` 包) 与渲染侧 (`opengl` / `ui` 包) 工具不在本节范围，由后续内容接续，本节完成的是教程工程对 LazyLib 的第一次真正调用。
 
 ## 建议参考项
 

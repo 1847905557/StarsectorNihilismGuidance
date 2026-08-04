@@ -28,13 +28,13 @@
   - 匹配流程 (`FireBest` 分数竞争、同分随机、`FireAll` 全执行与 `FireAllIntercept` 拦截)。
   - 条件与脚本语法、`$option` 回流 `DialogOptionSelected`；
   - 内置命令 (`DismissDialog` / `ShowDefaultVisual` / `SetShortcut` / `FireBest` / `FireAll` / `RollProbability`)。
-  - 文本 token 替换链 (C11-S01)。
+  - 文本 token 替换链 [C11-S1]。
   - 注册方式："注册 = 写行"：把行写进自己的 `data/campaign/rules.csv` 即完成注册，场景 trigger 同样如此，不需要任何 MOD 侧注册文件。
-- `showInteractionDialog(plugin, target)` 与 `InteractionDialogPlugin` 生命周期 (`init` → `optionSelected` → `advance`)(C08-S09)：
+- `showInteractionDialog(plugin, target)` 与 `InteractionDialogPlugin` 生命周期 (`init` → `optionSelected` → `advance`)[C8-S9]：
   - 本节所有对话场景的使用方 `RuleBasedInteractionDialogPluginImpl` 与 `NewGameDialogPluginImpl` 都是它的实现。
-- `addScript` 挂载脚本与 persistent data 条件检查 (C08-S01 / C06-S02)。
-- Rules 内存 (`MemoryAPI`) 的过期与持久化语义 (C11-S04)—— 本节只消费 `$option` 回流、场景事实键 (`$hasMarket` / `$menuState` / `$tradeMode` / `$hailing` / `$mh_count` 等) 与一次性演示 flag，不展开生命周期。
-- `BaseCommandPlugin` 规则命令 (C11-S03)：
+- `addScript` 挂载脚本与 persistent data 条件检查 [C8-S1] / [C6-S2]。
+- Rules 内存 (`MemoryAPI`) 的过期与持久化语义 [C11-S4]—— 本节只消费 `$option` 回流、场景事实键 (`$hasMarket` / `$menuState` / `$tradeMode` / `$hailing` / `$mh_count` 等) 与一次性演示 flag，不展开生命周期。
+- `BaseCommandPlugin` 规则命令 [C11-S3]：
   - 本节只消费内置命令与现成 rulecmd：`AddBarEvent` / `BarCMD` / `EndConversation` / `OpenComms` / `FleetDesc` / `HailPlayer`。
   - 以及 `NGCAddCredits` / `MissionHubCMD` / `SetActiveMission` / `ClearActiveMission` 等，不写自定义 rulecmd。
 
@@ -424,7 +424,7 @@ gradle jar
 
 ### 验证方案
 
-前置数据：规则基础页的 MOD 布局 (前置：C11-S01；`GearInRulesIntro` 类可保留，本节不依赖它)，追加本节 10 条 `GearIn_rules_scene_*` 规则行；启动器勾选 Dev Mode (验证新游戏场景与 dev 选项)。
+前置数据：规则基础页的 MOD 布局 (前置：[C11-S1]；`GearInRulesIntro` 类可保留，本节不依赖它)，追加本节 10 条 `GearIn_rules_scene_*` 规则行；启动器勾选 Dev Mode (验证新游戏场景与 dev 选项)。
 
 1. 规则注册：启动游戏，在 `starsector.log` 中找到本节 10 条 `Loading rule: GearIn_rules_scene_*` 行 (市场 1 + 酒吧 3 + 舰队 1 + 通讯 3 + 新游戏 2；注意 `_conv_end` 与 `_ngc_pick` 也在其中)。
 2. 市场场景：新建生涯，停靠 jangala：停靠许可文本后出现 `GearIn 市场场景：首次停靠 jangala...`，市场菜单完整 (通讯目录/酒吧/交易/Leave)；再次停靠 jangala：本节文本不再出现、菜单照常。

@@ -21,14 +21,14 @@
 
 本节示例会反复用到以下既有能力与资产，请先确认掌握：
 
-- MagicLib 概览与 `MagicTrailPlugin` 最小纪律 (C13-S04)：sprite 宽高为 2 的幂、ID 跨帧复用、中途不换 sprite；`MagicSettings.getList` 与 `modSettings.json` 合并读取 (本节 `magicTrail_files` 列表走的就是这条链)。
-- 硬依赖声明与运行时检测 (C13-S01)：引用 `org.magiclib.plugins.MagicTrailPlugin` 前 `dependencies` 必须声明 `MagicLib`(用户缺依赖 → `NoClassDefFoundError`)。
-- LazyLib 纪律 (C13-S02)：`MagicTrailPlugin` 与 `MagicAutoTrails` 内部使用 `MathUtils` / `VectorUtils`；本节示例不直接依赖 LazyLib。
-- 射弹运行态 (C07-S04)：数据驱动尾迹的匹配对象是 `DamagingProjectileAPI.getProjectileSpecId()`；`GearIn_test_shot` 弹体 ID 由该页声明，本节只使用。
-- 战斗插件模型与生命周期 (C07-S01 / C07-S05)：settings `plugins` 段每场战斗 `newInstance`、`advance` 必须先判 `engine == null`、暂停时停止推进、战斗结束无清理回调。
-- 分层渲染 (C07-S06)：`CombatLayeredRenderingPlugin` 与 `CombatEngineLayers` 层序 (本节 `MagicTrailRenderer` 就是一条分层渲染插件通道)。
-- `GearIn_test` 测试战役 (C03-S01)：战斗侧冒烟入口。
-- `Global` 生命周期 (C06-S03)：战斗外 `getCombatEngine()` 是非 null 空引擎；战斗外调用 `addTrailMember*` 走 `getPlugin()` 的 null 分支，静默无效果。
+- MagicLib 概览与 `MagicTrailPlugin` 最小纪律 [C13-S4]：sprite 宽高为 2 的幂、ID 跨帧复用、中途不换 sprite；`MagicSettings.getList` 与 `modSettings.json` 合并读取 (本节 `magicTrail_files` 列表走的就是这条链)。
+- 硬依赖声明与运行时检测 [C13-S1]：引用 `org.magiclib.plugins.MagicTrailPlugin` 前 `dependencies` 必须声明 `MagicLib`(用户缺依赖 → `NoClassDefFoundError`)。
+- LazyLib 纪律 [C13-S2]：`MagicTrailPlugin` 与 `MagicAutoTrails` 内部使用 `MathUtils` / `VectorUtils`；本节示例不直接依赖 LazyLib。
+- 射弹运行态 [C7-S4]：数据驱动尾迹的匹配对象是 `DamagingProjectileAPI.getProjectileSpecId()`；`GearIn_test_shot` 弹体 ID 由该页声明，本节只使用。
+- 战斗插件模型与生命周期 [C7-S1] / [C7-S5]：settings `plugins` 段每场战斗 `newInstance`、`advance` 必须先判 `engine == null`、暂停时停止推进、战斗结束无清理回调。
+- 分层渲染 [C7-S6]：`CombatLayeredRenderingPlugin` 与 `CombatEngineLayers` 层序 (本节 `MagicTrailRenderer` 就是一条分层渲染插件通道)。
+- `GearIn_test` 测试战役 [C3-S1]：战斗侧冒烟入口。
+- `Global` 生命周期 [C6-S3]：战斗外 `getCombatEngine()` 是非 null 空引擎；战斗外调用 `addTrailMember*` 走 `getPlugin()` 的 null 分支，静默无效果。
 
 ## 文件与 API 链路
 
@@ -61,7 +61,7 @@ MagicLib 把尾迹参数拆成两条通道 —— 数据驱动 (CSV 行由 `Magi
 :::
 
 1. **文件**：默认读取两个来源 ——`MagicLib` 段 `magicTrail_files` 列表 (MagicLib 自带 `modSettings.json` 的默认值 `["data/trails/trail_data.csv"]`，该路径是兼容路径，任何 MOD 都可以放自己的同名文件) 恒被读取；`data/config/modFiles/magicTrail_data.csv`(MagicLib 自带默认文件，恒追加在列表末尾)。
-2. **合并**：每个路径都走 `Global.getSettings().getMergedSpreadsheetDataForMod("trail", path, "MagicLib")`——`"trail"` 是键列，跨**全部已启用 MOD** 合并同路径文件，master 为 MagicLib(`getMergedSpreadsheetDataForMod` 的合并语义：master 行被非 master 同键行替换，见 C12-S03)。
+2. **合并**：每个路径都走 `Global.getSettings().getMergedSpreadsheetDataForMod("trail", path, "MagicLib")`——`"trail"` 是键列，跨**全部已启用 MOD** 合并同路径文件，master 为 MagicLib(`getMergedSpreadsheetDataForMod` 的合并语义：master 行被非 master 同键行替换，见 [C12-S3])。
 3. **时机**：`Magic_modPlugin.onApplicationLoad()` 调用 `MagicAutoTrails.getTrailData()` 读一次；dev 模式 `onDevModeF8Reload` 重读，`MagicAutoTrails.init` 在 dev 模式下也会重读。改尾迹数据必须重启游戏 (或 dev 模式 F8 重载 + 重进战斗)。
 4. **缺失文件**：`data/trails/trail_data.csv` 不存在 → INFO 日志 `Deprecated 'data/trails/trail_data.csv' not found, skipping.`，不中止；其他路径读取失败 → warn。
 
@@ -165,7 +165,7 @@ MagicLib 把尾迹参数拆成两条通道 —— 数据驱动 (CSV 行由 `Magi
 
 ### 插件与调用前置
 
-`MagicTrailPlugin` 由 MagicLib 的 `data\config\settings.json` `plugins` 段注册 (键 `MagicTrailPlugin` → `org.magiclib.plugins.MagicTrailPlugin`)，每场战斗全新实例 (settings 注册链见 C07-S05)。
+`MagicTrailPlugin` 由 MagicLib 的 `data\config\settings.json` `plugins` 段注册 (键 `MagicTrailPlugin` → `org.magiclib.plugins.MagicTrailPlugin`)，每场战斗全新实例 (settings 注册链见 [C7-S5])。
 
 `init(CombatEngineAPI)` 做四件事：
 
@@ -272,7 +272,7 @@ javadoc 允许 null，但 "that should really only be done in weird, edge-case s
 
 ### 规则 8：暂停时尾迹冻结；advance 推进不依赖使用方代码
 
-段的推进、淡出、移除全部由 MagicLib 自己的 `MagicTrailPlugin.advance` 完成 —— 使用方只负责 "每帧登记新段"。暂停时插件不推进任何段，画面上的尾迹**静止但可见**(与分层渲染的暂停行为同侧：渲染不停、推进停，见 C07-S06)。
+段的推进、淡出、移除全部由 MagicLib 自己的 `MagicTrailPlugin.advance` 完成 —— 使用方只负责 "每帧登记新段"。暂停时插件不推进任何段，画面上的尾迹**静止但可见**(与分层渲染的暂停行为同侧：渲染不停、推进停，见 [C7-S6])。
 
 违反的可观察结果：暂停 10 秒后恢复，尾迹位置与暂停前完全一致 (没有偷偷移动或淡出)；如果您在自己的 `advance` 里做了暂停检查，只是不再登记新段 —— 旧段照常由 MagicLib 管理。没有需要您手动推进的东西。
 
@@ -282,7 +282,7 @@ javadoc 允许 null，但 "that should really only be done in weird, edge-case s
 
 ### 渲染链与层选择
 
-`MagicTrailRenderer`(`MagicTrailPlugin` 的内部类) 是 `BaseCombatLayeredRenderingPlugin`(分层渲染通道，见 C07-S06)：
+`MagicTrailRenderer`(`MagicTrailPlugin` 的内部类) 是 `BaseCombatLayeredRenderingPlugin`(分层渲染通道，见 [C7-S6])：
 
 - `init` 时 `engine.addLayeredRenderingPlugin(renderer)`；
 - `getActiveLayers()` 返回 `EnumSet.allOf(CombatEngineLayers.class)`——**全部层**(注释说明 "只渲染一次检查无法按层过滤，开销可忽略")；
@@ -338,7 +338,7 @@ javadoc 允许 null，但 "that should really only be done in weird, edge-case s
 
 ### 战斗级状态与跨战斗缓存禁令
 
-`init` 每次战斗重置 ID 计数并清空 `mainMap` / `cuttingMap`；插件实例、renderer、customData 全部随战斗结束释放 (战斗插件的 `destroyInstance` 语义，见 C07-S05)。
+`init` 每次战斗重置 ID 计数并清空 `mainMap` / `cuttingMap`；插件实例、renderer、customData 全部随战斗结束释放 (战斗插件的 `destroyInstance` 语义，见 [C7-S5])。
 
 ::: caution
 禁止跨战斗缓存尾迹 ID 或实体引用 ——`usedIDs` 每场战斗从 1f 重新计数，缓存的旧 ID 会与新一轮计数冲突 (比如撞上别的尾迹)；旧实体 `isEntityInPlay` 恒为 false，cutting map 会在清理秒被删。全部尾迹状态必须在战斗内重建。
@@ -359,7 +359,7 @@ javadoc 允许 null，但 "that should really only be done in weird, edge-case s
 | 7 | **必须** | 至少 2 段才渲染 (第一段不可见是设计)| 首帧无画面 —— 不是故障 |
 | 8 | **必须** | 暂停时尾迹冻结 (MagicLib 自己的 advance 暂停检查)；段的推进与移除不依赖使用方代码 | 暂停后恢复位置不变；段照常由 MagicLib 管理 |
 | 9 | **必须** | 传送 / 瞬移 / 实体失效前调用 `cutTrailsOnEntity`(或 library-free cut)| 传送后新旧段被强行连成跨战场长条；死亡后拖尾残留 |
-| 10 | **必须** | 尾迹 ID、实体引用禁止跨战斗缓存 (C06-S03 / C07-S05 同规)| 第二场战斗 ID 撞计数、旧实体恒失效、cutting map 项被清 |
+| 10 | **必须** | 尾迹 ID、实体引用禁止跨战斗缓存 ([C6-S3] / [C7-S5] 同规)| 第二场战斗 ID 撞计数、旧实体恒失效、cutting map 项被清 |
 | 11 | **必须**(数据注释硬约束)| `BALLISTIC_AS_BEAM` 弹体的 `angleAdjustment` 必须 `FALSE` | 弹体朝向被强制改为速度方向，射线贴图旋转、视觉异常 |
 | 12 | **必须** | `layerToRenderOn` 与 additive/非 additive 一旦确定不可中途改变 | 中途变更被忽略或拆条 (javadoc "CANNOT change mid-trail")|
 | 13 | 建议 | `minLength` 保持小值 (默认示例 10)；需要时间加速省性能才用负数慢速模式 | 值过大 → 曲线尾迹变折线、加速下失真 |
@@ -374,23 +374,23 @@ javadoc 允许 null，但 "that should really only be done in weird, edge-case s
 
 ## 完整最小例
 
-在上一节 (C13-S04) 累计的工程布局上追加 (MOD 根目录 `Starsector\mods\GearIndustry`)：
+在上一节 [C13-S4] 累计的工程布局上追加 (MOD 根目录 `Starsector\mods\GearIndustry`)：
 
 ```text
 Starsector\mods\GearIndustry\
 ├── build.gradle
 ├── settings.gradle
-├── mod_info.json                      # dependencies 已含 MagicLib（C13-S01）
+├── mod_info.json                      # dependencies 已含 MagicLib（C13-S1）
 ├── data\
 │   ├── trails\
 │   │   └── trail_data.csv             # 本节新增（数据驱动尾迹一行）
 │   └── config\
-│       └── modSettings.json           # C13-S04 所有；本节不改动
+│       └── modSettings.json           # C13-S4 所有；本节不改动
 ├── src\
 │   └── data\scripts\gearin\
-│       ├── GearInModPlugin            # C06-S02 所有，本节只消费
+│       ├── GearInModPlugin            # C6-S2 所有，本节只消费
 │       ├── combat\                    # S07/S12 既有战斗插件目录
-│       ├── lib\                       # C13-S04 的 GearInMagicWiring 等五个小类
+│       ├── lib\                       # C13-S4 的 GearInMagicWiring 等五个小类
 │       └── visuals\
 │           └── GearInMagicTrail       # 本节新增
 └── jars\
@@ -398,7 +398,7 @@ Starsector\mods\GearIndustry\
 
 ### data/trails/trail_data.csv(本节所有，一行一条尾迹)
 
-`data/trails/trail_data.csv` 是 MagicLib 默认 `magicTrail_files` 列表里的兼容路径 (无需任何配置即被读取合并)；弹体 `GearIn_test_shot` 由 C07-S04 声明，本节只使用。表头与 MagicLib 自带默认文件一致 (30 列)：
+`data/trails/trail_data.csv` 是 MagicLib 默认 `magicTrail_files` 列表里的兼容路径 (无需任何配置即被读取合并)；弹体 `GearIn_test_shot` 由 [C7-S4] 声明，本节只使用。表头与 MagicLib 自带默认文件一致 (30 列)：
 
 ```csv
 trail,projectile,sprite,minLength,fadeIn,duration,fadeOut,sizeIn,sizeOut,colorIn,colorOut,opacity,textLength,textScroll,randomTextureOffset,distance,dispersion,drift,frameOffsetMult,fadeOnFadeOut,angleAdjustment,additive,velocityIn,velocityOut,randomVelocity,angle,rotationIn,rotationOut,randomRotation,renderBelowExplosions
@@ -441,7 +441,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
 /**
  * 完整最小例：MagicLib MagicTrailPlugin 的数据、创建、推进、渲染与清理。
  *
- * 由既有战斗插件在 init() 中 addPlugin 注册（C07-S01 模型），只在本场战斗内有效：
+ * 由既有战斗插件在 init() 中 addPlugin 注册（C7-S1 模型），只在本场战斗内有效：
  * - 数据：尾迹 sprite 必须是 settings.json "fx" 分类注册的键（MagicLib 自带
  *   base_trail_smooth / base_trail_contrail 等 12 张，宽高为 2 的倍数、垂直长条）；
  *   本示例不新增 PNG 资产；
@@ -451,7 +451,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
  * - 推进：addTrailMember* 只负责登记段，段的移动/淡出/移除由 MagicTrailPlugin.
  *   advance 完成（暂停时整条冻结，硬规则 8）；每段总寿命 = in + main + out；
  * - 渲染：渲染由 MagicTrailPlugin.init 注册的 MagicTrailRenderer（分层渲染插件，
- *   C07-S06 通道）完成；本示例两条尾迹分别用默认 CONTRAILS_LAYER 与显式
+ *   C7-S6 通道）完成；本示例两条尾迹分别用默认 CONTRAILS_LAYER 与显式
  *   ABOVE_SHIPS_AND_MISSILES_LAYER；
  * - 清理：舰船死亡/战斗结束时 cutTrailsOnEntity 切断旧段（旧段按自身寿命淡出，
  *   新段不再与之相连，硬规则 9）；战斗内全部状态随战斗结束释放，禁止跨战斗缓存
@@ -485,7 +485,7 @@ public class GearInMagicTrail extends BaseEveryFrameCombatPlugin {
     @Override
     public void init(CombatEngineAPI engine) {
         this.engine = engine;
-        this.ship = engine.getPlayerShip(); // 战斗内永不 null（C07-S01）
+        this.ship = engine.getPlayerShip(); // 战斗内永不 null（C7-S1）
         this.bodySprite = Global.getSettings().getSprite("fx", SPRITE_BODY);
         this.glowSprite = Global.getSettings().getSprite("fx", SPRITE_GLOW);
         this.bodyTrailID = MagicTrailPlugin.getUniqueID();
@@ -497,10 +497,10 @@ public class GearInMagicTrail extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine == null || ship == null) {
-            return; // init() 不保证先于 advance()（C07-S04），必须判空
+            return; // init() 不保证先于 advance()（C7-S4），必须判空
         }
         if (engine.isPaused()) {
-            return; // 暂停守卫（C02-S01）：暂停时 MagicTrailPlugin 不推进任何段（硬规则 8）
+            return; // 暂停守卫（C2-S1）：暂停时 MagicTrailPlugin 不推进任何段（硬规则 8）
         }
         if (!engine.isEntityInPlay(ship) || !ship.isAlive()) {
             cutTrails();
@@ -518,7 +518,7 @@ public class GearInMagicTrail extends BaseEveryFrameCombatPlugin {
                     + " elapsed=" + Math.round(engine.getTotalElapsedTime(false)));
         }
         if (engine.isCombatOver()) {
-            cutTrails(); // 战斗结束收尾：切断尾迹，旧段随各自寿命自然淡出（C07-S04 的收尾姿势）
+            cutTrails(); // 战斗结束收尾：切断尾迹，旧段随各自寿命自然淡出（C7-S4 的收尾姿势）
         }
     }
 
@@ -586,14 +586,14 @@ public class GearInMagicTrail extends BaseEveryFrameCombatPlugin {
 
 - **创建链**：`init` 里 `getUniqueID()` 各取一次存字段 (`bodyTrailID` / `glowTrailID`，规则 5)；两条尾迹的 ID 分别登记进同一 `cuttingMap` 实体项 (`ship`，规则 9 的切断索引)。
 - **推进链**：`advance` 每 0.05 秒调 `spawnSegments` 登记两段；段的时间推进、淡出与移除全部由 `MagicTrailPlugin.advance` 完成 (规则 8)，使用方不接触 `MagicTrailObject` / `MagicTrailTracker`。
-- **渲染链**：主体尾迹走 `addTrailMemberSimple` 的默认 `CONTRAILS_LAYER`；泛光尾迹走 `addTrailMemberAdvanced` 的显式 `ABOVE_SHIPS_AND_MISSILES_LAYER`(舰船之上、粒子之下，C07-S06 层序)，并演示 `textureLoopLength` / `textureScrollSpeed` / `SIZE_PULSE_*`。
+- **渲染链**：主体尾迹走 `addTrailMemberSimple` 的默认 `CONTRAILS_LAYER`；泛光尾迹走 `addTrailMemberAdvanced` 的显式 `ABOVE_SHIPS_AND_MISSILES_LAYER`(舰船之上、粒子之下，[C7-S6] 层序)，并演示 `textureLoopLength` / `textureScrollSpeed` / `SIZE_PULSE_*`。
 - **清理链**：舰船死亡 (`!isEntityInPlay || !isAlive`) 与 `engine.isCombatOver()` 都调 `cutTrails()`—— 先切断再让旧段自然淡出 (规则 9)；`cut` 标志防重复切断。
 - **数据链**：同目录的 `trail_data.csv` 行由 `MagicAutoTrails` 为 `GearIn_test_shot` 弹体自动生成尾迹 (与 Java 侧两条尾迹并存，互不干扰 ——Java 侧是实体尾迹，数据侧是弹体尾迹)。
 
-注册片段 (工程片段 —— 本节不改动 C13-S04 / C07-S05 的所有文件，只演示调用)：
+注册片段 (工程片段 —— 本节不改动 [C13-S4] / [C7-S5] 的所有文件，只演示调用)：
 
 ```java
-    // 已有战斗插件（C07-S01 的所有者类）的 init() 内新增一行
+    // 已有战斗插件（C7-S1 的所有者类）的 init() 内新增一行
     @Override
     public void init(CombatEngineAPI engine) {
         engine.addPlugin(new GearInMagicTrail());
@@ -601,7 +601,7 @@ public class GearInMagicTrail extends BaseEveryFrameCombatPlugin {
     }
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用 C06-S01)：
+构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用 [C6-S1])：
 
 ```text
 gradle jar
@@ -611,7 +611,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：C13-S04 的累计工程 + `data\trails\trail_data.csv`(本节新增)+ `GearInMagicTrail` + 注册片段一行 + C03-S01 的 `GearIn_test` 测试战役；已安装 MagicLib(启动器勾选)。
+前置数据：[C13-S4] 的累计工程 + `data\trails\trail_data.csv`(本节新增)+ `GearInMagicTrail` + 注册片段一行 + [C3-S1] 的 `GearIn_test` 测试战役；已安装 MagicLib(启动器勾选)。
 
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/visuals/GearInMagicTrail.class`。
 2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察 `GearIn trail` 相关记录。
@@ -624,7 +624,7 @@ gradle jar
 预期结果：
 
 - `gradle jar` 以 `BUILD SUCCESSFUL` 结束，`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/visuals/GearInMagicTrail.class`。
-- 战斗初始化：进入 `GearIn_test` 战役 (C03-S01) 一场战斗，`starsector.log` 出现一行 `GearIn trail init: body=base_trail_smooth glow=base_trail_contrail bodyID=<id> glowID=<id>`；`bodyID` / `glowID` 是两个不同的正数 (`getUniqueID()` 计数，规则 5 的观察面)；没有 `gear_in` 引起的 `ERROR`。
+- 战斗初始化：进入 `GearIn_test` 战役 [C3-S1] 一场战斗，`starsector.log` 出现一行 `GearIn trail init: body=base_trail_smooth glow=base_trail_contrail bodyID=<id> glowID=<id>`；`bodyID` / `glowID` 是两个不同的正数 (`getUniqueID()` 计数，规则 5 的观察面)；没有 `gear_in` 引起的 `ERROR`。
 - 画面 (创建 + 渲染)：玩家舰尾部出现两条尾迹 —— 青色主体条 (`CONTRAILS_LAYER`，随舰船机动弯曲) 与蓝色泛光条 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，覆盖在舰船与导弹之上)；泛光条宽度呈两次脉动 (`SIZE_PULSE_COUNT=2`)，纹理沿尾迹滚动 (`textureScrollSpeed=200`)；首帧只有 1 段 → 什么都不画，第 2 段起出现条带 (规则 7)。
 - 周期报告 (推进)：战斗中每 1 秒出现一行 `GearIn trail: segments=<n> elapsed=<秒数>`；`segments` 稳步增长 (每 0.05 秒两段)；暂停期间**没有**新报告行 (暂停检查 + MagicLib 不推进)。
 - 暂停冻结 (规则 8)：按空格暂停约 10 秒 —— 画面上的两条尾迹完全静止 (不移动、不淡出、不新增段)；恢复后尾迹从暂停前的位置继续生长。
@@ -690,7 +690,7 @@ gradle jar
 
 排错时最值得记住的判断是：尾迹链路里大多数失败是静默的 —— 插件未初始化、行解析失败、键撞车都不会产生 `ERROR`，只能靠日志里的 init 行、dev 模式的 `Invalid line, skipping` 与画面行为定位。创建阶段把 ID 取一次存字段、sprite 恒定、传送前切断，做到这三件事就避开了最常见的三类 "看起来正常但尾迹不对"。
 
-本节与 C14-S01 的非强制性依赖处理互为侧面：前者解决缺少库时的降级，本节解决库核心能力的使用纪律。若继续深入，`MagicTrailRenderer` 正是分层渲染插件通道的实例，把 "登记段 + 交给渲染插件绘制" 的思路迁移到自定义渲染插件，是这条知识的自然延伸。
+本节与 [C14-S1] 的非强制性依赖处理互为侧面：前者解决缺少库时的降级，本节解决库核心能力的使用纪律。若继续深入，`MagicTrailRenderer` 正是分层渲染插件通道的实例，把 "登记段 + 交给渲染插件绘制" 的思路迁移到自定义渲染插件，是这条知识的自然延伸。
 
 ## 建议参考项
 

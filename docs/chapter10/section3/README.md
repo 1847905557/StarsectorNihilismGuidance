@@ -21,15 +21,15 @@
 
 本节假设您已完成以下单元的学习，示例的注册调用点、触发势力与验证对象都来自这些成果：
 
-- MOD 目录结构、`starsector.log` 与编译链路 (C01-S01、C06-S01)。
-- 注册入口与回调心智模型 (C02-S01)；
-- 势力 `gear_industry` 的定义 —— 本节示例用它做触发条件，只消费不定义 (C03-S02)。
-- 新档生成入口 —— 累计工程为齿轮工业行星提供市场实体，是本节示例的可观察对象来源 (C03-S03)。
-- `modPlugin` 生命周期回调与 persistent data `CLASS_MARK` 首次进入检查 —— 本节的注册调用点挂在 `onGameLoad` 里，但**不用**这种一次性检查 (C06-S02)。
-- `Global.getSector()` 的 null 语义 —— 注册必须发生在生涯引擎建立之后 (C06-S03)。
-- 脚本注册与 persistent data 一次性检查 —— 本节的 transient 插件注册与之形成对照 (C08-S01)。
-- 生涯事件监听器 —— 生涯插件与监听器是两条不同的扩展通道，本节末尾有对照 (C10-S02)。
-- Rules 与记忆 ——facts 写入的 `$` 前缀记忆变量将由规则系统消费 (C11-S03、C11-S04)。
+- MOD 目录结构、`starsector.log` 与编译链路 [C1-S1]、[C6-S1]。
+- 注册入口与回调心智模型 [C2-S1]；
+- 势力 `gear_industry` 的定义 —— 本节示例用它做触发条件，只消费不定义 [C3-S2]。
+- 新档生成入口 —— 累计工程为齿轮工业行星提供市场实体，是本节示例的可观察对象来源 [C3-S3]。
+- `modPlugin` 生命周期回调与 persistent data `CLASS_MARK` 首次进入检查 —— 本节的注册调用点挂在 `onGameLoad` 里，但**不用**这种一次性检查 [C6-S2]。
+- `Global.getSector()` 的 null 语义 —— 注册必须发生在生涯引擎建立之后 [C6-S3]。
+- 脚本注册与 persistent data 一次性检查 —— 本节的 transient 插件注册与之形成对照 [C8-S1]。
+- 生涯事件监听器 —— 生涯插件与监听器是两条不同的扩展通道，本节末尾有对照 [C10-S2]。
+- Rules 与记忆 ——facts 写入的 `$` 前缀记忆变量将由规则系统消费 [C11-S3]、[C11-S4]。
 
 ## 术语
 
@@ -287,7 +287,7 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
  * 见页面正文）在每次读档后重新注册；registerPlugin 按 getId() 去重，重复注册只会
  * 替换旧实例，不会叠加。
  *
- * pickInteractionDialogPlugin：对"齿轮工业"（C03-S02 注册的势力 id）的舰队与市场实体
+ * pickInteractionDialogPlugin：对"齿轮工业"（C3-S2 注册的势力 id）的舰队与市场实体
  * 返回 GearInInteractionDialog（PickPriority.MOD_SPECIFIC）；对其他实体返回 null，即放弃本次
  * 选择权，由原版 CORE_GENERAL 对话继续生效。
  *
@@ -298,7 +298,7 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
  */
 public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
-    /** 演示触发势力：齿轮工业势力 id（C03-S02 定义，本节只消费不定义）。 */
+    /** 演示触发势力：齿轮工业势力 id（C3-S2 定义，本节只消费不定义）。 */
     public static final String DEMO_FACTION_ID = "gear_industry";
 
     /** updateGlobalFacts 写入的演示事实键：MOD 专属前缀 + 过期时间 0。 */

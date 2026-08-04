@@ -20,13 +20,13 @@
 
 阅读本节前，建议先掌握以下既有内容：
 
-- 命名约定 (C01-S01)：MOD ID `gear_in`、数据 / 资源 key 前缀 `GearIn_`、包 `data.scripts.gearin.<domain>`、类 `GearIn<Subject>`。
-- 船体注册与数值列 (C01-S02)：`ship_data.csv` 注册行与 `GearIn_artizan` 船体。
-- 战斗插件模型 (C07-S01)：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调、暂停检查。
-- 测试战役 (C03-S01)：战役 (mission) 概念与 `GearIn_test` 测试战役。
-- 编译 JAR 链路 (C06-S01)：MOD 编译产物 `jars\GearIndustry.jar`。
-- 生命周期纪律 (C06-S03)：`Global` 生命周期 —— 战斗引擎战斗外是非 null 空引擎、禁止跨战斗缓存引擎引用。
-- 战斗引擎读取侧 (C07-S02)：`getPlayerShip()` 永不 null (部署阶段返回 "Command Shuttle" 假舰)、`isAlive()` 过滤、时间语义。
+- 命名约定 [C1-S1]：MOD ID `gear_in`、数据 / 资源 key 前缀 `GearIn_`、包 `data.scripts.gearin.<domain>`、类 `GearIn<Subject>`。
+- 船体注册与数值列 [C1-S2]：`ship_data.csv` 注册行与 `GearIn_artizan` 船体。
+- 战斗插件模型 [C7-S1]：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调、暂停检查。
+- 测试战役 [C3-S1]：战役 (mission) 概念与 `GearIn_test` 测试战役。
+- 编译 JAR 链路 [C6-S1]：MOD 编译产物 `jars\GearIndustry.jar`。
+- 生命周期纪律 [C6-S3]：`Global` 生命周期 —— 战斗引擎战斗外是非 null 空引擎、禁止跨战斗缓存引擎引用。
+- 战斗引擎读取侧 [C7-S2]：`getPlayerShip()` 永不 null (部署阶段返回 "Command Shuttle" 假舰)、`isAlive()` 过滤、时间语义。
 
 ## 文件与 API 链路
 
@@ -34,9 +34,9 @@
 
 | 接口 / 类型 | 本节角色 | 链路 |
 |---|---|---|
-| `ShipAPI` | 战斗实体入口 | `engine.getShips()` / `getPlayerShip()` 的返回元素 (C07-S02)；`getMutableStats()` 取得本节主角 |
+| `ShipAPI` | 战斗实体入口 | `engine.getShips()` / `getPlayerShip()` 的返回元素 [C7-S2]；`getMutableStats()` 取得本节主角 |
 | `MutableShipStatsAPI` | 舰船 stats 集合 | `ship.getMutableStats()` 取得；约 90 个 getter 返回 `MutableStat` 或 `StatBonus` |
-| `MutableStat` | 固定 base 的数值对象 | `MutableShipStatsAPI` 各 getter 的返回类型；`CombatEngineAPI.getTimeMult()` 也是它 (C07-S02 消费)|
+| `MutableStat` | 固定 base 的数值对象 | `MutableShipStatsAPI` 各 getter 的返回类型；`CombatEngineAPI.getTimeMult()` 也是它 ([C7-S2] 消费)|
 | `MutableStat.StatMod` | 单项修饰 (source / desc / value)| `MutableStat` 内部三张表的条目类型 |
 | `StatBonus` | 以调用时 base 计算的另一族修饰 | `MutableShipStatsAPI` 的射程 / 弹药 / CR 类 getter 返回它；本节只做对照，不展开 |
 | `HullModEffect` | 船插效果回调 | `applyEffectsBeforeShipCreation` / `applyEffectsAfterShipCreation` / `applyEffectsAfterShipAddedToCombatEngine` 三个时机 (见 "applyEffects 时机")|
@@ -172,10 +172,10 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\
-│       ├── GearInModPlugin            # C06-S02 所有；本节不改动
-│       ├── GearInGlobalAccess         # C06-S03 所有；本节只消费
+│       ├── GearInModPlugin            # C6-S2 所有；本节不改动
+│       ├── GearInGlobalAccess         # C6-S3 所有；本节只消费
 │       └── combat\
-│           ├── GearInCombatStatePlugin   # C07-S02 所有；本节只消费
+│           ├── GearInCombatStatePlugin   # C7-S2 所有；本节只消费
 │           └── GearInShipStatsProbe      # 本节新增
 └── jars\
 ```
@@ -201,10 +201,10 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 完整最小例：ShipAPI / MutableShipStatsAPI / MutableStat 与 modifier ID。
  *
- * 本插件由战斗上下文注册（C07-S01 的插件模型），只在本场战斗内有效：
- * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存（C06-S03）；
- * - advance() 在暂停时仍会被调用，状态推进前必须先检查 engine.isPaused()（C07-S01）；
- * - getPlayerShip() 在玩家未部署时返回 "Command Shuttle" 假舰（C07-S02），
+ * 本插件由战斗上下文注册（C7-S1 的插件模型），只在本场战斗内有效：
+ * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存（C6-S3）；
+ * - advance() 在暂停时仍会被调用，状态推进前必须先检查 engine.isPaused()（C7-S1）；
+ * - getPlayerShip() 在玩家未部署时返回 "Command Shuttle" 假舰（C7-S2），
  *   写操作前用 isShuttlePod() 排除，避免把修饰加到假舰上；
  * - MutableShipStatsAPI 是舰船 stats 的入口：三个 MutableStat 修饰表
  *   （flat / percent / mult）各以 modifier ID 为键；同 ID 同类型调用是幂等覆盖，
@@ -215,7 +215,7 @@ public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInShipStatsProbe.class);
 
-    /** 稳定 modifier ID（本节专属命名空间，进程内不再变化；命名契约见 C01-S01）。 */
+    /** 稳定 modifier ID（本节专属命名空间，进程内不再变化；命名契约见 C1-S1）。 */
     private static final String MOD_SPEED_PERCENT = "GearIn_ship_stats_probe_speed_percent";
     private static final String MOD_SPEED_FLAT = "GearIn_ship_stats_probe_speed_flat";
     private static final String MOD_SPEED_MULT = "GearIn_ship_stats_probe_speed_mult";
@@ -246,11 +246,11 @@ public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine.isPaused()) {
-            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进（C07-S01）
+            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进（C7-S1）
         }
         ShipAPI ship = engine.getPlayerShip();
         if (ship == null || !ship.isAlive() || ship.isHulk() || ship.isShuttlePod()) {
-            return; // 部署阶段拿到的 "Command Shuttle" 假舰不做写操作（C07-S02）
+            return; // 部署阶段拿到的 "Command Shuttle" 假舰不做写操作（C7-S2）
         }
         MutableShipStatsAPI stats = ship.getMutableStats();
 
@@ -350,7 +350,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与战斗插件接入 (含本节注册片段)、`GearInShipStatsProbe` 源码、`GearIn_test` 测试战役 (C03-S01，玩家舰 `GearIn_artizan`)。
+前置数据：既有 MOD 布局与战斗插件接入 (含本节注册片段)、`GearInShipStatsProbe` 源码、`GearIn_test` 测试战役 ([C3-S1]，玩家舰 `GearIn_artizan`)。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
 2. **战役运行**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 观察 `GearIn stats probe` 相关记录。

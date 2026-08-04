@@ -82,9 +82,15 @@ const plainText = (src: string): string =>
     .replace(/<br\s*\/?>/gi, '')
     .trim()
 
-/** 块转换后把 C-S 绝对链接还原为契约裸编号 */
-const restoreSpLinks = (mdText: string): string =>
-  mdText.replace(/\[(C\d{1,2}-S\d{1,2})\]\([^)]*chapter\d+\/section\d+\/\)/g, '$1')
+/** 块转换后把 Section 链接还原为唯一源码形式 [C1-S1]。 */
+export const restoreSpLinks = (mdText: string): string =>
+  mdText.replace(
+    /\[(?:\\?\[)?(C([1-9]\d*)-S([1-9]\d*))(?:\\?\])?\]\([^)]*chapter([1-9]\d*)\/section([1-9]\d*)\/\)/g,
+    (source, label, labelChapter, labelSection, targetChapter, targetSection) => {
+      if (labelChapter !== targetChapter || labelSection !== targetSection) return source
+      return `[${label}]`
+    },
+  )
 
 const mdParser = new MarkdownIt()
 const turndown = new TurndownService({ codeBlockStyle: 'fenced', headingStyle: 'atx' })

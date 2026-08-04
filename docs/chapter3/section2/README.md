@@ -21,12 +21,12 @@
 
 本节建立在前面各页的注册成果之上，需要以下内容先就绪：
 
-- MOD 目录、`mod_info.json` 与数据合并规则 (C01-S01)；
-- 船体注册：`GearIn_artizan`(C01-S02)；
-- 战机与航母注册：`GearIn_slag_wing`、`GearIn_furnaceman`(C01-S03)；
-- 武器注册：`GearIn_durin`、`GearIn_dwalin`(C01-S05)；
-- 船插注册：`GearIn_stable_injector`(C02-S02)；
-- 战役与装配：装配 `GearIn_artizan_combat` 等 (C03-S01)。
+- MOD 目录、`mod_info.json` 与数据合并规则 [C1-S1]；
+- 船体注册：`GearIn_artizan`[C1-S2]；
+- 战机与航母注册：`GearIn_slag_wing`、`GearIn_furnaceman`[C1-S3]；
+- 武器注册：`GearIn_durin`、`GearIn_dwalin`[C1-S5]；
+- 船插注册：`GearIn_stable_injector`[C2-S2]；
+- 战役与装配：装配 `GearIn_artizan_combat` 等 [C3-S1]。
 
 本教程示例的 ID 语义 (`examples.md` 约定)：
 
@@ -60,7 +60,7 @@ spec 加载流程对每个 faction 文件按固定顺序解析字段。**必填*
 | 字段 | 加载器读取方式 | 缺失结果 |
 |---|---|---|
 | `id` | `getString` | 加载中断 (`JSONObject["id"] not found`)|
-| `logo` | `getString` + 贴图入资源队列 | 加载中断；贴图文件缺失还会在资源加载阶段报错 (TEXTURE 无错误备用值，见 C01-S02)|
+| `logo` | `getString` + 贴图入资源队列 | 加载中断；贴图文件缺失还会在资源加载阶段报错 (TEXTURE 无错误备用值，见 [C1-S2])|
 | `displayName` | `getString` | 加载中断 |
 | `displayNameWithArticle` | `getString` | 加载中断 |
 | `names` | `getJSONObject` | 加载中断 (可以是空对象 `{}`，但键必须存在)|
@@ -239,7 +239,7 @@ data/world/factions/gear_industry.faction
 		"drugs",
 		"organs",
 	],
-	"music":{                 # 各场景音乐，值为 sounds.json 已注册的音乐 ID（注册链见 C05-S02）
+	"music":{                 # 各场景音乐，值为 sounds.json 已注册的音乐 ID（注册链见 C5-S2）
 		"theme":"music_hegemony_market_neutral",
 		"market_neutral":"music_hegemony_market_neutral",
 		"market_hostile":"music_hegemony_market_hostile",
@@ -337,11 +337,11 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 
 每个条目是 `装配 ID → 权重`。**查不到装配会当场抛 `Ship hull variant [X] not found!` 并中断加载**。`includeDefault: true` 可把原版同名角色的条目复制进来再叠加自己的条目 (参考原版文件里各角色的写法；本例不需要)。
 
-注意角色表里只放**舰船装配**：航母角色 (`carrierSmall` 等) 的条目是航母船体的装配，战机联队不进角色表 —— 联队经由舰船装配的 `wings` 数组 (C03-S01) 与 `knownFighters` 池进入舰队。
+注意角色表里只放**舰船装配**：航母角色 (`carrierSmall` 等) 的条目是航母船体的装配，战机联队不进角色表 —— 联队经由舰船装配的 `wings` 数组 [C3-S1] 与 `knownFighters` 池进入舰队。
 
 角色条目 (`RoleEntryAPI`) 对 `_wing` 结尾的 ID 有按联队 ID 查找的历史兼容路径，原版数据不使用它，本教程也不建议使用。
 
-想加更多装配 (例如按 C03-S01 的导出流程为其它船体做的装配)，按同一格式加行即可。
+想加更多装配 (例如按 [C3-S1] 的导出流程为其它船体做的装配)，按同一格式加行即可。
 
 把装配文件放好之后，势力舰船池就形成了完整流程：`knownShips`(势力知道什么)∩ 角色表 (能抽什么)→ 权重由 `hullFrequency` 与 `priority*` 调节 → `pickShip` 抽取。
 
@@ -370,7 +370,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 
 ### 验证方案
 
-前置数据：C01-S01 的 `mod_info.json`、C01-S02 的船体 (`GearIn_artizan`)、C01-S03 的联队与航母 (`GearIn_slag_wing`、`GearIn_furnaceman`)、C01-S05 的武器 (`GearIn_durin`、`GearIn_dwalin`)、C02-S02 的船插 (`GearIn_stable_injector`)、C03-S01 的装配 (`GearIn_artizan_combat` 等)、本节的 `factions.csv`、`gear_industry.faction`、`default_ship_roles.json`。
+前置数据：[C1-S1] 的 `mod_info.json`、[C1-S2] 的船体 (`GearIn_artizan`)、[C1-S3] 的联队与航母 (`GearIn_slag_wing`、`GearIn_furnaceman`)、[C1-S5] 的武器 (`GearIn_durin`、`GearIn_dwalin`)、[C2-S2] 的船插 (`GearIn_stable_injector`)、[C3-S1] 的装配 (`GearIn_artizan_combat` 等)、本节的 `factions.csv`、`gear_industry.faction`、`default_ship_roles.json`。
 
 1. 启动游戏，加载到主菜单，检查 `Starsector\starsector-core\starsector.log`。
 2. 进入生涯 (或读取已有生涯存档)，按 `F` 打开情报。
@@ -419,7 +419,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 | `hist1t` / `hist2t` / `hist3t` | 是 (20/3/2 处)| 无 | 与历史学家相关的蓝图筛选 tag，池内稀有度依次降低 (使用方在生涯代码)|
 | `standard` | 是 (船插 tags 列大量使用，如 armoredweapons)| 11 个势力文件 | 通用船插 tag：`knownHullMods` 用它作为基础船插的默认来源，等价于武器侧的 `base_bp` |
 
-如何给自家组件打 tag：船体在 `ship_data.csv` 的 `tags` 列、武器在 `weapon_data.csv` 的 `tags` 列、战机联队在 `wing_data.csv`、船插在 `hull_mods.csv` 的 `tags` 列 (C01-S02 / C01-S05 / C02-S02 各自的注册页)。
+如何给自家组件打 tag：船体在 `ship_data.csv` 的 `tags` 列、武器在 `weapon_data.csv` 的 `tags` 列、战机联队在 `wing_data.csv`、船插在 `hull_mods.csv` 的 `tags` 列 ([C1-S2] / [C1-S5] / [C2-S2] 各自的注册页)。
 
 打出 `GearIn_bp` 后，本节 `knownShips` 等块里写上 `"GearIn_bp"` 即自动导入。
 
@@ -440,7 +440,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 1. **势力完全没有出现。**
    - 触发：`factions.csv` 没建、表头不是 `faction`、行首误加了 `#`、路径写错，或文件里没有 `id` 字段。
    - 可观察：日志里有 `Loading factions` 但**没有** `Loading gear_industry faction`；表头错误会让整行解析失败 (同文件列名不符)，`#` 注释与路径错误则静默跳过/打不开文件。
-   - 修正：确认 MOD 自己的 `factions.csv` 第一行是 `faction`，第二行是相对 MOD 根目录的完整路径；用记事本检查文件是 UTF-8 无 BOM(C01-S01)。
+   - 修正：确认 MOD 自己的 `factions.csv` 第一行是 `faction`，第二行是相对 MOD 根目录的完整路径；用记事本检查文件是 UTF-8 无 BOM[C1-S1]。
 2. **游戏加载中断，进不了主菜单。**
    - 触发：必填字段缺失 (`id`、`logo`、`displayName`、`displayNameWithArticle`、`names`、`portraits` 任一)、faction 文件 JSON 语法错误、`factionDoctrine` 六个 `getInt` 键缺失、`illegalCommodities` 引用非商品 ID。
    - 可观察：加载流程在 `Loading factions` 之后抛 `JSONException` 或 `RuntimeException`(`JSONObject["<键>"] not found`、`Invalid illegal commodity id: [...]`)，无保护地中断。
@@ -450,13 +450,13 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
    - 可观察：加载中断，日志出现 `Spec of class com.fs.starfarer.loading.FactionSpecAPI with id [X] already exists`。
    - 修正：换一个全局唯一的势力 ID；原版势力 ID 清单见 `data/world/factions/factions.csv`。
 4. **势力出现，但舰队里全是别人的船，自己的船一艘都没有。**
-   - 触发：`default_ship_roles.json` 没建、装配 ID 拼错 (大小写不一致)、装配还没做 (C03-S01 的 `GearIn_artizan_combat` 不存在)。
+   - 触发：`default_ship_roles.json` 没建、装配 ID 拼错 (大小写不一致)、装配还没做 ([C3-S1] 的 `GearIn_artizan_combat` 不存在)。
    - 可观察：角色表里没有本 MOD 的条目时，`pickShip` 回退到共享默认角色表，这些船体虽然 `knowsShip` 但没有角色条目可抽，舰队只能抽原版装配。
-   - 修正：只提交自己的角色条目并核对装配 ID 与 `data/variants` 里的一致；角色表只放舰船装配，联队不进角色表 (经航母装配的 `wings` 数组进入舰队，见 C03-S01)。
+   - 修正：只提交自己的角色条目并核对装配 ID 与 `data/variants` 里的一致；角色表只放舰船装配，联队不进角色表 (经航母装配的 `wings` 数组进入舰队，见 [C3-S1])。
 5. **加载中断，日志出现 `Ship hull variant [X] not found!`。**
    - 触发：`default_ship_roles.json`(或势力文件 `shipRoles`) 里的某个 ID 查不到装配 —— 角色条目 (`RoleEntryAPI`) 创建时立即校验 (`_wing` 结尾的 ID 按联队查，属历史兼容路径)。
    - 可观察：加载期直接抛 `Ship hull variant [X] not found!`。
-   - 修正：删掉或改正该条目；核对 `data/variants` 与联队注册 (C01-S03)。
+   - 修正：删掉或改正该条目；核对 `data/variants` 与联队注册 [C1-S3]。
 6. **势力出现，但某些船永远不出现 (无报错)。**
    - 触发：`hullFrequency` 里倍率写成 0、该船不在 `knownShips`(tags 拼错或漏列)、或在 `priorityShips` 之外的池子里被概率淹没。
    - 可观察：完全静默 —— 没有日志，只是生成结果里没有这些船。
@@ -464,10 +464,10 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 7. **关系错乱：该敌对的势力互相中立。**
    - 触发：只在 faction 文件里写了 `custom` 之类的键，以为关系是数据；或关系代码没挂进游戏回调。
    - 可观察：无任何报错，所有势力与新势力关系 0.0 中立 (`RepLevel.NEUTRAL`)，巡逻队相遇也不打。
-   - 修正：关系只能由代码设置 (第四步)，把代码挂进 MOD 的生涯生成回调 (C03-S03)；用 `isHostileTo` 验证结果时注意判据是等级 `HOSTILE` 或更差 (≤ -0.49)。
+   - 修正：关系只能由代码设置 (第四步)，把代码挂进 MOD 的生涯生成回调 [C3-S3]；用 `isHostileTo` 验证结果时注意判据是等级 `HOSTILE` 或更差 (≤ -0.49)。
 8. **图标异常或加载报贴图错误。**
    - 触发：`logo` / `crest` / 头像路径指向不存在的文件。
-   - 可观察：资源加载阶段直接报错 (TEXTURE 无错误备用值，同 C01-S02 的贴图规则)。
+   - 可观察：资源加载阶段直接报错 (TEXTURE 无错误备用值，同 [C1-S2] 的贴图规则)。
    - 修正：路径以 MOD 根目录为基准，把 410×256 / 256×256 的 PNG 放到 `graphics/factions/` 并确认文件名逐字一致。
 9. **情报里势力的颜色/名称不对。**
    - 触发：`color` 数组少于 4 个元素 (抛 `Color array with id [color] has less than 4 elements`，加载中断)，或 `displayName` 与 `displayNameWithArticle` 不一致 (显示带冠词变体)。
@@ -481,7 +481,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 
 本节新定义的 ID 只有一个：势力 ID `gear_industry`(小写) 与势力专属 tag `gear_industry`(可在 `ship_data.csv` 的 tags 列使用)。
 
-`GearIn_bp` 由前面各页 (C01-S02/P03/P04、C02-S02 的注册惯例) 沿用，本节只消费。其余引用均为既有 ID。
+`GearIn_bp` 由前面各页 ([C1-S2]、[C1-S3]、[C1-S4]、[C1-S5] 与 [C2-S2] 的注册惯例) 沿用，本节只消费。其余引用均为既有 ID。
 
 ## 总结
 

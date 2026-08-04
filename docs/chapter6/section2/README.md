@@ -20,10 +20,10 @@
 
 本节需要您先具备以下基础：
 
-- MOD 目录结构、`mod_info.json` 必填/可选字段、启动器与 `starsector.log`(C01-S01)；
-- 注册、回调与类名一致概念 (C02-S01)；
-- 新档生成入口 `onNewGame()`：C03-S03 的生成入口类为 `GearInSystemGenPlugin`(`data.scripts.gearin.campaign` 包，只实现 `onNewGame()`)；
-- 编译 JAR 链路 (`src` → `jars/GearIndustry.jar`)、`mod_info.json` 的 `jars` 声明、jar 类优先于 `.java` 即时编译 (C06-S01)。
+- MOD 目录结构、`mod_info.json` 必填/可选字段、启动器与 `starsector.log`[C1-S1]；
+- 注册、回调与类名一致概念 [C2-S1]；
+- 新档生成入口 `onNewGame()`：[C3-S3] 的生成入口类为 `GearInSystemGenPlugin`(`data.scripts.gearin.campaign` 包，只实现 `onNewGame()`)；
+- 编译 JAR 链路 (`src` → `jars/GearIndustry.jar`)、`mod_info.json` 的 `jars` 声明、jar 类优先于 `.java` 即时编译 [C6-S1]。
 
 `Global` 与 `settings` 的精确讲解在其他页面，本节只使用它们的结论。
 
@@ -262,7 +262,7 @@ public class GearInModPlugin extends BaseModPlugin {
 ```java
     @Override
     public void onNewGame() {
-        // C03-S03：新档生成入口（齿轮工业星系与关系播种），累计工程保留
+        // C3-S3：新档生成入口（齿轮工业星系与关系播种），累计工程保留
         new data.scripts.gearin.campaign.GearInSystemGenerator().generate(Global.getSector());
         seedRelations(Global.getSector());
         log("onNewGame");
@@ -281,7 +281,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：编译 JAR 链路建立的 MOD 布局 (C06-S01)——`mod_info.json`(追加本节 `modPlugin` 字段)、`build.gradle`、`settings.gradle`、入口类 `GearInModPlugin`(累计工程另含新档生成页的补全片段，C03-S03)。
+前置数据：编译 JAR 链路建立的 MOD 布局 [C6-S1]——`mod_info.json`(追加本节 `modPlugin` 字段)、`build.gradle`、`settings.gradle`、入口类 `GearInModPlugin`(累计工程另含新档生成页的补全片段，[C3-S3])。
 
 1. 在 MOD 根目录 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/GearInModPlugin.class`。
 2. 启动游戏勾选 "齿轮工业"，进入主菜单后退出；在 `starsector.log` 中观察生命周期记录。

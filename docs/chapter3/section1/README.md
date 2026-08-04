@@ -20,11 +20,11 @@
 
 本节建立在前置单元的基础上。
 
-- MOD 目录、`mod_info.json` 与数据合并规则 (C01-S01)。
-- 船体注册，`GearIn_artizan`(C01-S02)。
-- 战机装配文件与战机三段注册 (C01-S03)；
-- 武器注册，`GearIn_durin`(C01-S05)。
-- 船插注册 (C02-S02)。
+- MOD 目录、`mod_info.json` 与数据合并规则 [C1-S1]。
+- 船体注册，`GearIn_artizan`[C1-S2]。
+- 战机装配文件与战机三段注册 [C1-S3]；
+- 武器注册，`GearIn_durin`[C1-S5]。
+- 船插注册 [C2-S2]。
 
 ## 术语：战役与生涯
 
@@ -63,7 +63,7 @@ Starsector 有两个主要游玩入口，本节开始会经常把两者并列：
 
 1. 游戏扫描 `data/variants/**/*.variant`(`data/variants` 直接子文件 + 它的每个子目录，`data/variants/fighters` 也在其中)。
 2. 每个文件按 JSON 字段解析成装配规格并注册。`variantId` 是全局唯一的装配 ID；重复 ID 时**先注册者生效，后注册者被静默跳过，没有任何报错**。
-3. 使用方入口：`Global.getSettings().getVariant(id)` 按 ID 读取 `ShipVariantAPI`，`getAllVariantIds()` 枚举全部装配 ID；`FactoryAPI.createFleetMember(...)` 按装配 ID 或装配对象创建舰队成员。每个注册船体自动生成一个 `<hullId>_Hull` 空装配 (C01-S02)，所以即使还没写过任何 `.variant` 文件，船体也能被装配 ID 引用。
+3. 使用方入口：`Global.getSettings().getVariant(id)` 按 ID 读取 `ShipVariantAPI`，`getAllVariantIds()` 枚举全部装配 ID；`FactoryAPI.createFleetMember(...)` 按装配 ID 或装配对象创建舰队成员。每个注册船体自动生成一个 `<hullId>_Hull` 空装配 [C1-S2]，所以即使还没写过任何 `.variant` 文件，船体也能被装配 ID 引用。
 4. 每个装配有一个 `VariantSource`：MOD 里 `data/variants` 加载的是 `STOCK`；战役导出的装配是 `MISSION_SAVE` / `MISSION_DESIGN`。来源不同，保存和清理的规则就不同 (见下)。
 
 ### 装配导出链路
@@ -225,7 +225,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 ### 验证方案
 
-前置数据：`mod_info.json`(C01-S01)、船体 `GearIn_artizan`(C01-S02)、武器 `GearIn_durin`(C01-S05)、本节的 `data/missions/mission_list.csv`、`data/missions/GearIn_test/`(descriptor.json、mission_text.txt、icon、`MissionDefinition` 类源文件) 与 `data/variants/GearIn_artizan_combat.variant`。
+前置数据：`mod_info.json`[C1-S1]、船体 `GearIn_artizan`[C1-S2]、武器 `GearIn_durin`[C1-S5]、本节的 `data/missions/mission_list.csv`、`data/missions/GearIn_test/`(descriptor.json、mission_text.txt、icon、`MissionDefinition` 类源文件) 与 `data/variants/GearIn_artizan_combat.variant`。
 
 1. 启动游戏，打开主菜单 Missions 列表。
 2. 点击测试战役并部署，观察用户舰队、敌方空间站和地图。
@@ -305,18 +305,18 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 - `variantId`：从 `mission_GearIn_test_ship_0` 改为 `GearIn_artizan_combat`(建议与文件名一致，且不要保留 `mission_` 前缀 —— 那是任务导出装配的命名空间)；
 - `displayName`：从 `Custom` 改为希望显示的装配名，例如 `突击型`。
 
-其余字段无需修改：武器和船插已经在测试战役里装配好了，`hullId` 指向 `GearIn_artizan`(与 C01-S02 的船体注册一致)。
+其余字段无需修改：武器和船插已经在测试战役里装配好了，`hullId` 指向 `GearIn_artizan`(与 [C1-S2] 的船体注册一致)。
 
 ### 装配 JSON 字段速查表
 
 | 字段 | 是否必需 | 实际意义 |
 |---|---:|---|
 | `variantId` | 是 | 装配 ID，全局唯一，建议与文件名一致 |
-| `hullId` | 是 | 指向已注册船体 (C01-S02)，必须与 `.ship`、`ship_data.csv` 一致 |
+| `hullId` | 是 | 指向已注册船体 [C1-S2]，必须与 `.ship`、`ship_data.csv` 一致 |
 | `displayName` | 是 | 装配显示名，出现在装配界面与舰队面板 |
 | `fluxVents` / `fluxCapacitors` | 是 | 幅散 / 幅容数量 |
 | `weaponGroups` | 是 | 武器组数组；每组含 `mode`(只能是 `LINKED` 或 `ALTERNATING`，`WeaponGroupType` 枚举仅这两个值)、`autofire`(可选，默认 `false`)、`weapons`(槽位 ID → 武器 ID 的对象)|
-| `hullMods` | 否 | 已安装船插 ID 数组 (C02-S02)|
+| `hullMods` | 否 | 已安装船插 ID 数组 [C2-S2]|
 | `permaMods` / `sMods` | 否 | 永久船插 / S 插数组，常规装配通常留空 |
 | `wings` | 否 | 航母的机库装配，按甲板顺序列出战机 wing ID |
 | `goalVariant` | 否 | 布尔，默认 `false`；为 `true` 时该装配作为自动装配目标出现 |
@@ -339,7 +339,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 :::
 
-如果您还记得前置知识中的战机装配文件 (C01-S03)，它的结构与此相同 ——**舰船装配文件和战机装配文件没有本质区别**，只是战机装配通常没有 `fluxVents` 之外的复杂内容，且它的 `hullId` 指向战机船体。
+如果您还记得前置知识中的战机装配文件 [C1-S3]，它的结构与此相同 ——**舰船装配文件和战机装配文件没有本质区别**，只是战机装配通常没有 `fluxVents` 之外的复杂内容，且它的 `hullId` 指向战机船体。
 
 编者建议接下来为您的所有舰船各制作 2~3 个装配 (不同定位：突击、支援、长程等)，以待稍后使用。
 
@@ -378,7 +378,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
    - 触发：`prefix` 写错、大小写不一致，或误用了 `mission_` 之外的其他过滤条件。ID 匹配区分大小写。
    - 修正：`prefix` 必须与船体 ID 前缀完全一致 (`GearIn_`)，`getAllVariantIds()` 遍历的是装配 ID 而非 hull ID，过滤用 `variant.getHullSpec().getHullId()`。
 5. **战役里出现没有武器的空船。**
-   - 触发：该船体还没有任何正式装配 —— 每个注册船体自动生成 `<hullId>_Hull` 空装配 (C01-S02)，模板会把它一并列出。
+   - 触发：该船体还没有任何正式装配 —— 每个注册船体自动生成 `<hullId>_Hull` 空装配 [C1-S2]，模板会把它一并列出。
    - 可观察：船以空装配形态出现在舰队里。这**不是错误**，正是测试战役的用途：在装配界面给它装上武器并导出，之后它就有正式装配了。
 6. **导出文件放回 MOD 后，游戏里读到的还是旧内容。**
    - 触发：只改了文件名没改 `variantId`(保留 `mission_` 前缀)，或装配 ID 与其他来源撞名。
@@ -386,7 +386,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
    - 修正：剪贴 (不复制) 导出文件，`variantId` 改为 `GearIn_artizan_combat` 这类唯一 ID 且与文件名一致；如果之前已经放过同 ID 文件，先删掉旧的。
 7. **装配里的武器不出现或报错。**
    - 触发：`weapons` 里的槽位 ID 不是该船体真实槽位 (部署期报 `slot id not found`)，或武器 ID 不存在 (装配构建期报 `Weapon spec not found`)，或 `hullId` 与船体注册不一致。
-   - 修正：只改您确定拥有的槽位与已注册武器 (C01-S02 槽位、C01-S05 的 `GearIn_durin`)，不确定时回到测试战役重新装配导出。
+   - 修正：只改您确定拥有的槽位与已注册武器 ([C1-S2] 槽位、[C1-S5] 的 `GearIn_durin`)，不确定时回到测试战役重新装配导出。
 8. **装配加载直接失败。**
    - 触发：`weaponGroups` 里某组的 `mode` 拼错 (不是 `LINKED` / `ALTERNATING`)，或必填字段缺失。
    - 可观察：`Loading variant [...]` 之后抛 `Key [mode] has invalid value [...]`(枚举解析抛异常)，加载中断。

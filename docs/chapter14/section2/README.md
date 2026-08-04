@@ -21,11 +21,11 @@
 
 本节建立在这些既有内容之上：
 
-- 势力注册 (C03-S02)：`data/world/factions/factions.csv` 与 `gear_industry.faction`——Nexerelin 的势力配置只针对**已注册**的势力 id；
-- 新建生涯生成时序与本 MOD 的生成入口插件 (C03-S03)：`GearInSystemGenPlugin` 与 `GearInSystemGenerator`，本节的生成分支挂在 `onNewGame` 上；
-- 舰队工厂链 (C08-S04)：`FleetParamsV3` 与 `FleetFactoryV3.createFleet`—— 特遣队舰队正是沿这条链生成的，本节直接使用其结果；
-- 软依赖完整处理链 (C14-S01)：`isModEnabled(id)` 判据、类存在性判据、引用收敛与缺依赖降级；
-- 运行期注册检查与 MOD 插件回调时机 (C08-S01、C06-S02)：`onGameLoad` 与 persistent data 检查；`onNewGame` 只在新档触发。
+- 势力注册 [C3-S2]：`data/world/factions/factions.csv` 与 `gear_industry.faction`——Nexerelin 的势力配置只针对**已注册**的势力 id；
+- 新建生涯生成时序与本 MOD 的生成入口插件 [C3-S3]：`GearInSystemGenPlugin` 与 `GearInSystemGenerator`，本节的生成分支挂在 `onNewGame` 上；
+- 舰队工厂链 [C8-S4]：`FleetParamsV3` 与 `FleetFactoryV3.createFleet`—— 特遣队舰队正是沿这条链生成的，本节直接使用其结果；
+- 软依赖完整处理链 [C14-S1]：`isModEnabled(id)` 判据、类存在性判据、引用收敛与缺依赖降级；
+- 运行期注册检查与 MOD 插件回调时机 [C8-S1]、[C6-S2]：`onGameLoad` 与 persistent data 检查；`onNewGame` 只在新档触发。
 
 ## 术语
 
@@ -562,7 +562,7 @@ gradle jar
 
 ### 验证方案
 
-前置数据：势力注册页 (C03-S02) 的 `gear_industry` 势力；生成入口页 (C03-S03) 的 `GearInSystemGenPlugin`/`GearInSystemGenerator`(含本节接入片段改造)；本节四个数据文件与两个 Java 类；已安装 Nexerelin(`Starsector\mods\Nexerelin`)。
+前置数据：势力注册页 [C3-S2] 的 `gear_industry` 势力；生成入口页 [C3-S3] 的 `GearInSystemGenPlugin`/`GearInSystemGenerator`(含本节接入片段改造)；本节四个数据文件与两个 Java 类；已安装 Nexerelin(`Starsector\mods\Nexerelin`)。
 
 1. 游戏构建：`gradle jar` 成功；用 `jar tf jars\GearIndustry.jar` 确认两个 `.class` 都在。
 2. 降级路径：不勾选 Nexerelin 开新档，观察 `GearIn` 星系、日志与命名器加载情况。

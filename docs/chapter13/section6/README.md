@@ -19,16 +19,16 @@
 
 ## 前置知识
 
-本节是继 GraphicsLib (C13-S03) 之后第二个 GPU 渲染依赖库页面，沿用同一个示例 MOD 与测试战役。开始前您需要已经理解：
+本节是继 GraphicsLib [C13-S3] 之后第二个 GPU 渲染依赖库页面，沿用同一个示例 MOD 与测试战役。开始前您需要已经理解：
 
-- 硬依赖 (hard dependency) 声明与运行时检测 (C13-S01)：引用依赖库的类前 `dependencies` 必须声明对应 MOD，否则启动期 `NoClassDefFoundError`；
-- 战斗图层层序与渲染回调纪律 (C07-S06)：GL 原语只在渲染回调内使用 —— 本节 `setLayer(CombatEngineLayers)` 与 `directDraw()` 的时机约束延续同一条纪律；
-- settings `plugins` 段注册与战斗插件模型、暂停检查 (C07-S01)：BoxUtil 自己的 `BUtil_CombatEFS` 就按这个模型每场战斗实例化；
-- `modPlugin` 与 `onApplicationLoad()` 时机 (C06-S02)：`initPre()` 的接入点；
-- `Global` 生命周期 (C06-S03)：禁止跨战斗缓存引擎引用与渲染对象 (本节文本实体每场战斗重建)；
-- 战斗插件生命周期与 "战斗结束没有清理回调" (C07-S05)：BoxUtil 实体靠计时到期 / 显式 `delete()` 收尾，不赌战斗结束回调；
-- 战役 (mission) 与生涯 (campaign) 概念、`GearIn_test` 测试战役 (C03-S01)：本节用它做验证；
-- 对照 GraphicsLib (C13-S03)：同为 GPU 渲染依赖库，但本节只讲 BoxUtil 的战斗渲染队列；生涯侧 `CampaignRenderingManager` 只记录边界 (对照结论：战役画面不经过本节链路)。
+- 硬依赖 (hard dependency) 声明与运行时检测 [C13-S1]：引用依赖库的类前 `dependencies` 必须声明对应 MOD，否则启动期 `NoClassDefFoundError`；
+- 战斗图层层序与渲染回调纪律 [C7-S6]：GL 原语只在渲染回调内使用 —— 本节 `setLayer(CombatEngineLayers)` 与 `directDraw()` 的时机约束延续同一条纪律；
+- settings `plugins` 段注册与战斗插件模型、暂停检查 [C7-S1]：BoxUtil 自己的 `BUtil_CombatEFS` 就按这个模型每场战斗实例化；
+- `modPlugin` 与 `onApplicationLoad()` 时机 [C6-S2]：`initPre()` 的接入点；
+- `Global` 生命周期 [C6-S3]：禁止跨战斗缓存引擎引用与渲染对象 (本节文本实体每场战斗重建)；
+- 战斗插件生命周期与 "战斗结束没有清理回调" [C7-S5]：BoxUtil 实体靠计时到期 / 显式 `delete()` 收尾，不赌战斗结束回调；
+- 战役 (mission) 与生涯 (campaign) 概念、`GearIn_test` 测试战役 [C3-S1]：本节用它做验证；
+- 对照 GraphicsLib [C13-S3]：同为 GPU 渲染依赖库，但本节只讲 BoxUtil 的战斗渲染队列；生涯侧 `CampaignRenderingManager` 只记录边界 (对照结论：战役画面不经过本节链路)。
 
 ## BoxUtil 概览
 
@@ -265,7 +265,7 @@ FontDataManager.tryFont("graphics/fonts/insignia15LTaa.fnt")
 
 | 环节 | 文件或 API | 使用方 / 行为 |
 |---|---|---|
-| 依赖声明 | `mod_info.json` 的 `dependencies` 数组 | 声明 `BoxUtil` (C13-S01 硬依赖语义；缺依赖 → `NoClassDefFoundError`) |
+| 依赖声明 | `mod_info.json` 的 `dependencies` 数组 | 声明 `BoxUtil` ([C13-S1] 硬依赖语义；缺依赖 → `NoClassDefFoundError`) |
 | 初始化 | `org.boxutil.BoxUtilModPlugin.initPre()` / `initLater()` / `isPreInitialized()` / `isGlobalInitialized()` | `onApplicationLoad` 调 `initPre`；OpenGL context 创建后调 `initLater` (成熟实例在常驻渲染插件 `init`) |
 | 可用性 | `org.boxutil.config.BoxConfigs.isShaderEnable()` / `isBaseGL43Supported()`；`org.boxutil.manager.ShaderCore.isValid()` / `isInitialized()` | 共同决定 shader 渲染入口可用性；`isBaseGL43Supported` 只是 GL 能力探测 |
 | 实体创建 | `org.boxutil.units.standard.entity.SpriteEntity` (`FlareEntity` / `CurveEntity` / `TrailEntity` / `SegmentEntity` / `DistortionEntity` / `CommonEntity` / `TextFieldEntity`) | 实现 `RenderDataAPI`；设置后入队 |
@@ -276,8 +276,8 @@ FontDataManager.tryFont("graphics/fonts/insignia15LTaa.fnt")
 | 图层与混合 | `setLayer(CombatEngineLayers)`、`setAdditiveBlend` / `setBlendFunc` / `setBlendEquation` | 层序与混合由 BoxUtil 后端按层提交 |
 | 生命周期 | `BaseControlData` / `ControlDataAPI` (`controlInit` / `controlBeforeRenderingAdvance` / `controlAfterRenderingAdvance` / `controlAdvance` / `controlRemove`)、`RenderDataAPI` (`setGlobalTimer` / `getGlobalTimerState` / `hasDelete` / `delete`)、`SimpleParticleControlData` | 创建 (`setControlData` → `controlInit`)、推进 (逻辑线程 `controlAdvance` + 全局计时)、清理 (timer out → `controlRemove`；显式 `delete`) |
 | 状态集 | `org.boxutil.define.BoxEnum` (`STATE_SUCCESS` / `STATE_FAILED` / `STATE_FAILED_OTHER`；`TIMER_IN` / `TIMER_FULL` / `TIMER_OUT` / `TIMER_ONCE` / `TIMER_INVALID`) | manager 与 submit 类入口的返回语义、计时状态集 |
-| 后端接入 | BoxUtil `data\config\settings.json` 的 `plugins` 段 (`BUtil_CombatEFS`) | 每场战斗实例化的战斗插件 (C07-S01 模型)，读取并绘制 `CombatRenderingManager` 队列 |
-| 配置持久化 | `<saves>\common\BUtil_Configs.json.data` | BoxUtil 配置落盘 (C13-S02 同目录实证)；`BoxConfigGUI` 配置界面写入 |
+| 后端接入 | BoxUtil `data\config\settings.json` 的 `plugins` 段 (`BUtil_CombatEFS`) | 每场战斗实例化的战斗插件 ([C7-S1] 模型)，读取并绘制 `CombatRenderingManager` 队列 |
+| 配置持久化 | `<saves>\common\BUtil_Configs.json.data` | BoxUtil 配置落盘 ([C13-S2] 同目录实证)；`BoxConfigGUI` 配置界面写入 |
 
 ## 完整最小例
 
@@ -317,7 +317,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
 /**
  * 完整最小例的接线载体：BoxUtil 初始化（initLater 守卫）、可用性判据与生成
  * 计时在这里，实体生成与字体文本分别委托给 GearInBoxSpawner / GearInTextField；
- * 由既有战斗插件在 init() 中 addPlugin 注册（C07-S01 模型），只在本场战斗内有效。
+ * 由既有战斗插件在 init() 中 addPlugin 注册（C7-S1 模型），只在本场战斗内有效。
  */
 public class GearInBoxEntity extends BaseEveryFrameCombatPlugin {
 
@@ -354,7 +354,7 @@ public class GearInBoxEntity extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine == null) {
-            return; // 防御性判空（C02-S01 同款姿势）
+            return; // 防御性判空（C2-S1 同款姿势）
         }
         if (engine.isPaused()) {
             return; // 暂停守卫：实体生成只在非暂停推进
@@ -673,13 +673,13 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含四个类的 `.class` 条目 (`data/scripts/gearin/lib/` 下，可用 `jar tf` 核对；编者建议每次构建后顺手核对一次，缺一个类都会在战斗开始时以 `NoClassDefFoundError` 暴露)。
 
-`GearInBoxEntity` 类注释中的战斗插件模型引用为 C07-S01 (战斗插件模型由 C07-S01 讲解)。
+`GearInBoxEntity` 类注释中的战斗插件模型引用为 [C7-S1] (战斗插件模型由 [C7-S1] 讲解)。
 
 `dependencies` 的 `id` 与 BoxUtil 发行 `mod_info.json` 的 `id` 逐字一致
 
 ## 验证方案
 
-前置数据：C06-S01 的 MOD 布局 + C13-S01 的 `dependencies` (追加 `BoxUtil` 项) + 本节四个类 + 两处接入片段 (`GearInModPlugin.onApplicationLoad` 一行 `initPre`、战斗插件 `init` 一行 `addPlugin`)；C03-S01 的 `GearIn_test` 测试战役；已安装并勾选 BoxUtil。
+前置数据：[C6-S1] 的 MOD 布局 + [C13-S1] 的 `dependencies` (追加 `BoxUtil` 项) + 本节四个类 + 两处接入片段 (`GearInModPlugin.onApplicationLoad` 一行 `initPre`、战斗插件 `init` 一行 `addPlugin`)；[C3-S1] 的 `GearIn_test` 测试战役；已安装并勾选 BoxUtil。
 
 1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` (退出码 0)；用 `jar tf jars\GearIndustry.jar` 核对四个类的 `.class` 条目。
 2. 战斗冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察 `GearIn box` 相关记录。

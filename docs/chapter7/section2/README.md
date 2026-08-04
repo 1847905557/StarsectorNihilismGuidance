@@ -21,12 +21,12 @@
 
 本节直接建立在以下既有知识上：
 
-- MOD 目录结构与 `starsector.log` 日志 (C01-S01)：本节所有可观察结果都落在日志里。
-- 制作每帧战斗插件 (C07-S01)：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调与暂停检查 —— 本节的示例插件建立在这个模型上。
-- 战役 (mission) 与生涯 (campaign) 概念，以及 `GearIn_test` 测试战役 (C03-S01)。
-- 编译 JAR 链路 (C06-S01)：本节示例编入同一个 `jars\GearIndustry.jar`。
-- `Global` 生命周期 —— 战斗引擎每场战斗结束销毁后立即重建、战斗外是非 null 空引擎、禁止跨战斗缓存引擎引用 (C06-S03)：本节把同一条纪律延伸到引擎返回的舰船与列表。
-- `MutableStat`——`getTimeMult()` 的返回类型 (C07-S03)：本节只读取它的 `getModifiedValue()`，完整讲解见该单元。
+- MOD 目录结构与 `starsector.log` 日志 [C1-S1]：本节所有可观察结果都落在日志里。
+- 制作每帧战斗插件 [C7-S1]：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调与暂停检查 —— 本节的示例插件建立在这个模型上。
+- 战役 (mission) 与生涯 (campaign) 概念，以及 `GearIn_test` 测试战役 [C3-S1]。
+- 编译 JAR 链路 [C6-S1]：本节示例编入同一个 `jars\GearIndustry.jar`。
+- `Global` 生命周期 —— 战斗引擎每场战斗结束销毁后立即重建、战斗外是非 null 空引擎、禁止跨战斗缓存引擎引用 [C6-S3]：本节把同一条纪律延伸到引擎返回的舰船与列表。
+- `MutableStat`——`getTimeMult()` 的返回类型 [C7-S3]：本节只读取它的 `getModifiedValue()`，完整讲解见该单元。
 
 ## 文件与 API 链路
 
@@ -34,11 +34,11 @@
 
 | 接口 / 类型 | 本节角色 | 链路 |
 |---|---|---|
-| `CombatEngineAPI` | 状态 / 时间 / 遍历入口 | `Global.getCombatEngine()` 取得 (C06-S03 讲生命周期)；本节讲状态读取；写侧 (音效与粒子) 由后续节使用 |
+| `CombatEngineAPI` | 状态 / 时间 / 遍历入口 | `Global.getCombatEngine()` 取得 ([C6-S3] 讲生命周期)；本节讲状态读取；写侧 (音效与粒子) 由后续节使用 |
 | `CombatFleetManagerAPI` | 舰队名单与部署状态 | `engine.getFleetManager(FleetSide)` / `getFleetManager(int owner)` 取得 |
 | `ShipAPI` / `CombatEntityAPI` | 单舰状态访问器 | `getShips()` 与 `DeployedFleetMemberAPI.getShip()` 的返回元素 |
-| `DeployedFleetMemberAPI` | 已部署成员 (舰或战机联队)| `manager.getDeployedCopyDFM()` 的元素；`getMember()` 指向 `FleetMemberAPI`(完整讲解在 C08-S03)|
-| `EveryFrameCombatPlugin` / `BaseEveryFrameCombatPlugin` | 每帧回调骨架 | 战斗插件模型 (C07-S01) |
+| `DeployedFleetMemberAPI` | 已部署成员 (舰或战机联队)| `manager.getDeployedCopyDFM()` 的元素；`getMember()` 指向 `FleetMemberAPI`(完整讲解在 [C8-S3])|
+| `EveryFrameCombatPlugin` / `BaseEveryFrameCombatPlugin` | 每帧回调骨架 | 战斗插件模型 [C7-S1] |
 | `IntervalUtil` | 定期间隔触发 (本节示例用它做周期日志)| `com.fs.starfarer.api.util` |
 | `FleetSide` | `PLAYER` / `ENEMY` 两侧 | `getFleetManager(FleetSide)` |
 
@@ -149,7 +149,7 @@
 
 两个关键事实：
 
-1. **暂停时 `advance()` 仍被调用**：暂停不中断战斗引擎对 `EveryFrameCombatPlugin` 的每帧回调 ——`advance()` 在暂停时照常被调用。**必须**在推进状态前检查 `engine.isPaused()`(C07-S01 已立此规)。违反的可观察结果：暂停期间自己的计时 / 状态照常累计，解除暂停后数值已偏移。
+1. **暂停时 `advance()` 仍被调用**：暂停不中断战斗引擎对 `EveryFrameCombatPlugin` 的每帧回调 ——`advance()` 在暂停时照常被调用。**必须**在推进状态前检查 `engine.isPaused()`([C7-S1] 已立此规)。违反的可观察结果：暂停期间自己的计时 / 状态照常累计，解除暂停后数值已偏移。
 2. **插件收到的 `amount` 与 `getElapsedInLastFrame()` 是同一个数**：引擎按 `timeMult` 与 `combatSpeedMult` 缩放后得到本帧 `dt`，同时写入 `getElapsedInLastFrame()` 并作为 `amount` 传给每帧回调，暂停时也照常传入。默认两个倍率都是 1，`amount` 即真实帧长。做 "按推进时间累计" 直接用 `amount` 或 `getElapsedInLastFrame()`，**不要**再乘 `engine.getTimeMult().getModifiedValue()`—— 那会二次缩放，游戏内时间倍率一改 (慢动作等) 自己的计时就比战斗时间快/慢。违反的可观察结果：默认倍率下看不出来，一旦有 `timeMult` 修正 (技能、慢动作效果)，累计计时与 `getTotalElapsedTime(false)` 的差值按倍率扩大。
 
 选哪种累计时间的决策：
@@ -162,7 +162,7 @@
 
 ## 完整最小例
 
-在既有的 MOD 布局与战斗插件模型 (C07-S01) 之上，新增一个插件类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Subject>`)：
+在既有的 MOD 布局与战斗插件模型 [C7-S1] 之上，新增一个插件类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Subject>`)：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -201,8 +201,8 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 完整最小例：战斗状态读取 —— 引擎状态、时间语义与舰队/舰船遍历。
  *
- * 本插件由战斗上下文注册（C07-S01 的插件模型），只在本场战斗内有效：
- * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存（C06-S03）；
+ * 本插件由战斗上下文注册（C7-S1 的插件模型），只在本场战斗内有效：
+ * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存（C6-S3）；
  * - advance() 在暂停时仍会被调用（combatMap.advance 照常执行），
  *   状态推进前必须先检查 engine.isPaused()；
  * - getShips() 包含残骸与等待移除的舰船，遍历必须用 isAlive() 过滤；
@@ -230,7 +230,7 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine.isPaused()) {
-            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进（C07-S01）
+            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进（C7-S1）
         }
         reportInterval.advance(amount);
         if (reportInterval.intervalElapsed()) {
@@ -327,7 +327,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 (C06-S01) 与战斗插件接入 (C07-S01，含注册片段)、`GearInCombatStatePlugin` 类、`GearIn_test` 测试战役 (C03-S01)。
+前置数据：既有 MOD 布局 [C6-S1] 与战斗插件接入 ([C7-S1]，含注册片段)、`GearInCombatStatePlugin` 类、`GearIn_test` 测试战役 [C3-S1]。
 
 1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，并核对 `jar tf jars\GearIndustry.jar` 的内容。
 2. 进入 `GearIn_test` 战役一场战斗，让插件运行数秒。
@@ -357,7 +357,7 @@ gradle jar
    - 症状：暂停 10 秒后解除，自己的累计比 `getTotalElapsedTime(false)` 多出约 10 秒 —— 战斗根本没推进，数值已经偏了。
    - 触发：`advance()` 里没有 `engine.isPaused()` 判断，直接做计时/进度累计。
    - 原因：暂停不中断每帧回调，`advance()` 照常被调用。
-   - 修正：状态推进前检查 `engine.isPaused()`；需要 "含暂停的真实经历时间" 才用 `getTotalElapsedTime(true)`(C07-S01 对同一纪律有另一个视角)。
+   - 修正：状态推进前检查 `engine.isPaused()`；需要 "含暂停的真实经历时间" 才用 `getTotalElapsedTime(true)`([C7-S1] 对同一纪律有另一个视角)。
 3. **`getPlayerShip()` 判据失效**
    - 症状：依赖 null 判断的分支**永远不执行**，部署阶段代码把假舰当玩家舰处理 (静默失效，无报错)。
    - 触发：`if (engine.getPlayerShip() == null) return;` 想跳过 "玩家未部署" 阶段。

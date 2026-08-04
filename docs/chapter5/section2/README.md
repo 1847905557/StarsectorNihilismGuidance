@@ -17,7 +17,7 @@
 
 ## 前置知识
 
-本节建立在资源层单元 (C05-S01) 的产物之上，注册还需要满足以下条件：
+本节建立在资源层单元 [C5-S1] 的产物之上，注册还需要满足以下条件：
 
 - 三个 OGG 文件必须已经存在：
 
@@ -25,18 +25,18 @@
 sounds/gear_in/music/GearIn_market_theme.ogg sounds/gear_in/sfx_system/GearIn_system_loop.ogg sounds/gear_in/sfx_weapon/GearIn_weapon_fire.ogg
 ```
 
-- sound ID 必须全局唯一，且与使用方引用完全一致 (大小写敏感)。本教程让 ID 与文件语义一致：`GearIn_market_theme`、`GearIn_system_loop`、`GearIn_weapon_fire`。这三个 ID 的所有权属于资源层单元 (C05-S01)，本节只负责注册，消费在后续单元 (C05-S03) 完成；任何一侧改 ID 都必须同步改另外两侧。
+- sound ID 必须全局唯一，且与使用方引用完全一致 (大小写敏感)。本教程让 ID 与文件语义一致：`GearIn_market_theme`、`GearIn_system_loop`、`GearIn_weapon_fire`。这三个 ID 的所有权属于资源层单元 [C5-S1]，本节只负责注册，消费在后续单元 [C5-S3] 完成；任何一侧改 ID 都必须同步改另外两侧。
 
 ## 文件与 API 链路
 
 本节处于声音链的注册层：
 
 ```text
-sounds/.../*.ogg          资源层（C05-S01）：三个 OGG、路径与规格
+sounds/.../*.ogg          资源层（C5-S1）：三个 OGG、路径与规格
         ↓ 相对于 MOD 根目录的路径
 data/config/sounds.json   注册层（本节）：sound ID → OGG 路径与播放参数
         ↓ sound ID
-SoundPlayerAPI / .wpn     消费层（C05-S03）：代码按 ID 播放、数据按 ID 引用
+SoundPlayerAPI / .wpn     消费层（C5-S3）：代码按 ID 播放、数据按 ID 引用
 ```
 
 代码使用方通过 `Global.getSoundPlayer()` 拿到的 `SoundPlayerAPI` 按 ID 播放；数据使用方用 `.wpn` 的 `fireSoundOne` / `fireSoundTwo` 字段按 ID 引用。
@@ -156,8 +156,8 @@ SoundPlayerAPI / .wpn     消费层（C05-S03）：代码按 ID 播放、数据�
 
 逐条核对：
 
-- 三个 ID 与资源层单元 (C05-S01) 声明一致且全局唯一；
-- 所有 `file`/`source` 拼接路径与资源层单元 (C05-S01) 的目录树逐项一致且文件存在；
+- 三个 ID 与资源层单元 [C5-S1] 声明一致且全局唯一；
+- 所有 `file`/`source` 拼接路径与资源层单元 [C5-S1] 的目录树逐项一致且文件存在；
 - 文件为 Ogg Vorbis；
 - 音乐条目带 `source`；
 - JSON 花括号与数组闭合 (自检方法见下)；

@@ -22,11 +22,11 @@
 
 本节的两条通道、事件边界与生命周期规则都建立在既有成果之上，请先掌握以下内容：
 
-- 生涯引擎结构 (C08-S01)：`SectorAPI` 持有的监听器列表与脚本列表、`EveryFrameScript`、persistent data `CLASS_MARK` 注册标记、暂停语义 —— 本节的注册标记与配对模式从这里继续。
-- 脚本序列化边界与真实秒换算 (C10-S01)：`scripts` 随档、`transientScripts` 读档清空、`advance(amount)` 入参是上一帧真实秒 —— 本节的监听器与生命周期脚本配对复用这两条结论。
-- MOD 插件生命周期与阶段判断 (C06-S02、C06-S03)：`modPlugin` 生命周期回调与 persistent data 注册标记模式；`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"。
-- 市场、贸易与声望 (C08-S05、C08-S08)：`reportPlayerMarketTransaction` 的实体是市场交易；声望事件回调的对象由 `SectorAPI.adjustPlayerReputation` 触发。
-- 战斗域 (C07-S02)：`reportPlayerEngagement` 的 `EngagementResultAPI` 来自战斗结算。
+- 生涯引擎结构 [C8-S1]：`SectorAPI` 持有的监听器列表与脚本列表、`EveryFrameScript`、persistent data `CLASS_MARK` 注册标记、暂停语义 —— 本节的注册标记与配对模式从这里继续。
+- 脚本序列化边界与真实秒换算 [C10-S1]：`scripts` 随档、`transientScripts` 读档清空、`advance(amount)` 入参是上一帧真实秒 —— 本节的监听器与生命周期脚本配对复用这两条结论。
+- MOD 插件生命周期与阶段判断 [C6-S2]、[C6-S3]：`modPlugin` 生命周期回调与 persistent data 注册标记模式；`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"。
+- 市场、贸易与声望 [C8-S5]、[C8-S8]：`reportPlayerMarketTransaction` 的实体是市场交易；声望事件回调的对象由 `SectorAPI.adjustPlayerReputation` 触发。
+- 战斗域 [C7-S2]：`reportPlayerEngagement` 的 `EngagementResultAPI` 来自战斗结算。
 
 ## 术语
 
@@ -561,7 +561,7 @@ gradle jar
 
 ### 验证方案
 
-前置数据：既有 MOD 布局 (C06-S01)、`GearInModPlugin`(C06-S02，含本节调用点片段) 与本节三个类。
+前置数据：既有 MOD 布局 [C6-S1]、`GearInModPlugin`([C6-S2]，含本节调用点片段) 与本节三个类。
 
 1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`。
 2. 新建生涯，正常游玩，再按事件边界逐个触发：打开/关闭市场、买卖货物、与敌对舰队交战、改变声望。

@@ -20,9 +20,9 @@
 
 本节建立在前置内容之上，需要您掌握 MOD 结构与合并规则、舰船文件基础，并准备好模拟战验证环境：
 
-- MOD 根目录、全局 ID、资源目录结构 (`data/config`、`sounds/`) 与同路径文件的合并覆盖规则 (C01-S01)；
-- `.ship` 结构、`ship_data.csv` 注册、`GearIn_artizan` 与控制台 `Addship`(C01-S02)；
-- 模拟战环境，用于本节例子的验证观察 (C04-S01，可选)。
+- MOD 根目录、全局 ID、资源目录结构 (`data/config`、`sounds/`) 与同路径文件的合并覆盖规则 [C1-S1]；
+- `.ship` 结构、`ship_data.csv` 注册、`GearIn_artizan` 与控制台 `Addship`[C1-S2]；
+- 模拟战环境，用于本节例子的验证观察 ([C4-S1]，可选)。
 
 ## 文件与 API 链路
 
@@ -117,7 +117,7 @@
 
 ### 验证方案
 
-前置数据：前导的 `mod_info.json`(C01-S01)、`GearIn_artizan.ship` 与 `ship_data.csv`(C01-S02)、本节的 `hull_styles.json`。
+前置数据：前导的 `mod_info.json`[C1-S1]、`GearIn_artizan.ship` 与 `ship_data.csv`[C1-S2]、本节的 `hull_styles.json`。
 
 1. 勾选 `gear_in` 启动游戏，进入主菜单。
 2. 打开 `Starsector/starsector-core/starsector.log` 检查加载记录。
@@ -318,7 +318,7 @@ hull style 是声音与材质的总线 ——9 个声音字段指向 `sounds.jso
 - `data/config/hull_styles.json`：舰船风格定义，字段全集与保留 ID 清单见文件头注释。
 - `data/config/engine_styles.json`：引擎风格定义，含 `OMEGA` 光带参数与保留 ID `CUSTOM`。
 - `data/config/sounds.json`：声音集注册与按船体分级的分档结构。
-- `data/hulls/GearIn_artizan.ship`(C01-S02)：顶层 `style` 与 `engineSlots[].style` 的接入位置。
+- `data/hulls/GearIn_artizan.ship`[C1-S2]：顶层 `style` 与 `engineSlots[].style` 的接入位置。
 - `data/world/factions/`：势力数据目录，势力文件不声明风格，观感经舰船间接关联。
 - `hull_styles.json`、`engine_styles.json` 与 `sounds.json` 的加载入口方法：`loadEngineAndHullStyles()` 与 `loadSoundSets()`。
 - `data/hulls/<id>.ship` 的解析入口方法 `loadHullSpec()`：解析顶层 `style` 与引擎槽 `style` 的接入。

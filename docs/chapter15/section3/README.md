@@ -21,12 +21,12 @@
 
 本节内容建立在以下前置知识之上，建议先掌握：
 
-- GLSL 110/430 方言、`attribute`/`uniform`/`varying`、编译/链接检查链与能力门禁 (C15-S01)：本节把 430 方言与 BoxUtil 的 GL 4.3 基线连接起来；其 "uniform 名/类型必须一致" 这条必须遵守的规则在本节延续为提交纪律。
-- `.vert/.frag` 路径约定 (`data/shaders/`、`/` 分隔、UTF-8 无 BOM)、加载与编译日志、资源生命周期四环节 (C15-S02)：本节沿用 —— 每场战斗 `init` 内创建、`cleanup()` 内释放、禁止跨战斗缓存。
-- BoxUtil 初始化两段式 (`initPre` → `initLater`) 与可用性判据 `BoxConfigs.isShaderEnable() && ShaderCore.isValid()`(C13-S06)：本节的创建门禁直接复用；`isBaseGL43Supported()` 只是 GL 能力探测，不能替代 `ShaderCore.isValid()`。
-- 硬依赖 (C13-S01)：GearIndustry 对 BoxUtil 的硬依赖声明 (`mod_info.json` 的 `dependencies`，C13-S06)。
-- 分层渲染插件通道 (C07-S06)：本节渲染所属对象 ——`render(layer, viewport)` 回调内绘制、`advance()` 主动失效、`cleanup()` 释放 GL 资源。
-- `Global` 生命周期 (C06-S03)：禁止跨战斗缓存引擎引用与渲染对象 —— 本节的 `ShaderProgram`/VBO 同规。
+- GLSL 110/430 方言、`attribute`/`uniform`/`varying`、编译/链接检查链与能力门禁 [C15-S1]：本节把 430 方言与 BoxUtil 的 GL 4.3 基线连接起来；其 "uniform 名/类型必须一致" 这条必须遵守的规则在本节延续为提交纪律。
+- `.vert/.frag` 路径约定 (`data/shaders/`、`/` 分隔、UTF-8 无 BOM)、加载与编译日志、资源生命周期四环节 [C15-S2]：本节沿用 —— 每场战斗 `init` 内创建、`cleanup()` 内释放、禁止跨战斗缓存。
+- BoxUtil 初始化两段式 (`initPre` → `initLater`) 与可用性判据 `BoxConfigs.isShaderEnable() && ShaderCore.isValid()`[C13-S6]：本节的创建门禁直接复用；`isBaseGL43Supported()` 只是 GL 能力探测，不能替代 `ShaderCore.isValid()`。
+- 硬依赖 [C13-S1]：GearIndustry 对 BoxUtil 的硬依赖声明 (`mod_info.json` 的 `dependencies`，[C13-S6])。
+- 分层渲染插件通道 [C7-S6]：本节渲染所属对象 ——`render(layer, viewport)` 回调内绘制、`advance()` 主动失效、`cleanup()` 释放 GL 资源。
+- `Global` 生命周期 [C6-S3]：禁止跨战斗缓存引擎引用与渲染对象 —— 本节的 `ShaderProgram`/VBO 同规。
 
 ## 文件与 API 链路
 
@@ -34,18 +34,18 @@
 
 | 环节 | 文件 / API | 说明 |
 |---|---|---|
-| shader 源文件 | `data/shaders/GearIn_shader_visual.vert` / `.frag`(本节所有权)| MOD 根目录相对路径，`/` 分隔，UTF-8 无 BOM(路径与编码纪律，C15-S02)|
+| shader 源文件 | `data/shaders/GearIn_shader_visual.vert` / `.frag`(本节所有权)| MOD 根目录相对路径，`/` 分隔，UTF-8 无 BOM(路径与编码纪律，[C15-S2])|
 | 程序创建 | `org.boxutil.util.ShaderUtil.createShaderVFFormPath(String 名称, String vert 路径, String frag 路径)` → `int` | BoxUtil 封装入口：按路径加载、编译、链接并返回程序 id(成熟实例消费实证)；内部行为不读取 |
 | 程序包装 | `org.boxutil.units.standard.ShaderProgram(int programId)` | 封装 GL program 句柄、uniform/UBO location 查询、`active()`/`close()` 与 valid 状态 (实例规范)|
 | location 查询 | `getUniformIndex(String)` / `getUBOIndex(String 块名, int 绑定点)`；公共字段 `location` / `uboLocation`(`int[]`)| 创建后立即保存 (实例规范)；块名与 GLSL 逐字一致 |
 | 矩阵 UBO | `org.boxutil.manager.ShaderCore.getMatrixUBOBinding()` / `isValid()` | BoxUtil 全局矩阵 UBO 的绑定点入口 (实例规范)；`BUtilGlobalData` 块由此绑定 |
-| 配置开关 | `org.boxutil.config.BoxConfigs.isShaderEnable()` | 与 `ShaderCore.isValid()` 共同决定 shader 路径可用性 (既有可用性判据，C13-S06)|
-| 纹理获取 | `SettingsAPI.getSprite(String filename)`(`com.fs.starfarer.api.SettingsAPI`，文件必须已加载)/ `getSprite(String category, String key)`(读 settings.json 的 `graphics` 分类)| 本节示例用引擎启动期必载的 `graphics/fx/particlealpha32sq.png`(引擎启动期加载队列实证；既有示例同款做法，C13-S06)|
+| 配置开关 | `org.boxutil.config.BoxConfigs.isShaderEnable()` | 与 `ShaderCore.isValid()` 共同决定 shader 路径可用性 (既有可用性判据，[C13-S6])|
+| 纹理获取 | `SettingsAPI.getSprite(String filename)`(`com.fs.starfarer.api.SettingsAPI`，文件必须已加载)/ `getSprite(String category, String key)`(读 settings.json 的 `graphics` 分类)| 本节示例用引擎启动期必载的 `graphics/fx/particlealpha32sq.png`(引擎启动期加载队列实证；既有示例同款做法，[C13-S6])|
 | 纹理提交 | `SpriteAPI.getTextureId()` / `bindTexture()`；`GL13.glActiveTexture` + `GL11.glBindTexture(GL_TEXTURE_2D, id)` + `GL20.glUniform1i(texLoc, 0)` | 纹理单元绑定与采样器提交 (成熟实例同款做法)|
 | uniform 提交 | LWJGL `GL20.glUniform1f/2f/4f/Matrix4` | 标量/向量/矩阵三形态 (成熟实例同款做法)|
 | 矩阵构造 | 自建 16 float 列主序 `FloatBuffer`(旋转+平移)| 成熟实例 `maintainAnchoredFloatBuffer` 实证布局 |
 | 顶点提交 | VBO + `glVertexAttribPointer`(long 偏移)+ `glDrawArrays` | 沿用既有自建 VBO 做法；`#version 430` 的 `layout (location = N)` 在 GLSL 内固定位置，替代 110 方言的链接前 `glBindAttribLocation` |
-| 渲染所属对象 | `CombatLayeredRenderingPlugin`(分层渲染通道，C07-S06)| `engine.addLayeredRenderingPlugin(...)` 注册，`render(layer, viewport)` 回调内绘制 |
+| 渲染所属对象 | `CombatLayeredRenderingPlugin`(分层渲染通道，[C7-S6])| `engine.addLayeredRenderingPlugin(...)` 注册，`render(layer, viewport)` 回调内绘制 |
 | 可观察结果 | `starsector.log` + 战斗画面 | init/门禁/清理日志行；玩家舰船位置随动的纹理滚动发光四边形 |
 
 ### 四位置完整流程
@@ -397,14 +397,14 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  * - UBO：GLSL 侧声明 layout(std140) uniform BUtilGlobalData { mat4 gameViewport;
  *   vec4 gameScreenBorder; }（成熟实例同款声明），Java 侧
  *   getUBOIndex("BUtilGlobalData", ShaderCore.getMatrixUBOBinding()) 绑定；gameViewport
- *   是 BoxUtil 全局矩阵 UBO 供给的世界→屏幕矩阵，取代 C15-S01 的手动 glOrtho；
+ *   是 BoxUtil 全局矩阵 UBO 供给的世界→屏幕矩阵，取代 C15-S1 的手动 glOrtho；
  *   块名必须与 GLSL 逐字一致（大小写敏感）；
  * - uniform：标量/向量（glUniform1f/2f/4f）、采样器（glUniform1i 值=纹理单元号）、
  *   矩阵（glUniformMatrix4(loc, false, 列主序 FloatBuffer)，transpose 必须 false）；
- *   名称与类型必须与 GLSL 声明一致（C15-S01 硬规则 6）：拼错 → getUniformIndex 返回
+ *   名称与类型必须与 GLSL 声明一致（C15-S1 硬规则 6）：拼错 → getUniformIndex 返回
  *   -1 → 提交被静默忽略且无日志；
  * - 纹理：SettingsAPI.getSprite 取引擎必载贴图 graphics/fx/particlealpha32sq.png
- *   （引擎启动期入加载队列；C13-S06 同款姿势），
+ *   （引擎启动期入加载队列；C13-S6 同款姿势），
  *   SpriteAPI.getTextureId() 取 GL 纹理 id，glActiveTexture(GL_TEXTURE0) +
  *   glBindTexture(GL_TEXTURE_2D, id) + glUniform1i(texLoc, 0) 完成单元绑定与采样器
  *   提交（成熟实例实证）；
@@ -412,12 +412,12 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   maintainAnchoredFloatBuffer；每帧复用
  *   FloatBuffer（clear/put/flip）；
  * - 门禁：BoxConfigs.isShaderEnable() && ShaderCore.isValid() 共同决定 shader 路径
- *   可用性（K06/C13-S06）；isBaseGL43Supported() 只是 GL 能力探测，不能替代
+ *   可用性（K06/C13-S6）；isBaseGL43Supported() 只是 GL 能力探测，不能替代
  *   ShaderCore.isValid()（实例陷阱）；门禁失败 → 记录日志并自废，
  *   不创建程序；
  * - 生命周期：每场战斗 init 创建程序与 VBO（GL 上下文就绪），render 内 active()/
  *   close() 配对提交（实例规范"active() 后必须按 close() 关闭"），
- *   cleanup() 内 program.delete() + glDeleteBuffers，禁止跨战斗缓存（C06-S03/C07-S06
+ *   cleanup() 内 program.delete() + glDeleteBuffers，禁止跨战斗缓存（C6-S3/C7-S6
  *   延续；实例规范"资源清理归创建者"）；isValid() 使用前检查
  *   （实例陷阱：失效程序继续绑定 → 输出错位或状态污染）。
  */
@@ -425,7 +425,7 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInShaderVisual.class);
 
-    /** shader 资源路径（MOD 根目录相对路径，必须用 /；C15-S02 硬规则 1 延续）。 */
+    /** shader 资源路径（MOD 根目录相对路径，必须用 /；C15-S2 硬规则 1 延续）。 */
     private static final String VERT_PATH = "data/shaders/GearIn_shader_visual.vert";
     private static final String FRAG_PATH = "data/shaders/GearIn_shader_visual.frag";
 
@@ -458,7 +458,7 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        // 门禁：BoxUtil shader 路径可用性判据（K06/C13-S06）；失败即自废，不创建程序
+        // 门禁：BoxUtil shader 路径可用性判据（K06/C13-S6）；失败即自废，不创建程序
         if (!BoxConfigs.isShaderEnable() || !ShaderCore.isValid()) {
             LOG.info("GearIn shader visual: BoxUtil shader path unavailable (shaderEnable="
                     + BoxConfigs.isShaderEnable() + ", shaderCoreValid="
@@ -470,7 +470,7 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
             valid = false; // 初始化失败：不渲染，等引擎正常移除
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C07-S06 同款姿势）
+        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C7-S6 同款姿势）
         LOG.info("GearIn shader visual init: u_model=" + program.location[0]
                 + ", u_size=" + program.location[1]
                 + ", u_time=" + program.location[2]
@@ -561,10 +561,10 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
         }
         elapsed += amount;
         if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()（C07-S06 硬规则 3）
+            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()（C7-S6 硬规则 3）
             return;
         }
-        // 剔除依据是承载实体的位置（C07-S06 硬规则 4）：跟随玩家舰船
+        // 剔除依据是承载实体的位置（C7-S6 硬规则 4）：跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
     }
 
@@ -604,7 +604,7 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
         float facing = engine.getPlayerShip().getFacing();
         matrixBuffer = buildAnchoredMatrix(center, facing, matrixBuffer);
 
-        // attribute：VBO 绑定 + long 偏移（C15-S02 同款姿势；游戏自带 LWJGL 的
+        // attribute：VBO 绑定 + long 偏移（C15-S2 同款姿势；游戏自带 LWJGL 的
         // glVertexAttribPointer 没有 FloatBuffer client 指针重载）
         int stride = FLOATS_PER_VERTEX * Float.BYTES;
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
@@ -693,7 +693,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 (`mod_info.json` 硬依赖 BoxUtil)+ 战斗生命周期插件 (含本节注册片段一行)+ 分层渲染插件 + 上一页的脉冲渲染插件 + 本节的 `GearInShaderVisual`、`data/shaders/GearIn_shader_visual.vert/.frag` + `GearIn_test` 测试战役 (C03-S01)。
+前置数据：既有 MOD 布局 (`mod_info.json` 硬依赖 BoxUtil)+ 战斗生命周期插件 (含本节注册片段一行)+ 分层渲染插件 + 上一页的脉冲渲染插件 + 本节的 `GearInShaderVisual`、`data/shaders/GearIn_shader_visual.vert/.frag` + `GearIn_test` 测试战役 [C3-S1]。
 
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/shaders/GearIn_shader_visual.vert`、`data/shaders/GearIn_shader_visual.frag`、`data/scripts/gearin/combat/GearInShaderVisual.class`。
 2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察 init 行的路径、location 与 `ubo` 信息。

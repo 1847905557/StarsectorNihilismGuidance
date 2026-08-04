@@ -21,12 +21,12 @@
 
 本节要在既有编译链路之上新增技能数据，并在角色与舰队 stats 上重放效果，需要以下已经掌握的基线：
 
-- 命名约定 (C01-S01)：MOD ID `gear_in`、数据 / 资源 key 前缀 `GearIn_`、包 `data.scripts.gearin.<domain>`、类 `GearIn<Subject>`；
-- 编译 JAR 链路与脚本类加载 (C06-S01)：`.skill` 的 `script` 类与普通脚本一样按类名解析，`loadSkills` 会对每个 effect class 调 `registerScriptClass`；
-- `Global` 生命周期与阶段判断 (C06-S03)：读 `Global.getSector().getPlayerStats()` 前要确认处于生涯状态；
-- `MutableStat` 的 modifier ID 稳定性 (C07-S03)：三规则与 `(base + base*percent/100 + flat) * mult` 公式 —— 本节效果脚本全部沿用：用引擎传入的 effect id 做 modifier id、`unapply` 原样解除；
-- `FleetMemberAPI` 与成员 stats (C08-S03)：本节 SHIP / ALL_SHIPS_IN_FLEET 效果的生涯侧落点；
-- 人物 / captain / officer (C09-S01)：`MutableCharacterStatsAPI` 挂在人物上，技能等级与刷新入口 (`setSkillLevel` / `refreshCharacterStatsEffects`) 都在这里；旗舰舰长是玩家人物，所以玩家的 SHIP 技能作用到旗舰。
+- 命名约定 [C1-S1]：MOD ID `gear_in`、数据 / 资源 key 前缀 `GearIn_`、包 `data.scripts.gearin.<domain>`、类 `GearIn<Subject>`；
+- 编译 JAR 链路与脚本类加载 [C6-S1]：`.skill` 的 `script` 类与普通脚本一样按类名解析，`loadSkills` 会对每个 effect class 调 `registerScriptClass`；
+- `Global` 生命周期与阶段判断 [C6-S3]：读 `Global.getSector().getPlayerStats()` 前要确认处于生涯状态；
+- `MutableStat` 的 modifier ID 稳定性 [C7-S3]：三规则与 `(base + base*percent/100 + flat) * mult` 公式 —— 本节效果脚本全部沿用：用引擎传入的 effect id 做 modifier id、`unapply` 原样解除；
+- `FleetMemberAPI` 与成员 stats [C8-S3]：本节 SHIP / ALL_SHIPS_IN_FLEET 效果的生涯侧落点；
+- 人物 / captain / officer [C9-S1]：`MutableCharacterStatsAPI` 挂在人物上，技能等级与刷新入口 (`setSkillLevel` / `refreshCharacterStatsEffects`) 都在这里；旗舰舰长是玩家人物，所以玩家的 SHIP 技能作用到旗舰。
 
 ## 技能数据的三件套
 
@@ -163,7 +163,7 @@ Starsector\mods\GearIndustry\
 │       └── skill_data.csv                # 新建（表头 + 本节行；若已有该文件则把行追加进去）
 ├── src\
 │   └── data\scripts\gearin\
-│       ├── GearInModPlugin               # C06-S02 所有；本节不改动
+│       ├── GearInModPlugin               # C6-S2 所有；本节不改动
 │       └── campaign\
 │           └── GearInGunnerySkill        # 本节新增
 └── jars\
@@ -519,7 +519,7 @@ public class GearInGunnerySkill {
 - 五个 `apply` 各打一行 `GearIn gunnery ...` 日志：`id` 与 `level` 直接可见，是 "效果作用域 + 等级" 的现场表现。
 - `getEffectPerLevelDescription()` 返回 null：`.skill` 里 `effectBasedOnLevel:false`，tooltip 不渲染每级描述行 (本节不演示 per-level 描述)。
 
-### 读取与调用点 (工程片段 —— 方法所在类归 C06-S02 所有，本节只演示调用，不改动那些文件)
+### 读取与调用点 (工程片段 —— 方法所在类归 [C6-S2] 所有，本节只演示调用，不改动那些文件)
 
 ```java
     // 读取（消费者，任何生涯代码）：

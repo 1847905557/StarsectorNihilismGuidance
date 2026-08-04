@@ -21,14 +21,14 @@
 
 本节的状态交接链建立在前面各节的 stats、人物与装配语义之上，您需要已经理解：
 
-- `MutableStat` 概念、`(base + base*percent/100 + flat) * mult` 公式、modifier ID 稳定性三规则 (同 ID 同类型幂等覆盖、跨类型独立、`unmodify(source)` 清三类)(C07-S03)—— 本节的 stats 重建与重放全部建立在这套语义上；
-- 舰队成员 (`FleetMemberAPI`)：`getVariant()`/`setVariant(variant, withRefit, withStatsUpdate)`(传入引用不克隆)、`getStats()`、`addFleetMember` 自动行为、`setCaptain` 的生涯侧入口 (C08-S03)；
-- 人物与 captain：`PersonAPI.getStats()` 是技能等级与刷新入口；旗舰舰长特例；默认舰长保存压缩 (C09-S01)；
+- `MutableStat` 概念、`(base + base*percent/100 + flat) * mult` 公式、modifier ID 稳定性三规则 (同 ID 同类型幂等覆盖、跨类型独立、`unmodify(source)` 清三类)[C7-S3]—— 本节的 stats 重建与重放全部建立在这套语义上；
+- 舰队成员 (`FleetMemberAPI`)：`getVariant()`/`setVariant(variant, withRefit, withStatsUpdate)`(传入引用不克隆)、`getStats()`、`addFleetMember` 自动行为、`setCaptain` 的生涯侧入口 [C8-S3]；
+- 人物与 captain：`PersonAPI.getStats()` 是技能等级与刷新入口；旗舰舰长特例；默认舰长保存压缩 [C9-S1]；
 - 技能效果作用域：SHIP 族 (`ShipSkillEffect`) 与 ALL_SHIPS_IN_FLEET 的应用入口在 `FleetMemberAPI.updateStats` / 舰船对象创建 / `Ship` 构造器：
-  - FLEET / CHARACTER_STATS 在 `refreshCharacterStatsEffects` 即时重放；effect id 即 modifier id(C09-S02)；
-- `ShipVariantAPI`：`clone()` 深拷贝、`setSource`、`toJSONObject`、部署期创建舰船时对成员变体的武器组改写 (写回传入变体)、成员变体 STOCK/HULL 来源不落档 (C09-S03)；
-- 模块船：模块在部署期由 `spawnStationModules` 生成，是独立 `ShipAPI` 实体，本节部署链对模块同样生效 (C04-S03)；
-- `GearInModPlugin` 的所有权与 `onGameLoad` 注册检查：本节调用点片段只消费它，不改动其文件 (C06-S02)。
+  - FLEET / CHARACTER_STATS 在 `refreshCharacterStatsEffects` 即时重放；effect id 即 modifier id[C9-S2]；
+- `ShipVariantAPI`：`clone()` 深拷贝、`setSource`、`toJSONObject`、部署期创建舰船时对成员变体的武器组改写 (写回传入变体)、成员变体 STOCK/HULL 来源不落档 [C9-S3]；
+- 模块船：模块在部署期由 `spawnStationModules` 生成，是独立 `ShipAPI` 实体，本节部署链对模块同样生效 [C4-S3]；
+- `GearInModPlugin` 的所有权与 `onGameLoad` 注册检查：本节调用点片段只消费它，不改动其文件 [C6-S2]。
 
 ## 术语
 
@@ -727,7 +727,7 @@ gradle jar
 
 ### 验证方案
 
-前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段；C06-S01、C06-S02)、本节四个演示类、观察 `speedAfterRebuild` 语义同样成立 (界面触发同步 = 重建 = 丢弃；对应规则强度第 1 条与故障分析第 1 条)。
+前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段；[C6-S1]、[C6-S2])、本节四个演示类、观察 `speedAfterRebuild` 语义同样成立 (界面触发同步 = 重建 = 丢弃；对应规则强度第 1 条与故障分析第 1 条)。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含四个类的 class 条目。
 2. **新建生涯**：查看 `starsector.log` 中按注册顺序出现的四组日志：`GearIn variantToStats ...`、`GearIn captainToMember ...`、`GearIn commanderToMember ...`、`GearIn statsRebuild ...`。

@@ -21,14 +21,14 @@
 
 本节建立在以下前置知识之上，需要您已经理解：
 
-- 命名约定 (C01-S01)：MOD ID `gear_in`、数据 / 资源 key 前缀 `GearIn_`、包 `data.scripts.gearin.<domain>`、类 `GearIn<Subject>`；
-- 船插数据行 (C02-S02)：`hull_mods.csv` 的 `id` / `script` / `desc` 列、`HullModSpecAPI`、效果类会话级单例、`isApplicableToShip` / `getUnapplicableReason`、内置船插 (`builtInMods`)；
-- stats 修饰体系 (C07-S03)：`MutableStat` 修饰与 modifier ID 必须遵守的规则、`applyEffectsBeforeShipCreation` 的三个调用时机 (生涯重建重放 / `Ship` 构造 / 装配·预览场景；"加入引擎" 对应 `applyEffectsAfterShipAddedToCombatEngine`，延迟到舰船实际入引擎时、每船仅一次)；
-- 公开监听器系统 (C07-S05)：`com.fs.starfarer.api.combat.listeners` 三块注册表面、每类监听器的放置规则、`CombatListenerUtil` 派发、`hasListenerOfClass` 防重复判断；
-- 战斗状态读取与时间语义 (C07-S02)：每帧调用与暂停语义；
-- 编译 JAR 链路 (C06-S01)：把 Java 类编入 `jars/GearIndustry.jar`；
-- `Global` 生命周期 (C06-S03)：不缓存引擎 / 舰船引用；
-- 测试战役 (C03-S01)：`GearIn_test` 战役与用户舰 `GearIn_artizan`。
+- 命名约定 [C1-S1]：MOD ID `gear_in`、数据 / 资源 key 前缀 `GearIn_`、包 `data.scripts.gearin.<domain>`、类 `GearIn<Subject>`；
+- 船插数据行 [C2-S2]：`hull_mods.csv` 的 `id` / `script` / `desc` 列、`HullModSpecAPI`、效果类会话级单例、`isApplicableToShip` / `getUnapplicableReason`、内置船插 (`builtInMods`)；
+- stats 修饰体系 [C7-S3]：`MutableStat` 修饰与 modifier ID 必须遵守的规则、`applyEffectsBeforeShipCreation` 的三个调用时机 (生涯重建重放 / `Ship` 构造 / 装配·预览场景；"加入引擎" 对应 `applyEffectsAfterShipAddedToCombatEngine`，延迟到舰船实际入引擎时、每船仅一次)；
+- 公开监听器系统 [C7-S5]：`com.fs.starfarer.api.combat.listeners` 三块注册表面、每类监听器的放置规则、`CombatListenerUtil` 派发、`hasListenerOfClass` 防重复判断；
+- 战斗状态读取与时间语义 [C7-S2]：每帧调用与暂停语义；
+- 编译 JAR 链路 [C6-S1]：把 Java 类编入 `jars/GearIndustry.jar`；
+- `Global` 生命周期 [C6-S3]：不缓存引擎 / 舰船引用；
+- 测试战役 [C3-S1]：`GearIn_test` 战役与用户舰 `GearIn_artizan`。
 
 ## 文件与 API 链路
 
@@ -42,7 +42,7 @@
 | `HullModSpecAPI` | 船插静态配置 | `getSModEffectFormat()`、`getSModDescription(hullSize)` |
 | `MutableShipStatsAPI` | stats 入口 | `getArmorBonus()`、`getEffectiveArmorBonus()`—— 本节示例的修饰目标 |
 | `ArmorGridAPI` | 装甲网格读取 | `getGrid()` / `getMaxArmorInCell()` / `getArmorRating()`；战斗命中结算与监听器示例使用它 |
-| `com.fs.starfarer.api.combat.listeners.*` | 监听器接口 | `HullDamageAboutToBeTakenListener`、`AdvanceableListener` 本节示例实现；必须遵守的放置规则见 C07-S05 |
+| `com.fs.starfarer.api.combat.listeners.*` | 监听器接口 | `HullDamageAboutToBeTakenListener`、`AdvanceableListener` 本节示例实现；必须遵守的放置规则见 [C7-S5] |
 | `Misc` | S-mod 辅助 | `CAN_SMOD_BUILT_IN`、`getMaxPermanentMods`、`getBuildInBonusXP` |
 | `Stats` | 动态 stat id | `MAX_PERMANENT_HULLMODS_MOD = "max_permanent_hullmods_mod"`(`com.fs.starfarer.api.impl.campaign.ids.Stats`)|
 
@@ -248,14 +248,14 @@ import com.fs.starfarer.api.util.IntervalUtil;
  * 里注册的监听器实例中（每艘船一个实例，随舰船实体一起销毁）。
  *
  * 生命周期覆盖：
- * - applyEffectsBeforeShipCreation：生涯与战斗都会调用的 stats 入口（C07-S03）；
+ * - applyEffectsBeforeShipCreation：生涯与战斗都会调用的 stats 入口（C7-S3）；
  *   这里同时演示 S-mod 分支：isSMod(stats) 为 true 时把同一 id 的修饰覆盖为更大值；
  * - applyEffectsAfterShipCreation：战斗侧舰船实体创建后调用（含装配界面预览舰），
  *   注册监听器的正式位置；不承担 stats 修改（API javadoc 原文）；
  * - applyEffectsAfterShipAddedToCombatEngine：每艘船加入战斗引擎只回调一次
  *   （API javadoc 原文 "Only called once."）；
  * - advanceInCombat：战斗每帧调用，暂停时不调用（API javadoc 原文）；
- *   演示每帧幂等写 StatBonus（同 ID 覆盖，不累积，C07-S03 规则 6）；
+ *   演示每帧幂等写 StatBonus（同 ID 覆盖，不累积，C7-S3 规则 6）；
  * - advanceInCampaign：生涯每帧调用；舰队数据重同步时以 amount=0 调用
  *   （API javadoc 原文），这里只在该时机输出一行作为生命周期证明。
  *
@@ -277,7 +277,7 @@ public class GearInArmorTrainingHullMod extends BaseHullMod {
 
     @Override
     public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAPI stats, String id) {
-        // S-mod 分支：同一 id 同类型只保留一条条目，S-mod 时直接覆盖为合计值（C07-S03 覆盖语义）。
+        // S-mod 分支：同一 id 同类型只保留一条条目，S-mod 时直接覆盖为合计值（C7-S3 覆盖语义）。
         float bonus = ARMOR_BONUS_PERCENT + (isSMod(stats) ? SMOD_ADDITIONAL_PERCENT : 0f);
         stats.getArmorBonus().modifyPercent(id, bonus);           // 面板/生涯可见的护甲评级
         stats.getEffectiveArmorBonus().modifyPercent(id, bonus);  // 命中结算时的有效护甲
@@ -427,7 +427,7 @@ gradle jar
 
 ### 验证方案
 
-前置数据：MOD 布局与编译链路 (C06-S01)、本节 `hull_mods.csv` 行 (含 `sModDesc`)、示例类 `GearInArmorTrainingHullMod` 已编入 `jars/GearIndustry.jar`、测试战役 `GearIn_test`(C03-S01，用户舰 `GearIn_artizan`)。
+前置数据：MOD 布局与编译链路 [C6-S1]、本节 `hull_mods.csv` 行 (含 `sModDesc`)、示例类 `GearInArmorTrainingHullMod` 已编入 `jars/GearIndustry.jar`、测试战役 `GearIn_test`([C3-S1]，用户舰 `GearIn_artizan`)。
 
 1. 构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`。
 2. 注册与 tooltip：启动到生涯，在装配界面找到 "装甲训练"，悬停核对 desc 与 "S-mod bonus" 段落；搜索 `starsector.log` 中的注册行与错误。

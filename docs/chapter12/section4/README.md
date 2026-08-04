@@ -18,9 +18,9 @@
 
 ## 前置知识
 
-- C06-S02 的生涯生命周期回调；
-- C06-S03 的 `Global.getSettings()`；
-- C12-S02 的 JSON 结构、字段读取和编码规则。
+- [C6-S2] 的生涯生命周期回调；
+- [C6-S3] 的 `Global.getSettings()`；
+- [C12-S2] 的 JSON 结构、字段读取和编码规则。
 
 ## common 的位置与语义
 

@@ -19,12 +19,12 @@
 
 本节在第一章前五节建立的 GearIn 数据之上工作，要求您已掌握以下内容：
 
-- 舰船贴图 → `.ship` → `ship_data.csv` 的贴图与数据链 (C01-S02)。
-- 战机 hull/variant/wing 三层结构与 `wing_data.csv`(C01-S03)。
-- 武器 `.wpn` → `weapon_data.csv` → `.proj` 数据链 (C01-S05)。
-- 内置武器、内置船插与内置机联的三件套装配 (C01-S06)。
-- 能稳定使用 `gear_in` MOD 与 `GearIn_` 数据前缀 (C01-S01)。
-- CSV 基础：行首 `#` 的整行被忽略、逗号分割、含逗号的字段用引号包裹 (C01-S02)。
+- 舰船贴图 → `.ship` → `ship_data.csv` 的贴图与数据链 [C1-S2]。
+- 战机 hull/variant/wing 三层结构与 `wing_data.csv`[C1-S3]。
+- 武器 `.wpn` → `weapon_data.csv` → `.proj` 数据链 [C1-S5]。
+- 内置武器、内置船插与内置机联的三件套装配 [C1-S6]。
+- 能稳定使用 `gear_in` MOD 与 `GearIn_` 数据前缀 [C1-S1]。
+- CSV 基础：行首 `#` 的整行被忽略、逗号分割、含逗号的字段用引号包裹 [C1-S2]。
 - 术语：战术系统 (ship system)；数据库 (codex，生涯界面中的图鉴界面)。
 
 ## 文件/API 链路
@@ -151,7 +151,7 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 ### 验证方案
 
-前置数据：`gear_in` MOD(C01-S01) 与第一章前五节 (C01-S02 至 C01-S06) 建立的全部数据，加上本节的 `data/strings/descriptions.csv` 与三个 `.ship` 文件的 `descriptionId` 修改 (即本节前述示例内容)。
+前置数据：`gear_in` MOD[C1-S1] 与第一章前五节 ([C1-S2] 至 [C1-S6]) 建立的全部数据，加上本节的 `data/strings/descriptions.csv` 与三个 `.ship` 文件的 `descriptionId` 修改 (即本节前述示例内容)。
 
 1. 启动游戏进入生涯界面，观察 `starsector.log` 的描述文本加载记录。
 2. 用 dev 控制台输入 `Addship GearIn_artizan`、`Addship GearIn_forging`、`Addwing GearIn_slag_wing`。

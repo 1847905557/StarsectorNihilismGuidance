@@ -22,20 +22,20 @@
 
 本节消费三个已就绪的声音 ID，另依赖若干上游文件与机制，逐项列出如下：
 
-- 三个 OGG 的路径、声道与循环规格 (`sounds/gear_in/music/GearIn_market_theme.ogg`、`sounds/gear_in/sfx_system/GearIn_system_loop.ogg`、`sounds/gear_in/sfx_weapon/GearIn_weapon_fire.ogg`)，三个 sound ID 的所有权属于资源准备单元 (C05-S01)。
-- `data/config/sounds.json` 注册层：`GearIn_market_theme` 位于 `music` 分类，`GearIn_system_loop`、`GearIn_weapon_fire` 为普通音效条目；追加/替换合并规则与 `Loading sound sets` 日志 (C05-S02)。
-- hull style 的 9 个声音字段与声音集分档 (`engineLoopSet` 等)；GearIn 舰船当前挂在 `GEAR_TECH` 风格上 (C04-S02)。
-- `GearIn_durin.wpn` 武器规格文件与 `fireSoundTwo` 字段 (C01-S05)。
-- `GearIn_burstdrive.system` 与效果脚本 `GearInBurstDriveSystem`；源码由游戏按类名从 MOD 根目录 `data/scripts/...` 即时编译，自 C06-S01 起教程改为编译 JAR，类名规则不变 (C02-S03)。
-- 每帧回调模型与暂停语义 (C07-S01)；
-- `GearIn_test` 测试战役，本节验证方案使用 (C03-S01)。
+- 三个 OGG 的路径、声道与循环规格 (`sounds/gear_in/music/GearIn_market_theme.ogg`、`sounds/gear_in/sfx_system/GearIn_system_loop.ogg`、`sounds/gear_in/sfx_weapon/GearIn_weapon_fire.ogg`)，三个 sound ID 的所有权属于资源准备单元 [C5-S1]。
+- `data/config/sounds.json` 注册层：`GearIn_market_theme` 位于 `music` 分类，`GearIn_system_loop`、`GearIn_weapon_fire` 为普通音效条目；追加/替换合并规则与 `Loading sound sets` 日志 [C5-S2]。
+- hull style 的 9 个声音字段与声音集分档 (`engineLoopSet` 等)；GearIn 舰船当前挂在 `GEAR_TECH` 风格上 [C4-S2]。
+- `GearIn_durin.wpn` 武器规格文件与 `fireSoundTwo` 字段 [C1-S5]。
+- `GearIn_burstdrive.system` 与效果脚本 `GearInBurstDriveSystem`；源码由游戏按类名从 MOD 根目录 `data/scripts/...` 即时编译，自 [C6-S1] 起教程改为编译 JAR，类名规则不变 [C2-S3]。
+- 每帧回调模型与暂停语义 [C7-S1]；
+- `GearIn_test` 测试战役，本节验证方案使用 [C3-S1]。
 
 ## 文件与 API 链路
 
 ```text
-sounds/.../*.ogg                 资源层（C05-S01）：三个 OGG
+sounds/.../*.ogg                 资源层（C5-S1）：三个 OGG
         ↓ 相对于 MOD 根目录的路径
-data/config/sounds.json          注册层（C05-S02）：sound ID → 路径与播放参数
+data/config/sounds.json          注册层（C5-S2）：sound ID → 路径与播放参数
         ↓ sound ID
 数据消费者                         代码消费者
   .wpn fireSoundOne/fireSoundTwo   Global.getSoundPlayer().playUISound
@@ -51,7 +51,7 @@ data/config/sounds.json          注册层（C05-S02）：sound ID → 路径与
 | 武器开火 | `.wpn` 的 `fireSoundOne`/`fireSoundTwo` | 导弹、实弹与光束武器 | `GearIn_weapon_fire` |
 | 武器/导弹位置音效 | 代码 `playSound(id, pitch, volume, loc, vel)` | 位置音效播放器；冲击音播放器 | 代码示例 |
 | 战术系统 | `.system` 的 `useSound`/`loopSound`/`deactivateSound`/`outOfUsesSound` | 战斗系统实现 | `GearIn_system_loop` |
-| 引擎与舰船风格 | hull style 的 `engineLoopSet`/`engineAccelerateSet` 等 9 个字段 | `ShipEngineControllerAPI`/`ShieldAPI`/`FluxTrackerAPI`/冲击音播放器 | 沿用 C04-S02 原版声音集 |
+| 引擎与舰船风格 | hull style 的 `engineLoopSet`/`engineAccelerateSet` 等 9 个字段 | `ShipEngineControllerAPI`/`ShieldAPI`/`FluxTrackerAPI`/冲击音播放器 | 沿用 [C4-S2] 原版声音集 |
 | UI | 代码 `playUISound(id, pitch, volume)`、`playUILoop` | 战役/战斗 UI 各调用点 | `GearIn_weapon_fire`(复用示例)|
 | 环境地形 | `data/campaign/terrain.json` 的 `loopOne`..`loopFour`、`musicSuppression`、`custom` | `BaseTerrain.advance` → `playLoop` + `suppressMusic`；地形插件 `stormSound`/`gain`/`gainHF` | 机制说明 |
 | 音乐 | `settings.json` 的 `plugins.musicPlugin` 注册选曲插件；代码 `playCustomMusic` | `MusicPlayerPlugin`/`MusicPlayerPluginImpl`、音乐播放器基类 | `GearIn_market_theme` |
@@ -438,7 +438,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ### 验证方案
 
-前置数据：三个 OGG(C05-S01)、`data/config/sounds.json`(C05-S02)、`data/weapons/GearIn_durin.wpn`(C01-S05)、`data/shipsystems/GearIn_burstdrive.system`(C02-S03)、测试战役 `GearIn_test`(C03-S01)、本节的 `settings.json` 与新类 `GearInMusicPlayerPlugin`。
+前置数据：三个 OGG[C5-S1]、`data/config/sounds.json`[C5-S2]、`data/weapons/GearIn_durin.wpn`[C1-S5]、`data/shipsystems/GearIn_burstdrive.system`[C2-S3]、测试战役 `GearIn_test`[C3-S1]、本节的 `settings.json` 与新类 `GearInMusicPlayerPlugin`。
 
 1. 启用 `gear_in` 启动到主菜单，检查 `Starsector\starsector-core\starsector.log` 中的声音注册记录。
 2. 进入 `GearIn_test` 测试战役，使用装有 `GearIn_durin` 的舰船开火，听取武器开火音。

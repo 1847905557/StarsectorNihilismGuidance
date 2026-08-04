@@ -23,15 +23,15 @@
 
 本节会复用已经建立的对话、Intel、脚本与酒吧调度基础，请先熟悉以下主题：
 
-- 交互对话框三面板、`showInteractionDialog`、`SectorAPI.adjustPlayerReputation`(任务完成结算复用) 与 Intel 两条登记链 (`addIntel` 立即可见 / `queueIntel` 通信中继可见性)—— 本节 Intel 侧从这里继续 (C08-S09)。
+- 交互对话框三面板、`showInteractionDialog`、`SectorAPI.adjustPlayerReputation`(任务完成结算复用) 与 Intel 两条登记链 (`addIntel` 立即可见 / `queueIntel` 通信中继可见性)—— 本节 Intel 侧从这里继续 [C8-S9]。
 - 人物 (`PersonAPI`) 与 market 联系人 —— 任务的给任务者 (giver) 与目标联系人都是人物：
-  - `OfficerManagerEvent`、`ContactIntel` 语义被 `BaseHubMission` 的 `findOrCreateGiver` / `findOrCreateTrader` / `setPersonIsPotentialContactOnSuccess` 使用 (C09-S01)。
+  - `OfficerManagerEvent`、`ContactIntel` 语义被 `BaseHubMission` 的 `findOrCreateGiver` / `findOrCreateTrader` / `setPersonIsPotentialContactOnSuccess` 使用 [C9-S1]。
 - `EveryFrameScript` 推进约定与 `convertToDays` 换算 ——`BaseIntelPlugin` 实现 `EveryFrameScript`，`advanceImpl` 里 `days = clock.convertToDays(amount)`：
-  - 任务随 `scripts` 列表随档保存、`transientScripts` 读档清空的结论直接适用 (C10-S01)。
-- 事件边界与生命周期纪律 —— 任务的 "注册入口 → 派发 → 可观察结果" 方法论同源；任务实例随存档序列化的 XStream 边界与监听器一致 (C10-S02)。
-- `PortsideBarEvent` / `BarEventManager` / `PortsideBarData` / `HubMissionBarEventWrapper` 的调度与 `notifyWasInteractedWith` 收尾 —— 本节 bar 路线直接复用该调度器，`SpecBarEventCreator` 的 mission 分派是两条路线的交界点 (C10-S04)。
-- 战役 (mission) 与 `MissionDefinitionAPI`—— 对照对象，本节不重复 (C03-S01)。
-- `modPlugin` 生命周期与 `Global.getSector()` 阶段语义 —— 任务相关注册 (`bar_events.csv` 由加载期读取、无代码注册；代码侧只有 `addScript` / `addIntel` 发生在生涯引擎建立之后)(C06-S02 / C06-S03)。
+  - 任务随 `scripts` 列表随档保存、`transientScripts` 读档清空的结论直接适用 [C10-S1]。
+- 事件边界与生命周期纪律 —— 任务的 "注册入口 → 派发 → 可观察结果" 方法论同源；任务实例随存档序列化的 XStream 边界与监听器一致 [C10-S2]。
+- `PortsideBarEvent` / `BarEventManager` / `PortsideBarData` / `HubMissionBarEventWrapper` 的调度与 `notifyWasInteractedWith` 收尾 —— 本节 bar 路线直接复用该调度器，`SpecBarEventCreator` 的 mission 分派是两条路线的交界点 [C10-S4]。
+- 战役 (mission) 与 `MissionDefinitionAPI`—— 对照对象，本节不重复 [C3-S1]。
+- `modPlugin` 生命周期与 `Global.getSector()` 阶段语义 —— 任务相关注册 (`bar_events.csv` 由加载期读取、无代码注册；代码侧只有 `addScript` / `addIntel` 发生在生涯引擎建立之后)[C6-S2] / [C6-S3]。
 
 ## 术语
 
@@ -713,7 +713,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与 `GearInModPlugin`(C06-S01 / C06-S02)、本节 `GearInHubMission`、`bar_events.csv` 行、`rules.csv` 片段、既有 MOD 布局与 `GearInModPlugin`、本节任务类与两行数据 (同上)、同上，每次改动后重建。
+前置数据：既有 MOD 布局与 `GearInModPlugin`[C6-S1] / [C6-S2]、本节 `GearInHubMission`、`bar_events.csv` 行、`rules.csv` 片段、既有 MOD 布局与 `GearInModPlugin`、本节任务类与两行数据 (同上)、同上，每次改动后重建。
 
 1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`；
 2. 执行 `jar tf jars\GearIndustry.jar` 核对类文件。

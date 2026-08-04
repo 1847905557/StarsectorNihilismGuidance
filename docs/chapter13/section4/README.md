@@ -23,15 +23,15 @@
 
 本节是教程工程第一次**真正调用** `org.magiclib.**` 的 API，建议先具备以下基础：
 
-- 硬依赖声明与运行时检测 (C13-S01)：`mod_info.json` 的 `dependencies` 已声明 `MagicLib` (该页示例带 `version: "1.5.1"`)，MagicLib 自身依赖 `lw_lazylib`。
-- LazyLib 查询纪律 (C13-S02)：`AIUtils.getNearestEnemy` 等返回 `@Nullable` 必须判空、查询结果禁止跨战斗缓存。
+- 硬依赖声明与运行时检测 [C13-S1]：`mod_info.json` 的 `dependencies` 已声明 `MagicLib` (该页示例带 `version: "1.5.1"`)，MagicLib 自身依赖 `lw_lazylib`。
+- LazyLib 查询纪律 [C13-S2]：`AIUtils.getNearestEnemy` 等返回 `@Nullable` 必须判空、查询结果禁止跨战斗缓存。
 - `MagicFakeBeam` 内部链路使用 LazyLib(`MathUtils` / `VectorUtils` / `CombatUtils` / `CollisionUtils`)，本节示例也直接用 `AIUtils` / `VectorUtils`。
-- 战斗插件模型与暂停检查 (C07-S01)：`addPlugin` 注册、`advance` 每帧回调、`engine.isPaused()` 检查 (本节示例插件的骨架)。
-- MOD 主插件回调与 `onGameLoad` 时机 (C06-S02)：本节生涯查询片段从这里接入。
-- `Global` 生命周期 (C06-S03)：`getSector()` 在生涯启动/读档后才非 null；战斗外判断不要用 `getCombatEngine() == null`。
-- `GearIn_test` 测试战役 (C03-S01)：战斗侧冒烟入口。
-- `GearIn` 星系与 `GearIn_planet1`(C03-S03)：生涯写侧冒烟接入点。
-- 生涯对象基础 (S08 系列：C08-S01 生涯脚本、C08-S03 生涯舰队、C08-S08 生涯服务)：`MagicCampaign` 的产物就是这些对象。
+- 战斗插件模型与暂停检查 [C7-S1]：`addPlugin` 注册、`advance` 每帧回调、`engine.isPaused()` 检查 (本节示例插件的骨架)。
+- MOD 主插件回调与 `onGameLoad` 时机 [C6-S2]：本节生涯查询片段从这里接入。
+- `Global` 生命周期 [C6-S3]：`getSector()` 在生涯启动/读档后才非 null；战斗外判断不要用 `getCombatEngine() == null`。
+- `GearIn_test` 测试战役 [C3-S1]：战斗侧冒烟入口。
+- `GearIn` 星系与 `GearIn_planet1`[C3-S3]：生涯写侧冒烟接入点。
+- 生涯对象基础 (S08 系列：[C8-S1] 生涯脚本、[C8-S3] 生涯舰队、[C8-S8] 生涯服务)：`MagicCampaign` 的产物就是这些对象。
 
 ## MagicLib 概览
 
@@ -407,7 +407,7 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 
 | 环节 | 文件或 API | 使用方 / 行为 |
 |---|---|---|
-| 依赖声明 | `mod_info.json` 的 `dependencies`(`MagicLib`，C13-S01 已有)| 启动器强制检查 (缺装红色不可勾选)；代码侧 `org.magiclib.**` 引用 |
+| 依赖声明 | `mod_info.json` 的 `dependencies`(`MagicLib`，[C13-S1] 已有)| 启动器强制检查 (缺装红色不可勾选)；代码侧 `org.magiclib.**` 引用 |
 | 设置文件 | `data/config/modSettings.json`(本节新增，段 `gear_in`)| `Magic_modPlugin.onApplicationLoad` → `MagicSettings.loadModSettings` → `getMergedJSONForMod("data/config/modSettings.json", "MagicLib")`(跨 MOD 合并)|
 | 设置读取 | `MagicSettings.getBoolean/getString/getFloat/getInteger/getColorRGB/getColorRGBA/getList/get*Map` | 段内按键取值；缺省 false / `""` / 0 / `Color.RED` / 空集合；三类 warn 文案 |
 | 伪光束 | `MagicFakeBeam.spawnFakeBeam` / `spawnAdvancedFakeBeam` | 候选范围查询 (LazyLib)→ 最近命中点 → `applyDamage` 瞬时结算 + 命中粒子 → `MagicFakeBeamPlugin.addBeam` 视觉 |
@@ -440,7 +440,7 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 | 14 | **必须** | `createDerelict` 十参重载 `isRecoverable=false` → 追加 `Tags.UNRECOVERABLE`(recoverable 与 isRecoverable 是两个布尔)| 只传 `recoverable=false` 时残骸仍可被回收/语义错位 |
 | 15 | **必须** | `loadVariant` 解析失败返回 null(warn 日志)，使用前必须判空 | `.variant` 损坏 → NPE；日志只有 warn 行 |
 | 16 | 建议 | `MagicSettings` 不要在每帧解析，init 时读取一次缓存到字段 | 每帧重复 `has` → `getJSONObject` → 类型转换链路，纯浪费 |
-| 17 | **必须**(继承 C13-S01)| 引用 `org.magiclib.**` 前必须在 `dependencies` 声明 `MagicLib` | 用户缺依赖时 `NoClassDefFoundError` |
+| 17 | **必须**(继承 [C13-S1])| 引用 `org.magiclib.**` 前必须在 `dependencies` 声明 `MagicLib` | 用户缺依赖时 `NoClassDefFoundError` |
 
 规则表里每一行的后果都能在实际运行中观察到，接下来把这些边界装进一个同时使用四族的完整最小例。
 
@@ -623,7 +623,7 @@ public class GearInBeamCaster {
         if (player == null || !player.isAlive()) {
             return;
         }
-        ShipAPI enemy = AIUtils.getNearestEnemy(player); // @Nullable：必须判空（C13-S02 同规）
+        ShipAPI enemy = AIUtils.getNearestEnemy(player); // @Nullable：必须判空（C13-S2 同规）
         if (enemy == null) {
             LOG.info("GearIn magic beam: no enemy in sight");
             return;
@@ -747,7 +747,7 @@ public class GearInCampaignTools {
                 + " markets=" + sector.getEconomy().getMarketsCopy().size());
     }
 
-    /** 生涯写侧参考姿势：在生涯脚本（如 C03-S03 的 GearInSystemGenerator 末尾）调用，
+    /** 生涯写侧参考姿势：在生涯脚本（如 C3-S3 的 GearInSystemGenerator 末尾）调用，
      * 把一艘残骸舰放到轨道上。只有生涯上下文有效（orbitCenter 必须已加入星区）；
      * 场景错误时写 warn 而不是抛错。 */
     public static void spawnDerelictExample(SectorEntityToken orbitCenter, String variantId) {
@@ -789,7 +789,7 @@ import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.input.InputEventAPI;
 
 /** 薄载体接线类：把设置、伪光束与 HUD 状态条三个工具族接进一场战斗。
- * 由既有战斗插件在 init() 中 addPlugin 注册（C07-S01 模型），本身不含工具
+ * 由既有战斗插件在 init() 中 addPlugin 注册（C7-S1 模型），本身不含工具
  * 逻辑，只做接线：创建三个工具类、把引擎注入光束发射器、按帧转发 advance
  * 并执行暂停守卫。生涯工具不在这里接线（调用方是生涯脚本）。 */
 public class GearInMagicWiring extends BaseEveryFrameCombatPlugin {
@@ -810,13 +810,13 @@ public class GearInMagicWiring extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine == null) {
-            return; // 防御性判空（C07-S01 同款姿势）
+            return; // 防御性判空（C7-S1 同款姿势）
         }
         if (settings.hudEnabled) {
             hud.refresh(engine); // 放在暂停守卫之前：暂停期间也刷新，状态条才不会超时被移除
         }
         if (engine.isPaused()) {
-            return; // 暂停守卫（C07-S01）：光束与充能只在非暂停推进
+            return; // 暂停守卫（C7-S1）：光束与充能只在非暂停推进
         }
         beam.advance(amount);
     }
@@ -868,7 +868,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有累计工程 + `GearIn_test` 测试战役 (C03-S01)；已安装 MagicLib(启动器勾选)。
+前置数据：既有累计工程 + `GearIn_test` 测试战役 [C3-S1]；已安装 MagicLib(启动器勾选)。
 
 1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对五个类的条目。
 2. 进入 `GearIn_test` 一场战斗，打开 `starsector.log` 并观察战斗画面与 HUD。

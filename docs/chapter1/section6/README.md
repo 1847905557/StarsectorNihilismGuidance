@@ -19,10 +19,10 @@
 
 本节把三组 "内置" 配置写进 `.ship` 文件，直接使用前置章节建立的舰船、武器与战机数据，先确认以下基础：
 
-- `.ship` 结构、武器槽位 (`mount`/`type`/`size`)、`ship_data.csv` 注册链、控制台 `Addship`(C01-S02)。
-- 航母甲板、战机 hull/variant/wing 三层结构，以及 `GearIn_slag_wing` 等战机 ID(C01-S03)。
-- `weapon_data.csv` 与武器 ID、`.wpn` 的 `id` 字段 (C01-S05)。
-- 术语：hullmod 写作 "舰船插件 (船插)"，正文沿用简称 "船插"；本节只涉及 "内置" 这一安装方式 (船插的完整讲解见 C02-S02)。
+- `.ship` 结构、武器槽位 (`mount`/`type`/`size`)、`ship_data.csv` 注册链、控制台 `Addship`[C1-S2]。
+- 航母甲板、战机 hull/variant/wing 三层结构，以及 `GearIn_slag_wing` 等战机 ID[C1-S3]。
+- `weapon_data.csv` 与武器 ID、`.wpn` 的 `id` 字段 [C1-S5]。
+- 术语：hullmod 写作 "舰船插件 (船插)"，正文沿用简称 "船插"；本节只涉及 "内置" 这一安装方式 (船插的完整讲解见 [C2-S2])。
 
 ## 三组键与文件/API 链路
 
@@ -145,7 +145,7 @@
 
 ### 验证方案
 
-前置数据：`gear_in` MOD(C01-S01)+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_artizan`(C01-S02) 与武器 `GearIn_durin`(C01-S05)。
+前置数据：`gear_in` MOD[C1-S1]+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_artizan`[C1-S2] 与武器 `GearIn_durin`[C1-S5]。
 
 1. 用 dev 控制台 `Addship GearIn_artizan` 生成测试舰船。
 2. 在装配界面确认两门内置都林自动炮已安装。
@@ -231,7 +231,7 @@
 
 ### 验证方案
 
-前置数据：`gear_in` MOD(C01-S01)+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_forging`(C01-S04)。
+前置数据：`gear_in` MOD[C1-S1]+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_forging`[C1-S4]。
 
 1. 用 dev 控制台 `Addship GearIn_forging` 生成测试舰船。
 2. 在装配界面确认船插列表出现 `phasefield`(原版 Phase Field)。
@@ -276,7 +276,7 @@
 
 ### 验证方案
 
-前置数据：`gear_in` MOD(C01-S01)+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_furnaceman` 与战机 `GearIn_slag_wing`(C01-S03)。
+前置数据：`gear_in` MOD[C1-S1]+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_furnaceman` 与战机 `GearIn_slag_wing`[C1-S3]。
 
 1. 用 dev 控制台 `Addship GearIn_furnaceman` 生成测试舰船。
 2. 在装配界面确认第一个甲板固定为 `GearIn_slag_wing`(炉渣联队)。

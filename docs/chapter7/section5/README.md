@@ -22,13 +22,13 @@
 
 本节建立在前置单元的插件模型、引擎生命周期与战斗状态读取能力之上：
 
-- MOD 目录结构与 `starsector.log`(C01-S01)：本节所有可观察结果都落在日志里。
-- 战斗插件模型 (C07-S01)：注册入口、`addPlugin(...)` 与暂停判断 —— 本节细化生命周期与移除。
-- 战役与生涯概念、测试战役 (C03-S01)：`GearIn_test` 的部署与战斗结束是本节验证所依托的场景。
-- 编译 JAR 链路 (C06-S01)：前置单元建立的编译链路产出 `jars\GearIndustry.jar`。
-- 引擎生命周期与跨战斗缓存禁令 (C06-S03)：战斗引擎每场战斗结束销毁后立即重建、战斗外是非 null 空引擎 —— 本节把同一条纪律延伸到插件、监听器与它们持有的引用。
-- 战斗状态读取 (C07-S02)：`isCombatOver()` 在结束淡出完成前已为 `true`、时间语义、`getShips()` 遍历与实体存活性 —— 本节用这些判定做收尾。
-- 监听器通用概念 (生涯侧事件系统，C10-S02)：完整讲解在生涯侧事件系统单元；本节只讲战斗域监听器，不重复通用概念。
+- MOD 目录结构与 `starsector.log`[C1-S1]：本节所有可观察结果都落在日志里。
+- 战斗插件模型 [C7-S1]：注册入口、`addPlugin(...)` 与暂停判断 —— 本节细化生命周期与移除。
+- 战役与生涯概念、测试战役 [C3-S1]：`GearIn_test` 的部署与战斗结束是本节验证所依托的场景。
+- 编译 JAR 链路 [C6-S1]：前置单元建立的编译链路产出 `jars\GearIndustry.jar`。
+- 引擎生命周期与跨战斗缓存禁令 [C6-S3]：战斗引擎每场战斗结束销毁后立即重建、战斗外是非 null 空引擎 —— 本节把同一条纪律延伸到插件、监听器与它们持有的引用。
+- 战斗状态读取 [C7-S2]：`isCombatOver()` 在结束淡出完成前已为 `true`、时间语义、`getShips()` 遍历与实体存活性 —— 本节用这些判定做收尾。
+- 监听器通用概念 (生涯侧事件系统，[C10-S2])：完整讲解在生涯侧事件系统单元；本节只讲战斗域监听器，不重复通用概念。
 
 ## 文件与 API 链路
 
@@ -247,12 +247,12 @@ import com.fs.starfarer.api.util.IntervalUtil;
  * 生命周期事实：
  * - init() 已废弃：不保证在 advance() 前被调用（CombatEnginePlugin 的 API 注释），
  *   advance() 必须先判 engine == null；
- * - advance() 在暂停时仍会被调用，状态推进前必须先检查 engine.isPaused()（C02-S01）；
+ * - advance() 在暂停时仍会被调用，状态推进前必须先检查 engine.isPaused()（C2-S1）；
  * - 战斗结束没有回调：插件必须在 advance() 里用 engine.isCombatOver() 自行识别收尾时机，
- *   此时引擎仍存活（结束淡出尚未完成，C07-S01）；
+ *   此时引擎仍存活（结束淡出尚未完成，C7-S1）；
  * - 引擎级监听器不随插件移除而注销：插件调用 engine.removePlugin(this) 自移除时，
  *   必须同时把注册到 engine.getListenerManager() 的监听器 removeListener 掉；
- * - 引擎、插件、监听器与舰船引用禁止跨战斗缓存（C06-S03）：本类所有状态
+ * - 引擎、插件、监听器与舰船引用禁止跨战斗缓存（C6-S3）：本类所有状态
  *   都只属于当前这场战斗，战斗结束由引擎销毁统一释放。
  */
 public class GearInCombatLifecyclePlugin extends BaseEveryFrameCombatPlugin {
@@ -284,7 +284,7 @@ public class GearInCombatLifecyclePlugin extends BaseEveryFrameCombatPlugin {
             return; // init() 不保证先于 advance() 执行，必须判 null
         }
         if (engine.isPaused()) {
-            return; // 暂停守卫（C02-S01）
+            return; // 暂停守卫（C2-S1）
         }
         if (finalized) {
             return;
@@ -390,7 +390,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：MOD 布局与编译链路 (C06-S01)、战斗插件接入与注册片段 (C07-S01)、`GearIn_test` 测试战役 (C03-S01)、本节两个类，随编译进入 `jars\GearIndustry.jar`。
+前置数据：MOD 布局与编译链路 [C6-S1]、战斗插件接入与注册片段 [C7-S1]、`GearIn_test` 测试战役 [C3-S1]、本节两个类，随编译进入 `jars\GearIndustry.jar`。
 
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个类的 `.class`。
 2. 战斗初始化：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察生命周期初始化记录。

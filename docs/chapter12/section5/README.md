@@ -1,6 +1,6 @@
 # 实现本地化机制
 
-本节使用 C12-S02 已建立的 strings 规则，在 `gear_in` MOD 中组织分类和键，并写出 `GearInI18n` 取值封装。完成后，静态文本、`%s` 参数和 `$token` 都通过同一组调用入口进入界面或日志。
+本节使用 [C12-S2] 已建立的 strings 规则，在 `gear_in` MOD 中组织分类和键，并写出 `GearInI18n` 取值封装。完成后，静态文本、`%s` 参数和 `$token` 都通过同一组调用入口进入界面或日志。
 
 *本节预期阅读时间：~12 分钟。*
 
@@ -18,9 +18,9 @@
 
 ## 前置知识
 
-- C12-S02 的 `strings.json` 固定入口、双参 `getString`、缺失键和占位符规则；
-- C01-S01 的 MOD 目录结构与 `gear_in` 示例 MOD；
-- C01-S07、C03-S04 的 `descriptions.csv` 键规则与使用方。
+- [C12-S2] 的 `strings.json` 固定入口、双参 `getString`、缺失键和占位符规则；
+- [C1-S1] 的 MOD 目录结构与 `gear_in` 示例 MOD；
+- [C1-S7]、[C3-S4] 的 `descriptions.csv` 键规则与使用方。
 
 ## 本地化组织
 

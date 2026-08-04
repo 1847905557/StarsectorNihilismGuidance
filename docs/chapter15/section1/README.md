@@ -21,14 +21,14 @@
 
 本节在既有 MOD 布局、战斗渲染与 shader 能力基线之上展开，以下先修内容请先就绪：
 
-- MOD 目录结构与 `starsector.log` 的读取 (C01-S01)：本节所有可观察结果都落在日志与画面里。
-- 战役 (mission) 与生涯 (campaign) 概念、`GearIn_test` 测试战役 (C03-S01)：本节用它做游戏内验证。
-- 编译 JAR 链路 (C06-S01)：本节验证需要重新编译 `jars\GearIndustry.jar`。
-- `Global` 生命周期 (C06-S03)：禁止跨战斗缓存引擎引用，本节的渲染插件同规。
-- 战斗状态读取 (C07-S02)：`getPlayerShip()` 与实体存活判定，本节用玩家舰船做演示锚点。
-- 战斗插件生命周期 (C07-S05)：本节的注册片段所在。
-- 分层渲染插件 (C07-S06)：世界坐标提交、GL 资源清理与渲染回调纪律，本节直接复用。
-- GraphicsLib 初始化与能力门禁 (C13-S03)：`ShaderLib.init()` / `areShadersAllowed()` 的完整上下文。
+- MOD 目录结构与 `starsector.log` 的读取 [C1-S1]：本节所有可观察结果都落在日志与画面里。
+- 战役 (mission) 与生涯 (campaign) 概念、`GearIn_test` 测试战役 [C3-S1]：本节用它做游戏内验证。
+- 编译 JAR 链路 [C6-S1]：本节验证需要重新编译 `jars\GearIndustry.jar`。
+- `Global` 生命周期 [C6-S3]：禁止跨战斗缓存引擎引用，本节的渲染插件同规。
+- 战斗状态读取 [C7-S2]：`getPlayerShip()` 与实体存活判定，本节用玩家舰船做演示锚点。
+- 战斗插件生命周期 [C7-S5]：本节的注册片段所在。
+- 分层渲染插件 [C7-S6]：世界坐标提交、GL 资源清理与渲染回调纪律，本节直接复用。
+- GraphicsLib 初始化与能力门禁 [C13-S3]：`ShaderLib.init()` / `areShadersAllowed()` 的完整上下文。
 
 ## 文件与 API 链路
 
@@ -155,8 +155,8 @@ Java 侧                                   GPU 管线
 
 - **加载**：`Global.getSettings().loadText(String)` 读取 MOD 内文本 (`com.fs.starfarer.api.SettingsAPI`)，路径必须用 `/`(javadoc 原文 "Use / instead of \ in paths for compatibility (required to work on OS X and Linux)")。加载与日志处理的完整做法由后续单元展开；GraphicsLib 的用法是 `Global.getSettings().loadText("data/shaders/post/pre.vert")`(`org.dark.shaders.post.PostProcessShader`)。
 - **编译与链接**：`glCreateShader → glShaderSource → glCompileShader`，随后检查 `GL_COMPILE_STATUS`；`glCreateProgram → glAttachShader → glLinkProgram`，随后检查 `GL_LINK_STATUS`；失败时用 `glGetShaderInfoLog` / `glGetProgramInfoLog` 取日志并删除对象 (GraphicsLib `createShader` 编译失败抛 `"Error creating shader: " + 日志`；`loadShader` 链接失败删 program 返回 0)。编译错误日志包含行号与原因 ——**不检查状态，失败就不可见**(规则 7)。
-- **使用**：`glUseProgram(program)` → `glUniform*` / 顶点属性绑定 → `glDrawArrays` → `glUseProgram(0)`(GraphicsLib `exitDraw` 同款收尾)。渲染回调里自行管理 GL 状态 (C07-S06 建议 8 延续)。
-- **资源生命周期**(C07-S06 规则 2/3 延续)：程序对象在 `cleanup()` 里 `glDeleteProgram` 并复位句柄；战斗结束 `destroyInstance` 不调 `cleanup()`，必须 `advance()` 主动失效驱动引擎移除。
+- **使用**：`glUseProgram(program)` → `glUniform*` / 顶点属性绑定 → `glDrawArrays` → `glUseProgram(0)`(GraphicsLib `exitDraw` 同款收尾)。渲染回调里自行管理 GL 状态 ([C7-S6] 建议 8 延续)。
+- **资源生命周期**([C7-S6] 规则 2/3 延续)：程序对象在 `cleanup()` 里 `glDeleteProgram` 并复位句柄；战斗结束 `destroyInstance` 不调 `cleanup()`，必须 `advance()` 主动失效驱动引擎移除。
 - **方言**：GLSL 110 是 GL 2.0 上下文的标准方言 (GraphicsLib 全部 shader 用 `#version 110`)。GLSL 130+ 需要 GL 3.0+；现代 430 实例用 `#version 430`(`layout` / `std140` / UBO 等核心特性)，其内部规范要求 "版本声明必须统一为 `#version 430`"—— 这是**实例内部标准**(面向现代 GPU)，不是游戏基线。
 
 ::: info 为什么基线是 #version 110 而不是 430
@@ -180,8 +180,8 @@ GLSL 版本与 OpenGL 版本绑定：`#version 110` 是 GL 2.0 上下文的标�
 | 7 | **必须** | 编译/链接后检查 `GL_COMPILE_STATUS` / `GL_LINK_STATUS`，失败时读取信息日志并删除对象 | 错误程序继续使用：内容不出现或渲染异常，且失败原因不可见 (日志里才有行号与原因)|
 | 8 | **必须** | shader 源文本路径用 `/` 分隔 (`SettingsAPI.loadText` javadoc 原文)| `\` 路径在 OS X / Linux 上无法加载 (IOException)|
 | 9 | **必须** | GLSL 版本声明必须与目标上下文匹配：`#version 130+` 需要 GL 3.0+；教程基线用 `#version 110` | 低版本上下文声明高版本：`glCompileShader` 后 `GL_COMPILE_STATUS = FALSE`，信息日志含 version 错误 |
-| 10 | **必须** | GL 资源 (program 等) 在 `cleanup()` 释放；战斗结束 `destroyInstance` 不调 `cleanup()`，`advance()` 主动失效驱动引擎移除 (C07-S06 规则 2/3 延续)| 程序对象随战斗泄漏；多场战斗后驱动报错/渲染异常 |
-| 11 | **必须** | GL 命令只在 `render()` 回调内执行 (C07-S06 规则 1 延续)| `advance()` 里的 GL 调用在渲染阶段之外：内容不出现/错帧/层序错乱 |
+| 10 | **必须** | GL 资源 (program 等) 在 `cleanup()` 释放；战斗结束 `destroyInstance` 不调 `cleanup()`，`advance()` 主动失效驱动引擎移除 ([C7-S6] 规则 2/3 延续)| 程序对象随战斗泄漏；多场战斗后驱动报错/渲染异常 |
+| 11 | **必须** | GL 命令只在 `render()` 回调内执行 ([C7-S6] 规则 1 延续)| `advance()` 里的 GL 调用在渲染阶段之外：内容不出现/错帧/层序错乱 |
 | 12 | 建议 | 渲染回调里自行设置投影矩阵 (本节按 GraphicsLib `renderForeground` 做法 `glOrtho(viewport)`)，不依赖引擎固定管线矩阵在 shader 下的状态 | 无确定结果：依赖引擎矩阵时位置/缩放错误或消失 (引擎矩阵状态未承诺)|
 | 13 | 建议 | `glGetUniformLocation` 返回值判 -1(诊断价值高；GraphicsLib 实例未判，但 -1 的静默行为是头号隐蔽故障)| 无功能错误，只有可诊断性差异 |
 | 14 | 建议 | 参照实例规范：一个视觉参数只有一个所有者、颜色不硬编码、Java 只传外部状态、GLSL 内部形状/渐变/羽化自足 | 无功能错误；可维护性与风格问题 |
@@ -298,10 +298,10 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  * - 编译/链接失败检查：GL_COMPILE_STATUS / GL_LINK_STATUS 为 FALSE 时读取
  *   glGetShaderInfoLog / glGetProgramInfoLog 并删除对象（GraphicsLib createShader() /
  *   loadShader() 同款姿势）；
- * - 资源生命周期沿用 C07-S06 硬规则 2/3：GL 资源在 cleanup() 释放；战斗结束
+ * - 资源生命周期沿用 C7-S6 硬规则 2/3：GL 资源在 cleanup() 释放；战斗结束
  *   destroyInstance 不调用 cleanup()，插件在 advance() 里主动失效（isExpired() ->
  *   true）驱动引擎移除；本示例设 LIFETIME 秒寿命后自清；
- * - 插件、引擎引用禁止跨战斗缓存（C06-S03 / C07-S05 / C07-S06 同规）。
+ * - 插件、引擎引用禁止跨战斗缓存（C6-S3 / C7-S5 / C7-S6 同规）。
  */
 public class GearInBasicShaderRenderer extends BaseCombatLayeredRenderingPlugin {
 
@@ -336,7 +336,7 @@ public class GearInBasicShaderRenderer extends BaseCombatLayeredRenderingPlugin 
             valid = false; // 初始化失败：不渲染，等引擎正常移除
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C07-S06 同款姿势）
+        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C7-S6 同款姿势）
         LOG.info("GearIn basic shader init: program=" + program + ", vbo=" + vboId
                 + ", u_offset=" + uOffsetLocation);
     }
@@ -462,10 +462,10 @@ public class GearInBasicShaderRenderer extends BaseCombatLayeredRenderingPlugin 
         }
         elapsed += amount;
         if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()（C07-S06 硬规则 3）
+            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()（C7-S6 硬规则 3）
             return;
         }
-        // 剔除依据是承载实体的位置（C07-S06 硬规则 4）：跟随玩家舰船
+        // 剔除依据是承载实体的位置（C7-S6 硬规则 4）：跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
     }
 
@@ -538,10 +538,10 @@ public class GearInBasicShaderRenderer extends BaseCombatLayeredRenderingPlugin 
 
 对应关系：
 
-- `init` 三件事：`super.init(entity)` 存承载实体、`engine = Global.getCombatEngine()`(每场战斗新取，C06-S03/C07-S06 同规)、`createProgram()` + `buildQuad()` 建 GL 资源；失败即 `valid = false` 等引擎移除。`advance(0f)` 立即同步位置 (C07-S06 同款做法)。
+- `init` 三件事：`super.init(entity)` 存承载实体、`engine = Global.getCombatEngine()`(每场战斗新取，[C6-S3]/[C7-S6] 同规)、`createProgram()` + `buildQuad()` 建 GL 资源；失败即 `valid = false` 等引擎移除。`advance(0f)` 立即同步位置 ([C7-S6] 同款做法)。
 - `createProgram` 是数据流入口：`loadText` 读两个源文件 (规则 8 的路径做法)→ `compileShader` 逐个编译并查 `GL_COMPILE_STATUS`(规则 7)→ `glBindAttribLocation` 在链接前固定位置 0/1(规则 3)→ 链接并查 `GL_LINK_STATUS`(规则 7)→ `glGetUniformLocation` 取 `u_offset`(规则 6)。
-- `render` 四段：自行 `glOrtho(viewport)` 世界→屏幕正交投影 (建议 12，矩阵成对 push/pop)→ `glUseProgram` + `glUniform2f` 提交 uniform → VBO 绑定 + `glVertexAttribPointer`(long 偏移)+ `glDrawArrays(GL_TRIANGLES)` 绘制 6 顶点四边形 → 解除绑定、`glUseProgram(0)`(C07-S06 建议 8 的收尾做法)。
-- `advance`：`LIFETIME` 秒后 `valid = false` 主动失效 (规则 10)；位置同步 `entity.getLocation().set(...)`(C07-S06 规则 4)。
+- `render` 四段：自行 `glOrtho(viewport)` 世界→屏幕正交投影 (建议 12，矩阵成对 push/pop)→ `glUseProgram` + `glUniform2f` 提交 uniform → VBO 绑定 + `glVertexAttribPointer`(long 偏移)+ `glDrawArrays(GL_TRIANGLES)` 绘制 6 顶点四边形 → 解除绑定、`glUseProgram(0)`([C7-S6] 建议 8 的收尾做法)。
+- `advance`：`LIFETIME` 秒后 `valid = false` 主动失效 (规则 10)；位置同步 `entity.getLocation().set(...)`([C7-S6] 规则 4)。
 - `cleanup`：`glDeleteBuffers` 删 VBO、`glDeleteProgram` 删程序，句柄全部复位 (规则 10)。
 
 注册片段 (工程片段 —— 本节不改动战斗生命周期插件的任何既有文件，只演示使用方调用；把下面一行加进战斗生命周期插件 `GearInCombatLifecyclePlugin` 的 `init(CombatEngineAPI engine)` 方法末尾)：
@@ -563,7 +563,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与编译链路 (C06-S01)、`GearIn_test` 测试战役 (C03-S01)、战斗生命周期与分层渲染插件 (C07-S05、C07-S06)，加上本节的 `GearInBasicShaderRenderer` 与 `data\shaders\GearIn_basic_shader.vert/.frag`。
+前置数据：既有 MOD 布局与编译链路 [C6-S1]、`GearIn_test` 测试战役 [C3-S1]、战斗生命周期与分层渲染插件 [C7-S5]、[C7-S6]，加上本节的 `GearInBasicShaderRenderer` 与 `data\shaders\GearIn_basic_shader.vert/.frag`。
 
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag`、`data/scripts/gearin/combat/GearInBasicShaderRenderer.class`。
 2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察初始化记录。
@@ -580,14 +580,14 @@ gradle jar
   GearIn basic shader init: program=<id>, vbo=<id>, u_offset=<loc>
   ```
   没有由 `gear_in` 引起的 `ERROR` (编译/链接失败会在此处打 `GearIn basic shader: compile failed:` 或 `link failed:` 的 ERROR 行)。
-- 玩家舰船中心出现一个 120 世界单位见方的四边形，颜色从左下角到右上角红/绿渐变 —— 四边形内颜色连续变化 (红分量随水平位置、绿分量随垂直位置)，这是 `v_uv` 逐片元插值的直接表现；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，C07-S06 层序)。
+- 玩家舰船中心出现一个 120 世界单位见方的四边形，颜色从左下角到右上角红/绿渐变 —— 四边形内颜色连续变化 (红分量随水平位置、绿分量随垂直位置)，这是 `v_uv` 逐片元插值的直接表现；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，[C7-S6] 层序)。
 - 舰船移动时四边形跟着移动 (`u_offset` 每帧更新)；移动过程中四边形内的渐变样式不变 (`varying` 相对局部坐标插值)。
 - 约 20 秒后四边形消失，`starsector.log` 出现一行：
   ```text
   GearIn basic shader cleanup
   ```
   即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 10 的可观察面)。同一场战斗内不再出现。
-- 按空格暂停 —— 四边形静止但可见 (`advance` 不推进、渲染不暂停，C07-S06 同款)；恢复后继续跟随。
+- 按空格暂停 —— 四边形静止但可见 (`advance` 不推进、渲染不暂停，[C7-S6] 同款)；恢复后继续跟随。
 
 ## 故障分析
 
@@ -599,8 +599,8 @@ gradle jar
 4. **四边形不跟随舰船移动且没有任何日志**。症状：四边形停在初始位置，移动舰船没有反应，日志里也没有任何错误；触发：把 `"u_offset"` 改成 `"uOffset"`；原因：`glGetUniformLocation` 返回 -1，`glUniform2f` 被静默忽略 (GL 错误不报)；修正：核对名称与类型 (规则 6)，并判 -1(建议 13)。
 5. **内容不出现且失败原因不可见**。症状：图形不出现，`starsector.log` 里看不到失败线索；触发：注释掉 `compileShader` 里的 `GL_COMPILE_STATUS` 检查与日志读取；原因：错误程序继续使用，编译错误被吞掉；而检查日志时，语法错误的行号与原因 (如 `ERROR: 0:5: 'xxx' : syntax error`) 就在 `starsector.log` 里；修正：编译/链接后必查状态与日志 (规则 7)；完整日志处理在后续专题展开。
 6. **编译失败，信息日志含 version 错误**。症状：`GL_COMPILE_STATUS = FALSE`，信息日志含 version 错误 (GLSL 版本与 GL 版本绑定)；触发：把 `#version 110` 改成 `#version 130` 或更高；原因：GL 2.0 基线上下文不支持 GLSL 130+ 声明；修正：教程基线用 `#version 110`；需要 430 特性 (`layout`/`std140`/UBO) 时按目标硬件声明 (430 方言做法，规则 9)。
-7. **多场战斗后渲染异常、卡顿或驱动报错**。症状：程序对象随战斗泄漏，多场战斗后驱动报错、渲染异常或卡顿；触发：`cleanup()` 里不删 program，或指望 "战斗结束自动清理"；原因：`destroyInstance` 不调 `cleanup()` (C07-S06 规则 3)，句柄与显存每场累积；修正：`advance()` 主动失效 + `cleanup()` 里 `glDeleteProgram` 并复位句柄 (规则 10，同款做法)。
-8. **内容不出现、错帧或层序错乱**。症状：绘制内容不出现、错帧或层序错乱；触发：把 `glUseProgram` / `glDrawArrays` 放进 `advance()`；原因：`advance()` 属于推进阶段 (C07-S06)，命令在渲染阶段之外执行；修正：GL 命令只在 `render()` 回调 (规则 11)。
+7. **多场战斗后渲染异常、卡顿或驱动报错**。症状：程序对象随战斗泄漏，多场战斗后驱动报错、渲染异常或卡顿；触发：`cleanup()` 里不删 program，或指望 "战斗结束自动清理"；原因：`destroyInstance` 不调 `cleanup()` ([C7-S6] 规则 3)，句柄与显存每场累积；修正：`advance()` 主动失效 + `cleanup()` 里 `glDeleteProgram` 并复位句柄 (规则 10，同款做法)。
+8. **内容不出现、错帧或层序错乱**。症状：绘制内容不出现、错帧或层序错乱；触发：把 `glUseProgram` / `glDrawArrays` 放进 `advance()`；原因：`advance()` 属于推进阶段 [C7-S6]，命令在渲染阶段之外执行；修正：GL 命令只在 `render()` 回调 (规则 11)。
 9. **四边形位置/缩放错误或消失**。症状：位置/缩放错误或图形消失；触发：用 `ftransform()` 或 `gl_ModelViewProjectionMatrix` 但不自行设置投影矩阵；原因：分层渲染专题页只实证了固定管线提交路径，未承诺 shader 下的引擎矩阵状态；修正：按本节做法自行 `glOrtho(viewport)`(建议 12，GraphicsLib `renderForeground` 同款)。
 10. **把 430 方言写法搬进 110 文件后编译失败**。症状：编译失败，信息日志报语法错误 (`in`/`out` 不是 110 关键字)；触发：把 430 方言的 `in vec2 fragUV; out vec4 fragColor;` 写法抄进 `#version 110` 文件；原因：版本声明与语言关键字绑定；修正：110 方言用 `varying` 与 `gl_FragColor`；要搬 430 写法就连同版本声明与硬件前提一起搬 (规则 9)。
 

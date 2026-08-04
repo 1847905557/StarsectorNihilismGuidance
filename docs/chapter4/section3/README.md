@@ -20,10 +20,10 @@
 
 本节建立在以下内容之上：
 
-- 舰船制作全流程 —— 贴图、`.ship` 几何定义、槽位、`ship_data.csv` 注册与 `GearIn_artizan`(C01-S02)：模块和主体同样按该流程制作。
-- `GearIn_durin` 武器 (C01-S05)：本节装配示例会引用它。
-- 测试战役、装配导出与 `.variant` 字段表 (C03-S01)：该页字段表中 `modules` 一行写着 "本节不展开"—— 本节就是它的展开。
-- 可选：`GearIn_slag`、`GearIn_furnaceman`(C01-S03)、`GearIn_forging`(C01-S04) 与 `GearIn_artizan`(C02-S03) 会作为示例 `ship_data.csv` 的上下文行出现，不认识它们不影响本节内容。
+- 舰船制作全流程 —— 贴图、`.ship` 几何定义、槽位、`ship_data.csv` 注册与 `GearIn_artizan`[C1-S2]：模块和主体同样按该流程制作。
+- `GearIn_durin` 武器 [C1-S5]：本节装配示例会引用它。
+- 测试战役、装配导出与 `.variant` 字段表 [C3-S1]：该页字段表中 `modules` 一行写着 "本节不展开"—— 本节就是它的展开。
+- 可选：`GearIn_slag`、`GearIn_furnaceman`[C1-S3]、`GearIn_forging`[C1-S4] 与 `GearIn_artizan`[C2-S3] 会作为示例 `ship_data.csv` 的上下文行出现，不认识它们不影响本节内容。
 
 ## 文件与 API 链路
 

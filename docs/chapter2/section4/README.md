@@ -17,8 +17,8 @@
 
 ## 前置知识
 
-- 武器数据链：`weapon_data.csv` / `.wpn` / `.proj`(C01-S05)—— 本节给其中的 `.proj` 与 `.wpn` 加键；
-- 模板与参数、类名三处一致 (C02-S01、C02-S02)。
+- 武器数据链：`weapon_data.csv` / `.wpn` / `.proj`[C1-S5]—— 本节给其中的 `.proj` 与 `.wpn` 加键；
+- 模板与参数、类名三处一致 [C2-S1]、[C2-S2]。
 
 ## 武器调用效果类的机制
 
@@ -75,7 +75,7 @@ public class GearInHitLogger implements OnHitEffectPlugin {
 
 ### 第二步：注册到武器
 
-打开 C01-S05 制作的火炮的弹体文件 (`data/weapons/GearIn_durin_shot.proj` 之类)，在 JSON 中加一行：
+打开 [C1-S5] 制作的火炮的弹体文件 (`data/weapons/GearIn_durin_shot.proj` 之类)，在 JSON 中加一行：
 
 ```json
 "onHitEffect": "data.scripts.gearin.combat.GearInHitLogger",
@@ -134,7 +134,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ### 第二步：注册到武器
 
-打开 C01-S05 制作的**光束武器**的 `.wpn`，在 JSON 中加一行：
+打开 [C1-S5] 制作的**光束武器**的 `.wpn`，在 JSON 中加一行：
 
 ```json
 "beamEffect": "data.scripts.gearin.combat.GearInBeamLogger",
@@ -194,7 +194,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 给武器添加效果类 = 在数据文件里写类名：弹体 `.proj` 的 `onHitEffect`(命中时)、光束 `.wpn` 的 `beamEffect`(激活期间每帧)。效果类 = 按模板使用的接口方法 + 可修改的参数 (日志文字、间隔、粒子数值)。
 
-这两个接口的完整机制 —— 每种注册列的实例模型、`onFireEffect`/`everyFrameEffect` 等其余注册列、光束结算细节 —— 在 C07-S04 (观察武器开火与伤害过程) 与 C07-S09 (为武器加入动画与效果回调) 展开。
+这两个接口的完整机制 —— 每种注册列的实例模型、`onFireEffect`/`everyFrameEffect` 等其余注册列、光束结算细节 —— 在 [C7-S4] (观察武器开火与伤害过程) 与 [C7-S9] (为武器加入动画与效果回调) 展开。
 
 ## 建议参考项
 

@@ -21,10 +21,10 @@
 
 本节建立在前置章节的生涯机制之上：脚本注册与推进循环、时间与暂停语义、persistent data 注册标记，以及阶段与战斗域边界。具体衔接如下：
 
-- 星区结构、生涯时钟、`EveryFrameScript` 入门、脚本注册与推进循环、暂停与加速语义、persistent data `CLASS_MARK` 标记 —— 本节的所有概念都从这里继续，不重复基础讲解 (C08-S01)。
-- `modPlugin` 生命周期回调与 persistent data 注册标记模式；本节的注册沿用同一个模式 (C06-S02)。
-- `Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；脚本注册必须发生在生涯引擎建立之后 (C06-S03)。
-- 战斗域每帧回调 (`EveryFrameCombatPlugin`)—— 两边的暂停语义不同，注意对照 (生涯脚本循环在暂停时默认完全跳过)(C07-S01)。
+- 星区结构、生涯时钟、`EveryFrameScript` 入门、脚本注册与推进循环、暂停与加速语义、persistent data `CLASS_MARK` 标记 —— 本节的所有概念都从这里继续，不重复基础讲解 [C8-S1]。
+- `modPlugin` 生命周期回调与 persistent data 注册标记模式；本节的注册沿用同一个模式 [C6-S2]。
+- `Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；脚本注册必须发生在生涯引擎建立之后 [C6-S3]。
+- 战斗域每帧回调 (`EveryFrameCombatPlugin`)—— 两边的暂停语义不同，注意对照 (生涯脚本循环在暂停时默认完全跳过)[C7-S1]。
 
 ## 文件与 API 链路
 
@@ -114,7 +114,7 @@
 
 - **必须**：脚本字段只放可随 XStream 序列化的状态 (基础类型、可序列化对象)。
   - 把引擎单例、`CampaignUIAPI`、声音播放器等句柄存进字段，会把整个可达对象图拖进存档 —— 可观察结果：存档文件异常膨胀、保存/读档异常，或读档后字段指向失效对象导致行为错乱。
-- **必须**：一次性注册用随存档保存的 persistent data 标记 (C06-S02 的 `CLASS_MARK` 模式；本节示例用各自键 `REGISTER_MARK`)——`addScript` 不去重，标记缺失的可观察结果是读档次数越多日志越成双、行为叠加。
+- **必须**：一次性注册用随存档保存的 persistent data 标记 ([C6-S2] 的 `CLASS_MARK` 模式；本节示例用各自键 `REGISTER_MARK`)——`addScript` 不去重，标记缺失的可观察结果是读档次数越多日志越成双、行为叠加。
 - **必须**：transient 脚本的重新注册写在读档回调里，否则可观察结果是读档后脚本消失且无报错。
 - **建议**：跨会话的小数据放 `SectorAPI.getPersistentData()`(persistent data 随档保存；注意 XStream 存档边界)。
 - **建议**：脚本内瞬态句柄 (贴图、粒子、UI 引用) 声明为 `transient` 字段并用 `readResolve()` 重建 —— 成熟实例：实体插件用 `readResolve()` 恢复 `SpriteAPI` 句柄。
@@ -136,7 +136,7 @@
 
 ## 完整最小例
 
-选型之后落到代码。在已有 MOD 布局 (C06-S01) 与 `GearInModPlugin`(C06-S02) 之上新增两个脚本类 (不新增任何资源、不新增任何注册项 —— 指不新增数据/资源注册项；脚本经 `onGameLoad` 注册属于代码注册)：
+选型之后落到代码。在已有 MOD 布局 [C6-S1] 与 `GearInModPlugin`[C6-S2] 之上新增两个脚本类 (不新增任何资源、不新增任何注册项 —— 指不新增数据/资源注册项；脚本经 `onGameLoad` 注册属于代码注册)：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -172,7 +172,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * int，可随存档序列化（XStream 存档边界），脚本随存档保存、读档后继续。
  *
  * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），注册前用 persistent data
- * 键 REGISTER_MARK 做一次性门控（C06-S02 的 CLASS_MARK 模式），键与调用点片段逐字一致。
+ * 键 REGISTER_MARK 做一次性门控（C6-S2 的 CLASS_MARK 模式），键与调用点片段逐字一致。
  */
 public class GearInCalendarDayScript implements EveryFrameScript {
 
@@ -245,7 +245,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * 余数跨帧保留；单帧跨多个游戏日（加速、新档推进）时 while 逐日补触发；
  * daysToRun >= 0 时累计满该游戏天数后 isDone() 返回 true，引擎下一帧
  * 自动移除；全部字段可随存档序列化（XStream 存档边界），读档后继续。
- * 注册入口：onGameLoad 的 persistent data 门内（REGISTER_MARK 一次性门控，C06-S02 的 CLASS_MARK 模式）。
+ * 注册入口：onGameLoad 的 persistent data 门内（REGISTER_MARK 一次性门控，C6-S2 的 CLASS_MARK 模式）。
  */
 public class GearInDayAccumulatorScript implements EveryFrameScript {
 
@@ -320,10 +320,10 @@ public class GearInDayAccumulatorScript implements EveryFrameScript {
 - `daysAccumulator` / `while`(模式 B)：累计满 `tickEveryDays` 个游戏天触发一次例程 (日志 `GearIn daily: routine #N ...`)，余数跨帧保留；单帧跨多个游戏日时逐日补触发。
 - `daysSinceMount`：挂载以来的精确游戏天数，兼作 `daysToRun` 自停判据与日志统计；全部字段 (`int` / `float` / `boolean`) 都是可随存档序列化的基础类型，读档后从存档值继续。
 
-调用点 (工程片段 —— 方法所在类归 C06-S02 所有，本节只演示调用，不改动那些文件)：
+调用点 (工程片段 —— 方法所在类归 [C6-S2] 所有，本节只演示调用，不改动那些文件)：
 
 ```java
-    // onGameLoad(boolean newGame) 内新增本节注册块（GearInModPlugin 归 C06-S02 所有）。
+    // onGameLoad(boolean newGame) 内新增本节注册块（GearInModPlugin 归 C6-S2 所有）。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
     if (!Global.getSector().getPersistentData().containsKey(GearInCalendarDayScript.REGISTER_MARK)) {
         Global.getSector().getPersistentData().put(GearInCalendarDayScript.REGISTER_MARK, true);
@@ -333,7 +333,7 @@ public class GearInDayAccumulatorScript implements EveryFrameScript {
         Global.getSector().getPersistentData().put(GearInDayAccumulatorScript.REGISTER_MARK, true);
         Global.getSector().addScript(new GearInDayAccumulatorScript());
     }
-    // 可选冗余查重（C06-S02 建议：hasScript 与 persistent data 门互为冗余）：
+    // 可选冗余查重（C6-S2 建议：hasScript 与 persistent data 门互为冗余）：
     if (!Global.getSector().hasScript(GearInCalendarDayScript.class)) {
         Global.getSector().addScript(new GearInCalendarDayScript());
     }
@@ -365,7 +365,7 @@ public class GearInDayAccumulatorScript implements EveryFrameScript {
 
 :::
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用 C06-S01)：
+构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用 [C6-S1])：
 
 ```text
 gradle jar
@@ -375,7 +375,7 @@ gradle jar
 
 ### 验证方案
 
-前置数据：已有 MOD 布局 (C06-S01)、`GearInModPlugin` (C06-S02，含本节调用点片段) 与两个脚本类。
+前置数据：已有 MOD 布局 [C6-S1]、`GearInModPlugin` ([C6-S2]，含本节调用点片段) 与两个脚本类。
 
 1. 构建游戏 MOD：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，并核对 `jar tf jars\GearIndustry.jar` 含两个脚本类的 class 条目。
 2. 新建生涯，在 `starsector.log` 中观察两个脚本的周期记录。
@@ -400,7 +400,7 @@ gradle jar
 
 ## 故障分析
 
-1. **脚本完全没有日志**：`starsector.log` 里没有任何 `GearIn calendar:` / `GearIn daily:` 日志且无报错；另一种表现是启动中止，NPE 堆栈指向 `onApplicationLoad`。触发：忘了调用 `addScript`，或把注册写进 `onApplicationLoad` (此刻 `Global.getSector()` 为 null，解引用即 NPE)。修正：注册放 `onGameLoad` / `onNewGame` 的 persistent data 标记块内 (C06-S03 的 null 语义)，改回后重启新档确认恢复。
+1. **脚本完全没有日志**：`starsector.log` 里没有任何 `GearIn calendar:` / `GearIn daily:` 日志且无报错；另一种表现是启动中止，NPE 堆栈指向 `onApplicationLoad`。触发：忘了调用 `addScript`，或把注册写进 `onApplicationLoad` (此刻 `Global.getSector()` 为 null，解引用即 NPE)。修正：注册放 `onGameLoad` / `onNewGame` 的 persistent data 标记块内 ([C6-S3] 的 null 语义)，改回后重启新档确认恢复。
 2. **把 `amount` 当游戏天数用**：一切按天数计算的逻辑比真实快 10 倍 (10 真实秒被当成 10 游戏天，`daysToRun = 30` 的脚本 30 真实秒就自停)。触发：忽略接口提示 ("Use SectorAPI.getClock() to convert to campaign days")。修正：一律 `clock.convertToDays(amount)` —— 本节示例 `advance` 第一行就是换算。
 3. **`isDone()` 恒返回 true**：`advance` 一次都不执行、连日志都没有。触发：完成标记写反或占位返回 `true`，引擎第一帧先查 `isDone` 就直接移除。修正：初始 `false`，仅完成条件满足时置 `true`。
 4. **`isDone()` 恒 false 且想用 `removeScript` 移除别的实例**：日志持续，目标脚本删不掉。触发：把 `removeScript` 用在等价但不同实例上；引擎按对象同一性移除，`removeScriptsOfClass` 又只按精确类删 (子类不算)。修正：移除用注册时的同一实例，或改 `removeScriptsOfClass`；常驻脚本想自停就置 `done = true` 让引擎自动清理。
@@ -408,7 +408,7 @@ gradle jar
 6. **跨日检测漏触发**：模式 A 在跨多天的帧里只报一次新的一天，中间的日子没有日志。触发：单帧跨多个游戏日 (devMode 10x/100x 调试键、MOD 自定义大步长推进) 时，`dateKey` 一帧只比较一次。修正：日历事件一帧至多一次是正常行为；需要逐日补触发的逻辑用模式 B 的 `while` 累加器。
 7. **脚本字段放了引擎单例/UI 引用**：存档文件异常膨胀、保存/读档异常，或读档后字段指向失效对象导致行为错乱。触发：把 `getCampaignUI()`、声音播放器等存进脚本字段 (脚本字段会随存档一起序列化)。修正：字段只放可序列化状态；瞬态句柄用 `transient` 字段 + `readResolve()` 重建；跨会话小数据放 `getPersistentData()`。
 8. **transient 脚本读档后消失**：读档后逻辑静默缺失，无任何报错。触发：用 `addTransientScript` 注册常驻逻辑，没在读档回调里重新注册 (`transientScripts` 被 `readResolve` 清空)。修正：常驻逻辑用 `addScript`；`addTransientScript` 只用于纯临时推进逻辑，并在读档回调重新注册。
-9. **旧档永远不注册脚本**：旧档读档后无任何日志、脚本缺失且无报错。触发：把注册放进既有 `CLASS_MARK` 标记内 (C06-S02 的 persistent data 标记模式；该键在新档首次进入时就已置位)。修正：每个注册项用各自的 persistent data 键 (本节 `REGISTER_MARK`)，旧档缺键 = 视为首次注册，正好覆盖中途加脚本的场景。
+9. **旧档永远不注册脚本**：旧档读档后无任何日志、脚本缺失且无报错。触发：把注册放进既有 `CLASS_MARK` 标记内 ([C6-S2] 的 persistent data 标记模式；该键在新档首次进入时就已置位)。修正：每个注册项用各自的 persistent data 键 (本节 `REGISTER_MARK`)，旧档缺键 = 视为首次注册，正好覆盖中途加脚本的场景。
 10. **暂停时等待时钟推进的倒计时永不触发**：暂停期间 `since mount` 冻结、`done` 永不置位，恢复后继续。触发：脚本用 `clock.getElapsedDaysSince(ts) >= N` 做倒计时，又没改 `runWhilePaused`。修正：这是设计行为 (暂停 = 停表)；需要真实时间倒计时就自己累计 `amount`。
 11. **战斗期间脚本不再推进**：战斗期间无任何日志、时钟冻结；回生涯后日志继续。触发：在战斗里等生涯日志。修正：无需修复 —— 生涯推进循环只在生涯状态下运行，战斗域由战斗状态接管；生涯脚本天然不跨战斗推进。
 

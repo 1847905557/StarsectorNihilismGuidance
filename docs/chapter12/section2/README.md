@@ -18,9 +18,9 @@
 
 ## 前置知识
 
-- C12-S01 的文件读取概念、MOD 相对路径和 `modId`；
-- C01-S01 的 JSON 基础与 UTF-8 无 BOM 要求；
-- C06-S03 的 `Global.getSettings()` 和日志入口。
+- [C12-S1] 的文件读取概念、MOD 相对路径和 `modId`；
+- [C1-S1] 的 JSON 基础与 UTF-8 无 BOM 要求；
+- [C6-S3] 的 `Global.getSettings()` 和日志入口。
 
 ## 固定入口与自有路径
 
@@ -102,7 +102,7 @@ String serviceId = services.getString("serviceId");
 int interval = services.optInt("interval", 10);
 ```
 
-JSON 路径继续遵守 C12-S01 的资源路径规则。`validateFileName` 会拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径。`getString` 等强制取值方法在字段缺失或类型不符时抛出异常；允许字段缺失时使用 `optString`、`optInt` 等入口并提供明确的替代值。
+JSON 路径继续遵守 [C12-S1] 的资源路径规则。`validateFileName` 会拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径。`getString` 等强制取值方法在字段缺失或类型不符时抛出异常；允许字段缺失时使用 `optString`、`optInt` 等入口并提供明确的替代值。
 
 ### 自有 JSON 最小实例
 
@@ -172,4 +172,4 @@ JSON 路径继续遵守 C12-S01 的资源路径规则。`validateFileName` 会�
 - `com.fs.starfarer.api.SettingsAPI`：`loadJSON`、`getString` 和 `validateFileName`；
 - `data/strings/strings.json`：原版公开的本地化文本入口；
 - `data/config/`：MOD 自有 JSON 资源目录；
-- C12-S05：`GearInI18n` 本地化实现。
+- [C12-S5]：`GearInI18n` 本地化实现。

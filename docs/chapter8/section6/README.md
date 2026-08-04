@@ -22,14 +22,14 @@
 
 本节要继续使用 MOD 目录约定、经济 JSON、插件生命周期回调与 `MutableStat`，请先熟悉以下主题：
 
-- **MOD 目录结构与命名约定** (C01-S01)：数据/资源 key 前缀 `GearIn_`、包 `data.scripts.gearin.<domain>`、类 `GearIn<Subject>`，以及 `starsector.log` 的排查用法；
-- **经济 JSON 与市场就位时机** (C03-S03)：`econ/*.json` 市场的 `industries` 数组，元素可为纯 id 字符串或 `[id, param...]` 数组；`onNewGameAfterEconomyLoad` 之后经济与市场已就位；
-- **插件生命周期与一次性注册标记** (C06-S02)：`modPlugin` 生命周期回调；每个注册项用各自的 persistent data 键；
-- **settings 读取** (C06-S04)：本节引用的 `maxIndustries`、`industryRefundFraction` 等键；
-- **`MutableStat`** (C07-S03)：本节的供需数量、收入、维护费都是它；`modifyFlat` 同 id 幂等覆盖；
-- **生涯时钟与游戏日换算** (C08-S01)：`SectorAPI.getEconomy()` 入口；`getClock().convertToDays(amount)` 把每帧秒数换算成游戏日 (建设进度用它)；
-- **生涯对象族写法与一次性注册判断** (C08-S03)；
-- **市场与产业访问入口、经济循环节奏** (C08-S05)：`MarketAPI.addIndustry` / `getIndustry` / `hasIndustry` / `hasFunctionalIndustry` / `removeIndustry` / `instantiateIndustry`；产业 id 校验与条件不同，未注册 id 抛 `RuntimeException`；经济步的推进节奏与 `EconomyUpdateListener` 注册方式。
+- **MOD 目录结构与命名约定** [C1-S1]：数据/资源 key 前缀 `GearIn_`、包 `data.scripts.gearin.<domain>`、类 `GearIn<Subject>`，以及 `starsector.log` 的排查用法；
+- **经济 JSON 与市场就位时机** [C3-S3]：`econ/*.json` 市场的 `industries` 数组，元素可为纯 id 字符串或 `[id, param...]` 数组；`onNewGameAfterEconomyLoad` 之后经济与市场已就位；
+- **插件生命周期与一次性注册标记** [C6-S2]：`modPlugin` 生命周期回调；每个注册项用各自的 persistent data 键；
+- **settings 读取** [C6-S4]：本节引用的 `maxIndustries`、`industryRefundFraction` 等键；
+- **`MutableStat`** [C7-S3]：本节的供需数量、收入、维护费都是它；`modifyFlat` 同 id 幂等覆盖；
+- **生涯时钟与游戏日换算** [C8-S1]：`SectorAPI.getEconomy()` 入口；`getClock().convertToDays(amount)` 把每帧秒数换算成游戏日 (建设进度用它)；
+- **生涯对象族写法与一次性注册判断** [C8-S3]；
+- **市场与产业访问入口、经济循环节奏** [C8-S5]：`MarketAPI.addIndustry` / `getIndustry` / `hasIndustry` / `hasFunctionalIndustry` / `removeIndustry` / `instantiateIndustry`；产业 id 校验与条件不同，未注册 id 抛 `RuntimeException`；经济步的推进节奏与 `EconomyUpdateListener` 注册方式。
 
 ## 术语
 

@@ -22,13 +22,13 @@
 
 本节的知识基础来自数据面、开火流、插件模型与实例纪律等前置单元：
 
-- 武器 CSV、`.wpn`、`.proj` 数据面 (C01-S05)：本节的注册列挂在这些 spec 上；`fireSoundOne` / `fireSoundTwo`、导弹特殊字段已在数据侧讲过。
-- 武器开火流、射弹生命周期与光束 DPS 语义 (C07-S04)：`fireShot` 先扣弹药 → 生成射弹 → `onFire`；监听器纪律 —— 本节在其上展开 "效果类怎么写、动画怎么做"，不重复开火流细节。
-- 战斗插件模型 (C07-S01)：数据绑定效果类与插件是两类实例 —— 本节反复对照这一区别。
-- 编译 JAR 链路 (C06-S01)：本节示例编入同一个 `jars\GearIndustry.jar`。
-- `Global` 生命周期与禁止跨战斗缓存引擎引用 (C06-S03)：本节把同一条纪律延伸到效果类字段。
-- 暂停语义与实体遍历纪律 (C07-S01)：本节的效果回调在暂停时停摆，与插件 `advance` 暂停时仍被调用不同。
-- `MutableStat`(C07-S03)：`damage.getModifier()` 的返回类型；本节只消费。
+- 武器 CSV、`.wpn`、`.proj` 数据面 [C1-S5]：本节的注册列挂在这些 spec 上；`fireSoundOne` / `fireSoundTwo`、导弹特殊字段已在数据侧讲过。
+- 武器开火流、射弹生命周期与光束 DPS 语义 [C7-S4]：`fireShot` 先扣弹药 → 生成射弹 → `onFire`；监听器纪律 —— 本节在其上展开 "效果类怎么写、动画怎么做"，不重复开火流细节。
+- 战斗插件模型 [C7-S1]：数据绑定效果类与插件是两类实例 —— 本节反复对照这一区别。
+- 编译 JAR 链路 [C6-S1]：本节示例编入同一个 `jars\GearIndustry.jar`。
+- `Global` 生命周期与禁止跨战斗缓存引擎引用 [C6-S3]：本节把同一条纪律延伸到效果类字段。
+- 暂停语义与实体遍历纪律 [C7-S1]：本节的效果回调在暂停时停摆，与插件 `advance` 暂停时仍被调用不同。
+- `MutableStat`[C7-S3]：`damage.getModifier()` 的返回类型；本节只消费。
 
 ## 文件与 API 链路
 
@@ -47,7 +47,7 @@
 | `MuzzleFlashSpec` | 炮口粒子参数 | `.wpn` `muzzleFlashSpec`(`ProjectileWeaponSpecAPI.getMuzzleFlashSpec()`)|
 | `smokeSpec` 数据对象 | 开火烟尘参数 | `.wpn` `smokeSpec` 键 |
 | `ProjectileWeaponSpecAPI` / `BeamWeaponSpecAPI` / `ProjectileSpecAPI` / `MissileSpecAPI` | spec 读取侧 | `weapon.getSpec()` 或按 id 读取 spec 的加载期存储 |
-| `DamageAPI` | 光束 / 射弹伤害对象 | `beam.getDamage()` / `projectile.getDamage()`(C07-S04 / C07-S03)|
+| `DamageAPI` | 光束 / 射弹伤害对象 | `beam.getDamage()` / `projectile.getDamage()`[C7-S4] / [C7-S3]|
 
 ### .wpn / .proj 注册列 (数据挂载点)
 
@@ -182,7 +182,7 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 
 1. **武器构造时**：`.wpn` 登记的 `everyFrameEffect` 类名由脚本类加载器实例化 (**每次创建新实例**)→ 每把武器实例独有一个效果对象；若实现 `WeaponEffectPluginWithInit`，紧接着调用 `init(weapon)`。多艘舰、多把同 id 武器的效果对象互不相干。
 2. **每帧**：`advance(amount, engine, weapon)` 在本帧转向、开火等操作**之前**调用 (API javadoc 原文 "Called before this frame's operations for the weapon - turning, firing, etc.")；本帧操作完成后，若实现 `EveryFrameWeaponEffectPluginWithAdvanceAfter` 再调 `advanceAfter`。
-3. **暂停时武器不推进** → 两个回调全部停摆 (C07-S01 / C07-S04 的暂停语义；与战斗插件 `advance` 暂停时仍被调用不同)。
+3. **暂停时武器不推进** → 两个回调全部停摆 ([C7-S1] / [C7-S4] 的暂停语义；与战斗插件 `advance` 暂停时仍被调用不同)。
 4. 若该效果类同时实现 `OnFireEffectPlugin`，开火时**同一个实例**还会被调一次 `onFire`——"一类多角色、一武器一实例" 是原版常用做法 (`RiftBeamEffect` 用 everyFrameEffect 在光束武器上轮询 `weapon.getBeams()` 生成裂隙；`RealityDisruptorEffect` 一个类同时是 everyFrameEffect / onFireEffect / onHitEffect，见 "同实例多角色")。
 
 ### beamEffect(光束武器专属)
@@ -190,15 +190,15 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 - 注册列 `beamEffect` 只在 `specClass: beam` 的 `.wpn` 上被读取；写到弹丸武器 `.wpn` 上**静默不生效**。
 - 实例：每条光束射线实体构造时调 `getSpec().getBeamEffect()` → **每条射线独立实例**；实现 `BeamEffectPluginWithReset` 的实例在射线创建与销毁时收到 `reset()`—— 跨射线状态在这里复位。
 - 每帧调用：射线在开火 / 充能期间存在，光束武器每帧对每条射线调一次 `advance(amount, engine, beam)`。调用点在端点更新前后的位置随命中与否变化：**射线被目标截短 (命中) 时在更新 `to` 端点之后调用，未命中时在更新之前调用**—— 效果里读 `beam.getTo()` 的语义随命中状态不同，命中时读到本帧截短端点，未命中时读到上一帧端点。
-- 光束伤害是 DPS 语义按 0.1 秒结算 (C07-S04)；`beam.getDamage().getDpsDuration()` 在结算帧返回累计时长、其余帧为 0—— 原版 `IonBeamEffect` 用 `dpsDuration` 推进 `IntervalUtil`(并处理快速时间下的 `wasZero` 边沿)，使特效节奏跟随真实伤害结算。
-- `didDamageThisFrame()` / `getDamageTarget()` 只对本帧结算语义有效 (C07-S04 规则 5 同规)：光束逐帧可能切换命中目标，禁止把上一帧目标缓存跨帧使用。
+- 光束伤害是 DPS 语义按 0.1 秒结算 [C7-S4]；`beam.getDamage().getDpsDuration()` 在结算帧返回累计时长、其余帧为 0—— 原版 `IonBeamEffect` 用 `dpsDuration` 推进 `IntervalUtil`(并处理快速时间下的 `wasZero` 边沿)，使特效节奏跟随真实伤害结算。
+- `didDamageThisFrame()` / `getDamageTarget()` 只对本帧结算语义有效 ([C7-S4] 规则 5 同规)：光束逐帧可能切换命中目标，禁止把上一帧目标缓存跨帧使用。
 
 ### onFireEffect / onHitEffect(.proj)
 
 - 注册列：`onFireEffect` / `onHitEffect` 在 projectile 与 missile 两类 `.proj` 上都被读取。
 - 实例：`onFireEffect` 在**武器构造时**缓存到武器对象 (每武器一个实例)；`onHitEffect` 在**射弹构造时**缓存 (每射弹一个实例)。
-- 时机：`onFire` 在 `fireShot` 生成射弹之后立即调用，参数是刚生成的那一颗射弹 (弹药不足时不生成射弹、也不回调 ——C07-S04)；`onHit` 在命中伤害结算 (`notifyDealtDamage`) 时调用，`shieldHit` 与 `ApplyDamageResultAPI` 是本次结算上下文。弹道弹穿行时默认不触发 `onHit`，`.proj` 的 `applyOnHitEffectWhenPassThrough:true` 可改为穿行也触发。
-- 参数都是 "本次事件上下文"，**禁止跨发 / 跨帧缓存**(C07-S04 规则 2 同规)。
+- 时机：`onFire` 在 `fireShot` 生成射弹之后立即调用，参数是刚生成的那一颗射弹 (弹药不足时不生成射弹、也不回调 ——[C7-S4])；`onHit` 在命中伤害结算 (`notifyDealtDamage`) 时调用，`shieldHit` 与 `ApplyDamageResultAPI` 是本次结算上下文。弹道弹穿行时默认不触发 `onHit`，`.proj` 的 `applyOnHitEffectWhenPassThrough:true` 可改为穿行也触发。
+- 参数都是 "本次事件上下文"，**禁止跨发 / 跨帧缓存**([C7-S4] 规则 2 同规)。
 
 ### 同实例多角色 (RealityDisruptorEffect 模式)
 
@@ -221,16 +221,16 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 从实例模型与回调时机中提炼出的约束集中在这里，本节示例逐条对应。
 
 1. **效果类必须可无参实例化**。所有效果注册列都由脚本类加载器按类名创建实例 (要求无参构造器)。违反的可观察结果：绑定的类缺失、类名写错或无无参构造器时，武器 / 射线 / 射弹创建点抛 `Problem loading class [...]`(`RuntimeException`)—— 部署舰船即报错，或武器 / 射弹创建失败。
-2. **回调参数只在本回调内消费，禁止跨发 / 跨帧 / 跨实例缓存**。`onFire` 的 `projectile`、`onHit` 的 `target` / `damageResult`、光束的 `didDamageThisFrame` / `getDamageTarget` 都只在对应回调与对应帧有效 (与 C07-S04 规则 2、4 同一条纪律)。违反的可观察结果：把上一帧目标当本帧目标继续操作 —— 对已死实体施加逻辑；或跨发射复用射弹引用 —— 旧引用失效或被下一次覆盖。
+2. **回调参数只在本回调内消费，禁止跨发 / 跨帧 / 跨实例缓存**。`onFire` 的 `projectile`、`onHit` 的 `target` / `damageResult`、光束的 `didDamageThisFrame` / `getDamageTarget` 都只在对应回调与对应帧有效 (与 [C7-S4] 规则 2、4 同一条纪律)。违反的可观察结果：把上一帧目标当本帧目标继续操作 —— 对已死实体施加逻辑；或跨发射复用射弹引用 —— 旧引用失效或被下一次覆盖。
 3. **动画武器帧贴图必须按命名规则放置**：基贴图路径以 `00.png` 结尾，帧文件按 `00, 01, ..., N-1` 顺序编号。违反的可观察结果：基路径不以 `00.png` 结尾时帧 0 路径推导错位 (拼出错误文件名)，帧文件缺失在武器构造时加载失败 —— 部署舰船即报错。
 4. **`weapon.getAnimation()` 必须判空**。只有 `numFrames > 1` 的武器有动画对象 (`com.fs.starfarer.api.combat.WeaponAPI` javadoc 原文 "null for non-animated weapons")。违反的可观察结果：对静态贴图武器调用 `getAnimation()` 直接 NPE。
 5. **不得在 `getSprite()` 返回的贴图上设置 alpha 与角度**。渲染前引擎会调用 `setAlphaMult()` / `setAngle()` 覆盖 (`WeaponAPI.getSprite()` javadoc 原文)。改透明度用 `SpriteAPI.setColor()` 的 alpha 通道、改朝向用 `WeaponAPI.setCurrAngle()`。违反的可观察结果：设置值被覆盖，视觉无变化 (静默失效)。
 6. **`beamEffect` 只对光束武器生效**。注册列只在 `specClass: beam` 时被读取。违反的可观察结果：写在弹丸 `.wpn` 上完全无效，无任何报错 (静默)—— 回调不执行。
-7. **修改武器数值前必须 `ensureClonedSpec()`**(C07-S04 规则 1 同规)；效果类如需改伤害只能走 `damage.getModifier()`(C07-S04 规则 6)。本节示例只观察并生成纯视觉粒子，不改数值；违反的可观察结果见开火流单元 (C07-S04)。
+7. **修改武器数值前必须 `ensureClonedSpec()`**([C7-S4] 规则 1 同规)；效果类如需改伤害只能走 `damage.getModifier()`([C7-S4] 规则 6)。本节示例只观察并生成纯视觉粒子，不改数值；违反的可观察结果见开火流单元 [C7-S4]。
 
 ## 完整最小例
 
-规则需要落到可编译的类上。在编译 JAR 链路的 MOD 布局 (C06-S01) 与武器开火流单元 (C07-S04) 的 `GearInWeaponFlowEffect` 之上新增四个 Java 类，本节不新增任何资源文件。
+规则需要落到可编译的类上。在编译 JAR 链路的 MOD 布局 [C6-S1] 与武器开火流单元 [C7-S4] 的 `GearInWeaponFlowEffect` 之上新增四个 Java 类，本节不新增任何资源文件。
 
 `.wpn` / `.proj` 接入片段与帧贴图清单见下文，仅演示挂载点，本节不创建数据文件。
 
@@ -240,10 +240,10 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 
 | 类 | 所有权 | 本节关系 |
 |---|---|---|
-| `GearInModPlugin` | C06-S02 | 本节不改动 |
-| `GearInGlobalAccess` | C06-S03 | 本节只消费 |
-| `GearInCombatStatePlugin` | C07-S02 | 本节只消费 |
-| `GearInWeaponFlowEffect` | C07-S04 | 本节只消费 |
+| `GearInModPlugin` | [C6-S2] | 本节不改动 |
+| `GearInGlobalAccess` | [C6-S3] | 本节只消费 |
+| `GearInCombatStatePlugin` | [C7-S2] | 本节只消费 |
+| `GearInWeaponFlowEffect` | [C7-S4] | 本节只消费 |
 | `GearInWeaponFrameEffect` | 本节 | 新增 (`.wpn` `everyFrameEffect`)|
 | `GearInBeamHitEffect` | 本节 | 新增 (`.wpn` `beamEffect`，仅光束武器)|
 | `GearInOnFireEffect` | 本节 | 新增 (`.proj` `onFireEffect`)|
@@ -398,7 +398,7 @@ public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWi
         }
         if (didDamage) {
             // 纯视觉命中火花：以本帧射线端点（上一帧端点）为基准撒粒子，不造成伤害。
-            // 光束伤害按 0.1 秒间隔结算（C07-S04）；IonBeamEffect 的替代写法是用
+            // 光束伤害按 0.1 秒间隔结算（C7-S4）；IonBeamEffect 的替代写法是用
             // beam.getDamage().getDpsDuration() 推进节流器，让粒子节奏跟随真实结算。
             sparkInterval.advance(amount);
             if (sparkInterval.intervalElapsed()) {
@@ -488,7 +488,7 @@ public class GearInOnHitEffect implements OnHitEffectPlugin {
 }
 ```
 
-四个类的全部字段都是实例字段：每武器 / 每射线 / 每射弹实例各有一份，跨实例互不干扰；跨战斗实例全部重建，禁止跨战斗缓存 (C06-S03 纪律)。
+四个类的全部字段都是实例字段：每武器 / 每射线 / 每射弹实例各有一份，跨实例互不干扰；跨战斗实例全部重建，禁止跨战斗缓存 ([C6-S3] 纪律)。
 
 ### 数据接入片段
 
@@ -609,7 +609,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：编译 JAR 流程的 MOD 布局 (C06-S01)、本节三个数据文件与帧贴图清单、四个效果类，以及装有 `GearIn_test_rotor` 与 `GearIn_test_beam` 的测试舰。
+前置数据：编译 JAR 流程的 MOD 布局 [C6-S1]、本节三个数据文件与帧贴图清单、四个效果类，以及装有 `GearIn_test_rotor` 与 `GearIn_test_beam` 的测试舰。
 
 1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下的四个类。
 2. 进入 `GearIn_test` 战役部署测试舰，查看 `starsector.log` 中的两行初始化日志。
@@ -648,7 +648,7 @@ gradle jar
    - 视口外 —— `addHitParticle` 离视口过远不渲染；
    - 节流器用 `beam.getDamage().getDpsDuration()` 推进，而结算帧外 `dpsDuration` 为 0，`IntervalUtil.advance(0)` 永不触发 (`IonBeamEffect` 为此专门处理 `wasZero` 边沿)。
    修正：先核对光束确实命中 (`hit start` 日志)，节流推进改用 `amount` 或按 `IonBeamEffect` 的写法。
-8. **回调状态污染 / 引用失效**。症状：对已死亡或已离场实体继续施加逻辑，或第二场战斗引用失效。触发：把 `onFire` 的 `projectile`、`onHit` 的 `target` 或光束的 `getDamageTarget()` 存进字段跨帧 / 跨发射 / 跨战斗复用。原因：回调参数是本次事件上下文，只在本回调内有效；跨战斗实例全部重建 (与 C06-S03 / C07-S02 跨战斗缓存禁令同一条纪律)。修正：参数只在本回调内消费；需要跨帧状态时在本帧重新查询 (如 `weapon.getBeams()`、`engine.getProjectiles()`)。
+8. **回调状态污染 / 引用失效**。症状：对已死亡或已离场实体继续施加逻辑，或第二场战斗引用失效。触发：把 `onFire` 的 `projectile`、`onHit` 的 `target` 或光束的 `getDamageTarget()` 存进字段跨帧 / 跨发射 / 跨战斗复用。原因：回调参数是本次事件上下文，只在本回调内有效；跨战斗实例全部重建 (与 [C6-S3] / [C7-S2] 跨战斗缓存禁令同一条纪律)。修正：参数只在本回调内消费；需要跨帧状态时在本帧重新查询 (如 `weapon.getBeams()`、`engine.getProjectiles()`)。
 
 ## 总结
 

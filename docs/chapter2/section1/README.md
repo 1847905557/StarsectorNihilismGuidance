@@ -17,9 +17,9 @@
 
 ## 前置知识
 
-- MOD 目录与 `mod_info.json`(C01-S01)：本节的文件都放进 `gear_in` MOD；
-- CSV 数据行的读法 (C01-S02)：逗号分隔、行首 `#` 忽略；
-- 能进入模拟战并打开装配界面 (C01-S02 的舰船)。
+- MOD 目录与 `mod_info.json`[C1-S1]：本节的文件都放进 `gear_in` MOD；
+- CSV 数据行的读法 [C1-S2]：逗号分隔、行首 `#` 忽略；
+- 能进入模拟战并打开装配界面 ([C1-S2] 的舰船)。
 
 ## Java 文件的结构
 
@@ -75,7 +75,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 本节只关注这一行中的四列，其余按模板使用：
 
-- **`id` 列**(第 2 列)：船插的全局唯一标识，`GearIn_` 前缀是 ID 纪律 (C01-S01)。本行是 `GearIn_speed_booster`。
+- **`id` 列**(第 2 列)：船插的全局唯一标识，`GearIn_` 前缀是 ID 纪律 [C1-S1]。本行是 `GearIn_speed_booster`。
 - **`cost_*` 四列**：装配点消耗 —— 护卫舰 3、驱逐 6、巡洋 9、主力 12。修改这四个数字可调整成本。
 - **`script` 列**：类的完整名。这就是注册：游戏在数据中读到这个类名，需要时加载它。类名必须与文件中的 `class GearInSpeedBooster` 一字不差。
 - **`desc` 列**：装配界面显示的描述文字。引号内的文字可修改。
@@ -83,8 +83,8 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 ## 修改参数与观察
 
 1. 把 `SPEED_PERCENT` 从 `10f` 改为 `50f`，保存文件。
-2. 重启游戏。开发期的编译方式是：`data/scripts/` 目录下的源码由游戏**启动时自动编译**，改完代码重启即生效，不需要任何构建工具。正式工程化 (编译进 JAR) 在 C06-S01，类名规则不变。
-3. 进入模拟战，把 C01-S02 建立的舰船开进装配界面，安装 "加速器"。
+2. 重启游戏。开发期的编译方式是：`data/scripts/` 目录下的源码由游戏**启动时自动编译**，改完代码重启即生效，不需要任何构建工具。正式工程化 (编译进 JAR) 在 [C6-S1]，类名规则不变。
+3. 进入模拟战，把 [C1-S2] 建立的舰船开进装配界面，安装 "加速器"。
 4. 观察两处结果：装配界面的 tooltip 显示速度加成 **50%**；退出游戏后打开 `Starsector/starsector-core/starsector.log`，搜索 `GearIn_speed_booster`，能看到代码里写入的那行日志 —— 这行日志证明游戏确实调用了您的代码。
 
 ::: tip 建议
@@ -119,7 +119,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 ## 验证方案
 
-前置数据：C01-S02 建立的舰船、本节注册的 `GearIn_speed_booster` 船插与 `GearInSpeedBooster.java`。
+前置数据：[C1-S2] 建立的舰船、本节注册的 `GearIn_speed_booster` 船插与 `GearInSpeedBooster.java`。
 
 1. 从装配界面、模拟战与 `Starsector/starsector-core/starsector.log`开始验证。
 2. 把 `SPEED_PERCENT` 改为 `50f`，保存并重启游戏。

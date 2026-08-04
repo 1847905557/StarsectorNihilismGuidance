@@ -20,15 +20,15 @@
 
 本节把前几节逐个搭起的片段接到常驻形态上，请先熟悉以下既有成果：
 
-- GLSL 110/430 方言、attribute/uniform/varying 与编译/链接检查链、能力门禁 (C15-S01)；
-- `.vert/.frag` 路径约定、加载与编译日志、资源生命周期四环节 (C15-S02)；
-- BoxUtil `ShaderProgram` 创建与 location 保存、`active()/close()/delete()`、UBO `BUtilGlobalData`、uniform 三形态、纹理与矩阵提交 (C15-S03)；
-- 分层渲染插件通道、层序、剔除与 `cleanup()` 时机 (C07-S06)；
-- 战斗插件生命周期与注册 (C07-S05)；
-- BoxUtil 初始化两段式、可用性判据、渲染实体入队与 `delete()`(C13-S06)；
-- `Global` 生命周期，禁止跨战斗缓存引擎引用与渲染对象 (C06-S03)；
-- 战役概念与 `GearIn_test` 测试战役 (C03-S01)；
-- MOD 目录结构与 `starsector.log`(C01-S01)。
+- GLSL 110/430 方言、attribute/uniform/varying 与编译/链接检查链、能力门禁 [C15-S1]；
+- `.vert/.frag` 路径约定、加载与编译日志、资源生命周期四环节 [C15-S2]；
+- BoxUtil `ShaderProgram` 创建与 location 保存、`active()/close()/delete()`、UBO `BUtilGlobalData`、uniform 三形态、纹理与矩阵提交 [C15-S3]；
+- 分层渲染插件通道、层序、剔除与 `cleanup()` 时机 [C7-S6]；
+- 战斗插件生命周期与注册 [C7-S5]；
+- BoxUtil 初始化两段式、可用性判据、渲染实体入队与 `delete()`[C13-S6]；
+- `Global` 生命周期，禁止跨战斗缓存引擎引用与渲染对象 [C6-S3]；
+- 战役概念与 `GearIn_test` 测试战役 [C3-S1]；
+- MOD 目录结构与 `starsector.log`[C1-S1]。
 
 ## 文件与 API 链路
 
@@ -36,15 +36,15 @@
 
 | 环节 | 文件 / API | 说明 |
 |---|---|---|
-| shader 源文件 | `data/shaders/GearIn_field_shader.vert` / `.frag`(本节所有权)| MOD 根目录相对路径，`/` 分隔，UTF-8 无 BOM(C15-S02 规则 1/2 延续)|
-| 常驻注册 | C07-S05 的 `GearInCombatLifecyclePlugin.init(CombatEngineAPI)` 内 `engine.addLayeredRenderingPlugin(new GearInShaderPlugin())` | 每场战斗注册一次；成熟实例同款做法：在生命周期插件的 `init` 里 `engine.addLayeredRenderingPlugin(new 常驻渲染插件())` |
-| 渲染插件 | `BaseCombatLayeredRenderingPlugin`(`CombatLayeredRenderingPlugin` 接口，C07-S06 通道)| `init` / `advance` / `render` / `isExpired` / `cleanup` / `getActiveLayers` / `getRenderRadius` 七个回调 |
+| shader 源文件 | `data/shaders/GearIn_field_shader.vert` / `.frag`(本节所有权)| MOD 根目录相对路径，`/` 分隔，UTF-8 无 BOM([C15-S2] 规则 1/2 延续)|
+| 常驻注册 | [C7-S5] 的 `GearInCombatLifecyclePlugin.init(CombatEngineAPI)` 内 `engine.addLayeredRenderingPlugin(new GearInShaderPlugin())` | 每场战斗注册一次；成熟实例同款做法：在生命周期插件的 `init` 里 `engine.addLayeredRenderingPlugin(new 常驻渲染插件())` |
+| 渲染插件 | `BaseCombatLayeredRenderingPlugin`(`CombatLayeredRenderingPlugin` 接口，[C7-S6] 通道)| `init` / `advance` / `render` / `isExpired` / `cleanup` / `getActiveLayers` / `getRenderRadius` 七个回调 |
 | 层声明 | `CombatEngineLayers.ABOVE_PARTICLES_LOWER`(顶层三图层，粒子系统之后渲染)| 本节示例层；成熟实例同款 |
 | 战斗结束判定 | `CombatEngineAPI.isCombatOver()` | 结束标志成立且淡出完成后才转 true |
 | 淡出强度 | `ViewportAPI.getAlphaMult()` | 战斗结束淡出期间下降；本节示例把它送进 `intensity` uniform 实现视觉淡出 (成熟实例同款做法)|
-| 程序创建 | `org.boxutil.util.ShaderUtil.createShaderVFFormPath` → `org.boxutil.units.standard.ShaderProgram` | C15-S03 全部延续 (location 保存、`isValid()`、`active()/close()`、`delete()`)|
-| 门禁/开关 | `org.boxutil.config.BoxConfigs.isShaderEnable()`、`org.boxutil.manager.ShaderCore.isValid()` | 可用性判据 (C13-S06)；本节规定读取时机与缓存禁令 |
-| 对照入口 | `org.boxutil.manager.CombatRenderingManager.addEntity(...)` | BoxUtil 渲染实体队列 (C13-S06)：批量 instance 渲染由后端处理，入队返回 `BoxEnum.STATE_*`，失败必须显式 `delete()` |
+| 程序创建 | `org.boxutil.util.ShaderUtil.createShaderVFFormPath` → `org.boxutil.units.standard.ShaderProgram` | [C15-S3] 全部延续 (location 保存、`isValid()`、`active()/close()`、`delete()`)|
+| 门禁/开关 | `org.boxutil.config.BoxConfigs.isShaderEnable()`、`org.boxutil.manager.ShaderCore.isValid()` | 可用性判据 [C13-S6]；本节规定读取时机与缓存禁令 |
+| 对照入口 | `org.boxutil.manager.CombatRenderingManager.addEntity(...)` | BoxUtil 渲染实体队列 [C13-S6]：批量 instance 渲染由后端处理，入队返回 `BoxEnum.STATE_*`，失败必须显式 `delete()` |
 | 纹理 | `SettingsAPI.getSprite(String)`(单参形态要求文件已加载)/ `loadTexture` / `unloadTexture` | 本节示例用引擎启动期必载的 `graphics/fx/particlealpha32sq.png`(引擎启动期加载队列)；`unloadTexture` 按文件名从全局纹理管理器移除，只用于自己加载的纹理 |
 | 可观察结果 | `starsector.log` + 战斗画面 | init/cleanup/开关切换日志行 (cleanup 含 `frames`/`drawCalls` 计数)；玩家舰船周围的能量场画面 |
 
@@ -54,7 +54,7 @@
 |---|---|
 | 资源文件 | MOD 内 `data\shaders\GearIn_field_shader.vert` / `.frag` |
 | 加载入口 | `ShaderUtil.createShaderVFFormPath(名称, "data/shaders/GearIn_field_shader.vert", "data/shaders/GearIn_field_shader.frag")`(Java 常量 `VERT_PATH`/`FRAG_PATH` 与资源文件路径逐字一致)|
-| 运行使用方 | `GearInShaderPlugin`(C07-S06 通道注册，`render` 内 `program.active()` + 提交 + `close()`)|
+| 运行使用方 | `GearInShaderPlugin`([C7-S6] 通道注册，`render` 内 `program.active()` + 提交 + `close()`)|
 | 可观察结果 | 日志行含 `vert=data/shaders/GearIn_field_shader.vert`、`frag=...`；画面出现跟随玩家舰船的能量场 |
 
 另有 "名称一致性完整核对"：UBO 块名 `BUtilGlobalData` 在 GLSL 声明与 Java 常量 `UBO_BLOCK_NAME` 逐字一致；
@@ -246,23 +246,23 @@
 Starsector\mods\GearIndustry\
 ├── build.gradle
 ├── settings.gradle
-├── mod_info.json                        # 硬依赖 BoxUtil（C13-S06 既有声明）
+├── mod_info.json                        # 硬依赖 BoxUtil（C13-S6 既有声明）
 ├── data\
 │   └── shaders\
-│       ├── GearIn_shader_visual.vert    # C15-S03 所有；本节只消费
-│       ├── GearIn_shader_visual.frag    # C15-S03 所有；本节只消费
+│       ├── GearIn_shader_visual.vert    # C15-S3 所有；本节只消费
+│       ├── GearIn_shader_visual.frag    # C15-S3 所有；本节只消费
 │       ├── GearIn_field_shader.vert     # 本节新增
 │       └── GearIn_field_shader.frag     # 本节新增
 ├── src\
 │   └── data\scripts\gearin\
-│       ├── GearInModPlugin              # C06-S02 所有；本节不改动
-│       ├── GearInGlobalAccess           # C06-S03 所有；本节只消费
+│       ├── GearInModPlugin              # C6-S2 所有；本节不改动
+│       ├── GearInGlobalAccess           # C6-S3 所有；本节只消费
 │       └── combat\
-│           ├── GearInCombatStatePlugin        # C07-S02 所有；本节只消费
-│           ├── GearInCombatLifecyclePlugin    # C07-S05 所有；本节只消费
-│           ├── GearInLayeredRenderer          # C07-S06 所有；本节只消费
-│           ├── GearInPulseRenderer            # C15-S02 所有；本节只消费
-│           ├── GearInShaderVisual             # C15-S03 所有；本节只消费
+│           ├── GearInCombatStatePlugin        # C7-S2 所有；本节只消费
+│           ├── GearInCombatLifecyclePlugin    # C7-S5 所有；本节只消费
+│           ├── GearInLayeredRenderer          # C7-S6 所有；本节只消费
+│           ├── GearInPulseRenderer            # C15-S2 所有；本节只消费
+│           ├── GearInShaderVisual             # C15-S3 所有；本节只消费
 │           └── GearInShaderPlugin             # 本节新增
 └── jars\
 ```
@@ -373,7 +373,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   addLayeredRenderingPlugin(常驻渲染插件)），不按承载实体或
  *   寿命失效，跟随玩家舰船；层声明用顶层三图层之一的 ABOVE_PARTICLES_LOWER（粒子系统
  *   之后渲染，成熟实例同款）；渲染剔除依据是承载实体位置
- *   与 getRenderRadius()（C07-S06 硬规则 4），位置在 advance 里同步；
+ *   与 getRenderRadius()（C7-S6 硬规则 4），位置在 advance 里同步；
  * - 资源释放：GL 资源（program/VBO）在 cleanup() 释放并复位句柄（幂等，重复调用安全）；
  *   战斗结束 destroyInstance 不调 cleanup()—— 常驻插件必须在 advance() 里判
  *   engine.isCombatOver()（= 结束标志 && 淡出完成）
@@ -383,7 +383,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   particlealpha32sq.png）不卸载 ——
  *   SettingsAPI.unloadTexture 按文件名从全局纹理管理器移除，卸载共享贴图会伤及所有消费方；
  * - 开关：BoxConfigs.isShaderEnable() && ShaderCore.isValid() 是 BoxUtil shader 路径
- *   可用性判据（K06/C13-S06），必须在 GL 上下文就绪后的 init 里重新判定，禁止缓存进
+ *   可用性判据（K06/C13-S6），必须在 GL 上下文就绪后的 init 里重新判定，禁止缓存进
  *   类加载期 static final 字段（此时无 GL 上下文，isValid() 不可评估）；render 每帧
  *   复核（成熟实例每个使用点读取 BoxConfigs.isShaderEnable() 的姿势）；本示例另有运行时开关
  *   setRuntimeEnabled—— 只改变渲染路径与显示成本，不改变玩法状态（实例规范
@@ -392,13 +392,13 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   计数在 cleanup 日志输出）；uniform location 创建后保存、FloatBuffer 复用
  *   （clear/put/flip）、render 内零分配零日志；getRenderRadius 覆盖绘制范围即可，
  *   常驻插件也不需要 Float.MAX_VALUE（那是全层宿主模板的例外姿势，代价是永不离屏剔除）；
- *   批处理姿势见 glMultiDrawArrays 批量绘制与 C13-S06 的 instance 提交链。
+ *   批处理姿势见 glMultiDrawArrays 批量绘制与 C13-S6 的 instance 提交链。
  */
 public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInShaderPlugin.class);
 
-    /** shader 资源路径（MOD 根目录相对路径，必须用 /；C15-S02 硬规则 1 延续）。 */
+    /** shader 资源路径（MOD 根目录相对路径，必须用 /；C15-S2 硬规则 1 延续）。 */
     private static final String VERT_PATH = "data/shaders/GearIn_field_shader.vert";
     private static final String FRAG_PATH = "data/shaders/GearIn_field_shader.frag";
 
@@ -447,9 +447,9 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        // 门禁：BoxUtil shader 路径可用性判据（K06/C13-S06）。必须在 GL 上下文就绪后的
+        // 门禁：BoxUtil shader 路径可用性判据（K06/C13-S6）。必须在 GL 上下文就绪后的
         // init 里重新判定，禁止缓存进类加载期 static final 字段 —— 类加载期无 GL 上下文，
-        // ShaderCore.isValid() 不可评估（C15-S03 硬规则 1 延续）
+        // ShaderCore.isValid() 不可评估（C15-S3 硬规则 1 延续）
         if (!BoxConfigs.isShaderEnable() || !ShaderCore.isValid()) {
             LOG.info("GearIn shader plugin: BoxUtil shader path unavailable (shaderEnable="
                     + BoxConfigs.isShaderEnable() + ", shaderCoreValid="
@@ -461,7 +461,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
             cleanup();     // 已创建的部分资源立即释放；cleanup 幂等，引擎移除时再调一次也安全
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C07-S06 同款姿势）
+        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C7-S6 同款姿势）
         LOG.info("GearIn shader plugin init: layers=" + getActiveLayers()
                 + ", u_model=" + program.location[0]
                 + ", u_size=" + program.location[1]
@@ -537,7 +537,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public EnumSet<CombatEngineLayers> getActiveLayers() {
-        // 顶层三图层之一：粒子系统之后渲染（C07-S06 层序）；
+        // 顶层三图层之一：粒子系统之后渲染（C7-S6 层序）；
         // 成熟实例同款层选择
         return EnumSet.of(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
     }
@@ -557,12 +557,12 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         if (engine.isPaused()) {
             return;
         }
-        // 剔除依据是承载实体的位置（C07-S06 硬规则 4）：常驻插件跟随玩家舰船
+        // 剔除依据是承载实体的位置（C7-S6 硬规则 4）：常驻插件跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
         // 战斗结束收尾：isCombatOver() = 结束标志 && 淡出完成。
         // 常驻插件必须在 advance 里主动失效驱动引擎移除并调用
         // cleanup()—— 战斗结束 destroyInstance 不调 cleanup()，等它等于每场泄漏
-        // （C07-S06 硬规则 3 的常驻版）
+        // （C7-S6 硬规则 3 的常驻版）
         if (engine.isCombatOver()) {
             valid = false;
         }
@@ -624,7 +624,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         float facing = engine.getPlayerShip().getFacing();
         matrixBuffer = buildAnchoredMatrix(center, facing, matrixBuffer);
 
-        // attribute：VBO 绑定 + long 偏移（C15-S02 同款姿势；游戏自带 LWJGL 的
+        // attribute：VBO 绑定 + long 偏移（C15-S2 同款姿势；游戏自带 LWJGL 的
         // glVertexAttribPointer 没有 FloatBuffer client 指针重载）
         int stride = FLOATS_PER_VERTEX * Float.BYTES;
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
@@ -738,7 +738,7 @@ gradle jar
 7. 剔除：镜头拉远使舰船离开视口外扩 220 单位范围，再拉回镜头观察能量场。
 8. 淡出与清理：打出胜负判定，观察约 5 秒淡出和 `GearIn shader plugin cleanup: frames=<n>, drawCalls=<n>` 日志。
 9. 跨战斗：退出战斗再进一场，观察 init、句柄和 cleanup；连续进行 5 场战斗。
-10. 门禁降级：在 BoxUtil 配置界面 (`BoxConfigGUI`，BoxUtil 发行注册，C13-S06) 关闭 shader 选项 (或直接编辑 `<saves>\common\BUtil_Configs.json.data` 对应项) 后进战斗，观察日志、画面与资源创建情况。
+10. 门禁降级：在 BoxUtil 配置界面 (`BoxConfigGUI`，BoxUtil 发行注册，[C13-S6]) 关闭 shader 选项 (或直接编辑 `<saves>\common\BUtil_Configs.json.data` 对应项) 后进战斗，观察日志、画面与资源创建情况。
 
 预期结果：
 

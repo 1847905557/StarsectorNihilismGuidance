@@ -21,18 +21,18 @@
 
 阅读本节前，建议先掌握以下既有内容：
 
-- MOD 目录结构、`mod_info.json` 必填/可选字段、`enabled_mods.json` 启用列表、启动器与 `starsector.log`(C01-S01)。
-- 编译 JAR 链路 (`src` → `jars\GearIndustry.jar`) 与 "jar 类优先于同名 `.java`" 的加载结论 (C06-S01)。
-- `modPlugin` 入口与 `onApplicationLoad()` 时机；本节的运行时检测接入沿用该入口 (C06-S02)。
-- 硬依赖 (hard dependency) 声明、`CompatLevel` 检查、`isModEnabled`/`getModSpec`/`getAvailableModsCopy` 的运行时语义 (C13-S01)；软依赖是本节首次完整讲解。
-- LazyLib `ModUtils.isModEnabled`/`isClassPresent` 的语义分工 (C13-S02)。
-- LunaLib 设置 (`LunaSettings.csv`、`LunaSettings.getBoolean` 等) 的读取与保存细节 (C14-S03)；本节只采用其结论，设置项 `GearIn_fullGraphicEffect` 的定义在 C14-S03 的 `LunaSettings.csv` 中，本节只消费。
+- MOD 目录结构、`mod_info.json` 必填/可选字段、`enabled_mods.json` 启用列表、启动器与 `starsector.log`[C1-S1]。
+- 编译 JAR 链路 (`src` → `jars\GearIndustry.jar`) 与 "jar 类优先于同名 `.java`" 的加载结论 [C6-S1]。
+- `modPlugin` 入口与 `onApplicationLoad()` 时机；本节的运行时检测接入沿用该入口 [C6-S2]。
+- 硬依赖 (hard dependency) 声明、`CompatLevel` 检查、`isModEnabled`/`getModSpec`/`getAvailableModsCopy` 的运行时语义 [C13-S1]；软依赖是本节首次完整讲解。
+- LazyLib `ModUtils.isModEnabled`/`isClassPresent` 的语义分工 [C13-S2]。
+- LunaLib 设置 (`LunaSettings.csv`、`LunaSettings.getBoolean` 等) 的读取与保存细节 [C14-S3]；本节只采用其结论，设置项 `GearIn_fullGraphicEffect` 的定义在 [C14-S3] 的 `LunaSettings.csv` 中，本节只消费。
 
 ## 软依赖：定义与分界
 
-C13-S01 的硬依赖由启动器把关，缺失时 MOD 直接不可用。本节处理相反的约定：本 MOD 的代码或数据引用了另一个 MOD 的能力，但那个 MOD 缺失或未启用时，本 MOD **仍然可以启动并降级运行**，这就是软依赖 (可选依赖，optional dependency)。与硬依赖对照：
+[C13-S1] 的硬依赖由启动器把关，缺失时 MOD 直接不可用。本节处理相反的约定：本 MOD 的代码或数据引用了另一个 MOD 的能力，但那个 MOD 缺失或未启用时，本 MOD **仍然可以启动并降级运行**，这就是软依赖 (可选依赖，optional dependency)。与硬依赖对照：
 
-| 维度 | 硬依赖 (C13-S01)| 软依赖 (本节)|
+| 维度 | 硬依赖 [C13-S1]| 软依赖 (本节)|
 |---|---|---|
 | 声明 | 写在 `mod_info.json` 的 `dependencies` 数组 (`id` 必填)| **不写**进 `dependencies`；写了就变成强制安装 |
 | 检查 | 启动器的兼容检查把关 (缺失 → 红色不可勾选/自动禁用)| 代码在运行期自检 (`isModEnabled` / 类存在性)，缺失不拦启动 |
@@ -102,7 +102,7 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 
 ### 判据二（数据型）：约定位置配置文件
 
-数据型软依赖 (微型兼容) 的判据不是代码检测：把数据文件放到对方约定读取的位置 (如 `data/config/...` 固定路径)，本 MOD 零代码引用对方。对方缺失时文件不被读取，功能自然降级，不需要任何运行期判断 —— "约定位置" 本身即判据 (完整实例见 C14-S03 的 `LunaSettings.csv`)。
+数据型软依赖 (微型兼容) 的判据不是代码检测：把数据文件放到对方约定读取的位置 (如 `data/config/...` 固定路径)，本 MOD 零代码引用对方。对方缺失时文件不被读取，功能自然降级，不需要任何运行期判断 —— "约定位置" 本身即判据 (完整实例见 [C14-S3] 的 `LunaSettings.csv`)。
 
 ### 进阶：类存在性检测 (Class.forName / ModUtils.isClassPresent)
 
@@ -202,7 +202,7 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 | 声明 (不写)| 可选 MOD 的 `mod_info.json`(`id`: `lunalib`)| 软依赖**不**出现在 `dependencies` 数组里；代码侧用 `isModEnabled("lunalib")` 运行期自检 |
 | 检测 1 | `Global.getSettings().getModManager().isModEnabled(id)` | `ModManagerAPI` 启用列表逐字比较、大小写敏感 |
 | 检测 2 (进阶) | `Class.forName(...)` / LazyLib `ModUtils.isClassPresent(...)` | 脚本类路径存在性；默认不需要，特殊场景 (类被间接携带、jar 损坏防御) 才用 |
-| 设置数据 | 可选 MOD 读 `data/config/LunaSettings.csv`(fieldID `GearIn_fullGraphicEffect`；定义在 C14-S03)| LunaLib 的 `LunaSettingsLoader` 加载默认值；文件只有 LunaLib 启用时才会被读取 (C14-S03)|
+| 设置数据 | 可选 MOD 读 `data/config/LunaSettings.csv`(fieldID `GearIn_fullGraphicEffect`；定义在 [C14-S3])| LunaLib 的 `LunaSettingsLoader` 加载默认值；文件只有 LunaLib 启用时才会被读取 [C14-S3]|
 | 适配 | `lunalib.lunaSettings.LunaSettings.getBoolean(modId, fieldId)` | 返回可空 `Boolean`，mod/字段缺失时记录 ERROR 日志并返回 `null` |
 | 类加载 | 启动器收集 → 脚本类加载器加载 | 启用 MOD 的 jar 平铺进单一 `URLClassLoader`；未启用 MOD 的 jar 不在路径上 |
 | 过滤器 | 脚本安全过滤器的加载检查 | `java.io.*`/`java.lang.reflect.*`(白名单除外)→ `SecurityException` |
@@ -211,9 +211,9 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 
 ## 完整最小例
 
-在前序累计工程 (C06-S01) 的布局上追加两处 (MOD 根目录 `Starsector\mods\GearIndustry`)：一个适配器类、一行接入调用。
+在前序累计工程 [C6-S1] 的布局上追加两处 (MOD 根目录 `Starsector\mods\GearIndustry`)：一个适配器类、一行接入调用。
 
-本节示例新增：类 `data.scripts.gearin.modcompat.GearInCompatBridge`(归本节所有)；设置项 `GearIn_fullGraphicEffect` 的定义在 C14-S03 的 `LunaSettings.csv` 中 (第 7 行)，本节只消费。
+本节示例新增：类 `data.scripts.gearin.modcompat.GearInCompatBridge`(归本节所有)；设置项 `GearIn_fullGraphicEffect` 的定义在 [C14-S3] 的 `LunaSettings.csv` 中 (第 7 行)，本节只消费。
 
 `GearInModPlugin` 归前序单元所有，本节只调用它。
 
@@ -226,7 +226,7 @@ Starsector\mods\GearIndustry\
 ├── mod_info.json                # 不加 lunalib 依赖（软依赖不声明）
 ├── data\
 │   └── config\
-│       └── LunaSettings.csv     # C14-S03 定义；只有 LunaLib 启用时被消费
+│       └── LunaSettings.csv     # C14-S3 定义；只有 LunaLib 启用时被消费
 ├── src\
 │   └── data\scripts\gearin\
 │       ├── GearInModPlugin                     # 前序单元所有，本节追加一行调用
@@ -235,7 +235,7 @@ Starsector\mods\GearIndustry\
 └── jars\
 ```
 
-`data/config/LunaSettings.csv` 的完整定义 (含本节消费的 `GearIn_fullGraphicEffect` 行) 在 C14-S03，本节不新增文件。
+`data/config/LunaSettings.csv` 的完整定义 (含本节消费的 `GearIn_fullGraphicEffect` 行) 在 [C14-S3]，本节不新增文件。
 
 ### GearInCompatBridge
 
@@ -258,7 +258,7 @@ public class GearInCompatBridge {
     /** LunaLib 的 MOD id，与 Starsector\mods\Lunalib\mod_info.json 的 id 字段逐字一致。 */
     public static final String LUNA_MOD_ID = "lunalib";
 
-    /** 本 MOD 在 data/config/LunaSettings.csv 中登记的设置项 fieldID（文件由 C14-S03 定义）。 */
+    /** 本 MOD 在 data/config/LunaSettings.csv 中登记的设置项 fieldID（文件由 C14-S3 定义）。 */
     public static final String FULL_GRAPHIC_FIELD = "GearIn_fullGraphicEffect";
 
     private GearInCompatBridge() {
@@ -330,7 +330,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：前序累计工程 (C06-S01) 基础上追加本节内容 (沿用 C14-S03 的 `data/config/LunaSettings.csv`、新增 `GearInCompatBridge`、`GearInModPlugin.onGameLoad` 内一行调用)；已安装 Lunalib。
+前置数据：前序累计工程 [C6-S1] 基础上追加本节内容 (沿用 [C14-S3] 的 `data/config/LunaSettings.csv`、新增 `GearInCompatBridge`、`GearInModPlugin.onGameLoad` 内一行调用)；已安装 Lunalib。
 
 1. 构建核对：在 MOD 根目录执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；用 `jar tf jars\GearIndustry.jar` 查看 `data/scripts/gearin/modcompat/GearInCompatBridge.class` 是否在产物内。
 2. 降级路径：启动器**不**勾选 Lunalib，勾选 "齿轮工业" 启动并进入生涯，查看 `starsector.log` 中的 `GearIn compat:` 与 `LunaSettings:` 行。
@@ -412,6 +412,6 @@ gradle jar
 - `com.fs.starfarer.api.ModSpecAPI`：`getVersionInfo()` 读已安装版本 (版本判断用)。
 - `lunalib.lunaSettings.LunaSettings`：可选依赖 API，`getBoolean(modId, fieldId)` 返回可空 `Boolean`。
 - `data.scripts.gearin.modcompat`：本节示例包，软依赖适配器 `GearInCompatBridge` 所在。
-- `data/config/LunaSettings.csv`(MOD 根目录起；定义在 C14-S03)：本节消费的设置项 `GearIn_fullGraphicEffect` 的默认值登记处。
+- `data/config/LunaSettings.csv`(MOD 根目录起；定义在 [C14-S3])：本节消费的设置项 `GearIn_fullGraphicEffect` 的默认值登记处。
 - `Starsector/mods/Lunalib/mod_info.json`(游戏安装根起)：`id` 字段逐字比对对象。
 - `Starsector/starsector-core/starsector.log`(游戏安装根起)：降级/缺失日志的核对位置。

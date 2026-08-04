@@ -21,13 +21,13 @@
 
 酒吧事件复用多套既有机制，请先熟悉以下内容：
 
-- 交互对话框三面板 (`TextPanelAPI.addPara`、`OptionPanelAPI.addOption`)、`showInteractionDialog` 与对话框插件生命周期 —— 酒吧事件对话复用的是同一套面板 API；`showInteractionDialog` 返回 false 的语义同样适用于酒吧对话以外的调用 (C08-S09)。
-- 事件边界与监听器生命周期 —— 本节的 "事件 ID 使用方" 沿用 "注册入口 → 派发 → 可观察结果" 的既有方法论；XStream 序列化边界 (常驻对象随档保存) 决定事件实例能随存档保存哪些状态 (C10-S02)。
-- 时间语义 (`advance(amount)` 真实秒、`Misc.getDays` 换算)——`BarEventManager.advance` 与 `PortsideBarData.advance` 的推进节奏都建立在这条换算上 (C10-S01)。
-- `modPlugin` 生命周期与注册判断模式 (C06-S02)；`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"(C06-S03)—— 本页的注册动作同样要判断生涯引擎是否已建立。
-- 市场 (`MarketAPI`)——`shouldShowAtMarket` 的市场条件过滤 (`hasSpaceport()`、`getFactionId()` 等)(C08-S05)。
-- Rules 命令与 Rules 内存 (后续单元)—— 本节的 `AddBarEvent` / `RemoveBarEvent` 与 `BarCMD` 都是规则命令 (`BaseCommandPlugin` 子类)，本节只给命令语义与规则片段，规则引擎细节由这两个单元展开 (C11-S03 / C11-S04)。
-- 人物与关系 ——`BaseBarEventWithPerson` 的 market 稳定随机人物 (`seed + market.getId().hashCode()`) 来自人物生成面 (C09-S01)。
+- 交互对话框三面板 (`TextPanelAPI.addPara`、`OptionPanelAPI.addOption`)、`showInteractionDialog` 与对话框插件生命周期 —— 酒吧事件对话复用的是同一套面板 API；`showInteractionDialog` 返回 false 的语义同样适用于酒吧对话以外的调用 [C8-S9]。
+- 事件边界与监听器生命周期 —— 本节的 "事件 ID 使用方" 沿用 "注册入口 → 派发 → 可观察结果" 的既有方法论；XStream 序列化边界 (常驻对象随档保存) 决定事件实例能随存档保存哪些状态 [C10-S2]。
+- 时间语义 (`advance(amount)` 真实秒、`Misc.getDays` 换算)——`BarEventManager.advance` 与 `PortsideBarData.advance` 的推进节奏都建立在这条换算上 [C10-S1]。
+- `modPlugin` 生命周期与注册判断模式 [C6-S2]；`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"[C6-S3]—— 本页的注册动作同样要判断生涯引擎是否已建立。
+- 市场 (`MarketAPI`)——`shouldShowAtMarket` 的市场条件过滤 (`hasSpaceport()`、`getFactionId()` 等)[C8-S5]。
+- Rules 命令与 Rules 内存 (后续单元)—— 本节的 `AddBarEvent` / `RemoveBarEvent` 与 `BarCMD` 都是规则命令 (`BaseCommandPlugin` 子类)，本节只给命令语义与规则片段，规则引擎细节由这两个单元展开 [C11-S3] / [C11-S4]。
+- 人物与关系 ——`BaseBarEventWithPerson` 的 market 稳定随机人物 (`seed + market.getId().hashCode()`) 来自人物生成面 [C9-S1]。
 
 ## 术语
 
@@ -548,7 +548,7 @@ gearIn_barRumorSel,DialogOptionSelected,$option == gearIn_barRumorOption,"$globa
 gearIn_barBackToBar,DialogOptionSelected,$option == gearIn_barBackToBar,BarCMD returnFromEvent false,,,
 ```
 
-(`jangala` 是原版 Corvus 星系 (新档出生星系) 的市场；规则变量/分类/`FireBest` 细节见 C11-S03 / C11-S04。)
+(`jangala` 是原版 Corvus 星系 (新档出生星系) 的市场；规则变量/分类/`FireBest` 细节见 [C11-S3] / [C11-S4]。)
 
 临时选项点选后走 `DialogOptionSelected` 规则；`BarCMD returnFromEvent false` 从规则对话回到酒吧选项。
 
@@ -564,7 +564,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：既有教程 MOD 布局与 `GearInModPlugin`(含本节调用点片段，见前置知识 C06-S01 / C06-S02)、本节两个类、(可选)rules.csv 临时选项片段。
+前置数据：既有教程 MOD 布局与 `GearInModPlugin`(含本节调用点片段，见前置知识 [C6-S1] / [C6-S2])、本节两个类、(可选)rules.csv 临时选项片段。
 
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个类的 `.class`。
 2. 新建生涯，在教程进行中进入酒吧，观察事件和临时选项。

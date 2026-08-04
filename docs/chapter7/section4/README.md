@@ -26,12 +26,12 @@
 
 本节的运行态论述建立在以下既有知识上，需要时回到对应小节查阅：
 
-- 武器 CSV、`.wpn`、`.proj` 数据面 (C01-S05)：本节读取这些 spec；`fireSoundOne` / `fireSoundTwo`、`flameoutTime` 等字段语义已在数据侧讲过。
-- 战斗插件模型 (C07-S01)：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调、暂停判断 —— 本节示例插件建立在这个模型上。
-- 编译 JAR 链路 (C06-S01)：本节示例编入同一个 `jars\GearIndustry.jar`。
-- `Global` 生命周期与禁止跨战斗缓存引擎引用 (C06-S03)：本节把同一条纪律延伸到射弹 / 光束 / 武器实例。
-- `CombatEngineAPI` 读取侧 (C07-S02)：`getShips()` 遍历纪律、`getPlayerShip()` 永不 null、`isEntityInPlay`、暂停语义 —— 本节的插件与监听器观察建立在这些判据上。
-- `MutableStat`(C07-S03)：`damage.getModifier()` 与 `getTimeMult()` 的返回类型；本节只读取。
+- 武器 CSV、`.wpn`、`.proj` 数据面 [C1-S5]：本节读取这些 spec；`fireSoundOne` / `fireSoundTwo`、`flameoutTime` 等字段语义已在数据侧讲过。
+- 战斗插件模型 [C7-S1]：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调、暂停判断 —— 本节示例插件建立在这个模型上。
+- 编译 JAR 链路 [C6-S1]：本节示例编入同一个 `jars\GearIndustry.jar`。
+- `Global` 生命周期与禁止跨战斗缓存引擎引用 [C6-S3]：本节把同一条纪律延伸到射弹 / 光束 / 武器实例。
+- `CombatEngineAPI` 读取侧 [C7-S2]：`getShips()` 遍历纪律、`getPlayerShip()` 永不 null、`isEntityInPlay`、暂停语义 —— 本节的插件与监听器观察建立在这些判据上。
+- `MutableStat`[C7-S3]：`damage.getModifier()` 与 `getTimeMult()` 的返回类型；本节只读取。
 
 ## 文件与 API 链路
 
@@ -89,7 +89,7 @@
 3. 若效果对象实现了 `EveryFrameWeaponEffectPluginWithAdvanceAfter`，`advanceAfter(amount, engine, weapon)` 在本帧操作**之后**调用。
 
 ::: warning 暂停时武器 / 射弹 / 光束全部停摆
-**暂停时武器不推进**。暂停期间引擎跳过对武器、射弹与光束实体的推进循环，武器效果回调、射弹移动、光束结算全部停摆 (与插件 `advance` 暂停时仍被调用不同，C07-S01)。
+**暂停时武器不推进**。暂停期间引擎跳过对武器、射弹与光束实体的推进循环，武器效果回调、射弹移动、光束结算全部停摆 (与插件 `advance` 暂停时仍被调用不同，[C7-S1])。
 :::
 
 ### fireShot：一次开火做了什么
@@ -119,7 +119,7 @@
    - `ensureClonedSpec()` 把当前实例切到私有克隆并保存 `getOriginalSpec()`；
    - 违反的可观察结果：多艘舰的同名武器数值一起变化，且跨战斗持续。
 2. **`onFire` / `onHit` 回调参数只在本回调内使用，禁止跨发/跨帧缓存**。`onFire` 的 `projectile` 参数属于 "本发射弹"；把 `projectile`、`target` 或 `damageResult` 存进字段跨命中复用，会污染命中状态归属。
-   - 违反的可观察结果：下一次开火/命中覆盖字段后，旧逻辑对已移除实体继续操作，或第二场战斗引用失效 (与 C06-S03 / C07-S02 的跨战斗缓存禁令同一条纪律)。
+   - 违反的可观察结果：下一次开火/命中覆盖字段后，旧逻辑对已移除实体继续操作，或第二场战斗引用失效 (与 [C6-S3] / [C7-S2] 的跨战斗缓存禁令同一条纪律)。
 
 ## 射弹生命周期 (DamagingProjectileAPI)
 
@@ -246,10 +246,10 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\
-│       ├── GearInModPlugin            # C06-S02 所有；本节不改动
-│       ├── GearInGlobalAccess         # C06-S03 所有；本节只消费
+│       ├── GearInModPlugin            # C6-S2 所有；本节不改动
+│       ├── GearInGlobalAccess         # C6-S3 所有；本节只消费
 │       └── combat\
-│           ├── GearInCombatStatePlugin   # C07-S02 所有；本节只消费
+│           ├── GearInCombatStatePlugin   # C7-S2 所有；本节只消费
 │           ├── GearInFlowObserverPlugin  # 本节新增（六类）
 │           ├── GearInDamageObserverListener
 │           ├── GearInWeaponFlowEffect
@@ -299,10 +299,10 @@ import com.fs.starfarer.api.input.InputEventAPI;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 战斗插件观察者：由战斗上下文 addPlugin 注册（C07-S01 模型）。
+ * 战斗插件观察者：由战斗上下文 addPlugin 注册（C7-S1 模型）。
  * init() 把伤害监听器接入引擎，每帧识别新生成的射弹，并按 3 秒节奏
  * 触发武器 / 射弹 / 导弹 / 光束的运行态报告（实现见 GearInStateReport）。
- * 暂停守卫：暂停时武器 / 射弹 / 光束都不推进，只有插件 advance 仍被调用（C07-S01）。
+ * 暂停守卫：暂停时武器 / 射弹 / 光束都不推进，只有插件 advance 仍被调用（C7-S1）。
  */
 public class GearInFlowObserverPlugin extends BaseEveryFrameCombatPlugin {
 
@@ -609,7 +609,7 @@ public class GearInStateReport {
 
     /** 武器运行态：弹药、冷却、充能、开火与光束实体数。 */
     public static void logWeapons(CombatEngineAPI engine) {
-        ShipAPI player = engine.getPlayerShip(); // 战斗内永不 null（C07-S02）；部署前是转移穿梭机假舰
+        ShipAPI player = engine.getPlayerShip(); // 战斗内永不 null（C7-S2）；部署前是转移穿梭机假舰
         for (WeaponAPI weapon : player.getAllWeapons()) {
             LOG.info("GearIn weapon " + weapon.getId()
                     + " type=" + weapon.getType() + " size=" + weapon.getSize()
@@ -733,7 +733,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：前置知识中的 MOD 布局与战斗插件接入 (含本节注册片段)、六个示例类源码 (见上)、`GearIn_test` 测试战役 (C03-S01)。
+前置数据：前置知识中的 MOD 布局与战斗插件接入 (含本节注册片段)、六个示例类源码 (见上)、`GearIn_test` 测试战役 [C3-S1]。
 
 1. **构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/` 下的六个类。
 2. **战役冒烟**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 核对 `GearIn flow init: damage listeners registered on engine`：
@@ -749,7 +749,7 @@ gradle jar
 预期结果：
 
 - **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/` 下的六个类。
-- **初始化**：进入 `GearIn_test` 战役 (C03-S01) 一场战斗，`starsector.log` 出现 `GearIn flow init: damage listeners registered on engine`：
+- **初始化**：进入 `GearIn_test` 战役 [C3-S1] 一场战斗，`starsector.log` 出现 `GearIn flow init: damage listeners registered on engine`：
   - 随后 (部署玩家舰后) 每 3 秒出现 `GearIn weapon ...` / `GearIn projectiles: ...` / `GearIn beam ...` 周期报告；没有 `gear_in` 引起的 `ERROR`。
 - **开火 → 射弹生成**：武器开火后下一帧出现 `GearIn spawn <specId> spawnType=BALLISTIC fromMissile=false weapon=... source=... damage=... emp=...`：
   - 发射导弹时同一条日志的 `spawnType=MISSILE`(导弹同时计入 `getProjectiles()` 与 `getMissiles()`，周期报告里 `total` 与 `missiles` 一致增长)。

@@ -15,19 +15,21 @@ if (!starsectorRootProp.present) {
 def gameRoot = file(starsectorRootProp.get())
 def modsRoot = file("${gameRoot}/mods")
 def javaUnitIds = [
-	"C02-S01", "C02-S02", "C02-S03", "C02-S04",
-	"C03-S01", "C03-S03", "C03-S05",
-	"C06-S01", "C06-S02", "C06-S03", "C06-S04",
-	"C07-S01", "C07-S02", "C07-S03", "C07-S04", "C07-S05", "C07-S06", "C07-S07", "C07-S08", "C07-S09",
-	"C08-S01", "C08-S02", "C08-S03", "C08-S04", "C08-S05", "C08-S06", "C08-S07", "C08-S08", "C08-S09",
-	"C09-S01", "C09-S02", "C09-S03", "C09-S04",
-	"C10-S01", "C10-S02", "C10-S03", "C10-S04", "C10-S05",
-	"C11-S01", "C11-S03", "C11-S04",
-	"C12-S01", "C12-S02", "C12-S03", "C12-S04", "C12-S05", "C12-S06",
-	"C13-S01", "C13-S02", "C13-S03",
-	"C14-S02", "C14-S03", "C14-S04"
+	"C2-S1", "C2-S2", "C2-S3", "C2-S4",
+	"C3-S1", "C3-S3",
+	"C5-S3",
+	"C6-S1", "C6-S2", "C6-S3",
+	"C7-S1", "C7-S2", "C7-S3", "C7-S4", "C7-S5", "C7-S6", "C7-S7", "C7-S8", "C7-S9",
+	"C8-S1", "C8-S2", "C8-S3", "C8-S4", "C8-S5", "C8-S6", "C8-S7", "C8-S8", "C8-S9",
+	"C9-S1", "C9-S2", "C9-S3", "C9-S4",
+	"C10-S1", "C10-S2", "C10-S3", "C10-S4", "C10-S5",
+	"C11-S1", "C11-S3", "C11-S4",
+	"C12-S5",
+	"C13-S1", "C13-S2", "C13-S3", "C13-S4", "C13-S5", "C13-S6",
+	"C14-S1", "C14-S2", "C14-S3",
+	"C15-S1", "C15-S2", "C15-S3", "C15-S4"
 ]
-def shaderUnitIds = ["C14-S01", "C14-S02", "C14-S03", "C14-S04"]
+def shaderUnitIds = ["C15-S1", "C15-S2", "C15-S3", "C15-S4"]
 
 def fixtureJars = files(
 	fileTree(dir: "${gameRoot}/starsector-core", include: ["*.jar"]),
@@ -59,6 +61,15 @@ sourceSets {
 tasks.withType(JavaCompile).configureEach {
 	options.encoding = "UTF-8"
 	options.release = 17
+	dependsOn "checkFixtureContracts"
+}
+
+tasks.register("checkFixtureContracts", Exec) {
+	group = "verification"
+	description = "Checks the bidirectional contract between tutorial pages, fixtures, and explicit unit lists."
+	workingDir rootDir.parentFile
+	def pythonExecutable = providers.gradleProperty("pythonExecutable").getOrElse("python")
+	commandLine pythonExecutable, "-B", ".zcode/tools/check_fixtures.py"
 }
 
 def compileTasks = javaUnitIds.collect { unitId ->
@@ -68,13 +79,14 @@ def compileTasks = javaUnitIds.collect { unitId ->
 
 tasks.register("compileAllFixtures") {
 	group = "verification"
-	description = "Compiles all 50 isolated tutorial Java fixtures."
+	description = "Compiles all 54 isolated tutorial Java fixture units."
 	dependsOn compileTasks
 }
 
 tasks.register("validateShaders") {
 	group = "verification"
 	description = "Checks the four shader fixture resource sets."
+	dependsOn "checkFixtureContracts"
 	doLast {
 		shaderUnitIds.each { unitId ->
 			def shaderDir = file("units/${unitId}/src/main/resources")

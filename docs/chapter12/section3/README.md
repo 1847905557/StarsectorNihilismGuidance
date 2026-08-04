@@ -440,7 +440,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
  *
  * 适用边界：
  * - GraphicsLib 的初始化与 LightData/TextureData CSV 注册发生在 onApplicationLoad
- *   （本 MOD 的接入片段见页面正文，fixture 不含该片段）；
+ *   （本 MOD 的接入片段见页面正文，本节示例类不含该片段）；
  * - ShaderHook（settings plugins 注册的 EveryFrameCombatPlugin）在每场战斗开始时
  *   创建 LightShader 的战斗 LocalData（engine customData 键 "shaderlib_LightShader"），
  *   并注册一个覆盖全部层的分层渲染钩子；LightShader 声明在
@@ -748,7 +748,7 @@ public class GearInLightReporter {
 
 需要的 import(在 `GearInModPlugin` 里追加)：`org.dark.shaders.light.LightData`、`org.dark.shaders.util.ShaderLib`。
 
-`GearInModPlugin` 类由前置的 modPlugin 主题单元持有，本节只追加这两处；fixture 例不含此片段 (fixture 只含本节所有的四个示例类)。
+`GearInModPlugin` 类由前置的 modPlugin 主题单元持有，本节只追加这两处；本节示例类不含该片段。
 
 ### 注册片段 (战斗侧，工程片段)
 
@@ -764,7 +764,7 @@ public class GearInLightReporter {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/visuals` 下的四个新类 (可用 `jar tf` 核对)。本节代码块与 fixture 逐字一致，fixture 编译验收命令见 "验证方案"。
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/visuals` 下的四个新类 (可用 `jar tf` 核对)
 
 ### 验证方案
 
@@ -772,7 +772,7 @@ gradle jar
 
 操作步骤：
 
-1. 构建与产物核对：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC12s03Java --no-daemon`，确认 `BUILD SUCCESSFUL`(退出码 0)；随后在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/visuals` 下四个新类。
+1. 构建与产物核对：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/visuals` 下四个新类。
 2. 启动检查：确认启动器抗锯齿为 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`) 后启动游戏进入主菜单 —— 无 "not fully compatible with antialiasing" 中止。
 3. 战斗冒烟与画面：进入 `GearIn_test` 一场战斗，`starsector.log` 核对五个报告行 (`capabilities` / 两行 `light data` / `texture` / `ship`)，无 `gear_in` 引起的 `ERROR`；随后观察玩家舰船暖色光晕 (跟随移动、随朝向偏移)、每 2 秒淡蓝闪光 (约 0.5 秒自灭)、轻型自动炮暖白曳光与点防御光束光晕 (覆盖行生效)。
 4. 暂停：按空格暂停约 10 秒 —— 光源静止但可见；恢复后继续 (暂停期间不产生新闪光)。
@@ -785,39 +785,26 @@ gradle jar
 
 预期结果：
 
-1. **构建与产物**：fixture 编译 (验收 J)：在 Git Bash 执行
-```text
-gradle -p tutorial-fixtures compileC12s03Java --no-daemon
-```
-以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/visuals/GearInLightCombatPlugin.class` 等四个新类。
-2. **启动检查**：启动器抗锯齿处于 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`)；游戏正常进入主菜单，`starsector.log` 没有 "GraphicsLib shaders are not fully compatible with antialiasing!"(规则 3 的正面)。
-3. **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 依次出现：
+1. **启动检查**：启动器抗锯齿处于 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`)；游戏正常进入主菜单，`starsector.log` 没有 "GraphicsLib shaders are not fully compatible with antialiasing!"(规则 3 的正面)。
+2. **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 依次出现：
 ```text
 GearIn light capabilities: shaders=true buffers=true lightShaderEnabled=true GearIn light data: lightac_shot (projectile) standard=true size=90.0 intensity=0.4 chance=1.0 fighterDim=true GearIn light data: pdlaser (beam) standard=true size=50.0 intensity=0.7 chance=1.0 fighterDim=true GearIn light texture: hull=<玩家船体id> material=mag=<m> tex=<id> normal=mag=<m> tex=<id> surface=... shipTex=mag=<m> tex=<id> GearIn light ship: attached light added offset=(0.0, 60.0) size=150.0 intensity=1.0
 ```
 没有 `gear_in` 引起的 `ERROR`。`texture` 行的 `material` / `normal` 取决于核心 `core_texture_data.csv` 是否注册了该船体 (原版船体通常都有)；`surface` 可能为 `none`(surface 表覆盖较少且依赖 `loadSurface` 门禁)。
-4. **画面结果**：玩家舰船被暖色 (255,210,130) 光晕笼罩，光晕随舰船移动、随朝向偏移。
+3. **画面结果**：玩家舰船被暖色 (255,210,130) 光晕笼罩，光晕随舰船移动、随朝向偏移。
    - 每 2 秒舰船周围随机位置闪一次淡蓝 (120,220,255) 闪光并在约 0.5 秒内消失。
    - 轻型自动炮 (lightac) 飞行中带持续的暖白曳光、命中点出现爆炸光 (核心行无 hit 组，覆盖行新增；核心原有 flash 组被整行替换丢弃)。
    - 点防御光束 (pdlaser) 带暖色光晕。
-5. **覆盖生效与暂停**：把本节 CSV 的 `lightac_shot` 行 `size` 改回 `50`(与核心一致) 再对比 —— 曳光明显变小；`90` 时更大。注意 `readLightDataCSV` 是**覆盖式**：改 CSV 后重启游戏即可 (数据在 `onApplicationLoad` 注册)。按空格暂停 —— 光源静止 (闪光停在原地、光晕不随舰船淡出变化) 但**仍然可见**；恢复后继续。
-6. **生命期与失效清理**：闪光每次都在约 0.5 秒内消失 (fadeOut 自灭)；挂载光晕持续存在 —— 等待超过 60 秒仍在 (`makePermanent` 生效，规则 5 的正面)。若把 `makePermanent()` 注释掉 (故障注入)，光晕在第 60 秒附近消失。击毁玩家舰船 ——`starsector.log` 出现 `GearIn light ship: player destroyed, fading out attached light`，光晕约 1 秒内淡出消失 (规则 6)；闪光停止产生 (`player.isAlive()` 检查)。
-7. **战斗结束 (跨战斗)**：退出战斗再进一场 —— 五个日志行重新出现、`flash` 编号从 `#1` 重新开始 (每场战斗全新 `LocalData`，规则 7 的正面)；连续多场战斗后画面与显存无异常累积。
-8. **变更验证 (故障注入)**：
+4. **覆盖生效与暂停**：把本节 CSV 的 `lightac_shot` 行 `size` 改回 `50`(与核心一致) 再对比 —— 曳光明显变小；`90` 时更大。注意 `readLightDataCSV` 是**覆盖式**：改 CSV 后重启游戏即可 (数据在 `onApplicationLoad` 注册)。按空格暂停 —— 光源静止 (闪光停在原地、光晕不随舰船淡出变化) 但**仍然可见**；恢复后继续。
+5. **生命期与失效清理**：闪光每次都在约 0.5 秒内消失 (fadeOut 自灭)；挂载光晕持续存在 —— 等待超过 60 秒仍在 (`makePermanent` 生效，规则 5 的正面)。若把 `makePermanent()` 注释掉 (故障注入)，光晕在第 60 秒附近消失。击毁玩家舰船 ——`starsector.log` 出现 `GearIn light ship: player destroyed, fading out attached light`，光晕约 1 秒内淡出消失 (规则 6)；闪光停止产生 (`player.isAlive()` 检查)。
+6. **战斗结束 (跨战斗)**：退出战斗再进一场 —— 五个日志行重新出现、`flash` 编号从 `#1` 重新开始 (每场战斗全新 `LocalData`，规则 7 的正面)；连续多场战斗后画面与显存无异常累积。
+7. **变更验证 (故障注入)**：
    - **能力门禁注入**：把 `GRAPHICS_OPTIONS.ini` 的 `enableShaders` 改为 `false` 后重启游戏。`capabilities` 行变 `shaders=false buffers=false lightShaderEnabled=false`，两行 `light data` 变 `not registered`(接入片段里的能力判断把 CSV 读取跳过了)，战斗中无任何光源。恢复：改回 `true` 后恢复。对照：`enableLights:false` 时 `lightShaderEnabled=false`、光源全无，但 CSV 仍注册 (能力判断只查 shaders/buffers)—— 两条门禁的可观察结果不同，注意区分。
    - **初始化顺序注入**：把接入片段里的 `ShaderLib.init();` 注释掉后重启游戏。`capabilities` 行**仍然** `lightShaderEnabled=true`(战斗时 GraphicsLib 早已初始化)，但两行 `light data` 变 `not registered`(本 MOD 的 CSV 在能力判断 false 时被跳过)。"能力全开但自己的数据没注册" 正是规则 1 描述的迷惑症状；改回后恢复。
 
 通过信号：步骤 1–6 全部符合；步骤 7–8 的注入与恢复都符合预期。
 
-清理：取消勾选测试 MOD；恢复 `GRAPHICS_OPTIONS.ini` 与 CSV 为原值；确认没有对共享文件 (如 `tutorial-fixtures\build.gradle`) 做过修改。
-
-静态自查：
-
-- `GearIn_light_data.csv` 为 UTF-8 无 BOM；
-- 两行 id 与原版 `data\weapons\proj\lightac_shot.proj`、`data\weapons\weapon_data.csv` 的 `pdlaser` 行一致；
-- 四个示例类与 fixture 逐字一致 (包括 import 顺序与注释)；
-- 没有把工作单元编号写进任何包名、类名、资源名或字符串 key：包 `data.scripts.gearin.visuals`；类 `GearInLightCombatPlugin` / `GearInShipLight` / `GearInFlashSpawner` / `GearInLightReporter`；日志前缀 `GearIn light ...`；
-- 除本节目录与 fixture 目录外没有改动任何共享文件。
+清理：取消勾选测试 MOD；恢复 `GRAPHICS_OPTIONS.ini` 与 CSV 为原值
 
 ## 故障分析
 

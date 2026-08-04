@@ -824,50 +824,41 @@ gradle jar
 
 产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类 (可用 `jar tf` 核对)。
 
-本节源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C09-S01/src/main/java/data/scripts/gearin/campaign/`)，fixture 编译验收命令见 "验证方案" 的预期结果。
-
 演示链已经落地，下面按步骤编译、进档并核对日志与界面。
 
 ## 验证方案
 
-- **前置数据**：`gear_in` MOD 布局与插件生命周期类 (C06-S01 / C06-S02，含本节调用点片段)、本节 8 个类 (与 fixture 同源)、生涯时钟脚本 (C08-S01，非必需)。
+- **前置数据**：`gear_in` MOD 布局与插件生命周期类 (C06-S01 / C06-S02，含本节调用点片段)、本节 8 个类、生涯时钟脚本 (C08-S01，非必需)。
 - **操作**：
-  1. fixture 编译 (验收 J)：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC09s01Java --no-daemon`，确认 `BUILD SUCCESSFUL`。
-  2. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
-  3. 新建生涯：确认 `starsector.log` 按 "预期结果" 第 3 条顺序出现全部 `GearIn person lesson` 日志行：
+  1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
+  2. 新建生涯：确认 `starsector.log` 按 "预期结果" 第 2条顺序出现全部 `GearIn person lesson` 日志行：
      - 含 `start` / `flagship` / `members` / `personA defaults` / `personA identity` / `tagsMemory` / 五条 `relToPlayer` / `market` / `importantPeople`。
      - 含 `captain default` / `captain set` / `personB random` / `officer add` / `officer xp` / `officer levelUp` / `officer captain` / `officer remove` / 七条 `factionRel` / `done`。
      - 关键核对：`captainIsPlayerPerson=true`、`personA defaults` 六项默认值、`rank=Commander`、`post=Fleet Commander`、`relToPlayer` 五步 0.00→0.30→0.75→-0.50→0.00。
      - `factionRel` 序列 0.00→0.15→1.00→-0.50→-0.70→0.25→原值、`done` 行成员数与 `start` 一致。
      - 全程无 `gear_in` 引起的 `ERROR`。
-  4. 界面核对：演示日志出现时打开舰队界面 (F 键)，确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成 ("预期结果" 第 4 条)。
-  5. 只执行一次：等待若干游戏日后日志无新增 `GearIn person lesson` 行；保存并读档后仍无新增 (`REGISTER_MARK` 门已关)；读档后势力关系面板中 hegemony 与 tritachyon 的数值与演示前一致 (同帧回滚，"预期结果" 第 5 条)。
-  6. 故障注入 1：注释掉调用点片段的 `addScript` 行，重启新档：无任何 `GearIn person lesson` 日志 (对应 "故障分析" 第 1 条的前半 —— 注册缺失)；改回后确认恢复。
-  7. 故障注入 2：把 `GearInPersonIdentity` 里的 `personA.setPersonality("reckless")` 改为 `"bogus"`，重启新档后保存：`starsector.log` 出现保存时的 `NullPointerException`(对应 "故障分析" 第 2 条)；改回后确认恢复。
-  8. 故障注入 3：注释掉 `GearInFactionRelation` 里的 `setRelationship("tritachyon", originalRel)` 恢复行，重启新档并读档：
+  3. 界面核对：演示日志出现时打开舰队界面 (F 键)，确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成 ("预期结果" 第 3条)。
+  4. 只执行一次：等待若干游戏日后日志无新增 `GearIn person lesson` 行；保存并读档后仍无新增 (`REGISTER_MARK` 门已关)；读档后势力关系面板中 hegemony 与 tritachyon 的数值与演示前一致 (同帧回滚，"预期结果" 第 4条)。
+  5. 故障注入 1：注释掉调用点片段的 `addScript` 行，重启新档：无任何 `GearIn person lesson` 日志 (对应 "故障分析" 第 1 条的前半 —— 注册缺失)；改回后确认恢复。
+  6. 故障注入 2：把 `GearInPersonIdentity` 里的 `personA.setPersonality("reckless")` 改为 `"bogus"`，重启新档后保存：`starsector.log` 出现保存时的 `NullPointerException`(对应 "故障分析" 第 2 条)；改回后确认恢复。
+  7. 故障注入 3：注释掉 `GearInFactionRelation` 里的 `setRelationship("tritachyon", originalRel)` 恢复行，重启新档并读档：
      - 势力关系面板中 hegemony 对 tritachyon 的数值停在 `0.25`(`ensureAtWorst` 的残留)，证明回滚必要 (对应规则强度表 "演示同帧回滚" 与 "故障分析" 第 9 条)。
      - 改回后确认恢复。
-- **通过信号**：操作 1–5 全部符合；操作 6–8 的注入与恢复都符合预期。
-- **清理**：取消勾选测试 MOD；确认没有对共享文件 (如 fixture 构建脚本) 做过修改。
+- **通过信号**：操作 1–4 全部符合；操作 5–7 的注入与恢复都符合预期。
+- **清理**：取消勾选测试 MOD
 
 预期结果：
 
-1. **fixture 编译 (验收 J)**：在 Git Bash 执行。
-```text
-gradle -p tutorial-fixtures compileC09s01Java --no-daemon
-```
 以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
-3. **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现。
+1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
+2. **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现。
 ```text
 GearIn person lesson start: members=<N> playerFaction=player playerPerson=<玩家名> GearIn person lesson flagship: name=<旗舰船名> captainIsPlayerPerson=true GearIn person lesson members: added wolf=<船名> hammerhead=<船名> count=<N+2> GearIn person lesson personA defaults: id=p_<uid> personality=steady name='' rankId=spaceCommander postId=fleetCommander faction=neutral portraitIsDefault=true importance=MEDIUM GearIn person lesson personA identity: name=Aster Vance female=true rank=Commander post=Fleet Commander personality=reckless faction=hegemony voice=<soldier|official|aristo 之一> GearIn person lesson tagsMemory: hasTag=true tags=1 memory=42 GearIn person lesson relToPlayer default: rel=0.00 level=NEUTRAL hostile=false GearIn person lesson relToPlayer adjust: rel=0.30 level=WELCOMING GearIn person lesson relToPlayer cooperative: rel=0.75 level=COOPERATIVE GearIn person lesson relToPlayer hostile: rel=-0.50 level=HOSTILE hostile=true GearIn person lesson relToPlayer reset: rel=0.00 level=NEUTRAL GearIn person lesson market: id=jangala inAfterAdd=true personMarketLinked=true inAfterRemove=false GearIn person lesson importantPeople: containsAfterAdd=true dataLinked=true containsAfterRemove=false GearIn person lesson captain default: personality=steady name='' level=1 GearIn person lesson captain set: sameCaptain=true memberWithCaptainFound=true GearIn person lesson personB random: name=<随机名> female=<true|false> faction=hegemony personality=steady portraitIsDefault=false GearIn person lesson officer add: count=<M+1> fleetLinked=true GearIn person lesson officer xp: xp=<X> -> <X+100000> canLevelUp=true picks=4 GearIn person lesson officer levelUp: level=2 skill=<技能id> skillLevel=1.0 GearIn person lesson officer captain: sameCaptain=true memberWithCaptainFound=true officerInRoster=true GearIn person lesson officer remove: count=<M> fleetLinked=true GearIn person lesson factionRel start: original=<O> normalized=0.00 level=NEUTRAL GearIn person lesson factionRel adjust: value=0.15 level=FAVORABLE GearIn person lesson factionRel cap: value=1.00 level=COOPERATIVE changed=true GearIn person lesson factionRel hostile: value=-0.50 level=HOSTILE hostileTo=true GearIn person lesson factionRel vengefulCap: value=-0.70 level=HOSTILE GearIn person lesson factionRel ensure: value=0.25 level=WELCOMING ensured=true GearIn person lesson factionRel restore: value=<O> level=<原档位> GearIn person lesson done: members=<N> (initial <N>)
 ```
 其中 `<N>` 是初始成员数、`<M>` 是初始军官数、`<O>` 是存档里 hegemony 对 tritachyon 的关系原值、`<X>` 是人物 B 初始 XP(新档为 0)，均以实际日志为准；`voice` 是 hegemony `HIGH` 声音池三选一；`picks=4` 是新档典型值 (以日志为准，≥1)；`skill` 是重掷后的第一个军官技能候选。关系序列各行的数值/档位是**确定性**的：`0.15→FAVORABLE`、`1.00→COOPERATIVE changed=true`、`-0.50→HOSTILE hostileTo=true`、`-0.70 档位仍 HOSTILE`、`0.25→WELCOMING ensured=true`、`restore` 与原值一致。演示只执行一次，之后无任何 `GearIn person lesson` 日志。
-4. **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
-5. **读档**：不出现任何 `GearIn person lesson` 日志 (`REGISTER_MARK` 门已关、脚本不再注册)；玩家舰队与演示前一致；`hegemony` 与 `tritachyon` 的关系面板数值与演示前一致 (同帧回滚生效)。
-6. **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
-
-静态自查：全部 8 个类源码与 fixture 逐字一致 (包括 import 顺序)；`REGISTER_MARK` 与调用点片段的键逐字一致；没有把工作单元编号写进任何运行时名称 (类名、包名、persistent data 键、tag、memory key 均不含 C09-S01 变体)；示例只消费既有 GearIn ID 与原版 ID(无新增资源 ID)。
+3. **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
+4. **读档**：不出现任何 `GearIn person lesson` 日志 (`REGISTER_MARK` 门已关、脚本不再注册)；玩家舰队与演示前一致；`hegemony` 与 `tritachyon` 的关系面板数值与演示前一致 (同帧回滚生效)。
+5. **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
 
 ## 故障分析
 
@@ -921,5 +912,3 @@ GearIn person lesson start: members=<N> playerFaction=player playerPerson=<玩�
 - `data/world/factions/default_ranks.json`：rank/post 显示名的默认来源 (`spaceCommander` / `fleetCommander`)。
 - `data/world/factions/hegemony.faction`：`ranks` 段覆写与 `voices` 声音池 (`LOW` / `MEDIUM` / `HIGH`)。
 - `data/config/settings.json`：`default_portrait`、`officerLevelUp` 插件、`officerXPRequiredMult`、`officerMaxLevel`。
-- `tutorial-fixtures/units/C09-S01/src/main/java/data/scripts/gearin/campaign/`：本节 8 个类的 fixture 源。
-- `tutorial-fixtures/build.gradle`：`compileC09s01Java` 编译任务 (source set `s09p01` 含本单元)。

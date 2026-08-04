@@ -548,8 +548,6 @@ gradle jar
 
 - `$Level0` / `$Level1` / `$Level1A` / `$LevelShipFighters` / `$LevelFleet` / `$LevelStats`
 
-本节代码块与磁盘 fixture 逐字一致 (fixture 路径见 "建议参考项")，fixture 编译验收命令见 "验证方案"。
-
 ### GearIn_gunnery 完整流程 (静态交叉核对)
 
 把三件套、调用点与观察结果串成一张静态交叉核对表，逐行确认后再进入游戏验证：
@@ -570,14 +568,13 @@ gradle jar
 
 操作步骤：
 
-1. **fixture 编译**：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC09s02Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类；冒烟期间把 `skill_data.csv` 的 icon 列指向原版 `graphics/icons/skills/gunnery_implants.png`。
-3. **启动与注册**：新建生涯 (或读档)，核对 `starsector.log` 的注册结果：出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]`，没有 `Skipping skill` / `Skipping loading skill`，没有 `gear_in` 引起的 `ERROR`。
-4. **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (放在 `onGameLoad` 内)，随后打开舰队界面 (F 键) 并进入一场战斗部署。
-5. **界面核对**：打开技能树 (C 键)、整备界面 (R 键) 与舰队面板，查看战斗部署界面的指挥点数与武器伤害。
-6. **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)`。
-7. **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill`。
-8. **故障注入**：按以下三项逐项注入、观察并恢复 (分别对应故障分析 1、3、9)：
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类；冒烟期间把 `skill_data.csv` 的 icon 列指向原版 `graphics/icons/skills/gunnery_implants.png`。
+2. **启动与注册**：新建生涯 (或读档)，核对 `starsector.log` 的注册结果：出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]`，没有 `Skipping skill` / `Skipping loading skill`，没有 `gear_in` 引起的 `ERROR`。
+3. **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (放在 `onGameLoad` 内)，随后打开舰队界面 (F 键) 并进入一场战斗部署。
+4. **界面核对**：打开技能树 (C 键)、整备界面 (R 键) 与舰队面板，查看战斗部署界面的指挥点数与武器伤害。
+5. **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)`。
+6. **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill`。
+7. **故障注入**：按以下三项逐项注入、观察并恢复 (分别对应故障分析 1、2、8)：
    - 把 `skill_data.csv` 里的 `GearIn_gunnery` 行临时删掉再启动；
    - 把 `.skill` 里 Level1 的 `type` 临时改成 `"FLEET"` 再启动并学习；
    - 让另一个效果返回与 Level1 相同的 `label` + `value`。
@@ -586,36 +583,26 @@ gradle jar
 
 预期结果：
 
-1. **fixture 编译**：以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-```text
-gradle -p tutorial-fixtures compileC09s02Java --no-daemon
-```
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类；启动后加载期无 `gear_in` 引起的 ERROR (注意 icon 列在冒烟期间指向原版图标，见 "完整最小例")。
-3. **注册确认**：`starsector.log` 出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]` (loadSkills 的加载日志)，没有 `Skipping skill [...]` 或 `Skipping loading skill [...]` 两行。
-4. **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (见读取与调用点片段) 生效后，日志立即出现。
+1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类；启动后加载期无 `gear_in` 引起的 ERROR (注意 icon 列在冒烟期间指向原版图标，见 "完整最小例")。
+2. **注册确认**：`starsector.log` 出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]` (loadSkills 的加载日志)，没有 `Skipping skill [...]` 或 `Skipping loading skill [...]` 两行。
+3. **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (见读取与调用点片段) 生效后，日志立即出现。
 ```text
 GearIn gunnery stats apply: id=GearIn_gunnery_stats_4 level=1.0 commandPoints=+1 GearIn gunnery fleet apply: id=GearIn_gunnery_stats_3 level=1.0 burn=+2
 ```
 (FLEET 与 CHARACTER_STATS 在 `refreshCharacterStatsEffects` 内即时重放；`_stats_3` / `_stats_4` 与 "技能等级" 一节的 effect id 组合规则一致。)
-5. **stats 重建后 SHIP 效果**：打开舰队界面 (F 键，触发成员 stats 重建) 或进入一场战斗部署，日志出现。
+4. **stats 重建后 SHIP 效果**：打开舰队界面 (F 键，触发成员 stats 重建) 或进入一场战斗部署，日志出现。
 ```text
 GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damage=+15% aim=+100%
 ```
 (hull 以实际玩家旗舰为准。) 战斗内载机起飞时出现 `GearIn gunnery fighters apply: id=GearIn_gunnery_ship_fighters_2 ... speed=+10%`。
-6. **界面**：C 键技能树战斗系出现 "Gunnery" 行与 DESCRIPTION 文本；R 键整备界面舰队构成表出现 `Gunnery damage bonus +15%` 行，悬停显示自定义 tooltip；舰队面板 burn 提升 2 (最慢成员 burn ≥ 8 时)；战斗部署界面指挥点数 +1；玩家旗舰武器伤害倍率提升 (`GearIn_artizan` 等装配里实弹 / 能量武器 +15%，精英 +5%)，瞄准误差降低。
-7. **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)` 后，日志追加 `GearIn gunnery elite apply: id=GearIn_gunnery_ship_5 level=2.0 hull=... damage=+5%`。
-8. **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill` 后日志不再出现新 apply 行，burn / 指挥点数 / fleet total 行恢复基线；`unapply` 用同一 id 解除，数值无残留。
-9. **故障注入恢复**：三项注入分别出现 `Skipping loading skill [data/characters/skills/GearIn_gunnery.skill], it's not listed in skill_data.csv.` (技能树无 "Gunnery" 行)、stats 重放时抛 `ClassCastException`、整备界面只显示一行；改回后各自恢复。
+5. **界面**：C 键技能树战斗系出现 "Gunnery" 行与 DESCRIPTION 文本；R 键整备界面舰队构成表出现 `Gunnery damage bonus +15%` 行，悬停显示自定义 tooltip；舰队面板 burn 提升 2 (最慢成员 burn ≥ 8 时)；战斗部署界面指挥点数 +1；玩家旗舰武器伤害倍率提升 (`GearIn_artizan` 等装配里实弹 / 能量武器 +15%，精英 +5%)，瞄准误差降低。
+6. **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)` 后，日志追加 `GearIn gunnery elite apply: id=GearIn_gunnery_ship_5 level=2.0 hull=... damage=+5%`。
+7. **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill` 后日志不再出现新 apply 行，burn / 指挥点数 / fleet total 行恢复基线；`unapply` 用同一 id 解除，数值无残留。
+8. **故障注入恢复**：三项注入分别出现 `Skipping loading skill [data/characters/skills/GearIn_gunnery.skill], it's not listed in skill_data.csv.` (技能树无 "Gunnery" 行)、stats 重放时抛 `ClassCastException`、整备界面只显示一行；改回后各自恢复。
 
-静态核对：
-- `GearInGunnerySkill` 源码与 fixture 逐字一致 (包括 import 顺序与注释)；
-- `.skill`、`skill_data.csv`、fixture 资源三处 `GearIn_gunnery` id 一致；
-- 没有把工作单元编号写进任何运行时名称 (技能 id、类名、包名、常量、日志前缀均不含 C09-S02 变体)；
-- 示例只使用既有 GearIn ID 与原版 ID (无新增资源 ID，图标例外见 "完整最小例")。
+通过信号：操作 1–6 全部符合；操作 7 的三项注入与恢复都符合预期。
 
-通过信号：操作 1–7 全部符合；操作 8 的三项注入与恢复都符合预期。
-
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures` 构建配置等) 做过修改。
+清理：取消勾选测试 MOD
 
 ::: tip 日志核对技巧
 在 `Starsector/starsector-core/starsector.log` 中按 `GearIn gunnery` 前缀检索即可定位本技能的全部 apply 日志行；出现 `ERROR` 时优先查看 `gear_in` 包相关的堆栈。
@@ -660,7 +647,5 @@ GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damag
 - `data/characters/skills/GearIn_gunnery.skill`：本节技能定义 (aptitude / 等级组 / 效果清单)。
 - `data/characters/skills/aptitude_data.csv`：能力树分组表 (`effect_skill_id` 列)。
 - `data/characters/skills/gunnery_implants.skill`：原版 SHIP + 精英组样例 (本节示例的蓝本)。
-- `tutorial-fixtures/units/C09-S02/src/main/java/data/scripts/gearin/campaign`：`GearInGunnerySkill` 源码目录 (页面代码块的磁盘对照)。
-- `tutorial-fixtures/units/C09-S02/src/main/resources/data/characters/skills`：`GearIn_gunnery.skill` 与 `skill_data.csv` 数据 fixture。
 - `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
 - `Starsector/starsector-core/starsector.log`：游戏运行日志 (注册与 apply 日志的核对位置)。

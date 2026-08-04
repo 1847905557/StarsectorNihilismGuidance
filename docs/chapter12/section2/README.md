@@ -643,26 +643,22 @@ gradle jar
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/lib/` 下五个类 (可用 `jar tf` 核对)：
 - `GearInLazyPlugin` / `GearInLazyMathUsage` / `GearInLazyCombatQuery` / `GearInLazyJsonStore` / `GearInLazyRuntimeProbe`
 
-本节五个类的源码与 fixture 逐字一致 (fixture 目录 `tutorial-fixtures\units\C12-S02\src\main\java\data\scripts\gearin\lib\`)，fixture 编译验收命令见下文 "验证方案"。
-
 ### 验证方案
 
 前置数据：既有 MOD 布局 (C06-S01)；`dependencies` 已声明 `lw_lazylib`(C12-S01)；既有战斗插件接入本节注册片段 (C07-S01 模型)；`GearIn_test` 测试战役 (C03-S01)。
 
-1. fixture 编译：在仓库根目录执行 `gradle -p tutorial-fixtures compileC12s02Java --no-daemon`。
-2. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，并用 `jar tf jars\GearIndustry.jar` 列出类条目。
-3. 初始化：进入 `GearIn_test` 一场战斗，在 `starsector.log` 找到 `GearIn lazy init: ...` 行。
-4. 周期报告：战斗 (未暂停) 中观察报告输出；按空格暂停约 10 秒后恢复。
-5. 空目标：清空敌方后继续观察报告行。
-6. 持久化：退出战役再进入一场战斗，核对 init 行与 `<saves>\common\` 下的文件。
-7. 故障注入·save：注释 `GearInLazyJsonStore.writeInt` 里的 `jsonObject.save()`，重启游戏进入战斗后核对；改回后确认恢复。
-8. 故障注入·判空：删除 `GearInLazyMathUsage.report` 里的 `if (enemy == null)` 分支，清空敌方后核对日志；改回后确认恢复。
+1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，并用 `jar tf jars\GearIndustry.jar` 列出类条目。
+2. 初始化：进入 `GearIn_test` 一场战斗，在 `starsector.log` 找到 `GearIn lazy init: ...` 行。
+3. 周期报告：战斗 (未暂停) 中观察报告输出；按空格暂停约 10 秒后恢复。
+4. 空目标：清空敌方后继续观察报告行。
+5. 持久化：退出战役再进入一场战斗，核对 init 行与 `<saves>\common\` 下的文件。
+6. 故障注入·save：注释 `GearInLazyJsonStore.writeInt` 里的 `jsonObject.save()`，重启游戏进入战斗后核对；改回后确认恢复。
+7. 故障注入·判空：删除 `GearInLazyMathUsage.report` 里的 `if (enemy == null)` 分支，清空敌方后核对日志；改回后确认恢复。
 
 观察位置：`starsector.log` 中的 `GearIn lazy ...` 行、`<saves>\common\` 下的 `GearIn_lazy_demo` 文件、`jar tf` 输出的类条目。
 
 预期结果：
 
-- fixture 编译以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
 - `jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/lib/` 下五个类的条目：`GearInLazyPlugin` / `GearInLazyMathUsage` / `GearInLazyCombatQuery` / `GearInLazyJsonStore` / `GearInLazyRuntimeProbe`。
 - 首次进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行：
 
@@ -679,11 +675,9 @@ GearIn lazy init: version=3.0 supported=0.98a-RC5 modEnabled=true classPresent=t
 - 故障注入·save：`battleCount` 从 1 重新开始 (上次的 1 没有落盘)；改回后恢复递增。
 - 故障注入·判空：下一个报告周期日志出现 NPE 堆栈；改回后恢复。
 
-通过信号：操作 1–6 全部符合；操作 7/8 的注入与恢复都符合预期。
+通过信号：操作 1–5 全部符合；操作 6/7 的注入与恢复都符合预期。
 
-静态自查：Java 源码与 fixture 逐字一致 (包括 import 顺序与注释)；工作单元编号没有进入任何包名、类名、数据键或 common 文件名 (包 `data.scripts.gearin.lib`、类 `GearInLazyPlugin` / `GearInLazyMathUsage` / `GearInLazyCombatQuery` / `GearInLazyJsonStore` / `GearInLazyRuntimeProbe`、文件名 `GearIn_lazy_demo`、键 `battles` / `reports`)；源码 UTF-8 无 BOM、CRLF 换行。
-
-清理：取消勾选测试 MOD；删除 `GearIn_lazy_demo` 测试文件 (如需)；确认没有对共享文件做过修改。
+清理：取消勾选测试 MOD；删除 `GearIn_lazy_demo` 测试文件 (如需)
 
 ::: tip 只看本节日志行
 
@@ -734,4 +728,3 @@ GearIn lazy init: version=3.0 supported=0.98a-RC5 modEnabled=true classPresent=t
 - `Starsector\saves\common\`：common JSON 落盘目录 (`GearIn_lazy_demo` 文件所在)。
 - `Starsector\starsector-core\starsector.log`：游戏日志，本节日志行的可观察位置。
 - `mod_info.json`(本 MOD)：`dependencies` 声明 `lw_lazylib`。
-- `tutorial-fixtures\build.gradle`：教程验证工程构建脚本 (`compileC12s02Java` 任务)。

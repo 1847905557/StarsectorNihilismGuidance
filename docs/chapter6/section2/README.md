@@ -257,7 +257,7 @@ public class GearInModPlugin extends BaseModPlugin {
 - `SharedData.getData().getPersonBountyEventData().addParticipatingFaction("gear_industry")`：把势力注册进赏金机制的参与列表 (沿用旧版示例行为)，只在首次进入时执行一次。
 - `Global.getLogger(GearInModPlugin.class)`：日志写入 `Starsector/starsector-core/starsector.log`。
 
-累计工程补全片段 (本节 fixture 例不含新档生成页的生成器类，累计工程把生成入口接回 `onNewGame`)：
+累计工程补全片段 (本节示例类不含新档生成页的生成器类，累计工程把生成入口接回 `onNewGame`)：
 
 ```java
     @Override
@@ -306,8 +306,6 @@ GearIn lifecycle: onNewGame GearIn lifecycle: onEnabled wasEnabledBefore=false G
 - **保存** (读档后手动保存)：日志依次出现 `beforeGameSave` → `afterGameSave`。
 
 通过信号：操作 2–4 的日志行与顺序全部符合；操作 5、6 的注入与恢复都符合预期。
-
-静态自查：`mod_info.json` 为 UTF-8 无 BOM；`modPlugin` 值与类包路径逐字一致 (`data.scripts.gearin.GearInModPlugin` ↔ `data/scripts/gearin/GearInModPlugin.class`)；旧包类已删除。
 
 清理：取消勾选测试 MOD；删除测试期间残留的旧入口类 `GearInSystemGenPlugin`(`data.scripts.gearin.campaign` 包)。
 

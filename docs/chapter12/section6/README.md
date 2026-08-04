@@ -663,7 +663,7 @@ public class GearInFollowControlData extends BaseControlData {
     engine.addPlugin(new GearInBoxEntity());
 ```
 
-`GearInModPlugin` 与 `MissionDefinitionAPI` 分别由 MOD 生命周期与测试战役页面所有，本节只使用这两个注册点；fixture 例不含以上接入片段 (fixture 只含本节所有的四个类)。
+`GearInModPlugin` 与 `MissionDefinitionAPI` 分别由 MOD 生命周期与测试战役页面所有，本节只使用这两个注册点；本节示例类不含以上接入片段。
 
 ### 构建
 
@@ -673,9 +673,9 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含四个类的 `.class` 条目 (`data/scripts/gearin/lib/` 下，可用 `jar tf` 核对；编者建议每次构建后顺手核对一次，缺一个类都会在战斗开始时以 `NoClassDefFoundError` 暴露)。
 
-本节四个代码块与磁盘 fixture 对应 (fixture 位于 `tutorial-fixtures/units/C12-S06/src/main/java/data/scripts/gearin/lib/`)，逐字一致；`GearInBoxEntity` 类注释中的战斗插件模型引用为 C07-S01 (战斗插件模型由 C07-S01 讲解)。
+`GearInBoxEntity` 类注释中的战斗插件模型引用为 C07-S01 (战斗插件模型由 C07-S01 讲解)。
 
-`dependencies` 的 `id` 与 BoxUtil 发行 `mod_info.json` 的 `id` 逐字一致；fixture 编译验收命令见 "验证方案"。
+`dependencies` 的 `id` 与 BoxUtil 发行 `mod_info.json` 的 `id` 逐字一致
 
 ## 验证方案
 
@@ -683,7 +683,7 @@ gradle jar
 
 操作步骤：
 
-1. 构建：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC12s06Java --no-daemon`，确认 `BUILD SUCCESSFUL` (退出码 0)；随后在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，用 `jar tf jars\GearIndustry.jar` 核对四个类的 `.class` 条目。
+1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` (退出码 0)；用 `jar tf jars\GearIndustry.jar` 核对四个类的 `.class` 条目。
 2. 战斗冒烟：进入 `GearIn_test` 一场战斗，`starsector.log` 核对 `GearIn box init:` 一行与 `gear_in` 相关 `ERROR` 情况。
 3. 画面：观察每 2 秒玩家舰位置出现的青色方框，以及 `GearIn box: #N hull=... layer=ABOVE_PARTICLES_LOWER` 日志的同步递增。
 4. 文本：确认屏幕顶部靠左白色文本 `box #1` → `box #2` → `box #3`... 递增，并记录文本的实际屏幕位置与字号；随后把 `TEXT_SIZE` 改为 `24f` 重编译再对比字号。
@@ -694,7 +694,7 @@ gradle jar
 
 预期结果：
 
-1. **构建**：`compileC12s06Java` 以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`gradle jar` 同样成功，`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/lib/` 下四个类的条目 (`GearInBoxEntity`、`GearInBoxSpawner`、`GearInTextField`、`GearInFollowControlData`)。
+1. **构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/lib/` 下四个类的条目 (`GearInBoxEntity`、`GearInBoxSpawner`、`GearInTextField`、`GearInFollowControlData`)。
 2. **战斗初始化**：`starsector.log` 出现：
 ```text
 GearIn box init: shaderEnable=true shaderCoreValid=true available=true font=graphics/fonts/insignia15LTaa.fnt/15

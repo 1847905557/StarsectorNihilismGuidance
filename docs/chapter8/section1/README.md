@@ -332,13 +332,13 @@ public class GearInSectorClockScript implements EveryFrameScript {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInSectorClockScript.class`(可用 `jar tf` 核对)。本节源码与 fixture 逐字一致，fixture 编译验收命令见 "验证方案"。
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInSectorClockScript.class`(可用 `jar tf` 核对)
 
 ## 验证方案
 
 前置数据：既有 MOD 布局 (C06-S01)、`GearInModPlugin`(C06-S02，含本节调用点片段) 与本节类 `GearInSectorClockScript`。累计工程的 `GearInSystemGenerator`(C03-S03) 非必需。
 
-1. 构建：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC08s01Java --no-daemon`，确认 `BUILD SUCCESSFUL`；随后在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，用 `jar tf jars\GearIndustry.jar` 核对产物。
+1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；用 `jar tf jars\GearIndustry.jar` 核对产物。
 2. 新建生涯：启动游戏进入新档，持续观察 `starsector.log`，直到确认脚本挂载与跨日日志。
 3. 暂停 (预期结果 3)：生涯中按空格暂停，等待 20 秒以上，再恢复。
 4. 加速 (预期结果 4)：按住 Shift 约 10 秒，再松开。
@@ -349,7 +349,7 @@ gradle jar
 
 预期结果：
 
-1. fixture 编译与游戏构建都以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInSectorClockScript.class`。
+1. 游戏构建以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInSectorClockScript.class`。
 2. 新建生涯：`starsector.log` 依次出现。
 
 ```text
@@ -371,11 +371,9 @@ GearIn clock script done: 30 game days elapsed, isDone()=true
 之后不再有跨日日志 —— 引擎在置位后的下一帧从 `scripts` 列表移除了脚本 (可验证 `Global.getSector().hasScript(GearInSectorClockScript.class)` 为 `false`)。
 9. 退出到主菜单：脚本停止推进 (生涯引擎不再推进)；回到主菜单后再进档 (读档) 按第 5 条继续。
 
-静态自查：`GearInSectorClockScript` 源码与 fixture 逐字一致 (包括 import 顺序)；`REGISTER_MARK` 与调用点片段的键逐字一致；没有把工作单元编号写进任何运行时名称 (类名、包名、persistent data 键均不含 C08-S01 变体)。
-
 通过信号：操作 1–6 全部符合；操作 7、8 的注入与恢复都符合预期。
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 
@@ -414,4 +412,3 @@ GearIn clock script done: 30 game days elapsed, isDone()=true
 - `com.fs.starfarer.api.Global`：`getSector()` / `getLogger()` 全局入口。
 - `data.scripts.gearin.campaign.GearInSectorClockScript`：本节示例类 (完整最小例源码)。
 - `data/config/settings.json`：`campaignSpeedupMult` 等生涯设置 (加速倍数)。
-- `tutorial-fixtures/units/C08-S01/src/main/java/data/scripts/gearin/campaign/`：本节 fixture 目录，源码与页面代码块逐字一致。

@@ -258,11 +258,10 @@ gradle jar
 
 验证入口：启动器 (勾选 MOD) 与模拟战，观察位置为 `Starsector\starsector-core\starsector.log`。前置数据：`mod_info.json`(C01-S01，追加本节 `jars` 字段)、本节 `build.gradle`、`settings.gradle`、`data\config\settings.json` 与 `GearInFrameLogger` 类。
 
-1. 编译核对 (可选快速通道)：在仓库根目录执行 `gradle -p tutorial-fixtures compileC06s01Java --no-daemon`，确认 `BUILD SUCCESSFUL`—— 该任务以与本节相同的源码编译本类，可不启动游戏完成编译侧核对。
-2. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jars\GearIndustry.jar` 生成。
-3. 启动启动器，勾选 "齿轮工业"，进入主菜单后退出；打开 `Starsector\starsector-core\starsector.log`，确认出现 `Getting ready to load jar file [Starsector\mods\GearIndustry\jars\GearIndustry.jar]` 与 `Loading jar files`，且没有由 `gear_in` 引起的 `ERROR`。
-4. 进入游戏 → 模拟战，等待 3 秒以上，确认日志出现 `GearIn FrameLogger tick at battle time ...`。
-5. 故障注入：把 `jars` 声明改为 `["jars/NotExist.jar"]`，重启进模拟战，确认报 `Problem loading class [...]`；改回后再确认恢复。
+1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jars\GearIndustry.jar` 生成。
+2. 启动启动器，勾选 "齿轮工业"，进入主菜单后退出；打开 `Starsector\starsector-core\starsector.log`，确认出现 `Getting ready to load jar file [Starsector\mods\GearIndustry\jars\GearIndustry.jar]` 与 `Loading jar files`，且没有由 `gear_in` 引起的 `ERROR`。
+3. 进入游戏 → 模拟战，等待 3 秒以上，确认日志出现 `GearIn FrameLogger tick at battle time ...`。
+4. 故障注入：把 `jars` 声明改为 `["jars/NotExist.jar"]`，重启进模拟战，确认报 `Problem loading class [...]`；改回后再确认恢复。
 
 预期结果：
 
@@ -270,8 +269,6 @@ gradle jar
 - 步骤 3：`starsector.log` 出现 jar 加载两行 —— `Getting ready to load jar file [Starsector\mods\GearIndustry\jars\GearIndustry.jar]` 与 `Loading jar files`，且没有由 `gear_in` 引起的 `ERROR`。
 - 步骤 4：运行 3 秒以上后，日志每隔约 3 秒出现一行 `GearIn FrameLogger tick at battle time ...`。这条日志只可能在类被成功加载并实例化后产生，证明 jar 内容、`jars` 声明、`plugins` 登记三段链路全部打通。
 - 步骤 5：注入 `["jars/NotExist.jar"]` 时出现 `Problem loading class [...]`，改回后恢复；把 `TICK_INTERVAL` 改成 `5f` 重新 `gradle jar` 并重启，tick 间隔随之变为 5 秒。若间隔没有变化，说明游戏加载的不是刚构建的 jar (检查缓存目录、是否还有残留源码文件，见故障分析第 6 条)。
-
-静态自查：`mod_info.json` 为 UTF-8 无 BOM；`jars` 声明值与 jar 实际文件名一致；settings 的类名与 jar 内类路径一致 (`data.scripts.gearin.combat.GearInFrameLogger` ↔ `data/scripts/gearin/combat/GearInFrameLogger.class`)；Java 源码为 UTF-8 无 BOM、CRLF 换行。
 
 清理：取消勾选测试 MOD；删除测试期间写入的源码文件 (若按故障分析第 6 条做过实验)。
 
@@ -311,4 +308,3 @@ gradle jar
 - `Starsector/starsector-core/starsector.log`：运行日志 (jar 加载行、类加载异常、插件日志)。
 - `Starsector/starsector-core/starsector.bat`：游戏启动命令 (`..\jre\bin\java.exe`，classpath 含游戏侧公开 API 编译面)。
 - `Starsector/jre/release`：自带 JRE 版本信息 (Zulu 17.0.10)。
-- `tutorial-fixtures/build.gradle`：教程验证工程构建脚本 (`compileC06s01Java` 任务)。

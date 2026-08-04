@@ -856,7 +856,7 @@ SectorEntityToken prime = Global.getSector().getStarSystem("GearIn").getEntityBy
 GearInCampaignTools.spawnDerelictExample(prime, "hound_Standard");
 ```
 
-`hound_Standard` 是原版装配链中的注册装配 id；`GearInModPlugin` 与 `GearInSystemGenerator` 属于既有示例 (本节不改动)，fixture 例不含以上接入片段 (fixture 只含本节所有的五个类)。
+`hound_Standard` 是原版装配链中的注册装配 id；`GearInModPlugin` 与 `GearInSystemGenerator` 属于既有示例 (本节不改动)，本节示例类不含以上接入片段。
 
 ### 构建
 
@@ -866,8 +866,6 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/lib/` 下的五个类 (可用 `jar tf` 核对)。
 
-本节源码与 fixture 逐字一致 (`tutorial-fixtures/units/C12-S04/` 下五个类)，fixture 编译验收命令见下方验证方案。
-
 ## 验证方案
 
 以本节五个类 + `data/config/modSettings.json` + 两处接入片段 (战斗 `addPlugin`、`GearInModPlugin.onGameLoad` 一行，可选加生成器残骸两行) 为对象，按 8 组步骤逐项确认调用真的发生。运行验证需在 Starsector 环境中执行：以下步骤与预期结果已完整保留，实际表现以游戏内为准。
@@ -876,7 +874,7 @@ gradle jar
 
 **操作与预期结果**
 
-1. **编译与构建**：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC12s04Java --no-daemon`，再在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`。
+1. **编译与构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`。
    预期结果：两个构建都以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/lib/GearInMagicWiring.class` 等五个类。
 2. **战斗初始化**：进入 `GearIn_test` 一场战斗，核对 `starsector.log`。
    预期结果：出现 `GearIn magic settings: hud=true width=12.0 range=900.0 damage=60.0 emp=25.0 full=0.15 fading=0.4 impact=40.0 core=(210,240,255) tags=[gear_in, demo]`，与 `modSettings.json` 的 `"[210,240,255]"` 一致；随后出现 `GearIn magic campaign: no sector (not in campaign)`(战役场景下 `sector` 为 null → `not in campaign` 分支，规则 13 的正面)。没有 `gear_in` 引起的 `ERROR`。
@@ -899,19 +897,9 @@ gradle jar
 
 操作 1–8 全部符合预期；注入与恢复也符合预期。
 
-**静态自查**
-
-`modSettings.json` 为 UTF-8 无 BOM；段名 `gear_in` 与 `mod_info.json` 的 `id` 一致；颜色键为 `"[r,g,b]"` 字符串；五个示例类与 fixture 逐字一致 (包括 import 顺序与注释)；没有把工作单元编号写进任何包名、类名、资源名或字符串 key：
-
-- 包 `data.scripts.gearin.lib`；
-- 类 `GearInMagicWiring` / `GearInMagicSettings` / `GearInBeamCaster` / `GearInHudBar` / `GearInCampaignTools`；
-- 段 `gear_in`、状态条 key `gear_in_beam_charge`、日志前缀 `GearIn magic ...`。
-
-除本节目录与 fixture 目录外没有改动任何共享文件。
-
 **清理**
 
-取消勾选测试 MOD；恢复 `modSettings.json` 与代码为原值；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
+取消勾选测试 MOD；恢复 `modSettings.json` 与代码为原值
 
 ## 故障分析
 

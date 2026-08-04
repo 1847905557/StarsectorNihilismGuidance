@@ -283,7 +283,7 @@ GearIn_memory_leave,DialogOptionSelected,$option == GearIn_memory_leave,DismissD
 
 ### 六类结构与注册位置
 
-六个类之间不互相引用、不依赖注册顺序：全部以**键状态**对齐 (见各类的时序条件说明与 "跨类时序")。每个类的代码与磁盘 fixture 逐字一致。
+六个类之间不互相引用、不依赖注册顺序：全部以**键状态**对齐 (见各类的时序条件说明与 "跨类时序")。
 
 #### GearInMemoryKeys(键常量数据类)
 
@@ -780,17 +780,7 @@ gradle jar
    - persistent data 撞键：把 `GearInPersistentDataCounter.PERSIST_KEY_RUNS` 临时改成与另一注册项相同的键，`run N` 计数互相覆盖、读档恢复值错乱 (对应故障分析 8)。
 10. **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR`；加载期无 `Duplicate key` / 重复规则 id 报错。
 
-静态自查：
-- 六个类无未使用 import；
-- 记忆键常量 (`GearInMemoryKeys`) 与 rules.csv 条件/文本里的键逐字一致 (含 `$` 前缀与大小写)；
-- `GearInPersistentDataCounter.PERSIST_KEY_RUNS`(`GearIn_memory_runs`) 与调用点片段一致且不含 `$`；
-- `GearInMemoryDialog.INITIAL_TRIGGER` 与 rules.csv welcome 行 trigger 列逐字一致；
-- 没有把工作单元编号写进任何运行时名称 (记忆键、规则 id、触发器、类名、包名、persistent data 键均不含 C11-S04 变体)；
-- `data\campaign\rules.csv` 内本节 id 与既有 MOD 无冲突。
-
-通过信号：操作 1–8 与预期结果 1–10 全部符合，注入与恢复均回到注入前状态。
-
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 
@@ -881,4 +871,3 @@ gradle jar
 - `com.fs.starfarer.api.util.Misc` —— `Token.getVarNameAndMemory` 变量解析与 `replaceTokensFromMemory` 文本替换。
 - `data/campaign/rules.csv` —— 本节 5 条 `GearIn_memory_*` 规则行所在 (MOD 数据文件，追加行)。
 - `data/scripts/gearin/rules/` —— 本节六个示例类所在目录 (MOD 内路径)。
-- `tutorial-fixtures/units/C11-S04/src/main/java/data/scripts/gearin/rules/` —— 本节 fixture 源码目录 (仓库相对路径)。

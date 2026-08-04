@@ -14,7 +14,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
  *
  * 适用边界：
  * - GraphicsLib 的初始化与 LightData/TextureData CSV 注册发生在 onApplicationLoad
- *   （本 MOD 的接入片段见页面正文，fixture 不含该片段）；
+ *   （本 MOD 的接入片段见页面正文，本节示例类不含该片段）；
  * - ShaderHook（settings plugins 注册的 EveryFrameCombatPlugin）在每场战斗开始时
  *   创建 LightShader 的战斗 LocalData（engine customData 键 "shaderlib_LightShader"），
  *   并注册一个覆盖全部层的分层渲染钩子；LightShader 声明在

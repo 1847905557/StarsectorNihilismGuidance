@@ -55,12 +55,12 @@ shader 是**无注册表 ID**的资源：它不经过任何 CSV/JSON 注册链 (
 
 | 位置 | 本节取值 |
 |---|---|
-| 资源文件 | `tutorial-fixtures\units\C14-S02\src\main\resources\data\shaders\GearIn_pulse_shader.vert` / `.frag`(fixture)；MOD 内 `data\shaders\GearIn_pulse_shader.vert` / `.frag` |
+| 资源文件 | MOD 内 `data\shaders\GearIn_pulse_shader.vert` / `.frag` |
 | 加载入口 | `Global.getSettings().loadText("data/shaders/GearIn_pulse_shader.vert")`(Java 常量 `VERT_PATH` / `FRAG_PATH`，与资源文件路径逐字一致)|
 | 运行使用方 | `GearInPulseRenderer`(C07-S06 通道注册，`render` 内 `glUseProgram` + 绘制)|
 | 可观察结果 | 日志行含 `vert=data/shaders/GearIn_pulse_shader.vert`、`frag=...`(与前面三处一致)；画面出现脉冲环 |
 
-页面、fixture、Java 常量三处路径必须逐字一致 (本节 "完整最小例" 的代码块与 fixture 逐字一致，验收 J/G 佐证)。
+页面与 Java 常量两处路径必须逐字一致。
 
 ## 路径约定
 
@@ -298,7 +298,7 @@ void main() {
 
 Java 接入：在分层渲染插件通道上，四个环节各有一个落点 —— `init` 加载、`render` 使用、`cleanup` 清理、`advance` 内定时重载。
 
-源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C14-S02/src/main/java/data/scripts/gearin/combat/`，页面代码块与磁盘文件逐字一致)：
+源码如下：
 
 ```java
 package data.scripts.gearin.combat;
@@ -642,69 +642,46 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/shaders/GearIn_pulse_shader.vert`、`data/shaders/GearIn_pulse_shader.frag` 与 `data/scripts/gearin/combat/GearInPulseRenderer.class`(可用 `jar tf` 核对)。
 
-本节源码与 fixture 逐字一致 (shader 两个文件在 `tutorial-fixtures/units/C14-S02/src/main/resources/data/shaders/`，Java 类在 `tutorial-fixtures/units/C14-S02/src/main/java/data/scripts/gearin/combat/`)。
-
 ## 验证方案
 
 前置数据：编译链路建立的 MOD 布局 (C06-S01)、`GearIn_test` 测试战役 (C03-S01)、战斗插件体系 (C07-S05，含本节注册片段一行)、分层渲染插件 (C07-S06)、本节新增的 `GearInPulseRenderer` 类与 `data\shaders\GearIn_pulse_shader.vert/.frag`。
 
 操作：
 
-1. fixture 编译：在 Git Bash 执行：
-
-   ```text
-   gradle -p tutorial-fixtures compileC14s02Java --no-daemon
-   ```
+   确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
 
    确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. fixture 资源：在 Git Bash 执行：
-
-   ```text
-   gradle -p tutorial-fixtures validateShaders --no-daemon
-   ```
-
-   确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-3. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对产物清单。
-4. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中核对 init 行。
-5. 画面：观察玩家舰船中心 120 世界单位见方的四边形。
-6. 重载与暂停：记录战斗开始约 10 秒与 20 秒时的日志；按空格暂停约 10 秒，再恢复。
-7. 寿命与跨战斗：等待约 30 秒；随后退出战斗，再进一场。
-8. 故障注入：a) 把 `.vert` 路径改成反斜杠写法；b) 给 `.frag` 加 BOM 或删一行分号；c) Java 侧把 `"u_time"` 拼错；d) 把 `reloadProgram` 改成先删后建并破坏 `.frag`；e) 全部改回，确认恢复。
+1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对产物清单。
+2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中核对 init 行。
+3. 画面：观察玩家舰船中心 120 世界单位见方的四边形。
+4. 重载与暂停：记录战斗开始约 10 秒与 20 秒时的日志；按空格暂停约 10 秒，再恢复。
+5. 寿命与跨战斗：等待约 30 秒；随后退出战斗，再进一场。
+6. 故障注入：a) 把 `.vert` 路径改成反斜杠写法；b) 给 `.frag` 加 BOM 或删一行分号；c) Java 侧把 `"u_time"` 拼错；d) 把 `reloadProgram` 改成先删后建并破坏 `.frag`；e) 全部改回，确认恢复。
 
 预期结果：
 
-1. **fixture 编译 (验收 J)**：以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **fixture 资源 (验收 G)**：以 `BUILD SUCCESSFUL` 结束 (退出码 0)。该任务检查 `units/C14-S02/src/main/resources` 下的所有 `.vert/.frag` 非空。
-3. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_pulse_shader.vert`、`data/shaders/GearIn_pulse_shader.frag` 与 `data/scripts/gearin/combat/GearInPulseRenderer.class`。
-4. **战斗初始化 (加载 + 日志)**：`starsector.log` 出现一行：
+1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_pulse_shader.vert`、`data/shaders/GearIn_pulse_shader.frag` 与 `data/scripts/gearin/combat/GearInPulseRenderer.class`。
+2. **战斗初始化 (加载 + 日志)**：`starsector.log` 出现一行：
 
    ```text
    GearIn pulse shader init: program=<id>, vbo=<id>, u_offset=<loc>, u_time=<loc>, vert=data/shaders/GearIn_pulse_shader.vert, frag=data/shaders/GearIn_pulse_shader.frag
    ```
 
    其中 `vert=`/`frag=` 与资源文件路径一致 (四位置完整流程)；没有由 `gear_in` 引起的 `ERROR`。
-5. **画面 (使用)**：玩家舰船中心出现一个 120 世界单位见方的四边形，内部橙色脉冲环亮度随时间起伏，起伏呈 "从中心向外扩散" 的波纹 (`u_time * 4.0 - d * 24.0` 行波)；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，分层渲染层序)；舰船移动时四边形跟随 (`u_offset` 每帧更新)。
-6. **重载循环 (生命周期)**：约 10 秒与 20 秒时各出现一行 `GearIn pulse shader reload: program=<新 id>`，两次的 `program=<id>` 都与 init 行不同、彼此也不同 (旧程序已被 `glDeleteProgram` 删除、按同一路径重建)；期间没有 ERROR。
-7. **暂停行为**：按空格暂停 —— 脉冲波纹冻结 (`getTotalElapsedTime(false)` 不累计)、四边形静止但可见 (与分层渲染主题同款)；恢复后继续。
-8. **寿命与清理**：约 30 秒后四边形消失，`starsector.log` 出现一行：
+3. **画面 (使用)**：玩家舰船中心出现一个 120 世界单位见方的四边形，内部橙色脉冲环亮度随时间起伏，起伏呈 "从中心向外扩散" 的波纹 (`u_time * 4.0 - d * 24.0` 行波)；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，分层渲染层序)；舰船移动时四边形跟随 (`u_offset` 每帧更新)。
+4. **重载循环 (生命周期)**：约 10 秒与 20 秒时各出现一行 `GearIn pulse shader reload: program=<新 id>`，两次的 `program=<id>` 都与 init 行不同、彼此也不同 (旧程序已被 `glDeleteProgram` 删除、按同一路径重建)；期间没有 ERROR。
+5. **暂停行为**：按空格暂停 —— 脉冲波纹冻结 (`getTotalElapsedTime(false)` 不累计)、四边形静止但可见 (与分层渲染主题同款)；恢复后继续。
+6. **寿命与清理**：约 30 秒后四边形消失，`starsector.log` 出现一行：
 
    ```text
    GearIn pulse shader cleanup
    ```
 
    即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 7 的可观察面)，同一场战斗内不再出现。
-9. **跨战斗**：退出战斗再进一场 —— init 行重新出现且 `program=<id>` 全新 (每场战斗重建，跨战斗缓存禁令)；无 ERROR。
-10. **故障注入**：a 注入后 `loadText` 读取前抛 `RuntimeException` (`validateFileName` 拒绝，对应故障分析第 1 条)；b 注入后 `compile failed:` 带行号 (BOM 报首行，对应第 2、3 条)；c 注入后脉冲静止且无日志 (对应第 6 条)；d 注入后画面中断、无回退 (对应第 8 条)；e 全部改回后重新观察，结果与注入前一致。
+7. **跨战斗**：退出战斗再进一场 —— init 行重新出现且 `program=<id>` 全新 (每场战斗重建，跨战斗缓存禁令)；无 ERROR。
+8. **故障注入**：a 注入后 `loadText` 读取前抛 `RuntimeException` (`validateFileName` 拒绝，对应故障分析第 1 条)；b 注入后 `compile failed:` 带行号 (BOM 报首行，对应第 2、3 条)；c 注入后脉冲静止且无日志 (对应第 6 条)；d 注入后画面中断、无回退 (对应第 8 条)；e 全部改回后重新观察，结果与注入前一致。
 
-静态自查：
-
-- `GearInPulseRenderer` 类源码与 fixture 逐字一致 (包括 import 顺序与注释)；
-- `GearIn_pulse_shader.vert/.frag` 与 fixture 逐字一致；
-- 四位置完整流程中资源文件、加载入口 (Java 常量) 与使用方日志三处路径逐字一致；
-- 没有把工作单元编号写进任何包名、类名、资源名或字符串 key (包 `data.scripts.gearin.combat`、类 `GearInPulseRenderer`、资源 `data/shaders/GearIn_pulse_shader.vert/.frag`、日志前缀 `GearIn pulse shader`)；
-- 除本节目录与 fixture 目录外没有改动任何共享文件。
-
-清理：取消勾选测试 MOD；恢复代码与 shader 为原值；确认没有对共享文件 (`tutorial-fixtures/build.gradle` 等) 做过修改。
+清理：取消勾选测试 MOD；恢复代码与 shader 为原值
 
 ## 故障分析
 
@@ -740,7 +717,5 @@ gradle jar
 - `data/shaders/GearIn_pulse_shader.vert` / `data/shaders/GearIn_pulse_shader.frag`：本节 shader 资源，与 Java 常量 `VERT_PATH` / `FRAG_PATH` 逐字一致 (MOD 根相对路径)。
 - `data/shaders/`：GLSL 顶点与片元资源的目录约定。
 - `starsector.log`：本节所有日志可观察结果 (游戏安装根相对)。
-- `tutorial-fixtures/units/C14-S02/`：本单元 fixture(Java 类与 shader 资源；页面代码块与磁盘逐字一致)。
 - `org.dark.shaders.util.ShaderLib` / `org.dark.shaders.post.PostProcessShader`(GraphicsLib)：加载/链接失败做法的实例对照。
 - `org.boxutil.util.ShaderUtil`：另一条加载入口 `createShaderVFFormPath(...)`(依赖库使用入口)。
-- `tutorial-fixtures/build.gradle`：`javaUnitIds` / `shaderUnitIds` 的单元注册 (fixture 编译与 shader 校验任务)。

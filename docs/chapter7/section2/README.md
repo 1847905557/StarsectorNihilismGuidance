@@ -104,7 +104,7 @@
 
 ### 舰队管理器：五份名单
 
-`engine.getFleetManager(FleetSide.PLAYER / ENEMY)` 与 `engine.getFleetManager(int owner)`(0 = 玩家侧、1 = 敌方侧) 返回两侧的 `CombatFleetManagerAPI`。
+`engine.getFleetManager(FleetSide.PLAYER / ENEMY)` 与 `engine.getFleetManager(int owner)`(0 = 玩家侧、0 = 敌方侧) 返回两侧的 `CombatFleetManagerAPI`。
 
 注意：`getFleetManager(int)` 在战斗外的空引擎 / 已销毁的旧引擎上**不会**返回 null，而是新建一个空管理器返回 —— 所以 "拿不到管理器" 同样不能靠判 null，而要依靠引擎生命周期主题给出的阶段判据。
 
@@ -325,23 +325,16 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInCombatStatePlugin.class`(可用 `jar tf` 核对)。
 
-本节代码块与 fixture 源码逐字一致 (fixture 位于 `tutorial-fixtures/units/C07-S02/src/main/java`)，fixture 编译验收命令见下方验证方案。
-
 ## 验证方案
 
 本节成果是一个插件类，验证按工程、时间语义、遍历与判据四组展开。前置数据：既有 MOD 布局 (C06-S01) 与战斗插件接入 (C07-S01，含注册片段)、`GearInCombatStatePlugin` 类、`GearIn_test` 测试战役 (C03-S01)。入口为 Git Bash 构建与 `GearIn_test` 战役 (玩家舰判据用生涯遭遇战)；观察位置统一为 `Starsector/starsector-core/starsector.log` 中的 `GearIn` 条目。
 
-**1. fixture 编译**
-
-- 操作：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC07s02Java --no-daemon`。
-- 预期结果：以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-
-**2. 游戏构建**
+**1. 游戏构建**
 
 - 操作：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，并核对 `jar tf jars\GearIndustry.jar` 的内容。
 - 预期结果：`BUILD SUCCESSFUL`；`jar tf` 能看到 `data/scripts/gearin/combat/GearInCombatStatePlugin.class`。
 
-**3. 战役冒烟**
+**2. 战役冒烟**
 
 - 操作：进入 `GearIn_test` 战役一场战斗，让插件运行数秒。
 - 预期结果：`starsector.log` 出现一行：
@@ -352,40 +345,38 @@ GearIn battle init: campaign=false campaignSim=false simulation=false mission=tr
 
 生涯遭遇战则对应 `campaign=true` 其余为 false。随后每 2 秒出现三条周期报告 —— `GearIn time:` / `GearIn fleet ...:`(含两条 `GearIn deployed ...:`)/ `GearIn ships:`，其中 `time` 行的 `total` 稳步增长、`winner=-1`、`combatOver=false`；全程没有 `gear_in` 引起的 `ERROR`。
 
-**4. 暂停语义**
+**3. 暂停语义**
 
 - 操作：战斗内按空格暂停约 10 秒再恢复。
 - 预期结果：暂停期间**没有**报告输出 (暂停检查生效)；恢复后的下一条 `GearIn time:` 里 `totalWithPause` 比暂停前约多 10 秒，而 `total` 增长远小于 10 秒 —— 两条累计的差值就是暂停时长。
 
-**5. 残骸过滤**
+**4. 残骸过滤**
 
 - 操作：击毁一艘敌方舰船，观察下一条 `GearIn ships:` 日志。
 - 预期结果：`alive` 减 1、`notAlive` 加 1(残骸计入 notAlive 而不是消失)。
 
-**6. 玩家舰判据**
+**5. 玩家舰判据**
 
 - 操作：在生涯战斗中先后观察部署阶段与部署玩家舰后的日志。
 - 预期结果：部署阶段 (玩家尚未部署任何舰船)`playerShip=shuttlepod_xfer`、`playerAlive=true`、`playerInPlay=false`；部署玩家舰后 `playerShip` 变为玩家舰的 hull id、`playerInPlay=true`。战役开局即设置玩家舰，通常直接看到玩家舰。
 
-**7. 战斗结束**
+**6. 战斗结束**
 
 - 操作：清空一侧舰队，观察战斗收尾与结束动画的先后关系。
 - 预期结果：战斗收尾时 `combatOver=true`、`winner=0`(玩家胜) 或 `1`(敌方胜)；结束动画期间 `combatOver` 已为 true 但画面尚未淡出到结算。
 
-**8. 故障注入**
+**7. 故障注入**
 
 - 操作：把 `advance` 里的 `if (engine.isPaused()) return;` 注释掉，重新构建并再次暂停；改回后确认恢复。
 - 预期结果：暂停期间报告照常打印且 `total` 照常增长 (对应故障分析第 2 条)；改回后恢复。
 
-通过信号：操作 1–7 全部符合；操作 8 的注入与恢复都符合预期。
+通过信号：操作 1–6 全部符合；操作 7 的注入与恢复都符合预期。
 
-静态自查：`GearInCombatStatePlugin` 类源码与 fixture 逐字一致 (包括 import 顺序与注释)。没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInCombatStatePlugin`)。
-
-清理：取消勾选测试 MOD；确认没有对共享文件 (如 `tutorial-fixtures/build.gradle`) 做过修改。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 
-七个故障按症状组织：每个故障先写您实际看到的现象，再给触发条件、断链位置与核对顺序。验证方案的故障注入 (操作 8) 对应第 2 条。
+七个故障按症状组织：每个故障先写您实际看到的现象，再给触发条件、断链位置与核对顺序。验证方案的故障注入 (操作 7) 对应第 2 条。
 
 1. **"存活舰船" 统计含残骸**
    - 症状：击毁一艘敌舰后计数不降；死亡当帧的舰还会被多算一次。
@@ -445,4 +436,3 @@ GearIn battle init: campaign=false campaignSim=false simulation=false mission=tr
 - `data/config/settings.json`：`combatSpeedMult` 帧 dt 全局倍率配置。
 - `docs/chapter7/section1/README.md`：战斗插件模型、注册入口与暂停检查。
 - `docs/chapter6/section3/README.md`：引擎生命周期、阶段判据与跨战斗缓存禁令。
-- `tutorial-fixtures/units/C07-S02/src/main/java`：本节示例源码 (fixture)。

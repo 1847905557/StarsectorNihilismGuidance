@@ -221,7 +221,7 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 从实例模型与回调时机中提炼出的约束集中在这里，本节示例逐条对应。
 
 1. **效果类必须可无参实例化**。所有效果注册列都由脚本类加载器按类名创建实例 (要求无参构造器)。违反的可观察结果：绑定的类缺失、类名写错或无无参构造器时，武器 / 射线 / 射弹创建点抛 `Problem loading class [...]`(`RuntimeException`)—— 部署舰船即报错，或武器 / 射弹创建失败。
-2. **回调参数只在本回调内消费，禁止跨发 / 跨帧 / 跨实例缓存**。`onFire` 的 `projectile`、`onHit` 的 `target` / `damageResult`、光束的 `didDamageThisFrame` / `getDamageTarget` 都只在对应回调与对应帧有效 (与 C07-S04 规则 2、5 同一条纪律)。违反的可观察结果：把上一帧目标当本帧目标继续操作 —— 对已死实体施加逻辑；或跨发射复用射弹引用 —— 旧引用失效或被下一次覆盖。
+2. **回调参数只在本回调内消费，禁止跨发 / 跨帧 / 跨实例缓存**。`onFire` 的 `projectile`、`onHit` 的 `target` / `damageResult`、光束的 `didDamageThisFrame` / `getDamageTarget` 都只在对应回调与对应帧有效 (与 C07-S04 规则 2、4 同一条纪律)。违反的可观察结果：把上一帧目标当本帧目标继续操作 —— 对已死实体施加逻辑；或跨发射复用射弹引用 —— 旧引用失效或被下一次覆盖。
 3. **动画武器帧贴图必须按命名规则放置**：基贴图路径以 `00.png` 结尾，帧文件按 `00, 01, ..., N-1` 顺序编号。违反的可观察结果：基路径不以 `00.png` 结尾时帧 0 路径推导错位 (拼出错误文件名)，帧文件缺失在武器构造时加载失败 —— 部署舰船即报错。
 4. **`weapon.getAnimation()` 必须判空**。只有 `numFrames > 1` 的武器有动画对象 (`com.fs.starfarer.api.combat.WeaponAPI` javadoc 原文 "null for non-animated weapons")。违反的可观察结果：对静态贴图武器调用 `getAnimation()` 直接 NPE。
 5. **不得在 `getSprite()` 返回的贴图上设置 alpha 与角度**。渲染前引擎会调用 `setAlphaMult()` / `setAngle()` 覆盖 (`WeaponAPI.getSprite()` javadoc 原文)。改透明度用 `SpriteAPI.setColor()` 的 alpha 通道、改朝向用 `WeaponAPI.setCurrAngle()`。违反的可观察结果：设置值被覆盖，视觉无变化 (静默失效)。
@@ -607,20 +607,16 @@ gradle jar
 - `GearInOnFireEffect.class`
 - `GearInOnHitEffect.class`
 
-本节四个示例类与 fixture 源码逐字一致，fixture 编译验收命令见下文的 "验证方案"。
-
 ## 验证方案
 
 前置数据：编译 JAR 链路的 MOD 布局 (C06-S01)、本节数据接入片段 (三个数据文件与帧贴图清单) 与四个效果类；测试舰装 `GearIn_test_rotor` 与 `GearIn_test_beam`。
 
-### fixture 编译与游戏构建
+### 构建与游戏验证
 
-1. 在 Git Bash 执行 `gradle -p tutorial-fixtures compileC07s09Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，再用 `jar tf jars\GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下的四个类。
+1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，再用 `jar tf jars\GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下的四个类。
 
 预期结果：
 
-- fixture 编译以 `BUILD SUCCESSFUL` 结束；
 - `jars\GearIndustry.jar` 包含 `GearInWeaponFrameEffect.class` / `GearInBeamHitEffect.class` / `GearInOnFireEffect.class` / `GearInOnHitEffect.class`。
 
 ### 战斗内验证 (动画 / 回调时机 / onFire / onHit / 光束 / 暂停)
@@ -651,9 +647,9 @@ gradle jar
 
 - 类名改错后部署舰船即报错；`beamEffect` 错绑到弹丸武器后静默无回调；帧贴图违规后武器创建报错；全部改回并重启游戏后，3–8 步的观察结果恢复。
 
-通过信号：操作 1–8 全部符合；操作 9–11 的注入与恢复符合预期；四个效果类与 fixture 源码逐字一致 (含 import 顺序与注释)。
+通过信号：操作 1–7 全部符合；操作 8–10 的注入与恢复符合预期。
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (如 `tutorial-fixtures\build.gradle`) 做过修改。
+清理：取消勾选测试 MOD
 
 本节没有把页面编号写进任何包名、类名、资源名或字符串 key：
 
@@ -699,4 +695,3 @@ gradle jar
 - `com.fs.starfarer.api.loading.ProjectileWeaponSpecAPI`(`getMuzzleFlashSpec` / `getVisualRecoil` / `getHardpointGunSpriteName` / `getTurretGunSpriteName`)、`com.fs.starfarer.api.loading.BeamWeaponSpecAPI`(`getBeamEffect`)、`com.fs.starfarer.api.loading.ProjectileSpecAPI`(`getOnFireEffect` / `getOnHitEffect` / `isApplyOnHitEffectWhenPassThrough`)：spec 读取侧与注册列数据挂载点；`com.fs.starfarer.api.loading.MuzzleFlashSpec`：炮口粒子参数；`.wpn` 的 `smokeSpec` 键：烟尘参数。
 - `com.fs.starfarer.api.impl.combat.BlinkerEffect`(`setFrame` 人工切帧做法)、`com.fs.starfarer.api.impl.combat.RealityDisruptorEffect`(一类多角色实例模式)、`com.fs.starfarer.api.impl.combat.IonBeamEffect`(`getDpsDuration` 推进节流器)、`com.fs.starfarer.api.impl.combat.RiftBeamEffect`(everyFrameEffect 轮询 `weapon.getBeams()`)：原版实现参考。
 - `data/weapons/*.wpn` 与 `data/weapons/proj/*.proj`：四个注册列的数据挂载点 (MOD 根目录相对路径)。
-- `tutorial-fixtures/units/C07-S09/src/main/java/data/scripts/gearin/combat/`：本节四个效果类所在 fixture 目录。

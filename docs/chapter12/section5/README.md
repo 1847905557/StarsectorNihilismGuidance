@@ -416,7 +416,7 @@ GearIn_trail_test_shot,GearIn_test_shot,base_trail_smooth,10,0.05,0.1,0.6,10,4,"
 
 改数据必须重启游戏 (或 dev F8 重载)。
 
-### GearInMagicTrail(本节新增，与 fixture 逐字一致)
+### GearInMagicTrail(本节新增)
 
 ```java
 package data.scripts.gearin.visuals;
@@ -609,8 +609,6 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/visuals/GearInMagicTrail.class`(可用 `jar tf` 核对)；`data\trails\trail_data.csv` 随资源进包。
 
-本节源码与 fixture 逐字一致，fixture 编译验收命令见下方验证方案。
-
 ## 验证方案
 
 以本节示例 (`GearInMagicTrail` + `data/trails/trail_data.csv` 一行) 为对象，验证 "数据 → 创建 → 推进 → 渲染 → 清理" 完整流程。运行验证需在 Starsector 环境中执行：以下步骤与预期结果已完整保留，实际表现以游戏内为准。
@@ -619,18 +617,17 @@ gradle jar
 
 **操作步骤**：
 
-1. fixture 编译：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC12s05Java --no-daemon`，确认 `BUILD SUCCESSFUL`(退出码 0)。
-2. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/visuals/GearInMagicTrail.class`。
-3. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 核对 `GearIn trail init: ...` 与每 1 秒一行的 `GearIn trail: segments=<n> elapsed=<秒数>`，且没有 `gear_in` 引起的 `ERROR`。
-4. 画面：观察玩家舰尾部两条尾迹 (青色主体条在 `CONTRAILS_LAYER`、蓝色泛光条在舰船与导弹之上)，泛光宽度脉动两次、纹理滚动；首帧无画面、第 2 段起成条。
-5. 暂停：按空格暂停约 10 秒 —— 两条尾迹静止、无周期报告行；恢复后继续生长。
-6. 切断：击毁玩家舰或等战斗结束 ——`GearIn trail cut: segments=<n>` 出现，尾迹不再变长、旧段在约 1.1–1.7 秒内淡出消失。
-7. 跨战斗与数据变更：退出再进一场 ——`init` 重新出现、ID 重新分配、尾迹从零开始；随后把 `trail_data.csv` 的 `opacity` 改为 `1.0`、`sizeIn` 改为 `20`，重启游戏 (或 dev F8 重载 + 重进战斗)，发射 `GearIn_test_shot` 武器观察弹体尾迹。
-8. 故障注入与恢复：把 `spawnSegments()` 改为每帧新 ID—— 尾部出现点状毛刺；注释 `cutTrailsOnEntity`—— 死亡/瞬移时尾迹被拉伸；`colorIn` 去掉引号 —— 数据行整行消失 (dev 日志 `Invalid line, skipping`)；全部改回后确认恢复。
+1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/visuals/GearInMagicTrail.class`。
+2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 核对 `GearIn trail init: ...` 与每 1 秒一行的 `GearIn trail: segments=<n> elapsed=<秒数>`，且没有 `gear_in` 引起的 `ERROR`。
+3. 画面：观察玩家舰尾部两条尾迹 (青色主体条在 `CONTRAILS_LAYER`、蓝色泛光条在舰船与导弹之上)，泛光宽度脉动两次、纹理滚动；首帧无画面、第 2 段起成条。
+4. 暂停：按空格暂停约 10 秒 —— 两条尾迹静止、无周期报告行；恢复后继续生长。
+5. 切断：击毁玩家舰或等战斗结束 ——`GearIn trail cut: segments=<n>` 出现，尾迹不再变长、旧段在约 1.1–1.7 秒内淡出消失。
+6. 跨战斗与数据变更：退出再进一场 ——`init` 重新出现、ID 重新分配、尾迹从零开始；随后把 `trail_data.csv` 的 `opacity` 改为 `1.0`、`sizeIn` 改为 `20`，重启游戏 (或 dev F8 重载 + 重进战斗)，发射 `GearIn_test_shot` 武器观察弹体尾迹。
+7. 故障注入与恢复：把 `spawnSegments()` 改为每帧新 ID—— 尾部出现点状毛刺；注释 `cutTrailsOnEntity`—— 死亡/瞬移时尾迹被拉伸；`colorIn` 去掉引号 —— 数据行整行消失 (dev 日志 `Invalid line, skipping`)；全部改回后确认恢复。
 
 **预期结果**：
 
-- fixture 编译以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`gradle jar` 同样以 `BUILD SUCCESSFUL` 结束，`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/visuals/GearInMagicTrail.class`。
+- `gradle jar` 以 `BUILD SUCCESSFUL` 结束，`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/visuals/GearInMagicTrail.class`。
 - 战斗初始化：进入 `GearIn_test` 战役 (C03-S01) 一场战斗，`starsector.log` 出现一行 `GearIn trail init: body=base_trail_smooth glow=base_trail_contrail bodyID=<id> glowID=<id>`；`bodyID` / `glowID` 是两个不同的正数 (`getUniqueID()` 计数，规则 5 的观察面)；没有 `gear_in` 引起的 `ERROR`。
 - 画面 (创建 + 渲染)：玩家舰尾部出现两条尾迹 —— 青色主体条 (`CONTRAILS_LAYER`，随舰船机动弯曲) 与蓝色泛光条 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，覆盖在舰船与导弹之上)；泛光条宽度呈两次脉动 (`SIZE_PULSE_COUNT=2`)，纹理沿尾迹滚动 (`textureScrollSpeed=200`)；首帧只有 1 段 → 什么都不画，第 2 段起出现条带 (规则 7)。
 - 周期报告 (推进)：战斗中每 1 秒出现一行 `GearIn trail: segments=<n> elapsed=<秒数>`；`segments` 稳步增长 (每 0.05 秒两段)；暂停期间**没有**新报告行 (暂停检查 + MagicLib 不推进)。
@@ -644,9 +641,7 @@ gradle jar
 
 任一预期结果没有出现，验证即判定失败；对应症状、原因与修正见故障分析。
 
-**静态自查**：`trail_data.csv` 为 UTF-8 无 BOM、30 列与表头一致、`trail` 键 `GearIn_trail_test_shot` 全局唯一；`GearInMagicTrail` 与 fixture 逐字一致 (包括 import 顺序与注释)；没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.visuals`、类 `GearInMagicTrail`、日志前缀 `GearIn trail ...`、数据键 `GearIn_trail_test_shot`)；除本节目录与 fixture 目录外没有改动任何共享文件。
-
-**清理**：取消勾选测试 MOD；恢复 `trail_data.csv` 与代码为原值；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
+**清理**：取消勾选测试 MOD；恢复 `trail_data.csv` 与代码为原值
 
 ## 故障分析
 

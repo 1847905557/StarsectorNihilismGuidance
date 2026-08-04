@@ -35,7 +35,7 @@
 
 ### 第一步：效果类
 
-文件：`src\data\scripts\gearin\combat\GearInHitLogger.java`(与 `tutorial-fixtures/units/C02-S04/` 中的源码一致)：
+文件：`src\data\scripts\gearin\combat\GearInHitLogger.java`：
 
 ```java
 package data.scripts.gearin.combat;

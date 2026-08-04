@@ -23,7 +23,7 @@
 
 ## Java 文件的结构
 
-本节只有一个代码文件，完整内容如下 (与 `tutorial-fixtures/units/C02-S01/` 中的源码一致)：
+本节只有一个代码文件，完整内容如下：
 
 ```java
 package data.scripts.gearin.hullmods;

@@ -731,8 +731,6 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/` 下的六个类 (可用 `jar tf` 核对)。
 
-本节六个类的源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C07-S04` 的 `data/scripts/gearin/combat` 包内)，fixture 编译验收命令见 "验证方案"。
-
 ## 验证方案
 
 入口：`GearIn_test` 测试战役 (C03-S01) 的战斗；观察位置统一为 `Starsector/starsector-core/starsector.log` 中以 `gearin` 开头的日志行。
@@ -741,7 +739,7 @@ gradle jar
 
 操作步骤：
 
-1. **构建**：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC07s04Java --no-daemon` 确认 fixture 编译通过；再在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/` 下的六个类。
+1. **构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/` 下的六个类。
 2. **战役冒烟**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 核对 `GearIn flow init: damage listeners registered on engine`：
    - 部署玩家舰后每 3 秒出现 `GearIn weapon ...` / `GearIn projectiles: ...` / `GearIn beam ...` 周期报告；没有 `gear_in` 引起的 `ERROR`。
 3. **开火流**：用任意弹道武器开火，核对下一帧出现 `GearIn spawn ... spawnType=BALLISTIC fromMissile=false ...`，以及 `GearIn dealt ...` → `GearIn damage ...` 的先后顺序。
@@ -755,30 +753,27 @@ gradle jar
 
 预期结果：
 
-1. **fixture 编译 (验收)**：`gradle -p tutorial-fixtures compileC07s04Java --no-daemon` 以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/` 下的六个类。
-3. **初始化**：进入 `GearIn_test` 战役 (C03-S01) 一场战斗，`starsector.log` 出现 `GearIn flow init: damage listeners registered on engine`：
+1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/` 下的六个类。
+2. **初始化**：进入 `GearIn_test` 战役 (C03-S01) 一场战斗，`starsector.log` 出现 `GearIn flow init: damage listeners registered on engine`：
    - 随后 (部署玩家舰后) 每 3 秒出现 `GearIn weapon ...` / `GearIn projectiles: ...` / `GearIn beam ...` 周期报告；没有 `gear_in` 引起的 `ERROR`。
-4. **开火 → 射弹生成**：武器开火后下一帧出现 `GearIn spawn <specId> spawnType=BALLISTIC fromMissile=false weapon=... source=... damage=... emp=...`：
+3. **开火 → 射弹生成**：武器开火后下一帧出现 `GearIn spawn <specId> spawnType=BALLISTIC fromMissile=false weapon=... source=... damage=... emp=...`：
    - 发射导弹时同一条日志的 `spawnType=MISSILE`(导弹同时计入 `getProjectiles()` 与 `getMissiles()`，周期报告里 `total` 与 `missiles` 一致增长)。
-5. **集合语义**：`GearIn projectiles:` 行的 `total` 恒大于等于 `missiles`；光束武器开火时，若其弹体是 `spawnType=BEAM` 的射弹，`spawn` 日志同样出现 (光束脉冲也是 `DamagingProjectileAPI`)。
-6. **伤害监听器**：任意命中/被命中后出现 `GearIn dealt param=... target=... base=... total=... shieldHit=...`(结算前) 与 `GearIn damage source=... target=... hull=... armor=... shields=... emp=...`(结算后)：
+4. **集合语义**：`GearIn projectiles:` 行的 `total` 恒大于等于 `missiles`；光束武器开火时，若其弹体是 `spawnType=BEAM` 的射弹，`spawn` 日志同样出现 (光束脉冲也是 `DamagingProjectileAPI`)。
+5. **伤害监听器**：任意命中/被命中后出现 `GearIn dealt param=... target=... base=... total=... shieldHit=...`(结算前) 与 `GearIn damage source=... target=... hull=... armor=... shields=... emp=...`(结算后)：
    - 顺序固定：先 `dealt` 后 `damage`。
-7. **导弹状态**：发射导弹后 `GearIn missile ...` 行显示 `armed=false armingTime=...`(装填中)→ 数秒后 `armed=true`；`flight` 稳步增长、`fizzling/fading` 在熄火后变 true；被 EMP 电弧击中的导弹 `empRes=0` 时立即 `fizzling=true`。
-8. **光束状态**：光束武器开火期间 `GearIn beam ...` 行 `dps=true`、`dmg` 随照射增强、命中目标时 `didDamageThisFrame=true` 且 `target=Ship`；停火后该行消失 (光束实体只存在于开火/充能期间)。
-9. **数据绑定角色 (接入片段后)**：装好 `GearIn_test_gun.wpn` / `GearIn_test_shot.proj` 并给一艘测试舰装上该武器后：
+6. **导弹状态**：发射导弹后 `GearIn missile ...` 行显示 `armed=false armingTime=...`(装填中)→ 数秒后 `armed=true`；`flight` 稳步增长、`fizzling/fading` 在熄火后变 true；被 EMP 电弧击中的导弹 `empRes=0` 时立即 `fizzling=true`。
+7. **光束状态**：光束武器开火期间 `GearIn beam ...` 行 `dps=true`、`dmg` 随照射增强、命中目标时 `didDamageThisFrame=true` 且 `target=Ship`；停火后该行消失 (光束实体只存在于开火/充能期间)。
+8. **数据绑定角色 (接入片段后)**：装好 `GearIn_test_gun.wpn` / `GearIn_test_shot.proj` 并给一艘测试舰装上该武器后：
    - 武器创建时 `GearIn weapon init GearIn_test_gun ...`(`GearInWeaponFlowEffect` 实例收到 `init(WeaponAPI)`)。
    - 开火时 `GearIn weapon GearIn_test_gun started firing (before-frame callback)`(每发前回调)、`GearIn onFire GearIn_test_shot ...`(生成后，`GearInShotOnFireEffect`)。
    - 命中时 `GearIn onHit GearIn_test_shot ...`(`GearInShotOnHitEffect`)；
    - 持续射击时每 2 秒一条 `GearIn weapon GearIn_test_gun after-frame: ...`(操作后回调)。
-10. **暂停语义**：按空格暂停，暂停期间周期报告停更 (`GearInFlowObserverPlugin.advance` 的暂停判断生效)、武器/射弹/光束全部冻结；恢复后报告继续。
-11. **故障注入**：注释掉 `GearInFlowObserverPlugin.advance` 里的暂停判断后，暂停期间周期报告照常输出；改回后恢复停更。
+9. **暂停语义**：按空格暂停，暂停期间周期报告停更 (`GearInFlowObserverPlugin.advance` 的暂停判断生效)、武器/射弹/光束全部冻结；恢复后报告继续。
+10. **故障注入**：注释掉 `GearInFlowObserverPlugin.advance` 里的暂停判断后，暂停期间周期报告照常输出；改回后恢复停更。
 
 通过信号：预期结果 1–8、10 全部符合；9 在接入片段后符合；11 的注入与恢复都符合预期。
 
-静态自查：六个类的源码与 fixture 逐字一致 (包括 import 顺序与注释)；没有把工作单元编号写进任何包名、类名、资源名或字符串 key (包 `data.scripts.gearin.combat`，类 `GearInFlowObserverPlugin` / `GearInDamageObserverListener` / `GearInWeaponFlowEffect` / `GearInShotOnFireEffect` / `GearInShotOnHitEffect` / `GearInStateReport`)。
-
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures` 构建配置等) 做过修改。
+清理：取消勾选测试 MOD
 
 ::: tip 日志核对技巧
 在 `Starsector/starsector-core/starsector.log` 中按 `gearin` 前缀过滤即可定位本单元的全部输出行 (分类名含 `gearin`)；周期报告每 3 秒输出一行，先开火观察生成与命中行，再停火观察光束行消失；出现 `ERROR` 时优先查看 `gear_in` 包相关的堆栈。
@@ -889,6 +884,5 @@ gradle jar
 - `data/weapons/proj/assaying_rift_proj.proj`：原版 `onHitEffect` 键实例。
 - `data/weapons/annihilator.wpn`：`barrelMode` / `projectileSpecId` 键实例。
 - `data/weapons/proj/annihilator_rocket.proj`：`specClass:"missile"` 实例。
-- `tutorial-fixtures/units/C07-S04/src/main/java/data/scripts/gearin/combat`：六个示例类的源码目录 (页面代码块的磁盘对照)。
 - `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
 - `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证方案的日志核对位置)。

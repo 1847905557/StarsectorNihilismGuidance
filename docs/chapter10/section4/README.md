@@ -290,7 +290,7 @@ Starsector\mods\GearIndustry\
 
 事件 ID 不覆写，即类简单名 `"GearInBarEvent"`。
 
-完整代码 (与示例工程 fixture 逐字一致)：
+完整代码：
 
 ```java
 package data.scripts.gearin.campaign;
@@ -463,7 +463,7 @@ public class GearInBarEvent extends BaseBarEvent {
 
 本示例只覆写 `createBarEvent()` 创建 `GearInBarEvent`，其余抽取参数 (频率权重、active 时长、普通超时、accepted 超时、priority) 全部保持默认。
 
-完整代码 (与示例工程 fixture 逐字一致)：
+完整代码：
 
 ```java
 package data.scripts.gearin.campaign;
@@ -562,8 +562,6 @@ gradle jar
 - `data/scripts/gearin/campaign/GearInBarEvent.class`
 - `data/scripts/gearin/campaign/GearInBarEventCreator.class`
 
-本节两个类的源码与 fixture 逐字一致 (`tutorial-fixtures\units\C10-S04\src\main\java\data\scripts\gearin\campaign\` 下同名两文件)，fixture 编译验收命令见下方验证方案。
-
 ## 验证方案
 
 **入口**：命令行 (Git Bash) 完成编译；游戏内完成生涯验证 (新建生涯、市场交互 "Visit the bar"、酒吧面板与 `starsector.log`)。
@@ -572,26 +570,21 @@ gradle jar
 
 **操作步骤**：
 
-1. fixture 编译：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC10s04Java --no-daemon`，确认 `BUILD SUCCESSFUL`。
-2. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个类的 `.class`。
-3. 正常路径：新建生涯，教程进行中时进酒吧，确认无事件与临时选项 (预期结果 3)；跳过/完成教程后进入 Jangala 酒吧，核对 `creator picked` / `eligible at` / `prompt at` / `shown at` 四条日志与酒吧面板的提示文本、选项 (预期结果 4)，并确认同一市场 20–40 游戏天内重复进入时事件组复现。
-4. 事件对话三分支：分别用三个存档 (或完成后读档冷却) 验证 "Buy the coordinates"(信用点 −500、显示 Continue、点后回酒吧)、"Hear them out but decline"(无 Continue 直接回酒吧)、"Leave the spacer to their drink"(同左)；每次结束都出现 `finished, notified manager (done=true)`(预期结果 5)。
-5. 交互后冷却：完成事件后保存读档，跨 60–90 游戏天观察事件不再出现 (accepted 超时)；不完成事件时保存读档，事件仍在活动列表、可继续对话 (预期结果 6)。
-6. 故障注入：按故障分析 2/8/4/5 依次注入 —— 注释调用点片段的 `addEventCreator` 行、去掉 `hasEventCreator` 判断 (直接 `addEventCreator`)、把 `addOption(..., this)` 改成字符串、注释 `finish()` 里的 `notifyWasInteractedWith(this)`；每次注入确认对应症状出现后改回，并确认恢复。
-7. 参数演示：给 `GearInBarEventCreator` 覆写 `getBarEventFrequencyWeight()` 返回 100f 重建：事件出现频率明显上升 (预期结果 4 的对照)；改回默认后恢复。
+1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个类的 `.class`。
+2. 正常路径：新建生涯，教程进行中时进酒吧，确认无事件与临时选项 (预期结果 3)；跳过/完成教程后进入 Jangala 酒吧，核对 `creator picked` / `eligible at` / `prompt at` / `shown at` 四条日志与酒吧面板的提示文本、选项 (预期结果 4)，并确认同一市场 20–40 游戏天内重复进入时事件组复现。
+3. 事件对话三分支：分别用三个存档 (或完成后读档冷却) 验证 "Buy the coordinates"(信用点 −500、显示 Continue、点后回酒吧)、"Hear them out but decline"(无 Continue 直接回酒吧)、"Leave the spacer to their drink"(同左)；每次结束都出现 `finished, notified manager (done=true)`(预期结果 5)。
+4. 交互后冷却：完成事件后保存读档，跨 60–90 游戏天观察事件不再出现 (accepted 超时)；不完成事件时保存读档，事件仍在活动列表、可继续对话 (预期结果 6)。
+5. 故障注入：按故障分析 2/8/4/5 依次注入 —— 注释调用点片段的 `addEventCreator` 行、去掉 `hasEventCreator` 判断 (直接 `addEventCreator`)、把 `addOption(..., this)` 改成字符串、注释 `finish()` 里的 `notifyWasInteractedWith(this)`；每次注入确认对应症状出现后改回，并确认恢复。
+6. 参数演示：给 `GearInBarEventCreator` 覆写 `getBarEventFrequencyWeight()` 返回 100f 重建：事件出现频率明显上升 (预期结果 4 的对照)；改回默认后恢复。
 
 **观察位置**：酒吧面板的提示与选项、`starsector.log` 的 `GearIn bar event` 日志、游戏内信用点数量、`jars\GearIndustry.jar` 内的 class 条目。
 
 **预期结果**：
 
-1. **fixture 编译 (验收 J)**：在 Git Bash 执行
-```text
-gradle -p tutorial-fixtures compileC10s04Java --no-daemon
-```
 以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到两个类的 `.class`。
-3. **新建生涯 (教程进行中)**：新档开头教程进行中时酒吧**没有**常规事件 (BarCMD 对常规事件有教程门禁；临时选项无此门禁)—— 属正常，不是故障。
-4. **跳过/完成教程后**：
+7. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到两个类的 `.class`。
+8. **新建生涯 (教程进行中)**：新档开头教程进行中时酒吧**没有**常规事件 (BarCMD 对常规事件有教程门禁；临时选项无此门禁)—— 属正常，不是故障。
+9. **跳过/完成教程后**：
    - 进入任一有太空港的市场 (如 Corvus 星系的 Jangala)，交互里选 "Visit the bar"；`starsector.log` 出现。
 ```text
 GearIn bar event: creator picked, creating event (id=GearInBarEvent)
@@ -601,19 +594,17 @@ GearIn bar event: shown at Jangala
 ```
    - 酒吧面板出现提示 "A disheveled spacer at the bar..." 与选项 "Listen to the spacer's story"(事件 ID `GearInBarEvent` 会出现在同一市场的 `$BarCMD_shownEvents` 里，约 20–40 游戏天内再次进入同一市场复现同一组事件)。
    - 事件不是每次进酒吧都出现：抽取受 `minBarEvents` / `maxBarEvents` / 权重与随机影响；同一时间每个事件 ID 至多一个活跃实例。
-5. **事件对话**：点 "Listen to the spacer's story" → 日志 `dialog init (event id=GearInBarEvent)`，对话出现三个选项：
+10. **事件对话**：点 "Listen to the spacer's story" → 日志 `dialog init (event id=GearInBarEvent)`，对话出现三个选项：
    - 点 "Buy the coordinates (500 credits)"：日志 `bought coordinates, credits -500`，玩家舰队信用点减少 500(`cargo.getCredits()` 可负，演示不检查余额)；日志 `finished, notified manager (done=true)`；对话显示 "Continue"，点后回到酒吧选项 (`endWithContinue()` 默认 true 的路径)。
    - 点 "Hear them out but decline" / "Leave the spacer to their drink"：日志 `declined` / `left` + `finished, notified manager (done=true)`；**不显示** "Continue"，直接回到酒吧选项 (`noContinue = true` 路径)。
    - 三条路径都触发 `notifyWasInteractedWith`：事件立即从活动列表移除，creator 进入 accepted 超时 (60–90 游戏天)—— 事件在冷却期内不再出现。
-6. **读档**：完成后保存并读档 ——`hasEventCreator` 判断使 creator 不重复注册 (日志无二次 "creator registered" 之外的重复注册行)；未完成时保存读档，事件实例仍在活动列表 (随 sector memory 存档) 且可继续对话 (`init` 里 `done = false` 重置)。全程无 `gear_in` 引起的 `ERROR`。
-7. **临时 bar 选项 (规则片段)**：在 Jangala 进酒吧，出现 "Ask about the missing supplies" 选项 (`AddBarEvents` 规则命中)；点选后进入规则对话并置 `$global.gear_in_barRumorDone = true`；选 "Back to the bar" 回到酒吧选项；再次离开再进同一市场 —— 临时选项不再出现 (flag 判断)。
+11. **读档**：完成后保存并读档 ——`hasEventCreator` 判断使 creator 不重复注册 (日志无二次 "creator registered" 之外的重复注册行)；未完成时保存读档，事件实例仍在活动列表 (随 sector memory 存档) 且可继续对话 (`init` 里 `done = false` 重置)。全程无 `gear_in` 引起的 `ERROR`。
+12. **临时 bar 选项 (规则片段)**：在 Jangala 进酒吧，出现 "Ask about the missing supplies" 选项 (`AddBarEvents` 规则命中)；点选后进入规则对话并置 `$global.gear_in_barRumorDone = true`；选 "Back to the bar" 回到酒吧选项；再次离开再进同一市场 —— 临时选项不再出现 (flag 判断)。
    - 注意：`$core_tempBarEvents` 每次展示前清空重建，临时选项本身不跨展示持久。
 
-**通过信号**：操作 1–5、7 全部符合；操作 6 的注入与恢复都符合预期；全程无 `gear_in` 引起的 `ERROR`。
+**通过信号**：操作 1–4、6 全部符合；操作 5 的注入与恢复都符合预期；全程无 `gear_in` 引起的 `ERROR`。
 
-**清理**：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
-
-静态自查：`GearInBarEvent` / `GearInBarEventCreator` 与 fixture 逐字一致 (包括 import 顺序)；`hasEventCreator(GearInBarEventCreator.class)` 与调用点片段的类名一致。
+**清理**：取消勾选测试 MOD
 
 事件 ID(`GearInBarEvent`)、选项 id(`gearIn_barAccept` 等) 与规则 id(`gearIn_barRumor` 等) 均不含工作单元编号变体；没有把工作单元编号写进任何运行时名称。
 
@@ -708,5 +699,4 @@ GearIn bar event: shown at Jangala
 - `data/campaign/rules.csv`：`marketVisitBar` / `bar_optionSel` / `AddBarEvents` 分类规则 / `BarCMD returnFromEvent false`。
 - `data/campaign/econ/corvus.json`：`jangala` 市场实体 (验证临时选项片段用)。
 - `data/scripts/gearin/campaign`：本节两个示例类的包目录。
-- `tutorial-fixtures/units/C10-S04/src/main/java/data/scripts/gearin/campaign`：本节 fixture(`GearInBarEvent` / `GearInBarEventCreator`)。
 - `Starsector/starsector-core/starsector.log`：验证日志四段的主要依据。

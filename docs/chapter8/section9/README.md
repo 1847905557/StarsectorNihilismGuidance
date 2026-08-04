@@ -489,7 +489,7 @@ public class GearInServicesDialog implements InteractionDialogPlugin {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含五个类的 `.class` 条目 (可用 `jar tf` 核对)。本节五个类的源码与对应 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C08-S09` 的 `data/scripts/gearin/campaign` 包内)，fixture 编译验收命令见下方 "验证方案"。
+产物 `jars\GearIndustry.jar` 应包含五个类的 `.class` 条目 (可用 `jar tf` 核对)
 
 ## 验证方案
 
@@ -500,20 +500,19 @@ gradle jar
 
 操作步骤：
 
-1. **fixture 编译**：在仓库根执行 `gradle -p tutorial-fixtures compileC08s09Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含五个类的 `.class` 条目。
-3. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按下方预期结果列出的日志序列顺序出现两个脚本的日志行 (情报段 ×3、对话框段 1 行)，且**没有**旧复合演示的收尾 `done` 行。
-4. **消息区**：演示帧后左下消息区出现两条 `GearIn` 消息 —— 点击第一条跳转 Intel 页签 (`addIntel` 的自动发布消息)、点击第二条无跳转 (`MessageIntel` 纯消息)。
-5. **对话框**：游戏暂停并弹出演示对话框；依次点 "查看势力关系"(文本面板追加关系行、日志 `option selected: faction`)、"查看舰队货物"(追加货物行、日志 `option selected: cargo`)。
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含五个类的 `.class` 条目。
+2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按下方预期结果列出的日志序列顺序出现两个脚本的日志行 (情报段 ×3、对话框段 1 行)，且**没有**旧复合演示的收尾 `done` 行。
+3. **消息区**：演示帧后左下消息区出现两条 `GearIn` 消息 —— 点击第一条跳转 Intel 页签 (`addIntel` 的自动发布消息)、点击第二条无跳转 (`MessageIntel` 纯消息)。
+4. **对话框**：游戏暂停并弹出演示对话框；依次点 "查看势力关系"(文本面板追加关系行、日志 `option selected: faction`)、"查看舰队货物"(追加货物行、日志 `option selected: cargo`)。
    - "关闭演示" 或按 ESC(日志 `option selected: close`、对话框关闭、游戏恢复)。
-6. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位)，无对话框/消息残留。
+5. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位)，无对话框/消息残留。
 
 可选故障注入 (每项验证后改回，确认恢复)：
 
-7. **注入 1**：注释掉调用点片段中的某个 `addScript` 块，重启新档：只有该段日志缺失、其余一段正常 (对应故障分析第 7 条前半)；改回后确认恢复。
-8. **注入 2**：把 `intelManager.addIntel(intel)` 改为 `intelManager.queueIntel(intel)`：`hasIntel` 返回 false(情报在通信队列等待)、对话框段不受影响。
+6. **注入 1**：注释掉调用点片段中的某个 `addScript` 块，重启新档：只有该段日志缺失、其余一段正常 (对应故障分析第 7 条前半)；改回后确认恢复。
+7. **注入 2**：把 `intelManager.addIntel(intel)` 改为 `intelManager.queueIntel(intel)`：`hasIntel` 返回 false(情报在通信队列等待)、对话框段不受影响。
    - 提前置 `setForceAddNextFrame(true)` 则当帧转正 (对应故障分析第 2 条)。
-9. **注入 3**：把 `getIntelTags` 的 `super.getIntelTags(map)` 改成先解引用 `map.getPlayerFleet()`：打开 Intel 页或地图 tooltip 时 NPE(对应故障分析第 4 条)；改回后确认恢复。
+8. **注入 3**：把 `getIntelTags` 的 `super.getIntelTags(map)` 改成先解引用 `map.getPlayerFleet()`：打开 Intel 页或地图 tooltip 时 NPE(对应故障分析第 4 条)；改回后确认恢复。
 
 观察位置：`starsector.log`、左下消息区、Intel 页签、交互对话框文本面板。
 
@@ -544,9 +543,9 @@ GearIn campaign services dialog: shown=true (interactionTarget=null; 玩家在�
 
 **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
 
-通过信号：操作 1–6 全部符合；7–9 的注入与恢复都符合预期。
+通过信号：操作 1–5 全部符合；6–8 的注入与恢复都符合预期。
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (fixture 构建脚本等) 做过修改。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 

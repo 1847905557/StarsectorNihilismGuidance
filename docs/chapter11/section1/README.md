@@ -365,19 +365,11 @@ gradle jar
 
 通过信号：操作 1–5 全部符合预期；操作 6 每次注入都观察到对应故障现象，全部改回后恢复；全程无 `gear_in` 引起的 `ERROR` 日志。
 
-静态自查：
-
-- `GearInRulesIntro` 无未使用 import；
-- `REGISTER_MARK` 与调用点片段的键逐字一致；
-- 所有选项 id (`GearIn_rules_intro_open` / `GearIn_rules_intro_leave`) 与 `$option ==` 条件逐字一致 (大小写敏感)；
-- 工作单元编号不进入任何游戏运行时名称 (规则 id、trigger、类名、包名、persistent data 键均不含工作单元编号)；
-- `data\campaign\rules.csv` 内本节 id 与既有 MOD 无冲突 (按规则强度节的排查法核对)。
-
 > 定位规则没被读进来的问题时，按三个可观察表现依次核对：启动日志 `Loading rule: <id>` (数据文件侧)→ `shown=true` 日志 (代码侧)→ 对话表现 (运行侧)。
 
 > 单次使用变量 WARNING 只打印到启动器标准输出、不进 `starsector.log`，不是错误 —— 它只肯说给启动器控制台听。
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 

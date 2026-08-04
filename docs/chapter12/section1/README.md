@@ -359,8 +359,6 @@ GearIn dependency check: MagicLib (MagicLib) enabled=true installedVersion=1.5.1
 
 以上 1 到 6 项逐一核对，全部符合即验证通过。
 
-静态自查：`mod_info.json` 为 UTF-8 无 BOM；依赖 `id` 与 `Starsector\mods\LazyLib\mod_info.json`(`lw_lazylib`)、`Starsector\mods\MagicLib\mod_info.json`(`MagicLib`) 的 `id` 逐字一致；Java 源码为 UTF-8 无 BOM、CRLF 换行。
-
 清理：取消勾选测试 MOD；恢复 `dependencies` 为原值。
 
 ## 故障分析

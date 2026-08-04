@@ -711,25 +711,20 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInHubMission.class`(可用 `jar tf` 核对)。
 
-本节源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C10-S05/src/main/java/data/scripts/gearin/campaign/` 目录)，fixture 编译验收命令见下方 "验证方案"。
-
 ## 验证方案
 
-本节成果分三层验收：先做静态构建，再进游戏走完任务链，最后用注入用例复现故障分析的结论。游戏内步骤需要实际启动 Starsector，本环境无法运行，故整体标记为待人工执行；步骤与预期结果均保留完整，可照单执行。
+本节成果分三层验收：先构建示例 MOD，再进游戏走完任务链，最后用注入用例复现故障分析的结论。运行验证需在 Starsector 环境中执行：以下步骤与预期结果已完整保留，实际表现以游戏内为准。
 
-### fixture 与游戏构建
+### 构建与游戏验证
 
 - 入口：Git Bash 命令行。
 - 前置数据：既有 MOD 布局与 `GearInModPlugin`(C06-S01 / C06-S02)、本节 `GearInHubMission`、`bar_events.csv` 行、`rules.csv` 片段。
 - 操作步骤：
-  1. 在 Git Bash 执行 `gradle -p tutorial-fixtures compileC10s05Java --no-daemon`；
-  2. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`；
-  3. 执行 `jar tf jars\GearIndustry.jar` 核对类文件。
+  1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`；
+  2. 执行 `jar tf jars\GearIndustry.jar` 核对类文件。
 - 观察位置：命令行输出与 jar 内容列表。
 - 预期结果：
-  - fixture 编译以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
   - `gradle jar` 以 `BUILD SUCCESSFUL` 结束，`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInHubMission.class`。
-  - 静态自查：`GearInHubMission` 与 fixture 逐字一致 (包括 import 顺序)；mission id `gearInHub`、内存键 `$gearInHub_*`、规则分类 `gearInHub_blurbBar` / `gearInHub_optionBar` 与 CSV 行/规则片段逐字一致；没有把工作单元编号写进任何运行时名称 (类名、包名、mission id、内存键、规则 id 均不含 C10-S05 变体)。
 
 ### 酒吧任务完整流程
 
@@ -773,7 +768,7 @@ gradle jar
 
 通过信号：三组方案的预期结果全部出现；注入用例恢复后回到正常路径；全程无 `gear_in` 引起的 `ERROR`。
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle`、`.cursor\tutorial-work\` 等) 做过修改。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 
@@ -848,4 +843,3 @@ gradle jar
 - `data/campaign/person_missions.csv`：联系人任务板注册 (路线 B)。
 - `data/campaign/rules.csv`：本节六条任务规则。
 - `data/config/settings.json`：任务板数量配置 (`contactMinMissions` / `contactMaxMissions` 等)。
-- `tutorial-fixtures/units/C10-S05/src/main/java/data/scripts/gearin/campaign/`：本节 fixture 目录。

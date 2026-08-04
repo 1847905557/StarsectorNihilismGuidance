@@ -14,7 +14,7 @@
 - 设置 UBO 全局矩阵块 `BUtilGlobalData` 的 GLSL 声明与 Java 侧绑定，并解释其版本要求 (uniform block 需要 GLSL 1.40+/GL 3.1+，BoxUtil 全管线基线 GL 4.3)；
 - 区分 uniform 提交的三种形态：标量/向量 (`glUniform1f/2f/4f`)、采样器 (`glUniform1i` + 纹理单元)、矩阵 (`glUniformMatrix4` + 列主序 16 float `FloatBuffer`)；
 - 设置纹理提交链：`SettingsAPI.getSprite` → `SpriteAPI.getTextureId()` → `glActiveTexture(GL_TEXTURE0)` + `glBindTexture(GL_TEXTURE_2D, id)` → `glUniform1i(texLoc, 0)` → 片元侧 `texture(tex, uv)`；
-- 解释矩阵提交约定：`glUniformMatrix4(loc, false, buffer)` 的 `transpose` 必须为 `false`、缓冲为列主序 16 float、2D 刚性变换 (旋转+平移) 布局；
+- 解释矩阵提交约定：`glUniformMatrix4(loc, false, buffer)` 的 `transpose` 必须为 `false`、缓冲为列主序 16 float、1D 刚性变换 (旋转+平移) 布局；
 - 从症状定位典型故障：uniform 名拼错 (-1 静默)、采样器/纹理单元不配对、矩阵 `transpose=true`、UBO 块名拼错或未绑定、GLSL 版本与上下文不匹配、可用性判据或 `isValid()` 检查用错、跨战斗缓存程序句柄。
 
 ## 前置知识
@@ -54,7 +54,7 @@
 
 | 位置 | 本节取值 |
 |---|---|
-| 资源文件 | `tutorial-fixtures/units/C14-S03/src/main/resources/data/shaders/GearIn_shader_visual.vert` / `.frag`(fixture)；MOD 内 `data/shaders/GearIn_shader_visual.vert` / `.frag` |
+| 资源文件 | MOD 内 `data/shaders/GearIn_shader_visual.vert` / `.frag` |
 | 加载入口 | `ShaderUtil.createShaderVFFormPath(名称, "data/shaders/GearIn_shader_visual.vert", "data/shaders/GearIn_shader_visual.frag")`(Java 常量 `VERT_PATH`/`FRAG_PATH` 与资源文件路径逐字一致)|
 | 运行使用方 | `GearInShaderVisual`(分层渲染通道注册，`render` 内 `program.active()` + 提交 + 绘制)|
 | 可观察结果 | 日志行含 `vert=data/shaders/GearIn_shader_visual.vert`、`frag=...`；画面出现随舰船移动的纹理滚动发光四边形 |
@@ -215,7 +215,7 @@ SettingsAPI.getSprite(路径) → SpriteAPI.getTextureId()
 `GL20.glUniformMatrix4(int location, boolean transpose, FloatBuffer matrix)`(LWJGL 2.x 签名)：
 
 - **`transpose` 必须传 `false`**(规则 8)：`true` 表示上传前转置 —— 非列主序缓冲配 `true` 才等价于正确结果，配合列主序数据会得到转置矩阵，位置/旋转全部错乱；
-- 缓冲是**列主序 16 个 float**(OpenGL 约定)，即第 0、4、8、12 个元素是第一列...(`m00, m10, m20, m30, m01, ...`)；
+- 缓冲是**列主序 16 个 float**(OpenGL 约定)，即第 0、3、7、11 个元素是第一列...(`m00, m10, m20, m30, m01, ...`)；
 - `FloatBuffer` 每帧复用：`clear()` → `put` 16 个值 → `flip()`，避免每帧分配 (成熟实例 `maintainAnchoredFloatBuffer` 同款)。
 
 ::: tip 每帧复用 `FloatBuffer`
@@ -358,7 +358,7 @@ void main() {
 
 Java 接入在分层渲染插件通道上完成四个环节：init 内的可用性判断与程序创建、render 内的状态提交、cleanup 内的资源清理。
 
-源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C14-S03/src/main/java/data/scripts/gearin/combat/`)：
+源码如下：
 
 ```java
 package data.scripts.gearin.combat;
@@ -404,7 +404,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   名称与类型必须与 GLSL 声明一致（C14-S01 硬规则 6）：拼错 → getUniformIndex 返回
  *   -1 → 提交被静默忽略且无日志；
  * - 纹理：SettingsAPI.getSprite 取引擎必载贴图 graphics/fx/particlealpha32sq.png
- *   （引擎启动期入加载队列；C12-S06 fixture 同款姿势），
+ *   （引擎启动期入加载队列；C12-S06 同款姿势），
  *   SpriteAPI.getTextureId() 取 GL 纹理 id，glActiveTexture(GL_TEXTURE0) +
  *   glBindTexture(GL_TEXTURE_2D, id) + glUniform1i(texLoc, 0) 完成单元绑定与采样器
  *   提交（成熟实例实证）；
@@ -687,15 +687,13 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/shaders/GearIn_shader_visual.vert`、`data/shaders/GearIn_shader_visual.frag` 与 `data/scripts/gearin/combat/GearInShaderVisual.class`(可用 `jar tf` 核对)。
 
-本节源码与 fixture 逐字一致 (shader 两个文件在 `tutorial-fixtures/units/C14-S03/src/main/resources/data/shaders/`，Java 类在 `tutorial-fixtures/units/C14-S03/src/main/java/data/scripts/gearin/combat/`)。
-
 ### 实例对照
 
 成熟实例的用法与本节描述逐行同构：程序创建 (`createShaderVFFormPath` + `new ShaderProgram`)、创建后立即保存 uniform/UBO location、渲染前 `isValid()`、`active()/close()` 配对、矩阵/纹理提交做法、`cleanup()` 里 `program.delete()`。
 
 ## 验证方案
 
-本节只有一个待验证成果：`GearInShaderVisual` 接入后的完整渲染链。它同时覆盖 Java fixture 编译与 shader 资源两处校验，因此先跑构建侧，再进战斗看画面。
+本节只有一个待验证成果：`GearInShaderVisual` 接入后的完整渲染链。它同时覆盖 Java 编译与 shader 资源两处校验，因此先跑构建侧，再进战斗看画面。
 
 前置数据：既有 MOD 布局 (`mod_info.json` 硬依赖 BoxUtil)+ 战斗生命周期插件 (含本节注册片段一行)+ 分层渲染插件 + 上一页的脉冲渲染插件 + 本节的 `GearInShaderVisual`、`data/shaders/GearIn_shader_visual.vert/.frag` + `GearIn_test` 测试战役 (C03-S01)。
 
@@ -703,47 +701,35 @@ gradle jar
 
 **操作步骤**：
 
-1. fixture 校验：在 Git Bash 依次执行 `gradle -p tutorial-fixtures compileC14s03Java --no-daemon` 与 `gradle -p tutorial-fixtures validateShaders --no-daemon`，均确认 `BUILD SUCCESSFUL`(退出码 0)。
-2. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/shaders/GearIn_shader_visual.vert`、`data/shaders/GearIn_shader_visual.frag`、`data/scripts/gearin/combat/GearInShaderVisual.class`。
-3. 战役冒烟：进入 `GearIn_test` 一场战斗，`starsector.log` 核对 init 行 (含 `vert=`/`frag=` 路径与六个 `u_*` location、`ubo=`)；`ubo=<loc>` 非 -1；没有 `gear_in` 引起的 `ERROR`。
-4. 画面：观察玩家舰船位置 160×80 世界单位的发光四边形：中心偏橙、边缘偏蓝、柔和光晕；跟随舰船移动并随舰船朝向旋转；纹理沿 V 方向滚动 (约 4 秒一周期)。
-5. 暂停与寿命清理：按空格暂停约 10 秒 —— 纹理滚动冻结、四边形静止但可见；恢复后继续；约 30 秒后四边形消失且 `starsector.log` 出现 `GearIn shader visual cleanup`。
-6. 跨战斗：退出战斗再进一场 ——init 行重新出现，无 ERROR。
-7. 门禁降级：在 `LunaSettings`/`BoxConfigs` 把 shader 路径关闭后进战斗 ——`starsector.log` 出现 `GearIn shader visual: BoxUtil shader path unavailable (...), visual disabled`，无画面、无 ERROR(shader 路径干净降级)。
-8. 故障注入：a) Java 侧把 `getUniformIndex("time")` 拼成 `"Time"`—— 纹理滚动停止且无日志 (init 行 `u_time=-1`)；b) 把 `glUniformMatrix4` 的 `false` 改成 `true`—— 四边形位置/朝向错乱；c) 把 `glUniform1i(texLoc, 0)` 的 `0` 改成 `1`—— 四边形颜色错误/变黑；d) 把 `#version 430` 改成 `#version 140`—— 编译失败、无画面 (BoxUtil 侧日志)；e) 改回后确认恢复。
+1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/shaders/GearIn_shader_visual.vert`、`data/shaders/GearIn_shader_visual.frag`、`data/scripts/gearin/combat/GearInShaderVisual.class`。
+2. 战役冒烟：进入 `GearIn_test` 一场战斗，`starsector.log` 核对 init 行 (含 `vert=`/`frag=` 路径与六个 `u_*` location、`ubo=`)；`ubo=<loc>` 非 -1；没有 `gear_in` 引起的 `ERROR`。
+3. 画面：观察玩家舰船位置 160×80 世界单位的发光四边形：中心偏橙、边缘偏蓝、柔和光晕；跟随舰船移动并随舰船朝向旋转；纹理沿 V 方向滚动 (约 4 秒一周期)。
+4. 暂停与寿命清理：按空格暂停约 10 秒 —— 纹理滚动冻结、四边形静止但可见；恢复后继续；约 30 秒后四边形消失且 `starsector.log` 出现 `GearIn shader visual cleanup`。
+5. 跨战斗：退出战斗再进一场 ——init 行重新出现，无 ERROR。
+6. 门禁降级：在 `LunaSettings`/`BoxConfigs` 把 shader 路径关闭后进战斗 ——`starsector.log` 出现 `GearIn shader visual: BoxUtil shader path unavailable (...), visual disabled`，无画面、无 ERROR(shader 路径干净降级)。
+7. 故障注入：a) Java 侧把 `getUniformIndex("time")` 拼成 `"Time"`—— 纹理滚动停止且无日志 (init 行 `u_time=-1`)；b) 把 `glUniformMatrix4` 的 `false` 改成 `true`—— 四边形位置/朝向错乱；c) 把 `glUniform1i(texLoc, 0)` 的 `0` 改成 `1`—— 四边形颜色错误/变黑；d) 把 `#version 430` 改成 `#version 140`—— 编译失败、无画面 (BoxUtil 侧日志)；e) 改回后确认恢复。
 
 **预期结果**：
 
-1. **fixture 编译 (验收 J)**：操作步骤 1 的 fixture 编译命令 (`gradle -p tutorial-fixtures compileC14s03Java --no-daemon`) 以 `BUILD SUCCESSFUL` 结束 (退出码 0)。该任务编译 `units/C14-S03/src/main/java`，编译类路径已含 BoxUtil jars(`tutorial-fixtures/build.gradle` 的 `fixtureJars`)—— 本节 Java 代码的 `ShaderUtil`/`ShaderProgram`/`ShaderCore`/`BoxConfigs` 调用由此完成编译核对。
-2. **fixture 资源 (验收 G)**：操作步骤 1 的 fixture 资源校验命令 (`gradle -p tutorial-fixtures validateShaders --no-daemon`) 以 `BUILD SUCCESSFUL` 结束 (退出码 0)。该任务检查 `units/C14-S03/src/main/resources` 下的所有 `.vert/.frag` 非空。
-3. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_shader_visual.vert`、`data/shaders/GearIn_shader_visual.frag` 与 `data/scripts/gearin/combat/GearInShaderVisual.class`。
-4. **战斗初始化 (可用性判断 + 程序创建)**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行。
+8. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_shader_visual.vert`、`data/shaders/GearIn_shader_visual.frag` 与 `data/scripts/gearin/combat/GearInShaderVisual.class`。
+9. **战斗初始化 (可用性判断 + 程序创建)**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行。
 ```text
 GearIn shader visual init: u_model=<loc>, u_size=<loc>, u_time=<loc>, u_tex=<loc>, u_core=<loc>, u_fringe=<loc>, ubo=<loc>, vert=data/shaders/GearIn_shader_visual.vert, frag=data/shaders/GearIn_shader_visual.frag
 ```
 其中 `vert=`/`frag=` 与资源文件路径一致 (四位置完整流程)；`ubo=<loc>` 非 -1(UBO 块绑定成功)；没有由 `gear_in` 引起的 `ERROR`。若 BoxUtil 未初始化/被关闭，则出现 `GearIn shader visual: BoxUtil shader path unavailable (...), visual disabled` 且无画面 (可用性判断生效)。
-5. **画面 (提交生效)**：玩家舰船位置出现一个 160×80 世界单位的发光四边形 —— 中心偏橙 (`coreColor`)、边缘偏蓝 (`fringeColor`)，加法混合、柔和光晕 (`particlealpha32sq` 的径向渐变 + `discard` 剔除透明片元)；四边形跟随舰船移动并随舰船朝向旋转 (`modelMatrix` 提交)；纹理沿 V 方向向下滚动 (`time` 驱动，约 4 秒一个周期)；四边形位于舰船与导弹之上 (分层渲染通道层序)。
-6. **暂停行为**：按空格暂停 —— 纹理滚动冻结 (`getTotalElapsedTime(false)` 不累计)、四边形静止但可见 (与分层渲染插件同款)；恢复后继续滚动。
-7. **寿命与清理**：约 30 秒后四边形消失，`starsector.log` 出现一行。
+10. **画面 (提交生效)**：玩家舰船位置出现一个 160×80 世界单位的发光四边形 —— 中心偏橙 (`coreColor`)、边缘偏蓝 (`fringeColor`)，加法混合、柔和光晕 (`particlealpha32sq` 的径向渐变 + `discard` 剔除透明片元)；四边形跟随舰船移动并随舰船朝向旋转 (`modelMatrix` 提交)；纹理沿 V 方向向下滚动 (`time` 驱动，约 4 秒一个周期)；四边形位于舰船与导弹之上 (分层渲染通道层序)。
+11. **暂停行为**：按空格暂停 —— 纹理滚动冻结 (`getTotalElapsedTime(false)` 不累计)、四边形静止但可见 (与分层渲染插件同款)；恢复后继续滚动。
+12. **寿命与清理**：约 30 秒后四边形消失，`starsector.log` 出现一行。
 ```text
 GearIn shader visual cleanup
 ```
 即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 9 的可观察面)。同一场战斗内不再出现。
-8. **跨战斗**：退出战斗再进一场 ——init 行重新出现且 location 值重新查询 (每场战斗重建程序与 VBO，遵循既有生命周期纪律)；无 ERROR。
-9. **故障注入**：见故障分析第 4、5、6、7 条对应的注入动作与恢复。
+13. **跨战斗**：退出战斗再进一场 ——init 行重新出现且 location 值重新查询 (每场战斗重建程序与 VBO，遵循既有生命周期纪律)；无 ERROR。
+14. **故障注入**：见故障分析第 4、4、5、6 条对应的注入动作与恢复。
 
-**通过信号**：操作 1–6 全部符合；操作 7 的降级与操作 8 的注入/恢复都符合预期。
+**通过信号**：操作 1–5 全部符合；操作 6 的降级与操作 7 的注入/恢复都符合预期。
 
-**清理**：取消勾选测试 MOD；恢复代码与 shader 为原值；确认没有对共享文件 (`tutorial-fixtures/build.gradle` 等) 做过修改。
-
-静态自查：
-
-- `GearInShaderVisual` 与 fixture 逐字一致 (包括 import 顺序与注释)；
-- `GearIn_shader_visual.vert/.frag` 与 fixture 逐字一致；
-- 四位置完整流程中资源文件、加载入口 (Java 常量) 与使用方日志三处路径逐字一致；
-- UBO 块名 `BUtilGlobalData` 与六个 uniform 名在 GLSL 声明与 Java 参数中逐字一致；
-- 没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInShaderVisual`、资源 `data/shaders/GearIn_shader_visual.vert/.frag`、日志前缀 `GearIn shader visual`)；
-- 除本节目录与 fixture 目录外没有改动任何共享文件。
+**清理**：取消勾选测试 MOD；恢复代码与 shader 为原值
 
 ## 故障分析
 
@@ -780,4 +766,3 @@ GearIn shader visual cleanup
 - `data/shaders/GearIn_shader_visual.vert` / `data/shaders/GearIn_shader_visual.frag`：本节新增的两个 shader 资源 (MOD 根目录相对路径)。
 - `graphics/fx/particlealpha32sq.png`：引擎启动期必载的原版粒子贴图 (本节采样纹理来源，不引入新资产)。
 - `Starsector/mods/GearIndustry`：示例 MOD 工程目录 (`gradle jar` 构建，产物核对用 `jar tf`)。
-- `tutorial-fixtures/units/C14-S03`：本节 fixture 目录 (Java 类与 shader 资源，页面代码块与之一致)。

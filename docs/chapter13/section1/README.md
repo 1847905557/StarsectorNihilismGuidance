@@ -154,7 +154,7 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 
 1. **直接引用**：可选 API 的编译期引用 (如 `LunaSettings.getBoolean(...)`) 写进一个专用适配器类 (`GearInCompatBridge`；与成熟实例同构)。
 2. **收敛**：全工程只有适配器这一处出现 `lunalib.*` 类名；使用方只 import 适配器类。
-  - 编译期类路径上有可选 jar(`compileOnly` 或 fixture 类路径含 Lunalib jar)，运行期才谈得上缺失。
+  - 编译期类路径上有可选 jar(`compileOnly` 依赖)，运行期才谈得上缺失。
 3. **懒解析**：JVM 按需解析常量池引用 —— 适配器类本身在可选依赖缺失时**可以正常加载**(类加载不触发方法体内引用的解析)；`LunaSettings` 的符号引用只在检查分支**第一次执行**时才解析。
   - 无依赖时检测返回 false，分支不执行，引用永不解析，`NoClassDefFoundError` 不会出现。这正是 "缺依赖也能启动" 的机制基础。
 
@@ -316,7 +316,7 @@ public void onGameLoad(boolean newGame) {
 }
 ```
 
-`GearInModPlugin` 类归前序单元所有，本节只调用它；fixture 例不含此片段 (fixture 只含本节所有的 `GearInCompatBridge`)。
+`GearInModPlugin` 类归前序单元所有，本节只调用它；本节示例类不含该片段。
 
 ### 构建
 
@@ -348,8 +348,6 @@ gradle jar
 - 字段缺失：LunaLib 打 `LunaSettings: Value GearIn_fullGraphicEffect of type Boolean not found in JSONObject`(ERROR)，适配器打 `GearIn compat: field [GearIn_fullGraphicEffect] missing in LunaSettings, fallback=true`，两行成对出现，返回默认值且无 NPE；恢复删除的行后确认复原。
 - 引用泄漏：抛 `NoClassDefFoundError`(对应故障分析第 1 条)；改回后确认恢复。
 - 类存在性 (进阶，可选验证)：类存在性检测属进阶手段，本节示例不包含该判据；需要验证时按 "进阶" 小节写法在启用/未启用两种状态下分别探测。
-
-静态自查：`mod_info.json` 不含 `lunalib` 依赖项；`LUNA_MOD_ID` 与 `Starsector\mods\Lunalib\mod_info.json` 的 `id` 逐字一致；Java 源码为 UTF-8 无 BOM、CRLF 换行。
 
 清理：取消勾选测试 MOD；删除测试期间改动 (恢复 `LunaSettings.csv` 与适配器源码)。
 
@@ -422,4 +420,3 @@ gradle jar
 - `data/config/LunaSettings.csv`(MOD 根目录起；定义在 C13-S03)：本节消费的设置项 `GearIn_fullGraphicEffect` 的默认值登记处。
 - `Starsector/mods/Lunalib/mod_info.json`(游戏安装根起)：`id` 字段逐字比对对象。
 - `Starsector/starsector-core/starsector.log`(游戏安装根起)：降级/缺失日志的核对位置。
-- `tutorial-fixtures/units/C13-S01/src/main/java/data/scripts/gearin/modcompat`：`GearInCompatBridge` 源码目录 (页面代码块的磁盘对照)。

@@ -348,22 +348,19 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInShipStatsProbe.class` (可用 `jar tf` 核对)。
 
-本节源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C07-S03` 的 `data/scripts/gearin/combat` 包内)，fixture 编译验收命令见 "验证方案"。
-
 ## 验证方案
 
 前置数据：既有 MOD 布局与战斗插件接入 (含本节注册片段)、`GearInShipStatsProbe` 源码、`GearIn_test` 测试战役 (C03-S01，玩家舰 `GearIn_artizan`)。
 
 操作步骤：
 
-1. **fixture 编译**：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC07s03Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
-3. **战役运行**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 核对 `GearIn stats probe init: engine ready`，随后每 2 秒两条 `GearIn stats read:` / `GearIn stats flux:`：
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
+2. **战役运行**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 核对 `GearIn stats probe init: engine ready`，随后每 2 秒两条 `GearIn stats read:` / `GearIn stats flux:`：
    - 没有 `gear_in` 引起的 `ERROR`。
-4. **三阶段数值**：战斗时间 2–12 秒看 `maxSpeed modified=165.0` (entries 各 1)、12–22 秒看 `modified=111.0` (percent=-20.0)、22 秒后看 `modified=80.0 unmodified=true` (数值推导见下文预期结果)。同屏按速度对比：施加阶段玩家舰明显更快。
-5. **暂停语义**：战斗内按空格暂停约 10 秒再恢复，暂停期间无报告；恢复后阶段仍按战斗时间推进 (暂停不计入 `getTotalElapsedTime(false)`)。
-6. **故障注入 1**：把 `PROBE_VOLATILE_ID_FAULT` 改为 `true` 重新构建进战斗：`entries percent` 每帧增长、`percent` 合计与 `modified` 持续漂移、`unmodify` 之后 `entries` 仍残留 (对应故障分析 1)；改回 `false` 后确认恢复。
-7. **故障注入 2**：把 `applyModifiers` 里的 `modifyPercent(MOD_SPEED_PERCENT, 25f)` 换成 `modifyPercent(MOD_SPEED_PERCENT + "_x", 25f)` 且 `unapplyModifiers` 不变：解除阶段 `modified` 不回 80 (ID 不一致，对应故障分析 2)；改回后确认恢复。
+3. **三阶段数值**：战斗时间 2–12 秒看 `maxSpeed modified=165.0` (entries 各 1)、12–22 秒看 `modified=111.0` (percent=-20.0)、22 秒后看 `modified=80.0 unmodified=true` (数值推导见下文预期结果)。同屏按速度对比：施加阶段玩家舰明显更快。
+4. **暂停语义**：战斗内按空格暂停约 10 秒再恢复，暂停期间无报告；恢复后阶段仍按战斗时间推进 (暂停不计入 `getTotalElapsedTime(false)`)。
+5. **故障注入 1**：把 `PROBE_VOLATILE_ID_FAULT` 改为 `true` 重新构建进战斗：`entries percent` 每帧增长、`percent` 合计与 `modified` 持续漂移、`unmodify` 之后 `entries` 仍残留 (对应故障分析 1)；改回 `false` 后确认恢复。
+6. **故障注入 2**：把 `applyModifiers` 里的 `modifyPercent(MOD_SPEED_PERCENT, 25f)` 换成 `modifyPercent(MOD_SPEED_PERCENT + "_x", 25f)` 且 `unapplyModifiers` 不变：解除阶段 `modified` 不回 80 (ID 不一致，对应故障分析 2)；改回后确认恢复。
 
 预期结果：
 
@@ -380,15 +377,13 @@ gradle jar
 - 步骤 6：`entries percent` 每帧增长、`percent` 合计与 `modified` 持续漂移、`unmodify` 之后 `entries` 仍残留；改回 `false` 后恢复。
 - 步骤 7：解除阶段 `modified` 不回 80；改回后恢复。
 
-静态自查：`GearInShipStatsProbe` 与 fixture 逐字一致 (包括 import 顺序与注释)。没有把工作单元编号写进任何包名、类名、资源名或字符串 key：
-
 - 包 `data.scripts.gearin.combat`；
 - 类 `GearInShipStatsProbe`；
 - modifier ID 前缀 `GearIn_ship_stats_probe_`。
 
 通过信号：步骤 1–5 全部符合；步骤 6、7 的注入与恢复都符合预期。
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures` 构建配置等) 做过修改。
+清理：取消勾选测试 MOD
 
 ::: tip 日志核对技巧
 在 `Starsector/starsector-core/starsector.log` 中按时间戳检索 `GearIn stats` 前缀即可定位本插件的全部输出行；出现 `ERROR` 时优先查看 `gear_in` 包相关的堆栈。
@@ -400,7 +395,7 @@ gradle jar
 
 以下故障按症状分组；第 1、2 项可以用验证方案的故障注入开关直接复现，其余对应正文各条规则。
 
-1. **不稳定 ID 导致修饰累积 ("数值越来越大")**。触发：`stats.getMaxSpeed().modifyPercent("GearIn_speed_" + counter++, v)` 每帧调用 (把 fixture 的 `PROBE_VOLATILE_ID_FAULT` 改为 `true` 即复现)：
+1. **不稳定 ID 导致修饰累积 ("数值越来越大")**。触发：`stats.getMaxSpeed().modifyPercent("GearIn_speed_" + counter++, v)` 每帧调用 (把 `PROBE_VOLATILE_ID_FAULT` 改为 `true` 即复现)：
    - 可观察：`entries percent` 每帧 +1，`percent` 合计与 `modified` 持续漂移；战斗结束前条目数已达数百；`unmodify("GearIn_speed_" + 0)` 只清第一条，`modified` 不回 base。
    - 修正：ID 用常量 (规则 2)；同 ID 每帧重复是幂等的 (规则 6)。
 2. **unmodify 的 ID 与 modify 不一致，解除不生效**。触发：`modifyPercent("GearIn_a_b", 25f)` 但 `unmodify("GearIn_a_c")` (或拼接字符串笔误)。可观察：`modified` 不回 base、条目残留、**没有任何报错** (静默失效)。修正：modify 与 unmodify 用同一个常量 (规则 4)。
@@ -442,6 +437,5 @@ modifier ID 是这套体系的键。稳定唯一、按来源命名空间区分�
 - `com.fs.starfarer.api.combat.CombatEngineAPI`：`getTimeMult()` 返回 `MutableStat`；本节还用 `getTotalElapsedTime(boolean)` 做阶段判断。
 - `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：示例插件继承的基类。
 - `data/hulls/ship_data.csv`：`GearIn_artizan` 注册行及 max speed / max flux / flux dissipation 数值列。
-- `tutorial-fixtures/units/C07-S03/src/main/java/data/scripts/gearin/combat`：`GearInShipStatsProbe` 源码目录 (页面代码块的磁盘对照)。
 - `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
 - `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证方案的日志核对位置)。

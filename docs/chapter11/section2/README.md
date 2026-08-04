@@ -451,14 +451,7 @@ gradle jar
 
 通过信号：操作 1–5 全部符合预期，故障注入 6 的五个子项注入与恢复全部符合预期；全程无 `gear_in` 引起的 `ERROR`。
 
-静态自查：
-- 所有选项 id (`GearIn_rules_scene_bar` / `GearIn_rules_scene_bar_back` / `GearIn_rules_scene_conv_end` / `GearIn_rules_scene_ngc`) 与 `$option ==` 条件逐字一致 (大小写敏感)；
-- `AddBarEvent` 参数顺序为 id / 文本 / 描述；
-- `BeginFleetEncounter` 规则没有使用 `options` 列；
-- 临时 bar 选项 id 不以任何任务前缀开头；
-- 没有把写作工作单元编号写进任何运行时名称 (规则 id、trigger、选项 id、记忆键均不含工作单元编号变体)。
-
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 

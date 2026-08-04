@@ -448,18 +448,7 @@ gradle jar
 
 通过信号：操作 1–8 的注入、观察与恢复全部符合预期；全程无 `gear_in` 引起的 `ERROR` 日志。
 
-静态自查：
-
-- 两个 Java 类无未使用 import；
-- `REGISTER_MARK` 与调用点片段的键逐字一致；
-- `MEM_KEY_LAST` 与条件列 `$GearIn_rulecmd_last >= 2` 逐字一致；
-- 所有选项 id(`GearIn_rules_cmd_more` / `GearIn_rules_cmd_all` / `GearIn_rules_cmd_leave`) 与 `$option ==` 条件逐字一致 (大小写敏感)；
-- 初始 trigger `GearInRuleCmdOpener` 与 `RuleBasedInteractionDialogPluginImpl("GearInRuleCmdOpener")` 构造参数、rules.csv welcome 行 trigger 列逐字一致；
-- rules.csv 简单类名 `GearInRuleCommand` ↔ `settings.json` 的包 `data.scripts.gearin.rules` ↔ jar 内 `data/scripts/gearin/rules/GearInRuleCommand.class` 三段一致；
-- 没有把工作单元编号写进任何运行时名称 (规则 id、触发器、类名、包名、记忆键、persistent data 键均不含 C11-S03 变体)；
-- `data/campaign/rules.csv` 内本节 id 与既有 MOD 无冲突。
-
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures/build.gradle` 等) 做过修改。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 

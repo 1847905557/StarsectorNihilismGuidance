@@ -41,7 +41,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   名称与类型必须与 GLSL 声明一致（C14-S01 硬规则 6）：拼错 → getUniformIndex 返回
  *   -1 → 提交被静默忽略且无日志；
  * - 纹理：SettingsAPI.getSprite 取引擎必载贴图 graphics/fx/particlealpha32sq.png
- *   （引擎启动期入加载队列；C12-S06 fixture 同款姿势），
+ *   （引擎启动期入加载队列；C12-S06 同款姿势），
  *   SpriteAPI.getTextureId() 取 GL 纹理 id，glActiveTexture(GL_TEXTURE0) +
  *   glBindTexture(GL_TEXTURE_2D, id) + glUniform1i(texLoc, 0) 完成单元绑定与采样器
  *   提交（成熟实例实证）；

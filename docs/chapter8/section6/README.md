@@ -507,60 +507,51 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`(可用 `jar tf` 核对)。
 
-本节源码与示例工程的 fixture 源码逐字一致，fixture 编译验收命令见下方 "验证方案"。
-
-静态自查：`GearInTrainingIndustry` 类与示例工程 fixture 源码逐字一致 (包括 import 顺序)；`INDUSTRY_ID` 与 CSV `id` 列、`plugin` 列类名逐字一致；`REGISTER_MARK` 与调用点片段的键逐字一致；没有把工作单元编号写进任何运行时名称 (类名、包名、产业 id、persistent data 键、modifier id 均不含 C08-S06 变体)。
-
 注册行、类与调用点就绪后，按下面的方案验证整条链。
 
 ## 验证方案
 
-**前置数据**：MOD 布局与 `GearInModPlugin`(含本节调用点片段)、`data\campaign\industries.csv` 注册行、`GearInTrainingIndustry` 类 (与示例工程 fixture 源码逐字一致)。
+**前置数据**：MOD 布局与 `GearInModPlugin`(含本节调用点片段)、`data\campaign\industries.csv` 注册行、`GearInTrainingIndustry` 类。
 
 **操作步骤**：
 
-1. fixture 编译 (验收 J)：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC08s06Java --no-daemon`，以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，`BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`。
+1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，`BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`。
    - 确认 `data\campaign\industries.csv` 合并后 `SettingsAPI.getIndustrySpec("GearIn_training_industry")` 返回非 null(可用日志或加载期检查)。
-3. 代码安装：新建生涯，`starsector.log` 依次出现 `applied` / `state` / 三条 `disruption probe` 日志，核对见 "预期结果" 第 3–4 条；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
-4. 读档：保存后读档，不出现重复安装日志 (`REGISTER_MARK` 已置位，见 "预期结果" 第 8 条)。
-5. 用户殖民地建设：殖民 (size 3 以下注意产业位上限 1)→ 产业列表出现 `GearIn Training Industry` → 建造 (建设期 `functional=false`)→ 60 游戏日后 `functional=true`。
-   - 点击升级 → 完成后产业变为 `Military Base`(见 "预期结果" 第 5 条)。
-6. AI core：安装 alpha core → `applied` 日志 `aiCore=alpha_core`、市场稳定度 +1；卸下 → 稳定度修饰消失 (见 "预期结果" 第 6 条)。
-7. disruption 实战：装 core 后等待 Hegemony AI 审查，或对殖民地执行陆战队 "中断产业" 突袭 → `notifyDisrupted` 日志 + tooltip `Operations disrupted!` + 收入消失。
-   - 时间到 → `disruptionFinished` 日志 + 恢复 (见 "预期结果" 第 7 条)。
-8. 故障注入 (逐项做完恢复)：
+2. 代码安装：新建生涯，`starsector.log` 依次出现 `applied` / `state` / 三条 `disruption probe` 日志，核对见 "预期结果" 第 2–3条；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
+3. 读档：保存后读档，不出现重复安装日志 (`REGISTER_MARK` 已置位，见 "预期结果" 第 7条)。
+4. 用户殖民地建设：殖民 (size 3 以下注意产业位上限 1)→ 产业列表出现 `GearIn Training Industry` → 建造 (建设期 `functional=false`)→ 60 游戏日后 `functional=true`。
+   - 点击升级 → 完成后产业变为 `Military Base`(见 "预期结果" 第 4条)。
+5. AI core：安装 alpha core → `applied` 日志 `aiCore=alpha_core`、市场稳定度 +1；卸下 → 稳定度修饰消失 (见 "预期结果" 第 5条)。
+6. disruption 实战：装 core 后等待 Hegemony AI 审查，或对殖民地执行陆战队 "中断产业" 突袭 → `notifyDisrupted` 日志 + tooltip `Operations disrupted!` + 收入消失。
+   - 时间到 → `disruptionFinished` 日志 + 恢复 (见 "预期结果" 第 6条)。
+7. 故障注入 (逐项做完恢复)：
    - ① 把调用点 `addIndustry` 的参数改成 `"GearIn_training_industr"`(拼错)→ `RuntimeException: Industry [...] not found`，对应 "故障分析" 第 1 条；
    - ② 把 `apply()` 里的 `demand(Commodities.SUPPLIES, size, ...)` 挪到构造器 → 读档后 `state` 的 demand 只剩 `crew=1`(supplies 需求消失)，对应 "故障分析" 第 2 条；
    - ③ 注释掉 `applyNoAICoreModifiers` 的 `unmodifyFlat` → 装 alpha core 再卸下，市场稳定度 +1 残留，对应 "故障分析" 第 5 条。
 
 **预期结果：**
 
-1. **fixture 编译 (验收 J)**：在 Git Bash 执行。
-```text
-gradle -p tutorial-fixtures compileC08s06Java --no-daemon
-```
 以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`；`data\campaign\industries.csv` 已含本节注册行 (CSV 合并，勿改动核心文件)。
-3. **代码安装 (corvus_IIIa (Garnir)，size 3 海盗市场)**：新建生涯，`starsector.log` 依次出现。
+8. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`；`data\campaign\industries.csv` 已含本节注册行 (CSV 合并，勿改动核心文件)。
+9. **代码安装 (corvus_IIIa (Garnir)，size 3 海盗市场)**：新建生涯，`starsector.log` 依次出现。
 ```text
 GearIn training industry applied: market=Garnir size=3 supplyCrew=1 demandSupplies=3 demandCrew=1 income=0 upkeep=NN aiCore=none disrupted=false functional=true GearIn training industry state: market=Garnir id=GearIn_training_industry supply=[crew=1] demand=[supplies=3, crew=1] income=0 upkeep=NN buildProgress=0.0/60.0 building=false upgrading=false functional=true disrupted=false aiCore=none upgrade=militarybase
 ```
 数值核对：size 3 → `supplyCrew = max(1, 3-2) = 1`、`demandSupplies = 3`、`demandCrew = max(1, 3/2) = 1`；`income = 0`(spec 收入列空)；`upkeep = 2 × max(1, size-2) × 市场维护倍率`(以日志为准)；缺货削减只在 corvus_IIIa (Garnir) 的 supplies 可得量不足 3 时把 `supplyCrew` 压到 0/负数区间 (tooltip 图标同步变红)。
-4. **disruption 探针**(同一批日志)：
+10. **disruption 探针**(同一批日志)：
 ```text
 GearIn training industry disruption probe: before disrupted=false days=0.0 GearIn training industry disruption probe: during disrupted=true days=10.0 functional=false progress=Disrupted: 10 days left GearIn training industry disruption probe: after disrupted=false days=0.0
 ```
 核对：`during` 行 `functional=false`(`isFunctional()` 在中断时恒 false)、`progress` 显示 `Disrupted: 10 days left`(`getBuildOrUpgradeProgressText` 的中断分支)；`setDisrupted(0f)` 后 memory key 被 unset，`after` 恢复。市场内存里残留键 `$core_disrupted_GearInTrainingIndustry`(10 天过期)，可用 `DumpMemory` 或内存检查核对。
-5. **建设与升级 (用户殖民地路径)**：用户殖民后产业列表出现 `GearIn Training Industry`(`isAvailableToBuild` 要求市场有 `population` 且无 `MARKET_NO_INDUSTRIES_ALLOWED` tag；size 1–3 的殖民地产业位上限 1，注意是否占满)；建造后 `applied` 日志的 `functional=false`(`isBuilding` 中，tooltip 显示 "Currently under construction and not producing anything")；`advance` 按 `convertToDays(amount)` 累积 60 个游戏日后完成，`applied` 日志恢复 `functional=true`。点击升级：确认扣款后 `startUpgrading()`，完成后产业被替换为 `Military Base`(`militarybase` 行)，AI core / 改良 / 特殊物品迁移 (`finishBuildingOrUpgrading`)。
-6. **AI core**：往产业装 alpha core(AI core 选择对话框)：`applied` 日志 `aiCore=alpha_core`；市场稳定度 +1(`applyAlphaCoreModifiers` 的 `ind_GearIn_training_industry_2` 修饰)；tooltip 的 alpha 描述显示维护费 −25%(`UPKEEP_MULT = 0.75`)、需求 −1、产量 +1(`DEMAND_REDUCTION` / `SUPPLY_BONUS = 1`)；卸下 core 后稳定度修饰消失 (`applyNoAICoreModifiers`)。`getPatherInterest` = 4(alpha) 会提高 Luddic Path 对该市场的兴趣。
-7. **中断的实战触发**：给装 core 的殖民地等待 Hegemony AI 审查 intel(15–60 天)，或对该市场执行陆战队 "中断产业" 突袭 (时长 = 令牌数 × `disruptDanger.disruptionDays`，本行 LOW = 40 天/令牌)——`notifyDisrupted` 日志出现，tooltip 显示 `Operations disrupted!`，收入消失、建设暂停；时间到后 `disruptionFinished` 日志出现，恢复。
-8. **读档**：不重复安装 (`REGISTER_MARK` 已置位)，不出现 `applied` / `state` / `probe` 日志；`doPreSaveCleanup` / `doPostSaveRestore` 之后供需由 `apply()` 重建 —— 读档后 `state` 日志 (手动触发) 的 supply/demand 与读档前一致。
-9. **清理**：`market.removeIndustry(GearInTrainingIndustry.INDUSTRY_ID, null, false)` 后："applied" 日志消失、稳定度修饰撤销、装有 alpha core 时 core 返还用户 cargo(`notifyBeingRemoved`)。
+11. **建设与升级 (用户殖民地路径)**：用户殖民后产业列表出现 `GearIn Training Industry`(`isAvailableToBuild` 要求市场有 `population` 且无 `MARKET_NO_INDUSTRIES_ALLOWED` tag；size 1–3 的殖民地产业位上限 1，注意是否占满)；建造后 `applied` 日志的 `functional=false`(`isBuilding` 中，tooltip 显示 "Currently under construction and not producing anything")；`advance` 按 `convertToDays(amount)` 累积 60 个游戏日后完成，`applied` 日志恢复 `functional=true`。点击升级：确认扣款后 `startUpgrading()`，完成后产业被替换为 `Military Base`(`militarybase` 行)，AI core / 改良 / 特殊物品迁移 (`finishBuildingOrUpgrading`)。
+12. **AI core**：往产业装 alpha core(AI core 选择对话框)：`applied` 日志 `aiCore=alpha_core`；市场稳定度 +1(`applyAlphaCoreModifiers` 的 `ind_GearIn_training_industry_2` 修饰)；tooltip 的 alpha 描述显示维护费 −25%(`UPKEEP_MULT = 0.75`)、需求 −1、产量 +1(`DEMAND_REDUCTION` / `SUPPLY_BONUS = 1`)；卸下 core 后稳定度修饰消失 (`applyNoAICoreModifiers`)。`getPatherInterest` = 4(alpha) 会提高 Luddic Path 对该市场的兴趣。
+13. **中断的实战触发**：给装 core 的殖民地等待 Hegemony AI 审查 intel(15–60 天)，或对该市场执行陆战队 "中断产业" 突袭 (时长 = 令牌数 × `disruptDanger.disruptionDays`，本行 LOW = 40 天/令牌)——`notifyDisrupted` 日志出现，tooltip 显示 `Operations disrupted!`，收入消失、建设暂停；时间到后 `disruptionFinished` 日志出现，恢复。
+14. **读档**：不重复安装 (`REGISTER_MARK` 已置位)，不出现 `applied` / `state` / `probe` 日志；`doPreSaveCleanup` / `doPostSaveRestore` 之后供需由 `apply()` 重建 —— 读档后 `state` 日志 (手动触发) 的 supply/demand 与读档前一致。
+15. **清理**：`market.removeIndustry(GearInTrainingIndustry.INDUSTRY_ID, null, false)` 后："applied" 日志消失、稳定度修饰撤销、装有 alpha core 时 core 返还用户 cargo(`notifyBeingRemoved`)。
 
 **通过信号**：以上操作与核对结果全部符合。
 
-**清理**：恢复所有注入的故障；取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
+**清理**：恢复所有注入的故障；取消勾选测试 MOD
 
 ## 故障分析
 
@@ -622,4 +613,4 @@ GearIn training industry disruption probe: before disrupted=false days=0.0 GearI
   - `data/campaign/econ/corvus.json`—— 市场 `industries` 数组写法 (纯 id 字符串与 `[id, param...]`)。
   - `data/config/settings.json`——`maxIndustries` 数组、`overMaxIndustriesPenalty`、`industryRefundFraction`、`industryImproveBase`。
 - 本节示例：
-  - `data/scripts/gearin/campaign/GearInTrainingIndustry`—— 训练产业类 (与示例工程 fixture 源码逐字一致)。
+  - `data/scripts/gearin/campaign/GearInTrainingIndustry`—— 训练产业类。

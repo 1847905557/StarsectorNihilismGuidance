@@ -511,7 +511,7 @@ public class GearInUiSoundPlayer {
 
 - `GearInServiceLogger.logServiceState`：`Global.getLogger(GearInServiceLogger.class)` 类内缓存一份日志器 ("Logger" 节)。
 - `GearInSettingsReader.readLoopVolume` / `readServiceName`：单参取值，settings.json 键缺失即抛 `RuntimeException`—— 故障分析第 1 条。
-- `GearInStringTable.getLoopVolumeText`：双参取值，strings.json 键缺失返回占位文本 —— 故障分析第 2、3 条。
+- `GearInStringTable.getLoopVolumeText`：双参取值，strings.json 键缺失返回占位文本 —— 故障分析第 2、2 条。
 - `GearInConfigLoader.loadServiceConfig`：`loadJSON` 单文件读取 (`#` 注释与尾逗号可写，BOM 不可)。
 - `GearInConfigLoader.loadServiceEntries`：`getMergedSpreadsheetDataForMod("id", ...)` 合并读取，`masterMod` 用本 MOD id `gear_in`；数据文件必须存在，否则抛 `IOException`/`JSONException`。
 - `GearInCommonStateStore.readCommonState` / `writeCommonState`：common 文件往返；缺失返回空串。
@@ -554,7 +554,7 @@ public class GearInUiSoundPlayer {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含六个新类 (可用 `jar tf` 核对)。本节六段源码与 fixture 逐字一致，fixture 编译验收命令见下方验证方案。
+产物 `jars\GearIndustry.jar` 应包含六个新类 (可用 `jar tf` 核对)
 
 ### 验证方案
 
@@ -568,19 +568,17 @@ gradle jar
 
 操作步骤：
 
-1. **fixture 编译 (验收 J)**：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC06s04Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束。
-2. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认以 `BUILD SUCCESSFUL` 结束，且 `jar tf jars\GearIndustry.jar` 含六个新类；确认 `data\config\gear_in\services.json`、`service_entries.csv`、`data\strings\strings.json` 均已随 MOD 打包。
-3. **启动 (资源加载期)**：勾选 "齿轮工业" 启动到主菜单后退出；在 `starsector.log` 核对 `GearIn services: settings=true soundPlayer=true`，并确认没有 `gear_in` 引起的 `ERROR`。
-4. **新档 / 读档 (生涯回调)**：新建生涯，日志出现 `GearIn entries=2 visits=1 name=齿轮工业服务`；退出并读档，`visits=2`(common 文件落盘往返成功)；重复读档 visits 递增。
-5. **故障注入 A(双参缺失)**：把 `GearInStringTable.STRINGS_KEY` 临时改成不存在的键，调用 `GearInStringTable.getLoopVolumeText()`：无异常、返回 `Missing string: [...]`、日志一条 `ERROR`；改回后确认恢复。
-6. **故障注入 B(单参缺失)**：把 `GearInSettingsReader.KEY_SERVICE_NAME` 临时改错并调用 `GearInSettingsReader.readServiceName()`：调用点抛 `RuntimeException`；改回后确认恢复。
-7. **故障注入 C(路径违规)**：把 `GearInConfigLoader.CONFIG_PATH` 临时改成 `data\config\gear_in\services.json`(反斜杠)：读取调用点抛 `RuntimeException`(路径校验)；改回后确认恢复。
-8. **UI 音效**：接入 `GearInUiSoundPlayer.playFireUISound` 的 UI 事件触发时听到 `GearIn_weapon_fire`；把 `GearInUiSoundPlayer.SOUND_ID_UI` 改错后触发，调用点抛 `Sound set with id [...] not found`，改回后确认恢复。
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认以 `BUILD SUCCESSFUL` 结束，且 `jar tf jars\GearIndustry.jar` 含六个新类；确认 `data\config\gear_in\services.json`、`service_entries.csv`、`data\strings\strings.json` 均已随 MOD 打包。
+2. **启动 (资源加载期)**：勾选 "齿轮工业" 启动到主菜单后退出；在 `starsector.log` 核对 `GearIn services: settings=true soundPlayer=true`，并确认没有 `gear_in` 引起的 `ERROR`。
+3. **新档 / 读档 (生涯回调)**：新建生涯，日志出现 `GearIn entries=2 visits=1 name=齿轮工业服务`；退出并读档，`visits=2`(common 文件落盘往返成功)；重复读档 visits 递增。
+4. **故障注入 A(双参缺失)**：把 `GearInStringTable.STRINGS_KEY` 临时改成不存在的键，调用 `GearInStringTable.getLoopVolumeText()`：无异常、返回 `Missing string: [...]`、日志一条 `ERROR`；改回后确认恢复。
+5. **故障注入 B(单参缺失)**：把 `GearInSettingsReader.KEY_SERVICE_NAME` 临时改错并调用 `GearInSettingsReader.readServiceName()`：调用点抛 `RuntimeException`；改回后确认恢复。
+6. **故障注入 C(路径违规)**：把 `GearInConfigLoader.CONFIG_PATH` 临时改成 `data\config\gear_in\services.json`(反斜杠)：读取调用点抛 `RuntimeException`(路径校验)；改回后确认恢复。
+7. **UI 音效**：接入 `GearInUiSoundPlayer.playFireUISound` 的 UI 事件触发时听到 `GearIn_weapon_fire`；把 `GearInUiSoundPlayer.SOUND_ID_UI` 改错后触发，调用点抛 `Sound set with id [...] not found`，改回后确认恢复。
 
 预期结果：
 
-- 操作 1–4 全部符合；操作 5–8 的注入与恢复都符合预期。任一预期结果没有出现即判定验证失败，对应症状与修正见故障分析。
-- fixture 编译 (验收 J)：执行 `gradle -p tutorial-fixtures compileC06s04Java --no-daemon`，以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
+- 操作 1–3 全部符合；操作 3–7 的注入与恢复都符合预期。任一预期结果没有出现即判定验证失败，对应症状与修正见故障分析。
 - 游戏构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/GearInServiceLogger.class` 等六个新类。
 - 启动 (资源加载期)：进入主菜单前 `starsector.log` 出现一行 `GearIn services: settings=true soundPlayer=true`(`onApplicationLoad` 里调用；`settings`/`soundPlayer` 在此阶段已非 null，C06-S03 规则 1)；启动正常完成，没有 `gear_in` 引起的 `ERROR`。
 - 新档 / 读档 (生涯回调)：`onGameLoad` 里资源读取与 common 往返执行成功，日志出现 `GearIn entries=2 visits=1 name=齿轮工业服务`(首次进档 `visits=1`；第二次读档 `visits=2`，证明 common 文件落盘并被再次读回)。删除/注释消费代码后，`services.json` 不再被打开——启动与读档全程日志无 `ERROR`，且没有 `Loading JSON from [data/config/gear_in/services.json]` 行；只有路径指向缺失或损坏的文件时才出现 `ERROR`。
@@ -588,9 +586,7 @@ gradle jar
 - 单参缺失的对照：临时把 `GearInSettingsReader.KEY_SERVICE_NAME` 改错并调用 `GearInSettingsReader.readServiceName()`：调用点抛 `RuntimeException`(堆栈指向该行)，流程中止或由调用方 catch；改回后恢复。与双参缺失的对照合起来，就是 "单参抛异常、双参占位文本"。
 - UI 音效：接入 `GearInUiSoundPlayer.playFireUISound` 的 UI 事件触发时听到 `GearIn_weapon_fire`(与 C05-S03 已接的武器开火音同一 ID，互不影响)。
 
-静态自查：六个工具类的源码与 fixture 逐字一致 (包括 import 顺序)；settings 键 / strings 键 / 文件路径与页面片段逐字一致 (`GearIn_loop_volume`、`GearIn_service_name`、`GearIn_services`、`loop_volume_text`、`data/config/gear_in/services.json`、`data/config/gear_in/service_entries.csv`、`GearIn_services_state`)；没有把工作单元编号写进任何运行时名称。
-
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 
@@ -634,4 +630,3 @@ gradle jar
 - `data/config/gear_in/services.json`：本节 `loadJSON` 单文件读取示例。
 - `data/config/gear_in/service_entries.csv`：本节 `getMergedSpreadsheetDataForMod` 合并读取示例 (`id` 列)。
 - `GearIn_services_state`：本节 common 文件名 (对应 `<存档目录>/common/GearIn_services_state.data`)。
-- `tutorial-fixtures/build.gradle`：`compileC06s04Java` 任务 (source set `c06s04` → `units/C06-S04/src/main/java`)。

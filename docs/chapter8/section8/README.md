@@ -433,7 +433,7 @@ public class GearInCargoServicesScript extends GearInOneShotScript {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含三个类的 `.class` 条目 (可用 `jar tf` 核对)。本节三个类的源码与对应 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C08-S08` 的 `data/scripts/gearin/campaign` 包内)，fixture 编译验收命令见下方 "验证方案"。
+产物 `jars\GearIndustry.jar` 应包含三个类的 `.class` 条目 (可用 `jar tf` 核对)
 
 ### 验证方案
 
@@ -444,13 +444,12 @@ gradle jar
 
 操作：
 
-1. **fixture 编译**：在仓库根执行 `gradle -p tutorial-fixtures compileC08s08Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含三个类的 `.class` 条目。
-3. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按下方预期结果的日志序列顺序出现两个脚本的日志行 (势力段 ×4、货物段 ×2 组)，且**没有**旧复合演示的收尾 `done` 行。
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含三个类的 `.class` 条目。
+2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按下方预期结果的日志序列顺序出现两个脚本的日志行 (势力段 ×4、货物段 ×2 组)，且**没有**旧复合演示的收尾 `done` 行。
    - `write-rollback` 行的中间值分别比初值高 `0.05` / `100` / `50` / `10`，终值与初值相等；全程无 `gear_in` 引起的 `ERROR`。
-4. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位)。
-5. **故障注入 1 (可选)**：注释掉调用点片段中的某个 `addScript` 块，重启新档：只有该段日志缺失、其余一段正常 (对应故障分析第 6 条前半)；改回后确认恢复。
-6. **参数演示 (可选)**：把势力段 `adjustRelationship(Factions.PLAYER, 0.05f)` 的 delta 改成 `0.2f` 重新构建：`write-rollback` 行中间值比初值高 `0.20`，终值仍与初值相等 (回滚精确性验证)。
+3. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位)。
+4. **故障注入 1 (可选)**：注释掉调用点片段中的某个 `addScript` 块，重启新档：只有该段日志缺失、其余一段正常 (对应故障分析第 6 条前半)；改回后确认恢复。
+5. **参数演示 (可选)**：把势力段 `adjustRelationship(Factions.PLAYER, 0.05f)` 的 delta 改成 `0.2f` 重新构建：`write-rollback` 行中间值比初值高 `0.20`，终值仍与初值相等 (回滚精确性验证)。
 
 预期结果：
 
@@ -477,9 +476,9 @@ GearIn campaign services cargo stack[0..2]: type=<Type> data=<Data> size=<Size> 
 - **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
 - **其余数值**：以实际存档为准。
 
-通过信号：操作 1–4、6 全部符合；5 的注入与恢复都符合预期。任一预期结果没有出现，验证即判定为失败，核对路径见故障分析。
+通过信号：操作 1–3、5 全部符合；4 的注入与恢复都符合预期。任一预期结果没有出现，验证即判定为失败，核对路径见故障分析。
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (fixture 构建脚本等) 做过修改。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 

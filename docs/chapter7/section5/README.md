@@ -388,8 +388,6 @@ gradle jar
 - `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class`
 - `data/scripts/gearin/combat/GearInDeploymentListener.class`
 
-本节两段源码与磁盘 fixture 逐字一致，fixture 编译验收命令见下方验证方案的预期结果。
-
 ## 验证方案
 
 以本节两个类为对象，把 "构建 → 部署 → 收尾 → 跨战斗" 整条链路走一遍。
@@ -411,43 +409,37 @@ gradle jar
 6. 跨战斗实例：退出战斗再进一场，`init` 日志重现、`deployments=` 从头计数 —— 每场战斗新实例，旧引用全部作废 (规则 1)。
 7. 故障注入：临时注释掉 `finalizeBattle()` 里的 `engine.getListenerManager().removeListener(deploymentListener);`—— 战斗结束前的淡出窗口内再次部署仍会打印 `GearIn deployed:`(对应故障 2 的残留)；改回后确认恢复。
 
-通过信号：操作 1–6 的可观察结果全部符合，操作 7 的注入与恢复符合预期。
+通过信号：操作 1–5 的可观察结果全部符合，操作 6 的注入与恢复符合预期。
 
 预期结果：
 
-1. **fixture 编译 (验收 J)**：在 Git Bash 执行。
-```text
-gradle -p tutorial-fixtures compileC07s05Java --no-daemon
-```
 以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class` 与 `data/scripts/gearin/combat/GearInDeploymentListener.class`。
-3. **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行。
+1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class` 与 `data/scripts/gearin/combat/GearInDeploymentListener.class`。
+2. **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行。
 ```text
 GearIn lifecycle init: deployment listener registered
 ```
 没有 `ERROR`。若已有战斗注册片段则每场战斗出现一次 (每场战斗都是新实例，必须遵守的规则：不跨战斗缓存)。
-4. **周期报告**：战斗 (未暂停) 中每 2 秒出现一行。
+3. **周期报告**：战斗 (未暂停) 中每 2 秒出现一行。
 ```text
 GearIn lifecycle: total=<秒数> combatOver=false
 ```
 `total` 稳步增长 (暂停期间无输出)。
-5. **部署监听器**：任意成员部署时 (敌方 AI 自动部署、用户从后备手动部署都算) 出现一行。
+4. **部署监听器**：任意成员部署时 (敌方 AI 自动部署、用户从后备手动部署都算) 出现一行。
 ```text
 GearIn deployed: ally=false fighterWing=false ship=<hullId>
 ```
 每场战斗的 `deployments=` 计数等于该场部署日志条数 (监听器状态随战斗归属)。
-6. **战斗结束收尾**：胜负判定后 (结束动画期间) 出现一行。
+5. **战斗结束收尾**：胜负判定后 (结束动画期间) 出现一行。
 ```text
 GearIn lifecycle finalize: deployments=<n> listener removed, plugin removed
 ```
 此后**不再有**周期报告与部署日志 —— 插件已 `removePlugin`、监听器已 `removeListener`；战斗淡出与结算照常进行 (收尾不依赖任何 "战斗结束回调"，规则 3)。
-7. **跨战斗实例**：退出战斗再进一场，日志再次出现 `GearIn lifecycle init:`，且 `deployments=` 从头计数 —— 每场战斗新实例，旧引用全部作废 (规则 1)。
-
-静态自查：`GearInCombatLifecyclePlugin` 与 `GearInDeploymentListener` 的源码与磁盘 fixture 逐字一致 (包括 import 顺序与注释)。
+6. **跨战斗实例**：退出战斗再进一场，日志再次出现 `GearIn lifecycle init:`，且 `deployments=` 从头计数 —— 每场战斗新实例，旧引用全部作废 (规则 1)。
 
 没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInCombatLifecyclePlugin` / `GearInDeploymentListener`)。
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 

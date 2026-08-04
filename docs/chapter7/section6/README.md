@@ -379,58 +379,47 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`(可用 `jar tf` 核对)。
 
-本节源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C07-S06` 的 `data/scripts/gearin/combat` 包内)，fixture 编译验收命令见下方验证方案。
-
 ## 验证方案
 
 前置数据：C06-S01 的 MOD 布局 + C07-S01 的战斗插件接入 + C07-S05 的战斗生命周期插件 (其部署监听器已加入本节注册片段) + 本节的 `GearInLayeredRenderer` + C03-S01 的 `GearIn_test` 测试战役。
 
 操作步骤：
 
-1. **fixture 编译**：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC07s06Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
-3. **战役验证**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 核对 `GearIn layered renderer init: layers=[ABOVE_SHIPS_AND_MISSILES_LAYER]`；没有 `gear_in` 引起的 `ERROR`。
-4. **画面**：观察每个已部署成员身上的半透明青色方框：跟随移动、位于舰船与导弹之上、粒子之下。
-5. **暂停**：按空格暂停约 10 秒 —— 方框静止但可见；恢复后继续跟随。
-6. **剔除**：镜头拉远使方框离开可见区外扩 120 单位范围 —— 方框消失；拉回出现。
-7. **失效清理**：击毁一艘被追踪舰船 —— 方框消失且 `Starsector/starsector-core/starsector.log` 出现 `GearIn layered renderer cleanup: elapsed=<秒数>`；其余舰船方框正常。
-8. **跨战斗**：退出战斗再进一场 ——`GearIn layered renderer init:` 重新出现，新方框从零开始跟随。
-9. **故障注入**：把 `advance()` 里的 `entity.getLocation().set(trackedShip.getLocation());` 注释掉 —— 方框画在战场原点 (对应故障 2)；把 `valid = false;` 注释掉 —— 舰船被击毁后方框残留到战斗结束且无 `cleanup` 日志 (对应故障 3)；改回后确认恢复。
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
+2. **战役验证**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 核对 `GearIn layered renderer init: layers=[ABOVE_SHIPS_AND_MISSILES_LAYER]`；没有 `gear_in` 引起的 `ERROR`。
+3. **画面**：观察每个已部署成员身上的半透明青色方框：跟随移动、位于舰船与导弹之上、粒子之下。
+4. **暂停**：按空格暂停约 10 秒 —— 方框静止但可见；恢复后继续跟随。
+5. **剔除**：镜头拉远使方框离开可见区外扩 120 单位范围 —— 方框消失；拉回出现。
+6. **失效清理**：击毁一艘被追踪舰船 —— 方框消失且 `Starsector/starsector-core/starsector.log` 出现 `GearIn layered renderer cleanup: elapsed=<秒数>`；其余舰船方框正常。
+7. **跨战斗**：退出战斗再进一场 ——`GearIn layered renderer init:` 重新出现，新方框从零开始跟随。
+8. **故障注入**：把 `advance()` 里的 `entity.getLocation().set(trackedShip.getLocation());` 注释掉 —— 方框画在战场原点 (对应故障 2)；把 `valid = false;` 注释掉 —— 舰船被击毁后方框残留到战斗结束且无 `cleanup` 日志 (对应故障 3)；改回后确认恢复。
 
 预期结果：
 
-1. **fixture 编译 (验收 J)**：在 Git Bash 执行：
-
-   ```text
-   gradle -p tutorial-fixtures compileC07s06Java --no-daemon
-   ```
-
    以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
-3. **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`Starsector/starsector-core/starsector.log` 出现一行：
+1. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
+2. **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`Starsector/starsector-core/starsector.log` 出现一行：
 
    ```text
    GearIn layered renderer init: layers=[ABOVE_SHIPS_AND_MISSILES_LAYER]
    ```
 
    没有 `ERROR`。
-4. **画面结果**：每个被注册的已部署成员身上出现一个半透明青色方框 (120 世界单位边长)，跟随舰船移动；方框画在舰船与导弹之上、粒子之下 ——`ABOVE_SHIPS_AND_MISSILES_LAYER` 位于粒子系统之前 (层序表)。
-5. **暂停行为**：按空格暂停约 10 秒再恢复 —— 暂停期间方框静止不动 (`advance` 不被调用，位置不更新) 但**仍然可见**(渲染不暂停)；恢复后继续跟随。
-6. **视口剔除**：把镜头拉远到方框边缘超出可见区外扩 120 单位之外 —— 方框消失；拉回后重新出现 (`isNearViewport` 剔除，规则 4 的可观察表现)。战斗中正常推进时不会产生 `GearIn layered renderer` 的推进日志 (render 与推进都不打日志，只有 init/cleanup 打)。
-7. **失效与清理**：击毁被追踪的舰船 —— 方框立即消失 (下一帧起)，`Starsector/starsector-core/starsector.log` 出现一行：
+3. **画面结果**：每个被注册的已部署成员身上出现一个半透明青色方框 (120 世界单位边长)，跟随舰船移动；方框画在舰船与导弹之上、粒子之下 ——`ABOVE_SHIPS_AND_MISSILES_LAYER` 位于粒子系统之前 (层序表)。
+4. **暂停行为**：按空格暂停约 10 秒再恢复 —— 暂停期间方框静止不动 (`advance` 不被调用，位置不更新) 但**仍然可见**(渲染不暂停)；恢复后继续跟随。
+5. **视口剔除**：把镜头拉远到方框边缘超出可见区外扩 120 单位之外 —— 方框消失；拉回后重新出现 (`isNearViewport` 剔除，规则 4 的可观察表现)。战斗中正常推进时不会产生 `GearIn layered renderer` 的推进日志 (render 与推进都不打日志，只有 init/cleanup 打)。
+6. **失效与清理**：击毁被追踪的舰船 —— 方框立即消失 (下一帧起)，`Starsector/starsector-core/starsector.log` 出现一行：
 
    ```text
    GearIn layered renderer cleanup: elapsed=<秒数>
    ```
 
    此后该舰的方框不再出现；同一场战斗内其他舰船的方框不受影响。
-8. **战斗结束**：胜负判定后淡出期间方框随 `viewport.getAlphaMult()` 淡出；退出战斗再进一场 ——`GearIn layered renderer init:` 重新出现，第二场战斗每艘新部署成员都有新方框 (每场战斗全新实例，规则 6)。
+7. **战斗结束**：胜负判定后淡出期间方框随 `viewport.getAlphaMult()` 淡出；退出战斗再进一场 ——`GearIn layered renderer init:` 重新出现，第二场战斗每艘新部署成员都有新方框 (每场战斗全新实例，规则 6)。
 
-通过信号：操作 1–8 全部符合；操作 9 的注入与恢复都符合预期。
+通过信号：操作 1–7 全部符合；操作 8 的注入与恢复都符合预期。
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures` 构建配置等) 做过修改。
-
-静态自查：`GearInLayeredRenderer` 与 fixture 逐字一致 (包括 import 顺序与注释)；没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInLayeredRenderer`)，除本节目录与 fixture 目录外没有改动任何共享文件。
+清理：取消勾选测试 MOD
 
 ::: tip 日志核对技巧
 在 `Starsector/starsector-core/starsector.log` 中按 `GearIn layered renderer` 前缀检索即可定位本插件的全部输出行 (只有 init / cleanup 两处打日志)；出现 `ERROR` 时优先查看 `gear_in` 包相关的堆栈。
@@ -468,7 +457,6 @@ gradle jar
 - `com.fs.starfarer.api.combat.CombatEngineAPI`：`addLayeredRenderingPlugin` 注册入口、`getViewport`、`isEntityInPlay`。
 - `com.fs.starfarer.api.combat.CombatEntityAPI`：承载实体 (`getLocation`、`isExpired`)。
 - `com.fs.graphics.LayeredRenderer`：引擎内部按层渲染器 (`renderExcluding` / `renderOnly` 分派)。
-- `tutorial-fixtures/units/C07-S06/src/main/java/data/scripts/gearin/combat`：`GearInLayeredRenderer` 源码目录 (页面代码块的磁盘对照)。
 - `src/data/scripts/gearin/combat`：MOD 内本节类文件所在目录 (以 MOD 根目录为基准)。
 - `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
 - `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证方案的日志核对位置)。

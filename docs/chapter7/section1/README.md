@@ -57,7 +57,7 @@ advance(float amount, List<InputEventAPI> events)
 
 示例做一件事：统计 "非暂停时间" 累计秒数 (`elapsed`) 与回调总次数 (`calls`)，每累计 10 秒向日志输出一次，并在玩家舰船位置显示一行浮动文字。暂停期间 `calls` 继续增长、`elapsed` 冻结 —— 这正是暂停检查的可观察结果。
 
-文件：`src\data\scripts\gearin\combat\GearInPauseAwarePlugin.java`(fixture 中位于 `tutorial-fixtures/units/C07-S01/`，内容一致)：
+文件：`src\data\scripts\gearin\combat\GearInPauseAwarePlugin.java`：
 
 ```java
 package data.scripts.gearin.combat;
@@ -155,19 +155,16 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 
 本节成果是单个插件类，验证集中在一处进行。前置数据：`GearInPauseAwarePlugin` 已写入 `data/config/settings.json` 的 `plugins` 段，`jars\GearIndustry.jar` 已按 C06-S01 的流程构建并在启动器启用本 MOD。入口为 Git Bash 构建与模拟战 (有玩家舰船)；观察位置统一为 `Starsector/starsector-core/starsector.log` 的 `GearIn:` 条目与玩家舰船附近的画面。
 
-1. 在 Git Bash 执行 `gradle -p tutorial-fixtures compileC07s01Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
-3. 启动游戏，进入模拟战 (有玩家舰船)，正常跑约 15 秒。
-4. 打开 `starsector.log`，搜索 `GearIn`，核对报告行与数字。
-5. 按 ESC 暂停约 20 秒再恢复，再次核对报告行。
+1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
+2. 启动游戏，进入模拟战 (有玩家舰船)，正常跑约 15 秒。
+3. 打开 `starsector.log`，搜索 `GearIn`，核对报告行与数字。
+4. 按 ESC 暂停约 20 秒再恢复，再次核对报告行。
 
 预期结果：
 
 - 约 15 秒后 `starsector.log` 出现 `GearIn: elapsed ...s, calls ... (paused 0)` 形态的报告，玩家舰船位置出现过一行白色浮动文字 (约 3 秒后消失)；
 - 暂停约 20 秒期间没有新报告；恢复后第一次报告的 `elapsed` 与暂停前连续 (暂停的 20 秒未被计入)，`calls` 明显大于按帧率推算的调用数 —— 暂停期间回调照常执行，状态被暂停检查拦下；
 - `starsector.log` 没有与 `GearInPauseAwarePlugin` 相关的 `ERROR`。
-
-静态自查：`GearInPauseAwarePlugin` 源码与 fixture 逐字一致 (包括 import 顺序与注释)；页面没有把工作单元编号写进任何包名、类名、资源名或字符串 key (包 `data.scripts.gearin.combat`、类 `GearInPauseAwarePlugin`)。
 
 ## 故障分析
 
@@ -219,4 +216,3 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 - `com.fs.starfarer.api.Global`：`getLogger(Class)`(输出到 `starsector.log`)、`getCombatEngine()` (战斗外返回非 null 空引擎，仅资源加载期为 `null`)。
 - `data/config/settings.json`：`plugins` 段注册入口 (游戏本体与所有 MOD 同路径文件深合并，key 全局唯一)。
 - `Starsector/starsector-core/starsector.log`：运行日志，插件 `Global.getLogger(...)` 的输出位置。
-- `tutorial-fixtures/units/C07-S01/`：本节示例 fixture(类与页面代码块逐字一致)。

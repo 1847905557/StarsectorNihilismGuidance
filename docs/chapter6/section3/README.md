@@ -340,8 +340,6 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`(可用 `jar tf` 核对)。
 
-两个代码块与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures\units\C06-S03\src\main\java\data\scripts\gearin\`)，编译验收见下方验证方案的预期结果。
-
 ### 验证方案
 
 前置数据：
@@ -382,11 +380,9 @@ GearIn state=CAMPAIGN settings=true soundPlayer=true sector=true engine=true loa
 预期结果：
 
 - 步骤 1–4 的日志字符串逐字匹配，各阶段表现符合对应步骤的描述；步骤 5、6 的故障注入与恢复都符合预期。
-- fixture 编译 (验收 J)：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC06s03Java --no-daemon`，以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
 - 游戏构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`。
-- 静态自查：页面两个代码块与 fixture 逐字一致 (含 import 顺序与注释)；`SOUND_ID_*` 与既有声音注册的 ID 逐字一致；没有把工作单元编号写进任何运行时名称。
 
-清理：取消勾选测试 MOD；删除临时加上的故障注入行；确认没有对共享文件 (如 `tutorial-fixtures\build.gradle`) 做过修改。
+清理：取消勾选测试 MOD；删除临时加上的故障注入行
 
 ## 故障分析
 
@@ -426,5 +422,4 @@ GearIn state=CAMPAIGN settings=true soundPlayer=true sector=true engine=true loa
 - `com.fs.starfarer.api.combat.CombatEntityAPI`：`getLocation()` / `getVelocity()`。
 - `org.apache.log4j.Logger`：`Global.getLogger(Class)` 返回的日志器类型。
 - `data/scripts/gearin/`：本节两个示例类所在目录 (`GearInGlobalAccess` / `GearInSoundPlayer`)。
-- `tutorial-fixtures\units\C06-S03\src\main\java\data\scripts\gearin\`：fixture 目录，页面代码块与其逐字一致。
 - `Starsector\starsector-core\starsector.log`：日志输出位置。

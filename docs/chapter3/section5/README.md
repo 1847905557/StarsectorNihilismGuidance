@@ -160,7 +160,7 @@ strings.json 的值里有两种占位符，**引擎对两者都不做代换**：
 - 三种值形态各演示一条：纯文本、含 `%s`、含 `$token`。
 - 该文件不依赖任何注册入口 —— 放对路径即被读取并合并。
 
-代码侧是取值封装 (完整源码，与本单元 fixture 中的 `GearInI18n` 类逐字一致)：
+代码侧是取值封装 (完整源码)：
 
 ```java
 package data.scripts.gearin.campaign;

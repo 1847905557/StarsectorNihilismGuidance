@@ -540,44 +540,28 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInFleetFactory.class`(可用 `jar tf` 核对)。
 
-本节源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C08-S04` 的 `data/scripts/gearin/campaign` 包内)，fixture 编译验收命令见 "验证方案"。
-
-静态自查：
-
-- `GearInFleetFactory` 与 fixture 逐字一致 (包括 import 顺序与注释)。
-- `REGISTER_MARK` 与调用点片段的键逐字一致。
-- 没有把工作单元编号写进任何运行时名称 (类名、包名、persistent data 键、日志前缀均不含单元编号变体)。
-- 示例只使用既有 GearIn ID 与原版 ID(无新增资源 ID)。
-
 ## 验证方案
 
 前置数据：既有 MOD 布局与插件接入 (含本节调用点片段)、`GearInFleetFactory` 源码。
 
 操作步骤：
 
-1. **fixture 编译**：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC08s04Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInFleetFactory.class`。
-3. **新建生涯**：确认 `starsector.log` 按 "预期结果" 第 3 条顺序出现全部 `GearIn fleet factory` 日志行 (`start` / `params` / `created` / `flagship` / `commander` / `pre-inflate` / `inflated` / `memory` / `spawned` / `patrol` / `done`)。
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInFleetFactory.class`。
+2. **新建生涯**：确认 `starsector.log` 按 "预期结果" 第 2条顺序出现全部 `GearIn fleet factory` 日志行 (`start` / `params` / `created` / `flagship` / `commander` / `pre-inflate` / `inflated` / `memory` / `spawned` / `patrol` / `done`)。
    - 关键核对：`flagship hull=tempest variant=tempest_Attack captainIsCommander=true`、`pre-inflate isInflated=false ... inflaterQuality=0.60`、`inflated isInflated=true inflaterAttached=true refitVariants=<N>`、`memory fleetType=patrolMedium sourceMarket=jangala ... spawnFPMult=<mult>`、`spawned inLocation=true ... alive=true`、`done fleetAlive=false patrolAlive=false`。
    - 全程无 `gear_in` 引起的 `ERROR`。
-4. **界面核对**：在演示执行的那一帧附近暂停，`jangala` 行星位置会出现两支舰队图标并几乎立刻消失 (同帧即被移除，观察窗口不到一帧)；核对以日志为准。
-5. **只执行一次**：等待若干游戏日后日志无新增 `GearIn fleet factory` 行；保存并读档后仍无新增 (`REGISTER_MARK` 判断已置位)；`jangala` 附近无残留舰队。
-6. **故障注入 1(质量未设置)**：把 `FleetParamsV3` 换成 locInHyper 构造器并删除 `qualityOverride` 行，重启新档：`params` 行 `marketQuality=0.00`、`inflated` 行 `dmods` 明显增大 (平均 5 个/船)，对应故障分析第 1 条；改回后确认恢复。
-7. **故障注入 2(不投放)**：注释掉 `location.spawnFleet(anchor, 0f, 0f, fleet);` 与清理行，重启新档：`spawned` 行缺失、地图上无舰队、无报错，对应故障分析第 6 条；改回后确认恢复。
-8. **故障注入 3(膨胀前读装配)**：把 `fleet.inflateIfNeeded()` 移到日志 `spawned` 之后，观察 `inflated` 行之前读到的成员装配 (本演示不直接打印，可用调试器或临时日志核对 `getSource()` 非 REFIT)，对应故障分析第 5 条；改回后确认恢复。
+3. **界面核对**：在演示执行的那一帧附近暂停，`jangala` 行星位置会出现两支舰队图标并几乎立刻消失 (同帧即被移除，观察窗口不到一帧)；核对以日志为准。
+4. **只执行一次**：等待若干游戏日后日志无新增 `GearIn fleet factory` 行；保存并读档后仍无新增 (`REGISTER_MARK` 判断已置位)；`jangala` 附近无残留舰队。
+5. **故障注入 1(质量未设置)**：把 `FleetParamsV3` 换成 locInHyper 构造器并删除 `qualityOverride` 行，重启新档：`params` 行 `marketQuality=0.00`、`inflated` 行 `dmods` 明显增大 (平均 5 个/船)，对应故障分析第 1 条；改回后确认恢复。
+6. **故障注入 2(不投放)**：注释掉 `location.spawnFleet(anchor, 0f, 0f, fleet);` 与清理行，重启新档：`spawned` 行缺失、地图上无舰队、无报错，对应故障分析第 6 条；改回后确认恢复。
+7. **故障注入 3(膨胀前读装配)**：把 `fleet.inflateIfNeeded()` 移到日志 `spawned` 之后，观察 `inflated` 行之前读到的成员装配 (本演示不直接打印，可用调试器或临时日志核对 `getSource()` 非 REFIT)，对应故障分析第 5 条；改回后确认恢复。
 
 **预期结果：**
 
-1. **fixture 编译**：在 Git Bash 执行：
-
-```text
-gradle -p tutorial-fixtures compileC08s04Java --no-daemon
-```
-
 以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
 
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInFleetFactory.class`。
-3. **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
+8. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInFleetFactory.class`。
+9. **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
 
 ```text
 GearIn fleet factory start: market=jangala size=6 location=jangala quality=<市场质量> GearIn fleet factory params: faction=hegemony fleetType=patrolMedium marketQuality=<Q> qualityOverride=0.60 totalPts=58 GearIn fleet factory created: name=Patrol faction=hegemony fleetType=patrolMedium members=<N> fighters=<战机数> fp=<FP> GearIn fleet factory flagship: hull=tempest variant=tempest_Attack captainIsCommander=true GearIn fleet factory commander: name=<指挥官名> level=<L> personality=<personality> officers=<M> GearIn fleet factory pre-inflate: isInflated=false inflaterAttached=true inflaterQuality=0.60 GearIn fleet factory inflated: isInflated=true inflaterAttached=true refitVariants=<N> dmods=<D> GearIn fleet factory memory: fleetType=patrolMedium sourceMarket=jangala salvageSeed=<S> spawnFPMult=<mult> GearIn fleet factory spawned: inLocation=true at=(<ax>, <ay>) anchor=(<ax>, <ay>) alive=true GearIn fleet factory patrol: name=Fast Picket members=<P> fp=<FPp> flagship=<hull> GearIn fleet factory done: fleetAlive=false patrolAlive=false
@@ -585,13 +569,13 @@ GearIn fleet factory start: market=jangala size=6 location=jangala quality=<市�
 
 其中 `<N>` 是生成成员数 (40+18 点数预算下典型 7–12 艘)、`<战机数>` 是战机联队数 (无航母时为 0)、`<FP>` 是实际 fleet points(**可能低于 58**—— 点数是目标不是硬上限)、`<L>` 是指挥官等级 (`officerLevelBonus=1` 生效)、`<M>` 是军官数 (≥1 为正常)、`<D>` 是 D 插总数 (质量 0.6 下典型 ≈ 2×成员数)、`<mult>` 是 `$spawnFPMult`(实际/请求)。`flagship` 与 `patrol` 两行的 `fleetAlive=false` 证明清理生效。
 
-4. **游戏内地图**：演示期间 (日志可见时)`jangala` 行星位置短暂出现两支舰队图标 (同帧即被移除，若看不到可在暂停时核对日志)；演示结束后地图无残留。
-5. **读档**：不出现任何 `GearIn fleet factory` 日志 (`REGISTER_MARK` 判断已置位、脚本不再注册)；`jangala` 附近无残留舰队。
-6. **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR`(故障注入的预期例外场景除外)。
+10. **游戏内地图**：演示期间 (日志可见时)`jangala` 行星位置短暂出现两支舰队图标 (同帧即被移除，若看不到可在暂停时核对日志)；演示结束后地图无残留。
+11. **读档**：不出现任何 `GearIn fleet factory` 日志 (`REGISTER_MARK` 判断已置位、脚本不再注册)；`jangala` 附近无残留舰队。
+12. **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR`(故障注入的预期例外场景除外)。
 
-通过信号：操作 1–5 全部符合；操作 6–8 的注入与恢复都符合预期。
+通过信号：操作 1–4 全部符合；操作 5–7 的注入与恢复都符合预期。
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures` 构建配置等) 做过修改。
+清理：取消勾选测试 MOD
 
 ::: tip 日志核对技巧
 在 `Starsector/starsector-core/starsector.log` 中按时间戳检索 `GearIn fleet factory` 前缀即可定位本示例的全部输出行；出现 `ERROR` 时优先查看 `gear_in` 包相关的堆栈。
@@ -644,6 +628,5 @@ GearIn fleet factory start: market=jangala size=6 location=jangala quality=<市�
 - `data/config/settings.json`：`qualityPerDMod`(0.2)、`officerAIMax`(10)、`maxAIFleetCommanderLevel`(7)、`commanderLevelForOneSkill`(4)/ `commanderLevelForTwoSkills`(6)、`baseCombatShipsPerOfficer`(3)、`maxShipsInAIFleet`(30)。
 - `data/world/factions/default_ship_roles.json`：角色键 (`combatSmall`、`fastAttack`、`freighterSmall` 等)。
 - `data/world/factions/default_fleet_type_names.json`：舰队类型显示名 (`patrolSmall`→"Fast Picket"、`patrolMedium`→"Patrol"、`taskForce`→"Task Force")。
-- `tutorial-fixtures/units/C08-S04/src/main/java/data/scripts/gearin/campaign`：`GearInFleetFactory` 源码目录 (页面代码块的磁盘对照)。
 - `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
 - `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证方案的日志核对位置)。

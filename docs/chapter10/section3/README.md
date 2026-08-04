@@ -483,54 +483,40 @@ gradle jar
 - `data/scripts/gearin/campaign/GearInCampaignPlugin.class`
 - `data/scripts/gearin/campaign/GearInInteractionDialog.class`
 
-两个完整代码块与 fixture 源码逐字一致，fixture 编译验收见下面的验证方案。
-
 ## 验证方案
 
 **入口**：Git Bash 与游戏生涯 (新建生涯、读档、进入齿轮星系、交互齿轮工业实体)。
 
 **前置数据**：累计工程 (MOD 骨架、势力 `gear_industry`、星系生成器、`GearInModPlugin`，见前置知识)＋本节两个类与注册调用点片段。
 
-**静态自查**：
-
-- 两个代码块与 fixture 逐字一致 (包括 import 顺序)。
-- `DEMO_FACTION_ID`、`DEMO_GLOBAL_FACT`、`getId()` 返回值与调用点片段逐字一致。
-- 运行时名称 (类名、包名、插件 id、记忆键) 均不含工作单元编号。
-- `isTransient()` 为 `true` 时调用点没有 persistent data 一次性检查。
-
 **操作步骤**：
 
-1. fixture 编译：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC10s03Java --no-daemon`，确认 `BUILD SUCCESSFUL`(退出码 0)。
-2. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `GearInCampaignPlugin.class` 与 `GearInInteractionDialog.class`。
-3. 注册与 picker：新建生涯，确认 `starsector.log` 出现 `GearIn campaign plugin registered`；进入齿轮星系点击齿轮工业行星，确认弹出演示对话框且事实显示 `= true`。
-4. 放弃路径：点击原版势力行星/空间站/舰队/跳跃点，确认打开原版对话。
-5. 读档：保存后读档，确认注册日志重现、演示对话框仍在。
-6. 故障注入 1：注释掉 `onGameLoad` 里的 `registerPlugin` 调用，重启读档 —— 齿轮工业行星对话恢复原版且无任何报错 (对应故障分析第 1 条)；改回后确认恢复。
-7. 故障注入 2：把 `PickPriority.MOD_SPECIFIC` 改成 `CORE_GENERAL`，重新构建并新建生涯 —— 演示对话框不再可靠出现 (与原版并列，结果未定义，对应故障分析第 4 条)；改回后确认恢复。
-8. 故障注入 3：把 `getId()` 的返回值改成 `null`(注释掉覆写)，读档两次后交互齿轮工业行星 ——`updateGlobalFacts` 被咨询多次 (可通过在 facts 里临时加日志观察成双现象，对应故障分析第 2 条)；改回后确认恢复。
-9. 参数演示：把 `DEMO_FACTION_ID` 改成 `"pirates"` 重新构建 —— 海盗势力实体弹出演示对话框 (触发条件随参数变化，验证 "修改高频参数 → 结果变化")；改回后确认恢复。
+1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `GearInCampaignPlugin.class` 与 `GearInInteractionDialog.class`。
+2. 注册与 picker：新建生涯，确认 `starsector.log` 出现 `GearIn campaign plugin registered`；进入齿轮星系点击齿轮工业行星，确认弹出演示对话框且事实显示 `= true`。
+3. 放弃路径：点击原版势力行星/空间站/舰队/跳跃点，确认打开原版对话。
+4. 读档：保存后读档，确认注册日志重现、演示对话框仍在。
+5. 故障注入 1：注释掉 `onGameLoad` 里的 `registerPlugin` 调用，重启读档 —— 齿轮工业行星对话恢复原版且无任何报错 (对应故障分析第 1 条)；改回后确认恢复。
+6. 故障注入 2：把 `PickPriority.MOD_SPECIFIC` 改成 `CORE_GENERAL`，重新构建并新建生涯 —— 演示对话框不再可靠出现 (与原版并列，结果未定义，对应故障分析第 4 条)；改回后确认恢复。
+7. 故障注入 3：把 `getId()` 的返回值改成 `null`(注释掉覆写)，读档两次后交互齿轮工业行星 ——`updateGlobalFacts` 被咨询多次 (可通过在 facts 里临时加日志观察成双现象，对应故障分析第 2 条)；改回后确认恢复。
+8. 参数演示：把 `DEMO_FACTION_ID` 改成 `"pirates"` 重新构建 —— 海盗势力实体弹出演示对话框 (触发条件随参数变化，验证 "修改高频参数 → 结果变化")；改回后确认恢复。
 
 **预期结果**：
 
-1. **fixture 编译**：在 Git Bash 执行。
-```text
-gradle -p tutorial-fixtures compileC10s03Java --no-daemon
-```
 以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInCampaignPlugin.class` 与 `data/scripts/gearin/campaign/GearInInteractionDialog.class`。
-3. **注册**：新建生涯 (或读档) 后 `starsector.log` 出现一行 `GearIn campaign plugin registered`(来自调用点片段)；读档后再次出现同一行 (transient 插件每次读档重新注册，见 "生命周期与存档边界")。
-4. **picker 命中**：进入齿轮星系 (累计工程生成的齿轮工业系统)，点击任一齿轮工业势力的行星 —— 弹出 `GearIn demo dialog`：
+9. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInCampaignPlugin.class` 与 `data/scripts/gearin/campaign/GearInInteractionDialog.class`。
+10. **注册**：新建生涯 (或读档) 后 `starsector.log` 出现一行 `GearIn campaign plugin registered`(来自调用点片段)；读档后再次出现同一行 (transient 插件每次读档重新注册，见 "生命周期与存档边界")。
+11. **picker 命中**：进入齿轮星系 (累计工程生成的齿轮工业系统)，点击任一齿轮工业势力的行星 —— 弹出 `GearIn demo dialog`：
    - 第一行显示 `routed by pickInteractionDialogPlugin() with PickPriority.MOD_SPECIFIC` 与目标名；
    - 第二行显示 `Global fact [$gearIn_demoFact] = true`。
    - 这证明：本插件的 pick 在竞争中原版 `CORE_GENERAL` 对话中胜出，且 `updateGlobalFacts` 已生效。
-5. **事实刷新**：在对话框中选 `Refresh facts`—— 新增一行且 `= true`(每次 `getMemory()` 重跑 facts，值始终新鲜)；选 `Leave`—— 对话框关闭，返回生涯地图。
-6. **放弃路径**：点击任意非齿轮工业实体 (原版势力行星、空间站、舰队、跳跃点)—— 打开的是原版对话 (本插件返回 `null`，选择权留给原版 `CORE_GENERAL` 插件)。若点击后**什么都不发生**，见故障分析第 5 条。
-7. **读档后仍生效**：保存并读档 —— 日志再次出现注册行，点击齿轮工业行星演示对话框依旧出现 (transient 重新注册成功；若消失，见故障分析第 1 条)。
-8. **fleet 触发**：与齿轮工业势力的舰队 (如市场生成的防御舰队) 遭遇 —— 遭遇对话同样是 `GearIn demo dialog`(`instanceof CampaignFleetAPI` 分支)。
+12. **事实刷新**：在对话框中选 `Refresh facts`—— 新增一行且 `= true`(每次 `getMemory()` 重跑 facts，值始终新鲜)；选 `Leave`—— 对话框关闭，返回生涯地图。
+13. **放弃路径**：点击任意非齿轮工业实体 (原版势力行星、空间站、舰队、跳跃点)—— 打开的是原版对话 (本插件返回 `null`，选择权留给原版 `CORE_GENERAL` 插件)。若点击后**什么都不发生**，见故障分析第 5 条。
+14. **读档后仍生效**：保存并读档 —— 日志再次出现注册行，点击齿轮工业行星演示对话框依旧出现 (transient 重新注册成功；若消失，见故障分析第 1 条)。
+15. **fleet 触发**：与齿轮工业势力的舰队 (如市场生成的防御舰队) 遭遇 —— 遭遇对话同样是 `GearIn demo dialog`(`instanceof CampaignFleetAPI` 分支)。
 
 **通过信号**：预期结果 1–8 全部出现；三项故障注入与参数演示的改回恢复都符合预期。
 
-**清理**：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle`、`.cursor\tutorial-work\` 等) 做过修改。
+**清理**：取消勾选测试 MOD
 
 ## 故障分析
 

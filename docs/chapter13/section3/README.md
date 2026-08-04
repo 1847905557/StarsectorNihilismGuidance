@@ -444,7 +444,7 @@ public class GearInLunaSettingsReader {
 
 `logCurrentValues` / `toHex` 随本角色持有 (接入片段进档时调用一次，对照用)。
 
-绑定位置：`registerListener()` 接入 `GearInModPlugin.onGameLoad`(C06-S02 所有，fixture 例不含此片段)。
+绑定位置：`registerListener()` 接入 `GearInModPlugin.onGameLoad`(C06-S02 所有，本节示例类不含该片段)。
 
 行为纪律：监听器实例 (匿名 `LunaSettingsListener`) 在 `registerListener()` 方法体内、启用判断通过**之后**才创建，而不是放在静态字段初始化器里 —— 类加载路径零 `lunalib.**` 引用，LunaLib 未启用时 (硬依赖检测专题场景) 调用本类不会抛 `NoClassDefFoundError`。
 
@@ -549,7 +549,7 @@ public class GearInLunaSettingsListener {
 
 ### 接入片段 (在既有 GearInModPlugin 中追加两行)
 
-接入片段 (工程片段 ——`GearInModPlugin` 归 C06-S02 所有，本节不改动那些文件；fixture 例不含此片段)：
+接入片段 (工程片段 ——`GearInModPlugin` 归 C06-S02 所有，本节不改动那些文件；本节示例类不含该片段)：
 
 ```java
     // GearInModPlugin（C06-S02 所有）onGameLoad(boolean newGame) 内新增两行
@@ -569,17 +569,14 @@ gradle jar
 
 三个条目：`GearInLunaSettingsDefs.class`、`GearInLunaSettingsReader.class`、`GearInLunaSettingsListener.class`。
 
-本节三个示例类源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C13-S03/src/main/java/data/scripts/gearin/lib/`)，fixture 编译验收命令见下方验证方案。
-
 ## 验证方案
 
 前置数据：前置知识所列累计工程 (C12-S01 / C12-S04)+ `data\config\LunaSettings.csv`(本节新增)；三个示例类 (`GearInLunaSettingsDefs` / `GearInLunaSettingsReader` / `GearInLunaSettingsListener`)；接入片段两行 (`GearInModPlugin.onGameLoad`)；本机已安装并勾选 LunaLib。
 
-### 构建验证：fixture 编译与游戏构建
+### 构建验证
 
-1. 在 Git Bash 执行 `gradle -p tutorial-fixtures compileC13s03Java --no-daemon` (gradle 可执行文件按本机安装路径调用)，确认以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
-3. 用 `jar tf jars\GearIndustry.jar` 核对三个类条目，并确认 `data\config\LunaSettings.csv` 随 MOD 一起打包。
+1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
+2. 用 `jar tf jars\GearIndustry.jar` 核对三个类条目，并确认 `data\config\LunaSettings.csv` 随 MOD 一起打包。
 
 预期结果：
 
@@ -650,8 +647,6 @@ GearIn luna settings: reloaded GearIn luna settings: trails=true maxEntries=12 p
 - `defaultValue` 写 `abc`：首次读取调用点抛 `NumberFormatException`(或 LunaLib 应用加载期失败)，该 MOD 设置中断。
 - `Boolean` 默认值写 `1`：界面默认关、读取 `false`、无任何报错。
 - LunaLib 未启用：日志出现 warn `GearIn luna settings: LunaLib not enabled, listener not registered`，读取全回退代码默认值，无 `NoClassDefFoundError`、无 `ERROR`。
-
-静态自查：三个示例类源码与 fixture 逐字一致 (包括 import 顺序)；CSV 的 `fieldID` 五个值与 `GearInLunaSettingsDefs` 的 `KEY_*` 常量逐字一致；`fieldType` / `defaultValue` / `minValue` / `maxValue` / `tab` 与页面描述一致；`gear_in`、`lunalib`、`GearIn_*` 都是既有命名约定下的运行时名称，没有把工作单元编号写进任何运行时 ID、资源名、字符串 key、包名或类名；Java 源码与数据文件为 UTF-8 无 BOM、CRLF 换行。
 
 任一预期结果没有出现，本次验证即判定为失败；对应症状、原因与修正见下方故障分析。
 

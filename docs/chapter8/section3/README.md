@@ -430,9 +430,7 @@ public class GearInFleetMemberScript implements EveryFrameScript {
 gradle jar
 ```
 
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`(可用 `jar tf` 核对)。本节源码与 fixture 逐字一致，fixture 编译验收命令见下方 "验证方案"。
-
-静态自查：脚本类源码与 fixture 逐字一致 (包括 import 顺序)；`REGISTER_MARK` 与调用点片段的键逐字一致；没有把工作单元编号写进任何运行时名称 (类名、包名、persistent data 键均不含 C08-S03 变体)；示例只使用既有 GearIn ID(无新增资源 ID)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`(可用 `jar tf` 核对)
 
 脚本与注册点就绪后，按下面的方案验证整条链。
 
@@ -442,26 +440,19 @@ gradle jar
 
 **操作步骤**：
 
-1. fixture 编译 (验收 J)：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC08s03Java --no-daemon`，确认 `BUILD SUCCESSFUL`。
-2. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
-3. 新建生涯：确认 `starsector.log` 按 "预期结果" 第 3 条顺序出现 `GearIn fleet member` 各日志行 (`start` / `created` / `added` / `iterate` / `damage` / `repair` / `CR` / `mothball` / `variant swap` / `variant restore` / `done`)。
+1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
+2. 新建生涯：确认 `starsector.log` 按 "预期结果" 第 2条顺序出现 `GearIn fleet member` 各日志行 (`start` / `created` / `added` / `iterate` / `damage` / `repair` / `CR` / `mothball` / `variant swap` / `variant restore` / `done`)。
    - `added` 行成员数比 `start` 行多 2；`done` 行成员数与 `start` 一致；全程无 `gear_in` 引起的 `ERROR`。
-4. 界面核对：演示日志出现时打开舰队界面 (F 键)，确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成 ("预期结果" 第 4 条)。
-5. 只执行一次：等待若干游戏日后日志无新增 `GearIn fleet member` 行；保存并读档后仍无新增 (`REGISTER_MARK` 已写入 persistent data，脚本不再注册，"预期结果" 第 5 条)。
-6. 故障注入 1：注释掉调用点片段的 `addScript` 行，重启新档：无任何 `GearIn fleet member` 日志 (对应 "故障分析" 第 1 条前半)；改回后确认恢复。
-7. 故障注入 2：把 `setMothballed(true)` 之后改成立刻读 `playerFleet.getCargo().getMaxCapacity()`(不先同步)，对比加入 `forceSync()` 后的读数 —— 验证封存修正延迟生效 (对应 "故障分析" 第 8 条)。
+3. 界面核对：演示日志出现时打开舰队界面 (F 键)，确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成 ("预期结果" 第 3条)。
+4. 只执行一次：等待若干游戏日后日志无新增 `GearIn fleet member` 行；保存并读档后仍无新增 (`REGISTER_MARK` 已写入 persistent data，脚本不再注册，"预期结果" 第 4条)。
+5. 故障注入 1：注释掉调用点片段的 `addScript` 行，重启新档：无任何 `GearIn fleet member` 日志 (对应 "故障分析" 第 1 条前半)；改回后确认恢复。
+6. 故障注入 2：把 `setMothballed(true)` 之后改成立刻读 `playerFleet.getCargo().getMaxCapacity()`(不先同步)，对比加入 `forceSync()` 后的读数 —— 验证封存修正延迟生效 (对应 "故障分析" 第 8 条)。
 
 **预期结果：**
 
-1. **fixture 编译 (验收 J)**：在 Git Bash 执行：
-
-   ```text
-   gradle -p tutorial-fixtures compileC08s03Java --no-daemon
-   ```
-
    以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
-3. **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
+7. **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
+8. **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
 
    ```text
    GearIn fleet member start: members=<N> fleetPoints=<F> cargoCapacity=<C>
@@ -478,17 +469,17 @@ gradle jar
    ```
 
    其中 `<N>` 是初始成员数、`<F>` 是初始 fleet points、`<C>` 是初始 cargo 容量，均以实际日志为准；`firstPriority` 是玩家舰队第一个非封存成员的船名 (演示期间 `hammerhead` 被封存所以不在队首；玩家舰队为空时输出 `none`)。演示只执行一次，之后无任何 `GearIn fleet member` 日志。
-4. **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
-5. **读档**：不出现任何 `GearIn fleet member` 日志 (`REGISTER_MARK` 已写入 persistent data、脚本不再注册)；玩家舰队与演示前一致。
-6. **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
+9. **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
+10. **读档**：不出现任何 `GearIn fleet member` 日志 (`REGISTER_MARK` 已写入 persistent data、脚本不再注册)；玩家舰队与演示前一致。
+11. **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
 
-**通过信号**：操作 1–5 全部符合；操作 6、7 的注入与恢复都符合预期。
+**通过信号**：操作 1–4 全部符合；操作 5、6 的注入与恢复都符合预期。
 
-**清理**：取消勾选测试 MOD；确认没有对共享文件 (如 fixture 构建脚本) 做过修改。
+**清理**：取消勾选测试 MOD
 
 ## 故障分析
 
-以下按您实际看到的症状组织，每项给触发条件、断链位置与修正路径。验证方案的操作 6、7 分别复用第 1 条与第 8 条的注入场景。
+以下按您实际看到的症状组织，每项给触发条件、断链位置与修正路径。验证方案的操作 4、5 分别复用第 1 条与第 8 条的注入场景。
 
 1. **成员没加进舰队 (成员数不变、日志没有 added 行)**：只调 `createFleetMember` 忘了 `addFleetMember` 就会这样 —— 创建与入队是两步，前者只造出保存态成员，不会写入集合。此时 `created` 日志正常出现而 `added` 行缺失，舰队界面没有新船，`getNumMembers()` 不变且不报错。把成员交给 `FleetDataAPI.addFleetMember(...)`；向玩家舰队添加用 `Global.getSector().getPlayerFleet().getFleetData()`。
 2. **`addFleetMember` 抛 `Attempting to add null fleet member`**：触发条件是把 null 传入 (例如按装配 id 查不到时自己返回了 null)。集合接口对 null 入队直接抛 `RuntimeException`，堆栈消息含舰队名。修正从创建入口做起：`createFleetMember` 的 `SHIP` 分支对无效装配 id 回退 `errorShipVariant`，**不会**返回 null —— 先对创建结果判空再入队。

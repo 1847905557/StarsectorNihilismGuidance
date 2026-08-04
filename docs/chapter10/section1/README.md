@@ -373,26 +373,22 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下两个脚本类的 class 条目 (可用 `jar tf` 核对)。
 
-本节两段源码与 fixture 逐字一致 (fixture 位于 `tutorial-fixtures/units/C10-S01/src/main/java/data/scripts/gearin/campaign/`)，fixture 编译验收命令见下方验证方案。
-
 ### 验证方案
 
 前置数据：已有 MOD 布局 (C06-S01)、`GearInModPlugin` (C06-S02，含本节调用点片段) 与两个脚本类。
 
 操作步骤 (按顺序执行)：
 
-1. 编译 fixture：在 Git Bash 执行 `gradle -p tutorial-fixtures compileC10s01Java --no-daemon`，确认以 `BUILD SUCCESSFUL` 结束。
-2. 构建游戏 MOD：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，并核对 `jar tf jars\GearIndustry.jar` 含两个脚本类的 class 条目。
-3. 新建生涯：确认 `starsector.log` 出现两条日志线，随后每 10 真实秒各出现一次；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
-4. 暂停与加速对照：生涯中按空格暂停 20 秒以上，再按住 Shift 约 10 秒。
-5. 保存并读档：确认注册不重复、累计值从存档继续。
-6. 进入任意遭遇战再返回：确认战斗期间日志停止、回生涯后继续。
-7. 自停演示：把 `daysToRun` 设为 30 重新构建，挂载约 300 真实秒。
-8. 故障注入：按故障分析第 1 条注释调用点片段的 `addScript` 行；按第 9 条注释两处 `put(REGISTER_MARK, true)` (保留 `addScript`)；各验证一次后改回。
+1. 构建游戏 MOD：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，并核对 `jar tf jars\GearIndustry.jar` 含两个脚本类的 class 条目。
+2. 新建生涯：确认 `starsector.log` 出现两条日志线，随后每 10 真实秒各出现一次；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
+3. 暂停与加速对照：生涯中按空格暂停 20 秒以上，再按住 Shift 约 10 秒。
+4. 保存并读档：确认注册不重复、累计值从存档继续。
+5. 进入任意遭遇战再返回：确认战斗期间日志停止、回生涯后继续。
+6. 自停演示：把 `daysToRun` 设为 30 重新构建，挂载约 300 真实秒。
+7. 故障注入：按故障分析第 1 条注释调用点片段的 `addScript` 行；按第 9 条注释两处 `put(REGISTER_MARK, true)` (保留 `addScript`)；各验证一次后改回。
 
 预期结果：
 
-- **fixture 编译**：命令以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
 - **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInCalendarDayScript` 与 `GearInDayAccumulatorScript` 两个脚本类的 class 条目。
 - **新建生涯**：`starsector.log` 出现 `GearIn calendar: new day 206.3.3` 与 `GearIn daily: routine #1 at 206.3.3 | since mount=1.0 game days`；随后每 10 真实秒 (未暂停、未加速) 各出现一次：`GearIn calendar: new day ...` (模式 A，日期逐日前进) 与 `GearIn daily: routine #N ...` (模式 B，`since mount` 逐日 +1.0)。挂载点约为 206.3.2 (新档初始 206.1.1，推进窗口 60.2 游戏日)。
 - **暂停 (空格)**：等待 20 秒以上无新日志 (脚本冻结、时钟冻结)；恢复后继续，`since mount` 不因暂停丢失进度。
@@ -403,9 +399,7 @@ gradle jar
 - **故障注入**：注释 `addScript` 后重启新档无任何日志，改回后确认恢复；注释两处 `put(REGISTER_MARK, true)` 后读档两次，日志与例程逐次叠加，改回后确认恢复。
 - **退出到主菜单**：脚本停止推进 (生涯状态不再运行)；回到主菜单后再进档 (读档)，行为与读档一行相同。
 
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
-
-静态自查：两个脚本类与 fixture 逐字一致 (包括 import 顺序)；各自的 `REGISTER_MARK` 与调用点片段的键逐字一致；没有把工作单元编号写进任何运行时名称 (类名、包名、persistent data 键均不含 C10-S01 变体)。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 
@@ -437,5 +431,4 @@ gradle jar
 - `com.fs.starfarer.api.campaign.CampaignClockAPI`：时间换算与日历接口 (`convertToDays` / `convertToMonths` / `convertToSeconds` / `getTimestamp` / `getElapsedDaysSince` / `createClock`)。
 - `com.fs.starfarer.api.util.IntervalUtil`：公开间隔器 (`advance` 每帧调用、`intervalElapsed` 仅真一次)。
 - `data/config/settings.json`：`campaignSpeedupMult`(加速倍率，取值为 2)。
-- `tutorial-fixtures/units/C10-S01/src/main/java/data/scripts/gearin/campaign/`：本节两个脚本类 (`GearInCalendarDayScript`、`GearInDayAccumulatorScript`) 的 fixture 位置。
 - `data/scripts/gearin/campaign/`：示例 MOD 内两个脚本类的源码目录。

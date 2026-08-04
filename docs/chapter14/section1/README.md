@@ -254,7 +254,7 @@ void main() {
 
 ### GearInBasicShaderRenderer
 
-Java 接入：在分层渲染插件通道上加载、编译、链接程序，每帧提交 uniform 并绘制四边形。源码与 fixture 逐字一致 (`tutorial-fixtures\units\C14-S01\src\main\java\data\scripts\gearin\combat\`)：
+Java 接入：在分层渲染插件通道上加载、编译、链接程序，每帧提交 uniform 并绘制四边形。源码如下：
 
 ```java
 package data.scripts.gearin.combat;
@@ -561,56 +561,42 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag` 与 `data/scripts/gearin/combat/GearInBasicShaderRenderer.class`(可用 `jar tf` 核对)。
 
-本节源码与 fixture 逐字一致 (shader 两个文件在 `tutorial-fixtures\units\C14-S01\src\main\resources\data\shaders\`，Java 在 `tutorial-fixtures\units\C14-S01\src\main\java\data\scripts\gearin\combat\`)。
-
 ## 验证方案
 
 插件已经写完，最后在测试战役里验证整条链 —— 本节只有一个成果，以下集中核对：资源、构建、战斗冒烟、画面、uniform 数据流、寿命清理、暂停与故障注入。
 
 前置数据：既有 MOD 布局与编译链路 (C06-S01)、`GearIn_test` 测试战役 (C03-S01)、战斗生命周期与分层渲染插件 (C07-S05、C07-S06)，加上本节的 `GearInBasicShaderRenderer` 与 `data\shaders\GearIn_basic_shader.vert/.frag`。
 
-1. 资源校验 (fixture)：在 Git Bash 执行：
-```text
-gradle -p tutorial-fixtures validateShaders --no-daemon
-```
 以 `BUILD SUCCESSFUL` 结束 (退出码 0)。
-2. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag`、`data/scripts/gearin/combat/GearInBasicShaderRenderer.class`。
-3. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 核对初始化日志行；没有由 `gear_in` 引起的 `ERROR`。
-4. 画面：观察玩家舰船中心 120 世界单位的红→绿渐变四边形：颜色连续、位于舰船与导弹之上。
-5. uniform 数据流：移动舰船 —— 四边形跟随；四边形内渐变样式不随移动改变。
-6. 寿命与清理：约 20 秒后四边形自行消失 —— 这不是故障，只是寿命到了；`starsector.log` 出现 `GearIn basic shader cleanup`。
-7. 暂停：按空格暂停约 10 秒 —— 四边形静止但可见；恢复后继续跟随。
-8. 故障注入：a) 删掉 `.vert` 的 `gl_Position` 行 —— 四边形不出现或位置错乱 (故障 1)；b) 把 `.vert` 的 uniform 名 `u_offset` 在 Java 侧拼错 —— 四边形不跟随移动且无日志 (故障 4)；c) 把 `#version 110` 改成 `#version 130`—— 编译失败，日志出现 `GearIn basic shader: compile failed:` 与 version 错误 (故障 6)；d) 改回后确认恢复。
+1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag`、`data/scripts/gearin/combat/GearInBasicShaderRenderer.class`。
+2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 核对初始化日志行；没有由 `gear_in` 引起的 `ERROR`。
+3. 画面：观察玩家舰船中心 120 世界单位的红→绿渐变四边形：颜色连续、位于舰船与导弹之上。
+4. uniform 数据流：移动舰船 —— 四边形跟随；四边形内渐变样式不随移动改变。
+5. 寿命与清理：约 20 秒后四边形自行消失 —— 这不是故障，只是寿命到了；`starsector.log` 出现 `GearIn basic shader cleanup`。
+6. 暂停：按空格暂停约 10 秒 —— 四边形静止但可见；恢复后继续跟随。
+7. 故障注入：a) 删掉 `.vert` 的 `gl_Position` 行 —— 四边形不出现或位置错乱 (故障 1)；b) 把 `.vert` 的 uniform 名 `u_offset` 在 Java 侧拼错 —— 四边形不跟随移动且无日志 (故障 4)；c) 把 `#version 110` 改成 `#version 130`—— 编译失败，日志出现 `GearIn basic shader: compile failed:` 与 version 错误 (故障 6)；d) 改回后确认恢复。
 
 **预期结果：**
 
-1. `gradle -p tutorial-fixtures validateShaders --no-daemon` 以 `BUILD SUCCESSFUL` 结束 (退出码 0)；该任务检查 `units/C14-S01/src/main/resources` 下的所有 `.vert/.frag` 非空。
-2. `gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag` 与 `data/scripts/gearin/combat/GearInBasicShaderRenderer.class`。
-3. `starsector.log` 出现一行：
+8. `gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag` 与 `data/scripts/gearin/combat/GearInBasicShaderRenderer.class`。
+9. `starsector.log` 出现一行：
 ```text
 GearIn basic shader init: program=<id>, vbo=<id>, u_offset=<loc>
 ```
 没有由 `gear_in` 引起的 `ERROR` (编译/链接失败会在此处打 `GearIn basic shader: compile failed:` 或 `link failed:` 的 ERROR 行)。
-4. 玩家舰船中心出现一个 120 世界单位见方的四边形，颜色从左下角到右上角红/绿渐变 —— 四边形内颜色连续变化 (红分量随水平位置、绿分量随垂直位置)，这是 `v_uv` 逐片元插值的直接表现；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，C07-S06 层序)。
-5. 舰船移动时四边形跟着移动 (`u_offset` 每帧更新)；移动过程中四边形内的渐变样式不变 (`varying` 相对局部坐标插值)。
-6. 约 20 秒后四边形消失，`starsector.log` 出现一行：
+10. 玩家舰船中心出现一个 120 世界单位见方的四边形，颜色从左下角到右上角红/绿渐变 —— 四边形内颜色连续变化 (红分量随水平位置、绿分量随垂直位置)，这是 `v_uv` 逐片元插值的直接表现；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，C07-S06 层序)。
+11. 舰船移动时四边形跟着移动 (`u_offset` 每帧更新)；移动过程中四边形内的渐变样式不变 (`varying` 相对局部坐标插值)。
+12. 约 20 秒后四边形消失，`starsector.log` 出现一行：
 ```text
 GearIn basic shader cleanup
 ```
 即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 10 的可观察面)。同一场战斗内不再出现。
-7. 按空格暂停 —— 四边形静止但可见 (`advance` 不推进、渲染不暂停，C07-S06 同款)；恢复后继续跟随。
-8. 见故障分析第 1、4、6 条对应的注入动作与恢复。
+13. 按空格暂停 —— 四边形静止但可见 (`advance` 不推进、渲染不暂停，C07-S06 同款)；恢复后继续跟随。
+14. 见故障分析第 1、4、6 条对应的注入动作与恢复。
 
 以上预期结果全部出现即通过；任一缺失即失败，排查方向见故障分析。
 
-静态自查：
-
-- `GearInBasicShaderRenderer` 与 fixture 逐字一致 (包括 import 顺序与注释)；
-- `GearIn_basic_shader.vert/.frag` 与 fixture 逐字一致；
-- 没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInBasicShaderRenderer`、资源 `data/shaders/GearIn_basic_shader.vert/.frag`、日志前缀 `GearIn basic shader`)；
-- 除本节目录与 fixture 目录外没有改动任何共享文件。
-
-清理：取消勾选测试 MOD；确认没有对共享文件 (`tutorial-fixtures\build.gradle` 等) 做过修改。
+清理：取消勾选测试 MOD
 
 ## 故障分析
 

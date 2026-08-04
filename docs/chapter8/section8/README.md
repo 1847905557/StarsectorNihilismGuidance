@@ -69,12 +69,12 @@
 1. 关系存储在一张**全局对表**里：键 `idA_idB` 与 `idB_idA` 共享同一个对条目，新对默认 `0.0`(同势力对默认 `1.0`)；写入时把值钳位到 `[-1, 1]`。
    - 因此 `getRelationship(id)` 读到的是 "该势力视角下与目标势力" 的值，读取未建立的对会**用到时才创建**默认 0 的对条目。
 2. `getRelationship(id)` 直接返回对表值；`getRelationshipLevel(id)` = `RepLevel.getLevelFor(值)`。
-   - `RepLevel` 阈值：`T1=0.09`、`T2=0.24`、`T3=0.49`、`T4=0.74`；`getMin()` 不包含边界、`getMax()` 包含边界 (javadoc 原文)。
+   - `RepLevel` 阈值：`T1=0.09`、`T2=0.24`、`T3=0.49`、`T4=0.74`；`getMin()` 不包含边界、`getMax()` 包含边界。
 3. `adjustRelationship(id, delta)` **直接相加**并经 `setValue` 钳位，不触发任何监听；`adjustRelationship(id, delta, limit)` 按 `limit` 等级封顶/封底 (正方向默认 `COOPERATIVE`、负方向默认 `VENGEFUL`)。
    - `setRelationship(id, float)` 直写；`setRelationship(id, RepLevel)` 写到等级边界：`NEUTRAL` = 0、正级 = `getMin()+0.01`、负级 = `-getMin()-0.01`。
 4. `isHostileTo(id)` = `isAtBest(id, HOSTILE)`：关系等级 ≤ `HOSTILE` 即敌对。
 5. 玩家视角包装：`getRelToPlayer()` 返回 `RelationshipAPI`(`com.fs.starfarer.api.characters.RelationshipAPI`：`getRel()`、`getLevel()`)；玩家势力对玩家自己 = 同势力对默认 `1.0`。至少在这张对表里，每个势力与自己永远是满分关系。
-6. **玩家声望 action 的正规路径**是 `SectorAPI.adjustPlayerReputation(action, factionId/person)`(javadoc："This method will pick the highest-priority ReputationActionResponsePlugin and call its handlePlayerReputationAction() method"；原版 `AdjustRep` rulecmd 同款调用，`com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`)。
+6. **玩家声望 action 的正规路径**是 `SectorAPI.adjustPlayerReputation(action, factionId/person)`("This method will pick the highest-priority ReputationActionResponsePlugin and call its handlePlayerReputationAction() method"；原版 `AdjustRep` rulecmd 同款调用，`com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`)。
    - `FactionAPI` 的关系写入是**原始写入**，不经过 response plugin 的 delta 计算，也不产生声望监听通知。
 
 ### 货物 (CargoAPI)
@@ -102,7 +102,7 @@
 **栈语义 (`CargoStackAPI`，`com.fs.starfarer.api.campaign.CargoStackAPI`)**：`getType()`(`CargoItemType`：`RESOURCES` / `WEAPONS` / `FIGHTER_CHIP` / `SPECIAL` / `NULL`)、`getData()`(通常是 String 资源 id)、
 `getSize()` / `getFree()` / `getMaxSize()` / `isFull()`、`getCargoSpace()`。
 
-`isNull()`(**空占位栈**，javadoc："If true, it's an empty cargo stack. These get created for spacing, a result of the player moving cargo around.")。资源的小数部分会累计 (`addItems` 内部路径)；
+`isNull()`(**空占位栈**，"If true, it's an empty cargo stack. These get created for spacing, a result of the player moving cargo around.")。资源的小数部分会累计 (`addItems` 内部路径)；
 
 **`removeItems` 把减到 1.0 以下的栈原地替换为 `NULL_STACK` 占位**。
 
@@ -114,7 +114,7 @@
 
 **必须遵守的规则 (mothballed ships)**：`getMothballedShips()` 返回的是**可能为 null 的字段**，使用前**必须**先调 `initMothballedShips(factionId)`。
 
-`CargoAPI` javadoc 原文："Call initMothballedShips(String factionId) before using this method."；
+`CargoAPI` "Call initMothballedShips(String factionId) before using this method."；
 
 `addMothballedShip` 内部会自动以 `"independent"` 初始化 (成员创建后置 `setMothballed(true)`)。
 
@@ -134,10 +134,10 @@
 
 | 规则 | 强度 | 违反后的可观察结果 |
 |---|---|---|
-| `getMothballedShips()` 使用前必须先调 `initMothballedShips(factionId)`(`CargoAPI` javadoc 原文)| 必须 | `getMothballedShips()` 返回 null 解引用 NPE |
-| `removeKnownShip` / `removeKnownWeapon` / `removeKnownFighter` 想永久生效，必须把 "要移除的清单" 持久化并在每次读档重新移除 (`FactionAPI` javadoc 原文："...needs to be stored and they need to be re-removed on every game load.")| 必须 | 读档后 `.faction` 定义的蓝图重新回到已知集合 |
-| 直接改动 known / priority 集合后调 `clearShipRoleCache()`(`FactionAPI` javadoc："Should be called after direct manipulation...")| 建议 | 再次的 role 选择继续使用旧缓存 |
-| 玩家声望调整 (任务/事件等 action 语义) 走 `SectorAPI.adjustPlayerReputation`(`SectorAPI` javadoc)| 建议 | 直接写 `FactionAPI` 关系绕过 `ReputationActionResponsePlugin` 的 delta 计算与监听通知 |
+| `getMothballedShips()` 使用前必须先调 `initMothballedShips(factionId)`| 必须 | `getMothballedShips()` 返回 null 解引用 NPE |
+| `removeKnownShip` / `removeKnownWeapon` / `removeKnownFighter` 想永久生效，必须把 "要移除的清单" 持久化并在每次读档重新移除 (`FactionAPI` "...needs to be stored and they need to be re-removed on every game load.")| 必须 | 读档后 `.faction` 定义的蓝图重新回到已知集合 |
+| 直接改动 known / priority 集合后调 `clearShipRoleCache()`(`FactionAPI` "Should be called after direct manipulation...")| 建议 | 再次的 role 选择继续使用旧缓存 |
+| 玩家声望调整 (任务/事件等 action 语义) 走 `SectorAPI.adjustPlayerReputation`| 建议 | 直接写 `FactionAPI` 关系绕过 `ReputationActionResponsePlugin` 的 delta 计算与监听通知 |
 | `CargoAPI.setFreeTransfer` / `isFreeTransfer` 已废弃 (`CargoAPI` `@Deprecated`，"Use SectorEntityToken.setFreeTransfer() instead.")| 事实 | 实体转移费用语义由实体 free transfer 入口表达 |
 
 ## 完整最小例
@@ -459,17 +459,17 @@ gradle jar
 每条先看症状，再给触发与原因，最后是核对与修正路径。
 
 1. **调用 `getMothballedShips()` 直接抛 NPE**。症状：代码里取 `getMothballedShips()` 后立刻解引用，抛 `NullPointerException`，堆栈指向取用点。
-   触发与原因：该字段可能为 null，而使用前没有先调 `initMothballedShips(factionId)`(`CargoAPI` javadoc 的要求)。
+   触发与原因：该字段可能为 null，而使用前没有先调 `initMothballedShips(factionId)`。
    修正：使用前先 `initMothballedShips(factionId)`；`addMothballedShip` 内部会自动初始化，不需要自己先 init。
 2. **货物回滚后数量对但栈数量对不上**。症状：数值已经复原，`getStacksCopy().size()` 却比回滚前多 `k`。
    触发与原因：把栈数量当 "货物条目数" 核对 —— `removeItems` 把减空的栈原地替换为 `NULL_STACK` 占位，
-   多出的栈 `isNull()==true`(`CargoStackAPI.isNull()` javadoc)。
+   多出的栈 `isNull()==true`(`CargoStackAPI.isNull()`)。
    修正：核对数量读 `getSupplies()` / `getFuel()` 等数值接口；栈是存储细节，清理占位用 `removeEmptyStacks()`。
 3. **关系写入 "没生效" 或 "生效过头"**。症状：直接写关系后界面没有声望变化提示，或数值超出预期。
    触发与原因：把 `adjustRelationship(id, delta)` 当带监听的声望系统用，或忘了写入时的 `[-1,1]` 钳位 —— 直接写入不弹声望变化消息、不触发监听，值超界被钳位。
    修正：玩家声望 action 走 `SectorAPI.adjustPlayerReputation`；直接写关系时自行回滚并接受 "无监听" 语义 (本节演示写法)。
 4. **读档后蓝图/已知资源 "回来了"**。症状：读档后 `.faction` 文件定义的蓝图重新加入已知集合。
-   触发与原因：调了 `removeKnownShip` 以为永久移除 —— 移除清单不随存档保存，读档时 `.faction` 定义重新生效 (`FactionAPI` javadoc 原文)。
+   触发与原因：调了 `removeKnownShip` 以为永久移除 —— 移除清单不随存档保存，读档时 `.faction` 定义重新生效。
    修正：把 "要移除的清单" 存 persistent data，每次读档重新 `removeKnown*`；改完集合后调 `clearShipRoleCache()` 让 role 选择用新缓存。
 5. **演示日志出现但游戏内没有任何可观察内容**。症状：日志照常输出，游戏内没有对应效果。
    触发与原因：注册点放在错误生命周期阶段 (如 `onApplicationLoad` 里 `Global.getSector()` 为 null 即 NPE)，或关系/货物的写入被静默忽略；

@@ -98,7 +98,7 @@
 
 ::: info 条数口径说明
 
-上表条数为原版 `rules.csv` 非注释行的本地统计，仅用于帮助您估量各 trigger 在原版中的使用密度与竞争烈度，不构成任何 API 承诺，随游戏版本可能变化。
+上表条数为原版 `rules.csv` 非注释行的统计，仅用于帮助您估量各 trigger 在原版中的使用密度与竞争烈度，不构成任何 API 承诺，随游戏版本可能变化。
 
 :::
 
@@ -204,7 +204,7 @@ flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，�
   - `reinit(withContinueOnRuleFound)`：`getBestMatching(null, "BeginFleetEncounter", ...)` **预检**—— 命中则只显示 "Continue"(`REINIT_CONTINUE`)。
   - 用户点击后 `reinitPostContinue` `fireBest("BeginFleetEncounter")` (本地记忆 `$fidpi_addContinue` 为真时改走 `BeginFleetEncounter2`)。
   - 初次遭遇 (`optionSelected`)：创建 embedded 对话后同样 `fireBest("BeginFleetEncounter")`；规则脚本置 `$fidpi_addContinue` 则清空选项只留 "Continue"。
-  - 规则模式 (原版实证)：
+  - 规则模式：
     - 脚本 `AddText "You're being hailed by the $faction $otherShipOrFleet." $faction.baseColor` + `$hailing = true 0`(如 `LPTitheCheck`、`mpm_pirateEncounter`)：
       - `customsInspectionScan` 只 `AddText` 不写 `$hailing`；
       - `tOffPatrolBegin` 以 `OpenComms` 直接进入通讯。

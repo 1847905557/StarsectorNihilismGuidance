@@ -241,7 +241,7 @@ if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
 | `float getBarEventActiveDuration()` | 30 + rand×10(30–40 游戏天)| 事件在 active 跟踪器的存活时长 |
 | `float getBarEventTimeoutDuration()` | 30 + rand×10(30–40 游戏天)| 未交互过期后的 creator 冷却 |
 | `float getBarEventAcceptedTimeoutDuration()` | 60 + rand×30(60–90 游戏天)| 玩家交互后的 creator 冷却 |
-| `boolean isPriority()` | false | 进入 priority picker(先于普通 picker；javadoc 原文："Should be used sparingly, for gameplay-essential events")|
+| `boolean isPriority()` | false | 进入 priority picker(先于普通 picker；"Should be used sparingly, for gameplay-essential events")|
 | `String getBarEventId()` | 类简单名 | creator 级去重键 (同一 ID 同时只有一个活跃事件)|
 | `boolean wasAutoAdded()` | false | 是否由 CSV spec 自动生成 (`SpecBarEventCreator` 专用)|
 
@@ -261,7 +261,7 @@ if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
 | creator 注册只发生在生涯引擎建立之后 (`onGameLoad` / `onNewGame`)，注册块必须用 `hasEventCreator(Class)` 判断 (`addEventCreator` 不去重)| 必须 | 注册过早 (如 `onApplicationLoad`)：`getInstance()` 返回 null 解引用 NPE、启动中止；判断缺失：每次读档重复入列同 class creator，抽取权重翻倍、事件过频 |
 | `shouldShowAtMarket` 覆写时理解 shownAt 锁定语义 (`BaseBarEvent` 默认首次展示后锁定单一市场)，确需跨市场复用再自行处理 | 必须 (语义规则)| 事件在 A 市场展示后 B 市场不再出现 —— 若覆写时忘了先调 `super` 或自行实现，过滤结果与预期不符 |
 | `getBarEventId()` 与 creator 的 `getBarEventId()` 保持一致且稳定 (默认都是类简单名；覆写时两处同步)| 建议 | 不一致时 `$BarCMD_shownEvents` 按 ID 复现失效：市场内存里的 ID 匹配不到事件，该市场事件组显示为空；manager 的 active 去重键错位 |
-| `isPriority()` / `isAlwaysShow()` 只用于剧情关键事件 | 建议 | 太多 priority 事件挤占普通事件 (`BarEventManager` javadoc 原文："Having too many priority events could crowd out all other events entirely")；`isAlwaysShow` 事件永远占用展示名额 |
+| `isPriority()` / `isAlwaysShow()` 只用于剧情关键事件 | 建议 | 太多 priority 事件挤占普通事件 (`BarEventManager` "Having too many priority events could crowd out all other events entirely")；`isAlwaysShow` 事件永远占用展示名额 |
 | 临时 bar 选项 (`$core_tempBarEvents`) 只活在当次展示里，不能当长期状态读取；`RemoveBarEvent` 只删临时选项、不删活动列表事件 | 事实 | 期待 "加一次永久生效" 或 "删临时选项后事件也消失" 都会落空 (临时选项当长期状态读、`RemoveBarEvent` 不删活动列表事件)|
 | 教程进行中 (`TutorialMissionIntel.isTutorialInProgress()`) 酒吧事件全部跳过 | 事实 | 新档开头酒吧看不到任何事件属正常 |
 

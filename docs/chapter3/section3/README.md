@@ -223,7 +223,7 @@ createMarket(id, name, size)
 **两条路径二选一，不要同时启用**。一个实体至多注册一个市场；同时启用时同一实体出现两个同名市场，经济与市场界面错乱，且无加载报错。
 :::
 
-#### 两路径共用的 ID 对照 (原版数据核对)
+#### 两路径共用的 ID 对照
 
 | ID | 出处 | 本节使用 |
 |---|---|---|
@@ -232,7 +232,7 @@ createMarket(id, name, size)
 | `open_market` / `generic_military` / `black_market` / `storage` | `data/campaign/submarkets.csv` | 子市场 |
 | `gear_industry` | C03-S02 定义的势力 id | 市场势力 |
 
-市场**必须**带 `population_*` 人口条件：原版 `economy.json` 的 `starSystems` 列出的全部 20 个市场文件，其市场无一例外都带 `population_N`(本地数据核对)；代码路径的通用写法也是从 `population_` 条件解析市场规模。
+市场**必须**带 `population_*` 人口条件：原版 `economy.json` 的 `starSystems` 列出的全部 20 个市场文件，其市场无一例外都带 `population_N`；代码路径的通用写法也是从 `population_` 条件解析市场规模。
 
 缺少人口条件的市场在本节可核对范围内没有正常使用方，人口与移民机制会偏离预期 —— 保持带 `population_N`。
 

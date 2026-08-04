@@ -174,10 +174,10 @@
 
 - **自由港**：`setFreePort(true)` 自动添加 `free_market` 条件 (`Market.setFreePort`，条件 id 为 `free_market`，plugin 为 `FreeMarket`)。
   - `isFreePort()` 为 true 时 `isIllegal(id)` **恒返回 false**—— 自由港市场一切商品合法。
-- **隐藏市场**：`setHidden(true)` 后市场**不提供任务、不参与会间接暴露其存在的事件/intel，且不参与经济**(API javadoc 原文；隐藏市场跳过进口需求计算)**。可观察结果**：商品流计算完全忽略它，任何 UI/任务系统不出现它。
+- **隐藏市场**：`setHidden(true)` 后市场**不提供任务、不参与会间接暴露其存在的事件/intel，且不参与经济****。可观察结果**：商品流计算完全忽略它，任何 UI/任务系统不出现它。
 - **用户所有**：`setPlayerOwned(true)` 改变殖民地管理语义 (存档界面、收入、存储免费等)，并刷新用户的 outpost 效果。
 - **survey 等级**：`SurveyLevel.NONE / SEEN / PRELIMINARY / FULL`，`getSurveyLevel()` 读出；核心世界与代码路径建市场显式设 `FULL`(成熟实例的 `addMarketplace` 写法)。
-- **经济组**：`getEconGroup()` / `setEconGroup(String)`——"同一经济组的市场互相可见 ('nearby markets' 对话框等) 且只互相交易；默认 null 自成一组"(API javadoc 原文)。
+- **经济组**：`getEconGroup()` / `setEconGroup(String)`——"同一经济组的市场互相可见 ('nearby markets' 对话框等) 且只互相交易；默认 null 自成一组"。
 - **tag**：`addTag` / `removeTag` / `hasTag` / `getTags`—— 市场级标记 (与商品 tag、实体 tag 不同集合)。
 
 #### 每帧推进 (advance)
@@ -285,7 +285,7 @@ settings.json 中 `economyIntervalnGameDays` 键 (值 30) 的原文注释是 `# 
 
 ::: caution `nextStep` 系列只允许在 UI 交互路径调用
 
-API javadoc 原文："Should only be called from UI interactions, not from scripts that run in the background. Calling this method is likely to take longer than the time to render a single frame."
+"Should only be called from UI interactions, not from scripts that run in the background. Calling this method is likely to take longer than the time to render a single frame."
 
 这些方法同步执行整轮迭代，**禁止**在后台脚本 (`EveryFrameScript`、每帧回调) 里调用。
 
@@ -305,7 +305,7 @@ API javadoc 原文："Should only be called from UI interactions, not from scrip
 
 ::: caution 监听器注册必须走 `EconomyAPI.addUpdateListener()`
 
-**禁止加入 `SectorAPI.getListenerManager()`**——API javadoc 原文："Needs to be added via EconomyAPI.addUpdateListener(); should not be added to SectorAPI.getListenerManager()."
+**禁止加入 `SectorAPI.getListenerManager()`**——"Needs to be added via EconomyAPI.addUpdateListener(); should not be added to SectorAPI.getListenerManager()."
 
 违反后的可观察结果：监听器永不回调且**无任何报错**(监听器只在经济迭代里被遍历)。
 
@@ -850,7 +850,7 @@ gradle jar
 2. **实体点开没有市场交互**：触发是建了市场、也 `addMarket` 了，但没调 `entity.setMarket(market)`。原因：实体与市场脱钩，交互入口缺失，日志无报错。修正：三步收尾缺一不可 (见 "创建与注册链路")。
 3. **`getCargoNullOk()` 返回值直接解引用 NPE**：触发是把子市场库存当普通 getter 用。原因：`getCargoNullOk()` 直接返回字段、可能为 null —— cargo 是用到时才创建的，运行期 NPE 堆栈指向取库存行。修正：判 null 或直接走 `getCargo()`。
 4. **后台脚本里调 `nextStep()` / `tripleStep()` 后游戏卡顿**：触发是在 `EveryFrameScript.advance` 里想 "立即推进经济"。原因：这些方法同步执行整轮迭代 (含全部市场、全部商品的可达图与库存更新)，单帧阻塞明显超过一帧渲染时间，大存档下肉眼可见卡顿。修正：`nextStep` 系列只留在 UI 交互路径；后台脚本用 `forceStockpileUpdate(market)` 做局部刷新，或等自然经济步。
-5. **`EconomyUpdateListener` 永不回调且无报错**：触发是把监听器注册进 `SectorAPI.getListenerManager()` 或 `addListener`。原因：监听器只在经济迭代里被遍历，注册错位置后经济步照常跑，但方法一次都不执行。修正：必须 `economy.addUpdateListener(...)`(API javadoc 原文)；需要自清理时让 `isEconomyListenerExpired()` 返回 true。
+5. **`EconomyUpdateListener` 永不回调且无报错**：触发是把监听器注册进 `SectorAPI.getListenerManager()` 或 `addListener`。原因：监听器只在经济迭代里被遍历，注册错位置后经济步照常跑，但方法一次都不执行。修正：必须 `economy.addUpdateListener(...)`；需要自清理时让 `isEconomyListenerExpired()` 返回 true。
 6. **价格算错：用 `CommoditySpecAPI.getBasePrice()` 当市场价**：触发是图省事读全局规格。原因：基础价不含库存、供需、稳定度与用户修饰，与交易界面数字对不上。修正：市场买/卖价走 `getDemandPrice` / `getSupplyPrice`(`isPlayerPrice` 语义，方向以市场为主体)。
 7. **`removeCondition(id)` 把同 id 条件全部删掉**：触发是市场里同 id 条件出现多次 (例如事件叠加的同名条件)，用 id 想删一个。原因：`removeCondition(id)` 移除同 spec id 的全部实例，该 id 的所有条件一起消失。修正：保留 `addCondition` 返回的 token，用 `removeSpecificCondition(token)`；查询用 `getSpecificCondition(token)` / `getFirstCondition(id)` 分开。
 8. **`getMemory()` 高频调用导致插件回调风暴**：触发是每帧用 `getMemory()` 读 memory。原因：每次调用触发全部插件的 `updateMarketFacts`(`Market.getMemory`)，日志量/性能异常，且其他插件可能改内存值。修正：纯读取用 `getMemoryWithoutUpdate()`。

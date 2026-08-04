@@ -13,14 +13,14 @@
 - 说出 `Description.Type` 的全部 11 个枚举值，以及每个类型的查找键 (`id` 列怎么写) 与主要使用方；
 - 逐条说出 CSV 转义必须遵守的规则 (含双引号的字段用 `""` 转义并整体加引号、含英文逗号的字段必须加引号、多行字段必须加引号、行首 `#` 是注释)，并说出违反每条规则时可观察的结果；
 - 解释战机联队、船插 (hullmod)、市场条件、特殊物品为什么不在 `Description.Type` 里，以及它们各自的描述所在文件；
-- 为 `gear_in` 的 `descriptions.csv` 新增 `GearIn_description_*` 演示行，并通过静态检查 (键唯一、`type` 合法、UTF-8 无 BOM)；
+- 为 `gear_in` 的 `descriptions.csv` 新增 `GearIn_description_*` 演示行，并按键唯一、`type` 合法和 UTF-8 无 BOM 的要求保存；
 - 从 "加载期异常、文本错位/截断、未挂接行不显示" 三类症状反推描述数据错误。
 
 ## 前置知识
 
 本节建立在以下基础上：
 
-- **`descriptions.csv` 的基础结构与静态检查**(前置单元 C01-S07)：共 8 列 `id,type,text1,text2,text3,text4,text5,notes`、`id + type` 键规则、舰船/武器/战术系统的查找键、缺行占位与加载期硬失败、首次静态验证脚本 (含 11 个合法 `type` 的键检查)。
+- **`descriptions.csv` 的基础结构与键规则**(前置单元 C01-S07)：共 8 列 `id,type,text1,text2,text3,text4,text5,notes`、`id + type` 键规则、舰船/武器/战术系统的查找键、缺行占位与加载期硬失败。
 - **各数据链对象 ID 的出处**(前置单元 C01-S02 至 C01-S06)：能识别各数据链的对象 ID(`hullId`、武器 ID、系统 ID)，知道商品、势力、行星类型等对象的 ID 来自哪些文件。
 - **术语约定**：生涯 (campaign)；数据库 (codex，生涯界面中的图鉴界面)；C2 命令 (战斗指挥命令，如攻击、护航、撤退)；地形 (terrain，星系中的星云、小行星带、日冕等)。
 
@@ -32,13 +32,13 @@
 
 加载与查询共三步：
 
-1. CSV spec 加载期的描述行读取 (本地核对)：以 `id`、`type` 两列为键读取全部行；`type` 必须能解析为 `Description.Type` 枚举，解析失败立即抛 `RuntimeException`；每行先经 `replaceSmartQuotes` 归一化弯引号，再以 UID = `id + "_" + type` 存入注册表。text1–text3 缺省为占位文本 `No description... yet`，text4/text5 缺省为空。
+1. CSV spec 加载期的描述行读取：以 `id`、`type` 两列为键读取全部行；`type` 必须能解析为 `Description.Type` 枚举，解析失败立即抛 `RuntimeException`；每行先经 `replaceSmartQuotes` 归一化弯引号，再以 UID = `id + "_" + type` 存入注册表。text1–text3 缺省为占位文本 `No description... yet`，text4/text5 缺省为空。
 2. 运行期查询入口是公开 API：`Global.getSettings().getDescription(id, type)`(`SettingsAPI`)，返回 `com.fs.starfarer.api.loading.Description`；找不到键时返回一个填充占位文本的新描述对象 (不报错)。
 3. 使用方先按 "对象 → 查找键" 取描述，再按展示位置取 text1–text5 之一。
 
 ### 全类型键与使用方总览
 
-`Description.Type` 共有 **11 个枚举值**，全部可以在 MOD 的 `descriptions.csv` 中添加。原版行数统计自 `Starsector/starsector-core/data/strings/descriptions.csv`：
+`Description.Type` 共有 **11 个枚举值**，全部可以在 MOD 的 `descriptions.csv` 中添加。原版 `Starsector/starsector-core/data/strings/descriptions.csv` 行数：
 
 | Type 枚举 | `id` 列怎么写 | 主要使用方 (界面位置)| 原版行数 |
 |---|---|---|---|
@@ -63,7 +63,7 @@
 
 ## CSV 转义规则 (必须遵守的规则)
 
-`descriptions.csv` 由 CSV 解析器 `parseCsv`(本地核对) 解析：先把全文的 `\r\n` 归一为 `\n`，首行按逗号切分得到表头，其后逐字符扫描数据行。以下规则全部有效，**违反时必然出现所述的可观察结果**。
+`descriptions.csv` 由 CSV 解析器解析：先把全文的 `\r\n` 归一为 `\n`，首行按逗号切分得到表头，其后逐字符扫描数据行。以下规则全部有效，**违反时必然出现所述的可观察结果**。
 
 1. **字段内含有英文逗号 (半角 `,`) 时，必须用一对双引号把整个字段包起来。** 违反后果：字段被按列切分，该行后续所有列整体错位一格 —— 文本串到别的列，`id`/`type` 键值被污染 (变成未挂接行或显示占位文本)，列数异常。中文逗号 "，" 不是分隔符，无需处理。
 
@@ -301,14 +301,10 @@ CSV 转义必须遵守的规则只有四条：含引号/逗号/换行的字段�
 
 战机联队、船插、市场条件、特殊物品不在这个文件里，各自的描述写在自己所属的数据文件里。由此，连同战斗对象描述的基础部分，`descriptions.csv` 这条文本链路已经完整讲完。
 
-就逻辑上的后续而言，`strings.json` 是另一套独立的界面字符串入口 (两级映射，`Global.getSettings().getString(category, id)`，跨 MOD 键合并，缺失返回 `Missing string: [...]`)。
-
-它与 `descriptions.csv` 并行构成游戏文本的两条入口通道，加载期合并语义同源，是描述数据之外必然要接触的相邻主题。
-
 ## 建议参考项
 
 - `com.fs.starfarer.api.loading.Description`：11 个 `Type` 枚举、text1–text5 默认值与 `hasTextX()` 查询。
-- `com.fs.starfarer.api.SettingsAPI`：`getDescription(id, type)` 查询描述，`getString(category, id)` 查询界面字符串。
+- `com.fs.starfarer.api.SettingsAPI`：`getDescription(id, type)` 查询描述。
 - `com.fs.starfarer.api.campaign.PlanetAPI`：行星类型与 `descriptionId` 覆盖 (`getTypeId()`、`getDescriptionIdOverride()/setDescriptionIdOverride()`)。
 - `com.fs.starfarer.api.campaign.SectorEntityToken`：`setCustomDescriptionId()` 把 `CUSTOM` 描述挂到实体上。
 - `com.fs.starfarer.api.impl.codex.CodexDataV2`：图库填充逻辑 (GALLERY 键 = 插图贴图键、text1 标题、text2 正文、text3 的 `HIDE_IN_CODEX`/`unlocked` 控制)。

@@ -61,11 +61,11 @@
 | `getFleetPoints()` | 当前舰队 fleet point 总量 |
 | `getMembersWithFightersCopy()` | 含战机展开的成员副本 (见 "四种成员视图")|
 | `isEmpty()` | 成员列表是否为空 |
-| `isValidPlayerFleet()` | "舰队非空且不全由战机联队组成"(javadoc 原文)|
+| `isValidPlayerFleet()` | "舰队非空且不全由战机联队组成"|
 | `forceSync()` | 让容量、船员等与舰队构成、cargo 匹配，并重放舰队 buff / 船插 / 技能效果 (见 "FleetData 的分层结构")|
 | `setLocation(x, y)` | 舰队坐标写入入口 |
 | `getLocation()` | 坐标读取；**禁止**用它写坐标 (`setLocation` 才是坐标写入入口)|
-| `setAIMode(boolean)` | 关闭补给/燃料消耗、事故与船员需求，LR 锁 100%(javadoc 原文)|
+| `setAIMode(boolean)` | 关闭补给/燃料消耗、事故与船员需求，LR 锁 100%|
 | `getInflater()` / `inflateIfNeeded()` / `deflate()` | 保存态 ↔ 完整装配态的膨胀入口 (见 "战斗准备")|
 
 对象链只给出进入方式；集合内部如何组织成员，决定成员增删之后您读到的列表和统计是否可信，先看它的分层结构。
@@ -86,7 +86,7 @@
    - 战机展开经 `Utils.expandFighterWingsCampaign` 把每个联队展开成逐架成员；展开只取非封存且 CR > 0 的成员，封存成员排到末尾。
    - `syncMemberLists()` 重建这三个视图。
 3. **派生状态**：`fleetPointsUsed` / `effectiveStrength`、`cargo`(容量上限由成员重算)、`minCrew`、`travelSpeed`、`fuelPerLightYear`、burn level 三件套。全部在同步时重算。
-4. **瞬态层**：`snapshot`(`transient` 字段)——`takeSnapshot()` / `getSnapshot()` 的成员快照，**不随存档保存**(接口 javadoc 原文："The snapshot is transient and will not be in the save file.")。
+4. **瞬态层**：`snapshot`(`transient` 字段)——`takeSnapshot()` / `getSnapshot()` 的成员快照，**不随存档保存**(接口 "The snapshot is transient and will not be in the save file.")。
 
 同步管线 (`syncIfNeeded`)：`setSyncNeeded()` 置位 → 下一次读成员/容量前触发 —— 成员 stats 全量重算、`cacheClearedOnSync` 清空、舰队指挥官 fleetwide 效果重放、船员重分配 (`recrewFleetMembersV2`)、fleet sync 船插的 `onFleetSync`。
 
@@ -157,14 +157,14 @@
 
 | 分组 | 成员 | 语义 |
 |---|---|---|
-| 身份 | `getId()`("Unique id, generated using Misc.genUID()"，javadoc 原文)、`getSpecId()`、`getHullId()`、`getType()`、`getHullSpec()` | 成员唯一 id；装配 spec id；船体 id；`SHIP`/`FIGHTER_WING`/`NULL` |
+| 身份 | `getId()`("Unique id, generated using Misc.genUID()")、`getSpecId()`、`getHullId()`、`getType()`、`getHullSpec()` | 成员唯一 id；装配 spec id；船体 id；`SHIP`/`FIGHTER_WING`/`NULL` |
 | 装配 | `getVariant()`、`setVariant(ShipVariantAPI, boolean withRefit, boolean withStatsUpdate)` | 保存态装配读写；`getVariant().getHullVariantId()` 读装配 id |
 | 舰长 | `getCaptain()`、`setCaptain(PersonAPI)`、`getFleetCommander()`、`isFlagship()` / `setFlagship(boolean, boolean)` | 成员舰长；舰队指挥官 (`fleetData.getCommander()`)；旗舰标记 |
 | 状态 | `getStatus()`、`getRepairTracker()`、`needsRepairs()`、`canBeRepaired()`、`isMothballed()` | 船体状态、CR/维修、封存 (见 "战斗准备")|
 | 数值 | `getFleetPointCost()`、`getDeployCost()`、`getDeploymentPointsCost()`、`getDeploymentCostSupplies()`、`getMemberStrength()`、`getBaseValue()`、`getBaseBuyValue()`、`getBaseSellValue()` | 舰队点数、CR 部署成本、部署点数/补给、成员强度、基础价值 |
 | 后勤 | `getCargoCapacity()`、`getFuelCapacity()`、`getMinCrew()`、`getMaxCrew()`、`getNeededCrew()`、`getCrewFraction()`、`getFuelUse()` | 单成员后勤数值 (见 "后勤语义")|
 | 分类 | `isFighterWing()`、`isFrigate()`、`isDestroyer()`、`isCruiser()`、`isCapital()`、`isCivilian()`、`isCarrier()`、`getNumFlightDecks()`、`isPhaseShip()`、`isStation()` | 按 hull size / 角色判定 |
-| 其他 | `getFleetData()`、`getStats()`(`MutableShipStatsAPI`)、`getCrewComposition()`、`isAlly()` / `setAlly(boolean)`("Transient, not saved."，javadoc 原文)、`setShipName()` | 回链集合、成员统计、船员构成、战斗瞬态标记、船名 |
+| 其他 | `getFleetData()`、`getStats()`(`MutableShipStatsAPI`)、`getCrewComposition()`、`isAlly()` / `setAlly(boolean)`、`setShipName()` | 回链集合、成员统计、船员构成、战斗瞬态标记、船名 |
 
 **装配写入语义**(`FleetMemberAPI.setVariant`)：`withRefit = true` 时按新旧装配差异对 CR 施加事件 (`applyCREvent(..., "field refit")`)；
 
@@ -181,11 +181,11 @@
 ### 战斗准备语义
 
 - **CR(Combat Readiness)**：`getRepairTracker()` 返回 `RepairTrackerAPI`(`com.fs.starfarer.api.fleet.RepairTrackerAPI`)。
-  - `getCR()` 返回 0–1，**已按船员占比修正**(javadoc 原文)；`getBaseCR()` 不含船员修正；`getMaxCR()` 上限；`setCR(float)` 直接写入；`applyCREvent(float, String)` 施加 "近期事件"(显示在 CR 悬浮提示里)。
+  - `getCR()` 返回 0–1，**已按船员占比修正**；`getBaseCR()` 不含船员修正；`getMaxCR()` 上限；`setCR(float)` 直接写入；`applyCREvent(float, String)` 施加 "近期事件"(显示在 CR 悬浮提示里)。
   - 新成员 CR 初始 `0.5F`。CR 低于阈值会出现在战斗外 "无法部署"(见下)。
-- **部署判据**：`canBeDeployedForCombat()`(`FleetMemberAPI`)—— 封存 → `false`；战机且 CR ≤ 0 → `false`；否则要求 `CR >= noDeployCRPercent` 且 `crewFraction >= noDeployCrewPercent`(`settings.json` 中为 0% 与 5%)。
+- **部署判据**：`canBeDeployedForCombat()`(`FleetMemberAPI`)—— 封存 → `false`；战机且 CR ≤ 0 → `false`；否则要求 `CR >= noDeployCRPercent` 且 `crewFraction >= noDeployCrewPercent`(`settings.json`中为 0% 与 5%)。
   - **战斗准备是 "当前状态" 判据**：CR 或船员不足时返回 `false`，补给与时间可恢复。
-- **部署成本**：`getDeployCost()` 是 CR 占比 (`CRPerDeploymentPercent * CRToDeploy / 100`，战机乘联队数量；`FleetMemberAPI` javadoc："From 0 to 1, CR fraction. Multiplied by number of fighters if fighter wing.")。
+- **部署成本**：`getDeployCost()` 是 CR 占比 (`CRPerDeploymentPercent * CRToDeploy / 100`，战机乘联队数量；`FleetMemberAPI` "From 0 to 1, CR fraction. Multiplied by number of fighters if fighter wing.")。
   - `getDeploymentPointsCost()` 是部署点数 (战机乘数量)；`getDeploymentCostSupplies()` 是部署补给 (含最小 1 上限保护)。
 - **保存态与膨胀态**：`CampaignFleetAPI.getInflater()` 持有 `FleetInflater`(由 `FleetFactoryV3` 生成的舰队挂载)。
   - `inflateIfNeeded()` 在战役侧把保存态成员补全为完整装配态 (`CampaignFleetAPI.inflateIfNeeded`：inflater 存在、未膨胀、非中立势力时执行；`removeAfterInflating()` 为真则随后移除 inflater)；`deflate()` 回到保存态表达。
@@ -476,11 +476,11 @@ gradle jar
 2. **`addFleetMember` 抛 `Attempting to add null fleet member`**：触发条件是把 null 传入 (例如按装配 id 查不到时自己返回了 null)。集合接口对 null 入队直接抛 `RuntimeException`，堆栈消息含舰队名。修正从创建入口做起：`createFleetMember` 的 `SHIP` 分支对无效装配 id 回退 `errorShipVariant`，**不会**返回 null —— 先对创建结果判空再入队。
 3. **同一成员数量成双或行为叠加**：两种触发，表现不同。对已入队成员再次 `addFleetMember` 时，同引用重复添加被忽略，直接无效果；注册脚本没有一次性判断时，演示日志出现两次、成员被加两轮。注册用 `REGISTER_MARK` 判断 (本节调用点片段)；需要 "该成员是否已在队" 的判断用 `getMembersListCopy()` 按 `getId()` 比较。
 4. **战机数量对不上 (联队被算成 1 条而不是 N 架)**：用 `getMembersListCopy()` / `getNumMembers()` 统计 "舰队里有多少架战机" 就会遇到：列表里战机联队是 1 条 (联队对象本身，经 `getMembers()` 全量返回)，联队内数量要读 `getNumFightersInWing()`。按需求选视图："每个联队算 1 条" 用 `getMembersListCopy()`，"逐架计数" 用 `getMembersListWithFightersCopy()`(`Utils.expandFighterWingsCampaign` 展开)；展开视图只包含非封存且 CR > 0 的联队，封存 / 零 CR 联队不会展开。
-5. **`getSnapshot()` 读档后为空或与成员不一致**：触发条件是把 `takeSnapshot()` 的快照当成持久成员集合。接口 javadoc 原文："The snapshot is transient and will not be in the save file."；`snapshot` 是 `transient` 字段，读档后快照自然丢失，战斗中或舰队被销毁前拍下的快照与当前成员无关。持久状态一律读 `getMembersListCopy()` 等成员集合视图；快照只用于 "战斗前/销毁前" 的临时比较。
+5. **`getSnapshot()` 读档后为空或与成员不一致**：触发条件是把 `takeSnapshot()` 的快照当成持久成员集合。接口 "The snapshot is transient and will not be in the save file."；`snapshot` 是 `transient` 字段，读档后快照自然丢失，战斗中或舰队被销毁前拍下的快照与当前成员无关。持久状态一律读 `getMembersListCopy()` 等成员集合视图；快照只用于 "战斗前/销毁前" 的临时比较。
 6. **改装配没生效 (战斗里还是旧船)**：把 `setVariant` 当成战斗实体修改入口就会出现：成员保存态已变 (`getVariant()` 是新值)，但已部署的战斗实体仍按战斗实体状态读取 —— `FleetMemberAPI.setVariant` 只改写保存态。生涯侧改装配用 `setVariant(variant, true, true)`(带 refit CR 修正与 stats 重算)；战斗实体的修改要在部署侧做。
 7. **CR 低到不能部署，战斗准备列表里没有船**：刚经历战斗或缺补给后读 `getCombatReadyMembersListCopy()` 会遇到。`getCR() < noDeployCRPercent`(默认 0) 或 `getCrewFraction() < noDeployCrewPercent`(默认 5%) 时 `canBeDeployedForCombat()` 返回 `false`，成员不进战斗准备列表 (`settings.json`)。先看 `getCR()` / `getCrewFraction()` 两个判据 —— 船员不足也是原因；CR 恢复靠补给与时间。
 8. **封存了还在烧补给/还有容量**：`setMothballed(true)` 后立刻读容量就会读到旧值 —— 系统并不急着知道您封存了它。封存修正 (补给月耗 × `supplyConsumptionMothballedMult`、cargo/fuel/maxCrew/minCrew 乘数置 0) 只在 `updateStats` 时写入，立即读取仍是旧值。改完封存标志后触发一次同步 (`CampaignFleetAPI.forceSync()` 或读 `getMembers()` 触发 `syncIfNeeded`) 再读数。
-9. **`setFlagship` 后其他成员舰长被重置**：把 `setFlagship` 当成纯布尔标记写入就会触发它的副作用：原旗舰 (或舰长即玩家的成员) 舰长被换成全 0 属性新人，新旗舰舰长 = 舰队指挥官 (接口 javadoc 原文："Will also set the captains of all the other ships to a new person with all-0 stats.")。这是原版语义，接受即可；不要用 `setFlagship` 逐成员手动调 `setCaptain` 对抗。
+9. **`setFlagship` 后其他成员舰长被重置**：把 `setFlagship` 当成纯布尔标记写入就会触发它的副作用：原旗舰 (或舰长即玩家的成员) 舰长被换成全 0 属性新人，新旗舰舰长 = 舰队指挥官 (接口 "Will also set the captains of all the other ships to a new person with all-0 stats.")。这是原版语义，接受即可；不要用 `setFlagship` 逐成员手动调 `setCaptain` 对抗。
 10. **演示日志出现但游戏内舰队没变化 (或反过来)**：触发是在错误的生命周期阶段注册脚本，例如 `onApplicationLoad` 里 `Global.getSector()` 为 null 直接 NPE。注册点放错会启动中止或脚本永不推进。修正：把注册放进 `onGameLoad` 的一次性判断块内。
 
 ## 总结

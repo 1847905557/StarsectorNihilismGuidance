@@ -62,7 +62,7 @@
 | IntelAPI | `IntelInfoPlugin`(接口)+ `IntelManagerAPI`(登记表)+ `BaseIntelPlugin`(默认实现)| `com.fs.starfarer.api.campaign.comm` 与 `com.fs.starfarer.api.impl.campaign.intel` |
 | MissionDefinitionAPI | `MissionDefinitionAPI`(存在，但属于战役任务)| `com.fs.starfarer.api.mission.MissionDefinitionAPI` |
 
-`MissionDefinitionAPI` 的 javadoc 原文第一行就说明它由战役任务脚本用来创建任务场景内容 —— 它服务 `data/missions/<id>/` 的战役任务场景，与生涯枢纽任务是两套互不相通的系统。
+`MissionDefinitionAPI` 由战役任务脚本用来创建任务场景内容 —— 它服务 `data/missions/<id>/` 的战役任务场景，与生涯枢纽任务是两套互不相通的系统。
 
 ::: info 为什么本节能给出实现类细节
 `BaseHubMission` 等 "实现" 类位于公开 API 源码内 (`com.fs.starfarer.api.impl.campaign.missions.hub.*` 包路径，随 `starfarer.api.jar` 发行)，可以直接读取 —— 本节的行为结论与代码片段都来自这条公开面。

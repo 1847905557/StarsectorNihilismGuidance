@@ -142,7 +142,7 @@ rulecmd 参数内需要替换时用 `Misc.Token.getStringWithTokenReplacement`�
 | 舰队遭遇对话 `FleetInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl` | `reinit` 用 `getBestMatching(null, "BeginFleetEncounter", ...)` 决定是否给 "Continue" 选项；开通讯 (`OPEN_COMM`) 时内嵌 `RuleBasedInteractionDialogPluginImpl` 并 `fireBest("OpenCommLink")`，无匹配则报 "only get static" |
 | 非对话面板 (规则记忆组装)| 非对话文本面板 (内部实现)| 组装简化 memoryMap 后 `FireBest.fire(...)` 面板文本 trigger(使用例：已选阵营信息面板的 `RelationshipLevelDesc`)|
 
-原版 `rules.csv` 实测 (本地文件统计)：7 列、9749 条非注释规则、800 个不同 trigger，大族为：
+原版 `rules.csv`：7 列、9749 条非注释规则、800 个不同 trigger，大族为：
 - `DialogOptionSelected`(6050)；
 - `PopulateOptions` (334)；
 - `PickGreeting`(199)；
@@ -152,7 +152,7 @@ rulecmd 参数内需要替换时用 `Misc.Token.getStringWithTokenReplacement`�
 - `MarketPostDock`(32)；
 - `TradePanelFlavorText`(23)。
 
-`DialogOptionSelected` 全部 6050 条都带条件 (无空条件行)，佐证了原版选项必须回流 `$option ==` 条件的写法。
+`DialogOptionSelected` 全部 6050 条都带条件 (无空条件行)：原版选项必须回流 `$option ==` 条件。
 
 ## 规则强度
 

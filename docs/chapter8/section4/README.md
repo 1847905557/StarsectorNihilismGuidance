@@ -49,7 +49,7 @@
 
 `FleetParamsV3`(`com.fs.starfarer.api.impl.campaign.fleets.FleetParamsV3`) 是**公开字段**的参数类，无 getter/setter。
 
-javadoc 原文两条：**"Fleet point values are targets not hard limits."**(点数是目标不是硬上限)。
+**"Fleet point values are targets not hard limits."**(点数是目标不是硬上限)。
 
 **"'Pts' are fleet points in this implementation, unlike FleetFactoryV2."**(V3 的 pts 就是 fleet points，与旧版不同)。
 
@@ -57,14 +57,14 @@ javadoc 原文两条：**"Fleet point values are targets not hard limits."**(点
 
 | 分组 | 字段 | 语义 |
 |---|---|---|
-| 来源与质量 | `source`(`MarketAPI`)、`locInHyper`(`Vector2f`)、`quality`、`qualityMod`、`qualityOverride` | 见 "质量与市场" 小节；`source` 的 javadoc 原文："Use setSource() to set the source or directly call updateQualityAndProducerFromSourceMarket() to set the quality. Otherwise, the market's quality won't get used." |
+| 来源与质量 | `source`(`MarketAPI`)、`locInHyper`(`Vector2f`)、`quality`、`qualityMod`、`qualityOverride` | 见 "质量与市场" 小节；`source` 的 "Use setSource() to set the source or directly call updateQualityAndProducerFromSourceMarket() to set the quality. Otherwise, the market's quality won't get used." |
 | 身份 | `factionId`、`fleetType`、`factionOverride` | 势力与舰队类型；`factionOverride` 非 null 时舰队势力直接用该对象 (名称仍按 `fleetType` 取)|
 | 点数 | `combatPts` / `freighterPts` / `tankerPts` / `transportPts` / `linerPts` / `utilityPts` | 六类预算，`getTotalPts()` 求和 |
-| 规模 | `maxShipSize`(javadoc："0: fighter, 4: capital"，默认 1000)、`minShipSize`(javadoc："only affects combat ships; smaller ships will still be added with remaining fleet points")、`maxNumShips`、`ignoreMarketFleetSizeMult`、`onlyApplyFleetSizeToCombatShips`、`doNotPrune`、`doNotAddShipsBeforePruning` | 舰船尺寸与总数约束、市场规模乘数开关、裁剪开关 |
+| 规模 | `maxShipSize`("0: fighter, 4: capital"，默认 1000)、`minShipSize`("only affects combat ships; smaller ships will still be added with remaining fleet points")、`maxNumShips`、`ignoreMarketFleetSizeMult`、`onlyApplyFleetSizeToCombatShips`、`doNotPrune`、`doNotAddShipsBeforePruning` | 舰船尺寸与总数约束、市场规模乘数开关、裁剪开关 |
 | 军官 | `withOfficers`(默认 `true`)、`officerLevelBonus`、`officerNumberBonus`、`maxOfficersToAdd`、`officerNumberMult`(默认 1)、`officerLevelLimit`、`commanderLevelLimit`、`commander`(`PersonAPI`)、`noCommanderSkills` | 指挥官与军官生成参数 (见 "指挥官与军官" 节)|
 | 旗舰 | `flagshipVariantId`(`String`)、`flagshipVariant`(`ShipVariantAPI`)、`onlyRetainFlagship` | 旗舰装配覆盖与 "只留旗舰"(见 "旗舰" 节)|
 | 随机与 doctrine | `random`、`timestamp`、`doctrineOverride`、`modeOverride`(`ShipPickMode`)、`forceAllowPhaseShipsEtc`、`treatCombatFreighterSettingAsFraction`、`blockFallback`、`aiCores`、`doNotIntegrateAICores` | 随机源、时间戳 (武器可用性判定)、教条覆盖、抽选模式覆盖等 |
-| 装配杂项 | `allWeapons`、`averageSMods`(`Integer`，null = 不加 S 插)、`addShips`(`List<String>`，javadoc："If non-null: these ship variants will be added to the fleet before anything else")| 膨胀参数与显式预置舰船 |
+| 装配杂项 | `allWeapons`、`averageSMods`(`Integer`，null = 不加 S 插)、`addShips`(`List<String>`，"If non-null: these ship variants will be added to the fleet before anything else")| 膨胀参数与显式预置舰船 |
 
 三个构造器族 (内部都走 `init`)：
 
@@ -84,7 +84,7 @@ javadoc 原文两条：**"Fleet point values are targets not hard limits."**(点
 
 市场生产质量 (`QualityData.quality` 计算值)+ 市场 `FLEET_QUALITY_MOD`，再减市场势力的 `doctrine.getShipQualityContribution()`、加目标势力的 `doctrine.getShipQualityContribution()`。
 
-旧参数对象 `FleetParams`(V1，`com.fs.starfarer.api.impl.campaign.fleets.FleetParams`)：javadoc 原文：
+旧参数对象 `FleetParams`(V1，`com.fs.starfarer.api.impl.campaign.fleets.FleetParams`)：
 
 **"'Pts' are not fleet points; 1/2/4/8 points = frigate/destroyer/cruiser/capital"**。
 
@@ -267,9 +267,9 @@ fake market 意味着质量 0.5、无市场势力贡献 —— 这解释了 "无
 
 前文散落在各节的约束里，以下几条违反后有明确可观察结果；做完整最小例之前先过一遍：
 
-1. **质量必须来自市场**。`FleetParamsV3.source` 的 javadoc 原文要求经 `setSource(market, true)`、市场构造器或 `updateQualityAndProducerFromSourceMarket()` 设置来源；否则 `params.quality` 停留在 0，`createFleet` 里有效质量 = 0 → 平均 D 插 `(1-0)/0.2 = 5` 个/船、武器 tier 概率趋近下限，舰队战力明显低于同势力原版舰队。
+1. **质量必须来自市场**。`FleetParamsV3.source` 要求经 `setSource(market, true)`、市场构造器或 `updateQualityAndProducerFromSourceMarket()` 设置来源；否则 `params.quality` 停留在 0，`createFleet` 里有效质量 = 0 → 平均 D 插 `(1-0)/0.2 = 5` 个/船、武器 tier 概率趋近下限，舰队战力明显低于同势力原版舰队。
 2. **质量优先级：`qualityOverride` > `quality + qualityMod`**。不设 `qualityOverride` 时 `qualityMod` 才叠加到市场质量上；同时设置时 `qualityMod` 被无视，只设 `qualityMod` 不设来源时质量仍为 0。
-3. **点数是目标不是硬上限** (javadoc 原文)。"舰队点数与请求不符" 是**正常现象**，实际受市场供应、`maxShipsInAIFleet` 裁剪与角色缺货影响；需要还原请求值用 `Misc.getSpawnFPMult(fleet)`。
+3. **点数是目标不是硬上限**。"舰队点数与请求不符" 是**正常现象**，实际受市场供应、`maxShipsInAIFleet` 裁剪与角色缺货影响；需要还原请求值用 `Misc.getSpawnFPMult(fleet)`。
 4. **`flagshipVariantId` / `flagshipVariant` 只在 `getFlagship()` 非 null 时应用**，且 `setVariant(variant, false, true)` 会连船体一起换。舰队为空时不生效；指定了异 hull 的旗舰变体后，旗舰船体与角色会与抽选时不同。
 5. **`setFlagship(member)` 的副作用必须接受**：其他成员舰长被重置为默认、新旗舰舰长 = 舰队指挥官。旗舰读回 `getCaptain() == getCommander()`；不要用逐成员 `setCaptain` 对抗该语义。
 6. **膨胀前读取成员装配拿到的是未按质量调整的生成态变体**。需要完整装配必须先触发 `inflateIfNeeded()`—— 引擎在 AI/工具提示/战斗前自动触发；在此之前读 `member.getVariant()`：武器仍是角色变体原样、无 D 插/S 插 (`source` 仍是 STOCK/生成时来源，非 REFIT)。
@@ -567,7 +567,7 @@ gradle jar
 - 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 ## 故障分析
 
-1. **舰队 "凭空生成" 但战力奇低 (满船 D 插、武器全是低档)**：用 `new FleetParamsV3(locInHyper, ...)` 无市场版本且没设 `qualityOverride` 时，来源市场从未设置，`params.quality` 停在默认 0 → 有效质量 0 → 平均 D 插 5 个/船、tier 概率触底 (`getTierProbability`)；与同势力原版舰队对比战力悬殊。修正：用 market 构造器或 `setSource(market, true)`(`FleetParamsV3.source` javadoc 原文)，或显式 `qualityOverride`。
+1. **舰队 "凭空生成" 但战力奇低 (满船 D 插、武器全是低档)**：用 `new FleetParamsV3(locInHyper, ...)` 无市场版本且没设 `qualityOverride` 时，来源市场从未设置，`params.quality` 停在默认 0 → 有效质量 0 → 平均 D 插 5 个/船、tier 概率触底 (`getTierProbability`)；与同势力原版舰队对比战力悬殊。修正：用 market 构造器或 `setSource(market, true)`，或显式 `qualityOverride`。
 2. **舰队生成在错误生命周期阶段**：在 `onApplicationLoad` 里调 `createFleet` 时，`Global.getSector()` 为 null → NPE 启动中止；economy 未加载时 `getMarketsCopy()` 为空 → `pickMarket` 返回 null → 以 fake market 作备用方案。修正：注册放 `onGameLoad` 的一次性判断块内 (C08-S01 判断模式)。
 3. **指定了 `flagshipVariantId` 但旗舰没换**：id 拼错 (`SettingsAPI.getVariant` 抛 `Ship hull variant [...] not found!`，变体主题讲过)、舰队为空成员 (`getFlagship()` 为 null，旗舰变体应用条件不成立)，或 `flagshipVariantId` 与 `flagshipVariant` 同时设置 (前者优先)。可观察：异常中断或旗舰仍是抽选 hull。修正：id 用 `getAllVariantIds()` 核对；检查生成成员数非 0。
 4. **指挥官/军官完全不生成**：`withOfficers=false` 时 `createFleet` 跳过该步；成员列表为空时 `addCommanderAndOfficersV2` 对空成员直接返回。可观察：`getCommander()` 是默认指挥官、`getOfficersCopy()` 空。修正：确认 `withOfficers` 默认 true；先排查角色缺货导致的空舰队 (故障 10)。
@@ -576,7 +576,7 @@ gradle jar
 7. **舰队位置不对 (堆在原点或偏移方向反了)**：`spawnFleet(null, x, y, fleet)` 的 null anchor 不表示 "用市场锚点"，anchor 为 null 分支里坐标就是偏移本身，与市场位置无关。修正：anchor 传 `market.getPrimaryEntity()`(或任意实体)；偏移是 "锚点坐标 + 偏移"。
 8. **同一存档里演示/生成重复执行，舰队成双**：注册没有 persistent data 判断 (或键并入了插件已有的 `CLASS_MARK` 判断) 时，`onGameLoad` 每次读档都重新注册。可观察：每次读档重放，`onGameLoad` 新档与读档各生成一次，日志成双。修正：本节调用点片段的 `REGISTER_MARK` 判断 (每个注册项各自键)。
 9. **读档后舰队装配与膨胀前不同**：读档时舰队成员变体未落档 (`originalVariant` 回指注册表，变体持久化边界) 或 deflate 后重膨胀，膨胀结果随 `seed` 随机 —— 同一存档每次 deflate→inflate 结果一致 (`seed * shipName.hashCode()`)，但**跨创建**(新 `random`) 结果不同。修正：需要跨创建可复现时显式 `params.random = new Random(固定种子)`；不要依赖默认随机。
-10. **舰队点数与请求严重不符 (过小)**：市场缺货 (`pickShipsForRole` 返回空/不足)、`maxShipsInAIFleet(30)` 超员裁剪 (`pruneFleet`)、六类点数分配后 `rem.fp` 用尽都会造成。可观察：`getFleetPoints()` < 请求点数且无报错 ——javadoc 原文 "targets not hard limits"。修正：用 `Misc.getSpawnFPMult(fleet)` 还原请求值；排查角色配置 (`default_ship_roles.json` 与势力覆写)。
+10. **舰队点数与请求严重不符 (过小)**：市场缺货 (`pickShipsForRole` 返回空/不足)、`maxShipsInAIFleet(30)` 超员裁剪 (`pruneFleet`)、六类点数分配后 `rem.fp` 用尽都会造成。可观察：`getFleetPoints()` < 请求点数且无报错 —— "targets not hard limits"。修正：用 `Misc.getSpawnFPMult(fleet)` 还原请求值；排查角色配置 (`default_ship_roles.json` 与势力覆写)。
 11. **D 插数量与预期不符 (过多/为零)**：`qualityOverride` 与市场质量混用 (优先级 `qualityOverride > quality + qualityMod`)，或 `averageDmods` 公式里的 `qualityPerDMod` 被误当成 D 插上限。可观察：质量 0.6 时平均 `(1-0.6)/0.2=2` 个/船、质量 1.0 时平均 0 个 (`getAverageDmodsForQuality`)。修正：核对有效质量 (inflater 的 `getQuality()` 是权威值，本节演示 pre-inflate 日志即此)。
 12. **投放后舰队立刻被玩家/他人攻击**：用 `addEntity` + `setLocation` 手动投放且没调 `setNoEngaging` 时，`spawnFleet` 附赠的 `setNoEngaging(3.0F)` 缺失。可观察：敌对舰队/玩家贴近时立即进入交战。修正：就近用 `spawnFleet`；自定义投放路径要自行 `fleet.setNoEngaging(...)`。
 

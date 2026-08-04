@@ -30,7 +30,7 @@
 - 每帧回调模型 (战斗域)：本节的 `EveryFrameScript` 是它的生涯域对应物，两边的暂停语义不同 —— 战斗的 `advanceInner` 暂停分支仍推进地图，生涯的脚本循环在暂停时默认完全跳过 (C07-S01)。
 - `modPlugin` 生命周期回调与 "首次进入存档" 的 `CLASS_MARK` 标记；本节的脚本注册沿用同一个标记模式 (C06-S02)。
 - `Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；本节所有注册与读取都发生在生涯引擎建立之后 (C06-S03)。
-- settings 与 common 文件机制；本节不新增任何资源文件 (C06-S04)。
+- settings 与 common 文件机制分别见 C06-S04 和 C12-S04；本节不新增任何资源文件。
 
 ## 术语
 
@@ -94,7 +94,7 @@
   - 因此新档在 `onGameLoad` 里读到的时钟大约在 **206.3.2**。
 
 ::: caution 把秒当游戏天
-`advance(float amount)` 的 `amount` 是上一帧经过的真实秒数 (API javadoc 原文："Use SectorAPI.getClock() to convert to campaign days.")。
+`advance(float amount)` 的 `amount` 是上一帧经过的真实秒数 ("Use SectorAPI.getClock() to convert to campaign days.")。
 
 凡需要游戏时间，**必须**经 `clock.convertToDays(amount)` 换算 —— 直接把秒当游戏天，时间流速会偏差 10 倍 (10 真实秒被当成 10 游戏天，正确应为 1 游戏天)。
 :::
@@ -128,7 +128,7 @@
 |---|---|
 | `boolean isDone()` | 返回 `true` 表示脚本结束，引擎负责清理 (从脚本列表移除)。常驻脚本返回 `false` |
 | `boolean runWhilePaused()` | 返回 `true` 时，引擎暂停期间 `advance()` 仍会被调用 |
-| `void advance(float amount)` | 每帧回调；**`amount` 是上一帧经过的真实秒数**(API javadoc 原文："Use SectorAPI.getClock() to convert to campaign days.")|
+| `void advance(float amount)` | 每帧回调；**`amount` 是上一帧经过的真实秒数**("Use SectorAPI.getClock() to convert to campaign days.")|
 
 推进循环的精确语义 (引擎级脚本与 transient 脚本两条循环完全一致)：
 
@@ -377,7 +377,7 @@ gradle jar
 2. **每次读档后跨日日志成双、行为叠加**：`onGameLoad` 里直接 `addScript`，没有 persistent data 标记 (`addScript` 不去重)。读档次数越多，同一条跨日日志出现越多次 (两个实例各推进各打印)。修正：`REGISTER_MARK` 标记 + `hasScript` 查重 (本节调用点片段)。
 3. **`isDone()` 恒返回 true，脚本首帧即被移除**：把 "完成" 写反 (如 `return done` 但 `done` 初始为 true，或 `return true` 占位)。引擎第一帧就把脚本移除 (先查 `isDone` 再调 `advance`)，`advance` 一次都不执行、连 `mounted` 日志都没有。修正：`done` 初始 `false`，仅在完成条件满足时置 `true`。
 4. **`runWhilePaused()` 语义误用**：误以为 "返回 true 就能让时钟在暂停时前进"。`runWhilePaused = true` 时暂停期间 `advance()` 仍被调用 (`amount` 仍是真实秒数)，但 `getClock()` 的日期与时间戳**不变** —— 时钟只在未暂停分支推进。以 `amount` 自累计的逻辑在暂停时继续走、以时钟日期/时间戳为准的逻辑冻结，两者会分道扬镳。修正：暂停敏感的进度用时钟时间戳差值 (暂停时自动冻结)；必须暂停期间推进的 (如 UI 覆盖动画) 才用 `runWhilePaused = true`，且不依赖时钟。
-5. **把 `amount` 直接当游戏天数，时间流速快 10 倍**：忽略接口 javadoc("Use SectorAPI.getClock() to convert to campaign days")。10 真实秒被当成 10 游戏天，正确应是 1 游戏天。修正：一律 `clock.convertToDays(amount)`。
+5. **把 `amount` 直接当游戏天数，时间流速快 10 倍**：忽略接口提示("Use SectorAPI.getClock() to convert to campaign days")。10 真实秒被当成 10 游戏天，正确应是 1 游戏天。修正：一律 `clock.convertToDays(amount)`。
 6. **暂停时等待时钟推进的倒计时永不触发**：脚本用 `clock.getElapsedDaysSince(ts) >= N` 做倒计时，又没改 `runWhilePaused`。暂停期间 `since mount` 冻结、`done` 永不置位，恢复后继续。修正：理解这是设计行为 (暂停 = 停表)；需要真实时间倒计时就自己累计 `amount`。
 7. **战斗期间脚本 "消失"**：在战斗里等生涯日志。战斗期间无任何跨日日志、时钟冻结；回生涯后日志继续。修正：无需修复 —— 进入战斗后生涯引擎不再推进，战斗域是另一套推进循环；生涯脚本天然不跨战斗推进。
 8. **旧档永远不注册脚本**：把注册判断挂在插件既有的 `GearInModPlugin.CLASS_MARK` 标记上 (该键在新档首次进入时就已置位)。旧档读档后无 `mounted` 日志，脚本缺失且无报错。修正：每个注册项用各自的 persistent data 键 (本节 `REGISTER_MARK`)，旧档缺键 = 视为首次注册，正好覆盖 "中途加脚本" 的场景。

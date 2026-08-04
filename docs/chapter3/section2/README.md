@@ -121,7 +121,7 @@ data/world/factions/gear_industry.faction
 
 第一行 `faction` 是列名 (必须逐字一致，拼错会让整行解析失败)，第二行是势力文件路径。多行时用 `#` 注释掉整行。
 
-注册并启动后，游戏内的势力会以本节配置的身份信息显示 (下图为本机实测画面，供对照)：
+注册并启动后，游戏内的势力会以本节配置的身份信息显示 (下图供对照)：
 
 ![](./faction.png)
 
@@ -385,9 +385,9 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 - 未设置关系时，齿轮工业与所有势力的关系都是 0.0 中立；按第四步设置后，情报里对应关系显示为设定值 (例如与海盗 `HOSTILE`)，且海盗对该势力同样敌视 (关系是对称存储、按对读取的)。
 - 市场蓝图与打捞层面：带 `rare_bp` 的组件不出现在本势力默认池里，符合掉落池规则 (本节不展开市场)。
 
-## 实用势力包 (bp) 与其它生成型 tags 速查表 (原版数据核对)
+## 实用势力包 (bp) 与其它生成型 tags 速查表
 
-下表全部经原版数据核对 (tag 存在性来自 `data/weapons/weapon_data.csv`、`data/hulls/ship_data.csv`、`data/hulls/wing_data.csv`、`data/hullmods/hull_mods.csv`；"引用它的势力文件" 来自 `data/world/factions/*.faction`)。
+下表 tag 存在性来自 `data/weapons/weapon_data.csv`、`data/hulls/ship_data.csv`、`data/hulls/wing_data.csv`、`data/hullmods/hull_mods.csv`；"引用它的势力文件" 来自 `data/world/factions/*.faction`。
 
 **不在本表上的数据均为与势力包 (bp) 和生成均无关的 tags。**
 

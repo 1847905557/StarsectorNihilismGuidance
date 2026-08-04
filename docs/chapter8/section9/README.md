@@ -55,7 +55,7 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 **创建与登记两条链**：
 
 1. **`addIntel(plugin)`**(`IntelManagerAPI`) 直接加入已知集合：置玩家可见时间戳、调 `reportMadeVisibleToPlayer()`、`autoAddCampaignMessage()`(默认 true) 时经 `CampaignUIAPI.addMessage` 弹左下消息 (`IntelManagerAPI.addIntel`)。
-   - **`addIntel` 绕过通信中继可见性检查**——`IntelInfoPlugin.canMakeVisibleToPlayer` javadoc 原文："Only checked if adding using IntelManager.queueIntel(). addIntel() bypasses this and all other checks."。
+   - **`addIntel` 绕过通信中继可见性检查**——`IntelInfoPlugin.canMakeVisibleToPlayer` "Only checked if adding using IntelManager.queueIntel(). addIntel() bypasses this and all other checks."。
    - `addIntel(plugin, forceNoMessage)` / `addIntel(plugin, forceNoMessage, textPanel)` 控制消息行为。
 2. **`queueIntel(plugin[, maxCommQueueDays])`**(`IntelManagerAPI`) 加入通信队列；玩家进入通信中继范围或 `forceAddNextFrame()` 时，转为可见 intel 并出队。
    - 同批最多 3 条、第 4 条起合并为一条 "New messages" 汇总。
@@ -73,19 +73,19 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 | `endImmediately()` / `endAfterDelay()` / `endAfterDelay(days)` | 结束流程；`getBaseDaysAfterEnd()` 默认 **3 游戏日** |
 | `createIntelInfo` / `getName()` | 列表条目 = 名称 + 子弹行；`getName()` 返回 null 则不显示 |
 | `createSmallDescription` | 小描述 (默认 "请覆写")；`hasSmallDescription()` 默认 true |
-| `getIcon()` | null = 无图标 (`IntelInfoPlugin` javadoc："40x40, no icon if null.")|
+| `getIcon()` | null = 无图标 (`IntelInfoPlugin` "40x40, no icon if null.")|
 | `getIntelTags(map)` | 默认含 `INTEL_IMPORTANT` / `INTEL_NEW` / 中继范围内的 `INTEL_LOCAL`；**map 为 null 时安全返回**(基类内部已做 null 判断)|
 | `sendUpdate` / `sendUpdateIfPlayerHasIntel` | 更新消息；后者要求已有玩家可见时间戳 |
 | `BUTTON_DELETE` / `addDeleteButton` / `buttonPressConfirmed` | 删除按钮 (确认框 + `endImmediately`)|
 | `getCommMessageSound` | 发布/更新音效 (`ui_intel_something_posted` / `ui_intel_update` 等常量)|
 
-**`MessageIntel`**(`com.fs.starfarer.api.impl.campaign.intel.MessageIntel`) 是左下消息区的**纯消息**类，javadoc 原文："For campaign messages that show up in the lower-left corner, but are not tied to an actual piece of intel."—— 它不绑定任何情报页面。构造与追加入口：`new MessageIntel(text[, color[, highlights]])`、`addLine(...)` 多行追加、`getCommMessageSound` 默认 `ui_intel_minor_message`；用 `CampaignUIAPI.addMessage(IntelInfoPlugin)` 发送。
+**`MessageIntel`**(`com.fs.starfarer.api.impl.campaign.intel.MessageIntel`) 是左下消息区的**纯消息**类，"For campaign messages that show up in the lower-left corner, but are not tied to an actual piece of intel."—— 它不绑定任何情报页面。构造与追加入口：`new MessageIntel(text[, color[, highlights]])`、`addLine(...)` 多行追加、`getCommMessageSound` 默认 `ui_intel_minor_message`；用 `CampaignUIAPI.addMessage(IntelInfoPlugin)` 发送。
 
-**`IntelInfoPlugin` 约定要点**(`com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`)：`getIntelTags(map)` **必须处理 map 为 null**(javadoc："Method NEEDS to handle map being null gracefully.")；`NEW_DAYS = 5` 是新情报 "NEW" 标记窗口；`IntelSortTier` 是排序档；`getMapLocation(map)` 与 `getArrowData(map)` 控制地图定位与箭头；`isHidden()` 让已可见情报在 UI 与消息中隐藏 (`BaseIntelPlugin` 默认实现含教程状态判断)。
+**`IntelInfoPlugin` 约定要点**(`com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`)：`getIntelTags(map)` **必须处理 map 为 null**("Method NEEDS to handle map being null gracefully.")；`NEW_DAYS = 5` 是新情报 "NEW" 标记窗口；`IntelSortTier` 是排序档；`getMapLocation(map)` 与 `getArrowData(map)` 控制地图定位与箭头；`isHidden()` 让已可见情报在 UI 与消息中隐藏 (`BaseIntelPlugin` 默认实现含教程状态判断)。
 
 ### 交互对话框 (InteractionDialogAPI / InteractionDialogPlugin)
 
-**打开**：`CampaignUIAPI.showInteractionDialog(plugin, interactionTarget)`，javadoc 原文："Returns true if dialog was actually shown, false otherwise (if, for example, UI is already showing another dialog)."、"interactionTarget can be null."。
+**打开**：`CampaignUIAPI.showInteractionDialog(plugin, interactionTarget)`，"Returns true if dialog was actually shown, false otherwise (if, for example, UI is already showing another dialog)."、"interactionTarget can be null."。
 
 **插件生命周期 (`InteractionDialogPlugin`)**：`init(dialog)` → `optionSelected(optionText, optionData)` / `optionMousedOver` → 每帧 `advance(amount)` → 战斗返回 `backFromEngagement(result)`；另有 `getContext()` / `getMemoryMap()`(Rules 侧用)。
 
@@ -113,7 +113,7 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 
 :::
 
-**面板常用成员**：`OptionPanelAPI`(`com.fs.starfarer.api.campaign.OptionPanelAPI`)——`addOption(text, data[, tooltip])`、`addOption(text, data, color, tooltip)`、`clearOptions`；`setEnabled(data, enabled)`(javadoc："Only works for options, not selectors.")、`setShortcut`、`addSelector`、`addOptionConfirmation`、`removeOption`、`setStoryOptionParams`。
+**面板常用成员**：`OptionPanelAPI`(`com.fs.starfarer.api.campaign.OptionPanelAPI`)——`addOption(text, data[, tooltip])`、`addOption(text, data, color, tooltip)`、`clearOptions`；`setEnabled(data, enabled)`("Only works for options, not selectors.")、`setShortcut`、`addSelector`、`addOptionConfirmation`、`removeOption`、`setStoryOptionParams`。
 
 `TextPanelAPI`(`com.fs.starfarer.api.campaign.TextPanelAPI`)——`addPara(text[, color])`、`addPara(format, hl, highlights)`、`addParagraph`、`highlightInLastPara`、`setHighlightColorsInLastPara`、`clear`；另有 `getDialog`、`beginTooltip`/`addTooltip`。
 
@@ -319,9 +319,9 @@ import com.fs.starfarer.api.util.Misc;
  * 绑定位置：由 GearInIntelServicesScript 经 IntelManagerAPI.addIntel(plugin) 登记
  * （addIntel 绕过可见性检查，立即置玩家可见时间戳并弹出左下消息）。
  *
- * 契约要点：getIcon() 返回 null 时 Intel 页面使用默认图标（IntelInfoPlugin javadoc：
+ * 契约要点：getIcon() 返回 null 时 Intel 页面使用默认图标（IntelInfoPlugin
  * "40x40, no icon if null."）；getIntelTags(map) 必须处理 map 为 null
- * （javadoc："Method NEEDS to handle map being null gracefully."）—— 本类先调
+ * （"Method NEEDS to handle map being null gracefully."）—— 本类先调
  * super.getIntelTags(map)，基类默认实现内部已做 null 判断，再追加自定义 tag。
  */
 public class GearInServicesIntel extends BaseIntelPlugin {
@@ -517,14 +517,14 @@ gradle jar
 
 1. **`showInteractionDialog` 返回 false，对话框没弹出来且无报错**。
    - 触发条件：在已有对话框显示时再调 (例如演示脚本与某个 bar 事件/教程对话框撞车)。
-   - 可观察结果：`shown=false` 日志、游戏无任何对话框、无报错 (`CampaignUIAPI` javadoc 原文)。
+   - 可观察结果：`shown=false` 日志、游戏无任何对话框、无报错。
    - 原因：生涯 UI 同时只承载一个对话框，已有对话框时后续调用被拒绝。
    - 修正：把对话框作为唯一入口或先判 `CampaignUIAPI.isShowingDialog()`；本节演示记录了返回值，`shown=false` 时其余演示不受影响。
 2. **情报没出现在 Intel 页 (日志有、页面没有)**。
    - 触发条件：用 `queueIntel` 而用户舰队不在通信中继范围内，又没设 `forceAddNextFrame`。
    - 可观察结果：情报在通信队列等待，`getIntel()` 里查不到；无报错。
    - 原因：`queueIntel` 登记的情报先进入通信队列，通过中继可见性检查后才转为可见 intel 并出队。
-   - 修正：需要立即登记用 `addIntel`(绕过可见性检查，`IntelInfoPlugin` javadoc 原文)；需要 "进中继才可见" 的时序用 `queueIntel` + `setPostingLocation` / `setPostingRangeLY`(`BaseIntelPlugin`)。
+   - 修正：需要立即登记用 `addIntel`；需要 "进中继才可见" 的时序用 `queueIntel` + `setPostingLocation` / `setPostingRangeLY`(`BaseIntelPlugin`)。
 3. **情报一直不消失，`shouldRemoveIntel()` 恒 false**。
    - 触发条件：自定义 `IntelInfoPlugin` 没实现结束语义 (直接 implements 接口而非继承 `BaseIntelPlugin`)。
    - 可观察结果：情报永久留在 Intel 页与存档 (intel 集合随存档保存)。
@@ -532,7 +532,7 @@ gradle jar
    - 修正：继承 `BaseIntelPlugin`，结束用 `endAfterDelay()` / `endImmediately()`，`shouldRemoveIntel()` 默认 = `isEnded()` 即自动清理。
 4. **`getIntelTags(map)` 抛 NPE**。
    - 触发条件：覆写时直接 `map.getPlayerFleet()` 之类解引用。
-   - 可观察结果：地图 tooltip / Intel 页渲染路径 NPE(`IntelInfoPlugin` javadoc："Method NEEDS to handle map being null gracefully.")。
+   - 可观察结果：地图 tooltip / Intel 页渲染路径 NPE(`IntelInfoPlugin` "Method NEEDS to handle map being null gracefully.")。
    - 原因：`getIntelTags` 可能在 map 为 null 时被调用，接口要求实现方自己容忍 null。
    - 修正：先判 null 或调 `super.getIntelTags(map)`(基类内部已判)。
 5. **对话框选项点了没反应**。
@@ -554,7 +554,7 @@ gradle jar
    - 触发条件：把纯消息当 intel 用 (绑定 `MessageClickAction` 或加入情报管理器)。
    - 可观察结果：消息显示异常或点击行为不符合 "纯消息" 预期。
    - 原因：`MessageIntel` 不绑定任何情报页面，本身没有跳转语义。
-   - 修正：`MessageIntel` 的用途是左下消息区纯消息 (javadoc 原文)，走 `CampaignUIAPI.addMessage(intel)`；要出现在 Intel 页请用 `BaseIntelPlugin` 子类 + `addIntel`。
+   - 修正：`MessageIntel` 的用途是左下消息区纯消息，走 `CampaignUIAPI.addMessage(intel)`；要出现在 Intel 页请用 `BaseIntelPlugin` 子类 + `addIntel`。
 
 ## 总结
 

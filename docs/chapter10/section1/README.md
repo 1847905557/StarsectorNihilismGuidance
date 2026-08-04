@@ -10,7 +10,7 @@
 
 完成后，您将能够：
 
-- 解释 `advance(float amount)` 的 `amount` 语义 (上一帧真实秒数，API javadoc 原文)，并说出正常帧、暂停、加速、新档推进、战斗五种时序下引擎如何调用脚本与时钟；
+- 解释 `advance(float amount)` 的 `amount` 语义，并说出正常帧、暂停、加速、新档推进、战斗五种时序下引擎如何调用脚本与时钟；
 - 解释 `isDone()` 与 `runWhilePaused()` 的引擎执行约定 (每帧最多两查、清理入口、脚本基类默认值、`EveryFrameScriptWithCleanup` 的边界)，并用 `isDone()` 控制常驻脚本自停；
 - 解释 `CampaignClockAPI` 的内部换算 (10 真实秒 = 1 游戏日、整游戏秒截断、时间戳与 `getElapsedDaysSince`)，并区分以日历为准与以累加器为准两类时间判断的适用场景；
 - 解释存档序列化边界：`scripts` 随存档保存、`transientScripts` 读档后必然清空、脚本字段的 XStream 可序列化要求与 `readResolve()` 恢复模式；
@@ -23,7 +23,7 @@
 
 - 星区结构、生涯时钟、`EveryFrameScript` 入门、脚本注册与推进循环、暂停与加速语义、persistent data `CLASS_MARK` 标记 —— 本节的所有概念都从这里继续，不重复基础讲解 (C08-S01)。
 - `modPlugin` 生命周期回调与 persistent data 注册标记模式；本节的注册沿用同一个模式 (C06-S02)。
-- `Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段" ；脚本注册必须发生在生涯引擎建立之后 (C06-S03)。
+- `Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；脚本注册必须发生在生涯引擎建立之后 (C06-S03)。
 - 战斗域每帧回调 (`EveryFrameCombatPlugin`)—— 两边的暂停语义不同，注意对照 (生涯脚本循环在暂停时默认完全跳过)(C07-S01)。
 
 ## 文件与 API 链路
@@ -38,19 +38,19 @@
 |---|---|
 | `boolean isDone()` | 每帧**最多查两次**：`advance` 前查一次 —— 为 `true` 直接移除 (不调 `advance`)；`advance` 返回后再查一次 —— 为 `true` 移除。常驻脚本返回 `false` |
 | `boolean runWhilePaused()` | 调用条件 `runWhilePaused() || !isPaused()`：返回 `true` 时暂停期间 `advance` 仍被调用，但 `amount` 仍是真实秒数、时钟仍冻结 (见 "时间换算" 节)|
-| `void advance(float amount)` | `amount` 是**上一帧经过的真实秒数** (javadoc 原文 "seconds elapsed during the last frame" ； "Use SectorAPI.getClock() to convert to campaign days")。**必须**经时钟换算才是游戏天 |
+| `void advance(float amount)` | `amount` 是**上一帧经过的真实秒数** ("seconds elapsed during the last frame"； "Use SectorAPI.getClock() to convert to campaign days")。**必须**经时钟换算才是游戏天 |
 
 执行细节：
 
 1. 引擎遍历的是**列表快照**(`new ArrayList<>(this.scripts)`)，脚本在 `advance` 里 `addScript` / `removeScript` 安全；代价是 advance 里新加的脚本下一帧才推进。
-2. 移除是 "遍历快照、改原列表" ：
+2. 移除是 "遍历快照、改原列表"：
    - `isDone` 自动清理；
    - `removeScript(script)` 按**对象同一性**；
    - `removeScriptsOfClass(Class)` 按**精确类** `getClass() == clazz`；
    - `hasScript(Class)` 用 `isInstance`—— 查重用 `hasScript`，批量删用 `removeScriptsOfClass`，别混用。
 3. **`addScript` 不去重**：同一实例或等价实例重复注册会各自推进 —— 一次性注册必须用 persistent data 标记 (必须遵守的规则，见 "注册与存档" 节)。
 4. 脚本基类把 `runWhilePaused()` 默认设为 `false`；引擎内置脚本也走同一机制。
-5. `EveryFrameScriptWithCleanup`(`com.fs.starfarer.api.EveryFrameScriptWithCleanup`) 只多一个 `cleanup()`：API javadoc 约定是 "附着实体从生涯引擎移除时调用"(实体级脚本；引擎级脚本不触发)。该接口没有可观测的调用点，行为表述以 API javadoc 为准。
+5. `EveryFrameScriptWithCleanup`(`com.fs.starfarer.api.EveryFrameScriptWithCleanup`) 只多一个 `cleanup()`："附着实体从生涯引擎移除时调用"(实体级脚本；引擎级脚本不触发)。该接口没有可观测的调用点，行为表述即上述语义。
 
 ### amount 的取值：五种时序下引擎怎么调 advance
 
@@ -342,7 +342,7 @@ public class GearInDayAccumulatorScript implements EveryFrameScript {
     }
 ```
 
-(标记段与查重段只取一段即满足 "不重复注册" ；两段同留时查重段会在标记段之后补注册，不会叠加 —— 但演示时建议只保留标记段，避免混淆。)
+(标记段与查重段只取一段即满足 "不重复注册"；两段同留时查重段会在标记段之后补注册，不会叠加 —— 但演示时建议只保留标记段，避免混淆。)
 
 ::: caution 每个注册项必须用各自的 persistent data 键做标记
 
@@ -401,7 +401,7 @@ gradle jar
 ## 故障分析
 
 1. **脚本完全没有日志**：`starsector.log` 里没有任何 `GearIn calendar:` / `GearIn daily:` 日志且无报错；另一种表现是启动中止，NPE 堆栈指向 `onApplicationLoad`。触发：忘了调用 `addScript`，或把注册写进 `onApplicationLoad` (此刻 `Global.getSector()` 为 null，解引用即 NPE)。修正：注册放 `onGameLoad` / `onNewGame` 的 persistent data 标记块内 (C06-S03 的 null 语义)，改回后重启新档确认恢复。
-2. **把 `amount` 当游戏天数用**：一切按天数计算的逻辑比真实快 10 倍 (10 真实秒被当成 10 游戏天，`daysToRun = 30` 的脚本 30 真实秒就自停)。触发：忽略接口 javadoc ("Use SectorAPI.getClock() to convert to campaign days")。修正：一律 `clock.convertToDays(amount)` —— 本节示例 `advance` 第一行就是换算。
+2. **把 `amount` 当游戏天数用**：一切按天数计算的逻辑比真实快 10 倍 (10 真实秒被当成 10 游戏天，`daysToRun = 30` 的脚本 30 真实秒就自停)。触发：忽略接口提示 ("Use SectorAPI.getClock() to convert to campaign days")。修正：一律 `clock.convertToDays(amount)` —— 本节示例 `advance` 第一行就是换算。
 3. **`isDone()` 恒返回 true**：`advance` 一次都不执行、连日志都没有。触发：完成标记写反或占位返回 `true`，引擎第一帧先查 `isDone` 就直接移除。修正：初始 `false`，仅完成条件满足时置 `true`。
 4. **`isDone()` 恒 false 且想用 `removeScript` 移除别的实例**：日志持续，目标脚本删不掉。触发：把 `removeScript` 用在等价但不同实例上；引擎按对象同一性移除，`removeScriptsOfClass` 又只按精确类删 (子类不算)。修正：移除用注册时的同一实例，或改 `removeScriptsOfClass`；常驻脚本想自停就置 `done = true` 让引擎自动清理。
 5. **`runWhilePaused()` 语义误用**：以 `amount` 自累计的逻辑在暂停时继续走、以时钟为准的逻辑冻结，两者分道扬镳。触发：误以为返回 `true` 就能让时钟在暂停时前进；实际上 `runWhilePaused = true` 时暂停期间 `advance` 仍被调用 (`amount` 仍是真实秒数)，但 `getClock()` 的日期与时间戳不变。修正：暂停敏感的进度用时钟或 `convertToDays` 累加 (两者都随暂停冻结)；必须暂停期间推进的 (如 UI 覆盖动画) 才用 `runWhilePaused = true`，且不依赖时钟。

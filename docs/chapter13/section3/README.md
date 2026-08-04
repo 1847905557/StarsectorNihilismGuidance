@@ -1,8 +1,8 @@
-# 使用 LunaLib 制作设置界面
+# 使用 GraphicsLib 制作光源与材质
 
-本节为既有 MOD 接入 LunaLib 设置：用 CSV 定义设置项，在界面中保存，再从代码读取并监听变化。LunaLib 缺失时，已有的可选依赖判断会让 MOD 继续运行。
+本节初始化 GraphicsLib，并在战斗中加入动态光源与材质贴图。示例会同时留下日志和画面结果，用来确认资源已经注册并参与渲染。
 
-*本节预期阅读时间：~20 分钟。*
+*本节预期阅读时间：~25 分钟。*
 
 *本节预期操作时间：~45 分钟。*
 
@@ -10,637 +10,864 @@
 
 完成后，您将能够：
 
-- 写出 `data/config/LunaSettings.csv` 的九列与 `fieldType` 支持清单 (`Header` / `Text` / `Int` / `Boolean` / `Double` / `String` / `Enum` / `Keycode` / `Color` / `Radio`)。
-- 说出定义链：谁在什么时候读取谁的 CSV、空 `fieldID` 行被跳过、`defaultValue` 按类型转换及转换失败的可观察结果；
-- 说出用户设置文件的位置、创建时机与更新时机：首次加载设置时由 LunaLib 用默认值创建，之后在设置界面点保存按钮更新 (底层是 LazyLib `CommonDataJSONObject.save()`，唯一写盘入口)；`Header` / `Text` 类型不落盘、缺失键自动补默认值；
-- 用 `LunaSettings.getBoolean / getInt / getFloat / getDouble / getString / getColor(modId, fieldId)` 读取设置，说出三条约定：返回值是 boxed 值且**可为 null**、缺失时写 `ERROR` 日志并返回 null、未加载时懒触发整份加载。
-- 说出 `getFloat`(从保存的 double 转 float) 与 `getColor`(十六进制字符串，`#` 前缀可省略) 的转换规则；
-- 用 `LunaSettings.addSettingsListener` 注册 `LunaSettingsListener`，写出按**自己的 MOD id 过滤**的 `settingsChanged(modId)`，说出通知触发时机 (设置界面保存后) 与 "单个监听器抛异常被隔离、不影响其他监听器"；
-- 说出 LunaLib 未启用时引用 `lunalib.**` 的后果 (`NoClassDefFoundError`) 与 `isModEnabled("lunalib")` 启用判断回退写法 (与硬依赖检测专题一致，成熟实例同款)；
-- 从设置界面、用户设置文件、`starsector.log`、代码读取值四个可观察位置复核设置完整流程，并把 "设置没生效" 定位到定义链、保存链、读取链还是通知链。
+- 解释 GraphicsLib 的初始化完整流程：
+  - `ShaderModPlugin.onApplicationLoad` → `ShaderLib.init()`(幂等、能力检测)；
+  - `areShadersAllowed()` / `areBuffersAllowed()` 双门禁；
+  - `LightData` / `TextureData` CSV 注册 → `ShaderAPI` 实例注册。
+  - 每场战斗 `ShaderHook` 重新实例化并挂载。
+- 解释使用方 MOD 为什么**必须**在自己的 `onApplicationLoad` 里先调 `ShaderLib.init()` 再读能力门禁 (`onApplicationLoad` 按 MOD 显示名排序执行，"zz GraphicsLib" 几乎总是最后)。
+- 解释不这么做时可观察的结果："自己的 CSV 静默不注册"。
+- 用 `StandardLight` + `LightShader.addLight()` 在战斗内创建点光源 (point)，解释 line / cone / directional 三种其他类型与挂载、`fadeOut`、`setLifetime`、`makePermanent` 的语义；
+- 解释光源的适用边界：动态光源只在战斗内有效 (战斗 `LocalData` 不存在时 `addLight` 静默跳过)、光源列表随战斗销毁、未永久化的光源 60 秒 failsafe、每帧上限 (默认 100、硬上限 372)、暂停时不推进；
+- 解释 `LightData` / `TextureData` CSV 的注册与查询面：两套读入方法 (覆盖式 vs 先到先得)、行字段、key 组成 (`id + type + frame`)、`TextureEntry.magnitude`。
+- 解释贴图三遍 (material / normal / surface) 如何被 `LightShader` 在战斗内消费；
+- 从症状定位典型故障：启动抗锯齿中止、光源不出现且无报错、挂载光源一分钟后消失、舰船死后残光驻留、自己的 CSV 不生效、大场面光效 pop-in/out、贴图查询返回 none。
 
 ## 前置知识
 
-本节建立在既有教程工程与前面各节的机制之上，主要涉及以下主题：
+本节直接使用硬依赖库的 Java 接口，并沿用战斗插件与分层渲染的既有通道，请先熟悉以下内容：
 
-- 硬依赖声明与运行时检测 —— 本节示例把 LunaLib 当作**可选**前置：不修改 `mod_info.json` 的 `dependencies`(保持硬依赖检测专题的声明)。
-- 调用任何 `lunalib.**` 前先 `isModEnabled("lunalib")` 判断是否启用，未启用时回退代码内默认值 (成熟实例的 LunaSettings 用法同款)(C12-S01)。
-- LazyLib `CommonDataJSONObject`——`save()` 是唯一写盘入口 (官方 MUST)，LunaLib 保存链的底层就是它 (C12-S02)。
-- `loadCSV(path, modId)` 的 modId 限定读取 ——LunaLib 用它在每个启用 MOD 的目录里找各自的 `LunaSettings.csv`；common 文件与 `/` 路径规则 (C06-S04)。
-- `modPlugin` 回调与 `onGameLoad` 时机 —— 本节示例的注册/读取接入点 (C06-S02)。
-- `Global` 生命周期 ——`getSettings()` 全程非 null(启用判断与日志的前提)(C06-S03)。
-- `MagicSettings` 设置链 —— 对照：两套设置的读取入口与 ID 归属不同，本节设置项使用 `GearIn_` 前缀，不进入 `modSettings.json` 的 `gear_in` 段 (C12-S04)。
-- MOD id `gear_in` 与命名约定 —— 数据 key 用 `GearIn_` 前缀 (C01-S01)。
+- 硬依赖声明与运行时检测 (C13-S01)：`mod_info.json` 的 `dependencies` 写法与运行时自检流程；
+- 分层渲染插件通道 (C07-S06)：`engine.addLayeredRenderingPlugin(...)` 的注册方式、`ABOVE_SHIPS_AND_MISSILES_LAYER` 在层序中的位置；
+- 战斗插件模型与暂停检查 (C07-S01)：`EveryFrameCombatPlugin` 的 `advance` 生命周期与 `engine.isPaused()` 的用法；
+- `modPlugin` 与 `onApplicationLoad()` 时机 (C06-S02)：资源加载完成后、主菜单前调用；
+- `Global` 生命周期与战斗外引擎判空 (C06-S03)：战斗外 `getCombatEngine()` 是非 null 空引擎，"战斗内" 判据以 `LocalData` 是否存在为准；
+- MOD 目录与 `mod_info.json`(C01-S01)；
+- GLSL 语法 (C15-S01)：着色器专题负责 shader 源码，本节只调用 GraphicsLib 的 Java 接口，不编写 GLSL。
 
-## LunaLib 概览
+`GearInModPlugin` 由前置的 modPlugin 主题单元持有。
 
-本地发行布局 (`Starsector\mods\Lunalib`，官方源码固定 commit `5ee5fad724b7679de9bfd0b525e5c0a04172edc6`)：发行包 `jars\LunaLib.jar` 内随附官方 Kotlin 源文件 `*.kt`，本节行为事实全部来自这些随附源文件、本地数据文件与授权切片，未反编译任何 jar。
+## 适用边界速览 (先记住边界再读细节)
 
-```text
-Starsector\mods\Lunalib\
-├── mod_info.json              # id "lunalib"、version "2.0.3"、gameVersion "0.98a-RC7"、
-│                              # jars 三件（LunaLib.jar + LunaLib-Kotlin.jar + fuzzywuzzy-1.3.0.jar）、
-│                              # modPlugin lunalib.LunaLibPlugin、依赖 lw_lazylib
-├── data\
-│   └── config\
-│       ├── LunaSettings.csv           # LunaLib 自己的设置项定义（九列表头实例）
-│       ├── LunaSettingsConfig.json    # 设置界面图标配置（顶层键 = MOD id，lunalib 段实例）
-│       ├── LunaSettingsDefault.default # 用户设置文件的初始模板（本发行内容为 {}）
-│       ├── settings.json              # 界面/功能注册
-│       └── strings.json               # 界面文案
-├── graphics\
-└── jars\
-    └── LunaLib.jar / LunaLib-Kotlin.jar / fuzzywuzzy-1.3.0.jar
+本节的所有入口都以战斗引擎为所属对象。先把两类生命周期分清，后面读初始化与光源细节时才有参照：
+
+| 能力 | 生命周期 | 所属对象 | 说明 |
+|---|---|---|---|
+| `ShaderLib.init()` 与能力检测 | 会话级 (进程内一次)| `onApplicationLoad` | 幂等；多个 MOD 调用只有第一次真正执行 |
+| `LightData` / `TextureData` 数据注册 | 会话级 (进程内一次)| `onApplicationLoad` | 跨战斗复用；数据表在两次战斗之间不清空 |
+| 光源渲染与贴图三遍渲染 | 战斗级 (每场战斗重建)| 战斗引擎 | `ShaderHook` 每场战斗新实例化，`LocalData` 每场战斗重建 |
+| 动态光源列表 | 战斗级 | 战斗引擎 customData(键 `shaderlib_LightShader`)| 随战斗销毁；跨战斗引用全部失效 (会话级对象禁止跨战斗缓存)|
+| 战役画面 | 不经过本节链路 | —— | 战役引擎不实例化 settings `plugins` 的 `EveryFrameCombatPlugin`(走 `CampaignPlugin` / `ListenerUtil` 通道)，本节所有入口都以战斗引擎为所属对象 |
+
+一句话：**注册是会话级的，渲染是战斗级的**。`addLight`、CSV 自动光源、贴图替换都只在战斗画面里发生。
+
+## GraphicsLib 初始化 (onApplicationLoad 接入)
+
+边界已经建立：注册是会话级的，而初始化链就是注册发生的唯一位置。先看 GraphicsLib 自己在启动阶段做了什么，再看您的 MOD 应该在哪一步插入。
+
+### GraphicsLib 自己的初始化链
+
+GraphicsLib 是 utility MOD(`Starsector\mods\GraphicsLib\mod_info.json`：`id` `shaderLib`、`name` `"zz GraphicsLib"`)。
+
+其 `modPlugin` 为 `org.dark.shaders.ShaderModPlugin`、依赖 `lw_lazylib`。
+
+它的 `ShaderModPlugin.onApplicationLoad()` 依次做：
+
+1. **`ShaderLib.init()`**：幂等初始化 (`initialized` 标志，javadoc 原文 "many mods may call this method but only the first will actually do anything")。它依次做：
+  - 读取 `GRAPHICS_OPTIONS.ini`(`enableShaders` / `toggleKey` / `reloadKey` / `use64BitBuffer` / `extraScreenClear` / `aaCompatMode`)。
+  - 检测 OpenGL 2.0(`shadersAllowed`) 与 framebuffer 能力 (`buffersAllowed`，Core/ARB/EXT 三选一)。
+  - 按屏幕尺寸创建内部渲染纹理与 foreground / auxiliary 两个 FBO。
+  - `enableShaders:false` 时 `shadersAllowed` 与 `buffersAllowed` 同时置 false。
+2. **抗锯齿检查**：`getAASamples() > 1` 且 `aaCompatMode` 未开时**抛 `RuntimeException`**——"GraphicsLib shaders are not fully compatible with antialiasing!"，给出三个选项：
+  - 启动器把抗锯齿设为 Off；
+  - `GRAPHICS_OPTIONS.ini` 设 `aaCompatMode:true` 做部分抗锯齿；
+  - `enableShaders:false` 关闭 shader。
+3. **能力双通过后注册 shader 实例并读入核心数据**：
+  - `ShaderLib.addShaderAPI(new PostProcessShader())`
+  - 在 `areShadersAllowed() && areBuffersAllowed()` 内读入核心数据：
+    - `LightData.readLightDataCSVNoOverwrite("data/lights/core_light_data.csv")`、`TextureData.readTextureDataCSVNoOverwrite("data/lights/core_texture_data.csv")`；
+    - `ShaderLib.addShaderAPI(new LightShader())`、`addShaderAPI(new DistortionShader())`。
+
+`ShaderLib.addShaderAPI` 对同一 class 保持唯一实例 (已存在同 class 即忽略)，`getShaderAPI(Class)` 按类取回实例。
+
+### 战斗钩子：ShaderHook 与 LocalData
+
+`Starsector\mods\GraphicsLib\data\config\settings.json` 的 `plugins` 段注册了 `"ShaderHook": "org.dark.shaders.util.ShaderHook"`。
+
+settings `plugins` 的注册链：加载期把每个插件类名登记进脚本类表
+
+→ 每场战斗开始时，settings `plugins` 里的每个 `EveryFrameCombatPlugin` 脚本类都被**新实例化**并加入战斗地图
+
+(每次加载脚本类都新建实例)。
+
+也就是说 **`ShaderHook` 是战斗级的**：每场战斗都有全新实例，战役画面没有它。
+
+`ShaderHook.init(engine)` 做两件事：
+
+- 对每个 `ShaderAPI` 调 `initCombat()`。`LightShader.initCombat()` 把 `LocalData`(光源列表 + beam/projectile 跟踪表) 写入 `engine.getCustomData()`，键 `shaderlib_LightShader`；
+- `engine.addLayeredRenderingPlugin(new ShaderCombatLayerHook())`：一个覆盖**全部** `CombatEngineLayers`、`getRenderRadius()` 返回 `99999999f`、永不失效的分层渲染插件 (`org.dark.shaders.util.ShaderHook`，即分层渲染插件的注册通道)。
+- 它在每个层渲染时把 `isCombat() && getCombatLayer() == layer` 的 shader 的 `renderInWorldCoords(viewport)` 派发出去。
+
+`LightShader.getCombatLayer()` 返回 `ABOVE_SHIPS_AND_MISSILES_LAYER`、`isCombat()` 返回 true—— 所以**光照绘制发生在分层渲染层序中位于粒子系统之前的那一层**；
+
+`ShaderHook.advance` 每帧调 `shader.advance(amount, events)`，`LightShader.advance` 在非暂停时推进光源列表 (见 "光源" 节)。
+
+键 `197`(Pause/Break) 切换 shader 开关、键 `68`(F10) 重载设置 (键位来自 `GRAPHICS_OPTIONS.ini` 的 `toggleKey` / `reloadKey`)。
+
+### 使用方 MOD 的接入 (规则 1)
+
+成熟实例的一致写法：
+
+```java
+ShaderLib.init();
+if (ShaderLib.areShadersAllowed() && ShaderLib.areBuffersAllowed()) {
+    LightData.readLightDataCSV("data/lights/<自己的CSV>.csv");
+    TextureData.readTextureDataCSV("data/lights/<自己的CSV>.csv");
+}
 ```
 
-本节涉及的类与职责：
+**为什么 "必须" 自己先调 `ShaderLib.init()`**：`onApplicationLoad` 的调用顺序由 MOD 显示名排序决定 —— `ModManagerAPI` 把全部 MOD 按 `name` 排序，`enabledMods` 按该顺序重建，
 
-| 类 | 职责 | 本节范围 |
+加载流程按 `getEnabledModPlugins()` 顺序逐个调 `onApplicationLoad()`。
+
+GraphicsLib 的显示名是 `"zz GraphicsLib"`，几乎必然排在最后 —— 也就是说**本 MOD 的 `onApplicationLoad` 几乎总是先于 GraphicsLib 执行**。
+
+此时若没有先调 `ShaderLib.init()`，`areShadersAllowed()` / `areBuffersAllowed()` 读到的是初始值 false，CSV 读取被跳过；等 GraphicsLib 初始化完成后，数据也回不来了。
+
+**违反的可观察结果：shader 能力完全正常的机器上，自己的 light/texture CSV 静默未注册**—— 战斗里自动光源/贴图不生效，日志没有任何报错，只有 "查询返回 not registered / none" 这类痕迹。
+
+`ShaderLib.init()` 幂等，先调无副作用，所以这是无成本的必须遵守的规则。
+
+::: caution 先 `ShaderLib.init()` 再读能力门禁 (规则 1)
+使用方 MOD 在 `onApplicationLoad` 里读取任何能力门禁或注册 `LightData` / `TextureData` 之前，**必须先调用 `ShaderLib.init()`**。
+
+不先调用时能力判断读到初始 false，自己的 CSV 静默不注册 —— 能力全开的机器上自动光源/贴图不生效，且没有任何报错。
+
+`ShaderLib.init()` 幂等，先调无副作用。
+:::
+
+**为什么 CSV 读取要放在能力判断内**：`LightData` / `TextureData` 的读入方法本身不检查能力 (无条件读入、行非法只打 ERROR 日志不抛出)，但数据只会在 shader 能力具备时被消费；
+
+`TextureData` 的纹理加载还受 `GRAPHICS_OPTIONS.ini` 的 `loadMaterial` / `enableNormal` / `loadSurface` 门禁控制 (`org.dark.shaders.util.TextureData` 静态初始化块与加载门禁)。
+
+把 CSV 读取放进能力判断是成熟实例的一致做法，语义是 "不做注定不会被消费的注册"。
+
+### 能力门禁 API(规则 2)
+
+| 方法 (`org.dark.shaders.util.ShaderLib`)| 语义 |
+|---|---|
+| `areShadersAllowed()` | OpenGL 2.0 支持 (shader 能力)；javadoc 原文 "Do not use shader code if this returns false! Otherwise the game will crash!" |
+| `areBuffersAllowed()` | framebuffer object 支持；javadoc 原文 "Do not use FBOs if this returns false! Otherwise the game will crash!" |
+| `getAuxiliaryBufferId()` / `getAuxiliaryBufferTexture()` | `buffersAllowed == false` 时返回 0 |
+| `isAACompatMode()` | `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode` |
+| `getShaderAPI(Class)` / `getShaderAPIsCopy()` | 已注册 `ShaderAPI` 实例查询 |
+
+这两条门禁是 "必须" 级：`areShadersAllowed()` 为 false 时不得使用任何 shader 程序与 shader 绘制入口，`areBuffersAllowed()` 为 false 时不得使用任何 FBO 相关入口 —— 违反的可观察结果是崩溃或空绘制 (javadoc 原话)。
+
+本节示例不直接写 shader 程序，只消费 `LightShader` / `TextureData`，但同样的门禁语义贯穿整条链：
+
+`LightShader` 构造器自己也会读 `GRAPHICS_OPTIONS.ini`(`enableLights` / `maximumLights` / `maximumLineLights` / `intensityScale` / `sizeScale` / `fighterBrightnessScale` / `enableBloom` / `enableNormal` / …)。
+
+`enableLights:false` 时 `isEnabled()` 为 false，此后所有 `LightShader.addLight` 调用全部静默无效。
+
+## 光源 (LightShader / LightAPI / StandardLight)
+
+初始化与能力判断就绪后，进入战斗内最常用的消费面：光源。`LightShader` 既负责渲染也充当光源注册中心，先认识四种类型，再学注册与移除，最后看生命周期与上限。
+
+### 类型速查 (LightAPI)
+
+`org.dark.shaders.light.LightAPI` 是光源接口：
+- `getLocation` / `getLocation2` / `getArcStart` / `getArcEnd` / `getDirection`
+- `getSpecularIntensity` / `getSpecularMult` / `getHeight` / `getColor` / `getSize`
+- `getIntensity` / `getType` / `advance`
+
+`getType()` 定义四种类型 (接口 javadoc 原文)：
+
+| 类型 | 取值 | 说明 |
 |---|---|---|
-| `lunalib.lunaSettings.LunaSettings`(object，全部 `@JvmStatic`)| 运行时读取 `getX(modId, fieldId)`、监听器注册 `addSettingsListener` / `removeSettingsListener` / `hasSettingsListenerOfClass`、通知入口 `reportSettingsChanged`、运行时定义 `SettingsCreator` | 读取 / 通知 |
-| `lunalib.lunaSettings.LunaSettingsListener`(interface)| 变更通知回调，唯一方法 `settingsChanged(modId)` | 通知 |
-| `lunalib.backend.ui.settings.LunaSettingsLoader`(object)| `loadDefault`(解析各 MOD 的 CSV)、`saveDefaultsToFile`(补默认值落盘)、`loadSettings`(读入运行时表)；源码注释 "Can not be used outside LunaLib" | 定义 / 保存 (行为事实)|
-| `lunalib.backend.ui.settings.LunaSettingsConfigLoader`(object)| 设置界面图标 `getIconPath(modId)` | 可选 |
-| `lunalib.backend.scripts.LoadedSettings` | LunaLib 自己的监听器实例：`modID == "lunalib"` 过滤后重读键位 | 通知 (官方写法)|
-| `lunalib.backend.scripts.KeybindsScript` | 生涯每帧脚本：按键打开设置界面 / 调试界面 | 保存 (UI 入口)|
+| point(点光源)| 0(默认)| 圆形光斑，`getLocation` + `size` + `intensity` |
+| line(线光源)| 1 | 两个端点 `getLocation` / `getLocation2`，主要用于光束 |
+| cone(锥光源)| 2 | 可见弧 `getArcStart` / `getArcEnd`(度)|
+| directional(方向光)| 3 | 3D 方向向量 `getDirection` + `getSpecularIntensity`(用于模拟太阳等)|
 
-四条链路总览：
+`org.dark.shaders.light.StandardLight` 是 "默认自动行为足够用" 的标准实现 (类 javadoc 原文)，提供全套 setter：
+- `setColor(Color)` / `setColor(float,float,float)`、`setSize`、`setIntensity`、`setLifetime`、`fadeIn` / `fadeOut`、`makePermanent`。
+- `setVelocity` / `setVelocity2`、`setHeight`(法线贴图用的世界高度)。
+- `attachTo(CombatEntityAPI)` / `attachToBeam(BeamAPI)` / `linkToBeam(BeamAPI, boolean)`
+- `setArc(start, end)`(自动规整到 0–360 度)、`setSpecularIntensity` / `setSpecularMult`。
 
-```text
-定义链：data/config/LunaSettings.csv（每个启用 MOD 一份）
-        → LunaSettingsLoader.loadDefault()（按 mod.id 限定读取）→ SettingsData
-保存链：设置界面改动 → 保存按钮 → CommonDataJSONObject.save()（LazyLib 写盘）
-        → <存档目录>/common/LunaSettings/<modId>.json → 运行时表更新 → reportSettingsChanged
-读取链：LunaSettings.getX(modId, fieldId)（懒加载）→ 运行时表 JSONObject → boxed 值 / null
-通知链：addSettingsListener 注册 → reportSettingsChanged(modId) → 逐个 settingsChanged(modId)
+构造器族覆盖四型 (点：location+velocity+offset+attach；线：双端点+双速度+beamAttach；锥：location+velocity+arc；方向：Vector3f 方向)。
+
+**挂载语义**：光源挂载到实体后，`setLocation` / `setVelocity` 不再生效 (javadoc 原文 "Has no effect if the light is attached to something")。
+
+位置每帧取自实体 (有非零 offset 时按实体朝向旋转 offset 再叠加，即 `computeOffset` 的逻辑)。
+
+挂载是 "光源跟随舰船/武器" 的标准做法。
+
+### 注册与移除：LightShader.addLight / removeLight
+
+```java
+LightShader.addLight(light);      // 把 LightAPI 加入当前战斗的光源列表
+LightShader.removeLight(light);   // 强制移除
 ```
 
-四条链路里，定义链是起点：没有 CSV 就没有设置项，后面三条链路无从谈起。先从定义链开始，再依次走完保存、读取与通知。
+两个静态方法都是**静默**的：`addLight` 只有同时满足 "`ShaderLib.getShaderAPI(LightShader.class)` 返回已启用的 `LightShader` 实例" 且 "当前战斗引擎 customData 里的 `LocalData` 存在" 时才真正把光源写进列表。
 
-## 设置定义：data/config/LunaSettings.csv
+其余情况直接返回 (null 参数同样直接返回)。
 
-LunaLib 的设置项不是注册到某个全局文件，而是**每个已启用 MOD 自己提交一份**固定路径的 CSV：`data/config/LunaSettings.csv`。加载入口在 LunaLib 的应用加载期与首次读取时：
+javadoc 原话："This function will do nothing if the light shader is not enabled."
 
-- `LunaLibPlugin.onApplicationLoad`：`LunaSettings.addSettingsListener(LoadedSettings())` 后执行 `if (!LunaSettingsLoader.hasLoaded) LunaSettingsLoader.load()`(官方源码 `lunalib.LunaLibPlugin`)。
-- `LunaSettingsLoader.load()` = `loadDefault()` + `saveDefaultsToFile()` + `loadSettings()` (`lunalib.backend.ui.settings.LunaSettingsLoader`)。
-- `loadDefault()` 遍历 `Global.getSettings().getModManager().getEnabledModsCopy()`，对每个启用 MOD 执行 `Global.getSettings().loadCSV("data/config/LunaSettings.csv", mod.id)`。
-  - 这是 `loadCSV(path, modId)` 的 modId 限定读取，只会读到该 MOD 自己的目录。
-- 没有这个文件的 MOD 读取抛异常被静默吞掉 (`catch (_: Throwable) { continue }`)，即 "没写 CSV 的 MOD 没有设置项"。
-- 懒加载备用机制：任何 `LunaSettings.getX(...)` 在 `hasLoaded == false` 时先执行一次 `LunaSettingsLoader.load()`(`lunalib.lunaSettings.LunaSettings` 各 getter)。
-- 因此使用方在 `onApplicationLoad` 读设置也不需要等 LunaLib 自己的回调顺序 (跨 MOD `onApplicationLoad` 顺序按显示名排序)。
+由此得到规则 4：**动态光源必须在战斗内、战斗的 `LocalData` 创建之后添加**—— 即 `EveryFrameCombatPlugin` / 部署监听器 / 武器效果的推进回调里 (`ShaderHook.init` 在战斗初始化阶段就跑完了)。
 
-官方表头 (九列，`Starsector\mods\Lunalib\data\config\LunaSettings.csv` 与各成熟实例一致)：
-
-| 列 | 语义 | 解析行为 |
-|---|---|---|
-| `fieldID` | 设置项唯一 ID，也是运行时读取 key | **空行跳过**(`if (id == "") continue`)；同 MOD 内重复 ID 后读行覆盖前行 |
-| `fieldName` | 设置界面的显示名 | 直接读取 |
-| `fieldType` | 设置类型 | 支持 `Header` / `Text` / `Int` / `Boolean` / `Double` / `String` / `Enum` / `Keycode` / `Color` / `Radio` |
-| `defaultValue` | 默认值，按 `fieldType` 转换 | 见下表；**转换失败抛异常且不捕获** |
-| `secondaryValue` | 附加数据：`Radio` 的选项列表 (逗号分隔)、`Enum` 的候选等 | 可选，读取失败为空串 |
-| `fieldDescription` | 设置界面的说明文本 | 加载器**先试 `fieldTooltip` 列、再读 `fieldDescription` 列**；官方表头用 `fieldDescription` |
-| `minValue` / `maxValue` | 仅 `Int` / `Double` 的数值约束 | 可选；缺失或非法时回退 `0.0` / `100.0` |
-| `tab` | 设置界面分页名 | 可选，缺失为空串 |
-
-`defaultValue` 的类型转换 (`lunalib.backend.ui.settings.LunaSettingsLoader`，不在任何 try 内)：
-
-| `fieldType` | `defaultValue` 解析 | 运行时读取方法 |
-|---|---|---|
-| `Header` | 原样字符串，只做 UI 分组标题 | 不读取 |
-| `Text` | 原样字符串，只做 UI 展示 | 不读取 |
-| `Boolean` | Kotlin `toBoolean()`：**忽略大小写的 `"true"` 为 true，其余 (含 `"1"`、`"0"`) 一律 false** | `getBoolean` |
-| `Int` | `toInt()` | `getInt` |
-| `Double` | `toDouble()` | `getDouble` / `getFloat` |
-| `String` | 原样字符串 | `getString` |
-| `Enum` | 按逗号 `split(",")` 成列表 | LunaSettings 无枚举专用读取方法 (官方源码无 `getEnum`)|
-| `Keycode` | `toInt()`；LWJGL 键码，`0` = 未绑定/未知键 | `getInt` |
-| `Color` | 原样十六进制字符串 (如 `#f22e6e`)| `getColor` |
-| `Radio` | 原样字符串；选项列表来自 `secondaryValue`，默认选中项 = `defaultValue` | `getString` |
-
-设置界面 (`LunaSettingsUIMainPanel` / `LunaSettingsUIModsPanel` / `LunaSettingsUISettingsPanel`) 按 "已加载设置项的 MOD" 列出条目，按 `tab` 分页渲染控件：
-- `Boolean` 是开关按钮；
-- `Int`/`Double` 是文本框 + 滑条；
-- `Color` 是颜色选择器；
-- `Radio` 是单选按钮组；
-- `Keycode` 是键位绑定按钮；
-- `Header`/`Text` 只展示。
-
-界面在生涯内按键打开 (`lunalib.backend.scripts.KeybindsScript`)。
-
-默认键位定义在 LunaLib 自己的设置项 `luna_SettingsKeybind_new`(默认值 61，键码与 `org.lwjgl.input.Keyboard` 一致)，**`Shift+F2` 组合始终可用**(官方 CSV 描述原文)。
-
-::: tip 打开设置界面的技巧
-默认键位 (61) 可以在设置界面里被改掉，但 **`Shift+F2` 组合键始终可用**—— 排查 "设置界面打不开" 时直接按 `Shift+F2`。
+::: warning "光源不出现且无任何报错" 的首选排查方向
+在战役画面、主菜单或战斗初始化完成前调用 `addLight` 就是静默无效。不要用 `Global.getCombatEngine() == null` 当 "战斗内" 判据 (战斗外是非 null 空引擎)；判据是 "光源 shader 是否启用" + 调用时机。先看 `capabilities` 日志行。
 :::
 
-规则 (`data/config/LunaSettings.csv`)：
+### 推进、生命周期与清理 (规则 5、6)
 
-1. **必须**：`fieldID` 与运行时读取 key 逐字一致 (大小写敏感)。违反的可观察结果：`getX` 返回 null 并写 `ERROR` 日志 (见读取节)，设置界面有该项但代码读不到。
-2. **必须**：`defaultValue` 能被 `fieldType` 解析。
-   - 违反的可观察结果：`Int` / `Double` / `Keycode` 写非数字 → `NumberFormatException` 从加载链直接上抛 —— 要么 LunaLib 应用加载期失败、要么首个读取调用点抛异常 (错误堆栈在 `starsector.log`)，该 MOD 全部设置加载中断。
-   - `Boolean` 写 `"1"` / `"0"` **不报错**，但被静默解析成 `false`(Kotlin `toBoolean` 只认忽略大小写的 `"true"`)，开关语义反转且无任何日志。
-3. **必须**：`fieldType` 使用上表列出的类型名。未列出的类型名不执行任何默认值转换 (官方 `when` 无 else 分支)，`defaultValue` 保持字符串，界面控件与读取语义不可预期。
-4. **必须**：文件路径固定为 `data/config/LunaSettings.csv`，遵循 `loadCSV` 的 `/` 路径规则。放错位置或大小写不一致 → 读取异常被静默吞掉，设置界面里没有您的 MOD，且没有任何报错 ——"设置项整个消失" 的首选排查方向。
-5. 建议：`Radio` 的 `defaultValue` 出现在 `secondaryValue` 选项列表里；缺席时 UI 默认选中与运行时读取会错位。
+`LightShader.advance(amount, events)` 在**非暂停**时对列表逐个调 `light.advance(amount)`，返回 true 的光源被移除 (推进循环先做 `if (!engine.isPaused())` 检查)。
 
-::: warning `Boolean` 默认值只认 `"true"`
-Kotlin `toBoolean()` 只把忽略大小写的 `"true"` 解析为 true，`"1"` / `"0"` 等其余值一律**静默**解析为 false—— 不报错、无日志，开关语义反转。写 CSV 的 `defaultValue` 时用 `true` / `false`。
+暂停时光源不推进 (静止但可见)，与分层渲染插件的暂停语义一致。
+
+`StandardLight.advance` 的结束条件：type 0–2 为 `size <= 0 || intensity <= 0`；type 3 为 `intensity <= 0 && specularIntensity <= 0`。由此：
+
+- **`fadeOut(seconds)` 是 "短命光源" 的标准做法**：正数按速率把 intensity 线性降到 0，归零后下一轮 `advance` 返回 true 被移除；`fadeOut(0)` 或负数立即置 0。
+- 不要自己记秒数再 removeLight——fadeOut 一条链就走完了 (本节示例的周期闪光就是 fadeOut(0.5f) 自灭)。
+- **未永久化的光源有 60 秒 failsafe**：`superLifetime` 默认 60 秒，耗尽即移除 ——javadoc 原文 "By default, lights disappear after one minute to avoid 'light leaks'"。
+- 需要长期存在的光源 (如常驻的舰船灯、引擎灯)**必须 `makePermanent()`**(lifetime 与 superLifetime 均置 -1)。
+- 违反的可观察结果：光源的 size/intensity 一切正常，却在约 60 秒后消失。
+- **挂载在实体上的光源不会因实体死亡自动清理**：`LightShader` 只对 projectile 与 beam 维护附着关系清理，对普通 `CombatEntityAPI` 挂载没有任何生命周期跟踪。
+- 实体死亡后必须自己 `fadeOut` 或 `removeLight`，否则残光留在原地 (这正是 failsafe 存在的理由)。规则 6。
+
+::: caution 常驻必须 makePermanent，实体死亡必须自己清理 (规则 5、6)
+未永久化的光源 60 秒后会被 failsafe 移除；挂载在普通实体上的光源，实体死亡后引擎不会自动清理。需要长期存在的光源**必须 `makePermanent()`**；实体死亡后**必须自己 `fadeOut` / `removeLight`**，否则残光驻留原地 ("光泄漏")。
 :::
 
-定义链只决定"有哪些设置项、默认值是什么"；设置项改完后要能跨启动保留，靠的是保存链。
-
-## 设置保存：用户设置文件与保存流程
-
-用户设置文件：**`<存档目录>/common/LunaSettings/<modId>.json`** (存档目录由启动器按 `com.fs.starfarer.settings.paths.saves` 指定)。它由 LunaLib 独占管理，MOD 不应自己读写 (见故障分析第 11 条)。
-
-- **创建**：`LunaSettingsLoader.saveDefaultsToFile()` 对每个启用 MOD 调用 LazyLib 的 JSON 读取工具方法 `loadCommonJSON("LunaSettings/<modId>.json", "data/config/LunaSettingsDefault.default")`。
-  - LazyLib 公开 javadoc(本地发行 `Starsector\mods\LazyLib\javadoc.zip`)："Loads a JSON file from common data, or creates it, populates it with default values, and saves it to disk if it does not already exist."。
-  - 文件缺失时创建并落盘，初始内容来自该 MOD 自己的 `data/config/LunaSettingsDefault.default`(可选文件；不提供则从空对象开始)。
-- **补默认值**：随后逐项检查，`fieldType` 为 `Text` / `Header` 的跳过，其余键缺失时 `put(fieldID, defaultValue)`；`data.length() > 0` 时 `data.save()` 写盘。
-- 因此：用户文件里没有 `Header`/`Text` 键；删除某键后下次启动会以默认值补回。
-- **更新**：设置界面点保存按钮 (`lunalib.backend.ui.settings.LunaSettingsUIModsPanel`)—— 把界面收集的 `ChangedSetting` 逐项 `put` 进 `CommonDataJSONObject`，然后依次执行：
-
-```kotlin
-data.save()                                    // LazyLib CommonDataJSONObject.save()：唯一写盘入口
-LunaSettingsLoader.Settings.put(mod, data)     // 更新运行时表
-if (!newGame) LunaSettings.reportSettingsChanged(mod)  // 变更通知
-```
-
-`CommonDataJSONObject.save()` 的写盘语义 (`<saves>\common` 目录、唯一写盘入口) 如前置知识中 LazyLib `CommonDataJSONObject` 主题所列。
-
-**不点保存按钮直接关面板不会写盘、不会通知**(保存按钮有 5 帧的保存延迟，`saveDelay = 5`)。
-
-::: info 为什么 "界面保存、代码只读"
-LunaLib 的设置保存是 "界面保存、代码只读" 的设计：改设置只能走设置界面，写盘入口是 LazyLib `CommonDataJSONObject.save()`，代码侧没有 "写设置" 的 API—— 这正是用户设置文件由 LunaLib 独占管理、MOD 不应自己读写它的原因。
+::: tip 短命光源的标准写法
+要光源自灭就用 `fadeOut(秒)`：intensity 归零后由 `LightShader.advance` 自动移除，一条链走完，不需要自己记秒数再 `removeLight`。`fadeOut(0)` 或负数立即归零。
 :::
 
-可选：`data/config/LunaSettingsConfig.json` 给设置界面配 MOD 图标 —— 顶层键 = 自己的 MOD id，值含 `iconPath` (相对 MOD 根的贴图路径，正方形最佳)；
+**渲染与上限**：`LightShader.renderInWorldCoords` 先处理 projectile/beam 的自动光源 (见下)，再按 `LIGHTSIZE` 比较器对光源列表排序 (大光在前)。
 
-LunaLib 用 `getMergedJSONForMod("data/config/LunaSettingsConfig.json", "lunalib")` 合并读取。
+`drawLights` 用 `ShaderLib.isOnScreen` 剔除屏外光源、按类型打包进 1D 纹理交给 shader。
 
-读取类：`lunalib.backend.ui.settings.LunaSettingsConfigLoader`(master 是 LunaLib 自己)。
+每帧光源数上限 `min(maximumLights, 372)`(`GRAPHICS_OPTIONS.ini` 的 `maximumLights` 默认 100、最大 372，`maximumLineLights` 默认 50)——**超限光源被静默跳过**，大混战中光效可能 pop-in/out，属设计行为。
 
-本节示例不提交此文件 (无 PNG 资产)；不提供时设置界面用默认图标，不影响任何设置功能。
+全局强度/大小由 `intensityScale`(默认 0.5) 与 `sizeScale`(默认 2.0) 缩放；战机来源的自动光源乘 `fighterBrightnessScale`(默认 1.0)。
 
-文件写盘之后，运行时代码要拿到这些值，只能通过读取链。
+### LightData CSV：数据驱动的自动光源
 
-## 运行时读取：LunaSettings 静态读取 API
+`org.dark.shaders.light.LightData` 维护 projectile 与 beam 两张光源数据表，供 `LightShader` 在战斗内**自动**为射弹/光束生成光源 (不需要写 addLight 代码)：
 
-`lunalib.lunaSettings.LunaSettings` 是 Kotlin object，读取方法全部 `@JvmStatic`，Java 侧直接静态调用 (`LunaSettings.getBoolean(modId, fieldId)`)：
+- 注册：`readLightDataCSV(path)`(**覆盖式**，后读覆盖先读) 与 `readLightDataCSVNoOverwrite(path)`(**先到先得**，重复 key 保留先读 entry)。
+- 行格式 (表头即字段)：
+  - `id, type, size, intensity, fadeout, color, offset, hit size, hit intensity, hit fadeout, hit color, flash size, flash intensity, flash fadeout, flash color, flash offset, chance, fighter dim`
+  - `type` 只接受 `projectile` / `beam`，行缺 `id` 或 `type` 或 type 拼错 → **该行静默跳过**。
+  - standard 组要求 `size > 0` 且 `intensity > 0` 且 `color` 非空 `[r,g,b]` 字符串 (0–255，越界 clamp)。
+  - hit 组要求 `hit size` / `hit intensity` / `hit color` 同规则。
+  - flash 组同理；
+  - `color` 必须写成 `[255,225,50]` 形式。
+- 查询：`LightData.getLightData(id, LightDataType.PROJECTILE / BEAM)` 返回 `LightEntry` 或 null。
+  - `LightEntry` 的 public 字段：`hasStandard` / `standardSize` / `standardIntensity` / `standardColor` / `standardFadeout` / `standardOffset` / `hasHit` / `hasFlash` / `chance` / `fighterDim`。
+- 消费：`LightShader.renderInWorldCoords` 按射弹/光束 id 查表自动建光：
+  - 对每个新射弹按 `proj.getProjectileSpecId()`(`.proj` 文件的 id) 查表。
+  - 对每个新光束按 `beam.getWeapon().getId()`(武器 id) 查表；
+  - 命中且有数据时按 `chance` 随机决定是否创建 standard(附着射弹) 与 flash 光，boom 时创建 hit 光。
+  - 光束数据对 standard/flash/hit 各建一盏并 `makePermanent`，随光束亮度归零清理。
 
-| 方法 | 返回 | 转换与失败行为 |
-|---|---|---|
-| `getBoolean(modId, fieldId)` | `Boolean`(boxed，可 null)| 直接读 JSON 布尔值 |
-| `getInt(modId, fieldId)` | `Integer`(可 null)| 直接读 JSON 整数值 |
-| `getDouble(modId, fieldId)` | `Double`(可 null)| 直接读 JSON 数值 |
-| `getFloat(modId, fieldId)` | `Float`(可 null)| **从保存的 double 转 float**("Since floats dont exist in .json's, it just converts a saved double"，官方源码注释)|
-| `getString(modId, fieldId)` | `String`(可 null)| 原样字符串 |
-| `getColor(modId, fieldId)` | `java.awt.Color`(可 null)| 读字符串；**无 `#` 前缀时自动补 `#`**，`trim().uppercase()` 后 `Color.decode`；非法十六进制 → 捕获 → null + `ERROR` 日志 |
+### 适用边界小结 (光源)
 
-三条约定 (官方源码 `lunalib.lunaSettings.LunaSettings` 各 getter)：
+- 动态光源 (`addLight`) 与自动光源 (`LightData`) 都**只在战斗内渲染**；战役画面没有光源。
+- 光源列表是**战斗级**的 (`LocalData` 随 `initCombat` 重建)—— 禁止跨战斗持有 `LightAPI` / `StandardLight` 引用 (会话级对象禁止跨战斗缓存)。
+- 暂停时光源静止不推进；战斗结束淡出等全局透明度由引擎管，光源本身随战斗销毁。
+- 想要光源长期存在：`makePermanent()`；想要光源自灭：`fadeOut(秒)`；实体死了：自己 `fadeOut`。
 
-1. **懒加载**：`if (!LunaSettingsLoader.hasLoaded) LunaSettingsLoader.load()`—— 首次调用会触发整份 "解析全部启用 MOD 的 CSV + 落盘默认值 + 读入运行时表"。
-   - 因此任何一个已启用 MOD 的 `LunaSettings.csv` 损坏，都会让**所有 MOD** 的首次读取抛异常 (见故障分析第 4 条)。
-2. **可 null**：MOD 不存在 → `log.error("LunaSettings: Could not find mod $ModID")` 并返回 null。
-   - 字段缺失或类型不符 → `log.error("LunaSettings: Value $FieldID of type ... not found in JSONObject (ModID: $ModID)")` 并返回 null。
-   - **必须判空后再拆箱**，直接拆箱 null 抛 NPE。
-3. **每次现读运行时表**：getter 不做进程级缓存，保存后运行时表已被 `Settings.put` 更新，同一 JVM 内再读取即新值 ——"读取点自己缓存旧值" 才是设置不生效的常见原因 (故障分析第 6 条)。
+## 纹理 (TextureData / TextureEntry)
 
-::: warning "设置没生效" 先查读取点的缓存
-`LunaSettings.getX` 每次现读运行时表、不做进程级缓存 ——"设置界面改了、游戏里不变" 的常见根因是读取点自己把值缓存进了字段，且没注册监听器。需要热更新的缓存放进 `settingsChanged` 里重读。
+光源决定了哪里亮，纹理三遍则决定亮起来像什么：材质、法线与表面贴图分别在 `LightShader` 同一渲染回调里被消费。先看注册与查询面，再看三遍如何发生。
+
+`org.dark.shaders.util.TextureData` 维护 material(材质)、normal(法线)、surface(表面) 三张贴图表，供 `LightShader` 战斗内的三遍光照渲染消费，也可以由 MOD 代码查询 (本节示例的消费面)。
+
+### 注册与查询速查
+
+- 注册：`readTextureDataCSV(path)`(覆盖式)/ `readTextureDataCSVNoOverwrite(path)`(先到先得)。
+  - 行格式：`id, type, frame, magnitude, map, path`。
+  - `type` 只接受 `ship` / `turret` / `turretbarrel` / `turretunder` / 各种 `turretcover*` / `hardpoint*` / `missile` / `asteroid` 共 15 型。
+  - `map` 只接受 `material` / `normal` / `surface`。
+  - 行缺 `id` / `type` / `map` / `path` 之一 → 静默跳过。
+  - `frame` 缺省 0(动画武器按帧注册)；`magnitude` 缺省 1.0。
+- **注册键 = `id + 类型后缀 + frame`**(后缀如 `$$$ship`)—— 同一个 id 的不同 type 是互不干扰的独立条目。
+- 查询：`TextureData.getTextureData(id, TextureDataType.MATERIAL_MAP / NORMAL_MAP / SURFACE_MAP, ObjectType.SHIP / TURRET / HARDPOINT / MISSILE / ASTEROID / …, frame)` 返回 `TextureEntry` 或 null。
+- `TextureEntry` 只有两个 public 字段：`sprite`(`SpriteAPI`) 与 `magnitude`(贴图强度系数)。
+- **加载门禁**：`enableShaders:false` → 全关；否则 `enableLights:false` → 全关；material 需 `loadMaterial`、normal 需 `enableNormal`、surface 需 `enableNormal && loadSurface`。
+- 门禁未过时整类贴图 "查不到"(返回 null)**且无报错**—— 这是 "材质贴图不生效" 的首选排查方向。
+
+::: warning 贴图查询 none 有两种原因
+`loadMaterial` / `enableNormal` / `loadSurface` 门禁未开与 id 确实未注册都返回 null 且无报错。先查 `GRAPHICS_OPTIONS.ini` 的门禁状态，再确认 id 是否注册；两种原因无法从返回值区分。
 :::
 
-规则：
+- 高级查询与改写：
+  - `ShaderLib.getShipTexture(ship, type)` 按 hullId → D-parent hullId → base hullId 三级回退解析；`ShaderLib.getWeaponTexture(weapon, type, objType, frame)`(1.10.0 新增，含 weapon skin 解析)。
+  - `ShaderLib.overrideShipTexture(ship, id)` / `overrideWeaponTexture(weapon, id)` 改写解析源 (引擎 customData 键 `SL_shipTexOvd` / `SL_wpnTexOvd`)。
 
-6. **必须**：读取结果使用前判空 (boxed 值可 null)。违反的可观察结果：`boolean b = LunaSettings.getBoolean(...)` 在键缺失时 NPE(拆箱发生在赋值时)，调用点崩溃。
-7. **必须**：调用任何 `lunalib.**` 之前先 `Global.getSettings().getModManager().isModEnabled("lunalib")` 做启用判断 (与硬依赖检测专题一致)。
-   - 违反的可观察结果：LunaLib 未启用时首次解析到含 `LunaSettings` 引用的类 → `NoClassDefFoundError`(`Error` 不被捕获包装，直接冒泡)。
-   - 启用判断失败时回退默认值是成熟实例的标准做法：`if (isModEnabled("lunalib")) return LunaSettings.getBoolean(MOD_ID, key); return 默认值;`。
+### 消费面 (与分层渲染的关系)
 
-读取链每次现读运行时表，但读取方若把值缓存进字段，界面保存后仍会拿到旧值；通知链解决的就是"改动何时推给使用方"。
+`LightShader.renderInWorldCoords`(`ABOVE_SHIPS_AND_MISSILES_LAYER` 层，经 `ShaderCombatLayerHook` 派发) 内部跑三遍：
 
-## 变更通知：LunaSettingsListener
+1. **material 遍**(`ShaderLib.renderForeground`)：把材质贴图 (存在时) 替换渲染进 foreground framebuffer。
+   - 材质贴图控制反照率/高光细节，是所有 `getForegroundTexture` / `isForegroundEmpty` 使用方看到的前景内容。
+2. **normal 遍**(`drawNormalMaps`)：法线贴图参与 Blinn-Phong 光照计算 (`enableNormal` 时)；
+3. **surface 遍**(`drawSurfaceMaps`)：表面贴图控制高光硬度/强度。
 
-`lunalib.lunaSettings.LunaSettingsListener` 是单方法接口 (官方源码)：`void settingsChanged(String modId)` ——"gets called whenever settings are saved"(官方 javadoc 原文)。
+三遍都按 "查表命中 → 用 `entry.sprite` 替换原贴图、`magnitude` 参与深度/强度" 的写法处理舰船、武器槽、导弹、小行星与 `MapObjectAPI`。
 
-- **注册**：`LunaSettings.addSettingsListener(listener)`(`@JvmStatic`)；`removeSettingsListener(listener)`；幂等查询 `hasSettingsListenerOfClass(Class)`。
-- 注意：**不要用 `addListener` / `removeListener` / `hasListenerOfClass`**—— 官方源码标注 `@Deprecated("Deprecated due to not being JvmStatic, please use addSettingsListener() instead.")`。
-- 这三个不是静态方法，Java 侧调用走对象实例 (`LunaSettings.INSTANCE`)，且语义被官方明确废弃。
-- **触发时机**：设置界面保存按钮流程的最后一步 `if (!newGame) LunaSettings.reportSettingsChanged(mod)`(`lunalib.backend.ui.settings.LunaSettingsUIModsPanel`)—— 即**用户在设置界面改动并保存后**回调。
-- 代码侧没有任何写设置入口 (LunaLib 的设计就是 "界面保存，代码只读")。
-- **遍历与隔离**：`reportSettingsChanged(modID)` 遍历监听器列表**，每个监听器的调用包在 `try/catch (Throwable)` 里**。
-- 单个监听器抛异常只写一条 `debug` 日志 ("Failed to call LunaSettings listener for $modID")，不影响其他监听器 (`lunalib.lunaSettings.LunaSettings`)。
-- **不去重**：`addSettingsListener` 直接 `listeners.add(listener)`，没有去重 —— 同一实例注册两次，回调执行两次。重复注册是 "回调执行多次" 的根因，用 `hasSettingsListenerOfClass` 先查实现幂等。
-- **官方做法**：LunaLib 自己的 `LoadedSettings` 监听器 (`lunalib.backend.scripts.LoadedSettings`) 在 `settingsChanged(modID)` 里先 `if (modID == "lunalib")` 过滤，再重读键位缓存。
-- **必须按自己的 MOD id 过滤**，否则任何一个 MOD 保存设置都会触发您的刷新逻辑。
+把任意键 (如 `LightShader.DO_NOT_RENDER` = `"shaderlib_do_not_render"`) 写进实体 customData → 该实体跳过 normal/surface/lighting 相关渲染 (舰船/导弹/小行星三处 `containsKey` 判断)。
 
-规则：
+**与分层渲染的关系**：三遍渲染发生在 `LightShader` 这一条 `ShaderAPI` 渲染回调内，而回调本身由 `ShaderCombatLayerHook`(`CombatLayeredRenderingPlugin`，全层注册) 按层派发 —— 不是自己写的分层渲染插件。
 
-8. **必须**：`settingsChanged(modId)` 先按自己的 MOD id 过滤 (如 `MOD_ID.equals(modId)`)，再刷新缓存/执行逻辑。违反的可观察结果：其他 MOD 的保存动作触发您的重载/重算，行为随其他 MOD 的用户操作而变化。
-9. **必须**：注册幂等 (`hasSettingsListenerOfClass` 先查或只在一个回调里注册一次)。违反的可观察结果：同一次保存触发多次回调 (日志出现多条 `reloaded`)。
-10. **必须**：注册入口要保证 LunaLib 存在 —— 注册本身也走第 7 条的启用判断。违反的可观察结果：LunaLib 未启用时 `NoClassDefFoundError`。
+自己写的光源 `StandardLight` 也只是数据，绘制由 `LightShader` 完成。
 
-四条链路都介绍完了，下表把每一环的文件、API 与使用方收拢到一起，便于对照。
+换句话说，**本节的消费面不涉及直接 GL 绘制**(那是分层渲染与着色器专题的领域)，`addLight` 与 `TextureData` 查询在任何战斗推进回调里都能安全调用。
 
 ## 文件与 API 链路
 
+上面各小节的机制分散在正文里，把整条链收进一张表，方便回查与核对：
+
 | 环节 | 文件或 API | 使用方 / 行为 |
 |---|---|---|
-| 定义 | `data/config/LunaSettings.csv`(每个启用 MOD 一份)| `LunaSettingsLoader.loadDefault()`：`loadCSV("data/config/LunaSettings.csv", mod.id)`(modId 限定)；空 `fieldID` 行跳过；`defaultValue` 按类型转换 (不捕获异常)；`hasLoaded = true` |
-| 用户设置文件 | `<存档目录>/common/LunaSettings/<modId>.json` | `loadCommonJSON("LunaSettings/<modId>.json", "data/config/LunaSettingsDefault.default")`(LazyLib JSON 读取工具：缺失即创建+落盘)；`saveDefaultsToFile` 补默认值 (`Header`/`Text` 跳过)、`data.save()` 写盘 |
-| 保存入口 | LunaLib 设置界面 (`LunaSettingsUIModsPanel`)| 保存按钮 (`saveDelay = 5`)：`data.save()` → `Settings.put(mod, data)` → `if (!newGame) reportSettingsChanged(mod)` |
-| 运行时读取 | `LunaSettings.getBoolean/getInt/getFloat/getDouble/getString/getColor(modId, fieldId)` | 懒加载 `load()`；MOD/字段缺失 → `ERROR` 日志 + null；`getFloat` 从 double 转；`getColor` 补 `#` 后 `Color.decode` |
-| 变更通知 | `LunaSettingsListener.settingsChanged(modId)` | `addSettingsListener` 注册 (不去重)；`reportSettingsChanged` 逐个回调 (try/catch Throwable 隔离，`lunalib.lunaSettings.LunaSettings`)|
-| 界面入口 | `KeybindsScript`(生涯 transient 脚本)| 默认键位 `luna_SettingsKeybind_new`(61)+ `Shift+F2` 备用键位；`openLunaCustomPanel(LunaSettingsUIMainPanel(false))` |
-| 图标 (可选)| `data/config/LunaSettingsConfig.json` | `LunaSettingsConfigLoader`：`getMergedJSONForMod(..., "lunalib")` 读顶层键 `modId` 的 `iconPath` |
-| 运行时检测 | `Global.getSettings().getModManager().isModEnabled("lunalib")` | 启用判断：LunaLib 未启用时回退代码默认值 (C12-S01)|
-
-把前面分散在各节的十条规则集中列出，便于自查。
+| 依赖声明 | `mod_info.json` 的 `dependencies` 追加 `{"id":"shaderLib","name":"GraphicsLib"}` | 硬依赖自检 (C13-S01) 的启动器检查 (缺装即红色不可勾选)|
+| 初始化 | `ShaderModPlugin.onApplicationLoad` → `ShaderLib.init()`(幂等)| 读 `GRAPHICS_OPTIONS.ini`、检测 OpenGL 2.0 / FBO、建内部纹理与 FBO(`org.dark.shaders.util.ShaderLib`)|
+| 启动检查 | AA 检查 (`getAASamples()>1 && !aaCompatMode`)| 抛 `RuntimeException`，启动中止 (`org.dark.shaders.ShaderModPlugin`)|
+| 能力门禁 | `ShaderLib.areShadersAllowed()` / `areBuffersAllowed()` | 所有 shader / FBO 入口的必须前置检查 (javadoc 明确违反会崩溃)|
+| 数据注册 | `LightData.readLightDataCSV(NoOverwrite)` / `TextureData.readTextureDataCSV(NoOverwrite)` | 覆盖式 vs 先到先得；行非法静默跳过 (`org.dark.shaders.light.LightData` / `org.dark.shaders.util.TextureData`)|
+| 战斗钩子 | settings `plugins` 的 `ShaderHook` → `CombatEngineAPI.setCombatMap` 每场实例化 | `initCombat()` 建 `LocalData`(键 `shaderlib_LightShader`)；`addLayeredRenderingPlugin` 注册全层钩子 (`org.dark.shaders.util.ShaderHook`)|
+| 动态光源 | `LightShader.addLight(LightAPI)` / `removeLight` | 光源 shader 启用且 `LocalData` 存在才写入；否则静默 (`org.dark.shaders.light.LightShader`)|
+| 光源推进 | `LightShader.advance` → 每个 `LightAPI.advance` | 非暂停推进；返回 true 即移除；failsafe 60 秒 (`org.dark.shaders.light.StandardLight`)|
+| 自动光源 | `LightData` 表 → `renderInWorldCoords` | 射弹按 `.proj` id、光束按武器 id 查表自动建光 (`org.dark.shaders.light.LightShader`)|
+| 贴图消费 | `TextureData` 表 → material / normal / surface 三遍 | 命中替换 `entry.sprite` 参与光照 (`org.dark.shaders.light.LightShader`)|
+| 渲染层 | `LightShader.getCombatLayer()` = `ABOVE_SHIPS_AND_MISSILES_LAYER` | 分层渲染层序：粒子系统之前 (C07-S06)|
 
 ## 规则汇总
 
-| # | 规则 | 强度 | 违反的可观察结果 |
-|---|---|---|---|
-| 1 | `fieldID` 与运行时读取 key 逐字一致 | 必须 | `getX` 返回 null + `ERROR` 日志 |
-| 2 | `defaultValue` 能被 `fieldType` 解析 | 必须 | `NumberFormatException` 上抛 (加载期或首次读取调用点)；`Boolean` 写 `"1"`/`"0"` 静默变 false |
-| 3 | `fieldType` 使用受支持类型名 | 必须 | 不转换、界面控件与读取语义不可预期 |
-| 4 | CSV 路径固定 `data/config/LunaSettings.csv` | 必须 | 读取异常被吞，设置界面没有您的 MOD，无报错 |
-| 5 | `Radio` 默认值出现在 `secondaryValue` 列表 | 建议 | UI 默认选中与运行时读取错位 |
-| 6 | 读取结果判空后再拆箱 | 必须 | 拆箱 null 抛 NPE |
-| 7 | 调用 `lunalib.**` 前 `isModEnabled("lunalib")` 启用判断 | 必须 (继承硬依赖检测专题)| LunaLib 未启用 → `NoClassDefFoundError` |
-| 8 | `settingsChanged` 按自己的 modId 过滤 | 必须 | 其他 MOD 保存也触发您的逻辑 |
-| 9 | 监听器注册幂等 (`hasSettingsListenerOfClass`)| 必须 | 一次保存多次回调 |
-| 10 | 保存走 LunaLib 设置界面；不自己读写用户设置文件 | 建议 | 与运行时表不同步：改动丢失或读到旧值 |
+机制讲完，把必须遵守的边界整理成规则表。必须级条目都带违反后的可观察结果；建议级两条是编者的取舍判断：
 
-规则只是清单。下面把四条链路完整实现进 GearIndustry：先写 CSV，再写三个类，最后在既有 `GearInModPlugin` 里接入两行。
+| # | 强度 | 规则 | 违反的可观察结果 |
+|---|---|---|---|
+| 1 | **必须** | 使用方 MOD 在 `onApplicationLoad` 里读取任何能力门禁或注册 `LightData` / `TextureData` 前，必须先调用 `ShaderLib.init()`(幂等；`onApplicationLoad` 按 MOD 显示名排序，"zz GraphicsLib" 几乎总是最后执行)| 能力正常的环境里自己的 CSV 静默未注册：自动光源/贴图不生效、查询返回 not registered / none，无任何报错 |
+| 2 | **必须** | `areShadersAllowed()` / `areBuffersAllowed()` 未通过时不得使用对应 shader / FBO 入口 (javadoc 原话 "Otherwise the game will crash!")| 崩溃或空绘制 |
+| 3 | **必须** | 启动器抗锯齿开启且 `aaCompatMode` 未开时游戏无法启动 (GraphicsLib 自己的 `onApplicationLoad` 抛异常)| 加载末段中止，日志出现 "GraphicsLib shaders are not fully compatible with antialiasing!"；三选项 (关 AA / `aaCompatMode:true` / `enableShaders:false`)|
+| 4 | **必须** | 动态光源只能在战斗内、战斗 `LocalData` 创建后添加 (`addLight` 静默跳过其余情况)| 战役画面/战斗早期调用 `addLight`：光源不出现且无任何报错 |
+| 5 | **必须** | 需要长期存在的光源必须 `makePermanent()`(否则 60 秒 superLifetime failsafe 移除)| 光源一切参数正常却在约 1 分钟后消失 |
+| 6 | **必须** | 挂载在实体上的光源在实体死亡后必须自己 `fadeOut` / `removeLight`(`LightShader` 只自动清理 projectile / beam 附着)| 残光驻留在尸体位置 ("光泄漏")|
+| 7 | **必须** | 光源 / `TextureEntry` 引用禁止跨战斗缓存 (`LocalData` 随战斗重建；会话级对象禁止跨战斗缓存)| 第二场战斗起引用静默失效 |
+| 8 | **必须** | `LightData` 行 `type` 只接受 `projectile` / `beam`；`TextureData` 行 `type` / `map` 必须是合法枚举名；两套 CSV 行缺必填字段都静默跳过 | 行未注册：该 id 的光源/贴图不生效，无报错 |
+| 9 | **必须** | `LightData` 覆盖式加载是整行替换：覆盖行未写的组 (standard / hit / flash) 会变成 "无此组" | 用只写 standard 组的行覆盖原行后，命中/闪光光效丢失 |
+| 10 | 建议 | 大场面按 `maximumLights`(默认 100、上限 372) 与屏外剔除设计光源数量 | 超限光源被静默跳过：光效 pop-in/out(设计行为)|
+| 11 | 建议 | 贴图查询把 "none" 当两种原因处理：ini 门禁未开 vs id 未注册 | 两者都返回 null，需按配置区分 |
+| 12 | **必须**(继承硬依赖规则)| 引用 `org.dark.shaders.**` 前必须在 `dependencies` 声明 `shaderLib` | 用户缺依赖时 `NoClassDefFoundError` |
 
 ## 完整最小例
 
-在前置知识所列累计工程布局上追加 (MOD 根目录 `Starsector\mods\GearIndustry`)：
+规则有了，还需要一个能编译、能运行、能观察的落点。您将在累计工程上追加一个 CSV 与四个类，全部挂在既有工程布局 (MOD 骨架与战斗演示) 上，根目录为 `Starsector\mods\GearIndustry`：
 
 ```text
 Starsector\mods\GearIndustry\
 ├── build.gradle
 ├── settings.gradle
-├── mod_info.json                # C01-S01/C12-S01 累积；本节不改动 dependencies
+├── mod_info.json                      # 本节在 dependencies 追加 shaderLib
 ├── data\
-│   └── config\
-│       └── LunaSettings.csv     # 本节新增：设置项定义表（文件名由 LunaLib 固定）
+│   ├── config\
+│   │   └── settings.json              # 硬依赖自检主题所有，本节不改
+│   └── lights\
+│       └── GearIn_light_data.csv      # 本节新增（自动光源数据，注册入口）
 ├── src\
 │   └── data\scripts\gearin\
-│       ├── GearInModPlugin      # C06-S02 所有；本节追加两行接入
-│       └── lib\
-│           ├── GearInLunaSettingsDefs      # 本节新增：设置定义角色（常量）
-│           ├── GearInLunaSettingsReader    # 本节新增：运行时读取角色（门控 getter）
-│           └── GearInLunaSettingsListener  # 本节新增：变更通知角色（注册/注销）
+│       ├── GearInModPlugin            # 前置 modPlugin 主题所有，本节追加接入片段
+│       ├── modcompat\
+│       │   └── GearInDependencyCheck  # 硬依赖自检（前置单元所有，本节只消费）
+│       └── visuals\
+│           ├── GearInLightCombatPlugin  # 本节新增：战斗接线插件
+│           ├── GearInShipLight          # 本节新增：挂接光源实体
+│           ├── GearInFlashSpawner       # 本节新增：周期闪光生成器
+│           └── GearInLightReporter      # 本节新增：门禁与数据查询报告
 └── jars\
 ```
 
-### data/config/LunaSettings.csv(完整文件；九列表头与 LunaLib 官方一致)
+四个类里，`GearInLightCombatPlugin` 是唯一需要注册的入口；编者把查询与日志单独拆给 `GearInLightReporter`，让您不看画面也能核对状态。按顺序追加：
+
+### mod_info.json(在既有 dependencies 上追加一项)
+
+```json
+  "dependencies": [
+    {
+      "id": "lw_lazylib",
+      "name": "LazyLib"
+    },
+    {
+      "id": "shaderLib",
+      "name": "GraphicsLib"
+    }
+  ]
+```
+
+`id` 必须逐字为 `shaderLib`(打开 `Starsector\mods\GraphicsLib\mod_info.json` 复制，不要写 `GraphicsLib`)。`name` 只影响启动器显示。
+
+### data/lights/GearIn_light_data.csv(本节所有)
+
+表头与 `Starsector\mods\GraphicsLib\data\lights\core_light_data.csv` 一致。
+
+下面两行键为原版既有 ID(`lightac_shot` 是 `data\weapons\proj\lightac_shot.proj` 的射弹 id，`pdlaser` 是 `weapon_data.csv` 里的光束武器 id)，用**覆盖式**读入后会整行替换 GraphicsLib 核心的对应条目：
 
 ```csv
-fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab
-GearIn_visual_header,GearIn 显示设置,Header,,,设置界面里的分组标题。,,,GearIn
-GearIn_trails_enabled,轨迹特效,Boolean,true,,"启用 GearIn 的轨迹特效；关闭后不再生成轨迹粒子。",,,GearIn
-GearIn_max_entries,最大条目数,Int,12,,"面板最多同时显示的条目数。",1,100,GearIn
-GearIn_pulse_delay,脉冲间隔（秒）,Double,1.5,,"两次脉冲之间的间隔秒数；运行时用 getFloat 读取。",0.1,10.0,GearIn
-GearIn_marker_color,标记颜色,Color,#f22e6e,,"轨迹标记的颜色；十六进制字符串，读取时 # 前缀可省略。",,,GearIn
-GearIn_label_text,标签文本,String,GearIn,,"面板标题栏显示的文本。",,,GearIn
-GearIn_fullGraphicEffect,Full Graphic Effect,Boolean,true,,"是否启用生涯全屏转场特效；由 C13-S01 的可选依赖示例消费。",,,GearIn
+id,type,size,intensity,fadeout,color,offset,hit size,hit intensity,hit fadeout,hit color,flash size,flash intensity,flash fadeout,flash color,flash offset,chance,fighter dim
+lightac_shot,projectile,90,0.4,0.25,"[255,235,190]",,250,0.4,1,"[255,225,50]",,,,,,1,TRUE
+pdlaser,beam,50,0.7,0.2,"[255,180,160]",,110,0.25,,"[155,10,10]",55,0.25,,"[155,10,10]",,1,TRUE
 ```
 
-### GearInLunaSettingsDefs(设置定义角色)
+要点：
 
-职责：设置定义角色 —— 持有 MOD id(`gear_in`)、LunaLib 的 MOD id(`lunalib`) 与五个 `KEY_*` / 五个 `DEFAULT_*` 常量。
+- 核心的 `lightac_shot` 行只有 standard 与 flash 组 (`hit size` 等空 → 无 hit 光，`org.dark.shaders.light.LightData` 的条件不满足)。
+- 本节覆盖行改写 standard 组并新增 hit 组，同时丢掉 flash 组 —— 演示 "覆盖行是整行替换，想保留的组必须一起带上"(规则 9)。
+- `color` 必须是 `[r,g,b]` 字符串形式；standard 组要求 `size > 0`、`intensity > 0`、`color` 非空，否则该行静默跳过。
+- 本节不新增纹理数据文件：材质/法线/表面贴图条目直接消费 GraphicsLib 核心 `core_texture_data.csv` (GraphicsLib 自己以 NoOverwrite 注册，覆盖全部原版船体/武器)，示例只演示查询面。
 
-它们逐字镜像 `data/config/LunaSettings.csv` 的 `fieldID` / `defaultValue` 列 (规则 1、2)。
-
-`Header` 类型只做 UI 分组、不参与读取/保存，因此没有对应常量。
-
-绑定位置：无注册入口，纯常量入口类；`GearInLunaSettingsReader` 与 `GearInLunaSettingsListener` 在包内直接使用这些常量。
+### 例 1：GearInLightCombatPlugin—— 战斗接入插件
 
 ```java
-package data.scripts.gearin.lib;
+package data.scripts.gearin.visuals;
 
-import java.awt.Color;
+import java.util.List;
+
+import org.dark.shaders.light.LightData.LightDataType;
+
+import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.input.InputEventAPI;
 
 /**
- * 设置定义角色：LunaSettings 字段 ID 与代码内默认值，与 data/config/LunaSettings.csv
- * 的 fieldID / defaultValue 列逐字一致（硬规则 1、2）。Header 类型只做 UI 分组，
- * 不参与读取/保存，因此没有对应的 KEY 常量。
+ * 完整最小例：GraphicsLib 光源与纹理的最小消费面（战斗内）的接线插件。
+ *
+ * 适用边界：
+ * - GraphicsLib 的初始化与 LightData/TextureData CSV 注册发生在 onApplicationLoad
+ *   （本 MOD 的接入片段见页面正文，本节示例类不含该片段）；
+ * - ShaderHook（settings plugins 注册的 EveryFrameCombatPlugin）在每场战斗开始时
+ *   创建 LightShader 的战斗 LocalData（engine customData 键 "shaderlib_LightShader"），
+ *   并注册一个覆盖全部层的分层渲染钩子；LightShader 声明在
+ *   ABOVE_SHIPS_AND_MISSILES_LAYER 层渲染（ShaderAPI.isCombat() == true）；
+ * - LightShader.addLight 只在光源 shader 已启用且战斗 LocalData 已存在时把光源写进
+ *   当前战斗的光源列表，其余情况静默跳过 —— 动态光源必须在战斗内添加；
+ * - 光源列表随战斗销毁；未永久化的光源在 superLifetime（60 秒）耗尽后被 failsafe
+ *   移除；advance 返回 true（size 或 intensity 归零）的光源由 LightShader.advance
+ *   逐帧移除，fadeOut 是标准自灭姿势；
+ * - 暂停时 LightShader.advance 不推进光源（光源静止但保持可见）。
+ *
+ * 本类只做接线：光源实体（挂接光 / 周期闪光）与 GraphicsLib 状态报告分别在
+ * GearInShipLight / GearInFlashSpawner / GearInLightReporter。
  */
-public class GearInLunaSettingsDefs {
+public class GearInLightCombatPlugin extends BaseEveryFrameCombatPlugin {
 
-    /** 本 MOD 的 id（C01-S01 命名契约）：也是 LunaSettings.csv 归属与用户设置文件的键。 */
-    public static final String MOD_ID = "gear_in";
+    private CombatEngineAPI engine;
+    private final GearInShipLight shipLight = new GearInShipLight();
+    private final GearInFlashSpawner flashSpawner = new GearInFlashSpawner();
 
-    /** LunaLib 的 MOD id（逐字来自其 mod_info.json，大小写敏感）。 */
-    public static final String LUNA_LIB_MOD_ID = "lunalib";
+    @Override
+    public void init(CombatEngineAPI engine) {
+        this.engine = engine;
+        GearInLightReporter.reportCapabilities();
+        GearInLightReporter.reportLightData("lightac_shot", LightDataType.PROJECTILE);
+        GearInLightReporter.reportLightData("pdlaser", LightDataType.BEAM);
+        GearInLightReporter.reportShipTextures(engine);
+    }
 
-    // 设置项 fieldID：与 data/config/LunaSettings.csv 的 fieldID 列逐字一致。
-    public static final String KEY_TRAILS = "GearIn_trails_enabled";
-    public static final String KEY_MAX_ENTRIES = "GearIn_max_entries";
-    public static final String KEY_PULSE_DELAY = "GearIn_pulse_delay";
-    public static final String KEY_MARKER_COLOR = "GearIn_marker_color";
-    public static final String KEY_LABEL_TEXT = "GearIn_label_text";
-
-    // 代码内默认值：LunaLib 未启用或读取返回 null 时的回退（与 CSV 的 defaultValue 一致）。
-    public static final boolean DEFAULT_TRAILS = true;
-    public static final int DEFAULT_MAX_ENTRIES = 12;
-    public static final float DEFAULT_PULSE_DELAY = 1.5f;
-    public static final Color DEFAULT_MARKER_COLOR = new Color(0xf2, 0x2e, 0x6e);
-    public static final String DEFAULT_LABEL_TEXT = "GearIn";
-
-    private GearInLunaSettingsDefs() {
-        // 工具类：不实例化
+    @Override
+    public void advance(float amount, List<InputEventAPI> events) {
+        if (engine == null) {
+            return; // 防御性判空（C07-S01 同款姿势）
+        }
+        if (engine.isPaused()) {
+            return; // 暂停守卫（C07-S01）：暂停时 advance 仍会被调用，光源静止但保持可见
+        }
+        ShipAPI player = engine.getPlayerShip();
+        shipLight.update(player);
+        flashSpawner.update(amount, player);
     }
 }
 ```
 
-### GearInLunaSettingsReader(运行时读取角色)
+- **职责**：战斗侧的薄接入入口类。`init` 时驱动 `GearInLightReporter` 的三面报告 (能力门禁、两行 `LightData` 查询、`TextureData` 贴图查询)。
+- `advance` 先做防御性判空与暂停检查，再把玩家舰船分别交给 `GearInShipLight` 与 `GearInFlashSpawner` 逐帧推进。自己不创建光源，也不直接查询数据。
+- **协作**：包内协作三个类 ——`GearInShipLight`(挂载光源实体)、`GearInFlashSpawner`(周期闪光生成)、`GearInLightReporter`(门禁与数据查询报告)；无跨单元引用。
+- **绑定位置**：战斗引擎插件注册 (`engine.addPlugin(new GearInLightCombatPlugin())`，见下文注册片段)—— 四个类中唯一由外部注册的入口。插件实例每场战斗新建，`flash` 计数等状态随实例自然重置。
 
-职责：运行时读取角色 —— 用 `isLunaLibEnabled()` 做启用判断，再提供五个三段式 getter (先判断，再 `LunaSettings.getX(MOD_ID, KEY_*)`，判空回退 `DEFAULT_*`；规则 6、7)。
-
-绑定位置：无注册入口，静态工具类；由 `GearInLunaSettingsListener.logCurrentValues` 与接入片段消费。
-
-类加载路径不引用 `lunalib.**`(`lunalib` 类型只出现在方法体调用里，不在字段、静态初始化与签名中)，LunaLib 未启用时可直接安全调用。
-
-```java
-package data.scripts.gearin.lib;
-
-import java.awt.Color;
-
-import com.fs.starfarer.api.Global;
-
-import lunalib.lunaSettings.LunaSettings;
-
-/**
- * 运行时读取角色：门控读取 LunaLib 设置（LunaSettings 静态读取 API）。
- * 每个 getter 都是三段式：先过 isModEnabled("lunalib") 门（C12-S01），
- * 再调用 LunaSettings.getX，返回 null 时回退代码内默认值（Defs）。
- * 类自身不引用 lunalib.** 于类加载路径，未启用时可直接安全调用。
- */
-public class GearInLunaSettingsReader {
-
-    private GearInLunaSettingsReader() {
-        // 工具类：不实例化
-    }
-
-    /** LunaLib 是否已启用：调用任何 lunalib.** 之前必须先通过这道门（C12-S01）。 */
-    public static boolean isLunaLibEnabled() {
-        return Global.getSettings().getModManager().isModEnabled(GearInLunaSettingsDefs.LUNA_LIB_MOD_ID);
-    }
-
-    /** 轨迹特效开关：Boolean 设置，缺省 true。 */
-    public static boolean isTrailsEnabled() {
-        if (!isLunaLibEnabled()) {
-            return GearInLunaSettingsDefs.DEFAULT_TRAILS;
-        }
-        Boolean value = LunaSettings.getBoolean(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_TRAILS);
-        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_TRAILS;
-    }
-
-    /** 面板最大条目数：Int 设置，缺省 12。 */
-    public static int getMaxEntries() {
-        if (!isLunaLibEnabled()) {
-            return GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
-        }
-        Integer value = LunaSettings.getInt(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_MAX_ENTRIES);
-        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
-    }
-
-    /** 脉冲间隔（秒）：CSV 里是 Double 类型，读取时用 getFloat（从保存的 double 转换）。 */
-    public static float getPulseDelay() {
-        if (!isLunaLibEnabled()) {
-            return GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
-        }
-        Float value = LunaSettings.getFloat(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_PULSE_DELAY);
-        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
-    }
-
-    /** 标记颜色：Color 设置，保存/读取十六进制字符串（# 前缀可省略）。 */
-    public static Color getMarkerColor() {
-        if (!isLunaLibEnabled()) {
-            return GearInLunaSettingsDefs.DEFAULT_MARKER_COLOR;
-        }
-        Color value = LunaSettings.getColor(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_MARKER_COLOR);
-        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MARKER_COLOR;
-    }
-
-    /** 标签文本：String 设置，按原样读取。 */
-    public static String getLabelText() {
-        if (!isLunaLibEnabled()) {
-            return GearInLunaSettingsDefs.DEFAULT_LABEL_TEXT;
-        }
-        String value = LunaSettings.getString(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_LABEL_TEXT);
-        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_LABEL_TEXT;
-    }
-}
-```
-
-### GearInLunaSettingsListener(变更通知角色)
-
-职责：变更通知角色 —— 幂等注册/注销监听器 (`registerListener` / `unregisterListener`：先做启用判断，再 `hasSettingsListenerOfClass` 先查)，`settingsChanged` 按 `MOD_ID` 过滤后输出 `reloaded` 日志并重读当前值；
-
-`logCurrentValues` / `toHex` 随本角色持有 (接入片段进档时调用一次，对照用)。
-
-绑定位置：`registerListener()` 接入 `GearInModPlugin.onGameLoad`(C06-S02 所有，本节示例类不含该片段)。
-
-行为纪律：监听器实例 (匿名 `LunaSettingsListener`) 在 `registerListener()` 方法体内、启用判断通过**之后**才创建，而不是放在静态字段初始化器里 —— 类加载路径零 `lunalib.**` 引用，LunaLib 未启用时 (硬依赖检测专题场景) 调用本类不会抛 `NoClassDefFoundError`。
+### 例 2：GearInShipLight—— 挂载光源实体
 
 ```java
-package data.scripts.gearin.lib;
+package data.scripts.gearin.visuals;
 
 import java.awt.Color;
 
 import org.apache.log4j.Logger;
+import org.dark.shaders.light.LightShader;
+import org.dark.shaders.light.StandardLight;
+import org.lwjgl.util.vector.Vector2f;
 
 import com.fs.starfarer.api.Global;
-
-import lunalib.lunaSettings.LunaSettings;
-import lunalib.lunaSettings.LunaSettingsListener;
+import com.fs.starfarer.api.combat.ShipAPI;
 
 /**
- * 变更通知角色：注册/注销 LunaSettings 监听器，在设置界面保存后按本 MOD 过滤并
- * 重读输出当前生效值。addSettingsListener 不去重，注册前必须用
- * hasSettingsListenerOfClass 幂等查询（重复注册会让同一次保存触发多次回调）。
+ * 挂接到玩家舰船的常驻点光源实体（光源实体类）。
  *
- * 监听器实例在门控通过之后才创建 —— 类加载路径不触碰 lunalib.**，LunaLib 未启用
- * 时（C12-S01 场景）调用本类不会抛 NoClassDefFoundError，门控纪律见硬规则 7、10。
+ * 生命周期：战斗首帧由 GearInLightCombatPlugin 驱动 update 时创建（此时战斗
+ * LocalData 已存在，addLight 不再静默跳过），makePermanent 关闭 60 秒 failsafe；
+ * 玩家舰船死亡后 fadeOut(1f) 自灭，由 LightShader.advance 在 intensity 归零后移除。
  */
-public class GearInLunaSettingsListener {
+public class GearInShipLight {
 
-    private static final Logger LOG = Global.getLogger(GearInLunaSettingsListener.class);
-    private static LunaSettingsListener registered;
+    private static final Logger LOG = Global.getLogger(GearInShipLight.class);
 
-    private GearInLunaSettingsListener() {
-        // 工具类：不实例化
-    }
+    /** 挂接到玩家舰船的暖色点光源参数。 */
+    private static final Vector2f OFFSET = new Vector2f(0f, 60f);
+    private static final float INTENSITY = 1.0f;
+    private static final float SIZE = 150f;
 
-    /**
-     * 注册（幂等）：LunaLib 未启用时跳过并写 warn。注册入口见页面正文的接入片段
-     * （GearInModPlugin.onGameLoad 一行）；监听器实例在门控之后才创建。
-     */
-    public static void registerListener() {
-        if (!GearInLunaSettingsReader.isLunaLibEnabled()) {
-            LOG.warn("GearIn luna settings: LunaLib not enabled, listener not registered");
+    private StandardLight light;
+    private boolean added;
+
+    /** 每帧推进：首帧创建挂接光，舰船死亡后主动 fadeOut 让引擎移除。 */
+    public void update(ShipAPI player) {
+        if (player == null) {
             return;
         }
-        if (registered != null && LunaSettings.hasSettingsListenerOfClass(registered.getClass())) {
-            LOG.info("GearIn luna settings: listener already registered");
-            return;
-        }
-        registered = new LunaSettingsListener() {
-            @Override
-            public void settingsChanged(String modId) {
-                if (!GearInLunaSettingsDefs.MOD_ID.equals(modId)) {
-                    return; // 其他 MOD 的保存动作不影响本 MOD 的缓存
-                }
-                LOG.info("GearIn luna settings: reloaded");
-                logCurrentValues();
+        if (light == null) {
+            if (!added && player.isAlive()) {
+                add(player); // 延迟到战斗首帧：保证战斗 LocalData 已存在
             }
-        };
-        LunaSettings.addSettingsListener(registered);
-        LOG.info("GearIn luna settings: listener registered");
-    }
-
-    /** 取消注册（测试清理或卸载场景）。 */
-    public static void unregisterListener() {
-        if (!GearInLunaSettingsReader.isLunaLibEnabled()) {
             return;
         }
-        if (registered != null) {
-            LunaSettings.removeSettingsListener(registered);
-            registered = null;
+        if (!player.isAlive() && !light.isFadingOut()) {
+            light.fadeOut(1f);
+            LOG.info("GearIn light ship: player destroyed, fading out attached light");
         }
     }
 
-    /** 输出当前生效值：用于对照设置界面与用户设置文件（进档时可调用一次）。 */
-    public static void logCurrentValues() {
-        LOG.info("GearIn luna settings: trails=" + GearInLunaSettingsReader.isTrailsEnabled()
-                + " maxEntries=" + GearInLunaSettingsReader.getMaxEntries()
-                + " pulseDelay=" + GearInLunaSettingsReader.getPulseDelay()
-                + " markerColor=" + toHex(GearInLunaSettingsReader.getMarkerColor())
-                + " labelText=" + GearInLunaSettingsReader.getLabelText());
-    }
-
-    private static String toHex(Color color) {
-        return String.format("#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue());
+    /** 创建并挂接常驻点光源：跟随舰船移动，关闭 60 秒 failsafe。 */
+    private void add(ShipAPI player) {
+        added = true;
+        light = new StandardLight(player.getLocation(), new Vector2f(), OFFSET, player,
+                INTENSITY, SIZE);
+        light.setColor(new Color(255, 210, 130));
+        light.makePermanent(); // lifetime 与 superLifetime 均置 -1，不再受 failsafe 限制
+        LightShader.addLight(light);
+        LOG.info("GearIn light ship: attached light added offset=" + OFFSET
+                + " size=" + SIZE + " intensity=" + INTENSITY);
     }
 }
 ```
 
-::: caution 启用判断必须先于任何 `lunalib.**` 引用
-"调用前先判断是否启用" 对类加载同样成立：监听器实例的创建、`LunaSettings` 的静态调用等一切 `lunalib.**` 引用都必须发生在 `isLunaLibEnabled()` 判断通过之后 —— 不要在静态初始化器或字段初始化里触碰 `lunalib` 类型。
+- **职责**：玩家舰船常驻暖色点光源的生命周期。每帧 `update`：战斗首帧 (`added` 标志) 创建挂载光源。
+- 创建写法：`StandardLight(location, velocity, offset, attach, intensity, size)` 六参构造 + `setColor` + `makePermanent()`(规则 5)+ `LightShader.addLight`。
+- 挂载后光源位置每帧取自舰船，offset 按朝向旋转，`setLocation` 对挂载光源无效。
+- 玩家舰船死亡后 `fadeOut(1f)` 自灭 (规则 6)。
+- **协作**：由 `GearInLightCombatPlugin.advance` 在暂停检查之后驱动。
+- **绑定位置**：无独立注册入口 —— 普通实体类，由接入插件持有并驱动。
 
-违反的可观察结果：LunaLib 未启用时首次解析到该类 → `NoClassDefFoundError` 直接冒泡 (`Error` 不被捕获包装)。
-:::
-
-### 职责分工与协作 (对应关系)
-
-- `GearInLunaSettingsDefs.MOD_ID = "gear_in"`：CSV 归属与用户设置文件的文件名键 (`LunaSettings/gear_in.json`)。
-- `LUNA_LIB_MOD_ID = "lunalib"` 逐字来自 `Starsector\mods\Lunalib\mod_info.json` 的 `id`。
-- Defs 的五个 `KEY_*` 常量与 CSV 的 `fieldID` 列逐字一致 (规则 1)；五个 `DEFAULT_*` 与 CSV 的 `defaultValue` 一致 (规则 2 的 "代码内回退与 CSV 默认值保持一致")。
-- Reader 每个 getter 先做 `isLunaLibEnabled()` 启用判断 (规则 7)，再调用 `LunaSettings.getX`，再判空回退 (规则 6)—— 三段式是读取侧标准写法。
-- `getPulseDelay` 用 `getFloat`：演示 "CSV 类型 Double、读取转 float"；`getMarkerColor` 用 `getColor`：演示十六进制颜色读取。
-- Listener 的匿名监听器按 `MOD_ID.equals(modId)` 过滤 (规则 8)，回调里重读并输出一行日志 (`reloaded` + 当前值)。
-- Listener 的 `registerListener` 用 `hasSettingsListenerOfClass` 幂等 (规则 9)；LunaLib 未启用时写 warn 跳过 (与启用判断同一纪律)。
-- Listener 的 `logCurrentValues` 输出格式与页面预期结果一致；`toHex` 把 `Color` 转回 `#rrggbb` 便于对照用户设置文件。
-
-### 接入片段 (在既有 GearInModPlugin 中追加两行)
-
-接入片段 (工程片段 ——`GearInModPlugin` 归 C06-S02 所有，本节不改动那些文件；本节示例类不含该片段)：
+### 例 3：GearInFlashSpawner—— 周期闪光生成器
 
 ```java
-    // GearInModPlugin（C06-S02 所有）onGameLoad(boolean newGame) 内新增两行
-    GearInLunaSettingsListener.registerListener();   // 幂等注册；LunaLib 未启用时自动跳过并写 warn
-    GearInLunaSettingsListener.logCurrentValues();  // 每次进档输出当前生效值（对照用）
+package data.scripts.gearin.visuals;
+
+import java.awt.Color;
+
+import org.apache.log4j.Logger;
+import org.dark.shaders.light.LightShader;
+import org.dark.shaders.light.StandardLight;
+import org.lwjgl.util.vector.Vector2f;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.util.IntervalUtil;
+
+/**
+ * 周期闪光生成器（光源实体类）：按固定间隔在玩家舰船周围随机位置生成一盏
+ * fadeOut 自灭的短命点光源。闪光的间隔节奏与计数都归本类；由
+ * GearInLightCombatPlugin 在非暂停时驱动 update。
+ */
+public class GearInFlashSpawner {
+
+    private static final Logger LOG = Global.getLogger(GearInFlashSpawner.class);
+
+    /** 周期闪光的间隔（秒）。 */
+    private static final float FLASH_INTERVAL = 2f;
+
+    private final IntervalUtil flashInterval = new IntervalUtil(FLASH_INTERVAL, FLASH_INTERVAL);
+    private int flashCount;
+
+    /** 每帧推进（须在非暂停时调用）：间隔到点即生成一盏闪光。 */
+    public void update(float amount, ShipAPI player) {
+        flashInterval.advance(amount);
+        if (flashInterval.intervalElapsed()) {
+            spawn(player);
+        }
+    }
+
+    /** 在玩家舰船周围随机位置生成一盏 fadeOut(0.5f) 自灭的点光源（短命光源的标准姿势）。 */
+    private void spawn(ShipAPI player) {
+        if (player == null || !player.isAlive()) {
+            return;
+        }
+        double angle = Math.random() * Math.PI * 2.0;
+        float radius = 60f + (float) (Math.random() * 120f);
+        Vector2f loc = new Vector2f(player.getLocation().x + (float) (Math.cos(angle) * radius),
+                player.getLocation().y + (float) (Math.sin(angle) * radius));
+        StandardLight flash = new StandardLight(loc, new Vector2f(), new Vector2f(), null, 0.8f, 80f);
+        flash.setColor(new Color(120, 220, 255));
+        flash.fadeOut(0.5f); // intensity 归零后 LightShader.advance 会从光源列表移除该光源
+        LightShader.addLight(flash);
+        flashCount++;
+        LOG.info("GearIn light flash: #" + flashCount + " at (" + (int) loc.x + ", " + (int) loc.y + ")");
+    }
+}
+```
+
+- **职责**：按固定间隔 (2 秒) 在玩家舰船周围随机位置生成一盏 `fadeOut(0.5f)` 自灭的淡蓝短命点光源并计数 (`GearIn light flash: #N` 日志；计数随插件实例每场战斗从 `#1` 重置，规则 7 的观察面)。
+- **协作**：由 `GearInLightCombatPlugin.advance` 在暂停检查之后驱动 (暂停时不推进、间隔不累计)。
+- **绑定位置**：无独立注册入口 —— 普通实体类，由接入插件持有并驱动。
+
+### 例 4：GearInLightReporter—— 门禁与数据查询报告
+
+```java
+package data.scripts.gearin.visuals;
+
+import org.apache.log4j.Logger;
+import org.dark.shaders.light.LightData;
+import org.dark.shaders.light.LightData.LightDataType;
+import org.dark.shaders.light.LightEntry;
+import org.dark.shaders.light.LightShader;
+import org.dark.shaders.util.ShaderAPI;
+import org.dark.shaders.util.ShaderLib;
+import org.dark.shaders.util.TextureData;
+import org.dark.shaders.util.TextureData.ObjectType;
+import org.dark.shaders.util.TextureData.TextureDataType;
+import org.dark.shaders.util.TextureEntry;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+
+/**
+ * GraphicsLib 初始化状态与数据注册状态的日志报告（查询面，注册/初始化报告类）。
+ *
+ * 报告内容：能力门禁与光源 shader 可用性（必须在 ShaderLib.init 之后读取）、
+ * LightData 注册表查询（projectile/beam 自动光源数据）、TextureData 注册表查询
+ * （玩家舰船船体的 material/normal/surface 贴图条目）。只做查询与日志，不创建光源。
+ */
+public class GearInLightReporter {
+
+    private static final Logger LOG = Global.getLogger(GearInLightReporter.class);
+
+    /** 能力门禁与光源 shader 可用性报告（必须在 ShaderLib.init 之后读取）。 */
+    public static void reportCapabilities() {
+        boolean shaders = ShaderLib.areShadersAllowed();
+        boolean buffers = ShaderLib.areBuffersAllowed();
+        ShaderAPI lightShader = ShaderLib.getShaderAPI(LightShader.class);
+        boolean lightReady = lightShader != null && lightShader.isEnabled();
+        LOG.info("GearIn light capabilities: shaders=" + shaders + " buffers=" + buffers
+                + " lightShaderEnabled=" + lightReady);
+    }
+
+    /** 查询 LightData 注册表（projectile/beam 自动光源数据），报告消费侧查询面。 */
+    public static void reportLightData(String id, LightDataType type) {
+        LightEntry entry = LightData.getLightData(id, type);
+        if (entry == null) {
+            LOG.info("GearIn light data: " + id + " (" + type.name().toLowerCase() + ") not registered");
+            return;
+        }
+        LOG.info("GearIn light data: " + id + " (" + type.name().toLowerCase() + ")"
+                + " standard=" + entry.hasStandard
+                + " size=" + entry.standardSize
+                + " intensity=" + entry.standardIntensity
+                + " chance=" + entry.chance
+                + " fighterDim=" + entry.fighterDim);
+    }
+
+    /** 查询 TextureData 注册表：玩家舰船船体的 material/normal/surface 贴图条目。 */
+    public static void reportShipTextures(CombatEngineAPI engine) {
+        ShipAPI player = engine.getPlayerShip();
+        if (player == null) {
+            return;
+        }
+        String hullId = player.getHullSpec().getHullId();
+        LOG.info("GearIn light texture: hull=" + hullId
+                + " material=" + describeTexture(hullId, TextureDataType.MATERIAL_MAP)
+                + " normal=" + describeTexture(hullId, TextureDataType.NORMAL_MAP)
+                + " surface=" + describeTexture(hullId, TextureDataType.SURFACE_MAP)
+                + " shipTex=" + describeEntry(
+                        ShaderLib.getShipTexture(player, TextureDataType.MATERIAL_MAP)));
+    }
+
+    private static String describeTexture(String id, TextureDataType map) {
+        return describeEntry(TextureData.getTextureData(id, map, ObjectType.SHIP, 0));
+    }
+
+    private static String describeEntry(TextureEntry entry) {
+        if (entry == null) {
+            return "none";
+        }
+        return "mag=" + entry.magnitude + " tex=" + entry.sprite.getTextureId();
+    }
+}
+```
+
+- **职责**：纯静态查询与日志报告。
+  - `reportCapabilities` 读能力门禁与 `LightShader` 可用性 (必须在 `ShaderLib.init()` 之后读取，规则 1/2 的观察面)。
+  - `reportLightData` 演示 `LightData.getLightData` 查询面 (本节 CSV 覆盖核心后应读到 `standard=true` 且 `size=90.0` / `size=50.0`)。
+  - `reportShipTextures` 演示 `TextureData.getTextureData` 与 `ShaderLib.getShipTexture` 查询面 (玩家船体 hullId 在核心表里查 material / normal / surface 条目)。
+- **协作**：由 `GearInLightCombatPlugin.init` 一次性驱动。
+- **绑定位置**：无独立注册入口 —— 静态工具方法，由接入插件调用。
+
+### 日志前缀 (逐字)
+
+五条日志前缀逐字如下 ——`GearIn light ...:` 不是 strings key，只进 `starsector.log`：
+
+- `GearIn light capabilities:` —— 由 `GearInLightReporter.reportCapabilities()` 输出，格式 `shaders=<s> buffers=<b> lightShaderEnabled=<e>`；
+- `GearIn light data:` —— 由 `GearInLightReporter.reportLightData(...)` 输出两行 (`lightac_shot` / `pdlaser`)。
+  - 命中时格式 `standard=<b> size=<f> intensity=<f> chance=<f> fighterDim=<b>`；未注册时 `not registered`。
+- `GearIn light texture:` —— 由 `GearInLightReporter.reportShipTextures(...)` 输出，格式 `hull=<id> material=<m> normal=<m> surface=<m> shipTex=<m>`；
+- `GearIn light ship:` —— 由 `GearInShipLight` 输出两处：
+  - 挂载成功：`attached light added offset=(0.0, 60.0) size=150.0 intensity=1.0`。
+  - 玩家舰船死亡：`player destroyed, fading out attached light`。
+- `GearIn light flash:` —— 由 `GearInFlashSpawner` 每次生成输出，格式 `#<n> at (<x>, <y>)`(编号随插件实例每场战斗从 `#1` 重置)。
+
+### 接入片段 (在既有 modPlugin 中追加)
+
+```java
+    @Override
+    public void onApplicationLoad() {
+        // GraphicsLib 初始化：必须先于任何能力门禁读取。
+        // 幂等；onApplicationLoad 按 MOD 显示名排序，"zz GraphicsLib" 几乎总是最后执行，
+        // 不先调用 ShaderLib.init() 的话守卫会读到初始 false，下面的 CSV 静默不注册。
+        ShaderLib.init();
+        if (ShaderLib.areShadersAllowed() && ShaderLib.areBuffersAllowed()) {
+            LightData.readLightDataCSV("data/lights/GearIn_light_data.csv");
+        }
+        GearInDependencyCheck.reportDeclaredDependencies(); // 依赖自检报告（硬依赖主题的接入点）
+        // ... 既有回调内容 ...
+    }
+```
+
+需要的 import(在 `GearInModPlugin` 里追加)：`org.dark.shaders.light.LightData`、`org.dark.shaders.util.ShaderLib`。
+
+`GearInModPlugin` 类由前置的 modPlugin 主题单元持有，本节只追加这两处；本节示例类不含该片段。
+
+### 注册片段 (战斗侧，工程片段)
+
+```java
+    // 工程片段：在测试战役的 MissionDefinition.defineMission 中（或既有战斗插件
+    // init() 里）追加：
+    engine.addPlugin(new GearInLightCombatPlugin());
 ```
 
 ### 构建
-
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/lib/` 下三个类的 `.class` 条目 (可用 `jar tf` 核对)。
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/visuals` 下的四个新类 (可用 `jar tf` 核对)
 
-三个条目：`GearInLunaSettingsDefs.class`、`GearInLunaSettingsReader.class`、`GearInLunaSettingsListener.class`。
+### 验证方案
 
-## 验证方案
+前置数据：确认以下内容已就绪 —— 累计工程 (C13-S02)、`mod_info.json` 追加 `shaderLib` 依赖、`data\lights\GearIn_light_data.csv` 与四个示例类；`GearInModPlugin.onApplicationLoad` 内追加本节接入片段 (C06-S02)；测试战役 `GearIn_test`(C03-S01) 含本节注册片段一行；已安装 GraphicsLib(启动器勾选)。
 
-前置数据：C12-S01 与 C12-S04 的累计工程、本节的 `data\config\LunaSettings.csv`、三个示例类、`GearInModPlugin.onGameLoad` 中的两行接入代码，以及已安装并勾选的 LunaLib。
-
-1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对三个类与 `data\config\LunaSettings.csv`。
-2. 勾选 LunaLib 与 "齿轮工业" 启动游戏，到主菜单后退出。
-3. 打开 `<存档目录>\common\LunaSettings\gear_in.json`，核对五个数据键。
-4. 新建或读取生涯存档，查看注册与取值日志；再次进入存档，核对监听器注册状态。
-5. 进入生涯后按设置键位 (默认 61，`Shift+F2` 始终可用) 打开 LunaLib 设置界面。
-6. 打开 `GearIn` 页签，核对分组标题、五项设置和控件类型。
-7. 把 `GearIn_pulse_delay` 改为 `3.0` 并保存，查看日志与用户设置文件。
-8. 重启游戏后再次进入存档，核对 `pulseDelay`。
-9. 手动删除 `gear_in.json` 中的 `GearIn_max_entries` 键，再重启游戏。
+1. 构建与产物核对：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/visuals` 下四个新类。
+2. 启动检查：确认启动器抗锯齿为 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`) 后启动游戏进入主菜单 —— 无 "not fully compatible with antialiasing" 中止。
+3. 战斗冒烟与画面：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察五个报告行，在画面中观察舰船、火炮与光束的光效。
+4. 覆盖对比：把本节 CSV 的 `lightac_shot` 行 `size` 改为 `50`，重启游戏并观察曳光。
+5. 暂停：按空格暂停约 10 秒，再恢复战斗并观察光源。
+6. 跨战斗：退出再进一场，观察报告行、`flash` 编号与画面状态。
 
 预期结果：
 
-- 构建以 `BUILD SUCCESSFUL` 结束；`jar tf` 能看到 `GearInLunaSettingsDefs.class`、`GearInLunaSettingsReader.class`、`GearInLunaSettingsListener.class` 与 `data/config/LunaSettings.csv`。
-- 启动过程没有由 `gear_in` 引起的 `ERROR`，用户设置文件生成五个数据键，不含 `GearIn_visual_header`，其初始内容为：
-
-  ```json
-  { "GearIn_trails_enabled": true, "GearIn_max_entries": 12, "GearIn_pulse_delay": 1.5, "GearIn_marker_color": "#f22e6e", "GearIn_label_text": "GearIn" }
-  ```
-
-- 进入存档时出现监听器注册与当前值日志：
-
+- **启动检查**：启动器抗锯齿处于 Off(或 `GRAPHICS_OPTIONS.ini` 的 `aaCompatMode:true`)；游戏正常进入主菜单，`starsector.log` 没有 "GraphicsLib shaders are not fully compatible with antialiasing!"(规则 3 的正面)。
+- **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 依次出现：
   ```text
-  GearIn luna settings: listener registered
-  GearIn luna settings: trails=true maxEntries=12 pulseDelay=1.5 markerColor=#f22e6e labelText=GearIn
+  GearIn light capabilities: shaders=true buffers=true lightShaderEnabled=true GearIn light data: lightac_shot (projectile) standard=true size=90.0 intensity=0.4 chance=1.0 fighterDim=true GearIn light data: pdlaser (beam) standard=true size=50.0 intensity=0.7 chance=1.0 fighterDim=true GearIn light texture: hull=<玩家船体id> material=mag=<m> tex=<id> normal=mag=<m> tex=<id> surface=... shipTex=mag=<m> tex=<id> GearIn light ship: attached light added offset=(0.0, 60.0) size=150.0 intensity=1.0
   ```
+  没有 `gear_in` 引起的 `ERROR`。`texture` 行的 `material` / `normal` 取决于核心 `core_texture_data.csv` 是否注册了该船体 (原版船体通常都有)；`surface` 可能为 `none`(surface 表覆盖较少且依赖 `loadSurface` 门禁)。
+- **画面结果**：玩家舰船被暖色 (255,210,130) 光晕笼罩，光晕随舰船移动、随朝向偏移。
+  - 每 2 秒舰船周围随机位置闪一次淡蓝 (120,220,255) 闪光并在约 0.5 秒内消失。
+  - 轻型自动炮 (lightac) 飞行中带持续的暖白曳光、命中点出现爆炸光 (核心行无 hit 组，覆盖行新增；核心原有 flash 组被整行替换丢弃)。
+  - 点防御光束 (pdlaser) 带暖色光晕。
+- **覆盖生效与暂停**：`size=50`(与核心一致) 时曳光明显变小，`size=90` 时更大。`readLightDataCSV` 采用覆盖式读取，数据在 `onApplicationLoad` 注册。按空格暂停后，光源静止 (闪光停在原地、光晕不随舰船淡出变化) 但**仍然可见**；恢复后继续。
+- **战斗结束 (跨战斗)**：退出战斗再进一场 —— 五个日志行重新出现、`flash` 编号从 `#1` 重新开始 (每场战斗全新 `LocalData`，规则 7 的正面)；连续多场战斗后画面与显存无异常累积。
 
-- 再次进入存档时注册日志变为 `listener already registered`，没有重复监听器。
-- 设置界面左侧出现 "齿轮工业"；`GearIn` 页签显示分组标题 `GearIn 显示设置` 和五项设置，控件分别为开关、滑条与数字框、颜色选择器和文本输入框。
-- 保存后出现 `reloaded` 与 `pulseDelay=3.0` 的当前值日志，`gear_in.json` 中 `GearIn_pulse_delay` 变为 `3.0`。
-- 重启并进入存档后，`logCurrentValues` 仍读到 `pulseDelay=3.0`。
-- 删除 `GearIn_max_entries` 后重启，该键以 `12` 补回，`pulseDelay=3.0` 继续保留。
-
-清理：在设置界面把 `GearIn_pulse_delay` 恢复为 `1.5`。
-
+清理：把 `GearIn_light_data.csv` 中 `lightac_shot` 行的 `size` 恢复为 `90`。
 ## 故障分析
 
-1. **调用点 NPE，堆栈指向 `LunaSettings.getX(...)` 的赋值行。** `getX` 在 MOD 或字段缺失时返回 null，`boolean b = LunaSettings.getBoolean(...)` 这类直接拆箱会在赋值时抛 NPE (拆箱发生时返回的 `Boolean` 对象为 null)。修正：按本节 getter 的三段式先判空回退，再查 `starsector.log` 中带 `LunaSettings:` 前缀的 `ERROR` 行确认根因。
-2. **`ERROR LunaSettings: Could not find mod <xxx>`，读取恒为默认值。** 触发条件是 modId 传错：最常见是传了显示名 (`LunaLib`、`齿轮工业`)，或把 `mod_info.json` 的 `id` 拼错、大小写不符。每条读取各记一条 `ERROR`，值全部回退。修正：modId 用 `mod_info.json` 的 `id` 逐字 (`gear_in`、`lunalib`)。
-3. **`ERROR LunaSettings: Value <key> of type ... not found in JSONObject (ModID: ...)`。** 触发条件是 `fieldID` 与 CSV 不一致 (拼写、大小写、前后缀)，或读取方法与存储类型不符 (如对 `Double` 键调 `getBoolean`)。该键读取返回 null 并写这条 `ERROR`。修正：把 `KEY_*` 常量与 CSV `fieldID` 列逐字对照，再按读取方法表核对类型。
-4. **首次读取调用点抛 `NumberFormatException`(或 LunaLib 应用加载期失败)。** 某个**已启用** MOD(不一定是自己的) 的 `LunaSettings.csv` 里 `defaultValue` 与 `fieldType` 不匹配 (如 `Int` 写 `abc`、`Double` 写空串)，异常沿 `loadDefault` → `load()` 上抛 —— LunaLib 的 `onApplicationLoad` 失败，或所有 MOD 的首次 `getX` 都抛异常，`starsector.log` 的异常堆栈指向类型转换行。修正：修好所有启用 MOD 的 CSV 默认值；这是 "自己设置正常、别人一读就炸" 的隐蔽方向。
-5. **`Boolean` 开关语义反转。** CSV `defaultValue` 写 `1` / `0`(或 `"true"` 之外的其他拼写) 就会触发：Kotlin `toBoolean()` 只认忽略大小写的 `"true"`，其余全部解析为 false (官方源码)。表现是不报错、无日志，设置界面默认是关、代码读到 false，与 CSV 意图相反。修正：`defaultValue` 写 `true` / `false`。
-6. **设置界面改了并保存，游戏里读取值不变。** 触发条件是读取点把值缓存进了字段 (只在进档时读一次) 且没注册监听器。此时 `gear_in.json` 已更新、界面显示新值，但运行逻辑仍用旧值；日志没有 `GearIn luna settings: reloaded`(说明监听器未注册或未过滤到本 MOD)。修正：需要热更新的缓存放在 `settingsChanged` 里重读 (注册入口见接入片段)；不需要热更新的值按进档/重启生效理解。`getX` 本身每次现读运行时表，不做进程级缓存。
-7. **一次保存触发多次回调。** `registerListener` 被多个回调重复调用 (如 `onApplicationLoad` 和 `onGameLoad` 各调一次) 就会触发，因为 `addSettingsListener` 不去重。表现是保存一次，日志出现多条 `reloaded`。修正：`hasSettingsListenerOfClass` 先查 (本节示例已内置)，或只在单一回调里注册。
-8. **其他 MOD 保存设置后您的逻辑被触发。** 触发条件是 `settingsChanged(modId)` 没按 modId 过滤：别的 MOD 用户保存设置，您的刷新/重算代码跟着执行。修正：先 `MOD_ID.equals(modId)` 再干活 (`LoadedSettings` 官方做法)。
-9. **`NoClassDefFoundError`，堆栈指向 `lunalib.lunaSettings.LunaSettings`。** LunaLib 未启用/未安装时，代码没做启用判断就调用 `lunalib.**`(或启用判断写在 `LunaSettings` 引用之后)。`Error` 直接冒泡 (脚本加载的错误处理只包装 `Exception`，与硬依赖检测专题一致)，启动或调用点崩溃。修正：启用判断必须发生在任何 `lunalib.**` 引用之前 (本节 `GearInLunaSettingsReader.isLunaLibEnabled()` 三段式的第一段)；"判断先于引用" 对类加载同样成立 —— 未启用的类首次解析即抛。
-10. **`getColor` 返回 null，日志 `Value <key> of type String not found`。** 用户设置文件里该键存了非法十六进制 (如 `hello`)：`Color.decode` 抛异常被捕获转 null。颜色回退代码默认值，并写一条 `ERROR`。修正：给用户文件该键写回合法 `#rrggbb`；代码侧判空回退备用值。
-11. **自己直接读写 `LunaSettings/gear_in.json` 后改动丢失或读到旧值。** 绕过 LunaLib 保存链 (比如用 `writeJSONToCommon` 直接改用户设置文件)：文件改了但运行时表没更新 (`LunaSettingsLoader.Settings` 是旧对象)，代码读到旧值直到下次 `load()`；反过来直接改运行时表，保存时会被 `data.save()` 覆盖。原因在于用户设置文件由 LunaLib 独占管理 (`saveDefaultsToFile` + 界面保存)。修正：不要自己读写该文件 —— 需要 "代码改设置" 的场景用 `SettingsCreator` 的运行时定义 (`LunaSettings.SettingsCreator.addX(...)` + `refresh(modId)`)，官方注释是 "Has to be called after Settings have been added, otherwise they will not load."；让用户在界面里保存。本节示例不覆盖该场景。
-12. **设置界面里没有 "齿轮工业" 条目。** CSV 路径/文件名错 (如放在 `data/config/GearIn_luna_settings.csv` 或大小写不一致)、或 `fieldID` 列全空都会触发。`loadCSV` 异常被吞，因此无任何报错，界面列表缺本 MOD。修正：核对 `data/config/LunaSettings.csv` 路径与九列表头 (`loadCSV` 路径规则：`/` 分隔符、无 `..`)。
+以下故障按您在日志和画面上看到的症状组织，每条给出触发条件、断链原因和核对顺序。
+
+1. **光源不出现，代码看起来完全没问题**。
+  - 触发：`GRAPHICS_OPTIONS.ini` 的 `enableLights:false`(或 `enableShaders:false` / GPU 不支持 FBO)。
+  - 原因：`LightShader` 构造器读入 `enableLights`，关闭时 `isEnabled()` 为 false，此后所有 `addLight` 调用全部静默无效；`capabilities` 行会显示 `lightShaderEnabled=false`。
+  - 修正：开 `enableLights` / `enableShaders`；GPU 不支持时无解 (门禁本意)。排查入口永远是先看 `capabilities` 行。
+2. **战役画面 (或战斗初始化前) 调 `addLight` 没反应**。
+  - 触发：在 `onApplicationLoad`、战役脚本、战斗 `MissionDefinitionAPI.defineMission` 早期调用 `addLight`。
+  - 原因：`LocalData` 由 `ShaderHook.init` 在战斗初始化阶段才创建 (`LightShader.initCombat`)，光源列表不存在时 `addLight` 直接返回，没有任何报错。
+  - 修正：光源创建放到战斗推进回调 (`EveryFrameCombatPlugin.advance` / 部署监听器 / 武器效果)，本节示例延迟到战斗首帧 (规则 4)。
+3. **挂载光源一分钟后消失**。
+  - 触发：没调 `makePermanent()`。
+  - 原因：`StandardLight` 的 `superLifetime` 默认 60 秒，耗尽即被 failsafe 移除；此时 `size` / `intensity` 一切正常，最容易误判。
+  - 修正：常驻光源 `makePermanent()`(规则 5)。
+4. **舰船被击毁后残光驻留原地**。
+  - 触发：挂载光源没在舰船死亡时清理。
+  - 原因：`LightShader` 只自动清理 projectile / beam 的附着，普通实体挂载没有生命周期跟踪，残光继续在原地渲染。
+  - 修正：自己的 `advance` 里判 `isAlive()` 并 `fadeOut` / `removeLight`(规则 6，本节示例 `GearInShipLight.update`)。
+5. **自己的 light CSV 不生效，但 `capabilities` 全 true**。
+  - 触发：`onApplicationLoad` 里没先调 `ShaderLib.init()` 就读能力门禁。
+  - 原因：`onApplicationLoad` 按 MOD 显示名排序执行，"zz GraphicsLib" 几乎总是最后；本 MOD 先执行时门禁读到初始 false，CSV 读取被跳过，等 GraphicsLib 初始化完成后数据也回不来了。
+  - 可观察：`light data` 行 `not registered`，战斗内该武器无自动光源，无任何报错。
+  - 修正：接入片段先 `ShaderLib.init()`(幂等) 再读门禁 (规则 1)。
+6. **CSV 行写了但没注册**。
+  - 触发：`type` 拼错 (如 `projectile` 写成 `Projectile`)、行缺 `id` / `type`、standard 组缺 `size` / `intensity` / `color` 之一。
+  - 原因：`LightData` 的行校验不通过时该行静默跳过，日志通常只有读入函数捕获异常时的 ERROR(一般没有)。
+  - 修正：对照核心 `core_light_data.csv` 的表头与格式逐列核对 (规则 8)。
+7. **覆盖式加载后命中/闪光光效丢了**。
+  - 触发：用只写 standard 组的行覆盖了一个原本有 hit / flash 组的 id。
+  - 原因：覆盖式加载是整行替换，未写的组就是 "无此组"(`LightEntry.hasHit` / `hasFlash` 为 false)，武器的命中爆炸光/闪光随之消失。
+  - 修正：覆盖行带上想保留的全部组 (规则 9，本节示例行的写法)。
+8. **贴图查询全部返回 none**。
+  - 触发：`GRAPHICS_OPTIONS.ini` 的 `loadMaterial` / `enableNormal` / `loadSurface` 被关，或 id 确实未注册。
+  - 原因：两种原因都返回 null 且无报错，`texture` 行 `material=none ...`，渲染里该船没有材质/法线效果；从返回值无法区分。
+  - 修正：先开对应门禁再确认 id 是否注册，用 `GRAPHICS_OPTIONS.ini` 状态区分 (建议 11)。
+9. **大混战时光效忽隐忽现**。
+  - 触发：单帧光源数超过 `maximumLights`(默认 100，硬上限 372) 或超出屏外剔除范围。
+  - 原因：超限光源被静默跳过 (设计行为)，离屏光源本就不渲染，不算故障。
+  - 修正：调高 `maximumLights`(≤372) 或接受设计行为 (建议 10)。
+10. **启动到加载末段中止，日志有 "not fully compatible with antialiasing"**。
+  - 触发：启动器开了抗锯齿且 `aaCompatMode` 未开。
+  - 原因：`ShaderModPlugin.onApplicationLoad` 的抗锯齿检查发现 `getAASamples() > 1` 且未开兼容模式，抛 `RuntimeException`，游戏启动失败。
+  - 修正：按异常文案三选项之一处理：关 AA / `aaCompatMode:true` / `enableShaders:false`(规则 3)。
+11. **跨战斗引用光源/贴图对象**。
+  - 触发：把 `StandardLight` 或 `TextureEntry` 存进静态字段跨战斗复用。
+  - 原因：`LocalData` 随战斗重建 (`LightShader.initCombat`)，第二场战斗起引用全部失效，静默无报错。
+  - 修正：每场战斗重新创建 (规则 7)。
 
 ## 总结
 
-LunaLib 设置完整流程共四段：定义 (每个启用 MOD 一份的 `data/config/LunaSettings.csv`，`fieldID` 即运行时读取 key，`defaultValue` 按 `fieldType` 转换，转换失败是唯一能让加载直接抛异常的写法)、保存 (用户设置文件 `<存档目录>/common/LunaSettings/<modId>.json` 由 LunaLib 首次加载创建、设置界面保存按钮更新，`Header` / `Text` 不落盘、缺键补默认值)、读取 (静态 getter 懒加载、boxed 可 null、缺失写 `ERROR` 日志) 与通知 (保存后逐个回调，单监听器异常被隔离，回调必须按自己的 modId 过滤、注册必须幂等)。
+本节把 GraphicsLib 的消费面从启动阶段走到战斗画面：`onApplicationLoad` 里先 `ShaderLib.init()` 再读能力门禁，会话级完成 `LightData` / `TextureData` 的 CSV 注册；每场战斗由 `ShaderHook` 重建光源列表，`LightShader` 按射弹与武器 id 自动建光，并用 material / normal / surface 三遍替换贴图。整条链可以用一句话收住：注册是会话级的，渲染是战斗级的；战役画面不经过这条链路。
 
-排查 "设置没生效" 时按链逐层定位：先看设置界面有没有自己的 MOD 与页签 (定义链，问题在 CSV 路径或类型)，再核对 `gear_in.json` 内容 (保存链，问题在是否点了保存)，再看 `starsector.log` 的 `LunaSettings:` `ERROR` 行与代码读取值 (读取链，问题在 modId / fieldID / 判空)，最后看 `listener registered` 与 `reloaded` 日志 (通知链，问题在注册入口与过滤)。
+可复用的判断有三条。第一，初始化顺序是零成本规则：`ShaderLib.init()` 幂等，先调再读门禁，能直接避开 "能力全开但自己的 CSV 静默未注册" 这种最迷惑的症状。第二，光源生命周期由调用方负责：短命用 `fadeOut` 自灭，常驻用 `makePermanent()` 关掉 60 秒 failsafe，挂载在实体上的光源在实体死亡后自己清理。第三，覆盖式 CSV 是整行替换，想保留的组必须一起带上，否则命中与闪光光效会静默丢失。
 
-无论哪一段，调用 `lunalib.**` 前先做 `isModEnabled("lunalib")` 启用判断并回退代码默认值 (与硬依赖检测专题一致，成熟实例同款做法)。本节的使用写法 (启用判断 + 判空 + 幂等注册) 是通用骨架，可原样平移到其他可选依赖库的接入上；对照另一套 `MagicSettings` 设置链即可看到同一套 "定义 —— 保存 —— 读取 —— 通知" 流程。`SettingsCreator` 的运行时定义与本节静态 CSV 定义互补，适合需要按用户进度动态出设置的场景。调试菜单、Refit UI 等其余 LunaLib 功能不在本节范围。
+排查顺序也可以带走：先看 `capabilities` 日志行确定能力与开关，再查注册状态区分 "没注册" 与 "门禁未开"，最后核对生命周期 (暂停、60 秒、战斗边界)。更上层的视觉库如 MagicLib 把同一套 "初始化 → 门禁 → 生命周期内消费" 的模式推广到设置、HUD 与生涯工具，这套判断顺序可以原样迁移。
 
 ## 建议参考项
 
-- `lunalib.lunaSettings.LunaSettings`：静态读取 API(六个 `getX(modId, fieldId)`)。
-- 监听器注册入口：`addSettingsListener` / `hasSettingsListenerOfClass` / `removeSettingsListener`。
-- `lunalib.lunaSettings.LunaSettingsListener`：单方法变更通知接口，`settingsChanged(modId)`。
-- `lunalib.backend.ui.settings.LunaSettingsLoader`：设置链加载器 (`loadDefault` / `saveDefaultsToFile` / `loadSettings`)，本节行为事实的来源。
-- `lunalib.backend.ui.settings.LunaSettingsConfigLoader`：设置界面图标读取 (`getIconPath(modId)`)，可选功能。
-- `lunalib.backend.scripts.LoadedSettings`：官方监听器写法 ——`settingsChanged` 先按自己的 MOD id 过滤。
-- `lunalib.backend.scripts.KeybindsScript`：设置界面键位入口 (默认键位 + `Shift+F2` 备用键位)。
-- `com.fs.starfarer.api.Global`：`getSettings().getModManager().isModEnabled(...)` 启用判断入口。
-- `data/scripts/gearin/lib`：本节三个示例类 (`GearInLunaSettingsDefs` / `GearInLunaSettingsReader` / `GearInLunaSettingsListener`) 所在包。
-- `data/config/LunaSettings.csv`：设置项定义表 (九列)，文件名与读取路径由 LunaLib 固定。
-- `data/config/LunaSettingsConfig.json`：可选，设置界面 MOD 图标配置。
-- `<存档目录>/common/LunaSettings/<modId>.json`：用户设置文件，LunaLib 独占管理。
+- `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`—— 战斗插件基类，例集接入的所属对象；
+- `com.fs.starfarer.api.combat.CombatEngineAPI`——`addLayeredRenderingPlugin` / `getCustomData` / `getPlayerShip` / `isPaused`；
+- `com.fs.starfarer.api.combat.ShipAPI`——`getHullSpec` / `isAlive` / `getLocation`(实体位置经 `CombatEntityAPI`)；
+- `com.fs.starfarer.api.graphics.SpriteAPI`——`getTextureId`(`TextureEntry.sprite` 的消费面)；
+- `com.fs.starfarer.api.util.IntervalUtil`—— 周期节奏计时 (例集闪光间隔)；
+- `com.fs.starfarer.api.Global`——`getLogger`；
+- `org.dark.shaders.util.ShaderLib`——`init` / `areShadersAllowed` / `areBuffersAllowed` / `getShaderAPI` / `getShipTexture` / `getWeaponTexture` / `overrideShipTexture` / `overrideWeaponTexture`；
+- `org.dark.shaders.util.ShaderAPI`——shader 渲染回调接口 (`isEnabled` / `getCombatLayer` / `isCombat` / `initCombat`)；
+- `org.dark.shaders.light.LightAPI` / `StandardLight`—— 光源接口与标准实现 (四型构造、`fadeOut` / `makePermanent` / `attachTo` 等 setter)；
+- `org.dark.shaders.light.LightShader`——`addLight` / `removeLight` / `advance`，`DO_NOT_RENDER` customData 键；
+- `org.dark.shaders.light.LightData` / `LightEntry`—— 自动光源数据注册与查询 (`readLightDataCSV` / `getLightData`)；
+- `org.dark.shaders.util.TextureData` / `TextureEntry`—— 贴图数据注册与查询 (`readTextureDataCSV` / `getTextureData`)；
+- `mod_info.json`——`dependencies` 追加 `shaderLib`；
+- `data/lights/GearIn_light_data.csv`—— 本节新增的自动光源数据；
+- `data/weapons/proj/lightac_shot.proj` / `data/weapons/weapon_data.csv`—— 示例 CSV 两行键 (`lightac_shot` / `pdlaser`) 的原版来源；
+- `Starsector\mods\GraphicsLib\data\lights\core_light_data.csv` / `core_texture_data.csv` ——GraphicsLib 核心数据 (表头格式与覆盖语义的对照)；
+- `Starsector\mods\GraphicsLib\data\config\settings.json`——`plugins` 段注册 `ShaderHook`；
+- `Starsector\mods\GraphicsLib\GRAPHICS_OPTIONS.ini`—— 能力与性能开关 (`enableShaders` / `enableLights` / `maximumLights` / `loadMaterial` / `enableNormal` / `loadSurface` / `aaCompatMode`)。

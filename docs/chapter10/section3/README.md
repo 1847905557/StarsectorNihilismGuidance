@@ -63,9 +63,9 @@
 
 ### 生命周期与存档边界 (transient / 非 transient)
 
-登记表写完后，下一个决定是生命周期：插件的状态要不要进存档，这直接决定注册代码写在哪里、写几次。`CampaignPlugin.isTransient()` 的 javadoc 定义了两种生命周期：
+登记表写完后，下一个决定是生命周期：插件的状态要不要进存档，这直接决定注册代码写在哪里、写几次。`CampaignPlugin.isTransient()` 定义两种生命周期：
 
-- **transient(返回 `true`，`BaseCampaignPlugin` 默认值)**：插件数据不进存档 (`writeReplace` 写档前过滤)，**必须**在每次读档后重新注册 ——javadoc 原文："it needs to be re-added to the game every time (in ModPlugin.onGameLoad())"。
+- **transient(返回 `true`，`BaseCampaignPlugin` 默认值)**：插件数据不进存档 (`writeReplace` 写档前过滤)，**必须**在每次读档后重新注册 ——"it needs to be re-added to the game every time (in ModPlugin.onGameLoad())"。
   - 注册入口是 `onGameLoad(boolean)`(新档与读档共用，见前置知识)。
 - **非 transient(返回 `false`)**：插件实例随存档保存，可以只注册一次 (`onNewGame`，或 `onGameLoad` 里的 `CLASS_MARK` 首次进入检查内 —— 成熟实例正是把 `registerPlugin` 放进前置单元的首次进入检查内)。代价：实例字段随存档序列化 (XStream 边界)，且卸载 MOD 后存档里残留实例。
 
@@ -77,7 +77,7 @@
 
 ::: info 为什么默认 transient
 
-javadoc 明确建议默认 transient：transient 数据不进存档，卸载 MOD 不留残留，便于在既有存档上增删 MOD。
+默认 transient：transient 数据不进存档，卸载 MOD 不留残留，便于在既有存档上增删 MOD。
 
 原文："Plugins should be transient unless they need to save data, to improve the ability to add/remove mods from an existing game."
 
@@ -110,7 +110,7 @@ javadoc 明确建议默认 transient：transient 数据不进存档，卸载 MOD
 
 ::: warning 同优先级并列的结果未定义
 
-API javadoc 原文 (`CampaignPlugin`) 明确写 "what gets picked when multiple plugins have the same priority is undefined"。
+"what gets picked when multiple plugins have the same priority is undefined"。
 
 实现是稳定排序 (`Collections.sort`)+ 取最后一项，因此并列时**列表靠后者胜出**、列表顺序取决于注册时机 —— 这是实现观察，不是约定，**禁止依赖**(见 "规则强度")。
 
@@ -120,7 +120,7 @@ API javadoc 原文 (`CampaignPlugin`) 明确写 "what gets picked when multiple 
 
 `PickPriority` 是 `CampaignPlugin` 的嵌套枚举，共 7 级 (`com.fs.starfarer.api.campaign.CampaignPlugin`；战斗 AI picker 用到的也是同一个枚举，这里给出生涯侧的完整语义)：
 
-| 优先级 | ordinal | javadoc 语义 (归纳)|
+| 优先级 | ordinal | 语义 (归纳)|
 |---|---:|---|
 | `CORE_GENERAL` | 0 | 只应由核心代码使用；MOD 用这一级 "可能根本不会被选中" |
 | `MOD_GENERAL` | 1 | MOD 整体替换某项生涯功能 (如 "与所有行星的交互")|
@@ -162,7 +162,7 @@ MOD 用 `MOD_GENERAL` 及以上就能稳定覆盖原版，用 `CORE_GENERAL` 则
 | `pickAICoreAdminPlugin(String)` / `pickAICoreOfficerPlugin(String)` | 给殖民地/舰队分配 AI 核心时 | 经 `PluginPickerAPI` 由 UI 侧消费 (插件登记表；注意：战斗中 (COMBAT 状态)AI 核心军官有空实现回退)|
 | `pickFleetInflater(CampaignFleetAPI, Object)` | 舰队生成时填充成员与装配 | 经 `PluginPickerAPI` 消费 (详细讲解在后续专门页面，本节只登记入口)|
 
-**Facts(6 个)**—— 触发机制：每次调用对应对象的 `getMemory()` 都会对所有插件重新执行一次 (API javadoc 原文)，返回值写进传进来的 `MemoryAPI`：
+**Facts(6 个)**—— 触发机制：每次调用对应对象的 `getMemory()` 都会对所有插件重新执行一次，返回值写进传进来的 `MemoryAPI`：
 
 | facts 方法 | 触发点 (内部实现的 `getMemory()`)|
 |---|---|
@@ -205,12 +205,12 @@ MOD 用 `MOD_GENERAL` 及以上就能稳定覆盖原版，用 `CORE_GENERAL` 则
 
 机制、速查与对照都清楚了，动手之前先记下写作约束。**必须**(违反后的可观察结果写在括号里)：
 
-1. **picker 无法处理时必须返回 `null`**(API javadoc 每个 picker 的原文："Return null if this CampaignPlugin implementation doesn't provide one.")。
+1. **picker 无法处理时必须返回 `null`**("Return null if this CampaignPlugin implementation doesn't provide one.")。
    - 返回 "占位实例" 或 `plugin == null` 的 `PluginPick` → 顶掉低优先级插件的合法选择后自身不可用：`showInteractionDialog` 拿到 `null` 插件直接返回 `false`(**点击实体什么都不发生，连原版对话都不开**，生涯状态)。
 2. **picker 内不得抛出未处理异常**。
    - 裁决器 `getPriorityPlugin` 没有 try/catch(插件登记表)，异常沿调用点冒泡 → 生涯流程中断、UI 报错 (日志 `ERROR` + 异常堆栈指向本插件的 picker)。
    - 无法处理就返回 `null`，不要抛。
-3. **transient 插件必须在每次 `onGameLoad` 重新注册**(javadoc 原文 "needs to be re-added to the game every time (in ModPlugin.onGameLoad())")。
+3. **transient 插件必须在每次 `onGameLoad` 重新注册**("needs to be re-added to the game every time (in ModPlugin.onGameLoad())")。
    - 不注册 → 读档后插件缺失、picker 不响应、facts 不写，**无任何报错**。
 4. **transient 插件的注册禁止挂进 persistent data 一次性检查**(机制推导：检查标记写入后注册不再执行，而 transient 实例不被存档保留)。
    - 违反 → 新档一切正常，首次读档后插件永久消失且无报错 (这是与脚本注册策略最显著的差异 —— 脚本要一次性检查、transient 插件不能依赖它)。
@@ -221,19 +221,19 @@ MOD 用 `MOD_GENERAL` 及以上就能稳定覆盖原版，用 `CORE_GENERAL` 则
 7. **facts 回调内禁止调用会再次触发 facts 的 `getMemory()`**(典型：`updateGlobalFacts` 内调 `sector.getMemory()`、`updateEntityFacts` 内调 `entity.getMemory()`)。
    - 每次 `getMemory()` 都会重跑全插件对应 facts(生涯引擎)，自我触发构成无限递归 → `StackOverflowError`。
    - 读记忆用传入的 `memory` 参数或 `getMemoryWithoutUpdate()`。
-8. **禁止依赖同优先级并列的结果**(API javadoc 原文 "what gets picked when multiple plugins have the same priority is undefined")。
+8. **禁止依赖同优先级并列的结果**("what gets picked when multiple plugins have the same priority is undefined")。
    - 实现是稳定排序取列表靠后者，但这是实现观察、非约定 → 与其他 MOD 同层竞争时谁生效不保证 (版本升级可能反转)。
    - 要保证自己生效，用明确的层级差 (MOD 至少 `MOD_GENERAL`)。
 
-**建议**(API javadoc 用 should 表达；违反的可观察结果写在括号里)：
+**建议**(违反的可观察结果写在括号里)：
 
-- **覆写 `getId()` 返回稳定唯一值**(javadoc："should be unique. Can be null, but shouldn't.")。返回 `null` → 注册不去重，transient 插件每次读档后实例累积，picker 被咨询多次、facts 重复写入 (日志成双)。
+- **覆写 `getId()` 返回稳定唯一值**("should be unique. Can be null, but shouldn't.")。返回 `null` → 注册不去重，transient 插件每次读档后实例累积，picker 被咨询多次、facts 重复写入 (日志成双)。
 - **插件 id 全局唯一、带 MOD 前缀**(如 `GearIn_CampaignPlugin`)。id 撞车 → 后注册的同 id 插件静默顶掉先注册者 (去重按 id 全局生效，跨 MOD 也如此)。
-- **默认 `isTransient()` 返回 `true`**(javadoc："should be transient unless they need to save data")。一律返回 `false` → 插件实例随存档序列化 (XStream 边界风险、存档体积增长、卸载 MOD 后残留)，本可瞬态的状态被意外持久化。
-- **facts 写入的变量过期时间设为 `0`**(javadoc："Any variables set here should have an expiration time of 0, since this method will be called every time the getMemory() method is called")。
+- **默认 `isTransient()` 返回 `true`**("should be transient unless they need to save data")。一律返回 `false` → 插件实例随存档序列化 (XStream 边界风险、存档体积增长、卸载 MOD 后残留)，本可瞬态的状态被意外持久化。
+- **facts 写入的变量过期时间设为 `0`**("Any variables set here should have an expiration time of 0, since this method will be called every time the getMemory() method is called")。
   - 非 0 过期 → 事实滞留，规则系统读到陈旧值、记忆被污染。
-- **facts 键使用 MOD 专属前缀**(javadoc："Mod-added facts should have their variable names use a mod-specific prefix to avoid conflicts")。无前缀 → 与原版 `$name`、`$relValue` 等键或别的 MOD 键互相覆盖。
-- **priority 按 javadoc 语义层级选择**(`MOD_GENERAL` 整体替换 / `MOD_SET` 一类情形 / `MOD_SPECIFIC` 特定遭遇 / `HIGHEST` 慎用)。用错层级 → 过度覆盖 (所有对话被换成自己的) 或覆盖不足 (被更高优先级插件顶掉)。
+- **facts 键使用 MOD 专属前缀**("Mod-added facts should have their variable names use a mod-specific prefix to avoid conflicts")。无前缀 → 与原版 `$name`、`$relValue` 等键或别的 MOD 键互相覆盖。
+- **priority 按语义层级选择**(`MOD_GENERAL` 整体替换 / `MOD_SET` 一类情形 / `MOD_SPECIFIC` 特定遭遇 / `HIGHEST` 慎用)。用错层级 → 过度覆盖 (所有对话被换成自己的) 或覆盖不足 (被更高优先级插件顶掉)。
 - **picker 与 facts 里不做重活**(机制事实：pick 发生在对话打开、战斗创建等交互路径上；facts 在每次 `getMemory()` 时对全部插件重跑)。重活 → 卡顿、频繁重复执行。
 
 ## 完整最小例
@@ -447,9 +447,9 @@ public class GearInInteractionDialog implements InteractionDialogPlugin {
 
 对应关系：
 
-- `extends BaseCampaignPlugin`：27 个方法全部有默认实现，只覆写 `getId` / `isTransient` / `pickInteractionDialogPlugin` / `updateGlobalFacts`(`BaseCampaignPlugin` javadoc 明确建议继承而非直接实现接口)。
+- `extends BaseCampaignPlugin`：27 个方法全部有默认实现，只覆写 `getId` / `isTransient` / `pickInteractionDialogPlugin` / `updateGlobalFacts`。
 - `getId()` 返回 `"GearIn_CampaignPlugin"`：非 `null`、全局唯一、带 MOD 前缀 ——transient 插件每次读档重注册时被 `addPlugin` 按 id 顶替，不会累积 (插件登记表)。
-- `isTransient()` 返回 `true`：数据不进存档；这是 `BaseCampaignPlugin` 默认值，显式写出是为了讲明语义 (javadoc 建议的默认写法)。
+- `isTransient()` 返回 `true`：数据不进存档；这是 `BaseCampaignPlugin` 默认值，显式写出是为了讲明语义。
 - `pickInteractionDialogPlugin`：先判 `instanceof CampaignFleetAPI`(舰队势力匹配)，再判 `getMarket() != null`(市场实体势力匹配，覆盖行星/空间站)；命中返回 `MOD_SPECIFIC`(5 > 原版 `CORE_GENERAL` 0，必胜)；不命中返回 `null` 放弃。
 - `new PluginPick<>(new GearInInteractionDialog(), PickPriority.MOD_SPECIFIC)`：对话框实例在 pick 时现场创建 (原版 `CoreCampaignPluginImpl` 也是这个模式 ——picker 每次咨询都会新建实例，插件类必须无参可实例化)。
 - `updateGlobalFacts`：`memory.set(DEMO_GLOBAL_FACT, true, 0f)`——MOD 专属前缀 + 过期时间 0。
@@ -525,7 +525,7 @@ gradle jar
    - 原因：`MOD_SPECIFIC`(5) 高于原版 `CORE_GENERAL`(0)，命中的实体全部被本插件接管。
    - 修正：条件收窄到明确目标 (势力 id、tag、记忆标志)，其余返回 `null`。
 4. **点击齿轮工业行星，打开的仍是原版对话 (覆盖不足)**。
-   - 触发：priority 用错层级 —— 若用 `CORE_GENERAL`(0)，与原版核心插件同层并列，并列结果未定义 (API javadoc 原文)。
+   - 触发：priority 用错层级 —— 若用 `CORE_GENERAL`(0)，与原版核心插件同层并列，并列结果未定义。
    - 原因：实现按列表顺序稳定排序、并列时取靠后者，谁靠后取决于注册时机 —— 本插件的演示对话框**不再可靠出现**，可能被原版顶掉，也可能 "时灵时不灵"。
    - 修正：MOD 至少用 `MOD_GENERAL`(1)，本示例用 `MOD_SPECIFIC`(5)；并列竞争禁止依赖 (规则强度第 8 条)。
 5. **点击齿轮工业行星，什么都不发生 (连原版对话都不开)**。

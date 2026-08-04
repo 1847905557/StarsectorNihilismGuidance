@@ -1,8 +1,8 @@
-# 制作第一个 GLSL 着色器
+# 接入可选依赖
 
-本节制作第一个 GLSL 着色器，让顶点数据经过着色器程序变成战斗画面。示例会完成编译、链接与绘制，并建立后续加载文件和提交渲染状态所需的基础。
+本节为 MOD 接入可选依赖：依赖存在时启用对应功能，缺失时继续启动。代码型依赖通过启用状态判断和适配器隔离调用，数据型依赖则按对方约定提供配置文件。
 
-*本节预期阅读时间：~20 分钟。*
+*本节预期阅读时间：~15 分钟。*
 
 *本节预期操作时间：~40 分钟。*
 
@@ -10,618 +10,408 @@
 
 完成后，您将能够：
 
-- 区分 GLSL 1.10/1.20 方言的基本类型 (标量、向量、矩阵、采样器) 与构造器、swizzle、分量级运算，并指出本地成熟实例里的对应用法；
-- 解释顶点与片元两端的坐标语义：attribute 位置数据的三种约定、`gl_Position` 的裁剪空间含义、`gl_FragCoord` 的窗口像素坐标、纹理坐标 [0,1] 约定；
-- 描述顶点到片元的三条数据通道 —— attribute(每顶点)、uniform(每绘制)、varying(逐片元插值)，以及 `gl_Position` → `gl_FragCoord` 这条特殊通道；
-- 说明 Starsector 中 shader 的加载与使用上下文：游戏自带 LWJGL、OpenGL 2.0 能力门禁 (GraphicsLib 硬措辞)、`SettingsAPI.loadText` 读取源文本、编译/链接状态检查与信息日志；
-- 对比 GLSL 110 方言与 430 方言 (现代 430 实例内部标准) 的关键差异 (`attribute`/`varying`/`gl_FragColor` vs `in`/`out`/`layout`/`fragColor`) 与各自的硬件前提；
-- 从症状定位典型故障：不写 `gl_Position`、attribute 位置未固定、varying 两侧不一致、uniform 名拼错、漏查编译/链接状态、方言版本与硬件不匹配。
+- 解释软依赖 (可选依赖) 与硬依赖的三点分界 (声明、检查、失败结果)，并区分数据型软依赖与代码型软依赖；
+- 解释脚本类加载链的父子关系 (Janino 源码加载器 → jar URLClassLoader → 脚本安全过滤器 → 游戏核心)，并说明 "jar 类优先于同名 `.java`"、"全部启用 MOD 的 jar 平铺在同一个类加载器"、"只有启用 MOD 的 jar 在类路径上" 三个结论；
+- 解释脚本层的安全过滤器：为什么脚本代码禁止驱动 `java.lang.reflect`(`Method`/`Field`/`Constructor`/`Proxy`) 与 `java.io.File`；
+- 用 `isModEnabled(id)`(MOD 启用状态，逐字比较) 做主判据做调用隔离，识别把显示名当 id 传的误判场景；解释数据型软依赖 "约定位置放配置文件" 的形态；
+- 说出类存在性检测 (`Class.forName` / LazyLib `ModUtils.isClassPresent`) 属进阶手段、默认不需要，及其适用场景 (类被其他 MOD 间接携带等)；
+- 写出 "直接引用收敛在适配器类、检查分支内懒解析、缺依赖回落默认值" 的适配器 (`GearInCompatBridge` 模式)，并从日志与行为定位 "未启用分支 / 类缺失 / 反射受限" 三类症状。
 
 ## 前置知识
 
-本节在既有 MOD 布局、战斗渲染与 shader 能力基线之上展开，以下先修内容请先就绪：
+阅读本节前，建议先掌握以下既有内容：
 
-- MOD 目录结构与 `starsector.log` 的读取 (C01-S01)：本节所有可观察结果都落在日志与画面里。
-- 战役 (mission) 与生涯 (campaign) 概念、`GearIn_test` 测试战役 (C03-S01)：本节用它做游戏内验证。
-- 编译 JAR 链路 (C06-S01)：本节验证需要重新编译 `jars\GearIndustry.jar`。
-- `Global` 生命周期 (C06-S03)：禁止跨战斗缓存引擎引用，本节的渲染插件同规。
-- 战斗状态读取 (C07-S02)：`getPlayerShip()` 与实体存活判定，本节用玩家舰船做演示锚点。
-- 战斗插件生命周期 (C07-S05)：本节的注册片段所在。
-- 分层渲染插件 (C07-S06)：世界坐标提交、GL 资源清理与渲染回调纪律，本节直接复用。
-- GraphicsLib 初始化与能力门禁 (C12-S03)：`ShaderLib.init()` / `areShadersAllowed()` 的完整上下文。
+- MOD 目录结构、`mod_info.json` 必填/可选字段、`enabled_mods.json` 启用列表、启动器与 `starsector.log`(C01-S01)。
+- 编译 JAR 链路 (`src` → `jars\GearIndustry.jar`) 与 "jar 类优先于同名 `.java`" 的加载结论 (C06-S01)。
+- `modPlugin` 入口与 `onApplicationLoad()` 时机；本节的运行时检测接入沿用该入口 (C06-S02)。
+- 硬依赖 (hard dependency) 声明、`CompatLevel` 检查、`isModEnabled`/`getModSpec`/`getAvailableModsCopy` 的运行时语义 (C13-S01)；软依赖是本节首次完整讲解。
+- LazyLib `ModUtils.isModEnabled`/`isClassPresent` 的语义分工 (C13-S02)。
+- LunaLib 设置 (`LunaSettings.csv`、`LunaSettings.getBoolean` 等) 的读取与保存细节 (C14-S03)；本节只采用其结论，设置项 `GearIn_fullGraphicEffect` 的定义在 C14-S03 的 `LunaSettings.csv` 中，本节只消费。
+
+## 软依赖：定义与分界
+
+C13-S01 的硬依赖由启动器把关，缺失时 MOD 直接不可用。本节处理相反的约定：本 MOD 的代码或数据引用了另一个 MOD 的能力，但那个 MOD 缺失或未启用时，本 MOD **仍然可以启动并降级运行**，这就是软依赖 (可选依赖，optional dependency)。与硬依赖对照：
+
+| 维度 | 硬依赖 (C13-S01)| 软依赖 (本节)|
+|---|---|---|
+| 声明 | 写在 `mod_info.json` 的 `dependencies` 数组 (`id` 必填)| **不写**进 `dependencies`；写了就变成强制安装 |
+| 检查 | 启动器的兼容检查把关 (缺失 → 红色不可勾选/自动禁用)| 代码在运行期自检 (`isModEnabled` / 类存在性)，缺失不拦启动 |
+| 失败结果 | 缺失时 MOD 不可用 (启动器拦截或代码侧 `NoClassDefFoundError`)| 缺失时按检测结果分支，走降级行为，不报错 |
+
+两种形态：
+
+1. **数据型软依赖 (微型兼容)**：对方 MOD 按约定路径读取您的 CSV/JSON(`Global.getSettings().getMergedSpreadsheetDataForMod(...)` / `getMergedJSONForMod(...)`)，本 MOD 的代码零引用对方 —— 天然兼容，只要把数据文件放在约定目录。规范 (成熟实例规范原文)：微型兼容入口**不允许**出现在 `mod_info.json` 的 `dependencies` 中 —— 它没有代码引用，声明硬依赖只会给用户增加无谓的强制安装。
+2. **代码型软依赖**：本 MOD 代码要调用对方 API 类 (如 `lunalib.lunaSettings.LunaSettings`)。
+  - 这是本节主体：检测、隔离、降级三段缺一不可。代码引用了对方类却不做任何处理，等于把软依赖写成了隐式硬依赖 —— 缺失时运行期 `NoClassDefFoundError`(硬依赖故障分析中的同款症状)。
+
+## 脚本类加载链与安全过滤器
+
+代码型软依赖的风险来自类路径：对方类在不在脚本类路径上，由脚本类加载链决定，所以先看清这条链。启动资源加载期，脚本类加载器建立的脚本类加载链共三节 (脚本加载入口与启动加载线程同构)：
+
+```text
+Janino JavaSourceClassLoader（子，编译 data/scripts 下的 .java）
+        ↓ 委托
+URLClassLoader（中间，平铺全部启用 MOD 的 jar）
+        ↓ 委托
+脚本类加载器（父，脚本安全过滤器；其父是游戏进程类加载器）
+```
+
+1. **jar 收集**：启动器遍历**启用列表**中的 MOD，把每个 MOD 的 `jars` 数组展开为 `<MOD 路径>/<jar 路径>` 追加进脚本类加载器的 jar 列表 (按列表倒序)；随后脚本类加载器把这些路径变成 URL 数组交给 `URLClassLoader`。
+2. **jar 优先**：类名解析从 Janino 发起，委托向上先到 jar 加载器 —— 同名类 jar 里已有就跳过编译 (日志 `Class [...] already loaded (perhaps from jar file, or due to a reference from another class), skipping compilation.`)。这是 "jar 类永远优先于同名 `.java`" 的机制来源 (前序编译链路讲解中已确立的结论)。
+3. **MOD 之间不隔离**：全部启用 MOD 的 jar 在**同一个** `URLClassLoader` 里平铺。
+  - 两个 MOD 发布同一个全限定类名时，`findClass` 按 URL 顺序先到先得 —— 先被搜索到的 jar 胜出，静默生效，没有任何冲突提示。
+  - 软依赖的 "隔离" 不是类路径上的隔离，而是**引用点**上的隔离 (见 "适配器模式")。
+4. **未启用的 MOD 不可见**：jar 收集只遍历启用列表，所以**未启用 MOD 的类不在脚本类路径上**。
+  - 对单 jar 的可选 MOD，"启用" 与 "类在路径上" 两个判据在这条链上一致；判据差异只在类被其他 MOD 间接携带等场景出现 (见 "检测判据")。
+
+脚本层与游戏核心之间的过滤器 (脚本安全过滤器的加载检查) 是本节另一条硬边界：
+
+::: caution 脚本层安全过滤器是硬边界
+脚本链上的类 (jar 类与 `.java` 类同链、同规则)**禁止**驱动：
+
+- `java.io.*`(白名单类如 `BufferedReader`/`InputStream` 除外)；
+- `java.nio.file.File*`
+- `javax.script.*`
+- `java.util.prefs.*`
+- `sun.reflect.misc.MethodUtil`
+
+**禁止**驱动 `java.lang.reflect.*`—— 仅放行 `AnnotatedElement`/`InvocationTargetException`/`Type`/`GenericDeclaration`(后两个正是 "接住反射失败" 所需的类型)，
+
+`Method`/`Field`/`Constructor`/`Proxy`/`Modifier`/`Parameter` 等一律拦截。
+
+违反的可观察结果：加载被拦截的类名时抛 `SecurityException: File access and reflection are not allowed to scripts.`，运行期崩溃，日志记 `ERROR`。
+
+`java.lang.Class` 本身不在拦截范围：`Class.forName(...)` 可以正常使用 —— 这正是一切类存在性检测的前提。
+:::
+
+实例化失败的形态 (脚本类加载器按名实例化脚本)：`Class.forName(name, true, sourceClassLoader)` + `newInstance()`；
+
+抛 `Exception` 包装成 `RuntimeException("Problem loading class [...]")`，而 `NoClassDefFoundError`/`ExceptionInInitializerError` 是 `Error`，不包装直接冒泡 (硬依赖讲解中已证)。
+
+这条链能回答两个问题：MOD 勾没勾、类在不在。主流判据只用前者；"类在不在" 属进阶探测，见下。
+
+## 检测判据与调用隔离
+
+### 判据一（主线）：MOD 启用状态 (isModEnabled)
+
+代码型软依赖的主判据。`Global.getSettings().getModManager().isModEnabled(id)`：id 是否在启用列表，**逐字比较、大小写敏感**(`ModManagerAPI.isModEnabled` 逐字比较语义)。语义 = "这个 MOD 被勾选了"。
+
+- **必须**传对方 `mod_info.json` 的 `id` 字段值，不是显示名：LunaLib 的 id 是 `lunalib`，不是 `LunaLib`。
+  - 用显示名当 id 的可观察结果：`isModEnabled` 恒返回 `false`，功能永远降级，且日志查不出任何报错。
+- 成熟实例：只用 `isModEnabled` 判断软依赖是否可用；`lunalib` 没有出现在这些 MOD 的 `dependencies` 里 —— 这就是软依赖的实证。
+
+### 判据二（数据型）：约定位置配置文件
+
+数据型软依赖 (微型兼容) 的判据不是代码检测：把数据文件放到对方约定读取的位置 (如 `data/config/...` 固定路径)，本 MOD 零代码引用对方。对方缺失时文件不被读取，功能自然降级，不需要任何运行期判断 —— "约定位置" 本身即判据 (完整实例见 C14-S03 的 `LunaSettings.csv`)。
+
+### 进阶：类存在性检测 (Class.forName / ModUtils.isClassPresent)
+
+语义 = "这个类在不在脚本类路径上"。两种写法：
+
+- 原生：`Class.forName("lunalib.lunaSettings.LunaSettings")` 包在 `try { ... } catch (ClassNotFoundException e)` 里，缺类返回 `false`。注意单参 `Class.forName` 会触发类初始化 (执行静态块)；只想探测存在性、不想承受初始化副作用时，用双参 `Class.forName(name, false, loader)`(`initialize=false`)。
+- 库写法：LazyLib `ModUtils.isClassPresent(classCanonicalName)`，语义同样是 classpath 存在性。
+
+::: tip 单参与双参 Class.forName 怎么选
+单参 `Class.forName(name)` 会触发类初始化 (执行静态块)，适合需要目标类完全就绪的完整探测；
+
+只想回答 "类在不在"、不想承受初始化副作用 (静态块打日志、抛异常等) 时，用双参 `Class.forName(name, false, loader)`(`initialize=false`)，只查类路径、不触发初始化。
+
+本节示例用单参 (成熟社区惯用)，两种写法的判据语义相同。
+:::
+
+为什么默认不需要：启用列表语义下，已启用 MOD 的 jar 必然在脚本类路径上 (见 "脚本类加载链")，`isModEnabled` 一个判据已覆盖绝大多数场景；类存在性检测只在 "类可能被其他 MOD 间接携带"、"启用但 jar 损坏/版本漂移" 等特殊场景才需要补上。不鼓励默认使用，但不禁止 —— 需要时与启用判据组合使用是安全写法。
+
+### 分工与误用 (必须遵守的规则)
+
+- `isModEnabled` 表达**启用状态**，是代码型软依赖的主判据；类存在性检测表达**类路径存在性**，属进阶手段，两个判据**必须**按各自语义使用 (成熟实例规范原文)。
+- 版本判断 (补充判据，可选)：需要按可选 MOD 版本分支时，用 `getModSpec(id).getVersionInfo()` 读已安装版本 (`getModSpec` 只查启用列表，调用前必须先过 `isModEnabled`)。
+- (进阶) 把类存在性检测**当作**启用判断 (只查 `isClassPresent`，不查 `isModEnabled`) 的可观察结果：某类被其他 MOD 间接携带、或类在路径上而所属 MOD 未启用时，检测误报 "可用"，检查失效，调用可选 API 的代码在无依赖环境下被放行并崩溃 (成熟实例陷阱原文)。
+- 组合判据是进阶安全写法：`启用 && 类在路径上` 才允许调用可选 API。
+
+::: warning 判据用错的两个常见坑
+两个误用场景都没有显式报错，只能从日志降级行或崩溃点反推：一是把显示名当 `id` 传 (如 `LunaLib` 而非 `lunalib`)，`isModEnabled` 恒返回 `false`，功能永久降级，日志查不出任何报错；
+
+二是 (进阶) 把类存在性检测当作启用判断，某类被其他 MOD 间接携带、或类在路径上而所属 MOD 未启用时，检测误报 "可用"，检查通过后被放行，调用可选 API 的代码在无依赖环境下崩溃。
+:::
+
+## 适配器模式与反射边界
+
+判据只回答 "能不能用"，调用可选 API 的代码必须落在某处。先看一个常见但不成立的做法，再看正确形态。
+
+### 为什么 "反射桥接" 不是可选手段
+
+任务清单常见的 "反射桥接" 思路 —— 运行时用 `Class.forName` + `getMethod`/`invoke` 调可选 API—— 在脚本链上**不可行**：
+
+`java.lang.reflect.Method` 等驱动反射的类型被脚本类加载器的过滤器拦截 (见 "脚本类加载链与安全过滤器")。
+
+`Class.forName` 只能回答 "类在不在"；一旦代码索取 `Method`/`Field`/`Constructor`，立即抛 `SecurityException: File access and reflection are not allowed to scripts.`。
+
+可观察结果就是运行期崩溃，且没有任何绕过途径 (过滤器在父加载器上，jar 类与 `.java` 类同等受限)。
+
+### 适配器的正确形态：编译期直接引用 + 收敛 + 懒解析
+
+真正可行且被成熟实例使用的形态是**静态桥接**：
+
+1. **直接引用**：可选 API 的编译期引用 (如 `LunaSettings.getBoolean(...)`) 写进一个专用适配器类 (`GearInCompatBridge`；与成熟实例同构)。
+2. **收敛**：全工程只有适配器这一处出现 `lunalib.*` 类名；使用方只 import 适配器类。
+  - 编译期类路径上有可选 jar(`compileOnly` 依赖)，运行期才谈得上缺失。
+3. **懒解析**：JVM 按需解析常量池引用 —— 适配器类本身在可选依赖缺失时**可以正常加载**(类加载不触发方法体内引用的解析)；`LunaSettings` 的符号引用只在检查分支**第一次执行**时才解析。
+  - 无依赖时检测返回 false，分支不执行，引用永不解析，`NoClassDefFoundError` 不会出现。这正是 "缺依赖也能启动" 的机制基础。
+
+::: info 为什么 "缺依赖也能启动"
+类的加载与方法体引用的解析是两个时刻：加载适配器类本身不需要解析 `LunaSettings` 的符号引用，只有执行到持有该引用的那行代码时才解析。
+
+检查分支在无依赖时永远不执行，引用就永远不被解析 ——`NoClassDefFoundError` 只在 "引用被实际解析但类不在" 时出现。
+
+这就是 "适配器 + 检查分支" 能同时满足编译期强引用与运行期可缺失的原因。
+:::
+
+::: caution 适配器必须遵守的规则
+- 可选 API 的直接引用**必须**全部收敛在检查分支内 (`if (可用) { ... }` 的 then 分支)。
+  - 字段初始化、静态块、构造器、无检测的公开方法体里出现可选类引用 → 适配器类加载/首次调用时 `NoClassDefFoundError` 或 `ExceptionInInitializerError`(`Error` 冒泡，不包装，启动或运行中止)。
+- 适配器入口**必须**先过启用判据 (`isModEnabled`) 再碰可选 API；无检测的直接调用在缺依赖时 `NoClassDefFoundError`。
+  - 推荐判据：`isModEnabled(id)`(主线)；类存在性检测属进阶加固，特殊场景再叠加 (组合判据 `启用 && 类在路径上`)。
+:::
+
+适配器类**不要**注册进引擎按名实例化的列表 (`settings.json` 的 `plugins`、`modPlugin`、rules 脚本列等)—— 那些入口在加载期就 `newInstance`，任何构造路径上的引用都会立即解析，懒解析保护失效 (脚本类加载器的加载行为)。
+
+适配器是普通工具类，由本 MOD 自己的代码按名调用。
+
+脚本链上**禁止**驱动 `java.lang.reflect` 与 `java.io.File`(见 "脚本类加载链与安全过滤器")，适配器同样适用。
+
+## 降级边界：无依赖时的行为
+
+引用收敛之后还差最后一段：缺依赖时返回什么、日志怎么记。降级边界 = 可选依赖缺失时，适配器返回的默认值/默认动作，以及日志里可观测的降级记录。两条原则 (成熟实例归纳)：
+
+1. **缺依赖 ≠ 报错**：检测失败走默认分支，写一行 INFO 日志说明降级原因 (如 `GearIn compat: LunaLib unavailable, degrading to fallback=true`)。
+  - 用户在 `starsector.log` 里能看到 "这个功能为什么没接上"。
+2. **降级值必须让 MOD 行为完整可用**：默认值由使用方按业务语义传入 (成熟实例缺 LunaLib 时返回 `true` = 全特效，功能不缺失，只是少了用户可配置入口)。
+
+可选 API 自身也可能返回 "缺值"：`LunaSettings.getBoolean(modId, fieldId)` 返回可空 `Boolean`，mod 或字段缺失时记录 ERROR 日志并返回 `null`。
+
+**必须**判空后再拆箱 —— 直接拆箱 `null` 的可观察结果：`NullPointerException`，运行期崩溃 (成熟实例陷阱原文)。
+
+判空失败同样回落默认值。
 
 ## 文件与 API 链路
 
-动手之前，先把本节涉及的每一环文件与 API 落到一处 —— 后面的类型、坐标与数据流解释都沿这张表展开：
+以上各节把处理链拆开了，先用一张表收拢每个环节的落点；下一节的最小例逐项实现它们。
 
-| 环节 | 文件 / API | 说明 |
+| 环节 | 文件或 API | 使用方 / 行为 |
 |---|---|---|
-| shader 源文本 | `data/shaders/GearIn_basic_shader.vert` / `.frag`(本节所有权)| MOD 根目录相对路径，`/` 分隔；示例资源用语义命名 |
-| 文本读取 | `SettingsAPI.loadText(String)`(`com.fs.starfarer.api.SettingsAPI`)| GraphicsLib `org.dark.shaders.post.PostProcessShader` 同款调用；javadoc 必须遵守的规则：路径用 `/` |
-| 编译 | LWJGL `GL20.glCreateShader` / `glShaderSource` / `glCompileShader` / `glGetShaderi(GL_COMPILE_STATUS)` / `glGetShaderInfoLog` | GraphicsLib `ShaderLib.createShader` 同款 (失败抛 `"Error creating shader: " + 日志`)|
-| 链接 | `GL20.glCreateProgram` / `glAttachShader` / `glBindAttribLocation` / `glLinkProgram` / `glGetProgrami(GL_LINK_STATUS)` / `glGetProgramInfoLog` | GraphicsLib `ShaderLib.loadShader` 同款 (链接失败删 program 返回 0)|
-| 能力门禁 | GraphicsLib `ShaderLib.areShadersAllowed()` | `org.dark.shaders.util.ShaderLib`；javadoc 硬措辞见 "加载与使用上下文" |
-| uniform | `GL20.glGetUniformLocation` / `glUniform2f` | GraphicsLib `org.dark.shaders.post.PostProcessShader` 同款 |
-| 顶点属性 | `GL20.glVertexAttribPointer` / `glEnableVertexAttribArray` / `glDrawArrays` | VBO + long 偏移做法 (本节完整最小例)|
-| 渲染所属对象 | `CombatLayeredRenderingPlugin`(分层渲染插件通道)| `engine.addLayeredRenderingPlugin(...)` 注册，`render(layer, viewport)` 回调内绘制 |
-| 可观察结果 | `starsector.log`(编译/链接失败打 ERROR)+ 战斗画面 (渐变四边形)| 本节预期结果 |
-
-## GLSL 类型速查
-
-链路两端已经清楚，接下来认识 GLSL 自己 —— 类型是声明一切变量的基础，以下类型全部能在本地成熟实例的 shader 文件里直接指认：
-
-| 类别 | 类型 | 实例用法 |
-|---|---|---|
-| 标量 | `float` / `int` / `bool` | `float axis = clamp(uv.x, 0.0, 1.0);` |
-| 向量 | `vec2` / `vec3` / `vec4`(另有 `ivec*` / `bvec*`)| `uniform vec4 coreColor;`；`vec2` 遍布坐标计算 |
-| 矩阵 | `mat2` / `mat3` / `mat4` | `uniform mat4 modelMatrix;` |
-| 采样器 | `sampler2D` | `uniform sampler2D tex;`(GraphicsLib `bloom1-5.frag`)|
-| 常量 | `const` | `const float TIP_WIDTH = 0.35;` |
-| 内置输出 | `gl_Position`(顶点)/ `gl_FragColor`(片元)| `bloom1.vert`；`bloom1-5.frag` |
-| 内置输入 | `gl_FragCoord`(片元窗口坐标)、`gl_TexCoord[0]`(内置 varying)| GraphicsLib `pre.frag` |
-
-要点：
-
-- **构造器与 swizzle**：`vec2(0.5, 0.5)`、`vertex * 0.5 + vec2(0.5, 0.5)`；swizzle 用 `.xy`(或 `.rgba` / `.stpq` 两套别名)，可读可写，如 `vec4(c.bg, K.wz)`(rgb2hsv 的 swizzle 示例)。
-- **运算是分量级的**：`vec3 * vec3` 逐分量相乘；`mix` / `smoothstep` / `clamp` / `pow` / `fract` / `abs` / `texture2D` 等内置函数遍布成熟实例。
-- **限定符 (qualifier) 决定数据流方向**：GLSL 1.10/1.20 方言里是 `attribute`(每顶点输入)、`uniform`(绘制级常量)、`varying`(顶点输出 → 片元输入)、`const`(编译期常量)。GLSL 1.30+(要求 GL 3.0) 改为 `in` / `out` / `layout`——`#version 430` shader 用 `layout (location = 0) in vec2 vertex;`、`out vec2 fragUV;`、`out vec4 fragColor;`。
-- 430 方言还带来 uniform 块 (`layout (std140, binding = 0) uniform BUtilGlobalData {...}`)——uniform 块的布局与提交方式由后续专题展开。
-
-## 坐标语义
-
-类型负责声明变量，坐标决定这些变量在渲染两端的含义 —— 顶点与片元看到的是完全不同的坐标系，这是 shader 最常见的困惑来源。
-
-### 顶点坐标：从 attribute 到 gl_Position
-
-attribute 里的位置数据**没有固有语义**—— 它是什么坐标，取决于提交方与投影约定。本地实例里可见三种约定：
-
-| 约定 | 含义 | 本地实例 |
-|---|---|---|
-| 世界坐标 (战斗世界单位)| 分层渲染回调中提交世界单位几何；投影矩阵把世界坐标映射到裁剪空间 | 本节最小例：`glOrtho(viewport)` + `gl_ModelViewProjectionMatrix`；GraphicsLib `renderForeground` 的 `glOrtho(viewport.getLLX(), ...)`(`org.dark.shaders.util.ShaderLib`)|
-| 裁剪空间 [-1,1] | 顶点已经是裁剪坐标，直接写 `gl_Position` | `gl_Position = vec4(vertex, 0.0, 1.0);`(全屏 pass 通用写法)|
-| 屏幕像素 | 左下角原点、Y 向上；`glOrtho(0, displayWidth, 0, displayHeight, -1, 1)` | GraphicsLib `beginDraw`(`org.dark.shaders.util.ShaderLib`)；`bloom1.vert` 用 `ftransform()` 应用固定管线矩阵 |
-
-关键事实：
-
-- 顶点着色器**必须**写出 `gl_Position`(裁剪空间坐标)。光栅化器按它做裁剪、视口变换，最终换算成窗口像素坐标。不写 `gl_Position` → 顶点位置未定义 (见规则 2)。
-- shader 程序**不吃固定管线的变换**—— 投影必须由 shader 自己应用：`gl_ModelViewProjectionMatrix`(内置 uniform，反映当前 `GL_PROJECTION × GL_MODELVIEW`)、`ftransform()`(等价于 `gl_ModelViewProjectionMatrix * gl_Vertex`，GraphicsLib `bloom1.vert` 用法)，或从 BoxUtil 的 UBO(`BUtilGlobalData.gameViewport`) 取游戏视口矩阵。
-- 本节最小例在 `render()` 里按 GraphicsLib `renderForeground` 的做法**自行** `glOrtho(viewport)` (世界坐标正交投影)，不赌引擎固定管线矩阵在 shader 下的状态 —— 分层渲染专题页只实证了固定管线顶点提交路径，未承诺矩阵状态 (见规则 12)。
-
-### 片元坐标：varying 插值与 gl_FragCoord
-
-- 片元着色器**收不到 attribute**；它收到的是**光栅化插值后的 varying**。插值按图元做透视校正 (正交投影下退化为线性)—— 本节最小例的四边形渐变就是 `v_uv` 插值的直接表现。
-- `gl_FragCoord`：内置片元输入，窗口像素坐标 (左下角原点、Y 向上、像素中心在 `x+0.5`)；由 `gl_Position` 经视口变换得到。它是 "顶点 → 片元" 的第二条数据通道：顶点着色器写 `gl_Position`，片元着色器读 `gl_FragCoord`。
-- 屏幕尺寸类参数：本地实例**不直接读 `gl_FragCoord` 的尺寸**，而是用 uniform 传 ——`uniform vec2 screen;` + `1.0 / screen.x` 做像素步长 (`bloom1-5.frag`)，因为 GraphicsLib 的 RTT 纹理尺寸 (2048 起) 与窗口尺寸不同；430 方言实例同理用 `fwidth(fragUV)` 做像素化尺度。
-- 纹理坐标约定 [0,1]：GraphicsLib `drawScreenQuad` 的 tex coords 是 0..1 (`org.dark.shaders.util.ShaderLib`)；430 实例把 [-1,1] 顶点映射到 [0,1] (`fragUV = vertex * 0.5 + vec2(0.5, 0.5)`)。
-
-## 顶点到片元的数据流
-
-坐标语义确定了顶点往哪站，数据流决定这些值怎么到达片元 —— 顶点着色器与片元着色器之间有两条显式通道和一条特殊通道：
-
-```
-Java 侧                                   GPU 管线
-顶点缓冲（位置 / UV）─────────────┐
-                                 ↓
-                           attribute（每顶点）
-                                 ↓
-  uniform（每绘制常量）──────→ 顶点着色器 ──→ gl_Position（裁剪空间）
-  glGetUniformLocation +            │              │
-  glUniform2f / glUniformMatrix4    └─── varying ──┤
-                                                    ↓
-                          图元组装 → 光栅化（裁剪 / 视口变换 / 插值）
-                                                    ↓
-                             片元着色器 ← varying（插值）+ gl_FragCoord
-                                                    ↓
-                                        gl_FragColor → 帧缓冲
-```
-
-三条输入通道：
-
-1. **attribute(每顶点)**：来源是 Java 侧 `glVertexAttribPointer` + `glEnableVertexAttribArray`；位置必须在 `glLinkProgram` 前用 `glBindAttribLocation` 固定。成熟实例把位置、UV、颜色分别绑到 0/1/2。
-
-::: warning 常见坑：attribute 提交必须走 VBO + long 偏移
-
-游戏自带 LWJGL 的 `GL20.glVertexAttribPointer` 没有接收 `FloatBuffer` client 指针的重载 (本单元用游戏 API 编译实证)—— 网上常见的 "FloatBuffer 直接传" 写法在本基线编译不过。正确做法是 `glBindBuffer(GL_ARRAY_BUFFER, vbo)` 后用 long 偏移，见本节完整最小例。
-
-:::
-
-2. **uniform(每绘制)**：一次绘制内所有顶点/片元共享。来源是 `glGetUniformLocation` + `glUniform*`，类型必须与 GLSL 声明匹配。GraphicsLib 一帧提交十几个 uniform(`org.dark.shaders.post.PostProcessShader`)。
-
-::: tip uniform 名拼错时，返回值判 -1 是唯一早期诊断入口
-
-`glGetUniformLocation` 拼错名字会返回 -1，后续 `glUniform*` 被静默忽略且没有任何日志 —— 游戏用最安静的方式宣布您的赋值无效 (见故障分析 4)。给返回值做一次 -1 判断，成本极低、诊断价值高。
-
-:::
-
-3. **varying(逐片元插值)**：顶点着色器输出 → 光栅化插值 → 片元输入**；两侧必须同名同类型**(430 方言里 `fragUV` 在 `.vert` 的 `out` 与 `.frag` 的 `in` 成对出现；GLSL 110 里同名 `varying` 声明)。
-
-特殊通道与输出：
-
-- `gl_Position`(顶点输出)→ `gl_FragCoord`(片元输入)：第二条通道，携带的是变换后的窗口坐标，不是 attribute 原值。
-- 输出通道：GLSL 110 方言里片元着色器**必须写 `gl_FragColor`**；430 方言实例固定输出名为 `fragColor`。
-
-## Starsector 中 shader 的加载与使用上下文
-
-数据流在 GPU 内部成立，但让它跑起来还需要 Java 侧把源文本读进来、编译、链接并提交 —— 游戏自带的 LWJGL 与 OpenGL 2.0 能力基线，决定了您能用哪些 API 和哪个 GLSL 方言：
-
-- **LWJGL**：游戏自带 `Starsector\starsector-core\lwjgl.jar` 与 `lwjgl_util.jar`，MOD 代码直接调用 `org.lwjgl.opengl.GL20` 等 (GraphicsLib 的 import 全部来自这两个 jar)。`glShaderSource` 可直接传 String(GraphicsLib `org.dark.shaders.util.ShaderLib` 同款调用)。
-- **能力基线**：OpenGL 2.0 是 GLSL 可用下限。GraphicsLib `ShaderLib.init()` 检测 `GLContext.getCapabilities().OpenGL20`，不满足时置 `shadersAllowed = false` 并打 ERROR `GPU does not support OpenGL 2.0! Shaders disabled!`(`org.dark.shaders.util.ShaderLib`)。MOD 插件在 `onApplicationLoad` 里 `ShaderLib.init()` 后先查门禁再注册光效数据。
-
-::: caution 使用 shader 代码前必须通过能力门禁
-
-`areShadersAllowed()` 返回 false 时不得使用任何 shader 代码 —— 其 javadoc 是硬措辞：**"Do not use shader code if this returns false! Otherwise the game will crash!"**(规则 1)。
-
-:::
-
-- **加载**：`Global.getSettings().loadText(String)` 读取 MOD 内文本 (`com.fs.starfarer.api.SettingsAPI`)，路径必须用 `/`(javadoc 原文 "Use / instead of \ in paths for compatibility (required to work on OS X and Linux)")。加载与日志处理的完整做法由后续单元展开；GraphicsLib 的用法是 `Global.getSettings().loadText("data/shaders/post/pre.vert")`(`org.dark.shaders.post.PostProcessShader`)。
-- **编译与链接**：`glCreateShader → glShaderSource → glCompileShader`，随后检查 `GL_COMPILE_STATUS`；`glCreateProgram → glAttachShader → glLinkProgram`，随后检查 `GL_LINK_STATUS`；失败时用 `glGetShaderInfoLog` / `glGetProgramInfoLog` 取日志并删除对象 (GraphicsLib `createShader` 编译失败抛 `"Error creating shader: " + 日志`；`loadShader` 链接失败删 program 返回 0)。编译错误日志包含行号与原因 ——**不检查状态，失败就不可见**(规则 7)。
-- **使用**：`glUseProgram(program)` → `glUniform*` / 顶点属性绑定 → `glDrawArrays` → `glUseProgram(0)`(GraphicsLib `exitDraw` 同款收尾)。渲染回调里自行管理 GL 状态 (C07-S06 建议 8 延续)。
-- **资源生命周期**(C07-S06 规则 2/3 延续)：程序对象在 `cleanup()` 里 `glDeleteProgram` 并复位句柄；战斗结束 `destroyInstance` 不调 `cleanup()`，必须 `advance()` 主动失效驱动引擎移除。
-- **方言**：GLSL 110 是 GL 2.0 上下文的标准方言 (GraphicsLib 全部 shader 用 `#version 110`)。GLSL 130+ 需要 GL 3.0+；现代 430 实例用 `#version 430`(`layout` / `std140` / UBO 等核心特性)，其内部规范要求 "版本声明必须统一为 `#version 430`"—— 这是**实例内部标准**(面向现代 GPU)，不是游戏基线。
-
-::: info 为什么基线是 #version 110 而不是 430
-
-GLSL 版本与 OpenGL 版本绑定：`#version 110` 是 GL 2.0 上下文的标准方言 (GraphicsLib 全系同款)，也是游戏基线硬件普遍可用的版本；`#version 430` 需要现代 GPU(GL 4.3)，在低版本上下文声明必然编译失败。教程以 "基线硬件可运行" 为准则，430 只作为现代实例的内部标准出现 (规则 9)。
-
-:::
-
-## 规则汇总
-
-前面的章节已经逐条给出机制，这里把决定 shader 能否运行、能否诊断的约束集中成一张表：标为必须的规则违反后有明确的失败结果，标为建议的规则关乎可维护性与诊断性。正文与故障分析按编号引用：
-
-| # | 强度 | 规则 | 违反的可观察结果 |
-|---|---|---|---|
-| 1 | **必须** | 使用 GLSL 前做能力门禁：OpenGL 2.0 以下不得使用 shader 代码 (GraphicsLib `areShadersAllowed()` javadoc 原文 "Do not use shader code if this returns false! Otherwise the game will crash!")| 无 GL 2.0 上下文调用 GL20 编译 API：程序创建失败 (返回 0) 或渲染异常/崩溃 |
-| 2 | **必须** | 顶点着色器必须写 `gl_Position`，且值是裁剪空间坐标 | 顶点位置未定义：图形不出现或几何损坏 |
-| 3 | **必须** | attribute 位置必须在 `glLinkProgram` 前用 `glBindAttribLocation` 固定；之后 `glVertexAttribPointer` 用同一位置 | 链接器可自由分配位置：顶点数据喂错属性，几何错乱/花屏/空白，且不同驱动表现不同 |
-| 4 | **必须** | varying 在顶点与片元两侧必须同名同类型 | 片元读到未定义值 (链接器警告)：颜色恒为 0/黑或花屏 |
-| 5 | **必须** | 片元着色器必须写 `gl_FragColor`(GLSL 110 方言输出)| 输出未定义：颜色随意或黑屏 |
-| 6 | **必须** | uniform 名称与类型必须与 GLSL 声明一致 (大小写敏感)| `glGetUniformLocation` 返回 -1 或类型不匹配：赋值被静默忽略 (GL 错误不报)，参数不生效且无日志 |
-| 7 | **必须** | 编译/链接后检查 `GL_COMPILE_STATUS` / `GL_LINK_STATUS`，失败时读取信息日志并删除对象 | 错误程序继续使用：内容不出现或渲染异常，且失败原因不可见 (日志里才有行号与原因)|
-| 8 | **必须** | shader 源文本路径用 `/` 分隔 (`SettingsAPI.loadText` javadoc 原文)| `\` 路径在 OS X / Linux 上无法加载 (IOException)|
-| 9 | **必须** | GLSL 版本声明必须与目标上下文匹配：`#version 130+` 需要 GL 3.0+；教程基线用 `#version 110` | 低版本上下文声明高版本：`glCompileShader` 后 `GL_COMPILE_STATUS = FALSE`，信息日志含 version 错误 |
-| 10 | **必须** | GL 资源 (program 等) 在 `cleanup()` 释放；战斗结束 `destroyInstance` 不调 `cleanup()`，`advance()` 主动失效驱动引擎移除 (C07-S06 规则 2/3 延续)| 程序对象随战斗泄漏；多场战斗后驱动报错/渲染异常 |
-| 11 | **必须** | GL 命令只在 `render()` 回调内执行 (C07-S06 规则 1 延续)| `advance()` 里的 GL 调用在渲染阶段之外：内容不出现/错帧/层序错乱 |
-| 12 | 建议 | 渲染回调里自行设置投影矩阵 (本节按 GraphicsLib `renderForeground` 做法 `glOrtho(viewport)`)，不依赖引擎固定管线矩阵在 shader 下的状态 | 无确定结果：依赖引擎矩阵时位置/缩放错误或消失 (引擎矩阵状态未承诺)|
-| 13 | 建议 | `glGetUniformLocation` 返回值判 -1(诊断价值高；GraphicsLib 实例未判，但 -1 的静默行为是头号隐蔽故障)| 无功能错误，只有可诊断性差异 |
-| 14 | 建议 | 参照实例规范：一个视觉参数只有一个所有者、颜色不硬编码、Java 只传外部状态、GLSL 内部形状/渐变/羽化自足 | 无功能错误；可维护性与风格问题 |
+| 声明 (不写)| 可选 MOD 的 `mod_info.json`(`id`: `lunalib`)| 软依赖**不**出现在 `dependencies` 数组里；代码侧用 `isModEnabled("lunalib")` 运行期自检 |
+| 检测 1 | `Global.getSettings().getModManager().isModEnabled(id)` | `ModManagerAPI` 启用列表逐字比较、大小写敏感 |
+| 检测 2 (进阶) | `Class.forName(...)` / LazyLib `ModUtils.isClassPresent(...)` | 脚本类路径存在性；默认不需要，特殊场景 (类被间接携带、jar 损坏防御) 才用 |
+| 设置数据 | 可选 MOD 读 `data/config/LunaSettings.csv`(fieldID `GearIn_fullGraphicEffect`；定义在 C14-S03)| LunaLib 的 `LunaSettingsLoader` 加载默认值；文件只有 LunaLib 启用时才会被读取 (C14-S03)|
+| 适配 | `lunalib.lunaSettings.LunaSettings.getBoolean(modId, fieldId)` | 返回可空 `Boolean`，mod/字段缺失时记录 ERROR 日志并返回 `null` |
+| 类加载 | 启动器收集 → 脚本类加载器加载 | 启用 MOD 的 jar 平铺进单一 `URLClassLoader`；未启用 MOD 的 jar 不在路径上 |
+| 过滤器 | 脚本安全过滤器的加载检查 | `java.io.*`/`java.lang.reflect.*`(白名单除外)→ `SecurityException` |
+| 实例化 | 脚本类加载器按名实例化 | `Class.forName` + `newInstance`；`Exception` 包装为 `Problem loading class [...]`，`Error` 冒泡 |
+| 日志 | `starsector-core\starsector.log` | `GearIn compat:` 降级/缺失行；LunaLib 侧的 `LunaSettings:` ERROR 行 |
 
 ## 完整最小例
 
-规则是约束，现在把它们连同前面的类型、坐标与数据流一起落进代码。在既有 MOD 布局与战斗插件体系之上，本节新增两个 shader 资源与一个插件类 (不新增任何注册项、不改动任何既有文件)：
+在前序累计工程 (C06-S01) 的布局上追加两处 (MOD 根目录 `Starsector\mods\GearIndustry`)：一个适配器类、一行接入调用。
+
+本节示例新增：类 `data.scripts.gearin.modcompat.GearInCompatBridge`(归本节所有)；设置项 `GearIn_fullGraphicEffect` 的定义在 C14-S03 的 `LunaSettings.csv` 中 (第 7 行)，本节只消费。
+
+`GearInModPlugin` 归前序单元所有，本节只调用它。
+
+`Starsector\mods\GearIndustry` 是教程虚构工程路径，本节内部引用保持自洽。
 
 ```text
 Starsector\mods\GearIndustry\
 ├── build.gradle
 ├── settings.gradle
-├── mod_info.json
+├── mod_info.json                # 不加 lunalib 依赖（软依赖不声明）
 ├── data\
-│   └── shaders\
-│       ├── GearIn_basic_shader.vert      # 本节新增
-│       └── GearIn_basic_shader.frag      # 本节新增
+│   └── config\
+│       └── LunaSettings.csv     # C14-S03 定义；只有 LunaLib 启用时被消费
 ├── src\
 │   └── data\scripts\gearin\
-│       ├── GearInModPlugin              # 本节不改动
-│       ├── GearInGlobalAccess           # 本节只消费
-│       └── combat\
-│           ├── GearInCombatStatePlugin        # 本节只消费
-│           ├── GearInCombatLifecyclePlugin    # 本节只消费
-│           ├── GearInLayeredRenderer          # 本节只消费
-│           └── GearInBasicShaderRenderer      # 本节新增
+│       ├── GearInModPlugin                     # 前序单元所有，本节追加一行调用
+│       └── modcompat\
+│           └── GearInCompatBridge              # 本节新增
 └── jars\
 ```
 
-shader 资源放在 `data\shaders\`(MOD 根目录相对路径，与 GraphicsLib `data/shaders/post/pre.vert` 同款布局)；shader 文本会随既有编译链路 (`gradle jar`) 原样打进 `jars\GearIndustry.jar`。
+`data/config/LunaSettings.csv` 的完整定义 (含本节消费的 `GearIn_fullGraphicEffect` 行) 在 C14-S03，本节不新增文件。
 
-### GearIn_basic_shader.vert
-
-GLSL 1.10 方言 (`#version 110`，GL 2.0 上下文标准，GraphicsLib 全系同款)。`attribute` 每顶点输入、`uniform` 每绘制常量、`varying` 顶点输出：
-
-```glsl
-#version 110
-
-attribute vec2 a_position;
-
-attribute vec2 a_uv;
-
-uniform vec2 u_offset;
-
-varying vec2 v_uv;
-
-void main() {
-    v_uv = a_uv;
-    gl_Position = gl_ModelViewProjectionMatrix * vec4(a_position + u_offset, 0.0, 1.0);
-}
-```
-
-### GearIn_basic_shader.frag
-
-片元着色器读插值后的 `v_uv`，写 `gl_FragColor`：
-
-```glsl
-#version 110
-
-varying vec2 v_uv;
-
-void main() {
-    gl_FragColor = vec4(v_uv.x, v_uv.y, 0.0, 1.0);
-}
-```
-
-`v_uv` 在四边形内连续插值：红分量随水平位置、绿分量随垂直位置变化 —— 画面上的红→绿渐变就是 "顶点数据 → varying → 片元" 数据流的直接表现。
-
-扩展练习：把 `gl_FragColor` 改为 `vec4(gl_FragCoord.xy / 800.0, 0.0, 1.0)`，可观察到片元窗口坐标 (左下原点) 随屏幕位置变化。
-
-### GearInBasicShaderRenderer
-
-Java 接入：在分层渲染插件通道上加载、编译、链接程序，每帧提交 uniform 并绘制四边形。源码如下：
+### GearInCompatBridge
 
 ```java
-package data.scripts.gearin.combat;
-
-import java.io.IOException;
-import java.nio.FloatBuffer;
-import java.util.EnumSet;
-
-import org.apache.log4j.Logger;
-import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL15;
-import org.lwjgl.opengl.GL20;
-import org.lwjgl.util.vector.Vector2f;
+package data.scripts.gearin.modcompat;
 
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.CombatEngineLayers;
-import com.fs.starfarer.api.combat.CombatEntityAPI;
-import com.fs.starfarer.api.combat.ViewportAPI;
+import lunalib.lunaSettings.LunaSettings;
 
 /**
- * 完整最小例：GLSL 顶点到片元数据流（attribute / uniform / varying / gl_Position / gl_FragColor）。
+ * 软依赖适配器（兼容层）：把对可选依赖 LunaLib 的全部直接引用收敛在本类，
+ * 工程里只有这一处出现 lunalib.* 类；其余代码只消费本类的静态方法。
  *
- * 数据流事实：
- * - 顶点着色器输入分两类：attribute（每顶点，Java 侧 VBO + glVertexAttribPointer
- *   喂入，位置必须在 glLinkProgram 前用 glBindAttribLocation 固定）与 uniform（本次
- *   绘制内所有顶点共享，Java 侧 glGetUniformLocation + glUniform* 提交）；
- * - 顶点着色器输出 gl_Position（裁剪空间坐标）与 varying（每顶点写出、光栅化时在
- *   片元间插值）；片元着色器读插值后的 varying 并写 gl_FragColor（GLSL 1.10 方言）；
- * - 本节 render() 里按 GraphicsLib renderForeground() 的同款姿势（org.dark.shaders.util.ShaderLib）
- *   用 glOrtho(viewport) 设置世界→屏幕正交投影，顶点着色器用
- *   gl_ModelViewProjectionMatrix 应用它；
- * - 顶点数据走 VBO + long 偏移：游戏自带 LWJGL 的 GL20.glVertexAttribPointer
- *   没有 FloatBuffer client 指针重载（本单元用游戏 API jar 编译实证），必须
- *   glBindBuffer(GL_ARRAY_BUFFER, vbo) 后用 long 偏移；
- * - 能力基线：GLSL 需要 OpenGL 2.0 上下文（GraphicsLib ShaderLib.init() 的 OpenGL20
- *   门禁；areShadersAllowed() 的 javadoc 硬措辞 "Do not use shader code if this
- *   returns false! Otherwise the game will crash!"）；
- * - 编译/链接失败检查：GL_COMPILE_STATUS / GL_LINK_STATUS 为 FALSE 时读取
- *   glGetShaderInfoLog / glGetProgramInfoLog 并删除对象（GraphicsLib createShader() /
- *   loadShader() 同款姿势）；
- * - 资源生命周期沿用 C07-S06 硬规则 2/3：GL 资源在 cleanup() 释放；战斗结束
- *   destroyInstance 不调用 cleanup()，插件在 advance() 里主动失效（isExpired() ->
- *   true）驱动引擎移除；本示例设 LIFETIME 秒寿命后自清；
- * - 插件、引擎引用禁止跨战斗缓存（C06-S03 / C07-S05 / C07-S06 同规）。
+ * 调用链：isModEnabled 判定 MOD 启用状态，通过才进入持有 LunaSettings 直接
+ * 引用的分支；LunaLib 缺失或设置字段缺失时回落到调用方传入的默认值（降级边界）。
+ * 类存在性检测属进阶手段（见本节"进阶"小节），默认不需要。
  */
-public class GearInBasicShaderRenderer extends BaseCombatLayeredRenderingPlugin {
+public class GearInCompatBridge {
 
-    private static final Logger LOG = Global.getLogger(GearInBasicShaderRenderer.class);
+    /** LunaLib 的 MOD id，与 Starsector\mods\Lunalib\mod_info.json 的 id 字段逐字一致。 */
+    public static final String LUNA_MOD_ID = "lunalib";
 
-    /** shader 资源路径（MOD 根目录相对路径，必须用 /，SettingsAPI.loadText javadoc）。 */
-    private static final String VERT_PATH = "data/shaders/GearIn_basic_shader.vert";
-    private static final String FRAG_PATH = "data/shaders/GearIn_basic_shader.frag";
+    /** 本 MOD 在 data/config/LunaSettings.csv 中登记的设置项 fieldID（文件由 C14-S03 定义）。 */
+    public static final String FULL_GRAPHIC_FIELD = "GearIn_fullGraphicEffect";
 
-    /** 演示四边形半边长（世界单位）。 */
-    private static final float QUAD_HALF_SIZE = 60f;
-
-    /** 演示寿命（秒）：到时主动失效，驱动引擎移除并调用 cleanup()。 */
-    private static final float LIFETIME = 20f;
-
-    /** 交错顶点布局：位置(2 float) + UV(2 float)，每顶点 4 个 float。 */
-    private static final int FLOATS_PER_VERTEX = 4;
-
-    private CombatEngineAPI engine;
-    private boolean valid = true;
-    private float elapsed = 0f;
-
-    private int program = 0;
-    private int vboId = 0;
-    private int uOffsetLocation = -1;
-
-    @Override
-    public void init(CombatEntityAPI entity) {
-        super.init(entity);
-        engine = Global.getCombatEngine();
-        if (!createProgram() || !buildQuad()) {
-            valid = false; // 初始化失败：不渲染，等引擎正常移除
-            return;
-        }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C07-S06 同款姿势）
-        LOG.info("GearIn basic shader init: program=" + program + ", vbo=" + vboId
-                + ", u_offset=" + uOffsetLocation);
+    private GearInCompatBridge() {
     }
 
-    /** 加载、编译、链接 GearIn_basic_shader 的 vert/frag，成功返回 true。 */
-    private boolean createProgram() {
-        String vertSource;
-        String fragSource;
-        try {
-            vertSource = Global.getSettings().loadText(VERT_PATH);
-            fragSource = Global.getSettings().loadText(FRAG_PATH);
-        } catch (IOException e) {
-            LOG.error("GearIn basic shader: loadText failed: " + e.getMessage(), e);
-            return false;
-        }
-
-        int vert = compileShader(GL20.GL_VERTEX_SHADER, vertSource);
-        if (vert == 0) {
-            return false;
-        }
-        int frag = compileShader(GL20.GL_FRAGMENT_SHADER, fragSource);
-        if (frag == 0) {
-            GL20.glDeleteShader(vert);
-            return false;
-        }
-
-        program = GL20.glCreateProgram();
-        if (program == 0) {
-            GL20.glDeleteShader(vert);
-            GL20.glDeleteShader(frag);
-            return false;
-        }
-
-        GL20.glAttachShader(program, vert);
-        GL20.glAttachShader(program, frag);
-        // attribute 位置必须在链接前固定，之后 glVertexAttribPointer 用同一位置
-        GL20.glBindAttribLocation(program, 0, "a_position");
-        GL20.glBindAttribLocation(program, 1, "a_uv");
-        GL20.glLinkProgram(program);
-
-        // 链接完成后着色器对象即可删除：程序已持有编译结果
-        GL20.glDeleteShader(vert);
-        GL20.glDeleteShader(frag);
-
-        if (GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-            LOG.error("GearIn basic shader: link failed: " + getProgramLog(program));
-            GL20.glDeleteProgram(program);
-            program = 0;
-            return false;
-        }
-
-        uOffsetLocation = GL20.glGetUniformLocation(program, "u_offset");
-        return true;
+    /** 判据：LunaLib 是否在启用列表（启动器 MOD 管理器按 id 逐字比较，大小写敏感）。 */
+    public static boolean isLunaLibEnabled() {
+        return Global.getSettings().getModManager().isModEnabled(LUNA_MOD_ID);
     }
 
-    /** 编译单个 shader 并检查 GL_COMPILE_STATUS；失败时删除对象并返回 0。 */
-    private int compileShader(int type, String source) {
-        int shader = GL20.glCreateShader(type);
-        if (shader == 0) {
-            LOG.error("GearIn basic shader: glCreateShader returned 0 (type=" + type + ")");
-            return 0;
-        }
-        GL20.glShaderSource(shader, source);
-        GL20.glCompileShader(shader);
-        if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-            LOG.error("GearIn basic shader: compile failed: " + getShaderLog(shader));
-            GL20.glDeleteShader(shader);
-            return 0;
-        }
-        return shader;
+    /** 可用性判据：MOD 已启用即认为可选 API 可用（类存在性检测属进阶手段，默认不启用）。 */
+    public static boolean isLunaSettingsUsable() {
+        return isLunaLibEnabled();
     }
 
-    private static String getShaderLog(int shader) {
-        return GL20.glGetShaderInfoLog(shader, GL20.glGetShaderi(shader, GL20.GL_INFO_LOG_LENGTH));
-    }
-
-    private static String getProgramLog(int program) {
-        return GL20.glGetProgramInfoLog(program, GL20.glGetProgrami(program, GL20.GL_INFO_LOG_LENGTH));
-    }
-
-    /** 两个三角形组成的四边形：6 个顶点，位置与 UV 交错写入一个 VBO。 */
-    private boolean buildQuad() {
-        float half = QUAD_HALF_SIZE;
-        FloatBuffer quadBuffer = BufferUtils.createFloatBuffer(6 * FLOATS_PER_VERTEX);
-        quadBuffer.put(new float[]{
-                -half, -half, 0f, 0f,
-                half, -half, 1f, 0f,
-                half, half, 1f, 1f,
-                -half, -half, 0f, 0f,
-                half, half, 1f, 1f,
-                -half, half, 0f, 1f
-        });
-        quadBuffer.flip();
-
-        vboId = GL15.glGenBuffers();
-        if (vboId == 0) {
-            LOG.error("GearIn basic shader: glGenBuffers returned 0");
-            return false;
+    /**
+     * 适配入口（降级边界）：LunaLib 可用时读取 GearIn_fullGraphicEffect 设置，
+     * 否则返回调用方传入的默认值。LunaSettings.getBoolean 返回可空 Boolean，
+     * 字段缺失时 LunaLib 记录 ERROR 日志并返回 null，这里同样回落到默认值。
+     */
+    public static boolean getFullGraphicEffect(boolean fallback) {
+        if (!isLunaSettingsUsable()) {
+            Global.getLogger(GearInCompatBridge.class).info(
+                "GearIn compat: LunaLib unavailable, degrading to fallback=" + fallback);
+            return fallback;
         }
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, quadBuffer, GL15.GL_STATIC_DRAW);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        return true;
-    }
-
-    @Override
-    public EnumSet<CombatEngineLayers> getActiveLayers() {
-        return EnumSet.of(CombatEngineLayers.ABOVE_SHIPS_AND_MISSILES_LAYER);
-    }
-
-    @Override
-    public float getRenderRadius() {
-        return QUAD_HALF_SIZE * 2f;
-    }
-
-    @Override
-    public void advance(float amount) {
-        if (engine == null) {
-            return;
+        Boolean value = LunaSettings.getBoolean(LUNA_MOD_ID, FULL_GRAPHIC_FIELD);
+        if (value == null) {
+            Global.getLogger(GearInCompatBridge.class).info(
+                "GearIn compat: field [" + FULL_GRAPHIC_FIELD + "] missing in LunaSettings, fallback=" + fallback);
+            return fallback;
         }
-        if (engine.isPaused()) {
-            return;
-        }
-        elapsed += amount;
-        if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()（C07-S06 硬规则 3）
-            return;
-        }
-        // 剔除依据是承载实体的位置（C07-S06 硬规则 4）：跟随玩家舰船
-        entity.getLocation().set(engine.getPlayerShip().getLocation());
-    }
-
-    @Override
-    public boolean isExpired() {
-        return !valid;
-    }
-
-    @Override
-    public void cleanup() {
-        if (vboId != 0) {
-            GL15.glDeleteBuffers(vboId);
-            vboId = 0;
-        }
-        if (program != 0) {
-            GL20.glDeleteProgram(program);
-            program = 0;
-        }
-        LOG.info("GearIn basic shader cleanup");
-    }
-
-    @Override
-    public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (program == 0 || vboId == 0) {
-            return;
-        }
-        // 世界→屏幕正交投影：按 GraphicsLib renderForeground() 同款姿势自行设置
-        // （glOrtho(viewport) 以世界单位建投影，org.dark.shaders.util.ShaderLib），
-        // 顶点着色器用 gl_ModelViewProjectionMatrix 应用它；矩阵成对 push/pop 复原
-        GL11.glMatrixMode(GL11.GL_PROJECTION);
-        GL11.glPushMatrix();
-        GL11.glLoadIdentity();
-        GL11.glOrtho(viewport.getLLX(), viewport.getLLX() + viewport.getVisibleWidth(),
-                viewport.getLLY(), viewport.getLLY() + viewport.getVisibleHeight(), -1f, 1f);
-        GL11.glMatrixMode(GL11.GL_MODELVIEW);
-        GL11.glPushMatrix();
-        GL11.glLoadIdentity();
-
-        GL20.glUseProgram(program);
-
-        // uniform：本次绘制内所有顶点/片元共享，提交为玩家舰船当前位置（每帧更新）
-        if (uOffsetLocation >= 0) {
-            Vector2f center = engine.getPlayerShip().getLocation();
-            GL20.glUniform2f(uOffsetLocation, center.x, center.y);
-        }
-
-        // attribute：VBO 绑定 + long 偏移（游戏自带 LWJGL 的 glVertexAttribPointer
-        // 没有 FloatBuffer client 指针重载，必须走 VBO + long 偏移姿势）
-        int stride = FLOATS_PER_VERTEX * Float.BYTES;
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL20.glVertexAttribPointer(0, 2, GL11.GL_FLOAT, false, stride, 0L);
-        GL20.glEnableVertexAttribArray(0);
-        GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, stride, 2L * Float.BYTES);
-        GL20.glEnableVertexAttribArray(1);
-
-        GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
-
-        GL20.glDisableVertexAttribArray(0);
-        GL20.glDisableVertexAttribArray(1);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL20.glUseProgram(0);
-
-        GL11.glMatrixMode(GL11.GL_MODELVIEW);
-        GL11.glPopMatrix();
-        GL11.glMatrixMode(GL11.GL_PROJECTION);
-        GL11.glPopMatrix();
+        return value;
     }
 }
 ```
 
 对应关系：
 
-- `init` 三件事：`super.init(entity)` 存承载实体、`engine = Global.getCombatEngine()`(每场战斗新取，C06-S03/C07-S06 同规)、`createProgram()` + `buildQuad()` 建 GL 资源；失败即 `valid = false` 等引擎移除。`advance(0f)` 立即同步位置 (C07-S06 同款做法)。
-- `createProgram` 是数据流入口：`loadText` 读两个源文件 (规则 8 的路径做法)→ `compileShader` 逐个编译并查 `GL_COMPILE_STATUS`(规则 7)→ `glBindAttribLocation` 在链接前固定位置 0/1(规则 3)→ 链接并查 `GL_LINK_STATUS`(规则 7)→ `glGetUniformLocation` 取 `u_offset`(规则 6)。
-- `render` 四段：自行 `glOrtho(viewport)` 世界→屏幕正交投影 (建议 12，矩阵成对 push/pop)→ `glUseProgram` + `glUniform2f` 提交 uniform → VBO 绑定 + `glVertexAttribPointer`(long 偏移)+ `glDrawArrays(GL_TRIANGLES)` 绘制 6 顶点四边形 → 解除绑定、`glUseProgram(0)`(C07-S06 建议 8 的收尾做法)。
-- `advance`：`LIFETIME` 秒后 `valid = false` 主动失效 (规则 10)；位置同步 `entity.getLocation().set(...)`(C07-S06 规则 4)。
-- `cleanup`：`glDeleteBuffers` 删 VBO、`glDeleteProgram` 删程序，句柄全部复位 (规则 10)。
+- `LUNA_MOD_ID = "lunalib"`：对方 `mod_info.json` 的 `id` 字段值，逐字一致 (不是显示名 `LunaLib`)；这是 `isModEnabled` 判据的输入。
+- `isLunaSettingsUsable()`：启用判据 (`isLunaLibEnabled()` 的别名)，适配入口的唯一放行条件；类存在性检测属进阶加固，示例不默认启用。
+- `LunaSettings.getBoolean(LUNA_MOD_ID, FULL_GRAPHIC_FIELD)`：唯一持有可选 API 直接引用的语句，位于检查分支内；依赖缺失时该分支不执行，符号引用永不解析，`NoClassDefFoundError` 不会出现 (懒解析)。
+- `Boolean value` + 判空：`getBoolean` 返回可空 `Boolean`，字段缺失时 LunaLib 打 ERROR 日志并返回 `null`；判空失败再回落默认值，避免拆箱 NPE。
+- `Global.getLogger(GearInCompatBridge.class)`：降级/缺失日志走 `starsector-core\starsector.log`。
+- 全类只有 `import lunalib.lunaSettings.LunaSettings` 一处可选依赖引用：这就是 "收敛"。
 
-注册片段 (工程片段 —— 本节不改动战斗生命周期插件的任何既有文件，只演示使用方调用；把下面一行加进战斗生命周期插件 `GearInCombatLifecyclePlugin` 的 `init(CombatEngineAPI engine)` 方法末尾)：
+### 接入片段 (在 GearInModPlugin.onGameLoad 中追加一行)
 
 ```java
-    // 工程片段：战斗生命周期插件 init(CombatEngineAPI engine) 末尾追加
-    engine.addLayeredRenderingPlugin(new GearInBasicShaderRenderer());
+@Override
+public void onGameLoad(boolean newGame) {
+    // 软依赖适配器接入：把 LunaLib 设置与降级默认值收敛在 GearInCompatBridge
+    boolean fullGraphic = GearInCompatBridge.getFullGraphicEffect(true);
+    // ... 既有回调内容（前序讲解的 CLASS_MARK 门控等）……
+}
 ```
 
-与分层渲染专题的注册片段同一做法；渲染层接入的完整设计 (开关、常驻、性能) 由后续专题展开。
+`GearInModPlugin` 类归前序单元所有，本节只调用它；本节示例类不含该片段。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用既有编译链路)：
+### 构建
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag` 与 `data/scripts/gearin/combat/GearInBasicShaderRenderer.class`(可用 `jar tf` 核对)。
+编译注意事项：适配器持有 `LunaSettings` 的直接引用，**编译期**类路径上必须有 LunaLib 的 jar(`compileOnly` 依赖或开发机已装 Lunalib)；运行期没有则走降级，不影响启动。
+
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/modcompat/GearInCompatBridge.class`(可用 `jar tf` 核对)。
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与编译链路 (C06-S01)、`GearIn_test` 测试战役 (C03-S01)、战斗生命周期与分层渲染插件 (C07-S05、C07-S06)，加上本节的 `GearInBasicShaderRenderer` 与 `data\shaders\GearIn_basic_shader.vert/.frag`。
+前置数据：前序累计工程 (C06-S01) 基础上追加本节内容 (沿用 C14-S03 的 `data/config/LunaSettings.csv`、新增 `GearInCompatBridge`、`GearInModPlugin.onGameLoad` 内一行调用)；已安装 Lunalib。
 
-1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag`、`data/scripts/gearin/combat/GearInBasicShaderRenderer.class`。
-2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察初始化记录。
-3. 画面：观察玩家舰船中心 120 世界单位的红→绿渐变四边形：颜色连续、位于舰船与导弹之上。
-4. uniform 数据流：移动舰船 —— 四边形跟随；四边形内渐变样式不随移动改变。
-5. 暂停：按空格暂停约 10 秒 —— 四边形静止但可见；恢复后继续跟随。
-6. 让战斗继续运行约 20 秒，观察四边形与清理日志。
+1. 构建核对：在 MOD 根目录执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；用 `jar tf jars\GearIndustry.jar` 查看 `data/scripts/gearin/modcompat/GearInCompatBridge.class` 是否在产物内。
+2. 降级路径：启动器**不**勾选 Lunalib，勾选 "齿轮工业" 启动并进入生涯，查看 `starsector.log` 中的 `GearIn compat:` 与 `LunaSettings:` 行。
+3. 完整路径：勾选 Lunalib 重启进入生涯，打开 LunaLib 设置界面，观察 `GearIn_fullGraphicEffect` 项并查看日志。
 
 预期结果：
 
-- `gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_basic_shader.vert`、`data/shaders/GearIn_basic_shader.frag` 与 `data/scripts/gearin/combat/GearInBasicShaderRenderer.class`。
-- `starsector.log` 出现一行：
-  ```text
-  GearIn basic shader init: program=<id>, vbo=<id>, u_offset=<loc>
-  ```
-  没有由 `gear_in` 引起的 `ERROR` (编译/链接失败会在此处打 `GearIn basic shader: compile failed:` 或 `link failed:` 的 ERROR 行)。
-- 玩家舰船中心出现一个 120 世界单位见方的四边形，颜色从左下角到右上角红/绿渐变 —— 四边形内颜色连续变化 (红分量随水平位置、绿分量随垂直位置)，这是 `v_uv` 逐片元插值的直接表现；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，C07-S06 层序)。
-- 舰船移动时四边形跟着移动 (`u_offset` 每帧更新)；移动过程中四边形内的渐变样式不变 (`varying` 相对局部坐标插值)。
-- 约 20 秒后四边形消失，`starsector.log` 出现一行：
-  ```text
-  GearIn basic shader cleanup
-  ```
-  即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 10 的可观察面)。同一场战斗内不再出现。
-- 按空格暂停 —— 四边形静止但可见 (`advance` 不推进、渲染不暂停，C07-S06 同款)；恢复后继续跟随。
+- 构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/modcompat/GearInCompatBridge.class`。
+- 降级路径：`starsector.log` 出现 `GearIn compat: LunaLib unavailable, degrading to fallback=true`，`getFullGraphicEffect(true)` 返回 `true`(全特效默认行为)，游戏正常且没有由 `gear_in` 引起的 `ERROR`。
+- 完整路径：`starsector.log` 无降级行；LunaLib 设置界面出现 `GearIn_fullGraphicEffect` 项 (默认 `true`)，改值为 `false` 保存后重读存档，行为变为 `false` —— 设置值生效。
+- 字段缺失：LunaLib 打 `LunaSettings: Value GearIn_fullGraphicEffect of type Boolean not found in JSONObject`(ERROR)，适配器打 `GearIn compat: field [GearIn_fullGraphicEffect] missing in LunaSettings, fallback=true`，两行成对出现，返回默认值且无 NPE。
+- 类存在性 (进阶，可选验证)：类存在性检测属进阶手段，本节示例不包含该判据；需要验证时按 "进阶" 小节写法在启用/未启用两种状态下分别探测。
+
+清理：恢复 `LunaSettings.csv` 中临时删除的 `GearIn_fullGraphicEffect` 行。
 
 ## 故障分析
 
-以下故障按症状组织 —— 症状是您在画面或日志里实际看到的结果；触发与修正所用的规则编号见规则汇总：
+### 无 LunaLib 时启动正常，但调用 `LunaSettings.getBoolean` 的代码抛 `NoClassDefFoundError`
 
-1. **四边形不出现或出现在随机/错乱位置**。症状：图形缺失，或顶点堆在随机/错乱位置；触发：把 `gl_Position = ...` 一行删掉或注释掉；原因：顶点位置未定义 (GLSL 规范)，光栅化没有可用的裁剪坐标；修正：写回 `gl_Position`，且值是裁剪空间坐标 (规则 2)。
-2. **四边形形状错乱、拉伸或空白，且驱动间表现不同**。症状：位置与 UV 数据被喂错属性，形状错乱、拉伸或空白，部分驱动正常、部分驱动花屏 (分配结果实现相关)，是最隐蔽的一类故障；触发：删掉 `glBindAttribLocation` 两行，只留 `glVertexAttribPointer`；原因：链接器自由分配 attribute 位置；修正：链接前固定位置，`glVertexAttribPointer` 用同一位置 (规则 3)。
-3. **渐变消失、颜色恒为 0/黑或花屏**。症状：片元读到未定义值 (链接器警告)，渐变消失、颜色恒为 0/黑或花屏；触发：把 `.frag` 里的 `v_uv` 改名 (如 `v_uv2`) 而 `.vert` 不改；原因：varying 两侧声明不一致，插值通道在片元侧断开；修正：两侧同名同类型 (规则 4)。
-4. **四边形不跟随舰船移动且没有任何日志**。症状：四边形停在初始位置，移动舰船没有反应，日志里也没有任何错误；触发：把 `"u_offset"` 改成 `"uOffset"`；原因：`glGetUniformLocation` 返回 -1，`glUniform2f` 被静默忽略 (GL 错误不报)；修正：核对名称与类型 (规则 6)，并判 -1(建议 13)。
-5. **内容不出现且失败原因不可见**。症状：图形不出现，`starsector.log` 里看不到失败线索；触发：注释掉 `compileShader` 里的 `GL_COMPILE_STATUS` 检查与日志读取；原因：错误程序继续使用，编译错误被吞掉；而检查日志时，语法错误的行号与原因 (如 `ERROR: 0:5: 'xxx' : syntax error`) 就在 `starsector.log` 里；修正：编译/链接后必查状态与日志 (规则 7)；完整日志处理在后续专题展开。
-6. **编译失败，信息日志含 version 错误**。症状：`GL_COMPILE_STATUS = FALSE`，信息日志含 version 错误 (GLSL 版本与 GL 版本绑定)；触发：把 `#version 110` 改成 `#version 130` 或更高；原因：GL 2.0 基线上下文不支持 GLSL 130+ 声明；修正：教程基线用 `#version 110`；需要 430 特性 (`layout`/`std140`/UBO) 时按目标硬件声明 (430 方言做法，规则 9)。
-7. **多场战斗后渲染异常、卡顿或驱动报错**。症状：程序对象随战斗泄漏，多场战斗后驱动报错、渲染异常或卡顿；触发：`cleanup()` 里不删 program，或指望 "战斗结束自动清理"；原因：`destroyInstance` 不调 `cleanup()` (C07-S06 规则 3)，句柄与显存每场累积；修正：`advance()` 主动失效 + `cleanup()` 里 `glDeleteProgram` 并复位句柄 (规则 10，同款做法)。
-8. **内容不出现、错帧或层序错乱**。症状：绘制内容不出现、错帧或层序错乱；触发：把 `glUseProgram` / `glDrawArrays` 放进 `advance()`；原因：`advance()` 属于推进阶段 (C07-S06)，命令在渲染阶段之外执行；修正：GL 命令只在 `render()` 回调 (规则 11)。
-9. **四边形位置/缩放错误或消失**。症状：位置/缩放错误或图形消失；触发：用 `ftransform()` 或 `gl_ModelViewProjectionMatrix` 但不自行设置投影矩阵；原因：分层渲染专题页只实证了固定管线提交路径，未承诺 shader 下的引擎矩阵状态；修正：按本节做法自行 `glOrtho(viewport)`(建议 12，GraphicsLib `renderForeground` 同款)。
-10. **把 430 方言写法搬进 110 文件后编译失败**。症状：编译失败，信息日志报语法错误 (`in`/`out` 不是 110 关键字)；触发：把 430 方言的 `in vec2 fragUV; out vec4 fragColor;` 写法抄进 `#version 110` 文件；原因：版本声明与语言关键字绑定；修正：110 方言用 `varying` 与 `gl_FragColor`；要搬 430 写法就连同版本声明与硬件前提一起搬 (规则 9)。
+- 触发：可选类引用泄漏到了检查分支之外 —— 字段初始化、静态块、构造器，或某个无检测的公开方法体里直接出现 `lunalib.*` 类。
+- 原因：这些位置的符号引用在类加载或首次调用时就被解析，类不在脚本类路径上时 `NoClassDefFoundError`/`ExceptionInInitializerError` 冒泡 (`Error` 不包装，由脚本类加载器按名实例化时直接冒出)，启动或运行中止。
+- 修正：全工程搜索 `lunalib` 引用，除适配器检查分支外一律移除；把可选引用收敛进 `if (isLunaSettingsUsable())` 的 then 分支，重启后确认降级行正常出现。
+
+### `isModEnabled("lunalib")` 恒为 false，但启动器里明明勾着 Lunalib
+
+- 触发：把显示名 `LunaLib` 当 id 传。
+- 原因：`isModEnabled` 按 id 逐字比较、大小写敏感，显示名与对方 `mod_info.json` 的 `id` 字段不一致，所以恒返回 false。
+- 修正：复制对方 `mod_info.json` 的 `id` 字段值；重启后确认降级行消失。
+
+### (进阶) `isClassPresent` 返回 true 但功能没有接上，或反过来误放行崩溃
+
+- 触发：把类存在性判据 (进阶手段) 当作启用判据使用。
+- 原因：类存在性只回答 "类在不在脚本类路径上"，不回答所属 MOD 是否启用；可选类被其他 MOD 间接携带、而所属 MOD 未启用时，检测返回 true，检查通过后被放行，调用可选 API 的代码在缺依赖环境下运行并崩溃。
+- 修正：回退到主线判据 `isModEnabled`，或使用进阶组合判据 `启用 && 类在路径上`(成熟实例陷阱原文)，改后分别用启用与未启用两种状态复验。
+
+### 运行期 `SecurityException: File access and reflection are not allowed to scripts.`
+
+- 触发：脚本链代码驱动 `java.lang.reflect`(`getMethod`/`getField`/`newProxyInstance` 等) 或 `java.io.File`。
+- 原因：脚本安全过滤器在父加载器上拦截这些类型，jar 类与 `.java` 类同等受限，没有绕过途径。
+- 修正：改用本节适配器形态 (编译期直接引用 + 检查分支)；`Class.forName` 只用于存在性检测，不索取 `Method`/`Field`。
+
+### `NullPointerException`，堆栈指向拆箱 `LunaSettings.getBoolean(...)` 返回值
+
+- 触发：字段未定义或 mod 未登记时 `getBoolean` 返回 `null`，代码直接拆箱。
+- 原因：`getBoolean` 返回可空 `Boolean`，缺值时 LunaLib 先打一条 ERROR 再返回 `null`；对 `null` 拆箱即抛 NPE。
+- 修正：判空后回落默认值 (成熟实例陷阱原文)，再用删除字段场景复验无 NPE。
+
+### 两个 MOD 提供同一个全限定类名，行为时而正确时而错乱
+
+- 触发：两个 MOD 共享同一个 `URLClassLoader`，同名类按 URL 顺序先到先得 (脚本类加载器的加载行为)。
+- 原因：启用顺序或优先级变化后，`Class.forName` 返回的可能是对方实现，功能表现随启用组合漂移。
+- 修正：这是 MOD 之间不隔离的固有现象 —— 本 MOD 的类名保持唯一前缀 (`GearIn*`)，可选 API 一律通过对方的正式类访问。
+
+### 把软依赖误写进 `dependencies`，用户缺 LunaLib 时 MOD 直接被启动器拦截
+
+- 触发：适配器已经做好降级，却仍把 `lunalib` 声明为硬依赖。
+- 原因：`dependencies` 里的条目走硬依赖的启动器拦截语义，LunaLib 缺失时 "齿轮工业" 行红色不可勾选或自动禁用，用户无法选择降级运行。
+- 修正：代码型软依赖**不**写 `dependencies`；只有真正的强制引用才写 (硬依赖讲解)。
+
+### 降级日志缺失，功能悄悄变了行为
+
+- 触发：检测失败分支不写日志，或降级值写死在适配器里。
+- 原因：没有日志，用户与编者都无法从日志判断 "设置没接上" 还是 "被关闭"。
+- 修正：降级分支写 INFO 日志 (`GearIn compat: ...`)，降级值由调用方传入 (业务默认语义明确)。
 
 ## 总结
 
-本节把 GLSL 的最简流程完整建立起来：`#version 110` 的类型与限定符体系决定数据怎么声明，attribute / uniform / varying 决定数据怎么流动，坐标约定决定顶点与片元各自看到什么，最终全部落进一个能编译、能链接、能出画面的四边形渲染插件。
+本节走通了软依赖的三段处理链：判据 (`isModEnabled`，主线) 决定能不能碰可选 API，适配器决定引用在哪里被解析，降级决定缺依赖时返回什么。三条边界独立失效 —— 判据用错会静默误判，引用泄漏会直接崩溃，降级值或日志缺失会让行为悄悄偏离，因此验证要覆盖无依赖、有依赖和故障注入三条路径。
 
-画面出错时，沿数据链往回核对通常最快：先确认顶点着色器写了 `gl_Position`、attribute 位置在链接前固定、varying 两侧同名同类型、uniform 名称与类型一致，再确认编译/链接状态被检查过 —— 这几处是规则表全部硬约束的高发点，也是 shader 故障最集中的位置。
+脚本链的安全过滤器拦截 `java.lang.reflect` 驱动与 `java.io.File`，决定了 "反射桥接" 不可行，可选 API 只能以编译期直接引用收敛进适配器，再靠懒解析保住缺依赖时的启动。
 
-这套数据流还是后续更复杂 shader 工作的地基：加载与编译日志的完整处理、uniform 与纹理/矩阵的提交方式、渲染层接入与性能设计，都只是在本节这条数据流上补充实现细节与工程化手段。
+这套骨架不绑定 LunaLib。接入其他可选 MOD 时，适配器按目标 API 换形、降级默认值按业务语义传入、需要版本分支时在启用判据上补 `getVersionInfo()` 一层 (类存在性检测属进阶，特殊场景再叠加)；排查既有软依赖问题时按同一顺序核对：判据是否用对、引用是否全部在检查分支内、降级分支是否写日志、`dependencies` 是否误写。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.SettingsAPI`：`loadText(String)` 读取 MOD 内文本 (shader 源文件)，路径必须用 `/`。
-- `com.fs.starfarer.api.combat.CombatLayeredRenderingPlugin`：分层渲染插件接口，shader 绘制的所属对象 (`BaseCombatLayeredRenderingPlugin` 提供基础实现)。
-- `com.fs.starfarer.api.combat.ViewportAPI`：渲染回调中的视口信息 (`getLLX`/`getLLY`/`getVisibleWidth`/`getVisibleHeight`)，用于构造正交投影。
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：`isPaused()`/`getPlayerShip()` 等战斗状态查询。
-- `org.lwjgl.opengl.GL20`：shader 编译/链接、程序、uniform 与顶点属性 API(`glCreateShader`/`glCompileShader`/`glLinkProgram`/`glGetUniformLocation`/`glUniform*`/`glVertexAttribPointer`)。
-- `org.lwjgl.opengl.GL15`：VBO API(`glGenBuffers`/`glBindBuffer`/`glBufferData`/`glDeleteBuffers`)。
-- `org.lwjgl.opengl.GL11`：基础绘制与矩阵 API(`glDrawArrays`/`glOrtho`/矩阵 push/pop)。
-- `org.dark.shaders.util.ShaderLib`(GraphicsLib)：`areShadersAllowed()` 能力门禁与 `createShader`/`loadShader` 参考实现。
-- `data/shaders/GearIn_basic_shader.vert` / `data/shaders/GearIn_basic_shader.frag`：本节示例 shader 资源 (MOD 根目录相对路径)。
-- `data/shaders/post/pre.vert`(GraphicsLib)：`#version 110` 方言的参考文件 (相对 GraphicsLib MOD 根目录)。
-- `Starsector/starsector-core/starsector.log`：编译/链接失败与清理日志的可观察落点。
+- `com.fs.starfarer.api.Global`：全局入口，`getSettings()` 与 `getLogger(Class)` 所在。
+- `com.fs.starfarer.api.SettingsAPI`：`getModManager()` 取得 MOD 管理器。
+- `com.fs.starfarer.api.ModManagerAPI`：`isModEnabled(id)`(启用列表逐字比较、大小写敏感) 等运行时检测方法。
+- `com.fs.starfarer.api.ModSpecAPI`：`getVersionInfo()` 读已安装版本 (版本判断用)。
+- `lunalib.lunaSettings.LunaSettings`：可选依赖 API，`getBoolean(modId, fieldId)` 返回可空 `Boolean`。
+- `data.scripts.gearin.modcompat`：本节示例包，软依赖适配器 `GearInCompatBridge` 所在。
+- `data/config/LunaSettings.csv`(MOD 根目录起；定义在 C14-S03)：本节消费的设置项 `GearIn_fullGraphicEffect` 的默认值登记处。
+- `Starsector/mods/Lunalib/mod_info.json`(游戏安装根起)：`id` 字段逐字比对对象。
+- `Starsector/starsector-core/starsector.log`(游戏安装根起)：降级/缺失日志的核对位置。

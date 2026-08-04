@@ -145,7 +145,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ![](./variant_make.png)
 
-在装配界面为 `窑-级` 装上武器与船插，并为模块也做一份装配，游戏会把它们导出到存档目录 (本机 `\Starsector\saves\missions\GearIn_test\`)。
+在装配界面为 `窑-级` 装上武器与船插，并为模块也做一份装配，游戏会把它们导出到存档目录 (`\Starsector\saves\missions\GearIn_test\`)。
 
 ### 第六步：整理成正式装配
 

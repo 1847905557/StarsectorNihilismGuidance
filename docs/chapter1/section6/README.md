@@ -317,10 +317,7 @@
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.ShipHullSpecAPI`：内置武器/船插/战机的只读访问入口。
-- 访问方法：`getBuiltInWeapons()`/`getBuiltInMods()`/`getBuiltInWings()` 与 `isBuiltIn(...)` 系列。
 - `com.fs.starfarer.api.combat.WeaponAPI`：`WeaponType` 枚举，含 `BUILT_IN` 与 `DECORATIVE` 两种类型。
-- `com.fs.starfarer.api.loading.WeaponSlotAPI`：槽位类型访问入口 `getWeaponType()`。
 - `data/hulls/onslaught.ship`：原版 `builtInMods`/`builtInWeapons` 与 BUILT_IN 槽位示例。
 - `data/hulls/shade.ship`：原版 `builtInMods` 示例 (`phasefield`/`delicate`)。
 - `data/hulls/tempest.ship`：原版 `builtInWings` 示例 (`terminator_wing`)。

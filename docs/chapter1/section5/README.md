@@ -890,11 +890,6 @@ CSV 的导弹行会直接修改它引用的弹体 spec：当原版 `暴风 MLRS`
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.SettingsAPI`：数据加载入口。
-- `getMergedSpreadsheetData(...)` 按 id 列合并读取 CSV；`getMergedJSON(...)` 按 MOD 合并语义读取 JSON。
-- `com.fs.starfarer.api.loading.WeaponSpecAPI`：武器数据接口 (`.wpn` 与 `weapon_data.csv` 的合并结果)。
-- `com.fs.starfarer.api.loading.ProjectileSpecAPI`：射弹数据接口 (`.proj` 射弹)。
-- `com.fs.starfarer.api.loading.MissileSpecAPI`：导弹数据接口 (`.proj` 导弹)。
 - `data/weapons/weapon_data.csv`：武器数据表，按 id 列合并加载。
 - `data/weapons/`：武器文件目录 (`.wpn`)。
 - `data/weapons/proj/`：弹体目录 (`.proj`)。

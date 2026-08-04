@@ -118,7 +118,7 @@ if (!this.isPaused()) {
 
 实现 (`ListenerManagerAPI`)：内部由两个仓库构成 ——`listeners`(持久) 与 `transientListeners`(transient，读档时重建)。语义要点：
 
-- `addListener` / `addListener(listener, true)` 直接写入对应仓库，**`ListenerManagerAPI` 自身没有任何去重检查**(与通道一的 `contains` 去重不同；仓库内部语义本节不展开验证，不要依赖 "重复注册会被自动去重")。
+- `addListener` / `addListener(listener, true)` 直接写入对应仓库，**`ListenerManagerAPI` 自身没有任何去重检查**(与通道一的 `contains` 去重不同；不要依赖 "重复注册会被自动去重")。
 - `removeListener` 同时清两个仓库；`removeListenerOfClass` 遍历两个仓库的**快照**逐个移除 (安全改列表)；`getListeners` 返回两仓库并集的新列表，派发侧遍历的是这份副本。
 - 持久性：`ListenerManagerAPI` 实例随存档保存；transient 仓库读档后必然清空。
 
@@ -168,13 +168,13 @@ if (!this.isPaused()) {
 
 ### 事件边界：触发点表现
 
-方法签名只说明回调能拿到什么，触发时机要落到引擎的实现位置。以下触发点全部来自引擎内部实现与公开 API 源码，是 "事件边界" 判定的依据：
+方法签名只说明回调能拿到什么，触发时机要落到引擎的实现位置。以下触发点是 "事件边界" 判定的依据：
 
-| 事件 | 触发点 (本地表现)|
+| 事件 | 触发点 (具体表现)|
 |---|---|
 | 市场开启/关闭 | 打开市场交互对话框时 `reportPlayerOpenedMarket`，对话框关闭时 `reportPlayerClosedMarket`；打开贸易面板时 `reportPlayerOpenedMarketAndCargoUpdated` |
 | 贸易结算 | 贸易面板与整备界面 (舰船、武器、战机) 结算后 `reportPlayerMarketTransaction`；倾倒货物、未取走战利品也经贸易面板触发 |
-| 战斗发生/结束 | 自动结算轮结算出胜者后 `reportBattleOccurred`、战斗结束 `reportBattleFinished`；API javadoc：AI vs AI 每个自动结算轮一次、玩家遭遇战一次；玩家战斗结算生成 `EngagementResultAPI` 后 `reportPlayerEngagement`(`com.fs.starfarer.api.impl.campaign.FleetEncounterContext`)；战利品生成 `reportEncounterLootGenerated`(`com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`)|
+| 战斗发生/结束 | 自动结算轮结算出胜者后 `reportBattleOccurred`、战斗结束 `reportBattleFinished`；AI vs AI 每个自动结算轮一次、玩家遭遇战一次；玩家战斗结算生成 `EngagementResultAPI` 后 `reportPlayerEngagement`(`com.fs.starfarer.api.impl.campaign.FleetEncounterContext`)；战利品生成 `reportEncounterLootGenerated`(`com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`)|
 | 舰队入地 | 舰队加入地点且未上报过 (`isReportedSpawned` 标志) 时 `reportFleetSpawned`—— 每支舰队只上报一次 |
 | 舰队离场 | `CampaignFleetAPI.despawn(FleetDespawnReason, Object)` 内 `reportFleetDespawned`——reason 与 param 由调用方决定 |
 | 舰队跳跃/到达 | 超空间跳跃处理上报 `reportFleetJumped`(devmode 跳跃同样触发)；舰队 AI 到达 assignment 目标时上报 `reportFleetReachedEntity` |
@@ -183,7 +183,7 @@ if (!this.isPaused()) {
 | 当前位置变化 | 引擎检测到当前地点变化时经 `ListenerUtil.reportCurrentLocationChanged` 派发 (类型化通道 `CurrentLocationChangedListener`)|
 | 对话框 | 打开交互对话框后上报 `reportShowInteractionDialog`(`SectorAPI`)，随后回调 `CampaignEventListener.reportShownInteractionDialog` |
 | 遭遇开始 | 玩家舰队与实体接触形成遭遇时，引擎内部开始遭遇处理 (非公开 API，MOD 观察不到)；玩家侧后续以交互对话框/战斗事件体现 |
-| 能力开关 | 公开 API 有派发方法，具体触发点在引擎内部 (本节不展开验证)—— 语义：玩家激活/停用能力时回调 |
+| 能力开关 | 公开 API 有派发方法，具体触发点在引擎内部 —— 语义：玩家激活/停用能力时回调 |
 
 ## 生命周期规则
 
@@ -630,7 +630,7 @@ gradle jar
    - 修正：回调内过滤 (如 `fleet.isPlayerFleet()` 或按势力 id)，把玩家关心的事件单独归类。
 8. **战斗计数偏高**。
    - 症状：用 `reportBattleOccurred` 统计的 "玩家战斗次数" 与预期不符。
-   - 触发：`reportBattleOccurred` 只对 AI vs AI 每个自动结算轮调用一次、对玩家遭遇战一次 (API javadoc)，但玩家舰队**在战斗中**若包含多轮自动结算 (如玩家脱战后 AI 继续互打)，不会产生 player 标记。
+   - 触发：`reportBattleOccurred` 只对 AI vs AI 每个自动结算轮调用一次、对玩家遭遇战一次，但玩家舰队**在战斗中**若包含多轮自动结算 (如玩家脱战后 AI 继续互打)，不会产生 player 标记。
    - 原因：统计口径选错了回调 —— `reportBattleOccurred` 反映战斗过程，不反映玩家结算结果。
    - 修正：玩家战斗统计用 `reportPlayerEngagement`(`EngagementResultAPI.didPlayerWin()`)；战斗过程观察用 `reportBattleOccurred` 且以 `battle.isPlayerInvolved()` 过滤。
 9. **双通道混淆导致业务重复**。

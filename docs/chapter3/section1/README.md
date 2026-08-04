@@ -69,7 +69,7 @@ Starsector 有两个主要游玩入口，本节开始会经常把两者并列：
 ### 装配导出链路
 
 1. 在战役的装配界面修改任何舰船设计后，游戏立即把该船的设计写入 `<存档目录>/missions/<mission_id>/mission_<mission_id>_ship_<序号>.variant`(序号是该船在用户舰队列表中的位置，从 0 开始)。"另存为通用设计" 则写入 `<存档目录>/missions/variants/`，ID 形如 `missions_common_<hullId>_<随机串>`。
-2. 存档目录由 `vmparams` 的 `-Dcom.fs.starfarer.settings.paths.saves` 决定。本机 (`Starsector` 安装) 为 `Starsector\saves`，因此导出位置是 `Starsector\saves\missions\<mission_id>\`。
+2. 存档目录由 `vmparams` 的 `-Dcom.fs.starfarer.settings.paths.saves` 决定。`Starsector\saves`，因此导出位置是 `Starsector\saves\missions\<mission_id>\`。
 3. 游戏启动时 (装配加载之后) 从 `saves/missions/<mission_id>/` 和 `saves/missions/variants/` 读回这些装配并注册 (战役目录下来源 `MISSION_SAVE`，`variants` 目录下为 `MISSION_DESIGN`)，所以战役里改过的舰队会在下次进入时保持一致。删除这些文件即可清除对应设计。
 4. 这些导出文件与 `data/variants` 里的装配走同一个装配 spec 构造器、同一套字段，因此可以原样搬到 MOD 里使用 —— 只要改掉 `variantId`。
 
@@ -251,7 +251,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 ![](./variant_export.png)
 
-本机位置是 `Starsector\saves\missions\GearIn_test\`，文件名为 `mission_GearIn_test_ship_0.variant`(第一个进列表的船序号为 0)。它的 `variantId` 是 `mission_GearIn_test_ship_0`。
+位置是 `Starsector\saves\missions\GearIn_test\`，文件名为 `mission_GearIn_test_ship_0.variant`(第一个进列表的船序号为 0)。它的 `variantId` 是 `mission_GearIn_test_ship_0`。
 
 ::: warning 导出文件要剪贴，不要复制
 

@@ -62,12 +62,12 @@ data/config/sounds.json          注册层（C05-S02）：sound ID → 路径与
 
 | 方法 | 用途 | 位置音效 | 硬性要求 |
 |---|---|---|---|
-| `playUISound(String id, float pitch, float volume)` | 一次性 UI 音效，无位置 | 否 | 素材建议 stereo(API 注释原文 "UI sound files should be stereo")|
-| `playSound(String id, float pitch, float volume, Vector2f loc, Vector2f vel)` | 战斗/大地图位置音效 | 是 | 素材**必须为 mono**(API 注释原文 "Sound file must be *mono* for it to be properly played within the engine")；距监听点超过 2500 不播放 |
+| `playUISound(String id, float pitch, float volume)` | 一次性 UI 音效，无位置 | 否 | 素材建议 stereo("UI sound files should be stereo")|
+| `playSound(String id, float pitch, float volume, Vector2f loc, Vector2f vel)` | 战斗/大地图位置音效 | 是 | 素材**必须为 mono**("Sound file must be *mono* for it to be properly played within the engine")；距监听点超过 2500 不播放 |
 | `playLoop(String id, Object playingEntity, float pitch, float volume, Vector2f loc, Vector2f vel)` | 位置循环音效 | 是 | **必须每帧调用**，否则循环淡出；`playingEntity` 必填 (同实体同循环只播一个)；素材建议 mono |
 | `playLoop(..., float fadeIn, float fadeOut)` | 同上，指定淡入/淡出秒数 | 是 | 同上 |
 | `playUILoop(String id, float pitch, float volume)` | UI 循环音效 | 否 | 每帧续期规则同 `playLoop` |
-| `playCustomMusic(int fadeOutIfAny, int fadeIn, String musicSetId)` | 手动播放音乐集 | — | 淡入/淡出秒数**必须为整数**(API 注释原文 "have to be whole numbers")；`musicSetId` 传 `null` 停止当前曲目 |
+| `playCustomMusic(int fadeOutIfAny, int fadeIn, String musicSetId)` | 手动播放音乐集 | — | 淡入/淡出秒数**必须为整数**("have to be whole numbers")；`musicSetId` 传 `null` 停止当前曲目 |
 | `playCustomMusic(..., boolean looping)` | 同上，指定是否循环 | — | 同上 |
 | `setSuspendDefaultMusicPlayback(boolean)` | 阻止默认选曲自动开始新曲目 | — | 与 `playCustomMusic` 配合 |
 | `getCurrentMusicId()` | 当前曲目；无播放时返回字符串 `"nothing"` | — | 线程安全 |
@@ -200,7 +200,7 @@ hull style 里写入自定义声音集 ID 后，该 ID 必须存在于 `sounds.j
 
 ## 使用方三：UI 声音 (playUISound)
 
-`playUISound(id, pitch, volume)` 播放无位置的 UI 音效，适合按钮、提示、结算等一次性事件。API 注释建议 UI 素材使用 stereo。
+`playUISound(id, pitch, volume)` 播放无位置的 UI 音效，适合按钮、提示、结算等一次性事件。UI 素材建议使用 stereo。
 
 原版调用点遍布战役与战斗 UI：`ui_button_pressed`、`ui_smallaction_yes`/`ui_smallaction_no`、`ui_rep_raise`/`ui_rep_drop`、`ui_char_level_up`、`ui_target_reticle`、`cr_playership_warning`(战斗内对用户舰船警告) 等。
 
@@ -235,7 +235,7 @@ if (state == ShipSystemStatsScript.State.IN && effectLevel < 0.05f) {
   - `magnetic_field` 用 `terrain_magfield`/`terrain_magstorm`；
   - `slipstream` 用 `terrain_slipstream`/`terrain_slipstream_near`。
   - 公开 API `TerrainSpecAPI` 暴露 `getLoopOne()`..`getLoopFour()` 与 `getMusicSuppression()`。
-- 消费链 (公开 API 实现 `com.fs.starfarer.api.impl.campaign.terrain.BaseTerrain` 实证)：地形插件每帧检查用户舰队是否在范围内 (含 100 的额外声音半径)。
+- 消费链 (公开 API 实现 `com.fs.starfarer.api.impl.campaign.terrain.BaseTerrain`)：地形插件每帧检查用户舰队是否在范围内 (含 100 的额外声音半径)。
   - 对每个 loop 字段调 `Global.getSoundPlayer().playLoop(soundId, fleet, pitch, volume, fleet.getLocation(), Misc.ZERO)`；
   - 同时按 `musicSuppression * 接近度` 调 `Global.getSector().getCampaignUI().suppressMusic(...)` 压低音乐。
 - 地形插件可用 `custom` 参数：`HyperspaceTerrainPlugin` 读 `stormSound` 用 `playSound` 播雷击、读 `gain`/`gainHF` 用 `applyLowPassFilter` 做深渊低通 (公开 API 实现 `com.fs.starfarer.api.impl.campaign.terrain.HyperspaceTerrainPlugin`)。
@@ -254,7 +254,7 @@ MOD 接入环境音的路径是自定义地形类型 (实现 `CampaignTerrainPlu
    - `Misc.getMusicPlayerPlugin()`(公开 API `com.fs.starfarer.api.util.Misc`) 用 `Global.getSettings().getNewPluginInstance("musicPlugin")` 实例化并缓存为单例。
 2. **状态令牌**：`MusicPlayerPlugin` 接口 (公开 API) 定义 `getMusicSetIdForCampaignStateToken(token, param)`、`getMusicSetIdForCombat(engine)`、`getMusicSetIdForTitle()`。
    - `MusicPlayerPluginImpl`(公开 API 实现，可直接继承) 覆盖战役状态：`MARKET`/`ENCOUNTER`/`CAMPAIGN_SYSTEM`/`CAMPAIGN_HYPERSPACE`/`PLANET_SURVEY`/`NO_MUSIC`。
-3. **市场音乐决策顺序**(`MusicPlayerPluginImpl.getMarketMusicSetId` 实证)：
+3. **市场音乐决策顺序**(`MusicPlayerPluginImpl.getMarketMusicSetId`)：
    - 市场内存键 `$musicSetIdForMission` → 市场内存键 `$musicSetId` → 市场所属势力的 `music` 映射表 (键 `market_friendly`/`market_hostile`/`market_neutral`，另有 `encounter_*` 与 `music_combat_set` 用于遭遇与战斗)→ 默认 `music_default_market_friendly/hostile/neutral`。
    - 星区与深渊另有 `$musicSetId` 内存键与 `music_campaign*` 默认集。
 4. **播放**：各状态音乐播放器把返回的音乐集 ID 交给音乐线程播放；`music` 分类条目支持多曲候选 (`files` + `randomStart`，注册层已述)。

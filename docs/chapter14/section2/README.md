@@ -1,713 +1,666 @@
-# 加载并编译着色器文件
+# 接入 Nexerelin 势力功能
 
-本节从 `.vert` 与 `.frag` 文件加载并编译着色器，在战斗画面绘制扩散脉冲环。程序对象会按加载、使用、清理和重载四个环节管理，相关结果写入日志。
+本节把齿轮工业接入可选 MOD Nexerelin，使势力能够参与开局选择、星系生成、地面战与特遣队活动。Nexerelin 缺失时，齿轮工业仍可独立运行。
 
-*本节预期阅读时间：~20 分钟。*
+*本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~40 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 说出 `.vert/.frag` 在 MOD 中的存放约定 (`data/shaders/` 目录级入口) 与路径规则：MOD 根目录相对、`/` 分隔、同基名成对、UTF-8 无 BOM；
-- 说出 `SettingsAPI.loadText` 的两种形态 (单参全局、双参按 MOD 限定资源空间) 与读取端行为 (UTF-8 解码、`\r` 剥除、BOM 不剥)，以及 `validateFileName` 在读取前拒绝哪些路径；
-- 说出 shader 加载的完整调用链：`loadText` → `glCreateShader`/`glShaderSource`/`glCompileShader` → `glCreateProgram`/`glAttachShader`/`glLinkProgram` → 状态检查 → InfoLog，并指出游戏侧对这个过程零日志、日志责任在 MOD 侧；
-- 说出编译/链接失败的 InfoLog 里能看到什么 (行号、原因、version 错误)，成功时通常为空串，以及链接警告 (如 varying 不匹配) 不会让链接失败；
-- 说出 shader 资源生命周期的四个环节：加载 (每场战斗 init)→ 使用 (render 回调内)→ 清理 (`cleanup()` 里 `glDeleteProgram`；战斗结束 `destroyInstance` 不调 `cleanup()`)→ 重载 (按同一路径删除重建，重建成功才替换)；
-- 从症状定位典型故障：路径写错 (`\`/盘符/`..`/漏目录)、源文件带 BOM、漏查编译/链接状态、InfoLog 没进日志、重载先删后建、跨战斗缓存程序句柄。
+- 说出五个接入面各自的注册入口：`mod_factions.csv` 与 `<factionId>.json`(势力配置)、`corvus_spawnpoints.csv`(生成点)、`SectorManager`(模式判定)、`groundBattleDefs.json`(地面战)、`specialForcesNamerClass`(特遣队命名器)；
+- 解释势力配置的读取链 (按 MOD id 合并、只提交自己的行与键)，以及漏写 `mod_factions.csv` 名单行的可观察结果；
+- 写出生成分支的标准做法：`isModEnabled("nexerelin")` 检测 → `getManager() != null` 判断 → `isCorvusMode()` 分派，并解释为什么 `onNewGame` 阶段必须先判空；
+- 为齿轮工业创建最小配置：出生点行、势力 JSON、`groundBattleDefs.json` 条目与 `groundBattleSettings`；
+- 实现一个特遣队命名器类 (`GearInSpecialForcesNamer implements SpecialForcesNamer`)，并说出加载链与三个失败形态的可观察结果；
+- 从典型症状反推配置或代码错误，定位到对应链路并完成修正。
 
 ## 前置知识
 
-本节把上一节的 shader 能力接到文件与生命周期上，先确认以下基础：
+本节建立在这些既有内容之上：
 
-- MOD 目录结构与 `starsector.log` 的读取 (C01-S01)：本节所有日志观察结果都落在它里面。
-- 战役 (mission) 概念与 `GearIn_test` 测试战役 (C03-S01)：本节用它做游戏内验证。
-- 编译 JAR 链路 (C06-S01)：shader 文本作为资源进入构建，本节沿用松散文件 + jar 副本的交付形态。
-- `Global` 生命周期 (C06-S03)：禁止跨战斗缓存引擎引用与渲染对象，本节的程序/VBO 同规。
-- `SettingsAPI` 资源读取三族与 `validateFileName` 必须遵守的规则 (C06-S04)：本节的 `loadText` 语义直接承接。
-- 战斗插件生命周期 (C07-S05)：本节的注册片段加在它的 `init` 末尾。
-- 分层渲染插件与 GL 资源清理必须遵守的规则 (C07-S06)：本节的 "加载/清理/失效" 环节直接复用。
-- BoxUtil 初始化/实体/生命周期 (C12-S06)：对照的另一条加载入口 `ShaderUtil` 与同源的生命周期纪律。
-- GLSL 110 方言、编译/链接检查链、OpenGL 2.0 能力门禁 (C14-S01)：本节的加载与日志环节是它的延续。
+- 势力注册 (C03-S02)：`data/world/factions/factions.csv` 与 `gear_industry.faction`——Nexerelin 的势力配置只针对**已注册**的势力 id；
+- 新建生涯生成时序与本 MOD 的生成入口插件 (C03-S03)：`GearInSystemGenPlugin` 与 `GearInSystemGenerator`，本节的生成分支挂在 `onNewGame` 上；
+- 舰队工厂链 (C08-S04)：`FleetParamsV3` 与 `FleetFactoryV3.createFleet`—— 特遣队舰队正是沿这条链生成的，本节直接使用其结果；
+- 软依赖完整处理链 (C14-S01)：`isModEnabled(id)` 判据、类存在性判据、引用收敛与缺依赖降级；
+- 运行期注册检查与 MOD 插件回调时机 (C08-S01、C06-S02)：`onGameLoad` 与 persistent data 检查；`onNewGame` 只在新档触发。
+
+## 术语
+
+本节会反复使用以下 Nexerelin 专有名词与缩写，先统一指代，正文不再重复解释 (API 名保留源码大小写)：
+
+| 词 | 含义 |
+|---|---|
+| 势力争霸 (Nexerelin) | 可选 MOD；`mod_info.json` 的 `id` 为 `nexerelin`。其新档流程接管原版 "新游戏创建"，增加势力选择、随机星域生成、入侵、外交、地面战与特遣队 |
+| Corvus 模式 (corvus mode) | Nexerelin 的 "原版星域" 模式：保留原版 Corvus 等固定星系，追加各 MOD 固定内容；对应 `SectorManager.isCorvusMode() == true` |
+| 随机星域模式 | Nexerelin 的随机生成模式：星区由 `ExerelinProcGen` 程序化生成，势力市场按 `marketSpawnWeight` 分配份额；对应 `isCorvusMode() == false` |
+| 新游戏创建 (NGC) | Nexerelin 的开局流程界面 (源码 `Nex_NGC*` 规则命令族)：选择势力、开局舰队与出生方式 |
+| 势力配置 (faction config) | 运行期对象 `NexFactionConfig`；数据源是 `exerelinFactionConfig/<factionId>.json`，经 `NexConfig.getFactionConfig(id)` 读取 |
+| 生成点 (spawn point) | `corvus_spawnpoints.csv` 的一行：势力在 Corvus 模式下的开局出生位置 (`faction,system,entityID`) |
+| 地面战 (ground battle) | Nexerelin 的入侵地面战斗系统 (`exerelin.campaign.intel.groundbattle`)；MOD 接入面是 `groundBattleDefs.json` 与势力配置的 `groundBattleSettings` |
+| 特遣队 (special forces) | Nexerelin 的势力精锐舰队 (`SpecialForcesIntel`/`SpecialForcesManager`)；命名器 API 名保留 `SpecialForcesNamer` |
+
+## 接入总览：先定软依赖做法
+
+Nexerelin 的接入全部建立在此前的软依赖做法之上，三条不变：
+
+1. **不声明**：`nexerelin` 不进 `mod_info.json` 的 `dependencies`。
+  - 写了就变成硬依赖 —— 玩家不装势力争霸时齿轮工业被启动器拦截，而不是降级运行 (硬依赖故障的同款现象)。
+  - 成熟实例的 `mod_info.json` 中 `dependencies` 不含 `nexerelin`。
+2. **检测**：`Global.getSettings().getModManager().isModEnabled("nexerelin")`——id 必须是对方 `mod_info.json` 的 `id` 字段值，逐字比较、大小写敏感。成熟实例：`NEX()` 工具方法 (`isModEnabled("nexerelin")`) 同构。
+3. **收敛**：`exerelin.*` 的直接引用全部收敛在适配器类 `GearInNexCompat` 的判断分支内 (软依赖适配器模式)。
+  - 唯一的例外是本节的特遣队命名器类 —— 它**实现** `exerelin...SpecialForcesNamer` 接口，但只被 Nexerelin 侧按配置里的类名加载，齿轮工业自己的代码从不触碰它 (见 "链路五")。
+
+三条规定定下后，具体接入分五个链路：数据两份 (势力配置、生成点)、代码一份 (生成分支)、再回到数据 (地面战)、最后是代码 (特遣队命名器)。先看数据链路，Nexerelin 靠文件发现势力，而不是扫描代码。
 
 ## 文件与 API 链路
 
-从磁盘文件到战斗画面一共经过五类环节，下表先给每个环节的落点，再逐段解释为什么这样接：
+### 链路一：势力配置 (数据)——mod_factions.csv 与单势力 JSON
 
-| 环节 | 文件 / API | 说明 |
+路径 (均在 MOD 的 `data/config` 下；**这些文件 Nexerelin 不会自动创建，全部要自行建立**)：
+
+```text
+data/config/exerelinFactionConfig/mod_factions.csv      # 势力发现名单
+data/config/exerelinFactionConfig/gear_industry.json    # 单势力配置（文件名 = 势力 id）
+```
+
+**`mod_factions.csv`** 只有一列 `faction`，第一行是注释 `# case sensitive!!!`。它声明 "哪些外部势力需要 Nexerelin 接入"：
+
+```csv {3}
+faction
+# case sensitive!!!
+gear_industry
+```
+
+读取链 (`Starsector\mods\Nexerelin`)：
+
+1. `NexConfig.loadModFactionList()`：`Global.getSettings().getMergedSpreadsheetDataForMod("faction", "data/config/exerelinFactionConfig/mod_factions.csv", "nexerelin")` ——**跨全部已启用 MOD 合并**(master 是 Nexerelin 自己的文件，非 master 文件按 `faction` 列追加/替换，即跨 MOD 合并语义)，所以 MOD 只需要提交自己的行。
+2. `NexConfig.loadSettings()`：先按 `exerelin_config.json` 的 `builtInFactions` 加载内置势力配置；再遍历 `mod_factions.csv` 名单，对每个**已注册**的势力 (`NexUtilsFaction.doesFactionExist(factionId)` 校验 —— 势力必须先经势力注册页的 `factions.csv` 注册) 创建 `NexFactionConfig`。
+3. `NexFactionConfig.loadFactionConfig()`：`Global.getSettings().getMergedJSONForMod("data/config/exerelinFactionConfig/" + factionId + ".json", "nexerelin")` —— 同样按 MOD id 合并，**对象按键合并**，MOD 只提交自己的键，不要复制 Nexerelin 的同名文件。
+4. 运行期读取入口：`NexConfig.getFactionConfig(factionId)`—— 已注册返回对应配置；**未注册返回默认配置 (neutral 的配置，`playableFaction=false`)，不抛异常**。
+
+::: warning 本链路最值得警惕的是静默失败
+`NexConfig.getFactionConfig(factionId)` 对**未注册**势力不抛异常，而是回退默认配置 (neutral，`playableFaction=false`)。
+
+漏写 `mod_factions.csv` 名单行、或名单行与势力 id 大小写不符时，单势力 JSON 根本不会进入加载链，所有势力级配置静默失效且日志无任何报错。
+:::
+
+**单势力 JSON** 的常用字段速查表 (默认值与使用方见 `NexFactionConfig` 数据；不在表上的字段属于不常用项目，按需参考 Nexerelin 自带 `exerelinFactionConfig/` 下的文件)：
+| 键 | 默认值 | 使用方 / 语义 |
 |---|---|---|
-| shader 源文件 | `data/shaders/GearIn_pulse_shader.vert` / `.frag`(本节所有权)| MOD 根目录相对路径，`/` 分隔；同基名成对 (`GearIn_<语义>_shader.vert/.frag`)，语义命名 |
-| 路径校验 | `validateFileName` | `loadText` 读取前执行：`..`、首字符 `/`、`\`、`:`(含 `c:`/`d:`) 直接抛 `RuntimeException` |
-| 文本读取 | `SettingsAPI.loadText(String)` / `loadText(String, String)`(`com.fs.starfarer.api.SettingsAPI`)| 单参读全局资源空间；双参按 modId 限定 MOD 资源空间 (`setSourceFilter`)|
-| 读取实现 | `readText`(`loadText` 底层的读取实现) | UTF-8 解码、`\r` 全部剥除、**BOM 不剥除**；`readString` 本身无日志 |
-| 编译 | LWJGL `GL20.glCreateShader` / `glShaderSource` / `glCompileShader` / `glGetShaderi(GL_COMPILE_STATUS)` / `glGetShaderInfoLog` | GraphicsLib `ShaderLib.createShader`(编译失败抛 `"Error creating shader: " + 日志`)|
-| 链接 | `GL20.glCreateProgram` / `glAttachShader` / `glBindAttribLocation` / `glLinkProgram` / `glGetProgrami(GL_LINK_STATUS)` / `glGetProgramInfoLog` | GraphicsLib `ShaderLib.loadShader`(链接失败删 program 返回 0)|
-| 日志 | `Global.getLogger(...)`(log4j `Logger`)→ `starsector.log` | 编译/链接 InfoLog 与加载/重载/清理事件都由 MOD 侧写入 (游戏侧对 `loadText` 零日志)|
-| 运行使用方 | `GearInPulseRenderer`(C07-S06 分层渲染通道)| 每场战斗 `init` 加载程序、`render` 内使用、`cleanup` 内删除、`advance` 内定时重载 |
-| 实例对照 (加载入口 A)| GraphicsLib `org.dark.shaders.post.PostProcessShader` | `loadText("data/shaders/post/pre.vert")` → `ShaderLib.loadShader` → 失败置 `enabled = false` 并 ERROR |
-| 实例对照 (加载入口 B)| `ShaderUtil.createShaderVFFormPath(类名, vert 路径, frag 路径)` | BoxUtil 封装的使用入口 (内部行为留给 C14-S03)|
-| 可观察结果 | `starsector.log` + 战斗画面 | init/reload/cleanup/compile failed 日志行；玩家舰中心脉冲环 |
+| `playableFaction` | `true` | 新游戏创建 (NGC) 势力目录是否可选 (`Nex_FactionDirectoryHelper.getFactionsForDirectory`：`anyPlayable && config.playableFaction`) |
+| `corvusCompatible` | `false` | 声明势力按 Corvus 模式布局；成熟实例全部设 `true` 并与生成点一致 (见 "规则强度") |
+| `marketSpawnWeight` | `1` | 随机星域模式下该势力程序化生成市场的份额倍率 (`ExerelinProcGen` 按此分配)；NGC 权重滑条也读它 |
+| `colonyExpeditionChance` | `0` | 势力发起殖民远征的概率倍率 (默认 0 = 不发起) |
+| `colonyTargetValuator` | `"exerelin.campaign.colony.ColonyTargetValuator"` | 殖民目标估值器类名，按类名实例化 (`ColonyManager`)；成品 MOD 常用 `IndustrialColonyTargetValuator` |
+| `startRelationships` / `maxRelationships` / `minRelationships` | 空 map | 初始 / 最大 / 最小关系 (键 = 势力 id，值 = 关系值) |
+| `diplomacyPositiveChance` / `diplomacyNegativeChance` | 空 map | 与特定势力的正面 / 负面外交事件频率倍率 |
+| `diplomacyTraits` | 空列表 | 势力外交特性 (取值见 Nexerelin 的 `data/config/exerelin/factionTraits.json`) |
+| `alignments` | 空 map | 势力倾向 (外交联盟模型的倾向值) |
+| `startShipsSolo` / `startShipsCombatSmall` / `startShipsCombatLarge` / `startShipsTradeSmall` / `startShipsTradeLarge` / `startShipsExplorerSmall` / `startShipsExplorerLarge` / `startShipsCarrierSmall` / `startShipsCarrierLarge` / `startShipsSuper` / `startShipsGrandFleet` | 空 | 开局舰队包：**二维数组**，内层数组是一支开局舰队的装配 id 列表 (`StartFleetType` 逐键解析，`getStartShipTypeIfAvailable`) |
+| `startSpecialItems` | 空 | 开局物品 (通常 `[["<蓝图包 id>", ""]]` 形式) |
+| `defenceStations` | 三档默认空间站 | 空间站设施集合 (`[{"ids":[...]}]`) |
+| `industrySeeds` | 默认含 `heavyindustry` | 殖民地自动发展时的产业种子 (`{"id":..., "mult":...}`) |
+| `bonusSeeds` | 空 | 殖民地开局奖励物品 (`{"id":..., "count":..., "mult":...}`) |
+| `specialForcesMaxFleets` | `2` (非 playable 势力取 0) | 特遣队同时存在的数量上限 (`SpecialForcesManager` 读取) |
+| `specialForcesSizeMult` / `specialForcesPointMult` | `1` / `1` | 特遣队规模倍率 / 点数积累倍率 |
+| `specialForcesNamerClass` | `"exerelin.campaign.intel.specialforces.namer.CommanderNamer"` | 特遣队命名器类名 (见 "链路五") |
+| `groundBattleSettings` | 无 (null) | 该势力地面战修正 (见 "链路四") |
 
-### 四位置完整流程
+势力配置决定 NGC 里能否选择齿轮工业、随机星域里占多少份额；接下来补出生点，决定 Corvus 模式下开局落在哪。
 
-shader 是**无注册表 ID**的资源：它不经过任何 CSV/JSON 注册链 (与武器、战术系统、船插不同)，`data/shaders/...` 的路径与文件名就是它的身份。因此静态核对沿四个位置进行，四处必须一致：
+### 链路二：生成点 (数据)——corvus_spawnpoints.csv
 
-| 位置 | 本节取值 |
-|---|---|
-| 资源文件 | MOD 内 `data\shaders\GearIn_pulse_shader.vert` / `.frag` |
-| 加载入口 | `Global.getSettings().loadText("data/shaders/GearIn_pulse_shader.vert")`(Java 常量 `VERT_PATH` / `FRAG_PATH`，与资源文件路径逐字一致)|
-| 运行使用方 | `GearInPulseRenderer`(C07-S06 通道注册，`render` 内 `glUseProgram` + 绘制)|
-| 可观察结果 | 日志行含 `vert=data/shaders/GearIn_pulse_shader.vert`、`frag=...`(与前面三处一致)；画面出现脉冲环 |
+势力配置让齿轮工业可以被选择；生成点决定选择之后玩家出现在哪。Corvus 模式下开局的落点由这份 CSV 绑定：
 
-页面与 Java 常量两处路径必须逐字一致。
+路径：`data/config/exerelin/corvus_spawnpoints.csv`。表头三列 `faction,system,entityID`，第二行注释说明各列含义 (`#machine name,#human name,#machine name`)：
 
-## 路径约定
-
-四个位置的第一处是资源文件本身，先解决它放在哪里、怎么书写。
-
-### 目录与命名
-
-- 引擎对 `.vert/.frag` 没有任何内置路径 —— 目录约定是**实例惯例而不是引擎强制**：GraphicsLib 用 `data/shaders/post/pre.vert`，现代 430 实例在 `data/shaders/` 下用语义命名文件，实例知识规范把 `data/shaders/` 定义为 "GLSL 顶点与片元资源的目录级入口"。教程沿用该惯例 (建议 10)。
-- 文件命名语义化且同基名成对：`GearIn_pulse_shader.vert` 与 `GearIn_pulse_shader.frag` 是一对 (顶点/片元)，基名同时出现在 Java 的两个路径常量里。
-- 本单元不注册任何游戏运行时 ID；工作单元编号不得进入资源名 (示例所有权 `GearIn_pulse_shader.vert/.frag`)。
-
-::: info 为什么目录约定是 "实例惯例" 而不是引擎强制
-原版管线是固定管线：游戏侧源码零 GL20/GLSL 引用，设备诊断只调用 `GL11.glGetString`——shader 的存放位置、加载方式与生命周期全部由 MOD 自组织。所以 "放哪里、怎么读" 没有引擎默认支持，约定来自实例知识规范与成熟 MOD 的共识。
-:::
-
-### 路径语法：`/` 分隔、MOD 根相对
-
-`SettingsAPI.loadText` 的 javadoc 是必须遵守的规则：**"Use / instead of \ in paths for compatibility (required to work on OS X and Linux)"**(`com.fs.starfarer.api.SettingsAPI`)。
-
-本节把它的可观察面加强到所有平台：`loadText` 在读取前调用 `validateFileName`，其实现对含 `..`、以 `/` 开头、含 `\`、含 `:`(盘符形式 `c:`/`d:` 也在其中) 的路径**直接抛 `RuntimeException`**，报错原文：
-
-```text
-.. and starting with a / are not allowed in filenames. Also, use / instead of \.
+```csv {3}
+faction,system,entityID
+#machine name,#human name,#machine name
+gear_industry,GearIn,GearIn_planet1
 ```
 
-也就是说：
+读取链：`ExerelinCorvusLocations`(静态块) 用 `getMergedSpreadsheetDataForMod("faction", "data/config/exerelin/corvus_spawnpoints.csv", "nexerelin")` 全量合并读取，按 `faction` 列存表；
 
-- 用 `\` 或盘符前缀写路径 → 在所有平台上于读取前立即 `RuntimeException`(不只是 OS X/Linux 加载失败)；
-- 路径必须是 MOD 根目录相对 (`data/shaders/...`)，绝对路径 (首字符 `/`) 被拒；
-- `..` 目录穿越被拒 (也是安全边界)。
+运行期 `ExerelinCorvusLocations.getFactionSpawnPoint(factionId)` 查询。
 
-::: caution 路径写错的四种形态会在读取前被直接拒绝
-用 `\`、盘符前缀 (`c:`/`d:`)、`..`、或以 `/` 开头写 shader 路径，`validateFileName` 会在 `loadText` 读取前直接抛 `RuntimeException`(所有平台)。路径必须写成 MOD 根目录相对 + `/` 分隔 (规则 1)。
+使用方：`StartSetupPostTimePass`(新档开局定位)——Corvus 模式下取本势力的生成点，把 `entityID` 交给 `sector.getEntityById(...)` 找到实体后 `sendPlayerFleetToLocation`。
+
+**该使用方只使用 `entityID` 列**；生成点缺失或实体找不到时依次回退 homeworld、随机市场位置，最终回退超空间 (关应答机)—— 全程无报错。
+
+出生点绑定 Corvus 模式的开局位置，而两种模式的星区内容由代码分派 —— 这正是链路三。
+
+### 链路三：生成分支 (代码)—— 检测、null 判断与模式分派
+
+Nexerelin 启用后，新档的星区内容分两种模式，MOD 的固定内容必须按模式分派。标准做法是 "检测 → 判断 → 分派"：
+
+1. **检测**：`isModEnabled("nexerelin")`。
+2. **判空**：`SectorManager.getManager()` 返回的是 sector persistent data 里的管理器，未创建时返回 `null`；`isCorvusMode()` 是实例方法。
+  - **必须**先判 `getManager() != null` 再调 `isCorvusMode()`(成熟实例陷阱原文："`SectorManager.getManager()` 在 manager 尚未创建时返回 `null`，紧接着调用 `isCorvusMode()` 会失败")。
+3. **分派**：
+   - Corvus 模式：保留原版 Corvus 星系，MOD 固定星系照常生成；玩家出生点由 `corvus_spawnpoints.csv` 绑定。
+   - 随机星域模式：星区由 `ExerelinProcGen` 接管，势力市场按 `marketSpawnWeight` 分配；MOD 通常不再生成固定星系，或只生成自己的主星系。
+
+::: caution 调用 `isCorvusMode()` 必须先判空
+`SectorManager.getManager()` 的约定是 "未创建时返回 `null`"(sector persistent data 无条目即 null)。
+
+`isCorvusMode()` 只能在 Nexerelin 启用**且** manager 已创建之后调用；任何未先判空的直接调用 —— 包括已废弃的静态 `getCorvusMode()`—— 在 manager 未创建时都会 NPE。
+
+适配器组合判据 (启用检测在前、null 判断在中、模式判定在后) 是覆盖一切调用点的唯一安全写法。
+:::
+::: info 为什么新档 `onNewGame` 阶段也要判空 (时序)
+新档流程里 `SectorManager` 的创建点是 Nexerelin 的**入口生成器**——
+
+Nexerelin 的 `settings.json` 把 `newGameCreationEntryPoint` 覆盖为 `exerelin.world.ExerelinNewGameSetup`("禁止覆盖" 警告针对普通 MOD 重写原版键，Nexerelin 接管该键是其设计)。
+
+`ExerelinNewGameSetup.generate(sector)` 先执行：Corvus 模式跑 `VanillaSystemsGenerator` 生成原版星系，随机星域跑 `ExerelinCoreSystemGenerator`；
+
+随后 `setupPlugins(sector)` → `ExerelinModPlugin.addScripts()` → `sector.addScript(SectorManager.create())`。
+
+入口生成器先于 `generators.csv` 与全部 MOD 的 `onNewGame`(新档流程)—— 所以新档的 `onNewGame` 阶段 manager **已经存在**。
+
+但 `getManager()` 的约定是 "未创建时返回 `null`"(sector persistent data 无条目即 null)：早于入口生成器的调用点 (`onApplicationLoad`、启动期静态块、任何不经过 Nexerelin 新档入口的路径) 照样会拿到 null。
+
+成熟实例规范原文 ——"`isCorvusMode()` 应只在 Nexerelin 启用且 manager 已存在后调用"；陷阱原文 ——"`SectorManager.getManager()` 在 manager 尚未创建时返回 `null`，紧接着调用 `isCorvusMode()` 会失败"。
+
+适配器统一判断 (`isNexEnabled()` && `getManager() != null`) 是覆盖一切调用点的唯一安全写法。
 :::
 
-### 双参形态：按 MOD 限定资源空间
+成熟实例 (NEXGenerate 模式，多个 MOD 同构)：生成器类在 `generate(SectorAPI)` 里判 `SectorManager.getManager().isCorvusMode()`，Corvus 模式走完整生成、随机星域模式只生成主星系 (也有实例随机星域完全不生成)；
 
-`loadText(String filename, String modId)`(`com.fs.starfarer.api.SettingsAPI`) 在读取前取 `ModManagerAPI.getInstance().getModSpec(modId).getDirName()` 并 `setSourceFilter(dirName)`，把查找限定在该 MOD 的资源空间。
+注册在 `ModPlugin.onGameLoad` 的 persistent data 检查分支内 ——`onGameLoad` 时 manager 必然已创建，这也是把生成从 `onNewGame` 挪到 `onGameLoad` 的原因 (顺便覆盖旧档)。
 
-必须遵守的规则 (与资源读取三族的规则同源)：**modId 必须与 `mod_info.json` 的 `id` 逐字一致且该 MOD 已启用**，否则 `getModSpec` 返回 `null`，调用点直接 NPE。
+齿轮工业沿用既有新建生涯生成入口 (`onNewGame`)，因此**必须**先判空。
 
-### 交付形态：松散文件为准
+生成分支解决新档的星区结构；下一链路是运行期才会遇到的接入面 —— 地面战。
 
-MOD 根目录下的松散文件 (`data\shaders\...`) 是交付形态 (GraphicsLib 发行即松散文件，实机可加载)；构建阶段 (`gradle jar`) 会把 `src/main/resources` 一并打进 `jars\GearIndustry.jar` 作为构建产物。
+### 链路四：地面战 (数据)——groundBattleDefs.json 与 groundBattleSettings
 
-资源空间的注册与解析发生在资源加载器；可定位的事实是每个 MOD 的目录经 `addResourceSpec(...)` 注册。
+生成分支解决新档的星区，地面战解决入侵之后的战斗参数。Nexerelin 的入侵地面战是一个 intel 系统 (`exerelin.campaign.intel.groundbattle`)。MOD 的接入面是两处数据，不需要写地面战代码 (除非要自定义插件)：
 
-本节不承诺 "jar 内副本 vs 松散文件" 的解析次序，示例以松散文件为权威副本。
+**`data/config/exerelin/groundBattleDefs.json`**—— 按产业/条件/能力/兵种/插件定义地面战参数。
 
-## 加载链路
+读取链：`GBDataManager.loadDefs()`(静态块，`getMergedJSONForMod("data/config/exerelin/groundBattleDefs.json", "nexerelin")`—— 同样跨 MOD 按键合并)。
 
-路径正确只保证文件能被找到；文本能不能被编译，取决于读取端把它解码成什么。`loadText` 的行为由此成为第一条决定成败的规则。
+顶层键 `industries` / `conditions` / `abilities` / `unitTypes` / `plugins` / `natoAlphabet` 全部硬读取 (`getJSONObject`/`getJSONArray`)——
 
-### 读取端行为
+**顶层结构错误时直接抛 `RuntimeException("Failed to load ground battle defs", ex)`**。
 
-`loadText` 的调用链：`validateFileName` → 文本读取工具的 `readString`(打开资源流 → `readText`)→ `readText` 按 **UTF-8** 解码并把全部 `\r` 字符剥除 (`replaceAll("\\r", "")`)**，不剥离 BOM**。
+`industries` 条目 (键 = 产业 id，原版示例 `heavybatteries`/`grounddefenses`/`patrolhq` 等) 字段：
 
-三个直接推论：
-
-1. 源文件必须 **UTF-8 无 BOM**：BOM 字节 (`EF BB BF`) 会被解码成 `\uFEFF` 并原样进入 GLSL 源码字符串 ——`glShaderSource` 后 `glCompileShader` 在首行报错 (不同驱动报 "unexpected character" 或 version 位置错误，均可在 InfoLog 看到)。这与 MOD 文件基础规则中的 "MOD 文件必须 UTF-8 无 BOM" 是同一条读取端规则。
-2. **CRLF 换行安全**：`\r` 被读取端剥除，Windows 换行不会进入 GLSL 源码 (数据资源读取的换行归一化同理)。
-3. **读取无日志**：`readString`/`readText` 不写任何日志 ——"shader 加载成功的日志" 只可能来自 MOD 侧自己的 `Logger`。
-
-::: warning 用带 BOM 的编辑器保存 `.frag` 是最常见的加载失败坑
-BOM 字节会被解码成 `\uFEFF` 原样进入 GLSL 源码，编译首行报错，init 后无画面。保存 shader 源文件务必选 **UTF-8 无 BOM**；CRLF 换行完全安全 (`\r` 会被读取端剥除)。
-:::
-
-### 加载时机
-
-程序对象在**战斗内**创建：渲染插件 `init`(分层渲染通道，GL 上下文就绪后；与 GLSL 基础主题同款)。不在类加载期、不在 `onApplicationLoad` 创建 (此时无战斗 GL 上下文)。每场战斗重新 `init`，禁止跨战斗缓存 (`Global` 生命周期禁令)。
-
-### 编译与链接链
-
-延续基础主题建立的检查链，本节强调 "失败即日志"：
-
-```text
-glCreateShader → glShaderSource(直接传 String) → glCompileShader → glGetShaderi(GL_COMPILE_STATUS)
-glCreateProgram → glAttachShader → glBindAttribLocation(链接前固定) → glLinkProgram → glGetProgrami(GL_LINK_STATUS)
-失败路径：glGetShaderInfoLog / glGetProgramInfoLog（InfoLog）→ LOG.error → 删除对象
-```
-
-## 编译日志 (InfoLog)
-
-编译与链接失败的信息只存在于 InfoLog，而游戏侧不会把它写进任何日志 —— 省略记录，失败就不可见。这一节先确认谁负责写日志，再看 InfoLog 里能读到什么。
-
-### 谁写日志
-
-- **游戏侧零日志**：`loadText` 全程静默；引擎对 shader 编译/链接没有任何日志 (原版不加载 shader)。
-- **MOD 侧必须写日志**：编译/链接状态检查后，失败时的 InfoLog 由 MOD 自己的 log4j `Logger`(`Global.getLogger(...)`) 以 ERROR 写入游戏日志 `starsector.log`**。不写日志 = 失败不可见**(规则 6)。
-
-::: caution 不写日志 = 失败不可见
-游戏侧对 `loadText`、编译与链接零日志 ——"shader 加载成功/失败的日志" 只可能由 MOD 侧写入。省略失败日志，失败会完全静默：画面无内容且没有任何诊断 (规则 6)。
-:::
-
-### InfoLog 里能看到什么
-
-- **编译失败**：InfoLog 含行号与原因，如 `ERROR: 0:5: 'xxx' : syntax error`(`0` 是源索引、`5` 是源内行号)。GraphicsLib 把编译失败包装成 `"Error creating shader: " + InfoLog`(`org.dark.shaders.util.ShaderLib`)；本节示例的日志前缀是 `GearIn pulse shader: compile failed: ...`。
-- **version 错误**：在 GL 2.0 基线声明 `#version 130+`，InfoLog 报 version 相关错误 (方言基线规则)。
-- **链接失败**：`GL_LINK_STATUS == FALSE` 时 InfoLog 给出原因 (如 varying 两侧类型不一致的链接错误)；GraphicsLib 链接失败删 program 返回 0(`ShaderLib.loadShader` 做法)。
-- **链接警告 (不失败)**：varying 两侧同名不同类、或一侧缺失，常见的是**警告**而不是失败 —— 程序链接成功，但片元读到未定义值 (画面恒 0/黑)，这是 "日志里有 Warning、画面却异常" 的典型场景 (与基础主题同类故障)。
-- **成功**：InfoLog 通常为空串 (驱动相关，个别驱动会写一条 "no errors" 类提示)；本节示例成功路径不打印 InfoLog。
-
-### 本节日志行格式 (写入 `starsector.log`)
-
-| 事件 | 行格式 (`GearIn pulse shader` 前缀)|
-|---|---|
-| 加载成功 | `init: program=<id>, vbo=<id>, u_offset=<loc>, u_time=<loc>, vert=<vert 路径>, frag=<frag 路径>` |
-| 编译失败 | `compile failed: <InfoLog>`(ERROR)|
-| 链接失败 | `link failed: <InfoLog>`(ERROR)|
-| 文本读取失败 | `loadText failed: <异常消息>`(ERROR)|
-| 重载成功 | `reload: program=<新 id>` |
-| 重载失败 | `reload failed: keeping old program=<旧 id>`(ERROR)|
-| 清理 | `cleanup` |
-
-::: tip 用日志行里的路径定位 "失败的是哪个文件"
-init 日志行携带 `vert=`/`frag=` 路径：多对 shader 并存时，靠它区分 "失败的是哪个文件"。建议每条加载、重载与失败日志都带上路径 (建议 12)。
-:::
-
-## 资源生命周期
-
-程序对象建好之后还不是终点：它绑定在战斗的 GL 上下文上，必须随战斗加载、使用、清理，并支持修改源文件后重载。
-
-四个环节，全部可观察：
-
-```text
-加载（init：loadText → 编译 → 链接）→ 使用（render：glUseProgram + glUniform* + glDrawArrays）
-→ 清理（cleanup：glDeleteProgram + 句柄复位）→ 重载（按同一路径删除重建，周期重复）
-```
-
-| 环节 | 时机与做法 | 依据 |
+| 字段 | 默认 | 语义 |
 |---|---|---|
-| 加载 | 每场战斗 `init` 内；失败即 `valid = false` 自废 (引擎随后移除插件)| 分层渲染通道；本节示例 |
-| 使用 | 只在 `render(layer, viewport)` 回调内 `glUseProgram`/`glUniform*`/`glDrawArrays`，结束 `glUseProgram(0)` | 分层渲染使用纪律延续；GLSL 基础主题同款 |
-| 清理 | `cleanup()` 里 `glDeleteProgram` 并复位句柄；**战斗结束 `destroyInstance` 不调 `cleanup()`**，靠 `advance()` 主动失效 (`isExpired() → true`) 驱动引擎移除 | 分层渲染清理纪律；成熟实例同款做法 |
-| 重载 | 按同一路径删除旧程序、重新构建；**先构建成功再替换 (build-then-swap)**，构建失败保留旧程序 | 本节做法 (实例无重载先例)|
+| `strengthMult` | `1` | 该产业的驻军强度倍率 |
+| `enemyDropCostMult` | `1` | 敌方空降成本倍率 |
+| `enemyBombardmentCostMult` | `1` | 敌方轰炸成本倍率 |
+| `dropAttritionFactor` / `dropAttritionMult` | `0` / `1` | 空降损耗系数 / 倍率 |
+| `troopCounts` | 空 | 兵种数量：键 = `unitTypes` 里的兵种 id(`militia`/`marine`/`heavy` 等)，值 = 数量 |
+| `tags` | 空 | 行为标签：`noBombard`(不可轰炸)、`preventBombardment`(阻止轰炸行动)、`resistBombard`(抗轰炸)、`preventBombardmentSuper`/`preventEW` 等 |
+| `icon` | 无 | 地面战界面图标路径 |
+| `plugin` | 无 | 产业地面战插件类名 (原版 `SpaceportPlugin`/`GroundDefensesPlugin`) |
 
-重载的意义：程序与 GL 上下文绑定，源文本 (`loadText` 的 String) 是瞬时值 —— 修改 `.frag` 后重新构建程序才能看到新效果；重载循环把 "删除 + 按同一路径重建" 变成可重复验证的生命周期完整流程 (本节每 10 秒一次，日志里 `program=<id>` 每次变化)。
+MOD 只需提交自己的键；**不要复制 Nexerelin 的文件**。
 
-实例知识规范的陷阱 "shader program 已失效仍继续绑定，会导致渲染输出错位或 OpenGL 状态污染" 直接对应 "清理/重载后继续使用旧句柄" 的失败模式 (规则 7)。
+原版 `orbitalworks` 没有条目，本节示例就给它补一条。
 
-## 必须遵守的规则汇总
+**势力配置里的 `groundBattleSettings`**—— 该势力全军的地面战修正。
 
-前几节的事实按强度收拢成下表，完整最小例会逐条兑现其中的必须项。
+`NexFactionConfig.loadFactionConfig` 把它按 JSON 对象读成 map；
 
-| # | 强度 | 规则 | 违反的可观察结果 |
-|---|---|---|---|
-| 1 | **必须** | shader 资源路径用 MOD 根目录相对路径 + `/` 分隔 (`SettingsAPI.loadText` javadoc；`validateFileName` 实证)| `\`、盘符冒号、`..`、首字符 `/` → `loadText` 前 `validateFileName` 抛 `RuntimeException`(所有平台)；其余错写 → `IOException`(找不到资源)|
-| 2 | **必须** | shader 源文件必须 UTF-8 无 BOM(读取端按 UTF-8 解码、只剥 `\r`、不剥 BOM)| BOM 字符进入 GLSL 源码 → `glCompileShader` 失败，InfoLog 报首行错误；CRLF 换行安全 (`\r` 被剥除)|
-| 3 | **必须** | 加载必须捕获 `IOException` 并记 ERROR 日志 (GraphicsLib `PostProcessShader` 做法)| 路径缺失/读取失败时 `loadText` 抛 `IOException`；不捕获 → 异常从 `init` 传播；捕获但不记日志 → 失败不可见 |
-| 4 | **必须** | 双参 `loadText(path, modId)` 的 modId 必须与 `mod_info.json` 的 `id` 逐字一致且 MOD 已启用 | `getModSpec` 返回 null → 调用点 NPE |
-| 5 | **必须** | 编译/链接后检查 `GL_COMPILE_STATUS` / `GL_LINK_STATUS`，失败读取 InfoLog 并删除对象 (GLSL 基础主题必须遵守的规则延续)| 错误程序继续使用：内容不出现或渲染异常，失败原因不可见 |
-| 6 | **必须** | 编译/链接失败的信息日志必须由 MOD 侧以 ERROR 写入 `starsector.log` | 游戏侧对 `loadText`/编译零日志；不写日志 → 失败完全静默 (画面无内容且无诊断)|
-| 7 | **必须** | GL 资源生命周期完整流程：加载 (每场战斗 init)→ 使用 (render 内)→ 清理 (`cleanup()` 内 `glDeleteProgram`)→ 重载 (删除后按同一路径重建)；失效句柄不得继续绑定 (分层渲染纪律延续；实例陷阱)| 程序对象随战斗泄漏 (`destroyInstance` 不调 `cleanup()`)；已删句柄继续绑定 → 渲染输出错位或 OpenGL 状态污染 |
-| 8 | **必须** | 重载采用 "重建成功才替换"：先构建新程序，成功才删除旧程序并换入 | 先删后建且构建失败 → 画面中断且无旧程序可回退 (本节故障注入 8 验证)|
-| 9 | **必须** | 程序与 VBO 每场战斗重建，禁止跨战斗缓存 (`Global` 生命周期纪律延续)| 跨战斗引用已删句柄 → 未定义行为/渲染异常 |
-| 10 | 建议 | `data/shaders/` 目录约定、同基名成对、语义命名 (GraphicsLib/430 实例惯例)| 无功能错误；维护性与实例一致性 |
-| 11 | 建议 | `glGetUniformLocation` 返回值判 -1(GLSL 基础主题建议延续)| 无功能错误；只影响诊断 (uniform 拼错时静默不生效)|
-| 12 | 建议 | 日志行携带 vert/frag 路径 (本节 init 行)| 无功能错误；多对 shader 时能定位 "失败的是哪个文件" |
+使用方 `FactionBonusSubplugin`(地面战 intel 每场战斗按势力实例化) 识别三个键：`attackMult`(攻击倍率)、`damageTakenMult`(受击倍率)、`moraleDamageTakenMult`(士气损失倍率)；
+
+`plugin` 键可换成自定义子插件类名。
+
+**未知键静默忽略**。原版示例：`hegemony.json` 的 `"groundBattleSettings":{"moraleDamageTakenMult":0.9}`。
+
+::: warning 只提交自己的键，不要复制 Nexerelin 的文件
+两处数据都是跨 MOD 按键合并读取：复制 Nexerelin 的同名文件会被整体合并，产生不必要的冲突。
+
+`groundBattleSettings` 只识别 `attackMult`/`damageTakenMult`/`moraleDamageTakenMult`/`plugin` 四个键，其余键 (含拼写错误) 被静默忽略 —— 键名写错时没有任何报错，需要对照可识别键名核对。
+:::
+
+地面战是纯数据接入；特遣队则补上唯一一处需要写 Java 的接入面 —— 命名器。
+
+### 链路五：特遣队 (代码)——specialForcesNamerClass 与 SpecialForcesNamer
+
+最后一个链路回到代码：特遣队命名器。它实现 Nexerelin 的接口，但只被 Nexerelin 按配置类名加载 —— 正是 "收敛" 规则里那个唯一例外。
+
+特遣队 (special forces) 是势力的精锐舰队：`SpecialForcesManager` 按点数 (受 `specialForcesPointMult`/`specialForcesMaxFleets` 等配置) 积累生成，
+
+`SpecialForcesIntel` 用 `FleetParamsV3` + `FleetFactoryV3.createFleet` 造舰 (舰队工厂链)、投放后命名。
+
+命名器接入：
+
+1. 势力 JSON 写 `"specialForcesNamerClass":"<您的类全名>"`(默认 `exerelin.campaign.intel.specialforces.namer.CommanderNamer`)。
+2. 类**必须**实现接口：
+
+```java
+public interface SpecialForcesNamer {
+    public String getFleetName(CampaignFleetAPI fleet, MarketAPI origin, PersonAPI commander);
+}
+```
+
+3. 加载链 (`SpecialForcesIntel.pickFleetName`)：`Global.getSettings().getScriptClassLoader().loadClass(className)` + `newInstance()`(**无参构造硬要求**)，然后循环调用 `getFleetName(fleet, origin, commander)` **至多 25 次**，直到返回的名字非 `null` 且与既有特遣队不重名 (`hasDuplicateName`)；加载或调用抛任何 `Throwable` → ERROR 日志 `Failed to load special forces namer <类名>`，名字回落字面量 `error`。
+4. 类名经 JSON 引用、由 Nexerelin 侧加载：齿轮工业自己的代码**从不引用**命名器类 —— 所以它是 "收敛" 规则的唯一例外，不破坏无 Nexerelin 时的启动。
+
+::: tip 命名器返回的名字建议带随机成分
+随机编号、后缀等随机成分配合 25 次唯一性重试，多个特遣队基本不重名 (原版 `PlanetNamer` 同款结构)；返回确定性名字时，第二个特遣队起重名概率上升，重试耗尽后重复名会被保留。
+:::
+
+五个链路讲完，把必须遵守的规则与可观察后果收成一张表，排错时直接对照。
+
+## 规则强度
+
+**必须/禁止 (当前基线 + Nexerelin 仍有效；违反的可观察结果写在括号里)**：
+
+| 规则 | 依据 | 违反后的可观察结果 |
+|---|---|---|
+| `nexerelin` **禁止**写进 `mod_info.json` 的 `dependencies`(软依赖不声明) | 软依赖语义；成熟实例 `mod_info.json` 实证 | 玩家未装/未启用 Nexerelin 时齿轮工业被启动器拦截 (硬依赖语义)，失去降级运行能力 |
+| `exerelin.*` 直接引用**必须**收敛在适配器 (`GearInNexCompat`) 判断分支内；命名器类 (实现接口) 只许经 JSON 配置被 Nexerelin 加载 | 懒解析与 `Error` 冒泡 | 无 Nexerelin 时引用被解析 → `NoClassDefFoundError` 冒泡，启动或运行中止 |
+| `isModEnabled` 的 id **必须**用 `mod_info.json` 的 `id` 字段值 `nexerelin`(逐字比较) | `ModManagerAPI` 逐字比较 | 检测恒 false，Nexerelin 分支永不执行，且日志查不出报错 |
+| **必须**在 Nexerelin 启用**且** `SectorManager.getManager() != null` 之后才调 `isCorvusMode()` | `SectorManager.getManager()` 语义 | 早于 Nexerelin 入口生成器的调用点拿到 null → NPE(未判空的 `getCorvusMode()` 等写法直接崩)；新档 `onNewGame` 阶段 manager 已由入口生成器创建，但约定允许 null，判空是唯一安全写法 |
+| `mod_factions.csv` **必须**列出势力 id，且与势力 id 逐字一致 (文件注释原文 `# case sensitive!!!`) | `NexConfig.loadModFactionList`；`mod_factions.csv` 头注释 | 单势力 JSON 不进入加载链 → `getFactionConfig` 回退默认配置 (`playableFaction=false`)→ NGC 列表不出现、所有势力级配置失效，无任何报错 |
+| 势力 JSON 路径**必须**是 `data/config/exerelinFactionConfig/<factionId>.json`，文件名 = 势力 id | `NexFactionConfig.loadFactionConfig` | 路径不符 → 合并读取读不到本 MOD 的键 → 字段取默认值，静默 |
+| `corvus_spawnpoints.csv` 的 `entityID` **必须**引用目标星系内已存在的实体 id(市场 id、显示名都不行) | `StartSetupPostTimePass` 消费链 (`getEntityById`) | 出生点找不到实体 → 回退 homeworld / 随机位置，无报错 |
+| `groundBattleDefs.json` 顶层**必须**保持对象结构 (`industries`/`conditions`/`abilities`/`unitTypes`/`plugins`/`natoAlphabet`) | `GBDataManager.loadDefs` 硬读取 | 顶层键缺失或类型错 → `RuntimeException("Failed to load ground battle defs")`(静态初始化失败)，地面战不可用 |
+| `specialForcesNamerClass` 指向的类**必须**实现 `SpecialForcesNamer` 且可无参实例化 | `SpecialForcesIntel.pickFleetName` | 特遣队命名失败：ERROR 日志 `Failed to load special forces namer [...]`，舰队名称为字面量 `error` |
+| 命名器返回 `null` 或与既有特遣队重名时会被重试 (至多 25 次)，重试尽后保留最后一次结果 | `SpecialForcesIntel.pickFleetName` 循环 | 确定性命名且特遣队多时，重名舰队出现 (见 "故障分析" 第 6 条) |
+
+**建议**：
+
+- `corvusCompatible` 设 `true` 并与生成点/势力配置保持一致 (成熟实例势力 JSON、Nexerelin 全部内置势力文件均设 `true`；字段默认 `false`，该字段仅经 `NexUtilsFaction.isCorvusCompatible` 辅助读取、无强制使用方)。
+- `groundBattleSettings` 只写 Nexerelin 可识别键 (`attackMult`/`damageTakenMult`/`moraleDamageTakenMult`/`plugin`，或自定义子插件消费的键)；未知键静默忽略。
+- `startShips*` 保持二维数组结构 (`getStartShipTypeIfAvailable` 逐内层数组读装配 id)。
+- 随机星域模式的固定星系处理二选一：不生成或只生成主星系 —— 与您的势力配置一致即可，没有强制。
+- 命名器返回带随机成分的名字 (数字/后缀)，降低撞重名概率。
+
+规则表用于排错时对照；现在把五个链路落成齿轮工业工程里的实际文件与代码。
 
 ## 完整最小例
 
-规则是散的，下面用一个类把路径、加载、日志与生命周期四件事串成一个可运行的最小例。在既有 MOD 布局与战斗插件体系之上新增两个 shader 资源与一个插件类 (不新增任何注册项、不改动任何既有文件)：
+在既有生成入口页的累计工程上追加 (MOD 根目录 `Starsector\mods\GearIndustry`)：
 
 ```text
-Starsector\mods\GearIndustry\
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data\
-│   └── shaders\
-│       ├── GearIn_pulse_shader.vert      # 本节新增
-│       └── GearIn_pulse_shader.frag      # 本节新增
-├── src\
-│   └── data\scripts\gearin\
-│       ├── GearInModPlugin              # MOD 插件主题建立；本节不改动
-│       ├── GearInGlobalAccess           # 全局访问主题建立；本节只消费
-│       └── combat\
-│           ├── GearInCombatStatePlugin          # 战斗状态主题建立；本节只消费
-│           ├── GearInCombatLifecyclePlugin      # 生命周期主题建立；本节只消费
-│           ├── GearInLayeredRenderer            # 分层渲染主题建立；本节只消费
-│           └── GearInPulseRenderer              # 本节新增
-└── jars\
+data\
+└── config\
+    ├── exerelin\
+    │   ├── corvus_spawnpoints.csv              # 本节新增：Corvus 模式出生点
+    │   └── groundBattleDefs.json               # 本节新增：地面战产业定义
+    └── exerelinFactionConfig\
+        ├── mod_factions.csv                    # 本节新增：势力发现名单
+        └── gear_industry.json                  # 本节新增：势力配置
 ```
 
-shader 资源放在 `data\shaders\`(MOD 根目录相对路径，与 GraphicsLib `data/shaders/post/pre.vert` 同款布局)；构建阶段 (`gradle jar`) 会把 `src/main/resources` 下的同一对文件打进 `jars\GearIndustry.jar` 作为构建产物，运行以松散文件为准 (见 "交付形态")。
+### 数据文件
 
-### GearIn_pulse_shader.vert
+**`data/config/exerelinFactionConfig/mod_factions.csv`**(只提交自己的行；与 Nexerelin 的文件跨来源合并)：
 
-GLSL 1.10 方言 (`#version 110`)。与基础主题的顶点着色器 `GearIn_basic_shader.vert` 结构一致 (attribute/uniform/varying、`gl_ModelViewProjectionMatrix`)，本节侧重演示加载与生命周期，不引入新的数据流概念：
+```csv
+faction
+# case sensitive!!!
+gear_industry
+```
 
-```glsl
-#version 110
+**`data/config/exerelin/corvus_spawnpoints.csv`**(`entityID` = 生成入口页生成的第一颗行星的实体 id)：
 
-attribute vec2 a_position;
+```csv
+faction,system,entityID
+#machine name,#human name,#machine name
+gear_industry,GearIn,GearIn_planet1
+```
+**`data/config/exerelinFactionConfig/gear_industry.json`**(只提交自己关心的键；合并读取，不复制 Nexerelin 文件)：
 
-attribute vec2 a_uv;
+```json
+{
+	"playableFaction":true,
+	"corvusCompatible":true,
 
-uniform vec2 u_offset;
+	"marketSpawnWeight":1,
 
-varying vec2 v_uv;
+	"startRelationships":{
+		"hegemony":0.2,
+	},
 
-void main() {
-    v_uv = a_uv;
-    gl_Position = gl_ModelViewProjectionMatrix * vec4(a_position + u_offset, 0.0, 1.0);
+	"colonyExpeditionChance":0,
+	"colonyTargetValuator":"exerelin.campaign.colony.IndustrialColonyTargetValuator",
+
+	"startShipsSolo":[
+		["tempest_Attack"],
+	],
+	"startShipsCombatSmall":[
+		["medusa_Attack", "wolf_hegemony_CS"],
+	],
+	"startShipsTradeSmall":[
+		["mule_Starting", "hound_hegemony_Standard"],
+	],
+
+	"groundBattleSettings":{
+		"attackMult":1.05,
+	},
+
+	"specialForcesNamerClass":"data.scripts.gearin.modcompat.GearInSpecialForcesNamer",
+
+	"defenceStations":[
+		{"ids":["orbitalstation", "battlestation", "starfortress"]},
+	],
+	"industrySeeds":[
+		{"id":"orbitalworks", "mult":0.1},
+	],
 }
 ```
 
-### GearIn_pulse_shader.frag
+**`data/config/exerelin/groundBattleDefs.json`**(原版 `orbitalworks` 无条目，本节补一条 ——`troopCounts` 的键 = `unitTypes` 兵种 id，`icon` 复用 Nexerelin 自带图标路径)：
 
-片元着色器以 `v_uv`(四边形内插值 UV) 与 `u_time`(每帧提交的秒数) 计算一个从中心向外扩散的脉冲环：
-
-- `d = distance(v_uv, vec2(0.5, 0.5))` 是到四边形中心的距离；
-- `ring = 1.0 - smoothstep(0.30, 0.45, d)` 在半径 0.30–0.45 的环带内从 1 渐变到 0；
-- `pulse = 0.5 + 0.5 * sin(u_time * 4.0 - d * 24.0)` 是随 `u_time` 增大、随 `d` 减小的相位 ——`u_time * 4.0 - d * 24.0` 是一个向外传播的行波 (离中心越远相位越落后)：
-
-```glsl
-#version 110
-
-uniform float u_time;
-
-varying vec2 v_uv;
-
-void main() {
-    float d = distance(v_uv, vec2(0.5, 0.5));
-    float ring = 1.0 - smoothstep(0.30, 0.45, d);
-    float pulse = 0.5 + 0.5 * sin(u_time * 4.0 - d * 24.0);
-    vec3 color = vec3(0.9, 0.3, 0.1) * ring * (0.3 + 0.7 * pulse);
-    gl_FragColor = vec4(color, 1.0);
+```json
+{
+	"industries":{
+		"orbitalworks":{
+			"strengthMult":1.5,
+			"troopCounts":{
+				"heavy":0.3,
+			},
+			"tags":["resistBombard"],
+			"icon":"graphics/exerelin/icons/groundbattle/groundefenses.png",
+		},
+	},
 }
 ```
 
-四边形外 (`d > 0.45`) 颜色为黑 (`ring = 0`)，环带内为橙色脉冲 —— 画面上的 "脉冲环向外扩散" 就是 `u_time` 每帧提交的**使用环节**表现。
-
-### GearInPulseRenderer
-
-Java 接入：在分层渲染插件通道上，四个环节各有一个落点 —— `init` 加载、`render` 使用、`cleanup` 清理、`advance` 内定时重载。
-
-源码如下：
-
+### GearInNexCompat
 ```java
-package data.scripts.gearin.combat;
-
-import java.io.IOException;
-import java.nio.FloatBuffer;
-import java.util.EnumSet;
-
-import org.apache.log4j.Logger;
-import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL15;
-import org.lwjgl.opengl.GL20;
-import org.lwjgl.util.vector.Vector2f;
+package data.scripts.gearin.modcompat;
 
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.CombatEngineLayers;
-import com.fs.starfarer.api.combat.CombatEntityAPI;
-import com.fs.starfarer.api.combat.ViewportAPI;
+import exerelin.campaign.SectorManager;
+import exerelin.utilities.NexConfig;
+import exerelin.world.ExerelinCorvusLocations;
 
 /**
- * 完整最小例：.vert/.frag 的路径、加载、编译日志与资源生命周期。
+ * Nexerelin 软依赖适配器：把对 exerelin.* 的直接引用全部收敛在本类，
+ * 工程里只有本类与特遣队命名器（GearInSpecialForcesNamer，仅被 Nexerelin
+ * 按配置类名加载）出现 exerelin.* 类名。
  *
- * 路径与加载事实：
- * - shader 没有注册表 ID（区别于 CSV/JSON/spec 注册链）：.vert/.frag 以 MOD 根目录
- *   相对路径为身份，约定放在 data/shaders/（GraphicsLib data/shaders/post/pre.vert、
- *   data/shaders/ 同款布局），路径必须用 / 分隔（SettingsAPI.loadText javadoc
- *   硬规则）；反斜杠、盘符冒号、.. 与首字符 / 会在读取前被 validateFileName 直接拒绝
- *   （启动器设置的 validateFileName 抛 RuntimeException）；
- * - 读取端行为（文本读取工具的 readText）：按 UTF-8 解码并把全部 \r 剥除，不剥离
- *   BOM—— 源文件必须 UTF-8 无 BOM（BOM 字符会进入 GLSL 源码导致编译失败），CRLF 安全；
- *   loadText 本身不打日志，编译/链接日志由 MOD 侧写入 starsector.log；
- * - 编译/链接链（延续 C14-S01）：glCreateShader -> glShaderSource -> glCompileShader ->
- *   glGetShaderi(GL_COMPILE_STATUS)；glCreateProgram -> glAttachShader ->
- *   glBindAttribLocation（链接前固定）-> glLinkProgram -> glGetProgrami(GL_LINK_STATUS)；
- *   失败时读取 glGetShaderInfoLog / glGetProgramInfoLog（含行号与原因）并以 ERROR 写入
- *   starsector.log，然后删除对象（GraphicsLib ShaderLib.createShader/loadShader 同款）；
- * - 生命周期四环节：加载（每场战斗 init 内执行，不跨战斗缓存）-> 使用（render 回调内
- *   glUseProgram + glUniform* + glDrawArrays）-> 清理（cleanup() 内 glDeleteProgram，
- *   战斗结束 destroyInstance 不调 cleanup()，由 advance() 主动失效驱动引擎移除，
- *   C07-S06 硬规则延续）-> 重载（按同一路径删除后重建；本节采用"重建成功才替换"：
- *   新程序构建失败时保留旧程序、画面不中断，ERROR 日志给出 InfoLog 作为第一证据）。
+ * 调用链（软依赖组合判据）：
+ *   isModEnabled 判定 MOD 启用状态 -> SectorManager.getManager() 判管理器
+ *   是否已创建（null 守卫）-> isCorvusMode() 判当前模式。
+ * NexConfig.getFactionConfig 读取本 MOD 势力配置（经 mod_factions.csv 注册）；
+ * ExerelinCorvusLocations 读取本 MOD 的出生点行（corvus_spawnpoints.csv）。
+ * Nexerelin 未启用时全部回落降级值，不抛异常。
  */
-public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
+public class GearInNexCompat {
 
-    private static final Logger LOG = Global.getLogger(GearInPulseRenderer.class);
+    /** Nexerelin 的 MOD id，与 Starsector\mods\Nexerelin\mod_info.json 的 id 字段逐字一致。 */
+    public static final String NEX_MOD_ID = "nexerelin";
 
-    /** shader 资源路径（MOD 根目录相对路径，必须用 /，SettingsAPI.loadText javadoc）。 */
-    private static final String VERT_PATH = "data/shaders/GearIn_pulse_shader.vert";
-    private static final String FRAG_PATH = "data/shaders/GearIn_pulse_shader.frag";
+    /** 本 MOD 势力 id（教程势力章节注册）。 */
+    public static final String GEAR_FACTION_ID = "gear_industry";
 
-    /** 演示四边形半边长（世界单位）。 */
-    private static final float QUAD_HALF_SIZE = 60f;
-
-    /** 演示寿命（秒）：到时主动失效，驱动引擎移除并调用 cleanup()。 */
-    private static final float LIFETIME = 30f;
-
-    /** 重载间隔（秒）：按同一路径删除并重建 program，演示资源生命周期闭环。 */
-    private static final float RELOAD_INTERVAL = 10f;
-
-    /** 交错顶点布局：位置(2 float) + UV(2 float)，每顶点 4 个 float。 */
-    private static final int FLOATS_PER_VERTEX = 4;
-
-    private CombatEngineAPI engine;
-    private boolean valid = true;
-    private float elapsed = 0f;
-    private float reloadTimer = 0f;
-
-    private int program = 0;
-    private int vboId = 0;
-    private int uOffsetLocation = -1;
-    private int uTimeLocation = -1;
-
-    @Override
-    public void init(CombatEntityAPI entity) {
-        super.init(entity);
-        engine = Global.getCombatEngine();
-        if (!buildQuad() || !loadProgram()) {
-            valid = false; // 初始化失败：不渲染，等引擎正常移除
-            return;
-        }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点（C07-S06 同款姿势）
-        LOG.info("GearIn pulse shader init: program=" + program + ", vbo=" + vboId
-                + ", u_offset=" + uOffsetLocation + ", u_time=" + uTimeLocation
-                + ", vert=" + VERT_PATH + ", frag=" + FRAG_PATH);
+    private GearInNexCompat() {
     }
 
-    /** 首次加载：按路径读取源文本并构建 program；失败时 renderer 自废。 */
-    private boolean loadProgram() {
-        program = buildProgram();
-        if (program == 0) {
-            LOG.error("GearIn pulse shader: loadProgram failed, renderer disabled");
-            return false;
-        }
-        return true;
+    /** 判据一：Nexerelin 是否在启用列表（启动器 MOD 管理器按 id 逐字比较，大小写敏感）。 */
+    public static boolean isNexEnabled() {
+        return Global.getSettings().getModManager().isModEnabled(NEX_MOD_ID);
     }
 
     /**
-     * 重载：按同一路径重新构建 program。新程序构建成功才删除并替换旧程序（build-then-swap）；
-     * 构建失败（源文件被改坏、路径失效等）时保留旧程序继续绘制，ERROR 日志给出 InfoLog。
+     * 组合判据：Nexerelin 已启用、SectorManager 已创建且处于 Corvus 模式。
+     * SectorManager.getManager() 在 manager 尚未创建时返回 null（sector
+     * persistent data 中无条目）—— 直接调用 isCorvusMode() 会 NPE；
+     * manager 由 Nexerelin 的入口生成器创建，早于它的调用点必须靠这里守卫。
      */
-    private void reloadProgram() {
-        int newProgram = buildProgram();
-        if (newProgram == 0) {
-            LOG.error("GearIn pulse shader reload failed: keeping old program=" + program);
-            return;
-        }
-        if (program != 0) {
-            GL20.glDeleteProgram(program);
-        }
-        program = newProgram;
-        LOG.info("GearIn pulse shader reload: program=" + program);
-    }
-
-    /** 读取两个源文件、编译、链接并检查状态；成功返回 program，失败返回 0。 */
-    private int buildProgram() {
-        String vertSource;
-        String fragSource;
-        try {
-            vertSource = Global.getSettings().loadText(VERT_PATH);
-            fragSource = Global.getSettings().loadText(FRAG_PATH);
-        } catch (IOException e) {
-            LOG.error("GearIn pulse shader: loadText failed: " + e.getMessage(), e);
-            return 0;
-        }
-
-        int vert = compileShader(GL20.GL_VERTEX_SHADER, vertSource);
-        if (vert == 0) {
-            return 0;
-        }
-        int frag = compileShader(GL20.GL_FRAGMENT_SHADER, fragSource);
-        if (frag == 0) {
-            GL20.glDeleteShader(vert);
-            return 0;
-        }
-
-        int prog = GL20.glCreateProgram();
-        if (prog == 0) {
-            GL20.glDeleteShader(vert);
-            GL20.glDeleteShader(frag);
-            return 0;
-        }
-
-        GL20.glAttachShader(prog, vert);
-        GL20.glAttachShader(prog, frag);
-        // attribute 位置必须在链接前固定，之后 glVertexAttribPointer 用同一位置
-        GL20.glBindAttribLocation(prog, 0, "a_position");
-        GL20.glBindAttribLocation(prog, 1, "a_uv");
-        GL20.glLinkProgram(prog);
-
-        // 链接完成后着色器对象即可删除：程序已持有编译结果
-        GL20.glDeleteShader(vert);
-        GL20.glDeleteShader(frag);
-
-        if (GL20.glGetProgrami(prog, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-            LOG.error("GearIn pulse shader: link failed: " + getProgramLog(prog));
-            GL20.glDeleteProgram(prog);
-            return 0;
-        }
-
-        uOffsetLocation = GL20.glGetUniformLocation(prog, "u_offset");
-        uTimeLocation = GL20.glGetUniformLocation(prog, "u_time");
-        return prog;
-    }
-
-    /** 编译单个 shader 并检查 GL_COMPILE_STATUS；失败时记录 InfoLog、删除对象并返回 0。 */
-    private int compileShader(int type, String source) {
-        int shader = GL20.glCreateShader(type);
-        if (shader == 0) {
-            LOG.error("GearIn pulse shader: glCreateShader returned 0 (type=" + type + ")");
-            return 0;
-        }
-        GL20.glShaderSource(shader, source);
-        GL20.glCompileShader(shader);
-        if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-            LOG.error("GearIn pulse shader: compile failed: " + getShaderLog(shader));
-            GL20.glDeleteShader(shader);
-            return 0;
-        }
-        return shader;
-    }
-
-    private static String getShaderLog(int shader) {
-        return GL20.glGetShaderInfoLog(shader, GL20.glGetShaderi(shader, GL20.GL_INFO_LOG_LENGTH));
-    }
-
-    private static String getProgramLog(int program) {
-        return GL20.glGetProgramInfoLog(program, GL20.glGetProgrami(program, GL20.GL_INFO_LOG_LENGTH));
-    }
-
-    /** 两个三角形组成的四边形：6 个顶点，位置与 UV 交错写入一个 VBO。 */
-    private boolean buildQuad() {
-        float half = QUAD_HALF_SIZE;
-        FloatBuffer quadBuffer = BufferUtils.createFloatBuffer(6 * FLOATS_PER_VERTEX);
-        quadBuffer.put(new float[]{
-                -half, -half, 0f, 0f,
-                half, -half, 1f, 0f,
-                half, half, 1f, 1f,
-                -half, -half, 0f, 0f,
-                half, half, 1f, 1f,
-                -half, half, 0f, 1f
-        });
-        quadBuffer.flip();
-
-        vboId = GL15.glGenBuffers();
-        if (vboId == 0) {
-            LOG.error("GearIn pulse shader: glGenBuffers returned 0");
+    public static boolean isNexCorvusMode() {
+        if (!isNexEnabled()) {
             return false;
         }
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, quadBuffer, GL15.GL_STATIC_DRAW);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        return true;
+        SectorManager manager = SectorManager.getManager();
+        return manager != null && manager.isCorvusMode();
     }
 
-    @Override
-    public EnumSet<CombatEngineLayers> getActiveLayers() {
-        return EnumSet.of(CombatEngineLayers.ABOVE_SHIPS_AND_MISSILES_LAYER);
+    /**
+     * 读取本 MOD 势力配置的 marketSpawnWeight（随机星域模式的市场份额倍率）。
+     * NexConfig.getFactionConfig 未注册时回退默认配置（neutral），不抛异常 ——
+     * "读到的不是自己的配置"是该 API 的静默失败模式（mod_factions.csv 漏写时
+     * playableFaction 读回 false）。
+     */
+    public static float getFactionMarketSpawnWeight(String factionId) {
+        if (!isNexEnabled()) {
+            return 1f;
+        }
+        return NexConfig.getFactionConfig(factionId).marketSpawnWeight;
     }
 
-    @Override
-    public float getRenderRadius() {
-        return QUAD_HALF_SIZE * 2f;
-    }
-
-    @Override
-    public void advance(float amount) {
-        if (engine == null) {
-            return;
+    /**
+     * 读取本 MOD 势力在 corvus_spawnpoints.csv 里的生成点实体 id。
+     * 漏写行时返回 null—— 玩家出生点回退 homeworld / 随机位置，无报错。
+     */
+    public static String getFactionSpawnPointEntityId(String factionId) {
+        if (!isNexEnabled()) {
+            return null;
         }
-        if (engine.isPaused()) {
-            return;
-        }
-        elapsed += amount;
-        if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()（C07-S06 硬规则 3）
-            return;
-        }
-        // 重载循环：按同一路径删除并重建 program（资源生命周期闭环）
-        reloadTimer += amount;
-        if (reloadTimer >= RELOAD_INTERVAL) {
-            reloadTimer = 0f;
-            reloadProgram();
-        }
-        // 剔除依据是承载实体的位置（C07-S06 硬规则 4）：跟随玩家舰船
-        entity.getLocation().set(engine.getPlayerShip().getLocation());
-    }
-
-    @Override
-    public boolean isExpired() {
-        return !valid;
-    }
-
-    @Override
-    public void cleanup() {
-        if (vboId != 0) {
-            GL15.glDeleteBuffers(vboId);
-            vboId = 0;
-        }
-        if (program != 0) {
-            GL20.glDeleteProgram(program);
-            program = 0;
-        }
-        LOG.info("GearIn pulse shader cleanup");
-    }
-
-    @Override
-    public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (program == 0 || vboId == 0) {
-            return;
-        }
-        // 世界→屏幕正交投影：按 GraphicsLib renderForeground 姿势自行设置
-        // （glOrtho(viewport) 以世界单位建投影，org.dark.shaders.util.ShaderLib.renderForeground() 同款姿势），
-        // 顶点着色器用 gl_ModelViewProjectionMatrix 应用它；矩阵成对 push/pop 复原
-        GL11.glMatrixMode(GL11.GL_PROJECTION);
-        GL11.glPushMatrix();
-        GL11.glLoadIdentity();
-        GL11.glOrtho(viewport.getLLX(), viewport.getLLX() + viewport.getVisibleWidth(),
-                viewport.getLLY(), viewport.getLLY() + viewport.getVisibleHeight(), -1f, 1f);
-        GL11.glMatrixMode(GL11.GL_MODELVIEW);
-        GL11.glPushMatrix();
-        GL11.glLoadIdentity();
-
-        GL20.glUseProgram(program);
-
-        // uniform：本次绘制内所有顶点/片元共享；u_offset 每帧更新为玩家舰船位置，
-        // u_time 驱动片元侧脉冲相位（暂停时不累计，与 advance 暂停守卫一致）
-        if (uOffsetLocation >= 0) {
-            Vector2f center = engine.getPlayerShip().getLocation();
-            GL20.glUniform2f(uOffsetLocation, center.x, center.y);
-        }
-        if (uTimeLocation >= 0) {
-            GL20.glUniform1f(uTimeLocation, engine.getTotalElapsedTime(false));
-        }
-
-        // attribute：VBO 绑定 + long 偏移（游戏自带 LWJGL 的 glVertexAttribPointer
-        // 没有 FloatBuffer client 指针重载，必须走 VBO + long 偏移姿势）
-        int stride = FLOATS_PER_VERTEX * Float.BYTES;
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL20.glVertexAttribPointer(0, 2, GL11.GL_FLOAT, false, stride, 0L);
-        GL20.glEnableVertexAttribArray(0);
-        GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, stride, 2L * Float.BYTES);
-        GL20.glEnableVertexAttribArray(1);
-
-        GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
-
-        GL20.glDisableVertexAttribArray(0);
-        GL20.glDisableVertexAttribArray(1);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL20.glUseProgram(0);
-
-        GL11.glMatrixMode(GL11.GL_MODELVIEW);
-        GL11.glPopMatrix();
-        GL11.glMatrixMode(GL11.GL_PROJECTION);
-        GL11.glPopMatrix();
+        ExerelinCorvusLocations.SpawnPointEntry entry = ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
+        return entry == null ? null : entry.entityId;
     }
 }
 ```
 
 对应关系：
 
-- **加载 (init)**：`buildQuad()` 建 VBO；`loadProgram()` → `buildProgram()`：`loadText` 读两个源文件 (规则 1/2 的路径与编码做法)→ `compileShader` 逐个编译并查 `GL_COMPILE_STATUS`(规则 5)→ 链接前 `glBindAttribLocation` 固定 0/1(attribute 位置固定规则)→ 查 `GL_LINK_STATUS`(规则 5)→ 取 `u_offset`/`u_time` location(建议 11)。任何一步失败返回 0 并在 `starsector.log` 留下 ERROR(规则 6)；`loadProgram` 失败 → `valid = false` 自废。
-- **重载 (advance)**：每 `RELOAD_INTERVAL` 秒调用一次 `reloadProgram()`：先 `buildProgram()` 构建新程序 (不删旧程序)，成功才 `glDeleteProgram` 旧程序并换入 (规则 8)；失败保留旧程序并 ERROR。
-- **使用 (render)**：自行 `glOrtho(viewport)` 世界→屏幕正交投影 (矩阵成对 push/pop)→ `glUseProgram` + `glUniform2f(u_offset)` + `glUniform1f(u_time)`(`getTotalElapsedTime(false)`，暂停冻结)→ VBO + `glVertexAttribPointer`(long 偏移)+ `glDrawArrays` → 解除绑定、`glUseProgram(0)`。
-- **清理 (cleanup)**：`glDeleteBuffers` 删 VBO、`glDeleteProgram` 删程序，句柄全部复位 (规则 7)；`advance` 在 `LIFETIME` 秒后 `valid = false` 主动失效驱动引擎移除 (`destroyInstance` 不调 `cleanup()`)。
+- `isNexEnabled()`：`isModEnabled` 判据，id 用 `nexerelin` 逐字值 (软依赖判据语义)。
+- `isNexCorvusMode()`：三连环 —— 启用判据在前、`getManager()` null 判断在中、`isCorvusMode()` 在后。
+  - 这是 "生成分支" 的唯一放行条件，也是成熟实例陷阱的对应实现。
+- `getFactionMarketSpawnWeight(...)` / `getFactionSpawnPointEntityId(...)`：两个 "读回" 接口，把本节的数据文件 (势力 JSON、出生点 CSV) 与 Nexerelin 的消费结果连成完整流程：本节的数据文件 → Nexerelin 加载 → 适配器读回。未启用时回落 `1f` / `null`(软依赖降级边界)。
+- 全部 `exerelin.*` 引用位于方法体内、判断分支内：Nexerelin 缺失时符号引用永不解析 (懒解析)，`NoClassDefFoundError` 不会出现。
 
-注册片段 (工程片段 —— 本节不改动生命周期插件的任何文件，只演示使用方调用；把下面一行加进 `GearInCombatLifecyclePlugin.init(CombatEngineAPI engine)` 末尾)：
-
+### GearInSpecialForcesNamer
 ```java
-    // 工程片段：GearInCombatLifecyclePlugin.init(CombatEngineAPI engine) 内追加
-    engine.addLayeredRenderingPlugin(new GearInPulseRenderer());
+package data.scripts.gearin.modcompat;
+
+import java.util.List;
+import java.util.Random;
+
+import com.fs.starfarer.api.campaign.CampaignFleetAPI;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.util.Misc;
+import exerelin.campaign.intel.specialforces.namer.SpecialForcesNamer;
+
+/**
+ * 特遣队命名器：实现 Nexerelin 的 SpecialForcesNamer 接口。
+ * 注册方式：gear_industry.json 的 specialForcesNamerClass 指向本类；
+ * 由 Nexerelin 在生成特遣队时经脚本类加载器 loadClass + newInstance
+ * （无参构造）后调用 getFleetName，至多重试 25 次直到名字不重复。
+ *
+ * 命名形如 "1st GearIn Prime Forgeguard"：以起源市场命名，编号随机，
+ * 降低与既有特遣队撞名概率；origin 缺失时回退势力首个市场，再回退 "GearIn"。
+ * 本类只被 Nexerelin 侧加载，齿轮工业自己的代码从不引用它。
+ */
+public class GearInSpecialForcesNamer implements SpecialForcesNamer {
+
+    private static final Random RANDOM = new Random();
+
+    @Override
+    public String getFleetName(CampaignFleetAPI fleet, MarketAPI origin, PersonAPI commander) {
+        MarketAPI market = origin;
+        if (market == null) {
+            List<MarketAPI> markets = Misc.getFactionMarkets(fleet.getFaction());
+            market = markets.isEmpty() ? null : markets.get(0);
+        }
+        String marketName = market == null ? "GearIn" : market.getName();
+
+        int num = RANDOM.nextInt(33) + 1;
+        return num + ordinalSuffix(num) + " " + marketName + " Forgeguard";
+    }
+
+    private String ordinalSuffix(int num) {
+        if (num >= 11 && num <= 13) {
+            return "th";
+        }
+        switch (num % 10) {
+            case 1:
+                return "st";
+            case 2:
+                return "nd";
+            case 3:
+                return "rd";
+            default:
+                return "th";
+        }
+    }
+}
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，与编译链路一致)：
+对应关系：
+
+- `implements SpecialForcesNamer`：接口签名 `String getFleetName(CampaignFleetAPI fleet, MarketAPI origin, PersonAPI commander)`；`origin` 是特遣队起源市场，`fleet` 是刚建好的特遣队舰队 (`FleetFactoryV3` 产物，来自舰队工厂链)。
+- 名字 = 随机编号 (1–33)+ 序数后缀 + 市场名 + `Forgeguard`：随机成分配合 Nexerelin 的 25 次唯一性重试，多个特遣队基本不重名 (原版 `PlanetNamer` 同款结构)。
+- `Misc.getFactionMarkets(fleet.getFaction())`：`com.fs.starfarer.api.util.Misc` 的公开工具 (`FactionAPI` 没有市场列表方法)；`origin`/市场全缺失时回退字面量 `GearIn`(不返回 null—— 返回 null 会被当作 "无效名字" 重试 25 次后保留 null，名字显示异常)。
+- 无参构造 (默认构造器)：`pickFleetName` 的 `newInstance()` 硬要求。
+- 本类引用 `exerelin.*` 是 "收敛" 规则的例外：它实现接口、只被 Nexerelin 按配置加载，齿轮工业自己的代码不 import 它 —— 无 Nexerelin 时本类永远不会被加载。
+
+### 接入片段 (在既有生成入口插件中改造 onNewGame)
+```java
+    // 在既有生成入口插件的 onNewGame() 内新增本节生成分支。
+    // 原实现直接调用 new GearInSystemGenerator().generate(Global.getSector())，
+    // 本节把它改成按 Nexerelin 模式分派；seedRelations 照旧。
+    @Override
+    public void onNewGame() {
+        if (GearInNexCompat.isNexCorvusMode()) {
+            // Corvus 模式：固定星系照常生成；出生点由 corvus_spawnpoints.csv 绑定
+            new GearInSystemGenerator().generate(Global.getSector());
+            Global.getLogger(GearInSystemGenPlugin.class).info(String.format(
+                "GearIn Nexerelin: corvus mode; spawnEntity=%s marketSpawnWeight=%.2f",
+                GearInNexCompat.getFactionSpawnPointEntityId(GearInNexCompat.GEAR_FACTION_ID),
+                GearInNexCompat.getFactionMarketSpawnWeight(GearInNexCompat.GEAR_FACTION_ID)));
+        } else if (GearInNexCompat.isNexEnabled()) {
+            // 随机星域模式：星区由 Nexerelin 程序化生成接管（marketSpawnWeight 分配份额），
+            // 不生成固定星系
+            Global.getLogger(GearInSystemGenPlugin.class).info(
+                "GearIn Nexerelin: random sector mode; fixed system skipped, procgen markets only");
+        } else {
+            // 无 Nexerelin：原版生成，降级运行
+            new GearInSystemGenerator().generate(Global.getSector());
+        }
+        seedRelations(Global.getSector());
+    }
+```
+
+`GearInSystemGenPlugin` 类归生成入口页所有，本节只演示调用，不改动那个文件；本节示例类不含该片段。
+
+### 构建
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/shaders/GearIn_pulse_shader.vert`、`data/shaders/GearIn_pulse_shader.frag` 与 `data/scripts/gearin/combat/GearInPulseRenderer.class`(可用 `jar tf` 核对)。
+编译注意事项：适配器与命名器持有 `exerelin.*` 的编译期引用，**编译期**类路径上必须有 Nexerelin 的 `ExerelinCore.jar`；运行期没有则走降级 (`isNexEnabled()` 为 false，分支不执行)，不影响启动。
 
-## 验证方案
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/modcompat/GearInNexCompat.class` 与 `data/scripts/gearin/modcompat/GearInSpecialForcesNamer.class`(可用 `jar tf` 核对)。
 
-前置数据：编译链路建立的 MOD 布局 (C06-S01)、`GearIn_test` 测试战役 (C03-S01)、战斗插件体系 (C07-S05，含本节注册片段一行)、分层渲染插件 (C07-S06)、本节新增的 `GearInPulseRenderer` 类与 `data\shaders\GearIn_pulse_shader.vert/.frag`。
+### 验证方案
 
-1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对产物清单。
-2. 战役冒烟：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中核对 init 行。
-3. 画面：观察玩家舰船中心 120 世界单位见方的四边形。
-4. 重载与暂停：记录战斗开始约 10 秒与 20 秒时的日志；按空格暂停约 10 秒，再恢复。
-5. 寿命与跨战斗：等待约 30 秒；随后退出战斗，再进一场。
+前置数据：势力注册页 (C03-S02) 的 `gear_industry` 势力；生成入口页 (C03-S03) 的 `GearInSystemGenPlugin`/`GearInSystemGenerator`(含本节接入片段改造)；本节四个数据文件与两个 Java 类；已安装 Nexerelin(`Starsector\mods\Nexerelin`)。
+
+1. 游戏构建：`gradle jar` 成功；用 `jar tf jars\GearIndustry.jar` 确认两个 `.class` 都在。
+2. 降级路径：不勾选 Nexerelin 开新档，观察 `GearIn` 星系、日志与命名器加载情况。
+3. Corvus 路径：勾选 Nexerelin，新档选 Corvus 模式并选择齿轮工业开局，观察 NGC 势力目录、出生位置与日志。
+4. 随机星域路径：新档选随机星域模式 (不开 Corvus)，观察日志、`GearIn` 星系与市场分布 (可把 `marketSpawnWeight` 改大/改小对比)。
+5. 特遣队：持续游玩至齿轮工业特遣队出现，观察舰队名与日志。
+6. 地面战：入侵齿轮工业市场并触发地面战，观察 `orbitalworks` 条目与修正列表。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/shaders/GearIn_pulse_shader.vert`、`data/shaders/GearIn_pulse_shader.frag` 与 `data/scripts/gearin/combat/GearInPulseRenderer.class`。
-- **战斗初始化 (加载 + 日志)**：`starsector.log` 出现一行：
+- 降级路径：`GearIn` 星系照常出现，日志无 `GearIn Nexerelin:` 行、无 `ERROR`；`GearInSpecialForcesNamer` 类不被加载 (类名不出现在任何日志)。
+- Corvus 路径：NGC 界面势力目录出现 "齿轮工业"(`playableFaction=true`)；玩家出生在 `GearIn_planet1`；日志出现 `GearIn Nexerelin: corvus mode; spawnEntity=GearIn_planet1 marketSpawnWeight=1.00`，且 `GearIn` 星系照常存在。
+- 随机星域路径：日志出现 `GearIn Nexerelin: random sector mode; fixed system skipped, procgen markets only`；`GearIn` 星系不存在 (预期行为)；齿轮工业的市场按 `marketSpawnWeight=1` 参与程序化生成分配。
+- 特遣队：舰队名形如 `1st GearIn Prime Forgeguard`(命名器输出，`origin` = 起源市场名)；两个以上特遣队不重名；`starsector.log` 无 `Failed to load special forces namer`。
+- 地面战：`orbitalworks` 产业条目生效 (`strengthMult=1.5`、`heavy 0.3` 兵种、`resistBombard` 标签在对应产业上可见)；势力修正 `attackMult=1.05` 出现在地面战修正列表；日志无 `Failed to load ground battle defs`。
 
-  ```text
-     GearIn pulse shader init: program=<id>, vbo=<id>, u_offset=<loc>, u_time=<loc>, vert=data/shaders/GearIn_pulse_shader.vert, frag=data/shaders/GearIn_pulse_shader.frag
-  ```
-
-  其中 `vert=`/`frag=` 与资源文件路径一致 (四位置完整流程)；没有由 `gear_in` 引起的 `ERROR`。
-- **画面 (使用)**：玩家舰船中心出现一个 120 世界单位见方的四边形，内部橙色脉冲环亮度随时间起伏，起伏呈 "从中心向外扩散" 的波纹 (`u_time * 4.0 - d * 24.0` 行波)；四边形位于舰船与导弹之上 (`ABOVE_SHIPS_AND_MISSILES_LAYER`，分层渲染层序)；舰船移动时四边形跟随 (`u_offset` 每帧更新)。
-- **重载循环 (生命周期)**：约 10 秒与 20 秒时各出现一行 `GearIn pulse shader reload: program=<新 id>`，两次的 `program=<id>` 都与 init 行不同、彼此也不同 (旧程序已被 `glDeleteProgram` 删除、按同一路径重建)。
-- **暂停行为**：按空格暂停 —— 脉冲波纹冻结 (`getTotalElapsedTime(false)` 不累计)、四边形静止但可见 (与分层渲染主题同款)；恢复后继续。
-- **寿命与清理**：约 30 秒后四边形消失，`starsector.log` 出现一行：
-
-  ```text
-     GearIn pulse shader cleanup
-  ```
-
-  即主动失效 → 引擎移除 → `cleanup()` 的正常链 (规则 7 的可观察面)，同一场战斗内不再出现。
-- **跨战斗**：退出战斗再进一场 —— init 行重新出现且 `program=<id>` 全新 (每场战斗重建，跨战斗缓存禁令)。
-- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
+清理：如果调整过 `marketSpawnWeight`，将其恢复为 `1`。
 
 ## 故障分析
 
-1. **路径语法写错**：`loadText` 在读取前被 `validateFileName` 拒绝，抛 `RuntimeException` (所有平台，不只是 OS X/Linux)，异常从 `init` 传播；把路径改成 `"data/GearIn_pulse_shader.vert"` (漏目录) 则抛 `IOException`，日志出现 `GearIn pulse shader: loadText failed:`。触发条件：把 `VERT_PATH` 改成 `"data\\shaders\\GearIn_pulse_shader.vert"` (反斜杠) 或盘符前缀的路径。原因：`validateFileName` 对含 `\`、盘符冒号、`..` 或首字符 `/` 的路径直接拒绝 (规则 1)。修正：恢复 MOD 根相对 + `/` 分隔，对照四位置完整流程核对路径。
-2. **源文件带 BOM**：编译失败，`starsector.log` 出现 `GearIn pulse shader: compile failed: ERROR: 0:1: ...` (首行 token/字符错误，驱动相关)，init 后无画面。触发条件：用带 BOM 的编辑器保存 `.frag`。原因：读取端按 UTF-8 解码但不剥 BOM，`\uFEFF` 进入 GLSL 源码。修正：保存为 UTF-8 无 BOM (规则 2；CRLF 换行则安全)。
-3. **GLSL 语法错误**：编译失败，InfoLog 含行号与原因，如 `ERROR: 0:5: 'xxx' : syntax error` —— 行号直接指向出错行；init 后无画面，但游戏不崩溃 (状态检查生效，规则 5)。触发条件：删掉 `.frag` 某行分号。修正：按 InfoLog 行号定位出错行。
-4. **方言版本与硬件不匹配**：GL 2.0 基线上下文编译失败，InfoLog 含 version 错误。触发条件：把 `#version 110` 改成 `#version 130` 或更高。修正：基线用 `#version 110` (方言基线规则)。
-5. **不检查编译/链接状态**：错误程序继续使用 —— 内容不出现且失败原因不可见 (与基础主题同类)。触发条件：注释掉 `compileShader` 里的 `GL_COMPILE_STATUS` 检查。修正：状态检查 + InfoLog + 删除对象三连 (规则 5)。
-6. **uniform 名拼错**：画面出现但脉冲完全静止，且没有任何日志 (GL 错误不报)。触发条件：把 `"u_time"` 改成 `"uTime"`。原因：`glGetUniformLocation` 返回 -1，`glUniform1f` 被静默忽略。修正：核对名称与类型 (uniform 命名与类型规则)，保留判 -1 (建议 11)。
-7. **varying 两侧不一致**：链接只给警告而不失败，片元读到未定义值 —— 环带颜色恒为 0/黑 (与基础主题同类故障)。触发条件：把 `.frag` 的 `v_uv` 改名而 `.vert` 不改。修正：两侧同名同类型 (varying 匹配规则)。
-8. **重载先删后建**：构建失败 (如源文件此时被改坏) 时旧程序已被删除 —— 画面中断 (四边形消失) 且无回退；本节的 build-then-swap 版本则画面保持，日志出现 `reload failed: keeping old program=<id>` ERROR。触发条件：把 `reloadProgram` 改成先 `glDeleteProgram(program)` 再 `buildProgram()`。修正：重建成功才替换 (规则 8)。
-9. **重载后继续绑定旧句柄**：渲染输出错位或 OpenGL 状态污染 (实例陷阱原话)，且随每次重载恶化。触发条件：`reloadProgram` 成功后渲染仍 `glUseProgram` 旧的 program id。修正：重载后统一从字段取新 id (规则 7)。
-10. **跨战斗缓存程序**：第二场战斗引用已删句柄 —— 渲染异常/未定义行为 (跨战斗缓存禁令)。触发条件：把 `program` 存进静态字段，第二场战斗不重建。修正：每场战斗 `init` 重建 (规则 9)。
-11. **双参 loadText 的 modId 写错**：调用点直接 NPE。触发条件：把 `loadText(path, "gear_in_typo")`。原因：`getModSpec` 返回 null (与资源读取规则同规)。修正：modId 与 `mod_info.json` 的 `id` 逐字一致 (规则 4)。
+故障按阶段分三组：新档与加载阶段 (1–4)、运行期 (5–8)、判断类 (9–11)。每个故障从您看到的症状出发，依次给触发条件、断链原因与修正顺序。
+
+1. **NGC 势力目录里没有齿轮工业，且日志无任何报错。**
+  - 触发：`mod_factions.csv` 漏写 `gear_industry` 行、大小写不符 (文件注释 `# case sensitive!!!`)，或势力未在 `factions.csv` 注册 (势力注册页)。
+  - 原因：名单行缺失时单势力 JSON 不进入加载链，`NexConfig.getFactionConfig("gear_industry")` 回退默认配置 (neutral，`playableFaction=false`)——NGC 不出现、`marketSpawnWeight` 等全部势力配置失效 (成熟实例陷阱原文："mod_factions.csv 遗漏势力时，单势力 JSON 不会进入 Nexerelin 外部势力发现链路")。
+  - 修正：核对名单行与势力 id 逐字一致；确认势力已注册。
+2. **选择了齿轮工业开局，但出生在随机位置或超空间。**
+  - 触发：`corvus_spawnpoints.csv` 漏写行，或 `entityID` 写成了市场 id / 行星显示名 / 不存在的 id。
+  - 原因：`getFactionSpawnPoint` 查不到行，或 `getEntityById` 找不到实体 —— 使用方依次回退 homeworld、随机市场、超空间，全程无报错。
+  - 修正：`entityID` 用实体 id (生成入口页的 `GearIn_planet1`)。游戏会安静地完成这次回退，不给任何提示，所以这一列值得逐字核对。
+3. **新档生成中断：NPE。**
+  - 触发：在早于 Nexerelin 入口生成器的调用点 (`onApplicationLoad`、启动期静态块、任何未走 Nexerelin 新档入口的路径) 直接 `SectorManager.getManager().isCorvusMode()`；或用了已废弃的静态 `SectorManager.getCorvusMode()`(同样未判空)。
+  - 原因：manager 尚未创建 (persistent data 无条目) 时 `getManager()` 返回 null，而 `isCorvusMode()` 是实例方法，直接调用即 NPE。新档 `onNewGame` 阶段 manager 已由 Nexerelin 入口生成器创建 (`ExerelinNewGameSetup.generate` → `setupPlugins` → `addScripts`)，但 `getManager()` 的约定允许返回 null —— 判空是唯一安全写法。
+  - 修正：一律经 `GearInNexCompat.isNexCorvusMode()`(启用判据 + null 判断在前)。
+4. **无 Nexerelin 时启动或运行崩溃：`NoClassDefFoundError: exerelin/...`。**
+  - 触发：`exerelin.*` 引用泄漏到适配器之外 —— 字段初始化、静态块、构造器或未检测的方法体 (如直接把 `NexConfig` 用在 `GearInSystemGenerator` 里)。
+  - 原因：Nexerelin 缺失时这些符号引用一旦被解析就失败；`Error` 冒泡 (脚本类加载器加载脚本实例时只包装 `Exception`)，启动或运行中止。
+  - 修正：全工程搜索 `exerelin` 引用，除 `GearInNexCompat` 与命名器外一律移除。
+5. **特遣队舰队名显示为 `error`，日志有 `Failed to load special forces namer [...]`。**
+  - 触发：`specialForcesNamerClass` 类名拼错/包名错、类没实现 `SpecialForcesNamer`、没有无参构造、`getFleetName` 抛异常。
+  - 原因：`pickFleetName` 捕获 `Throwable` 后把名字回落字面量 `error`——Nexerelin 对失败的命名器毫不掩饰，舰队直接顶着这个名字出征 (成熟实例陷阱原文："实现方法签名不匹配时，特遣队命名会在接口调用时失败")。
+  - 修正：类名与配置逐字一致；实现接口；保留无参构造。
+6. **多个特遣队重名。**
+  - 触发：命名器返回确定性名字 (如固定市场名 + 固定后缀)。
+  - 原因：`hasDuplicateName` 对重复名连续判真，25 次重试用尽后保留最后一次结果，重复名留下。
+  - 修正：名字带随机成分 (本节示例的随机编号 + 序数后缀)。
+7. **地面战配置加载失败，日志含 `Failed to load ground battle defs`。**
+  - 触发：`groundBattleDefs.json` 顶层结构错误 —— `industries` 写成数组、顶层键缺失或类型错误。
+  - 原因：`GBDataManager` 静态初始化对顶层键全部硬读取，结构错误直接抛 `RuntimeException`，地面战系统不可用。
+  - 修正：保持对象结构，只提交自己的键。
+8. **地面战修正无效 (`attackMult` 等不生效)。**
+  - 触发：`groundBattleSettings` 里的键名写错 (如 `attackMult` 写成 `attack_mult`)，或写进了别的 JSON 层级。
+  - 原因：未知键被静默忽略 —— `FactionBonusSubplugin` 只按 `attackMult`/`damageTakenMult`/`moraleDamageTakenMult`/`plugin` 读取。
+  - 修正：对照可识别键名；自定义键必须配合自定义 `plugin` 子插件读取。
+9. **随机星域模式里找不到固定星系，误以为生成失败。**
+  - 触发：对模式分支语义不清楚。
+  - 原因：这是本节示例的**预期行为** —— 星区由程序化生成接管，份额由 `marketSpawnWeight` 决定，固定星系不生成；日志有 `random sector mode` 行。
+  - 修正：理解分支；若需要固定星系，改用 "随机星域也生成主星系" 的变体。
+10. **`corvusCompatible` 设为 false 后 "无法继续兼容" 的旧说法不成立。**
+  - 触发：按旧资料把 `corvusCompatible` 当成硬开关。
+  - 原因：该字段仅经 `NexUtilsFaction.isCorvusCompatible` 辅助读取，没有内置强制使用方；成熟实例全部设 `true`。
+  - 修正：设 `true` 并与生成点/势力配置保持一致 (建议级，见 "规则强度")。
+11. **同时启用两套生成 (Nexerelin 分支与既有原实现都在跑)。**
+  - 触发：`onNewGame` 里既有本节分支又保留旧的直接调用。
+  - 原因：Corvus 模式下星系/实体被生成两遍，实体 id 冲突静默绑定到后注册者 (既有生成入口故障分析的同款语义)。
+  - 修正：分支互斥 (if / else if / else 三路只走一路)。
 
 ## 总结
 
-本节把 shader 从磁盘文件接到了战斗画面，整条链可以用一句话收拢：shader 没有注册表 ID，路径就是身份。排错时先沿四个位置核对路径 (资源文件、加载入口常量、使用方、日志)，再看 `starsector.log`：init 行证明文件被读到，`compile failed` / `link failed` 带行号直接指向源文件问题；画面异常但日志干净时，才需要怀疑 uniform 拼写、varying 匹配这类不报错的问题。
+Nexerelin 接入可以收成一张五链路图：
 
-生命周期的判断同样可以复用：程序对象随战斗加载与清理，重载按同一路径重建，且只在新程序构建成功后才替换旧程序。按这个顺序检查，改坏 shader 时损失的是效果而不是画面，跨战斗也不会带着已删句柄继续绘制。
+- **势力配置 (数据)**：`mod_factions.csv`(发现名单，`# case sensitive!!!`)→ 单势力 JSON(`exerelinFactionConfig/<factionId>.json`，按 MOD id 合并)→ `NexConfig.getFactionConfig(id)` 运行期读取。漏写名单行 = 全部配置静默回退默认。
+- **生成点 (数据)**：`corvus_spawnpoints.csv` 一行 (`faction,system,entityID`) 绑定 Corvus 模式开局；行或实体缺失时静默回退 homeworld、随机位置、超空间。
+- **生成分支 (代码)**：`isModEnabled("nexerelin")` → `SectorManager.getManager()` null 判断 → `isCorvusMode()` 分派。
+  - Corvus 模式保留固定星系 + 出生点由 `corvus_spawnpoints.csv` 绑定；随机星域模式由 `ExerelinProcGen` 接管、`marketSpawnWeight` 分配份额。
+  - manager 由 Nexerelin 的入口生成器创建，`getManager()` 约定允许 null，判空不能省。
+- **地面战 (数据)**：`groundBattleDefs.json` 的 `industries` 条目 (`strengthMult`/`troopCounts`/`tags`/`icon`/`plugin`)+ 势力配置的 `groundBattleSettings`(`attackMult`/`damageTakenMult`/`moraleDamageTakenMult`/`plugin`)。结构错误 = `Failed to load ground battle defs`；未知键静默。
+- **特遣队 (代码)**：`specialForcesNamerClass` 指向实现 `SpecialForcesNamer` 的无参类，Nexerelin 经脚本类加载器实例化并至多 25 次重试去重；失败形态是名字 `error` + ERROR 日志。命名器是 "引用收敛" 的唯一例外 (由对方加载、经 JSON 引用)。
 
-从逻辑上看，本节停在 "程序建好、按生命周期维护" 这一环。要让程序承担更完整的视觉效果，剩下两件事：把数据送进程序 (uniform、纹理与矩阵提交)，以及把渲染插件放进更大的工程结构 (渲染层接入、资源释放、开关与性能)。二者都建立在本节 "路径即身份、生命周期完整流程" 的底座上。
+五条链路共用同一个软依赖框架：不声明 `dependencies`、`isModEnabled` 检测、引用收敛进 `GearInNexCompat`、缺依赖降级且降级可观测。
+
+排错时先问 "这条数据由哪个使用方读取，读不到时它回退什么"：数据链路 (势力配置、生成点、地面战) 的故障几乎都不报错，只能靠预期结果对照；代码链路 (生成分支、命名器) 至少会留下 NPE、ERROR 日志或字面量 `error`。接入面越靠数据，缺依赖时的降级越容易 —— 任何可选 MOD 的接入都可以按 "检测 → 收敛 → 降级" 三段复刻，并与硬依赖声明 (启动器拦截) 形成可选 / 必需两种接入强度的完整对照。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.SettingsAPI`：`loadText(String)` 与 `loadText(String, String)` 的文本读取入口；双参按 modId 限定资源空间。
-- `com.fs.starfarer.api.Global`：`getSettings()`、`getLogger(...)`、`getCombatEngine()` 的全局入口。
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：`getTotalElapsedTime(boolean)`、`getPlayerShip()`、`isPaused()`、`addLayeredRenderingPlugin(...)` 的战斗内使用面。
-- `com.fs.starfarer.api.combat.ViewportAPI`：`getLLX()` / `getLLY()` / `getVisibleWidth()` / `getVisibleHeight()` 视口取值。
-- `com.fs.starfarer.api.combat.CombatEngineLayers`：渲染层枚举，本例使用 `ABOVE_SHIPS_AND_MISSILES_LAYER`。
-- `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：分层渲染插件基类 (本例继承)。
-- `org.lwjgl.opengl.GL20` / `GL15` / `GL11`：编译、链接、状态检查、VBO 与绘制调用。
-- `data/shaders/GearIn_pulse_shader.vert` / `data/shaders/GearIn_pulse_shader.frag`：本节 shader 资源，与 Java 常量 `VERT_PATH` / `FRAG_PATH` 逐字一致 (MOD 根相对路径)。
-- `data/shaders/`：GLSL 顶点与片元资源的目录约定。
-- `starsector.log`：本节所有日志可观察结果 (游戏安装根相对)。
-- `org.dark.shaders.util.ShaderLib` / `org.dark.shaders.post.PostProcessShader`(GraphicsLib)：加载/链接失败做法的实例对照。
-- `org.boxutil.util.ShaderUtil`：另一条加载入口 `createShaderVFFormPath(...)`(依赖库使用入口)。
+- `com.fs.starfarer.api.Global` / `com.fs.starfarer.api.SettingsAPI` / `com.fs.starfarer.api.ModManagerAPI`—— 启用检测入口 (`getModManager` / `isModEnabled` 逐字比较)；
+- `com.fs.starfarer.api.util.Misc`——`getFactionMarkets(FactionAPI)` 等公开工具；
+- `com.fs.starfarer.api.campaign.CampaignFleetAPI` / `com.fs.starfarer.api.campaign.econ.MarketAPI` / `com.fs.starfarer.api.characters.PersonAPI`—— 命名器接口三参；
+- `exerelin.campaign.SectorManager`——`getManager()` 可空约定与 `isCorvusMode()` 模式判定；
+- `exerelin.utilities.NexConfig` / `exerelin.utilities.NexFactionConfig`—— 势力配置加载与运行期读取 (`getFactionConfig`)；
+- `exerelin.world.ExerelinCorvusLocations`—— 出生点查询 (`getFactionSpawnPoint`)；
+- `exerelin.campaign.intel.specialforces.namer.SpecialForcesNamer`—— 特遣队命名接口；
+- `exerelin.campaign.intel.specialforces.SpecialForcesIntel`—— 命名器加载链 (类名实例化 + 至多 25 次去重重试)；
+- `exerelin.campaign.intel.groundbattle.GBDataManager`—— 地面战定义加载；
+- `exerelin.campaign.intel.groundbattle.plugins.FactionBonusSubplugin`——`groundBattleSettings` 可识别键的使用方；
+- `data/config/exerelinFactionConfig/mod_factions.csv`—— 势力发现名单 (唯一列 `faction`，注释 `# case sensitive!!!`)；
+- `data/config/exerelinFactionConfig/gear_industry.json`—— 单势力配置 (文件名 = 势力 id)；
+- `data/config/exerelin/corvus_spawnpoints.csv`——Corvus 模式出生点 (`faction,system,entityID`)；
+- `data/config/exerelin/groundBattleDefs.json`—— 地面战产业定义；
+- `data/scripts/gearin/modcompat/GearInNexCompat`—— 本节适配器类 (`exerelin.*` 引用收敛点)；
+- `data/scripts/gearin/modcompat/GearInSpecialForcesNamer`—— 本节命名器类 (仅被 Nexerelin 按配置类名加载)。

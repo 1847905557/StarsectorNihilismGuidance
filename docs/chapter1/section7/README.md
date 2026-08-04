@@ -1,4 +1,4 @@
-# 战斗对象描述与首次静态验证
+# 补充描述文本
 
 本节将为本章各前节建立的舰船、战机与武器补上描述文本，并解释 `descriptions.csv` 的组织方式。
 
@@ -13,7 +13,6 @@
 - 说出 `descriptions.csv` 的列结构、`id + type` 键规则与 `Description.Type` 的全部枚举值，并解释缺行与键错误的可观察结果差异 (占位文本 vs 启动失败)；
 - 按对象类型说出描述查找键 (舰船 = hullId 或 `.ship` 的 `descriptionId`、武器 = 武器 ID、战术系统 = 系统 ID)，并说出 text1–text5 各自的主要使用方；
 - 为既有 GearIn 对象编写描述行，并用 `.ship` 的 `descriptionId` 字段把舰船描述挂到本节专属键上；
-- 执行首次静态验证：不启动游戏，对舰船、战机、武器与内置件的全部数据链做一遍交叉检查；
 - 从 "占位文本、启动报错、数据库 (codex) 显示降级" 三类症状反推描述数据错误。
 
 ## 前置知识
@@ -179,51 +178,6 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 清理：恢复 `data/strings/descriptions.csv` 中临时改动的描述行。
 
-## 首次静态验证
-
-第一章前五节建立的内容此前都是 "做完就进游戏看效果"；本节要求先不启动游戏，把整条数据链交叉检查一遍。按以下顺序执行：
-
-1. **编码**：所有数据文件 UTF-8 无 BOM(编辑器状态栏确认；含中文的 CSV 尤其关键)。
-2. **CSV 结构**：表头列名与列数正确；每行列数与表头一致；含英文逗号/换行/引号的字段已加引号；行首 `#` 注释行不影响数据行。
-3. **键唯一性与类型**：`descriptions.csv` 的 `id + type` 全文件唯一、`type` 是枚举名 (大小写敏感)。可以直接用下面的脚本从 MOD 根目录检查：
-4. **ID 交叉检查**(沿既有链逐项核对，全部为逐字符匹配、大小写敏感)：
-   - `.ship` 的 `hullId` == `ship_data.csv` 的 `id` == 装配 `.variant` 的 `hullId` == `wing_data.csv` 的 `variant` 对应 hull；
-   - `builtInWeapons` 的键 == `.ship` 槽位 `id`、值 == `weapon_data.csv` 的 `id`；
-   - `builtInMods` 的值 == `hull_mods.csv` 的 `id`；`builtInWings` 的值 == `wing_data.csv` 的 `id`；
-   - `weapon_data.csv` 的 `id` == `.wpn` 的 `id`；`.wpn` 的 `projectileSpecId` == `.proj` 的 `id`；
-   - 描述行键：`WEAPON` 行的 `id` == 武器 ID；`SHIP` 行的 `id` == `hullId` 或 `.ship` 的 `descriptionId`；系统行 `id` == 系统 ID。
-5. **资源路径**：`.ship`/`.wpn`/`.proj` 里的 sprite 与声音路径按原样 (含大小写) 能在对应 `graphics`/`sounds` 目录找到。
-6. **启动日志收尾**：启动一次游戏，`starsector.log` 无 `ERROR`—— 这是静态检查的运行时确认。
-
-```python
-import csv
-from collections import Counter
-
-VALID = {"SHIP", "WEAPON", "SHIP_SYSTEM", "RESOURCE", "ACTION_TOOLTIP",
-         "PLANET", "ASTEROID", "FACTION", "TERRAIN", "GALLERY", "CUSTOM"}
-
-rows = []
-with open("data/strings/descriptions.csv", encoding="utf-8", errors="replace") as f:
-    for r in csv.DictReader(f):
-        if (r["id"] or "").strip() and (r["type"] or "").strip():
-            rows.append(r)
-
-keys = [r["id"] + " | " + r["type"] for r in rows]
-dups = {k for k, n in Counter(keys).items() if n > 1}
-bad = {r["id"] for r in rows if r["type"] not in VALID}
-print("rows:", len(rows))
-print("duplicate keys:", sorted(dups) or "none")
-print("invalid types:", sorted(bad) or "none")
-```
-
-脚本输出 `duplicate keys: none` 与 `invalid types: none` 即通过。
-
-::: tip
-脚本要放在 MOD 根目录 (与 `data/` 同级) 运行，因为它读取的是相对路径 `data/strings/descriptions.csv`。
-
-如果文件带了 BOM，脚本会在 `r["id"]` 处抛 `KeyError('id')`—— 这正是游戏内会发生的表头污染问题，见故障分析。
-:::
-
 ## 故障分析
 
 按 "症状 → 原因 → 修正" 逐条排查；每条症状都是本节示例数据可以实际复现的。
@@ -241,7 +195,7 @@ print("invalid types:", sorted(bad) or "none")
 - 典型场景：武器行 `id` 写错、`.ship` 的 `descriptionId` 指向不存在的行、或该对象根本没有描述行。
 - 修正：补行或改正键；注意大小写敏感。
 - **改了描述但游戏里没变化**：先确认改的是会被读取的行 —— 键与任何对象都不匹配的未挂接行永远不会被读取，且不报错。
-- 用 "键唯一性脚本 + ID 交叉检查" 定位。
+- 核对描述行的 `id`、`type` 与对象实际使用的查找键。
 - **舰船 tooltip 引言与 text2 不一致**：tooltip 生成的规则是 text3 非空或 text2 缺失/为占位时改用 text1 第一段。
 - 想用 text2 当引言，就不要填 text3。
 - **数据库系统列表的类型标签显示 `Special`**：该系统的 `SHIP_SYSTEM` 行缺 text2。
@@ -258,19 +212,13 @@ print("invalid types:", sorted(bad) or "none")
 
 ## 总结
 
-本节完成了对于 `descriptions.csv` 的解析，且把本章前几节建立的全部数据链收拢成一张交叉检查清单：编码 → 结构 → 键唯一 → ID 逐字符一致 → 资源路径 → 启动日志，此后每新增一类数据，都可以先跑清单再进游戏。
+本节完成了 `descriptions.csv` 的解析：从 8 列结构、`id + type` 键和 `.ship` 的 `descriptionId`，到 text1–text5 在舰船、战机、武器和系统界面中的使用位置。
 
-从逻辑上延伸，本节的结论不止适用于描述文本：任何键控 CSV 都遵循 "键唯一 + 使用方按查找键精确匹配" 的同一套规则，加载期硬失败与静默降级的二分法也一以贯之。
-
-`descriptions.csv` 与界面字符串入口是两套独立的文本体系，掌握占位与降级机制之后，排查其他文本数据的方式是相通的。
+描述行的键必须与使用方逐字符匹配；缺少描述时显示占位文本，键、类型、引号或编码错误则可能在加载阶段失败。遇到异常时，先按对象类型确认查找键，再按字段内容和文件编码排查。
 
 ## 建议参考项
 
 - `data/strings/descriptions.csv`(MOD 内相对路径)：描述文本注册入口，路径即注册、无需额外声明。
 - 原版参考文件位于 `Starsector/starsector-core/data/strings/descriptions.csv`(仅观察不修改)；
-- `com.fs.starfarer.api.SettingsAPI`：`getDescription(String id, Type type)` 公开查询入口。
 - `com.fs.starfarer.api.loading.Description`：`Type` 枚举与 text1–text5 的默认值/占位行为。
-- `com.fs.starfarer.api.combat.ShipHullSpecAPI`：`getDescriptionId()` 缺省回退 `hullId`。
 - `com.fs.starfarer.api.impl.codex.CodexDataV2`：数据库系统列表的类型标签与 `Special` 回退。
-- `com.fs.starfarer.api.campaign.impl.items.ShipBlueprintItemPlugin`、`WeaponBlueprintItemPlugin`、`FighterBlueprintItemPlugin`：蓝图 tooltip 取 text1 第一段。
-- `data/strings/strings.json`：界面字符串入口，与描述文本相对照的独立文本体系。

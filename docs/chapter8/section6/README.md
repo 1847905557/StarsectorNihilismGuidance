@@ -90,14 +90,14 @@
 
 原版 17 个产业类全部 `extends BaseIndustry`(`com.fs.starfarer.api.impl.campaign.econ.impl` 包)。
 
-五个核心回调 (API 签名与公开实现佐证)：
+五个核心回调：
 
 | 回调 | 时机 | 职责 |
 |---|---|---|
 | `init(String id, MarketAPI market)` | `getNewPluginInstance` 后、`apply` 前 | 绑定 id 与 market；`BaseIndustry.init` 同时 `readResolve()`(重取 spec、生成 `"ind_<id>"` / `"ind_<id>_<n>"` 修饰 id 族)|
 | `apply()` | `addIndustry` 时、`reapplyIndustries` 每轮、tooltip 预览 (克隆市场) 时 | 写供需、收入/维护、统计修饰、AI core / 改良 / 特殊物品效果。子类先 `super.apply(true)` 再写自己的供需 |
 | `unapply()` | `reapply` 前半、`removeIndustry`、`startBuilding` | 撤销 AI core 修饰 (`applyNoAICoreModifiers`)、改良、移民修饰、特殊物品效果 |
-| `reapply()` | 外部直接调用或 tooltip 预览 | 语义固定为 `unapply()` + `apply()`(API javadoc 原文："Calls unapply() and then reapply()")|
+| `reapply()` | 外部直接调用或 tooltip 预览 | 语义固定为 `unapply()` + `apply()`("Calls unapply() and then reapply()")|
 | `advance(float amount)` | 市场每帧 (`Market.advance` 对产业列表逐个调用)| `BaseIndustry.advance`：disruption 结束检测 (`wasDisrupted` 翻转 → `disruptionFinished()`)；建设中且未中断时用 `getClock().convertToDays(amount)` 累积 `buildProgress`，达到 `buildTime` 调 `finishBuildingOrUpgrading()` |
 
 `BaseIndustry.apply(boolean withIncomeUpdate)` 的内部顺序：

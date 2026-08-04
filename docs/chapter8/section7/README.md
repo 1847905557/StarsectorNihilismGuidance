@@ -25,7 +25,7 @@
 - MOD 目录结构、`starsector.log`(C01-S01)。
 - CSV 合并语义 (C02-S02)：同文件重复 id 抛 `Duplicate key`、跨文件先到先得、空 id 行跳过；本节 `market_conditions.csv` 走同一读取器。
 - `GearInModPlugin` 与 `onGameLoad` 的一次性注册模式 (C06-S02)。
-- `getMergedSpreadsheetData` 系列与 `loadJSON` 的资源读取族 (C06-S04)：本节只依赖 `market_conditions.csv` 自身的合并语义。
+- `loadJSON` 与 `getMergedSpreadsheetData` 的资源读取入口 (C12-S02、C12-S03)：本节只依赖 `market_conditions.csv` 自身的合并语义。
 - `MutableStat` 与 `StatBonus` 的 modifier 写入 (C07-S03)：`getHazard()` / `getAccessibilityMod()` 都是它们。
 - 一次性 `EveryFrameScript` 演示模式 (C08-S01)：`executed` 置位后 `isDone()` 返回 true。
 - `addPlanet` 自动为行星挂条件市场 (C08-S02)：`market_<planetId>`，survey 的实体侧。
@@ -54,7 +54,7 @@
 | `name` | `MarketConditionSpecAPI.getName()` | 显示名；必填 (`getString`，缺列即加载失败)。`MarketConditionAPI.getName()` 先问 plugin，plugin 回退 spec 名 |
 | `id` | spec 注册 key | 条件 spec id，CSV spec 加载期注册表的键；`addCondition(id)` 的入参；`ConditionGenDataSpec` 交叉校验键 |
 | `tags` | `getTags()` | 逗号分隔字符串，`optString` 可选 |
-| `planetary` | `spec.isPlanetary()` | `optBoolean` 默认 false；`MarketConditionAPI.isPlanetary()` 转发 plugin(默认读 spec)；"行星条件显示在条件面板右侧，市场条件显示在行星条件左侧的组里"(API javadoc 原文)|
+| `planetary` | `spec.isPlanetary()` | `optBoolean` 默认 false；`MarketConditionAPI.isPlanetary()` 转发 plugin(默认读 spec)；"行星条件显示在条件面板右侧，市场条件显示在行星条件左侧的组里"|
 | `decivRemove` | `spec.isDecivRemove()` | `optBoolean` 默认 false；文明衰退移除标记 |
 | `script` | `getScriptClass()` | **plugin 类名**；必填。加载期经脚本类加载器 `registerScriptClass` 注册；实例化时机见下 |
 | `desc` | `getDesc()` | tooltip 正文；`optString` 默认 `"No description... yet"`；支持 `$token` 替换 (见 "tooltip 链路")|
@@ -112,7 +112,7 @@
 
 **不重放 `setParam`**(读档重建时只执行 `init`)。
 
-`BaseMarketConditionPlugin2` 非 transient(`isTransient()` = false)，进存档、附带 `daysActive` 计时，API javadoc 原文提示 "Use sparingly since it'll add to savefile bloat"。
+`BaseMarketConditionPlugin2` 非 transient(`isTransient()` = false)，进存档、附带 `daysActive` 计时，"Use sparingly since it'll add to savefile bloat"。
 
 ### token 与实例访问
 

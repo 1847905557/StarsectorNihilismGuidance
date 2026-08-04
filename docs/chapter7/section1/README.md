@@ -160,7 +160,6 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 3. 打开 `starsector.log`，搜索 `GearIn`，核对报告行与数字。
 4. 按 ESC 暂停约 20 秒再恢复，再次核对报告行。
 
-
 预期结果：
 
 - 约 15 秒后 `starsector.log` 出现 `GearIn: elapsed ...s, calls ... (paused 0)` 形态的报告，玩家舰船位置出现过一行白色浮动文字 (约 3 秒后消失)；

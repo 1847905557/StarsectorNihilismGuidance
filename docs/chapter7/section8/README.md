@@ -20,14 +20,13 @@
 
 ## 前置知识
 
-本节继续使用战术系统的数据面与战斗实体判据，建议先掌握以下既有内容：
-
-- 船体注册与 `system id` 挂载 [C1-S2]：`ship_data.csv` 的 `system id` 列与 `GearIn_artizan` 示例行。
-- 战术系统数据面四段完整流程 [C2-S3]：`.system` / `ship_systems.csv` / `ship_data.csv` / 效果脚本与 `effectLevel` 概念。
-- 原版 AI 基线：不写任何代码时，舰船自动使用原版默认 AI(转向、目标选择、开火、规避)；`ModPlugin.pickShipAI(...)` 返回 `null` 即保持原版 AI；`.system` 的 `aiType` 字段决定战术系统的 AI 行为 (此前示例写的 `NONE` = 无 AI 行为，玩家按键不受影响)。
-- 实体判据与暂停语义 [C7-S2]：`getPlayerShip()` 永不 null、`isAlive()` / `isEntityInPlay()` 实体判据、暂停语义。
-- `MutableStat` 的 modifier ID 纪律 [C7-S3]：modifier ID 稳定性与 `modifyMult` / `unmodify` 纪律。
-- `Global` 生命周期与跨战斗缓存禁令 [C6-S3]：禁止跨战斗缓存引擎/实体引用。
+- [C1-S2] 的 `ship_data.csv` 船体登记与 `system id` 挂载；
+- [C2-S3] 的 `.system`、`ship_systems.csv`、`ship_data.csv` 与效果脚本关系；
+- [C6-S3] 的 `Global` 生命周期与跨战斗引用边界；
+- [C7-S2] 的 `getPlayerShip()`、`isAlive()`、`isEntityInPlay()` 与暂停语义；
+- [C7-S3] 的 `MutableStat` modifier ID、`modifyMult` 与 `unmodify`；
+- 理解原版舰船 AI 的目标选择、开火和规避职责；
+- 理解 `.system` 的 `aiType` 与 `aiScript` 如何决定系统 AI。
 
 ## 文件与 API 链路
 
@@ -81,7 +80,7 @@ getSystemRegenBonus().computeEffective(spec.regen)       → getRegen(stats)
 ```
 
 ::: info bonus 的部署时烘焙与即时读取
-系统运行时对象在创建时 (构造器调用)**一次性**把这些值写回充能记录 —— 冷却、次数与恢复的 bonus 在舰船部署时烘焙，运行期改动这几项不会反映到本场战斗 (重新部署才重算)；
+系统运行时对象在创建时 (构造器调用)** 一次性**把这些值写回充能记录 —— 冷却、次数与恢复的 bonus 在舰船部署时烘焙，运行期改动这几项不会反映到本场战斗 (重新部署才重算)；
 
 而直接调用 `spec.getRange(stats)` / `stats.getSystemRangeBonus().computeEffective(...)` 的读取 (如本节示例的 AI 每次决策现取有效射程) 是即时的。
 :::
@@ -131,7 +130,7 @@ getSystemRegenBonus().computeEffective(spec.regen)       → getRegen(stats)
    - `progress` 的语义按目标态不同 (`IN` → 前摇进度、`OUT` → 后摇进度、`COOLDOWN` → 冷却比例、`ACTIVE` → 时长比例)；`deactivate()` → `forceDeactivate()` 直接进入 `COOLDOWN`。
    - 它适合脚本 / 调试逻辑，**禁止**用它在正常流程里 "代替" 关闭 —— 它会跳过 `systemChargingDown` / `systemDeactivated` 回调的一部分语义。
 4. **stats 脚本的可见性边界**：`apply` 只在 `effectLevel > 0`(`IN`/`ACTIVE`/`OUT`) 或 `.system` 开启 `runScriptWhileIdle` 时每帧被调用；`effectLevel` 归零时 (进入 `COOLDOWN`/`IDLE`、舰船撤退或解体)`unapply` 被调用一次。
-   - **`COOLDOWN` 与 `IDLE` 两态在 stats 脚本里不可见**—— 需要观察这两态的时机用 AI 角色或战斗插件。
+   - **`COOLDOWN` 与 `IDLE` 两态在 stats 脚本里不可见** —— 需要观察这两态的时机用 AI 角色或战斗插件。
    - `getStatusData` 只对用户舰船每帧按 `index = 0、0、1...` 查询 (上限 7 个)。
    - `runScriptWhilePaused`(默认 `false`) 控制暂停期间是否额外运行脚本 (`advanceEvenIfPaused`)。
 5. **暂停时状态机不推进**：系统随舰船推进 (系统的每帧推进由 `Ship.advance` 驱动)，暂停分支只推进用户舰与地图 (前置单元已证)，因此 `effectLevel` 冻结在暂停前的值；AI 角色与 stats 脚本也随之停摆，脚本里**不必**再做 `isPaused()` 判断 (做了也无害，成熟实例仍保留)。
@@ -152,7 +151,7 @@ getSystemRegenBonus().computeEffective(spec.regen)       → getRegen(stats)
 由通道 3 引出的两个关键事实 (`ShipAPI.getAIFlags()`)：
 
 - **`getAIFlags()` 永不返回 null**：非 AI 舰船 (用户舰) 会用到时才创建一份 flag 容器，以 `"nonAI_SAIF_" + shipId` 为键存在引擎 customData 里：
-  - 但**非 AI 舰船没有任何每帧刷新者**——`TARGET_FOR_SHIP_SYSTEM` 只会被舰船 AI 写入，用户舰的这份 flag 无人写入、也永不自动过期。
+  - 但**非 AI 舰船没有任何每帧刷新者** ——`TARGET_FOR_SHIP_SYSTEM` 只会被舰船 AI 写入，用户舰的这份 flag 无人写入、也永不自动过期。
 
 ::: caution 读取 flag 前必须判 "舰船是否有 AI"
 `ship.getShipAI() == null`(用户舰) 时 flag 语义不可用，回退 `getShipTarget()`。成熟实例正是这个判空做法。
@@ -620,7 +619,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`(可用 `jar tf` 核对)
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`(可用 `jar tf` 核对)。
 
 ## 验证方案
 
@@ -639,7 +638,7 @@ gradle jar
 
 - **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
 - **数据接入**：按数据接入片段接入后启动游戏，日志出现 `Loading ship system [data/shipsystems/GearIn_targetingsystem.system]` 与 `Applying data from ship_systems.csv to [GearIn_targetingsystem]`：没有与 `GearIn_targetingsystem` 相关的 `ERROR`。
-- **用户侧手动激活 (`GearIn_test` 战役或模拟战，`GearIn_artizan` 已挂载)**：无目标时按 U——**没有任何反应**(`isUsable` 返回 false，规则 1；日志无状态变化)；连续空按约 2 秒后出现失败音。鼠标右键锁定一艘敌舰 (`getShipTarget()` 非 null) 后按 U—— 系统正常进入 `IN`，日志出现。
+- **用户侧手动激活 (`GearIn_test` 战役或模拟战，`GearIn_artizan` 已挂载)**：无目标时按 U——** 没有任何反应** (`isUsable` 返回 false，规则 1；日志无状态变化)；连续空按约 2 秒后出现失败音。鼠标右键锁定一艘敌舰 (`getShipTarget()` 非 null) 后按 U—— 系统正常进入 `IN`，日志出现。
   ```text
     GearIn targeting stats: state null -> IN effectLevel=0.0 GearIn targeting stats: state IN -> ACTIVE effectLevel=1.0 GearIn targeting stats: state ACTIVE -> OUT effectLevel=1.0 GearIn targeting stats: unapply effect (id=GearIn_targetingsystem effect)
   ```

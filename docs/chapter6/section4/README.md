@@ -18,7 +18,7 @@
 
 ## 前置知识
 
-- [C6-S1] 的 Java 工具链和 `mod_info.json`；
+- [C6-S1] 的 Java 工具链、入口类和 `mod_info.json` 结构；
 - [C6-S2] 的生命周期回调；
 - [C6-S3] 的 `Global.getSettings()` 和日志入口；
 - [C1-S1] 的 MOD 数据文件编码要求。
@@ -101,5 +101,3 @@ settings 读取有清晰的边界：对象键先合并，取值方法再按类�
 
 - `com.fs.starfarer.api.SettingsAPI`：`getSettingsJSON`、`getString`、`getFloat`、`getInt`、`getBoolean`、`getColor`、`optBoolean`、`resetCached`；
 - `data/config/settings.json`：设置键和值的来源；
-- [C12-S1]：MOD 文本与 JSON 文件读取；
-- [C12-S3]/[C12-S4]：common 数据读取与写入；

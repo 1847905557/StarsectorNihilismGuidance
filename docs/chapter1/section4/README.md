@@ -15,11 +15,9 @@
 
 ## 前置知识
 
-本节假设您已完成普通舰船的完整制作流程 [C1-S2]：
-
-- 在舰船编辑器中制作一艘普通舰船；
-- 在 `ship_data.csv` 中填写不至于让游戏报错的数据；
-- 使用控制台 `Addship` 获取舰船，以及用 `starsector.log` 排查加载问题。
+- [C1-S2] 的舰船编辑器操作与普通舰船制作流程；
+- [C1-S2] 的 `ship_data.csv` 登记规则；
+- [C1-S2] 的 `Addship` 使用方法与 `starsector.log` 排错方法。
 
 ## 获取贴图
 
@@ -80,7 +78,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 相位舰船的 `shield type` **必须填写 `PHASE`**，`defense id` 必须填写实际右键相位系统，例如原版 `phasecloak`。CSV 中的相位激活与维持幅能字段也必须填写。
 
-该行的 `tags` 同样按 [C1-S3]"提前准备" 的建议填写为 `GearIn_bp`。
+该行的 `tags` 同样建议填写为 `GearIn_bp`。
 
 ## 设置相位光效贴图
 
@@ -128,7 +126,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 本节在普通舰船链的基础上完成了一种专用约束的完整流程：相位舰必须同时满足 CSV 防御字段与命名资源约定。
 
-虽然相位舰给人一种非常酷炫的感觉，但它的本质和常规带盾舰船一样简单，甚至严格来说它还更那么不稳定一些。另外，相位舰船最好内置 `phasefield` 插件，但后续小节才会提到如何进行处理。
+虽然相位舰给人一种非常酷炫的感觉，但它的本质和常规带盾舰船一样简单，甚至严格来说它还更那么不稳定一些。另外，相位舰船最好内置 `phasefield` 插件；内置船插的处理见 [C1-S6]。
 
 ## 建议参考项
 

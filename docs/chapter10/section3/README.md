@@ -19,17 +19,16 @@
 
 ## 前置知识
 
-本节假设您已完成以下单元的学习，示例的注册调用点、触发势力与验证对象都来自这些成果：
-
-- MOD 目录结构、`starsector.log` 与编译链路 [C1-S1]、[C6-S1]。
-- 注册入口与回调心智模型 [C2-S1]；
-- 势力 `gear_industry` 的定义 —— 本节示例用它做触发条件，只消费不定义 [C3-S2]。
-- 新档生成入口 —— 累计工程为齿轮工业行星提供市场实体，是本节示例的可观察对象来源 [C3-S3]。
-- `modPlugin` 生命周期回调与 persistent data `CLASS_MARK` 首次进入检查 —— 本节的注册调用点挂在 `onGameLoad` 里，但**不用**这种一次性检查 [C6-S2]。
-- `Global.getSector()` 的 null 语义 —— 注册必须发生在生涯引擎建立之后 [C6-S3]。
-- 脚本注册与 persistent data 一次性检查 —— 本节的 transient 插件注册与之形成对照 [C8-S1]。
-- 生涯事件监听器 —— 生涯插件与监听器是两条不同的扩展通道，本节末尾有对照 [C10-S2]。
-- Rules 与记忆 ——facts 写入的 `$` 前缀记忆变量将由规则系统消费 [C11-S3]、[C11-S4]。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
+- [C2-S1] 的注册入口与回调模型；
+- [C3-S2] 的 `gear_industry` 势力定义；
+- [C3-S3] 的新档生成入口、行星与市场实体；
+- [C6-S1] 的 Java 构建与 JAR 输出；
+- [C6-S2] 的 `modPlugin` 生命周期与 `onGameLoad` 回调；
+- [C6-S3] 的 `Global.getSector()` 阶段语义；
+- [C8-S1] 的生涯脚本注册与持久数据判断；
+- [C10-S2] 的生涯事件监听器通道；
+- [C11-S3] 的 Rules 命令与 [C11-S4] 的 `$` 前缀记忆变量。
 
 ## 术语
 
@@ -51,9 +50,9 @@
 | 环节 | 文件或 API | 行为 |
 |---|---|---|
 | 注册 | `SectorAPI.registerPlugin(CampaignPlugin)`(`com.fs.starfarer.api.campaign.SectorAPI`)| 写入插件登记表 (`addPlugin`，去重规则见下行)|
-| 去重 | 插件登记表 `addPlugin` | 若 `getId()` 非 `null`：先 `removePlugin(getId())` 再追加 ——**后注册的同 id 插件静默顶掉先注册者**；`getId()` 为 `null` 则不去重、直接追加 |
+| 去重 | 插件登记表 `addPlugin` | 若 `getId()` 非 `null`：先 `removePlugin(getId())` 再追加 ——** 后注册的同 id 插件静默顶掉先注册者**；`getId()` 为 `null` 则不去重、直接追加 |
 | 注销 | `SectorAPI.unregisterPlugin(String pluginId)`(`com.fs.starfarer.api.campaign.SectorAPI`)| 按 id 移除**第一个**匹配项；id 不匹配则什么都不做 |
-| 存储 | 插件登记表 | 非 transient 插件随存档序列化、读档恢复；transient 插件写档时被过滤、不进存档 ——**这就是 transient 与非 transient 的存档边界** |
+| 存储 | 插件登记表 | 非 transient 插件随存档序列化、读档恢复；transient 插件写档时被过滤、不进存档 ——** 这就是 transient 与非 transient 的存档边界** |
 | 竞争 | 插件登记表的裁决逻辑 | 所有 picker 共用的裁决器 (见 "竞争裁决与优先级")|
 | 聚合入口 | `SectorAPI.getPluginPicker()`(`com.fs.starfarer.api.campaign.SectorAPI`，返回 `PluginPickerAPI`)| 公开暴露 6 个聚合 picker：`pickFleetStubConverter` ×2、`pickImmigrationPlugin`、`pickAICoreAdminPlugin`、`pickAICoreOfficerPlugin`、`pickFleetInflater`(`com.fs.starfarer.api.campaign.PluginPickerAPI`)；其余 picker 由引擎内部调用 |
 
@@ -85,7 +84,7 @@
 
 :::
 
-`getId()` 与去重的联动：transient 插件每次读档重新注册时，若 `getId()` 返回稳定非 `null` 值，`addPlugin` 先按 id 移除旧实例再追加 ——**重复注册是幂等的**(不会叠加)。
+`getId()` 与去重的联动：transient 插件每次读档重新注册时，若 `getId()` 返回稳定非 `null` 值，`addPlugin` 先按 id 移除旧实例再追加 ——** 重复注册是幂等的** (不会叠加)。
 
 若返回 `null`(未覆写，`BaseCampaignPlugin` 默认)，每次读档后新旧实例并存，picker 被逐个咨询、facts 重复执行。
 
@@ -100,7 +99,7 @@
 1. 按注册顺序对**全部**已注册插件调用本次 picker 的 `pick` 方法，收集所有非 `null` 的 `PluginPick`**。没有 try/catch**—— 任何插件抛出的异常直接沿调用点冒泡。
 2. 一个都没收集到 → 返回 `null`(本次选择没有任何插件接手)。
 3. 只有一个 → 直接返回它的 `plugin`。
-4. 多个 → 按 `priority.ordinal()` 升序稳定排序，返回**最后一个**(即 `ordinal` 最高者)。
+4. 多个 → 按 `priority.ordinal()` 升序稳定排序，返回**最后一个** (即 `ordinal` 最高者)。
 
 关键结论：
 
@@ -112,7 +111,7 @@
 
 "what gets picked when multiple plugins have the same priority is undefined"。
 
-实现是稳定排序 (`Collections.sort`)+ 取最后一项，因此并列时**列表靠后者胜出**、列表顺序取决于注册时机 —— 这是实现观察，不是约定，**禁止依赖**(见 "规则强度")。
+实现是稳定排序 (`Collections.sort`)+ 取最后一项，因此并列时**列表靠后者胜出**、列表顺序取决于注册时机 —— 这是实现观察，不是约定，**禁止依赖** (见 "规则强度")。
 
 :::
 
@@ -160,7 +159,7 @@ MOD 用 `MOD_GENERAL` 及以上就能稳定覆盖原版，用 `CORE_GENERAL` 则
 | `pickReputationActionResponsePlugin(Object, String)` / `(Object, PersonAPI)` | 玩家声望变动 (`adjustPlayerReputation`) 时 | 生涯引擎 |
 | `pickImmigrationPlugin(MarketAPI)` | 殖民地人口/移民计算 | 经 `PluginPickerAPI` 由经济侧消费，内部实现无调用点 |
 | `pickAICoreAdminPlugin(String)` / `pickAICoreOfficerPlugin(String)` | 给殖民地/舰队分配 AI 核心时 | 经 `PluginPickerAPI` 由 UI 侧消费 (插件登记表；注意：战斗中 (COMBAT 状态)AI 核心军官有空实现回退)|
-| `pickFleetInflater(CampaignFleetAPI, Object)` | 舰队生成时填充成员与装配 | 经 `PluginPickerAPI` 消费 (详细讲解在后续专门页面，本节只登记入口)|
+| `pickFleetInflater(CampaignFleetAPI, Object)` | 舰队生成时填充成员与装配 | 经 `PluginPickerAPI` 消费；本节只登记入口与调用时机 |
 
 **Facts(6 个)**—— 触发机制：每次调用对应对象的 `getMemory()` 都会对所有插件重新执行一次，返回值写进传进来的 `MemoryAPI`：
 
@@ -203,38 +202,38 @@ MOD 用 `MOD_GENERAL` 及以上就能稳定覆盖原版，用 `CORE_GENERAL` 则
 
 ## 规则强度
 
-机制、速查与对照都清楚了，动手之前先记下写作约束。**必须**(违反后的可观察结果写在括号里)：
+机制、速查与对照都清楚了，动手之前先记下写作约束。**必须** (违反后的可观察结果写在括号里)：
 
 1. **picker 无法处理时必须返回 `null`**("Return null if this CampaignPlugin implementation doesn't provide one.")。
    - 返回 "占位实例" 或 `plugin == null` 的 `PluginPick` → 顶掉低优先级插件的合法选择后自身不可用：`showInteractionDialog` 拿到 `null` 插件直接返回 `false`(**点击实体什么都不发生，连原版对话都不开**，生涯状态)。
 2. **picker 内不得抛出未处理异常**。
    - 裁决器 `getPriorityPlugin` 没有 try/catch(插件登记表)，异常沿调用点冒泡 → 生涯流程中断、UI 报错 (日志 `ERROR` + 异常堆栈指向本插件的 picker)。
    - 无法处理就返回 `null`，不要抛。
-3. **transient 插件必须在每次 `onGameLoad` 重新注册**("needs to be re-added to the game every time (in ModPlugin.onGameLoad())")。
+3. **transient 插件必须在每次 `onGameLoad` 重新注册** ("needs to be re-added to the game every time (in ModPlugin.onGameLoad())")。
    - 不注册 → 读档后插件缺失、picker 不响应、facts 不写，**无任何报错**。
-4. **transient 插件的注册禁止挂进 persistent data 一次性检查**(机制推导：检查标记写入后注册不再执行，而 transient 实例不被存档保留)。
+4. **transient 插件的注册禁止挂进 persistent data 一次性检查** (机制推导：检查标记写入后注册不再执行，而 transient 实例不被存档保留)。
    - 违反 → 新档一切正常，首次读档后插件永久消失且无报错 (这是与脚本注册策略最显著的差异 —— 脚本要一次性检查、transient 插件不能依赖它)。
-5. **返回的 `PluginPick` 必须携带非 `null` 插件实例**(裁决器只检查 `PluginPick` 非 null，调用点只检查取出的 plugin)。
+5. **返回的 `PluginPick` 必须携带非 `null` 插件实例** (裁决器只检查 `PluginPick` 非 null，调用点只检查取出的 plugin)。
    - 违反 → 高优先级 "废票" 顶掉其他 MOD 的合法选择 (见第 1 条的可观察结果)。
-6. **注册必须发生在生涯引擎建立之后**(`onGameLoad` / `onNewGame`)。
+6. **注册必须发生在生涯引擎建立之后** (`onGameLoad` / `onNewGame`)。
    - 在 `onApplicationLoad` 注册 → `Global.getSector()` 为 `null`，NPE 启动中止。
 7. **facts 回调内禁止调用会再次触发 facts 的 `getMemory()`**(典型：`updateGlobalFacts` 内调 `sector.getMemory()`、`updateEntityFacts` 内调 `entity.getMemory()`)。
    - 每次 `getMemory()` 都会重跑全插件对应 facts(生涯引擎)，自我触发构成无限递归 → `StackOverflowError`。
    - 读记忆用传入的 `memory` 参数或 `getMemoryWithoutUpdate()`。
-8. **禁止依赖同优先级并列的结果**("what gets picked when multiple plugins have the same priority is undefined")。
+8. **禁止依赖同优先级并列的结果** ("what gets picked when multiple plugins have the same priority is undefined")。
    - 实现是稳定排序取列表靠后者，但这是实现观察、非约定 → 与其他 MOD 同层竞争时谁生效不保证 (版本升级可能反转)。
    - 要保证自己生效，用明确的层级差 (MOD 至少 `MOD_GENERAL`)。
 
-**建议**(违反的可观察结果写在括号里)：
+**建议** (违反的可观察结果写在括号里)：
 
-- **覆写 `getId()` 返回稳定唯一值**("should be unique. Can be null, but shouldn't.")。返回 `null` → 注册不去重，transient 插件每次读档后实例累积，picker 被咨询多次、facts 重复写入 (日志成双)。
-- **插件 id 全局唯一、带 MOD 前缀**(如 `GearIn_CampaignPlugin`)。id 撞车 → 后注册的同 id 插件静默顶掉先注册者 (去重按 id 全局生效，跨 MOD 也如此)。
+- **覆写 `getId()` 返回稳定唯一值** ("should be unique. Can be null, but shouldn't.")。返回 `null` → 注册不去重，transient 插件每次读档后实例累积，picker 被咨询多次、facts 重复写入 (日志成双)。
+- **插件 id 全局唯一、带 MOD 前缀** (如 `GearIn_CampaignPlugin`)。id 撞车 → 后注册的同 id 插件静默顶掉先注册者 (去重按 id 全局生效，跨 MOD 也如此)。
 - **默认 `isTransient()` 返回 `true`**("should be transient unless they need to save data")。一律返回 `false` → 插件实例随存档序列化 (XStream 边界风险、存档体积增长、卸载 MOD 后残留)，本可瞬态的状态被意外持久化。
 - **facts 写入的变量过期时间设为 `0`**("Any variables set here should have an expiration time of 0, since this method will be called every time the getMemory() method is called")。
   - 非 0 过期 → 事实滞留，规则系统读到陈旧值、记忆被污染。
-- **facts 键使用 MOD 专属前缀**("Mod-added facts should have their variable names use a mod-specific prefix to avoid conflicts")。无前缀 → 与原版 `$name`、`$relValue` 等键或别的 MOD 键互相覆盖。
-- **priority 按语义层级选择**(`MOD_GENERAL` 整体替换 / `MOD_SET` 一类情形 / `MOD_SPECIFIC` 特定遭遇 / `HIGHEST` 慎用)。用错层级 → 过度覆盖 (所有对话被换成自己的) 或覆盖不足 (被更高优先级插件顶掉)。
-- **picker 与 facts 里不做重活**(机制事实：pick 发生在对话打开、战斗创建等交互路径上；facts 在每次 `getMemory()` 时对全部插件重跑)。重活 → 卡顿、频繁重复执行。
+- **facts 键使用 MOD 专属前缀** ("Mod-added facts should have their variable names use a mod-specific prefix to avoid conflicts")。无前缀 → 与原版 `$name`、`$relValue` 等键或别的 MOD 键互相覆盖。
+- **priority 按语义层级选择** (`MOD_GENERAL` 整体替换 / `MOD_SET` 一类情形 / `MOD_SPECIFIC` 特定遭遇 / `HIGHEST` 慎用)。用错层级 → 过度覆盖 (所有对话被换成自己的) 或覆盖不足 (被更高优先级插件顶掉)。
+- **picker 与 facts 里不做重活** (机制事实：pick 发生在对话打开、战斗创建等交互路径上；facts 在每次 `getMemory()` 时对全部插件重跑)。重活 → 卡顿、频繁重复执行。
 
 ## 完整最小例
 
@@ -351,7 +350,7 @@ public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
 **同包协作**：`refreshFact()` 经同包静态常量 `GearInCampaignPlugin.DEMO_GLOBAL_FACT` 读事实键。
 
-读 `Global.getSector().getMemory()`——**这次读取本身就会触发全插件 (含 `GearInCampaignPlugin`) 的 `updateGlobalFacts`**，所以显示的值必然反映 "已注册 + facts 生效" 两个事实。
+读 `Global.getSector().getMemory()`——** 这次读取本身就会触发全插件 (含 `GearInCampaignPlugin`) 的 `updateGlobalFacts`**，所以显示的值必然反映 "已注册 + facts 生效" 两个事实。
 
 这里只读不写，不构成递归 (递归规则见 "规则强度")。
 
@@ -551,7 +550,7 @@ gradle jar
 
 picker 是 "咨询制"：返回非 `null` 就接管这次处理，因此条件必须收窄，否则就是故障分析第 3 条的过度覆盖；无法处理时返回 `null` 永远是对的。八条必须项里最常踩的是三处：无法处理时忘了返回 `null`、transient 没在每次读档重注册、返回了空插件 `PluginPick`。排查时从可观察结果反推：插件消失查注册时机与存档边界，重复咨询查 `getId()`，对话被抢或抢不到查条件宽度与优先级层级，点击无反应查是否返回了空插件或抛了异常。
 
-与生涯事件监听器的对照：`CampaignEventListener` 在事件发生后被动接收回调，生涯插件在事件发生前被咨询；`GenericPluginManagerAPI` 是另一套 int 优先级注册表，排查 "注册了却从未被调用" 时先分清用的是哪一套。本节写入的 `$` 前缀事实与选中的对话框，正是后续规则系统与交互页面要消费的输入，生涯插件这条扩展通道至此形成完整流程。
+与生涯事件监听器的对照：`CampaignEventListener` 在事件发生后被动接收回调，生涯插件在事件发生前被咨询；`GenericPluginManagerAPI` 是另一套 int 优先级注册表，排查 "注册了却从未被调用" 时先分清用的是哪一套。本节写入的 `$` 前缀事实供 [C11-S1] 的 Rules 对话读取，选中的对话框供 [C8-S9] 的交互对话流程使用，生涯插件这条扩展通道至此形成完整流程。
 
 ## 建议参考项
 

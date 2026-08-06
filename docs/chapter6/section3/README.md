@@ -19,14 +19,14 @@
 
 ## 前置知识
 
-开始本节前，您应已掌握以下基础：
-
-- MOD 目录结构与 `starsector.log`[C1-S1]。
-- 战斗插件与每帧回调模型 —— 战斗域的代码入口 [C7-S1]。
-- 生涯概念：`SectorAPI` 属于生涯域；`GearIn_test` 测试战役 [C3-S1]。
-- 三个 GearIn 声音 ID 的资产规格、注册层与完整使用方讲解 [C5-S1] / [C5-S2] / [C5-S3]。
-- 编译 JAR 的工程链路与 `jars\GearIndustry.jar` 产物 [C6-S1]。
-- `modPlugin` 生命周期回调与 `onApplicationLoad` 禁令 [C6-S2]。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 使用方法；
+- [C3-S1] 的生涯对象、测试战役与装配部署；
+- [C5-S1] 的 OGG 资源规格；
+- [C5-S2] 的声音注册、sound ID 匹配与合并规则；
+- [C5-S3] 的声音消费入口与播放约定；
+- [C6-S1] 的 Java 编译、JAR 输出与 MOD 声明链路；
+- [C6-S2] 的 `modPlugin` 生命周期与 `onApplicationLoad` 阶段边界；
+- [C7-S1] 的战斗插件与每帧回调模型。
 
 ## 文件与 API 链路
 
@@ -97,10 +97,10 @@ Global 的引用由内核在固定的时机登记 (调用点详见 "生命周期
 2. **`getSector()` / `getFactory()` 只在第一个生涯引擎创建之前为 null**，即资源加载期 (`onApplicationLoad` 阶段，即 modPlugin 生命周期禁令所辖的窗口)；一旦创建，`Global` 的引用**只会被替换、不会被置回 null**。
    - 退出生涯回主菜单并不清空 `Global`：`Global` 对生涯引擎的引用在退出后仍然保留 (不会置回 null)，`getSector()` 仍返回旧对象。
    - 可观察结果：退出到主菜单后 `getSector()` 仍返回**旧生涯引擎对象 (非 null)**，其数据已随存档关闭而失效。
-   - 因此 "是否在生涯中"**必须**用 `Global.getCurrentState() == GameState.CAMPAIGN` 判断，不能依赖 `getSector() == null`。
-3. **`getCombatEngine()` 的战斗外取值不是 null，而是空引擎**：战斗引擎的首次创建发生在主菜单初始化阶段 —— 首次初始化生涯引擎时会一并创建；每场战斗结束后，内核先销毁旧引擎 (用 `Global.setCombatEngine(null)` 清空引用)**再立即重建**一个新引擎。
-   - 可观察结果：战斗外 `getCombatEngine()` 非 null 而是刚重建的空引擎；战斗结束后缓存的旧引用是已清空的死对象 (`getShips()` 为空；`getPlayerShip()` 也不是 null——它**永不返回 null**，`playerShip` 未设置时延迟创建 "Command Shuttle" 假舰)。
-   - 因此：**禁止**跨战斗缓存引擎引用，每次需要时现取；"是否在战斗中" 用 `getCurrentState() == GameState.COMBAT` 判断；"用户是否已部署"**禁止**用 `getPlayerShip() == null` 判断 (战斗内该表达式恒为 `false`，依赖它的分支永远不执行、静默失效)，应读 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()` 是否非空 (判据细则见战斗域部署判断主题)。
+   - 因此 "是否在生涯中"** 必须**用 `Global.getCurrentState() == GameState.CAMPAIGN` 判断，不能依赖 `getSector() == null`。
+3. **`getCombatEngine()` 的战斗外取值不是 null，而是空引擎**：战斗引擎的首次创建发生在主菜单初始化阶段 —— 首次初始化生涯引擎时会一并创建；每场战斗结束后，内核先销毁旧引擎 (用 `Global.setCombatEngine(null)` 清空引用)** 再立即重建**一个新引擎。
+   - 可观察结果：战斗外 `getCombatEngine()` 非 null 而是刚重建的空引擎；战斗结束后缓存的旧引用是已清空的死对象 (`getShips()` 为空；`getPlayerShip()` 也不是 null—— 它**永不返回 null**，`playerShip` 未设置时延迟创建 "Command Shuttle" 假舰)。
+   - 因此：**禁止**跨战斗缓存引擎引用，每次需要时现取；"是否在战斗中" 用 `getCurrentState() == GameState.COMBAT` 判断；"用户是否已部署"** 禁止**用 `getPlayerShip() == null` 判断 (战斗内该表达式恒为 `false`，依赖它的分支永远不执行、静默失效)，应读 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()` 是否非空 (判据细则见战斗域部署判断主题)。
 4. **`getCurrentState()` 由当前所处阶段实时计算**：处于战斗状态 → `COMBAT`，处于生涯状态 → `CAMPAIGN`，处于主菜单 → `TITLE`，其余状态 (资源加载等)→ `null`。它是阶段判断的唯一可靠入口。
 
 ::: info 为什么 `getCurrentState()` 返回 null 也是有效信号？
@@ -142,13 +142,13 @@ Global.getLogger(GearInGlobalAccess.class).info("任意内容");
 
 | 方法 | 用途 | 约定 (违反后的可观察结果)|
 |---|---|---|
-| `playUISound(String id, float pitch, float volume)` | 一次性 UI 音效，无播放点 | 素材**应为双声道**(API 注释原文 "UI sound files should be stereo")；双声道素材用 `playSound` 播放时在引擎内无法正确播放 (API 注释原文 "Sound file must be *mono* for it to be properly played within the engine")|
+| `playUISound(String id, float pitch, float volume)` | 一次性 UI 音效，无播放点 | 素材**应为双声道** (API 注释原文 "UI sound files should be stereo")；双声道素材用 `playSound` 播放时在引擎内无法正确播放 (API 注释原文 "Sound file must be *mono* for it to be properly played within the engine")|
 | `playSound(String id, float pitch, float volume, Vector2f loc, Vector2f vel)` | 位置音效，在 `loc` 处播放并按方位与距离计算 | 素材**必须为 mono**(同上前提)**；`loc` 与 `vel` 都必须非 null**—— 播放声音时引擎直接解引用 `loc.x` / `vel.x`，传 null 在调用点抛 `NullPointerException` |
-| `playLoop(String id, Object playingEntity, float pitch, float volume, Vector2f loc, Vector2f vel)` | 循环音效 | **必须每帧调用，否则循环淡出**(API 注释原文 "Must be called every frame or the loop will fade out")；`playingEntity` **必填**—— 用于区分同一实体的循环 (同实体同循环只播一个)；素材建议 mono；调用方负责在每帧回调里续期 (完整讲解见声音消费主题)|
+| `playLoop(String id, Object playingEntity, float pitch, float volume, Vector2f loc, Vector2f vel)` | 循环音效 | **必须每帧调用，否则循环淡出** (API 注释原文 "Must be called every frame or the loop will fade out")；`playingEntity` **必填** —— 用于区分同一实体的循环 (同实体同循环只播一个)；素材建议 mono；调用方负责在每帧回调里续期 (完整讲解见声音消费主题)|
 
 其他常用成员 (约定均出自 `SoundPlayerAPI` javadoc)：
 
-- `playCustomMusic(int fadeOutIfAny, int fadeIn, String musicSetId)`：切换音乐集；**淡入淡出秒数必须是整数**(javadoc 原文 "have to be whole numbers")，`musicSetId` 传 `null` 停止当前曲且不换新曲。
+- `playCustomMusic(int fadeOutIfAny, int fadeIn, String musicSetId)`：切换音乐集；**淡入淡出秒数必须是整数** (javadoc 原文 "have to be whole numbers")，`musicSetId` 传 `null` 停止当前曲且不换新曲。
 - `getCurrentMusicId()`：返回当前曲目 ID；无播放时返回字符串 `"nothing"`(javadoc 原文)。
 - `restartCurrentMusic()` / `getCurrentMusicId()` / `playCustomMusic` / `setSuspendDefaultMusicPlayback`：javadoc 标注线程安全，可从非主循环线程调用。
 

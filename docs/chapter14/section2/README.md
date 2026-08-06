@@ -19,13 +19,12 @@
 
 ## 前置知识
 
-本节建立在这些既有内容之上：
-
-- 势力注册 [C3-S2]：`data/world/factions/factions.csv` 与 `gear_industry.faction`——Nexerelin 的势力配置只针对**已注册**的势力 id；
-- 新建生涯生成时序与本 MOD 的生成入口插件 [C3-S3]：`GearInSystemGenPlugin` 与 `GearInSystemGenerator`，本节的生成分支挂在 `onNewGame` 上；
-- 舰队工厂链 [C8-S4]：`FleetParamsV3` 与 `FleetFactoryV3.createFleet`—— 特遣队舰队正是沿这条链生成的，本节直接使用其结果；
-- 软依赖完整处理链 [C14-S1]：`isModEnabled(id)` 判据、类存在性判据、引用收敛与缺依赖降级；
-- 运行期注册检查与 MOD 插件回调时机 [C8-S1]、[C6-S2]：`onGameLoad` 与 persistent data 检查；`onNewGame` 只在新档触发。
+- [C3-S2] 的势力注册、`factions.csv` 与势力 ID；
+- [C3-S3] 的新建生涯生成时序、生成入口插件和 `onNewGame` 调用时机；
+- [C8-S4] 的 `FleetParamsV3` 与 `FleetFactoryV3.createFleet` 舰队创建；
+- [C14-S1] 的软依赖 `isModEnabled(id)`、类存在性判断、引用隔离和缺依赖降级；
+- [C8-S1] 的运行期注册检查与 persistent data；
+- [C6-S2] 的 MOD 插件回调与 `onGameLoad` 调用时机。
 
 ## 术语
 
@@ -76,7 +75,7 @@ gear_industry
 
 读取链 (`Starsector\mods\Nexerelin`)：
 
-1. `NexConfig.loadModFactionList()`：`Global.getSettings().getMergedSpreadsheetDataForMod("faction", "data/config/exerelinFactionConfig/mod_factions.csv", "nexerelin")` ——**跨全部已启用 MOD 合并**(master 是 Nexerelin 自己的文件，非 master 文件按 `faction` 列追加/替换，即跨 MOD 合并语义)，所以 MOD 只需要提交自己的行。
+1. `NexConfig.loadModFactionList()`：`Global.getSettings().getMergedSpreadsheetDataForMod("faction", "data/config/exerelinFactionConfig/mod_factions.csv", "nexerelin")` ——** 跨全部已启用 MOD 合并** (master 是 Nexerelin 自己的文件，非 master 文件按 `faction` 列追加/替换，即跨 MOD 合并语义)，所以 MOD 只需要提交自己的行。
 2. `NexConfig.loadSettings()`：先按 `exerelin_config.json` 的 `builtInFactions` 加载内置势力配置；再遍历 `mod_factions.csv` 名单，对每个**已注册**的势力 (`NexUtilsFaction.doesFactionExist(factionId)` 校验 —— 势力必须先经势力注册页的 `factions.csv` 注册) 创建 `NexFactionConfig`。
 3. `NexFactionConfig.loadFactionConfig()`：`Global.getSettings().getMergedJSONForMod("data/config/exerelinFactionConfig/" + factionId + ".json", "nexerelin")` —— 同样按 MOD id 合并，**对象按键合并**，MOD 只提交自己的键，不要复制 Nexerelin 的同名文件。
 4. 运行期读取入口：`NexConfig.getFactionConfig(factionId)`—— 已注册返回对应配置；**未注册返回默认配置 (neutral 的配置，`playableFaction=false`)，不抛异常**。
@@ -152,9 +151,7 @@ Nexerelin 启用后，新档的星区内容分两种模式，MOD 的固定内容
 适配器组合判据 (启用检测在前、null 判断在中、模式判定在后) 是覆盖一切调用点的唯一安全写法。
 :::
 ::: info 为什么新档 `onNewGame` 阶段也要判空 (时序)
-新档流程里 `SectorManager` 的创建点是 Nexerelin 的**入口生成器**——
-
-Nexerelin 的 `settings.json` 把 `newGameCreationEntryPoint` 覆盖为 `exerelin.world.ExerelinNewGameSetup`("禁止覆盖" 警告针对普通 MOD 重写原版键，Nexerelin 接管该键是其设计)。
+新档流程里 `SectorManager` 的创建点是 Nexerelin 的**入口生成器** —— Nexerelin 的 `settings.json` 把 `newGameCreationEntryPoint` 覆盖为 `exerelin.world.ExerelinNewGameSetup`("禁止覆盖" 警告针对普通 MOD 重写原版键，Nexerelin 接管该键是其设计)。
 
 `ExerelinNewGameSetup.generate(sector)` 先执行：Corvus 模式跑 `VanillaSystemsGenerator` 生成原版星系，随机星域跑 `ExerelinCoreSystemGenerator`；
 
@@ -185,9 +182,7 @@ Nexerelin 的 `settings.json` 把 `newGameCreationEntryPoint` 覆盖为 `exereli
 
 读取链：`GBDataManager.loadDefs()`(静态块，`getMergedJSONForMod("data/config/exerelin/groundBattleDefs.json", "nexerelin")`—— 同样跨 MOD 按键合并)。
 
-顶层键 `industries` / `conditions` / `abilities` / `unitTypes` / `plugins` / `natoAlphabet` 全部硬读取 (`getJSONObject`/`getJSONArray`)——
-
-**顶层结构错误时直接抛 `RuntimeException("Failed to load ground battle defs", ex)`**。
+顶层键 `industries` / `conditions` / `abilities` / `unitTypes` / `plugins` / `natoAlphabet` 全部硬读取 (`getJSONObject`/`getJSONArray`)—— **顶层结构错误时直接抛 `RuntimeException("Failed to load ground battle defs", ex)`**。
 
 `industries` 条目 (键 = 产业 id，原版示例 `heavybatteries`/`grounddefenses`/`patrolhq` 等) 字段：
 
@@ -228,9 +223,7 @@ MOD 只需提交自己的键；**不要复制 Nexerelin 的文件**。
 
 最后一个链路回到代码：特遣队命名器。它实现 Nexerelin 的接口，但只被 Nexerelin 按配置类名加载 —— 正是 "收敛" 规则里那个唯一例外。
 
-特遣队 (special forces) 是势力的精锐舰队：`SpecialForcesManager` 按点数 (受 `specialForcesPointMult`/`specialForcesMaxFleets` 等配置) 积累生成，
-
-`SpecialForcesIntel` 用 `FleetParamsV3` + `FleetFactoryV3.createFleet` 造舰 (舰队工厂链)、投放后命名。
+特遣队 (special forces) 是势力的精锐舰队：`SpecialForcesManager` 按点数 (受 `specialForcesPointMult`/`specialForcesMaxFleets` 等配置) 积累生成，`SpecialForcesIntel` 用 `FleetParamsV3` + `FleetFactoryV3.createFleet` 造舰 (舰队工厂链)、投放后命名。
 
 命名器接入：
 

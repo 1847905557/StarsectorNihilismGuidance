@@ -17,12 +17,10 @@
 
 ## 前置知识
 
-本节的可观察结果全部落在日志与战斗画面里，示例还要编进 JAR、遵守引擎生命周期，请先确认以下既有知识：
-
-- MOD 目录结构与 `starsector.log` 日志 [C1-S1]：本节所有可观察结果都落在日志里。
-- 战役 (mission) 与生涯 (campaign) 概念，以及 `GearIn_test` 测试战役 [C3-S1]。
-- 编译 JAR 链路 [C6-S1]：本节示例编入同一个 `jars\GearIndustry.jar`。
-- `Global` 生命周期 —— 战斗引擎每场战斗结束销毁后立即重建、战斗外是非 null 空引擎、禁止跨战斗缓存引擎引用 [C6-S3]：本节把同一条纪律延伸到插件实例，实例字段随战斗生灭。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
+- [C3-S1] 的模拟战入口与战斗验证方法；
+- [C6-S1] 的 Java 构建、JAR 输出与入口类；
+- [C6-S3] 的 `Global` 生命周期、战斗引擎实例边界与跨战斗引用规则。
 
 ## 每帧是什么
 
@@ -51,7 +49,7 @@ advance(float amount, List<InputEventAPI> events)
 - **key 唯一**：`gearInPauseAwarePlugin` 全局唯一，带 `GearIn_` 前缀的可读命名同理。key 与其他来源重复时后读覆盖先读 —— 您的插件可能被别人的覆盖，通常还没报错。
 - **值是完整类名**：包名.类名，必须与文件里的 `package` + `class` 完全一致。
 
-游戏启动时读取这个类名并注册；**每场战斗开始时为它创建一个新实例**，之后每帧调用实例的 `advance`；战斗结束实例销毁。`engine.addPlugin(...)` 是战斗内的另一种注册方式 (本节示例之外的插件用它)，注册路径汇总在 [C7-S6]。
+游戏启动时读取这个类名并注册；**每场战斗开始时为它创建一个新实例**，之后每帧调用实例的 `advance`；战斗结束实例销毁。`engine.addPlugin(...)` 是战斗内的另一种注册方式 (本节示例之外的插件用它)，完整注册与移除见 [C7-S5]。
 
 ## 完整示例：GearInPauseAwarePlugin
 
@@ -134,8 +132,8 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 要点：
 
 - **`extends BaseEveryFrameCombatPlugin`**：基类提供其余回调 (输入处理、渲染等) 的空实现，只需覆写 `advance`。
-- **5 个字段**：插件自己记的数 (累计秒数、距上次报告多久、调用次数、暂停帧次数)。字段随实例生存：每场战斗一个新实例，数字从零开始 ——**不要**把实例缓存到下一场战斗，否则 `elapsed` 会从上一场接着涨。
-- **`advance` 三件事按顺序**：`calls++` 在暂停检查**之前**(暂停帧也计数，这是 "暂停期间回调照常执行" 的观测点)；引擎引用**用到时才取**(`init()` 已废弃、不保证先于 `advance` 调用)；**暂停检查** `if (engine.isPaused()) { pausedCalls++; return; }` —— 暂停帧只计数、不推进状态。
+- **5 个字段**：插件自己记的数 (累计秒数、距上次报告多久、调用次数、暂停帧次数)。字段随实例生存：每场战斗一个新实例，数字从零开始 ——** 不要**把实例缓存到下一场战斗，否则 `elapsed` 会从上一场接着涨。
+- **`advance` 三件事按顺序**：`calls++` 在暂停检查**之前** (暂停帧也计数，这是 "暂停期间回调照常执行" 的观测点)；引擎引用**用到时才取** (`init()` 已废弃、不保证先于 `advance` 调用)；**暂停检查** `if (engine.isPaused()) { pausedCalls++; return; }` —— 暂停帧只计数、不推进状态。
 - **`report`**：`Global.getLogger(...)` 写日志；`addFloatingText(...)` 在玩家舰船位置显示浮动文字 (3 秒后消失)。
 
 ## 暂停实验：亲眼看到每帧
@@ -206,7 +204,7 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 
 排错时沿注册条目、构建产物、状态推进的顺序核对，比对着画面猜测更快。暂停语义是本节的核心判断：游戏不会替您跳过暂停帧，凡是推进状态、累计时间的代码，都要先过 `engine.isPaused()` 这一道检查。
 
-插件注册的完整生命周期 (三条注册路径、`addPlugin` / `removePlugin`、战斗结束无清理回调) 与监听器系统，都在 [C7-S6] 展开。
+插件注册的完整生命周期 (三条注册路径、`addPlugin` / `removePlugin`、战斗结束无清理回调) 与监听器系统见 [C7-S5]。
 
 ## 建议参考项
 

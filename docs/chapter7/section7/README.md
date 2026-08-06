@@ -19,16 +19,14 @@
 
 ## 前置知识
 
-本节建立在以下前置知识之上，需要您已经理解：
-
-- 命名约定 [C1-S1]：MOD ID `gear_in`、数据 / 资源 key 前缀 `GearIn_`、包 `data.scripts.gearin.<domain>`、类 `GearIn<Subject>`；
-- 船插数据行 [C2-S2]：`hull_mods.csv` 的 `id` / `script` / `desc` 列、`HullModSpecAPI`、效果类会话级单例、`isApplicableToShip` / `getUnapplicableReason`、内置船插 (`builtInMods`)；
-- stats 修饰体系 [C7-S3]：`MutableStat` 修饰与 modifier ID 必须遵守的规则、`applyEffectsBeforeShipCreation` 的三个调用时机 (生涯重建重放 / `Ship` 构造 / 装配·预览场景；"加入引擎" 对应 `applyEffectsAfterShipAddedToCombatEngine`，延迟到舰船实际入引擎时、每船仅一次)；
-- 公开监听器系统 [C7-S5]：`com.fs.starfarer.api.combat.listeners` 三块注册表面、每类监听器的放置规则、`CombatListenerUtil` 派发、`hasListenerOfClass` 防重复判断；
-- 战斗状态读取与时间语义 [C7-S2]：每帧调用与暂停语义；
-- 编译 JAR 链路 [C6-S1]：把 Java 类编入 `jars/GearIndustry.jar`；
-- `Global` 生命周期 [C6-S3]：不缓存引擎 / 舰船引用；
-- 测试战役 [C3-S1]：`GearIn_test` 战役与用户舰 `GearIn_artizan`。
+- [C1-S1] 的 MOD ID、`GearIn_` 命名、包路径与类名规则；
+- [C2-S2] 的 `hull_mods.csv` 数据行、`HullModSpecAPI` 与船插注册字段；
+- [C3-S1] 的 `GearIn_test` 测试战役与舰船装配；
+- [C6-S1] 的 Java 构建与 JAR 输出；
+- [C6-S3] 的 `Global` 生命周期与跨战斗引用边界；
+- [C7-S2] 的战斗状态读取与时间语义；
+- [C7-S3] 的 `MutableStat` 修饰、modifier ID 与 `applyEffects` 时机；
+- [C7-S5] 的公开监听器表面、放置规则、派发与去重。
 
 ## 文件与 API 链路
 
@@ -82,7 +80,7 @@ advanceInCampaign：CampaignFleetAPI.advance 每成员；FleetDataAPI 同步时 
 
 ::: info 为什么效果类必须是会话级单例
 
-`HullModEffect` 接口 javadoc 开篇即必须遵守的规则：**效果类每个应用会话只实例化一次**("the effect class is instantiated once per application session. Storing campaign data in data members of an implementing class is a bad idea (will likely cause memory leaks), use SectorAPI.getPersistentData() instead.")。
+`HullModEffect` 接口 javadoc 开篇即必须遵守的规则：**效果类每个应用会话只实例化一次** ("the effect class is instantiated once per application session. Storing campaign data in data members of an implementing class is a bad idea (will likely cause memory leaks), use SectorAPI.getPersistentData() instead.")。
 
 违反的可观察结果：两个船插实例或两艘船共享字段，计时器串船、计数互相覆盖；把跨存档数据放字段还会造成泄漏。因此：**跨船状态必须放在每船一个的监听器实例 (或 `getDynamic()` 标记位，见前置单元)，不得放在效果类字段**。
 
@@ -92,9 +90,9 @@ advanceInCampaign：CampaignFleetAPI.advance 每成员；FleetDataAPI 同步时 
 |---|---|---|---|
 | `init(HullModSpecAPI spec)` | spec 就绪后、首次使用效果时 | `HullModSpecAPI.getEffect()` 用到时才实例化 | `BaseHullMod` 用它保存 spec；`isSMod` / `isBuiltIn` / `hasSModEffect` 都依赖 spec 非 null |
 | `applyEffectsBeforeShipCreation(HullSize, MutableShipStatsAPI, String id)` | 生涯 stats 每次重建重放；战斗舰船构造 | `FleetMemberAPI.updateStats`；`Ship` 构造器 | 改 stats 的唯一正式入口 (前置讲解必须遵守的规则)；`id` 参数就是本船插的 spec id，直接用作修饰 ID；S-mod 分支也在这里 |
-| `applyEffectsAfterShipCreation(ShipAPI, String id)` | 战斗侧舰船实体创建后；装配界面预览舰也会创建 | 舰船对象创建流程的 `createShip`(`createStats=true` 时)；装配界面预览面板用 `createShip(variant, true, ...)` | **不承担 stats 修改**(API javadoc 原文："Effects applied here should NOT affect ship stats as this does not get called from the campaign.")；监听器注册的正式位置 |
-| `applyEffectsAfterShipAddedToCombatEngine(ShipAPI, String id)` | 舰船第一次加入战斗引擎 | `Ship` 的 `appliedAfterAddEffects` 防重复标记 ← `CombatEngineAPI.addObjectToEngine` | **每艘船只回调一次**(API javadoc 原文："Only called once. Not called again if the ship is removed and then added back to the engine.")；做一次性战斗初始化 (本节示例用它打日志证明)|
-| `advanceInCombat(ShipAPI, float amount)` | 战斗中每帧 | `Ship.advance` 遍历 `getVariant().getAllMods()` | **暂停时不调用**(API javadoc 原文："Not called while paused.")；无状态写入合法 (前置讲解的每帧幂等做法)，跨船状态不行 |
+| `applyEffectsAfterShipCreation(ShipAPI, String id)` | 战斗侧舰船实体创建后；装配界面预览舰也会创建 | 舰船对象创建流程的 `createShip`(`createStats=true` 时)；装配界面预览面板用 `createShip(variant, true, ...)` | **不承担 stats 修改** (API javadoc 原文："Effects applied here should NOT affect ship stats as this does not get called from the campaign.")；监听器注册的正式位置 |
+| `applyEffectsAfterShipAddedToCombatEngine(ShipAPI, String id)` | 舰船第一次加入战斗引擎 | `Ship` 的 `appliedAfterAddEffects` 防重复标记 ← `CombatEngineAPI.addObjectToEngine` | **每艘船只回调一次** (API javadoc 原文："Only called once. Not called again if the ship is removed and then added back to the engine.")；做一次性战斗初始化 (本节示例用它打日志证明)|
+| `advanceInCombat(ShipAPI, float amount)` | 战斗中每帧 | `Ship.advance` 遍历 `getVariant().getAllMods()` | **暂停时不调用** (API javadoc 原文："Not called while paused.")；无状态写入合法 (前置讲解的每帧幂等做法)，跨船状态不行 |
 | `advanceInCampaign(FleetMemberAPI, float amount)` | 生涯每帧；舰队数据重同步时 `amount=0` | `CampaignFleetAPI.advance` 每成员；`FleetDataAPI` 同步时 | **暂停时不调用**；API javadoc 原文："Not called while paused. But, called when the fleet data needs to be re-synced, with amount=0 (such as if, say, a fleet member is moved around in the fleet screen.)" |
 | `applyEffectsToFighterSpawnedByShip(ShipAPI fighter, ShipAPI ship, String id)` | 航母舰船生成战机后 | 战机出生链 | 效果向母舰生成的战机传播；本节不展开，示例不实现 |
 
@@ -122,7 +120,7 @@ advanceInCampaign：CampaignFleetAPI.advance 每成员；FleetDataAPI 同步时 
 
 1. **`desc` 里每个 `%s` 都必须能在 `getDescriptionParam(0..9)` 拿到非 null 返回值**，index 从 0 开始按出现顺序对应。违反的可观察结果：tooltip 中 `%s` 位置空白或显示 `%s` 字面量 (见故障分析第 3 条)：
    - 原版写法是参数带单位字符 (如 `"" + (int)ARMOR_BONUS_PERCENT + "%"`)，`desc` 本身不写裸 `%`——`addPara` 内部走 `String.format`，裸 `%` 会解析失败。
-2. **`sModDesc` 列与 `getSModDescriptionParam` 的 `%s` 约定与 `desc` 相同**(index 0..9)。`sModDesc` 为空 → 无 S-mod 效果段 (见下节 `hasSModEffect`)。
+2. **`sModDesc` 列与 `getSModDescriptionParam` 的 `%s` 约定与 `desc` 相同** (index 0..9)。`sModDesc` 为空 → 无 S-mod 效果段 (见下节 `hasSModEffect`)。
 3. 需要完全自绘 tooltip 时用 `shouldAddDescriptionToTooltip` 返回 `false` + `addPostDescriptionSection` 全权接管 (原版 `HighScatterAmp` 的做法)，但 `%s` 约定仍在 `getDescriptionParam` 里保留。
 
 ## S-mod(稳定性改造)
@@ -169,11 +167,11 @@ if (sMod) {
 - **默认上限 2 个**：`settings.json` 的 `maxPermanentHullmods: 2` → `Misc.MAX_PERMA_MODS`：
   - `Misc.getMaxPermanentMods(ship)` = `round(stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD).computeEffective(2))`；
   - 船插 / 技能可以用 `stats.getDynamic().getMod("max_permanent_hullmods_mod").modifyFlat(...)` 提升上限 —— S-mod 上限不是写死的数字，是动态 stat。
-- 装配界面的计数：普通 S-mod 计入上限，**增强内置不占上限**(装配界面的计数提示原文 "Hull-standard built-in mods do not count against the limit."；计数代码把增强内置单独以 `*` 显示)。
+- 装配界面的计数：普通 S-mod 计入上限，**增强内置不占上限** (装配界面的计数提示原文 "Hull-standard built-in mods do not count against the limit."；计数代码把增强内置单独以 `*` 显示)。
 - 故事点消耗：每个普通 S-mod / 每次增强内置各消耗 1 点 ("Building mods into a hull uses a story point for each hullmod.")。
 - 奖励经验：增强内置固定 100%(原文 "enhancing it always grants %s bonus experience." 参数 "100%")。普通内置的奖励经验按舰船大小分档：
   - `settings.json` 的 `bonusXP` 段 `permModFrigate: 0.75` / `permModDestroyer: 0.5` / `permModCruiser: 0.25` / `permModCapital: 0`，由 `Misc.getBuildInBonusXP(mod, size)` 返回。
-  - **"成本低于 X OP 才有奖励" 的阈值逻辑已整段注释**(`Misc` 中 `permModNoBonusXPOPThreshold` / `permModMaxBonusXP` 相关逻辑已被注释)—— 奖励与 OP 成本无关；装配界面的 "成本低于 %s OP" 说明文本是遗留文案，与行为不符。
+  - **"成本低于 X OP 才有奖励" 的阈值逻辑已整段注释** (`Misc` 中 `permModNoBonusXPOPThreshold` / `permModMaxBonusXP` 相关逻辑已被注释)—— 奖励与 OP 成本无关；装配界面的 "成本低于 %s OP" 说明文本是遗留文案，与行为不符。
 
 ## 监听器接入 (船插视角)
 
@@ -185,7 +183,7 @@ tooltip 与 S-mod 属于装配界面，战斗中的持续行为要靠监听器�
 2. **每船一个监听器实例是唯一的合法跨船状态容器**：监听器在 `applyEffectsAfterShipCreation` 里 `new` 出来，持有自己的计时器 / 计数器，随舰船实体一起销毁 —— 这是 "效果类单例" 约束的正面对策 (本节示例的 `ArmorTrainingListener` 就是这么做的)。
 3. 必须遵守的放置规则摘要 (完整表见前置讲解)：
    - `HullDamageAboutToBeTakenListener` 挂承受伤害的舰船 (或引擎)；`DamageTakenModifier` 挂承受舰；`DamageDealtModifier` 挂造成舰。
-   - `AdvanceableListener` **只能挂舰船**(javadoc 原文 "Only supported when added to a ShipAPI, not to CombatEngineAPI.")；OP 成本类修饰只能挂 `MutableShipStatsAPI`。
+   - `AdvanceableListener` **只能挂舰船** (javadoc 原文 "Only supported when added to a ShipAPI, not to CombatEngineAPI.")；OP 成本类修饰只能挂 `MutableShipStatsAPI`。
    - 违反的共性可观察结果：**静默不生效、无任何报错**。
 
 ::: tip 防重复注册
@@ -399,7 +397,7 @@ public class GearInArmorTrainingHullMod extends BaseHullMod {
 - `applyEffectsAfterShipCreation`：注册每船一个的 `ArmorTrainingListener` 实例并打日志。日志会在装配界面预览舰上先出现一次 (预览舰也走舰船对象创建流程的 `createShip`)。
 - `applyEffectsAfterShipAddedToCombatEngine`：战斗开始时打一行一次性日志 ——"每船只回调一次" 的证明。
 - `advanceInCombat`：S-mod 时每帧把 "当前装甲平均比例" 写成 `DYNAMIC_ID` 修饰 (幂等覆盖)；命中结算逐击读取，因此下一击即生效：
-  - `DYNAMIC_ID` 与 hullmod id 分开，**避免与 `applyEffectsBeforeShipCreation` 的条目在同一张表里互相覆盖**(故障分析第 6 条的反面示范)。
+  - `DYNAMIC_ID` 与 hullmod id 分开，**避免与 `applyEffectsBeforeShipCreation` 的条目在同一张表里互相覆盖** (故障分析第 6 条的反面示范)。
 - `advanceInCampaign`：只在 `amount <= 0f`(舰队数据重同步) 时打一行 ——"该回调确实被调用" 且 "同步时 amount=0" 的证明，同时避免每帧刷屏。
 - `getDescriptionParam` / `getSModDescriptionParam`：按 index 输出参数字符串；`null` 的 index 不会被 tooltip 使用。
   - `ArmorTrainingListener`：同时实现 `HullDamageAboutToBeTakenListener`(返回 `true` 抵消结构伤害，`notifyAboutToTakeHullDamage` 语义来自 javadoc 原文) 与 `AdvanceableListener`(每帧推进、暂停不派发)。
@@ -452,14 +450,14 @@ gradle jar
 
 验证方案中任一预期结果没有出现，验证即失败；下面的故障按症状展开，每条给出触发、原因与修正。
 
-1. **效果完全不生效 (装甲评级没有变化)。** 症状：装配界面找不到船插，或找到但数值不变，多数情况日志无报错。触发：CSV 行未写入、`id` 跨文件重复被静默跳过、`script` 类名与类不匹配、`applyEffectsBeforeShipCreation` 没写进 stats。原因：注册链 (数据行 → 类名) 或回调链 (回调 → stats) 断在某一环，加载失败大多安静。修正：按前置讲解的 "数据行 → 类名 → 回调位置" 四段排查法复核；本节示例的两个 stats 都要写 (`getArmorBonus` 管显示、`getEffectiveArmorBonus` 管结算)，只写一个会出现 "面板有了但战斗没变" 或反之。
-2. **S-mod 分支永不触发 (内置后加成不变)。** 症状：装配界面显示 `2 / 2` 计数、故事点正常扣、`sModDesc` 文本正常显示，但生涯面板数值与普通安装时相同。触发：分支写在 `advanceInCombat` 或 `applyEffectsAfterShipCreation` —— 生涯 stats 路径不会经过它们；或 `isSMod(stats)` 传入的 `stats.getVariant()` 为 null(API 外的构造路径)。原因：stats 每次重建只重放 `applyEffectsBeforeShipCreation`。修正：S-mod 分支必须写在 `applyEffectsBeforeShipCreation`，且用回调传入的 `stats`(本节示例的写法)。
-3. **装配界面没有 S-mod 效果段。** 症状：tooltip 只显示 "Aside from removing its ordnance point cost, this hullmod gains no extra effect..." 或 `%s` 位置空白。触发：`sModDesc` 列为空、或内容以 `#` 开头、或 `%s` 数量与 `getSModDescriptionParam` 返回值不匹配。原因：`BaseHullMod.hasSModEffect()` 据此判定无 S-mod 效果。修正：填 `sModDesc`、不以 `#` 开头、`%s` 一一对应 (index 0..9)。
-4. **跨船状态串船 (计数 / 计时互相污染)。** 症状：两艘装有该船插的船共享计数；一艘触发抵消后另一艘的日志计数也跟着涨；同一字段在多艘船之间漂移。触发：把 `negations` 计数、`IntervalUtil` 或任何 per-ship 字段写进 `GearInArmorTrainingHullMod` 字段。原因：效果类是会话级单例，所有舰船共享同一个实例。修正：状态放进 `applyEffectsAfterShipCreation` 里 `new` 出来的监听器实例 (每船一个)；效果类只保留常量与无状态方法 (本节示例的结构)。
-5. **监听器静默不生效 (抵消从未触发)。** 症状：没有任何报错、日志永远没有 negated 行。触发：把 `HullDamageAboutToBeTakenListener` 挂到错误的注册表面 —— 例如挂到造成伤害的船上，或只 `new` 了实例而从未 `ship.addListener(...)`。原因：伤害族监听器只从承受伤害的舰船 (或引擎) 派发，挂错位置等于没有注册。修正：按前置讲解的放置规则核对层级 (伤害族挂承受舰 / 引擎)；在 `applyEffectsAfterShipCreation` 里 `ship.addListener(...)`(本节示例的写法)。
-6. **动态修饰与静态修饰互相覆盖 (数值乱跳)。** 症状：每帧覆盖后命中结算只剩一个来源的值；或生涯重建重放时动态值被静态值覆盖，战斗手感与面板不一致。触发：`advanceInCombat` 用与 `applyEffectsBeforeShipCreation` 相同的修饰 ID(都写 `id`)。原因：同 ID 同类型只保留一条条目，两个来源争用同一张表。修正：动态来源用独立稳定 ID(本节 `DYNAMIC_ID`)；同 ID 只用于 "同值覆盖" 语义 (前置讲解的覆盖规则)。
-7. **tick 日志翻倍 (同一船每帧被派发多次)。** 症状：`GearIn armor training tick:` 每 5 秒出现多行。触发：`applyEffectsAfterShipCreation` 对同一实体重复注册监听器 (多次 `createShip` 同一 variant、或注册代码写进了会被重复调用的路径)。原因：`AdvanceableListener` 叠加后每帧被派发多次。修正：注册前用 `ship.getListenerManager().hasListenerOfClass(...)` 防重复判断，或保证注册代码只执行一次 (前置讲解的注册纪律)。
-8. **生涯需要但效果只写在战斗回调里。** 症状：战斗内数值正确、生涯面板 (舰队面板 / 战术地图) 没有加成 —— 两个环境两套数值。触发：把装甲加成写进 `advanceInCombat` 或 `applyEffectsAfterShipCreation` 而不写 `applyEffectsBeforeShipCreation`。原因：战斗回调不在生涯 stats 重建路径上。修正：stats 修饰一律放 `applyEffectsBeforeShipCreation`(前置讲解必须遵守的规则)；战斗回调只做战斗内的事。
+1. **效果完全不生效 (装甲评级没有变化)。**症状：装配界面找不到船插，或找到但数值不变，多数情况日志无报错。触发：CSV 行未写入、`id` 跨文件重复被静默跳过、`script` 类名与类不匹配、`applyEffectsBeforeShipCreation` 没写进 stats。原因：注册链 (数据行 → 类名) 或回调链 (回调 → stats) 断在某一环，加载失败大多安静。修正：按前置讲解的 "数据行 → 类名 → 回调位置" 四段排查法复核；本节示例的两个 stats 都要写 (`getArmorBonus` 管显示、`getEffectiveArmorBonus` 管结算)，只写一个会出现 "面板有了但战斗没变" 或反之。
+2. **S-mod 分支永不触发 (内置后加成不变)。**症状：装配界面显示 `2 / 2` 计数、故事点正常扣、`sModDesc` 文本正常显示，但生涯面板数值与普通安装时相同。触发：分支写在 `advanceInCombat` 或 `applyEffectsAfterShipCreation` —— 生涯 stats 路径不会经过它们；或 `isSMod(stats)` 传入的 `stats.getVariant()` 为 null(API 外的构造路径)。原因：stats 每次重建只重放 `applyEffectsBeforeShipCreation`。修正：S-mod 分支必须写在 `applyEffectsBeforeShipCreation`，且用回调传入的 `stats`(本节示例的写法)。
+3. **装配界面没有 S-mod 效果段。**症状：tooltip 只显示 "Aside from removing its ordnance point cost, this hullmod gains no extra effect..." 或 `%s` 位置空白。触发：`sModDesc` 列为空、或内容以 `#` 开头、或 `%s` 数量与 `getSModDescriptionParam` 返回值不匹配。原因：`BaseHullMod.hasSModEffect()` 据此判定无 S-mod 效果。修正：填 `sModDesc`、不以 `#` 开头、`%s` 一一对应 (index 0..9)。
+4. **跨船状态串船 (计数 / 计时互相污染)。**症状：两艘装有该船插的船共享计数；一艘触发抵消后另一艘的日志计数也跟着涨；同一字段在多艘船之间漂移。触发：把 `negations` 计数、`IntervalUtil` 或任何 per-ship 字段写进 `GearInArmorTrainingHullMod` 字段。原因：效果类是会话级单例，所有舰船共享同一个实例。修正：状态放进 `applyEffectsAfterShipCreation` 里 `new` 出来的监听器实例 (每船一个)；效果类只保留常量与无状态方法 (本节示例的结构)。
+5. **监听器静默不生效 (抵消从未触发)。**症状：没有任何报错、日志永远没有 negated 行。触发：把 `HullDamageAboutToBeTakenListener` 挂到错误的注册表面 —— 例如挂到造成伤害的船上，或只 `new` 了实例而从未 `ship.addListener(...)`。原因：伤害族监听器只从承受伤害的舰船 (或引擎) 派发，挂错位置等于没有注册。修正：按前置讲解的放置规则核对层级 (伤害族挂承受舰 / 引擎)；在 `applyEffectsAfterShipCreation` 里 `ship.addListener(...)`(本节示例的写法)。
+6. **动态修饰与静态修饰互相覆盖 (数值乱跳)。**症状：每帧覆盖后命中结算只剩一个来源的值；或生涯重建重放时动态值被静态值覆盖，战斗手感与面板不一致。触发：`advanceInCombat` 用与 `applyEffectsBeforeShipCreation` 相同的修饰 ID(都写 `id`)。原因：同 ID 同类型只保留一条条目，两个来源争用同一张表。修正：动态来源用独立稳定 ID(本节 `DYNAMIC_ID`)；同 ID 只用于 "同值覆盖" 语义 (前置讲解的覆盖规则)。
+7. **tick 日志翻倍 (同一船每帧被派发多次)。**症状：`GearIn armor training tick:` 每 5 秒出现多行。触发：`applyEffectsAfterShipCreation` 对同一实体重复注册监听器 (多次 `createShip` 同一 variant、或注册代码写进了会被重复调用的路径)。原因：`AdvanceableListener` 叠加后每帧被派发多次。修正：注册前用 `ship.getListenerManager().hasListenerOfClass(...)` 防重复判断，或保证注册代码只执行一次 (前置讲解的注册纪律)。
+8. **生涯需要但效果只写在战斗回调里。**症状：战斗内数值正确、生涯面板 (舰队面板 / 战术地图) 没有加成 —— 两个环境两套数值。触发：把装甲加成写进 `advanceInCombat` 或 `applyEffectsAfterShipCreation` 而不写 `applyEffectsBeforeShipCreation`。原因：战斗回调不在生涯 stats 重建路径上。修正：stats 修饰一律放 `applyEffectsBeforeShipCreation`(前置讲解必须遵守的规则)；战斗回调只做战斗内的事。
 
 ## 总结
 

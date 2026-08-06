@@ -17,9 +17,9 @@
 
 ## 前置知识
 
-- MOD 目录与 `mod_info.json`[C1-S1]：本节的文件都放进 `gear_in` MOD；
-- CSV 数据行的读法 [C1-S2]：逗号分隔、行首 `#` 忽略；
-- 能进入模拟战并打开装配界面 ([C1-S2] 的舰船)。
+- [C1-S1] 的 MOD 目录、`mod_info.json` 与 `gear_in` MOD；
+- [C1-S2] 的 CSV 分隔与行首 `#` 注释规则；
+- [C1-S2] 的模拟战入口与装配界面操作。
 
 ## Java 文件的结构
 
@@ -54,7 +54,7 @@ public class GearInSpeedBooster extends BaseHullMod {
 
 - **`package` 行**：类的存放目录。`data.scripts.gearin.hullmods` 对应 `src/data/scripts/gearin/hullmods/`，文件必须放在该目录下。按模板使用。
 - **`import` 行**：向游戏借用的工具 (日志、船插基类、数值修改器)。按模板使用，不认识的名称不影响本节操作。
-- **`public class GearInSpeedBooster extends BaseHullMod`**：类的名字。两条规则**：类名必须与文件名一致**(文件 `GearInSpeedBooster.java` 对应类名 `GearInSpeedBooster`)；`extends BaseHullMod` 表示采用船插的标准模板。按模板使用。
+- **`public class GearInSpeedBooster extends BaseHullMod`**：类的名字。两条规则**：类名必须与文件名一致** (文件 `GearInSpeedBooster.java` 对应类名 `GearInSpeedBooster`)；`extends BaseHullMod` 表示采用船插的标准模板。按模板使用。
 - **`SPEED_PERCENT = 10f`**：本节唯一的参数 —— 速度加成百分比。改为 `50f` 即加成 50%。`f` 是小数标记，`10f` 与 `10.0f` 等价。
 - **方法 `applyEffectsBeforeShipCreation` 及其两行**：按模板使用，方法签名的参数不需要全部理解。方法体内两行各有用途：`modifyPercent(id, SPEED_PERCENT)` 是 "给最大速度加百分之几" 的固定句式；`Global.getLogger(...).info("...")` 向游戏日志写入一行文字 —— 引号内的文字可修改，改成什么，日志里就出现什么。
 
@@ -75,7 +75,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 本节只关注这一行中的四列，其余按模板使用：
 
-- **`id` 列**(第 2 列)：船插的全局唯一标识，`GearIn_` 前缀是 ID 纪律 [C1-S1]。本行是 `GearIn_speed_booster`。
+- **`id` 列** (第 2 列)：船插的全局唯一标识，`GearIn_` 前缀是 ID 纪律 [C1-S1]。本行是 `GearIn_speed_booster`。
 - **`cost_*` 四列**：装配点消耗 —— 护卫舰 3、驱逐 6、巡洋 9、主力 12。修改这四个数字可调整成本。
 - **`script` 列**：类的完整名。这就是注册：游戏在数据中读到这个类名，需要时加载它。类名必须与文件中的 `class GearInSpeedBooster` 一字不差。
 - **`desc` 列**：装配界面显示的描述文字。引号内的文字可修改。
@@ -93,13 +93,13 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 :::
 
-改回 `10f` 再重启，加成回到 10%——"修改——重启——观察" 的流程至此建立，后续章节均依赖该流程。
+改回 `10f` 再重启，加成回到 10%——"修改 —— 重启 —— 观察" 的流程至此建立，后续代码操作继续沿用这组核对动作。
 
 ## 参数的写法
 
 - **小数带 `f`**：`10f`、`0.5f`、`3.14f`。游戏数值几乎都是浮点数，写数字时带 `f` 结尾是固定习惯。
 - **`modifyPercent` 加的是百分比**：`modifyPercent(id, 10f)` = 最大速度 +10%。
-- **`modifyFlat` 加的是固定值**：`modifyFlat(id, 50f)` = 直接 +50 单位/秒。下一节使用这种写法。
+- **`modifyFlat` 加的是固定值**：`modifyFlat(id, 50f)` = 直接 +50 单位/秒；本页后面的示例使用这种写法。
 
 ::: warning 修改后无变化时的排查顺序
 
@@ -112,7 +112,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 | 症状 | 原因 | 修法 |
 |---|---|---|
 | 装配界面里没有 "加速器" | CSV 行未生效 | 文件路径必须是 MOD 根的 `data/hullmods/hull_mods.csv`；保留表头行；文件以 UTF-8 无 BOM 保存 |
-| 启动时日志报 `Problem loading class [data.scripts.gearin.hullmods.GearInSpeedBooster]` | 类名三处不一致 | 核对文件名、`class` 后的名字、CSV `script` 列 —— 必须一字不差 (下一节系统化核对) |
+| 启动时日志报 `Problem loading class [data.scripts.gearin.hullmods.GearInSpeedBooster]` | 类名三处不一致 | 核对文件名、`class` 后的名字、CSV `script` 列 —— 必须一字不差 |
 | 日志报 `Error loading [...]` 且带行号 | Java 代码书写错误 (漏分号、括号不配对) | 按报错行号对照本节代码逐字检查 |
 | 修改参数后无变化 | 未重启游戏，或改的不是游戏加载的那份文件 | 确认文件路径；重启游戏 |
 | 船插已装但数值无变化 | 观察对象错误 (tooltip 已是 50% 但船本身基础速度低) | 用装配界面的速度数值对比安装前后 |
@@ -137,7 +137,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 ## 故障分析
 
 1. **类能编译但没有效果**。触发：`hull_mods.csv` 里没有这一行，或 `script` 列写错。可观察：游戏内无任何反应，日志也没有本船插相关行。修正：确认 CSV 路径与 `script` 列类名。
-2. **`Problem loading class`**。触发：`script` 列类名、`package` 行、`class` 行三者不一致。可观察：启动或第一次使用船插时日志报错。修正：三处逐一对照 (下一节给出系统化核对法)。
+2. **`Problem loading class`**。触发：`script` 列类名、`package` 行、`class` 行三者不一致。可观察：启动或第一次使用船插时日志报错。修正：三处逐一对照。
 3. **修改参数后加成不变**。触发：改的是别的文件，或游戏未重启。可观察：tooltip 数值依旧是旧值。修正：确认编辑的是 `gear_in` 的 `GearInSpeedBooster.java`；重启游戏。最常见的原因不是代码写错，而是游戏没有重启。
 4. **日志文字没出现**。触发：日志级别过滤或搜索词不对。可观察：游戏内行为正常但搜不到。修正：搜索 `GearIn_speed_booster` 而非完整句子；验证前清空 `starsector.log` 最易定位。
 
@@ -146,7 +146,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 - 一个 Java 文件 = 按模板使用的部分 (包名、import、类声明、方法签名)+ 可修改的参数 (数字、引号内的文字)；
 - 注册 = 在数据文件的 `script` 列写类名；回调 = 游戏在特定时机调用您的方法；
 
-"修改 —— 重启 —— 观察" 这一流程是后续所有代码操作的基础。虽然在较为进阶的部分，重启这一环节有时候可以省略。但就目前而言，概念将只展开到本节操作所需的程度。
+"修改 —— 重启 —— 观察" 这一流程是代码操作的基础；在本节范围内，重启用于确认修改已经被加载。
 
 ## 建议参考项
 

@@ -17,12 +17,10 @@
 
 ## 前置知识
 
-本节把三组 "内置" 配置写进 `.ship` 文件，直接使用前置章节建立的舰船、武器与战机数据，先确认以下基础：
-
-- `.ship` 结构、武器槽位 (`mount`/`type`/`size`)、`ship_data.csv` 注册链、控制台 `Addship`[C1-S2]。
-- 航母甲板、战机 hull/variant/wing 三层结构，以及 `GearIn_slag_wing` 等战机 ID[C1-S3]。
-- `weapon_data.csv` 与武器 ID、`.wpn` 的 `id` 字段 [C1-S5]。
-- 术语：hullmod 写作 "舰船插件 (船插)"，正文沿用简称 "船插"；本节只涉及 "内置" 这一安装方式 (船插的完整讲解见 [C2-S2])。
+- [C1-S2] 的 `.ship` 结构、武器槽位、`ship_data.csv` 登记与 `Addship` 使用方法；
+- [C1-S3] 的航母甲板与战机 hull、variant、wing 三层结构；
+- [C1-S4] 的相位舰船体与防御数据；
+- [C1-S5] 的 `weapon_data.csv`、武器 ID 与 `.wpn` 文件结构。
 
 ## 三组键与文件/API 链路
 
@@ -116,7 +114,7 @@
 
 ::: warning 槽位 ID 必须逐字符一致
 
-**反复确定槽位 ID 的正确**——`builtInWeapons` 的键必须与 `.ship` 中 `weaponSlots` 数组里的槽位 `id` 完全一致。
+**反复确定槽位 ID 的正确** ——`builtInWeapons` 的键必须与 `.ship` 中 `weaponSlots` 数组里的槽位 `id` 完全一致。
 
 :::
 
@@ -168,11 +166,7 @@
 - **不会被永久损坏**：装饰槽武器不会因损坏而失效。
 - **仍然渲染**：战斗中和生涯舰船界面都会显示装饰武器。
 
-装饰武器适合纯视觉内容。原版例子：`buffalo.ship` 的红色/绿色信号灯 ——`builtInWeapons` 里装 `blinker_red`/`blinker_green`
-
-(`data/weapons/blinker_red.wpn`、`blinker_green.wpn`，`.wpn` 的 `"type": "DECORATIVE"`)，
-
-信号灯槽位为 `"type": "DECORATIVE"` 的 TURRET 槽。
+装饰武器适合纯视觉内容。原版例子：`buffalo.ship` 的红色/绿色信号灯 ——`builtInWeapons` 里装 `blinker_red`/`blinker_green` (`data/weapons/blinker_red.wpn`、`blinker_green.wpn`，`.wpn` 的 `"type": "DECORATIVE"`)，信号灯槽位为 `"type": "DECORATIVE"` 的 TURRET 槽。
 
 ## 战机的内置武器？
 
@@ -227,7 +221,7 @@
 - **不占装配点**：`computeHullModOPCost` 跳过内置船插 (`!hullSpec.isBuiltInMod(id)`)。
 - **不可移除**：`removeMod` 对内置船插直接返回；船插选择器把内置船插排除在可装卸列表之外；清空装配时 `clear(false)` 会把内置船插重新加回。
 - **船插 ID 必须真实存在**：装配构建阶段不校验，但舰船部署时 `getAllMods()` 会解析每个船插 ID，未知 ID 抛 `Hullmod <id> not found!`(见故障分析)。
-- 船插的完整讲解 (effect 脚本、S-mod 等) 在后续章节展开；本节只涉及 "内置" 这一安装方式。
+- 本节只涉及 "内置" 这一安装方式；effect 脚本和 S-mod 见 [C7-S7]。
 
 ### 验证方案
 
@@ -272,7 +266,7 @@
 - 本例中 `GearIn_slag_wing` 占据守炉人的第一个甲板，第二个甲板仍可在装配界面正常装配。
 - **不可更换**：`setWingId` 对内置甲板索引强制覆盖；装配界面的 "清空战机槽" 按 `isBuiltInWing` 判断、跳过内置甲板。
 - **不占装配点**：`computeWeaponOPCost` 的战机循环跳过内置战机；舰队成员的造价与 CR 计算也使用 `getNonBuiltInWings()` 排除内置战机。
-- **战机 ID 必须真实存在**(`wing_data.csv` 的 `id` 列)：未知 ID 不会报错，而是该甲板**静默不生成联队**(见故障分析)。
+- **战机 ID 必须真实存在** (`wing_data.csv` 的 `id` 列)：未知 ID 不会报错，而是该甲板**静默不生成联队** (见故障分析)。
 
 ### 验证方案
 

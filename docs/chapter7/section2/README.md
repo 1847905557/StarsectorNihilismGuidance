@@ -1,6 +1,6 @@
 # 读取战斗状态与时间
 
-本节读取战斗状态、双方舰队与时间，并制作一个每 2 秒向 `starsector.log` 报告状态的插件。后续修改战斗对象前，都需要先确认当前状态和所用时间尺度。
+本节读取战斗状态、双方舰队与时间，并制作一个每 2 秒向 `starsector.log` 报告状态的插件。修改战斗对象前，需要先确认当前状态和所用时间尺度。
 
 *本节预期阅读时间：~20 分钟。*
 
@@ -19,14 +19,12 @@
 
 ## 前置知识
 
-本节直接建立在以下既有知识上：
-
-- MOD 目录结构与 `starsector.log` 日志 [C1-S1]：本节所有可观察结果都落在日志里。
-- 制作每帧战斗插件 [C7-S1]：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调与暂停检查 —— 本节的示例插件建立在这个模型上。
-- 战役 (mission) 与生涯 (campaign) 概念，以及 `GearIn_test` 测试战役 [C3-S1]。
-- 编译 JAR 链路 [C6-S1]：本节示例编入同一个 `jars\GearIndustry.jar`。
-- `Global` 生命周期 —— 战斗引擎每场战斗结束销毁后立即重建、战斗外是非 null 空引擎、禁止跨战斗缓存引擎引用 [C6-S3]：本节把同一条纪律延伸到引擎返回的舰船与列表。
-- `MutableStat`——`getTimeMult()` 的返回类型 [C7-S3]：本节只读取它的 `getModifiedValue()`，完整讲解见该单元。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
+- [C3-S1] 的模拟战入口、战役与生涯概念；
+- [C6-S1] 的 Java 构建与 JAR 输出；
+- [C6-S3] 的 `Global` 生命周期、战斗引擎阶段与跨战斗引用边界；
+- [C7-S1] 的 `addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 回调与暂停检查；
+- [C7-S3] 的 `MutableStat` 与 `getTimeMult()` 返回值。
 
 ## 文件与 API 链路
 
@@ -34,10 +32,10 @@
 
 | 接口 / 类型 | 本节角色 | 链路 |
 |---|---|---|
-| `CombatEngineAPI` | 状态 / 时间 / 遍历入口 | `Global.getCombatEngine()` 取得 ([C6-S3] 讲生命周期)；本节讲状态读取；写侧 (音效与粒子) 由后续节使用 |
+| `CombatEngineAPI` | 状态 / 时间 / 遍历入口 | `Global.getCombatEngine()` 取得 ([C6-S3] 讲生命周期)；本节讲状态读取，写侧由音效与粒子示例使用 |
 | `CombatFleetManagerAPI` | 舰队名单与部署状态 | `engine.getFleetManager(FleetSide)` / `getFleetManager(int owner)` 取得 |
 | `ShipAPI` / `CombatEntityAPI` | 单舰状态访问器 | `getShips()` 与 `DeployedFleetMemberAPI.getShip()` 的返回元素 |
-| `DeployedFleetMemberAPI` | 已部署成员 (舰或战机联队)| `manager.getDeployedCopyDFM()` 的元素；`getMember()` 指向 `FleetMemberAPI`(完整讲解在 [C8-S3])|
+| `DeployedFleetMemberAPI` | 已部署成员 (舰或战机联队) | `manager.getDeployedCopyDFM()` 的元素；`getMember()` 指向 `FleetMemberAPI` |
 | `EveryFrameCombatPlugin` / `BaseEveryFrameCombatPlugin` | 每帧回调骨架 | 战斗插件模型 [C7-S1] |
 | `IntervalUtil` | 定期间隔触发 (本节示例用它做周期日志)| `com.fs.starfarer.api.util` |
 | `FleetSide` | `PLAYER` / `ENEMY` 两侧 | `getFleetManager(FleetSide)` |
@@ -69,7 +67,7 @@
 
 由此得到两条必须遵守的规则：
 
-1. **禁止**用 `engine.getPlayerShip() == null` 判断 "玩家未部署 / 不在战斗"。该表达式在战斗内永远为 `false`，依赖它的分支**永远不执行**(静默失效，无报错)。判断部署状态应读 `engine.getFleetManager(FleetSide.PLAYER).getDeployedCopy()` 是否非空；判断是否在战斗用 `Global.getCurrentState() == GameState.COMBAT`。
+1. **禁止**用 `engine.getPlayerShip() == null` 判断 "玩家未部署 / 不在战斗"。该表达式在战斗内永远为 `false`，依赖它的分支**永远不执行** (静默失效，无报错)。判断部署状态应读 `engine.getFleetManager(FleetSide.PLAYER).getDeployedCopy()` 是否非空；判断是否在战斗用 `Global.getCurrentState() == GameState.COMBAT`。
 2. 拿到 `getPlayerShip()` 后**必须**核对 `isHulk()` / `isAlive()`(或 `playerShip` 的舰型)，再把它当作 "玩家控制的真舰" 使用 —— 部署阶段拿到的是假舰，对它调用写操作没有实际玩家意义。
 
 ### 战斗结果
@@ -84,7 +82,7 @@
 
 ### 引擎对象表：getShips()
 
-`engine.getShips()` 返回引擎对象表里的全部 `ShipAPI`，它**不是**"存活舰船列表"：
+`engine.getShips()` 返回引擎对象表里的全部 `ShipAPI`，它**不是** "存活舰船列表"：
 
 - 残骸 (`isHulk() == true`) 仍在对象表里 (引擎自身的推进循环遍历时也要跳过残骸)；
 - 已标记移除、尚未执行移除的舰船也还在表里；
@@ -118,7 +116,7 @@
 | `getDestroyedCopy()` | 已击毁的成员 |
 | `getRetreatedCopy()` | 已撤退的成员 |
 
-遍历已部署成员用 `getDeployedCopyDFM()`(`List<DeployedFleetMemberAPI>`)：每个元素把 "部署记录" 与 "场上实体" 连起来 ——
+遍历已部署成员用 `getDeployedCopyDFM()`(`List<DeployedFleetMemberAPI>`)：每个元素把 "部署记录" 与 "场上实体" 连起来：
 
 - `getMember()` 是 `FleetMemberAPI`(生涯侧身份，完整讲解见生涯主题)。
 - `getShip()` 是场上 `ShipAPI`(战机联队返回联队长机)；
@@ -141,7 +139,7 @@
 | 方法 | 语义 | 暂停时行为 |
 |---|---|---|
 | `getTotalElapsedTime(false)` | 累计战斗时间，**暂停不计** | 停止累计 |
-| `getTotalElapsedTime(true)` | 累计真实经历时间，**含暂停**(暂停时也增长)| 继续累计 |
+| `getTotalElapsedTime(true)` | 累计真实经历时间，**含暂停** (暂停时也增长)| 继续累计 |
 | `getElapsedInLastFrame()` | 当前帧的 `dt`；API javadoc 原文 "Does *not* return 0 if the game is paused; actually the *current* frame." | **非 0**(暂停时也不例外)|
 | `getTimeMult()` | 引擎全局时间倍率 (`MutableStat`，完整讲解见时间倍率主题)；每帧 `dt` 先乘 `getModifiedValue()` 再乘 settings 的 `combatSpeedMult`(默认 1f，见 `settings.json` 的 `combatSpeedMult` 项) 才用于推进战斗 | — |
 | `getElapsedInContactWithEnemy()` | 双方互见敌舰的累计时间 (API javadoc "Time elapsed while both sides can see at least one enemy ship.")| 不累计 |

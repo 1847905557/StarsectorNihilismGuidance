@@ -18,11 +18,12 @@
 
 ## 前置知识
 
-本节建立在以下基础上：
-
-- **`descriptions.csv` 的基础结构与键规则**(前置单元 [C1-S7])：共 8 列 `id,type,text1,text2,text3,text4,text5,notes`、`id + type` 键规则、舰船/武器/战术系统的查找键、缺行占位与加载期硬失败。
-- **各数据链对象 ID 的出处**(前置单元 [C1-S2] 至 [C1-S6])：能识别各数据链的对象 ID(`hullId`、武器 ID、系统 ID)，知道商品、势力、行星类型等对象的 ID 来自哪些文件。
-- **术语约定**：生涯 (campaign)；数据库 (codex，生涯界面中的图鉴界面)；C2 命令 (战斗指挥命令，如攻击、护航、撤退)；地形 (terrain，星系中的星云、小行星带、日冕等)。
+- [C1-S7] 的 `descriptions.csv` 八列结构、`id + type` 键规则与加载失败表现；
+- [C1-S2] 至 [C1-S6] 的船体、武器、战术系统及相关对象 ID 来源；
+- 理解生涯 (campaign) 的基本界面与对象范围；
+- 理解数据库 (codex) 是生涯界面中的图鉴；
+- 理解 C2 命令是攻击、护航、撤退等战斗指挥命令；
+- 理解地形 (terrain) 包括星云、小行星带和日冕等星系区域。
 
 ## 文件/API 链路
 
@@ -65,7 +66,7 @@
 
 `descriptions.csv` 由 CSV 解析器解析：先把全文的 `\r\n` 归一为 `\n`，首行按逗号切分得到表头，其后逐字符扫描数据行。以下规则全部有效，**违反时必然出现所述的可观察结果**。
 
-1. **字段内含有英文逗号 (半角 `,`) 时，必须用一对双引号把整个字段包起来。** 违反后果：字段被按列切分，该行后续所有列整体错位一格 —— 文本串到别的列，`id`/`type` 键值被污染 (变成未挂接行或显示占位文本)，列数异常。中文逗号 "，" 不是分隔符，无需处理。
+1. **字段内含有英文逗号 (半角 `,`) 时，必须用一对双引号把整个字段包起来。**违反后果：字段被按列切分，该行后续所有列整体错位一格 —— 文本串到别的列，`id`/`type` 键值被污染 (变成未挂接行或显示占位文本)，列数异常。中文逗号 "，" 不是分隔符，无需处理。
 
 ```csv
 # 错误：text1 未加引号，含英文逗号，被切成两列
@@ -75,7 +76,7 @@ GearIn_description_esc_comma,SHIP,This is a test ship, with a comma in its name.
 GearIn_description_esc_comma,SHIP,"This is a test ship, with a comma in its name.",,,,,
 ```
 
-2. **字段内含有双引号时，必须把每个引号写成两个连续的双引号 `""`，并且必须用一对双引号把整个字段包起来。** 违反后果：单独出现的 `"` 被解析器当作引号段的起点或终点；引号数量不成对时，加载期直接抛 `JSONException("Mismatched quotes in the string; ...")`，游戏无法启动；即使恰好成对，也会把不该引用的内容包进引号段造成错位。
+2. **字段内含有双引号时，必须把每个引号写成两个连续的双引号 `""`，并且必须用一对双引号把整个字段包起来。**违反后果：单独出现的 `"` 被解析器当作引号段的起点或终点；引号数量不成对时，加载期直接抛 `JSONException("Mismatched quotes in the string; ...")`，游戏无法启动；即使恰好成对，也会把不该引用的内容包进引号段造成错位。
 
 ```csv
 # 错误：裸引号不成对，启动期报 Mismatched quotes
@@ -85,7 +86,7 @@ GearIn_description_esc_quote,SHIP,这艘船被称为"工坊之锤"。,,,,,
 GearIn_description_esc_quote,SHIP,"这艘船被称为""工坊之锤""。",,,,,
 ```
 
-3. **字段内含有换行 (多行文本) 时，必须用一对双引号把整个字段包起来。** 引号内的换行会被保留 (text1 的段落之间习惯用空行分隔，消费端按 `\n` 分段)。违反后果：换行被当作行结束符，该行被拦腰截断、后续列错位，断出来的 "新行" 要么成为未挂接数据，要么直接触发加载期异常。
+3. **字段内含有换行 (多行文本) 时，必须用一对双引号把整个字段包起来。**引号内的换行会被保留 (text1 的段落之间习惯用空行分隔，消费端按 `\n` 分段)。违反后果：换行被当作行结束符，该行被拦腰截断、后续列错位，断出来的 "新行" 要么成为未挂接数据，要么直接触发加载期异常。
 
 ```csv
 # 错误：多行未加引号，第二行被当作新的一行
@@ -99,14 +100,14 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 这是第二段介绍。",,,,,
 ```
 
-4. **行首是 `#` 的整行被忽略**(注释)。可以用它暂时注释掉某条描述，或给文件写分节说明；`#` 必须位于行首第一列，行内其他位置的 `#` 是普通字符。
+4. **行首是 `#` 的整行被忽略** (注释)。可以用它暂时注释掉某条描述，或给文件写分节说明；`#` 必须位于行首第一列，行内其他位置的 `#` 是普通字符。
 
 5. **键必须唯一**：同一文件内 `id + type` 组合重复时，加载期抛 `RuntimeException("Duplicate key [...] while loading [data/strings/descriptions.csv from [<路径>]]")`；跨文件 (原版与其他 MOD 之间) 重复时不报错，先被枚举到的文件的行生效，后到的同键行被静默跳过。
-   - **不要重定义原版或其他 MOD 已有的 `id + type` 组合**—— 覆盖顺序不是可以依赖的约定。
+   - **不要重定义原版或其他 MOD 已有的 `id + type` 组合** —— 覆盖顺序不是可以依赖的约定。
 
 6. **文件必须 UTF-8 无 BOM**：加载器按 UTF-8 读取；BOM 字符会粘在表头第一列的列名上 (`id` 变成 `\ufeffid`)，加载期抛 `JSONObject["id"] not found` 一类异常。含中文的文件尤其要确认保存为 UTF-8 无 BOM。弯引号 (" " ' ') 会在加载时被 `replaceSmartQuotes` 归一为直引号 (原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步清洗)，所以**不要依赖弯引号原样保留**。
 
-7. **表头固定 8 列**：`id,type,text1,text2,text3,text4,text5,notes`。数据行缺列时对应键缺失**；比表头多的列被静默丢弃**—— 多写一列不会报错，只会让文本 "消失"，是排查文本丢失时容易漏掉的点。
+7. **表头固定 8 列**：`id,type,text1,text2,text3,text4,text5,notes`。数据行缺列时对应键缺失**；比表头多的列被静默丢弃** —— 多写一列不会报错，只会让文本 "消失"，是排查文本丢失时容易漏掉的点。
 
 ::: tip 稳定性建议
 
@@ -128,7 +129,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 - 键：`data/campaign/commodities.csv` 的 `id`(如 `supplies`、`fuel`)。
 - 使用方：货舱与交易界面的货物 tooltip 取 text1 段落，正文较长时 tooltip 可展开。
 - 原版参考行：`supplies,RESOURCE,"Assorted supplies required by ships and crew, ..."`(text1 单段)。
-- 注意：commodities.csv 自身也有 `desc` 列，但 `loadCommodities` 不读取它 ——**商品的显示文本一律以 `RESOURCE` 行为准**。
+- 注意：commodities.csv 自身也有 `desc` 列，但 `loadCommodities` 不读取它 ——** 商品的显示文本一律以 `RESOURCE` 行为准**。
 
 ### PLANET：行星类型描述
 
@@ -219,7 +220,7 @@ GearIn_description_custom_test,CUSTOM,一个用于演示的自定义实体描述
 要点：
 
 - 前三行分别演示规则 1/2/3：含英文逗号、含双引号 (`""` 转义)、多行 (空行分段)，全部用引号包络，**列数与表头一致 (8 列)**。
-- 第四行演示武器署名：text2 以 `-` 开头，将来被武器 tooltip 消费时 text1 第一段会斜体渲染并附加署名。
+- 第四行演示武器署名：text2 以 `-` 开头；武器 tooltip 读取该行时，text1 第一段会斜体渲染并附加署名。
 - 其余四行演示 `RESOURCE`/`PLANET`/`FACTION`/`CUSTOM` 的键写法；`CUSTOM` 行把 text2 用作实体默认标题 (`演示站`)。
 - 这些行目前没有对象挂接，是**合法未挂接行**：加载不报错、界面不显示。待商品、行星、势力与自定义实体创建并挂接后，这些键即可被消费 (`PLANET` 行需要行星类型键一致，`GALLERY` 行需要与插图贴图键一致，`CUSTOM` 行需要 `setCustomDescriptionId` 挂接)。
 - 原版参考行 (仅观察不修改)：
@@ -260,7 +261,7 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
 预期结果：
 
 - **启动日志**：出现 `Loading descriptions` 与 `Loading CSV data from [mod: .../descriptions.csv]` 日志，`starsector.log` 无 `ERROR`。新增的 `GearIn_description_*` 演示行不产生任何报错 —— 它们目前是合法未挂接行 (不显示、不报错)，这本身就是预期状态。
-- **原版行的使用方观察**(验证各类型使用方链路，不修改原版文件)：
+- **原版行的使用方观察** (验证各类型使用方链路，不修改原版文件)：
 - 货舱/交易界面悬停 `supplies`：tooltip 正文等于 `supplies` 的 `RESOURCE` 行 text1；
 - 悬停行星 (如任一宜居行星) 与打开行星详情：正文等于该行星类型键的 `PLANET` 行 text1；
 - 悬停小行星：tooltip 标题为 `Asteroid`，正文等于 `asteroid` 的 `ASTEROID` 行 text1；

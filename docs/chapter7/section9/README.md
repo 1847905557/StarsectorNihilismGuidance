@@ -20,15 +20,12 @@
 
 ## 前置知识
 
-本节的知识基础来自数据面、开火流、插件模型与实例纪律等前置单元：
-
-- 武器 CSV、`.wpn`、`.proj` 数据面 [C1-S5]：本节的注册列挂在这些 spec 上；`fireSoundOne` / `fireSoundTwo`、导弹特殊字段已在数据侧讲过。
-- 武器开火流、射弹生命周期与光束 DPS 语义 [C7-S4]：`fireShot` 先扣弹药 → 生成射弹 → `onFire`；监听器纪律 —— 本节在其上展开 "效果类怎么写、动画怎么做"，不重复开火流细节。
-- 战斗插件模型 [C7-S1]：数据绑定效果类与插件是两类实例 —— 本节反复对照这一区别。
-- 编译 JAR 链路 [C6-S1]：本节示例编入同一个 `jars\GearIndustry.jar`。
-- `Global` 生命周期与禁止跨战斗缓存引擎引用 [C6-S3]：本节把同一条纪律延伸到效果类字段。
-- 暂停语义与实体遍历纪律 [C7-S1]：本节的效果回调在暂停时停摆，与插件 `advance` 暂停时仍被调用不同。
-- `MutableStat`[C7-S3]：`damage.getModifier()` 的返回类型；本节只消费。
+- [C1-S5] 的武器 CSV、`.wpn`、`.proj` 数据关系与注册字段；
+- [C6-S1] 的 Java 构建与 JAR 输出；
+- [C6-S3] 的 `Global` 生命周期与跨战斗引用边界；
+- [C7-S1] 的战斗插件注册、实例区分与暂停语义；
+- [C7-S3] 的 `MutableStat` 与 `damage.getModifier()` 返回值；
+- [C7-S4] 的武器开火流、射弹生命周期与光束 DPS 语义。
 
 ## 文件与 API 链路
 
@@ -66,7 +63,7 @@
 
 | `.wpn` 键 | 默认 | 语义 |
 |---|---|---|
-| `numFrames` | 1 | 帧数；**大于 1 时武器才是动画武器**(`isAnimated`)|
+| `numFrames` | 1 | 帧数；**大于 1 时武器才是动画武器** (`isAnimated`)|
 | `frameRate` | 1 | 播放帧率 (帧 / 秒)|
 | `alwaysAnimate` | false | true 时闲置也持续播放 |
 | `animateWhileFiring` | true | false 时开火中冻结动画 (约 0.001 倍速)|
@@ -102,7 +99,7 @@
 
 ### 帧贴图命名规则
 
-动画帧文件由基贴图路径推导：基路径 (`turretSprite` / `hardpointSprite`)**必须以 `00.png` 结尾**，帧 N 的路径 = 去掉 `00.png` 后拼接 `%02d.png`。原版 `chaingun.wpn` 的 `numFrames:4` 对应：
+动画帧文件由基贴图路径推导：基路径 (`turretSprite` / `hardpointSprite`)** 必须以 `00.png` 结尾**，帧 N 的路径 = 去掉 `00.png` 后拼接 `%02d.png`。原版 `chaingun.wpn` 的 `numFrames:4` 对应：
 
 ```text
 graphics/weapons/rotary/rotary_cannon_turret_base00.png   # 帧 0
@@ -128,7 +125,7 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 
 两条渲染约束 (`WeaponAPI.getSprite()` javadoc 原文)：
 
-- 渲染前引擎会在 `getSprite()` 返回的贴图上调用 `setAlphaMult()` 与 `setAngle()`—— 在这张贴图上设置这两项**无效**(会被覆盖)。改透明度要用 `SpriteAPI.setColor()` 的 alpha 通道，改朝向要用 `WeaponAPI.setCurrAngle()`。
+- 渲染前引擎会在 `getSprite()` 返回的贴图上调用 `setAlphaMult()` 与 `setAngle()`—— 在这张贴图上设置这两项**无效** (会被覆盖)。改透明度要用 `SpriteAPI.setColor()` 的 alpha 通道，改朝向要用 `WeaponAPI.setCurrAngle()`。
 
 ## 内置视觉：animationType、visualRecoil 与炮口粒子
 
@@ -189,7 +186,7 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 
 - 注册列 `beamEffect` 只在 `specClass: beam` 的 `.wpn` 上被读取；写到弹丸武器 `.wpn` 上**静默不生效**。
 - 实例：每条光束射线实体构造时调 `getSpec().getBeamEffect()` → **每条射线独立实例**；实现 `BeamEffectPluginWithReset` 的实例在射线创建与销毁时收到 `reset()`—— 跨射线状态在这里复位。
-- 每帧调用：射线在开火 / 充能期间存在，光束武器每帧对每条射线调一次 `advance(amount, engine, beam)`。调用点在端点更新前后的位置随命中与否变化：**射线被目标截短 (命中) 时在更新 `to` 端点之后调用，未命中时在更新之前调用**—— 效果里读 `beam.getTo()` 的语义随命中状态不同，命中时读到本帧截短端点，未命中时读到上一帧端点。
+- 每帧调用：射线在开火 / 充能期间存在，光束武器每帧对每条射线调一次 `advance(amount, engine, beam)`。调用点在端点更新前后的位置随命中与否变化：**射线被目标截短 (命中) 时在更新 `to` 端点之后调用，未命中时在更新之前调用** —— 效果里读 `beam.getTo()` 的语义随命中状态不同，命中时读到本帧截短端点，未命中时读到上一帧端点。
 - 光束伤害是 DPS 语义按 0.1 秒结算 [C7-S4]；`beam.getDamage().getDpsDuration()` 在结算帧返回累计时长、其余帧为 0—— 原版 `IonBeamEffect` 用 `dpsDuration` 推进 `IntervalUtil`(并处理快速时间下的 `wasZero` 边沿)，使特效节奏跟随真实伤害结算。
 - `didDamageThisFrame()` / `getDamageTarget()` 只对本帧结算语义有效 ([C7-S4] 规则 5 同规)：光束逐帧可能切换命中目标，禁止把上一帧目标缓存跨帧使用。
 
@@ -198,7 +195,7 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 - 注册列：`onFireEffect` / `onHitEffect` 在 projectile 与 missile 两类 `.proj` 上都被读取。
 - 实例：`onFireEffect` 在**武器构造时**缓存到武器对象 (每武器一个实例)；`onHitEffect` 在**射弹构造时**缓存 (每射弹一个实例)。
 - 时机：`onFire` 在 `fireShot` 生成射弹之后立即调用，参数是刚生成的那一颗射弹 (弹药不足时不生成射弹、也不回调 ——[C7-S4])；`onHit` 在命中伤害结算 (`notifyDealtDamage`) 时调用，`shieldHit` 与 `ApplyDamageResultAPI` 是本次结算上下文。弹道弹穿行时默认不触发 `onHit`，`.proj` 的 `applyOnHitEffectWhenPassThrough:true` 可改为穿行也触发。
-- 参数都是 "本次事件上下文"，**禁止跨发 / 跨帧缓存**([C7-S4] 规则 2 同规)。
+- 参数都是 "本次事件上下文"，**禁止跨发 / 跨帧缓存** ([C7-S4] 规则 2 同规)。
 
 ### 同实例多角色 (RealityDisruptorEffect 模式)
 
@@ -208,7 +205,7 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 - `OnFireEffectPlugin`
 - `OnHitEffectPlugin`
 
-类注释原文："will be multiple instances of this, as this doubles as the every frame effect and the on fire effect (same instance)"
+类注释原文："will be multiple instances of this, as this doubles as the every frame effect and the on fire effect (same instance)"。
 
 要点：
 
@@ -492,7 +489,7 @@ public class GearInOnHitEffect implements OnHitEffectPlugin {
 
 ### 数据接入片段
 
-(工程片段 —— 本节不创建数据文件；接入后四个效果类才生效。以下 ID 由本节声明，路径在 `Starsector\mods\GearIndustry\` 下自洽)
+(工程片段 —— 本节不创建数据文件；接入后四个效果类才生效。以下 ID 由本节声明，路径在 `Starsector\mods\GearIndustry\` 下自洽)：
 
 ```text
 data\weapons\GearIn_test_rotor.wpn         # 弹丸武器：GearInWeaponFrameEffect（everyFrameEffect）+ 动画 / 内置视觉字段

@@ -19,16 +19,14 @@
 
 ## 前置知识
 
-阅读本节前，建议先掌握以下既有内容：
-
-- MOD 目录结构、`starsector.log`[C1-S1]：本节所有可观察结果都落在日志与画面里。
-- 插件模型与暂停判断 [C7-S1]：本节的分层渲染插件沿用 `engine.isPaused()` 判断做法，但推进语义不同 —— 见 "推进与暂停"。
-- 战役 (mission) 与生涯 (campaign) 概念、`GearIn_test` 测试战役 [C3-S1]：本节用它做验证。
-- 编译 JAR 链路 [C6-S1]：本节示例编入同一个 `jars\GearIndustry.jar`。
-- `Global` 生命周期 —— 禁止跨战斗缓存引擎引用 [C6-S3]：本节把同一条纪律延伸到渲染插件与它持有的舰船引用。
-- 战斗状态读取 —— 实体存活性、`isCombatOver()`[C7-S2]：本节消费存活判定做失效。
-- 战斗插件生命周期与清理纪律 [C7-S5]：本节把 "战斗结束没有清理回调" 拓展到渲染插件侧，并指出两条插件通道的差异。
-- shader 与 GLSL[C14-S1]：完整讲解在该单元；本节只用 `GL11` 立即模式原语，不涉及 shader 资源。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
+- [C3-S1] 的模拟战入口与测试战役；
+- [C6-S1] 的 Java 构建与 JAR 输出；
+- [C6-S3] 的 `Global` 生命周期与跨战斗引用边界；
+- [C7-S1] 的战斗插件注册与暂停判断；
+- [C7-S2] 的实体存活性与 `isCombatOver()`；
+- [C7-S5] 的战斗插件生命周期与清理边界；
+- [C15-S1] 的 shader 与 GLSL 基础。
 
 ## 文件与 API 链路
 
@@ -49,7 +47,7 @@
 | 回调 | 时机 | 说明 |
 |---|---|---|
 | `init(CombatEntityAPI)` | `addLayeredRenderingPlugin` 后由引擎在 `executeAdds` 阶段调用 | 与 `EveryFrameCombatPlugin.init()` 不同，**这个 init 保证在渲染与推进前执行**；参数是承载实体，不是引擎 |
-| `advance(float)` | 每帧非暂停分支的实体推进循环 | 暂停时**不调用**(与 `EveryFrameCombatPlugin.advance` 相反，见 "推进与暂停")|
+| `advance(float)` | 每帧非暂停分支的实体推进循环 | 暂停时**不调用** (与 `EveryFrameCombatPlugin.advance` 相反，见 "推进与暂停")|
 | `render(CombatEngineLayers, ViewportAPI)` | 每帧渲染阶段，**每个激活层各调用一次** | 只有 `isNearViewport(entity.getLocation(), getRenderRadius())` 通过才调用 |
 | `isExpired()` | 每次推进后由引擎检查 | 返回 true → 实体进移除队列 → 移除时调用 `cleanup()` |
 | `cleanup()` | 实体被引擎移除时 | 见 "清理" 节：战斗结束的 `destroyInstance` 不调用它 |
@@ -98,7 +96,7 @@ JUST_BELOW_WIDGETS       ─┘
 
 | 方法 | 语义 |
 |---|---|
-| `getLLX()` / `getLLY()` / `getVisibleWidth()` / `getVisibleHeight()` | 可见区左下角与宽高，**世界单位**(`ViewportAPI` javadoc 原文)|
+| `getLLX()` / `getLLY()` / `getVisibleWidth()` / `getVisibleHeight()` | 可见区左下角与宽高，**世界单位** (`ViewportAPI` javadoc 原文)|
 | `getViewMult()` | 当前层级缩放倍数 (`visibleWidth * worldXtoScreenX / screenWidth`)|
 | `getAlphaMult()` | 全局透明度倍数 (战斗结束淡出等)|
 | `convertWorldXtoScreenX / convertWorldYtoScreenY` | 世界坐标 → 屏幕坐标 (`(world - llx) / viewMult * worldXtoScreenX`)|
@@ -109,7 +107,7 @@ JUST_BELOW_WIDGETS       ─┘
 
 `setExternalControl` 的引擎侧行为：`isExternalControl()` 为 true 时不再调用 `engine.setViewport(...)`、相机中心跟随 `viewport.getCenter()`、屏幕叠加范围取 `viewport` 自己的参数。
 
-注意渲染回调里的顶点**直接以世界坐标提交**(视口变换已由渲染器应用)，屏幕转换方法只在需要屏幕空间时才用。
+注意渲染回调里的顶点**直接以世界坐标提交** (视口变换已由渲染器应用)，屏幕转换方法只在需要屏幕空间时才用。
 
 ::: warning 视口转换方向搞反
 在世界坐标绘制里拿 `convertWorldXtoScreenX` / `convertWorldYtoScreenY` 的结果当顶点坐标，或漏乘 / 多乘 `getViewMult()`，元素尺寸会随镜头缩放错误变化、位置偏移。记住：世界坐标绘制直接提交世界坐标，只有需要屏幕空间时才用转换方法，方向为 world→screen。
@@ -140,7 +138,7 @@ JUST_BELOW_WIDGETS       ─┘
 由此得到两条对照事实：
 
 - `EveryFrameCombatPlugin.advance` 暂停时仍被调用 (前置单元必须遵守的规则：必须自行判断 `engine.isPaused()`)；
-- `CombatLayeredRenderingPlugin.advance` 暂停时**不被调用**(引擎暂停分支不推进实体)，但渲染照常执行 —— 暂停时画面上的自绘内容静止但可见。
+- `CombatLayeredRenderingPlugin.advance` 暂停时**不被调用** (引擎暂停分支不推进实体)，但渲染照常执行 —— 暂停时画面上的自绘内容静止但可见。
 
 成熟实例的 `advance` 仍保留 `engine.isPaused()` 判断：这是防御性写法，本教程不作必须遵守的规则，但建议保留以抵抗基线变动。`advance` 里也照例判 `engine == null`(`init` 虽然保证先执行，成熟实例一致做法是判空)。
 
@@ -162,7 +160,7 @@ if (viewport.isNearViewport(this.getLocation(), this.plugin.getRenderRadius())) 
 
 需要全局常驻的插件用 `Float.MAX_VALUE`。
 
-`render` 对**每个激活层各调用一次**(成熟实例声明多个层时，回调内按 `layer` 参数分支绘制)。一个插件声明多层时，同一帧会收到多次 `render` 调用，必须在回调内按 `layer` 参数分支，而不是每次都画全套。
+`render` 对**每个激活层各调用一次** (成熟实例声明多个层时，回调内按 `layer` 参数分支绘制)。一个插件声明多层时，同一帧会收到多次 `render` 调用，必须在回调内按 `layer` 参数分支，而不是每次都画全套。
 
 ::: tip 图形 "凭空消失" 时查两处
 图形在视口内 "凭空消失"(或被画到战场原点) 时，先查两处：承载实体位置是否每帧同步到 `entity.getLocation()`、`getRenderRadius()` 是否覆盖绘制范围 —— 这两处正是 `isNearViewport` 剔除判定的输入 (规则 4 的可观察表现)。
@@ -188,7 +186,7 @@ if (viewport.isNearViewport(this.getLocation(), this.plugin.getRenderRadius())) 
 | # | 强度 | 规则 | 违反的可观察结果 |
 |---|---|---|---|
 | 1 | **必须** | 绘制只用 GL 原语，且**只在 `render()` 回调内进行**；`advance()` 属于推进阶段，不绘制 | `advance()` 里发出的 GL 命令在渲染阶段之外执行：内容不出现、错帧或叠加在错误图层上 (随后被渲染阶段的状态切换与清屏覆盖)，且无法参与本层的层序 |
-| 2 | **必须** | GL 资源 (VAO / VBO / 着色器 (shader) 程序等)**必须随战斗清理**：在 `cleanup()` 中释放，句柄复位防重复删除 | 句柄与显存随每场战斗累积泄漏；多场战斗后渲染异常 (驱动报错、画面损坏、卡顿)|
+| 2 | **必须** | GL 资源 (VAO / VBO / 着色器 (shader) 程序等)** 必须随战斗清理**：在 `cleanup()` 中释放，句柄复位防重复删除 | 句柄与显存随每场战斗累积泄漏；多场战斗后渲染异常 (驱动报错、画面损坏、卡顿)|
 | 3 | **必须** | 不能在 `cleanup()` 上赌 "战斗结束时会被调用"：`destroyInstance` 只清空对象表不调 `cleanup()`；插件必须在 `advance()` 里主动失效 (`isExpired()` → true) 驱动引擎移除 | 舰船已死/已脱离的插件继续渲染到战斗结束；战斗结束时资源静默丢失、`cleanup()` 永不执行 |
 | 4 | **必须** | 渲染位置同步到承载实体 `entity.getLocation()`，且 `getRenderRadius()` 覆盖绘制范围 | 位置不同步 → 图形画在战场原点或旧位置；半径过小 → 图形在视口内 "凭空消失"(`isNearViewport` 剔除)；半径过大 → 离屏仍绘制，性能损耗 |
 | 5 | **必须** | `getActiveLayers()` 精确声明需要的层，`render` 回调内按 `layer` 参数分支 | 漏层 → 图形不出现或被下层遮挡；多激活层不分支 → 同一图形每帧重复绘制 (叠加变亮/闪烁)，同帧多图层内容互相污染 |
@@ -402,7 +400,7 @@ gradle jar
 
   没有 `ERROR`。
 - **画面结果**：每个被注册的已部署成员身上出现一个半透明青色方框 (120 世界单位边长)，跟随舰船移动；方框画在舰船与导弹之上、粒子之下 ——`ABOVE_SHIPS_AND_MISSILES_LAYER` 位于粒子系统之前 (层序表)。
-- **暂停行为**：按空格暂停约 10 秒再恢复 —— 暂停期间方框静止不动 (`advance` 不被调用，位置不更新) 但**仍然可见**(渲染不暂停)；恢复后继续跟随。
+- **暂停行为**：按空格暂停约 10 秒再恢复 —— 暂停期间方框静止不动 (`advance` 不被调用，位置不更新) 但**仍然可见** (渲染不暂停)；恢复后继续跟随。
 - **视口剔除**：把镜头拉远到方框边缘超出可见区外扩 120 单位之外 —— 方框消失；拉回后重新出现 (`isNearViewport` 剔除，规则 4 的可观察表现)。战斗中正常推进时不会产生 `GearIn layered renderer` 的推进日志 (render 与推进都不打日志，只有 init/cleanup 打)。
 - **失效与清理**：击毁被追踪的舰船 —— 方框立即消失 (下一帧起)，`Starsector/starsector-core/starsector.log` 出现一行：
 
@@ -434,7 +432,7 @@ gradle jar
 - **视口**：`ViewportAPI` 全是世界单位 (`getLLX/getLLY/getVisibleWidth/getVisibleHeight`)；`getViewMult()` 是当前缩放；转换方法 world↔screen 双向；`setExternalControl(true)` 让引擎每帧不再设置视口参数，是 MOD 接管相机的入口。
 - **清理一条线**：`advance()` 主动失效 (`isExpired()` → true)→ 引擎移除 → `cleanup()` 释放 GL 资源；战斗结束 `destroyInstance` **不调** `cleanup()`，与前置单元 "战斗结束没有清理回调" 的结论同构；跨战斗缓存禁令 (前置纪律) 原样适用。
 
-本节的分层渲染语义与视口坐标模型，是后续视觉类工作的地基：需要屏幕空间元素、按层自绘或相机接管 (`setExternalControl`) 的场合，都以这里的层序与坐标语义为起点；"没有战斗结束回调、收尾由插件自己驱动" 的清理纪律，与战斗插件通道一脉相承。
+本节的分层渲染语义与视口坐标模型，是视觉类工作的地基：需要屏幕空间元素、按层自绘或相机接管 (`setExternalControl`) 的场合，都以这里的层序与坐标语义为起点；"没有战斗结束回调、收尾由插件自己驱动" 的清理纪律，与战斗插件通道一脉相承。
 
 ## 建议参考项
 

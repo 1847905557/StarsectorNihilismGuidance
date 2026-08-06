@@ -23,21 +23,19 @@
 
 ## 前置知识
 
-本节假设您已具备以下基础：
-
-- MOD 目录结构、`starsector.log`[C1-S1]。
-- 生涯 (campaign) 概念：星区是生涯模式的运行对象，战役 mission 是另一个域 [C3-S1]。
-- 每帧回调模型 (战斗域)：本节的 `EveryFrameScript` 是它的生涯域对应物，两边的暂停语义不同 —— 战斗的 `advanceInner` 暂停分支仍推进地图，生涯的脚本循环在暂停时默认完全跳过 [C7-S1]。
-- `modPlugin` 生命周期回调与 "首次进入存档" 的 `CLASS_MARK` 标记；本节的脚本注册沿用同一个标记模式 [C6-S2]。
-- `Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；本节所有注册与读取都发生在生涯引擎建立之后 [C6-S3]。
-- settings 与 common 文件机制分别见 [C6-S4] 和 [C12-S4]；本节不新增任何资源文件。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
+- [C3-S1] 的生涯与战役域概念；
+- [C6-S2] 的 `modPlugin` 生命周期回调与持久数据标记；
+- [C6-S3] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
+- [C7-S1] 的每帧回调模型、暂停语义与战斗域和生涯域的差异；
+- [C6-S4] 的 settings 读取与 [C12-S4] 的 common 文件机制。
 
 ## 术语
 
-本节首次完整讲解两个词，后续内容在此基础上继续使用：
+本节首次完整讲解两个词：
 
 - **星区 (sector)**：API 名保留 `SectorAPI`。一个存档对应一个星区，`Global.getSector()` 返回当前存档的生涯引擎。星区是 "生涯域根对象"：时钟、地点、舰队、经济、势力、脚本、监听器、持久数据、记忆、UI 外壳都从它下面取。
-- **地点容器 (location)**：API 名保留 `LocationAPI`。星区内部的空间容器 (超空间与各恒星系)，实体挂在容器里。本节只给最小定义，容器内实体与访问的完整讲解由后续页面展开。
+- **地点容器 (location)**：API 名保留 `LocationAPI`。星区内部的空间容器 (超空间与各恒星系)，实体挂在容器里。容器内实体与访问见 [C8-S2]。
 
 ## 文件与 API 链路
 
@@ -52,13 +50,13 @@
 | 时钟 | `getClock()` | 生涯时钟 (`CampaignClockAPI`)，见 "时间系统" 节 |
 | 脚本 | `addScript` / `removeScript` / `removeScriptsOfClass(Class)` / `hasScript(Class)` / `getScripts()` | 引擎级每帧脚本的注册、移除、查询 (见 "脚本生命周期" 节)|
 | 脚本 (临时)| `addTransientScript` / `removeTransientScript` / `removeTransientScriptsOfClass(Class)` / `hasTransientScript(Class)` / `getTransientScripts()` | 不随存档保存的临时脚本 |
-| 地点 | `getHyperspace()` / `getStarSystem(String name)` / `getStarSystems()` / `getCurrentLocation()` / `getAllLocations()` / `getEntityById(String id)` / `getEntitiesWithTag(String tag)` | 地点容器与实体查找 (细节由后续页面展开)|
+| 地点 | `getHyperspace()` / `getStarSystem(String name)` / `getStarSystems()` / `getCurrentLocation()` / `getAllLocations()` / `getEntityById(String id)` / `getEntitiesWithTag(String tag)` | 地点容器与实体查找，详见 [C8-S2] |
 | 玩家 | `getPlayerFleet()` / `getPlayerPerson()` / `getPlayerFaction()` / `getPlayerStats()` | 玩家舰队、人物、势力、属性 |
 | 经济与势力 | `getEconomy()` / `getFaction(String id)` / `getAllFactions()` | 经济入口与势力表 |
-| 监听器 | `addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners()` / `getListenerManager()` | 生涯事件监听器 (由后续的监听器专题展开)|
+| 监听器 | `addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners()` / `getListenerManager()` | 生涯事件监听器，详见 [C10-S2] |
 | 通用插件 | `getGenericPlugins()` | 通用插件注册表 |
 | 持久数据 | `getPersistentData()` | 返回随存档保存的 `Map<String, Object>`，跨会话 MOD 数据入口 (前置生命周期例已用)|
-| 记忆 | `getMemory()` / `getMemoryWithoutUpdate()` | 星区 "global" memory(由后续的记忆专题展开)|
+| 记忆 | `getMemory()` / `getMemoryWithoutUpdate()` | 星区 "global" memory，详见 [C11-S4] |
 | UI 外壳 | `getCampaignUI()` | `CampaignUIAPI`：生涯消息区、core UI 页签、确认框等入口 |
 | 暂停 | `isPaused()` / `setPaused(boolean)` | 生涯暂停状态 (见 "暂停与加速语义" 节)|
 | 状态标志 | `isInFastAdvance()` / `isInNewGameAdvance()` | 新档时间推进窗口内为 `true`(见 "时间系统" 节)|
@@ -72,14 +70,14 @@
    - 这是 `addScript` 与 `addTransientScript` 的唯一行为差别，注册入口的选择直接决定跨存档行为。
 3. 实体级脚本是另一条平行线：实体对象也持有自己的 `scripts` 列表并逐实体推进，舰队脚本用 `CampaignFleetAPI.addScript(...)` 挂载 (成熟实例的通用做法)。
    - 实体级脚本随实体生命周期走，`EveryFrameScriptWithCleanup.cleanup()` 只在附着实体被移除时调用。
-   - 本节示例用引擎级 `addScript`；实体级细节由后续页面展开。
+   - 本节示例用引擎级 `addScript`；实体级脚本按对象生命周期注册。
 
 ### 时间系统 (CampaignClockAPI)
 
 结构表里的 `getClock()` 指向整个生涯的时间基准。脚本要换算游戏时间、做跨日检测，必须先读懂这颗钟：`CampaignClockAPI`(`com.fs.starfarer.api.campaign.CampaignClockAPI`) 是生涯时钟的公开接口，由引擎内部时钟类实现。基线事实：
 
 - **纪元起点是 206 年 1 月 1 日**：`new GregorianCalendar(206, 0, 1)`。
-  - `getCycle()` 返回日历**年**(开档即 206，因此 `getCycleString()` 是 `"c206"` 这种写法)；
+  - `getCycle()` 返回日历**年** (开档即 206，因此 `getCycleString()` 是 `"c206"` 这种写法)；
   - `getMonth()` 返回 1–12(1 = January)；
   - `getDay()` 返回 1–31；`getHour()` 返回 0–23。
 - **换算基线：10 真实秒 = 1 游戏日**：`SECONDS_PER_GAME_DAY = 10.0F`。`convertToDays(真实秒)` = 秒 ÷ 10；`convertToSeconds(游戏天)` = 天 × 10；`convertToMonths(真实秒)` = 秒 ÷ 10 ÷ 30。
@@ -128,14 +126,14 @@
 |---|---|
 | `boolean isDone()` | 返回 `true` 表示脚本结束，引擎负责清理 (从脚本列表移除)。常驻脚本返回 `false` |
 | `boolean runWhilePaused()` | 返回 `true` 时，引擎暂停期间 `advance()` 仍会被调用 |
-| `void advance(float amount)` | 每帧回调；**`amount` 是上一帧经过的真实秒数**("Use SectorAPI.getClock() to convert to campaign days.")|
+| `void advance(float amount)` | 每帧回调；**`amount` 是上一帧经过的真实秒数** ("Use SectorAPI.getClock() to convert to campaign days.")|
 
 推进循环的精确语义 (引擎级脚本与 transient 脚本两条循环完全一致)：
 
-1. 引擎遍历的是**列表快照**(`new ArrayList<>(this.scripts)`)，因此脚本在 `advance()` 里安全地 `addScript` / `removeScript` 不会抛 `ConcurrentModificationException`。
+1. 引擎遍历的是**列表快照** (`new ArrayList<>(this.scripts)`)，因此脚本在 `advance()` 里安全地 `addScript` / `removeScript` 不会抛 `ConcurrentModificationException`。
    - 代价是**在 advance 里新加的脚本要到下一帧才开始推进**。
 2. 对每个脚本：先查 `isDone()`—— 为真直接移除 (不调 `advance`)；否则查 `runWhilePaused() || !isPaused()`—— 为真才调 `advance(amount)`；`advance` 返回后再查一次 `isDone()`，为真则移除。
-3. 移除的三个入口：`isDone()` 自动清理 (引擎下一帧生效)；`removeScript(script)` 按**对象同一性**移除；`removeScriptsOfClass(Class)` 按**精确类**(`getClass() == clazz`，子类不算) 批量移除。
+3. 移除的三个入口：`isDone()` 自动清理 (引擎下一帧生效)；`removeScript(script)` 按**对象同一性**移除；`removeScriptsOfClass(Class)` 按**精确类** (`getClass() == clazz`，子类不算) 批量移除。
 4. `hasScript(Class)` 用 `isInstance` 判断 (**子类实例也算命中**)，与 `removeScriptsOfClass` 的精确类语义不同 —— 查重用 `hasScript`，批量删用 `removeScriptsOfClass`，别混用。
 5. **`addScript` 不去重**：直接 `scripts.add(...)`。同一实例或等价实例重复注册会各自推进，这是 "日志成双、行为叠加" 的根源。
 6. 引擎自身也会注册自己的内置脚本 —— 引擎级脚本不是 MOD 专属机制。
@@ -170,14 +168,14 @@
 2. **`onGameLoad(boolean newGame)`**：新档与读档共用；新档调用时已在时间推进之后 (由游戏管理器驱动)。本节示例用这个入口。
 
 ::: caution 注册的必须与禁止
-脚本注册**必须**发生在生涯引擎建立之后 ——**禁止**在 `onApplicationLoad` 里注册 (此刻 `Global.getSector()` 为 null，解引用即 NPE，启动中止)。
+脚本注册**必须**发生在生涯引擎建立之后 ——** 禁止**在 `onApplicationLoad` 里注册 (此刻 `Global.getSector()` 为 null，解引用即 NPE，启动中止)。
 
 一次性注册**必须**用随存档保存的 persistent data 标记，且每个注册项用**各自的键**，不要并入插件既有的 `CLASS_MARK` 标记 —— 否则在插件标记已置位的旧档里，本脚本永远不会注册。
 :::
 
 无论哪个入口，一次性注册**必须**用随存档保存的 persistent data 标记 (前置生命周期例的 `CLASS_MARK` 模式)。
 
-本节示例给每个注册项**各自的键**(`REGISTER_MARK`)，不要并入插件既有的 `GearInModPlugin.CLASS_MARK` 标记 —— 否则在插件标记已置位的旧档里，本脚本永远不会注册。
+本节示例给每个注册项**各自的键** (`REGISTER_MARK`)，不要并入插件既有的 `GearInModPlugin.CLASS_MARK` 标记 —— 否则在插件标记已置位的旧档里，本脚本永远不会注册。
 
 ## 完整最小例
 
@@ -332,11 +330,11 @@ public class GearInSectorClockScript implements EveryFrameScript {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInSectorClockScript.class`(可用 `jar tf` 核对)
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInSectorClockScript.class`(可用 `jar tf` 核对)。
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 [C6-S1]、`GearInModPlugin`([C6-S2]，含本节调用点片段) 与本节类 `GearInSectorClockScript`。累计工程的 `GearInSystemGenerator`[C3-S3] 非必需。
+前置数据：既有 MOD 布局 [C6-S1]、`GearInModPlugin` ([C6-S2]，含本节调用点片段) 与本节类 `GearInSectorClockScript`。累计工程的 `GearInSystemGenerator` 非必需。
 
 1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；用 `jar tf jars\GearIndustry.jar` 核对产物。
 2. 新建生涯：启动游戏进入新档，持续观察 `starsector.log`，直到确认脚本挂载与跨日日志。
@@ -355,7 +353,7 @@ gradle jar
   GearIn clock script mounted at Mar 2, c206 GearIn clock day change: Mar 2, c206 (short=206.3.2) | this frame=0.0017 game days | since mount=0.0 game days
   ```
 
-  随后**每 10 真实秒**(未暂停、未加速) 出现一条新的跨日日志，日期逐日前进、`since mount` 逐日 +1.0。挂载日期约 206.3.2 —— 新档时间推进约 60.2 游戏日 (约两个月) 后才是玩家开始游玩的时间点；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
+  随后**每 10 真实秒** (未暂停、未加速) 出现一条新的跨日日志，日期逐日前进、`since mount` 逐日 +1.0。挂载日期约 206.3.2 —— 新档时间推进约 60.2 游戏日 (约两个月) 后才是玩家开始游玩的时间点；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
 - 暂停 (空格)：跨日日志停止 (脚本冻结、时钟冻结)；恢复后继续，`since mount` 不因暂停丢失进度。
 - 加速 (按住 Shift)：跨日频率约翻倍 (`campaignSpeedupMult = 2`，每帧推进两次)，约每 5 真实秒一条。
 - 读档：不出现 `mounted` 日志 (`startTimestamp` 随存档恢复)；不重复注册 (`REGISTER_MARK` 标记已置位、`hasScript` 命中)；跨日日志从存档时刻继续。
@@ -377,7 +375,7 @@ gradle jar
 2. **每次读档后跨日日志成双、行为叠加**：`onGameLoad` 里直接 `addScript`，没有 persistent data 标记 (`addScript` 不去重)。读档次数越多，同一条跨日日志出现越多次 (两个实例各推进各打印)。修正：`REGISTER_MARK` 标记 + `hasScript` 查重 (本节调用点片段)。
 3. **`isDone()` 恒返回 true，脚本首帧即被移除**：把 "完成" 写反 (如 `return done` 但 `done` 初始为 true，或 `return true` 占位)。引擎第一帧就把脚本移除 (先查 `isDone` 再调 `advance`)，`advance` 一次都不执行、连 `mounted` 日志都没有。修正：`done` 初始 `false`，仅在完成条件满足时置 `true`。
 4. **`runWhilePaused()` 语义误用**：误以为 "返回 true 就能让时钟在暂停时前进"。`runWhilePaused = true` 时暂停期间 `advance()` 仍被调用 (`amount` 仍是真实秒数)，但 `getClock()` 的日期与时间戳**不变** —— 时钟只在未暂停分支推进。以 `amount` 自累计的逻辑在暂停时继续走、以时钟日期/时间戳为准的逻辑冻结，两者会分道扬镳。修正：暂停敏感的进度用时钟时间戳差值 (暂停时自动冻结)；必须暂停期间推进的 (如 UI 覆盖动画) 才用 `runWhilePaused = true`，且不依赖时钟。
-5. **把 `amount` 直接当游戏天数，时间流速快 10 倍**：忽略接口提示("Use SectorAPI.getClock() to convert to campaign days")。10 真实秒被当成 10 游戏天，正确应是 1 游戏天。修正：一律 `clock.convertToDays(amount)`。
+5. **把 `amount` 直接当游戏天数，时间流速快 10 倍**：忽略接口提示 ("Use SectorAPI.getClock() to convert to campaign days")。10 真实秒被当成 10 游戏天，正确应是 1 游戏天。修正：一律 `clock.convertToDays(amount)`。
 6. **暂停时等待时钟推进的倒计时永不触发**：脚本用 `clock.getElapsedDaysSince(ts) >= N` 做倒计时，又没改 `runWhilePaused`。暂停期间 `since mount` 冻结、`done` 永不置位，恢复后继续。修正：理解这是设计行为 (暂停 = 停表)；需要真实时间倒计时就自己累计 `amount`。
 7. **战斗期间脚本 "消失"**：在战斗里等生涯日志。战斗期间无任何跨日日志、时钟冻结；回生涯后日志继续。修正：无需修复 —— 进入战斗后生涯引擎不再推进，战斗域是另一套推进循环；生涯脚本天然不跨战斗推进。
 8. **旧档永远不注册脚本**：把注册判断挂在插件既有的 `GearInModPlugin.CLASS_MARK` 标记上 (该键在新档首次进入时就已置位)。旧档读档后无 `mounted` 日志，脚本缺失且无报错。修正：每个注册项用各自的 persistent data 键 (本节 `REGISTER_MARK`)，旧档缺键 = 视为首次注册，正好覆盖 "中途加脚本" 的场景。
@@ -385,13 +383,13 @@ gradle jar
 
 ## 总结
 
-本节把星区、时钟与脚本讲成一条链：**注册入口**(`onGameLoad` + persistent data 标记)→ **每帧推进**(引擎遍历快照：`isDone` 先清、`runWhilePaused() || !isPaused()` 才调 `advance(amount)`)。
+本节把星区、时钟与脚本讲成一条链：**注册入口** (`onGameLoad` + persistent data 标记)→ **每帧推进** (引擎遍历快照：`isDone` 先清、`runWhilePaused() || !isPaused()` 才调 `advance(amount)`)。
 
-链条的后半是**时钟换算**(`amount` 是真实秒，`convertToDays` 按 10 秒/游戏日折算；暂停时时钟冻结) 与**清理**(`isDone` 自动移除、`removeScript` 按同一性、`removeScriptsOfClass` 按精确类、`hasScript` 按 `isInstance`)。
+链条的后半是**时钟换算** (`amount` 是真实秒，`convertToDays` 按 10 秒/游戏日折算；暂停时时钟冻结) 与**清理** (`isDone` 自动移除、`removeScript` 按同一性、`removeScriptsOfClass` 按精确类、`hasScript` 按 `isInstance`)。
 
 记忆要点：
 
-- `scripts` 随存档保存、`transientScripts` 不随存档保存；`addScript` 不去重 ——**一次性注册必须用 persistent data 标记**，查重用 `hasScript`。
+- `scripts` 随存档保存、`transientScripts` 不随存档保存；`addScript` 不去重 ——** 一次性注册必须用 persistent data 标记**，查重用 `hasScript`。
 - 引擎遍历快照：`advance` 里 `addScript` 的新脚本**下一帧**才推进。
 - 暂停 (空格) 时：脚本默认冻结、时钟冻结、经济冻结；加速 (按住 Shift) 时每帧推进两次；**战斗期间生涯引擎完全不推进**。
 - 纪元 206-01-01；`getCycle()` 是年、`getMonth()` 1–12、`getDay()` 1–31；`getElapsedDaysSince(0)` 返回 `Float.MAX_VALUE`。

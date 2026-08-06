@@ -1,6 +1,6 @@
 # 读取与修改生涯舰队
 
-本节读取并修改生涯舰队、舰队数据与舰队成员，包括成员加入、保存状态、装配和战斗准备。舰队坐标、任务与 AI 留给后续页面，本节集中处理成员数据。
+本节读取并修改生涯舰队、舰队数据与舰队成员，包括成员加入、保存状态、装配和战斗准备；本节集中处理成员数据，舰队坐标、任务与 AI 由对应生涯对象页面负责。
 
 *本节预期阅读时间：~25 分钟。*
 
@@ -19,17 +19,15 @@
 
 ## 前置知识
 
-本节要继续使用生涯脚本、工厂入口与插件生命周期回调，请先熟悉以下主题：
-
-- **生涯时钟与脚本注册判断** [C8-S1]：`SectorAPI`、生涯时钟、`EveryFrameScript` 的注册时机，以及 persistent data `CLASS_MARK` 一次性判断模式。
-- **生涯与战役、装配与共享注册表** [C3-S1]：生涯 (campaign) 与战役 (mission) 的区别；装配 (variant) 与舰船共享注册表。
-- **无效装配 ID 的两条分流** [C4-S1]：`FleetMemberAPI` 路径日志 + `errorShipVariant` 回退 (本节 "成员创建" 直接使用该结论)。
-- **工厂入口与阶段判断** [C6-S3]：`Global.getFactory()` 是创建生涯对象的正式途径；`getCurrentState()` 阶段判断。
-- **插件生命周期回调与注册判断** [C6-S2]：`GearInModPlugin` 的生命周期回调与 `CLASS_MARK` 一次性判断键。
+- [C3-S1] 的生涯与战役域、装配与舰船共享注册表；
+- [C4-S1] 的无效装配 ID、路径日志与 `errorShipVariant` 回退；
+- [C6-S2] 的插件生命周期回调与持久数据标记；
+- [C6-S3] 的 `Global.getFactory()` 创建入口与阶段语义；
+- [C8-S1] 的生涯时钟、`EveryFrameScript` 注册时机与一次性判断。
 
 ## 术语
 
-按术语约定，本节首次完整讲解一个词 ([C8-S5] 起继续使用)：
+按术语约定，本节首次完整讲解一个词：
 
 - **舰队成员 (fleet member)**：API 名保留 `FleetMemberAPI`。一艘舰船或一个战机联队在生涯侧的保存态对象。
   - 成员不是战斗实体 (`ShipAPI`)—— 战斗实体由成员在部署时实例化；成员承载船体 id、装配 (variant)、舰长、船体状态、CR、维修状态与后勤数值。
@@ -86,7 +84,7 @@
    - 战机展开经 `Utils.expandFighterWingsCampaign` 把每个联队展开成逐架成员；展开只取非封存且 CR > 0 的成员，封存成员排到末尾。
    - `syncMemberLists()` 重建这三个视图。
 3. **派生状态**：`fleetPointsUsed` / `effectiveStrength`、`cargo`(容量上限由成员重算)、`minCrew`、`travelSpeed`、`fuelPerLightYear`、burn level 三件套。全部在同步时重算。
-4. **瞬态层**：`snapshot`(`transient` 字段)——`takeSnapshot()` / `getSnapshot()` 的成员快照，**不随存档保存**(接口 "The snapshot is transient and will not be in the save file.")。
+4. **瞬态层**：`snapshot`(`transient` 字段)——`takeSnapshot()` / `getSnapshot()` 的成员快照，**不随存档保存** (接口 "The snapshot is transient and will not be in the save file.")。
 
 同步管线 (`syncIfNeeded`)：`setSyncNeeded()` 置位 → 下一次读成员/容量前触发 —— 成员 stats 全量重算、`cacheClearedOnSync` 清空、舰队指挥官 fleetwide 效果重放、船员重分配 (`recrewFleetMembersV2`)、fleet sync 船插的 `onFleetSync`。
 
@@ -109,7 +107,7 @@
 
 创建后成员即处于 "保存态"：自带默认舰长 (人格 `steady`)、唯一 id(`Misc.genUID()`)、从 CSV spec 加载期取装配并 **clone**(成员各自持有副本)、以及 `FleetMemberStatusAPI`(船体状态) 与 `RepairTrackerAPI`(CR/维修) 两个状态对象。
 
-**创建不等于入队**—— 成员必须交给 `FleetDataAPI.addFleetMember(...)` 才会成为舰队一员。
+**创建不等于入队** —— 成员必须交给 `FleetDataAPI.addFleetMember(...)` 才会成为舰队一员。
 
 无效装配 id 的两条分流：`SHIP` 类型装配缺失 → 打印堆栈 + 回退 `errorShipVariant`(默认 `nebula_Standard`)，**不抛异常**；
 
@@ -166,7 +164,7 @@
 | 分类 | `isFighterWing()`、`isFrigate()`、`isDestroyer()`、`isCruiser()`、`isCapital()`、`isCivilian()`、`isCarrier()`、`getNumFlightDecks()`、`isPhaseShip()`、`isStation()` | 按 hull size / 角色判定 |
 | 其他 | `getFleetData()`、`getStats()`(`MutableShipStatsAPI`)、`getCrewComposition()`、`isAlly()` / `setAlly(boolean)`、`setShipName()` | 回链集合、成员统计、船员构成、战斗瞬态标记、船名 |
 
-**装配写入语义**(`FleetMemberAPI.setVariant`)：`withRefit = true` 时按新旧装配差异对 CR 施加事件 (`applyCREvent(..., "field refit")`)；
+**装配写入语义** (`FleetMemberAPI.setVariant`)：`withRefit = true` 时按新旧装配差异对 CR 施加事件 (`applyCREvent(..., "field refit")`)；
 
 非战机成员会同步更新 `specId = variant.getHullVariantId()`(**换装配会连船体一起换**)；`withStatsUpdate = true` 时立即重算成员 stats。
 
@@ -430,13 +428,13 @@ public class GearInFleetMemberScript implements EveryFrameScript {
 gradle jar
 ```
 
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`(可用 `jar tf` 核对)
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`(可用 `jar tf` 核对)。
 
 脚本与注册点就绪后，按下面的方案验证整条链。
 
 ## 验证方案
 
-前置数据：`gear_in` MOD 布局与插件生命周期类 ([C6-S1] / [C6-S2]，含本节调用点片段)、本节脚本类、生涯时钟脚本 ([C8-S1]，非必需)。
+前置数据：`gear_in` MOD 布局与插件生命周期类 ([C6-S1] / [C6-S2]，含本节调用点片段)、本节脚本类、生涯时钟脚本 (非必需)。
 
 1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
 2. 新建生涯：确认 `starsector.log` 按顺序出现 `GearIn fleet member` 各日志行 (`start` / `created` / `added` / `iterate` / `damage` / `repair` / `CR` / `mothball` / `variant swap` / `variant restore` / `done`)。
@@ -489,7 +487,7 @@ gradle jar
 
 排错时先按症状定位层：成员数量与遍历顺序的问题查集合视图与同步时机，数值没变或读档丢失的问题查保存态字段与瞬态层，部署与后勤的问题查 CR、船员与封存判据。封存修正延迟生效是最常被忽略的一处 —— 改完封存标志先触发同步再读数。
 
-这条对象链到此已经形成完整流程。顺着它继续向前：舰队坐标写入、任务与 AI 调度位于集合层之上，是围绕舰队实体的另一组 API 主题；舰队侧的市场补给来源则落在经济系统一侧 —— 本节的成员读写语义是这两条支线的共同底座，后续遇到 "给某支舰队加船、改装配、查部署状态" 的需求时，都可以回到本节的三层链路上定位。
+这条对象链到此已经形成完整流程。舰队坐标写入、任务与 AI 调度位于集合层之上，市场补给来源落在经济系统一侧；本节的成员读写语义是这些操作的共同底座。
 
 ## 建议参考项
 

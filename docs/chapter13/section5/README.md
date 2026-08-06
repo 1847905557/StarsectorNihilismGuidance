@@ -19,20 +19,17 @@
 
 ## 前置知识
 
-本节示例会反复用到以下既有能力与资产，请先确认掌握：
-
-- MagicLib 概览与 `MagicTrailPlugin` 最小纪律 [C13-S4]：sprite 宽高为 2 的幂、ID 跨帧复用、中途不换 sprite；`MagicSettings.getList` 与 `modSettings.json` 合并读取 (本节 `magicTrail_files` 列表走的就是这条链)。
-- 硬依赖声明与运行时检测 [C13-S1]：引用 `org.magiclib.plugins.MagicTrailPlugin` 前 `dependencies` 必须声明 `MagicLib`(用户缺依赖 → `NoClassDefFoundError`)。
-- LazyLib 纪律 [C13-S2]：`MagicTrailPlugin` 与 `MagicAutoTrails` 内部使用 `MathUtils` / `VectorUtils`；本节示例不直接依赖 LazyLib。
-- 射弹运行态 [C7-S4]：数据驱动尾迹的匹配对象是 `DamagingProjectileAPI.getProjectileSpecId()`；`GearIn_test_shot` 弹体 ID 由该页声明，本节只使用。
-- 战斗插件模型与生命周期 [C7-S1] / [C7-S5]：settings `plugins` 段每场战斗 `newInstance`、`advance` 必须先判 `engine == null`、暂停时停止推进、战斗结束无清理回调。
-- 分层渲染 [C7-S6]：`CombatLayeredRenderingPlugin` 与 `CombatEngineLayers` 层序 (本节 `MagicTrailRenderer` 就是一条分层渲染插件通道)。
-- `GearIn_test` 测试战役 [C3-S1]：战斗侧冒烟入口。
-- `Global` 生命周期 [C6-S3]：战斗外 `getCombatEngine()` 是非 null 空引擎；战斗外调用 `addTrailMember*` 走 `getPlugin()` 的 null 分支，静默无效果。
+- [C13-S4] 的 MagicLib 设置读取、`MagicTrailPlugin` 生命周期、精灵尺寸和尾迹 ID 复用规则；
+- [C13-S1] 的硬依赖声明与运行时检测，以及在 `dependencies` 中声明 MagicLib；
+- [C13-S2] 的 LazyLib 数学工具和战斗状态生命周期；
+- [C7-S4] 的 `DamagingProjectileAPI.getProjectileSpecId()` 与射弹运行态；
+- [C7-S1] 和 [C7-S5] 的战斗插件实例化、`advance` 回调、引擎判空、暂停判断和战斗结束处理；
+- [C7-S6] 的 `CombatLayeredRenderingPlugin` 与 `CombatEngineLayers` 层序；
+- [C6-S3] 的 `Global` 生命周期和战斗外 `getCombatEngine()` 判定。
 
 ## 文件与 API 链路
 
-先给一张全链路速查表：每一环的文件或 API、谁在读它、读不到或读错会有什么后果。表内全部名称与路径是后续各节的核对基准，正文按 数据 → 创建 → 推进 → 渲染 → 清理 的顺序展开：
+先给一张全链路速查表：每一环的文件或 API、谁在读它、读不到或读错会有什么后果。表内全部名称与路径是本章各小节的核对基准，正文按 数据 → 创建 → 推进 → 渲染 → 清理 的顺序展开：
 
 | 环节 | 文件或 API | 使用方 / 行为 |
 |---|---|---|
@@ -107,7 +104,7 @@ MagicLib 把尾迹参数拆成两条通道 —— 数据驱动 (CSV 行由 `Magi
 
 | 列 | 语义 |
 |---|---|
-| `trail` | 尾迹行键，**必须全局唯一**(合并键列)|
+| `trail` | 尾迹行键，**必须全局唯一** (合并键列)|
 | `projectile` | 弹体 spec id(`.proj` 文件 id)；一个弹体可有多行 = 多条尾迹 |
 | `sprite` | `settings.json` `graphics.fx` 分类的贴图键 (MagicLib 自带 `base_trail_smooth` / `base_trail_contrail` / `base_trail_mild` / `base_trail_fuzzy` / `base_trail_rough` / `base_trail_smoke` / `base_trail_heavySmoke` / `base_trail_heavyBurn` / `base_trail_weave` / `base_trail_aura` / `base_trail_zap` / `base_trail_zapWithCore`，共 12 张)|
 | `minLength` | 最小段间距 (SU)。**负数 → 慢速模式**：专为速度低于 500 的弹体优化的节流生成 (每 0.06–0.07 秒一段)|
@@ -140,9 +137,9 @@ MagicLib 把尾迹参数拆成两条通道 —— 数据驱动 (CSV 行由 `Magi
 
 要点：
 
-- **整条尾迹的视觉长度 ≈ 弹体速度 × 每段总时长**(`fadeIn + duration + fadeOut`)：段以弹体位置为起点、以自身速度移动，最老段在总时长后消失，新段在弹头持续生成 —— 弹速越快或段寿命越长，尾迹越长。这是段参数与观感的换算关系 (近似，段速不为 0 时按相对速度折算)。
+- **整条尾迹的视觉长度 ≈ 弹体速度 × 每段总时长** (`fadeIn + duration + fadeOut`)：段以弹体位置为起点、以自身速度移动，最老段在总时长后消失，新段在弹头持续生成 —— 弹速越快或段寿命越长，尾迹越长。这是段参数与观感的换算关系 (近似，段速不为 0 时按相对速度折算)。
 - `minLength` 建议保持小值 (MagicLib 注释的 "最小段间距" 语义，原版示例 10)。
-  - 值过大 → 段间距大、段间直线连接，曲线弹道变成折线，时间加速时尤为明显。这是**建议**(旧教程的 "不建议高于 10" 在当前基线语义下仍为软约束，不是引擎硬限制)。
+  - 值过大 → 段间距大、段间直线连接，曲线弹道变成折线，时间加速时尤为明显。这是**建议** (旧教程的 "不建议高于 10" 在当前基线语义下仍为软约束，不是引擎硬限制)。
 - `additive` 建议开 `TRUE`(MagicLib 自带 `base_trail_*` 贴图大多按叠加混合设计；`renderBelowExplosions` 注释也说明该选项 "mostly used with non additive trails")。旧教程 "极度建议写 true" 仍为建议级。
 - `angleAdjustment` 一般不建议用：它会改写弹体自身朝向 (`proj.setFacing`)，只应在需要尾迹与弹体朝向一致且 `drift<1` 时使用；`BALLISTIC_AS_BEAM` 弹体是**必须 `FALSE`**(`!!!! Must be FALSE for BALLISTIC_AS_BEAM projs !!!!`，排除 `BALLISTIC_AS_BEAM`)。
 
@@ -152,8 +149,8 @@ MagicLib 把尾迹参数拆成两条通道 —— 数据驱动 (CSV 行由 `Magi
 
 每场战斗 `init` 清空自己的追踪表，`advance` 里遍历 `engine.getProjectiles()`，按 `getProjectileSpecId()` 查表：
 
-- **快速模式**(`minLength >= 0`)：该弹体移动超过 `minLength` 才生成一个新段 —— 时间加速时自动省性能；
-- **慢速模式**(`minLength < 0`)：按 0.06–0.07 秒定时器生成，注释说明 "专为速度低于 500 的弹体优化"；
+- **快速模式** (`minLength >= 0`)：该弹体移动超过 `minLength` 才生成一个新段 —— 时间加速时自动省性能；
+- **慢速模式** (`minLength < 0`)：按 0.06–0.07 秒定时器生成，注释说明 "专为速度低于 500 的弹体优化"；
 - 每个弹体、每条尾迹行各取一个 `getUniqueID()`，随后每段生成都复用同一 ID；
 - 段生成时应用全部行参数：sprite、`distance` 偏移、`drift` 侧向速度、`dispersion` / `randomVelocity` / `randomRotation` 随机化、`fadeOnFadeOut` 透明度缩放、层与混合。
 
@@ -190,7 +187,7 @@ MagicLib 把尾迹参数拆成两条通道 —— 数据驱动 (CSV 行由 `Magi
 
 ### getUniqueID：一条尾迹一个 ID，生命周期内必须复用
 
-`getUniqueID()` 从静态计数 `usedIDs = 1f` 起每次返回 `+0.1f`；**负数 ID 是切断操作的保留区**(`usedCutterIDs` 从 `-1f` 递减)。
+`getUniqueID()` 从静态计数 `usedIDs = 1f` 起每次返回 `+0.1f`；**负数 ID 是切断操作的保留区** (`usedCutterIDs` 从 `-1f` 递减)。
 
 官方 javadoc 原文："must be saved in the function that generates the trail, since if it changes it counts as a new trail altogether"。
 
@@ -198,8 +195,8 @@ MagicLib 把尾迹参数拆成两条通道 —— 数据驱动 (CSV 行由 `Magi
 
 两件事互相独立：
 
-- **每帧生成新 ID** → 每条都是独立的 1 片段尾迹**，无法连接成条**—— 画面是密集的短横条或毛刺，不是一条连续的尾迹 (每帧一个 ID 的 tracker 各有一到两段，段与段不连锁)。
-- **中途换 sprite** → `addOrGetTrailTracker` 按 "层 + 纹理 id" 分桶 (`texID = sprite.getTextureId()` 参与分桶)，同 ID 换贴图会落进不同的 `trailTrackerMap` → 一条尾迹被**拆成两条**(旧段按旧纹理淡出、新段从新纹理重新起条)。
+- **每帧生成新 ID** → 每条都是独立的 1 片段尾迹**，无法连接成条** —— 画面是密集的短横条或毛刺，不是一条连续的尾迹 (每帧一个 ID 的 tracker 各有一到两段，段与段不连锁)。
+- **中途换 sprite** → `addOrGetTrailTracker` 按 "层 + 纹理 id" 分桶 (`texID = sprite.getTextureId()` 参与分桶)，同 ID 换贴图会落进不同的 `trailTrackerMap` → 一条尾迹被**拆成两条** (旧段按旧纹理淡出、新段从新纹理重新起条)。
 
 违反的可观察结果：`base_trail_smooth` 与 `base_trail_contrail` 交替使用同一 ID → 尾迹断成两段纹理；每帧调 `getUniqueID()` → 尾部出现 "点阵"。
 
@@ -257,9 +254,9 @@ javadoc 允许 null，但 "that should really only be done in weird, edge-case s
 
 - **寿命**：`spentLifetime += amount`，钳制到 `getTotalLifetime() = inDuration + mainDuration + outDuration`；
 - **尺寸**：`currentSize = startSize × (1 − t) + endSize × t`(+ 可选 `SIZE_PULSE` 脉动)，`t = spentLifetime / totalLifetime`；
-- **颜色**：`startColor` → `endColor` 线性插值**，alpha 分量被忽略**(javadoc 原文 "Ignores alpha component entirely"—— 透明度单独走 `opacity` 曲线)；
+- **颜色**：`startColor` → `endColor` 线性插值**，alpha 分量被忽略** (javadoc 原文 "Ignores alpha component entirely"—— 透明度单独走 `opacity` 曲线)；
 - **透明度三段曲线**：`spent < inDuration` → `opacity × spent / inDuration` 爬升；`in..in+main` → 满 `opacity`；`> in+main` → 按 `(1 − (spent − in − main)/out)` 衰减；`inDuration = 0` 时生成即满；
-- **运动**：`angle += currentAngularVelocity × amount`；`position += (cos/sin(angle) × currentSpeed + offsetVelocity) × amount`—— 段自己带速度、角速度与恒定偏移速度漂移**，不跟随实体**(实体只是生成点的来源)。
+- **运动**：`angle += currentAngularVelocity × amount`；`position += (cos/sin(angle) × currentSpeed + offsetVelocity) × amount`—— 段自己带速度、角速度与恒定偏移速度漂移**，不跟随实体** (实体只是生成点的来源)。
 
 ### 插件逐帧处理 (MagicTrailPlugin.advance)
 
@@ -267,12 +264,12 @@ javadoc 允许 null，但 "that should really only be done in weird, edge-case s
 
 1. **暂停时不推进**：`engine == null || engine.isPaused()` → 直接返回 —— 暂停时整条尾迹冻结 (段不移动、不淡出)，恢复后继续；
 2. 每秒清理计时 (`cleanTimer`) 到时：把 `isExpired()` 的 tracker 从主表移除、把 `!engine.isEntityInPlay(entity)` 的 cutting map 项删除；
-3. 每个 tracker `tickTimersInTrail(amount)`：遍历段，`spentLifetime >= totalLifetime` 的段移除，其余 `tick`；tracker 空置累计 3 秒 → `isExpired = true`——**旧段全部消失后约 3–4 秒，tracker 本体才被回收**(下个清理秒)；
+3. 每个 tracker `tickTimersInTrail(amount)`：遍历段，`spentLifetime >= totalLifetime` 的段移除，其余 `tick`；tracker 空置累计 3 秒 → `isExpired = true`——** 旧段全部消失后约 3–4 秒，tracker 本体才被回收** (下个清理秒)；
 4. library-free cut 检查：遍历 customData，键含 `MagicTrailPlugin_LIB_FREE_TRAIL_CUT` 且值为 `CombatEntityAPI` → 执行 `cutTrailsOnEntity` 并删除该键。
 
 ### 规则 8：暂停时尾迹冻结；advance 推进不依赖使用方代码
 
-段的推进、淡出、移除全部由 MagicLib 自己的 `MagicTrailPlugin.advance` 完成 —— 使用方只负责 "每帧登记新段"。暂停时插件不推进任何段，画面上的尾迹**静止但可见**(与分层渲染的暂停行为同侧：渲染不停、推进停，见 [C7-S6])。
+段的推进、淡出、移除全部由 MagicLib 自己的 `MagicTrailPlugin.advance` 完成 —— 使用方只负责 "每帧登记新段"。暂停时插件不推进任何段，画面上的尾迹**静止但可见** (与分层渲染的暂停行为同侧：渲染不停、推进停，见 [C7-S6])。
 
 违反的可观察结果：暂停 10 秒后恢复，尾迹位置与暂停前完全一致 (没有偷偷移动或淡出)；如果您在自己的 `advance` 里做了暂停检查，只是不再登记新段 —— 旧段照常由 MagicLib 管理。没有需要您手动推进的东西。
 
@@ -285,7 +282,7 @@ javadoc 允许 null，但 "that should really only be done in weird, edge-case s
 `MagicTrailRenderer`(`MagicTrailPlugin` 的内部类) 是 `BaseCombatLayeredRenderingPlugin`(分层渲染通道，见 [C7-S6])：
 
 - `init` 时 `engine.addLayeredRenderingPlugin(renderer)`；
-- `getActiveLayers()` 返回 `EnumSet.allOf(CombatEngineLayers.class)`——**全部层**(注释说明 "只渲染一次检查无法按层过滤，开销可忽略")；
+- `getActiveLayers()` 返回 `EnumSet.allOf(CombatEngineLayers.class)`——** 全部层** (注释说明 "只渲染一次检查无法按层过滤，开销可忽略")；
 - `render(layer, view)` 按传入的层查 `mainMap.get(layer)`，逐 tracker `renderTrail(texID)`；
 - `getRenderRadius()` 返回超大值 —— 不靠承载实体剔除，靠**段级**视口剔除。
 
@@ -295,11 +292,11 @@ javadoc 允许 null，但 "that should really only be done in weird, edge-case s
 - `addTrailMemberAdvanced` 的 `layerToRenderOn` 覆盖 (缺省仍 `CONTRAILS_LAYER`)；
 - 数据驱动行由 `renderBelowExplosions` 映射 (`TRUE` → `ABOVE_SHIPS_LAYER`，否则 `BELOW_INDICATORS_LAYER`)。
 
-**层一旦确定不可中途更改**(javadoc 原文 "CANNOT change mid-trail, under any circumstance")。
+**层一旦确定不可中途更改** (javadoc 原文 "CANNOT change mid-trail, under any circumstance")。
 
 ### 纹理与混合
 
-- **混合模式**：段记录 `blendModeSRC` / `blendModeDEST`；渲染时取**最新一段**的混合模式 (注释原文 "uses the most recent blend mode added to the trail")；`additive` 简单重载映射为 `GL_SRC_ALPHA, GL_ONE` / `GL_ONE_MINUS_SRC_ALPHA`。additive 与普通混合**不可中途混用**(javadoc "Does not support being changed in the middle of a trail")。
+- **混合模式**：段记录 `blendModeSRC` / `blendModeDEST`；渲染时取**最新一段**的混合模式 (注释原文 "uses the most recent blend mode added to the trail")；`additive` 简单重载映射为 `GL_SRC_ALPHA, GL_ONE` / `GL_ONE_MINUS_SRC_ALPHA`。additive 与普通混合**不可中途混用** (javadoc "Does not support being changed in the middle of a trail")。
 - **纹理循环**：`textureLoopLength > 0` 时纹理按段距循环 (`texDistTracker += partDistance / loopLength`)；`<= 0` 时整张纹理拉伸覆盖整条尾迹。
 - **纹理滚动**：`scrollingTextureOffset -= amount × scrollSpeed / 1000`——`scrollSpeed = 1000` 即每秒滚动整张纹理；滚动对整条尾迹统一 (每条 tracker 一个偏移量)，不是逐段。
 - **透明渐弱**：首尾各 2 段有额外的 `opacityMult` 渐弱，让尾迹两端圆滑收尾。
@@ -360,7 +357,7 @@ javadoc 允许 null，但 "that should really only be done in weird, edge-case s
 | 8 | **必须** | 暂停时尾迹冻结 (MagicLib 自己的 advance 暂停检查)；段的推进与移除不依赖使用方代码 | 暂停后恢复位置不变；段照常由 MagicLib 管理 |
 | 9 | **必须** | 传送 / 瞬移 / 实体失效前调用 `cutTrailsOnEntity`(或 library-free cut)| 传送后新旧段被强行连成跨战场长条；死亡后拖尾残留 |
 | 10 | **必须** | 尾迹 ID、实体引用禁止跨战斗缓存 ([C6-S3] / [C7-S5] 同规)| 第二场战斗 ID 撞计数、旧实体恒失效、cutting map 项被清 |
-| 11 | **必须**(数据注释硬约束)| `BALLISTIC_AS_BEAM` 弹体的 `angleAdjustment` 必须 `FALSE` | 弹体朝向被强制改为速度方向，射线贴图旋转、视觉异常 |
+| 11 | **必须** (数据注释硬约束)| `BALLISTIC_AS_BEAM` 弹体的 `angleAdjustment` 必须 `FALSE` | 弹体朝向被强制改为速度方向，射线贴图旋转、视觉异常 |
 | 12 | **必须** | `layerToRenderOn` 与 additive/非 additive 一旦确定不可中途改变 | 中途变更被忽略或拆条 (javadoc "CANNOT change mid-trail")|
 | 13 | 建议 | `minLength` 保持小值 (默认示例 10)；需要时间加速省性能才用负数慢速模式 | 值过大 → 曲线尾迹变折线、加速下失真 |
 | 14 | 建议 | `additive` 开 `TRUE`(自带贴图按叠加设计)| 非 additive 尾迹易被爆炸等粒子遮挡 (`renderBelowExplosions` 注释同侧)|
@@ -631,7 +628,7 @@ gradle jar
 - 数据驱动尾迹 (数据链)：`GearIn_test_shot` 弹体数据接入并被武器发射后，该弹体后方出现一条按 `trail_data.csv` 行参数生成的尾迹 (`base_trail_smooth`、青色、`textLength=-1` 整条拉伸、默认 `BELOW_INDICATORS_LAYER` 层)；dev 模式日志出现 `Merging trails from data/trails/trail_data.csv` warn，文件缺失时出现 `Deprecated 'data/trails/trail_data.csv' not found, skipping.` 的正常 INFO。
 - 切断与清理 (规则 9)：击毁玩家舰 (或战斗结束)——`starsector.log` 出现一行 `GearIn trail cut: segments=<n>`；随后两条尾迹**不再变长**，旧段在各自总寿命 (主体 1.7 秒 / 泛光 1.1 秒) 内淡出消失，尾部不会出现 "新段拖着旧段" 的延伸；战斗结束淡出期间旧段照常淡出 (渲染不暂停)。
 - 跨战斗 (规则 10)：退出战斗再进一场 ——`GearIn trail init:` 重新出现且 `bodyID` 重新从计数起点分配 (每场战斗 `usedIDs` 重置为 1f)；新战斗的尾迹从零开始。
-- 数据变更 (规则 3 的观察面)：`opacity=1.0`、`sizeIn=20` 重启后弹体尾迹变粗变亮；把 `colorIn` 写成 `[255,0,0]`(无引号数字数组) 后重启 —— 该行尾迹**消失**(整行跳过，dev 模式日志 `Invalid line, skipping`)，Java 侧两条尾迹不受影响。
+- 数据变更 (规则 3 的观察面)：`opacity=1.0`、`sizeIn=20` 重启后弹体尾迹变粗变亮；把 `colorIn` 写成 `[255,0,0]`(无引号数字数组) 后重启 —— 该行尾迹**消失** (整行跳过，dev 模式日志 `Invalid line, skipping`)，Java 侧两条尾迹不受影响。
 
 清理：把 `trail_data.csv` 的 `opacity` 恢复为 `0.6`、`sizeIn` 恢复为 `10`，并把 `colorIn` 恢复为带引号的 `"[120,220,255]"`。
 

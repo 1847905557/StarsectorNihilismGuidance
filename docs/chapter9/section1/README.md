@@ -20,18 +20,16 @@
 
 ## 前置知识
 
-本节的人物演示要跑在生涯引擎里，并沿用前序页面的注册与工厂入口，请先熟悉以下内容：
-
-- 生涯时钟脚本与一次性注册判断 [C8-S1]：persistent data `CLASS_MARK` 模式。
-- 舰队成员与舰长 [C8-S3]：`FactoryAPI.createFleetMember` / `FleetDataAPI.addFleetMember`、`FleetMemberAPI.getCaptain` / `setCaptain`、旗舰语义、`getMemberWithCaptain`。
-- 市场人物与通信目录 [C8-S5]：`MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`、通信目录 `getCommDirectory().addPerson`。
-- 工厂入口与阶段判断 [C6-S3]：`Global.getFactory()` 是创建生涯对象的正式途径；`getCurrentState()` 判断当前阶段。
-- 插件生命周期回调 [C6-S2]：`GearInModPlugin` 生命周期与 `CLASS_MARK` 门。
-- 生涯与战役的区别 [C3-S1]：生涯 (campaign) 与战役 (mission) 的区别。
+- [C3-S1] 的生涯与战役域区别；
+- [C6-S2] 的插件生命周期回调与持久数据标记；
+- [C6-S3] 的 `Global.getFactory()` 创建入口与阶段语义；
+- [C8-S1] 的生涯脚本注册与一次性判断；
+- [C8-S3] 的舰队成员、舰长、旗舰与 `FleetDataAPI`；
+- [C8-S5] 的市场人物、通信目录与 `MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`。
 
 ## 术语
 
-按术语约定，本节首次完整讲解以下词 (后续页面继续使用)：
+按术语约定，本节首次完整讲解以下词：
 
 - **人物 (person)**：API 名保留 `PersonAPI`。生涯里代表一个 "人" 的对象，承载身份 (姓名/性别/rank/post/头像/势力)、记忆、标签、对玩家关系、角色数值与归属 (captain、officer、市场、important people)。
 - **关系 (relationship)**：两两之间的声望数值与档位。势力之间/势力对玩家走 `FactionAPI` 关系族；人物对玩家走 `RelationshipAPI`。数值范围 [-1, 1]，档位由 `RepLevel` 分段。
@@ -124,7 +122,7 @@ voice 即 memory `$voice`。
 
 :::
 
-**人物数据文件**(加载链：CSV spec 加载期读入、姓名池)：`data/characters/personalities.csv`(`id,name,desc,bravery` + 12 个任务权重列)
+**人物数据文件** (加载链：CSV spec 加载期读入、姓名池)：`data/characters/personalities.csv`(`id,name,desc,bravery` + 12 个任务权重列)
 
 原版 id 恰 5 个：`timid` / `cautious` / `steady` / `aggressive` / `reckless`，bravery 全为 5。
 
@@ -148,7 +146,7 @@ voice 即 memory `$voice`。
 
 `RepLevel`(`com.fs.starfarer.api.campaign.RepLevel`) 九档，正向阈值 `T1=0.09` / `T2=0.24` / `T3=0.49` / `T4=0.74`。
 
-档位判定 `getLevelFor(float)`：取整到百分制再与阈值比，**边界含于高位档**(如 0.49 → `WELCOMING`，0.50 → `FRIENDLY`)。
+档位判定 `getLevelFor(float)`：取整到百分制再与阈值比，**边界含于高位档** (如 0.49 → `WELCOMING`，0.50 → `FRIENDLY`)。
 
 `isPositive()` = 从 `FAVORABLE` 起 (`isAtWorst(FAVORABLE)`)；`isNegative()` = `SUSPICIOUS` 及以下。
 
@@ -200,8 +198,8 @@ voice 即 memory `$voice`。
 
 #### 生涯侧 captain(FleetMemberAPI)
 
-- 默认舰长：成员自带默认舰长 `steady`(前序页面已记录 "自动补默认舰长")。保存压缩时，**steady + 空姓名 + level ≤ 1 的默认舰长不落盘**——"读档后默认舰长消失" 是正常语义。
-- `FleetMemberAPI.getCaptain()`：**玩家旗舰特例**—— 成员是玩家舰队旗舰时返回玩家人物。
+- 默认舰长：成员自带默认舰长 `steady`(前序页面已记录 "自动补默认舰长")。保存压缩时，**steady + 空姓名 + level ≤ 1 的默认舰长不落盘** ——"读档后默认舰长消失" 是正常语义。
+- `FleetMemberAPI.getCaptain()`：**玩家旗舰特例** —— 成员是玩家舰队旗舰时返回玩家人物。
   - 否则返回缓存的 `captain` 字段 (null 时延迟创建默认舰长并设势力)。
   - `FleetMemberAPI.setCaptain(PersonAPI)` 写回并触发成员 stats 重算。
 
@@ -247,12 +245,12 @@ voice 即 memory `$voice`。
 人物只随 "引用它的持久集合" 保存：
 
 1. **成员舰长**：`FleetMemberAPI.setCaptain(person)`(成员在 `FleetDataAPI` 里)；
-2. **市场人物**：`MarketAPI.addPerson(person)`(同时写 `person.setMarket(market)`)**，通信目录条目必须另行 `getCommDirectory().addPerson(person)` 维护**(`MarketAPI.addPerson` 不会自动建目录条目)；
+2. **市场人物**：`MarketAPI.addPerson(person)`(同时写 `person.setMarket(market)`)**，通信目录条目必须另行 `getCommDirectory().addPerson(person)` 维护** (`MarketAPI.addPerson` 不会自动建目录条目)；
 3. **重要人物**：`SectorAPI.getImportantPeople()` → `ImportantPeopleAPI.addPerson` / `containsPerson` / `removePerson` / `getData(person)`(`com.fs.starfarer.api.characters.ImportantPeopleAPI`)：
    - `checkOutPerson(person, reasonId)` / `returnPerson(person, reasonId)`；
 4. **officer roster**：`FleetDataAPI.addOfficer`(见上)。
 
-只存在于局部变量、未被任何持久集合引用的人物，帧结束后即被回收 ——**不会被保存，也不会报错**。
+只存在于局部变量、未被任何持久集合引用的人物，帧结束后即被回收 ——** 不会被保存，也不会报错**。
 
 ::: warning 市场人物不等于通信目录联系人
 
@@ -324,7 +322,7 @@ mods/GearIndustry/
 
 一次性演示脚本 (`EveryFrameScript`)：`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除。
 
-职责：记录基线 (交由 GearInBaseline)、创建并挂载演示成员 wolf / hammerhead 供后续小节使用、依序调用各角色小类、末尾清理恢复初始舰队。
+职责：记录基线 (交由 GearInBaseline)、创建并挂载演示成员 wolf / hammerhead 供本页各角色小类使用、末尾清理恢复初始舰队。
 
 `REGISTER_MARK`(`"GearIn_PersonLesson"`) 是存档持久化的注册标记键，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
 
@@ -737,7 +735,7 @@ public class GearInOfficer {
 
 ### GearInFactionRelation
 
-势力间关系 (`FactionAPI` 关系族，hegemony vs tritachyon)：确定性序列 + 同帧回滚 ——
+势力间关系 (`FactionAPI` 关系族，hegemony vs tritachyon)：确定性序列 + 同帧回滚：
 - `setRelationship(0)` 归一；
 - `adjustRelationship(+0.15)` 落 `0.15 FAVORABLE`；
 - `adjustRelationship(+0.9, COOPERATIVE)` 封顶 `1.00 changed=true`；
@@ -828,7 +826,7 @@ gradle jar
 
 ## 验证方案
 
-前置数据：`gear_in` MOD 布局与插件生命周期类 ([C6-S1] / [C6-S2]，含本节调用点片段)、本节 8 个类、生涯时钟脚本 ([C8-S1]，非必需)。
+前置数据：`gear_in` MOD 布局与插件生命周期类 ([C6-S1] / [C6-S2]，含本节调用点片段)、本节 8 个类、生涯时钟脚本 (非必需)。
 
 1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
 2. 新建生涯：确认 `starsector.log` 按顺序出现全部 `GearIn person lesson` 日志行：
@@ -874,7 +872,7 @@ gradle jar
 
 排错时先问 "人物是否挂在持久集合"：局部变量人物不保存也不报错，这是多数 "消失" 类问题的共同起点；关系类问题先分清人物侧与势力侧，再对照关系四件事判断。三个 "每次都会发生" 的陷阱值得记牢：`getMemory()` 触发全插件回调、`makeSkillPicks()` 重掷选项、默认舰长保存时压缩。
 
-人物对象链到这里已经走通完整流程。顺着它继续向前：人物是任务、贸易与通信系统的共同实体 —— 任务与事件的选人规则建立在 important people 的 checkout 机制上，市场侧的联系人体系建立在人物归属之上。后续遇到 "造一个人、调整它与玩家或势力的关系、把它挂进某个持久集合" 的需求，都可以回到本节的四条链上定位。
+人物对象链到这里已经走通完整流程。人物是任务、贸易与通信系统的共同实体 —— 任务与事件的选人规则建立在 important people 的 checkout 机制上，市场侧的联系人体系建立在人物归属之上。遇到 "造一个人、调整它与玩家或势力的关系、把它挂进某个持久集合" 的需求，都可以回到本节的四条链上定位。
 
 ## 建议参考项
 

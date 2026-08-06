@@ -93,7 +93,7 @@ JSONObject configFromMod = Global.getSettings().loadJSON(
 
 单参形式从当前资源空间寻找文件；双参形式把来源限定为指定 MOD。`modId` 必须与 `mod_info.json` 的 `id` 逐字符一致，且该 MOD 已启用。
 
-`loadJSON` 返回 `JSONObject`。读取成功只说明文件可以解析，字段存在性与类型仍由后续访问判断：
+`loadJSON` 返回 `JSONObject`。读取成功只说明文件可以解析，访问字段时仍需判断字段是否存在及类型是否正确：
 
 ```java
 JSONObject services = Global.getSettings().loadJSON(
@@ -172,4 +172,3 @@ JSON 路径继续遵守 [C12-S1] 的资源路径规则。`validateFileName` 会�
 - `com.fs.starfarer.api.SettingsAPI`：`loadJSON`、`getString` 和 `validateFileName`；
 - `data/strings/strings.json`：原版公开的本地化文本入口；
 - `data/config/`：MOD 自有 JSON 资源目录；
-- [C12-S5]：`GearInI18n` 本地化实现。

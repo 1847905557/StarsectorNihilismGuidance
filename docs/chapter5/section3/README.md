@@ -20,15 +20,13 @@
 
 ## 前置知识
 
-本节消费三个已就绪的声音 ID，另依赖若干上游文件与机制，逐项列出如下：
-
-- 三个 OGG 的路径、声道与循环规格 (`sounds/gear_in/music/GearIn_market_theme.ogg`、`sounds/gear_in/sfx_system/GearIn_system_loop.ogg`、`sounds/gear_in/sfx_weapon/GearIn_weapon_fire.ogg`)，三个 sound ID 的所有权属于资源准备单元 [C5-S1]。
-- `data/config/sounds.json` 注册层：`GearIn_market_theme` 位于 `music` 分类，`GearIn_system_loop`、`GearIn_weapon_fire` 为普通音效条目；追加/替换合并规则与 `Loading sound sets` 日志 [C5-S2]。
-- hull style 的 9 个声音字段与声音集分档 (`engineLoopSet` 等)；GearIn 舰船当前挂在 `GEAR_TECH` 风格上 [C4-S2]。
-- `GearIn_durin.wpn` 武器规格文件与 `fireSoundTwo` 字段 [C1-S5]。
-- `GearIn_burstdrive.system` 与效果脚本 `GearInBurstDriveSystem`；源码由游戏按类名从 MOD 根目录 `data/scripts/...` 即时编译，自 [C6-S1] 起教程改为编译 JAR，类名规则不变 [C2-S3]。
-- 每帧回调模型与暂停语义 [C7-S1]；
-- `GearIn_test` 测试战役，本节验证方案使用 [C3-S1]。
+- [C5-S1] 的 OGG 路径、声道、循环边界与响度要求；
+- [C5-S2] 的 `sounds.json` 注册、`music` 分类、sound ID 匹配与追加/替换合并规则；
+- [C4-S2] 的 hull style 声音字段与声音集分档；
+- [C1-S5] 的 `GearIn_durin.wpn` 与 `fireSoundOne`、`fireSoundTwo` 字段；
+- [C2-S3] 的战术系统文件、效果脚本类名和脚本路径规则；
+- [C7-S1] 的每帧回调与暂停语义；
+- [C3-S1] 的测试战役、舰船装配与部署操作。
 
 ## 文件与 API 链路
 
@@ -67,7 +65,7 @@ data/config/sounds.json          注册层（C5-S2）：sound ID → 路径与�
 | `playLoop(String id, Object playingEntity, float pitch, float volume, Vector2f loc, Vector2f vel)` | 位置循环音效 | 是 | **必须每帧调用**，否则循环淡出；`playingEntity` 必填 (同实体同循环只播一个)；素材建议 mono |
 | `playLoop(..., float fadeIn, float fadeOut)` | 同上，指定淡入/淡出秒数 | 是 | 同上 |
 | `playUILoop(String id, float pitch, float volume)` | UI 循环音效 | 否 | 每帧续期规则同 `playLoop` |
-| `playCustomMusic(int fadeOutIfAny, int fadeIn, String musicSetId)` | 手动播放音乐集 | — | 淡入/淡出秒数**必须为整数**("have to be whole numbers")；`musicSetId` 传 `null` 停止当前曲目 |
+| `playCustomMusic(int fadeOutIfAny, int fadeIn, String musicSetId)` | 手动播放音乐集 | — | 淡入/淡出秒数**必须为整数** ("have to be whole numbers")；`musicSetId` 传 `null` 停止当前曲目 |
 | `playCustomMusic(..., boolean looping)` | 同上，指定是否循环 | — | 同上 |
 | `setSuspendDefaultMusicPlayback(boolean)` | 阻止默认选曲自动开始新曲目 | — | 与 `playCustomMusic` 配合 |
 | `getCurrentMusicId()` | 当前曲目；无播放时返回字符串 `"nothing"` | — | 线程安全 |
@@ -162,9 +160,9 @@ ID 大小写不一致同样触发。
 
 任何 "持续音效" 也可由代码播放。`SoundPlayerAPI.playLoop` 的注释与运行期行为说明了四条循环语义：
 
-1. **必须每帧调用，否则淡出。** 循环管理器每帧把 "本帧未续期" 的循环加入淡出列表 (默认 0.5 秒淡入/淡出)。
-2. **`playingEntity` 必填且用于去重。** 同一实体对同一循环只保留一个实例 (循环管理器按所属实体合并去重)。不传或每帧传新对象，会失去 "同实体同循环只播一个" 的保证。
-3. **距离衰减与上限。** 距监听点超过 2500 不播放；活动循环数达到上限时替换最远的一个。
+1. **必须每帧调用，否则淡出。**循环管理器每帧把 "本帧未续期" 的循环加入淡出列表 (默认 0.5 秒淡入/淡出)。
+2. **`playingEntity` 必填且用于去重。**同一实体对同一循环只保留一个实例 (循环管理器按所属实体合并去重)。不传或每帧传新对象，会失去 "同实体同循环只播一个" 的保证。
+3. **距离衰减与上限。**距监听点超过 2500 不播放；活动循环数达到上限时替换最远的一个。
 4. **素材建议 mono**(API 注释)，位置循环在空间中有声像。
 
 代码接入形态 (挂到战术系统效果脚本，完整文件见 "完整最小例")：
@@ -242,7 +240,7 @@ if (state == ShipSystemStatsScript.State.IN && effectLevel < 0.05f) {
 
 MOD 接入环境音的路径是自定义地形类型 (实现 `CampaignTerrainPlugin`，在 `terrain.json` 注册新键并在地图数据中放置地形)，成本较高；本节消费的三个 ID 中也没有环境 ID。
 
-本节只交代机制与相关 API(`playLoop`、`applyLowPassFilter`、`suppressMusic`)，供后续地形类单元消费。
+本节只交代机制与相关 API(`playLoop`、`applyLowPassFilter`、`suppressMusic`)，这些 API 也适用于地形类音频。
 
 ## 使用方五：音乐
 
@@ -254,7 +252,7 @@ MOD 接入环境音的路径是自定义地形类型 (实现 `CampaignTerrainPlu
    - `Misc.getMusicPlayerPlugin()`(公开 API `com.fs.starfarer.api.util.Misc`) 用 `Global.getSettings().getNewPluginInstance("musicPlugin")` 实例化并缓存为单例。
 2. **状态令牌**：`MusicPlayerPlugin` 接口 (公开 API) 定义 `getMusicSetIdForCampaignStateToken(token, param)`、`getMusicSetIdForCombat(engine)`、`getMusicSetIdForTitle()`。
    - `MusicPlayerPluginImpl`(公开 API 实现，可直接继承) 覆盖战役状态：`MARKET`/`ENCOUNTER`/`CAMPAIGN_SYSTEM`/`CAMPAIGN_HYPERSPACE`/`PLANET_SURVEY`/`NO_MUSIC`。
-3. **市场音乐决策顺序**(`MusicPlayerPluginImpl.getMarketMusicSetId`)：
+3. **市场音乐决策顺序** (`MusicPlayerPluginImpl.getMarketMusicSetId`)：
    - 市场内存键 `$musicSetIdForMission` → 市场内存键 `$musicSetId` → 市场所属势力的 `music` 映射表 (键 `market_friendly`/`market_hostile`/`market_neutral`，另有 `encounter_*` 与 `music_combat_set` 用于遭遇与战斗)→ 默认 `music_default_market_friendly/hostile/neutral`。
    - 星区与深渊另有 `$musicSetId` 内存键与 `music_campaign*` 默认集。
 4. **播放**：各状态音乐播放器把返回的音乐集 ID 交给音乐线程播放；`music` 分类条目支持多曲候选 (`files` + `randomStart`，注册层已述)。
@@ -269,7 +267,7 @@ MOD 接入环境音的路径是自定义地形类型 (实现 `CampaignTerrainPlu
 
 未注册的音乐集 ID 在播放请求时解析为 `null` 后抛 NPE(音乐播放线程)。
 
-因此**音乐 ID 必须注册在 `music` 分类**—— 普通音效条目不会被音乐播放器识别 (注册层已述)。
+因此**音乐 ID 必须注册在 `music` 分类** —— 普通音效条目不会被音乐播放器识别 (注册层已述)。
 
 ### 接入示例
 
@@ -454,14 +452,14 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ## 故障分析
 
-1. **开火完全无声，其他音效正常。** 检查链：`.wpn` 的 `fireSoundTwo` 与注册层条目逐字一致 (大小写敏感)→ `sounds.json` 条目存在 → OGG 路径存在。`.wpn` 写错 ID 会在开火时报 NPE 而不是静默 (见下条)。
-2. **开火瞬间抛 NPE，堆栈指向武器开火实现。** `fireSoundOne`/`fireSoundTwo` 引用了未注册 ID：声音集查找返回空后解引用。修正：同步注册 ID，或改回原版 ID。
-3. **系统激活无循环声。** `.system` 的 `loopSound` 未注册 → 系统实现构造时取到 `null`，激活时报 NPE；已注册但无声 → 区分 "激活音有、循环音无"(说明 `useSound` 正常、`loopSound` 或素材有问题) 与 "全无"(`useSound` 也查一遍)，再核对资源层的循环素材规格 (首尾无缝、音量合理)。
-4. **代码 `playLoop` 不响或断断续续。** 每帧未调用 (循环淡出)、`playingEntity` 每帧传新对象 (去重失效)、距离超 2500、音量 `volume <= 0`、内部静音开关生效 (静音时不报错)。修正：把调用放在每帧回调里，用一个稳定实体对象作 `playingEntity`。
-5. **`playUISound` 抛 `Sound set with id [...] not found`。** 未注册或大小写不符。这是运行期异常，不是加载期错误。修正：核对注册 ID。
-6. **部署舰船抛 NPE，堆栈指向 `ShipEngineControllerAPI`。** hull style 引用了未注册声音集 (风格声音部分已述的同类故障)。本节三个 ID 均不用于引擎声音，出现此错先查风格文件。
-7. **市场音乐仍是原版。** 检查：`settings.json` 的 `plugins.musicPlugin` 是否真的合并生效 (对象键合并、后加载者覆盖；类名与类路径一致、类可加载)、类是否继承 `MusicPlayerPluginImpl`、市场是否被 `$musicSetId` 内存键抢先覆盖 (内存键优先级最高)。
-8. **`playCustomMusic` 后无音乐或日志 NPE。** 音乐 ID 未注册在 `music` 分类 (普通音效条目不被音乐播放器识别)，或 fade 参数传了非整数秒。修正：确认 `music` 分类条目与整数 fade；需要停止默认换曲时配合 `setSuspendDefaultMusicPlayback(true)`。
+1. **开火完全无声，其他音效正常。**检查链：`.wpn` 的 `fireSoundTwo` 与注册层条目逐字一致 (大小写敏感)→ `sounds.json` 条目存在 → OGG 路径存在。`.wpn` 写错 ID 会在开火时报 NPE 而不是静默 (见下条)。
+2. **开火瞬间抛 NPE，堆栈指向武器开火实现。**`fireSoundOne`/`fireSoundTwo` 引用了未注册 ID：声音集查找返回空后解引用。修正：同步注册 ID，或改回原版 ID。
+3. **系统激活无循环声。**`.system` 的 `loopSound` 未注册 → 系统实现构造时取到 `null`，激活时报 NPE；已注册但无声 → 区分 "激活音有、循环音无"(说明 `useSound` 正常、`loopSound` 或素材有问题) 与 "全无"(`useSound` 也查一遍)，再核对资源层的循环素材规格 (首尾无缝、音量合理)。
+4. **代码 `playLoop` 不响或断断续续。**每帧未调用 (循环淡出)、`playingEntity` 每帧传新对象 (去重失效)、距离超 2500、音量 `volume <= 0`、内部静音开关生效 (静音时不报错)。修正：把调用放在每帧回调里，用一个稳定实体对象作 `playingEntity`。
+5. **`playUISound` 抛 `Sound set with id [...] not found`。**未注册或大小写不符。这是运行期异常，不是加载期错误。修正：核对注册 ID。
+6. **部署舰船抛 NPE，堆栈指向 `ShipEngineControllerAPI`。**hull style 引用了未注册声音集 (风格声音部分已述的同类故障)。本节三个 ID 均不用于引擎声音，出现此错先查风格文件。
+7. **市场音乐仍是原版。**检查：`settings.json` 的 `plugins.musicPlugin` 是否真的合并生效 (对象键合并、后加载者覆盖；类名与类路径一致、类可加载)、类是否继承 `MusicPlayerPluginImpl`、市场是否被 `$musicSetId` 内存键抢先覆盖 (内存键优先级最高)。
+8. **`playCustomMusic` 后无音乐或日志 NPE。**音乐 ID 未注册在 `music` 分类 (普通音效条目不被音乐播放器识别)，或 fade 参数传了非整数秒。修正：确认 `music` 分类条目与整数 fade；需要停止默认换曲时配合 `setSuspendDefaultMusicPlayback(true)`。
 
 ## 总结
 
@@ -471,7 +469,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 所有 ID 引用必须指向已注册条目，未注册的后果全部在运行期 (武器/系统 NPE、UI 抛 `Sound set with id not found`、音乐播放 NPE)，加载期不校验引用。
 
-逻辑上的后续：同一套 "注册 → 引用 → 素材存在" 的完整流程可平移到任何新声音 —— 自定义引擎声沿用 "注册分档复合集 → hull style 引用 → `.ogg` 存在"，自定义地形环境音沿用 "`terrain.json` 注册 → 地形插件播放"。
+同一套 "注册 → 引用 → 素材存在" 的完整流程可平移到任何新声音 —— 自定义引擎声沿用 "注册分档复合集 → hull style 引用 → `.ogg` 存在"，自定义地形环境音沿用 "`terrain.json` 注册 → 地形插件播放"。
 
 排查无声故障始终从注册存在、路径存在、ID 一致三件事入手，打包 MOD 时保持 `sounds/` 资源、`sounds.json` 条目、数据字段与代码调用四者一致。
 

@@ -1,6 +1,6 @@
 # 使用 Rules 制作对话
 
-本节使用 `data/campaign/rules.csv` 制作一个由规则表驱动的对话框。规则会完成触发匹配、条件判断与结果执行，并为后续自定义命令和内存状态提供基础。
+本节使用 `data/campaign/rules.csv` 制作一个由规则表驱动的对话框。规则会完成触发匹配、条件判断与结果执行，并为 [C11-S3] 的自定义命令和 [C11-S4] 的内存状态提供基础。
 
 *本节预期阅读时间：~25 分钟。*
 
@@ -20,24 +20,22 @@
 
 ## 前置知识
 
-本节在以下既有知识之上展开：
-
-- 交互对话框生命周期 [C8-S9]：`showInteractionDialog(plugin, target)` (可能返回 `false`)、`InteractionDialogPlugin` 的生命周期 (`init` → `optionSelected` → `advance`)；
-- 脚本注册判断 [C8-S1]：`addScript` 与 persistent data 的一次性注册判断，每个注册项使用各自独立的 persistent data 键；
-- 插件生命周期回调 [C6-S2]：`onGameLoad` 回调的注册时机；
-- Rules 内存语义 [C11-S4]：`MemoryAPI` 的过期、持久化与记忆键维护语义 —— `$memkey.name` 这类变量按记忆分组解析，写条件表达式前需要先了解这个前提；
-- Rules 命令 [C11-S3]：`BaseCommandPlugin` 的职责与原版内置命令集 (`DismissDialog`、`ShowDefaultVisual`、`SetShortcut`、`FireBest`、`FireAll`、`RollProbability` 等)。
+- [C6-S2] 的 `onGameLoad` 生命周期与注册时机；
+- [C8-S1] 的 `addScript` 与持久数据一次性判断；
+- [C8-S9] 的交互对话框生命周期与 `showInteractionDialog`；
+- [C11-S3] 的 `BaseCommandPlugin` 职责与原版命令；
+- [C11-S4] 的 `MemoryAPI` 过期、持久化与记忆键分组解析。
 
 ## 术语
 
-本节先固定规则系统的六个核心词，后续页面沿用同一套写法；API 类名保留源码大小写。其中规则命令与 Rules 内存只在此约定读法，完整语义分别在 [C11-S3]、[C11-S4] 展开：
+本节先固定规则系统的六个核心词；API 类名保留源码大小写。其中规则命令的实现见 [C11-S3]，Rules 内存的完整语义见 [C11-S4]：
 
 - **规则 (rule)**：API 名保留 `RuleAPI`。`rules.csv` 中的一行就是一条规则：id、trigger、条件列表、脚本列表、文本变体列表、选项列表。
 - **触发器 (trigger)**：规则的字符串分组 key (`trigger` 列)。同一触发器的规则构成一个候选池；对话插件以触发器名为入口发起匹配。
 - **条件 (condition)**：API 名保留 `ExpressionAPI`。规则命中前必须全部为真的表达式行 (`conditions` 列)；条件也在匹配阶段被求值。
 - **结果 (result)**：规则命中后发生的事，由三列共同描述 —— `script` (脚本表达式)、`text` (对话文本)、`options` (对话选项)。
-- **规则命令 (rule command)**：类名保留 `BaseCommandPlugin`；本节把它们当作内置命令使用，自定义命令的编写与注册属于 [C11-S3]。
-- **Rules 内存 (memory)**：API 名保留 `MemoryAPI`；本节只使用记忆键语法，内存生命周期属于 [C11-S4]。
+- **规则命令 (rule command)**：类名保留 `BaseCommandPlugin`；本节把它们当作内置命令使用，自定义命令的编写与注册见 [C11-S3]。
+- **Rules 内存 (memory)**：API 名保留 `MemoryAPI`；本节只使用记忆键语法，内存生命周期见 [C11-S4]。
 
 ## 文件与 API 链路
 
@@ -230,9 +228,9 @@ GearIn_rules_intro_leave,DialogOptionSelected,$option == GearIn_rules_intro_leav
   - 两规则条件都成立，但 high 总分 102(两条 1 分 + `!$GearIn_rules_intro_skip score:100`) 恒大于 low 的 1 分，结果确定性选中 high。
   - high 的 `script` 演示赋值并携带选项。
 - **leave** (trigger `DialogOptionSelected`)：`$option == GearIn_rules_intro_leave` → 内置命令 `DismissDialog` 关闭对话。
-- 内置命令 (`ShowDefaultVisual` / `SetShortcut` / `DismissDialog` / `FireBest` / `FireAll` / `RollProbability`) 都是 `BaseCommandPlugin` 子类 (`com.fs.starfarer.api.impl.campaign.rulecmd`)，本节只使用不实现；自定义规则命令的编写与注册属于 [C11-S3]。
-- 记忆键 `$option` / `$GearIn_rules_intro_opens` / `$GearIn_rules_intro_skip` / `$GearIn_rules_intro_last` 的过期、持久化与维护语义属于 [C11-S4]；本节只保证演示流程内的取值逻辑。
-- `rules.csv` 是跨单元共享文件：本节只拥有 `GearIn_rules_intro_*` 前缀；后续主题将以各自前缀追加行 (同前缀内 id 唯一，跨文件重复 id 先到先得的纪律见规则强度节)。
+- 内置命令 (`ShowDefaultVisual` / `SetShortcut` / `DismissDialog` / `FireBest` / `FireAll` / `RollProbability`) 都是 `BaseCommandPlugin` 子类 (`com.fs.starfarer.api.impl.campaign.rulecmd`)，本节只使用不实现；自定义规则命令见 [C11-S3]。
+- 记忆键 `$option` / `$GearIn_rules_intro_opens` / `$GearIn_rules_intro_skip` / `$GearIn_rules_intro_last` 的过期、持久化与维护语义见 [C11-S4]；本节只保证演示流程内的取值逻辑。
+- `rules.csv` 是跨单元共享文件：本节只拥有 `GearIn_rules_intro_*` 前缀；其他页面使用各自前缀追加行，同前缀内 id 唯一，跨文件重复 id 先到先得的纪律见规则强度节。
 
 ### GearInRulesIntro
 
@@ -419,7 +417,7 @@ gradle jar
 
 排错判断可以浓缩成几条：注册看 `Loading rule:` 日志而不是找报错；加载期致命错误全部是启动中止级 (条件列 `=`、脚本列 `==`、`$` 开头选项 id、命令找不到、同文件重复 id)；跨文件重复 id 静默跳过是规则不触发且无报错的首要原因；`FireBest` 只取一条而 `FireAll` 执行全部；判真只有 `"true"` 与 `Boolean.TRUE` 为真，比较大小写敏感；文本变体靠独占一行的 `OR`，选项文本里不能有冒号，选项 id 与 `$option ==` 必须逐字一致。
 
-对话框生命周期与脚本注册判断是本节的两个底座。规则命令与内存的完整语义分别在 [C11-S3]、[C11-S4] 展开 —— 它们都会继续使用这份 `GearIn_rules_intro_*` 规则表与 `$option` 回流约定。
+对话框生命周期与脚本注册判断是本节的两个底座。[C11-S3] 和 [C11-S4] 会继续使用这份 `GearIn_rules_intro_*` 规则表与 `$option` 回流约定。
 
 ## 建议参考项
 

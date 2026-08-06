@@ -17,11 +17,9 @@
 
 ## 前置知识
 
-- MOD 目录与 `GearIn_` 前缀纪律 [C1-S1]；
-- CSV 数据行读法 [C1-S2]；
-- 模板与参数、注册与回调的含义、重启即生效 [C2-S1]。
-
-本节示例所有权：`GearInStableInjectorHullMod`(稳定化推进器 —— 原版 "不稳定推进器" 的调整版：只保留小幅速度加成，取消惩罚，并与原插件互斥)。
+- [C1-S1] 的 MOD 目录与 `GearIn_` 前缀规则；
+- [C1-S2] 的 CSV 数据行读取方法；
+- [C2-S1] 的 Java 模板、参数、注册、回调与重启生效流程。
 
 ## 类名三处一致
 
@@ -132,7 +130,7 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 
 **① 按舰船大小给出不同数值 (`SPEED_BONUS` 段)**
 
-`FRIGATE`/`DESTROYER`/`CRUISER`/`CAPITAL_SHIP` 是四档舰船大小：护卫舰/驱逐舰/巡洋舰/主力舰。这段的写法是模板，**参数是四个数字**—— 想改成 "护卫舰 +30、主力舰 +10"，改数字即可。上一节用的 `modifyPercent`(百分比)，这里换成了 `modifyFlat`(固定值)：`modifyFlat(id, 15f)` = 最大速度直接 +15 单位/秒。
+`FRIGATE`/`DESTROYER`/`CRUISER`/`CAPITAL_SHIP` 是四档舰船大小：护卫舰/驱逐舰/巡洋舰/主力舰。这段的写法是模板，**参数是四个数字** —— 想改成 "护卫舰 +30、主力舰 +10"，改数字即可。上一节用的 `modifyPercent`(百分比)，这里换成了 `modifyFlat`(固定值)：`modifyFlat(id, 15f)` = 最大速度直接 +15 单位/秒。
 
 **② 描述联动 (`getDescriptionParam`)**
 

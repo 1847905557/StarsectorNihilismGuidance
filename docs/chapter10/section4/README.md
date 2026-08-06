@@ -19,19 +19,18 @@
 
 ## 前置知识
 
-酒吧事件复用多套既有机制，请先熟悉以下内容：
-
-- 交互对话框三面板 (`TextPanelAPI.addPara`、`OptionPanelAPI.addOption`)、`showInteractionDialog` 与对话框插件生命周期 —— 酒吧事件对话复用的是同一套面板 API；`showInteractionDialog` 返回 false 的语义同样适用于酒吧对话以外的调用 [C8-S9]。
-- 事件边界与监听器生命周期 —— 本节的 "事件 ID 使用方" 沿用 "注册入口 → 派发 → 可观察结果" 的既有方法论；XStream 序列化边界 (常驻对象随档保存) 决定事件实例能随存档保存哪些状态 [C10-S2]。
-- 时间语义 (`advance(amount)` 真实秒、`Misc.getDays` 换算)——`BarEventManager.advance` 与 `PortsideBarData.advance` 的推进节奏都建立在这条换算上 [C10-S1]。
-- `modPlugin` 生命周期与注册判断模式 [C6-S2]；`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"[C6-S3]—— 本页的注册动作同样要判断生涯引擎是否已建立。
-- 市场 (`MarketAPI`)——`shouldShowAtMarket` 的市场条件过滤 (`hasSpaceport()`、`getFactionId()` 等)[C8-S5]。
-- Rules 命令与 Rules 内存 (后续单元)—— 本节的 `AddBarEvent` / `RemoveBarEvent` 与 `BarCMD` 都是规则命令 (`BaseCommandPlugin` 子类)，本节只给命令语义与规则片段，规则引擎细节由这两个单元展开 [C11-S3] / [C11-S4]。
-- 人物与关系 ——`BaseBarEventWithPerson` 的 market 稳定随机人物 (`seed + market.getId().hashCode()`) 来自人物生成面 [C9-S1]。
+- [C6-S2] 的 `modPlugin` 生命周期与注册判断；
+- [C6-S3] 的 `Global.getSector()` 阶段语义；
+- [C8-S5] 的 `MarketAPI` 与市场条件过滤；
+- [C8-S9] 的交互对话框面板、`showInteractionDialog` 与插件生命周期；
+- [C9-S1] 的人物、关系与市场稳定随机人物；
+- [C10-S1] 的 `advance(amount)` 真实秒语义与 `Misc.getDays` 换算；
+- [C10-S2] 的事件边界、监听器生命周期与 XStream 序列化边界；
+- [C11-S3] 的 Rules 命令与 [C11-S4] 的 Rules 内存。
 
 ## 术语
 
-酒吧事件牵扯一组角色与一条展示管线，先统一叫法，后文才不必在 API 名与中文说法之间反复切换。按术语约定，API 类名保留源码大小写。本节首次完整讲解以下术语 (后续页面继续使用)：
+酒吧事件牵扯一组角色与一条展示管线，先统一叫法，便于后文在 API 名与中文说法之间保持一致。按术语约定，API 类名保留源码大小写。本节首次完整讲解以下术语：
 
 - **酒吧事件 (bar event)**：API 名保留 `PortsideBarEvent`。
   - 一次可在星球/空间站酒吧出现、由玩家主动选择进入的短对话事件：酒吧提示 + 选项 (`addPromptAndOption`)→ 事件对话 (`init` / `optionSelected`)→ 结束返回酒吧。
@@ -76,7 +75,7 @@
 
 原版 `bar_events.csv` 共 25 条数据行 (另 1 行表头)，全部是 mission 类 (`com.fs.starfarer.api.impl.campaign.missions.*`)。
 
-**非 mission 的普通事件**(如 `LuddicFarmerBarEvent`、`HistorianBarEvent`) 不走 CSV，走代码注册 (见下)。
+**非 mission 的普通事件** (如 `LuddicFarmerBarEvent`、`HistorianBarEvent`) 不走 CSV，走代码注册 (见下)。
 
 ### 注册入口
 
@@ -89,7 +88,7 @@
 
 `PortsideBarData` 与 `BarEventManager` 构造器都把实例写入 sector memory 的固定键 (`$core_PortsideBarData` / `$core_genericBarEventManager`)。
 
-**manager 实例、creator 列表、active 事件列表都随存档保存**(sector memory 持久化；`TimeoutTracker` 的 `set` 由 `readResolve` 重建)。
+**manager 实例、creator 列表、active 事件列表都随存档保存** (sector memory 持久化；`TimeoutTracker` 的 `set` 由 `readResolve` 重建)。
 
 MOD 注册入口 (本节示例，见 "完整最小例")：
 
@@ -100,7 +99,7 @@ if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
 }
 ```
 
-要点：`hasEventCreator(Class)` 用 `isInstance` 判断，而 `addEventCreator` 本身**不去重**(直接 `creators.add`)——**判断缺失的可观察结果是同 class 的 creator 反复入列、抽取权重翻倍**。
+要点：`hasEventCreator(Class)` 用 `isInstance` 判断，而 `addEventCreator` 本身**不去重** (直接 `creators.add`)——** 判断缺失的可观察结果是同 class 的 creator 反复入列、抽取权重翻倍**。
 
 注册时机必须在生涯引擎建立之后 (`onGameLoad` / `onNewGame`)；原版核心插件的 `onGameLoad` 先于 MOD 插件执行 (vanilla 固定最先，成熟实例直接依赖此顺序)，因此 `getInstance()` 不判空。
 
@@ -108,7 +107,7 @@ if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
 
 两条入口都汇入 manager 之后，看调度器如何决定事件何时被创建、何时过期。`BarEventManager.advance(float amount)` 每帧被推进 (`runWhilePaused()` 返回 false，暂停不推进)：
 
-1. `days = Misc.getDays(amount)`——**所有时长都是游戏天**(10 真实秒 = 1 游戏日)。
+1. `days = Misc.getDays(amount)`——** 所有时长都是游戏天** (10 真实秒 = 1 游戏日)。
 2. `active.advance(days)` / `timeout.advance(days)`：active 跟踪器里的事件按天扣减，扣到 0 自动移除；timeout 跟踪器里的 creator 同理。
 3. `tracker`(`IntervalUtil(0.4f, 0.6f)`，游戏天) 到点才执行抽取；`tracker2`(20–40 天) 到点更新种子。
 4. 未交互过期清理：在 `barEventCreators` 映射里但不在 active 跟踪器中的事件 = 未交互且 active 时长已过期 —— 从映射与活动列表移除，并把对应 creator 置入超时：`dur = max(creator.getBarEventTimeoutDuration(), timeout 剩余)`。
@@ -172,7 +171,7 @@ if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
 `BarCMD.showOptions()` 的展示管线：
 
 1. 数量：`minBarEvents`(默认 1)/ `maxBarEvents`(默认 3)/ `barEventProbOneMore`(默认 0.5) 加权抽 `num`(见 settings.json)。
-2. 已展示集合：市场内存 `$BarCMD_shownEvents`——**存在则按事件 ID 匹配复现同一组事件**(`event.getBarEventId()`)，不存在则全量洗牌并 `needToSaveShown = true`。
+2. 已展示集合：市场内存 `$BarCMD_shownEvents`——** 存在则按事件 ID 匹配复现同一组事件** (`event.getBarEventId()`)，不存在则全量洗牌并 `needToSaveShown = true`。
    - 展示后 `mem.set(key, shown, time)`(20–40，即 `BAR_EVENT_MIN/MAX_TIME_BEFORE_CHANGING`)。内存过期按**游戏天**扣减 (`Memory` 内部实现：`convertToDays(var1)`、仅未暂停)—— 同一市场约 20–40 游戏天内复现同一组事件。
 3. 临时选项：`AddBarEvent.clearTempEvents(market)` 清空 `$core_tempBarEvents`，然后 `FireAll.fire(..., "AddBarEvents")` 触发全部匹配的 `AddBarEvents` 分类规则，再逐个显示 (上限 `max`)。
 4. 事件循环：**教程进行中 (`TutorialMissionIntel.isTutorialInProgress()`) 全部跳过**；数量占满即 break。
@@ -182,7 +181,7 @@ if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
 
 `BarCMD.optionSelected` 分派：
 
-- `optionData instanceof PortsideBarEvent` → 创建 `BarEventDialogPlugin(this, this, event, memoryMap)`，`dialog.setPlugin(plugin)` + `plugin.init(dialog)`——**事件对话的唯一入口**；
+- `optionData instanceof PortsideBarEvent` → 创建 `BarEventDialogPlugin(this, this, event, memoryMap)`，`dialog.setPlugin(plugin)` + `plugin.init(dialog)`——** 事件对话的唯一入口**；
 - `"barLeave"` → `leaveBar()`(回市场对话)；`"barContinue"` → `showOptions(true)`；
 - 其他字符串 (临时选项 / mission wrapper 选项)→ 写 `$BarCMD` 到实体内存、`dialog.setPlugin(originalPlugin)`、`$option = optionData`、`FireBest "DialogOptionSelected"`—— 落到规则对话。
 
@@ -661,7 +660,7 @@ gradle jar
 
 本节只覆盖 "事件本体" 链路：mission 类酒吧事件的 `HubMissionBarEventWrapper` 包装与 `bar_events.csv` 的 mission plugin 编写。
 
-`BaseBarEventWithPerson` 的 market 稳定人物生成 (人物生成面)、规则对话的深度语法 (规则引擎部分) 由后续单元展开。
+`BaseBarEventWithPerson` 的 market 稳定人物生成属于人物对象主题，规则对话的深度语法属于 Rules 主题；本节只保留酒吧事件的接入边界。
 
 ## 建议参考项
 

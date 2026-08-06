@@ -18,16 +18,14 @@
 
 ## 前置知识
 
-本节建立在前置单元的基础上。
-
-- **星区入口与脚本注册**[C8-S1]：`SectorAPI` 星区结构 (本节两个入口都从 `getSector()` 下的 getter 进入)、`onGameLoad` 的一次性注册判断 (persistent data 各自键的 `REGISTER_MARK` 模式)。
-- **修改势力关系与货舱** [C8-S8]：`FactionAPI` 与 `CargoAPI` 的常用入口；本节对话框的两个信息选项直接读取玩家势力的关系数值与玩家舰队货物。
-- **全局对象与阶段判断**[C6-S3]：`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；本节所有读取与注册都发生在生涯引擎建立之后。
-- **MOD 插件生命周期**[C6-S2]：`modPlugin` 生命周期与 `CLASS_MARK` 一次性注册标记。
+- [C6-S2] 的 `modPlugin` 生命周期与持久数据标记；
+- [C6-S3] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
+- [C8-S1] 的 `SectorAPI` 星区入口、`onGameLoad` 注册与 `REGISTER_MARK` 判断；
+- [C8-S8] 的 `FactionAPI` 关系读取与 `CargoAPI` 货舱读取。
 
 ## 术语
 
-按术语约定，本节首次完整讲解两个词 (后续页面继续使用；API 类名保留源码大小写)：
+按术语约定，本节首次完整讲解两个词；API 类名保留源码大小写：
 
 - **情报 (intel)**：API 名保留 `IntelInfoPlugin`(单条情报约定) 与 `IntelManagerAPI`(登记集合)。
   - 一条情报 = 一个实现了 `IntelInfoPlugin` 的插件实例，同时承载 Intel 页 UI 描述、消息更新与每帧推进 (`BaseIntelPlugin` 兼为 `EveryFrameScript`)。
@@ -55,7 +53,7 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 **创建与登记两条链**：
 
 1. **`addIntel(plugin)`**(`IntelManagerAPI`) 直接加入已知集合：置玩家可见时间戳、调 `reportMadeVisibleToPlayer()`、`autoAddCampaignMessage()`(默认 true) 时经 `CampaignUIAPI.addMessage` 弹左下消息 (`IntelManagerAPI.addIntel`)。
-   - **`addIntel` 绕过通信中继可见性检查**——`IntelInfoPlugin.canMakeVisibleToPlayer` "Only checked if adding using IntelManager.queueIntel(). addIntel() bypasses this and all other checks."。
+   - **`addIntel` 绕过通信中继可见性检查** ——`IntelInfoPlugin.canMakeVisibleToPlayer` "Only checked if adding using IntelManager.queueIntel(). addIntel() bypasses this and all other checks."。
    - `addIntel(plugin, forceNoMessage)` / `addIntel(plugin, forceNoMessage, textPanel)` 控制消息行为。
 2. **`queueIntel(plugin[, maxCommQueueDays])`**(`IntelManagerAPI`) 加入通信队列；玩家进入通信中继范围或 `forceAddNextFrame()` 时，转为可见 intel 并出队。
    - 同批最多 3 条、第 4 条起合并为一条 "New messages" 汇总。
@@ -74,14 +72,14 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 | `createIntelInfo` / `getName()` | 列表条目 = 名称 + 子弹行；`getName()` 返回 null 则不显示 |
 | `createSmallDescription` | 小描述 (默认 "请覆写")；`hasSmallDescription()` 默认 true |
 | `getIcon()` | null = 无图标 (`IntelInfoPlugin` "40x40, no icon if null.")|
-| `getIntelTags(map)` | 默认含 `INTEL_IMPORTANT` / `INTEL_NEW` / 中继范围内的 `INTEL_LOCAL`；**map 为 null 时安全返回**(基类内部已做 null 判断)|
+| `getIntelTags(map)` | 默认含 `INTEL_IMPORTANT` / `INTEL_NEW` / 中继范围内的 `INTEL_LOCAL`；**map 为 null 时安全返回** (基类内部已做 null 判断)|
 | `sendUpdate` / `sendUpdateIfPlayerHasIntel` | 更新消息；后者要求已有玩家可见时间戳 |
 | `BUTTON_DELETE` / `addDeleteButton` / `buttonPressConfirmed` | 删除按钮 (确认框 + `endImmediately`)|
 | `getCommMessageSound` | 发布/更新音效 (`ui_intel_something_posted` / `ui_intel_update` 等常量)|
 
 **`MessageIntel`**(`com.fs.starfarer.api.impl.campaign.intel.MessageIntel`) 是左下消息区的**纯消息**类，"For campaign messages that show up in the lower-left corner, but are not tied to an actual piece of intel."—— 它不绑定任何情报页面。构造与追加入口：`new MessageIntel(text[, color[, highlights]])`、`addLine(...)` 多行追加、`getCommMessageSound` 默认 `ui_intel_minor_message`；用 `CampaignUIAPI.addMessage(IntelInfoPlugin)` 发送。
 
-**`IntelInfoPlugin` 约定要点**(`com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`)：`getIntelTags(map)` **必须处理 map 为 null**("Method NEEDS to handle map being null gracefully.")；`NEW_DAYS = 5` 是新情报 "NEW" 标记窗口；`IntelSortTier` 是排序档；`getMapLocation(map)` 与 `getArrowData(map)` 控制地图定位与箭头；`isHidden()` 让已可见情报在 UI 与消息中隐藏 (`BaseIntelPlugin` 默认实现含教程状态判断)。
+**`IntelInfoPlugin` 约定要点** (`com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`)：`getIntelTags(map)` **必须处理 map 为 null**("Method NEEDS to handle map being null gracefully.")；`NEW_DAYS = 5` 是新情报 "NEW" 标记窗口；`IntelSortTier` 是排序档；`getMapLocation(map)` 与 `getArrowData(map)` 控制地图定位与箭头；`isHidden()` 让已可见情报在 UI 与消息中隐藏 (`BaseIntelPlugin` 默认实现含教程状态判断)。
 
 ### 交互对话框 (InteractionDialogAPI / InteractionDialogPlugin)
 
@@ -489,7 +487,7 @@ public class GearInServicesDialog implements InteractionDialogPlugin {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含五个类的 `.class` 条目 (可用 `jar tf` 核对)
+产物 `jars\GearIndustry.jar` 应包含五个类的 `.class` 条目 (可用 `jar tf` 核对)。
 
 ## 验证方案
 

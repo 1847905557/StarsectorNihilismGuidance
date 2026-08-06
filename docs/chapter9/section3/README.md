@@ -20,16 +20,13 @@
 
 ## 前置知识
 
-本节直接引用舰船、船插、战役、模块船与生涯脚本的既有成果，请先掌握以下内容：
-
-- 舰船船体 (hull)、`.ship` 文件与内置三件套 (内置武器/船插/联队随 `setHullSpec` 应用到每个装配)、`<hullId>_Hull` 空装配：
-  - "武器 ID 错 → 装配构建期 `Weapon spec not found`、槽位 ID 错 → 部署期 `slot id not found`、船插 ID 错 → 部署期 `Hullmod not found`" 的失败时机表 [C1-S6]。
-- 船插 (hullmod) 概念与 `hull_mods.csv`；效果类为会话级单例 [C2-S2]。
-- 战役 (mission) 装配的构造方式、`variantId`/`hullId`/`displayName`/`fluxVents`/`fluxCapacitors`/ `weaponGroups` 必填、任务导出完整流程 (`mission_<id>_ship_<n>.variant`)[C3-S1]。
-- 模块船：`modules` 字段加载期不校验、模块在部署期按该字段生成、模块是独立 `ShipAPI` 实体 [C4-S3]。
-- 生涯每帧脚本 (`EveryFrameScript`) 的注册模式 [C8-S1]。
-- 舰队成员 (`FleetMemberAPI`)：`getVariant()` / `setVariant(variant, withRefit, withStatsUpdate)`，传入引用不克隆 [C8-S3]。
-- `GearInModPlugin` 的所有权与 `onGameLoad` 回调 [C6-S2]。
+- [C1-S6] 的舰船船体、`.ship` 文件、内置三件套与装配构建期和部署期错误边界；
+- [C2-S2] 的船插、`hull_mods.csv` 与效果类实例；
+- [C3-S1] 的战役装配结构、字段要求与任务导出流程；
+- [C4-S3] 的模块船、`modules` 字段加载与部署期实体；
+- [C6-S2] 的 `GearInModPlugin` 所有权与 `onGameLoad` 回调；
+- [C8-S1] 的生涯每帧脚本注册；
+- [C8-S3] 的 `FleetMemberAPI.getVariant()`、`setVariant(...)` 与装配引用边界。
 
 ## 术语
 
@@ -45,7 +42,7 @@
 | 入口 | 路径 | 来源 | 使用方 |
 |---|---|---|---|
 | 空装配自动生成 | `ship_data.csv` 每个注册行 | `HULL` | 按 hull 自动生成 `<hullId>_Hull` 空装配并注册 (无武器槽 displayName "Standard"、有武器槽 "Custom")|
-| 数据变体 | `data/variants/**/*.variant`(core 与各 MOD 合并)| `STOCK` | 变体文件加载流程 (先读 `variantId`，已存在则**静默跳过**—— 跨文件先到先得；加载后置 `STOCK` 来源并注册)|
+| 数据变体 | `data/variants/**/*.variant`(core 与各 MOD 合并)| `STOCK` | 变体文件加载流程 (先读 `variantId`，已存在则**静默跳过** —— 跨文件先到先得；加载后置 `STOCK` 来源并注册)|
 | 任务设计/任务存档 | `<saves>/missions/variants`、`<saves>/missions/<id>` | `MISSION_DESIGN` / `MISSION_SAVE` | 任务变体加载流程 |
 | 存档内变体 | 随生涯存档保存的变体 (refit 界面保存的 `svd_<hullId>_<uid>` 变体)| `REFIT` | 读档时按 id 从存档恢复变体 |
 
@@ -122,7 +119,7 @@
 
 | 方法 | 语义与陷阱 |
 |---|---|
-| `void addWeapon(String slotId, String weaponId)` | 立即按武器 id 解析 spec(缺失 → 立刻抛 `RuntimeException("Weapon spec [...] not found!")`)；**槽位不校验**—— 坏槽位静默写入，延迟到部署期失败 (见下)。内置武器槽的写入被忽略 (`addWeapon(slot, spec, false)` 只在非内置槽写入)|
+| `void addWeapon(String slotId, String weaponId)` | 立即按武器 id 解析 spec(缺失 → 立刻抛 `RuntimeException("Weapon spec [...] not found!")`)；**槽位不校验** —— 坏槽位静默写入，延迟到部署期失败 (见下)。内置武器槽的写入被忽略 (`addWeapon(slot, spec, false)` 只在非内置槽写入)|
 | `void clearSlot(String slotId)` | 从武器表移除槽位 |
 | `String getWeaponId(String slotId)` / `WeaponSpecAPI getWeaponSpec(String slotId)` | 未装 → `null` |
 | `List<String> getNonBuiltInWeaponSlots()` | 装有武器的槽减去内置槽 |
@@ -135,7 +132,7 @@
 |---|---|
 | `setNumFluxVents(int)` / `setNumFluxCapacitors(int)` | 直接写数值 |
 | `addMod(String)` | 进 `hullMods`(被压制时忽略)|
-| `removeMod(String)` | 内置船插与 perma 船插**返回不删**—— 想移除必须 `removePermaMod`，内置船插不可移除 |
+| `removeMod(String)` | 内置船插与 perma 船插**返回不删** —— 想移除必须 `removePermaMod`，内置船插不可移除 |
 | `clearHullMods()` | 清空后重放内置 + perma 船插 (与 `getHullMods().clear()` 不同，javadoc 明确这点)|
 | `addPermaMod(String)` / `addPermaMod(String, boolean isSMod)` | 进 `permaMods`(isSMod 时同时进 `sMods`) 并 `addMod` |
 | `getHullMods()` | 含内置与 perma 的完整集合 (`getAllMods()` 是实现类方法，接口外)|
@@ -153,7 +150,7 @@
 | 方法 | 语义与陷阱 |
 |---|---|
 | `getWeaponGroups()` / `addWeaponGroup(WeaponGroupSpec)` | 读/追加；**空组被 `addWeaponGroup` 静默丢弃** |
-| `WeaponGroupSpec getGroup(int index)` | 越界时**自动新建一个空 `LINKED` 组并追加**—— 遍历式调用会悄悄改变装配 |
+| `WeaponGroupSpec getGroup(int index)` | 越界时**自动新建一个空 `LINKED` 组并追加** —— 遍历式调用会悄悄改变装配 |
 | `autoGenerateWeaponGroups()` | 按 AI hints、弧线、武器尺寸把武器聚类成**最多 7 组**：PD / `NO_MANUAL_FIRE` 组排最后、导弹/火箭组排前、每组按内容决定 `LINKED`/`ALTERNATING` 与 autofire 默认值 (`autoGenerateWeaponGroupsV2`)|
 | `boolean hasUnassignedWeapons()` | 存在非装饰、未入任何组的武器 → `true` |
 | `void assignUnassignedWeapons()` | 无组 → 直接 `autoGenerateWeaponGroups()`；有组 → 未分配武器并入 (已有 7 组时并入第 7 组)，并清空空组 |
@@ -162,14 +159,14 @@
 
 两个调用**直接写回传入的变体对象**：舰队部署路径传的是成员的克隆变体 (成员进入战斗时生成的克隆)，所以注册表变体不被污染，但成员变体本身会被改写；如果直接把共享/复用变体传进会部署的路径，它会被改。
 
-**战机 (`isFighter()`) 两条都不触发**—— 战机未入组武器拿不到瞄准目标 (见舰船制作章节)。
+**战机 (`isFighter()`) 两条都不触发** —— 战机未入组武器拿不到瞄准目标 (见舰船制作章节)。
 
 **OP 成本**
 
 | 方法 | 语义 |
 |---|---|
 | `computeOPCost(MutableCharacterStatsAPI stats)` | = 武器 OP + 船插 OP + vents + capacitors |
-| `computeWeaponOPCost(stats)` | 引用缺失的武器/联队 spec 时抛 `RuntimeException`(消息形如 `Weapon spec with id [...] not found`、`Fighter wing spec with id [...] not found`——**实现原文的格式化串缺右括号，不要依赖消息文本做解析**)|
+| `computeWeaponOPCost(stats)` | 引用缺失的武器/联队 spec 时抛 `RuntimeException`(消息形如 `Weapon spec with id [...] not found`、`Fighter wing spec with id [...] not found`——** 实现原文的格式化串缺右括号，不要依赖消息文本做解析**)|
 | `computeHullModOPCost()` / `computeHullModOPCost(stats)` | 只算非内置、非 perma 船插 |
 | `getUnusedOP(stats)` | 船体 OP(`hullSpec.getOrdnancePoints(stats)`)− `computeOPCost` |
 
@@ -180,7 +177,7 @@
 - `Map<String, String> getStationModules()`：模块槽 id → 模块变体 id(`.variant` 文件的 `modules` 字段；对象与数组两种写法都被接受、加载期不校验，见模块船制作章节)。
 - `List<String> getModuleSlots()`：`stationModules` 中槽位类型为 `STATION_MODULE` 的槽。
 - `ShipVariantAPI getModuleVariant(String slotId)`：先查运行期覆盖 `moduleVariants`，未命中且槽位是模块槽时按 `stationModules` 的变体 id 查注册表。
-- `void setModuleVariant(String slotId, ShipVariantAPI variant)`：**只接受非 STOCK 来源的变体作为覆盖**——`null` 与 STOCK 来源变体都按 "移除覆盖" 处理。挂覆盖时 `stationModules` 条目同步指向覆盖变体的 `hullVariantId`。
+- `void setModuleVariant(String slotId, ShipVariantAPI variant)`：**只接受非 STOCK 来源的变体作为覆盖** ——`null` 与 STOCK 来源变体都按 "移除覆盖" 处理。挂覆盖时 `stationModules` 条目同步指向覆盖变体的 `hullVariantId`。
 
 ::: caution 模块覆盖必须是非 STOCK 来源
 `setModuleVariant(slotId, variant)` 只接受非 STOCK 来源的变体作为覆盖 ——`null` 与 STOCK 来源变体都按 "移除覆盖" 处理。忘记 `setSource(REFIT)` 是模块覆盖 "没生效" 的首因 (对应规则强度第 6 条)。
@@ -191,14 +188,14 @@
 装配改完之后，变体要能复制、能写盘、能随存档保存 —— 这一步的边界决定改动能在哪里生效。
 
 - `clone()`：深拷贝 `weapons`、`weaponGroups`(逐组 `clone`)、`hullMods`/`permaMods`/`sMods`/`sModdedBuiltIns`/ `suppressedMods`/`wings`/`tags`/`stationModules`，`moduleVariants` 递归克隆：
-  - **`hullSpec` 是共享引用**；来源等标量随 `super.clone` 复制 ——**克隆保留原来源**，需要时显式 `setSource`。
+  - **`hullSpec` 是共享引用**；来源等标量随 `super.clone` 复制 ——** 克隆保留原来源**，需要时显式 `setSource`。
 - `toJSONObject()`：键与 `.variant` 数据文件一致 ——`displayName`/`hullId`/`variantId`/`fluxVents`/`fluxCapacitors`；`goalVariant` 仅 `true` 时输出：
   - `weaponGroups`(`mode` 用枚举名、`autofire`、`weapons` 为槽→武器 id 映射)；`modules`(数组形式)。
   - `wings`/ `hullMods` 只序列化非内置内容；`permaMods`/`sMods`/`tags`(tags 非空才输出)。
   - 副作用：序列化时若没有任何已装联队会清空 `wings` 列表。
 - 引擎的变体保存入口 (`saveVariant(spec, path)`)：克隆一份、把克隆与原件的来源都置 `STOCK`、注册 (覆盖) 并写 JSON 文件 —— 引擎内部保存变体统一走 "克隆后落盘"。
 - 任务导出完整流程 (战役制作章节)：`createMissionVariant` 写 `<saves>/missions/<id>/mission_<id>_ship_<n>.variant`。
-- 成员变体持久化边界 (成员随档保存时)：**只有非 STOCK 且非 HULL 来源的变体随成员存档**(写入 `savedVariant`)：
+- 成员变体持久化边界 (成员随档保存时)：**只有非 STOCK 且非 HULL 来源的变体随成员存档** (写入 `savedVariant`)：
   - STOCK/HULL 来源的成员变体不落档，读档后重新从注册表按 id 克隆 —— 所以部署期对成员变体的武器组写入 (来源仍为 STOCK 时) 不会跨存档残留。
 
 ::: warning 成员变体落档边界
@@ -212,7 +209,7 @@
 **必须/禁止 (当前基线仍有效，违反有明确可观察结果)**：
 
 1. `.variant` 数据文件**必须**包含 `displayName`、`hullId`、`variantId`、`fluxVents`、`fluxCapacitors`、`weaponGroups` 六个键：
-   - 缺键 → `JSONException` 从变体文件加载流程冒泡，**启动加载失败**(战役制作章节已定：`weaponGroups` 必填)。
+   - 缺键 → `JSONException` 从变体文件加载流程冒泡，**启动加载失败** (战役制作章节已定：`weaponGroups` 必填)。
 2. 变体文件的 `hullId` **必须**指向已注册 hull(否则 `Ship hull spec [...] not found!`)；`weapons` 里的武器 id **必须**有效 (否则 `Weapon spec [...] not found!`)—— 两者都是加载期失败，非静默。
 3. 代码里 `addWeapon` 的武器 id **必须**有效 —— 调用点立刻抛 `Weapon spec [...] not found!`，而不是延迟报错。
 4. 槽位 id **必须**是 hull 真实存在的槽。`addWeapon` 不校验 (静默写入)，部署期才抛 `Ship hull [<hullId>] variant [<variantId>]: slot id [<slot>] not found for weapon [<weapon>]`，舰船不生成。
@@ -741,11 +738,11 @@ final class GearInVariantLog {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下七个类的 class 条目 (可用 `jar tf` 核对)
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下七个类的 class 条目 (可用 `jar tf` 核对)。
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 [C6-S1]+ `GearInModPlugin`([C6-S2]，含本节调用点片段)、本节七个类；生涯时钟脚本 `GearInSectorClockScript` ([C8-S1]，可选)。
+前置数据：既有 MOD 布局 [C6-S1] + `GearInModPlugin` ([C6-S2]，含本节调用点片段)、本节七个类；生涯时钟脚本 `GearInSectorClockScript` (可选)。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含七个类的 class 条目。
 2. **新建生涯**：查看 `starsector.log` 中本节七个类输出的全部 `GearIn ...` 日志。
@@ -787,7 +784,7 @@ gradle jar
 
 本节建立了一条完整的变体数据链：`ship_data.csv` 与 `data/variants` 负责注册，`SettingsAPI.getVariant` 负责读取，`clone()` 隔离修改，来源决定覆盖与落档，`toJSONObject` 与 `saveVariant` 完成序列化。排错时先分清两条读取路径，再沿 id、来源、克隆三层定位 —— 这是本节最可复用的判断。
 
-- 公开面只有 `ShipVariantAPI` 接口；`hullSpec` 不随存档保存，读档按 `hullId` 重建 ——**变体引用禁止跨存档缓存**。
+- 公开面只有 `ShipVariantAPI` 接口；`hullSpec` 不随存档保存，读档按 `hullId` 重建 ——** 变体引用禁止跨存档缓存**。
 - `addWeapon` 校验武器 id 但不校验槽位：武器 id 错 → 调用点抛；槽位 id 错 → 部署期抛。
 - 内置武器槽与内置/perma 船插不可改 (静默不生效)；`clearHullMods` 保留内置与 perma。
 - `getGroup(i)` 越界新建空组；`addWeaponGroup` 丢弃空组；`autoGenerateWeaponGroups` 最多 7 组且写回传入变体 —— 改装配先 `clone()`。
@@ -795,7 +792,7 @@ gradle jar
 - `setModuleVariant` 只接受非 STOCK 覆盖；模块槽 id 由 `getModuleSlots()` 给出 (STATION_MODULE 槽)。
 - 战机不触发部署期补组；未入组武器拿不到目标。
 
-变体只是数据，它的生命周期终点是部署与存档：本节把数据层的全部语义讲清后，逻辑上的后续是它经 `setVariant` 挂到舰队成员、随人物 (Person) 与 `MutableStat` 进入状态交接链 —— 那些交接点 "谁克隆、谁改来源、谁落档" 的差异，正是由本节的规则决定的。
+变体只是数据，它的生命周期终点是部署与存档：本节把数据层的全部语义讲清后，它经 `setVariant` 挂到舰队成员、随人物 (Person) 与 `MutableStat` 进入状态交接链 —— 那些交接点 "谁克隆、谁改来源、谁落档" 的差异，正是由本节的规则决定的。
 
 ## 建议参考项
 

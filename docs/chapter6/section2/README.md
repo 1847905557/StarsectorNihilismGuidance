@@ -18,14 +18,10 @@
 
 ## 前置知识
 
-本节需要您先具备以下基础：
-
-- MOD 目录结构、`mod_info.json` 必填/可选字段、启动器与 `starsector.log`[C1-S1]；
-- 注册、回调与类名一致概念 [C2-S1]；
-- 新档生成入口 `onNewGame()`：[C3-S3] 的生成入口类为 `GearInSystemGenPlugin`(`data.scripts.gearin.campaign` 包，只实现 `onNewGame()`)；
-- 编译 JAR 链路 (`src` → `jars/GearIndustry.jar`)、`mod_info.json` 的 `jars` 声明、jar 类优先于 `.java` 即时编译 [C6-S1]。
-
-`Global` 与 `settings` 的精确讲解在其他页面，本节只使用它们的结论。
+- [C1-S1] 的 MOD 目录、`mod_info.json` 可选字段、启动器与 `starsector.log`；
+- [C2-S1] 的注册、回调与完整类名一致规则；
+- [C3-S3] 的新档生成入口 `onNewGame()` 与 `GearInSystemGenPlugin` 类；
+- [C6-S1] 的 `src` 到 JAR 编译链、`mod_info.json` 的 `jars` 声明和 JAR 类优先规则。
 
 ## 文件与 API 链路
 
@@ -41,7 +37,7 @@
 | 实例化 (特例)| 启用状态通知 | `onEnabled` 触发时**每次都新建一个实例**再调用，与上面缓存的实例不是同一个对象 |
 
 ::: info `modPlugin` 缺失不是错误
-MOD 正常启用，但 `getEnabledModPlugins` 对 `null` 类名直接跳过 ——**没有任何生命周期回调，且没有任何报错**。它是整个教程里最安静的失败方式：一切正常，只是永远不被叫醒；这也是 "回调不执行" 的首选排查方向。
+MOD 正常启用，但 `getEnabledModPlugins` 对 `null` 类名直接跳过 ——** 没有任何生命周期回调，且没有任何报错**。它是整个教程里最安静的失败方式：一切正常，只是永远不被叫醒；这也是 "回调不执行" 的首选排查方向。
 :::
 
 读链路时的另一个关键结论：除 `onEnabled` 外，全部回调 (含 picker) 都在**同一个缓存实例**上调用，且该实例跨存档复用。跨存档的状态**必须**放 persistent data，不能放实例字段。
@@ -57,7 +53,7 @@ MOD 正常启用，但 `getEnabledModPlugins` 对 `null` 类名直接跳过 —�
 1. 资源加载期：创建脚本类加载器并登记各 MOD 的 `modPlugin` 类名。
 2. 全部资源与脚本加载完成后：对缓存列表逐个调用 **`onApplicationLoad()`**。这是整个游戏进程的第一个回调。
    - 适合：版本检查、读取 `settings`、加载静态数据、初始化外部库 (shader 初始化就发生在这里)。
-   - 抛出的异常沿资源加载链向上传播，**游戏启动中止**(错误弹窗 + `starsector.log` 记 `ERROR`)。成熟实例正是利用这一点做版本门：`onApplicationLoad` 里检查 `Global.getSettings().getGameVersion()` 不是 `0.98a` 前缀就抛 `IllegalArgumentException`。
+   - 抛出的异常沿资源加载链向上传播，**游戏启动中止** (错误弹窗 + `starsector.log` 记 `ERROR`)。成熟实例正是利用这一点做版本门：`onApplicationLoad` 里检查 `Global.getSettings().getGameVersion()` 不是 `0.98a` 前缀就抛 `IllegalArgumentException`。
 
 ::: caution 禁止在 `onApplicationLoad` 访问 `Global.getSector()`
 此刻 sector 尚未建立，`Global.getSector()` 返回 `null`，任何解引用都是 NPE。
@@ -139,7 +135,7 @@ MOD 正常启用，但 `getEnabledModPlugins` 对 `null` 类名直接跳过 —�
 
 ## 存档入口：首次进入存档的初始化门
 
-`onGameLoad` 无论新档 (`true`) 还是读档 (`false`) 都会被调用，因此 "每个存档只做一次" 的初始化 (生成补丁、势力注册、脚本注册)**必须**用随存档保存的 persistent data 判断：
+`onGameLoad` 无论新档 (`true`) 还是读档 (`false`) 都会被调用，因此 "每个存档只做一次" 的初始化 (生成补丁、势力注册、脚本注册)** 必须**用随存档保存的 persistent data 判断：
 
 ```java
 if (!sector.getPersistentData().containsKey(CLASS_MARK)) {

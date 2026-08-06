@@ -21,17 +21,14 @@
 
 ## 前置知识
 
-本节会复用已经建立的对话、Intel、脚本与酒吧调度基础，请先熟悉以下主题：
-
-- 交互对话框三面板、`showInteractionDialog`、`SectorAPI.adjustPlayerReputation`(任务完成结算复用) 与 Intel 两条登记链 (`addIntel` 立即可见 / `queueIntel` 通信中继可见性)—— 本节 Intel 侧从这里继续 [C8-S9]。
-- 人物 (`PersonAPI`) 与 market 联系人 —— 任务的给任务者 (giver) 与目标联系人都是人物：
-  - `OfficerManagerEvent`、`ContactIntel` 语义被 `BaseHubMission` 的 `findOrCreateGiver` / `findOrCreateTrader` / `setPersonIsPotentialContactOnSuccess` 使用 [C9-S1]。
-- `EveryFrameScript` 推进约定与 `convertToDays` 换算 ——`BaseIntelPlugin` 实现 `EveryFrameScript`，`advanceImpl` 里 `days = clock.convertToDays(amount)`：
-  - 任务随 `scripts` 列表随档保存、`transientScripts` 读档清空的结论直接适用 [C10-S1]。
-- 事件边界与生命周期纪律 —— 任务的 "注册入口 → 派发 → 可观察结果" 方法论同源；任务实例随存档序列化的 XStream 边界与监听器一致 [C10-S2]。
-- `PortsideBarEvent` / `BarEventManager` / `PortsideBarData` / `HubMissionBarEventWrapper` 的调度与 `notifyWasInteractedWith` 收尾 —— 本节 bar 路线直接复用该调度器，`SpecBarEventCreator` 的 mission 分派是两条路线的交界点 [C10-S4]。
-- 战役 (mission) 与 `MissionDefinitionAPI`—— 对照对象，本节不重复 [C3-S1]。
-- `modPlugin` 生命周期与 `Global.getSector()` 阶段语义 —— 任务相关注册 (`bar_events.csv` 由加载期读取、无代码注册；代码侧只有 `addScript` / `addIntel` 发生在生涯引擎建立之后)[C6-S2] / [C6-S3]。
+- [C3-S1] 的战役与 `MissionDefinitionAPI` 对照关系；
+- [C6-S2] 的 `modPlugin` 生命周期与加载期数据读取；
+- [C6-S3] 的 `Global.getSector()` 阶段语义；
+- [C8-S9] 的交互对话框、Intel 登记与 `SectorAPI.adjustPlayerReputation`；
+- [C9-S1] 的人物、市场联系人、`OfficerManagerEvent` 与 `ContactIntel`；
+- [C10-S1] 的 `EveryFrameScript`、`convertToDays` 与脚本存档边界；
+- [C10-S2] 的事件边界、生命周期与 XStream 序列化；
+- [C10-S4] 的 `PortsideBarEvent`、`BarEventManager`、`PortsideBarData`、`HubMissionBarEventWrapper` 与 `notifyWasInteractedWith`。
 
 ## 术语
 
@@ -39,7 +36,7 @@
 
 - **枢纽任务 (hub mission)**：API 名保留 `HubMission`(接口) 与 `BaseHubMission`(基类)。一种 "任务 = 阶段图 + 触发器 + Intel" 的生涯任务模型：
   - 任务是一个 `BaseIntelPlugin`(用户在 Intel 界面跟踪进度)，同时是一个 `EveryFrameScript`(每帧推进阶段)，通过 `MissionHub`(联系人任务板) 或酒吧事件两种入口提供给用户。
-- **任务阶段 (stage)**：API 名保留 `StageData`。任务状态机的一个节点，用任意 `Object` 作 id(惯例是枚举常量)。任务在同一时刻只有一个 `currentStage`；阶段之间用**连接 (`StageConnection`)**组成有向图。
+- **任务阶段 (stage)**：API 名保留 `StageData`。任务状态机的一个节点，用任意 `Object` 作 id(惯例是枚举常量)。任务在同一时刻只有一个 `currentStage`；阶段之间用**连接 (`StageConnection`)** 组成有向图。
 - **目标 (objective)**：本节术语。任务给用户的一项 "当前要做的事"= 当前阶段 + 阶段连接上的完成条件 (`ConditionChecker`)。任务的成功/失败由 `successStages` / `failStages` 集合判定，不单独建模。
 - **事件链 (event chain)**：本节术语，两种形态：①单任务内 —— 阶段连接 (`connections`)+ 触发器 (`triggers`) 组成的事件序列；②跨任务 —— 多个任务 Intel 经全局内存阶段 (如成熟实例的 `MissionStage`) 串成的大剧情链。
 - **触发器 (trigger)**：API 名保留 `MissionTrigger`。绑定到若干阶段、带一个 `ConditionChecker` 与一串 `TriggerAction` 的一次性动作；条件满足且任务处于绑定阶段时执行并从列表移除。
@@ -91,7 +88,7 @@ MOD 侧几乎不直接实现它，而是继承 `BaseIntelPlugin`(`com.fs.starfar
 
 - `advance(float amount)`：`isEnded()` 直接返回；`isEnding()` 时按游戏天扣 `endingTimeRemaining`，扣完置 `ended = true` 并调 `notifyEnded()`；否则转 `advanceImpl(amount)`—— 子类覆写点。
 - `endAfterDelay()` / `endAfterDelay(float days)` / `endImmediately()`：置 `ending = true` + 剩余天数：
-  - `getBaseDaysAfterEnd()` 默认 **3 游戏日**—— 任务结束后 Intel 条目还留 3 天展示结算结果，之后由引擎按 `shouldRemoveIntel()`(默认 `isEnded`) 清理。
+  - `getBaseDaysAfterEnd()` 默认 **3 游戏日** —— 任务结束后 Intel 条目还留 3 天展示结算结果，之后由引擎按 `shouldRemoveIntel()`(默认 `isEnded`) 清理。
 - `isDone()` = `isEnded()`、`runWhilePaused()` = false—— 作为 `EveryFrameScript`，任务结束后引擎自动从脚本列表移除。
 - 更新推送：`sendUpdate(listInfoParam, textPanel)`(走 `addIntelToTextPanel`)、`sendUpdateIfPlayerHasIntel(...)`(走 `CampaignUIAPI.addMessage`)—— 任务阶段变化时给用户 "进度更新" 消息的两条通道。
 
@@ -244,7 +241,7 @@ protected List<Abortable> changes = ...;
 - `StageData`：`id` + `elapsed`(当前阶段内累计游戏天)+ `important`(本阶段的 `ImportanceData` 列表)。`getData(id)` 延迟创建。
 - `StageConnection`：`from` / `to` / `checker`——`from == null` 表示 "任意阶段"。
 - 阶段声明：`setStartingStage`、`setSuccessStage` / `addSuccessStages`、`setFailureStage` / `addFailureStages`、`setNoPenaltyFailureStage` / `addNoPenaltyFailureStages`、`setAbandonStage` / `setNoAbandon`。
-  - **阶段 id 惯例是枚举常量**(`updateInteractionData` 会做 `((Enum)getCurrentStage()).name()`)。
+  - **阶段 id 惯例是枚举常量** (`updateInteractionData` 会做 `((Enum)getCurrentStage()).name()`)。
 
 `setCurrentStage` 的完整副作用链 —— 写任务代码必须理解：
 
@@ -279,9 +276,9 @@ protected List<Abortable> changes = ...;
 
 1. **帧推进轮询**：`advanceImpl` → `tracker.intervalElapsed()` → `checkStageChangesAndTriggers(null, null)`。
    - 检测循环：对 `connections` 逐条检查 "`conn.from == currentStage || conn.from == null` 且 `conn.to != currentStage` 且 `checker.conditionsMet()`"。
-   - 命中即 `setCurrentStage(conn.to)` 并**移除该连接**(除非 `setStageTransitionsRepeatable()`)。
+   - 命中即 `setCurrentStage(conn.to)` 并**移除该连接** (除非 `setStageTransitionsRepeatable()`)。
    - `while (changed)` 直到无变化，最后 `runTriggers()`。
-   - **连接是一次性的**—— 同一条连接只触发一次阶段转换。
+   - **连接是一次性的** —— 同一条连接只触发一次阶段转换。
 2. **对话驱动**：rules 把完成标志写进目标对象内存 (如 `$gearInHub_delivered = true`)。
    - 再 `Call $<missionId>_ref updateStage` 或 `Call $<missionId>_ref updateData`——`BaseHubMission.callEvent` 里 `"updateStage"` → `checkStageChangesAndTriggers(dialog, memoryMap)`。
    - 这就是 "对话里完成目标" 的标准收尾 (原版 `cheapCom` 的 `$cheapCom_completed = true` + `Call $cheapCom_ref updateStage` 同款)。
@@ -289,7 +286,7 @@ protected List<Abortable> changes = ...;
    - 进入 `endLimitStages` 后时限取消。
 
 ::: caution 完成标志写哪里：目标内存必须与规则作用域一致
-`setStageOnMemoryFlag(to, X, flag)` 检测的是**对象 X 的内存**(或显式 `MemoryAPI`)，rules 里 `$flag = true` 写的是**当前对话作用域**(人物对话 = 该人物内存、市场对话 = 市场实体内存；作用域细节由规则引擎与内存作用域主题展开)。
+`setStageOnMemoryFlag(to, X, flag)` 检测的是**对象 X 的内存** (或显式 `MemoryAPI`)，rules 里 `$flag = true` 写的是**当前对话作用域** (人物对话 = 该人物内存、市场对话 = 市场实体内存；作用域细节由规则引擎与内存作用域主题展开)。
 
 两者必须指向同一对象 —— 写错内存时连接永不满足，任务永远卡在阶段 (无报错，只差最后一段)。
 :::
@@ -321,9 +318,9 @@ endTrigger();                                                 // 必须成对
 ```
 
 - `beginCustomTrigger(checker, Object... stages)` 开一个 `currTrigger`。
-  - **`endTrigger()` 把触发器入列**—— 没有 begin 就 end 抛 `RuntimeException("endTrigger() called without a corresponding beginTrigger()")`。
+  - **`endTrigger()` 把触发器入列** —— 没有 begin 就 end 抛 `RuntimeException("endTrigger() called without a corresponding beginTrigger()")`。
   - 没 end 就开下一个抛 `"Already began a trigger, call endTrigger() to finish it"`。
-- 触发器执行 (`runTriggers`)：`trigger.getStages().contains(currentStage)` 且 `condition.conditionsMet()` → 依次执行 `TriggerAction.doAction(context)` → **从列表移除**(一次性)。
+- 触发器执行 (`runTriggers`)：`trigger.getStages().contains(currentStage)` 且 `condition.conditionsMet()` → 依次执行 `TriggerAction.doAction(context)` → **从列表移除** (一次性)。
   - 调用时机：`accept` 末尾、`setCurrentStage` 末尾、`checkStageChangesAndTriggers` 末尾、时限切换后。
 - 动作族 (`trigger*`，全部汇聚到 `triggerCustomAction`)：
   - 生成类：`triggerSpawnEntity` / `triggerSpawnDerelictHull` / `triggerSpawnDebrisField` / `triggerSpawnShipGraveyard` / `triggerSpawnFleetAtPickedLocation`。
@@ -336,10 +333,10 @@ endTrigger();                                                 // 必须成对
 **形态二：跨任务全局链 (成熟实例的 `MissionStage` 模式)**。大剧情把 "阶段" 提升为全局状态，每个步骤由独立任务 Intel 承载，步骤结束回写全局阶段：
 
 1. 全局阶段枚举 + 唯一读写入口：管理器 `getStage()` 从全局内存读、`setStage(MissionStage)` 写；规则侧转换命令把字符串转枚举 (写错字符串会把阶段退回 `STAGE_NOT_STARTED`)。
-2. 每步一个任务 Intel(成熟实例中每步一个独立任务类)，**各自的结束条件 (时限耗尽/条件失效) 里回写全局阶段**(如 `STAGE_DOOMED`)—— 不回写则后续阶段继续消费旧状态。
+2. 每步一个任务 Intel(成熟实例中每步一个独立任务类)，**各自的结束条件 (时限耗尽/条件失效) 里回写全局阶段** (如 `STAGE_DOOMED`)—— 不回写则后续阶段继续消费旧状态。
 3. 入口用酒吧路线的调度 (各阶段 bar creator，`shouldShowAtMarket` 只匹配特定全局阶段)；中间步骤用 rules `Call` 委托创建/推进 Intel。
 
-对照结论：`HubMission` 的内部阶段图是**单任务事件链**(阶段 + 连接 + 触发器，自带回滚与清理)；`MissionStage` 全局链是**跨任务事件链**(全局内存 + 每步 Intel + 回写纪律)。
+对照结论：`HubMission` 的内部阶段图是**单任务事件链** (阶段 + 连接 + 触发器，自带回滚与清理)；`MissionStage` 全局链是**跨任务事件链** (全局内存 + 每步 Intel + 回写纪律)。
 
 两者可以嵌套 —— 全局链的一个步骤本身可以是一个 `HubMission`(如成熟实例中挂进 `person_missions.csv` 的 `HubMissionWithBarEvent`)。
 
@@ -351,7 +348,7 @@ endTrigger();                                                 // 必须成对
 
 **路线 A：酒吧事件 (bar_events.csv)**—— 酒吧调度器的 mission 分派：
 
-1. `data/campaign/bar_events.csv` 一行 (CSV spec 加载期读取；表头 11 列：`bar event id,tags,freq,prob,min dur,max dur,min timeout,max timeout,min accepted timeout,max accepted timeout,plugin` )：
+1. `data/campaign/bar_events.csv` 一行 (CSV spec 加载期读取；表头 11 列：`bar event id,tags,freq,prob,min dur,max dur,min timeout,max timeout,min accepted timeout,max accepted timeout,plugin`)：
 
    ```text
    gearInHub,,10,1,30,40,15,20,60,90,data.scripts.gearin.campaign.GearInHubMission
@@ -653,10 +650,10 @@ public class GearInHubMission extends HubMissionWithBarEvent {
   - 与同一联系人同时存在的其他任务会互相避开方向 (`preferMarketInDirectionOfOtherMissions`)。
 - `findOrCreateTrader(faction, market, true)`：目标市场生成/复用联系人 (`cleanUpOnMissionOverIfWasNewPerson=true` 时新人物随任务结束清理)。
 - `setStageOnMemoryFlag(Stage.RETURN, sourceContact, "$gearInHub_dataReceived")`：完成检测连接 ——rules 在联系人对话里写 `$gearInHub_dataReceived = true`(写进联系人内存) 再 `Call $gearInHub_ref updateStage`，连接命中切到 RETURN。
-  - **目标内存与规则作用域必须一致**(规则强度 "必须" 第 3 条)。
+  - **目标内存与规则作用域必须一致** (规则强度 "必须" 第 3 条)。
 - `setTimeLimit(Stage.FAILED, MISSION_DAYS, null)`：时限；`advanceImpl` 按任务总 `elapsed`(游戏天) 判定，超时切 FAILED。
 - `makeImportant(sourceContact, "$gearInHub_hasData", Stage.CONTACT)`：CONTACT 阶段联系人市场点亮地图标记；`getMapLocation` 用默认实现 (当前阶段第一个重要实体)。
-- `makeImportant(giver, "$gearInHub_returnMark", Stage.RETURN)`：RETURN 阶段任务人市场点亮地图标记；标志与完成连接监听的 `$gearInHub_delivered` 分开（进入 RETURN 时引擎写阶段标志，若同名会立即命中完成连接，交付对话不会发生）。
+- `makeImportant(giver, "$gearInHub_returnMark", Stage.RETURN)`：RETURN 阶段任务人市场点亮地图标记；标志与完成连接监听的 `$gearInHub_delivered` 分开 (进入 RETURN 时引擎写阶段标志，若同名会立即命中完成连接，交付对话不会发生)。
 - `beginCustomTrigger(new AlwaysTrueChecker(), Stage.RETURN)` + `triggerSetGlobalMemoryValue(...)` + `endTrigger()`：一次性触发器 (进 RETURN 即写全局内存 `$gearInHub_enteredReturn`)。
     - 半程触发器用 `beginCustomTrigger(new DaysElapsedChecker(MISSION_DAYS / 2f, this), ...)`；
     - `DaysElapsedChecker(days, mission)` 判 `mission.elapsed >= days`(与 `beginDaysElapsedTrigger(days, this)` 同语义)，避开该 helper 双重载在三个实参下的编译歧义。
@@ -693,7 +690,7 @@ $gearInHub_delivered = true
 Call $gearInHub_ref updateStage","The trader takes the datapad and runs a quick check: ""That's everything. Here's your payment - $gearInHub_reward credits.""",contact_pickAnotherGreeting:Continue,
 ```
 
-交付收尾两条规则沿用原版同类任务的 `PickGreeting` 模式（原版 `cheapCom` 取货与 `extr` / `jabr` 回任务人同款）：前往目标市场与联系人 `$gearInHub_contactName` 通讯时命中 `gearInHubDataReceivedGreeting`（条件 `$gearInHub_hasData`——CONTACT 阶段 `makeImportant` 写在联系人内存的阶段标志），脚本把 `$gearInHub_dataReceived = true` 写进联系人内存（与 `setStageOnMemoryFlag(Stage.RETURN, sourceContact, ...)` 作用域一致）并 `Call $gearInHub_ref updateStage`，阶段切到 RETURN；回来源市场与任务人通讯时命中 `gearInHubDeliveryGreeting`（条件 `$gearInHub_returnMark`——RETURN 阶段地图标记标志，进入 RETURN 时由 `makeImportant` 写入；脚本把 `$gearInHub_delivered = true` 写进任务人内存——完成连接监听的标志，与阶段标志分开），并 `Call $gearInHub_ref updateStage`，连接 RETURN→COMPLETED 命中并结算。两条规则对应验证方案步骤 3/4；`score:1000` 让规则胜过原版通用问候，`contact_pickAnotherGreeting:Continue` 是原版问候回环选项（选后回到通讯问候流程）。
+交付收尾两条规则沿用原版同类任务的 `PickGreeting` 模式 (原版 `cheapCom` 取货与 `extr` / `jabr` 回任务人同款)：前往目标市场与联系人 `$gearInHub_contactName` 通讯时命中 `gearInHubDataReceivedGreeting`(条件 `$gearInHub_hasData`——CONTACT 阶段 `makeImportant` 写在联系人内存的阶段标志)，脚本把 `$gearInHub_dataReceived = true` 写进联系人内存 (与 `setStageOnMemoryFlag(Stage.RETURN, sourceContact, ...)` 作用域一致) 并 `Call $gearInHub_ref updateStage`，阶段切到 RETURN；回来源市场与任务人通讯时命中 `gearInHubDeliveryGreeting`(条件 `$gearInHub_returnMark`——RETURN 阶段地图标记标志，进入 RETURN 时由 `makeImportant` 写入；脚本把 `$gearInHub_delivered = true` 写进任务人内存 —— 完成连接监听的标志，与阶段标志分开)，并 `Call $gearInHub_ref updateStage`，连接 RETURN→COMPLETED 命中并结算。两条规则对应验证方案步骤 3/4；`score:1000` 让规则胜过原版通用问候，`contact_pickAnotherGreeting:Continue` 是原版问候回环选项 (选后回到通讯问候流程)。
 
 ::: warning 规则分类必须与 mission id 一致
 规则 ID 用驼峰 (`gearInHubBlurbBar`)，规则**分类**是 `gearInHub_blurbBar` / `gearInHub_optionBar`。

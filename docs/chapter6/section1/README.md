@@ -19,11 +19,11 @@
 
 ## 前置知识
 
-开始本节前，您需要熟悉以下概念：
-
-- MOD 目录结构、`mod_info.json`、启动器与日志；`src/` 不是游戏查找源码的前缀 [C1-S1]。
-- 注册、回调与类名一致概念；`settings.json` 的 `plugins` 段、`BaseEveryFrameCombatPlugin`；暂停语义 [C7-S1]。
-- 完整类名如何被数据文件引用，`Problem loading class [...]` 异常的含义 [C2-S2]。
+- [C1-S1] 的 MOD 目录、`mod_info.json`、启动器与日志，以及游戏不从 `src/` 查找源码的路径规则；
+- [C2-S2] 的完整类名引用、注册入口和 `Problem loading class [...]` 异常含义；
+- [C7-S1] 的每帧回调、`BaseEveryFrameCombatPlugin` 和暂停语义；
+- 理解 Java 17 字节码上限、Gradle toolchain 与 `--release` 的关系；
+- 理解编译期依赖、运行时由游戏提供的公开 API 与 JAR 输出边界。
 
 ## 工具链基线
 

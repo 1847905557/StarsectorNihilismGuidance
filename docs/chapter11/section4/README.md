@@ -19,18 +19,16 @@
 
 ## 前置知识
 
-本节要解释规则脚本背后的内存层，需要您已经掌握变量语法、flag 模式与脚本注册，这些知识来自以下页面：
-
-- rules.csv 条件/脚本/文本里的 `$memkey.name` 变量解析、判真规则，以及 `=` / `++` / `--` 赋值中的过期天数写法 [C11-S1]；
-- 一次性 flag 模式 (条件 `!$player.<flag>` + 脚本 `$player.<flag> = true 0`)，`$menuState` / `$tradeMode` 状态机记忆与 `$hailing` 等场景事实键，以及 `$player.` / `$global.` 槽位选择对键可见范围的影响 [C11-S2]；
-- rulecmd 的 `execute(ruleId, dialog, params, memoryMap)` 执行面与 `BaseCommandPlugin.getEntityMemory(memoryMap)` 的实体优先、局部回退 [C11-S3]；
-- `modPlugin` 的 `onGameLoad` 回调与 "每个注册项用各自 persistent data 键" 的注册纪律 [C6-S2]；
-- `addScript` 注册脚本的方法 [C8-S1]；
-- 对话框生命周期与 `getInteractionTarget()`——`RuleBasedInteractionDialogPluginImpl` 会把交互目标记忆装入 `MemKeys.LOCAL` [C8-S9]。
+- [C6-S2] 的 `modPlugin`、`onGameLoad` 与持久数据注册；
+- [C8-S1] 的 `addScript` 脚本注册；
+- [C8-S9] 的对话框生命周期、`getInteractionTarget()` 与 `MemKeys.LOCAL`；
+- [C11-S1] 的 `$memkey.name` 变量解析、判真规则与赋值过期天数；
+- [C11-S2] 的 flag 模式、状态记忆、场景事实键与 `$player.` / `$global.` 槽位；
+- [C11-S3] 的 rulecmd `execute(...)` 与 `BaseCommandPlugin.getEntityMemory(...)`。
 
 ## 术语
 
-按术语约定，本节首次完整讲解以下词 (后续页面继续使用；API 类名保留源码大小写)：
+按术语约定，本节首次完整讲解以下词；API 类名保留源码大小写：
 
 - **Rules 内存 (memory)**：API 名保留 `MemoryAPI`。规则系统、交互对象、实体、人物、舰队、市场和势力共用的键值状态容器；`memory` 是运行时对象 —— 没有数据文件、没有注册表，靠 `getMemory()` / `getMemoryWithoutUpdate()` 取到实例，随所属对象序列化进存档。
 - **记忆键 (memory key)**：`MemoryAPI` 里的键名，必须以 `$` 开头 (如 `$GearIn_memory_tag`、原版的 `$option`、`$menuState`、`$hailing`)。
@@ -57,7 +55,7 @@
 | `is(key, value)` | `contains` 且值相等 (float 精确比较)|
 | `between(key, min, max)` | 闭区间 `[min, max]`；缺失返回 false |
 | `getKeys()` / `getExpire(key)` | 全部键集合 / 剩余游戏天 (无过期 -1)|
-| `advance(amount)` | **引擎驱动**(见 "谁推进记忆")，MOD 代码不要手动调用 |
+| `advance(amount)` | **引擎驱动** (见 "谁推进记忆")，MOD 代码不要手动调用 |
 | `addRequired` / `removeRequired` / `getRequired` / `removeAllRequired` | required 依赖清理 (见下)|
 | `clear()` / `isEmpty()` | 清空全部键 (含过期与依赖表)/ 判空 |
 
@@ -152,7 +150,7 @@ devMode 下 `DumpMemory` 显示键列表与 `(e=<剩余天数>)`；`getExpire` �
 
 - 写键不需要 facts——`getMemory()` 会在每次调用时把全部插件刷一遍 (副作用 + 性能损耗)。
 - 读取时如果需要最新 facts(如 `$tag:` 条件依赖的键)，用 `getMemory()`；纯读自写键用 `getMemoryWithoutUpdate()`。
-- `Global.getSector().getMemory()`(sector 记忆)**同样有** facts 钩子 —— 遍历全部注册 `CampaignPlugin` 调 `updateGlobalFacts`(`CoreCampaignPluginImpl.updateGlobalFacts` 写入 `$isDevMode` / `$isInTutorial` / `$playerCanUseGates` / `$daysSinceStart`)，两入口不等价；`getMemoryWithoutUpdate()` 只读写；`SectorAPI.getPlayerMemoryWithoutUpdate()` 与 `getCharacterData().getMemoryWithoutUpdate()` 等价。
+- `Global.getSector().getMemory()`(sector 记忆)** 同样有** facts 钩子 —— 遍历全部注册 `CampaignPlugin` 调 `updateGlobalFacts`(`CoreCampaignPluginImpl.updateGlobalFacts` 写入 `$isDevMode` / `$isInTutorial` / `$playerCanUseGates` / `$daysSinceStart`)，两入口不等价；`getMemoryWithoutUpdate()` 只读写；`SectorAPI.getPlayerMemoryWithoutUpdate()` 与 `getCharacterData().getMemoryWithoutUpdate()` 等价。
 
 ::: caution 写入与高频读取一律用 `getMemoryWithoutUpdate()`。
 否则每次调用都触发全部插件 `update*Facts`：性能损耗 + facts 副作用在意外时机发生。这是必须级纪律 (见 "规则强度" 表)。
@@ -187,7 +185,7 @@ devMode 下 `DumpMemory` 显示键列表与 `(e=<剩余天数>)`；`getExpire` �
 
 `Memory.writeReplace` 把两类引用换成字符串占位：存活的 `SectorEntityToken` → `"enRef_" + id`、`Market` → `"mRef_" + id`；
 
-`readResolve` 延迟重建，首次访问 (`get` / `contains` / `advance`，`restored` 标志) 时 `replaceIdsWithEntities` 把占位解析回对象 ——**解析不到 (实体已销毁/移除)→ 该键被删除**。
+`readResolve` 延迟重建，首次访问 (`get` / `contains` / `advance`，`restored` 标志) 时 `replaceIdsWithEntities` 把占位解析回对象 ——** 解析不到 (实体已销毁/移除)→ 该键被删除**。
 
 可观察结果：读档后 "键还在但值变了" 或 "键整个消失"，都没有任何报错。
 
@@ -206,7 +204,7 @@ javadoc 明确它 "可被不属于存档的类 (`ModPlugin` 或 transient `Campa
 | 跨存档、跨 `ModPlugin` 实例、注册判断 (`REGISTER_MARK` 等)| 不适用 | 是 |
 | 值类型 | 任意可序列化对象；实体/市场引用走 enRef/mRef 白名单 | 存**可序列化值**；存运行时实体引用会在读档恢复边界污染状态 |
 
-纪律 (延续前置章节的持久数据键约定)：**每个注册项用各自 persistent data 键**—— 多个演示/系统共用一键会互相覆盖；把新注册项并入插件已有的 CLASS_MARK 检查会让旧档永不注册。
+纪律 (延续前置章节的持久数据键约定)：**每个注册项用各自 persistent data 键** —— 多个演示/系统共用一键会互相覆盖；把新注册项并入插件已有的 CLASS_MARK 检查会让旧档永不注册。
 
 ::: caution `PersistentData` 不得存运行时实体/脚本引用。
 读档恢复边界上引用对象状态过期或反序列化异常；只存可序列化值。这是必须级纪律 (见 "规则强度" 表)。
@@ -219,7 +217,7 @@ javadoc 明确它 "可被不属于存档的类 (`ModPlugin` 或 transient `Campa
 | 规则 | 强度 | 违反后的可观察结果 |
 |---|---|---|
 | 记忆键必须以 `$` 开头 (`Memory.set` 强制校验)| 必须 | Java 侧 `set` 抛 `RuntimeException("Key ... should start with $")`：脚本/命令调用点异常 (对话红字段落或日志堆栈)，写入不生效 |
-| `set(key, value, expire)` 的 `expire` 单位是**游戏天**(`CampaignClockAPI`，10 真实秒 = 1 游戏天)| 必须 | 把真实秒当天数：键以 10 倍速过期，`getExpire` / `DumpMemory` 显示与直觉不符 |
+| `set(key, value, expire)` 的 `expire` 单位是**游戏天** (`CampaignClockAPI`，10 真实秒 = 1 游戏天)| 必须 | 把真实秒当天数：键以 10 倍速过期，`getExpire` / `DumpMemory` 显示与直觉不符 |
 | 两参 `set` 清除该键未决过期 | 事实 | `getExpire(key)` 变 -1，键转为永不过期 ——"顺手改成永久" 是特性，不是 bug |
 | `expire(key, 负值)` 取消过期 | 事实 | 键永不过期；`getExpire` 返回 -1 |
 | 过期只在生涯非暂停时推进 | 事实 | 对话打开 (生涯暂停) 期间 `expire 0` 的键不消失；对话关闭后的第一个推进帧才移除 |

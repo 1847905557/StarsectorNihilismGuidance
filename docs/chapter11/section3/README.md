@@ -19,21 +19,17 @@
 
 ## 前置知识
 
-本节在以下先修与相邻内容之上展开，按需回查：
-
-- rules.csv 规则系统 [C11-S1]：七列语义、`getAllMatching` / `getBestMatching` 匹配流程、条件表达式语法 (命令调用、`score:`、判真规则)、结果执行链 (`FireBest`/`FireAll` 收集选项、`pickText` 变体、`runScript`)、`$option` 回流 `DialogOptionSelected`。
-  - 本节在其之上只讲 "命令" 这一层：命令类怎么写、参数怎么解析、再入边界在哪。
-- 编译 JAR 工具链 [C6-S1]：`gradle jar`、`mod_info.json` 的 `jars` 声明、`compileOnly` 依赖提供 `com.fs.starfarer.api` 各包的 API jar。
-  - 本节的命令类编译进同一个 jar，jar 类对脚本类加载器可见 (解析命令类时，在其父加载器里做 `Class.forName` 查找)。
-- modPlugin 回调与 persistent data 一次性注册检查 [C6-S2]：`onGameLoad` 回调与 "每个注册项用各自的键" 的一次性注册检查。本节的对话入口沿用规则系统页的 `REGISTER_MARK` 模式 (调用点片段见 "完整最小例")。
-- Rules 内存语义 [C11-S4]：`MemoryAPI` 的过期、持久化与记忆键维护。本节的命令只使用 `set(key, value)` 与条件读取，不展开内存生命周期；过期语义一律归该单元。
+- [C6-S1] 的 JAR 构建、`mod_info.json` 的 JAR 声明与 API 依赖；
+- [C6-S2] 的 `modPlugin`、`onGameLoad` 与持久数据一次性判断；
+- [C11-S1] 的 `rules.csv` 七列、匹配流程、条件脚本语法、结果执行与 `$option` 回流；
+- [C11-S4] 的 `MemoryAPI` 过期、持久化与记忆键维护。
 
 ## 术语
 
-按术语约定，本节首次完整讲解以下词 (后续页面继续使用；API 类名保留源码大小写)：
+按术语约定，本节首次完整讲解以下词；API 类名保留源码大小写：
 
 - **规则命令 (rule command)**：API 类名保留 `BaseCommandPlugin`(接口为 `CommandPlugin`)。rules.csv 条件/脚本列里第一个 token 不是变量的行即命令调用；命令类按 `ruleCommandPackages` 里的包名加简单类名定位。
-- **Rules 内存 (memory)**：见术语约定，归属后续 "Rules 内存" 单元 (API 名保留 `MemoryAPI`)；本节只使用 `MemoryAPI.set/get` 的最小面。
+- **Rules 内存 (memory)**：见术语约定，归属 [C11-S4] (API 名保留 `MemoryAPI`)；本节只使用 `MemoryAPI.set/get` 的最小面。
 - **触发器 (trigger)**、**条件 (condition)**、**结果 (result)**、**规则 (rule)**：语义见规则系统页术语节，本节沿用。
 
 ## 注册与实例化
@@ -46,9 +42,9 @@
 
 1. 命令包列表来自 `settings.json` 的 `ruleCommandPackages`(`Starsector/starsector-core/data/config/settings.json`，原版 5 个包：`com.fs.starfarer.api.impl.campaign.rulecmd` 及其 `salvage` / `newgame` / `missions` / `academy` 子包)。
    - 命令包列表在加载期只读取一次并缓存。
-2. MOD 可以在自己的 `data/config/settings.json` 里声明同名数组追加自己的包：`settings.json` 经文本读取工具的 `readJSONMerged` 合并，**数组追加**(`mergeJSON`；仅 `core_clearArray` 标记或 color/button/`music_*` 键走整体替换)。
+2. MOD 可以在自己的 `data/config/settings.json` 里声明同名数组追加自己的包：`settings.json` 经文本读取工具的 `readJSONMerged` 合并，**数组追加** (`mergeJSON`；仅 `core_clearArray` 标记或 color/button/`music_*` 键走整体替换)。
    - 合并发生在设置加载阶段 (读取 settings 的 JSON，由游戏启动器在资源加载前调用)，早于 `Rules.loadRules`，所以追加的包在命令解析时已就位。
-3. 命令类解析会逐包尝试 `Class.forName(pkg + "." + name, false, 脚本类加载器父加载器)` 并 `newInstance()`——**加载期即实例化一次**，验证类存在、可实例化、无参构造可用；全部包都找不到时抛 `RuntimeException("Command [...] not found in packages:...")` → 资源加载崩溃、游戏启动中止。
+3. 命令类解析会逐包尝试 `Class.forName(pkg + "." + name, false, 脚本类加载器父加载器)` 并 `newInstance()`——** 加载期即实例化一次**，验证类存在、可实例化、无参构造可用；全部包都找不到时抛 `RuntimeException("Command [...] not found in packages:...")` → 资源加载崩溃、游戏启动中止。
 4. 脚本列的命令类还会被脚本类加载器记录，供 Janino 即时编译 MOD 根下以源码形式提供的命令类；jar 内类不依赖该机制。
 
 ### 实例化与执行链 (运行期)
@@ -58,7 +54,7 @@
 | 调用点 | 位置 | 消费的方法 | 返回值用途 |
 |---|---|---|---|
 | 条件求值 | 规则求值阶段调用 `execute` | `execute` | 布尔结果参与匹配 (`!` 取反后判真)；`execute` 抛异常 → `dialog` 非 null 时文本面板加红字段落 `<异常类>: <消息>` 并返回 null，`dialog` 为 null 时重抛 |
-| 脚本执行 | `Rule.runScript` | `execute` | **返回值被丢弃**(只执行不收集)|
+| 脚本执行 | `Rule.runScript` | `execute` | **返回值被丢弃** (只执行不收集)|
 | 选项收集 | `FireBest`/`FireAll` 的选项组装 (`com.fs.starfarer.api.impl.campaign.rulecmd.FireBest` / `FireAll`)| `doesCommandAddOptions()`、`getOptionOrder(params, memoryMap)` | 判定是否选项型命令、排序用 order |
 
 公开 API 面 (`com.fs.starfarer.api.campaign.rules.CommandPlugin`)：
@@ -78,7 +74,7 @@ public interface CommandPlugin {
 
 自定义命令只需继承它并覆写 `execute`。
 
-命令接口的执行入口只有 `execute`——生命周期由 "每次调用 newInstance + 四参 execute" 构成。命令类拿到的是解析后的 `Token` 列表而不是原始字符串，接下来看它怎么切分和取值。
+命令接口的执行入口只有 `execute`—— 生命周期由 "每次调用 newInstance + 四参 execute" 构成。命令类拿到的是解析后的 `Token` 列表而不是原始字符串，接下来看它怎么切分和取值。
 
 ## Token 参数解析
 
@@ -446,7 +442,7 @@ gradle jar
    - 可观察：资源加载期 `RuntimeException`，游戏启动中止；报错文案里列出已搜索的包 (含全部 MOD 追加的包)。
    - 修正：核对 settings.json 数组与类包名逐字一致 (合并是追加语义，不是覆盖)；`jar tf` 核对类路径；类名大小写敏感。
 2. **规则加载成功、日志有 `Loading rule:`，但命令 "没执行"**。
-   - 触发：把命令写进了**条件列**(匹配阶段执行，返回值判真) 却以为它在脚本阶段；或命令是选项型 (`doesCommandAddOptions()` 返回 true) 被 `runScript` 跳过。
+   - 触发：把命令写进了**条件列** (匹配阶段执行，返回值判真) 却以为它在脚本阶段；或命令是选项型 (`doesCommandAddOptions()` 返回 true) 被 `runScript` 跳过。
    - 可观察：条件列命令只在匹配求值时执行；选项型命令在脚本阶段不执行。
    - 修正：写状态/触发用脚本列；选项型命令交给 `FireBest`/`FireAll` 提前执行。
 3. **对话里出现红字段落 `<异常类>: <消息>`**。

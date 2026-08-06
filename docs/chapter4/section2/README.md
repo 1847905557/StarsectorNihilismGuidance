@@ -18,11 +18,9 @@
 
 ## 前置知识
 
-本节建立在前置内容之上，需要您掌握 MOD 结构与合并规则、舰船文件基础，并准备好模拟战验证环境：
-
-- MOD 根目录、全局 ID、资源目录结构 (`data/config`、`sounds/`) 与同路径文件的合并覆盖规则 [C1-S1]；
-- `.ship` 结构、`ship_data.csv` 注册、`GearIn_artizan` 与控制台 `Addship`[C1-S2]；
-- 模拟战环境，用于本节例子的验证观察 ([C4-S1]，可选)。
+- [C1-S1] 的 MOD 根目录、全局 ID、`data/config` 与 `sounds/` 目录及同路径文件合并规则；
+- [C1-S2] 的 `.ship` 结构、`ship_data.csv` 注册、`GearIn_artizan` 与 `Addship` 使用方法；
+- [C4-S1] 的模拟战入口、装配部署和战斗观察方法。
 
 ## 文件与 API 链路
 
@@ -43,7 +41,7 @@
 
 舰船风格文件位于 `data/config` 文件夹内的 `hull_styles.json`。它控制护盾颜色、V 排粒子、各类音效与贴图材质。
 
-**最稳妥的做法是复制粘贴修改原版的舰船风格**—— 原版条目保留了读取所需的完整字段，不容易漏字段。
+**最稳妥的做法是复制粘贴修改原版的舰船风格** —— 原版条目保留了读取所需的完整字段，不容易漏字段。
 
 本例以 `LOW_TECH` 为底，把配色改成齿轮工业的黄铜色系：
 
@@ -103,7 +101,7 @@
 
 舰船风格读取器对以下 9 个颜色字段**缺键时不抛异常**，而是静默回退为白色 (读取颜色的工具方法在键缺失时返回 `Color.white`)：`hyperspaceJitterColor`、`baseCampaignExplosionColor`、`baseCombatExplosionColor`、`fighterRepairFlickerColor`、`weaponDisabledExplosionColor`、`shieldRingColor`、`shieldInnerColor`、`fluxVentCoreColor`、`fluxVentFringeColor`。
 
-后果：漏掉某个颜色键，游戏照常加载、**不会**中断，但对应的护盾/爆炸/V 排颜色会变成白色，观感与原版色系不一致且没有任何报错。真正会让 `loadEngineAndHullStyles()` 阶段抛错的是**值格式非法**：颜色数组不足 4 个元素抛 `Color array with id [...] has less than 4 elements`，JSON 语法错误抛对应解析异常 —— 游戏在加载进度条阶段直接失败，无法进入主菜单。所以**请复制原版条目再改数值，不要手写精简版**(漏键虽不报错，但观感会静默劣化)。
+后果：漏掉某个颜色键，游戏照常加载、**不会**中断，但对应的护盾/爆炸/V 排颜色会变成白色，观感与原版色系不一致且没有任何报错。真正会让 `loadEngineAndHullStyles()` 阶段抛错的是**值格式非法**：颜色数组不足 4 个元素抛 `Color array with id [...] has less than 4 elements`，JSON 语法错误抛对应解析异常 —— 游戏在加载进度条阶段直接失败，无法进入主菜单。所以**请复制原版条目再改数值，不要手写精简版** (漏键虽不报错，但观感会静默劣化)。
 
 :::
 
@@ -151,7 +149,7 @@
 
 ::: caution 引擎风格的必填字段
 
-引擎风格读取器必填：`type`(只能填 `GLOW` 或 `SMOKE`；缺键抛 `Key [type] is required`，枚举之外的值如手误写成 `GLOWW` 抛 `Key [type] has invalid value`)、`contrailMaxSpeedMult`、`contrailAngularVelocityMult`；在 `PARTICLES` 模式下还必填 `contrailParticleSizeMult`、`contrailParticleDuration`。`engineColor` 与 `contrailColor` **不是必填**—— 缺键不抛异常，与舰船风格的颜色同理静默回退为白色。
+引擎风格读取器必填：`type`(只能填 `GLOW` 或 `SMOKE`；缺键抛 `Key [type] is required`，枚举之外的值如手误写成 `GLOWW` 抛 `Key [type] has invalid value`)、`contrailMaxSpeedMult`、`contrailAngularVelocityMult`；在 `PARTICLES` 模式下还必填 `contrailParticleSizeMult`、`contrailParticleDuration`。`engineColor` 与 `contrailColor` **不是必填** —— 缺键不抛异常，与舰船风格的颜色同理静默回退为白色。
 
 违反后的可观察结果：缺失/非法必填键会让条目解析失败、游戏在加载阶段整体失败，无法进入主菜单 (`starsector.log` 记录 `Key [...] is required`、`JSONObject[...] not found.` 或 `invalid value`)。
 
@@ -291,7 +289,7 @@ hull style 是 "声音与材质的总线"：
 
 - **游戏在加载进度条阶段失败，日志有 `Key [...] is required`、`invalid value` 或 `Color array with id [...] has less than 4 elements`**：
   - `engine_styles.json` 中的条目缺少必填键 (数值键缺键报 `JSONObject[...] not found.`)，或任一风格条目的颜色数组不足 4 个元素，或 `type` 填了 `GLOW`/`SMOKE` 之外的值。
-  - 注意 `hull_styles.json` 的颜色字段**缺键不会报错**(静默回退为白色，见上文)，它的加载失败只来自值格式非法或 JSON 语法错误。
+  - 注意 `hull_styles.json` 的颜色字段**缺键不会报错** (静默回退为白色，见上文)，它的加载失败只来自值格式非法或 JSON 语法错误。
   - 修正：对照本节字段表补齐，复制原版条目修改最稳妥。
 - **游戏在加载阶段失败，日志指向某 `.ship`**：顶层 `style` 字段缺失 (`getString("style")` 抛 JSONException，org.json 的缺失键消息为 `JSONObject["style"] not found.`)，或 `style` 引用的 hull style ID 不存在 (风格解析为 null，随后取护盾颜色时抛 NPE)。
   - 修正：确认 `.ship` 顶层 `style` 与 `hull_styles.json` 的 ID 完全一致 (大小写敏感)。
@@ -311,14 +309,14 @@ hull style 是声音与材质的总线 ——9 个声音字段指向 `sounds.jso
 
 最小例零资产可用，自定义声音则必须完成 "注册声音集 → 风格引用 → `.ogg` 存在" 三步完整流程。
 
-从逻辑上看，这套 "注册 → 引用 → 资产存在" 的机制也是后续一切自定义视觉与声音数据的共同底座：新增舰船变体、势力配色或自定义音效时，只要沿同一条链路补齐数据文件，本节的加载期与战斗期排查方法即可复用。
+这套 "注册 → 引用 → 资产存在" 的机制是自定义视觉与声音数据的共同基础：新增舰船变体、势力配色或自定义音效时，只要沿同一条流程补齐数据文件，本节的加载期与战斗期排查方法即可复用。
 
 ## 建议参考项
 
 - `data/config/hull_styles.json`：舰船风格定义，字段全集与保留 ID 清单见文件头注释。
 - `data/config/engine_styles.json`：引擎风格定义，含 `OMEGA` 光带参数与保留 ID `CUSTOM`。
 - `data/config/sounds.json`：声音集注册与按船体分级的分档结构。
-- `data/hulls/GearIn_artizan.ship`[C1-S2]：顶层 `style` 与 `engineSlots[].style` 的接入位置。
+- `data/hulls/GearIn_artizan.ship`：顶层 `style` 与 `engineSlots[].style` 的接入位置。
 - `data/world/factions/`：势力数据目录，势力文件不声明风格，观感经舰船间接关联。
 - `hull_styles.json`、`engine_styles.json` 与 `sounds.json` 的加载入口方法：`loadEngineAndHullStyles()` 与 `loadSoundSets()`。
 - `data/hulls/<id>.ship` 的解析入口方法 `loadHullSpec()`：解析顶层 `style` 与引擎槽 `style` 的接入。

@@ -17,15 +17,9 @@
 
 ## 前置知识
 
-本节建立在资源层单元 [C5-S1] 的产物之上，注册还需要满足以下条件：
-
-- 三个 OGG 文件必须已经存在：
-
-```text
-sounds/gear_in/music/GearIn_market_theme.ogg sounds/gear_in/sfx_system/GearIn_system_loop.ogg sounds/gear_in/sfx_weapon/GearIn_weapon_fire.ogg
-```
-
-- sound ID 必须全局唯一，且与使用方引用完全一致 (大小写敏感)。本教程让 ID 与文件语义一致：`GearIn_market_theme`、`GearIn_system_loop`、`GearIn_weapon_fire`。这三个 ID 的所有权属于资源层单元 [C5-S1]，本节只负责注册，消费在后续单元 [C5-S3] 完成；任何一侧改 ID 都必须同步改另外两侧。
+- [C5-S1] 的 Ogg Vorbis 编码、MOD 根目录相对路径、声道与循环边界要求；
+- 理解 sound ID 的全局唯一性、大小写匹配和使用方引用关系；
+- 理解 JSON 对象、数组、字段合并与 `/` 路径分隔符的写法。
 
 ## 文件与 API 链路
 

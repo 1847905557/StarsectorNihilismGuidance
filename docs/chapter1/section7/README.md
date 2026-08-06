@@ -17,15 +17,13 @@
 
 ## 前置知识
 
-本节在第一章前五节建立的 GearIn 数据之上工作，要求您已掌握以下内容：
-
-- 舰船贴图 → `.ship` → `ship_data.csv` 的贴图与数据链 [C1-S2]。
-- 战机 hull/variant/wing 三层结构与 `wing_data.csv`[C1-S3]。
-- 武器 `.wpn` → `weapon_data.csv` → `.proj` 数据链 [C1-S5]。
-- 内置武器、内置船插与内置机联的三件套装配 [C1-S6]。
-- 能稳定使用 `gear_in` MOD 与 `GearIn_` 数据前缀 [C1-S1]。
-- CSV 基础：行首 `#` 的整行被忽略、逗号分割、含逗号的字段用引号包裹 [C1-S2]。
-- 术语：战术系统 (ship system)；数据库 (codex，生涯界面中的图鉴界面)。
+- [C1-S1] 的 `gear_in` MOD 与 `GearIn_` 数据前缀；
+- [C1-S2] 的舰船贴图、`.ship` 与 `ship_data.csv` 数据关系；
+- [C1-S2] 的 CSV 注释、分隔符与字段引用规则；
+- [C1-S3] 的战机 hull、variant、wing 三层结构与 `wing_data.csv`；
+- [C1-S5] 的 `.wpn`、`weapon_data.csv` 与 `.proj` 数据关系；
+- [C1-S6] 的内置武器、内置船插与内置战机；
+- 理解战术系统与生涯数据库界面的基本用途。
 
 ## 文件/API 链路
 
@@ -65,7 +63,7 @@ id,type,text1,text2,text3,text4,text5,notes
 | `SHIP` | 舰船与战机 hull 的描述 | 本节 |
 | `WEAPON` | 武器描述 | 本节 |
 | `SHIP_SYSTEM` | 战术系统描述 | 本节 (观察原版行，不新建)|
-| `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 | 后续章节 |
+| `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 | [C3-S4] |
 
 - `text1`–`text5` 的默认值与主要使用方：
 
@@ -135,8 +133,8 @@ GearIn_combat_desc_forging,SHIP,"锻件-级相位护卫舰围绕一门中型实�
 - 中文内容必须以 UTF-8 无 BOM 保存，否则显示乱码或加载异常 (见故障分析)。
 - **弯引号**：加载时会把弯引号 (" " ' ') 替换为直引号 (`replaceSmartQuotes`)，所以不要依赖弯引号保留原样 (原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步归一化)。
 - **键唯一**：`id + type` 在同一文件内**必须**唯一，否则加载期抛异常 (见故障分析)。
-- 也不要重定义原版或其他 MOD 已存在的 `id + type` 组合：跨文件合并时先被枚举到的文件的行生效，后到的同键行被**静默跳过**(读 CSV 时的去重分支)，覆盖顺序不是可以依赖的约定。
-- 需要整体替换某个数据文件时，支持在 `mod_info.json` 的 `replace` 数组里声明 (加载器内部映射为 fullOverrides)，整体替换的细节见后续专题。
+- 也不要重定义原版或其他 MOD 已存在的 `id + type` 组合：跨文件合并时先被枚举到的文件的行生效，后到的同键行被**静默跳过** (读 CSV 时的去重分支)，覆盖顺序不是可以依赖的约定。
+- 需要整体替换某个数据文件时，支持在 `mod_info.json` 的 `replace` 数组里声明；`fullOverrides` 的文件读取语义见 [C12-S2]。
 
 原版参考行 (`Starsector/starsector-core/data/strings/descriptions.csv`，仅观察不修改)：
 
@@ -164,7 +162,7 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 预期结果：
 
 - **启动日志**：出现 `Loading descriptions` 的加载日志，`starsector.log` 无 `ERROR`。
-- **装配界面**(`Addship GearIn_artizan` 后进入)：武器选择列表里三门 GearIn 武器的副标题显示 `反装甲, range 600` 之类的内容。
+- **装配界面** (`Addship GearIn_artizan` 后进入)：武器选择列表里三门 GearIn 武器的副标题显示 `反装甲, range 600` 之类的内容。
 - 副标题文本由 `primaryRoleStr + ", range"` 拼出 (`text2` 是备用值)。
 - 战术系统行显示 text3(例如锻件-级的相位系统行显示对应描述)，没有 text3 时显示完整 text1。
 - text4 非空时其中片段被高亮。

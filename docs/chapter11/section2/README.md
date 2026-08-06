@@ -22,25 +22,16 @@
 
 ## 前置知识
 
-本节的所有 trigger 与派发点都建立在规则基础页的规则数据链和对话插件生命周期之上，请先掌握以下内容：
-
-- `rules.csv` 的七列语义、加载与合并 (同文件重复 id 崩溃 / 跨文件先到先得静默跳过)：
-  - 匹配流程 (`FireBest` 分数竞争、同分随机、`FireAll` 全执行与 `FireAllIntercept` 拦截)。
-  - 条件与脚本语法、`$option` 回流 `DialogOptionSelected`；
-  - 内置命令 (`DismissDialog` / `ShowDefaultVisual` / `SetShortcut` / `FireBest` / `FireAll` / `RollProbability`)。
-  - 文本 token 替换链 [C11-S1]。
-  - 注册方式："注册 = 写行"：把行写进自己的 `data/campaign/rules.csv` 即完成注册，场景 trigger 同样如此，不需要任何 MOD 侧注册文件。
-- `showInteractionDialog(plugin, target)` 与 `InteractionDialogPlugin` 生命周期 (`init` → `optionSelected` → `advance`)[C8-S9]：
-  - 本节所有对话场景的使用方 `RuleBasedInteractionDialogPluginImpl` 与 `NewGameDialogPluginImpl` 都是它的实现。
-- `addScript` 挂载脚本与 persistent data 条件检查 [C8-S1] / [C6-S2]。
-- Rules 内存 (`MemoryAPI`) 的过期与持久化语义 [C11-S4]—— 本节只消费 `$option` 回流、场景事实键 (`$hasMarket` / `$menuState` / `$tradeMode` / `$hailing` / `$mh_count` 等) 与一次性演示 flag，不展开生命周期。
-- `BaseCommandPlugin` 规则命令 [C11-S3]：
-  - 本节只消费内置命令与现成 rulecmd：`AddBarEvent` / `BarCMD` / `EndConversation` / `OpenComms` / `FleetDesc` / `HailPlayer`。
-  - 以及 `NGCAddCredits` / `MissionHubCMD` / `SetActiveMission` / `ClearActiveMission` 等，不写自定义 rulecmd。
+- [C6-S2] 的 MOD 生命周期与规则文件加载边界；
+- [C8-S1] 的 `addScript` 与持久数据判断；
+- [C8-S9] 的 `showInteractionDialog` 与 `InteractionDialogPlugin` 生命周期；
+- [C11-S1] 的 `rules.csv` 七列、匹配流程、条件脚本语法、文本 token 替换与直接写行即注册的效果；
+- [C11-S3] 的 `BaseCommandPlugin` 与内置规则命令；
+- [C11-S4] 的 `MemoryAPI` 过期、持久化、`$option` 回流与场景事实键。
 
 ## 术语
 
-按术语约定，本节首次完整讲解以下词 (后续页面继续使用；API 类名保留源码大小写)：
+按术语约定，本节首次完整讲解以下词；API 类名保留源码大小写：
 
 - **场景 trigger(scene trigger)**：`rules.csv` 中按 "生涯场景" 分组的标准触发器名。
   - 场景 trigger 的候选池由原版派发点 (Java 插件) 以固定字符串发起匹配；MOD 向其中添加规则即挂载到该场景。
@@ -51,7 +42,7 @@
 - **任务 trigger 前缀 (mission trigger prefix)**：任务 (`HubMission`) 的 `getTriggerPrefix()`(如原版 `hijack`、`smug`、`sitm`)。任务对话规则以 `前缀_blurb` / `前缀_option`(对话列表) 与 `前缀_blurbBar` / `前缀_optionBar`(酒吧包装) 为 trigger 名。
 - **流程场景 (flow scene)**：非实体交互对象驱动的规则场景，本节唯一例子是主菜单新游戏对话框 (`NewGameDialogPluginImpl`)。它的 `$option` 回流 trigger 是 `NewGameOptionSelected`，不是 `DialogOptionSelected`。
 
-这些术语会贯穿下文。接下来看五类场景的 trigger 由谁在何时发起匹配。
+接下来看五类场景的 trigger 由谁在何时发起匹配。
 
 ## 文件与 API 链路
 
@@ -201,7 +192,7 @@ flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，�
 舰队遭遇与通讯共用同一套对话底座：`BeginFleetEncounter` 负责遭遇开局，`OpenCommLink` 与 `PickGreeting` 负责通讯与问候。
 
 - **`BeginFleetEncounter`(61 条)**：舰队遭遇对话。两次匹配时机 (`FleetInteractionDialogPluginImpl`)：
-  - `reinit(withContinueOnRuleFound)`：`getBestMatching(null, "BeginFleetEncounter", ...)` **预检**—— 命中则只显示 "Continue"(`REINIT_CONTINUE`)。
+  - `reinit(withContinueOnRuleFound)`：`getBestMatching(null, "BeginFleetEncounter", ...)` **预检** —— 命中则只显示 "Continue"(`REINIT_CONTINUE`)。
   - 用户点击后 `reinitPostContinue` `fireBest("BeginFleetEncounter")` (本地记忆 `$fidpi_addContinue` 为真时改走 `BeginFleetEncounter2`)。
   - 初次遭遇 (`optionSelected`)：创建 embedded 对话后同样 `fireBest("BeginFleetEncounter")`；规则脚本置 `$fidpi_addContinue` 则清空选项只留 "Continue"。
   - 规则模式：
@@ -210,7 +201,7 @@ flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，�
       - `tOffPatrolBegin` 以 `OpenComms` 直接进入通讯。
     - 或 `FleetDesc` + `$shownFleetDescAlready = true 0` (`initial_AnyFleet` 回退规则，1 分)。
     - 文本经 `FireBest` 的 `addText` 显示。
-    - **BeginFleetEncounter 规则不依赖 `options` 列**—— 选项面板随后由舰队主菜单接管 (`INIT` 路径清空选项)。
+    - **BeginFleetEncounter 规则不依赖 `options` 列** —— 选项面板随后由舰队主菜单接管 (`INIT` 路径清空选项)。
   - `$hailing` 的可观察效果：舰队主菜单里 "Open a comm link" 选项高亮并改名 "Accept the comm request"(随后 `unset $hailing`)。
     - `OpenComms` rulecmd 置 `FleetInteractionDialogPluginImpl.directToComms = true` 直接进入通讯。
     - `HailPlayer` rulecmd 是写 `$hailing` 的正式途径。
@@ -255,7 +246,7 @@ flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，�
       - `mem.set("$option", optionData, 0)` + `FireBest "DialogOptionSelected"`—— 与 `RuleBasedInteractionDialogPluginImpl` 的回流完全一致。
       - 本节最小例的酒吧规则正是消费这里。
 5. **返回/退出**：`BarCMD.returnFromEvent [true|false]`(从事件对话返回酒吧；true 时给 "Continue") 与 `leaveBar`(停掉酒吧环境音、`dialog.setPlugin(originalPlugin)`、`ShowDefaultVisual`、`FireBest "ReturnFromBar"`)。
-   - `ReturnFromBar`(5 条) 中 `marketReturnFromBar`：`$menuState = main 0` + `FireAll PopulateOptions` + 文本 "You leave the bar and take a shuttle back to your $shipOrFleet."——**退出转场把市场菜单状态复位**。
+   - `ReturnFromBar`(5 条) 中 `marketReturnFromBar`：`$menuState = main 0` + `FireAll PopulateOptions` + 文本 "You leave the bar and take a shuttle back to your $shipOrFleet."——** 退出转场把市场菜单状态复位**。
 6. **奖励**：`BarHighRepCrewGain`(6 条) 由高声望酒吧事件演讲规则 `BarHRESpeechB` 脚本 `FireAll` 触发 (`AddCommodity crew N`，按 `$player.fleetPoints` / `RollProbability` / `score:2` 分档)。
 
 ::: warning 临时 bar 选项的三个边界

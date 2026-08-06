@@ -18,16 +18,10 @@
 
 ## 前置知识
 
-本节是生涯篇的第一份 Java 内容，需要您先具备以下基础：
-
-- MOD 目录、`mod_info.json` 与 JSON 合并规则、UTF-8 无 BOM[C1-S1]；
-- 注册与回调心智模型："注册入口 → 游戏创建实例 → 生命周期回调"[C2-S1]；
-- 生涯与装配 [C3-S1]；
-- 势力 `gear_industry` 的注册，以及 "关系不是文件数据、只能由代码播种"[C3-S2]—— 本节会正式给出关系代码的挂载点。
-
-行星的自定义描述 (`setCustomDescriptionId` 与 `descriptions.csv`) 不在本节范围，本节只用行星类型的默认描述 (该主题在描述文件单元讲解，[C3-S4])。
-
-市场的完整语义 (稳定度、供需、移民、殖民) 也不在本节范围 (市场语义单元讲解，[C8-S5])，本节只建立 "市场挂在实体上、注册进经济集合" 的基础。
+- [C1-S1] 的 MOD 目录、`mod_info.json`、JSON 合并与 UTF-8 无 BOM 规则；
+- [C2-S1] 的注册入口、实例创建与生命周期回调关系；
+- [C3-S1] 的生涯与舰船装配组织方式；
+- [C3-S2] 的 `gear_industry` 势力注册与关系设置方式。
 
 ## 术语
 
@@ -37,7 +31,7 @@
 | 实体 entity | 星系/超空间里的物体，恒星、行星、跳跃点、稳定点、空间站都是实体；API 名保留 `SectorEntityToken` |
 | 跳跃点 jump point | 星系内或超空间里的航行出入口；API 名保留 `JumpPointAPI` |
 | 轨道 orbit | 实体绕焦点的运行轨迹；`setCircularOrbit(focus, angle, orbitRadius, orbitDays)` 设置圆形轨道 |
-| 市场 market | 挂在实体上的经济体 (人口、条件、产业、子市场)；API 名保留 `MarketAPI`。首次完整讲解在市场语义单元 [C8-S5]，本节只讲注册 |
+| 市场 market | 挂在实体上的经济体 (人口、条件、产业、子市场)；API 名保留 `MarketAPI`。本节只讲注册 |
 | 生成器 generator | 在生涯生成阶段往星区里放东西的插件；接口 `SectorGeneratorPlugin`(只有 `generate(SectorAPI)` 一个方法)|
 | 程序化生成 procgen | 游戏自己随机生成星系、星云等内容的阶段，对应 `SectorProcGenPlugin` 与 settings 里的 `newGameSectorProcGen` |
 
@@ -91,7 +85,7 @@ initStar 的恒星 id  ==  starmap.json 的 starSystemLocations 键  ==  market.
 
 两条路二选一；什么都不做时星系会定位在超空间原点 `(0,0)`。
 
-- 背景与光照：`system.setBackgroundTextureFilename("graphics/backgrounds/background2.jpg")` 设置星系背景 (路径以 MOD 根目录为基准，`graphics/backgrounds/` 里是原版背景图)；`system.setLightColor(new Color(...))` 设置全星系光照，**不设置光照的星系内一片漆黑**(行星背光面全黑，只有视觉影响)。
+- 背景与光照：`system.setBackgroundTextureFilename("graphics/backgrounds/background2.jpg")` 设置星系背景 (路径以 MOD 根目录为基准，`graphics/backgrounds/` 里是原版背景图)；`system.setLightColor(new Color(...))` 设置全星系光照，**不设置光照的星系内一片漆黑** (行星背光面全黑，只有视觉影响)。
 
 #### 恒星与行星
 
@@ -104,7 +98,7 @@ PlanetAPI prime = system.addPlanet("GearIn_planet1", star, "GearIn Prime", "terr
 
 - `id`：恒星实体 id(全星区唯一)；`type`：`data/config/planets.json` 里的恒星类型键，如 `star_white`、`star_yellow`、`star_orange`(有 `initStar(id, type, radius, coronaSize)` 四参重载，风烧等级/耀斑概率/CR 损失乘数用默认值 10 / 0.25 / 3.0)；
 - `radius`：恒星半径 (像素)；`coronaSize`：日冕外扩尺寸；`windBurnLevel`：日风烧灼等级；`flareProbability`：耀斑概率；`crLossMult`：恒星附近 CR 损失乘数 (原版注释：合适范围 1–5)。
-- **该重载不会自动生成通向超空间的虫洞/锚点**(API 注释明确说明)，要靠后面的 `autogenerateHyperspaceJumpPoints`(或使用带超空间坐标的六参 `initStar` 重载，它自动创建恒星虫洞)。`initStar` 还会把恒星显示名登记进 `ProcgenUsedNames`，防止后面的程序化生成阶段 (时序第 5 步) 撞名。
+- **该重载不会自动生成通向超空间的虫洞/锚点** (API 注释明确说明)，要靠后面的 `autogenerateHyperspaceJumpPoints`(或使用带超空间坐标的六参 `initStar` 重载，它自动创建恒星虫洞)。`initStar` 还会把恒星显示名登记进 `ProcgenUsedNames`，防止后面的程序化生成阶段 (时序第 5 步) 撞名。
 
 `addPlanet(id, focus, name, type, angle, radius, orbitRadius, orbitDays)`：
 
@@ -144,7 +138,7 @@ system.autogenerateHyperspaceJumpPoints(true, true);
 第一个参数为 `true` 时还在气态巨行星旁生成单向入口，第二个参数为 `true` 时在星系边缘生成一个双向跳跃点。
 
 ::: caution 必须打通超空间入口
-**不调用这一步 (又不使用带超空间坐标的 `initStar` 重载)，星系就没有任何超空间入口，用户无法到达**—— 星系照常生成、日志没有任何报错。
+**不调用这一步 (又不使用带超空间坐标的 `initStar` 重载)，星系就没有任何超空间入口，用户无法到达** —— 星系照常生成、日志没有任何报错。
 :::
 
 #### 还能加什么
@@ -182,7 +176,7 @@ data/campaign/econ/economy.json（starSystems 数组）
 
 `economy.json` 的字段 (本地 `Starsector\starsector-core\data\campaign\econ\economy.json`)：`starSystems`(数组，每项是一个市场文件的相对路径)、`initialStepsToRun`、`defaultTariff`(0.3)、`map`(指向 `../starmap.json`)。
 
-这个文件跨来源合并读取 (`readJSONMerged`)，**数组追加、对象按键合并、标量后写覆盖**—— 所以 MOD 只需要提交自己的 `starSystems` 数组项和自己的市场文件**，不要**复制整份原版文件，也不要写 `map` / `initialStepsToRun` / `defaultTariff` 键 (标量会覆盖原版值，原版经济会被破坏)。
+这个文件跨来源合并读取 (`readJSONMerged`)，**数组追加、对象按键合并、标量后写覆盖** —— 所以 MOD 只需要提交自己的 `starSystems` 数组项和自己的市场文件**，不要**复制整份原版文件，也不要写 `map` / `initialStepsToRun` / `defaultTariff` 键 (标量会覆盖原版值，原版经济会被破坏)。
 
 每个市场文件的字段 (经济数据加载流程)：
 
@@ -270,7 +264,7 @@ data/campaign/starmap.json                         # 本节新增（星系坐标
 
 本类是本节的生成入口类；`ModPlugin` 各回调的完整生命周期由 ModPlugin 所有权单元讲解 (其所有权示例类 `GearInModPlugin` 位于 `data.scripts.gearin` 包)，本节只用到 `onNewGame()` 这一个生成入口。
 
-**绑定位置：modPlugin 注册**——`mod_info.json` 的 `modPlugin` 字段指向本类。
+**绑定位置：modPlugin 注册** ——`mod_info.json` 的 `modPlugin` 字段指向本类。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -325,7 +319,7 @@ public class GearInSystemGenPlugin extends BaseModPlugin {
 
 这是本节的星系布局类：生成星系、恒星、两颗行星、稳定点与跳跃点，并把市场构建委托给 `GearInMarketFactory`(见第四步)。
 
-**绑定位置：星系生成链**—— 由 `GearInSystemGenPlugin.onNewGame()` 调用 `generate(sector)`；实现 `SectorGeneratorPlugin` 只是采用生成器的 "约定" 写法 (原版 `data.scripts.world.SectorGen` 就是 `SectorGeneratorPlugin`)。
+**绑定位置：星系生成链** —— 由 `GearInSystemGenPlugin.onNewGame()` 调用 `generate(sector)`；实现 `SectorGeneratorPlugin` 只是采用生成器的 "约定" 写法 (原版 `data.scripts.world.SectorGen` 就是 `SectorGeneratorPlugin`)。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -398,7 +392,7 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 
 这是代码路径建市场的入口类 (角色：市场工厂)：每个实体一行 `createMarket(...)`，即可完成市场规模推导 (`population_` 条件)、条件/产业/子市场填充与注册三步收尾 (`economy.addMarket` / `entity.setMarket` / `entity.setFaction`)。
 
-**绑定位置：市场构建链**—— 由 `GearInSystemGenerator.generate()` 对每颗行星调用一次 (对应链路三的代码路径)。
+**绑定位置：市场构建链** —— 由 `GearInSystemGenerator.generate()` 对每颗行星调用一次 (对应链路三的代码路径)。
 
 ```java
 package data.scripts.gearin.campaign;
@@ -490,7 +484,7 @@ public class GearInMarketFactory {
 
 如果您愿意走原版的数据路径，把 `GearInSystemGenerator.generate()` 里对 `GearInMarketFactory` 的两次 `createMarket(...)` 调用删掉，换成下面的两个数据文件 (`data/campaign/econ/gearin.json` 与 `data/campaign/econ/economy.json`)。
 
-**注意：这是与代码路径互斥的替代方案，不要同时保留**—— 同一颗行星上会出现两个同名市场。
+**注意：这是与代码路径互斥的替代方案，不要同时保留** —— 同一颗行星上会出现两个同名市场。
 
 新建 `data/campaign/econ/gearin.json`(文件名随意，但建议与星系对应；`starSystem` 必须等于 starmap 键 `gearin`)。
 
@@ -658,7 +652,7 @@ public class GearInMarketFactory {
 - 条件、产业、子市场 ID(原版三张 CSV)；
 - 背景 `graphics/backgrounds/background2.jpg`(原版资源)。
 
-行星自定义描述 ID 留给描述文件单元 [C3-S4] 的 `descriptions.csv`，本节未使用 `setCustomDescriptionId`。
+行星自定义描述 ID 留给描述文件单元的 `descriptions.csv`，本节未使用 `setCustomDescriptionId`。
 
 ## 总结
 
@@ -673,7 +667,7 @@ public class GearInMarketFactory {
 
 从逻辑上看，本节的星系还只是骨架：行星用类型默认描述、市场只完成注册。
 
-这条链的自然延伸，是给行星配自定义描述、把市场推进到完整的经济语义 (稳定度、供需、移民、殖民)；生成入口这半边，则由 `ModPlugin` 的完整生命周期承接 —— 本节只用了 `onNewGame()` 一个回调，完整的回调族与示例 MOD 的最终编译形态 (JAR) 是它的逻辑后续。
+这条链的自然延伸，是给行星配自定义描述、把市场推进到完整的经济语义 (稳定度、供需、移民、殖民)；生成入口这半边由 `ModPlugin` 的完整生命周期承接。本节只用了 `onNewGame()` 一个回调，完整的回调族与示例 MOD 的最终编译形态 (JAR) 仍属于同一生命周期模型。
 
 ## 建议参考项
 

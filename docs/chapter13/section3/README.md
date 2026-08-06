@@ -25,17 +25,13 @@
 
 ## 前置知识
 
-本节直接使用硬依赖库的 Java 接口，并沿用战斗插件与分层渲染的既有通道，请先熟悉以下内容：
-
-- 硬依赖声明与运行时检测 [C13-S1]：`mod_info.json` 的 `dependencies` 写法与运行时自检流程；
-- 分层渲染插件通道 [C7-S6]：`engine.addLayeredRenderingPlugin(...)` 的注册方式、`ABOVE_SHIPS_AND_MISSILES_LAYER` 在层序中的位置；
-- 战斗插件模型与暂停检查 [C7-S1]：`EveryFrameCombatPlugin` 的 `advance` 生命周期与 `engine.isPaused()` 的用法；
-- `modPlugin` 与 `onApplicationLoad()` 时机 [C6-S2]：资源加载完成后、主菜单前调用；
-- `Global` 生命周期与战斗外引擎判空 [C6-S3]：战斗外 `getCombatEngine()` 是非 null 空引擎，"战斗内" 判据以 `LocalData` 是否存在为准；
-- MOD 目录与 `mod_info.json`[C1-S1]；
-- GLSL 语法 [C15-S1]：着色器专题负责 shader 源码，本节只调用 GraphicsLib 的 Java 接口，不编写 GLSL。
-
-`GearInModPlugin` 由前置的 modPlugin 主题单元持有。
+- [C13-S1] 的硬依赖声明与运行时检测，以及 `mod_info.json` 的 `dependencies` 写法；
+- [C7-S6] 的分层渲染插件注册与 `ABOVE_SHIPS_AND_MISSILES_LAYER` 层序；
+- [C7-S1] 的 `EveryFrameCombatPlugin` 生命周期与 `engine.isPaused()` 暂停判断；
+- [C6-S2] 的 `modPlugin` 与 `onApplicationLoad()` 调用时机；
+- [C6-S3] 的 `Global` 生命周期、`getCombatEngine()` 判空和 `LocalData` 战斗状态判断；
+- [C1-S1] 的 MOD 目录与 `mod_info.json`；
+- [C15-S1] 的 GLSL 语法与着色器源码基础。
 
 ## 适用边界速览 (先记住边界再读细节)
 
@@ -116,15 +112,13 @@ if (ShaderLib.areShadersAllowed() && ShaderLib.areBuffersAllowed()) {
 }
 ```
 
-**为什么 "必须" 自己先调 `ShaderLib.init()`**：`onApplicationLoad` 的调用顺序由 MOD 显示名排序决定 —— `ModManagerAPI` 把全部 MOD 按 `name` 排序，`enabledMods` 按该顺序重建，
-
-加载流程按 `getEnabledModPlugins()` 顺序逐个调 `onApplicationLoad()`。
+**为什么 "必须" 自己先调 `ShaderLib.init()`**：`onApplicationLoad` 的调用顺序由 MOD 显示名排序决定 —— `ModManagerAPI` 把全部 MOD 按 `name` 排序，`enabledMods` 按该顺序重建，加载流程按 `getEnabledModPlugins()` 顺序逐个调 `onApplicationLoad()`。
 
 GraphicsLib 的显示名是 `"zz GraphicsLib"`，几乎必然排在最后 —— 也就是说**本 MOD 的 `onApplicationLoad` 几乎总是先于 GraphicsLib 执行**。
 
 此时若没有先调 `ShaderLib.init()`，`areShadersAllowed()` / `areBuffersAllowed()` 读到的是初始值 false，CSV 读取被跳过；等 GraphicsLib 初始化完成后，数据也回不来了。
 
-**违反的可观察结果：shader 能力完全正常的机器上，自己的 light/texture CSV 静默未注册**—— 战斗里自动光源/贴图不生效，日志没有任何报错，只有 "查询返回 not registered / none" 这类痕迹。
+**违反的可观察结果：shader 能力完全正常的机器上，自己的 light/texture CSV 静默未注册** —— 战斗里自动光源/贴图不生效，日志没有任何报错，只有 "查询返回 not registered / none" 这类痕迹。
 
 `ShaderLib.init()` 幂等，先调无副作用，所以这是无成本的必须遵守的规则。
 
@@ -156,7 +150,7 @@ GraphicsLib 的显示名是 `"zz GraphicsLib"`，几乎必然排在最后 ——
 
 本节示例不直接写 shader 程序，只消费 `LightShader` / `TextureData`，但同样的门禁语义贯穿整条链：
 
-`LightShader` 构造器自己也会读 `GRAPHICS_OPTIONS.ini`(`enableLights` / `maximumLights` / `maximumLineLights` / `intensityScale` / `sizeScale` / `fighterBrightnessScale` / `enableBloom` / `enableNormal` / …)。
+`LightShader` 构造器自己也会读 `GRAPHICS_OPTIONS.ini`(`enableLights` / `maximumLights` / `maximumLineLights` / `intensityScale` / `sizeScale` / `fighterBrightnessScale` / `enableBloom` / `enableNormal` / ...)。
 
 `enableLights:false` 时 `isEnabled()` 为 false，此后所有 `LightShader.addLight` 调用全部静默无效。
 
@@ -207,7 +201,7 @@ LightShader.removeLight(light);   // 强制移除
 
 javadoc 原话："This function will do nothing if the light shader is not enabled."
 
-由此得到规则 4：**动态光源必须在战斗内、战斗的 `LocalData` 创建之后添加**—— 即 `EveryFrameCombatPlugin` / 部署监听器 / 武器效果的推进回调里 (`ShaderHook.init` 在战斗初始化阶段就跑完了)。
+由此得到规则 4：**动态光源必须在战斗内、战斗的 `LocalData` 创建之后添加** —— 即 `EveryFrameCombatPlugin` / 部署监听器 / 武器效果的推进回调里 (`ShaderHook.init` 在战斗初始化阶段就跑完了)。
 
 ::: warning "光源不出现且无任何报错" 的首选排查方向
 在战役画面、主菜单或战斗初始化完成前调用 `addLight` 就是静默无效。不要用 `Global.getCombatEngine() == null` 当 "战斗内" 判据 (战斗外是非 null 空引擎)；判据是 "光源 shader 是否启用" + 调用时机。先看 `capabilities` 日志行。
@@ -224,7 +218,7 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 - **`fadeOut(seconds)` 是 "短命光源" 的标准做法**：正数按速率把 intensity 线性降到 0，归零后下一轮 `advance` 返回 true 被移除；`fadeOut(0)` 或负数立即置 0。
 - 不要自己记秒数再 removeLight——fadeOut 一条链就走完了 (本节示例的周期闪光就是 fadeOut(0.5f) 自灭)。
 - **未永久化的光源有 60 秒 failsafe**：`superLifetime` 默认 60 秒，耗尽即移除 ——javadoc 原文 "By default, lights disappear after one minute to avoid 'light leaks'"。
-- 需要长期存在的光源 (如常驻的舰船灯、引擎灯)**必须 `makePermanent()`**(lifetime 与 superLifetime 均置 -1)。
+- 需要长期存在的光源 (如常驻的舰船灯、引擎灯)** 必须 `makePermanent()`**(lifetime 与 superLifetime 均置 -1)。
 - 违反的可观察结果：光源的 size/intensity 一切正常，却在约 60 秒后消失。
 - **挂载在实体上的光源不会因实体死亡自动清理**：`LightShader` 只对 projectile 与 beam 维护附着关系清理，对普通 `CombatEntityAPI` 挂载没有任何生命周期跟踪。
 - 实体死亡后必须自己 `fadeOut` 或 `removeLight`，否则残光留在原地 (这正是 failsafe 存在的理由)。规则 6。
@@ -241,7 +235,7 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 
 `drawLights` 用 `ShaderLib.isOnScreen` 剔除屏外光源、按类型打包进 1D 纹理交给 shader。
 
-每帧光源数上限 `min(maximumLights, 372)`(`GRAPHICS_OPTIONS.ini` 的 `maximumLights` 默认 100、最大 372，`maximumLineLights` 默认 50)——**超限光源被静默跳过**，大混战中光效可能 pop-in/out，属设计行为。
+每帧光源数上限 `min(maximumLights, 372)`(`GRAPHICS_OPTIONS.ini` 的 `maximumLights` 默认 100、最大 372，`maximumLineLights` 默认 50)——** 超限光源被静默跳过**，大混战中光效可能 pop-in/out，属设计行为。
 
 全局强度/大小由 `intensityScale`(默认 0.5) 与 `sizeScale`(默认 2.0) 缩放；战机来源的自动光源乘 `fighterBrightnessScale`(默认 1.0)。
 
@@ -290,7 +284,7 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 - 查询：`TextureData.getTextureData(id, TextureDataType.MATERIAL_MAP / NORMAL_MAP / SURFACE_MAP, ObjectType.SHIP / TURRET / HARDPOINT / MISSILE / ASTEROID / …, frame)` 返回 `TextureEntry` 或 null。
 - `TextureEntry` 只有两个 public 字段：`sprite`(`SpriteAPI`) 与 `magnitude`(贴图强度系数)。
 - **加载门禁**：`enableShaders:false` → 全关；否则 `enableLights:false` → 全关；material 需 `loadMaterial`、normal 需 `enableNormal`、surface 需 `enableNormal && loadSurface`。
-- 门禁未过时整类贴图 "查不到"(返回 null)**且无报错**—— 这是 "材质贴图不生效" 的首选排查方向。
+- 门禁未过时整类贴图 "查不到"(返回 null)** 且无报错** —— 这是 "材质贴图不生效" 的首选排查方向。
 
 ::: warning 贴图查询 none 有两种原因
 `loadMaterial` / `enableNormal` / `loadSurface` 门禁未开与 id 确实未注册都返回 null 且无报错。先查 `GRAPHICS_OPTIONS.ini` 的门禁状态，再确认 id 是否注册；两种原因无法从返回值区分。
@@ -304,10 +298,10 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 
 `LightShader.renderInWorldCoords`(`ABOVE_SHIPS_AND_MISSILES_LAYER` 层，经 `ShaderCombatLayerHook` 派发) 内部跑三遍：
 
-1. **material 遍**(`ShaderLib.renderForeground`)：把材质贴图 (存在时) 替换渲染进 foreground framebuffer。
+1. **material 遍** (`ShaderLib.renderForeground`)：把材质贴图 (存在时) 替换渲染进 foreground framebuffer。
    - 材质贴图控制反照率/高光细节，是所有 `getForegroundTexture` / `isForegroundEmpty` 使用方看到的前景内容。
-2. **normal 遍**(`drawNormalMaps`)：法线贴图参与 Blinn-Phong 光照计算 (`enableNormal` 时)；
-3. **surface 遍**(`drawSurfaceMaps`)：表面贴图控制高光硬度/强度。
+2. **normal 遍** (`drawNormalMaps`)：法线贴图参与 Blinn-Phong 光照计算 (`enableNormal` 时)；
+3. **surface 遍** (`drawSurfaceMaps`)：表面贴图控制高光硬度/强度。
 
 三遍都按 "查表命中 → 用 `entry.sprite` 替换原贴图、`magnitude` 参与深度/强度" 的写法处理舰船、武器槽、导弹、小行星与 `MapObjectAPI`。
 
@@ -317,7 +311,7 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 
 自己写的光源 `StandardLight` 也只是数据，绘制由 `LightShader` 完成。
 
-换句话说，**本节的消费面不涉及直接 GL 绘制**(那是分层渲染与着色器专题的领域)，`addLight` 与 `TextureData` 查询在任何战斗推进回调里都能安全调用。
+换句话说，**本节的消费面不涉及直接 GL 绘制** (那是分层渲染与着色器专题的领域)，`addLight` 与 `TextureData` 查询在任何战斗推进回调里都能安全调用。
 
 ## 文件与 API 链路
 
@@ -354,7 +348,7 @@ javadoc 原话："This function will do nothing if the light shader is not enabl
 | 9 | **必须** | `LightData` 覆盖式加载是整行替换：覆盖行未写的组 (standard / hit / flash) 会变成 "无此组" | 用只写 standard 组的行覆盖原行后，命中/闪光光效丢失 |
 | 10 | 建议 | 大场面按 `maximumLights`(默认 100、上限 372) 与屏外剔除设计光源数量 | 超限光源被静默跳过：光效 pop-in/out(设计行为)|
 | 11 | 建议 | 贴图查询把 "none" 当两种原因处理：ini 门禁未开 vs id 未注册 | 两者都返回 null，需按配置区分 |
-| 12 | **必须**(继承硬依赖规则)| 引用 `org.dark.shaders.**` 前必须在 `dependencies` 声明 `shaderLib` | 用户缺依赖时 `NoClassDefFoundError` |
+| 12 | **必须** (继承硬依赖规则)| 引用 `org.dark.shaders.**` 前必须在 `dependencies` 声明 `shaderLib` | 用户缺依赖时 `NoClassDefFoundError` |
 
 ## 完整最小例
 
@@ -764,7 +758,7 @@ public class GearInLightReporter {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/visuals` 下的四个新类 (可用 `jar tf` 核对)
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/visuals` 下的四个新类 (可用 `jar tf` 核对)。
 
 ### 验证方案
 

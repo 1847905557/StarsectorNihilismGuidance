@@ -18,15 +18,13 @@
 
 ## 前置知识
 
-阅读本节前，建议先掌握以下既有内容：
-
-- 命名约定 [C1-S1]：MOD ID `gear_in`、数据 / 资源 key 前缀 `GearIn_`、包 `data.scripts.gearin.<domain>`、类 `GearIn<Subject>`。
-- 船体注册与数值列 [C1-S2]：`ship_data.csv` 注册行与 `GearIn_artizan` 船体。
-- 战斗插件模型 [C7-S1]：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调、暂停检查。
-- 测试战役 [C3-S1]：战役 (mission) 概念与 `GearIn_test` 测试战役。
-- 编译 JAR 链路 [C6-S1]：MOD 编译产物 `jars\GearIndustry.jar`。
-- 生命周期纪律 [C6-S3]：`Global` 生命周期 —— 战斗引擎战斗外是非 null 空引擎、禁止跨战斗缓存引擎引用。
-- 战斗引擎读取侧 [C7-S2]：`getPlayerShip()` 永不 null (部署阶段返回 "Command Shuttle" 假舰)、`isAlive()` 过滤、时间语义。
+- [C1-S1] 的 MOD ID、`GearIn_` 命名、包路径与类名规则；
+- [C1-S2] 的 `ship_data.csv` 船体登记和数值列；
+- [C3-S1] 的战役入口与 `GearIn_test` 测试战役；
+- [C6-S1] 的 Java 构建与 JAR 输出；
+- [C6-S3] 的 `Global` 生命周期、空引擎阶段与跨战斗引用边界；
+- [C7-S1] 的战斗插件注册、每帧回调与暂停检查；
+- [C7-S2] 的 `getPlayerShip()`、`isAlive()` 和战斗时间读取。
 
 ## 文件与 API 链路
 
@@ -140,7 +138,7 @@ modifier 写进表里只是第一步，还要知道这些表在什么时机被�
 
 `HullModEffect` 的 stats 修饰在三个时机被调用：
 
-1. **生涯侧：`FleetMemberAPI.updateStats()`**。stats 被**整体重建**(按装配重新生成一套 stats 集合)，随后按顺序重放：舰长个人技能、舰队指挥官全局技能、每个船插的 `applyEffectsBeforeShipCreation`：
+1. **生涯侧：`FleetMemberAPI.updateStats()`**。stats 被**整体重建** (按装配重新生成一套 stats 集合)，随后按顺序重放：舰长个人技能、舰队指挥官全局技能、每个船插的 `applyEffectsBeforeShipCreation`：
    - `"flux_capacitors"` / `"flux_vents"` 平铺修饰、`"mothballed_mod_id"` 封存修饰、`getDynamic().removeUmodified()`。
     - 只要 `statUpdateNeeded` (改装配、换舰长、进出舰队界面等) 就会重建重放。
 2. **战斗侧：舰船对象创建**。同样先按装配重建 stats 集合、重放舰队指挥官技能与 buff，随后创建舰船实体 (传入重建出的 stats 与装配)。

@@ -1,6 +1,6 @@
 # 制作第一个 GLSL 着色器
 
-本节制作第一个 GLSL 着色器，让顶点数据经过着色器程序变成战斗画面。示例会完成编译、链接与绘制，并建立后续加载文件和提交渲染状态所需的基础。
+本节制作第一个 GLSL 着色器，让顶点数据经过着色器程序变成战斗画面。示例会完成编译、链接与绘制，为 [C15-S2] 的着色器文件加载和 [C15-S3] 的绘制数据提交提供可运行基础。
 
 *本节预期阅读时间：~20 分钟。*
 
@@ -19,16 +19,14 @@
 
 ## 前置知识
 
-本节在既有 MOD 布局、战斗渲染与 shader 能力基线之上展开，以下先修内容请先就绪：
-
-- MOD 目录结构与 `starsector.log` 的读取 [C1-S1]：本节所有可观察结果都落在日志与画面里。
-- 战役 (mission) 与生涯 (campaign) 概念、`GearIn_test` 测试战役 [C3-S1]：本节用它做游戏内验证。
-- 编译 JAR 链路 [C6-S1]：本节验证需要重新编译 `jars\GearIndustry.jar`。
-- `Global` 生命周期 [C6-S3]：禁止跨战斗缓存引擎引用，本节的渲染插件同规。
-- 战斗状态读取 [C7-S2]：`getPlayerShip()` 与实体存活判定，本节用玩家舰船做演示锚点。
-- 战斗插件生命周期 [C7-S5]：本节的注册片段所在。
-- 分层渲染插件 [C7-S6]：世界坐标提交、GL 资源清理与渲染回调纪律，本节直接复用。
-- GraphicsLib 初始化与能力门禁 [C13-S3]：`ShaderLib.init()` / `areShadersAllowed()` 的完整上下文。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 读取；
+- [C3-S1] 的战役与生涯对象概念；
+- [C6-S1] 的 Java 编译与 JAR 输出；
+- [C6-S3] 的 `Global` 生命周期和战斗引擎对象有效期；
+- [C7-S2] 的 `getPlayerShip()` 与实体存活判断；
+- [C7-S5] 的战斗插件生命周期；
+- [C7-S6] 的分层渲染插件、世界坐标提交、GL 资源清理和渲染回调时机；
+- [C13-S3] 的 GraphicsLib 初始化与 `ShaderLib.init()`、`areShadersAllowed()` 能力门禁。
 
 ## 文件与 API 链路
 
@@ -65,7 +63,7 @@
 - **构造器与 swizzle**：`vec2(0.5, 0.5)`、`vertex * 0.5 + vec2(0.5, 0.5)`；swizzle 用 `.xy`(或 `.rgba` / `.stpq` 两套别名)，可读可写，如 `vec4(c.bg, K.wz)`(rgb2hsv 的 swizzle 示例)。
 - **运算是分量级的**：`vec3 * vec3` 逐分量相乘；`mix` / `smoothstep` / `clamp` / `pow` / `fract` / `abs` / `texture2D` 等内置函数遍布成熟实例。
 - **限定符 (qualifier) 决定数据流方向**：GLSL 1.10/1.20 方言里是 `attribute`(每顶点输入)、`uniform`(绘制级常量)、`varying`(顶点输出 → 片元输入)、`const`(编译期常量)。GLSL 1.30+(要求 GL 3.0) 改为 `in` / `out` / `layout`——`#version 430` shader 用 `layout (location = 0) in vec2 vertex;`、`out vec2 fragUV;`、`out vec4 fragColor;`。
-- 430 方言还带来 uniform 块 (`layout (std140, binding = 0) uniform BUtilGlobalData {...}`)——uniform 块的布局与提交方式由后续专题展开。
+- 430 方言还带来 uniform 块 (`layout (std140, binding = 0) uniform BUtilGlobalData {...}`)——uniform 块的布局与提交方式见 [C15-S3]。
 
 ## 坐标语义
 
@@ -73,7 +71,7 @@
 
 ### 顶点坐标：从 attribute 到 gl_Position
 
-attribute 里的位置数据**没有固有语义**—— 它是什么坐标，取决于提交方与投影约定。本地实例里可见三种约定：
+attribute 里的位置数据**没有固有语义** —— 它是什么坐标，取决于提交方与投影约定。本地实例里可见三种约定：
 
 | 约定 | 含义 | 本地实例 |
 |---|---|---|
@@ -84,7 +82,7 @@ attribute 里的位置数据**没有固有语义**—— 它是什么坐标，�
 关键事实：
 
 - 顶点着色器**必须**写出 `gl_Position`(裁剪空间坐标)。光栅化器按它做裁剪、视口变换，最终换算成窗口像素坐标。不写 `gl_Position` → 顶点位置未定义 (见规则 2)。
-- shader 程序**不吃固定管线的变换**—— 投影必须由 shader 自己应用：`gl_ModelViewProjectionMatrix`(内置 uniform，反映当前 `GL_PROJECTION × GL_MODELVIEW`)、`ftransform()`(等价于 `gl_ModelViewProjectionMatrix * gl_Vertex`，GraphicsLib `bloom1.vert` 用法)，或从 BoxUtil 的 UBO(`BUtilGlobalData.gameViewport`) 取游戏视口矩阵。
+- shader 程序**不吃固定管线的变换** —— 投影必须由 shader 自己应用：`gl_ModelViewProjectionMatrix`(内置 uniform，反映当前 `GL_PROJECTION × GL_MODELVIEW`)、`ftransform()`(等价于 `gl_ModelViewProjectionMatrix * gl_Vertex`，GraphicsLib `bloom1.vert` 用法)，或从 BoxUtil 的 UBO(`BUtilGlobalData.gameViewport`) 取游戏视口矩阵。
 - 本节最小例在 `render()` 里按 GraphicsLib `renderForeground` 的做法**自行** `glOrtho(viewport)` (世界坐标正交投影)，不赌引擎固定管线矩阵在 shader 下的状态 —— 分层渲染专题页只实证了固定管线顶点提交路径，未承诺矩阵状态 (见规则 12)。
 
 ### 片元坐标：varying 插值与 gl_FragCoord
@@ -133,7 +131,7 @@ Java 侧                                   GPU 管线
 
 :::
 
-3. **varying(逐片元插值)**：顶点着色器输出 → 光栅化插值 → 片元输入**；两侧必须同名同类型**(430 方言里 `fragUV` 在 `.vert` 的 `out` 与 `.frag` 的 `in` 成对出现；GLSL 110 里同名 `varying` 声明)。
+3. **varying(逐片元插值)**：顶点着色器输出 → 光栅化插值 → 片元输入**；两侧必须同名同类型** (430 方言里 `fragUV` 在 `.vert` 的 `out` 与 `.frag` 的 `in` 成对出现；GLSL 110 里同名 `varying` 声明)。
 
 特殊通道与输出：
 
@@ -153,11 +151,11 @@ Java 侧                                   GPU 管线
 
 :::
 
-- **加载**：`Global.getSettings().loadText(String)` 读取 MOD 内文本 (`com.fs.starfarer.api.SettingsAPI`)，路径必须用 `/`(javadoc 原文 "Use / instead of \ in paths for compatibility (required to work on OS X and Linux)")。加载与日志处理的完整做法由后续单元展开；GraphicsLib 的用法是 `Global.getSettings().loadText("data/shaders/post/pre.vert")`(`org.dark.shaders.post.PostProcessShader`)。
-- **编译与链接**：`glCreateShader → glShaderSource → glCompileShader`，随后检查 `GL_COMPILE_STATUS`；`glCreateProgram → glAttachShader → glLinkProgram`，随后检查 `GL_LINK_STATUS`；失败时用 `glGetShaderInfoLog` / `glGetProgramInfoLog` 取日志并删除对象 (GraphicsLib `createShader` 编译失败抛 `"Error creating shader: " + 日志`；`loadShader` 链接失败删 program 返回 0)。编译错误日志包含行号与原因 ——**不检查状态，失败就不可见**(规则 7)。
+- **加载**：`Global.getSettings().loadText(String)` 读取 MOD 内文本 (`com.fs.starfarer.api.SettingsAPI`)，路径必须用 `/`(javadoc 原文 "Use / instead of \ in paths for compatibility (required to work on OS X and Linux)")。MOD 文本读取见 [C12-S1]；GraphicsLib 的用法是 `Global.getSettings().loadText("data/shaders/post/pre.vert")`(`org.dark.shaders.post.PostProcessShader`)。
+- **编译与链接**：`glCreateShader → glShaderSource → glCompileShader`，随后检查 `GL_COMPILE_STATUS`；`glCreateProgram → glAttachShader → glLinkProgram`，随后检查 `GL_LINK_STATUS`；失败时用 `glGetShaderInfoLog` / `glGetProgramInfoLog` 取日志并删除对象 (GraphicsLib `createShader` 编译失败抛 `"Error creating shader: " + 日志`；`loadShader` 链接失败删 program 返回 0)。编译错误日志包含行号与原因 ——** 不检查状态，失败就不可见** (规则 7)。
 - **使用**：`glUseProgram(program)` → `glUniform*` / 顶点属性绑定 → `glDrawArrays` → `glUseProgram(0)`(GraphicsLib `exitDraw` 同款收尾)。渲染回调里自行管理 GL 状态 ([C7-S6] 建议 8 延续)。
-- **资源生命周期**([C7-S6] 规则 2/3 延续)：程序对象在 `cleanup()` 里 `glDeleteProgram` 并复位句柄；战斗结束 `destroyInstance` 不调 `cleanup()`，必须 `advance()` 主动失效驱动引擎移除。
-- **方言**：GLSL 110 是 GL 2.0 上下文的标准方言 (GraphicsLib 全部 shader 用 `#version 110`)。GLSL 130+ 需要 GL 3.0+；现代 430 实例用 `#version 430`(`layout` / `std140` / UBO 等核心特性)，其内部规范要求 "版本声明必须统一为 `#version 430`"—— 这是**实例内部标准**(面向现代 GPU)，不是游戏基线。
+- **资源生命周期** ([C7-S6] 规则 2/3 延续)：程序对象在 `cleanup()` 里 `glDeleteProgram` 并复位句柄；战斗结束 `destroyInstance` 不调 `cleanup()`，必须 `advance()` 主动失效驱动引擎移除。
+- **方言**：GLSL 110 是 GL 2.0 上下文的标准方言 (GraphicsLib 全部 shader 用 `#version 110`)。GLSL 130+ 需要 GL 3.0+；现代 430 实例用 `#version 430`(`layout` / `std140` / UBO 等核心特性)，其内部规范要求 "版本声明必须统一为 `#version 430`"—— 这是**实例内部标准** (面向现代 GPU)，不是游戏基线。
 
 ::: info 为什么基线是 #version 110 而不是 430
 
@@ -551,7 +549,7 @@ public class GearInBasicShaderRenderer extends BaseCombatLayeredRenderingPlugin 
     engine.addLayeredRenderingPlugin(new GearInBasicShaderRenderer());
 ```
 
-与分层渲染专题的注册片段同一做法；渲染层接入的完整设计 (开关、常驻、性能) 由后续专题展开。
+与分层渲染专题的注册片段同一做法；渲染层接入的完整设计 (开关、常驻、性能) 见 [C15-S4]。
 
 构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用既有编译链路)：
 
@@ -597,7 +595,7 @@ gradle jar
 2. **四边形形状错乱、拉伸或空白，且驱动间表现不同**。症状：位置与 UV 数据被喂错属性，形状错乱、拉伸或空白，部分驱动正常、部分驱动花屏 (分配结果实现相关)，是最隐蔽的一类故障；触发：删掉 `glBindAttribLocation` 两行，只留 `glVertexAttribPointer`；原因：链接器自由分配 attribute 位置；修正：链接前固定位置，`glVertexAttribPointer` 用同一位置 (规则 3)。
 3. **渐变消失、颜色恒为 0/黑或花屏**。症状：片元读到未定义值 (链接器警告)，渐变消失、颜色恒为 0/黑或花屏；触发：把 `.frag` 里的 `v_uv` 改名 (如 `v_uv2`) 而 `.vert` 不改；原因：varying 两侧声明不一致，插值通道在片元侧断开；修正：两侧同名同类型 (规则 4)。
 4. **四边形不跟随舰船移动且没有任何日志**。症状：四边形停在初始位置，移动舰船没有反应，日志里也没有任何错误；触发：把 `"u_offset"` 改成 `"uOffset"`；原因：`glGetUniformLocation` 返回 -1，`glUniform2f` 被静默忽略 (GL 错误不报)；修正：核对名称与类型 (规则 6)，并判 -1(建议 13)。
-5. **内容不出现且失败原因不可见**。症状：图形不出现，`starsector.log` 里看不到失败线索；触发：注释掉 `compileShader` 里的 `GL_COMPILE_STATUS` 检查与日志读取；原因：错误程序继续使用，编译错误被吞掉；而检查日志时，语法错误的行号与原因 (如 `ERROR: 0:5: 'xxx' : syntax error`) 就在 `starsector.log` 里；修正：编译/链接后必查状态与日志 (规则 7)；完整日志处理在后续专题展开。
+5. **内容不出现且失败原因不可见**。症状：图形不出现，`starsector.log` 里看不到失败线索；触发：注释掉 `compileShader` 里的 `GL_COMPILE_STATUS` 检查与日志读取；原因：错误程序继续使用，编译错误被吞掉；而检查日志时，语法错误的行号与原因 (如 `ERROR: 0:5: 'xxx' : syntax error`) 就在 `starsector.log` 里；修正：编译/链接后必查状态与日志 (规则 7)。
 6. **编译失败，信息日志含 version 错误**。症状：`GL_COMPILE_STATUS = FALSE`，信息日志含 version 错误 (GLSL 版本与 GL 版本绑定)；触发：把 `#version 110` 改成 `#version 130` 或更高；原因：GL 2.0 基线上下文不支持 GLSL 130+ 声明；修正：教程基线用 `#version 110`；需要 430 特性 (`layout`/`std140`/UBO) 时按目标硬件声明 (430 方言做法，规则 9)。
 7. **多场战斗后渲染异常、卡顿或驱动报错**。症状：程序对象随战斗泄漏，多场战斗后驱动报错、渲染异常或卡顿；触发：`cleanup()` 里不删 program，或指望 "战斗结束自动清理"；原因：`destroyInstance` 不调 `cleanup()` ([C7-S6] 规则 3)，句柄与显存每场累积；修正：`advance()` 主动失效 + `cleanup()` 里 `glDeleteProgram` 并复位句柄 (规则 10，同款做法)。
 8. **内容不出现、错帧或层序错乱**。症状：绘制内容不出现、错帧或层序错乱；触发：把 `glUseProgram` / `glDrawArrays` 放进 `advance()`；原因：`advance()` 属于推进阶段 [C7-S6]，命令在渲染阶段之外执行；修正：GL 命令只在 `render()` 回调 (规则 11)。
@@ -610,7 +608,7 @@ gradle jar
 
 画面出错时，沿数据链往回核对通常最快：先确认顶点着色器写了 `gl_Position`、attribute 位置在链接前固定、varying 两侧同名同类型、uniform 名称与类型一致，再确认编译/链接状态被检查过 —— 这几处是规则表全部硬约束的高发点，也是 shader 故障最集中的位置。
 
-这套数据流还是后续更复杂 shader 工作的地基：加载与编译日志的完整处理、uniform 与纹理/矩阵的提交方式、渲染层接入与性能设计，都只是在本节这条数据流上补充实现细节与工程化手段。
+这套数据流是 shader 工作的地基：加载与编译日志、uniform 与纹理/矩阵提交、渲染层接入与性能设计都建立在同一条数据流上。
 
 ## 建议参考项
 

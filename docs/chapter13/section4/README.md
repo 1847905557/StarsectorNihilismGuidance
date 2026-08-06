@@ -21,17 +21,14 @@
 
 ## 前置知识
 
-本节是教程工程第一次**真正调用** `org.magiclib.**` 的 API，建议先具备以下基础：
-
-- 硬依赖声明与运行时检测 [C13-S1]：`mod_info.json` 的 `dependencies` 已声明 `MagicLib` (该页示例带 `version: "1.5.1"`)，MagicLib 自身依赖 `lw_lazylib`。
-- LazyLib 查询纪律 [C13-S2]：`AIUtils.getNearestEnemy` 等返回 `@Nullable` 必须判空、查询结果禁止跨战斗缓存。
-- `MagicFakeBeam` 内部链路使用 LazyLib(`MathUtils` / `VectorUtils` / `CombatUtils` / `CollisionUtils`)，本节示例也直接用 `AIUtils` / `VectorUtils`。
-- 战斗插件模型与暂停检查 [C7-S1]：`addPlugin` 注册、`advance` 每帧回调、`engine.isPaused()` 检查 (本节示例插件的骨架)。
-- MOD 主插件回调与 `onGameLoad` 时机 [C6-S2]：本节生涯查询片段从这里接入。
-- `Global` 生命周期 [C6-S3]：`getSector()` 在生涯启动/读档后才非 null；战斗外判断不要用 `getCombatEngine() == null`。
-- `GearIn_test` 测试战役 [C3-S1]：战斗侧冒烟入口。
-- `GearIn` 星系与 `GearIn_planet1`[C3-S3]：生涯写侧冒烟接入点。
-- 生涯对象基础 (S08 系列：[C8-S1] 生涯脚本、[C8-S3] 生涯舰队、[C8-S8] 生涯服务)：`MagicCampaign` 的产物就是这些对象。
+- [C13-S1] 的硬依赖声明与运行时检测，以及在 `mod_info.json` 中声明 `MagicLib` 和 `lw_lazylib`；
+- [C13-S2] 的 LazyLib 查询、`@Nullable` 判空和战斗状态生命周期；
+- [C7-S1] 的战斗插件注册、`advance` 每帧回调和 `engine.isPaused()` 暂停判断；
+- [C6-S2] 的 MOD 主插件回调与 `onGameLoad` 调用时机；
+- [C6-S3] 的 `Global` 生命周期、`getSector()` 生涯状态和战斗引擎判定；
+- [C3-S1] 的测试战役与战斗验证入口；
+- [C3-S3] 的生涯星系与行星对象；
+- [C8-S1] 的生涯脚本、[C8-S3] 的生涯舰队和 [C8-S8] 的生涯服务对象。
 
 ## MagicLib 概览
 
@@ -96,8 +93,8 @@ public static void loadModSettings() {
 - `getMergedJSONForMod(path, masterMod)` 是 settings 的跨 MOD 合并读取 (settings 合并读取的同族入口)：**全部已启用 MOD** 的同路径文件合并成一份 JSON(以 MagicLib 自己的副本为 master)。
 - 使用方 MOD 只需要提交自己的 `data/config/modSettings.json`，在**自己的 MOD id 段**里写键，不要复制 MagicLib 的段，也不要写别人的段。
 - 读取时机：**MagicLib 的 `onApplicationLoad` 时读一次**，结果缓存在静态字段 `modSettings`；dev 模式下 F8 重载 (`onDevModeF8Reload`) 会重新读取。
-- 改 `modSettings.json` 后**重启游戏**(或 dev 模式 F8 重载 + 重进战斗) 才生效。
-- 若合并解析失败 (文件损坏等)，`loadModSettings` 写 `fatal` 日志且 `modSettings` 保持 null，`Magic_modPlugin.onApplicationLoad` 随后抛 `ClassNotFoundException`——**启动中止**。
+- 改 `modSettings.json` 后**重启游戏** (或 dev 模式 F8 重载 + 重进战斗) 才生效。
+- 若合并解析失败 (文件损坏等)，`loadModSettings` 写 `fatal` 日志且 `modSettings` 保持 null，`Magic_modPlugin.onApplicationLoad` 随后抛 `ClassNotFoundException`——** 启动中止**。
 - dev 模式下 (`Global.getSettings().isDevMode()`)`MagicVariables.verbose = true`，各 `getX` 成功读到值时会额外输出 `INFO` 日志 `<modId> , <id> : <value>`—— 这是核对读取链的第一个日志位置。
 
 ::: tip "设置没生效" 的排查顺序
@@ -268,7 +265,7 @@ public static void spawnFakeBeam(
 由此带出 `MagicTrailPlugin` 的最小纪律 (完整尾迹 API 不在本节范围)：
 
 - **纹理要求**：`MagicTrailPlugin` 类 javadoc 要求参与尾迹的 sprite 宽高都必须是 2 的倍数 (16 / 32 / 64 / 128 等)，且是垂直方向的贴图。
-- **ID 复用纪律 (规则 9)**：`getUniqueID()` 返回的 ID 必须在同一条尾迹生命周期内**保存并复用**—— 每帧生成新 ID → 每条都是独立的 1 片段尾迹**，表现为多条无法连接的短条**；同一条 trail 中途更换 sprite 会拆成不同的 texture tracker。
+- **ID 复用纪律 (规则 9)**：`getUniqueID()` 返回的 ID 必须在同一条尾迹生命周期内**保存并复用** —— 每帧生成新 ID → 每条都是独立的 1 片段尾迹**，表现为多条无法连接的短条**；同一条 trail 中途更换 sprite 会拆成不同的 texture tracker。
 - `spawnAdvancedFakeBeam` 内部对每条光束取两次 `getUniqueID()`(核心与边缘各一)，不需要自己管理 ID—— 但若您直接用 `MagicTrailPlugin` 做尾迹，必须自己遵守上述纪律。
 
 光束的伤害与视觉都有了着落，下一步把充能进度画到战斗 HUD 上，让玩家看得见下一次发射。
@@ -281,7 +278,7 @@ public static void spawnFakeBeam(
 
 ### 状态条渲染链 (先记住 "谁在画")
 
-`drawInterfaceStatusBar`(带 key 重载)**只注册数据**：把 `StatusBarData` 写进静态表 `statusBars`。真正的绘制由 MagicLib 的另一条链完成：
+`drawInterfaceStatusBar`(带 key 重载)** 只注册数据**：把 `StatusBarData` 写进静态表 `statusBars`。真正的绘制由 MagicLib 的另一条链完成：
 
 1. `MagicRenderPlugin`(settings `plugins` 段的 `ML_spriteRenderManager`，`org.magiclib.plugins.MagicRenderPlugin`) 每帧 `advance` 驱动绘制链。
    - 调用入口：`MagicUIInternal.callRenderMethods$MagicLib()`。
@@ -315,12 +312,12 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 
 违反的可观察结果：key 与其他 MOD 撞车 → 两条数据互相覆盖，数字/填充 "互相打架"；停止刷新 (或暂停检查把刷新挡掉) 约 5 秒后状态条**消失**，恢复刷新才回来 —— 暂停 10 秒再恢复，条已经没了。
 
-修正：key 用本 MOD 专属前缀 (示例 `gear_in_beam_charge`)；刷新调用放在暂停检查**之前**(示例 `advance` 写法)，暂停期间也保持刷新。
+修正：key 用本 MOD 专属前缀 (示例 `gear_in_beam_charge`)；刷新调用放在暂停检查**之前** (示例 `advance` 写法)，暂停期间也保持刷新。
 
 ::: warning 状态条 "过一会儿消失"
 最常见的触发是刷新调用被暂停检查挡住：暂停超过约 5 秒 (含暂停的游戏时间) 后 `drawStatusBarMap` 把该条移除，恢复刷新才回来 (规则 10)。
 
-另一个常见触发是 key 撞车 —— 两条数据共用同一 key，后写覆盖先写。修正：刷新调用放在暂停检查**之前**(示例写法)；key 用本 MOD 专属前缀。
+另一个常见触发是 key 撞车 —— 两条数据共用同一 key，后写覆盖先写。修正：刷新调用放在暂停检查**之前** (示例写法)；key 用本 MOD 专属前缀。
 :::
 
 ### 规则 11：绘制方法只在 "ship 是玩家舰且 HUD 可见" 时输出，非玩家舰静默跳过
@@ -331,7 +328,7 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 
 `getCombatUI() == null || !isUIShowingHUD()` → 直接 return (如 `drawInterfaceStatusBar`；只在玩家舰且 HUD 可见时输出)。
 
-违反的可观察结果：给非玩家舰传 `ship`，状态条/系统条完全不出现，**没有任何报错**——"别人舰上画了条" 是不可能的。修正：只对玩家舰调用；需要给敌方舰显示信息时，用 `drawHUDStatusBar` 的 offset 参数锚定在玩家舰屏位置 (示例没有这个需求)。
+违反的可观察结果：给非玩家舰传 `ship`，状态条/系统条完全不出现，**没有任何报错** ——"别人舰上画了条" 是不可能的。修正：只对玩家舰调用；需要给敌方舰显示信息时，用 `drawHUDStatusBar` 的 offset 参数锚定在玩家舰屏位置 (示例没有这个需求)。
 
 ### 规则 12：自管 OpenGL 栈的入口必须成对使用
 
@@ -349,7 +346,7 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 
 `MagicCampaign`(`org.magiclib.util.MagicCampaign`) 提供生涯层的辅助工具族。
 
-所有写侧入口都以 `Global.getSector()` 与**已加入星区**的实体为操作对象，因此**只能在生涯 (campaign) 上下文调用**—— 战役 (mission) 战斗与主菜单没有生涯数据 (`Global` 生命周期：生涯启动/读档后才非 null)。
+所有写侧入口都以 `Global.getSector()` 与**已加入星区**的实体为操作对象，因此**只能在生涯 (campaign) 上下文调用** —— 战役 (mission) 战斗与主菜单没有生涯数据 (`Global` 生命周期：生涯启动/读档后才非 null)。
 
 ### 速查表
 
@@ -440,7 +437,7 @@ javadoc 原文：key "Should be unique to your mod and whatever this status bar 
 | 14 | **必须** | `createDerelict` 十参重载 `isRecoverable=false` → 追加 `Tags.UNRECOVERABLE`(recoverable 与 isRecoverable 是两个布尔)| 只传 `recoverable=false` 时残骸仍可被回收/语义错位 |
 | 15 | **必须** | `loadVariant` 解析失败返回 null(warn 日志)，使用前必须判空 | `.variant` 损坏 → NPE；日志只有 warn 行 |
 | 16 | 建议 | `MagicSettings` 不要在每帧解析，init 时读取一次缓存到字段 | 每帧重复 `has` → `getJSONObject` → 类型转换链路，纯浪费 |
-| 17 | **必须**(继承 [C13-S1])| 引用 `org.magiclib.**` 前必须在 `dependencies` 声明 `MagicLib` | 用户缺依赖时 `NoClassDefFoundError` |
+| 17 | **必须** (继承 [C13-S1])| 引用 `org.magiclib.**` 前必须在 `dependencies` 声明 `MagicLib` | 用户缺依赖时 `NoClassDefFoundError` |
 
 规则表里每一行的后果都能在实际运行中观察到，接下来把这些边界装进一个同时使用四族的完整最小例。
 
@@ -955,11 +952,11 @@ gradle jar
 
 ## 总结
 
-本节把 MagicLib 的四族工具走了一个完整流程：`MagicSettings` 的合并加载链、缺省值表与三类 warn 文案构成 "设置没生效" 的排查入口；`MagicFakeBeam` 的瞬时结算、不可截断与 HE 全额伤害三条边界，加上碰撞助手的 null 约定，定义了伪光束能做什么、不能做什么；`MagicUI` 状态条的 "注册——绘制" 分离、key 唯一与约 5 秒刷新 (含暂停) 要求，说明 HUD 数据谁注册、谁绘制、何时被移除；`MagicCampaign` 的生涯上下文要求与写侧双布尔 / null 约定，划定了生涯工具的调用边界。
+本节把 MagicLib 的四族工具走了一个完整流程：`MagicSettings` 的合并加载链、缺省值表与三类 warn 文案构成 "设置没生效" 的排查入口；`MagicFakeBeam` 的瞬时结算、不可截断与 HE 全额伤害三条边界，加上碰撞助手的 null 约定，定义了伪光束能做什么、不能做什么；`MagicUI` 状态条的 "注册 —— 绘制" 分离、key 唯一与约 5 秒刷新 (含暂停) 要求，说明 HUD 数据谁注册、谁绘制、何时被移除；`MagicCampaign` 的生涯上下文要求与写侧双布尔 / null 约定，划定了生涯工具的调用边界。
 
 示例以五个小类分别承载四族与接入，四个可观察位置验证调用真的发生。排错时按同一套路径定位：设置问题先看 warn 行与缺省值表，特效问题先区分伤害与视觉两条链，HUD 问题先问 key 与刷新时机，生涯问题先问是否在生涯上下文。
 
-在逻辑上，本节有两条延伸线：设置链上，另一套设置系统 (LunaLib 的读取、保存与通知链) 将与本节的 `MagicSettings` 形成对照 —— 两套链的合并入口与 ID 归属不同，`gear_in` 段已在本节定义，后续设置主题不得重复定义该段；战斗效果链上，伪光束与真光束 (`BeamAPI`) 的 "瞬时 vs 持续" 边界、生涯工具与生涯对象链的衔接，是后续武器与生涯内容设计的直接基础。
+在设置方面，[C14-S3] 的 LunaLib 读取、保存与通知链与本节的 `MagicSettings` 形成对照；两套链的合并入口与 ID 归属不同，`gear_in` 段已在本节定义，其他设置页面不得重复定义该段。战斗效果方面，伪光束与真光束 (`BeamAPI`) 的 "瞬时 vs 持续" 边界，以及生涯工具与 [C8-S1] 至 [C8-S9] 的生涯对象链之间的衔接，构成后续实现的技术基础。
 
 ## 建议参考项
 

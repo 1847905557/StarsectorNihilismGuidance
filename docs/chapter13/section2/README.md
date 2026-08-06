@@ -19,14 +19,13 @@
 
 ## 前置知识
 
-本节直接调用 LazyLib 的 API，调用发生在哪里、能读到什么状态、结果落在哪里，都由既有章节决定。请先熟悉下列主题：
-
-- 硬依赖声明与运行时检测 [C13-S1]—— LazyLib 是硬依赖外部库，调用它的 API 前，`mod_info.json` 的 `dependencies` 必须已声明 `lw_lazylib`。
-- 战斗状态读取 [C7-S2]——`getShips()` 含残骸、`isAlive()` 过滤、暂停检查、实体与列表禁止跨战斗缓存 (本节把同一条纪律延伸到 LazyLib 的查询结果)。
-- `Global` 生命周期 [C6-S3]—— 战斗引擎只在战斗运行期 "有效"，查询入口只在战斗内消费。
-- 战斗插件模型 [C7-S1]——`addPlugin` 注册与 `advance` 每帧回调 (本节示例插件的骨架)。
-- 测试战役 [C3-S1]——`GearIn_test` 是本节示例的验证入口。
-- common 文件语义 [C12-S4]——`<saves>\common\<name>.data` 与 LazyLib `JSONUtils` 的读取和写入位置是同一个目录；settings 合并仍由 [C6-S4] 负责。
+- [C13-S1] 的硬依赖声明与运行时检测，以及在 `mod_info.json` 的 `dependencies` 中声明 `lw_lazylib` 的方法；
+- [C7-S2] 的战斗状态读取、`getShips()` 结果过滤、暂停判断和战斗状态生命周期；
+- [C6-S3] 的 `Global` 生命周期与战斗运行期入口；
+- [C7-S1] 的战斗插件注册与 `advance` 每帧回调；
+- [C3-S1] 的测试战役入口与 `GearIn_test`；
+- [C12-S4] 的 common 文件位置、LazyLib `JSONUtils` 读写和 `save()` 持久化语义；
+- [C6-S4] 的 settings 合并与设置读取。
 
 ## LazyLib 概览
 
@@ -84,7 +83,7 @@ Starsector\mods\LazyLib\
 | `equals(float, float)` | 浮点近等判定 (两个值互相在 99.99999% 内)|
 | `getDistance(...)` / `getDistanceSquared(...)` | 距离 / 平方距离 (避免 `sqrt()`)；`Vector2f` 直算，`CombatEntityAPI` 含碰撞半径，`SectorEntityToken` 含交互半径 |
 | `isWithinRange(...)` | 范围内判定，重载与 `getDistance` 同构 |
-| `getShortestRotation(float, float)` | 两角之间最短旋转的**方向与长度**(单位度；同输入角差 400° 时返回 40° 而不是 400°)|
+| `getShortestRotation(float, float)` | 两角之间最短旋转的**方向与长度** (单位度；同输入角差 400° 时返回 40° 而不是 400°)|
 | `getRandomNumberInRange(float, float)` / `(int, int)` | 随机数；int 版上下限**含端点** |
 | `getRandomPointInCircle` / `getRandomPointInCone` / `getRandomPointOnCircumference` / `getRandomPointOnLine` | 均匀随机取点 (圆、扇形、圆周、线段)|
 | `getPointOnCircumference(Vector2f, float, float)` / `getPointsAlongCircumference(...)` | 圆周定点 / 等分布多点 (`center` 允许 null，null 时以原点为圆心)|
@@ -116,7 +115,7 @@ Starsector\mods\LazyLib\
 
 ### 规则 2：VectorUtils 的原地修改语义必须认清
 
-不带 `dest` 的重载 (`resize` / `clampLength` / `rotate` / `rotateAroundPivot`)**原地修改传入向量并返回同一个对象**，不是纯值函数；带 `dest` 的重载把结果写入 dest。禁止把返回值当纯值对象复用、同时继续依赖传入向量的旧值。
+不带 `dest` 的重载 (`resize` / `clampLength` / `rotate` / `rotateAroundPivot`)** 原地修改传入向量并返回同一个对象**，不是纯值函数；带 `dest` 的重载把结果写入 dest。禁止把返回值当纯值对象复用、同时继续依赖传入向量的旧值。
 
 违反的可观察结果：`Vector2f speed = missile.getVelocity(); Vector2f turned = VectorUtils.rotate(speed, 90f);` —— 这行代码把**导弹自己的速度向量**转了 90°，导弹在飞行中突然改向，而不是得到一个新向量；
 
@@ -129,7 +128,7 @@ Starsector\mods\LazyLib\
 - `EllipseUtils`：`getPointOnEllipse` / `getRandomPointInEllipse` / `getRandomPointOnEllipse` / `isPointWithinEllipse` (椭圆取点、随机点、包含判定，全部按角度参数、允许 null 中心)。
 - `ShapeUtils`：`createCircle` / `createEllipse` / `createArc` 返回顶点数组 (3.0 从 `DrawUtils` 拆分而来，只算顶点不绘制)。
 - `CollisionUtils`：线段与碰撞边界查询 ——：
-  - `getCollisionPoint(lineStart, lineEnd, CombatEntityAPI)` 返回线段与目标碰撞边界相交的点 (**不是命中结算**—— 伤害、护盾、碰撞类处理仍走战斗引擎)。
+  - `getCollisionPoint(lineStart, lineEnd, CombatEntityAPI)` 返回线段与目标碰撞边界相交的点 (**不是命中结算** —— 伤害、护盾、碰撞类处理仍走战斗引擎)。
   - `isPointWithinBounds` / `isPointWithinCollisionCircle` / `getNearestPointOnBounds` / `getCollides` / `isPointOnSegment`。
 - `CollectionUtils`：集合工具 ——：
   - `combinedList` / `combinedSet` 合并多集合；`filter(collection, CollectionFilter)` 按过滤器挑元素；`implode(collection, separator)` 拼字符串。
@@ -261,11 +260,7 @@ LazyLib 路径的优势是 `CommonDataJSONObject` 本身就是一个 `JSONObject
 
 `isClassPresent(...)` 表达 **classpath 存在性**，`isModEnabled(...)` 表达 **MOD 启用状态**：前者用于 "这个类能不能调"(API 可用性)，后者用于 "这个 MOD 开着没有"(功能开关)。
 
-违反的可观察结果：用 `isClassPresent("org.lazywizard.lazylib.combat.CombatUtils")` 判断 "LazyLib 已启用" ——classpath 上的类可能由**其他已启用 MOD 间接携带**
-
-(某个 MOD 把 LazyLib 类打进自己的 jar)，此时 `isClassPresent` 为 true 而 `isModEnabled("lw_lazylib")` 为 false，功能分支错误开启；
-
-反过来用 `isModEnabled` 判断 "类可用" 也会在类缺失时误判。
+违反的可观察结果：用 `isClassPresent("org.lazywizard.lazylib.combat.CombatUtils")` 判断 "LazyLib 已启用" ——classpath 上的类可能由**其他已启用 MOD 间接携带** (某个 MOD 把 LazyLib 类打进自己的 jar)，此时 `isClassPresent` 为 true 而 `isModEnabled("lw_lazylib")` 为 false，功能分支错误开启；反过来用 `isModEnabled` 判断 "类可用" 也会在类缺失时误判。
 
 修正：API 可用性用 `isClassPresent`，启用状态用 `isModEnabled`，需要两者同时成立时显式 AND。
 
@@ -688,9 +683,9 @@ gradle jar
 
 本节把 LazyLib 的四组工具接成了一条可编译、可观察的调用链：`GearInLazyPlugin` 只做节奏控制，四个用法片段类分别使用数学、战斗查询、JSON 与元信息工具，`starsector.log` 与 `<saves>\common` 是这条链路的两个核对终点，`battles` / `reports` 两个计数证明调用真的发生过。
 
-六条规则都对应一个具体的失败表现：度/弧度混用让角度偏移，原地修改改写实体速度，跨战斗缓存让查询静默失效，`@Nullable` 不判空抛 NPE，`save()` 漏调让数据归零，`isClassPresent` / `isModEnabled` 混用让功能分支误开。核对任何库工具调用时先问三件事：它读的是哪个状态 (当前帧快照还是磁盘内容)，它改的是谁的对象 (引擎实体还是自己的数据)，漏掉必要调用会看到什么 (报错还是静默) —— 这三问也适用于后续所有库工具页面。
+六条规则都对应一个具体的失败表现：度/弧度混用让角度偏移，原地修改改写实体速度，跨战斗缓存让查询静默失效，`@Nullable` 不判空抛 NPE，`save()` 漏调让数据归零，`isClassPresent` / `isModEnabled` 混用让功能分支误开。核对任何库工具调用时先问三件事：它读的是哪个状态 (当前帧快照还是磁盘内容)，它改的是谁的对象 (引擎实体还是自己的数据)，漏掉必要调用会看到什么 (报错还是静默)。
 
-既有纪律在本节全部复用：暂停检查、`isAlive()` 过滤、禁止跨战斗缓存与战斗插件模型章节完全同源；依赖声明与运行时检测复用 [C13-S1]；common 文件位置与 settings 合并处对照。战役侧 (`campaign` 包) 与渲染侧 (`opengl` / `ui` 包) 工具不在本节范围，由后续内容接续，本节完成的是教程工程对 LazyLib 的第一次真正调用。
+既有纪律在本节全部复用：暂停检查、`isAlive()` 过滤、禁止跨战斗缓存与战斗插件模型章节完全同源；依赖声明与运行时检测复用 [C13-S1]；common 文件位置与 settings 合并处对照。本节完成教程工程对 LazyLib 的第一次真正调用，战役侧和渲染侧工具不属于本节职责。
 
 ## 建议参考项
 

@@ -19,14 +19,12 @@
 
 ## 前置知识
 
-本节要在既有编译链路之上新增技能数据，并在角色与舰队 stats 上重放效果，需要以下已经掌握的基线：
-
-- 命名约定 [C1-S1]：MOD ID `gear_in`、数据 / 资源 key 前缀 `GearIn_`、包 `data.scripts.gearin.<domain>`、类 `GearIn<Subject>`；
-- 编译 JAR 链路与脚本类加载 [C6-S1]：`.skill` 的 `script` 类与普通脚本一样按类名解析，`loadSkills` 会对每个 effect class 调 `registerScriptClass`；
-- `Global` 生命周期与阶段判断 [C6-S3]：读 `Global.getSector().getPlayerStats()` 前要确认处于生涯状态；
-- `MutableStat` 的 modifier ID 稳定性 [C7-S3]：三规则与 `(base + base*percent/100 + flat) * mult` 公式 —— 本节效果脚本全部沿用：用引擎传入的 effect id 做 modifier id、`unapply` 原样解除；
-- `FleetMemberAPI` 与成员 stats [C8-S3]：本节 SHIP / ALL_SHIPS_IN_FLEET 效果的生涯侧落点；
-- 人物 / captain / officer [C9-S1]：`MutableCharacterStatsAPI` 挂在人物上，技能等级与刷新入口 (`setSkillLevel` / `refreshCharacterStatsEffects`) 都在这里；旗舰舰长是玩家人物，所以玩家的 SHIP 技能作用到旗舰。
+- [C1-S1] 的 MOD 命名约定、数据键前缀、包路径与类名；
+- [C6-S1] 的 JAR 构建、脚本类加载与 `.skill` 文件注册；
+- [C6-S3] 的 `Global` 生命周期与生涯阶段判断；
+- [C7-S3] 的 `MutableStat` modifier ID、修饰公式与原样解除；
+- [C8-S3] 的 `FleetMemberAPI` 与成员 stats 落点；
+- [C9-S1] 的人物、captain、officer、`MutableCharacterStatsAPI`、`setSkillLevel` 与 `refreshCharacterStatsEffects`。
 
 ## 技能数据的三件套
 
@@ -71,7 +69,7 @@ skill_data.csv（按 id 读行，收集全部注册 id）
 - `Global.getSettings().getSortedSkillIds()`：按 order 排序的技能 id 列表 (技能树 UI 用)。
 - `MutableCharacterStatsAPI` (`com.fs.starfarer.api.characters.MutableCharacterStatsAPI`) 的角色侧方法：`getSkillLevel(id)` / `setSkillLevel(id, level)` / `increaseSkill` / `hasSkill` / `refreshCharacterStatsEffects()`，技能状态与刷新入口都在这里。
 
-注册只决定技能存在，每个效果作用到哪一组对象由下一节的 `type` 决定。
+注册只决定技能存在，每个效果作用到哪一组对象由本页下一小节的 `type` 决定。
 
 ## 效果作用域：type 决定作用对象
 
@@ -91,7 +89,7 @@ skill_data.csv（按 id 读行，收集全部注册 id）
 | `HULLMOD_UNLOCK` / `ABILITY_UNLOCK` | 无脚本接口 (数据声明)| 解锁集合 | effect 内 `hullmods` / `abilities` 键；使用方 `getUnlockedHullMods(level)`、`MutableCharacterStatsAPI.getGrantedAbilityIds` / `isHullModAvailable` |
 
 ::: warning 生效范围只看 type，别信 scope
-`ALL_SHIPS_IN_FLEET` 与 `SHIP` 的**接口相同**(都是 `ShipSkillEffect`)，作用对象集合完全由 `type` 决定 —— 这是本节最容易被 `scope` 字段误导的一点：`scope` 只是 UI 文本，写 `"scope":"FLEET"` 不会把 SHIP 效果变成全舰队加成。
+`ALL_SHIPS_IN_FLEET` 与 `SHIP` 的**接口相同** (都是 `ShipSkillEffect`)，作用对象集合完全由 `type` 决定 —— 这是本节最容易被 `scope` 字段误导的一点：`scope` 只是 UI 文本，写 `"scope":"FLEET"` 不会把 SHIP 效果变成全舰队加成。
 :::
 
 本节示例用到 SHIP、SHIP_FIGHTERS、FLEET、CHARACTER_STATS 与 DESCRIPTION 五类，写效果脚本时每个 effect 的 `type` 决定类实现哪个接口，先对照上面的表格再落笔。
@@ -112,7 +110,7 @@ skill_data.csv（按 id 读行，收集全部注册 id）
 等级门槛是最容易落空的一处：把 `requiredSkillLevel` 写成 2 却不配 `elite:true`，这个门槛会一直等一个到不了的等级。
 
 ::: caution effect id 必须原样用作 modifier id
-引擎传入的 effect id(本节示例 `GearIn_gunnery_ship_1`)**必须**原样用作 modifier id，`unapply` **必须**用同一个 id 解除；**禁止**自造 id 或拼接字符串。违反的后果：数值残留、解除静默失效、重放多次后数值膨胀，且全程没有任何报错。
+引擎传入的 effect id(本节示例 `GearIn_gunnery_ship_1`)** 必须**原样用作 modifier id，`unapply` **必须**用同一个 id 解除；**禁止**自造 id 或拼接字符串。违反的后果：数值残留、解除静默失效、重放多次后数值膨胀，且全程没有任何报错。
 :::
 
 ## fleet total 管道
@@ -512,7 +510,7 @@ public class GearInGunnerySkill {
 
 - 外层类只是容器：嵌套类名 (`Level0` / `Level1` / `Level1A` / `LevelShipFighters` / `LevelFleet` / `LevelStats`) 与 `.skill` 的 `script` 值 (`GearInGunnerySkill$Level1` 等) 逐字对应 —— 原版 `GunneryImplants` 同款做法。
 - `Level1 implements ShipSkillEffect, FleetTotalSource`：同一个脚本类被两处调用 —— `SHIP` 效果重放时经 `getAsShipEffect()` 强转，`getFleetTotals()` 时经 `getAsFleetTotalSource()` 检查 `instanceof`：
-  - 两处都是**每次按类名重新实例化**(脚本类加载流程 `loadScriptInstance` → `newInstance()`)，效果类不能有带参构造器。
+  - 两处都是**每次按类名重新实例化** (脚本类加载流程 `loadScriptInstance` → `newInstance()`)，效果类不能有带参构造器。
 - `apply` 里的 modifier id 全部用传入的 `id`：`modifyPercent(id, ...)` / `modifyFlat(id, ...)`，`unapply` 用同一个 `id` 调 `unmodify(id)` / `unmodifyFlat(id)`—— 稳定 ID 规则的直接应用 (规则见前置知识；引擎每次重放传入的 id 逐字相同)。
 - `Level1.getFleetTotalItem()` 返回 `label="Gunnery damage bonus"`、`value="+15%"`、`sortOrder=50` 与自定义 tooltip：这是 fleet total 行的最小完整形态；`TOOLTIP_WIDTH` 继承自 `BaseSkillEffectDescription`(450)。
 - `LevelFleet` / `LevelStats` 的 `getScopeDescription()` 返回 `FLEET`：这只是 tooltip 的 "作用范围" 文本；实际生效对象由 `type`(FLEET / CHARACTER_STATS) 决定。
@@ -612,7 +610,7 @@ gradle jar
 
 留作复用的判断有三条。第一，技能没出现且无报错时，先查两条跳过日志，再核对 `.skill` 的 `type` 与脚本类实现的接口是否对应。第二，生效范围只看 `type`，`scope` 只是 UI 文本；2 级门槛必须配 `elite:true`。第三，effect id 就是 modifier id，引擎传入什么就用什么，`unapply` 用同一个 id 解除 —— 数值残留与解除失效几乎都源于这里。
 
-这套 "type → 作用域 → 应用入口" 模型还会继续用在生涯数值链下游：从人物经 `FleetMemberAPI` 到舰船 stats 的交接中，SHIP / ALL_SHIPS_IN_FLEET 效果正是 "人物技能到达成员 stats" 的关键一跳，后续装配与舰队数值页面会直接沿用本节定下的注册与生效规则。
+这套 "type → 作用域 → 应用入口" 模型也适用于生涯数值链下游：从人物经 `FleetMemberAPI` 到舰船 stats 的交接中，SHIP / ALL_SHIPS_IN_FLEET 效果正是 "人物技能到达成员 stats" 的关键一跳。
 
 ## 建议参考项
 

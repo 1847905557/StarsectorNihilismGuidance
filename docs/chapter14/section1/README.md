@@ -19,14 +19,13 @@
 
 ## 前置知识
 
-阅读本节前，建议先掌握以下既有内容：
-
-- MOD 目录结构、`mod_info.json` 必填/可选字段、`enabled_mods.json` 启用列表、启动器与 `starsector.log`[C1-S1]。
-- 编译 JAR 链路 (`src` → `jars\GearIndustry.jar`) 与 "jar 类优先于同名 `.java`" 的加载结论 [C6-S1]。
-- `modPlugin` 入口与 `onApplicationLoad()` 时机；本节的运行时检测接入沿用该入口 [C6-S2]。
-- 硬依赖 (hard dependency) 声明、`CompatLevel` 检查、`isModEnabled`/`getModSpec`/`getAvailableModsCopy` 的运行时语义 [C13-S1]；软依赖是本节首次完整讲解。
-- LazyLib `ModUtils.isModEnabled`/`isClassPresent` 的语义分工 [C13-S2]。
-- LunaLib 设置 (`LunaSettings.csv`、`LunaSettings.getBoolean` 等) 的读取与保存细节 [C14-S3]；本节只采用其结论，设置项 `GearIn_fullGraphicEffect` 的定义在 [C14-S3] 的 `LunaSettings.csv` 中，本节只消费。
+- [C1-S1] 的 MOD 目录、`mod_info.json` 字段、`enabled_mods.json` 启用列表、启动器与 `starsector.log`；
+- [C6-S1] 的 Java 编译、JAR 声明和 JAR 类与同名 `.java` 的加载优先级；
+- [C6-S2] 的 `modPlugin` 入口与 `onApplicationLoad()` 调用时机；
+- [C13-S1] 的硬依赖声明、`CompatLevel` 检查、`isModEnabled`、`getModSpec` 和 `getAvailableModsCopy` 运行时语义；
+- [C13-S2] 的 LazyLib `ModUtils.isModEnabled` 与 `isClassPresent` 语义分工；
+- [C14-S3] 的 LunaLib 设置读取与保存；
+- 理解 Java 类加载器的父子关系和脚本安全过滤器的作用。
 
 ## 软依赖：定义与分界
 
@@ -67,7 +66,7 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 脚本层与游戏核心之间的过滤器 (脚本安全过滤器的加载检查) 是本节另一条硬边界：
 
 ::: caution 脚本层安全过滤器是硬边界
-脚本链上的类 (jar 类与 `.java` 类同链、同规则)**禁止**驱动：
+脚本链上的类 (jar 类与 `.java` 类同链、同规则)** 禁止**驱动：
 
 - `java.io.*`(白名单类如 `BufferedReader`/`InputStream` 除外)；
 - `java.nio.file.File*`
@@ -75,9 +74,7 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 - `java.util.prefs.*`
 - `sun.reflect.misc.MethodUtil`
 
-**禁止**驱动 `java.lang.reflect.*`—— 仅放行 `AnnotatedElement`/`InvocationTargetException`/`Type`/`GenericDeclaration`(后两个正是 "接住反射失败" 所需的类型)，
-
-`Method`/`Field`/`Constructor`/`Proxy`/`Modifier`/`Parameter` 等一律拦截。
+**禁止**驱动 `java.lang.reflect.*`—— 仅放行 `AnnotatedElement`/`InvocationTargetException`/`Type`/`GenericDeclaration`(后两个正是 "接住反射失败" 所需的类型)，`Method`/`Field`/`Constructor`/`Proxy`/`Modifier`/`Parameter` 等一律拦截。
 
 违反的可观察结果：加载被拦截的类名时抛 `SecurityException: File access and reflection are not allowed to scripts.`，运行期崩溃，日志记 `ERROR`。
 
@@ -92,15 +89,15 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 
 ## 检测判据与调用隔离
 
-### 判据一（主线）：MOD 启用状态 (isModEnabled)
+### 判据一 (主线)：MOD 启用状态 (isModEnabled)
 
-代码型软依赖的主判据。`Global.getSettings().getModManager().isModEnabled(id)`：id 是否在启用列表，**逐字比较、大小写敏感**(`ModManagerAPI.isModEnabled` 逐字比较语义)。语义 = "这个 MOD 被勾选了"。
+代码型软依赖的主判据。`Global.getSettings().getModManager().isModEnabled(id)`：id 是否在启用列表，**逐字比较、大小写敏感** (`ModManagerAPI.isModEnabled` 逐字比较语义)。语义 = "这个 MOD 被勾选了"。
 
 - **必须**传对方 `mod_info.json` 的 `id` 字段值，不是显示名：LunaLib 的 id 是 `lunalib`，不是 `LunaLib`。
   - 用显示名当 id 的可观察结果：`isModEnabled` 恒返回 `false`，功能永远降级，且日志查不出任何报错。
 - 成熟实例：只用 `isModEnabled` 判断软依赖是否可用；`lunalib` 没有出现在这些 MOD 的 `dependencies` 里 —— 这就是软依赖的实证。
 
-### 判据二（数据型）：约定位置配置文件
+### 判据二 (数据型)：约定位置配置文件
 
 数据型软依赖 (微型兼容) 的判据不是代码检测：把数据文件放到对方约定读取的位置 (如 `data/config/...` 固定路径)，本 MOD 零代码引用对方。对方缺失时文件不被读取，功能自然降级，不需要任何运行期判断 —— "约定位置" 本身即判据 (完整实例见 [C14-S3] 的 `LunaSettings.csv`)。
 
@@ -155,7 +152,7 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 1. **直接引用**：可选 API 的编译期引用 (如 `LunaSettings.getBoolean(...)`) 写进一个专用适配器类 (`GearInCompatBridge`；与成熟实例同构)。
 2. **收敛**：全工程只有适配器这一处出现 `lunalib.*` 类名；使用方只 import 适配器类。
   - 编译期类路径上有可选 jar(`compileOnly` 依赖)，运行期才谈得上缺失。
-3. **懒解析**：JVM 按需解析常量池引用 —— 适配器类本身在可选依赖缺失时**可以正常加载**(类加载不触发方法体内引用的解析)；`LunaSettings` 的符号引用只在检查分支**第一次执行**时才解析。
+3. **懒解析**：JVM 按需解析常量池引用 —— 适配器类本身在可选依赖缺失时**可以正常加载** (类加载不触发方法体内引用的解析)；`LunaSettings` 的符号引用只在检查分支**第一次执行**时才解析。
   - 无依赖时检测返回 false，分支不执行，引用永不解析，`NoClassDefFoundError` 不会出现。这正是 "缺依赖也能启动" 的机制基础。
 
 ::: info 为什么 "缺依赖也能启动"
@@ -195,7 +192,7 @@ URLClassLoader（中间，平铺全部启用 MOD 的 jar）
 
 ## 文件与 API 链路
 
-以上各节把处理链拆开了，先用一张表收拢每个环节的落点；下一节的最小例逐项实现它们。
+以上各节把处理链拆开了，先用一张表收拢每个环节的落点；本页下一小节的最小例逐项实现它们。
 
 | 环节 | 文件或 API | 使用方 / 行为 |
 |---|---|---|

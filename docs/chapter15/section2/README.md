@@ -19,17 +19,15 @@
 
 ## 前置知识
 
-本节把上一节的 shader 能力接到文件与生命周期上，先确认以下基础：
-
-- MOD 目录结构与 `starsector.log` 的读取 [C1-S1]：本节所有日志观察结果都落在它里面。
-- 战役 (mission) 概念与 `GearIn_test` 测试战役 [C3-S1]：本节用它做游戏内验证。
-- 编译 JAR 链路 [C6-S1]：shader 文本作为资源进入构建，本节沿用松散文件 + jar 副本的交付形态。
-- `Global` 生命周期 [C6-S3]：禁止跨战斗缓存引擎引用与渲染对象，本节的程序/VBO 同规。
-- `SettingsAPI` 资源读取三族与 `validateFileName` 必须遵守的规则 [C12-S1]：本节的 `loadText` 语义直接承接。
-- 战斗插件生命周期 [C7-S5]：本节的注册片段加在它的 `init` 末尾。
-- 分层渲染插件与 GL 资源清理必须遵守的规则 [C7-S6]：本节的 "加载/清理/失效" 环节直接复用。
-- BoxUtil 初始化/实体/生命周期 [C13-S6]：对照的另一条加载入口 `ShaderUtil` 与同源的生命周期纪律。
-- GLSL 110 方言、编译/链接检查链、OpenGL 2.0 能力门禁 [C15-S1]：本节的加载与日志环节是它的延续。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 读取；
+- [C3-S1] 的战役对象与生涯对象概念；
+- [C6-S1] 的 Java 编译与资源进入 JAR 的方式；
+- [C6-S3] 的 `Global` 生命周期和渲染对象有效期；
+- [C12-S1] 的 `SettingsAPI` 资源读取与 `validateFileName` 路径规则；
+- [C7-S5] 的战斗插件生命周期；
+- [C7-S6] 的分层渲染插件与 GL 资源清理时机；
+- [C13-S6] 的 BoxUtil 初始化、实体和生命周期；
+- [C15-S1] 的 GLSL 1.10 方言、编译与链接检查、OpenGL 2.0 能力门禁。
 
 ## 文件与 API 链路
 
@@ -46,7 +44,7 @@
 | 日志 | `Global.getLogger(...)`(log4j `Logger`)→ `starsector.log` | 编译/链接 InfoLog 与加载/重载/清理事件都由 MOD 侧写入 (游戏侧对 `loadText` 零日志)|
 | 运行使用方 | `GearInPulseRenderer`([C7-S6] 分层渲染通道)| 每场战斗 `init` 加载程序、`render` 内使用、`cleanup` 内删除、`advance` 内定时重载 |
 | 实例对照 (加载入口 A)| GraphicsLib `org.dark.shaders.post.PostProcessShader` | `loadText("data/shaders/post/pre.vert")` → `ShaderLib.loadShader` → 失败置 `enabled = false` 并 ERROR |
-| 实例对照 (加载入口 B)| `ShaderUtil.createShaderVFFormPath(类名, vert 路径, frag 路径)` | BoxUtil 封装的使用入口 (内部行为留给 [C15-S3])|
+| 实例对照 (加载入口 B)| `ShaderUtil.createShaderVFFormPath(类名, vert 路径, frag 路径)` | BoxUtil 封装的使用入口 |
 | 可观察结果 | `starsector.log` + 战斗画面 | init/reload/cleanup/compile failed 日志行；玩家舰中心脉冲环 |
 
 ### 四位置完整流程
@@ -149,7 +147,7 @@ glCreateProgram → glAttachShader → glBindAttribLocation(链接前固定) →
 ### 谁写日志
 
 - **游戏侧零日志**：`loadText` 全程静默；引擎对 shader 编译/链接没有任何日志 (原版不加载 shader)。
-- **MOD 侧必须写日志**：编译/链接状态检查后，失败时的 InfoLog 由 MOD 自己的 log4j `Logger`(`Global.getLogger(...)`) 以 ERROR 写入游戏日志 `starsector.log`**。不写日志 = 失败不可见**(规则 6)。
+- **MOD 侧必须写日志**：编译/链接状态检查后，失败时的 InfoLog 由 MOD 自己的 log4j `Logger`(`Global.getLogger(...)`) 以 ERROR 写入游戏日志 `starsector.log`**。不写日志 = 失败不可见** (规则 6)。
 
 ::: caution 不写日志 = 失败不可见
 游戏侧对 `loadText`、编译与链接零日志 ——"shader 加载成功/失败的日志" 只可能由 MOD 侧写入。省略失败日志，失败会完全静默：画面无内容且没有任何诊断 (规则 6)。

@@ -19,16 +19,14 @@
 
 ## 前置知识
 
-本节是继 GraphicsLib [C13-S3] 之后第二个 GPU 渲染依赖库页面，沿用同一个示例 MOD 与测试战役。开始前您需要已经理解：
-
-- 硬依赖 (hard dependency) 声明与运行时检测 [C13-S1]：引用依赖库的类前 `dependencies` 必须声明对应 MOD，否则启动期 `NoClassDefFoundError`；
-- 战斗图层层序与渲染回调纪律 [C7-S6]：GL 原语只在渲染回调内使用 —— 本节 `setLayer(CombatEngineLayers)` 与 `directDraw()` 的时机约束延续同一条纪律；
-- settings `plugins` 段注册与战斗插件模型、暂停检查 [C7-S1]：BoxUtil 自己的 `BUtil_CombatEFS` 就按这个模型每场战斗实例化；
-- `modPlugin` 与 `onApplicationLoad()` 时机 [C6-S2]：`initPre()` 的接入点；
-- `Global` 生命周期 [C6-S3]：禁止跨战斗缓存引擎引用与渲染对象 (本节文本实体每场战斗重建)；
-- 战斗插件生命周期与 "战斗结束没有清理回调" [C7-S5]：BoxUtil 实体靠计时到期 / 显式 `delete()` 收尾，不赌战斗结束回调；
-- 战役 (mission) 与生涯 (campaign) 概念、`GearIn_test` 测试战役 [C3-S1]：本节用它做验证；
-- 对照 GraphicsLib [C13-S3]：同为 GPU 渲染依赖库，但本节只讲 BoxUtil 的战斗渲染队列；生涯侧 `CampaignRenderingManager` 只记录边界 (对照结论：战役画面不经过本节链路)。
+- [C13-S1] 的硬依赖声明与运行时检测；
+- [C13-S3] 的 GraphicsLib 初始化与 GPU 渲染依赖边界；
+- [C7-S6] 的战斗图层层序与渲染回调时机；
+- [C7-S1] 的 settings `plugins` 注册、战斗插件实例化和暂停判断；
+- [C6-S2] 的 `modPlugin` 与 `onApplicationLoad()` 调用时机；
+- [C6-S3] 的 `Global` 生命周期和跨战斗对象有效期；
+- [C7-S5] 的战斗插件生命周期与战斗结束处理；
+- [C3-S1] 的战役与生涯对象区别。
 
 ## BoxUtil 概览
 
@@ -675,7 +673,7 @@ gradle jar
 
 `GearInBoxEntity` 类注释中的战斗插件模型引用为 [C7-S1] (战斗插件模型由 [C7-S1] 讲解)。
 
-`dependencies` 的 `id` 与 BoxUtil 发行 `mod_info.json` 的 `id` 逐字一致
+`dependencies` 的 `id` 与 BoxUtil 发行 `mod_info.json` 的 `id` 逐字一致。
 
 ## 验证方案
 

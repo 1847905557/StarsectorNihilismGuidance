@@ -1,6 +1,6 @@
 # 向着色器提交绘制数据
 
-本节向着色器提交矩阵、uniform 与纹理数据，在战斗画面绘制一个跟随玩家舰船移动的发光四边形。示例使用 BoxUtil 的 `ShaderProgram` 管理程序对象，资源释放与性能控制留到下一节。
+本节向着色器提交矩阵、uniform 与纹理数据，在战斗画面绘制一个跟随玩家舰船移动的发光四边形。示例使用 BoxUtil 的 `ShaderProgram` 管理程序对象；资源释放与性能控制见 [C15-S4]。
 
 *本节预期阅读时间：~20 分钟。*
 
@@ -19,18 +19,17 @@
 
 ## 前置知识
 
-本节内容建立在以下前置知识之上，建议先掌握：
-
-- GLSL 110/430 方言、`attribute`/`uniform`/`varying`、编译/链接检查链与能力门禁 [C15-S1]：本节把 430 方言与 BoxUtil 的 GL 4.3 基线连接起来；其 "uniform 名/类型必须一致" 这条必须遵守的规则在本节延续为提交纪律。
-- `.vert/.frag` 路径约定 (`data/shaders/`、`/` 分隔、UTF-8 无 BOM)、加载与编译日志、资源生命周期四环节 [C15-S2]：本节沿用 —— 每场战斗 `init` 内创建、`cleanup()` 内释放、禁止跨战斗缓存。
-- BoxUtil 初始化两段式 (`initPre` → `initLater`) 与可用性判据 `BoxConfigs.isShaderEnable() && ShaderCore.isValid()`[C13-S6]：本节的创建门禁直接复用；`isBaseGL43Supported()` 只是 GL 能力探测，不能替代 `ShaderCore.isValid()`。
-- 硬依赖 [C13-S1]：GearIndustry 对 BoxUtil 的硬依赖声明 (`mod_info.json` 的 `dependencies`，[C13-S6])。
-- 分层渲染插件通道 [C7-S6]：本节渲染所属对象 ——`render(layer, viewport)` 回调内绘制、`advance()` 主动失效、`cleanup()` 释放 GL 资源。
-- `Global` 生命周期 [C6-S3]：禁止跨战斗缓存引擎引用与渲染对象 —— 本节的 `ShaderProgram`/VBO 同规。
+- [C15-S1] 的 GLSL 1.10/4.30 方言、`attribute`、`uniform`、`varying`、编译与链接检查、能力门禁；
+- [C15-S2] 的 `.vert`、`.frag` 路径、`/` 分隔、UTF-8 无 BOM、加载日志和 shader 资源生命周期；
+- [C13-S6] 的 BoxUtil 两段式初始化、`BoxConfigs.isShaderEnable()` 与 `ShaderCore.isValid()` 可用性判断；
+- [C13-S1] 的硬依赖声明与 `mod_info.json` 的 `dependencies`；
+- [C7-S6] 的分层渲染插件、`render(layer, viewport)` 回调、`advance()` 失效和 `cleanup()` 资源释放；
+- [C6-S3] 的 `Global` 生命周期和跨战斗对象有效期；
+- 理解 OpenGL uniform、纹理单元、矩阵与顶点缓冲的基本提交方式。
 
 ## 文件与 API 链路
 
-本节要接的对象很多，先给一张总表：shader 资源、BoxUtil 程序入口、uniform/UBO 提交与渲染通道归属都按环节登记，后续小节逐个展开。
+本节要接的对象很多，先给一张总表：shader 资源、BoxUtil 程序入口、uniform/UBO 提交与渲染通道归属都按环节登记，随后按当前小节的任务逐个说明。
 
 | 环节 | 文件 / API | 说明 |
 |---|---|---|
@@ -101,7 +100,7 @@ bladeProgram.uboLocation = new int[] {
 - 渲染前检查 `program.isValid()`—— 程序创建失败 (GPU 不支持、编译失败等) 时 `isValid()` 为 false，直接跳过绘制。
 - 提交段夹在 `program.active()` 与 `program.close()` 之间；实例规范原文 "`ShaderProgram.active()` 后必须按 `ShaderProgram.close()` 关闭 program 状态"。
 - `cleanup()` 里 `program.delete()`，句柄置空；每场战斗 `init` 重新创建，禁止跨战斗缓存 (沿用跨战斗缓存禁令)。
-- 前页的编译/链接状态检查与 InfoLog 职责在 BoxUtil 封装内，MOD 侧不再逐行检查 ——**失败可见性取决于 `isValid()` 检查与 BoxUtil 自己的日志**；本节示例把 "程序无效" 写成 ERROR 日志并自废 (规则 3)。
+- 前页的编译/链接状态检查与 InfoLog 职责在 BoxUtil 封装内，MOD 侧不再逐行检查 ——** 失败可见性取决于 `isValid()` 检查与 BoxUtil 自己的日志**；本节示例把 "程序无效" 写成 ERROR 日志并自废 (规则 3)。
 
 ::: caution 不得以 `isBaseGL43Supported()` 替代 `ShaderCore.isValid()`
 
@@ -173,7 +172,7 @@ uniform 是 "一次绘制内所有顶点/片元共享" 的常量 (数据流语�
 
 纪律 (名称/类型一致性纪律的延续)：
 
-- **名称与类型必须与 GLSL 声明一致**(大小写敏感)：名称拼错 → `getUniformIndex` 返回 -1 → `glUniform*` 被静默忽略 (GL 错误不报)——uniform 不生效且无日志；
+- **名称与类型必须与 GLSL 声明一致** (大小写敏感)：名称拼错 → `getUniformIndex` 返回 -1 → `glUniform*` 被静默忽略 (GL 错误不报)——uniform 不生效且无日志；
 - 类型不匹配 (如 GLSL 声明 `float` 却提交 `glUniform2f`)→ 赋值失败/未定义，同样是静默路径；
 - 提交时机在 `program.active()` 之后、`glDrawArrays` 之前 (绘制内的状态在 `close()` 后失效 —— 这也解释了为什么每帧都要重新提交)。
 
@@ -677,7 +676,7 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
     engine.addLayeredRenderingPlugin(new GearInShaderVisual());
 ```
 
-与上一页的注册片段同一做法；渲染层接入的完整设计 (开关、常驻、性能) 在本章后续展开。
+与上一页的注册片段同一做法；渲染层接入的完整设计 (开关、常驻、性能) 见 [C15-S4]。
 
 构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用既有 MOD 工程)：
 
@@ -740,7 +739,7 @@ gradle jar
 
 本节把绘制前的状态提交走成了一条完整的数据链：两个 shader 资源文件定义程序，`ShaderProgram` 在创建后立即保存 location，render 内按矩阵、uniform、纹理、颜色的顺序把状态送进程序，UBO 补上投影，战斗画面里那枚跟随舰船移动的发光四边形就是整条链走通后的可见结果。这条链的每一环都有明确的失败表现：名称拼错是 -1 静默、采样器错位是变黑、转置矩阵是位置错乱、块名拼错是画面缺失；init 日志里打印的 location 值能直接区分前几类问题 —— 排错时先看 init 行，再沿 "名称一致性 → 纹理单元号 → transpose → UBO 块名 → 生命周期" 的顺序核对，比在渲染代码里逐行猜测更快。
 
-对您来说，这套流程同时收敛成一段可复用的样板：创建 → 保存 location → `isValid()` → `active()`/提交/`close()` → `cleanup()` 释放。任何新的视觉 shader 都可以沿用同一节奏；下一步的逻辑延伸是把这段样板接入渲染层的常驻开关与生命周期管理，让程序对象从一次性演示走向随配置启停的常驻渲染资源，并为多程序复用与性能取舍留出空间。
+对您来说，这套流程同时收敛成一段可复用的样板：创建 → 保存 location → `isValid()` → `active()`/提交/`close()` → `cleanup()` 释放。任何新的视觉 shader 都可以沿用同一节奏；常驻开关与生命周期管理继续在 [C15-S4] 中把这段样板扩展为可启停的渲染资源。
 
 ## 建议参考项
 

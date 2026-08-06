@@ -24,14 +24,12 @@
 
 ## 前置知识
 
-本节的运行态论述建立在以下既有知识上，需要时回到对应小节查阅：
-
-- 武器 CSV、`.wpn`、`.proj` 数据面 [C1-S5]：本节读取这些 spec；`fireSoundOne` / `fireSoundTwo`、`flameoutTime` 等字段语义已在数据侧讲过。
-- 战斗插件模型 [C7-S1]：`addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 每帧回调、暂停判断 —— 本节示例插件建立在这个模型上。
-- 编译 JAR 链路 [C6-S1]：本节示例编入同一个 `jars\GearIndustry.jar`。
-- `Global` 生命周期与禁止跨战斗缓存引擎引用 [C6-S3]：本节把同一条纪律延伸到射弹 / 光束 / 武器实例。
-- `CombatEngineAPI` 读取侧 [C7-S2]：`getShips()` 遍历纪律、`getPlayerShip()` 永不 null、`isEntityInPlay`、暂停语义 —— 本节的插件与监听器观察建立在这些判据上。
-- `MutableStat`[C7-S3]：`damage.getModifier()` 与 `getTimeMult()` 的返回类型；本节只读取。
+- [C1-S5] 的武器 CSV、`.wpn`、`.proj` 数据关系与字段登记；
+- [C6-S1] 的 Java 构建与 JAR 输出；
+- [C6-S3] 的 `Global` 生命周期与跨战斗引用边界；
+- [C7-S1] 的战斗插件注册、每帧回调与暂停判断；
+- [C7-S2] 的 `CombatEngineAPI` 状态读取、实体遍历与暂停语义；
+- [C7-S3] 的 `MutableStat` 返回类型与修饰值读取。
 
 ## 文件与 API 链路
 
@@ -84,7 +82,7 @@
 
 武器实例由引擎随舰船创建，每帧推进一次。回调顺序 (弹丸类武器与光束武器同构)：
 
-1. `EveryFrameWeaponEffectPlugin.advance(amount, engine, weapon)`—— 本帧转向、开火等核心操作**之前**(API javadoc 原文 "Called before this frame's operations for the weapon - turning, firing, etc.")。
+1. `EveryFrameWeaponEffectPlugin.advance(amount, engine, weapon)`—— 本帧转向、开火等核心操作**之前** (API javadoc 原文 "Called before this frame's operations for the weapon - turning, firing, etc.")。
 2. 本帧核心操作：转向、充能/爆发、开火判定、冷却、弹药装填、禁用状态。
 3. 若效果对象实现了 `EveryFrameWeaponEffectPluginWithAdvanceAfter`，`advanceAfter(amount, engine, weapon)` 在本帧操作**之后**调用。
 
@@ -830,7 +828,7 @@ gradle jar
 
 排查时从注册与绑定点开始核对，比对着现象猜测更快：数据绑定类名没写进 `.proj` / `.wpn` 是第一嫌疑 (静默失效、无报错)，缓存了本帧命中状态是第二嫌疑，叠加统计两个集合排第三。六条必须遵守的规则是本节的行为底线：改武器数值前 `ensureClonedSpec()`、回调上下文禁止缓存、射弹不命中 source、导弹派生射弹必须 `setFromMissile(true)`、光束命中状态只对本帧有效、伤害修改只能走 `getModifier()` 并返回 id。
 
-本节建立的监听器与数据绑定模型，是后续实现伤害联动、光束视觉效果与自定义导弹 AI 的基础；AI 侧的开火决策与光束充能曲线的精确形态，也可以在这条对象流之上继续深入。
+本节建立的监听器与数据绑定模型，同样适用于伤害联动、光束视觉效果与自定义导弹 AI；AI 侧的开火决策与光束充能曲线也可沿这条对象流继续分析。
 
 ## 建议参考项
 

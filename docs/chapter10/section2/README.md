@@ -20,17 +20,17 @@
 
 ## 前置知识
 
-本节的两条通道、事件边界与生命周期规则都建立在既有成果之上，请先掌握以下内容：
-
-- 生涯引擎结构 [C8-S1]：`SectorAPI` 持有的监听器列表与脚本列表、`EveryFrameScript`、persistent data `CLASS_MARK` 注册标记、暂停语义 —— 本节的注册标记与配对模式从这里继续。
-- 脚本序列化边界与真实秒换算 [C10-S1]：`scripts` 随档、`transientScripts` 读档清空、`advance(amount)` 入参是上一帧真实秒 —— 本节的监听器与生命周期脚本配对复用这两条结论。
-- MOD 插件生命周期与阶段判断 [C6-S2]、[C6-S3]：`modPlugin` 生命周期回调与 persistent data 注册标记模式；`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"。
-- 市场、贸易与声望 [C8-S5]、[C8-S8]：`reportPlayerMarketTransaction` 的实体是市场交易；声望事件回调的对象由 `SectorAPI.adjustPlayerReputation` 触发。
-- 战斗域 [C7-S2]：`reportPlayerEngagement` 的 `EngagementResultAPI` 来自战斗结算。
+- [C6-S2] 的 MOD 插件生命周期与持久数据标记；
+- [C6-S3] 的 `Global.getSector()` 阶段语义；
+- [C7-S2] 的战斗域 `reportPlayerEngagement` 与 `EngagementResultAPI`；
+- [C8-S1] 的 `SectorAPI` 监听器和脚本列表、`EveryFrameScript`、暂停语义与注册标记；
+- [C8-S5] 的市场交易回调 `reportPlayerMarketTransaction`；
+- [C8-S8] 的势力关系与 `SectorAPI.adjustPlayerReputation`；
+- [C10-S1] 的脚本序列化边界与 `advance(amount)` 的真实秒语义。
 
 ## 术语
 
-进入两条通道之前，先弄清本节承担首次讲解的两个概念；后续生涯域页面会直接沿用这两种说法：
+进入两条通道之前，先弄清本节承担首次讲解的两个概念：
 
 - **监听器 (listener)**：API 名保留 `CampaignEventListener` / `ListenerManagerAPI` 等源码大小写。
   - 在生涯域中，监听器是 "对生涯事件感兴趣、事件发生时被引擎回调" 的对象。
@@ -84,11 +84,11 @@ if (!this.isPaused()) {
 }
 ```
 
-**`daysToKeep` 的单位是游戏天**(不是真实秒)；每帧按本帧折合的游戏天数扣减，且**只在未暂停时扣减**—— 暂停期间超时冻结。扣减到 0 后由 `TimeoutTracker.advance` 自动移除。
+**`daysToKeep` 的单位是游戏天** (不是真实秒)；每帧按本帧折合的游戏天数扣减，且**只在未暂停时扣减** —— 暂停期间超时冻结。扣减到 0 后由 `TimeoutTracker.advance` 自动移除。
 
 ::: warning 常见坑：超时单位误用
 
-`addListenerWithTimeout` / `reRegister` 的 `daysToKeep` 是**游戏天**(10 真实秒 = 1 游戏日)，且只在未暂停时扣减。把超时当真实秒、或以为暂停也在计时，都会得到 "永不超时 / 超时过慢" 的假象 (对应故障分析第 5 条)。
+`addListenerWithTimeout` / `reRegister` 的 `daysToKeep` 是**游戏天** (10 真实秒 = 1 游戏日)，且只在未暂停时扣减。把超时当真实秒、或以为暂停也在计时，都会得到 "永不超时 / 超时过慢" 的假象 (对应故障分析第 5 条)。
 
 :::
 
@@ -118,7 +118,7 @@ if (!this.isPaused()) {
 
 实现 (`ListenerManagerAPI`)：内部由两个仓库构成 ——`listeners`(持久) 与 `transientListeners`(transient，读档时重建)。语义要点：
 
-- `addListener` / `addListener(listener, true)` 直接写入对应仓库，**`ListenerManagerAPI` 自身没有任何去重检查**(与通道一的 `contains` 去重不同；不要依赖 "重复注册会被自动去重")。
+- `addListener` / `addListener(listener, true)` 直接写入对应仓库，**`ListenerManagerAPI` 自身没有任何去重检查** (与通道一的 `contains` 去重不同；不要依赖 "重复注册会被自动去重")。
 - `removeListener` 同时清两个仓库；`removeListenerOfClass` 遍历两个仓库的**快照**逐个移除 (安全改列表)；`getListeners` 返回两仓库并集的新列表，派发侧遍历的是这份副本。
 - 持久性：`ListenerManagerAPI` 实例随存档保存；transient 仓库读档后必然清空。
 
@@ -205,7 +205,7 @@ if (!this.isPaused()) {
    - 违反的可观察结果：读档后事件静默不触发、无任何报错。
    - 成熟实例：用 `addListener(epGen, true)` 注册 transient 遭遇点生成器。
 5. **必须**：配对类 "脚本结束 ≠ 监听器移除"。
-   - `isDone() == true` 只让引擎从脚本列表清理脚本半身，**监听器注册表不会自动移除**—— 必须显式 `removeListener(this)`。
+   - `isDone() == true` 只让引擎从脚本列表清理脚本半身，**监听器注册表不会自动移除** —— 必须显式 `removeListener(this)`。
    - 违反的可观察结果：脚本自停日志出现后事件回调仍持续 ("僵尸监听器")。
 
 :::
@@ -442,7 +442,7 @@ public class GearInListenerLifecycleScript implements EveryFrameScript {
 对应关系：
 
 - `implements EveryFrameScript`：脚本半身提供 `isDone` / `runWhilePaused` / `advance`，按游戏天累计挂载时长，是本节 "生命周期脚本" 角色。
-- 构造器持有受管监听器引用；`setDaysToLive(int)` 是**本节演示参数，归属脚本类**——`< 0` 常驻、`>= 0` 到期自停并移除监听器。
+- 构造器持有受管监听器引用；`setDaysToLive(int)` 是**本节演示参数，归属脚本类** ——`< 0` 常驻、`>= 0` 到期自停并移除监听器。
 - `advance` 里 `clock.convertToDays(amount)`：`amount` 是上一帧真实秒数，游戏天累加必须经时钟换算 (10 真实秒 = 1 游戏日)。
 - `sector.removeListener(listener)`：脚本半身 `done=true` 的同时显式移除监听器 —— 规则 5 的演示 (脚本结束 ≠ 监听器移除)。
 - 注册入口：调用点的注册块内 `sector.addScript(script)`(脚本列表)；`addScript` 不去重，这正是注册块需要整体判断的缘由之一。

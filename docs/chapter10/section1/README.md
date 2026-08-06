@@ -19,12 +19,10 @@
 
 ## 前置知识
 
-本节建立在前置章节的生涯机制之上：脚本注册与推进循环、时间与暂停语义、persistent data 注册标记，以及阶段与战斗域边界。具体衔接如下：
-
-- 星区结构、生涯时钟、`EveryFrameScript` 入门、脚本注册与推进循环、暂停与加速语义、persistent data `CLASS_MARK` 标记 —— 本节的所有概念都从这里继续，不重复基础讲解 [C8-S1]。
-- `modPlugin` 生命周期回调与 persistent data 注册标记模式；本节的注册沿用同一个模式 [C6-S2]。
-- `Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；脚本注册必须发生在生涯引擎建立之后 [C6-S3]。
-- 战斗域每帧回调 (`EveryFrameCombatPlugin`)—— 两边的暂停语义不同，注意对照 (生涯脚本循环在暂停时默认完全跳过)[C7-S1]。
+- [C6-S2] 的 `modPlugin` 生命周期与持久数据标记；
+- [C6-S3] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
+- [C7-S1] 的战斗域每帧回调、暂停语义与生涯域的差异；
+- [C8-S1] 的星区结构、生涯时钟、`EveryFrameScript` 注册、推进循环、暂停与加速语义。
 
 ## 文件与 API 链路
 
@@ -38,11 +36,11 @@
 |---|---|
 | `boolean isDone()` | 每帧**最多查两次**：`advance` 前查一次 —— 为 `true` 直接移除 (不调 `advance`)；`advance` 返回后再查一次 —— 为 `true` 移除。常驻脚本返回 `false` |
 | `boolean runWhilePaused()` | 调用条件 `runWhilePaused() || !isPaused()`：返回 `true` 时暂停期间 `advance` 仍被调用，但 `amount` 仍是真实秒数、时钟仍冻结 (见 "时间换算" 节)|
-| `void advance(float amount)` | `amount` 是**上一帧经过的真实秒数** ("seconds elapsed during the last frame"； "Use SectorAPI.getClock() to convert to campaign days")。**必须**经时钟换算才是游戏天 |
+| `void advance(float amount)` | `amount` 是**上一帧经过的真实秒数** ("seconds elapsed during the last frame"；"Use SectorAPI.getClock() to convert to campaign days")。**必须**经时钟换算才是游戏天 |
 
 执行细节：
 
-1. 引擎遍历的是**列表快照**(`new ArrayList<>(this.scripts)`)，脚本在 `advance` 里 `addScript` / `removeScript` 安全；代价是 advance 里新加的脚本下一帧才推进。
+1. 引擎遍历的是**列表快照** (`new ArrayList<>(this.scripts)`)，脚本在 `advance` 里 `addScript` / `removeScript` 安全；代价是 advance 里新加的脚本下一帧才推进。
 2. 移除是 "遍历快照、改原列表"：
    - `isDone` 自动清理；
    - `removeScript(script)` 按**对象同一性**；
@@ -68,7 +66,7 @@
 
 `CampaignClockAPI`(`com.fs.starfarer.api.campaign.CampaignClockAPI`) 由引擎内部实现。此前已给出换算基线，本节讲换算的**内部机制**与两个推论：
 
-- **基线：10 真实秒 = 1 游戏日**(`SECONDS_PER_GAME_DAY = 10.0F`)。`convertToDays(秒)` = 秒 ÷ 10；`convertToSeconds(天)` = 天 × 10；`convertToMonths(秒)` = 秒 ÷ 10 ÷ 30。
+- **基线：10 真实秒 = 1 游戏日** (`SECONDS_PER_GAME_DAY = 10.0F`)。`convertToDays(秒)` = 秒 ÷ 10；`convertToSeconds(天)` = 天 × 10；`convertToMonths(秒)` = 秒 ÷ 10 ÷ 30。
 - **日历按整游戏秒推进**：`advance(float)` 的实作是 `(int)(秒 / secondsPerDay * 86400)`，把整游戏秒加进日历；每帧独立截断，余数不结转。
   - 推论一：`getDay()` / `getDateString()` / `getTimestamp()` 全部来自这个日历，因此是整秒粒度；而 `convertToDays(amount)` 的累加保留小数。
   - 推论二：长时间游玩后两者会错位 —— 每帧损失不足 1 游戏秒，60 FPS 下一小时约损失 1 个游戏天量级的日历时间 (帧率越高损失越快)。
@@ -99,12 +97,12 @@
 
 时间换算解决怎么算时间，序列化解决算出来的进度怎么保留。
 
-**保存与读档的机制**(游戏管理器)：
+**保存与读档的机制** (游戏管理器)：
 
 - 保存：`saveGame(...)` 用 XStream 序列化**整个生涯引擎 (星区)**—— 包括 `scripts` 列表里每个脚本的全部非 `transient` 字段。
 - 读档：`fromXML` 还原生涯引擎 (星区) 与脚本字段，脚本状态从存档值继续。
 
-**两个脚本列表的序列化边界**(生涯引擎)：
+**两个脚本列表的序列化边界** (生涯引擎)：
 
 - `scripts` **非** `transient` → **随存档保存**：常驻脚本 (管理器、周期脚本) 跨读档继续运行，其非 `transient` 字段原样恢复；`readResolve` 只补 null 备用值。
 - `transientScripts` 是 `transient` → **不随存档保存**，且 `readResolve` 直接重建空列表 → **transient 脚本读档后必然消失，需要重新注册**。
@@ -418,7 +416,7 @@ gradle jar
 
 值得记住的判断：暂停就是停表，时钟、日历与 `convertToDays` 累加全部冻结，真实时间倒计时只能靠 `amount` 累计；日历按整游戏秒前进、累加器保留小数，短会话一致、长会话漂移，日历事件用跨日检测、精确统计用累加器；`scripts` 随存档保存、`transientScripts` 读档后必然清空，一次性注册必须用 persistent data 标记；`isFastForwardIteration()` 可探测加速帧的第 2 次及以后的迭代 (`campaignSpeedupMult = 2`)。
 
-同一套生涯对象还有另一条驱动轴 —— 事件在状态变化时被同步唤醒 (监听器与事件派发)。两条轴的推进时机、存档边界与生命周期清理如何对齐，是后续内容的自然落点；本节的 persistent data 标记与阶段语义则始终是贯穿各页的基础。
+同一套生涯对象还有另一条驱动轴 —— 事件在状态变化时被同步唤醒 (监听器与事件派发)。两条轴的推进时机、存档边界与生命周期清理需要与本节的 persistent data 标记和阶段语义对齐。
 
 ## 建议参考项
 

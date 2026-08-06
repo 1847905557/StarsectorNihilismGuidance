@@ -22,18 +22,17 @@
 
 ## 前置知识
 
-本节建立在前置单元的基础上。
-
-- **星区入口与脚本注册标记**[C8-S1]：`SectorAPI` 星区结构 (本节两个入口都从 `getSector()` 下的 getter 进入)、`onGameLoad` 注册判断 (persistent data 各自键的 `REGISTER_MARK` 模式)。
-- **玩家舰队与成员**[C8-S3]：玩家舰队 (`getPlayerFleet().getCargo()` 的货物归属)、`FleetDataAPI`(`getMothballedShips()` 返回类型)、`CampaignFleetAPI.getCargo()` 链路。
-- **市场与子市场货物**[C8-S6]：子市场 cargo(`getCargo()` 用到时才创建 / `getCargoNullOk()` 可能 null)、商品 id 族 (`Commodities`)。
-- **全局对象与阶段判断**[C6-S3]：`Global.getSector()` 的 null 语义与 "用 `getCurrentState()` 判断阶段"；本节所有读取与注册都发生在生涯引擎建立之后。
-- **MOD 插件生命周期**[C6-S2]：`modPlugin` 生命周期与 `CLASS_MARK` 一次性注册标记。
-- **静态字段与 `MutableStat` 的区分**[C7-S3]：注意 `FactionAPI.getTariffFraction()` 取的是势力规格 (`FactionSpecAPI`) 里的普通数值，不是 `MutableStat`(与 [C8-S6] 的 `MarketAPI.getTariff()` 不同)。
+- [C6-S2] 的 `modPlugin` 生命周期与持久数据标记；
+- [C6-S3] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
+- [C7-S3] 的普通字段与 `MutableStat` 的区别；
+- [C8-S1] 的 `SectorAPI` 星区入口、`onGameLoad` 注册与 `REGISTER_MARK` 判断；
+- [C8-S3] 的玩家舰队、成员、`FleetDataAPI.getMothballedShips()` 与 `CampaignFleetAPI.getCargo()`；
+- [C8-S6] 的子市场 cargo 创建时机、`getCargoNullOk()` 判空与 `Commodities` 商品 ID；
+- 理解 `FactionAPI.getTariffFraction()` 读取势力规格中的普通数值。
 
 ## 术语
 
-按术语约定，本节首次完整讲解两个词 (后续页面继续使用；API 类名保留源码大小写)：
+按术语约定，本节首次完整讲解两个词；API 类名保留源码大小写：
 
 - **势力 (faction)**：API 名保留 `FactionAPI`。一个身份完整的派系对象：id、显示名、颜色、关系表、已知资源集合、随机人物与 `.faction` 规格。玩家自身也是一个势力 (`Factions.PLAYER`)。
 - **货物 (cargo)**：API 名保留 `CargoAPI`。实体 (舰队、战利品、子市场、市场) 持有的货物容器：栈集合 + 信用 (credits)+ 容量统计。单个货物条目是 `CargoStackAPI`(栈)。
@@ -61,7 +60,7 @@
 | 资源集合 | `getKnownShips()`、`addKnownShip`、`removeKnownShip`、`knowsShip`、`getKnownWeapons()`、`getKnownFighters()`、`getKnownIndustries()`、priority 族、`clearShipRoleCache()` | 已知蓝图与优先资源；`removeKnown*` 的读档回写规则见 "规则强度"|
 | 经济字段 | `getTariffFraction()`、`getTollFraction()`、`getFineFraction()`、`getInternalCommsChannel()`、`isIllegal(String)`、`getIllegalCommodities()`、`makeCommodityIllegal/Legal` | 势力级税率 (注意：静态值，非 `MutableStat`) 与商品合法性 |
 | 随机与显示 | `createRandomPerson()`、`getLogo()`、`getCrest()`、`isShowInIntelTab()` / `setShowInIntelTab`、`getCustom()`、`getCustomBoolean`、`getCustomString`、`getRank`、`getPost`、`pickRandomShipName` | `.faction` 文件数据与随机生成 |
-| 舰船选择 | `pickShip(role, params, ...)`、`pickShipAndAddToFleet`、`ShipPickParams` / `ShipPickMode`、`getNumAvailableForRole` | 自动装配舰船选择 (本节只给入口，深度归后续单元)|
+| 舰船选择 | `pickShip(role, params, ...)`、`pickShipAndAddToFleet`、`ShipPickParams` / `ShipPickMode`、`getNumAvailableForRole` | 自动装配舰船选择，本节只给入口 |
 | 配置 | `getDoctrine()`、`getProduction()`、`getFactionSpec()`、`getMemory()`、`getMemoryWithoutUpdate()`、`isNeutralFaction()`、`isPlayerFaction()` | doctrine / production / 规格与势力 memory |
 
 **关系语义 (全局对表)**：
@@ -99,8 +98,7 @@
 | mothballed ships | `addMothballedShip` | `getMothballedShips` | 见 "必须遵守的规则"|
 | 通用汇总 | `addItems` / `removeItems`(返回是否完成)| `getQuantity` / `getStacksCopy` | 栈模型 |
 
-**栈语义 (`CargoStackAPI`，`com.fs.starfarer.api.campaign.CargoStackAPI`)**：`getType()`(`CargoItemType`：`RESOURCES` / `WEAPONS` / `FIGHTER_CHIP` / `SPECIAL` / `NULL`)、`getData()`(通常是 String 资源 id)、
-`getSize()` / `getFree()` / `getMaxSize()` / `isFull()`、`getCargoSpace()`。
+**栈语义 (`CargoStackAPI`，`com.fs.starfarer.api.campaign.CargoStackAPI`)**：`getType()`(`CargoItemType`：`RESOURCES` / `WEAPONS` / `FIGHTER_CHIP` / `SPECIAL` / `NULL`)、`getData()`(通常是 String 资源 id)、`getSize()` / `getFree()` / `getMaxSize()` / `isFull()`、`getCargoSpace()`。
 
 `isNull()`(**空占位栈**，"If true, it's an empty cargo stack. These get created for spacing, a result of the player moving cargo around.")。资源的小数部分会累计 (`addItems` 内部路径)；
 
@@ -433,7 +431,7 @@ public class GearInCargoServicesScript extends GearInOneShotScript {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含三个类的 `.class` 条目 (可用 `jar tf` 核对)
+产物 `jars\GearIndustry.jar` 应包含三个类的 `.class` 条目 (可用 `jar tf` 核对)。
 
 ### 验证方案
 
@@ -462,8 +460,7 @@ gradle jar
    触发与原因：该字段可能为 null，而使用前没有先调 `initMothballedShips(factionId)`。
    修正：使用前先 `initMothballedShips(factionId)`；`addMothballedShip` 内部会自动初始化，不需要自己先 init。
 2. **货物回滚后数量对但栈数量对不上**。症状：数值已经复原，`getStacksCopy().size()` 却比回滚前多 `k`。
-   触发与原因：把栈数量当 "货物条目数" 核对 —— `removeItems` 把减空的栈原地替换为 `NULL_STACK` 占位，
-   多出的栈 `isNull()==true`(`CargoStackAPI.isNull()`)。
+   触发与原因：把栈数量当 "货物条目数" 核对 —— `removeItems` 把减空的栈原地替换为 `NULL_STACK` 占位，多出的栈 `isNull()==true`(`CargoStackAPI.isNull()`)。
    修正：核对数量读 `getSupplies()` / `getFuel()` 等数值接口；栈是存储细节，清理占位用 `removeEmptyStacks()`。
 3. **关系写入 "没生效" 或 "生效过头"**。症状：直接写关系后界面没有声望变化提示，或数值超出预期。
    触发与原因：把 `adjustRelationship(id, delta)` 当带监听的声望系统用，或忘了写入时的 `[-1,1]` 钳位 —— 直接写入不弹声望变化消息、不触发监听，值超界被钳位。
@@ -484,12 +481,11 @@ gradle jar
 势力链从 `SectorAPI.getFaction(id)` / `getPlayerFaction()` 进入 `FactionAPI`，关系读写经过全局对表 (双向共享、`-1..1` 钳位、对条目用到时才建)；
 货物链从 `SectorEntityToken.getCargo()` 进入 `CargoAPI`，读写按分族进行，栈是存储细节而不是数量真相。
 
-排错时先记住两条判断：关系写入是**原始写入**(无监听、钳位 `[-1,1]`)，玩家声望 action 走 `adjustPlayerReputation`；
-`getMothballedShips()` 必须先 `initMothballedShips`，`getStacksCopy()` 含 NULL 占位栈。本节演示的 "写入后立即精确回滚" 写法，
-让验证可以在不遗留任何持久状态的前提下完成。
+排错时先记住两条判断：关系写入是**原始写入** (无监听、钳位 `[-1,1]`)，玩家声望 action 走 `adjustPlayerReputation`；
+`getMothballedShips()` 必须先 `initMothballedShips`，`getStacksCopy()` 含 NULL 占位栈。本节演示的 "写入后立即精确回滚" 写法，让验证可以在不遗留任何持久状态的前提下完成。
 
 脚本注册标记与 `Global` 阶段语义是本节底座；`REGISTER_MARK` 注册模式沿用既有脚本节 "每个注册项用各自的键" 的惯例。
-本节只覆盖两个入口的常用高频面：势力关系监听与任务类势力逻辑在逻辑上属于更深的主题，本节不展开；制作情报与交互对话框的方法在 [C8-S9] 讲解。
+本节只覆盖两个入口的常用高频面；制作情报与交互对话框的方法见 [C8-S9]。
 
 ## 建议参考项
 

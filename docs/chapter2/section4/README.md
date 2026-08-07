@@ -34,7 +34,7 @@
 
 ## OnHit：射弹命中时
 
-### 第一步：效果类
+### 实现命中效果类
 
 文件：`src\data\scripts\gearin\combat\GearInHitLogger.java`：
 
@@ -74,7 +74,7 @@ public class GearInHitLogger implements OnHitEffectPlugin {
   - `addHitParticle(...)` 一行：在命中点生成一个光点 (大小、颜色为数字参数，可修改)。粒子机制本节不展开，只需知道这一行在命中点生成光点。
 - **`package` / `import` / 类名**：按模板使用。
 
-### 第二步：注册到武器
+### 注册命中效果
 
 打开 [C1-S5] 制作的火炮的弹体文件 (`data/weapons/GearIn_durin_shot.proj` 之类)，在 JSON 中加一行：
 
@@ -82,7 +82,7 @@ public class GearInHitLogger implements OnHitEffectPlugin {
 "onHitEffect": "data.scripts.gearin.combat.GearInHitLogger",
 ```
 
-### 第三步：验证
+### 验证命中效果
 
 1. 重启游戏，进模拟战用这把武器命中敌人；
 2. 退出游戏打开 `starsector.log`：每命中一次出现一行 `GearIn hit! shieldHit=false`(打在船体) 或 `shieldHit=true`(打在护盾)；
@@ -92,7 +92,7 @@ public class GearInHitLogger implements OnHitEffectPlugin {
 
 ## BeamEffect：光束激活期间
 
-### 第一步：效果类
+### 实现光束效果类
 
 文件：`src\data\scripts\gearin\combat\GearInBeamLogger.java`：
 
@@ -133,7 +133,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 新增的一个概念：**`advance(float amount, ...)` 在光束激活期间每帧被调用**，`amount` 是距上一帧的秒数 (正常约 0.017)。字段 `timeSinceLastReport` 每帧累加 `amount`，达到 `REPORT_INTERVAL`(参数，默认 1 秒) 时输出一行日志、生成一个光点并归零 —— 这种固定间隔写法同样适用于光束持续伤害与每帧修正。其余按模板使用。
 
-### 第二步：注册到武器
+### 注册光束效果
 
 打开 [C1-S5] 制作的**光束武器**的 `.wpn`，在 JSON 中加一行：
 
@@ -141,7 +141,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 "beamEffect": "data.scripts.gearin.combat.GearInBeamLogger",
 ```
 
-### 第三步：验证
+### 验证光束效果
 
 1. 重启游戏，进模拟战用光束武器照射敌人并保持开火；
 2. `starsector.log`：光束激活期间每秒一行 `GearIn beam tick`，停止开火即停；
@@ -186,10 +186,10 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ## 故障分析
 
-1. **效果类不触发**。触发：注册列写错文件 (`onHitEffect` 写到 `.wpn`)、键名拼错、`beamEffect` 挂到非光束武器。可观察：无日志、无报错 (静默)。修正：核对注册列位置与键名。
-2. **`Problem loading class [...]`**。触发：类名三处不一致或类不存在。修正：按类名三处一致 (武器版) 核对。
-3. **命中日志有但光点不出现**。触发：粒子参数过小。修正：调大 `addHitParticle` 的 size(第三个数字) 与 duration(第五个数字)。
-4. **光束日志节奏不符**。触发：`REPORT_INTERVAL` 理解偏差。可观察：改大后日志变稀。修正：该数字 = 多少秒输出一行，`1f` = 每秒一行。
+- **效果类没有触发：**注册列写进了错误文件、键名拼错，或 `beamEffect` 挂在非光束武器上时，日志和画面都会保持安静。核对 `.proj` 的 `onHitEffect` 与光束 `.wpn` 的 `beamEffect`，修正后重新命中目标。
+- **日志出现 `Problem loading class [...]`：**注册类名、包声明和文件路径没有指向同一个类。逐字核对三处名称，重启后确认异常消失。
+- **命中日志出现但光点不可见：**粒子的尺寸或持续时间过小。调大 `addHitParticle` 的第三个参数 `size` 与第五个参数 `duration`，再次命中后观察命中点。
+- **光束日志节奏不符：**`REPORT_INTERVAL` 表示两次输出之间的秒数，数值越大日志越稀。设为 `1f` 后持续照射目标，日志应每秒出现一行。
 
 ## 总结
 

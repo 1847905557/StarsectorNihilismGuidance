@@ -22,7 +22,7 @@
 - [C1-S2] 的 `.ship` 结构、`ship_data.csv` 注册、`GearIn_artizan` 与 `Addship` 使用方法；
 - [C4-S1] 的模拟战入口、装配部署和战斗观察方法。
 
-## 文件与 API 链路
+## 梳理舰船外观关系
 
 | 文件 | 注册入口 | 产物 | 使用方 |
 |---|---|---|---|
@@ -287,19 +287,13 @@ hull style 是 "声音与材质的总线"：
 
 ## 故障分析
 
-- **游戏在加载进度条阶段失败，日志有 `Key [...] is required`、`invalid value` 或 `Color array with id [...] has less than 4 elements`**：
-  - `engine_styles.json` 中的条目缺少必填键 (数值键缺键报 `JSONObject[...] not found.`)，或任一风格条目的颜色数组不足 4 个元素，或 `type` 填了 `GLOW`/`SMOKE` 之外的值。
-  - 注意 `hull_styles.json` 的颜色字段**缺键不会报错** (静默回退为白色，见上文)，它的加载失败只来自值格式非法或 JSON 语法错误。
-  - 修正：对照本节字段表补齐，复制原版条目修改最稳妥。
-- **游戏在加载阶段失败，日志指向某 `.ship`**：顶层 `style` 字段缺失 (`getString("style")` 抛 JSONException，org.json 的缺失键消息为 `JSONObject["style"] not found.`)，或 `style` 引用的 hull style ID 不存在 (风格解析为 null，随后取护盾颜色时抛 NPE)。
-  - 修正：确认 `.ship` 顶层 `style` 与 `hull_styles.json` 的 ID 完全一致 (大小写敏感)。
-- **加载正常，但 `Addship` 部署进战斗时报 NPE，舰船无法入场**：`engineSlots` 里的 `style` 指向了 `engine_styles.json` 中不存在的 ID(引擎槽风格解析为 null，生成战斗实体时抛 NPE)。
-  - 修正：把引擎槽 `style` 改成已注册的 ID，或补上 `engine_styles.json` 条目。
-- **部署进战斗时报 NPE，堆栈指向 `ShipEngineControllerAPI` 或 `Shield`**：hull style 引用了 `sounds.json` 中不存在的声音集 ID。
-  - 修正：注册对应声音集，或改回原版声音集 ID。
-- **启动时声音资源加载失败**：`sounds.json` 中注册的 `.ogg` 路径不存在。修正：核对 `file` 相对 MOD 根目录的路径与大小写。
-- **势力舰队出现加载报错**：根因多半是舰队装配引用的舰船 `.ship` 风格引用损坏 (见上两条)，先沿 `.ship` → 风格 ID → 声音集 ID 的链路排查。
-- **护盾、引擎声音 "不像自己的风格"**：这不是错误。未注册自定义声音集时回落到原版通用声音；按 "声音与材质的完整关联流程" 一节注册并引用自定义声音集即可。
+- **加载进度条阶段出现风格键或颜色数组错误**：`engine_styles.json` 缺少必填键、颜色数组不足 4 个元素，或 `type` 不是 `GLOW`、`SMOKE` 时，日志会出现 `Key [...] is required`、`invalid value` 或颜色数组错误。补齐字段后重启，风格表应完成加载；`hull_styles.json` 缺少颜色字段时会回退为白色，非法值和 JSON 语法才会中断加载。
+- **加载阶段失败且日志指向 `.ship`**：顶层 `style` 缺失会抛出 `JSONObject["style"] not found.`，引用不存在的 hull style 时会在读取护盾颜色处抛 NPE。让 `.ship` 的 `style` 与 `hull_styles.json` ID 逐字一致，重启后船体应完成加载。
+- **`Addship` 部署时抛 NPE 且舰船无法入场**：`engineSlots` 的 `style` 指向未注册的 engine style，战斗实体生成时会取得 null。改用已注册 ID 或补齐 `engine_styles.json` 条目，再次部署后舰船应正常入场。
+- **部署时 NPE 堆栈指向 `ShipEngineControllerAPI` 或 `Shield`**：hull style 引用了 `sounds.json` 中不存在的声音集 ID。注册对应声音集或改用现有 ID，重新部署后引擎与护盾应完成初始化。
+- **启动时声音资源加载失败**：`sounds.json` 中的 `.ogg` 路径不存在，或大小写与文件不一致。核对 `file` 相对 MOD 根目录的路径，重启后声音资源应完成加载。
+- **势力舰队生成时出现风格加载错误**：舰队装配引用的 `.ship` 可能带有损坏的风格或声音集关系。沿 `.ship`、风格 ID、声音集 ID 逐层核对，重新生成舰队后错误应消失。
+- **护盾和引擎声音仍像原版风格**：未引用自定义声音集时，hull style 会使用原版通用声音。按 "声音与材质的完整关联流程" 注册并引用自定义 ID，重新部署后应听到目标声音。
 
 ## 总结
 

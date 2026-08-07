@@ -1,167 +1,464 @@
-# 声明并检测 MOD 依赖
+# 制作酒吧事件
 
-本节在 `mod_info.json` 中声明 MOD 的强制依赖，并用 `ModManagerAPI` 检查运行时状态。依赖缺失或未启用时，启动器会先给出提示并阻止错误组合进入游戏。
+本节制作一个生涯酒吧事件：一位落魄船员出售补给藏匿点的情报，玩家可以购买、婉拒或离开。示例会让事件进入酒吧、完成对话并正确收尾。
 
-*本节预期阅读时间：~15 分钟。*
+*本节预期阅读时间：~30 分钟。*
 
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：~50 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 写出 `mod_info.json` 的 `dependencies` 数组，说出 `id`、`name`、`version` 三个字段的必需性与缺失后果；
-- 解释硬依赖 (hard dependency) 的完整语义：谁检查、检查什么、失败时启动器做什么；
-- 说出 `getDependencies()` 与 `getAllDependencies()` 的差别 (直接依赖 vs 递归展开的全部依赖)；
-- 用 `Global.getSettings().getModManager()` 在运行时读取依赖与启用状态，区分 `isModEnabled`、`getModSpec`、`getAvailableModsCopy` 的语义；
-- 从启动器行的颜色与文案、自动禁用弹窗、`starsector.log` 三个位置判断依赖问题出在哪一环。
+* 区分酒吧事件链路的三个角色，并列出各自公开 API 归属：事件约定 `PortsideBarEvent`、creator 约定 `BarEventManager.GenericBarEventCreator`(内部接口)、调度器 `BarEventManager`，以及配套的 `PortsideBarData`(活动事件列表)、`BaseBarEvent` / `BaseBarEventCreator` / `BaseBarEventWithPerson`(默认实现)、`SpecBarEventCreator`(CSV 路由)、`BarEventSpec`(CSV spec)、`BarEventDialogPlugin`(事件对话包装)、`BarCMD`(酒吧 UI 规则命令)、`AddBarEvent` / `RemoveBarEvent`(临时 bar 选项规则命令)；
+* 解释两条注册/数据链路的构成：数据文件链路 `data/campaign/bar_events.csv`(11 列)→ `BarEventSpec` → CSV spec 加载期 (内部实现)→ `SettingsAPI.getAllBarEventSpecs()` → `BarEventManager.updateBarEventCreatorsFromSpecs()` 自动生成 `SpecBarEventCreator`；代码注册链路 `BarEventManager.getInstance().addEventCreator(creator)`(配合 `hasEventCreator(Class)` 判断，`onGameLoad` 执行)；
+* 解释 `BarEventManager` 的调度语义：按游戏天推进 (`Misc.getDays`)、active/timeout 两个 `TimeoutTracker`、未交互过期事件清理、`maxTotalBarEventsAsFractionOfEventTypes` 上限、priority picker 优先、普通 picker 按 `getBarEventFrequencyWeight()` 权重抽取、`createBarEvent()` 返回 null 跳过；
+* 描述事件生命周期：创建入列 (active 时长内可显示)→ 显示过滤 (`shouldRemoveEvent` / `shouldShowAtMarket`)→ `addPromptAndOption` 写提示与选项 (**optionData 必须是事件自身**)→ `BarEventDialogPlugin` 事件对话 (`init` → `optionSelected` → `isDialogFinished` → 回到酒吧)→ 交互收尾 `notifyWasInteractedWith(this)`(移除 + accepted 超时)；以及未交互时 active 时长过期后的清理与普通超时；
+* 设置酒吧显示链路的可调参数：`settings.json` 的 `minBarEvents` / `maxBarEvents` / `barEventProbOneMore`、市场内存 `$BarCMD_shownEvents`(按事件 ID 复现)、`AddBarEvents` 规则分类与 `AddBarEvent` / `RemoveBarEvent` 临时选项的 "每次展示前清空重建" 语义；
+* 从症状定位故障 (见 "故障分析" 节)：结果必须沿着**数据文件/注册入口 → 调度入列 → 显示过滤 → 对话收尾**四个位置核对。
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录、`mod_info.json` 必填字段、`enabled_mods.json` 启用列表、启动器与日志；
-- [C6-S1] 的 Java 编译、JAR 声明，以及依赖 MOD 的类来源；
-- [C6-S2] 的 `modPlugin` 入口与 `onApplicationLoad()` 时机；
-- 理解 `dependencies` 在既有 manifest 上追加声明的方式；
-- [C14-S1] 的软依赖运行时分支、调用隔离与降级适配。
+* [C6-S2] 的 `modPlugin` 生命周期与注册判断；
+* [C6-S3] 的 `Global.getSector()` 阶段语义；
+* [C10-S1] 的 `MarketAPI` 与市场条件过滤；
+* [C9-S6] 的交互对话框面板、`showInteractionDialog` 与插件生命周期；
+* [C11-S1] 的人物、关系与市场稳定随机人物；
+* [C12-S1] 的 `advance(amount)` 真实秒语义与 `Misc.getDays` 换算；
+* [C12-S2] 的事件边界、监听器生命周期与 XStream 序列化边界；
+* [C14-S3] 的 Rules 命令与 [C14-S4] 的 Rules 内存。
 
-## 硬依赖语义
+## 术语
 
-硬依赖 = 在 `mod_info.json` 的 `dependencies` 数组里声明的、**必须已安装**的 MOD。
+酒吧事件牵扯一组角色与一条展示管线，先统一叫法，便于后文在 API 名与中文说法之间保持一致。按术语约定，API 类名保留源码大小写。本节首次完整讲解以下术语：
 
-它的强制力来自启动器：依赖缺失或版本不符时，启动器不允许勾选本 MOD；此前已勾选的会在启动器主界面初始化时被自动禁用并弹窗。
+* **酒吧事件 (bar event)**：API 名保留 `PortsideBarEvent`。
+    *   一次可在星球/空间站酒吧出现、由玩家主动选择进入的短对话事件：酒吧提示 + 选项 (`addPromptAndOption`)→ 事件对话 (`init` / `optionSelected`)→ 结束返回酒吧。
+    *   它独立于普通交互对话框：酒吧事件不自己调用 `showInteractionDialog`，而是由 `BarCMD` 在酒吧 UI 里把选项的 optionData 指到事件自身，再经 `BarEventDialogPlugin` 包装接管对话。
+* **creator**：API 名保留 `GenericBarEventCreator`(`BarEventManager` 的内部接口) 与默认实现 `BaseBarEventCreator`。
+    *   负责两件事：`createBarEvent()` 创建事件实例 (返回 null 表示本次放弃抽取)；提供抽取参数 (频率权重、active 时长、普通超时、accepted 超时、是否 priority)。
+* **manager**：API 名保留 `BarEventManager`。全局酒吧事件调度器 (`EveryFrameScript`)：持有 creator 集合与 active/timeout 两个跟踪器，按游戏天推进并周期性抽取事件入列。
+* **活动列表 (PortsideBarData)**：当前全部已抽取、等待被酒吧显示的事件实例列表。manager 决定 "创建哪些事件"，活动列表决定 "哪些事件可被显示"。
+* **临时 bar 选项 (temp bar option)**：规则系统经 `AddBarEvent` 规则命令写入市场内存、由 `BarCMD` 当次展示的临时酒吧选项。它**不是** `PortsideBarEvent` 事件，点选后走普通规则对话 (`$option == <optionId>`)，每次展示前被清空重建。
+* **事件对话 (event dialog)**：`BarEventDialogPlugin` 包装下的事件交互对话。玩家点选酒吧选项后，`BarCMD` 把对话框插件切换为 `BarEventDialogPlugin`，事件自身通过 `init` / `optionSelected` 驱动对话，结束时切换回 `BarCMD` 并回到酒吧。
 
-这是声明式的检查：启动器只核对声明，不检查代码里是否真的引用 —— 引用与声明的一致性由 MOD 作者负责 (见故障分析第 6 条)。
+## 梳理酒吧事件关系
 
-### 声明：mod_info.json 的 dependencies 数组
+术语就位后，下一步把两条入口链路接起来：数据文件链路把 CSV 行变成可用事件，代码注册链路登记手写 creator，最终都汇入 `BarEventManager` 的 creator 集合。先看清三个角色的公开 API 归属：
 
-```json
-"dependencies": [
-  {
-    "id": "lw_lazylib",
-    "name": "LazyLib"
-  },
-  {
-    "id": "MagicLib",
-    "name": "MagicLib",
-    "version": "1.5.1"
-  }
-]
+### 角色命名与归属总览
+
+任务清单里的 "BarEventAPI / BarEventCreatorAPI / BarManagerAPI" 对应本主题的三个角色；公开 API 中的具体类型名如下 (全部在 `com.fs.starfarer.api.*` 包路径内)：
+
+角色
+
+类型
+
+位置
+
+bar event(事件约定)
+
+`PortsideBarEvent`(接口)
+
+`com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent`
+
+bar event(默认实现)
+
+`BaseBarEvent`(抽象)
+
+`com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent`
+
+bar event(带人物默认实现)
+
+`BaseBarEventWithPerson`(抽象)
+
+`com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventWithPerson`
+
+creator(约定 + 默认实现)
+
+`GenericBarEventCreator`(`BarEventManager` 内部接口)+ `BaseBarEventCreator`
+
+`com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`、`BaseBarEventCreator`
+
+manager(调度器)
+
+`BarEventManager`
+
+`com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`
+
+活动列表
+
+`PortsideBarData`
+
+`com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarData`
+
+CSV spec 与路由
+
+`BarEventSpec` / `SpecBarEventCreator`
+
+`com.fs.starfarer.api.loading.BarEventSpec`、`com.fs.starfarer.api.impl.campaign.intel.bar.events.SpecBarEventCreator`
+
+事件对话包装
+
+`BarEventDialogPlugin`
+
+`com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin`
+
+酒吧 UI 规则命令
+
+`BarCMD`
+
+`com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`
+
+临时 bar 选项规则命令
+
+`AddBarEvent` / `RemoveBarEvent`
+
+`com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent`、`RemoveBarEvent`
+
+### 数据文件链路 (bar\_events.csv)
+
+1. 游戏在 CSV spec 加载期读取 `data/campaign/bar_events.csv`：`loadSpecsFromJson("bar event id", "data/campaign/bar_events.csv", BarEventSpec.class, ...)`(内部加载实现)，`bar event id` 列是 spec key。
+2. 每行构造一个 `BarEventSpec`：`bar event id`(必填)、`plugin`(必填，`row.getString("plugin")`)、`freq`(默认 10)、`prob`(默认 1)、`min/max dur`(默认 30/40)、`min/max timeout`(默认 30/40)、`min/max accepted timeout`(默认 60/90)、`tags`(逗号分隔，可空)。
+3. `SettingsAPI.getAllBarEventSpecs()` / `getBarEventSpec(id)` 暴露全部 spec。
+4. `BarEventManager.readResolve()` → `updateBarEventCreatorsFromSpecs()`：对每个**还没有 creator** 的 spec 自动创建一个 `SpecBarEventCreator(specId)`。CSV 里新加的行，下一次读档 (manager 反序列化触发 readResolve) 即生效。
+5. `SpecBarEventCreator`(继承 `BaseBarEventCreator`) 把 spec 的字段接到抽取参数上：
+    *   `createBarEvent()` 按 `spec.isMission()` 分派 ——plugin 是 `HubMissionWithBarEvent` 时创建 `HubMissionBarEventWrapper`(mission 酒吧包装)，否则 `spec.createEvent()` 直接 `getInstanceOfScript(pluginClass)` 实例化普通 `PortsideBarEvent`；
+    *   `isPriority()` = `spec.hasTag(Tags.MISSION_PRIORITY)`("priority" tag)。
+
+原版 `bar_events.csv` 共 25 条数据行 (另 1 行表头)，全部是 mission 类 (`com.fs.starfarer.api.impl.campaign.missions.*`)。
+
+**非 mission 的普通事件** (如 `LuddicFarmerBarEvent`、`HistorianBarEvent`) 不走 CSV，走代码注册 (见下)。
+
+### 注册入口
+
+原版注册入口 (`CoreLifecyclePluginImpl`，`com.fs.starfarer.api.impl.campaign.CoreLifecyclePluginImpl`)：
+
+* `onGameLoad(boolean)` → `addScriptsIfNeeded()` → `addBarEvents()`：
+    *   `sector.hasScript(PortsideBarData.class)` 缺则 `addScript(new PortsideBarData())`；
+    *   `sector.hasScript(BarEventManager.class)` 缺则 `addScript(new BarEventManager())`；
+    *   `BarEventManager.getInstance()` 后对每个原版手写 creator 做 `!hasEventCreator(XxxCreator.class) → addEventCreator(new XxxCreator())`。
+
+`PortsideBarData` 与 `BarEventManager` 构造器都把实例写入 sector memory 的固定键 (`$core_PortsideBarData` / `$core_genericBarEventManager`)。
+
+**manager 实例、creator 列表、active 事件列表都随存档保存** (sector memory 持久化；`TimeoutTracker` 的 `set` 由 `readResolve` 重建)。
+
+MOD 注册入口 (本节示例，见 "完整最小例")：
+
+```java
+BarEventManager manager = BarEventManager.getInstance();
+if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
+    manager.addEventCreator(new GearInBarEventCreator());
+}
 ```
 
-字段作用与缺失后果：
+要点：`hasEventCreator(Class)` 用 `isInstance` 判断，而 `addEventCreator` 本身**不去重** (直接 `creators.add`)—— **判断缺失的可观察结果是同 class 的 creator 反复入列、抽取权重翻倍**。
 
-| 字段 | 必需性 | 作用与缺失后果 |
-|---|---:|---|
-| `id` | 必须 | 依赖 MOD 的 `mod_info.json` 的 `id` 字段值，大小写敏感、逐字匹配。缺失或不是字符串 → manifest 解析失败，整个 MOD 目录被跳过 (日志 `Error loading mod from [...]`)|
-| `name` | 可选 | 启动器 "Required mods:" 列表的显示名；缺失时回退为 `id` 本身 |
-| `version` | 可选 | 声明的最低要求版本，字符串 (如 `"3.0.0"`) 或对象 (`{"major":3,"minor":0,"patch":0}`) 均可；缺失 → 只检查依赖 MOD 是否安装，不比较版本 |
+注册时机必须在生涯引擎建立之后 (`onGameLoad` / `onNewGame`)；原版核心插件的 `onGameLoad` 先于 MOD 插件执行 (vanilla 固定最先，成熟实例直接依赖此顺序)，因此 `getInstance()` 不判空。
 
-解析细节 (启动器解析 `mod_info.json` 时)：`id` 用 `getString`，缺字段抛 `JSONException` 并上抛为解析失败；
+### 调度与抽取 (BarEventManager.advance)
 
-`name` 用 `optString("name", id)`；`version` 与顶层 `version` 字段共用同一套版本解析，写成对象时 `major` 必填，缺失同样导致解析失败。
+两条入口都汇入 manager 之后，看调度器如何决定事件何时被创建、何时过期。`BarEventManager.advance(float amount)` 每帧被推进 (`runWhilePaused()` 返回 false，暂停不推进)：
 
-::: caution 依赖项 `id` 必须逐字一致
-`id` 必须与依赖 MOD 的 `mod_info.json` 的 `id` 字段逐字匹配、大小写敏感；启动器按 `equals` 逐字比对，拼错或大小写不符一律按未安装处理 (`MODULE_MISSING`)，错误文案只会提示缺少该 MOD，不会提示 ID 拼写有误。
-:::
+1. `days = Misc.getDays(amount)`—— **所有时长都是游戏天** (10 真实秒 = 1 游戏日)。
+2. `active.advance(days)` / `timeout.advance(days)`：active 跟踪器里的事件按天扣减，扣到 0 自动移除；timeout 跟踪器里的 creator 同理。
+3. `tracker`(`IntervalUtil(0.4f, 0.6f)`，游戏天) 到点才执行抽取；`tracker2`(20–40 天) 到点更新种子。
+4. 未交互过期清理：在 `barEventCreators` 映射里但不在 active 跟踪器中的事件 = 未交互且 active 时长已过期 —— 从映射与活动列表移除，并把对应 creator 置入超时：`dur = max(creator.getBarEventTimeoutDuration(), timeout 剩余)`。
+5. 数量上限：`max = round(creators.size() * settings.getFloat("maxTotalBarEventsAsFractionOfEventTypes"))`(默认 0.5，见 settings.json)，最小 1；`active` 数量达到 `max` 或每个 creator 都有活跃事件时本次不再抽取。
+6. 抽取：先建 priority picker(`isPriority()` 的 creator，权重 = `getBarEventFrequencyWeight()`) 与普通 picker。
+    *   **priority 优先**，未命中再抽普通；同一 `getBarEventId()` 已有活跃事件或 creator 在 timeout 中的跳过；抽中后 `createBarEvent()`**，返回 null 则本次放弃**。
+    *   事件加入 `active` 跟踪器 (时长 = `getBarEventActiveDuration()`)、记录 `barEventCreators.put(event, creator)`、`PortsideBarData.getInstance().addEvent(event)` 入活动列表。
 
-::: warning 声明与引用要一致
-`dependencies` 数组只应列出本 MOD 代码**真实引用**的 MOD。两条错误方向：声明了但代码不用，只是给用户增加启动器强制安装的摩擦；代码用了但没声明，启动器无法自动发现，用户缺依赖时在运行期才炸 (见故障分析第 6 条)。
-:::
+所有时长都用游戏天
 
-### 加载器检查：谁在什么时候检查
+酒吧事件的抽取与展示节奏都建立在 `Misc.getDays` 的换算上 (10 真实秒 = 1 游戏日)，且推进只在未暂停时发生 —— 用游戏天计价让 "一次事件从抽取到过期" 的语义与玩家实际游戏节奏挂钩，而不是与真实时间挂钩；暂停挂机时事件不会批量过期。
 
-声明只是起点，真正的强制力来自启动器随后执行的检查：
+### 活动列表与事件生命周期 (PortsideBarData)
 
-- 检查入口：启动器的兼容性检查。启动器每次构建 MOD 行、刷新信息面板、初始化主界面时都会执行。
-- 检查对象：`getAllDependencies()` —— 按已安装 MOD 的 manifest 递归展开全部依赖，包括依赖项的依赖 (`LinkedHashSet` 防环)。因此间接依赖 (依赖项的依赖) 失效同样产生硬错误。
-- 判定级别 (从轻到重)：
+事件入列之后，谁决定它能被显示、何时被移除？活动列表与事件生命周期回答这两个问题。`PortsideBarData`(`EveryFrameScript`，`runWhilePaused()` false) 持有 `active` 列表：
 
-| 级别 | 触发条件 | 启动器处理 |
-|---|---|---|
-| `COMPATIBLE` | 依赖已安装且版本相符 (或未声明版本)| 正常 |
-| `PATCH_MISMATCH` | 依赖已安装，patch 不同 | 黄色警告，可勾选 |
-| `MINOR_MISMATCH` | 依赖已安装，minor 不同 | 黄色警告，可勾选 |
-| `MAJOR_MISMATCH` | 依赖已安装，major 不同；或依赖项声明了版本、而已安装依赖 MOD 自身 `gameVersion` 的 major 不符当前游戏 | 红色，不可勾选 |
-| `VERSION_UNSPECIFIED` | 依赖项声明了版本但已安装 MOD 无版本信息；或已安装依赖 MOD 未声明 `gameVersion` | 红色，不可勾选 |
-| `MODULE_MISSING` | 依赖 MOD 未安装 (不在 `Starsector\mods\` 下)| 红色，不可勾选 |
+* `addEvent(event)` 入列；`getEvents()` 返回列表 (活的引用，不是副本)。
+* `advance(amount)` 每帧遍历：**在调 `curr.advance(amount)` 前后各查一次 `shouldRemoveEvent()`**，返回 true 就移除 —— 需要 "限时消失" 的事件在 `advance` 里推进倒计时、到期由 `shouldRemoveEvent` 返回 true 自清。
+* `removeEvent(event)` 同时从 manager 的 active 跟踪器移除。
 
-版本比较规则：major 不同 → `MAJOR_MISMATCH`；minor 不同 → `MINOR_MISMATCH`(依赖项与已安装 MOD 的版本都是 RC 编号时跳过 minor 比较)；
+事件生命周期完整流程：
 
-patch 不同 → `PATCH_MISMATCH`；全部相同 → `COMPATIBLE`。
+阶段
 
-整体级别取自身 `gameVersion` 级别与全部依赖级别中最重的一档。
+触发
 
-### 启动器侧的可观察结果
+关键调用
 
-检查结果最终呈现在启动器界面上，按严重程度表现为不同行为：
+抽取入列
 
-1. **红色 + 不可勾选**：整体级别为 `MODULE_MISSING` / `MAJOR_MISMATCH` / `VERSION_UNSPECIFIED` 的 MOD 行以红色绘制，点击勾选无反应 (启动器 MOD 列表的行面板)。
-2. **描述面板**：选中 MOD 时列出 "Required mods:" 段，逐项显示 `<name> <version>`(红或黄着色)，并追加错误行：
-  - 依赖缺失显示 `Error: this mod requires another mod that you don't have installed.`；
-  - 依赖版本 major 不符显示 `Error: this mod requires a different version of a mod that you have installed.`；
-  - 依赖版本 minor/patch 不符显示黄色 `Warning: this mod requires a different version of a mod that you have installed, but might run with this one.`。
-3. **勾选联动**：勾选一个 MOD 会**自动勾选**它的全部依赖行 (含间接依赖)；取消一个 MOD 的勾选会**级联取消**声明它为依赖的 MOD。
-4. **自动禁用 + 弹窗**：启动器主界面初始化时，已启用 MOD 中整体级别为硬错误 (`MODULE_MISSING` / `MAJOR_MISMATCH` / `VERSION_UNSPECIFIED`) 的会被移出启用列表，并立即保存 `Starsector\mods\enabled_mods.json`。
-  - 弹窗：随后弹出 `Some of the enabled mods have unmet requirements or are not compatible with this version of the game and have been disabled.`(启动器)。
-  - 不可绕过：手动改写 `enabled_mods.json` 无法绕过这一道检查。
-  - 注：版本比较为代码逻辑 (major/minor/patch 差异规则) 而非硬编码表。
+manager 周期性抽取
 
-### 代码侧：运行时检测 API
+`creator.createBarEvent()` → `active.add(event, activeDuration)` → `PortsideBarData.addEvent`
 
-启动器负责启动前的把关；代码侧还需要在运行时读取同样的事实，用于日志与分支判断。
+显示过滤
 
-运行时读取依赖状态的标准入口：`Global.getSettings().getModManager()`(`SettingsAPI.getModManager()`)→ `ModManagerAPI`：
+玩家进酒吧，`BarCMD.showOptions`
 
-| 方法 | 语义 |
-|---|---|
-| `isModEnabled(String id)` | id 是否在启用列表 (大小写敏感、逐字比较)|
-| `getModSpec(String id)` | 只查**已启用** MOD；未启用或未安装 → `null` |
-| `getAvailableModsCopy()` | 全部已安装 MOD 的副本，不区分启用状态 |
-| `getEnabledModsCopy()` | 当前启用列表的快照 |
-| `ModSpecAPI.getDependencies()` / `getAllDependencies()` | 直接依赖 / 递归展开 (含依赖的依赖)|
+`shouldRemoveEvent()` → `shouldShowAtMarket(market)` → `addPromptAndOption` → `wasShownAtMarket`
 
-`ModSpecAPI.getVersionInfo()` 返回已安装 MOD **自己**的版本对象 (`VersionInfoAPI.getString()` 输出 `3.0.0` 形式)；
+事件对话
 
-`ModDependencyAPI` 只有 `getId()` / `getName()` / `getVersionInfo()`。
+玩家点选酒吧选项
 
-运行期读到的启用列表与启动器勾选一致 —— 两者共用同一个 `ModManagerAPI` 与 `Starsector\mods\enabled_mods.json`。
+`BarEventDialogPlugin.init` → `event.init` → `event.optionSelected`
 
-硬依赖的代码侧含义：本 MOD 直接引用依赖 MOD 的类或资源。
+交互收尾
 
-依赖缺失时这些类不在脚本类路径上，JVM 在首次解析或初始化相关类时抛 `NoClassDefFoundError`；
+对话完成
 
-若入口类 (`modPlugin`) 的初始化链引用缺失类，启动阶段即失败 (`Error` 不被包装，直接冒泡)。
+`done = true` + `BarEventManager.getInstance().notifyWasInteractedWith(this)`
 
-这正是声明式硬依赖要由启动器把关的原因。
+未交互过期
 
-::: info 为什么由启动器把关
-等到代码运行期再失败已经太晚 —— 用户连主菜单都进不去才知道缺了依赖；启动器在启动前拦截，才能给出缺什么、装什么的明确提示。
-:::
+active 时长扣完
 
-::: caution 引用了就必须声明
-代码里引用了依赖 MOD 的类或资源，`dependencies` 就必须声明该 MOD —— 这是玩家侧把关的唯一依据；启动器只核对声明，无法替代码检查引用，漏声明时缺依赖的用户只能在运行期以 `NoClassDefFoundError` 的形式发现问题。
-:::
+未交互过期清理：活动列表移除 + creator 普通超时
 
-## 文件与 API 链路
+交互收尾 (必须)
 
-上面分头出现的文件与 API，按数据流串起来就是同一条链：
+对话结束必须调 `BarEventManager.getInstance().notifyWasInteractedWith(this)`：它把事件从活动列表与 active 跟踪器移除。
 
-| 环节 | 文件或 API | 使用方 / 行为 |
-|---|---|---|
-| 声明 | `mod_info.json` 的 `dependencies` 数组 | 启动器解析：`id` 用 `getString`，`name`/`version` 可选 |
-| 检查 | 启动器的兼容性检查 | 递归 `getAllDependencies` 逐项对照已安装 MOD；版本按 major/minor/patch 逐档比较 |
-| 展示 | 启动器 Mods 列表 | 红/黄着色、不可勾选、"Required mods:" 列表与错误文案 |
-| 联动 | 启动器勾选事件 | 勾选自动带出依赖、取消级联取消依赖者 |
-| 强制 | 启动器主界面初始化 | 移除硬错误级别 MOD、保存 `enabled_mods.json`、弹窗 |
-| 运行时读取 | `Global.getSettings().getModManager()` → `ModManagerAPI` | `isModEnabled` / `getModSpec` / `getAvailableModsCopy` / `getEnabledModsCopy`(API `com.fs.starfarer.api.SettingsAPI`、`com.fs.starfarer.api.ModManagerAPI`)|
-| 代码引用 | 依赖 MOD 的 JAR / 脚本类 | 脚本类加载器：类缺失 → `NoClassDefFoundError` / `Problem loading class` |
-| 日志 | `starsector-core\starsector.log` | `Found mod:` 扫描行、`Running with the following mods` 启动行、本节示例的 `GearIn dependency check:` 行 |
+并把 creator 置入 `getBarEventAcceptedTimeoutDuration()`(与剩余普通超时取较大值)。
 
-链路的每一环都要在工程里有个落点，否则只停留在纸面。接下来在既有工程上追加一个最小例，让声明、检查、强制与运行时读取全部可以观察。
+**接受与拒绝都算 "已交互"**(原版 `BaseGetCommodityBarEvent` 的 confirm 与 cancel 分支都调用)。
 
-## 完整最小例
+不调用的话，事件在 active 时长内继续留在活动列表、同一市场可能再次出现，creator 也只能拿到普通超时 (30–40 天而非 60–90 天)。
 
-在既有累计工程的布局上追加 (MOD 根目录 `Starsector\mods\GearIndustry`)；本节不新增任何数据 ID 或资源，只新增一个 Java 类：
+存档边界 (必须)
+
+活动列表随 sector memory 存档 (XStream)，事件实例的非 transient 字段必须可序列化。
+
+`BaseBarEvent` 已把对话句柄声明为 `transient`(`dialog` / `text` / `options` / `memoryMap`)，`done` / `noContinue` 同样声明为 `transient`，`shownAt` 是普通字段 (`MarketAPI`，可序列化)。
+
+事件自定义字段只放可序列化数据。
+
+### 酒吧显示 (BarCMD.showOptions)
+
+事件在活动列表里就绪后，还差最后一步：玩家进入酒吧时，事件如何被挑出来显示。玩家在星球/空间站交互里选 "Visit the bar"(`marketVisitBar` 选项，`data/campaign/rules.csv`) 触发 `bar_optionSel` 规则。
+
+随后依次执行 `FireBest BarShuttleDownPrintDesc` / `FireBest BarPrintDesc` / `BarCMD showOptions`。
+
+`BarCMD.showOptions()` 的展示管线：
+
+1. 数量：`minBarEvents`(默认 1)/ `maxBarEvents`(默认 3)/ `barEventProbOneMore`(默认 0.5) 加权抽 `num`(见 settings.json)。
+2. 已展示集合：市场内存 `$BarCMD_shownEvents`—— **存在则按事件 ID 匹配复现同一组事件** (`event.getBarEventId()`)，不存在则全量洗牌并 `needToSaveShown = true`。
+    *   展示后 `mem.set(key, shown, time)`(20–40，即 `BAR_EVENT_MIN/MAX_TIME_BEFORE_CHANGING`)。内存过期按**游戏天**扣减 (`Memory` 内部实现：`convertToDays(amount)`、仅未暂停)—— 同一市场约 20–40 游戏天内复现同一组事件。
+3. 临时选项：`AddBarEvent.clearTempEvents(market)` 清空 `$core_tempBarEvents`，然后 `FireAll.fire(..., "AddBarEvents")` 触发全部匹配的 `AddBarEvents` 分类规则，再逐个显示 (上限 `max`)。
+4. 事件循环：**教程进行中 (`TutorialMissionIntel.isTutorialInProgress()`) 全部跳过**；数量占满即 break。
+    *   依次检查 `shouldRemoveEvent()` 与 `shouldShowAtMarket(market)`；通过后 `event.addPromptAndOption(dialog, memoryMap)`(事件自己写提示与选项)→ `wasShownAtMarket(market)` → `shown.add(event.getBarEventId())`。
+    *   `isAlwaysShow()` 的事件不占普通名额，且排在最前 (按 `isAlwaysShow` 排序)。
+5. 底部固定 "Leave the bar" 选项 + ESC 快捷键；`dialog.setPlugin(this)` + `init(dialog)`—— 对话框插件切换为 `BarCMD` 自身。
+
+`BarCMD.optionSelected` 分派：
+
+* `optionData instanceof PortsideBarEvent` → 创建 `BarEventDialogPlugin(this, this, event, memoryMap)`，`dialog.setPlugin(plugin)` + `plugin.init(dialog)`—— **事件对话的唯一入口**；
+* `"barLeave"` → `leaveBar()`(回市场对话)；`"barContinue"` → `showOptions(true)`；
+* 其他字符串 (临时选项 / mission wrapper 选项)→ 写 `$BarCMD` 到实体内存、`dialog.setPlugin(originalPlugin)`、`$option = optionData`、`FireBest "DialogOptionSelected"`—— 落到规则对话。
+
+### 事件对话 (BarEventDialogPlugin)
+
+玩家点选酒吧选项后，对话权从 `BarCMD` 交给事件外壳。`BarEventDialogPlugin`(`com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin`，`InteractionDialogPlugin`) 是事件的对话外壳：
+
+* `init(dialog)`：`event.init(dialog, memoryMap)`；`event.isDialogFinished()` 已为 true 则直接 `endEvent()`。
+* `optionSelected(optionText, optionData)`：`dialog.addOptionSelectedText(optionData)` 回显 (复用交互对话框面板的文本回显语义)；`event.optionSelected(optionText, optionData)`；事件完成则 `endEvent()`。
+* `endEvent()`：`dialog.setPlugin(originalPlugin)`(切回 `BarCMD`)+ `cmd.returningFromEvent(event)` → `returningFromEvent(event.endWithContinue())`。
+    *   `endWithContinue()` 为 true 先显示 "Continue"(再点回酒吧)，false 直接 `showOptions(true)`("Nothing of note is going on at the bar." 提示)。
+
+### 临时规则命令 (AddBarEvent / RemoveBarEvent)
+
+以上都是事件本体；规则系统还能绕开事件链，直接给酒吧加临时选项。规则驱动的临时 bar 选项 (不属于 `PortsideBarEvent`，常用来给特定市场/特定条件加一次性酒吧入口)：
+
+* `AddBarEvent <option id> <option text> <blurb> [color]`：从 `dialog.getInteractionTarget().getMarket()` 取市场。
+    *   option text 与 blurb 支持规则 token 替换 (`getStringWithTokenReplacement`)；写入市场内存 `$core_tempBarEvents` 容器 (`events.put(optionId, data)`，`LinkedHashMap` 保序)。
+    *   `getTempEvents` 不存在时创建并 `mem.set(KEY, events, 0f)`——**expire=0**，下一帧内存推进即清除，只活在当次展示里。
+* `RemoveBarEvent <option id>`：`AddBarEvent.removeTempEvent(market, optionId)` 删除单个临时选项。
+
+临时 bar 选项不能当长期状态读取
+
+`BarCMD.showOptions` 每次展示前 `clearTempEvents` 再重触发 `AddBarEvents` 规则 —— 临时选项只活在当次展示里。
+
+`RemoveBarEvent` 只删临时选项，**不会**移除 `PortsideBarData` 活动列表里的事件。
+
+期待 "加一次永久生效" 或 "删临时选项后事件也消失" 都会落空。
+
+### 围绕一次交互实现回调
+
+酒吧事件只为当前交互实现创建人物、写提示、添加选项、处理选择和收尾所需的回调。其余默认行为交给 `BaseBarEvent` 与 `BaseBarEventCreator`。判断遗漏时沿着调度入列、市场显示、选项点击和交互收尾四个阶段检查，比逐项对照接口表更快。
+
+## 规则强度
+
+链路与接口全表就位后，把本节反复出现的必须/建议规则集中列出，正文与验证方案直接引用。本节必须遵守的规则清单 (违反后的可观察结果均附上)：
+
+规则
+
+强度
+
+违反后的可观察结果
+
+玩家与事件交互并结束对话时必须调 `BarEventManager.getInstance().notifyWasInteractedWith(this)`(接受与拒绝都算交互；原版 `BaseGetCommodityBarEvent` 的 confirm 与 cancel 分支同款)
+
+必须
+
+事件留在活动列表直到 active 时长过期：同一市场可能再次出现同一事件；creator 只拿到普通超时 (30–40 天) 而非 accepted 超时 (60–90 天)，重复出现频率更高
+
+`addPromptAndOption` 里酒吧选项的 optionData 必须是事件自身 (`addOption(text, this)`；原版 `BaseGetCommodityBarEvent` 同款)
+
+必须
+
+点击选项不进入事件对话：`BarCMD.optionSelected` 只对 `optionData instanceof PortsideBarEvent` 创建 `BarEventDialogPlugin`；其他类型落入规则对话分支 (`$option` / `DialogOptionSelected`)，事件对话永不启动
+
+事件与 creator 的非 transient 字段必须可序列化 (活动列表与 manager 存于 sector memory、随存档 XStream 保存)
+
+必须
+
+保存/读档异常、读档后事件行为错乱；对话句柄 (`dialog` / `text` / `options` / `memoryMap`) 必须保持 `BaseBarEvent` 的 transient 声明
+
+creator 注册只发生在生涯引擎建立之后 (`onGameLoad` / `onNewGame`)，注册块必须用 `hasEventCreator(Class)` 判断 (`addEventCreator` 不去重)
+
+必须
+
+注册过早 (如 `onApplicationLoad`)：`getInstance()` 返回 null 解引用 NPE、启动中止；判断缺失：每次读档重复入列同 class creator，抽取权重翻倍、事件过频
+
+`shouldShowAtMarket` 覆写时理解 shownAt 锁定语义 (`BaseBarEvent` 默认首次展示后锁定单一市场)，确需跨市场复用再自行处理
+
+必须 (语义规则)
+
+事件在 A 市场展示后 B 市场不再出现 —— 若覆写时忘了先调 `super` 或自行实现，过滤结果与预期不符
+
+`getBarEventId()` 与 creator 的 `getBarEventId()` 保持一致且稳定 (默认都是类简单名；覆写时两处同步)
+
+建议
+
+不一致时 `$BarCMD_shownEvents` 按 ID 复现失效：市场内存里的 ID 匹配不到事件，该市场事件组显示为空；manager 的 active 去重键错位
+
+`isPriority()` / `isAlwaysShow()` 只用于剧情关键事件
+
+建议
+
+太多 priority 事件挤占普通事件 (`BarEventManager` "Having too many priority events could crowd out all other events entirely")；`isAlwaysShow` 事件永远占用展示名额
+
+临时 bar 选项 (`$core_tempBarEvents`) 只活在当次展示里，不能当长期状态读取；`RemoveBarEvent` 只删临时选项、不删活动列表事件
+
+事实
+
+期待 "加一次永久生效" 或 "删临时选项后事件也消失" 都会落空 (临时选项当长期状态读、`RemoveBarEvent` 不删活动列表事件)
+
+教程进行中 (`TutorialMissionIntel.isTutorialInProgress()`) 酒吧事件全部跳过
+
+事实
+
+新档开头酒吧看不到任何事件属正常
+
+## 实现酒吧事件
+
+酒吧事件要连续通过五个边界：creator 在场、manager 抽中、市场允许显示、选项进入事件对话、对话通知 manager 收尾。以下片段按这条链逐段接通。
+
+### 注册事件 creator
+
+把 creator 判断放入 `GearInModPlugin.onGameLoad()`。manager 的 creator 列表随存档保存，`hasEventCreator` 就是这里的去重门。
+
+```java
+BarEventManager manager = BarEventManager.getInstance();
+if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
+    manager.addEventCreator(new GearInBarEventCreator());
+}
+```
+
+在 `GearInBarEventCreator.createBarEvent()` 中创建事件：
+
+```java
+@Override
+public PortsideBarEvent createBarEvent() {
+    return new GearInBarEvent();
+}
+```
+
+完成信号：首次抽中时日志出现 creator picked；连续读档不会增加同类 creator 的数量或抽取权重。
+
+### 过滤可用市场
+
+在 `GearInBarEvent.shouldShowAtMarket()` 中先保留基类的 `shownAt` 锁定，再检查太空港。
+
+```java
+@Override
+public boolean shouldShowAtMarket(MarketAPI market) {
+    if (!super.shouldShowAtMarket(market)) {
+        return false;
+    }
+    return market.hasSpaceport();
+}
+```
+
+完成信号：事件首次显示后只在同一市场继续可见；没有太空港的市场不会得到该选项。
+
+### 把酒吧选项指向事件
+
+在 `addPromptAndOption()` 中写提示，并把事件对象自身作为 optionData。`BarCMD` 依靠这个类型判断进入事件对话。
+
+```java
+@Override
+public void addPromptAndOption(InteractionDialogAPI dialog,
+        Map<String, MemoryAPI> memoryMap) {
+    super.addPromptAndOption(dialog, memoryMap);
+    dialog.getTextPanel().addPara(
+            "A disheveled spacer is talking about a drifting supply cache.");
+    dialog.getOptionPanel().addOption(
+            "Listen to the spacer's story", this);
+}
+```
+
+完成信号：酒吧面板出现提示与选项，点击后日志进入 `GearInBarEvent.init()`，而不是写入 `$option` 的普通规则分支。
+
+### 建立购买与拒绝分支
+
+在 `init()` 中重置完成状态并建立选项；在 `optionSelected()` 中只比较 optionData 常量。
+
+```java
+@Override
+public void init(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
+    super.init(dialog, memoryMap);
+    done = false;
+    dialog.getOptionPanel().addOption(
+            "Buy the coordinates (500 credits)", OPTION_ACCEPT);
+    dialog.getOptionPanel().addOption(
+            "Hear them out but decline", OPTION_DECLINE);
+}
+```
+
+```java
+if (OPTION_ACCEPT.equals(optionData)) {
+    Global.getSector().getPlayerFleet().getCargo()
+            .getCredits().subtract(INFO_PRICE);
+    finish();
+} else if (OPTION_DECLINE.equals(optionData)) {
+    noContinue = true;
+    finish();
+}
+```
+
+完成信号：购买分支扣除 500 信用点并显示 Continue；拒绝分支不扣款，直接返回酒吧。
+
+### 统一结束事件
+
+把所有结束分支收敛到 `finish()`。`done` 让对话外壳结束，manager 通知负责移除活动事件并启动 accepted 冷却。
+
+```java
+private void finish() {
+    done = true;
+    BarEventManager.getInstance().notifyWasInteractedWith(this);
+}
+```
+
+完成信号：购买、拒绝和离开三条路径结束后，事件立即离开活动列表，并在默认 60–90 游戏天 accepted 冷却内不再被抽取。
+
+## 组装酒吧事件实现
+
+规则明确之后，可以动手了。本节示例在既有教程 MOD 布局与 `GearInModPlugin`(前置单元) 之上新增两个同包类，位于 `src\data\scripts\gearin\campaign\`，不新增任何资源、不新增 CSV 行：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -169,238 +466,412 @@ Starsector\mods\GearIndustry\
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
-│   └── config\
-│       └── settings.json
 ├── src\
-│   └── data\scripts\gearin\
-│       ├── GearInModPlugin            # 既有插件类，本节追加一行调用
-│       └── modcompat\
-│           └── GearInDependencyCheck  # 本节新增
+│   └── data\scripts\gearin\campaign\
+│       ├── GearInBarEvent          # 本节新增（酒吧事件：显示、对话与生命周期收尾）
+│       └── GearInBarEventCreator   # 本节新增（creator：注册入口与抽取参数）
 └── jars\
 ```
 
-### mod_info.json(在既有 manifest 上追加 dependencies)
+### GearInBarEvent(bar event 约定)
 
-```json
-{
-  "id": "gear_in",
-  "name": "齿轮工业",
-  "author": "YourName",
-  "version": {
-    "major": 0,
-    "minor": 1,
-    "patch": 0
-  },
-  "description": "Starsector MOD 教程的练习项目。",
-  "gameVersion": "0.98a-RC8",
-  "jars": ["jars/GearIndustry.jar"],
-  "modPlugin": "data.scripts.gearin.GearInModPlugin",
-  "dependencies": [
-    {
-      "id": "lw_lazylib",
-      "name": "LazyLib"
-    },
-    {
-      "id": "MagicLib",
-      "name": "MagicLib",
-      "version": "1.5.1"
-    }
-  ]
-}
-```
+**角色**：酒吧事件 —— 继承 `BaseBarEvent`(`PortsideBarEvent` 约定的默认实现)，承担显示过滤 (`shouldShowAtMarket`)、写提示与选项 (`addPromptAndOption`)。
 
-要点：
+事件对话 (`init` / `optionSelected`) 与生命周期收尾 (`finish` = `done = true` + `notifyWasInteractedWith(this)`)。
 
-- `id` 必须与依赖 MOD 自己的 `id` 逐字一致：LazyLib 的 id 是 `lw_lazylib`，MagicLib 的 id 是 `MagicLib` (打开对方的 `mod_info.json` 复制，不要凭印象写)。
-- `name` 只影响启动器显示；LazyLib 一项省略 `version`(只检查存在性 —— `MagicLib` 官方注释 "Remove the specific version for future-proofing." 推荐的做法)，MagicLib 一项带 `version` 演示版本比较。
-- 示例声明这两个依赖仅用于演示启动器把关与运行时检测，本教程代码没有调用它们的 API；您自己的 MOD 只声明真实引用的依赖。
+事件 ID 不覆写，即类简单名 `"GearInBarEvent"`。
 
-### GearInDependencyCheck
+完整代码：
 
-```java
-package data.scripts.gearin.modcompat;
+事件本体写好了，还需要一个 creator 把事件交到调度器手里并给出抽取参数。
 
-import java.util.List;
+### GearInBarEventCreator(creator 约定与注册入口)
 
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.ModDependencyAPI;
-import com.fs.starfarer.api.ModManagerAPI;
-import com.fs.starfarer.api.ModSpecAPI;
-import com.fs.starfarer.api.VersionInfoAPI;
+**角色**：creator—— 继承 `BaseBarEventCreator`(`BarEventManager.GenericBarEventCreator` 约定的默认实现)，提供注册入口与抽取参数。
 
-/**
- * 依赖的运行时检测：把 mod_info.json 声明的 dependencies 与启动器 MOD 管理器
- * 的运行时状态对齐，逐项输出 id、名称、是否启用与安装版本。
- *
- * 声明式硬依赖由启动器把关（缺失或版本不符时无法勾选）；本类只负责
- * 在代码里复核声明与事实，并把不一致暴露成明确的日志行。
- */
-public class GearInDependencyCheck {
+本示例只覆写 `createBarEvent()` 创建 `GearInBarEvent`，其余抽取参数 (频率权重、active 时长、普通超时、accepted 超时、priority) 全部保持默认。
 
-    public static final String SELF_MOD_ID = "gear_in";
-
-    private GearInDependencyCheck() {
-    }
-
-    /**
-     * 在 MOD 插件的 onApplicationLoad() 中调用一次（接入方式见页面正文）。
-     */
-    public static void reportDeclaredDependencies() {
-        ModManagerAPI modManager = Global.getSettings().getModManager();
-        ModSpecAPI self = modManager.getModSpec(SELF_MOD_ID);
-        if (self == null) {
-            Global.getLogger(GearInDependencyCheck.class).warn(
-                "GearIn dependency check: mod [" + SELF_MOD_ID + "] is not enabled; cannot read declared dependencies");
-            return;
-        }
-        List<ModDependencyAPI> declared = self.getDependencies();
-        if (declared.isEmpty()) {
-            Global.getLogger(GearInDependencyCheck.class).info(
-                "GearIn dependency check: no dependencies declared in mod_info.json");
-            return;
-        }
-        for (ModDependencyAPI dep : declared) {
-            boolean enabled = modManager.isModEnabled(dep.getId());
-            String installedVersion = "not installed";
-            if (enabled) {
-                ModSpecAPI installed = modManager.getModSpec(dep.getId());
-                VersionInfoAPI versionInfo = installed.getVersionInfo();
-                if (versionInfo != null) {
-                    installedVersion = versionInfo.getString();
-                }
-            }
-            Global.getLogger(GearInDependencyCheck.class).info(
-                "GearIn dependency check: " + dep.getName() + " (" + dep.getId()
-                    + ") enabled=" + enabled
-                    + " installedVersion=" + installedVersion);
-        }
-    }
-}
-```
+完整代码：
 
 对应关系：
 
-- `modManager.getModSpec(SELF_MOD_ID)`：返回本 MOD 自己的 `ModSpecAPI`，只在**本 MOD 已启用**时非 null —— `getModSpec` 只查启用列表。null 分支写 warn 日志而不是直接遍历，避免对 "未启用" 场景误报。
-- `self.getDependencies()`：直接依赖列表，与 manifest 的 `dependencies` 数组一一对应。
-- `modManager.isModEnabled(dep.getId())`：依赖是否在启用列表；依赖已安装但未勾选时返回 false。
-- `modManager.getModSpec(dep.getId())`：只在 `enabled` 为 true 时调用 —— `getModSpec` 未启用即 null，null 上调用方法会 NPE。
-- `installed.getVersionInfo().getString()`：读的是**已安装** MOD 自己的版本 (如 LazyLib 的 `3.0.0`)，与声明项里有没有写 `version` 无关。
-- `Global.getLogger(GearInDependencyCheck.class)`：log4j 记录器，输出到 `starsector-core\starsector.log`。
+* `extends BaseBarEvent`：事件约定的默认实现 ——`getBarEventId()` 默认返回类简单名 `"GearInBarEvent"`(本示例不覆写，事件 ID 即此值)。
+    *   `shouldRemoveEvent()` 默认 false(事件靠 active 时长或交互收尾移除)；`endWithContinue()` 默认 true(买下情报后先显示 "Continue" 再回酒吧)。
+* `shouldShowAtMarket`：先调 `super`(shownAt 锁定语义)，再演示市场条件 (`hasSpaceport()`)；日志记录过滤结果，供验证方案核对。
+* `addPromptAndOption`：写提示文本 + `addOption("Listen to the spacer's story", this)`——**optionData 是事件自身**，这是进入事件对话的机制 (`BarCMD` 只对 `optionData instanceof PortsideBarEvent` 创建 `BarEventDialogPlugin`)。
+* `init`：`super.init` 之后**自行重置 `done = false`**(`BaseBarEvent.init` 不清完成标记，原版 `BaseGetCommodityBarEvent.init` 同样自行重置)—— 读档后同一事件再次进入对话不会卡在已完成状态。
+* `optionSelected`：三个分支都用**常量比较 optionData**(不用 optionText，沿用交互对话框部分的 optionData 常量比较纪律)。
+    *   买下情报真实扣减玩家舰队 cargo credits(`getCargo().getCredits().subtract`)；拒绝/离开分支设 `noContinue = true`(结束后不显示 "Continue" 直接回酒吧)。
+* `finish()`：`done = true` + `notifyWasInteractedWith(this)`—— 交互收尾必须遵守的规则；日志打出 `isDialogFinished()` 供核对。
+* `extends BaseBarEventCreator`：抽取参数全部保持默认 (权重 10、active 30–40 天、普通超时 30–40 天、accepted 超时 60–90 天、非 priority)，只覆写 `createBarEvent()` 创建 `GearInBarEvent`。
 
-### 接入片段 (在既有 `GearInModPlugin` 中追加一行)
+调用点 (工程片段 —— 方法所在类 `GearInModPlugin` 归前置单元所有，本节只演示调用，不改动那些文件)：
 
 ```java
-@Override
-public void onApplicationLoad() {
-    // 依赖检查接入：把 mod_info.json 声明的依赖与运行时启用状态对齐并写日志
-    GearInDependencyCheck.reportDeclaredDependencies();
-    // ... 既有回调内容 ...
-}
+    // GearInModPlugin（前置单元所有）onGameLoad(boolean newGame) 内新增本节注册块。
+    // BarEventManager 实例与 creator 列表存放在 sector memory（$core_genericBarEventManager），
+    // 随存档保存；hasEventCreator 即持久化门控（原版 addBarEvents 与成熟实例同款写法）。
+    // 原版 CoreLifecyclePluginImpl.onGameLoad 先于 MOD 插件执行（vanilla 固定最先），
+    // 因此 getInstance() 不会返回 null（注册时机见“注册时出现空指针异常”故障条目）。
+    BarEventManager manager = BarEventManager.getInstance();
+    if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
+        manager.addEventCreator(new GearInBarEventCreator());
+        LOG.info("GearIn bar event: creator registered");
+    }
 ```
 
-`GearInModPlugin` 类定义于既有教程工程 (不归本节所有)，本节只调用它；示例工程不含此片段 (示例工程只含本节所有的 `GearInDependencyCheck`)。
+想演示 "高频字段修改验证"，把 `createBarEvent()` 之外的高频参数覆写掉再观察抽取频率变化，例如：
 
-### 构建
+```java
+    // GearInBarEventCreator 内覆写（演示用）：
+    @Override
+    public float getBarEventFrequencyWeight() {
+        return 100f; // 默认 10f；权重 ×10，事件出现频率明显上升
+    }
+```
+
+临时 bar 选项 (规则驱动，不经过 creator) 的 rules.csv 片段 —— 放在 `data/campaign/rules.csv` 末尾，`AddBarEvents` 分类规则在每次展示酒吧时由 `BarCMD` 触发：
+
+```text
+gearIn_barRumor,AddBarEvents,"$market.id == jangala
+!$global.gearIn_barRumorDone","AddBarEvent gearIn_barRumorOption ""Ask about the missing supplies"" ""A port official is complaining loudly about missing supplies. Sounds like a problem someone could get paid to solve.""",,,
+gearIn_barRumorSel,DialogOptionSelected,$option == gearIn_barRumorOption,"$global.gearIn_barRumorDone = true","The official lowers their voice. ""The manifest says the supplies were never loaded, but I saw the crates leave the dock. Someone has been skimming.""","gearIn_barBackToBar:Back to the bar",
+gearIn_barBackToBar,DialogOptionSelected,$option == gearIn_barBackToBar,BarCMD returnFromEvent false,,,
+```
+
+(`jangala` 是原版 Corvus 星系 (新档出生星系) 的市场；规则变量/分类/`FireBest` 细节见 [C14-S3] / [C14-S4]。)
+
+临时选项点选后走 `DialogOptionSelected` 规则；`BarCMD returnFromEvent false` 从规则对话回到酒吧选项。
+
+构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用前置单元的编译链路)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/modcompat/GearInDependencyCheck.class`(可用 `jar tf` 核对)。
+产物 `jars\GearIndustry.jar` 应包含两个 class 条目 (可用 `jar tf` 核对)：
+
+* `data/scripts/gearin/campaign/GearInBarEvent.class`
+* `data/scripts/gearin/campaign/GearInBarEventCreator.class`
+
+## 关键故障实验：酒吧选项结束后事件仍在活动列表
+
+让结束分支只把对话框关闭。玩家看似已经离开，但事件仍在 `PortsideBarData` 与 manager 的 active 跟踪器中，同一市场可能再次显示。
+
+**局部故障片段：**
+
+```java
+// 故障片段
+done = true;
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+done = true;
+BarEventManager.getInstance().notifyWasInteractedWith(this);
+```
+
+原因：`isDialogFinished()` 只结束对话外壳，活动列表与 creator 冷却由 manager 单独维护。复验：购买、婉拒和离开三条选项各执行一次；每次结束后活动列表中都找不到该事件，并且 accepted 冷却开始计时。
 
 ## 验证方案
 
-前置数据：既有累计工程 ([C6-S2] 的累计成果) —— `mod_info.json` 已追加本节 `dependencies`、已新增 `GearInDependencyCheck` 类、`GearInModPlugin` 内已追加一行调用；已安装 LazyLib 与 MagicLib。
+前置数据：既有教程 MOD 布局与 `GearInModPlugin`(含本节调用点片段，见前置知识 [C6-S1] / [C6-S2])、本节两个类、(可选)rules.csv 临时选项片段。
 
-1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
-   - 核对产物：`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/modcompat/GearInDependencyCheck.class`。
-2. 启动器声明检查：打开启动器 Mods 列表，选中 "齿轮工业"，确认描述面板出现 "Required mods:" 并列出 `LazyLib` 与 `MagicLib 1.5.1`；勾选 "齿轮工业"，确认 LazyLib、MagicLib 被自动勾选。
-3. 运行时检测：启动游戏进入主菜单后退出，在 `starsector.log` 中观察依赖检查记录。
-4. 把 MagicLib 依赖项的 `version` 改为 `"2.0.0"`，重启启动器，观察 "齿轮工业" 行与描述面板。
+1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个类的 `.class`。
+2. 新建生涯，在教程进行中进入酒吧，观察事件和临时选项。
+3. 跳过或完成教程后进入 Jangala 酒吧，查看 `creator picked`、`eligible at`、`prompt at`、`shown at` 四条日志，以及酒吧面板的提示文本和选项。
+4. 在同一市场等待 20–40 游戏天后再次进入酒吧，观察事件组。
+5. 分别使用三个存档 (或完成后读档冷却)，依次选择 "Buy the coordinates"、"Hear them out but decline"、"Leave the spacer to their drink"，观察信用点、Continue 选项、返回酒吧过程和结束日志。
+6. 完成事件后保存并读档，跨 60–90 游戏天观察事件是否再次出现。
+7. 不完成事件时保存并读档，观察活动列表和继续对话入口。
+8. 给 `GearInBarEventCreator` 覆写 `getBarEventFrequencyWeight()` 返回 `100f`，重新构建并观察事件出现频率。
 
 预期结果：
 
-- **构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束。
-- **声明生效 (启动器)**：Mods 列表中 "齿轮工业" 行正常、可勾选；选中后描述面板出现 "Required mods:"，列出 `LazyLib` 与 `MagicLib 1.5.1`。
-- **勾选联动**：勾选 "齿轮工业" 时，LazyLib 与 MagicLib 被自动勾选；取消 LazyLib 的勾选，"齿轮工业" 的勾选被级联取消 (依赖仍安装时它仍可重新勾选 —— 启动器要求的是 "已安装"，不是 "必须同时启用")。
-- **运行时检测**：启动游戏进入主菜单后退出，`starsector.log` 出现：
+* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到两个类的 `.class`。
+* **跳过/完成教程后**：
 
-  ```text
-     GearIn dependency check: LazyLib (lw_lazylib) enabled=true installedVersion=3.0.0
-  GearIn dependency check: MagicLib (MagicLib) enabled=true installedVersion=1.5.1
-  ```
+    *   进入任一有太空港的市场 (如 Corvus 星系的 Jangala)，交互里选 "Visit the bar"；`starsector.log` 出现。
 
-  `installedVersion` 是已安装 MOD 的真实版本 (`getVersionInfo`)，LazyLib 声明项里没写 `version` 也能查出 `3.0.0`。
-- 启动期间没有由 `gear_in` 引起的 `ERROR`。
-- **变更验证 (版本)**：把 MagicLib 项的 `version` 改为 `"2.0.0"`，重启启动器。
-  - "齿轮工业" 行变红且不可勾选，描述面板出现 `Error: this mod requires a different version of a mod that you have installed.`。
+    ```text
+    GearIn bar event: creator picked, creating event (id=GearInBarEvent)
+    GearIn bar event: eligible at Jangala
+    GearIn bar event: prompt at Jangala (event id=GearInBarEvent)
+    GearIn bar event: shown at Jangala
+    ```
 
-清理：把 MagicLib 依赖项的 `version` 恢复为 `1.5.1`。
+    *   酒吧面板出现提示 "A disheveled spacer at the bar..." 与选项 "Listen to the spacer's story"(事件 ID `GearInBarEvent` 会出现在同一市场的 `$BarCMD_shownEvents` 里，约 20–40 游戏天内再次进入同一市场复现同一组事件)。
+    *   事件不是每次进酒吧都出现：抽取受 `minBarEvents` / `maxBarEvents` / 权重与随机影响；同一时间每个事件 ID 至多一个活跃实例。
+* **事件对话**：点 "Listen to the spacer's story" → 日志 `dialog init (event id=GearInBarEvent)`，对话出现三个选项：
+    *   点 "Buy the coordinates (500 credits)"：日志 `bought coordinates, credits -500`，玩家舰队信用点减少 500(`cargo.getCredits()` 可负，演示不检查余额)；日志 `finished, notified manager (done=true)`；对话显示 "Continue"，点后回到酒吧选项 (`endWithContinue()` 默认 true 的路径)。
+    *   点 "Hear them out but decline" / "Leave the spacer to their drink"：日志 `declined` / `left` + `finished, notified manager (done=true)`；**不显示** "Continue"，直接回到酒吧选项 (`noContinue = true` 路径)。
+    *   三条路径都触发 `notifyWasInteractedWith`：事件立即从活动列表移除，creator 进入 accepted 超时 (60–90 游戏天)—— 事件在冷却期内不再出现。
+* **读档**：完成后保存并读档 ——`hasEventCreator` 判断使 creator 不重复注册 (日志无二次 "creator registered" 之外的重复注册行)；未完成时保存读档，事件实例仍在活动列表 (随 sector memory 存档) 且可继续对话 (`init` 里 `done = false` 重置)。全程无 `gear_in` 引起的 `ERROR`。
+
+清理：删除参数演示添加的 `getBarEventFrequencyWeight()` 覆写，使其恢复继承值 `10f`。
 
 ## 故障分析
 
-1. **"Error: this mod requires another mod that you don't have installed." 但依赖明明装了**。
-  - 触发：依赖项 `id` 拼错或大小写不符 (如把 `lw_lazylib` 写成 `LazyLib`)。
-  - 可观察：MOD 行红色、不可勾选，错误文案指向缺少该 MOD。
-  - 原因：兼容性检查按 `equals` 逐字比对 id，大小写敏感 —— 它只认逐字相等，不认差不多。
-  - 修正：打开依赖 MOD 自己的 `mod_info.json`，复制 `id` 字段值。
-2. **上次还正常的 MOD 这次被自动禁用并弹窗**。
-  - 触发：用户卸载/移走了依赖 MOD，或依赖项写了当前环境不存在的版本。
-  - 可观察：启动器弹出 "Some of the enabled mods have unmet requirements or are not compatible with this version of the game and have been disabled."。
-  - 可观察：`Starsector\mods\enabled_mods.json` 的 `enabledMods` 里本 MOD 已被移除。
-  - 原因：启动器主界面初始化时对硬错误级别 MOD 执行移除并保存。
-  - 修正：恢复依赖或修正声明。这是设计行为，不是 bug；也是已勾选 MOD 悄悄消失时首选排查的方向。
-3. **勾选一个 MOD 却带出一串从没勾过的 MOD**。
-  - 触发：该 MOD 声明了间接依赖 (依赖的依赖)。
-  - 可观察：勾选后多行自动变为勾选态。
-  - 原因：启动器 MOD 列表按 `getAllDependencies()` 递归自动勾选。
-  - 修正：无，属预期行为；若某个依赖不应被连带启用，应把它降级为软依赖 —— 软依赖的声明与检测在软依赖专题中展开。
-4. **`isModEnabled(...)` 返回 false 但启动器里明明勾着**。
-  - 触发：把 `name` 当 `id` 传 (如 `isModEnabled("LazyLib")`)。
-  - 可观察：运行时分支错误、日志显示依赖未启用。
-  - 原因：`isModEnabled` 只认 `id` 且逐字比较。
-  - 修正：代码里永远使用对方 manifest 的 `id`(如 `lw_lazylib`)，不用显示名。
-5. **`getModSpec(id)` 返回 null 导致 NPE**。
-  - 触发：目标 MOD 已安装但未启用，或未安装，代码未判空直接调用返回对象的方法。
-  - 可观察：NPE 堆栈，日志 `ERROR`。
-  - 原因：`getModSpec` 只查启用列表。
-  - 修正：先 `isModEnabled` 判断，或改用 `getAvailableModsCopy()` 枚举安装态 (不区分启用)。
-6. **代码引用了依赖 MOD 的类，用户没装那个依赖，启动或运行报错**。
-  - 触发：用了 `org.lazywizard.lazylib` 之类的类，但 `dependencies` 没声明 (或声明了但依赖未被启用且类确实缺失)。
-  - 可观察：入口类初始化链引用缺失类 → 启动阶段日志出现 `NoClassDefFoundError` 或 `Problem loading class [...]`(脚本类加载器不包装 `Error`，直接冒泡)。
-  - 可观察：战斗或回调期首次调用 → 该处抛 `NoClassDefFoundError`，流程中止。
-  - 原因：依赖 MOD 的类不在脚本类路径上；启动器只核对声明，无法替代码检查引用。
-  - 修正：把用到的 MOD 加入 `dependencies` —— 这是玩家侧把关的唯一依据。
-7. **manifest 解析失败、MOD 整个消失**。
-  - 触发：`dependencies` 数组里某项缺 `id`、`id` 不是字符串，或 `version` 写成对象但缺 `major`。
-  - 可观察：MOD 不出现在列表，日志 `Error loading mod from [<MOD 目录>]`。
-  - 原因：`id` 用 `getString`，`version` 对象缺 `major` 同样抛异常，`JSONException` 上抛为解析失败。
-  - 修正：恢复合法 JSON；`id` 必填，`version` 尽量用字符串或干脆省略。
-8. **运行时检测日志没有出现**。
-  - 触发：`GearInDependencyCheck.reportDeclaredDependencies()` 没有接到任何回调，或 MOD 未勾选。
-  - 可观察：`starsector.log` 无 `GearIn dependency check:` 行；若本 MOD 未启用，只会有 warn 行 "mod [gear_in] is not enabled"。
-  - 原因：类不会被自动加载 —— 没人按名调用它就什么都不做，运行时检测类必须由回调显式调用。
-  - 修正：按接入片段一节把调用加进 `GearInModPlugin.onApplicationLoad()`，并确认 MOD 已勾选。
+- **注册时出现空指针异常**：`onApplicationLoad` 阶段还没有 sector 和 `BarEventManager`。将 creator 注册移到 `onGameLoad` 或 `onNewGame`，重启后确认注册日志出现。
+- **酒吧始终没有该事件**：creator 未被抽取、返回了 null，或市场被 `shouldShowAtMarket` 过滤。依次核对 `creator picked`、`eligible/skip`、`prompt/shown` 日志，修正最先缺失的阶段后重新进入酒吧。
+- **事件只在首次市场出现**：默认 `shownAt` 会把事件锁定到第一次展示的市场。需要跨市场显示时覆写 `shouldShowAtMarket` 并管理状态，再访问两个市场复验。
+- **点击酒吧选项后进入普通规则对话**：`addOption` 的 optionData 不是事件对象。改为 `addOption(text, this)`，再次点击后确认 `dialog init` 日志出现。
+- **完成后的事件仍反复出现**：完成分支没有通知 manager 移除活动事件。设置完成状态时调用 `notifyWasInteractedWith(this)`，重开酒吧确认事件不再列出。
+- **倒计时结束后事件仍未移除**：到期状态没有让 `shouldRemoveEvent()` 返回 true。同步更新到期字段和移除判断，再推进超过期限确认活动列表已清理。
+- **未交互事件提前消失**：默认 active 时长 30–40 游戏天已经耗尽。需要更长窗口时覆写 `getBarEventActiveDuration()`，推进到原期限后确认事件仍可出现。
+- **读档越多事件越频繁**：每次载入都追加了同类 creator。注册前用 `hasEventCreator(Class)` 判断，连续读档后确认 creator 数量和抽取频率稳定。
+- **普通事件几乎不再出现**：某个事件被设为 priority，优先抽取挤占了普通 picker。只为剧情关键事件保留 priority，再观察普通事件重新进入候选。
+- **临时酒吧选项没有出现**：`AddBarEvents` 的市场条件或一次性 flag 不满足。核对 `$market.id` 与规则内存值，重新进入酒吧确认选项生成。
+- **临时酒吧选项下一帧就消失**：`$core_tempBarEvents` 会在展示前重建，并以 `expire=0` 清理。长期状态改存独立 memory flag，再次打开酒吧确认规则能按该状态重建选项。
+- **事件选项进入错误分支**：`optionSelected` 比较了显示文本，或常量与 `addOption` 的 optionData 不一致。统一比较 optionData 常量，再点击各选项核对对应日志。
+- **保存或读档时事件字段报错**：事件或 creator 保存了非 transient 的对话句柄、引擎对象。持久字段只保留可序列化数据，句柄保持 transient；完成一次保存和读档复验。
 
 ## 总结
 
-本节把依赖从口头约定变成一条完整的强制链：`mod_info.json` 里声明，启动器在启动前按声明检查并强制，运行时再借 `ModManagerAPI` 把声明与事实对齐成日志行。三段共用同一份 `id` 与启用列表，任何一环的偏差都能沿同一条线对照。
+本节把酒吧事件接成了一条完整流程：注册入口决定事件从哪来，调度入列决定何时出现，显示过滤决定在哪个市场出现，对话收尾决定何时离开。排错时沿 "注册 → 抽取 → 过滤 → 显示" 四段日志核对，日志停在哪一段，问题就在哪一段。
 
-排查依赖问题时先看启动器行的颜色与文案判断是哪一档级别，再看 `starsector.log` 的 `GearIn dependency check:` 行，最后核对 `id` 的大小写与 `enabled_mods.json`。
+可复用的判断如下：注册只发生在生涯引擎建立之后，并用 `hasEventCreator(Class)` 判断去重 (沿用原版 `CoreLifecyclePluginImpl.addBarEvents` 的写法)；所有时长都是游戏天 (`Misc.getDays` 换算)，manager 与活动列表随存档保存，事件字段必须可序列化；酒吧选项的 optionData 必须是事件自身 (`addOption(text, this)`)，交互收尾必须 `notifyWasInteractedWith(this)`，接受与拒绝都算交互。`shouldRemoveEvent` 默认 false、`shouldShowAtMarket` 默认锁定单一市场、教程进行中全部隐藏 —— 这三条默认语义解释了多数 "该出现没出现、该消失没消失" 的现象，怀疑事件逻辑前先对照它们。
 
-代码里引用了什么 MOD 的类，`dependencies` 就必须声明什么 —— 启动器拦得住没装和版本不符，拦不住漏声明，这是声明式依赖的固有边界，只能由代码侧补齐。
+临时 bar 选项走规则系统，每次展示前清空重建，不是事件本体，也不能当长期状态读；`RemoveBarEvent` 只删临时选项，不碰活动列表。
 
-软依赖 (可选依赖) 由运行时分支检测、调用隔离与降级适配组成；缺少依赖时的降级策略属于代码侧，与声明式硬依赖形成互补。
+本节只覆盖 "事件本体" 链路：mission 类酒吧事件的 `HubMissionBarEventWrapper` 包装与 `bar_events.csv` 的 mission plugin 编写。
+
+`BaseBarEventWithPerson` 的 market 稳定人物生成属于人物对象主题，规则对话的深度语法属于 Rules 主题；本节只保留酒吧事件的接入边界。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.SettingsAPI`：`getModManager()`，运行时读取 MOD 管理器与启用列表的入口。
-- `com.fs.starfarer.api.ModManagerAPI`：`isModEnabled` / `getModSpec` / `getAvailableModsCopy` / `getEnabledModsCopy`，运行时依赖与启用状态读取。
-- `com.fs.starfarer.api.ModSpecAPI`：`getDependencies` / `getAllDependencies` / `getVersionInfo`，MOD 元数据与依赖列表。
-- `com.fs.starfarer.api.ModDependencyAPI`：`getId` / `getName` / `getVersionInfo`，单个依赖项。
-- `com.fs.starfarer.api.VersionInfoAPI`：`getString`，版本号字符串化输出。
-- `com.fs.starfarer.api.Global`：`getSettings` / `getLogger`，全局入口与日志记录器。
-- `data/scripts/gearin/modcompat`：本节示例类 `GearInDependencyCheck` 所在包。
-- `mod_info.json`：MOD 根目录下的清单文件，`dependencies` 数组在此声明。
-- `Starsector\mods\enabled_mods.json`：启动器启用列表，自动禁用时被立即改写。
-- `starsector-core\starsector.log`：启动扫描与运行时日志输出位置。
+* `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent`：bar event 约定 ——11 个回调方法。
+* `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarData`：活动事件列表 (全局单例，随 sector memory 存档)。
+* `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`：全局调度器与 `GenericBarEventCreator` 内部接口。
+* `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent`：bar event 默认实现 ——transient 对话句柄、shownAt 锁定、`getBarEventId` 默认类简单名。
+* `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventCreator`：creator 默认实现与全部抽取参数默认值。
+* `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventWithPerson`：带 market 稳定人物的默认实现。
+* `com.fs.starfarer.api.impl.campaign.intel.bar.events.SpecBarEventCreator`：CSV spec 自动生成的 creator(mission / 普通分派)。
+* `com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin`：事件对话包装 (init / optionSelected / endEvent)。
+* `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`：酒吧 UI 展示管线与选项分派。
+* `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent` / `RemoveBarEvent`：临时 bar 选项规则命令。
+* `com.fs.starfarer.api.loading.BarEventSpec`：bar\_events.csv 行的解析。
+* `com.fs.starfarer.api.SettingsAPI`：`getAllBarEventSpecs()` / `getBarEventSpec(id)`。
+* `com.fs.starfarer.api.impl.campaign.CoreLifecyclePluginImpl`：原版注册入口 (`addBarEvents`)。
+* `com.fs.starfarer.api.impl.campaign.ids.Tags`：`MISSION_PRIORITY`("priority" tag)。
+* `com.fs.starfarer.api.util.TimeoutTracker`：active / timeout 跟踪器 (`advance` 扣到 0 移除)。
+* `com.fs.starfarer.api.util.Misc`：`getDays` 时间换算。
+* `com.fs.starfarer.api.campaign.rules.MemoryAPI`：`set(key, value[, expire])` 记忆读写。
+* `data/campaign/bar_events.csv`：酒吧事件 spec 数据 (11 列)。
+* `data/config/settings.json`：`minBarEvents` / `maxBarEvents` / `barEventProbOneMore` / `maxTotalBarEventsAsFractionOfEventTypes`。
+* `data/campaign/rules.csv`：`marketVisitBar` / `bar_optionSel` / `AddBarEvents` 分类规则 / `BarCMD returnFromEvent false`。
+* `data/campaign/econ/corvus.json`：`jangala` 市场实体 (验证临时选项片段用)。
+* `data/scripts/gearin/campaign`：本节两个示例类的包目录。
+* `Starsector/starsector-core/starsector.log`：验证日志四段的主要依据。
+
+## 完整最小例
+
+::: details 完整成品：GearInBarEvent
+
+```java
+package data.scripts.gearin.campaign;
+
+import java.util.Map;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.CargoAPI;
+import com.fs.starfarer.api.campaign.InteractionDialogAPI;
+import com.fs.starfarer.api.campaign.OptionPanelAPI;
+import com.fs.starfarer.api.campaign.TextPanelAPI;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.campaign.rules.MemoryAPI;
+import com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent;
+import com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager;
+
+/**
+ * 完整最小例：酒吧事件（PortsideBarEvent）—— 酒吧选项、事件对话与生命周期收尾。
+ *
+ * 事件 ID：BaseBarEvent.getBarEventId() 默认返回类简单名，本示例不覆写，
+ * 事件 ID 为 "GearInBarEvent"。该 ID 的消费者：BarEventManager 抽取时按
+ * creator 的 getBarEventId() 去重（同一 ID 同时只有一个活跃事件）；BarCMD 展示后
+ * 把 event.getBarEventId() 写入市场内存 $BarCMD_shownEvents（带过期时间），
+ * 下次进入同一市场时按 ID 匹配复现同一组事件。
+ *
+ * 生命周期：
+ * 1. 抽取与入列：creator.createBarEvent() 创建实例；BarEventManager 把它加入
+ *    active 跟踪器（时长 = getBarEventActiveDuration()）并写入 PortsideBarData 活动列表；
+ * 2. 显示：玩家进入酒吧时 BarCMD.showOptions() 遍历活动列表，经
+ *    shouldShowAtMarket() 过滤、addPromptAndOption() 写入提示与选项 ——
+ *    选项的 optionData 必须是事件自身（this），BarCMD.optionSelected() 只对
+ *    optionData instanceof PortsideBarEvent 进入 BarEventDialogPlugin 事件对话；
+ * 3. 对话：BarEventDialogPlugin.init() 调 event.init() 接管对话面板；每次点选
+ *    经 event.optionSelected()；isDialogFinished() 返回 true 时回到酒吧
+ *    （endWithContinue() 决定是否先显示 "Continue"）；
+ * 4. 收尾：玩家与事件交互后必须调 BarEventManager.getInstance()
+ *    .notifyWasInteractedWith(this)—— 把事件从活动列表与 active 跟踪器移除，
+ *    并把 creator 置入 accepted 超时（默认 60-90 游戏天），否则事件会在
+ *    active 时长内继续出现在同一市场、creator 也只能拿到普通超时。
+ *
+ * 演示内容：酒吧里一位落魄船员兜售一份补给藏匿点的情报。玩家可以花 500 信用点
+ * 买下坐标（真实写入玩家舰队 cargo credits），或婉拒、或直接离开；
+ * 三个分支都以 notifyWasInteractedWith 收尾，验证 accepted 超时路径。
+ */
+public class GearInBarEvent extends BaseBarEvent {
+
+    private static final Logger LOG = Global.getLogger(GearInBarEvent.class);
+
+    /** 对话选项 id（仅事件对话内部使用；optionData 用常量比较，不用文本）。 */
+    public static final String OPTION_ACCEPT = "gearIn_barAccept";
+    public static final String OPTION_DECLINE = "gearIn_barDecline";
+    public static final String OPTION_LEAVE = "gearIn_barLeave";
+
+    /** 买下情报的信用点价格（真实从玩家舰队 cargo 扣减）。 */
+    public static final int INFO_PRICE = 500;
+
+    @Override
+    public boolean shouldShowAtMarket(MarketAPI market) {
+        // BaseBarEvent 默认：shownAt == null 或 == 当前市场才显示（首次展示后锁定单一市场）。
+        boolean ok = super.shouldShowAtMarket(market);
+        if (!ok) {
+            LOG.info("GearIn bar event: skip " + market.getName()
+                    + " (shownAt locked to " + getShownAt() + ")");
+            return false;
+        }
+        // 演示市场条件：只出现在有太空港的市场（新档可访问的核心市场基本满足）。
+        if (!market.hasSpaceport()) {
+            LOG.info("GearIn bar event: skip " + market.getName() + " (no spaceport)");
+            return false;
+        }
+        LOG.info("GearIn bar event: eligible at " + market.getName());
+        return true;
+    }
+
+    @Override
+    public void addPromptAndOption(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
+        super.addPromptAndOption(dialog, memoryMap);
+        MarketAPI market = dialog.getInteractionTarget().getMarket();
+        LOG.info(String.format("GearIn bar event: prompt at %s (event id=%s)",
+                market.getName(), getBarEventId()));
+
+        TextPanelAPI text = dialog.getTextPanel();
+        text.addPara("A disheveled spacer at the bar is telling anyone who will listen about a cache "
+                + "of supplies drifting somewhere in this system.");
+
+        // 关键机制：选项的 optionData 必须是事件自身（this）。BarCMD.optionSelected()
+        // 只对 optionData instanceof PortsideBarEvent 才创建 BarEventDialogPlugin，
+        // 进入事件对话；换成字符串或其他对象则落入规则对话框分支。
+        dialog.getOptionPanel().addOption("Listen to the spacer's story", this);
+    }
+
+    @Override
+    public void init(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
+        super.init(dialog, memoryMap);
+        LOG.info("GearIn bar event: dialog init (event id=" + getBarEventId() + ")");
+        // 对话每次进入都重置完成标记（BaseBarEvent.init 不清 done，需要自行重置）。
+        done = false;
+        showRumor();
+    }
+
+    private void showRumor() {
+        TextPanelAPI text = dialog.getTextPanel();
+        OptionPanelAPI options = dialog.getOptionPanel();
+        text.addPara("You sit down across from the spacer and buy them a drink. Once the drink is "
+                + "half-gone, they lower their voice and tell you about a cargo pod that drifted off "
+                + "a burning freighter - still full of supplies, just waiting to be found. "
+                + "\"I'd sell you the coordinates for a song,\" they say.");
+        options.clearOptions();
+        options.addOption("Buy the coordinates (" + INFO_PRICE + " credits)", OPTION_ACCEPT);
+        options.addOption("Hear them out but decline", OPTION_DECLINE);
+        options.addOption("Leave the spacer to their drink", OPTION_LEAVE);
+    }
+
+    @Override
+    public void optionSelected(String optionText, Object optionData) {
+        TextPanelAPI text = dialog.getTextPanel();
+        if (OPTION_ACCEPT.equals(optionData)) {
+            text.addPara("The spacer scribbles coordinates on a napkin and slides it over. You pay "
+                    + "them " + INFO_PRICE + " credits and pocket the napkin.");
+            CargoAPI cargo = Global.getSector().getPlayerFleet().getCargo();
+            cargo.getCredits().subtract(INFO_PRICE);
+            LOG.info("GearIn bar event: bought coordinates, credits -" + INFO_PRICE);
+            finish();
+        } else if (OPTION_DECLINE.equals(optionData)) {
+            text.addPara("The spacer shrugs. \"Suit yourself. The void isn't going anywhere.\"");
+            // noContinue = true：结束时不显示 "Continue"，直接回到酒吧选项。
+            noContinue = true;
+            LOG.info("GearIn bar event: declined");
+            finish();
+        } else if (OPTION_LEAVE.equals(optionData)) {
+            text.addPara("You finish your drink and get up. The spacer returns to telling the story "
+                    + "to nobody in particular.");
+            noContinue = true;
+            LOG.info("GearIn bar event: left");
+            finish();
+        } else {
+            LOG.info("GearIn bar event: unknown option data " + optionData);
+        }
+    }
+
+    /** 对话收尾：置完成标记并通知 manager 移除本事件（creator 进入 accepted 超时）。 */
+    private void finish() {
+        done = true;
+        BarEventManager.getInstance().notifyWasInteractedWith(this);
+        LOG.info("GearIn bar event: finished, notified manager (done=" + isDialogFinished() + ")");
+    }
+
+    @Override
+    public void wasShownAtMarket(MarketAPI market) {
+        super.wasShownAtMarket(market);
+        LOG.info("GearIn bar event: shown at " + market.getName());
+    }
+
+    @Override
+    public void advance(float amount) {
+        // 事件在活动列表中每帧被 PortsideBarData.advance 推进（未暂停时）；
+        // 本示例没有时间逻辑，保留空实现。需要限时消失的事件在这里推进
+        // 倒计时并在到期时由 shouldRemoveEvent() 返回 true。
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInBarEventCreator
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent;
+import com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventCreator;
+
+/**
+ * 完整最小例：酒吧事件 creator（GenericBarEventCreator）—— 注册入口与抽取参数。
+ *
+ * 注册入口：BarEventManager.getInstance().addEventCreator(this)，调用点片段见页面正文
+ * （GearInModPlugin.onGameLoad 内的注册块）。manager 实例与 creator 列表存放在
+ * sector memory（键 $core_genericBarEventManager），随存档保存，因此用
+ * hasEventCreator(Class) 作为持久化门控（原版 CoreLifecyclePluginImpl.addBarEvents
+ * 与两个成熟实例同款写法），不需要额外的 persistent data 键。
+ *
+ * 抽取参数（全部在 BaseBarEventCreator 有默认值，本示例只覆写 createBarEvent）：
+ * - getBarEventFrequencyWeight()：普通 picker 的抽取权重，默认 10f；
+ * - getBarEventActiveDuration()：事件在 active 跟踪器中的时长（游戏天），默认 30+rand*10；
+ * - getBarEventTimeoutDuration()：事件未交互、active 过期移除后 creator 的冷却（游戏天），默认 30+rand*10；
+ * - getBarEventAcceptedTimeoutDuration()：玩家交互（接受或拒绝都算）后的冷却（游戏天），默认 60+rand*30；
+ * - isPriority()：true 时进入 priority picker（先于普通 picker 抽取），默认 false。
+ */
+public class GearInBarEventCreator extends BaseBarEventCreator {
+
+    private static final Logger LOG = Global.getLogger(GearInBarEventCreator.class);
+
+    @Override
+    public PortsideBarEvent createBarEvent() {
+        LOG.info("GearIn bar event: creator picked, creating event (id=" + getBarEventId() + ")");
+        return new GearInBarEvent();
+    }
+}
+```
+
+:::

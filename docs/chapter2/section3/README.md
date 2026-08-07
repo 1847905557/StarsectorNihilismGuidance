@@ -32,7 +32,7 @@
 
 按下按键后的过程分为四段：**前摇 (效果爬升)→ 全功率 (效果满值)→ 后摇 (效果回落)→ 冷却**。`ship_systems.csv` 里的 `charge up`/`active`/`down`/`cooldown` 四个数字就是这四段各持续几秒。
 
-## 第一步：复制并改名 .system 文件
+## 复制战术系统模板
 
 把原版 `Starsector\starsector-core\data\shipsystems\burndrive.system` 复制到 MOD 的 `data\shipsystems` 下，改名为 `GearIn_burstdrive.system`，内容整理为如下形式 (`id` 与 `statsScript` 两处已改)：
 
@@ -69,7 +69,7 @@
 
 其余字段是视觉 (引擎焰)、声音与物理细节，按需保留。文件中的 `aiType` 字段属于系统 AI 配置，本教程在 C07 讲解 —— 示例用 `NONE`(无 AI 行为)，玩家按键不受影响。
 
-## 第二步：注册行 (数值参数)
+## 注册战术系统参数
 
 在 MOD 的 `data\shipsystems\ship_systems.csv` 里，从原版复制 `#Burn Drive` 那一行，只改 `name` 与 `id`：
 
@@ -99,7 +99,7 @@ name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u 
 
 `f/s`、`f/u` 系列与 `cr/u` 等列按模板使用；本页只保留原版幅能费率字段，不展开额外调参。复制原版行时保留表头与 `#` 注释行，只改目标行的 `name` 与 `id`。
 
-## 第三步：效果脚本
+## 实现战术系统效果
 
 在 `src\data\scripts\gearin\shipsystems\GearInBurstDriveSystem.java` 建类，完整内容如下：
 
@@ -155,11 +155,11 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ::: warning apply 与 unapply 必须成对
 
-`apply` 里 `modify` 过什么，`unapply` 里就必须用同一个 `id` `unmodify` 什么。漏一项的后果：系统结束后那一项加成永远残留 (见故障分析第 4 条)。
+`apply` 里 `modify` 过什么，`unapply` 里就必须用同一个 `id` `unmodify` 什么。漏一项的后果：系统结束后那一项加成永远残留 (见 "冷却结束后效果仍然残留" 故障条目)。
 
 :::
 
-## 第四步：挂载到舰船
+## 挂载战术系统
 
 打开 MOD 的 `data\hulls\ship_data.csv`，把 `工匠-级` 行的 `system id` 列 (第 5 列) 改为 `GearIn_burstdrive`：
 
@@ -300,11 +300,11 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
 ## 故障分析
 
-1. **游戏加载直接失败 (`Fatal: ship_systems.csv is missing systems`)**。触发：`.system` 已建但 CSV 无对应行，或行首残留 `#`。可观察：`Ship system [GearIn_burstdrive] not found in ship_systems.csv` 后跟 Fatal。修正：CSV 补行、去 `#`。
-2. **系统表现异常 (数值全 0)**。触发：CSV 行 `id` 与 `.system` `id` 不一致。可观察：警告 `not found in store`，系统时长全 0、按键瞬间结束。修正：两处 `id` 逐字符一致。
-3. **舰船无法部署 (`System with id [...] not found`)**。触发：`system id` 打错或系统未注册。修正：三处 `id` 一致。
-4. **效果残留**。触发：`unapply` 漏撤销。可观察：冷却结束后加速度仍异常。修正：`apply`/`unapply` 成对。
-5. **效果脚本不生效 (`Problem loading class [...]`)**。触发：`statsScript` 类名、包声明、文件路径不一致，或文件放进了 `src\`(游戏不按 `src\` 前缀查找)。修正：三者一致并保持在 MOD 根目录下。
+- **游戏加载时报 `Fatal: ship_systems.csv is missing systems`：**`.system` 已创建，但 CSV 没有对应行或行首仍有 `#`。补回 `GearIn_burstdrive` 数据行并取消注释，重启后确认加载继续。
+- **系统数值全为零：**CSV 行与 `.system` 使用了不同 ID，日志会出现 `not found in store`，按键后系统瞬间结束。统一两处 ID，重新进入战斗后核对持续时间。
+- **舰船部署时报 `System with id [...] not found`：**船体的 `system id` 拼错，或对应系统尚未注册。核对 `.ship`、`.system` 与 CSV 三处 ID，修正后重新部署。
+- **冷却结束后效果仍然残留：**`unapply` 没有撤销 `apply` 写入的修饰。使用同一 source id 成对撤销，再次完整激活并等待冷却结束。
+- **日志出现 `Problem loading class [...]`：**`statsScript` 类名、包声明和文件路径不一致，或文件错误地放在 `src\` 前缀下。将类放在 MOD 根目录对应包路径，统一三处名称后重启。
 
 ## 总结
 
@@ -312,7 +312,7 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
 脚本侧只需要掌握 "效果强度" 一个概念：`effectLevel` 从 0 升至 1 再落回 0，所有数值乘以它；`apply`/`unapply` 成对撤销是唯一的纪律。
 
-这四段链路是各类系统的共同骨架 —— 武器类、护盾类、相位类系统都只是更换数据与脚本内容。系统 AI(`aiType`) 与自定义使用时机见 [C7-S8]。
+这四段链路是各类系统的共同骨架 —— 武器类、护盾类、相位类系统都只是更换数据与脚本内容。系统 AI(`aiType`) 与自定义使用时机见 [C8-S2]。
 
 ## 建议参考项
 

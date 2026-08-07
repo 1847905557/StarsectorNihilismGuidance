@@ -1,711 +1,1148 @@
-# 使用 LazyLib 工具
+# 制作完整生涯任务
 
-本节在已经声明依赖的 MOD 中使用 LazyLib，完成数学计算、战斗查询和 JSON 文件读写。示例结果可以从 `starsector.log` 与 `<saves>\common` 核对；战役和渲染工具留给其他页面。
+本节制作一个完整生涯任务，让它从酒吧出现，经过接取与阶段推进，最终完成结算。`GearInHubMission` 会连接情报、触发器与目标检测，并把任务状态显示给玩家。
 
 *本节预期阅读时间：~30 分钟。*
 
-*本节预期操作时间：~45 分钟。*
+*本节预期操作时间：~60 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 解释 LazyLib 工具类的四个分组，以及每个分组的 "无状态" 或 "快照" 性质；
-- 用 `MathUtils` / `VectorUtils` 写出距离、范围、角度、最短旋转、向量定长/限长/旋转的最小代码，区分度/弧度分工 (`FastTrig` 用弧度，其余用度) 及违反后果；
-- 用 `CombatUtils` / `AIUtils` 做范围查询、可见性查询与拦截点计算，解释 "结果按当前帧快照处理、禁止跨战斗缓存" 与 `@Nullable` 判空要求；
-- 用 `JSONUtils.loadCommonJSON` + `CommonDataJSONObject` 读写 `<saves>\common` 下的 JSON，解释 `save()` 的强制语义 (不调用不落盘)；
-- 区分 `ModUtils.isClassPresent` 与 `ModUtils.isModEnabled` 的语义分工，用 `LazyLib.MOD_ID` 常量而不是手写 id 做运行时检测；
-- 从 `starsector.log` 与 common 文件两个位置复核工具调用是否真的发生，并把 "数学→查询→持久化" 的调用链走通。
+* 区分任务清单旧名对应的实际类型：枢纽任务约定是 `HubMission`，Intel 约定是 `IntelInfoPlugin` 与 `IntelManagerAPI`，并说明 `MissionDefinitionAPI` 属于战役任务而非生涯任务；
+* 解释 `HubMission` 接口与 `BaseHubMission` 类族的职责分工，以及 `HubMissionWithTriggers` / `HubMissionWithSearch` / `HubMissionWithBarEvent` 各补充了什么能力；
+* 复述任务生命周期的创建、接受、推进与结束四段，说出每段的关键调用与失败表现；
+* 解释阶段管理的内部结构 (`StageData` 与阶段图) 和 `setCurrentStage` 的完整副作用链；
+* 说明目标完成检测的帧推进轮询、对话驱动与时限三通道，以及 `ConditionChecker` 家族和 `setStageOn*` / `connectWith*` 的连接声明方式；
+* 区分单任务触发器链与跨任务全局链两种事件链形态，并说明各自的注册与回写方式；
+* 从零编写一个 `HubMissionWithBarEvent` 任务 (本节 `GearInHubMission`)，用一条 `bar_events.csv` 行和六条 `rules.csv` 规则把它接进酒吧，并验证从出现、接取、推进到结算的完整流程；
+* 根据症状定位枢纽任务的典型故障 (见 "故障分析")。
 
 ## 前置知识
 
-- [C13-S1] 的硬依赖声明与运行时检测，以及在 `mod_info.json` 的 `dependencies` 中声明 `lw_lazylib` 的方法；
-- [C7-S2] 的战斗状态读取、`getShips()` 结果过滤、暂停判断和战斗状态生命周期；
-- [C6-S3] 的 `Global` 生命周期与战斗运行期入口；
-- [C7-S1] 的战斗插件注册与 `advance` 每帧回调；
-- [C3-S1] 的测试战役入口与 `GearIn_test`；
-- [C12-S4] 的 common 文件位置、LazyLib `JSONUtils` 读写和 `save()` 持久化语义；
-- [C6-S4] 的 settings 合并与设置读取。
+* [C3-S1] 的战役与 `MissionDefinitionAPI` 对照关系；
+* [C6-S2] 的 `modPlugin` 生命周期与加载期数据读取；
+* [C6-S3] 的 `Global.getSector()` 阶段语义；
+* [C9-S6] 的交互对话框、Intel 登记与 `SectorAPI.adjustPlayerReputation`；
+* [C11-S1] 的人物、市场联系人、`OfficerManagerEvent` 与 `ContactIntel`；
+* [C12-S1] 的 `EveryFrameScript`、`convertToDays` 与脚本存档边界；
+* [C12-S2] 的事件边界、生命周期与 XStream 序列化；
+* [C13-S1] 的 `PortsideBarEvent`、`BarEventManager`、`PortsideBarData`、`HubMissionBarEventWrapper` 与 `notifyWasInteractedWith`。
 
-## LazyLib 概览
+## 术语
 
-LazyLib 是硬依赖外部库，所有公开工具类位于包 `org.lazywizard.lazylib` 及其子包 (`campaign` / `combat` / `opengl` / `ui` / `ext`)。发行布局：
+按术语约定，API 名保留源码大小写。本节首次完整讲解以下页面级术语 (不进入共享术语表)：
 
-```text
-Starsector\mods\LazyLib\
-├── mod_info.json          # id "lw_lazylib"，gameVersion "0.98a-RC5"，jars 四件
-├── lazylib_settings.json  # 库级设置：enableCaching / logLevel / logDeprecated / crashOnDeprecated
-├── changelog.txt          # 发行说明
-├── javadoc.zip            # 官方 Javadoc（本地发行签名，本节速查表的依据）
-├── data\
-│   └── console\commands.csv  # 全部命令以 # 注释，不提供现成控制台命令
-└── jars\
-    ├── LazyLib.jar            # MOD 依赖应引用的主 jar
-    ├── LazyLib-Kotlin.jar     # Kotlin 支持
-    └── internal\              # LazyLib-Console.jar、Kotlin-Runtime.jar：
-                               # 发行说明明确 internal 不是给 MOD 当依赖加的
+* **枢纽任务 (hub mission)**：API 名保留 `HubMission`(接口) 与 `BaseHubMission`(基类)。一种 "任务 = 阶段图 + 触发器 + Intel" 的生涯任务模型：
+    *   任务是一个 `BaseIntelPlugin`(用户在 Intel 界面跟踪进度)，同时是一个 `EveryFrameScript`(每帧推进阶段)，通过 `MissionHub`(联系人任务板) 或酒吧事件两种入口提供给用户。
+* **任务阶段 (stage)**：API 名保留 `StageData`。任务状态机的一个节点，用任意 `Object` 作 id(惯例是枚举常量)。任务在同一时刻只有一个 `currentStage`；阶段之间用**连接 (`StageConnection`)** 组成有向图。
+* **目标 (objective)**：本节术语。任务给用户的一项 "当前要做的事"= 当前阶段 + 阶段连接上的完成条件 (`ConditionChecker`)。任务的成功/失败由 `successStages` / `failStages` 集合判定，不单独建模。
+* **事件链 (event chain)**：本节术语，两种形态：①单任务内 —— 阶段连接 (`connections`)+ 触发器 (`triggers`) 组成的事件序列；②跨任务 —— 多个任务 Intel 经全局内存阶段 (如成熟实例的 `MissionStage`) 串成的大剧情链。
+* **触发器 (trigger)**：API 名保留 `MissionTrigger`。绑定到若干阶段、带一个 `ConditionChecker` 与一串 `TriggerAction` 的一次性动作；条件满足且任务处于绑定阶段时执行并从列表移除。
+
+## 梳理生涯任务关系
+
+以下按任务的组装顺序展开：先澄清类型名，再建立 Intel 与 HubMission 两条链，随后依次是生命周期、阶段管理、目标检测与事件链，最后落到注册入口。前几节以静态知识为主，从生命周期一节开始进入可以观察的运行行为。
+
+### 命名说明：HubMissionAPI / IntelAPI / MissionDefinitionAPI
+
+任务清单里的三个名字的实际归属如下 (全部在 `com.fs.starfarer.api.*` 包路径内)：
+
+任务清单名称
+
+实际类型
+
+位置
+
+HubMissionAPI
+
+`HubMission`(接口)
+
+`com.fs.starfarer.api.impl.campaign.missions.hub.HubMission`
+
+任务基类族
+
+`BaseHubMission` / `HubMissionWithTriggers` / `HubMissionWithSearch` / `HubMissionWithBarEvent`
+
+同目录
+
+任务板
+
+`MissionHub` / `BaseMissionHub`
+
+同目录
+
+任务创建器
+
+`HubMissionCreator` / `BaseHubMissionCreator`
+
+同目录
+
+酒吧包装
+
+`HubMissionBarEventWrapper`
+
+同目录
+
+IntelAPI
+
+`IntelInfoPlugin`(接口)+ `IntelManagerAPI`(登记表)+ `BaseIntelPlugin`(默认实现)
+
+`com.fs.starfarer.api.campaign.comm` 与 `com.fs.starfarer.api.impl.campaign.intel`
+
+MissionDefinitionAPI
+
+`MissionDefinitionAPI`(存在，但属于战役任务)
+
+`com.fs.starfarer.api.mission.MissionDefinitionAPI`
+
+`MissionDefinitionAPI` 由战役任务脚本用来创建任务场景内容 —— 它服务 `data/missions/<id>/` 的战役任务场景，与生涯枢纽任务是两套互不相通的系统。
+
+为什么本节能给出实现类细节
+
+`BaseHubMission` 等 "实现" 类位于公开 API 源码内 (`com.fs.starfarer.api.impl.campaign.missions.hub.*` 包路径，随 `starfarer.api.jar` 发行)，可以直接读取 —— 本节的行为结论与代码片段都来自这条公开面。
+
+先看 Intel 半身：它决定任务以什么形式出现在 Intel 界面，`BaseHubMission` 的展示与收尾行为全部来自这一侧。
+
+### Intel 侧：登记链与生命周期
+
+`IntelInfoPlugin`(`com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`) 是 Intel 条目的完整约定 (含 `TableRowClickData` / `ListInfoMode` / `IntelSortTier` 等嵌套类型)。
+
+MOD 侧几乎不直接实现它，而是继承 `BaseIntelPlugin`(`com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`)。
+
+它同时实现 `IntelInfoPlugin`、`CallableEvent`、`EveryFrameScript`、`CommSnifferReadableIntel` 四个接口，是 "Intel 条目 + 每帧脚本" 的组合基类。
+
+登记表 (`IntelManagerAPI`) 的语义 (Intel 登记链的结论此处不展开，只补 `IntelManagerAPI` 内部实现细节)：
+
+方法
+
+语义
+
+`addIntel(plugin)` / `addIntel(plugin, forceNoMessage)` / `addIntel(plugin, forceNoMessage, textPanel)`
+
+立即登记：置 `playerVisibleTimestamp`、调 `reportMadeVisibleToPlayer`、默认 `autoAddCampaignMessage()` 加一条通信消息 (`forceNoMessage` / `textPanel` 两个变体改写消息去向)
+
+`queueIntel(plugin, maxCommQueueDays)` / `queueIntel(plugin)`
+
+进通信队列；`IntelManagerAPI.advance` 每帧 (未暂停) 检查 `canMakeVisibleToPlayer(relay)` 或 `forceAddNextFrame()`，可见则 `addIntel`—— 前 3 条单独显示、第 4 条起合并进 `NewMessagesIntel`
+
+`removeIntel(plugin)`
+
+从 intel 表与通信队列同时移除；确实移除了才调 `reportRemovedIntel`
+
+`hasIntel(plugin)` / `getIntel()` / `getIntel(Class)` / `getFirstIntel(Class)`
+
+查询
+
+`BaseIntelPlugin` 的生命周期 (MOD 写任务 Intel 时直接继承)：
+
+* `advance(float amount)`：`isEnded()` 直接返回；`isEnding()` 时按游戏天扣 `endingTimeRemaining`，扣完置 `ended = true` 并调 `notifyEnded()`；否则转 `advanceImpl(amount)`—— 子类覆写点。
+* `endAfterDelay()` / `endAfterDelay(float days)` / `endImmediately()`：置 `ending = true` + 剩余天数：
+    *   `getBaseDaysAfterEnd()` 默认 **3 游戏日** —— 任务结束后 Intel 条目还留 3 天展示结算结果，之后由引擎按 `shouldRemoveIntel()`(默认 `isEnded`) 清理。
+* `isDone()` = `isEnded()`、`runWhilePaused()` = false—— 作为 `EveryFrameScript`，任务结束后引擎自动从脚本列表移除。
+* 更新推送：`sendUpdate(listInfoParam, textPanel)`(走 `addIntelToTextPanel`)、`sendUpdateIfPlayerHasIntel(...)`(走 `CampaignUIAPI.addMessage`)—— 任务阶段变化时给用户 "进度更新" 消息的两条通道。
+
+Intel 条目只是展示层，任务的状态与推进逻辑在 `HubMission` 接口与实现类族里。
+
+### HubMission 接口与类族
+
+`HubMission`(16 个方法)：
+
+方法
+
+语义
+
+`String getTriggerPrefix()`
+
+规则分类前缀 = `getMissionId()`
+
+`String getMissionId()` / `void setMissionId(String)`
+
+任务 ID(规则键根、`getReason()` 返回值)
+
+`void setGenRandom(Random)`
+
+注入任务随机源 (hub 从 creator 传入)
+
+`void accept(InteractionDialogAPI, Map<String, MemoryAPI>)`
+
+用户接受任务
+
+`void updateInteractionData(dialog, memoryMap)`
+
+把任务状态写进对话 LOCAL 内存 (`$<missionId>_stage` 等)
+
+`void createAndAbortIfFailed(MarketAPI market, boolean barEvent)`
+
+创建入口；失败即 `abort()`
+
+`void abort()`
+
+清理任务副作用 (回滚 `changes`)
+
+`boolean isMissionCreationAborted()`
+
+创建是否已放弃
+
+`MissionHub getHub()` / `void setHub(MissionHub)`
+
+任务板归属
+
+`HubMissionCreator getCreator()` / `void setCreator(HubMissionCreator)`
+
+创建器归属
+
+`PersonAPI getPerson()` / `PersonAPI getPersonOverride()` / `void setPersonOverride(PersonAPI)`
+
+给任务者 (giver) 人物
+
+类族职责 (全部在 `missions.hub` 包内)：
+
+类
+
+职责
+
+`BaseHubMission`
+
+抽象基类：Intel 半身 + 脚本半身 + 阶段图 + 触发器 + 奖励/声望 + 生成辅助。子类必须实现 `create(MarketAPI createdAt, boolean barEvent)`
+
+`HubMissionWithTriggers`
+
+触发器 API 的完整实现：`beginXxxTrigger` / `trigger*` 动作族 / `endTrigger`；`FleetSize` / `FleetQuality` / `OfficerNum` / `OfficerQuality` 枚举与几十个 `TriggerAction` 嵌套类
+
+`HubMissionWithSearch`
+
+目标选择系统：`require*` / `prefer*` 要求族 + `pickSystem` / `pickPlanet` / `pickEntity` / `pickMarket` / `pickCommodity` 抽取器
+
+`HubMissionWithBarEvent`
+
+酒吧入口补充：`shouldShowAtMarket(MarketAPI)`(默认 true，在 `create()` **之前**被调用)
+
+`MissionHub` / `BaseMissionHub`
+
+联系人任务板：持有 creator 列表与 `offered` 列表，`updateOfferedMissions` 抽取、`accept` 派发、`listMissions` 写规则选项
+
+`HubMissionCreator` / `BaseHubMissionCreator`
+
+任务创建器：`createHubMission(MissionHub)` 实例化、频率/超时/声望过滤、完成计数
+
+`HubMissionBarEventWrapper`
+
+酒吧包装 (`BaseBarEvent` 子类)：把 `HubMissionWithBarEvent` 任务包装成酒吧事件
+
+`MissionTrigger`
+
+触发器数据类 (`ConditionChecker` + 阶段集合 + `TriggerAction` 列表)
+
+类族职责已经清楚，接下来看任务在运行时的四段生命周期：创建、接受、推进与结束。
+
+### 生命周期四段
+
+**创建 (createAndAbortIfFailed)**：
+
+```java
+protected boolean isBarEvent = false;
+public void createAndAbortIfFailed(MarketAPI market, boolean barEvent) {
+    isBarEvent = barEvent;
+    if (getPerson() != null) {
+        genMissionRewardMultAndQuality();
+    }
+    if (!create(market, barEvent)) {
+        abort();
+    }
+}
+protected abstract boolean create(MarketAPI createdAt, boolean barEvent);
 ```
 
-::: caution 引用 LazyLib 前必须先声明依赖
+要点：`create()` 返回 `false` 表示 "本次不成立该任务"(目标选不出来、ref 键被占用、市场条件不满足)。
+
+基类立即 `abort()` 回滚已登记的 `changes`(`VariableSet` / `MadeImportant` / `EntityAdded` / `PersonAdded` 等 `Abortable`)。
+
+随后把 `aborted` 置位 —— 调用方用 `isMissionCreationAborted()` 跳过该任务。
+
+`create()` 的副作用必须可回滚
+
+**`create()` 里做的一切副作用都必须登记进 `changes` 或走基类方法**，否则失败回滚不干净。可观察结果：创建失败或任务结束时实体/人物/标志残留在星区 —— 重复出现、地图永久标记、内存键不清理 (规则强度 "必须" 第 2 条)。
+
+**接受 (accept)**：
+
+```java
+public void accept(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
+    setImportant(true);
+    if (startingStage == null) {
+        throw new RuntimeException("startingStage can not be null. Use setStartingStage()");
+    }
+    setCurrentStage(startingStage, null, null);
+    acceptImpl(dialog, memoryMap);
+    // cargoOnAccept 直接进用户货舱
+    Global.getSector().getIntelManager().addIntel(this, false, text);
+    Global.getSector().addScript(this);
+    startingStage = null;
+    runTriggers();
+}
+```
 
-`mod_info.json` 的 `dependencies` 必须包含 `lw_lazylib`—— 声明与启动器把关体系在前置依赖章已建立；缺声明时用户运行期抛 `NoClassDefFoundError`。本节从 "已声明" 直接进入 "真正调用"。
+顺序固定：
 
-:::
+* 置重要标记；
+* **必须已 `setStartingStage`**(null 抛 RuntimeException)。
+* `setCurrentStage(startingStage)`(进入起点阶段，此时若起点就是 success/fail 阶段会立即结算)。
+* `acceptImpl`(子类放置任务实体/舰队)；
+* `addIntel`(Intel 条目即刻可见)；
+* `addScript`(脚本半身开始每帧推进)；
+* `startingStage` 置空 (任务已在进行中，abort 语义随之切换)。
+* `runTriggers()`
 
-库元信息入口 `LazyLib` 类：`LazyLib.MOD_ID` 常量就是 `"lw_lazylib"`(与 `mod_info.json` 的 `id` 一致，运行时检测用常量不要手写字符串)；
+**推进 (advanceImpl)**：
 
-`getVersion()` 返回 float 版本 (3.0 发行返回 `3.0`)；`getSupportedGameVersion()` 返回本发行声明支持的游戏版本字符串；
+```java
+@Override
+protected void advanceImpl(float amount) {
+    float days = Global.getSector().getClock().convertToDays(amount);
+    StageData stage = getData(currentStage);
+    if (stage != null) {
+        stage.elapsed += days;
+    }
+    elapsed += days;
+    if (timeLimit != null && timeLimit.days < elapsed && (timeLimit.noLimitWhileInSystem == null ||
+            timeLimit.noLimitWhileInSystem != Global.getSector().getCurrentLocation())) {
+        setCurrentStage(timeLimit.failStage, null, null);
+        timeLimit = null;
+        runTriggers();
+    }
+    tracker.advance(days);
+    if (tracker.intervalElapsed()) {
+        checkStageChangesAndTriggers(null, null);
+    }
+}
+```
 
-`isCachingEnabled()` 读取 `lazylib_settings.json` 的 `enableCaching`(缓存只加速 "当前帧结果不变" 的昂贵查询，不得把缓存结果升级为业务持久状态)。
+每帧：当前阶段 `elapsed` 与任务总 `elapsed` 按游戏天累计 (`convertToDays` 换算，见前置知识)→ 时限判定 (超时且用户不在豁免星系则直接切失败阶段)→ `tracker`(`IntervalUtil(0.09f, 0.11f)` 游戏天) 到点执行阶段连接检查。
 
-`getLogLevel()` / `setLogLevel(...)` 控制 LazyLib 各工具类的日志级别，`onDeprecatedMethodUsage()` 由库在检测到弃用方法调用时内部调用 (策略由 `logDeprecated` / `crashOnDeprecated` 决定，仅调试用途)。
+**结束 (setCurrentStage 的终态分支)**：`setCurrentStage` 切到 `successStages` 成员 → `endSuccess`：
 
-::: info 为什么按四分组讲？
+* 置 `result`、加 XP(`getXPReward`)、加信用点 (`getCreditsReward`)、`adjustRep(RepActions.MISSION_SUCCESS)`、`endSuccessImpl`、`cargoOnSuccess` 入舱、`endAfterDelay()`、发 `END_MISSION_UPDATE` 更新。
+* `creator.incrCompleted()`、潜在联系人入列、`abort()`、置 `completedKey`。
 
-四个分组对应四种状态边界：数学与几何是纯静态无状态，战斗查询返回当前帧快照，JSON 与文件接触磁盘，通用工具反映库与 MOD 元信息。工具不会自动持有任何业务状态 —— 需要跨帧保留什么由您的代码显式持有 (数值、id)，不要持有工具返回的实体引用。
+`endFailure` 与 `endAbandon` 同理 (无奖励、`incrFailed`、无惩罚失败阶段走 `noPenaltyFailStages`)。
 
-:::
+最终 `endAfterDelay` 的倒计时走完 → `BaseIntelPlugin` 置 `ended` → **`notifyEnded()`(`super.notifyEnded()` + `Global.getSector().removeScript(this)`)**。
 
-## 数学与几何工具
+脚本半身由引擎在下一帧按 `isDone()` 清理，Intel 条目按 `shouldRemoveIntel()` 由 `IntelManagerAPI` 清理。
 
-从最常用的数学与几何组开始：`MathUtils`、`VectorUtils`、`FastTrig`、`EllipseUtils`、`ShapeUtils`、`CollisionUtils`、`CollectionUtils` 都是无持久状态的纯静态工具。
+生命周期围绕阶段切换展开。先看阶段的数据结构：`StageData`、阶段图与 `setCurrentStage` 的完整副作用。
 
-调用方传入 `Vector2f` / `CombatEntityAPI` / `SectorEntityToken` / 角度 / 半径 / 范围，工具返回计算结果，不持有任何跨帧状态。
+### 阶段管理 (StageData 与阶段图)
 
-坐标系与单位由方法签名约定：**`FastTrig` 用弧度，其余全部用度**。
+内部结构：
 
-### MathUtils 速查 (`org.lazywizard.lazylib.MathUtils`，度)
+```java
+protected Object currentStage = null;
+protected LinkedHashMap<Object, StageData> stages = ...;
+protected List<Object> successStages = new ArrayList<>();
+protected List<Object> failStages = new ArrayList<>();
+protected List<Object> noPenaltyFailStages = new ArrayList<>();
+protected Object abandonStage = Abandon.ABANDON;
+protected List<StageConnection> connections = ...;
+protected List<MissionTrigger> triggers = ...;
+protected List<Abortable> changes = ...;
+```
 
-| 方法 (代表重载)| 语义 |
-|---|---|
-| `clamp(float, float, float)` / `clamp(int, int, int)` | 数值钳制到 `[min, max]` |
-| `clampAngle(float)` | 角度归一到 `[0, 360)`(如 400° → 40°)|
-| `equals(float, float)` | 浮点近等判定 (两个值互相在 99.99999% 内)|
-| `getDistance(...)` / `getDistanceSquared(...)` | 距离 / 平方距离 (避免 `sqrt()`)；`Vector2f` 直算，`CombatEntityAPI` 含碰撞半径，`SectorEntityToken` 含交互半径 |
-| `isWithinRange(...)` | 范围内判定，重载与 `getDistance` 同构 |
-| `getShortestRotation(float, float)` | 两角之间最短旋转的**方向与长度** (单位度；同输入角差 400° 时返回 40° 而不是 400°)|
-| `getRandomNumberInRange(float, float)` / `(int, int)` | 随机数；int 版上下限**含端点** |
-| `getRandomPointInCircle` / `getRandomPointInCone` / `getRandomPointOnCircumference` / `getRandomPointOnLine` | 均匀随机取点 (圆、扇形、圆周、线段)|
-| `getPointOnCircumference(Vector2f, float, float)` / `getPointsAlongCircumference(...)` | 圆周定点 / 等分布多点 (`center` 允许 null，null 时以原点为圆心)|
-| `getMidpoint` / `getNearestPointOnLine` / `isPointOnLine` / `isPointWithinCircle` / `getEquidistantPointsInsideCircle` | 几何判定与取点 |
-| `getRandom()` | LazyLib 共享的 `Random` 实例 (可用于种子控制或避免自建实例)|
-| `FPI` / `FTAU` | float 常量：`3.1415927f` / `6.2831855f`(避免 `Math.PI` 的 double→float 转换)|
+* `StageData`：`id` + `elapsed`(当前阶段内累计游戏天)+ `important`(本阶段的 `ImportanceData` 列表)。`getData(id)` 延迟创建。
+* `StageConnection`：`from` / `to` / `checker`——`from == null` 表示 "任意阶段"。
+* 阶段声明：`setStartingStage`、`setSuccessStage` / `addSuccessStages`、`setFailureStage` / `addFailureStages`、`setNoPenaltyFailureStage` / `addNoPenaltyFailureStages`、`setAbandonStage` / `setNoAbandon`。
+    *   **阶段 id 惯例是枚举常量** (`updateInteractionData` 会做 `((Enum)getCurrentStage()).name()`)。
 
-### VectorUtils 速查 (`org.lazywizard.lazylib.VectorUtils`，度)
+`setCurrentStage` 的完整副作用链 —— 写任务代码必须理解：
 
-| 方法 (代表重载)| 语义 |
-|---|---|
-| `getFacing(Vector2f)` / `getFacingStrict(Vector2f)` | 向量的朝向角 (度)|
-| `getAngle(Vector2f, Vector2f)` / `getAngleStrict(...)` | 两向量之间夹角 (度)|
-| `getDirectionalVector(Vector2f, Vector2f)` | 从 source 指向 destination 的归一化向量 |
-| `resize(Vector2f, float)` / `clampLength(Vector2f, float)` | 定长 / 限长；带 `dest` 的重载把结果写入 dest |
-| `rotate(Vector2f, float)` / `rotateAroundPivot(Vector2f, Vector2f, float)` | 旋转 (可绕任意支点)；带 `dest` 的重载写 dest |
-| `getCrossProduct(Vector2f, Vector2f)` / `isZeroVector(Vector2f)` | 叉积 / 零向量判定 |
-| `toFloatArray(List<Vector2f>)` / `toVectorList(float[])` | 与 OpenGL `FloatBuffer` 顶点数组互转 (3.0 新增)|
+1. 同阶段直接返回 (幂等)；
+2. 离开旧阶段：解除该阶段登记的 `makeImportant`(`Misc.makeUnimportant` + `removeImportanceChanges`)、`unset` 阶段标志 (`removeMemoryFlagChanges`)；
+3. 写入 `currentStage`；若新阶段在 `timeLimit.endLimitStages` 里则取消时限；
+4. 进入新阶段：登记新阶段 `makeImportant`(`Misc.makeImportant(memory, getReason())` + `changes.add(MadeImportant)`)、写 `FlagData` 标志 (`setFlag` 族登记的按阶段生效标志)；
+5. 结束判定：`!doNotEndMission` 时依次检查 `successStages` / `failStages` / `abandonStage`，命中即结算；否则 `sendUpdateForNextStep(NEXT_STEP_UPDATE, textPanel)` 发 "下一步" 更新；
+6. `runTriggers()`。
 
-### 规则 1：度/弧度分工必须遵守
+阶段图决定任务往哪里走，完成检测决定它什么时候走。本节看目标定义与三条检测通道。
 
-`FastTrig.sin/cos/atan/atan2` 的输入与输出是**弧度**；`MathUtils` 与 `VectorUtils` 的 facing、angle、rotate、clamp angle 全部是**度**。两套单位之间没有自动转换。
+### 目标定义与完成检测
 
-违反的可观察结果：把 `MathUtils.clampAngle(angle)` 的返回值 (度) 直接喂给 `FastTrig.sin(...)`，或把 `FastTrig` 结果 (弧度) 当度参与 `VectorUtils.rotate(...)`，得到的转向量、圆周取点位置、最短旋转量全部偏移；
+**目标定义**：目标 = 当前阶段 + 阶段连接的 `ConditionChecker`。连接声明两条 API 族：
 
-例如把 90° 的意图写成弧度值 `(float)Math.PI / 2f` 传给按度解释的 `VectorUtils.rotate(...)`，向量只转约 1.57°；把 90 当度传给按弧度解释的 `FastTrig.sin(...)`，得到约 0.894 而不是 1 —— 两套单位之间没有任何自动换算。
+声明方式
 
-修正：只在这两个域内分别使用各自单位，需要互转时显式 `Math.toRadians` / `Math.toDegrees`。
+语义
 
-### 规则 2：VectorUtils 的原地修改语义必须认清
+检测器
 
-不带 `dest` 的重载 (`resize` / `clampLength` / `rotate` / `rotateAroundPivot`)** 原地修改传入向量并返回同一个对象**，不是纯值函数；带 `dest` 的重载把结果写入 dest。禁止把返回值当纯值对象复用、同时继续依赖传入向量的旧值。
+`setStageOnGlobalFlag(to, flag)`
 
-违反的可观察结果：`Vector2f speed = missile.getVelocity(); Vector2f turned = VectorUtils.rotate(speed, 90f);` —— 这行代码把**导弹自己的速度向量**转了 90°，导弹在飞行中突然改向，而不是得到一个新向量；
+全局内存布尔标志为 true → 进 `to`
 
-`VectorUtils.resize(vel, 100f)` 同理把源向量长度改写。
+`GlobalBooleanChecker`
 
-修正：需要保留旧值时传入副本 (`new Vector2f(old)`) 或使用带 `dest` 的重载，且不得把同一 mutable 向量同时当作仍需保留的旧值。
+`setStageOnMemoryFlag(to, HasMemory, flag)` / `setStageOnMemoryFlag(to, MemoryAPI, flag)`
 
-### 几何补充：EllipseUtils / ShapeUtils / CollisionUtils / CollectionUtils
+指定对象内存布尔标志 → 进 `to`
 
-- `EllipseUtils`：`getPointOnEllipse` / `getRandomPointInEllipse` / `getRandomPointOnEllipse` / `isPointWithinEllipse` (椭圆取点、随机点、包含判定，全部按角度参数、允许 null 中心)。
-- `ShapeUtils`：`createCircle` / `createEllipse` / `createArc` 返回顶点数组 (3.0 从 `DrawUtils` 拆分而来，只算顶点不绘制)。
-- `CollisionUtils`：线段与碰撞边界查询 ——：
-  - `getCollisionPoint(lineStart, lineEnd, CombatEntityAPI)` 返回线段与目标碰撞边界相交的点 (**不是命中结算** —— 伤害、护盾、碰撞类处理仍走战斗引擎)。
-  - `isPointWithinBounds` / `isPointWithinCollisionCircle` / `getNearestPointOnBounds` / `getCollides` / `isPointOnSegment`。
-- `CollectionUtils`：集合工具 ——：
-  - `combinedList` / `combinedSet` 合并多集合；`filter(collection, CollectionFilter)` 按过滤器挑元素；`implode(collection, separator)` 拼字符串。
-  - `SortEntitiesByDistance` / `SortTokensByDistance` 按距离排序的 `Comparator`(构造参数是基准点)。
+`MemoryBooleanChecker`
 
-成熟实例：`VectorUtils.rotate` + `Vector2f.add` 用于实体局部坐标↔世界坐标互转 (`toRelative` / `toAbsolute`)；
+`setStageOnDaysElapsed(to, days)`
 
-`MathUtils.getShortestRotation(facing, VectorUtils.getAngle(a, b))` 用于最短转向控制；
+从任务开始累计满天数 → 进 `to`
 
-`CollisionUtils.getCollisionPoint` 用于求射线与舰船边界的命中点。
+`DaysElapsedChecker`
 
-## 战斗查询工具
+`setStageOnEntityNotAlive(to, entity)`
 
-坐标、距离和角度能算出来后，战斗决策还需要知道场上有什么。战斗查询组读**当前帧**的战斗引擎状态 (引擎对象表、可见性、弹道)，返回对象仍归 Starsector 战斗引擎管理；`WeaponUtils` / `DefenseUtils` 分别提供武器弧与装甲查询。
+实体死亡/失效 → 进 `to`
 
-### CombatUtils 速查 (`org.lazywizard.lazylib.combat.CombatUtils`)
+`EntityNotAliveChecker`
 
-| 方法 | 语义 |
-|---|---|
-| `getShipsWithinRange(Vector2f, float)` | 范围内舰船列表 (**排除 Command Shuttle 假舰**)|
-| `getMissilesWithinRange` / `getProjectilesWithinRange` | 范围内导弹 / 射弹 (后者不含导弹)|
-| `getAsteroidsWithinRange` / `getObjectivesWithinRange` / `getEntitiesWithinRange` | 小行星 / 战术点 / 全部实体 |
-| `isVisibleToSide(CombatEntityAPI, int)` | 实体对某侧 (0=玩家 / 1=敌方) 是否可见 |
-| `getFleetMember(ShipAPI)` | 由场上舰船取对应 `FleetMemberAPI`(生涯侧身份，对应讲解在生涯侧内容中)|
-| `spawnShipOrWingDirectly(String variantId, FleetMemberType, FleetSide, float combatReadiness, Vector2f, float facing)` | 绕过后备直接生成舰船/联队 (写侧，本节只列名)|
-| `toScreenCoordinates(Vector2f)` / `toWorldCoordinates(Vector2f)` | 世界/屏幕坐标互转 (UI 侧)|
-| `centerViewport(Vector2f)` / `applyForce(CombatEntityAPI, ...)` | 视口居中 / 施加力 (写侧)|
+`setStageOnEnteredLocation(to, location)`
 
-### AIUtils 速查 (`org.lazywizard.lazylib.combat.AIUtils`)
+用户进入地点 → 进 `to`
 
-| 方法 | 语义 |
-|---|---|
-| `getNearestEnemy(CombatEntityAPI)` / `getNearestAlly` / `getNearestShip` / `getNearestMissile` / `getNearestEnemyMissile` / `getNearestObjective` | 最近的可见敌/友/舰/导弹/目标点 |
-| `getEnemiesOnMap` / `getAlliesOnMap` / `getEnemyMissilesOnMap` | 场上全部可见敌/友/敌导弹 |
-| `getNearbyEnemies` / `getNearbyAllies` / `getNearbyEnemyMissiles` | 范围内列表 |
-| `getBestInterceptPoint(Vector2f point, float speed, Vector2f targetLoc, Vector2f targetVel)` | 以给定速度拦截移动目标的最佳瞄准点 |
-| `canUseSystemThisFrame(ShipAPI)` | 舰船战术系统本帧是否可激活 |
+`EnteredLocationChecker`
 
-- `WeaponUtils`(`aimTowardsPoint` / `getTimeToAim` / `isWithinArc` / `getEnemiesInArc` 等) 是只读查询。
-- `DefenseUtils`(`getDefenseAtPoint` / `getArmorLevel` / `getArmorDamage` / `getMostDamagedArmorCell` / `hasHullDamage` / `hasArmorDamage` / 常量 `NOT_IN_GRID`) 是只读查询。
+`setStageInRangeOfEntity(to, entity, range)`
 
-开火决策与伤害结算仍归武器状态与战斗引擎。
+用户进入实体范围 → 进 `to`
 
-::: warning 直接拿查询结果数当 "存活数" 会偏
+`InRangeOfEntityChecker`
 
-`CombatUtils.getShipsWithinRange(...)` 的结果是引擎对象表的当前帧快照，可能含残骸 (LazyLib 只保证排除 Command Shuttle)。需要 "存活" 语义时按 `isAlive()` 过滤 (建议级，示例的 `alive` 计数写法)；需要含残骸时明确表达意图。
+`setStageOnWithinHyperspaceRange(to, entity, rangeLY, ...)`
 
-:::
+用户进入超空间范围 → 进 `to`
 
-### 规则 3：查询结果是当前帧快照，禁止跨战斗缓存
+`InHyperRangeOfEntityChecker`
 
-`AIUtils` 与 `CombatUtils` 的返回对象按**当前帧**引擎状态计算；实体死亡、脱离范围或 owner 变化后，之前拿到的引用不再表达有效状态。
+`setStageOnInRangeOfCommRelay(to)`
 
-把 `getNearestEnemy(...)` / `getShipsWithinRange(...)` 的结果存进字段跨帧、尤其**跨战斗**复用，与战斗状态内容的缓存禁令同一条纪律：战斗结束后引擎销毁重建，旧实体判定恒失效。
+用户进入通信中继范围 → 进 `to`
 
-违反的可观察结果：第二场战斗起，缓存的引用 "数据还在但全部判定失效"(`isAlive()` / 距离全部按新引擎/新位置计算或返回 false)，且**没有任何报错**；跨帧持有也常在实体被击毁后读到陈旧状态。
+`InCommRelayRangeChecker`
 
-修正：每次需要时重新查询，只把查询结果用于当帧决策；跨帧业务状态由调用方显式持有 (数值、id 等)，不持有实体引用。
+`setStageOnCustomCondition(to, checker)`
 
-### 规则 4：@Nullable 返回值必须判空
+自定义条件 → 进 `to`
 
-`AIUtils.getNearestEnemy(...)` 与 `getBestInterceptPoint(...)` 在 javadoc 上标注 `@Nullable`：没有可见敌人 / 目标无法拦截时返回 `null`。
+`ConditionChecker` 任意实现
 
-违反的可观察结果：敌方全灭或视野内无目标时，`getNearestEnemy(...)` 返回 null，下一行调用其方法直接抛 NPE，日志出现 `ERROR` 与堆栈，本帧流程中止。
+`connectWithXxx(from, to, ...)`
 
-修正：使用前判空 (示例的 `if (enemy == null) { ...; return; }` 写法)，并让空目标分支输出日志而不是静默。
+带起点的连接 (`from` 明确时只在 `from` 阶段生效)
 
-## JSON 与文件工具
+同族检测器
 
-查询结果只属于当前帧，需要跨战斗保留的数据必须落到磁盘。JSON 与文件组负责 `<saves>\common` 的读写：`JSONUtils` 提供 common JSON 读写与杂项转换，`IOUtils` 提供受限类加载器下的文件读取。
+`connectWithMarketDecivilized` / `connectWithHostilitiesEnded` / `connectWithHostilitiesStarted`
 
-### JSONUtils 速查 (`org.lazywizard.lazylib.JSONUtils`)
+市场去文明 / 敌对结束 / 敌对开始
 
-| 方法 | 语义 |
-|---|---|
-| `loadCommonJSON(String filename)` | 从 `<saves>\common` 加载 JSON；文件不存在则返回空包装 (不写盘)|
-| `loadCommonJSON(String filename, String defaultJSONPath)` | 文件不存在时用 `defaultJSONPath`(MOD 文件夹内的 JSON) 填充并**立即保存** |
-| `clear(JSONObject)` | 清空一个 JSONObject 的全部条目 |
-| `toColor(JSONArray)` | 把 ≥3 个 int 的 JSONArray 转为 `Color`(配合 settings 合并处的文件加载方法读颜色配置)|
-| `CommonDataJSONObject` | `extends JSONObject implements AutoCloseable`：构造器与 `loadCommonJSON` 的返回类型，`save()` 落盘 |
+`MarketDecivChecker` / `HostilitiesEndedChecker` / `HostilitiesStartedChecker`
 
-`CommonDataJSONObject` 的 javadoc 原文：`save() Saves this JSONObject's contents to common data. You MUST call this if you want your data to persist!` —— 这是官方文档里的**必须**。
+**完成检测三通道**：
 
-`save()` 把内容写到 `saves/common`("persist between saves (and presumably survive Starsector updates)")，读取侧每次 `loadCommonJSON` 重新加载磁盘内容。
+1. **帧推进轮询**：`advanceImpl` → `tracker.intervalElapsed()` → `checkStageChangesAndTriggers(null, null)`。
+    *   检测循环：对 `connections` 逐条检查 "`conn.from == currentStage || conn.from == null` 且 `conn.to != currentStage` 且 `checker.conditionsMet()`"。
+    *   命中即 `setCurrentStage(conn.to)` 并**移除该连接** (除非 `setStageTransitionsRepeatable()`)。
+    *   `while (changed)` 直到无变化，最后 `runTriggers()`。
+    *   **连接是一次性的** —— 同一条连接只触发一次阶段转换。
+2. **对话驱动**：rules 把完成标志写进目标对象内存 (如 `$gearInHub_delivered = true`)。
+    *   再 `Call $<missionId>_ref updateStage` 或 `Call $<missionId>_ref updateData`——`BaseHubMission.callEvent` 里 `"updateStage"` → `checkStageChangesAndTriggers(dialog, memoryMap)`。
+    *   这就是 "对话里完成目标" 的标准收尾 (原版 `cheapCom` 的 `$cheapCom_completed = true` + `Call $cheapCom_ref updateStage` 同款)。
+3. **时限**：`setTimeLimit(failStage, days, noLimitWhileInSystem, ...noLimitAfterStages)` → `advanceImpl` 里 `timeLimit.days < elapsed` 且用户不在豁免星系 → `setCurrentStage(failStage)`。
+    *   进入 `endLimitStages` 后时限取消。
 
-`close()` 只是 `AutoCloseable` 接口实现 (javadoc 原文 "You will never need to call this")，try-with-resources 里调用即可，真正的写盘动作是 `save()`。
+完成标志写哪里：目标内存必须与规则作用域一致
 
-### 规则 5：save() 必须显式调用
+`setStageOnMemoryFlag(to, X, flag)` 检测的是**对象 X 的内存** (或显式 `MemoryAPI`)，rules 里 `$flag = true` 写的是**当前对话作用域** (人物对话 = 该人物内存、市场对话 = 市场实体内存；作用域细节由规则引擎与内存作用域主题展开)。
 
-写完 `CommonDataJSONObject` 后**必须**调用 `save()`，否则改动只存在于内存对象，`close()` 不会自动写盘。
+两者必须指向同一对象 —— 写错内存时连接永不满足，任务永远卡在阶段 (无报错，只差最后一段)。
 
-违反的可观察结果：战斗内 `put(...)` 后没有 `save()`，本场战斗读到的还是旧值；退出游戏/重进后新增键完全消失，`<saves>\common` 下文件内容不变 —— 表现为 "计数器归零 / 设置丢失"，且没有任何报错。
+**任务与规则的握手 (interaction memory 与 mission ref)**：
 
-修正：写操作末尾调用 `save()`；读取失败与写盘失败都要 catch(`IOException` / `JSONException`)，不要让异常中断战斗循环。
+* `updateInteractionData`：`interactionMemory = memoryMap.get(MemKeys.LOCAL)`。
+    *   写 `$<missionId>_stage`(当前阶段枚举名) 与人物代词/称呼 token(`setPersonTokens`)，再调 `updateInteractionDataImpl()`—— 子类在这里用 `set("$key", value)` 写规则变量 (LOCAL 人物内存，随档持久)。
+* **mission ref**：`setGlobalReference(key)` / `setPersonMissionRef(person, key)` / `setFactionMissionRef` / `setMarketMissionRef` / `setEntityMissionRef` 把任务实例自身写进目标内存 (键已被占用时返回 `false`—— 同键任务互斥)。
+    *   rules 侧 `Call $<key> showMap` / `Call $<key> updateStage` / `Call $<key> repSuccess` 就是打到任务的 `callEvent`。
+    *   ref 作为 `VariableSet` 登记进 `changes`，任务结束 `abort()` 时从内存移除。
 
-`defaultJSONPath` 的语义边界：它只用于**首次创建**时填充默认值 (2.4b 起：若默认文件存在且目标文件不存在，立即创建并保存)。
+**地图标记与 Intel 展示**：`makeImportant(person/entity/market, flag, Enum... stages)` 按阶段登记地图重要标记 (`ImportanceData`)。
 
-**禁止**把 `loadCommonJSON(filename, defaultJSONPath)` 读到的内容当作用户显式配置 —— 文件一旦创建，后续读取都以磁盘内容为准，默认值不再参与。
+`getMapLocation(map)` 默认返回当前阶段第一个重要实体的位置 (不可发现实体回退星系中心)—— 任务 Intel 的地图定位**不需要覆写**，只要登记了 `makeImportant`。
 
-需要 "用户配置 + 默认值" 分层时，读取后自行判断键是否存在 (示例的 `has(key)` 写法)，不要依赖默认文件覆盖。
+`addDescriptionForNonEndStage` 与 `addNextStepText` 按当前阶段写 Intel 描述与下一步；`addDescriptionForCurrentStage` 对终态自动输出成功/失败/放弃文案。
 
-::: warning 默认值不是 "用户配置" 的备用值
+单个任务里，阶段连接与触发器组成一条事件链；跨多个任务的大剧情需要第二种形态。本节把两种形态放在一起对照。
 
-`defaultJSONPath` 只在**文件不存在**的首次创建时填充并立即保存；文件一旦存在，后续读取都以磁盘内容为准。把默认内容当用户配置反复写回，会覆盖用户对 common 文件的修改 (表现为 "用户改了配置，下次进游戏被默认值覆盖")。
+### 事件链：触发器链与跨任务全局链
 
-:::
+**形态一：单任务触发器链 (`MissionTrigger`)**。创建纪律 (`HubMissionWithTriggers`)：
 
-对照前置章节：游戏侧 `Global.getSettings().writeJSONToCommon(...)` 与 LazyLib 的 `JSONUtils` 写的是同一个 `<saves>\common` 目录，两条路径选一条即可；
+```java
+beginCustomTrigger(new AlwaysTrueChecker(), Stage.RETURN);   // 或 beginGlobalFlagTrigger / beginDaysElapsedTrigger / ...
+triggerSetGlobalMemoryValue("$gearInHub_enteredReturn", true); // 任意 trigger* 动作
+endTrigger();                                                 // 必须成对
+```
 
-LazyLib 路径的优势是 `CommonDataJSONObject` 本身就是一个 `JSONObject`(原生 `put` / `getInt` / `has`)，无需手动序列化。
+* `beginCustomTrigger(checker, Object... stages)` 开一个 `currTrigger`。
+    *   **`endTrigger()` 把触发器入列** —— 没有 begin 就 end 抛 `RuntimeException("endTrigger() called without a corresponding beginTrigger()")`。
+    *   没 end 就开下一个抛 `"Already began a trigger, call endTrigger() to finish it"`。
+* 触发器执行 (`runTriggers`)：`trigger.getStages().contains(currentStage)` 且 `condition.conditionsMet()` → 依次执行 `TriggerAction.doAction(context)` → **从列表移除** (一次性)。
+    *   调用时机：`accept` 末尾、`setCurrentStage` 末尾、`checkStageChangesAndTriggers` 末尾、时限切换后。
+* 动作族 (`trigger*`，全部汇聚到 `triggerCustomAction`)：
+    *   生成类：`triggerSpawnEntity` / `triggerSpawnDerelictHull` / `triggerSpawnDebrisField` / `triggerSpawnShipGraveyard` / `triggerSpawnFleetAtPickedLocation`。
+    *   舰队类：`triggerCreateFleet` / `triggerSetFleetFaction` / `triggerOrderFleetPatrol` / `triggerOrderFleetInterceptPlayer` / `triggerFleetMakeImportant`。
+    *   标志类：`triggerSetGlobalMemoryValue` / `triggerSetMemoryValue` / `triggerSetFleetFlag` / `triggerSetEntityFlag` / `triggerUnset*`。
+    *   人物类：`triggerMovePersonToMarket` / `triggerUnhideCommListing` / `triggerSetPersonMissionRef`。
+    *   奖励类：`triggerAddCommodityDrop` / `triggerAddWeaponDrop` / `triggerAddHullmodDrop` / `triggerAddSpecialItemDrop` / `triggerAddCustomDrop`。
+    *   其他：`triggerMakeDiscoverable` / `triggerAddAbilities` / `triggerSetRemnantConfig` / `triggerFleetNoAutoDespawn`。
 
-`IOUtils.readAllBytes(String)` 是 `Files.readAllBytes` 的移植版，能在游戏的类加载器限制下按路径读完整字节数组 (MOD 文件夹内文件)；读取时用 `/` 路径分隔 (沿用 settings 合并处建立的 `validateFileName` 规则)。
+**形态二：跨任务全局链 (成熟实例的 `MissionStage` 模式)**。大剧情把 "阶段" 提升为全局状态，每个步骤由独立任务 Intel 承载，步骤结束回写全局阶段：
 
-## 通用工具
+1. 全局阶段枚举 + 唯一读写入口：管理器 `getStage()` 从全局内存读、`setStage(MissionStage)` 写；规则侧转换命令把字符串转枚举 (写错字符串会把阶段退回 `STAGE_NOT_STARTED`)。
+2. 每步一个任务 Intel(成熟实例中每步一个独立任务类)，**各自的结束条件 (时限耗尽/条件失效) 里回写全局阶段** (如 `STAGE_DOOMED`)—— 不回写则后续阶段继续消费旧状态。
+3. 入口用酒吧路线的调度 (各阶段 bar creator，`shouldShowAtMarket` 只匹配特定全局阶段)；中间步骤用 rules `Call` 委托创建/推进 Intel。
 
-数据能落盘之后，还剩一个前置问题：库本身是否启用、类是否在 classpath。通用工具组回答这两问：`ModUtils` / `StringUtils` / `CollectionUtils` / `LazyLib` 提供 MOD 检测、文本与库元信息。
+对照结论：`HubMission` 的内部阶段图是**单任务事件链** (阶段 + 连接 + 触发器，自带回滚与清理)；`MissionStage` 全局链是**跨任务事件链** (全局内存 + 每步 Intel + 回写纪律)。
 
-### ModUtils 速查 (`org.lazywizard.lazylib.ModUtils`)
+两者可以嵌套 —— 全局链的一个步骤本身可以是一个 `HubMission`(如成熟实例中挂进 `person_missions.csv` 的 `HubMissionWithBarEvent`)。
 
-| 方法 | 语义 |
-|---|---|
-| `isModEnabled(String modId)` | 该 MOD id 是否在启用列表 (逐字比较)|
-| `isClassPresent(String classCanonicalName)` | 类是否存在于已加载 MOD 的 classpath(`Class.forName` 式存在性检查，不初始化)|
-| `getEnabledModIds()` | 全部已启用 MOD 的 id 列表 |
-| `getOverrides()` | 各 MOD 在 `mod_info.json` 里显式 override 的原版文件列表 |
-| `loadClassesIfClassIsPresent(...)` | 目标类存在时批量加载一组类 (可选初始化)，用于按 MOD 存在性做可选分支 |
+机制已经完整，还差最后一步：把任务接进游戏。两条注册路线 —— 酒吧事件与联系人任务板 —— 都在这里。
 
-### 规则 6：isClassPresent 与 isModEnabled 语义分工必须分清
+### 注册入口与使用方完整流程
 
-`isClassPresent(...)` 表达 **classpath 存在性**，`isModEnabled(...)` 表达 **MOD 启用状态**：前者用于 "这个类能不能调"(API 可用性)，后者用于 "这个 MOD 开着没有"(功能开关)。
+枢纽任务有两条注册路线 (本节示例走 bar 路线)：
 
-违反的可观察结果：用 `isClassPresent("org.lazywizard.lazylib.combat.CombatUtils")` 判断 "LazyLib 已启用" ——classpath 上的类可能由**其他已启用 MOD 间接携带** (某个 MOD 把 LazyLib 类打进自己的 jar)，此时 `isClassPresent` 为 true 而 `isModEnabled("lw_lazylib")` 为 false，功能分支错误开启；反过来用 `isModEnabled` 判断 "类可用" 也会在类缺失时误判。
+**路线 A：酒吧事件 (bar\_events.csv)**—— 酒吧调度器的 mission 分派：
 
-修正：API 可用性用 `isClassPresent`，启用状态用 `isModEnabled`，需要两者同时成立时显式 AND。
+1. `data/campaign/bar_events.csv` 一行 (CSV spec 加载期读取；表头 11 列：`bar event id,tags,freq,prob,min dur,max dur,min timeout,max timeout,min accepted timeout,max accepted timeout,plugin`)：
 
-硬依赖的声明与启动器把关仍按前置依赖章建立的 `ModManagerAPI` 体系 (本节的 `ModUtils` 是 LazyLib 提供的便捷入口，语义分工一致)。
+    ```text
+    gearInHub,,10,1,30,40,15,20,60,90,data.scripts.gearin.campaign.GearInHubMission
+    ```
 
-`StringUtils`：`wrapString(String, int)` 按固定行宽换行、`indent(String, String)` 逐行缩进。`LazyLib` 元信息与设置见 "概览" 节。
+2. `BarEventSpec`(`com.fs.starfarer.api.loading.BarEventSpec`)：`plugin` 必填；`isMission()` 判定 plugin 是 `HubMissionWithBarEvent` 子类。
 
-`data\console\commands.csv` 中全部以 `#` 注释 (LazyLib 自带的控制台测试命令未启用)，不要把 "LazyLib 提供控制台命令" 当作可用现状。
+3. `BarEventManager.readResolve()` → `updateBarEventCreatorsFromSpecs()`(调度器为每个无 creator 的 spec 自动建 `SpecBarEventCreator`)。
 
-## 文件与 API 链路
+4. `SpecBarEventCreator.createBarEvent()`：`spec.isMission()` → `new HubMissionBarEventWrapper(specId)`。
 
-四组工具的职责已经分开，下面把它们收进一张链路表，谁声明、谁加载、谁读取、结果在哪里核对一目了然：
+    *   `BarEventSpec.isMission()` 用 `getInstanceOfScript(pluginClass) instanceof HubMissionWithBarEvent` 判定 ——**plugin 必须是 `HubMissionWithBarEvent` 子类**。
+    *   `createMission()` 反射实例化并把 `setMissionId(id)` 与 (若存在同名 person mission spec 的) 图标一并设置。
+5. `HubMissionBarEventWrapper.shouldShowAtMarket(market)`：按 `seed + market.getId().hashCode()` 掷 `spec.getProb()`；通过则 `spec.createMission()`(反射实例化任务)→ `setMissionId(specId)`(与 `createMission` 幂等重复)：
 
-| 环节 | 文件或 API | 使用方 / 行为 |
-|---|---|---|
-| 依赖声明 | `mod_info.json` 的 `dependencies`(`lw_lazylib`)| 启动器 `ModManagerAPI` 强制检查 [C13-S1]；LazyLib 侧 id 常量 `LazyLib.MOD_ID` |
-| 库加载 | `Starsector\mods\LazyLib\jars\LazyLib.jar`(+ `LazyLib-Kotlin.jar`；`jars\internal\` 不用于 MOD 依赖)| 脚本类路径；`ModUtils.isClassPresent` 反映 classpath 存在性 |
-| 数学 / 几何 | `MathUtils` / `VectorUtils` / `FastTrig` / `EllipseUtils` / `ShapeUtils` / `CollisionUtils` / `CollectionUtils` | 纯静态无状态；度/弧度分工 (规则 1)、原地修改语义 (规则 2)|
-| 战斗查询 | `CombatUtils` / `AIUtils` / `WeaponUtils` / `DefenseUtils` | 当前帧引擎状态快照 (规则 3)；`@Nullable` 判空 (规则 4)|
-| JSON / 文件 | `JSONUtils` / `JSONUtils.CommonDataJSONObject` / `IOUtils` | `<saves>\common` 下 JSON 读写；`save()` 落盘 (规则 5)|
-| MOD 检测 | `ModUtils` / `LazyLib` | classpath 存在性 vs 启用状态 (规则 6)；版本 / 缓存 / 日志设置 |
-| 库配置 | `Starsector\mods\LazyLib\lazylib_settings.json` | `enableCaching` / `logLevel` / `logDeprecated` / `crashOnDeprecated` 四键 |
-| 可观察结果 | `Starsector\starsector-core\starsector.log`；`<saves>\common\GearIn_lazy_demo` 文件 | 本节示例的 `GearIn lazy ...` 日志行与 common JSON 内容 |
+    *   `setGenRandom(genRandom)` → `mission.shouldShowAtMarket(market)`。6. `addPromptAndOption`：`mission.createAndAbortIfFailed(market, true)`；创建失败 (`isMissionCreationAborted()`) 则本次不展示。
+    *   否则把 LOCAL 内存切到任务人、`updateInteractionData`、`FireBest` 触发 `<prefix>_blurbBar` 与 `<prefix>_optionBar` 规则。
+6. 用户点选后 rules 走 `contact_acceptBar` → **`BarCMD accept $missionId`**(`BarCMD` 的 `accept` 分支)：按 `getBarEventId()` 找到 wrapper → `BarEventManager.notifyWasInteractedWith(w)`(酒吧事件的交互收尾)：
 
-## 完整最小例
+    *   `w.getMission().accept(dialog, memoryMap)`—— 进入 "生命周期四段" 的接受段。
 
-链路表的每一环都需要真实调用才算数。下面在既有累计工程布局上追加一个薄入口类战斗插件与四个工具族用法片段类 (不新增任何游戏资源)，五个类同在 `data.scripts.gearin.lib` 包内协作：
+**路线 B：联系人任务板 (person\_missions.csv + `BaseMissionHub`)**：
 
-- `GearInLazyPlugin`：薄入口类战斗插件 —— 只做接入与节奏控制 (暂停检查 + 报告周期)，按序调用四个用法片段，不含任何工具调用细节；
-- `GearInLazyMathUsage`：数学与几何工具族片段 ——`MathUtils` / `VectorUtils` 的距离、范围、角度、最短旋转、向量定长与圆周取点 (`AIUtils.getNearestEnemy` 仅用于取演示目标)；
-- `GearInLazyCombatQuery`：战斗查询工具族片段 ——`CombatUtils` / `AIUtils` 的范围列表 (`isAlive()` 过滤)、可见性统计与拦截点；
-- `GearInLazyJsonStore`：JSON 与文件工具族片段 ——`JSONUtils.loadCommonJSON` + `CommonDataJSONObject` 读写 `<saves>\common\GearIn_lazy_demo`，写后必须 `save()`；
-- `GearInLazyRuntimeProbe`：通用工具族片段 ——`LazyLib.MOD_ID` 常量 + `ModUtils` 运行时检测。
+1. `data/campaign/person_missions.csv` 一行 (CSV spec 加载期读取；17 列)：
+    *   `demo_dcm,demo_aegle,,,,,10,10,30,FRIENDLY,,,,,,graphics/icons/missions/dead_drop.png,data.scripts.campaign.missions.DemoMission` (示例行)。
+2. `PersonMissionSpec`(`com.fs.starfarer.api.loading.PersonMissionSpec`)：
+    *   `person id` / `tagsAll` / `tagsAny` / `tagsNotAny` / `freq` / `min-max timeout`
+    *   `min-max rep` / `importance` / `reqMission*` / `icon` / `plugin`。
+    *   `createMission()` 反射实例化 `plugin`。
+3. 用户与联系人开任务板 (`MissionHubCMD hasHub` → `addMHubOption` → `openMhubOptionSel` → `Call $mHub prepare`)。
+    *   `BaseMissionHub.prepare` → `updateOfferedMissions`—— 超时/完成过滤 → 按 `getFrequencyWeight` 建 priority/普通 picker → 数量 `MIN_TO_SHOW`–`MAX_TO_SHOW`(settings `contactMinMissions` / `contactMaxMissions`)。
+    *   `creator.createHubMission(this)` → `setHub` / `setCreator` / `setGenRandom` → `createAndAbortIfFailed(person.getMarket(), false)` → 成功者进 `offered` 并 `updateInteractionData`。
+4. `listMissions`：`FireBest.fire(..., getTriggerPrefix() + "_blurb true")` / `"_option true"` 写任务列表选项。
+    *   接受：`Call $mHub accept $missionId`(`BaseMissionHub.callEvent` → `accept`：`curr.accept(dialog, memoryMap)` → 从 `offered` 移除 → creator 进 accepted 超时)。
+
+**使用方完整流程**：
+
+* 任务 ID `gearInHub` → `bar_events.csv` 行 (注册入口)→ `SpecBarEventCreator` → `HubMissionBarEventWrapper`(抽取与展示)→ `BarCMD accept`(接受入口)→ `BaseHubMission.accept`。
+* `IntelManagerAPI.addIntel`(Intel 使用方)+ `SectorAPI.addScript`(脚本使用方)→ `advanceImpl` / `checkStageChangesAndTriggers`(阶段推进使用方)→ rules `Call $gearInHub_ref updateStage`(完成检测使用方)。
+* `endSuccess`(奖励使用方)→ `notifyEnded` → `removeScript`(清理使用方)。
+
+rules 侧的 `$gearInHub_ref` / `$gearInHub_stage` / `gearInHub_blurbBar` / `gearInHub_optionBar` 是同一 ID 的规则使用方。
+
+## 规则强度
+
+以上机制里有几处一旦写错，任务会静默失效或直接报错。以下按强度集中列出本节的关键约束，正文与故障分析按编号引用；编者建议写任务类时把这张表放在手边，每完成一段就对照一次。
+
+**必须/禁止 (当前基线仍有效，违反后的可观察结果附上；出处见文末 "建议参考项")**：
+
+规则
+
+强度依据
+
+违反后的可观察结果
+
+接受前**必须**调用 `setStartingStage(id)`
+
+`accept` 对 null 直接抛 `RuntimeException("startingStage can not be null. Use setStartingStage()")`
+
+用户接受任务瞬间启动中止 (异常沿规则执行链冒泡，日志 ERROR 堆栈指向 `BaseHubMission.accept`)
+
+`create()` 里注册的副作用**必须**能回滚：实体/人物/标志经基类方法 (`spawn*` / `makeImportant` / `setFlag` / `set*MissionRef`) 或显式 `changes.add(...)`，结束时由 `abort()` 统一清理
+
+`EntityAdded.abort` 只移除带 `REMOVE_ON_MISSION_OVER` tag 的实体
+
+创建失败或任务结束时实体/人物/标志残留在星区：重复出现、地图永久标记、内存键不清理
+
+`setStageOnMemoryFlag` / `connectWithMemoryFlag` 的目标内存**必须**与 rules 写标志的作用域一致
+
+内存键与作用域语义 (见本节 "完成检测" 节)
+
+完成标志写到了别处内存：阶段连接永不满足，任务永远卡在当前阶段 (无报错，只差最后一段)
+
+`beginXxxTrigger` 与 `endTrigger` **必须**成对
+
+两条 RuntimeException 原文："Already began a trigger" / "endTrigger() called without a corresponding beginTrigger()"
+
+任务创建期抛 RuntimeException；缺 end 的触发器永不入列 (动作静默缺失)
+
+规则侧推进任务**必须**经 `Call $<missionId>_ref updateStage` / `updateData`，不能只写内存标志
+
+`callEvent` 的 `updateStage` / `updateData` 分支
+
+只写 `$flag = true` 不 `updateStage`：`checkStageChangesAndTriggers` 在下一轮轮询 (每 0.09–0.11 游戏天) 仍会检测到，但对话内不立即推进、Intel 不更新 —— 表现为 "对话里说完成了，界面/日志下一帧才变"；依赖即时性的业务 (如立即结算) 会错乱
+
+任务实例字段**必须**可随存档序列化 (任务随 `scripts` 列表 XStream 保存的结论见前置知识)；对话句柄等瞬态引用用 `transient`
+
+`BaseHubMission` 已把 `startingStage` / `cargoOnAccept` / `aborted` / `interactionMemory` / `doNotEndMission` 标 `transient`
+
+保存/读档异常、读档后任务字段指向失效对象、行为错乱
+
+mission ref 键**必须** MOD 专属且唯一
+
+`set*MissionRef` 对已占用键返回 false
+
+与其他 MOD 撞键：任务创建被拒 (`create` 返回 false → 任务不出现)；同 MOD 两个任务共用一键则后建者失败
+
+bar 路线任务类**必须**继承 `HubMissionWithBarEvent`
+
+`BarEventSpec.isMission()` 按此分派
+
+plugin 类型错位：wrapper 不创建、任务被当普通 `PortsideBarEvent` 反射实例化 —— 构造/类型错误，酒吧选项不出现或报错 (酒吧事件陷阱 "plugin 类型错位" 同源)
+
+完成/失败/放弃路径**必须**落在 `successStages` / `failStages` / `abandonStage` 集合内
+
+`setCurrentStage` 只对这些集合结算
+
+阶段切到集合外对象：任务不结束、只发 NEXT\_STEP\_UPDATE，永久 "进行中"
+
+时限失效**必须**有对应失败阶段 (`setTimeLimit(failStage, ...)` 的第一参)
+
+时限分支的切换目标语义
+
+`advanceImpl` 时限分支切到一个非失败阶段：任务 "卡死" 且每次帧推进都重复切
+
+**建议 (违反的可观察结果附上)**：
+
+* 任务 ID 全局唯一、带 MOD 前缀 (`gearInHub`)；内存键族与规则分类随之唯一 (`$gearInHub_*` / `gearInHub_blurbBar`...)。撞名 → 与别的 MOD 规则分类/内存键互相覆盖 (症状同键冲突主题的既有结论)。
+* 奖励与声望用方法族：`setCreditReward` / `setCreditReward(CreditReward)` / `setXPReward` / `setRepPersonChangesXxx` / `setRepFactionChangesXxx` / `setRepChanges(...)` / `setNoRepChanges()`。
+    *   直接调 `adjustRep` 会绕过 `adjustedRep` 一次性保护，且与 `repSuccess`/`repFailure` 规则动作重复结算。
+* 目标选择先 `require*` 后 `pick*`(`HubMissionWithSearch` 的要求系统)，不要在 `create` 里手写遍历。手写 → 复用不了市场/星系筛选与 `preferMarketInDirectionOfOtherMissions` 等成品能力，且 `genRandom` 一致性被破坏。
+* 每阶段至多一个 `makeImportant` 主要目标 (`makePrimaryObjective`)，不要给一个阶段塞多个重要标记 ——Intel 地图定位只取第一个，其余标记只增加噪声。
+
+## 实现生涯任务
+
+枢纽任务先在数据侧成为酒吧候选，接受后才进入 Intel 与脚本列表。实现时按注册、创建、目标、阶段、触发器、规则数据的顺序推进，每一步都有独立的失败边界。
+
+### 注册酒吧任务
+
+在 `data/campaign/bar_events.csv` 追加任务行。plugin 必须是 `HubMissionWithBarEvent` 子类，任务 ID 同时决定规则分类前缀。
+
+```csv
+gearInHub,,10,1,30,40,15,20,60,90,data.scripts.gearin.campaign.GearInHubMission
+```
+
+完成信号：设置表能读取 `gearInHub` spec，酒吧 manager 为它建立 mission wrapper creator。
+
+### 建立任务人与唯一引用
+
+在 `GearInHubMission.create()` 开头处理酒吧任务人，再把任务实例写进人物内存。引用键已被占用时必须放弃本次创建。
+
+```java
+setGiverRank(Ranks.CITIZEN);
+setGiverPost(Ranks.POST_TRADER);
+setGiverFaction(Factions.INDEPENDENT);
+findOrCreateGiver(createdAt, true, false);
+giver = getPerson();
+if (giver == null || !setPersonMissionRef(giver, "$gearInHub_ref")) {
+    return false;
+}
+```
+
+完成信号：酒吧文本能取得任务人，LOCAL memory 中的 `$gearInHub_ref` 指向当前任务实例；同一人物无法同时创建第二个同键任务。
+
+### 选择目标与联系人
+
+继续在 `create()` 中使用要求系统选择另一个友好市场，再创建或复用交付联系人。
+
+```java
+sourceMarket = giver.getMarket();
+requireMarketIsNot(sourceMarket);
+requireMarketFaction(sourceMarket.getFactionId());
+requireMarketFactionNotHostileTo(Factions.PLAYER);
+targetMarket = pickMarket();
+if (targetMarket == null) {
+    return false;
+}
+sourceContact = findOrCreateTrader(
+        targetMarket.getFactionId(), targetMarket, true);
+```
+
+完成信号：日志中的目标市场不同于来源市场，联系人出现在目标市场通讯录，并能被 Intel 地图定位。
+
+### 连接任务阶段
+
+仍在 `create()` 中声明起点、终态、两条内存连接和时限。连接监听的对象必须与 rules 写标志的对象一致。
+
+```java
+setStartingStage(Stage.CONTACT);
+setSuccessStage(Stage.COMPLETED);
+setFailureStage(Stage.FAILED);
+setStageOnMemoryFlag(Stage.RETURN,
+        sourceContact, "$gearInHub_dataReceived");
+setStageOnMemoryFlag(Stage.COMPLETED,
+        giver, "$gearInHub_delivered");
+setTimeLimit(Stage.FAILED, MISSION_DAYS, null);
+```
+
+完成信号：接受任务后当前阶段为 CONTACT；联系人标志置位后进入 RETURN；任务人标志置位后进入 COMPLETED；60 游戏日未完成则进入 FAILED。
+
+### 添加阶段触发器
+
+在阶段声明后建立一次性触发器。每个 `begin` 都必须由 `endTrigger()` 入列。
+
+```java
+beginCustomTrigger(new AlwaysTrueChecker(), Stage.RETURN);
+triggerSetGlobalMemoryValue("$gearInHub_enteredReturn", true);
+endTrigger();
+
+beginCustomTrigger(new DaysElapsedChecker(
+        MISSION_DAYS / 2f, this), Stage.CONTACT, Stage.RETURN);
+triggerSetGlobalMemoryValue("$gearInHub_halfTime", true);
+endTrigger();
+```
+
+完成信号：首次进入 RETURN 时写入 `$gearInHub_enteredReturn`；任务累计 30 游戏日时写入 `$gearInHub_halfTime`，两项动作都只执行一次。
+
+### 向规则提供任务数据
+
+在 `updateInteractionDataImpl()` 中写显示变量。规则完成目标后先写对应人物内存，再立即调用 mission ref 的 `updateStage`。
+
+```java
+@Override
+protected void updateInteractionDataImpl() {
+    set("$gearInHub_reward", Misc.getWithDGS(reward));
+    set("$gearInHub_targetMarketName", targetMarket.getName());
+    set("$gearInHub_contactName", sourceContact.getNameString());
+}
+```
+
+```text
+$gearInHub_dataReceived = true
+Call $gearInHub_ref updateStage
+```
+
+完成信号：酒吧报价显示奖励与目标名称，取货对话结束的同一刻 Intel 从 CONTACT 更新为 RETURN。
+
+## 组装生涯任务实现
+
+机制、约束与注册入口都齐了，现在把它们落成一个可以编译、可以进游戏验收的任务类。
+
+在既有 MOD 布局与 `GearInModPlugin` 之上新增一个任务类与两行数据 (`bar_events.csv` 行 + `rules.csv` 片段；数据行见本节 "注册入口与使用方完整流程" 与下方规则片段)：
 
 ```text
 Starsector\mods\GearIndustry\
 ├── build.gradle
 ├── settings.gradle
-├── mod_info.json                      # 已声明 dependencies: [lw_lazylib]（前置依赖章）
+├── mod_info.json
 ├── data\
+│   └── campaign\
+│       ├── bar_events.csv    # 追加一行（见"注册入口与消费者闭环"节）
+│       └── rules.csv         # 追加规则片段（见下方）
 ├── src\
-│   └── data\scripts\gearin\
-│       ├── GearInModPlugin            # 前置章节所有
-│       ├── GearInGlobalAccess         # 前置章节所有
-│       ├── combat\
-│       │   └── GearInCombatStatePlugin   # 前置章节所有
-│       └── lib\                       # 本节新增五个类
-│           ├── GearInLazyPlugin            # 薄载体战斗插件（接线与节奏）
-│           ├── GearInLazyMathUsage         # 数学与几何工具族片段
-│           ├── GearInLazyCombatQuery       # 战斗查询工具族片段
-│           ├── GearInLazyJsonStore         # JSON 与文件工具族片段
-│           └── GearInLazyRuntimeProbe      # 通用工具族片段
+│   └── data\scripts\gearin\campaign\
+│       └── GearInHubMission   # 本节新增（归本节所有）
 └── jars\
 ```
 
-### GearInLazyPlugin：薄入口类战斗插件
+### GearInHubMission
 
-```java
-package data.scripts.gearin.lib;
+对应关系：
 
-import java.util.List;
+* `extends HubMissionWithBarEvent`：任务约定的完整默认实现链 (`BaseHubMission` → `HubMissionWithTriggers` → `HubMissionWithSearch` → `HubMissionWithBarEvent`)。
+    *   `shouldShowAtMarket` 在 `create()` **之前**被 wrapper 调用 (`HubMissionBarEventWrapper.shouldShowAtMarket`)，返回 false 本次不展示。
+* `create(createdAt, true)`：bar 路线用 `setGiverRank/Post/Importance/Faction/Tags` + `findOrCreateGiver(createdAt, true, false)` 生成任务人 (`addToCommDirectory=true`：任务人留在通讯录，交付对话可达；原版 extr 任务同款)。
+    *   `getPerson()` / `getMarket()` 判空、`setPersonMissionRef` 判占用 —— 任何一步失败返回 false 即 `abort()`。
+    *   `requireMarketIsNot(sourceMarket)` / `requireMarketFaction(...)` / `requireMarketFactionNotHostileTo(Factions.PLAYER)` / `preferMarketInDirectionOfOtherMissions()` / `pickMarket()`
+    *   目标选择要求系统 (`HubMissionWithSearch`)。
+    *   与同一联系人同时存在的其他任务会互相避开方向 (`preferMarketInDirectionOfOtherMissions`)。
+* `findOrCreateTrader(faction, market, true)`：目标市场生成/复用联系人 (`cleanUpOnMissionOverIfWasNewPerson=true` 时新人物随任务结束清理)。
+* `setStageOnMemoryFlag(Stage.RETURN, sourceContact, "$gearInHub_dataReceived")`：完成检测连接 ——rules 在联系人对话里写 `$gearInHub_dataReceived = true`(写进联系人内存) 再 `Call $gearInHub_ref updateStage`，连接命中切到 RETURN。
+    *   **目标内存与规则作用域必须一致** (规则强度 "必须" 第 3 条)。
+* `setTimeLimit(Stage.FAILED, MISSION_DAYS, null)`：时限；`advanceImpl` 按任务总 `elapsed`(游戏天) 判定，超时切 FAILED。
+* `makeImportant(sourceContact, "$gearInHub_hasData", Stage.CONTACT)`：CONTACT 阶段联系人市场点亮地图标记；`getMapLocation` 用默认实现 (当前阶段第一个重要实体)。
+* `makeImportant(giver, "$gearInHub_returnMark", Stage.RETURN)`：RETURN 阶段任务人市场点亮地图标记；标志与完成连接监听的 `$gearInHub_delivered` 分开 (进入 RETURN 时引擎写阶段标志，若同名会立即命中完成连接，交付对话不会发生)。
+* `beginCustomTrigger(new AlwaysTrueChecker(), Stage.RETURN)` + `triggerSetGlobalMemoryValue(...)` + `endTrigger()`：一次性触发器 (进 RETURN 即写全局内存 `$gearInHub_enteredReturn`)。
+    *   半程触发器用 `beginCustomTrigger(new DaysElapsedChecker(MISSION_DAYS / 2f, this), ...)`；
+    *   `DaysElapsedChecker(days, mission)` 判 `mission.elapsed >= days`(与 `beginDaysElapsedTrigger(days, this)` 同语义)，避开该 helper 双重载在三个实参下的编译歧义。
+    *   **必须成对 endTrigger**。
+* `creditReward = reward`：直接写受保护字段 (`getCreditsReward` 返回它)，绕过 `setCreditReward` 的 `rewardMult` 与千位取整，日志与发放一致；声望走 `setRepPersonChangesMedium` / `setRepFactionChangesLow`。
+* `updateInteractionDataImpl`：`set(...)` 写 `$gearInHub_*` 规则变量 (LOCAL 人物内存，随档持久)；`$gearInHub_stage` 由基类 `updateInteractionData` 自动写。
+* `addDescriptionForNonEndStage` / `addNextStepText`：Intel 界面的阶段描述与下一步 (终态文案由 `addDescriptionForCurrentStage` 自动处理)。
 
-import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.input.InputEventAPI;
-import com.fs.starfarer.api.util.IntervalUtil;
+### bar\_events.csv 行与 rules.csv 片段
 
-/**
- * 薄载体：把四个工具族用法片段接成完整最小例的战斗插件。
- *
- * 由既有战斗插件在 init() 中 addPlugin 注册（C7-S1 模型），只在本场
- * 战斗内有效；每个工具族一个用法片段类（GearInLazyMathUsage /
- * GearInLazyCombatQuery / GearInLazyJsonStore / GearInLazyRuntimeProbe），
- * 本类只做接线与节奏控制（暂停守卫 + 报告周期），不含工具调用细节。
- */
-public class GearInLazyPlugin extends BaseEveryFrameCombatPlugin {
+`data/campaign/bar_events.csv` 追加一行 (列序与表头一致，见 "注册入口与使用方完整流程")：
 
-    private CombatEngineAPI engine;
-    private final IntervalUtil reportInterval = new IntervalUtil(2f, 2f);
-    private int battleCount;
-    private int reportCount;
-
-    @Override
-    public void init(CombatEngineAPI engine) {
-        this.engine = engine;
-        battleCount = GearInLazyJsonStore.readInt("battles");
-        battleCount++;
-        GearInLazyJsonStore.writeInt("battles", battleCount);
-        GearInLazyRuntimeProbe.logInit(battleCount);
-    }
-
-    @Override
-    public void advance(float amount, List<InputEventAPI> events) {
-        if (engine.isPaused()) {
-            return; // 暂停守卫（C7-S1）：暂停时 advance 仍会被调用
-        }
-        reportInterval.advance(amount);
-        if (reportInterval.intervalElapsed()) {
-            reportCount++;
-            GearInLazyMathUsage.report(engine);
-            GearInLazyCombatQuery.report(engine, reportCount);
-            GearInLazyJsonStore.writeInt("reports", reportCount);
-        }
-    }
-}
+```text
+gearInHub,,10,1,30,40,15,20,60,90,data.scripts.gearin.campaign.GearInHubMission
 ```
 
-接入关系：`init` 里先经 `GearInLazyJsonStore.readInt("battles")` 读计数、自增后 `writeInt` 写回，再经 `GearInLazyRuntimeProbe.logInit(battleCount)` 输出检测行；
+`data/campaign/rules.csv` 追加 (规则引擎完整语法与内存作用域不在此展开；这里按酒吧事件路由的最简流程写法给出)：
 
-`advance` 里报告周期到点时依次调用 `GearInLazyMathUsage.report(engine)`、`GearInLazyCombatQuery.report(engine, reportCount)`。
-
-`reports` 计数经 `GearInLazyJsonStore.writeInt` 落盘。
-
-入口类只维护引擎引用、周期计时器与两个计数，不直接调用任何 LazyLib 工具。
-
-- **暂停检查**：`advance` 开头 `if (engine.isPaused()) return;`，暂停期间报告停摆 —— 沿用前置章节建立的暂停检查纪律。
-- **日志前缀**：`GearIn lazy init:` / `GearIn lazy math:` / `GearIn lazy combat:` / `GearIn lazy json:` 四条前缀由四个类各自输出，逐字保留，作为预期结果与故障分析的核对信号。
-
-### GearInLazyMathUsage：数学与几何工具族片段
-
-```java
-package data.scripts.gearin.lib;
-
-import org.apache.log4j.Logger;
-import org.lazywizard.lazylib.MathUtils;
-import org.lazywizard.lazylib.VectorUtils;
-import org.lazywizard.lazylib.combat.AIUtils;
-import org.lwjgl.util.vector.Vector2f;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.ShipAPI;
-
-/**
- * 数学与几何工具族的用法片段：MathUtils / VectorUtils 的最小消费面。
- *
- * 无持久状态的纯静态工具，角度一律使用度（degrees）；AIUtils 只用于
- * 获取演示目标（最近可见敌舰），查询结果按当前帧快照使用（C7-S2 同规）。
- */
-public final class GearInLazyMathUsage {
-
-    private static final Logger LOG = Global.getLogger(GearInLazyMathUsage.class);
-
-    private GearInLazyMathUsage() {
-        // 工具类：不实例化
-    }
-
-    /** 距离、范围、角度、最短旋转、向量定长与圆周取点各输出一行日志。 */
-    public static void report(CombatEngineAPI engine) {
-        ShipAPI player = engine.getPlayerShip();
-        if (player == null) {
-            return; // 防御性判空：getPlayerShip() 战斗内实际永不返回 null（C7-S2）
-        }
-        Vector2f playerLoc = player.getLocation();
-        ShipAPI enemy = AIUtils.getNearestEnemy(player);
-        if (enemy == null) {
-            LOG.info("GearIn lazy math: no enemy in sight");
-            return;
-        }
-        Vector2f enemyLoc = enemy.getLocation();
-        float angleTo = VectorUtils.getAngle(playerLoc, enemyLoc);
-
-        // 原地修改语义：getDirectionalVector 返回新向量；resize 原地改写并返回同一引用
-        Vector2f dirToEnemy = VectorUtils.getDirectionalVector(playerLoc, enemyLoc);
-        Vector2f spot = VectorUtils.resize(dirToEnemy, 100f); // dirToEnemy 被改写为长度 100
-        Vector2f.add(spot, playerLoc, spot);
-
-        LOG.info("GearIn lazy math: dist=" + MathUtils.getDistance(player, enemy)
-                + " inRange1200=" + MathUtils.isWithinRange(player, enemy, 1200f)
-                + " angleTo=" + angleTo
-                + " clampAngle=" + MathUtils.clampAngle(angleTo + 360f)
-                + " facing=" + VectorUtils.getFacing(player.getVelocity())
-                + " shortest=" + MathUtils.getShortestRotation(VectorUtils.getFacing(player.getVelocity()), angleTo)
-                + " spot=(" + spot.getX() + ", " + spot.getY() + ")"
-                + " circumference=(" + MathUtils.getPointOnCircumference(playerLoc, 100f, angleTo).getX() + ", "
-                + MathUtils.getPointOnCircumference(playerLoc, 100f, angleTo).getY() + ")"
-                + " random=" + MathUtils.getRandomNumberInRange(1, 6));
-    }
-}
+```text
+gearInHubBlurbBar,gearInHub_blurbBar,,,"An independent trader at the bar is complaining loudly about a shipment of factory data that went missing in transit.",,
+gearInHubOfferOptionBar,gearInHub_optionBar,,,,gearInHub_startBar:Ask about the missing shipment,
+gearInHubOfferTextBar,DialogOptionSelected,"$option == gearInHub_startBar","$missionId = gearInHub
+FireBest GearInHubOfferText",,"contact_acceptBar:Accept
+contact_declineBarNoContinue:Decline",
+gearInHubTextBar,GearInHubOfferText,,"SetTextHighlights $gearInHub_reward $gearInHub_targetMarketName
+Call $gearInHub_ref showMap ""Destination: $gearInHub_targetMarketName""","The trader leans in: ""The data was lost when the convoy jumped through $gearInHub_targetMarketName. My contact there - $gearInHub_contactName - can get it back. I'll pay $gearInHub_reward credits if you deliver it to me.""",,
+gearInHubDataReceivedGreeting,PickGreeting,"$gearInHub_hasData score:1000
+Call $gearInHub_ref updateData","ShowPersonVisual
+$gearInHub_dataReceived = true
+Call $gearInHub_ref updateStage","So you're the trader's courier. Here - the factory data cache, intact. It's all there.",contact_pickAnotherGreeting:Continue,
+gearInHubDeliveryGreeting,PickGreeting,"$gearInHub_returnMark score:1000
+Call $gearInHub_ref updateData","ShowPersonVisual
+$gearInHub_delivered = true
+Call $gearInHub_ref updateStage","The trader takes the datapad and runs a quick check: ""That's everything. Here's your payment - $gearInHub_reward credits.""",contact_pickAnotherGreeting:Continue,
 ```
 
-要点：
+交付收尾两条规则沿用原版同类任务的 `PickGreeting` 模式 (原版 `cheapCom` 取货与 `extr` / `jabr` 回任务人同款)：前往目标市场与联系人 `$gearInHub_contactName` 通讯时命中 `gearInHubDataReceivedGreeting`(条件 `$gearInHub_hasData`——CONTACT 阶段 `makeImportant` 写在联系人内存的阶段标志)，脚本把 `$gearInHub_dataReceived = true` 写进联系人内存 (与 `setStageOnMemoryFlag(Stage.RETURN, sourceContact, ...)` 作用域一致) 并 `Call $gearInHub_ref updateStage`，阶段切到 RETURN；回来源市场与任务人通讯时命中 `gearInHubDeliveryGreeting`(条件 `$gearInHub_returnMark`——RETURN 阶段地图标记标志，进入 RETURN 时由 `makeImportant` 写入；脚本把 `$gearInHub_delivered = true` 写进任务人内存 —— 完成连接监听的标志，与阶段标志分开)，并 `Call $gearInHub_ref updateStage`，连接 RETURN→COMPLETED 命中并结算。两条规则对应验证方案步骤 3/4；`score:1000` 让规则胜过原版通用问候，`contact_pickAnotherGreeting:Continue` 是原版问候回环选项 (选后回到通讯问候流程)。
 
-- `MathUtils.getDistance` / `isWithinRange` 做距离与范围判定 (含碰撞半径)；`VectorUtils.getAngle` / `getFacing` / `MathUtils.getShortestRotation` 算朝向与最短旋转 (全部度)。
-- `clampAngle(angleTo + 360f)` 演示角度归一 (结果应等于 `angleTo`)。
-- `resize` 演示原地修改语义 (注释标明 `dirToEnemy` 被改写为长度 100)；`getPointOnCircumference` 演示圆周定点。
-- 目标获取借用 `AIUtils.getNearestEnemy`(`@Nullable`，判空后输出 `no enemy in sight`)；战斗查询族的完整消费面在 `GearInLazyCombatQuery`。
+规则分类必须与 mission id 一致
 
-### GearInLazyCombatQuery：战斗查询工具族片段
+规则 ID 用驼峰 (`gearInHubBlurbBar`)，规则**分类**是 `gearInHub_blurbBar` / `gearInHub_optionBar`。
 
-```java
-package data.scripts.gearin.lib;
+分类由 `getTriggerPrefix()` = mission id 决定，必须与 CSV 的 mission id 列一致。
 
-import java.util.List;
+分类拼错时 `FireBest` 找不到规则，酒吧选项静默缺失 (无报错、无日志)。
 
-import org.apache.log4j.Logger;
-import org.lazywizard.lazylib.combat.AIUtils;
-import org.lazywizard.lazylib.combat.CombatUtils;
-import org.lwjgl.util.vector.Vector2f;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.ShipAPI;
-
-/**
- * 战斗查询工具族的用法片段：CombatUtils / AIUtils 的最小消费面。
- *
- * 查询结果是当前帧引擎状态快照，实体仍归战斗引擎管理，结果禁止跨战斗
- * 缓存（C7-S2 同规）；@Nullable 返回值（getNearestEnemy /
- * getBestInterceptPoint）使用前必须判空。
- */
-public final class GearInLazyCombatQuery {
-
-    private static final Logger LOG = Global.getLogger(GearInLazyCombatQuery.class);
-
-    private GearInLazyCombatQuery() {
-        // 工具类：不实例化
-    }
-
-    /** 范围列表、可见性统计与拦截点各输出一行日志。 */
-    public static void report(CombatEngineAPI engine, int reportCount) {
-        ShipAPI player = engine.getPlayerShip();
-        if (player == null) {
-            return;
-        }
-        List<ShipAPI> ships = CombatUtils.getShipsWithinRange(player.getLocation(), 2000f);
-        int alive = 0;
-        int visible = 0;
-        for (ShipAPI ship : ships) {
-            if (ship.isAlive()) {
-                alive++; // 快照可能含残骸，按 C7-S2 的 isAlive() 纪律过滤
-            }
-            if (CombatUtils.isVisibleToSide(ship, player.getOwner())) {
-                visible++;
-            }
-        }
-        ShipAPI enemy = AIUtils.getNearestEnemy(player);
-        String intercept = "none";
-        if (enemy != null) {
-            Vector2f point = AIUtils.getBestInterceptPoint(player.getLocation(), 400f,
-                    enemy.getLocation(), enemy.getVelocity());
-            intercept = point == null ? "none" : "(" + point.getX() + ", " + point.getY() + ")";
-        }
-        LOG.info("GearIn lazy combat: inRange2000=" + ships.size()
-                + " alive=" + alive + " visible=" + visible
-                + " intercept=" + intercept
-                + " reports=" + reportCount);
-    }
-}
-```
-
-要点：
-
-- `CombatUtils.getShipsWithinRange` 返回 2000 范围列表；按战斗状态内容的纪律用 `isAlive()` 过滤后计数 (快照可能含残骸)，再按 `CombatUtils.isVisibleToSide(ship, player.getOwner())` 统计可见数。
-- `AIUtils.getNearestEnemy` 判空后，`getBestInterceptPoint` 以 400 速度求拦截点，`point == null` 时输出 `intercept=none` —— 两次判空同一条纪律 (规则 4)。
-
-### GearInLazyJsonStore：JSON 与文件工具族片段
-
-```java
-package data.scripts.gearin.lib;
-
-import org.apache.log4j.Logger;
-import org.lazywizard.lazylib.JSONUtils;
-import org.lazywizard.lazylib.JSONUtils.CommonDataJSONObject;
-
-import com.fs.starfarer.api.Global;
-
-/**
- * JSON 与文件工具族的用法片段：JSONUtils / CommonDataJSONObject 的最小消费面。
- *
- * 读写 <saves>/common 下的 JSON：只有调用 CommonDataJSONObject.save()
- * 才会写盘（不调用 save() 的改动不会落盘）；读取与写盘失败都要 catch，
- * 不让异常中断战斗循环。
- */
-public final class GearInLazyJsonStore {
-
-    private static final Logger LOG = Global.getLogger(GearInLazyJsonStore.class);
-
-    /** 公共数据文件名：JSONUtils 在 <saves>/common 下读写该 JSON。 */
-    private static final String COMMON_FILE = "GearIn_lazy_demo";
-
-    private GearInLazyJsonStore() {
-        // 工具类：不实例化
-    }
-
-    /** 读公共 JSON 中的 int 键；文件或键不存在时返回 0。 */
-    public static int readInt(String key) {
-        try (CommonDataJSONObject jsonObject = JSONUtils.loadCommonJSON(COMMON_FILE)) {
-            if (jsonObject.has(key)) {
-                return jsonObject.getInt(key);
-            }
-        } catch (Exception e) {
-            LOG.warn("GearIn lazy json: failed to read key " + key, e);
-        }
-        return 0;
-    }
-
-    /** 写公共 JSON 的 int 键并立即 save()：不调用 save() 的改动不会落盘。 */
-    public static void writeInt(String key, int value) {
-        try (CommonDataJSONObject jsonObject = JSONUtils.loadCommonJSON(COMMON_FILE)) {
-            jsonObject.put(key, value);
-            jsonObject.save();
-        } catch (Exception e) {
-            LOG.warn("GearIn lazy json: failed to write key " + key, e);
-        }
-    }
-}
-```
-
-要点：
-
-- 读侧 `has(key)` 判键、`getInt` 取值，文件或键不存在时返回 0；写侧 `put` 后**必须** `save()`(规则 5)，`close()` 不会自动写盘。
-- 读取与写盘失败都 catch(`Exception`) 并输出 `GearIn lazy json:` 警告行，不让异常中断战斗循环。
-- try-with-resources 用法：`CommonDataJSONObject` 实现 `AutoCloseable`，`close()` 只是接口实现，真正的写盘动作是 `save()`。
-
-### GearInLazyRuntimeProbe：通用工具族片段
-
-```java
-package data.scripts.gearin.lib;
-
-import org.apache.log4j.Logger;
-import org.lazywizard.lazylib.LazyLib;
-import org.lazywizard.lazylib.ModUtils;
-
-import com.fs.starfarer.api.Global;
-
-/**
- * 通用工具族的用法片段：LazyLib / ModUtils 的最小消费面。
- *
- * 以库自身常量 LazyLib.MOD_ID 做启用检测（不手写 id 字符串）；
- * isClassPresent 表达 classpath 存在性、isModEnabled 表达启用状态，
- * 两条信息分别回答"LazyLib 开着没"与"这个类能调没"。
- */
-public final class GearInLazyRuntimeProbe {
-
-    private static final Logger LOG = Global.getLogger(GearInLazyRuntimeProbe.class);
-
-    private GearInLazyRuntimeProbe() {
-        // 工具类：不实例化
-    }
-
-    /** 输出库版本、支持的游戏版本与运行时检测结果一行日志。 */
-    public static void logInit(int battleCount) {
-        LOG.info("GearIn lazy init: version=" + LazyLib.getVersion()
-                + " supported=" + LazyLib.getSupportedGameVersion()
-                + " modEnabled=" + ModUtils.isModEnabled(LazyLib.MOD_ID)
-                + " classPresent=" + ModUtils.isClassPresent("org.lazywizard.lazylib.combat.CombatUtils")
-                + " battleCount=" + battleCount);
-    }
-}
-```
-
-要点：
-
-- `LazyLib.getVersion()` / `getSupportedGameVersion()` 打印库版本与支持的游戏版本；`ModUtils.isModEnabled(LazyLib.MOD_ID)` 用库常量做启用检测 (不手写 `"lw_lazylib"`)。
-- `ModUtils.isClassPresent("org.lazywizard.lazylib.combat.CombatUtils")` 单独表达 "类在不在 classpath" —— 两条信息分别回答 "LazyLib 开着没" 与 "这个类能调没"(规则 6)。
-
-### 注册片段 (工程片段 —— 本节不改动既有战斗插件所有者文件)
-
-```java
-    // 既有战斗插件（前置章节的所有者类）的 init() 内新增一行
-    @Override
-    public void init(CombatEngineAPI engine) {
-        engine.addPlugin(new GearInLazyPlugin());
-        // ... 原有逻辑
-    }
-```
-
-### 构建
+构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/lib/` 下五个类 (可用 `jar tf` 核对)：
-- `GearInLazyPlugin` / `GearInLazyMathUsage` / `GearInLazyCombatQuery` / `GearInLazyJsonStore` / `GearInLazyRuntimeProbe`
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInHubMission.class`(可用 `jar tf` 核对)。
 
-### 验证方案
+## 关键故障实验：任务被接受后立即异常中止
 
-前置数据：既有 MOD 布局 [C6-S1]；`dependencies` 已声明 `lw_lazylib`[C13-S1]；既有战斗插件接入本节注册片段 ([C7-S1] 模型)；`GearIn_test` 测试战役 [C3-S1]。
+让 `create()` 成功返回，却不声明起点阶段。酒吧包装仍会展示任务，但点击接受时 `BaseHubMission.accept()` 直接抛出 startingStage 异常。
 
-1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，并用 `jar tf jars\GearIndustry.jar` 列出类条目。
-2. 初始化：进入 `GearIn_test` 一场战斗，在 `starsector.log` 找到 `GearIn lazy init: ...` 行。
-3. 周期报告：战斗 (未暂停) 中观察报告输出；按空格暂停约 10 秒后恢复。
-4. 空目标：清空敌方后继续观察报告行。
-5. 持久化：退出战役再进入一场战斗，核对 init 行与 `<saves>\common\` 下的文件。
+**局部故障片段：**
+
+```java
+// 故障片段
+return true;
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+setStartingStage(Stage.CONTACT);
+return true;
+```
+
+复验：从酒吧接受任务，确认当前阶段为 CONTACT、Intel 条目已登记、任务脚本已进入 Sector 脚本列表，目标联系人同时在地图上被标记。
+
+## 验证方案
+
+前置数据：既有 MOD 布局与 `GearInModPlugin`[C6-S1] / [C6-S2]、本节 `GearInHubMission`、`bar_events.csv` 行、`rules.csv` 片段、既有 MOD 布局与 `GearInModPlugin`、本节任务类与两行数据 (同上)、同上，每次改动后重建。
+
+1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`；
+2. 执行 `jar tf jars\GearIndustry.jar` 核对类文件。
+3. 跳过/完成教程后进入酒吧，核对日志与酒吧提示/选项 (事件不是每次都在，受酒吧调度影响，可多进几个市场或等待)；
+4. 点 "Ask about the missing shipment"，核对文本后选 "Accept"；
+5. 前往目标市场与联系人 `$gearInHub_contactName` 对话并走交付规则；
+6. 回任务人市场与其对话并走收尾规则；
+7. 接受后挂机 600 真实秒，观察失败路径；
+8. 接受后保存并读档，任务完成后再次读档核对清理。
+9. 把 `setStageOnMemoryFlag(Stage.COMPLETED, giver, "$gearInHub_delivered")` 的目标改成 `sourceContact`，交付后核对阶段；
+10. 删掉 `endTrigger()` 后重建，核对创建期异常；
+11. 把 `MISSION_DAYS` 改成 10 重建，接受后挂机核对失败路径。
+12. 查看 `starsector.log`、对话流程和 Intel 状态。
 
 预期结果：
 
-- `jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/lib/` 下五个类的条目：`GearInLazyPlugin` / `GearInLazyMathUsage` / `GearInLazyCombatQuery` / `GearInLazyJsonStore` / `GearInLazyRuntimeProbe`。
-- 首次进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行：
+* `gradle jar` 以 `BUILD SUCCESSFUL` 结束，`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInHubMission.class`。
 
-  ```text
-  GearIn lazy init: version=3.0 supported=0.98a-RC5 modEnabled=true classPresent=true battleCount=1
-  ```
+    ### 酒吧任务完整流程
 
-  `version` 是 `LazyLib.getVersion()` 的 float 输出；`supported` 应与 `Starsector\mods\LazyLib\mod_info.json` 的 `gameVersion`(`0.98a-RC5`) 一致；`battleCount` 首次为 1。
-- 战斗 (未暂停) 中每 2 秒出现 `GearIn lazy math:` 与 `GearIn lazy combat:` 各一行；`math` 行的 `dist` 随敌舰距离变化、`clampAngle` 与 `angleTo` 数值一致 (角度归一到 `[0,360)`)、`shortest` 的绝对值不超过 180(最短旋转)、`spot` 与玩家距离约 100(`resize` 定长 + 平移)；`combat` 行的 `inRange2000` 覆盖 2000 范围内的舰船 (含残骸时 `alive` 小于 `inRange2000`)。
-- 按空格暂停约 10 秒，暂停期间**没有**报告输出；恢复后报告继续。
-- 敌方全灭后，`math` 行变为 `GearIn lazy math: no enemy in sight`，无 `ERROR`；`combat` 行的 `intercept=none`。
-- 退出战役再进入一场战斗，init 行 `battleCount` 递增 (1 → 2)；`<saves>\common\` 下出现以 `GearIn_lazy_demo` 开头的文件，内容含 `battles` 键，战斗内 `reports` 键随报告周期增长。
-- 变更验证 (单位分工)：把示例的 `MathUtils.clampAngle(angleTo + 360f)` 换成 `FastTrig.sin(angleTo)` 输出 —— 数值不再等于 `angleTo` (度被当弧度用)。
+* 三组方案的预期结果全部出现。
 
-清理：保留测试类时，把 `FastTrig.sin(angleTo)` 恢复为 `MathUtils.clampAngle(angleTo + 360f)`；无需保留测试数据时，删除 `GearIn_lazy_demo` 测试文件。
+* 全程无 `gear_in` 引起的 `ERROR`。
+
+清理：把完成阶段连接的目标恢复为 `giver`，补回 `endTrigger()`，并把 `MISSION_DAYS` 恢复为 `60f`。
 
 ## 故障分析
 
-以下症状按您实际看到的现象组织，每个故障给出触发条件、断链原因与修正方法。
-
-1. **角度全部偏了，转向、取点位置不对**。触发：把 `FastTrig` 的弧度输入与 `MathUtils` / `VectorUtils` 的度混用 (如 `VectorUtils.rotate(vec, FastTrig.cos(x))` 或 `FastTrig.sin(angleInDegrees)`)。可观察：转向量、圆周取点、最短旋转全部偏移，差值恰为弧度/度的换算比例 (如 `VectorUtils.rotate(vec, (float)Math.PI / 2f)` 只转约 1.57° 而不是 90°，`FastTrig.sin(90f)` 得到约 0.894 而不是 1)。原因：两个域没有自动转换 (规则 1)。修正：各自域内用各自单位，互转显式 `Math.toRadians` / `Math.toDegrees`。
-2. **common JSON 改了但重进游戏又 "归零"**。触发：`put(...)` 后忘了 `save()`。可观察：本场战斗内读到的还是旧值；退出重进后键值丢失，文件内容不变，无任何报错。原因：`CommonDataJSONObject.save()` 是唯一写盘入口 (规则 5，javadoc "You MUST call this if you want your data to persist!")。修正：写操作末尾调用 `save()`；把 "读-改-写" 封装成示例的 `GearInLazyJsonStore.writeInt` 单一入口。
-3. **敌方全灭后日志出现 NPE 堆栈**。触发：`AIUtils.getNearestEnemy(player)` 的返回值直接 `.getLocation()`，没有判空。可观察：敌方全部被击毁后的下一个报告周期抛 NPE，`ERROR` + 堆栈，本帧流程中止。原因：`getNearestEnemy` / `getBestInterceptPoint` 标注 `@Nullable`(规则 4)。修正：判空并输出 `no enemy in sight` / `intercept=none` 日志。
-4. **第二场战斗起查询全部 "失效" 却无报错**。触发：把 `CombatUtils.getShipsWithinRange(...)` / `AIUtils.getNearestEnemy(...)` 的结果存进字段，跨战斗复用。可观察：第二场战斗里缓存的实体引用判定恒 false / 位置陈旧，逻辑静默失效 —— 与战斗状态内容的实体缓存禁令同一条纪律。原因：查询结果是当前帧快照，实体归战斗引擎管理 (规则 3)；战斗结束引擎销毁重建。修正：每帧重新查询，不缓存实体引用。
-5. **导弹/舰船方向被 "算出来的向量" 改掉了**。触发：`Vector2f vel = ship.getVelocity(); VectorUtils.rotate(vel, 90f);` 想 "算出转向后的新方向"。可观察：`ship.getVelocity()` 本身被旋转 ——`getVelocity()` 返回的是引擎内部的同一个向量对象，实体飞行方向突变。原因：`VectorUtils` 不带 `dest` 的重载原地修改并返回同一引用 (规则 2)。修正：先 `new Vector2f(old)` 再变换，或使用带 `dest` 的重载。
-6. **`isClassPresent(...)` 为 true 但 LazyLib 没勾选，功能分支错误开启**。触发：用 `ModUtils.isClassPresent("org.lazywizard.lazylib.combat.CombatUtils")` 当 "LazyLib 已启用" 判据。可观察：某个其他已启用 MOD 把 LazyLib 类打进了自己的 jar(间接携带)，classpath 上存在类但 `isModEnabled("lw_lazylib")` 为 false，分支按 "可用" 执行后调用缺失的功能。原因：`isClassPresent` 表达 classpath 存在性、`isModEnabled` 表达启用状态 (规则 6)。修正：API 可用性用 `isClassPresent`、启用状态用 `isModEnabled`，需要同时成立时显式 AND。
-7. **用户改了 common 配置，下次进游戏却被 "默认值" 覆盖**。触发：`JSONUtils.loadCommonJSON("GearIn_settings", "data/config/gear_defaults.json")` 每次读取后把默认文件的内容整体写回。可观察：用户对 `GearIn_settings` 的修改丢失，文件内容回到默认值。原因：`defaultJSONPath` 只在**文件不存在**的首次创建时填充并立即保存 (2.4b 起)，一旦文件存在就以磁盘为准；把默认值当用户配置反复写回属于误用。修正：默认值只用于初始化；读取后按 `has(key)` 判断键是否存在 (示例写法)。
-8. **范围查询统计含残骸，计数 "不对"**。触发：`CombatUtils.getShipsWithinRange(...).size()` 直接当 "存活舰船数"。可观察：击毁敌舰后计数不减或延迟减少。原因：查询结果是引擎对象表的当前帧快照 (引擎对象表含残骸与待移除舰；LazyLib 只保证排除 Command Shuttle)。修正 (建议)：需要 "存活" 语义时按 `isAlive()` 过滤 (示例的 `alive` 计数写法)；需要含残骸时明确表达意图。
+- **酒吧没有任务选项**：`bar_events.csv` 缺少注册行、plugin 类名错误，或 rules 分类与 `getTriggerPrefix()` 不一致。核对注册表和规则前缀，重新进入酒吧确认任务出现。
+- **接受任务时抛出起点阶段异常**：`create()` 成功返回前没有调用 `setStartingStage`。设置起点阶段，再接受任务确认 Intel 正常建立。
+- **交付后任务阶段没有推进**：内存标志写入的对象与 `setStageOnMemoryFlag` 监听对象不同，或规则没有调用 `updateStage`。统一作用域并执行 `Call $gearInHub_ref updateStage`，确认阶段切换到 RETURN。
+- **任务结束后目标实体仍然存在**：对象由普通 API 创建，没有登记进任务的 `changes`。改用 `spawn*`、`makeImportant`、`setFlag` 和 mission ref 辅助方法，完成任务并读档后确认清理生效。
+- **创建任务时报 `Already began a trigger`**：新的 `begin*Trigger` 在前一个触发器结束前执行。保证每段 `begin*Trigger`、动作和 `endTrigger` 成对，再创建任务确认异常消失。
+- **触发器动作没有执行**：动作写在 begin/end 区间外，没有进入触发器列表。把动作移入配对区间，进入对应阶段后确认 memory flag 或日志出现。
+- **终态阶段没有结算任务**：成功、失败或放弃阶段未登记到对应集合，或阶段 ID 类型不一致。统一使用同一枚举并调用终态登记方法，再走收尾对话确认奖励与结束文案出现。
+- **时限耗尽后任务仍在进行**：时限目标为 null，或没有登记为失败阶段。将时限指向已登记的失败阶段，推进到期限后确认任务进入失败状态。
+- **信用点奖励与 Intel 文案不一致**：随机奖励经过倍率和千位取整，展示仍使用了边界值。用最终 `creditReward` 生成文案，完成任务后核对实际余额增量。
+- **一次任务增加了两次声望**：rules 反馈和 `endSuccess` 都执行了结算。只保留一个实际 `adjustRep` 入口，再完成任务确认声望只变化一次。
+- **同一任务同时存在两个实例**：创建时没有检查已占用的 mission ref。`setPersonMissionRef` 返回 false 时让 `create` 失败，重复抽取后确认旧 ref 未被覆盖。
+- **保存或读档时任务字段报错**：任务保存了对话句柄或其他不可序列化引用。持久字段只保留可序列化状态，瞬态句柄标记为 `transient` 并按需重建；完成一次保存和读档复验。
+- **联系人任务板没有该任务**：联系人 ID、tag、声望、importance 或前置任务条件未通过 `PersonMissionSpec` 过滤。逐项对照目标联系人和 CSV 字段，刷新任务板后确认选项出现。
+- **Intel 地图定位到星系中心**：当前阶段的主要实体不可发现，地图只能回退到星系中心。指定一个可发现的 primary objective，或覆写地图位置方法；重开 Intel 地图核对标记。
+- **Intel 地图标记消失**：被登记的重要实体已经死亡，地图定位会跳过它。改用仍存活的阶段目标并更新 primary objective，再确认标记恢复。
 
 ## 总结
 
-本节把 LazyLib 的四组工具接成了一条可编译、可观察的调用链：`GearInLazyPlugin` 只做节奏控制，四个用法片段类分别使用数学、战斗查询、JSON 与元信息工具，`starsector.log` 与 `<saves>\common` 是这条链路的两个核对终点，`battles` / `reports` 两个计数证明调用真的发生过。
+本节把枢纽任务系统串成一条从注册到结算的完整链：`bar_events.csv` 一行把任务交到酒吧调度器手里，`accept` 一次完成起点阶段、Intel 登记与脚本登记，随后 `advanceImpl` 按游戏天推进，`setCurrentStage` 命中终态集合时结算奖励，最后由 `endAfterDelay` 走到 `notifyEnded` 收尾。Intel 条目与脚本半身都来自 `BaseIntelPlugin` 这一侧，阶段图、完成检测与触发器属于任务自己。
 
-六条规则都对应一个具体的失败表现：度/弧度混用让角度偏移，原地修改改写实体速度，跨战斗缓存让查询静默失效，`@Nullable` 不判空抛 NPE，`save()` 漏调让数据归零，`isClassPresent` / `isModEnabled` 混用让功能分支误开。核对任何库工具调用时先问三件事：它读的是哪个状态 (当前帧快照还是磁盘内容)，它改的是谁的对象 (引擎实体还是自己的数据)，漏掉必要调用会看到什么 (报错还是静默)。
+排错时先问三个问题：任务有没有出现，任务有没有被接受，任务卡在哪个阶段。没有出现查注册行与规则分类；一接受就报错查 `setStartingStage`；卡阶段查连接目标与规则作用域是否指向同一对象、`updateStage` 是否被 `Call`。完成标志写进哪块内存，决定三条检测通道里哪一条会命中 —— 先写内存，再 `Call $<missionId>_ref updateStage`，这是本节最值得记住的握手。
 
-既有纪律在本节全部复用：暂停检查、`isAlive()` 过滤、禁止跨战斗缓存与战斗插件模型章节完全同源；依赖声明与运行时检测复用 [C13-S1]；common 文件位置与 settings 合并处对照。本节完成教程工程对 LazyLib 的第一次真正调用，战役侧和渲染侧工具不属于本节职责。
+从逻辑上看，rules 的语法与内存作用域规则是这条链的自然下游；事件链的两种形态 (单任务触发器链 / 跨任务全局链) 则为任务接入更宏观的剧情推进提供了位置。
 
 ## 建议参考项
 
-- `org.lazywizard.lazylib.MathUtils`：数学工具 —— 钳制、距离、范围、最短旋转、随机取点 (度)。
-- `org.lazywizard.lazylib.VectorUtils`：向量工具 —— 朝向、夹角、定向、定长/限长/旋转 (原地修改语义，度)。
-- `org.lazywizard.lazylib.FastTrig`：三角工具 ——`sin` / `cos` / `atan` / `atan2`(弧度)。
-- `org.lazywizard.lazylib.EllipseUtils` / `ShapeUtils` / `CollisionUtils` / `CollectionUtils`：椭圆几何、顶点生成、碰撞查询与集合工具。
-- `org.lazywizard.lazylib.combat.CombatUtils`：战斗范围与可见性查询 (当前帧快照)。
-- `org.lazywizard.lazylib.combat.AIUtils`：最近目标与拦截点计算 (`@Nullable` 判空)。
-- `org.lazywizard.lazylib.combat.WeaponUtils` / `DefenseUtils`：武器弧与装甲只读查询。
-- `org.lazywizard.lazylib.JSONUtils`：common JSON 读写；`CommonDataJSONObject.save()` 落盘。
-- `org.lazywizard.lazylib.ModUtils`：MOD 启用状态与 classpath 存在性检测。
-- `org.lazywizard.lazylib.LazyLib`：库元信息 (`MOD_ID` / `getVersion()` / `getSupportedGameVersion()`) 与日志设置。
-- `org.lazywizard.lazylib.IOUtils` / `StringUtils`：受限类加载器下的文件读取与文本换行、缩进。
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：`getPlayerShip()` / `isPaused()` / `addPlugin(...)`。
-- `com.fs.starfarer.api.combat.ShipAPI`：`isAlive()` / `getLocation()` / `getVelocity()` / `getOwner()`。
-- `com.fs.starfarer.api.util.IntervalUtil`：周期计时器 (`advance` + `intervalElapsed`)。
-- `Starsector\mods\LazyLib\javadoc.zip`：LazyLib 官方 Javadoc。
-- `Starsector\mods\LazyLib\mod_info.json`：`id` `lw_lazylib`、`gameVersion` `0.98a-RC5`。
-- `Starsector\mods\LazyLib\lazylib_settings.json`：`enableCaching` / `logLevel` / `logDeprecated` / `crashOnDeprecated` 四键。
-- `Starsector\saves\common\`：common JSON 落盘目录 (`GearIn_lazy_demo` 文件所在)。
-- `Starsector\starsector-core\starsector.log`：游戏日志，本节日志行的可观察位置。
-- `mod_info.json`(本 MOD)：`dependencies` 声明 `lw_lazylib`。
+* `com.fs.starfarer.api.impl.campaign.missions.hub.HubMission`：任务约定接口 (11 个方法)。
+* `com.fs.starfarer.api.impl.campaign.missions.hub.BaseHubMission`：任务基类 (生命周期 / 阶段 / 完成检测 / 奖励与生成辅助)。
+* `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithTriggers`：触发器 API(`begin*Trigger` / `trigger*` 动作族 / `endTrigger`)。
+* `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithSearch`：目标选择要求系统 (`require*` / `prefer*` / `pick*`)。
+* `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithBarEvent`：酒吧入口补充 (`shouldShowAtMarket`)。
+* `com.fs.starfarer.api.impl.campaign.missions.hub.MissionHub` / `BaseMissionHub`：联系人任务板 (路线 B)。
+* `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionCreator` / `BaseHubMissionCreator`：任务创建器 (频率 / 声望过滤 / 计数)。
+* `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionBarEventWrapper`：酒吧包装 (路线 A 的抽取与展示)。
+* `com.fs.starfarer.api.impl.campaign.missions.hub.MissionTrigger`：触发器数据类。
+* `com.fs.starfarer.api.impl.campaign.missions.CheapCommodityMission`：原版酒吧任务实例 (对照对象)。
+* `com.fs.starfarer.api.campaign.comm.IntelInfoPlugin` / `IntelManagerAPI`：Intel 约定与登记表。
+* `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`：Intel 条目 + 每帧脚本组合基类。
+* `com.fs.starfarer.api.loading.BarEventSpec` / `PersonMissionSpec`：两条注册路线的规格类。
+* `com.fs.starfarer.api.impl.campaign.intel.bar.events.SpecBarEventCreator`：酒吧事件创建器 (mission 分派)。
+* `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD` / `MissionHubCMD`：接受任务的规则命令。
+* `com.fs.starfarer.api.mission.MissionDefinitionAPI`：战役任务 API(对照项，与枢纽任务无关)。
+* `com.fs.starfarer.api.impl.campaign.ids.Factions` / `Ranks` / `Tags`：示例用到的 id 常量。
+* `com.fs.starfarer.api.util.Misc`：`makeImportant` / `getWithDGS` / `getDGSCredits` 等工具。
+* `data/campaign/bar_events.csv`：酒吧事件注册 (本节任务一行)。
+* `data/campaign/person_missions.csv`：联系人任务板注册 (路线 B)。
+* `data/campaign/rules.csv`：本节六条任务规则。
+* `data/config/settings.json`：任务板数量配置 (`contactMinMissions` / `contactMaxMissions` 等)。
+
+## 完整最小例
+
+::: details 完整成品：GearInHubMission
+
+```java
+package data.scripts.gearin.campaign;
+
+import java.awt.Color;
+import java.util.Map;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.InteractionDialogAPI;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.campaign.rules.MemoryAPI;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Factions;
+import com.fs.starfarer.api.impl.campaign.ids.Ranks;
+import com.fs.starfarer.api.impl.campaign.ids.Tags;
+import com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithBarEvent;
+import com.fs.starfarer.api.ui.TooltipMakerAPI;
+import com.fs.starfarer.api.util.Misc;
+
+/**
+ * 完整最小例：枢纽任务（HubMission）——Intel、阶段、目标与事件链。
+ *
+ * 任务 ID：gearInHub（bar_events.csv 的 mission id 列 = 本类在 CSV 的 spec id；
+ * 该 ID 的消费者：HubMissionBarEventWrapper.setMissionId、规则分类前缀
+ * gearInHub_blurbBar / gearInHub_optionBar、交互内存键 $gearInHub_stage、
+ * mission ref 键 $gearInHub_ref）。本节所有权，不含工作单元编号变体。
+ *
+ * 注册入口：data/campaign/bar_events.csv 一行（plugin 列 = 本类全名）+ rules.csv
+ * 六条规则（blurbBar / optionBar / startBar / 任务文本 / 数据收讫 / 交付结算），见页面正文。
+ * 展示链路：BarEventManager -> SpecBarEventCreator（isMission 判定）->
+ * HubMissionBarEventWrapper -> shouldShowAtMarket / createAndAbortIfFailed(true)
+ * -> updateInteractionData -> FireBest gearInHub_blurbBar / gearInHub_optionBar。
+ * 接受链路：rules 的 contact_acceptBar -> BarCMD accept gearInHub ->
+ * wrapper.getMission().accept() -> addIntel + addScript + setCurrentStage。
+ *
+ * 演示点：
+ * 1. Intel：本类经 BaseHubMission 继承 BaseIntelPlugin——accept 时 addIntel
+ *    （Intel 界面可见）+ addScript（每帧推进），结束时 endAfterDelay(3 游戏日)
+ *    -> notifyEnded -> removeScript；
+ * 2. 阶段：Stage 枚举四态（CONTACT -> RETURN -> COMPLETED / FAILED），
+ *    setCurrentStage 切阶段时登记/解除 makeImportant 地图标记并发送下一步更新；
+ * 3. 目标完成检测三通道：对话驱动（rules 写 $gearInHub_dataReceived /
+ *    $gearInHub_delivered + Call $gearInHub_ref updateStage，走 MemoryBooleanChecker
+ *    连接）、帧推进轮询（tracker 每 0.09-0.11 游戏天查连接）、时限
+ *    （setTimeLimit(Stage.FAILED, 60, null) 到期切失败）；
+ * 4. 事件链：两个一次性触发器 —— 进入 RETURN 阶段时写全局内存标记
+ *    （AlwaysTrueChecker），任务进行满 30 游戏天时写半程标记（DaysElapsedChecker）；
+ * 5. 奖励：信用点（按距离与质量折算）与双声望（人物 MEDIUM / 势力 LOW）。
+ */
+public class GearInHubMission extends HubMissionWithBarEvent {
+
+    public static final float MISSION_DAYS = 60f;
+
+    /** 阶段图：CONTACT（去目标市场找联系人）-> RETURN（回任务人处交货）-> 终态。 */
+    public enum Stage {
+        CONTACT,
+        RETURN,
+        COMPLETED,
+        FAILED,
+    }
+
+    private static final Logger LOG = Global.getLogger(GearInHubMission.class);
+
+    private PersonAPI giver;
+    private MarketAPI sourceMarket;
+    private MarketAPI targetMarket;
+    private PersonAPI sourceContact;
+    private int reward = 0;
+
+    @Override
+    public boolean shouldShowAtMarket(MarketAPI market) {
+        // 酒吧路线：create() 之前被调用（HubMissionBarEventWrapper.shouldShowAtMarket）。
+        // 本示例任何有太空港的市场都可出现。
+        return market.hasSpaceport();
+    }
+
+    @Override
+    protected boolean create(MarketAPI createdAt, boolean barEvent) {
+        if (barEvent) {
+            // 酒吧路线需要自己生成给任务者（联系人路线由 hub 的 getPerson() 提供）。
+            setGiverRank(Ranks.CITIZEN);
+            setGiverPost(Ranks.POST_TRADER);
+            setGiverImportance(pickImportance());
+            setGiverFaction(Factions.INDEPENDENT);
+            setGiverTags(Tags.CONTACT_TRADE);
+            findOrCreateGiver(createdAt, true, false);
+        }
+
+        giver = getPerson();
+        if (giver == null) return false;
+        sourceMarket = giver.getMarket();
+        if (sourceMarket == null) return false;
+
+        // mission ref：rules 侧 Call $gearInHub_ref <action> 打到本任务的 callEvent。
+        // 键已被其他任务占用时返回 false——create 失败、本次不提供该任务。
+        if (!setPersonMissionRef(giver, "$gearInHub_ref")) {
+            return false;
+        }
+
+        // ---- 目标选择：HubMissionWithSearch 的要求系统 ----
+        requireMarketIsNot(sourceMarket);
+        requireMarketFaction(sourceMarket.getFactionId());
+        requireMarketFactionNotHostileTo(Factions.PLAYER);
+        preferMarketInDirectionOfOtherMissions();
+        targetMarket = pickMarket();
+        if (targetMarket == null) return false;
+
+        sourceContact = findOrCreateTrader(targetMarket.getFactionId(), targetMarket, true);
+        if (sourceContact == null || !setPersonMissionRef(sourceContact, "$gearInHub_ref")) {
+            return false;
+        }
+
+        // ---- 阶段图 ----
+        setStartingStage(Stage.CONTACT);
+        setSuccessStage(Stage.COMPLETED);
+        setFailureStage(Stage.FAILED);
+
+        // ---- 目标完成检测：内存标志连接（对话驱动，rules 置位 + Call updateStage）----
+        setStageOnMemoryFlag(Stage.RETURN, sourceContact, "$gearInHub_dataReceived");
+        setStageOnMemoryFlag(Stage.COMPLETED, giver, "$gearInHub_delivered");
+
+        // ---- 目标时限：60 游戏天超时进 FAILED ----
+        setTimeLimit(Stage.FAILED, MISSION_DAYS, null);
+
+        // ---- 地图目标标记：进入对应阶段时点亮 ----
+        makeImportant(sourceContact, "$gearInHub_hasData", Stage.CONTACT);
+        makeImportant(giver, "$gearInHub_returnMark", Stage.RETURN);
+
+        // ---- 事件链：一次性触发器 ----
+        // 进入 RETURN 阶段即写全局标记（AlwaysTrueChecker 恒真，进阶段即触发）。
+        beginCustomTrigger(new AlwaysTrueChecker(), Stage.RETURN);
+        triggerSetGlobalMemoryValue("$gearInHub_enteredReturn", true);
+        endTrigger();
+        // 任务进行满 30 游戏天（无论停在哪个阶段）写半程标记。
+        // 注意：beginDaysElapsedTrigger(float, Object...) 与 (float, Object, Object...)
+        // 两个重载在三个实参时会歧义，这里直接用它内部构造的 DaysElapsedChecker。
+        beginCustomTrigger(new DaysElapsedChecker(MISSION_DAYS / 2f, this), Stage.CONTACT, Stage.RETURN);
+        triggerSetGlobalMemoryValue("$gearInHub_halfTime", true);
+        endTrigger();
+
+        // ---- 奖励与声望 ----
+        reward = getRoundNumber(30000f + getDistanceLY(targetMarket) * 3000f + getQuality() * 20000f);
+        creditReward = reward;
+        setRepPersonChangesMedium();
+        setRepFactionChangesLow();
+
+        LOG.info(String.format("GearIn hub mission: created at %s, target %s, reward %d",
+                createdAt.getName(), targetMarket.getName(), reward));
+        return true;
+    }
+
+    @Override
+    protected void updateInteractionDataImpl() {
+        // 写规则变量（LOCAL 人物内存，随档持久；$gearInHub_stage 由基类自动写）。
+        set("$gearInHub_reward", Misc.getWithDGS(reward));
+        set("$gearInHub_targetMarketName", targetMarket.getName());
+        set("$gearInHub_dist", getDistanceLY(targetMarket));
+        set("$gearInHub_contactName", sourceContact.getNameString());
+    }
+
+    @Override
+    public void acceptImpl(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
+        LOG.info("GearIn hub mission: accepted, currentStage=" + getCurrentStage());
+    }
+
+    @Override
+    public String getBaseName() {
+        return "Lost Shipment Data";
+    }
+
+    @Override
+    public void addDescriptionForNonEndStage(TooltipMakerAPI info, float width, float height) {
+        float opad = 10f;
+        Color h = Misc.getHighlightColor();
+        if (currentStage == Stage.CONTACT) {
+            info.addPara("A shipment of factory data went missing while a convoy passed through %s. "
+                    + "Talk to %s there to retrieve the data cache.",
+                    opad, h, targetMarket.getName(), sourceContact.getNameString());
+        } else if (currentStage == Stage.RETURN) {
+            info.addPara("Return to %s and hand the recovered data over to %s.",
+                    opad, h, sourceMarket.getName(), giver.getNameString());
+        }
+    }
+
+    @Override
+    public boolean addNextStepText(TooltipMakerAPI info, Color tc, float pad) {
+        Color h = Misc.getHighlightColor();
+        if (currentStage == Stage.CONTACT) {
+            info.addPara("Go to %s and talk to %s",
+                    pad, tc, h, targetMarket.getName(), sourceContact.getNameString());
+            return true;
+        }
+        if (currentStage == Stage.RETURN) {
+            info.addPara("Return to %s and talk to %s",
+                    pad, tc, h, sourceMarket.getName(), giver.getNameString());
+            return true;
+        }
+        return false;
+    }
+}
+```
+
+:::

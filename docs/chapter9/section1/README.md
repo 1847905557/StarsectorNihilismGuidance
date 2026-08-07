@@ -1,330 +1,553 @@
-# 创建人物并设置关系
+# 制作随存档运行的生涯脚本
 
-本节创建人物并设置身份、关系与持久归属。人物会在任务、贸易和通信功能中反复使用，因此示例同时确认舰长与军官的分配方式。
+本节注册一个随存档运行的生涯脚本，并用 `SectorAPI` 读取生涯时钟。示例会观察暂停、加速和战斗期间的推进差异；地点容器只保留本页所需的最小定义。
 
-*本节预期阅读时间：~30 分钟。*
+*本节预期阅读时间：~18 分钟。*
 
-*本节预期操作时间：~40 分钟。*
+*本节预期操作时间：~35 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 创建人物 (空白与势力随机两个入口)，并核对人物对象的默认值表；
-- 读写人物的身份与档案字段，区分 `getMemory()` 与 `getMemoryWithoutUpdate()` 两条记忆读取路径；
-- 解释关系三族的存储方式、`RepLevel` 九档阈值与档位判定；
-- 用 `setRelationship` / `adjustRelationship` / `ensureAtBest` / `ensureAtWorst` 修改关系，并核对返回值与数值落点；
-- 分配 captain 与 officer，说明舰长对战斗 AI 与成员统计的作用；
-- 把人物挂入四个持久归属入口，并解释局部变量人物不被保存的后果；
-- 从日志与界面症状定位人物相关的典型故障。
+* 说出星区 (sector) 的结构：`SectorAPI` 是生涯引擎根对象，名下挂哪些子容器 (地点、时钟、玩家舰队、经济、势力、脚本、监听器、persistent data、memory、UI 外壳)，以及每个子容器从哪个 getter 进入；
+* 用 `SectorAPI.getClock()` 读生涯时钟：
+    *   `getCycle()` / `getMonth()` / `getDay()` / `getHour()` 的取值规则与纪元起点；
+    *   `getDateString()` / `getShortDate()` / `getTimestamp()` / `getElapsedDaysSince()` 的语义；
+    *   记住换算基线 "10 真实秒 = 1 游戏日"；
+* 从零写一个 `EveryFrameScript` 实现并通过 `SectorAPI.addScript` 注册：
+    *   复述一次性注册标记 (persistent data `CLASS_MARK` 模式) 与每帧推进循环 (`isDone` → 移除；`runWhilePaused()` 或未暂停 → `advance`)；
+    *   说出 "脚本随存档保存、transient 脚本不保存" 的序列化边界；
+* 说出暂停与加速时哪些推进、哪些冻结：引擎暂停时脚本默认不推进、时钟不前进；按住 Shift 加速时每帧推进两次 (`campaignSpeedupMult`)；战斗期间生涯引擎完全不推进；
+* 从症状定位九类典型故障：脚本没注册、重复注册、`isDone()` 恒 true、`runWhilePaused` 语义误用、把秒当游戏天、暂停时依赖时钟、战斗期 "脚本消失"、旧档不注册、脚本字段放了不可序列化对象。
 
 ## 前置知识
 
-- [C3-S1] 的生涯与战役域区别；
-- [C6-S2] 的插件生命周期回调与持久数据标记；
-- [C6-S3] 的 `Global.getFactory()` 创建入口与阶段语义；
-- [C8-S1] 的生涯脚本注册与一次性判断；
-- [C8-S3] 的舰队成员、舰长、旗舰与 `FleetDataAPI`；
-- [C8-S5] 的市场人物、通信目录与 `MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`。
+* [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
+* [C3-S1] 的生涯与战役域概念；
+* [C6-S2] 的 `modPlugin` 生命周期回调与持久数据标记；
+* [C6-S3] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
+* [C7-S1] 的每帧回调模型、暂停语义与战斗域和生涯域的差异；
+* [C6-S4] 的 settings 读取与 [C15-S4] 的 common 文件机制。
 
 ## 术语
 
-按术语约定，本节首次完整讲解以下词：
+本节首次完整讲解两个词：
 
-- **人物 (person)**：API 名保留 `PersonAPI`。生涯里代表一个 "人" 的对象，承载身份 (姓名/性别/rank/post/头像/势力)、记忆、标签、对玩家关系、角色数值与归属 (captain、officer、市场、important people)。
-- **关系 (relationship)**：两两之间的声望数值与档位。势力之间/势力对玩家走 `FactionAPI` 关系族；人物对玩家走 `RelationshipAPI`。数值范围 [-1, 1]，档位由 `RepLevel` 分段。
-- **声誉档位 (RepLevel)**：API 名保留 `RepLevel`。
-  - 九档枚举：`VENGEFUL` / `HOSTILE` / `INHOSPITABLE` / `SUSPICIOUS` / `NEUTRAL` / `FAVORABLE` / `WELCOMING` / `FRIENDLY` / `COOPERATIVE`。
-  - 正向阈值 0.09 / 0.24 / 0.49 / 0.74，负向对称。
-- **captain(舰长)**：舰队成员的指挥官。决定该成员/战斗舰船的统计修正与战斗 AI personality。
-- **officer(军官)**：`OfficerDataAPI` 包装的人物，带 XP、等级与技能选择；隶属舰队 roster(`FleetDataAPI` 军官集合)，被 `setCaptain` 到某个成员上时指挥该船。
+* **星区 (sector)**：API 名保留 `SectorAPI`。一个存档对应一个星区，`Global.getSector()` 返回当前存档的生涯引擎。星区是 "生涯域根对象"：时钟、地点、舰队、经济、势力、脚本、监听器、持久数据、记忆、UI 外壳都从它下面取。
+* **地点容器 (location)**：API 名保留 `LocationAPI`。星区内部的空间容器 (超空间与各恒星系)，实体挂在容器里。容器内实体与访问见 [C9-S2]。
 
-## 人物对象与 API 面
+## 梳理生涯脚本关系
 
-### 人物对象与创建入口
+星区是生涯域的根对象，本节的所有读取与注册都从它开始。先看整体结构，再顺着时钟与脚本两条线深入。
 
-创建人物的两个正式入口 (`com.fs.starfarer.api.FactoryAPI`)：
+### 星区结构 (SectorAPI)
 
-| 入口 | 语义 |
-|---|---|
-| `Global.getFactory().createPerson()` | 创建空白人物 (默认值见下表)|
-| `FactionAPI.createRandomPerson()`(含 Gender / Random 变体)| 按势力生成随机人物：随机性别 (默认各半)、势力肖像、随机姓名 (姓名池)、随机 voice(`FactionAPI.createRandomPerson`)|
+`SectorAPI`(`com.fs.starfarer.api.campaign.SectorAPI`) 是纯接口，由生涯引擎实现。按功能分组，本节涉及的成员如下：
 
-另有包装入口 `Global.getFactory().createOfficerData(PersonAPI)`—— 把人物包装成 `OfficerDataAPI`(见 "officer" 节)。
+分组
 
-`SettingsAPI` 也有同签名 `createPerson`(同样返回空白人物)，习惯用 `Global.getFactory()`。
+成员
 
-人物对象的**默认值**：
+语义
 
-| 字段 | 默认值 | 说明 |
-|---|---|---|
-| id | `"p_" + Misc.genUID()` | 每个实例唯一 |
-| personalityId | `"steady"` | 无参构造默认即 `"steady"` |
-| name | `FullName("", "", Gender.ANY)` | 空姓名 |
-| portraitSprite | `SettingsAPI.getSpriteName("misc", "default_portrait")` | `settings.json` → `graphics/portraits/portrait_generic_grayscale.png` |
-| rankId / postId | `Ranks.SPACE_COMMANDER` / `Ranks.POST_FLEET_COMMANDER` | `spaceCommander` / `fleetCommander` |
-| factionId | `"neutral"` | |
-| importance | `PersonImportance.MEDIUM` | (枚举值 0/0.25/0.5/0.75/1)|
-| contactWeight | `1.0F` | |
-| relToPlayer | null(延迟创建)| 首次 `getRelToPlayer()` 才创建 |
+时钟
 
-`isDefault()` = 头像等于默认头像；`isPlayer()` = 人物对象即 `Global.getSector().getPlayerPerson()`；`isAICore()` = `aiCoreId != null`。
+`getClock()`
 
-玩家人物同样以 `steady` 起步，新档创建时人物势力为 `"player"`。
+生涯时钟 (`CampaignClockAPI`)，见 "时间系统" 节
 
-### 身份与档案 (PersonAPI)
+脚本
 
-创建之后的人物只有一组默认值，身份与档案字段按功能分组如下。
+`addScript` / `removeScript` / `removeScriptsOfClass(Class)` / `hasScript(Class)` / `getScripts()`
 
-`PersonAPI`(`com.fs.starfarer.api.characters.PersonAPI`) 按功能分组：
+引擎级每帧脚本的注册、移除、查询 (见 "脚本生命周期" 节)
 
-| 分组 | 成员 | 语义 |
-|---|---|---|
-| 身份 | `getId()` / `setId(String)`、`getName()` / `setName(FullName)`、`getNameString()`、`getGender()` / `setGender(Gender)`、`isMale()` / `isFemale()` | id 唯一；姓名是**可变对象** `FullName`(`(first + " " + last).trim()`)；性别挂在姓名上 |
-| rank/post | `getRankId()` / `setRankId(String)`、`getPostId()` / `setPostId(String)`、`getRank()` / `getPost()`、`getRankArticle()` / `getPostArticle()` | id 是存储值；显示名经势力解析 (见下)|
-| 头像 | `getPortraitSprite()` / `setPortraitSprite(String)` | 资源路径字符串 (不校验存在性)|
-| 势力 | `getFaction()`、`setFaction(String factionId)` | `getFaction()` 延迟解析势力对象 (按 id 从全局势力表解析)；`setFaction` 只写 id |
-| 关系 | `getRelToPlayer()` | 人物对玩家关系 (见 "关系" 节)|
-| 记忆 | `getMemory()` / `getMemoryWithoutUpdate()` | 见 "记忆" 小节 |
-| 标签 | `hasTag` / `addTag` / `removeTag` / `getTags` / `clearTags` | 运行时标签集合 (`getTags()` 缺省返回空集)|
-| personality | `getPersonalityAPI()`、`setPersonality(String)` | 由 `personalities.csv` 注册 (见 "故障分析" 第 2 条)|
-| importance/voice | `getImportance()` / `setImportance(PersonImportance)`、`setImportanceAndVoice(PersonImportance, Random)`、`getVoice()` / `setVoice(String)` | voice 存储在 memory `$voice`；`setImportanceAndVoice` 只在 voice 未被显式覆写时写 voice |
-| AI core | `getAICoreId()` / `setAICoreId(String)`、`isAICore()` | `aiCoreId != null` 即 AI 核心人物 |
-| 归属 | `getFleet()` / `setFleet(CampaignFleetAPI)`、`getMarket()` / `setMarket(MarketAPI)` | officer 所在舰队、当前市场 (见 "归属" 小节)|
-| 角色数值 | `getStats()`、`setStats(MutableCharacterStatsAPI)`、`getFleetCommanderStats()` | 等级/XP/技能/故事点；`getFleetCommanderStats()` = `fleet.getCommanderStats()`，无舰队时 null |
-| 联系 | `wantsToContactPlayer()` / `incrWantsToContactReasons()` / `decrWantsToContactReasons()`、`getContactWeight()` / `setContactWeight(float)` | 联系人与权重 (`wantsToContactReasonsCount`)|
+脚本 (临时)
 
-::: caution personality id 必须来自注册表
+`addTransientScript` / `removeTransientScript` / `removeTransientScriptsOfClass(Class)` / `hasTransientScript(Class)` / `getTransientScripts()`
 
-`personalities.csv` 之外的 id 使 `getPersonalityAPI()` 返回 null(CSV spec 加载期的查询对未知 id 静默返回 null、不报错)。
+不随存档保存的临时脚本
 
-问题延迟到使用点：保存时写档失败 (`NullPointerException`)。
+地点
 
-原版合法 id 恰 5 个：`timid` / `cautious` / `steady` / `aggressive` / `reckless`。
+`getHyperspace()` / `getStarSystem(String name)` / `getStarSystems()` / `getCurrentLocation()` / `getAllLocations()` / `getEntityById(String id)` / `getEntitiesWithTag(String tag)`
 
-:::
+地点容器与实体查找，详见 [C9-S2]
 
-**rank/post 解析**：`getRank()` = `getFaction().getRank(rankId)`；`FactionAPI.getRank` 先查势力 spec 的 ranks 段，查不到回退默认值 (数据源 `data/world/factions/default_ranks.json`)。
+玩家
 
-`getRankArticle()` / `getPostArticle()` 按显示名首字母是否元音返回 `"an"` / `"a"`。
+`getPlayerFleet()` / `getPlayerPerson()` / `getPlayerFaction()` / `getPlayerStats()`
 
-示例：`spaceCommander` 在 `default_ranks.json` 是 "Commander"，`hegemony.faction` 覆写为同名 "Commander"；`fleetCommander` post 是 "Fleet Commander"。
+玩家舰队、人物、势力、属性
 
-**记忆**：`getMemory()` 触发全部插件的 `updatePersonFacts(person, memory)` 回调 (与 `MarketAPI.getMemory()` 同族)；纯读取**必须**用 `getMemoryWithoutUpdate()`(同样延迟创建但无回调)。
+经济与势力
 
-voice 即 memory `$voice`。
+`getEconomy()` / `getFaction(String id)` / `getAllFactions()`
 
-::: info 为什么记忆读取要分两条路径
+经济入口与势力表
 
-`getMemory()` 先跑一遍全部插件的 `updatePersonFacts` 回调，让各插件在读取前按最新事实刷新记忆 —— 这是 "读前更新" 的设计；但高频读取 (如每帧) 也走这条路径就会变成回调风暴，其他插件还可能改写内存值。
+监听器
 
-纯读取用 `getMemoryWithoutUpdate()`：同样延迟创建记忆对象，但没有回调。
+`addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners()` / `getListenerManager()`
 
-:::
+生涯事件监听器，详见 [C12-S2]
 
-**人物数据文件** (加载链：CSV spec 加载期读入、姓名池)：`data/characters/personalities.csv`(`id,name,desc,bravery` + 12 个任务权重列)
+通用插件
 
-原版 id 恰 5 个：`timid` / `cautious` / `steady` / `aggressive` / `reckless`，bravery 全为 5。
+`getGenericPlugins()`
 
-`data/characters/person_names.csv`(姓名池，usage `f`/`l`，category 如 `fringe`/`core`/`pirate`，随机姓名按势力 spec 的名字段加权)。
+通用插件注册表
 
-`personalities.csv` 的权重列 (`CAPTURE`/`PATROL`/`INTERCEPT`/`ASSAULT` 等) 是舰船 AI 行为权重。
+持久数据
 
-### 关系
+`getPersistentData()`
 
-身份字段之外，人物之间以及人物与玩家之间还有一套数值体系。关系分三族、两套存储，先看存储与钳制，再看档位与写入方法。
+返回随存档保存的 `Map<String, Object>`，跨会话 MOD 数据入口 (前置生命周期例已用)
 
-#### 存储与钳制
+记忆
 
-势力关系按 `"<id1>_<id2>"` 键存储，**双向插入同一对象**；读取时延迟创建：默认 `0.0F`，**同势力之间恒 `1.0F`**。
+`getMemory()` / `getMemoryWithoutUpdate()`
 
-写入时值被钳制在 [-1, 1]—— 关系数值不可能越界。
+星区 "global" memory，详见 [C14-S4]
 
-人物对玩家关系存在人物字段 `relToPlayer`(延迟创建)，`RelationshipAPI.setRel` 同样钳制 [-1 , 1]。
+UI 外壳
 
-#### RepLevel 档位
+`getCampaignUI()`
 
-`RepLevel`(`com.fs.starfarer.api.campaign.RepLevel`) 九档，正向阈值 `T1=0.09` / `T2=0.24` / `T3=0.49` / `T4=0.74`。
+`CampaignUIAPI`：生涯消息区、core UI 页签、确认框等入口
 
-档位判定 `getLevelFor(float)`：取整到百分制再与阈值比，**边界含于高位档** (如 0.49 → `WELCOMING`，0.50 → `FRIENDLY`)。
+暂停
 
-`isPositive()` = 从 `FAVORABLE` 起 (`isAtWorst(FAVORABLE)`)；`isNegative()` = `SUSPICIOUS` 及以下。
+`isPaused()` / `setPaused(boolean)`
 
-`setRelationship(id, RepLevel)` 的落点 (`FactionAPI`)：
+生涯暂停状态 (见 "暂停与加速语义" 节)
 
-| 档位 | 写入值 |
-|---|---|
-| `NEUTRAL` | `0.0` |
-| 正档 (FAVORABLE / WELCOMING / FRIENDLY / COOPERATIVE)| `min + 0.01`(0.10 / 0.25 / 0.50 / 0.75)|
-| 负档 (SUSPICIOUS / INHOSPITABLE / HOSTILE / VENGEFUL)| `-(min + 0.01)`(-0.10 / -0.25 / -0.50 / -0.75)|
+状态标志
 
-#### FactionAPI 关系族
+`isInFastAdvance()` / `isInNewGameAdvance()`
 
-`FactionAPI`(`com.fs.starfarer.api.campaign.FactionAPI`) 关系成员：
+新档时间推进窗口内为 `true`(见 "时间系统" 节)
 
-| 成员 | 语义 |
-|---|---|
-| `adjustRelationship(String id, float delta)` | 直接加 delta(无 limit，只受 ±1 钳制)|
-| `adjustRelationship(String id, float delta, RepLevel limit)` | 带 limit：delta 为 0 直接返回 false；正 delta 上限 = `limit.getMax()`(limit 为负档时 = `-min-0.01`)，负 delta 下限 = `-limit.getMax()`(limit 为正档时 = `min+0.01`)；值未越过限制返回 false |
-| `setRelationship(String id, float newValue)` / `setRelationship(String id, RepLevel level)` | 精确写值 / 按档位落点 (见上表)|
-| `ensureAtBest(String id, RepLevel)` / `ensureAtWorst(String id, RepLevel)` | 当前档位不满足时写入边界值并返回 true |
-| `getRelationship(String id)` / `getRelationshipLevel(String)` / `getRepInt(String)` | 值 / 档位 / 百分制整数 (`RepLevel.getRepInt`)|
-| `isAtBest` / `isAtWorst`、`isHostileTo(String)` | 档位比较；`isHostileTo` = `isAtBest(HOSTILE)` |
-| `getRelToPlayer()` | 玩家视角关系包装 (内部转发 `adjustRelationship` 到自己 id)|
+工具
 
-::: warning limit 只是 "本次调整的方向边界"
+`genUID()`
 
-`adjustRelationship(delta, limit)` 的 limit 不是 "目标档位"—— 从 1.00 减 0.5(limit `VENGEFUL`) 落在 0.50(`FRIENDLY`)，而不是 `HOSTILE`。
+返回本星区唯一递增的十六进制 id 字符串，脚本/实体造 id 时用它
 
-"设置档位" 用 `setRelationship(id, RepLevel)`，"确保不高于/不低于某档" 用 `ensureAtBest` / `ensureAtWorst`。
+结构要点：
 
-:::
+1. 一个存档 = 一个生涯引擎实例；`Global.getSector()` 返回它，星区引用**禁止**跨存档缓存 (见前置知识中的 `Global` 阶段语义条目)。
+2. 星区自身直接持有：时钟 (`CampaignClockAPI`)、`scripts` 与 `transientScripts` 两个脚本列表、`paused` 标志、经济、势力管理器、监听器、persistent data、memory、UI 外壳。
+    *   也就是说，"脚本随不随存档保存" 由字段的 `transient` 修饰决定：**`scripts` 随存档保存，`transientScripts` 不随存档保存**。
+    *   这是 `addScript` 与 `addTransientScript` 的唯一行为差别，注册入口的选择直接决定跨存档行为。
+3. 实体级脚本是另一条平行线：实体对象也持有自己的 `scripts` 列表并逐实体推进，舰队脚本用 `CampaignFleetAPI.addScript(...)` 挂载 (成熟实例的通用做法)。
+    *   实体级脚本随实体生命周期走，`EveryFrameScriptWithCleanup.cleanup()` 只在附着实体被移除时调用。
+    *   本节示例用引擎级 `addScript`；实体级脚本按对象生命周期注册。
 
-#### 人物对玩家关系 (RelationshipAPI)
+### 时间系统 (CampaignClockAPI)
 
-`RelationshipAPI`(`com.fs.starfarer.api.characters.RelationshipAPI`)：`getRel()` / `setRel(float)`、`getLevel()` / `setLevel(RepLevel)`、`adjustRelationship(float delta, RepLevel limit)`
+结构表里的 `getClock()` 指向整个生涯的时间基准。脚本要换算游戏时间、做跨日检测，必须先读懂这颗钟：`CampaignClockAPI`(`com.fs.starfarer.api.campaign.CampaignClockAPI`) 是生涯时钟的公开接口，由引擎内部时钟类实现。基线事实：
 
-`isAtBest` / `isAtWorst`、`ensureAtBest` / `ensureAtWorst`、`isHostile()`、`getRepInt()`
+* **纪元起点是 206 年 1 月 1 日**：`new GregorianCalendar(206, 0, 1)`。
+    *   `getCycle()` 返回日历**年** (开档即 206，因此 `getCycleString()` 是 `"c206"` 这种写法)；
+    *   `getMonth()` 返回 1–12(1 = January)；
+    *   `getDay()` 返回 1–31；`getHour()` 返回 0–23。
+* **换算基线：10 真实秒 = 1 游戏日**：`SECONDS_PER_GAME_DAY = 10.0F`。`convertToDays(真实秒)` = 秒 ÷ 10；`convertToSeconds(游戏天)` = 天 × 10；`convertToMonths(真实秒)` = 秒 ÷ 10 ÷ 30。
+* **日期字符串**：`getDateString()` = `"Mar 2, c206"` 形态；`getShortDate()` = `"206.3.2"` 形态；`getShortMonthString()` = 三字母月份。
+* **时间戳与间隔**：`getTimestamp()` 返回内部日历毫秒值；`getElapsedDaysSince(ts)` 返回从 `ts` 到现在的真实天数 (`(now - ts) / 86400000`)。
+    *   **参数为 `0` 时返回 `Float.MAX_VALUE`**，计算 "未初始化" 的间隔时不要传 0。
+* **`createClock(long timestamp)`**：按时间戳新建一个时钟实例 (对齐 "从某时刻起算" 的局部计时)。
+* **时钟只在未暂停时前进**：引擎的每帧推进里 `clock.advance(amount)` 只在 `!isPaused()` 分支执行；暂停时 `getTimestamp()` / 日期全部冻结。
+    *   `readResolve` 在读档时按保存的时间戳重建内部日历，读档后时钟从存档时刻继续。
+* **新档时间推进**：新建生涯时引擎进入 `isInFastAdvance()` 窗口 (新档流程置位、复位)。
+    *   以 `2.5` 秒步长连推约 600 真实秒 + 收尾约 2 秒，合计约 **60.2 游戏日 (约两个月)**；随后才调用 `onNewGameAfterTimePass` 与 `onGameLoad(true)`。
+    *   因此新档在 `onGameLoad` 里读到的时钟大约在 **206.3.2**。
 
-语义与 `FactionAPI` 关系族一致 (`RelationshipAPI` 是同一套逻辑的孪生实现)。
+把秒当游戏天
 
-`RelationshipTarget` 标记目标类型 `FACTION` / `PERSON` / `PLAYER`；`isPlayer()` 判断目标人物 == `Global.getSector().getPlayerPerson()`。
+`advance(float amount)` 的 `amount` 是上一帧经过的真实秒数 ("Use SectorAPI.getClock() to convert to campaign days.")。
 
-接近零的人物对玩家关系在保存时不落盘，读档后恢复默认值。
+凡需要游戏时间，**必须**经 `clock.convertToDays(amount)` 换算 —— 直接把秒当游戏天，时间流速会偏差 10 倍 (10 真实秒被当成 10 游戏天，正确应为 1 游戏天)。
 
-### captain 与 officer
+别用 0 占位
 
-关系决定声望，岗位决定行为。接下来把人物放上舰长与军官两个实际岗位。
+`getElapsedDaysSince(ts)` 的参数为 `0` 时返回 `Float.MAX_VALUE`。计算 "未初始化" 的间隔时先检查时间戳是否已写入，不要传 0。
 
-#### 生涯侧 captain(FleetMemberAPI)
+时钟高频方法速查：
 
-- 默认舰长：成员自带默认舰长 `steady`(前序页面已记录 "自动补默认舰长")。保存压缩时，**steady + 空姓名 + level ≤ 1 的默认舰长不落盘** ——"读档后默认舰长消失" 是正常语义。
-- `FleetMemberAPI.getCaptain()`：**玩家旗舰特例** —— 成员是玩家舰队旗舰时返回玩家人物。
-  - 否则返回缓存的 `captain` 字段 (null 时延迟创建默认舰长并设势力)。
-  - `FleetMemberAPI.setCaptain(PersonAPI)` 写回并触发成员 stats 重算。
+方法
 
-::: warning 玩家旗舰的舰长读回恒是玩家人物
+返回
 
-成员是玩家舰队旗舰时 `getCaptain()` 直接返回玩家人物，读路径覆盖写入 —— 把自定义舰长挂到旗舰再读回，读到的仍是玩家人物。自定义舰长请放非旗舰成员 (本节示例即如此)。
+语义
 
-:::
+`getCycle()`
 
-- 舰长对成员的影响：`captain.getStats().applyPersonalToStats(stats, hullSize)` 把舰长个人技能应用到成员 `MutableShipStatsAPI`。
-- 反查：`FleetDataAPI.getMemberWithCaptain(PersonAPI)` 按同一性找舰长所在成员。
-- 舰队指挥官：默认是 `steady` 人物；`CampaignFleetAPI.getCommander()` / `setCommander(PersonAPI)`：
-  - 新档 `setPlayerFleet` 把玩家人物同时设为旗舰舰长与舰队指挥官。
+`int`
 
-#### 战斗侧 captain(ShipAPI)
+年 (纪元 206 起；存档界面与 `getCycleString()` 写作 `c206`)
 
-- 部署链：成员部署为战斗舰船时，`getCaptain()` 与 `getFleetCommander()` 传入战斗侧：
-  - `ShipAPI.getCaptain()`(`com.fs.starfarer.api.combat.ShipAPI`) 返回战斗舰船舰长，`getOriginalCaptain()` 返回部署初始舰长，`getFleetCommander()` 返回关联的舰队指挥官。
-- **中途换舰长会改统计**：`ShipAPI.setCaptain(PersonAPI)` 先解除旧舰长的个人技能 (含子模块)，再挂新舰长。
-- **personality 决定战斗 AI**：战斗舰船的 personality 取舰长 personality id(舰长缺失时用装配的 fallback personality)。
+`getMonth()`
 
-#### officer(OfficerDataAPI)
+`int`
 
-- 包装与 roster：`Global.getFactory().createOfficerData(person)`(`com.fs.starfarer.api.FactoryAPI`)：
-  - → `FleetDataAPI.addOfficer(PersonAPI)` / `addOfficer(OfficerDataAPI)` / `getOfficersCopy()` / `removeOfficer(PersonAPI)`(`com.fs.starfarer.api.campaign.FleetDataAPI`)。
-  - `FleetDataAPI`：`addOfficer` 写入 roster 并 `person.setFleet(fleet)`(PersonAPI 版还会把人物势力设为舰队势力)。
-  - `removeOfficer` 移出并 `setFleet(null)`。
-- `OfficerDataAPI`(`com.fs.starfarer.api.characters.OfficerDataAPI`)：
-  - `getPerson()` / `setPerson(PersonAPI)`、`addXP(long[, TextPanelAPI[, boolean]])`、`canLevelUp()`；
-  - `makeSkillPicks([Random])`、`getSkillPicks()`、`levelUp(String skillId[, Random])`。
-- 升级链 (`OfficerDataAPI`)：
-  - `addXP` 走 `settings.json` 的 `officerLevelUp` 插件 (`com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`)。
-  - **`$isMercenary` 记忆为 true 的佣兵人物 addXP 直接返回** (`Misc.isMercenary` 读 memory `$isMercenary`，`com.fs.starfarer.api.util.Misc`)。
-  - XP 达到下一级阈值 (`TOTAL_XP_PER_LEVEL × officerXPRequiredMult(4)`，`com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`) 且等级 ≤ `officerMaxLevel(5)`(settings) 时可升级。
-  - `canLevelUp()` 满足时 `addXP` 自动 `makeSkillPicks()`；`makeSkillPicks()` **每次调用都重掷选项**。
-  - `levelUp(skillId)` 等级 +1、技能 +1 级并清空重掷。
-- 军官上舰 = 把 officer 的人物 `setCaptain` 到成员 (原版军官面板的 "命令舰船" 即此语义)。
+月，1–12(1 = January)
 
-#### 归属四入口 (持久化边界)
+`getDay()`
 
-岗位分配完之后，真正要紧的问题是：人物到底随什么保存？四个持久归属入口给出答案。
+`int`
 
-人物只随 "引用它的持久集合" 保存：
+日，1–31
 
-1. **成员舰长**：`FleetMemberAPI.setCaptain(person)`(成员在 `FleetDataAPI` 里)；
-2. **市场人物**：`MarketAPI.addPerson(person)`(同时写 `person.setMarket(market)`)**，通信目录条目必须另行 `getCommDirectory().addPerson(person)` 维护** (`MarketAPI.addPerson` 不会自动建目录条目)；
-3. **重要人物**：`SectorAPI.getImportantPeople()` → `ImportantPeopleAPI.addPerson` / `containsPerson` / `removePerson` / `getData(person)`(`com.fs.starfarer.api.characters.ImportantPeopleAPI`)：
-   - `checkOutPerson(person, reasonId)` / `returnPerson(person, reasonId)`；
-4. **officer roster**：`FleetDataAPI.addOfficer`(见上)。
+`getHour()`
 
-只存在于局部变量、未被任何持久集合引用的人物，帧结束后即被回收 ——** 不会被保存，也不会报错**。
+`int`
 
-::: warning 市场人物不等于通信目录联系人
+时，0–23
 
-`MarketAPI.addPerson` 只把人物放进市场 roster，不会自动建通信目录条目 —— 人物在市场人物列表与存档里，但通信目录/联系人 UI 不出现。
+`getDateString()`
 
-要人物作为联系人可见，必须另行 `getCommDirectory().addPerson(person)` 维护；移除可见联系人时先移 comm entry 再移 roster。
+`String`
 
-:::
+`"Mar 2, c206"` 形态
 
-### 注册入口
+`getShortDate()`
 
-归属决定保存，注册决定何时执行。本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)`，用各自的 persistent data 键做一次注册判断 (不要把注册键挂进插件既有的 `CLASS_MARK` 门内)。具体代码见 "完整最小例" 的调用点片段。
+`String`
 
-API 面里最反直觉的几处已经标了容器警告，下面把必须遵守的约束连同违反后果收成一张表。
+`"206.3.2"` 形态 (年.月.日)
 
-## 规则强度
+`getTimestamp()`
 
-本节必须遵守的规则清单 ("必须/禁止"，均附违反后的可观察结果)：
+`long`
 
-| 规则 | 强度 | 违反后的可观察结果 |
-|---|---|---|
-| 纯读取人物记忆用 `getMemoryWithoutUpdate()`；`getMemory()` 触发全部插件 `updatePersonFacts` | 必须 | 每次调用触发全部插件回调 (`PersonAPI.getMemory`)，高频读取时回调风暴，其他插件可能改写内存值 |
-| 人物要成为市场可见联系人，`MarketAPI.addPerson` 之后必须另行 `getCommDirectory().addPerson(person)` 维护目录条目 | 必须 | 人物在市场人物列表与存档里，但通信目录/联系人 UI 不出现 |
-| "设置档位" 用 `setRelationship(id, RepLevel)`(或 `ensureAtBest`/`ensureAtWorst`)；`adjustRelationship(delta, limit)` 的 limit 只是单次调整的方向边界 | 必须 | 数值落在限位内但档位与预期不符 (1.00 − 0.5 落 0.50 = `FRIENDLY` 而非 `HOSTILE`)|
-| `adjustRelationship` 的 delta 为 0 时 (三参版) 不产生任何修改并返回 false | 必须 | 返回值 false、值不变，误以为调用成功 |
-| 关系数值恒被钳制在 [-1, 1] (`RelationshipAPI.setRel` 等写入方法均钳制)| 必须 | 写入越界值后读回被截断 (如写 1.5 读回 1.0)|
-| personality id 必须来自 `personalities.csv` 注册表 (原版 5 个：`timid`/`cautious`/`steady`/`aggressive`/`reckless`)| 必须 | 未知 id 使 `getPersonalityAPI()` 返回 null(CSV spec 加载期的查询静默返回 null)，保存时写档失败 (`NullPointerException`)|
-| `OfficerDataAPI.makeSkillPicks()` 每次调用都会重掷选项；已展示给玩家的可选项必须维持同一对象状态 | 必须 | 玩家看到的可选技能列表与展示不一致 |
-| `ImportantPeopleAPI.checkOutPerson(person, reasonId)` 必须配对 `returnPerson`；未归还时同 reason 的按条件选人会跳过该人物 | 必须 | 任务/事件生成时该人物不再被选中 (`MarketPostPersonFilter`)|
-| `PersonAPI.setMarket(market)` 只写人物字段；市场 roster 必须由 `MarketAPI.addPerson` 维护 (反向：`person.setMarket` 不会把人物放进市场列表)| 必须 | 人物字段显示在市场，但市场列表与通信目录查不到 |
-| 跨存档保留人物必须挂入至少一个持久集合 (成员 captain / 市场 people+comm / important people / officer roster)| 必须 | 读档后人物不存在、无任何报错 |
-| 玩家旗舰 `getCaptain()` 恒返回玩家人物 (特例)，不要把自定义舰长挂到旗舰再读回 | 必须 | 读回结果与写入不一致 (`FleetMemberAPI.getCaptain`)|
-| 佣兵人物 (memory `$isMercenary`) 不获得军官 XP | 必须 | `addXP` 后 XP 不变 (`OfficerDataAPI.addXP`)|
-| 演示/临时人物修改关系后应同帧回滚，且回滚用 "快照原值 + `setRelationship`" | 建议 | 中断残留的修改随存档保存 |
-| 创建人物优先用 `Global.getFactory().createPerson()` / `FactionAPI.createRandomPerson()`，不依赖实现类构造器 | 建议 | 实现类不在公开 API 面，换版本可能失效 |
+内部日历毫秒；暂停时冻结
 
-规则只是约束，示例才是落地。下面用 8 个类把上面的 API 与规则串成一条可运行、可同帧回滚的演示链。
+`getElapsedDaysSince(ts)`
 
-## 完整最小例
+`float`
 
-在既有 MOD 布局与插件生命周期类之上新增 8 个类 (不新增资源文件)。原单一演示类按角色拆成 8 个小类：协调器 + 7 个角色小类，各自承担一个职责：
+从 `ts` 到现在的真实天数；`ts == 0` 返回 `Float.MAX_VALUE`
+
+`convertToDays(真实秒)`
+
+`float`
+
+秒 ÷ 10(`amount` 参数的正确换算)
+
+`convertToSeconds(游戏天)`
+
+`float`
+
+天 × 10
+
+`convertToMonths(真实秒)`
+
+`float`
+
+秒 ÷ 10 ÷ 30
+
+`createClock(ts)`
+
+`CampaignClockAPI`
+
+按时间戳建独立时钟 (局部计时)
+
+### 脚本生命周期 (EveryFrameScript)
+
+时钟给出当前时刻，脚本决定每帧做什么。`EveryFrameScript`(`com.fs.starfarer.api.EveryFrameScript`) 只有三个方法，这是生涯按帧脚本的完整约定：
+
+方法
+
+约定
+
+`boolean isDone()`
+
+返回 `true` 表示脚本结束，引擎负责清理 (从脚本列表移除)。常驻脚本返回 `false`
+
+`boolean runWhilePaused()`
+
+返回 `true` 时，引擎暂停期间 `advance()` 仍会被调用
+
+`void advance(float amount)`
+
+每帧回调；**`amount` 是上一帧经过的真实秒数** ("Use SectorAPI.getClock() to convert to campaign days.")
+
+推进循环的精确语义 (引擎级脚本与 transient 脚本两条循环完全一致)：
+
+1. 引擎遍历的是**列表快照** (`new ArrayList<>(this.scripts)`)，因此脚本在 `advance()` 里安全地 `addScript` / `removeScript` 不会抛 `ConcurrentModificationException`。
+    *   代价是**在 advance 里新加的脚本要到下一帧才开始推进**。
+2. 对每个脚本：先查 `isDone()`—— 为真直接移除 (不调 `advance`)；否则查 `runWhilePaused() || !isPaused()`—— 为真才调 `advance(amount)`；`advance` 返回后再查一次 `isDone()`，为真则移除。
+3. 移除的三个入口：`isDone()` 自动清理 (引擎下一帧生效)；`removeScript(script)` 按**对象同一性**移除；`removeScriptsOfClass(Class)` 按**精确类** (`getClass() == clazz`，子类不算) 批量移除。
+4. `hasScript(Class)` 用 `isInstance` 判断 (**子类实例也算命中**)，与 `removeScriptsOfClass` 的精确类语义不同 —— 查重用 `hasScript`，批量删用 `removeScriptsOfClass`，别混用。
+5. **`addScript` 不去重**：直接 `scripts.add(...)`。同一实例或等价实例重复注册会各自推进，这是 "日志成双、行为叠加" 的根源。
+6. 引擎自身也会注册自己的内置脚本 —— 引擎级脚本不是 MOD 专属机制。
+
+序列化边界 (脚本字段随存档)：
+
+* `scripts` 非 `transient` → **随存档保存**：常驻脚本 (管理器、星系防御舰队脚本 (SDF, Starsystem Defense Fleet) 等) 跨读档继续运行，其非 `transient` 字段原样恢复。
+* `transientScripts` 是 `transient` → **不随存档保存**：读档后需要重新注册。
+* 因此脚本字段里**不要**放不能随存档序列化的对象 (UI 外壳引用、声音播放器等引擎单例或瞬态句柄)；跨会话的小数据放 `getPersistentData()`，脚本字段只保留可序列化状态。`SectorAPI.getPersistentData()` 保存运行时对象时同样要考虑 XStream 存档边界。
+
+脚本字段随存档序列化
+
+`scripts` 里的脚本字段会随存档保存 (非 `transient` 字段原样恢复)。不要存放不能序列化的对象 (UI 外壳引用、声音播放器句柄等引擎单例或瞬态句柄)；跨会话的小数据放 `getPersistentData()`，纯临时推进逻辑用 `addTransientScript`。
+
+### 暂停与加速语义
+
+推进循环的步频不是恒定的。正常游玩时，生涯引擎每帧推进一次；时间加速时同帧连调多次：
+
+* **暂停 (空格键)**：按空格键切换 `engine.setPaused(...)`。
+    *   暂停时引擎照常 `advance`(时钟、经济、脚本循环都在跑)—— 但时钟只在非暂停分支推进，脚本只在 `runWhilePaused() || !isPaused()` 时推进。
+    *   **结论：默认 (`runWhilePaused() == false`) 脚本在暂停时完全冻结，`amount` 也拿不到。**
+* **加速 (按住 Shift)**：按住 Shift 键加速 (`campaignSpeedUpTimeIsToggle` 默认 `false`，即按住生效不是切换)。
+    *   加速时按 `campaignSpeedupMult`(`settings.json`，取值为 2) 连调 `engine.advance`，脚本与时钟同帧推进两次 —— 游戏日流速翻倍。
+* **新档时间推进窗口**：`isInFastAdvance()` 为 `true` 时引擎以 2.5 秒步长连推 (见 "时间系统" 节)，`onNewGame` 阶段注册的脚本也会被这次推进逐帧调用。
+* **战斗期间生涯冻结**：进入战斗后生涯引擎不再推进 —— 脚本、时钟、经济全部冻结，回生涯后恢复。
+
+### 注册入口与持久数据标记
+
+循环怎么跑已经清楚，剩下的是注册时机：脚本注册**必须**发生在生涯引擎建立之后，只有两条合法入口：
+
+1. **`onNewGame()`**：新档生成期 (此时生涯引擎已建立，早于生命周期回调 `onNewGame` 完成)。注意新档的 "时间推进" 发生在 `onNewGame` 之后，此入口注册的脚本会经历那约 60 游戏日的推进。
+2. **`onGameLoad(boolean newGame)`**：新档与读档共用；新档调用时已在时间推进之后 (由游戏管理器驱动)。本节示例用这个入口。
+
+注册的必须与禁止
+
+脚本注册**必须**发生在生涯引擎建立之后 —— **禁止**在 `onApplicationLoad` 里注册 (此刻 `Global.getSector()` 为 null，解引用即 NPE，启动中止)。
+
+一次性注册**必须**用随存档保存的 persistent data 标记，且每个注册项用**各自的键**，不要并入插件既有的 `CLASS_MARK` 标记 —— 否则在插件标记已置位的旧档里，本脚本永远不会注册。
+
+无论哪个入口，一次性注册**必须**用随存档保存的 persistent data 标记 (前置生命周期例的 `CLASS_MARK` 模式)。
+
+本节示例给每个注册项**各自的键** (`REGISTER_MARK`)，不要并入插件既有的 `GearInModPlugin.CLASS_MARK` 标记 —— 否则在插件标记已置位的旧档里，本脚本永远不会注册。
+
+## 实现生涯时钟脚本
+
+本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段；把它放入指定类或方法后再继续，日志或界面出现对应信号时才进入下一段。
+
+### 按存档注册一次
+
+```java
+// 插入位置：GearInModPlugin.onGameLoad()
+SectorAPI sector = Global.getSector();
+if (!sector.getPersistentData().containsKey(GearInSectorClockScript.REGISTER_MARK)) {
+    sector.getPersistentData().put(GearInSectorClockScript.REGISTER_MARK, true);
+    sector.addScript(new GearInSectorClockScript());
+}
+```
+
+新增行为：每个存档首次加载时注册一个常驻脚本，标记随存档保存。完成信号：首次进入旧档或新档出现挂载日志；同一存档再次读档不会增加第二个实例。
+
+### 保存首次推进时刻
+
+```java
+// 插入位置：GearInSectorClockScript.advance() 取得 clock 之后
+if (startTimestamp == 0L) {
+    startTimestamp = clock.getTimestamp();
+    LOG.info("GearIn clock script mounted at " + clock.getDateString());
+}
+```
+
+新增行为：脚本第一次真正推进时记录生涯时间戳，该字段随存档恢复。完成信号：首次挂载只出现一次日志；保存并读档后累计时间从保存点继续。
+
+### 检测跨日并换算帧长
+
+```java
+// 插入位置：advance() 完成首次时刻初始化之后
+int dateKey = clock.getCycle() * 10000 + clock.getMonth() * 100 + clock.getDay();
+if (dateKey != lastDateKey) {
+    lastDateKey = dateKey;
+    LOG.info(String.format(
+            "GearIn clock day change: %s | this frame=%.4f game days | since mount=%.1f game days",
+            clock.getDateString(),
+            clock.convertToDays(amount),
+            clock.getElapsedDaysSince(startTimestamp)));
+}
+```
+
+新增行为：真实帧长先换算为游戏天，再在日期键变化时报告。完成信号：正常速度约每 10 真实秒出现一条跨日日志，暂停时停止，加速时频率约翻倍。
+
+### 到期后交给引擎移除
+
+```java
+// 插入位置：advance() 末尾，以及 isDone()
+if (daysToRun >= 0 && clock.getElapsedDaysSince(startTimestamp) >= daysToRun) {
+    LOG.info("GearIn clock script done: " + daysToRun + " game days elapsed");
+    done = true;
+}
+
+return done;
+```
+
+新增行为：可选运行上限满足后只设置完成标志，由脚本循环在下一次检查时移除实例。完成信号：`daysToRun=30` 时约 30 个游戏日后出现完成日志，随后 `sector.hasScript(GearInSectorClockScript.class)` 返回 `false`。
+
+## 组装生涯脚本实现
+
+入口与一次性注册标记都确认了，该让脚本真正跑起来。在既有 MOD 布局与前置的 `GearInModPlugin` 生命周期例之上，本节只新增一个脚本类 (不新增任何资源、不新增任何注册项)：
 
 ```text
-mods/GearIndustry/
+Starsector\mods\GearIndustry\
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
-├── data/
-├── src/
-│   └── data/scripts/gearin/campaign/
-│       ├── GearInPersonScript         # 本节新增（归本节所有）：协调器
-│       ├── GearInBaseline             # 基线快照
-│       ├── GearInPersonIdentity       # 人物创建与身份
-│       ├── GearInPersonRelationship   # 人物对玩家关系
-│       ├── GearInPersonRegistration   # 人物注册（归属入口）
-│       ├── GearInCaptain              # 舰长
-│       ├── GearInOfficer              # 军官
-│       └── GearInFactionRelation      # 势力间关系
-└── jars/
+├── data\
+├── src\
+│   └── data\scripts\gearin\campaign\
+│       └── GearInSectorClockScript   # 本节新增（归本节所有）
+└── jars\
 ```
 
-演示脚本在挂载后的第一帧执行**同帧回滚**的序列：基线 → 演示成员 → 人物 A 默认值与身份 → 标签/记忆 → 人物对玩家关系 → 市场与重要人物 → 默认舰长与自定义舰长 → 势力随机人物 → officer 全链 (包装/XP/技能/升级/上舰)→ 势力关系确定性序列 → 清理。
+### GearInSectorClockScript
 
-全部修改在当帧回滚，不遗留任何持久状态。
+对应关系：
 
-**演示纪律**：演示/临时人物修改后必须同帧回滚，回滚用 "快照原值 + `setRelationship`"(见规则强度表)；先 `add` 后立刻 `remove` 的配对顺序不要调换 —— 演示帧中途抛异常会留下随存档保存的残留，且 `REGISTER_MARK` 已置位后读档不重放，残留无法自动清理 (最坏形态见故障分析第 9 条)。
+* `implements EveryFrameScript`：三个方法全来自接口 (`isDone` / `runWhilePaused` / `advance`)；`isDone()` 返回字段 `done`，演示 "引擎自动清理"。
+* `REGISTER_MARK`：persistent data 标记键 (`"GearIn_SectorClockScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
+* `advance(float amount)`：`amount` 是上一帧真实秒数；`clock.convertToDays(amount)` 才是本帧折合的游戏天数 (换算规则见 "时间系统" 节)。
+* `getCycle() * 10000 + getMonth() * 100 + getDay()`：把日期折叠成整数键做跨日检测 (206.3.2 → 2060302)。
+* `getElapsedDaysSince(startTimestamp)`：挂载以来经过的游戏天数；暂停时不增长。
+* `daysToRun` / `setRunWhilePaused`：两个演示参数，对应 "修改参数看行为变化" 的演示步骤。
 
-### GearInPersonScript(协调器)
+调用点 (工程片段 —— 方法所在类由前置生命周期例持有，本节只演示调用，不改动那些文件)：
 
-一次性演示脚本 (`EveryFrameScript`)：`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除。
+```java
+    // GearInModPlugin（前置生命周期例持有）的 onGameLoad(boolean newGame) 内新增本节注册块。
+    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
+    if (!Global.getSector().getPersistentData().containsKey(GearInSectorClockScript.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInSectorClockScript.REGISTER_MARK, true);
+        Global.getSector().addScript(new GearInSectorClockScript());
+    }
+    // 可选冗余查重（建议：hasScript 与 persistent data 门互为冗余）：
+    if (!Global.getSector().hasScript(GearInSectorClockScript.class)) {
+        Global.getSector().addScript(new GearInSectorClockScript());
+    }
+```
 
-职责：记录基线 (交由 GearInBaseline)、创建并挂载演示成员 wolf / hammerhead 供本页各角色小类使用、末尾清理恢复初始舰队。
+(上面两段只取一段即满足 "不重复注册"；两段同留时，第二段被自己的 `hasScript` 检查 (isInstance 命中) 拦截而不补注册；`addScript` 本身不去重，移除 hasScript 门后会叠加运行 —— 但演示时建议只保留标记段，避免混淆。)
 
-`REGISTER_MARK`(`"GearIn_PersonLesson"`) 是存档持久化的注册标记键，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
+想演示 `daysToRun`，在注册前先设参数：
+
+```java
+    GearInSectorClockScript script = new GearInSectorClockScript();
+    script.setDaysToRun(30); // 约 30 个游戏日（约 5 分钟游戏时间）后自停
+    Global.getSector().addScript(script);
+```
+
+构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
+
+```text
+gradle jar
+```
+
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInSectorClockScript.class`(可用 `jar tf` 核对)。
+
+## 关键故障实验：读档后脚本进度重新开始
+
+将脚本加入 transient scripts 或只依赖实例字段。
+
+**局部故障片段：**
+
+```java
+// 故障片段
+sector.addTransientScript(new GearInSectorClockScript());
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+sector.addScript(new GearInSectorClockScript());
+```
+
+复验：保存、退出、读档并核对同一进度键。
+
+## 验证方案
+
+前置数据：既有 MOD 布局 [C6-S1]、`GearInModPlugin` ([C6-S2]，含本节调用点片段) 与本节类 `GearInSectorClockScript`。累计工程的 `GearInSystemGenerator` 非必需。
+
+1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；用 `jar tf jars\GearIndustry.jar` 核对产物。
+2. 新建生涯：启动游戏进入新档，持续观察 `starsector.log`，直到确认脚本挂载与跨日日志。
+3. 暂停：生涯中按空格暂停，等待 20 秒以上，再恢复。
+4. 加速：按住 Shift 约 10 秒，再松开。
+5. 读档：保存后读档，继续观察日志。
+6. 战斗：进入前置战役 `GearIn_test` 或任意遭遇战，观察战斗期间的日志；退出战斗回生涯后继续观察。
+7. 参数演示：把 `daysToRun` 设为 30 重新构建，观察自停行为。
+
+预期结果：
+
+* 游戏构建以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInSectorClockScript.class`。
+
+* 新建生涯：`starsector.log` 依次出现。
+
+    ```text
+    GearIn clock script mounted at Mar 2, c206 GearIn clock day change: Mar 2, c206 (short=206.3.2) | this frame=0.0017 game days | since mount=0.0 game days
+    ```
+
+    随后**每 10 真实秒** (未暂停、未加速) 出现一条新的跨日日志，日期逐日前进、`since mount` 逐日 +1.0。挂载日期约 206.3.2 —— 新档时间推进约 60.2 游戏日 (约两个月) 后才是玩家开始游玩的时间点；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
+
+* 暂停 (空格)：跨日日志停止 (脚本冻结、时钟冻结)；恢复后继续，`since mount` 不因暂停丢失进度。
+
+* 加速 (按住 Shift)：跨日频率约翻倍 (`campaignSpeedupMult = 2`，每帧推进两次)，约每 5 真实秒一条。
+
+* 读档：不出现 `mounted` 日志 (`startTimestamp` 随存档恢复)；不重复注册 (`REGISTER_MARK` 标记已置位、`hasScript` 命中)；跨日日志从存档时刻继续。
+
+* 战斗：进入战斗期间无任何跨日日志 (生涯引擎冻结)；回生涯后继续。
+
+* `daysToRun = 30`：挂载约 300 真实秒后出现。
+
+    ```text
+    GearIn clock script done: 30 game days elapsed, isDone()=true
+    ```
+
+    之后不再有跨日日志 —— 引擎在置位后的下一帧从 `scripts` 列表移除了脚本 (可验证 `Global.getSector().hasScript(GearInSectorClockScript.class)` 为 `false`)。
+
+* 退出到主菜单：脚本停止推进 (生涯引擎不再推进)；回到主菜单后再进档 (读档) 按第 5 条继续。
+
+清理：把 `daysToRun` 恢复为 `-1`，使脚本保持常驻。
+
+## 故障分析
+
+- **脚本完全没有日志：**脚本没有注册，或注册错误地放在 `onApplicationLoad`。将一次性注册放入 `onGameLoad` 或 `onNewGame`，重新读档后确认出现 `GearIn clock`。
+- **每次读档后跨日日志成倍增加：**`addScript` 没有持久标记和查重。使用 `REGISTER_MARK` 与 `hasScript`，连续读档后确认每次跨日只有一行。
+- **脚本首帧即被移除：**`isDone()` 初始就返回 true。让 `done` 初始为 false，只在完成条件满足时置 true。
+- **暂停时脚本推进但日期不变：**`runWhilePaused()` 只允许 `advance()` 继续调用，不会推进生涯时钟。暂停敏感进度使用时钟差值；需要真实时间时才累计 `amount`。
+- **时间流速快了十倍：**代码把真实秒 `amount` 直接当成游戏日。改用 `clock.convertToDays(amount)`，10 真实秒应得到 1 游戏日。
+- **暂停期间倒计时始终不触发：**倒计时依赖冻结的生涯时钟。需要真实时间倒计时就自行累计 `amount`；需要游戏时间则等待解除暂停。
+- **战斗期间没有生涯脚本日志：**战斗阶段会暂停生涯引擎与时钟。返回生涯后日志应继续出现。
+- **旧存档始终没有注册脚本：**新注册项错误地复用了入口插件的 `CLASS_MARK`。为脚本使用独立的 `REGISTER_MARK`，读入缺少该键的旧档后完成首次注册。
+- **读档后脚本行为错乱或保存异常：**脚本字段保存了 UI、声音播放器等瞬态对象。字段只保存可序列化状态；跨会话数据进入 `getPersistentData()`，纯临时脚本使用 `addTransientScript`。
+
+## 总结
+
+本节把星区、时钟与脚本讲成一条链：**注册入口** (`onGameLoad` + persistent data 标记)→ **每帧推进** (引擎遍历快照：`isDone` 先清、`runWhilePaused() || !isPaused()` 才调 `advance(amount)`)。
+
+链条的后半是**时钟换算** (`amount` 是真实秒，`convertToDays` 按 10 秒/游戏日折算；暂停时时钟冻结) 与**清理** (`isDone` 自动移除、`removeScript` 按同一性、`removeScriptsOfClass` 按精确类、`hasScript` 按 `isInstance`)。
+
+记忆要点：
+
+* `scripts` 随存档保存、`transientScripts` 不随存档保存；`addScript` 不去重 —— **一次性注册必须用 persistent data 标记**，查重用 `hasScript`。
+* 引擎遍历快照：`advance` 里 `addScript` 的新脚本**下一帧**才推进。
+* 暂停 (空格) 时：脚本默认冻结、时钟冻结、经济冻结；加速 (按住 Shift) 时每帧推进两次；**战斗期间生涯引擎完全不推进**。
+* 纪元 206-01-01；`getCycle()` 是年、`getMonth()` 1–12、`getDay()` 1–31；`getElapsedDaysSince(0)` 返回 `Float.MAX_VALUE`。
+* 新档在 `onGameLoad` 时时钟已推进约 60.2 游戏日 (约 206.3.2)。
+
+引擎级脚本只是生涯异步逻辑的一半：实体级脚本随实体生命周期走、事件监听器挂在星区上，它们是这条链的逻辑延伸；而贯穿始终的两块底座是 "首次进入存档" 的 `CLASS_MARK` 标记与 `Global` 阶段语义 —— 所有注册与读取都建立在生涯引擎建立之后。
+
+## 建议参考项
+
+* `com.fs.starfarer.api.campaign.SectorAPI`：星区根对象 —— 时钟、脚本、持久数据、记忆、暂停等入口。
+* `com.fs.starfarer.api.campaign.CampaignClockAPI`：生涯时钟 —— 日期/时间戳读取与秒 ⇄ 游戏日换算。
+* `com.fs.starfarer.api.EveryFrameScript`：生涯按帧脚本接口 ——`isDone` / `runWhilePaused` / `advance` 三方法约定。
+* `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：带 `cleanup()` 的脚本接口，附着实体被移除时调用。
+* `com.fs.starfarer.api.Global`：`getSector()` / `getLogger()` 全局入口。
+* `data.scripts.gearin.campaign.GearInSectorClockScript`：本节示例类 (完整最小例源码)。
+* `data/config/settings.json`：`campaignSpeedupMult` 等生涯设置 (加速倍数)。
+
+## 完整最小例
+
+::: details 完整成品：GearInSectorClockScript
 
 ```java
 package data.scripts.gearin.campaign;
@@ -333,572 +556,92 @@ import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.FleetDataAPI;
+import com.fs.starfarer.api.campaign.CampaignClockAPI;
 import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.fleet.FleetMemberAPI;
-import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 人物专题一次性演示脚本（协调器）：编排各角色小类并负责演示成员与清理，自停脚本。
- * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK 一次性守卫；全程同帧回滚。
+ * 完整最小例：SectorAPI 注册的生涯每帧脚本（EveryFrameScript）。
+ *
+ * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），注册前用 hasScript() 查重，
+ * 并用 sector persistent data 键 REGISTER_MARK 做一次性门控（C6-S2 的 CLASS_MARK 模式）。
+ *
+ * 行为：每个游戏日跨日时打印一行日志（当前日期、本帧折合的游戏天数、挂载以来经过的游戏天数）；
+ * 默认 runWhilePaused() 返回 false：引擎暂停时脚本不推进、生涯时钟也不前进；
+ * daysToRun >= 0 时挂载满该天数后 isDone() 返回 true，引擎在下一帧自动从 scripts 列表移除本脚本。
  */
-public class GearInPersonScript implements EveryFrameScript {
+public class GearInSectorClockScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过（随存档保存）。 */
-    public static final String REGISTER_MARK = "GearIn_PersonLesson";
+    /** 存档持久化标记：本脚本是否已在该存档注册过（随存档保存）。 */
+    public static final String REGISTER_MARK = "GearIn_SectorClockScript";
 
-    private static final Logger LOG = Global.getLogger(GearInPersonScript.class);
+    private static final Logger LOG = Global.getLogger(GearInSectorClockScript.class);
 
-    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
-    private boolean executed = false;
+    /** 跨日判定键（cycle * 10000 + month * 100 + day）；-1 表示尚未初始化。 */
+    private int lastDateKey = -1;
 
-    public GearInPersonScript() {
+    /** 脚本第一次 advance() 时的时钟时间戳；随存档序列化，读档后继续累计。 */
+    private long startTimestamp = 0L;
+
+    /** 演示参数：最多运行多少游戏天后自停；< 0 表示常驻不停止。 */
+    private int daysToRun = -1;
+
+    /** 演示参数：是否在引擎暂停时仍推进；默认 false（暂停即停表）。 */
+    private boolean runWhilePaused = false;
+
+    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
+    private boolean done = false;
+
+    public GearInSectorClockScript() {
+        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
+    }
+
+    /** 修改运行天数上限；改回 -1 恢复常驻。 */
+    public void setDaysToRun(int daysToRun) {
+        this.daysToRun = daysToRun;
+    }
+
+    /** 修改暂停语义；改为 true 后暂停期间 advance() 仍会被调用。 */
+    public void setRunWhilePaused(boolean runWhilePaused) {
+        this.runWhilePaused = runWhilePaused;
     }
 
     @Override
     public boolean isDone() {
-        return executed;
+        return done;
     }
 
     @Override
     public boolean runWhilePaused() {
-        return false;
+        return runWhilePaused;
     }
 
     @Override
     public void advance(float amount) {
-        if (executed) {
-            return;
-        }
-        executed = true;
-        run();
-    }
-
-    private void run() {
         SectorAPI sector = Global.getSector();
-        FleetDataAPI fleetData = sector.getPlayerFleet().getFleetData();
-        int initialCount = new GearInBaseline().run(sector, fleetData);
-        // 演示成员 wolf / hammerhead（供 captain / officer 小节使用）
-        FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
-        FleetMemberAPI hammerhead = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "hammerhead_Elite");
-        fleetData.addFleetMember(wolf);
-        fleetData.addFleetMember(hammerhead);
-        LOG.info(String.format(
-                "GearIn person lesson members: added wolf=%s hammerhead=%s count=%d",
-                wolf.getShipName(), hammerhead.getShipName(), fleetData.getNumMembers()));
+        CampaignClockAPI clock = sector.getClock();
 
-        // 人物 A：创建/身份/标签内存 -> 对玩家关系 -> 市场与重要人物注册
-        PersonAPI personA = new GearInPersonIdentity().run();
-        new GearInPersonRelationship().run(personA);
-        new GearInPersonRegistration().run(sector, personA);
-
-        // 舰长；人物 B 与军官；势力关系（同帧回滚）
-        new GearInCaptain().run(wolf, personA, fleetData);
-        new GearInOfficer().run(sector, hammerhead, fleetData, sector.getPlayerFleet());
-        new GearInFactionRelation().run(sector);
-
-        // 清理：恢复初始舰队
-        fleetData.removeFleetMember(wolf);
-        fleetData.removeFleetMember(hammerhead);
-        LOG.info(String.format(
-                "GearIn person lesson done: members=%d (initial %d)",
-                fleetData.getNumMembers(), initialCount));
-    }
-}
-```
-
-### GearInBaseline
-
-基线快照 (演示前置观察)：记录玩家舰队成员数、玩家势力 id、玩家人物名，并验证玩家旗舰 `getCaptain()` 特例 (旗舰舰长读回玩家人物，`captainIsPlayerPerson=true`)；返回初始成员数，供协调器在清理后对比。
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.FleetDataAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.fleet.FleetMemberAPI;
-
-/**
- * 基线快照（演示前置观察）：玩家舰队成员数/玩家势力/玩家人物，及玩家旗舰 getCaptain() 特例。
- */
-public class GearInBaseline {
-
-    private static final Logger LOG = Global.getLogger(GearInBaseline.class);
-
-    /** 记录基线并返回初始成员数，供协调器在清理后对比。 */
-    public int run(SectorAPI sector, FleetDataAPI fleetData) {
-        int initialCount = fleetData.getNumMembers();
-        LOG.info(String.format(
-                "GearIn person lesson start: members=%d playerFaction=%s playerPerson=%s",
-                initialCount, sector.getPlayerFaction().getId(), sector.getPlayerPerson().getNameString()));
-        CampaignFleetAPI playerFleet = sector.getPlayerFleet();
-        FleetMemberAPI flagship = playerFleet.getFlagship();
-        boolean flagshipCaptainIsPlayer = flagship != null && flagship.getCaptain() == sector.getPlayerPerson();
-        LOG.info(String.format(
-                "GearIn person lesson flagship: name=%s captainIsPlayerPerson=%s",
-                flagship == null ? "none" : flagship.getShipName(), flagshipCaptainIsPlayer));
-        return initialCount;
-    }
-}
-```
-
-### GearInPersonIdentity
-
-人物创建与身份 (`PersonAPI`)：`Global.getFactory().createPerson()` 创建人物 A 并逐字段读回默认值 (id、`steady`、空名、`spaceCommander`/ `fleetCommander`、`neutral`、默认头像、`MEDIUM`，对应 "人物对象与创建入口" 的默认值表)；
-
-随后写入姓名/性别/势力/rank/post/personality/importance+voice 并读回 (`rank=Commander`、`post=Fleet Commander` 经势力解析)；
-
-标签与内存写入读取 —— 纯读只用 `getMemoryWithoutUpdate()`(对应规则强度第 1 条)。
-
-```java
-package data.scripts.gearin.campaign;
-
-import java.util.Random;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.PersonImportance;
-import com.fs.starfarer.api.characters.FullName;
-import com.fs.starfarer.api.characters.FullName.Gender;
-import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.impl.campaign.ids.Ranks;
-
-/**
- * 人物创建与身份（PersonAPI）：createPerson 默认值、姓名/性别/势力/rank/post/personality/importance+voice、标签与内存。
- */
-public class GearInPersonIdentity {
-
-    private static final Logger LOG = Global.getLogger(GearInPersonIdentity.class);
-
-    /** 创建人物并写入身份与附属数据，返回该人物供后续角色小节使用。 */
-    public PersonAPI run() {
-        PersonAPI personA = Global.getFactory().createPerson();
-        LOG.info(String.format(
-                "GearIn person lesson personA defaults: id=%s personality=%s name='%s' rankId=%s postId=%s faction=%s portraitIsDefault=%s importance=%s",
-                personA.getId(), personA.getPersonalityAPI().getId(), personA.getNameString(),
-                personA.getRankId(), personA.getPostId(), personA.getFaction().getId(),
-                personA.isDefault(), personA.getImportance()));
-
-        personA.setFaction("hegemony");
-        personA.setName(new FullName("Aster", "Vance", Gender.FEMALE));
-        personA.setRankId(Ranks.SPACE_COMMANDER);
-        personA.setPostId(Ranks.POST_FLEET_COMMANDER);
-        personA.setPersonality("reckless");
-        personA.setImportanceAndVoice(PersonImportance.HIGH, new Random());
-        LOG.info(String.format(
-                "GearIn person lesson personA identity: name=%s female=%s rank=%s post=%s personality=%s faction=%s voice=%s",
-                personA.getNameString(), personA.isFemale(), personA.getRank(), personA.getPost(),
-                personA.getPersonalityAPI().getId(), personA.getFaction().getId(), personA.getVoice()));
-
-        personA.addTag("GearIn_personLesson");
-        personA.getMemoryWithoutUpdate().set("$GearIn_personLesson", 42);
-        LOG.info(String.format(
-                "GearIn person lesson tagsMemory: hasTag=%s tags=%d memory=%d",
-                personA.hasTag("GearIn_personLesson"), personA.getTags().size(),
-                personA.getMemoryWithoutUpdate().getInt("$GearIn_personLesson")));
-        return personA;
-    }
-}
-```
-
-### GearInPersonRelationship
-
-人物对玩家关系 (`RelationshipAPI` / `RepLevel`)：
-- `getRelToPlayer()` 延迟创建 (默认 `rel=0.00 level=NEUTRAL`)；
-- `adjustRelationship(0.3f, null)`(无 limit，正向默认封顶 `COOPERATIVE.getMax()` 即 1.0)；
-- `setLevel(COOPERATIVE)` 落 `0.75`；
-- `setLevel(HOSTILE)` 落 `-0.50`(`min+0.01` / `-min-0.01` 语义)；
-- `setRel(0)` 复位。
-
-五步日志覆盖 "数值连续、档位分段"。
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.RepLevel;
-import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.characters.RelationshipAPI;
-
-/**
- * 人物对玩家关系（RelationshipAPI / RepLevel）：延迟默认 -> adjustRelationship -> setLevel -> setRel 复位。
- */
-public class GearInPersonRelationship {
-
-    private static final Logger LOG = Global.getLogger(GearInPersonRelationship.class);
-
-    public void run(PersonAPI personA) {
-        RelationshipAPI relToPlayer = personA.getRelToPlayer();
-        LOG.info(String.format(
-                "GearIn person lesson relToPlayer default: rel=%.2f level=%s hostile=%s",
-                relToPlayer.getRel(), relToPlayer.getLevel(), relToPlayer.isHostile()));
-        relToPlayer.adjustRelationship(0.3f, null);
-        LOG.info(String.format(
-                "GearIn person lesson relToPlayer adjust: rel=%.2f level=%s",
-                relToPlayer.getRel(), relToPlayer.getLevel()));
-        relToPlayer.setLevel(RepLevel.COOPERATIVE);
-        LOG.info(String.format(
-                "GearIn person lesson relToPlayer cooperative: rel=%.2f level=%s",
-                relToPlayer.getRel(), relToPlayer.getLevel()));
-        relToPlayer.setLevel(RepLevel.HOSTILE);
-        LOG.info(String.format(
-                "GearIn person lesson relToPlayer hostile: rel=%.2f level=%s hostile=%s",
-                relToPlayer.getRel(), relToPlayer.getLevel(), relToPlayer.isHostile()));
-        relToPlayer.setRel(0f);
-        LOG.info(String.format(
-                "GearIn person lesson relToPlayer reset: rel=%.2f level=%s",
-                relToPlayer.getRel(), relToPlayer.getLevel()));
-    }
-}
-```
-
-### GearInPersonRegistration
-
-人物注册 (归属入口)：市场侧 `addPerson` / `removePerson` 同帧配对 (`person.setMarket` 联动、`getPeopleCopy` 前后核对)；重要人物 `addPerson` / `containsPerson` / `getData` / `removePerson` 同帧配对。
-
-演示归属四入口中的两个 (市场 people + important people)，且不遗留存档。
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.campaign.econ.EconomyAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.characters.ImportantPeopleAPI.PersonDataAPI;
-import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
-
-/**
- * 人物注册（归属入口）：市场通讯录 addPerson/removePerson 双向交接，重要人物 addPerson/contains/getData/removePerson。
- */
-public class GearInPersonRegistration {
-
-    private static final Logger LOG = Global.getLogger(GearInPersonRegistration.class);
-
-    public void run(SectorAPI sector, PersonAPI personA) {
-        EconomyAPI economy = sector.getEconomy();
-        MarketAPI market = economy.getMarket("jangala");
-        if (market == null) {
-            for (MarketAPI candidate : economy.getMarketsCopy()) {
-                if (candidate.hasSubmarket(Submarkets.SUBMARKET_OPEN)) {
-                    market = candidate;
-                    break;
-                }
-            }
+        if (startTimestamp == 0L) {
+            startTimestamp = clock.getTimestamp();
+            LOG.info("GearIn clock script mounted at " + clock.getDateString());
         }
-        if (market != null) {
-            market.addPerson(personA);
-            boolean inMarketAfterAdd = market.getPeopleCopy().contains(personA);
-            boolean personMarketLinked = personA.getMarket() == market;
-            market.removePerson(personA);
-            boolean inMarketAfterRemove = market.getPeopleCopy().contains(personA);
+
+        int dateKey = clock.getCycle() * 10000 + clock.getMonth() * 100 + clock.getDay();
+        if (dateKey != lastDateKey) {
+            lastDateKey = dateKey;
             LOG.info(String.format(
-                    "GearIn person lesson market: id=%s inAfterAdd=%s personMarketLinked=%s inAfterRemove=%s",
-                    market.getId(), inMarketAfterAdd, personMarketLinked, inMarketAfterRemove));
-        } else {
-            LOG.info("GearIn person lesson market: none found, skipped");
+                    "GearIn clock day change: %s (short=%s) | this frame=%.4f game days | since mount=%.1f game days",
+                    clock.getDateString(),
+                    clock.getShortDate(),
+                    clock.convertToDays(amount),
+                    clock.getElapsedDaysSince(startTimestamp)));
         }
 
-        sector.getImportantPeople().addPerson(personA);
-        boolean importantAfterAdd = sector.getImportantPeople().containsPerson(personA);
-        PersonDataAPI personData = sector.getImportantPeople().getData(personA);
-        boolean personDataLinked = personData != null && personData.getPerson() == personA;
-        sector.getImportantPeople().removePerson(personA);
-        boolean importantAfterRemove = sector.getImportantPeople().containsPerson(personA);
-        LOG.info(String.format(
-                "GearIn person lesson importantPeople: containsAfterAdd=%s dataLinked=%s containsAfterRemove=%s",
-                importantAfterAdd, personDataLinked, importantAfterRemove));
-    }
-}
-```
-
-### GearInCaptain
-
-舰长 (`FleetMemberAPI`)：读取 wolf 的默认舰长 (steady、空名、level 1，正是保存时会被压缩掉的形态)；`setCaptain(personA)` 后验证 `getCaptain() == personA` 同一性 + `getMemberWithCaptain(personA)` 反查。
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.FleetDataAPI;
-import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.fleet.FleetMemberAPI;
-
-/**
- * 舰长（captain）：默认舰长读取（steady/空名/level 1）、setCaptain 交接与 getMemberWithCaptain 反查。
- */
-public class GearInCaptain {
-
-    private static final Logger LOG = Global.getLogger(GearInCaptain.class);
-
-    public void run(FleetMemberAPI wolf, PersonAPI personA, FleetDataAPI fleetData) {
-        PersonAPI defaultCaptain = wolf.getCaptain();
-        LOG.info(String.format(
-                "GearIn person lesson captain default: personality=%s name='%s' level=%d",
-                defaultCaptain.getPersonalityAPI().getId(), defaultCaptain.getNameString(),
-                defaultCaptain.getStats().getLevel()));
-        wolf.setCaptain(personA);
-        LOG.info(String.format(
-                "GearIn person lesson captain set: sameCaptain=%s memberWithCaptainFound=%s",
-                wolf.getCaptain() == personA, fleetData.getMemberWithCaptain(personA) == wolf));
-    }
-}
-```
-
-### GearInOfficer
-
-军官 (`OfficerDataAPI`)：
-- `hegemony.createRandomPerson()` 势力随机人物 (随机姓名/肖像/voice，personality 恒 `steady`)→ `createOfficerData` → `addOfficer`(`personB.getFleet() == playerFleet` 联动)；
-- `addXP(100000)`(`officerMaxLevel=5` 内不封顶)→ `canLevelUp()`(≥ 2 级阈值 48000)；
-- `makeSkillPicks()`(4 个候选)→ `levelUp(pick)`(level 2、技能 1 级)；
-- `hammerhead.setCaptain(personB)` 军官上舰 → `removeOfficer`(`getFleet()` 回 null)。
-
-```java
-package data.scripts.gearin.campaign;
-
-import java.util.List;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.FleetDataAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.characters.OfficerDataAPI;
-import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.fleet.FleetMemberAPI;
-
-/**
- * 军官（OfficerDataAPI）：势力随机人物 -> 包装入 roster -> XP/技能候选/升级 -> 上舰 -> 移除。
- */
-public class GearInOfficer {
-
-    private static final Logger LOG = Global.getLogger(GearInOfficer.class);
-
-    public void run(SectorAPI sector, FleetMemberAPI hammerhead, FleetDataAPI fleetData,
-                    CampaignFleetAPI playerFleet) {
-        PersonAPI personB = sector.getFaction("hegemony").createRandomPerson();
-        LOG.info(String.format(
-                "GearIn person lesson personB random: name=%s female=%s faction=%s personality=%s portraitIsDefault=%s",
-                personB.getNameString(), personB.isFemale(), personB.getFaction().getId(),
-                personB.getPersonalityAPI().getId(), personB.isDefault()));
-
-        OfficerDataAPI officer = Global.getFactory().createOfficerData(personB);
-        fleetData.addOfficer(officer);
-        LOG.info(String.format(
-                "GearIn person lesson officer add: count=%d fleetLinked=%s",
-                fleetData.getOfficersCopy().size(), personB.getFleet() == playerFleet));
-
-        long xpBefore = personB.getStats().getXP();
-        officer.addXP(100000);
-        boolean canLevelUp = officer.canLevelUp();
-        officer.makeSkillPicks();
-        List<String> picks = officer.getSkillPicks();
-        LOG.info(String.format(
-                "GearIn person lesson officer xp: xp=%d -> %d canLevelUp=%s picks=%d",
-                xpBefore, personB.getStats().getXP(), canLevelUp, picks.size()));
-        if (!picks.isEmpty()) {
-            String pick = picks.get(0);
-            officer.levelUp(pick);
-            LOG.info(String.format(
-                    "GearIn person lesson officer levelUp: level=%d skill=%s skillLevel=%s",
-                    personB.getStats().getLevel(), pick, personB.getStats().getSkillLevel(pick)));
+        if (daysToRun >= 0 && clock.getElapsedDaysSince(startTimestamp) >= daysToRun) {
+            LOG.info("GearIn clock script done: " + daysToRun + " game days elapsed, isDone()=true");
+            done = true;
         }
-
-        hammerhead.setCaptain(personB);
-        LOG.info(String.format(
-                "GearIn person lesson officer captain: sameCaptain=%s memberWithCaptainFound=%s officerInRoster=%s",
-                hammerhead.getCaptain() == personB,
-                fleetData.getMemberWithCaptain(personB) == hammerhead,
-                fleetData.getOfficersCopy().contains(officer)));
-
-        fleetData.removeOfficer(personB);
-        LOG.info(String.format(
-                "GearIn person lesson officer remove: count=%d fleetLinked=%s",
-                fleetData.getOfficersCopy().size(), personB.getFleet() == null));
     }
 }
 ```
 
-### GearInFactionRelation
-
-势力间关系 (`FactionAPI` 关系族，hegemony vs tritachyon)：确定性序列 + 同帧回滚：
-- `setRelationship(0)` 归一；
-- `adjustRelationship(+0.15)` 落 `0.15 FAVORABLE`；
-- `adjustRelationship(+0.9, COOPERATIVE)` 封顶 `1.00 changed=true`；
-- `setRelationship(HOSTILE)` 落 `-0.50`、`isHostileTo=true`；
-- `adjustRelationship(-0.2, VENGEFUL)` 落 `-0.70` **但档位仍 HOSTILE**(数值连续、档位分段)；
-- `ensureAtWorst(WELCOMING)` 落 `0.25 ensured=true`(抬高关系用 `ensureAtWorst`；`ensureAtBest` 只拉低不抬高，此刻调用它返回 false、值不变)；
-- `setRelationship(原值)` 精确恢复。
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.FactionAPI;
-import com.fs.starfarer.api.campaign.RepLevel;
-import com.fs.starfarer.api.campaign.SectorAPI;
-
-/**
- * 势力间关系（FactionAPI 关系族）：setRelationship / adjustRelationship / ensureAtWorst 确定性序列 + 同帧回滚。
- */
-public class GearInFactionRelation {
-
-    private static final Logger LOG = Global.getLogger(GearInFactionRelation.class);
-
-    public void run(SectorAPI sector) {
-        FactionAPI hegemony = sector.getFaction("hegemony");
-        FactionAPI tritachyon = sector.getFaction("tritachyon");
-        float originalRel = hegemony.getRelationship("tritachyon");
-        hegemony.setRelationship("tritachyon", 0f);
-        LOG.info(String.format(
-                "GearIn person lesson factionRel start: original=%.2f normalized=%.2f level=%s",
-                originalRel, hegemony.getRelationship("tritachyon"),
-                hegemony.getRelationshipLevel("tritachyon")));
-        hegemony.adjustRelationship("tritachyon", 0.15f);
-        LOG.info(String.format(
-                "GearIn person lesson factionRel adjust: value=%.2f level=%s",
-                hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon")));
-        boolean cappedChanged = hegemony.adjustRelationship("tritachyon", 0.9f, RepLevel.COOPERATIVE);
-        LOG.info(String.format(
-                "GearIn person lesson factionRel cap: value=%.2f level=%s changed=%s",
-                hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon"), cappedChanged));
-        hegemony.setRelationship("tritachyon", RepLevel.HOSTILE);
-        LOG.info(String.format(
-                "GearIn person lesson factionRel hostile: value=%.2f level=%s hostileTo=%s",
-                hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon"),
-                hegemony.isHostileTo("tritachyon")));
-        hegemony.adjustRelationship("tritachyon", -0.2f, RepLevel.VENGEFUL);
-        LOG.info(String.format(
-                "GearIn person lesson factionRel vengefulCap: value=%.2f level=%s",
-                hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon")));
-        boolean ensured = hegemony.ensureAtWorst("tritachyon", RepLevel.WELCOMING);
-        LOG.info(String.format(
-                "GearIn person lesson factionRel ensure: value=%.2f level=%s ensured=%s",
-                hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon"), ensured));
-        hegemony.setRelationship("tritachyon", originalRel);
-        LOG.info(String.format(
-                "GearIn person lesson factionRel restore: value=%.2f level=%s",
-                hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon")));
-    }
-}
-```
-
-**协作关系**：协调器持有共享对象 (人物 A、wolf、hammerhead)，角色小类以 `run(...)` 参数接收 (包内协作，不跨单元)，保持 "同一人物对象贯穿身份 → 关系 → 注册 → 舰长" 的演示语义；
-
-日志前缀统一为 `GearIn person lesson`；人物 A 的标签与 memory key 为 `GearIn_personLesson` / `$GearIn_personLesson`。
-
-调用点 (工程片段 —— 方法所在类归插件生命周期页所有，本节只演示调用，不改动那些文件)：
-
-```java
-    // GearInModPlugin（插件生命周期页所有）onGameLoad(boolean newGame) 内新增本节注册块。
-    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInPersonScript.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInPersonScript.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInPersonScript());
-    }
-```
-
-构建命令 (在 `mods/GearIndustry/` 执行)：
-
-```text
-gradle jar
-```
-
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类 (可用 `jar tf` 核对)。
-
-演示链已经落地，下面按步骤编译、进档并核对日志与界面。
-
-## 验证方案
-
-前置数据：`gear_in` MOD 布局与插件生命周期类 ([C6-S1] / [C6-S2]，含本节调用点片段)、本节 8 个类、生涯时钟脚本 (非必需)。
-
-1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
-2. 新建生涯：确认 `starsector.log` 按顺序出现全部 `GearIn person lesson` 日志行：
-   - 含 `start` / `flagship` / `members` / `personA defaults` / `personA identity` / `tagsMemory` / 五条 `relToPlayer` / `market` / `importantPeople`。
-   - 含 `captain default` / `captain set` / `personB random` / `officer add` / `officer xp` / `officer levelUp` / `officer captain` / `officer remove` / 七条 `factionRel` / `done`。
-   - 关键核对：`captainIsPlayerPerson=true`、`personA defaults` 六项默认值、`rank=Commander`、`post=Fleet Commander`、`relToPlayer` 五步 0.00→0.30→0.75→-0.50→0.00。
-   - `factionRel` 序列 0.00→0.15→1.00→-0.50→-0.70→0.25→原值、`done` 行成员数与 `start` 一致。
-   - 观察完整日志序列与数值变化。
-3. 界面核对：演示日志出现时打开舰队界面 (F 键)，确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
-4. 只执行一次：等待若干游戏日后日志无新增 `GearIn person lesson` 行；保存并读档后仍无新增 (`REGISTER_MARK` 门已关)；读档后势力关系面板中 hegemony 与 tritachyon 的数值与演示前一致 (同帧回滚)。
-
-预期结果：
-
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
-- **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现。
-  ```text
-  GearIn person lesson start: members=<N> playerFaction=player playerPerson=<玩家名> GearIn person lesson flagship: name=<旗舰船名> captainIsPlayerPerson=true GearIn person lesson members: added wolf=<船名> hammerhead=<船名> count=<N+2> GearIn person lesson personA defaults: id=p_<uid> personality=steady name='' rankId=spaceCommander postId=fleetCommander faction=neutral portraitIsDefault=true importance=MEDIUM GearIn person lesson personA identity: name=Aster Vance female=true rank=Commander post=Fleet Commander personality=reckless faction=hegemony voice=<soldier|official|aristo 之一> GearIn person lesson tagsMemory: hasTag=true tags=1 memory=42 GearIn person lesson relToPlayer default: rel=0.00 level=NEUTRAL hostile=false GearIn person lesson relToPlayer adjust: rel=0.30 level=WELCOMING GearIn person lesson relToPlayer cooperative: rel=0.75 level=COOPERATIVE GearIn person lesson relToPlayer hostile: rel=-0.50 level=HOSTILE hostile=true GearIn person lesson relToPlayer reset: rel=0.00 level=NEUTRAL GearIn person lesson market: id=jangala inAfterAdd=true personMarketLinked=true inAfterRemove=false GearIn person lesson importantPeople: containsAfterAdd=true dataLinked=true containsAfterRemove=false GearIn person lesson captain default: personality=steady name='' level=1 GearIn person lesson captain set: sameCaptain=true memberWithCaptainFound=true GearIn person lesson personB random: name=<随机名> female=<true|false> faction=hegemony personality=steady portraitIsDefault=false GearIn person lesson officer add: count=<M+1> fleetLinked=true GearIn person lesson officer xp: xp=<X> -> <X+100000> canLevelUp=true picks=4 GearIn person lesson officer levelUp: level=2 skill=<技能id> skillLevel=1.0 GearIn person lesson officer captain: sameCaptain=true memberWithCaptainFound=true officerInRoster=true GearIn person lesson officer remove: count=<M> fleetLinked=true GearIn person lesson factionRel start: original=<O> normalized=0.00 level=NEUTRAL GearIn person lesson factionRel adjust: value=0.15 level=FAVORABLE GearIn person lesson factionRel cap: value=1.00 level=COOPERATIVE changed=true GearIn person lesson factionRel hostile: value=-0.50 level=HOSTILE hostileTo=true GearIn person lesson factionRel vengefulCap: value=-0.70 level=HOSTILE GearIn person lesson factionRel ensure: value=0.25 level=WELCOMING ensured=true GearIn person lesson factionRel restore: value=<O> level=<原档位> GearIn person lesson done: members=<N> (initial <N>)
-  ```
-  其中 `<N>` 是初始成员数、`<M>` 是初始军官数、`<O>` 是存档里 hegemony 对 tritachyon 的关系原值、`<X>` 是人物 B 初始 XP(新档为 0)，均以实际日志为准；`voice` 是 hegemony `HIGH` 声音池三选一；`picks=4` 是新档典型值 (以日志为准，≥1)；`skill` 是重掷后的第一个军官技能候选。关系序列各行的数值/档位是**确定性**的：`0.15→FAVORABLE`、`1.00→COOPERATIVE changed=true`、`-0.50→HOSTILE hostileTo=true`、`-0.70 档位仍 HOSTILE`、`0.25→WELCOMING ensured=true`、`restore` 与原值一致。演示只执行一次，之后无任何 `GearIn person lesson` 日志。
-- **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
-- **读档**：不出现任何 `GearIn person lesson` 日志 (`REGISTER_MARK` 门已关、脚本不再注册)；玩家舰队与演示前一致；`hegemony` 与 `tritachyon` 的关系面板数值与演示前一致 (同帧回滚生效)。
-- **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
-
-## 故障分析
-
-1. **读档后人物消失**：保存并读档后人物不见了，全程没有报错；同会话内人物对象仍可用。触发：人物只存在于演示或事件脚本的局部变量里，没挂进任何持久集合。原因：人物只随引用它的持久集合保存，局部变量在帧结束后即被回收。修正：需要跨存档的人物必须挂入至少一个持久集合 (成员 captain / 市场 people+comm / important people / officer roster，见 "归属四入口" 小节)。
-2. **非法 personality id 导致保存时 NPE**：保存时写档失败，`starsector.log` 出现 `NullPointerException`。触发：`setPersonality("bogus")` 用了 `personalities.csv` 没有的 id。原因：CSV spec 加载期的查询对未知 id 静默返回 null、不报错，`getPersonalityAPI()` 拿到 null 后，问题延迟到保存写档时才爆发。修正：只用注册表内的 id (原版 5 个：`timid` / `cautious` / `steady` / `aggressive` / `reckless`)。
-3. **`adjustRelationship` 返回值 false、值不变**：调用后关系值没有变化，返回值 false。触发：三参版 delta 为 0 (例如想用 `adjustRelationship(id, 0f, level)` "确认档位")，或 delta 方向与当前值方向相反且被 limit 挡住。原因：`FactionAPI.adjustRelationship` 三参版 delta 为 0 时直接返回 false，不产生任何修改。修正："设档位" 用 `setRelationship(id, RepLevel)`；"确保档位" 用 `ensureAtBest` / `ensureAtWorst`。
-4. **档位与数值对不上**：关系值到了预期位置，档位却停在上一个档。触发：`setRelationship(id, HOSTILE)` 落 `-0.50` 后，又用 `adjustRelationship(id, -0.2f, VENGEFUL)` 期待档位更敌对。原因：值变 `-0.70`，但未越过 0.74 边界；`RepLevel.getLevelFor` 按百分制整数分段，跳变点只在 0.09 / 0.24 / 0.49 / 0.74 (负向对称)。修正：接受 "数值连续、档位分段"；需要档位结果时直接用 `setRelationship(id, RepLevel)`。
-5. **市场有人物但通信目录/联系人界面查不到**：`getPeopleCopy()` 包含该人物，通信目录和联系人 UI 里却没有。触发：只调了 `market.addPerson(person)`。原因：`MarketAPI.addPerson` 只把人物放进市场 roster，不会自动建通信目录条目 (前序页面已记录同一规则)。修正：另行 `market.getCommDirectory().addPerson(person)` 维护；移除可见联系人时先移 comm entry 再移 roster。
-6. **军官/佣兵不加 XP**：`addXP` 之后 XP 数值不变。触发：给 memory `$isMercenary` 为 true 的人物调用 `addXP`。原因：`OfficerDataAPI.addXP` 对佣兵直接返回 (`Misc.isMercenary` 读 memory `$isMercenary`)。修正：先确认人物不是佣兵；确需给 XP 时先解除佣兵标记。
-7. **军官技能选项被重掷**：玩家看到的可选技能列表与展示不一致。触发：玩家已经看到 `getSkillPicks()` 列表后，又调用了 `makeSkillPicks()`。原因：`OfficerDataAPI.makeSkillPicks()` 每次调用都清空并重掷选项。修正：只在需要生成选项时调用一次；展示期间维持同一个 `OfficerDataAPI` 对象状态。
-8. **checkout 未归还，按条件选人总选不到**：任务或事件生成时，某个人物总是不会被选中。触发：`checkOutPerson(person, "permanent_staff")` 之后没有配对 `returnPerson`。原因：`ImportantPeopleAPI.getPerson(...)` / `getMatching(...)` 按同 reason 过滤时，未归还人物被 `MarketPostPersonFilter.accept` → `canCheckOutPerson` 拒绝。修正：用完必须 `returnPerson(person, reasonId)`。
-9. **演示中断残留**：人物残留在 important people / 市场列表里并随存档保存，读档后仍在。触发：演示帧中途抛异常 (例如把市场段挪到重要人物段之后且市场查询失败)，`addPerson` 与 `removePerson` 未配对。原因：`REGISTER_MARK` 已置位，读档不重放，残留无法自动清理。修正：保持同帧配对顺序 (先 add 后立刻 remove)；不要随意调换段序；需要重试时手动清 `REGISTER_MARK` 键。
-10. **人物对玩家关系与势力对玩家关系混用**：读到的关系值与界面或另一侧不一致。触发：用 `person.getRelToPlayer()` 推断势力声望，或用 `faction.getRelationship("player")` 推断人物好感。原因：人物字段 `relToPlayer` 与势力侧的关系存储是两套，数值互不同步。修正：人物走 `RelationshipAPI`；势力走 `FactionAPI` 关系族 (`getRelToPlayer()` 是势力侧包装，目标仍是势力关系)。
-11. **给玩家旗舰换舰长，读回仍是玩家**：`playerFleet.getFlagship().setCaptain(myPerson)` 之后读 `getCaptain()`，返回的还是玩家人物。触发：把自定义舰长挂到旗舰成员。原因：旗舰特例 —— `FleetMemberAPI.getCaptain()` 对旗舰直接返回玩家人物，读路径覆盖写入。修正：自定义舰长放非旗舰成员 (本节演示即如此)；旗舰身份由玩家人物固定。
-12. **`getMemory()` 高频调用引发插件回调风暴**：日志量与帧耗时异常，或内存值被其他插件改写。触发：每帧用 `person.getMemory()` 读记忆。原因：`getMemory()` 每次调用都触发全部插件的 `updatePersonFacts` 回调 (`PersonAPI.getMemory`)。修正：纯读取用 `getMemoryWithoutUpdate()` (本节 `GearInPersonIdentity` 即此写法)。
-13. **读档后默认舰长消失**：读档后成员 `getCaptain()` 不再是上次会话见到的舰长对象。触发：以为每个成员恒定有一个舰长对象，且从未显式设置。原因：`steady + 空姓名 + level ≤ 1` 的默认舰长在保存时被压缩 (不落盘)，读档后 `getCaptain()` 延迟重建新默认舰长 —— 每次读档都是新对象。修正：需要稳定身份就显式 `setCaptain` 自定义人物 (会随成员保存)。
-
-## 总结
-
-本节把人物走通为四条链：创建链 (空白或势力随机 → 默认值 → 身份写入)、关系链 (数值连续、档位分段、limit 只是单次调整边界、数值恒钳制在 [-1, 1])、captain 链 (生涯侧与战斗侧，玩家旗舰恒返回玩家人物)、officer 链 (包装 → roster → XP/升级 → 上舰)。人物默认值表是调试基准，人物持久化依赖四个归属入口。
-
-排错时先问 "人物是否挂在持久集合"：局部变量人物不保存也不报错，这是多数 "消失" 类问题的共同起点；关系类问题先分清人物侧与势力侧，再对照关系四件事判断。三个 "每次都会发生" 的陷阱值得记牢：`getMemory()` 触发全插件回调、`makeSkillPicks()` 重掷选项、默认舰长保存时压缩。
-
-人物对象链到这里已经走通完整流程。人物是任务、贸易与通信系统的共同实体 —— 任务与事件的选人规则建立在 important people 的 checkout 机制上，市场侧的联系人体系建立在人物归属之上。遇到 "造一个人、调整它与玩家或势力的关系、把它挂进某个持久集合" 的需求，都可以回到本节的四条链上定位。
-
-## 建议参考项
-
-- `com.fs.starfarer.api.characters.PersonAPI`：人物接口全貌 —— 身份、rank/post、头像、势力、记忆、标签、personality、importance/voice、AI core、归属、角色数值与联系。
-- `com.fs.starfarer.api.FactoryAPI`：人物创建入口 (`createPerson` / `createOfficerData`)。
-- `com.fs.starfarer.api.campaign.FactionAPI`：势力关系族 (`adjustRelationship` 两版 / `setRelationship` 两版 / `ensureAtBest` / `ensureAtWorst` / `getRelationshipLevel` / `isHostileTo`) 与 `createRandomPerson`。
-- `com.fs.starfarer.api.campaign.RepLevel`：九档声誉档位枚举与阈值判定 (`getLevelFor` / `getMin` / `getMax` / `isAtWorst` / `isPositive` / `isNegative`)。
-- `com.fs.starfarer.api.characters.RelationshipAPI`：人物对玩家关系 (`getRel` / `setRel` / `getLevel` / `setLevel` / `adjustRelationship` / `ensureAtBest` / `ensureAtWorst` / `isHostile`)。
-- `com.fs.starfarer.api.characters.OfficerDataAPI`：军官包装 (`getPerson` / `setPerson` / `addXP` / `canLevelUp` / `makeSkillPicks` / `getSkillPicks` / `levelUp`)。
-- `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：角色数值 (`getLevel` / `getXP` / `getSkillLevel` / `increaseSkill` / `refreshCharacterStatsEffects`)。
-- `com.fs.starfarer.api.characters.ImportantPeopleAPI`：重要人物集合 (`addPerson` / `containsPerson` / `removePerson` / `getData` / `checkOutPerson` / `returnPerson`)。
-- `com.fs.starfarer.api.characters.MarketPostPersonFilter`：按条件选人的 checkout 过滤。
-- `com.fs.starfarer.api.characters.FullName`：姓名对象与 `Gender` 枚举。
-- `com.fs.starfarer.api.campaign.PersonImportance`：重要性五档与 `getValue()`。
-- `com.fs.starfarer.api.campaign.SectorAPI`：`getEconomy` / `getPlayerPerson` / `getImportantPeople` / `getPlayerFaction` / `getFaction`。
-- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：舰队指挥官 (`getCommander` / `setCommander` / `getCommanderStats`) 与 `getFlagship`。
-- `com.fs.starfarer.api.campaign.FleetDataAPI`：军官集合 (`getOfficersCopy` / `addOfficer` / `removeOfficer`) 与 `getMemberWithCaptain`。
-- `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员舰长 (`getCaptain` / `setCaptain` / `getShipName`)。
-- `com.fs.starfarer.api.combat.ShipAPI`：战斗侧舰长 (`getCaptain` / `getOriginalCaptain` / `setCaptain` / `getFleetCommander`)。
-- `com.fs.starfarer.api.campaign.econ.MarketAPI`：市场人物 (`getCommDirectory` / `addPerson` / `removePerson` / `getPeopleCopy`)。
-- `com.fs.starfarer.api.impl.campaign.ids.Ranks`：rank/post 常量 (`SPACE_COMMANDER` / `POST_FLEET_COMMANDER` 等)。
-- `com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`：`officerLevelUp` 插件实现 (XP 阈值、每级候选)。
-- `com.fs.starfarer.api.plugins.OfficerLevelupPlugin`：军官升级插件接口。
-- `com.fs.starfarer.api.util.Misc`：`isMercenary`(读 memory `$isMercenary`)。
-- `data/characters/personalities.csv`：personality 注册表 (原版 5 个 id、任务权重列)。
-- `data/characters/person_names.csv`：姓名池 (usage `f`/`l`、category)。
-- `data/world/factions/default_ranks.json`：rank/post 显示名的默认来源 (`spaceCommander` / `fleetCommander`)。
-- `data/world/factions/hegemony.faction`：`ranks` 段覆写与 `voices` 声音池 (`LOW` / `MEDIUM` / `HIGH`)。
-- `data/config/settings.json`：`default_portrait`、`officerLevelUp` 插件、`officerXPRequiredMult`、`officerMaxLevel`。
+:::

@@ -173,35 +173,10 @@ MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用�
 
 ## 故障分析
 
-### 启动器中没有 MOD(manifest 缺失)
-
-- 触发条件：`mod_info.json` 不在 MOD 的直接根目录，或文件实际名为 `mod_info.json.txt`。
-- 可观察结果：Mods 列表没有 "齿轮工业"。
-- 原因：启动器只把 "直接子目录 + 根目录 `mod_info.json`" 识别为 MOD，找不到该文件时目录不会进入列表。
-- 修正：确认路径恰好是 `Starsector/mods/GearIndustry/mod_info.json`，并让编辑器显示文件扩展名。
-
-### manifest 解析失败
-
-- 触发条件：JSON 语法错误 (引号、逗号或花括号缺失)、文件带 BOM 或非 UTF-8 编码，或缺少 `id`/`name`/`description` 之一。
-- 可观察结果：MOD 不出现在列表中 (而不是显示错误行)；`starsector.log` 记录 `Error loading mod from [MOD 目录]` 以及解析异常的堆栈。
-- 原因：manifest 没有形成可解析对象，或缺少必需字段。
-- 修正：先恢复本节的标准 JSON，再逐字段修改；保持 UTF-8 无 BOM。
-
-### 游戏版本提示不匹配
-
-- 触发条件：`gameVersion` 缺失，或仍是旧教程中的版本号 (major 与当前不符，如 `0.95a-RC15`)。
-- 可观察结果：启动器把 MOD 行显示为红色并提示 "Error: this mod requires a different version of the game."，且无法勾选。
-- 如果此前已勾选，启动器下次启动时会自动取消勾选，并弹窗提示不兼容 MOD 已被禁用。
-- 原因：manifest 声明与当前游戏版本不兼容。
-- 仅 RC 编号或小版本不同 (如 `0.98a-RC6`) 会被视为兼容，最多显示黄色警告。
-- 修正：使用本教程范例的 `0.98a-RC8` 版本。
-
-### 添加数据后出现别人的内容或重复条目
-
-- 触发条件：使用 `test_ship`、`my_weapon` 等常见 ID，或复制原版整行但保留原 ID。
-- 可观察结果：条目被替换、出现重复、装配引用到错误对象，或加载阶段报 duplicate/unknown ID。
-- 原因：多个来源争用同一注册表键。
-- 修正：改为 `GearIn_<语义名>` 形式，例如 `GearIn_artizan`，并同步所有使用方。
+- **启动器中没有 GearIn MOD**：`mod_info.json` 不在 MOD 的直接根目录，或文件实际名为 `mod_info.json.txt` 时，启动器不会把该目录加入 Mods 列表。确认路径恰好是 `Starsector/mods/GearIndustry/mod_info.json`，并让编辑器显示文件扩展名；重新打开启动器后，列表应出现 "齿轮工业"。
+- **日志报告 manifest 解析失败**：JSON 缺少引号、逗号或花括号，文件带 BOM、编码并非 UTF-8，或缺少 `id`、`name`、`description` 时，`starsector.log` 会记录 `Error loading mod from [MOD 目录]` 和解析堆栈。恢复本节的标准 JSON，再逐字段修改并以 UTF-8 无 BOM 保存；重启后日志不应再出现该错误，MOD 应进入列表。
+- **启动器将 MOD 标红并禁止勾选**：`gameVersion` 缺失或主版本与当前游戏不符时，启动器会提示 "Error: this mod requires a different version of the game."；已经启用的 MOD 会在下次启动时被取消勾选。将版本写为本教程使用的 `0.98a-RC8`；仅 RC 编号或小版本不同 (如 `0.98a-RC6`) 时，启动器最多显示黄色警告。
+- **添加数据后出现重复条目或错误对象**：使用 `test_ship`、`my_weapon` 等常见 ID，或复制数据后保留原 ID，会让多个来源争用同一注册表键。将 ID 改为 `GearIn_<语义名>` 形式，例如 `GearIn_artizan`，并同步全部引用；重启后不应再出现 duplicate、unknown ID 或对象替换现象。
 
 ## 总结
 

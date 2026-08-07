@@ -136,10 +136,10 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 ## 故障分析
 
-1. **类能编译但没有效果**。触发：`hull_mods.csv` 里没有这一行，或 `script` 列写错。可观察：游戏内无任何反应，日志也没有本船插相关行。修正：确认 CSV 路径与 `script` 列类名。
-2. **`Problem loading class`**。触发：`script` 列类名、`package` 行、`class` 行三者不一致。可观察：启动或第一次使用船插时日志报错。修正：三处逐一对照。
-3. **修改参数后加成不变**。触发：改的是别的文件，或游戏未重启。可观察：tooltip 数值依旧是旧值。修正：确认编辑的是 `gear_in` 的 `GearInSpeedBooster.java`；重启游戏。最常见的原因不是代码写错，而是游戏没有重启。
-4. **日志文字没出现**。触发：日志级别过滤或搜索词不对。可观察：游戏内行为正常但搜不到。修正：搜索 `GearIn_speed_booster` 而非完整句子；验证前清空 `starsector.log` 最易定位。
+- **类能编译但没有效果**：`hull_mods.csv` 缺少对应行，或 `script` 列写错时，游戏和日志都没有本船插的反应。核对 CSV 路径与完整类名，重启后确认加成出现。
+- **日志出现 `Problem loading class`**：`script` 列、`package` 行和 `class` 行没有指向同一个类。逐一对照三处文本，重启后确认日志不再报告该异常。
+- **修改参数后加成不变**：当前编辑的可能是另一份文件，或游戏仍在使用重启前加载的类。确认文件属于 `gear_in` 的 `GearInSpeedBooster.java`，重启后重新查看 tooltip。
+- **日志文字没出现**：日志级别过滤或搜索词不对时，游戏内行为可以正常而搜索不到完整句子。验证前清空 `starsector.log`，再搜索稳定标识 `GearIn_speed_booster`。
 
 ## 总结
 

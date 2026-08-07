@@ -1,512 +1,981 @@
-# 在生涯场景中使用 Rules
+# 制作舰队技能
 
-本节把已有 Rules 规则接入对话、市场、舰队、酒吧与任务等生涯场景。每类场景会在固定时机触发匹配，并提供不同的变量供规则使用。
+本节为 GearIndustry 制作第一个舰队技能 `GearIn_gunnery`。示例会完成技能注册、等级判断与数值应用，并在整备界面汇总舰队效果。
 
-*本节预期阅读时间：~20 分钟。*
+*本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~40 分钟。*
+*本节预期操作时间：~45 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 区分五类场景各自的核心 trigger，并说清每类的触发时机、派发点与主要可用变量：
-  - 对话：`OpenInteractionDialog` / `PopulateOptions` / `DialogOptionSelected` / `PickGreeting` / `OpenCommLink`；
-  - 市场：`MarketPostOpen` / `MarketPostDock` / `TradePanelFlavorText`；
-  - 舰队：`BeginFleetEncounter` / `OpenCommLink` / `PickGreeting`；
-  - 酒吧：`AddBarEvents` / `BarPrintDesc` / `ReturnFromBar` / `BarHighRepCrewGain`；
-  - 任务：`MHOpenText` / `<前缀>_blurb` / `<前缀>_option` / `<前缀>_blurbBar` / `<前缀>_optionBar` / `AddMHCloseOption` / `NewGameOptionSelected` / `AddNewGameChoices`；
-- 解释场景组合写法：`$menuState` / `$tradeMode` 状态记忆限定菜单、`$option` 回流 `DialogOptionSelected` 形成选项完整流程、`FireAll` 填充菜单与 `FireBest` 叙述/转场的分层、`score:` 竞争纪律、以及 "进入/退出配对" 的转场模式；
-- 说明覆盖原版规则时的职责纪律：`FireBest` 只执行一条规则，覆盖者必须复刻被覆盖规则的结果职责 (最典型的：`MarketPostDock` 的 `$menuState = main 0` + `FireAll PopulateOptions`)，否则市场菜单不会出现；
-- 从症状定位场景故障 (见故障分析节)，并沿着**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置核对 (沿用规则基础页的最小任务链)。
+* 创建技能数据三件套 (注册行、`.skill` 定义、效果脚本) 并解释它们如何汇成 `SkillSpecAPI`；
+* 区分 `SkillEffectType` 各取值对应的效果接口、作用对象与应用入口；
+* 设置技能等级 0 / 1 / 2 与 `requiredSkillLevel` 门槛，并解释 `apply()` 的 `level` 参数来源；
+* 验证 effect id 的组成规则，并把它原样用作 modifier id；
+* 实现 `FleetTotalSource`，并在整备界面核对 fleet total 汇总行；
+* 从日志与界面症状定位注册、类型、等级与数值残留类故障。
 
 ## 前置知识
 
-- [C6-S2] 的 MOD 生命周期与规则文件加载边界；
-- [C8-S1] 的 `addScript` 与持久数据判断；
-- [C8-S9] 的 `showInteractionDialog` 与 `InteractionDialogPlugin` 生命周期；
-- [C11-S1] 的 `rules.csv` 七列、匹配流程、条件脚本语法、文本 token 替换与直接写行即注册的效果；
-- [C11-S3] 的 `BaseCommandPlugin` 与内置规则命令；
-- [C11-S4] 的 `MemoryAPI` 过期、持久化、`$option` 回流与场景事实键。
+* [C1-S1] 的 MOD 命名约定、数据键前缀、包路径与类名；
+* [C6-S1] 的 JAR 构建、脚本类加载与 `.skill` 文件注册；
+* [C6-S3] 的 `Global` 生命周期与生涯阶段判断；
+* [C7-S3] 的 `MutableStat` modifier ID、修饰公式与原样解除；
+* [C9-S3] 的 `FleetMemberAPI` 与成员 stats 落点；
+* [C11-S1] 的人物、captain、officer、`MutableCharacterStatsAPI`、`setSkillLevel` 与 `refreshCharacterStatsEffects`。
 
-## 术语
+## 技能数据的三件套
 
-按术语约定，本节首次完整讲解以下词；API 类名保留源码大小写：
+写任何效果脚本之前，先弄清技能在磁盘上由什么组成、游戏从哪里读入。技能 (skill) 的运行时对象是 `SkillSpecAPI`，挂在人物 `MutableCharacterStatsAPI` 上的可学习能力，由三件套合成：`skill_data.csv` 注册行、`<id>.skill` JSON 定义、效果脚本类。RC8 不再有单个 `skills.json`，定义按技能拆成独立文件。
 
-- **场景 trigger(scene trigger)**：`rules.csv` 中按 "生涯场景" 分组的标准触发器名。
-  - 场景 trigger 的候选池由原版派发点 (Java 插件) 以固定字符串发起匹配；MOD 向其中添加规则即挂载到该场景。
-  - 与规则基础页的自定义 trigger 相对：自定义 trigger 只能由 `RuleBasedInteractionDialogPluginImpl` 构造器或 `FireBest`/`FireAll` 主动调用，场景 trigger 由原版使用方在固定时机调用。
-- **场景事实键 (scene fact key)**：`CoreCampaignPluginImpl` 的 `update*Facts` 钩子与规则脚本共同维护的记忆键 (如 `$hasMarket`、`$menuState`、`$tradeMode`、`$hailing`、`$mh_count`、`$mHub`)。
-  - 它们是场景规则的 "上下文开关"，条件列必须引用它们才能把规则限定在正确的场景与状态下。
-- **临时 bar 选项 (temp bar option)**：由 `AddBarEvents` 规则经 `AddBarEvent` rulecmd 写入市场记忆 `$core_tempBarEvents` 的酒吧选项。`BarCMD.showOptions` 每次进酒吧先清空再重建 —— 临时选项不跨进入保留。
-- **任务 trigger 前缀 (mission trigger prefix)**：任务 (`HubMission`) 的 `getTriggerPrefix()`(如原版 `hijack`、`smug`、`sitm`)。任务对话规则以 `前缀_blurb` / `前缀_option`(对话列表) 与 `前缀_blurbBar` / `前缀_optionBar`(酒吧包装) 为 trigger 名。
-- **流程场景 (flow scene)**：非实体交互对象驱动的规则场景，本节唯一例子是主菜单新游戏对话框 (`NewGameDialogPluginImpl`)。它的 `$option` 回流 trigger 是 `NewGameOptionSelected`，不是 `DialogOptionSelected`。
+为什么 RC8 没有 skills.json
 
-接下来看五类场景的 trigger 由谁在何时发起匹配。
+注册信息 (名称、order、tier、reqPoints、icon 等) 集中在 `skill_data.csv`，定义信息 (aptitude、等级组、效果清单) 按技能各自放在独立的 `<id>.skill` 文件里，两者在 CSV spec 加载期经 `loadSkills` 按 id 合并成一个 `SkillSpecAPI`。
 
-## 文件与 API 链路
+旧资料里的单个 `skills.json` 在 RC8 不存在，按旧资料找文件会落空。
 
-先看总览表确认各 trigger 的派发点与时机，再按对话、市场、舰队、酒吧、任务的顺序逐个展开，最后归纳跨场景的组合写法。
+三件套各自的角色与关键字段：
 
-### 五类场景总览
+文件
 
-原版 `rules.csv`(`Starsector\starsector-core\data\campaign\rules.csv`) 中，本节五类场景的核心 trigger 与派发点如下。
+角色
 
-规则基础页已统计的 `DialogOptionSelected`(6050)、`PopulateOptions`(334)、`OpenInteractionDialog`(121) 不再重复，只补充场景归属与派发点。
+关键字段
 
-| 场景 | trigger | 条数 | 派发点 (使用方)| 触发时机 |
-|---|---|---|---|---|
-| 对话 | `OpenInteractionDialog` | 121 | `RuleBasedInteractionDialogPluginImpl.init` 的 `fireBest(initialTrigger)`(默认 trigger，规则基础页已证)；`AbandonMarketPluginImpl` 的 `FireAll` | 交互对话框初始化；弃档后回到停靠对话 |
-| 对话 | `PopulateOptions` | 334 | 规则脚本 `FireAll`(如 `marketDock`、`greetingDefaultFriendly`)；`EndConversation`；`BaseMissionHub.listMissions` | 填充选项菜单 |
-| 对话 | `DialogOptionSelected` | 6050 | `RuleBasedInteractionDialogPluginImpl.optionSelected`；`BarCMD.optionSelected` | 用户点选任意选项 (`$option` 回流)|
-| 对话 | `PickGreeting` | 199 | 规则脚本 `FireBest`(`OpenCDE` → `convDefault`；`DialogOptionSelected` → `npcCommsAccept`)；`RuleBasedInteractionDialogPluginImpl` 构造器可指定 `PickGreeting` 为初始 trigger | 人物通讯连接被接受时的问候 |
-| 对话 | `OpenCommLink` | 183 | `FleetInteractionDialogPluginImpl` 的 `fireBest`；规则脚本 `FireBest`(如 `greetingCGRweirdHM` 等势力特殊问候)| 打开舰队通讯链接 |
-| 市场 | `MarketPostOpen` | 22 | `marketOpen` 规则 (`OpenInteractionDialog`) 脚本 `FireBest`；`EndConversation` | 停靠后进入市场对话；对话结束仍在市场时 |
-| 市场 | `MarketPostDock` | 32 | `MarketPostOpen` 规则脚本 `FireBest` | 停靠流程收尾 (`$menuState = main` + 菜单)|
-| 市场 | `TradePanelFlavorText` | 23 | 交易面板的 `FireBest` 调用 (假 dialog)| 每次打开交易面板 |
-| 舰队 | `BeginFleetEncounter` | 61 | `FleetInteractionDialogPluginImpl.reinit` 预检 + `reinitPostContinue` / `optionSelected` 的 `fireBest` | 舰队遭遇对话初始与 Continue 之后 |
-| 舰队 | `OpenCommLink` / `PickGreeting` | 183 / 199 | 见 "对话" 行 | 打开通讯 / 人物问候 |
-| 酒吧 | `AddBarEvents` | 16 | `BarCMD.showOptions`(先清空再 `FireAll`)| 每次展示酒吧选项 |
-| 酒吧 | `BarPrintDesc` | 10 | `bar_optionSel` 规则 (`$option == marketVisitBar`) 脚本 `FireBest` | 进入酒吧 |
-| 酒吧 | `ReturnFromBar` | 5 | `BarCMD.leaveBar` 的 `FireBest` | 离开酒吧 (还原插件后)|
-| 酒吧 | `BarHighRepCrewGain` | 6 | `BarHRESpeechB` 规则脚本 `FireAll` | 高声望酒吧事件演讲结束 |
-| 任务 | `MHOpenText` | 2 | `openMhubOptionSel` 规则脚本 `FireBest` | 任务列表文本之前 |
-| 任务 | `<前缀>_blurb` / `<前缀>_option` | 每条任务各 1 | `BaseMissionHub.listMissions`(`FireBest`，带 keepOptions)| 任务列表展开 |
-| 任务 | `AddMHCloseOption` | 5 | `BaseMissionHub.listMissions`(`FireBest`)| 任务列表收尾 |
-| 任务 | `MHPostMissionListText` | 2 | `BaseMissionHub.listMissions`(`FireBest`)| 任务列表文本之后 |
-| 任务 | `<前缀>_blurbBar` / `<前缀>_optionBar` | 每条任务各 1 | `HubMissionBarEventWrapper.addPromptAndOption`(`FireBest`)| 任务以酒吧事件展示 |
-| 任务 | `NewGameOptionSelected` / `AddNewGameChoices` | 15 / 8 | `NewGameDialogPluginImpl` 的 `fireBest`；`InitNewGameChoices` → `AddNewGameChoices` 链 | 主菜单新游戏对话框 |
+`skill_data.csv`
 
-计数口径：原版 `rules.csv` 非注释行统计，与规则基础页相同；上表之外的少量 trigger 如下：
-- `BeginFleetEncounter2` 另有 1 条；
-- `BarShuttleDownPrintDesc` 1 条；
-- `ContactPreMissionListText` 4 条；
-- `AsebPreMissionListText` 3 条；
-- `ContactPostAccept` 8 条；
-- `ContactPrintAcceptText` 10 条；
-- `ContactPrintDeclineText` 1 条；
-- `InitNewGameChoices` / `BeginNewGameCreation` 各 1 条。
+注册表：技能必须在此有行
 
-::: info 条数口径说明
+`id,name,order,tier,reqPoints,reqPointsPerExtraSkill,description,author,combat officer,admiral,admin,tags,icon`
 
-上表条数为原版 `rules.csv` 非注释行的统计，仅用于帮助您估量各 trigger 在原版中的使用密度与竞争烈度，不构成任何 API 承诺，随游戏版本可能变化。
+`<id>.skill`(JSON)
 
-:::
+技能定义：aptitude、等级组、效果清单
 
-### 场景事实键的写入方
+`id`、`governingAptitude`、`compressHullmods`(默认 true)、`elite`(默认 false)、`permanent`(默认 false)、`scope` / `scopeStr`、`scope2` / `scopeStr2`、`effectGroups[]`
 
-规则条件里最常见的场景事实键由 `CoreCampaignPluginImpl`(`com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`) 的 `update*Facts` 钩子在规则匹配前写入实体/市场/人物/势力记忆：
+`aptitude_data.csv`
 
-- `updateEntityFacts`：`$tag:<tag>`、`$isHostile`(按声望档位)、`$hasMarket`(非纯条件市场)、`$hasStation`、`$marketSize`、`$stability`、`$planetType`；
-- `updateMarketFacts`：`$tag:<tag>`、`$mc:<条件id>`、`$ind:<产业id>`、`$id`(市场 id) 等；
-- `updatePersonFacts`：`$id`(人物 id)、`$isPerson`、`$isContact`、`$name` / `$personName`、`$rel` / `$relName`、`$rank` / `$post`、`$importance*`、`$level`、`$personality`、`$tag:<tag>` 等；
-- `updateFactionFacts`：`$id`、`$friendlyToPlayer` / `$hostileToPlayer` / `$neutralToPlayer`、`$isHostile`。
+能力树分组
 
-`$menuState` / `$tradeMode` / `$hailing` 等**状态**键不由 facts 钩子写，而是由规则脚本与原版 rulecmd 维护 (见各场景小节)。规则基础页的结论仍然成立：`$tag:` 类条件的前提是目标实体/市场/人物确实带该 tag。
+`id,name,color,description,order,effect_skill_id,sound1..5,sound_story,elite_overlay*`
 
-### 对话场景 (OpenInteractionDialog / PopulateOptions / DialogOptionSelected / PickGreeting / OpenCommLink)
+`data/characters/skills/<id>.skill` 的 effect
 
-对话场景是其余场景的底座：进入、填菜单、回收选项都在这里发生，市场、舰队与酒吧复用同一套机制。
+效果清单
 
-- **`OpenInteractionDialog`(121 条)**：交互对话框的默认初始 trigger(`RuleBasedInteractionDialogPluginImpl` 构造器默认值，规则基础页已证)。
-  - 原版规则分成两组：无条件/实体类回退规则 (`defaultOpenDialog`：`ShowDefaultVisual` + `PrintDescription 3` + `SetShortcut defaultLeave "ESCAPE"` + `defaultLeave:Leave`)。
-  - 实体条件类 (`beaconOpenDialog`：`$tag:warning_beacon`；`marketOpen`：`$hasMarket` → `ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`，即市场场景的入口)。
-- **`PopulateOptions`(334 条)**：菜单填充器，由规则脚本 `FireAll` 调用 (不是插件直接触发)。
-  - 所有选项规则必须用状态条件限定，否则该选项会一直出现或一直不出现。
-  - 市场菜单用 `$menuState == main` + `$hasMarket` + `$tradeMode != NONE` (如 `marketCommDir`、`marketOptBar`、`marketOptTradeMulti`、`marketAddOptionLeave`)。
-  - 舰队对话菜单用 `$menuState == fleetConvMain`；
-  - 人物对话用 `$isPerson`(`convOptionLeave`：`cutCommLink:Cut the comm link`)。
-- **`DialogOptionSelected`(6050 条)**：选项回流唯一使用方 (`RuleBasedInteractionDialogPluginImpl.optionSelected`：本地记忆写 `$option`、`expire 0`、`fireBest("DialogOptionSelected")`)。
-  - 规则基础页已证全部 6050 条都带 `$option ==` 条件。
-  - 本节补充两个非默认回流方：`BarCMD.optionSelected` 对酒吧字符串选项同样写 `$option` 并 `FireBest "DialogOptionSelected"`；`NewGameDialogPluginImpl.optionSelected` 写 `$option` 后触发的是 **`NewGameOptionSelected`**(见任务场景)。
-- **`PickGreeting`(199 条)**：人物通讯问候。
-  - 派发链：通讯目录点选人物 → 通讯面板触发 `FireBest "OpenCDE"` → `OpenCDE` 规则 `convDefault` 脚本 `FireBest PickGreeting`：
-    - 问候规则按 `$isContact`、`$id`(人物)、声望等条件选一条，展示 `ShowPersonVisual` + 问候文本 + 选项 (`FireAll PopulateOptions` 或直接列选项)。
-  - `NPCCommsRequest` 触发器 (`npcCommsAccept` 规则脚本 `FireBest`) 处理 NPC 主动通讯请求。
-  - 以问候 trigger 为初始 trigger、或自定义问候子 trigger(`FireBest` 分派 + `score:` 加分) 都是常见扩展写法。
-- **`OpenCommLink`(183 条)**：舰队通讯对话。
-  - 派发：`FleetInteractionDialogPluginImpl` 开通讯 (`OPEN_COMM`) 时创建 embedded `RuleBasedInteractionDialogPluginImpl` (`setEmbeddedMode(true)`、`setActivePerson(对方指挥官)`) 并 `fireBest("OpenCommLink")`：
-    - 无匹配时文本面板显示 "You try to establish a comm link, but get only static."。
-  - 原版问候规则族按关系与状态分派：
-    - `$faction.friendlyToPlayer`(友好→`$menuState = fleetConvMain 0` + `FireAll PopulateOptions`)；
-    - `$faction.neutralToPlayer`
-    - `$entity.isHostile` + `$entity.relativeStrength`(敌舰强弱)；
-    - `!$player.transponderOn` (应答器关闭→"Turn your transponder on" 选项)。
-    - `$entity.ignorePlayerCommRequests score:10000`(拒绝通讯)；
-    - 无条件 `greetingFallthrough` 回退规则 (1 分)。
+每项 `type`(`SkillEffectType` 枚举，必填)、`script`(类名，可选)、`hullmods`(对象：船插 id → 解锁等级)、`abilities`(数组)
 
-### 市场场景 (MarketPostOpen / MarketPostDock / TradePanelFlavorText)
+`effectGroups[]` 每组的字段：`governingSkill`(可选，**默认 = 本技能 id**)、`name`(可选，如 "Elite")、`effectBasedOnLevel`(可选，**默认 true**)、`requiredSkillLevel`(可选，**默认 1**)、`effects[]`。
 
-市场对话是规则场景中 "进入 → 状态 → 菜单 → 退出" 的最完整流程：
+注册链 (CSV spec 加载期 `loadSkills`)：
 
-1. **进入**：停靠市场实体 → 默认对话初始化 `fireBest("OpenInteractionDialog")` → `marketOpen` 规则 (条件 `$hasMarket`，1 分) 命中：`ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`。
-2. **停靠许可**：`MarketPostOpen`(22 条) 按条件选一条 (`$hasMarket` + `$player.transponderOn` + 关系分派；
-   - `marketPostOpenDefault` 打印停靠许可文本、`$tradeMode = OPEN 0`、`FireBest MarketPostDock`)。
-    - **应答器关闭时**，`marketPostOpenDefault` 等要求 `$player.transponderOn` 的规则不匹配，但原版有专门的应答器关闭规则族接管：
-      - `marketPostOpenToOffIsFine`(`$hasMarket` + `!$player.transponderOn`，2 分，`$tradeMode = OPEN 0`)。
-      - `marketPostOpenToOffSneak`(另需 `!$faction.c:allowsTransponderOffTrade` + `!$market.mc:free_market`，4 分，`$tradeMode = SNEAK 0`)。
-      - `marketPostOpenToOffPatrols`(另需 `IsSeenByPatrols $faction.id true`，5 分，`$tradeMode = NONE 0`)。
-      - `marketPostOpenNoTradeHostile`(`$market.playerHostileTimeout score:100`)；
-      - 停靠流程继续 (`FireBest MarketPostDock` 照常)，只是贸易模式不同，不会 "无停靠文本、不进市场菜单"。
-   - 中立势力市场由 `marketPostOpenDefaultNeutral` 回退规则接管 (条件只有 `$hasMarket` + `$faction.isNeutralFaction score:100`，无应答器条件)—— 停靠流程继续但无许可文本。
-3. **停靠收尾**：`MarketPostDock`(32 条) 中 `marketDock`(无条件，1 分) 是回退规则：`$menuState = main 0` + `FireAll PopulateOptions`。
-   - 其余 31 条是场景附加 (任务交付检查 `DeliveryMission checkCompletion score:100`、债务/雇佣兵检查 `MarketCMD checkDebtEffect score:1000`、`MarketCMD checkMercsLeaving score:500`、特殊势力检查等)。
-   - `FireBest` 只执行一条 —— 覆盖者必须自己复刻 `marketDock` 的结果职责 (见规则强度与故障分析 1)。
-4. **市场菜单**：`PopulateOptions` 中 `$menuState == main` + `$hasMarket` 的规则加选项：
-   - `marketCommDir`(通讯目录，`!$faction.isNeutralFaction`)。
-   - `marketVisitBar`(酒吧，`$tradeMode != NONE` + `!$faction.isNeutralFaction` + `!$market.noBar`)。
-   - `marketOpenCoreUI`(交易/整备)；
-   - `marketRepair`(`$tradeMode == OPEN` + `Repair*` 命令条件)；
-   - `marketConsiderHostile`(军事选项)；
-   - `marketAddOptionLeave` (`marketLeave:Leave`)。
-5. **退出/再进入**：`EndConversation` rulecmd：对话插件不是 `FleetInteractionDialogPluginImpl` 时，若 `$hasMarket` 且本地记忆无 `$menuState` → `FireBest MarketPostOpen`(重新走停靠许可)；否则 `FireAll PopulateOptions`。
-   - `AbandonMarketPluginImpl`(弃档) 复位 `$menuState = main`、`$tradeMode = NONE`、`unset $hasMarket` 后 `FireAll "OpenInteractionDialog"`。
-6. **交易面板**：
-   - 交易面板每次打开面板时以 `FireBest` 发起 `"TradePanelFlavorText"` 匹配 (传入假 dialog 与记忆槽位)。
-   - memoryMap 由交易面板在更新 flavor 文本时自建 (槽位与规则匹配用的槽位结构一致：`local` / `faction` / `global` / `player` / `market` / `sourceMarket`)。
-   - `$tradePanelMode`(MARKET/CARGO/SALVAGE) 由面板按自身模式写入 sector 记忆 (与 `$tradeMode` 无关；这些槽位的一个实际使用例是势力关系描述文本的生成，规则基础页已述)。
-   - 原版 23 条按 `$global.tradePanelMode`、`$marketSize`、`$stability` 分派文本。
+```text
+skill_data.csv（按 id 读行，收集全部注册 id）
+  + aptitude_data.csv 的 effect_skill_id（能力树自身的"技能"）
+  → 遍历 data/characters/skills/*.skill：
+       SkillSpecAPI(readJSON) → id 已注册？"Skipping skill [...], was already loaded" 跳过
+                          → id 不在 skill_data.csv？"Skipping loading skill [...], it's not listed in skill_data.csv." 跳过
+                          → 否则 putSpec 注册，并把每个 effect 的 script 类 registerScriptClass
+  → 回头按 skill_data.csv 行补写 order / tier / reqPoints / 角色类型 flags / tags / icon / name / description / author
+```
 
-::: warning 交易面板的 dialog 是假 dialog
+技能被静默跳过时不报错
 
-交易面板制造假 dialog 来匹配 `TradePanelFlavorText`：
+两个 "跳过" 分支都只写日志、不报错 —— 技能在技能树里不出现且没有任何 ERROR 时，先到日志里查这两行，再动手改代码。技能树里少了一个技能，日志却风平浪静。
 
-flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，视觉面板、`DismissDialog` 等依赖真实对话上下文的命令会异常或静默无效 (与规则基础页所讲的假 dialog 限制同类)。
+注册完成后，读取入口在 `com.fs.starfarer.api.SettingsAPI`：
 
-:::
+* `Global.getSettings().getSkillSpec(String skillId)` (`com.fs.starfarer.api.SettingsAPI`)：读 `SkillSpecAPI`；未注册的 id 由 CSV spec 加载期静默返回 null。
+* `Global.getSettings().getSortedSkillIds()`：按 order 排序的技能 id 列表 (技能树 UI 用)。
+* `MutableCharacterStatsAPI` (`com.fs.starfarer.api.characters.MutableCharacterStatsAPI`) 的角色侧方法：`getSkillLevel(id)` / `setSkillLevel(id, level)` / `increaseSkill` / `hasSkill` / `refreshCharacterStatsEffects()`，技能状态与刷新入口都在这里。
 
-::: caution 覆盖 FireBest 目标必须复刻结果职责
+注册只决定技能存在，每个效果作用到哪一组对象由本页下一小节的 `type` 决定。
 
-`FireBest` 只执行一条规则：命中本 MOD 的规则，被覆盖的原版回退规则就不再执行。
+## 效果作用域：type 决定作用对象
 
-因此覆盖 `MarketPostDock` 的 `marketDock` 时，必须把它的结果职责复刻进自己的脚本 (`$menuState = main 0` + `FireAll PopulateOptions`)；
+注册只决定技能存在，每个效果作用到哪一组对象由 `SkillEffectType` 决定，并与脚本类实现的接口一一对应。所有效果接口都继承 `LevelBasedEffect` (`getEffectDescription(float)` / `getEffectPerLevelDescription()` / `getScopeDescription()`)。`SkillEffectType` 与接口、作用对象、应用入口的对应：
 
-覆盖 `OpenInteractionDialog` 的 `marketOpen` 时同理 (`ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`)。
+`SkillEffectType`
 
-否则市场菜单不会出现 (选项面板空、只剩 failsafe/Leave)，停靠后卡在对话 (见故障分析 1)。
+效果接口
 
-:::
+作用对象
 
-### 舰队场景 (BeginFleetEncounter / OpenCommLink / PickGreeting)
+应用入口
 
-舰队遭遇与通讯共用同一套对话底座：`BeginFleetEncounter` 负责遭遇开局，`OpenCommLink` 与 `PickGreeting` 负责通讯与问候。
+`SHIP`
 
-- **`BeginFleetEncounter`(61 条)**：舰队遭遇对话。两次匹配时机 (`FleetInteractionDialogPluginImpl`)：
-  - `reinit(withContinueOnRuleFound)`：`getBestMatching(null, "BeginFleetEncounter", ...)` **预检** —— 命中则只显示 "Continue"(`REINIT_CONTINUE`)。
-  - 用户点击后 `reinitPostContinue` `fireBest("BeginFleetEncounter")` (本地记忆 `$fidpi_addContinue` 为真时改走 `BeginFleetEncounter2`)。
-  - 初次遭遇 (`optionSelected`)：创建 embedded 对话后同样 `fireBest("BeginFleetEncounter")`；规则脚本置 `$fidpi_addContinue` 则清空选项只留 "Continue"。
-  - 规则模式：
-    - 脚本 `AddText "You're being hailed by the $faction $otherShipOrFleet." $faction.baseColor` + `$hailing = true 0`(如 `LPTitheCheck`、`mpm_pirateEncounter`)：
-      - `customsInspectionScan` 只 `AddText` 不写 `$hailing`；
-      - `tOffPatrolBegin` 以 `OpenComms` 直接进入通讯。
-    - 或 `FleetDesc` + `$shownFleetDescAlready = true 0` (`initial_AnyFleet` 回退规则，1 分)。
-    - 文本经 `FireBest` 的 `addText` 显示。
-    - **BeginFleetEncounter 规则不依赖 `options` 列** —— 选项面板随后由舰队主菜单接管 (`INIT` 路径清空选项)。
-  - `$hailing` 的可观察效果：舰队主菜单里 "Open a comm link" 选项高亮并改名 "Accept the comm request"(随后 `unset $hailing`)。
-    - `OpenComms` rulecmd 置 `FleetInteractionDialogPluginImpl.directToComms = true` 直接进入通讯。
-    - `HailPlayer` rulecmd 是写 `$hailing` 的正式途径。
-- **`OpenCommLink`**：见对话场景。
-  - 通讯内规则把 `$menuState = fleetConvMain 0` + `FireAll PopulateOptions` 切换成舰队对话菜单：
-    - `shrineFleetConvOption`、`academyFleetConvOption` 等按 `$entity.<flag>` 条件加选项；
-    - `convOptionLeave` 按 `$isPerson` 加 `cutCommLink`。
-  - `cutCommLink` 选项由 `DialogOptionSelected` 规则 `convEnd` 等处理：`ShowDefaultVisual` + `EndConversation` → 回舰队主菜单。
-- **`PickGreeting`**：人物通讯 (见对话场景)。舰队侧经通讯目录/接触人入口进入。
-- **可用变量**：
-  - `$entity.relativeStrength`(正=对方更强)；
-  - `$entity.isHostile`
-  - `$faction.id` / `$faction.friendlyToPlayer`
-  - `$player.transponderOn`
-  - `$entity.<自定义 flag>`(记忆键)；
-  - `$isPatrol` / `$sourceMarket.mc:<条件>`(应答器检查规则族)。
+`ShipSkillEffect` `apply(stats, hullSize, id, level)`
 
-### 酒吧场景 (AddBarEvents / BarPrintDesc / ReturnFromBar / BarHighRepCrewGain)
+被驾驶舰船 (舰长 / 指挥官个人技能作用到其旗舰)
 
-酒吧场景是 "市场菜单 → 临时选项 → 事件对话 → 返回" 的完整流程 (`BarCMD` 既是 rulecmd 也是对话插件，`com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`)：
+生涯 `FleetMemberAPI.updateStats` 的 `captain.getStats().applyPersonalToStats`；战斗侧舰船构造时 `setCaptain` → `applyPersonalToShip`
 
-1. **进入**：市场菜单 `marketVisitBar`(`marketOptBar` 规则，选项 order 5)→ `bar_optionSel` 规则 (`$option == marketVisitBar`)：
-   - `FireBest BarShuttleDownPrintDesc` + `FireBest BarPrintDesc`(10 条，`ShowImageVisual space_bar` + 描述文本)。
-   - `BarCMD showOptions`。
-2. **展示选项**：`BarCMD.showOptions`：
-   - `dialog.getOptionPanel().clearOptions()`
-   - `AddBarEvent.clearTempEvents(market)` + `FireAll.fire(null, dialog, memoryMap, "AddBarEvents")`
-   - 把 `$core_tempBarEvents` 中的临时选项 (`blurb` 进文本面板、`option` 进选项面板、可带颜色)。
-   - 再追加 `PortsideBarData` 的 active 事件 (Java `BaseBarEvent` / `HubMissionBarEventWrapper`)。
-   - 末尾加 `"Leave the bar"`(id `barLeave`，ESC 快捷键)。
-   - `dialog.setPlugin(this)`(BarCMD 接管对话)。
-3. **临时选项**：`AddBarEvents`(16 条) 规则用 `AddBarEvent <optionId> <选项文本> <描述文本> [颜色]` rulecmd 写临时选项：
-   - 存储：`com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent` 用 `KEY = "$core_tempBarEvents"` 存市场记忆，`getTempEvents` / `clearTempEvents` 维护。
-   - 选项文本与描述做 token 替换。
-   - 原版 16 条按 `$market.id == <市场>` + 剧情 flag 条件添加 (如 `gaMeetHegLieutenantOnCoatl`、`goToTheGABarEventOption` 带 `RollProbability 0.2`)。
-   - **临时选项每轮重建**：每次进酒吧 `BarCMD` 先 `clearTempEvents` 再 `FireAll AddBarEvents`，跨进入不保留。
-4. **点选**：`BarCMD.optionSelected`：
-   - `PortsideBarEvent` 选项 → `BarEventDialogPlugin`(事件对话，Java)。
-   - `"barLeave"` → `leaveBar()`；
-   - `"barContinue"` → `showOptions(true)`：
-    - 字符串选项 (含临时选项与 mission 包装选项)→ `dialog.setPlugin(originalPlugin)` 还原规则对话：
-      - `mem.set("$option", optionData, 0)` + `FireBest "DialogOptionSelected"`—— 与 `RuleBasedInteractionDialogPluginImpl` 的回流完全一致。
-      - 本节最小例的酒吧规则正是消费这里。
-5. **返回/退出**：`BarCMD.returnFromEvent [true|false]`(从事件对话返回酒吧；true 时给 "Continue") 与 `leaveBar`(停掉酒吧环境音、`dialog.setPlugin(originalPlugin)`、`ShowDefaultVisual`、`FireBest "ReturnFromBar"`)。
-   - `ReturnFromBar`(5 条) 中 `marketReturnFromBar`：`$menuState = main 0` + `FireAll PopulateOptions` + 文本 "You leave the bar and take a shuttle back to your $shipOrFleet."——** 退出转场把市场菜单状态复位**。
-6. **奖励**：`BarHighRepCrewGain`(6 条) 由高声望酒吧事件演讲规则 `BarHRESpeechB` 脚本 `FireAll` 触发 (`AddCommodity crew N`，按 `$player.fleetPoints` / `RollProbability` / `score:2` 分档)。
+`ALL_SHIPS_IN_FLEET`
 
-::: warning 临时 bar 选项的三个边界
+`ShipSkillEffect`
 
-- 临时选项不能当长期状态 (每轮清空重建)；
-- `RemoveBarEvent` 只删市场记忆中的临时选项、不碰 `PortsideBarData` 的 active 事件；
-- `HubMissionBarEventWrapper` 的选项 id 以任务前缀开头，`getWrapperFor` 用 `startsWith` 识别、`abortMissions` 会中止**其它** mission 包装 —— 自定义临时选项不要使用与已注册任务相同的前缀。
+舰队全部非战机舰船
 
-:::
+`FleetMemberAPI.updateStats`、舰船对象创建的 `applyFleetwideToStats`、`FleetDataAPI.syncIfNeeded`(指挥官回退链)、tooltip 渲染
 
-### 任务场景 (MHOpenText / 任务前缀 trigger / AddMHCloseOption / 新游戏流程场景)
+`SHIP_FIGHTERS`
 
-生涯任务对话 (联系人任务) 是规则 + Java 任务插件 (`BaseMissionHub` / `HubMission`，属生涯对象体系) 的协作：
+`ShipSkillEffect`
 
-1. **入口**：人物对话菜单 `PopulateOptions` 规则 `addMHubOption`(条件 `$isPerson` + `MissionHubCMD hasHub` + `Call $mHub setMHOptionText`) 加 `5:mh_open:$mh_openOptionText` ("Do you have any work for me?")。
-   - `$mHub` = `BaseMissionHub.KEY`，`setMHOptionText` 写 `$mh_openOptionText`。
-2. **列表**：点 `mh_open` → `openMhubOptionSel` 规则：`Call $mHub prepare` → `FireBest MHOpenText` →`Call $mHub listMissions` → `SetEnabled mh_open false`。
-   - `MHOpenText`(2 条：`contactMHOpenText` / `asebMHOpenText`)→ `FireBest ContactPreMissionListText`(4 条，按 `$mh_count` / `$mh_firstInlineBlurb` / `$mHub_contactSuspended` 打印列表前文本)。
-3. **展开**：`BaseMissionHub.listMissions` 对每份 offered mission：
-   - `FireBest <前缀>_blurb true` / `FireBest <前缀>_option true`(每条任务各 1 条规则，如 `hijack_blurb` / `hijack_option`)。
-   - 随后 `FireBest AddMHCloseOption true`(5 条：`mh_close` 选项 + `SetShortcut mh_close "ESCAPE"`)。
-   - `withBlurbs` 时 `FireBest MHPostMissionListText`(2 条："So, how about it?" 等)。
-   - **`FireBest` 的第二个参数 `true` 是 keepOptions**(`FireBest.fire` 把参数字符串 tokenize)。
-4. **接受/拒绝**：任务选项 (如 `hijack_start`) 经 `DialogOptionSelected` 回流到任务规则：
-   - 接受类规则 `contactMissionAcceptGeneric`(`$option == contact_accept`)：`FireBest ContactPrintAcceptText` + `Call $mHub accept $missionId` + `FireBest ContactPostAccept` + `Call $mHub returnToList`。
-   - `BaseMissionHub.callEvent` 分派 `prepare` / `listMissions` / `returnToList` / `accept` / `doCleanup` 动作；`accept` 调 `mission.accept(dialog, memoryMap)`。
-   - 任务规则可读 `$missionId` 与 `$mission` 记忆 (`MemKeys.MISSION`)。
-   - 写入方：`SetActiveMission` / `ClearActiveMission` rulecmd，或插件 `setActiveMission`(`RuleBasedInteractionDialogPluginImpl` / `FleetInteractionDialogPluginImpl`)。
-5. **酒吧任务包装**：任务也可以出现在酒吧：
-   - `HubMissionBarEventWrapper.addPromptAndOption` 把 `LOCAL` 临时换成任务人物记忆 (`ENTITY` / `PERSON_FACTION` 一并换)。
-   - 调 `mission.updateInteractionData(dialog, memoryMap)`，然后 `FireBest <前缀>_blurbBar true` + `FireBest <前缀>_optionBar true`，再恢复记忆。
-   - 原版对应 `hijack_blurbBar` / `hijack_optionBar` 等。
-   - 用户点选后由 `BarCMD.optionSelected` 进入任务对话 (`abortMissions` 中止未选中的包装)。
-6. **对照：任务板**：通讯面板的 missions 页签是 **Java** 任务板 (`MissionBoardAPI` / `MissionAvailability.playerAccept`)，不走规则 —— 本节只把它作为 "非规则场景" 的边界。
-7. **流程场景：新游戏对话框**：主菜单新游戏 → `NewGameDialogPluginImpl`(`com.fs.starfarer.api.impl.campaign.NewGameDialogPluginImpl`)：
-   - `init` 组装 memoryMap(`LOCAL` = 角色数据实体记忆、`GLOBAL`，devMode 时 `$global.isDevMode`)。
-   - 选项回流：`memory.set("$option", ...)` + `expire 0` + `fireBest("NewGameOptionSelected")`。
-   - `CONTINUE_CHOICES` → `fireBest("BeginNewGameCreation")`；
-   - 规则链：`BeginNewGameCreation` → `onNewGameCreationStart`(`NGCAddCredits 2000` + `FireAll InitNewGameChoices`)→ `InitNewGameChoices` → `initNewGameChoices`(`FireAll AddNewGameChoices`)。
-   - `AddNewGameChoices`(8 条) 加起始选项 (`ngcWolf` / `ngcWayfarer` / dev 选项以 `$global.isDevMode` 为条件)。
-   - `NewGameOptionSelected`(15 条) 处理器 (`$option == ngcX` → `NGC*` 命令族：`NGCAddShip` / `NGCAddCredits` / `NGCSetDifficulty` / `NGCDone` 等)。
-   - **注意 `NewGameOptionSelected` 是主菜单对话框的专属回流 trigger**，在生涯对话里写它永不触发。
+被驾驶舰船起飞的本舰战机
 
-### 场景组合写法
+战斗起飞 `FighterLaunchBayAPI`(母舰舰长 stats)
 
-把五类场景放在一起看，会得到三组反复出现的写法。
+`ALL_FIGHTERS_IN_FLEET`
 
-- **状态机模式**：`$menuState`(`main` / `fleetConvMain`) 与 `$tradeMode`(`OPEN` / `NONE` / `SNEAK`) 是场景状态记忆：
-  - `PopulateOptions` 菜单规则以它们为条件；
-  - 转场必须成对 —— 进入时赋值 (`marketDock`：`$menuState = main 0`；`greetingDefaultFriendly`：`$menuState = fleetConvMain 0`)。
-  - 退出时复位 (`ReturnFromBar` → `$menuState = main`；`AbandonMarketPluginImpl` → `$tradeMode = NONE`)。
-- **分层模式**：`FireAll` 填充 (`PopulateOptions` / `AddNewGameChoices` / `AddBarEvents`—— 候选规则全部执行、全部添加选项)：
-  - `FireBest` 叙述与转场 (`MarketPostOpen` / `MarketPostDock` / `BarPrintDesc` / `MHOpenText` / `PickGreeting`—— 只取分数最高一条)。
-- **回流完整流程**：`options` 列 id ↔ `DialogOptionSelected`(或 `NewGameOptionSelected`) 规则 `$option == <id>` 逐字一致 (大小写敏感)。
-- **竞争纪律**：默认条件 1 分；原版剧情规则常用 `score:1000`(`$tag:xxx score:1000` 等)；MOD 覆盖回退规则用 100 级即可 (100–103 分恒胜 1–3 分的回退规则、输给 1000 级剧情规则 —— 见最小例)。
+`ShipSkillEffect`
 
-::: tip 一次性演示 flag 的写法
+舰队全部战机
 
-条件列写 `!$player.<flag>`、脚本列写 `$player.<flag> = true 0`(`expire 0`)：第一次命中后 flag 置位，第二次进入自动回退原版行为。
+战斗起飞 `FighterLaunchBayAPI`(舰队指挥官 → 舰队数据指挥官 → 默认指挥官回退链)
 
-需要重新演示时换一个新 flag 名即可 (原版没有 "清记忆" 的 rulecmd，devMode 下可用 `DumpMemory` 查看记忆键)。
+`CHARACTER_STATS`
 
-:::
+`CharacterStatsSkillEffect` `apply(stats, id, level)`
+
+角色自身 `MutableCharacterStatsAPI`
+
+`MutableCharacterStatsAPI.refreshCharacterStatsEffects`
+
+`FLEET`
+
+`FleetStatsSkillEffect` `apply(stats, id, level)`
+
+该角色指挥舰队的 `MutableFleetStatsAPI`
+
+`MutableCharacterStatsAPI.refreshCharacterStatsEffects`
+
+`GOVERNED_OUTPOST`
+
+`MarketSkillEffect` `apply(market, id, level)`
+
+治理的殖民地市场
+
+`refreshGovernedOutpostEffects`
+
+`ALL_OUTPOSTS`
+
+`MarketSkillEffect`
+
+玩家全部殖民地市场
+
+`refreshAllOutpostsEffectsForPlayerOutposts` / `refreshAllOutpostsEffects`
+
+`DESCRIPTION`
+
+`DescriptionSkillEffect`
+
+技能面板 / tooltip 文本行
+
+纯 UI，无数值写入
+
+`HULLMOD_UNLOCK` / `ABILITY_UNLOCK`
+
+无脚本接口 (数据声明)
+
+解锁集合
+
+effect 内 `hullmods` / `abilities` 键；使用方 `getUnlockedHullMods(level)`、`MutableCharacterStatsAPI.getGrantedAbilityIds` / `isHullModAvailable`
+
+生效范围只看 type，别信 scope
+
+`ALL_SHIPS_IN_FLEET` 与 `SHIP` 的**接口相同** (都是 `ShipSkillEffect`)，作用对象集合完全由 `type` 决定 —— 这是本节最容易被 `scope` 字段误导的一点：`scope` 只是 UI 文本，写 `"scope":"FLEET"` 不会把 SHIP 效果变成全舰队加成。
+
+本节示例用到 SHIP、SHIP\_FIGHTERS、FLEET、CHARACTER\_STATS 与 DESCRIPTION 五类，写效果脚本时每个 effect 的 `type` 决定类实现哪个接口，先对照上面的表格再落笔。
+
+## 技能等级
+
+作用对象定了，接下来是何时生效、按什么等级生效：
+
+* 技能等级只有 0 (未学) / 1 (已学) / 2 (精英)。UI 加点走 `increaseSkill` / `decreaseSkill`，钳制到 1 (非精英) 或 2 (`elite:true`)；`setSkillLevel(id, level)` 不钳制，直接写任意 float 并触发 `refreshCharacterStatsEffects`。
+* 每个 effectGroup 的 `requiredSkillLevel` (默认 1) 是门槛：`getSkillLevel(governingSkill) >= requiredSkillLevel` 的效果才进入应用列表 (如 `getShipEffects` 的过滤)。
+* `apply()` 收到的 `level` 参数 = `getSkillLevel(governingSkill)`，不是等级增量，也不会逐帧变化。
+* `effectBasedOnLevel` (默认 true) 只供 UI 的 tooltip 渲染读取：true 时标准 tooltip 追加渲染 `getEffectPerLevelDescription()`。
+* 引擎组合 effect id 并传入 `apply` / `unapply`：`<技能id>_<类型后缀>_<效果序号>`：
+    *   后缀：`SHIP→_ship_`、`ALL_SHIPS_IN_FLEET→_ships_`、`SHIP_FIGHTERS→_ship_fighters_`、`ALL_FIGHTERS_IN_FLEET→_all_fighters_`；
+    *   `CHARACTER_STATS` 与 `FLEET` 都是 `_stats_`、`GOVERNED_OUTPOST→_GO_`、`ALL_OUTPOSTS→_AO_`；
+    *   序号是效果在本技能平铺效果列表 (跨 effectGroups 累计) 中的下标；本节示例 `GearIn_gunnery` 的 Level1 (SHIP) 拿到的 id 是 `GearIn_gunnery_ship_1`。
+
+等级门槛是最容易落空的一处：把 `requiredSkillLevel` 写成 2 却不配 `elite:true`，这个门槛会一直等一个到不了的等级。
+
+effect id 必须原样用作 modifier id
+
+引擎传入的 effect id(本节示例 `GearIn_gunnery_ship_1`) **必须**原样用作 modifier id，`unapply` **必须**用同一个 id 解除；**禁止**自造 id 或拼接字符串。违反的后果：数值残留、解除静默失效、重放多次后数值膨胀，且全程没有任何报错。
+
+## fleet total 管道
+
+效果按等级生效后，数值写进角色、舰船与舰队 stats；需要整备界面汇总展示的一类走 fleet total 管道：
+
+* 接口：`FleetTotalSource.getFleetTotalItem()` → `FleetTotalItem` (字段 `label` / `value` / `valueColor` / `labelColor` / `sortOrder` / `tooltipCreator`)。
+* 汇总：`getFleetTotals()` 遍历已学技能的全部效果，凡 `level >= requiredSkillLevel` 且脚本实例 `instanceof FleetTotalSource`，就取 `getFleetTotalItem()`：
+    *   按 `label + "_" + value` 去重 (两个技能 / 效果返回相同 label+value 只保留一行)，按 `sortOrder` 升序排成舰队构成表的行数据 (附 `skillLevels`，供 tooltip 列出贡献技能)。
+* 使用方：整备界面 (refit) 的舰队构成表 —— 界面把 `getPlayerStats().getFleetTotals()` 渲染成构成表行，`tooltipCreator` 挂可展开 tooltip；全库调用 `getFleetTotals()` 的地方只有这一处 (技能面板 tooltip 不读取它)。
+* 原版聚合做法：`BaseSkillEffectDescription.getOPTotal()` / `getCombatOPTotal()` / `getAutomatedPointsTotal()` (`com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription`)：
+    *   对舰队成员逐艘收集贡献 (`FleetMemberPointContrib`) 再汇总；
+    *   本节示例只演示最小管道 (静态值 + 自定义 tooltip)。
+
+机制到这里已经齐全，接下来把三件套、等级与 fleet total 全部落成 GearIndustry 的一个真实技能。
 
 ## 规则强度
 
-本节必须遵守的规则清单 (违反后的可观察结果均附上；规则基础页已列的加载期致命错误与跨文件重复 id 语义在本节所有场景继续有效，不重复)：
+下表集中列出本节涉及的注册与生效规则；每条都给出违反后的可观察结果，原因在正文各节展开，故障分析按症状复用这些条目。
 
-| 规则 | 强度 | 违反后的可观察结果 |
-|---|---|---|
-| 覆盖 `FireBest` 目标规则时必须复刻被覆盖规则的结果职责 (市场场景：`MarketPostDock` 的 `$menuState = main 0` + `FireAll PopulateOptions`；`OpenInteractionDialog` 的 `ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`)| 必须 | `FireBest` 只执行一条规则：市场菜单不出现 (选项面板空、只剩 failsafe/Leave)，停靠后卡在对话 |
-| `options` 列选项 id 与 `DialogOptionSelected` / `NewGameOptionSelected` 规则的 `$option == <id>` 逐字一致 (大小写敏感)| 必须 | 点选后无规则匹配：对话文本面板出现 `ERROR: no rule found for option <id>` + failsafe |
-| 任务规则 trigger 名必须等于 `mission.getTriggerPrefix() + "_blurb" / "_option" / "_blurbBar" / "_optionBar"` | 必须 | `BaseMissionHub.listMissions` 文本面板打印 `No blurb found for <prefix>`、`FireBest` 返回 false、任务选项缺失 |
-| 临时 bar 选项必须经 `AddBarEvents` 规则 + `AddBarEvent` rulecmd 添加；它每轮被清空重建，不是持久状态 | 事实 | 跨进酒吧不保留；`BarCMD.showOptions` 先 `clearTempEvents` 再 `FireAll AddBarEvents` |
-| 自定义临时 bar 选项 id 不得使用与任何已注册任务相同的前缀 | 事实 | `BarCMD.getWrapperFor` / `abortMissions` 按 `optionId.startsWith(mission.getTriggerPrefix())` 识别，同前缀选项被当作 mission 包装处理、其余包装被中止 |
-| `BeginFleetEncounter` 规则不依赖 `options` 列 (交互经 `$hailing` / `OpenComms` / 主菜单转场)| 事实 | `reinitPostContinue` / `INIT` 路径在规则执行后接管选项面板，`options` 列内容被清空 |
-| `TradePanelFlavorText` 规则的 dialog 是假 dialog | 事实 | 依赖真实对话上下文的命令 (视觉面板、`DismissDialog` 等) 异常或无效 (交易面板的假 dialog 机制)|
-| `NewGameOptionSelected` 只在主菜单新游戏对话框回流 `$option`；`DialogOptionSelected` 只在生涯对话回流 | 必须 | 写错场景的回流 trigger 规则永不触发且无报错 |
-| `$menuState` / `$tradeMode` 由场景脚本维护，进入与退出必须配对 | 必须 | 未复位时市场/对话菜单选项残留或消失 (如不设 `$menuState` 的市场菜单永不显示)|
-| `PopulateOptions` / `AddBarEvents` / `AddNewGameChoices` 菜单规则必须加状态或场景条件判断 (`$menuState == ...`、`$market.id == ...`、`$global.isDevMode` 等)| 必须 | 没有条件限定的规则在每个匹配场景都添加选项 (如进任何市场都出现本 MOD 的酒吧选项)|
-| 条件列命令副作用与跨文件重复 id 静默跳过 (规则基础页已列)| 必须/事实 | 见规则基础页规则强度表 |
+规则
 
-上表的每一条纪律都会直接落进下面的最小例：覆盖规则复刻职责，场景规则用分数赢得竞争，一次性 flag 控制演示次数。
+强度
+
+违反后的可观察结果
+
+`.skill` 的 `id` **必须**在 `skill_data.csv` 有对应行
+
+必须
+
+加载期日志 `Skipping loading skill [...], it's not listed in skill_data.csv.`，技能不注册、技能树不出现、`getSkillSpec(id)` 返回 null，**无任何 ERROR**
+
+技能 id **必须**全局唯一 (跨 MOD)
+
+必须
+
+后加载的同 id 技能被跳过 (日志 `Skipping skill [...], was already loaded`)，本 MOD 的版本静默失效
+
+effect 的 `type` **必须**与脚本类实现的接口族匹配 (SHIP → `ShipSkillEffect`、FLEET → `FleetStatsSkillEffect`、CHARACTER\_STATS → `CharacterStatsSkillEffect`、市场 → `MarketSkillEffect`、DESCRIPTION → `DescriptionSkillEffect`)
+
+必须
+
+效果实例化时 `getAsXxxEffect()` 强转抛 `ClassCastException`(如舰船 stats 重放 / 起飞 / tooltip 渲染处)，游戏画面报错或加载失败
+
+效果脚本类 **必须**无参可实例化 (不写构造器或显式无参构造器；脚本类加载流程 `loadScriptInstance` 用 `newInstance()`)
+
+必须
+
+`InstantiationException` 包装为 `RuntimeException "Problem loading class [<类名>]"`，在效果被实例化的时刻 (不是加载期) 抛出
+
+效果脚本 **必须**把引擎传入的 `id` 原样用作 modifier id，`unapply` 用同一个 id 解除
+
+必须
+
+数值残留 / 累计或解除不生效 (稳定 ID 规则在技能域的直接应用，前置知识已引用；引擎给的 id 形如 `GearIn_gunnery_ship_1`)
+
+生效范围**必须**按 `SkillEffectType` 判断；`.skill` 的 `scope` / `scopeStr` 只是 UI 文本
+
+必须
+
+把 `scope:FLEET` 的 SHIP 效果当 "全舰队加成" 排查，实际它只作用于被驾驶舰船，舰队其它船 "没变化"
+
+战机效果 (SHIP\_FIGHTERS / ALL\_FIGHTERS\_IN\_FLEET) 只在战斗起飞时应用
+
+必须
+
+在生涯侧读战机 stats 期望已生效，读不到；战机加成 "部署前看不到" 属正常语义
+
+非精英技能 (`elite` 缺省 / false) 经 UI 加点最高到 1 级，`requiredSkillLevel:2` 的效果组永不激活
+
+必须
+
+2 级门槛的效果 "不生效"；精英加成必须配 `"elite":true`
+
+fleet total 的 `label` + `value` 必须能区分不同的汇总行
+
+必须
+
+两个技能返回相同 label+value 时 `getFleetTotals()` 去重合并成一行，其中一行的汇总 "消失"
+
+技能 `icon` 列 **必须**指向可加载的纹理
+
+必须
+
+`loadSkills` 末尾 `queueResource(TEXTURE, ...)` 排队纹理，缺失时资源加载阶段报错 (TEXTURE 无 try/catch)
+
+技能 id 使用 MOD 专属前缀 (`GearIn_`)，数据 id、`.skill` 文件名、脚本类名三处一致
+
+建议
+
+撞原版 / 其它 MOD id 时被先加载者覆盖，行为随 MOD 启用顺序漂移
+
+效果脚本在 `.skill` 里按 "外层类 `$` 嵌套类" 书写类名 (如 `...GearInGunnerySkill$Level1`)
+
+建议
+
+类名拼写错误 → 效果实例化时 `Problem loading class`
+
+## 实现舰队技能
+
+这项技能同时改变舰船、战机、舰队与角色数值。实现顺序应当从数据侧分派开始，再逐个接通作用域；这样每增加一个效果，都有独立的界面数值或日志可以核对。
+
+### 注册技能与效果分派
+
+先在 `skill_data.csv` 注册技能，再把以下内容放入 `data/characters/skills/GearIn_gunnery.skill` 的 `effectGroups`。`type` 决定引擎传入哪一种 stats 对象，`script` 决定实例化哪个嵌套类。
+
+```json
+{
+    "name":"Level 1",
+    "requiredSkillLevel":1,
+    "effectBasedOnLevel":false,
+    "effects":[
+        {"type":"SHIP", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$Level1"},
+        {"type":"SHIP_FIGHTERS", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$LevelShipFighters"}
+    ]
+}
+```
+
+完成信号：启动日志出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]`，并且没有跳过该技能的记录。
+
+### 修改被驾驶舰船
+
+在 `GearInGunnerySkill` 内新增 `Level1`。把引擎传入的 `id` 原样交给三个 modifier；技能刷新时，相同 ID 会覆盖旧值，而不是继续叠加。
+
+```java
+public static class Level1 extends BaseSkillEffectDescription implements ShipSkillEffect {
+    @Override
+    public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
+        stats.getBallisticWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS);
+        stats.getEnergyWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS);
+        stats.getAutofireAimAccuracy().modifyFlat(id, AIM_BONUS * 0.01f);
+    }
+
+    @Override
+    public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
+        stats.getBallisticWeaponDamageMult().unmodify(id);
+        stats.getEnergyWeaponDamageMult().unmodify(id);
+        stats.getAutofireAimAccuracy().unmodify(id);
+    }
+}
+```
+
+完成信号：技能达到 1 级后，角色驾驶舰船的实弹与能量武器伤害均增加 15%，自动开火精度增加 100%；降回 0 级后全部恢复。
+
+### 扩展到本舰战机
+
+在同一外层类中新增 `LevelShipFighters`，并让 `.skill` 中的 `SHIP_FIGHTERS` 指向它。这里收到的是战机自己的 `MutableShipStatsAPI`，因此速度修改不会落到母舰上。
+
+```java
+public static class LevelShipFighters extends BaseSkillEffectDescription implements ShipSkillEffect {
+    @Override
+    public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
+        stats.getMaxSpeed().modifyPercent(id, FIGHTER_SPEED_BONUS);
+    }
+
+    @Override
+    public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
+        stats.getMaxSpeed().unmodify(id);
+    }
+}
+```
+
+完成信号：由角色驾驶舰船放出的战机最高速度增加 10%，其它舰船放出的同型战机不受影响。
+
+### 修改整支舰队
+
+在 `GearInGunnerySkill` 内新增 `LevelFleet`。`FLEET` 效果由角色数值刷新流程重放，修改对象是 `MutableFleetStatsAPI`。
+
+```java
+public static class LevelFleet extends BaseSkillEffectDescription implements FleetStatsSkillEffect {
+    @Override
+    public void apply(MutableFleetStatsAPI stats, String id, float level) {
+        stats.getFleetwideMaxBurnMod().modifyFlat(id, FLEET_BURN_BONUS);
+    }
+
+    @Override
+    public void unapply(MutableFleetStatsAPI stats, String id) {
+        stats.getFleetwideMaxBurnMod().unmodifyFlat(id);
+    }
+}
+```
+
+完成信号：技能达到 1 级后舰队最大燃烧等级增加 2，解除技能后立即恢复。
+
+### 修改角色数值
+
+再新增 `LevelStats`，并由 `.skill` 中的 `CHARACTER_STATS` 分派。该效果直接进入角色 stats，不需要等待战斗舰船构造。
+
+```java
+public static class LevelStats extends BaseSkillEffectDescription implements CharacterStatsSkillEffect {
+    @Override
+    public void apply(MutableCharacterStatsAPI stats, String id, float level) {
+        stats.getCommandPoints().modifyFlat(id, COMMAND_POINTS_BONUS);
+    }
+
+    @Override
+    public void unapply(MutableCharacterStatsAPI stats, String id) {
+        stats.getCommandPoints().unmodify(id);
+    }
+}
+```
+
+完成信号：技能达到 1 级后，部署界面的指挥点数增加 1；解除技能并刷新角色数值后恢复。
+
+### 显示舰队汇总项
+
+让 `Level1` 同时实现 `FleetTotalSource`，并加入以下方法。整备界面会按需重新实例化效果类，再读取这个对象生成汇总行。
+
+```java
+@Override
+public FleetTotalItem getFleetTotalItem() {
+    FleetTotalItem item = new FleetTotalItem();
+    item.label = "Gunnery damage bonus";
+    item.value = "+" + (int) DAMAGE_BONUS + "%";
+    item.sortOrder = 50;
+    return item;
+}
+```
+
+完成信号：整备界面的舰队构成汇总出现 `Gunnery damage bonus +15%`，重复打开界面不会增加重复行。
 
 ## 完整最小例
 
-在规则基础页的 MOD 布局 (`Starsector\mods\GearIndustry\`，含 `data\campaign\rules.csv` 与 `GearInRulesIntro` 类) 之上，**只追加规则行**。
-
-本节五个场景的使用方全是原版插件 (`RuleBasedInteractionDialogPluginImpl` / `FleetInteractionDialogPluginImpl` / `BarCMD` / `NewGameDialogPluginImpl` / 交易面板)，MOD 侧不需要新增 Java 类：
+在既有 MOD 布局 (前置知识所列的编译链路) 之上新增一个技能：两个数据文件加一个效果脚本类，全部由本节定义，技能 id 为 `GearIn_gunnery`：
 
 ```text
 Starsector\mods\GearIndustry\
 ├── build.gradle
+├── settings.gradle
 ├── mod_info.json
 ├── data\
-│   └── campaign\
-│       └── rules.csv                     # 追加本节拥有的 GearIn_rules_scene_* 行（与规则基础页的 GearIn_rules_intro_* 同文件共存）
+│   └── characters\skills\
+│       ├── GearIn_gunnery.skill          # 本节新增
+│       └── skill_data.csv                # 新建（表头 + 本节行；若已有该文件则把行追加进去）
+├── src\
+│   └── data\scripts\gearin\
+│       ├── GearInModPlugin               # C6-S2 所有；本节不改动
+│       └── campaign\
+│           └── GearInGunnerySkill        # 本节新增
 └── jars\
 ```
 
-### data\campaign\rules.csv(追加行，示例 ID 全部为 `GearIn_rules_scene_*`)
+### 数据文件：data\\characters\\skills\\GearIn\_gunnery.skill
+
+```json
+{
+	"id":"GearIn_gunnery",
+	"governingAptitude":"combat",
+	"compressHullmods":false,
+	"elite":true,
+	"scope":"PILOTED_SHIP",
+	"effectGroups":[
+		{
+			"name":"Level 1",
+			"requiredSkillLevel":1,
+			"effectBasedOnLevel":false,
+			"effects":[
+				{"type":"DESCRIPTION", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$Level0"},
+				{"type":"SHIP", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$Level1"},
+				{"type":"SHIP_FIGHTERS", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$LevelShipFighters"},
+				{"type":"FLEET", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$LevelFleet"},
+				{"type":"CHARACTER_STATS", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$LevelStats"},
+			]
+		},
+		{
+			"name":"Elite",
+			"requiredSkillLevel":2,
+			"effectBasedOnLevel":false,
+			"effects":[
+				{"type":"SHIP", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$Level1A"},
+			]
+		},
+	],
+}
+```
+
+要点：
+
+* `elite:true` 允许技能到 2 级；第 2 个 effectGroup (`requiredSkillLevel:2`，`name:"Elite"`) 在 2 级才激活 —— 与 `gunnery_implants.skill` 同款结构。
+* 六个 effect 平铺后的序号：Level0=0、Level1=1、LevelShipFighters=2、LevelFleet=3、LevelStats=4、Level1A=5。由此引擎组合的 effect id：
+    *   `GearIn_gunnery_ship_1`、`GearIn_gunnery_ship_fighters_2`、`GearIn_gunnery_stats_3` (FLEET)、`GearIn_gunnery_stats_4` (CHARACTER\_STATS)、`GearIn_gunnery_ship_5` (精英)。
+    *   效果脚本必须原样使用。
+* `governingSkill` 未写 → 默认本技能 id：所有效果的等级判据都是 `GearIn_gunnery` 自己的等级。
+
+### 数据文件：data\\characters\\skills\\skill\_data.csv(表头 + 本节行)
 
 ```csv
-GearIn_rules_scene_market,MarketPostDock,"$market.id == jangala score:100
-!$player.gearInSceneMarketSeen","$player.gearInSceneMarketSeen = true 0
-$menuState = main 0
-FireAll PopulateOptions",GearIn 市场场景：首次停靠 jangala 时本规则以 101 分胜过原版 marketDock（1 分）。FireBest 只执行一条规则，所以脚本必须复刻原版职责（$menuState + FireAll PopulateOptions），否则市场菜单不会出现。,,
-GearIn_rules_scene_bar_add,AddBarEvents,$market.id == jangala,,AddBarEvent GearIn_rules_scene_bar "和 GearIn 演示员聊聊" "一个穿着测试连体服的 GearIn 演示员朝您招手，示意您过去坐坐。",,
-GearIn_rules_scene_bar_pick,DialogOptionSelected,$option == GearIn_rules_scene_bar,,GearIn 酒吧场景：临时 bar 选项被点选后，BarCMD 写入 $option 并触发 DialogOptionSelected。选项与描述来自 AddBarEvent，存储在市场记忆 $core_tempBarEvents；每次进入酒吧 BarCMD 先清空再 FireAll AddBarEvents 重建。,GearIn_rules_scene_bar_back:回吧台,
-GearIn_rules_scene_bar_back,DialogOptionSelected,$option == GearIn_rules_scene_bar_back,"BarCMD showOptions",,,
-GearIn_rules_scene_fleet_hail,BeginFleetEncounter,"$faction.id == independent score:100
-!$entity.isHostile
-!$player.gearInSceneHailed","$player.gearInSceneHailed = true 0
-FleetDesc
-$shownFleetDescAlready = true 0
-AddText ""GearIn 舰队场景：一支独立势力舰队呼叫了您；请在菜单中选择接受通讯请求。""
-$hailing = true 0",,,
-GearIn_rules_scene_comm,OpenCommLink,"$faction.id == independent score:100
-$player.transponderOn
-!$entity.isHostile
-!$player.gearInSceneCommed","$player.gearInSceneCommed = true 0
-$menuState = fleetConvMain 0
-FireAll PopulateOptions",GearIn 对话场景（OpenCommLink）：对独立势力舰队的问候语。脚本把菜单状态置为 fleetConvMain 并 FireAll PopulateOptions 填充对话菜单。,,
-GearIn_rules_scene_conv,PopulateOptions,"$menuState == fleetConvMain
-$faction.id == independent",,GearIn 对话场景（PopulateOptions）：舰队对话菜单选项 —— 点选后经 DialogOptionSelected 回流执行 EndConversation 回到舰队菜单。,"GearIn_rules_scene_conv_end:结束通讯",,
-GearIn_rules_scene_conv_end,DialogOptionSelected,$option == GearIn_rules_scene_conv_end,EndConversation,,,
-GearIn_rules_scene_ngc_add,AddNewGameChoices,$global.isDevMode,,,6:GearIn_rules_scene_ngc:GearIn 演示起点：额外 5000 星币 (dev),,
-GearIn_rules_scene_ngc_pick,NewGameOptionSelected,"$option == GearIn_rules_scene_ngc
-$global.isDevMode",NGCAddCredits 5000,,,
+id,name,order,tier,reqPoints,reqPointsPerExtraSkill,description,author,combat officer,admiral,admin,tags,icon,
+GearIn_gunnery,Gunnery,1025,2,1,0,"Precision gunnery drills: ballistic and energy weapon damage up, autofire accuracy up, fighter top speed up, fleet burn up, command points up.","GearIndustry Weapons Division",TRUE,,,,graphics/icons/skills/GearIn_gunnery.png,
 ```
+
+要点：
+
+* `id` 与 `.skill` 的 `id` 逐字一致；`tier:2` (战斗系 2 阶)、`reqPoints:1` (消耗 1 技能点)。
+* `combat officer` 列 `TRUE`：军官也可以学。
+* `icon` 指向本 MOD 图标资源。**本单元无 PNG 资产**：冒烟时请临时把 icon 列指向原版 `graphics/icons/skills/gunnery_implants.png` (资源加载期会排队校验纹理，缺失会导致加载失败)；生产 MOD 必须自备图标 (资产不在本单元范围)。
+
+### GearInGunnerySkill
 
 对应关系：
 
-- **`GearIn_rules_scene_market`(市场场景，trigger `MarketPostDock`)**：条件 `$market.id == jangala score:100` + `!$player.gearInSceneMarketSeen`，总分 101，恒胜原版回退规则 `marketDock`(1 分)：
-  - 原版高优先规则 (`MarketCMD checkDebtEffect score:1000`、`checkMercsLeaving score:500`、`DeliveryMission checkCompletion score:100`) 在激活时仍然获胜 —— 演示 "竞争分层"。
-  - 脚本**复刻** `marketDock` 职责 (`$menuState = main 0` + `FireAll PopulateOptions`) 并置一次性 flag—— 第二次停靠 jangala 自动回退原版行为。
-  - `FireBest` 先 `addText` 显示本规则文本、后 `runScript` 填充菜单。
-- **`GearIn_rules_scene_bar_add` / `_pick` / `_back`(酒吧场景)**：`AddBarEvents` 规则条件 `$market.id == jangala`，脚本 `AddBarEvent <id> <文本> <描述>`。
-  - 进 jangala 酒吧 (市场菜单 "Take a shuttle down to visit a dockside bar")→ `bar_optionSel` 打印描述并 `BarCMD showOptions` → 清空重建临时选项。
-  - 用户点选 `GearIn_rules_scene_bar` → `BarCMD.optionSelected` 写 `$option` 并 `FireBest "DialogOptionSelected"` → `_pick` 显示文本 + `_back` 选项。
-  - 点 `_back` → `BarCMD showOptions` 重新显示酒吧选项；
-  - "Leave the bar"(`barLeave`，原版 BarCMD 提供)→ `ReturnFromBar` → `$menuState = main` + 市场菜单复位。
-- **`GearIn_rules_scene_fleet_hail`(舰队场景，trigger `BeginFleetEncounter`)**：条件 `$faction.id == independent score:100` + `!$entity.isHostile` + `!$player.gearInSceneHailed`，总分 102：
-  - 恒胜原版回退规则 `initial_AnyFleet`(1 分)、输给 1000 级剧情规则 (优雅降级)。
-  - 脚本按原版模式：置一次性 flag、`FleetDesc` + `$shownFleetDescAlready = true 0`(**复刻 `initial_AnyFleet` 职责**)、`AddText` 呼叫文本、`$hailing = true 0`。
-  - 可观察：遭遇独立舰队时主菜单出现高亮 "Accept the comm request"。
-- **`GearIn_rules_scene_comm` / `_conv` / `_conv_end`(对话场景，trigger `OpenCommLink` + `PopulateOptions` + `DialogOptionSelected`)。**
-  - 接受通讯请求 → `fireBest("OpenCommLink")` → 本规则 (103 分) 胜过原版问候回退规则 (1–3 分；`$entity.ignorePlayerCommRequests score:10000` 时仍由原版拒绝)。
-  - 问候文本 + `$menuState = fleetConvMain` + `FireAll PopulateOptions` → `_conv` 加菜单选项 → 点选 → `_conv_end` 执行 `EndConversation`。
-  - `FleetInteractionDialogPluginImpl.reinit` 预检 (`BeginFleetEncounter` 无匹配)→ 回舰队主菜单。
-  - 原版 `convOptionLeave`(`$isPerson`) 仍提供 `cutCommLink` 选项。
-- **`GearIn_rules_scene_ngc_add` / `_pick`(任务/流程场景，trigger `AddNewGameChoices` + `NewGameOptionSelected`)。**
-  - devMode(`$global.isDevMode`，`NewGameDialogPluginImpl.init` 写入) 下新游戏对话框出现演示起点选项 (顺序 6，排在原版 ngc 选项之后)。
-  - 点选 → `NewGameOptionSelected` 回流 → `NGCAddCredits 5000`(脚本列)—— 之后继续选择原版起始即可，两者叠加。
-  - **`NGCAddCredits` 放在回流处理器而非 `AddNewGameChoices` 规则里**：`FireAll` 会执行命中规则的全部脚本，写在 `_add` 里会在列表阶段就加钱。
-- **为什么不新增 Java**：规则基础页的最小例需要 Java 是因为它用了自定义 trigger(`GearInRulesIntro`，没有原版派发点)；本节全部使用原版场景 trigger，派发点 (使用方) 是原版插件，规则行本身就是完整的注册与消费流程。需要自定义 trigger 对话时沿用规则基础页的 `GearInRulesIntro` / `REGISTER_MARK` 模式。
-- **共享文件纪律**：`data/campaign/rules.csv` 是跨单元共享文件：规则基础页拥有 `GearIn_rules_intro_*`、本节拥有 `GearIn_rules_scene_*`；同前缀内 id 唯一，跨文件重复 id 先到先得的纪律见规则基础页规则强度表。
+* 外层类只是容器：嵌套类名 (`Level0` / `Level1` / `Level1A` / `LevelShipFighters` / `LevelFleet` / `LevelStats`) 与 `.skill` 的 `script` 值 (`GearInGunnerySkill$Level1` 等) 逐字对应 —— 原版 `GunneryImplants` 同款做法。
+* `Level1 implements ShipSkillEffect, FleetTotalSource`：同一个脚本类被两处调用 —— `SHIP` 效果重放时经 `getAsShipEffect()` 强转，`getFleetTotals()` 时经 `getAsFleetTotalSource()` 检查 `instanceof`：
+    *   两处都是**每次按类名重新实例化** (脚本类加载流程 `loadScriptInstance` → `newInstance()`)，效果类不能有带参构造器。
+* `apply` 里的 modifier id 全部用传入的 `id`：`modifyPercent(id, ...)` / `modifyFlat(id, ...)`，`unapply` 用同一个 `id` 调 `unmodify(id)` / `unmodifyFlat(id)`—— 稳定 ID 规则的直接应用 (规则见前置知识；引擎每次重放传入的 id 逐字相同)。
+* `Level1.getFleetTotalItem()` 返回 `label="Gunnery damage bonus"`、`value="+15%"`、`sortOrder=50` 与自定义 tooltip：这是 fleet total 行的最小完整形态；`TOOLTIP_WIDTH` 继承自 `BaseSkillEffectDescription`(450)。
+* `LevelFleet` / `LevelStats` 的 `getScopeDescription()` 返回 `FLEET`：这只是 tooltip 的 "作用范围" 文本；实际生效对象由 `type`(FLEET / CHARACTER\_STATS) 决定。
+* 五个 `apply` 各打一行 `GearIn gunnery ...` 日志：`id` 与 `level` 直接可见，是 "效果作用域 + 等级" 的现场表现。
+* `getEffectPerLevelDescription()` 返回 null：`.skill` 里 `effectBasedOnLevel:false`，tooltip 不渲染每级描述行 (本节不演示 per-level 描述)。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，与规则基础页一致)：
+### 读取与调用点
+
+以下工程片段所在类归 [C6-S2] 所有，本节只演示调用，不改动那些文件。
+
+```java
+    // 读取（消费者，任何生涯代码）：
+    SkillSpecAPI spec = Global.getSettings().getSkillSpec("GearIn_gunnery");
+    if (spec == null) {
+        LOG.info("GearIn skill spec missing - check skill_data.csv registration");
+    }
+
+    // 学习（脚本侧临时钩子；正式路径是玩家在技能树里花技能点，走 increaseSkill）：
+    Global.getSector().getPlayerStats().setSkillLevel("GearIn_gunnery", 1f);
+    // 精英：
+    Global.getSector().getPlayerStats().setSkillLevel("GearIn_gunnery", 2f);
+```
+
+学习入口小结 (`MutableCharacterStatsAPI`)：`setSkillLevel` 与 `increaseSkill` 都会触发 `refreshCharacterStatsEffects`；FLEET 与 CHARACTER\_STATS 效果在刷新时**立即**重放。
+
+SHIP 族效果要等成员 stats 重建 (`FleetMemberAPI.updateStats`，开舰队界面 / 舰队同步触发) 或舰船构造 / 战机起飞。
+
+构建命令 (在 `Starsector\mods\GearIndustry\` 执行，编译链路见前置知识)：
 
 ```text
 gradle jar
 ```
 
-本节只改数据文件：`rules.csv` 随 MOD 目录被加载器读取，无需进 jar。`jar tf jars\GearIndustry.jar` 的输出里不应该也不需要包含本节新内容。
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 及六个内部类 (可用 `jar tf` 核对)：
 
-### 验证方案
+* `$Level0` / `$Level1` / `$Level1A` / `$LevelShipFighters` / `$LevelFleet` / `$LevelStats`
 
-前置数据：规则基础页的 MOD 布局 (前置：[C11-S1]；`GearInRulesIntro` 类可保留，本节不依赖它)，追加本节 10 条 `GearIn_rules_scene_*` 规则行；启动器勾选 Dev Mode (验证新游戏场景与 dev 选项)。
+### GearIn\_gunnery 完整流程 (静态交叉核对)
 
-1. 规则注册：启动游戏，在 `starsector.log` 中找到本节 10 条 `Loading rule: GearIn_rules_scene_*` 行 (市场 1 + 酒吧 3 + 舰队 1 + 通讯 3 + 新游戏 2；注意 `_conv_end` 与 `_ngc_pick` 也在其中)。
-2. 市场场景：新建生涯，停靠 jangala：停靠许可文本后出现 `GearIn 市场场景：首次停靠 jangala...`，市场菜单完整 (通讯目录/酒吧/交易/Leave)；再次停靠 jangala：本节文本不再出现、菜单照常。
-3. 酒吧场景：在 jangala 市场菜单点 "Take a shuttle down to visit a dockside bar"：出现酒吧描述文本与 "和 GearIn 演示员聊聊"；点选后出现本节酒吧文本与 "回吧台"；点 "回吧台" 选项重现；"Leave the bar"(ESC) 回到市场菜单。
-4. 舰队场景：在超空间或星系内找一支非敌对独立舰队 (拾荒/商队) 并遭遇：出现呼叫文本；通讯选项高亮 "Accept the comm request"；接受后出现本节问候语与 "结束通讯"/"Cut the comm link"；点 "结束通讯" 回到舰队主菜单。
-5. 任务/流程场景：主菜单新建游戏：角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)`(顺序 6)；点选后选 `ngcWolf` 等原版起始；开局确认星币 = 原版初始 + 5000。非 devMode 启动时该选项不出现。
+把三件套、调用点与观察结果串成一张静态交叉核对表，逐行确认后再进入游戏验证：
+
+环节
+
+内容
+
+一致性要求
+
+注册行
+
+`skill_data.csv` 的 `id=GearIn_gunnery` (order 1025、tier 2、reqPoints 1、combat officer TRUE)
+
+与 `.skill` 的 `id` 逐字一致
+
+技能定义
+
+`GearIn_gunnery.skill`：`governingAptitude=combat`、`elite=true`、两个 `effectGroups`
+
+id 一致；脚本类名与 Java 类逐字一致
+
+效果脚本
+
+`data.scripts.gearin.campaign.GearInGunnerySkill$Level0/Level1/Level1A/LevelShipFighters/LevelFleet/LevelStats`
+
+六个类名与 `.skill` 六个 `script` 值一致；`type` 与接口族匹配
+
+调用入口
+
+CSV spec 加载期 `loadSkills` 注册 → 玩家 `setSkillLevel` / UI 加点 → `refreshCharacterStatsEffects` / `FleetMemberAPI.updateStats` / 战斗舰船构造 / `FighterLaunchBayAPI` / `getFleetTotals`
+
+日志行、技能树行、burn、指挥点数、fleet total 行
+
+可观察结果
+
+日志 `GearIn gunnery ... apply`、技能树 "Gunnery" 行、整备界面 "Gunnery damage bonus +15%" 行
+
+见 "验证方案"
+
+## 关键故障实验：技能效果叠加后无法解除
+
+把 `LevelShipFighters.apply()` 中的 modifier ID 临时改成自造字符串，同时保留原来的 `unapply()`。学习技能后再解除，战机速度加成仍会残留。
+
+**局部故障片段：**
+
+```java
+// 故障片段
+stats.getMaxSpeed().modifyFlat("gunnery", 10f);
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+stats.getMaxSpeed().modifyPercent(id, FIGHTER_SPEED_BONUS);
+```
+
+`unapply()` 使用同一个引擎 ID 撤销：
+
+```java
+stats.getMaxSpeed().unmodify(id);
+```
+
+原因是 `MutableStat` 以 modifier ID 保存来源；`"gunnery"` 与引擎传入的效果 ID 是两个键，`unmodify(id)` 无法删除前者。复验时依次把技能设为 1、0、1 级，并让舰载机重新起飞；每轮 1 级都应只有 10% 加成，0 级应恢复基础速度。
+
+## 验证方案
+
+前置数据：既有 MOD 布局与编译链路 (前置知识所列)、`GearIn_gunnery.skill`、`skill_data.csv` 行、`GearInGunnerySkill` 源码 (含读取与调用点片段中的临时钩子)。
+
+1. **资源准备**：冒烟期间把 `skill_data.csv` 的 icon 列指向原版 `graphics/icons/skills/gunnery_implants.png`。
+2. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类。
+3. **启动与注册**：新建生涯 (或读档)，在 `starsector.log` 中观察 `GearIn_gunnery` 的技能加载记录。
+4. **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (放在 `onGameLoad` 内)，随后打开舰队界面 (F 键) 并进入一场战斗部署。
+5. **界面核对**：打开技能树 (C 键)、整备界面 (R 键) 与舰队面板，查看战斗部署界面的指挥点数与武器伤害。
+6. **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)`。
+7. **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill`。
+8. 打开 `starsector.log`，查看 `GearIn gunnery` 前缀的 apply 日志；在技能树、整备界面、舰队面板和战斗部署界面观察对应数值。
 
 预期结果：
 
-- 规则注册 (加载期)：`starsector.log` 出现本节 10 条 `Loading rule:` 行：`GearIn_rules_scene_market` / `..._bar_add` / `..._bar_pick` / `..._bar_back` / `..._fleet_hail` / `..._comm` / `..._conv` / `..._conv_end` / `..._ngc_add` / `..._ngc_pick`(日志路径与加载行为在规则基础页已证)。标准输出可能出现单次使用变量 WARNING(`System.out.println`，正常现象，非错误)。
-- 酒吧场景 (jangala 市场菜单 → 酒吧)：进入酒吧显示 `BarPrintDesc` 描述文本 + 选项 "和 GearIn 演示员聊聊"(描述文本进文本面板)：点选后出现 `GearIn 酒吧场景：临时 bar 选项...` 文本 + "回吧台" 选项；点 "回吧台" 酒吧选项重新出现；"Leave the bar"(ESC) 出现 "You leave the bar..." 文本 + 市场菜单复位。
-- 舰队场景：找到一支非敌对的独立势力舰队 (如拾荒舰队) 并接近，遭遇对话出现 `GearIn 舰队场景：一支独立势力舰队呼叫了您...` 文本：舰队主菜单通讯选项高亮为 "Accept the comm request"；接受后出现 `GearIn 对话场景（OpenCommLink）：对独立势力舰队的问候语。` + 菜单选项 "结束通讯" (另有原版 "Cut the comm link")；点 "结束通讯" 回到舰队主菜单。
-- 任务/流程场景 (devMode)：启动器勾选 Dev Mode 后新建游戏，角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)` 选项；点选后继续选任一原版起始，开局星币 = 原版初始 + 5000。非 devMode 时该选项不出现 (`$global.isDevMode` 条件限定)。
-- 全程无 ERROR：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志；加载期无 `Duplicate key` / `Command [...] not found` / 赋值/比较操作符错位等规则加载异常 (规则基础页规则强度表的加载期五连)。
+* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类；启动后加载期无 `gear_in` 引起的 ERROR (注意 icon 列在冒烟期间指向原版图标，见 "完整最小例")。
+* **注册确认**：`starsector.log` 出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]` (loadSkills 的加载日志)，没有 `Skipping skill [...]` 或 `Skipping loading skill [...]` 两行。
+* **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (见读取与调用点片段) 生效后，日志立即出现。
+
+    ```text
+    GearIn gunnery stats apply: id=GearIn_gunnery_stats_4 level=1.0 commandPoints=+1 GearIn gunnery fleet apply: id=GearIn_gunnery_stats_3 level=1.0 burn=+2
+    ```
+
+    (FLEET 与 CHARACTER\_STATS 在 `refreshCharacterStatsEffects` 内即时重放；`_stats_3` / `_stats_4` 与 "技能等级" 一节的 effect id 组合规则一致。)
+* **stats 重建后 SHIP 效果**：打开舰队界面 (F 键，触发成员 stats 重建) 或进入一场战斗部署，日志出现。
+
+    ```text
+    GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damage=+15% aim=+100%
+    ```
+
+    (hull 以实际玩家旗舰为准。) 战斗内载机起飞时出现 `GearIn gunnery fighters apply: id=GearIn_gunnery_ship_fighters_2 ... speed=+10%`。
+* **界面**：C 键技能树战斗系出现 "Gunnery" 行与 DESCRIPTION 文本；R 键整备界面舰队构成表出现 `Gunnery damage bonus +15%` 行，悬停显示自定义 tooltip；舰队面板 burn 提升 2 (最慢成员 burn ≥ 8 时)；战斗部署界面指挥点数 +1；玩家旗舰武器伤害倍率提升 (`GearIn_artizan` 等装配里实弹 / 能量武器 +15%，精英 +5%)，瞄准误差降低。
+* **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)` 后，日志追加 `GearIn gunnery elite apply: id=GearIn_gunnery_ship_5 level=2.0 hull=... damage=+5%`。
+* **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill` 后日志不再出现新 apply 行，burn / 指挥点数 / fleet total 行恢复基线；`unapply` 用同一 id 解除，数值无残留。
+
+清理：删除 `onGameLoad` 中临时添加的 `setSkillLevel("GearIn_gunnery", ...)` 钩子，或把技能等级设为 `0f` 后移除该调用。
 
 ## 故障分析
 
-以下故障按您实际看到的症状排列，每项给出触发条件、断链位置与修正方法。
-
-1. **市场菜单消失了 (选项面板只剩 Leave)**。
-   - 触发：覆盖了 `MarketPostDock`(FireBest 取胜) 但没有复刻 `marketDock` 的结果职责。
-   - 原因：`FireBest` 只执行命中的这一条，原版 `marketDock` 的 `$menuState = main 0` + `FireAll PopulateOptions` 不会执行；本 MOD 的停靠文本虽然显示，菜单却没有人填充。
-   - 修正：脚本必须包含 `$menuState = main 0` + `FireAll PopulateOptions`(本节最小例 `GearIn_rules_scene_market` 的写法)。覆盖 `OpenInteractionDialog` 的 `marketOpen` 时同理：复刻 `ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`。
-2. **第二次停靠 jangala 没有本节文本**。
-   - 触发：一次性 flag `$player.gearInSceneMarketSeen` 已经置位。
-   - 原因：这是预期行为而不是故障：第一次命中后 `!$player.gearInSceneMarketSeen` 条件不再成立，第二次停靠自动回退原版行为，且无任何报错。
-   - 修正：重新验证时换一个新 flag 名 (原版没有清记忆的 rulecmd，devMode 下可用 `DumpMemory` 查看记忆键)，或临时删掉条件里的 `!$player.<flag>`，并承担每次覆盖原版行为的后果。
-3. **酒吧里看不到 "和 GearIn 演示员聊聊"**。
-   - 触发：`AddBarEvents` 规则条件不满足 (`$market.id` 写错、在别的市场看)，或 `BarCMD` 没走 `showOptions`。
-   - 原因：临时选项由 `AddBarEvents` 规则在 `BarCMD.showOptions` 清空后重建；条件不满足时 `$core_tempBarEvents` 保持为空，酒吧只剩原版描述与 "Leave the bar"。
-   - 修正：核对 `$market.id` 逐字一致；注意临时选项只在本市场、本轮有效 (先清空再重建)，把它当持久状态跨市场读是错误预期。
-4. **点选酒吧临时选项后文本出现，但选项面板空白**。
-   - 触发：`BarCMD.optionSelected` 把插件还原为 `originalPlugin` 后，本 MOD 的 `DialogOptionSelected` 规则没有提供后续选项。
-   - 原因：`FireBest` 只显示文本，没有规则再触发菜单填充，选项面板就保持空白。
-   - 修正：回调规则必须带 `options` 列或再触发 `FireBest`/`FireAll` 填充 (本节最小例用 `GearIn_rules_scene_bar_back` 选项 + `BarCMD showOptions`)。
-5. **舰队遭遇时没有本节呼叫文本**。
-   - 触发：`BeginFleetEncounter` 分数竞争失败 (对方是剧情舰队、`$entity.isHostile` 为真、`$faction.id` 不是 independent)，或把观察时机放在遭遇瞬间而非主菜单。
-   - 原因：分数低的规则不执行，原版文本 (剧情/`initial_AnyFleet`) 胜出；`BeginFleetEncounter` 有两次匹配时机 (`reinit` 预检与 `fireBest` 路径)，文本只在 `fireBest` 路径显示。
-   - 修正：核对条件与分数 (本节 102 分 vs 剧情 1000 分)，并在主菜单观察结果。
-6. **接受通讯请求后问候语还是原版**。
-   - 触发：`OpenCommLink` 竞争失败 ——`$entity.ignorePlayerCommRequests`(10000 分) 时原版拒绝规则必然获胜；或用户应答器关闭 (本节规则条件要求 `$player.transponderOn`)。
-   - 原因：`FireBest` 只执行分数最高的一条：原版拒绝规则获胜时本节规则不执行；应答器关闭时原版 `greetingDefaultTOff*` 规则族接管 —— 注意本节规则 103 分仍高于它们，若您不想要这个行为就删掉该条件或把分数降为 1 级。
-   - 修正：按期望调整条件与分数 (`score:` 只改当前条件行，总分 = 各行之和)。
-7. **任务列表出现 "No blurb found for <前缀>"**。
-   - 触发：规则 trigger 名与 `mission.getTriggerPrefix()` 不一致 (拼写、大小写、后缀)。
-   - 原因：`BaseMissionHub.listMissions` 按 `前缀_blurb` 等名称发起匹配，名称对不上时文本面板红字提示、`FireBest` 返回 false，任务选项缺失。
-   - 修正：trigger 必须等于 `前缀_blurb` / `前缀_option` / `前缀_blurbBar` / `前缀_optionBar` (原版 `hijack_blurb` / `hijack_option` 参照)；任务插件本身归生涯对象体系，本节只消费触发约定。
-8. **新游戏对话框里演示选项不出现**。
-   - 触发：没开 Dev Mode(`$global.isDevMode` 条件不满足)，或把规则写成了 `DialogOptionSelected` / 生涯 trigger。
-   - 原因：`NewGameDialogPluginImpl.optionSelected` 的回流 trigger 是 `NewGameOptionSelected`；写错场景的回流 trigger 规则永不触发且无报错，主菜单对话框只剩原版选项。
-   - 修正：devMode 选项必须用 `$global.isDevMode` 条件限定；选项由 `AddNewGameChoices` 链添加。
-9. **交易面板文本规则报错/无效**。
-   - 触发：`TradePanelFlavorText` 规则里用了依赖真实对话的命令。
-   - 原因：dialog 是交易面板制造的假 dialog，视觉面板、`DismissDialog` 等依赖真实对话上下文的命令会异常或静默无效。
-   - 修正：flavor 规则只用 `AddText` 与 `$global.tradePanelMode` 等变量判断 (与规则基础页所讲的假 dialog 限制同类)。
-10. **对话只有文本没有选项，卡住**。
-    - 触发：`FireAll PopulateOptions` 无匹配 (`$menuState` 未设或拼错、条件不满足)。
-    - 原因：菜单规则以 `$menuState == main` / `fleetConvMain` 与事实键为条件，条件不成立就没有选项加入面板。
-    - 修正：检查 `$menuState` 与事实键；`convOptionLeave`(`$isPerson`) 是人物对话的回退选项来源。
-11. **规则 "不触发且无报错"**。
-    - 触发：跨文件重复 id(先到先得静默跳过) 或 trigger 拼写错误。
-    - 原因：重复 id 的规则在加载期被跳过，`starsector.log` 没有对应 `Loading rule:` 行；trigger 拼写错误则没有任何派发点发起匹配，两种情况都没有异常。
-    - 修正：换唯一前缀 (本节 `GearIn_rules_scene_*` 即为此设计)；trigger 拼写与派发点字符串逐字核对 (如 `BeginFleetEncounter` 与 `BeginFleetEncounter2` 是两个 trigger)。
-12. **`$option` 读不到**。
-    - 触发：在非回流 trigger(如 `OpenCommLink`、`MarketPostDock`) 里用 `$option` 条件。
-    - 原因：`$option` 只由 `RuleBasedInteractionDialogPluginImpl` / `NewGameDialogPluginImpl` / `BarCMD` 的选项回流写入；其他 trigger 里变量解析回落到 `local` 记忆后取 null，条件恒假。
-    - 修正：`$option` 只在 `DialogOptionSelected` / `NewGameOptionSelected`(以及 `BarCMD` 点选后的同一回流) 里使用。
+- **技能没有出现在技能树中**：`.skill` 缺少 `skill_data.csv` 注册行，或各处 ID 不一致。补齐注册并统一 ID；重启后确认 `getSkillSpec` 返回对象，日志不再出现 `Skipping loading skill`。
+- **技能定义被静默跳过**：技能 ID 与原版或其他 MOD 重复，后加载的定义不会覆盖已有项。改用带 MOD 前缀的唯一 ID，重启后确认日志中没有 `was already loaded`。
+- **效果实例化时出现 `ClassCastException`**：`.skill` 的 `type` 与脚本实现的效果接口不匹配。让 `type` 对应正确接口族，再触发 stats 重建并确认效果正常应用。
+- **首次应用效果时报 `Problem loading class`**：脚本类名错误，或效果类缺少无参构造器。核对完整类名并保留可访问的无参构造器，再重新进入触发该效果的界面或战斗。
+- **移除技能后数值仍然残留**：`apply` 和 `unapply` 使用了自造 modifier ID，无法成对解除。两处都使用引擎传入的 `id`，重放 stats 后确认旧条目消失。
+- **加成只作用于旗舰**：`.skill` 的 `type` 是 `SHIP`，而 `scope` 只改变说明文字。根据目标对象改用正确的效果类型，再分别检查旗舰和其他成员数值。
+- **战前找不到战机加成**：`SHIP_FIGHTERS` 在战机起飞并生成战斗 stats 后应用。进入战斗放出战机，再从战斗内数值或日志复验。
+- **精英效果始终不生效**：二级效果设置了 `requiredSkillLevel: 2`，技能却没有启用 `elite`。加入 `"elite": true`，重新加点后确认二级效果进入应用列表。
+- **舰队汇总行少了一项**：两个效果返回了相同的 `label` 与 `value`，汇总键发生重复。让 label 或 value 可区分，再重开整备界面确认两行都存在。
+- **SHIP 效果日志延迟出现**：这类效果要等成员 stats 重建或舰船部署后才应用。打开舰队界面触发同步，或部署舰船后检查对应日志。
+- **启动时纹理加载失败**：`skill_data.csv` 的 icon 指向不存在的文件。修正为实际纹理路径，重启后确认资源加载阶段不再报错且技能图标可见。
 
 ## 总结
 
-本节把五类生涯场景讲成同一条链：原版派发点在固定时机发起匹配，规则行按条件与分数竞争命中，脚本负责叙述、转场或填充菜单，最终以游戏内文本、菜单与日志给出可观察结果。覆盖市场、酒吧、舰队、新游戏四处的完整最小例把这条链从注册验证到游戏内；场景 trigger 与自定义 trigger 的分界也由此清楚：前者只需写行，后者才需要 Java 入口 (规则基础页已述)。
+本节完成了技能域从数据到生效的完整流程：三件套在 `loadSkills` 汇成 `SkillSpecAPI`，type 决定作用对象，等级决定是否生效，fleet total 把需要汇总的数值送到整备界面。
 
-排错时沿四个位置核对：`Loading rule:` 日志确认注册、trigger 拼写确认匹配、分数确认竞争、职责复刻与状态复位确认行为。`FireBest` 只执行一条，覆盖原版规则必须复刻其结果职责；`FireAll` 全执行，菜单类 trigger 用它批量添加选项。状态键 `$menuState` / `$tradeMode` 进入与退出成对维护；`$option` 回流只属于各自对话框插件的回流 trigger；临时 bar 选项每轮清空重建；任务 trigger 前缀必须与 `getTriggerPrefix()` 一致；`TradePanelFlavorText` 只匹配假 dialog。
+留作复用的判断有三条。第一，技能没出现且无报错时，先查两条跳过日志，再核对 `.skill` 的 `type` 与脚本类实现的接口是否对应。第二，生效范围只看 `type`，`scope` 只是 UI 文本；2 级门槛必须配 `elite:true`。第三，effect id 就是 modifier id，引擎传入什么就用什么，`unapply` 用同一个 id 解除 —— 数值残留与解除失效几乎都源于这里。
 
-从逻辑上看，这套使用方式的下游是三个主题：规则命令体系 (自定义 rulecmd 可替代 `BarCMD` / `EndConversation` 等现成使用方式)、记忆语义 (本节的一次性 flag 与 `$menuState` 的过期与持久化由此完整展开)、对话插件生命周期 (市场/舰队/酒吧场景的 Java 侧底座)。
+这套 "type → 作用域 → 应用入口" 模型也适用于生涯数值链下游：从人物经 `FleetMemberAPI` 到舰船 stats 的交接中，SHIP / ALL\_SHIPS\_IN\_FLEET 效果正是 "人物技能到达成员 stats" 的关键一跳。
 
 ## 建议参考项
 
-- `data/campaign/rules.csv`(MOD 侧)：本节示例追加行所在文件，规则 id 前缀 `GearIn_rules_scene_*`。
-- `Starsector\starsector-core\data\campaign\rules.csv`(原版)：五类场景 trigger 的平台规则表：
-  - 本节引用的回退规则 (`marketOpen` / `marketDock` / `marketPostOpenDefault` / `greetingFallthrough` / `initial_AnyFleet` / `marketReturnFromBar` 等) 的参照来源。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.RuleBasedInteractionDialogPluginImpl`：交互对话框插件，对话场景 trigger 的主要派发点与 `$option` 回流实现。
-- `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`：舰队遭遇与通讯对话插件，`BeginFleetEncounter` / `OpenCommLink` 的派发点。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`：酒吧场景的 rulecmd 与对话插件，`AddBarEvents` / `ReturnFromBar` 派发与字符串选项回流。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent`：写临时 bar 选项的 rulecmd(`$core_tempBarEvents` 记忆键)。
-- `com.fs.starfarer.api.impl.campaign.missions.hub.BaseMissionHub`：任务列表与任务对话 trigger(`<前缀>_blurb` / `<前缀>_option` / `AddMHCloseOption`) 的使用方。
-- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionBarEventWrapper`：任务以酒吧事件展示时的 `<前缀>_blurbBar` / `<前缀>_optionBar` trigger 使用方。
-- `com.fs.starfarer.api.impl.campaign.NewGameDialogPluginImpl`：主菜单新游戏对话框 (流程场景)，回流 trigger 为 `NewGameOptionSelected`。
-- `com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`：场景事实键 (`$hasMarket` / `$isHostile` / `$isContact` 等) 的写入方。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.EndConversation`：对话退出转场 rulecmd。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.OpenComms` / `com.fs.starfarer.api.impl.campaign.rulecmd.HailPlayer`：舰队通讯转场与 `$hailing` 写入 rulecmd。
-- `com.fs.starfarer.api.impl.campaign.AbandonMarketPluginImpl`：弃档时的市场状态复位 (`$menuState` / `$tradeMode` / `$hasMarket`)。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.FireBest`：单选派发与 keepOptions(第二参) 语义。
-- `com.fs.starfarer.api.campaign.rules.MemKeys`：规则记忆键常量 (`MISSION` 等)。
+* `com.fs.starfarer.api.characters.SkillSpecAPI`：技能规格对象 (`getSkillSpec(id)` 的返回类型)；其内部类型 `SkillEffectSpecAPI` 承载 `getType` / `getAsXxxEffect` / `getRequiredSkillLevel` / `getUnlockedHullMods` 等效果字段访问。
+* `com.fs.starfarer.api.characters.SkillEffectType`：11 个效果类型枚举：
+    *   `SHIP` / `ALL_SHIPS_IN_FLEET` / `SHIP_FIGHTERS` / `ALL_FIGHTERS_IN_FLEET` / `CHARACTER_STATS` / `FLEET`
+    *   `HULLMOD_UNLOCK` / `ABILITY_UNLOCK` / `GOVERNED_OUTPOST` / `ALL_OUTPOSTS` / `DESCRIPTION`。
+* `com.fs.starfarer.api.characters.ShipSkillEffect` / `FleetStatsSkillEffect` / `CharacterStatsSkillEffect` / `MarketSkillEffect` / `DescriptionSkillEffect`：五个效果接口族，`apply` / `unapply` 的签名所在。
+* `com.fs.starfarer.api.characters.LevelBasedEffect`：效果接口的共同父接口，`getEffectDescription` / `getEffectPerLevelDescription` / `getScopeDescription` 与 `ScopeDescription` 枚举。
+* `com.fs.starfarer.api.characters.FleetTotalSource` / `FleetTotalItem`：fleet total 行的提供接口与数据对象 (`label` / `value` / `sortOrder` / `tooltipCreator`)。
+* `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：`getSkillLevel` / `setSkillLevel` / `increaseSkill` / `hasSkill` / `refreshCharacterStatsEffects` / `getCommandPoints` 所在。
+* `com.fs.starfarer.api.fleet.MutableFleetStatsAPI`：`getFleetwideMaxBurnMod` 等舰队 stats 访问器。
+* `com.fs.starfarer.api.SettingsAPI`：`getSkillSpec` / `getSortedSkillIds` 读取入口。
+* `com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription`：示例各效果类继承的基类 (`TOOLTIP_WIDTH` 与 fleet total 聚合做法)。
+* `data/characters/skills/skill_data.csv`：技能注册表 (id / order / tier / reqPoints / 角色 flags / tags / icon)。
+* `data/characters/skills/GearIn_gunnery.skill`：本节技能定义 (aptitude / 等级组 / 效果清单)。
+* `data/characters/skills/aptitude_data.csv`：能力树分组表 (`effect_skill_id` 列)。
+* `data/characters/skills/gunnery_implants.skill`：原版 SHIP + 精英组样例 (本节示例的蓝本)。
+* `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
+* `Starsector/starsector-core/starsector.log`：游戏运行日志 (注册与 apply 日志的核对位置)。
+::: details 完整成品：GearInGunnerySkill
+
+```java
+package data.scripts.gearin.campaign;
+
+import java.awt.Color;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.characters.CharacterStatsSkillEffect;
+import com.fs.starfarer.api.characters.DescriptionSkillEffect;
+import com.fs.starfarer.api.characters.FleetStatsSkillEffect;
+import com.fs.starfarer.api.characters.FleetTotalItem;
+import com.fs.starfarer.api.characters.FleetTotalSource;
+import com.fs.starfarer.api.characters.LevelBasedEffect.ScopeDescription;
+import com.fs.starfarer.api.characters.MutableCharacterStatsAPI;
+import com.fs.starfarer.api.characters.ShipSkillEffect;
+import com.fs.starfarer.api.combat.MutableShipStatsAPI;
+import com.fs.starfarer.api.combat.ShipAPI.HullSize;
+import com.fs.starfarer.api.fleet.MutableFleetStatsAPI;
+import com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription;
+import com.fs.starfarer.api.ui.TooltipMakerAPI;
+import com.fs.starfarer.api.ui.TooltipMakerAPI.TooltipCreator;
+import com.fs.starfarer.api.util.Misc;
+
+/**
+ * 完整最小例：SkillSpecAPI、效果作用域、技能等级与 fleet total。
+ *
+ * 本类只是效果脚本的容器（原版 GunneryImplants 同款做法）：
+ * 数据侧的 .skill 文件与 skill_data.csv 行把每个 effect 的 type 分派到下面的嵌套类。
+ *
+ * 作用域（effect type 决定作用对象集合，与脚本类实现哪个接口一一对应）：
+ * - DESCRIPTION   -> Level0           技能面板与 tooltip 的文本行；
+ * - SHIP          -> Level1 / Level1A 被驾驶（该角色指挥）的舰船 stats；
+ * - SHIP_FIGHTERS -> LevelShipFighters 由被驾驶舰船起飞的本舰战机 stats（起飞时应用）；
+ * - FLEET         -> LevelFleet       该角色指挥舰队的 MutableFleetStatsAPI；
+ * - CHARACTER_STATS -> LevelStats     角色自身 MutableCharacterStatsAPI。
+ *
+ * 等级语义：
+ * - 技能等级只有 0（未学）/ 1（已学）/ 2（精英，仅 elite:true 的技能）；
+ *   UI 加点路径 increaseSkill 会钳制到 1 或 2，setSkillLevel 不钳制；
+ * - 每个 effectGroup 的 requiredSkillLevel 是生效门槛：getSkillLevel(governingSkill) >= requiredSkillLevel
+ *   才进入 apply 列表；默认 governingSkill = 本技能 id；
+ * - apply() 收到的 level 参数 = getSkillLevel(governingSkill)，不是等级增量；
+ * - 引擎按 <技能id>_<类型后缀>_<效果序号> 组合 effect id 并传入 apply，
+ *   效果类必须原样用它做 MutableStat / StatBonus 的 modifier id（稳定 ID 规则，见前置页）。
+ *
+ * fleet total：
+ * - 本技能 Level1 同时实现 FleetTotalSource：整备界面（refit）的舰队构成表会调用
+ *   getFleetTotalItem() 展示一行汇总；同一脚本实例按需被重新实例化，效果类必须无参可实例化。
+ */
+public class GearInGunnerySkill {
+
+    private static final Logger LOG = Global.getLogger(GearInGunnerySkill.class);
+
+    /** 数据侧技能 id（skill_data.csv 行 + GearIn_gunnery.skill 的 id 字段，三者必须逐字一致）。 */
+    public static final String SKILL_ID = "GearIn_gunnery";
+
+    /** 数值常量：与 .skill 的 effectGroups、skill_data.csv 行、页面描述文本保持一致。 */
+    public static final float DAMAGE_BONUS = 15f;
+    public static final float DAMAGE_BONUS_ELITE = 5f;
+    public static final float AIM_BONUS = 100f;
+    public static final float FIGHTER_SPEED_BONUS = 10f;
+    public static final float FLEET_BURN_BONUS = 2f;
+    public static final float COMMAND_POINTS_BONUS = 1f;
+
+    /** DESCRIPTION：纯文本行；数值写入由其它 effect type 承担。 */
+    public static class Level0 implements DescriptionSkillEffect {
+        @Override
+        public Color getTextColor() {
+            return null;
+        }
+
+        @Override
+        public String getString() {
+            return "Precision gunnery drills: ballistic and energy weapon damage up by 15%, "
+                    + "autofire accuracy up by 100%, fighters' top speed up by 10%, "
+                    + "fleet burn up by 2, and command points up by 1.";
+        }
+
+        @Override
+        public String[] getHighlights() {
+            return new String[] {"15%", "100%", "10%", "2", "1"};
+        }
+
+        @Override
+        public Color[] getHighlightColors() {
+            Color h = Misc.getHighlightColor();
+            return new Color[] {h, h, h, h, h};
+        }
+    }
+
+    /** SHIP：被驾驶舰船（角色为舰长 / 指挥官时作用于其旗舰），同时提供 fleet total 行。 */
+    public static class Level1 extends BaseSkillEffectDescription implements ShipSkillEffect, FleetTotalSource {
+
+        @Override
+        public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
+            stats.getBallisticWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS);
+            stats.getEnergyWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS);
+            stats.getAutofireAimAccuracy().modifyFlat(id, AIM_BONUS * 0.01f);
+            LOG.info(String.format("GearIn gunnery ship apply: id=%s level=%.1f hull=%s damage=+%.0f%% aim=+%.0f%%",
+                    id, level, hullSize, DAMAGE_BONUS, AIM_BONUS));
+        }
+
+        @Override
+        public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
+            stats.getBallisticWeaponDamageMult().unmodify(id);
+            stats.getEnergyWeaponDamageMult().unmodify(id);
+            stats.getAutofireAimAccuracy().unmodify(id);
+        }
+
+        @Override
+        public String getEffectDescription(float level) {
+            return "+" + (int) DAMAGE_BONUS + "% ballistic and energy weapon damage, "
+                    + "+" + (int) AIM_BONUS + "% autofire accuracy";
+        }
+
+        @Override
+        public String getEffectPerLevelDescription() {
+            return null;
+        }
+
+        @Override
+        public ScopeDescription getScopeDescription() {
+            return ScopeDescription.PILOTED_SHIP;
+        }
+
+        /** fleet total：整备界面（refit）的舰队构成表按 label+value 去重后展示这一行。 */
+        @Override
+        public FleetTotalItem getFleetTotalItem() {
+            FleetTotalItem item = new FleetTotalItem();
+            item.label = "Gunnery damage bonus";
+            item.value = "+" + (int) DAMAGE_BONUS + "%";
+            item.sortOrder = 50;
+            item.tooltipCreator = new TooltipCreator() {
+                @Override
+                public boolean isTooltipExpandable(Object tooltipParam) {
+                    return false;
+                }
+
+                @Override
+                public float getTooltipWidth(Object tooltipParam) {
+                    return TOOLTIP_WIDTH;
+                }
+
+                @Override
+                public void createTooltip(TooltipMakerAPI tooltip, boolean expanded, Object tooltipParam) {
+                    tooltip.addPara("Ballistic and energy weapon damage bonus granted to the piloted ship "
+                            + "while this skill is learned.", 0f);
+                }
+            };
+            return item;
+        }
+    }
+
+    /** SHIP（精英组）：技能到 2 级（精英）后追加的加成。 */
+    public static class Level1A extends BaseSkillEffectDescription implements ShipSkillEffect {
+
+        @Override
+        public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
+            stats.getBallisticWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS_ELITE);
+            stats.getEnergyWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS_ELITE);
+            LOG.info(String.format("GearIn gunnery elite apply: id=%s level=%.1f hull=%s damage=+%.0f%%",
+                    id, level, hullSize, DAMAGE_BONUS_ELITE));
+        }
+
+        @Override
+        public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
+            stats.getBallisticWeaponDamageMult().unmodify(id);
+            stats.getEnergyWeaponDamageMult().unmodify(id);
+        }
+
+        @Override
+        public String getEffectDescription(float level) {
+            return "+" + (int) DAMAGE_BONUS_ELITE + "% ballistic and energy weapon damage";
+        }
+
+        @Override
+        public String getEffectPerLevelDescription() {
+            return null;
+        }
+
+        @Override
+        public ScopeDescription getScopeDescription() {
+            return ScopeDescription.PILOTED_SHIP;
+        }
+    }
+
+    /** SHIP_FIGHTERS：本舰（被驾驶舰船）起飞的战机，起飞时由 FighterLaunchBayAPI 应用。 */
+    public static class LevelShipFighters extends BaseSkillEffectDescription implements ShipSkillEffect {
+
+        @Override
+        public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
+            stats.getMaxSpeed().modifyPercent(id, FIGHTER_SPEED_BONUS);
+            LOG.info(String.format("GearIn gunnery fighters apply: id=%s level=%.1f hull=%s speed=+%.0f%%",
+                    id, level, hullSize, FIGHTER_SPEED_BONUS));
+        }
+
+        @Override
+        public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
+            stats.getMaxSpeed().unmodify(id);
+        }
+
+        @Override
+        public String getEffectDescription(float level) {
+            return "+" + (int) FIGHTER_SPEED_BONUS + "% top speed for fighters launched by the piloted ship";
+        }
+
+        @Override
+        public String getEffectPerLevelDescription() {
+            return null;
+        }
+
+        @Override
+        public ScopeDescription getScopeDescription() {
+            return ScopeDescription.SHIP_FIGHTERS;
+        }
+    }
+
+    /** FLEET：角色指挥舰队的 MutableFleetStatsAPI，由 refreshCharacterStatsEffects 统一重放。 */
+    public static class LevelFleet extends BaseSkillEffectDescription implements FleetStatsSkillEffect {
+
+        @Override
+        public void apply(MutableFleetStatsAPI stats, String id, float level) {
+            stats.getFleetwideMaxBurnMod().modifyFlat(id, FLEET_BURN_BONUS);
+            LOG.info(String.format("GearIn gunnery fleet apply: id=%s level=%.1f burn=+%.0f",
+                    id, level, FLEET_BURN_BONUS));
+        }
+
+        @Override
+        public void unapply(MutableFleetStatsAPI stats, String id) {
+            stats.getFleetwideMaxBurnMod().unmodifyFlat(id);
+        }
+
+        @Override
+        public String getEffectDescription(float level) {
+            return "+" + (int) FLEET_BURN_BONUS + " fleet burn level";
+        }
+
+        @Override
+        public String getEffectPerLevelDescription() {
+            return null;
+        }
+
+        @Override
+        public ScopeDescription getScopeDescription() {
+            return ScopeDescription.FLEET;
+        }
+    }
+
+    /** CHARACTER_STATS：角色自身数值，由 refreshCharacterStatsEffects 统一重放。 */
+    public static class LevelStats extends BaseSkillEffectDescription implements CharacterStatsSkillEffect {
+
+        @Override
+        public void apply(MutableCharacterStatsAPI stats, String id, float level) {
+            stats.getCommandPoints().modifyFlat(id, COMMAND_POINTS_BONUS);
+            LOG.info(String.format("GearIn gunnery stats apply: id=%s level=%.1f commandPoints=+%.0f",
+                    id, level, COMMAND_POINTS_BONUS));
+        }
+
+        @Override
+        public void unapply(MutableCharacterStatsAPI stats, String id) {
+            stats.getCommandPoints().unmodify(id);
+        }
+
+        @Override
+        public String getEffectDescription(float level) {
+            return "+" + (int) COMMAND_POINTS_BONUS + " command point";
+        }
+
+        @Override
+        public String getEffectPerLevelDescription() {
+            return null;
+        }
+
+        @Override
+        public ScopeDescription getScopeDescription() {
+            return ScopeDescription.FLEET;
+        }
+    }
+}
+```
+
+:::

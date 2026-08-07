@@ -1,408 +1,656 @@
-# 制作随存档运行的生涯脚本
+# 为船插加入提示、S-mod 与监听器
 
-本节注册一个随存档运行的生涯脚本，并用 `SectorAPI` 读取生涯时钟。示例会观察暂停、加速和战斗期间的推进差异；地点容器只保留本页所需的最小定义。
+本节扩展既有船插，为它加入提示文本、S-mod 效果与战斗监听器。示例 `GearInArmorTrainingHullMod` 会展示这些能力分别在哪个生命周期阶段接入。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：~30 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 说出星区 (sector) 的结构：`SectorAPI` 是生涯引擎根对象，名下挂哪些子容器 (地点、时钟、玩家舰队、经济、势力、脚本、监听器、persistent data、memory、UI 外壳)，以及每个子容器从哪个 getter 进入；
-- 用 `SectorAPI.getClock()` 读生涯时钟：
-  - `getCycle()` / `getMonth()` / `getDay()` / `getHour()` 的取值规则与纪元起点；
-  - `getDateString()` / `getShortDate()` / `getTimestamp()` / `getElapsedDaysSince()` 的语义；
-  - 记住换算基线 "10 真实秒 = 1 游戏日"；
-- 从零写一个 `EveryFrameScript` 实现并通过 `SectorAPI.addScript` 注册：
-  - 复述一次性注册标记 (persistent data `CLASS_MARK` 模式) 与每帧推进循环 (`isDone` → 移除；`runWhilePaused()` 或未暂停 → `advance`)；
-  - 说出 "脚本随存档保存、transient 脚本不保存" 的序列化边界；
-- 说出暂停与加速时哪些推进、哪些冻结：引擎暂停时脚本默认不推进、时钟不前进；按住 Shift 加速时每帧推进两次 (`campaignSpeedupMult`)；战斗期间生涯引擎完全不推进；
-- 从症状定位九类典型故障：脚本没注册、重复注册、`isDone()` 恒 true、`runWhilePaused` 语义误用、把秒当游戏天、暂停时依赖时钟、战斗期 "脚本消失"、旧档不注册、脚本字段放了不可序列化对象。
+* 说出 `HullModEffect` 全部生命周期回调的调用时机与调用点 (生涯 stats 重建、战斗舰船构造、加入战斗引擎、每帧、装配预览舰)；
+* 解释效果类为什么必须是会话级单例，以及跨船状态为什么必须放进每船一个的监听器实例；
+* 说出 tooltip 的组装顺序，以及 `desc` / `sModDesc` 的 `%s` 如何由参数方法填充；
+* 解释 S-mod 的状态存储、默认上限、增强内置与奖励经验语义；
+* 在 `applyEffectsAfterShipCreation` 里注册每船一个的监听器，并说出放置规则为何决定监听器生效或静默失效；
+* 从症状定位典型故障：效果完全不生效、S-mod 分支永不触发、装配界面没有 S-mod 效果段、串船、监听器静默失效、`%s` 错位、生涯与战斗数值不一致。
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-- [C3-S1] 的生涯与战役域概念；
-- [C6-S2] 的 `modPlugin` 生命周期回调与持久数据标记；
-- [C6-S3] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
-- [C7-S1] 的每帧回调模型、暂停语义与战斗域和生涯域的差异；
-- [C6-S4] 的 settings 读取与 [C12-S4] 的 common 文件机制。
+* [C1-S1] 的 MOD ID、`GearIn_` 命名、包路径与类名规则；
+* [C2-S2] 的 `hull_mods.csv` 数据行、`HullModSpecAPI` 与船插注册字段；
+* [C3-S1] 的 `GearIn_test` 测试战役与舰船装配；
+* [C6-S1] 的 Java 构建与 JAR 输出；
+* [C6-S3] 的 `Global` 生命周期与跨战斗引用边界；
+* [C7-S2] 的战斗状态读取与时间语义；
+* [C7-S3] 的 `MutableStat` 修饰、modifier ID 与 `applyEffects` 时机；
+* [C7-S5] 的公开监听器表面、放置规则、派发与去重。
 
-## 术语
+## 梳理船插回调关系
 
-本节首次完整讲解两个词：
+本节涉及的接口 (除注明外都在 `com.fs.starfarer.api.combat`)：
 
-- **星区 (sector)**：API 名保留 `SectorAPI`。一个存档对应一个星区，`Global.getSector()` 返回当前存档的生涯引擎。星区是 "生涯域根对象"：时钟、地点、舰队、经济、势力、脚本、监听器、持久数据、记忆、UI 外壳都从它下面取。
-- **地点容器 (location)**：API 名保留 `LocationAPI`。星区内部的空间容器 (超空间与各恒星系)，实体挂在容器里。容器内实体与访问见 [C8-S2]。
+接口 / 类型
 
-## 文件与 API 链路
+本节角色
 
-星区是生涯域的根对象，本节的所有读取与注册都从它开始。先看整体结构，再顺着时钟与脚本两条线深入。
+链路
 
-### 星区结构 (SectorAPI)
+`HullModEffect`
 
-`SectorAPI`(`com.fs.starfarer.api.campaign.SectorAPI`) 是纯接口，由生涯引擎实现。按功能分组，本节涉及的成员如下：
+船插效果接口，全部生命周期回调的定义处
 
-| 分组 | 成员 | 语义 |
-|---|---|---|
-| 时钟 | `getClock()` | 生涯时钟 (`CampaignClockAPI`)，见 "时间系统" 节 |
-| 脚本 | `addScript` / `removeScript` / `removeScriptsOfClass(Class)` / `hasScript(Class)` / `getScripts()` | 引擎级每帧脚本的注册、移除、查询 (见 "脚本生命周期" 节)|
-| 脚本 (临时)| `addTransientScript` / `removeTransientScript` / `removeTransientScriptsOfClass(Class)` / `hasTransientScript(Class)` / `getTransientScripts()` | 不随存档保存的临时脚本 |
-| 地点 | `getHyperspace()` / `getStarSystem(String name)` / `getStarSystems()` / `getCurrentLocation()` / `getAllLocations()` / `getEntityById(String id)` / `getEntitiesWithTag(String tag)` | 地点容器与实体查找，详见 [C8-S2] |
-| 玩家 | `getPlayerFleet()` / `getPlayerPerson()` / `getPlayerFaction()` / `getPlayerStats()` | 玩家舰队、人物、势力、属性 |
-| 经济与势力 | `getEconomy()` / `getFaction(String id)` / `getAllFactions()` | 经济入口与势力表 |
-| 监听器 | `addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners()` / `getListenerManager()` | 生涯事件监听器，详见 [C10-S2] |
-| 通用插件 | `getGenericPlugins()` | 通用插件注册表 |
-| 持久数据 | `getPersistentData()` | 返回随存档保存的 `Map<String, Object>`，跨会话 MOD 数据入口 (前置生命周期例已用)|
-| 记忆 | `getMemory()` / `getMemoryWithoutUpdate()` | 星区 "global" memory，详见 [C11-S4] |
-| UI 外壳 | `getCampaignUI()` | `CampaignUIAPI`：生涯消息区、core UI 页签、确认框等入口 |
-| 暂停 | `isPaused()` / `setPaused(boolean)` | 生涯暂停状态 (见 "暂停与加速语义" 节)|
-| 状态标志 | `isInFastAdvance()` / `isInNewGameAdvance()` | 新档时间推进窗口内为 `true`(见 "时间系统" 节)|
-| 工具 | `genUID()` | 返回本星区唯一递增的十六进制 id 字符串，脚本/实体造 id 时用它 |
+数据行 `script` 列 → `HullModSpecAPI.getEffect()`(用到时才创建的单例)→ 各调用点
 
-结构要点：
+`BaseHullMod`
 
-1. 一个存档 = 一个生涯引擎实例；`Global.getSector()` 返回它，星区引用**禁止**跨存档缓存 (见前置知识中的 `Global` 阶段语义条目)。
-2. 星区自身直接持有：时钟 (`CampaignClockAPI`)、`scripts` 与 `transientScripts` 两个脚本列表、`paused` 标志、经济、势力管理器、监听器、persistent data、memory、UI 外壳。
-   - 也就是说，"脚本随不随存档保存" 由字段的 `transient` 修饰决定：**`scripts` 随存档保存，`transientScripts` 不随存档保存**。
-   - 这是 `addScript` 与 `addTransientScript` 的唯一行为差别，注册入口的选择直接决定跨存档行为。
-3. 实体级脚本是另一条平行线：实体对象也持有自己的 `scripts` 列表并逐实体推进，舰队脚本用 `CampaignFleetAPI.addScript(...)` 挂载 (成熟实例的通用做法)。
-   - 实体级脚本随实体生命周期走，`EveryFrameScriptWithCleanup.cleanup()` 只在附着实体被移除时调用。
-   - 本节示例用引擎级 `addScript`；实体级脚本按对象生命周期注册。
+空实现基类
 
-### 时间系统 (CampaignClockAPI)
+建议继承；`isSMod` / `isBuiltIn` / `hasSModEffect` / `addSModSection` 等默认实现在这里
 
-结构表里的 `getClock()` 指向整个生涯的时间基准。脚本要换算游戏时间、做跨日检测，必须先读懂这颗钟：`CampaignClockAPI`(`com.fs.starfarer.api.campaign.CampaignClockAPI`) 是生涯时钟的公开接口，由引擎内部时钟类实现。基线事实：
+`ShipVariantAPI`
 
-- **纪元起点是 206 年 1 月 1 日**：`new GregorianCalendar(206, 0, 1)`。
-  - `getCycle()` 返回日历**年** (开档即 206，因此 `getCycleString()` 是 `"c206"` 这种写法)；
-  - `getMonth()` 返回 1–12(1 = January)；
-  - `getDay()` 返回 1–31；`getHour()` 返回 0–23。
-- **换算基线：10 真实秒 = 1 游戏日**：`SECONDS_PER_GAME_DAY = 10.0F`。`convertToDays(真实秒)` = 秒 ÷ 10；`convertToSeconds(游戏天)` = 天 × 10；`convertToMonths(真实秒)` = 秒 ÷ 10 ÷ 30。
-- **日期字符串**：`getDateString()` = `"Mar 2, c206"` 形态；`getShortDate()` = `"206.3.2"` 形态；`getShortMonthString()` = 三字母月份。
-- **时间戳与间隔**：`getTimestamp()` 返回内部日历毫秒值；`getElapsedDaysSince(ts)` 返回从 `ts` 到现在的真实天数 (`(now - ts) / 86400000`)。
-  - **参数为 `0` 时返回 `Float.MAX_VALUE`**，计算 "未初始化" 的间隔时不要传 0。
-- **`createClock(long timestamp)`**：按时间戳新建一个时钟实例 (对齐 "从某时刻起算" 的局部计时)。
-- **时钟只在未暂停时前进**：引擎的每帧推进里 `clock.advance(amount)` 只在 `!isPaused()` 分支执行；暂停时 `getTimestamp()` / 日期全部冻结。
-  - `readResolve` 在读档时按保存的时间戳重建内部日历，读档后时钟从存档时刻继续。
-- **新档时间推进**：新建生涯时引擎进入 `isInFastAdvance()` 窗口 (新档流程置位、复位)。
-  - 以 `2.5` 秒步长连推约 600 真实秒 + 收尾约 2 秒，合计约 **60.2 游戏日 (约两个月)**；随后才调用 `onNewGameAfterTimePass` 与 `onGameLoad(true)`。
-  - 因此新档在 `onGameLoad` 里读到的时钟大约在 **206.3.2**。
+S-mod 状态存储
 
-::: caution 把秒当游戏天
-`advance(float amount)` 的 `amount` 是上一帧经过的真实秒数 ("Use SectorAPI.getClock() to convert to campaign days.")。
+`getSMods()`、`getSModdedBuiltIns()`、`addPermaMod(modId, isSMod)`
 
-凡需要游戏时间，**必须**经 `clock.convertToDays(amount)` 换算 —— 直接把秒当游戏天，时间流速会偏差 10 倍 (10 真实秒被当成 10 游戏天，正确应为 1 游戏天)。
-:::
+`HullModSpecAPI`
 
-::: warning 别用 0 占位
-`getElapsedDaysSince(ts)` 的参数为 `0` 时返回 `Float.MAX_VALUE`。计算 "未初始化" 的间隔时先检查时间戳是否已写入，不要传 0。
-:::
+船插静态配置
 
-时钟高频方法速查：
+`getSModEffectFormat()`、`getSModDescription(hullSize)`
 
-| 方法 | 返回 | 语义 |
-|---|---|---|
-| `getCycle()` | `int` | 年 (纪元 206 起；存档界面与 `getCycleString()` 写作 `c206`)|
-| `getMonth()` | `int` | 月，1–12(1 = January)|
-| `getDay()` | `int` | 日，1–31 |
-| `getHour()` | `int` | 时，0–23 |
-| `getDateString()` | `String` | `"Mar 2, c206"` 形态 |
-| `getShortDate()` | `String` | `"206.3.2"` 形态 (年.月.日)|
-| `getTimestamp()` | `long` | 内部日历毫秒；暂停时冻结 |
-| `getElapsedDaysSince(ts)` | `float` | 从 `ts` 到现在的真实天数；`ts == 0` 返回 `Float.MAX_VALUE` |
-| `convertToDays(真实秒)` | `float` | 秒 ÷ 10(`amount` 参数的正确换算)|
-| `convertToSeconds(游戏天)` | `float` | 天 × 10 |
-| `convertToMonths(真实秒)` | `float` | 秒 ÷ 10 ÷ 30 |
-| `createClock(ts)` | `CampaignClockAPI` | 按时间戳建独立时钟 (局部计时)|
+`MutableShipStatsAPI`
 
-### 脚本生命周期 (EveryFrameScript)
+stats 入口
 
-时钟给出当前时刻，脚本决定每帧做什么。`EveryFrameScript`(`com.fs.starfarer.api.EveryFrameScript`) 只有三个方法，这是生涯按帧脚本的完整约定：
+`getArmorBonus()`、`getEffectiveArmorBonus()`—— 本节示例的修饰目标
 
-| 方法 | 约定 |
-|---|---|
-| `boolean isDone()` | 返回 `true` 表示脚本结束，引擎负责清理 (从脚本列表移除)。常驻脚本返回 `false` |
-| `boolean runWhilePaused()` | 返回 `true` 时，引擎暂停期间 `advance()` 仍会被调用 |
-| `void advance(float amount)` | 每帧回调；**`amount` 是上一帧经过的真实秒数** ("Use SectorAPI.getClock() to convert to campaign days.")|
+`ArmorGridAPI`
 
-推进循环的精确语义 (引擎级脚本与 transient 脚本两条循环完全一致)：
+装甲网格读取
 
-1. 引擎遍历的是**列表快照** (`new ArrayList<>(this.scripts)`)，因此脚本在 `advance()` 里安全地 `addScript` / `removeScript` 不会抛 `ConcurrentModificationException`。
-   - 代价是**在 advance 里新加的脚本要到下一帧才开始推进**。
-2. 对每个脚本：先查 `isDone()`—— 为真直接移除 (不调 `advance`)；否则查 `runWhilePaused() || !isPaused()`—— 为真才调 `advance(amount)`；`advance` 返回后再查一次 `isDone()`，为真则移除。
-3. 移除的三个入口：`isDone()` 自动清理 (引擎下一帧生效)；`removeScript(script)` 按**对象同一性**移除；`removeScriptsOfClass(Class)` 按**精确类** (`getClass() == clazz`，子类不算) 批量移除。
-4. `hasScript(Class)` 用 `isInstance` 判断 (**子类实例也算命中**)，与 `removeScriptsOfClass` 的精确类语义不同 —— 查重用 `hasScript`，批量删用 `removeScriptsOfClass`，别混用。
-5. **`addScript` 不去重**：直接 `scripts.add(...)`。同一实例或等价实例重复注册会各自推进，这是 "日志成双、行为叠加" 的根源。
-6. 引擎自身也会注册自己的内置脚本 —— 引擎级脚本不是 MOD 专属机制。
+`getGrid()` / `getMaxArmorInCell()` / `getArmorRating()`；战斗命中结算与监听器示例使用它
 
-序列化边界 (脚本字段随存档)：
+`com.fs.starfarer.api.combat.listeners.*`
 
-- `scripts` 非 `transient` → **随存档保存**：常驻脚本 (管理器、星系防御舰队脚本 (SDF, Starsystem Defense Fleet) 等) 跨读档继续运行，其非 `transient` 字段原样恢复。
-- `transientScripts` 是 `transient` → **不随存档保存**：读档后需要重新注册。
-- 因此脚本字段里**不要**放不能随存档序列化的对象 (UI 外壳引用、声音播放器等引擎单例或瞬态句柄)；跨会话的小数据放 `getPersistentData()`，脚本字段只保留可序列化状态。`SectorAPI.getPersistentData()` 保存运行时对象时同样要考虑 XStream 存档边界。
+监听器接口
 
-::: warning 脚本字段随存档序列化
-`scripts` 里的脚本字段会随存档保存 (非 `transient` 字段原样恢复)。不要存放不能序列化的对象 (UI 外壳引用、声音播放器句柄等引擎单例或瞬态句柄)；跨会话的小数据放 `getPersistentData()`，纯临时推进逻辑用 `addTransientScript`。
-:::
+`HullDamageAboutToBeTakenListener`、`AdvanceableListener` 本节示例实现；必须遵守的放置规则见 [C7-S5]
 
-### 暂停与加速语义
+`Misc`
 
-推进循环的步频不是恒定的。正常游玩时，生涯引擎每帧推进一次；时间加速时同帧连调多次：
+S-mod 辅助
 
-- **暂停 (空格键)**：按空格键切换 `engine.setPaused(...)`。
-  - 暂停时引擎照常 `advance`(时钟、经济、脚本循环都在跑)—— 但时钟只在非暂停分支推进，脚本只在 `runWhilePaused() || !isPaused()` 时推进。
-  - **结论：默认 (`runWhilePaused() == false`) 脚本在暂停时完全冻结，`amount` 也拿不到。**
-- **加速 (按住 Shift)**：按住 Shift 键加速 (`campaignSpeedUpTimeIsToggle` 默认 `false`，即按住生效不是切换)。
-  - 加速时按 `campaignSpeedupMult`(`settings.json`，取值为 2) 连调 `engine.advance`，脚本与时钟同帧推进两次 —— 游戏日流速翻倍。
-- **新档时间推进窗口**：`isInFastAdvance()` 为 `true` 时引擎以 2.5 秒步长连推 (见 "时间系统" 节)，`onNewGame` 阶段注册的脚本也会被这次推进逐帧调用。
-- **战斗期间生涯冻结**：进入战斗后生涯引擎不再推进 —— 脚本、时钟、经济全部冻结，回生涯后恢复。
+`CAN_SMOD_BUILT_IN`、`getMaxPermanentMods`、`getBuildInBonusXP`
 
-### 注册入口与持久数据标记
+`Stats`
 
-循环怎么跑已经清楚，剩下的是注册时机：脚本注册**必须**发生在生涯引擎建立之后，只有两条合法入口：
+动态 stat id
 
-1. **`onNewGame()`**：新档生成期 (此时生涯引擎已建立，早于生命周期回调 `onNewGame` 完成)。注意新档的 "时间推进" 发生在 `onNewGame` 之后，此入口注册的脚本会经历那约 60 游戏日的推进。
-2. **`onGameLoad(boolean newGame)`**：新档与读档共用；新档调用时已在时间推进之后 (由游戏管理器驱动)。本节示例用这个入口。
+`MAX_PERMANENT_HULLMODS_MOD = "max_permanent_hullmods_mod"`(`com.fs.starfarer.api.impl.campaign.ids.Stats`)
 
-::: caution 注册的必须与禁止
-脚本注册**必须**发生在生涯引擎建立之后 ——** 禁止**在 `onApplicationLoad` 里注册 (此刻 `Global.getSector()` 为 null，解引用即 NPE，启动中止)。
-
-一次性注册**必须**用随存档保存的 persistent data 标记，且每个注册项用**各自的键**，不要并入插件既有的 `CLASS_MARK` 标记 —— 否则在插件标记已置位的旧档里，本脚本永远不会注册。
-:::
-
-无论哪个入口，一次性注册**必须**用随存档保存的 persistent data 标记 (前置生命周期例的 `CLASS_MARK` 模式)。
-
-本节示例给每个注册项**各自的键** (`REGISTER_MARK`)，不要并入插件既有的 `GearInModPlugin.CLASS_MARK` 标记 —— 否则在插件标记已置位的旧档里，本脚本永远不会注册。
-
-## 完整最小例
-
-入口与一次性注册标记都确认了，该让脚本真正跑起来。在既有 MOD 布局与前置的 `GearInModPlugin` 生命周期例之上，本节只新增一个脚本类 (不新增任何资源、不新增任何注册项)：
+三条关键链路 (sModDesc、tooltip、生命周期)，全部带调用点：
 
 ```text
-Starsector\mods\GearIndustry\
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data\
-├── src\
-│   └── data\scripts\gearin\campaign\
-│       └── GearInSectorClockScript   # 本节新增（归本节所有）
-└── jars\
+sModDesc 链路：
+hull_mods.csv 的 sModDesc 列
+  → loadHullMods（CSV spec 加载期）：optString("sModDesc", "")
+  → HullModSpecAPI.setSModEffectFormat→ getSModEffectFormat()
+  → BaseHullMod.hasSModEffect()（非空且不以 # 开头）
+  → getSModDescription(hullSize)：String.format 填充 getSModDescriptionParam(0..9)
+    → addSModEffectSection
+
+tooltip 链路（标准 tooltip 的 createHullModTooltip）：
+getTooltipWidth() → 标题 / 制造商
+  → getDescriptionParam(0..9, hullSize, ship) 填充 desc 的 %s
+  → shouldAddDescriptionToTooltip 决定是否显示 desc 段
+  → addPostDescriptionSection
+  → hasSModEffectSection → addSModSection
+  → 状态行：d-mod / 内置 / 增强内置 / S-mod / 不可安装原因 / canBeAddedOrRemovedNow / addRequiredItemSection
+
+生命周期调用点：
+applyEffectsBeforeShipCreation：FleetMemberAPI.updateStats（生涯重建重放）+
+ 战斗舰船对象构造（战斗部署）—— 前置单元已详述
+applyEffectsAfterShipCreation：舰船对象创建（createStats=true）；
+  装配界面预览舰同路径（舰船显示面板）
+applyEffectsAfterShipAddedToCombatEngine：ShipAPI.applyEffectsAfterShipAddedToCombatEngine
+  （防重复标记守卫）← 战斗引擎的 addObjectToEngine
+advanceInCombat：战斗舰船对象的每帧推进遍历 variant.getAllMods()
+advanceInCampaign：CampaignFleetAPI.advance 每成员；FleetDataAPI 同步时 amount=0
 ```
 
-### GearInSectorClockScript
+## 生命周期：HullModEffect 全部回调
+
+七条回调覆盖船插从加载到每帧的全部存在时刻；先把每个回调的调用时机与调用点对清楚，后面的效果、tooltip 与监听器都挂在这些时刻上。
+
+为什么效果类必须是会话级单例
+
+`HullModEffect` 接口 javadoc 开篇即必须遵守的规则：**效果类每个应用会话只实例化一次** ("the effect class is instantiated once per application session. Storing campaign data in data members of an implementing class is a bad idea (will likely cause memory leaks), use SectorAPI.getPersistentData() instead.")。
+
+违反的可观察结果：两个船插实例或两艘船共享字段，计时器串船、计数互相覆盖；把跨存档数据放字段还会造成泄漏。因此：**跨船状态必须放在每船一个的监听器实例 (或 `getDynamic()` 标记位，见前置单元)，不得放在效果类字段**。
+
+回调
+
+调用时机
+
+调用点
+
+要点
+
+`init(HullModSpecAPI spec)`
+
+spec 就绪后、首次使用效果时
+
+`HullModSpecAPI.getEffect()` 用到时才实例化
+
+`BaseHullMod` 用它保存 spec；`isSMod` / `isBuiltIn` / `hasSModEffect` 都依赖 spec 非 null
+
+`applyEffectsBeforeShipCreation(HullSize, MutableShipStatsAPI, String id)`
+
+生涯 stats 每次重建重放；战斗舰船构造
+
+`FleetMemberAPI.updateStats`；`ShipAPI` 对象构造
+
+改 stats 的唯一正式入口 (前置讲解必须遵守的规则)；`id` 参数就是本船插的 spec id，直接用作修饰 ID；S-mod 分支也在这里
+
+`applyEffectsAfterShipCreation(ShipAPI, String id)`
+
+战斗侧舰船实体创建后；装配界面预览舰也会创建
+
+舰船对象创建流程 (`createStats=true` 时)；装配界面预览面板同样按 (variant, true, ...) 创建舰船对象
+
+**不承担 stats 修改** (API javadoc 原文："Effects applied here should NOT affect ship stats as this does not get called from the campaign.")；监听器注册的正式位置
+
+`applyEffectsAfterShipAddedToCombatEngine(ShipAPI, String id)`
+
+舰船第一次加入战斗引擎
+
+战斗舰船对象上的防重复标记 ← `CombatEngineAPI.addObjectToEngine`
+
+**每艘船只回调一次** (API javadoc 原文："Only called once. Not called again if the ship is removed and then added back to the engine.")；做一次性战斗初始化 (本节示例用它打日志证明)
+
+`advanceInCombat(ShipAPI, float amount)`
+
+战斗中每帧
+
+战斗舰船对象的每帧推进遍历 `getVariant().getAllMods()`
+
+**暂停时不调用** (API javadoc 原文："Not called while paused.")；无状态写入合法 (前置讲解的每帧幂等做法)，跨船状态不行
+
+`advanceInCampaign(FleetMemberAPI, float amount)`
+
+生涯每帧；舰队数据重同步时 `amount=0`
+
+`CampaignFleetAPI.advance` 每成员；`FleetDataAPI` 同步时
+
+**暂停时不调用**；API javadoc 原文："Not called while paused. But, called when the fleet data needs to be re-synced, with amount=0 (such as if, say, a fleet member is moved around in the fleet screen.)"
+
+`applyEffectsToFighterSpawnedByShip(ShipAPI fighter, ShipAPI ship, String id)`
+
+航母舰船生成战机后
+
+战机出生链
+
+效果向母舰生成的战机传播；本节不展开，示例不实现
+
+不要依赖 "只在战斗里调用一次" 来初始化
+
+用户在装配界面改装配时，显示实体经舰船对象创建流程重建，`applyEffectsAfterShipCreation` 会在预览舰上运行 —— 注册监听器、打日志都会发生一次。真正的 "每船一次" 在 `applyEffectsAfterShipAddedToCombatEngine`。
+
+## 让提示解释当前装配结果
+
+Tooltip 的任务是解释玩家此刻装上的船插，而不是展示方法清单。先用 `isApplicableToShip` 与 `getUnapplicableReason` 处理安装条件，再在描述回调中读取舰船、S-mod 状态和实际数值。提示中的数字必须与效果回调使用同一组常量，否则界面会很有信心地解释另一个效果。
+
+## S-mod(稳定性改造)
+
+tooltip 让用户读懂效果，S-mod 决定效果还能怎么变强：用故事点把船插内置进船体后，语义、上限与回报都需要讲清。先看状态存在哪里，再看效果如何升级。
+
+### 概念与状态存储
+
+S-mod 是用故事点把船插 "内置" 进船体的改造：不消耗装配点、不可移除，并激活 `sModDesc` 描述的效果。它由装配界面操作产生 (船插选择对话框的确认逻辑对每个新内置船插调用 `variant.addPermaMod(id, true)`)，状态存在装配上：
+
+* `ShipVariantAPI.getSMods()`：普通 S-mod 的 id 集合 (`LinkedHashSet`)；
+* `ShipVariantAPI.getSModdedBuiltIns()`：被 "增强" 的原生内置船插 id 集合 (`Misc.CAN_SMOD_BUILT_IN = true`，内置船插可以增强)；
+* `BaseHullMod.isSMod(stats)` / `isSMod(ship)` 同时查这两个集合 —— 增强内置也算 S-mod。
+
+效果代码的 S-mod 分支写在 `applyEffectsBeforeShipCreation` 里 (stats 侧唯一入口)，原版做法见原版船插 `ArmoredWeapons`(`Starsector/starsector-core/data/hullmods/`)：
 
 ```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignClockAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
-
-/**
- * 完整最小例：SectorAPI 注册的生涯每帧脚本（EveryFrameScript）。
- *
- * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），注册前用 hasScript() 查重，
- * 并用 sector persistent data 键 REGISTER_MARK 做一次性门控（C6-S2 的 CLASS_MARK 模式）。
- *
- * 行为：每个游戏日跨日时打印一行日志（当前日期、本帧折合的游戏天数、挂载以来经过的游戏天数）；
- * 默认 runWhilePaused() 返回 false：引擎暂停时脚本不推进、生涯时钟也不前进；
- * daysToRun >= 0 时挂载满该天数后 isDone() 返回 true，引擎在下一帧自动从 scripts 列表移除本脚本。
- */
-public class GearInSectorClockScript implements EveryFrameScript {
-
-    /** 存档持久化标记：本脚本是否已在该存档注册过（随存档保存）。 */
-    public static final String REGISTER_MARK = "GearIn_SectorClockScript";
-
-    private static final Logger LOG = Global.getLogger(GearInSectorClockScript.class);
-
-    /** 跨日判定键（cycle * 10000 + month * 100 + day）；-1 表示尚未初始化。 */
-    private int lastDateKey = -1;
-
-    /** 脚本第一次 advance() 时的时钟时间戳；随存档序列化，读档后继续累计。 */
-    private long startTimestamp = 0L;
-
-    /** 演示参数：最多运行多少游戏天后自停；< 0 表示常驻不停止。 */
-    private int daysToRun = -1;
-
-    /** 演示参数：是否在引擎暂停时仍推进；默认 false（暂停即停表）。 */
-    private boolean runWhilePaused = false;
-
-    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
-    private boolean done = false;
-
-    public GearInSectorClockScript() {
-        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
-    }
-
-    /** 修改运行天数上限；改回 -1 恢复常驻。 */
-    public void setDaysToRun(int daysToRun) {
-        this.daysToRun = daysToRun;
-    }
-
-    /** 修改暂停语义；改为 true 后暂停期间 advance() 仍会被调用。 */
-    public void setRunWhilePaused(boolean runWhilePaused) {
-        this.runWhilePaused = runWhilePaused;
-    }
-
-    @Override
-    public boolean isDone() {
-        return done;
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return runWhilePaused;
-    }
-
-    @Override
-    public void advance(float amount) {
-        SectorAPI sector = Global.getSector();
-        CampaignClockAPI clock = sector.getClock();
-
-        if (startTimestamp == 0L) {
-            startTimestamp = clock.getTimestamp();
-            LOG.info("GearIn clock script mounted at " + clock.getDateString());
-        }
-
-        int dateKey = clock.getCycle() * 10000 + clock.getMonth() * 100 + clock.getDay();
-        if (dateKey != lastDateKey) {
-            lastDateKey = dateKey;
-            LOG.info(String.format(
-                    "GearIn clock day change: %s (short=%s) | this frame=%.4f game days | since mount=%.1f game days",
-                    clock.getDateString(),
-                    clock.getShortDate(),
-                    clock.convertToDays(amount),
-                    clock.getElapsedDaysSince(startTimestamp)));
-        }
-
-        if (daysToRun >= 0 && clock.getElapsedDaysSince(startTimestamp) >= daysToRun) {
-            LOG.info("GearIn clock script done: " + daysToRun + " game days elapsed, isDone()=true");
-            done = true;
-        }
-    }
+boolean sMod = isSMod(stats);
+if (sMod) {
+    stats.getBallisticRoFMult().modifyMult(id, 1f + SMOD_BONUS * 0.01f);
+    stats.getEnergyRoFMult().modifyMult(id, 1f + SMOD_BONUS * 0.01f);
 }
 ```
 
-对应关系：
+同一 `id` 同类型只保留一条条目，因此基础值与 S-mod 值用同一个 id 覆盖 (同 ID 覆盖语义，见前置讲解)，不需要分支 `unmodify`。
 
-- `implements EveryFrameScript`：三个方法全来自接口 (`isDone` / `runWhilePaused` / `advance`)；`isDone()` 返回字段 `done`，演示 "引擎自动清理"。
-- `REGISTER_MARK`：persistent data 标记键 (`"GearIn_SectorClockScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
-- `advance(float amount)`：`amount` 是上一帧真实秒数；`clock.convertToDays(amount)` 才是本帧折合的游戏天数 (换算规则见 "时间系统" 节)。
-- `getCycle() * 10000 + getMonth() * 100 + getDay()`：把日期折叠成整数键做跨日检测 (206.3.2 → 2060302)。
-- `getElapsedDaysSince(startTimestamp)`：挂载以来经过的游戏天数；暂停时不增长。
-- `daysToRun` / `setRunWhilePaused`：两个演示参数，对应 "修改参数看行为变化" 的演示步骤。
+### sModDesc 与 hasSModEffect
 
-调用点 (工程片段 —— 方法所在类由前置生命周期例持有，本节只演示调用，不改动那些文件)：
+`sModDesc` 不得以 `#` 开头写正常文本
+
+以 `#` 开头是 "关闭 S-mod 效果" 的开关 (原版注释用法)，`BaseHullMod.hasSModEffect()` 据此判定无 S-mod 效果。违反后果：装配界面不再显示 S-mod 效果段。
+
+* `hull_mods.csv` 的 `sModDesc` 列 (20 列表头，位于 `short` 与 `sprite` 之间)→ `HullModSpecAPI` 的 `sModEffectFormat`。
+* `BaseHullMod.hasSModEffect()`：`sModEffectFormat` 非空、非全空白、**不以 `#` 开头** → 有 S-mod 效果。
+* `isSModEffectAPenalty()` 返回 true 时 S-mod 段用 "penalty" 样式 (`BaseHullMod.addSModSection`)—— 高成本船插的 S-mod 可能是惩罚。
+* `hasSModEffectSection`：结合内置 / 增强内置 / 惩罚语义决定是否显示；内置且未增强时显示 "enhanced built-in" 说明文本：
+    *   ("This effect only applies if this built-in hullmod is enhanced using a %s. Doing this does not count against the maximum number of s-mods a ship can have.")。
+* `sModDesc` 为空时 tooltip 显示 "Aside from removing its ordnance point cost, this hullmod gains no extra effect from being built into the hull using a story point."—— 没有效果不等于不能内置。
+
+### 上限、故事点与奖励经验
+
+* **默认上限 2 个**：`settings.json` 的 `maxPermanentHullmods: 2` → `Misc.MAX_PERMA_MODS`：
+    *   `Misc.getMaxPermanentMods(ship)` = `round(stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD).computeEffective(2))`；
+    *   船插 / 技能可以用 `stats.getDynamic().getMod("max_permanent_hullmods_mod").modifyFlat(...)` 提升上限 —— S-mod 上限不是写死的数字，是动态 stat。
+* 装配界面的计数：普通 S-mod 计入上限，**增强内置不占上限** (装配界面的计数提示原文 "Hull-standard built-in mods do not count against the limit."；计数代码把增强内置单独以 `*` 显示)。
+* 故事点消耗：每个普通 S-mod / 每次增强内置各消耗 1 点 ("Building mods into a hull uses a story point for each hullmod.")。
+* 奖励经验：增强内置固定 100%(原文 "enhancing it always grants %s bonus experience." 参数 "100%")。普通内置的奖励经验按舰船大小分档：
+    *   `settings.json` 的 `bonusXP` 段 `permModFrigate: 0.75` / `permModDestroyer: 0.5` / `permModCruiser: 0.25` / `permModCapital: 0`，由 `Misc.getBuildInBonusXP(mod, size)` 返回。
+    *   **"成本低于 X OP 才有奖励" 的阈值逻辑已整段注释** (`Misc` 中 `permModNoBonusXPOPThreshold` / `permModMaxBonusXP` 相关逻辑已被注释)—— 奖励与 OP 成本无关；装配界面的 "成本低于 %s OP" 说明文本是遗留文案，与行为不符。
+
+## 监听器接入 (船插视角)
+
+tooltip 与 S-mod 属于装配界面，战斗中的持续行为要靠监听器。前置单元已给出公开监听器系统的三块注册表面 (引擎 `getListenerManager()` / 舰船 `ship.addListener(...)` / 统计 `stats.addListener(...)`) 与每类监听器的必须遵守的放置规则，本节把它们挂进船插生命周期，补充船插侧的接入做法：
+
+1. **注册时机必须用 `applyEffectsAfterShipCreation`**：此时 `ship` 实体完整可用，且每个实体恰好回调一次 (含装配界面预览舰)：
+    *   效果类是单例，不能在里面直接注册 "给自己用" 的舰船级监听器 —— 监听器必须挂在传入的 `ship` 上。
+    *   原版做法：`HighScatterAmp` 在 `applyEffectsAfterShipCreation` 里 `ship.addListener(new HighScatterAmpDamageDealtMod(ship));`。
+2. **每船一个监听器实例是唯一的合法跨船状态容器**：监听器在 `applyEffectsAfterShipCreation` 里 `new` 出来，持有自己的计时器 / 计数器，随舰船实体一起销毁 —— 这是 "效果类单例" 约束的正面对策 (本节示例的 `ArmorTrainingListener` 就是这么做的)。
+3. 必须遵守的放置规则摘要 (完整表见前置讲解)：
+    *   `HullDamageAboutToBeTakenListener` 挂承受伤害的舰船 (或引擎)；`DamageTakenModifier` 挂承受舰；`DamageDealtModifier` 挂造成舰。
+    *   `AdvanceableListener` **只能挂舰船** (javadoc 原文 "Only supported when added to a ShipAPI, not to CombatEngineAPI.")；OP 成本类修饰只能挂 `MutableShipStatsAPI`。
+    *   违反的共性可观察结果：**静默不生效、无任何报错**。
+
+防重复注册
+
+同一实体重复创建 (如多次创建舰船对象) 会让同一类监听器叠加，`AdvanceableListener` 叠加后每帧被派发多次 (tick 日志翻倍是典型症状)。**建议**在注册前用 `ship.getListenerManager().hasListenerOfClass(...)` 防重复判断 (成熟实例的常见做法)。
+
+## 实现船插扩展
+
+本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段；把它放入指定类或方法后再继续，日志或界面出现对应信号时才进入下一段。
+
+### 写入基础与 S-mod 数值
 
 ```java
-    // GearInModPlugin（前置生命周期例持有）的 onGameLoad(boolean newGame) 内新增本节注册块。
-    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInSectorClockScript.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInSectorClockScript.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInSectorClockScript());
-    }
-    // 可选冗余查重（建议：hasScript 与 persistent data 门互为冗余）：
-    if (!Global.getSector().hasScript(GearInSectorClockScript.class)) {
-        Global.getSector().addScript(new GearInSectorClockScript());
-    }
+// 插入位置：GearInArmorTrainingHullMod.applyEffectsBeforeShipCreation()
+float bonus = ARMOR_BONUS_PERCENT + (isSMod(stats) ? SMOD_ADDITIONAL_PERCENT : 0f);
+stats.getArmorBonus().modifyPercent(id, bonus);
+stats.getEffectiveArmorBonus().modifyPercent(id, bonus);
 ```
 
-(上面两段只取一段即满足 "不重复注册"；两段同留时，第二段被自己的 `hasScript` 检查 (isInstance 命中) 拦截而不补注册；`addScript` 本身不去重，移除 hasScript 门后会叠加运行 —— 但演示时建议只保留标记段，避免混淆。)
+新增行为：普通安装与 S-mod 共用稳定 ID，分别写入面板护甲和命中结算护甲。完成信号：基础船体护甲 `500` 时普通安装显示 `550`，S-mod 显示 `625`。
 
-想演示 `daysToRun`，在注册前先设参数：
+### 为每艘船注册独立监听器
 
 ```java
-    GearInSectorClockScript script = new GearInSectorClockScript();
-    script.setDaysToRun(30); // 约 30 个游戏日（约 5 分钟游戏时间）后自停
-    Global.getSector().addScript(script);
+// 插入位置：GearInArmorTrainingHullMod.applyEffectsAfterShipCreation()
+ship.addListener(new ArmorTrainingListener(ship));
+LOG.info("GearIn armor training: listener attached to " + ship.getName());
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
+新增行为：计时器和抵消次数归属到单舰监听器，不进入会话级船插效果实例。完成信号：两艘装有船插的舰船分别输出自己的舰名和计数，互不串值。
+
+### 按当前装甲更新动态加成
+
+```java
+// 插入位置：GearInArmorTrainingHullMod.advanceInCombat()
+if (!isSMod(ship) || !ship.isAlive() || ship.isHulk()) return;
+float frac = armorFraction(ship.getArmorGrid());
+ship.getMutableStats().getEffectiveArmorBonus()
+        .modifyPercent(DYNAMIC_ID, SMOD_ADDITIONAL_PERCENT * frac);
+```
+
+新增行为：S-mod 的额外有效护甲随装甲平均比例下降，并使用独立 ID 避免覆盖静态值。完成信号：满装甲时动态加成为 `15%`，装甲比例降至一半时变为约 `7.5%`。
+
+### 填充两段提示参数
+
+```java
+// 插入位置：getDescriptionParam() 与 getSModDescriptionParam()
+if (index == 0) return "" + (int) ARMOR_BONUS_PERCENT + "%";
+if (index == 1) return "" + Math.round(NEGATION_ARMOR_FRACTION * 100f) + "%";
+
+if (index == 0) return "" + (int) (ARMOR_BONUS_PERCENT + SMOD_ADDITIONAL_PERCENT) + "%";
+if (index == 1) return "" + (int) SMOD_ADDITIONAL_PERCENT + "%";
+```
+
+新增行为：`desc` 和 `sModDesc` 的两个占位符分别从同一组效果常量生成。完成信号：提示依次显示 `10%`、`50%`，S-mod 段依次显示 `25%`、`15%`。
+
+### 在高装甲状态抵消结构伤害
+
+```java
+// 插入位置：ArmorTrainingListener.notifyAboutToTakeHullDamage()
+float frac = armorFraction(ship.getArmorGrid());
+if (frac <= NEGATION_ARMOR_FRACTION) return false;
+negations++;
+LOG.info("GearIn armor training: hull damage negated amount=" + damageAmount
+        + " armorFraction=" + String.format("%.2f", frac)
+        + " negations=" + negations);
+return true;
+```
+
+新增行为：监听器只在平均装甲高于 `50%` 时抵消本次结构伤害。完成信号：高于阈值时日志计数增加且结构值不降；低于阈值后回调返回 `false`，结构正常受损。
+
+## 组装船插实现
+
+四块机制已经分别讲清，现在把它们收进一个能编译、能验证的完整船插。
+
+示例所有权：`GearInArmorTrainingHullMod`。概念：船员装甲训练 —— 提高有效护甲 (`getArmorBonus` + `getEffectiveArmorBonus`)；装甲平均比例高于 50% 时由监听器抵消舰体结构伤害；S-mod 提高合计加成并在战斗中按装甲比例每帧动态加成。
+
+示例覆盖五条生命周期回调 (四条日志证明 + 两个 stats/行为点)、`desc` / `sModDesc` 双段 tooltip、S-mod 分支、两个监听器接口。
+
+### 注册船插数据
+
+在 MOD 的 `data/hullmods/hull_mods.csv` 写入 (文件在 MOD 中不存在就新建，只包含本 MOD 的行；表头 20 列)：
+
+```csv
+name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
+装甲训练,GearIn_armor_training,0,,,"defensive, merc, standard",Defenses,2500,TRUE,,,4,8,12,20,data.scripts.gearin.hullmods.GearInArmorTrainingHullMod,"提高舰船的有效护甲评级与命中结算护甲 %s。装甲平均比例高于 %s 时，抵消即将发生的舰体结构伤害。","提高有效护甲；高装甲时抵消结构伤害。",S-mod 将有效护甲加成提高至 %s，战斗中按装甲比例至多再获得 %s。,
+```
+
+要点 (字段的使用方速查表见前置讲解)：
+
+* `script` 列 = 注册入口：`data.scripts.gearin.hullmods.GearInArmorTrainingHullMod` 与下文类的包名 + 类名必须逐字一致。
+* `desc` 有 2 个 `%s`(对应 `getDescriptionParam(0)` = `10%`、`getDescriptionParam(1)` = `50%`)；`sModDesc` 有 2 个 `%s`(对应 `getSModDescriptionParam(0)` = `25%`、`getSModDescriptionParam(1)` = `15%`)。
+* `sprite` 留空 → 使用默认 `graphics/hullmods/generic_mod.png`(本单元无 PNG 资产)。
+* 四个 `cost_*` 列都填数字 (`4,8,12,20`)，`unlocked=TRUE` 保证装配界面可直接安装。
+
+### 编写船插效果类
+
+文件：MOD 源码目录 `src/data/scripts/gearin/hullmods/` 下的 `GearInArmorTrainingHullMod`：
+
+### 逐段说明
+
+* `extends BaseHullMod`：`HullModEffect` 全部方法的空实现基类 (前置讲解已介绍)；本类不持有任何跨船字段 (会话级单例约束)。
+* `applyEffectsBeforeShipCreation`：`isSMod(stats)` 读取装配上的 S-mod 状态 (普通 S-mod 与增强内置都算)；同 `id` 同类型只保留一条条目，S-mod 时把 10% 覆盖为 25%(同 ID 覆盖语义)：
+    *   `getArmorBonus()` 决定面板与网格创建时的护甲评级 (`armorValue = getArmorBonus().computeEffective(...)`)；`getEffectiveArmorBonus()` 决定每次命中结算的有效护甲 —— 两个 stat 都写，行为才完整。
+* `applyEffectsAfterShipCreation`：注册每船一个的 `ArmorTrainingListener` 实例并打日志。日志会在装配界面预览舰上先出现一次 (预览舰也走舰船对象创建流程)。
+* `applyEffectsAfterShipAddedToCombatEngine`：战斗开始时打一行一次性日志 ——"每船只回调一次" 的证明。
+* `advanceInCombat`：S-mod 时每帧把 "当前装甲平均比例" 写成 `DYNAMIC_ID` 修饰 (幂等覆盖)；命中结算逐击读取，因此下一击即生效：
+    *   `DYNAMIC_ID` 与 hullmod id 分开，**避免与 `applyEffectsBeforeShipCreation` 的条目在同一张表里互相覆盖** (见 "动态与静态修饰导致数值乱跳" 故障条目)。
+* `advanceInCampaign`：只在 `amount <= 0f`(舰队数据重同步) 时打一行 ——"该回调确实被调用" 且 "同步时 amount=0" 的证明，同时避免每帧刷屏。
+* `getDescriptionParam` / `getSModDescriptionParam`：按 index 输出参数字符串；`null` 的 index 不会被 tooltip 使用。
+    *   `ArmorTrainingListener`：同时实现 `HullDamageAboutToBeTakenListener`(返回 `true` 抵消结构伤害，`notifyAboutToTakeHullDamage` 语义来自 javadoc 原文) 与 `AdvanceableListener`(每帧推进、暂停不派发)。
+    *   `IntervalUtil(5f, 5f)` 与 `negations` 计数是单船状态，合法放在这里。
+
+### 注册与构建
+
+注册入口就是数据行的 `script` 列 —— 船插不需要任何额外代码注册 (对比前置单元插件的战斗内 `addPlugin` 注册方式)。
+
+使用方的完整流程：
+
+* `hull_mods.csv` 行 → `HullModSpecAPI` → `getEffect()` 单例；
+* `FleetMemberAPI.updateStats` / `ShipAPI` 对象构造 (stats)；
+* 舰船对象创建流程 (监听器)；
+* 战斗舰船对象的每帧推进；
+* `createHullModTooltip`(tooltip 渲染流程)。
+
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用前置编译链路讲解)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInSectorClockScript.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/hullmods/GearInArmorTrainingHullMod.class`(可用 `jar tf` 核对)。
+
+### 关键故障实验：船插提示出现但数值没有改变
+
+只实现 tooltip 回调，没有把效果接入 `applyEffectsBeforeShipCreation`。
+
+**局部故障片段：**
+
+```java
+// 故障片段
+public void addPostDescriptionSection(TooltipMakerAPI tooltip, HullSize size, ShipAPI ship, float width, boolean isForModSpec) { tooltip.addPara("Armor training", 10f); }
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAPI stats, String id) {
+    stats.getArmorBonus().modifyPercent(id, 10f);
+}
+```
+
+复验：装配界面与战斗部署分别核对提示和护甲数值。
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 [C6-S1]、`GearInModPlugin` ([C6-S2]，含本节调用点片段) 与本节类 `GearInSectorClockScript`。累计工程的 `GearInSystemGenerator` 非必需。
+前置数据：MOD 布局与编译链路 [C6-S1]、本节 `hull_mods.csv` 行 (含 `sModDesc`)、示例类 `GearInArmorTrainingHullMod` 已编入 `jars/GearIndustry.jar`、测试战役 `GearIn_test`([C3-S1]，用户舰 `GearIn_artizan`)。
 
-1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；用 `jar tf jars\GearIndustry.jar` 核对产物。
-2. 新建生涯：启动游戏进入新档，持续观察 `starsector.log`，直到确认脚本挂载与跨日日志。
-3. 暂停：生涯中按空格暂停，等待 20 秒以上，再恢复。
-4. 加速：按住 Shift 约 10 秒，再松开。
-5. 读档：保存后读档，继续观察日志。
-6. 战斗：进入前置战役 `GearIn_test` 或任意遭遇战，观察战斗期间的日志；退出战斗回生涯后继续观察。
-7. 参数演示：把 `daysToRun` 设为 30 重新构建，观察自停行为。
+1. 构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`。
+2. 注册与 tooltip：启动到生涯，在装配界面找到 "装甲训练"，悬停核对 desc 与 "S-mod bonus" 段落；搜索 `starsector.log` 中的注册行与错误。
+3. 数值：给 `GearIn_artizan` 安装，记录装甲评级；再用 1 个故事点把它内置，记录内置后的评级与 tooltip 的 S-mod 段。
+4. 生命周期：进入 `GearIn_test` 一场战斗，观察 `starsector.log` 的部署与周期日志行；按空格暂停约 10 秒，再恢复。
+5. 抵消：让敌人集中攻击同一装甲点直到出现结构伤害判定，观察抵消日志与舰体结构值；继续攻击到平均装甲低于 50%，观察抵消是否停止。
+6. 生涯同步：在舰队界面移动一次成员，观察 `campaign sync` 行。
+7. 上限：对同一驱逐舰尝试故事点内置第 3 个普通船插，确认被拒绝。
 
 预期结果：
 
-- 游戏构建以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInSectorClockScript.class`。
-- 新建生涯：`starsector.log` 依次出现。
-
-  ```text
-  GearIn clock script mounted at Mar 2, c206 GearIn clock day change: Mar 2, c206 (short=206.3.2) | this frame=0.0017 game days | since mount=0.0 game days
-  ```
-
-  随后**每 10 真实秒** (未暂停、未加速) 出现一条新的跨日日志，日期逐日前进、`since mount` 逐日 +1.0。挂载日期约 206.3.2 —— 新档时间推进约 60.2 游戏日 (约两个月) 后才是玩家开始游玩的时间点；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
-- 暂停 (空格)：跨日日志停止 (脚本冻结、时钟冻结)；恢复后继续，`since mount` 不因暂停丢失进度。
-- 加速 (按住 Shift)：跨日频率约翻倍 (`campaignSpeedupMult = 2`，每帧推进两次)，约每 5 真实秒一条。
-- 读档：不出现 `mounted` 日志 (`startTimestamp` 随存档恢复)；不重复注册 (`REGISTER_MARK` 标记已置位、`hasScript` 命中)；跨日日志从存档时刻继续。
-- 战斗：进入战斗期间无任何跨日日志 (生涯引擎冻结)；回生涯后继续。
-- `daysToRun = 30`：挂载约 300 真实秒后出现。
-
-  ```text
-  GearIn clock script done: 30 game days elapsed, isDone()=true
-  ```
-
-  之后不再有跨日日志 —— 引擎在置位后的下一帧从 `scripts` 列表移除了脚本 (可验证 `Global.getSector().hasScript(GearInSectorClockScript.class)` 为 `false`)。
-- 退出到主菜单：脚本停止推进 (生涯引擎不再推进)；回到主菜单后再进档 (读档) 按第 5 条继续。
-
-清理：把 `daysToRun` 恢复为 `-1`，使脚本保持常驻。
+* 构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/hullmods/GearInArmorTrainingHullMod.class`。
+* 注册与 tooltip：启动时 `starsector.log` 出现 `Loading hullmod [装甲训练] (source: [.../hull_mods.csv])`(与前置数据行讲解同款)，无 `ERROR`；`desc` 显示 `提高舰船的有效护甲评级与命中结算护甲 10%。装甲平均比例高于 50% 时，抵消即将发生的舰体结构伤害。`(`10%` 与 `50%` 高亮)，"S-mod bonus" 段落 (黄色标题) 显示 `S-mod 将有效护甲加成提高至 25%，战斗中按装甲比例至多再获得 15%。`。
+* 数值：装甲评级 500(前置单元 ship\_data.csv 中的定义)→ 装配界面 / 生涯面板显示 550(+10%)；故事点内置 (S-mod) 后显示 625(+25%)。
+* 生命周期日志 (用户舰 `GearIn_artizan`)：`GearIn armor training: listener attached to 工匠`(部署时；若用户舰是自动生成的预览实体，装配界面阶段可能已出现过一次同款行)；`GearIn armor training combat-ready: 工匠 (once per engine add)` 只出现一次，即使舰船被打掉重新部署也不会再次出现；每 5 秒一条 `GearIn armor training tick: 工匠 rating=550.0 armorFraction=1.00 negations=0`；按空格暂停期间没有 tick(`advanceInCombat` / `AdvanceableListener` 都暂停不派发)。
+* 抵消：出现结构伤害判定时日志有 `GearIn armor training: hull damage negated amount=... armorFraction=0.7x negations=N`，舰体结构值不下降；平均比例低于 50% 后抵消停止、结构正常掉血。
+* S-mod 动态加成：装甲平均比例随战斗下降时，命中结算的有效护甲逐击降低 (动态修饰 `DYNAMIC_ID` 每帧重写)；未装 / 已装 S-mod 在同一受击点的掉甲速度可对比。
+* 生涯同步：日志出现 `GearIn armor training campaign sync: 工匠 variant=...`(`advanceInCampaign` 以 `amount=0` 调用)。
+* 上限：界面显示 `2 / 2`(`maxPermanentHullmods: 2`)，第 3 个普通船插无法内置。
 
 ## 故障分析
 
-1. **脚本完全没有日志**：忘了调用 `addScript`，或把注册写进 `onApplicationLoad`(此刻 `Global.getSector()` 为 null，解引用即 NPE)。前者无任何 `GearIn clock` 日志且无报错；后者启动中止、日志 NPE 堆栈指向 `onApplicationLoad`。修正：注册放 `onGameLoad` / `onNewGame` 的一次性判断块内 (`Global` 阶段语义中的 null 规则，见前置知识)。
-2. **每次读档后跨日日志成双、行为叠加**：`onGameLoad` 里直接 `addScript`，没有 persistent data 标记 (`addScript` 不去重)。读档次数越多，同一条跨日日志出现越多次 (两个实例各推进各打印)。修正：`REGISTER_MARK` 标记 + `hasScript` 查重 (本节调用点片段)。
-3. **`isDone()` 恒返回 true，脚本首帧即被移除**：把 "完成" 写反 (如 `return done` 但 `done` 初始为 true，或 `return true` 占位)。引擎第一帧就把脚本移除 (先查 `isDone` 再调 `advance`)，`advance` 一次都不执行、连 `mounted` 日志都没有。修正：`done` 初始 `false`，仅在完成条件满足时置 `true`。
-4. **`runWhilePaused()` 语义误用**：误以为 "返回 true 就能让时钟在暂停时前进"。`runWhilePaused = true` 时暂停期间 `advance()` 仍被调用 (`amount` 仍是真实秒数)，但 `getClock()` 的日期与时间戳**不变** —— 时钟只在未暂停分支推进。以 `amount` 自累计的逻辑在暂停时继续走、以时钟日期/时间戳为准的逻辑冻结，两者会分道扬镳。修正：暂停敏感的进度用时钟时间戳差值 (暂停时自动冻结)；必须暂停期间推进的 (如 UI 覆盖动画) 才用 `runWhilePaused = true`，且不依赖时钟。
-5. **把 `amount` 直接当游戏天数，时间流速快 10 倍**：忽略接口提示 ("Use SectorAPI.getClock() to convert to campaign days")。10 真实秒被当成 10 游戏天，正确应是 1 游戏天。修正：一律 `clock.convertToDays(amount)`。
-6. **暂停时等待时钟推进的倒计时永不触发**：脚本用 `clock.getElapsedDaysSince(ts) >= N` 做倒计时，又没改 `runWhilePaused`。暂停期间 `since mount` 冻结、`done` 永不置位，恢复后继续。修正：理解这是设计行为 (暂停 = 停表)；需要真实时间倒计时就自己累计 `amount`。
-7. **战斗期间脚本 "消失"**：在战斗里等生涯日志。战斗期间无任何跨日日志、时钟冻结；回生涯后日志继续。修正：无需修复 —— 进入战斗后生涯引擎不再推进，战斗域是另一套推进循环；生涯脚本天然不跨战斗推进。
-8. **旧档永远不注册脚本**：把注册判断挂在插件既有的 `GearInModPlugin.CLASS_MARK` 标记上 (该键在新档首次进入时就已置位)。旧档读档后无 `mounted` 日志，脚本缺失且无报错。修正：每个注册项用各自的 persistent data 键 (本节 `REGISTER_MARK`)，旧档缺键 = 视为首次注册，正好覆盖 "中途加脚本" 的场景。
-9. **脚本字段放了引擎单例/UI 引用，读档后行为错乱或存档异常**：把 `getCampaignUI()`、声音播放器等引用存进脚本字段 (脚本随存档序列化)。存档/读档异常，或读档后字段指向失效对象导致行为错乱。修正：脚本字段只放可序列化状态；跨会话数据放 `getPersistentData()`；纯临时推进逻辑用 `addTransientScript`(不随存档)。
+- **装甲评级没有变化：**CSV 行、`script` 类名或 stats 回调存在缺口时，船插会缺失或数值保持原样。核对数据行、完整类名与 `applyEffectsBeforeShipCreation`；显示使用 `getArmorBonus`，结算使用 `getEffectiveArmorBonus`。
+- **S-mod 内置后加成不变：**分支写在 `advanceInCombat` 或 `applyEffectsAfterShipCreation` 时，生涯 stats 不会执行它。将 S-mod 判断放入 `applyEffectsBeforeShipCreation`，并使用回调传入的 `stats`。
+- **装配界面没有 S-mod 效果段：**`sModDesc` 为空、以 `#` 开头，或 `%s` 与参数数量不一致。修正描述和 `getSModDescriptionParam` 后重新打开 tooltip。
+- **多艘船的计数与计时互相污染：**per-ship 状态写进了会话级船插实例。把计数和 `IntervalUtil` 放进每艘船独立创建的监听器，船插类只保留常量和无状态方法。
+- **伤害抵消监听器从未触发：**监听器挂错对象，或实例从未交给 `ship.addListener(...)`。将它挂在承受伤害的舰船或引擎层，再次承受舰体伤害。
+- **动态与静态修饰导致数值乱跳：**两个来源使用了相同 modifier ID。为动态来源使用独立稳定的 `DYNAMIC_ID`，重新比较面板和战斗数值。
+- **tick 日志在同一周期出现多行：**同一舰船重复注册了 `AdvanceableListener`。注册前使用 `hasListenerOfClass` 查重，再观察日志频率。
+- **战斗数值正确但生涯面板没有加成：**stats 修改只写在战斗回调中。把共用数值修饰移入 `applyEffectsBeforeShipCreation`，战斗回调只处理战斗行为。
 
 ## 总结
 
-本节把星区、时钟与脚本讲成一条链：**注册入口** (`onGameLoad` + persistent data 标记)→ **每帧推进** (引擎遍历快照：`isDone` 先清、`runWhilePaused() || !isPaused()` 才调 `advance(amount)`)。
+本节把船插讲成一个完整的生命周期对象：七条回调各有明确的调用时机与调用点，stats 修改只在 `applyEffectsBeforeShipCreation`，跨船状态只放进每船一个的监听器实例；tooltip 由方法族按固定顺序组装，`desc` / `sModDesc` 的 `%s` 必须与参数方法一一对应。S-mod 是写在装配上的状态，`sModDesc` 非空且不以 `#` 开头才有效果段，上限默认 2 且可经动态 stat 提升。
 
-链条的后半是**时钟换算** (`amount` 是真实秒，`convertToDays` 按 10 秒/游戏日折算；暂停时时钟冻结) 与**清理** (`isDone` 自动移除、`removeScript` 按同一性、`removeScriptsOfClass` 按精确类、`hasScript` 按 `isInstance`)。
+排错时先问两件事：这个行为属于哪个时机，状态归谁所有。回调放错时机 (如把 stats 修改写进战斗回调) 会得到两个环境两套数值；状态放错容器 (如写进单例效果类字段) 会串船；S-mod 分支、动态修饰 ID 与监听器放置规则都是这两问的具体答案。
 
-记忆要点：
-
-- `scripts` 随存档保存、`transientScripts` 不随存档保存；`addScript` 不去重 ——** 一次性注册必须用 persistent data 标记**，查重用 `hasScript`。
-- 引擎遍历快照：`advance` 里 `addScript` 的新脚本**下一帧**才推进。
-- 暂停 (空格) 时：脚本默认冻结、时钟冻结、经济冻结；加速 (按住 Shift) 时每帧推进两次；**战斗期间生涯引擎完全不推进**。
-- 纪元 206-01-01；`getCycle()` 是年、`getMonth()` 1–12、`getDay()` 1–31；`getElapsedDaysSince(0)` 返回 `Float.MAX_VALUE`。
-- 新档在 `onGameLoad` 时时钟已推进约 60.2 游戏日 (约 206.3.2)。
-
-引擎级脚本只是生涯异步逻辑的一半：实体级脚本随实体生命周期走、事件监听器挂在星区上，它们是这条链的逻辑延伸；而贯穿始终的两块底座是 "首次进入存档" 的 `CLASS_MARK` 标记与 `Global` 阶段语义 —— 所有注册与读取都建立在生涯引擎建立之后。
+这套 "回调时机 + 状态归属" 的框架并不限于船插：武器、战术系统与战斗插件的每帧行为服从同一套实例归属与回调纪律，监听器事件模型在伤害、命中与击毁的结算链上还会继续扩展 —— 读懂本节的生命周期调用点与放置规则，就拿到了阅读整个战斗侧行为链的钥匙。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.SectorAPI`：星区根对象 —— 时钟、脚本、持久数据、记忆、暂停等入口。
-- `com.fs.starfarer.api.campaign.CampaignClockAPI`：生涯时钟 —— 日期/时间戳读取与秒 ⇄ 游戏日换算。
-- `com.fs.starfarer.api.EveryFrameScript`：生涯按帧脚本接口 ——`isDone` / `runWhilePaused` / `advance` 三方法约定。
-- `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：带 `cleanup()` 的脚本接口，附着实体被移除时调用。
-- `com.fs.starfarer.api.Global`：`getSector()` / `getLogger()` 全局入口。
-- `data.scripts.gearin.campaign.GearInSectorClockScript`：本节示例类 (完整最小例源码)。
-- `data/config/settings.json`：`campaignSpeedupMult` 等生涯设置 (加速倍数)。
+* `com.fs.starfarer.api.combat.HullModEffect`：船插效果接口，七条生命周期回调的定义处 (会话级单例、暂停与 `amount=0` 语义的 javadoc 原文)。
+* `com.fs.starfarer.api.combat.BaseHullMod`：空实现基类，`isSMod` / `hasSModEffect` / tooltip 方法族的默认实现。
+* `com.fs.starfarer.api.combat.ShipVariantAPI`：S-mod 状态存储，`getSMods()` / `getSModdedBuiltIns()` / `addPermaMod(modId, isSMod)`。
+* `com.fs.starfarer.api.loading.HullModSpecAPI`：船插静态配置，`getSModDescription(hullSize)` / `getSModEffectFormat()`。
+* `com.fs.starfarer.api.combat.MutableShipStatsAPI`：stats 入口，`getArmorBonus()` / `getEffectiveArmorBonus()` / `getDynamic()`。
+* `com.fs.starfarer.api.combat.ArmorGridAPI`：装甲网格读取，`getGrid()` / `getMaxArmorInCell()` / `getArmorRating()`。
+* `com.fs.starfarer.api.combat.listeners.HullDamageAboutToBeTakenListener`：舰体结构伤害前回调，返回 `true` 即抵消伤害。
+* `com.fs.starfarer.api.combat.listeners.AdvanceableListener`：舰船级每帧推进，仅支持挂载到 `ShipAPI`。
+* `com.fs.starfarer.api.combat.listeners.CombatListenerUtil`：伤害族监听器的聚合派发。
+* `com.fs.starfarer.api.util.Misc`：S-mod 辅助，`CAN_SMOD_BUILT_IN` / `getMaxPermanentMods` / `getBuildInBonusXP`。
+* `com.fs.starfarer.api.impl.campaign.ids.Stats`：`MAX_PERMANENT_HULLMODS_MOD = "max_permanent_hullmods_mod"`。
+* `com.fs.starfarer.api.fleet.FleetMemberAPI`：生涯侧回调参数，`getShipName()` / `getVariant()`。
+* `data/hullmods/hull_mods.csv`：`script` 列注册入口与 `desc` / `sModDesc` 列 (20 列表头)。
+* `data/config/settings.json`：`maxPermanentHullmods` 与 `bonusXP` 分档。
+* `data/hullmods/`：原版效果类参考 (`ArmoredWeapons` 的 S-mod 分支做法)。
+* `com.fs.starfarer.api.impl.hullmods.HighScatterAmp`：原版实现类，监听器注册与自绘 tooltip 做法。
+* `src/data/scripts/gearin/hullmods/`：本节示例类在 MOD 侧的源码位置。
+
+## 完整最小例
+
+::: details 完整成品：GearInArmorTrainingHullMod
+
+```java
+package data.scripts.gearin.hullmods;
+
+import org.apache.log4j.Logger;
+import org.lwjgl.util.vector.Vector2f;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.ArmorGridAPI;
+import com.fs.starfarer.api.combat.BaseHullMod;
+import com.fs.starfarer.api.combat.MutableShipStatsAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.combat.ShipAPI.HullSize;
+import com.fs.starfarer.api.combat.listeners.AdvanceableListener;
+import com.fs.starfarer.api.combat.listeners.HullDamageAboutToBeTakenListener;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.api.util.IntervalUtil;
+
+/**
+ * 完整最小例：HullMod 生命周期、tooltip、S-mod 与监听器接入。
+ *
+ * 主题：装甲训练。效果类扩展 BaseHullMod（HullModEffect 的空实现基类）；
+ * 效果类是会话级单例（HullModEffect javadoc 原文），本类不持有任何跨船字段 ——
+ * 每艘船自己的状态（周期计时、抵消计数）放在 applyEffectsAfterShipCreation
+ * 里注册的监听器实例中（每艘船一个实例，随舰船实体一起销毁）。
+ *
+ * 生命周期覆盖：
+ * - applyEffectsBeforeShipCreation：生涯与战斗都会调用的 stats 入口（C7-S3）；
+ *   这里同时演示 S-mod 分支：isSMod(stats) 为 true 时把同一 id 的修饰覆盖为更大值；
+ * - applyEffectsAfterShipCreation：战斗侧舰船实体创建后调用（含装配界面预览舰），
+ *   注册监听器的正式位置；不承担 stats 修改（API javadoc 原文）；
+ * - applyEffectsAfterShipAddedToCombatEngine：每艘船加入战斗引擎只回调一次
+ *   （API javadoc 原文 "Only called once."）；
+ * - advanceInCombat：战斗每帧调用，暂停时不调用（API javadoc 原文）；
+ *   演示每帧幂等写 StatBonus（同 ID 覆盖，不累积，C7-S3 规则 6）；
+ * - advanceInCampaign：生涯每帧调用；舰队数据重同步时以 amount=0 调用
+ *   （API javadoc 原文），这里只在该时机输出一行作为生命周期证明。
+ *
+ * tooltip：desc 的 %s 由 getDescriptionParam(0..n) 填充，sModDesc 的 %s
+ * 由 getSModDescriptionParam(0..n) 填充（BaseHullMod / 标准 tooltip）。
+ */
+public class GearInArmorTrainingHullMod extends BaseHullMod {
+
+    private static final Logger LOG = Global.getLogger(GearInArmorTrainingHullMod.class);
+
+    /** 基础效果：有效护甲 +10%（getDescriptionParam(0) 输出同值）。 */
+    public static final float ARMOR_BONUS_PERCENT = 10f;
+    /** S-mod 额外加成：applyEffects 合计 25%、动态加成上限 15%（getSModDescriptionParam 0/1 输出）。 */
+    public static final float SMOD_ADDITIONAL_PERCENT = 15f;
+    /** 装甲平均比例高于该值时，监听器抵消即将发生的舰体结构伤害。 */
+    public static final float NEGATION_ARMOR_FRACTION = 0.5f;
+    /** 动态修饰 ID：与 hullmod id 分开，避免与 applyEffects 的条目互相覆盖。 */
+    private static final String DYNAMIC_ID = "GearIn_armor_training_dynamic";
+
+    @Override
+    public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAPI stats, String id) {
+        // S-mod 分支：同一 id 同类型只保留一条条目，S-mod 时直接覆盖为合计值（C7-S3 覆盖语义）。
+        float bonus = ARMOR_BONUS_PERCENT + (isSMod(stats) ? SMOD_ADDITIONAL_PERCENT : 0f);
+        stats.getArmorBonus().modifyPercent(id, bonus);           // 面板/生涯可见的护甲评级
+        stats.getEffectiveArmorBonus().modifyPercent(id, bonus);  // 命中结算时的有效护甲
+    }
+
+    @Override
+    public void applyEffectsAfterShipCreation(ShipAPI ship, String id) {
+        // 每艘船实体一个监听器实例：跨船状态只能放在这里，不能放效果类字段。
+        // 装配界面预览舰也会走到这里（舰船显示面板按 (variant, true, ...) 创建舰船对象重建显示实体）。
+        ship.addListener(new ArmorTrainingListener(ship));
+        LOG.info("GearIn armor training: listener attached to " + ship.getName());
+    }
+
+    @Override
+    public void applyEffectsAfterShipAddedToCombatEngine(ShipAPI ship, String id) {
+        // 一次性回调：舰船移除后再加入引擎也不会再次调用（API javadoc 原文）。
+        LOG.info("GearIn armor training combat-ready: " + ship.getName() + " (once per engine add)");
+    }
+
+    @Override
+    public void advanceInCombat(ShipAPI ship, float amount) {
+        // 每帧调用、暂停时不调用。效果类不保存跨船字段，这里只做无状态写入：
+        // S-mod 时每帧把"当前装甲平均比例"写成动态修饰。命中结算时装甲网格
+        // 以 getEffectiveArmorBonus().computeEffective(...) 读取，因此下一击即生效；同 ID 每帧重复调用是幂等覆盖，不会累积。
+        if (!isSMod(ship) || !ship.isAlive() || ship.isHulk()) return;
+        float frac = armorFraction(ship.getArmorGrid());
+        ship.getMutableStats().getEffectiveArmorBonus()
+                .modifyPercent(DYNAMIC_ID, SMOD_ADDITIONAL_PERCENT * frac);
+    }
+
+    @Override
+    public void advanceInCampaign(FleetMemberAPI member, float amount) {
+        // 生涯每帧调用；舰队数据重同步（如舰队界面移动成员）时以 amount=0 调用（API javadoc 原文）。
+        // 只在同步时机输出一行，作为"该回调确实被调用"的证明，避免每帧刷屏。
+        if (amount <= 0f) {
+            LOG.info("GearIn armor training campaign sync: " + member.getShipName()
+                    + " variant=" + member.getVariant().getHullVariantId());
+        }
+    }
+
+    @Override
+    public String getDescriptionParam(int index, HullSize hullSize) {
+        if (index == 0) return "" + (int) ARMOR_BONUS_PERCENT + "%";
+        if (index == 1) return "" + Math.round(NEGATION_ARMOR_FRACTION * 100f) + "%";
+        return null;
+    }
+
+    @Override
+    public String getSModDescriptionParam(int index, HullSize hullSize) {
+        if (index == 0) return "" + (int) (ARMOR_BONUS_PERCENT + SMOD_ADDITIONAL_PERCENT) + "%";
+        if (index == 1) return "" + (int) SMOD_ADDITIONAL_PERCENT + "%";
+        return null;
+    }
+
+    /** 装甲网格平均比例（0..1）：网格总值 /（格子数 × 单格最大值）。 */
+    private static float armorFraction(ArmorGridAPI grid) {
+        float[][] cells = grid.getGrid();
+        float maxCell = grid.getMaxArmorInCell();
+        if (cells.length == 0 || maxCell <= 0f) return 0f;
+        float total = 0f;
+        int count = 0;
+        for (float[] row : cells) {
+            for (float value : row) {
+                total += value;
+                count++;
+            }
+        }
+        return count == 0 ? 0f : total / (count * maxCell);
+    }
+
+    /**
+     * 每艘船一个实例（applyEffectsAfterShipCreation 里注册），持有本船的状态。
+     * 同时实现两个监听器接口：
+     * - HullDamageAboutToBeTakenListener：舰体结构伤害结算前回调，返回 true 即抵消
+     *   （API javadoc 原文："if true is returned, the hull damage to be taken is negated."）；
+     * - AdvanceableListener：舰船级每帧推进（战斗舰船对象的每帧推进仅对 amount>0 派发，即暂停时不调用），
+     *   这里用它做 5 秒一次的状态输出 —— 周期计时器是单船状态，合法放在本实例。
+     */
+    public static class ArmorTrainingListener implements HullDamageAboutToBeTakenListener, AdvanceableListener {
+
+        private final ShipAPI ship;
+        private final IntervalUtil reportInterval = new IntervalUtil(5f, 5f);
+        private long negations;
+
+        public ArmorTrainingListener(ShipAPI ship) {
+            this.ship = ship;
+        }
+
+        @Override
+        public boolean notifyAboutToTakeHullDamage(Object param, ShipAPI ship, Vector2f point, float damageAmount) {
+            float frac = armorFraction(ship.getArmorGrid());
+            if (frac <= NEGATION_ARMOR_FRACTION) return false;
+            negations++;
+            LOG.info("GearIn armor training: hull damage negated amount=" + damageAmount
+                    + " armorFraction=" + String.format("%.2f", frac)
+                    + " negations=" + negations);
+            return true; // 抵消本次舰体结构伤害
+        }
+
+        @Override
+        public void advance(float amount) {
+            reportInterval.advance(amount);
+            if (!reportInterval.intervalElapsed()) return;
+            float frac = armorFraction(ship.getArmorGrid());
+            LOG.info("GearIn armor training tick: " + ship.getName()
+                    + " rating=" + ship.getArmorGrid().getArmorRating()
+                    + " armorFraction=" + String.format("%.2f", frac)
+                    + " negations=" + negations);
+        }
+    }
+}
+```
+
+:::

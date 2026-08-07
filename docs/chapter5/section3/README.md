@@ -28,7 +28,7 @@
 - [C7-S1] 的每帧回调与暂停语义；
 - [C3-S1] 的测试战役、舰船装配与部署操作。
 
-## 文件与 API 链路
+## 梳理音频播放关系
 
 ```text
 sounds/.../*.ogg                 资源层（C5-S1）：三个 OGG
@@ -300,7 +300,7 @@ public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
 
 另一种不改插件的接入：由脚本给市场设置内存键 `$musicSetId`(优先级高于势力映射与默认集)，例如 `market.getMemoryWithoutUpdate().set("$musicSetId", "GearIn_market_theme")`。
 
-## 完整最小例
+## 组装音频播放实现
 
 三个 ID 各接一个使用方 (文件均位于 MOD 根目录下)：
 
@@ -452,14 +452,16 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ## 故障分析
 
-1. **开火完全无声，其他音效正常。**检查链：`.wpn` 的 `fireSoundTwo` 与注册层条目逐字一致 (大小写敏感)→ `sounds.json` 条目存在 → OGG 路径存在。`.wpn` 写错 ID 会在开火时报 NPE 而不是静默 (见下条)。
-2. **开火瞬间抛 NPE，堆栈指向武器开火实现。**`fireSoundOne`/`fireSoundTwo` 引用了未注册 ID：声音集查找返回空后解引用。修正：同步注册 ID，或改回原版 ID。
-3. **系统激活无循环声。**`.system` 的 `loopSound` 未注册 → 系统实现构造时取到 `null`，激活时报 NPE；已注册但无声 → 区分 "激活音有、循环音无"(说明 `useSound` 正常、`loopSound` 或素材有问题) 与 "全无"(`useSound` 也查一遍)，再核对资源层的循环素材规格 (首尾无缝、音量合理)。
-4. **代码 `playLoop` 不响或断断续续。**每帧未调用 (循环淡出)、`playingEntity` 每帧传新对象 (去重失效)、距离超 2500、音量 `volume <= 0`、内部静音开关生效 (静音时不报错)。修正：把调用放在每帧回调里，用一个稳定实体对象作 `playingEntity`。
-5. **`playUISound` 抛 `Sound set with id [...] not found`。**未注册或大小写不符。这是运行期异常，不是加载期错误。修正：核对注册 ID。
-6. **部署舰船抛 NPE，堆栈指向 `ShipEngineControllerAPI`。**hull style 引用了未注册声音集 (风格声音部分已述的同类故障)。本节三个 ID 均不用于引擎声音，出现此错先查风格文件。
-7. **市场音乐仍是原版。**检查：`settings.json` 的 `plugins.musicPlugin` 是否真的合并生效 (对象键合并、后加载者覆盖；类名与类路径一致、类可加载)、类是否继承 `MusicPlayerPluginImpl`、市场是否被 `$musicSetId` 内存键抢先覆盖 (内存键优先级最高)。
-8. **`playCustomMusic` 后无音乐或日志 NPE。**音乐 ID 未注册在 `music` 分类 (普通音效条目不被音乐播放器识别)，或 fade 参数传了非整数秒。修正：确认 `music` 分类条目与整数 fade；需要停止默认换曲时配合 `setSuspendDefaultMusicPlayback(true)`。
+- **开火完全无声，但其他音效正常：**依次核对 `.wpn` 的 `fireSoundTwo`、`sounds.json` 条目和 OGG 路径。三处 ID 区分大小写；修正后重新开火，应能听到注册声音。
+- **开火瞬间抛出 NPE：**`fireSoundOne` 或 `fireSoundTwo` 引用了未注册 ID，声音集查找返回空值后被解引用。同步注册该 ID，或改回已存在的原版 ID。
+- **系统激活时没有循环声：**先区分激活音是否存在。只有循环音缺失时，核对 `loopSound` 与循环素材；两种声音都缺失时，同时核对 `useSound`。
+- **系统激活时因声音配置抛出 NPE：**`.system` 的 `loopSound` 指向未注册 ID，系统实现构造时取得了空值。补齐声音注册后重新激活系统。
+- **`playLoop` 不响或断断续续：**每帧没有续播、`playingEntity` 不稳定、距离超过 2500 或 `volume <= 0` 都会中断循环。把调用放进每帧回调，并持续传入同一个实体后复验。
+- **`playUISound` 报 `Sound set with id [...] not found`：**声音 ID 未注册或大小写不一致。核对注册条目后再次触发 UI 声音。
+- **部署舰船时在 `ShipEngineControllerAPI` 抛出 NPE：**hull style 引用了未注册的引擎声音集。本节三个声音 ID 均不用于引擎，出现该堆栈时直接检查风格文件。
+- **市场音乐仍是原版：**确认 `settings.json` 的 `plugins.musicPlugin` 已合并为正确类名，类继承 `MusicPlayerPluginImpl`，并检查市场 `$musicSetId` 是否覆盖了选曲结果。修正后重新进入市场。
+- **`playCustomMusic` 后没有音乐：**音乐 ID 必须注册在 `music` 分类，普通音效条目不会被音乐播放器识别。补齐分类后使用整数 fade 参数再次播放。
+- **`playCustomMusic` 后日志出现 NPE：**音乐 ID 没有解析到有效音乐条目。核对 `music` 分类和 ID 大小写；需要阻止默认音乐立即换回时，再设置 `setSuspendDefaultMusicPlayback(true)`。
 
 ## 总结
 

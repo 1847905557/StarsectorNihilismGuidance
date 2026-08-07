@@ -1,273 +1,844 @@
-# 使用 Rules 制作对话
+# 创建人物并设置关系
 
-本节使用 `data/campaign/rules.csv` 制作一个由规则表驱动的对话框。规则会完成触发匹配、条件判断与结果执行，并为 [C11-S3] 的自定义命令和 [C11-S4] 的内存状态提供基础。
+本节创建人物并设置身份、关系与持久归属。人物会在任务、贸易和通信功能中反复使用，因此示例同时确认舰长与军官的分配方式。
 
-*本节预期阅读时间：~25 分钟。*
+*本节预期阅读时间：~30 分钟。*
 
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：~40 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 解释 `rules.csv` 七列各自的归属与内部格式，并区分哪些列被加载器读取 (`notes` 不读)；
-- 解释规则的注册与合并方式：路径固定为 `data/campaign/rules.csv`，同文件重复 id 在加载期崩溃、跨文件重复 id 先到先得静默跳过、`#` 开头的行是注释行；
-- 解释匹配流程：按 `trigger` 分组 → 逐条求值条件 (首个失败短路)→ `FireBest` 分数竞争 (同分随机、`score:` 控制权重、跳过当前规则 id)→`FireAll` 执行全部命中规则 (可被 `FireAllIntercept` 整体拦截)；
-- 解释条件表达式的语法与判真规则：`$memkey.name` 变量解析 (无记忆键回落 `local`)、比较操作符、`=` 赋值 (只能出现在脚本列)、`!` 取反、行尾 `score:`、命令调用 (按 `ruleCommandPackages` 找类)，以及 `null` 为假、仅 `"true"` (忽略大小写) 与 `Boolean.TRUE` 为真的规则；
-- 解释结果三件套的执行方式：`script` 按顺序执行 (选项型命令由 `FireBest` / `FireAll` 提前执行)、`text` 按 `\nOR\n` 拆成变体随机取一条、`options` 的 `id:text` 与 `order:id:text` 两种格式，以及 `performTokenReplacement` 的文本替换链；
-- 创建含 `GearIn_rules_intro_*` 规则的 `data/campaign/rules.csv` 与规则驱动对话入口 `GearInRulesIntro`，并验证对话完整流程；
-- 从症状定位故障，沿数据文件 → 注册入口 → 运行使用方 → 可观察结果四个位置复核。
+* 创建人物 (空白与势力随机两个入口)，并核对人物对象的默认值表；
+* 读写人物的身份与档案字段，区分 `getMemory()` 与 `getMemoryWithoutUpdate()` 两条记忆读取路径；
+* 解释关系三族的存储方式、`RepLevel` 九档阈值与档位判定；
+* 用 `setRelationship` / `adjustRelationship` / `ensureAtBest` / `ensureAtWorst` 修改关系，并核对返回值与数值落点；
+* 分配 captain 与 officer，说明舰长对战斗 AI 与成员统计的作用；
+* 把人物挂入四个持久归属入口，并解释局部变量人物不被保存的后果；
+* 从日志与界面症状定位人物相关的典型故障。
 
 ## 前置知识
 
-- [C6-S2] 的 `onGameLoad` 生命周期与注册时机；
-- [C8-S1] 的 `addScript` 与持久数据一次性判断；
-- [C8-S9] 的交互对话框生命周期与 `showInteractionDialog`；
-- [C11-S3] 的 `BaseCommandPlugin` 职责与原版命令；
-- [C11-S4] 的 `MemoryAPI` 过期、持久化与记忆键分组解析。
+* [C3-S1] 的生涯与战役域区别；
+* [C6-S2] 的插件生命周期回调与持久数据标记；
+* [C6-S3] 的 `Global.getFactory()` 创建入口与阶段语义；
+* [C9-S1] 的生涯脚本注册与一次性判断；
+* [C9-S3] 的舰队成员、舰长、旗舰与 `FleetDataAPI`；
+* [C10-S1] 的市场人物、通信目录与 `MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`。
 
 ## 术语
 
-本节先固定规则系统的六个核心词；API 类名保留源码大小写。其中规则命令的实现见 [C11-S3]，Rules 内存的完整语义见 [C11-S4]：
+按术语约定，本节首次完整讲解以下词：
 
-- **规则 (rule)**：API 名保留 `RuleAPI`。`rules.csv` 中的一行就是一条规则：id、trigger、条件列表、脚本列表、文本变体列表、选项列表。
-- **触发器 (trigger)**：规则的字符串分组 key (`trigger` 列)。同一触发器的规则构成一个候选池；对话插件以触发器名为入口发起匹配。
-- **条件 (condition)**：API 名保留 `ExpressionAPI`。规则命中前必须全部为真的表达式行 (`conditions` 列)；条件也在匹配阶段被求值。
-- **结果 (result)**：规则命中后发生的事，由三列共同描述 —— `script` (脚本表达式)、`text` (对话文本)、`options` (对话选项)。
-- **规则命令 (rule command)**：类名保留 `BaseCommandPlugin`；本节把它们当作内置命令使用，自定义命令的编写与注册见 [C11-S3]。
-- **Rules 内存 (memory)**：API 名保留 `MemoryAPI`；本节只使用记忆键语法，内存生命周期见 [C11-S4]。
+* **人物 (person)**：API 名保留 `PersonAPI`。生涯里代表一个 "人" 的对象，承载身份 (姓名/性别/rank/post/头像/势力)、记忆、标签、对玩家关系、角色数值与归属 (captain、officer、市场、important people)。
+* **关系 (relationship)**：两两之间的声望数值与档位。势力之间/势力对玩家走 `FactionAPI` 关系族；人物对玩家走 `RelationshipAPI`。数值范围 \[-1, 1\]，档位由 `RepLevel` 分段。
+* **声誉档位 (RepLevel)**：API 名保留 `RepLevel`。
+    *   九档枚举：`VENGEFUL` / `HOSTILE` / `INHOSPITABLE` / `SUSPICIOUS` / `NEUTRAL` / `FAVORABLE` / `WELCOMING` / `FRIENDLY` / `COOPERATIVE`。
+    *   正向阈值 0.09 / 0.24 / 0.49 / 0.74，负向对称。
+* **captain(舰长)**：舰队成员的指挥官。决定该成员/战斗舰船的统计修正与战斗 AI personality。
+* **officer(军官)**：`OfficerDataAPI` 包装的人物，带 XP、等级与技能选择；隶属舰队 roster(`FleetDataAPI` 军官集合)，被 `setCaptain` 到某个成员上时指挥该船。
 
-## 文件与 API 链路
+## 人物对象与 API 面
 
-### 数据入口与列语义
+### 人物对象与创建入口
 
-词义固定后，从数据入口开始，沿加载、匹配、执行三条链看机制。规则表只有一份来源：**所有** `data/campaign/rules.csv`(原版 + 全部启用 MOD 各自一份，加载时合并)。原版表头为七列 (`Starsector\starsector-core\data\campaign\rules.csv` 首行；加载器按列名读取，列顺序即表头顺序)：
+创建人物的两个正式入口 (`com.fs.starfarer.api.FactoryAPI`)：
 
-| 列 | 加载方式 | 语义 |
-|---|---|---|
-| `id` | `getString("id")` | 规则唯一标识；id 以 `#` 开头 → 整行跳过；空 id → 行跳过 |
-| `trigger` | `getString("trigger")` | 规则所属触发器名 (分组 key)|
-| `conditions` | `getString("conditions")`：去 `\r`、trim、按 `\n` 拆行，每行一条条件表达式 | 匹配阶段必须全部为真 |
-| `script` | `getString("script")`：去 `\r`、trim、按 `\n` 拆行，每行一条脚本表达式 | 命中后按顺序执行的结果 |
-| `text` | `optString("text", null)`：去尾部空白、按 `\nOR\n` 拆段 | 文本变体列表；`pickText()` 随机取一条展示 |
-| `options` | `getString("options")`：去 `\r`、按 `\n` 拆行 | 选项列表：每行 `id:text` 或 `order:id:text` |
-| `notes` | **不读取** (加载流程没有该列的取值入口)| 备注，供人阅读 |
+入口
 
-`conditions` / `script` / `options` 中 `#` 开头的行是注释行；空行跳过。
+语义
 
-加载期还会对只出现一次的变量向**标准输出**打印 `WARNING: variable [...] only used once; rule id: [...]`(`System.out.println`，不进 `starsector.log`，且 `tag:` / `$market.mc:` 变量排除)。
+`Global.getFactory().createPerson()`
 
-> 规则系统是纯数据驱动的：MOD 侧不需要任何注册文件，把行写进自己的 `data/campaign/rules.csv` 就会被加载器自动合并 —— 原版大量对话、选项与事件文本都是同一套机制的产物。
+创建空白人物 (默认值见下表)
 
-> 这也是为什么确认规则是否真的被读进来，要看加载日志而不是找报错。
+`FactionAPI.createRandomPerson()`(含 Gender / Random 变体)
 
-### 加载链与合并语义
+按势力生成随机人物：随机性别 (默认各半)、势力肖像、随机姓名 (姓名池)、随机 voice(`FactionAPI.createRandomPerson`)
 
-行与列的含义定了，下一步是这些行如何进入游戏。
+另有包装入口 `Global.getFactory().createOfficerData(PersonAPI)`—— 把人物包装成 `OfficerDataAPI`(见 "officer" 节)。
 
-1. **加载时机**：CSV spec 加载期，`loadStarmap` 末尾调用 `Rules.loadRules`—— 一次游戏启动只加载一次，规则表不属于存档数据。
-2. **合并读取**：文本读取工具的 `readCSV(["id"], "data/campaign/rules.csv", true, true)`：
-   - 打开原版与所有启用 MOD 的同路径资源；某个 MOD 把该路径列入 `fullOverrides` 时整文件替换；
-   - **同文件**内重复 id → `RuntimeException("Duplicate key [...] while loading [...]")`，加载崩溃；
-   - **跨文件**重复 id → 按资源处理顺序先到先得，后处理文件中的同 id 行**静默跳过** (无任何报错)；
-   - 每份文件读取前过 `replaceSmartQuotes`(`readCSV` 第 4 参为 true，spec 加载期执行 `replaceSmartQuotes`)。
-3. **逐行解析与严格校验** (规则文件加载流程的校验，错误均为加载期 `RuntimeException`，汇总见规则强度节)。
-4. **注册入口**：MOD 侧不需要任何注册文件 —— 把行写进自己的 `data/campaign/rules.csv`，加载器自动合并；`starsector.log` 逐条打印 `Loading rule: <id>` 与 `Loading CSV data from [...]`，是确认规则是否真的被读进来的第一手证明。
+`SettingsAPI` 也有同签名 `createPerson`(同样返回空白人物)，习惯用 `Global.getFactory()`。
 
-### 匹配链
+人物对象的**默认值**：
 
-行被加载后，下一步是匹配：对话插件发起一次触发时，哪些规则会被选中。匹配入口有两个公开面：`RulesAPI.getAllMatching(currentRule, trigger, dialog, memoryMap)` 与 `RulesAPI.getBestMatching(...)`，都在 `com.fs.starfarer.api.campaign.rules.RulesAPI` 上；`SectorAPI.getRules()` 可以拿到 `RulesAPI`，生涯引擎内是包装实现。
+字段
 
-规则引擎的匹配流程如下：
+默认值
 
-1. `getRulesForTrigger(trigger)` 按触发器名取候选池 (未知触发器用到时才建空列表)。
-2. 逐条规则：跳过 id 等于当前规则 id(currentRule) 的规则，防止自再入；逐条求值条件 (表达式判真)，首个失败即短路。
-3. `getRulesFor`：返回全部条件通过者 —— 这是 `FireAll` 的候选集。
-4. `getBestMatchingRule`：通过条件分数求和 (每条条件默认 1 分，`score:` 可改) + 规则 `scoreBonus` (CSV 无此列，恒 0) → 只保留最高分候选 → 同分用 `WeightedRandomPicker` 随机取一条 → 返回单条或 `null` (无匹配)。
-5. `RulesAPI.setRandomForNextRulePick(random)` 只影响下一次 pick，用后即清 —— 跨多次匹配复用随机源会改变文本选择语义。
+说明
 
-### 条件表达式语法
+id
 
-匹配靠逐条求值条件，条件与结果都写成表达式。每条条件/脚本行是一个表达式。
+`"p_" + Misc.genUID()`
 
-token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` 开头 = 变量；引号包裹 = 字面量 (含空格/特殊字符)；`\` 转义；操作符独立成 token。
+每个实例唯一
 
-操作符全集：`=`(赋值)、`==`、`!=`、`>`、`>=`、`<`、`<=`、`!`(取反)、`++`、`--`。
+personalityId
 
-| 形式 | 示例 | 语义与归属 |
-|---|---|---|
-| 纯变量 (判真)| `$tag:warning_beacon` | `IS` 语义：记忆值 null → false；字符串 `"true"`(去空白、忽略大小写) 或 `Boolean.TRUE` → true；其余 (含 `"1"`、`"false"`)→ false |
-| 比较 | `$option == GearIn_rules_intro_leave`、`$entity.relativeStrength >= 0`、`$faction.id == independent` | `==`/`!=`/`<`/`<=`/`>`/`>=`；字符串比较大小写敏感；数值经 `Memory.parseFloat`；`==` 双侧都 null → true、null 与字面量 `"null"` 互等、`0` 与 `"false"`/`"null"` 互等 |
-| 取反 | `!$var`、`!Command args` | 变量判反 / 命令结果取反；`!` 的运算对象必须是变量或命令 |
-| 赋值 | `$menuState = fleetConvMain 0` | `=` 只能出现在**脚本列** (条件列出现 → 加载崩溃)；第三 token 为过期天数 (可选，`0` = 立即过期语义；过期天数的完整语义属 [C11-S4])|
-| 增减 | `$GearIn_rules_intro_visits++`、`$x--` | 浮点自增/自减；第三 token 为过期天数 (原版脚本列含 595 处 `++`、16 处 `--`)|
-| 命令 | `RollProbability 0.5`、`FireAll PopulateOptions`、`SetShortcut beaconLeave "ESCAPE"` | 首 token 非变量即命令：按 `ruleCommandPackages`(`data/config/settings.json`，5 个包，默认回退 `com.fs.starfarer.api.impl.campaign.rulecmd`) 逐个 `Class.forName` 定位；找不到 → 加载崩溃 `Command [...] not found in packages`；命令执行异常在对话内显示红字段落 (`<异常类>: <消息>`)，dialog 为 null 时重抛 |
-| 分数 | `$temporarilyIgnoreYou score:10` | 行尾字面量 `score:N` 改写该条件分数 (默认 1)，参与 `FireBest` 竞争 |
+`"steady"`
 
-> 判真很严格：只有字符串 `"true"`(忽略大小写) 与 `Boolean.TRUE` 为真，null、`"1"`、`"false"` 一律为假；比较操作符对字符串大小写敏感。
+无参构造默认即 `"steady"`
 
-> 把 `"1"` / `"yes"` 当真值、把记忆键拼错 (如少了 `$tag:` 前缀)，是条件恒假最常见的两个原因。
+name
 
-**变量解析** (`Misc.Token.getVarNameAndMemory`)：`$memkey.name` → 从 `memoryMap` 取 `memkey` 记忆，再读记忆中的 `$name` 键；token 无 `.`(如 `$option`、`$tag:x`)→ 记忆键为 null → 回落 `local` 记忆；两者都找不到 → `RuleException("No memory found for keys: ...")`。
+`FullName("", "", Gender.ANY)`
 
-对话插件向 `memoryMap` 装入哪些记忆，见下文使用方完整流程的表。`$tag:`、`$mc:`、`$friendlyToPlayer` 等 facts 键由 `CoreCampaignPluginImpl` 的 `updateEntityFacts` / `updateMarketFacts` / `updatePersonFacts` / `updateFactionFacts` 钩子写入 (`com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`)；使用 `$tag:xxx` 条件的前提是目标实体确实带该 tag。
+空姓名
 
-### 结果执行链
+portraitSprite
 
-规则命中后，结果由内置命令 `FireBest` / `FireAll` (`com.fs.starfarer.api.impl.campaign.rulecmd` 包) 执行，两条路径的对比如下：
+`SettingsAPI.getSpriteName("misc", "default_portrait")`
 
-| 步骤 | `FireBest` | `FireAll` |
-|---|---|---|
-| 触发名 | `params[0]`(变量则取记忆值)；`params[1]` = keepOptions | 同左；另在实体记忆写 `$fireAllTrigger`(expire 0)，并先 `FireBest` 触发 `FireAllIntercept`—— 有命中规则即整体拦截 |
-| 选规则 | `getBestMatching`(分数竞争，null → 返回 `false`)| `getAllMatching`(全部通过者，空 → 返回 `false`)|
-| 选项 | 收集 `rule.getOptions()` + 脚本中 `doesCommandAddOptions()==true` 的表达式 → 按 `order`(选项 `order` 字段 / `getOptionOrder`) 排序 → 非 keepOptions 时清空选项面板 → 逐个添加 (选项文本先做 token 替换)| 全部命中规则的选项合并、排序、清空后添加 |
-| 文本 | `addText`：`rule.pickText()` 随机取一条文本变体 → `performTokenReplacement` → `textPanel.addParagraph` | 每条命中规则各执行一次 `addText` |
-| 脚本 | `rule.runScript(dialog, memoryMap)` | 每条命中规则各执行一次 |
+`settings.json` → `graphics/portraits/portrait_generic_grayscale.png`
 
-`Rule.runScript` 按声明顺序执行脚本表达式，跳过选项型命令 (`doesCommandAddOptions()==true` 的由 `FireBest` / `FireAll` 提前执行)—— 所以选项型命令即使写在脚本列里，也不会在脚本阶段重复执行。
+rankId / postId
 
-**文本 token 替换** (`SectorAPI.getRules().performTokenReplacement`)：先汇总所有注册的 `RuleTokenReplacementGeneratorPlugin` 生成的替换表 (默认注册 `CoreRuleTokenReplacementGeneratorImpl`，提供 `$playerName` / `$Playername` / `$marketName` / `$entityName` / `$faction` / `$heOrShe` / `$personRank` / `$personName` 等，`com.fs.starfarer.api.impl.campaign.CoreRuleTokenReplacementGeneratorImpl`)，替换键按长度降序 `replaceAll`；再对 `memoryMap` 各记忆的键做 `$memkey.key` / `$key` 替换 (`Misc.replaceTokensFromMemory`，仅 String/Boolean/Float/Integer 值)。
+`Ranks.SPACE_COMMANDER` / `Ranks.POST_FLEET_COMMANDER`
 
-rulecmd 参数内需要替换时用 `Misc.Token.getStringWithTokenReplacement`。
+`spaceCommander` / `fleetCommander`
 
-### 使用方完整流程
+factionId
 
-机制到这里已经齐全，最后看实际的使用方 —— 对话插件如何把规则变成对话。
+`"neutral"`
 
-| 使用方 | 位置 | 触发方式 |
-|---|---|---|
-| 规则驱动对话插件 `RuleBasedInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl` | 构造器指定初始 trigger(默认 `OpenInteractionDialog`)；`init` 组装 `memoryMap`(`local` = 交互目标记忆或活动人物记忆、`faction`、`global`、`player`、`market`、`sourceMarket`、活动人物时的 `personFaction`/`entity`)→ `fireBest(initialTrigger)` → 无任何选项时加 failsafe `Leave`；玩家点选项 → 本地记忆写 `$option`(expire 0)→ `fireBest("DialogOptionSelected")` → 无匹配规则时文本报 `ERROR: no rule found for option [...]` 并加 failsafe `Exit dialog` |
-| 舰队遭遇对话 `FleetInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl` | `reinit` 用 `getBestMatching(null, "BeginFleetEncounter", ...)` 决定是否给 "Continue" 选项；开通讯 (`OPEN_COMM`) 时内嵌 `RuleBasedInteractionDialogPluginImpl` 并 `fireBest("OpenCommLink")`，无匹配则报 "only get static" |
-| 非对话面板 (规则记忆组装)| 非对话文本面板 (内部实现)| 组装简化 memoryMap 后 `FireBest.fire(...)` 面板文本 trigger(使用例：已选阵营信息面板的 `RelationshipLevelDesc`)|
+importance
 
-原版 `rules.csv`：7 列、9749 条非注释规则、800 个不同 trigger，大族为：
-- `DialogOptionSelected`(6050)；
-- `PopulateOptions` (334)；
-- `PickGreeting`(199)；
-- `OpenCommLink`(183)；
-- `OpenInteractionDialog`(121)；
-- `BeginFleetEncounter`(61)；
-- `MarketPostDock`(32)；
-- `TradePanelFlavorText`(23)。
+`PersonImportance.MEDIUM`
 
-`DialogOptionSelected` 全部 6050 条都带条件 (无空条件行)：原版选项必须回流 `$option ==` 条件。
+(枚举值 0/0.25/0.5/0.75/1)
+
+contactWeight
+
+`1.0F`
+
+relToPlayer
+
+null(延迟创建)
+
+首次 `getRelToPlayer()` 才创建
+
+`isDefault()` = 头像等于默认头像；`isPlayer()` = 人物对象即 `Global.getSector().getPlayerPerson()`；`isAICore()` = `aiCoreId != null`。
+
+玩家人物同样以 `steady` 起步，新档创建时人物势力为 `"player"`。
+
+### 身份与档案 (PersonAPI)
+
+创建之后的人物只有一组默认值，身份与档案字段按功能分组如下。
+
+`PersonAPI`(`com.fs.starfarer.api.characters.PersonAPI`) 按功能分组：
+
+分组
+
+成员
+
+语义
+
+身份
+
+`getId()` / `setId(String)`、`getName()` / `setName(FullName)`、`getNameString()`、`getGender()` / `setGender(Gender)`、`isMale()` / `isFemale()`
+
+id 唯一；姓名是**可变对象** `FullName`(`(first + " " + last).trim()`)；性别挂在姓名上
+
+rank/post
+
+`getRankId()` / `setRankId(String)`、`getPostId()` / `setPostId(String)`、`getRank()` / `getPost()`、`getRankArticle()` / `getPostArticle()`
+
+id 是存储值；显示名经势力解析 (见下)
+
+头像
+
+`getPortraitSprite()` / `setPortraitSprite(String)`
+
+资源路径字符串 (不校验存在性)
+
+势力
+
+`getFaction()`、`setFaction(String factionId)`
+
+`getFaction()` 延迟解析势力对象 (按 id 从全局势力表解析)；`setFaction` 只写 id
+
+关系
+
+`getRelToPlayer()`
+
+人物对玩家关系 (见 "关系" 节)
+
+记忆
+
+`getMemory()` / `getMemoryWithoutUpdate()`
+
+见 "记忆" 小节
+
+标签
+
+`hasTag` / `addTag` / `removeTag` / `getTags` / `clearTags`
+
+运行时标签集合 (`getTags()` 缺省返回空集)
+
+personality
+
+`getPersonalityAPI()`、`setPersonality(String)`
+
+由 `personalities.csv` 注册 (见 "故障分析" 第 2 条)
+
+importance/voice
+
+`getImportance()` / `setImportance(PersonImportance)`、`setImportanceAndVoice(PersonImportance, Random)`、`getVoice()` / `setVoice(String)`
+
+voice 存储在 memory `$voice`；`setImportanceAndVoice` 只在 voice 未被显式覆写时写 voice
+
+AI core
+
+`getAICoreId()` / `setAICoreId(String)`、`isAICore()`
+
+`aiCoreId != null` 即 AI 核心人物
+
+归属
+
+`getFleet()` / `setFleet(CampaignFleetAPI)`、`getMarket()` / `setMarket(MarketAPI)`
+
+officer 所在舰队、当前市场 (见 "归属" 小节)
+
+角色数值
+
+`getStats()`、`setStats(MutableCharacterStatsAPI)`、`getFleetCommanderStats()`
+
+等级/XP/技能/故事点；`getFleetCommanderStats()` = `fleet.getCommanderStats()`，无舰队时 null
+
+联系
+
+`wantsToContactPlayer()` / `incrWantsToContactReasons()` / `decrWantsToContactReasons()`、`getContactWeight()` / `setContactWeight(float)`
+
+联系人与权重 (`wantsToContactReasonsCount`)
+
+personality id 必须来自注册表
+
+`personalities.csv` 之外的 id 使 `getPersonalityAPI()` 返回 null(CSV spec 加载期的查询对未知 id 静默返回 null、不报错)。
+
+问题延迟到使用点：保存时写档失败 (`NullPointerException`)。
+
+原版合法 id 恰 5 个：`timid` / `cautious` / `steady` / `aggressive` / `reckless`。
+
+**rank/post 解析**：`getRank()` = `getFaction().getRank(rankId)`；`FactionAPI.getRank` 先查势力 spec 的 ranks 段，查不到回退默认值 (数据源 `data/world/factions/default_ranks.json`)。
+
+`getRankArticle()` / `getPostArticle()` 按显示名首字母是否元音返回 `"an"` / `"a"`。
+
+示例：`spaceCommander` 在 `default_ranks.json` 是 "Commander"，`hegemony.faction` 覆写为同名 "Commander"；`fleetCommander` post 是 "Fleet Commander"。
+
+**记忆**：`getMemory()` 触发全部插件的 `updatePersonFacts(person, memory)` 回调 (与 `MarketAPI.getMemory()` 同族)；纯读取**必须**用 `getMemoryWithoutUpdate()`(同样延迟创建但无回调)。
+
+voice 即 memory `$voice`。
+
+为什么记忆读取要分两条路径
+
+`getMemory()` 先跑一遍全部插件的 `updatePersonFacts` 回调，让各插件在读取前按最新事实刷新记忆 —— 这是 "读前更新" 的设计；但高频读取 (如每帧) 也走这条路径就会变成回调风暴，其他插件还可能改写内存值。
+
+纯读取用 `getMemoryWithoutUpdate()`：同样延迟创建记忆对象，但没有回调。
+
+**人物数据文件** (加载链：CSV spec 加载期读入、姓名池)：`data/characters/personalities.csv`(`id,name,desc,bravery` + 12 个任务权重列)
+
+原版 id 恰 5 个：`timid` / `cautious` / `steady` / `aggressive` / `reckless`，bravery 全为 5。
+
+`data/characters/person_names.csv`(姓名池，usage `f`/`l`，category 如 `fringe`/`core`/`pirate`，随机姓名按势力 spec 的名字段加权)。
+
+`personalities.csv` 的权重列 (`CAPTURE`/`PATROL`/`INTERCEPT`/`ASSAULT` 等) 是舰船 AI 行为权重。
+
+### 关系
+
+身份字段之外，人物之间以及人物与玩家之间还有一套数值体系。关系分三族、两套存储，先看存储与钳制，再看档位与写入方法。
+
+#### [存储与钳制]
+
+势力关系按 `"<id1>_<id2>"` 键存储，**双向插入同一对象**；读取时延迟创建：默认 `0.0F`，**同势力之间恒 `1.0F`**。
+
+写入时值被钳制在 \[-1, 1\]—— 关系数值不可能越界。
+
+人物对玩家关系存在人物字段 `relToPlayer`(延迟创建)，`RelationshipAPI.setRel` 同样钳制 \[-1 , 1\]。
+
+#### [RepLevel 档位]
+
+`RepLevel`(`com.fs.starfarer.api.campaign.RepLevel`) 九档，正向阈值 `T1=0.09` / `T2=0.24` / `T3=0.49` / `T4=0.74`。
+
+档位判定 `getLevelFor(float)`：取整到百分制再与阈值比，**边界含于高位档** (如 0.49 → `WELCOMING`，0.50 → `FRIENDLY`)。
+
+`isPositive()` = 从 `FAVORABLE` 起 (`isAtWorst(FAVORABLE)`)；`isNegative()` = `SUSPICIOUS` 及以下。
+
+`setRelationship(id, RepLevel)` 的落点 (`FactionAPI`)：
+
+档位
+
+写入值
+
+`NEUTRAL`
+
+`0.0`
+
+正档 (FAVORABLE / WELCOMING / FRIENDLY / COOPERATIVE)
+
+`min + 0.01`(0.10 / 0.25 / 0.50 / 0.75)
+
+负档 (SUSPICIOUS / INHOSPITABLE / HOSTILE / VENGEFUL)
+
+`-(min + 0.01)`(-0.10 / -0.25 / -0.50 / -0.75)
+
+#### [FactionAPI 关系族]
+
+`FactionAPI`(`com.fs.starfarer.api.campaign.FactionAPI`) 关系成员：
+
+成员
+
+语义
+
+`adjustRelationship(String id, float delta)`
+
+直接加 delta(无 limit，只受 ±1 钳制)
+
+`adjustRelationship(String id, float delta, RepLevel limit)`
+
+带 limit：delta 为 0 直接返回 false；正 delta 上限 = `limit.getMax()`(limit 为负档时 = `-min-0.01`)，负 delta 下限 = `-limit.getMax()`(limit 为正档时 = `min+0.01`)；值未越过限制返回 false
+
+`setRelationship(String id, float newValue)` / `setRelationship(String id, RepLevel level)`
+
+精确写值 / 按档位落点 (见上表)
+
+`ensureAtBest(String id, RepLevel)` / `ensureAtWorst(String id, RepLevel)`
+
+当前档位不满足时写入边界值并返回 true
+
+`getRelationship(String id)` / `getRelationshipLevel(String)` / `getRepInt(String)`
+
+值 / 档位 / 百分制整数 (`RepLevel.getRepInt`)
+
+`isAtBest` / `isAtWorst`、`isHostileTo(String)`
+
+档位比较；`isHostileTo` = `isAtBest(HOSTILE)`
+
+`getRelToPlayer()`
+
+玩家视角关系包装 (内部转发 `adjustRelationship` 到自己 id)
+
+limit 只是 "本次调整的方向边界"
+
+`adjustRelationship(delta, limit)` 的 limit 不是 "目标档位"—— 从 1.00 减 0.5(limit `VENGEFUL`) 落在 0.50(`FRIENDLY`)，而不是 `HOSTILE`。
+
+"设置档位" 用 `setRelationship(id, RepLevel)`，"确保不高于/不低于某档" 用 `ensureAtBest` / `ensureAtWorst`。
+
+#### [人物对玩家关系 (RelationshipAPI)]
+
+`RelationshipAPI`(`com.fs.starfarer.api.characters.RelationshipAPI`)：`getRel()` / `setRel(float)`、`getLevel()` / `setLevel(RepLevel)`、`adjustRelationship(float delta, RepLevel limit)`
+
+`isAtBest` / `isAtWorst`、`ensureAtBest` / `ensureAtWorst`、`isHostile()`、`getRepInt()`
+
+语义与 `FactionAPI` 关系族一致 (`RelationshipAPI` 是同一套逻辑的孪生实现)。
+
+`RelationshipTarget` 标记目标类型 `FACTION` / `PERSON` / `PLAYER`；`isPlayer()` 判断目标人物 == `Global.getSector().getPlayerPerson()`。
+
+接近零的人物对玩家关系在保存时不落盘，读档后恢复默认值。
+
+### captain 与 officer
+
+关系决定声望，岗位决定行为。接下来把人物放上舰长与军官两个实际岗位。
+
+#### [生涯侧 captain(FleetMemberAPI)]
+
+* 默认舰长：成员自带默认舰长 `steady`(前序页面已记录 "自动补默认舰长")。保存压缩时，**steady + 空姓名 + level ≤ 1 的默认舰长不落盘** ——"读档后默认舰长消失" 是正常语义。
+* `FleetMemberAPI.getCaptain()`：**玩家旗舰特例** —— 成员是玩家舰队旗舰时返回玩家人物。
+    *   否则返回缓存的 `captain` 字段 (null 时延迟创建默认舰长并设势力)。
+    *   `FleetMemberAPI.setCaptain(PersonAPI)` 写回并触发成员 stats 重算。
+
+玩家旗舰的舰长读回恒是玩家人物
+
+成员是玩家舰队旗舰时 `getCaptain()` 直接返回玩家人物，读路径覆盖写入 —— 把自定义舰长挂到旗舰再读回，读到的仍是玩家人物。自定义舰长请放非旗舰成员 (本节示例即如此)。
+
+* 舰长对成员的影响：`captain.getStats().applyPersonalToStats(stats, hullSize)` 把舰长个人技能应用到成员 `MutableShipStatsAPI`。
+* 反查：`FleetDataAPI.getMemberWithCaptain(PersonAPI)` 按同一性找舰长所在成员。
+* 舰队指挥官：默认是 `steady` 人物；`CampaignFleetAPI.getCommander()` / `setCommander(PersonAPI)`：
+    *   新档 `setPlayerFleet` 把玩家人物同时设为旗舰舰长与舰队指挥官。
+
+#### [战斗侧 captain(ShipAPI)]
+
+* 部署链：成员部署为战斗舰船时，`getCaptain()` 与 `getFleetCommander()` 传入战斗侧：
+    *   `ShipAPI.getCaptain()`(`com.fs.starfarer.api.combat.ShipAPI`) 返回战斗舰船舰长，`getOriginalCaptain()` 返回部署初始舰长，`getFleetCommander()` 返回关联的舰队指挥官。
+* **中途换舰长会改统计**：`ShipAPI.setCaptain(PersonAPI)` 先解除旧舰长的个人技能 (含子模块)，再挂新舰长。
+* **personality 决定战斗 AI**：战斗舰船的 personality 取舰长 personality id(舰长缺失时用装配的 fallback personality)。
+
+#### [officer(OfficerDataAPI)]
+
+* 包装与 roster：`Global.getFactory().createOfficerData(person)`(`com.fs.starfarer.api.FactoryAPI`)：
+    *   → `FleetDataAPI.addOfficer(PersonAPI)` / `addOfficer(OfficerDataAPI)` / `getOfficersCopy()` / `removeOfficer(PersonAPI)`(`com.fs.starfarer.api.campaign.FleetDataAPI`)。
+    *   `FleetDataAPI`：`addOfficer` 写入 roster 并 `person.setFleet(fleet)`(PersonAPI 版还会把人物势力设为舰队势力)。
+    *   `removeOfficer` 移出并 `setFleet(null)`。
+* `OfficerDataAPI`(`com.fs.starfarer.api.characters.OfficerDataAPI`)：
+    *   `getPerson()` / `setPerson(PersonAPI)`、`addXP(long[, TextPanelAPI[, boolean]])`、`canLevelUp()`；
+    *   `makeSkillPicks([Random])`、`getSkillPicks()`、`levelUp(String skillId[, Random])`。
+* 升级链 (`OfficerDataAPI`)：
+    *   `addXP` 走 `settings.json` 的 `officerLevelUp` 插件 (`com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`)。
+    *   **`$isMercenary` 记忆为 true 的佣兵人物 addXP 直接返回** (`Misc.isMercenary` 读 memory `$isMercenary`，`com.fs.starfarer.api.util.Misc`)。
+    *   XP 达到下一级阈值 (`TOTAL_XP_PER_LEVEL × officerXPRequiredMult(4)`，`com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`) 且等级 ≤ `officerMaxLevel(5)`(settings) 时可升级。
+    *   `canLevelUp()` 满足时 `addXP` 自动 `makeSkillPicks()`；`makeSkillPicks()` **每次调用都重掷选项**。
+    *   `levelUp(skillId)` 等级 +1、技能 +1 级并清空重掷。
+* 军官上舰 = 把 officer 的人物 `setCaptain` 到成员 (原版军官面板的 "命令舰船" 即此语义)。
+
+#### [归属四入口 (持久化边界)]
+
+岗位分配完之后，真正要紧的问题是：人物到底随什么保存？四个持久归属入口给出答案。
+
+人物只随 "引用它的持久集合" 保存：
+
+1. **成员舰长**：`FleetMemberAPI.setCaptain(person)`(成员在 `FleetDataAPI` 里)；
+2. **市场人物**：`MarketAPI.addPerson(person)`(同时写 `person.setMarket(market)`)**，通信目录条目必须另行 `getCommDirectory().addPerson(person)` 维护** (`MarketAPI.addPerson` 不会自动建目录条目)；
+3. **重要人物**：`SectorAPI.getImportantPeople()` → `ImportantPeopleAPI.addPerson` / `containsPerson` / `removePerson` / `getData(person)`(`com.fs.starfarer.api.characters.ImportantPeopleAPI`)：
+    *   `checkOutPerson(person, reasonId)` / `returnPerson(person, reasonId)`；
+4. **officer roster**：`FleetDataAPI.addOfficer`(见上)。
+
+只存在于局部变量、未被任何持久集合引用的人物，帧结束后即被回收 —— **不会被保存，也不会报错**。
+
+市场人物不等于通信目录联系人
+
+`MarketAPI.addPerson` 只把人物放进市场 roster，不会自动建通信目录条目 —— 人物在市场人物列表与存档里，但通信目录/联系人 UI 不出现。
+
+要人物作为联系人可见，必须另行 `getCommDirectory().addPerson(person)` 维护；移除可见联系人时先移 comm entry 再移 roster。
+
+### 注册入口
+
+归属决定保存，注册决定何时执行。本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)`，用各自的 persistent data 键做一次注册判断 (不要把注册键挂进插件既有的 `CLASS_MARK` 门内)。具体代码见 "完整最小例" 的调用点片段。
+
+API 面里最反直觉的几处已经标了容器警告，下面把必须遵守的约束连同违反后果收成一张表。
 
 ## 规则强度
 
-把引擎的行为边界汇总成一张核对表：必须项违反后加载中止，事实项描述运行时的真实行为；每行都附上违反后的可观察结果。
+本节必须遵守的规则清单 ("必须/禁止"，均附违反后的可观察结果)：
 
-| 规则 | 强度 | 违反后的可观察结果 |
-|---|---|---|
-| `conditions` 列禁止出现 `=`(赋值) 操作符 (报错文案："rule [...] has = ('assignment') operator in its conditions, this is most likely an error")| 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
-| `script` 列禁止出现 `==` 操作符 (加载期校验)| 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
-| 选项 id 禁止以 `$` 开头 (报错文案："Option id starts with $ for rule [...]")| 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
-| 条件/脚本引用的命令类必须能在 `ruleCommandPackages`(`data/config/settings.json`) 中找到 | 必须 | 资源加载期 `RuntimeException`(`Command [...] not found in packages:`)，游戏启动中止 |
-| 同一份 `rules.csv` 内规则 id 不得重复 (文本读取工具同文件去重逻辑："Duplicate key [...]")| 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
-| 跨文件重复规则 id：后处理文件的同 id 行静默跳过 (先到先得)| 事实 | 规则不触发且无任何报错；`starsector.log` 中看不到该 id 的 `Loading rule:` 行 |
-| 文本变体分隔符必须独占一行，且严格为 `\nOR\n`(变体按该分隔符切分)| 必须 | 分隔符不匹配时多段文本被当作单条变体整段展示 |
-| `options` 每行必须是 `id:text`(2 段) 或 `order:id:text`(3 段)，按**所有**冒号切分；文本内不得再有冒号 | 必须 | 3 段且首段非数字 → `NumberFormatException` 加载崩溃；3 段以上 → 文本静默截断 (只保留第 3 段)|
-| 选项 id 必须与 `DialogOptionSelected` 规则里的 `$option == <id>` 逐字一致 (含大小写；表达式比较大小写敏感)| 必须 | 点选后无规则匹配：文本面板出现 `ERROR: no rule found for option <id>` + failsafe 选项 (`RuleBasedInteractionDialogPluginImpl`)|
-| `FireAll` 之前会先匹配 `FireAllIntercept` 触发器 (`FireAll`)| 事实 | 拦截规则命中时本次 `FireAll` 被整体跳过 (原版仅 1 条拦截规则，条件是 `$fireAllTrigger == PopulateOptions` 等，不影响自定义 trigger)|
-| 条件列会执行命令：带副作用的 rulecmd 在**匹配阶段**就写状态 (条件求值路径会直接执行命令)| 事实 | 每次匹配 (包括候选失败前已通过的条件) 都执行副作用；写状态应放脚本列 |
-| 同分规则随机挑选 | 事实 | 期望确定性结果时必须用 `score:` 拉开分数差 |
-| `setRandomForNextRulePick` 只影响下一次 pick | 事实 | 跨多次匹配复用随机源会改变文本选择语义 |
+规则
+
+强度
+
+违反后的可观察结果
+
+纯读取人物记忆用 `getMemoryWithoutUpdate()`；`getMemory()` 触发全部插件 `updatePersonFacts`
+
+必须
+
+每次调用触发全部插件回调 (`PersonAPI.getMemory`)，高频读取时回调风暴，其他插件可能改写内存值
+
+人物要成为市场可见联系人，`MarketAPI.addPerson` 之后必须另行 `getCommDirectory().addPerson(person)` 维护目录条目
+
+必须
+
+人物在市场人物列表与存档里，但通信目录/联系人 UI 不出现
+
+"设置档位" 用 `setRelationship(id, RepLevel)`(或 `ensureAtBest`/`ensureAtWorst`)；`adjustRelationship(delta, limit)` 的 limit 只是单次调整的方向边界
+
+必须
+
+数值落在限位内但档位与预期不符 (1.00 − 0.5 落 0.50 = `FRIENDLY` 而非 `HOSTILE`)
+
+`adjustRelationship` 的 delta 为 0 时 (三参版) 不产生任何修改并返回 false
+
+必须
+
+返回值 false、值不变，误以为调用成功
+
+关系数值恒被钳制在 \[-1, 1\] (`RelationshipAPI.setRel` 等写入方法均钳制)
+
+必须
+
+写入越界值后读回被截断 (如写 1.5 读回 1.0)
+
+personality id 必须来自 `personalities.csv` 注册表 (原版 5 个：`timid`/`cautious`/`steady`/`aggressive`/`reckless`)
+
+必须
+
+未知 id 使 `getPersonalityAPI()` 返回 null(CSV spec 加载期的查询静默返回 null)，保存时写档失败 (`NullPointerException`)
+
+`OfficerDataAPI.makeSkillPicks()` 每次调用都会重掷选项；已展示给玩家的可选项必须维持同一对象状态
+
+必须
+
+玩家看到的可选技能列表与展示不一致
+
+`ImportantPeopleAPI.checkOutPerson(person, reasonId)` 必须配对 `returnPerson`；未归还时同 reason 的按条件选人会跳过该人物
+
+必须
+
+任务/事件生成时该人物不再被选中 (`MarketPostPersonFilter`)
+
+`PersonAPI.setMarket(market)` 只写人物字段；市场 roster 必须由 `MarketAPI.addPerson` 维护 (反向：`person.setMarket` 不会把人物放进市场列表)
+
+必须
+
+人物字段显示在市场，但市场列表与通信目录查不到
+
+跨存档保留人物必须挂入至少一个持久集合 (成员 captain / 市场 people+comm / important people / officer roster)
+
+必须
+
+读档后人物不存在、无任何报错
+
+玩家旗舰 `getCaptain()` 恒返回玩家人物 (特例)，不要把自定义舰长挂到旗舰再读回
+
+必须
+
+读回结果与写入不一致 (`FleetMemberAPI.getCaptain`)
+
+佣兵人物 (memory `$isMercenary`) 不获得军官 XP
+
+必须
+
+`addXP` 后 XP 不变 (`OfficerDataAPI.addXP`)
+
+演示/临时人物修改关系后应同帧回滚，且回滚用 "快照原值 + `setRelationship`"
+
+建议
+
+中断残留的修改随存档保存
+
+创建人物优先用 `Global.getFactory().createPerson()` / `FactionAPI.createRandomPerson()`，不依赖实现类构造器
+
+建议
+
+实现类不在公开 API 面，换版本可能失效
+
+规则只是约束，示例才是落地。下面用 8 个类把上面的 API 与规则串成一条可运行、可同帧回滚的演示链。
+
+## 实现人物关系配置
+
+下面让同一个人物依次获得身份、关系、持久归属和舰长岗位，再用另一人物走军官链，并在末尾回滚势力关系。
+
+### 创建并填写人物身份
+
+```java
+PersonAPI person = Global.getFactory().createPerson();
+person.setFaction("hegemony");
+person.setName(new FullName("Aster", "Vance", Gender.FEMALE));
+person.setRankId(Ranks.SPACE_COMMANDER);
+person.setPostId(Ranks.POST_FLEET_COMMANDER);
+person.setPersonality("reckless");
+person.addTag("GearIn_personLesson");
+person.getMemoryWithoutUpdate().set("$GearIn_personLesson", 42);
+```
+
+插入位置：`GearInPersonIdentity.run`。完成信号：姓名、势力、rank、post、personality、标签与 memory 均能从同一对象读回。
+
+### 调整人物对玩家关系
+
+```java
+RelationshipAPI relationship = person.getRelToPlayer();
+relationship.adjustRelationship(0.3f, null);
+relationship.setLevel(RepLevel.COOPERATIVE);
+relationship.setLevel(RepLevel.HOSTILE);
+relationship.setRel(0f);
+```
+
+插入位置：`GearInPersonRelationship.run`。完成信号：关系依次经过 0.30、0.75、-0.50，最后精确回到 0。
+
+### 挂入市场与重要人物集合
+
+```java
+market.addPerson(person);
+market.getCommDirectory().addPerson(person);
+sector.getImportantPeople().addPerson(person);
+```
+
+插入位置：需要跨存档保留并显示联系人的注册逻辑。完成信号：市场 roster、通信目录与 important people 都能找到同一人物。
+
+### 把人物设为非旗舰舰长
+
+```java
+wolf.setCaptain(person);
+boolean sameCaptain = wolf.getCaptain() == person;
+boolean found = fleetData.getMemberWithCaptain(person) == wolf;
+```
+
+插入位置：`GearInCaptain.run`。完成信号：两个判据都为 true；该成员不是玩家旗舰，因此不会触发旗舰舰长特例。
+
+### 包装军官并分配舰船
+
+```java
+PersonAPI officerPerson = sector.getFaction("hegemony").createRandomPerson();
+OfficerDataAPI officer = Global.getFactory().createOfficerData(officerPerson);
+fleetData.addOfficer(officer);
+officer.addXP(100000);
+officer.makeSkillPicks();
+if (!officer.getSkillPicks().isEmpty()) {
+	officer.levelUp(officer.getSkillPicks().get(0));
+}
+hammerhead.setCaptain(officerPerson);
+```
+
+插入位置：`GearInOfficer.run`。完成信号：人物进入军官 roster、舰队引用成立、等级与技能变化，并能从 Hammerhead 反查该舰长。
+
+### 修改势力关系后恢复快照
+
+```java
+float original = hegemony.getRelationship("tritachyon");
+hegemony.setRelationship("tritachyon", 0f);
+hegemony.adjustRelationship("tritachyon", 0.15f);
+hegemony.setRelationship("tritachyon", RepLevel.HOSTILE);
+hegemony.ensureAtWorst("tritachyon", RepLevel.WELCOMING);
+hegemony.setRelationship("tritachyon", original);
+```
+
+插入位置：`GearInFactionRelation.run`。完成信号：日志展示数值与档位变化，末行与演示前关系值完全一致。
+
+## 组装人物关系实现
+
+在既有 MOD 布局与插件生命周期类之上新增 8 个类 (不新增资源文件)。原单一演示类按角色拆成 8 个小类：协调器 + 7 个角色小类，各自承担一个职责：
+
+```text
+mods/GearIndustry/
+├── build.gradle
+├── settings.gradle
+├── mod_info.json
+├── data/
+├── src/
+│   └── data/scripts/gearin/campaign/
+│       ├── GearInPersonScript         # 本节新增（归本节所有）：协调器
+│       ├── GearInBaseline             # 基线快照
+│       ├── GearInPersonIdentity       # 人物创建与身份
+│       ├── GearInPersonRelationship   # 人物对玩家关系
+│       ├── GearInPersonRegistration   # 人物注册（归属入口）
+│       ├── GearInCaptain              # 舰长
+│       ├── GearInOfficer              # 军官
+│       └── GearInFactionRelation      # 势力间关系
+└── jars/
+```
+
+演示脚本在挂载后的第一帧执行**同帧回滚**的序列：基线 → 演示成员 → 人物 A 默认值与身份 → 标签/记忆 → 人物对玩家关系 → 市场与重要人物 → 默认舰长与自定义舰长 → 势力随机人物 → officer 全链 (包装/XP/技能/升级/上舰)→ 势力关系确定性序列 → 清理。
+
+全部修改在当帧回滚，不遗留任何持久状态。
+
+**演示纪律**：演示/临时人物修改后必须同帧回滚，回滚用 "快照原值 + `setRelationship`"(见规则强度表)；先 `add` 后立刻 `remove` 的配对顺序不要调换 —— 演示帧中途抛异常会留下随存档保存的残留，且 `REGISTER_MARK` 已置位后读档不重放，残留无法自动清理 (最坏形态见 "演示异常后关系修改残留" 故障条目)。
+
+### GearInPersonScript(协调器)
+
+一次性演示脚本 (`EveryFrameScript`)：`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除。
+
+职责：记录基线 (交由 GearInBaseline)、创建并挂载演示成员 wolf / hammerhead 供本页各角色小类使用、末尾清理恢复初始舰队。
+
+`REGISTER_MARK`(`"GearIn_PersonLesson"`) 是存档持久化的注册标记键，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
+
+### GearInBaseline
+
+基线快照 (演示前置观察)：记录玩家舰队成员数、玩家势力 id、玩家人物名，并验证玩家旗舰 `getCaptain()` 特例 (旗舰舰长读回玩家人物，`captainIsPlayerPerson=true`)；返回初始成员数，供协调器在清理后对比。
+
+### GearInPersonIdentity
+
+人物创建与身份 (`PersonAPI`)：`Global.getFactory().createPerson()` 创建人物 A 并逐字段读回默认值 (id、`steady`、空名、`spaceCommander`/ `fleetCommander`、`neutral`、默认头像、`MEDIUM`，对应 "人物对象与创建入口" 的默认值表)；
+
+随后写入姓名/性别/势力/rank/post/personality/importance+voice 并读回 (`rank=Commander`、`post=Fleet Commander` 经势力解析)；
+
+标签与内存写入读取 —— 纯读只用 `getMemoryWithoutUpdate()`(对应规则强度第 1 条)。
+
+### GearInPersonRelationship
+
+人物对玩家关系 (`RelationshipAPI` / `RepLevel`)：
+
+* `getRelToPlayer()` 延迟创建 (默认 `rel=0.00 level=NEUTRAL`)；
+* `adjustRelationship(0.3f, null)`(无 limit，正向默认封顶 `COOPERATIVE.getMax()` 即 1.0)；
+* `setLevel(COOPERATIVE)` 落 `0.75`；
+* `setLevel(HOSTILE)` 落 `-0.50`(`min+0.01` / `-min-0.01` 语义)；
+* `setRel(0)` 复位。
+
+五步日志覆盖 "数值连续、档位分段"。
+
+### GearInPersonRegistration
+
+人物注册 (归属入口)：市场侧 `addPerson` / `removePerson` 同帧配对 (`person.setMarket` 联动、`getPeopleCopy` 前后核对)；重要人物 `addPerson` / `containsPerson` / `getData` / `removePerson` 同帧配对。
+
+演示归属四入口中的两个 (市场 people + important people)，且不遗留存档。
+
+### GearInCaptain
+
+舰长 (`FleetMemberAPI`)：读取 wolf 的默认舰长 (steady、空名、level 1，正是保存时会被压缩掉的形态)；`setCaptain(personA)` 后验证 `getCaptain() == personA` 同一性 + `getMemberWithCaptain(personA)` 反查。
+
+### GearInOfficer
+
+军官 (`OfficerDataAPI`)：
+
+* `hegemony.createRandomPerson()` 势力随机人物 (随机姓名/肖像/voice，personality 恒 `steady`)→ `createOfficerData` → `addOfficer`(`personB.getFleet() == playerFleet` 联动)；
+* `addXP(100000)`(`officerMaxLevel=5` 内不封顶)→ `canLevelUp()`(≥ 2 级阈值 48000)；
+* `makeSkillPicks()`(4 个候选)→ `levelUp(pick)`(level 2、技能 1 级)；
+* `hammerhead.setCaptain(personB)` 军官上舰 → `removeOfficer`(`getFleet()` 回 null)。
+
+### GearInFactionRelation
+
+势力间关系 (`FactionAPI` 关系族，hegemony vs tritachyon)：确定性序列 + 同帧回滚：
+
+* `setRelationship(0)` 归一；
+* `adjustRelationship(+0.15)` 落 `0.15 FAVORABLE`；
+* `adjustRelationship(+0.9, COOPERATIVE)` 封顶 `1.00 changed=true`；
+* `setRelationship(HOSTILE)` 落 `-0.50`、`isHostileTo=true`；
+* `adjustRelationship(-0.2, VENGEFUL)` 落 `-0.70` **但档位仍 HOSTILE**(数值连续、档位分段)；
+* `ensureAtWorst(WELCOMING)` 落 `0.25 ensured=true`(抬高关系用 `ensureAtWorst`；`ensureAtBest` 只拉低不抬高，此刻调用它返回 false、值不变)；
+* `setRelationship(原值)` 精确恢复。
+
+**协作关系**：协调器持有共享对象 (人物 A、wolf、hammerhead)，角色小类以 `run(...)` 参数接收 (包内协作，不跨单元)，保持 "同一人物对象贯穿身份 → 关系 → 注册 → 舰长" 的演示语义；
+
+日志前缀统一为 `GearIn person lesson`；人物 A 的标签与 memory key 为 `GearIn_personLesson` / `$GearIn_personLesson`。
+
+调用点 (工程片段 —— 方法所在类归插件生命周期页所有，本节只演示调用，不改动那些文件)：
+
+```java
+    // GearInModPlugin（插件生命周期页所有）onGameLoad(boolean newGame) 内新增本节注册块。
+    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
+    if (!Global.getSector().getPersistentData().containsKey(GearInPersonScript.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInPersonScript.REGISTER_MARK, true);
+        Global.getSector().addScript(new GearInPersonScript());
+    }
+```
+
+构建命令 (在 `mods/GearIndustry/` 执行)：
+
+```text
+gradle jar
+```
+
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类 (可用 `jar tf` 核对)。
+
+演示链已经落地，下面按步骤编译、进档并核对日志与界面。
+
+## 关键故障实验：人物创建成功但任务和通信找不到他
+
+人物只保存在局部变量，没有加入重要人物或市场目录。
+
+**局部故障片段：**
+
+```java
+// 故障片段
+PersonAPI person = Global.getFactory().createPerson();
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+market.addPerson(person);
+market.getCommDirectory().addPerson(person);
+sector.getImportantPeople().addPerson(person);
+```
+
+实际症状：同一会话内局部变量可用，读档后人物消失；只加入市场 roster 时，通信目录仍看不到联系人。
+
+原因：人物只随持久集合保存，通信目录又是独立于市场 roster 的可见联系人集合。
+
+复验：保存并读档后，市场 `getPeopleCopy()`、通信目录和 important people 均应命中同一人物 ID；清理时按相反顺序移除三个归属。
+
+## 验证方案
+
+前置数据：`gear_in` MOD 布局与插件生命周期类 ([C6-S1] / [C6-S2]，含本节调用点片段)、本节 8 个类、生涯时钟脚本 (非必需)。
+
+1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
+2. 新建生涯：确认 `starsector.log` 按顺序出现全部 `GearIn person lesson` 日志行：
+    *   含 `start` / `flagship` / `members` / `personA defaults` / `personA identity` / `tagsMemory` / 五条 `relToPlayer` / `market` / `importantPeople`。
+    *   含 `captain default` / `captain set` / `personB random` / `officer add` / `officer xp` / `officer levelUp` / `officer captain` / `officer remove` / 七条 `factionRel` / `done`。
+    *   关键核对：`captainIsPlayerPerson=true`、`personA defaults` 六项默认值、`rank=Commander`、`post=Fleet Commander`、`relToPlayer` 五步 0.00→0.30→0.75→-0.50→0.00。
+    *   `factionRel` 序列 0.00→0.15→1.00→-0.50→-0.70→0.25→原值、`done` 行成员数与 `start` 一致。
+    *   观察完整日志序列与数值变化。
+3. 界面核对：演示日志出现时打开舰队界面 (F 键)，确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
+4. 只执行一次：等待若干游戏日后日志无新增 `GearIn person lesson` 行；保存并读档后仍无新增 (`REGISTER_MARK` 门已关)；读档后势力关系面板中 hegemony 与 tritachyon 的数值与演示前一致 (同帧回滚)。
+
+预期结果：
+
+* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
+* **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现。
+
+    ```text
+    GearIn person lesson start: members=<N> playerFaction=player playerPerson=<玩家名> GearIn person lesson flagship: name=<旗舰船名> captainIsPlayerPerson=true GearIn person lesson members: added wolf=<船名> hammerhead=<船名> count=<N+2> GearIn person lesson personA defaults: id=p_<uid> personality=steady name='' rankId=spaceCommander postId=fleetCommander faction=neutral portraitIsDefault=true importance=MEDIUM GearIn person lesson personA identity: name=Aster Vance female=true rank=Commander post=Fleet Commander personality=reckless faction=hegemony voice=<soldier|official|aristo 之一> GearIn person lesson tagsMemory: hasTag=true tags=1 memory=42 GearIn person lesson relToPlayer default: rel=0.00 level=NEUTRAL hostile=false GearIn person lesson relToPlayer adjust: rel=0.30 level=WELCOMING GearIn person lesson relToPlayer cooperative: rel=0.75 level=COOPERATIVE GearIn person lesson relToPlayer hostile: rel=-0.50 level=HOSTILE hostile=true GearIn person lesson relToPlayer reset: rel=0.00 level=NEUTRAL GearIn person lesson market: id=jangala inAfterAdd=true personMarketLinked=true inAfterRemove=false GearIn person lesson importantPeople: containsAfterAdd=true dataLinked=true containsAfterRemove=false GearIn person lesson captain default: personality=steady name='' level=1 GearIn person lesson captain set: sameCaptain=true memberWithCaptainFound=true GearIn person lesson personB random: name=<随机名> female=<true|false> faction=hegemony personality=steady portraitIsDefault=false GearIn person lesson officer add: count=<M+1> fleetLinked=true GearIn person lesson officer xp: xp=<X> -> <X+100000> canLevelUp=true picks=4 GearIn person lesson officer levelUp: level=2 skill=<技能id> skillLevel=1.0 GearIn person lesson officer captain: sameCaptain=true memberWithCaptainFound=true officerInRoster=true GearIn person lesson officer remove: count=<M> fleetLinked=true GearIn person lesson factionRel start: original=<O> normalized=0.00 level=NEUTRAL GearIn person lesson factionRel adjust: value=0.15 level=FAVORABLE GearIn person lesson factionRel cap: value=1.00 level=COOPERATIVE changed=true GearIn person lesson factionRel hostile: value=-0.50 level=HOSTILE hostileTo=true GearIn person lesson factionRel vengefulCap: value=-0.70 level=HOSTILE GearIn person lesson factionRel ensure: value=0.25 level=WELCOMING ensured=true GearIn person lesson factionRel restore: value=<O> level=<原档位> GearIn person lesson done: members=<N> (initial <N>)
+    ```
+
+    其中 `<N>` 是初始成员数、`<M>` 是初始军官数、`<O>` 是存档里 hegemony 对 tritachyon 的关系原值、`<X>` 是人物 B 初始 XP(新档为 0)，均以实际日志为准；`voice` 是 hegemony `HIGH` 声音池三选一；`picks=4` 是新档典型值 (以日志为准，≥1)；`skill` 是重掷后的第一个军官技能候选。关系序列各行的数值/档位是**确定性**的：`0.15→FAVORABLE`、`1.00→COOPERATIVE changed=true`、`-0.50→HOSTILE hostileTo=true`、`-0.70 档位仍 HOSTILE`、`0.25→WELCOMING ensured=true`、`restore` 与原值一致。演示只执行一次，之后无任何 `GearIn person lesson` 日志。
+* **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
+* **读档**：不出现任何 `GearIn person lesson` 日志 (`REGISTER_MARK` 门已关、脚本不再注册)；玩家舰队与演示前一致；`hegemony` 与 `tritachyon` 的关系面板数值与演示前一致 (同帧回滚生效)。
+* **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
+
+## 故障分析
+
+- **读档后人物消失**：人物只保存在脚本局部变量中，没有进入持久集合。将人物挂入成员 captain、市场 people 与 comm、important people 或 officer roster；保存并读档后确认同一身份仍可取得。
+- **保存时出现 `NullPointerException`**：`setPersonality` 使用了 `personalities.csv` 中不存在的 ID，空 spec 到写档时才暴露。改用已注册的 personality ID，再保存一次确认日志不再报错。
+- **`adjustRelationship` 返回 `false`**：三参版的 delta 为 `0`，或调整方向被 limit 拦截，因此关系值没有变化。设置档位使用 `setRelationship`，限制上界或下界使用 `ensureAtBest`、`ensureAtWorst`；随后重新读取关系值与档位。
+- **关系档位没有随数值变化**：关系值尚未越过 `RepLevel` 的分段边界。需要确定档位时直接传入 `RepLevel` 调用 `setRelationship`，再同时记录数值和档位复验。
+- **市场人物没有出现在通信目录**：`market.addPerson` 只加入市场 roster。再调用 `market.getCommDirectory().addPerson`，重开通信目录确认联系人可见。
+- **军官获得的 XP 始终为零**：人物 memory 中的 `$isMercenary` 为 true，`OfficerDataAPI.addXP` 会直接返回。解除佣兵标记或改用普通军官，再比较调用前后的 XP。
+- **军官技能选项发生变化**：展示 `getSkillPicks()` 后又调用了 `makeSkillPicks()`，旧选项被清空并重掷。只在生成阶段调用一次，并在同一个 `OfficerDataAPI` 上复查列表。
+- **任务始终选不到指定人物**：人物以相同 reason 被 checkout 后没有归还，筛选器会拒绝再次选取。调用 `returnPerson(person, reasonId)`，再运行一次选人流程。
+- **演示人物在读档后仍然存在**：异常发生在 `addPerson` 与 `removePerson` 之间，而 `REGISTER_MARK` 已阻止演示重放。补齐同帧清理并清除该标记，再运行、保存和读档确认没有残留。
+- **人物好感与势力声望不一致**：代码混用了人物的 `RelationshipAPI` 与势力的 `FactionAPI` 关系。按界面对象选择对应接口，再分别读取两侧数值核对。
+- **旗舰舰长始终显示为玩家**：`FleetMemberAPI.getCaptain()` 对玩家旗舰固定返回玩家人物。将自定义舰长放到非旗舰成员，并从该成员重新读取舰长。
+- **读取 memory 时回调数量异常**：每帧调用 `person.getMemory()` 会触发人物事实更新插件。纯读取改用 `getMemoryWithoutUpdate()`，再比较日志频率和帧耗时。
+- **读档后默认舰长对象发生变化**：未显式设置的低等级默认舰长不会作为稳定人物保存。需要稳定身份时调用 `setCaptain` 写入自定义人物，读档后再核对人物 ID。
+
+## 总结
+
+本节把人物走通为四条链：创建链 (空白或势力随机 → 默认值 → 身份写入)、关系链 (数值连续、档位分段、limit 只是单次调整边界、数值恒钳制在 \[-1, 1\])、captain 链 (生涯侧与战斗侧，玩家旗舰恒返回玩家人物)、officer 链 (包装 → roster → XP/升级 → 上舰)。人物默认值表是调试基准，人物持久化依赖四个归属入口。
+
+排错时先问 "人物是否挂在持久集合"：局部变量人物不保存也不报错，这是多数 "消失" 类问题的共同起点；关系类问题先分清人物侧与势力侧，再对照关系四件事判断。三个 "每次都会发生" 的陷阱值得记牢：`getMemory()` 触发全插件回调、`makeSkillPicks()` 重掷选项、默认舰长保存时压缩。
+
+人物对象链到这里已经走通完整流程。人物是任务、贸易与通信系统的共同实体 —— 任务与事件的选人规则建立在 important people 的 checkout 机制上，市场侧的联系人体系建立在人物归属之上。遇到 "造一个人、调整它与玩家或势力的关系、把它挂进某个持久集合" 的需求，都可以回到本节的四条链上定位。
+
+## 建议参考项
+
+* `com.fs.starfarer.api.characters.PersonAPI`：人物接口全貌 —— 身份、rank/post、头像、势力、记忆、标签、personality、importance/voice、AI core、归属、角色数值与联系。
+* `com.fs.starfarer.api.FactoryAPI`：人物创建入口 (`createPerson` / `createOfficerData`)。
+* `com.fs.starfarer.api.campaign.FactionAPI`：势力关系族 (`adjustRelationship` 两版 / `setRelationship` 两版 / `ensureAtBest` / `ensureAtWorst` / `getRelationshipLevel` / `isHostileTo`) 与 `createRandomPerson`。
+* `com.fs.starfarer.api.campaign.RepLevel`：九档声誉档位枚举与阈值判定 (`getLevelFor` / `getMin` / `getMax` / `isAtWorst` / `isPositive` / `isNegative`)。
+* `com.fs.starfarer.api.characters.RelationshipAPI`：人物对玩家关系 (`getRel` / `setRel` / `getLevel` / `setLevel` / `adjustRelationship` / `ensureAtBest` / `ensureAtWorst` / `isHostile`)。
+* `com.fs.starfarer.api.characters.OfficerDataAPI`：军官包装 (`getPerson` / `setPerson` / `addXP` / `canLevelUp` / `makeSkillPicks` / `getSkillPicks` / `levelUp`)。
+* `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：角色数值 (`getLevel` / `getXP` / `getSkillLevel` / `increaseSkill` / `refreshCharacterStatsEffects`)。
+* `com.fs.starfarer.api.characters.ImportantPeopleAPI`：重要人物集合 (`addPerson` / `containsPerson` / `removePerson` / `getData` / `checkOutPerson` / `returnPerson`)。
+* `com.fs.starfarer.api.characters.MarketPostPersonFilter`：按条件选人的 checkout 过滤。
+* `com.fs.starfarer.api.characters.FullName`：姓名对象与 `Gender` 枚举。
+* `com.fs.starfarer.api.campaign.PersonImportance`：重要性五档与 `getValue()`。
+* `com.fs.starfarer.api.campaign.SectorAPI`：`getEconomy` / `getPlayerPerson` / `getImportantPeople` / `getPlayerFaction` / `getFaction`。
+* `com.fs.starfarer.api.campaign.CampaignFleetAPI`：舰队指挥官 (`getCommander` / `setCommander` / `getCommanderStats`) 与 `getFlagship`。
+* `com.fs.starfarer.api.campaign.FleetDataAPI`：军官集合 (`getOfficersCopy` / `addOfficer` / `removeOfficer`) 与 `getMemberWithCaptain`。
+* `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员舰长 (`getCaptain` / `setCaptain` / `getShipName`)。
+* `com.fs.starfarer.api.combat.ShipAPI`：战斗侧舰长 (`getCaptain` / `getOriginalCaptain` / `setCaptain` / `getFleetCommander`)。
+* `com.fs.starfarer.api.campaign.econ.MarketAPI`：市场人物 (`getCommDirectory` / `addPerson` / `removePerson` / `getPeopleCopy`)。
+* `com.fs.starfarer.api.impl.campaign.ids.Ranks`：rank/post 常量 (`SPACE_COMMANDER` / `POST_FLEET_COMMANDER` 等)。
+* `com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`：`officerLevelUp` 插件实现 (XP 阈值、每级候选)。
+* `com.fs.starfarer.api.plugins.OfficerLevelupPlugin`：军官升级插件接口。
+* `com.fs.starfarer.api.util.Misc`：`isMercenary`(读 memory `$isMercenary`)。
+* `data/characters/personalities.csv`：personality 注册表 (原版 5 个 id、任务权重列)。
+* `data/characters/person_names.csv`：姓名池 (usage `f`/`l`、category)。
+* `data/world/factions/default_ranks.json`：rank/post 显示名的默认来源 (`spaceCommander` / `fleetCommander`)。
+* `data/world/factions/hegemony.faction`：`ranks` 段覆写与 `voices` 声音池 (`LOW` / `MEDIUM` / `HIGH`)。
+* `data/config/settings.json`：`default_portrait`、`officerLevelUp` 插件、`officerXPRequiredMult`、`officerMaxLevel`。
 
 ## 完整最小例
 
-机制与边界都清楚了，现在把它们组合成最小可运行的一套：一份规则表加一个使用入口，覆盖从加载到对话的完整流程。在既有 MOD 工程布局之上新增：一份 `data/campaign/rules.csv`(含本节拥有的 `GearIn_rules_intro_*` 规则，与其它 MOD 的同路径文件自动合并) 与一个 Java 使用入口类。
-
-不新增其它资源、不修改任何既有文件：
-
-```text
-Starsector\mods\GearIndustry\
-├── build.gradle
-├── mod_info.json
-├── data\
-│   └── campaign\
-│       └── rules.csv                     # 本节新增：GearIn_rules_intro_* 规则（本节示例所有权）
-├── src\
-│   └── data\scripts\gearin\rules\
-│       └── GearInRulesIntro             # 本节新增：Java 消费入口（归本节所有）
-└── jars\
-```
-
-### data\campaign\rules.csv
-
-新建 MOD 侧的 `data\campaign\rules.csv`，只写本节拥有的行。命名沿用语义约定：规则 id 为 `GearIn_rules_intro_*`、自定义触发器为 `GearInRulesIntro*`、Java 类 `GearInRulesIntro` 位于包 `data.scripts.gearin.rules`：
-
-```csv
-id,trigger,conditions,script,text,options,notes
-GearIn_rules_intro_welcome,GearInRulesIntro,,"ShowDefaultVisual
-SetShortcut GearIn_rules_intro_leave ""ESCAPE""","欢迎，$playerName。这个对话框完全由 data/campaign/rules.csv 驱动：列、匹配、条件、结果与文本。
-OR
-再次见到您，$playerName。规则系统按独占一行的 OR 把 text 列拆成多条变体，每次随机取一条。","GearIn_rules_intro_open:查看详情
-5:GearIn_rules_intro_leave:结束","本节示例所有权 GearIn_rules_intro_*"
-GearIn_rules_intro_add_a,GearInRulesIntroAdd,,,FireAll 附加文本：条件为空，必然追加。,,
-GearIn_rules_intro_add_b,GearInRulesIntroAdd,RollProbability 0.0,,FireAll 附加文本：命令条件恒假（RollProbability 0.0），永不追加。,,
-GearIn_rules_intro_open,DialogOptionSelected,$option == GearIn_rules_intro_open,"$GearIn_rules_intro_opens = 1 0
-FireAll GearInRulesIntroAdd
-FireBest GearInRulesIntroDetail",,,
-GearIn_rules_intro_detail_low,GearInRulesIntroDetail,$GearIn_rules_intro_opens >= 1,,低分规则：条件总分 1，FireBest 竞争失败。,,
-GearIn_rules_intro_detail_high,GearInRulesIntroDetail,"$GearIn_rules_intro_opens >= 1
-RollProbability 1.0
-!$GearIn_rules_intro_skip score:100","$GearIn_rules_intro_last = detail 0",高分规则：条件总分 102（1 + 1 + 100），FireBest 必然选中。,GearIn_rules_intro_leave:结束,
-GearIn_rules_intro_leave,DialogOptionSelected,$option == GearIn_rules_intro_leave,DismissDialog,,,
-```
-
-> 这是跨单元共享文件：本节只拥有 `GearIn_rules_intro_*` 前缀。禁止改写原版或其它 MOD 的既有规则行，禁止与既有 id 重复 —— 跨文件重复 id 先到先得，本 MOD 的行会被静默跳过且无任何报错。
-
-对应关系：
-
-- **welcome** (trigger `GearInRulesIntro`)：初始对话。
-  - `text` 两段变体用独占一行的 `OR` 分隔，`pickText()` 每次随机取一条；文本里的 `$playerName` 由 token 替换链换成本档人物名。
-  - `script` 先 `ShowDefaultVisual`(显示交互目标默认视觉)，再 `SetShortcut` 把 ESC 绑定到 `GearIn_rules_intro_leave` 选项。
-  - `options` 演示两种格式：`id:text`(order 0) 与 `5:id:text`(order 5)，`FireBest` 按 order 升序排。
-- **add_a / add_b** (trigger `GearInRulesIntroAdd`)：演示 `FireAll` 与命令条件。`RollProbability 0.0` 恒假 (`f < 0.0` 不可能为真)，`RollProbability 1.0` 恒真 —— 不引入随机性。
-- **open** (trigger `DialogOptionSelected`)：演示 `$option` 回流。脚本做三件事：`$GearIn_rules_intro_opens = 1 0`(赋值 + 0 天过期)、`FireAll GearInRulesIntroAdd`(追加 add_a 文本)、`FireBest GearInRulesIntroDetail`(进入分数竞争)。
-- **detail_low / detail_high** (trigger `GearInRulesIntroDetail`)：演示 `FireBest` 分数竞争。
-  - 两规则条件都成立，但 high 总分 102(两条 1 分 + `!$GearIn_rules_intro_skip score:100`) 恒大于 low 的 1 分，结果确定性选中 high。
-  - high 的 `script` 演示赋值并携带选项。
-- **leave** (trigger `DialogOptionSelected`)：`$option == GearIn_rules_intro_leave` → 内置命令 `DismissDialog` 关闭对话。
-- 内置命令 (`ShowDefaultVisual` / `SetShortcut` / `DismissDialog` / `FireBest` / `FireAll` / `RollProbability`) 都是 `BaseCommandPlugin` 子类 (`com.fs.starfarer.api.impl.campaign.rulecmd`)，本节只使用不实现；自定义规则命令见 [C11-S3]。
-- 记忆键 `$option` / `$GearIn_rules_intro_opens` / `$GearIn_rules_intro_skip` / `$GearIn_rules_intro_last` 的过期、持久化与维护语义见 [C11-S4]；本节只保证演示流程内的取值逻辑。
-- `rules.csv` 是跨单元共享文件：本节只拥有 `GearIn_rules_intro_*` 前缀；其他页面使用各自前缀追加行，同前缀内 id 唯一，跨文件重复 id 先到先得的纪律见规则强度节。
-
-### GearInRulesIntro
+::: details 完整成品：GearInPersonScript
 
 ```java
-package data.scripts.gearin.rules;
+package data.scripts.gearin.campaign;
 
 import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignUIAPI;
-import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
+import com.fs.starfarer.api.campaign.FleetDataAPI;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 完整最小例：rules.csv 数据驱动对话的 Java 消费入口。
- *
- * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），persistent data 键 REGISTER_MARK
- * 一次性门控（沿用 C8-S1 / C8-S8 的既有模式，每个注册项用各自的键）。
- *
- * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个初始
- * trigger 为 GearInRulesIntro 的对话；对话的文本、脚本与选项全部来自 data/campaign/rules.csv
- * 中本节拥有的 GearIn_rules_intro_* 规则 ——Java 侧不写任何文本与选项。
- * 验证闭环：注册入口（本类 + onGameLoad 门控）→ 数据文件（rules.csv）→ 运行消费者
- * （RuleBasedInteractionDialogPluginImpl → Rules 引擎）→ 可观察结果（对话文本与日志）。
+ * 人物专题一次性演示脚本（协调器）：编排各角色小类并负责演示成员与清理，自停脚本。
+ * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK 一次性守卫；全程同帧回滚。
  */
-public class GearInRulesIntro implements EveryFrameScript {
+public class GearInPersonScript implements EveryFrameScript {
 
     /** 存档持久化标记：本演示是否已在该存档执行过（随存档保存）。 */
-    public static final String REGISTER_MARK = "GearIn_RulesIntro";
+    public static final String REGISTER_MARK = "GearIn_PersonLesson";
 
-    private static final Logger LOG = Global.getLogger(GearInRulesIntro.class);
+    private static final Logger LOG = Global.getLogger(GearInPersonScript.class);
 
     /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
     private boolean executed = false;
 
-    public GearInRulesIntro() {
-        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
+    public GearInPersonScript() {
     }
 
     @Override
@@ -286,152 +857,407 @@ public class GearInRulesIntro implements EveryFrameScript {
             return;
         }
         executed = true;
-        CampaignUIAPI ui = Global.getSector().getCampaignUI();
-        boolean shown = ui.showInteractionDialog(
-                new RuleBasedInteractionDialogPluginImpl("GearInRulesIntro"),
-                Global.getSector().getPlayerFleet());
-        LOG.info("GearIn rules intro dialog shown=" + shown
-                + " (initial trigger GearInRulesIntro; 对话内容全部来自 rules.csv)");
+        run();
+    }
+
+    private void run() {
+        SectorAPI sector = Global.getSector();
+        FleetDataAPI fleetData = sector.getPlayerFleet().getFleetData();
+        int initialCount = new GearInBaseline().run(sector, fleetData);
+        // 演示成员 wolf / hammerhead（供 captain / officer 小节使用）
+        FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
+        FleetMemberAPI hammerhead = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "hammerhead_Elite");
+        fleetData.addFleetMember(wolf);
+        fleetData.addFleetMember(hammerhead);
+        LOG.info(String.format(
+                "GearIn person lesson members: added wolf=%s hammerhead=%s count=%d",
+                wolf.getShipName(), hammerhead.getShipName(), fleetData.getNumMembers()));
+
+        // 人物 A：创建/身份/标签内存 -> 对玩家关系 -> 市场与重要人物注册
+        PersonAPI personA = new GearInPersonIdentity().run();
+        new GearInPersonRelationship().run(personA);
+        new GearInPersonRegistration().run(sector, personA);
+
+        // 舰长；人物 B 与军官；势力关系（同帧回滚）
+        new GearInCaptain().run(wolf, personA, fleetData);
+        new GearInOfficer().run(sector, hammerhead, fleetData, sector.getPlayerFleet());
+        new GearInFactionRelation().run(sector);
+
+        // 清理：恢复初始舰队
+        fleetData.removeFleetMember(wolf);
+        fleetData.removeFleetMember(hammerhead);
+        LOG.info(String.format(
+                "GearIn person lesson done: members=%d (initial %d)",
+                fleetData.getNumMembers(), initialCount));
     }
 }
 ```
 
-对应关系：
+:::
 
-- `implements EveryFrameScript`：沿用一次性演示模式 ——`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除。
-- `REGISTER_MARK`：persistent data 注册判断键 (`"GearIn_RulesIntro"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
-- `new RuleBasedInteractionDialogPluginImpl("GearInRulesIntro")`：自定义初始 trigger(原版默认 `OpenInteractionDialog` 有 121 条规则，会与演示规则混战；自定义 trigger 保证候选池只有本节规则，`FleetInteractionDialogPluginImpl` / 非对话面板文本触发同样使用自定义 trigger)。
-- `showInteractionDialog(plugin, playerFleet)`：交互目标非 null(`init` 里 `getInteractionTarget().getMemory()` 依赖它)；返回值记入日志 (对话框打开失败时用于定位的防御写法)。
-- 无匹配规则时插件会加 failsafe `Leave` (`RuleBasedInteractionDialogPluginImpl`) —— 整套规则都没加载时，对话框依然恭候您离开，除此之外什么也不显示。它是规则没加载或 trigger 拼错时最直接的可观察信号 (见故障分析 1)。
-
-调用点 (工程片段 —— 该方法属于插件生命周期主题所持有的类，本节只演示调用，不改动那些文件)：
+::: details 完整成品：GearInBaseline
 
 ```java
-    // GearInModPlugin（C6-S2 所有）onGameLoad(boolean newGame) 内新增本节注册块。
-    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInRulesIntro.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInRulesIntro.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInRulesIntro());
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.CampaignFleetAPI;
+import com.fs.starfarer.api.campaign.FleetDataAPI;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+
+/**
+ * 基线快照（演示前置观察）：玩家舰队成员数/玩家势力/玩家人物，及玩家旗舰 getCaptain() 特例。
+ */
+public class GearInBaseline {
+
+    private static final Logger LOG = Global.getLogger(GearInBaseline.class);
+
+    /** 记录基线并返回初始成员数，供协调器在清理后对比。 */
+    public int run(SectorAPI sector, FleetDataAPI fleetData) {
+        int initialCount = fleetData.getNumMembers();
+        LOG.info(String.format(
+                "GearIn person lesson start: members=%d playerFaction=%s playerPerson=%s",
+                initialCount, sector.getPlayerFaction().getId(), sector.getPlayerPerson().getNameString()));
+        CampaignFleetAPI playerFleet = sector.getPlayerFleet();
+        FleetMemberAPI flagship = playerFleet.getFlagship();
+        boolean flagshipCaptainIsPlayer = flagship != null && flagship.getCaptain() == sector.getPlayerPerson();
+        LOG.info(String.format(
+                "GearIn person lesson flagship: name=%s captainIsPlayerPerson=%s",
+                flagship == null ? "none" : flagship.getShipName(), flagshipCaptainIsPlayer));
+        return initialCount;
     }
+}
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
+:::
 
-```text
-gradle jar
+::: details 完整成品：GearInPersonIdentity
+
+```java
+package data.scripts.gearin.campaign;
+
+import java.util.Random;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.PersonImportance;
+import com.fs.starfarer.api.characters.FullName;
+import com.fs.starfarer.api.characters.FullName.Gender;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Ranks;
+
+/**
+ * 人物创建与身份（PersonAPI）：createPerson 默认值、姓名/性别/势力/rank/post/personality/importance+voice、标签与内存。
+ */
+public class GearInPersonIdentity {
+
+    private static final Logger LOG = Global.getLogger(GearInPersonIdentity.class);
+
+    /** 创建人物并写入身份与附属数据，返回该人物供后续角色小节使用。 */
+    public PersonAPI run() {
+        PersonAPI personA = Global.getFactory().createPerson();
+        LOG.info(String.format(
+                "GearIn person lesson personA defaults: id=%s personality=%s name='%s' rankId=%s postId=%s faction=%s portraitIsDefault=%s importance=%s",
+                personA.getId(), personA.getPersonalityAPI().getId(), personA.getNameString(),
+                personA.getRankId(), personA.getPostId(), personA.getFaction().getId(),
+                personA.isDefault(), personA.getImportance()));
+
+        personA.setFaction("hegemony");
+        personA.setName(new FullName("Aster", "Vance", Gender.FEMALE));
+        personA.setRankId(Ranks.SPACE_COMMANDER);
+        personA.setPostId(Ranks.POST_FLEET_COMMANDER);
+        personA.setPersonality("reckless");
+        personA.setImportanceAndVoice(PersonImportance.HIGH, new Random());
+        LOG.info(String.format(
+                "GearIn person lesson personA identity: name=%s female=%s rank=%s post=%s personality=%s faction=%s voice=%s",
+                personA.getNameString(), personA.isFemale(), personA.getRank(), personA.getPost(),
+                personA.getPersonalityAPI().getId(), personA.getFaction().getId(), personA.getVoice()));
+
+        personA.addTag("GearIn_personLesson");
+        personA.getMemoryWithoutUpdate().set("$GearIn_personLesson", 42);
+        LOG.info(String.format(
+                "GearIn person lesson tagsMemory: hasTag=%s tags=%d memory=%d",
+                personA.hasTag("GearIn_personLesson"), personA.getTags().size(),
+                personA.getMemoryWithoutUpdate().getInt("$GearIn_personLesson")));
+        return personA;
+    }
+}
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/rules/GearInRulesIntro.class`(可用 `jar tf` 核对)；`data\campaign\rules.csv` 是 MOD 数据文件，随 MOD 目录被加载器读取 (无需进 jar，规则行放 jar 外与放 jar 内等效 —— 资源加载器都读)。
+:::
 
-注意示例路径 `Starsector\mods\GearIndustry` 是教程虚构路径，页面内路径互相自洽即可。
+::: details 完整成品：GearInPersonRelationship
 
-## 验证方案
+```java
+package data.scripts.gearin.campaign;
 
-前置数据：既有 MOD 工程布局与插件生命周期注册回调 ([C6-S1]、[C6-S2] 建立)、本节的 `data\campaign\rules.csv` 规则表与 `GearInRulesIntro` 使用入口。验证入口为启动器与新建生涯，观察位置是 `starsector.log`、启动器控制台标准输出与对话界面。
+import org.apache.log4j.Logger;
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
-2. **规则注册**：启动游戏，查看 `starsector.log` 中的 `Loading CSV data from [...]` 与本节 7 条 `Loading rule: GearIn_rules_intro_*` 行。
-3. 查看启动器控制台标准输出中的 `$GearIn_rules_intro_skip`、`$GearIn_rules_intro_last` 两条单次使用变量 WARNING(正常现象，原版同样大量存在)。
-4. **对话完整流程**：新建生涯，日志出现 `GearIn rules intro dialog shown=true`，对话弹出；文本为两条欢迎变体之一且含玩家名；选项为 "查看详情" / "结束"；按 ESC 等效点选 "结束"。
-5. **结果链**：点 "查看详情"→ 追加 `FireAll 附加文本` 与 `高分规则` 两段文本，选项只剩 "结束"；点 "结束" 关闭对话。
-6. **读档**：保存后读档，不再出现 `shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关)。
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.RepLevel;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.characters.RelationshipAPI;
 
-预期结果：
+/**
+ * 人物对玩家关系（RelationshipAPI / RepLevel）：延迟默认 -> adjustRelationship -> setLevel -> setRel 复位。
+ */
+public class GearInPersonRelationship {
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
-- **规则注册 (加载期)**：
-  - 启动日志 `starsector.log` 出现 `Loading CSV data from [...data/campaign/rules.csv]` 与逐条 `Loading rule: GearIn_rules_intro_welcome` / `..._add_a` / `..._add_b` / `..._open` / `..._detail_low` / `..._detail_high` / `..._leave`—— 注册入口完整流程的静态证明。
-  - 标准输出 (启动器控制台) 出现两条变量警告 (`System.out.println`，非日志)：`WARNING: variable [$GearIn_rules_intro_skip] only used once; rule id: [GearIn_rules_intro_detail_high]` 与 `...[$GearIn_rules_intro_last] only used once; rule id: [GearIn_rules_intro_detail_high]`—— 单次使用变量属正常现象 (原版同样大量存在)，不是错误。
-- **对话弹出 (新档首次进入生涯后第一帧)**：`starsector.log` 出现 `GearIn rules intro dialog shown=true`；游戏暂停并弹出对话：
-  - 文本面板显示两条欢迎变体之一 (每次随机)：含玩家名的句子 (`$playerName` 已替换)；
-  - 选项面板按 order 显示 "查看详情"(order 0) 与 "结束"(order 5)；
-  - 按 ESC 等于点选 "结束"(`SetShortcut` 生效)。
-- **点 "查看详情"**：文本面板按顺序追加三段：
-  - `FireAll 附加文本：条件为空，必然追加。`(`add_a` 命中；`add_b` 的 `RollProbability 0.0` 恒假不触发)；
-  - `高分规则：条件总分 102（1 + 1 + 100），FireBest 必然选中。`(`detail_high` 总分 102 恒胜 `detail_low` 的 1 分，确定性)；
-  - 选项面板被替换为单个 "结束"(`detail_high` 的选项；`FireBest` 非 keepOptions 时先清空再添加)。
-- **点 "结束"(或按 ESC)**：`DismissDialog` 关闭对话，游戏恢复。
-- **读档**：不出现 `GearIn rules intro dialog shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关)；对话本身不随存档保存。
-- **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志；加载期无 `Duplicate key` / `Duplicate rule id` / `Command [...] not found` / `has = ('assignment')` / `has == ('equals')` / `Option id starts with $` 等规则加载异常。
+    private static final Logger LOG = Global.getLogger(GearInPersonRelationship.class);
 
-## 故障分析
+    public void run(PersonAPI personA) {
+        RelationshipAPI relToPlayer = personA.getRelToPlayer();
+        LOG.info(String.format(
+                "GearIn person lesson relToPlayer default: rel=%.2f level=%s hostile=%s",
+                relToPlayer.getRel(), relToPlayer.getLevel(), relToPlayer.isHostile()));
+        relToPlayer.adjustRelationship(0.3f, null);
+        LOG.info(String.format(
+                "GearIn person lesson relToPlayer adjust: rel=%.2f level=%s",
+                relToPlayer.getRel(), relToPlayer.getLevel()));
+        relToPlayer.setLevel(RepLevel.COOPERATIVE);
+        LOG.info(String.format(
+                "GearIn person lesson relToPlayer cooperative: rel=%.2f level=%s",
+                relToPlayer.getRel(), relToPlayer.getLevel()));
+        relToPlayer.setLevel(RepLevel.HOSTILE);
+        LOG.info(String.format(
+                "GearIn person lesson relToPlayer hostile: rel=%.2f level=%s hostile=%s",
+                relToPlayer.getRel(), relToPlayer.getLevel(), relToPlayer.isHostile()));
+        relToPlayer.setRel(0f);
+        LOG.info(String.format(
+                "GearIn person lesson relToPlayer reset: rel=%.2f level=%s",
+                relToPlayer.getRel(), relToPlayer.getLevel()));
+    }
+}
+```
 
-规则系统的故障几乎都落在同一条核对线上：数据文件 → 注册入口 → 运行使用方 → 可观察结果。以下按症状列出，每个症状给出触发、原因与修正。
+:::
 
-1. **对话只显示 failsafe"Leave"，本节规则一条都没执行**。
-   - 触发：`GearInRulesIntro` trigger 拼写与 `new RuleBasedInteractionDialogPluginImpl("GearInRulesIntro")` 不一致，或 welcome 规则没被加载 (id 拼错、列错位、跨文件撞 id 被静默跳过)。
-   - 原因：`init` 里 `fireBest(initialTrigger)` 无匹配，插件只加 failsafe "Leave" (`RuleBasedInteractionDialogPluginImpl`)；`starsector.log` 中没有对应 `Loading rule:` 行。
-   - 修正：先核对 `Loading rule:` 日志 (数据文件侧)，再核对 trigger 字符串逐字一致 (注册入口侧)。
-2. **启动中止 (Fatal/堆栈)，指向规则加载**。
-   - 触发：`conditions` 列写了 `=`、`script` 列写了 `==`、选项 id 以 `$` 开头、命令类不存在、同一文件重复 id。
-   - 原因：这些写法都触发资源加载期 `RuntimeException`，游戏启动中止，报错文案见规则强度节。
-   - 修正：按报错文案定位到行；`=` 赋值移到脚本列、`==` 移到条件列。
-3. **规则不触发且无报错 (首选排查方向)**。
-   - 触发：跨文件重复 id —— 本 MOD 行与原版/其它 MOD 同 id，先到先得把本 MOD 行静默跳过。
-   - 原因：`Loading rule:` 日志只有先处理文件的 id (无本 MOD 行)，也没有任何异常，规则因此悄悄缺席。
-   - 修正：把 id 换成唯一前缀 (本节 `GearIn_rules_intro_*` 即为此设计)；同文件内重复 id 则直接崩溃 (`Duplicate key`)。
-4. **选项点了没反应，文本面板出现 `ERROR: no rule found for option ...`**。
-   - 触发：`$option == <id>` 与 `options` 列里的 id 不一致 (大小写、多余空格、`id:text` 里 id 被改写)。
-   - 原因：`DialogOptionSelected` 无匹配 → 红字 ERROR + failsafe `Exit dialog` (`RuleBasedInteractionDialogPluginImpl`)。
-   - 修正：`$option` 的值 = `addOption` 时使用的 `option.id` (`options` 列 `:` 前那段)，比较大小写敏感，逐字对齐。
-5. **条件恒假导致规则永不命中**。
-   - 触发：记忆键拼错 (少了 `$tag:` 前缀、`$memkey.name` 的记忆键名写错、把本地键写成别的记忆键)；或把 `"1"` / `"yes"` 当真值。
-   - 原因：`$var` 判真只有 `"true"` (忽略大小写) 与 `Boolean.TRUE` 为真，null / `"1"` / `"false"` 都是 false；`$tag:` 类 facts 键依赖实体/市场/人物确实带该 tag (`CoreCampaignPluginImpl`)。
-   - 修正：用 devMode 的 `DumpMemory` 命令 (rulecmd `DumpMemory`) 或 `console` 查看 memoryMap 实际键；变量解析规则见 `Misc.Token.getVarNameAndMemory`。
-6. **文本一直整段显示、从不分变体**。
-   - 触发：`OR` 没有独占一行 (`\nOR\n` 是严格分隔符)；或编辑器把换行写成了 `\r\n` 且 CSV 解析未归一。
-   - 原因：多段文本被当成单条变体，`pickText` 只有一条候选，没有随机。
-   - 修正：把 `OR` 单独成行；确认文件 UTF-8 无 BOM、行尾按 CSV 规范。
-7. **选项文本丢失或加载崩溃，问题出在冒号**。
-   - 触发：选项行 `id:Text: with colon`。
-   - 原因：加载器按**所有**冒号切分 —— 2 段 = `id:text`；3 段 = `order:id:text` (首段解析 float)；3 段以上 → 文本只保留第 3 段 (静默截断)；3 段且首段非数字 → `NumberFormatException` 加载崩溃。
-   - 修正：选项文本内不要用冒号 (用全角冒号或改写文本)。
-8. **明明命中了却出现随机性、结果不稳定**。
-   - 触发：`FireBest` 候选同分 → `WeightedRandomPicker` 随机。
-   - 原因：同分时引擎只做随机挑选：同样操作两次结果不同，日志无提示。
-   - 修正：给期望确定性的规则条件加 `score:N` (本节 `detail_high` 的 `score:100` 就是为此)；`setRandomForNextRulePick` 只影响下一次 pick，不能当全局随机源。
-9. **`FireAll` 什么都没做**。
-   - 触发：目标 trigger 无命中规则；或拦截 —— `FireAll` 先 `fireBest("FireAllIntercept")`，命中即整体跳过 (`FireAll`；原版有 1 条拦截规则，条件是 `$fireAllTrigger == PopulateOptions` 等，只拦截特定 trigger，自定义 trigger 不受影响)。
-   - 原因：无追加文本/选项；`FireAll` 返回 false。
-   - 修正：核对 trigger 与规则条件；注意拦截规则是对全 trigger 生效的。
-10. **条件列命令悄悄改了状态**。
-   - 触发：把写状态命令 (如 `AddCredits`、赋值类) 放进 `conditions` 列。
-   - 原因：每次匹配求值都会执行该命令 (包括最终失败候选已通过的部分)，状态被重复写入。
-   - 修正：写状态放 `script` 列；条件列只放无副作用的判断 (`$var`、比较、`RollProbability`、`RepIsAtBest` 等)。
-11. **命令异常时对话内出现红字段落**。
-   - 触发：脚本/条件命令执行抛 RuntimeException。
-   - 原因：表达式执行路径捕获异常后 `log.warn` + 文本面板加 `<异常类>: <消息>` 红字段落；dialog 为 null 的上下文 (非对话触发，如面板文本 trigger) 则直接重抛。
-   - 修正：按红字定位命令与参数；非对话 trigger 的命令要自己处理 null dialog。
-12. **对话没弹出来 (或弹出时机不对)**。
-   - 触发：与已有对话/新手引导撞车 (`showInteractionDialog` 返回 false，与交互对话框打开失败同源)，或演示脚本在错误阶段注册。
-   - 原因：`showInteractionDialog` 返回 `false`，对话框没有打开；日志只有 `shown=false`，没有报错。
-   - 修正：在生涯阶段 (`Global.getCurrentState()` 为 CAMPAIGN 状态) 注册；首次进入生涯后由 `advance` 触发；若与新档引导冲突，等引导结束后再触发 (扩展写法不在本节范围)。
-13. **`$option` 之外的记忆在对话结束后变了**。
-   - 触发：把演示脚本写进了局部记忆但误以为会随对话一起消失。
-   - 原因：记忆键过期语义由 `expire` 天数决定 (`0` 天过期的具体行为属 [C11-S4])；`$option` 由插件写 `expire 0` (`RuleBasedInteractionDialogPluginImpl`)。
-   - 修正：需要跨对话保留的状态显式设过期天数或接受持久化；深度语义属于 [C11-S4]。
+::: details 完整成品：GearInPersonRegistration
 
-## 总结
+```java
+package data.scripts.gearin.campaign;
 
-本节把规则系统走通成一条从数据到对话的流程：`data/campaign/rules.csv` 的七列决定一条规则能写什么，加载与合并决定它是否真的进入游戏，匹配与条件决定它何时被选中，`FireBest` / `FireAll` 与 `$option` 回流把它变成对话文本和选项。完整最小例把这条流程全部接通：规则表只负责数据，`GearInRulesIntro` 只负责打开对话，文本与选项全部来自 CSV。
+import org.apache.log4j.Logger;
 
-排错判断可以浓缩成几条：注册看 `Loading rule:` 日志而不是找报错；加载期致命错误全部是启动中止级 (条件列 `=`、脚本列 `==`、`$` 开头选项 id、命令找不到、同文件重复 id)；跨文件重复 id 静默跳过是规则不触发且无报错的首要原因；`FireBest` 只取一条而 `FireAll` 执行全部；判真只有 `"true"` 与 `Boolean.TRUE` 为真，比较大小写敏感；文本变体靠独占一行的 `OR`，选项文本里不能有冒号，选项 id 与 `$option ==` 必须逐字一致。
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.campaign.econ.EconomyAPI;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.characters.ImportantPeopleAPI.PersonDataAPI;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
 
-对话框生命周期与脚本注册判断是本节的两个底座。[C11-S3] 和 [C11-S4] 会继续使用这份 `GearIn_rules_intro_*` 规则表与 `$option` 回流约定。
+/**
+ * 人物注册（归属入口）：市场通讯录 addPerson/removePerson 双向交接，重要人物 addPerson/contains/getData/removePerson。
+ */
+public class GearInPersonRegistration {
 
-## 建议参考项
+    private static final Logger LOG = Global.getLogger(GearInPersonRegistration.class);
 
-- `data/campaign/rules.csv`：本节示例规则表 (`GearIn_rules_intro_*` 前缀) 与原版规则表的存放路径。
-- `data/config/settings.json`：`ruleCommandPackages` 命令包配置。
-- `com.fs.starfarer.api.campaign.rules.RulesAPI`：规则匹配入口 (`getAllMatching` / `getBestMatching` / `performTokenReplacement` / `setRandomForNextRulePick`)。
-- `com.fs.starfarer.api.campaign.rules.RuleAPI`：单条规则的文本、选项与脚本访问。
-- `com.fs.starfarer.api.campaign.rules.MemoryAPI` / `MemKeys`：规则记忆键读写与内存分组键。
-- `com.fs.starfarer.api.campaign.rules.Option`：对话选项的 `id` / `text` / `order`。
-- `com.fs.starfarer.api.campaign.rules.CommandPlugin` / `ExpressionAPI`：规则命令与条件表达式的约定接口。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin`：内置规则命令基类 (`FireBest` / `FireAll` / `DismissDialog` / `RollProbability` / `SetShortcut` / `ShowDefaultVisual` 等均为其子类)。
-- `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl`：规则驱动对话插件，本节使用方完整流程的核心。
-- `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`：舰队遭遇对话对规则引擎的调用。
-- `com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`：`$tag:` / `$mc:` / `$friendlyToPlayer` 等 facts 记忆键的来源。
-- `com.fs.starfarer.api.impl.campaign.CoreRuleTokenReplacementGeneratorImpl`：文本 token 替换表的默认实现。
-- `com.fs.starfarer.api.util.Misc`：规则表达式 token 化、变量解析与 token 替换工具。
-- `com.fs.starfarer.api.campaign.SectorAPI`：`getRules()` 获取 `RulesAPI`。
+    public void run(SectorAPI sector, PersonAPI personA) {
+        EconomyAPI economy = sector.getEconomy();
+        MarketAPI market = economy.getMarket("jangala");
+        if (market == null) {
+            for (MarketAPI candidate : economy.getMarketsCopy()) {
+                if (candidate.hasSubmarket(Submarkets.SUBMARKET_OPEN)) {
+                    market = candidate;
+                    break;
+                }
+            }
+        }
+        if (market != null) {
+            market.addPerson(personA);
+            boolean inMarketAfterAdd = market.getPeopleCopy().contains(personA);
+            boolean personMarketLinked = personA.getMarket() == market;
+            market.removePerson(personA);
+            boolean inMarketAfterRemove = market.getPeopleCopy().contains(personA);
+            LOG.info(String.format(
+                    "GearIn person lesson market: id=%s inAfterAdd=%s personMarketLinked=%s inAfterRemove=%s",
+                    market.getId(), inMarketAfterAdd, personMarketLinked, inMarketAfterRemove));
+        } else {
+            LOG.info("GearIn person lesson market: none found, skipped");
+        }
+
+        sector.getImportantPeople().addPerson(personA);
+        boolean importantAfterAdd = sector.getImportantPeople().containsPerson(personA);
+        PersonDataAPI personData = sector.getImportantPeople().getData(personA);
+        boolean personDataLinked = personData != null && personData.getPerson() == personA;
+        sector.getImportantPeople().removePerson(personA);
+        boolean importantAfterRemove = sector.getImportantPeople().containsPerson(personA);
+        LOG.info(String.format(
+                "GearIn person lesson importantPeople: containsAfterAdd=%s dataLinked=%s containsAfterRemove=%s",
+                importantAfterAdd, personDataLinked, importantAfterRemove));
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInCaptain
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.FleetDataAPI;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+
+/**
+ * 舰长（captain）：默认舰长读取（steady/空名/level 1）、setCaptain 交接与 getMemberWithCaptain 反查。
+ */
+public class GearInCaptain {
+
+    private static final Logger LOG = Global.getLogger(GearInCaptain.class);
+
+    public void run(FleetMemberAPI wolf, PersonAPI personA, FleetDataAPI fleetData) {
+        PersonAPI defaultCaptain = wolf.getCaptain();
+        LOG.info(String.format(
+                "GearIn person lesson captain default: personality=%s name='%s' level=%d",
+                defaultCaptain.getPersonalityAPI().getId(), defaultCaptain.getNameString(),
+                defaultCaptain.getStats().getLevel()));
+        wolf.setCaptain(personA);
+        LOG.info(String.format(
+                "GearIn person lesson captain set: sameCaptain=%s memberWithCaptainFound=%s",
+                wolf.getCaptain() == personA, fleetData.getMemberWithCaptain(personA) == wolf));
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInOfficer
+
+```java
+package data.scripts.gearin.campaign;
+
+import java.util.List;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.CampaignFleetAPI;
+import com.fs.starfarer.api.campaign.FleetDataAPI;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.characters.OfficerDataAPI;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+
+/**
+ * 军官（OfficerDataAPI）：势力随机人物 -> 包装入 roster -> XP/技能候选/升级 -> 上舰 -> 移除。
+ */
+public class GearInOfficer {
+
+    private static final Logger LOG = Global.getLogger(GearInOfficer.class);
+
+    public void run(SectorAPI sector, FleetMemberAPI hammerhead, FleetDataAPI fleetData,
+                    CampaignFleetAPI playerFleet) {
+        PersonAPI personB = sector.getFaction("hegemony").createRandomPerson();
+        LOG.info(String.format(
+                "GearIn person lesson personB random: name=%s female=%s faction=%s personality=%s portraitIsDefault=%s",
+                personB.getNameString(), personB.isFemale(), personB.getFaction().getId(),
+                personB.getPersonalityAPI().getId(), personB.isDefault()));
+
+        OfficerDataAPI officer = Global.getFactory().createOfficerData(personB);
+        fleetData.addOfficer(officer);
+        LOG.info(String.format(
+                "GearIn person lesson officer add: count=%d fleetLinked=%s",
+                fleetData.getOfficersCopy().size(), personB.getFleet() == playerFleet));
+
+        long xpBefore = personB.getStats().getXP();
+        officer.addXP(100000);
+        boolean canLevelUp = officer.canLevelUp();
+        officer.makeSkillPicks();
+        List<String> picks = officer.getSkillPicks();
+        LOG.info(String.format(
+                "GearIn person lesson officer xp: xp=%d -> %d canLevelUp=%s picks=%d",
+                xpBefore, personB.getStats().getXP(), canLevelUp, picks.size()));
+        if (!picks.isEmpty()) {
+            String pick = picks.get(0);
+            officer.levelUp(pick);
+            LOG.info(String.format(
+                    "GearIn person lesson officer levelUp: level=%d skill=%s skillLevel=%s",
+                    personB.getStats().getLevel(), pick, personB.getStats().getSkillLevel(pick)));
+        }
+
+        hammerhead.setCaptain(personB);
+        LOG.info(String.format(
+                "GearIn person lesson officer captain: sameCaptain=%s memberWithCaptainFound=%s officerInRoster=%s",
+                hammerhead.getCaptain() == personB,
+                fleetData.getMemberWithCaptain(personB) == hammerhead,
+                fleetData.getOfficersCopy().contains(officer)));
+
+        fleetData.removeOfficer(personB);
+        LOG.info(String.format(
+                "GearIn person lesson officer remove: count=%d fleetLinked=%s",
+                fleetData.getOfficersCopy().size(), personB.getFleet() == null));
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInFactionRelation
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.FactionAPI;
+import com.fs.starfarer.api.campaign.RepLevel;
+import com.fs.starfarer.api.campaign.SectorAPI;
+
+/**
+ * 势力间关系（FactionAPI 关系族）：setRelationship / adjustRelationship / ensureAtWorst 确定性序列 + 同帧回滚。
+ */
+public class GearInFactionRelation {
+
+    private static final Logger LOG = Global.getLogger(GearInFactionRelation.class);
+
+    public void run(SectorAPI sector) {
+        FactionAPI hegemony = sector.getFaction("hegemony");
+        FactionAPI tritachyon = sector.getFaction("tritachyon");
+        float originalRel = hegemony.getRelationship("tritachyon");
+        hegemony.setRelationship("tritachyon", 0f);
+        LOG.info(String.format(
+                "GearIn person lesson factionRel start: original=%.2f normalized=%.2f level=%s",
+                originalRel, hegemony.getRelationship("tritachyon"),
+                hegemony.getRelationshipLevel("tritachyon")));
+        hegemony.adjustRelationship("tritachyon", 0.15f);
+        LOG.info(String.format(
+                "GearIn person lesson factionRel adjust: value=%.2f level=%s",
+                hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon")));
+        boolean cappedChanged = hegemony.adjustRelationship("tritachyon", 0.9f, RepLevel.COOPERATIVE);
+        LOG.info(String.format(
+                "GearIn person lesson factionRel cap: value=%.2f level=%s changed=%s",
+                hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon"), cappedChanged));
+        hegemony.setRelationship("tritachyon", RepLevel.HOSTILE);
+        LOG.info(String.format(
+                "GearIn person lesson factionRel hostile: value=%.2f level=%s hostileTo=%s",
+                hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon"),
+                hegemony.isHostileTo("tritachyon")));
+        hegemony.adjustRelationship("tritachyon", -0.2f, RepLevel.VENGEFUL);
+        LOG.info(String.format(
+                "GearIn person lesson factionRel vengefulCap: value=%.2f level=%s",
+                hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon")));
+        boolean ensured = hegemony.ensureAtWorst("tritachyon", RepLevel.WELCOMING);
+        LOG.info(String.format(
+                "GearIn person lesson factionRel ensure: value=%.2f level=%s ensured=%s",
+                hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon"), ensured));
+        hegemony.setRelationship("tritachyon", originalRel);
+        LOG.info(String.format(
+                "GearIn person lesson factionRel restore: value=%.2f level=%s",
+                hegemony.getRelationship("tritachyon"), hegemony.getRelationshipLevel("tritachyon")));
+    }
+}
+```
+
+:::

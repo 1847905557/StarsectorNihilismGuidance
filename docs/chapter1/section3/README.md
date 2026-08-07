@@ -330,13 +330,13 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 
 ## 故障分析
 
-- `Addship` 找不到航母：`ship_data.csv` 的 `GearIn_furnaceman` 行未加载，或 `.ship`、CSV 与装配引用的船体 ID 不一致。
-- 航母战机从舰体中心生成：对应甲板港口数为 0/1。
-- 联队无法补充或返航：先确认战机船体的 `hullSize` 为 `FIGHTER`，再核对 wing、variant 与 hull 三段 ID 是否依次指向现有对象。
-- `Addwing` 报 unknown wing：`wing_data.csv` 的 ID 未加载，或误把 hull/variant ID 当成 wing ID。
-- 战机生成后没有武器：variant 的槽位 ID 与 `.ship` 不一致。
-- 装配界面分类与 `role` 不一致：核对 `wing_data.csv` 的 `role`、`role desc` 和分类 tag，并确认修改已保存且游戏已经重启加载。
-- 日志出现航母或战机相关错误：从首个异常开始，沿最终 ID 依次核对 CSV、wing、variant、hull 和资源路径。
+- **`Addship` 找不到航母**：`ship_data.csv` 的 `GearIn_furnaceman` 行未加载，或 `.ship`、CSV 与装配引用的船体 ID 不一致。统一 ID 并重启游戏后，`Addship GearIn_furnaceman` 应能生成航母。
+- **航母战机从舰体中心生成**：对应甲板的港口数为 0 或 1，无法提供正确的出入路径。在舰船编辑器中补齐并保存甲板港口，重新开战后，战机应从设定位置起飞。
+- **联队无法补充或返航**：战机船体的 `hullSize` 不是 `FIGHTER`，或 wing、variant、hull 三段 ID 没有依次指向现有对象。修正引用后重新部署航母，损失的战机应能补充，存活战机应能返航。
+- **`Addwing` 报 unknown wing**：`wing_data.csv` 的 ID 未加载，或命令中误用了 hull 或 variant ID。核对并使用 wing ID，重启后 `Addwing` 应能生成完整联队。
+- **战机生成后没有武器**：variant 中的槽位 ID 与 `.ship` 不一致，武器无法挂载到目标槽位。统一槽位 ID 并重新生成联队，战机应携带装配定义的武器。
+- **装配界面的联队分类与 `role` 不一致**：`wing_data.csv` 的 `role`、`role desc` 或分类 tag 配置不匹配，或修改尚未重新加载。修正并重启游戏后，装配界面的分类和说明应与数据行一致。
+- **日志出现航母或战机加载错误**：从首个异常开始，沿最终 ID 依次核对 CSV、wing、variant、hull 和资源路径。修正首个断点并重启，日志应完成整条联队加载链。
 
 ## 总结
 

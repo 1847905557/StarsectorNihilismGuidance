@@ -1,8 +1,8 @@
-# 接入 Nexerelin 势力功能
+# 在生涯场景中使用 Rules
 
-本节把齿轮工业接入可选 MOD Nexerelin，使势力能够参与开局选择、星系生成、地面战与特遣队活动。Nexerelin 缺失时，齿轮工业仍可独立运行。
+本节把已有 Rules 规则接入对话、市场、舰队、酒吧与任务等生涯场景。每类场景会在固定时机触发匹配，并提供不同的变量供规则使用。
 
-*本节预期阅读时间：~25 分钟。*
+*本节预期阅读时间：~20 分钟。*
 
 *本节预期操作时间：~40 分钟。*
 
@@ -10,650 +10,701 @@
 
 完成后，您将能够：
 
-- 说出五个接入面各自的注册入口：`mod_factions.csv` 与 `<factionId>.json`(势力配置)、`corvus_spawnpoints.csv`(生成点)、`SectorManager`(模式判定)、`groundBattleDefs.json`(地面战)、`specialForcesNamerClass`(特遣队命名器)；
-- 解释势力配置的读取链 (按 MOD id 合并、只提交自己的行与键)，以及漏写 `mod_factions.csv` 名单行的可观察结果；
-- 写出生成分支的标准做法：`isModEnabled("nexerelin")` 检测 → `getManager() != null` 判断 → `isCorvusMode()` 分派，并解释为什么 `onNewGame` 阶段必须先判空；
-- 为齿轮工业创建最小配置：出生点行、势力 JSON、`groundBattleDefs.json` 条目与 `groundBattleSettings`；
-- 实现一个特遣队命名器类 (`GearInSpecialForcesNamer implements SpecialForcesNamer`)，并说出加载链与三个失败形态的可观察结果；
-- 从典型症状反推配置或代码错误，定位到对应链路并完成修正。
+* 区分五类场景各自的核心 trigger，并说清每类的触发时机、派发点与主要可用变量：
+    *   对话：`OpenInteractionDialog` / `PopulateOptions` / `DialogOptionSelected` / `PickGreeting` / `OpenCommLink`；
+    *   市场：`MarketPostOpen` / `MarketPostDock` / `TradePanelFlavorText`；
+    *   舰队：`BeginFleetEncounter` / `OpenCommLink` / `PickGreeting`；
+    *   酒吧：`AddBarEvents` / `BarPrintDesc` / `ReturnFromBar` / `BarHighRepCrewGain`；
+    *   任务：`MHOpenText` / `<前缀>_blurb` / `<前缀>_option` / `<前缀>_blurbBar` / `<前缀>_optionBar` / `AddMHCloseOption` / `NewGameOptionSelected` / `AddNewGameChoices`；
+* 解释场景组合写法：`$menuState` / `$tradeMode` 状态记忆限定菜单、`$option` 回流 `DialogOptionSelected` 形成选项完整流程、`FireAll` 填充菜单与 `FireBest` 叙述/转场的分层、`score:` 竞争纪律、以及 "进入/退出配对" 的转场模式；
+* 说明覆盖原版规则时的职责纪律：`FireBest` 只执行一条规则，覆盖者必须复刻被覆盖规则的结果职责 (最典型的：`MarketPostDock` 的 `$menuState = main 0` + `FireAll PopulateOptions`)，否则市场菜单不会出现；
+* 从症状定位场景故障 (见故障分析节)，并沿着**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置核对 (沿用规则基础页的最小任务链)。
 
 ## 前置知识
 
-- [C3-S2] 的势力注册、`factions.csv` 与势力 ID；
-- [C3-S3] 的新建生涯生成时序、生成入口插件和 `onNewGame` 调用时机；
-- [C8-S4] 的 `FleetParamsV3` 与 `FleetFactoryV3.createFleet` 舰队创建；
-- [C14-S1] 的软依赖 `isModEnabled(id)`、类存在性判断、引用隔离和缺依赖降级；
-- [C8-S1] 的运行期注册检查与 persistent data；
-- [C6-S2] 的 MOD 插件回调与 `onGameLoad` 调用时机。
+* [C6-S2] 的 MOD 生命周期与规则文件加载边界；
+* [C9-S1] 的 `addScript` 与持久数据判断；
+* [C9-S6] 的 `showInteractionDialog` 与 `InteractionDialogPlugin` 生命周期；
+* [C14-S1] 的 `rules.csv` 七列、匹配流程、条件脚本语法、文本 token 替换与直接写行即注册的效果；
+* [C14-S3] 的 `BaseCommandPlugin` 与内置规则命令；
+* [C14-S4] 的 `MemoryAPI` 过期、持久化、`$option` 回流与场景事实键。
 
 ## 术语
 
-本节会反复使用以下 Nexerelin 专有名词与缩写，先统一指代，正文不再重复解释 (API 名保留源码大小写)：
-
-| 词 | 含义 |
-|---|---|
-| 势力争霸 (Nexerelin) | 可选 MOD；`mod_info.json` 的 `id` 为 `nexerelin`。其新档流程接管原版 "新游戏创建"，增加势力选择、随机星域生成、入侵、外交、地面战与特遣队 |
-| Corvus 模式 (corvus mode) | Nexerelin 的 "原版星域" 模式：保留原版 Corvus 等固定星系，追加各 MOD 固定内容；对应 `SectorManager.isCorvusMode() == true` |
-| 随机星域模式 | Nexerelin 的随机生成模式：星区由 `ExerelinProcGen` 程序化生成，势力市场按 `marketSpawnWeight` 分配份额；对应 `isCorvusMode() == false` |
-| 新游戏创建 (NGC) | Nexerelin 的开局流程界面 (源码 `Nex_NGC*` 规则命令族)：选择势力、开局舰队与出生方式 |
-| 势力配置 (faction config) | 运行期对象 `NexFactionConfig`；数据源是 `exerelinFactionConfig/<factionId>.json`，经 `NexConfig.getFactionConfig(id)` 读取 |
-| 生成点 (spawn point) | `corvus_spawnpoints.csv` 的一行：势力在 Corvus 模式下的开局出生位置 (`faction,system,entityID`) |
-| 地面战 (ground battle) | Nexerelin 的入侵地面战斗系统 (`exerelin.campaign.intel.groundbattle`)；MOD 接入面是 `groundBattleDefs.json` 与势力配置的 `groundBattleSettings` |
-| 特遣队 (special forces) | Nexerelin 的势力精锐舰队 (`SpecialForcesIntel`/`SpecialForcesManager`)；命名器 API 名保留 `SpecialForcesNamer` |
+按术语约定，本节首次完整讲解以下词；API 类名保留源码大小写：
 
-## 接入总览：先定软依赖做法
+* **场景 trigger(scene trigger)**：`rules.csv` 中按 "生涯场景" 分组的标准触发器名。
+    *   场景 trigger 的候选池由原版派发点 (Java 插件) 以固定字符串发起匹配；MOD 向其中添加规则即挂载到该场景。
+    *   与规则基础页的自定义 trigger 相对：自定义 trigger 只能由 `RuleBasedInteractionDialogPluginImpl` 构造器或 `FireBest`/`FireAll` 主动调用，场景 trigger 由原版使用方在固定时机调用。
+* **场景事实键 (scene fact key)**：`CoreCampaignPluginImpl` 的 `update*Facts` 钩子与规则脚本共同维护的记忆键 (如 `$hasMarket`、`$menuState`、`$tradeMode`、`$hailing`、`$mh_count`、`$mHub`)。
+    *   它们是场景规则的 "上下文开关"，条件列必须引用它们才能把规则限定在正确的场景与状态下。
+* **临时 bar 选项 (temp bar option)**：由 `AddBarEvents` 规则经 `AddBarEvent` rulecmd 写入市场记忆 `$core_tempBarEvents` 的酒吧选项。`BarCMD.showOptions` 每次进酒吧先清空再重建 —— 临时选项不跨进入保留。
+* **任务 trigger 前缀 (mission trigger prefix)**：任务 (`HubMission`) 的 `getTriggerPrefix()`(如原版 `hijack`、`smug`、`sitm`)。任务对话规则以 `前缀_blurb` / `前缀_option`(对话列表) 与 `前缀_blurbBar` / `前缀_optionBar`(酒吧包装) 为 trigger 名。
+* **流程场景 (flow scene)**：非实体交互对象驱动的规则场景，本节唯一例子是主菜单新游戏对话框 (`NewGameDialogPluginImpl`)。它的 `$option` 回流 trigger 是 `NewGameOptionSelected`，不是 `DialogOptionSelected`。
 
-Nexerelin 的接入全部建立在此前的软依赖做法之上，三条不变：
+接下来看五类场景的 trigger 由谁在何时发起匹配。
 
-1. **不声明**：`nexerelin` 不进 `mod_info.json` 的 `dependencies`。
-  - 写了就变成硬依赖 —— 玩家不装势力争霸时齿轮工业被启动器拦截，而不是降级运行 (硬依赖故障的同款现象)。
-  - 成熟实例的 `mod_info.json` 中 `dependencies` 不含 `nexerelin`。
-2. **检测**：`Global.getSettings().getModManager().isModEnabled("nexerelin")`——id 必须是对方 `mod_info.json` 的 `id` 字段值，逐字比较、大小写敏感。成熟实例：`NEX()` 工具方法 (`isModEnabled("nexerelin")`) 同构。
-3. **收敛**：`exerelin.*` 的直接引用全部收敛在适配器类 `GearInNexCompat` 的判断分支内 (软依赖适配器模式)。
-  - 唯一的例外是本节的特遣队命名器类 —— 它**实现** `exerelin...SpecialForcesNamer` 接口，但只被 Nexerelin 侧按配置里的类名加载，齿轮工业自己的代码从不触碰它 (见 "链路五")。
+## 梳理 Rules 场景关系
 
-三条规定定下后，具体接入分五个链路：数据两份 (势力配置、生成点)、代码一份 (生成分支)、再回到数据 (地面战)、最后是代码 (特遣队命名器)。先看数据链路，Nexerelin 靠文件发现势力，而不是扫描代码。
+先看总览表确认各 trigger 的派发点与时机，再按对话、市场、舰队、酒吧、任务的顺序逐个展开，最后归纳跨场景的组合写法。
 
-## 文件与 API 链路
+### 五类场景总览
 
-### 链路一：势力配置 (数据)——mod_factions.csv 与单势力 JSON
+原版 `rules.csv`(`Starsector\starsector-core\data\campaign\rules.csv`) 中，本节五类场景的核心 trigger 与派发点如下。
 
-路径 (均在 MOD 的 `data/config` 下；**这些文件 Nexerelin 不会自动创建，全部要自行建立**)：
+规则基础页已统计的 `DialogOptionSelected`(6050)、`PopulateOptions`(334)、`OpenInteractionDialog`(121) 不再重复，只补充场景归属与派发点。
 
-```text
-data/config/exerelinFactionConfig/mod_factions.csv      # 势力发现名单
-data/config/exerelinFactionConfig/gear_industry.json    # 单势力配置（文件名 = 势力 id）
-```
+场景
 
-**`mod_factions.csv`** 只有一列 `faction`，第一行是注释 `# case sensitive!!!`。它声明 "哪些外部势力需要 Nexerelin 接入"：
+trigger
 
-```csv {3}
-faction
-# case sensitive!!!
-gear_industry
-```
+条数
 
-读取链 (`Starsector\mods\Nexerelin`)：
+派发点 (使用方)
 
-1. `NexConfig.loadModFactionList()`：`Global.getSettings().getMergedSpreadsheetDataForMod("faction", "data/config/exerelinFactionConfig/mod_factions.csv", "nexerelin")` ——** 跨全部已启用 MOD 合并** (master 是 Nexerelin 自己的文件，非 master 文件按 `faction` 列追加/替换，即跨 MOD 合并语义)，所以 MOD 只需要提交自己的行。
-2. `NexConfig.loadSettings()`：先按 `exerelin_config.json` 的 `builtInFactions` 加载内置势力配置；再遍历 `mod_factions.csv` 名单，对每个**已注册**的势力 (`NexUtilsFaction.doesFactionExist(factionId)` 校验 —— 势力必须先经势力注册页的 `factions.csv` 注册) 创建 `NexFactionConfig`。
-3. `NexFactionConfig.loadFactionConfig()`：`Global.getSettings().getMergedJSONForMod("data/config/exerelinFactionConfig/" + factionId + ".json", "nexerelin")` —— 同样按 MOD id 合并，**对象按键合并**，MOD 只提交自己的键，不要复制 Nexerelin 的同名文件。
-4. 运行期读取入口：`NexConfig.getFactionConfig(factionId)`—— 已注册返回对应配置；**未注册返回默认配置 (neutral 的配置，`playableFaction=false`)，不抛异常**。
+触发时机
 
-::: warning 本链路最值得警惕的是静默失败
-`NexConfig.getFactionConfig(factionId)` 对**未注册**势力不抛异常，而是回退默认配置 (neutral，`playableFaction=false`)。
+对话
 
-漏写 `mod_factions.csv` 名单行、或名单行与势力 id 大小写不符时，单势力 JSON 根本不会进入加载链，所有势力级配置静默失效且日志无任何报错。
-:::
+`OpenInteractionDialog`
 
-**单势力 JSON** 的常用字段速查表 (默认值与使用方见 `NexFactionConfig` 数据；不在表上的字段属于不常用项目，按需参考 Nexerelin 自带 `exerelinFactionConfig/` 下的文件)：
-| 键 | 默认值 | 使用方 / 语义 |
-|---|---|---|
-| `playableFaction` | `true` | 新游戏创建 (NGC) 势力目录是否可选 (`Nex_FactionDirectoryHelper.getFactionsForDirectory`：`anyPlayable && config.playableFaction`) |
-| `corvusCompatible` | `false` | 声明势力按 Corvus 模式布局；成熟实例全部设 `true` 并与生成点一致 (见 "规则强度") |
-| `marketSpawnWeight` | `1` | 随机星域模式下该势力程序化生成市场的份额倍率 (`ExerelinProcGen` 按此分配)；NGC 权重滑条也读它 |
-| `colonyExpeditionChance` | `0` | 势力发起殖民远征的概率倍率 (默认 0 = 不发起) |
-| `colonyTargetValuator` | `"exerelin.campaign.colony.ColonyTargetValuator"` | 殖民目标估值器类名，按类名实例化 (`ColonyManager`)；成品 MOD 常用 `IndustrialColonyTargetValuator` |
-| `startRelationships` / `maxRelationships` / `minRelationships` | 空 map | 初始 / 最大 / 最小关系 (键 = 势力 id，值 = 关系值) |
-| `diplomacyPositiveChance` / `diplomacyNegativeChance` | 空 map | 与特定势力的正面 / 负面外交事件频率倍率 |
-| `diplomacyTraits` | 空列表 | 势力外交特性 (取值见 Nexerelin 的 `data/config/exerelin/factionTraits.json`) |
-| `alignments` | 空 map | 势力倾向 (外交联盟模型的倾向值) |
-| `startShipsSolo` / `startShipsCombatSmall` / `startShipsCombatLarge` / `startShipsTradeSmall` / `startShipsTradeLarge` / `startShipsExplorerSmall` / `startShipsExplorerLarge` / `startShipsCarrierSmall` / `startShipsCarrierLarge` / `startShipsSuper` / `startShipsGrandFleet` | 空 | 开局舰队包：**二维数组**，内层数组是一支开局舰队的装配 id 列表 (`StartFleetType` 逐键解析，`getStartShipTypeIfAvailable`) |
-| `startSpecialItems` | 空 | 开局物品 (通常 `[["<蓝图包 id>", ""]]` 形式) |
-| `defenceStations` | 三档默认空间站 | 空间站设施集合 (`[{"ids":[...]}]`) |
-| `industrySeeds` | 默认含 `heavyindustry` | 殖民地自动发展时的产业种子 (`{"id":..., "mult":...}`) |
-| `bonusSeeds` | 空 | 殖民地开局奖励物品 (`{"id":..., "count":..., "mult":...}`) |
-| `specialForcesMaxFleets` | `2` (非 playable 势力取 0) | 特遣队同时存在的数量上限 (`SpecialForcesManager` 读取) |
-| `specialForcesSizeMult` / `specialForcesPointMult` | `1` / `1` | 特遣队规模倍率 / 点数积累倍率 |
-| `specialForcesNamerClass` | `"exerelin.campaign.intel.specialforces.namer.CommanderNamer"` | 特遣队命名器类名 (见 "链路五") |
-| `groundBattleSettings` | 无 (null) | 该势力地面战修正 (见 "链路四") |
+121
 
-势力配置决定 NGC 里能否选择齿轮工业、随机星域里占多少份额；接下来补出生点，决定 Corvus 模式下开局落在哪。
+`RuleBasedInteractionDialogPluginImpl.init` 的 `fireBest(initialTrigger)`(默认 trigger，规则基础页已证)；`AbandonMarketPluginImpl` 的 `FireAll`
 
-### 链路二：生成点 (数据)——corvus_spawnpoints.csv
+交互对话框初始化；弃档后回到停靠对话
 
-势力配置让齿轮工业可以被选择；生成点决定选择之后玩家出现在哪。Corvus 模式下开局的落点由这份 CSV 绑定：
+对话
 
-路径：`data/config/exerelin/corvus_spawnpoints.csv`。表头三列 `faction,system,entityID`，第二行注释说明各列含义 (`#machine name,#human name,#machine name`)：
+`PopulateOptions`
 
-```csv {3}
-faction,system,entityID
-#machine name,#human name,#machine name
-gear_industry,GearIn,GearIn_planet1
-```
+334
 
-读取链：`ExerelinCorvusLocations`(静态块) 用 `getMergedSpreadsheetDataForMod("faction", "data/config/exerelin/corvus_spawnpoints.csv", "nexerelin")` 全量合并读取，按 `faction` 列存表；
+规则脚本 `FireAll`(如 `marketDock`、`greetingDefaultFriendly`)；`EndConversation`；`BaseMissionHub.listMissions`
 
-运行期 `ExerelinCorvusLocations.getFactionSpawnPoint(factionId)` 查询。
+填充选项菜单
 
-使用方：`StartSetupPostTimePass`(新档开局定位)——Corvus 模式下取本势力的生成点，把 `entityID` 交给 `sector.getEntityById(...)` 找到实体后 `sendPlayerFleetToLocation`。
+对话
 
-**该使用方只使用 `entityID` 列**；生成点缺失或实体找不到时依次回退 homeworld、随机市场位置，最终回退超空间 (关应答机)—— 全程无报错。
+`DialogOptionSelected`
 
-出生点绑定 Corvus 模式的开局位置，而两种模式的星区内容由代码分派 —— 这正是链路三。
+6050
 
-### 链路三：生成分支 (代码)—— 检测、null 判断与模式分派
+`RuleBasedInteractionDialogPluginImpl.optionSelected`；`BarCMD.optionSelected`
 
-Nexerelin 启用后，新档的星区内容分两种模式，MOD 的固定内容必须按模式分派。标准做法是 "检测 → 判断 → 分派"：
+用户点选任意选项 (`$option` 回流)
 
-1. **检测**：`isModEnabled("nexerelin")`。
-2. **判空**：`SectorManager.getManager()` 返回的是 sector persistent data 里的管理器，未创建时返回 `null`；`isCorvusMode()` 是实例方法。
-  - **必须**先判 `getManager() != null` 再调 `isCorvusMode()`(成熟实例陷阱原文："`SectorManager.getManager()` 在 manager 尚未创建时返回 `null`，紧接着调用 `isCorvusMode()` 会失败")。
-3. **分派**：
-   - Corvus 模式：保留原版 Corvus 星系，MOD 固定星系照常生成；玩家出生点由 `corvus_spawnpoints.csv` 绑定。
-   - 随机星域模式：星区由 `ExerelinProcGen` 接管，势力市场按 `marketSpawnWeight` 分配；MOD 通常不再生成固定星系，或只生成自己的主星系。
+对话
 
-::: caution 调用 `isCorvusMode()` 必须先判空
-`SectorManager.getManager()` 的约定是 "未创建时返回 `null`"(sector persistent data 无条目即 null)。
+`PickGreeting`
 
-`isCorvusMode()` 只能在 Nexerelin 启用**且** manager 已创建之后调用；任何未先判空的直接调用 —— 包括已废弃的静态 `getCorvusMode()`—— 在 manager 未创建时都会 NPE。
+199
 
-适配器组合判据 (启用检测在前、null 判断在中、模式判定在后) 是覆盖一切调用点的唯一安全写法。
-:::
-::: info 为什么新档 `onNewGame` 阶段也要判空 (时序)
-新档流程里 `SectorManager` 的创建点是 Nexerelin 的**入口生成器** —— Nexerelin 的 `settings.json` 把 `newGameCreationEntryPoint` 覆盖为 `exerelin.world.ExerelinNewGameSetup`("禁止覆盖" 警告针对普通 MOD 重写原版键，Nexerelin 接管该键是其设计)。
+规则脚本 `FireBest`(`OpenCDE` → `convDefault`；`DialogOptionSelected` → `npcCommsAccept`)；`RuleBasedInteractionDialogPluginImpl` 构造器可指定 `PickGreeting` 为初始 trigger
 
-`ExerelinNewGameSetup.generate(sector)` 先执行：Corvus 模式跑 `VanillaSystemsGenerator` 生成原版星系，随机星域跑 `ExerelinCoreSystemGenerator`；
+人物通讯连接被接受时的问候
 
-随后 `setupPlugins(sector)` → `ExerelinModPlugin.addScripts()` → `sector.addScript(SectorManager.create())`。
+对话
 
-入口生成器先于 `generators.csv` 与全部 MOD 的 `onNewGame`(新档流程)—— 所以新档的 `onNewGame` 阶段 manager **已经存在**。
+`OpenCommLink`
 
-但 `getManager()` 的约定是 "未创建时返回 `null`"(sector persistent data 无条目即 null)：早于入口生成器的调用点 (`onApplicationLoad`、启动期静态块、任何不经过 Nexerelin 新档入口的路径) 照样会拿到 null。
+183
 
-成熟实例规范原文 ——"`isCorvusMode()` 应只在 Nexerelin 启用且 manager 已存在后调用"；陷阱原文 ——"`SectorManager.getManager()` 在 manager 尚未创建时返回 `null`，紧接着调用 `isCorvusMode()` 会失败"。
+`FleetInteractionDialogPluginImpl` 的 `fireBest`；规则脚本 `FireBest`(如 `greetingCGRweirdHM` 等势力特殊问候)
 
-适配器统一判断 (`isNexEnabled()` && `getManager() != null`) 是覆盖一切调用点的唯一安全写法。
-:::
+打开舰队通讯链接
 
-成熟实例 (NEXGenerate 模式，多个 MOD 同构)：生成器类在 `generate(SectorAPI)` 里判 `SectorManager.getManager().isCorvusMode()`，Corvus 模式走完整生成、随机星域模式只生成主星系 (也有实例随机星域完全不生成)；
+市场
 
-注册在 `ModPlugin.onGameLoad` 的 persistent data 检查分支内 ——`onGameLoad` 时 manager 必然已创建，这也是把生成从 `onNewGame` 挪到 `onGameLoad` 的原因 (顺便覆盖旧档)。
+`MarketPostOpen`
 
-齿轮工业沿用既有新建生涯生成入口 (`onNewGame`)，因此**必须**先判空。
+22
 
-生成分支解决新档的星区结构；下一链路是运行期才会遇到的接入面 —— 地面战。
+`marketOpen` 规则 (`OpenInteractionDialog`) 脚本 `FireBest`；`EndConversation`
 
-### 链路四：地面战 (数据)——groundBattleDefs.json 与 groundBattleSettings
+停靠后进入市场对话；对话结束仍在市场时
 
-生成分支解决新档的星区，地面战解决入侵之后的战斗参数。Nexerelin 的入侵地面战是一个 intel 系统 (`exerelin.campaign.intel.groundbattle`)。MOD 的接入面是两处数据，不需要写地面战代码 (除非要自定义插件)：
+市场
 
-**`data/config/exerelin/groundBattleDefs.json`**—— 按产业/条件/能力/兵种/插件定义地面战参数。
+`MarketPostDock`
 
-读取链：`GBDataManager.loadDefs()`(静态块，`getMergedJSONForMod("data/config/exerelin/groundBattleDefs.json", "nexerelin")`—— 同样跨 MOD 按键合并)。
+32
 
-顶层键 `industries` / `conditions` / `abilities` / `unitTypes` / `plugins` / `natoAlphabet` 全部硬读取 (`getJSONObject`/`getJSONArray`)—— **顶层结构错误时直接抛 `RuntimeException("Failed to load ground battle defs", ex)`**。
+`MarketPostOpen` 规则脚本 `FireBest`
 
-`industries` 条目 (键 = 产业 id，原版示例 `heavybatteries`/`grounddefenses`/`patrolhq` 等) 字段：
+停靠流程收尾 (`$menuState = main` + 菜单)
 
-| 字段 | 默认 | 语义 |
-|---|---|---|
-| `strengthMult` | `1` | 该产业的驻军强度倍率 |
-| `enemyDropCostMult` | `1` | 敌方空降成本倍率 |
-| `enemyBombardmentCostMult` | `1` | 敌方轰炸成本倍率 |
-| `dropAttritionFactor` / `dropAttritionMult` | `0` / `1` | 空降损耗系数 / 倍率 |
-| `troopCounts` | 空 | 兵种数量：键 = `unitTypes` 里的兵种 id(`militia`/`marine`/`heavy` 等)，值 = 数量 |
-| `tags` | 空 | 行为标签：`noBombard`(不可轰炸)、`preventBombardment`(阻止轰炸行动)、`resistBombard`(抗轰炸)、`preventBombardmentSuper`/`preventEW` 等 |
-| `icon` | 无 | 地面战界面图标路径 |
-| `plugin` | 无 | 产业地面战插件类名 (原版 `SpaceportPlugin`/`GroundDefensesPlugin`) |
+市场
 
-MOD 只需提交自己的键；**不要复制 Nexerelin 的文件**。
+`TradePanelFlavorText`
 
-原版 `orbitalworks` 没有条目，本节示例就给它补一条。
+23
 
-**势力配置里的 `groundBattleSettings`**—— 该势力全军的地面战修正。
+交易面板的 `FireBest` 调用 (假 dialog)
 
-`NexFactionConfig.loadFactionConfig` 把它按 JSON 对象读成 map；
+每次打开交易面板
 
-使用方 `FactionBonusSubplugin`(地面战 intel 每场战斗按势力实例化) 识别三个键：`attackMult`(攻击倍率)、`damageTakenMult`(受击倍率)、`moraleDamageTakenMult`(士气损失倍率)；
+舰队
 
-`plugin` 键可换成自定义子插件类名。
+`BeginFleetEncounter`
 
-**未知键静默忽略**。原版示例：`hegemony.json` 的 `"groundBattleSettings":{"moraleDamageTakenMult":0.9}`。
+61
 
-::: warning 只提交自己的键，不要复制 Nexerelin 的文件
-两处数据都是跨 MOD 按键合并读取：复制 Nexerelin 的同名文件会被整体合并，产生不必要的冲突。
+`FleetInteractionDialogPluginImpl.reinit` 预检 + `reinitPostContinue` / `optionSelected` 的 `fireBest`
 
-`groundBattleSettings` 只识别 `attackMult`/`damageTakenMult`/`moraleDamageTakenMult`/`plugin` 四个键，其余键 (含拼写错误) 被静默忽略 —— 键名写错时没有任何报错，需要对照可识别键名核对。
-:::
+舰队遭遇对话初始与 Continue 之后
 
-地面战是纯数据接入；特遣队则补上唯一一处需要写 Java 的接入面 —— 命名器。
+舰队
 
-### 链路五：特遣队 (代码)——specialForcesNamerClass 与 SpecialForcesNamer
+`OpenCommLink` / `PickGreeting`
 
-最后一个链路回到代码：特遣队命名器。它实现 Nexerelin 的接口，但只被 Nexerelin 按配置类名加载 —— 正是 "收敛" 规则里那个唯一例外。
+183 / 199
 
-特遣队 (special forces) 是势力的精锐舰队：`SpecialForcesManager` 按点数 (受 `specialForcesPointMult`/`specialForcesMaxFleets` 等配置) 积累生成，`SpecialForcesIntel` 用 `FleetParamsV3` + `FleetFactoryV3.createFleet` 造舰 (舰队工厂链)、投放后命名。
+见 "对话" 行
 
-命名器接入：
+打开通讯 / 人物问候
 
-1. 势力 JSON 写 `"specialForcesNamerClass":"<您的类全名>"`(默认 `exerelin.campaign.intel.specialforces.namer.CommanderNamer`)。
-2. 类**必须**实现接口：
+酒吧
 
-```java
-public interface SpecialForcesNamer {
-    public String getFleetName(CampaignFleetAPI fleet, MarketAPI origin, PersonAPI commander);
-}
-```
+`AddBarEvents`
 
-3. 加载链 (`SpecialForcesIntel.pickFleetName`)：`Global.getSettings().getScriptClassLoader().loadClass(className)` + `newInstance()`(**无参构造硬要求**)，然后循环调用 `getFleetName(fleet, origin, commander)` **至多 25 次**，直到返回的名字非 `null` 且与既有特遣队不重名 (`hasDuplicateName`)；加载或调用抛任何 `Throwable` → ERROR 日志 `Failed to load special forces namer <类名>`，名字回落字面量 `error`。
-4. 类名经 JSON 引用、由 Nexerelin 侧加载：齿轮工业自己的代码**从不引用**命名器类 —— 所以它是 "收敛" 规则的唯一例外，不破坏无 Nexerelin 时的启动。
+16
 
-::: tip 命名器返回的名字建议带随机成分
-随机编号、后缀等随机成分配合 25 次唯一性重试，多个特遣队基本不重名 (原版 `PlanetNamer` 同款结构)；返回确定性名字时，第二个特遣队起重名概率上升，重试耗尽后重复名会被保留。
-:::
+`BarCMD.showOptions`(先清空再 `FireAll`)
 
-五个链路讲完，把必须遵守的规则与可观察后果收成一张表，排错时直接对照。
+每次展示酒吧选项
+
+酒吧
+
+`BarPrintDesc`
+
+10
+
+`bar_optionSel` 规则 (`$option == marketVisitBar`) 脚本 `FireBest`
+
+进入酒吧
+
+酒吧
+
+`ReturnFromBar`
+
+5
+
+`BarCMD.leaveBar` 的 `FireBest`
+
+离开酒吧 (还原插件后)
+
+酒吧
+
+`BarHighRepCrewGain`
+
+6
+
+`BarHRESpeechB` 规则脚本 `FireAll`
+
+高声望酒吧事件演讲结束
+
+任务
+
+`MHOpenText`
+
+2
+
+`openMhubOptionSel` 规则脚本 `FireBest`
+
+任务列表文本之前
+
+任务
+
+`<前缀>_blurb` / `<前缀>_option`
+
+每条任务各 1
+
+`BaseMissionHub.listMissions`(`FireBest`，带 keepOptions)
+
+任务列表展开
+
+任务
+
+`AddMHCloseOption`
+
+5
+
+`BaseMissionHub.listMissions`(`FireBest`)
+
+任务列表收尾
+
+任务
+
+`MHPostMissionListText`
+
+2
+
+`BaseMissionHub.listMissions`(`FireBest`)
+
+任务列表文本之后
+
+任务
+
+`<前缀>_blurbBar` / `<前缀>_optionBar`
+
+每条任务各 1
+
+`HubMissionBarEventWrapper.addPromptAndOption`(`FireBest`)
+
+任务以酒吧事件展示
+
+任务
+
+`NewGameOptionSelected` / `AddNewGameChoices`
+
+15 / 8
+
+`NewGameDialogPluginImpl` 的 `fireBest`；`InitNewGameChoices` → `AddNewGameChoices` 链
+
+主菜单新游戏对话框
+
+计数口径：原版 `rules.csv` 非注释行统计，与规则基础页相同；上表之外的少量 trigger 如下：
+
+* `BeginFleetEncounter2` 另有 1 条；
+* `BarShuttleDownPrintDesc` 1 条；
+* `ContactPreMissionListText` 4 条；
+* `AsebPreMissionListText` 3 条；
+* `ContactPostAccept` 8 条；
+* `ContactPrintAcceptText` 10 条；
+* `ContactPrintDeclineText` 1 条；
+* `InitNewGameChoices` / `BeginNewGameCreation` 各 1 条。
+
+条数口径说明
+
+上表条数为原版 `rules.csv` 非注释行的统计，仅用于帮助您估量各 trigger 在原版中的使用密度与竞争烈度，不构成任何 API 承诺，随游戏版本可能变化。
+
+### 场景事实键的写入方
+
+规则条件里最常见的场景事实键由 `CoreCampaignPluginImpl`(`com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`) 的 `update*Facts` 钩子在规则匹配前写入实体/市场/人物/势力记忆：
+
+* `updateEntityFacts`：`$tag:<tag>`、`$isHostile`(按声望档位)、`$hasMarket`(非纯条件市场)、`$hasStation`、`$marketSize`、`$stability`、`$planetType`；
+* `updateMarketFacts`：`$tag:<tag>`、`$mc:<条件id>`、`$ind:<产业id>`、`$id`(市场 id) 等；
+* `updatePersonFacts`：`$id`(人物 id)、`$isPerson`、`$isContact`、`$name` / `$personName`、`$rel` / `$relName`、`$rank` / `$post`、`$importance*`、`$level`、`$personality`、`$tag:<tag>` 等；
+* `updateFactionFacts`：`$id`、`$friendlyToPlayer` / `$hostileToPlayer` / `$neutralToPlayer`、`$isHostile`。
+
+`$menuState` / `$tradeMode` / `$hailing` 等**状态**键不由 facts 钩子写，而是由规则脚本与原版 rulecmd 维护 (见各场景小节)。规则基础页的结论仍然成立：`$tag:` 类条件的前提是目标实体/市场/人物确实带该 tag。
+
+### 对话场景 (OpenInteractionDialog / PopulateOptions / DialogOptionSelected / PickGreeting / OpenCommLink)
+
+对话场景是其余场景的底座：进入、填菜单、回收选项都在这里发生，市场、舰队与酒吧复用同一套机制。
+
+* **`OpenInteractionDialog`(121 条)**：交互对话框的默认初始 trigger(`RuleBasedInteractionDialogPluginImpl` 构造器默认值，规则基础页已证)。
+    *   原版规则分成两组：无条件/实体类回退规则 (`defaultOpenDialog`：`ShowDefaultVisual` + `PrintDescription 3` + `SetShortcut defaultLeave "ESCAPE"` + `defaultLeave:Leave`)。
+    *   实体条件类 (`beaconOpenDialog`：`$tag:warning_beacon`；`marketOpen`：`$hasMarket` → `ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`，即市场场景的入口)。
+* **`PopulateOptions`(334 条)**：菜单填充器，由规则脚本 `FireAll` 调用 (不是插件直接触发)。
+    *   所有选项规则必须用状态条件限定，否则该选项会一直出现或一直不出现。
+    *   市场菜单用 `$menuState == main` + `$hasMarket` + `$tradeMode != NONE` (如 `marketCommDir`、`marketOptBar`、`marketOptTradeMulti`、`marketAddOptionLeave`)。
+    *   舰队对话菜单用 `$menuState == fleetConvMain`；
+    *   人物对话用 `$isPerson`(`convOptionLeave`：`cutCommLink:Cut the comm link`)。
+* **`DialogOptionSelected`(6050 条)**：选项回流唯一使用方 (`RuleBasedInteractionDialogPluginImpl.optionSelected`：本地记忆写 `$option`、`expire 0`、`fireBest("DialogOptionSelected")`)。
+    *   规则基础页已证全部 6050 条都带 `$option ==` 条件。
+    *   本节补充两个非默认回流方：`BarCMD.optionSelected` 对酒吧字符串选项同样写 `$option` 并 `FireBest "DialogOptionSelected"`；`NewGameDialogPluginImpl.optionSelected` 写 `$option` 后触发的是 **`NewGameOptionSelected`**(见任务场景)。
+* **`PickGreeting`(199 条)**：人物通讯问候。
+    *   派发链：通讯目录点选人物 → 通讯面板触发 `FireBest "OpenCDE"` → `OpenCDE` 规则 `convDefault` 脚本 `FireBest PickGreeting`：
+        *   问候规则按 `$isContact`、`$id`(人物)、声望等条件选一条，展示 `ShowPersonVisual` + 问候文本 + 选项 (`FireAll PopulateOptions` 或直接列选项)。
+    *   `NPCCommsRequest` 触发器 (`npcCommsAccept` 规则脚本 `FireBest`) 处理 NPC 主动通讯请求。
+    *   以问候 trigger 为初始 trigger、或自定义问候子 trigger(`FireBest` 分派 + `score:` 加分) 都是常见扩展写法。
+* **`OpenCommLink`(183 条)**：舰队通讯对话。
+    *   派发：`FleetInteractionDialogPluginImpl` 开通讯 (`OPEN_COMM`) 时创建 embedded `RuleBasedInteractionDialogPluginImpl` (`setEmbeddedMode(true)`、`setActivePerson(对方指挥官)`) 并 `fireBest("OpenCommLink")`：
+        *   无匹配时文本面板显示 "You try to establish a comm link, but get only static."。
+    *   原版问候规则族按关系与状态分派：
+        *   `$faction.friendlyToPlayer`(友好→`$menuState = fleetConvMain 0` + `FireAll PopulateOptions`)；
+        *   `$faction.neutralToPlayer`
+        *   `$entity.isHostile` + `$entity.relativeStrength`(敌舰强弱)；
+        *   `!$player.transponderOn` (应答器关闭→"Turn your transponder on" 选项)。
+        *   `$entity.ignorePlayerCommRequests score:10000`(拒绝通讯)；
+        *   无条件 `greetingFallthrough` 回退规则 (1 分)。
+
+### 市场场景 (MarketPostOpen / MarketPostDock / TradePanelFlavorText)
+
+市场对话是规则场景中 "进入 → 状态 → 菜单 → 退出" 的最完整流程：
+
+1. **进入**：停靠市场实体 → 默认对话初始化 `fireBest("OpenInteractionDialog")` → `marketOpen` 规则 (条件 `$hasMarket`，1 分) 命中：`ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`。
+2. **停靠许可**：`MarketPostOpen`(22 条) 按条件选一条 (`$hasMarket` + `$player.transponderOn` + 关系分派；
+    *   `marketPostOpenDefault` 打印停靠许可文本、`$tradeMode = OPEN 0`、`FireBest MarketPostDock`)。
+    *   **应答器关闭时**，`marketPostOpenDefault` 等要求 `$player.transponderOn` 的规则不匹配，但原版有专门的应答器关闭规则族接管：
+        *   `marketPostOpenToOffIsFine`(`$hasMarket` + `!$player.transponderOn`，2 分，`$tradeMode = OPEN 0`)。
+        *   `marketPostOpenToOffSneak`(另需 `!$faction.c:allowsTransponderOffTrade` + `!$market.mc:free_market`，4 分，`$tradeMode = SNEAK 0`)。
+        *   `marketPostOpenToOffPatrols`(另需 `IsSeenByPatrols $faction.id true`，5 分，`$tradeMode = NONE 0`)。
+        *   `marketPostOpenNoTradeHostile`(`$market.playerHostileTimeout score:100`)；
+        *   停靠流程继续 (`FireBest MarketPostDock` 照常)，只是贸易模式不同，不会 "无停靠文本、不进市场菜单"。
+    *   中立势力市场由 `marketPostOpenDefaultNeutral` 回退规则接管 (条件只有 `$hasMarket` + `$faction.isNeutralFaction score:100`，无应答器条件)—— 停靠流程继续但无许可文本。
+3. **停靠收尾**：`MarketPostDock`(32 条) 中 `marketDock`(无条件，1 分) 是回退规则：`$menuState = main 0` + `FireAll PopulateOptions`。
+    *   其余 31 条是场景附加 (任务交付检查 `DeliveryMission checkCompletion score:100`、债务/雇佣兵检查 `MarketCMD checkDebtEffect score:1000`、`MarketCMD checkMercsLeaving score:500`、特殊势力检查等)。
+    *   `FireBest` 只执行一条 —— 覆盖者必须自己复刻 `marketDock` 的结果职责 (见规则强度与 "市场选项只剩 `Leave`" 故障条目)。
+4. **市场菜单**：`PopulateOptions` 中 `$menuState == main` + `$hasMarket` 的规则加选项：
+    *   `marketCommDir`(通讯目录，`!$faction.isNeutralFaction`)。
+    *   `marketVisitBar`(酒吧，`$tradeMode != NONE` + `!$faction.isNeutralFaction` + `!$market.noBar`)。
+    *   `marketOpenCoreUI`(交易/整备)；
+    *   `marketRepair`(`$tradeMode == OPEN` + `Repair*` 命令条件)；
+    *   `marketConsiderHostile`(军事选项)；
+    *   `marketAddOptionLeave` (`marketLeave:Leave`)。
+5. **退出/再进入**：`EndConversation` rulecmd：对话插件不是 `FleetInteractionDialogPluginImpl` 时，若 `$hasMarket` 且本地记忆无 `$menuState` → `FireBest MarketPostOpen`(重新走停靠许可)；否则 `FireAll PopulateOptions`。
+    *   `AbandonMarketPluginImpl`(弃档) 复位 `$menuState = main`、`$tradeMode = NONE`、`unset $hasMarket` 后 `FireAll "OpenInteractionDialog"`。
+6. **交易面板**：
+    *   交易面板每次打开面板时以 `FireBest` 发起 `"TradePanelFlavorText"` 匹配 (传入假 dialog 与记忆槽位)。
+    *   memoryMap 由交易面板在更新 flavor 文本时自建 (槽位与规则匹配用的槽位结构一致：`local` / `faction` / `global` / `player` / `market` / `sourceMarket`)。
+    *   `$tradePanelMode`(MARKET/CARGO/SALVAGE) 由面板按自身模式写入 sector 记忆 (与 `$tradeMode` 无关；这些槽位的一个实际使用例是势力关系描述文本的生成，规则基础页已述)。
+    *   原版 23 条按 `$global.tradePanelMode`、`$marketSize`、`$stability` 分派文本。
+
+交易面板的 dialog 是假 dialog
+
+交易面板制造假 dialog 来匹配 `TradePanelFlavorText`：
+
+flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，视觉面板、`DismissDialog` 等依赖真实对话上下文的命令会异常或静默无效 (与规则基础页所讲的假 dialog 限制同类)。
+
+覆盖 FireBest 目标必须复刻结果职责
+
+`FireBest` 只执行一条规则：命中本 MOD 的规则，被覆盖的原版回退规则就不再执行。
+
+因此覆盖 `MarketPostDock` 的 `marketDock` 时，必须把它的结果职责复刻进自己的脚本 (`$menuState = main 0` + `FireAll PopulateOptions`)；
+
+覆盖 `OpenInteractionDialog` 的 `marketOpen` 时同理 (`ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`)。
+
+否则市场菜单不会出现 (选项面板空、只剩 failsafe/Leave)，停靠后卡在对话 (见 "市场选项只剩 `Leave`" 故障条目)。
+
+### 舰队场景 (BeginFleetEncounter / OpenCommLink / PickGreeting)
+
+舰队遭遇与通讯共用同一套对话底座：`BeginFleetEncounter` 负责遭遇开局，`OpenCommLink` 与 `PickGreeting` 负责通讯与问候。
+
+* **`BeginFleetEncounter`(61 条)**：舰队遭遇对话。两次匹配时机 (`FleetInteractionDialogPluginImpl`)：
+    *   `reinit(withContinueOnRuleFound)`：`getBestMatching(null, "BeginFleetEncounter", ...)` **预检** —— 命中则只显示 "Continue"(`REINIT_CONTINUE`)。
+    *   用户点击后 `reinitPostContinue` `fireBest("BeginFleetEncounter")` (本地记忆 `$fidpi_addContinue` 为真时改走 `BeginFleetEncounter2`)。
+    *   初次遭遇 (`optionSelected`)：创建 embedded 对话后同样 `fireBest("BeginFleetEncounter")`；规则脚本置 `$fidpi_addContinue` 则清空选项只留 "Continue"。
+    *   规则模式：
+        *   脚本 `AddText "You're being hailed by the $faction $otherShipOrFleet." $faction.baseColor` + `$hailing = true 0`(如 `LPTitheCheck`、`mpm_pirateEncounter`)：
+            *   `customsInspectionScan` 只 `AddText` 不写 `$hailing`；
+            *   `tOffPatrolBegin` 以 `OpenComms` 直接进入通讯。
+        *   或 `FleetDesc` + `$shownFleetDescAlready = true 0` (`initial_AnyFleet` 回退规则，1 分)。
+        *   文本经 `FireBest` 的 `addText` 显示。
+        *   **BeginFleetEncounter 规则不依赖 `options` 列** —— 选项面板随后由舰队主菜单接管 (`INIT` 路径清空选项)。
+    *   `$hailing` 的可观察效果：舰队主菜单里 "Open a comm link" 选项高亮并改名 "Accept the comm request"(随后 `unset $hailing`)。
+        *   `OpenComms` rulecmd 置 `FleetInteractionDialogPluginImpl.directToComms = true` 直接进入通讯。
+        *   `HailPlayer` rulecmd 是写 `$hailing` 的正式途径。
+* **`OpenCommLink`**：见对话场景。
+    *   通讯内规则把 `$menuState = fleetConvMain 0` + `FireAll PopulateOptions` 切换成舰队对话菜单：
+        *   `shrineFleetConvOption`、`academyFleetConvOption` 等按 `$entity.<flag>` 条件加选项；
+        *   `convOptionLeave` 按 `$isPerson` 加 `cutCommLink`。
+    *   `cutCommLink` 选项由 `DialogOptionSelected` 规则 `convEnd` 等处理：`ShowDefaultVisual` + `EndConversation` → 回舰队主菜单。
+* **`PickGreeting`**：人物通讯 (见对话场景)。舰队侧经通讯目录/接触人入口进入。
+* **可用变量**：
+    *   `$entity.relativeStrength`(正=对方更强)；
+    *   `$entity.isHostile`
+    *   `$faction.id` / `$faction.friendlyToPlayer`
+    *   `$player.transponderOn`
+    *   `$entity.<自定义 flag>`(记忆键)；
+    *   `$isPatrol` / `$sourceMarket.mc:<条件>`(应答器检查规则族)。
+
+### 酒吧场景 (AddBarEvents / BarPrintDesc / ReturnFromBar / BarHighRepCrewGain)
+
+酒吧场景是 "市场菜单 → 临时选项 → 事件对话 → 返回" 的完整流程 (`BarCMD` 既是 rulecmd 也是对话插件，`com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`)：
+
+1. **进入**：市场菜单 `marketVisitBar`(`marketOptBar` 规则，选项 order 5)→ `bar_optionSel` 规则 (`$option == marketVisitBar`)：
+    *   `FireBest BarShuttleDownPrintDesc` + `FireBest BarPrintDesc`(10 条，`ShowImageVisual space_bar` + 描述文本)。
+    *   `BarCMD showOptions`。
+2. **展示选项**：`BarCMD.showOptions`：
+    *   `dialog.getOptionPanel().clearOptions()`
+    *   `AddBarEvent.clearTempEvents(market)` + `FireAll.fire(null, dialog, memoryMap, "AddBarEvents")`
+    *   把 `$core_tempBarEvents` 中的临时选项 (`blurb` 进文本面板、`option` 进选项面板、可带颜色)。
+    *   再追加 `PortsideBarData` 的 active 事件 (Java `BaseBarEvent` / `HubMissionBarEventWrapper`)。
+    *   末尾加 `"Leave the bar"`(id `barLeave`，ESC 快捷键)。
+    *   `dialog.setPlugin(this)`(BarCMD 接管对话)。
+3. **临时选项**：`AddBarEvents`(16 条) 规则用 `AddBarEvent <optionId> <选项文本> <描述文本> [颜色]` rulecmd 写临时选项：
+    *   存储：`com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent` 用 `KEY = "$core_tempBarEvents"` 存市场记忆，`getTempEvents` / `clearTempEvents` 维护。
+    *   选项文本与描述做 token 替换。
+    *   原版 16 条按 `$market.id == <市场>` + 剧情 flag 条件添加 (如 `gaMeetHegLieutenantOnCoatl`、`goToTheGABarEventOption` 带 `RollProbability 0.2`)。
+    *   **临时选项每轮重建**：每次进酒吧 `BarCMD` 先 `clearTempEvents` 再 `FireAll AddBarEvents`，跨进入不保留。
+4. **点选**：`BarCMD.optionSelected`：
+    *   `PortsideBarEvent` 选项 → `BarEventDialogPlugin`(事件对话，Java)。
+    *   `"barLeave"` → `leaveBar()`；
+    *   `"barContinue"` → `showOptions(true)`：
+    *   字符串选项 (含临时选项与 mission 包装选项)→ `dialog.setPlugin(originalPlugin)` 还原规则对话：
+        *   `mem.set("$option", optionData, 0)` + `FireBest "DialogOptionSelected"`—— 与 `RuleBasedInteractionDialogPluginImpl` 的回流完全一致。
+        *   本节最小例的酒吧规则正是消费这里。
+5. **返回/退出**：`BarCMD.returnFromEvent [true|false]`(从事件对话返回酒吧；true 时给 "Continue") 与 `leaveBar`(停掉酒吧环境音、`dialog.setPlugin(originalPlugin)`、`ShowDefaultVisual`、`FireBest "ReturnFromBar"`)。
+    *   `ReturnFromBar`(5 条) 中 `marketReturnFromBar`：`$menuState = main 0` + `FireAll PopulateOptions` + 文本 "You leave the bar and take a shuttle back to your $shipOrFleet."—— **退出转场把市场菜单状态复位**。
+6. **奖励**：`BarHighRepCrewGain`(6 条) 由高声望酒吧事件演讲规则 `BarHRESpeechB` 脚本 `FireAll` 触发 (`AddCommodity crew N`，按 `$player.fleetPoints` / `RollProbability` / `score:2` 分档)。
+
+临时 bar 选项的三个边界
+
+* 临时选项不能当长期状态 (每轮清空重建)；
+* `RemoveBarEvent` 只删市场记忆中的临时选项、不碰 `PortsideBarData` 的 active 事件；
+* `HubMissionBarEventWrapper` 的选项 id 以任务前缀开头，`getWrapperFor` 用 `startsWith` 识别、`abortMissions` 会中止**其它** mission 包装 —— 自定义临时选项不要使用与已注册任务相同的前缀。
+
+### 任务场景 (MHOpenText / 任务前缀 trigger / AddMHCloseOption / 新游戏流程场景)
+
+生涯任务对话 (联系人任务) 是规则 + Java 任务插件 (`BaseMissionHub` / `HubMission`，属生涯对象体系) 的协作：
+
+1. **入口**：人物对话菜单 `PopulateOptions` 规则 `addMHubOption`(条件 `$isPerson` + `MissionHubCMD hasHub` + `Call $mHub setMHOptionText`) 加 `5:mh_open:$mh_openOptionText` ("Do you have any work for me?")。
+    *   `$mHub` = `BaseMissionHub.KEY`，`setMHOptionText` 写 `$mh_openOptionText`。
+2. **列表**：点 `mh_open` → `openMhubOptionSel` 规则：`Call $mHub prepare` → `FireBest MHOpenText` →`Call $mHub listMissions` → `SetEnabled mh_open false`。
+    *   `MHOpenText`(2 条：`contactMHOpenText` / `asebMHOpenText`)→ `FireBest ContactPreMissionListText`(4 条，按 `$mh_count` / `$mh_firstInlineBlurb` / `$mHub_contactSuspended` 打印列表前文本)。
+3. **展开**：`BaseMissionHub.listMissions` 对每份 offered mission：
+    *   `FireBest <前缀>_blurb true` / `FireBest <前缀>_option true`(每条任务各 1 条规则，如 `hijack_blurb` / `hijack_option`)。
+    *   随后 `FireBest AddMHCloseOption true`(5 条：`mh_close` 选项 + `SetShortcut mh_close "ESCAPE"`)。
+    *   `withBlurbs` 时 `FireBest MHPostMissionListText`(2 条："So, how about it?" 等)。
+    *   **`FireBest` 的第二个参数 `true` 是 keepOptions**(`FireBest.fire` 把参数字符串 tokenize)。
+4. **接受/拒绝**：任务选项 (如 `hijack_start`) 经 `DialogOptionSelected` 回流到任务规则：
+    *   接受类规则 `contactMissionAcceptGeneric`(`$option == contact_accept`)：`FireBest ContactPrintAcceptText` + `Call $mHub accept $missionId` + `FireBest ContactPostAccept` + `Call $mHub returnToList`。
+    *   `BaseMissionHub.callEvent` 分派 `prepare` / `listMissions` / `returnToList` / `accept` / `doCleanup` 动作；`accept` 调 `mission.accept(dialog, memoryMap)`。
+    *   任务规则可读 `$missionId` 与 `$mission` 记忆 (`MemKeys.MISSION`)。
+    *   写入方：`SetActiveMission` / `ClearActiveMission` rulecmd，或插件 `setActiveMission`(`RuleBasedInteractionDialogPluginImpl` / `FleetInteractionDialogPluginImpl`)。
+5. **酒吧任务包装**：任务也可以出现在酒吧：
+    *   `HubMissionBarEventWrapper.addPromptAndOption` 把 `LOCAL` 临时换成任务人物记忆 (`ENTITY` / `PERSON_FACTION` 一并换)。
+    *   调 `mission.updateInteractionData(dialog, memoryMap)`，然后 `FireBest <前缀>_blurbBar true` + `FireBest <前缀>_optionBar true`，再恢复记忆。
+    *   原版对应 `hijack_blurbBar` / `hijack_optionBar` 等。
+    *   用户点选后由 `BarCMD.optionSelected` 进入任务对话 (`abortMissions` 中止未选中的包装)。
+6. **对照：任务板**：通讯面板的 missions 页签是 **Java** 任务板 (`MissionBoardAPI` / `MissionAvailability.playerAccept`)，不走规则 —— 本节只把它作为 "非规则场景" 的边界。
+7. **流程场景：新游戏对话框**：主菜单新游戏 → `NewGameDialogPluginImpl`(`com.fs.starfarer.api.impl.campaign.NewGameDialogPluginImpl`)：
+    *   `init` 组装 memoryMap(`LOCAL` = 角色数据实体记忆、`GLOBAL`，devMode 时 `$global.isDevMode`)。
+    *   选项回流：`memory.set("$option", ...)` + `expire 0` + `fireBest("NewGameOptionSelected")`。
+    *   `CONTINUE_CHOICES` → `fireBest("BeginNewGameCreation")`；
+    *   规则链：`BeginNewGameCreation` → `onNewGameCreationStart`(`NGCAddCredits 2000` + `FireAll InitNewGameChoices`)→ `InitNewGameChoices` → `initNewGameChoices`(`FireAll AddNewGameChoices`)。
+    *   `AddNewGameChoices`(8 条) 加起始选项 (`ngcWolf` / `ngcWayfarer` / dev 选项以 `$global.isDevMode` 为条件)。
+    *   `NewGameOptionSelected`(15 条) 处理器 (`$option == ngcX` → `NGC*` 命令族：`NGCAddShip` / `NGCAddCredits` / `NGCSetDifficulty` / `NGCDone` 等)。
+    *   **注意 `NewGameOptionSelected` 是主菜单对话框的专属回流 trigger**，在生涯对话里写它永不触发。
+
+### 场景组合写法
+
+把五类场景放在一起看，会得到三组反复出现的写法。
+
+* **状态机模式**：`$menuState`(`main` / `fleetConvMain`) 与 `$tradeMode`(`OPEN` / `NONE` / `SNEAK`) 是场景状态记忆：
+    *   `PopulateOptions` 菜单规则以它们为条件；
+    *   转场必须成对 —— 进入时赋值 (`marketDock`：`$menuState = main 0`；`greetingDefaultFriendly`：`$menuState = fleetConvMain 0`)。
+    *   退出时复位 (`ReturnFromBar` → `$menuState = main`；`AbandonMarketPluginImpl` → `$tradeMode = NONE`)。
+* **分层模式**：`FireAll` 填充 (`PopulateOptions` / `AddNewGameChoices` / `AddBarEvents`—— 候选规则全部执行、全部添加选项)：
+    *   `FireBest` 叙述与转场 (`MarketPostOpen` / `MarketPostDock` / `BarPrintDesc` / `MHOpenText` / `PickGreeting`—— 只取分数最高一条)。
+* **回流完整流程**：`options` 列 id ↔ `DialogOptionSelected`(或 `NewGameOptionSelected`) 规则 `$option == <id>` 逐字一致 (大小写敏感)。
+* **竞争纪律**：默认条件 1 分；原版剧情规则常用 `score:1000`(`$tag:xxx score:1000` 等)；MOD 覆盖回退规则用 100 级即可 (100–103 分恒胜 1–3 分的回退规则、输给 1000 级剧情规则 —— 见最小例)。
+
+一次性演示 flag 的写法
+
+条件列写 `!$player.<flag>`、脚本列写 `$player.<flag> = true 0`(`expire 0`)：第一次命中后 flag 置位，第二次进入自动回退原版行为。
+
+需要重新演示时换一个新 flag 名即可 (原版没有 "清记忆" 的 rulecmd，devMode 下可用 `DumpMemory` 查看记忆键)。
 
 ## 规则强度
 
-**必须/禁止 (当前基线 + Nexerelin 仍有效；违反的可观察结果写在括号里)**：
+本节必须遵守的规则清单 (违反后的可观察结果均附上；规则基础页已列的加载期致命错误与跨文件重复 id 语义在本节所有场景继续有效，不重复)：
 
-| 规则 | 依据 | 违反后的可观察结果 |
-|---|---|---|
-| `nexerelin` **禁止**写进 `mod_info.json` 的 `dependencies`(软依赖不声明) | 软依赖语义；成熟实例 `mod_info.json` 实证 | 玩家未装/未启用 Nexerelin 时齿轮工业被启动器拦截 (硬依赖语义)，失去降级运行能力 |
-| `exerelin.*` 直接引用**必须**收敛在适配器 (`GearInNexCompat`) 判断分支内；命名器类 (实现接口) 只许经 JSON 配置被 Nexerelin 加载 | 懒解析与 `Error` 冒泡 | 无 Nexerelin 时引用被解析 → `NoClassDefFoundError` 冒泡，启动或运行中止 |
-| `isModEnabled` 的 id **必须**用 `mod_info.json` 的 `id` 字段值 `nexerelin`(逐字比较) | `ModManagerAPI` 逐字比较 | 检测恒 false，Nexerelin 分支永不执行，且日志查不出报错 |
-| **必须**在 Nexerelin 启用**且** `SectorManager.getManager() != null` 之后才调 `isCorvusMode()` | `SectorManager.getManager()` 语义 | 早于 Nexerelin 入口生成器的调用点拿到 null → NPE(未判空的 `getCorvusMode()` 等写法直接崩)；新档 `onNewGame` 阶段 manager 已由入口生成器创建，但约定允许 null，判空是唯一安全写法 |
-| `mod_factions.csv` **必须**列出势力 id，且与势力 id 逐字一致 (文件注释原文 `# case sensitive!!!`) | `NexConfig.loadModFactionList`；`mod_factions.csv` 头注释 | 单势力 JSON 不进入加载链 → `getFactionConfig` 回退默认配置 (`playableFaction=false`)→ NGC 列表不出现、所有势力级配置失效，无任何报错 |
-| 势力 JSON 路径**必须**是 `data/config/exerelinFactionConfig/<factionId>.json`，文件名 = 势力 id | `NexFactionConfig.loadFactionConfig` | 路径不符 → 合并读取读不到本 MOD 的键 → 字段取默认值，静默 |
-| `corvus_spawnpoints.csv` 的 `entityID` **必须**引用目标星系内已存在的实体 id(市场 id、显示名都不行) | `StartSetupPostTimePass` 消费链 (`getEntityById`) | 出生点找不到实体 → 回退 homeworld / 随机位置，无报错 |
-| `groundBattleDefs.json` 顶层**必须**保持对象结构 (`industries`/`conditions`/`abilities`/`unitTypes`/`plugins`/`natoAlphabet`) | `GBDataManager.loadDefs` 硬读取 | 顶层键缺失或类型错 → `RuntimeException("Failed to load ground battle defs")`(静态初始化失败)，地面战不可用 |
-| `specialForcesNamerClass` 指向的类**必须**实现 `SpecialForcesNamer` 且可无参实例化 | `SpecialForcesIntel.pickFleetName` | 特遣队命名失败：ERROR 日志 `Failed to load special forces namer [...]`，舰队名称为字面量 `error` |
-| 命名器返回 `null` 或与既有特遣队重名时会被重试 (至多 25 次)，重试尽后保留最后一次结果 | `SpecialForcesIntel.pickFleetName` 循环 | 确定性命名且特遣队多时，重名舰队出现 (见 "故障分析" 第 6 条) |
+规则
 
-**建议**：
+强度
 
-- `corvusCompatible` 设 `true` 并与生成点/势力配置保持一致 (成熟实例势力 JSON、Nexerelin 全部内置势力文件均设 `true`；字段默认 `false`，该字段仅经 `NexUtilsFaction.isCorvusCompatible` 辅助读取、无强制使用方)。
-- `groundBattleSettings` 只写 Nexerelin 可识别键 (`attackMult`/`damageTakenMult`/`moraleDamageTakenMult`/`plugin`，或自定义子插件消费的键)；未知键静默忽略。
-- `startShips*` 保持二维数组结构 (`getStartShipTypeIfAvailable` 逐内层数组读装配 id)。
-- 随机星域模式的固定星系处理二选一：不生成或只生成主星系 —— 与您的势力配置一致即可，没有强制。
-- 命名器返回带随机成分的名字 (数字/后缀)，降低撞重名概率。
+违反后的可观察结果
 
-规则表用于排错时对照；现在把五个链路落成齿轮工业工程里的实际文件与代码。
+覆盖 `FireBest` 目标规则时必须复刻被覆盖规则的结果职责 (市场场景：`MarketPostDock` 的 `$menuState = main 0` + `FireAll PopulateOptions`；`OpenInteractionDialog` 的 `ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`)
 
-## 完整最小例
+必须
 
-在既有生成入口页的累计工程上追加 (MOD 根目录 `Starsector\mods\GearIndustry`)：
+`FireBest` 只执行一条规则：市场菜单不出现 (选项面板空、只剩 failsafe/Leave)，停靠后卡在对话
+
+`options` 列选项 id 与 `DialogOptionSelected` / `NewGameOptionSelected` 规则的 `$option == <id>` 逐字一致 (大小写敏感)
+
+必须
+
+点选后无规则匹配：对话文本面板出现 `ERROR: no rule found for option <id>` + failsafe
+
+任务规则 trigger 名必须等于 `mission.getTriggerPrefix() + "_blurb" / "_option" / "_blurbBar" / "_optionBar"`
+
+必须
+
+`BaseMissionHub.listMissions` 文本面板打印 `No blurb found for <prefix>`、`FireBest` 返回 false、任务选项缺失
+
+临时 bar 选项必须经 `AddBarEvents` 规则 + `AddBarEvent` rulecmd 添加；它每轮被清空重建，不是持久状态
+
+事实
+
+跨进酒吧不保留；`BarCMD.showOptions` 先 `clearTempEvents` 再 `FireAll AddBarEvents`
+
+自定义临时 bar 选项 id 不得使用与任何已注册任务相同的前缀
+
+事实
+
+`BarCMD.getWrapperFor` / `abortMissions` 按 `optionId.startsWith(mission.getTriggerPrefix())` 识别，同前缀选项被当作 mission 包装处理、其余包装被中止
+
+`BeginFleetEncounter` 规则不依赖 `options` 列 (交互经 `$hailing` / `OpenComms` / 主菜单转场)
+
+事实
+
+`reinitPostContinue` / `INIT` 路径在规则执行后接管选项面板，`options` 列内容被清空
+
+`TradePanelFlavorText` 规则的 dialog 是假 dialog
+
+事实
+
+依赖真实对话上下文的命令 (视觉面板、`DismissDialog` 等) 异常或无效 (交易面板的假 dialog 机制)
+
+`NewGameOptionSelected` 只在主菜单新游戏对话框回流 `$option`；`DialogOptionSelected` 只在生涯对话回流
+
+必须
+
+写错场景的回流 trigger 规则永不触发且无报错
+
+`$menuState` / `$tradeMode` 由场景脚本维护，进入与退出必须配对
+
+必须
+
+未复位时市场/对话菜单选项残留或消失 (如不设 `$menuState` 的市场菜单永不显示)
+
+`PopulateOptions` / `AddBarEvents` / `AddNewGameChoices` 菜单规则必须加状态或场景条件判断 (`$menuState == ...`、`$market.id == ...`、`$global.isDevMode` 等)
+
+必须
+
+没有条件限定的规则在每个匹配场景都添加选项 (如进任何市场都出现本 MOD 的酒吧选项)
+
+条件列命令副作用与跨文件重复 id 静默跳过 (规则基础页已列)
+
+必须/事实
+
+见规则基础页规则强度表
+
+上表的每一条纪律都会直接落进下面的最小例：覆盖规则复刻职责，场景规则用分数赢得竞争，一次性 flag 控制演示次数。
+
+## 组装 Rules 场景实现
+
+在规则基础页的 MOD 布局 (`Starsector\mods\GearIndustry\`，含 `data\campaign\rules.csv` 与 `GearInRulesIntro` 类) 之上，**只追加规则行**。
+
+本节五个场景的使用方全是原版插件 (`RuleBasedInteractionDialogPluginImpl` / `FleetInteractionDialogPluginImpl` / `BarCMD` / `NewGameDialogPluginImpl` / 交易面板)，MOD 侧不需要新增 Java 类：
 
 ```text
-data\
-└── config\
-    ├── exerelin\
-    │   ├── corvus_spawnpoints.csv              # 本节新增：Corvus 模式出生点
-    │   └── groundBattleDefs.json               # 本节新增：地面战产业定义
-    └── exerelinFactionConfig\
-        ├── mod_factions.csv                    # 本节新增：势力发现名单
-        └── gear_industry.json                  # 本节新增：势力配置
+Starsector\mods\GearIndustry\
+├── build.gradle
+├── mod_info.json
+├── data\
+│   └── campaign\
+│       └── rules.csv                     # 追加本节拥有的 GearIn_rules_scene_* 行（与规则基础页的 GearIn_rules_intro_* 同文件共存）
+└── jars\
 ```
 
-### 数据文件
-
-**`data/config/exerelinFactionConfig/mod_factions.csv`**(只提交自己的行；与 Nexerelin 的文件跨来源合并)：
+### 配置场景规则数据
 
 ```csv
-faction
-# case sensitive!!!
-gear_industry
-```
-
-**`data/config/exerelin/corvus_spawnpoints.csv`**(`entityID` = 生成入口页生成的第一颗行星的实体 id)：
-
-```csv
-faction,system,entityID
-#machine name,#human name,#machine name
-gear_industry,GearIn,GearIn_planet1
-```
-**`data/config/exerelinFactionConfig/gear_industry.json`**(只提交自己关心的键；合并读取，不复制 Nexerelin 文件)：
-
-```json
-{
-	"playableFaction":true,
-	"corvusCompatible":true,
-
-	"marketSpawnWeight":1,
-
-	"startRelationships":{
-		"hegemony":0.2,
-	},
-
-	"colonyExpeditionChance":0,
-	"colonyTargetValuator":"exerelin.campaign.colony.IndustrialColonyTargetValuator",
-
-	"startShipsSolo":[
-		["tempest_Attack"],
-	],
-	"startShipsCombatSmall":[
-		["medusa_Attack", "wolf_hegemony_CS"],
-	],
-	"startShipsTradeSmall":[
-		["mule_Starting", "hound_hegemony_Standard"],
-	],
-
-	"groundBattleSettings":{
-		"attackMult":1.05,
-	},
-
-	"specialForcesNamerClass":"data.scripts.gearin.modcompat.GearInSpecialForcesNamer",
-
-	"defenceStations":[
-		{"ids":["orbitalstation", "battlestation", "starfortress"]},
-	],
-	"industrySeeds":[
-		{"id":"orbitalworks", "mult":0.1},
-	],
-}
-```
-
-**`data/config/exerelin/groundBattleDefs.json`**(原版 `orbitalworks` 无条目，本节补一条 ——`troopCounts` 的键 = `unitTypes` 兵种 id，`icon` 复用 Nexerelin 自带图标路径)：
-
-```json
-{
-	"industries":{
-		"orbitalworks":{
-			"strengthMult":1.5,
-			"troopCounts":{
-				"heavy":0.3,
-			},
-			"tags":["resistBombard"],
-			"icon":"graphics/exerelin/icons/groundbattle/groundefenses.png",
-		},
-	},
-}
-```
-
-### GearInNexCompat
-```java
-package data.scripts.gearin.modcompat;
-
-import com.fs.starfarer.api.Global;
-import exerelin.campaign.SectorManager;
-import exerelin.utilities.NexConfig;
-import exerelin.world.ExerelinCorvusLocations;
-
-/**
- * Nexerelin 软依赖适配器：把对 exerelin.* 的直接引用全部收敛在本类，
- * 工程里只有本类与特遣队命名器（GearInSpecialForcesNamer，仅被 Nexerelin
- * 按配置类名加载）出现 exerelin.* 类名。
- *
- * 调用链（软依赖组合判据）：
- *   isModEnabled 判定 MOD 启用状态 -> SectorManager.getManager() 判管理器
- *   是否已创建（null 守卫）-> isCorvusMode() 判当前模式。
- * NexConfig.getFactionConfig 读取本 MOD 势力配置（经 mod_factions.csv 注册）；
- * ExerelinCorvusLocations 读取本 MOD 的出生点行（corvus_spawnpoints.csv）。
- * Nexerelin 未启用时全部回落降级值，不抛异常。
- */
-public class GearInNexCompat {
-
-    /** Nexerelin 的 MOD id，与 Starsector\mods\Nexerelin\mod_info.json 的 id 字段逐字一致。 */
-    public static final String NEX_MOD_ID = "nexerelin";
-
-    /** 本 MOD 势力 id（教程势力章节注册）。 */
-    public static final String GEAR_FACTION_ID = "gear_industry";
-
-    private GearInNexCompat() {
-    }
-
-    /** 判据一：Nexerelin 是否在启用列表（启动器 MOD 管理器按 id 逐字比较，大小写敏感）。 */
-    public static boolean isNexEnabled() {
-        return Global.getSettings().getModManager().isModEnabled(NEX_MOD_ID);
-    }
-
-    /**
-     * 组合判据：Nexerelin 已启用、SectorManager 已创建且处于 Corvus 模式。
-     * SectorManager.getManager() 在 manager 尚未创建时返回 null（sector
-     * persistent data 中无条目）—— 直接调用 isCorvusMode() 会 NPE；
-     * manager 由 Nexerelin 的入口生成器创建，早于它的调用点必须靠这里守卫。
-     */
-    public static boolean isNexCorvusMode() {
-        if (!isNexEnabled()) {
-            return false;
-        }
-        SectorManager manager = SectorManager.getManager();
-        return manager != null && manager.isCorvusMode();
-    }
-
-    /**
-     * 读取本 MOD 势力配置的 marketSpawnWeight（随机星域模式的市场份额倍率）。
-     * NexConfig.getFactionConfig 未注册时回退默认配置（neutral），不抛异常 ——
-     * "读到的不是自己的配置"是该 API 的静默失败模式（mod_factions.csv 漏写时
-     * playableFaction 读回 false）。
-     */
-    public static float getFactionMarketSpawnWeight(String factionId) {
-        if (!isNexEnabled()) {
-            return 1f;
-        }
-        return NexConfig.getFactionConfig(factionId).marketSpawnWeight;
-    }
-
-    /**
-     * 读取本 MOD 势力在 corvus_spawnpoints.csv 里的生成点实体 id。
-     * 漏写行时返回 null—— 玩家出生点回退 homeworld / 随机位置，无报错。
-     */
-    public static String getFactionSpawnPointEntityId(String factionId) {
-        if (!isNexEnabled()) {
-            return null;
-        }
-        ExerelinCorvusLocations.SpawnPointEntry entry = ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
-        return entry == null ? null : entry.entityId;
-    }
-}
+GearIn_rules_scene_market,MarketPostDock,"$market.id == jangala score:100
+!$player.gearInSceneMarketSeen","$player.gearInSceneMarketSeen = true 0
+$menuState = main 0
+FireAll PopulateOptions",GearIn 市场场景：首次停靠 jangala 时本规则以 101 分胜过原版 marketDock（1 分）。FireBest 只执行一条规则，所以脚本必须复刻原版职责（$menuState + FireAll PopulateOptions），否则市场菜单不会出现。,,
+GearIn_rules_scene_bar_add,AddBarEvents,$market.id == jangala,,AddBarEvent GearIn_rules_scene_bar "和 GearIn 演示员聊聊" "一个穿着测试连体服的 GearIn 演示员朝您招手，示意您过去坐坐。",,
+GearIn_rules_scene_bar_pick,DialogOptionSelected,$option == GearIn_rules_scene_bar,,GearIn 酒吧场景：临时 bar 选项被点选后，BarCMD 写入 $option 并触发 DialogOptionSelected。选项与描述来自 AddBarEvent，存储在市场记忆 $core_tempBarEvents；每次进入酒吧 BarCMD 先清空再 FireAll AddBarEvents 重建。,GearIn_rules_scene_bar_back:回吧台,
+GearIn_rules_scene_bar_back,DialogOptionSelected,$option == GearIn_rules_scene_bar_back,"BarCMD showOptions",,,
+GearIn_rules_scene_fleet_hail,BeginFleetEncounter,"$faction.id == independent score:100
+!$entity.isHostile
+!$player.gearInSceneHailed","$player.gearInSceneHailed = true 0
+FleetDesc
+$shownFleetDescAlready = true 0
+AddText ""GearIn 舰队场景：一支独立势力舰队呼叫了您；请在菜单中选择接受通讯请求。""
+$hailing = true 0",,,
+GearIn_rules_scene_comm,OpenCommLink,"$faction.id == independent score:100
+$player.transponderOn
+!$entity.isHostile
+!$player.gearInSceneCommed","$player.gearInSceneCommed = true 0
+$menuState = fleetConvMain 0
+FireAll PopulateOptions",GearIn 对话场景（OpenCommLink）：对独立势力舰队的问候语。脚本把菜单状态置为 fleetConvMain 并 FireAll PopulateOptions 填充对话菜单。,,
+GearIn_rules_scene_conv,PopulateOptions,"$menuState == fleetConvMain
+$faction.id == independent",,GearIn 对话场景（PopulateOptions）：舰队对话菜单选项 —— 点选后经 DialogOptionSelected 回流执行 EndConversation 回到舰队菜单。,"GearIn_rules_scene_conv_end:结束通讯",,
+GearIn_rules_scene_conv_end,DialogOptionSelected,$option == GearIn_rules_scene_conv_end,EndConversation,,,
+GearIn_rules_scene_ngc_add,AddNewGameChoices,$global.isDevMode,,,6:GearIn_rules_scene_ngc:GearIn 演示起点：额外 5000 星币 (dev),,
+GearIn_rules_scene_ngc_pick,NewGameOptionSelected,"$option == GearIn_rules_scene_ngc
+$global.isDevMode",NGCAddCredits 5000,,,
 ```
 
 对应关系：
 
-- `isNexEnabled()`：`isModEnabled` 判据，id 用 `nexerelin` 逐字值 (软依赖判据语义)。
-- `isNexCorvusMode()`：三连环 —— 启用判据在前、`getManager()` null 判断在中、`isCorvusMode()` 在后。
-  - 这是 "生成分支" 的唯一放行条件，也是成熟实例陷阱的对应实现。
-- `getFactionMarketSpawnWeight(...)` / `getFactionSpawnPointEntityId(...)`：两个 "读回" 接口，把本节的数据文件 (势力 JSON、出生点 CSV) 与 Nexerelin 的消费结果连成完整流程：本节的数据文件 → Nexerelin 加载 → 适配器读回。未启用时回落 `1f` / `null`(软依赖降级边界)。
-- 全部 `exerelin.*` 引用位于方法体内、判断分支内：Nexerelin 缺失时符号引用永不解析 (懒解析)，`NoClassDefFoundError` 不会出现。
+* **`GearIn_rules_scene_market`(市场场景，trigger `MarketPostDock`)**：条件 `$market.id == jangala score:100` + `!$player.gearInSceneMarketSeen`，总分 101，恒胜原版回退规则 `marketDock`(1 分)：
+    *   原版高优先规则 (`MarketCMD checkDebtEffect score:1000`、`checkMercsLeaving score:500`、`DeliveryMission checkCompletion score:100`) 在激活时仍然获胜 —— 演示 "竞争分层"。
+    *   脚本**复刻** `marketDock` 职责 (`$menuState = main 0` + `FireAll PopulateOptions`) 并置一次性 flag—— 第二次停靠 jangala 自动回退原版行为。
+    *   `FireBest` 先 `addText` 显示本规则文本、后 `runScript` 填充菜单。
+* **`GearIn_rules_scene_bar_add` / `_pick` / `_back`(酒吧场景)**：`AddBarEvents` 规则条件 `$market.id == jangala`，脚本 `AddBarEvent <id> <文本> <描述>`。
+    *   进 jangala 酒吧 (市场菜单 "Take a shuttle down to visit a dockside bar")→ `bar_optionSel` 打印描述并 `BarCMD showOptions` → 清空重建临时选项。
+    *   用户点选 `GearIn_rules_scene_bar` → `BarCMD.optionSelected` 写 `$option` 并 `FireBest "DialogOptionSelected"` → `_pick` 显示文本 + `_back` 选项。
+    *   点 `_back` → `BarCMD showOptions` 重新显示酒吧选项；
+    *   "Leave the bar"(`barLeave`，原版 BarCMD 提供)→ `ReturnFromBar` → `$menuState = main` + 市场菜单复位。
+* **`GearIn_rules_scene_fleet_hail`(舰队场景，trigger `BeginFleetEncounter`)**：条件 `$faction.id == independent score:100` + `!$entity.isHostile` + `!$player.gearInSceneHailed`，总分 102：
+    *   恒胜原版回退规则 `initial_AnyFleet`(1 分)、输给 1000 级剧情规则 (优雅降级)。
+    *   脚本按原版模式：置一次性 flag、`FleetDesc` + `$shownFleetDescAlready = true 0`(**复刻 `initial_AnyFleet` 职责**)、`AddText` 呼叫文本、`$hailing = true 0`。
+    *   可观察：遭遇独立舰队时主菜单出现高亮 "Accept the comm request"。
+* **`GearIn_rules_scene_comm` / `_conv` / `_conv_end`(对话场景，trigger `OpenCommLink` + `PopulateOptions` + `DialogOptionSelected`)。**
+    *   接受通讯请求 → `fireBest("OpenCommLink")` → 本规则 (103 分) 胜过原版问候回退规则 (1–3 分；`$entity.ignorePlayerCommRequests score:10000` 时仍由原版拒绝)。
+    *   问候文本 + `$menuState = fleetConvMain` + `FireAll PopulateOptions` → `_conv` 加菜单选项 → 点选 → `_conv_end` 执行 `EndConversation`。
+    *   `FleetInteractionDialogPluginImpl.reinit` 预检 (`BeginFleetEncounter` 无匹配)→ 回舰队主菜单。
+    *   原版 `convOptionLeave`(`$isPerson`) 仍提供 `cutCommLink` 选项。
+* **`GearIn_rules_scene_ngc_add` / `_pick`(任务/流程场景，trigger `AddNewGameChoices` + `NewGameOptionSelected`)。**
+    *   devMode(`$global.isDevMode`，`NewGameDialogPluginImpl.init` 写入) 下新游戏对话框出现演示起点选项 (顺序 6，排在原版 ngc 选项之后)。
+    *   点选 → `NewGameOptionSelected` 回流 → `NGCAddCredits 5000`(脚本列)—— 之后继续选择原版起始即可，两者叠加。
+    *   **`NGCAddCredits` 放在回流处理器而非 `AddNewGameChoices` 规则里**：`FireAll` 会执行命中规则的全部脚本，写在 `_add` 里会在列表阶段就加钱。
+* **为什么不新增 Java**：规则基础页的最小例需要 Java 是因为它用了自定义 trigger(`GearInRulesIntro`，没有原版派发点)；本节全部使用原版场景 trigger，派发点 (使用方) 是原版插件，规则行本身就是完整的注册与消费流程。需要自定义 trigger 对话时沿用规则基础页的 `GearInRulesIntro` / `REGISTER_MARK` 模式。
+* **共享文件纪律**：`data/campaign/rules.csv` 是跨单元共享文件：规则基础页拥有 `GearIn_rules_intro_*`、本节拥有 `GearIn_rules_scene_*`；同前缀内 id 唯一，跨文件重复 id 先到先得的纪律见规则基础页规则强度表。
 
-### GearInSpecialForcesNamer
-```java
-package data.scripts.gearin.modcompat;
-
-import java.util.List;
-import java.util.Random;
-
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.util.Misc;
-import exerelin.campaign.intel.specialforces.namer.SpecialForcesNamer;
-
-/**
- * 特遣队命名器：实现 Nexerelin 的 SpecialForcesNamer 接口。
- * 注册方式：gear_industry.json 的 specialForcesNamerClass 指向本类；
- * 由 Nexerelin 在生成特遣队时经脚本类加载器 loadClass + newInstance
- * （无参构造）后调用 getFleetName，至多重试 25 次直到名字不重复。
- *
- * 命名形如 "1st GearIn Prime Forgeguard"：以起源市场命名，编号随机，
- * 降低与既有特遣队撞名概率；origin 缺失时回退势力首个市场，再回退 "GearIn"。
- * 本类只被 Nexerelin 侧加载，齿轮工业自己的代码从不引用它。
- */
-public class GearInSpecialForcesNamer implements SpecialForcesNamer {
-
-    private static final Random RANDOM = new Random();
-
-    @Override
-    public String getFleetName(CampaignFleetAPI fleet, MarketAPI origin, PersonAPI commander) {
-        MarketAPI market = origin;
-        if (market == null) {
-            List<MarketAPI> markets = Misc.getFactionMarkets(fleet.getFaction());
-            market = markets.isEmpty() ? null : markets.get(0);
-        }
-        String marketName = market == null ? "GearIn" : market.getName();
-
-        int num = RANDOM.nextInt(33) + 1;
-        return num + ordinalSuffix(num) + " " + marketName + " Forgeguard";
-    }
-
-    private String ordinalSuffix(int num) {
-        if (num >= 11 && num <= 13) {
-            return "th";
-        }
-        switch (num % 10) {
-            case 1:
-                return "st";
-            case 2:
-                return "nd";
-            case 3:
-                return "rd";
-            default:
-                return "th";
-        }
-    }
-}
-```
-
-对应关系：
-
-- `implements SpecialForcesNamer`：接口签名 `String getFleetName(CampaignFleetAPI fleet, MarketAPI origin, PersonAPI commander)`；`origin` 是特遣队起源市场，`fleet` 是刚建好的特遣队舰队 (`FleetFactoryV3` 产物，来自舰队工厂链)。
-- 名字 = 随机编号 (1–33)+ 序数后缀 + 市场名 + `Forgeguard`：随机成分配合 Nexerelin 的 25 次唯一性重试，多个特遣队基本不重名 (原版 `PlanetNamer` 同款结构)。
-- `Misc.getFactionMarkets(fleet.getFaction())`：`com.fs.starfarer.api.util.Misc` 的公开工具 (`FactionAPI` 没有市场列表方法)；`origin`/市场全缺失时回退字面量 `GearIn`(不返回 null—— 返回 null 会被当作 "无效名字" 重试 25 次后保留 null，名字显示异常)。
-- 无参构造 (默认构造器)：`pickFleetName` 的 `newInstance()` 硬要求。
-- 本类引用 `exerelin.*` 是 "收敛" 规则的例外：它实现接口、只被 Nexerelin 按配置加载，齿轮工业自己的代码不 import 它 —— 无 Nexerelin 时本类永远不会被加载。
-
-### 接入片段 (在既有生成入口插件中改造 onNewGame)
-```java
-    // 在既有生成入口插件的 onNewGame() 内新增本节生成分支。
-    // 原实现直接调用 new GearInSystemGenerator().generate(Global.getSector())，
-    // 本节把它改成按 Nexerelin 模式分派；seedRelations 照旧。
-    @Override
-    public void onNewGame() {
-        if (GearInNexCompat.isNexCorvusMode()) {
-            // Corvus 模式：固定星系照常生成；出生点由 corvus_spawnpoints.csv 绑定
-            new GearInSystemGenerator().generate(Global.getSector());
-            Global.getLogger(GearInSystemGenPlugin.class).info(String.format(
-                "GearIn Nexerelin: corvus mode; spawnEntity=%s marketSpawnWeight=%.2f",
-                GearInNexCompat.getFactionSpawnPointEntityId(GearInNexCompat.GEAR_FACTION_ID),
-                GearInNexCompat.getFactionMarketSpawnWeight(GearInNexCompat.GEAR_FACTION_ID)));
-        } else if (GearInNexCompat.isNexEnabled()) {
-            // 随机星域模式：星区由 Nexerelin 程序化生成接管（marketSpawnWeight 分配份额），
-            // 不生成固定星系
-            Global.getLogger(GearInSystemGenPlugin.class).info(
-                "GearIn Nexerelin: random sector mode; fixed system skipped, procgen markets only");
-        } else {
-            // 无 Nexerelin：原版生成，降级运行
-            new GearInSystemGenerator().generate(Global.getSector());
-        }
-        seedRelations(Global.getSector());
-    }
-```
-
-`GearInSystemGenPlugin` 类归生成入口页所有，本节只演示调用，不改动那个文件；本节示例类不含该片段。
-
-### 构建
+构建命令 (在 `Starsector\mods\GearIndustry\` 执行，与规则基础页一致)：
 
 ```text
 gradle jar
 ```
 
-编译注意事项：适配器与命名器持有 `exerelin.*` 的编译期引用，**编译期**类路径上必须有 Nexerelin 的 `ExerelinCore.jar`；运行期没有则走降级 (`isNexEnabled()` 为 false，分支不执行)，不影响启动。
-
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/modcompat/GearInNexCompat.class` 与 `data/scripts/gearin/modcompat/GearInSpecialForcesNamer.class`(可用 `jar tf` 核对)。
+本节只改数据文件：`rules.csv` 随 MOD 目录被加载器读取，无需进 jar。`jar tf jars\GearIndustry.jar` 的输出里不应该也不需要包含本节新内容。
 
 ### 验证方案
 
-前置数据：势力注册页 [C3-S2] 的 `gear_industry` 势力；生成入口页 [C3-S3] 的 `GearInSystemGenPlugin`/`GearInSystemGenerator`(含本节接入片段改造)；本节四个数据文件与两个 Java 类；已安装 Nexerelin(`Starsector\mods\Nexerelin`)。
+前置数据：规则基础页的 MOD 布局 (前置：[C14-S1]；`GearInRulesIntro` 类可保留，本节不依赖它)，追加本节 10 条 `GearIn_rules_scene_*` 规则行；启动器勾选 Dev Mode (验证新游戏场景与 dev 选项)。
 
-1. 游戏构建：`gradle jar` 成功；用 `jar tf jars\GearIndustry.jar` 确认两个 `.class` 都在。
-2. 降级路径：不勾选 Nexerelin 开新档，观察 `GearIn` 星系、日志与命名器加载情况。
-3. Corvus 路径：勾选 Nexerelin，新档选 Corvus 模式并选择齿轮工业开局，观察 NGC 势力目录、出生位置与日志。
-4. 随机星域路径：新档选随机星域模式 (不开 Corvus)，观察日志、`GearIn` 星系与市场分布 (可把 `marketSpawnWeight` 改大/改小对比)。
-5. 特遣队：持续游玩至齿轮工业特遣队出现，观察舰队名与日志。
-6. 地面战：入侵齿轮工业市场并触发地面战，观察 `orbitalworks` 条目与修正列表。
+1. 规则注册：启动游戏，在 `starsector.log` 中找到本节 10 条 `Loading rule: GearIn_rules_scene_*` 行 (市场 1 + 酒吧 3 + 舰队 1 + 通讯 3 + 新游戏 2；注意 `_conv_end` 与 `_ngc_pick` 也在其中)。
+2. 市场场景：新建生涯，停靠 jangala：停靠许可文本后出现 `GearIn 市场场景：首次停靠 jangala...`，市场菜单完整 (通讯目录/酒吧/交易/Leave)；再次停靠 jangala：本节文本不再出现、菜单照常。
+3. 酒吧场景：在 jangala 市场菜单点 "Take a shuttle down to visit a dockside bar"：出现酒吧描述文本与 "和 GearIn 演示员聊聊"；点选后出现本节酒吧文本与 "回吧台"；点 "回吧台" 选项重现；"Leave the bar"(ESC) 回到市场菜单。
+4. 舰队场景：在超空间或星系内找一支非敌对独立舰队 (拾荒/商队) 并遭遇：出现呼叫文本；通讯选项高亮 "Accept the comm request"；接受后出现本节问候语与 "结束通讯"/"Cut the comm link"；点 "结束通讯" 回到舰队主菜单。
+5. 任务/流程场景：主菜单新建游戏：角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)`(顺序 6)；点选后选 `ngcWolf` 等原版起始；开局确认星币 = 原版初始 + 5000。非 devMode 启动时该选项不出现。
 
 预期结果：
 
-- 降级路径：`GearIn` 星系照常出现，日志无 `GearIn Nexerelin:` 行、无 `ERROR`；`GearInSpecialForcesNamer` 类不被加载 (类名不出现在任何日志)。
-- Corvus 路径：NGC 界面势力目录出现 "齿轮工业"(`playableFaction=true`)；玩家出生在 `GearIn_planet1`；日志出现 `GearIn Nexerelin: corvus mode; spawnEntity=GearIn_planet1 marketSpawnWeight=1.00`，且 `GearIn` 星系照常存在。
-- 随机星域路径：日志出现 `GearIn Nexerelin: random sector mode; fixed system skipped, procgen markets only`；`GearIn` 星系不存在 (预期行为)；齿轮工业的市场按 `marketSpawnWeight=1` 参与程序化生成分配。
-- 特遣队：舰队名形如 `1st GearIn Prime Forgeguard`(命名器输出，`origin` = 起源市场名)；两个以上特遣队不重名；`starsector.log` 无 `Failed to load special forces namer`。
-- 地面战：`orbitalworks` 产业条目生效 (`strengthMult=1.5`、`heavy 0.3` 兵种、`resistBombard` 标签在对应产业上可见)；势力修正 `attackMult=1.05` 出现在地面战修正列表；日志无 `Failed to load ground battle defs`。
-
-清理：如果调整过 `marketSpawnWeight`，将其恢复为 `1`。
+* 规则注册 (加载期)：`starsector.log` 出现本节 10 条 `Loading rule:` 行：`GearIn_rules_scene_market` / `..._bar_add` / `..._bar_pick` / `..._bar_back` / `..._fleet_hail` / `..._comm` / `..._conv` / `..._conv_end` / `..._ngc_add` / `..._ngc_pick`(日志路径与加载行为在规则基础页已证)。标准输出可能出现单次使用变量 WARNING(`System.out.println`，正常现象，非错误)。
+* 酒吧场景 (jangala 市场菜单 → 酒吧)：进入酒吧显示 `BarPrintDesc` 描述文本 + 选项 "和 GearIn 演示员聊聊"(描述文本进文本面板)：点选后出现 `GearIn 酒吧场景：临时 bar 选项...` 文本 + "回吧台" 选项；点 "回吧台" 酒吧选项重新出现；"Leave the bar"(ESC) 出现 "You leave the bar..." 文本 + 市场菜单复位。
+* 舰队场景：找到一支非敌对的独立势力舰队 (如拾荒舰队) 并接近，遭遇对话出现 `GearIn 舰队场景：一支独立势力舰队呼叫了您...` 文本：舰队主菜单通讯选项高亮为 "Accept the comm request"；接受后出现 `GearIn 对话场景（OpenCommLink）：对独立势力舰队的问候语。` + 菜单选项 "结束通讯" (另有原版 "Cut the comm link")；点 "结束通讯" 回到舰队主菜单。
+* 任务/流程场景 (devMode)：启动器勾选 Dev Mode 后新建游戏，角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)` 选项；点选后继续选任一原版起始，开局星币 = 原版初始 + 5000。非 devMode 时该选项不出现 (`$global.isDevMode` 条件限定)。
+* 全程无 ERROR：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志；加载期无 `Duplicate key` / `Command [...] not found` / 赋值/比较操作符错位等规则加载异常 (规则基础页规则强度表的加载期五连)。
 
 ## 故障分析
 
-故障按阶段分三组：新档与加载阶段 (1–4)、运行期 (5–8)、判断类 (9–11)。每个故障从您看到的症状出发，依次给触发条件、断链原因与修正顺序。
-
-1. **NGC 势力目录里没有齿轮工业，且日志无任何报错。**
-  - 触发：`mod_factions.csv` 漏写 `gear_industry` 行、大小写不符 (文件注释 `# case sensitive!!!`)，或势力未在 `factions.csv` 注册 (势力注册页)。
-  - 原因：名单行缺失时单势力 JSON 不进入加载链，`NexConfig.getFactionConfig("gear_industry")` 回退默认配置 (neutral，`playableFaction=false`)——NGC 不出现、`marketSpawnWeight` 等全部势力配置失效 (成熟实例陷阱原文："mod_factions.csv 遗漏势力时，单势力 JSON 不会进入 Nexerelin 外部势力发现链路")。
-  - 修正：核对名单行与势力 id 逐字一致；确认势力已注册。
-2. **选择了齿轮工业开局，但出生在随机位置或超空间。**
-  - 触发：`corvus_spawnpoints.csv` 漏写行，或 `entityID` 写成了市场 id / 行星显示名 / 不存在的 id。
-  - 原因：`getFactionSpawnPoint` 查不到行，或 `getEntityById` 找不到实体 —— 使用方依次回退 homeworld、随机市场、超空间，全程无报错。
-  - 修正：`entityID` 用实体 id (生成入口页的 `GearIn_planet1`)。游戏会安静地完成这次回退，不给任何提示，所以这一列值得逐字核对。
-3. **新档生成中断：NPE。**
-  - 触发：在早于 Nexerelin 入口生成器的调用点 (`onApplicationLoad`、启动期静态块、任何未走 Nexerelin 新档入口的路径) 直接 `SectorManager.getManager().isCorvusMode()`；或用了已废弃的静态 `SectorManager.getCorvusMode()`(同样未判空)。
-  - 原因：manager 尚未创建 (persistent data 无条目) 时 `getManager()` 返回 null，而 `isCorvusMode()` 是实例方法，直接调用即 NPE。新档 `onNewGame` 阶段 manager 已由 Nexerelin 入口生成器创建 (`ExerelinNewGameSetup.generate` → `setupPlugins` → `addScripts`)，但 `getManager()` 的约定允许返回 null —— 判空是唯一安全写法。
-  - 修正：一律经 `GearInNexCompat.isNexCorvusMode()`(启用判据 + null 判断在前)。
-4. **无 Nexerelin 时启动或运行崩溃：`NoClassDefFoundError: exerelin/...`。**
-  - 触发：`exerelin.*` 引用泄漏到适配器之外 —— 字段初始化、静态块、构造器或未检测的方法体 (如直接把 `NexConfig` 用在 `GearInSystemGenerator` 里)。
-  - 原因：Nexerelin 缺失时这些符号引用一旦被解析就失败；`Error` 冒泡 (脚本类加载器加载脚本实例时只包装 `Exception`)，启动或运行中止。
-  - 修正：全工程搜索 `exerelin` 引用，除 `GearInNexCompat` 与命名器外一律移除。
-5. **特遣队舰队名显示为 `error`，日志有 `Failed to load special forces namer [...]`。**
-  - 触发：`specialForcesNamerClass` 类名拼错/包名错、类没实现 `SpecialForcesNamer`、没有无参构造、`getFleetName` 抛异常。
-  - 原因：`pickFleetName` 捕获 `Throwable` 后把名字回落字面量 `error`——Nexerelin 对失败的命名器毫不掩饰，舰队直接顶着这个名字出征 (成熟实例陷阱原文："实现方法签名不匹配时，特遣队命名会在接口调用时失败")。
-  - 修正：类名与配置逐字一致；实现接口；保留无参构造。
-6. **多个特遣队重名。**
-  - 触发：命名器返回确定性名字 (如固定市场名 + 固定后缀)。
-  - 原因：`hasDuplicateName` 对重复名连续判真，25 次重试用尽后保留最后一次结果，重复名留下。
-  - 修正：名字带随机成分 (本节示例的随机编号 + 序数后缀)。
-7. **地面战配置加载失败，日志含 `Failed to load ground battle defs`。**
-  - 触发：`groundBattleDefs.json` 顶层结构错误 —— `industries` 写成数组、顶层键缺失或类型错误。
-  - 原因：`GBDataManager` 静态初始化对顶层键全部硬读取，结构错误直接抛 `RuntimeException`，地面战系统不可用。
-  - 修正：保持对象结构，只提交自己的键。
-8. **地面战修正无效 (`attackMult` 等不生效)。**
-  - 触发：`groundBattleSettings` 里的键名写错 (如 `attackMult` 写成 `attack_mult`)，或写进了别的 JSON 层级。
-  - 原因：未知键被静默忽略 —— `FactionBonusSubplugin` 只按 `attackMult`/`damageTakenMult`/`moraleDamageTakenMult`/`plugin` 读取。
-  - 修正：对照可识别键名；自定义键必须配合自定义 `plugin` 子插件读取。
-9. **随机星域模式里找不到固定星系，误以为生成失败。**
-  - 触发：对模式分支语义不清楚。
-  - 原因：这是本节示例的**预期行为** —— 星区由程序化生成接管，份额由 `marketSpawnWeight` 决定，固定星系不生成；日志有 `random sector mode` 行。
-  - 修正：理解分支；若需要固定星系，改用 "随机星域也生成主星系" 的变体。
-10. **`corvusCompatible` 设为 false 后 "无法继续兼容" 的旧说法不成立。**
-  - 触发：按旧资料把 `corvusCompatible` 当成硬开关。
-  - 原因：该字段仅经 `NexUtilsFaction.isCorvusCompatible` 辅助读取，没有内置强制使用方；成熟实例全部设 `true`。
-  - 修正：设 `true` 并与生成点/势力配置保持一致 (建议级，见 "规则强度")。
-11. **同时启用两套生成 (Nexerelin 分支与既有原实现都在跑)。**
-  - 触发：`onNewGame` 里既有本节分支又保留旧的直接调用。
-  - 原因：Corvus 模式下星系/实体被生成两遍，实体 id 冲突静默绑定到后注册者 (既有生成入口故障分析的同款语义)。
-  - 修正：分支互斥 (if / else if / else 三路只走一路)。
+- **市场选项只剩 `Leave`**：覆盖 `MarketPostDock` 后没有复刻设置 `$menuState` 和填充选项的职责。执行 `$menuState = main 0` 与 `FireAll PopulateOptions`，重新停靠后确认主菜单恢复。
+- **再次停靠时自定义文本消失**：一次性 memory flag 已经置位，条件不再成立。用 `DumpMemory` 确认该键；需要重复展示时改用可重置条件，再次停靠复验。
+- **酒吧没有临时选项**：`AddBarEvents` 的市场条件不匹配，或没有进入 `BarCMD.showOptions`。核对 `$market.id`，重新打开目标市场酒吧确认选项被当轮重建。
+- **点击酒吧选项后面板空白**：回流规则只写了文本，没有添加后续选项。补充 options 列或调用菜单填充 trigger，再次点击确认返回选项出现。
+- **舰队遭遇没有自定义呼叫文本**：`BeginFleetEncounter` 候选分数低于剧情规则，或条件未命中。核对势力、敌对状态和 score，在遭遇主菜单确认胜出的文本。
+- **通讯问候仍为原版**：拒绝通讯规则得分更高，或应答器条件不满足。按目标行为调整条件与 score，再接受通讯确认自定义问候出现。
+- **任务列表显示 `No blurb found`**：规则 trigger 与 `getTriggerPrefix()` 生成的名称不一致。统一 `_blurb`、`_option`、`_blurbBar` 和 `_optionBar` 前缀，刷新任务列表确认红字消失。
+- **新游戏对话没有演示选项**：规则没有挂在 `AddNewGameChoices`，或回流 trigger 写成了生涯对话版本。使用 `NewGameOptionSelected` 并满足 devMode 条件，重开新游戏对话确认选项出现。
+- **交易面板规则报错**：`TradePanelFlavorText` 使用了依赖真实对话框的命令。只保留 `AddText` 和交易模式变量判断，再打开交易面板确认文本正常显示。
+- **对话只有文本没有选项**：`$menuState` 或事实键未让 `PopulateOptions` 命中。核对当前 memory 值并修正菜单状态，重新触发后确认至少有返回选项。
+- **规则未触发且日志无异常**：规则 ID 跨文件重复，或派发点的 trigger 拼写不一致。改用唯一前缀并逐字核对 trigger，再确认 `Loading rule:` 和运行文本同时出现。
+- **`$option` 条件始终为 false**：该条件写在非选项回流 trigger 中，没有任何插件写入 `$option`。把判断移到 `DialogOptionSelected`、`NewGameOptionSelected` 或酒吧回流路径，再点击选项复验。
 
 ## 总结
 
-Nexerelin 接入可以收成一张五链路图：
+本节把五类生涯场景讲成同一条链：原版派发点在固定时机发起匹配，规则行按条件与分数竞争命中，脚本负责叙述、转场或填充菜单，最终以游戏内文本、菜单与日志给出可观察结果。覆盖市场、酒吧、舰队、新游戏四处的完整最小例把这条链从注册验证到游戏内；场景 trigger 与自定义 trigger 的分界也由此清楚：前者只需写行，后者才需要 Java 入口 (规则基础页已述)。
 
-- **势力配置 (数据)**：`mod_factions.csv`(发现名单，`# case sensitive!!!`)→ 单势力 JSON(`exerelinFactionConfig/<factionId>.json`，按 MOD id 合并)→ `NexConfig.getFactionConfig(id)` 运行期读取。漏写名单行 = 全部配置静默回退默认。
-- **生成点 (数据)**：`corvus_spawnpoints.csv` 一行 (`faction,system,entityID`) 绑定 Corvus 模式开局；行或实体缺失时静默回退 homeworld、随机位置、超空间。
-- **生成分支 (代码)**：`isModEnabled("nexerelin")` → `SectorManager.getManager()` null 判断 → `isCorvusMode()` 分派。
-  - Corvus 模式保留固定星系 + 出生点由 `corvus_spawnpoints.csv` 绑定；随机星域模式由 `ExerelinProcGen` 接管、`marketSpawnWeight` 分配份额。
-  - manager 由 Nexerelin 的入口生成器创建，`getManager()` 约定允许 null，判空不能省。
-- **地面战 (数据)**：`groundBattleDefs.json` 的 `industries` 条目 (`strengthMult`/`troopCounts`/`tags`/`icon`/`plugin`)+ 势力配置的 `groundBattleSettings`(`attackMult`/`damageTakenMult`/`moraleDamageTakenMult`/`plugin`)。结构错误 = `Failed to load ground battle defs`；未知键静默。
-- **特遣队 (代码)**：`specialForcesNamerClass` 指向实现 `SpecialForcesNamer` 的无参类，Nexerelin 经脚本类加载器实例化并至多 25 次重试去重；失败形态是名字 `error` + ERROR 日志。命名器是 "引用收敛" 的唯一例外 (由对方加载、经 JSON 引用)。
+排错时沿四个位置核对：`Loading rule:` 日志确认注册、trigger 拼写确认匹配、分数确认竞争、职责复刻与状态复位确认行为。`FireBest` 只执行一条，覆盖原版规则必须复刻其结果职责；`FireAll` 全执行，菜单类 trigger 用它批量添加选项。状态键 `$menuState` / `$tradeMode` 进入与退出成对维护；`$option` 回流只属于各自对话框插件的回流 trigger；临时 bar 选项每轮清空重建；任务 trigger 前缀必须与 `getTriggerPrefix()` 一致；`TradePanelFlavorText` 只匹配假 dialog。
 
-五条链路共用同一个软依赖框架：不声明 `dependencies`、`isModEnabled` 检测、引用收敛进 `GearInNexCompat`、缺依赖降级且降级可观测。
-
-排错时先问 "这条数据由哪个使用方读取，读不到时它回退什么"：数据链路 (势力配置、生成点、地面战) 的故障几乎都不报错，只能靠预期结果对照；代码链路 (生成分支、命名器) 至少会留下 NPE、ERROR 日志或字面量 `error`。接入面越靠数据，缺依赖时的降级越容易 —— 任何可选 MOD 的接入都可以按 "检测 → 收敛 → 降级" 三段复刻，并与硬依赖声明 (启动器拦截) 形成可选 / 必需两种接入强度的完整对照。
+从逻辑上看，这套使用方式的下游是三个主题：规则命令体系 (自定义 rulecmd 可替代 `BarCMD` / `EndConversation` 等现成使用方式)、记忆语义 (本节的一次性 flag 与 `$menuState` 的过期与持久化由此完整展开)、对话插件生命周期 (市场/舰队/酒吧场景的 Java 侧底座)。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global` / `com.fs.starfarer.api.SettingsAPI` / `com.fs.starfarer.api.ModManagerAPI`—— 启用检测入口 (`getModManager` / `isModEnabled` 逐字比较)；
-- `com.fs.starfarer.api.util.Misc`——`getFactionMarkets(FactionAPI)` 等公开工具；
-- `com.fs.starfarer.api.campaign.CampaignFleetAPI` / `com.fs.starfarer.api.campaign.econ.MarketAPI` / `com.fs.starfarer.api.characters.PersonAPI`—— 命名器接口三参；
-- `exerelin.campaign.SectorManager`——`getManager()` 可空约定与 `isCorvusMode()` 模式判定；
-- `exerelin.utilities.NexConfig` / `exerelin.utilities.NexFactionConfig`—— 势力配置加载与运行期读取 (`getFactionConfig`)；
-- `exerelin.world.ExerelinCorvusLocations`—— 出生点查询 (`getFactionSpawnPoint`)；
-- `exerelin.campaign.intel.specialforces.namer.SpecialForcesNamer`—— 特遣队命名接口；
-- `exerelin.campaign.intel.specialforces.SpecialForcesIntel`—— 命名器加载链 (类名实例化 + 至多 25 次去重重试)；
-- `exerelin.campaign.intel.groundbattle.GBDataManager`—— 地面战定义加载；
-- `exerelin.campaign.intel.groundbattle.plugins.FactionBonusSubplugin`——`groundBattleSettings` 可识别键的使用方；
-- `data/config/exerelinFactionConfig/mod_factions.csv`—— 势力发现名单 (唯一列 `faction`，注释 `# case sensitive!!!`)；
-- `data/config/exerelinFactionConfig/gear_industry.json`—— 单势力配置 (文件名 = 势力 id)；
-- `data/config/exerelin/corvus_spawnpoints.csv`——Corvus 模式出生点 (`faction,system,entityID`)；
-- `data/config/exerelin/groundBattleDefs.json`—— 地面战产业定义；
-- `data/scripts/gearin/modcompat/GearInNexCompat`—— 本节适配器类 (`exerelin.*` 引用收敛点)；
-- `data/scripts/gearin/modcompat/GearInSpecialForcesNamer`—— 本节命名器类 (仅被 Nexerelin 按配置类名加载)。
+* `data/campaign/rules.csv`(MOD 侧)：本节示例追加行所在文件，规则 id 前缀 `GearIn_rules_scene_*`。
+* `Starsector\starsector-core\data\campaign\rules.csv`(原版)：五类场景 trigger 的平台规则表：
+    *   本节引用的回退规则 (`marketOpen` / `marketDock` / `marketPostOpenDefault` / `greetingFallthrough` / `initial_AnyFleet` / `marketReturnFromBar` 等) 的参照来源。
+* `com.fs.starfarer.api.impl.campaign.rulecmd.RuleBasedInteractionDialogPluginImpl`：交互对话框插件，对话场景 trigger 的主要派发点与 `$option` 回流实现。
+* `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`：舰队遭遇与通讯对话插件，`BeginFleetEncounter` / `OpenCommLink` 的派发点。
+* `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`：酒吧场景的 rulecmd 与对话插件，`AddBarEvents` / `ReturnFromBar` 派发与字符串选项回流。
+* `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent`：写临时 bar 选项的 rulecmd(`$core_tempBarEvents` 记忆键)。
+* `com.fs.starfarer.api.impl.campaign.missions.hub.BaseMissionHub`：任务列表与任务对话 trigger(`<前缀>_blurb` / `<前缀>_option` / `AddMHCloseOption`) 的使用方。
+* `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionBarEventWrapper`：任务以酒吧事件展示时的 `<前缀>_blurbBar` / `<前缀>_optionBar` trigger 使用方。
+* `com.fs.starfarer.api.impl.campaign.NewGameDialogPluginImpl`：主菜单新游戏对话框 (流程场景)，回流 trigger 为 `NewGameOptionSelected`。
+* `com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`：场景事实键 (`$hasMarket` / `$isHostile` / `$isContact` 等) 的写入方。
+* `com.fs.starfarer.api.impl.campaign.rulecmd.EndConversation`：对话退出转场 rulecmd。
+* `com.fs.starfarer.api.impl.campaign.rulecmd.OpenComms` / `com.fs.starfarer.api.impl.campaign.rulecmd.HailPlayer`：舰队通讯转场与 `$hailing` 写入 rulecmd。
+* `com.fs.starfarer.api.impl.campaign.AbandonMarketPluginImpl`：弃档时的市场状态复位 (`$menuState` / `$tradeMode` / `$hasMarket`)。
+* `com.fs.starfarer.api.impl.campaign.rulecmd.FireBest`：单选派发与 keepOptions(第二参) 语义。
+* `com.fs.starfarer.api.campaign.rules.MemKeys`：规则记忆键常量 (`MISSION` 等)。

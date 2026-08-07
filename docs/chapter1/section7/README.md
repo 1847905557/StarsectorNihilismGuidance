@@ -25,7 +25,7 @@
 - [C1-S6] 的内置武器、内置船插与内置战机；
 - 理解战术系统与生涯数据库界面的基本用途。
 
-## 文件/API 链路
+## 文件与 API 链路
 
 数据文件是 MOD 内的 `data/strings/descriptions.csv`。
 
@@ -63,7 +63,7 @@ id,type,text1,text2,text3,text4,text5,notes
 | `SHIP` | 舰船与战机 hull 的描述 | 本节 |
 | `WEAPON` | 武器描述 | 本节 |
 | `SHIP_SYSTEM` | 战术系统描述 | 本节 (观察原版行，不新建)|
-| `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 | [C3-S4] |
+| `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 | [C3-S8] |
 
 - `text1`–`text5` 的默认值与主要使用方：
 
@@ -91,7 +91,7 @@ id,type,text1,text2,text3,text4,text5,notes
 三类错误在本节故障分析中均有对应症状与修正。
 :::
 
-### 完整最小例
+## 完整最小例
 
 以下内容全部放在虚构示例 MOD(`gear_in`，第一章首节建立) 中。先建立 `data/strings/descriptions.csv`，表头之后依次是本节拥有的描述行：
 
@@ -134,7 +134,7 @@ GearIn_combat_desc_forging,SHIP,"锻件-级相位护卫舰围绕一门中型实�
 - **弯引号**：加载时会把弯引号 (" " ' ') 替换为直引号 (`replaceSmartQuotes`)，所以不要依赖弯引号保留原样 (原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步归一化)。
 - **键唯一**：`id + type` 在同一文件内**必须**唯一，否则加载期抛异常 (见故障分析)。
 - 也不要重定义原版或其他 MOD 已存在的 `id + type` 组合：跨文件合并时先被枚举到的文件的行生效，后到的同键行被**静默跳过** (读 CSV 时的去重分支)，覆盖顺序不是可以依赖的约定。
-- 需要整体替换某个数据文件时，支持在 `mod_info.json` 的 `replace` 数组里声明；`fullOverrides` 的文件读取语义见 [C12-S2]。
+- 需要整体替换某个数据文件时，支持在 `mod_info.json` 的 `replace` 数组里声明；`fullOverrides` 的文件读取语义见 [C15-S2]。
 
 原版参考行 (`Starsector/starsector-core/data/strings/descriptions.csv`，仅观察不修改)：
 
@@ -178,35 +178,17 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 ## 故障分析
 
-按 "症状 → 原因 → 修正" 逐条排查；每条症状都是本节示例数据可以实际复现的。
-
-- **启动即失败，日志含 `Invalid type of description: [null]`**：某行 `type` 列不是枚举名 (拼写、大小写或多余空格)。
-- 描述加载对每一行做枚举解析，解析失败立即抛 `RuntimeException`。
-- 修正：与 `Type` 枚举名逐字符一致，重启。
-- **启动即失败，日志含 `Duplicate key [...] while loading [data/strings/descriptions.csv ...]`**：同一文件内出现相同 `id + type` 组合 (键串形如 `id | type |`)。
-- 读 CSV 时对每个文件内部做重复键检查并抛异常。
-- 修正：保证 `id + type` 全文件唯一，重启。
-- **启动即失败，日志含 `JSONObject["id"] not found` 一类异常**：文件带 BOM 或表头被污染。
-- BOM 字符会粘在表头第一列的列名上 (`id` 变成 `\ufeffid`)，加载器按 `id` 取键失败。
-- 修正：以 UTF-8 **无 BOM** 重新保存。
-- **对象缺描述行，界面显示 `No description... yet`**：这是设计行为而非报错 —— 查询缺行时得到占位描述对象 (text1–3 为占位文本)。
-- 典型场景：武器行 `id` 写错、`.ship` 的 `descriptionId` 指向不存在的行、或该对象根本没有描述行。
-- 修正：补行或改正键；注意大小写敏感。
-- **改了描述但游戏里没变化**：先确认改的是会被读取的行 —— 键与任何对象都不匹配的未挂接行永远不会被读取，且不报错。
-- 核对描述行的 `id`、`type` 与对象实际使用的查找键。
-- **舰船 tooltip 引言与 text2 不一致**：tooltip 生成的规则是 text3 非空或 text2 缺失/为占位时改用 text1 第一段。
-- 想用 text2 当引言，就不要填 text3。
-- **数据库系统列表的类型标签显示 `Special`**：该系统的 `SHIP_SYSTEM` 行缺 text2。
-- 条目本身仍会列出 (系统列表不依赖描述行)，只是类型标签降级；缺整行时详情正文显示占位文本。
-- 修正：为自定义系统提供描述行，text1 必填、text2 建议填。
-- **装配界面系统行显示整段长文**：系统描述缺 text3，界面回退到 text1。
-- 若希望行内文本短而精，补 text3；text4 的 `|` 分隔片段会作为高亮渲染。
-- **战机详情显示占位文本但装配界面正常**：战机的 hull 写了 `descriptionId`—— 装配界面的战机选择器按它查询，数据库战机详情却直接按 `hullId` 查询，两处键不一致。
-- 修正：战机 hull 不写 `descriptionId`(本例 `GearIn_slag` 的用法)。
-- **文本错位、截断或串到别的列**：某字段内含未加引号的英文逗号或换行，按列切分后错位 —— 键可能因此改变 (变成占位文本或没被使用的行)，或列数异常。
-- 修正：含这些字符的字段加引号，重新跑结构检查。
-- **重定义原版或其他 MOD 已有的 `id + type` 后没有任何效果**：跨文件合并时先被枚举到的文件的行生效，后到的同键行被静默跳过。
-- 不要重定义既有键；确有整体替换需要时使用 `replace`(fullOverrides 整文件替换)。
+- **启动即失败并出现 `Invalid type of description: [null]`**：某行 `type` 列不是枚举名，常见原因是拼写、大小写或多余空格。描述加载会在枚举解析失败时抛出 `RuntimeException`；改为与 `Type` 枚举逐字符一致并重启，日志应完成解析。
+- **启动即失败并出现 `Duplicate key [...] while loading [data/strings/descriptions.csv ...]`**：同一文件内存在相同的 `id + type` 组合。保证键串 `id | type |` 在文件内唯一并重启，重复键异常应消失。
+- **启动即失败并出现 `JSONObject["id"] not found`**：文件带 BOM 或表头被污染，第一列可能被读成 `\ufeffid`。以 UTF-8 无 BOM 保存文件并重启，加载器应能按 `id` 读取表头。
+- **对象缺描述行并显示 `No description... yet`**：武器行 ID 写错、`.ship` 的 `descriptionId` 不存在，或对象没有描述行时，查询会返回占位描述对象。补齐描述行或改正键的大小写后重新打开对象详情，正文应替换占位文本。
+- **修改描述后游戏内没有变化**：未挂接到任何对象的键不会被读取，也不会报错。核对描述行的 `id`、`type` 与对象实际查找键；改动后重启并在对应界面确认文本变化。
+- **舰船 tooltip 引言与 text2 不一致**：当 text3 非空，或 text2 缺失、仍为占位文本时，tooltip 会改用 text1 第一段。要使用 text2 作为引言就不要填写 text3；重新悬停舰船后，引言应来自目标字段。
+- **数据库系统列表的类型标签显示 `Special`**：对应 `SHIP_SYSTEM` 行缺少 text2。系统条目仍会列出，但类型标签会降级，缺整行时详情正文也会显示占位文本；补齐 text1 和建议填写的 text2 后重启，标签应恢复。
+- **装配界面系统行显示整段长文**：系统描述缺少 text3，界面会回退到 text1。补充短的 text3，并用 text4 的 `|` 分隔需要高亮的片段；重新打开装配界面，行内文本应按字段分段。
+- **战机详情显示占位文本而装配界面正常**：战机 hull 写了 `descriptionId` 时，装配界面按该键查找，而数据库战机详情直接按 `hullId` 查找。删除战机 hull 的 `descriptionId` (本例使用 `GearIn_slag`)，重新打开两处详情后，文本应一致。
+- **文本错位、截断或串到其他列**：字段中的英文逗号或换行没有加引号，会造成列切分错位、键值改变或列数异常。给含这些字符的字段加引号并重新运行结构检查，重新加载后各列应回到预期位置。
+- **重定义已有 `id + type` 后没有效果**：跨文件合并时，先枚举到的同键行生效，后到的行会被静默跳过。不要重定义既有键；确需整体替换时使用 `replace` (fullOverrides 整文件替换)，重启后再观察目标对象。
 
 ## 总结
 

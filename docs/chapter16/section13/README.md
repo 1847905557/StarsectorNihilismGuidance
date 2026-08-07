@@ -1,0 +1,194 @@
+# 用 BoxUtil 加载 OBJ 模型并配置材质
+
+OBJ 文件本身只描述几何；模型 ID、贴图材质与世界变换仍要由 BoxUtil 数据表和 Java 代码组合。本节先确认 ModelManager 已注册模型，再为实体建立平移、旋转和缩放矩阵。
+
+*本节预期阅读时间：~18 分钟。*
+
+*本节预期操作时间：~30 分钟。*
+
+## 学习目标
+
+完成后，您将能够：
+
+* 按 BoxUtil 1.5.4 的 9 列结构登记 OBJ 与材质贴图；
+* 用 `ModelManager` 验证模型 ID 并取得共享 `ModelData`；
+* 用 `TransformUtil` 建立与游戏世界坐标一致的模型矩阵；
+* 用 `CommonEntity` 组合模型、变换与默认光照；
+* 从 ID、模型有效性、贴图通道和尺度定位空白模型。
+
+## 前置知识
+
+* [C6-S2] 理解 Java 类、方法、字段与入口插件；
+* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+
+## 明确当前需求
+
+战斗开始后，玩家舰旁显示一个小型齿轮模型；舰船转向时模型保持自身角度，贴图缺失时日志明确指出模型 ID 或材质项。
+
+## 文件与 API 链路
+
+`ModelManager` 从 `data/config/modFiles/BUtil_obj_data.csv` 取得模型数据；`ModelData` 保存几何缓冲和各贴图通道；`CommonEntity` 使用模型与默认光照；`TransformUtil` 构建与游戏坐标一致的模型矩阵。自定义生成网格时才需要直接调用 `MeshUtil` 计算法线或切线。
+
+### 在 CSV 中登记模型 ID
+
+**插入位置：`data/config/modFiles/BUtil_obj_data.csv` 的 GearIn 行。** 按表头关联 OBJ、漫反射、法线、复杂、发光和切线贴图；空通道保留空字段。
+
+```csv
+GearIn_gear,data/models/GearIn_gear.obj,data/models/GearIn_gear_diffuse.png,data/models/GearIn_gear_normal.png,,data/models/GearIn_gear_emissive.png,,,F32
+```
+
+完成信号：ModelManager.containsModelID 返回 true。
+
+### 在创建实体前确认模型存在
+
+**插入位置：`GearInModelCatalog.require()`。** 把未知 ID 改成明确参数错误。
+
+```java
+if (!ModelManager.containsModelID(modelId)) {
+    throw new IllegalArgumentException("Unknown BoxUtil model: " + modelId);
+}
+```
+
+完成信号：错误日志包含未知 modelId。
+
+### 取得已解析的 ModelData
+
+**插入位置：`require()` 返回处。** 复用 BoxUtil 启动期加载结果，并让实体构造器再次检查 `model.isValid()`。
+
+```java
+ModelData model = ModelManager.getModelData(modelId);
+```
+
+完成信号：返回对象包含模型缓冲与材质引用。
+
+### 组合模型与世界变换
+
+**插入位置：`GearInModelTransform.create()`。** 先用有效 `ModelData` 创建 `CommonEntity`，再把坐标、舰首角和缩放写入同一 `Matrix4f`。
+
+```java
+CommonEntity entity = new CommonEntity(model, true);
+entity.setModelMatrix(TransformUtil.createModelMatrixVanilla(
+        location, facing, scale, matrix));
+```
+
+完成信号：实体持有同一份共享模型缓冲，模型矩阵包含本次位置、角度和缩放。
+
+### 建立可观察的基础光照
+
+**插入位置：`create()` 返回前。** 先使用 `CommonEntity` 的默认光照证明法线与材质通道可读；动态光源留到 [C16-S14]。
+
+```java
+entity.setDefaultLight();
+return entity;
+```
+
+完成信号：GearIn 齿轮以漫反射、法线和发光通道渲染，朝向与传入 `facing` 一致。
+
+## 排查关键故障
+
+下面是**局部故障片段**：
+
+```java
+ModelData model = ModelManager.getModelData("GearIn_Gear");
+```
+
+实际症状：实体成功创建但完全空白，日志中没有文件读取异常。
+
+原因：模型 ID 大小写与 CSV 的 `GearIn_gear` 不一致，`getModelData()` 返回 `null`；直接构造实体把真正的查询错误推迟成空白画面或空引用。
+
+下面是**局部修正片段**：
+
+```java
+ModelData model = catalog.require("GearIn_gear");
+```
+
+复验：用精确 ID 创建实体并记录 `model.isValid()`；再故意改大小写，确认在创建 GPU 实体之前得到明确错误。
+
+## 完整最小例
+
+目录类只负责模型注册表查询，变换类只接受有效 `ModelData` 并返回配置好矩阵与默认光照的 `CommonEntity`。战斗接线仍需检查 `CombatRenderingManager.addEntity()` 返回码。
+
+## 验证方案
+
+前置数据：9 列模型 CSV 已被 BoxUtil 加载，OBJ、diffuse、normal 与 emissive 文件均存在，战斗接线能把返回实体入队。
+
+1. 启动后核对 `ModelManager.containsModelID("GearIn_gear")` 和 `ModelData.isValid()`。
+2. 在玩家舰旁创建比例为 `(1, 1)` 的实体，核对位置和朝向。
+3. 把比例改为 `(0.5, 0.5)`，确认世界尺寸减半而模型缓冲仍被复用。
+4. 分别移除 emissive、normal 路径并重启，观察材质通道变化和加载日志。
+5. 把 ID 改为 `GearIn_Gear`，确认目录类在实体创建前抛出带 ID 的参数错误。
+
+预期结果：
+
+* 精确模型 ID 返回有效、可复用的 `ModelData`；
+* `CommonEntity` 的模型矩阵与传入位置、朝向、缩放一致；
+* 默认光照能够区分漫反射、法线和发光通道的加载结果；
+* 错误大小写在创建实体前产生明确异常；
+* 有效实体入队后没有未处理异常。
+
+## 故障分析
+
+- **实体创建后完全空白**：模型 ID 大小写与 CSV 不一致，或 `ModelData.isValid()` 为 false。先通过 `require()` 验证数据，再构造实体；修正后确认模型可见。
+- **模型整体显示为黑色**：漫反射贴图或材质数据没有注册。补齐材质引用，重新载入后确认基础颜色出现。
+- **光照方向与模型表面相反**：OBJ 的法线或切线方向不一致。修正并重新导出网格，再旋转光源确认明暗方向正确。
+- **模型位置正确但比例巨大**：OBJ 单位与世界缩放没有统一。调整导出单位或模型矩阵缩放，重新显示后与舰船尺寸对照。
+
+## 总结
+
+模型加载分成数据注册、存在性确认、模型取得和世界变换。先让 ID 查询失败得足够明确，再处理法线、材质和尺度，排错顺序会短很多。
+
+## 建议参考项
+
+* `ModelManager`：注册并查询模型数据；
+* `CommonEntity`：组合模型与材质；
+* `TransformUtil.createModelMatrixVanilla`：建立世界变换。
+::: details 完整成品：GearInModelCatalog
+
+```java
+package data.scripts.gearin.lib;
+
+import org.boxutil.manager.ModelManager;
+import org.boxutil.units.standard.attribute.ModelData;
+
+public final class GearInModelCatalog {
+    public ModelData require(String modelId) {
+        if (!ModelManager.containsModelID(modelId)) {
+            throw new IllegalArgumentException("Unknown BoxUtil model: " + modelId);
+        }
+        return ModelManager.getModelData(modelId);
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInModelTransform
+
+```java
+package data.scripts.gearin.lib;
+
+import org.boxutil.units.standard.attribute.ModelData;
+import org.boxutil.units.standard.entity.CommonEntity;
+import org.boxutil.util.TransformUtil;
+import org.lwjgl.util.vector.Matrix4f;
+import org.lwjgl.util.vector.Vector2f;
+
+public final class GearInModelTransform {
+    private final Matrix4f matrix = new Matrix4f();
+
+    public CommonEntity create(ModelData model, Vector2f location,
+            float facing, Vector2f scale) {
+        if (model == null || !model.isValid()) {
+            throw new IllegalArgumentException("BoxUtil model is not valid");
+        }
+        CommonEntity entity = new CommonEntity(model, true);
+        entity.setModelMatrix(TransformUtil.createModelMatrixVanilla(
+                location, facing, scale, matrix));
+        entity.setDefaultLight();
+        return entity;
+    }
+}
+```
+
+:::

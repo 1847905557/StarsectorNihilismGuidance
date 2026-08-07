@@ -1,8 +1,8 @@
-# 制作可保存进度的生涯脚本
+# 用代码创建市场
 
-本节制作能够保存进度的每日与周期生涯脚本。脚本会按游戏时间推进并随存档序列化，日志用于确认注册、时间换算和读档后的进度。
+本节用代码创建市场，把实体、子市场和经济循环连接起来。示例会设置市场的开放状态并检查商品流，为产业、交易界面与殖民地管理提供基础。
 
-*本节预期阅读时间：~30 分钟。*
+*本节预期阅读时间：~45 分钟。*
 
 *本节预期操作时间：~60 分钟。*
 
@@ -10,420 +10,1224 @@
 
 完成后，您将能够：
 
-- 解释 `advance(float amount)` 的 `amount` 语义，并说出正常帧、暂停、加速、新档推进、战斗五种时序下引擎如何调用脚本与时钟；
-- 解释 `isDone()` 与 `runWhilePaused()` 的引擎执行约定 (每帧最多两查、清理入口、脚本基类默认值、`EveryFrameScriptWithCleanup` 的边界)，并用 `isDone()` 控制常驻脚本自停；
-- 解释 `CampaignClockAPI` 的内部换算 (10 真实秒 = 1 游戏日、整游戏秒截断、时间戳与 `getElapsedDaysSince`)，并区分以日历为准与以累加器为准两类时间判断的适用场景；
-- 解释存档序列化边界：`scripts` 随存档保存、`transientScripts` 读档后必然清空、脚本字段的 XStream 可序列化要求与 `readResolve()` 恢复模式；
-- 编写并注册每日/周期脚本 (本节以 `GearInCalendarDayScript` 演示模式 A、`GearInDayAccumulatorScript` 演示模式 B)，并在四种周期模式 (日历跨日、天数累加、间隔器、自注册倒计时) 之间做选择；
-- 从症状定位十一类典型故障。
+* 说出市场 (market) 的结构：`MarketAPI` 名下挂哪些子集合 (身份与实体绑定、条件、产业、子市场、商品、人物、状态、memory、stats)，以及每个子集合从哪个 getter 进入；
+* 用代码路径在生涯里创建一个市场：`FactoryAPI.createMarket` → `setFactionId` / `setPrimaryEntity` → `addCondition` / `addIndustry` / `addSubmarket` → `EconomyAPI.addMarket` → `SectorEntityToken.setMarket`。
+    *   并复述 "缺任何一步的失败形态"；
+* 说出三种原版子市场 (`Submarkets.SUBMARKET_OPEN` / `SUBMARKET_BLACK` / `SUBMARKET_STORAGE`) 的插件行为差异：税率、合法性、库存上限与稳定度的关系、是否参与经济、用户交易的 `PlayerEconomyImpactMode`；
+* 说出经济循环 (`EconomyAPI.advance` → 经济推进器 → 每月 `economyIterPerMonth` 次迭代 → 月末步 `updateStockpileAndPrice`) 的节奏。
+    *   以及 `nextStep()` / `doubleStep()` / `tripleStep()` 只允许在 UI 交互路径调用、`EconomyUpdateListener` 必须经 `EconomyAPI.addUpdateListener` 注册这两条必须遵守的规则；
+* 说出开放状态族 (`setFreePort` / `setHidden` / `setPlayerOwned` / `setSurveyLevel` / `setEconGroup` / tag) 各自改变什么可观察行为；
+* 从症状定位典型故障：市场不出现、实体没有市场归属、`getCargoNullOk()` 判空失败、后台调 `nextStep` 卡顿、监听器永不回调、把全局基础价当市场价、误删同 id 全部条件、用 `getMemory()` 做纯读取等。
 
 ## 前置知识
 
-- [C6-S2] 的 `modPlugin` 生命周期与持久数据标记；
-- [C6-S3] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
-- [C7-S1] 的战斗域每帧回调、暂停语义与生涯域的差异；
-- [C8-S1] 的星区结构、生涯时钟、`EveryFrameScript` 注册、推进循环、暂停与加速语义。
+* [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
+* [C3-S7] 的经济数据加载链与代码路径建市场收尾；
+* [C6-S2] 的 `modPlugin` 生命周期与持久数据标记；
+* [C6-S3] 的 `Global.getSector()` 阶段语义；
+* [C6-S4] 的 settings 读取；
+* [C7-S3] 的 `MutableStat` 与修饰值读取；
+* [C9-S1] 的 `SectorAPI.getEconomy()`、生涯时钟与 `EveryFrameScript` 注册；
+* [C9-S2] 的 `SectorEntityToken` 与地点容器挂载；
+* [C9-S3] 的生涯对象一次性脚本与 `REGISTER_MARK` 标记。
 
-## 文件与 API 链路
+## 术语
 
-脚本要能稳定运行，先得看清引擎的四个约定：每帧怎么调脚本、`amount` 是什么、时间怎么换算、进度存在哪里。本节依次讲完这四个机制，再据此给出四种实现模式。
+按术语约定，本节首次完整讲解以下词：
 
-### EveryFrameScript：三方法约定再深入
+* **市场 (market)**：API 名保留 `MarketAPI`。一个 "可交易的经济节点"，绑定在一个主实体 (行星、空间站、残骸等) 上，持有势力、规模、条件、产业、子市场、商品库存、人物与开放状态。涉及殖民地 (colony) 语义时页面会明确说 "殖民地"；本节 `market` 一律写 "市场"。
+* **子市场 (submarket)**：API 名保留 `SubmarketAPI`。市场下属的独立交易入口 (开放市场、黑市、仓库等)，每个子市场由静态 spec + 运行时 plugin + 自己的 cargo 组成。
+* **商品 (commodity)**：API 名保留 `CommodityOnMarketAPI`(市场内单商品对象) 与 `CommoditySpecAPI`(全局商品规格)。"商品流" 指商品在市场网络里以经济单位流动、最终反映为库存与价格的循环。
+* **库存 (stockpile)**：市场内单商品的存量，以 "经济单位刻度" 计量 (与用户 cargo 的原始单位不同，`CommoditySpecAPI.getEconUnit()` 是换算系数)。
+* **开放状态 (open state)**：一组改变市场可交易语义的开关，包括自由港 (free port)、隐藏 (hidden)、用户所有 (player-owned)、survey 等级、经济组 (econ group) 与 tag。
 
-`EveryFrameScript`(`com.fs.starfarer.api.EveryFrameScript`) 只有三个方法，是生涯按帧脚本的完整约定。此前已讲过三方法是什么，本节讲引擎到底怎么用它们：
+## 梳理市场创建关系
 
-| 方法 | 引擎执行约定 (生涯引擎 `advance` 的内部实现)|
-|---|---|
-| `boolean isDone()` | 每帧**最多查两次**：`advance` 前查一次 —— 为 `true` 直接移除 (不调 `advance`)；`advance` 返回后再查一次 —— 为 `true` 移除。常驻脚本返回 `false` |
-| `boolean runWhilePaused()` | 调用条件 `runWhilePaused() || !isPaused()`：返回 `true` 时暂停期间 `advance` 仍被调用，但 `amount` 仍是真实秒数、时钟仍冻结 (见 "时间换算" 节)|
-| `void advance(float amount)` | `amount` 是**上一帧经过的真实秒数** ("seconds elapsed during the last frame"；"Use SectorAPI.getClock() to convert to campaign days")。**必须**经时钟换算才是游戏天 |
+本节的所有读取与注册都围绕同一个任务：在生涯里建一个市场，再实地观察它的结构、子市场与经济行为。先看市场对象的结构与创建链，再分别展开子市场差异与经济循环节奏；最后的完整最小例把这套入口逐一在生涯里跑一遍。
 
-执行细节：
+### 市场对象 (MarketAPI)
 
-1. 引擎遍历的是**列表快照** (`new ArrayList<>(this.scripts)`)，脚本在 `advance` 里 `addScript` / `removeScript` 安全；代价是 advance 里新加的脚本下一帧才推进。
-2. 移除是 "遍历快照、改原列表"：
-   - `isDone` 自动清理；
-   - `removeScript(script)` 按**对象同一性**；
-   - `removeScriptsOfClass(Class)` 按**精确类** `getClass() == clazz`；
-   - `hasScript(Class)` 用 `isInstance`—— 查重用 `hasScript`，批量删用 `removeScriptsOfClass`，别混用。
-3. **`addScript` 不去重**：同一实例或等价实例重复注册会各自推进 —— 一次性注册必须用 persistent data 标记 (必须遵守的规则，见 "注册与存档" 节)。
-4. 脚本基类把 `runWhilePaused()` 默认设为 `false`；引擎内置脚本也走同一机制。
-5. `EveryFrameScriptWithCleanup`(`com.fs.starfarer.api.EveryFrameScriptWithCleanup`) 只多一个 `cleanup()`："附着实体从生涯引擎移除时调用"(实体级脚本；引擎级脚本不触发)。该接口没有可观测的调用点，行为表述即上述语义。
+先给结论：市场是绑定在主实体上的经济节点，它自己持有全部子集合，但商品流重算不属于它 —— 那是经济集合的职责。`MarketAPI`(`com.fs.starfarer.api.campaign.econ.MarketAPI`) 是纯接口，运行时实现为 `Market`。市场结构 (字段与 getter)：
 
-### amount 的取值：五种时序下引擎怎么调 advance
+分组
 
-方法约定说明脚本自身怎么写，时序约定决定引擎每次怎么调、传多少 `amount`。引擎在五种时序下推进脚本与时钟的方式各不相同，本节把调用方式与后果列全：
+成员
 
-| 时序 | 引擎行为 | 脚本与时钟后果 |
-|---|---|---|
-| 正常帧 | 每渲染帧调一次 `engine.advance(var1)`，`var1` 是该帧真实秒数 | 脚本 `advance(amount)` 每帧一次，`amount` = 帧真实秒；时钟按 10 秒/游戏日前进 |
-| 暂停 (空格)| 引擎照常 advance，但脚本的调用条件 `runWhilePaused() || !isPaused()` 为假时不执行、`clock.advance` 只在非暂停分支执行 | 默认脚本完全冻结、时钟冻结、`amount` 也拿不到；`runWhilePaused = true` 时 `advance` 仍被调用但时钟不动 |
-| 加速 (按住 Shift)| `fastForward` 时 `var35 = round(campaignSpeedupMult)`(`settings.json` 的 `campaignSpeedupMult`，取值为 2)，同一渲染帧连调 `var35` 次 `engine.advance(var1)`，每次 `amount` 都是完整帧秒 | 脚本与时钟同帧推进两次，游戏日流速翻倍；`Global.getSector().isFastForwardIteration()` 可探测 "本次调用来自加速帧的第 2 次及以后的迭代"(`SectorAPI.isFastForwardIteration()`；第 1 次连调时标志尚未置位)。devMode 下还有 10x/100x 调试键 |
-| 新档推进 | 新建生涯时有一段快速推进窗口 (`isInFastAdvance()`)，窗口内时钟与脚本连续推进，之后才调 `onNewGameAfterTimePass` 与 `onGameLoad(true)`(游戏管理器)| `onNewGame` 注册的脚本经历这次推进；`onGameLoad` 里注册的脚本**不**经历 (窗口已关闭)|
-| 战斗 | 进入战斗后运行的是战斗状态，生涯状态不再推进 | 生涯脚本、时钟、经济全部冻结，回生涯后恢复 |
+语义
 
-### 时间换算：时钟内部机制
+身份
 
-`CampaignClockAPI`(`com.fs.starfarer.api.campaign.CampaignClockAPI`) 由引擎内部实现。此前已给出换算基线，本节讲换算的**内部机制**与两个推论：
+`getId()` / `getName()` / `setName(String)` / `getSize()` / `setSize(int)`
 
-- **基线：10 真实秒 = 1 游戏日** (`SECONDS_PER_GAME_DAY = 10.0F`)。`convertToDays(秒)` = 秒 ÷ 10；`convertToSeconds(天)` = 天 × 10；`convertToMonths(秒)` = 秒 ÷ 10 ÷ 30。
-- **日历按整游戏秒推进**：`advance(float)` 的实作是 `(int)(秒 / secondsPerDay * 86400)`，把整游戏秒加进日历；每帧独立截断，余数不结转。
-  - 推论一：`getDay()` / `getDateString()` / `getTimestamp()` 全部来自这个日历，因此是整秒粒度；而 `convertToDays(amount)` 的累加保留小数。
-  - 推论二：长时间游玩后两者会错位 —— 每帧损失不足 1 游戏秒，60 FPS 下一小时约损失 1 个游戏天量级的日历时间 (帧率越高损失越快)。
-  - 结论：**以日历为准 (跨日检测) 与以累加器为准 (`convertToDays` 累加) 是两种不同的时间基准**：短会话一致、长会话错位；统计型进度用累加器，日历事件用跨日检测。
-- **`getElapsedDaysSince(ts)`**：`(now - ts) / 86400000`，返回真实天数；`ts == 0` 时返回 `Float.MAX_VALUE` —— 计算未初始化间隔时不要传 0。
-- **`getTimestamp()`** 是日历毫秒值，暂停时冻结；`createClock(ts)` 按时间戳建独立时钟做局部计时。
-- **读档重建**：`readResolve()` 按保存的时间戳重建内部日历，读档后时钟从存档时刻继续 —— 您在读档前度过的真实时间，游戏日历一概不认。
+市场 id(全星区唯一)；名称；规模 (殖民地人口规模，`setSize` 变化触发 `reportColonySizeChanged` 监听器)
 
-::: info 两种基准的分工
+实体绑定
 
-日历以整游戏秒前进，适合 "某一天做什么" 这类事件判定；`convertToDays` 累加保留小数、每帧追加，适合跨帧累计的统计。长会话里两者错位不是 bug，而是按需选基准的设计：日历事件用跨日检测、精确统计用累加器。
+`getPrimaryEntity()` / `setPrimaryEntity(token)` / `getConnectedEntities()` / `getPlanetEntity()`
 
-:::
+主实体与关联实体集合；`setPrimaryEntity` 同时把实体加入 `connectedEntities` 并同步超空间坐标
 
-时间换算速查表 (高频方法；签名出处见文末建议参考项)：
+位置
 
-| 方法 | 返回 | 语义 |
-|---|---|---|
-| `convertToDays(amount)` | `float` | 真实秒 → 游戏天 (`advance` 里**必须**用它换算)|
-| `convertToSeconds(days)` | `float` | 游戏天 → 真实秒 |
-| `convertToMonths(amount)` | `float` | 真实秒 → 游戏月 (÷10÷30)|
-| `getTimestamp()` | `long` | 日历毫秒；暂停时冻结；跨存档安全的间隔基准 |
-| `getElapsedDaysSince(ts)` | `float` | 从 `ts` 到现在的真实天数；`ts == 0` 返回 `Float.MAX_VALUE` |
-| `createClock(ts)` | `CampaignClockAPI` | 按时间戳建独立时钟 (局部计时)|
-| `isFastForwardIteration()` | `boolean` | 本次推进来自加速帧的第 2 次及以后的迭代 (第 1 次连调时为 false；`SectorAPI.isFastForwardIteration()`)|
+`getStarSystem()` / `getContainingLocation()` / `getLocationInHyperspace()` / `getLocation()` / `isInHyperspace()` / `getOnOrAt()`
 
-### 注册与存档：序列化边界
+全部由主实体推导；`getLocation()` 是 `getLocationInHyperspace()` 的别名 (不是星系内本地坐标)；`getOnOrAt()`：主实体带 `station` tag 返回 `"at"`，否则 `"on"`
 
-时间换算解决怎么算时间，序列化解决算出来的进度怎么保留。
+势力
 
-**保存与读档的机制** (游戏管理器)：
+`getFactionId()` / `setFactionId(String)` / `getFaction()`
 
-- 保存：`saveGame(...)` 用 XStream 序列化**整个生涯引擎 (星区)**—— 包括 `scripts` 列表里每个脚本的全部非 `transient` 字段。
-- 读档：`fromXML` 还原生涯引擎 (星区) 与脚本字段，脚本状态从存档值继续。
+市场势力；`setFactionId` 清缓存，`getFaction` 用到时才解析
 
-**两个脚本列表的序列化边界** (生涯引擎)：
+条件
 
-- `scripts` **非** `transient` → **随存档保存**：常驻脚本 (管理器、周期脚本) 跨读档继续运行，其非 `transient` 字段原样恢复；`readResolve` 只补 null 备用值。
-- `transientScripts` 是 `transient` → **不随存档保存**，且 `readResolve` 直接重建空列表 → **transient 脚本读档后必然消失，需要重新注册**。
-- 实体级脚本：实体的脚本列表也非 `transient` → 随实体保存。
+`getConditions()` / `addCondition(id[, param])` / `getCondition(id)` / `getFirstCondition(id)` / `getSpecificCondition(token)` / `removeCondition(id)` / `removeSpecificCondition(token)` / `reapplyConditions()` / `suppressCondition(id)` / `isConditionSuppressed(id)`
 
-由此得到三条必须遵守的规则与两条建议：
+见 "市场条件与产业访问" 节
 
-- **必须**：脚本字段只放可随 XStream 序列化的状态 (基础类型、可序列化对象)。
-  - 把引擎单例、`CampaignUIAPI`、声音播放器等句柄存进字段，会把整个可达对象图拖进存档 —— 可观察结果：存档文件异常膨胀、保存/读档异常，或读档后字段指向失效对象导致行为错乱。
-- **必须**：一次性注册用随存档保存的 persistent data 标记 ([C6-S2] 的 `CLASS_MARK` 模式；本节示例用各自键 `REGISTER_MARK`)——`addScript` 不去重，标记缺失的可观察结果是读档次数越多日志越成双、行为叠加。
-- **必须**：transient 脚本的重新注册写在读档回调里，否则可观察结果是读档后脚本消失且无报错。
-- **建议**：跨会话的小数据放 `SectorAPI.getPersistentData()`(persistent data 随档保存；注意 XStream 存档边界)。
-- **建议**：脚本内瞬态句柄 (贴图、粒子、UI 引用) 声明为 `transient` 字段并用 `readResolve()` 重建 —— 成熟实例：实体插件用 `readResolve()` 恢复 `SpriteAPI` 句柄。
+产业
 
-### 每日/周期脚本模式
+`getIndustries()` / `addIndustry(id[, params])` / `getIndustry(id)` / `hasIndustry(id)` / `hasFunctionalIndustry(id)` / `removeIndustry(id, mode, forUpgrade)` / `instantiateIndustry(id)`
 
-机制已经齐备，剩下的是把它们组合成完整写法。本节把按时间反复执行的生涯脚本分成两类：以游戏日为最小时间颗粒、每个游戏日执行一次 (或每 N 个游戏日一次) 的每日脚本 (daily script)，以及按固定或随机间隔反复执行某段逻辑的周期脚本 (periodic script)。判断新的一天有两种基准：日历日期变化，或游戏天累加器跨过整数；间隔单位可以是真实秒 (间隔器直接推进) 或游戏天 (先 `convertToDays` 再推进)。
+见 "市场条件与产业访问" 节
 
-四种经过验证的模式 (判据：原版内部实现与成熟实例模组)：
+商品
 
-| 模式 | 实现要点 | 适用场景 | 成熟实例 |
-|---|---|---|---|
-| A. 日历跨日检测 | `dateKey = cycle*10000 + month*100 + day`(示例自用辅助键，非原版机制)，与上次比较，变化即 "新的一天" | 日历事件 (征兵、账单、节日)；每游戏日恰好一次 | 本节 `GearInCalendarDayScript`(常驻跨日检测)|
-| B. 天数累加器 | `acc += clock.convertToDays(amount)`，`while (acc >= period) { acc -= period; ... }` | 精确天数统计；单帧跨多天也要逐日补触发 | 本节 `GearInDayAccumulatorScript`(含 `daysToRun` 自停演示)|
-| C. 间隔器 | `IntervalUtil`(公开 API `com.fs.starfarer.api.util.IntervalUtil`) 每帧 `advance`、`intervalElapsed()` 判定；原版游戏内置的同类间隔计时用法一致 | 固定/随机间隔的周期任务；喂秒就是真实时间周期，喂 `convertToDays(amount)` 就是游戏天周期 | 原版游戏的事故判定 (按游戏天在 0.5–1.5 天区间内判定)|
-| D. 自注册倒计时 | 构造器 `Global.getSector().addScript(this)` 自注册，`isDone()` 完成即被引擎清理；倒计时按天扣减 (`isDay` 模式先把 `amount` 换成天)| 一次性延迟任务 (剧情事件、临时效果)；少一处调用点 | — |
+`getAllCommodities()` / `getCommoditiesCopy()` / `getCommodityData(id)` / `getCommoditiesWithTag(tag)` / `getDemand(demandClass)`
 
-选型建议：日历事件用模式 A；需要精确累计 (含小数) 或单帧可能跨多天时用模式 B (用 `while` 而不是 `if`)；固定/随机真实时间节奏用模式 C；一次性倒计时任务用模式 D。模式 A 与 B 混用时，注意时间换算一节的漂移结论。
+见 "商品与价格" 节
 
-## 完整最小例
+价格
 
-选型之后落到代码。在已有 MOD 布局 [C6-S1] 与 `GearInModPlugin`[C6-S2] 之上新增两个脚本类 (不新增任何资源、不新增任何注册项 —— 指不新增数据/资源注册项；脚本经 `onGameLoad` 注册属于代码注册)：
+`getTariff()` / `getDemandPriceMod()` / `getSupplyPriceMod()` / `getSupplyPrice(id, qty, isPlayerPrice)` / `getDemandPrice(id, qty, isPlayerPrice)` / `updatePrices()` / `updatePriceMult()`
 
-```text
-Starsector\mods\GearIndustry\
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data\
-├── src\
-│   └── data\scripts\gearin\campaign\
-│       ├── GearInCalendarDayScript     # 模式 A：日历跨日检测（本节新增）
-│       └── GearInDayAccumulatorScript  # 模式 B：天数累加器 + daysToRun 自停（本节新增）
-└── jars\
-```
+税率是 `MutableStat`；价格方向以**市场为主体** (`getDemandPrice` = 市场买入价 = 用户卖出价)
 
-### GearInCalendarDayScript：模式 A(日历跨日检测，常驻)
+人物
+
+`addPerson(person)` / `removePerson(person)` / `getPeopleCopy()` / `getAdmin()` / `setAdmin(person)` / `getCommDirectory()`
+
+见 "人物与开放状态" 节
+
+状态
+
+`isFreePort()` / `setFreePort(boolean)` / `isHidden()` / `setHidden(Boolean)` / `isPlayerOwned()` / `setPlayerOwned(boolean)` / `getSurveyLevel()` / `setSurveyLevel(...)` / `getEconGroup()` / `setEconGroup(String)` / `getTags()` / `addTag(String)` / `removeTag(String)` / `isIllegal(id)` / `isInEconomy()`
+
+见 "人物与开放状态" 节
+
+稳定度与危险度
+
+`getStability()` / `getStabilityValue()` / `getHazard()` / `getHazardValue()`
+
+稳定度取整到 0–10(`Market.getStabilityValue`)；危险度 `1f` = `100%`
+
+杂项
+
+`getMemory()` / `getMemoryWithoutUpdate()` / `getStats()` / `getDaysInExistence()` / `advance(float)`
+
+`getMemory()` 触发所有插件的 `updateMarketFacts` 回调；纯读取用 `getMemoryWithoutUpdate()`
+
+子市场
+
+`addSubmarket(specId)` / `hasSubmarket(specId)` / `getSubmarket(specId)` / `getSubmarketsCopy()` / `removeSubmarket(specId)`
+
+见 "子市场" 节
+
+#### [创建与注册链路]
+
+**数据路径** (加载时序在经济数据加载主题中已讲，本节补结构)：`data/campaign/econ/economy.json` 列出 `starSystems`，每个星区一个 json(如 `econ/corvus.json`) 含 `markets` 数组。
+
+每个市场条目：`entities`(数组，**首实体的 id 就是市场 id**)、`faction`、`size` 为必填；`tariff` 键仅模拟模式生效 (真实税率 = 势力 `tariffFraction`，`FactionSpecAPI` 默认 `0.3F`)；
+
+可选键 `startingConditions`、`industries`(元素可为数组 `[id, param...]`)、`freePort`、`submarkets`。
+
+**`submarkets` 键缺失时加载器补默认：`open_market` + `black_market` + `storage`，且市场有 `militarybase` 或 `highcommand` 产业时再加 `generic_military`**(经济数据加载器)。
+
+加载器对每个实体执行 `entity.setMarket(market)` 与 `entity.setFaction(...)`，并把实体加入 `connectedEntities`。
+
+**代码路径** (生涯代码里建市场，把经济数据主题的三步收尾展开为完整链)：
+
+1. `Global.getFactory().createMarket(id, name, size)` 创建市场对象 (只建对象，不注册)。
+2. `setFactionId(factionId)` 设势力；`setPrimaryEntity(entity)` 绑主实体。
+3. 按需 `addCondition(...)` / `addIndustry(...)` / `addSubmarket(specId)`。
+4. `economy.addMarket(market, withJunkAndChatter)` 注册进经济集合 (`withJunkAndChatter = true` 会加 junk 与无线电喧闹)。
+5. `entity.setMarket(market)`(以及 `entity.setFaction(...)`) 把实体绑到市场。
+
+成熟实例的 `addMarketplace` 工具正是这条链的原版用法：`createMarket(primaryEntity.getId(), ...)` → `setFactionId` → `setPrimaryEntity` → `getTariff().modifyFlat("generator", tarrif)` → `addSubmarket` ×N。
+
+随后 `addCondition` ×N(`free_port` 条件同时 `setFreePort(true)`)→ `addIndustry` ×N。
+
+随后 `globalEconomy.addMarket(newMarket, true)` → `primaryEntity.setMarket(newMarket)` → `primaryEntity.setFaction(factionID)`。
+
+代码路径建市场必须完成三步收尾
+
+`economy.addMarket` / `entity.setMarket` / `entity.setFaction` 缺一不可：
+
+* 只 `createMarket` 不 `addMarket`：市场不在经济集合里，`isInEconomy()` 返回 `false`(`Market.isInEconomy` 就是查 `economy.getMarket(id) != null`)，不出现在任何经济/UI 入口，商品流永不更新它 —— **可观察结果**：市场 "不存在"，代码侧无报错。
+* 不 `entity.setMarket`：实体与市场脱钩，交互入口 (进市场界面) 失效，`getPrimaryEntity()` 侧的市场归属为空 —— **可观察结果**：点击实体没有任何市场交互，日志无报错。
+* 不 `entity.setFaction`：实体仍显示原势力 (市场与实体势力不一致)。
+
+`EconomyAPI.removeMarket(market)` 从集合移除。
+
+#### [市场条件与产业访问]
+
+**条件 (condition)**：`getConditions()` 返回市场当前 `MarketConditionAPI` 列表 (活集合，只读遍历时先拷贝)。
+
+`addCondition(id)` 返回该实例的**唯一 token**(`getIdForPluginModifications()`，形如 `ore_sparse_b44c3`，spec id ≠ 实例 token)；
+
+带参数用 `addCondition(id, param)`(`Market.addCondition`：非 suppressed 时立即 `plugin.apply(token)`)。读取：
+
+* `getCondition(id)` / `getFirstCondition(id)`：同 spec id 的**首个**实例；
+* `getSpecificCondition(token)`：按唯一 token 取**具体**实例。
+
+移除：`removeCondition(id)` **移除同 spec id 的全部实例**；`removeSpecificCondition(token)` 只移除 token 对应实例。
+
+**必须记住这个不对称性**：多实例条件 (同 id 出现多次) 想删一个，用 token；用 id 会把所有副本一起删掉 —— **可观察结果**：同名条件全部消失。
+
+`reapplyConditions()` 逐个 `unapply`/`apply`(suppressed 的跳过)；`suppressCondition(id)` 隐藏条件显示与生效但保留实例，配对 `unsuppressCondition(id)` 恢复。
+
+条件 plugin 生命周期 (`MarketConditionPlugin`)：`init(market, condition)` → `setParam`(可选)→ `apply(id)` → 每帧 `advance`(`runWhilePaused()` 决定暂停时是否推进)→ 移除/重算时 `unapply(id)`。
+
+**产业 (industry)**：`getIndustries()` 返回 `Industry` 列表；`addIndustry(id)` 幂等 (已存在则跳过)，spec 不存在时**抛 `RuntimeException("Industry [...] not found")`**—— 注意这与条件不同：条件 id 不校验、产业 id 校验。
+
+`getIndustry(id)` / `hasIndustry(id)` 按 id 查；`hasFunctionalIndustry(id)` 额外要求 `isFunctional()`(被封禁/损坏的产业不算)；
+
+`removeIndustry(id, mode, forUpgrade)` 三个参数按 API 语义调用 (代码里 mode 传 null)；`instantiateIndustry(id)` 只建实例不挂载。
+
+产业系统的供需、建设和 disruption 细节由产业语义维护；本节只讲市场对产业的访问入口，产业制作见 [C10-S2]。
+
+#### [商品与价格]
+
+`getAllCommodities()` 返回**全部已注册商品**在市场上的数据对象 (对无关商品也是占位对象，`Market.getAllCommodities` 遍历已注册商品规格逐个 `getCommodityData`)；
+
+`getCommodityData(id)` 按需创建单个 `CommodityOnMarketAPI`。
+
+因此 "某商品在市场里有没有数据" 不是判断依据，要看数值。`CommodityOnMarketAPI` 高频成员：
+
+成员
+
+语义
+
+`getStockpile()` / `setStockpile(float)`
+
+当前库存 (经济单位刻度)
+
+`getAvailable()`
+
+当前可得量 (本地生产 + 进口 − 短缺，`getAvailableStat()` 的修饰后值)
+
+`getMaxSupply()` / `getMaxDemand()`
+
+供需上限 (产业重算后)
+
+`getDemandClass()` / `getDemand()`
+
+需求类与 `MarketDemandAPI`(`getDemandValue()`)
+
+`getTradeMod()` / `getTradeModPlus()` / `getTradeModMinus()`
+
+用户交易写入的 120 天衰减修饰 (见 "用户交易对经济的影响")
+
+`isIllegal()` / `isNonEcon()` / `isFuel()` / `isPersonnel()`
+
+商品级判定
+
+价格：`getTariff()` 返回 `MutableStat`(税率；`getModifiedValue()` 是生效值)；`getSupplyPrice(id, qty, isPlayerPrice)` 是市场卖出价、`getDemandPrice(...)` 是市场买入价。
+
+**方向以市场为主体** (`isPlayerPrice = true` 时套用用户价格修饰)。
+
+`CommoditySpecAPI.getBasePrice()` 是全局基础价，**禁止**当市场买卖价用 (市场价必须走价格接口)。
+
+`updatePrices()` 重算全部商品的 `updateCalc()`；`updatePriceMult()` 按稳定度更新本地价格倍率。
+
+#### [人物与开放状态]
+
+**人物**：`addPerson(person)` 加入市场人物列表并同时写入 `person.setMarket(this)`；`removePerson(person)` 反向解除；`getPeopleCopy()` 返回快照。
+
+**注意两个集合边界**：`addPerson` 不会自动创建通信目录 (comm directory) 条目，可见联系人需要另行 `getCommDirectory().addPerson(person)` 维护；`getCommDirectory()` 用到时才创建。
+
+`setAdmin(admin)` 会移除旧管理员的市场与通信目录归属。
+
+纯读取场景不要调用 `getAdmin()`
+
+`getAdmin()` **用到时才创建**默认管理员 (`Market.getAdmin`：市场无 admin 时 new 一个默认人物并 `setAdmin`；用户拥有的市场回退到用户扮演的角色)—— 调用它会留下创建管理员的持久副作用：存档被写入一个从未有意创建的管理员。
+
+**开放状态** (本节主题之一)：
+
+* **自由港**：`setFreePort(true)` 自动添加 `free_market` 条件 (`Market.setFreePort`，条件 id 为 `free_market`，plugin 为 `FreeMarket`)。
+    *   `isFreePort()` 为 true 时 `isIllegal(id)` **恒返回 false**—— 自由港市场一切商品合法。
+* **隐藏市场**：`setHidden(true)` 后市场**不提供任务、不参与会间接暴露其存在的事件/intel，且不参与经济。可观察结果**：商品流计算完全忽略它，任何 UI/任务系统不出现它。
+* **用户所有**：`setPlayerOwned(true)` 改变殖民地管理语义 (存档界面、收入、存储免费等)，并刷新用户的 outpost 效果。
+* **survey 等级**：`SurveyLevel.NONE / SEEN / PRELIMINARY / FULL`，`getSurveyLevel()` 读出；核心世界与代码路径建市场显式设 `FULL`(成熟实例的 `addMarketplace` 写法)。
+* **经济组**：`getEconGroup()` / `setEconGroup(String)`——"同一经济组的市场互相可见 ('nearby markets' 对话框等) 且只互相交易；默认 null 自成一组"。
+* **tag**：`addTag` / `removeTag` / `hasTag` / `getTags`—— 市场级标记 (与商品 tag、实体 tag 不同集合)。
+
+#### [每帧推进 (advance)]
+
+`Market.advance(amount)` 做什么：换算游戏日累加 `daysInExistence`；稳定度变化时 `reapplyConditions()` + `reapplyIndustries()` + `updatePrices()`；推进全部条件 plugin、全部子市场 plugin、memory、人物、建筑队列。
+
+同时推进商品 `available/tradeMod/tradeModPlus/tradeModMinus` 的衰减并 `reapplyEventMod()`；推进产业。**市场自身不在这里做商品流重算** —— 商品流是经济集合的职责 (见 "经济对象" 节)。
+
+### 子市场 (SubmarketAPI)
+
+市场结构里，子市场是用户最常打交道的入口。三种原版子市场看起来都是同一个交易界面，行为差异全部集中在各自插件上，可以先用一句话记住差异方向：税率 (市场税率 / 恒 0 / 恒 0)、合法性 (仅合法 / 全合法 / 用户市场全合法)、库存与稳定度的关系 (正相关 / 负相关 / 无)、经济参与 (参与 / 参与 / 不参与)。先看插件从哪来，再对照差异表。
+
+#### [静态表与运行时对象]
+
+子市场静态表是 `data/campaign/submarkets.csv`(列：`id,name,faction,desc,script,icon,order`)。原版五个 spec：
+
+id
+
+faction
+
+plugin(script 列)
+
+order
+
+`open_market`
+
+(空，用市场势力)
+
+`OpenMarketPlugin`
+
+0
+
+`generic_military`
+
+(空)
+
+`MilitarySubmarketPlugin`
+
+100
+
+`local_resources`
+
+(空)
+
+`LocalResourcesSubmarketPlugin`
+
+200
+
+`black_market`
+
+`pirates`
+
+`BlackMarketPlugin`
+
+999
+
+`storage`
+
+`player`
+
+`StoragePlugin`
+
+1000
+
+id 常量在 `com.fs.starfarer.api.impl.campaign.ids.Submarkets`(`SUBMARKET_OPEN = "open_market"`、`SUBMARKET_BLACK = "black_market"`、`SUBMARKET_STORAGE = "storage"`、`GENERIC_MILITARY`、`LOCAL_RESOURCES`)。
+
+运行时对象 (`SubmarketAPI`)：`addSubmarket(specId)` 创建实例时按 spec 的 `script` 列 `getNewPluginInstance()` 并 `plugin.init(this)`；faction 解析：spec 的 faction 非空用它 (找不到该 faction **抛 RuntimeException**)，为空回退市场势力。
+
+`getSpecId()` / `getSpec()` / `getPlugin()` / `getCargo()` / `getCargoNullOk()` / `getTariff()`(转发 plugin)/ `isIllegalOnSubmarket(stack, action)` 是运行时入口；`getNameOneLine()` 把多行名压成单行。
+
+`addSubmarket` 对已存在的 spec id **静默跳过** (`Market`)，列表按 spec `order` 排序。
+
+#### [open / black / storage 三种子市场]
+
+三种子市场的插件差异 (`com.fs.starfarer.api.impl.campaign.submarkets` 包的公开 API 面)：
+
+行为
+
+open\_market(`OpenMarketPlugin`)
+
+black\_market(`BlackMarketPlugin`)
+
+storage(`StoragePlugin`)
+
+税率 `getTariff()`
+
+市场税率 `market.getTariff().getModifiedValue()`(基类默认)
+
+**恒 0**
+
+**恒 0**
+
+合法性
+
+`shouldHaveCommodity = !market.isIllegal(com)`：只备货合法商品；交易时 `isIllegalOnSubmarket` 基类默认 = `market.isIllegal`
+
+`isIllegalOnSubmarket` **恒 false**：什么都能交易
+
+用户市场/中立势力市场全部合法，否则走基类
+
+库存上限与稳定度
+
+`limit *= 0.25 + 0.75 * (stability/10)`：**稳定度越高货越多** (spec desc 原文)
+
+`limit *= 0.25 + 0.75 * (1 - stability/10)`**：稳定度越低货越多**
+
+不参与经济，无商品流库存
+
+经济参与
+
+基类 `isParticipatesInEconomy() = true`
+
+true
+
+**false**：用户存取不影响经济
+
+用户交易影响
+
+`getPlayerEconomyImpactMode() = PLAYER_SELL_ONLY`
+
+`PLAYER_SELL_ONLY`
+
+无 (不参与经济，`reportPlayerMarketTransaction` 直接返回)
+
+专属行为
+
+`isOpenMarket() = true`；tooltip 在 SNEAK 模式提示 "需要开启应答器"
+
+`isBlackMarket() = true`；走私嫌疑 tooltip(suspicion level 档位)；卖出蓝图触发延迟学习脚本 (`DelayedBlueprintLearnScript`)
+
+`isFreeTransfer() = true`(免费转移，动词 Take/Leave)；一次性 5000 信用解锁 + 每月 `storageFreeFraction`(settings 键，= 0.01，即存值 1%/月，`Misc.getStorageFeeFraction` 读取)；**用户拥有的市场免费**
+
+基类 `BaseSubmarketPlugin` 的通用事实：`TRADE_IMPACT_DAYS = 120f`(用户交易修饰的持续天数)；
+
+`getCargo()` **用到时才创建** unlimited cargo 并按 `submarket.getFaction()` 初始化 mothballed ships；`getCargoNullOk()` 直接返回字段，**可能为 null**；
+
+`isBlackMarket()` 基类默认 = 市场势力对子市场势力敌对 (黑市插件覆写为恒 true)。
+
+#### [库存 cargo 与合法性]
+
+子市场库存是 `CargoAPI`：`getCargo()` 保证非 null(用到时才创建)，`getCargoNullOk()` 可能 null。**读取子市场库存前必须先判空或直接走 `getCargo()`**—— 直接用 `getCargoNullOk()` 返回值会 NPE。
+
+合法性判定 `isIllegalOnSubmarket(CargoStackAPI stack, TransferAction action)`：非 commodity stack 基类默认合法 (舰船走 `FleetMemberAPI` 重载)；`TransferAction` 只有 `PLAYER_BUY` / `PLAYER_SELL` 两向。
+
+#### [用户交易对经济的影响]
+
+交易发生后 UI 调用 `plugin.reportPlayerMarketTransaction(transaction)`(基类实现)：`isParticipatesInEconomy()` 为 false 直接返回 (storage 因此不影响经济)；
+
+否则按 `getPlayerEconomyImpactMode()` 对**每个 commodity stack** 写 `CommodityOnMarketAPI.addTradeMod(Plus/Minus)`，持续 `TRADE_IMPACT_DAYS = 120` 游戏日。
+
+open / black 都是 `PLAYER_SELL_ONLY`—— **用户卖出**给市场会正向影响该商品的经济单位 ("selling enough of a commodity will temporarily resolve a shortage"，spec desc 原文)，**用户买入**不产生使市场缺货的负向修饰 (`BlackMarketPlugin` 注释：防止刷买/卖循环)。
+
+交易量的全局倍率 `economyPlayerTradeImpactMult`(settings 键，= 1)。
+
+### 经济对象与商品流 (EconomyAPI)
+
+子市场决定单个市场的交易入口，商品流何时重算则属于经济集合的职责。先给结论：经济推进器每月按 `economyIterPerMonth` 次迭代分布重算，只有当月最后一次迭代才写库存与价格；`nextStep` 系列与 `forceStockpileUpdate` 是两条手动重算入口。`EconomyAPI`(`com.fs.starfarer.api.campaign.econ.EconomyAPI`) 是经济集合接口，运行时按商品维护可达网络 (`CommodityMarketDataAPI`)。
+
+#### [市场集合与商品注册表]
+
+* 集合：`getMarketsCopy()`(快照)/ `getMarket(id)`(精确 id，无则 null)/ `getNumMarkets()` / `getMarkets(loc)` / `getLocationsWithMarkets()` / `getStarSystemsWithMarkets()`。
+    *   `getMarketsInGroup(group)` / `getMarketsWithSameGroup(market)`(经济组语义见上文)。
+* 商品注册表：`getAllCommodityIds()` 返回全部已注册商品 id(来自 CSV spec 加载期的 `CommoditySpecAPI` 集合)；`getCommoditySpec(id)` 返回**全局规格** `CommoditySpecAPI`(基础价、econ unit、tag、demand class 等)。
+    *   **不等于**市场库存 —— 读取的是全局 spec，不表示该 commodity 在某个市场有库存、供给或需求。
+* `isSimMode()`：模拟模式 (战役/经济编辑器) 标记。
+
+#### [经济推进循环 (商品流)]
+
+`SectorAPI.getEconomy()` 的 `EconomyAPI.advance(amount)` 每帧被生涯引擎调用：`economyEnabled`(settings 键，= true) 时把 `amount` 换算成游戏日送入经济推进器；随后逐个 `market.advance(amount)`。
+
+经济自身的商品流节奏 (经济推进器)：
+
+1. **每月 `economyIterPerMonth` 次迭代** (settings 键 = 10)。跨月时重置剩余迭代数为 10，迭代间隔 = `(当月剩余天数) / 10` 游戏日。
+2. 每次迭代的任务链 (主重算任务)：重算全部市场条件/产业 → 按商品逐个构建 `CommodityMarketDataAPI` 可达图 → **当月最后一次迭代**才 `updateStockpileAndPrice` 写库存与价格。
+    *   随后依次执行市场重算、移民与整轮收尾。
+3. 每次迭代结束触发 `reportEconomyTick`(`EconomyTickListener`)，跨月触发 `reportEconomyMonthEnd`。
+4. 商品可达图 (`CommodityMarketDataAPI`)：每个商品一套，按 "本地生产 + 进口 + 短缺 + 低可达性" 拆解 `getAvailable()` 的修饰，隐藏市场跳过进口需求。
+5. `updateStockpileAndPriceV2`(主重算任务)：重算 demand/greed 修饰、写 `setStockpile`(经济单位刻度)、按短缺/过剩设置价格倍率上下限 (`economyDeficitPriceIncrPerUnit` / `economyExcessPriceDecrPerUnit` 等)。
+    *   **供需均为 0 的商品用户买入价 × `economyNoDemandPriceMult`(0.5)**。
+
+`economyIntervalnGameDays` 不能用来推断经济频率
+
+settings.json 中 `economyIntervalnGameDays` 键 (值 30) 的原文注释是 `# not actually used by the economy, but used for a few other things`—— 真正节奏是上面的 `economyIterPerMonth` 迭代分布。
+
+#### [手动重算入口]
+
+* `nextStep()` / `doubleStep()` / `tripleStep()`：立即执行一/二/三步迭代 (含 `withStockpileUpdate=true`)。
+
+`nextStep` 系列只允许在 UI 交互路径调用
+
+"Should only be called from UI interactions, not from scripts that run in the background. Calling this method is likely to take longer than the time to render a single frame."
+
+这些方法同步执行整轮迭代，**禁止**在后台脚本 (`EveryFrameScript`、每帧回调) 里调用。
+
+违反后的可观察结果：单帧阻塞明显超过一帧渲染时间，大存档下肉眼可见的卡顿/掉帧 (加载器稳定化也是这套入口)。
+
+* `forceStockpileUpdate(market)`：对市场全部非 `nonecon` 商品立即 `updateStockpileAndPrice`，适合 "改完供需想让库存立即反映" 的场景。
+
+#### [EconomyUpdateListener]
+
+`EconomyAPI.EconomyUpdateListener`(在 `EconomyAPI` 中声明) 三个方法：
+
+* `commodityUpdated(String commodityId)`(每个商品一次，逐商品通知)；
+* `economyUpdated()`(整轮结束一次，整轮收尾通知)；
+* `isEconomyListenerExpired()`(返回 true 的监听器**由引擎自动移除**)。
+
+监听器注册必须走 `EconomyAPI.addUpdateListener()`
+
+**禁止加入 `SectorAPI.getListenerManager()`**——"Needs to be added via EconomyAPI.addUpdateListener(); should not be added to SectorAPI.getListenerManager()."
+
+违反后的可观察结果：监听器永不回调且**无任何报错** (监听器只在经济迭代里被遍历)。
+
+注意 `commodityUpdated` 的每次回调都是**同一经济步内**对单个商品的增量通知，`economyUpdated` 才是 "整轮完成"。
+
+## 实现市场创建流程
+
+本例从经济集合中选择一个既有市场，依次检查结构、子市场、商品与税率，最后挂载一个自过期经济监听器。以下局部片段均来自完整成品，按调用顺序逐步加入。
+
+### 选择可巡检的市场
+
+插入位置：`GearInMarketPicker.pick`。首选 ID 不存在时，回退到第一个拥有开放子市场的市场。
 
 ```java
-package data.scripts.gearin.campaign;
+MarketAPI market = economy.getMarket(preferredId);
+if (market == null) {
+	for (MarketAPI candidate : economy.getMarketsCopy()) {
+		if (candidate.hasSubmarket(Submarkets.SUBMARKET_OPEN)) {
+			market = candidate;
+			break;
+		}
+	}
+}
+return market;
+```
 
-import org.apache.log4j.Logger;
+完成信号：`jangala` 存在时稳定命中；改成不存在的 ID 后仍能返回一个带 `open_market` 的市场。
 
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignClockAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
+### 编排一次市场巡检
 
-/**
- * 每日/周期脚本模式 A：日历跨日检测。dateKey = cycle * 10000 + month * 100 + day，
- * 把日历日期折叠为整数键，与上次比较，变化即"新的一天"；每个游戏日恰好触发一次
- * （首帧只初始化不打印）。单帧跨多个游戏日（加速、新档推进）时一帧只报一次 ——
- * 日历事件一帧至多一次是正常行为，需要逐日补触发的逻辑请改用天数累加器
- * （本单元 GearInDayAccumulatorScript）。runWhilePaused() 返回 false；字段只有
- * int，可随存档序列化（XStream 存档边界），脚本随存档保存、读档后继续。
- *
- * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），注册前用 persistent data
- * 键 REGISTER_MARK 做一次性门控（C6-S2 的 CLASS_MARK 模式），键与调用点片段逐字一致。
- */
-public class GearInCalendarDayScript implements EveryFrameScript {
+插入位置：`GearInMarketInspector.runInspection`。取到市场后按结构、子市场、商品和税率的顺序调用四个角色类。
 
-    /** 存档持久化标记：本脚本是否已在该存档注册过（随存档保存）。 */
-    public static final String REGISTER_MARK = "GearIn_CalendarDayScript";
+```java
+EconomyAPI economy = Global.getSector().getEconomy();
+MarketAPI market = new GearInMarketPicker(targetMarketId).pick(economy);
+if (market == null) {
+	LOG.info("GearIn market inspection abort: no open-market market found");
+	return;
+}
+GearInMarketStructureLog.log(market, economy);
+GearInSubmarketLog.log(market);
+GearInCommodityLog.log(market);
+GearInTariffProbe.log(market);
+```
 
-    private static final Logger LOG = Global.getLogger(GearInCalendarDayScript.class);
+完成信号：日志依次出现 structure、conditions、industries、submarket、commodity 与 tariff probe，不存在目标市场时有明确回退或中止记录。
 
-    /** 跨日判定键（cycle * 10000 + month * 100 + day）；-1 表示尚未初始化。 */
-    private int lastDateKey = -1;
+### 安全读取子市场库存
 
-    @Override
-    public boolean isDone() {
-        return false; // 常驻脚本：日历事件逐日触发，永不结束
-    }
+插入位置：`GearInSubmarketLog.log` 的循环体。先检查 spec，再对 `getCargoNullOk()` 判空；巡检不会为了读取而创建库存。
 
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
+```java
+if (!market.hasSubmarket(specId)) {
+	LOG.info("GearIn submarket " + specId + ": present=false");
+	continue;
+}
+SubmarketAPI submarket = market.getSubmarket(specId);
+CargoAPI cargoNullOk = submarket.getCargoNullOk();
+float supplies = cargoNullOk == null ? 0f
+		: cargoNullOk.getCommodityQuantity(Commodities.SUPPLIES);
+```
 
-    @Override
-    public void advance(float amount) {
-        SectorAPI sector = Global.getSector();
-        CampaignClockAPI clock = sector.getClock();
+完成信号：未初始化库存显示 `cargoNullOk=null`，已交互的子市场显示 `created`；两种情况都不会抛 NPE。
 
-        // 本模式只看日历日期，不直接用 amount（时间换算与逐日补触发见 GearInDayAccumulatorScript）。
-        int dateKey = clock.getCycle() * 10000 + clock.getMonth() * 100 + clock.getDay();
-        if (dateKey != lastDateKey) {
-            if (lastDateKey != -1) {
-                LOG.info(String.format("GearIn calendar: new day %s", clock.getShortDate()));
-            }
-            lastDateKey = dateKey;
-        }
-    }
+### 对照库存、供需与价格
+
+插入位置：`GearInCommodityLog.log`。同一商品同时读取经济单位库存、可得量、供需上限与玩家交易价格。
+
+```java
+CommodityOnMarketAPI commodity = market.getCommodityData(commodityId);
+LOG.info(String.format(
+		"GearIn commodity %s: stockpile=%.1f available=%d supply=%d demand=%d buy=%.0f sell=%.0f",
+		commodityId, commodity.getStockpile(), commodity.getAvailable(),
+		commodity.getMaxSupply(), commodity.getMaxDemand(),
+		market.getDemandPrice(commodityId, 100, true),
+		market.getSupplyPrice(commodityId, 100, true)));
+```
+
+完成信号：`supplies` 与 `drugs` 各产生一行，价格随市场供需变化，不再等同于全局基础价。
+
+### 修改税率并当帧回滚
+
+插入位置：`GearInTariffProbe.log`。修饰 ID 固定，读回三个阶段后立即移除修饰。
+
+```java
+MutableStat tariff = market.getTariff();
+float before = tariff.getModifiedValue();
+tariff.modifyFlat(TARIFF_MOD_ID, 0.05f);
+float during = tariff.getModifiedValue();
+tariff.unmodifyFlat(TARIFF_MOD_ID);
+float after = tariff.getModifiedValue();
+```
+
+完成信号：日志严格呈现 `before → before + 0.05 → before`，存档中的市场税率没有残留修改。
+
+### 注册自过期经济监听器
+
+插入位置：巡检末尾与 `GearInEconomyTickLog`。监听器必须交给经济对象；整轮更新后置位，下一次过期检查自动移除。
+
+```java
+economy.addUpdateListener(new GearInEconomyTickLog());
+
+@Override
+public void economyUpdated() {
+	economyFired = true;
+	LOG.info("GearIn economy listener economyUpdated (expiring)");
+}
+
+@Override
+public boolean isEconomyListenerExpired() {
+	return economyFired;
 }
 ```
 
-对应关系：
+完成信号：下一经济步只出现一次首次商品更新与一次整轮更新日志，之后不再回调。
 
-- `implements EveryFrameScript`：三个方法全来自接口 (`isDone` / `runWhilePaused` / `advance`)；`isDone()` 恒返回 `false`—— 常驻脚本永不结束，日历事件逐日触发。
-- `REGISTER_MARK`：persistent data 注册标记的键 (`"GearIn_CalendarDayScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
-- `dateKey` 跨日检测 (模式 A)：`getCycle() * 10000 + getMonth() * 100 + getDay()` 折叠日期为整数键；首帧只初始化不打印，之后每个游戏日打印一次 `GearIn calendar: new day ...`。
-- 时间换算与逐日补触发不在本类：本模式只看日历日期、不直接用 `amount` —— 那是模式 B(`GearInDayAccumulatorScript`) 的职责；两个类可同档共存，各自用独立的 persistent data 标记注册。
-- 字段只有 `int`(`lastDateKey`)，可随存档序列化；`runWhilePaused()` 恒 `false`(暂停时本脚本与时钟一并冻结)。
+## 组装市场创建实现
 
-::: warning 模式 A 在单帧跨多个游戏日 (加速、新档推进) 时一帧只报一次 "新的一天"
+结构、差异与节奏都清楚了，接下来把它们跑起来：在既有 MOD 布局与 `GearInModPlugin` 之上新增七个单角色类 (不新增任何资源、不新增任何注册项)，同处 `data.scripts.gearin.campaign` 包内协作。上文出现的每条必须遵守的规则都在首次展开处说明，本节的类按这些规则逐一落地。
 
-这是正常行为而非漏触发；需要逐日补触发的逻辑应改用模式 B 的 `while` 累加器。
+巡检脚本在挂载后的第一帧执行**只读 + 即刻回滚**的序列：经济基线 → 目标市场选择 → 市场结构 → 三种子市场差异 → 商品库存与价格 → 税率瞬时修改并回滚 → 注册一个自过期的 `EconomyUpdateListener`(演示商品流通知)。
 
-:::
+全部巡检不遗留任何持久状态 (税率回滚、监听器整轮通知后自过期、脚本自停)：
 
-模式 A 只回答是不是新的一天，回答不了累计了多少天；模式 B 用累加器补上这一半，并演示运行天数上限自停。
+* `GearInMarketInspector`：巡检调度脚本 (`EveryFrameScript`)—— 注册判断 + 目标市场选择 + 经济基线 + 编排各日志器 + 注册自过期监听器；
+* `GearInMarketPicker`：目标市场选择器 —— 优先指定 id，查无时回退到第一个有开放子市场的市场；
+* `GearInMarketStructureLog`：市场结构日志器 —— 身份/势力/实体绑定/survey/开放状态/条件与产业 id 列表及人物数与同经济组市场数；
+* `GearInSubmarketLog`：子市场差异日志器 ——open/black/storage 的税率、势力、plugin 类、cargo 用到时才创建的语义与三个标志；
+* `GearInCommodityLog`：商品日志器 —— 演示商品的库存、可得量、供需上限、买卖价与合法性；
+* `GearInTariffProbe`：税率探针 —— 瞬时 `modifyFlat` 并当帧 `unmodifyFlat` 回滚，记录 before/during/after；
+* `GearInEconomyTickLog`：经济监听 (`EconomyUpdateListener`)—— 记录下一经济步的首次 `commodityUpdated` 与整轮 `economyUpdated`，之后自过期。
 
-### GearInDayAccumulatorScript：模式 B(天数累加器 + 自停)
+### GearInMarketInspector：巡检调度脚本
 
-```java
-package data.scripts.gearin.campaign;
+巡检入口 (`EveryFrameScript` 角色)：挂载后第一次 `advance()` 执行一次巡检序列并自停 (`isDone()=true`，引擎下一帧自动移除本脚本)。
 
-import org.apache.log4j.Logger;
+**绑定**：注册入口为生涯回调 `onGameLoad`(调用点片段见下)，persistent data 键 `REGISTER_MARK = "GearIn_MarketInspector"` 一次性注册标记 (沿用既有模式：每个注册项用各自的键，不并入插件的 `CLASS_MARK` 标记)。
 
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignClockAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
+### GearInMarketPicker：目标市场选择
 
-/**
- * 每日/周期脚本模式 B：天数累加器。amount 是上一帧真实秒数，必须经
- * clock.convertToDays(amount) 换算成游戏天（10 真实秒 = 1 游戏日）；
- * 余数跨帧保留；单帧跨多个游戏日（加速、新档推进）时 while 逐日补触发；
- * daysToRun >= 0 时累计满该游戏天数后 isDone() 返回 true，引擎下一帧
- * 自动移除；全部字段可随存档序列化（XStream 存档边界），读档后继续。
- * 注册入口：onGameLoad 的 persistent data 门内（REGISTER_MARK 一次性门控，C6-S2 的 CLASS_MARK 模式）。
- */
-public class GearInDayAccumulatorScript implements EveryFrameScript {
+目标市场选择器：优先按指定 id 取市场 (默认 `"jangala"`，原版核心世界，必存在)；id 为空或查无此市场时回退扫描，取第一个有 `open_market` 子市场的市场，仍找不到返回 null。
 
-    /** 存档持久化标记：本脚本是否已在该存档注册过（随存档保存）。 */
-    public static final String REGISTER_MARK = "GearIn_DayAccumulatorScript";
-    private static final Logger LOG = Global.getLogger(GearInDayAccumulatorScript.class);
+**绑定**：由 `GearInMarketInspector.runInspection()` 包内协作调用，无独立注册项。
 
-    /** 挂载以来的游戏天数（精确累加，保留小数）；随存档序列化，读档后继续累计。 */
-    private float daysSinceMount = 0f;
-    /** 例程周期余数：累计满 tickEveryDays 个游戏天触发一次每日例程。 */
-    private float daysAccumulator = 0f;
-    /** 已执行的每日例程次数（跨存档累计）。 */
-    private int routineCount = 0;
-    /** 演示参数：每多少个游戏天执行一次例程；默认 1（每日一次）。 */
-    private int tickEveryDays = 1;
-    /** 演示参数：最多运行多少游戏天后自停；< 0 表示常驻不停止。 */
-    private int daysToRun = -1;
-    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
-    private boolean done = false;
-    /** 修改例程周期；周期至少为 1 个游戏天。 */
-    public void setTickEveryDays(int tickEveryDays) {
-        this.tickEveryDays = Math.max(1, tickEveryDays);
-    }
-    /** 修改运行天数上限；改回 -1 恢复常驻。 */
-    public void setDaysToRun(int daysToRun) {
-        this.daysToRun = daysToRun;
-    }
+### GearInMarketStructureLog：市场结构日志
 
-    @Override
-    public boolean isDone() {
-        return done;
-    }
+市场结构日志器 (静态工具类)：输出目标市场的身份 / 势力 / 实体绑定 / survey / 开放状态、条件与产业 id 列表，以及市场人物数量与同经济组市场数。**绑定**：由 `GearInMarketInspector` 包内协作调用，无独立注册项。
 
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
+### GearInSubmarketLog：子市场差异日志
 
-    @Override
-    public void advance(float amount) {
-        SectorAPI sector = Global.getSector();
-        CampaignClockAPI clock = sector.getClock();
+子市场差异日志器 (静态工具类)：遍历 `open_market` / `black_market` / `storage` 三种原版子市场，输出税率、势力、plugin 类、cargo 用到时才创建语义与开放 / 黑市 / 免费转移标志；对缺失的子市场只输出 `present=false`。
 
-        // amount 是上一帧真实秒数；经时钟换算才是本帧的游戏天数（10 真实秒 = 1 游戏日）。
-        float daysThisFrame = clock.convertToDays(amount);
-        daysSinceMount += daysThisFrame;
-        daysAccumulator += daysThisFrame;
+**绑定**：由 `GearInMarketInspector` 包内协作调用，无独立注册项。
 
-        // while 而非 if：单帧跨多个游戏日时逐日补触发；余数保留在 daysAccumulator 里继续累计。
-        while (daysAccumulator >= tickEveryDays) {
-            daysAccumulator -= tickEveryDays;
-            routineCount++;
-            LOG.info(String.format(
-                    "GearIn daily: routine #%d at %s | since mount=%.1f game days",
-                    routineCount, clock.getShortDate(), daysSinceMount));
-        }
+### GearInCommodityLog：商品日志
 
-        if (daysToRun >= 0 && daysSinceMount >= daysToRun) {
-            LOG.info(String.format(
-                    "GearIn daily: done, isDone()=true after %.1f game days", daysSinceMount));
-            done = true;
-        }
-    }
-}
-```
+商品日志器 (静态工具类)：对 `supplies` / `drugs` 输出库存、可得量、供需上限、市场买入/卖出价与合法性 (价格方向以市场为主体)。**绑定**：由 `GearInMarketInspector` 包内协作调用，无独立注册项。
+
+### GearInTariffProbe：税率探针
+
+税率探针 (静态工具类)：对 `MarketAPI.getTariff()`(`MutableStat`) 做瞬时 `modifyFlat("GearIn_inspect_tariff", 0.05f)` 并当帧 `unmodifyFlat` 回滚，记录生效值 before / during / after。
+
+演示 "修改高频参数观察结果变化" 的最小任务链，无持久残留。
+
+**绑定**：由 `GearInMarketInspector` 包内协作调用，无独立注册项。
+
+### GearInEconomyTickLog：经济监听
+
+经济更新监听器 (`EconomyUpdateListener` 角色)：记录下一个经济步的第一次 `commodityUpdated` 与整轮 `economyUpdated`。
+
+之后 `isEconomyListenerExpired()` 返回 true，引擎在下一个经济步自动从监听器列表移除；只持有两个 boolean，随存档序列化无副作用。
+
+**绑定**：由 `GearInMarketInspector` 经 `economy.addUpdateListener(...)` 注册 —— **必须**走 `EconomyAPI.addUpdateListener`，不能加入 `SectorAPI.getListenerManager()`(必须遵守的规则见 "经济对象与商品流" 节)。
 
 对应关系：
 
-- `implements EveryFrameScript`：`isDone()` 返回字段 `done`—— 累计满 `daysToRun` 后引擎在下一帧自动移除本脚本；`daysToRun < 0` 时恒 `false`，常驻。
-- `REGISTER_MARK`：persistent data 注册标记的键 (`"GearIn_DayAccumulatorScript"`)，**必须**与调用点片段里的键逐字一致 (与模式 A 各自独立，互不复用)。
-- `convertToDays(amount)`：`amount` 是上一帧真实秒数，`clock.convertToDays(amount)` 才是本帧折合的游戏天数 —— 本类 `advance` 第一行就是换算。
-- `daysAccumulator` / `while`(模式 B)：累计满 `tickEveryDays` 个游戏天触发一次例程 (日志 `GearIn daily: routine #N ...`)，余数跨帧保留；单帧跨多个游戏日时逐日补触发。
-- `daysSinceMount`：挂载以来的精确游戏天数，兼作 `daysToRun` 自停判据与日志统计；全部字段 (`int` / `float` / `boolean`) 都是可随存档序列化的基础类型，读档后从存档值继续。
+* 巡检模式：`implements EveryFrameScript` 沿用生涯一次性脚本模式 ——`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除。
+* `REGISTER_MARK`：persistent data 标记键 (`"GearIn_MarketInspector"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入 `GearInModPlugin` 的 `CLASS_MARK` 标记 (旧档补注册规则见前置知识)。
+* `GearInMarketPicker.pick`：`economy.getMarket(id)` 精确 id 查找 + `hasSubmarket(Submarkets.SUBMARKET_OPEN)` 回退 —— 对应 "市场 id = economy.json entities 首实体 id" 的读取链路。
+* `GearInSubmarketLog.log`：`submarket.getCargoNullOk()` 判空后 `getCommodityQuantity`—— 演示 "库存用到时才创建、`getCargoNullOk()` 可能为 null" 的必须遵守的规则 (见 "库存 cargo 与合法性" 节)。
+* `GearInTariffProbe.log`：`modifyFlat("GearIn_inspect_tariff", 0.05f)` → `unmodifyFlat`—— `getTariff()` 是 `MutableStat`(前置知识已介绍)，当帧回滚、无持久残留；这是 "修改高频参数观察结果变化" 的最小任务链第 4 步。
+* `GearInEconomyTickLog`：`economy.addUpdateListener`—— 监听器**必须**走 `EconomyAPI.addUpdateListener`(见 "EconomyUpdateListener" 节)；`isEconomyListenerExpired()` 返回 true 后由引擎自动移除，不残留存档。
 
-调用点 (工程片段 —— 方法所在类归 [C6-S2] 所有，本节只演示调用，不改动那些文件)：
+调用点 (工程片段 —— 方法所在类归属插件生命周期主题，本节只演示调用，不改动既有文件)：
 
 ```java
-    // onGameLoad(boolean newGame) 内新增本节注册块（GearInModPlugin 归 C6-S2 所有）。
+    // GearInModPlugin 的 onGameLoad(boolean newGame) 内新增本节注册块。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInCalendarDayScript.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInCalendarDayScript.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInCalendarDayScript());
-    }
-    if (!Global.getSector().getPersistentData().containsKey(GearInDayAccumulatorScript.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInDayAccumulatorScript.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInDayAccumulatorScript());
-    }
-    // 可选冗余查重（C6-S2 建议：hasScript 与 persistent data 门互为冗余）：
-    if (!Global.getSector().hasScript(GearInCalendarDayScript.class)) {
-        Global.getSector().addScript(new GearInCalendarDayScript());
-    }
-    if (!Global.getSector().hasScript(GearInDayAccumulatorScript.class)) {
-        Global.getSector().addScript(new GearInDayAccumulatorScript());
+    if (!Global.getSector().getPersistentData().containsKey(GearInMarketInspector.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInMarketInspector.REGISTER_MARK, true);
+        Global.getSector().addScript(new GearInMarketInspector());
     }
 ```
 
-(标记段与查重段只取一段即满足 "不重复注册"；两段同留时查重段会在标记段之后补注册，不会叠加 —— 但演示时建议只保留标记段，避免混淆。)
-
-::: caution 每个注册项必须用各自的 persistent data 键做标记
-
-本节两个类各持一个 `REGISTER_MARK`，且不要并入插件已有的 `CLASS_MARK` 标记 (该键在新档首次进入时就已置位，标记内的注册对旧档永远不会再执行)。
-
-:::
-
-想演示周期与自停，在注册前先设参数 (模式 B 专用；模式 A 无参数)：
+想演示换目标市场 (最小任务链第 4 步的另一种做法)，注册前先设参数：
 
 ```java
-    GearInDayAccumulatorScript script = new GearInDayAccumulatorScript();
-    script.setTickEveryDays(1);  // 每 1 个游戏日一次例程（默认）
-    script.setDaysToRun(30);     // 约 30 个游戏日（约 300 真实秒）后自停
-    Global.getSector().addScript(script);
+    GearInMarketInspector inspector = new GearInMarketInspector();
+    inspector.setTargetMarketId("asharu"); // corvus 星系的独立势力市场（economy.json 首实体 id 即市场 id）
+    Global.getSector().addScript(inspector);
 ```
 
-::: tip 演示周期与自停
-
-先 `setTickEveryDays` / `setDaysToRun` 再 `addScript`；该实例不经过 persistent data 标记，仅用于演示，看完记得移除，避免与常驻实例的日志混淆。
-
-:::
-
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用 [C6-S1])：
+构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下两个脚本类的 class 条目 (可用 `jar tf` 核对)。
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下的七个类 (可用 `jar tf` 核对)。
 
-### 验证方案
+## 关键故障实验：经济监听器始终没有回调
 
-前置数据：已有 MOD 布局 [C6-S1]、`GearInModPlugin` ([C6-S2]，含本节调用点片段) 与两个脚本类。
+监听器实现正确，但被注册到通用监听器管理器。
 
-1. 构建游戏 MOD：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，并核对 `jar tf jars\GearIndustry.jar` 含两个脚本类的 class 条目。
-2. 新建生涯，在 `starsector.log` 中观察两个脚本的周期记录。
-3. 暂停与加速对照：生涯中按空格暂停 20 秒以上，再按住 Shift 约 10 秒。
-4. 保存并读档：确认注册不重复、累计值从存档继续。
-5. 进入任意遭遇战再返回：确认战斗期间日志停止、回生涯后继续。
-6. 自停演示：把 `daysToRun` 设为 30 重新构建，挂载约 300 真实秒。
+**局部故障片段：**
+
+```java
+// 故障片段：注册位置错误
+Global.getSector().getListenerManager().addListener(new GearInEconomyTickLog());
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段：交给经济对象
+Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
+```
+
+实际症状：市场、商品流和其他经济事件正常推进，但 `commodityUpdated` 与 `economyUpdated` 永远没有日志，也没有注册异常。
+
+原因：`EconomyUpdateListener` 只由 `EconomyAPI` 自己维护和遍历，通用监听器管理器不会派发这两个回调。
+
+复验：修正注册后保持生涯未暂停，跨过下一次经济迭代；应先收到至少一次 `commodityUpdated`，再收到一次 `economyUpdated`，后续迭代不再回调。
+
+## 验证方案
+
+前置数据：既有 MOD 布局 [C6-S1] 与 `GearInModPlugin`([C6-S2]，含本节调用点片段)、七个巡检类。
+
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/` 下的七个类。
+2. **新建生涯**：在 `starsector.log` 中观察 `GearIn market inspection` 相关记录。
+3. **结构核对**：`structure` 行 `id=jangala`、`inEconomy=true`、`freePort=false`、`onOrAt=on`；三条 `submarket` 行 tariff 依次约 `0.300` / `0.000` / `0.000`，black 的 `faction=pirates`、storage 的 `freeTransfer=true`。
+4. **经济监听器**：注册日志后保持未暂停游玩，几十真实秒内应出现 `GearIn economy listener first commodityUpdated` 与 `GearIn economy listener economyUpdated (expiring)`；继续观察该日志不重复出现；暂停 (空格) 期间不出现；恢复后出现。
+5. **读档**：保存后读档，确认无 `inspection start` 日志 (`REGISTER_MARK` 标记已置位)；若监听器在保存前未触发，读档后继续等待下一个经济步。
+6. **参数演示**：注册前 `inspector.setTargetMarketId("asharu")` 重新构建：`structure` 行 `id=asharu ... faction=independent`；`GearIn commodity drugs` 行 `illegal` 值随市场势力变化 (pirate/自由港市场为 false)。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInCalendarDayScript` 与 `GearInDayAccumulatorScript` 两个脚本类的 class 条目。
-- **新建生涯**：`starsector.log` 出现 `GearIn calendar: new day 206.3.3` 与 `GearIn daily: routine #1 at 206.3.3 | since mount=1.0 game days`；随后每 10 真实秒 (未暂停、未加速) 各出现一次：`GearIn calendar: new day ...` (模式 A，日期逐日前进) 与 `GearIn daily: routine #N ...` (模式 B，`since mount` 逐日 +1.0)。挂载点约为 206.3.2 (新档初始 206.1.1，推进窗口 60.2 游戏日)。
-- **暂停 (空格)**：等待 20 秒以上无新日志 (脚本冻结、时钟冻结)；恢复后继续，`since mount` 不因暂停丢失进度。
-- **加速 (按住 Shift)**：日志频率约翻倍 (`campaignSpeedupMult = 2`，每帧推进两次)，约每 5 真实秒各一次。
-- **读档**：不重复注册 (两个 `REGISTER_MARK` 标记已置位、`hasScript` 命中)；`since mount` / `routine #` 从存档时的累计值继续 (字段随档)，不出现新的 `routine #1`。
-- **战斗**：进入战斗期间无任何日志 (生涯引擎冻结)；回生涯后继续。
-- **自停 (`daysToRun = 30`)**：挂载约 300 真实秒后出现 `GearIn daily: done, isDone()=true after 30.0 game days`；之后不再有日志 —— 引擎在置位后的下一帧从 `scripts` 列表移除了该脚本 (可验证 `Global.getSector().hasScript(GearInDayAccumulatorScript.class)` 为 `false`)。
-- **退出到主菜单**：脚本停止推进 (生涯状态不再运行)；回到主菜单后再进档 (读档)，行为与读档一行相同。
-- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
+* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下的七个类 (`GearInMarketInspector` 等)。
 
-清理：把 `daysToRun` 恢复为 `-1`，使脚本保持常驻。
+* **新建生涯**：`starsector.log` 依次出现：
+
+    ```text
+       GearIn market inspection start: markets=NN commodities=33
+    ```
+
+    (`NN` 是存档市场数，以日志为准；`commodities=33` 是 原版商品规格数，`getAllCommodityIds()` 来自 CSV spec 加载期的 `CommoditySpecAPI` 集合)。随后出现：
+
+    ```text
+       GearIn market structure: id=jangala name=Jangala size=6 faction=hegemony inEconomy=true survey=FULL playerOwned=false freePort=false hidden=false onOrAt=on primaryEntity=Jangala
+    ```
+
+    `Jangala` 是 corvus 星系核心市场 (`econ/corvus.json`：faction `hegemony`、size 6)，`onOrAt=on`(主实体是行星，无 `station` tag)；`survey` 以实际存档为准。
+
+* **条件与产业**：
+
+    ```text
+       GearIn market conditions: count=6 ids=[population_6, inimical_biosphere, organics_plentiful, farmland_adequate, extreme_weather, habitable] GearIn market industries: count=7 ids=[population, farming, spaceport, mining, heavybatteries, militarybase, starfortress_mid]
+    ```
+
+    (与 `econ/corvus.json` 的 `startingConditions` / `industries` 数组一致，以日志为准；其他市场看各自条目。)
+
+* **三种子市场**：
+
+    ```text
+       GearIn submarket open_market: present=true name=Open Market tariff=0.300 faction=hegemony plugin=OpenMarketPlugin cargoNullOk=null supplies=0.0 open=true black=false freeTransfer=false GearIn submarket black_market: present=true name=Black Market tariff=0.000 faction=pirates plugin=BlackMarketPlugin cargoNullOk=null supplies=0.0 open=false black=true freeTransfer=false GearIn submarket storage: present=true name=Storage tariff=0.000 faction=player plugin=StoragePlugin cargoNullOk=null supplies=0.0 open=false black=false freeTransfer=true
+    ```
+
+    核对：open 税率 = 市场税率 (原版默认 `0.3`，`FactionSpecAPI.tariffFraction` 默认值)；black 与 storage 恒 `0.000`；black 的势力是 `pirates`(`submarkets.csv`)、storage 是 `player`；`cargoNullOk=null` 表示该子市场 cargo 尚未被创建 (用到时才创建语义)—— 若某个市场曾被交互过则为 `created` 并带 supplies 数量；`freeTransfer=true` 只出现在 storage。
+
+* **商品** (数值随存档经济状态浮动，方向核对不变)：
+
+    ```text
+       GearIn commodity supplies: stockpile=NNNN.N available=NNN maxSupply=NNN maxDemand=NNN illegal=false demandPrice(100)=NNN supplyPrice(100)=NNN GearIn commodity drugs: stockpile=NN.N available=N maxSupply=N maxDemand=N illegal=true demandPrice(100)=NNN supplyPrice(100)=NNN
+    ```
+
+    `supplies` 的市场买入/卖出价在库存充足时接近基础价区间；`drugs` 对 hegemony 市场 `illegal=true`(非自由港)，开放市场不备货、黑市可交易 (`BlackMarketPlugin.isIllegalOnSubmarket` 恒 false)。
+
+* **人物与经济组**：`GearIn market people: count=N`(Jangala 的 NPC 人物数，以日志为准)；`GearIn market econGroup: group=null sameGroupMarkets=1`(默认 null 自成一组，`getMarketsWithSameGroup` 至少包含自己)。
+
+* **税率回滚**：
+
+    ```text
+       GearIn tariff probe: before=0.300 during=0.350 after=0.300
+    ```
+
+    `during` 恒比 `before` 高 `0.05`，`after` 与 `before` 相等 —— 修改已被当帧回滚。
+
+* **经济监听器** (商品流通知的观察窗口)：注册日志后，在**下一个经济步** (每月 10 次迭代，间隔最多约当月剩余天数/10 个游戏日，未暂停时几十真实秒内) 出现：
+
+    ```text
+       GearIn economy listener first commodityUpdated: <某个商品 id> GearIn economy listener economyUpdated (expiring)
+    ```
+
+    之后不再出现 —— 监听器在整轮通知后由引擎自动移除 (`isEconomyListenerExpired()` 为 true)。暂停期间经济不推进，监听器日志会推迟到恢复后。
+
+* **读档**：不重复执行 (`REGISTER_MARK` 标记已置位)，也不出现 `inspection start` 日志；经济监听器若在读档前未触发，读档后继续等待下一个经济步 (监听器只持 boolean，随存档恢复无副作用)。
+
+* **参数演示**：注册前 `setTargetMarketId("asheru")`(不存在于原版的 id)→ 回退扫描生效，`structure` 行打印第一个有开放市场的市场而不是 `asheru`；改成 `"asharu"` → `structure` 行打印 `id=asharu ... faction=independent`。
+
+* 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
 ## 故障分析
 
-1. **脚本完全没有日志**：`starsector.log` 里没有任何 `GearIn calendar:` / `GearIn daily:` 日志且无报错；另一种表现是启动中止，NPE 堆栈指向 `onApplicationLoad`。触发：忘了调用 `addScript`，或把注册写进 `onApplicationLoad` (此刻 `Global.getSector()` 为 null，解引用即 NPE)。修正：注册放 `onGameLoad` / `onNewGame` 的 persistent data 标记块内 ([C6-S3] 的 null 语义)，改回后重启新档确认恢复。
-2. **把 `amount` 当游戏天数用**：一切按天数计算的逻辑比真实快 10 倍 (10 真实秒被当成 10 游戏天，`daysToRun = 30` 的脚本 30 真实秒就自停)。触发：忽略接口提示 ("Use SectorAPI.getClock() to convert to campaign days")。修正：一律 `clock.convertToDays(amount)` —— 本节示例 `advance` 第一行就是换算。
-3. **`isDone()` 恒返回 true**：`advance` 一次都不执行、连日志都没有。触发：完成标记写反或占位返回 `true`，引擎第一帧先查 `isDone` 就直接移除。修正：初始 `false`，仅完成条件满足时置 `true`。
-4. **`isDone()` 恒 false 且想用 `removeScript` 移除别的实例**：日志持续，目标脚本删不掉。触发：把 `removeScript` 用在等价但不同实例上；引擎按对象同一性移除，`removeScriptsOfClass` 又只按精确类删 (子类不算)。修正：移除用注册时的同一实例，或改 `removeScriptsOfClass`；常驻脚本想自停就置 `done = true` 让引擎自动清理。
-5. **`runWhilePaused()` 语义误用**：以 `amount` 自累计的逻辑在暂停时继续走、以时钟为准的逻辑冻结，两者分道扬镳。触发：误以为返回 `true` 就能让时钟在暂停时前进；实际上 `runWhilePaused = true` 时暂停期间 `advance` 仍被调用 (`amount` 仍是真实秒数)，但 `getClock()` 的日期与时间戳不变。修正：暂停敏感的进度用时钟或 `convertToDays` 累加 (两者都随暂停冻结)；必须暂停期间推进的 (如 UI 覆盖动画) 才用 `runWhilePaused = true`，且不依赖时钟。
-6. **跨日检测漏触发**：模式 A 在跨多天的帧里只报一次新的一天，中间的日子没有日志。触发：单帧跨多个游戏日 (devMode 10x/100x 调试键、MOD 自定义大步长推进) 时，`dateKey` 一帧只比较一次。修正：日历事件一帧至多一次是正常行为；需要逐日补触发的逻辑用模式 B 的 `while` 累加器。
-7. **脚本字段放了引擎单例/UI 引用**：存档文件异常膨胀、保存/读档异常，或读档后字段指向失效对象导致行为错乱。触发：把 `getCampaignUI()`、声音播放器等存进脚本字段 (脚本字段会随存档一起序列化)。修正：字段只放可序列化状态；瞬态句柄用 `transient` 字段 + `readResolve()` 重建；跨会话小数据放 `getPersistentData()`。
-8. **transient 脚本读档后消失**：读档后逻辑静默缺失，无任何报错。触发：用 `addTransientScript` 注册常驻逻辑，没在读档回调里重新注册 (`transientScripts` 被 `readResolve` 清空)。修正：常驻逻辑用 `addScript`；`addTransientScript` 只用于纯临时推进逻辑，并在读档回调重新注册。
-9. **旧档永远不注册脚本**：旧档读档后无任何日志、脚本缺失且无报错。触发：把注册放进既有 `CLASS_MARK` 标记内 ([C6-S2] 的 persistent data 标记模式；该键在新档首次进入时就已置位)。修正：每个注册项用各自的 persistent data 键 (本节 `REGISTER_MARK`)，旧档缺键 = 视为首次注册，正好覆盖中途加脚本的场景。
-10. **暂停时等待时钟推进的倒计时永不触发**：暂停期间 `since mount` 冻结、`done` 永不置位，恢复后继续。触发：脚本用 `clock.getElapsedDaysSince(ts) >= N` 做倒计时，又没改 `runWhilePaused`。修正：这是设计行为 (暂停 = 停表)；需要真实时间倒计时就自己累计 `amount`。
-11. **战斗期间脚本不再推进**：战斗期间无任何日志、时钟冻结；回生涯后日志继续。触发：在战斗里等生涯日志。修正：无需修复 —— 生涯推进循环只在生涯状态下运行，战斗域由战斗状态接管；生涯脚本天然不跨战斗推进。
+- **市场查询返回 null：**只创建了市场对象，没有调用 `economy.addMarket`，或市场 ID 写错。补齐注册并以 `econ/*.json` 的首实体 ID 为准。
+- **实体没有市场交互：**市场已加入经济集合，但没有执行 `entity.setMarket(market)`。完成实体绑定后重新打开交互界面。
+- **读取子市场库存时抛 NPE：**`getCargoNullOk()` 可能返回 null。判空，或需要自动创建库存时使用 `getCargo()`。
+- **后台脚本调用 `nextStep()` 后卡顿：**该调用会同步执行整轮经济迭代。后台逻辑改用 `forceStockpileUpdate(market)` 或等待自然经济步。
+- **`EconomyUpdateListener` 从不回调：**监听器注册到了 Sector listener 表。改用 `economy.addUpdateListener(...)`，经济步运行后确认回调日志。
+- **市场价格与交易界面不一致：**`CommoditySpecAPI.getBasePrice()` 只是全局基础价。买卖价格读取市场的 `getDemandPrice` 与 `getSupplyPrice`。
+- **删除一个条件却把同 ID 全删：**`removeCondition(id)` 面向 spec ID，会移除所有同 ID 实例。保存 `addCondition` 返回的 token，改用 `removeSpecificCondition(token)`。
+- **每帧读取市场 memory 导致回调风暴：**`getMemory()` 会触发全部插件的 `updateMarketFacts`。纯读取使用 `getMemoryWithoutUpdate()`。
+- **读取管理员后存档多出人物：**`getAdmin()` 会在缺失时创建默认管理员。读取前确认市场已有 admin，避免触发创建副作用。
+- **经济频率观察与 `economyIntervalnGameDays` 不符：**该设置键不参与实际经济推进。按 `economyIterPerMonth` 和经济迭代日志判断节奏。
+- **关闭自由港后黑市仍存在：**自由港条件与黑市子市场是两条独立链。使用 `removeSubmarket` 处理黑市，不要把 `setFreePort(false)` 当作黑市开关。
+- **交易后立即读取库存看不到变化：**交易影响通过 120 游戏日的 trade mod 缓慢衰减，需等待经济步后再观察。
 
 ## 总结
 
-本节把 `EveryFrameScript` 从会用推进到讲透，全部机制围绕一条主线：脚本在每帧被唤醒、按时钟与累加器决策、随存档往返。排错时只需核对三个问题：脚本注册了吗 (persistent data 标记是否置位)、换算对了吗 (`amount` 是否经 `convertToDays`)、字段能随档吗 (是否全部可序列化)。三个答案定位完毕，剩下的通常只是时序或数值问题。
+本节把市场、子市场与经济对象讲成三条链：市场链从 `createMarket` 经三步收尾把市场注册进经济集合并绑到实体；子市场链从 `submarkets.csv` 的 spec 生成插件实例，差异集中在税率、合法性、库存与稳定度的关系和经济参与；经济链由 `EconomyAPI.advance` 每帧喂给经济推进器，每月 10 步、月末步写库存与价格。排错时抓住一个分工即可少走弯路：市场持有结构与交易入口，经济集合负责重算，子市场插件决定单个入口的行为差异 —— 市场是实体绑定的经济节点，不是经济重算的执行者。
 
-值得记住的判断：暂停就是停表，时钟、日历与 `convertToDays` 累加全部冻结，真实时间倒计时只能靠 `amount` 累计；日历按整游戏秒前进、累加器保留小数，短会话一致、长会话漂移，日历事件用跨日检测、精确统计用累加器；`scripts` 随存档保存、`transientScripts` 读档后必然清空，一次性注册必须用 persistent data 标记；`isFastForwardIteration()` 可探测加速帧的第 2 次及以后的迭代 (`campaignSpeedupMult = 2`)。
+记忆要点：
 
-同一套生涯对象还有另一条驱动轴 —— 事件在状态变化时被同步唤醒 (监听器与事件派发)。两条轴的推进时机、存档边界与生命周期清理需要与本节的 persistent data 标记和阶段语义对齐。
+* 市场 id = `econ/*.json` `entities` 首实体 id；`getMarket(id)` 精确匹配、查无返回 null。
+* `addCondition` 返回 token：删具体实例用 `removeSpecificCondition(token)`，`removeCondition(id)` 删同 id 全部；产业 `addIndustry` 对不存在的 id 抛异常 (条件不校验)。
+* `getCargoNullOk()` 可能 null；`getMemory()` 触发全插件回调；`getAdmin()` 用到时才创建管理员 —— 三个 "用到时才创建/副作用" 入口。
+* `economyIterPerMonth = 10`、`economyIntervalnGameDays` 不参与经济；`nextStep` 系列禁止后台调用；监听器必须走 `addUpdateListener`。
+* 自由港 → `isIllegal` 全 false；隐藏市场 → 不参与任务/事件/intel/经济；同经济组市场只互相可见与交易。
+
+地点容器与实体挂载承载着市场主实体，舰队成员是生涯对象族的另一支；本节的 `REGISTER_MARK` 注册模式沿用生涯对象族的既有做法。市场的行为由三条链共同决定 —— 子市场的插件差异、经济循环的迭代节奏、开放状态的语义开关；产业供需、交易界面与殖民地管理都沿这些入口展开。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.EveryFrameScript`：生涯按帧脚本的三方法约定 (`isDone` / `runWhilePaused` / `advance`)。
-- `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：实体级脚本的清理钩子 (附着实体从生涯引擎移除时调用)。
-- `com.fs.starfarer.api.campaign.SectorAPI`：脚本注册、查重与 persistent data 入口 (`addScript` / `addTransientScript` / `hasScript` / `getScripts` / `getPersistentData` / `isFastForwardIteration`)。
-- `com.fs.starfarer.api.campaign.CampaignClockAPI`：时间换算与日历接口 (`convertToDays` / `convertToMonths` / `convertToSeconds` / `getTimestamp` / `getElapsedDaysSince` / `createClock`)。
-- `com.fs.starfarer.api.util.IntervalUtil`：公开间隔器 (`advance` 每帧调用、`intervalElapsed` 仅真一次)。
-- `data/config/settings.json`：`campaignSpeedupMult`(加速倍率，取值为 2)。
-- `data/scripts/gearin/campaign/`：示例 MOD 内两个脚本类的源码目录。
+* `com.fs.starfarer.api.campaign.econ.MarketAPI`：市场接口全貌 —— 身份、实体绑定、条件、产业、商品、价格、人物、开放状态与每帧推进。
+* `com.fs.starfarer.api.campaign.econ.SubmarketAPI`：子市场运行时入口 (spec、plugin、cargo、税率、合法性)。
+* `com.fs.starfarer.api.campaign.SubmarketPlugin`：子市场插件角色 —— 税率、合法性、经济参与、用户交易影响 (`PlayerEconomyImpactMode` / `TransferAction`)。
+* `com.fs.starfarer.api.campaign.econ.EconomyAPI`：经济集合、商品注册表、手动重算入口与 `EconomyUpdateListener`(注册必须经 `addUpdateListener`)。
+* `com.fs.starfarer.api.campaign.econ.CommodityOnMarketAPI`：单商品数据 —— 库存、可得量、供需上限、交易修饰。
+* `com.fs.starfarer.api.campaign.econ.CommoditySpecAPI`：全局商品规格 —— 基础价、econ unit、demand class。
+* `com.fs.starfarer.api.campaign.econ.MarketConditionAPI`：条件实例 ——spec id 与唯一 token。
+* `com.fs.starfarer.api.impl.campaign.ids.Submarkets`：五个原版子市场 spec id 常量。
+* `com.fs.starfarer.api.impl.campaign.ids.Commodities`：原版商品 id 常量 (`SUPPLIES` / `DRUGS`)。
+* `com.fs.starfarer.api.impl.campaign.submarkets.BaseSubmarketPlugin`：子市场基类 —— 交易影响天数、cargo 用到时才创建、默认税率与合法性。
+* `com.fs.starfarer.api.impl.campaign.submarkets.OpenMarketPlugin` / `BlackMarketPlugin` / `StoragePlugin`：三种原版子市场的插件差异。
+* `com.fs.starfarer.api.combat.MutableStat`：税率等修饰统计 ——`modifyFlat` / `unmodifyFlat` / `getModifiedValue`。
+* `com.fs.starfarer.api.FactoryAPI`：`createMarket` 创建市场对象 (只建对象，不注册)。
+* `com.fs.starfarer.api.campaign.SectorEntityToken`：`getMarket` / `setMarket` 实体侧绑定。
+* `com.fs.starfarer.api.util.Misc`：`getStorageFeeFraction` 读取 `storageFreeFraction` 存值费率。
+* `data/campaign/econ/economy.json`：经济入口配置 ——`starSystems` 列表与 `defaultTariff`。
+* `data/campaign/econ/corvus.json`：示例市场条目 (`jangala` / `asharu`)。
+* `data/campaign/submarkets.csv`：五个原版子市场 spec(`script` 列即 plugin)。
+* `data/campaign/market_conditions.csv`：条件 spec(含 `free_market`)。
+* `data/config/settings.json`：经济参数键 (`economyIterPerMonth`、`economyPlayerTradeImpactMult`、`storageFreeFraction` 等)。
+
+## 完整最小例
+
+::: details 完整成品：GearInMarketInspector
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.EveryFrameScript;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.econ.EconomyAPI;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+
+/**
+ * 市场巡检脚本（EveryFrameScript 角色）：挂载后第一次 advance() 执行一次市场/子市场/
+ * 经济对象巡检序列并自停（isDone()=true，引擎下一帧自动移除本脚本）。注册入口：生涯回调
+ * onGameLoad（调用点片段见页面正文），persistent data 键 REGISTER_MARK 一次性门控
+ * （沿用既有模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内）。
+ */
+public class GearInMarketInspector implements EveryFrameScript {
+
+    /** 存档持久化标记：本巡检是否已在该存档执行过（随存档保存）。 */
+    public static final String REGISTER_MARK = "GearIn_MarketInspector";
+
+    private static final Logger LOG = Global.getLogger(GearInMarketInspector.class);
+
+    /** 巡检目标市场 id；默认 "jangala"（原版核心世界，必存在）。 */
+    private String targetMarketId = "jangala";
+
+    /** 巡检是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
+    private boolean executed = false;
+
+    public GearInMarketInspector() {
+        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
+    }
+
+    /** 修改巡检目标市场；改回 null 时回退到"第一个有开放市场的市场"。 */
+    public void setTargetMarketId(String targetMarketId) {
+        this.targetMarketId = targetMarketId;
+    }
+
+    @Override
+    public boolean isDone() {
+        return executed;
+    }
+
+    @Override
+    public boolean runWhilePaused() {
+        return false;
+    }
+
+    @Override
+    public void advance(float amount) {
+        if (executed) {
+            return;
+        }
+        executed = true;
+        runInspection();
+    }
+
+    private void runInspection() {
+        EconomyAPI economy = Global.getSector().getEconomy();
+
+        // --- 经济基线 ---
+        LOG.info(String.format(
+                "GearIn market inspection start: markets=%d commodities=%d",
+                economy.getNumMarkets(), economy.getAllCommodityIds().size()));
+
+        MarketAPI market = new GearInMarketPicker(targetMarketId).pick(economy);
+        if (market == null) {
+            LOG.info("GearIn market inspection abort: no open-market market found");
+            return;
+        }
+
+        GearInMarketStructureLog.log(market, economy);
+        GearInSubmarketLog.log(market);
+        GearInCommodityLog.log(market);
+        GearInTariffProbe.log(market);
+
+        economy.addUpdateListener(new GearInEconomyTickLog());
+        LOG.info("GearIn market inspection registered economy update listener (self-expires)");
+        LOG.info("GearIn market inspection done");
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInMarketPicker
+
+```java
+package data.scripts.gearin.campaign;
+
+import com.fs.starfarer.api.campaign.econ.EconomyAPI;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
+
+/**
+ * 目标市场选择器：优先按指定 id 取市场；id 为空或查无此市场时回退扫描，
+ * 取第一个有开放市场（open_market 子市场）的市场，仍找不到返回 null。
+ * 供巡检脚本 GearInMarketInspector 编排时调用。
+ */
+public class GearInMarketPicker {
+
+    /** 首选市场 id；null 或查无此市场时走回退扫描。 */
+    private final String preferredId;
+
+    public GearInMarketPicker(String preferredId) {
+        this.preferredId = preferredId;
+    }
+
+    /** 返回首选市场；不可用时回退扫描，仍找不到返回 null。 */
+    public MarketAPI pick(EconomyAPI economy) {
+        MarketAPI market = economy.getMarket(preferredId);
+        if (market == null) {
+            for (MarketAPI candidate : economy.getMarketsCopy()) {
+                if (candidate.hasSubmarket(Submarkets.SUBMARKET_OPEN)) {
+                    market = candidate;
+                    break;
+                }
+            }
+        }
+        return market;
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInMarketStructureLog
+
+```java
+package data.scripts.gearin.campaign;
+
+import java.util.List;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.econ.EconomyAPI;
+import com.fs.starfarer.api.campaign.econ.Industry;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.campaign.econ.MarketConditionAPI;
+
+/**
+ * 市场结构日志器：输出目标市场的身份/势力/实体绑定/survey/开放状态/条件与产业 id 列表，
+ * 以及市场人物数量与同经济组市场数。由巡检脚本 GearInMarketInspector 选定目标市场后调用。
+ */
+public class GearInMarketStructureLog {
+
+    private static final Logger LOG = Global.getLogger(GearInMarketStructureLog.class);
+
+    private GearInMarketStructureLog() {
+        // 工具类：不实例化
+    }
+
+    public static void log(MarketAPI market, EconomyAPI economy) {
+        LOG.info(String.format(
+                "GearIn market structure: id=%s name=%s size=%d faction=%s inEconomy=%s survey=%s playerOwned=%s freePort=%s hidden=%s onOrAt=%s primaryEntity=%s",
+                market.getId(), market.getName(), market.getSize(), market.getFactionId(),
+                market.isInEconomy(), market.getSurveyLevel(), market.isPlayerOwned(),
+                market.isFreePort(), market.isHidden(), market.getOnOrAt(),
+                market.getPrimaryEntity() == null ? "null" : market.getPrimaryEntity().getName()));
+
+        List<MarketConditionAPI> conditions = market.getConditions();
+        StringBuilder conditionIds = new StringBuilder();
+        for (MarketConditionAPI condition : conditions) {
+            if (conditionIds.length() > 0) {
+                conditionIds.append(", ");
+            }
+            conditionIds.append(condition.getId());
+        }
+        LOG.info(String.format(
+                "GearIn market conditions: count=%d ids=[%s]",
+                conditions.size(), conditionIds));
+
+        List<Industry> industries = market.getIndustries();
+        StringBuilder industryIds = new StringBuilder();
+        for (Industry industry : industries) {
+            if (industryIds.length() > 0) {
+                industryIds.append(", ");
+            }
+            industryIds.append(industry.getId());
+        }
+        LOG.info(String.format(
+                "GearIn market industries: count=%d ids=[%s]",
+                industries.size(), industryIds));
+
+        LOG.info(String.format(
+                "GearIn market people: count=%d",
+                market.getPeopleCopy().size()));
+        LOG.info(String.format(
+                "GearIn market econGroup: group=%s sameGroupMarkets=%d",
+                market.getEconGroup(), economy.getMarketsWithSameGroup(market).size()));
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInSubmarketLog
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.CargoAPI;
+import com.fs.starfarer.api.campaign.SubmarketPlugin;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.campaign.econ.SubmarketAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Commodities;
+import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
+
+/**
+ * 子市场差异日志器：遍历 open_market/black_market/storage 三种原版子市场，
+ * 输出税率、势力、plugin 类、cargo 惰性创建语义与开放/黑市/免费转移标志。
+ * 由巡检脚本 GearInMarketInspector 选定目标市场后调用。
+ */
+public class GearInSubmarketLog {
+
+    private static final Logger LOG = Global.getLogger(GearInSubmarketLog.class);
+
+    private static final String[] SPEC_IDS = {
+            Submarkets.SUBMARKET_OPEN,
+            Submarkets.SUBMARKET_BLACK,
+            Submarkets.SUBMARKET_STORAGE,
+    };
+
+    private GearInSubmarketLog() {
+        // 工具类：不实例化
+    }
+
+    public static void log(MarketAPI market) {
+        for (String specId : SPEC_IDS) {
+            if (!market.hasSubmarket(specId)) {
+                LOG.info("GearIn submarket " + specId + ": present=false");
+                continue;
+            }
+            SubmarketAPI submarket = market.getSubmarket(specId);
+            SubmarketPlugin plugin = submarket.getPlugin();
+            CargoAPI cargoNullOk = submarket.getCargoNullOk();
+            float supplies = 0f;
+            if (cargoNullOk != null) {
+                supplies = cargoNullOk.getCommodityQuantity(Commodities.SUPPLIES);
+            }
+            LOG.info(String.format(
+                    "GearIn submarket %s: present=true name=%s tariff=%.3f faction=%s plugin=%s cargoNullOk=%s supplies=%.1f open=%s black=%s freeTransfer=%s",
+                    specId, submarket.getNameOneLine(), submarket.getTariff(),
+                    submarket.getFaction().getId(), plugin.getClass().getSimpleName(),
+                    cargoNullOk == null ? "null" : "created", supplies,
+                    plugin.isOpenMarket(), plugin.isBlackMarket(), plugin.isFreeTransfer()));
+        }
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInCommodityLog
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.econ.CommodityOnMarketAPI;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Commodities;
+
+/**
+ * 商品日志器：对演示商品输出库存、可得量、供需上限、市场买入/卖出价与合法性
+ * （价格方向以市场为主体：demandPrice = 市场买入 = 玩家卖出）。
+ * 由巡检脚本 GearInMarketInspector 选定目标市场后调用。
+ */
+public class GearInCommodityLog {
+
+    private static final Logger LOG = Global.getLogger(GearInCommodityLog.class);
+
+    private static final String[] COMMODITY_IDS = {
+            Commodities.SUPPLIES,
+            Commodities.DRUGS,
+    };
+
+    private GearInCommodityLog() {
+        // 工具类：不实例化
+    }
+
+    public static void log(MarketAPI market) {
+        for (String commodityId : COMMODITY_IDS) {
+            CommodityOnMarketAPI commodity = market.getCommodityData(commodityId);
+            LOG.info(String.format(
+                    "GearIn commodity %s: stockpile=%.1f available=%d maxSupply=%d maxDemand=%d illegal=%s demandPrice(100)=%.0f supplyPrice(100)=%.0f",
+                    commodityId, commodity.getStockpile(), commodity.getAvailable(),
+                    commodity.getMaxSupply(), commodity.getMaxDemand(),
+                    market.isIllegal(commodityId),
+                    market.getDemandPrice(commodityId, 100, true),
+                    market.getSupplyPrice(commodityId, 100, true)));
+        }
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInTariffProbe
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.combat.MutableStat;
+
+/**
+ * 税率探针：对市场税率（MutableStat）做瞬时 modifyFlat 并当帧 unmodifyFlat 回滚，
+ * 记录生效值 before/during/after，演示"修改高频参数观察结果变化"的最小任务链。
+ * 由巡检脚本 GearInMarketInspector 选定目标市场后调用，无持久残留。
+ */
+public class GearInTariffProbe {
+
+    private static final Logger LOG = Global.getLogger(GearInTariffProbe.class);
+
+    private static final String TARIFF_MOD_ID = "GearIn_inspect_tariff";
+
+    private GearInTariffProbe() {
+        // 工具类：不实例化
+    }
+
+    public static void log(MarketAPI market) {
+        MutableStat tariff = market.getTariff();
+        float before = tariff.getModifiedValue();
+        tariff.modifyFlat(TARIFF_MOD_ID, 0.05f);
+        float during = tariff.getModifiedValue();
+        tariff.unmodifyFlat(TARIFF_MOD_ID);
+        float after = tariff.getModifiedValue();
+        LOG.info(String.format(
+                "GearIn tariff probe: before=%.3f during=%.3f after=%.3f",
+                before, during, after));
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInEconomyTickLog
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.econ.EconomyAPI.EconomyUpdateListener;
+
+/**
+ * 经济更新监听器（EconomyUpdateListener 角色）：记录下一个经济步的第一次
+ * commodityUpdated 与整轮 economyUpdated，之后 isEconomyListenerExpired() 返回 true，
+ * 引擎在下一个经济步自动从监听器列表移除。
+ *
+ * 只持有两个 boolean，无外部引用，随存档序列化无副作用。注册入口：必须经
+ * EconomyAPI.addUpdateListener() 注册，不能加入 SectorAPI.getListenerManager()。
+ */
+public class GearInEconomyTickLog implements EconomyUpdateListener {
+
+    private static final Logger LOG = Global.getLogger(GearInEconomyTickLog.class);
+
+    private boolean commodityFired = false;
+    private boolean economyFired = false;
+
+    @Override
+    public void commodityUpdated(String commodityId) {
+        if (!commodityFired) {
+            commodityFired = true;
+            LOG.info("GearIn economy listener first commodityUpdated: " + commodityId);
+        }
+    }
+
+    @Override
+    public void economyUpdated() {
+        if (!economyFired) {
+            economyFired = true;
+            LOG.info("GearIn economy listener economyUpdated (expiring)");
+        }
+    }
+
+    @Override
+    public boolean isEconomyListenerExpired() {
+        return economyFired;
+    }
+}
+```
+
+:::

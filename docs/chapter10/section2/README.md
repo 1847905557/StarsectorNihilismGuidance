@@ -1,667 +1,918 @@
-# 监听生涯事件
+# 制作可升级产业
 
-本节为 MOD 注册生涯事件监听器，使市场、贸易、战斗、舰队和声望变化能够触发代码。示例会分别使用两种注册入口，并在加载存档时恢复监听器。
+本节制作一个可建设、升级并被外部中断的产业。示例会把产业接入市场经济循环，并在界面和日志中观察供需、升级与中断效果。
 
 *本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~50 分钟。*
+*本节预期操作时间：~60 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 说出两条监听器通道，并说清各自的存储、去重与派发语义：
-  - Sector 级 `CampaignEventListener` 通道：`addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners`；
-  - `ListenerManagerAPI` 类型化通道：`addListener` / `addListener(listener, isTransient)` / `removeListener` / `removeListenerOfClass` / `hasListener` / `hasListenerOfClass` / `getListeners(Class)`。
-- 按分组说出 `CampaignEventListener` 全接口 21 个方法，并解释每一组事件在哪个边界点被触发 (战斗结束、贸易结算、舰队入地/离场/跳跃/到达、市场开关、声望变更、经济迭代)；
-- 说出监听器生命周期规则：注册时机、persistent data 注册标记、**监听器必须在合适时机移除**、transient 监听器读档后必须重新注册、配对类 "脚本结束 ≠ 监听器移除"、`addListenerWithTimeout` 的游戏天单位与暂停冻结语义；
-- 创建 `GearInCampaignListener`(Sector 级监听器)、`GearInListenerLifecycleScript`(按帧生命周期脚本，与监听器配对) 与 `GearInLocationChangeListener`(`ListenerManagerAPI` 类型化监听器)，并在 `onGameLoad` 正确注册；
-- 从症状定位十类典型故障：没注册、`onApplicationLoad` 注册 NPE、重复注册成双、transient 读档丢失、僵尸监听器、超时单位误用、事件日志过频、战斗回调重复计数、双通道混淆、旧档不注册。
+* 在 `industries.csv` 中登记产业行，并解释从 CSV 行到运行时 `Industry` 实例的注册链；
+* 区分 `Industry` / `BaseIndustry` 生命周期五个回调的时机与职责，并说出市场侧的两个驱动点；
+* 用 `supply(...)` / `demand(...)` 在 `apply()` 里声明供需，用 `getMaxDeficit` / `applyDeficitToProduction` 实现缺货削减；
+* 设置建设、升级与降级链，解释 `startUpgrading` → `finishBuildingOrUpgrading` 的完成行为与状态迁移；
+* 安装与卸载 AI core，解释四个修饰钩子的成对撤销语义；
+* 施放与解除 disruption，并解释它的内存键、中断表现与三个原版触发方；
+* 从症状定位产业注册、供需、升级、AI core 与 disruption 的典型故障，并给出修正路径。
 
 ## 前置知识
 
-- [C6-S2] 的 MOD 插件生命周期与持久数据标记；
-- [C6-S3] 的 `Global.getSector()` 阶段语义；
-- [C7-S2] 的战斗域 `reportPlayerEngagement` 与 `EngagementResultAPI`；
-- [C8-S1] 的 `SectorAPI` 监听器和脚本列表、`EveryFrameScript`、暂停语义与注册标记；
-- [C8-S5] 的市场交易回调 `reportPlayerMarketTransaction`；
-- [C8-S8] 的势力关系与 `SectorAPI.adjustPlayerReputation`；
-- [C10-S1] 的脚本序列化边界与 `advance(amount)` 的真实秒语义。
+* [C1-S1] 的 MOD 目录、命名约定与 `starsector.log` 日志位置；
+* [C3-S7] 的经济 JSON、市场加载时机与 `industries` 数据结构；
+* [C6-S2] 的插件生命周期与持久数据标记；
+* [C6-S4] 的 settings 读取；
+* [C7-S3] 的 `MutableStat` 与修饰值；
+* [C9-S1] 的 `SectorAPI.getEconomy()`、生涯时钟与游戏日换算；
+* [C9-S3] 的生涯对象一次性注册判断；
+* [C10-S1] 的市场与产业访问入口、产业 ID 校验、经济循环节奏与监听器注册。
 
 ## 术语
 
-进入两条通道之前，先弄清本节承担首次讲解的两个概念：
+按术语约定，本节首次完整讲解以下词：
 
-- **监听器 (listener)**：API 名保留 `CampaignEventListener` / `ListenerManagerAPI` 等源码大小写。
-  - 在生涯域中，监听器是 "对生涯事件感兴趣、事件发生时被引擎回调" 的对象。
-  - 它与生涯脚本 (每帧被推进) 互补：脚本是轮询式 (每帧 `advance`)，监听器是事件驱动式 (事件发生才回调)。
-  - 两者可以绑定在同一对象上 (API 侧的 `BaseCampaignEventListenerAndScript` 即此形态)，也可以拆成两个对象配对协作 (本节示例即拆分形态)，但两条机制的生命周期互不通用。
-- **事件边界 (event boundary)**：一个生涯事件从 "游戏逻辑发生" 到 "全部已注册监听器被回调" 的完整链路 —— 触发点 (谁在什么条件下发起)、派发者 (Sector 级通道由引擎侧 `reportXxx` 方法族遍历、类型化通道由 `ListenerUtil.reportXxx` 遍历)、回调签名。排查 "回调没触发" 时必须沿着这条链逐段核对。
+* **产业 (industry)**：API 名保留 `Industry`。挂在一个市场下的 "生产/服务单元"，由静态 spec(`industries.csv` 行)+ 运行时实例 (plugin 列类名) 组成，承载供需、收入、维护费、AI core、特殊物品、改良与 disruption 等状态。与市场条件 (`MarketConditionAPI`) 并列但生命周期更重。
+* **供需修饰 (supply/demand modifier)**：`MutableCommodityQuantity.getQuantity()` 上的 `MutableStat` flat 修饰。
+    *   产业的 `supply(...)` / `demand(...)` 以 `"ind_<id>[_<n>]"` 为修饰 id 写入数量；
+    *   `supplyBonus` / `demandReduction` 是产业级 "产量加一 / 需求减一" 统计项，写入时合并为 `"ind_sb"` / `"ind_dr"`。
+* **建设与升级 (building / upgrading)**：`isBuilding()` = 建设中 (含首次建设与升级)；`isUpgrading()` = 建设中且 `upgradeId != null`。`isFunctional()` = 非 disruption 且非 "建设中且未升级"。
+* **AI core**：安装到产业上的三种商品化智能核心 (`alpha_core` / `beta_core` / `gamma_core`)，提供供需、维护费与 (自定义) 统计修饰，并提高 Luddic Path 的关注度 (`getPatherInterest`)。
+* **disruption(中断)**：产业被外部行动 (突袭、审查) 打停的一段带倒计时的状态，存于市场 memory(key 含产业类名)。中断期间产业不产出、不推进建设。
 
-## 文件与 API 链路
+## 梳理产业升级关系
 
-两条通道的存储、去重与派发语义都不同，命名也容易混。先解决命名问题，再分别看两条通道。
+本节的全部机制沿四个位置核对：**数据文件 → 注册入口 → 运行使用方 → 可观察结果**。先看产业如何从 CSV 行变成运行时对象，再依次进入生命周期、供需、建设升级、AI core 与 disruption 各链。
 
-### 命名说明：CampaignListener 与 CampaignEventListener
+### 产业注册链 (industries.csv)
 
-**公开**生涯事件监听器接口名是 `CampaignEventListener`(`com.fs.starfarer.api.campaign.CampaignEventListener`)。
+产业静态表是 `data/campaign/industries.csv`(含表头；原版 33 个活动产业，另有 1 个 `#` 注释行)。15 个列按表头顺序为：
 
-旧资料里出现的 "CampaignListener" 写法只残留在引擎内部实现侧，不是公开 API，MOD 无法也不应注册到该接口。
+列
 
-正文一律使用公开接口名 `CampaignEventListener`；教程主题里的 "CampaignListener" 指的就是这个概念。
+`IndustrySpecAPI` 字段
 
-### 通道一：Sector 级 CampaignEventListener
+语义
 
-通道一是 MOD 直接实现 `CampaignEventListener` 的常规路径。注册入口 (`SectorAPI`，`com.fs.starfarer.api.campaign.SectorAPI`)：
+`id`
 
-| 方法 | 语义 |
-|---|---|
-| `void addListener(CampaignEventListener listener)` | 注册到**持久**监听器列表 (随存档保存)|
-| `void addTransientListener(CampaignEventListener listener)` | 注册到 **transient** 监听器列表 (不随存档保存，读档后清空)|
-| `void addListenerWithTimeout(CampaignEventListener listener, float daysToKeep)` | 注册到超时跟踪器，**daysToKeep 个游戏天**后自动移除 |
-| `void removeListener(CampaignEventListener listener)` | 从三个列表同时移除 |
-| `List<CampaignEventListener> getAllListeners()` | 三个列表的并集快照 |
+`getId()`
 
-存储与持久性 (生涯引擎侧)：
+产业 spec key，全游戏唯一；`MarketAPI.addIndustry(id)` / `instantiateIndustry(id)` 按它查 spec
 
-- `listeners` 非 `transient` → **随存档保存**：常驻监听器跨读档继续有效，其非 `transient` 字段原样恢复。
-- `transientListeners` 是 `transient` → **不随存档保存**，读档时重建为空列表 ——transient 监听器读档后必然消失。
-- `listenersWithTimeout` 用 `TimeoutTracker`(公开 API `com.fs.starfarer.api.util.TimeoutTracker`) 承载；`items` 随档保存、`set` 读档时重建。
-- `listenerManager` 是 `ListenerManagerAPI` 实例 (通道二)，读档时若为 null 会重建默认实例。
+`name`
 
-去重：`addListener` / `addTransientListener` 在写入前用 `contains` 去重 —— 列表按 `equals` 判等，监听器普遍不覆写 `equals`，此时即按对象同一性；`addListenerWithTimeout` 同样以 `contains` 判重。
+`getName()`
 
-派发：生涯引擎的 `reportXxx(...)` 方法族逐事件遍历 `getAllListeners()`(三列表并集的新列表快照) 调用回调。
+显示名 (`getCurrentName()`)
 
-因此**在回调里注册/移除监听器不会抛 `ConcurrentModificationException`**(派发基于快照)，但遍历顺序是 "持久 → transient → 超时" 三段的拼接顺序，不要依赖跨段次序。
+`cost mult`
 
-超时语义 (引擎每帧推进时)：
+`getCost()`
+
+建设费用基础值 (`getBuildCost()`，可被 `setBuildCostOverride` 覆盖；升级/关停退款按它 × `industryRefundFraction`)
+
+`build time`
+
+`getBuildTime()`
+
+建设天数 (游戏日)；`startBuilding` / `startUpgrading` 时写入
+
+`income`
+
+`getIncome()`
+
+收入基础值 (× 市场规模倍率后写入 `getIncome()` stat)
+
+`upkeep`
+
+`getUpkeep()`
+
+维护费基础值 (× 规模倍率 × 维护倍率后写入 `getUpkeep()` stat)
+
+`downgrade`
+
+`getDowngrade()`
+
+降级目标产业 id(`downgrade()` 使用)
+
+`upgrade`
+
+`getUpgrade()`
+
+升级目标产业 id(`startUpgrading()` 使用；UI 的 "升级" 按钮只在非空时出现)
+
+`tags`
+
+`getTags()`
+
+产业 tag；`industry` / `structure` 决定 `isIndustry()` / `isStructure()`(`Industries.TAG_INDUSTRY` / `TAG_STRUCTURE`)，`important` / `population` 等被 UI 与队列使用
+
+`data`
+
+`getData()`
+
+附加数据字符串
+
+`image`
+
+`getImageName()`
+
+产业贴图 (`getCurrentImage()`)；资源从全局资源集解析，MOD 可引用核心自带路径或自己的路径
+
+`plugin`
+
+`getPluginClass()`
+
+产业 Java 类名；`getNewPluginInstance(market)` 用无参构造实例化
+
+`desc`
+
+`getDesc()`
+
+描述文本 (tooltip 展示，支持 `$token` 替换)
+
+`order`
+
+`getOrder()`
+
+列表排序权重
+
+`disruptDanger`
+
+`getDisruptDanger()`
+
+`RaidDangerLevel` 枚举名 (NONE/MINIMAL/LOW/MEDIUM/HIGH/EXTREME)，突袭 "中断产业" 目标时长来源
+
+注册链 (使用方视角的 "数据 → 注册" 半程)：
+
+1. 加载器把每一行读成 `IndustrySpecAPI`，`id` 列成为 spec key(缺失/重复语义与 `hull_mods.csv` 的 `readCSVMerged` 一致：同文件重复 id 抛异常、跨文件重复后读行跳过 ——"产业不出现且无报错" 首选排查方向)；
+2. `MarketAPI.addIndustry(id)` 或 `instantiateIndustry(id)` 从 CSV spec 加载期的注册表按 id 取 `IndustrySpecAPI`，查不到**抛 `RuntimeException("Industry [" + id + "] not found")`**(`Market.addIndustry`)。
+    *   与条件不同：`addCondition` 不校验 id，产业校验；
+3. `spec.getNewPluginInstance(market)` 无参实例化产业类 (`plugin` 列类名必须存在且可无参实例化，否则类加载失败)；
+4. `addIndustry(id, params)` 带参数时先 `initWithParams(params)`(经济 JSON 的 `[id, param...]` 数组元素：识别 AI core id 与 params 匹配本产业 id 的特殊物品)；
+5. 产业加入 `market.getIndustries()` 后**立即 `apply()`**——`addIndustry` 本身不校验 `isAvailableToBuild()`，代码路径可以给任何市场直接挂产业。
+
+`SettingsAPI.getIndustrySpec(id)`(`com.fs.starfarer.api.SettingsAPI`) 是只读查询同一注册表的入口。
+
+注册链只保证产业能被实例化；创建之后，每个产业还要按固定节奏重算供需、收入与建设状态，这由生命周期回调承担。
+
+### 产业生命周期 (Industry / BaseIndustry)
+
+`Industry`(`com.fs.starfarer.api.campaign.econ.Industry`) 是纯接口；`BaseIndustry`(`com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry`) 是产业公共基类。
+
+`BaseIndustry` 归属默认状态 (`supply` / `demand` map、`income` / `upkeep` stat、`building` / `buildProgress` / `upgradeId` / `aiCoreId` / `improved` / `special` 字段) 与各链路默认行为。
+
+原版 17 个产业类全部 `extends BaseIndustry`(`com.fs.starfarer.api.impl.campaign.econ.impl` 包)。
+
+五个核心回调：
+
+回调
+
+时机
+
+职责
+
+`init(String id, MarketAPI market)`
+
+`getNewPluginInstance` 后、`apply` 前
+
+绑定 id 与 market；`BaseIndustry.init` 同时 `readResolve()`(重取 spec、生成 `"ind_<id>"` / `"ind_<id>_<n>"` 修饰 id 族)
+
+`apply()`
+
+`addIndustry` 时、`reapplyIndustries` 每轮、tooltip 预览 (克隆市场) 时
+
+写供需、收入/维护、统计修饰、AI core / 改良 / 特殊物品效果。子类先 `super.apply(true)` 再写自己的供需
+
+`unapply()`
+
+`reapply` 前半、`removeIndustry`、`startBuilding`
+
+撤销 AI core 修饰 (`applyNoAICoreModifiers`)、改良、移民修饰、特殊物品效果
+
+`reapply()`
+
+外部直接调用或 tooltip 预览
+
+语义固定为 `unapply()` + `apply()`("Calls unapply() and then reapply()")
+
+`advance(float amount)`
+
+市场每帧 (`Market.advance` 对产业列表逐个调用)
+
+`BaseIndustry.advance`：disruption 结束检测 (`wasDisrupted` 翻转 → `disruptionFinished()`)；建设中且未中断时用 `getClock().convertToDays(amount)` 累积 `buildProgress`，达到 `buildTime` 调 `finishBuildingOrUpgrading()`
+
+`BaseIndustry.apply(boolean withIncomeUpdate)` 的内部顺序：
+
+1. `updateSupplyAndDemandModifiers()`：重置并汇总 `supplyBonus` / `demandReduction`(AI core、改良、管理员 `Stats.SUPPLY_BONUS_MOD` / `Stats.DEMAND_REDUCTION_MOD`、外部修饰)；
+2. `withIncomeUpdate` 时 `updateIncomeAndUpkeep()`(收入/维护 stat 写入)；
+3. `applyAICoreModifiers()`：按 `aiCoreId` 派发 `applyAlphaCoreModifiers` / `applyBetaCoreModifiers` / `applyGammaCoreModifiers`(无 core 时 `applyNoAICoreModifiers`)；
+4. `applyImproveModifiers()`(改良状态)；
+5. 移民修饰注册、特殊物品效果 (requirements 满足才 `effect.apply(this)`，否则 `effect.unapply(this)`)。
+
+市场侧的两个驱动点 (`Market`)：
+
+* `Market.advance(amount)`：**稳定度取整值变化时**触发 `reapplyConditions()` + `reapplyIndustries()` + `updatePrices()`。
+    *   随后对 `new ArrayList<>(industries)` 逐个 `advance(amount)`—— 产业每帧推进挂在市场推进上；
+* `Market.reapplyIndustries()`：`getAdmin().getStats().refreshGovernedOutpostEffects(this)` → 对每个产业 `unapply()` + `apply()`。
+    *   随后 `PopulationAndInfrastructure.modifyUpkeepByHazardRating(market, "upkeep_hazard_mod")`(维护费 × 危险度修饰统一在产业重算尾部补上)。
+
+必须遵守的规则：供需与统计修饰只能写在 `apply()` 里
+
+`BaseIndustry.doPreSaveCleanup()` 在存档前把 `supply` / `demand` / `income` / `upkeep` 全部置 null，`doPostSaveRestore()` 重建空 map—— 供需只能由 `apply()` 每轮重建。只写在构造器或 `init` 里的供需，读档后全部消失且无报错。
+
+这是本节第一条必须遵守的规则 (见 "规则强度")。
+
+生命周期决定回调何时运行，供需链回答回调里写什么：产业对商品流的全部影响，都来自 `supply(...)` / `demand(...)` 写入 `MutableStat` 的数量修饰。
+
+### 供需链
+
+`BaseIndustry` 持有 `supply` / `demand` 两个 `Map<String, MutableCommodityQuantity>`；`getSupply(id)` / `getDemand(id)` 用到时才创建条目。
+
+* **写入**：`supply(modId, commodityId, quantity, desc)` / `demand(...)` 在 `getQuantity()`(`MutableStat`) 上 `modifyFlat`；`quantity == 0` 时 `unmodifyFlat`("清掉这条供需" 的正式写法)。
+    *   默认 modId 族 = `"ind_<id>"`(索引 0) 与 `"ind_<id>_<n>"`；`quantity > 0` 时把 `supplyBonus` / `demandReduction` 的生效值合并写入 `"ind_sb"` / `"ind_dr"`——**alpha core 的 "产量 +1" 就是这条路径**。
+* **收入与维护**：`updateIncomeAndUpkeep()` → `applyIncomeAndUpkeep(size)`：`sizeMult = max(1, market.getSize() - 2)`。
+    *   `income = (int)(spec.getIncome() × sizeMult)` 写 `"ind_base"` flat + `"ind_stability"` mult(市场收入倍率)；`upkeep = (int)(spec.getUpkeep() × sizeMult)` 写 `"ind_base"` + `"ind_hazard"` mult(市场维护倍率)。
+    *   随后 `applyAICoreToIncomeAndUpkeep()`(alpha/beta → `"ind_core"` × `UPKEEP_MULT = 0.75`，gamma 无)；**`!isFunctional()` 时收入修饰被移除** —— 建设中与中断中的产业不产生收入。
+* **缺货**：`getMaxDeficit(commodityIds...)` 返回 `(商品, 缺口)`，缺口 = `getDemand(id).getQuantity().getModifiedInt() − market.getCommodityData(id).getAvailable()`。
+    *   `getAllDeficit(...)` 返回全部正缺口列表；`applyDeficitToProduction(index, deficit, commodities...)` 对列出的商品写负供给 (desc 为 "X shortage")。
+    *   **且只对已声明过供给的商品生效** (`if (getSupply(commodity).getQuantity().isUnmodified()) continue;`)。
+* **读取 (经济步)**：经济步每次迭代重建商品可达图 (`CommodityMarketDataAPI` 构造器)：对每个市场、每个商品调 `updateMaxSupplyAndDemand()`(`CommodityOnMarketAPI.updateMaxSupplyAndDemand`)。
+    *   **maxSupply / maxDemand = 该市场所有产业中同商品供需的最大值** (不是总和)，同时记下该产业对 max 值的合法性判定 (`isSupplyLegal` / `isDemandLegal`)。
+    *   主商品 (`CommoditySpecAPI.isPrimary()`) 的 maxDemand 还会沿 demand class 传播给同类的其他商品。
+    *   价格与库存写入沿用市场与商品流主题已介绍的 `updateStockpileAndPriceV2`。
+    *   需求侧定价按商品的 `demand class`(`commodities.csv` 的 `demand class` 列：`supplies` / `fuel` / `crew` / `organics` / `heavy_machinery` / `domestic_goods` / `drugs` 等) 聚合到 `MarketDemandAPI`。
+
+背景：为什么商品流按 "最大值" 而非 "总和" 统计
+
+多个产业可能供给同一商品 (例如本节示例与其它产业都产 `crew`)。
+
+经济步的 `CommodityOnMarketAPI.updateMaxSupplyAndDemand` 对 "该市场所有产业中同商品" 取最大值作为 `maxSupply` / `maxDemand`，而不是把各产业数量相加 —— 市场总量以 "单一最强供给/需求" 为口径。
+
+读商品流数字与定价时按这个口径理解，不要按总和预期。
+
+可观察结果形成完整流程：产业 tooltip 的 Production / Demand & effects 区块 (`BaseIndustry.createTooltip`) 按供需 map 的修饰值渲染图标；经济 UI 的短缺/过剩按 `CommodityMarketDataAPI` 的结果显示。
+
+供需让一个建成的产业参与经济；建设与升级链则决定产业如何从无到有、从低级到高级。
+
+### 建设与升级链
+
+状态字段：`building` / `buildProgress` / `buildTime` / `upgradeId`。
+
+入口
+
+行为 (`BaseIndustry`)
+
+`startBuilding()`
+
+`building = true`、进度归零、`upgradeId = null`、`buildTime = spec.getBuildTime()`，然后 **`unapply()`**—— 建设中的产业立刻停摆 (`isFunctional()` = `!(building && !isUpgrading())`)
+
+`advance(amount)`
+
+`building && !disrupted` 时 `buildProgress += convertToDays(amount)`；达到 `buildTime` 调 `finishBuildingOrUpgrading()`。**中断期间建设暂停**
+
+`finishBuildingOrUpgrading()`
+
+升级分支 (`upgradeId != null`)：`market.removeIndustry(getId(), null, true)` → `market.addIndustry(upgradeId)` → 把 `aiCoreId` / `improved` 迁移到新产业 → `upgradeFinished(previous)`(迁移特殊物品)→ 新产业 `reapply()`。首次建设分支：`buildingFinished()`(通知 + 队列下一项)→ `reapply()`
+
+`startUpgrading()`
+
+`building = true`、进度归零、`upgradeId = spec.getUpgrade()`、`buildTime = 升级 spec 的 buildTime`；**升级目标 spec 必须已注册**，否则 `getIndustrySpec(upgradeId)` 返回 null → 取 `getBuildTime()` 时 NPE
+
+`downgrade()`
+
+`building = true`、`upgradeId = spec.getDowngrade()`，立即 `finishBuildingOrUpgrading()`—— 降级走同一条完成链 (同样要求降级目标已注册)
+
+`cancelUpgrade()`
+
+复位 `building` / 进度 / `upgradeId`
+
+UI 使用方 (产业交互对话框)：升级确认扣款后调 `startUpgrading()`；降级确认后调 `downgrade()` 并返还退款；关停调 `market.removeIndustry(id, interactionMode, false)`。
+
+tooltip 的升级入口只在 `getSpec().getUpgrade() != null && !isBuilding()` 时出现 (`BaseIndustry.createTooltip`)。
+
+建设队列 (`ConstructionQueue`，`com.fs.starfarer.api.impl.campaign.econ.impl.ConstructionQueue`)：`MarketAPI.getConstructionQueue()` 是队列容器，`addToEnd(id, cost)` 入队；
+
+`Market.advance` 在 "队列非空且当前无在建产业" 时调 `BaseIndustry.buildNextInQueue(market)`：逐个弹出，`isAvailableToBuild()` 且未超产业上限才开工 (`addIndustry` + `startBuilding` + 成本 override)。
+
+否则给用户退款并记 "Construction aborted" intel。
+
+产业位上限：`Misc.getMaxIndustries(market)` = `market.getStats().getDynamic().getMod(Stats.MAX_INDUSTRIES).computeEffective(0)`(`Misc`)；
+
+该 mod 由 `population` 产业 (`PopulationAndInfrastructure.apply`) 写入 `getMaxIndustries(size)`，读 settings `maxIndustries` 数组 (`[1,1,1,2,3,4,4,4,4,4]`，size 1–10 减一索引)——**size 1–3 的殖民地最多 1 个产业位**。
+
+超出时 `PopulationAndInfrastructure` 施加稳定度惩罚 (`Misc.OVER_MAX_INDUSTRIES_PENALTY` = settings `overMaxIndustriesPenalty` = 5)。
+
+`Misc.getNumIndustries(market)` 只统计 `isIndustry()` 的产业 (升级中的按升级目标算)。
+
+`isAvailableToBuild()`：市场无 `MARKET_NO_INDUSTRIES_ALLOWED` tag、已有 `population` 产业且自身不是 `population`。
+
+建设链会迁移产业的状态，AI core 正是其中最常被迁移的一种：它同时改供需、维护与 Luddic Path 关注度，而且修饰必须成对撤销。
+
+### AI core 链
+
+* 安装：`setAICoreId(String)` 写入 `aiCoreId`；`canInstallAICores()` 默认 true(`population` 等少数产业覆写为 false 的语义以各自类为准)。
+    *   UI 安装/卸下走 AI core 选择对话框 (产业交互对话框)。
+* 应用：`apply()` → `applyAICoreModifiers()` 按 core 派发四个**空实现钩子**：`applyAlphaCoreModifiers` / `applyBetaCoreModifiers` / `applyGammaCoreModifiers` / `applyNoAICoreModifiers`。
+    *   自定义核心效果写这里。
+* 供需侧 (`updateAICoreToSupplyAndDemandModifiers`)：alpha → `supplyBonus +1` 且 `demandReduction +1`；beta / gamma → 仅 `demandReduction +1`。
+    *   "产量 +1 / 需求 −1 单位" 就是 `SUPPLY_BONUS = 1` / `DEMAND_REDUCTION = 1`。
+* 维护侧 (`applyAICoreToIncomeAndUpkeep`)：alpha / beta → 维护费 × `0.75`(`"ind_core"` mult)；gamma → 无。
+* 关注度：`getPatherInterest()`：alpha +4 / beta +2 / gamma +1，另加特殊物品的 pather tag 权重。
+* 卸载/移除：`unapply()` 第一步调 `applyNoAICoreModifiers()`—— **自定义核心修饰必须在这里成对撤销**。
+    *   `notifyBeingRemoved(mode, forUpgrade)` 在非升级移除时把 `aiCoreId` 与特殊物品返还给 cargo(`REMOTE` 交互进存储、其余进用户舰队)。
+* 管理员人物：`AICoreAdminPlugin`(`com.fs.starfarer.api.campaign.AICoreAdminPlugin`) 唯一方法是 `PersonAPI createPerson(String aiCoreId, String factionId, long seed)`。
+    *   由实现类 (原版 `AICoreAdminPluginImpl`) 使用，用于把 AI core 变成殖民地管理员/官员。
+
+### Disruption 链
+
+状态不存产业对象，**存市场 memory**：
+
+1. key：`getDisruptedKey()` = `"$core_disrupted_" + getClass().getSimpleName()`—— **按 Java 类名生成**，同一市场内共用同一 Java 类的多个产业 (不同 spec id) 共享同一个 key；
+
+共用同一 Java 类的多个产业共享同一个 disruption key
+
+同一市场内两个不同 spec id 但共用同一 plugin 类的产业 (原版 farming / aquaculture 都 `extends Farming`) 共享同一个 key：对其中一个施放 disruption，另一个也会被中断。这类产业必须覆写 `getDisruptedKey()` 区分 (如加 spec id 后缀)。
+
+2. 施加：`setDisrupted(float days)` = `setDisrupted(days, false)`；`setDisrupted(days, useMax)` 先过 `canBeDisrupted()`(默认 true；`population` 覆写为 false)。
+    *   `useMax = true` 时取 `max(现有剩余, days)`(`MemoryAPI.getExpire(key)`)，`useMax = false` 直接覆盖。
+    *   `dur <= 0` 时 `memory.unset(key)`，否则 `memory.set(key, true, dur)`(带天数的过期标记)。
+    *   从未中断变中断时调 `notifyDisrupted()`。
+3. 读取：`isDisrupted()` = `memory.is(key, true)`；`getDisruptedDays()` = `memory.getExpire(key)`(负数归零)；
+4. 结束：`advance(amount)` 检测 `isDisrupted()` 从 true 翻回 false → `disruptionFinished()`(两个钩子默认空实现)。
+
+中断期间的可观察行为：`isFunctional()` 恒 false → 供需 map 里 "生产中" 的判定失效、`applyIncomeAndUpkeep` 移除收入；`getBuildOrUpgradeProgress()` 返回 0；`advance` 的进度累积被 `!disrupted` 条件跳过 (建设暂停)。
+
+tooltip 显示红字 `Operations disrupted! X days until return to normal function.`；`getBuildOrUpgradeDaysText()` / `getBuildOrUpgradeProgressText()` 显示 `Disrupted: X days left`。
+
+`getDisruptedDays()` 是剩余中断天数，不是剩余建设时间
+
+建设剩余时间 = `buildTime − buildProgress`；中断期间建设暂停、进度冻结，要显示 "还剩多少天恢复" 应读 `getDisruptedDays()`。两套读数口径不同，直接混用会让 UI 数字与 tooltip 对不上。
+
+三个原版触发方 (都在公开 API 面 `com.fs.starfarer.api.impl.campaign.*`)：
+
+* **陆战队突袭**：`MarketCMD`(`com.fs.starfarer.api.impl.campaign.rulecmd.salvage.MarketCMD`) 的 "中断产业" 目标用 `DisruptIndustryRaidObjectivePluginImpl`。
+    *   时长 = `marineTokens × spec.getDisruptDanger().disruptionDays − 已中断天数`，`disruptDanger` 列取值见 `RaidDangerLevel` 枚举 (NONE 60 / MINIMAL 50 / LOW 40 / MEDIUM 30 / HIGH 20 / EXTREME 10 天)；
+* **Hegemony AI 审查**：`com.fs.starfarer.api.impl.campaign.intel.inspection.HIActionStage` 以 `curr.setDisrupted((intel.getRandom().nextFloat() * 45f) + 15f)` 施放 ——15–60 天；
+* **Luddic Path 细胞**：`com.fs.starfarer.api.impl.campaign.intel.bases.LuddicPathCellsIntel` 以 `target.setDisrupted(disruptionDur, true)` 施放。
+    *   `useMax = true` 保留较长剩余时间。
+
+AI core 提高 Luddic Path 的关注度，disruption 正是外部行动打断产业的方式 —— 它的状态存放位置与其他字段都不同。
+
+## 规则强度
+
+本节必须遵守的规则清单 ("必须/禁止"，均附违反后的可观察结果)：
+
+规则
+
+强度
+
+违反后的可观察结果
+
+产业 id 必须已在 `industries.csv` 注册后才可 `addIndustry` / `instantiateIndustry` / 用作 `upgrade` / `downgrade` 列目标 (`Market.addIndustry` 抛 `RuntimeException("Industry [...] not found")`；`startUpgrading` 对未注册目标 `getIndustrySpec` 返回 null 后取 `getBuildTime()` NPE)
+
+必须
+
+`addIndustry` 抛 `RuntimeException`、产业不出现且流程中断；升级启动瞬间 NPE；升级完成时 `addIndustry(upgradeId)` 抛异常
+
+供需、收入/维护与统计修饰必须写在 `apply()` 里，禁止只在构造器 / `init` 写入 (`doPreSaveCleanup` 置空四个 map，`doPostSaveRestore` 重建空 map)
+
+必须
+
+存档后读档，产业 tooltip 与商品流中的供需条目全部消失、无报错
+
+想在缺货时被 `applyDeficitToProduction` 削减的商品，必须先 `supply(...)` 声明 (`if (getSupply(commodity).getQuantity().isUnmodified()) continue;`)
+
+必须
+
+缺货时该商品产量不减、tooltip 无 shortage 削减显示
+
+升级 / 降级必须由 `startUpgrading` / `downgrade` → `finishBuildingOrUpgrading` 驱动，其中 `removeIndustry(id, null, true)` 的 `forUpgrade` 必须为 true
+
+必须
+
+自定义替换链传 `false` 时 AI core / 特殊物品被 `notifyBeingRemoved` 返还 cargo，同时新产业仍继承一份 —— 物品被复制；传错完成时机则队列与 intel 通知缺失
+
+AI core 自定义修饰必须成对：`applyAlpha/Beta/GammaCoreModifiers` 里加的修饰必须在 `applyNoAICoreModifiers` 撤销 (`unapply()` 第一步就是 `applyNoAICoreModifiers`)
+
+必须
+
+卸下 core 或产业重算后修饰残留且反复叠加 (如稳定度 +1 永不消失)
+
+同一市场内共用同一 Java 类的多个产业 (如不同 spec id 同一 plugin 类)，必须覆写 `getDisruptedKey()` 区分
+
+必须
+
+对其中一个施放 disruption，同市场同类产业全部进入中断 (key 由类名生成)；原版 farming / aquaculture 共用 `Farming` 类即存在此语义
+
+修改供需后不要期待当前帧的 `getAvailable()` / 价格立即变化
+
+建议
+
+数值在下一个经济步 (每月 10 次迭代) 才被抓取重算；要立即反映用 `EconomyAPI.forceStockpileUpdate(market)`
+
+`getDisruptedDays()` 是 "剩余中断天数"，不是剩余建设时间 (建设剩余 = `buildTime − buildProgress`)
+
+必须
+
+把中断天数当剩余建设时间显示，UI 数字与 tooltip 对不上
+
+中断期间的产业收入被移除、建设暂停 (`applyIncomeAndUpkeep`；`advance`)
+
+必须
+
+在 `advance` 里无视 disruption 继续累积 `buildProgress` 会与基类语义冲突 (进度在恢复后 "跳变")
+
+规则表之外，本节用一个可运行的产业把四条链串起来 —— 下面制作 `GearIn_training_industry`。
+
+## 实现产业升级流程
+
+产业必须先由 CSV 注册，再由 `BaseIndustry` 子类提供运行时行为。下面按注册、供需、缺货、AI core、中断和安装的顺序逐段接通。
+
+### 注册产业规格
+
+插入位置：MOD 自己的 `data/campaign/industries.csv`。ID、升级目标与 plugin 类名在这一行建立静态关系。
+
+```text
+GearIn_training_industry,GearIn Training Industry,20,60,,2,,militarybase,"training, industry, industrial",,graphics/icons/industry/light_industry.png,data.scripts.gearin.campaign.GearInTrainingIndustry,"A facility that trains serviceable crew.",250,LOW
+```
+
+完成信号：`SettingsAPI.getIndustrySpec("GearIn_training_industry")` 返回非 null，`getUpgrade()` 为 `militarybase`，plugin 类能无参实例化。
+
+### 声明供需
+
+插入位置：`GearInTrainingIndustry.apply`，紧接 `super.apply(true)`。市场规模同时决定训练耗材、教官和结业船员的数量。
 
 ```java
-float var9 = this.getClock().convertToDays(var1);
-if (!this.isPaused()) {
-    this.listenersWithTimeout.advance(var9);
+int size = market.getSize();
+demand(Commodities.SUPPLIES, size, "Training operations");
+demand(Commodities.CREW, Math.max(1, size / 2), "Instructors");
+supply(Commodities.CREW, Math.max(1, size - 2), "Trained crew");
+```
+
+完成信号：size 3 市场显示 supplies 需求 3、crew 需求 1、crew 供给 1；保存读档后这些条目由 `apply()` 重建。
+
+### 让耗材短缺削减产出
+
+插入位置：供需声明之后。先从 supplies 需求计算最大缺口，再把缺口施加到已声明的 crew 供给；非功能状态清空生产。
+
+```java
+Pair<String, Integer> deficit = getMaxDeficit(Commodities.SUPPLIES);
+applyDeficitToProduction(1, deficit, Commodities.CREW);
+
+if (!isFunctional()) {
+	supply.clear();
 }
 ```
 
-**`daysToKeep` 的单位是游戏天** (不是真实秒)；每帧按本帧折合的游戏天数扣减，且**只在未暂停时扣减** —— 暂停期间超时冻结。扣减到 0 后由 `TimeoutTracker.advance` 自动移除。
+完成信号：supplies 可得量不足时 crew 产出下降；建设或中断期间 tooltip 不再显示有效产出。
 
-::: warning 常见坑：超时单位误用
+### 成对应用 AI core 修饰
 
-`addListenerWithTimeout` / `reRegister` 的 `daysToKeep` 是**游戏天** (10 真实秒 = 1 游戏日)，且只在未暂停时扣减。把超时当真实秒、或以为暂停也在计时，都会得到 "永不超时 / 超时过慢" 的假象 (对应故障分析第 5 条)。
+插入位置：`GearInTrainingIndustry` 的 AI core 钩子。两个方法使用同一个修饰 ID，安装 Alpha core 增加稳定度，卸下或重算时撤销。
 
-:::
+```java
+@Override
+protected void applyAlphaCoreModifiers() {
+	market.getStability().modifyFlat(getModId(2), 1,
+			"Alpha core (" + getNameForModifier() + ")");
+}
 
-帮助类 (公开 API)：
+@Override
+protected void applyNoAICoreModifiers() {
+	market.getStability().unmodifyFlat(getModId(2));
+}
+```
 
-- `BaseCampaignEventListener(boolean permaRegister)`(`com.fs.starfarer.api.campaign.BaseCampaignEventListener`)：
-  - `CampaignEventListener` 的**全方法空实现**，`permaRegister=true` 时构造器直接 `Global.getSector().addListener(this)`；
-  - `reRegister(float daysToKeep)` 等价 `addListenerWithTimeout(this, daysToKeep)`；
-  - 覆写关心的方法即可，不必实现 21 个方法的全接口。
-- `BaseCampaignEventListenerAndScript(float days)`(`com.fs.starfarer.api.campaign.BaseCampaignEventListenerAndScript`)：监听器与 `EveryFrameScript` 绑定在同一对象上的基类，构造器按 days 以超时方式注册监听器。
+完成信号：安装 Alpha core 后稳定度增加 1，卸下后 `ind_GearIn_training_industry_2` 修饰消失，反复 reapply 不叠加。
 
-### 通道二：ListenerManagerAPI 类型化通道
+### 施加并解除产业中断
 
-通道一按对象存监听器，回调却按接口签名区分；`SectorAPI` 里的 `listenerManager` 就是按接口类型组织的第二通道。
+插入位置：调试入口调用 `runDisruptionProbe`，其核心动作使用公开 `Industry` 接口。10 天中断写入后立即读取状态，再以 0 天解除。
 
-`SectorAPI.getListenerManager()` 返回 `ListenerManagerAPI`(`com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI`，7 个方法)：
+```java
+Industry industry = market.getIndustry(INDUSTRY_ID);
+industry.setDisrupted(10f, false);
+LOG.info("disrupted=" + industry.isDisrupted()
+		+ " days=" + industry.getDisruptedDays()
+		+ " functional=" + industry.isFunctional());
+industry.setDisrupted(0f);
+```
 
-| 方法 | 语义 |
-|---|---|
-| `void addListener(Object listener)` | 注册到持久仓库 |
-| `void addListener(Object listener, boolean isTransient)` | `isTransient=true` 注册到 transient 仓库 |
-| `void removeListener(Object listener)` | 从两个仓库同时移除 |
-| `void removeListenerOfClass(Class<?> c)` | 按类从两个仓库批量移除 |
-| `boolean hasListener(Object listener)` | 两个仓库都查 |
-| `boolean hasListenerOfClass(Class<?> c)` | 两仓库任一生效 |
-| `<T> List<T> getListeners(Class<T> c)` | 返回持久 + transient 并集的**新列表副本** |
+完成信号：期间显示 `disrupted=true`、约 10 天、`functional=false`；解除后剩余天数为 0 且恢复功能状态。
 
-实现 (`ListenerManagerAPI`)：内部由两个仓库构成 ——`listeners`(持久) 与 `transientListeners`(transient，读档时重建)。语义要点：
+### 在生涯市场安装产业
 
-- `addListener` / `addListener(listener, true)` 直接写入对应仓库，**`ListenerManagerAPI` 自身没有任何去重检查** (与通道一的 `contains` 去重不同；不要依赖 "重复注册会被自动去重")。
-- `removeListener` 同时清两个仓库；`removeListenerOfClass` 遍历两个仓库的**快照**逐个移除 (安全改列表)；`getListeners` 返回两仓库并集的新列表，派发侧遍历的是这份副本。
-- 持久性：`ListenerManagerAPI` 实例随存档保存；transient 仓库读档后必然清空。
+插入位置：既有 `GearInModPlugin.onGameLoad` 的独立 persistent data 判断块。先确认目标市场和 spec，再加入产业并运行观察助手。
 
-派发：所有类型化事件由公开 API 的 `ListenerUtil`(`com.fs.starfarer.api.campaign.listeners.ListenerUtil`) 静态方法族派发。
+```java
+MarketAPI market = Global.getSector().getEconomy().getMarket("corvus_IIIa");
+if (market != null
+		&& Global.getSettings().getIndustrySpec(GearInTrainingIndustry.INDUSTRY_ID) != null
+		&& !market.hasIndustry(GearInTrainingIndustry.INDUSTRY_ID)) {
+	market.addIndustry(GearInTrainingIndustry.INDUSTRY_ID);
+	GearInTrainingIndustry.logState(market);
+	GearInTrainingIndustry.runDisruptionProbe(market);
+}
+```
 
-模式统一为 `for (X x : Global.getSector().getListenerManager().getListeners(X.class)) { x.report...( ... ); }`(约 50 个事件方法)。
+完成信号：产业只安装一次，日志能读到 `upgrade=militarybase`，读档时不会重复添加。
 
-类型化接口 40 余个，都在 `com.fs.starfarer.api.campaign.listeners` 包下：
-- `ColonyInteractionListener`、`FleetEventListener`、`EconomyTickListener`；
-- `CurrentLocationChangedListener`、`CargoGainedListener`、`DiscoverEntityListener`；
-- `GateTransitListener` 等。
+## 组装产业升级实现
 
-::: warning 常见坑：双通道并存，同一对象只走一条
+示例所有权：`GearInTrainingIndustry`(产业 id `GearIn_training_industry`，本节拥有)。
 
-部分事件两个通道都会派发。
+在既有示例的 MOD 布局与 `GearInModPlugin` 之上新增：一条 `industries.csv` 注册行 (数据文件，位于 `data\campaign\industries.csv`，用 CSV 合并语义提交自己的行)、一个演示类 (本节所有)。
 
-例：`reportPlayerOpenedMarket` 派发时先遍历 `getAllListeners()` 调用 `CampaignEventListener.reportPlayerOpenedMarket`。
-
-随后再调 `ListenerUtil.reportPlayerOpenedMarket` 派发 `ColonyInteractionListener`。
-
-同一对象不要同时注册两条通道，否则同一事件回调双份。
-
-:::
-
-### CampaignEventListener 全接口方法
-
-`CampaignEventListener` 是唯一需要记全方法签名的接口。21 个方法按事件边界分组：
-
-| 分组 | 方法 | 触发边界 |
-|---|---|---|
-| 市场 | `reportPlayerOpenedMarket(MarketAPI)` / `reportPlayerClosedMarket(MarketAPI)` / `reportPlayerOpenedMarketAndCargoUpdated(MarketAPI)` | 玩家打开/关闭市场交互；打开市场且货物刷新后 |
-| 贸易 | `reportPlayerMarketTransaction(PlayerMarketTransaction)` / `reportPlayerDumpedCargo(CargoAPI)` / `reportPlayerDidNotTakeCargo(CargoAPI)` / `reportEncounterLootGenerated(FleetEncounterContextPlugin, CargoAPI)` | 贸易/整备结算、倾倒货物、未取走战利品、遭遇战利品生成 |
-| 战斗 | `reportBattleOccurred(CampaignFleetAPI primaryWinner, BattleAPI)` / `reportBattleFinished(CampaignFleetAPI, BattleAPI)` / `reportPlayerEngagement(EngagementResultAPI)` | 战斗发生/结束 (含 AI vs AI 自动结算)、玩家战斗结算 |
-| 舰队 | `reportFleetSpawned(CampaignFleetAPI)` / `reportFleetDespawned(CampaignFleetAPI, FleetDespawnReason, Object param)` / `reportFleetReachedEntity(CampaignFleetAPI, SectorEntityToken)` / `reportFleetJumped(CampaignFleetAPI, SectorEntityToken from, JumpDestination to)` | 舰队入地/离场/到达目标/跳跃 |
-| 声望 | `reportPlayerReputationChange(String faction, float delta)` / `reportPlayerReputationChange(PersonAPI person, float delta)` | 玩家对势力/人物的声望变更 |
-| 能力 | `reportPlayerActivatedAbility(AbilityPlugin, Object param)` / `reportPlayerDeactivatedAbility(AbilityPlugin, Object param)` | 玩家激活/停用能力 |
-| 对话框 | `reportShownInteractionDialog(InteractionDialogAPI)` | 玩家打开任意交互对话框 |
-| 经济 | `reportEconomyTick(int iterIndex)` / `reportEconomyMonthEnd()` | 每次经济迭代、每月末 |
-
-`FleetDespawnReason` 枚举恰 6 值：
-- `REACHED_DESTINATION`(param 是 `SectorEntityToken`)；
-- `DESTROYED_BY_BATTLE`(param 是战斗前快照的 `BattleAPI`)；
-- `NO_MEMBERS`
-- `OTHER`
-- `NO_REASON_PROVIDED`
-- `PLAYER_FAR_AWAY`
-
-### 事件边界：触发点表现
-
-方法签名只说明回调能拿到什么，触发时机要落到引擎的实现位置。以下触发点是 "事件边界" 判定的依据：
-
-| 事件 | 触发点 (具体表现)|
-|---|---|
-| 市场开启/关闭 | 打开市场交互对话框时 `reportPlayerOpenedMarket`，对话框关闭时 `reportPlayerClosedMarket`；打开贸易面板时 `reportPlayerOpenedMarketAndCargoUpdated` |
-| 贸易结算 | 贸易面板与整备界面 (舰船、武器、战机) 结算后 `reportPlayerMarketTransaction`；倾倒货物、未取走战利品也经贸易面板触发 |
-| 战斗发生/结束 | 自动结算轮结算出胜者后 `reportBattleOccurred`、战斗结束 `reportBattleFinished`；AI vs AI 每个自动结算轮一次、玩家遭遇战一次；玩家战斗结算生成 `EngagementResultAPI` 后 `reportPlayerEngagement`(`com.fs.starfarer.api.impl.campaign.FleetEncounterContext`)；战利品生成 `reportEncounterLootGenerated`(`com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`)|
-| 舰队入地 | 舰队加入地点且未上报过 (`isReportedSpawned` 标志) 时 `reportFleetSpawned`—— 每支舰队只上报一次 |
-| 舰队离场 | `CampaignFleetAPI.despawn(FleetDespawnReason, Object)` 内 `reportFleetDespawned`——reason 与 param 由调用方决定 |
-| 舰队跳跃/到达 | 超空间跳跃处理上报 `reportFleetJumped`(devmode 跳跃同样触发)；舰队 AI 到达 assignment 目标时上报 `reportFleetReachedEntity` |
-| 声望变更 | 声望行动处理插件结算后 `reportPlayerReputationChange`(`com.fs.starfarer.api.impl.campaign.CoreReputationPlugin`)|
-| 经济迭代 | 经济推进器每次迭代 `reportEconomyTick(iterIndex)`、月末 `reportEconomyMonthEnd`(同时派发类型化通道 `EconomyTickListener`)|
-| 当前位置变化 | 引擎检测到当前地点变化时经 `ListenerUtil.reportCurrentLocationChanged` 派发 (类型化通道 `CurrentLocationChangedListener`)|
-| 对话框 | 打开交互对话框后上报 `reportShowInteractionDialog`(`SectorAPI`)，随后回调 `CampaignEventListener.reportShownInteractionDialog` |
-| 遭遇开始 | 玩家舰队与实体接触形成遭遇时，引擎内部开始遭遇处理 (非公开 API，MOD 观察不到)；玩家侧后续以交互对话框/战斗事件体现 |
-| 能力开关 | 公开 API 有派发方法，具体触发点在引擎内部 —— 语义：玩家激活/停用能力时回调 |
-
-## 生命周期规则
-
-接口与边界回答 "有哪些事件、何时触发"，生命周期回答 "注册之后怎么办"。规则按强度分级：必须遵守的规则在前，建议在后。
-
-::: caution 监听器生命周期必须遵守的规则
-
-1. **必须**：监听器注册只发生在生涯引擎建立之后。
-   - `Global.getSector()` 在资源加载期为 null，在 `onApplicationLoad` 里注册的解引用即 NPE、启动中止。
-   - 注册入口：`onNewGame` / `onGameLoad`。
-2. **必须**：一次性注册用随存档保存的 persistent data 注册标记 (`CLASS_MARK` 模式，本节示例用各自键)。
-   - 通道一 `addListener` 虽然自带 `contains` 去重，但配对的生命周期脚本半身 `addScript` 不去重 —— 注册标记缺失的可观察结果是读档次数越多日志越成双、行为叠加。
-3. **必须**：监听器在不再需要时必须在合适时机移除 (`removeListener` / `removeListenerOfClass`)。
-   - 监听器一旦注册就持续被派发：常驻注册表的对象还随存档用 XStream 序列化。
-   - 违反的可观察结果：事件日志持续出现、行为持续叠加；监听器字段里的瞬态句柄或不可序列化状态拖进存档导致存档异常膨胀、保存/读档异常或读档后行为错乱。
-   - 成熟实例：事件 factor 类在构造器注册、`notifyFactorRemoved` 里 `removeListener(this)`。
-4. **必须**：transient 监听器 (`addTransientListener` / `addListener(listener, true)`) 读档后必须重新注册。
-   - 读档时两条通道的 transient 仓库都会被清空。
-   - 违反的可观察结果：读档后事件静默不触发、无任何报错。
-   - 成熟实例：用 `addListener(epGen, true)` 注册 transient 遭遇点生成器。
-5. **必须**：配对类 "脚本结束 ≠ 监听器移除"。
-   - `isDone() == true` 只让引擎从脚本列表清理脚本半身，**监听器注册表不会自动移除** —— 必须显式 `removeListener(this)`。
-   - 违反的可观察结果：脚本自停日志出现后事件回调仍持续 ("僵尸监听器")。
-
-:::
-
-建议 (建议强度)：
-
-- 常驻监听器 (与具体任务无关、全程有效) 在 `onGameLoad` 注册一次；临时监听器 (剧情、任务、事件 factor、遭遇点生成器) 用通道二注册并在结束时移除。
-- 注册前用 `hasListenerOfClass` / `hasListener` 查重 (成熟实例：先 `hasListenerOfClass` 再 `addListener`，随后 `getListeners(...).get(0)` 取回实例)。
-- 事件与玩家无关的过滤放在回调内 (如 `fleet.isPlayerFleet()`)，不要在回调外做全局开关。
-
-## 完整最小例
-
-规则落到代码。在既有 MOD 布局与 `GearInModPlugin` 之上新增三个类 (不新增任何资源)，对应两条注册通道：
-
-通道一 = 监听器 + 生命周期脚本配对 (`sector.addListener` / `sector.addScript`)；
-
-通道二 = 类型化监听器 (`getListenerManager().addListener(..., true)`)：
+先看数据侧的注册行 (自洽要求：`plugin` 列类名与本节 Java 类逐字一致，`upgrade` 列目标是已注册的原版 id `militarybase`—— 本节使用它演示升级链，不定义新 id)：
 
 ```text
-Starsector/mods/GearIndustry/
+GearIn_training_industry,GearIn Training Industry,20,60,,2,,militarybase,"training, industry, industrial",,graphics/icons/industry/light_industry.png,data.scripts.gearin.campaign.GearInTrainingIndustry,"A facility that puts recruits through a rigorous training regimen, turning idle hands into serviceable crew.",250,LOW
+```
+
+* `build time = 60`(游戏日)、`upkeep = 2`、`upgrade = militarybase`、`tags` 含 `industry`(`isIndustry()` 为 true，占产业位)、`disruptDanger = LOW`(40 天/令牌，见 `RaidDangerLevel`)；
+* `image` 列用原版路径 `graphics/icons/industry/light_industry.png` 占位 (全局资源集解析，核心自带该贴图；本节无资产，MOD 发布时替换为自己的贴图)。
+
+目录结构 (沿用既有示例页的布局，只新增加粗两项)：
+
+```text
+Starsector\mods\GearIndustry\
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
-├── data/
-├── src/
-│   └── data/scripts/gearin/campaign/
-│       ├── GearInCampaignListener        # 本节新增（通道一：Sector 级监听器）
-│       ├── GearInListenerLifecycleScript # 本节新增（通道一：生命周期脚本，与监听器配对）
-│       └── GearInLocationChangeListener  # 本节新增（通道二：ListenerManagerAPI 类型化监听器）
-└── jars/
+├── data\
+│   └── campaign\
+│       └── industries.csv      # 新增本节注册行（CSV 合并，勿改核心文件）
+├── src\
+│   └── data\scripts\gearin\campaign\
+│       └── GearInTrainingIndustry    # 本节新增（归本节所有）
+└── jars\
 ```
 
-### GearInCampaignListener(通道一：Sector 级监听器)
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.BaseCampaignEventListener;
-import com.fs.starfarer.api.campaign.BattleAPI;
-import com.fs.starfarer.api.campaign.CampaignEventListener.FleetDespawnReason;
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.CargoAPI;
-import com.fs.starfarer.api.campaign.FleetEncounterContextPlugin;
-import com.fs.starfarer.api.campaign.PlayerMarketTransaction;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.combat.EngagementResultAPI;
-
-/**
- * 完整最小例：Sector 级生涯事件监听器（CampaignEventListener 角色）。
- * 注册入口：onGameLoad 门控块（页面调用点片段，REGISTER_MARK 一次性门控）。
- * 注册与自停由配对脚本 GearInListenerLifecycleScript 管理 —— 脚本到期后显式
- * removeListener：脚本结束不等于监听器移除（硬规则）。BaseCampaignEventListener
- * 提供全接口 21 方法的空实现，本类只覆写关心的事件边界（市场/贸易/战斗/舰队/声望）。
- */
-public class GearInCampaignListener extends BaseCampaignEventListener {
-
-    /** 存档持久化标记：本监听器及其生命周期脚本是否已在该存档注册过（随存档保存）。 */
-    public static final String REGISTER_MARK = "GearIn_CampaignListener";
-
-    private static final Logger LOG = Global.getLogger(GearInCampaignListener.class);
-
-    /** 不在构造器自注册；注册由调用点在 onGameLoad 门控块内显式执行。 */
-    public GearInCampaignListener() {
-        super(false);
-    }
-
-    // ---- 事件边界：市场 ----
-
-    @Override
-    public void reportPlayerOpenedMarket(MarketAPI market) {
-        LOG.info(String.format("GearIn listener: market opened: %s (size %d)",
-                market.getName(), market.getSize()));
-    }
-
-    @Override
-    public void reportPlayerClosedMarket(MarketAPI market) {
-        LOG.info("GearIn listener: market closed: " + market.getName());
-    }
-
-    // ---- 事件边界：贸易 ----
-
-    @Override
-    public void reportPlayerMarketTransaction(PlayerMarketTransaction transaction) {
-        LOG.info(String.format("GearIn listener: trade at %s, credit value %.0f",
-                transaction.getMarket().getName(), transaction.getCreditValue()));
-    }
-
-    @Override
-    public void reportEncounterLootGenerated(FleetEncounterContextPlugin plugin, CargoAPI loot) {
-        LOG.info("GearIn listener: encounter loot generated, " + loot.getStacksCopy().size() + " stacks");
-    }
-
-    // ---- 事件边界：战斗 ----
-
-    @Override
-    public void reportBattleOccurred(CampaignFleetAPI primaryWinner, BattleAPI battle) {
-        LOG.info(String.format("GearIn listener: battle occurred, player involved=%s, winner=%s",
-                battle.isPlayerInvolved(), winnerName(primaryWinner)));
-    }
-
-    @Override
-    public void reportBattleFinished(CampaignFleetAPI primaryWinner, BattleAPI battle) {
-        LOG.info(String.format("GearIn listener: battle finished, player involved=%s, winner=%s",
-                battle.isPlayerInvolved(), winnerName(primaryWinner)));
-    }
-
-    @Override
-    public void reportPlayerEngagement(EngagementResultAPI result) {
-        LOG.info("GearIn listener: player engagement resolved, didPlayerWin=" + result.didPlayerWin());
-    }
-
-    // ---- 事件边界：舰队 ----
-
-    @Override
-    public void reportFleetSpawned(CampaignFleetAPI fleet) {
-        LOG.info("GearIn listener: fleet spawned: " + fleet.getName() + " (" + fleet.getFaction().getId() + ")");
-    }
-
-    @Override
-    public void reportFleetDespawned(CampaignFleetAPI fleet, FleetDespawnReason reason, Object param) {
-        LOG.info("GearIn listener: fleet despawned: " + fleet.getName() + ", reason=" + reason);
-    }
-
-    // ---- 事件边界：声望 ----
-
-    @Override
-    public void reportPlayerReputationChange(String faction, float delta) {
-        LOG.info(String.format("GearIn listener: reputation change vs faction %s by %+.2f", faction, delta));
-    }
-
-    @Override
-    public void reportPlayerReputationChange(PersonAPI person, float delta) {
-        LOG.info(String.format("GearIn listener: reputation change vs %s by %+.2f",
-                person.getName().getFullName(), delta));
-    }
-
-    private static String winnerName(CampaignFleetAPI fleet) {
-        if (fleet == null) {
-            return "none";
-        }
-        return fleet.getName() + " (" + fleet.getFaction().getId() + ")";
-    }
-}
-```
+### GearInTrainingIndustry
 
 对应关系：
 
-- `extends BaseCampaignEventListener`：全接口 21 个方法的空实现，本类只覆写关心的 11 个事件方法 (市场/贸易/战斗/舰队/声望五个事件边界)。
-- `super(false)`：不在构造器自注册 (区别于 `permaRegister=true` 的自动注册写法)，注册统一收敛到调用点的注册块，符合本教程的注册纪律。
-- `REGISTER_MARK`：persistent data 注册标记键，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；它标记 "监听器 + 生命周期脚本" 成对注册，由调用点统一检查。
-- 注册入口：调用点的注册块内 `sector.addListener(listener)`(通道一持久列表)。
-- 回调全部只读公开 API 入参并打日志：`market.getName()` / `getSize()`、`transaction.getMarket().getName()` / `getCreditValue()`、`battle.isPlayerInvolved()`、`result.didPlayerWin()`、`loot.getStacksCopy().size()`、`fleet.getFaction().getId()`、`person.getName().getFullName()`。
+* `implements` 侧：`extends BaseIndustry` 继承全部默认行为 (供需 map、收入/维护 stat、建设状态、AI core 派发、disruption memory 键)；类只写四类扩展点 —— `apply()` / `unapply()`、AI core 成对钩子、disruption 钩子、两个静态观察助手。
+* `INDUSTRY_ID` 与 `industries.csv` 的 `id` 列、`plugin` 列与本类全名**三者逐字一致** (`Market.addIndustry` 按 id 查 spec、按 plugin 类名实例化)。
+* `UPGRADE_TARGET_ID = "militarybase"`：只用于与 CSV 行互相核对，运行时不读取它 —— 升级链真正使用的是 `getSpec().getUpgrade()`(CSV `upgrade` 列)。
+    *   升级完成时 `finishBuildingOrUpgrading` 会 `removeIndustry` + `addIndustry("militarybase")` 并迁移 AI core / 改良 / 特殊物品 (`BaseIndustry`)。
+* `apply()` 里 `super.apply(true)` 先跑基类汇总 (供需 bonus、收入/维护、AI core、改良)，再写本产业的供需与缺货削减；`isFunctional()` 为 false(建设中/中断) 时清空供给。
+* `applyAlphaCoreModifiers` / `applyNoAICoreModifiers` 用 `getModId(2)`(= `"ind_GearIn_training_industry_2"`) 成对加减稳定度：安装 alpha core 市场稳定度 +1，卸下/重算即撤销 (成对写法见 "规则强度" 的规则)。
+* `runDisruptionProbe` 全程用公开 API(`setDisrupted` / `isDisrupted` / `getDisruptedDays` / `setDisrupted(0f)`)，当帧清除、无持久残留 (`setDisrupted(0f)` → `memory.unset(key)`)。
 
-### GearInListenerLifecycleScript(通道一：生命周期脚本)
+观察助手可以复用
 
-```java
-package data.scripts.gearin.campaign;
+`logState` 与 `runDisruptionProbe` 都是静态方法，不依赖本节调用点 —— 任何代码 (控制台、其它回调、调试入口) 都可以直接调用：`logState(market)` 打印本产业的供需/收入/建设/中断全状态；
 
-import org.apache.log4j.Logger;
+`runDisruptionProbe(market)` 施放并立即清除 10 天 disruption，用于核对 `setDisrupted` / `isDisrupted` / `getDisruptedDays` 链路。
 
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignClockAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
-
-/**
- * 完整最小例：监听器生命周期脚本（EveryFrameScript 角色）。
- *
- * 与 GearInCampaignListener（监听器角色）配对：原组合类拆分出的脚本半身。
- * 注册入口：onGameLoad 门控块内与监听器一同注册（sector.addScript(this)）。
- * 职责：按游戏天累计挂载时长，daysToLive >= 0 且到期时显式
- * sector.removeListener(listener) 并自停 ——isDone() 只清理脚本列表，
- * 监听器注册表必须单独移除，否则事件继续派发且实例随存档序列化（硬规则）。
- */
-public class GearInListenerLifecycleScript implements EveryFrameScript {
-
-    private static final Logger LOG = Global.getLogger(GearInListenerLifecycleScript.class);
-
-    /** 受管监听器：到期时由本脚本显式移除。 */
-    private GearInCampaignListener listener;
-
-    /** 挂载以来的游戏天数（精确累加，保留小数）；随存档序列化，读档后继续累计。 */
-    private float daysActive = 0f;
-
-    /** 演示参数：挂载满多少游戏天后自停并移除监听器；< 0 表示常驻不停止。 */
-    private int daysToLive = -1;
-
-    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
-    private boolean done = false;
-
-    public GearInListenerLifecycleScript(GearInCampaignListener listener) {
-        this.listener = listener;
-    }
-
-    /** 修改自停天数；改回 -1 恢复常驻。 */
-    public void setDaysToLive(int daysToLive) {
-        this.daysToLive = daysToLive;
-    }
-
-    @Override
-    public boolean isDone() {
-        return done;
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        SectorAPI sector = Global.getSector();
-        CampaignClockAPI clock = sector.getClock();
-
-        // amount 是上一帧真实秒数；经时钟换算才是本帧的游戏天数（10 真实秒 = 1 游戏日）。
-        daysActive += clock.convertToDays(amount);
-
-        if (daysToLive >= 0 && daysActive >= daysToLive) {
-            done = true;
-            // 硬规则：脚本结束不等于监听器移除。isDone() 只清理脚本列表，
-            // 监听器注册表必须显式 removeListener，否则事件继续派发。
-            sector.removeListener(listener);
-            LOG.info(String.format(
-                    "GearIn listener: removed itself after %.1f game days (isDone()=true)", daysActive));
-        }
-    }
-}
-```
-
-对应关系：
-
-- `implements EveryFrameScript`：脚本半身提供 `isDone` / `runWhilePaused` / `advance`，按游戏天累计挂载时长，是本节 "生命周期脚本" 角色。
-- 构造器持有受管监听器引用；`setDaysToLive(int)` 是**本节演示参数，归属脚本类** ——`< 0` 常驻、`>= 0` 到期自停并移除监听器。
-- `advance` 里 `clock.convertToDays(amount)`：`amount` 是上一帧真实秒数，游戏天累加必须经时钟换算 (10 真实秒 = 1 游戏日)。
-- `sector.removeListener(listener)`：脚本半身 `done=true` 的同时显式移除监听器 —— 规则 5 的演示 (脚本结束 ≠ 监听器移除)。
-- 注册入口：调用点的注册块内 `sector.addScript(script)`(脚本列表)；`addScript` 不去重，这正是注册块需要整体判断的缘由之一。
-
-### GearInLocationChangeListener(通道二：类型化监听器)
+调用点 (工程片段 —— 方法所在类不属于本节所有权，本节只演示调用，不改动那些文件)：
 
 ```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.LocationAPI;
-import com.fs.starfarer.api.campaign.listeners.CurrentLocationChangedListener;
-
-/**
- * 完整最小例：经 ListenerManagerAPI 注册的类型化监听器（typed listener）。
- *
- * 与 GearInCampaignListener（Sector 级 CampaignEventListener 通道）不同，本类走的是
- * 第二条通道：SectorAPI.getListenerManager().addListener(listener, isTransient) 注册、
- * removeListener(this) 移除，事件由 ListenerUtil 按接口类型派发
- * （本类对应 CurrentLocationChangedListener，派发点在生涯引擎的 advance
- * 检测到当前地点变化时）。
- *
- * 注册入口：onGameLoad（调用点片段见页面正文），用 transient=true 注册 ——
- * transient 监听器不随存档保存（ListenerManagerAPI 的 transientListeners 仓库读档时
- * 重建为空），因此读档后必须重新注册；调用点用 hasListenerOfClass 判空
- * 再补注册即可覆盖旧档。
- *
- * 演示点：
- * 1. reportCurrentLocationChanged(prev, curr)：玩家当前地点变化（进出超空间、进入星系）时触发；
- * 2. 自移除：触发满 reportsLeft 次后 removeListener(this) 并打日志 —— 监听器在不再需要时
- *    必须在合适时机移除，否则事件持续派发（硬规则）；
- * 3. 全部字段可随存档序列化；本类字段不涉及瞬态句柄。
- */
-public class GearInLocationChangeListener implements CurrentLocationChangedListener {
-
-    private static final Logger LOG = Global.getLogger(GearInLocationChangeListener.class);
-
-    /** 演示参数：最多触发多少次后自移除。 */
-    private int reportsLeft = 5;
-
-    public GearInLocationChangeListener() {
-        // 空构造：注册由调用方执行（onGameLoad，见页面调用点片段）
-    }
-
-    @Override
-    public void reportCurrentLocationChanged(LocationAPI prev, LocationAPI curr) {
-        LOG.info(String.format("GearIn listener: current location changed: %s -> %s",
-                locationName(prev), locationName(curr)));
-
-        reportsLeft--;
-        if (reportsLeft <= 0) {
-            Global.getSector().getListenerManager().removeListener(this);
-            LOG.info("GearIn listener: location listener removed itself after 5 reports");
-        }
-    }
-
-    private static String locationName(LocationAPI location) {
-        return location == null ? "null" : location.getName();
-    }
-}
-```
-
-对应关系：
-
-- `implements CurrentLocationChangedListener`：类型化接口只有一个方法 `reportCurrentLocationChanged(LocationAPI prev, LocationAPI curr)`，派发在引擎检测到当前地点变化时经 `ListenerUtil` 完成。
-- `reportsLeft` 自减到 0 后 `getListenerManager().removeListener(this)`：规则 3(在合适时机移除) 的演示。
-- transient 注册 + `hasListenerOfClass` 判空补注册：规则 4(读档后重新注册) 的演示。
-- 注册入口：调用点片段里 `getListenerManager().addListener(new GearInLocationChangeListener(), true)`(通道二 transient 仓库)。
-
-调用点 (工程片段 —— 方法所在类属既有 MOD 插件工程，本节只演示调用，不改动原文件)：
-
-```java
-    // GearInModPlugin.onGameLoad(boolean newGame) 内新增本节注册块。
+    // GearInModPlugin 的 onGameLoad(boolean newGame) 内新增本节注册块。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    SectorAPI sector = Global.getSector();
-
-    // 通道一：监听器 + 生命周期脚本配对注册。addListener 按同一性去重，但 addScript 不去重，
-    // 因此整个注册块必须用 REGISTER_MARK 门控（硬规则 2）。
-    if (!sector.getPersistentData().containsKey(GearInCampaignListener.REGISTER_MARK)) {
-        sector.getPersistentData().put(GearInCampaignListener.REGISTER_MARK, true);
-        GearInCampaignListener listener = new GearInCampaignListener();
-        GearInListenerLifecycleScript script = new GearInListenerLifecycleScript(listener);
-        sector.addListener(listener);   // 监听器：通道一持久列表
-        sector.addScript(script);       // 生命周期脚本：脚本列表
-    }
-
-    // 通道二：类型化监听器，transient 注册。读档后 transient 仓库被清空，
-    // hasListenerOfClass 判空补注册（硬规则 4）；ListenerManagerAPI 不去重，别去掉这个判空。
-    if (!sector.getListenerManager().hasListenerOfClass(GearInLocationChangeListener.class)) {
-        sector.getListenerManager().addListener(new GearInLocationChangeListener(), true);
+    if (!Global.getSector().getPersistentData().containsKey(GearInTrainingIndustry.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInTrainingIndustry.REGISTER_MARK, true);
+        MarketAPI market = Global.getSector().getEconomy().getMarket("corvus_IIIa");
+        if (market != null) {
+            market.addIndustry(GearInTrainingIndustry.INDUSTRY_ID);
+            GearInTrainingIndustry.logState(market);
+            GearInTrainingIndustry.runDisruptionProbe(market);
+        }
     }
 ```
 
-想演示自停，在注册前先设参数：
+想走数据驱动的注册 (替代上面的代码安装)：
 
-```java
-    GearInCampaignListener listener = new GearInCampaignListener();
-    GearInListenerLifecycleScript script = new GearInListenerLifecycleScript(listener);
-    script.setDaysToLive(30); // 约 30 个游戏日（约 300 真实秒）后自停并移除监听器
-    sector.addListener(listener);
-    sector.addScript(script);
-```
+在 `data\campaign\econ\<星系>.json` 的目标市场条目 `industries` 数组里加一行 `"GearIn_training_industry"`(或 `["GearIn_training_industry", "alpha_core"]`—— 数组第二元素起由 `initWithParams` 识别安装 AI core / 特殊物品)。
 
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用既有工程)：
+构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars/GearIndustry.jar` 应包含以下 class 条目 (可用 `jar tf` 核对)：
-- `data/scripts/gearin/campaign/GearInCampaignListener.class`
-- `GearInListenerLifecycleScript.class`
-- `GearInLocationChangeListener.class`
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`(可用 `jar tf` 核对)。
 
-### 验证方案
+注册行、类与调用点就绪后，按下面的方案验证整条链。
 
-前置数据：既有 MOD 布局 [C6-S1]、`GearInModPlugin`([C6-S2]，含本节调用点片段) 与本节三个类。
+## 关键故障实验：添加产业时报告规格不存在
 
-1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`。
-2. 新建生涯，正常游玩，再按事件边界逐个触发：打开/关闭市场、买卖货物、与敌对舰队交战、改变声望。
-3. 连续跳跃 5 次，进出超空间或星系。
-4. 保存后读档，再次跳跃并打开市场；随后退出到主菜单，再进档一次。
-5. 把 `daysToLive` 设为 30 重新构建，进档等待约 300 真实秒。
-6. 暂停游戏中打开市场。
-7. 打开游戏日志 (`Starsector/starsector-core/starsector.log`)，查看 `GearIn listener` 条目。
+代码使用的 ID 与 `industries.csv` 注册行不一致。
+
+**局部故障片段：**
+
+```java
+// 故障片段
+market.addIndustry("GearIn_training");
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+String industryId = GearInTrainingIndustry.INDUSTRY_ID;
+if (Global.getSettings().getIndustrySpec(industryId) == null) {
+	throw new IllegalStateException("Missing industry spec: " + industryId);
+}
+market.addIndustry(industryId);
+```
+
+实际症状：`Market.addIndustry` 抛出 `RuntimeException: Industry [GearIn_training] not found`，产业没有加入市场，后续 reapply、升级和中断代码均无法执行。
+
+原因：运行时注册键是 CSV 的完整 ID `GearIn_training_industry`；`reapplyIndustries()` 只重放已经加入的实例，不会创建缺失 spec。
+
+复验：修正后 `market.hasIndustry(INDUSTRY_ID)` 为 true，`getSpec().getUpgrade()` 返回 `militarybase`；完成 60 游戏日建设后可启动升级，中断探针能读取同一实例。
+
+## 验证方案
+
+前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段)、`data\campaign\industries.csv` 注册行、`GearInTrainingIndustry` 类。
+
+1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，`BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`。
+    *   确认 `data\campaign\industries.csv` 合并后 `SettingsAPI.getIndustrySpec("GearIn_training_industry")` 返回非 null(可用日志或加载期检查)。
+2. 代码安装：新建生涯，在 `starsector.log` 中观察产业安装与中断探针记录。
+3. 读档：保存后读档，不出现重复安装日志 (`REGISTER_MARK` 已置位)。
+4. 用户殖民地建设：殖民 (size 3 以下注意产业位上限 1)→ 产业列表出现 `GearIn Training Industry` → 建造 (建设期 `functional=false`)→ 60 游戏日后 `functional=true`。
+    *   点击升级 → 完成后产业变为 `Military Base`(见 "预期结果" 第 4条)。
+5. AI core：安装 alpha core → `applied` 日志 `aiCore=alpha_core`、市场稳定度 +1；卸下 → 稳定度修饰消失。
+6. disruption 实战：装 core 后等待 Hegemony AI 审查，或对殖民地执行陆战队 "中断产业" 突袭 → `notifyDisrupted` 日志 + tooltip `Operations disrupted!` + 收入消失。
+    *   时间到 → `disruptionFinished` 日志 + 恢复 (见 "预期结果" 第 6条)。
 
 预期结果：
 
-- **游戏构建**：`BUILD SUCCESSFUL`；`jar tf jars/GearIndustry.jar` 能看到三个类的 `.class` 条目
-- **新建生涯与事件边界**：未触发事件时日志不出现周期性的 `GearIn listener` 输出 (监听器是事件驱动，不产生周期日志)—— 这本身是 "注册成功且无副作用" 的判据。触发后的日志按事件核对：
-- 打开市场交互：`GearIn listener: market opened: <市场名> (size N)`；关闭：`GearIn listener: market closed: <市场名>`。
-  - 市场买入/卖出 (或整备界面购买舰船/武器/战机)：每次结算出现 `GearIn listener: trade at <市场名>, credit value <数值>`。
-  - 遭遇战：战斗阶段出现 `GearIn listener: battle occurred, player involved=true, winner=...` 与 `GearIn listener: battle finished, ...`(玩家遭遇战各一次)；战斗结算后出现 `GearIn listener: player engagement resolved, didPlayerWin=<true/false>`；出现战利品时 `GearIn listener: encounter loot generated, N stacks`。
-  - 改变与势力的声望 (完成任务、送礼、攻击势力目标)：`GearIn listener: reputation change vs faction <id> by +X.XX`。
-  - 任何舰队入地/离场 (包括 AI 舰队)：`fleet spawned` / `fleet despawned, reason=<REASON>`—— 活动星区里这类日志会比较频繁，属正常。
-  - 启动与游玩全程无 `gear_in` 引起的 `ERROR`。
+* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`；`data\campaign\industries.csv` 已含本节注册行 (CSV 合并，勿改动核心文件)。
 
-- **位置监听器**：前 5 次出现 `current location changed`；第 5 次后出现 `location listener removed itself after 5 reports`，第 6 次起不再出现
-- **读档**：无重复注册 —— 无 `trade at` 成双 (`REGISTER_MARK` 注册标记 + `addListener` 去重)；位置监听器因 transient 读档清空、由 `hasListenerOfClass` 判空重新注册 (读档后继续出现位置变化日志且不叠加，计数从 5 次重新开始)；退出到主菜单后生涯引擎停止、日志停止，再进档按第 3、3 项继续
-- **自停演示**：挂载约 300 真实秒后出现：
-- **暂停语义**：监听器不受暂停影响 (事件驱动，暂停中打开市场仍会触发 `market opened`)；若用 `addListenerWithTimeout` / `reRegister` 演示超时，暂停期间超时不计时 (游戏天不前进)，恢复后继续
-- 操作 7b：把通道二的 `addListener(..., true)` 改为不加 `hasListenerOfClass` 判空并去掉 transient 参数，读档两次。
+* **代码安装 (corvus\_IIIa (Garnir)，size 3 海盗市场)**：新建生涯，`starsector.log` 依次出现。
 
-清理：把 `daysToLive` 恢复为 `-1`，并恢复通道二的 `hasListenerOfClass` 判断与 transient 参数。
+    ```text
+    GearIn training industry applied: market=Garnir size=3 supplyCrew=1 demandSupplies=3 demandCrew=1 income=0 upkeep=NN aiCore=none disrupted=false functional=true GearIn training industry state: market=Garnir id=GearIn_training_industry supply=[crew=1] demand=[supplies=3, crew=1] income=0 upkeep=NN buildProgress=0.0/60.0 building=false upgrading=false functional=true disrupted=false aiCore=none upgrade=militarybase
+    ```
+
+    数值核对：size 3 → `supplyCrew = max(1, 3-2) = 1`、`demandSupplies = 3`、`demandCrew = max(1, 3/2) = 1`；`income = 0`(spec 收入列空)；`upkeep = 2 × max(1, size-2) × 市场维护倍率`(以日志为准)；缺货削减只在 corvus\_IIIa (Garnir) 的 supplies 可得量不足 3 时把 `supplyCrew` 压到 0/负数区间 (tooltip 图标同步变红)。
+
+* **disruption 探针** (同一批日志)：
+
+    ```text
+    GearIn training industry disruption probe: before disrupted=false days=0.0 GearIn training industry disruption probe: during disrupted=true days=10.0 functional=false progress=Disrupted: 10 days left GearIn training industry disruption probe: after disrupted=false days=0.0
+    ```
+
+    核对：`during` 行 `functional=false`(`isFunctional()` 在中断时恒 false)、`progress` 显示 `Disrupted: 10 days left`(`getBuildOrUpgradeProgressText` 的中断分支)；`setDisrupted(0f)` 后 memory key 被 unset，`after` 恢复。市场内存里残留键 `$core_disrupted_GearInTrainingIndustry`(10 天过期)，可用 `DumpMemory` 或内存检查核对。
+
+* **建设与升级 (用户殖民地路径)**：用户殖民后产业列表出现 `GearIn Training Industry`(`isAvailableToBuild` 要求市场有 `population` 且无 `MARKET_NO_INDUSTRIES_ALLOWED` tag；size 1–3 的殖民地产业位上限 1，注意是否占满)；建造后 `applied` 日志的 `functional=false`(`isBuilding` 中，tooltip 显示 "Currently under construction and not producing anything")；`advance` 按 `convertToDays(amount)` 累积 60 个游戏日后完成，`applied` 日志恢复 `functional=true`。点击升级：确认扣款后 `startUpgrading()`，完成后产业被替换为 `Military Base`(`militarybase` 行)，AI core / 改良 / 特殊物品迁移 (`finishBuildingOrUpgrading`)。
+
+* **AI core**：往产业装 alpha core(AI core 选择对话框)：`applied` 日志 `aiCore=alpha_core`；市场稳定度 +1(`applyAlphaCoreModifiers` 的 `ind_GearIn_training_industry_2` 修饰)；tooltip 的 alpha 描述显示维护费 −25%(`UPKEEP_MULT = 0.75`)、需求 −1、产量 +1(`DEMAND_REDUCTION` / `SUPPLY_BONUS = 1`)；卸下 core 后稳定度修饰消失 (`applyNoAICoreModifiers`)。`getPatherInterest` = 4(alpha) 会提高 Luddic Path 对该市场的兴趣。
+
+* **中断的实战触发**：给装 core 的殖民地等待 Hegemony AI 审查 intel(15–60 天)，或对该市场执行陆战队 "中断产业" 突袭 (时长 = 令牌数 × `disruptDanger.disruptionDays`，本行 LOW = 40 天/令牌)——`notifyDisrupted` 日志出现，tooltip 显示 `Operations disrupted!`，收入消失、建设暂停；时间到后 `disruptionFinished` 日志出现，恢复。
+
+* **读档**：不重复安装 (`REGISTER_MARK` 已置位)，不出现 `applied` / `state` / `probe` 日志；`doPreSaveCleanup` / `doPostSaveRestore` 之后供需由 `apply()` 重建 —— 读档后 `state` 日志 (手动触发) 的 supply/demand 与读档前一致。
+
+* 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
+
+    **预期结果**：以上操作与核对结果全部符合。
+
+清理：调用 `market.removeIndustry(GearInTrainingIndustry.INDUSTRY_ID, null, false)`；产业移除后，"applied" 日志消失、稳定度修饰撤销，已安装的 alpha core 返回用户 cargo。
+
 ## 故障分析
 
-十个故障按症状组织：每个故障先写您实际看到的现象，再给触发条件、断链位置与核对顺序。验证方案的故障注入 8a–8c 分别对应第 1、1/3、3 条。
+验证方案中的故障注入直接复现对应症状；每项从实际日志或界面现象开始。
 
-1. **监听器完全没有日志**。
-   - 症状：对应事件没有任何 `GearIn listener` 日志且无报错；或启动直接中止，日志里的 NPE 堆栈指向 `onApplicationLoad`。
-   - 触发：忘了调用 `addListener` / `getListenerManager().addListener`，或把注册写进 `onApplicationLoad`(此刻 `Global.getSector()` 为 null)。
-   - 原因：注册入口错误或缺失，事件派发时注册表里没有该监听器。
-   - 修正：把注册放进 `onGameLoad` / `onNewGame` 的注册块内 (规则 1)，重新进档后事件日志应出现。
-2. **同一事件回调双份**。
-   - 症状：`market opened` 等同一事件同一来源出现两条日志，且读档次数越多越成双。
-   - 触发：同一对象既 `sector.addListener(this)` 又 `getListenerManager().addListener(this)`(双通道各注册一份)，或配对注册块没有注册标记，每次读档 `addScript` 再挂一份 (脚本半身叠加)。
-   - 原因：两条通道各自派发同一个事件，或者脚本列表没有去重、注册块整体缺一次性判断。
-   - 修正：一个对象只走一条通道；注册块整体用 `REGISTER_MARK` 判断是否已注册 (必须遵守的规则 2)。
-3. **读档后事件静默消失**。
-   - 症状：读档后对应事件无任何日志、无任何报错。
-   - 触发：transient 监听器 (`addTransientListener` 或 `addListener(x, true)`) 没有在读档回调里重新注册。
-   - 原因：读档时两条通道的 transient 仓库都被清空，监听器已不在注册表。
-   - 修正：用 `hasListenerOfClass` 判空补注册 (本节调用点片段的通道二写法)，读档后事件日志应恢复。
-4. **脚本自停后事件仍在触发 (僵尸监听器)**。
-   - 症状：`removed itself ... (isDone()=true)` 日志出现后，`market opened` 等事件日志继续出现。
-   - 触发：生命周期脚本只置 `done = true`，没有在到期路径里 `removeListener(listener)`。
-   - 原因：`isDone()` 只让引擎清理脚本列表，监听器注册表不会自动移除 —— 脚本半身被清理了，监听器还在注册表里。
-   - 修正：在到期路径内显式 `removeListener(listener)`(本节示例即如此)，复验自停日志出现后事件日志停止。
-5. **超时监听器 "永不超时" 或超时过慢**。
-   - 症状：挂机等待超时无效果，或按真实秒预期时超时明显偏慢。
-   - 触发：把 `addListenerWithTimeout` 的 `daysToKeep` 当成真实秒，或以为暂停也在计时。
-   - 原因：`daysToKeep` 的单位是游戏天 (10 真实秒 = 1 游戏日)，且只在未暂停时扣减；暂停期间 `listenersWithTimeout` 不推进。
-   - 修正：按 "游戏天、仅未暂停时扣减" 理解并使用，恢复游戏后超时继续扣减。
-6. **`isDone()` 恒返回 true**。
-   - 症状：脚本半身第一帧就被移除，`advance` 一次都不执行，自停日志从不出现，事件却持续回调。
-   - 触发：完成标记写反或占位返回 `true`。
-   - 原因：引擎第一帧先查 `isDone`，返回 true 时直接移除脚本，`removeListener` 自然没机会执行 —— 脚本半身消失、监听器半身残留 (又是僵尸监听器，且无自停日志)。
-   - 修正：`done` 初始 `false`，仅在条件满足时置 `true`。
-7. **事件日志过频刷屏**。
-   - 症状：日志被无关舰队淹没，找不到玩家相关事件。
-   - 触发：`reportFleetSpawned` / `reportFleetDespawned` 覆盖所有 AI 舰队，活动星区每帧多条。
-   - 原因：回调没有按玩家相关过滤。
-   - 修正：回调内过滤 (如 `fleet.isPlayerFleet()` 或按势力 id)，把玩家关心的事件单独归类。
-8. **战斗计数偏高**。
-   - 症状：用 `reportBattleOccurred` 统计的 "玩家战斗次数" 与预期不符。
-   - 触发：`reportBattleOccurred` 只对 AI vs AI 每个自动结算轮调用一次、对玩家遭遇战一次，但玩家舰队**在战斗中**若包含多轮自动结算 (如玩家脱战后 AI 继续互打)，不会产生 player 标记。
-   - 原因：统计口径选错了回调 —— `reportBattleOccurred` 反映战斗过程，不反映玩家结算结果。
-   - 修正：玩家战斗统计用 `reportPlayerEngagement`(`EngagementResultAPI.didPlayerWin()`)；战斗过程观察用 `reportBattleOccurred` 且以 `battle.isPlayerInvolved()` 过滤。
-9. **双通道混淆导致业务重复**。
-   - 症状：同一市场事件业务逻辑执行两次。
-   - 触发：为同一业务同时实现 `CampaignEventListener.reportPlayerOpenedMarket` 与 `ColonyInteractionListener.reportPlayerOpenedMarket` 并各注册一份。
-   - 原因：两个通道各自派发同一个事件，同一对象被回调双份。
-   - 修正：同一业务只选一条通道；确需两通道时明确分工 (如一个做统计、一个做 UI)。
-10. **旧档永远不注册监听器**。
-    - 症状：旧档读档后无任何 `GearIn listener` 日志、监听器缺失且无报错。
-    - 触发：把注册放进既有 `GearInModPlugin.CLASS_MARK` 注册块内 (该键在新档首次进入时已置位)。
-    - 原因：旧档缺少本节自己的注册键，被既有注册块整体跳过，注册代码永远不会执行。
-    - 修正：每个注册项用各自的 persistent data 键 (本节 `REGISTER_MARK`)，旧档缺键即视为首次注册。
+- **`addIndustry` 抛 `Industry [...] not found`：**CSV 缺少对应 ID、行被重复覆盖或调用 ID 拼错。用 `SettingsAPI.getIndustrySpec(id)` 确认注册，再逐字核对 CSV 与调用点。
+- **读档后产业供需消失：**供需写在构造器或 `init`，而不是每次重算都会调用的 `apply()`。把供需与统计修饰移入 `apply()`。
+- **缺货时产量没有减少：**缺货削减前没有先声明对应商品的 supply。先完成 `demand`/`supply`，再调用 `applyDeficitToProduction`。
+- **升级启动或完成时报错：**`upgrade` 指向未注册产业 ID。补齐注册或修改升级目标，确认目标 MOD 已启用。
+- **卸下 AI core 后效果仍然存在：**`applyAlphaCoreModifiers` 与 `applyNoAICoreModifiers` 没有成对撤销。为每个 AI core 修饰提供对应的移除逻辑。
+- **升级时 AI core 或特殊物品被复制：**自定义代码调用了 `removeIndustry(..., false)`。让升级流程使用 `forUpgrade=true` 的原版链路。
+- **同市场两个产业同时中断：**不同产业共用 Java 类却共用默认 disruption key。覆写 `getDisruptedKey()`，把 spec ID 纳入 key。
+- **把 `getMaxDeficit` 当成总需求：**它返回的是 `max(0, demand - available)`。总需求读取 `getDemand(id).getQuantity().getModifiedValue()`。
+- **界面把中断天数显示成建设剩余时间：**`getDisruptedDays()` 与建设进度是两套读数。分别使用中断天数和 `buildTime - buildProgress`。
+- **修改供需后当前帧数值没有变化：**经济数据在经济步中抓取。等待一个经济步，或对目标市场调用 `EconomyAPI.forceStockpileUpdate(market)`。
+- **`supply(com, 0)` 没有清掉全部供给：**0 只撤销当前 modId 的修饰。使用对应的 `unmodifyFlat`，并检查其他修饰来源。
 
 ## 总结
 
-本节建立了一条从注册到回调的完整判断链：两条通道决定监听器存哪里、怎么去重、由谁派发，21 个方法决定哪些事件值得监听，生命周期规则决定注册与移除的时机。动手前先回答三个问题：走哪条通道、什么时候注册、什么时候移除 —— 三个答案都落在 `onGameLoad` 的注册块和配对脚本里，而不是散落在构造器或 `onApplicationLoad`。
+本节把产业讲成四条链：注册链让 CSV 行变成可实例化的 `Industry`，生命周期链决定状态何时重算，供需与建设升级链决定产业如何参与经济循环，AI core 与 disruption 链决定它的修饰与被打断的方式。产业 id 校验比市场条件严格，升级与降级都走同一条完成链，disruption 状态存在市场 memory 而非产业对象里 —— 这三条是本节最容易被绕进去的地方。
 
-排错时沿用 "触发点 → 派发者 → 回调签名" 的边界分析法：回调没触发，先确认事件真的发生 (边界点)，再确认派发者遍历了注册表，最后核对签名与注册时机。这套方法可以迁移到同一家族的其他事件驱动机制：能力与对话框事件、战斗结算后的流程钩子、经济与声望的联动处理，都能沿这条链逐段核对 "回调为什么没触发"。
+记忆要点：
 
-最容易反复踩中的三个判断：持久监听器随存档序列化，字段必须可序列化；transient 监听器读档后必然清空，必须重新注册；脚本 `isDone()` 只清理脚本，监听器必须显式移除。把这三条连同 "游戏天、暂停冻结" 的超时语义写进注释，可以少背许多与您无关的报错黑锅。
+* CSV `id` 必须与 `addIndustry` 参数逐字一致；`upgrade` / `downgrade` 列目标必须已注册。
+* `supply` / `demand` / 收入 / 维护只写在 `apply()`；缺货削减前先 `supply(...)`。
+* `getModId(n)` = `"ind_<id>_<n>"`；AI core 修饰成对 (`applyXxxCoreModifiers` ↔ `applyNoAICoreModifiers`)。
+* `setDisrupted(days, useMax)`：`useMax=true` 保留较大剩余；`setDisrupted(0)` 解除；同市场同 Java 类的多产业共享 disruption key。
+* 产业位 = `maxIndustries[size-1]`(size 1–3 都是 1)；`isFunctional()` = 非中断 ∧ 非 "建设中且未升级"。
+
+从逻辑上看，产业不是孤立对象：市场与商品流的经济循环 (经济步) 是产业供需的使用端，时钟与游戏日换算 (`getClock().convertToDays`) 是建设进度的换算来源，`MutableStat` 承载全部数量修饰；本节示例的 `REGISTER_MARK` 一次性标记沿用既有生涯注册示例的写法。产业写完并注册后，它在市场里的可见性 (tooltip 数字、商品流、价格、突袭中断) 全部由这些既有机制承接 —— 本节只负责把产业自身的四条链写对。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.CampaignEventListener`：公开生涯监听器接口，全接口 21 个方法，含 `FleetDespawnReason` 枚举 (6 值)。
-- `com.fs.starfarer.api.campaign.SectorAPI`：通道一注册入口 (`addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners`) 与 `getListenerManager()`。
-- `com.fs.starfarer.api.campaign.BaseCampaignEventListener`：全方法空实现基类；`permaRegister` 构造器与 `reRegister(daysToKeep)`。
-- `com.fs.starfarer.api.campaign.BaseCampaignEventListenerAndScript`：监听器与 `EveryFrameScript` 绑定在同一对象的基类 (原版 `CoreScript` 同形态)。
-- `com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI`：通道二类型化仓库，7 个方法。
-- `com.fs.starfarer.api.campaign.listeners.ListenerUtil`：类型化事件派发静态方法族 (按 `getListeners(X.class)` 遍历)。
-- `com.fs.starfarer.api.campaign.listeners.CurrentLocationChangedListener`：本节类型化监听器接口 (单方法)。
-- `com.fs.starfarer.api.util.TimeoutTracker`：`addListenerWithTimeout` 的底层超时跟踪器。
-- `com.fs.starfarer.api.campaign.PlayerMarketTransaction`：贸易事件的取值入口 (`getMarket` / `getSubmarket` / `getCreditValue` / `getLineItems`)。
-- `com.fs.starfarer.api.campaign.BattleAPI`：`isPlayerInvolved()`；`com.fs.starfarer.api.combat.EngagementResultAPI`：`didPlayerWin()`。
-- `com.fs.starfarer.api.impl.campaign.CoreScript`：原版 "监听器 + 脚本" 实例，组合形态参考。
+* Java API(包路径)：
+    *   `com.fs.starfarer.api.campaign.econ.Industry`—— 产业接口全貌：生命周期五回调、供需、建设/升级、AI core、disruption、特殊物品/改良。
+    *   `com.fs.starfarer.api.loading.IndustrySpecAPI`—— `industries.csv` 全部列字段的 getter/setter 与 `getNewPluginInstance` 无参实例化。
+    *   `com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry`—— 产业公共基类：`apply(boolean)` 顺序、供需写入与 `ind_sb` / `ind_dr` 合并、`applyDeficitToProduction`、`applyIncomeAndUpkeep`、`advance`、建设/升级/降级链、AI core 派发与四钩子、`getPatherInterest`、disruption 系列 (`getDisruptedKey` / `setDisrupted` / `getDisruptedDays` / `canBeDisrupted` / `isDisrupted`)、`doPreSaveCleanup` / `doPostSaveRestore`、`initWithParams`、`isAvailableToBuild`、tooltip 渲染。
+    *   `com.fs.starfarer.api.impl.campaign.econ.impl.LightIndustry`——`apply()` 标准写法范例 (先声明供需、再挂缺货削减)。
+    *   `com.fs.starfarer.api.impl.campaign.econ.impl.PopulationAndInfrastructure`——`MAX_INDUSTRIES` 写入、超限稳定度惩罚、`getMaxIndustries(size)`、`canBeDisrupted() = false`。
+    *   `com.fs.starfarer.api.impl.campaign.econ.impl.ConstructionQueue`—— 建设队列容器与 `addToEnd`；
+    *   `com.fs.starfarer.api.campaign.econ.MutableCommodityQuantity`—— 商品 id + `MutableStat` 数量；
+    *   `com.fs.starfarer.api.campaign.AICoreAdminPlugin`——`createPerson(aiCoreId, factionId, seed)`，把 AI core 变成殖民地管理员/官员。
+    *   `com.fs.starfarer.api.impl.campaign.ids.Industries`——tag 常量 `TAG_INDUSTRY` / `TAG_STRUCTURE` / `TAG_POPULATION`。
+    *   `com.fs.starfarer.api.impl.campaign.ids.Commodities`—— `SUPPLIES` / `CREW` / `ALPHA_CORE` / `BETA_CORE` / `GAMMA_CORE`。
+    *   `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.MarketCMD`——`RaidDangerLevel.disruptionDays` 与突袭 "中断产业" 时长计算。
+    *   `com.fs.starfarer.api.impl.campaign.graid.DisruptIndustryRaidObjectivePluginImpl`—— 突袭中断目标的 `disruptDanger` 使用与 `setDisrupted` 施放。
+    *   `com.fs.starfarer.api.impl.campaign.intel.inspection.HIActionStage`——Hegemony AI 审查对产业施放 15–60 天 disruption。
+    *   `com.fs.starfarer.api.impl.campaign.intel.bases.LuddicPathCellsIntel`—— Luddic Path 细胞以 `setDisrupted(dur, true)` 施放并保留较长剩余。
+    *   `com.fs.starfarer.api.util.Misc`—— `getMaxIndustries` / `getNumIndustries` / `getCurrentlyBeingConstructed` / `OVER_MAX_INDUSTRIES_PENALTY`。
+    *   `com.fs.starfarer.api.SettingsAPI`——`getIndustrySpec(id)` 只读查询产业注册表；
+    *   `com.fs.starfarer.api.campaign.econ.MarketAPI`—— 产业访问族 (`addIndustry` / `getIndustry` / `hasIndustry` / `hasFunctionalIndustry` / `removeIndustry` / `instantiateIndustry`) 与 `getConstructionQueue`。
+    *   `Market`——`addIndustry` / `instantiateIndustry` / `removeIndustry` / `reapplyIndustries`、`advance` 稳定度重算与产业推进。
+    *   `CommodityOnMarketAPI`——`updateMaxSupplyAndDemand` 同商品取最大值与合法性、`getAvailable` / `getMaxSupply` / `getMaxDemand`。
+    *   `CommodityMarketDataAPI`—— 经济步使用产业供需 (`updateMaxSupplyAndDemand`、demand class 传播)。
+    *   产业交互对话框 —— 升级/降级/关停 UI 使用方、退款计算。
+* 原版数据 (相对路径)：
+    *   `data/campaign/industries.csv`—— 产业静态表：15 列表头与 `population` / `spaceport` / `militarybase` / `heavybatteries` 等原版行。
+    *   `data/campaign/commodities.csv`—— `demand class` 列 (supplies / fuel / crew / organics / heavy\_machinery / domestic\_goods / drugs 等)。
+    *   `data/campaign/econ/corvus.json`—— 市场 `industries` 数组写法 (纯 id 字符串与 `[id, param...]`)。
+    *   `data/config/settings.json`——`maxIndustries` 数组、`overMaxIndustriesPenalty`、`industryRefundFraction`、`industryImproveBase`。
+* 本节示例：
+    *   `data/scripts/gearin/campaign/GearInTrainingIndustry`—— 训练产业类。
+
+## 完整最小例
+
+::: details 完整成品：GearInTrainingIndustry
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.econ.Industry;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.campaign.econ.MutableCommodityQuantity;
+import com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry;
+import com.fs.starfarer.api.impl.campaign.ids.Commodities;
+import com.fs.starfarer.api.util.Pair;
+
+/**
+ * 完整最小例：产业（Industry）注册、供需、升级、AI core 与 disruption 演示。
+ *
+ * 注册入口：industries.csv 一行（plugin 列 = 本类全名，id = INDUSTRY_ID）。市场侧由
+ * MarketAPI.addIndustry / instantiateIndustry 消费；演示安装点片段见页面正文
+ * （GearInModPlugin 的 onGameLoad，persistent data 键 REGISTER_MARK 一次性门控）。
+ *
+ * 行为：
+ *   1. apply() 声明供需：需求 SUPPLIES（训练耗材）与 CREW（教官），供给 CREW（结业船员）；
+ *      supplies 缺货时按缺口削减船员产出（applyDeficitToProduction）。
+ *   2. 收入/维护由 spec（income=0, upkeep=2）经 applyIncomeAndUpkeep 写入。
+ *   3. AI core：alpha 额外给市场 +1 稳定度（applyAlphaCoreModifiers / applyNoAICoreModifiers
+ *      成对）；供需/维护侧走 BaseIndustry 默认（alpha: 产量+1、需求-1、维护×0.75）。
+ *   4. disruption：notifyDisrupted / disruptionFinished 打日志；setDisrupted 由外部触发
+ *      （突袭、AI 审查、Luddic Path），中断期间 isFunctional()=false、建设暂停。
+ *
+ * 演示全程可清理：removeIndustry(GearInTrainingIndustry.INDUSTRY_ID, null, false) 即返还
+ * AI core 并撤销全部修饰。
+ */
+public class GearInTrainingIndustry extends BaseIndustry {
+
+    /** 产业 id：与 industries.csv 的 id 列逐字一致。 */
+    public static final String INDUSTRY_ID = "GearIn_training_industry";
+
+    /** 存档持久化标记：演示安装是否已在该存档执行过（随存档保存）。 */
+    public static final String REGISTER_MARK = "GearIn_TrainingIndustry";
+
+    /** industries.csv upgrade 列目标（原版产业 id，本节只消费不定义）。 */
+    public static final String UPGRADE_TARGET_ID = "militarybase";
+
+    private static final Logger LOG = Global.getLogger(GearInTrainingIndustry.class);
+
+    @Override
+    public void apply() {
+        // 顺序：updateSupplyAndDemandModifiers -> updateIncomeAndUpkeep ->
+        // applyAICoreModifiers -> applyImproveModifiers（BaseIndustry.apply(boolean)）
+        super.apply(true);
+
+        int size = market.getSize();
+
+        demand(Commodities.SUPPLIES, size, "Training operations");
+        demand(Commodities.CREW, Math.max(1, size / 2), "Instructors");
+        supply(Commodities.CREW, Math.max(1, size - 2), "Trained crew");
+
+        // supplies 缺口会削减船员产出（只对已声明供给的商品生效）
+        Pair<String, Integer> deficit = getMaxDeficit(Commodities.SUPPLIES);
+        applyDeficitToProduction(1, deficit, Commodities.CREW);
+
+        if (!isFunctional()) {
+            supply.clear();
+        }
+
+        LOG.info(String.format(
+                "GearIn training industry applied: market=%s size=%d supplyCrew=%d demandSupplies=%d demandCrew=%d income=%d upkeep=%d aiCore=%s disrupted=%s functional=%s",
+                market.getName(), size,
+                (int) getSupply(Commodities.CREW).getQuantity().getModifiedValue(),
+                (int) getDemand(Commodities.SUPPLIES).getQuantity().getModifiedValue(),
+                (int) getDemand(Commodities.CREW).getQuantity().getModifiedValue(),
+                (int) getIncome().getModifiedValue(),
+                (int) getUpkeep().getModifiedValue(),
+                aiCoreId == null ? "none" : aiCoreId,
+                isDisrupted(), isFunctional()));
+    }
+
+    @Override
+    public void unapply() {
+        super.unapply(); // 先 applyNoAICoreModifiers，再撤销改良/移民/特殊物品
+    }
+
+    // ---- AI core：自定义修饰必须成对（apply / unapply 对称） ----
+
+    @Override
+    protected void applyAlphaCoreModifiers() {
+        market.getStability().modifyFlat(getModId(2), 1,
+                "Alpha core (" + getNameForModifier() + ")");
+    }
+
+    @Override
+    protected void applyNoAICoreModifiers() {
+        market.getStability().unmodifyFlat(getModId(2));
+    }
+
+    // ---- disruption 钩子（默认空实现，这里只打日志观察） ----
+
+    @Override
+    protected void notifyDisrupted() {
+        LOG.info(String.format(
+                "GearIn training industry disrupted: market=%s days=%d key=%s",
+                market.getName(), (int) getDisruptedDays(), getDisruptedKey()));
+    }
+
+    @Override
+    protected void disruptionFinished() {
+        LOG.info("GearIn training industry disruption finished: market=" + market.getName());
+    }
+
+    /**
+     * 观察助手：把目标市场里本产业的状态打一条日志（含供需明细）。
+     * 供调用点、控制台与排障复用；市场无该产业时打印 not present。
+     */
+    public static void logState(MarketAPI market) {
+        Industry industry = market.getIndustry(INDUSTRY_ID);
+        if (industry == null) {
+            LOG.info("GearIn training industry state: not present at " + market.getName());
+            return;
+        }
+
+        StringBuilder supplyDesc = new StringBuilder();
+        for (MutableCommodityQuantity curr : industry.getAllSupply()) {
+            if (supplyDesc.length() > 0) supplyDesc.append(", ");
+            supplyDesc.append(curr.getCommodityId())
+                    .append("=")
+                    .append((int) curr.getQuantity().getModifiedValue());
+        }
+        StringBuilder demandDesc = new StringBuilder();
+        for (MutableCommodityQuantity curr : industry.getAllDemand()) {
+            if (demandDesc.length() > 0) demandDesc.append(", ");
+            demandDesc.append(curr.getCommodityId())
+                    .append("=")
+                    .append((int) curr.getQuantity().getModifiedValue());
+        }
+
+        LOG.info(String.format(
+                "GearIn training industry state: market=%s id=%s supply=[%s] demand=[%s] income=%d upkeep=%d buildProgress=%.1f/%s building=%s upgrading=%s functional=%s disrupted=%s aiCore=%s upgrade=%s",
+                market.getName(), industry.getId(), supplyDesc, demandDesc,
+                (int) industry.getIncome().getModifiedValue(),
+                (int) industry.getUpkeep().getModifiedValue(),
+                industry.getBuildOrUpgradeProgress() * industry.getBuildTime(),
+                industry.getBuildTime(),
+                industry.isBuilding(), industry.isUpgrading(), industry.isFunctional(),
+                industry.isDisrupted(),
+                industry.getAICoreId() == null ? "none" : industry.getAICoreId(),
+                industry.getSpec().getUpgrade()));
+    }
+
+    /**
+     * 探针助手：对目标市场里本产业施放 10 天 disruption 并立即清除（useMax=false 覆盖语义），
+     * 打印 前后/期间 三态。只用于验证 setDisrupted / isDisrupted / getDisruptedDays 链路。
+     */
+    public static void runDisruptionProbe(MarketAPI market) {
+        Industry industry = market.getIndustry(INDUSTRY_ID);
+        if (industry == null) {
+            LOG.info("GearIn training industry disruption probe: not present at " + market.getName());
+            return;
+        }
+        LOG.info(String.format(
+                "GearIn training industry disruption probe: before disrupted=%s days=%.1f",
+                industry.isDisrupted(), industry.getDisruptedDays()));
+        industry.setDisrupted(10f, false);
+        LOG.info(String.format(
+                "GearIn training industry disruption probe: during disrupted=%s days=%.1f functional=%s progress=%s",
+                industry.isDisrupted(), industry.getDisruptedDays(),
+                industry.isFunctional(), industry.getBuildOrUpgradeProgressText()));
+        industry.setDisrupted(0f);
+        LOG.info(String.format(
+                "GearIn training industry disruption probe: after disrupted=%s days=%.1f",
+                industry.isDisrupted(), industry.getDisruptedDays()));
+    }
+}
+```
+
+:::

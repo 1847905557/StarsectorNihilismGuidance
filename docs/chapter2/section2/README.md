@@ -35,7 +35,7 @@
 
 ## 完整最小例：稳定化推进器
 
-### 第一步：注册数据行
+### 注册船插数据
 
 在 MOD 的 `data/hullmods/hull_mods.csv` 写入 (文件不存在就新建，只包含本 MOD 的行；表头行必须保留)：
 
@@ -59,7 +59,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 :::
 
-### 第二步：效果类
+### 实现船插效果
 
 将以下类完整写入 `src/data/scripts/gearin/hullmods/GearInStableInjectorHullMod.java`(文件路径即包路径，见类名三处一致表)：
 
@@ -146,11 +146,11 @@ CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四�
 - `getDescriptionParam`：填充描述里的 `%s`；
 - `isApplicableToShip` + `getUnapplicableReason`：限制能否安装。
 
-数值修改只写在第一个方法里 —— 写错位置 (比如写进 `applyEffectsAfterShipCreation`) 的效果是生涯面板看不到加成，见故障分析第 4 条。
+数值修改只写在第一个方法里 —— 写错位置 (比如写进 `applyEffectsAfterShipCreation`) 的效果是生涯面板看不到加成，见 "速度加成没有生效" 故障条目。
 
 :::
 
-### 第三步：装船验证
+### 验证船插效果
 
 1. 重启游戏，进入生涯，打开装配界面 ——"稳定化推进器" 应出现在船插列表；
 2. 装到护卫舰上：tooltip 显示 "提高舰船最大速度 15/10/5/5 单位/秒..."，四个数字高亮；
@@ -203,13 +203,14 @@ CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四�
 
 ## 故障分析
 
-1. **装配界面找不到船插**。触发：CSV 行未写入、`id` 与其他来源重复 (跨文件重复是静默跳过，日志无报错)、`unlocked` 缺失、`script` 类名写错。修正：确认文件路径；`GearIn_` 前缀唯一；调试期 `unlocked=TRUE`；核对类名。
-2. **加载中断，`JSONException` 或 `Duplicate key`**。触发：`cost_*` 之一留空、必填列缺失、同一文件内两行 `id` 相同。修正：四档 cost 填数字；同文件内不重复 `id`。
-3. **`Problem loading class [...]`**。触发：类名三处不一致或类不存在。修正：按类名三处一致表核对；源码放在 `data/scripts/gearin/hullmods/` 包路径下。
-4. **效果不生效 (速度没变)**。触发：把 `modifyFlat(...)` 写进了 `applyEffectsAfterShipCreation`—— 该方法不被生涯调用，不应承担数值修改。修正：数值修改一律放 `applyEffectsBeforeShipCreation`。
-5. **两个船插数值互相覆盖**。触发：多个船插共用硬编码 source id(如都写 `modifyFlat("bonus", ...)`)。修正：一律用回调传入的船插 `id` 作 source id。
-6. **互斥失效**。触发：只写了数据行，没写 `isApplicableToShip`。修正：补 `isApplicableToShip` + `getUnapplicableReason`。
-7. **描述出现空位**。触发：`%s` 数量与 `getDescriptionParam` 返回值数量不一致。修正：`desc` 的每个 `%s` 都有对应 `index` 返回非 null 字符串。
+- **装配界面找不到船插：**先确认 CSV 行存在、`id` 使用唯一的 `GearIn_` 前缀，并在调试期设置 `unlocked=TRUE`。随后核对 `script` 列；修正后重启，船插应出现在装配列表中。
+- **加载中断并报告 `JSONException`：**必填列缺失或某个 `cost_*` 留空会破坏数据行。补齐四档数字后重启，加载过程应越过该 CSV。
+- **加载中断并报告 `Duplicate key`：**同一文件内存在重复 `id`。为每行保留唯一 ID，重启后确认重复键异常消失。
+- **日志出现 `Problem loading class [...]`：**注册类名、包声明和文件路径没有指向同一个类。源码应位于 `data/scripts/gearin/hullmods/` 对应包路径，三处文本必须逐字一致。
+- **速度加成没有生效：**数值修改写进 `applyEffectsAfterShipCreation` 时，生涯侧不会执行它。把 `modifyFlat(...)` 移入 `applyEffectsBeforeShipCreation`，重新部署舰船后核对速度。
+- **两个船插数值互相覆盖：**多个船插共用 `modifyFlat("bonus", ...)` 之类的硬编码 source id。改用回调传入的船插 `id`，同时安装两个船插后确认修饰分别存在。
+- **互斥限制没有生效：**数据行本身不会建立互斥判断。补齐 `isApplicableToShip` 与 `getUnapplicableReason`，装配界面应拒绝不兼容组合并显示原因。
+- **描述出现空位：**`desc` 中的 `%s` 数量超过 `getDescriptionParam` 返回的参数。为每个占位符提供对应 `index` 的非 null 字符串，重启后核对完整描述。
 
 ## 总结
 

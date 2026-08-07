@@ -1,505 +1,1025 @@
-# 读取与修改生涯舰队
+# 为武器加入动画与效果回调
 
-本节读取并修改生涯舰队、舰队数据与舰队成员，包括成员加入、保存状态、装配和战斗准备；本节集中处理成员数据，舰队坐标、任务与 AI 由对应生涯对象页面负责。
+本节为武器加入动画与开火、命中、光束效果回调。效果类只有通过武器或射弹数据完成绑定才会被引擎调用，单独实现接口不会产生效果。
 
-*本节预期阅读时间：~25 分钟。*
+*本节预期阅读时间：~20 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~40 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 说出生涯舰队的三层对象链 (`SectorAPI.getPlayerFleet()` → `CampaignFleetAPI` → `FleetDataAPI` → `FleetMemberAPI`)，并解释成员集合的持久槽位、同步视图与派生状态；
-- 用 `FactoryAPI.createFleetMember` 创建成员，用 `addFleetMember` / `removeFleetMember` / `scuttle` 修改成员集合，并说出添加时的自动行为；
-- 区分四种成员视图的读取结果，按需求选择正确的遍历入口；
-- 读写成员保存态的身份、装配、舰长、船体状态与 CR / 维修；
-- 解释战斗准备判据、部署成本，以及后勤容量求和与封存豁免的语义；
-- 从症状定位成员读写相关的典型故障，并给出修正路径。
+* 区分 `.wpn` 的 `everyFrameEffect` / `beamEffect` 与 `.proj` 的 `onFireEffect` / `onHitEffect` 四个注册列的使用方与实例模型：每武器、每光束射线、每射弹独立实例，效果类必须可无参实例化；
+* 解释弹丸与光束武器上 `EveryFrameWeaponEffectPlugin.advance` 的调用时机 (本帧转向 / 开火之前)、`advanceAfter`(本帧操作之后)、`WeaponEffectPluginWithInit.init`(武器构造时)，并验证暂停时这些回调全部停摆；
+* 判断武器贴图动画的播放条件 (开火 / 充能 / `alwaysAnimate` 才推进、`animateWhileFiring:false` 时开火中冻结、`frameRate` 为帧 / 秒、帧环绕播放)，并列出帧贴图命名规则 (基路径以 `00.png` 结尾、帧文件顺序编号)；
+* 使用 `weapon.getAnimation()` 的 `AnimationAPI`(`play` / `pause` / `setFrame` / `setFrameRate`) 程序化控制动画，并说明两条渲染约束：`getAnimation()` 对非动画武器返回 null、`getSprite()` 上设置的 alpha 与角度会被渲染前覆盖；
+* 区分 `animationType` 的取值 (`NONE` / `GLOW` / `MUZZLE_FLASH` / `GLOW_AND_FLASH` / `SMOKE`) 与 `muzzleFlashSpec` / `smokeSpec` / `visualRecoil` 的角色、触发条件与可观察结果；
+* 解释 `BeamEffectPlugin` 的每帧回调与 `BeamEffectPluginWithReset.reset()` 的调用窗口 (射线创建与销毁)，并只消费本帧光束状态 (`didDamageThisFrame` / `getDamageTarget`)；
+* 用 `starsector.log` 与视口粒子从症状定位本节列出的八类典型故障。
 
 ## 前置知识
 
-- [C3-S1] 的生涯与战役域、装配与舰船共享注册表；
-- [C4-S1] 的无效装配 ID、路径日志与 `errorShipVariant` 回退；
-- [C6-S2] 的插件生命周期回调与持久数据标记；
-- [C6-S3] 的 `Global.getFactory()` 创建入口与阶段语义；
-- [C8-S1] 的生涯时钟、`EveryFrameScript` 注册时机与一次性判断。
+* [C1-S5] 的武器 CSV、`.wpn`、`.proj` 数据关系与注册字段；
+* [C6-S1] 的 Java 构建与 JAR 输出；
+* [C6-S3] 的 `Global` 生命周期与跨战斗引用边界；
+* [C7-S1] 的战斗插件注册、实例区分与暂停语义；
+* [C7-S3] 的 `MutableStat` 与 `damage.getModifier()` 返回值；
+* [C7-S4] 的武器开火流、射弹生命周期与光束 DPS 语义。
 
-## 术语
+## 梳理武器效果关系
 
-按术语约定，本节首次完整讲解一个词：
+先确认四个注册列与动画、视觉对象各落在哪个接口，再进入字段与时机。本节涉及的接口在 `com.fs.starfarer.api.combat`(`AnimationAPI` 在 `com.fs.starfarer.api`，数据对象在 `com.fs.starfarer.api.loading`)：
 
-- **舰队成员 (fleet member)**：API 名保留 `FleetMemberAPI`。一艘舰船或一个战机联队在生涯侧的保存态对象。
-  - 成员不是战斗实体 (`ShipAPI`)—— 战斗实体由成员在部署时实例化；成员承载船体 id、装配 (variant)、舰长、船体状态、CR、维修状态与后勤数值。
-  - `FleetMemberType` 区分 `SHIP` / `FIGHTER_WING` / `NULL` 三种成员类型。
+接口 / 类型
 
-## 文件与 API 链路
+本节角色
 
-先建立整条对象链的骨架，再逐层进入集合内部、创建入口与读写语义。
+注册列 / 获取入口
 
-### 对象链：Sector → CampaignFleetAPI → FleetDataAPI → FleetMemberAPI
+`EveryFrameWeaponEffectPlugin`
 
-本节所有成员读写都发生在这条三层链上，各层进入方式与职责如下：
+武器逐帧效果 (操作前回调)
 
-| 层 | 进入方式 | 职责 |
-|---|---|---|
-| 舰队实体 | `SectorAPI.getPlayerFleet()` / `getFleetById` 等 | `CampaignFleetAPI`(`com.fs.starfarer.api.campaign.CampaignFleetAPI`)：舰队身份、坐标、速度、势力、成员集合入口、统计、战斗绑定、inflater |
-| 成员集合 | `CampaignFleetAPI.getFleetData()` | `FleetDataAPI`(`com.fs.starfarer.api.campaign.FleetDataAPI`)：成员增删遍历、旗舰、军官、同步、快照、容量与 burn 计算 |
-| 单个成员 | `FleetDataAPI` 各列表 / `CampaignFleetAPI.getFlagship()` | `FleetMemberAPI`(`com.fs.starfarer.api.fleet.FleetMemberAPI`)：成员保存态全部字段与数值 |
+`.wpn` `everyFrameEffect`
 
-`CampaignFleetAPI` 高频成员 (`CampaignFleetAPI`)：
+`EveryFrameWeaponEffectPluginWithAdvanceAfter`
 
-| 成员 | 语义 |
-|---|---|
-| `getFleetData()` | 成员集合入口 (本节主链路)|
-| `getFlagship()` | 旗舰成员；无旗舰时返回第一个非战机成员 (`CampaignFleetAPI.getFlagship`)|
-| `isPlayerFleet()` | 是否为玩家舰队 |
-| `getStats()` | `MutableFleetStatsAPI`：舰队级统计 (burn 修正等)|
-| `getLogistics()` | `FleetLogisticsAPI`：补给/燃料消耗与维修调度 |
-| `getFleetPoints()` | 当前舰队 fleet point 总量 |
-| `getMembersWithFightersCopy()` | 含战机展开的成员副本 (见 "四种成员视图")|
-| `isEmpty()` | 成员列表是否为空 |
-| `isValidPlayerFleet()` | "舰队非空且不全由战机联队组成"|
-| `forceSync()` | 让容量、船员等与舰队构成、cargo 匹配，并重放舰队 buff / 船插 / 技能效果 (见 "FleetData 的分层结构")|
-| `setLocation(x, y)` | 舰队坐标写入入口 |
-| `getLocation()` | 坐标读取；**禁止**用它写坐标 (`setLocation` 才是坐标写入入口)|
-| `setAIMode(boolean)` | 关闭补给/燃料消耗、事故与船员需求，LR 锁 100%|
-| `getInflater()` / `inflateIfNeeded()` / `deflate()` | 保存态 ↔ 完整装配态的膨胀入口 (见 "战斗准备")|
+武器逐帧效果 (操作后追加回调)
 
-对象链只给出进入方式；集合内部如何组织成员，决定成员增删之后您读到的列表和统计是否可信，先看它的分层结构。
+同上 (类实现即生效)
 
-### FleetData 的分层结构
+`WeaponEffectPluginWithInit`
 
-`FleetDataAPI` 是成员集合的接口，按持久与派生分四层：
+武器效果构造回调
 
-::: info 为什么按 "持久 / 派生" 分层
+同上 (类实现即生效)
 
-只有槽位列表随存档保存；视图与派生状态每次同步时由成员重算 —— 这样读档后集合自动自洽，成员增删也不需要手动维护任何视图或统计值。
+`BeamEffectPlugin`
 
-:::
+光束逐帧效果
 
-1. **持久槽位列表**：`members`—— 按槽位存储成员，槽位可被 `NULL_MEMBER` 占位 (`FleetMemberType.NULL`)。这是**唯一随存档保存**的成员层。
-   - 添加成员填入第一个空槽 (`findFirstUnusedIndex`)，按索引移除只在原槽放回 NULL(`removeFleetMemberAtIndex`)，整体移除才收缩 (`removeFleetMemberAndCollapseSlot`)。
-2. **同步视图**：`membersWithoutNull`(不可变)、`sortedMembersWithoutNull`(按 hull size ordinal 降序 + fleet point cost 降序)、`sortedMembersWithoutNullWithFighters`。
-   - 战机展开经 `Utils.expandFighterWingsCampaign` 把每个联队展开成逐架成员；展开只取非封存且 CR > 0 的成员，封存成员排到末尾。
-   - `syncMemberLists()` 重建这三个视图。
-3. **派生状态**：`fleetPointsUsed` / `effectiveStrength`、`cargo`(容量上限由成员重算)、`minCrew`、`travelSpeed`、`fuelPerLightYear`、burn level 三件套。全部在同步时重算。
-4. **瞬态层**：`snapshot`(`transient` 字段)——`takeSnapshot()` / `getSnapshot()` 的成员快照，**不随存档保存** (接口 "The snapshot is transient and will not be in the save file.")。
+`.wpn` `beamEffect`(仅光束武器)
 
-同步管线 (`syncIfNeeded`)：`setSyncNeeded()` 置位 → 下一次读成员/容量前触发 —— 成员 stats 全量重算、`cacheClearedOnSync` 清空、舰队指挥官 fleetwide 效果重放、船员重分配 (`recrewFleetMembersV2`)、fleet sync 船插的 `onFleetSync`。
+`BeamEffectPluginWithReset`
 
-同一管线还执行 `updateFleetPointsUsed`、`updateCargoCapacities`、`updateTravelSpeed`、logistics 刷新、buff 应用、舰队计数与 burn bonus。
+光束效果创建 / 销毁复位
 
-`CampaignFleetAPI.forceSync()` 等价于 `setSyncNeeded` + `syncIfNeeded` 执行两次。
+同上 (类实现即生效)
 
-集合的持久层是槽位列表；往槽位里放成员之前，先得能把成员造出来。创建与入队是两件事，分开讲。
+`OnFireEffectPlugin`
 
-### 成员创建与注册
+开火一次性回调
 
-创建成员的正式途径 (`FactoryAPI`)：
+`.proj` `onFireEffect`
 
-| 成员 | 语义 |
-|---|---|
-| `Global.getFactory().createFleetMember(FleetMemberType type, String variantOrWingId)` | 按装配 id(SHIP) 或联队 id(FIGHTER_WING) 创建 |
-| `Global.getFactory().createFleetMember(FleetMemberType type, ShipVariantAPI variant)` | 按装配对象创建 |
+`OnHitEffectPlugin`
 
-(`SettingsAPI` 有同签名双入口；两处创建结果一致，习惯用 `Global.getFactory()`。)
+命中一次性回调
 
-创建后成员即处于 "保存态"：自带默认舰长 (人格 `steady`)、唯一 id(`Misc.genUID()`)、从 CSV spec 加载期取装配并 **clone**(成员各自持有副本)、以及 `FleetMemberStatusAPI`(船体状态) 与 `RepairTrackerAPI`(CR/维修) 两个状态对象。
+`.proj` `onHitEffect`
 
-**创建不等于入队** —— 成员必须交给 `FleetDataAPI.addFleetMember(...)` 才会成为舰队一员。
+`AnimationAPI`
 
-无效装配 id 的两条分流：`SHIP` 类型装配缺失 → 打印堆栈 + 回退 `errorShipVariant`(默认 `nebula_Standard`)，**不抛异常**；
+武器贴图动画控制
 
-`FIGHTER_WING` 类型联队缺失 → 抛 `RuntimeException("... is not a valid fighter wing id")`。
+`weapon.getAnimation()`(非动画武器返回 null)
 
-创建出来的成员要交给修改入口才会进入集合；改完集合之后，读取侧的四种视图决定您能看到什么。
+`MuzzleFlashSpec`
 
-### 成员添加 / 移除 / 遍历
+炮口粒子参数
 
-`FleetDataAPI` 的成员修改入口 (`FleetDataAPI`)：
+`.wpn` `muzzleFlashSpec`(`ProjectileWeaponSpecAPI.getMuzzleFlashSpec()`)
 
-| 成员 | 语义 |
-|---|---|
-| `addFleetMember(FleetMemberAPI)` | 加入成员 (自动行为见下)|
-| `addFleetMember(String variantId)` | 按装配 id 创建 `SHIP` 成员并加入，返回新成员 |
-| `removeFleetMember(FleetMemberAPI)` | 从列表移除并收缩槽位 |
-| `scuttle(FleetMemberAPI)` | 移除并把拆解收益与已装武器放入 cargo(见 "后勤语义")|
-| `clear()` | 清空成员列表 |
-| `setFlagship(FleetMemberAPI)` | 指定旗舰 (副作用见 "故障分析")|
+`smokeSpec` 数据对象
 
-`addFleetMember` 的自动行为：同一对象引用已在列表 → **直接返回不重复添加**；填入第一个 NULL 槽；非战机且船名为空 → 自动起名；写回 `setFleetData(this)`；舰长为空 → 补默认舰长；清旗舰标记；`setSyncNeeded()`。
+开火烟尘参数
 
-::: caution addFleetMember 禁止传 null
+`.wpn` `smokeSpec` 键
 
-传 null 会抛 `RuntimeException("Attempting to add null fleet member to [...]")`。入队前先对创建结果判空 —— `createFleetMember` 的 `SHIP` 分支对无效装配 id 会回退 `errorShipVariant` 而**不会**返回 null。
+`ProjectileWeaponSpecAPI` / `BeamWeaponSpecAPI` / `ProjectileSpecAPI` / `MissileSpecAPI`
 
-:::
+spec 读取侧
 
-四种成员视图 (读取全部返回副本，可安全遍历)：
+`weapon.getSpec()` 或按 id 读取 spec 的加载期存储
 
-| 视图 | 内容 |
-|---|---|
-| `getMembersListCopy()` | 成员副本 (含战机联队，每个联队 1 条；无 NULL 占位)，最常用 |
-| `getCombatReadyMembersListCopy()` | 非封存且 `canBeDeployedForCombat()` 的成员 |
-| `getMembersInPriorityOrder()` | 非封存成员在前、封存成员在后，类内保持原顺序 |
-| `getMembersListWithFightersCopy()` | 战机联队按联队数量逐架展开的完整列表 (`Utils.expandFighterWingsCampaign`；仅非封存且 CR > 0 的联队展开，封存排末尾)|
+`DamageAPI`
 
-另有 `getMemberWithCaptain(PersonAPI)` 按舰长查成员、`getNumMembers()`、`getFleetPointsUsed()`。成员级实体脚本与视图偏移 (`FleetMemberViewAPI`) 不在本节范围。
+光束 / 射弹伤害对象
 
-成员进入集合后，读写的落点就是它的保存态。`FleetMemberAPI` 按功能分七组：
+`beam.getDamage()` / `projectile.getDamage()`[C7-S4] / [C7-S3]
 
-### FleetMemberAPI：身份、装配、舰长、数值
+### .wpn / .proj 注册列 (数据挂载点)
 
-`FleetMemberAPI`(`com.fs.starfarer.api.fleet.FleetMemberAPI`) 按功能分组：
+数据文件
 
-| 分组 | 成员 | 语义 |
-|---|---|---|
-| 身份 | `getId()`("Unique id, generated using Misc.genUID()")、`getSpecId()`、`getHullId()`、`getType()`、`getHullSpec()` | 成员唯一 id；装配 spec id；船体 id；`SHIP`/`FIGHTER_WING`/`NULL` |
-| 装配 | `getVariant()`、`setVariant(ShipVariantAPI, boolean withRefit, boolean withStatsUpdate)` | 保存态装配读写；`getVariant().getHullVariantId()` 读装配 id |
-| 舰长 | `getCaptain()`、`setCaptain(PersonAPI)`、`getFleetCommander()`、`isFlagship()` / `setFlagship(boolean, boolean)` | 成员舰长；舰队指挥官 (`fleetData.getCommander()`)；旗舰标记 |
-| 状态 | `getStatus()`、`getRepairTracker()`、`needsRepairs()`、`canBeRepaired()`、`isMothballed()` | 船体状态、CR/维修、封存 (见 "战斗准备")|
-| 数值 | `getFleetPointCost()`、`getDeployCost()`、`getDeploymentPointsCost()`、`getDeploymentCostSupplies()`、`getMemberStrength()`、`getBaseValue()`、`getBaseBuyValue()`、`getBaseSellValue()` | 舰队点数、CR 部署成本、部署点数/补给、成员强度、基础价值 |
-| 后勤 | `getCargoCapacity()`、`getFuelCapacity()`、`getMinCrew()`、`getMaxCrew()`、`getNeededCrew()`、`getCrewFraction()`、`getFuelUse()` | 单成员后勤数值 (见 "后勤语义")|
-| 分类 | `isFighterWing()`、`isFrigate()`、`isDestroyer()`、`isCruiser()`、`isCapital()`、`isCivilian()`、`isCarrier()`、`getNumFlightDecks()`、`isPhaseShip()`、`isStation()` | 按 hull size / 角色判定 |
-| 其他 | `getFleetData()`、`getStats()`(`MutableShipStatsAPI`)、`getCrewComposition()`、`isAlly()` / `setAlly(boolean)`、`setShipName()` | 回链集合、成员统计、船员构成、战斗瞬态标记、船名 |
+键
 
-**装配写入语义** (`FleetMemberAPI.setVariant`)：`withRefit = true` 时按新旧装配差异对 CR 施加事件 (`applyCREvent(..., "field refit")`)；
+原版实例
 
-非战机成员会同步更新 `specId = variant.getHullVariantId()`(**换装配会连船体一起换**)；`withStatsUpdate = true` 时立即重算成员 stats。
+使用方
 
-::: warning setVariant 保存的是传入引用
+`data/weapons/*.wpn`
 
-创建成员时的装配已被克隆，但 `setVariant` 传入的引用需要调用方自己管理生命周期 —— 不要长期共享同一装配引用。
+`everyFrameEffect`
 
-:::
+`riftbeam.wpn` 的 `com.fs.starfarer.api.impl.combat.RiftBeamEffect`；`blinker_red.wpn` 的 `BlinkerEffect`
 
-保存态里有两组字段决定成员能否上场：CR 与部署成本。战斗准备是 "当前状态" 判据，补给和时间可以恢复。
+弹丸武器构造器 / 光束武器构造器
 
-### 战斗准备语义
+`data/weapons/*.wpn`
 
-- **CR(Combat Readiness)**：`getRepairTracker()` 返回 `RepairTrackerAPI`(`com.fs.starfarer.api.fleet.RepairTrackerAPI`)。
-  - `getCR()` 返回 0–1，**已按船员占比修正**；`getBaseCR()` 不含船员修正；`getMaxCR()` 上限；`setCR(float)` 直接写入；`applyCREvent(float, String)` 施加 "近期事件"(显示在 CR 悬浮提示里)。
-  - 新成员 CR 初始 `0.5F`。CR 低于阈值会出现在战斗外 "无法部署"(见下)。
-- **部署判据**：`canBeDeployedForCombat()`(`FleetMemberAPI`)—— 封存 → `false`；战机且 CR ≤ 0 → `false`；否则要求 `CR >= noDeployCRPercent` 且 `crewFraction >= noDeployCrewPercent`(`settings.json`中为 0% 与 5%)。
-  - **战斗准备是 "当前状态" 判据**：CR 或船员不足时返回 `false`，补给与时间可恢复。
-- **部署成本**：`getDeployCost()` 是 CR 占比 (`CRPerDeploymentPercent * CRToDeploy / 100`，战机乘联队数量；`FleetMemberAPI` "From 0 to 1, CR fraction. Multiplied by number of fighters if fighter wing.")。
-  - `getDeploymentPointsCost()` 是部署点数 (战机乘数量)；`getDeploymentCostSupplies()` 是部署补给 (含最小 1 上限保护)。
-- **保存态与膨胀态**：`CampaignFleetAPI.getInflater()` 持有 `FleetInflater`(由 `FleetFactoryV3` 生成的舰队挂载)。
-  - `inflateIfNeeded()` 在战役侧把保存态成员补全为完整装配态 (`CampaignFleetAPI.inflateIfNeeded`：inflater 存在、未膨胀、非中立势力时执行；`removeAfterInflating()` 为真则随后移除 inflater)；`deflate()` 回到保存态表达。
-  - 玩家舰队的成员默认即保存态，战斗部署时由战斗侧实例化。
+`beamEffect`
 
-能部署是一回事，舰队养不养得起是另一回事：容量、船员与补给消耗按成员求和，封存则把成员从这些负担中豁免出来。
+`ionbeam.wpn` 的 `com.fs.starfarer.api.impl.combat.IonBeamEffect`
 
-### 后勤语义
+光束射线构造器
 
-- **容量按成员求和**：`updateCargoCapacities` 遍历成员，把 `getFuelCapacity` / `getCargoCapacity` / `getMinCrew` / `getMaxCrew` / `getFuelUse` 累加 (战机按联队数量加权)。
-  - 写入 cargo 的 `maxFuel` / `maxCapacity` / `maxPersonnel`，并算出 `minCrew` 与 `fuelPerLightYear`；读取侧 `CampaignFleetAPI.getCargo()`(经 `SectorEntityToken.getCargo()`) 拿到 `CargoAPI`。
-- **burn level**：`getMaxBurnLevel()` 是**非封存**成员中最快者 (含 `getFleetwideMaxBurnMod`)；`getMinBurnLevel()` 是全体最慢者；`getBurnLevel()` 是有效 burn(含深超空间与舰队 mod 修正，上限 20)。
-  - `CampaignFleetAPI.getCurrBurnLevel()` 是当前实际流速。
-- **封存 (mothball)**：`getRepairTracker().setMothballed(true)` 后：成员不进 `getCombatReadyMembersListCopy()`、排到 `getMembersInPriorityOrder()` 末尾、`canBeDeployedForCombat()` 恒 `false`。
-  - stats 重算时补给月耗 × `supplyConsumptionMothballedMult`、cargo / fuel / maxCrew / minCrew 乘数置 0(`FleetMemberAPI.updateStats`)。
-  - 封存船**不贡献容量也不烧船员**，这正是 "封存闲置船" 的语义。
+`data/weapons/proj/*.proj`
 
-::: warning 封存修正是延迟生效的
+`onFireEffect`
 
-stats 修正在下一次 `updateStats` 才写入 —— 改完封存标志后要触发同步 (如 `forceSync`) 再读数，否则读到的还是旧值。
+`canister_flak.proj`
 
-:::
+武器构造期缓存，开火时回调
 
-- **scuttle(拆解)**：`scuttle(member)` 移除成员并把拆解收益 (补给、燃料、重型机械，`getSuppliesFromScuttling` 等)、已装非 built-in 武器与战机 LPC、AI 核心放入 cargo。
-  - 拆解是**不可逆**的成员移除方式，与 `removeFleetMember` 的差别在于收益入舱。
+`data/weapons/proj/*.proj`
 
-机制讲完，示例脚本需要在正确时机注册，才能观察到这些行为。
+`onHitEffect`
 
-### 注册入口
+`assaying_rift_proj.proj`
 
-本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)` + 各自 persistent data 键的一次性判断模式 (不要把注册键并入插件既有的 `CLASS_MARK` 判断)。注册见 "完整最小例" 的调用点片段。
+射弹构造期缓存，命中时回调
 
-本节用一个自停脚本把整条链走一遍：创建、入队、读写、清理，全程只操作演示成员。
+加载期：四个键都在加载武器 / 弹体 spec 时把类名登记给脚本类加载器，类在首次被实例化时才真正加载。
 
-## 完整最小例
+### .wpn 动画与视觉字段
 
-在既有 MOD 布局与插件生命周期类之上新增一个演示脚本类 (不新增资源文件)：
+加载器读取 (缺省值即默认)：
+
+`.wpn` 键
+
+默认
+
+语义
+
+`numFrames`
+
+1
+
+帧数；**大于 1 时武器才是动画武器** (`isAnimated`)
+
+`frameRate`
+
+1
+
+播放帧率 (帧 / 秒)
+
+`alwaysAnimate`
+
+false
+
+true 时闲置也持续播放
+
+`animateWhileFiring`
+
+true
+
+false 时开火中冻结动画 (约 0.001 倍速)
+
+`animationType`
+
+NONE
+
+弹丸武器开火视觉：`NONE` / `GLOW` / `MUZZLE_FLASH` / `GLOW_AND_FLASH` / `SMOKE`
+
+`visualRecoil`
+
+0
+
+非 0 时启用炮管贴图 (`turretGunSprite` / `hardpointGunSprite`) 与后坐位移
+
+`muzzleFlashSpec`
+
+—
+
+`animationType` 为 `MUZZLE_FLASH` / `GLOW_AND_FLASH` 时的炮口粒子参数
+
+`smokeSpec`
+
+—
+
+`animationType` 为 `SMOKE` 时的烟尘参数
+
+`turretGlowSprite` / `hardpointGlowSprite`
+
+—
+
+`GLOW` / `GLOW_AND_FLASH` 的开火闪光贴图
+
+`turretGunSprite` / `hardpointGunSprite`
+
+—
+
+`visualRecoil` 非 0 时的炮管 (barrel) 贴图
+
+原版实例：
+
+* `chaingun.wpn`(`numFrames:4`、`frameRate:20`、`animationType:"MUZZLE_FLASH"`、`muzzleFlashSpec` 完整对象)。
+* `heavyac.wpn`(`visualRecoil:10.0`)；
+* `amblaster.wpn`(`animationType:"GLOW_AND_FLASH"`)；
+* `blinker_red.wpn`(`numFrames:2`、`frameRate:1`、`alwaysAnimate:"false"`，配 `BlinkerEffect` 人工切帧)。
+
+## 武器贴图动画
+
+注册列回答了 "哪个类被调用"，动画数据回答 "贴图怎么动"。
+
+### 数据驱动动画：四个字段的播放条件
+
+动画武器 (`numFrames > 1`) 的帧由引擎每帧推进 (弹丸与光束武器同构)，推进条件：
+
+1. **只有开火、充能 (charge state 非 IDLE) 或 `alwaysAnimate:true` 时动画才走帧**；其余时间停在当前帧 (通常 0 帧)。
+2. `animateWhileFiring:false` 时，开火中动画几乎冻结 (时间倍率 0.001)。
+3. `burstDelay > 0` 的连射武器在冷却超过 burstDelay 且不在 burst 内时完全冻结 (倍率 0)。
+4. 帧循环环绕：`currFrame += 时间 × frameRate`，超过 `numFrames` 回绕 (`Animation.advance`)。
+5. 动画只在视口附近且武器未隐藏时推进。
+
+`frameRate` 是 "帧 / 秒" 的播放速率，帧间切换由引擎驱动 —— 效果类无需自己数帧。
+
+### 帧贴图命名规则
+
+动画帧文件由基贴图路径推导：基路径 (`turretSprite` / `hardpointSprite`) **必须以 `00.png` 结尾**，帧 N 的路径 = 去掉 `00.png` 后拼接 `%02d.png`。原版 `chaingun.wpn` 的 `numFrames:4` 对应：
 
 ```text
-mods/GearIndustry/
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data/
-├── src/
-│   └── data/scripts/gearin/campaign/
-│       └── GearInFleetMemberScript   # 本节新增（归本节所有）
-└── jars/
+graphics/weapons/rotary/rotary_cannon_turret_base00.png   # 帧 0
+graphics/weapons/rotary/rotary_cannon_turret_base01.png   # 帧 1
+graphics/weapons/rotary/rotary_cannon_turret_base02.png   # 帧 2
+graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 ```
 
-### GearInFleetMemberScript
+帧贴图在**武器实例构造时**逐帧加载；基路径不以 `00.png` 结尾时帧 0 路径推导错位 (替换不命中，帧文件拼出错误文件名)，帧文件缺失则在武器创建阶段加载失败 —— 部署舰船时即报错，不会延迟到渲染。命名规则是必须遵守的 (规则 3)。
+
+### AnimationAPI 程序化控制
+
+`weapon.getAnimation()` 返回 `AnimationAPI`(**非动画武器返回 null**，`com.fs.starfarer.api.combat.WeaponAPI` javadoc 原文 "null for non-animated weapons")，提供：
+
+* 帧读写：`getFrame()` / `setFrame(int)` / `getNumFrames()`；
+* 播放控制：`play()`(置 playing 标志，闲置时也继续走帧)/ `pause()` / `reset()`；
+* 速率：`getFrameRate()` / `setFrameRate(float)`(可变速)；
+* 透明度：`getAlphaMult()` / `setAlphaMult(float)`。
+
+引擎的自动推进受 `Animation` 的 `paused` 与 `playing` 双重影响：`pause()` 后引擎不再推进 (包括开火 / 充能期间)；`play()` 使闲置武器也持续循环。
+
+效果类可以用 `setFrame` 直接定格 (原版 `BlinkerEffect` 每帧按舰船状态把导航灯切到 0 / 1 帧)，也可以用 `play` / `pause` 覆盖数据字段的默认播放节奏。
+
+两条渲染约束 (`WeaponAPI.getSprite()` javadoc 原文)：
+
+* 渲染前引擎会在 `getSprite()` 返回的贴图上调用 `setAlphaMult()` 与 `setAngle()`—— 在这张贴图上设置这两项**无效** (会被覆盖)。改透明度要用 `SpriteAPI.setColor()` 的 alpha 通道，改朝向要用 `WeaponAPI.setCurrAngle()`。
+
+## 内置视觉：animationType、visualRecoil 与炮口粒子
+
+动画解决帧的推进，开火瞬间的光、烟与炮管后坐由内置视觉字段承担。弹丸武器开火时，在视口 100 单位内且舰船允许炮口闪光 (`ShipAPI.isNoMuzzleFlash()` 为 false) 时按 `animationType` 分派：
+
+`animationType`
+
+开火视觉
+
+数据来源
+
+`NONE`
+
+无内置粒子
+
+—
+
+`GLOW`
+
+glow 贴图按充能时间一半淡出闪烁
+
+`turretGlowSprite` / `hardpointGlowSprite`、`glowColor`
+
+`MUZZLE_FLASH`
+
+炮口粒子爆发
+
+`muzzleFlashSpec`
+
+`GLOW_AND_FLASH`
+
+两者
+
+上述两者
+
+`SMOKE`
+
+烟云 + 后喷烟
+
+`smokeSpec`
+
+`muzzleFlashSpec` 字段 (`com.fs.starfarer.api.loading.MuzzleFlashSpec`)：
+
+* `length`(粒子射程)；
+* `spread`(散度，度)；
+* `particleSizeMin` / `particleSizeRange`(粒子尺寸区间)；
+* `particleDuration`(寿命，秒)；
+* `particleCount`(数量；`<= 0` 生成空 spec)；
+* `particleColor`。
+
+`smokeSpec` 字段 (`.wpn` 数据键)：
+
+* `particleSizeMin` / `particleSizeRange`；
+* `cloudParticleCount` / `cloudDuration` / `cloudRadius`(烟云)；
+* `blowbackParticleCount` / `blowbackDuration` / `blowbackLength` / `blowbackSpread`(后喷)；
+* `particleColor`。
+
+`visualRecoil` 非 0 且基贴图存在时启用炮管贴图与后坐位移：`turretGunSprite` / `hardpointGunSprite` 作为炮管层渲染。
+
+炮管层渲染用到 `weapon.getBarrelSpriteAPI()` / `renderBarrel` / `isRenderBarrelBelow()`。
+
+开火后炮管沿后坐方向位移并复位；数值越大位移越明显 (原版 `heavyac.wpn` 用 10.0)。
+
+注意 `visualRecoil` 是视觉后坐，与散布相关的实际后坐由 `minSpread` / `maxSpread` / `spreadBuildup` / `spreadDecayRate` 控制，两者独立。
+
+## 效果回调：注册列 → 实例 → 时机
+
+数据字段与渲染字段已经看完，现在回到四个注册列本身：实例何时创建、每帧何时被调用。
+
+为什么每个注册列都要独立实例化
+
+四个注册列各自创建实例，根源在脚本类加载器的实例化行为：类名只作工厂键，每次调用都创建新实例。于是 "同一把武器绑多个类名" 或 "同一类名绑多个注册列" 得到的都是独立实例 —— 实例归属完全由绑定位置决定，类实现了接口不等于实例被引擎调用。
+
+### everyFrameEffect(弹丸与光束通用)
+
+实例与时机 (弹丸武器；光束武器同构)：
+
+1. **武器构造时**：`.wpn` 登记的 `everyFrameEffect` 类名由脚本类加载器实例化 (**每次创建新实例**)→ 每把武器实例独有一个效果对象；若实现 `WeaponEffectPluginWithInit`，紧接着调用 `init(weapon)`。多艘舰、多把同 id 武器的效果对象互不相干。
+2. **每帧**：`advance(amount, engine, weapon)` 在本帧转向、开火等操作**之前**调用 (API javadoc 原文 "Called before this frame's operations for the weapon - turning, firing, etc.")；本帧操作完成后，若实现 `EveryFrameWeaponEffectPluginWithAdvanceAfter` 再调 `advanceAfter`。
+3. **暂停时武器不推进** → 两个回调全部停摆 ([C7-S1] / [C7-S4] 的暂停语义；与战斗插件 `advance` 暂停时仍被调用不同)。
+4. 若该效果类同时实现 `OnFireEffectPlugin`，开火时**同一个实例**还会被调一次 `onFire`——"一类多角色、一武器一实例" 是原版常用做法 (`RiftBeamEffect` 用 everyFrameEffect 在光束武器上轮询 `weapon.getBeams()` 生成裂隙；`RealityDisruptorEffect` 一个类同时是 everyFrameEffect / onFireEffect / onHitEffect，见 "同实例多角色")。
+
+### beamEffect(光束武器专属)
+
+* 注册列 `beamEffect` 只在 `specClass: beam` 的 `.wpn` 上被读取；写到弹丸武器 `.wpn` 上**静默不生效**。
+* 实例：每条光束射线实体构造时调 `getSpec().getBeamEffect()` → **每条射线独立实例**；实现 `BeamEffectPluginWithReset` 的实例在射线创建与销毁时收到 `reset()`—— 跨射线状态在这里复位。
+* 每帧调用：射线在开火 / 充能期间存在，光束武器每帧对每条射线调一次 `advance(amount, engine, beam)`。调用点在端点更新前后的位置随命中与否变化：**射线被目标截短 (命中) 时在更新 `to` 端点之后调用，未命中时在更新之前调用** —— 效果里读 `beam.getTo()` 的语义随命中状态不同，命中时读到本帧截短端点，未命中时读到上一帧端点。
+* 光束伤害是 DPS 语义按 0.1 秒结算 [C7-S4]；`beam.getDamage().getDpsDuration()` 在结算帧返回累计时长、其余帧为 0—— 原版 `IonBeamEffect` 用 `dpsDuration` 推进 `IntervalUtil`(并处理快速时间下的 `wasZero` 边沿)，使特效节奏跟随真实伤害结算。
+* `didDamageThisFrame()` / `getDamageTarget()` 只对本帧结算语义有效 ([C7-S4] 规则 5 同规)：光束逐帧可能切换命中目标，禁止把上一帧目标缓存跨帧使用。
+
+### onFireEffect / onHitEffect(.proj)
+
+* 注册列：`onFireEffect` / `onHitEffect` 在 projectile 与 missile 两类 `.proj` 上都被读取。
+* 实例：`onFireEffect` 在**武器构造时**缓存到武器对象 (每武器一个实例)；`onHitEffect` 在**射弹构造时**缓存 (每射弹一个实例)。
+* 时机：`onFire` 在 `fireShot` 生成射弹之后立即调用，参数是刚生成的那一颗射弹 (弹药不足时不生成射弹、也不回调 ——[C7-S4])；`onHit` 在命中伤害结算 (`notifyDealtDamage`) 时调用，`shieldHit` 与 `ApplyDamageResultAPI` 是本次结算上下文。弹道弹穿行时默认不触发 `onHit`，`.proj` 的 `applyOnHitEffectWhenPassThrough:true` 可改为穿行也触发。
+* 参数都是 "本次事件上下文"，**禁止跨发 / 跨帧缓存** ([C7-S4] 规则 2 同规)。
+
+### 同实例多角色 (RealityDisruptorEffect 模式)
+
+原版 `RealityDisruptorEffect`(`com.fs.starfarer.api.impl.combat.RealityDisruptorEffect`) 同时实现三个效果接口：
+
+* `EveryFrameWeaponEffectPlugin`
+* `OnFireEffectPlugin`
+* `OnHitEffectPlugin`
+
+类注释原文："will be multiple instances of this, as this doubles as the every frame effect and the on fire effect (same instance)"。
+
+要点：
+
+* `.wpn` 的 `everyFrameEffect` 与 `.proj` 的 `onFireEffect` / `onHitEffect` 可以指向**同一个类名**，但每个注册列各创建自己的实例；
+* 同一把武器上，"每武器实例" 同时收到 `advance`(每帧) 与 `onFire`(每次开火)—— 两个回调共享该实例的字段，是跨回调传状态的合法窗口；
+* 反之，`.proj` 绑定产生的 `onHit` 实例与武器效果实例是不同对象 —— 跨角色传状态必须另找通道 (如 `weapon.setCustom(...)` / `getCustom()`)。
+
+## 必须遵守的规则
+
+从实例模型与回调时机中提炼出的约束集中在这里，本节示例逐条对应。
+
+1. **效果类必须可无参实例化**。所有效果注册列都由脚本类加载器按类名创建实例 (要求无参构造器)。违反的可观察结果：绑定的类缺失、类名写错或无无参构造器时，武器 / 射线 / 射弹创建点抛 `Problem loading class [...]`(`RuntimeException`)—— 部署舰船即报错，或武器 / 射弹创建失败。
+2. **回调参数只在本回调内消费，禁止跨发 / 跨帧 / 跨实例缓存**。`onFire` 的 `projectile`、`onHit` 的 `target` / `damageResult`、光束的 `didDamageThisFrame` / `getDamageTarget` 都只在对应回调与对应帧有效 (与 [C7-S4] 规则 2、4 同一条纪律)。违反的可观察结果：把上一帧目标当本帧目标继续操作 —— 对已死实体施加逻辑；或跨发射复用射弹引用 —— 旧引用失效或被下一次覆盖。
+3. **动画武器帧贴图必须按命名规则放置**：基贴图路径以 `00.png` 结尾，帧文件按 `00, 01, ..., N-1` 顺序编号。违反的可观察结果：基路径不以 `00.png` 结尾时帧 0 路径推导错位 (拼出错误文件名)，帧文件缺失在武器构造时加载失败 —— 部署舰船即报错。
+4. **`weapon.getAnimation()` 必须判空**。只有 `numFrames > 1` 的武器有动画对象 (`com.fs.starfarer.api.combat.WeaponAPI` javadoc 原文 "null for non-animated weapons")。违反的可观察结果：对静态贴图武器调用 `getAnimation()` 直接 NPE。
+5. **不得在 `getSprite()` 返回的贴图上设置 alpha 与角度**。渲染前引擎会调用 `setAlphaMult()` / `setAngle()` 覆盖 (`WeaponAPI.getSprite()` javadoc 原文)。改透明度用 `SpriteAPI.setColor()` 的 alpha 通道、改朝向用 `WeaponAPI.setCurrAngle()`。违反的可观察结果：设置值被覆盖，视觉无变化 (静默失效)。
+6. **`beamEffect` 只对光束武器生效**。注册列只在 `specClass: beam` 时被读取。违反的可观察结果：写在弹丸 `.wpn` 上完全无效，无任何报错 (静默)—— 回调不执行。
+7. **修改武器数值前必须 `ensureClonedSpec()`**([C7-S4] 规则 1 同规)；效果类如需改伤害只能走 `damage.getModifier()`([C7-S4] 规则 6)。本节示例只观察并生成纯视觉粒子，不改数值；违反的可观察结果见开火流单元 [C7-S4]。
+
+## 实现武器动画与回调
+
+本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段；把它放入指定类或方法后再继续，日志或界面出现对应信号时才进入下一段。
+
+### 识别动画武器
 
 ```java
-package data.scripts.gearin.campaign;
+// 插入位置：GearInWeaponFrameEffect.init()
+AnimationAPI animation = weapon.getAnimation();
+LOG.info("GearIn weapon fx init " + weapon.getId()
+        + " beam=" + weapon.isBeam()
+        + " animated=" + (animation != null)
+        + (animation != null
+                ? " frames=" + animation.getNumFrames() + " rate=" + animation.getFrameRate()
+                : ""));
+```
 
-import java.util.List;
+新增行为：武器创建时区分动画贴图与静态贴图，并报告帧数和帧率。完成信号：转轮武器显示 `animated=true frames=4 rate=12.0`，静态光束武器显示 `animated=false`，且不发生空指针。
 
-import org.apache.log4j.Logger;
+### 在操作前控制动画
 
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.FleetDataAPI;
-import com.fs.starfarer.api.combat.ShipVariantAPI;
-import com.fs.starfarer.api.fleet.FleetMemberAPI;
-import com.fs.starfarer.api.fleet.FleetMemberType;
-
-/**
- * 完整最小例：生涯舰队成员（FleetMemberAPI）与舰队数据（FleetDataAPI）。
- *
- * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），persistent data 键 REGISTER_MARK 一次性门控
- * （沿用既有 CLASS_MARK 门控模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内）。
- *
- * 行为：挂载后第一次 advance() 执行一次演示序列并自停（isDone()=true，引擎下一帧自动移除本脚本）：
- *   1. 读取玩家舰队初始成员数与 fleet points、cargo 容量；
- *   2. 用 Global.getFactory().createFleetMember 创建 wolf_Assault 与 hammerhead_Elite 两个 SHIP 成员；
- *   3. 分别 addFleetMember 加入玩家舰队，记录加入前后成员数、fleet points、cargo 容量变化；
- *   4. 遍历 getMembersListCopy() 验证新成员在列；
- *   5. 船体状态：applyHullFractionDamage(0.3) -> getStatus().getHullFraction() / needsRepairs() -> repairFully()；
- *   6. CR：setCR(0.3f) 压低 CR 再恢复；
- *   7. 封存：setMothballed(true) 对 canBeDeployedForCombat() 与 getMembersInPriorityOrder() 的影响；
- *   8. 装配：setVariant 换成 wolf 装配 -> getHullId() 变化 -> 换回原装配；
- *   9. 清理：removeFleetMember 移除两个演示成员，恢复初始状态。
- *
- * 演示全程只操作演示成员；结束后玩家舰队成员数与初始一致。
- */
-public class GearInFleetMemberScript implements EveryFrameScript {
-
-    /** 存档持久化标记：本脚本是否已在该存档执行过（随存档保存）。 */
-    public static final String REGISTER_MARK = "GearIn_FleetMemberScript";
-
-    private static final Logger LOG = Global.getLogger(GearInFleetMemberScript.class);
-
-    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
-    private boolean executed = false;
-
-    public GearInFleetMemberScript() {
-        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
-    }
-
-    @Override
-    public boolean isDone() {
-        return executed;
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        if (executed) {
-            return;
+```java
+// 插入位置：GearInWeaponFrameEffect.advance()
+AnimationAPI animation = weapon.getAnimation();
+if (animation != null) {
+    boolean idle = weapon.getChargeLevel() <= 0f
+            && weapon.getCooldownRemaining() <= 0f
+            && !weapon.isFiring();
+    if (idle) {
+        animation.pause();
+        if (!idleFrameApplied) {
+            animation.setFrame(0);
+            idleFrameApplied = true;
         }
-        executed = true;
-        runSequence();
-    }
-
-    private void runSequence() {
-        CampaignFleetAPI playerFleet = Global.getSector().getPlayerFleet();
-        FleetDataAPI data = playerFleet.getFleetData();
-
-        int initialCount = data.getNumMembers();
-        float initialFleetPoints = playerFleet.getFleetPoints();
-        float initialCargo = playerFleet.getCargo().getMaxCapacity();
-        LOG.info(String.format(
-                "GearIn fleet member start: members=%d fleetPoints=%.0f cargoCapacity=%.0f",
-                initialCount, initialFleetPoints, initialCargo));
-
-        // --- 创建成员（先不入队）---
-        FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
-        FleetMemberAPI hammerhead = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "hammerhead_Elite");
-        LOG.info(String.format(
-                "GearIn fleet member created: wolf id=%s hull=%s variant=%s fp=%d | hammerhead id=%s hull=%s variant=%s fp=%d",
-                wolf.getId(), wolf.getHullId(), wolf.getVariant().getHullVariantId(), wolf.getFleetPointCost(),
-                hammerhead.getId(), hammerhead.getHullId(),
-                hammerhead.getVariant().getHullVariantId(), hammerhead.getFleetPointCost()));
-
-        // --- 加入舰队 ---
-        data.addFleetMember(wolf);
-        data.addFleetMember(hammerhead);
-        LOG.info(String.format(
-                "GearIn fleet member added: members=%d (was %d) fleetPoints=%.0f (was %.0f) cargoCapacity=%.0f (was %.0f)",
-                data.getNumMembers(), initialCount,
-                playerFleet.getFleetPoints(), initialFleetPoints,
-                playerFleet.getCargo().getMaxCapacity(), initialCargo));
-
-        // --- 遍历验证 ---
-        List<FleetMemberAPI> members = data.getMembersListCopy();
-        boolean wolfFound = false;
-        boolean hammerheadFound = false;
-        for (FleetMemberAPI member : members) {
-            if (member.getId().equals(wolf.getId())) {
-                wolfFound = true;
-            }
-            if (member.getId().equals(hammerhead.getId())) {
-                hammerheadFound = true;
-            }
-        }
-        LOG.info(String.format(
-                "GearIn fleet member iterate: count=%d wolfFound=%s hammerheadFound=%s",
-                members.size(), wolfFound, hammerheadFound));
-
-        // --- 船体状态：损伤与修复 ---
-        float hullBefore = hammerhead.getStatus().getHullFraction();
-        hammerhead.getStatus().applyHullFractionDamage(0.3f);
-        LOG.info(String.format(
-                "GearIn fleet member damage: hullFraction %.2f -> %.2f needsRepairs=%s",
-                hullBefore, hammerhead.getStatus().getHullFraction(), hammerhead.needsRepairs()));
-        hammerhead.getStatus().repairFully();
-        LOG.info(String.format(
-                "GearIn fleet member repair: hullFraction=%.2f needsRepairs=%s",
-                hammerhead.getStatus().getHullFraction(), hammerhead.needsRepairs()));
-
-        // --- CR 与战斗准备 ---
-        float crBefore = hammerhead.getRepairTracker().getCR();
-        hammerhead.getRepairTracker().setCR(0.3f);
-        LOG.info(String.format(
-                "GearIn fleet member CR: %.2f -> %.2f canBeDeployedForCombat=%s",
-                crBefore, hammerhead.getRepairTracker().getCR(), hammerhead.canBeDeployedForCombat()));
-        hammerhead.getRepairTracker().setCR(crBefore);
-
-        // --- 封存与遍历顺序 ---
-        boolean deployBefore = hammerhead.canBeDeployedForCombat();
-        hammerhead.getRepairTracker().setMothballed(true);
-        List<FleetMemberAPI> priorityOrder = data.getMembersInPriorityOrder();
-        String firstPriority = priorityOrder.isEmpty() ? "none" : priorityOrder.get(0).getShipName();
-        LOG.info(String.format(
-                "GearIn fleet member mothball: canBeDeployedForCombat=%s->%s firstPriority=%s mothballed=%s",
-                deployBefore, hammerhead.canBeDeployedForCombat(), firstPriority, hammerhead.isMothballed()));
-        hammerhead.getRepairTracker().setMothballed(false);
-
-        // --- 装配写入：换装配 -> hull 变化 -> 换回 ---
-        ShipVariantAPI originalVariant = hammerhead.getVariant();
-        hammerhead.setVariant(wolf.getVariant(), true, true);
-        LOG.info(String.format(
-                "GearIn fleet member variant swap: hull=%s variant=%s",
-                hammerhead.getHullId(), hammerhead.getVariant().getHullVariantId()));
-        hammerhead.setVariant(originalVariant, true, true);
-        LOG.info(String.format(
-                "GearIn fleet member variant restore: hull=%s variant=%s",
-                hammerhead.getHullId(), hammerhead.getVariant().getHullVariantId()));
-
-        // --- 清理：恢复初始舰队 ---
-        data.removeFleetMember(wolf);
-        data.removeFleetMember(hammerhead);
-        LOG.info(String.format(
-                "GearIn fleet member done: members=%d (initial %d) fleetPoints=%.0f (initial %.0f)",
-                data.getNumMembers(), initialCount, playerFleet.getFleetPoints(), initialFleetPoints));
+    } else {
+        animation.play();
+        idleFrameApplied = false;
     }
 }
 ```
 
-对应关系：
+新增行为：充能或开火时播放动画，完全闲置后只执行一次暂停并归零。完成信号：开火时帧号循环，冷却结束后稳定停在第 0 帧。
 
-- `implements EveryFrameScript`：`isDone()` 返回 `executed`(脚本执行后自停，引擎下一帧自动移除)；`runWhilePaused()` 返回 `false`(暂停时不执行)。
-- `REGISTER_MARK`：persistent data 判断键，用于判断脚本是否已在该存档执行过 (`"GearIn_FleetMemberScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不含任何工作单元编号变体。
-- `createFleetMember(FleetMemberType.SHIP, "...")`：创建入口。
-  - `wolf_Assault` / `hammerhead_Elite` 是原版注册装配 id(`data/variants/wolf/wolf_Assault.variant`、`data/variants/hammerhead/hammerhead_Elite.variant`，variant id = 文件名去扩展名)。
-- `data.addFleetMember(...)`：入队入口；加入后 `getNumMembers()` / `getFleetPoints()` / `getCargo().getMaxCapacity()` 随之变化 —— 容量变化来自同步管线里的 `updateCargoCapacities`。
-- `getStatus().applyHullFractionDamage(0.3f)` / `repairFully()`：船体状态写入与恢复 (`hammerhead_Elite` 是普通舰船，单一状态槽，hull fraction 从 1.0 到 0.7 再回 1.0)。
-- `getRepairTracker().setCR(0.3f)` / `setMothballed(true)`：CR 与封存写入；`canBeDeployedForCombat()` 与 `getMembersInPriorityOrder()` 是 "当前状态" 读取。
-- `setVariant(wolf.getVariant(), true, true)`：装配写入 —— 非战机成员换装配后 `getHullId()` 从 `hammerhead` 变为 `wolf`(`setVariant` 同步更新 `specId`)，换回原装配恢复。
-  - 演示中 `hammerhead` 与 `wolf` 短暂共享同一装配引用且双方都不再改装配，属可控演示；生产代码避免长期共享装配引用。
-- 清理段 `removeFleetMember`：把两个演示成员移除，玩家舰队恢复初始状态 —— 演示脚本**不留副作用**，可反复读档重放。
-
-调用点 (工程片段 —— 方法所在类归插件生命周期类所有，本节只演示调用，不改动那些文件)：
+### 在操作后读取弹药与冷却
 
 ```java
-    // 在 GearInModPlugin 的 onGameLoad(boolean newGame) 内新增本节注册块。
-    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInFleetMemberScript.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInFleetMemberScript.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInFleetMemberScript());
+// 插入位置：GearInWeaponFrameEffect.advanceAfter()
+if (weapon.isFiring()) {
+    afterReportInterval.advance(amount);
+    if (afterReportInterval.intervalElapsed()) {
+        LOG.info("GearIn weapon fx " + weapon.getId() + " after-frame:"
+                + " ammo=" + weapon.getAmmo() + "/" + weapon.getMaxAmmo()
+                + " cooldown=" + weapon.getCooldownRemaining());
     }
+}
 ```
 
-构建命令 (在 `mods/GearIndustry/` 执行，沿用既有 MOD 构建流程)：
+新增行为：开火核心操作完成后，每秒读取一次已经扣减的弹药和当前冷却。完成信号：`before-frame callback` 先出现，随后 `after-frame` 中的弹药数量反映本帧开火结果。
+
+### 复位并观察光束命中
+
+```java
+// 插入位置：GearInBeamHitEffect.reset() 与 advance()
+lastDidDamage = false;
+
+boolean didDamage = beam.didDamageThisFrame();
+CombatEntityAPI target = beam.getDamageTarget();
+if (didDamage && !lastDidDamage) {
+    LOG.info("GearIn beam fx hit start: target="
+            + (target == null ? "null" : target.getClass().getSimpleName()));
+}
+if (didDamage) {
+    sparkInterval.advance(amount);
+    if (sparkInterval.intervalElapsed()) {
+        Vector2f point = beam.getRayEndPrevFrame();
+        engine.addHitParticle(point, new Vector2f(),
+                6f, 1f, 0.4f, new Color(130, 200, 255, 200));
+    }
+}
+lastDidDamage = didDamage;
+```
+
+新增行为：每条射线创建时清空边沿状态，只在本帧命中期间按 0.15 秒节奏生成火花。完成信号：首次命中出现一条 `hit start`，持续照射产生端点粒子，停火后的新射线重新开始计数。
+
+### 记录刚生成的射弹
+
+```java
+// 插入位置：GearInOnFireEffect.onFire()
+LOG.info("GearIn onFire " + projectile.getProjectileSpecId()
+        + " weapon=" + (weapon == null ? "null" : weapon.getId())
+        + " spawnType=" + projectile.getSpawnType()
+        + " speed=" + projectile.getVelocity().length());
+```
+
+新增行为：每次成功生成射弹后记录弹体、武器、生成类型和初速。完成信号：弹药充足时每发一条日志；弹药耗尽后不生成射弹，也不触发该回调。
+
+### 记录本次命中结算
+
+```java
+// 插入位置：GearInOnHitEffect.onHit()
+LOG.info("GearIn onHit " + projectile.getProjectileSpecId()
+        + " target=" + target.getClass().getSimpleName()
+        + " shieldHit=" + shieldHit
+        + " hull=" + damageResult.getDamageToHull()
+        + " armor=" + damageResult.getTotalDamageToArmor()
+        + " shields=" + damageResult.getDamageToShields()
+        + " emp=" + damageResult.getEmpDamage());
+```
+
+新增行为：命中回调把本次伤害在船体、装甲、护盾和 EMP 之间的分配写入日志。完成信号：命中护盾与命中装甲时各列出现不同结果，参数不会被保存到下一发射弹。
+
+## 组装武器效果实现
+
+规则需要落到可编译的类上。在编译 JAR 链路的 MOD 布局 [C6-S1] 与武器开火流单元 [C7-S4] 的 `GearInWeaponFlowEffect` 之上新增四个 Java 类，本节不新增任何资源文件。
+
+`.wpn` / `.proj` 接入片段与帧贴图清单见下文，仅演示挂载点，本节不创建数据文件。
+
+包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Role>`)。
+
+四个类按注册列一一对应：
+
+类
+
+所有权
+
+本节关系
+
+`GearInModPlugin`
+
+[C6-S2]
+
+本节不改动
+
+`GearInGlobalAccess`
+
+[C6-S3]
+
+本节只消费
+
+`GearInCombatStatePlugin`
+
+[C7-S2]
+
+本节只消费
+
+`GearInWeaponFlowEffect`
+
+[C7-S4]
+
+本节只消费
+
+`GearInWeaponFrameEffect`
+
+本节
+
+新增 (`.wpn` `everyFrameEffect`)
+
+`GearInBeamHitEffect`
+
+本节
+
+新增 (`.wpn` `beamEffect`，仅光束武器)
+
+`GearInOnFireEffect`
+
+本节
+
+新增 (`.proj` `onFireEffect`)
+
+`GearInOnHitEffect`
+
+本节
+
+新增 (`.proj` `onHitEffect`)
+
+### GearInWeaponFrameEffect(`.wpn` everyFrameEffect)
+
+武器逐帧效果，绑定 `everyFrameEffect` 后每把武器一个实例：
+
+* `init` 报告武器是否动画化及帧数 / 帧率；
+* `advance`(操作前) 用 `AnimationAPI` 程序化控制贴图动画 (闲置冻结回 0 帧、否则 `play()`) 并按帧变化打印；
+* `advanceAfter`(操作后) 按 1 秒节奏打印弹药 / 冷却。
+
+### GearInBeamHitEffect(`.wpn` beamEffect，仅光束武器)
+
+光束效果，绑定 `beamEffect` 后每条光束射线一个实例：`reset` 在射线创建与销毁时各调一次 (跨射线状态在这里复位)；`advance` 每帧只消费本帧命中状态 (`didDamageThisFrame` / `getDamageTarget`)。
+
+命中时按 0.15 秒节奏在上一帧射线端点 (`getRayEndPrevFrame()`) 撒纯视觉火花 (`addHitParticle`)，命中边沿打日志。
+
+### GearInOnFireEffect(`.proj` onFireEffect)
+
+开火回调，绑定 `onFireEffect` 后每武器一个实例：武器开火生成射弹后回调一次，参数是刚生成的那一颗射弹 (速度 / 朝向已就绪)，打印弹体 id、发射武器、`spawnType` 与弹速 —— 只观察不改数值，参数禁止缓存跨发射使用。
+
+### GearInOnHitEffect(`.proj` onHitEffect)
+
+命中回调，绑定 `onHitEffect` 后每射弹一个实例：射弹命中结算时回调一次，打印命中结算结果 (`ApplyDamageResultAPI` 的 hull / armor / shields / emp)—— 参数是本次结算上下文，禁止缓存跨命中使用。
+
+四个类的全部字段都是实例字段：每武器 / 每射线 / 每射弹实例各有一份，跨实例互不干扰；跨战斗实例全部重建，禁止跨战斗缓存 ([C6-S3] 纪律)。
+
+### 数据接入片段
+
+(工程片段 —— 本节不创建数据文件；接入后四个效果类才生效。以下 ID 由本节声明，路径在 `Starsector\mods\GearIndustry\` 下自洽)：
+
+```text
+data\weapons\GearIn_test_rotor.wpn         # 弹丸武器：GearInWeaponFrameEffect（everyFrameEffect）+ 动画 / 内置视觉字段
+data\weapons\GearIn_test_beam.wpn          # 光束武器：GearInWeaponFrameEffect（everyFrameEffect）+ GearInBeamHitEffect（beamEffect）
+data\weapons\proj\GearIn_test_shot.proj    # 弹体 spec：GearInOnFireEffect / GearInOnHitEffect（onFireEffect / onHitEffect）
+graphics\weapons\gearin\GearIn_test_rotor_turret_base00.png     # 帧 0（您自备，命名规则见"帧贴图命名规则"）
+graphics\weapons\gearin\GearIn_test_rotor_turret_base01.png     # 帧 1
+graphics\weapons\gearin\GearIn_test_rotor_turret_base02.png     # 帧 2
+graphics\weapons\gearin\GearIn_test_rotor_turret_base03.png     # 帧 3
+graphics\weapons\gearin\GearIn_test_rotor_hardpoint_base00.png  # 帧 0
+graphics\weapons\gearin\GearIn_test_rotor_hardpoint_base01.png  # 帧 1
+graphics\weapons\gearin\GearIn_test_rotor_hardpoint_base02.png  # 帧 2
+graphics\weapons\gearin\GearIn_test_rotor_hardpoint_base03.png  # 帧 3
+graphics\weapons\gearin\GearIn_test_beam_turret_base.png        # 光束武器基贴图
+graphics\weapons\gearin\GearIn_test_beam_hardpoint_base.png     # 光束武器基贴图
+graphics\weapons\gearin\GearIn_test_shot.png                    # 弹体贴图
+```
+
+```json
+// GearIn_test_rotor.wpn（片段：弹丸武器，绑定 GearInWeaponFrameEffect；动画与内置视觉字段全开）
+{
+    "id": "GearIn_test_rotor",
+    "specClass": "projectile",
+    "type": "BALLISTIC",
+    "size": "MEDIUM",
+    "turretSprite": "graphics/weapons/gearin/GearIn_test_rotor_turret_base00.png",
+    "hardpointSprite": "graphics/weapons/gearin/GearIn_test_rotor_hardpoint_base00.png",
+    "numFrames": 4,
+    "frameRate": 12,
+    "alwaysAnimate": false,
+    "animateWhileFiring": true,
+    "animationType": "GLOW_AND_FLASH",
+    "muzzleFlashSpec": {"length": 30.0, "spread": 10.0, "particleSizeMin": 4.0, "particleSizeRange": 8.0, "particleDuration": 0.2, "particleCount": 8, "particleColor": [255, 230, 140, 220]},
+    "turretOffsets": [14, 0],
+    "turretAngleOffsets": [0],
+    "hardpointOffsets": [14, 0],
+    "hardpointAngleOffsets": [0],
+    "barrelMode": "LINKED",
+    "everyFrameEffect": "data.scripts.gearin.combat.GearInWeaponFrameEffect",
+    "projectileSpecId": "GearIn_test_shot"
+}
+```
+
+```json
+// GearIn_test_beam.wpn（片段：光束武器，两个注册列各绑一个效果类）
+{
+    "id": "GearIn_test_beam",
+    "specClass": "beam",
+    "type": "ENERGY",
+    "size": "MEDIUM",
+    "turretSprite": "graphics/weapons/gearin/GearIn_test_beam_turret_base.png",
+    "hardpointSprite": "graphics/weapons/gearin/GearIn_test_beam_hardpoint_base.png",
+    "everyFrameEffect": "data.scripts.gearin.combat.GearInWeaponFrameEffect",
+    "beamEffect": "data.scripts.gearin.combat.GearInBeamHitEffect",
+    "turretOffsets": [18, 0],
+    "turretAngleOffsets": [0],
+    "hardpointOffsets": [26, 0],
+    "hardpointAngleOffsets": [0],
+    "fringeColor": [120, 200, 255, 255],
+    "coreColor": [255, 255, 255, 255],
+    "glowColor": [130, 200, 255, 255],
+    "width": 12.0,
+    "textureType": "SMOOTH",
+    "textureScrollSpeed": 120.0,
+    "pixelsPerTexel": 2.0
+}
+```
+
+```json
+// GearIn_test_shot.proj（片段：弹体 spec，绑定 GearInOnFireEffect 与 GearInOnHitEffect）
+{
+    "id": "GearIn_test_shot",
+    "specClass": "projectile",
+    "spawnType": "BALLISTIC",
+    "onFireEffect": "data.scripts.gearin.combat.GearInOnFireEffect",
+    "onHitEffect": "data.scripts.gearin.combat.GearInOnHitEffect",
+    "bulletSprite": "graphics/weapons/gearin/GearIn_test_shot.png",
+    "fringeColor": [255, 200, 120, 255],
+    "coreColor": [255, 255, 255, 255],
+    "glowColor": [255, 220, 150, 180],
+    "glowRadius": 10.0,
+    "length": 8.0,
+    "width": 4.0,
+    "fadeTime": 0.1,
+    "collisionClass": "PROJECTILE_NO_FF",
+    "collisionClassByFighter": "PROJECTILE_FIGHTER"
+}
+```
+
+类名必须与全限定名逐字一致
+
+`everyFrameEffect` / `beamEffect` / `onFireEffect` / `onHitEffect` 的类名必须是脚本类加载器可实例化的完整类名，绑错或类缺失时武器 / 射线 / 射弹创建抛 `Problem loading class [...]`，部署舰船即报错。
+
+构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用编译 JAR 链路)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`(可用 `jar tf` 核对)。
+核对产物
 
-脚本与注册点就绪后，按下面的方案验证整条链。
+`gradle jar` 后用 `jar tf jars\GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下四个效果类都在 —— 类缺失或包路径不符时，先查包名与类名拼写，再查 `everyFrameEffect` / `beamEffect` / `onFireEffect` / `onHitEffect` 四处的全限定名。
+
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/` 下的四个类：
+
+* `GearInWeaponFrameEffect.class`
+* `GearInBeamHitEffect.class`
+* `GearInOnFireEffect.class`
+* `GearInOnHitEffect.class`
+
+## 关键故障实验：效果类编译成功但武器完全没有反应
+
+只实现接口，没有在 `.wpn` 或 `.proj` 中绑定类名。
+
+**局部故障片段：**
+
+```java
+// 故障片段
+public class GearInWeaponFrameEffect implements EveryFrameWeaponEffectPlugin { }
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+"everyFrameEffect": "data.scripts.gearin.combat.GearInWeaponFrameEffect"
+```
+
+复验：开火并观察动画、光束或命中日志。
 
 ## 验证方案
 
-前置数据：`gear_in` MOD 布局与插件生命周期类 ([C6-S1] / [C6-S2]，含本节调用点片段)、本节脚本类、生涯时钟脚本 (非必需)。
+前置数据：编译 JAR 流程的 MOD 布局 [C6-S1]、本节三个数据文件与帧贴图清单、四个效果类，以及装有 `GearIn_test_rotor` 与 `GearIn_test_beam` 的测试舰。
 
-1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
-2. 新建生涯：确认 `starsector.log` 按顺序出现 `GearIn fleet member` 各日志行 (`start` / `created` / `added` / `iterate` / `damage` / `repair` / `CR` / `mothball` / `variant swap` / `variant restore` / `done`)。
-   - 观察 `start`、`added` 与 `done` 行的成员数。
-3. 界面核对：演示日志出现时打开舰队界面 (F 键)，确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
-4. 只执行一次：等待若干游戏日后日志无新增 `GearIn fleet member` 行；保存并读档后仍无新增 (`REGISTER_MARK` 已写入 persistent data，脚本不再注册)。
+1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下的四个类。
+2. 进入 `GearIn_test` 战役部署测试舰，查看 `starsector.log` 中的两行初始化日志。
+3. 用 `GearIn_test_rotor` 射击并停火，观察动画帧；再把 `.wpn` 的 `animateWhileFiring` 设为 `false`，重启后重复射击。
+4. 持续射击，核对 `started firing (before-frame callback)` 与每秒一次的 `after-frame:` 日志。
+5. 核对每次开火的 `GearIn onFire ...` 日志与命中时的 `GearIn onHit ...` 日志。
+6. 用 `GearIn_test_beam` 照射目标，观察射线创建、命中、端点粒子与停火后的销毁。
+7. 按空格暂停，再恢复战斗并观察上述日志。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
-- **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
+* `jars\GearIndustry.jar` 包含 `GearInWeaponFrameEffect.class`、`GearInBeamHitEffect.class`、`GearInOnFireEffect.class` 与 `GearInOnHitEffect.class`。
+* 部署时出现 `GearIn weapon fx init GearIn_test_rotor ... animated=true frames=4 rate=12.0` 与 `GearIn weapon fx init GearIn_test_beam ... animated=false`；光束武器没有 `numFrames`，动画对象为 null。
+* 开火时帧号按 0→1→2→3→0 循环；停火且冷却结束后出现一次 `idle -> frame 0 (programmatic)` 并停在第 0 帧；`animateWhileFiring:false` 时开火期间帧号冻结。
+* 每次开火在生成射弹前出现 `started firing (before-frame callback)`；持续射击时每秒出现一条 `after-frame: ammo=... cooldown=...`。
+* 每发射弹出现 `GearIn onFire GearIn_test_shot weapon=GearIn_test_rotor spawnType=BALLISTIC speed=...`；命中时出现 `GearIn onHit GearIn_test_shot target=Ship shieldHit=... hull=... armor=... shields=... emp=...`。
+* 光束创建与销毁时各出现一次 `GearIn beam fx reset (ray created or destroyed)`；命中后出现 `GearIn beam fx hit start: target=Ship brightness=...`，照射期间射线端点每 0.15 秒出现一批蓝色火花，停火后射线与粒子消失。
+* 暂停期间上述日志全部停止更新，恢复后继续。
 
-  ```text
-     GearIn fleet member start: members=<N> fleetPoints=<F> cargoCapacity=<C>
-     GearIn fleet member created: wolf id=<id> hull=wolf variant=wolf_Assault fp=<fp> | hammerhead id=<id> hull=hammerhead variant=hammerhead_Elite fp=<fp>
-     GearIn fleet member added: members=<N+2> (was <N>) fleetPoints=<F'> (was <F>) cargoCapacity=<C'> (was <C>)
-     GearIn fleet member iterate: count=<N+2> wolfFound=true hammerheadFound=true
-     GearIn fleet member damage: hullFraction 1.00 -> 0.70 needsRepairs=true
-     GearIn fleet member repair: hullFraction=1.00 needsRepairs=false
-     GearIn fleet member CR: 0.50 -> 0.30 canBeDeployedForCombat=true
-     GearIn fleet member mothball: canBeDeployedForCombat=true->false firstPriority=<船名> mothballed=true
-     GearIn fleet member variant swap: hull=wolf variant=wolf_Assault
-     GearIn fleet member variant restore: hull=hammerhead variant=hammerhead_Elite
-     GearIn fleet member done: members=<N> (initial <N>) fleetPoints=<F> (initial <F>)
-  ```
-
-  其中 `<N>` 是初始成员数、`<F>` 是初始 fleet points、`<C>` 是初始 cargo 容量，均以实际日志为准；`firstPriority` 是玩家舰队第一个非封存成员的船名 (演示期间 `hammerhead` 被封存所以不在队首；玩家舰队为空时输出 `none`)。演示只执行一次，之后无任何 `GearIn fleet member` 日志。
-- **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
-- **读档**：不出现任何 `GearIn fleet member` 日志 (`REGISTER_MARK` 已写入 persistent data、脚本不再注册)；玩家舰队与演示前一致。
-- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
+清理：把 `GearIn_test_rotor.wpn` 的 `animateWhileFiring` 恢复为 `true`。
 
 ## 故障分析
 
-以下按您实际看到的症状组织，每项给触发条件、断链位置与修正路径。验证方案的操作 4、5 分别复用第 1 条与第 8 条的注入场景。
-
-1. **成员没加进舰队 (成员数不变、日志没有 added 行)**：只调 `createFleetMember` 忘了 `addFleetMember` 就会这样 —— 创建与入队是两步，前者只造出保存态成员，不会写入集合。此时 `created` 日志正常出现而 `added` 行缺失，舰队界面没有新船，`getNumMembers()` 不变且不报错。把成员交给 `FleetDataAPI.addFleetMember(...)`；向玩家舰队添加用 `Global.getSector().getPlayerFleet().getFleetData()`。
-2. **`addFleetMember` 抛 `Attempting to add null fleet member`**：触发条件是把 null 传入 (例如按装配 id 查不到时自己返回了 null)。集合接口对 null 入队直接抛 `RuntimeException`，堆栈消息含舰队名。修正从创建入口做起：`createFleetMember` 的 `SHIP` 分支对无效装配 id 回退 `errorShipVariant`，**不会**返回 null —— 先对创建结果判空再入队。
-3. **同一成员数量成双或行为叠加**：两种触发，表现不同。对已入队成员再次 `addFleetMember` 时，同引用重复添加被忽略，直接无效果；注册脚本没有一次性判断时，演示日志出现两次、成员被加两轮。注册用 `REGISTER_MARK` 判断 (本节调用点片段)；需要 "该成员是否已在队" 的判断用 `getMembersListCopy()` 按 `getId()` 比较。
-4. **战机数量对不上 (联队被算成 1 条而不是 N 架)**：用 `getMembersListCopy()` / `getNumMembers()` 统计 "舰队里有多少架战机" 就会遇到：列表里战机联队是 1 条 (联队对象本身，经 `getMembers()` 全量返回)，联队内数量要读 `getNumFightersInWing()`。按需求选视图："每个联队算 1 条" 用 `getMembersListCopy()`，"逐架计数" 用 `getMembersListWithFightersCopy()`(`Utils.expandFighterWingsCampaign` 展开)；展开视图只包含非封存且 CR > 0 的联队，封存 / 零 CR 联队不会展开。
-5. **`getSnapshot()` 读档后为空或与成员不一致**：触发条件是把 `takeSnapshot()` 的快照当成持久成员集合。接口 "The snapshot is transient and will not be in the save file."；`snapshot` 是 `transient` 字段，读档后快照自然丢失，战斗中或舰队被销毁前拍下的快照与当前成员无关。持久状态一律读 `getMembersListCopy()` 等成员集合视图；快照只用于 "战斗前/销毁前" 的临时比较。
-6. **改装配没生效 (战斗里还是旧船)**：把 `setVariant` 当成战斗实体修改入口就会出现：成员保存态已变 (`getVariant()` 是新值)，但已部署的战斗实体仍按战斗实体状态读取 —— `FleetMemberAPI.setVariant` 只改写保存态。生涯侧改装配用 `setVariant(variant, true, true)`(带 refit CR 修正与 stats 重算)；战斗实体的修改要在部署侧做。
-7. **CR 低到不能部署，战斗准备列表里没有船**：刚经历战斗或缺补给后读 `getCombatReadyMembersListCopy()` 会遇到。`getCR() < noDeployCRPercent`(默认 0) 或 `getCrewFraction() < noDeployCrewPercent`(默认 5%) 时 `canBeDeployedForCombat()` 返回 `false`，成员不进战斗准备列表 (`settings.json`)。先看 `getCR()` / `getCrewFraction()` 两个判据 —— 船员不足也是原因；CR 恢复靠补给与时间。
-8. **封存了还在烧补给/还有容量**：`setMothballed(true)` 后立刻读容量就会读到旧值 —— 系统并不急着知道您封存了它。封存修正 (补给月耗 × `supplyConsumptionMothballedMult`、cargo/fuel/maxCrew/minCrew 乘数置 0) 只在 `updateStats` 时写入，立即读取仍是旧值。改完封存标志后触发一次同步 (`CampaignFleetAPI.forceSync()` 或读 `getMembers()` 触发 `syncIfNeeded`) 再读数。
-9. **`setFlagship` 后其他成员舰长被重置**：把 `setFlagship` 当成纯布尔标记写入就会触发它的副作用：原旗舰 (或舰长即玩家的成员) 舰长被换成全 0 属性新人，新旗舰舰长 = 舰队指挥官 (接口 "Will also set the captains of all the other ships to a new person with all-0 stats.")。这是原版语义，接受即可；不要用 `setFlagship` 逐成员手动调 `setCaptain` 对抗。
-10. **演示日志出现但游戏内舰队没变化 (或反过来)**：触发是在错误的生命周期阶段注册脚本，例如 `onApplicationLoad` 里 `Global.getSector()` 为 null 直接 NPE。注册点放错会启动中止或脚本永不推进。修正：把注册放进 `onGameLoad` 的一次性判断块内。
+- **效果回调从不执行**：类只注册成战斗插件，而 `.wpn` 或 `.proj` 没有绑定对应注册列。补上完整类名并重启，开火或命中时应出现回调日志。
+- **创建武器、射线或射弹时报告 `Problem loading class [...]`**：类名错误、类缺失或没有无参构造器。核对完整类名和构造器，再用 `jar tf jars\GearIndustry.jar` 检查 class 路径；修正后实体应能创建。
+- **`beamEffect` 没有任何行为**：注册列写在弹丸武器的 `.wpn` 中时，引擎不会创建光束效果实例。让武器使用 `specClass: beam`，或改绑 `everyFrameEffect`；重新开火后应出现对应日志。
+- **`getAnimation()` 抛出 NPE**：静态贴图武器的 `getAnimation()` 返回 null。调用动画方法前先判空，重新部署静态武器后不应再出现异常。
+- **动画停在第 0 帧**：`numFrames` 保持 1、`alwaysAnimate:false` 且武器闲置，或调用 `pause()` 后没有调用 `play()`，都会让帧号停住。核对 `.wpn` 的播放条件并让 `pause()`、`play()` 成对使用；开火后帧号应按配置循环。
+- **部署时报告帧文件加载错误**：基贴图路径没有以 `00.png` 结尾，或所需帧文件缺失。按命名规则补齐全部帧，重新部署后应完成动画资源加载。
+- **动画帧画面错位**：各帧贴图的尺寸或主体对齐点不一致。统一画布和主体位置后重新播放，切帧时图像应保持稳定。
+- **光束命中后没有火花**：`didDamageThisFrame()` 为 false、命中点在视口外，或用结算帧外为 0 的 `dpsDuration` 推进节流器时，粒子不会生成。先用 `hit start` 日志确认命中，把节流推进改用 `amount` 或 `IonBeamEffect` 的边沿处理；持续照射时应每 0.15 秒出现火花。
+- **第二场战斗仍在使用失效实体**：回调参数被保存并跨帧或跨战斗复用时，旧实体不属于当前引擎。参数只在当前回调内消费，需要持续状态时每帧从 `weapon.getBeams()` 或 `engine.getProjectiles()` 查询；第二场战斗应取得新实体。
 
 ## 总结
 
-本节把生涯舰队讲成一条链：入口 (`SectorAPI.getPlayerFleet()` → `CampaignFleetAPI`) → 集合 (`getFleetData()` → `FleetDataAPI`) → 成员 (`FleetMemberAPI`)。整条链上有三条反复用到的判断：创建不等于入队，改集合后要想到同步，保存态与战斗态分离 —— 演示脚本正是围绕这三条展开的。
+本节把四个注册列串成一条完整的链：`.wpn` 的 `everyFrameEffect` / `beamEffect` 与 `.proj` 的 `onFireEffect` / `onHitEffect` 声明 "绑哪个类"，对应实体创建时由脚本类加载器按类名实例化 (每武器、每光束射线、每射弹独立实例，必须可无参实例化)，之后由引擎按角色、按时机调用。动画数据面与帧贴图命名构成效果层的数据支柱，`AnimationAPI` 程序化控制与内置视觉构成渲染支柱，四个单角色示例类各对应一个注册列。
 
-排错时先按症状定位层：成员数量与遍历顺序的问题查集合视图与同步时机，数值没变或读档丢失的问题查保存态字段与瞬态层，部署与后勤的问题查 CR、船员与封存判据。封存修正延迟生效是最常被忽略的一处 —— 改完封存标志先触发同步再读数。
+排错时先分清 "类实现了接口" 与 "实例被引擎调用"：回调不执行先查注册列有没有绑，再查类名与无参构造器；动画与视觉异常先核对 `.wpn` 数据字段与帧贴图命名，再检查程序化控制是否成对 (`pause()` / `play()`)。
 
-这条对象链到此已经形成完整流程。舰队坐标写入、任务与 AI 调度位于集合层之上，市场补给来源落在经济系统一侧；本节的成员读写语义是这些操作的共同底座。
+一类多角色时每个注册列仍各创建实例，跨角色传状态需要显式通道 (`weapon.setCustom` / `getCustom`)；四条规则 (回调参数只在本回调内消费、`getAnimation()` 判空、帧贴图命名、`getSprite()` 不可设 alpha / 角度) 是叠加自定义视觉时的检查清单。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：舰队实体；成员集合入口、统计、战斗绑定、inflater。
-- `com.fs.starfarer.api.campaign.FleetDataAPI`：成员集合；增删遍历、四种成员视图、同步与快照。
-- `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员保存态；身份、装配、舰长、状态、数值。
-- `com.fs.starfarer.api.fleet.FleetMemberStatusAPI`：船体状态与维修 (`getHullFraction` / `repairFully` / `applyHullFractionDamage`)。
-- `com.fs.starfarer.api.fleet.RepairTrackerAPI`：CR 与封存 (`getCR` / `setCR` / `setMothballed`)。
-- `com.fs.starfarer.api.fleet.FleetMemberType`：成员类型枚举 (`SHIP` / `FIGHTER_WING` / `NULL`)。
-- `com.fs.starfarer.api.FactoryAPI`：成员创建入口 (`createFleetMember`)。
-- `com.fs.starfarer.api.campaign.SectorEntityToken`：舰队 cargo 读取入口 (`getCargo()`)。
-- `com.fs.starfarer.api.combat.ShipVariantAPI`：装配对象 (`setVariant` 的入参类型；`getHullVariantId` 读装配 id)。
-- `com.fs.starfarer.api.EveryFrameScript`：示例脚本接口 (`isDone` / `runWhilePaused` / `advance`)。
-- `data/config/settings.json`：部署判据基线 (`noDeployCRPercent` = 0、`noDeployCrewPercent` = 5)。
-- `data/variants/wolf/wolf_Assault.variant`、`data/variants/hammerhead/hammerhead_Elite.variant`：示例使用的原版装配 (variant id = 文件名去扩展名)。
+* `com.fs.starfarer.api.combat.EveryFrameWeaponEffectPlugin` / `EveryFrameWeaponEffectPluginWithAdvanceAfter` / `WeaponEffectPluginWithInit`：武器逐帧效果接口族 (操作前 / 操作后 / 构造回调)。
+* `com.fs.starfarer.api.combat.BeamEffectPlugin` / `BeamEffectPluginWithReset`：光束逐帧回调与射线创建 / 销毁复位。
+* `com.fs.starfarer.api.combat.OnFireEffectPlugin` / `OnHitEffectPlugin`：开火与命中一次性回调。
+* `com.fs.starfarer.api.AnimationAPI`：动画程序化控制 (`getFrame` / `setFrame` / `play` / `pause` / `reset` / `getFrameRate` / `setFrameRate` / `getAlphaMult` / `setAlphaMult`)。
+* `com.fs.starfarer.api.combat.WeaponAPI`：`getAnimation`(非动画武器返回 null)、`getSprite`(alpha / 角度渲染前被覆盖)、`setCurrAngle`、`getBarrelSpriteAPI`、`setCustom` / `getCustom`。
+* `com.fs.starfarer.api.combat.BeamAPI`：`didDamageThisFrame` / `getDamageTarget` / `getRayEndPrevFrame` / `getDamage` / `getBrightness`。
+* `com.fs.starfarer.api.combat.CombatEngineAPI`：`addHitParticle`；`com.fs.starfarer.api.combat.ShipAPI`：`isNoMuzzleFlash`。
+* `com.fs.starfarer.api.loading.ProjectileWeaponSpecAPI`(`getMuzzleFlashSpec` / `getVisualRecoil` / `getHardpointGunSpriteName` / `getTurretGunSpriteName`)、`com.fs.starfarer.api.loading.BeamWeaponSpecAPI`(`getBeamEffect`)、`com.fs.starfarer.api.loading.ProjectileSpecAPI`(`getOnFireEffect` / `getOnHitEffect` / `isApplyOnHitEffectWhenPassThrough`)：spec 读取侧与注册列数据挂载点；`com.fs.starfarer.api.loading.MuzzleFlashSpec`：炮口粒子参数；`.wpn` 的 `smokeSpec` 键：烟尘参数。
+* `com.fs.starfarer.api.impl.combat.BlinkerEffect`(`setFrame` 人工切帧做法)、`com.fs.starfarer.api.impl.combat.RealityDisruptorEffect`(一类多角色实例模式)、`com.fs.starfarer.api.impl.combat.IonBeamEffect`(`getDpsDuration` 推进节流器)、`com.fs.starfarer.api.impl.combat.RiftBeamEffect`(everyFrameEffect 轮询 `weapon.getBeams()`)：原版实现参考。
+* `data/weapons/*.wpn` 与 `data/weapons/proj/*.proj`：四个注册列的数据挂载点 (MOD 根目录相对路径)。
+
+## 完整最小例
+
+::: details 完整成品：GearInWeaponFrameEffect
+
+```java
+package data.scripts.gearin.combat;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.AnimationAPI;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.EveryFrameWeaponEffectPluginWithAdvanceAfter;
+import com.fs.starfarer.api.combat.WeaponAPI;
+import com.fs.starfarer.api.combat.WeaponEffectPluginWithInit;
+import com.fs.starfarer.api.util.IntervalUtil;
+
+/**
+ * 武器逐帧效果（.wpn everyFrameEffect 注册列，每把武器一个实例）。
+ * 构造时 init(weapon)；之后每帧在本帧"转向 / 开火之前"回调 advance、操作完成后
+ * 回调 advanceAfter。演示 AnimationAPI 程序化控制贴图动画（play / pause / setFrame）。
+ */
+public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
+        EveryFrameWeaponEffectPluginWithAdvanceAfter {
+    private static final Logger LOG = Global.getLogger(GearInWeaponFrameEffect.class);
+    private int lastReportedFrame = -1; // 帧变化日志去重
+    private boolean wasFiring = false; // 开火边沿记录
+    private boolean idleFrameApplied = false; // 闲置帧只强制一次
+    private final IntervalUtil afterReportInterval = new IntervalUtil(1f, 1f); // 操作后日志节流
+
+    @Override
+    public void init(WeaponAPI weapon) {
+        AnimationAPI animation = weapon.getAnimation(); // 非动画武器返回 null（硬规范 4）
+        LOG.info("GearIn weapon fx init " + weapon.getId()
+                + " beam=" + weapon.isBeam()
+                + " animated=" + (animation != null)
+                + (animation != null ? " frames=" + animation.getNumFrames() + " rate=" + animation.getFrameRate() : ""));
+    }
+    @Override
+    public void advance(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
+        // 本帧转向 / 开火等操作之前；闲置且冷却完成时冻结回 0 帧（BlinkerEffect
+        // 同款姿势），否则恢复播放（play() 覆盖 alwaysAnimate:false 的数据默认）。
+        AnimationAPI animation = weapon.getAnimation();
+        if (animation != null) {
+            boolean idle = weapon.getChargeLevel() <= 0f
+                    && weapon.getCooldownRemaining() <= 0f
+                    && !weapon.isFiring();
+            if (idle) {
+                animation.pause();
+                if (!idleFrameApplied) {
+                    animation.setFrame(0);
+                    idleFrameApplied = true;
+                    LOG.info("GearIn weapon fx " + weapon.getId() + " idle -> frame 0 (programmatic)");
+                }
+            } else {
+                animation.play();
+                idleFrameApplied = false;
+            }
+            if (animation.getFrame() != lastReportedFrame) {
+                LOG.info("GearIn weapon fx " + weapon.getId()
+                        + " frame=" + animation.getFrame() + "/" + animation.getNumFrames()
+                        + " firing=" + weapon.isFiring()
+                        + " charge=" + weapon.getChargeLevel()
+                        + " cooldown=" + weapon.getCooldownRemaining());
+                lastReportedFrame = animation.getFrame();
+            }
+        }
+        if (weapon.isFiring() && !wasFiring) {
+            LOG.info("GearIn weapon fx " + weapon.getId() + " started firing (before-frame callback)");
+        }
+        wasFiring = weapon.isFiring();
+    }
+    @Override
+    public void advanceAfter(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
+        // 本帧操作完成后（WithAdvanceAfter）：弹药扣减已生效，可观察操作后状态。
+        if (weapon.isFiring()) {
+            afterReportInterval.advance(amount);
+            if (afterReportInterval.intervalElapsed()) {
+                LOG.info("GearIn weapon fx " + weapon.getId() + " after-frame:"
+                        + " ammo=" + weapon.getAmmo() + "/" + weapon.getMaxAmmo()
+                        + " cooldown=" + weapon.getCooldownRemaining());
+            }
+        }
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInBeamHitEffect
+
+```java
+package data.scripts.gearin.combat;
+
+import java.awt.Color;
+
+import org.apache.log4j.Logger;
+import org.lwjgl.util.vector.Vector2f;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.BeamAPI;
+import com.fs.starfarer.api.combat.BeamEffectPlugin;
+import com.fs.starfarer.api.combat.BeamEffectPluginWithReset;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.CombatEntityAPI;
+import com.fs.starfarer.api.util.IntervalUtil;
+
+/**
+ * 光束效果（.wpn beamEffect 注册列，仅光束武器；每条光束射线一个实例）。
+ * 射线创建与销毁时调 reset()（实现 BeamEffectPluginWithReset 时），开火 / 充能
+ * 期间每帧回调 advance。本类只消费"本帧"光束命中状态并生成纯视觉命中粒子，
+ * 不修改任何游戏数值。
+ */
+public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWithReset {
+
+    private static final Logger LOG = Global.getLogger(GearInBeamHitEffect.class);
+
+    /** 命中粒子节流器（光束 0.1 秒结算一次，逐帧撒粒子会过密）。 */
+    private final IntervalUtil sparkInterval = new IntervalUtil(0.15f, 0.15f);
+    /** 上一帧命中状态（仅用于命中边沿日志，不跨实例复用）。 */
+    private boolean lastDidDamage = false;
+
+    @Override
+    public void reset() {
+        // 射线创建与销毁各调一次（光束射线构造器 / 光束武器.destroyBeamRays）：
+        // 跨射线状态在这里复位。
+        lastDidDamage = false;
+        LOG.info("GearIn beam fx reset (ray created or destroyed)");
+    }
+
+    @Override
+    public void advance(float amount, CombatEngineAPI engine, BeamAPI beam) {
+        // 每帧只消费本帧光束状态（规则 2：didDamageThisFrame / getDamageTarget
+        // 只对本帧结算语义有效，禁止缓存跨帧使用）。
+        boolean didDamage = beam.didDamageThisFrame();
+        CombatEntityAPI target = beam.getDamageTarget();
+        if (didDamage && !lastDidDamage) {
+            LOG.info("GearIn beam fx hit start:"
+                    + " target=" + (target == null ? "null" : target.getClass().getSimpleName())
+                    + " brightness=" + beam.getBrightness());
+        }
+        if (didDamage) {
+            // 纯视觉命中火花：以本帧射线端点（上一帧端点）为基准撒粒子，不造成伤害。
+            // 光束伤害按 0.1 秒间隔结算（C7-S4）；IonBeamEffect 的替代写法是用
+            // beam.getDamage().getDpsDuration() 推进节流器，让粒子节奏跟随真实结算。
+            sparkInterval.advance(amount);
+            if (sparkInterval.intervalElapsed()) {
+                Vector2f point = beam.getRayEndPrevFrame();
+                engine.addHitParticle(point, new Vector2f(0f, 0f),
+                        6f, 1f, 0.4f, new Color(130, 200, 255, 200));
+            }
+        }
+        lastDidDamage = didDamage;
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInOnFireEffect
+
+```java
+package data.scripts.gearin.combat;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.DamagingProjectileAPI;
+import com.fs.starfarer.api.combat.OnFireEffectPlugin;
+import com.fs.starfarer.api.combat.WeaponAPI;
+
+/**
+ * 开火回调（.proj onFireEffect 注册列，每武器一个实例）。
+ * 武器开火生成射弹后回调一次，参数是刚生成的那一颗射弹，
+ * 禁止缓存跨发射使用。本类只观察并打日志，不修改任何游戏数值。
+ */
+public class GearInOnFireEffect implements OnFireEffectPlugin {
+
+    private static final Logger LOG = Global.getLogger(GearInOnFireEffect.class);
+
+    @Override
+    public void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon, CombatEngineAPI engine) {
+        // 参数是"本发射弹"上下文：射弹刚生成，速度 / 朝向已就绪
+        // （原版 CanisterFlakPlugin 在此改写弹速与旋转，本节只观察）。
+        LOG.info("GearIn onFire " + projectile.getProjectileSpecId()
+                + " weapon=" + (weapon == null ? "null" : weapon.getId())
+                + " spawnType=" + projectile.getSpawnType()
+                + " speed=" + projectile.getVelocity().length());
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInOnHitEffect
+
+```java
+package data.scripts.gearin.combat;
+
+import org.apache.log4j.Logger;
+import org.lwjgl.util.vector.Vector2f;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.CombatEntityAPI;
+import com.fs.starfarer.api.combat.DamagingProjectileAPI;
+import com.fs.starfarer.api.combat.OnHitEffectPlugin;
+import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
+
+/**
+ * 命中回调（.proj onHitEffect 注册列，每射弹一个实例）。
+ * 射弹命中结算时回调一次，参数是本次命中结算结果，
+ * 禁止缓存跨命中使用。本类只观察并打日志，不修改任何游戏数值。
+ */
+public class GearInOnHitEffect implements OnHitEffectPlugin {
+
+    private static final Logger LOG = Global.getLogger(GearInOnHitEffect.class);
+
+    @Override
+    public void onHit(DamagingProjectileAPI projectile, CombatEntityAPI target, Vector2f point,
+                      boolean shieldHit, ApplyDamageResultAPI damageResult, CombatEngineAPI engine) {
+        LOG.info("GearIn onHit " + projectile.getProjectileSpecId()
+                + " target=" + target.getClass().getSimpleName()
+                + " shieldHit=" + shieldHit
+                + " hull=" + damageResult.getDamageToHull()
+                + " armor=" + damageResult.getTotalDamageToArmor()
+                + " shields=" + damageResult.getDamageToShields()
+                + " emp=" + damageResult.getEmpDamage());
+    }
+}
+```
+
+:::

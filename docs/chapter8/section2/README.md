@@ -1,230 +1,450 @@
-# 用代码建立恒星系
+# 制作带目标选择的战术系统
 
-本节用代码建立一个可从超空间进入的恒星系，并在其中放置、查询实体和读取访问状态；该地点容器作为舰队与市场功能的运行空间。
+本节制作一个带目标选择的战术系统，让效果脚本与系统 AI 在战斗中使用同一目标。系统状态、目标来源和 AI 决策必须在正确阶段衔接，脚本才会实际生效。
 
 *本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~50 分钟。*
+*本节预期操作时间：~35 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 用 `SectorAPI.createStarSystem` 与 `StarSystemAPI.initStar` 建立恒星系，区分 4/6/7 参数变体，并验证 `autogenerateHyperspaceJumpPoints` 生成的超空间入口；
-- 用 `addPlanet` / `addCustomEntity` / `addAsteroidBelt` / `createToken` 创建并放置实体，选择正确的放置方式，解释 `createToken` 的 "初始不在容器" 语义与 token 上 `setFixedLocation` 空实现的陷阱；
-- 用地点级与星区级查询读取实体，说出 `getEntityById` / `getEntitiesWithTag` 的覆盖范围、id 匹配规则与 "移除后不再命中"；
-- 区分访问状态的更新来源与可观察结果：地点级 `isCurrentLocation` / `activeThisFrame`、实体级 `isInCurrentLocation` / `isInHyperspace` / `isAlive`、星系级 `isEnteredByPlayer` / `getDaysSinceLastPlayerVisit`；
-- 编写五个协作类接入既有插件，验证新建生涯、跳入星系、暂停、读档与战斗各阶段的日志输出；
-- 从症状定位故障：星系无超空间入口、实体查不到或堆在原点、token 位置不动、`isAlive` 误判、推进中移除星系抛异常。
+* 列出 `ShipSystemAPI` 的状态访问器分组 (状态 / 效果 / 冷却 / 弹药 / 幅能 / 激活控制 / 目标)，并说出每个代表方法的返回类型与语义；
+* 解释五态状态机的推进规则：`IDLE`→`IN`→`ACTIVE`→`OUT`→`COOLDOWN` 每一步的转移条件、开关式 (toggle) 系统的两种结束路径、幅能不足提前结束与 `forceState` / `deactivate` 的语义；
+* 区分 stats 脚本的可见性边界：`apply` 只在 `effectLevel > 0` 或 `runScriptWhileIdle` 时被调用，`COOLDOWN` / `IDLE` 两态脚本不可见；
+* 说出目标获取的三条通道 (`getTargetLoc()` 用户右键坐标、`getShipTarget()` 舰船当前目标、`TARGET_FOR_SHIP_SYSTEM` AI flag)，并解释 flag 的寿命语义 (`FLAG_DURATION = 0.5f`，舰船 AI 覆写 1.0 秒) 与用户舰侧的差异 (无 AI 舰船无人写入 flag)；
+* 解释系统 AI 的接入链：`.system` 的 `aiType: "CUSTOM"` + `aiScript` 类名 → `ShipSystemSpecAPI.getAIScript()` 实例化 → `init(ship, system, flags, engine)`，包装成系统 AI 适配器后由舰船 AI 每帧调 `advance(amount, missileDangerDir, collisionDangerDir, target)`；
+* 区分 "statsScript 与 aiScript 是同名类的两个独立实例" 这一事实，并解释它对共享逻辑的约束 (只能走静态方法或 `ship.setCustomData`)；
+* 从 `starsector.log` 症状定位典型故障：部署期 `Error creating AI of type [...]`、AI 从不使用系统、用户按 U 无反应、激活无加成、加成中途消失、目标过期、跨战斗缓存残留。
 
 ## 前置知识
 
-- [C3-S3] 的星系创建 API：`createStarSystem`、`initStar`、`addPlanet`、`addCustomEntity` 与 `autogenerateHyperspaceJumpPoints`；
-- [C6-S2] 的 `modPlugin` 生命周期回调与持久数据标记；
-- [C6-S3] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
-- [C8-S1] 的引擎级 `EveryFrameScript` 推进、暂停冻结、战斗期边界与一次性注册；
-- 理解 `SectorAPI` 作为生涯引擎根对象，并能通过地点和实体查询入口定位对象。
+* [C1-S2] 的 `ship_data.csv` 船体登记与 `system id` 挂载；
+* [C2-S3] 的 `.system`、`ship_systems.csv`、`ship_data.csv` 与效果脚本关系；
+* [C6-S3] 的 `Global` 生命周期与跨战斗引用边界；
+* [C7-S2] 的 `getPlayerShip()`、`isAlive()`、`isEntityInPlay()` 与暂停语义；
+* [C7-S3] 的 `MutableStat` modifier ID、`modifyMult` 与 `unmodify`；
+* 理解原版舰船 AI 的目标选择、开火和规避职责；
+* 理解 `.system` 的 `aiType` 与 `aiScript` 如何决定系统 AI。
 
-## 术语
+## 梳理战术系统关系
 
-按术语约定，以下术语由前序主题首次引出，本节**首次完整讲解**：
+本节涉及的接口都在 `com.fs.starfarer.api.combat`(脚本接口在 `com.fs.starfarer.api.plugins`，基类在 `com.fs.starfarer.api.impl.combat`)：
 
-- **地点容器 (location)**：API 名保留 `LocationAPI`。星区内部的空间容器，超空间与每个恒星系各是一个地点容器；实体、地形、舰队、脚本挂在容器里，容器自带 id、显示名、memory、persistent data、背景与访问状态。
-- **恒星系 (star system)**：API 名保留 `StarSystemAPI`。一类地点容器，特化出恒星、中心、超空间锚点、自动跳跃点、星座等星系级结构。
-- **实体 (entity)**：API 名保留 `SectorEntityToken`。挂在容器里的可定位对象 (行星、舰队、跳跃点、custom entity、terrain 实体等)，身份、位置、轨道、tag、memory 都由它携带。
-- **访问状态**：本节首次成组讲解 ——"玩家在不在这个地点/实体在不在玩家当前地点/玩家有没有进过这个星系/距离上次访问多久"，对应 `isCurrentLocation` / `isInCurrentLocation` / `isEnteredByPlayer` / `getDaysSinceLastPlayerVisit` 等只读状态。
+接口 / 类型
 
-## 文件与 API 链路
+本节角色
 
-先按职责把 API 分组：容器怎么建、实体怎么放、查询怎么走、状态怎么读。理解这四件事之后，完整最小例只是把这些入口按顺序调用一遍。
+链路
 
-### 地点容器模型 (LocationAPI)
+`ShipSystemAPI`
 
-`LocationAPI`(`com.fs.starfarer.api.campaign.LocationAPI`) 是纯接口，只有两种容器形态：超空间 (`isHyperspaceMode=true`) 与恒星系 (`StarSystemAPI`，`isHyperspaceMode=false`)。
+舰船上运行时系统实例
 
-一个存档恰好一个超空间，创建时被命名为 `"Hyperspace"`。容器模型：
+战斗创建舰船时由 spec 生成 (`createSystem`)；`ShipAPI.getSystem()` / `getPhaseCloak()` 取得
+
+`ShipSystemSpecAPI`
+
+系统数据 spec
+
+`.system` + `ship_systems.csv` 合并产物；`getStatsScript()` / `getAIScript()` 按类名实例化脚本
+
+`ShipSystemStatsScript` / `Advanced`
+
+效果脚本接口
+
+`.system` 的 `statsScript` 挂载；`State` / `StatusData` / `apply` / `unapply` / `getStatusData` / `isUsable` / `getInfoText`
+
+`BaseShipSystemScript`
+
+官方基类
+
+`com.fs.starfarer.api.impl.combat`；空实现全部方法，覆写方法返回 `-1` / `null`
+
+`ShipSystemAIScript`
+
+系统 AI 接口
+
+`.system` 的 `aiScript` 挂载 (仅 `aiType: CUSTOM` 时使用)；`init` / `advance`
+
+`ShipwideAIFlags`
+
+AI 短期 flag 容器
+
+`ShipAPI.getAIFlags()`；`TARGET_FOR_SHIP_SYSTEM` / `SYSTEM_TARGET_COORDS` 等
+
+`ShipAPI`
+
+舰船实体入口
+
+`getSystem()` / `getPhaseCloak()` / `getShipTarget()` / `getAIFlags()` / `useSystem()`
+
+`MutableShipStatsAPI`
+
+stats 集合
+
+系统四个 bonus 族：`getSystemRangeBonus` / `getSystemCooldownBonus` / `getSystemUsesBonus` / `getSystemRegenBonus`(`StatBonus`)
+
+`IntervalUtil`
+
+决策节流
+
+`com.fs.starfarer.api.util`；AI 决策与日志节奏
+
+数据到运行态的链路 (前置单元的数据面 + 本节运行态)：
 
 ```text
-星区 SectorAPI
-├── 超空间 Hyperspace（LocationAPI，isHyperspaceMode=true）
-│   └── 实体集合：跳跃点、舰队、星门、异常地形、系统锚点……
-├── 恒星系 StarSystem×N（StarSystemAPI extends LocationAPI）
-│   └── 实体集合：恒星、行星、卫星、空间站、custom entity、terrain 实体、位置 token……
-└── 玩家舰队所在的地点 = 当前地点（current location）
+ship_data.csv 的 system id / defense id 列
+  → ShipHullSpecAPI.systemId（船体 CSV 加载器）
+  → 战斗创建 Ship 时按 id 查 ShipSystemSpecAPI（.system + ship_systems.csv 合并产物）
+  → ShipSystemSpecAPI.createSystem(type) → 系统运行时对象（每舰一个）
+  → 系统运行时对象构造器调用 spec.getStatsScript() 创建 stats 脚本实例（每系统一个）
+  → 舰船 AI 创建时调用 spec.createSystemAI(aiType)
+      → aiType == CUSTOM 时 spec.getAIScript() 创建 AI 脚本实例，init 后包装为系统 AI
+  → 舰船 AI 每帧调 systemAI.advance(...)；系统运行时对象.advance 每帧推进状态机并回调 stats 脚本
 ```
 
-按功能分组，本节涉及的 `LocationAPI` 成员：
+`ShipSystemAPI` 状态访问器速查 (全部签名见 "建议参考项")：
 
-| 分组 | 成员 | 语义 |
-|---|---|---|
-| 标识 | `getId()` / `getName()` / `setName()` | 地点 id = 显示名小写 (恒星系为基名小写，见下)；显示名可改 |
-| 实体容器 | `addEntity` / `removeEntity` / `getAllEntities` / `getEntities(Class)` / `getEntityById` / `getEntitiesWithTag` / `getCustomEntitiesWithTag` / `getFleets` / `getPlanets` / `getTerrainCopy` / `getCustomEntities` / `getAsteroids` / `getJumpPoints` / `getGravityWells` | 实体集合与按类别/按 tag 的派生查询 (见 "实体容器查询" 节)|
-| 创建入口 | `addPlanet` / `addCustomEntity` / `addTerrain` / `addAsteroidBelt` / `addAsteroid` / `addCorona` / `addRingBand` / `addOrbitalJunk` / `createToken` / `addRadioChatter` / `spawnFleet` | 创建并加入容器 (`createToken` 例外，见 "实体与放置" 节)|
-| 脚本 | `addScript` / `removeScript` / `removeScriptsOfClass` / `getScripts` | 地点级每帧脚本，推进节奏跟随地点 (见 "访问状态" 节)|
-| 状态 | `isCurrentLocation` / `activeThisFrame` / `isHyperspace` / `isNebula` / `isDeepSpace` / `getLastPlayerVisitTimestamp` / `getDaysSinceLastPlayerVisit` | 访问状态 (见 "访问状态" 节)|
-| 数据 | `getPersistentData` / `getMemoryWithoutUpdate` | 地点级持久 Map 与 memory|
-| 背景 | `getBackgroundTextureFilename` / `setBackgroundTextureFilename` / `setBackgroundOffset` / `getBackgroundColorShifter` | 背景贴图与偏移 (星系创建主题已用，[C3-S3])|
-| 星系特化 | `isInConstellation` / `getConstellation` | 恒星系实现为星座成员判断，超空间恒为 false / null |
+分组
 
-容器关键行为：
+成员
 
-1. **`addEntity` / `removeEntity` 就是 "进容器 / 出容器"**：入容器会写实体的 `setContainingLocation`、把实体加入容器的实体集合，并同步星区级 id 索引。
-   - 出容器只移除，**不清空** `containingLocation`。
-2. **`getAllEntities()` 返回当前实体集合**：`objects.getList(SectorEntityToken.class)`；`getFleets` / `getPlanets` / `getTerrainCopy` / `getCustomEntities` 等是同一仓库按类过滤的派生集合。
-   - **这是运行时的活集合** —— 其他代码随时可能添加或移除实体。
-3. **`getEntityById(id)`**：先用缓存索引查精确 id，未命中回退线性扫描且**大小写不敏感**；实体已不在容器内时返回 null。
-   - 索引每帧重建，并随实体增删增量维护。
-4. **`isHyperspace()` = "我就是超空间"**：`this == Global.getSector().getHyperspace()`—— 不是 "内容像超空间"，是对象同一性。
-5. **`isCurrentLocation()` = "我是玩家当前地点"**：`this == Global.getSector().getCurrentLocation()`。玩家跳跃/跃迁到达时，引擎调用 `setCurrentLocation` 更新当前地点。
-6. **`activeThisFrame()`**：当前地点恒为 `true`；非当前地点只在真正推进的那一帧为 `true`。
-   - 引擎对非当前地点**每 60 帧推进一次、步长 ×60**(`activeThisFrame` 只在真正推进的那一帧为 `true`、其余帧为 `false`)。
-7. **`getLastPlayerVisitTimestamp()` / `getDaysSinceLastPlayerVisit()`**：地点成为当前地点并在非暂停帧推进时刷新时间戳。
-   - **从未访问时返回 `Float.MAX_VALUE`**(与引擎级时钟的 `getElapsedDaysSince(0)` 同一语义)。
+语义
 
-### 恒星系结构 (StarSystemAPI)
+状态
 
-`StarSystemAPI`(`com.fs.starfarer.api.campaign.StarSystemAPI`)** 继承 `LocationAPI`**，是恒星系的容器接口。结构要点：
+`getState()` / `isActive()` / `isOn()` / `isStateActive()` / `isChargeup()` / `isChargedown()` / `isCoolingDown()`
 
-- **标识**：基名 (`baseName`)+ 显示名。构造时 `setName(baseName + " Star System")`；`getId()` = **基名小写** (区别于默认的 "显示名小写")；`setBaseName` 联动改名。
-  - `getNameWithNoType()` / `getNameWithLowercaseType()` 等是去后缀/换写法的显示辅助。
-- **查询键**：`SectorAPI.getStarSystem(name)` 用 `optionalUniqueId`(若非 null) 或基名小写匹配**，大小写不敏感**，找不到返回 null。
-  - 所以 `setOptionalUniqueId("GearIn_demo")` 后，`getStarSystem("GearIn_demo")` 与 `getStarSystem("gearIn_demo")` 都能命中。
-- **恒星与中心**：`getStar()`(主星)、`getSecondary()` / `getTertiary()`(联星)、`getCenter()`(`center` 为 null 时回退主星)、`initNonStarCenter()`(无恒星星系用，建一个 `LocationToken` 当中心)。
-- **超空间锚点**：`getHyperspaceAnchor()` / `setHyperspaceAnchor()`。
-  - 锚点是一个放在超空间里的 `LocationToken`(tag `"system_anchor"`、memory `$anchor_starSystem` 指向本星系、轨道类型 `UpdateFromHyperspaceLocation` 让锚点跟随星系位置)。
-  - 锚点由 `generateAnchorIfNeeded()` 创建 ——** 已存在则跳过**。
-- **超空间入口**：`autogenerateHyperspaceJumpPoints()` 无参版本等价于 `(false, false)`。
-  - 三参版本依据星系内的跳跃点、恒星、行星生成超空间侧的跳跃点与 nascent gravity well(气态巨行星的单向入口、非卫星行星的引力井、可选边缘跳跃点)，最后补 `generateAnchorIfNeeded` 并生成行星条件。
-  - 生成结果读 `getAutogeneratedJumpPointsInHyper()` / `getAutogeneratedNascentWellsInHyper()`。
-- **其他**：`getType()` / `setType()`(`StarSystemGenerator.StarSystemType`，`isNebula` / `isDeepSpace` 据此)、`getConstellation()` / `isInConstellation()`(星座多于一个星系才算)。
-  - `hasPulsar()` / `hasBlackHole()`(按恒星与联星 spec 判定)、`isEnteredByPlayer()`(见 "访问状态" 节)、`getMapGridWidthOverride` / `getMapGridHeightOverride`、`getMaxRadiusInHyperspace`。
+`SystemState` 五态枚举与四个布尔视图 (详见 "状态机")
 
-`initStar` 变体：
+效果
 
-| 签名 | 超空间坐标 | 超空间锚点 | 其他 |
-|---|---|---|---|
-| `initStar(id, type, radius, coronaSize)` | 不设置 | 不生成 | 默认日冕参数 `windBurnLevel=10` / `flareProbability=0.25` / `crLossMult=3` |
-| `initStar(id, type, radius, coronaSize, windBurn, flare, crLoss)` | 用恒星 id 查 starmap.json 的 `starSystemLocations`(查不到保持 (0,0)，[C3-S3] 知识)| **不生成** | 完整日冕参数；[C3-S3] 的 `GearIn` 星系用此变体 |
-| `initStar(id, type, radius, hyperX, hyperY, coronaSize)` | 显式设置 | **自动生成** ("automatically creates a wormhole/jump point leading to the star from hyperspace")| 本节示例用此变体 |
+`getEffectLevel()` / `getChargeUpDur()` / `getChargeActiveDur()` / `getChargeDownDur()`
 
-`initStar` 内部：移除旧星、创建新恒星实体并加入容器、按变体查 starmap 或写坐标、`addCorona`。
+效果强度 0–1 与三段时间 (来自 CSV `charge up` / `active` / `down`)
 
-::: caution 玩家可达性必须显式打通
-**除带坐标变体外，星系建好时超空间里什么都没有 —— 玩家无法到达**。**必须**调用 `autogenerateHyperspaceJumpPoints`(或用带超空间坐标的 6 参数 `initStar` 变体，它会自动生成超空间锚点)，否则星系没有通向超空间的入口 (规则核对见 "规则强度核对" 节)。
-:::
+冷却
 
-### 实体与放置 (SectorEntityToken)
+`getCooldown()` / `getCooldownRemaining()` / `setCooldown()` / `setCooldownRemaining()`
 
-`SectorEntityToken`(`com.fs.starfarer.api.campaign.SectorEntityToken`) 是实体约定：身份 (`getId` / `setId` / `getName` / `setName` / `getFullName`)、归属 (`setFaction` / `getFaction` / `getMarket` / `setMarket`)。
+冷却总时长与剩余；剩余量只在 `COOLDOWN` 态倒计时，`IN`/`ACTIVE`/`OUT` 返回完整时长，`IDLE` 返回 0(充能计时器的冷却进度值)—— 这也是原版内置 AI 用 `getCooldownRemaining() > 0` 作判断时能同时拦下 "激活中/后摇中" 的原因
 
-位置与轨道 (`getLocation` / `setLocation` / `setFixedLocation` / `setCircularOrbit` / `setCircularOrbitPointingDown` / `setCircularOrbitWithSpin` / `setOrbit` / `getOrbit` / `getOrbitFocus`)。
+弹药
 
-容器持有 (`getContainingLocation` / `setContainingLocation` / `isAlive` / `isExpired` / `setExpired`)。
+`getAmmo()` / `getMaxAmmo()` / `getAmmoPerSecond()` / `getAmmoReloadProgress()` / `isOutOfAmmo()` / `setAmmo()`
 
-访问状态 (`isInCurrentLocation` / `isInHyperspace` / `getLocationInHyperspace` / `isInOrNearSystem`)、tag 与 memory、脚本挂载 (`addScript` / `removeScript` / `removeScriptsOfClass` / `getScripts`)。
+`max uses` / `regen` 两列的运行态 (`AmmoTrackerAPI`)
 
-实体级脚本随实体生命周期推进，引擎级脚本主题已述。
+幅能
 
-容器持有的精确语义：
+`getFluxPerUse()` / `getFluxPerSecond()` / `setFluxPerUse()` / `setFluxPerSecond()`
 
-- **`isAlive()`** = `containingLocation != null` 且该容器的实体集合包含自己。
-  - "Returns false if: 1) getContainingLocation() is null, or 2) getContainingLocation() doesn't contain this entity"。
-  - **`removeEntity` 后普通实体的 `isAlive()` 立即变 `false`。**
-- **`isExpired()` / `setExpired()`**：`isExpired` 为 true 的实体在容器推进时被自动移除 —— 只置 `expired` 不调 `removeEntity` 也能出容器，但延迟到下一帧。
-- **`LocationToken`(`createToken` 的返回值) 例外**：`isAlive()` **恒返回 true**(`LocationToken` 实现)，与容器无关 —— 不能用它判断 token 的容器持有。
+每次激活与每秒幅能成本 (系统创建时按 flux 容量/耗散折算)
 
-放置三方式：
+激活控制
 
-| 方式 | 行为 |
-|---|---|
-| `setFixedLocation(x, y)` | **清空轨道** (`setOrbit(null)`) 并写坐标 |
-| `setCircularOrbit(focus, angle, orbitRadius, orbitDays)`(含 PointingDown / WithSpin 变体)| 建一个圆形轨道 (`OrbitAPI`，焦点 + 半径 + 周期 + 起始角)|
-| `setOrbit(OrbitAPI)` | 自定义轨道；`setOrbit` 会回调 `orbit.setEntity(this)` 并立即 `advance(0)` 定位 |
+`canBeActivated()` / `deactivate()` / `forceState(state, progress)`
 
-创建入口 (返回类型与自动副作用)：
+激活许可、强制进入冷却、直接改写状态机
 
-| 入口 | 返回 | 自动副作用 |
-|---|---|---|
-| `addPlanet(id, focus, name, type, angle, radius, orbitRadius, orbitDays)` | `PlanetAPI` | `focus` 非 null 且 `radius >= 1` 才设轨道；**非恒星行星自动挂 condition-only 市场** (`Misc.initConditionMarket`，见下)|
-| `addCustomEntity(id, name, type, factionId[, radius, spriteWidth, spriteHeight][, pluginParams])` | `CustomCampaignEntityAPI` | `factionId` 缺省 `neutral`；位置默认 (0,0)，**必须显式放置** |
-| `addTerrain(terrainId, param)` | `CampaignTerrainAPI` | 直接建 terrain 实体；`param` 按地形类型 (如 `AsteroidBeltParams` / `CoronaParams`)|
-| `addAsteroidBelt(focus, num, orbitRadius, width, minOrbitDays, maxOrbitDays)` | `SectorEntityToken` | 内部 `addTerrain("asteroid_belt", ...)` 并围绕 focus 公转 |
-| `addAsteroid(radius)` | `AsteroidAPI` | 独立小行星实体 |
-| `addCorona(star, extraRadius, windBurn, flare, crLoss)` | `SectorEntityToken` | terrain `"corona"`；`initStar` 内部已调用 |
-| `addRingBand(...)` | `RingBandAPI`；terrain 版返回地形实体 | 环带视觉 + 可选地形 |
-| `createToken(x, y)` / `createToken(Vector2f)` | `SectorEntityToken` | **不加入容器** ("Not actually added to the location, and doesn't need to be. Can be added via addEntity if it needs to have an orbit.")；需要轨道或被查询时 `addEntity` |
+目标
 
-::: warning token 的两个陷阱 (本节重点)
-1. `LocationToken.setFixedLocation(x, y)` 是**空实现** ——token 上调用它坐标不变、无任何报错；写 token 坐标**必须用 `setLocation(x, y)`**(真实生效)。
-2. token 不 `addEntity` 就不在实体集合里：`getAllEntities()` 不含它、`getEntityById(token.getId())` 找不到它 —— 但 `isAlive()` 仍返回 `true`(见上)，三个状态互相矛盾是正常现象，别拿 `isAlive` 当容器判据。
-:::
+`getTargetLoc()`
 
-`addPlanet` 的自动市场 (`com.fs.starfarer.api.util.Misc.initConditionMarket` 实现)：非恒星行星建 `"market_" + 行星id`、neutral、`setPlanetConditionMarketOnly(true)` 的市场并 `planet.setMarket(market)`。
+用户右键激活时传入的引擎坐标 (`Vector2f`，AI 激活时为 null)
 
-所以 `addPlanet` 之后 `getMarket()` 立即非 null(这是 "仅条件市场"：只装行星条件、不进经济列表；正式市场流程见 [C8-S5])。
+脚本
 
-### 实体容器查询
+`getScript()` / `getSpecAPI()` / `getId()` / `getDisplayName()`
 
-| 查询 | 地点级 (`LocationAPI`)| 星区级 (`SectorAPI`)|
-|---|---|---|
-| 按 id | `getEntityById(id)`：本容器内；缓存索引精确 id + 回退大小写不敏感扫描；不在容器内返回 null | `getEntityById(id)`：**遍历超空间与所有恒星系** ("Will look for the entity in all LocationAPIs")|
-| 按 tag | `getEntitiesWithTag(tag)` / `getCustomEntitiesWithTag(tag)`(后者只遍历 custom entity，更省)| `getEntitiesWithTag(tag)` / `getCustomEntitiesWithTag(tag)`：超空间 + 所有星系拼接 |
-| 全部 | `getAllEntities()` / `getEntities(Class)`(返回裸 `List`)| `getAllLocations()`(星系 + 超空间)/ `getStarSystems()`(副本)|
-| 分类 | `getFleets` / `getPlanets` / `getTerrainCopy` / `getCustomEntities` / `getAsteroids` / `getJumpPoints` / `getGravityWells` | —— |
+stats 脚本实例、spec、id 与显示名
 
-要点：
+四个 bonus 族的使用方 (`ShipSystemSpecAPI` 的取值方式)：
 
-::: warning "查不到" 未必是实体丢了
-自定义 id 用错大小写是常见事故源 ——id 匹配对大小写不敏感 (两级的回退扫描都 `toLowerCase`)，但缓存索引键是精确 id，只有回退扫描才折叠大小写。
+```text
+getSystemRangeBonus().computeEffective(spec.range)      → getRange(stats)
+getSystemCooldownBonus().computeEffective(spec.cooldown) → getCooldown(stats)
+getSystemUsesBonus().computeEffective(spec.maxUses)      → getMaxUses(stats)
+getSystemRegenBonus().computeEffective(spec.regen)       → getRegen(stats)
+```
 
-另一个来源是 "移除后不再命中"：`removeEntity` 后地点级与星区级 `getEntityById` 都返回 null(索引由 `objectAdded` / `objectRemoved` 维护)。已持有的引用不受影响 —— 移除只改容器，不销毁对象。
-:::
+bonus 的部署时烘焙与即时读取
 
-- **空间站查询**：`getOrbitalStations()` 已废弃**，必须用 `getEntitiesWithTag(Tags.STATION)`**(`Tags` 在 `com.fs.starfarer.api.impl.campaign.ids.Tags`)。
-  - custom entity 充当的空间站同样带 `STATION` tag，只有 tag 查询能一起捞到。
-- `getEntityByName` 同样已废弃，按 id 查询必须用 `getEntityById`。
+系统运行时对象在创建时 (构造器调用) **一次性** 把这些值写回充能记录 —— 冷却、次数与恢复的 bonus 在舰船部署时烘焙，运行期改动这几项不会反映到本场战斗 (重新部署才重算)；
 
-### 访问状态
+而直接调用 `spec.getRange(stats)` / `stats.getSystemRangeBonus().computeEffective(...)` 的读取 (如本节示例的 AI 每次决策现取有效射程) 是即时的。
 
-| 状态 | API | 更新/置位来源 | 可观察结果 |
-|---|---|---|---|
-| 我是玩家当前地点 | `LocationAPI.isCurrentLocation()` | `this == sector.getCurrentLocation()`；跳跃/跃迁到达时引擎调用 `setCurrentLocation` | 玩家在星系内时为 `true` |
-| 本帧推进了吗 | `LocationAPI.activeThisFrame()` | 当前地点恒 `true`；非当前地点每 60 帧推进的那一帧 `true` | 非当前地点的脚本/日志节奏是 "60 帧一次、`amount` 跳变 ×60" |
-| 实体在玩家当前地点吗 | `SectorEntityToken.isInCurrentLocation()` | `containingLocation == currentLocation` | 玩家在星系内时其中实体为 `true`；已移出容器仍能回答 |
-| 在超空间吗 | `SectorEntityToken.isInHyperspace()` / `LocationAPI.isHyperspace()` | 实体：containing 地点是超空间 (`isHyperspaceMode`)；地点：对象同一性 | 超空间内实体为 `true` |
-| 玩家进过这个星系吗 | `StarSystemAPI.isEnteredByPlayer()` | 玩家舰队跳跃进入星系时置位 (`com.fs.starfarer.api.impl.campaign.CoreScript` 的 `reportFleetJumped` → `markSystemAsEntered`)；新档拥有正式市场的星系在生成期置位 (`com.fs.starfarer.api.impl.campaign.CoreLifecyclePluginImpl.updateKnownPlanets`)| 首次进入后 `true`，随存档保存；使用方是超空间地图对未进入星系的展示 |
-| 距上次玩家访问 | `getDaysSinceLastPlayerVisit()` / `getLastPlayerVisitTimestamp()` | 成为当前地点且非暂停帧推进时刷新时间戳 | **从未访问 = `Float.MAX_VALUE`**；进入后 ≈ 0；离开后递增 |
-| 还挂在容器里吗 | `SectorEntityToken.isAlive()` | `containingLocation` 非 null 且容器实体集合包含自己 (普通实体)；token 恒 `true` | `removeEntity` 后普通实体为 `false` |
+## 状态机：五态与推进规则
 
-推进节奏决定这些状态 "什么时候会变"(引擎级推进语义已述，这里补地点级)：当前地点每帧 `advance`；非当前地点每 60 帧以 ×60 步长推进。
+访问器和链路已经就位，接下来看系统每帧怎么推进：五态状态机的转移条件决定全部访问器语义的取值，也决定效果脚本回调在哪些状态被调用。`ShipSystemAPI.SystemState` 与 `ShipSystemStatsScript.State` 是同一组状态的两种视图 (枚举顺序一致)，回调里拿到的是 `State`，`ShipSystemAPI.getState()` 返回 `SystemState`。
 
-暂停时地点 `advance` 不执行 (地点级脚本与引擎级脚本一样默认冻结 —— 仅 `runWhilePaused()` 返回 true 的脚本在暂停时继续推进)；战斗期间生涯引擎完全不推进。
+五个状态与 `effectLevel`(= 充能进度值)：
 
-::: info 为什么地点级脚本与引擎级脚本只差推进节奏
-引擎级脚本每帧推进，地点级脚本跟随地点推进 (当前地点每帧、非当前地点 60 帧合一次、`amount` 跳变 ×60)。因此需要 "实时节奏" 的逻辑挂引擎级 (本节示例)，"只在某地点内干活" 的逻辑才挂地点级。
-:::
+状态
 
-### 文件与注册链路
+`getEffectLevel()`
 
-- **不新增任何数据文件**：演示星系的恒星类型 `"star_white"`、行星类型 `"terran"`、custom entity 类型 `"stable_location"`(`data\config\custom_entities.json` 键)、terrain id `"asteroid_belt"` 全部复用原版资源。
-  - 不需要 JSON/CSV/贴图。
-- **本节拥有的 ID**(只由本节定义，其他页面只能使用并链接所有者)：
+语义
 
-| ID | 用途 |
-|---|---|
-| `GearIn_demo` | 演示星系 `optionalUniqueId`(`SectorAPI.getStarSystem` 查询键)|
-| `GearIn_demo_star` | 恒星实体 id |
-| `GearIn_demo_planet1` | 行星实体 id |
-| `GearIn_demo_beacon` | 信标 custom entity id |
-| `GearIn_demo_tag` | 信标 tag |
-| `GearIn_LocationScript`(`REGISTER_MARK`)| persistent data 一次性注册键 |
+`IDLE`
 
-- **注册链路**：`GearInLocationScript`(本节所有)→ 既有插件类 `GearInModPlugin.onGameLoad` 中经 persistent data 一次性注册判断后的 `sector.addScript`(沿用 "每个注册项各自键" 约定)→ 引擎每帧 `advance` → 日志可观察。
-  - 星系创建发生在脚本**首帧** (`onGameLoad` 之后，安全)。
+0
 
-## 完整最小例
+待机；激活许可通过后响应激活请求
 
-前面四组 API 已经讲完，现在把它们按任务顺序写进五个协作类。示例在既有 MOD 布局与插件类 `GearInModPlugin` 之上新增 5 个协作类 (不新增任何资源、不新增任何注册项)：
+`IN`
+
+`timer / chargeUp`(`charge up` 为 0 时恒 1)
+
+前摇，线性增强
+
+`ACTIVE`
+
+1
+
+全功率段
+
+`OUT`
+
+`1 - timer / down`(`down` 为 0 时恒 1)
+
+后摇，线性减弱
+
+`COOLDOWN`
+
+0
+
+冷却，期间无法再次激活
+
+### 推进规则 (每帧充能推进)
+
+每帧系统运行时对象把 "本帧是否有激活请求" 传给充能推进 `advance(activated, dt)`，状态机按当前态分派：
+
+1. **IDLE + 激活请求**：按顺序检查 ——：
+    *   `canBeActivated()`(`requiresZeroFluxBoost` 时要求零幅能加速引擎开启)；
+    *   弹药 (用弹药系统且弹尽 → `failedToActivateDueToAmmo`)；
+    *   `raiseFlux(activationFlux, hardFlux)` 扣激活幅能 (扣不动 → `failedToActivateDueToFlux`)；
+    *   `deductOneAmmo()` 扣一发 (失败 → `restoreFlux` 退回幅能 + `failedToActivateDueToAmmo`)。
+    *   全部通过 → `state = IN`、`timer = 0`、回调 `systemChargingUp()`。
+2. **IN**：`timer += dt`；`timer >= charge up` → `state = ACTIVE`、`timer = 0`、回调 `systemActivated()`。`charge up` 为 0 时当帧即转入 `ACTIVE`(`IN` 只存在一帧，该帧 `effectLevel` 为 1)。
+3. **IN / ACTIVE 每帧扣幅能**：`raiseFlux(fluxPerSecond * dt, hardFlux)`；扣不动且当前系统可关闭 (`canBeDeactivated()`)→ **提前结束**：`state = OUT`、回调 `systemChargingDown()`。可观察结果：幅能成本超过耗散能力时，`ACTIVE` 段缺失或极短，系统 "刚开就关"。
+4. **ACTIVE 结束路径**：
+    *   非开关式 (`toggle` 空/`FALSE`)：`timer >= active` → `OUT`(自动结束)；
+    *   开关式 (`toggle=TRUE`) 且 `active > 0`：同样按 `timer >= active` 自动结束 (例如原版 Burn Drive `active=5`，开满 5 秒自动关)；
+    *   开关式且 `active` 为 0(如原版 Fortress Shield)：时长分支整体跳过，系统**无限保持 `ACTIVE`**，直到再次激活请求到来且 `canBeDeactivated()` → `OUT`(开关式分支的手动关闭)。
+5. **OUT**：`timer += dt`；`timer >= down` → `state = COOLDOWN`、`timer = 0`、回调 `systemDeactivated()`。
+6. **COOLDOWN**：`timer += dt`；`timer >= cooldown` → `state = IDLE`、回调 `systemCooldownFinished()`。`cooldown` 为 0 时冷却段只存在一帧。
+
+激活请求的来源：用户按 U / 右键，AI 调 `ShipAPI.useSystem()`(→ `giveCommand(USE_SYSTEM)`；命令处理把参数坐标传给 `system.fire(param)`)。系统对象的 `fire(loc)` 只记录 `targetLoc` 并置激活请求标志。
+
+### 必须遵守的规则
+
+1. **`isUsable()` 返回 `false` 时，激活请求被丢弃**。系统每帧推进时，在激活请求帧先检查脚本是否 `ShipSystemStatsScriptAdvanced` 且 `isUsable(system, ship)` 为真；为假则清掉请求并调 `failedToActivateDueToAmmo()`(连续失败 2 秒后才播放失败音)。
+    *   违反/误解的可观察结果：用户按 U **没有任何状态变化、没有报错**；连续空按约 2 秒后听到 "弹药耗尽" 音效。
+    *   因此**禁止**把 `isUsable` 写成恒 `true` 之外的 "随口返回"—— 它决定 "能不能按下"，而状态机决定 "按下后走哪段"。
+2. **`apply` 里写入的每一项 stat 修改，`unapply` 必须用同一把钥匙撤销**。引擎传入的 `id` 是 `系统id + " effect"`(例如 `GearIn_targetingsystem effect`)，modifier ID 稳定性纪律在这里同样成立。违反的可观察结果：系统结束后效果残留 (速度加成不消失)，且**没有任何报错**。
+3. **`forceState(state, progress)` 直接改写运行时状态机，跳过正常转移回调**。
+    *   `progress` 的语义按目标态不同 (`IN` → 前摇进度、`OUT` → 后摇进度、`COOLDOWN` → 冷却比例、`ACTIVE` → 时长比例)；`deactivate()` → `forceDeactivate()` 直接进入 `COOLDOWN`。
+    *   它适合脚本 / 调试逻辑，**禁止**用它在正常流程里 "代替" 关闭 —— 它会跳过 `systemChargingDown` / `systemDeactivated` 回调的一部分语义。
+4. **stats 脚本的可见性边界**：`apply` 只在 `effectLevel > 0`(`IN`/`ACTIVE`/`OUT`) 或 `.system` 开启 `runScriptWhileIdle` 时每帧被调用；`effectLevel` 归零时 (进入 `COOLDOWN`/`IDLE`、舰船撤退或解体)`unapply` 被调用一次。
+    *   **`COOLDOWN` 与 `IDLE` 两态在 stats 脚本里不可见** —— 需要观察这两态的时机用 AI 角色或战斗插件。
+    *   `getStatusData` 只对用户舰船每帧按 `index = 0、0、1...` 查询 (上限 7 个)。
+    *   `runScriptWhilePaused`(默认 `false`) 控制暂停期间是否额外运行脚本 (`advanceEvenIfPaused`)。
+5. **暂停时状态机不推进**：系统随舰船推进 (系统的每帧推进由战斗舰船对象的每帧推进驱动)，暂停分支只推进用户舰与地图 (前置单元已证)，因此 `effectLevel` 冻结在暂停前的值；AI 角色与 stats 脚本也随之停摆，脚本里**不必**再做 `isPaused()` 判断 (做了也无害，成熟实例仍保留)。
+
+## 目标获取：三条通道
+
+状态机决定 "什么时候走哪一段"，但效果要施加到谁身上？目标获取的三条通道回答这个问题 —— 本节示例的锁定系统正是按这三条通道找目标。
+
+1. **用户右键坐标**：用户右键 (或点击) 激活系统时，`USE_SYSTEM` 命令携带鼠标位置坐标并传给 `system.fire(loc)`，随后 `getTargetLoc()` 返回该坐标 (`ShipSystemAPI.getTargetLoc()`)：
+    *   AI 激活时参数为 null(系统 AI 发出的 `USE_SYSTEM` 激活命令不带坐标参数)，`targetLoc` 保持 null。
+    *   可观察结果：用户右键激活的传送/位移类系统以光标为落点，AI 激活的同类系统没有落点参数。
+2. **舰船当前目标**：`ShipAPI.getShipTarget()`—— 用户瞄准锁定的目标或 AI 的当前攻击目标。它不依赖任何 flag，用户舰与 AI 舰都可用，是目标系统的首选回退。
+3. **AI flag**：`ShipwideAIFlags.AIFlags.TARGET_FOR_SHIP_SYSTEM`。
+    *   **引擎侧维护者**：舰船 AI 每帧在调用系统 AI **之前**执行 `ship.getAIFlags().setFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM, 1.0F, target)`，目标不可见 (战争迷雾) 时写入 null：
+        *   也就是说这个 flag 的 "custom 数据" 就是当前目标，读它不需要自定义 AI 就有值。
+    *   flag 寿命：`ShipwideAIFlags.FLAG_DURATION = 0.5f`，舰船 AI 覆写为 1.0 秒，过期由持有方每帧调 `aiFlags.advance(amount)` 清除。
+
+由通道 3 引出的两个关键事实 (`ShipAPI.getAIFlags()`)：
+
+* **`getAIFlags()` 永不返回 null**：非 AI 舰船 (用户舰) 会用到时才创建一份 flag 容器，以 `"nonAI_SAIF_" + shipId` 为键存在引擎 customData 里：
+    *   但**非 AI 舰船没有任何每帧刷新者** ——`TARGET_FOR_SHIP_SYSTEM` 只会被舰船 AI 写入，用户舰的这份 flag 无人写入、也永不自动过期。
+
+读取 flag 前必须判 "舰船是否有 AI"
+
+`ship.getShipAI() == null`(用户舰) 时 flag 语义不可用，回退 `getShipTarget()`。成熟实例正是这个判空做法。
+
+### 必须遵守的规则
+
+6. **AI 写入的目标 flag 有寿命，使用前必须再验证一次**。flag 默认 0.5 秒过期、舰船 AI 覆写 1.0 秒 ——AI 上一轮决策写入的目标，下一帧可能已经死亡、脱离射程或换了目标。
+    *   `stats` 启动侧拿到 `getCustom(AIFlags.TARGET_FOR_SHIP_SYSTEM)` 后**必须**重新执行合法性检查 (存活、非残骸、非相位、敌我、射程)，验证不过就不施加效果。
+    *   违反的可观察结果：目标被击毁后效果仍持续一段 (flag 未过期窗口)，或反过来效果 "闪断"(flag 已过期)。
+    *   AI 侧同理：激活期间要持续刷新 flag(本节示例每 0.2–0.3 秒重写一次)，否则 `IN`/`ACTIVE` 后段锁会丢。
+7. **目标合法性检查必须包含相位与残骸**。`isValidTarget` 的标准五件套：`isAlive()`、`!isHulk()`、`!isPhased()`、`owner` 与发射侧不同、距离不超过有效射程 (`getSystemRangeBonus` 修正后的值)。
+    *   漏掉相位判定的可观察结果：系统对相位中的敌舰 "锁了个寂寞"(效果无效但状态文字显示锁定)。
+    *   漏掉残骸判定的结果：对残骸施加效果、浪费幅能，且无报错。
+
+## 系统 AI：接入、实例化与优先级
+
+目标通道已经明确，但对 AI 舰船来说，"该不该激活" 由谁决定？系统 AI 把目标通道接到舰船 AI 的每帧决策里，最终调用与玩家按 U 走同一个入口。`ShipSystemAIScript`(`com.fs.starfarer.api.combat`) 只有两个方法：
+
+* `init(ShipAPI, ShipSystemAPI, ShipwideAIFlags, CombatEngineAPI)`
+* `advance(float amount, Vector2f missileDangerDir, Vector2f collisionDangerDir, ShipAPI target)`
+
+接入链：
+
+```text
+.system 里 "aiType": "CUSTOM" + "aiScript": "data.scripts.gearin.shipsystems.GearInTargetingSystem"
+  → ShipSystemSpecAPI.aiType / aiScript 字段
+  → 舰船 AI 创建时，其构造器调 spec.createSystemAI(...)
+  → createSystemAI 的 switch 命中 CUSTOM 分支：
+      spec.getAIScript() → 脚本类加载器.loadScriptInstance(aiScript)（类缓存 + 每次 newInstance）
+      → aiScript.init(ship, ship.getSystem(), aiFlags, engine)
+      → 包装成系统 AI 适配器（advance 转发给 ShipSystemAIScript.advance）
+  → 舰船 AI 每帧调 systemAI.advance(amount, 导弹危险方向, 碰撞危险方向, target)
+      （target 是 AI 当前目标，迷雾中不可见时为 null）
+```
+
+### 必须遵守的规则
+
+8. **`aiScript` 只在 `aiType: "CUSTOM"` 时被使用**。`createSystemAI` 按 `aiType` 枚举分派到内置 AI 类 (EMP → 原版 EMP 系统 AI、相位 → 原版相位隐形系统 AI 等)，唯一走 `getAIScript()` 的分支是 CUSTOM。
+    *   `aiType: "NONE"` 不创建任何系统 AI(返回 null)。
+    *   `aiType` 缺失、拼错或与 `type` 不配对时，**舰船部署生成 AI 的瞬间**抛 `RuntimeException("Error creating AI of type [...] for ship system [...]")`，该舰船无法进入战斗 —— 与数据面单元故障分析中的同一可观察结果。
+    *   `aiType: CUSTOM` 而 `aiScript` 缺失/类名错时同样在部署期失败 (`getAIScript()` 返回 null → `init` 空指针被包装；类名错则 `Problem loading class [...]`)。
+9. **statsScript 与 aiScript 是同名类的两个独立实例**。`getStatsScript()` 与 `getAIScript()` 各自经脚本类加载器按类名创建实例 —— 类缓存共享，但**每次 `newInstance()`**。
+    *   一个类同时挂两个角色时，stats 实例与 AI 实例的**实例字段互不共享**；共享逻辑必须走静态方法 (本节示例的全部目标逻辑都是静态的) 或 `ship.setCustomData`。
+    *   违反的可观察结果：在 stats 实例字段里存 AI 决策状态 (或反过来)，另一侧永远读不到 —— 静默失效，无报错。
+10. **系统 AI 只在 AI 舰船上运行**。`systemAI` 由舰船 AI 在创建时生成，用户舰没有舰船 AI，`ShipSystemAIScript.advance` 对用户舰**永不调用**。需要用户侧 "自动" 行为时走 stats 脚本 (`apply` 对用户舰照常回调) 或战斗插件，不能依赖 AI 脚本。
+11. **AI 决策必须节流**。`ShipSystemAIScript.advance` 每帧被调用，直接做全战场扫描每帧都会执行；成熟实例与原版内置 AI 都在 0.2–0.5 秒粒度决策 (如 `IntervalUtil` 配 `0.2f–0.3f` 或 `0.25f–0.5f` 区间)。违反的可观察结果：行为抖动与不必要的性能开销 (无报错)。
+
+### 优先级：aiHints 威胁评估
+
+`.system` 的 `aiHints` 段 (`threatRange` / `threatAmount` / `threatArc` / `threatAngle`) 是 "系统威胁" 影响**敌方** AI 的通道；`ShipSystemSpecAPI` 解析这些字段。
+
+原版 `emp.system` 用 `threatRange: 600, threatAmount: 4, threatArc: 360`。
+
+威胁评估器评估敌舰时，满足以下条件就把 `threatAmount` 计入威胁分并扩展评估射程：
+
+* 该系统 `getCooldownRemaining() < 3.0F`(接近就绪) 且 `threatAmount > 0`；
+* 距离在 `threatRange`(经 `getSystemRangeBonus` 修正) 内；
+* 方向落在 `threatAngle ± threatArc` 里。
+
+可观察结果：给系统写大 `threatAmount` 后，敌方 AI 会把这艘舰当作高威胁目标 (更早规避、更谨慎接近)；`threatAmount: 0`(默认) 则系统不参与威胁评估。
+
+## 实现目标选择系统
+
+本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段；把它放入指定类或方法后再继续，日志或界面出现对应信号时才进入下一段。
+
+### 校验锁定目标
+
+```java
+// 插入位置：GearInTargetingSystem.isValidTarget()
+if (source == null || target == null || target == source) return false;
+if (!target.isAlive() || target.isHulk() || target.isPhased() || target.isShuttlePod()) return false;
+if (target.getOwner() == source.getOwner()) return false;
+Vector2f delta = Vector2f.sub(target.getLocation(), source.getLocation(), new Vector2f());
+return delta.length() <= getRange(source);
+```
+
+新增行为：用户与 AI 共用敌我、存活、相位、残骸和有效射程判据。完成信号：合法敌舰返回 `true`；同侧、相位、残骸和超距目标均返回 `false`。
+
+### 读取 AI flag 并回退当前目标
+
+```java
+// 插入位置：GearInTargetingSystem.pickTarget()
+ShipAPI target = readAITarget(source);
+if (isValidTarget(source, target)) {
+    return target;
+}
+target = source.getShipTarget();
+if (isValidTarget(source, target)) {
+    return target;
+}
+return null;
+```
+
+新增行为：AI 舰优先消费短期系统目标，用户舰与 flag 失效场景回退到当前锁定目标。完成信号：用户右键锁定后能取得目标；AI flag 过期但 `getShipTarget()` 仍有效时锁定不中断。
+
+### 按效果强度施加速度倍率
+
+```java
+// 插入位置：GearInTargetingSystem.apply() 与 unapply()
+ShipAPI ship = (ShipAPI) stats.getEntity();
+boolean locked = ship != null && isValidTarget(ship, pickTarget(ship));
+if (state == ShipSystemStatsScript.State.OUT || !locked) {
+    stats.getMaxSpeed().unmodify(id);
+} else {
+    stats.getMaxSpeed().modifyMult(id, 1f + (SPEED_MULT - 1f) * effectLevel);
+}
+
+stats.getMaxSpeed().unmodify(id);
+```
+
+新增行为：`IN` 和 `ACTIVE` 随 `effectLevel` 提升速度，`OUT`、目标失效与 `unapply` 使用同一 ID 撤销。完成信号：满效果时基础速度 `80` 变为 `120`，系统结束或目标死亡后立即回到 `80`。
+
+### 阻止无目标激活
+
+```java
+// 插入位置：GearInTargetingSystem.isUsable() 与 getInfoText()
+if (system.isActive()) {
+    return true;
+}
+return isValidTarget(ship, pickTarget(ship));
+
+if (system.isOutOfAmmo() || system.getState() != SystemState.IDLE) {
+    return null;
+}
+return isValidTarget(ship, pickTarget(ship)) ? "READY" : "NO TARGET";
+```
+
+新增行为：用户在待机状态必须先取得合法目标，信息栏同步说明当前许可。完成信号：无目标时显示 `NO TARGET` 且按 U 不进入 `IN`；取得目标后显示 `READY`。
+
+### 初始化 AI 决策上下文
+
+```java
+// 插入位置：ShipSystemAIScript.init()
+this.aiShip = ship;
+this.system = system;
+this.aiFlags = flags;
+this.engine = engine;
+this.decisionInterval.randomize();
+LOG.info("GearIn targeting AI init: ship=" + ship.getHullSpec().getHullId()
+        + " system=" + system.getId());
+```
+
+新增行为：每艘 AI 舰拥有独立的系统引用、flag 容器和随机化节流相位。完成信号：部署 AI 舰时出现一次初始化日志，多舰决策不会全部落在同一帧。
+
+### 刷新目标并触发系统
+
+```java
+// 插入位置：ShipSystemAIScript.advance() 通过暂停、实体、冷却和弹药守卫之后
+decisionInterval.advance(amount);
+if (!decisionInterval.intervalElapsed()) return;
+
+ShipAPI lock = target == null ? aiShip.getShipTarget() : target;
+if (!isValidTarget(aiShip, lock)) {
+    clearAITarget();
+    return;
+}
+writeAITarget(aiShip, lock);
+if (system.isActive()) return;
+if (aiShip.getFluxTracker().isOverloadedOrVenting() || aiShip.getFluxLevel() > 0.9f) return;
+aiShip.useSystem();
+```
+
+新增行为：AI 每 0.2–0.3 秒重新验证并刷新 1 秒目标 flag，满足幅能条件时走与玩家相同的激活入口。完成信号：激活全程目标不闪断，冷却结束且目标仍有效时再次使用系统。
+
+## 组装战术系统实现
+
+前三节给出规则，本节把它们收进一个完整示例。示例系统 `GearIn_targetingsystem` 同时挂 stats 脚本与 AI 脚本，是 "同名双实例" 事实最直观的样本：`STAT_MOD` 类型、`aiType: CUSTOM`，stats 脚本与 AI 脚本是**同一个类** `data.scripts.gearin.shipsystems.GearInTargetingSystem` 的两个实例。
+
+行为基线：锁定有效期内 (敌方、存活、非相位、在有效射程内)`IN`/`ACTIVE` 段按 `effectLevel` 施加最大速度倍率 `1.5`；锁定失效立即撤销。
+
+AI 舰船每 0.2–0.3 秒决策一次：验证目标 → 写入 `TARGET_FOR_SHIP_SYSTEM` flag(激活期间持续刷新)→ `ship.useSystem()`。
+
+在既有 MOD 布局与战术系统数据面之上新增一个类文件，包与类名遵循命名约定 (`data.scripts.gearin.shipsystems`、`GearIn<Subject>`)：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -232,435 +452,78 @@ Starsector\mods\GearIndustry\
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
+│   └── shipsystems\
+│       ├── GearIn_targetingsystem.system   # 本节数据接入片段（见下）
+│       └── ship_systems.csv                # 注册行（见下）
 ├── src\
-│   └── data\scripts\gearin\campaign\
-│       ├── GearInSectorClockScript      # 引擎级脚本主题所有
-│       ├── GearInSystemGenerator        # 星系创建主题所有
-│       ├── GearInLocationScript         # 本节新增（编排）
-│       ├── GearInLocationSystemBuilder  # 本节新增（星系创建）
-│       ├── GearInTokenCreator           # 本节新增（token 语义）
-│       ├── GearInAccessStateLogger      # 本节新增（访问状态日志）
-│       └── GearInContainerCheck         # 本节新增（容器核验）
+│   └── data\scripts\gearin\
+│       ├── GearInModPlugin                 # 既有入口类；本节不改动
+│       ├── GearInGlobalAccess              # 既有全局访问类；本节只消费
+│       └── shipsystems\
+│           ├── GearInBurstDriveSystem      # 既有系统类；本节只消费
+│           ├── GearInResistFieldSystem     # 既有系统类；本节只消费
+│           └── GearInTargetingSystem       # 本节新增（stats 脚本 + AI 脚本同名类）
 └── jars\
 ```
 
-五个类一文件一角色：脚本类承担编排，其余四个角色类由脚本装配或调用 (仅包内协作，无跨单元依赖)，绑定位置如下。
-
-### GearInLocationScript(编排)
-
-职责：生涯每帧脚本 ——`REGISTER_MARK` 一次性注册判断、首帧装配辅助角色、每帧驱动 "地点变化检测 / 首次进入核对 / 周期摘要"。
-
-**绑定位置：`onGameLoad` 中经 persistent data 一次性注册判断后调用 `sector.addScript`**(见下方调用点片段)；这是本节唯一的注册入口，其余四个类由它装配或调用。
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.LocationAPI;
-import com.fs.starfarer.api.campaign.SectorEntityToken;
-import com.fs.starfarer.api.campaign.StarSystemAPI;
-
-/**
- * 完整最小例：LocationAPI / StarSystemAPI 实体容器与访问状态（日志前缀 "GearIn loc"）。
- * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），REGISTER_MARK 一次性门控
- * （C6-S2 的 CLASS_MARK 模式）。编排：星系创建/复用、访问状态记录、容器核验与
- * 周期摘要，分别委托给 GearInLocationSystemBuilder / GearInAccessStateLogger / GearInContainerCheck。
- */
-public class GearInLocationScript implements EveryFrameScript {
-	/** 存档持久化标记：本脚本是否已在该存档注册过（随存档保存）。 */
-	public static final String REGISTER_MARK = "GearIn_LocationScript";
-	private static final Logger LOG = Global.getLogger(GearInLocationScript.class);
-
-	/** 状态摘要日志的最小间隔（真实秒）。 */
-	private static final float LOG_INTERVAL = 10f;
-
-	private boolean setupDone = false;
-	private boolean broken = false;
-	private boolean enterDone = false;
-	private float sinceLastLog = 0f;
-	/** 随存档序列化的引用：演示星系与实体（存档图内持久对象，可安全放脚本字段）。 */
-	private StarSystemAPI demoSystem;
-	private SectorEntityToken beacon;
-	private GearInAccessStateLogger accessStateLogger;
-	private GearInContainerCheck containerCheck;
-
-	public GearInLocationScript() {
-		// 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
-	}
-
-	@Override
-	public boolean isDone() {
-		return false;
-	}
-
-	@Override
-	public boolean runWhilePaused() {
-		return false;
-	}
-
-	@Override
-	public void advance(float amount) {
-		if (!setupDone) {
-			setup();
-			if (broken) {
-				return;
-			}
-		}
-
-		LocationAPI current = Global.getSector().getCurrentLocation();
-		if (accessStateLogger.logLocationChangeIfChanged(current) && current == demoSystem) {
-			accessStateLogger.logEnteredDemoSystem();
-		}
-		if (!enterDone && demoSystem.isCurrentLocation()) {
-			enterDone = true;
-			containerCheck.runRemoveAddCheck();
-		}
-
-		sinceLastLog += amount;
-		if (sinceLastLog >= LOG_INTERVAL) {
-			sinceLastLog = 0f;
-			accessStateLogger.logStateSummary();
-		}
-	}
-
-	/** 首帧准备：演示星系复用或创建，取回信标引用，装配辅助角色。 */
-	private void setup() {
-		demoSystem = GearInLocationSystemBuilder.getOrCreate(Global.getSector());
-		beacon = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
-		if (beacon == null) {
-			LOG.error("GearIn loc: beacon not found in demo system, demos disabled");
-			broken = true;
-			return;
-		}
-		accessStateLogger = new GearInAccessStateLogger(demoSystem, beacon);
-		containerCheck = new GearInContainerCheck(demoSystem, beacon);
-		setupDone = true;
-	}
-}
-```
-
-### GearInLocationSystemBuilder(星系创建)
-
-职责：演示星系的创建与复用 —— 存在则 `getStarSystem` 复用，否则创建恒星、行星、信标、小行星带并调用 `autogenerateHyperspaceJumpPoints` 打通超空间入口。
-
-**绑定位置：被 `GearInLocationScript.setup` 调用 (静态入口 `getOrCreate`)**。本节拥有的常量 (`SYSTEM_UNIQUE_ID` / `STAR_ID` / `PLANET_ID` / `BEACON_ID` / `BEACON_TAG`) 都定义在这里。
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.PlanetAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.campaign.SectorEntityToken;
-import com.fs.starfarer.api.campaign.StarSystemAPI;
-
-/**
- * 角色：演示星系创建（LocationAPI / StarSystemAPI 的实体填充），被
- * GearInLocationScript.setup 调用：星系已存在则复用，否则创建并记录日志。
- */
-public class GearInLocationSystemBuilder {
-	/** 演示星系查询键：SectorAPI.getStarSystem 用 optionalUniqueId 或基名小写匹配。 */
-	public static final String SYSTEM_UNIQUE_ID = "GearIn_demo";
-	/** 本单元专属实体 ID（与 C3-S3 的 GearIn 星系既有 ID 互不冲突）。 */
-	public static final String STAR_ID = "GearIn_demo_star";
-	public static final String PLANET_ID = "GearIn_demo_planet1";
-	public static final String BEACON_ID = "GearIn_demo_beacon";
-	public static final String BEACON_TAG = "GearIn_demo_tag";
-	private static final Logger LOG = Global.getLogger(GearInLocationSystemBuilder.class);
-
-	private GearInLocationSystemBuilder() {
-		// 工具类：实例化由调用方承担（静态入口 getOrCreate）
-	}
-
-	/** 演示星系存在则复用，否则创建；返回可用的星系。 */
-	public static StarSystemAPI getOrCreate(SectorAPI sector) {
-		StarSystemAPI system = sector.getStarSystem(SYSTEM_UNIQUE_ID);
-		if (system != null) {
-			LOG.info("GearIn loc: demo system already exists, reusing id=" + system.getId());
-			return system;
-		}
-		return create(sector);
-	}
-
-	/** 创建演示星系并填充实体，返回创建结果。 */
-	private static StarSystemAPI create(SectorAPI sector) {
-		StarSystemAPI system = sector.createStarSystem("GearIn Demo");
-		system.setOptionalUniqueId(SYSTEM_UNIQUE_ID);
-
-		// 6 参数 initStar：同时把星系定位到超空间坐标 (7500, 8500)，并自动生成超空间锚点；
-		// 7 参数 initStar 不生成锚点、不设坐标（只查 starmap.json 的 starSystemLocations）。
-		PlanetAPI star = system.initStar(STAR_ID, "star_white", 600f, 7500f, 8500f, 400f);
-
-		// addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)；
-		// 非恒星行星会被自动挂一个 condition-only 市场（Misc.initConditionMarket），
-		// 因此 addPlanet 之后 getMarket() 立即非 null（正式市场流程归 C8-S5）。
-		PlanetAPI planet = system.addPlanet(PLANET_ID, star, "GearIn Demo Prime", "terran", 55, 150, 3200, 120);
-
-		// 自定义实体：type 是 data/config/custom_entities.json 里的键（"stable_location" 为原版键），
-		// factionId 缺省为 neutral；创建后实体位于 (0,0)，必须显式放置。
-		SectorEntityToken beacon = system.addCustomEntity(BEACON_ID, "GearIn 演示信标", "stable_location", "neutral");
-		beacon.setLocation(1400f, 900f);
-		beacon.addTag(BEACON_TAG);
-
-		// 小行星带 = terrain 实体（默认 terrain id "asteroid_belt"），围绕行星
-		system.addAsteroidBelt(planet, 40, 600, 100, 120, 160);
-
-		// 位置 token 的创建与容器语义见 GearInTokenCreator
-		GearInTokenCreator.create(system);
-
-		// 必须调用（或用带超空间坐标的 initStar 变体），否则星系没有通向超空间的跳跃点，玩家无法到达
-		system.autogenerateHyperspaceJumpPoints(true, false);
-
-		LOG.info(String.format(
-				"GearIn loc: created system id=%s name=%s | star=%s planet=%s | anchor=%s | hyperJumpPoints=%d | hyperLoc=(%.0f, %.0f)",
-				system.getId(),
-				system.getName(),
-				star.getName(),
-				planet.getName(),
-				system.getHyperspaceAnchor() != null,
-				system.getAutogeneratedJumpPointsInHyper().size(),
-				system.getLocation().x,
-				system.getLocation().y));
-		return system;
-	}
-}
-```
-
-### GearInTokenCreator(token 语义)
-
-职责：位置 token 的创建与容器语义演示 ——`createToken` 初始不在实体集合里，需要轨道或被按 id 查询时先 `addEntity` 加入容器。**绑定位置：被 `GearInLocationSystemBuilder` 在填充星系时调用 (静态入口 `create`)**。
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.SectorEntityToken;
-import com.fs.starfarer.api.campaign.StarSystemAPI;
-
-/**
- * 角色：位置 token 创建（LocationAPI.createToken 语义演示）。
- * 被 GearInLocationSystemBuilder 在填充星系时调用：createToken 初始不在实体集合里
- * （javadoc 原文），需要轨道或被按 id 查询时，必须先 addEntity 加入容器。
- */
-public class GearInTokenCreator {
-
-	private static final Logger LOG = Global.getLogger(GearInTokenCreator.class);
-
-	private GearInTokenCreator() {
-		// 工具类：实例化由调用方承担（静态入口 create）
-	}
-
-	/** 创建并加入位置 token，记录 createToken 语义（初始不在实体集合中）。 */
-	public static void create(StarSystemAPI system) {
-		SectorEntityToken token = system.createToken(0f, 0f);
-		LOG.info(String.format(
-				"GearIn loc: token created | id=%s | inList before add=%s | isAlive before add=%s",
-				token.getId(),
-				system.getAllEntities().contains(token),
-				token.isAlive()));
-		token.setLocation(-2000f, -1500f);
-		system.addEntity(token);
-		LOG.info(String.format(
-				"GearIn loc: token added | inList after add=%s | byId found=%s",
-				system.getAllEntities().contains(token),
-				system.getEntityById(token.getId()) != null));
-	}
-}
-```
-
-### GearInAccessStateLogger(访问状态日志)
-
-职责：访问状态六件套的可观察输出，三条日志 ——location 变化、进入演示星系、周期摘要；`formatDays` 把 `Float.MAX_VALUE` 显示为 `never`。
-
-**绑定位置：由 `GearInLocationScript.setup` 构造 (持有星系与信标引用)，`advance` 每帧驱动**。
-
-```java
-package data.scripts.gearin.campaign;
-
-import java.util.List;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.LocationAPI;
-import com.fs.starfarer.api.campaign.SectorEntityToken;
-import com.fs.starfarer.api.campaign.StarSystemAPI;
-
-/**
- * 角色：访问状态记录（isCurrentLocation / activeThisFrame / isInCurrentLocation /
- * isAlive / isEnteredByPlayer / getDaysSinceLastPlayerVisit），三条日志
- * （location 变化、进入演示星系、周期摘要）由 GearInLocationScript 调用。
- */
-public class GearInAccessStateLogger {
-	private static final Logger LOG = Global.getLogger(GearInAccessStateLogger.class);
-	private final StarSystemAPI demoSystem;
-	private final SectorEntityToken beacon;
-	private String lastPlayerLocationId = null;
-
-	public GearInAccessStateLogger(StarSystemAPI demoSystem, SectorEntityToken beacon) {
-		this.demoSystem = demoSystem;
-		this.beacon = beacon;
-	}
-
-	/** 玩家所在 location 变化时记录访问状态；返回是否发生了变化。 */
-	public boolean logLocationChangeIfChanged(LocationAPI current) {
-		String currentId = current == null ? null : current.getId();
-		if (lastPlayerLocationId != null && lastPlayerLocationId.equals(currentId)) {
-			return false;
-		}
-		String oldId = lastPlayerLocationId;
-		lastPlayerLocationId = currentId;
-		StringBuilder sb = new StringBuilder("GearIn loc: player location change");
-		if (oldId == null) {
-			sb.append(" | first observed: ");
-		} else {
-			sb.append(" | ").append(oldId).append(" -> ");
-		}
-		sb.append(currentId);
-		if (current != null) {
-			sb.append(" [name=").append(current.getName())
-					.append(", isHyperspace=").append(current.isHyperspace())
-					.append(", isCurrentLocation=").append(current.isCurrentLocation())
-					.append(", activeThisFrame=").append(current.activeThisFrame())
-					.append("]");
-		}
-		LOG.info(sb.toString());
-		return true;
-	}
-
-	/** 玩家刚进入演示星系：记录访问状态与实体状态。 */
-	public void logEnteredDemoSystem() {
-		LOG.info(String.format(
-				"GearIn loc: demo system entered | isEnteredByPlayer=%s | daysSinceLastVisit=%s | beacon.isInCurrentLocation=%s | beacon.isAlive=%s",
-				demoSystem.isEnteredByPlayer(),
-				formatDays(demoSystem.getDaysSinceLastPlayerVisit()),
-				beacon.isInCurrentLocation(),
-				beacon.isAlive()));
-	}
-
-	/** 周期状态摘要：演示星系的实体集合与访问状态。 */
-	public void logStateSummary() {
-		LocationAPI current = Global.getSector().getCurrentLocation();
-		List<SectorEntityToken> entities = demoSystem.getAllEntities();
-		LOG.info(String.format(
-				"GearIn loc: state | current=%s (id=%s) | demoSystem.isCurrentLocation=%s activeThisFrame=%s enteredByPlayer=%s daysSinceVisit=%s | entities=%d planets=%d terrains=%d custom=%d | beacon isAlive=%s inList=%s",
-				current == null ? "null" : current.getName(),
-				current == null ? "null" : current.getId(),
-				demoSystem.isCurrentLocation(),
-				demoSystem.activeThisFrame(),
-				demoSystem.isEnteredByPlayer(),
-				formatDays(demoSystem.getDaysSinceLastPlayerVisit()),
-				entities.size(),
-				demoSystem.getPlanets().size(),
-				demoSystem.getTerrainCopy().size(),
-				demoSystem.getCustomEntities().size(),
-				beacon.isAlive(),
-				entities.contains(beacon)));
-	}
-
-	/** Float.MAX_VALUE 表示从未访问过（getDaysSinceLastPlayerVisit 语义）。 */
-	private static String formatDays(float days) {
-		if (days >= Float.MAX_VALUE) {
-			return "never";
-		}
-		return String.format("%.1f", days);
-	}
-}
-```
-
-### GearInContainerCheck(容器核对)
-
-职责：实体容器持有语义核对 —— 对信标执行一次 `removeEntity` / `addEntity`，记录 `isAlive()` 与 `getEntityById()` 的前后变化 (true→false→true 全链路)。
-
-**绑定位置：由 `GearInLocationScript.setup` 构造，玩家首次进入演示星系时执行一次 (`enterDone` 判断，读档不重放)**。
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.SectorEntityToken;
-import com.fs.starfarer.api.campaign.StarSystemAPI;
-
-/**
- * 角色：实体容器持有语义核验（isAlive / getEntityById 与容器成员关系）。
- * 被 GearInLocationScript 在玩家首次进入演示星系时调用一次：
- * 对信标执行 removeEntity / addEntity，记录 isAlive() 与 getEntityById() 的前后变化。
- */
-public class GearInContainerCheck {
-
-	private static final Logger LOG = Global.getLogger(GearInContainerCheck.class);
-
-	private final StarSystemAPI demoSystem;
-	private final SectorEntityToken beacon;
-
-	public GearInContainerCheck(StarSystemAPI demoSystem, SectorEntityToken beacon) {
-		this.demoSystem = demoSystem;
-		this.beacon = beacon;
-	}
-
-	/** 移除/重新加入核验：只执行一次，展示 isAlive 与 getEntityById 的容器持有语义。 */
-	public void runRemoveAddCheck() {
-		LOG.info("GearIn loc: enter demo system first time - remove/add demo");
-		boolean aliveBefore = beacon.isAlive();
-		SectorEntityToken byIdBefore = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
-
-		demoSystem.removeEntity(beacon);
-		boolean aliveAfterRemove = beacon.isAlive();
-		SectorEntityToken byIdAfterRemove = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
-		SectorEntityToken byIdSectorAfterRemove = Global.getSector().getEntityById(GearInLocationSystemBuilder.BEACON_ID);
-		boolean listContainsAfterRemove = demoSystem.getAllEntities().contains(beacon);
-
-		demoSystem.addEntity(beacon);
-		boolean aliveAfterReadd = beacon.isAlive();
-		SectorEntityToken byIdAfterReadd = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
-
-		LOG.info(String.format(
-				"GearIn loc: beacon | alive before=%s | byId before=%s | alive after remove=%s | byId after remove=%s | sector byId after remove=%s | inList after remove=%s | alive after re-add=%s | byId after re-add=%s",
-				aliveBefore,
-				byIdBefore != null,
-				aliveAfterRemove,
-				byIdAfterRemove != null,
-				byIdSectorAfterRemove != null,
-				listContainsAfterRemove,
-				aliveAfterReadd,
-				byIdAfterReadd != null));
-	}
-}
-```
+### GearInTargetingSystem
 
 对应关系：
 
-- `GearInLocationScript implements EveryFrameScript`：三个方法全来自接口；`isDone()` 恒 `false`(常驻)、`runWhilePaused()` 恒 `false`(暂停冻结，引擎级脚本语义)。
-  - `setup()` 首帧执行：`getOrCreate` 命中 (读档场景) 走 "复用" 分支，未命中 (新档) 走创建分支 —— 这就是 "旧档只补实体、不重复建星系" 的幂等做法。
-- `REGISTER_MARK`：persistent data 一次性注册键 (`"GearIn_LocationScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
-- `GearInLocationSystemBuilder`：星系创建与复用 (`SYSTEM_UNIQUE_ID` / 实体 ID 常量都在这里)。
-  - `system.getId()` 实际是基名小写 (`"gearin demo"`)，`getStarSystem(SYSTEM_UNIQUE_ID)` 按 `optionalUniqueId` 命中 —— 两条路径都可观察。
-- `GearInTokenCreator`：token 两行日志 `inList before add=false` 与 `isAlive before add=true` 并存 —— 正是 "token 不在容器但 `isAlive` 恒 `true`" 的教学点。
-- `GearInAccessStateLogger`：访问状态六件套的可观察输出 (location 变化 / 进入演示星系 / 周期摘要三条日志)；`formatDays` 把 `Float.MAX_VALUE` 显示为 `never`。
-- `GearInContainerCheck`：`removeEntity` → `isAlive=false` / 两处 `getEntityById` 都 null → `addEntity` 恢复 —— 容器持有语义形成完整流程。
-- `REGISTER_MARK` 注册判断 + `SectorAPI.getStarSystem` 幂等检查：读档不会重复建星系 (脚本字段随存档序列化，`setupDone` 保持 `true` 根本不重跑 `setup`；即使字段丢失，`getStarSystem` 也能捞回已有星系)。
+* 静态目标逻辑 (`getRange` / `isValidTarget` / `readAITarget` / `writeAITarget` / `pickTarget`)：两个角色共享的同一语义 ——AI 写入、stats 使用都走同一套合法性检查 (规则 6、6)，"AI 与 Stats 各自复制过滤条件" 是高频陷阱。
+* `readAITarget` 的 `source.getShipAI() == null` 判断：用户舰无 AI，flag 无人写入 (规则 6 的用户侧事实)；`pickTarget` 回退 `getShipTarget()`(通道 2)。
+* `apply`：`(ShipAPI) stats.getEntity()` 取舰船 (战斗期非 null)；`state == OUT || !locked` 时 `unmodify(id)`，否则 `modifyMult(id, 1 + 0.5 * effectLevel)`—— "目标验证不过就不加成"。
+    *   `lastApplyState` 状态跳变日志把 `IN → ACTIVE → OUT` 变成日志证明 (规则 4 的可见性边界：`COOLDOWN`/`IDLE` 在 stats 侧看不到，由 AI 侧补全)。
+* `unapply`：撤销同一把钥匙并打日志 (引擎传入的 `id` = `GearIn_targetingsystem effect`，规则 2)。
+* `isUsable` / `getInfoText`：`isUsable` 返回 false 时按 U 不激活 (规则 1)；`getInfoText` 返回 null 时 UI 用默认 `READY` /`ACTIVE`(`ShipSystemStatsScriptAdvanced` javadoc 原文)。
+* AI 角色 `init`：缓存引用并 `decisionInterval.randomize()`(规则 11 的节流相位随机化)。
+* AI 角色 `advance`：判断链 (暂停 → 实体存在 → 存活 → CR → 冷却 → 弹药 → 节流 → 目标再验证 → 写 flag → 激活中只刷新 → 过载/高幅能 → `useSystem`)，顺序是成熟实例的标准做法；`system.isActive()` 分支只刷新 flag 不重复激活 (规则 6 的 "持续刷新")。
+* `logStateTransition`：AI 视角的完整五态日志 (`IDLE → IN → ACTIVE → OUT → COOLDOWN → IDLE`)—— 这是 stats 脚本看不见的两态 (`COOLDOWN`/`IDLE`) 的唯一脚本侧观察点。
+* `writeAITarget` 写入时长为 `1.0f`(与舰船 AI 的覆写一致)，`clearAITarget` 在目标失效时清 flag。
 
-五个类只做包内协作，不跨单元依赖；日志前缀统一 `GearIn loc`—— 全部 10 条日志可观察信号与拆分前逐字一致，时序固定为 token created → token added → created system。
+### 数据接入片段 (工程片段 —— 本单元不创建数据文件)
 
-调用点 (工程片段 —— 方法所在类为既有插件类，本节只演示调用，不改动既有文件)：
-
-```java
-    // GearInModPlugin（既有插件类）onGameLoad(boolean newGame) 内新增本节注册块。
-    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门（沿用既有约定）。
-    if (!Global.getSector().getPersistentData().containsKey(GearInLocationScript.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInLocationScript.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInLocationScript());
+```json
+// data\shipsystems\GearIn_targetingsystem.system（片段）
+{
+    "id": "GearIn_targetingsystem",
+    "type": "STAT_MOD",
+    "aiType": "CUSTOM",
+    "statsScript": "data.scripts.gearin.shipsystems.GearInTargetingSystem",
+    "aiScript": "data.scripts.gearin.shipsystems.GearInTargetingSystem",
+    "range": 800,
+    "useSound": "system_targeting_feed",
+    "deactivateSound": "gun_out_of_ammo",
+    "aiHints": {
+        "threatRange": 800,
+        "threatAmount": 1,
+        "threatArc": 360,
+        "threatAngle": 0
     }
+}
 ```
+
+```csv
+name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle,noDissipation,noHardDissipation,hardFlux,noFiring,noTurning,noStrafing,noAccel,noShield,noVent,isPhaseCloak,tags,icon
+目标锁定,GearIn_targetingsystem,1,,,,,,,,,0.5,4,0.5,3,,,,,,,,,,,offensive,graphics/icons/hullsys/targeting_feed.png
+```
+
+测试舰挂载要还原
+
+挂载到测试舰 ([C2-S3] 示例行的 `system id` 是 `GearIn_burstdrive`；接入本节系统后要恢复原状，改回即可)。
+
+```csv
+name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
+工匠,GearIn_artizan,驱逐舰,未知,GearIn_targetingsystem,10,5000,500,3800,4167,200,95,,80,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,GearIn_bp,,,,0.5,2,3,,300
+```
+
+数据字段 (CSV 28 列，数据面单元速查表已有全部列)：`flux/second=1`(`IN`/`ACTIVE` 段每秒幅能)。
+
+`charge up=0.5`、`active=4`、`down=0.5`、`cooldown=3`、`tags=offensive`；
+
+`.system` 的 `range` 被 `getSystemRangeBonus` 修正后是本例 "有效射程" 的 base(`ShipSystemSpecAPI` 的 `getRange`)。
+
+`aiHints` 让敌方 AI 把就绪中的本系统计入威胁 (`threatAmount=1`、`threatRange=800`)。
 
 构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
 
@@ -668,106 +531,419 @@ public class GearInContainerCheck {
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInLocationScript.class`(可用 `jar tf` 核对，五个类都应出现)。
+产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`(可用 `jar tf` 核对)。
 
-## 规则强度核对
+## 关键故障实验：系统能充能却没有有效目标
 
-以下规则中为 "必须/禁止"，本节全部用硬措辞并写明违反后的可观察结果；未做任何软化：
+AI 和效果脚本各自选择目标。
 
-| 规则 | 依据 | 违反后的可观察结果 |
-|---|---|---|
-| **必须**调用 `autogenerateHyperspaceJumpPoints`(或使用带超空间坐标的 6 参数 `initStar` 变体)，否则星系没有通向超空间的入口 | `StarSystemAPI.initStar`("Will not automatically generate a hyperspace anchor")；星系创建主题的既有结论 | 星系存在但超空间无跳跃点、`getHyperspaceAnchor()` 为 null，玩家无法到达 |
-| token 写坐标**必须**用 `setLocation`(其 `setFixedLocation` 为空实现，调用无效)| (`LocationToken.setFixedLocation` 空实现)| token 坐标不变、无任何报错，位置静默错误 |
-| 空间站查询**必须**用 `getEntitiesWithTag(Tags.STATION)`(`getOrbitalStations()` 已废弃)；按 id 查询**必须**用 `getEntityById`(`getEntityByName()` 已废弃)| `LocationAPI` 废弃标注 | 用废弃方法仍能跑，但拿不到 custom entity 充当的空间站、且未来 API 行为不保证 |
-| 脚本/advance 内移除星系**必须**用 `removeStarSystemNextFrame` | `SectorAPI.removeStarSystemNextFrame` | `removeStarSystem` 在遍历中调用抛 `ConcurrentModificationException` |
-| 一次性注册**必须**经 persistent data 判断、每个注册项各自键 | 既有插件生命周期与引擎级脚本主题的约定 (延续)| 每次读档重复注册，脚本实例叠加 (日志成双、行为叠加)|
-| 脚本字段**必须**只放可序列化状态 (星系/实体引用可以，引擎单例不行)| 引擎级脚本主题的约定 (延续)| 存档/读档异常或读档后引用失效 |
+**局部故障片段：**
+
+```java
+// 故障片段
+target = findTarget(); aiTarget = findTarget();
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+writeAITarget(aiShip, target);
+ShipAPI locked = pickTarget(ship);
+```
+
+复验：让 AI 选定一艘敌舰，确认效果与 UI 指向同一目标。
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与插件类 ([C6-S1] / [C6-S2]，含本节调用点片段)、本节五个示例类、累计工程的引擎级时钟脚本 [C8-S1] 与星系生成器 (非必需)。
+前置数据：既有 MOD 布局 [C6-S1]、战术系统数据面 [C2-S3]；本节数据接入片段 (`GearIn_targetingsystem.system`、`ship_systems.csv` 注册行、`GearIn_artizan` 的 `system id` 挂载)；`GearInTargetingSystem` 类实现已编入 `jars\GearIndustry.jar`。
 
-1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含五个类的 class 条目。
-2. 新建生涯：确认 `starsector.log` 首帧依次出现两条 token 日志与 `GearIn loc: created system ... | anchor=true | hyperJumpPoints=1 | hyperLoc=(7500, 8500)`。
-   - 观察 token 创建、添加、系统创建与周期状态日志的先后顺序。
-3. 超空间地图：确认存在 `GearIn Demo Star System` 跳跃点；未进入时摘要 `daysSinceVisit=never`、`enteredByPlayer=false`。
-4. 跳入演示星系：确认 `player location change | ... -> gearin demo [...isCurrentLocation=true, activeThisFrame=true]`、`demo system entered | isEnteredByPlayer=true ...` 与一次性 remove/add 核对日志。
-   - 核对 alive/byId 全流程 true→false→true；星系内周期摘要 `demoSystem.isCurrentLocation=true ... daysSinceVisit=0.0`；地图上信标出现在 (1400, 900) 附近。
-5. 暂停：星系内按空格暂停 20 秒以上 —— 无新日志；恢复后继续。
-6. 读档：保存后读档 —— 无 `created system`、无重复注册、无重复星系；周期摘要从存档时刻继续；再次进入演示星系不重复执行 remove/add 核对。
-7. 战斗：进入任意遭遇战 —— 战斗期间无 `GearIn loc` 日志；回生涯后继续。
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
+2. **数据接入**：启动游戏，在日志中观察 `GearIn_targetingsystem` 的系统加载与数据应用记录。
+3. **用户侧无目标**：进入 `GearIn_test` 战役，无目标按 U，观察系统反应 (`isUsable` 返回 false)。
+4. **用户侧有目标**：右键锁定敌舰后按 U，核对四行 stats 状态日志与 `unapply effect (id=GearIn_targetingsystem effect)`，观察 1.5 倍速度与 `target locked` 状态文字。
+5. 击毁锁定目标，观察加成撤销。
+6. **AI 侧**：把挂载该系统的舰船放入敌方，进入战斗后核对 `GearIn targeting AI init`、`lock` 日志与五态状态机日志，并观察敌方舰船使用系统。
+7. 击毁 AI 的目标，观察后续 `lock` 日志。
+8. **暂停**：战斗内按空格暂停约 10 秒，确认 AI 决策与状态机日志停更，恢复后继续。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInLocationScript.class`。
-- **新建生涯 (脚本首帧)**：`starsector.log` 依次出现两条 token 日志与一条创建日志：
-  ```text
-  GearIn loc: token created | id=<十六进制id> | inList before add=false | isAlive before add=true GearIn loc: token added | inList after add=true | byId found=true GearIn loc: created system id=gearin demo name=GearIn Demo Star System | star=GearIn Demo planet=GearIn Demo Prime | anchor=true | hyperJumpPoints=1 | hyperLoc=(7500, 8500)
-  ```
-  随后一帧出现 `GearIn loc: player location change | first observed: <玩家出生地点 id>`。说明：`hyperJumpPoints=1` 来自 autogen 逻辑 (恒星 → 1 个超空间跳跃点；非气态巨行星 → nascent gravity well 而不是跳跃点)；`anchor=true` 证明 6 参数 `initStar` 自动生成了超空间锚点。
-- **周期摘要**：此后约每 10 真实秒一条 (未暂停)：
-  ```text
-  GearIn loc: state | current=<当前地点名> (id=<id>) | demoSystem.isCurrentLocation=false activeThisFrame=<不定> enteredByPlayer=false daysSinceVisit=never | entities=6 planets=2 terrains=2 custom=1 | beacon isAlive=true inList=true
-  ```
-  实体计数构成：恒星 + 行星 + 信标 + 小行星带 + 位置 token + 日冕地形 = 6；`planets=2`(恒星与行星都是 `PlanetAPI`)、`terrains=2`(日冕 + 小行星带)、`custom=1`(信标)。若计数不同，先排查其他 MOD 是否向新建星系追加了实体。
-- **跳跃进入演示星系**：在超空间地图飞到 `GearIn Demo Star System` 跳跃点跳入，日志出现：
-  ```text
-  GearIn loc: player location change | <旧地点 id> -> gearin demo [name=GearIn Demo Star System, isHyperspace=false, isCurrentLocation=true, activeThisFrame=true] GearIn loc: demo system entered | isEnteredByPlayer=true | daysSinceLastVisit=<never 或 ≈0.0> | beacon.isInCurrentLocation=true | beacon.isAlive=true
-  ```
-  `isEnteredByPlayer=true`：玩家舰队跳跃进入时置位 (`CoreScript.reportFleetJumped` → `markSystemAsEntered`)；`daysSinceLastVisit` 由 `never`(从未访问) 变为接近 `0.0`(成为当前地点后逐帧刷新时间戳)。玩家在星系内时周期摘要变为 `demoSystem.isCurrentLocation=true activeThisFrame=true daysSinceVisit=0.0`。
-- **移除/重新加入演示 (首次进入时只执行一次)**：
-  ```text
-  GearIn loc: enter demo system first time - remove/add demo GearIn loc: beacon | alive before=true | byId before=true | alive after remove=false | byId after remove=false | sector byId after remove=false | inList after remove=false | alive after re-add=true | byId after re-add=true
-  ```
-  `removeEntity` 后普通实体 `isAlive()` 立即变 `false`、地点级与星区级 `getEntityById` 都返回 null；`addEntity` 后全部恢复。
-- **暂停 (空格)**：周期摘要与地点变化日志全部停止 (引擎级脚本默认暂停冻结)；恢复后继续。
-- **读档**：不出现 `created system`(`setupDone` 随存档序列化，不重跑 `setup`)；无重复注册 (`REGISTER_MARK` 已置位)；周期摘要从存档时刻继续，星系与实体原样恢复。若在旧档首次启用本 MOD(注册判断未置位、脚本字段为空)，首帧走 "复用" 分支打出 `GearIn loc: demo system already exists, reusing id=gearin demo`—— 星系幂等复用，不会重复创建。
-- **战斗**：进入战斗期间无任何 `GearIn loc` 日志 (生涯引擎冻结)；回生涯后继续。
-- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
+* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
+* **数据接入**：按数据接入片段接入后启动游戏，日志出现 `Loading ship system [data/shipsystems/GearIn_targetingsystem.system]` 与 `Applying data from ship_systems.csv to [GearIn_targetingsystem]`：没有与 `GearIn_targetingsystem` 相关的 `ERROR`。
+* **用户侧手动激活 (`GearIn_test` 战役或模拟战，`GearIn_artizan` 已挂载)**：无目标时按 U—— **没有任何反应** (`isUsable` 返回 false，规则 1；日志无状态变化)；连续空按约 2 秒后出现失败音。鼠标右键锁定一艘敌舰 (`getShipTarget()` 非 null) 后按 U—— 系统正常进入 `IN`，日志出现。
+
+    ```text
+      GearIn targeting stats: state null -> IN effectLevel=0.0 GearIn targeting stats: state IN -> ACTIVE effectLevel=1.0 GearIn targeting stats: state ACTIVE -> OUT effectLevel=1.0 GearIn targeting stats: unapply effect (id=GearIn_targetingsystem effect)
+    ```
+
+    期间用户舰最大速度约为基础 1.5 倍 (`GearIn_artizan` 基础 80 → 120)，左下角状态栏显示 `target locked`(绿色)。目标被击毁或脱离射程后，加成**立即**撤销 (`unmodify`)，状态文字变 `no target`(红色样式)。
+* **AI 侧自动激活**：把挂载了该系统的舰船放进敌方 (生涯遭遇战或模拟战对手)，其 AI 进入用户视野 (`target` 非 null) 且目标有效时，日志出现。
+
+    ```text
+      GearIn targeting AI init: ship=<敌方hullId> system=GearIn_targetingsystem GearIn targeting AI: lock <目标hullId> range=800.0
+    ```
+
+    随后敌方舰船实际使用系统 (速度提升)；`logStateTransition` 输出完整五态：
+
+    ```text
+      GearIn targeting AI: state null -> IDLE ... GearIn targeting AI: state IDLE -> IN ... GearIn targeting AI: state IN -> ACTIVE ... GearIn targeting AI: state ACTIVE -> OUT ... GearIn targeting AI: state OUT -> COOLDOWN cooldownRemaining=... GearIn targeting AI: state COOLDOWN -> IDLE ...
+    ```
+
+    冷却结束后若目标仍有效，重复该循环。激活期间每 0.2–0.3 秒 `writeAITarget` 刷新 flag(ACTIVE 全程锁定不断)。
+* **目标过期**：AI 的目标被击毁后，不再出现 `lock` 日志 (`clearAITarget` 生效)；目标复活/换目标后恢复。
+* **暂停语义**：按空格暂停，暂停期间 AI 决策日志与状态机日志停更；恢复后继续 (与前置单元的时间语义同规)。
+* **状态栏与信息文字**：用户舰在 `IDLE` 态把鼠标悬停系统图标，`getInfoText` 显示 `NO TARGET`(有锁定目标时 `READY`)；`IN`/`ACTIVE` 段状态栏显示锁定状态。 没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.shipsystems`、类 `GearInTargetingSystem`、系统 ID `GearIn_targetingsystem`)。
+
 ## 故障分析
 
-以下故障按读者能看到的症状列出，每项给出触发、原因与修正顺序；日志对照统一看 `starsector.log`。
-
-1. **超空间里没有入口，玩家无法到达。**触发：只调 4/7 参数 `initStar`，忘了 `autogenerateHyperspaceJumpPoints`(星系创建主题的知识；无参版本等价 `(false, false)`，而 4/7 参数 `initStar` 明确不生成锚点，"Will not automatically generate a hyperspace anchor")。原因：入口只由 autogen 逻辑生成，这一步缺失时 `getAllLocations()` / `getStarSystems()` 里有星系，但超空间地图没有它的跳跃点，`getHyperspaceAnchor()` 为 null(没调用 6 参数变体时)。修正：**必须**调用 `autogenerateHyperspaceJumpPoints(true, false)`(或用带超空间坐标的 6 参数 `initStar` 变体，它会 `generateAnchorIfNeeded`)，并在超空间地图核对入口。
-2. **实体创建后 "查得到但地图上不显示"，或堆在原点。**触发：`addCustomEntity` 后没放置 —— 创建时位置是 (0,0)。原因：实体已经在容器里 (`getEntityById` 能查到)，但位置从未被设置，星系地图原点一堆图标叠着；既有示例星系同样显式放置。修正：创建后立即 `setFixedLocation` / `setCircularOrbit`(普通实体两者都有效)。
-3. **token 用 `setFixedLocation` 位置完全不动，且无报错。**触发：把 `createToken` 的返回值当普通实体用 `setFixedLocation`。原因：`LocationToken.setFixedLocation` 是空实现，调用无异常、无日志，token 坐标始终是创建时的值 —— 这类失败最隐蔽，连一句报错都不给。修正：token 写坐标**必须用 `setLocation`**；需要轨道时 `addEntity` 后 `setCircularOrbit`。
-4. **`isAlive()` 误判容器状态。**触发：拿 `isAlive()` 当 "在不在玩家当前地点" 或当 token 的容器判据。原因：它只回答 "还挂在某个容器里"：普通实体在**别的**地点时仍为 `true`；token 被 `removeEntity` 后仍为 `true`(`LocationToken` 恒 true)。修正：访问状态用 `isInCurrentLocation()` / `getContainingLocation()`；容器持有才用 `isAlive()`(普通实体)。
-5. **`getEntityById` 返回 null，但实体明明还在。**触发：id 大小写写错，或依赖跨帧缓存的查询结果。原因：缓存索引按精确 id 键匹配，大小写不一致时索引不命中、回退扫描才折叠大小写；而实体被移除后 `getEntityById` 恒 null —— 两件事的症状都是 "查不到"。修正：id 用常量并逐字一致 (本节 `BEACON_ID` 等)；每次需要时重新查询，不要缓存查询结果跨帧使用。
-6. **在脚本里遍历 `getStarSystems()` 并 `removeStarSystem`，抛 `ConcurrentModificationException`。**触发：把 "删星系" 写进 advance 循环。原因：遍历中直接删除破坏迭代结构 (`SectorAPI.removeStarSystemNextFrame` "Useful for remove star systems from scripts etc where using removeStarSystem() would cause a ConcurrentModificationException")。修正：脚本/advance 内**必须**用 `removeStarSystemNextFrame`(引擎把它挪到 `removeAsap` 队列)。
-7. **把地点级 `isCurrentLocation()` 当实体判据。**触发：用 `location.isCurrentLocation()` 判断 "这个实体在不在玩家当前地点"。原因：该状态对 "玩家当前地点本身" 恒 `true`，与实体毫无关系；实体级判据是 `entity.isInCurrentLocation()`。修正：分清两套 API—— 地点回答 "我是当前地点吗"，实体回答 "我在当前地点吗"。
-8. **地点级脚本的日志节奏突然变慢/`amount` 跳变。**触发：把周期逻辑挂在 `system.addScript(...)` 上，玩家离开星系后观察。原因：非当前地点每 60 帧才推进一次、`advance` 的 `amount` 是 ×60 的合步，"每帧" 不再成立。修正：需要实时节奏用引擎级 `addScript`(本节示例)；地点级脚本只放 "该地点内才有意义" 的逻辑。
-9. **脚本字段放了引擎单例/当前地点句柄，读档后行为错乱。**触发：把 `getCurrentLocation()` 的返回值或 UI 引用存进脚本字段。原因：当前地点是瞬态 (读档后重建)，存档/读档异常或读档后引用指向失效对象 (引擎级脚本主题的序列化边界约定)。修正：字段只放存档图内持久对象 (星系、实体引用) 与可序列化标量；引擎单例每次 `Global.getSector()` 现取。
-10. **战斗期间实体/地点状态 "不动"。**触发：在战斗里等状态变化。原因：战斗期间生涯推进暂停，访问状态冻结 —— 无任何 `GearIn loc` 日志；回生涯后恢复。修正：无需修复 —— 这是推进边界，不是 bug。
+- **部署期报告 `Error creating AI of type [...] for ship system [...]`**：`aiType` 缺失、拼错，或 `CUSTOM` 没有可实例化的 `aiScript` 时，`createSystemAI` 会在舰船部署阶段抛出包装后的 `RuntimeException`。设置 `aiType: "CUSTOM"` 并让 `aiScript` 完整类名与包名、路径一致；重新部署后 AI 应完成创建。
+- **AI 从不使用系统**：`GearIn targeting AI init` 已出现而 `lock` 缺失、状态停在 `IDLE`，说明实体、存活、CR、冷却、弹药、节流或目标判据提前返回。按该判断链逐项核对，确保目标可见、同侧关系正确且在射程内；修正后应出现 `lock` 和状态迁移日志。
+- **AI 激活后加成约一秒便消失**：AI 只在激活前写一次 flag 时，`IN` 与 `ACTIVE` 总时长会超过 flag 的 1 秒寿命，stats 随后读到 null。AI 在 `system.isActive()` 期间持续刷新 flag，复验时整个 `ACTIVE` 段的速度与状态文字应保持稳定。
+- **用户手动激活后没有锁定加成**：用户舰没有 AI 写入 flag，stats 只读 flag 时会始终得到 null。`pickTarget` 先读 flag，再回退到 `getShipTarget()`；手动选中目标并激活后，应获得与 AI 舰相同的锁定加成。
+- **用户按 U 后没有状态变化**：`isUsable` 为 false，或幅能、弹药、冷却条件不满足时，激活请求会被丢弃，连续尝试约 2 秒后才播放失败音。核对目标与资源条件，并用 `getInfoText` 显示 `NO TARGET` 等原因；条件满足后按 U，状态应进入 `IN`。
+- **系统进入 `ACTIVE` 后立即转入 `OUT`**：`flux/second` 超过舰船净耗散能力时，状态机无法继续扣除幅能，会在一帧或数帧后提前结束。降低每秒幅能或增加耗散，重新激活后 `ACTIVE` 应持续到配置时长。
+- **系统结束后速度倍率仍然残留**：`apply` 的 `modifyMult` 与 `unapply` 的 `unmodify` 使用不同 modifier ID，或某个分支只写入而未撤销。统一使用引擎传入的 `id`，并在 `OUT` 与 `unapply` 中撤销同一 ID；系统结束后速度应回到基础值。
+- **第二场战斗的目标锁定全部失败**：把 `ShipAPI` 保存到静态字段或跨战斗 custom data 后，当前引擎会判定旧实体不在场，`isAlive()` 与 `isEntityInPlay()` 持续为 false。目标只在本帧决策和回调内使用，让 AI 与 stats 实例随每场战斗重建；进入第二场后应重新取得有效目标。
+- **AI 高频尝试并刷屏**：`ShipSystemAIScript.advance` 每帧调用，缺少节流会让全量扫描、开关尝试和日志每帧发生。使用 `IntervalUtil` 将决策间隔设为 0.2–0.3 秒；多舰测试时日志频率和帧时间应恢复稳定。
 
 ## 总结
 
-本节把地点容器讲成一条链：**建容器** (`createStarSystem` → `initStar` 选变体 → 填实体 → `autogenerateHyperspaceJumpPoints` 开入口)，**装实体** (`addPlanet` / `addCustomEntity` / `addTerrain` / `addAsteroidBelt` / `createToken`+`addEntity`，用 `setFixedLocation` / `setCircularOrbit` / `setOrbit` 放置)，**查实体** (地点级与星区级查询的覆盖范围、id 匹配、移除后不命中)，**读状态** (访问状态的更新来源与可观察结果)。
+本节在数据面之上补齐了运行态：五态状态机决定系统 "怎么走"，stats 访问器提供 "走到哪" 的读数，目标三通道与系统 AI 决定 "加成给谁、由谁触发"。数据面负责 "系统是什么"，运行态负责 "系统怎么走" —— 排错时这两半要分开核对。
 
-记忆要点：
+排错时可以反复使用两组判断：先问 "这个行为发生在状态机的哪一段" —— `IN`/`ACTIVE`/`OUT` 是效果脚本可见的三段，`COOLDOWN`/`IDLE` 只能靠 AI 角色观察；再问 "这个信息来自哪条通道" —— 用户右键坐标、舰船当前目标与 AI flag 各有写入者和寿命，flag 只有 1 秒寿命且用户舰无人写入，任何来自 flag 的目标在使用前都要再验证。stats 脚本与 AI 脚本是同名类的两个独立实例，跨角色共享只能走静态方法或 `customData`，这正是 "写在哪一侧、读在哪一侧" 问题的根源。
 
-- 超空间与恒星系都是 `LocationAPI`；`getAllLocations()` = 星系列表 + 超空间；地点 id = 显示名小写 (恒星系为基名小写)。
-- `SectorAPI.getStarSystem(name)` 匹配 `optionalUniqueId` 或基名小写，大小写不敏感；找不到返回 null。
-- `initStar` 三变体：4/7 参数**不生成超空间锚点**，6 参数 (带超空间坐标)** 自动生成**；玩家可达性必须靠 `autogenerateHyperspaceJumpPoints`(或 6 参数变体)，否则星系没有入口。
-- `createToken` 不加入容器；token 的 `setFixedLocation` 是空实现 (**必须用 `setLocation`**)；token 的 `isAlive()` 恒 `true`—— 与普通实体 (`isAlive` = 容器持有) 不同。
-- 访问状态分三层：地点层 (`isCurrentLocation` / `activeThisFrame` / 访问时间戳)、实体层 (`isInCurrentLocation` / `isInHyperspace` / `isAlive`)、星系层 (`isEnteredByPlayer` / `getDaysSinceLastPlayerVisit`)；`getDaysSinceLastPlayerVisit` 从未访问 = `Float.MAX_VALUE`。
-- 非当前地点每 60 帧合步推进 (`amount` ×60)：实时节奏挂引擎级脚本，地点内逻辑才挂地点级脚本。
-- 脚本内删星系必须 `removeStarSystemNextFrame`；废弃入口 (`getEntityByName` / `getOrbitalStations`) 必须用 `getEntityById` / `Tags.STATION` 替代。
-
-从逻辑上看，本节建立的容器与访问状态模型是实体子系统的共同基础：舰队成员、市场等实体级主题都在这条链上继续延伸；引擎级脚本的一次性注册判断与生涯阶段语义则贯穿始终。
+逻辑上看，运行态主线自然延伸到战斗视觉与特效层：动画、开火与命中特效使用的正是状态机的时间轴与目标判定结果，五态模型与目标纪律在那条链路上会反复出现；数据面字段速查与 modifier 纪律的完整细节，仍由对应前置单元持有。
 
 ## 建议参考项
 
-- Java API(包路径)：
-  - `com.fs.starfarer.api.campaign.LocationAPI`—— 地点容器接口：实体容器、创建入口 (`createToken` 不加入容器)、脚本、访问状态与背景。
-  - `com.fs.starfarer.api.campaign.StarSystemAPI`—— 恒星系接口：`initStar` 变体、超空间锚点、`autogenerateHyperspaceJumpPoints`、`isEnteredByPlayer`。
-  - `com.fs.starfarer.api.campaign.SectorEntityToken`—— 实体约定：身份、归属、位置与轨道、容器持有 (`isAlive` / `isExpired`)、访问状态、tag 与 memory。
-  - `com.fs.starfarer.api.campaign.SectorAPI`—— 星区入口：`createStarSystem` / `getStarSystem` / 全地点实体查询 / `removeStarSystemNextFrame`。
-  - `com.fs.starfarer.api.campaign.CampaignTerrainAPI`——terrain 实体约定 (`getPlugin` / `getType` / `setRadius`)。
-  - `com.fs.starfarer.api.EveryFrameScript`—— 引擎级每帧脚本约定 (`isDone` / `runWhilePaused` / `advance`)。
-  - `com.fs.starfarer.api.impl.campaign.ids.Tags`—— 原版 tag 常量 (空间站查询用 `STATION`)。
-  - `com.fs.starfarer.api.util.Misc`——`initConditionMarket`(`addPlanet` 自动挂 condition-only 市场)、`genUID`。
-- 原版数据 (以游戏安装根为基准)：
-  - `data/config/custom_entities.json`——custom entity 类型键 (本例复用 `stable_location`)。
-  - `data/campaign/starmap.json`——`starSystemLocations` 星系坐标查询 (`initStar` 坐标变体使用)。
-- 文档与示例 (以仓库根为基准)：
-  - `docs/chapter8/section1/README.md`—— 引擎级脚本一次性注册判断与推进语义 (本节沿用)。
+* `com.fs.starfarer.api.combat.ShipSystemAPI`：运行时系统实例的访问器全集 (`SystemState` 五态、效果 / 冷却 / 弹药 / 幅能、激活控制与目标坐标)。
+* `com.fs.starfarer.api.combat.ShipSystemSpecAPI`：系统数据 spec，`getStatsScript()` / `getAIScript()` 按类名实例化脚本，`getRange(stats)` 等取值方法。
+* `com.fs.starfarer.api.combat.ShipSystemAIScript`：系统 AI 接口，`init` / `advance` 双方法。
+* `com.fs.starfarer.api.combat.ShipwideAIFlags`：AI 短期 flag 容器，`TARGET_FOR_SHIP_SYSTEM` 与 `FLAG_DURATION` 寿命语义。
+* `com.fs.starfarer.api.combat.ShipAPI`：舰船实体入口 (`getSystem` / `getShipTarget` / `getAIFlags` / `useSystem` / `getShipAI`)。
+* `com.fs.starfarer.api.combat.MutableShipStatsAPI`：四个系统 bonus 族 (`getSystemRangeBonus` / `getSystemCooldownBonus` / `getSystemUsesBonus` / `getSystemRegenBonus`) 与 `getMaxSpeed`。
+* `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：效果脚本接口，`State` 五态、`apply` / `unapply` / `getStatusData`。
+* `com.fs.starfarer.api.plugins.ShipSystemStatsScriptAdvanced`：高级扩展，`isUsable` / `getInfoText`。
+* `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：官方基类，覆写方法默认返回 `-1` / `null`。
+* `com.fs.starfarer.api.util.IntervalUtil`：AI 决策节流计时器 (`randomize` / `advance` / `intervalElapsed`)。
+* `data/shipsystems/ship_systems.csv`：系统注册 28 列表头与 Fortress Shield(开关式 `active` 留空)、EMP Emitter、Damper Field、Targeting Feed 等原版行。
+* `data/shipsystems/targetingfeed.system` / `data/shipsystems/emp.system`：原版 `.system` 实例 (`aiType` 枚举与 `aiHints` 的 `threat*` 字段参考)。
+* `data/shipsystems/GearIn_targetingsystem.system`(示例 MOD 内)：本节数据接入片段 (`aiType: CUSTOM` + 双脚本类名)。
+* `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (`gradle jar` 构建命令执行位置)。
+* `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证方案的日志核对位置)。
+
+## 完整最小例
+
+::: details 完整成品：GearInTargetingSystem
+
+```java
+package data.scripts.gearin.shipsystems;
+
+import org.apache.log4j.Logger;
+import org.lwjgl.util.vector.Vector2f;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.MutableShipStatsAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.combat.ShipSystemAPI;
+import com.fs.starfarer.api.combat.ShipSystemAPI.SystemState;
+import com.fs.starfarer.api.combat.ShipSystemAIScript;
+import com.fs.starfarer.api.combat.ShipwideAIFlags;
+import com.fs.starfarer.api.combat.ShipwideAIFlags.AIFlags;
+import com.fs.starfarer.api.impl.combat.BaseShipSystemScript;
+import com.fs.starfarer.api.plugins.ShipSystemStatsScript;
+import com.fs.starfarer.api.util.IntervalUtil;
+
+/**
+ * 完整最小例：战术系统运行态 ——Stats 脚本、状态机、目标锁定与系统 AI 的完整流程。
+ *
+ * 一个类身兼两个角色，两个角色由数据绑定各自实例化一次：
+ * 1. Stats 脚本角色（ShipSystemStatsScriptAdvanced）：.system 的 statsScript 字段挂载。
+ *    实例在舰船部署时由系统运行时对象构造器创建一次（spec.getStatsScript()），
+ *    apply 只在 effectLevel &gt; 0（或 runScriptWhileIdle）期间每帧调用，
+ *    unapply 在 effectLevel 归零边界调用一次；COOLDOWN/IDLE 两态脚本不可见。
+ *    引擎传入的 id 是 "系统id effect"（系统运行时对象.getStatModId），modify 与 unmodify 必须用同一把钥匙。
+ * 2. AI 角色（ShipSystemAIScript）：.system 的 aiScript 字段挂载，aiType 必须为 CUSTOM。
+ *    实例在舰船 AI 创建时由 createSystemAI 实例化一次（spec.getAIScript()），
+ *    init 缓存 ship/system/flags/engine，advance 每帧被舰船 AI 调用，
+ *    参数 target 是舰船 AI 的当前目标（不可见时为 null）。
+ *
+ * 关键纪律：
+ * - statsScript 与 aiScript 是同名类的两个独立实例（脚本类加载器.loadScriptInstance
+ *   每次 newInstance），实例字段互不共享；共享逻辑必须走静态方法（本类全部目标逻辑都是静态的）；
+ * - TARGET_FOR_SHIP_SYSTEM 由舰船 AI 每帧在调用系统 AI 前写入（时长 1 秒），
+ *   本类 AI 角色也会把验证过的目标写进去；flag 有持续时间，消费前必须再验证一次；
+ * - 玩家舰没有舰船 AI，AI 角色不会运行，flag 也无人写入 —— 玩家侧目标回退
+ *   到 ship.getShipTarget()（瞄准镜锁定的目标）；
+ * - 目标 ShipAPI 属于本场战斗实体，禁止跨战斗缓存（与战斗实体同一纪律）。
+ */
+public class GearInTargetingSystem extends BaseShipSystemScript implements ShipSystemAIScript {
+
+	private static final Logger LOG = Global.getLogger(GearInTargetingSystem.class);
+
+	/** 系统标称射程（经 systemRangeBonus 修正前的基础值）。 */
+	public static final float RANGE = 800f;
+	/** 锁定有效时满 effectLevel 下的最大速度倍率（1.5 倍）。 */
+	public static final float SPEED_MULT = 1.5f;
+	/** AI 写入 TARGET_FOR_SHIP_SYSTEM 的 flag 持续时间（秒），与原版舰船 AI 的 1.0 秒一致。 */
+	public static final float AI_TARGET_FLAG_DURATION = 1.0f;
+	/** AI 决策节流区间（0.2–0.3 秒一次决策，成熟实例同款）。 */
+	private static final float AI_DECISION_MIN = 0.2f;
+	private static final float AI_DECISION_MAX = 0.3f;
+
+	// ---------- AI 角色字段（ShipSystemAIScript 实例独有） ----------
+	private CombatEngineAPI engine;
+	private ShipAPI aiShip;
+	private ShipSystemAPI system;
+	private ShipwideAIFlags aiFlags;
+	private final IntervalUtil decisionInterval = new IntervalUtil(AI_DECISION_MIN, AI_DECISION_MAX);
+	private SystemState lastAISystemState = null;
+
+	// ---------- Stats 角色字段（ShipSystemStatsScript 实例独有） ----------
+	private State lastApplyState = null;
+
+	// ================= 共享目标逻辑（静态，两个角色共用同一语义） =================
+
+	/** 有效射程：基础 RANGE 经 systemRangeBonus 修正（ShipSystemSpecAPI.getRange 同式）。 */
+	public static float getRange(ShipAPI source) {
+		if (source == null) {
+			return RANGE;
+		}
+		return source.getMutableStats().getSystemRangeBonus().computeEffective(RANGE);
+	}
+
+	/** 目标合法性：敌方、存活、非残骸/相位/转移穿梭机、且在有效射程内。 */
+	public static boolean isValidTarget(ShipAPI source, ShipAPI target) {
+		if (source == null || target == null) {
+			return false;
+		}
+		if (target == source) {
+			return false;
+		}
+		if (!target.isAlive()) {
+			return false;
+		}
+		if (target.isHulk()) {
+			return false;
+		}
+		if (target.isPhased()) {
+			return false;
+		}
+		if (target.isShuttlePod()) {
+			return false;
+		}
+		if (target.getOwner() == source.getOwner()) {
+			return false;
+		}
+		Vector2f delta = Vector2f.sub(target.getLocation(), source.getLocation(), new Vector2f());
+		return delta.length() <= getRange(source);
+	}
+
+	/**
+	 * 读取 AI 写入的目标：TARGET_FOR_SHIP_SYSTEM 的 custom 数据。
+	 * 玩家舰没有舰船 AI，本类 AI 角色也不会运行，flag 无人写入 —— 返回 null。
+	 */
+	public static ShipAPI readAITarget(ShipAPI source) {
+		if (source == null || source.getShipAI() == null) {
+			return null;
+		}
+		ShipwideAIFlags flags = source.getAIFlags();
+		if (flags == null || !flags.hasFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM)) {
+			return null;
+		}
+		Object data = flags.getCustom(AIFlags.TARGET_FOR_SHIP_SYSTEM);
+		return data instanceof ShipAPI ? (ShipAPI) data : null;
+	}
+
+	/** 把验证通过的目标写入 TARGET_FOR_SHIP_SYSTEM（AI 角色调用 ship.useSystem() 前使用）。 */
+	public static boolean writeAITarget(ShipAPI source, ShipAPI target) {
+		if (source == null || source.getShipAI() == null) {
+			return false;
+		}
+		ShipwideAIFlags flags = source.getAIFlags();
+		if (flags == null || !isValidTarget(source, target)) {
+			return false;
+		}
+		flags.setFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM, AI_TARGET_FLAG_DURATION, target);
+		return true;
+	}
+
+	/** 目标解析：AI flag 优先，回退舰船当前目标（getShipTarget()），全部经过再验证。 */
+	public static ShipAPI pickTarget(ShipAPI source) {
+		if (source == null) {
+			return null;
+		}
+		ShipAPI target = readAITarget(source);
+		if (isValidTarget(source, target)) {
+			return target;
+		}
+		target = source.getShipTarget();
+		if (isValidTarget(source, target)) {
+			return target;
+		}
+		return null;
+	}
+
+	// ================= Stats 脚本角色（ShipSystemStatsScriptAdvanced） =================
+
+	/**
+	 * IN/ACTIVE 期间每帧调用：锁定有效时按 effectLevel 施加最大速度倍率，
+	 * 锁定失效或进入 OUT 立即撤销 —— 目标是"启动侧再验证，验证不过不加成"。
+	 */
+	@Override
+	public void apply(MutableShipStatsAPI stats, String id, State state, float effectLevel) {
+		ShipAPI ship = (ShipAPI) stats.getEntity();
+		if (ship == null) {
+			return;
+		}
+		if (lastApplyState != state) {
+			LOG.info("GearIn targeting stats: state " + lastApplyState + " -> " + state
+					+ " effectLevel=" + effectLevel);
+			lastApplyState = state;
+		}
+		boolean locked = isValidTarget(ship, pickTarget(ship));
+		if (state == ShipSystemStatsScript.State.OUT || !locked) {
+			stats.getMaxSpeed().unmodify(id);
+		} else {
+			stats.getMaxSpeed().modifyMult(id, 1f + (SPEED_MULT - 1f) * effectLevel);
+		}
+	}
+
+	/** effectLevel 归零边界（进入 COOLDOWN/IDLE、舰船撤退或解体）由引擎调用一次。 */
+	@Override
+	public void unapply(MutableShipStatsAPI stats, String id) {
+		stats.getMaxSpeed().unmodify(id);
+		LOG.info("GearIn targeting stats: unapply effect (id=" + id + ")");
+	}
+
+	/** 仅玩家舰：IN/ACTIVE 期间显示目标锁定状态（无目标时按减益样式显示）。 */
+	@Override
+	public StatusData getStatusData(int index, State state, float effectLevel) {
+		if (index != 0) {
+			return null;
+		}
+		if (state != State.IN && state != State.ACTIVE) {
+			return null;
+		}
+		CombatEngineAPI engine = Global.getCombatEngine();
+		ShipAPI player = engine == null ? null : engine.getPlayerShip();
+		boolean locked = player != null && isValidTarget(player, pickTarget(player));
+		return new StatusData(locked ? "target locked" : "no target", !locked);
+	}
+
+	/** 可用性许可：激活中始终可用；待机时必须有有效锁定目标，否则按下 U 不激活。 */
+	@Override
+	public boolean isUsable(ShipSystemAPI system, ShipAPI ship) {
+		if (system.isActive()) {
+			return true;
+		}
+		return isValidTarget(ship, pickTarget(ship));
+	}
+
+	/** 信息栏文字：返回 null 时 UI 使用默认 "READY" / "ACTIVE"。 */
+	@Override
+	public String getInfoText(ShipSystemAPI system, ShipAPI ship) {
+		if (system.isOutOfAmmo()) {
+			return null;
+		}
+		if (system.getState() != SystemState.IDLE) {
+			return null;
+		}
+		return isValidTarget(ship, pickTarget(ship)) ? "READY" : "NO TARGET";
+	}
+
+	// ================= AI 脚本角色（ShipSystemAIScript） =================
+
+	/** AI 实例创建时调用一次：缓存引用并随机化决策节流相位。 */
+	@Override
+	public void init(ShipAPI ship, ShipSystemAPI system, ShipwideAIFlags flags, CombatEngineAPI engine) {
+		this.aiShip = ship;
+		this.system = system;
+		this.aiFlags = flags;
+		this.engine = engine;
+		this.decisionInterval.randomize();
+		LOG.info("GearIn targeting AI init: ship=" + ship.getHullSpec().getHullId()
+				+ " system=" + system.getId());
+	}
+
+	/**
+	 * 每帧被舰船 AI 调用：守卫链（暂停/实体/存活/CR/冷却/弹药）→ 决策节流 →
+	 * 目标补全与再验证 → 写 flag（激活期间每 0.2–0.3 秒刷新，flag 只有 1 秒寿命）→
+	 * 过载/高幅能守卫 → ship.useSystem()。
+	 */
+	@Override
+	public void advance(float amount, Vector2f missileDangerDir, Vector2f collisionDangerDir, ShipAPI target) {
+		if (engine.isPaused()) {
+			return; // 暂停守卫：暂停时 AI 决策不推进
+		}
+		logStateTransition();
+
+		if (!engine.isEntityInPlay(aiShip) || !aiShip.isAlive()) {
+			return;
+		}
+		if (aiShip.getCurrentCR() <= 0f) {
+			return;
+		}
+		if (system.getCooldownRemaining() > 0f) {
+			return; // 冷却中（COOLDOWN 状态）
+		}
+		if (system.isOutOfAmmo()) {
+			return;
+		}
+
+		decisionInterval.advance(amount);
+		if (!decisionInterval.intervalElapsed()) {
+			return; // 决策节流
+		}
+
+		// 目标补全与再验证：参数 target 优先（舰船 AI 传入，不可见时为 null），回退舰船当前目标
+		ShipAPI lock = target;
+		if (lock == null) {
+			lock = aiShip.getShipTarget();
+		}
+		if (!isValidTarget(aiShip, lock)) {
+			clearAITarget();
+			return;
+		}
+		writeAITarget(aiShip, lock);
+
+		if (system.isActive()) {
+			return; // 激活中：只刷新锁定（flag 1 秒过期，不刷新 ACTIVE 后半段会丢锁），不重复激活
+		}
+		if (aiShip.getFluxTracker().isOverloadedOrVenting()) {
+			return;
+		}
+		if (aiShip.getFluxLevel() > 0.9f) {
+			return; // 高幅能不启动
+		}
+		LOG.info("GearIn targeting AI: lock " + lock.getHullSpec().getHullId()
+				+ " range=" + getRange(aiShip));
+		aiShip.useSystem(); // ShipAPI.useSystem() -> giveCommand(USE_SYSTEM)（玩家按 U 与 AI 同一入口）
+	}
+
+	/** 清除过期的目标 flag（目标失效后下一轮决策不再复用旧锁）。 */
+	private void clearAITarget() {
+		if (aiFlags != null) {
+			aiFlags.removeFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM);
+		}
+	}
+
+	/** AI 视角的运行时状态机跳变日志：完整五态（含 COOLDOWN/IDLE，Stats 角色看不到这两态）。 */
+	private void logStateTransition() {
+		if (system == null) {
+			return;
+		}
+		SystemState current = system.getState();
+		if (current != lastAISystemState) {
+			LOG.info("GearIn targeting AI: state " + lastAISystemState + " -> " + current
+					+ " effectLevel=" + system.getEffectLevel()
+					+ " cooldownRemaining=" + system.getCooldownRemaining());
+			lastAISystemState = current;
+		}
+	}
+}
+```
+
+:::

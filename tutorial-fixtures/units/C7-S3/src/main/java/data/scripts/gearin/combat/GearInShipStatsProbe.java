@@ -37,7 +37,7 @@ public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
     private static final String MOD_VOLATILE_PREFIX = "GearIn_ship_stats_probe_volatile_";
 
     /**
-     * 故障注入开关（对应"故障分析"故障 1）：
+     * 故障注入开关（对应"数值与修饰条目持续增长"故障）：
      * true 时每帧用自增 ID 追加一条 percent 修饰，观察 percentMods 只增不减、
      * modified 值持续漂移、unmodify 之后残留条目清不掉。
      */

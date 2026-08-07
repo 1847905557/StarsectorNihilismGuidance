@@ -22,7 +22,7 @@
 - [C1-S4] 的相位舰船体与防御数据；
 - [C1-S5] 的 `weapon_data.csv`、武器 ID 与 `.wpn` 文件结构。
 
-## 三组键与文件/API 链路
+## 文件与 API 链路
 
 三种内置内容都写在 `.ship` 文件**顶层**，与 `weaponSlots`、`engineSlots`、`center` 同级。
 
@@ -221,7 +221,7 @@
 - **不占装配点**：`computeHullModOPCost` 跳过内置船插 (`!hullSpec.isBuiltInMod(id)`)。
 - **不可移除**：`removeMod` 对内置船插直接返回；船插选择器把内置船插排除在可装卸列表之外；清空装配时 `clear(false)` 会把内置船插重新加回。
 - **船插 ID 必须真实存在**：装配构建阶段不校验，但舰船部署时 `getAllMods()` 会解析每个船插 ID，未知 ID 抛 `Hullmod <id> not found!`(见故障分析)。
-- 本节只涉及 "内置" 这一安装方式；effect 脚本和 S-mod 见 [C7-S7]。
+- 本节只涉及 "内置" 这一安装方式；effect 脚本和 S-mod 见 [C8-S1]。
 
 ### 验证方案
 
@@ -284,24 +284,13 @@
 
 ## 故障分析
 
-- **游戏加载阶段报 `Weapon spec [<id>] not found!`**：`builtInWeapons` 里的武器 ID 不在武器注册表 (`weapon_data.csv` 无此行、拼写或大小写错误)。
-- 装配构建会立即解析武器 ID，因此该错误在启动/装配构建阶段就会出现。
-- 修正：核对 `weapon_data.csv` 的 `id` 列，统一两边写法。
-- **部署时报 `slot id [<槽位>] not found for weapon [<武器>]`**：`builtInWeapons` 的键不是真实槽位 ID，或槽位片段与 `builtInWeapons` 键不一致。
-- 舰船生成时挂载每个已装配槽位都会检查槽位存在性。
-- 修正：**反复确定槽位 ID 的正确**，让两处 `id` 逐字符一致。
-- **部署时抛 `Hullmod <id> not found!`**：`builtInMods` 里的船插 ID 不存在 (`hull_mods.csv` 无此行)。
-- 装配构建阶段不校验，错误在舰船生成时由 `getAllMods()` 抛出。
-- 修正：核对 `hull_mods.csv` 的 `id` 列。
-- **内置战机甲板静默为空**：`builtInWings` 里的战机 ID 不存在 (`wing_data.csv` 无此行)。
-- 联队 ID 解析失败时该甲板不生成联队，**没有任何报错**。
-- 排查：核对 `wing_data.csv` 的 `id` 列；日志中应能看到翼 ID 缺失但不会指向本船体。
-- **内置武器可以拆卸或计入 OP**：不会发生。
-- 内置三件套在 OP 计算与装配界面均有专门排除逻辑 (见上文行为小节)。
-- 若出现此现象，检查 `.ship` 键名是否拼错 (例如写成 `builtInWeapon` 而非 `builtInWeapons`)，键名不匹配时内容会被静默忽略。
-- **战机内置武器不转动/不追踪**：见 "战机的内置武器？" 一节，按数据路径修正：取消内置槽位，改为正常槽位 + `.variant` 装配。
-- **装饰武器仍然被 AI 开火或计入面板**：检查槽位 `type` 是否真的是 `DECORATIVE`(而非 `BUILT_IN`)，以及武器 `.wpn` 的 `"type": "DECORATIVE"` 是否一致。
-- 装饰判定同时看槽位类型 (武器组/面板/AI 跳过) 与武器类型 (`isDecorative()`)。
+- **游戏加载时报 `Weapon spec [<id>] not found!`**：`builtInWeapons` 中的武器 ID 不在 `weapon_data.csv` 注册表，或拼写、大小写不一致。装配构建会立即解析该 ID；统一 CSV 的 `id` 列后重启，启动和装配构建都应越过该错误。
+- **部署时报 `slot id [<槽位>] not found for weapon [<武器>]`**：`builtInWeapons` 的键不是真实槽位 ID，或槽位片段与该键不一致。舰船生成时会检查每个已装配槽位；把两处 ID 改成逐字符一致后重新部署，武器应挂到目标槽位。
+- **部署时抛 `Hullmod <id> not found!`**：`builtInMods` 的船插 ID 不存在于 `hull_mods.csv`。装配构建阶段不会校验，错误会在舰船生成时由 `getAllMods()` 抛出；补齐或改正 `id` 后重启，部署应完成。
+- **内置战机甲板静默为空**：`builtInWings` 中的战机 ID 不存在于 `wing_data.csv`，解析失败时甲板不会生成联队。核对 wing ID 并重新部署航母，日志和甲板列表应出现该联队。
+- **内置插件出现在可拆卸列表或 OP 计算中**：`.ship` 键名拼错 (例如写成 `builtInWeapon` 而不是 `builtInWeapons`) 时，内置内容会被静默忽略。改正键名后重启装配界面，内置武器、船插和战机应恢复不可拆卸且不计 OP。
+- **战机内置武器不转动或不追踪**：战机内置槽位不会提供正常武器的装配行为。取消内置槽位，改为正常槽位并在 `.variant` 中装配；重新生成联队后，武器应按战机目标转动和追踪。
+- **装饰武器仍被 AI 开火或计入面板**：槽位 `type` 不是 `DECORATIVE`，或武器 `.wpn` 的 `"type": "DECORATIVE"` 不一致。两处都改为装饰类型后重新载入，武器应被 AI 和面板统计跳过。
 
 ## 总结
 

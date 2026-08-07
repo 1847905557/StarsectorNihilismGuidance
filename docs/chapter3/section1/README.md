@@ -1,4 +1,4 @@
-# 制作测试战役与装配
+# 制作测试战役装配
 
 本节制作一个自动列出本 MOD 舰船的测试战役，并从装配界面导出正式装配；随后以原版战役为基础建立常规战役，让这些装配进入战役数据。
 
@@ -73,7 +73,7 @@ Starsector 有两个主要游玩入口，本节开始会经常把两者并列：
 
 ## 完整最小例：注册并制作测试战役
 
-### 第一步：注册战役
+### 注册测试战役
 
 在 MOD 中新建 `data/missions/mission_list.csv`，写入表头和战役 ID。**不要**复制整份原版 `mission_list.csv`—— 这个文件按行合并，您只需要自己的行：
 
@@ -84,7 +84,7 @@ GearIn_test
 
 第一行 `mission` 是列名 (必须逐字一致，拼错会导致加载失败)，第二行是战役 ID。多行时可以随时用 `#` 注释掉整行。
 
-### 第二步：复制原版战役文件夹作为起点
+### 复制战役模板
 
 随机挑选一个原版战役，例如 `Starsector\starsector-core\data\missions\afistfulofcredits`，把它文件夹里的所有东西复制到 `Starsector\mods\GearIndustry\data\missions\GearIn_test\`：
 
@@ -92,7 +92,7 @@ GearIn_test
 
 原版战役文件夹包含 `descriptor.json`、`icon.jpg`、`mission_text.txt` 和一个存放 `MissionDefinition` 类的源文件。接下来逐个修改。
 
-### 第三步：descriptor.json
+### 配置战役描述
 
 ```json
 {
@@ -112,13 +112,13 @@ GearIn_test
 | `icon` | 是 | 战役图标贴图文件名，位于战役文件夹内 (本例沿用复制的 `icon.jpg`)|
 | `background` | 否 | 战役背景贴图路径 (相对于 MOD 根目录，可指向原版 `graphics/`)|
 
-`title`、`difficulty`、`icon` 缺失会让加载直接失败 (见故障分析第 2 条)。
+`title`、`difficulty`、`icon` 缺失会让加载直接失败 (见 "游戏加载中断，进不了主菜单" 故障条目)。
 
-### 第四步：mission_text.txt
+### 编写战役文本
 
 里面是战役的详细文本，显示在战役详情页，可以随意填写。保持该文件存在即可，缺失同样会让加载失败。
 
-### 第五步：MissionDefinition 类
+### 实现战役定义
 
 打开复制来的 `MissionDefinitionPlugin` 实现类源文件，整个替换为下面的测试战役模板。文件位置：`Starsector\mods\GearIndustry\data\missions\GearIn_test\`。
 
@@ -126,7 +126,7 @@ GearIn_test
 
 **包名必须是 `data.missions.GearIn_test`**—— 这是游戏按战役 ID 写死的类名 (`data.missions.<mission_id>.MissionDefinition`)，不是教程的命名偏好**，不能**改成 `data.scripts.gearin.*` 之类自己的包。
 
-包名不符时，点击战役会抛出 `Problem loading class`(见故障分析第 3 条)。
+包名不符时，点击战役会抛出 `Problem loading class` (见 "战役出现但点击时报错无法进入" 故障条目)。
 
 :::
 
@@ -358,45 +358,16 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 ## 故障分析
 
-下面每条都给出触发条件、可观察结果和修正。
-
-1. **Missions 列表里没有您的战役。**
-   - 触发：`mission_list.csv` 没建、表头不是 `mission`、行首误加了 `#`、或者忘记把文件夹放进 MOD 的 `data/missions`。
-   - 可观察：列表完全没有条目 (表头错误会让整行解析失败，见第 2 条)。
-   - 修正：确认 MOD 自己的 `mission_list.csv` 第一行是 `mission`，第二行是战役 ID；确认战役文件夹位于 MOD 根目录下的 `data/missions\GearIn_test`(不是 `src` 或别处)。
-2. **游戏加载中断，进不了主菜单。**
-   - 触发：`mission_list.csv` 注册了 ID 但文件夹缺失；`descriptor.json` 缺失、JSON 语法错误、或缺少 `title` / `difficulty` / `icon` 之一；`mission_text.txt` 缺失；`icon` 指向不存在的贴图文件。
-   - 可观察：`starsector.log` 在 `Loading missions` 之后出现异常堆栈，加载流程无保护地中断；图标缺失还会在资源加载阶段直接报错 (贴图资源无错误备用值)。
-   - 修正：补全文件夹与必填字段，确认图标文件真实存在于战役文件夹。
-3. **战役出现，但点击时报错无法进入。**
-   - 触发：`MissionDefinition` 类源文件缺失，或包名/类名不是 `data.missions.<ID>.MissionDefinition`(例如从别的战役复制后忘了改包名)。
-   - 可观察：点击战役 (详情面板创建战役对象) 时抛出 `Problem loading class [data.missions.<ID>.MissionDefinition]`。
-   - 修正：包名逐字与战役 ID 一致 (含大小写与下划线)，类源文件放在 `data/missions\<ID>\` 目录下。
-4. **战役里没有自己的船，或全是别人的船。**
-   - 触发：`prefix` 写错、大小写不一致，或误用了 `mission_` 之外的其他过滤条件。ID 匹配区分大小写。
-   - 修正：`prefix` 必须与船体 ID 前缀完全一致 (`GearIn_`)，`getAllVariantIds()` 遍历的是装配 ID 而非 hull ID，过滤用 `variant.getHullSpec().getHullId()`。
-5. **战役里出现没有武器的空船。**
-   - 触发：该船体还没有任何正式装配 —— 每个注册船体自动生成 `<hullId>_Hull` 空装配 [C1-S2]，模板会把它一并列出。
-   - 可观察：船以空装配形态出现在舰队里。这**不是错误**，正是测试战役的用途：在装配界面给它装上武器并导出，之后它就有正式装配了。
-6. **导出文件放回 MOD 后，游戏里读到的还是旧内容。**
-   - 触发：只改了文件名没改 `variantId`(保留 `mission_` 前缀)，或装配 ID 与其他来源撞名。
-   - 可观察：引用旧 ID 的地方仍然命中任务导出装配；重复 ID 时先注册者生效、后注册者被静默跳过、无任何报错。
-   - 修正：剪贴 (不复制) 导出文件，`variantId` 改为 `GearIn_artizan_combat` 这类唯一 ID 且与文件名一致；如果之前已经放过同 ID 文件，先删掉旧的。
-7. **装配里的武器不出现或报错。**
-   - 触发：`weapons` 里的槽位 ID 不是该船体真实槽位 (部署期报 `slot id not found`)，或武器 ID 不存在 (装配构建期报 `Weapon spec not found`)，或 `hullId` 与船体注册不一致。
-   - 修正：只改您确定拥有的槽位与已注册武器 ([C1-S2] 槽位、[C1-S5] 的 `GearIn_durin`)，不确定时回到测试战役重新装配导出。
-8. **装配加载直接失败。**
-   - 触发：`weaponGroups` 里某组的 `mode` 拼错 (不是 `LINKED` / `ALTERNATING`)，或必填字段缺失。
-   - 可观察：`Loading variant [...]` 之后抛 `Key [mode] has invalid value [...]`(枚举解析抛异常)，加载中断。
-   - 修正：`mode` 只用两个枚举值；缺失字段对照速查表补齐。
-9. **`goalVariant` 加了但自动装配里没有。**
-   - 触发：键名拼写错误 (如 `goalvariant`)、值不是 `true`、或该 hull 名下还没有其他可装配目标。
-   - 可观察：自动装配列表不出现该装配。
-   - 修正：精确写 `"goalVariant": true`，并确认 `hullId` 正确。
-10. **常规战役复制后还是原版内容。**
-    - 触发：只改了文件夹名，`MissionDefinition` 类源文件里的包名、文本和装配 ID 都没改。
-    - 可观察：战役 ID 已是新名字，但进入后是原版舰船与原版文案 (包名没改时则点击即报第 3 条的错误)。
-    - 修正：按 "制作常规战役" 一节的清单逐处替换，最后在 `mission_list.csv` 注册。
+- **Missions 列表里没有您的战役**：`mission_list.csv` 缺失、表头不是 `mission`、战役行以 `#` 开头，或文件夹不在 MOD 的 `data/missions` 中时，列表不会出现条目。确认 CSV 第一行是 `mission`、第二行是战役 ID，且目录为 `data/missions\GearIn_test`；重启后列表应出现战役。
+- **游戏加载中断，进不了主菜单**：已注册的战役文件夹、`descriptor.json`、`mission_text.txt` 或图标缺失，JSON 语法错误，或 `title`、`difficulty`、`icon` 任一必填字段缺失时，`Loading missions` 后会出现异常堆栈。补齐文件和字段并确认图标真实存在，重启后应进入主菜单。
+- **战役出现但点击时报错无法进入**：`MissionDefinition` 源文件缺失，或包名、类名不是 `data.missions.<ID>.MissionDefinition` 时，点击会抛出 `Problem loading class [data.missions.<ID>.MissionDefinition]`。让包名逐字匹配战役 ID，并把类放入 `data/missions\<ID>\`；再次点击应进入战役。
+- **战役里没有自己的船**：`prefix` 拼写或大小写错误，或过滤条件使用了错误前缀。`getAllVariantIds()` 遍历装配 ID，船体过滤应读取 `variant.getHullSpec().getHullId()`；将前缀统一为 `GearIn_` 后重新进入，舰队应列出 GearIn 船体。
+- **战役里出现没有武器的空船**：每个注册船体都会生成 `<hullId>_Hull` 空装配，模板会在没有正式装配时把它列出。用测试战役完成武器装配并导出正式 variant，再重新进入战役，舰队应使用已装配版本。
+- **导出文件放回 MOD 后仍读到旧内容**：只改文件名却保留 `mission_` 开头的 `variantId`，或新 ID 与其他来源重复时，旧注册项仍会命中，后注册项会被静默跳过。剪贴导出文件，将 `variantId` 改为与文件名一致的唯一 ID，例如 `GearIn_artizan_combat`，并删除旧同名文件；重启后应读取新内容。
+- **装配里的武器不出现**：`weapons` 中的槽位 ID 不属于该船体、武器 ID 未注册，或 `hullId` 不一致时，部署会报告 `slot id not found`，装配构建会报告 `Weapon spec not found`。只使用 [C1-S2] 已确认的槽位和 [C1-S5] 注册的武器，不确定时重新在测试战役中导出；再次部署后武器应出现。
+- **装配加载直接失败**：`weaponGroups` 的 `mode` 不是 `LINKED` 或 `ALTERNATING`，或必填字段缺失时，`Loading variant [...]` 后会抛出 `Key [mode] has invalid value [...]`。改用有效枚举值并补齐字段，重启后装配应完成加载。
+- **自动装配列表没有目标装配**：`goalVariant` 键名拼错、值不是 `true`，或该 hull 没有其他可装配目标时，列表不会显示该 variant。精确写入 `"goalVariant": true` 并核对 `hullId`，重新打开自动装配列表后应出现目标项。
+- **常规战役复制后仍是原版内容**：只改文件夹名而未同步 `MissionDefinition` 的包名、文本和装配 ID，会保留原版舰船与文案；包名不匹配时还会出现 `Problem loading class`。按 "制作常规战役" 的清单同步替换并在 `mission_list.csv` 注册，重启后战役应显示新内容。
 
 ## 总结
 
@@ -408,7 +379,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 调试时先问三个问题：战役注册了吗 (Missions 列表)、类名对吗 (点击是否报 `Problem loading class`)、装配 ID 唯一吗 (重复会被静默跳过)。
 
-[C3-S2] 会把常规势力 (faction) 作为战役阵营与装配的所属对象，并通过势力文件接入舰队、关系与舰船池。
+[C3-S3] 会把常规势力 (faction) 作为战役阵营与装配的所属对象，并通过势力文件接入舰队、关系与舰船池。
 
 ## 建议参考项
 

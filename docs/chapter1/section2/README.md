@@ -359,11 +359,11 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ## 故障分析
 
-- 控制台报错找不到装配或船体：CSV 行未加载 (例如行首仍带 `#`)，或 `.ship` 的 `hullId`、CSV 的 `id` 与装配引用的 ID 不一致；统一为 `GearIn_artizan` 后重启游戏。
-- 舰船显示为白块或缺图：`.ship` 的 `spriteName` 路径未指向 MOD 根目录下的实际 PNG；核对大小写和扩展名。
-- 武器或引擎偏半个像素：贴图中心、槽位坐标或引擎坐标落在不一致的像素网格；保持偶数贴图尺寸并重新在编辑器中对齐。
-- 装配界面数值与 CSV 不一致：确认当前装配引用的是 `GearIn_artizan` 船体，并核对 `ship_data.csv` 中 ID 唯一且修改已经保存；重启游戏后再次检查。
-- 舰船一加载就报错：先查 `starsector.log` 中 hull ID 附近的首个异常，再依次核对 CSV 列数、`.ship` 宽松 JSON 和资源路径。
+- **控制台报错找不到装配或船体**：CSV 行未加载 (例如行首仍带 `#`)，或 `.ship` 的 `hullId`、CSV 的 `id` 与装配引用不一致。将三处 ID 统一为 `GearIn_artizan` 并重启游戏，控制台应能正常生成舰船。
+- **舰船显示为白块或缺图**：`.ship` 的 `spriteName` 没有指向 MOD 根目录下的实际 PNG。核对路径大小写和扩展名后重新载入，舰体贴图应完整显示。
+- **武器或引擎偏移半个像素**：贴图中心、槽位坐标或引擎坐标落在不同的像素网格。保持偶数贴图尺寸并在编辑器中重新对齐，进游戏后观察槽位与喷口应贴合舰体。
+- **装配界面数值与 CSV 不一致**：当前装配可能引用了其他船体，或 `ship_data.csv` 中存在重复 ID、修改尚未保存。确认装配引用 `GearIn_artizan` 且 ID 唯一，保存并重启后，界面数值应与 CSV 一致。
+- **舰船加载时立即报错**：从 `starsector.log` 中 hull ID 附近的首个异常开始，依次核对 CSV 列数、`.ship` 宽松 JSON 和资源路径。修正首个错误并重启，日志应越过该船体的加载阶段。
 
 ## 总结
 

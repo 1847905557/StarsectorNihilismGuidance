@@ -8,11 +8,11 @@ import com.fs.starfarer.api.impl.campaign.shared.SharedData;
 /**
  * 完整最小例：ModPlugin 生命周期、注册与存档入口。
  * mod_info.json 的 modPlugin 字段指向本类。
- * 每个回调打印一行日志；"首次进入存档"的一次性初始化用 sector persistent data 门控（CLASS_MARK 模式）。
+ * 每个回调打印一行日志；"首次进入存档"的一次性初始化用 sector persistent data 门控(CLASS_MARK 模式)。
  */
 public class GearInModPlugin extends BaseModPlugin {
 
-    /** 存档持久化标记：本 MOD 是否已完成首次进入初始化（随存档保存）。 */
+    /** 存档持久化标记：本 MOD 是否已完成首次进入初始化(随存档保存)。 */
     public static final String CLASS_MARK = "GearInModPlugin";
 
     @Override

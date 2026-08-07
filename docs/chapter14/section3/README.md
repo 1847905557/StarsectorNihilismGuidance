@@ -47,41 +47,15 @@
 3. 命令类解析会逐包尝试 `Class.forName(pkg + "." + name, false, 脚本类加载器父加载器)` 并 `newInstance()`—— **加载期即实例化一次**，验证类存在、可实例化、无参构造可用；全部包都找不到时抛 `RuntimeException("Command [...] not found in packages:...")` → 资源加载崩溃、游戏启动中止。
 4. 脚本列的命令类还会被脚本类加载器记录，供 Janino 即时编译 MOD 根下以源码形式提供的命令类；jar 内类不依赖该机制。
 
-### 实例化与执行链 (运行期)
+### 实例化与执行链速查表
 
 执行期命令类由脚本类加载器实例化：类名缓存、**每次调用都执行 `Class.forName(...).newInstance()`**——rulecmd 实例是 "每次调用一个"，任何字段状态都不可跨调用使用。想在字段里攒点状态的话，下次调用拿到的是全新实例。调用点有三处，各自消费不同的方法：
 
-调用点
-
-位置
-
-消费的方法
-
-返回值用途
-
-条件求值
-
-规则求值阶段调用 `execute`
-
-`execute`
-
-布尔结果参与匹配 (`!` 取反后判真)；`execute` 抛异常 → `dialog` 非 null 时文本面板加红字段落 `<异常类>: <消息>` 并返回 null，`dialog` 为 null 时重抛
-
-脚本执行
-
-`Rule.runScript`
-
-`execute`
-
-**返回值被丢弃** (只执行不收集)
-
-选项收集
-
-`FireBest`/`FireAll` 的选项组装 (`com.fs.starfarer.api.impl.campaign.rulecmd.FireBest` / `FireAll`)
-
-`doesCommandAddOptions()`、`getOptionOrder(params, memoryMap)`
-
-判定是否选项型命令、排序用 order
+| 调用点 | 位置 | 消费的方法 | 返回值用途 |
+|---|---|---|---|
+| 条件求值 | 规则求值阶段调用 `execute` | `execute` | 布尔结果参与匹配 (`!` 取反后判真)；`execute` 抛异常 → `dialog` 非 null 时文本面板加红字段落 `<异常类>: <消息>` 并返回 null，`dialog` 为 null 时重抛 |
+| 脚本执行 | `Rule.runScript` | `execute` | **返回值被丢弃** (只执行不收集) |
+| 选项收集 | `FireBest`/`FireAll` 的选项组装 (`com.fs.starfarer.api.impl.campaign.rulecmd.FireBest` / `FireAll`) | `doesCommandAddOptions()`、`getOptionOrder(params, memoryMap)` | 判定是否选项型命令、排序用 order |
 
 公开 API 面 (`com.fs.starfarer.api.campaign.rules.CommandPlugin`)：
 
@@ -107,55 +81,19 @@ public interface CommandPlugin {
 
 命令行的参数由 `Misc.tokenize` 切成 `Token` 列表 (`com.fs.starfarer.api.util.Misc`)：空白切分；`"` 引号成组 (引号内含空格/特殊字符，token 类型按内容判定)；`\` 转义下一个字符；`=`、`==`、`!` 等操作符独立成 OPERATOR token。`Token` 有三类：VARIABLE(`$` 开头)、LITERAL、OPERATOR。
 
+### Token 常用方法速查表
+
 常用方法：
 
-方法
-
-语义
-
-陷阱
-
-`getString(memoryMap)`
-
-变量 token → `getVarNameAndMemory` 取记忆值；字面量 token → 原样字符串
-
-变量解析失败抛 `RuleException`(`getVarNameAndMemory`：无 `.` 的 token 回落 `MemKeys.LOCAL`，local 也不存在即抛 "`No memory found for keys`")
-
-`getStringWithTokenReplacement(ruleId, dialog, memoryMap)`
-
-先 `getString` 再做规则 token 替换 (`$playerName` 等)
-
-内部调 `dialog.getInteractionTarget()`——`dialog` 为 null 会 NPE，必须先判空
-
-`getFloat(memoryMap)`
-
-变量 → `memory.getFloat`；字面量 → `Float.parseFloat`
-
-非数字字面量抛 `NumberFormatException` → 红字段落/重抛
-
-`getBoolean(memoryMap)`
-
-变量 → 记忆字符串；字面量 → `Boolean.parseBoolean`
-
-**只有 `"true"`(忽略大小写) 为 true，`"0"`/`"1"`/`"yes"` 全是 false**
-
-`getInt(memoryMap)`
-
-`Math.round(getFloat)`
-
-同上 getFloat 的异常
-
-`getObject(memoryMap)`
-
-变量 → `memory.get` 原对象；字面量 → null
-
-读对象型记忆 (如列表) 用这个
-
-`isVariable()` / `isLiteral()` / `isBoolean` / `isFloat`
-
-类型/取值预检
-
-先用 `isFloat` 预检可避免 getFloat 抛异常
+| 方法 | 语义 | 陷阱 |
+|---|---|---|
+| `getString(memoryMap)` | 变量 token → `getVarNameAndMemory` 取记忆值；字面量 token → 原样字符串 | 变量解析失败抛 `RuleException`(`getVarNameAndMemory`：无 `.` 的 token 回落 `MemKeys.LOCAL`，local 也不存在即抛 "`No memory found for keys`") |
+| `getStringWithTokenReplacement(ruleId, dialog, memoryMap)` | 先 `getString` 再做规则 token 替换 (`$playerName` 等) | 内部调 `dialog.getInteractionTarget()`——`dialog` 为 null 会 NPE，必须先判空 |
+| `getFloat(memoryMap)` | 变量 → `memory.getFloat`；字面量 → `Float.parseFloat` | 非数字字面量抛 `NumberFormatException` → 红字段落/重抛 |
+| `getBoolean(memoryMap)` | 变量 → 记忆字符串；字面量 → `Boolean.parseBoolean` | **只有 `"true"`(忽略大小写) 为 true，`"0"`/`"1"`/`"yes"` 全是 false** |
+| `getInt(memoryMap)` | `Math.round(getFloat)` | 同上 getFloat 的异常 |
+| `getObject(memoryMap)` | 变量 → `memory.get` 原对象；字面量 → null | 读对象型记忆 (如列表) 用这个 |
+| `isVariable()` / `isLiteral()` / `isBoolean` / `isFloat` | 类型/取值预检 | 先用 `isFloat` 预检可避免 getFloat 抛异常 |
 
 参数检查是 rulecmd 的标准写法：`FireBest` 自己都直接 `params.get(0)`(空参数 → `IndexOutOfBoundsException` → 红字)，所以自定义命令必须先判 `params.isEmpty()` / `params.size() > n`。
 
@@ -196,39 +134,16 @@ public interface CommandPlugin {
 
 再入链必须设计为有向无环：目标触发器不要反向指向来源触发器。一旦两条规则互相 `FireBest`，游戏表现为无响应、进程占满 CPU、日志尾部反复执行规则 —— 没有红字，栈溢出前难以察觉。
 
-### 代码侧再入调用点 (Java → 规则引擎)
+### 代码侧再入调用点速查表
 
 规则引擎也可以从非规则上下文被 Java 直接再入 (此时 `currentRule` 传 null，无规则被跳过)：
 
-调用点
-
-位置
-
-方式
-
-规则驱动对话
-
-`com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl`
-
-`fireBest(trigger)` / `fireAll(trigger)` 包装；`optionSelected` 里写 `$option` 后 `fireBest("DialogOptionSelected")`
-
-贸易面板提示文本
-
-贸易面板类
-
-`updateFlavorText` 组装 memoryMap(`local`\=实体记忆等) 后 `FireBest.fire(null, createFakeDialog(...), memories, "TradePanelFlavorText")`；`createFakeDialog` 把文本路由进面板的 `TextPanelAPI`
-
-通讯录面板
-
-通讯录面板类
-
-选中人物条目后 `FireBest.fire(null, parentDialog, plugin.getMemoryMap(), "OpenCDE")`
-
-通用面板
-
-通用面板类
-
-`populateMemoryMap` + `fireRule(trigger)`
+| 调用点 | 位置 | 方式 |
+|---|---|---|
+| 规则驱动对话 | `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl` | `fireBest(trigger)` / `fireAll(trigger)` 包装；`optionSelected` 里写 `$option` 后 `fireBest("DialogOptionSelected")` |
+| 贸易面板提示文本 | 贸易面板类 | `updateFlavorText` 组装 memoryMap(`local`\=实体记忆等) 后 `FireBest.fire(null, createFakeDialog(...), memories, "TradePanelFlavorText")`；`createFakeDialog` 把文本路由进面板的 `TextPanelAPI` |
+| 通讯录面板 | 通讯录面板类 | 选中人物条目后 `FireBest.fire(null, parentDialog, plugin.getMemoryMap(), "OpenCDE")` |
+| 通用面板 | 通用面板类 | `populateMemoryMap` + `fireRule(trigger)` |
 
 共同点：`dialog` 是伪造的或真实的对话上下文；`dialog` 为 null 时规则命令内部任何对 `dialog.get*` 的调用都会 NPE—— `RuleAPI.runScript` 的 javadoc 明确写 "dialog can be null"(`com.fs.starfarer.api.campaign.rules.RuleAPI`)，所以命令里访问 `dialog` 前必须判空。
 
@@ -238,81 +153,23 @@ public interface CommandPlugin {
 
 判空检查必须写在任何 `dialog.get*`(含 `getStringWithTokenReplacement` 内部的 `getInteractionTarget`) 之前；漏判时非对话上下文异常被重抛而非红字，更难定位。
 
-## 规则强度
+## 规则强度速查表
 
 以上机制每条都带可观察的后果，整理成下面的规则清单，编写与排错时对照使用：
 
-规则
-
-强度
-
-违反后的可观察结果
-
-命令类必须位于 `ruleCommandPackages` 之一 (原版 5 包)
-
-必须
-
-资源加载期 `RuntimeException("Command [...] not found in packages:")`，游戏启动中止
-
-命令类必须无参可实例化 (命令解析与每次执行都 `newInstance()`，经脚本类加载器)
-
-必须
-
-无参构造缺失 → 当作 "命令找不到" 加载崩溃；实例字段状态跨调用不可依赖
-
-命令在 `params` 越界、`getFloat` 非数字字面量等情况下抛出的 RuntimeException，被规则执行阶段捕获：`dialog` 非 null → 红字段落 `<异常类>: <消息>`，`dialog` 为 null → 重抛
-
-事实
-
-对话里出现红字段落；非对话触发 (如面板再入) 直接异常冒泡
-
-`execute` 返回值双语义：条件列经 `isTrueFor` 判真、脚本列被 `runScript` 丢弃
-
-事实
-
-在脚本列写 `return false` 不能阻断后续脚本行
-
-`Token.getBoolean` 是 `Boolean.parseBoolean`：只有 `"true"`(忽略大小写) 为 true
-
-事实
-
-CSV 里传 `1` / `0` 当布尔参数，永远解析为 false
-
-再入匹配只跳过 id 等于 currentRule 的规则
-
-事实
-
-同触发器内两条规则互相 `FireBest` 会无限递归 (卡死/栈溢出)；不同 id 的同触发器规则在再入中仍可命中
-
-选项型命令 (`doesCommandAddOptions()` 为 true) 在脚本阶段被跳过，由 `FireBest`/`FireAll` 提前执行
-
-必须
-
-选项型命令写在脚本列不会在脚本阶段重复执行
-
-`FireAll` 先写 `$fireAllTrigger` 再 `FireBest` 触发 `FireAllIntercept`
-
-事实
-
-拦截规则命中时本次 `FireAll` 整体跳过 (原版仅 1 条，条件 `$fireAllTrigger == PopulateOptions` 等，自定义触发器不受影响)
-
-目标规则带选项且 `FireBest` 非 keepOptions 时，先清空选项面板再加目标规则选项 (整块在 `!options.isEmpty()` 内)
-
-事实
-
-再入的内层 `FireBest` 命中带选项的规则时会清掉外层对话已有的选项；目标规则无选项则不动面板
-
-命令内访问 `dialog`(含 `getStringWithTokenReplacement` 内部的 `getInteractionTarget`) 前必须判 null(`RuleAPI.runScript` 的 javadoc 声明 `dialog` 可为 null)
-
-必须
-
-非对话触发 (贸易面板 / 通用面板等面板再入) 时 NPE，且 `dialog` 为 null 时异常被重抛
-
-`settings.json` 的 `ruleCommandPackages` 数组按合并语义追加 (文本读取工具的 `mergeJSON`；`core_clearArray` 可整体清空)
-
-事实
-
-不声明则 MOD 自定义包的命令 "找不到"；`core_clearArray` 会抹掉原版 5 包 (全部命令找不到)
+| 规则 | 强度 | 违反后的可观察结果 |
+|---|---|---|
+| 命令类必须位于 `ruleCommandPackages` 之一 (原版 5 包) | 必须 | 资源加载期 `RuntimeException("Command [...] not found in packages:")`，游戏启动中止 |
+| 命令类必须无参可实例化 (命令解析与每次执行都 `newInstance()`，经脚本类加载器) | 必须 | 无参构造缺失 → 当作 "命令找不到" 加载崩溃；实例字段状态跨调用不可依赖 |
+| 命令在 `params` 越界、`getFloat` 非数字字面量等情况下抛出的 RuntimeException，被规则执行阶段捕获：`dialog` 非 null → 红字段落 `<异常类>: <消息>`，`dialog` 为 null → 重抛 | 事实 | 对话里出现红字段落；非对话触发 (如面板再入) 直接异常冒泡 |
+| `execute` 返回值双语义：条件列经 `isTrueFor` 判真、脚本列被 `runScript` 丢弃 | 事实 | 在脚本列写 `return false` 不能阻断后续脚本行 |
+| `Token.getBoolean` 是 `Boolean.parseBoolean`：只有 `"true"`(忽略大小写) 为 true | 事实 | CSV 里传 `1` / `0` 当布尔参数，永远解析为 false |
+| 再入匹配只跳过 id 等于 currentRule 的规则 | 事实 | 同触发器内两条规则互相 `FireBest` 会无限递归 (卡死/栈溢出)；不同 id 的同触发器规则在再入中仍可命中 |
+| 选项型命令 (`doesCommandAddOptions()` 为 true) 在脚本阶段被跳过，由 `FireBest`/`FireAll` 提前执行 | 必须 | 选项型命令写在脚本列不会在脚本阶段重复执行 |
+| `FireAll` 先写 `$fireAllTrigger` 再 `FireBest` 触发 `FireAllIntercept` | 事实 | 拦截规则命中时本次 `FireAll` 整体跳过 (原版仅 1 条，条件 `$fireAllTrigger == PopulateOptions` 等，自定义触发器不受影响) |
+| 目标规则带选项且 `FireBest` 非 keepOptions 时，先清空选项面板再加目标规则选项 (整块在 `!options.isEmpty()` 内) | 事实 | 再入的内层 `FireBest` 命中带选项的规则时会清掉外层对话已有的选项；目标规则无选项则不动面板 |
+| 命令内访问 `dialog`(含 `getStringWithTokenReplacement` 内部的 `getInteractionTarget`) 前必须判 null(`RuleAPI.runScript` 的 javadoc 声明 `dialog` 可为 null) | 必须 | 非对话触发 (贸易面板 / 通用面板等面板再入) 时 NPE，且 `dialog` 为 null 时异常被重抛 |
+| `settings.json` 的 `ruleCommandPackages` 数组按合并语义追加 (文本读取工具的 `mergeJSON`；`core_clearArray` 可整体清空) | 事实 | 不声明则 MOD 自定义包的命令 "找不到"；`core_clearArray` 会抹掉原版 5 包 (全部命令找不到) |
 
 ## 组装 Rules 命令实现
 
@@ -332,13 +189,13 @@ Starsector/mods/GearIndustry/
 ├── mod_info.json
 ├── data/
 │   ├── campaign/
-│   │   └── rules.csv                     # 追加本节 GearIn_rules_cmd_* 行（本节示例所有权）
+│   │   └── rules.csv                     # 追加本节 GearIn_rules_cmd_* 行(本节示例所有权)
 │   └── config/
-│       └── settings.json                 # 追加 ruleCommandPackages 键（本节新增键）
+│       └── settings.json                 # 追加 ruleCommandPackages 键(本节新增键)
 ├── src/
 │   └── data/scripts/gearin/rules/
-│       ├── GearInRuleCommand             # 本节新增：自定义规则命令（示例所有权）
-│       └── GearInRuleCmdOpener           # 本节新增：一次性对话入口（EveryFrameScript）
+│       ├── GearInRuleCommand             # 本节新增：自定义规则命令(示例所有权)
+│       └── GearInRuleCmdOpener           # 本节新增：一次性对话入口(EveryFrameScript)
 └── jars/
 ```
 
@@ -362,7 +219,7 @@ GearIn_rules_cmd_welcome,GearInRuleCmdOpener,,"GearInRuleCommand GearInRuleCmdRe
 SetShortcut GearIn_rules_cmd_leave ""ESCAPE""","欢迎，$playerName。本对话框的 script 列调用了本节自定义规则命令 GearInRuleCommand：参数为触发器名 GearInRuleCmdResult、浮点 2、布尔 true。命令先写记忆再 FireBest 再入目标触发器。",GearIn_rules_cmd_more:FireBest 再入
 5:GearIn_rules_cmd_all:FireAll 再入,"本节示例所有权 GearIn_rules_cmd_*"
 GearIn_rules_cmd_result,GearInRuleCmdResult,$GearIn_rulecmd_last >= 2,,再入命中文本：命令把 amount=2 写入 $GearIn_rulecmd_last，FireBest 再入本触发器后条件成立。,,本节示例所有权 GearIn_rules_cmd_*
-GearIn_rules_cmd_more,DialogOptionSelected,$option == GearIn_rules_cmd_more,"GearInRuleCommand GearInRuleCmdResult 3 false",再次调用命令（amount=3）并再入同一触发器：FireBest 只执行一条最佳规则。,,本节示例所有权 GearIn_rules_cmd_*
+GearIn_rules_cmd_more,DialogOptionSelected,$option == GearIn_rules_cmd_more,"GearInRuleCommand GearInRuleCmdResult 3 false",再次调用命令(amount=3)并再入同一触发器：FireBest 只执行一条最佳规则。,,本节示例所有权 GearIn_rules_cmd_*
 GearIn_rules_cmd_all,DialogOptionSelected,$option == GearIn_rules_cmd_all,"FireAll GearInRuleCmdResult",FireAll 再入同一触发器：执行全部命中规则。,,本节示例所有权 GearIn_rules_cmd_*
 GearIn_rules_cmd_leave,DialogOptionSelected,$option == GearIn_rules_cmd_leave,DismissDialog,,,本节示例所有权 GearIn_rules_cmd_*
 ```
@@ -385,34 +242,34 @@ import com.fs.starfarer.api.impl.campaign.rulecmd.FireBest;
 import com.fs.starfarer.api.util.Misc.Token;
 
 /**
- * 完整最小例：自定义规则命令（rulecmd）。
+ * 完整最小例：自定义规则命令(rulecmd)。
  *
- * 注册入口：data/campaign/rules.csv 脚本列按简单类名调用（如
- * "GearInRuleCommand GearInRuleCmdResult 2 true"），类经 ruleCommandPackages
- * （data/config/settings.json 追加的 data.scripts.gearin.rules）定位。
+ * 注册入口：data/campaign/rules.csv 脚本列按简单类名调用(如
+ * "GearInRuleCommand GearInRuleCmdResult 2 true")，类经 ruleCommandPackages
+ * (data/config/settings.json 追加的 data.scripts.gearin.rules)定位。
  *
  * 生命周期：规则加载期 getCommandClass 用 Class.forName + newInstance
  * 校验一次；每次执行经脚本类加载器的 loadScriptInstance 重新 newInstance 后调用
  * execute(ruleId, dialog, params, memoryMap) —— 实例字段不可跨调用使用。
  *
- * 行为（参数 <trigger> [<amount>] [<keepOptions>]）：
- * - params.get(0).getString：触发器名（字面量或变量皆可）；
- * - params.get(1).getFloat：浮点参数，写入实体记忆 $GearIn_rulecmd_last（无过期，
- *   过期/持久化语义归 C14-S4），供条件列 $GearIn_rulecmd_last >= 2 读取；
- * - params.get(2).getBoolean：布尔参数（Token.getBoolean = Boolean.parseBoolean，
- *   只有 "true" 为真），透传给 FireBest 的 keepOptions；
+ * 行为(参数 <trigger> [<amount>] [<keepOptions>])：
+ * - params.get(0).getString：触发器名(字面量或变量皆可)；
+ * - params.get(1).getFloat：浮点参数，写入实体记忆 $GearIn_rulecmd_last(无过期，
+ *   过期/持久化语义归 C14-S4)，供条件列 $GearIn_rulecmd_last >= 2 读取；
+ * - params.get(2).getBoolean：布尔参数(Token.getBoolean = Boolean.parseBoolean，
+ *   只有 "true" 为真)，透传给 FireBest 的 keepOptions；
  * - 再入：FireBest.fire(ruleId, dialog, memoryMap, trigger) 用同一 dialog 与
  *   memoryMap 对目标触发器重新匹配；ruleId 原样透传，引擎跳过同 id 规则防自再入；
- * - 返回值：脚本列消费时被丢弃（Rule.runScript 只执行不收集）；条件列消费时
- *   作为布尔判真（isTrueFor）。
+ * - 返回值：脚本列消费时被丢弃(Rule.runScript 只执行不收集)；条件列消费时
+ *   作为布尔判真(isTrueFor)。
  *
- * 验证闭环：注册入口（rules.csv 脚本列 + ruleCommandPackages）→ 数据文件（记忆键
- * $GearIn_rulecmd_last）→ 运行消费者（规则表达式的 execute / FireBest 再入）→
- * 可观察结果（日志行、再入命中文本）。
+ * 验证闭环：注册入口(rules.csv 脚本列 + ruleCommandPackages)→ 数据文件(记忆键
+ * $GearIn_rulecmd_last)→ 运行消费者(规则表达式的 execute / FireBest 再入)→
+ * 可观察结果(日志行、再入命中文本)。
  */
 public class GearInRuleCommand extends BaseCommandPlugin {
 
-    /** 命令写入的记忆键（无过期；深度语义归 C14-S4）。 */
+    /** 命令写入的记忆键(无过期；深度语义归 C14-S4)。 */
     public static final String MEM_KEY_LAST = "$GearIn_rulecmd_last";
 
     private static final Logger LOG = Global.getLogger(GearInRuleCommand.class);
@@ -420,7 +277,7 @@ public class GearInRuleCommand extends BaseCommandPlugin {
     @Override
     public boolean execute(String ruleId, InteractionDialogAPI dialog,
                            List<Token> params, Map<String, MemoryAPI> memoryMap) {
-        // 参数守卫：FireBest 自身都不判空直接 params.get(0)（越界即红字异常），
+        // 参数守卫：FireBest 自身都不判空直接 params.get(0)(越界即红字异常)，
         // 自定义命令必须先守卫。
         if (params.isEmpty()) {
             LOG.warn("GearInRuleCommand: expected params <trigger> [<amount>] [<keepOptions>]");
@@ -434,7 +291,7 @@ public class GearInRuleCommand extends BaseCommandPlugin {
         MemoryAPI memory = getEntityMemory(memoryMap);
         memory.set(MEM_KEY_LAST, amount);
 
-        // dialog 可能为 null（非对话触发，如面板再入）：先判空再再入。
+        // dialog 可能为 null(非对话触发，如面板再入)：先判空再再入。
         if (dialog == null) {
             LOG.warn("GearInRuleCommand: dialog is null; cannot fire trigger " + trigger);
             return false;
@@ -462,10 +319,10 @@ import com.fs.starfarer.api.campaign.CampaignUIAPI;
 import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
 
 /**
- * 完整最小例：对话入口（支撑类，示例所有权主类为 GearInRuleCommand）。
+ * 完整最小例：对话入口(支撑类，示例所有权主类为 GearInRuleCommand)。
  *
- * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），persistent data 键
- * REGISTER_MARK 一次性门控（沿用 C9-S1 / C14-S1 的模式，每个注册项用各自的键）。
+ * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
+ * REGISTER_MARK 一次性门控(沿用 C9-S1 / C14-S1 的模式，每个注册项用各自的键)。
  *
  * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个
  * 初始 trigger 为 GearInRuleCmdOpener 的对话；对话的文本、脚本与选项全部来自
@@ -474,7 +331,7 @@ import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
  */
 public class GearInRuleCmdOpener implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过（随存档保存）。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_RuleCmdOpener";
 
     private static final Logger LOG = Global.getLogger(GearInRuleCmdOpener.class);
@@ -483,7 +340,7 @@ public class GearInRuleCmdOpener implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInRuleCmdOpener() {
-        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
+        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -529,7 +386,7 @@ public class GearInRuleCmdOpener implements EveryFrameScript {
 调用点 (工程片段 —— 方法所在类由前置单元所有，本节只演示调用，不改动那些文件)：
 
 ```java
-    // GearInModPlugin（由前置单元所有）onGameLoad(boolean newGame) 内新增本节注册块。
+    // GearInModPlugin(由前置单元所有)onGameLoad(boolean newGame) 内新增本节注册块。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
     if (!Global.getSector().getPersistentData().containsKey(GearInRuleCmdOpener.REGISTER_MARK)) {
         Global.getSector().getPersistentData().put(GearInRuleCmdOpener.REGISTER_MARK, true);

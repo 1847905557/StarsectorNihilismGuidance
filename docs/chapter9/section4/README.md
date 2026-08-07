@@ -52,79 +52,30 @@
 
 **"'Pts' are fleet points in this implementation, unlike FleetFactoryV2."**(V3 的 pts 就是 fleet points，与旧版不同)。
 
-全参数分组 (字段全览见下表)：
+### FleetParamsV3 全参数分组速查表
 
-分组
+字段全览如下：
 
-字段
+| 分组 | 字段 | 语义 |
+|---|---|---|
+| 来源与质量 | `source`(`MarketAPI`)、`locInHyper`(`Vector2f`)、`quality`、`qualityMod`、`qualityOverride` | 见 "质量与市场" 小节；`source` 的 "Use setSource() to set the source or directly call updateQualityAndProducerFromSourceMarket() to set the quality. Otherwise, the market's quality won't get used." |
+| 身份 | `factionId`、`fleetType`、`factionOverride` | 势力与舰队类型；`factionOverride` 非 null 时舰队势力直接用该对象 (名称仍按 `fleetType` 取) |
+| 点数 | `combatPts` / `freighterPts` / `tankerPts` / `transportPts` / `linerPts` / `utilityPts` | 六类预算，`getTotalPts()` 求和 |
+| 规模 | `maxShipSize`("0: fighter, 4: capital"，默认 1000)、`minShipSize`("only affects combat ships; smaller ships will still be added with remaining fleet points")、`maxNumShips`、`ignoreMarketFleetSizeMult`、`onlyApplyFleetSizeToCombatShips`、`doNotPrune`、`doNotAddShipsBeforePruning` | 舰船尺寸与总数约束、市场规模乘数开关、裁剪开关 |
+| 军官 | `withOfficers`(默认 `true`)、`officerLevelBonus`、`officerNumberBonus`、`maxOfficersToAdd`、`officerNumberMult`(默认 1)、`officerLevelLimit`、`commanderLevelLimit`、`commander`(`PersonAPI`)、`noCommanderSkills` | 指挥官与军官生成参数 (见 "指挥官与军官" 节) |
+| 旗舰 | `flagshipVariantId`(`String`)、`flagshipVariant`(`ShipVariantAPI`)、`onlyRetainFlagship` | 旗舰装配覆盖与 "只留旗舰"(见 "旗舰" 节) |
+| 随机与 doctrine | `random`、`timestamp`、`doctrineOverride`、`modeOverride`(`ShipPickMode`)、`forceAllowPhaseShipsEtc`、`treatCombatFreighterSettingAsFraction`、`blockFallback`、`aiCores`、`doNotIntegrateAICores` | 随机源、时间戳 (武器可用性判定)、教条覆盖、抽选模式覆盖等 |
+| 装配杂项 | `allWeapons`、`averageSMods`(`Integer`，null = 不加 S 插)、`addShips`(`List<String>`，"If non-null: these ship variants will be added to the fleet before anything else") | 膨胀参数与显式预置舰船 |
 
-语义
-
-来源与质量
-
-`source`(`MarketAPI`)、`locInHyper`(`Vector2f`)、`quality`、`qualityMod`、`qualityOverride`
-
-见 "质量与市场" 小节；`source` 的 "Use setSource() to set the source or directly call updateQualityAndProducerFromSourceMarket() to set the quality. Otherwise, the market's quality won't get used."
-
-身份
-
-`factionId`、`fleetType`、`factionOverride`
-
-势力与舰队类型；`factionOverride` 非 null 时舰队势力直接用该对象 (名称仍按 `fleetType` 取)
-
-点数
-
-`combatPts` / `freighterPts` / `tankerPts` / `transportPts` / `linerPts` / `utilityPts`
-
-六类预算，`getTotalPts()` 求和
-
-规模
-
-`maxShipSize`("0: fighter, 4: capital"，默认 1000)、`minShipSize`("only affects combat ships; smaller ships will still be added with remaining fleet points")、`maxNumShips`、`ignoreMarketFleetSizeMult`、`onlyApplyFleetSizeToCombatShips`、`doNotPrune`、`doNotAddShipsBeforePruning`
-
-舰船尺寸与总数约束、市场规模乘数开关、裁剪开关
-
-军官
-
-`withOfficers`(默认 `true`)、`officerLevelBonus`、`officerNumberBonus`、`maxOfficersToAdd`、`officerNumberMult`(默认 1)、`officerLevelLimit`、`commanderLevelLimit`、`commander`(`PersonAPI`)、`noCommanderSkills`
-
-指挥官与军官生成参数 (见 "指挥官与军官" 节)
-
-旗舰
-
-`flagshipVariantId`(`String`)、`flagshipVariant`(`ShipVariantAPI`)、`onlyRetainFlagship`
-
-旗舰装配覆盖与 "只留旗舰"(见 "旗舰" 节)
-
-随机与 doctrine
-
-`random`、`timestamp`、`doctrineOverride`、`modeOverride`(`ShipPickMode`)、`forceAllowPhaseShipsEtc`、`treatCombatFreighterSettingAsFraction`、`blockFallback`、`aiCores`、`doNotIntegrateAICores`
-
-随机源、时间戳 (武器可用性判定)、教条覆盖、抽选模式覆盖等
-
-装配杂项
-
-`allWeapons`、`averageSMods`(`Integer`，null = 不加 S 插)、`addShips`(`List<String>`，"If non-null: these ship variants will be added to the fleet before anything else")
-
-膨胀参数与显式预置舰船
+### FleetParamsV3 构造器速查表
 
 三个构造器族 (内部都走 `init`)：
 
-构造器
-
-行为
-
-`(MarketAPI source, String fleetType, 六点数..., float qualityMod)`
-
-`init(source, ...)`：`locInHyper = source.getLocationInHyperspace()`、`factionId = source.getFactionId()`、`timestamp = Global.getSector().getClock().getTimestamp()`、`updateQualityAndProducerFromSourceMarket()`(质量 = `Misc.getShipQuality(source, factionId)`)
-
-`(MarketAPI source, Vector2f locInHyper, String factionId, Float qualityOverride, String fleetType, 六点数..., float qualityMod)`
-
-同上，另显式设 `locInHyper` / `factionId` / `qualityOverride`
-
-`(Vector2f locInHyper, String factionId, Float qualityOverride, String fleetType, 六点数..., float qualityMod)`
-
-无市场版本：只写字段，**不**调用 `updateQualityAndProducerFromSourceMarket`(质量取字段默认值 0)
+| 构造器 | 行为 |
+|---|---|
+| `(MarketAPI source, String fleetType, 六点数..., float qualityMod)` | `init(source, ...)`：`locInHyper = source.getLocationInHyperspace()`、`factionId = source.getFactionId()`、`timestamp = Global.getSector().getClock().getTimestamp()`、`updateQualityAndProducerFromSourceMarket()`(质量 = `Misc.getShipQuality(source, factionId)`) |
+| `(MarketAPI source, Vector2f locInHyper, String factionId, Float qualityOverride, String fleetType, 六点数..., float qualityMod)` | 同上，另显式设 `locInHyper` / `factionId` / `qualityOverride` |
+| `(Vector2f locInHyper, String factionId, Float qualityOverride, String fleetType, 六点数..., float qualityMod)` | 无市场版本：只写字段，**不**调用 `updateQualityAndProducerFromSourceMarket`(质量取字段默认值 0) |
 
 `setSource(MarketAPI source, boolean updateQuality)`：换来源市场；`updateQuality=true` 时重算质量。
 
@@ -276,43 +227,19 @@ fake market 意味着质量 0.5、无市场势力贡献 —— 这解释了 "无
 
 ### 内存 (memory)
 
+### 内存 (memory)
+
+### 舰队内存键速查表
+
 生成链的各个环节把关键状态写进舰队内存，集中列在下表；读写都经 `getMemoryWithoutUpdate()`：
 
-键 (MemFlags 常量)
-
-写入点
-
-使用方
-
-`$fleetType`(`MEMORY_KEY_FLEET_TYPE`)
-
-`FleetFactoryV3.createEmptyFleet`；`FleetFactory.createEmptyFleet`
-
-舰队类型判定 (巡逻/袭击等行为脚本) 与调试
-
-`$sourceMarket`(`MEMORY_KEY_SOURCE_MARKET`)
-
-同上 (fake 市场除外)
-
-来源市场 id(重生/补给逻辑)
-
-`$salvageSeed`(`SALVAGE_SEED`)
-
-`Misc.getSalvageSeed(fleet)`(createFleet 调用即写入；`com.fs.starfarer.api.util.Misc`：种子缺失时按实体 id 哈希派生)
-
-掠夺/回收随机
-
-`$spawnFPMult`(`FleetFactoryV3.KEY_SPAWN_FP_MULT`)
-
-`Misc.setSpawnFPMult(fleet, actual/requested)`(createFleet 收尾；`Misc`)
-
-`BaseRaidStage.enoughMadeIt`(`com.fs.starfarer.api.impl.campaign.intel.raid.BaseRaidStage`)：`fleet.getFleetPoints() / mult` 还原 "请求 FP" 判断是否达到中止阈值
-
-`$overrideNoAutofit`(`MEMORY_KEY_FORCE_AUTOFIT_ON_NO_AUTOFIT_SHIPS`)
-
-MOD 代码按需写入
-
-`inflate` 与 `deflate` 读取：强制对 no\_autofit 舰船也膨胀
+| 键 (MemFlags 常量) | 写入点 | 使用方 |
+|---|---|---|
+| `$fleetType`(`MEMORY_KEY_FLEET_TYPE`) | `FleetFactoryV3.createEmptyFleet`；`FleetFactory.createEmptyFleet` | 舰队类型判定 (巡逻/袭击等行为脚本) 与调试 |
+| `$sourceMarket`(`MEMORY_KEY_SOURCE_MARKET`) | 同上 (fake 市场除外) | 来源市场 id(重生/补给逻辑) |
+| `$salvageSeed`(`SALVAGE_SEED`) | `Misc.getSalvageSeed(fleet)`(createFleet 调用即写入；`com.fs.starfarer.api.util.Misc`：种子缺失时按实体 id 哈希派生) | 掠夺/回收随机 |
+| `$spawnFPMult`(`FleetFactoryV3.KEY_SPAWN_FP_MULT`) | `Misc.setSpawnFPMult(fleet, actual/requested)`(createFleet 收尾；`Misc`) | `BaseRaidStage.enoughMadeIt`(`com.fs.starfarer.api.impl.campaign.intel.raid.BaseRaidStage`)：`fleet.getFleetPoints() / mult` 还原 "请求 FP" 判断是否达到中止阈值 |
+| `$overrideNoAutofit`(`MEMORY_KEY_FORCE_AUTOFIT_ON_NO_AUTOFIT_SHIPS`) | MOD 代码按需写入 | `inflate` 与 `deflate` 读取：强制对 no\_autofit 舰船也膨胀 |
 
 舰队内存读取纪律
 
@@ -491,7 +418,7 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\campaign\
-│       └── GearInFleetFactory   # 本节新增（归本节所有）
+│       └── GearInFleetFactory   # 本节新增(归本节所有)
 └── jars\
 ```
 
@@ -588,18 +515,18 @@ location.spawnFleet(market.getPrimaryEntity(), 0f, 0f, fleet);
 
 ## 故障分析
 
-- **生成舰队的战力奇低：**无市场构造器没有提供来源质量，且 `qualityOverride` 为空时，有效质量保持为 0。使用 market 构造器、`setSource(market, true)` 或显式质量覆盖。
-- **舰队生成时启动中止：**`createFleet` 被放在 `onApplicationLoad`，此时 `Global.getSector()` 仍为 null。把注册放入 `onGameLoad` 的一次性判断块。
-- **指定 `flagshipVariantId` 后旗舰没换：**装配 ID 无效、舰队为空，或同时设置了两个旗舰字段。用 `getAllVariantIds()` 核对 ID，并确认生成成员数大于 0。
-- **指挥官和军官完全没有生成：**`withOfficers=false` 或成员列表为空都会跳过创建。启用军官生成，并先解决舰队成员为空的问题。
-- **生成后读取装配时看不到武器：**舰队尚未膨胀，成员仍保留角色变体。需要完整装配时先调用 `fleet.inflateIfNeeded()`。
-- **舰队创建成功但地图与 `getFleets()` 都找不到：**对象没有进入地点容器。使用 `spawnFleet`，或先 `addEntity` 再设置位置。
-- **舰队堆在原点或偏移方向错误：**`spawnFleet` 的 anchor 传了 null。传入 `market.getPrimaryEntity()` 等实际锚点，偏移量会在锚点坐标上累加。
-- **每次读档都会多出一支舰队：**注册缺少独立的 persistent data 标记。使用本节 `REGISTER_MARK`，连续读档后确认生成只执行一次。
-- **跨创建时舰队装配无法复现：**默认 random 让新创建使用不同 seed。设置 `params.random = new Random(固定种子)`，重新创建后比较装配。
-- **实际舰队点数明显低于请求值：**市场供应、30 舰上限和角色点数分配都会裁剪结果。用 `Misc.getSpawnFPMult(fleet)` 还原请求值，再核对角色配置。
-- **D 插数量过多或为零：**代码混用了 `qualityOverride` 与市场质量，或误读了 `qualityPerDMod`。读取 inflater 的 `getQuality()`，质量 0.6 时平均 2 个，质量 1.0 时平均 0 个。
-- **投放后舰队立刻进入交战：**手动 `addEntity` 路径没有附加免战时间。优先使用 `spawnFleet`；自定义投放时调用 `fleet.setNoEngaging(...)`。
+- **生成舰队的战力奇低**：无市场构造器没有提供来源质量，且 `qualityOverride` 为空时，有效质量保持为 0。使用 market 构造器、`setSource(market, true)` 或显式质量覆盖。
+- **舰队生成时启动中止**：`createFleet` 被放在 `onApplicationLoad`，此时 `Global.getSector()` 仍为 null。把注册放入 `onGameLoad` 的一次性判断块。
+- **指定 `flagshipVariantId` 后旗舰没换**：装配 ID 无效、舰队为空，或同时设置了两个旗舰字段。用 `getAllVariantIds()` 核对 ID，并确认生成成员数大于 0。
+- **指挥官和军官完全没有生成**：`withOfficers=false` 或成员列表为空都会跳过创建。启用军官生成，并先解决舰队成员为空的问题。
+- **生成后读取装配时看不到武器**：舰队尚未膨胀，成员仍保留角色变体。需要完整装配时先调用 `fleet.inflateIfNeeded()`。
+- **舰队创建成功但地图与 `getFleets()` 都找不到**：对象没有进入地点容器。使用 `spawnFleet`，或先 `addEntity` 再设置位置。
+- **舰队堆在原点或偏移方向错误**：`spawnFleet` 的 anchor 传了 null。传入 `market.getPrimaryEntity()` 等实际锚点，偏移量会在锚点坐标上累加。
+- **每次读档都会多出一支舰队**：注册缺少独立的 persistent data 标记。使用本节 `REGISTER_MARK`，连续读档后确认生成只执行一次。
+- **跨创建时舰队装配无法复现**：默认 random 让新创建使用不同 seed。设置 `params.random = new Random(固定种子)`，重新创建后比较装配。
+- **实际舰队点数明显低于请求值**：市场供应、30 舰上限和角色点数分配都会裁剪结果。用 `Misc.getSpawnFPMult(fleet)` 还原请求值，再核对角色配置。
+- **D 插数量过多或为零**：代码混用了 `qualityOverride` 与市场质量，或误读了 `qualityPerDMod`。读取 inflater 的 `getQuality()`，质量 0.6 时平均 2 个，质量 1.0 时平均 0 个。
+- **投放后舰队立刻进入交战**：手动 `addEntity` 路径没有附加免战时间。优先使用 `spawnFleet`；自定义投放时调用 `fleet.setNoEngaging(...)`。
 
 ## 总结
 
@@ -665,28 +592,28 @@ import com.fs.starfarer.api.loading.VariantSource;
 import com.fs.starfarer.api.util.Misc;
 
 /**
- * 完整最小例：生涯舰队工厂（FleetParamsV3 -> FleetFactoryV3.createFleet -> inflate -> spawn）。
+ * 完整最小例：生涯舰队工厂(FleetParamsV3 -> FleetFactoryV3.createFleet -> inflate -> spawn)。
  *
- * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），persistent data 键 REGISTER_MARK 一次性门控
- * （沿用既有模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内）。
+ * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控
+ * (沿用既有模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
  *
- * 行为：挂载后第一次 advance() 执行一次演示序列并自停（isDone()=true，引擎下一帧自动移除本脚本）：
- *   1. 基线：选定演示市场（优先 jangala），记录地点/锚点与市场质量；
- *   2. FleetParamsV3（market 构造器：source/quality/timestamp 一次就位），qualityOverride=0.6
- *      压质量（平均 D 插约 2 个/船，可观察），flagshipVariantId 指定旗舰变体；
+ * 行为：挂载后第一次 advance() 执行一次演示序列并自停(isDone()=true，引擎下一帧自动移除本脚本)：
+ *   1. 基线：选定演示市场(优先 jangala)，记录地点/锚点与市场质量；
+ *   2. FleetParamsV3(market 构造器：source/quality/timestamp 一次就位)，qualityOverride=0.6
+ *      压质量(平均 D 插约 2 个/船，可观察)，flagshipVariantId 指定旗舰变体；
  *   3. FleetFactoryV3.createFleet：记录舰队名/势力/类型/成员数/战机数/FP；
  *   4. 旗舰与指挥官：flagship hull 与变体、舰长是否就是舰队指挥官、指挥官等级/personality、军官数；
  *   5. 膨胀前状态：isInflated=false、inflater 已挂载、inflater.getQuality()==0.6；
- *   6. inflateIfNeeded 后：isInflated=true、inflater 保留（persistent=true）、
- *      成员变体来源 REFIT、D 插总数（质量 0.6 -> 平均 2 个/船）；
+ *   6. inflateIfNeeded 后：isInflated=true、inflater 保留(persistent=true)、
+ *      成员变体来源 REFIT、D 插总数(质量 0.6 -> 平均 2 个/船)；
  *   7. 内存键：$fleetType / $sourceMarket / $salvageSeed / $spawnFPMult；
  *   8. 投放：location.spawnFleet(anchor, 0, 0, fleet) -> 入容器、坐标=锚点坐标、isAlive=true；
- *   9. 对照：FleetFactory.createPatrol（V1 固定模板）生成快速巡逻队并投放；
+ *   9. 对照：FleetFactory.createPatrol(V1 固定模板)生成快速巡逻队并投放；
  *  10. 清理：同帧 removeEntity 移除两支舰队，不留任何持久副作用。
  */
 public class GearInFleetFactory implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过（随存档保存）。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_FleetFactory";
 
     private static final Logger LOG = Global.getLogger(GearInFleetFactory.class);
@@ -695,7 +622,7 @@ public class GearInFleetFactory implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInFleetFactory() {
-        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
+        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -738,12 +665,12 @@ public class GearInFleetFactory implements EveryFrameScript {
                 market.getId(), market.getSize(), location.getId(),
                 Misc.getShipQuality(market, market.getFactionId())));
 
-        // --- 1. FleetParamsV3：market 构造器（source + quality + timestamp 一次就位）---
+        // --- 1. FleetParamsV3：market 构造器(source + quality + timestamp 一次就位)---
         // combatPts=40, freighterPts=12, tankerPts=6；总点数 58 -> getMinPreferredMarketSize=5
         FleetParamsV3 params = new FleetParamsV3(market, FleetTypes.PATROL_MEDIUM,
                 40f, 12f, 6f, 0f, 0f, 0f, 0f);
         params.qualityOverride = 0.6f;          // 覆盖市场质量：quality=0.6 -> 平均 D 插 (1-0.6)/0.2 = 2 个/船
-        params.flagshipVariantId = "tempest_Attack"; // 旗舰装配覆盖（换 hull 为 tempest）
+        params.flagshipVariantId = "tempest_Attack"; // 旗舰装配覆盖(换 hull 为 tempest)
         params.officerLevelBonus = 1;           // 军官/指挥官等级 +1
         LOG.info(String.format(
                 "GearIn fleet factory params: faction=%s fleetType=%s marketQuality=%.2f qualityOverride=%.2f totalPts=%.0f",
@@ -803,7 +730,7 @@ public class GearInFleetFactory implements EveryFrameScript {
                 fleet.getMemoryWithoutUpdate().getLong(MemFlags.SALVAGE_SEED),
                 Misc.getSpawnFPMult(fleet)));
 
-        // --- 7. 投放：入容器 + 定位（锚点坐标 + 偏移）+ setNoEngaging(3s) ---
+        // --- 7. 投放：入容器 + 定位(锚点坐标 + 偏移)+ setNoEngaging(3s) ---
         float anchorX = anchor.getLocation().x;
         float anchorY = anchor.getLocation().y;
         location.spawnFleet(anchor, 0f, 0f, fleet);
@@ -812,7 +739,7 @@ public class GearInFleetFactory implements EveryFrameScript {
                 fleet.getContainingLocation() == location,
                 fleet.getLocation().x, fleet.getLocation().y, anchorX, anchorY, fleet.isAlive()));
 
-        // --- 8. 对照：FleetFactory（V1）固定模板 createPatrol ---
+        // --- 8. 对照：FleetFactory(V1)固定模板 createPatrol ---
         CampaignFleetAPI patrol = FleetFactory.createPatrol(market, FleetFactory.PatrolType.FAST);
         List<FleetMemberAPI> patrolMembers = patrol.getFleetData().getMembersListCopy();
         LOG.info(String.format(
@@ -829,7 +756,7 @@ public class GearInFleetFactory implements EveryFrameScript {
                 fleet.isAlive(), patrol.isAlive()));
     }
 
-    /** 演示市场：优先 jangala（hegemony 核心市场），否则第一个有 open 子市场的市场。 */
+    /** 演示市场：优先 jangala(hegemony 核心市场)，否则第一个有 open 子市场的市场。 */
     private MarketAPI pickMarket() {
         MarketAPI market = Global.getSector().getEconomy().getMarket("jangala");
         if (market != null) {

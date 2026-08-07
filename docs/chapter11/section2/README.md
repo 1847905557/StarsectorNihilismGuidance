@@ -36,45 +36,24 @@
 
 旧资料里的单个 `skills.json` 在 RC8 不存在，按旧资料找文件会落空。
 
+### 三件套角色速查表
+
 三件套各自的角色与关键字段：
 
-文件
-
-角色
-
-关键字段
-
-`skill_data.csv`
-
-注册表：技能必须在此有行
-
-`id,name,order,tier,reqPoints,reqPointsPerExtraSkill,description,author,combat officer,admiral,admin,tags,icon`
-
-`<id>.skill`(JSON)
-
-技能定义：aptitude、等级组、效果清单
-
-`id`、`governingAptitude`、`compressHullmods`(默认 true)、`elite`(默认 false)、`permanent`(默认 false)、`scope` / `scopeStr`、`scope2` / `scopeStr2`、`effectGroups[]`
-
-`aptitude_data.csv`
-
-能力树分组
-
-`id,name,color,description,order,effect_skill_id,sound1..5,sound_story,elite_overlay*`
-
-`data/characters/skills/<id>.skill` 的 effect
-
-效果清单
-
-每项 `type`(`SkillEffectType` 枚举，必填)、`script`(类名，可选)、`hullmods`(对象：船插 id → 解锁等级)、`abilities`(数组)
+| 文件 | 角色 | 关键字段 |
+|---|---|---|
+| `skill_data.csv` | 注册表：技能必须在此有行 | `id,name,order,tier,reqPoints,reqPointsPerExtraSkill,description,author,combat officer,admiral,admin,tags,icon` |
+| `<id>.skill`(JSON) | 技能定义：aptitude、等级组、效果清单 | `id`、`governingAptitude`、`compressHullmods`(默认 true)、`elite`(默认 false)、`permanent`(默认 false)、`scope` / `scopeStr`、`scope2` / `scopeStr2`、`effectGroups[]` |
+| `aptitude_data.csv` | 能力树分组 | `id,name,color,description,order,effect_skill_id,sound1..5,sound_story,elite_overlay*` |
+| `<id>.skill` 的 effect | 效果清单 | 每项 `type`(`SkillEffectType` 枚举，必填)、`script`(类名，可选)、`hullmods`(对象：船插 id → 解锁等级)、`abilities`(数组) |
 
 `effectGroups[]` 每组的字段：`governingSkill`(可选，**默认 = 本技能 id**)、`name`(可选，如 "Elite")、`effectBasedOnLevel`(可选，**默认 true**)、`requiredSkillLevel`(可选，**默认 1**)、`effects[]`。
 
 注册链 (CSV spec 加载期 `loadSkills`)：
 
 ```text
-skill_data.csv（按 id 读行，收集全部注册 id）
-  + aptitude_data.csv 的 effect_skill_id（能力树自身的"技能"）
+skill_data.csv(按 id 读行，收集全部注册 id)
+  + aptitude_data.csv 的 effect_skill_id(能力树自身的"技能")
   → 遍历 data/characters/skills/*.skill：
        SkillSpecAPI(readJSON) → id 已注册？"Skipping skill [...], was already loaded" 跳过
                           → id 不在 skill_data.csv？"Skipping loading skill [...], it's not listed in skill_data.csv." 跳过
@@ -96,95 +75,24 @@ skill_data.csv（按 id 读行，收集全部注册 id）
 
 ## 效果作用域：type 决定作用对象
 
-注册只决定技能存在，每个效果作用到哪一组对象由 `SkillEffectType` 决定，并与脚本类实现的接口一一对应。所有效果接口都继承 `LevelBasedEffect` (`getEffectDescription(float)` / `getEffectPerLevelDescription()` / `getScopeDescription()`)。`SkillEffectType` 与接口、作用对象、应用入口的对应：
+注册只决定技能存在，每个效果作用到哪一组对象由 `SkillEffectType` 决定，并与脚本类实现的接口一一对应。所有效果接口都继承 `LevelBasedEffect` (`getEffectDescription(float)` / `getEffectPerLevelDescription()` / `getScopeDescription()`)。
 
-`SkillEffectType`
+### SkillEffectType 速查表
 
-效果接口
+`SkillEffectType` 与接口、作用对象、应用入口的对应：
 
-作用对象
-
-应用入口
-
-`SHIP`
-
-`ShipSkillEffect` `apply(stats, hullSize, id, level)`
-
-被驾驶舰船 (舰长 / 指挥官个人技能作用到其旗舰)
-
-生涯 `FleetMemberAPI.updateStats` 的 `captain.getStats().applyPersonalToStats`；战斗侧舰船构造时 `setCaptain` → `applyPersonalToShip`
-
-`ALL_SHIPS_IN_FLEET`
-
-`ShipSkillEffect`
-
-舰队全部非战机舰船
-
-`FleetMemberAPI.updateStats`、舰船对象创建的 `applyFleetwideToStats`、`FleetDataAPI.syncIfNeeded`(指挥官回退链)、tooltip 渲染
-
-`SHIP_FIGHTERS`
-
-`ShipSkillEffect`
-
-被驾驶舰船起飞的本舰战机
-
-战斗起飞 `FighterLaunchBayAPI`(母舰舰长 stats)
-
-`ALL_FIGHTERS_IN_FLEET`
-
-`ShipSkillEffect`
-
-舰队全部战机
-
-战斗起飞 `FighterLaunchBayAPI`(舰队指挥官 → 舰队数据指挥官 → 默认指挥官回退链)
-
-`CHARACTER_STATS`
-
-`CharacterStatsSkillEffect` `apply(stats, id, level)`
-
-角色自身 `MutableCharacterStatsAPI`
-
-`MutableCharacterStatsAPI.refreshCharacterStatsEffects`
-
-`FLEET`
-
-`FleetStatsSkillEffect` `apply(stats, id, level)`
-
-该角色指挥舰队的 `MutableFleetStatsAPI`
-
-`MutableCharacterStatsAPI.refreshCharacterStatsEffects`
-
-`GOVERNED_OUTPOST`
-
-`MarketSkillEffect` `apply(market, id, level)`
-
-治理的殖民地市场
-
-`refreshGovernedOutpostEffects`
-
-`ALL_OUTPOSTS`
-
-`MarketSkillEffect`
-
-玩家全部殖民地市场
-
-`refreshAllOutpostsEffectsForPlayerOutposts` / `refreshAllOutpostsEffects`
-
-`DESCRIPTION`
-
-`DescriptionSkillEffect`
-
-技能面板 / tooltip 文本行
-
-纯 UI，无数值写入
-
-`HULLMOD_UNLOCK` / `ABILITY_UNLOCK`
-
-无脚本接口 (数据声明)
-
-解锁集合
-
-effect 内 `hullmods` / `abilities` 键；使用方 `getUnlockedHullMods(level)`、`MutableCharacterStatsAPI.getGrantedAbilityIds` / `isHullModAvailable`
+| `SkillEffectType` | 效果接口 | 作用对象 | 应用入口 |
+|---|---|---|---|
+| `SHIP` | `ShipSkillEffect` `apply(stats, hullSize, id, level)` | 被驾驶舰船 (舰长 / 指挥官个人技能作用到其旗舰) | 生涯 `FleetMemberAPI.updateStats` 的 `captain.getStats().applyPersonalToStats`；战斗侧舰船构造时 `setCaptain` → `applyPersonalToShip` |
+| `ALL_SHIPS_IN_FLEET` | `ShipSkillEffect` | 舰队全部非战机舰船 | `FleetMemberAPI.updateStats`、舰船对象创建的 `applyFleetwideToStats`、`FleetDataAPI.syncIfNeeded`(指挥官回退链)、tooltip 渲染 |
+| `SHIP_FIGHTERS` | `ShipSkillEffect` | 被驾驶舰船起飞的本舰战机 | 战斗起飞 `FighterLaunchBayAPI`(母舰舰长 stats) |
+| `ALL_FIGHTERS_IN_FLEET` | `ShipSkillEffect` | 舰队全部战机 | 战斗起飞 `FighterLaunchBayAPI`(舰队指挥官 → 舰队数据指挥官 → 默认指挥官回退链) |
+| `CHARACTER_STATS` | `CharacterStatsSkillEffect` `apply(stats, id, level)` | 角色自身 `MutableCharacterStatsAPI` | `MutableCharacterStatsAPI.refreshCharacterStatsEffects` |
+| `FLEET` | `FleetStatsSkillEffect` `apply(stats, id, level)` | 该角色指挥舰队的 `MutableFleetStatsAPI` | `MutableCharacterStatsAPI.refreshCharacterStatsEffects` |
+| `GOVERNED_OUTPOST` | `MarketSkillEffect` `apply(market, id, level)` | 治理的殖民地市场 | `refreshGovernedOutpostEffects` |
+| `ALL_OUTPOSTS` | `MarketSkillEffect` | 玩家全部殖民地市场 | `refreshAllOutpostsEffectsForPlayerOutposts` / `refreshAllOutpostsEffects` |
+| `DESCRIPTION` | `DescriptionSkillEffect` | 技能面板 / tooltip 文本行 | 纯 UI，无数值写入 |
+| `HULLMOD_UNLOCK` / `ABILITY_UNLOCK` | 无脚本接口 (数据声明) | 解锁集合 | effect 内 `hullmods` / `abilities` 键；使用方 `getUnlockedHullMods(level)`、`MutableCharacterStatsAPI.getGrantedAbilityIds` / `isHullModAvailable` |
 
 生效范围只看 type，别信 scope
 
@@ -225,87 +133,24 @@ effect id 必须原样用作 modifier id
 
 机制到这里已经齐全，接下来把三件套、等级与 fleet total 全部落成 GearIndustry 的一个真实技能。
 
-## 规则强度
+## 规则强度速查表
 
 下表集中列出本节涉及的注册与生效规则；每条都给出违反后的可观察结果，原因在正文各节展开，故障分析按症状复用这些条目。
 
-规则
-
-强度
-
-违反后的可观察结果
-
-`.skill` 的 `id` **必须**在 `skill_data.csv` 有对应行
-
-必须
-
-加载期日志 `Skipping loading skill [...], it's not listed in skill_data.csv.`，技能不注册、技能树不出现、`getSkillSpec(id)` 返回 null，**无任何 ERROR**
-
-技能 id **必须**全局唯一 (跨 MOD)
-
-必须
-
-后加载的同 id 技能被跳过 (日志 `Skipping skill [...], was already loaded`)，本 MOD 的版本静默失效
-
-effect 的 `type` **必须**与脚本类实现的接口族匹配 (SHIP → `ShipSkillEffect`、FLEET → `FleetStatsSkillEffect`、CHARACTER\_STATS → `CharacterStatsSkillEffect`、市场 → `MarketSkillEffect`、DESCRIPTION → `DescriptionSkillEffect`)
-
-必须
-
-效果实例化时 `getAsXxxEffect()` 强转抛 `ClassCastException`(如舰船 stats 重放 / 起飞 / tooltip 渲染处)，游戏画面报错或加载失败
-
-效果脚本类 **必须**无参可实例化 (不写构造器或显式无参构造器；脚本类加载流程 `loadScriptInstance` 用 `newInstance()`)
-
-必须
-
-`InstantiationException` 包装为 `RuntimeException "Problem loading class [<类名>]"`，在效果被实例化的时刻 (不是加载期) 抛出
-
-效果脚本 **必须**把引擎传入的 `id` 原样用作 modifier id，`unapply` 用同一个 id 解除
-
-必须
-
-数值残留 / 累计或解除不生效 (稳定 ID 规则在技能域的直接应用，前置知识已引用；引擎给的 id 形如 `GearIn_gunnery_ship_1`)
-
-生效范围**必须**按 `SkillEffectType` 判断；`.skill` 的 `scope` / `scopeStr` 只是 UI 文本
-
-必须
-
-把 `scope:FLEET` 的 SHIP 效果当 "全舰队加成" 排查，实际它只作用于被驾驶舰船，舰队其它船 "没变化"
-
-战机效果 (SHIP\_FIGHTERS / ALL\_FIGHTERS\_IN\_FLEET) 只在战斗起飞时应用
-
-必须
-
-在生涯侧读战机 stats 期望已生效，读不到；战机加成 "部署前看不到" 属正常语义
-
-非精英技能 (`elite` 缺省 / false) 经 UI 加点最高到 1 级，`requiredSkillLevel:2` 的效果组永不激活
-
-必须
-
-2 级门槛的效果 "不生效"；精英加成必须配 `"elite":true`
-
-fleet total 的 `label` + `value` 必须能区分不同的汇总行
-
-必须
-
-两个技能返回相同 label+value 时 `getFleetTotals()` 去重合并成一行，其中一行的汇总 "消失"
-
-技能 `icon` 列 **必须**指向可加载的纹理
-
-必须
-
-`loadSkills` 末尾 `queueResource(TEXTURE, ...)` 排队纹理，缺失时资源加载阶段报错 (TEXTURE 无 try/catch)
-
-技能 id 使用 MOD 专属前缀 (`GearIn_`)，数据 id、`.skill` 文件名、脚本类名三处一致
-
-建议
-
-撞原版 / 其它 MOD id 时被先加载者覆盖，行为随 MOD 启用顺序漂移
-
-效果脚本在 `.skill` 里按 "外层类 `$` 嵌套类" 书写类名 (如 `...GearInGunnerySkill$Level1`)
-
-建议
-
-类名拼写错误 → 效果实例化时 `Problem loading class`
+| 规则 | 强度 | 违反后的可观察结果 |
+|---|---|---|
+| `.skill` 的 `id` **必须**在 `skill_data.csv` 有对应行 | 必须 | 加载期日志 `Skipping loading skill [...], it's not listed in skill_data.csv.`，技能不注册、技能树不出现、`getSkillSpec(id)` 返回 null，**无任何 ERROR** |
+| 技能 id **必须**全局唯一 (跨 MOD) | 必须 | 后加载的同 id 技能被跳过 (日志 `Skipping skill [...], was already loaded`)，本 MOD 的版本静默失效 |
+| effect 的 `type` **必须**与脚本类实现的接口族匹配 (SHIP → `ShipSkillEffect`、FLEET → `FleetStatsSkillEffect`、CHARACTER\_STATS → `CharacterStatsSkillEffect`、市场 → `MarketSkillEffect`、DESCRIPTION → `DescriptionSkillEffect`) | 必须 | 效果实例化时 `getAsXxxEffect()` 强转抛 `ClassCastException`(如舰船 stats 重放 / 起飞 / tooltip 渲染处)，游戏画面报错或加载失败 |
+| 效果脚本类 **必须**无参可实例化 (不写构造器或显式无参构造器；脚本类加载流程 `loadScriptInstance` 用 `newInstance()`) | 必须 | `InstantiationException` 包装为 `RuntimeException "Problem loading class [<类名>]"`，在效果被实例化的时刻 (不是加载期) 抛出 |
+| 效果脚本 **必须**把引擎传入的 `id` 原样用作 modifier id，`unapply` 用同一个 id 解除 | 必须 | 数值残留 / 累计或解除不生效 (稳定 ID 规则在技能域的直接应用，前置知识已引用；引擎给的 id 形如 `GearIn_gunnery_ship_1`) |
+| 生效范围**必须**按 `SkillEffectType` 判断；`.skill` 的 `scope` / `scopeStr` 只是 UI 文本 | 必须 | 把 `scope:FLEET` 的 SHIP 效果当 "全舰队加成" 排查，实际它只作用于被驾驶舰船，舰队其它船 "没变化" |
+| 战机效果 (SHIP\_FIGHTERS / ALL\_FIGHTERS\_IN\_FLEET) 只在战斗起飞时应用 | 必须 | 在生涯侧读战机 stats 期望已生效，读不到；战机加成 "部署前看不到" 属正常语义 |
+| 非精英技能 (`elite` 缺省 / false) 经 UI 加点最高到 1 级，`requiredSkillLevel:2` 的效果组永不激活 | 必须 | 2 级门槛的效果 "不生效"；精英加成必须配 `"elite":true` |
+| fleet total 的 `label` + `value` 必须能区分不同的汇总行 | 必须 | 两个技能返回相同 label+value 时 `getFleetTotals()` 去重合并成一行，其中一行的汇总 "消失" |
+| 技能 `icon` 列 **必须**指向可加载的纹理 | 必须 | `loadSkills` 末尾 `queueResource(TEXTURE, ...)` 排队纹理，缺失时资源加载阶段报错 (TEXTURE 无 try/catch) |
+| 技能 id 使用 MOD 专属前缀 (`GearIn_`)，数据 id、`.skill` 文件名、脚本类名三处一致 | 建议 | 撞原版 / 其它 MOD id 时被先加载者覆盖，行为随 MOD 启用顺序漂移 |
+| 效果脚本在 `.skill` 里按 "外层类 `$` 嵌套类" 书写类名 (如 `...GearInGunnerySkill$Level1`) | 建议 | 类名拼写错误 → 效果实例化时 `Problem loading class` |
 
 ## 实现舰队技能
 
@@ -442,7 +287,7 @@ Starsector\mods\GearIndustry\
 ├── data\
 │   └── characters\skills\
 │       ├── GearIn_gunnery.skill          # 本节新增
-│       └── skill_data.csv                # 新建（表头 + 本节行；若已有该文件则把行追加进去）
+│       └── skill_data.csv                # 新建(表头 + 本节行；若已有该文件则把行追加进去)
 ├── src\
 │   └── data\scripts\gearin\
 │       ├── GearInModPlugin               # C6-S2 所有；本节不改动
@@ -524,13 +369,13 @@ GearIn_gunnery,Gunnery,1025,2,1,0,"Precision gunnery drills: ballistic and energ
 以下工程片段所在类归 [C6-S2] 所有，本节只演示调用，不改动那些文件。
 
 ```java
-    // 读取（消费者，任何生涯代码）：
+    // 读取(消费者，任何生涯代码)：
     SkillSpecAPI spec = Global.getSettings().getSkillSpec("GearIn_gunnery");
     if (spec == null) {
         LOG.info("GearIn skill spec missing - check skill_data.csv registration");
     }
 
-    // 学习（脚本侧临时钩子；正式路径是玩家在技能树里花技能点，走 increaseSkill）：
+    // 学习(脚本侧临时钩子；正式路径是玩家在技能树里花技能点，走 increaseSkill)：
     Global.getSector().getPlayerStats().setSkillLevel("GearIn_gunnery", 1f);
     // 精英：
     Global.getSector().getPlayerStats().setSkillLevel("GearIn_gunnery", 2f);
@@ -550,45 +395,17 @@ gradle jar
 
 * `$Level0` / `$Level1` / `$Level1A` / `$LevelShipFighters` / `$LevelFleet` / `$LevelStats`
 
-### GearIn\_gunnery 完整流程 (静态交叉核对)
+### GearIn\_gunnery 完整流程速查表
 
 把三件套、调用点与观察结果串成一张静态交叉核对表，逐行确认后再进入游戏验证：
 
-环节
-
-内容
-
-一致性要求
-
-注册行
-
-`skill_data.csv` 的 `id=GearIn_gunnery` (order 1025、tier 2、reqPoints 1、combat officer TRUE)
-
-与 `.skill` 的 `id` 逐字一致
-
-技能定义
-
-`GearIn_gunnery.skill`：`governingAptitude=combat`、`elite=true`、两个 `effectGroups`
-
-id 一致；脚本类名与 Java 类逐字一致
-
-效果脚本
-
-`data.scripts.gearin.campaign.GearInGunnerySkill$Level0/Level1/Level1A/LevelShipFighters/LevelFleet/LevelStats`
-
-六个类名与 `.skill` 六个 `script` 值一致；`type` 与接口族匹配
-
-调用入口
-
-CSV spec 加载期 `loadSkills` 注册 → 玩家 `setSkillLevel` / UI 加点 → `refreshCharacterStatsEffects` / `FleetMemberAPI.updateStats` / 战斗舰船构造 / `FighterLaunchBayAPI` / `getFleetTotals`
-
-日志行、技能树行、burn、指挥点数、fleet total 行
-
-可观察结果
-
-日志 `GearIn gunnery ... apply`、技能树 "Gunnery" 行、整备界面 "Gunnery damage bonus +15%" 行
-
-见 "验证方案"
+| 环节 | 内容 | 一致性要求 |
+|---|---|---|
+| 注册行 | `skill_data.csv` 的 `id=GearIn_gunnery` (order 1025、tier 2、reqPoints 1、combat officer TRUE) | 与 `.skill` 的 `id` 逐字一致 |
+| 技能定义 | `GearIn_gunnery.skill`：`governingAptitude=combat`、`elite=true`、两个 `effectGroups` | id 一致；脚本类名与 Java 类逐字一致 |
+| 效果脚本 | `data.scripts.gearin.campaign.GearInGunnerySkill$Level0/Level1/Level1A/LevelShipFighters/LevelFleet/LevelStats` | 六个类名与 `.skill` 六个 `script` 值一致；`type` 与接口族匹配 |
+| 调用入口 | CSV spec 加载期 `loadSkills` 注册 → 玩家 `setSkillLevel` / UI 加点 → `refreshCharacterStatsEffects` / `FleetMemberAPI.updateStats` / 战斗舰船构造 / `FighterLaunchBayAPI` / `getFleetTotals` | 日志行、技能树行、burn、指挥点数、fleet total 行 |
+| 可观察结果 | 日志 `GearIn gunnery ... apply`、技能树 "Gunnery" 行、整备界面 "Gunnery damage bonus +15%" 行 | 见 "验证方案" |
 
 ## 关键故障实验：技能效果叠加后无法解除
 
@@ -723,34 +540,34 @@ import com.fs.starfarer.api.util.Misc;
 /**
  * 完整最小例：SkillSpecAPI、效果作用域、技能等级与 fleet total。
  *
- * 本类只是效果脚本的容器（原版 GunneryImplants 同款做法）：
+ * 本类只是效果脚本的容器(原版 GunneryImplants 同款做法)：
  * 数据侧的 .skill 文件与 skill_data.csv 行把每个 effect 的 type 分派到下面的嵌套类。
  *
- * 作用域（effect type 决定作用对象集合，与脚本类实现哪个接口一一对应）：
+ * 作用域(effect type 决定作用对象集合，与脚本类实现哪个接口一一对应)：
  * - DESCRIPTION   -> Level0           技能面板与 tooltip 的文本行；
- * - SHIP          -> Level1 / Level1A 被驾驶（该角色指挥）的舰船 stats；
- * - SHIP_FIGHTERS -> LevelShipFighters 由被驾驶舰船起飞的本舰战机 stats（起飞时应用）；
+ * - SHIP          -> Level1 / Level1A 被驾驶(该角色指挥)的舰船 stats；
+ * - SHIP_FIGHTERS -> LevelShipFighters 由被驾驶舰船起飞的本舰战机 stats(起飞时应用)；
  * - FLEET         -> LevelFleet       该角色指挥舰队的 MutableFleetStatsAPI；
  * - CHARACTER_STATS -> LevelStats     角色自身 MutableCharacterStatsAPI。
  *
  * 等级语义：
- * - 技能等级只有 0（未学）/ 1（已学）/ 2（精英，仅 elite:true 的技能）；
+ * - 技能等级只有 0(未学)/ 1(已学)/ 2(精英，仅 elite:true 的技能)；
  *   UI 加点路径 increaseSkill 会钳制到 1 或 2，setSkillLevel 不钳制；
  * - 每个 effectGroup 的 requiredSkillLevel 是生效门槛：getSkillLevel(governingSkill) >= requiredSkillLevel
  *   才进入 apply 列表；默认 governingSkill = 本技能 id；
  * - apply() 收到的 level 参数 = getSkillLevel(governingSkill)，不是等级增量；
  * - 引擎按 <技能id>_<类型后缀>_<效果序号> 组合 effect id 并传入 apply，
- *   效果类必须原样用它做 MutableStat / StatBonus 的 modifier id（稳定 ID 规则，见前置页）。
+ *   效果类必须原样用它做 MutableStat / StatBonus 的 modifier id(稳定 ID 规则，见前置页)。
  *
  * fleet total：
- * - 本技能 Level1 同时实现 FleetTotalSource：整备界面（refit）的舰队构成表会调用
+ * - 本技能 Level1 同时实现 FleetTotalSource：整备界面(refit)的舰队构成表会调用
  *   getFleetTotalItem() 展示一行汇总；同一脚本实例按需被重新实例化，效果类必须无参可实例化。
  */
 public class GearInGunnerySkill {
 
     private static final Logger LOG = Global.getLogger(GearInGunnerySkill.class);
 
-    /** 数据侧技能 id（skill_data.csv 行 + GearIn_gunnery.skill 的 id 字段，三者必须逐字一致）。 */
+    /** 数据侧技能 id(skill_data.csv 行 + GearIn_gunnery.skill 的 id 字段，三者必须逐字一致)。 */
     public static final String SKILL_ID = "GearIn_gunnery";
 
     /** 数值常量：与 .skill 的 effectGroups、skill_data.csv 行、页面描述文本保持一致。 */
@@ -787,7 +604,7 @@ public class GearInGunnerySkill {
         }
     }
 
-    /** SHIP：被驾驶舰船（角色为舰长 / 指挥官时作用于其旗舰），同时提供 fleet total 行。 */
+    /** SHIP：被驾驶舰船(角色为舰长 / 指挥官时作用于其旗舰)，同时提供 fleet total 行。 */
     public static class Level1 extends BaseSkillEffectDescription implements ShipSkillEffect, FleetTotalSource {
 
         @Override
@@ -822,7 +639,7 @@ public class GearInGunnerySkill {
             return ScopeDescription.PILOTED_SHIP;
         }
 
-        /** fleet total：整备界面（refit）的舰队构成表按 label+value 去重后展示这一行。 */
+        /** fleet total：整备界面(refit)的舰队构成表按 label+value 去重后展示这一行。 */
         @Override
         public FleetTotalItem getFleetTotalItem() {
             FleetTotalItem item = new FleetTotalItem();
@@ -850,7 +667,7 @@ public class GearInGunnerySkill {
         }
     }
 
-    /** SHIP（精英组）：技能到 2 级（精英）后追加的加成。 */
+    /** SHIP(精英组)：技能到 2 级(精英)后追加的加成。 */
     public static class Level1A extends BaseSkillEffectDescription implements ShipSkillEffect {
 
         @Override
@@ -883,7 +700,7 @@ public class GearInGunnerySkill {
         }
     }
 
-    /** SHIP_FIGHTERS：本舰（被驾驶舰船）起飞的战机，起飞时由 FighterLaunchBayAPI 应用。 */
+    /** SHIP_FIGHTERS：本舰(被驾驶舰船)起飞的战机，起飞时由 FighterLaunchBayAPI 应用。 */
     public static class LevelShipFighters extends BaseSkillEffectDescription implements ShipSkillEffect {
 
         @Override

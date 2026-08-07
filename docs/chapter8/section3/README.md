@@ -29,199 +29,52 @@
 
 ## 梳理武器效果关系
 
+### 接口与角色速查表
+
 先确认四个注册列与动画、视觉对象各落在哪个接口，再进入字段与时机。本节涉及的接口在 `com.fs.starfarer.api.combat`(`AnimationAPI` 在 `com.fs.starfarer.api`，数据对象在 `com.fs.starfarer.api.loading`)：
 
-接口 / 类型
+| 接口 / 类型 | 本节角色 | 注册列 / 获取入口 |
+|---|---|---|
+| `EveryFrameWeaponEffectPlugin` | 武器逐帧效果 (操作前回调) | `.wpn` `everyFrameEffect` |
+| `EveryFrameWeaponEffectPluginWithAdvanceAfter` | 武器逐帧效果 (操作后追加回调) | 同上 (类实现即生效) |
+| `WeaponEffectPluginWithInit` | 武器效果构造回调 | 同上 (类实现即生效) |
+| `BeamEffectPlugin` | 光束逐帧效果 | `.wpn` `beamEffect`(仅光束武器) |
+| `BeamEffectPluginWithReset` | 光束效果创建 / 销毁复位 | 同上 (类实现即生效) |
+| `OnFireEffectPlugin` | 开火一次性回调 | `.proj` `onFireEffect` |
+| `OnHitEffectPlugin` | 命中一次性回调 | `.proj` `onHitEffect` |
+| `AnimationAPI` | 武器贴图动画控制 | `weapon.getAnimation()`(非动画武器返回 null) |
+| `MuzzleFlashSpec` | 炮口粒子参数 | `.wpn` `muzzleFlashSpec`(`ProjectileWeaponSpecAPI.getMuzzleFlashSpec()`) |
+| `smokeSpec` 数据对象 | 开火烟尘参数 | `.wpn` `smokeSpec` 键 |
+| `ProjectileWeaponSpecAPI` / `BeamWeaponSpecAPI` / `ProjectileSpecAPI` / `MissileSpecAPI` | spec 读取侧 | `weapon.getSpec()` 或按 id 读取 spec 的加载期存储 |
+| `DamageAPI` | 光束 / 射弹伤害对象 | `beam.getDamage()` / `projectile.getDamage()`[C7-S4] / [C7-S3] |
 
-本节角色
+### .wpn / .proj 注册列速查表
 
-注册列 / 获取入口
-
-`EveryFrameWeaponEffectPlugin`
-
-武器逐帧效果 (操作前回调)
-
-`.wpn` `everyFrameEffect`
-
-`EveryFrameWeaponEffectPluginWithAdvanceAfter`
-
-武器逐帧效果 (操作后追加回调)
-
-同上 (类实现即生效)
-
-`WeaponEffectPluginWithInit`
-
-武器效果构造回调
-
-同上 (类实现即生效)
-
-`BeamEffectPlugin`
-
-光束逐帧效果
-
-`.wpn` `beamEffect`(仅光束武器)
-
-`BeamEffectPluginWithReset`
-
-光束效果创建 / 销毁复位
-
-同上 (类实现即生效)
-
-`OnFireEffectPlugin`
-
-开火一次性回调
-
-`.proj` `onFireEffect`
-
-`OnHitEffectPlugin`
-
-命中一次性回调
-
-`.proj` `onHitEffect`
-
-`AnimationAPI`
-
-武器贴图动画控制
-
-`weapon.getAnimation()`(非动画武器返回 null)
-
-`MuzzleFlashSpec`
-
-炮口粒子参数
-
-`.wpn` `muzzleFlashSpec`(`ProjectileWeaponSpecAPI.getMuzzleFlashSpec()`)
-
-`smokeSpec` 数据对象
-
-开火烟尘参数
-
-`.wpn` `smokeSpec` 键
-
-`ProjectileWeaponSpecAPI` / `BeamWeaponSpecAPI` / `ProjectileSpecAPI` / `MissileSpecAPI`
-
-spec 读取侧
-
-`weapon.getSpec()` 或按 id 读取 spec 的加载期存储
-
-`DamageAPI`
-
-光束 / 射弹伤害对象
-
-`beam.getDamage()` / `projectile.getDamage()`[C7-S4] / [C7-S3]
-
-### .wpn / .proj 注册列 (数据挂载点)
-
-数据文件
-
-键
-
-原版实例
-
-使用方
-
-`data/weapons/*.wpn`
-
-`everyFrameEffect`
-
-`riftbeam.wpn` 的 `com.fs.starfarer.api.impl.combat.RiftBeamEffect`；`blinker_red.wpn` 的 `BlinkerEffect`
-
-弹丸武器构造器 / 光束武器构造器
-
-`data/weapons/*.wpn`
-
-`beamEffect`
-
-`ionbeam.wpn` 的 `com.fs.starfarer.api.impl.combat.IonBeamEffect`
-
-光束射线构造器
-
-`data/weapons/proj/*.proj`
-
-`onFireEffect`
-
-`canister_flak.proj`
-
-武器构造期缓存，开火时回调
-
-`data/weapons/proj/*.proj`
-
-`onHitEffect`
-
-`assaying_rift_proj.proj`
-
-射弹构造期缓存，命中时回调
+| 数据文件 | 键 | 原版实例 | 使用方 |
+|---|---|---|---|
+| `data/weapons/*.wpn` | `everyFrameEffect` | `riftbeam.wpn` 的 `com.fs.starfarer.api.impl.combat.RiftBeamEffect`；`blinker_red.wpn` 的 `BlinkerEffect` | 弹丸武器构造器 / 光束武器构造器 |
+| `data/weapons/*.wpn` | `beamEffect` | `ionbeam.wpn` 的 `com.fs.starfarer.api.impl.combat.IonBeamEffect` | 光束射线构造器 |
+| `data/weapons/proj/*.proj` | `onFireEffect` | `canister_flak.proj` | 武器构造期缓存，开火时回调 |
+| `data/weapons/proj/*.proj` | `onHitEffect` | `assaying_rift_proj.proj` | 射弹构造期缓存，命中时回调 |
 
 加载期：四个键都在加载武器 / 弹体 spec 时把类名登记给脚本类加载器，类在首次被实例化时才真正加载。
 
-### .wpn 动画与视觉字段
+### .wpn 动画与视觉字段速查表
 
 加载器读取 (缺省值即默认)：
 
-`.wpn` 键
-
-默认
-
-语义
-
-`numFrames`
-
-1
-
-帧数；**大于 1 时武器才是动画武器** (`isAnimated`)
-
-`frameRate`
-
-1
-
-播放帧率 (帧 / 秒)
-
-`alwaysAnimate`
-
-false
-
-true 时闲置也持续播放
-
-`animateWhileFiring`
-
-true
-
-false 时开火中冻结动画 (约 0.001 倍速)
-
-`animationType`
-
-NONE
-
-弹丸武器开火视觉：`NONE` / `GLOW` / `MUZZLE_FLASH` / `GLOW_AND_FLASH` / `SMOKE`
-
-`visualRecoil`
-
-0
-
-非 0 时启用炮管贴图 (`turretGunSprite` / `hardpointGunSprite`) 与后坐位移
-
-`muzzleFlashSpec`
-
-—
-
-`animationType` 为 `MUZZLE_FLASH` / `GLOW_AND_FLASH` 时的炮口粒子参数
-
-`smokeSpec`
-
-—
-
-`animationType` 为 `SMOKE` 时的烟尘参数
-
-`turretGlowSprite` / `hardpointGlowSprite`
-
-—
-
-`GLOW` / `GLOW_AND_FLASH` 的开火闪光贴图
-
-`turretGunSprite` / `hardpointGunSprite`
-
-—
-
-`visualRecoil` 非 0 时的炮管 (barrel) 贴图
+| `.wpn` 键 | 默认 | 语义 |
+|---|---|---|
+| `numFrames` | 1 | 帧数；**大于 1 时武器才是动画武器** (`isAnimated`) |
+| `frameRate` | 1 | 播放帧率 (帧 / 秒) |
+| `alwaysAnimate` | false | true 时闲置也持续播放 |
+| `animateWhileFiring` | true | false 时开火中冻结动画 (约 0.001 倍速) |
+| `animationType` | NONE | 弹丸武器开火视觉：`NONE` / `GLOW` / `MUZZLE_FLASH` / `GLOW_AND_FLASH` / `SMOKE` |
+| `visualRecoil` | 0 | 非 0 时启用炮管贴图 (`turretGunSprite` / `hardpointGunSprite`) 与后坐位移 |
+| `muzzleFlashSpec` | — | `animationType` 为 `MUZZLE_FLASH` / `GLOW_AND_FLASH` 时的炮口粒子参数 |
+| `smokeSpec` | — | `animationType` 为 `SMOKE` 时的烟尘参数 |
+| `turretGlowSprite` / `hardpointGlowSprite` | — | `GLOW` / `GLOW_AND_FLASH` 的开火闪光贴图 |
+| `turretGunSprite` / `hardpointGunSprite` | — | `visualRecoil` 非 0 时的炮管 (barrel) 贴图 |
 
 原版实例：
 
@@ -280,41 +133,15 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 
 动画解决帧的推进，开火瞬间的光、烟与炮管后坐由内置视觉字段承担。弹丸武器开火时，在视口 100 单位内且舰船允许炮口闪光 (`ShipAPI.isNoMuzzleFlash()` 为 false) 时按 `animationType` 分派：
 
-`animationType`
+### animationType 开火视觉速查表
 
-开火视觉
-
-数据来源
-
-`NONE`
-
-无内置粒子
-
-—
-
-`GLOW`
-
-glow 贴图按充能时间一半淡出闪烁
-
-`turretGlowSprite` / `hardpointGlowSprite`、`glowColor`
-
-`MUZZLE_FLASH`
-
-炮口粒子爆发
-
-`muzzleFlashSpec`
-
-`GLOW_AND_FLASH`
-
-两者
-
-上述两者
-
-`SMOKE`
-
-烟云 + 后喷烟
-
-`smokeSpec`
+| `animationType` | 开火视觉 | 数据来源 |
+|---|---|---|
+| `NONE` | 无内置粒子 | — |
+| `GLOW` | glow 贴图按充能时间一半淡出闪烁 | `turretGlowSprite` / `hardpointGlowSprite`、`glowColor` |
+| `MUZZLE_FLASH` | 炮口粒子爆发 | `muzzleFlashSpec` |
+| `GLOW_AND_FLASH` | 两者 | 上述两者 |
+| `SMOKE` | 烟云 + 后喷烟 | `smokeSpec` |
 
 `muzzleFlashSpec` 字段 (`com.fs.starfarer.api.loading.MuzzleFlashSpec`)：
 
@@ -344,7 +171,7 @@ glow 贴图按充能时间一半淡出闪烁
 
 数据字段与渲染字段已经看完，现在回到四个注册列本身：实例何时创建、每帧何时被调用。
 
-为什么每个注册列都要独立实例化
+### 为什么每个注册列都要独立实例化
 
 四个注册列各自创建实例，根源在脚本类加载器的实例化行为：类名只作工厂键，每次调用都创建新实例。于是 "同一把武器绑多个类名" 或 "同一类名绑多个注册列" 得到的都是独立实例 —— 实例归属完全由绑定位置决定，类实现了接口不等于实例被引擎调用。
 
@@ -519,61 +346,20 @@ LOG.info("GearIn onHit " + projectile.getProjectileSpecId()
 
 包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Role>`)。
 
+### 示例类所有权速查表
+
 四个类按注册列一一对应：
 
-类
-
-所有权
-
-本节关系
-
-`GearInModPlugin`
-
-[C6-S2]
-
-本节不改动
-
-`GearInGlobalAccess`
-
-[C6-S3]
-
-本节只消费
-
-`GearInCombatStatePlugin`
-
-[C7-S2]
-
-本节只消费
-
-`GearInWeaponFlowEffect`
-
-[C7-S4]
-
-本节只消费
-
-`GearInWeaponFrameEffect`
-
-本节
-
-新增 (`.wpn` `everyFrameEffect`)
-
-`GearInBeamHitEffect`
-
-本节
-
-新增 (`.wpn` `beamEffect`，仅光束武器)
-
-`GearInOnFireEffect`
-
-本节
-
-新增 (`.proj` `onFireEffect`)
-
-`GearInOnHitEffect`
-
-本节
-
-新增 (`.proj` `onHitEffect`)
+| 类 | 所有权 | 本节关系 |
+|---|---|---|
+| `GearInModPlugin` | [C6-S2] | 本节不改动 |
+| `GearInGlobalAccess` | [C6-S3] | 本节只消费 |
+| `GearInCombatStatePlugin` | [C7-S2] | 本节只消费 |
+| `GearInWeaponFlowEffect` | [C7-S4] | 本节只消费 |
+| `GearInWeaponFrameEffect` | 本节 | 新增 (`.wpn` `everyFrameEffect`) |
+| `GearInBeamHitEffect` | 本节 | 新增 (`.wpn` `beamEffect`，仅光束武器) |
+| `GearInOnFireEffect` | 本节 | 新增 (`.proj` `onFireEffect`) |
+| `GearInOnHitEffect` | 本节 | 新增 (`.proj` `onHitEffect`) |
 
 ### GearInWeaponFrameEffect(`.wpn` everyFrameEffect)
 
@@ -604,10 +390,10 @@ LOG.info("GearIn onHit " + projectile.getProjectileSpecId()
 (工程片段 —— 本节不创建数据文件；接入后四个效果类才生效。以下 ID 由本节声明，路径在 `Starsector\mods\GearIndustry\` 下自洽)：
 
 ```text
-data\weapons\GearIn_test_rotor.wpn         # 弹丸武器：GearInWeaponFrameEffect（everyFrameEffect）+ 动画 / 内置视觉字段
-data\weapons\GearIn_test_beam.wpn          # 光束武器：GearInWeaponFrameEffect（everyFrameEffect）+ GearInBeamHitEffect（beamEffect）
-data\weapons\proj\GearIn_test_shot.proj    # 弹体 spec：GearInOnFireEffect / GearInOnHitEffect（onFireEffect / onHitEffect）
-graphics\weapons\gearin\GearIn_test_rotor_turret_base00.png     # 帧 0（您自备，命名规则见"帧贴图命名规则"）
+data\weapons\GearIn_test_rotor.wpn         # 弹丸武器：GearInWeaponFrameEffect(everyFrameEffect)+ 动画 / 内置视觉字段
+data\weapons\GearIn_test_beam.wpn          # 光束武器：GearInWeaponFrameEffect(everyFrameEffect)+ GearInBeamHitEffect(beamEffect)
+data\weapons\proj\GearIn_test_shot.proj    # 弹体 spec：GearInOnFireEffect / GearInOnHitEffect(onFireEffect / onHitEffect)
+graphics\weapons\gearin\GearIn_test_rotor_turret_base00.png     # 帧 0(您自备，命名规则见"帧贴图命名规则")
 graphics\weapons\gearin\GearIn_test_rotor_turret_base01.png     # 帧 1
 graphics\weapons\gearin\GearIn_test_rotor_turret_base02.png     # 帧 2
 graphics\weapons\gearin\GearIn_test_rotor_turret_base03.png     # 帧 3
@@ -621,7 +407,7 @@ graphics\weapons\gearin\GearIn_test_shot.png                    # 弹体贴图
 ```
 
 ```json
-// GearIn_test_rotor.wpn（片段：弹丸武器，绑定 GearInWeaponFrameEffect；动画与内置视觉字段全开）
+// GearIn_test_rotor.wpn(片段：弹丸武器，绑定 GearInWeaponFrameEffect；动画与内置视觉字段全开)
 {
     "id": "GearIn_test_rotor",
     "specClass": "projectile",
@@ -646,7 +432,7 @@ graphics\weapons\gearin\GearIn_test_shot.png                    # 弹体贴图
 ```
 
 ```json
-// GearIn_test_beam.wpn（片段：光束武器，两个注册列各绑一个效果类）
+// GearIn_test_beam.wpn(片段：光束武器，两个注册列各绑一个效果类)
 {
     "id": "GearIn_test_beam",
     "specClass": "beam",
@@ -671,7 +457,7 @@ graphics\weapons\gearin\GearIn_test_shot.png                    # 弹体贴图
 ```
 
 ```json
-// GearIn_test_shot.proj（片段：弹体 spec，绑定 GearInOnFireEffect 与 GearInOnHitEffect）
+// GearIn_test_shot.proj(片段：弹体 spec，绑定 GearInOnFireEffect 与 GearInOnHitEffect)
 {
     "id": "GearIn_test_shot",
     "specClass": "projectile",
@@ -691,7 +477,7 @@ graphics\weapons\gearin\GearIn_test_shot.png                    # 弹体贴图
 }
 ```
 
-类名必须与全限定名逐字一致
+### 类名必须与全限定名逐字一致
 
 `everyFrameEffect` / `beamEffect` / `onFireEffect` / `onHitEffect` 的类名必须是脚本类加载器可实例化的完整类名，绑错或类缺失时武器 / 射线 / 射弹创建抛 `Problem loading class [...]`，部署舰船即报错。
 
@@ -701,7 +487,7 @@ graphics\weapons\gearin\GearIn_test_shot.png                    # 弹体贴图
 gradle jar
 ```
 
-核对产物
+### 核对产物
 
 `gradle jar` 后用 `jar tf jars\GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下四个效果类都在 —— 类缺失或包路径不符时，先查包名与类名拼写，再查 `everyFrameEffect` / `beamEffect` / `onFireEffect` / `onHitEffect` 四处的全限定名。
 
@@ -807,9 +593,9 @@ import com.fs.starfarer.api.combat.WeaponEffectPluginWithInit;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 武器逐帧效果（.wpn everyFrameEffect 注册列，每把武器一个实例）。
+ * 武器逐帧效果(.wpn everyFrameEffect 注册列，每把武器一个实例)。
  * 构造时 init(weapon)；之后每帧在本帧"转向 / 开火之前"回调 advance、操作完成后
- * 回调 advanceAfter。演示 AnimationAPI 程序化控制贴图动画（play / pause / setFrame）。
+ * 回调 advanceAfter。演示 AnimationAPI 程序化控制贴图动画(play / pause / setFrame)。
  */
 public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
         EveryFrameWeaponEffectPluginWithAdvanceAfter {
@@ -821,7 +607,7 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
 
     @Override
     public void init(WeaponAPI weapon) {
-        AnimationAPI animation = weapon.getAnimation(); // 非动画武器返回 null（硬规范 4）
+        AnimationAPI animation = weapon.getAnimation(); // 非动画武器返回 null(硬规范 4)
         LOG.info("GearIn weapon fx init " + weapon.getId()
                 + " beam=" + weapon.isBeam()
                 + " animated=" + (animation != null)
@@ -829,8 +615,8 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
     }
     @Override
     public void advance(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
-        // 本帧转向 / 开火等操作之前；闲置且冷却完成时冻结回 0 帧（BlinkerEffect
-        // 同款姿势），否则恢复播放（play() 覆盖 alwaysAnimate:false 的数据默认）。
+        // 本帧转向 / 开火等操作之前；闲置且冷却完成时冻结回 0 帧(BlinkerEffect
+        // 同款姿势)，否则恢复播放(play() 覆盖 alwaysAnimate:false 的数据默认)。
         AnimationAPI animation = weapon.getAnimation();
         if (animation != null) {
             boolean idle = weapon.getChargeLevel() <= 0f
@@ -863,7 +649,7 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
     }
     @Override
     public void advanceAfter(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
-        // 本帧操作完成后（WithAdvanceAfter）：弹药扣减已生效，可观察操作后状态。
+        // 本帧操作完成后(WithAdvanceAfter)：弹药扣减已生效，可观察操作后状态。
         if (weapon.isFiring()) {
             afterReportInterval.advance(amount);
             if (afterReportInterval.intervalElapsed()) {
@@ -897,8 +683,8 @@ import com.fs.starfarer.api.combat.CombatEntityAPI;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 光束效果（.wpn beamEffect 注册列，仅光束武器；每条光束射线一个实例）。
- * 射线创建与销毁时调 reset()（实现 BeamEffectPluginWithReset 时），开火 / 充能
+ * 光束效果(.wpn beamEffect 注册列，仅光束武器；每条光束射线一个实例)。
+ * 射线创建与销毁时调 reset()(实现 BeamEffectPluginWithReset 时)，开火 / 充能
  * 期间每帧回调 advance。本类只消费"本帧"光束命中状态并生成纯视觉命中粒子，
  * 不修改任何游戏数值。
  */
@@ -906,14 +692,14 @@ public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWi
 
     private static final Logger LOG = Global.getLogger(GearInBeamHitEffect.class);
 
-    /** 命中粒子节流器（光束 0.1 秒结算一次，逐帧撒粒子会过密）。 */
+    /** 命中粒子节流器(光束 0.1 秒结算一次，逐帧撒粒子会过密)。 */
     private final IntervalUtil sparkInterval = new IntervalUtil(0.15f, 0.15f);
-    /** 上一帧命中状态（仅用于命中边沿日志，不跨实例复用）。 */
+    /** 上一帧命中状态(仅用于命中边沿日志，不跨实例复用)。 */
     private boolean lastDidDamage = false;
 
     @Override
     public void reset() {
-        // 射线创建与销毁各调一次（光束射线构造器 / 光束武器.destroyBeamRays）：
+        // 射线创建与销毁各调一次(光束射线构造器 / 光束武器.destroyBeamRays)：
         // 跨射线状态在这里复位。
         lastDidDamage = false;
         LOG.info("GearIn beam fx reset (ray created or destroyed)");
@@ -921,8 +707,8 @@ public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWi
 
     @Override
     public void advance(float amount, CombatEngineAPI engine, BeamAPI beam) {
-        // 每帧只消费本帧光束状态（规则 2：didDamageThisFrame / getDamageTarget
-        // 只对本帧结算语义有效，禁止缓存跨帧使用）。
+        // 每帧只消费本帧光束状态(规则 2：didDamageThisFrame / getDamageTarget
+        // 只对本帧结算语义有效，禁止缓存跨帧使用)。
         boolean didDamage = beam.didDamageThisFrame();
         CombatEntityAPI target = beam.getDamageTarget();
         if (didDamage && !lastDidDamage) {
@@ -931,8 +717,8 @@ public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWi
                     + " brightness=" + beam.getBrightness());
         }
         if (didDamage) {
-            // 纯视觉命中火花：以本帧射线端点（上一帧端点）为基准撒粒子，不造成伤害。
-            // 光束伤害按 0.1 秒间隔结算（C7-S4）；IonBeamEffect 的替代写法是用
+            // 纯视觉命中火花：以本帧射线端点(上一帧端点)为基准撒粒子，不造成伤害。
+            // 光束伤害按 0.1 秒间隔结算(C7-S4)；IonBeamEffect 的替代写法是用
             // beam.getDamage().getDpsDuration() 推进节流器，让粒子节奏跟随真实结算。
             sparkInterval.advance(amount);
             if (sparkInterval.intervalElapsed()) {
@@ -962,7 +748,7 @@ import com.fs.starfarer.api.combat.OnFireEffectPlugin;
 import com.fs.starfarer.api.combat.WeaponAPI;
 
 /**
- * 开火回调（.proj onFireEffect 注册列，每武器一个实例）。
+ * 开火回调(.proj onFireEffect 注册列，每武器一个实例)。
  * 武器开火生成射弹后回调一次，参数是刚生成的那一颗射弹，
  * 禁止缓存跨发射使用。本类只观察并打日志，不修改任何游戏数值。
  */
@@ -973,7 +759,7 @@ public class GearInOnFireEffect implements OnFireEffectPlugin {
     @Override
     public void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon, CombatEngineAPI engine) {
         // 参数是"本发射弹"上下文：射弹刚生成，速度 / 朝向已就绪
-        // （原版 CanisterFlakPlugin 在此改写弹速与旋转，本节只观察）。
+        // (原版 CanisterFlakPlugin 在此改写弹速与旋转，本节只观察)。
         LOG.info("GearIn onFire " + projectile.getProjectileSpecId()
                 + " weapon=" + (weapon == null ? "null" : weapon.getId())
                 + " spawnType=" + projectile.getSpawnType()
@@ -1000,7 +786,7 @@ import com.fs.starfarer.api.combat.OnHitEffectPlugin;
 import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
 
 /**
- * 命中回调（.proj onHitEffect 注册列，每射弹一个实例）。
+ * 命中回调(.proj onHitEffect 注册列，每射弹一个实例)。
  * 射弹命中结算时回调一次，参数是本次命中结算结果，
  * 禁止缓存跨命中使用。本类只观察并打日志，不修改任何游戏数值。
  */

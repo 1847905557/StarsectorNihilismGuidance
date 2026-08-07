@@ -28,7 +28,15 @@
 
 ## 文件与 API 链路
 
-`CampaignUtils` 负责敌对舰队查询与关系判断；`MathUtils` 计算距离；玩家货舱由原版 `CargoAPI` 读取；消息输出与持久记录分别交给界面入口和 `SectorAPI.getPersistentData()`。
+### 航路风险 API 职责速查表
+
+| 对象 | 职责 |
+|---|---|
+| `CampaignUtils` | 敌对舰队查询与关系判断 |
+| `MathUtils` | 计算距离 |
+| `CargoAPI` | 读取玩家货舱补给 |
+| 界面入口 | 输出风险等级与数值消息 |
+| `SectorAPI.getPersistentData()` | 持久记录最近一次评估 |
 
 ### 扫描航路点附近敌对舰队
 

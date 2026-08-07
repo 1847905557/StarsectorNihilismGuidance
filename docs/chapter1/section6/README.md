@@ -26,6 +26,8 @@
 
 三种内置内容都写在 `.ship` 文件**顶层**，与 `weaponSlots`、`engineSlots`、`center` 同级。
 
+### 内置组件键速查表
+
 原版 `onslaught.ship` 中，`builtInMods` 与 `builtInWeapons` 紧邻 `weaponSlots` 数组之后：
 
 | 键 | JSON 类型 | 含义 | 原版参考 |

@@ -10,8 +10,8 @@ import com.fs.starfarer.api.campaign.CampaignFleetAPI;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 
 /**
- * 记忆写入与读回脚本（EveryFrameScript）：读档首个未暂停帧写入全部记忆键并立即
- * 读回验证（键常量见 GearInMemoryKeys）。probe 键（expire 0）的「写入后立即读回」
+ * 记忆写入与读回脚本(EveryFrameScript)：读档首个未暂停帧写入全部记忆键并立即
+ * 读回验证(键常量见 GearInMemoryKeys)。probe 键(expire 0)的「写入后立即读回」
  * 必须在同一方法内完成 —— 跨脚本同帧执行顺序未定义，独立读回可能错过其存在状态。
  */
 public class GearInMemoryWriter implements EveryFrameScript {
@@ -47,7 +47,7 @@ public class GearInMemoryWriter implements EveryFrameScript {
         sector.set(GearInMemoryKeys.KEY_REQUIRED_PARENT, true);
         sector.addRequired(GearInMemoryKeys.KEY_REQUIRED_PARENT, GearInMemoryKeys.KEY_REQUIRED_CHILD);
 
-        LOG.info("GearInMemoryWriter: 记忆键必须 $ 前缀（Memory.set 对无 $ 键抛 RuntimeException）");
+        LOG.info("GearInMemoryWriter: 记忆键必须 $ 前缀(Memory.set 对无 $ 键抛 RuntimeException)");
         LOG.info("GearInMemoryWriter: contains(KEY_TAG)="
                 + sector.contains(GearInMemoryKeys.KEY_TAG)
                 + " getString=" + sector.getString(GearInMemoryKeys.KEY_TAG)
@@ -56,15 +56,15 @@ public class GearInMemoryWriter implements EveryFrameScript {
                 + sector.getFloat(GearInMemoryKeys.KEY_COUNTER)
                 + " is(key,1f)=" + sector.is(GearInMemoryKeys.KEY_COUNTER, 1f)
                 + " between(0,2)=" + sector.between(GearInMemoryKeys.KEY_COUNTER, 0f, 2f)
-                + " getExpire=" + sector.getExpire(GearInMemoryKeys.KEY_COUNTER) + "（游戏天）");
-        LOG.info("GearInMemoryWriter: KEY_PROBE（expire 0）contains="
+                + " getExpire=" + sector.getExpire(GearInMemoryKeys.KEY_COUNTER) + "(游戏天)");
+        LOG.info("GearInMemoryWriter: KEY_PROBE(expire 0)contains="
                 + sector.contains(GearInMemoryKeys.KEY_PROBE)
                 + " getBoolean=" + sector.getBoolean(GearInMemoryKeys.KEY_PROBE)
                 + " getExpire=" + sector.getExpire(GearInMemoryKeys.KEY_PROBE)
                 + "；将在下一个未暂停推进帧被移除");
         LOG.info("GearInMemoryWriter: expire(KEY_REARM, 30f) 重设后 getExpire=" + rearmedExpire
                 + "；两参 set 清除未决过期后 getExpire=" + clearedExpire
-                + "（-1 = 永不过期）");
+                + "(-1 = 永不过期)");
         LOG.info("GearInMemoryWriter: required 依赖 getRequired(KEY_REQUIRED_PARENT)="
                 + sector.getRequired(GearInMemoryKeys.KEY_REQUIRED_PARENT));
 

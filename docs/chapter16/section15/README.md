@@ -28,7 +28,15 @@
 
 ## 文件与 API 链路
 
-`SpriteEntity` 负责一次批量绘制；`InstanceDataAPI` 是实例集合接口；`Instance2Data` 保存二维状态；`GearInBatchPool` 管理可复用对象；`GearInThousandInstanceBatch` 负责首次全量提交、后续局部刷新和移除后的归还。
+### 批量实例 API 职责速查表
+
+| 对象 | 职责 |
+|---|---|
+| `SpriteEntity` | 一次批量绘制 |
+| `InstanceDataAPI` | 实例集合接口 |
+| `Instance2Data` | 保存二维状态 |
+| `GearInBatchPool` | 管理可复用对象 |
+| `GearInThousandInstanceBatch` | 首次全量提交、后续局部刷新和移除后的归还 |
 
 ### 预分配一千容量的实例列表
 

@@ -23,6 +23,8 @@
 
 ## 类名三处一致
 
+### 类名三处速查表
+
 游戏靠**完整类名**找到效果类。一个类名出现在三个位置，必须一字不差：
 
 | 位置 | 本例的值 |
@@ -61,7 +63,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 ### 实现船插效果
 
-将以下类完整写入 `src/data/scripts/gearin/hullmods/GearInStableInjectorHullMod.java`(文件路径即包路径，见类名三处一致表)：
+将以下类完整写入 `src/data/scripts/gearin/hullmods/GearInStableInjectorHullMod.java`(文件路径即包路径，见类名三处速查表)：
 
 ```java
 package data.scripts.gearin.hullmods;
@@ -75,7 +77,7 @@ import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ShipAPI.HullSize;
 
 /**
- * 稳定化推进器：按舰船大小提供小幅最大速度加成，与不稳定推进器（unstable_injector）互斥。
+ * 稳定化推进器：按舰船大小提供小幅最大速度加成，与不稳定推进器(unstable_injector)互斥。
  * 注册在 hull_mods.csv 的 script 列；效果类每个应用会话只实例化一次。
  */
 public class GearInStableInjectorHullMod extends BaseHullMod {
@@ -172,18 +174,6 @@ CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四�
 
 这个报错就是类名三处一致被破坏的可观察结果。类名改错时游戏会明确报 `Problem loading class`—— 相比静默失败，这已经算客气。之后在任何船插、武器、战术系统上见到这个报错，首先核对类名三处。
 
-## 错误对照表
-
-| 症状 | 原因 | 修法 |
-|---|---|---|
-| 装配界面找不到船插 | CSV 行未生效 / `id` 与其他来源重复 / `unlocked` 不是 `TRUE` | 确认文件在 MOD 根 `data/hullmods/hull_mods.csv`；`id` 全局唯一；调试期 `unlocked=TRUE` |
-| 启动中断，日志报 `JSONException` | `cost_*` 四列之一留空，或 `name`/`id`/`script` 缺失 | 四档 cost 都填数字；必填列不空 |
-| `Problem loading class [...]` | 类名三处不一致，或类不存在 | 按类名三处一致表逐一核对 |
-| 装上了但数值无变化 | 数值写进了 `applyEffectsAfterShipCreation` | 数值修改一律放 `applyEffectsBeforeShipCreation` |
-| 两个船插加成互相覆盖 | 多个船插用同一个硬编码 source id | 一律使用回调传入的 `id`(即 CSV 的 `id`) |
-| 互斥失效，两个都能装 | 只写了数据行，没写 `isApplicableToShip` | 补 `isApplicableToShip` 返回 `false` + `getUnapplicableReason` 给原因 |
-| tooltip 出现空位或未替换的 `%s` | `desc` 的 `%s` 数量与 `getDescriptionParam` 返回值不一致 | 每个 `%s` 都有对应 `index` 返回非 null |
-
 ## 验证方案
 
 前置数据：本节的 `hull_mods.csv` 注册行与 `GearInStableInjectorHullMod` 效果类。
@@ -203,14 +193,14 @@ CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四�
 
 ## 故障分析
 
-- **装配界面找不到船插：**先确认 CSV 行存在、`id` 使用唯一的 `GearIn_` 前缀，并在调试期设置 `unlocked=TRUE`。随后核对 `script` 列；修正后重启，船插应出现在装配列表中。
-- **加载中断并报告 `JSONException`：**必填列缺失或某个 `cost_*` 留空会破坏数据行。补齐四档数字后重启，加载过程应越过该 CSV。
-- **加载中断并报告 `Duplicate key`：**同一文件内存在重复 `id`。为每行保留唯一 ID，重启后确认重复键异常消失。
-- **日志出现 `Problem loading class [...]`：**注册类名、包声明和文件路径没有指向同一个类。源码应位于 `data/scripts/gearin/hullmods/` 对应包路径，三处文本必须逐字一致。
-- **速度加成没有生效：**数值修改写进 `applyEffectsAfterShipCreation` 时，生涯侧不会执行它。把 `modifyFlat(...)` 移入 `applyEffectsBeforeShipCreation`，重新部署舰船后核对速度。
-- **两个船插数值互相覆盖：**多个船插共用 `modifyFlat("bonus", ...)` 之类的硬编码 source id。改用回调传入的船插 `id`，同时安装两个船插后确认修饰分别存在。
-- **互斥限制没有生效：**数据行本身不会建立互斥判断。补齐 `isApplicableToShip` 与 `getUnapplicableReason`，装配界面应拒绝不兼容组合并显示原因。
-- **描述出现空位：**`desc` 中的 `%s` 数量超过 `getDescriptionParam` 返回的参数。为每个占位符提供对应 `index` 的非 null 字符串，重启后核对完整描述。
+- **装配界面找不到船插**：先确认 CSV 行存在、`id` 使用唯一的 `GearIn_` 前缀，并在调试期设置 `unlocked=TRUE`。随后核对 `script` 列；修正后重启，船插应出现在装配列表中。
+- **加载中断并报告 `JSONException`**：必填列缺失或某个 `cost_*` 留空会破坏数据行。补齐四档数字后重启，加载过程应越过该 CSV。
+- **加载中断并报告 `Duplicate key`**：同一文件内存在重复 `id`。为每行保留唯一 ID，重启后确认重复键异常消失。
+- **日志出现 `Problem loading class [...]`**：注册类名、包声明和文件路径没有指向同一个类。源码应位于 `data/scripts/gearin/hullmods/` 对应包路径，三处文本必须逐字一致。
+- **速度加成没有生效**：数值修改写进 `applyEffectsAfterShipCreation` 时，生涯侧不会执行它。把 `modifyFlat(...)` 移入 `applyEffectsBeforeShipCreation`，重新部署舰船后核对速度。
+- **两个船插数值互相覆盖**：多个船插共用 `modifyFlat("bonus", ...)` 之类的硬编码 source id。改用回调传入的船插 `id`，同时安装两个船插后确认修饰分别存在。
+- **互斥限制没有生效**：数据行本身不会建立互斥判断。补齐 `isApplicableToShip` 与 `getUnapplicableReason`，装配界面应拒绝不兼容组合并显示原因。
+- **描述出现空位**：`desc` 中的 `%s` 数量超过 `getDescriptionParam` 返回的参数。为每个占位符提供对应 `index` 的非 null 字符串，重启后核对完整描述。
 
 ## 总结
 

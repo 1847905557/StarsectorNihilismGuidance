@@ -24,6 +24,13 @@
 
 Corvus 模式把玩家放在 GearIn 固定母星旁；随机星区先生成 GearIn 市场，再选择其中一个作为出生点。两种模式都获得相同类型的起始舰队。
 
+### 星区模式出生点速查表
+
+| 星区模式 | 出生点来源 | 有效条件 |
+|---|---|---|
+| Corvus | `corvus_spawnpoints.csv` 登记的固定实体 | 实体已由 Corvus 星区生成器创建 |
+| 随机星区 | 规模最大的已生成 GearIn 市场主实体 | 市场已生成且包含主实体 |
+
 ## 文件与 API 链路
 
 `SectorManager.isCorvusMode` 选择分支；`ExerelinCorvusLocations` 读取固定出生实体；`NexUtilsFaction.getFactionMarkets` 返回随机星区已经生成的本势力市场；`NexFactionConfig.getStartFleetForType` 读取起始舰队变体 ID。

@@ -30,80 +30,34 @@
 
 ## 梳理船插回调关系
 
+### 接口与角色速查表
+
 本节涉及的接口 (除注明外都在 `com.fs.starfarer.api.combat`)：
 
-接口 / 类型
-
-本节角色
-
-链路
-
-`HullModEffect`
-
-船插效果接口，全部生命周期回调的定义处
-
-数据行 `script` 列 → `HullModSpecAPI.getEffect()`(用到时才创建的单例)→ 各调用点
-
-`BaseHullMod`
-
-空实现基类
-
-建议继承；`isSMod` / `isBuiltIn` / `hasSModEffect` / `addSModSection` 等默认实现在这里
-
-`ShipVariantAPI`
-
-S-mod 状态存储
-
-`getSMods()`、`getSModdedBuiltIns()`、`addPermaMod(modId, isSMod)`
-
-`HullModSpecAPI`
-
-船插静态配置
-
-`getSModEffectFormat()`、`getSModDescription(hullSize)`
-
-`MutableShipStatsAPI`
-
-stats 入口
-
-`getArmorBonus()`、`getEffectiveArmorBonus()`—— 本节示例的修饰目标
-
-`ArmorGridAPI`
-
-装甲网格读取
-
-`getGrid()` / `getMaxArmorInCell()` / `getArmorRating()`；战斗命中结算与监听器示例使用它
-
-`com.fs.starfarer.api.combat.listeners.*`
-
-监听器接口
-
-`HullDamageAboutToBeTakenListener`、`AdvanceableListener` 本节示例实现；必须遵守的放置规则见 [C7-S5]
-
-`Misc`
-
-S-mod 辅助
-
-`CAN_SMOD_BUILT_IN`、`getMaxPermanentMods`、`getBuildInBonusXP`
-
-`Stats`
-
-动态 stat id
-
-`MAX_PERMANENT_HULLMODS_MOD = "max_permanent_hullmods_mod"`(`com.fs.starfarer.api.impl.campaign.ids.Stats`)
+| 接口 / 类型 | 本节角色 | 链路 |
+|---|---|---|
+| `HullModEffect` | 船插效果接口，全部生命周期回调的定义处 | 数据行 `script` 列 → `HullModSpecAPI.getEffect()`(用到时才创建的单例)→ 各调用点 |
+| `BaseHullMod` | 空实现基类 | 建议继承；`isSMod` / `isBuiltIn` / `hasSModEffect` / `addSModSection` 等默认实现在这里 |
+| `ShipVariantAPI` | S-mod 状态存储 | `getSMods()`、`getSModdedBuiltIns()`、`addPermaMod(modId, isSMod)` |
+| `HullModSpecAPI` | 船插静态配置 | `getSModEffectFormat()`、`getSModDescription(hullSize)` |
+| `MutableShipStatsAPI` | stats 入口 | `getArmorBonus()`、`getEffectiveArmorBonus()`—— 本节示例的修饰目标 |
+| `ArmorGridAPI` | 装甲网格读取 | `getGrid()` / `getMaxArmorInCell()` / `getArmorRating()`；战斗命中结算与监听器示例使用它 |
+| `com.fs.starfarer.api.combat.listeners.*` | 监听器接口 | `HullDamageAboutToBeTakenListener`、`AdvanceableListener` 本节示例实现；必须遵守的放置规则见 [C7-S5] |
+| `Misc` | S-mod 辅助 | `CAN_SMOD_BUILT_IN`、`getMaxPermanentMods`、`getBuildInBonusXP` |
+| `Stats` | 动态 stat id | `MAX_PERMANENT_HULLMODS_MOD = "max_permanent_hullmods_mod"`(`com.fs.starfarer.api.impl.campaign.ids.Stats`) |
 
 三条关键链路 (sModDesc、tooltip、生命周期)，全部带调用点：
 
 ```text
 sModDesc 链路：
 hull_mods.csv 的 sModDesc 列
-  → loadHullMods（CSV spec 加载期）：optString("sModDesc", "")
+  → loadHullMods(CSV spec 加载期)：optString("sModDesc", "")
   → HullModSpecAPI.setSModEffectFormat→ getSModEffectFormat()
-  → BaseHullMod.hasSModEffect()（非空且不以 # 开头）
+  → BaseHullMod.hasSModEffect()(非空且不以 # 开头)
   → getSModDescription(hullSize)：String.format 填充 getSModDescriptionParam(0..9)
     → addSModEffectSection
 
-tooltip 链路（标准 tooltip 的 createHullModTooltip）：
+tooltip 链路(标准 tooltip 的 createHullModTooltip)：
 getTooltipWidth() → 标题 / 制造商
   → getDescriptionParam(0..9, hullSize, ship) 填充 desc 的 %s
   → shouldAddDescriptionToTooltip 决定是否显示 desc 段
@@ -112,12 +66,12 @@ getTooltipWidth() → 标题 / 制造商
   → 状态行：d-mod / 内置 / 增强内置 / S-mod / 不可安装原因 / canBeAddedOrRemovedNow / addRequiredItemSection
 
 生命周期调用点：
-applyEffectsBeforeShipCreation：FleetMemberAPI.updateStats（生涯重建重放）+
- 战斗舰船对象构造（战斗部署）—— 前置单元已详述
-applyEffectsAfterShipCreation：舰船对象创建（createStats=true）；
-  装配界面预览舰同路径（舰船显示面板）
+applyEffectsBeforeShipCreation：FleetMemberAPI.updateStats(生涯重建重放)+
+ 战斗舰船对象构造(战斗部署)—— 前置单元已详述
+applyEffectsAfterShipCreation：舰船对象创建(createStats=true)；
+  装配界面预览舰同路径(舰船显示面板)
 applyEffectsAfterShipAddedToCombatEngine：ShipAPI.applyEffectsAfterShipAddedToCombatEngine
-  （防重复标记守卫）← 战斗引擎的 addObjectToEngine
+  (防重复标记守卫)← 战斗引擎的 addObjectToEngine
 advanceInCombat：战斗舰船对象的每帧推进遍历 variant.getAllMods()
 advanceInCampaign：CampaignFleetAPI.advance 每成员；FleetDataAPI 同步时 amount=0
 ```
@@ -126,77 +80,25 @@ advanceInCampaign：CampaignFleetAPI.advance 每成员；FleetDataAPI 同步时 
 
 七条回调覆盖船插从加载到每帧的全部存在时刻；先把每个回调的调用时机与调用点对清楚，后面的效果、tooltip 与监听器都挂在这些时刻上。
 
-为什么效果类必须是会话级单例
+### 为什么效果类必须是会话级单例
 
 `HullModEffect` 接口 javadoc 开篇即必须遵守的规则：**效果类每个应用会话只实例化一次** ("the effect class is instantiated once per application session. Storing campaign data in data members of an implementing class is a bad idea (will likely cause memory leaks), use SectorAPI.getPersistentData() instead.")。
 
 违反的可观察结果：两个船插实例或两艘船共享字段，计时器串船、计数互相覆盖；把跨存档数据放字段还会造成泄漏。因此：**跨船状态必须放在每船一个的监听器实例 (或 `getDynamic()` 标记位，见前置单元)，不得放在效果类字段**。
 
-回调
+### 生命周期回调速查表
 
-调用时机
+| 回调 | 调用时机 | 调用点 | 要点 |
+|---|---|---|---|
+| `init(HullModSpecAPI spec)` | spec 就绪后、首次使用效果时 | `HullModSpecAPI.getEffect()` 用到时才实例化 | `BaseHullMod` 用它保存 spec；`isSMod` / `isBuiltIn` / `hasSModEffect` 都依赖 spec 非 null |
+| `applyEffectsBeforeShipCreation(HullSize, MutableShipStatsAPI, String id)` | 生涯 stats 每次重建重放；战斗舰船构造 | `FleetMemberAPI.updateStats`；`ShipAPI` 对象构造 | 改 stats 的唯一正式入口 (前置讲解必须遵守的规则)；`id` 参数就是本船插的 spec id，直接用作修饰 ID；S-mod 分支也在这里 |
+| `applyEffectsAfterShipCreation(ShipAPI, String id)` | 战斗侧舰船实体创建后；装配界面预览舰也会创建 | 舰船对象创建流程 (`createStats=true` 时)；装配界面预览面板同样按 (variant, true, ...) 创建舰船对象 | **不承担 stats 修改** (API javadoc 原文："Effects applied here should NOT affect ship stats as this does not get called from the campaign.")；监听器注册的正式位置 |
+| `applyEffectsAfterShipAddedToCombatEngine(ShipAPI, String id)` | 舰船第一次加入战斗引擎 | 战斗舰船对象上的防重复标记 ← `CombatEngineAPI.addObjectToEngine` | **每艘船只回调一次** (API javadoc 原文："Only called once. Not called again if the ship is removed and then added back to the engine.")；做一次性战斗初始化 (本节示例用它打日志证明) |
+| `advanceInCombat(ShipAPI, float amount)` | 战斗中每帧 | 战斗舰船对象的每帧推进遍历 `getVariant().getAllMods()` | **暂停时不调用** (API javadoc 原文："Not called while paused.")；无状态写入合法 (前置讲解的每帧幂等做法)，跨船状态不行 |
+| `advanceInCampaign(FleetMemberAPI, float amount)` | 生涯每帧；舰队数据重同步时 `amount=0` | `CampaignFleetAPI.advance` 每成员；`FleetDataAPI` 同步时 | **暂停时不调用**；API javadoc 原文："Not called while paused. But, called when the fleet data needs to be re-synced, with amount=0 (such as if, say, a fleet member is moved around in the fleet screen.)" |
+| `applyEffectsToFighterSpawnedByShip(ShipAPI fighter, ShipAPI ship, String id)` | 航母舰船生成战机后 | 战机出生链 | 效果向母舰生成的战机传播；本节不展开，示例不实现 |
 
-调用点
-
-要点
-
-`init(HullModSpecAPI spec)`
-
-spec 就绪后、首次使用效果时
-
-`HullModSpecAPI.getEffect()` 用到时才实例化
-
-`BaseHullMod` 用它保存 spec；`isSMod` / `isBuiltIn` / `hasSModEffect` 都依赖 spec 非 null
-
-`applyEffectsBeforeShipCreation(HullSize, MutableShipStatsAPI, String id)`
-
-生涯 stats 每次重建重放；战斗舰船构造
-
-`FleetMemberAPI.updateStats`；`ShipAPI` 对象构造
-
-改 stats 的唯一正式入口 (前置讲解必须遵守的规则)；`id` 参数就是本船插的 spec id，直接用作修饰 ID；S-mod 分支也在这里
-
-`applyEffectsAfterShipCreation(ShipAPI, String id)`
-
-战斗侧舰船实体创建后；装配界面预览舰也会创建
-
-舰船对象创建流程 (`createStats=true` 时)；装配界面预览面板同样按 (variant, true, ...) 创建舰船对象
-
-**不承担 stats 修改** (API javadoc 原文："Effects applied here should NOT affect ship stats as this does not get called from the campaign.")；监听器注册的正式位置
-
-`applyEffectsAfterShipAddedToCombatEngine(ShipAPI, String id)`
-
-舰船第一次加入战斗引擎
-
-战斗舰船对象上的防重复标记 ← `CombatEngineAPI.addObjectToEngine`
-
-**每艘船只回调一次** (API javadoc 原文："Only called once. Not called again if the ship is removed and then added back to the engine.")；做一次性战斗初始化 (本节示例用它打日志证明)
-
-`advanceInCombat(ShipAPI, float amount)`
-
-战斗中每帧
-
-战斗舰船对象的每帧推进遍历 `getVariant().getAllMods()`
-
-**暂停时不调用** (API javadoc 原文："Not called while paused.")；无状态写入合法 (前置讲解的每帧幂等做法)，跨船状态不行
-
-`advanceInCampaign(FleetMemberAPI, float amount)`
-
-生涯每帧；舰队数据重同步时 `amount=0`
-
-`CampaignFleetAPI.advance` 每成员；`FleetDataAPI` 同步时
-
-**暂停时不调用**；API javadoc 原文："Not called while paused. But, called when the fleet data needs to be re-synced, with amount=0 (such as if, say, a fleet member is moved around in the fleet screen.)"
-
-`applyEffectsToFighterSpawnedByShip(ShipAPI fighter, ShipAPI ship, String id)`
-
-航母舰船生成战机后
-
-战机出生链
-
-效果向母舰生成的战机传播；本节不展开，示例不实现
-
-不要依赖 "只在战斗里调用一次" 来初始化
+### 不要依赖 "只在战斗里调用一次" 来初始化
 
 用户在装配界面改装配时，显示实体经舰船对象创建流程重建，`applyEffectsAfterShipCreation` 会在预览舰上运行 —— 注册监听器、打日志都会发生一次。真正的 "每船一次" 在 `applyEffectsAfterShipAddedToCombatEngine`。
 
@@ -265,7 +167,7 @@ tooltip 与 S-mod 属于装配界面，战斗中的持续行为要靠监听器�
     *   `AdvanceableListener` **只能挂舰船** (javadoc 原文 "Only supported when added to a ShipAPI, not to CombatEngineAPI.")；OP 成本类修饰只能挂 `MutableShipStatsAPI`。
     *   违反的共性可观察结果：**静默不生效、无任何报错**。
 
-防重复注册
+### 防重复注册
 
 同一实体重复创建 (如多次创建舰船对象) 会让同一类监听器叠加，`AdvanceableListener` 叠加后每帧被派发多次 (tick 日志翻倍是典型症状)。**建议**在注册前用 `ship.getListenerManager().hasListenerOfClass(...)` 防重复判断 (成熟实例的常见做法)。
 
@@ -370,7 +272,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 * `applyEffectsAfterShipCreation`：注册每船一个的 `ArmorTrainingListener` 实例并打日志。日志会在装配界面预览舰上先出现一次 (预览舰也走舰船对象创建流程)。
 * `applyEffectsAfterShipAddedToCombatEngine`：战斗开始时打一行一次性日志 ——"每船只回调一次" 的证明。
 * `advanceInCombat`：S-mod 时每帧把 "当前装甲平均比例" 写成 `DYNAMIC_ID` 修饰 (幂等覆盖)；命中结算逐击读取，因此下一击即生效：
-    *   `DYNAMIC_ID` 与 hullmod id 分开，**避免与 `applyEffectsBeforeShipCreation` 的条目在同一张表里互相覆盖** (见 "动态与静态修饰导致数值乱跳" 故障条目)。
+    *   `DYNAMIC_ID` 与 hullmod id 分开，**避免与 `applyEffectsBeforeShipCreation` 的条目互相覆盖** (见 "动态与静态修饰导致数值乱跳" 故障条目)。
 * `advanceInCampaign`：只在 `amount <= 0f`(舰队数据重同步) 时打一行 ——"该回调确实被调用" 且 "同步时 amount=0" 的证明，同时避免每帧刷屏。
 * `getDescriptionParam` / `getSModDescriptionParam`：按 index 输出参数字符串；`null` 的 index 不会被 tooltip 使用。
     *   `ArmorTrainingListener`：同时实现 `HullDamageAboutToBeTakenListener`(返回 `true` 抵消结构伤害，`notifyAboutToTakeHullDamage` 语义来自 javadoc 原文) 与 `AdvanceableListener`(每帧推进、暂停不派发)。
@@ -443,14 +345,14 @@ public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAP
 
 ## 故障分析
 
-- **装甲评级没有变化：**CSV 行、`script` 类名或 stats 回调存在缺口时，船插会缺失或数值保持原样。核对数据行、完整类名与 `applyEffectsBeforeShipCreation`；显示使用 `getArmorBonus`，结算使用 `getEffectiveArmorBonus`。
-- **S-mod 内置后加成不变：**分支写在 `advanceInCombat` 或 `applyEffectsAfterShipCreation` 时，生涯 stats 不会执行它。将 S-mod 判断放入 `applyEffectsBeforeShipCreation`，并使用回调传入的 `stats`。
-- **装配界面没有 S-mod 效果段：**`sModDesc` 为空、以 `#` 开头，或 `%s` 与参数数量不一致。修正描述和 `getSModDescriptionParam` 后重新打开 tooltip。
-- **多艘船的计数与计时互相污染：**per-ship 状态写进了会话级船插实例。把计数和 `IntervalUtil` 放进每艘船独立创建的监听器，船插类只保留常量和无状态方法。
-- **伤害抵消监听器从未触发：**监听器挂错对象，或实例从未交给 `ship.addListener(...)`。将它挂在承受伤害的舰船或引擎层，再次承受舰体伤害。
-- **动态与静态修饰导致数值乱跳：**两个来源使用了相同 modifier ID。为动态来源使用独立稳定的 `DYNAMIC_ID`，重新比较面板和战斗数值。
-- **tick 日志在同一周期出现多行：**同一舰船重复注册了 `AdvanceableListener`。注册前使用 `hasListenerOfClass` 查重，再观察日志频率。
-- **战斗数值正确但生涯面板没有加成：**stats 修改只写在战斗回调中。把共用数值修饰移入 `applyEffectsBeforeShipCreation`，战斗回调只处理战斗行为。
+- **装甲评级没有变化**：CSV 行、`script` 类名或 stats 回调存在缺口时，船插会缺失或数值保持原样。核对数据行、完整类名与 `applyEffectsBeforeShipCreation`；显示使用 `getArmorBonus`，结算使用 `getEffectiveArmorBonus`。
+- **S-mod 内置后加成不变**：分支写在 `advanceInCombat` 或 `applyEffectsAfterShipCreation` 时，生涯 stats 不会执行它。将 S-mod 判断放入 `applyEffectsBeforeShipCreation`，并使用回调传入的 `stats`。
+- **装配界面没有 S-mod 效果段**：`sModDesc` 为空、以 `#` 开头，或 `%s` 与参数数量不一致。修正描述和 `getSModDescriptionParam` 后重新打开 tooltip。
+- **多艘船的计数与计时互相污染**：per-ship 状态写进了会话级船插实例。把计数和 `IntervalUtil` 放进每艘船独立创建的监听器，船插类只保留常量和无状态方法。
+- **伤害抵消监听器从未触发**：监听器挂错对象，或实例从未交给 `ship.addListener(...)`。将它挂在承受伤害的舰船或引擎层，再次承受舰体伤害。
+- **动态与静态修饰导致数值乱跳**：两个来源使用了相同 modifier ID。为动态来源使用独立稳定的 `DYNAMIC_ID`，重新比较面板和战斗数值。
+- **tick 日志在同一周期出现多行**：同一舰船重复注册了 `AdvanceableListener`。注册前使用 `hasListenerOfClass` 查重，再观察日志频率。
+- **战斗数值正确但生涯面板没有加成**：stats 修改只写在战斗回调中。把共用数值修饰移入 `applyEffectsBeforeShipCreation`，战斗回调只处理战斗行为。
 
 ## 总结
 
@@ -504,33 +406,33 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 完整最小例：HullMod 生命周期、tooltip、S-mod 与监听器接入。
  *
- * 主题：装甲训练。效果类扩展 BaseHullMod（HullModEffect 的空实现基类）；
- * 效果类是会话级单例（HullModEffect javadoc 原文），本类不持有任何跨船字段 ——
- * 每艘船自己的状态（周期计时、抵消计数）放在 applyEffectsAfterShipCreation
- * 里注册的监听器实例中（每艘船一个实例，随舰船实体一起销毁）。
+ * 主题：装甲训练。效果类扩展 BaseHullMod(HullModEffect 的空实现基类)；
+ * 效果类是会话级单例(HullModEffect javadoc 原文)，本类不持有任何跨船字段 ——
+ * 每艘船自己的状态(周期计时、抵消计数)放在 applyEffectsAfterShipCreation
+ * 里注册的监听器实例中(每艘船一个实例，随舰船实体一起销毁)。
  *
  * 生命周期覆盖：
- * - applyEffectsBeforeShipCreation：生涯与战斗都会调用的 stats 入口（C7-S3）；
+ * - applyEffectsBeforeShipCreation：生涯与战斗都会调用的 stats 入口(C7-S3)；
  *   这里同时演示 S-mod 分支：isSMod(stats) 为 true 时把同一 id 的修饰覆盖为更大值；
- * - applyEffectsAfterShipCreation：战斗侧舰船实体创建后调用（含装配界面预览舰），
- *   注册监听器的正式位置；不承担 stats 修改（API javadoc 原文）；
+ * - applyEffectsAfterShipCreation：战斗侧舰船实体创建后调用(含装配界面预览舰)，
+ *   注册监听器的正式位置；不承担 stats 修改(API javadoc 原文)；
  * - applyEffectsAfterShipAddedToCombatEngine：每艘船加入战斗引擎只回调一次
- *   （API javadoc 原文 "Only called once."）；
- * - advanceInCombat：战斗每帧调用，暂停时不调用（API javadoc 原文）；
- *   演示每帧幂等写 StatBonus（同 ID 覆盖，不累积，C7-S3 规则 6）；
+ *   (API javadoc 原文 "Only called once.")；
+ * - advanceInCombat：战斗每帧调用，暂停时不调用(API javadoc 原文)；
+ *   演示每帧幂等写 StatBonus(同 ID 覆盖，不累积，C7-S3 规则 6)；
  * - advanceInCampaign：生涯每帧调用；舰队数据重同步时以 amount=0 调用
- *   （API javadoc 原文），这里只在该时机输出一行作为生命周期证明。
+ *   (API javadoc 原文)，这里只在该时机输出一行作为生命周期证明。
  *
  * tooltip：desc 的 %s 由 getDescriptionParam(0..n) 填充，sModDesc 的 %s
- * 由 getSModDescriptionParam(0..n) 填充（BaseHullMod / 标准 tooltip）。
+ * 由 getSModDescriptionParam(0..n) 填充(BaseHullMod / 标准 tooltip)。
  */
 public class GearInArmorTrainingHullMod extends BaseHullMod {
 
     private static final Logger LOG = Global.getLogger(GearInArmorTrainingHullMod.class);
 
-    /** 基础效果：有效护甲 +10%（getDescriptionParam(0) 输出同值）。 */
+    /** 基础效果：有效护甲 +10%(getDescriptionParam(0) 输出同值)。 */
     public static final float ARMOR_BONUS_PERCENT = 10f;
-    /** S-mod 额外加成：applyEffects 合计 25%、动态加成上限 15%（getSModDescriptionParam 0/1 输出）。 */
+    /** S-mod 额外加成：applyEffects 合计 25%、动态加成上限 15%(getSModDescriptionParam 0/1 输出)。 */
     public static final float SMOD_ADDITIONAL_PERCENT = 15f;
     /** 装甲平均比例高于该值时，监听器抵消即将发生的舰体结构伤害。 */
     public static final float NEGATION_ARMOR_FRACTION = 0.5f;
@@ -539,7 +441,7 @@ public class GearInArmorTrainingHullMod extends BaseHullMod {
 
     @Override
     public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAPI stats, String id) {
-        // S-mod 分支：同一 id 同类型只保留一条条目，S-mod 时直接覆盖为合计值（C7-S3 覆盖语义）。
+        // S-mod 分支：同一 id 同类型只保留一条条目，S-mod 时直接覆盖为合计值(C7-S3 覆盖语义)。
         float bonus = ARMOR_BONUS_PERCENT + (isSMod(stats) ? SMOD_ADDITIONAL_PERCENT : 0f);
         stats.getArmorBonus().modifyPercent(id, bonus);           // 面板/生涯可见的护甲评级
         stats.getEffectiveArmorBonus().modifyPercent(id, bonus);  // 命中结算时的有效护甲
@@ -548,14 +450,14 @@ public class GearInArmorTrainingHullMod extends BaseHullMod {
     @Override
     public void applyEffectsAfterShipCreation(ShipAPI ship, String id) {
         // 每艘船实体一个监听器实例：跨船状态只能放在这里，不能放效果类字段。
-        // 装配界面预览舰也会走到这里（舰船显示面板按 (variant, true, ...) 创建舰船对象重建显示实体）。
+        // 装配界面预览舰也会走到这里(舰船显示面板按 (variant, true, ...) 创建舰船对象重建显示实体)。
         ship.addListener(new ArmorTrainingListener(ship));
         LOG.info("GearIn armor training: listener attached to " + ship.getName());
     }
 
     @Override
     public void applyEffectsAfterShipAddedToCombatEngine(ShipAPI ship, String id) {
-        // 一次性回调：舰船移除后再加入引擎也不会再次调用（API javadoc 原文）。
+        // 一次性回调：舰船移除后再加入引擎也不会再次调用(API javadoc 原文)。
         LOG.info("GearIn armor training combat-ready: " + ship.getName() + " (once per engine add)");
     }
 
@@ -572,7 +474,7 @@ public class GearInArmorTrainingHullMod extends BaseHullMod {
 
     @Override
     public void advanceInCampaign(FleetMemberAPI member, float amount) {
-        // 生涯每帧调用；舰队数据重同步（如舰队界面移动成员）时以 amount=0 调用（API javadoc 原文）。
+        // 生涯每帧调用；舰队数据重同步(如舰队界面移动成员)时以 amount=0 调用(API javadoc 原文)。
         // 只在同步时机输出一行，作为"该回调确实被调用"的证明，避免每帧刷屏。
         if (amount <= 0f) {
             LOG.info("GearIn armor training campaign sync: " + member.getShipName()
@@ -594,7 +496,7 @@ public class GearInArmorTrainingHullMod extends BaseHullMod {
         return null;
     }
 
-    /** 装甲网格平均比例（0..1）：网格总值 /（格子数 × 单格最大值）。 */
+    /** 装甲网格平均比例(0..1)：网格总值 /(格子数 × 单格最大值)。 */
     private static float armorFraction(ArmorGridAPI grid) {
         float[][] cells = grid.getGrid();
         float maxCell = grid.getMaxArmorInCell();
@@ -611,11 +513,11 @@ public class GearInArmorTrainingHullMod extends BaseHullMod {
     }
 
     /**
-     * 每艘船一个实例（applyEffectsAfterShipCreation 里注册），持有本船的状态。
+     * 每艘船一个实例(applyEffectsAfterShipCreation 里注册)，持有本船的状态。
      * 同时实现两个监听器接口：
      * - HullDamageAboutToBeTakenListener：舰体结构伤害结算前回调，返回 true 即抵消
-     *   （API javadoc 原文："if true is returned, the hull damage to be taken is negated."）；
-     * - AdvanceableListener：舰船级每帧推进（战斗舰船对象的每帧推进仅对 amount>0 派发，即暂停时不调用），
+     *   (API javadoc 原文："if true is returned, the hull damage to be taken is negated.")；
+     * - AdvanceableListener：舰船级每帧推进(战斗舰船对象的每帧推进仅对 amount>0 派发，即暂停时不调用)，
      *   这里用它做 5 秒一次的状态输出 —— 周期计时器是单船状态，合法放在本实例。
      */
     public static class ArmorTrainingListener implements HullDamageAboutToBeTakenListener, AdvanceableListener {

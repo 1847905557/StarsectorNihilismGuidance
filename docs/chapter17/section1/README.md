@@ -122,6 +122,15 @@ return true;
 
 分别准备 4 种启用组合：两个库都缺席、仅 Nexerelin、仅 LunaLib、两个库都启用。每种组合都使用同一 GearIn JAR。
 
+### 启用组合检测结果速查表
+
+| 安装组合 | Nexerelin 检测 | LunaLib 检测 |
+|---|---|---|
+| 两个库都缺席 | false | false |
+| 仅 Nexerelin | true | false |
+| 仅 LunaLib | false | true |
+| 两个库都启用 | true | true |
+
 1. 启动并读档，记录两个 `is*Enabled()` 的返回值。
 2. 连续调用 `getFullGraphicEffect(true)` 100 次，记录返回值和缺席日志条数。
 3. 连续调用 `reportNexerelinFallback()` 100 次，记录 Nexerelin 缺席日志条数。

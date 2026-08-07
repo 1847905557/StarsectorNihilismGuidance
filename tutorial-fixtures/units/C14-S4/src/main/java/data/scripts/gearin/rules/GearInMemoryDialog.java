@@ -10,10 +10,10 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
 
 /**
- * 规则对话打开脚本（EveryFrameScript）：记忆写入与过期验证完成（KEY_TAG 存在、
- * probe 已被移除）后，打开初始 trigger 为 GearInMemoryDialog 的对话 —— 对话文本、
- * 条件与选项全部来自 rules.csv 中本节拥有的 GearIn_memory_* 规则（$global. /
- * $player. / 无点号回落 local 三种读法 + $player. 赋值 0 天过期）。
+ * 规则对话打开脚本(EveryFrameScript)：记忆写入与过期验证完成(KEY_TAG 存在、
+ * probe 已被移除)后，打开初始 trigger 为 GearInMemoryDialog 的对话 —— 对话文本、
+ * 条件与选项全部来自 rules.csv 中本节拥有的 GearIn_memory_* 规则($global. /
+ * $player. / 无点号回落 local 三种读法 + $player. 赋值 0 天过期)。
  */
 public class GearInMemoryDialog implements EveryFrameScript {
 
@@ -42,7 +42,7 @@ public class GearInMemoryDialog implements EveryFrameScript {
         MemoryAPI sector = Global.getSector().getMemoryWithoutUpdate();
         if (!sector.contains(GearInMemoryKeys.KEY_TAG)
                 || sector.contains(GearInMemoryKeys.KEY_PROBE)) {
-            return; // 等写入与过期演示完成（probe 移除后）再弹对话，日志顺序可预期
+            return; // 等写入与过期演示完成(probe 移除后)再弹对话，日志顺序可预期
         }
         CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
         if (fleet == null) {

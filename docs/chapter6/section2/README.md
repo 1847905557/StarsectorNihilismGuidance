@@ -27,47 +27,16 @@
 
 本节的读者任务是一条链：声明入口类、让加载器实例化它、按顺序收到回调、在首次进入存档时完成一次性初始化。从声明到回调共六段：
 
-环节
+### 生命周期链路速查表
 
-文件或 API
-
-使用方 / 行为
-
-声明
-
-`mod_info.json` 的 `modPlugin`
-
-可选字段：启动时读取，缺失时为 `null`
-
-登记
-
-资源加载期
-
-每个已启用 MOD 的 `modPlugin` 类名注册进脚本类加载器；`null` 类名会被跳过
-
-实例化
-
-`ModManagerAPI.getEnabledModPlugins()`
-
-首次调用时按 `coreLifecyclePlugin`(原版 `CoreLifecyclePluginImpl`，恒为列表第一个)→ 各 MOD 顺序，经脚本类加载器按类名创建实例 (`Class.forName` + `newInstance`，失败抛 `Problem loading class [...]`)，创建结果**缓存复用**；`modPlugin` 为 `null` 的 MOD 直接跳过
-
-回调派发
-
-游戏管理器 / MOD 启用记录 / 战斗状态
-
-新档、读档、保存、F8 重载各节点对缓存列表循环调用
-
-首次进入门
-
-`SectorAPI.getPersistentData()`
-
-返回随存档保存的 `Map<String, Object>`；`CLASS_MARK` 模式用它做一次性初始化门
-
-实例化 (特例)
-
-启用状态通知
-
-`onEnabled` 触发时**每次都新建一个实例**再调用，与上面缓存的实例不是同一个对象
+| 环节 | 文件或 API | 使用方 / 行为 |
+|---|---|---|
+| 声明 | `mod_info.json` 的 `modPlugin` | 可选字段：启动时读取，缺失时为 `null` |
+| 登记 | 资源加载期 | 每个已启用 MOD 的 `modPlugin` 类名注册进脚本类加载器；`null` 类名会被跳过 |
+| 实例化 | `ModManagerAPI.getEnabledModPlugins()` | 首次调用时按 `coreLifecyclePlugin`(原版 `CoreLifecyclePluginImpl`，恒为列表第一个)→ 各 MOD 顺序，经脚本类加载器按类名创建实例 (`Class.forName` + `newInstance`，失败抛 `Problem loading class [...]`)，创建结果**缓存复用**；`modPlugin` 为 `null` 的 MOD 直接跳过 |
+| 回调派发 | 游戏管理器 / MOD 启用记录 / 战斗状态 | 新档、读档、保存、F8 重载各节点对缓存列表循环调用 |
+| 首次进入门 | `SectorAPI.getPersistentData()` | 返回随存档保存的 `Map<String, Object>`；`CLASS_MARK` 模式用它做一次性初始化门 |
+| 实例化 (特例) | 启用状态通知 | `onEnabled` 触发时**每次都新建一个实例**再调用，与上面缓存的实例不是同一个对象 |
 
 ::: info `modPlugin` 缺失不是错误
 
@@ -247,7 +216,7 @@ if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
 Starsector/mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
-├── mod_info.json          # 追加 modPlugin 字段（见上）
+├── mod_info.json          # 追加 modPlugin 字段(见上)
 ├── data/
 ├── src/
 │   └── data/scripts/gearin/GearInModPlugin   # 本节新增
@@ -273,7 +242,7 @@ Starsector/mods/GearIndustry/
 ```java
     @Override
     public void onNewGame() {
-        // C3-S6：新档生成入口（齿轮工业星系与关系播种），累计工程保留
+        // C3-S6：新档生成入口(齿轮工业星系与关系播种)，累计工程保留
         new data.scripts.gearin.campaign.GearInSystemGenerator().generate(Global.getSector());
         seedRelations(Global.getSector());
         log("onNewGame");
@@ -337,15 +306,15 @@ public void onGameLoad(boolean newGame) { Global.getSector().addScript(new GearI
 
 ## 故障分析
 
-- **启动时报 `Problem loading class [data.scripts.gearin.GearInModPlugin]`：**`modPlugin`、包名、目录或 jar 内容不一致。用 `jar tf` 核对类路径，再与 `modPlugin` 值逐段对照。
-- **启动时报 `ClassCastException`：**入口类没有实现 `ModPlugin`。让类继承 `BaseModPlugin`，重新构建后启动。
-- **游戏正常但没有任何 `GearIn lifecycle:` 日志：**`mod_info.json` 没有有效的 `modPlugin` 字段。补上完整类名并重启，首个应用回调应写入日志。
-- **`onApplicationLoad` 抛出 `NullPointerException`：**该阶段访问了尚未建立的 `Global.getSector()`。把生涯状态操作移入 `onGameLoad` 或 `onNewGame`。
-- **每次读档都重复首次初始化：**一次性逻辑直接写在 `onGameLoad`，却没有 persistent data 标记。用 `CLASS_MARK` 门控，并确认初始化日志只出现一次。
-- **脚本或监听器随读档次数叠加：**注册前没有调用 `hasScript`、`hasListenerOfClass` 或 `hasPlugin` 查重。补上对应判断，连续读档后确认推进频率不再增加。
-- **新档初始化执行两遍：**同一状态同时写在 `onNewGame` 与 `onGameLoad(true)`。把共用初始化收敛到带持久标记的 `onGameLoad`，只把纯新档逻辑留在 `onNewGame`。
-- **切换存档后仍使用上一档对象：**`SectorAPI` 或生涯实体被保存在入口类实例字段中，而入口实例会跨存档复用。把状态放入 `getPersistentData()` 或随存档保存的对象，重新切档验证。
-- **高版本游戏直到运行深处才暴露兼容错误：**`onApplicationLoad` 没有检查 `getGameVersion()`。在入口处验证 `0.98a` 前缀，不匹配时立即中止启动并给出明确错误。
+- **启动时报 `Problem loading class [data.scripts.gearin.GearInModPlugin]`**：`modPlugin`、包名、目录或 jar 内容不一致。用 `jar tf` 核对类路径，再与 `modPlugin` 值逐段对照。
+- **启动时报 `ClassCastException`**：入口类没有实现 `ModPlugin`。让类继承 `BaseModPlugin`，重新构建后启动。
+- **游戏正常但没有任何 `GearIn lifecycle:` 日志**：`mod_info.json` 没有有效的 `modPlugin` 字段。补上完整类名并重启，首个应用回调应写入日志。
+- **`onApplicationLoad` 抛出 `NullPointerException`**：该阶段访问了尚未建立的 `Global.getSector()`。把生涯状态操作移入 `onGameLoad` 或 `onNewGame`。
+- **每次读档都重复首次初始化**：一次性逻辑直接写在 `onGameLoad`，却没有 persistent data 标记。用 `CLASS_MARK` 门控，并确认初始化日志只出现一次。
+- **脚本或监听器随读档次数叠加**：注册前没有调用 `hasScript`、`hasListenerOfClass` 或 `hasPlugin` 查重。补上对应判断，连续读档后确认推进频率不再增加。
+- **新档初始化执行两遍**：同一状态同时写在 `onNewGame` 与 `onGameLoad(true)`。把共用初始化收敛到带持久标记的 `onGameLoad`，只把纯新档逻辑留在 `onNewGame`。
+- **切换存档后仍使用上一档对象**：`SectorAPI` 或生涯实体被保存在入口类实例字段中，而入口实例会跨存档复用。把状态放入 `getPersistentData()` 或随存档保存的对象，重新切档验证。
+- **高版本游戏直到运行深处才暴露兼容错误**：`onApplicationLoad` 没有检查 `getGameVersion()`。在入口处验证 `0.98a` 前缀，不匹配时立即中止启动并给出明确错误。
 
 ## 总结
 
@@ -385,11 +354,11 @@ import com.fs.starfarer.api.impl.campaign.shared.SharedData;
 /**
  * 完整最小例：ModPlugin 生命周期、注册与存档入口。
  * mod_info.json 的 modPlugin 字段指向本类。
- * 每个回调打印一行日志；"首次进入存档"的一次性初始化用 sector persistent data 门控（CLASS_MARK 模式）。
+ * 每个回调打印一行日志；"首次进入存档"的一次性初始化用 sector persistent data 门控(CLASS_MARK 模式)。
  */
 public class GearInModPlugin extends BaseModPlugin {
 
-    /** 存档持久化标记：本 MOD 是否已完成首次进入初始化（随存档保存）。 */
+    /** 存档持久化标记：本 MOD 是否已完成首次进入初始化(随存档保存)。 */
     public static final String CLASS_MARK = "GearInModPlugin";
 
     @Override

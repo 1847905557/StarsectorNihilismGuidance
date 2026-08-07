@@ -11,7 +11,7 @@ import com.fs.starfarer.api.combat.OnHitEffectPlugin;
 import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
 
 /**
- * 命中回调（.proj onHitEffect 注册列，每射弹一个实例）。
+ * 命中回调(.proj onHitEffect 注册列，每射弹一个实例)。
  * 射弹命中结算时回调一次，参数是本次命中结算结果，
  * 禁止缓存跨命中使用。本类只观察并打日志，不修改任何游戏数值。
  */

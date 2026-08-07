@@ -30,6 +30,16 @@ BoxUtil 提供点、线、聚光、区域与无限光五种形态，它们的选
 
 五类 Light 都继承 `BaseIlluminantData`，共享位置、颜色、强度、衰减和全局计时；`LinearLight`、`SpotLight` 与 `AreaLight` 再增加各自几何状态。`EntityShadingDataManager` 分别查询舰船、导弹材质集合，以及弹体、光束、引擎的发光注册。
 
+### 光源选型速查表
+
+| 发光对象 | 光源类型 | 关键几何参数 |
+|---|---|---|
+| 弹体 | `PointLight` | 各向发散，衰减半径 180 su |
+| 光束 | `LinearLight` | 长度 240 su，柱半径 18 su |
+| 舰首 | `SpotLight` | 锥角 18°，朝向随舰首同步 |
+| 大面积面板 | `AreaLight` | 尺寸 180 × 70 su |
+| 全局环境 | `InfiniteLight` | 低强度，关闭距离衰减 |
+
 ### 为弹体选择 PointLight
 
 **插入位置：`GearInLightFactory.createFiveKinds()`。** 创建各向发散的短程光源，并写入通用局部光参数。

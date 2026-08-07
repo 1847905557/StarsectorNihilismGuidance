@@ -13,7 +13,7 @@ import exerelin.campaign.intel.specialforces.namer.SpecialForcesNamer;
  * 特遣队命名器：实现 Nexerelin 的 SpecialForcesNamer 接口。
  * 注册方式：gear_industry.json 的 specialForcesNamerClass 指向本类；
  * 由 Nexerelin 在生成特遣队时经脚本类加载器 loadClass + newInstance
- * （无参构造）后调用 getFleetName，至多重试 25 次直到名字不重复。
+ * (无参构造)后调用 getFleetName，至多重试 25 次直到名字不重复。
  *
  * 命名形如 "1st GearIn Prime Forgeguard"：以起源市场命名，编号随机，
  * 降低与既有特遣队撞名概率；origin 缺失时回退势力首个市场，再回退 "GearIn"。

@@ -13,15 +13,15 @@ import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.input.InputEventAPI;
 
 /**
- * 完整最小例的接线载体：BoxUtil 初始化（initLater 守卫）、可用性判据与生成
+ * 完整最小例的接线载体：BoxUtil 初始化(initLater 守卫)、可用性判据与生成
  * 计时在这里，实体生成委托给 GearInBoxSpawner；
- * 由既有战斗插件在 init() 中 addPlugin 注册（C7-S1 模型），只在本场战斗内有效。
+ * 由既有战斗插件在 init() 中 addPlugin 注册(C7-S1 模型)，只在本场战斗内有效。
  */
 public class GearInBoxEntity extends BaseEveryFrameCombatPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInBoxEntity.class);
 
-    /** 生成间隔（秒）。 */
+    /** 生成间隔(秒)。 */
     private static final float SPAWN_INTERVAL = 2f;
 
     private CombatEngineAPI engine;
@@ -49,7 +49,7 @@ public class GearInBoxEntity extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine == null) {
-            return; // 防御性判空（C2-S1 同款姿势）
+            return; // 防御性判空(C2-S1 同款姿势)
         }
         if (engine.isPaused()) {
             return; // 暂停守卫：实体生成只在非暂停推进

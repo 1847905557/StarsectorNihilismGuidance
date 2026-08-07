@@ -14,10 +14,10 @@ import com.fs.starfarer.api.input.InputEventAPI;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 战斗插件观察者：由战斗上下文 addPlugin 注册（C7-S1 模型）。
+ * 战斗插件观察者：由战斗上下文 addPlugin 注册(C7-S1 模型)。
  * init() 把伤害监听器接入引擎，每帧识别新生成的射弹，并按 3 秒节奏
- * 触发武器 / 射弹 / 导弹 / 光束的运行态报告（实现见 GearInStateReport）。
- * 暂停守卫：暂停时武器 / 射弹 / 光束都不推进，只有插件 advance 仍被调用（C7-S1）。
+ * 触发武器 / 射弹 / 导弹 / 光束的运行态报告(实现见 GearInStateReport)。
+ * 暂停守卫：暂停时武器 / 射弹 / 光束都不推进，只有插件 advance 仍被调用(C7-S1)。
  */
 public class GearInFlowObserverPlugin extends BaseEveryFrameCombatPlugin {
 
@@ -25,7 +25,7 @@ public class GearInFlowObserverPlugin extends BaseEveryFrameCombatPlugin {
 
     private CombatEngineAPI engine;
     private final IntervalUtil reportInterval = new IntervalUtil(3f, 3f);
-    /** 已见过的射弹（specId + 实体身份码），用于逐帧识别"新生成"的射弹。 */
+    /** 已见过的射弹(specId + 实体身份码)，用于逐帧识别"新生成"的射弹。 */
     private final Set<String> seenProjectiles = new HashSet<>();
 
     @Override
@@ -50,7 +50,7 @@ public class GearInFlowObserverPlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
-    /** 逐帧识别新生成的射弹（含导弹与光束脉冲），打印生成时刻的运行态。 */
+    /** 逐帧识别新生成的射弹(含导弹与光束脉冲)，打印生成时刻的运行态。 */
     private void trackNewProjectiles() {
         for (DamagingProjectileAPI projectile : engine.getProjectiles()) {
             if (seenProjectiles.add(keyOf(projectile))) {

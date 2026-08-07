@@ -39,57 +39,19 @@
 
 ## 梳理 Rules 数据关系
 
-### 数据入口与列语义
+### rules.csv 列语义速查表
 
 词义固定后，从数据入口开始，沿加载、匹配、执行三条链看机制。规则表只有一份来源：**所有** `data/campaign/rules.csv`(原版 + 全部启用 MOD 各自一份，加载时合并)。原版表头为七列 (`Starsector\starsector-core\data\campaign\rules.csv` 首行；加载器按列名读取，列顺序即表头顺序)：
 
-列
-
-加载方式
-
-语义
-
-`id`
-
-`getString("id")`
-
-规则唯一标识；id 以 `#` 开头 → 整行跳过；空 id → 行跳过
-
-`trigger`
-
-`getString("trigger")`
-
-规则所属触发器名 (分组 key)
-
-`conditions`
-
-`getString("conditions")`：去 `\r`、trim、按 `\n` 拆行，每行一条条件表达式
-
-匹配阶段必须全部为真
-
-`script`
-
-`getString("script")`：去 `\r`、trim、按 `\n` 拆行，每行一条脚本表达式
-
-命中后按顺序执行的结果
-
-`text`
-
-`optString("text", null)`：去尾部空白、按 `\nOR\n` 拆段
-
-文本变体列表；`pickText()` 随机取一条展示
-
-`options`
-
-`getString("options")`：去 `\r`、按 `\n` 拆行
-
-选项列表：每行 `id:text` 或 `order:id:text`
-
-`notes`
-
-**不读取** (加载流程没有该列的取值入口)
-
-备注，供人阅读
+| 列 | 加载方式 | 语义 |
+|---|---|---|
+| `id` | `getString("id")` | 规则唯一标识；id 以 `#` 开头 → 整行跳过；空 id → 行跳过 |
+| `trigger` | `getString("trigger")` | 规则所属触发器名 (分组 key) |
+| `conditions` | `getString("conditions")`：去 `\r`、trim、按 `\n` 拆行，每行一条条件表达式 | 匹配阶段必须全部为真 |
+| `script` | `getString("script")`：去 `\r`、trim、按 `\n` 拆行，每行一条脚本表达式 | 命中后按顺序执行的结果 |
+| `text` | `optString("text", null)`：去尾部空白、按 `\nOR\n` 拆段 | 文本变体列表；`pickText()` 随机取一条展示 |
+| `options` | `getString("options")`：去 `\r`、按 `\n` 拆行 | 选项列表：每行 `id:text` 或 `order:id:text` |
+| `notes` | **不读取** (加载流程没有该列的取值入口) | 备注，供人阅读 |
 
 `conditions` / `script` / `options` 中 `#` 开头的行是注释行；空行跳过。
 
@@ -132,53 +94,17 @@ token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` �
 
 操作符全集：`=`(赋值)、`==`、`!=`、`>`、`>=`、`<`、`<=`、`!`(取反)、`++`、`--`。
 
-形式
+### 表达式形式速查表
 
-示例
-
-语义与归属
-
-纯变量 (判真)
-
-`$tag:warning_beacon`
-
-`IS` 语义：记忆值 null → false；字符串 `"true"`(去空白、忽略大小写) 或 `Boolean.TRUE` → true；其余 (含 `"1"`、`"false"`)→ false
-
-比较
-
-`$option == GearIn_rules_intro_leave`、`$entity.relativeStrength >= 0`、`$faction.id == independent`
-
-`==`/`!=`/`<`/`<=`/`>`/`>=`；字符串比较大小写敏感；数值经 `Memory.parseFloat`；`==` 双侧都 null → true、null 与字面量 `"null"` 互等、`0` 与 `"false"`/`"null"` 互等
-
-取反
-
-`!$var`、`!Command args`
-
-变量判反 / 命令结果取反；`!` 的运算对象必须是变量或命令
-
-赋值
-
-`$menuState = fleetConvMain 0`
-
-`=` 只能出现在**脚本列** (条件列出现 → 加载崩溃)；第三 token 为过期天数 (可选，`0` = 立即过期语义；过期天数的完整语义属 [C14-S4])
-
-增减
-
-`$GearIn_rules_intro_visits++`、`$x--`
-
-浮点自增/自减；第三 token 为过期天数 (原版脚本列含 595 处 `++`、16 处 `--`)
-
-命令
-
-`RollProbability 0.5`、`FireAll PopulateOptions`、`SetShortcut beaconLeave "ESCAPE"`
-
-首 token 非变量即命令：按 `ruleCommandPackages`(`data/config/settings.json`，5 个包，默认回退 `com.fs.starfarer.api.impl.campaign.rulecmd`) 逐个 `Class.forName` 定位；找不到 → 加载崩溃 `Command [...] not found in packages`；命令执行异常在对话内显示红字段落 (`<异常类>: <消息>`)，dialog 为 null 时重抛
-
-分数
-
-`$temporarilyIgnoreYou score:10`
-
-行尾字面量 `score:N` 改写该条件分数 (默认 1)，参与 `FireBest` 竞争
+| 形式 | 示例 | 语义与归属 |
+|---|---|---|
+| 纯变量 (判真) | `$tag:warning_beacon` | `IS` 语义：记忆值 null → false；字符串 `"true"`(去空白、忽略大小写) 或 `Boolean.TRUE` → true；其余 (含 `"1"`、`"false"`)→ false |
+| 比较 | `$option == GearIn_rules_intro_leave`、`$entity.relativeStrength >= 0`、`$faction.id == independent` | `==`/`!=`/`<`/`<=`/`>`/`>=`；字符串比较大小写敏感；数值经 `Memory.parseFloat`；`==` 双侧都 null → true、null 与字面量 `"null"` 互等、`0` 与 `"false"`/`"null"` 互等 |
+| 取反 | `!$var`、`!Command args` | 变量判反 / 命令结果取反；`!` 的运算对象必须是变量或命令 |
+| 赋值 | `$menuState = fleetConvMain 0` | `=` 只能出现在**脚本列** (条件列出现 → 加载崩溃)；第三 token 为过期天数 (可选，`0` = 立即过期语义；过期天数的完整语义属 [C14-S4]) |
+| 增减 | `$GearIn_rules_intro_visits++`、`$x--` | 浮点自增/自减；第三 token 为过期天数 (原版脚本列含 595 处 `++`、16 处 `--`) |
+| 命令 | `RollProbability 0.5`、`FireAll PopulateOptions`、`SetShortcut beaconLeave "ESCAPE"` | 首 token 非变量即命令：按 `ruleCommandPackages`(`data/config/settings.json`，5 个包，默认回退 `com.fs.starfarer.api.impl.campaign.rulecmd`) 逐个 `Class.forName` 定位；找不到 → 加载崩溃 `Command [...] not found in packages`；命令执行异常在对话内显示红字段落 (`<异常类>: <消息>`)，dialog 为 null 时重抛 |
+| 分数 | `$temporarilyIgnoreYou score:10` | 行尾字面量 `score:N` 改写该条件分数 (默认 1)，参与 `FireBest` 竞争 |
 
 > 判真很严格：只有字符串 `"true"`(忽略大小写) 与 `Boolean.TRUE` 为真，null、`"1"`、`"false"` 一律为假；比较操作符对字符串大小写敏感。
 
@@ -188,45 +114,17 @@ token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` �
 
 对话插件向 `memoryMap` 装入哪些记忆，见下文使用方完整流程的表。`$tag:`、`$mc:`、`$friendlyToPlayer` 等 facts 键由 `CoreCampaignPluginImpl` 的 `updateEntityFacts` / `updateMarketFacts` / `updatePersonFacts` / `updateFactionFacts` 钩子写入 (`com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`)；使用 `$tag:xxx` 条件的前提是目标实体确实带该 tag。
 
-### 结果执行链
+### FireBest 与 FireAll 结果执行速查表
 
 规则命中后，结果由内置命令 `FireBest` / `FireAll` (`com.fs.starfarer.api.impl.campaign.rulecmd` 包) 执行，两条路径的对比如下：
 
-步骤
-
-`FireBest`
-
-`FireAll`
-
-触发名
-
-`params[0]`(变量则取记忆值)；`params[1]` = keepOptions
-
-同左；另在实体记忆写 `$fireAllTrigger`(expire 0)，并先 `FireBest` 触发 `FireAllIntercept`—— 有命中规则即整体拦截
-
-选规则
-
-`getBestMatching`(分数竞争，null → 返回 `false`)
-
-`getAllMatching`(全部通过者，空 → 返回 `false`)
-
-选项
-
-收集 `rule.getOptions()` + 脚本中 `doesCommandAddOptions()==true` 的表达式 → 按 `order`(选项 `order` 字段 / `getOptionOrder`) 排序 → 非 keepOptions 时清空选项面板 → 逐个添加 (选项文本先做 token 替换)
-
-全部命中规则的选项合并、排序、清空后添加
-
-文本
-
-`addText`：`rule.pickText()` 随机取一条文本变体 → `performTokenReplacement` → `textPanel.addParagraph`
-
-每条命中规则各执行一次 `addText`
-
-脚本
-
-`rule.runScript(dialog, memoryMap)`
-
-每条命中规则各执行一次
+| 步骤 | `FireBest` | `FireAll` |
+|---|---|---|
+| 触发名 | `params[0]`(变量则取记忆值)；`params[1]` = keepOptions | 同左；另在实体记忆写 `$fireAllTrigger`(expire 0)，并先 `FireBest` 触发 `FireAllIntercept`—— 有命中规则即整体拦截 |
+| 选规则 | `getBestMatching`(分数竞争，null → 返回 `false`) | `getAllMatching`(全部通过者，空 → 返回 `false`) |
+| 选项 | 收集 `rule.getOptions()` + 脚本中 `doesCommandAddOptions()==true` 的表达式 → 按 `order`(选项 `order` 字段 / `getOptionOrder`) 排序 → 非 keepOptions 时清空选项面板 → 逐个添加 (选项文本先做 token 替换) | 全部命中规则的选项合并、排序、清空后添加 |
+| 文本 | `addText`：`rule.pickText()` 随机取一条文本变体 → `performTokenReplacement` → `textPanel.addParagraph` | 每条命中规则各执行一次 `addText` |
+| 脚本 | `rule.runScript(dialog, memoryMap)` | 每条命中规则各执行一次 |
 
 `Rule.runScript` 按声明顺序执行脚本表达式，跳过选项型命令 (`doesCommandAddOptions()==true` 的由 `FireBest` / `FireAll` 提前执行)—— 所以选项型命令即使写在脚本列里，也不会在脚本阶段重复执行。
 
@@ -234,33 +132,15 @@ token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` �
 
 rulecmd 参数内需要替换时用 `Misc.Token.getStringWithTokenReplacement`。
 
-### 使用方完整流程
+### 使用方完整流程速查表
 
 机制到这里已经齐全，最后看实际的使用方 —— 对话插件如何把规则变成对话。
 
-使用方
-
-位置
-
-触发方式
-
-规则驱动对话插件 `RuleBasedInteractionDialogPluginImpl`
-
-`com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl`
-
-构造器指定初始 trigger(默认 `OpenInteractionDialog`)；`init` 组装 `memoryMap`(`local` = 交互目标记忆或活动人物记忆、`faction`、`global`、`player`、`market`、`sourceMarket`、活动人物时的 `personFaction`/`entity`)→ `fireBest(initialTrigger)` → 无任何选项时加 failsafe `Leave`；玩家点选项 → 本地记忆写 `$option`(expire 0)→ `fireBest("DialogOptionSelected")` → 无匹配规则时文本报 `ERROR: no rule found for option [...]` 并加 failsafe `Exit dialog`
-
-舰队遭遇对话 `FleetInteractionDialogPluginImpl`
-
-`com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`
-
-`reinit` 用 `getBestMatching(null, "BeginFleetEncounter", ...)` 决定是否给 "Continue" 选项；开通讯 (`OPEN_COMM`) 时内嵌 `RuleBasedInteractionDialogPluginImpl` 并 `fireBest("OpenCommLink")`，无匹配则报 "only get static"
-
-非对话面板 (规则记忆组装)
-
-非对话文本面板 (内部实现)
-
-组装简化 memoryMap 后 `FireBest.fire(...)` 面板文本 trigger(使用例：已选阵营信息面板的 `RelationshipLevelDesc`)
+| 使用方 | 位置 | 触发方式 |
+|---|---|---|
+| 规则驱动对话插件 `RuleBasedInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl` | 构造器指定初始 trigger(默认 `OpenInteractionDialog`)；`init` 组装 `memoryMap`(`local` = 交互目标记忆或活动人物记忆、`faction`、`global`、`player`、`market`、`sourceMarket`、活动人物时的 `personFaction`/`entity`)→ `fireBest(initialTrigger)` → 无任何选项时加 failsafe `Leave`；玩家点选项 → 本地记忆写 `$option`(expire 0)→ `fireBest("DialogOptionSelected")` → 无匹配规则时文本报 `ERROR: no rule found for option [...]` 并加 failsafe `Exit dialog` |
+| 舰队遭遇对话 `FleetInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl` | `reinit` 用 `getBestMatching(null, "BeginFleetEncounter", ...)` 决定是否给 "Continue" 选项；开通讯 (`OPEN_COMM`) 时内嵌 `RuleBasedInteractionDialogPluginImpl` 并 `fireBest("OpenCommLink")`，无匹配则报 "only get static" |
+| 非对话面板 (规则记忆组装) | 非对话文本面板 (内部实现) | 组装简化 memoryMap 后 `FireBest.fire(...)` 面板文本 trigger(使用例：已选阵营信息面板的 `RelationshipLevelDesc`) |
 
 原版 `rules.csv`：7 列、9749 条非注释规则、800 个不同 trigger，大族为：
 
@@ -275,93 +155,25 @@ rulecmd 参数内需要替换时用 `Misc.Token.getStringWithTokenReplacement`�
 
 `DialogOptionSelected` 全部 6050 条都带条件 (无空条件行)：原版选项必须回流 `$option ==` 条件。
 
-## 规则强度
+## 规则强度速查表
 
 把引擎的行为边界汇总成一张核对表：必须项违反后加载中止，事实项描述运行时的真实行为；每行都附上违反后的可观察结果。
 
-规则
-
-强度
-
-违反后的可观察结果
-
-`conditions` 列禁止出现 `=`(赋值) 操作符 (报错文案："rule \[...\] has = ('assignment') operator in its conditions, this is most likely an error")
-
-必须
-
-资源加载期 `RuntimeException`，游戏启动中止
-
-`script` 列禁止出现 `==` 操作符 (加载期校验)
-
-必须
-
-资源加载期 `RuntimeException`，游戏启动中止
-
-选项 id 禁止以 `$` 开头 (报错文案："Option id starts with $ for rule \[...\]")
-
-必须
-
-资源加载期 `RuntimeException`，游戏启动中止
-
-条件/脚本引用的命令类必须能在 `ruleCommandPackages`(`data/config/settings.json`) 中找到
-
-必须
-
-资源加载期 `RuntimeException`(`Command [...] not found in packages:`)，游戏启动中止
-
-同一份 `rules.csv` 内规则 id 不得重复 (文本读取工具同文件去重逻辑："Duplicate key \[...\]")
-
-必须
-
-资源加载期 `RuntimeException`，游戏启动中止
-
-跨文件重复规则 id：后处理文件的同 id 行静默跳过 (先到先得)
-
-事实
-
-规则不触发且无任何报错；`starsector.log` 中看不到该 id 的 `Loading rule:` 行
-
-文本变体分隔符必须独占一行，且严格为 `\nOR\n`(变体按该分隔符切分)
-
-必须
-
-分隔符不匹配时多段文本被当作单条变体整段展示
-
-`options` 每行必须是 `id:text`(2 段) 或 `order:id:text`(3 段)，按**所有**冒号切分；文本内不得再有冒号
-
-必须
-
-3 段且首段非数字 → `NumberFormatException` 加载崩溃；3 段以上 → 文本静默截断 (只保留第 3 段)
-
-选项 id 必须与 `DialogOptionSelected` 规则里的 `$option == <id>` 逐字一致 (含大小写；表达式比较大小写敏感)
-
-必须
-
-点选后无规则匹配：文本面板出现 `ERROR: no rule found for option <id>` + failsafe 选项 (`RuleBasedInteractionDialogPluginImpl`)
-
-`FireAll` 之前会先匹配 `FireAllIntercept` 触发器 (`FireAll`)
-
-事实
-
-拦截规则命中时本次 `FireAll` 被整体跳过 (原版仅 1 条拦截规则，条件是 `$fireAllTrigger == PopulateOptions` 等，不影响自定义 trigger)
-
-条件列会执行命令：带副作用的 rulecmd 在**匹配阶段**就写状态 (条件求值路径会直接执行命令)
-
-事实
-
-每次匹配 (包括候选失败前已通过的条件) 都执行副作用；写状态应放脚本列
-
-同分规则随机挑选
-
-事实
-
-期望确定性结果时必须用 `score:` 拉开分数差
-
-`setRandomForNextRulePick` 只影响下一次 pick
-
-事实
-
-跨多次匹配复用随机源会改变文本选择语义
+| 规则 | 强度 | 违反后的可观察结果 |
+|---|---|---|
+| `conditions` 列禁止出现 `=`(赋值) 操作符 (报错文案："rule \[...\] has = ('assignment') operator in its conditions, this is most likely an error") | 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
+| `script` 列禁止出现 `==` 操作符 (加载期校验) | 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
+| 选项 id 禁止以 `$` 开头 (报错文案："Option id starts with $ for rule \[...\]") | 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
+| 条件/脚本引用的命令类必须能在 `ruleCommandPackages`(`data/config/settings.json`) 中找到 | 必须 | 资源加载期 `RuntimeException`(`Command [...] not found in packages:`)，游戏启动中止 |
+| 同一份 `rules.csv` 内规则 id 不得重复 (文本读取工具同文件去重逻辑："Duplicate key \[...\]") | 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
+| 跨文件重复规则 id：后处理文件的同 id 行静默跳过 (先到先得) | 事实 | 规则不触发且无任何报错；`starsector.log` 中看不到该 id 的 `Loading rule:` 行 |
+| 文本变体分隔符必须独占一行，且严格为 `\nOR\n`(变体按该分隔符切分) | 必须 | 分隔符不匹配时多段文本被当作单条变体整段展示 |
+| `options` 每行必须是 `id:text`(2 段) 或 `order:id:text`(3 段)，按**所有**冒号切分；文本内不得再有冒号 | 必须 | 3 段且首段非数字 → `NumberFormatException` 加载崩溃；3 段以上 → 文本静默截断 (只保留第 3 段) |
+| 选项 id 必须与 `DialogOptionSelected` 规则里的 `$option == <id>` 逐字一致 (含大小写；表达式比较大小写敏感) | 必须 | 点选后无规则匹配：文本面板出现 `ERROR: no rule found for option <id>` + failsafe 选项 (`RuleBasedInteractionDialogPluginImpl`) |
+| `FireAll` 之前会先匹配 `FireAllIntercept` 触发器 (`FireAll`) | 事实 | 拦截规则命中时本次 `FireAll` 被整体跳过 (原版仅 1 条拦截规则，条件是 `$fireAllTrigger == PopulateOptions` 等，不影响自定义 trigger) |
+| 条件列会执行命令：带副作用的 rulecmd 在**匹配阶段**就写状态 (条件求值路径会直接执行命令) | 事实 | 每次匹配 (包括候选失败前已通过的条件) 都执行副作用；写状态应放脚本列 |
+| 同分规则随机挑选 | 事实 | 期望确定性结果时必须用 `score:` 拉开分数差 |
+| `setRandomForNextRulePick` 只影响下一次 pick | 事实 | 跨多次匹配复用随机源会改变文本选择语义 |
 
 ## 组装 Rules 对话实现
 
@@ -375,10 +187,10 @@ Starsector\mods\GearIndustry\
 ├── mod_info.json
 ├── data\
 │   └── campaign\
-│       └── rules.csv                     # 本节新增：GearIn_rules_intro_* 规则（本节示例所有权）
+│       └── rules.csv                     # 本节新增：GearIn_rules_intro_* 规则(本节示例所有权)
 ├── src\
 │   └── data\scripts\gearin\rules\
-│       └── GearInRulesIntro             # 本节新增：Java 消费入口（归本节所有）
+│       └── GearInRulesIntro             # 本节新增：Java 消费入口(归本节所有)
 └── jars\
 ```
 
@@ -394,14 +206,14 @@ OR
 再次见到您，$playerName。规则系统按独占一行的 OR 把 text 列拆成多条变体，每次随机取一条。","GearIn_rules_intro_open:查看详情
 5:GearIn_rules_intro_leave:结束","本节示例所有权 GearIn_rules_intro_*"
 GearIn_rules_intro_add_a,GearInRulesIntroAdd,,,FireAll 附加文本：条件为空，必然追加。,,
-GearIn_rules_intro_add_b,GearInRulesIntroAdd,RollProbability 0.0,,FireAll 附加文本：命令条件恒假（RollProbability 0.0），永不追加。,,
+GearIn_rules_intro_add_b,GearInRulesIntroAdd,RollProbability 0.0,,FireAll 附加文本：命令条件恒假(RollProbability 0.0)，永不追加。,,
 GearIn_rules_intro_open,DialogOptionSelected,$option == GearIn_rules_intro_open,"$GearIn_rules_intro_opens = 1 0
 FireAll GearInRulesIntroAdd
 FireBest GearInRulesIntroDetail",,,
 GearIn_rules_intro_detail_low,GearInRulesIntroDetail,$GearIn_rules_intro_opens >= 1,,低分规则：条件总分 1，FireBest 竞争失败。,,
 GearIn_rules_intro_detail_high,GearInRulesIntroDetail,"$GearIn_rules_intro_opens >= 1
 RollProbability 1.0
-!$GearIn_rules_intro_skip score:100","$GearIn_rules_intro_last = detail 0",高分规则：条件总分 102（1 + 1 + 100），FireBest 必然选中。,GearIn_rules_intro_leave:结束,
+!$GearIn_rules_intro_skip score:100","$GearIn_rules_intro_last = detail 0",高分规则：条件总分 102(1 + 1 + 100)，FireBest 必然选中。,GearIn_rules_intro_leave:结束,
 GearIn_rules_intro_leave,DialogOptionSelected,$option == GearIn_rules_intro_leave,DismissDialog,,,
 ```
 
@@ -438,18 +250,18 @@ import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
 /**
  * 完整最小例：rules.csv 数据驱动对话的 Java 消费入口。
  *
- * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），persistent data 键 REGISTER_MARK
- * 一次性门控（沿用 C9-S1 / C9-S5 的既有模式，每个注册项用各自的键）。
+ * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK
+ * 一次性门控(沿用 C9-S1 / C9-S5 的既有模式，每个注册项用各自的键)。
  *
  * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个初始
  * trigger 为 GearInRulesIntro 的对话；对话的文本、脚本与选项全部来自 data/campaign/rules.csv
  * 中本节拥有的 GearIn_rules_intro_* 规则 ——Java 侧不写任何文本与选项。
- * 验证闭环：注册入口（本类 + onGameLoad 门控）→ 数据文件（rules.csv）→ 运行消费者
- * （RuleBasedInteractionDialogPluginImpl → Rules 引擎）→ 可观察结果（对话文本与日志）。
+ * 验证闭环：注册入口(本类 + onGameLoad 门控)→ 数据文件(rules.csv)→ 运行消费者
+ * (RuleBasedInteractionDialogPluginImpl → Rules 引擎)→ 可观察结果(对话文本与日志)。
  */
 public class GearInRulesIntro implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过（随存档保存）。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_RulesIntro";
 
     private static final Logger LOG = Global.getLogger(GearInRulesIntro.class);
@@ -458,7 +270,7 @@ public class GearInRulesIntro implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInRulesIntro() {
-        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
+        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -498,7 +310,7 @@ public class GearInRulesIntro implements EveryFrameScript {
 调用点 (工程片段 —— 该方法属于插件生命周期主题所持有的类，本节只演示调用，不改动那些文件)：
 
 ```java
-    // GearInModPlugin（C6-S2 所有）onGameLoad(boolean newGame) 内新增本节注册块。
+    // GearInModPlugin(C6-S2 所有)onGameLoad(boolean newGame) 内新增本节注册块。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
     if (!Global.getSector().getPersistentData().containsKey(GearInRulesIntro.REGISTER_MARK)) {
         Global.getSector().getPersistentData().put(GearInRulesIntro.REGISTER_MARK, true);
@@ -539,7 +351,7 @@ gradle jar
     *   按 ESC 等于点选 "结束"(`SetShortcut` 生效)。
 * **点 "查看详情"**：文本面板按顺序追加三段：
     *   `FireAll 附加文本：条件为空，必然追加。`(`add_a` 命中；`add_b` 的 `RollProbability 0.0` 恒假不触发)；
-    *   `高分规则：条件总分 102（1 + 1 + 100），FireBest 必然选中。`(`detail_high` 总分 102 恒胜 `detail_low` 的 1 分，确定性)；
+    *   `高分规则：条件总分 102(1 + 1 + 100)，FireBest 必然选中。`(`detail_high` 总分 102 恒胜 `detail_low` 的 1 分，确定性)；
     *   选项面板被替换为单个 "结束"(`detail_high` 的选项；`FireBest` 非 keepOptions 时先清空再添加)。
 * **点 "结束"(或按 ESC)**：`DismissDialog` 关闭对话，游戏恢复。
 * **读档**：不出现 `GearIn rules intro dialog shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关)；对话本身不随存档保存。

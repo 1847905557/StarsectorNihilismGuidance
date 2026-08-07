@@ -8,7 +8,7 @@ import com.fs.starfarer.api.campaign.RepLevel;
 import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
- * 势力间关系（FactionAPI 关系族）：setRelationship / adjustRelationship / ensureAtWorst 确定性序列 + 同帧回滚。
+ * 势力间关系(FactionAPI 关系族)：setRelationship / adjustRelationship / ensureAtWorst 确定性序列 + 同帧回滚。
  */
 public class GearInFactionRelation {
 

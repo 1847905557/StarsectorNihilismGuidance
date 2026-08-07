@@ -8,33 +8,33 @@ import org.magiclib.util.MagicSettings;
 
 import com.fs.starfarer.api.Global;
 
-/** 设置接入（MagicSettings）：从 data/config/modSettings.json 的 "gear_in" 段读取
- * 光束与 HUD 配置，构造时缓存一次、不在每帧解析（MagicSettings javadoc 建议）。
- * 键缺失返回类型缺省值（false / 0 / Color.RED / 空集合）并写 warn 日志，不抛
+/** 设置接入(MagicSettings)：从 data/config/modSettings.json 的 "gear_in" 段读取
+ * 光束与 HUD 配置，构造时缓存一次、不在每帧解析(MagicSettings javadoc 建议)。
+ * 键缺失返回类型缺省值(false / 0 / Color.RED / 空集合)并写 warn 日志，不抛
  * 异常 —— 缺省值会参与后续运行语义，业务开关不要依赖缺省值。 */
 public class GearInMagicSettings {
 
     private static final Logger LOG = Global.getLogger(GearInMagicSettings.class);
 
-    /** data/config/modSettings.json 中本 MOD 的段名（= MOD id "gear_in"）。 */
+    /** data/config/modSettings.json 中本 MOD 的段名(= MOD id "gear_in")。 */
     private static final String CONFIG_SECTION = "gear_in";
 
     /** HUD 状态条总开关。 */
     public final boolean hudEnabled;
-    /** 光束宽度 / 射程 / 伤害 / EMP（数值键缺省 0）。 */
+    /** 光束宽度 / 射程 / 伤害 / EMP(数值键缺省 0)。 */
     public final float beamWidth;
     public final float beamRange;
     public final float beamDamage;
     public final float beamEmp;
-    /** 全亮与淡出时长（秒）：只控制视觉，不影响伤害结算。 */
+    /** 全亮与淡出时长(秒)：只控制视觉，不影响伤害结算。 */
     public final float beamFull;
     public final float beamFading;
     /** 命中光斑尺寸。 */
     public final float beamImpactSize;
-    /** 光束核心 / 边缘颜色（缺省 Color.RED）。 */
+    /** 光束核心 / 边缘颜色(缺省 Color.RED)。 */
     public final Color beamCoreColor;
     public final Color beamFringeColor;
-    /** 光束标签列表（缺省空集合）。 */
+    /** 光束标签列表(缺省空集合)。 */
     public final List<String> beamTags;
 
     public GearInMagicSettings() {

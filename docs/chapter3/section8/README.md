@@ -37,111 +37,29 @@
 2. 运行期查询入口是公开 API：`Global.getSettings().getDescription(id, type)`(`SettingsAPI`)，返回 `com.fs.starfarer.api.loading.Description`；找不到键时返回一个填充占位文本的新描述对象 (不报错)。
 3. 使用方先按 "对象 → 查找键" 取描述，再按展示位置取 text1–text5 之一。
 
-### 全类型键与使用方总览
+### 全类型键与使用方速查表
 
-`Description.Type` 共有 **11 个枚举值**，全部可以在 MOD 的 `descriptions.csv` 中添加。原版 `Starsector/starsector-core/data/strings/descriptions.csv` 行数：
+`Description.Type` 共有 **11 个枚举值**，全部可以在 MOD 的 `descriptions.csv` 中添加。原版 `Starsector/starsector-core/data/strings/descriptions.csv` 行数如下：
 
-Type 枚举
-
-`id` 列怎么写
-
-主要使用方 (界面位置)
-
-原版行数
-
-`SHIP`
-
-`.ship` 的 `descriptionId`，未填则回退 `hullId`[C1-S7]
-
-数据库船体详情、舰队 tooltip、装配界面、蓝图/货舱 tooltip
-
-178
-
-`WEAPON`
-
-武器 ID(`weapon_data.csv` 的 `id`)
-
-装配武器列表副标题、武器 tooltip、数据库武器详情
-
-129
-
-`SHIP_SYSTEM`
-
-系统 ID(`ship_systems.csv` / `.system` 的 `id`)
-
-装配界面系统行、数据库系统列表与详情
-
-56
-
-`RESOURCE`
-
-商品 ID(`data/campaign/commodities.csv` 的 `id`)
-
-货舱/交易界面货物 tooltip
-
-30
-
-`PLANET`
-
-行星类型键 (`data/config/planets.json` 的键；类型可经 `descriptionId` 共享)
-
-行星悬停 tooltip、行星详情面板
-
-38
-
-`ASTEROID`
-
-固定写 `asteroid`
-
-小行星 tooltip(标题 text2、正文 text1)
-
-1
-
-`FACTION`
-
-势力 ID
-
-通讯界面的势力信息面板、数据库势力详情
-
-9
-
-`TERRAIN`
-
-地形插件的 `getTerrainId()`；超空间地形另有 `_abyssal`/`_normal`/`_deep`/`_storm` 变体键
-
-星系地形 tooltip 正文
-
-16
-
-`ACTION_TOOLTIP`
-
-战斗命令名的小写形式 (如 `avoid`、`attack`)
-
-C2 命令 tooltip 正文 text1、命令显示名 text2
-
-33
-
-`GALLERY`
-
-`graphics/illustrations` 下的插图贴图键
-
-数据库图库：text1 标题、text2 正文、text3 隐藏/解锁控制
-
-90
-
-`CUSTOM`
-
-任意键，经 `SectorEntityToken.setCustomDescriptionId()` 挂到实体上
-
-实体 tooltip、行星接触文本、`PrintDescription` 规则命令等
-
-156
+| Type 枚举 | `id` 列怎么写 | 主要使用方 (界面位置) | 原版行数 |
+|---|---|---|---|
+| `SHIP` | `.ship` 的 `descriptionId`，未填则回退 `hullId`[C1-S7] | 数据库船体详情、舰队 tooltip、装配界面、蓝图/货舱 tooltip | 178 |
+| `WEAPON` | 武器 ID(`weapon_data.csv` 的 `id`) | 装配武器列表副标题、武器 tooltip、数据库武器详情 | 129 |
+| `SHIP_SYSTEM` | 系统 ID(`ship_systems.csv` / `.system` 的 `id`) | 装配界面系统行、数据库系统列表与详情 | 56 |
+| `RESOURCE` | 商品 ID(`data/campaign/commodities.csv` 的 `id`) | 货舱/交易界面货物 tooltip | 30 |
+| `PLANET` | 行星类型键 (`data/config/planets.json` 的键；类型可经 `descriptionId` 共享) | 行星悬停 tooltip、行星详情面板 | 38 |
+| `ASTEROID` | 固定写 `asteroid` | 小行星 tooltip(标题 text2、正文 text1) | 1 |
+| `FACTION` | 势力 ID | 通讯界面的势力信息面板、数据库势力详情 | 9 |
+| `TERRAIN` | 地形插件的 `getTerrainId()`；超空间地形另有 `_abyssal`/`_normal`/`_deep`/`_storm` 变体键 | 星系地形 tooltip 正文 | 16 |
+| `ACTION_TOOLTIP` | 战斗命令名的小写形式 (如 `avoid`、`attack`) | C2 命令 tooltip 正文 text1、命令显示名 text2 | 33 |
+| `GALLERY` | `graphics/illustrations` 下的插图贴图键 | 数据库图库：text1 标题、text2 正文、text3 隐藏/解锁控制 | 90 |
+| `CUSTOM` | 任意键，经 `SectorEntityToken.setCustomDescriptionId()` 挂到实体上 | 实体 tooltip、行星接触文本、`PrintDescription` 规则命令等 | 156 |
 
 要点：
 
 * **`id + type` 两列合成查找键**，`type` 是枚举名、区分大小写；`id` 或 `type` 为空的行被静默跳过。
 * **没有 "战机联队 (FIGHTER\_WING)" 类型**：战机复用其 hull 的 `SHIP` 行 (战斗对象描述的基础讲解已详述)。
-* **船插、市场条件、特殊物品不在 descriptions.csv 里**：它们的描述写在各自 CSV 的 `desc` 列 (见 "不属于 descriptions.csv 的描述")。
+* **船插、市场条件、特殊物品不在 descriptions.csv 里**：它们的描述写在各自 CSV 的 `desc` 列 (见 "非 descriptions.csv 描述来源速查表")。
 * `RESOURCE`/`PLANET`/`FACTION`/`TERRAIN`/`ASTEROID`/`ACTION_TOOLTIP`/`GALLERY` 与武器、系统一样，键**锁定在对象 ID 上，无法另起别名**；只有 `SHIP`(经 `.ship` 的 `descriptionId`) 与 `CUSTOM`(键完全自取) 可以自由命名。
 
 ## CSV 转义规则 (必须遵守的规则)
@@ -265,39 +183,16 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 * 优先级：行星/实体的 tooltip 与详情面板中，`customDescriptionId` 非空时 `CUSTOM` 行**覆盖** `PLANET` 行。
 * 原版参考行：`orbital_dockyard,CUSTOM,"An orbital dockyard, ..."`；自定义行星描述的常见写法是每颗行星一个 `CUSTOM` 键。
 
-### 不属于 descriptions.csv 的描述 (边界)
+### 非 descriptions.csv 描述来源速查表
 
 常被误认为描述类型的几类对象，全部**不走 descriptions.csv**：
 
-对象
-
-描述所在文件
-
-使用方
-
-船插 (hullmod)
-
-`data/hullmods/hull_mods.csv` 的 `desc` 列 (该文件的列结构已另行讲解)
-
-`HullModSpecAPI.getDescription(HullSize)`(`%s` 代换船体尺寸)
-
-市场条件 (condition)
-
-`data/campaign/market_conditions.csv` 的 `desc` 列
-
-市场界面条件 tooltip
-
-特殊物品 (special item)
-
-`data/campaign/special_items.csv` 的 `desc` 列
-
-货舱 tooltip 由物品插件渲染 (`BaseSpecialItemPlugin.createTooltip` → `spec.getDesc()`)
-
-商品 (commodity)
-
-见上文：显示文本以 `RESOURCE` 行为准，commodities.csv 的 `desc` 列不被读取
-
-货舱/交易 tooltip
+| 对象 | 描述所在文件 | 使用方 |
+|---|---|---|
+| 船插 (hullmod) | `data/hullmods/hull_mods.csv` 的 `desc` 列 (该文件的列结构已另行讲解) | `HullModSpecAPI.getDescription(HullSize)`(`%s` 代换船体尺寸) |
+| 市场条件 (condition) | `data/campaign/market_conditions.csv` 的 `desc` 列 | 市场界面条件 tooltip |
+| 特殊物品 (special item) | `data/campaign/special_items.csv` 的 `desc` 列 | 货舱 tooltip 由物品插件渲染 (`BaseSpecialItemPlugin.createTooltip` → `spec.getDesc()`) |
+| 商品 (commodity) | 见上文：显示文本以 `RESOURCE` 行为准，commodities.csv 的 `desc` 列不被读取 | 货舱/交易 tooltip |
 
 这些 CSV 的 `desc` 列由同一个 CSV 解析器解析，同样适用本节的转义规则。
 
@@ -380,8 +275,6 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
 
 ## 故障分析
 
-按 "症状 → 原因 → 修正" 逐条排查；每条都可以用本节示例数据复现。
-
 * **启动失败，日志含 `Mismatched quotes in the string; last quote: [...]`**：某个字段的引号不成对 (例如把示例行的 `""` 只写了一个)。CSV 解析器解析结束时检测到引号未闭合，直接抛 `JSONException`。修正：保证引号成对，重启。
 * **启动失败，日志含 `Key [type] has invalid value [...]`**：某行 `type` 列不是枚举名 (拼写、大小写或多余空格)。修正：与 11 个枚举名逐字符一致，重启。
 * **启动失败，日志含 `Duplicate key [...] while loading [data/strings/descriptions.csv from [...]`**：同一文件内出现相同 `id + type` 组合 (键串形如 `id | type |`)。修正：保证键全文件唯一，重启。
@@ -394,7 +287,7 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
 
 ## 总结
 
-`descriptions.csv` 的全部秘密可以收成一张表：**11 个 `Description.Type` 枚举，每个类型的 `id` 列怎么写、text1–text5 由谁消费**。
+`descriptions.csv` 的全部秘密都可以概括为：**11 个 `Description.Type` 枚举，每个类型的 `id` 列怎么写、text1–text5 由谁消费**。
 
 键的规律只有两类：
 

@@ -31,8 +31,6 @@
 
 游戏进程由自带的 JRE 启动：`Starsector\jre`(`release` 文件写明 `JAVA_VERSION="17.0.10"`，Zulu 17.48+15-CA)，`starsector-core\starsector.bat` 用 `..\jre\bin\java.exe` 运行。因此：
 
-必须
-
 编译 MOD 时**必须**把字节码目标定在 Java 17 或更低 (`--release 17`)；
 
 用更高版本 JDK 的默认目标 (如 JDK 21 默认 target 21) 编译的 class，游戏加载时会抛 `UnsupportedClassVersionError`(日志出现 `class file has wrong version`)，表现为启动或战斗开始时报错。
@@ -54,8 +52,6 @@
 * MOD 构建时用 `compileOnly` 引用公开 API(`com.fs.starfarer.api.*`) 的编译面，它**不得**被打包进 MOD 自己的 JAR；
 * 教程基线只依赖公开 API 面；个别需要 `com.fs.starfarer.api.impl` 或实现类细节的 MOD 会额外把核心实现 jar 放上编译路径，本教程不采用这种做法。
 
-背景
-
 为什么是 `compileOnly`？运行时 API 类由游戏提供，MOD 只须在编译期引用它们，产物只包含自己的类。把 API 编译面打包进 JAR 只会让产物膨胀；重复类还可能被游戏侧的父加载器静默遮蔽，造成类身份混淆。
 
 ### 配置 Gradle 编译目标
@@ -64,61 +60,23 @@
 
 两条编译约束缺一不可：`java.toolchain.languageVersion = JavaLanguageVersion.of(17)` 让 Gradle 自动选择本机 JDK 17；`options.release = 17` 强制字节码目标。
 
-注意
-
 `options.release` 用于防止 Gradle 自身跑在更高版本 JDK 上时悄悄把 target 抬高 —— 漏掉它时编译仍会成功，字节码目标随 Gradle 运行 JDK 漂移，直到游戏加载类时才以 `UnsupportedClassVersionError` 暴露。
 
 ## 文件与 API 链路
 
 工具链基线解决了 "怎么编译"，接下来要回答 "编译出的 jar 怎样进入游戏并生效"。从源码到游戏内生效共七段：
 
-环节
+### JAR 加载链路速查表
 
-文件或 API
-
-使用方 / 行为
-
-源码
-
-`GearInFrameLogger`(源文件位于 `src\data\scripts\gearin\combat\`)
-
-`javac`(Gradle `compileJava`)
-
-编译依赖
-
-游戏侧公开 API(`com.fs.starfarer.api.*`) 编译面
-
-`compileOnly`；运行时由游戏提供
-
-产物
-
-`jars\GearIndustry.jar`
-
-Gradle `jar` 任务输出
-
-声明
-
-`mod_info.json` 的 `jars` 数组
-
-`ModManagerAPI` 解析 (公开只读面为 `ModSpecAPI.getJars()`)
-
-挂载
-
-游戏启动期
-
-把 `<MOD 根目录>/<jars 声明值>` 逐项加入脚本类加载器的 jar 列表，日志 `Getting ready to load jar file [...]` 与 `Loading jar files`
-
-解析
-
-脚本类加载器 (`URLClassLoader`)
-
-脚本类按完整类名 `Class.forName`；jar 类优先于即时编译源码 (Janino 源码编译器是 jar 类加载器的子加载器，父加载器优先)
-
-注册与实例化
-
-`data\config\settings.json` 的 `plugins` 段
-
-CSV spec 加载期把 key→类名注册进脚本类加载器；每场战斗对 `EveryFrameCombatPlugin` 类型创建新实例并附加
+| 环节 | 文件或 API | 使用方 / 行为 |
+|---|---|---|
+| 源码 | `GearInFrameLogger`(源文件位于 `src\data\scripts\gearin\combat\`) | `javac`(Gradle `compileJava`) |
+| 编译依赖 | 游戏侧公开 API(`com.fs.starfarer.api.*`) 编译面 | `compileOnly`；运行时由游戏提供 |
+| 产物 | `jars\GearIndustry.jar` | Gradle `jar` 任务输出 |
+| 声明 | `mod_info.json` 的 `jars` 数组 | `ModManagerAPI` 解析 (公开只读面为 `ModSpecAPI.getJars()`) |
+| 挂载 | 游戏启动期 | 把 `<MOD 根目录>/<jars 声明值>` 逐项加入脚本类加载器的 jar 列表，日志 `Getting ready to load jar file [...]` 与 `Loading jar files` |
+| 解析 | 脚本类加载器 (`URLClassLoader`) | 脚本类按完整类名 `Class.forName`；jar 类优先于即时编译源码 (Janino 源码编译器是 jar 类加载器的子加载器，父加载器优先) |
+| 注册与实例化 | `data\config\settings.json` 的 `plugins` 段 | CSV spec 加载期把 key→类名注册进脚本类加载器；每场战斗对 `EveryFrameCombatPlugin` 类型创建新实例并附加 |
 
 运行期取得脚本类加载器的公开 API：`SettingsAPI.getScriptClassLoader()`；按完整类名创建实例：`SettingsAPI.getInstanceOfScript(String)`。本节不调用它们，只作阅读链路的对照。
 
@@ -258,8 +216,6 @@ rootProject.name = "gear_in"
 }
 ```
 
-必须
-
 `jars` 数组的每一项必须是相对 MOD 根目录的路径，用 `/` 分隔。游戏启动时按 `<MOD 根目录>/<声明值>` 拼接；写成绝对路径会被拼成 `<MOD 根目录>/<绝对路径>` 之类的无效路径。
 
 ### 配置运行时设置
@@ -294,8 +250,6 @@ gradle jar
 ```
 
 产物为 `jars\GearIndustry.jar`，其内部条目按包路径组织，包含 `data/scripts/gearin/combat/GearInFrameLogger.class`(可用 `jar tf` 核对)。
-
-提示
 
 想确认游戏加载的是新构建的 jar 而不是缓存或旧源码，可先改一个参数 (如把 `TICK_INTERVAL` 从 `3f` 改为 `5f`) 再重新构建 —— 日志中 tick 间隔随之变化即证明产物已更新；用 `jar tf jars\GearIndustry.jar` 可直接核对 jar 内部条目。
 
@@ -336,12 +290,12 @@ gradle jar
 
 ## 故障分析
 
-- **编译时报 `cannot find symbol`：**`com.fs.starfarer.api.*` 没有进入 classpath，或 IDE 语言级别低于 17。按本节 `build.gradle` 配置 `compileOnly`，确认 Project SDK 为 17 后重新构建。
-- **日志没有 jar 加载行：**`mod_info.json` 缺少 `jars` 字段、MOD 没有启用，或 jar 声明属于未启用的 MOD。确认 manifest 含 `"jars": ["jars/GearIndustry.jar"]`，启用 MOD 后重启。
-- **日志有 jar 加载行，但引用类时报 `Problem loading class`：**声明路径可能指向不存在的文件，或 jar 内没有对应完整类名。先把声明改成正确的相对路径，再用 `jar tf` 对照包名和类名。
-- **日志报告 `UnsupportedClassVersionError`：**class 文件版本高于游戏的 Java 17。保留 `toolchain 17` 与 `options.release = 17`，重新构建 jar 后复验。
-- **类在 jar 里但游戏没有任何行为：**该类没有被注册入口按名引用。通过 `settings.json` 的 `plugins`、`mod_info.json` 的 `modPlugin`[C6-S2] 或数据文件的 `script` 列 [C2-S2] 接入，再观察对应日志。
-- **修改源码并重启后行为仍是旧版本：**MOD 根目录残留同名源码，或 jar 没有重新构建。删除重复源码，以 jar 为唯一来源，并在启动前重新执行 `gradle jar`。
+- **编译时报 `cannot find symbol`**：`com.fs.starfarer.api.*` 没有进入 classpath，或 IDE 语言级别低于 17。按本节 `build.gradle` 配置 `compileOnly`，确认 Project SDK 为 17 后重新构建。
+- **日志没有 jar 加载行**：`mod_info.json` 缺少 `jars` 字段、MOD 没有启用，或 jar 声明属于未启用的 MOD。确认 manifest 含 `"jars": ["jars/GearIndustry.jar"]`，启用 MOD 后重启。
+- **日志有 jar 加载行，但引用类时报 `Problem loading class`**：声明路径可能指向不存在的文件，或 jar 内没有对应完整类名。先把声明改成正确的相对路径，再用 `jar tf` 对照包名和类名。
+- **日志报告 `UnsupportedClassVersionError`**：class 文件版本高于游戏的 Java 17。保留 `toolchain 17` 与 `options.release = 17`，重新构建 jar 后复验。
+- **类在 jar 里但游戏没有任何行为**：该类没有被注册入口按名引用。通过 `settings.json` 的 `plugins`、`mod_info.json` 的 `modPlugin`[C6-S2] 或数据文件的 `script` 列 [C2-S2] 接入，再观察对应日志。
+- **修改源码并重启后行为仍是旧版本**：MOD 根目录残留同名源码，或 jar 没有重新构建。删除重复源码，以 jar 为唯一来源，并在启动前重新执行 `gradle jar`。
 
 ## 总结
 

@@ -45,7 +45,7 @@
 4. 每个势力注册为一张 `FactionSpecAPI`，存入按类分组的 spec 表。**两个注册行产生了相同的势力 ID 时** (无论来自同一文件还是两份文件)，加载抛 `Spec of class [...] with id [X] already exists`，加载中断。
 5. 运行时入口：`Global.getSector().getFaction(id)` 按 ID 取 `FactionAPI`，`getAllFactions()` 枚举全部势力，`getPlayerFaction()` 取玩家势力。势力对象按 ID 缓存 (构造时从 spec 表取数据)，因此**势力 ID 在加载期就已经唯一**。
 
-### 解析势力字段
+### faction 必填字段速查表
 
 spec 加载流程对每个 faction 文件按固定顺序解析字段。**必填** (缺失即 `JSONException`，加载中断)：
 
@@ -58,6 +58,8 @@ spec 加载流程对每个 faction 文件按固定顺序解析字段。**必填*
 | `names` | `getJSONObject` | 加载中断 (可以是空对象 `{}`，但键必须存在)|
 | `portraits` | `getJSONObject` | 加载中断 (其中 `standard_male` / `standard_female` 数组可选，条目同时入贴图资源队列)|
 
+### 可选字段与加载期校验
+
 **可选** (带默认值或缺省行为)：
 
 - `crest`、`shipNamePrefix`(默认 `ISS`)、`shipNameSources`(缺省回退为 `ALL` 一项权重 1)、`displayNameLong` / `displayNameLongWithArticle`(回退显示名)、`entityNamePrefix` / `personNamePrefix` / `personNamePrefixAOrAn` / `displayNameIsOrAre`、`barSound`(默认 `bar_ambience`)、`internalComms`、`tariffFraction`(默认取 `data/campaign/econ/economy.json` 的 `defaultTariff`，为 0.3)、`tollFraction`(0.1)、`fineFraction`(0.25)、`color`(缺失回退白色)、`baseUIColor` / `darkUIColor` / `gridUIColor` / `brightUIColor` / `secondaryUIColor`、`music`。
@@ -67,7 +69,7 @@ spec 加载流程对每个 faction 文件按固定顺序解析字段。**必填*
 
 - `illegalCommodities` 数组里的每个 ID 必须在 `data/campaign/commodities.csv` 中存在，否则抛 `Invalid illegal commodity id: [X]`，加载中断。**不要**把武器、补给这类商品之外的物品写进去。
 - `variantOverrides` 的每个键是装配 ID，加载期就查装配并记下它所属的船体 (`getOverriddenHulls`)，装配不存在同样加载失败。
-- `hullFrequency.tags` 的每个 tag 会当场展开：遍历**所有已注册船体**，把带该 tag 的船体的出现倍率乘以对应数值 (基准 1.0)，写进 `hullFrequency.hulls` 的同一张表。数值 0 表示绝不出现。
+- `hullFrequency.tags` 的每个 tag 会当场展开：遍历**所有已注册船体**，把带该 tag 的船体的出现倍率乘以对应数值 (基准 1.0)，写进 `hullFrequency.hulls` 的同一个映射。数值 0 表示绝不出现。
 - `shipsWhenImporting` 如果既没有 tags 也没有 hulls(空列表)，回退为 `knownShips` 的并集。
 - `logo` / `crest` / 头像贴图路径全部进入 TEXTURE 资源队列，文件缺失在资源加载阶段直接报错。
 
@@ -192,13 +194,13 @@ data/world/factions/gear_industry.faction
 		"weapons":[],
 	},
 	"knownHullMods":{
-		"tags":["standard", "GearIn_bp"],   # standard 是原版通用船插 tag（见 hull_mods.csv 的 tags 列）
+		"tags":["standard", "GearIn_bp"],   # standard 是原版通用船插 tag(见 hull_mods.csv 的 tags 列)
 		"hullMods":[
 			"GearIn_stable_injector",
 		],
 	},
 	"factionDoctrine":{
-		# 组一：warships+carriers+phaseShips 总和建议 7，每一行 1–5（玩家势力编辑器即此约束）
+		# 组一：warships+carriers+phaseShips 总和建议 7，每一行 1–5(玩家势力编辑器即此约束)
 		"warships":4,
 		"carriers":2,
 		"phaseShips":1,
@@ -231,7 +233,7 @@ data/world/factions/gear_industry.faction
 		"drugs",
 		"organs",
 	],
-	"music":{                 # 各场景音乐，值为 sounds.json 已注册的音乐 ID（注册链见 C5-S2）
+	"music":{                 # 各场景音乐，值为 sounds.json 已注册的音乐 ID(注册链见 C5-S2)
 		"theme":"music_hegemony_market_neutral",
 		"market_neutral":"music_hegemony_market_neutral",
 		"market_hostile":"music_hegemony_market_hostile",
@@ -240,8 +242,8 @@ data/world/factions/gear_industry.faction
 		"encounter_hostile":"music_hegemony_encounter_hostile",
 		"encounter_friendly":"music_hegemony_encounter_friendly",
 	},
-	"internalComms":"hegemony_internal",  # 内部频道 ID，须在 data/campaign/channels.json 中注册（本节沿用原版频道）
-	"portraits":{             # 人物头像池（键必须存在；数组可省略，条目入资源队列）
+	"internalComms":"hegemony_internal",  # 内部频道 ID，须在 data/campaign/channels.json 中注册(本节沿用原版频道)
+	"portraits":{             # 人物头像池(键必须存在；数组可省略，条目入资源队列)
 		"standard_male":[
 			"graphics/portraits/portrait_hegemony01.png",
 			"graphics/portraits/portrait_mercenary03.png",
@@ -259,16 +261,16 @@ data/world/factions/gear_industry.faction
 			"factionLeader":{"name":"总工程师"},
 		},
 	},
-	"voices":{                # 联络人类型权重（spacer/faithful/pather/business/official/soldier/scientist/villain/aristo）
+	"voices":{                # 联络人类型权重(spacer/faithful/pather/business/official/soldier/scientist/villain/aristo)
 		"LOW":{"soldier":5,"spacer":5},
 		"MEDIUM":{"official":5,"soldier":5},
 		"HIGH":{"official":5,"aristo":2},
 	},
 	"custom":{
-		# 本地可核验的消费方只有 engageWhenEvenStrength（舰队 AI：势均力敌时也主动进攻）。
-		# 其余键是原版文件的惯例内容（offersCommissions、buysAICores、caresAboutAtrocities、
+		# 本地可核验的消费方只有 engageWhenEvenStrength(舰队 AI：势均力敌时也主动进攻)。
+		# 其余键是原版文件的惯例内容(offersCommissions、buysAICores、caresAboutAtrocities、
 		# punitiveExpeditionData、postsNoBounties、allowsTransponderOffTrade、decentralized、
-		# pirateBehavior、makesPirateBases、fightToTheLast、gaVIPMission 等），它们的消费方大多在
+		# pirateBehavior、makesPirateBases、fightToTheLast、gaVIPMission 等)，它们的消费方大多在
 		# 本教程可验证切片之外：照原样保留即可，但不要把势力行为的关键逻辑寄托在未核验的键上。
 		"engageWhenEvenStrength":false,
 		"offersCommissions":false,
@@ -293,6 +295,8 @@ data/world/factions/gear_industry.faction
 	},
 }
 ```
+
+### 势力文件必守规则速查表
 
 由于 faction 文件很长，无法逐字段列表，上文用注释注解了所有在本节有意义的字段。下面只总结必须遵守的规则 (均来自 spec 加载期解析 faction 文件的实现)：
 
@@ -379,9 +383,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 
 ## 实用势力包 (bp) 与其它生成型 tags 速查表
 
-下表 tag 存在性来自 `data/weapons/weapon_data.csv`、`data/hulls/ship_data.csv`、`data/hulls/wing_data.csv`、`data/hullmods/hull_mods.csv`；"引用它的势力文件" 来自 `data/world/factions/*.faction`。
-
-**不在本表上的数据均为与势力包 (bp) 和生成均无关的 tags。**
+下表 tag 存在性来自 `data/weapons/weapon_data.csv`、`data/hulls/ship_data.csv`、`data/hulls/wing_data.csv`、`data/hullmods/hull_mods.csv`；"引用它的势力文件" 来自 `data/world/factions/*.faction`。**不在本表上的数据均为与势力包 (bp) 和生成均无关的 tags。**
 
 | tag | 原版数据中存在性 | 引用它的原版势力文件 | 实际意义 |
 |---|---|---|---|

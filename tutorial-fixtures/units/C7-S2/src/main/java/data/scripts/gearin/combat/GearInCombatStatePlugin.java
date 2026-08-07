@@ -17,9 +17,9 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 完整最小例：战斗状态读取 —— 引擎状态、时间语义与舰队/舰船遍历。
  *
- * 本插件由战斗上下文注册（C7-S1 的插件模型），只在本场战斗内有效：
- * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存（C6-S3）；
- * - advance() 在暂停时仍会被调用（combatMap.advance 照常执行），
+ * 本插件由战斗上下文注册(C7-S1 的插件模型)，只在本场战斗内有效：
+ * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存(C6-S3)；
+ * - advance() 在暂停时仍会被调用(combatMap.advance 照常执行)，
  *   状态推进前必须先检查 engine.isPaused()；
  * - getShips() 包含残骸与等待移除的舰船，遍历必须用 isAlive() 过滤；
  * - 战机停在甲板时 isAlive() 仍为 true，但不在 getShips() 的列表里；
@@ -46,7 +46,7 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine.isPaused()) {
-            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进（C7-S1）
+            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进(C7-S1)
         }
         reportInterval.advance(amount);
         if (reportInterval.intervalElapsed()) {

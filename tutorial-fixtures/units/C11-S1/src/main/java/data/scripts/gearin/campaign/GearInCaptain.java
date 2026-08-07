@@ -8,7 +8,7 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 
 /**
- * 舰长（captain）：默认舰长读取（steady/空名/level 1）、setCaptain 交接与 getMemberWithCaptain 反查。
+ * 舰长(captain)：默认舰长读取(steady/空名/level 1)、setCaptain 交接与 getMemberWithCaptain 反查。
  */
 public class GearInCaptain {
 

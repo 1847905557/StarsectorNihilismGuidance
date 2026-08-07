@@ -11,17 +11,17 @@ import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Commodities;
 
 /**
- * 完整最小例（货物段）：CargoAPI 常用入口演示脚本。
+ * 完整最小例(货物段)：CargoAPI 常用入口演示脚本。
  *
- * 注册入口：onGameLoad（调用点片段见页面正文），persistent data 键 REGISTER_MARK 一次性门控。
+ * 注册入口：onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控。
  *
  * 行为：读取玩家舰队补给/燃料/陆战队员/信用/空间/栈数基线；addSupplies(100)/addFuel(50)/addMarines(10)
- * 后读取中间值，再 remove 同量回滚并读取终值（验证数值精确复原）；读取重型机械商品量与栈列表
- * 前几条（CargoStackAPI 的 type/data/size/isNull）。不遗留持久状态。
+ * 后读取中间值，再 remove 同量回滚并读取终值(验证数值精确复原)；读取重型机械商品量与栈列表
+ * 前几条(CargoStackAPI 的 type/data/size/isNull)。不遗留持久状态。
  */
 public class GearInCargoServicesScript extends GearInOneShotScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档执行过（随存档保存）。 */
+    /** 存档持久化标记：本脚本是否已在该存档执行过(随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_CargoServices";
 
     private static final Logger LOG = Global.getLogger(GearInCargoServicesScript.class);
@@ -68,7 +68,7 @@ public class GearInCargoServicesScript extends GearInOneShotScript {
         LOG.info(String.format("GearIn campaign services cargo stacks: before=%d during=%d after=%d nullAfter=%d",
                 stacksBefore, stacksDuring, stacksAfter, nullStacksAfter));
 
-        // 栈列表前三条（CargoStackAPI：type / data / size / isNull）
+        // 栈列表前三条(CargoStackAPI：type / data / size / isNull)
         List<CargoStackAPI> stacks = cargo.getStacksCopy();
         int stacksShown = Math.min(3, stacks.size());
         for (int i = 0; i < stacksShown; i++) {

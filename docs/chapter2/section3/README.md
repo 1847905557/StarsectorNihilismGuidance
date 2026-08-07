@@ -81,6 +81,8 @@ name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u 
 燃烧驱动,GearIn_burstdrive,1,,,,,,,,,2,5,1,10,TRUE,,,,,TRUE,TRUE,TRUE,TRUE,,,movement,graphics/icons/hullsys/burn_drive.png
 ```
 
+### 常用参数速查表
+
 最常用的五个参数 (修改它们即调整行为)：
 
 | 列 | 作用 | 本行值 |
@@ -271,16 +273,6 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
 最后把 `工匠-级` 的 `shield type` 改为 `PHASE`、`defense id` 填 `GearIn_resistfield`，这艘船就同时拥有主系统与右键系统。右键验证：进模拟战按右键，出现 `reduce damage taken` 状态文字与阻尼力场同款视觉，高爆/EMP 减伤最高 75%、动能/能量最高 50%。
 
-## 错误对照表
-
-| 症状 | 原因 | 修法 |
-|---|---|---|
-| 游戏无法启动，日志 `Fatal: ship_systems.csv is missing systems` | `.system` 已建但 CSV 没有对应 `id` 行 (或行首残留 `#`) | 在 CSV 补同名 `id` 行；检查行首无 `#` |
-| 系统存在但数值全为 0，按键瞬间结束 | CSV 的 `id` 与 `.system` 的 `id` 不一致 | 两个 `id` 逐字符一致 (注意大小写) |
-| 舰船部署时报 `System with id [...] not found` | `ship_data.csv` 的 `system id` 打错或系统未注册 | 核对三处 `id`：`.system`、CSV 行、`system id` 列 |
-| 系统结束后效果残留 | `unapply` 漏掉了 `apply` 里的某项 `unmodify` | `apply` 里每个 `modify` 都有对应 `unmodify` |
-| `Problem loading class [...]` | `statsScript`、包声明、文件路径不一致 | 按类名三处一致核对 |
-
 ## 验证方案
 
 前置数据：本节注册并挂载的 `GearIn_burstdrive` 与 `GearIn_resistfield` 战术系统。
@@ -300,11 +292,11 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
 ## 故障分析
 
-- **游戏加载时报 `Fatal: ship_systems.csv is missing systems`：**`.system` 已创建，但 CSV 没有对应行或行首仍有 `#`。补回 `GearIn_burstdrive` 数据行并取消注释，重启后确认加载继续。
-- **系统数值全为零：**CSV 行与 `.system` 使用了不同 ID，日志会出现 `not found in store`，按键后系统瞬间结束。统一两处 ID，重新进入战斗后核对持续时间。
-- **舰船部署时报 `System with id [...] not found`：**船体的 `system id` 拼错，或对应系统尚未注册。核对 `.ship`、`.system` 与 CSV 三处 ID，修正后重新部署。
-- **冷却结束后效果仍然残留：**`unapply` 没有撤销 `apply` 写入的修饰。使用同一 source id 成对撤销，再次完整激活并等待冷却结束。
-- **日志出现 `Problem loading class [...]`：**`statsScript` 类名、包声明和文件路径不一致，或文件错误地放在 `src\` 前缀下。将类放在 MOD 根目录对应包路径，统一三处名称后重启。
+- **游戏加载时报 `Fatal: ship_systems.csv is missing systems`**：`.system` 已创建，但 CSV 没有对应行或行首仍有 `#`。补回 `GearIn_burstdrive` 数据行并取消注释，重启后确认加载继续。
+- **系统数值全为零**：CSV 行与 `.system` 使用了不同 ID，日志会出现 `not found in store`，按键后系统瞬间结束。统一两处 ID，重新进入战斗后核对持续时间。
+- **舰船部署时报 `System with id [...] not found`**：船体的 `system id` 拼错，或对应系统尚未注册。核对 `.ship`、`.system` 与 CSV 三处 ID，修正后重新部署。
+- **冷却结束后效果仍然残留**：`unapply` 没有撤销 `apply` 写入的修饰。使用同一 source id 成对撤销，再次完整激活并等待冷却结束。
+- **日志出现 `Problem loading class [...]`**：`statsScript` 类名、包声明和文件路径不一致，或文件错误地放在 `src\` 前缀下。将类放在 MOD 根目录对应包路径，统一三处名称后重启。
 
 ## 总结
 

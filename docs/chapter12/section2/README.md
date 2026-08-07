@@ -50,33 +50,17 @@
 
 正文一律使用公开接口名 `CampaignEventListener`；教程主题里的 "CampaignListener" 指的就是这个概念。
 
-### 通道一：Sector 级 CampaignEventListener
+### 通道一注册入口速查表
 
 通道一是 MOD 直接实现 `CampaignEventListener` 的常规路径。注册入口 (`SectorAPI`，`com.fs.starfarer.api.campaign.SectorAPI`)：
 
-方法
-
-语义
-
-`void addListener(CampaignEventListener listener)`
-
-注册到**持久**监听器列表 (随存档保存)
-
-`void addTransientListener(CampaignEventListener listener)`
-
-注册到 **transient** 监听器列表 (不随存档保存，读档后清空)
-
-`void addListenerWithTimeout(CampaignEventListener listener, float daysToKeep)`
-
-注册到超时跟踪器，**daysToKeep 个游戏天**后自动移除
-
-`void removeListener(CampaignEventListener listener)`
-
-从三个列表同时移除
-
-`List<CampaignEventListener> getAllListeners()`
-
-三个列表的并集快照
+| 方法 | 语义 |
+|---|---|
+| `void addListener(CampaignEventListener listener)` | 注册到**持久**监听器列表 (随存档保存) |
+| `void addTransientListener(CampaignEventListener listener)` | 注册到 **transient** 监听器列表 (不随存档保存，读档后清空) |
+| `void addListenerWithTimeout(CampaignEventListener listener, float daysToKeep)` | 注册到超时跟踪器，**daysToKeep 个游戏天**后自动移除 |
+| `void removeListener(CampaignEventListener listener)` | 从三个列表同时移除 |
+| `List<CampaignEventListener> getAllListeners()` | 三个列表的并集快照 |
 
 存储与持久性 (生涯引擎侧)：
 
@@ -114,43 +98,19 @@ if (!this.isPaused()) {
     *   覆写关心的方法即可，不必实现 21 个方法的全接口。
 * `BaseCampaignEventListenerAndScript(float days)`(`com.fs.starfarer.api.campaign.BaseCampaignEventListenerAndScript`)：监听器与 `EveryFrameScript` 绑定在同一对象上的基类，构造器按 days 以超时方式注册监听器。
 
-### 通道二：ListenerManagerAPI 类型化通道
+### 通道二注册入口速查表
 
-通道一按对象存监听器，回调却按接口签名区分；`SectorAPI` 里的 `listenerManager` 就是按接口类型组织的第二通道。
+通道一按对象存监听器，回调却按接口签名区分；`SectorAPI.getListenerManager()` 返回按接口类型组织的第二通道 `ListenerManagerAPI`(`com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI`，7 个方法)：
 
-`SectorAPI.getListenerManager()` 返回 `ListenerManagerAPI`(`com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI`，7 个方法)：
-
-方法
-
-语义
-
-`void addListener(Object listener)`
-
-注册到持久仓库
-
-`void addListener(Object listener, boolean isTransient)`
-
-`isTransient=true` 注册到 transient 仓库
-
-`void removeListener(Object listener)`
-
-从两个仓库同时移除
-
-`void removeListenerOfClass(Class<?> c)`
-
-按类从两个仓库批量移除
-
-`boolean hasListener(Object listener)`
-
-两个仓库都查
-
-`boolean hasListenerOfClass(Class<?> c)`
-
-两仓库任一生效
-
-`<T> List<T> getListeners(Class<T> c)`
-
-返回持久 + transient 并集的**新列表副本**
+| 方法 | 语义 |
+|---|---|
+| `void addListener(Object listener)` | 注册到持久仓库 |
+| `void addListener(Object listener, boolean isTransient)` | `isTransient=true` 注册到 transient 仓库 |
+| `void removeListener(Object listener)` | 从两个仓库同时移除 |
+| `void removeListenerOfClass(Class<?> c)` | 按类从两个仓库批量移除 |
+| `boolean hasListener(Object listener)` | 两个仓库都查 |
+| `boolean hasListenerOfClass(Class<?> c)` | 两仓库任一生效 |
+| `<T> List<T> getListeners(Class<T> c)` | 返回持久 + transient 并集的**新列表副本** |
 
 实现 (`ListenerManagerAPI`)：内部由两个仓库构成 ——`listeners`(持久) 与 `transientListeners`(transient，读档时重建)。语义要点：
 
@@ -182,61 +142,24 @@ if (!this.isPaused()) {
 
 `BaseCampaignEventListener` 已提供空实现，示例只覆写市场交易、战斗结束和舰队变化等当前任务需要的回调。选择方法时从玩家实际完成的动作反推事件边界，再到接口中查对应签名；整份方法清单不会帮助判断监听器应在何时注册和移除。
 
-### 事件边界：触发点表现
+### 事件边界触发点速查表
 
 方法签名只说明回调能拿到什么，触发时机要落到引擎的实现位置。以下触发点是 "事件边界" 判定的依据：
 
-事件
-
-触发点 (具体表现)
-
-市场开启/关闭
-
-打开市场交互对话框时 `reportPlayerOpenedMarket`，对话框关闭时 `reportPlayerClosedMarket`；打开贸易面板时 `reportPlayerOpenedMarketAndCargoUpdated`
-
-贸易结算
-
-贸易面板与整备界面 (舰船、武器、战机) 结算后 `reportPlayerMarketTransaction`；倾倒货物、未取走战利品也经贸易面板触发
-
-战斗发生/结束
-
-自动结算轮结算出胜者后 `reportBattleOccurred`、战斗结束 `reportBattleFinished`；AI vs AI 每个自动结算轮一次、玩家遭遇战一次；玩家战斗结算生成 `EngagementResultAPI` 后 `reportPlayerEngagement`(`com.fs.starfarer.api.impl.campaign.FleetEncounterContext`)；战利品生成 `reportEncounterLootGenerated`(`com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`)
-
-舰队入地
-
-舰队加入地点且未上报过 (`isReportedSpawned` 标志) 时 `reportFleetSpawned`—— 每支舰队只上报一次
-
-舰队离场
-
-`CampaignFleetAPI.despawn(FleetDespawnReason, Object)` 内 `reportFleetDespawned`——reason 与 param 由调用方决定
-
-舰队跳跃/到达
-
-超空间跳跃处理上报 `reportFleetJumped`(devmode 跳跃同样触发)；舰队 AI 到达 assignment 目标时上报 `reportFleetReachedEntity`
-
-声望变更
-
-声望行动处理插件结算后 `reportPlayerReputationChange`(`com.fs.starfarer.api.impl.campaign.CoreReputationPlugin`)
-
-经济迭代
-
-经济推进器每次迭代 `reportEconomyTick(iterIndex)`、月末 `reportEconomyMonthEnd`(同时派发类型化通道 `EconomyTickListener`)
-
-当前位置变化
-
-引擎检测到当前地点变化时经 `ListenerUtil.reportCurrentLocationChanged` 派发 (类型化通道 `CurrentLocationChangedListener`)
-
-对话框
-
-打开交互对话框后上报 `reportShowInteractionDialog`(`SectorAPI`)，随后回调 `CampaignEventListener.reportShownInteractionDialog`
-
-遭遇开始
-
-玩家舰队与实体接触形成遭遇时，引擎内部开始遭遇处理 (非公开 API，MOD 观察不到)；玩家侧后续以交互对话框/战斗事件体现
-
-能力开关
-
-公开 API 有派发方法，具体触发点在引擎内部 —— 语义：玩家激活/停用能力时回调
+| 事件 | 触发点 (具体表现) |
+|---|---|
+| 市场开启/关闭 | 打开市场交互对话框时 `reportPlayerOpenedMarket`，对话框关闭时 `reportPlayerClosedMarket`；打开贸易面板时 `reportPlayerOpenedMarketAndCargoUpdated` |
+| 贸易结算 | 贸易面板与整备界面 (舰船、武器、战机) 结算后 `reportPlayerMarketTransaction`；倾倒货物、未取走战利品也经贸易面板触发 |
+| 战斗发生/结束 | 自动结算轮结算出胜者后 `reportBattleOccurred`、战斗结束 `reportBattleFinished`；AI vs AI 每个自动结算轮一次、玩家遭遇战一次；玩家战斗结算生成 `EngagementResultAPI` 后 `reportPlayerEngagement`(`com.fs.starfarer.api.impl.campaign.FleetEncounterContext`)；战利品生成 `reportEncounterLootGenerated`(`com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`) |
+| 舰队入地 | 舰队加入地点且未上报过 (`isReportedSpawned` 标志) 时 `reportFleetSpawned`—— 每支舰队只上报一次 |
+| 舰队离场 | `CampaignFleetAPI.despawn(FleetDespawnReason, Object)` 内 `reportFleetDespawned`——reason 与 param 由调用方决定 |
+| 舰队跳跃/到达 | 超空间跳跃处理上报 `reportFleetJumped`(devmode 跳跃同样触发)；舰队 AI 到达 assignment 目标时上报 `reportFleetReachedEntity` |
+| 声望变更 | 声望行动处理插件结算后 `reportPlayerReputationChange`(`com.fs.starfarer.api.impl.campaign.CoreReputationPlugin`) |
+| 经济迭代 | 经济推进器每次迭代 `reportEconomyTick(iterIndex)`、月末 `reportEconomyMonthEnd`(同时派发类型化通道 `EconomyTickListener`) |
+| 当前位置变化 | 引擎检测到当前地点变化时经 `ListenerUtil.reportCurrentLocationChanged` 派发 (类型化通道 `CurrentLocationChangedListener`) |
+| 对话框 | 打开交互对话框后上报 `reportShowInteractionDialog`(`SectorAPI`)，随后回调 `CampaignEventListener.reportShownInteractionDialog` |
+| 遭遇开始 | 玩家舰队与实体接触形成遭遇时，引擎内部开始遭遇处理 (非公开 API，MOD 观察不到)；玩家侧后续以交互对话框/战斗事件体现 |
+| 能力开关 | 公开 API 有派发方法，具体触发点在引擎内部 —— 语义：玩家激活/停用能力时回调 |
 
 ## 生命周期规则
 
@@ -379,9 +302,9 @@ Starsector/mods/GearIndustry/
 ├── data/
 ├── src/
 │   └── data/scripts/gearin/campaign/
-│       ├── GearInCampaignListener        # 本节新增（通道一：Sector 级监听器）
-│       ├── GearInListenerLifecycleScript # 本节新增（通道一：生命周期脚本，与监听器配对）
-│       └── GearInLocationChangeListener  # 本节新增（通道二：ListenerManagerAPI 类型化监听器）
+│       ├── GearInCampaignListener        # 本节新增(通道一：Sector 级监听器)
+│       ├── GearInListenerLifecycleScript # 本节新增(通道一：生命周期脚本，与监听器配对)
+│       └── GearInLocationChangeListener  # 本节新增(通道二：ListenerManagerAPI 类型化监听器)
 └── jars/
 ```
 
@@ -422,7 +345,7 @@ Starsector/mods/GearIndustry/
     SectorAPI sector = Global.getSector();
 
     // 通道一：监听器 + 生命周期脚本配对注册。addListener 按同一性去重，但 addScript 不去重，
-    // 因此整个注册块必须用 REGISTER_MARK 门控（硬规则 2）。
+    // 因此整个注册块必须用 REGISTER_MARK 门控(硬规则 2)。
     if (!sector.getPersistentData().containsKey(GearInCampaignListener.REGISTER_MARK)) {
         sector.getPersistentData().put(GearInCampaignListener.REGISTER_MARK, true);
         GearInCampaignListener listener = new GearInCampaignListener();
@@ -432,7 +355,7 @@ Starsector/mods/GearIndustry/
     }
 
     // 通道二：类型化监听器，transient 注册。读档后 transient 仓库被清空，
-    // hasListenerOfClass 判空补注册（硬规则 4）；ListenerManagerAPI 不去重，别去掉这个判空。
+    // hasListenerOfClass 判空补注册(硬规则 4)；ListenerManagerAPI 不去重，别去掉这个判空。
     if (!sector.getListenerManager().hasListenerOfClass(GearInLocationChangeListener.class)) {
         sector.getListenerManager().addListener(new GearInLocationChangeListener(), true);
     }
@@ -443,7 +366,7 @@ Starsector/mods/GearIndustry/
 ```java
     GearInCampaignListener listener = new GearInCampaignListener();
     GearInListenerLifecycleScript script = new GearInListenerLifecycleScript(listener);
-    script.setDaysToLive(30); // 约 30 个游戏日（约 300 真实秒）后自停并移除监听器
+    script.setDaysToLive(30); // 约 30 个游戏日(约 300 真实秒)后自停并移除监听器
     sector.addListener(listener);
     sector.addScript(script);
 ```
@@ -579,15 +502,15 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.combat.EngagementResultAPI;
 
 /**
- * 完整最小例：Sector 级生涯事件监听器（CampaignEventListener 角色）。
- * 注册入口：onGameLoad 门控块（页面调用点片段，REGISTER_MARK 一次性门控）。
+ * 完整最小例：Sector 级生涯事件监听器(CampaignEventListener 角色)。
+ * 注册入口：onGameLoad 门控块(页面调用点片段，REGISTER_MARK 一次性门控)。
  * 注册与自停由配对脚本 GearInListenerLifecycleScript 管理 —— 脚本到期后显式
- * removeListener：脚本结束不等于监听器移除（硬规则）。BaseCampaignEventListener
- * 提供全接口 21 方法的空实现，本类只覆写关心的事件边界（市场/贸易/战斗/舰队/声望）。
+ * removeListener：脚本结束不等于监听器移除(硬规则)。BaseCampaignEventListener
+ * 提供全接口 21 方法的空实现，本类只覆写关心的事件边界(市场/贸易/战斗/舰队/声望)。
  */
 public class GearInCampaignListener extends BaseCampaignEventListener {
 
-    /** 存档持久化标记：本监听器及其生命周期脚本是否已在该存档注册过（随存档保存）。 */
+    /** 存档持久化标记：本监听器及其生命周期脚本是否已在该存档注册过(随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_CampaignListener";
 
     private static final Logger LOG = Global.getLogger(GearInCampaignListener.class);
@@ -691,13 +614,13 @@ import com.fs.starfarer.api.campaign.CampaignClockAPI;
 import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
- * 完整最小例：监听器生命周期脚本（EveryFrameScript 角色）。
+ * 完整最小例：监听器生命周期脚本(EveryFrameScript 角色)。
  *
- * 与 GearInCampaignListener（监听器角色）配对：原组合类拆分出的脚本半身。
- * 注册入口：onGameLoad 门控块内与监听器一同注册（sector.addScript(this)）。
+ * 与 GearInCampaignListener(监听器角色)配对：原组合类拆分出的脚本半身。
+ * 注册入口：onGameLoad 门控块内与监听器一同注册(sector.addScript(this))。
  * 职责：按游戏天累计挂载时长，daysToLive >= 0 且到期时显式
  * sector.removeListener(listener) 并自停 ——isDone() 只清理脚本列表，
- * 监听器注册表必须单独移除，否则事件继续派发且实例随存档序列化（硬规则）。
+ * 监听器注册表必须单独移除，否则事件继续派发且实例随存档序列化(硬规则)。
  */
 public class GearInListenerLifecycleScript implements EveryFrameScript {
 
@@ -706,7 +629,7 @@ public class GearInListenerLifecycleScript implements EveryFrameScript {
     /** 受管监听器：到期时由本脚本显式移除。 */
     private GearInCampaignListener listener;
 
-    /** 挂载以来的游戏天数（精确累加，保留小数）；随存档序列化，读档后继续累计。 */
+    /** 挂载以来的游戏天数(精确累加，保留小数)；随存档序列化，读档后继续累计。 */
     private float daysActive = 0f;
 
     /** 演示参数：挂载满多少游戏天后自停并移除监听器；< 0 表示常驻不停止。 */
@@ -739,7 +662,7 @@ public class GearInListenerLifecycleScript implements EveryFrameScript {
         SectorAPI sector = Global.getSector();
         CampaignClockAPI clock = sector.getClock();
 
-        // amount 是上一帧真实秒数；经时钟换算才是本帧的游戏天数（10 真实秒 = 1 游戏日）。
+        // amount 是上一帧真实秒数；经时钟换算才是本帧的游戏天数(10 真实秒 = 1 游戏日)。
         daysActive += clock.convertToDays(amount);
 
         if (daysToLive >= 0 && daysActive >= daysToLive) {
@@ -768,23 +691,23 @@ import com.fs.starfarer.api.campaign.LocationAPI;
 import com.fs.starfarer.api.campaign.listeners.CurrentLocationChangedListener;
 
 /**
- * 完整最小例：经 ListenerManagerAPI 注册的类型化监听器（typed listener）。
+ * 完整最小例：经 ListenerManagerAPI 注册的类型化监听器(typed listener)。
  *
- * 与 GearInCampaignListener（Sector 级 CampaignEventListener 通道）不同，本类走的是
+ * 与 GearInCampaignListener(Sector 级 CampaignEventListener 通道)不同，本类走的是
  * 第二条通道：SectorAPI.getListenerManager().addListener(listener, isTransient) 注册、
  * removeListener(this) 移除，事件由 ListenerUtil 按接口类型派发
- * （本类对应 CurrentLocationChangedListener，派发点在生涯引擎的 advance
- * 检测到当前地点变化时）。
+ * (本类对应 CurrentLocationChangedListener，派发点在生涯引擎的 advance
+ * 检测到当前地点变化时)。
  *
- * 注册入口：onGameLoad（调用点片段见页面正文），用 transient=true 注册 ——
- * transient 监听器不随存档保存（ListenerManagerAPI 的 transientListeners 仓库读档时
- * 重建为空），因此读档后必须重新注册；调用点用 hasListenerOfClass 判空
+ * 注册入口：onGameLoad(调用点片段见页面正文)，用 transient=true 注册 ——
+ * transient 监听器不随存档保存(ListenerManagerAPI 的 transientListeners 仓库读档时
+ * 重建为空)，因此读档后必须重新注册；调用点用 hasListenerOfClass 判空
  * 再补注册即可覆盖旧档。
  *
  * 演示点：
- * 1. reportCurrentLocationChanged(prev, curr)：玩家当前地点变化（进出超空间、进入星系）时触发；
+ * 1. reportCurrentLocationChanged(prev, curr)：玩家当前地点变化(进出超空间、进入星系)时触发；
  * 2. 自移除：触发满 reportsLeft 次后 removeListener(this) 并打日志 —— 监听器在不再需要时
- *    必须在合适时机移除，否则事件持续派发（硬规则）；
+ *    必须在合适时机移除，否则事件持续派发(硬规则)；
  * 3. 全部字段可随存档序列化；本类字段不涉及瞬态句柄。
  */
 public class GearInLocationChangeListener implements CurrentLocationChangedListener {
@@ -795,7 +718,7 @@ public class GearInLocationChangeListener implements CurrentLocationChangedListe
     private int reportsLeft = 5;
 
     public GearInLocationChangeListener() {
-        // 空构造：注册由调用方执行（onGameLoad，见页面调用点片段）
+        // 空构造：注册由调用方执行(onGameLoad，见页面调用点片段)
     }
 
     @Override

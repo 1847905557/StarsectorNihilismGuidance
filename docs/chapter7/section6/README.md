@@ -32,110 +32,36 @@
 
 本节涉及的接口与注册表面：
 
-接口 / 类型
+### 本节接口速查表
 
-本节角色
+| 接口 / 类型 | 本节角色 | 链路 |
+|---|---|---|
+| `CombatLayeredRenderingPlugin` | 分层渲染插件接口 (`init` / `cleanup` / `isExpired` / `advance` / `getActiveLayers` / `getRenderRadius` / `render`) | `com.fs.starfarer.api.combat` |
+| `BaseCombatLayeredRenderingPlugin` | 七个回调的空实现基类 (默认层 `BELOW_INDICATORS_LAYER`、默认剔除半径 `100`) | 建议继承 (成熟实例全部继承它) |
+| `CombatEngineLayers` | 层级枚举 (23 个值，声明顺序即层序) | `getActiveLayers()` 的返回值与 `render` 的参数 |
+| `CombatEngineAPI.addLayeredRenderingPlugin` | 战斗内注册入口 | 返回承载实体 `CombatEntityAPI`(引擎把插件包装成战斗实体) |
+| `ViewportAPI` | 视口：可见区左下角、宽高 (世界单位)、缩放、双向转换 | `engine.getViewport()` |
+| `CombatEntityAPI` | `init` 的参数与承载实体 (位置同步、存活/失效判定) | 引擎把插件包装成战斗实体 |
+| `LayeredRenderer` | 引擎内部按层渲染器 (`com.fs.graphics`) | 引擎构造时创建，`renderer.add / remove / renderExcluding / renderOnly` |
 
-链路
+### 注册与回调速查表
 
-`CombatLayeredRenderingPlugin`
-
-分层渲染插件接口 (`init` / `cleanup` / `isExpired` / `advance` / `getActiveLayers` / `getRenderRadius` / `render`)
-
-`com.fs.starfarer.api.combat`
-
-`BaseCombatLayeredRenderingPlugin`
-
-七个回调的空实现基类 (默认层 `BELOW_INDICATORS_LAYER`、默认剔除半径 `100`)
-
-建议继承 (成熟实例全部继承它)
-
-`CombatEngineLayers`
-
-层级枚举 (23 个值，声明顺序即层序)
-
-`getActiveLayers()` 的返回值与 `render` 的参数
-
-`CombatEngineAPI.addLayeredRenderingPlugin`
-
-战斗内注册入口
-
-返回承载实体 `CombatEntityAPI`(引擎把插件包装成战斗实体)
-
-`ViewportAPI`
-
-视口：可见区左下角、宽高 (世界单位)、缩放、双向转换
-
-`engine.getViewport()`
-
-`CombatEntityAPI`
-
-`init` 的参数与承载实体 (位置同步、存活/失效判定)
-
-引擎把插件包装成战斗实体
-
-`LayeredRenderer`
-
-引擎内部按层渲染器 (`com.fs.graphics`)
-
-引擎构造时创建，`renderer.add / remove / renderExcluding / renderOnly`
-
-### 注册与回调速查
-
-回调
-
-时机
-
-说明
-
-`init(CombatEntityAPI)`
-
-`addLayeredRenderingPlugin` 后由引擎在 `executeAdds` 阶段调用
-
-与 `EveryFrameCombatPlugin.init()` 不同，**这个 init 保证在渲染与推进前执行**；参数是承载实体，不是引擎
-
-`advance(float)`
-
-每帧非暂停分支的实体推进循环
-
-暂停时**不调用** (与 `EveryFrameCombatPlugin.advance` 相反，见 "推进与暂停")
-
-`render(CombatEngineLayers, ViewportAPI)`
-
-每帧渲染阶段，**每个激活层各调用一次**
-
-只有 `isNearViewport(entity.getLocation(), getRenderRadius())` 通过才调用
-
-`isExpired()`
-
-每次推进后由引擎检查
-
-返回 true → 实体进移除队列 → 移除时调用 `cleanup()`
-
-`cleanup()`
-
-实体被引擎移除时
-
-见 "清理" 节：战斗结束的 `destroyInstance` 不调用它
-
-`getActiveLayers()`
-
-注册时 (决定进哪些层) 与每次渲染 (分派)
-
-返回 `EnumSet<CombatEngineLayers>`
-
-`getRenderRadius()`
-
-每次渲染前 (剔除判定)
-
-绘制范围必须被它覆盖
+| 回调 | 时机 | 说明 |
+|---|---|---|
+| `init(CombatEntityAPI)` | `addLayeredRenderingPlugin` 后由引擎在 `executeAdds` 阶段调用 | 与 `EveryFrameCombatPlugin.init()` 不同，**这个 init 保证在渲染与推进前执行**；参数是承载实体，不是引擎 |
+| `advance(float)` | 每帧非暂停分支的实体推进循环 | 暂停时**不调用** (与 `EveryFrameCombatPlugin.advance` 相反，见 "推进与暂停") |
+| `render(CombatEngineLayers, ViewportAPI)` | 每帧渲染阶段，**每个激活层各调用一次** | 只有 `isNearViewport(entity.getLocation(), getRenderRadius())` 通过才调用 |
+| `isExpired()` | 每次推进后由引擎检查 | 返回 true → 实体进移除队列 → 移除时调用 `cleanup()` |
+| `cleanup()` | 实体被引擎移除时 | 见 "清理" 节：战斗结束的 `destroyInstance` 不调用它 |
+| `getActiveLayers()` | 注册时 (决定进哪些层) 与每次渲染 (分派) | 返回 `EnumSet<CombatEngineLayers>` |
+| `getRenderRadius()` | 每次渲染前 (剔除判定) | 绘制范围必须被它覆盖 |
 
 ### 层级表 (CombatEngineLayers，23 个值)
 
 `CombatEngineLayers` 枚举 (公开 API 可直接读取) 按声明顺序即层间顺序；`PHASED_SHIPS_LAYER` 的枚举注释自证层序敏感 ("need to be below fighters to avoid artifacts when phasing back in")：
 
 ```text
-BELOW_PLANETS            （行星下方）
+BELOW_PLANETS            (行星下方)
 PLANET_LAYER
 ABOVE_PLANETS
 CLOUD_LAYER
@@ -147,7 +73,7 @@ CRUISERS_LAYER
 DESTROYERS_LAYER
 FRIGATES_LAYER
 BELOW_PHASED_SHIPS_LAYER
-PHASED_SHIPS_LAYER       （必须低于战机层：相位解除瞬间避免伪影）
+PHASED_SHIPS_LAYER       (必须低于战机层：相位解除瞬间避免伪影)
 STATION_WEAPONS_LAYER
 CONTRAILS_LAYER
 FIGHTERS_LAYER
@@ -184,7 +110,7 @@ JUST_BELOW_WIDGETS       ─┘
 
 此后插件就作为普通战斗实体参与推进与渲染。
 
-为什么是独立的插件通道
+### 为什么是独立的插件通道
 
 分层渲染插件以战斗实体为承载 (引擎注册时把它包装成战斗实体)，天然获得战斗实体的位置、存活与剔除语义，还能按层参与渲染分派；`EveryFrameCombatPlugin` 只是每帧回调，没有这些实体语义 —— 这正是两条通道推进与清理时机不同的根源。
 
@@ -221,7 +147,7 @@ if (viewport.isNearViewport(this.getLocation(), this.plugin.getRenderRadius())) 
 
 `render` 对**每个激活层各调用一次** (成熟实例声明多个层时，回调内按 `layer` 参数分支绘制)。一个插件声明多层时，同一帧会收到多次 `render` 调用，必须在回调内按 `layer` 参数分支，而不是每次都画全套。
 
-图形 "凭空消失" 时查两处
+### 图形 "凭空消失" 时查两处
 
 图形在视口内 "凭空消失"(或被画到战场原点) 时，先查两处：承载实体位置是否每帧同步到 `entity.getLocation()`、`getRenderRadius()` 是否覆盖绘制范围 —— 这两处正是 `isNearViewport` 剔除判定的输入 (规则 4 的可观察表现)。
 
@@ -236,91 +162,23 @@ if (viewport.isNearViewport(this.getLocation(), this.plugin.getRenderRadius())) 
 
 把 GL 资源 (VAO/VBO/着色器程序等) 的释放放进 `cleanup()`，并把句柄置回哨兵值防止重复删除。这与前置单元的结论同构：两条插件通道都没有 "战斗结束回调"，收尾必须由插件自己驱动。
 
-不要赌 "战斗结束时 cleanup() 会被调用"
+### 不要赌 "战斗结束时 cleanup() 会被调用"
 
 战斗结束的 `destroyInstance` 只清空对象表、不调用 `cleanup()`—— 把 GL 资源释放寄托在 "战斗结束回调" 上，资源会静默丢失。正确做法：在 `advance()` 里主动失效 (`isExpired()` 转 true)，让引擎走正常移除路径调用 `cleanup()`。
 
-## 必须遵守的规则汇总
+## 必须遵守的规则速查表
 
-#
-
-强度
-
-规则
-
-违反的可观察结果
-
-1
-
-**必须**
-
-绘制只用 GL 原语，且**只在 `render()` 回调内进行**；`advance()` 属于推进阶段，不绘制
-
-`advance()` 里发出的 GL 命令在渲染阶段之外执行：内容不出现、错帧或叠加在错误图层上 (随后被渲染阶段的状态切换与清屏覆盖)，且无法参与本层的层序
-
-2
-
-**必须**
-
-GL 资源 (VAO / VBO / 着色器 (shader) 程序等) **必须随战斗清理**：在 `cleanup()` 中释放，句柄复位防重复删除
-
-句柄与显存随每场战斗累积泄漏；多场战斗后渲染异常 (驱动报错、画面损坏、卡顿)
-
-3
-
-**必须**
-
-不能在 `cleanup()` 上赌 "战斗结束时会被调用"：`destroyInstance` 只清空对象表不调 `cleanup()`；插件必须在 `advance()` 里主动失效 (`isExpired()` → true) 驱动引擎移除
-
-舰船已死/已脱离的插件继续渲染到战斗结束；战斗结束时资源静默丢失、`cleanup()` 永不执行
-
-4
-
-**必须**
-
-渲染位置同步到承载实体 `entity.getLocation()`，且 `getRenderRadius()` 覆盖绘制范围
-
-位置不同步 → 图形画在战场原点或旧位置；半径过小 → 图形在视口内 "凭空消失"(`isNearViewport` 剔除)；半径过大 → 离屏仍绘制，性能损耗
-
-5
-
-**必须**
-
-`getActiveLayers()` 精确声明需要的层，`render` 回调内按 `layer` 参数分支
-
-漏层 → 图形不出现或被下层遮挡；多激活层不分支 → 同一图形每帧重复绘制 (叠加变亮/闪烁)，同帧多图层内容互相污染
-
-6
-
-**必须**
-
-插件、引擎与舰船引用禁止跨战斗缓存 (前置单元的跨战斗缓存纪律同规；每场战斗用 `init` 里 `Global.getCombatEngine()` 取引擎)
-
-第二场战斗起引用全部失效且无报错：旧引擎已被 `destroyInstance` 丢弃、旧舰 `isAlive()` 恒为 false，插件被自己的失效逻辑立刻清掉或绘制异常
-
-7
-
-建议
-
-`advance()` 保留 `engine == null` 与 `engine.isPaused()` 判断 (成熟实例一致做法)
-
-无功能错误 (init 保证先执行、暂停分支不推进实体)；判断是防基线变动的防御
-
-8
-
-建议
-
-`render()` 开头设置自己需要的 GL 状态 (如 `GL_BLEND` 与混合函数)；结束时解除 VAO / VBO 绑定、关闭自己激活的程序
-
-不解除绑定会让后续图元沿用插件设置的状态；本教程不把 "引擎每层重置 GL 状态" 当作承诺，成熟实例全部自己收尾
-
-9
-
-建议
-
-`getRenderRadius()` 按实际覆盖范围取值；需要全局常驻时才用 `Float.MAX_VALUE`(调试用途)
-
-无功能错误，只有性能成本
+| # | 强度 | 规则 | 违反的可观察结果 |
+|---|---|---|---|
+| 1 | **必须** | 绘制只用 GL 原语，且**只在 `render()` 回调内进行**；`advance()` 属于推进阶段，不绘制 | `advance()` 里发出的 GL 命令在渲染阶段之外执行：内容不出现、错帧或叠加在错误图层上 (随后被渲染阶段的状态切换与清屏覆盖)，且无法参与本层的层序 |
+| 2 | **必须** | GL 资源 (VAO / VBO / 着色器 (shader) 程序等) **必须随战斗清理**：在 `cleanup()` 中释放，句柄复位防重复删除 | 句柄与显存随每场战斗累积泄漏；多场战斗后渲染异常 (驱动报错、画面损坏、卡顿) |
+| 3 | **必须** | 不能在 `cleanup()` 上赌 "战斗结束时会被调用"：`destroyInstance` 只清空对象表不调 `cleanup()`；插件必须在 `advance()` 里主动失效 (`isExpired()` → true) 驱动引擎移除 | 舰船已死/已脱离的插件继续渲染到战斗结束；战斗结束时资源静默丢失、`cleanup()` 永不执行 |
+| 4 | **必须** | 渲染位置同步到承载实体 `entity.getLocation()`，且 `getRenderRadius()` 覆盖绘制范围 | 位置不同步 → 图形画在战场原点或旧位置；半径过小 → 图形在视口内 "凭空消失"(`isNearViewport` 剔除)；半径过大 → 离屏仍绘制，性能损耗 |
+| 5 | **必须** | `getActiveLayers()` 精确声明需要的层，`render` 回调内按 `layer` 参数分支 | 漏层 → 图形不出现或被下层遮挡；多激活层不分支 → 同一图形每帧重复绘制 (叠加变亮/闪烁)，同帧多图层内容互相污染 |
+| 6 | **必须** | 插件、引擎与舰船引用禁止跨战斗缓存 (前置单元的跨战斗缓存纪律同规；每场战斗用 `init` 里 `Global.getCombatEngine()` 取引擎) | 第二场战斗起引用全部失效且无报错：旧引擎已被 `destroyInstance` 丢弃、旧舰 `isAlive()` 恒为 false，插件被自己的失效逻辑立刻清掉或绘制异常 |
+| 7 | 建议 | `advance()` 保留 `engine == null` 与 `engine.isPaused()` 判断 (成熟实例一致做法) | 无功能错误 (init 保证先执行、暂停分支不推进实体)；判断是防基线变动的防御 |
+| 8 | 建议 | `render()` 开头设置自己需要的 GL 状态 (如 `GL_BLEND` 与混合函数)；结束时解除 VAO / VBO 绑定、关闭自己激活的程序 | 不解除绑定会让后续图元沿用插件设置的状态；本教程不把 "引擎每层重置 GL 状态" 当作承诺，成熟实例全部自己收尾 |
+| 9 | 建议 | `getRenderRadius()` 按实际覆盖范围取值；需要全局常驻时才用 `Float.MAX_VALUE`(调试用途) | 无功能错误，只有性能成本 |
 
 ## 实现分层渲染效果
 
@@ -538,15 +396,15 @@ public void advance(float amount) { advanceState(amount); } public void render(C
 
 ## 故障分析
 
-- **绘制内容不出现或落在错误图层：**GL 调用写在 `advance()`，随后被渲染阶段覆盖。绘制只放入 `render()`，推进回调只更新状态。
-- **图形出现在原点：**自定义坐标没有同步到承载实体。每次 `advance()` 更新 `entity.getLocation()`，再次移动目标后观察图形位置。
-- **图形在视口内突然消失：**`getRenderRadius()` 小于实际绘制范围，剔除判断过早生效。扩大半径，使其覆盖完整图形。
-- **舰船被击毁后图形仍然存在：**`isExpired()` 始终返回 false。检测 `isEntityInPlay` 与 `isAlive`，失效时将 `valid` 置为 false。
-- **多场战斗后渲染异常或卡顿：**`cleanup()` 没有释放 VAO、VBO 或着色器程序。删除所有 GL 句柄并恢复哨兵值，再连续进入多场战斗复验。
-- **同一图形叠加变亮或闪烁：**插件声明多个激活层，却在每次 `render` 中绘制全部内容。按 `layer` 参数分支，每层只提交对应图形。
-- **第二场战斗不再显示图形：**分层渲染插件跨战斗缓存了上一场的舰船。每场战斗重新创建并注册插件。
-- **暂停恢复后计时不符合预期：**混用了每帧插件与分层渲染插件的暂停语义。分层插件暂停时不推进，但仍会渲染；按这一边界重新安排计时。
-- **元素缩放或位置偏移：**世界坐标和屏幕坐标转换方向用反。世界绘制直接提交世界坐标，只有屏幕空间元素才使用 world→screen 转换。
+- **绘制内容不出现或落在错误图层**：GL 调用写在 `advance()`，随后被渲染阶段覆盖。绘制只放入 `render()`，推进回调只更新状态。
+- **图形出现在原点**：自定义坐标没有同步到承载实体。每次 `advance()` 更新 `entity.getLocation()`，再次移动目标后观察图形位置。
+- **图形在视口内突然消失**：`getRenderRadius()` 小于实际绘制范围，剔除判断过早生效。扩大半径，使其覆盖完整图形。
+- **舰船被击毁后图形仍然存在**：`isExpired()` 始终返回 false。检测 `isEntityInPlay` 与 `isAlive`，失效时将 `valid` 置为 false。
+- **多场战斗后渲染异常或卡顿**：`cleanup()` 没有释放 VAO、VBO 或着色器程序。删除所有 GL 句柄并恢复哨兵值，再连续进入多场战斗复验。
+- **同一图形叠加变亮或闪烁**：插件声明多个激活层，却在每次 `render` 中绘制全部内容。按 `layer` 参数分支，每层只提交对应图形。
+- **第二场战斗不再显示图形**：分层渲染插件跨战斗缓存了上一场的舰船。每场战斗重新创建并注册插件。
+- **暂停恢复后计时不符合预期**：混用了每帧插件与分层渲染插件的暂停语义。分层插件暂停时不推进，但仍会渲染；按这一边界重新安排计时。
+- **元素缩放或位置偏移**：世界坐标和屏幕坐标转换方向用反。世界绘制直接提交世界坐标，只有屏幕空间元素才使用 world→screen 转换。
 
 ## 总结
 
@@ -591,30 +449,30 @@ import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 
 /**
- * 完整最小例：分层渲染插件（CombatLayeredRenderingPlugin）的层级、视口与清理。
+ * 完整最小例：分层渲染插件(CombatLayeredRenderingPlugin)的层级、视口与清理。
  *
  * 渲染管线事实：
  * - engine.addLayeredRenderingPlugin(plugin) 用自定义战斗实体包装插件并加入引擎；
  *   executeAdds 时调用 plugin.init(entity) 并按 getActiveLayers() 注册进 LayeredRenderer；
- * - 每帧（非暂停分支）推进 entity.advance(amount)，随后 isExpired() 为 true 的实体
+ * - 每帧(非暂停分支)推进 entity.advance(amount)，随后 isExpired() 为 true 的实体
  *   进移除队列；移除时引擎调用 entity.cleanup() -> plugin.cleanup()——
  *   cleanup() 是释放 GL 资源的正常时机；
  * - 战斗结束 destroyInstance 只清空对象表、不调用 cleanup()——
- *   插件必须在 advance() 里主动失效（isExpired() -> true），不能等"战斗结束回调"；
+ *   插件必须在 advance() 里主动失效(isExpired() -> true)，不能等"战斗结束回调"；
  * - 渲染阶段：自定义战斗实体的 render 先判 viewport.isNearViewport(entity.getLocation(),
  *   plugin.getRenderRadius())，通过才调 plugin.render(layer, viewport)——
  *   剔除依据是承载实体的位置与 getRenderRadius()，位置必须同步到 entity；
  * - 渲染回调在渲染阶段被调用，绘制必须在这里用 GL 原语完成；advance() 属于推进阶段，
  *   不做任何绘制；
- * - 暂停时引擎不推进实体（advanceInner 的暂停分支只 advance 地形与玩家舰船），
- *   但渲染循环照常执行（渲染不暂停）；isPaused() 守卫为防御性写法（成熟实例一致做法）；
- * - 插件、引擎与舰船引用禁止跨战斗缓存（C6-S3 / C7-S4 同规）。
+ * - 暂停时引擎不推进实体(advanceInner 的暂停分支只 advance 地形与玩家舰船)，
+ *   但渲染循环照常执行(渲染不暂停)；isPaused() 守卫为防御性写法(成熟实例一致做法)；
+ * - 插件、引擎与舰船引用禁止跨战斗缓存(C6-S3 / C7-S4 同规)。
  */
 public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInLayeredRenderer.class);
 
-    /** 半透明方框的边长（世界单位）。 */
+    /** 半透明方框的边长(世界单位)。 */
     private static final float MARKER_SIZE = 120f;
 
     /** 被追踪的舰船：每帧读取它的实时位置，不缓存坐标副本。 */
@@ -656,7 +514,7 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
             return; // 防御：init() 先于 advance() 被引擎调用，保留与成熟实例一致的判空
         }
         if (engine.isPaused()) {
-            return; // 暂停守卫（防御性；引擎的暂停分支本就不推进实体）
+            return; // 暂停守卫(防御性；引擎的暂停分支本就不推进实体)
         }
         if (!engine.isEntityInPlay(trackedShip) || !trackedShip.isAlive()) {
             valid = false; // 失效：下一轮 executeRemoves 移除实体并调用 cleanup()

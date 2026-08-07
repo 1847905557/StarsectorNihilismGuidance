@@ -12,8 +12,8 @@ import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
 
 /**
  * 射弹命中回调：只有把本类类名写进 .proj 的 onHitEffect 字段时才会被调用
- * （射弹 / 导弹 / 光束脉冲命中结算时触发）。参数都是"本次命中上下文"，
- * 禁止跨命中缓存（硬规范 2）。
+ * (射弹 / 导弹 / 光束脉冲命中结算时触发)。参数都是"本次命中上下文"，
+ * 禁止跨命中缓存(硬规范 2)。
  */
 public class GearInShotOnHitEffect implements OnHitEffectPlugin {
 

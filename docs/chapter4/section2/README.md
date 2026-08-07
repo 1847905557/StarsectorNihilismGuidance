@@ -24,6 +24,8 @@
 
 ## 梳理舰船外观关系
 
+### 舰船外观文件速查表
+
 | 文件 | 注册入口 | 产物 | 使用方 |
 |---|---|---|---|
 | `data/config/hull_styles.json` | 加载入口 `loadEngineAndHullStyles()`(加载早期，先于全部船体数据) | 舰船风格数据 | `.ship` 顶层 `style`；战役/战斗渲染与声音系统 |
@@ -47,17 +49,17 @@
 
 ```json
 {
-	"GEAR_TECH":{ # 舰船风格 ID。不得使用文件头保留 ID（见下）
+	"GEAR_TECH":{ # 舰船风格 ID。不得使用文件头保留 ID(见下)
 		"hyperspaceJitterColor":[255,170,60,200], # 建议保留：舰船在超空间航行时的光芒颜色
 		"baseCampaignExplosionColor":[255,150,50,255], # 建议保留：大地图爆炸颜色
-		"baseCombatExplosionColor":[255,150,50,255], # 建议保留：战斗爆炸颜色（闪光）
-		"combatExplosionNonFlashColorOverride":[255,180,90,255], # 可选：战斗爆炸的非闪光部分（更蓬松的爆炸）
+		"baseCombatExplosionColor":[255,150,50,255], # 建议保留：战斗爆炸颜色(闪光)
+		"combatExplosionNonFlashColorOverride":[255,180,90,255], # 可选：战斗爆炸的非闪光部分(更蓬松的爆炸)
 		"fighterRepairFlickerColor":[255,170,60,255], # 建议保留：甲板维修战机时冒火花的颜色
 		"fighterChipIconColor":[255,200,120,255], # 可选，默认同 fighterRepairFlickerColor：战机 LPC 颜色
 		"weaponDisabledExplosionColor":[255,170,60,255], # 建议保留：武器下线冒火花的颜色
 		"shieldRingColor":[255,215,140,255], # 建议保留：护盾外圈颜色
 		"shieldInnerColor":[255,140,40,70], # 建议保留：护盾内圈颜色
-		"fluxVentCoreColor":[255,235,200,255], # 建议保留：V 排（幅能排放）核心颜色
+		"fluxVentCoreColor":[255,235,200,255], # 建议保留：V 排(幅能排放)核心颜色
 		"fluxVentFringeColor":[255,120,0,255], # 建议保留：V 排外圈颜色
 		"fluxVentTextureSheet":"graphics/fx/nebula_colorless.png", # 可选：V 排外圈材质
 		"fluxVentRadialTexture":"graphics/fx/radial_fx.png", # 可选：V 排核心材质
@@ -79,7 +81,7 @@
 		"coversColorShiftAmount":0.6,
 		"coversMatchShipBrightness":true,
 
-		# 武器盖板贴图（最小例复用原版材质，可换成自己的盖板贴图）
+		# 武器盖板贴图(最小例复用原版材质，可换成自己的盖板贴图)
 		"slotCoverSmallTurret":"graphics/weapons/covers/cover_turret_lowtech_small.png",
 		"slotCoverSmallHardpoint":"graphics/weapons/covers/cover_hardpoint_lowtech_small.png",
 		"slotCoverMediumTurret":"graphics/weapons/covers/cover_turret_lowtech_medium.png",
@@ -87,7 +89,7 @@
 		"slotCoverLargeTurret":"graphics/weapons/covers/cover_turret_lowtech_large.png",
 		"slotCoverLargeHardpoint":"graphics/weapons/covers/cover_hardpoint_lowtech_large.png",
 
-		# D 插覆盖贴图（舰船安装 D 插件后的船体贴花）
+		# D 插覆盖贴图(舰船安装 D 插件后的船体贴花)
 		"dHullOverlayLight":"graphics/damage/dmod_overlay_lowtech_light.png",
 		"dHullOverlayMedium":"graphics/damage/dmod_overlay_lowtech_medium.png",
 		"dHullOverlayHeavy":"graphics/damage/dmod_overlay_lowtech_heavy.png",
@@ -133,14 +135,14 @@
 	"GEAR_TECH":{ # 引擎风格 ID，不得使用保留 ID "CUSTOM"
 		"engineColor":[255,150,40,255], # 建议保留：引擎火焰颜色
 		"engineCampaignColor":[220,110,50,255], # 可选，默认同 engineColor：引擎火焰在大地图的颜色
-		"contrailParticleSizeMult":3, # 必填（PARTICLES 模式）：引擎航迹粒子大小倍率
-		"contrailParticleDuration":2, # 必填（PARTICLES 模式）：航迹粒子持续时间
+		"contrailParticleSizeMult":3, # 必填(PARTICLES 模式)：引擎航迹粒子大小倍率
+		"contrailParticleDuration":2, # 必填(PARTICLES 模式)：航迹粒子持续时间
 		"contrailParticleFinalSizeMult":2.5, # 可选，默认 0.5：航迹粒子随延长而放大的倍率
 		"contrailMaxSpeedMult":0.5, # 必填：航迹飘出速率
 		"contrailAngularVelocityMult":0.3, # 必填：航迹角速度飘出速率
 		"contrailColor":[70,60,50,60], # 建议保留：引擎航迹颜色
 		"contrailCampaignColor":[220,110,50,70], # 可选，默认同 contrailColor：航迹在大地图的颜色
-		"type":"SMOKE" # 必填：GLOW（淡光、加法混合）或 SMOKE（烟雾、常规混合）
+		"type":"SMOKE" # 必填：GLOW(淡光、加法混合)或 SMOKE(烟雾、常规混合)
 	},
 }
 ```
@@ -162,8 +164,8 @@
 ```json
 		"GEAR_TECH_OMEGA":{ # 光带型风格：mode 为 QUAD_STRIP
 			"mode":"QUAD_STRIP", # 粒子模式或光带模式，决定读取哪一组参数
-			"contrailDuration":1.5, # 必填（QUAD_STRIP 模式）：光带持续时间
-			"contrailWidthMult":0.67, # 必填（QUAD_STRIP 模式）：光带宽度
+			"contrailDuration":1.5, # 必填(QUAD_STRIP 模式)：光带持续时间
+			"contrailWidthMult":0.67, # 必填(QUAD_STRIP 模式)：光带宽度
 			"contrailWidthAddedFractionAtEnd":-1, # 可选，默认 0.5：光带尾部的宽度，0 为默认，小于 0 末端窄，大于 0 末端宽
 			"contrailMinSeg":5, # 可选，默认 5：光带每一小节的渲染长度
 			"contrailMaxSpeedMult":1, # 必填：见上文

@@ -20,40 +20,40 @@ import com.fs.starfarer.api.util.IntervalUtil;
  * 完整最小例：战术系统运行态 ——Stats 脚本、状态机、目标锁定与系统 AI 的完整流程。
  *
  * 一个类身兼两个角色，两个角色由数据绑定各自实例化一次：
- * 1. Stats 脚本角色（ShipSystemStatsScriptAdvanced）：.system 的 statsScript 字段挂载。
- *    实例在舰船部署时由系统运行时对象构造器创建一次（spec.getStatsScript()），
- *    apply 只在 effectLevel &gt; 0（或 runScriptWhileIdle）期间每帧调用，
+ * 1. Stats 脚本角色(ShipSystemStatsScriptAdvanced)：.system 的 statsScript 字段挂载。
+ *    实例在舰船部署时由系统运行时对象构造器创建一次(spec.getStatsScript())，
+ *    apply 只在 effectLevel &gt; 0(或 runScriptWhileIdle)期间每帧调用，
  *    unapply 在 effectLevel 归零边界调用一次；COOLDOWN/IDLE 两态脚本不可见。
- *    引擎传入的 id 是 "系统id effect"（系统运行时对象.getStatModId），modify 与 unmodify 必须用同一把钥匙。
- * 2. AI 角色（ShipSystemAIScript）：.system 的 aiScript 字段挂载，aiType 必须为 CUSTOM。
- *    实例在舰船 AI 创建时由 createSystemAI 实例化一次（spec.getAIScript()），
+ *    引擎传入的 id 是 "系统id effect"(系统运行时对象.getStatModId)，modify 与 unmodify 必须用同一把钥匙。
+ * 2. AI 角色(ShipSystemAIScript)：.system 的 aiScript 字段挂载，aiType 必须为 CUSTOM。
+ *    实例在舰船 AI 创建时由 createSystemAI 实例化一次(spec.getAIScript())，
  *    init 缓存 ship/system/flags/engine，advance 每帧被舰船 AI 调用，
- *    参数 target 是舰船 AI 的当前目标（不可见时为 null）。
+ *    参数 target 是舰船 AI 的当前目标(不可见时为 null)。
  *
  * 关键纪律：
- * - statsScript 与 aiScript 是同名类的两个独立实例（脚本类加载器.loadScriptInstance
- *   每次 newInstance），实例字段互不共享；共享逻辑必须走静态方法（本类全部目标逻辑都是静态的）；
- * - TARGET_FOR_SHIP_SYSTEM 由舰船 AI 每帧在调用系统 AI 前写入（时长 1 秒），
+ * - statsScript 与 aiScript 是同名类的两个独立实例(脚本类加载器.loadScriptInstance
+ *   每次 newInstance)，实例字段互不共享；共享逻辑必须走静态方法(本类全部目标逻辑都是静态的)；
+ * - TARGET_FOR_SHIP_SYSTEM 由舰船 AI 每帧在调用系统 AI 前写入(时长 1 秒)，
  *   本类 AI 角色也会把验证过的目标写进去；flag 有持续时间，消费前必须再验证一次；
  * - 玩家舰没有舰船 AI，AI 角色不会运行，flag 也无人写入 —— 玩家侧目标回退
- *   到 ship.getShipTarget()（瞄准镜锁定的目标）；
- * - 目标 ShipAPI 属于本场战斗实体，禁止跨战斗缓存（与战斗实体同一纪律）。
+ *   到 ship.getShipTarget()(瞄准镜锁定的目标)；
+ * - 目标 ShipAPI 属于本场战斗实体，禁止跨战斗缓存(与战斗实体同一纪律)。
  */
 public class GearInTargetingSystem extends BaseShipSystemScript implements ShipSystemAIScript {
 
 	private static final Logger LOG = Global.getLogger(GearInTargetingSystem.class);
 
-	/** 系统标称射程（经 systemRangeBonus 修正前的基础值）。 */
+	/** 系统标称射程(经 systemRangeBonus 修正前的基础值)。 */
 	public static final float RANGE = 800f;
-	/** 锁定有效时满 effectLevel 下的最大速度倍率（1.5 倍）。 */
+	/** 锁定有效时满 effectLevel 下的最大速度倍率(1.5 倍)。 */
 	public static final float SPEED_MULT = 1.5f;
-	/** AI 写入 TARGET_FOR_SHIP_SYSTEM 的 flag 持续时间（秒），与原版舰船 AI 的 1.0 秒一致。 */
+	/** AI 写入 TARGET_FOR_SHIP_SYSTEM 的 flag 持续时间(秒)，与原版舰船 AI 的 1.0 秒一致。 */
 	public static final float AI_TARGET_FLAG_DURATION = 1.0f;
-	/** AI 决策节流区间（0.2–0.3 秒一次决策，成熟实例同款）。 */
+	/** AI 决策节流区间(0.2–0.3 秒一次决策，成熟实例同款)。 */
 	private static final float AI_DECISION_MIN = 0.2f;
 	private static final float AI_DECISION_MAX = 0.3f;
 
-	// ---------- AI 角色字段（ShipSystemAIScript 实例独有） ----------
+	// ---------- AI 角色字段(ShipSystemAIScript 实例独有) ----------
 	private CombatEngineAPI engine;
 	private ShipAPI aiShip;
 	private ShipSystemAPI system;
@@ -61,12 +61,12 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 	private final IntervalUtil decisionInterval = new IntervalUtil(AI_DECISION_MIN, AI_DECISION_MAX);
 	private SystemState lastAISystemState = null;
 
-	// ---------- Stats 角色字段（ShipSystemStatsScript 实例独有） ----------
+	// ---------- Stats 角色字段(ShipSystemStatsScript 实例独有) ----------
 	private State lastApplyState = null;
 
-	// ================= 共享目标逻辑（静态，两个角色共用同一语义） =================
+	// ================= 共享目标逻辑(静态，两个角色共用同一语义) =================
 
-	/** 有效射程：基础 RANGE 经 systemRangeBonus 修正（ShipSystemSpecAPI.getRange 同式）。 */
+	/** 有效射程：基础 RANGE 经 systemRangeBonus 修正(ShipSystemSpecAPI.getRange 同式)。 */
 	public static float getRange(ShipAPI source) {
 		if (source == null) {
 			return RANGE;
@@ -117,7 +117,7 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 		return data instanceof ShipAPI ? (ShipAPI) data : null;
 	}
 
-	/** 把验证通过的目标写入 TARGET_FOR_SHIP_SYSTEM（AI 角色调用 ship.useSystem() 前使用）。 */
+	/** 把验证通过的目标写入 TARGET_FOR_SHIP_SYSTEM(AI 角色调用 ship.useSystem() 前使用)。 */
 	public static boolean writeAITarget(ShipAPI source, ShipAPI target) {
 		if (source == null || source.getShipAI() == null) {
 			return false;
@@ -130,7 +130,7 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 		return true;
 	}
 
-	/** 目标解析：AI flag 优先，回退舰船当前目标（getShipTarget()），全部经过再验证。 */
+	/** 目标解析：AI flag 优先，回退舰船当前目标(getShipTarget())，全部经过再验证。 */
 	public static ShipAPI pickTarget(ShipAPI source) {
 		if (source == null) {
 			return null;
@@ -146,7 +146,7 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 		return null;
 	}
 
-	// ================= Stats 脚本角色（ShipSystemStatsScriptAdvanced） =================
+	// ================= Stats 脚本角色(ShipSystemStatsScriptAdvanced) =================
 
 	/**
 	 * IN/ACTIVE 期间每帧调用：锁定有效时按 effectLevel 施加最大速度倍率，
@@ -171,14 +171,14 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 		}
 	}
 
-	/** effectLevel 归零边界（进入 COOLDOWN/IDLE、舰船撤退或解体）由引擎调用一次。 */
+	/** effectLevel 归零边界(进入 COOLDOWN/IDLE、舰船撤退或解体)由引擎调用一次。 */
 	@Override
 	public void unapply(MutableShipStatsAPI stats, String id) {
 		stats.getMaxSpeed().unmodify(id);
 		LOG.info("GearIn targeting stats: unapply effect (id=" + id + ")");
 	}
 
-	/** 仅玩家舰：IN/ACTIVE 期间显示目标锁定状态（无目标时按减益样式显示）。 */
+	/** 仅玩家舰：IN/ACTIVE 期间显示目标锁定状态(无目标时按减益样式显示)。 */
 	@Override
 	public StatusData getStatusData(int index, State state, float effectLevel) {
 		if (index != 0) {
@@ -214,7 +214,7 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 		return isValidTarget(ship, pickTarget(ship)) ? "READY" : "NO TARGET";
 	}
 
-	// ================= AI 脚本角色（ShipSystemAIScript） =================
+	// ================= AI 脚本角色(ShipSystemAIScript) =================
 
 	/** AI 实例创建时调用一次：缓存引用并随机化决策节流相位。 */
 	@Override
@@ -229,8 +229,8 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 	}
 
 	/**
-	 * 每帧被舰船 AI 调用：守卫链（暂停/实体/存活/CR/冷却/弹药）→ 决策节流 →
-	 * 目标补全与再验证 → 写 flag（激活期间每 0.2–0.3 秒刷新，flag 只有 1 秒寿命）→
+	 * 每帧被舰船 AI 调用：守卫链(暂停/实体/存活/CR/冷却/弹药)→ 决策节流 →
+	 * 目标补全与再验证 → 写 flag(激活期间每 0.2–0.3 秒刷新，flag 只有 1 秒寿命)→
 	 * 过载/高幅能守卫 → ship.useSystem()。
 	 */
 	@Override
@@ -247,7 +247,7 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 			return;
 		}
 		if (system.getCooldownRemaining() > 0f) {
-			return; // 冷却中（COOLDOWN 状态）
+			return; // 冷却中(COOLDOWN 状态)
 		}
 		if (system.isOutOfAmmo()) {
 			return;
@@ -258,7 +258,7 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 			return; // 决策节流
 		}
 
-		// 目标补全与再验证：参数 target 优先（舰船 AI 传入，不可见时为 null），回退舰船当前目标
+		// 目标补全与再验证：参数 target 优先(舰船 AI 传入，不可见时为 null)，回退舰船当前目标
 		ShipAPI lock = target;
 		if (lock == null) {
 			lock = aiShip.getShipTarget();
@@ -270,7 +270,7 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 		writeAITarget(aiShip, lock);
 
 		if (system.isActive()) {
-			return; // 激活中：只刷新锁定（flag 1 秒过期，不刷新 ACTIVE 后半段会丢锁），不重复激活
+			return; // 激活中：只刷新锁定(flag 1 秒过期，不刷新 ACTIVE 后半段会丢锁)，不重复激活
 		}
 		if (aiShip.getFluxTracker().isOverloadedOrVenting()) {
 			return;
@@ -280,17 +280,17 @@ public class GearInTargetingSystem extends BaseShipSystemScript implements ShipS
 		}
 		LOG.info("GearIn targeting AI: lock " + lock.getHullSpec().getHullId()
 				+ " range=" + getRange(aiShip));
-		aiShip.useSystem(); // ShipAPI.useSystem() -> giveCommand(USE_SYSTEM)（玩家按 U 与 AI 同一入口）
+		aiShip.useSystem(); // ShipAPI.useSystem() -> giveCommand(USE_SYSTEM)(玩家按 U 与 AI 同一入口)
 	}
 
-	/** 清除过期的目标 flag（目标失效后下一轮决策不再复用旧锁）。 */
+	/** 清除过期的目标 flag(目标失效后下一轮决策不再复用旧锁)。 */
 	private void clearAITarget() {
 		if (aiFlags != null) {
 			aiFlags.removeFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM);
 		}
 	}
 
-	/** AI 视角的运行时状态机跳变日志：完整五态（含 COOLDOWN/IDLE，Stats 角色看不到这两态）。 */
+	/** AI 视角的运行时状态机跳变日志：完整五态(含 COOLDOWN/IDLE，Stats 角色看不到这两态)。 */
 	private void logStateTransition() {
 		if (system == null) {
 			return;

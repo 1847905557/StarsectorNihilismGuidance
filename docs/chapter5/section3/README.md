@@ -31,18 +31,20 @@
 ## 梳理音频播放关系
 
 ```text
-sounds/.../*.ogg                 资源层（C5-S1）：三个 OGG
+sounds/.../*.ogg                 资源层(C5-S1)：三个 OGG
         ↓ 相对于 MOD 根目录的路径
-data/config/sounds.json          注册层（C5-S2）：sound ID → 路径与播放参数
+data/config/sounds.json          注册层(C5-S2)：sound ID → 路径与播放参数
         ↓ sound ID
 数据消费者                         代码消费者
   .wpn fireSoundOne/fireSoundTwo   Global.getSoundPlayer().playUISound
   .system useSound/loopSound/        / playSound / playLoop / playCustomMusic
-    deactivateSound/outOfUsesSound   （返回 SoundPlayerAPI）
+    deactivateSound/outOfUsesSound   (返回 SoundPlayerAPI)
   hull style 9 个 *Set 字段
   terrain.json loopOne..loopFour
-  MusicPlayerPlugin 音乐集 ID（music 分类）
+  MusicPlayerPlugin 音乐集 ID(music 分类)
 ```
+
+### 使用方类别速查表
 
 | 使用方类别 | 注册/调用入口 | 运行期使用方 | 本节接入的 ID |
 |---|---|---|---|
@@ -57,6 +59,8 @@ data/config/sounds.json          注册层（C5-S2）：sound ID → 路径与�
 ## 公共入口：Global.getSoundPlayer()
 
 代码使用方的唯一入口是 `Global.getSoundPlayer()`，返回 `SoundPlayerAPI`(公开 API `com.fs.starfarer.api.SoundPlayerAPI`)：
+
+### 播放方法速查表
 
 | 方法 | 用途 | 位置音效 | 硬性要求 |
 |---|---|---|---|
@@ -78,7 +82,7 @@ data/config/sounds.json          注册层（C5-S2）：sound ID → 路径与�
 
 ## 使用方一：武器开火与命中音
 
-### 数据引用：.wpn 的 fireSound 字段
+### .wpn 声音字段速查表
 
 武器规格文件 `data/weapons/*.wpn` 加载时读取以下声音相关字段：
 
@@ -130,7 +134,7 @@ ID 大小写不一致同样触发。
 
 ## 使用方二：战术系统与持续循环 (playLoop)
 
-### .system 数据使用方
+### .system 声音字段速查表
 
 战术系统文件 `data/shipsystems/*.system` 有四个声音字段 (公开 API `ShipSystemSpecAPI` 提供 `getUseSound`/`getLoopSound`/`getDeactivateSound`/`getOutOfUsesSound`)：
 
@@ -302,6 +306,8 @@ public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
 
 ## 组装音频播放实现
 
+### 接入位置速查表
+
 三个 ID 各接一个使用方 (文件均位于 MOD 根目录下)：
 
 | ID | 接入文件 | 改动 |
@@ -452,16 +458,16 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ## 故障分析
 
-- **开火完全无声，但其他音效正常：**依次核对 `.wpn` 的 `fireSoundTwo`、`sounds.json` 条目和 OGG 路径。三处 ID 区分大小写；修正后重新开火，应能听到注册声音。
-- **开火瞬间抛出 NPE：**`fireSoundOne` 或 `fireSoundTwo` 引用了未注册 ID，声音集查找返回空值后被解引用。同步注册该 ID，或改回已存在的原版 ID。
-- **系统激活时没有循环声：**先区分激活音是否存在。只有循环音缺失时，核对 `loopSound` 与循环素材；两种声音都缺失时，同时核对 `useSound`。
-- **系统激活时因声音配置抛出 NPE：**`.system` 的 `loopSound` 指向未注册 ID，系统实现构造时取得了空值。补齐声音注册后重新激活系统。
-- **`playLoop` 不响或断断续续：**每帧没有续播、`playingEntity` 不稳定、距离超过 2500 或 `volume <= 0` 都会中断循环。把调用放进每帧回调，并持续传入同一个实体后复验。
-- **`playUISound` 报 `Sound set with id [...] not found`：**声音 ID 未注册或大小写不一致。核对注册条目后再次触发 UI 声音。
-- **部署舰船时在 `ShipEngineControllerAPI` 抛出 NPE：**hull style 引用了未注册的引擎声音集。本节三个声音 ID 均不用于引擎，出现该堆栈时直接检查风格文件。
-- **市场音乐仍是原版：**确认 `settings.json` 的 `plugins.musicPlugin` 已合并为正确类名，类继承 `MusicPlayerPluginImpl`，并检查市场 `$musicSetId` 是否覆盖了选曲结果。修正后重新进入市场。
-- **`playCustomMusic` 后没有音乐：**音乐 ID 必须注册在 `music` 分类，普通音效条目不会被音乐播放器识别。补齐分类后使用整数 fade 参数再次播放。
-- **`playCustomMusic` 后日志出现 NPE：**音乐 ID 没有解析到有效音乐条目。核对 `music` 分类和 ID 大小写；需要阻止默认音乐立即换回时，再设置 `setSuspendDefaultMusicPlayback(true)`。
+- **开火完全无声，但其他音效正常**：依次核对 `.wpn` 的 `fireSoundTwo`、`sounds.json` 条目和 OGG 路径。三处 ID 区分大小写；修正后重新开火，应能听到注册声音。
+- **开火瞬间抛出 NPE**：`fireSoundOne` 或 `fireSoundTwo` 引用了未注册 ID，声音集查找返回空值后被解引用。同步注册该 ID，或改回已存在的原版 ID。
+- **系统激活时没有循环声**：先区分激活音是否存在。只有循环音缺失时，核对 `loopSound` 与循环素材；两种声音都缺失时，同时核对 `useSound`。
+- **系统激活时因声音配置抛出 NPE**：`.system` 的 `loopSound` 指向未注册 ID，系统实现构造时取得了空值。补齐声音注册后重新激活系统。
+- **`playLoop` 不响或断断续续**：每帧没有续播、`playingEntity` 不稳定、距离超过 2500 或 `volume <= 0` 都会中断循环。把调用放进每帧回调，并持续传入同一个实体后复验。
+- **`playUISound` 报 `Sound set with id [...] not found`**：声音 ID 未注册或大小写不一致。核对注册条目后再次触发 UI 声音。
+- **部署舰船时在 `ShipEngineControllerAPI` 抛出 NPE**：hull style 引用了未注册的引擎声音集。本节三个声音 ID 均不用于引擎，出现该堆栈时直接检查风格文件。
+- **市场音乐仍是原版**：确认 `settings.json` 的 `plugins.musicPlugin` 已合并为正确类名，类继承 `MusicPlayerPluginImpl`，并检查市场 `$musicSetId` 是否覆盖了选曲结果。修正后重新进入市场。
+- **`playCustomMusic` 后没有音乐**：音乐 ID 必须注册在 `music` 分类，普通音效条目不会被音乐播放器识别。补齐分类后使用整数 fade 参数再次播放。
+- **`playCustomMusic` 后日志出现 NPE**：音乐 ID 没有解析到有效音乐条目。核对 `music` 分类和 ID 大小写；需要阻止默认音乐立即换回时，再设置 `setSuspendDefaultMusicPlayback(true)`。
 
 ## 总结
 

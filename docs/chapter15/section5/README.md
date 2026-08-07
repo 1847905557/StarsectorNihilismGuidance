@@ -96,7 +96,7 @@ public final class GearInI18n {
 
 `get` 是唯一的双参取值入口；`ui` 和 `dialog` 只固定分类，调用方只传键名。`format` 负责填入 `%s` 参数，`replaceToken` 负责填入 `$token`。
 
-## 调用示例与预期返回值
+## 调用示例速查表
 
 | 调用 | 返回 |
 | --- | --- |

@@ -15,9 +15,9 @@ import com.fs.starfarer.api.combat.EngagementResultAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Factions;
 
 /**
- * 完整最小例（对话框插件）：演示交互对话框（InteractionDialogPlugin）。
+ * 完整最小例(对话框插件)：演示交互对话框(InteractionDialogPlugin)。
  * 绑定位置：GearInDialogServicesScript 经 CampaignUIAPI.showInteractionDialog(plugin,
- * target) 打开（target 传 null）。optionSelected 的 optionText 是显示文本、optionData 是
+ * target) 打开(target 传 null)。optionSelected 的 optionText 是显示文本、optionData 是
  * addOption 传入的 id，分支判断必须用 optionData；未使用的回调保留空实现。
  */
 public class GearInServicesDialog implements InteractionDialogPlugin {
@@ -33,7 +33,7 @@ public class GearInServicesDialog implements InteractionDialogPlugin {
     @Override
     public void init(InteractionDialogAPI dialog) {
         this.dialog = dialog;
-        String target = dialog.getInteractionTarget() == null ? "null（本演示未绑定交互目标）"
+        String target = dialog.getInteractionTarget() == null ? "null(本演示未绑定交互目标)"
                 : dialog.getInteractionTarget().getName();
         dialog.getTextPanel().addPara("GearIn 生涯服务速览：交互对话框演示。交互目标=" + target
                 + "。选择下方选项查看对应服务信息，或选择关闭结束对话框。");
@@ -71,7 +71,7 @@ public class GearInServicesDialog implements InteractionDialogPlugin {
         }
     }
 
-    // 未使用的回调保留空实现（InteractionDialogPlugin 要求全部实现）。
+    // 未使用的回调保留空实现(InteractionDialogPlugin 要求全部实现)。
     @Override public void optionMousedOver(String optionText, Object optionData) {}
     @Override public void advance(float amount) {}
     @Override public void backFromEngagement(EngagementResultAPI battleResult) {}

@@ -11,9 +11,9 @@ import com.fs.starfarer.api.loading.WeaponGroupSpec;
 /**
  * 角色：武器组生成。演示空装配装武器但无武器组时的
  * hasUnassignedWeapons() == true，以及 autoGenerateWeaponGroups() 按 AI hints / 弧线 /
- * 尺寸重新聚类补组（同型武器必合并为一组，最多 7 组）。
+ * 尺寸重新聚类补组(同型武器必合并为一组，最多 7 组)。
  *
- * 注册入口：GearInVariantLauncher.register()（跑一次即停）。
+ * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
  */
 public class GearInWeaponGroupBuilder implements EveryFrameScript {
 

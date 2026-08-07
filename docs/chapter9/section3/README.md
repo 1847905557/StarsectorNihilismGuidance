@@ -39,93 +39,36 @@
 
 ### 对象链：Sector → CampaignFleetAPI → FleetDataAPI → FleetMemberAPI
 
-本节所有成员读写都发生在这条三层链上，各层进入方式与职责如下：
+本节所有成员读写都发生在这条三层链上。
 
-层
+### 舰队对象链速查表
 
-进入方式
+各层进入方式与职责如下：
 
-职责
+| 层 | 进入方式 | 职责 |
+|---|---|---|
+| 舰队实体 | `SectorAPI.getPlayerFleet()` / `getFleetById` 等 | `CampaignFleetAPI`(`com.fs.starfarer.api.campaign.CampaignFleetAPI`)：舰队身份、坐标、速度、势力、成员集合入口、统计、战斗绑定、inflater |
+| 成员集合 | `CampaignFleetAPI.getFleetData()` | `FleetDataAPI`(`com.fs.starfarer.api.campaign.FleetDataAPI`)：成员增删遍历、旗舰、军官、同步、快照、容量与 burn 计算 |
+| 单个成员 | `FleetDataAPI` 各列表 / `CampaignFleetAPI.getFlagship()` | `FleetMemberAPI`(`com.fs.starfarer.api.fleet.FleetMemberAPI`)：成员保存态全部字段与数值 |
 
-舰队实体
+### CampaignFleetAPI 高频成员速查表
 
-`SectorAPI.getPlayerFleet()` / `getFleetById` 等
-
-`CampaignFleetAPI`(`com.fs.starfarer.api.campaign.CampaignFleetAPI`)：舰队身份、坐标、速度、势力、成员集合入口、统计、战斗绑定、inflater
-
-成员集合
-
-`CampaignFleetAPI.getFleetData()`
-
-`FleetDataAPI`(`com.fs.starfarer.api.campaign.FleetDataAPI`)：成员增删遍历、旗舰、军官、同步、快照、容量与 burn 计算
-
-单个成员
-
-`FleetDataAPI` 各列表 / `CampaignFleetAPI.getFlagship()`
-
-`FleetMemberAPI`(`com.fs.starfarer.api.fleet.FleetMemberAPI`)：成员保存态全部字段与数值
-
-`CampaignFleetAPI` 高频成员 (`CampaignFleetAPI`)：
-
-成员
-
-语义
-
-`getFleetData()`
-
-成员集合入口 (本节主链路)
-
-`getFlagship()`
-
-旗舰成员；无旗舰时返回第一个非战机成员 (`CampaignFleetAPI.getFlagship`)
-
-`isPlayerFleet()`
-
-是否为玩家舰队
-
-`getStats()`
-
-`MutableFleetStatsAPI`：舰队级统计 (burn 修正等)
-
-`getLogistics()`
-
-`FleetLogisticsAPI`：补给/燃料消耗与维修调度
-
-`getFleetPoints()`
-
-当前舰队 fleet point 总量
-
-`getMembersWithFightersCopy()`
-
-含战机展开的成员副本 (见 "四种成员视图")
-
-`isEmpty()`
-
-成员列表是否为空
-
-`isValidPlayerFleet()`
-
-"舰队非空且不全由战机联队组成"
-
-`forceSync()`
-
-让容量、船员等与舰队构成、cargo 匹配，并重放舰队 buff / 船插 / 技能效果 (见 "FleetData 的分层结构")
-
-`setLocation(x, y)`
-
-舰队坐标写入入口
-
-`getLocation()`
-
-坐标读取；**禁止**用它写坐标 (`setLocation` 才是坐标写入入口)
-
-`setAIMode(boolean)`
-
-关闭补给/燃料消耗、事故与船员需求，LR 锁 100%
-
-`getInflater()` / `inflateIfNeeded()` / `deflate()`
-
-保存态 ↔ 完整装配态的膨胀入口 (见 "战斗准备")
+| 成员 | 语义 |
+|---|---|
+| `getFleetData()` | 成员集合入口 (本节主链路) |
+| `getFlagship()` | 旗舰成员；无旗舰时返回第一个非战机成员 (`CampaignFleetAPI.getFlagship`) |
+| `isPlayerFleet()` | 是否为玩家舰队 |
+| `getStats()` | `MutableFleetStatsAPI`：舰队级统计 (burn 修正等) |
+| `getLogistics()` | `FleetLogisticsAPI`：补给/燃料消耗与维修调度 |
+| `getFleetPoints()` | 当前舰队 fleet point 总量 |
+| `getMembersWithFightersCopy()` | 含战机展开的成员副本 (见 "四种成员视图") |
+| `isEmpty()` | 成员列表是否为空 |
+| `isValidPlayerFleet()` | "舰队非空且不全由战机联队组成" |
+| `forceSync()` | 让容量、船员等与舰队构成、cargo 匹配，并重放舰队 buff / 船插 / 技能效果 (见 "FleetData 的分层结构") |
+| `setLocation(x, y)` | 舰队坐标写入入口 |
+| `getLocation()` | 坐标读取；**禁止**用它写坐标 (`setLocation` 才是坐标写入入口) |
+| `setAIMode(boolean)` | 关闭补给/燃料消耗、事故与船员需求，LR 锁 100% |
+| `getInflater()` / `inflateIfNeeded()` / `deflate()` | 保存态 ↔ 完整装配态的膨胀入口 (见 "战斗准备") |
 
 对象链只给出进入方式；集合内部如何组织成员，决定成员增删之后您读到的列表和统计是否可信，先看它的分层结构。
 
@@ -155,19 +98,14 @@
 
 ### 成员创建与注册
 
+### 成员创建入口速查表
+
 创建成员的正式途径 (`FactoryAPI`)：
 
-成员
-
-语义
-
-`Global.getFactory().createFleetMember(FleetMemberType type, String variantOrWingId)`
-
-按装配 id(SHIP) 或联队 id(FIGHTER\_WING) 创建
-
-`Global.getFactory().createFleetMember(FleetMemberType type, ShipVariantAPI variant)`
-
-按装配对象创建
+| 成员 | 语义 |
+|---|---|
+| `Global.getFactory().createFleetMember(FleetMemberType type, String variantOrWingId)` | 按装配 id(SHIP) 或联队 id(FIGHTER\_WING) 创建 |
+| `Global.getFactory().createFleetMember(FleetMemberType type, ShipVariantAPI variant)` | 按装配对象创建 |
 
 (`SettingsAPI` 有同签名双入口；两处创建结果一致，习惯用 `Global.getFactory()`。)
 
@@ -183,35 +121,18 @@
 
 ### 成员添加 / 移除 / 遍历
 
+### FleetDataAPI 修改入口速查表
+
 `FleetDataAPI` 的成员修改入口 (`FleetDataAPI`)：
 
-成员
-
-语义
-
-`addFleetMember(FleetMemberAPI)`
-
-加入成员 (自动行为见下)
-
-`addFleetMember(String variantId)`
-
-按装配 id 创建 `SHIP` 成员并加入，返回新成员
-
-`removeFleetMember(FleetMemberAPI)`
-
-从列表移除并收缩槽位
-
-`scuttle(FleetMemberAPI)`
-
-移除并把拆解收益与已装武器放入 cargo(见 "后勤语义")
-
-`clear()`
-
-清空成员列表
-
-`setFlagship(FleetMemberAPI)`
-
-指定旗舰 (副作用见 "故障分析")
+| 成员 | 语义 |
+|---|---|
+| `addFleetMember(FleetMemberAPI)` | 加入成员 (自动行为见下) |
+| `addFleetMember(String variantId)` | 按装配 id 创建 `SHIP` 成员并加入，返回新成员 |
+| `removeFleetMember(FleetMemberAPI)` | 从列表移除并收缩槽位 |
+| `scuttle(FleetMemberAPI)` | 移除并把拆解收益与已装武器放入 cargo(见 "后勤语义") |
+| `clear()` | 清空成员列表 |
+| `setFlagship(FleetMemberAPI)` | 指定旗舰 (副作用见 "故障分析") |
 
 `addFleetMember` 的自动行为：同一对象引用已在列表 → **直接返回不重复添加**；填入第一个 NULL 槽；非战机且船名为空 → 自动起名；写回 `setFleetData(this)`；舰长为空 → 补默认舰长；清旗舰标记；`setSyncNeeded()`。
 
@@ -219,27 +140,16 @@ addFleetMember 禁止传 null
 
 传 null 会抛 `RuntimeException("Attempting to add null fleet member to [...]")`。入队前先对创建结果判空 —— `createFleetMember` 的 `SHIP` 分支对无效装配 id 会回退 `errorShipVariant` 而**不会**返回 null。
 
+### 四种成员视图速查表
+
 四种成员视图 (读取全部返回副本，可安全遍历)：
 
-视图
-
-内容
-
-`getMembersListCopy()`
-
-成员副本 (含战机联队，每个联队 1 条；无 NULL 占位)，最常用
-
-`getCombatReadyMembersListCopy()`
-
-非封存且 `canBeDeployedForCombat()` 的成员
-
-`getMembersInPriorityOrder()`
-
-非封存成员在前、封存成员在后，类内保持原顺序
-
-`getMembersListWithFightersCopy()`
-
-战机联队按联队数量逐架展开的完整列表 (`Utils.expandFighterWingsCampaign`；仅非封存且 CR > 0 的联队展开，封存排末尾)
+| 视图 | 内容 |
+|---|---|
+| `getMembersListCopy()` | 成员副本 (含战机联队，每个联队 1 条；无 NULL 占位)，最常用 |
+| `getCombatReadyMembersListCopy()` | 非封存且 `canBeDeployedForCombat()` 的成员 |
+| `getMembersInPriorityOrder()` | 非封存成员在前、封存成员在后，类内保持原顺序 |
+| `getMembersListWithFightersCopy()` | 战机联队按联队数量逐架展开的完整列表 (`Utils.expandFighterWingsCampaign`；仅非封存且 CR > 0 的联队展开，封存排末尾) |
 
 另有 `getMemberWithCaptain(PersonAPI)` 按舰长查成员、`getNumMembers()`、`getFleetPointsUsed()`。成员级实体脚本与视图偏移 (`FleetMemberViewAPI`) 不在本节范围。
 
@@ -247,61 +157,20 @@ addFleetMember 禁止传 null
 
 ### FleetMemberAPI：身份、装配、舰长、数值
 
+### FleetMemberAPI 成员分组速查表
+
 `FleetMemberAPI`(`com.fs.starfarer.api.fleet.FleetMemberAPI`) 按功能分组：
 
-分组
-
-成员
-
-语义
-
-身份
-
-`getId()`("Unique id, generated using Misc.genUID()")、`getSpecId()`、`getHullId()`、`getType()`、`getHullSpec()`
-
-成员唯一 id；装配 spec id；船体 id；`SHIP`/`FIGHTER_WING`/`NULL`
-
-装配
-
-`getVariant()`、`setVariant(ShipVariantAPI, boolean withRefit, boolean withStatsUpdate)`
-
-保存态装配读写；`getVariant().getHullVariantId()` 读装配 id
-
-舰长
-
-`getCaptain()`、`setCaptain(PersonAPI)`、`getFleetCommander()`、`isFlagship()` / `setFlagship(boolean, boolean)`
-
-成员舰长；舰队指挥官 (`fleetData.getCommander()`)；旗舰标记
-
-状态
-
-`getStatus()`、`getRepairTracker()`、`needsRepairs()`、`canBeRepaired()`、`isMothballed()`
-
-船体状态、CR/维修、封存 (见 "战斗准备")
-
-数值
-
-`getFleetPointCost()`、`getDeployCost()`、`getDeploymentPointsCost()`、`getDeploymentCostSupplies()`、`getMemberStrength()`、`getBaseValue()`、`getBaseBuyValue()`、`getBaseSellValue()`
-
-舰队点数、CR 部署成本、部署点数/补给、成员强度、基础价值
-
-后勤
-
-`getCargoCapacity()`、`getFuelCapacity()`、`getMinCrew()`、`getMaxCrew()`、`getNeededCrew()`、`getCrewFraction()`、`getFuelUse()`
-
-单成员后勤数值 (见 "后勤语义")
-
-分类
-
-`isFighterWing()`、`isFrigate()`、`isDestroyer()`、`isCruiser()`、`isCapital()`、`isCivilian()`、`isCarrier()`、`getNumFlightDecks()`、`isPhaseShip()`、`isStation()`
-
-按 hull size / 角色判定
-
-其他
-
-`getFleetData()`、`getStats()`(`MutableShipStatsAPI`)、`getCrewComposition()`、`isAlly()` / `setAlly(boolean)`、`setShipName()`
-
-回链集合、成员统计、船员构成、战斗瞬态标记、船名
+| 分组 | 成员 | 语义 |
+|---|---|---|
+| 身份 | `getId()`("Unique id, generated using Misc.genUID()")、`getSpecId()`、`getHullId()`、`getType()`、`getHullSpec()` | 成员唯一 id；装配 spec id；船体 id；`SHIP`/`FIGHTER_WING`/`NULL` |
+| 装配 | `getVariant()`、`setVariant(ShipVariantAPI, boolean withRefit, boolean withStatsUpdate)` | 保存态装配读写；`getVariant().getHullVariantId()` 读装配 id |
+| 舰长 | `getCaptain()`、`setCaptain(PersonAPI)`、`getFleetCommander()`、`isFlagship()` / `setFlagship(boolean, boolean)` | 成员舰长；舰队指挥官 (`fleetData.getCommander()`)；旗舰标记 |
+| 状态 | `getStatus()`、`getRepairTracker()`、`needsRepairs()`、`canBeRepaired()`、`isMothballed()` | 船体状态、CR/维修、封存 (见 "战斗准备") |
+| 数值 | `getFleetPointCost()`、`getDeployCost()`、`getDeploymentPointsCost()`、`getDeploymentCostSupplies()`、`getMemberStrength()`、`getBaseValue()`、`getBaseBuyValue()`、`getBaseSellValue()` | 舰队点数、CR 部署成本、部署点数/补给、成员强度、基础价值 |
+| 后勤 | `getCargoCapacity()`、`getFuelCapacity()`、`getMinCrew()`、`getMaxCrew()`、`getNeededCrew()`、`getCrewFraction()`、`getFuelUse()` | 单成员后勤数值 (见 "后勤语义") |
+| 分类 | `isFighterWing()`、`isFrigate()`、`isDestroyer()`、`isCruiser()`、`isCapital()`、`isCivilian()`、`isCarrier()`、`getNumFlightDecks()`、`isPhaseShip()`、`isStation()` | 按 hull size / 角色判定 |
+| 其他 | `getFleetData()`、`getStats()`(`MutableShipStatsAPI`)、`getCrewComposition()`、`isAlly()` / `setAlly(boolean)`、`setShipName()` | 回链集合、成员统计、船员构成、战斗瞬态标记、船名 |
 
 **装配写入语义** (`FleetMemberAPI.setVariant`)：`withRefit = true` 时按新旧装配差异对 CR 施加事件 (`applyCREvent(..., "field refit")`)；
 
@@ -475,7 +344,7 @@ mods/GearIndustry/
 ├── data/
 ├── src/
 │   └── data/scripts/gearin/campaign/
-│       └── GearInFleetMemberScript   # 本节新增（归本节所有）
+│       └── GearInFleetMemberScript   # 本节新增(归本节所有)
 └── jars/
 ```
 
@@ -582,17 +451,17 @@ fleet.getFleetData().addFleetMember(member);
 
 ## 故障分析
 
-- **成员数不变且日志没有 added 行：**代码只调用了 `createFleetMember`，没有把保存态成员加入集合。使用玩家舰队的 `FleetDataAPI.addFleetMember(...)`，随后确认成员数增加。
-- **`addFleetMember` 抛出 `Attempting to add null fleet member`：**调用方把 null 传给了集合。检查自定义创建入口的返回值，确认非 null 后再入队。
-- **同一成员被加入两轮：**注册脚本缺少一次性判断，每次读档都会重新执行添加逻辑。使用 `REGISTER_MARK` 门控，连续读档后核对成员数量。
-- **重复调用 `addFleetMember` 没有任何变化：**同一对象引用已经在舰队集合中。通过 `getMembersListCopy()` 按 `getId()` 判断是否已入队。
-- **战机联队只被计为一个成员：**`getMembersListCopy()` 与 `getNumMembers()` 按联队对象计数。逐架统计使用 `getMembersListWithFightersCopy()`；封存或零 CR 联队不会展开。
-- **`getSnapshot()` 读档后为空：**snapshot 是瞬态字段，不进入存档。持久成员状态读取 `getMembersListCopy()`；快照只用于战斗前或销毁前的临时比较。
-- **修改装配后战斗中仍是旧船：**`FleetMemberAPI.setVariant` 只修改保存态，已部署实体不会跟随变化。生涯侧使用 `setVariant(variant, true, true)`，战斗实体在部署侧处理。
-- **战斗准备列表里没有低 CR 舰船：**CR 低于部署门槛，或船员比例低于默认 5%，都会让 `canBeDeployedForCombat()` 返回 false。核对 `getCR()` 与 `getCrewFraction()`，补充船员并等待 CR 恢复。
-- **封存后仍显示补给消耗和货舱容量：**封存修饰要到 stats 同步时才写入。调用 `CampaignFleetAPI.forceSync()`，或读取 `getMembers()` 触发同步后再检查数值。
-- **`setFlagship` 后其他成员舰长被重置：**该方法会为其他舰船设置全零属性新人，并让新旗舰使用舰队指挥官。按这一语义安排调用，不要再逐成员调用 `setCaptain` 对抗。
-- **演示日志出现但舰队没有变化：**脚本注册在错误生命周期阶段，或操作的不是当前玩家舰队。将注册放入 `onGameLoad` 的一次性判断块，并从 `Global.getSector().getPlayerFleet()` 重新取得目标。
+- **成员数不变且日志没有 added 行**：代码只调用了 `createFleetMember`，没有把保存态成员加入集合。使用玩家舰队的 `FleetDataAPI.addFleetMember(...)`，随后确认成员数增加。
+- **`addFleetMember` 抛出 `Attempting to add null fleet member`**：调用方把 null 传给了集合。检查自定义创建入口的返回值，确认非 null 后再入队。
+- **同一成员被加入两轮**：注册脚本缺少一次性判断，每次读档都会重新执行添加逻辑。使用 `REGISTER_MARK` 门控，连续读档后核对成员数量。
+- **重复调用 `addFleetMember` 没有任何变化**：同一对象引用已经在舰队集合中。通过 `getMembersListCopy()` 按 `getId()` 判断是否已入队。
+- **战机联队只被计为一个成员**：`getMembersListCopy()` 与 `getNumMembers()` 按联队对象计数。逐架统计使用 `getMembersListWithFightersCopy()`；封存或零 CR 联队不会展开。
+- **`getSnapshot()` 读档后为空**：snapshot 是瞬态字段，不进入存档。持久成员状态读取 `getMembersListCopy()`；快照只用于战斗前或销毁前的临时比较。
+- **修改装配后战斗中仍是旧船**：`FleetMemberAPI.setVariant` 只修改保存态，已部署实体不会跟随变化。生涯侧使用 `setVariant(variant, true, true)`，战斗实体在部署侧处理。
+- **战斗准备列表里没有低 CR 舰船**：CR 低于部署门槛，或船员比例低于默认 5%，都会让 `canBeDeployedForCombat()` 返回 false。核对 `getCR()` 与 `getCrewFraction()`，补充船员并等待 CR 恢复。
+- **封存后仍显示补给消耗和货舱容量**：封存修饰要到 stats 同步时才写入。调用 `CampaignFleetAPI.forceSync()`，或读取 `getMembers()` 触发同步后再检查数值。
+- **`setFlagship` 后其他成员舰长被重置**：该方法会为其他舰船设置全零属性新人，并让新旗舰使用舰队指挥官。按这一语义安排调用，不要再逐成员调用 `setCaptain` 对抗。
+- **演示日志出现但舰队没有变化**：脚本注册在错误生命周期阶段，或操作的不是当前玩家舰队。将注册放入 `onGameLoad` 的一次性判断块，并从 `Global.getSector().getPlayerFleet()` 重新取得目标。
 
 ## 总结
 
@@ -637,12 +506,12 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 完整最小例：生涯舰队成员（FleetMemberAPI）与舰队数据（FleetDataAPI）。
+ * 完整最小例：生涯舰队成员(FleetMemberAPI)与舰队数据(FleetDataAPI)。
  *
- * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），persistent data 键 REGISTER_MARK 一次性门控
- * （沿用既有 CLASS_MARK 门控模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内）。
+ * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控
+ * (沿用既有 CLASS_MARK 门控模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
  *
- * 行为：挂载后第一次 advance() 执行一次演示序列并自停（isDone()=true，引擎下一帧自动移除本脚本）：
+ * 行为：挂载后第一次 advance() 执行一次演示序列并自停(isDone()=true，引擎下一帧自动移除本脚本)：
  *   1. 读取玩家舰队初始成员数与 fleet points、cargo 容量；
  *   2. 用 Global.getFactory().createFleetMember 创建 wolf_Assault 与 hammerhead_Elite 两个 SHIP 成员；
  *   3. 分别 addFleetMember 加入玩家舰队，记录加入前后成员数、fleet points、cargo 容量变化；
@@ -657,7 +526,7 @@ import com.fs.starfarer.api.fleet.FleetMemberType;
  */
 public class GearInFleetMemberScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档执行过（随存档保存）。 */
+    /** 存档持久化标记：本脚本是否已在该存档执行过(随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_FleetMemberScript";
 
     private static final Logger LOG = Global.getLogger(GearInFleetMemberScript.class);
@@ -666,7 +535,7 @@ public class GearInFleetMemberScript implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInFleetMemberScript() {
-        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
+        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -699,7 +568,7 @@ public class GearInFleetMemberScript implements EveryFrameScript {
                 "GearIn fleet member start: members=%d fleetPoints=%.0f cargoCapacity=%.0f",
                 initialCount, initialFleetPoints, initialCargo));
 
-        // --- 创建成员（先不入队）---
+        // --- 创建成员(先不入队)---
         FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
         FleetMemberAPI hammerhead = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "hammerhead_Elite");
         LOG.info(String.format(

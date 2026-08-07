@@ -67,7 +67,7 @@ strings 的值可以包含两类占位符：
 
 例如，`$fleetName` 需要由舰队遭遇文本的使用方替换；`%s` 的参数数量和类型必须与模板一致。
 
-## 原版分类与同目录文件
+## 原版分类速查表
 
 原版 `strings.json` 有 4 个顶层分类：
 
@@ -79,6 +79,8 @@ strings 的值可以包含两类占位符：
 | `planetInteractionDialog` | 行星接近文本：`approach` | `$fleetOrShip`、`$planetName` | 行星交互对话 | 1 |
 
 MOD 可以使用自己的分类，不需要复用原版分类名。对话类值依靠 `$token` 注入动态内容，帮助类值可以使用 `\n` 组织多段文本。
+
+## 同目录文件
 
 `data/strings/tooltips.json` 与 `strings.json` 不合并，键空间独立；值可以是纯字符串，也可以是包含 `title` 和 `body` 的对象。`data/strings/tips.json` 保存加载界面的随机小贴士。两者都不能用双参 `getString` 读取。单参 `getString(key)` 的目标是 `data/config/settings.json`。
 

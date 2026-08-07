@@ -11,12 +11,12 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 人物专题一次性演示脚本（协调器）：编排各角色小类并负责演示成员与清理，自停脚本。
+ * 人物专题一次性演示脚本(协调器)：编排各角色小类并负责演示成员与清理，自停脚本。
  * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK 一次性守卫；全程同帧回滚。
  */
 public class GearInPersonScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过（随存档保存）。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_PersonLesson";
 
     private static final Logger LOG = Global.getLogger(GearInPersonScript.class);
@@ -50,7 +50,7 @@ public class GearInPersonScript implements EveryFrameScript {
         SectorAPI sector = Global.getSector();
         FleetDataAPI fleetData = sector.getPlayerFleet().getFleetData();
         int initialCount = new GearInBaseline().run(sector, fleetData);
-        // 演示成员 wolf / hammerhead（供 captain / officer 小节使用）
+        // 演示成员 wolf / hammerhead(供 captain / officer 小节使用)
         FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
         FleetMemberAPI hammerhead = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "hammerhead_Elite");
         fleetData.addFleetMember(wolf);
@@ -64,7 +64,7 @@ public class GearInPersonScript implements EveryFrameScript {
         new GearInPersonRelationship().run(personA);
         new GearInPersonRegistration().run(sector, personA);
 
-        // 舰长；人物 B 与军官；势力关系（同帧回滚）
+        // 舰长；人物 B 与军官；势力关系(同帧回滚)
         new GearInCaptain().run(wolf, personA, fleetData);
         new GearInOfficer().run(sector, hammerhead, fleetData, sector.getPlayerFleet());
         new GearInFactionRelation().run(sector);

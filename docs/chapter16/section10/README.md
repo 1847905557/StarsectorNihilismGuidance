@@ -28,7 +28,14 @@
 
 ## 文件与 API 链路
 
-`SegmentEntity` 适合线段、折线、圆与椭圆；`CurveEntity` 提供平滑曲线插值；两者都在客户端节点列表和 GPU 节点缓冲之间保留明确的提交边界。`CombatRenderingManager` 负责把构造完成的实体加入当前战斗。
+### 线段与曲线实体速查表
+
+| 实体 | 适用形状 |
+|---|---|
+| `SegmentEntity` | 线段、折线、圆与椭圆 |
+| `CurveEntity` | 平滑曲线插值 |
+
+两者都在客户端节点列表和 GPU 节点缓冲之间保留明确的提交边界，构造完成后由 `CombatRenderingManager` 加入当前战斗。
 
 ### 初始化战术范围圆环
 

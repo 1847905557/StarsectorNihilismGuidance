@@ -39,7 +39,7 @@ import com.fs.starfarer.api.combat.ShipAPI.HullSize;
  */
 public class GearInSpeedBooster extends BaseHullMod {
 
-    /** 速度加成百分比（参数：改这个数字，其余不动）。 */
+    /** 速度加成百分比(参数：改这个数字，其余不动)。 */
     private static final float SPEED_PERCENT = 10f;
 
     @Override
@@ -107,16 +107,6 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 :::
 
-## 错误对照表 (第一版)
-
-| 症状 | 原因 | 修法 |
-|---|---|---|
-| 装配界面里没有 "加速器" | CSV 行未生效 | 文件路径必须是 MOD 根的 `data/hullmods/hull_mods.csv`；保留表头行；文件以 UTF-8 无 BOM 保存 |
-| 启动时日志报 `Problem loading class [data.scripts.gearin.hullmods.GearInSpeedBooster]` | 类名三处不一致 | 核对文件名、`class` 后的名字、CSV `script` 列 —— 必须一字不差 |
-| 日志报 `Error loading [...]` 且带行号 | Java 代码书写错误 (漏分号、括号不配对) | 按报错行号对照本节代码逐字检查 |
-| 修改参数后无变化 | 未重启游戏，或改的不是游戏加载的那份文件 | 确认文件路径；重启游戏 |
-| 船插已装但数值无变化 | 观察对象错误 (tooltip 已是 50% 但船本身基础速度低) | 用装配界面的速度数值对比安装前后 |
-
 ## 验证方案
 
 前置数据：[C1-S2] 建立的舰船、本节注册的 `GearIn_speed_booster` 船插与 `GearInSpeedBooster.java`。
@@ -136,9 +126,11 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 ## 故障分析
 
-- **类能编译但没有效果**：`hull_mods.csv` 缺少对应行，或 `script` 列写错时，游戏和日志都没有本船插的反应。核对 CSV 路径与完整类名，重启后确认加成出现。
-- **日志出现 `Problem loading class`**：`script` 列、`package` 行和 `class` 行没有指向同一个类。逐一对照三处文本，重启后确认日志不再报告该异常。
+- **类能编译但没有效果**：`hull_mods.csv` 缺少对应行，或 `script` 列写错时，游戏和日志都没有本船插的反应。文件必须位于 MOD 根的 `data/hullmods/hull_mods.csv`，保留表头行并以 UTF-8 无 BOM 保存；核对 CSV 路径与完整类名，重启后确认加成出现。
+- **日志出现 `Problem loading class`**：`script` 列、`package` 行和 `class` 行没有指向同一个类。逐一对照文件名、`class` 后的名字与 `script` 列三处文本，重启后确认日志不再报告该异常。
+- **日志报告 `Error loading [...]` 并带行号**：漏分号、括号不配对等 Java 书写错误会在日志中带行号报告。按报错行号对照本节代码逐字检查，修正后重启。
 - **修改参数后加成不变**：当前编辑的可能是另一份文件，或游戏仍在使用重启前加载的类。确认文件属于 `gear_in` 的 `GearInSpeedBooster.java`，重启后重新查看 tooltip。
+- **船插已装但数值没有变化**：观察对象错误时 (tooltip 已是 50% 而舰船本身基础速度较低)，差异容易被忽略。用装配界面的速度数值对比安装前后。
 - **日志文字没出现**：日志级别过滤或搜索词不对时，游戏内行为可以正常而搜索不到完整句子。验证前清空 `starsector.log`，再搜索稳定标识 `GearIn_speed_booster`。
 
 ## 总结

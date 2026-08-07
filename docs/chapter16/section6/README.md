@@ -28,7 +28,14 @@
 
 ## 文件与 API 链路
 
-`MagicSettings` 从 `modSettings.json` 的 `gear_in` 段读取值；`AIUtils` 与 `VectorUtils` 选择目标并计算角度；`MagicFakeBeam` 完成射线、视觉与伤害；`MagicUI` 只为玩家舰绘制状态条，并要求定期刷新唯一 key。
+### 脉冲光束 API 职责速查表
+
+| 对象 | 职责 |
+|---|---|
+| `MagicSettings` | 从 `modSettings.json` 的 `gear_in` 段读取值 |
+| `AIUtils` 与 `VectorUtils` | 选择目标并计算角度 |
+| `MagicFakeBeam` | 完成射线、视觉与伤害 |
+| `MagicUI` | 为玩家舰绘制状态条，并要求定期刷新唯一 key |
 
 ### 缓存光束与界面配置
 
@@ -195,12 +202,12 @@ import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.DamageType;
 import com.fs.starfarer.api.combat.ShipAPI;
 
-/** 伪光束（MagicFakeBeam）：每 BEAM_INTERVAL 秒向最近可见敌舰发射一条伪光束。
+/** 伪光束(MagicFakeBeam)：每 BEAM_INTERVAL 秒向最近可见敌舰发射一条伪光束。
  * 伤害瞬时结算，持续视觉时间不等于持续伤害时间；光束不会被中途物体截断；
- * HIGH_EXPLOSIVE 对装甲全额伤害（原版有折减），本类用 ENERGY 规避。 */
+ * HIGH_EXPLOSIVE 对装甲全额伤害(原版有折减)，本类用 ENERGY 规避。 */
 public class GearInBeamCaster {
     private static final Logger LOG = Global.getLogger(GearInBeamCaster.class);
-    private static final float BEAM_INTERVAL = 2f; // 光束发射间隔（秒）；伤害瞬时，视觉时长由 modSettings.json 控制
+    private static final float BEAM_INTERVAL = 2f; // 光束发射间隔(秒)；伤害瞬时，视觉时长由 modSettings.json 控制
 
     private final GearInMagicSettings settings;
     private CombatEngineAPI engine;
@@ -211,12 +218,12 @@ public class GearInBeamCaster {
         this.settings = settings;
     }
 
-    /** 战斗 init 时注入引擎（由接线类调用）。 */
+    /** 战斗 init 时注入引擎(由接线类调用)。 */
     public void init(CombatEngineAPI engine) {
         this.engine = engine;
     }
 
-    /** 每帧推进充能，满 1 发射并清零；只在非暂停推进（暂停守卫由接线类负责）。 */
+    /** 每帧推进充能，满 1 发射并清零；只在非暂停推进(暂停守卫由接线类负责)。 */
     public void advance(float amount) {
         beamCharge += amount / BEAM_INTERVAL;
         if (beamCharge >= 1f) {
@@ -276,9 +283,9 @@ import org.magiclib.util.MagicUI;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 
-/** 战斗 HUD 状态条（MagicUI）：以固定 key 刷新玩家舰状态条。
- * 只注册数据，绘制由 MagicLib 的 MagicRenderPlugin（settings plugins 注册的
- * 战斗插件）每帧完成；状态条约 5 秒不被刷新就会被移除（含暂停时间），因此
+/** 战斗 HUD 状态条(MagicUI)：以固定 key 刷新玩家舰状态条。
+ * 只注册数据，绘制由 MagicLib 的 MagicRenderPlugin(settings plugins 注册的
+ * 战斗插件)每帧完成；状态条约 5 秒不被刷新就会被移除(含暂停时间)，因此
  * 刷新调用必须放在暂停守卫之前。 */
 public class GearInHudBar {
 
@@ -293,7 +300,7 @@ public class GearInHudBar {
         this.settings = settings;
     }
 
-    /** 刷新状态条：填充进度 = 光束充能，颜色复用光束颜色（改配置 → 光束与状态条一起变色）。 */
+    /** 刷新状态条：填充进度 = 光束充能，颜色复用光束颜色(改配置 → 光束与状态条一起变色)。 */
     public void refresh(CombatEngineAPI engine) {
         ShipAPI player = engine.getPlayerShip();
         if (player == null) {
@@ -301,11 +308,11 @@ public class GearInHudBar {
         }
         MagicUI.drawInterfaceStatusBar(
                 player,
-                HUD_BAR_KEY,            // 固定 key：改变文本不会生成新条（无 key 重载用文本兼作 key）
+                HUD_BAR_KEY,            // 固定 key：改变文本不会生成新条(无 key 重载用文本兼作 key)
                 beam.getBeamCharge(),   // 0..1 的填充进度
                 settings.beamCoreColor,   // 填充色；null 时用原版 HUD 绿
                 settings.beamFringeColor, // 边框色；null 时用原版 HUD 绿
-                0f,                     // 第二段填充（类硬幅能），0 即关闭
+                0f,                     // 第二段填充(类硬幅能)，0 即关闭
                 "Beam charge",
                 beam.getBeamCount());   // 右侧数字，0..999999
     }
@@ -327,33 +334,33 @@ import org.magiclib.util.MagicSettings;
 
 import com.fs.starfarer.api.Global;
 
-/** 设置接入（MagicSettings）：从 data/config/modSettings.json 的 "gear_in" 段读取
- * 光束与 HUD 配置，构造时缓存一次、不在每帧解析（MagicSettings javadoc 建议）。
- * 键缺失返回类型缺省值（false / 0 / Color.RED / 空集合）并写 warn 日志，不抛
+/** 设置接入(MagicSettings)：从 data/config/modSettings.json 的 "gear_in" 段读取
+ * 光束与 HUD 配置，构造时缓存一次、不在每帧解析(MagicSettings javadoc 建议)。
+ * 键缺失返回类型缺省值(false / 0 / Color.RED / 空集合)并写 warn 日志，不抛
  * 异常 —— 缺省值会参与后续运行语义，业务开关不要依赖缺省值。 */
 public class GearInMagicSettings {
 
     private static final Logger LOG = Global.getLogger(GearInMagicSettings.class);
 
-    /** data/config/modSettings.json 中本 MOD 的段名（= MOD id "gear_in"）。 */
+    /** data/config/modSettings.json 中本 MOD 的段名(= MOD id "gear_in")。 */
     private static final String CONFIG_SECTION = "gear_in";
 
     /** HUD 状态条总开关。 */
     public final boolean hudEnabled;
-    /** 光束宽度 / 射程 / 伤害 / EMP（数值键缺省 0）。 */
+    /** 光束宽度 / 射程 / 伤害 / EMP(数值键缺省 0)。 */
     public final float beamWidth;
     public final float beamRange;
     public final float beamDamage;
     public final float beamEmp;
-    /** 全亮与淡出时长（秒）：只控制视觉，不影响伤害结算。 */
+    /** 全亮与淡出时长(秒)：只控制视觉，不影响伤害结算。 */
     public final float beamFull;
     public final float beamFading;
     /** 命中光斑尺寸。 */
     public final float beamImpactSize;
-    /** 光束核心 / 边缘颜色（缺省 Color.RED）。 */
+    /** 光束核心 / 边缘颜色(缺省 Color.RED)。 */
     public final Color beamCoreColor;
     public final Color beamFringeColor;
-    /** 光束标签列表（缺省空集合）。 */
+    /** 光束标签列表(缺省空集合)。 */
     public final List<String> beamTags;
 
     public GearInMagicSettings() {

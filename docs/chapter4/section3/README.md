@@ -24,6 +24,8 @@
 
 ## 文件与 API 链路
 
+### 模块船文件速查表
+
 模块船涉及 4 类文件，链路如下：
 
 | 文件 | 注册入口 | 产物 | 使用方 |
@@ -259,7 +261,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 把模块挂到主体上发生在**部署**阶段，而不是装配加载阶段：
 
-1. `CombatFleetManagerAPI` 部署舰队成员时，先检查 `成员是空间站（STATION）或船体带 SHIP_WITH_MODULES`；只有命中才走模块船生成流程生成模块。
+1. `CombatFleetManagerAPI` 部署舰队成员时，先检查 `成员是空间站(STATION)或船体带 SHIP_WITH_MODULES`；只有命中才走模块船生成流程生成模块。
 2. 模块船生成流程遍历主体装配的 `getStationModules()`(槽位 → 模块装配 ID)；对每个 `isStationModule()` 为真的槽位，用模块装配创建一个新 `FleetMemberAPI` 与 `ShipAPI` 实体。
 3. 新实体被放置到 `槽位.computePosition(主体, 模块锚点)`，朝向设为 `槽位.computeMidArcAngle(主体)`(即槽位的中间角)，随后 `setParentStation(主体)`、`setStationSlot(槽位)`，并加入主体的 `getChildModules()`。
 4. 模块实体和主体一样是完整的 `ShipAPI`：有自己的装甲格、幅能、武器组、战术系统和 AI(`pickShipAIPlugin` 为它挑选 AI)。
@@ -282,6 +284,8 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 ### 装配界面里的模块
 
 主体在装配界面里会显示其模块；模块是否**可被选中改装**由模块船体的 `ordnance points` 决定：装配点上限为 0 的模块默认无法被选中 (装配面板按 `getOrdnancePoints() > 0` 判定)。
+
+### 模块行为 tag 速查表
 
 模块的下列行为 tag 放在模块行的 `tags` 列 (会被加载器复制到船体 tag 上)：
 

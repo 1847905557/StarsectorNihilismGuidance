@@ -13,7 +13,7 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 
 /**
- * 军官（OfficerDataAPI）：势力随机人物 -> 包装入 roster -> XP/技能候选/升级 -> 上舰 -> 移除。
+ * 军官(OfficerDataAPI)：势力随机人物 -> 包装入 roster -> XP/技能候选/升级 -> 上舰 -> 移除。
  */
 public class GearInOfficer {
 

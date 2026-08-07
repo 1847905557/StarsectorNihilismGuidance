@@ -28,7 +28,14 @@
 
 ## 文件与 API 链路
 
-`AIUtils` 提供当前帧附近敌方导弹；`WeaponUtils` 判断射界并驱动炮塔朝向；`CombatUtils` 适合按区域补充查询；`DefenseUtils` 用于把本舰装甲状态纳入扩展评分。
+### 点防御 API 职责速查表
+
+| 对象 | 职责 |
+|---|---|
+| `AIUtils` | 提供当前帧附近敌方导弹 |
+| `WeaponUtils` | 判断射界并驱动炮塔朝向 |
+| `CombatUtils` | 按区域补充查询 |
+| `DefenseUtils` | 把本舰装甲状态纳入扩展评分 |
 
 ### 取得当前帧威胁列表
 

@@ -16,30 +16,30 @@ import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 
 /**
- * 完整最小例：分层渲染插件（CombatLayeredRenderingPlugin）的层级、视口与清理。
+ * 完整最小例：分层渲染插件(CombatLayeredRenderingPlugin)的层级、视口与清理。
  *
  * 渲染管线事实：
  * - engine.addLayeredRenderingPlugin(plugin) 用自定义战斗实体包装插件并加入引擎；
  *   executeAdds 时调用 plugin.init(entity) 并按 getActiveLayers() 注册进 LayeredRenderer；
- * - 每帧（非暂停分支）推进 entity.advance(amount)，随后 isExpired() 为 true 的实体
+ * - 每帧(非暂停分支)推进 entity.advance(amount)，随后 isExpired() 为 true 的实体
  *   进移除队列；移除时引擎调用 entity.cleanup() -> plugin.cleanup()——
  *   cleanup() 是释放 GL 资源的正常时机；
  * - 战斗结束 destroyInstance 只清空对象表、不调用 cleanup()——
- *   插件必须在 advance() 里主动失效（isExpired() -> true），不能等"战斗结束回调"；
+ *   插件必须在 advance() 里主动失效(isExpired() -> true)，不能等"战斗结束回调"；
  * - 渲染阶段：自定义战斗实体的 render 先判 viewport.isNearViewport(entity.getLocation(),
  *   plugin.getRenderRadius())，通过才调 plugin.render(layer, viewport)——
  *   剔除依据是承载实体的位置与 getRenderRadius()，位置必须同步到 entity；
  * - 渲染回调在渲染阶段被调用，绘制必须在这里用 GL 原语完成；advance() 属于推进阶段，
  *   不做任何绘制；
- * - 暂停时引擎不推进实体（advanceInner 的暂停分支只 advance 地形与玩家舰船），
- *   但渲染循环照常执行（渲染不暂停）；isPaused() 守卫为防御性写法（成熟实例一致做法）；
- * - 插件、引擎与舰船引用禁止跨战斗缓存（C6-S3 / C7-S4 同规）。
+ * - 暂停时引擎不推进实体(advanceInner 的暂停分支只 advance 地形与玩家舰船)，
+ *   但渲染循环照常执行(渲染不暂停)；isPaused() 守卫为防御性写法(成熟实例一致做法)；
+ * - 插件、引擎与舰船引用禁止跨战斗缓存(C6-S3 / C7-S4 同规)。
  */
 public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInLayeredRenderer.class);
 
-    /** 半透明方框的边长（世界单位）。 */
+    /** 半透明方框的边长(世界单位)。 */
     private static final float MARKER_SIZE = 120f;
 
     /** 被追踪的舰船：每帧读取它的实时位置，不缓存坐标副本。 */
@@ -81,7 +81,7 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
             return; // 防御：init() 先于 advance() 被引擎调用，保留与成熟实例一致的判空
         }
         if (engine.isPaused()) {
-            return; // 暂停守卫（防御性；引擎的暂停分支本就不推进实体）
+            return; // 暂停守卫(防御性；引擎的暂停分支本就不推进实体)
         }
         if (!engine.isEntityInPlay(trackedShip) || !trackedShip.isAlive()) {
             valid = false; // 失效：下一轮 executeRemoves 移除实体并调用 cleanup()

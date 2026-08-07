@@ -10,23 +10,23 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 环节一：装配 -> stats 交接（舰船 stats 基值与 setVariant 重算）。
+ * 环节一：装配 -> stats 交接(舰船 stats 基值与 setVariant 重算)。
  *
- * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），persistent data 键
- * REGISTER_MARK 一次性门控（每个注册项用各自的键）。
+ * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
+ * REGISTER_MARK 一次性门控(每个注册项用各自的键)。
  *
- * 行为：挂载后第一次 advance() 执行一次演示并自停（isDone()=true，引擎下一帧自动移除）：
- *   1. 基线：创建 wolf_Assault 成员（未入队），读取舰船 stats 基值（幅能/速度/CR）与
+ * 行为：挂载后第一次 advance() 执行一次演示并自停(isDone()=true，引擎下一帧自动移除)：
+ *   1. 基线：创建 wolf_Assault 成员(未入队)，读取舰船 stats 基值(幅能/速度/CR)与
  *      stats.getVariant() / getFleetMember() 的对象关系；
  *   2. 装配 -> stats：克隆装配加 5 电容 + 5 散热后 setVariant(withRefit=false,
- *      withStatsUpdate=true)，幅能容量 +5*200、幅能散耗 +5*10（引擎保留 ID 的 flat 写入），
+ *      withStatsUpdate=true)，幅能容量 +5*200、幅能散耗 +5*10(引擎保留 ID 的 flat 写入)，
  *      stats.getVariant() 与传入变体同一引用。
  *
- * 演示全程同帧回滚（只留下 REGISTER_MARK 键），不遗留任何持久状态。
+ * 演示全程同帧回滚(只留下 REGISTER_MARK 键)，不遗留任何持久状态。
  */
 public class GearInVariantToStats implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过（随存档保存）。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_VariantToStats";
 
     private static final Logger LOG = Global.getLogger(GearInVariantToStats.class);
@@ -35,7 +35,7 @@ public class GearInVariantToStats implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInVariantToStats() {
-        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
+        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override

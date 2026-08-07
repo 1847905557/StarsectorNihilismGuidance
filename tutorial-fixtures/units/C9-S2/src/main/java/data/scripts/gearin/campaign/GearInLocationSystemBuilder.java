@@ -9,13 +9,13 @@ import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.StarSystemAPI;
 
 /**
- * 角色：演示星系创建（LocationAPI / StarSystemAPI 的实体填充），被
+ * 角色：演示星系创建(LocationAPI / StarSystemAPI 的实体填充)，被
  * GearInLocationScript.setup 调用：星系已存在则复用，否则创建并记录日志。
  */
 public class GearInLocationSystemBuilder {
 	/** 演示星系查询键：SectorAPI.getStarSystem 用 optionalUniqueId 或基名小写匹配。 */
 	public static final String SYSTEM_UNIQUE_ID = "GearIn_demo";
-	/** 本单元专属实体 ID（与 C3-S6 的 GearIn 星系既有 ID 互不冲突）。 */
+	/** 本单元专属实体 ID(与 C3-S6 的 GearIn 星系既有 ID 互不冲突)。 */
 	public static final String STAR_ID = "GearIn_demo_star";
 	public static final String PLANET_ID = "GearIn_demo_planet1";
 	public static final String BEACON_ID = "GearIn_demo_beacon";
@@ -23,7 +23,7 @@ public class GearInLocationSystemBuilder {
 	private static final Logger LOG = Global.getLogger(GearInLocationSystemBuilder.class);
 
 	private GearInLocationSystemBuilder() {
-		// 工具类：实例化由调用方承担（静态入口 getOrCreate）
+		// 工具类：实例化由调用方承担(静态入口 getOrCreate)
 	}
 
 	/** 演示星系存在则复用，否则创建；返回可用的星系。 */
@@ -42,27 +42,27 @@ public class GearInLocationSystemBuilder {
 		system.setOptionalUniqueId(SYSTEM_UNIQUE_ID);
 
 		// 6 参数 initStar：同时把星系定位到超空间坐标 (7500, 8500)，并自动生成超空间锚点；
-		// 7 参数 initStar 不生成锚点、不设坐标（只查 starmap.json 的 starSystemLocations）。
+		// 7 参数 initStar 不生成锚点、不设坐标(只查 starmap.json 的 starSystemLocations)。
 		PlanetAPI star = system.initStar(STAR_ID, "star_white", 600f, 7500f, 8500f, 400f);
 
 		// addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)；
-		// 非恒星行星会被自动挂一个 condition-only 市场（Misc.initConditionMarket），
-		// 因此 addPlanet 之后 getMarket() 立即非 null（正式市场流程归 C10-S1）。
+		// 非恒星行星会被自动挂一个 condition-only 市场(Misc.initConditionMarket)，
+		// 因此 addPlanet 之后 getMarket() 立即非 null(正式市场流程归 C10-S1)。
 		PlanetAPI planet = system.addPlanet(PLANET_ID, star, "GearIn Demo Prime", "terran", 55, 150, 3200, 120);
 
-		// 自定义实体：type 是 data/config/custom_entities.json 里的键（"stable_location" 为原版键），
+		// 自定义实体：type 是 data/config/custom_entities.json 里的键("stable_location" 为原版键)，
 		// factionId 缺省为 neutral；创建后实体位于 (0,0)，必须显式放置。
 		SectorEntityToken beacon = system.addCustomEntity(BEACON_ID, "GearIn 演示信标", "stable_location", "neutral");
 		beacon.setLocation(1400f, 900f);
 		beacon.addTag(BEACON_TAG);
 
-		// 小行星带 = terrain 实体（默认 terrain id "asteroid_belt"），围绕行星
+		// 小行星带 = terrain 实体(默认 terrain id "asteroid_belt")，围绕行星
 		system.addAsteroidBelt(planet, 40, 600, 100, 120, 160);
 
 		// 位置 token 的创建与容器语义见 GearInTokenCreator
 		GearInTokenCreator.create(system);
 
-		// 必须调用（或用带超空间坐标的 initStar 变体），否则星系没有通向超空间的跳跃点，玩家无法到达
+		// 必须调用(或用带超空间坐标的 initStar 变体)，否则星系没有通向超空间的跳跃点，玩家无法到达
 		system.autogenerateHyperspaceJumpPoints(true, false);
 
 		LOG.info(String.format(

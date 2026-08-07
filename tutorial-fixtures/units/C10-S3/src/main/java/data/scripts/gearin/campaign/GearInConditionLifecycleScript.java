@@ -14,45 +14,45 @@ import com.fs.starfarer.api.characters.MarketConditionSpecAPI;
 import com.fs.starfarer.api.combat.MutableStat;
 
 /**
- * 完整最小例：市场条件生命周期演示脚本（token、survey、suppression、重算）。
+ * 完整最小例：市场条件生命周期演示脚本(token、survey、suppression、重算)。
  *
- * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），persistent data 键
- * REGISTER_MARK 一次性门控（沿用既有模式：每个注册项用各自的键，不挂进插件的
- * CLASS_MARK 门内）。演示脚本在挂载后的第一帧执行一次完整序列并自停
- * （isDone()=true，引擎下一帧自动移除本脚本）：
+ * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
+ * REGISTER_MARK 一次性门控(沿用既有模式：每个注册项用各自的键，不挂进插件的
+ * CLASS_MARK 门内)。演示脚本在挂载后的第一帧执行一次完整序列并自停
+ * (isDone()=true，引擎下一帧自动移除本脚本)：
  *   1. addCondition(GearIn_ore_deposits)：spec id -> 实例 token，plugin 立即 apply，
  *      hazard/accessibility 上升；读取实例 token、plugin 类、planetary、survey 状态、
  *      spec 字段与 tooltip token 替换值；
  *   2. 多实例 + param：addCondition(id, 0.20f) 产生第二个实例，两个 token 相互独立，
- *      修饰按 token 隔离（同 spec id 不互相覆盖）；getFirstCondition 取首个实例；
- *   3. removeCondition(id) 移除同 id 全部实例（不对称性 A），修饰全部撤销；
+ *      修饰按 token 隔离(同 spec id 不互相覆盖)；getFirstCondition 取首个实例；
+ *   3. removeCondition(id) 移除同 id 全部实例(不对称性 A)，修饰全部撤销；
  *   4. reapplyCondition(token) 单实例重算：unapply + apply，效果先降后升、终值不变；
  *   5. suppressCondition(id) 后 reapplyConditions()：unapply 执行、apply 被跳过，
  *      效果休眠但实例保留；unsuppressCondition(id) 后重算恢复；
- *   6. removeSpecificCondition(token) 只移除一个实例（不对称性 B）；
+ *   6. removeSpecificCondition(token) 只移除一个实例(不对称性 B)；
  *   7. survey 门控：setSurveyed(false) 后重算 -> 效果休眠；setSurveyed(true) 后重算
- *      -> 效果恢复（reapplyConditions 只对 surveyed 且未 suppressed 的条件 apply）；
- *   8. 原版对照（只读）：找一颗条件市场（isPlanetConditionMarketOnly）上
+ *      -> 效果恢复(reapplyConditions 只对 surveyed 且未 suppressed 的条件 apply)；
+ *   8. 原版对照(只读)：找一颗条件市场(isPlanetConditionMarketOnly)上
  *      requiresSurveying() 为 true 的条件，观察其 isSurveyed 初始状态。
  *
- * 演示全程不遗留持久状态：全部实例在当帧移除（removeSpecificCondition -> unapply），
+ * 演示全程不遗留持久状态：全部实例在当帧移除(removeSpecificCondition -> unapply)，
  * suppressed 集合复位，hazard/accessibility 回到基线。
  */
 public class GearInConditionLifecycleScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过（随存档保存）。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_ConditionLifecycleScript";
 
     private static final Logger LOG = Global.getLogger(GearInConditionLifecycleScript.class);
 
-    /** 演示目标市场 id；默认 "jangala"（原版核心世界，必存在）。 */
+    /** 演示目标市场 id；默认 "jangala"(原版核心世界，必存在)。 */
     private String targetMarketId = "jangala";
 
     /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
     private boolean executed = false;
 
     public GearInConditionLifecycleScript() {
-        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
+        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     /** 修改演示目标市场；默认 "jangala"。 */
@@ -142,7 +142,7 @@ public class GearInConditionLifecycleScript implements EveryFrameScript {
                 accMod1 == null ? "null" : String.format("%.2f", accMod1.getValue()),
                 accMod2 == null ? "null" : String.format("%.2f", accMod2.getValue())));
 
-        // --- 3. removeCondition(id)：同 id 全部实例一起移除（不对称性 A） ---
+        // --- 3. removeCondition(id)：同 id 全部实例一起移除(不对称性 A) ---
         market.removeCondition(GearInOreCondition.ORE_DEPOSITS);
         LOG.info(String.format(
                 "GearIn condition lifecycle removeAll: conditions=%d hazard=%.2f accessibilityFlat=%.2f",
@@ -175,7 +175,7 @@ public class GearInConditionLifecycleScript implements EveryFrameScript {
                 market.isConditionSuppressed(GearInOreCondition.ORE_DEPOSITS),
                 market.getHazard().getModifiedValue()));
 
-        // --- 6. removeSpecificCondition(token)：只移除一个实例（不对称性 B） ---
+        // --- 6. removeSpecificCondition(token)：只移除一个实例(不对称性 B) ---
         market.removeSpecificCondition(token3);
         LOG.info(String.format(
                 "GearIn condition lifecycle removeOne: conditions=%d hazard=%.2f accessibilityFlat=%.2f",
@@ -197,7 +197,7 @@ public class GearInConditionLifecycleScript implements EveryFrameScript {
                 "GearIn condition lifecycle surveyGate: afterAdd=%.2f afterUnsurveyedReapply=%.2f afterSurveyedReapply=%.2f",
                 hazardAfterAdd4, hazardUnsurveyed, hazardSurveyed));
 
-        // --- 8. 原版对照（只读）：找一颗条件市场上 reqSurvey 条件的初始状态 ---
+        // --- 8. 原版对照(只读)：找一颗条件市场上 reqSurvey 条件的初始状态 ---
         boolean found = false;
         for (MarketAPI candidate : sector.getEconomy().getMarketsCopy()) {
             if (!candidate.isPlanetConditionMarketOnly()) {

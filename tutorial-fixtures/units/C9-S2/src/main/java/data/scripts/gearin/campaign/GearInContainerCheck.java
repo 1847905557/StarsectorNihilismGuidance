@@ -7,7 +7,7 @@ import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.StarSystemAPI;
 
 /**
- * 角色：实体容器持有语义核验（isAlive / getEntityById 与容器成员关系）。
+ * 角色：实体容器持有语义核验(isAlive / getEntityById 与容器成员关系)。
  * 被 GearInLocationScript 在玩家首次进入演示星系时调用一次：
  * 对信标执行 removeEntity / addEntity，记录 isAlive() 与 getEntityById() 的前后变化。
  */

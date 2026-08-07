@@ -45,67 +45,23 @@
 
 ### market\_conditions.csv 注册链
 
-原版注册表是 `Starsector\starsector-core\data\campaign\market_conditions.csv`(169 行)。表头九个字段，每列被谁使用：
+原版注册表是 `Starsector\starsector-core\data\campaign\market_conditions.csv`(169 行)。
 
-字段
+### market\_conditions.csv 字段速查表
 
-写入对象
+表头九个字段，每列被谁使用：
 
-语义 / 使用方
-
-`name`
-
-`MarketConditionSpecAPI.getName()`
-
-显示名；必填 (`getString`，缺列即加载失败)。`MarketConditionAPI.getName()` 先问 plugin，plugin 回退 spec 名
-
-`id`
-
-spec 注册 key
-
-条件 spec id，CSV spec 加载期注册表的键；`addCondition(id)` 的入参；`ConditionGenDataSpec` 交叉校验键
-
-`tags`
-
-`getTags()`
-
-逗号分隔字符串，`optString` 可选
-
-`planetary`
-
-`spec.isPlanetary()`
-
-`optBoolean` 默认 false；`MarketConditionAPI.isPlanetary()` 转发 plugin(默认读 spec)；"行星条件显示在条件面板右侧，市场条件显示在行星条件左侧的组里"
-
-`decivRemove`
-
-`spec.isDecivRemove()`
-
-`optBoolean` 默认 false；文明衰退移除标记
-
-`script`
-
-`getScriptClass()`
-
-**plugin 类名**；必填。加载期经脚本类加载器 `registerScriptClass` 注册；实例化时机见下
-
-`desc`
-
-`getDesc()`
-
-tooltip 正文；`optString` 默认 `"No description... yet"`；支持 `$token` 替换 (见 "tooltip 链路")
-
-`icon`
-
-`getIcon()`
-
-图标贴图路径；**留空回退原版 `graphics/hullmods/generic_mod.png`**；非空时资源加载期排队 TEXTURE，路径无效 → 加载期失败
-
-`order`
-
-`getOrder()`
-
-`optDouble` 默认 20.0；条件列表排序
+| 字段 | 写入对象 | 语义 / 使用方 |
+|---|---|---|
+| `name` | `MarketConditionSpecAPI.getName()` | 显示名；必填 (`getString`，缺列即加载失败)。`MarketConditionAPI.getName()` 先问 plugin，plugin 回退 spec 名 |
+| `id` | spec 注册 key | 条件 spec id，CSV spec 加载期注册表的键；`addCondition(id)` 的入参；`ConditionGenDataSpec` 交叉校验键 |
+| `tags` | `getTags()` | 逗号分隔字符串，`optString` 可选 |
+| `planetary` | `spec.isPlanetary()` | `optBoolean` 默认 false；`MarketConditionAPI.isPlanetary()` 转发 plugin(默认读 spec)；"行星条件显示在条件面板右侧，市场条件显示在行星条件左侧的组里" |
+| `decivRemove` | `spec.isDecivRemove()` | `optBoolean` 默认 false；文明衰退移除标记 |
+| `script` | `getScriptClass()` | **plugin 类名**；必填。加载期经脚本类加载器 `registerScriptClass` 注册；实例化时机见下 |
+| `desc` | `getDesc()` | tooltip 正文；`optString` 默认 `"No description... yet"`；支持 `$token` 替换 (见 "tooltip 链路") |
+| `icon` | `getIcon()` | 图标贴图路径；**留空回退原版 `graphics/hullmods/generic_mod.png`**；非空时资源加载期排队 TEXTURE，路径无效 → 加载期失败 |
+| `order` | `getOrder()` | `optDouble` 默认 20.0；条件列表排序 |
 
 **加载入口**：CSV spec 加载期用 `readCSV("id", "data/campaign/market_conditions.csv", true)` 读取，逐行构造 `MarketConditionSpecAPI`。合并语义与 `hull_mods.csv` 相同 (同一读取器实现)：
 
@@ -127,55 +83,21 @@ tooltip 正文；`optString` 默认 `"No description... yet"`；支持 `$token` 
 
 注册链让 spec 在加载期就位，实例则在运行期由插件五步驱动，先看接口本身。
 
+### 条件接口速查表
+
 **接口速查** (`com.fs.starfarer.api.campaign.econ.MarketConditionAPI`、`com.fs.starfarer.api.characters.MarketConditionSpecAPI`、`com.fs.starfarer.api.campaign.econ.MarketConditionPlugin`)：
 
-接口
-
-高频成员
-
-语义
-
-`MarketConditionAPI`
-
-`getId()` / `getName()` / `getSpec()` / `getPlugin()`
-
-spec id；显示名；静态配置；plugin
-
-`getIdForPluginModifications()`
-
-**唯一 token**(`id + "_" + genUID`)
-
-`isSurveyed()` / `setSurveyed(boolean)` / `requiresSurveying()`
-
-条件级 survey；`requiresSurveying` 读 procgen 表的 `reqSurvey`
-
-`isPlanetary()`
-
-转发 plugin(默认 spec 标记)，决定条件面板位置
-
-`MarketConditionSpecAPI`
-
-`getOrder()` / `getIcon()` / `getDesc()` / `getScriptClass()` / `getTags()` / `isPlanetary()` / `isDecivRemove()`
-
-CSV 九字段的运行时面
-
-`MarketConditionPlugin`
-
-`init(market, condition)` / `setParam(Object)` / `apply(String id)` / `advance(float amount)` / `unapply(String id)`
-
-生命周期五步
-
-`isTransient()` / `showIcon()` / `runWhilePaused()` / `getName()` / `getIconName()`
-
-存档与展示语义
-
-`getTokenReplacements()` / `getHighlights()` / `getHighlightColors()` / `hasCustomTooltip()` / `createTooltip(...)` / `isTooltipExpandable()` / `getTooltipWidth()`
-
-tooltip 链路
-
-`getRelatedCommodities()`
-
-仅事件来源条件使用
+| 接口 | 高频成员 | 语义 |
+|---|---|---|
+| `MarketConditionAPI` | `getId()` / `getName()` / `getSpec()` / `getPlugin()` | spec id；显示名；静态配置；plugin |
+| `MarketConditionAPI` | `getIdForPluginModifications()` | **唯一 token**(`id + "_" + genUID`) |
+| `MarketConditionAPI` | `isSurveyed()` / `setSurveyed(boolean)` / `requiresSurveying()` | 条件级 survey；`requiresSurveying` 读 procgen 表的 `reqSurvey` |
+| `MarketConditionAPI` | `isPlanetary()` | 转发 plugin(默认 spec 标记)，决定条件面板位置 |
+| `MarketConditionSpecAPI` | `getOrder()` / `getIcon()` / `getDesc()` / `getScriptClass()` / `getTags()` / `isPlanetary()` / `isDecivRemove()` | CSV 九字段的运行时面 |
+| `MarketConditionPlugin` | `init(market, condition)` / `setParam(Object)` / `apply(String id)` / `advance(float amount)` / `unapply(String id)` | 生命周期五步 |
+| `MarketConditionPlugin` | `isTransient()` / `showIcon()` / `runWhilePaused()` / `getName()` / `getIconName()` | 存档与展示语义 |
+| `MarketConditionPlugin` | `getTokenReplacements()` / `getHighlights()` / `getHighlightColors()` / `hasCustomTooltip()` / `createTooltip(...)` / `isTooltipExpandable()` / `getTooltipWidth()` | tooltip 链路 |
+| `MarketConditionPlugin` | `getRelatedCommodities()` | 仅事件来源条件使用 |
 
 **实例创建**：`MarketAPI.addCondition(id[, param])` 的完整顺序：
 
@@ -225,37 +147,16 @@ survey 是**两层**状态，别混用：
 * **市场级 `SurveyLevel`**(`NONE / SEEN / PRELIMINARY / FULL`)：用户对行星的勘测进度。规则读取器把 `$isSurveyed` / `$surveyLevel` 写进市场 memory。
 * **条件级 `isSurveyed` / `requiresSurveying`**：单条条件的勘测状态。`requiresSurveying()` 查 `condition_gen_data.csv` 对应行的 `reqSurvey` 列 (表内 `ore_sparse` / `ore_abundant` / `ruins_*` 等资源类条件为 `TRUE`)。
 
+### 条件 survey 初始值速查表
+
 初始值来自四个入口：
 
-入口
-
-设置
-
-出处
-
-procgen 行星生成
-
-`mc.setSurveyed(!genSpec.isRequiresSurvey())`
-
-`PlanetConditionGenerator`
-
-`addCondition(id)`
-
-genSpec 非 null 时同上
-
-`MarketAPI.addCondition`
-
-`economy.json` 的 `startingConditions`
-
-**强制 `setSurveyed(true)`**
-
-`economy.json` 加载期
-
-`Misc.setFullySurveyed`(勘测完成)
-
-全部条件 `setSurveyed(true)` + `setSurveyLevel(FULL)`
-
-`com.fs.starfarer.api.util.Misc`
+| 入口 | 设置 | 出处 |
+|---|---|---|
+| procgen 行星生成 | `mc.setSurveyed(!genSpec.isRequiresSurvey())` | `PlanetConditionGenerator` |
+| `addCondition(id)` | genSpec 非 null 时同上 | `MarketAPI.addCondition` |
+| `economy.json` 的 `startingConditions` | **强制 `setSurveyed(true)`** | `economy.json` 加载期 |
+| `Misc.setFullySurveyed`(勘测完成) | 全部条件 `setSurveyed(true)` + `setSurveyLevel(FULL)` | `com.fs.starfarer.api.util.Misc` |
 
 用户侧完整链路：`addPlanet` 为行星挂条件市场 `market_<planetId>`(`Misc.initConditionMarket`，行星加入所在位置时调用；市场 id = `"market_" + planet.getId()`)。
 
@@ -310,65 +211,19 @@ suppressed 集合只增不减：漏掉配对会让该条件的效果永久休眠
 
 机制讲完，把必须遵守与值得遵循的做法集中成清单，每条都附违反后的可观察结果：
 
-规则
+### 规则强度速查表
 
-强度
-
-违反后的可观察结果
-
-`addCondition(id)` 的 id 必须存在于 `market_conditions.csv`(含跨 MOD 合并表)；spec 缺失时实例构造抛 `RuntimeException("Market condition [id] not found")`
-
-必须
-
-运行期抛异常，条件未添加
-
-条件 plugin 写市场修饰时，modifier source 必须用实例 token(`apply` 传入的 id 或 `getModId()`)，禁止用 spec id
-
-必须
-
-同 spec id 多实例的修饰互相覆盖：后 apply 覆盖先 apply，`unapply` 一个实例全部修饰丢失
-
-移除具体条件实例必须用 `removeSpecificCondition(token)`；`removeCondition(id)` 移除同 id 全部实例
-
-必须
-
-同 id 其他实例被连带移除并 unapply
-
-`suppressCondition(id)` 必须配对 `unsuppressCondition(id)`；且效果变化在下次重算后才可观察
-
-必须
-
-漏配对 → 条件效果永久休眠；suppress 后立刻查数值 → 效果还在 (重算前不变)
-
-transient 条件插件 (`BaseMarketConditionPlugin` 默认) 不得依赖 `setParam` 数据跨存档；需要持久参数必须改用非 transient 插件 (`BaseMarketConditionPlugin2`) 或把参数另存 (如市场 memory)
-
-必须
-
-读档后条件参数恢复默认值：plugin 不进存档、读档重建不重放 `setParam`
-
-新增条件 id 若同时写入 `condition_gen_data.csv`，两表必须都有该行
-
-必须
-
-加载期 `RuntimeException("[...] is not a valid market condition, was loading: condition_gen_data.csv")`
-
-条件 icon 列留空会回退原版 `graphics/hullmods/generic_mod.png`；写一个不存在的路径则资源加载期失败
-
-建议
-
-留空：使用回退图标；写错路径：加载期报错 (TEXTURE 无 try/catch)
-
-遍历 `getConditions()` 前先拷贝 (活列表)
-
-建议
-
-遍历中增删条件导致迭代器失效类问题
-
-需要暂停时继续推进的条件必须覆写 `runWhilePaused()` 返回 true(基类默认 false)
-
-建议
-
-暂停期间条件 plugin 不推进 (依赖时间流逝的效果停摆)
+| 规则 | 强度 | 违反后的可观察结果 |
+|---|---|---|
+| `addCondition(id)` 的 id 必须存在于 `market_conditions.csv`(含跨 MOD 合并表)；spec 缺失时实例构造抛 `RuntimeException("Market condition [id] not found")` | 必须 | 运行期抛异常，条件未添加 |
+| 条件 plugin 写市场修饰时，modifier source 必须用实例 token(`apply` 传入的 id 或 `getModId()`)，禁止用 spec id | 必须 | 同 spec id 多实例的修饰互相覆盖：后 apply 覆盖先 apply，`unapply` 一个实例全部修饰丢失 |
+| 移除具体条件实例必须用 `removeSpecificCondition(token)`；`removeCondition(id)` 移除同 id 全部实例 | 必须 | 同 id 其他实例被连带移除并 unapply |
+| `suppressCondition(id)` 必须配对 `unsuppressCondition(id)`；且效果变化在下次重算后才可观察 | 必须 | 漏配对 → 条件效果永久休眠；suppress 后立刻查数值 → 效果还在 (重算前不变) |
+| transient 条件插件 (`BaseMarketConditionPlugin` 默认) 不得依赖 `setParam` 数据跨存档；需要持久参数必须改用非 transient 插件 (`BaseMarketConditionPlugin2`) 或把参数另存 (如市场 memory) | 必须 | 读档后条件参数恢复默认值：plugin 不进存档、读档重建不重放 `setParam` |
+| 新增条件 id 若同时写入 `condition_gen_data.csv`，两表必须都有该行 | 必须 | 加载期 `RuntimeException("[...] is not a valid market condition, was loading: condition_gen_data.csv")` |
+| 条件 icon 列留空会回退原版 `graphics/hullmods/generic_mod.png`；写一个不存在的路径则资源加载期失败 | 建议 | 留空：使用回退图标；写错路径：加载期报错 (TEXTURE 无 try/catch) |
+| 遍历 `getConditions()` 前先拷贝 (活列表) | 建议 | 遍历中增删条件导致迭代器失效类问题 |
+| 需要暂停时继续推进的条件必须覆写 `runWhilePaused()` 返回 true(基类默认 false) | 建议 | 暂停期间条件 plugin 不推进 (依赖时间流逝的效果停摆) |
 
 ## 实现市场条件流程
 
@@ -452,11 +307,11 @@ Starsector\mods\GearIndustry\
 ├── data\
 │   └── campaign\
 │       └── market_conditions.csv   # 本节新增：在文件末尾追加下面一行
-├── jars\                           # 构建产物目录（gradle jar）
+├── jars\                           # 构建产物目录(gradle jar)
 └── src\
     └── data\scripts\gearin\campaign\
-        ├── GearInOreCondition             # 本节新增（归本节所有）
-        └── GearInConditionLifecycleScript # 本节新增（归本节所有）
+        ├── GearInOreCondition             # 本节新增(归本节所有)
+        └── GearInConditionLifecycleScript # 本节新增(归本节所有)
 ```
 
 ### market\_conditions.csv 追加行
@@ -501,7 +356,7 @@ GearIn Ore Deposits,GearIn_ore_deposits,,TRUE,,data.scripts.gearin.campaign.Gear
 调用点 (工程片段 —— 方法所在类归既有注册类所有，本节只演示调用，不改动那些文件)：
 
 ```java
-    // GearInModPlugin（既有注册类）onGameLoad(boolean newGame) 内新增本节注册块。
+    // GearInModPlugin(既有注册类)onGameLoad(boolean newGame) 内新增本节注册块。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
     if (!Global.getSector().getPersistentData().containsKey(GearInConditionLifecycleScript.REGISTER_MARK)) {
         Global.getSector().getPersistentData().put(GearInConditionLifecycleScript.REGISTER_MARK, true);
@@ -513,7 +368,7 @@ GearIn Ore Deposits,GearIn_ore_deposits,,TRUE,,data.scripts.gearin.campaign.Gear
 
 ```java
     GearInConditionLifecycleScript script = new GearInConditionLifecycleScript();
-    script.setTargetMarketId("asharu"); // corvus 星系独立势力市场（economy.json 首实体 id 即市场 id）
+    script.setTargetMarketId("asharu"); // corvus 星系独立势力市场(economy.json 首实体 id 即市场 id)
     Global.getSector().addScript(script);
 ```
 
@@ -646,14 +501,14 @@ MarketConditionAPI condition = market.getSpecificCondition(token);
 
 ## 故障分析
 
-- **条件完全不出现：**ID 重复、文件路径错误或 CSV 行没有进入合并表时，日志不会出现 `Loading condition: <id>`。先确认注册日志，再换用唯一 ID。
-- **`addCondition` 抛 `Market condition [...] not found`：**调用 ID 没有对应 spec。逐字核对 CSV 的 `id` 与 `ORE_DEPOSITS` 常量。
-- **删除一个条件却把同 ID 全删：**`removeCondition(id)` 面向 spec ID。保存 `addCondition` 返回的 token，改用 `removeSpecificCondition(token)`。
-- **读档后条件参数恢复默认：**transient 插件不会保存 `setParam` 状态。改用 `BaseMarketConditionPlugin2`，或把参数保存到市场 memory / persistent data。
-- **抑制条件后效果仍在：**`suppressCondition` 只修改集合，效果要到下一次重算才撤销。需要立即更新时调用 `reapplyConditions()`，解除时配对 `unsuppressCondition(id)`。
-- **未 survey 条件在重算后消失：**`reqSurvey=TRUE` 的条件只有在 `isSurveyed()` 后才会重新 apply。完成勘测，或让自定义条件不进入 procgen 检查。
-- **同 spec ID 的多个实例互相覆盖：**modifier source 使用了 spec ID。改用 `id` 参数或 `getModId()`，让每个 token 拥有独立修饰。
-- **条件图标路径错误导致加载失败：**`icon` 指向不存在的贴图。留空以使用 `graphics/hullmods/generic_mod.png`，或补齐真实文件。
+- **条件完全不出现**：ID 重复、文件路径错误或 CSV 行没有进入合并表时，日志不会出现 `Loading condition: <id>`。先确认注册日志，再换用唯一 ID。
+- **`addCondition` 抛 `Market condition [...] not found`**：调用 ID 没有对应 spec。逐字核对 CSV 的 `id` 与 `ORE_DEPOSITS` 常量。
+- **删除一个条件却把同 ID 全删**：`removeCondition(id)` 面向 spec ID。保存 `addCondition` 返回的 token，改用 `removeSpecificCondition(token)`。
+- **读档后条件参数恢复默认**：transient 插件不会保存 `setParam` 状态。改用 `BaseMarketConditionPlugin2`，或把参数保存到市场 memory / persistent data。
+- **抑制条件后效果仍在**：`suppressCondition` 只修改集合，效果要到下一次重算才撤销。需要立即更新时调用 `reapplyConditions()`，解除时配对 `unsuppressCondition(id)`。
+- **未 survey 条件在重算后消失**：`reqSurvey=TRUE` 的条件只有在 `isSurveyed()` 后才会重新 apply。完成勘测，或让自定义条件不进入 procgen 检查。
+- **同 spec ID 的多个实例互相覆盖**：modifier source 使用了 spec ID。改用 `id` 参数或 `getModId()`，让每个 token 拥有独立修饰。
+- **条件图标路径错误导致加载失败**：`icon` 指向不存在的贴图。留空以使用 `graphics/hullmods/generic_mod.png`，或补齐真实文件。
 
 ## 总结
 
@@ -709,38 +564,38 @@ import com.fs.starfarer.api.ui.TooltipMakerAPI;
 import com.fs.starfarer.api.util.Misc;
 
 /**
- * 完整最小例：市场条件（MarketConditionAPI）插件。
+ * 完整最小例：市场条件(MarketConditionAPI)插件。
  *
- * 注册入口：data/campaign/market_conditions.csv 的 script 列（类名逐字一致），
+ * 注册入口：data/campaign/market_conditions.csv 的 script 列(类名逐字一致)，
  * 由 CSV spec 加载期的 loadMarketConditions 完成 registerScriptClass；条件实例创建时
- * 脚本类加载器的 loadScriptInstance 按类名 newInstance（必须无参可实例化），随后
+ * 脚本类加载器的 loadScriptInstance 按类名 newInstance(必须无参可实例化)，随后
  * init(market, condition) 绑定，再进入 apply/advance/unapply 生命周期。
  *
  * 数据所有权：本节新增条件 id {@code GearIn_ore_deposits}，只由本节定义；页面正文
  * 的 CSV 行与本类逐字配套。
  *
  * 行为：apply(id) 以传入的实例 token 为 modifier source 写入两条市场修饰 ——
- *   1. hazard +0.15（MutableStat，getHazard()）；
- *   2. accessibility +0.10（StatBonus，getAccessibilityMod()，默认值可由
- *      addCondition(id, param) 的 param 覆盖，setParam 在 apply 之前被调用）。
+ *   1. hazard +0.15(MutableStat，getHazard())；
+ *   2. accessibility +0.10(StatBonus，getAccessibilityMod()，默认值可由
+ *      addCondition(id, param) 的 param 覆盖，setParam 在 apply 之前被调用)。
  * unapply(id) 按同一 source 撤销。修饰 source 用实例 token 而非 spec id，
- * 同 spec id 多实例才不会互相覆盖（"GearIn_ore_deposits" 是 spec id，
+ * 同 spec id 多实例才不会互相覆盖("GearIn_ore_deposits" 是 spec id，
  * 每个实例的 token 形如 "GearIn_ore_deposits_xxxxx"，由
- * MarketConditionAPI.getIdForPluginModifications() 提供）。
+ * MarketConditionAPI.getIdForPluginModifications() 提供)。
  *
  * 存档语义：继承 BaseMarketConditionPlugin，isTransient() = true——plugin 实例
  * 不进存档，读档后按 spec 重建并重新 init，setParam 的数据不重放
- * （见页面"读档后条件参数恢复默认"故障分析）。
+ * (见页面"读档后条件参数恢复默认"故障分析)。
  *
- * tooltip：createTooltipAfterDescription 在 spec desc（含 $marketName token）之后
+ * tooltip：createTooltipAfterDescription 在 spec desc(含 $marketName token)之后
  * 追加一条本条件的数值说明，演示 tooltip 扩展链路。
  */
 public class GearInOreCondition extends BaseMarketConditionPlugin {
 
-    /** 条件 spec id（与 market_conditions.csv 的 id 列逐字一致）。 */
+    /** 条件 spec id(与 market_conditions.csv 的 id 列逐字一致)。 */
     public static final String ORE_DEPOSITS = "GearIn_ore_deposits";
 
-    /** hazard 平值修饰（1f = 100%）。 */
+    /** hazard 平值修饰(1f = 100%)。 */
     public static final float HAZARD_MOD = 0.15f;
 
     /** accessibility 平值修饰默认值；addCondition(id, param) 的 param 可覆盖。 */
@@ -804,45 +659,45 @@ import com.fs.starfarer.api.characters.MarketConditionSpecAPI;
 import com.fs.starfarer.api.combat.MutableStat;
 
 /**
- * 完整最小例：市场条件生命周期演示脚本（token、survey、suppression、重算）。
+ * 完整最小例：市场条件生命周期演示脚本(token、survey、suppression、重算)。
  *
- * 注册入口：生涯回调 onGameLoad（调用点片段见页面正文），persistent data 键
- * REGISTER_MARK 一次性门控（沿用既有模式：每个注册项用各自的键，不挂进插件的
- * CLASS_MARK 门内）。演示脚本在挂载后的第一帧执行一次完整序列并自停
- * （isDone()=true，引擎下一帧自动移除本脚本）：
+ * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
+ * REGISTER_MARK 一次性门控(沿用既有模式：每个注册项用各自的键，不挂进插件的
+ * CLASS_MARK 门内)。演示脚本在挂载后的第一帧执行一次完整序列并自停
+ * (isDone()=true，引擎下一帧自动移除本脚本)：
  *   1. addCondition(GearIn_ore_deposits)：spec id -> 实例 token，plugin 立即 apply，
  *      hazard/accessibility 上升；读取实例 token、plugin 类、planetary、survey 状态、
  *      spec 字段与 tooltip token 替换值；
  *   2. 多实例 + param：addCondition(id, 0.20f) 产生第二个实例，两个 token 相互独立，
- *      修饰按 token 隔离（同 spec id 不互相覆盖）；getFirstCondition 取首个实例；
- *   3. removeCondition(id) 移除同 id 全部实例（不对称性 A），修饰全部撤销；
+ *      修饰按 token 隔离(同 spec id 不互相覆盖)；getFirstCondition 取首个实例；
+ *   3. removeCondition(id) 移除同 id 全部实例(不对称性 A)，修饰全部撤销；
  *   4. reapplyCondition(token) 单实例重算：unapply + apply，效果先降后升、终值不变；
  *   5. suppressCondition(id) 后 reapplyConditions()：unapply 执行、apply 被跳过，
  *      效果休眠但实例保留；unsuppressCondition(id) 后重算恢复；
- *   6. removeSpecificCondition(token) 只移除一个实例（不对称性 B）；
+ *   6. removeSpecificCondition(token) 只移除一个实例(不对称性 B)；
  *   7. survey 门控：setSurveyed(false) 后重算 -> 效果休眠；setSurveyed(true) 后重算
- *      -> 效果恢复（reapplyConditions 只对 surveyed 且未 suppressed 的条件 apply）；
- *   8. 原版对照（只读）：找一颗条件市场（isPlanetConditionMarketOnly）上
+ *      -> 效果恢复(reapplyConditions 只对 surveyed 且未 suppressed 的条件 apply)；
+ *   8. 原版对照(只读)：找一颗条件市场(isPlanetConditionMarketOnly)上
  *      requiresSurveying() 为 true 的条件，观察其 isSurveyed 初始状态。
  *
- * 演示全程不遗留持久状态：全部实例在当帧移除（removeSpecificCondition -> unapply），
+ * 演示全程不遗留持久状态：全部实例在当帧移除(removeSpecificCondition -> unapply)，
  * suppressed 集合复位，hazard/accessibility 回到基线。
  */
 public class GearInConditionLifecycleScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过（随存档保存）。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_ConditionLifecycleScript";
 
     private static final Logger LOG = Global.getLogger(GearInConditionLifecycleScript.class);
 
-    /** 演示目标市场 id；默认 "jangala"（原版核心世界，必存在）。 */
+    /** 演示目标市场 id；默认 "jangala"(原版核心世界，必存在)。 */
     private String targetMarketId = "jangala";
 
     /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
     private boolean executed = false;
 
     public GearInConditionLifecycleScript() {
-        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
+        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     /** 修改演示目标市场；默认 "jangala"。 */
@@ -932,7 +787,7 @@ public class GearInConditionLifecycleScript implements EveryFrameScript {
                 accMod1 == null ? "null" : String.format("%.2f", accMod1.getValue()),
                 accMod2 == null ? "null" : String.format("%.2f", accMod2.getValue())));
 
-        // --- 3. removeCondition(id)：同 id 全部实例一起移除（不对称性 A） ---
+        // --- 3. removeCondition(id)：同 id 全部实例一起移除(不对称性 A) ---
         market.removeCondition(GearInOreCondition.ORE_DEPOSITS);
         LOG.info(String.format(
                 "GearIn condition lifecycle removeAll: conditions=%d hazard=%.2f accessibilityFlat=%.2f",
@@ -965,7 +820,7 @@ public class GearInConditionLifecycleScript implements EveryFrameScript {
                 market.isConditionSuppressed(GearInOreCondition.ORE_DEPOSITS),
                 market.getHazard().getModifiedValue()));
 
-        // --- 6. removeSpecificCondition(token)：只移除一个实例（不对称性 B） ---
+        // --- 6. removeSpecificCondition(token)：只移除一个实例(不对称性 B) ---
         market.removeSpecificCondition(token3);
         LOG.info(String.format(
                 "GearIn condition lifecycle removeOne: conditions=%d hazard=%.2f accessibilityFlat=%.2f",
@@ -987,7 +842,7 @@ public class GearInConditionLifecycleScript implements EveryFrameScript {
                 "GearIn condition lifecycle surveyGate: afterAdd=%.2f afterUnsurveyedReapply=%.2f afterSurveyedReapply=%.2f",
                 hazardAfterAdd4, hazardUnsurveyed, hazardSurveyed));
 
-        // --- 8. 原版对照（只读）：找一颗条件市场上 reqSurvey 条件的初始状态 ---
+        // --- 8. 原版对照(只读)：找一颗条件市场上 reqSurvey 条件的初始状态 ---
         boolean found = false;
         for (MarketAPI candidate : sector.getEconomy().getMarketsCopy()) {
             if (!candidate.isPlanetConditionMarketOnly()) {

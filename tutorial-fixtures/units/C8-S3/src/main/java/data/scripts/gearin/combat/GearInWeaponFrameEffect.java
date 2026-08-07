@@ -11,9 +11,9 @@ import com.fs.starfarer.api.combat.WeaponEffectPluginWithInit;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 武器逐帧效果（.wpn everyFrameEffect 注册列，每把武器一个实例）。
+ * 武器逐帧效果(.wpn everyFrameEffect 注册列，每把武器一个实例)。
  * 构造时 init(weapon)；之后每帧在本帧"转向 / 开火之前"回调 advance、操作完成后
- * 回调 advanceAfter。演示 AnimationAPI 程序化控制贴图动画（play / pause / setFrame）。
+ * 回调 advanceAfter。演示 AnimationAPI 程序化控制贴图动画(play / pause / setFrame)。
  */
 public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
         EveryFrameWeaponEffectPluginWithAdvanceAfter {
@@ -25,7 +25,7 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
 
     @Override
     public void init(WeaponAPI weapon) {
-        AnimationAPI animation = weapon.getAnimation(); // 非动画武器返回 null（硬规范 4）
+        AnimationAPI animation = weapon.getAnimation(); // 非动画武器返回 null(硬规范 4)
         LOG.info("GearIn weapon fx init " + weapon.getId()
                 + " beam=" + weapon.isBeam()
                 + " animated=" + (animation != null)
@@ -33,8 +33,8 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
     }
     @Override
     public void advance(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
-        // 本帧转向 / 开火等操作之前；闲置且冷却完成时冻结回 0 帧（BlinkerEffect
-        // 同款姿势），否则恢复播放（play() 覆盖 alwaysAnimate:false 的数据默认）。
+        // 本帧转向 / 开火等操作之前；闲置且冷却完成时冻结回 0 帧(BlinkerEffect
+        // 同款姿势)，否则恢复播放(play() 覆盖 alwaysAnimate:false 的数据默认)。
         AnimationAPI animation = weapon.getAnimation();
         if (animation != null) {
             boolean idle = weapon.getChargeLevel() <= 0f
@@ -67,7 +67,7 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
     }
     @Override
     public void advanceAfter(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
-        // 本帧操作完成后（WithAdvanceAfter）：弹药扣减已生效，可观察操作后状态。
+        // 本帧操作完成后(WithAdvanceAfter)：弹药扣减已生效，可观察操作后状态。
         if (weapon.isFiring()) {
             afterReportInterval.advance(amount);
             if (afterReportInterval.intervalElapsed()) {

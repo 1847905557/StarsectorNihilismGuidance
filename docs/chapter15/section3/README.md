@@ -38,7 +38,7 @@ JSONArray master = Global.getSettings().getMergedSpreadsheetDataForMod(
 
 `getMergedJSON` 递归合并对象键，标量由后加载来源覆盖，数组按引擎规则追加或整体替换。需要自己的文件只提供自己的分类或键；需要读取单一 MOD 的 JSON 时使用 `loadJSON(path, modId)`，基础见 [C15-S2]。
 
-### 选择入口
+### 选择入口速查表
 
 | 任务 | 入口 | 结果 |
 | --- | --- | --- |

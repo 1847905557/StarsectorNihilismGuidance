@@ -19,11 +19,11 @@ import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.graphics.SpriteAPI;
 
 /**
- * 方框实体生成（BoxUtil Entity / 实例数据工具族）：SpriteEntity + Instance2Data，
+ * 方框实体生成(BoxUtil Entity / 实例数据工具族)：SpriteEntity + Instance2Data，
  * 写入实例字段只是客户端状态，必须 setInstanceDataRefreshAllFromCurrentIndex() +
- * submitInstanceData() + setRenderingCount() 完成提交（addInstanceData 成功
- * 不等于 GPU 已上传）；addEntity 返回非 STATE_SUCCESS 时显式 delete()；
- * BoxUtil 不可用时回退原版粒子（降级分支）。
+ * submitInstanceData() + setRenderingCount() 完成提交(addInstanceData 成功
+ * 不等于 GPU 已上传)；addEntity 返回非 STATE_SUCCESS 时显式 delete()；
+ * BoxUtil 不可用时回退原版粒子(降级分支)。
  */
 public class GearInBoxSpawner {
 

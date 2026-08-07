@@ -10,9 +10,9 @@ import com.fs.starfarer.api.loading.VariantSource;
 
 /**
  * 角色：变体序列化。演示 toJSONObject() 的输出键与 .variant 数据文件一致
- * （displayName/hullId/variantId/fluxVents/fluxCapacitors/weaponGroups/modules/wings/hullMods/permaMods/sMods/tags）。
+ * (displayName/hullId/variantId/fluxVents/fluxCapacitors/weaponGroups/modules/wings/hullMods/permaMods/sMods/tags)。
  *
- * 注册入口：GearInVariantLauncher.register()（跑一次即停）。
+ * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
  */
 public class GearInVariantSerializer implements EveryFrameScript {
 

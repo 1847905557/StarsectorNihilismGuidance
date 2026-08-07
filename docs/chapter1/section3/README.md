@@ -265,7 +265,7 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 
 :::
 
-### 实用战机数据速查表
+### wing_data.csv 数据速查表
 
 **不在本表上的数据均为本教程用不到的数据 (如 fleet pts) 或不重要数据 (如 number)，照抄原版样本即可。**
 
@@ -273,7 +273,7 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 | -------------------- | ------------------------------------------------------------ |
 | id                   | 战机的战机 ID，如果没有特别要求，应当以 `_wing` 结尾           |
 | variant              | 战机所对应的装配文件，在本例中是 `GearIn_slag_normal`         |
-| tags                 | 进阶内容，常用写法见本页的实用战机 tags 速查表                 |
+| tags                 | 进阶内容，常用写法见本页的 wing_data.csv tags 速查表                 |
 | tier                 | 科技等级，影响市场、突袭等权重，照抄原版样本即可 |
 | rarity               | 稀有度，影响市场、突袭等权重，照抄原版样本即可 |
 | op cost              | 装配点数需求                                                 |
@@ -287,7 +287,7 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 | refit                | 战机整备所需秒数                                             |
 | base value           | 每联队的成本价                                               |
 
-### 实用战机 tags 速查表
+### wing_data.csv tags 速查表
 
 **本表未列出的 tags 与战机性能无关，例如 `rare_bp`，照抄原版样本即可。**
 

@@ -38,85 +38,33 @@
 
 ## 梳理势力货舱关系
 
-### 服务入口总览
+### 服务入口速查表
 
 两个入口的进入方式与核心接口先列成总表：
 
-服务
-
-进入方式
-
-核心接口
-
-势力
-
-`Global.getSector().getFaction(id)` / `getAllFactions()` / `getPlayerFaction()`
-
-`FactionAPI`
-
-货物
-
-`SectorEntityToken.getCargo()`(玩家舰队 `CampaignFleetAPI.getCargo()` 经 `SectorEntityToken` 实现；子市场 `SubmarketAPI.getCargo()` 见前置知识 [C10-S2])
-
-`CargoAPI` / `CargoStackAPI`
+| 服务 | 进入方式 | 核心接口 |
+|---|---|---|
+| 势力 | `Global.getSector().getFaction(id)` / `getAllFactions()` / `getPlayerFaction()` | `FactionAPI` |
+| 货物 | `SectorEntityToken.getCargo()`(玩家舰队 `CampaignFleetAPI.getCargo()` 经 `SectorEntityToken` 实现；子市场 `SubmarketAPI.getCargo()` 见前置知识 [C10-S2]) | `CargoAPI` / `CargoStackAPI` |
 
 ### 势力 (FactionAPI)
 
-`FactionAPI`(`com.fs.starfarer.api.campaign.FactionAPI`) 是纯接口，势力集合由引擎统一管理。成员按功能分组：
+`FactionAPI`(`com.fs.starfarer.api.campaign.FactionAPI`) 是纯接口，势力集合由引擎统一管理。
 
-分组
+### FactionAPI 成员分组速查表
 
-成员
+成员按功能分组：
 
-语义
-
-身份
-
-`getId()`、`getDisplayName()`、`getDisplayNameWithArticle()`、`getDisplayNameIsOrAre()`
-
-势力 id(全局唯一，与 `.faction` 文件 id 一致) 与显示名变体
-
-颜色
-
-`getColor()`、`getBaseUIColor()`、`getGridUIColor()`、`getDarkUIColor()`、`getSecondaryUIColor()`、`getBrightUIColor()`、`getRelColor(id)` / `getRelColor(RepLevel)`
-
-UI 配色族；`getRelColor` 按关系值混合敌我色
-
-关系
-
-`getRelationship(id)`、`getRelationshipLevel(id)`、`setRelationship(id, float)`、`setRelationship(id, RepLevel)`、`adjustRelationship(id, delta)`、`adjustRelationship(id, delta, limit)`、`ensureAtBest`、`ensureAtWorst`、`isAtWorst` / `isAtBest`、`isHostileTo`、`getRelToPlayer()`
-
-见 "关系语义"
-
-资源集合
-
-`getKnownShips()`、`addKnownShip`、`removeKnownShip`、`knowsShip`、`getKnownWeapons()`、`getKnownFighters()`、`getKnownIndustries()`、priority 族、`clearShipRoleCache()`
-
-已知蓝图与优先资源；`removeKnown*` 的读档回写规则见 "规则强度"
-
-经济字段
-
-`getTariffFraction()`、`getTollFraction()`、`getFineFraction()`、`getInternalCommsChannel()`、`isIllegal(String)`、`getIllegalCommodities()`、`makeCommodityIllegal/Legal`
-
-势力级税率 (注意：静态值，非 `MutableStat`) 与商品合法性
-
-随机与显示
-
-`createRandomPerson()`、`getLogo()`、`getCrest()`、`isShowInIntelTab()` / `setShowInIntelTab`、`getCustom()`、`getCustomBoolean`、`getCustomString`、`getRank`、`getPost`、`pickRandomShipName`
-
-`.faction` 文件数据与随机生成
-
-舰船选择
-
-`pickShip(role, params, ...)`、`pickShipAndAddToFleet`、`ShipPickParams` / `ShipPickMode`、`getNumAvailableForRole`
-
-自动装配舰船选择，本节只给入口
-
-配置
-
-`getDoctrine()`、`getProduction()`、`getFactionSpec()`、`getMemory()`、`getMemoryWithoutUpdate()`、`isNeutralFaction()`、`isPlayerFaction()`
-
-doctrine / production / 规格与势力 memory
+| 分组 | 成员 | 语义 |
+|---|---|---|
+| 身份 | `getId()`、`getDisplayName()`、`getDisplayNameWithArticle()`、`getDisplayNameIsOrAre()` | 势力 id(全局唯一，与 `.faction` 文件 id 一致) 与显示名变体 |
+| 颜色 | `getColor()`、`getBaseUIColor()`、`getGridUIColor()`、`getDarkUIColor()`、`getSecondaryUIColor()`、`getBrightUIColor()`、`getRelColor(id)` / `getRelColor(RepLevel)` | UI 配色族；`getRelColor` 按关系值混合敌我色 |
+| 关系 | `getRelationship(id)`、`getRelationshipLevel(id)`、`setRelationship(id, float)`、`setRelationship(id, RepLevel)`、`adjustRelationship(id, delta)`、`adjustRelationship(id, delta, limit)`、`ensureAtBest`、`ensureAtWorst`、`isAtWorst` / `isAtBest`、`isHostileTo`、`getRelToPlayer()` | 见 "关系语义" |
+| 资源集合 | `getKnownShips()`、`addKnownShip`、`removeKnownShip`、`knowsShip`、`getKnownWeapons()`、`getKnownFighters()`、`getKnownIndustries()`、priority 族、`clearShipRoleCache()` | 已知蓝图与优先资源；`removeKnown*` 的读档回写规则见 "规则强度" |
+| 经济字段 | `getTariffFraction()`、`getTollFraction()`、`getFineFraction()`、`getInternalCommsChannel()`、`isIllegal(String)`、`getIllegalCommodities()`、`makeCommodityIllegal/Legal` | 势力级税率 (注意：静态值，非 `MutableStat`) 与商品合法性 |
+| 随机与显示 | `createRandomPerson()`、`getLogo()`、`getCrest()`、`isShowInIntelTab()` / `setShowInIntelTab`、`getCustom()`、`getCustomBoolean`、`getCustomString`、`getRank`、`getPost`、`pickRandomShipName` | `.faction` 文件数据与随机生成 |
+| 舰船选择 | `pickShip(role, params, ...)`、`pickShipAndAddToFleet`、`ShipPickParams` / `ShipPickMode`、`getNumAvailableForRole` | 自动装配舰船选择，本节只给入口 |
+| 配置 | `getDoctrine()`、`getProduction()`、`getFactionSpec()`、`getMemory()`、`getMemoryWithoutUpdate()`、`isNeutralFaction()`、`isPlayerFaction()` | doctrine / production / 规格与势力 memory |
 
 **关系语义 (全局对表)**：
 
@@ -135,84 +83,26 @@ doctrine / production / 规格与势力 memory
 
 势力入口管身份与关系，货物的存取则归 `CargoAPI`。与势力不同，货物容器不挂在星区根对象上，而是挂在实体上 —— 玩家舰队、战利品、子市场和市场各自持有自己的容器。
 
-`CargoAPI`(`com.fs.starfarer.api.campaign.CargoAPI`) 是纯接口，结构分三块：- **栈集合**：`stacks` 字段，`getStacksCopy()` 返回副本；
+`CargoAPI`(`com.fs.starfarer.api.campaign.CargoAPI`) 是纯接口，结构分三块：
 
+* **栈集合**：`stacks` 字段，`getStacksCopy()` 返回副本；
 * **信用**：`credits` 字段，`getCredits()` 返回 `MutableValue`——`com.fs.starfarer.api.util.MutableValue`： `get()` / `set()` / `add()` / `subtract()`；
 * **容量统计**：`maxCapacity` / `maxFuel` / `maxPersonnel` / `spaceUsed`。
 
+### CargoAPI 读写分族速查表
+
 读写分族 (方法均位于 `CargoAPI`)：
 
-分族
-
-写入
-
-读取
-
-底层
-
-补给 / 燃料
-
-`addSupplies` / `removeSupplies`、`addFuel` / `removeFuel`
-
-`getSupplies` / `getFuel`
-
-资源栈 `"supplies"` / `"fuel"`；`getSupplies` 另含 `extraSuppliesUsed`
-
-人员
-
-`addCrew` / `removeCrew`、`addMarines` / `removeMarines`
-
-`getCrew` / `getMarines` / `getTotalCrew` / `getTotalPersonnel`
-
-资源栈 `"crew"` / `"marines"`(整数语义；`crew` 写入触发携带舰队 `setSyncNeeded`)
-
-通用商品
-
-`addCommodity` / `removeCommodity`
-
-`getCommodityQuantity`
-
-`addItems(RESOURCES, id, qty)`
-
-武器
-
-`addWeapons` / `removeWeapons`
-
-`getNumWeapons` / `getWeapons`
-
-`WEAPONS` 栈 (整数、roundSize)
-
-战机芯片
-
-`addFighters` / `removeFighters`
-
-`getNumFighters` / `getFighters`
-
-`FIGHTER_CHIP` 栈
-
-船插 / 特殊物品
-
-`addHullmods` / `addSpecial`
-
-`getQuantity`
-
-`SPECIAL` 栈 (`SpecialItemData`；船插 data = `new SpecialItemData("modspec", hullModId)`)
-
-mothballed ships
-
-`addMothballedShip`
-
-`getMothballedShips`
-
-见 "必须遵守的规则"
-
-通用汇总
-
-`addItems` / `removeItems`(返回是否完成)
-
-`getQuantity` / `getStacksCopy`
-
-栈模型
+| 分族 | 写入 | 读取 | 底层 |
+|---|---|---|---|
+| 补给 / 燃料 | `addSupplies` / `removeSupplies`、`addFuel` / `removeFuel` | `getSupplies` / `getFuel` | 资源栈 `"supplies"` / `"fuel"`；`getSupplies` 另含 `extraSuppliesUsed` |
+| 人员 | `addCrew` / `removeCrew`、`addMarines` / `removeMarines` | `getCrew` / `getMarines` / `getTotalCrew` / `getTotalPersonnel` | 资源栈 `"crew"` / `"marines"`(整数语义；`crew` 写入触发携带舰队 `setSyncNeeded`) |
+| 通用商品 | `addCommodity` / `removeCommodity` | `getCommodityQuantity` | `addItems(RESOURCES, id, qty)` |
+| 武器 | `addWeapons` / `removeWeapons` | `getNumWeapons` / `getWeapons` | `WEAPONS` 栈 (整数、roundSize) |
+| 战机芯片 | `addFighters` / `removeFighters` | `getNumFighters` / `getFighters` | `FIGHTER_CHIP` 栈 |
+| 船插 / 特殊物品 | `addHullmods` / `addSpecial` | `getQuantity` | `SPECIAL` 栈 (`SpecialItemData`；船插 data = `new SpecialItemData("modspec", hullModId)`) |
+| mothballed ships | `addMothballedShip` | `getMothballedShips` | 见 "必须遵守的规则" |
+| 通用汇总 | `addItems` / `removeItems`(返回是否完成) | `getQuantity` / `getStacksCopy` | 栈模型 |
 
 **栈语义 (`CargoStackAPI`，`com.fs.starfarer.api.campaign.CargoStackAPI`)**：`getType()`(`CargoItemType`：`RESOURCES` / `WEAPONS` / `FIGHTER_CHIP` / `SPECIAL` / `NULL`)、`getData()`(通常是 String 资源 id)、`getSize()` / `getFree()` / `getMaxSize()` / `isFull()`、`getCargoSpace()`。
 
@@ -240,43 +130,17 @@ mothballed ships
 
 ## 规则强度
 
-两条链上需要强记的约束集中成下面的清单，每条都附上违反后的可观察结果，验证与排错时直接对照：
+两条链上需要强记的约束集中成下面的清单，每条都附上违反后的可观察结果，验证与排错时直接对照。
 
-规则
+### 规则强度速查表
 
-强度
-
-违反后的可观察结果
-
-`getMothballedShips()` 使用前必须先调 `initMothballedShips(factionId)`
-
-必须
-
-`getMothballedShips()` 返回 null 解引用 NPE
-
-`removeKnownShip` / `removeKnownWeapon` / `removeKnownFighter` 想永久生效，必须把 "要移除的清单" 持久化并在每次读档重新移除 (`FactionAPI` "...needs to be stored and they need to be re-removed on every game load.")
-
-必须
-
-读档后 `.faction` 定义的蓝图重新回到已知集合
-
-直接改动 known / priority 集合后调 `clearShipRoleCache()`(`FactionAPI` "Should be called after direct manipulation...")
-
-建议
-
-再次的 role 选择继续使用旧缓存
-
-玩家声望调整 (任务/事件等 action 语义) 走 `SectorAPI.adjustPlayerReputation`
-
-建议
-
-直接写 `FactionAPI` 关系绕过 `ReputationActionResponsePlugin` 的 delta 计算与监听通知
-
-`CargoAPI.setFreeTransfer` / `isFreeTransfer` 已废弃 (`CargoAPI` `@Deprecated`，"Use SectorEntityToken.setFreeTransfer() instead.")
-
-事实
-
-实体转移费用语义由实体 free transfer 入口表达
+| 规则 | 强度 | 违反后的可观察结果 |
+|---|---|---|
+| `getMothballedShips()` 使用前必须先调 `initMothballedShips(factionId)` | 必须 | `getMothballedShips()` 返回 null 解引用 NPE |
+| `removeKnownShip` / `removeKnownWeapon` / `removeKnownFighter` 想永久生效，必须把 "要移除的清单" 持久化并在每次读档重新移除 (`FactionAPI` "...needs to be stored and they need to be re-removed on every game load.") | 必须 | 读档后 `.faction` 定义的蓝图重新回到已知集合 |
+| 直接改动 known / priority 集合后调 `clearShipRoleCache()`(`FactionAPI` "Should be called after direct manipulation...") | 建议 | 再次的 role 选择继续使用旧缓存 |
+| 玩家声望调整 (任务/事件等 action 语义) 走 `SectorAPI.adjustPlayerReputation` | 建议 | 直接写 `FactionAPI` 关系绕过 `ReputationActionResponsePlugin` 的 delta 计算与监听通知 |
+| `CargoAPI.setFreeTransfer` / `isFreeTransfer` 已废弃 (`CargoAPI` `@Deprecated`，"Use SectorEntityToken.setFreeTransfer() instead.") | 事实 | 实体转移费用语义由实体 free transfer 入口表达 |
 
 ## 实现势力与货舱服务
 
@@ -402,9 +266,9 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\campaign\
-│       ├── GearInOneShotScript          # 本节新增（抽象基类，不参与注册）
-│       ├── GearInFactionServicesScript  # 本节新增（势力段脚本）
-│       └── GearInCargoServicesScript    # 本节新增（货物段脚本）
+│       ├── GearInOneShotScript          # 本节新增(抽象基类，不参与注册)
+│       ├── GearInFactionServicesScript  # 本节新增(势力段脚本)
+│       └── GearInCargoServicesScript    # 本节新增(货物段脚本)
 └── jars\
 ```
 
@@ -430,31 +294,13 @@ Starsector\mods\GearIndustry\
 
 **绑定注册入口**：在 onGameLoad 的 persistent data 判断块内调用 `addScript` 注册，标记键 `REGISTER_MARK = "GearIn_CargoServices"`(与调用点片段逐字一致)。
 
-### 绑定位置一览
+### 绑定位置一览速查表
 
-类
-
-角色
-
-绑定注册入口
-
-`GearInOneShotScript`
-
-抽象基类：一次性演示脚本骨架
-
-不参与注册
-
-`GearInFactionServicesScript`
-
-势力段演示脚本
-
-onGameLoad `addScript`，标记键 `GearIn_FactionServices`
-
-`GearInCargoServicesScript`
-
-货物段演示脚本
-
-onGameLoad `addScript`，标记键 `GearIn_CargoServices`
+| 类 | 角色 | 绑定注册入口 |
+|---|---|---|
+| `GearInOneShotScript` | 抽象基类：一次性演示脚本骨架 | 不参与注册 |
+| `GearInFactionServicesScript` | 势力段演示脚本 | onGameLoad `addScript`，标记键 `GearIn_FactionServices` |
+| `GearInCargoServicesScript` | 货物段演示脚本 | onGameLoad `addScript`，标记键 `GearIn_CargoServices` |
 
 ### 行为要点
 
@@ -540,13 +386,13 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 
 ## 故障分析
 
-- **调用 `getMothballedShips()` 时抛出 NPE：**该字段尚未初始化。读取前调用 `initMothballedShips(factionId)`；`addMothballedShip` 会自动初始化。
-- **货物数量已经回滚，但栈数量仍然偏多：**减空的栈会留下 `NULL_STACK` 占位。数量读取 `getSupplies()` 或 `getFuel()`，需要清理占位时调用 `removeEmptyStacks()`。
-- **直接修改关系后没有声望提示：**`adjustRelationship` 是原始写入，不触发玩家声望监听。玩家声望变化使用 `SectorAPI.adjustPlayerReputation`。
-- **关系数值超出预期：**直接写入会把结果钳位到 `[-1,1]`。记录原值并精确回滚，复验时读取最终关系值。
-- **读档后移除的蓝图重新出现：**`removeKnownShip` 的移除清单不随存档保存。将清单写入 persistent data，每次读档重新移除并调用 `clearShipRoleCache()`。
-- **演示日志出现但游戏内没有效果：**注册点或操作目标错误。将注册放入 `onGameLoad` 的持久标记块，并在写入后读取同一对象验证结果。
-- **演示脚本只执行一段：**某个 `addScript` 块缺失，或 `REGISTER_MARK` 与调用点不一致。恢复注册块并统一键名，读档后核对所有日志段。
+- **调用 `getMothballedShips()` 时抛出 NPE**：该字段尚未初始化。读取前调用 `initMothballedShips(factionId)`；`addMothballedShip` 会自动初始化。
+- **货物数量已经回滚，但栈数量仍然偏多**：减空的栈会留下 `NULL_STACK` 占位。数量读取 `getSupplies()` 或 `getFuel()`，需要清理占位时调用 `removeEmptyStacks()`。
+- **直接修改关系后没有声望提示**：`adjustRelationship` 是原始写入，不触发玩家声望监听。玩家声望变化使用 `SectorAPI.adjustPlayerReputation`。
+- **关系数值超出预期**：直接写入会把结果钳位到 `[-1,1]`。记录原值并精确回滚，复验时读取最终关系值。
+- **读档后移除的蓝图重新出现**：`removeKnownShip` 的移除清单不随存档保存。将清单写入 persistent data，每次读档重新移除并调用 `clearShipRoleCache()`。
+- **演示日志出现但游戏内没有效果**：注册点或操作目标错误。将注册放入 `onGameLoad` 的持久标记块，并在写入后读取同一对象验证结果。
+- **演示脚本只执行一段**：某个 `addScript` 块缺失，或 `REGISTER_MARK` 与调用点不一致。恢复注册块并统一键名，读档后核对所有日志段。
 
 ## 总结
 
@@ -584,11 +430,11 @@ import com.fs.starfarer.api.EveryFrameScript;
 
 /**
  * 一次性演示脚本基类：挂载后第一次 advance() 执行一次子类实现的 runDemo() 并自停
- * （isDone() 返回 true，引擎在下一帧自动从脚本列表移除本脚本）。
+ * (isDone() 返回 true，引擎在下一帧自动从脚本列表移除本脚本)。
  *
- * 两个服务演示脚本（势力 / 货物）都继承本类，各自只实现 runDemo()，
+ * 两个服务演示脚本(势力 / 货物)都继承本类，各自只实现 runDemo()，
  * 避免每个演示类重复 EveryFrameScript 的骨架方法。本类是抽象基类，不参与任何注册；
- * 各子类的注册在 onGameLoad 的 persistent data 门内各自执行（见页面调用点片段）。
+ * 各子类的注册在 onGameLoad 的 persistent data 门内各自执行(见页面调用点片段)。
  */
 public abstract class GearInOneShotScript implements EveryFrameScript {
 
@@ -596,7 +442,7 @@ public abstract class GearInOneShotScript implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInOneShotScript() {
-        // 空构造：注册由调用方执行（onGameLoad 的 persistent data 门内，见页面调用点片段）
+        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -639,17 +485,17 @@ import com.fs.starfarer.api.impl.campaign.ids.Commodities;
 import com.fs.starfarer.api.impl.campaign.ids.Factions;
 
 /**
- * 完整最小例（势力段）：FactionAPI 常用入口演示脚本。
+ * 完整最小例(势力段)：FactionAPI 常用入口演示脚本。
  *
- * 注册入口：onGameLoad（调用点片段见页面正文），persistent data 键 REGISTER_MARK 一次性门控。
+ * 注册入口：onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控。
  *
- * 行为：读取玩家势力身份/颜色与对霸主/海盗/独立势力的关系（数值、等级、敌对判定、getRelToPlayer
- * 包装）；对霸主 adjustRelationship(+0.05) 后立即 setRelationship 精确回滚（"写入后必须回滚"
- * 基线写法）；读取 tariff/toll/fine、非法商品、已知资源集合规模、isShowInIntelTab。不遗留持久状态。
+ * 行为：读取玩家势力身份/颜色与对霸主/海盗/独立势力的关系(数值、等级、敌对判定、getRelToPlayer
+ * 包装)；对霸主 adjustRelationship(+0.05) 后立即 setRelationship 精确回滚("写入后必须回滚"
+ * 基线写法)；读取 tariff/toll/fine、非法商品、已知资源集合规模、isShowInIntelTab。不遗留持久状态。
  */
 public class GearInFactionServicesScript extends GearInOneShotScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档执行过（随存档保存）。 */
+    /** 存档持久化标记：本脚本是否已在该存档执行过(随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_FactionServices";
 
     private static final Logger LOG = Global.getLogger(GearInFactionServicesScript.class);
@@ -685,7 +531,7 @@ public class GearInFactionServicesScript extends GearInOneShotScript {
                 playerFaction.getRelationshipLevel(Factions.INDEPENDENT).getDisplayName(),
                 playerFaction.isHostileTo(Factions.INDEPENDENT)));
 
-        // 关系写入并精确回滚：adjustRelationship 直接加、setRelationship 直写原值（势力管理器钳位 [-1,1]）
+        // 关系写入并精确回滚：adjustRelationship 直接加、setRelationship 直写原值(势力管理器钳位 [-1,1])
         float relBefore = hegemony.getRelationship(Factions.PLAYER);
         hegemony.adjustRelationship(Factions.PLAYER, 0.05f);
         float relDuring = hegemony.getRelationship(Factions.PLAYER);
@@ -726,17 +572,17 @@ import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Commodities;
 
 /**
- * 完整最小例（货物段）：CargoAPI 常用入口演示脚本。
+ * 完整最小例(货物段)：CargoAPI 常用入口演示脚本。
  *
- * 注册入口：onGameLoad（调用点片段见页面正文），persistent data 键 REGISTER_MARK 一次性门控。
+ * 注册入口：onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控。
  *
  * 行为：读取玩家舰队补给/燃料/陆战队员/信用/空间/栈数基线；addSupplies(100)/addFuel(50)/addMarines(10)
- * 后读取中间值，再 remove 同量回滚并读取终值（验证数值精确复原）；读取重型机械商品量与栈列表
- * 前几条（CargoStackAPI 的 type/data/size/isNull）。不遗留持久状态。
+ * 后读取中间值，再 remove 同量回滚并读取终值(验证数值精确复原)；读取重型机械商品量与栈列表
+ * 前几条(CargoStackAPI 的 type/data/size/isNull)。不遗留持久状态。
  */
 public class GearInCargoServicesScript extends GearInOneShotScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档执行过（随存档保存）。 */
+    /** 存档持久化标记：本脚本是否已在该存档执行过(随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_CargoServices";
 
     private static final Logger LOG = Global.getLogger(GearInCargoServicesScript.class);
@@ -783,7 +629,7 @@ public class GearInCargoServicesScript extends GearInOneShotScript {
         LOG.info(String.format("GearIn campaign services cargo stacks: before=%d during=%d after=%d nullAfter=%d",
                 stacksBefore, stacksDuring, stacksAfter, nullStacksAfter));
 
-        // 栈列表前三条（CargoStackAPI：type / data / size / isNull）
+        // 栈列表前三条(CargoStackAPI：type / data / size / isNull)
         List<CargoStackAPI> stacks = cargo.getStacksCopy();
         int stacksShown = Math.min(3, stacks.size());
         for (int i = 0; i < stacksShown; i++) {

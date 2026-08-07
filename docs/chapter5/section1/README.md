@@ -25,11 +25,11 @@
 本节的声音文件位于链路的资源层；注册和消费分别见 [C5-S2]、[C5-S3]：
 
 ```text
-sounds/.../*.ogg          资源层（本节）：合法 OGG、首尾无缝、路径稳定、许可清楚
+sounds/.../*.ogg          资源层(本节)：合法 OGG、首尾无缝、路径稳定、许可清楚
         ↓ 相对于 MOD 根目录的路径
-data/config/sounds.json   注册层（C5-S2）：sound ID → OGG 路径与播放参数
+data/config/sounds.json   注册层(C5-S2)：sound ID → OGG 路径与播放参数
         ↓ sound ID
-SoundPlayerAPI            消费层（C5-S3）：Global.getSoundPlayer() 按 ID 播放
+SoundPlayerAPI            消费层(C5-S3)：Global.getSoundPlayer() 按 ID 播放
 ```
 
 两个事实决定素材必须在本节做好：
@@ -65,7 +65,9 @@ GearIndustry\
 
 :::
 
-建议导出设置：
+## 音频导出规格速查表
+
+按用途选择声道，并核对对应的导出关注点：
 
 | 用途 | 声道 | 关注点 |
 |---|---|---|
@@ -75,7 +77,7 @@ GearIndustry\
 
 原版素材统一为 44100 Hz 采样率 (武器音效为 mono，音乐为 stereo)；教程不强制采样率，但同一 sound ID 的多个差分文件 (可互换的变体素材) 应使用相同采样率、声道数和相近响度，避免随机切换时音色突变。
 
-## 资产形态与生成规格
+## 资产形态与生成规格速查表
 
 本节没有图片资产，资产形态为三个 OGG 声音文件，由您按下列规格生成：
 

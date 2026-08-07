@@ -24,6 +24,16 @@
 
 在 LunaLib 面板关闭 GearIn 轨迹、调整条目上限、脉冲间隔、标记颜色或标签文字后，GearIn 的下一次读取立即使用新值；LunaLib 缺席时安全地使用代码默认值。
 
+### GearIn 设置字段速查表
+
+| 字段 ID | 控件类型 | 默认值 | 取值范围 |
+|---|---|---|---|
+| `GearIn_trails_enabled` | Boolean | true | — |
+| `GearIn_max_entries` | Int | 12 | 1–64 |
+| `GearIn_pulse_delay` | Float | 1.5 | 0.1–10 |
+| `GearIn_marker_color` | Color | `#f22e6e` | — |
+| `GearIn_label_text` | String | GearIn | — |
+
 ## 文件与 API 链路
 
 `data/config/LunaSettings.csv` 定义控件；`LunaSettings.getBoolean/getInt/getFloat/getColor/getString` 返回可为空的包装值；`LunaSettingsListener` 在保存设置后通知 MOD；GearIn 读取器集中处理门控和默认值。
@@ -189,7 +199,7 @@ import lunalib.lunaSettings.LunaSettingsListener;
 /**
  * 变更通知角色：注册/注销 LunaSettings 监听器，在设置界面保存后按本 MOD 过滤并
  * 重读输出当前生效值。addSettingsListener 不去重，注册前必须用
- * hasSettingsListenerOfClass 幂等查询（重复注册会让同一次保存触发多次回调）。
+ * hasSettingsListenerOfClass 幂等查询(重复注册会让同一次保存触发多次回调)。
  *
  * 监听器实例在门控通过之后才创建 —— 类加载路径不触碰 lunalib.**，LunaLib 未启用
  * 时调用本类不会抛 NoClassDefFoundError；缺库处理方式见 C17-S1。
@@ -204,8 +214,8 @@ public class GearInLunaSettingsListener {
     }
 
     /**
-     * 注册（幂等）：LunaLib 未启用时跳过并写 warn。注册入口见页面正文的接入片段
-     * （GearInModPlugin.onGameLoad 一行）；监听器实例在门控之后才创建。
+     * 注册(幂等)：LunaLib 未启用时跳过并写 warn。注册入口见页面正文的接入片段
+     * (GearInModPlugin.onGameLoad 一行)；监听器实例在门控之后才创建。
      */
     public static void registerListener() {
         if (!GearInLunaSettingsReader.isLunaLibEnabled()) {
@@ -230,7 +240,7 @@ public class GearInLunaSettingsListener {
         LOG.info("GearIn luna settings: listener registered");
     }
 
-    /** 取消注册（测试清理或卸载场景）。 */
+    /** 取消注册(测试清理或卸载场景)。 */
     public static void unregisterListener() {
         if (!GearInLunaSettingsReader.isLunaLibEnabled()) {
             return;
@@ -241,7 +251,7 @@ public class GearInLunaSettingsListener {
         }
     }
 
-    /** 输出当前生效值：用于对照设置界面与用户设置文件（进档时可调用一次）。 */
+    /** 输出当前生效值：用于对照设置界面与用户设置文件(进档时可调用一次)。 */
     public static void logCurrentValues() {
         LOG.info("GearIn luna settings: trails=" + GearInLunaSettingsReader.isTrailsEnabled()
                 + " maxEntries=" + GearInLunaSettingsReader.getMaxEntries()
@@ -270,9 +280,9 @@ import com.fs.starfarer.api.Global;
 import lunalib.lunaSettings.LunaSettings;
 
 /**
- * 运行时读取角色：门控读取 LunaLib 设置（LunaSettings 静态读取 API）。
+ * 运行时读取角色：门控读取 LunaLib 设置(LunaSettings 静态读取 API)。
  * 每个 getter 都是三段式：先按 C17-S1 检查 isModEnabled("lunalib")，
- * 再调用 LunaSettings.getX，返回 null 时回退代码内默认值（Defs）。
+ * 再调用 LunaSettings.getX，返回 null 时回退代码内默认值(Defs)。
  * 类自身不引用 lunalib.** 于类加载路径，未启用时可直接安全调用。
  */
 public class GearInLunaSettingsReader {
@@ -304,7 +314,7 @@ public class GearInLunaSettingsReader {
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
     }
 
-    /** 脉冲间隔（秒）：CSV 里是 Double 类型，读取时用 getFloat（从保存的 double 转换）。 */
+    /** 脉冲间隔(秒)：CSV 里是 Double 类型，读取时用 getFloat(从保存的 double 转换)。 */
     public static float getPulseDelay() {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
@@ -313,7 +323,7 @@ public class GearInLunaSettingsReader {
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
     }
 
-    /** 标记颜色：Color 设置，保存/读取十六进制字符串（# 前缀可省略）。 */
+    /** 标记颜色：Color 设置，保存/读取十六进制字符串(# 前缀可省略)。 */
     public static Color getMarkerColor() {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_MARKER_COLOR;

@@ -24,7 +24,7 @@ public class GearInStateReport {
 
     /** 武器运行态：弹药、冷却、充能、开火与光束实体数。 */
     public static void logWeapons(CombatEngineAPI engine) {
-        ShipAPI player = engine.getPlayerShip(); // 战斗内永不 null（C7-S2）；部署前是转移穿梭机假舰
+        ShipAPI player = engine.getPlayerShip(); // 战斗内永不 null(C7-S2)；部署前是转移穿梭机假舰
         for (WeaponAPI weapon : player.getAllWeapons()) {
             LOG.info("GearIn weapon " + weapon.getId()
                     + " type=" + weapon.getType() + " size=" + weapon.getSize()
@@ -39,7 +39,7 @@ public class GearInStateReport {
         }
     }
 
-    /** 射弹集合与导弹子集：getProjectiles() 已包含导弹（API javadoc "Includes missiles."），不要叠加统计。 */
+    /** 射弹集合与导弹子集：getProjectiles() 已包含导弹(API javadoc "Includes missiles.")，不要叠加统计。 */
     public static void logProjectiles(CombatEngineAPI engine) {
         List<DamagingProjectileAPI> projectiles = engine.getProjectiles();
         List<MissileAPI> missiles = engine.getMissiles();

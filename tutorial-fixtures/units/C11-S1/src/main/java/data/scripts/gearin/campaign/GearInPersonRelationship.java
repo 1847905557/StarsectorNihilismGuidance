@@ -8,7 +8,7 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.characters.RelationshipAPI;
 
 /**
- * 人物对玩家关系（RelationshipAPI / RepLevel）：延迟默认 -> adjustRelationship -> setLevel -> setRel 复位。
+ * 人物对玩家关系(RelationshipAPI / RepLevel)：延迟默认 -> adjustRelationship -> setLevel -> setRel 复位。
  */
 public class GearInPersonRelationship {
 

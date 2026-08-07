@@ -12,7 +12,7 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Ranks;
 
 /**
- * 人物创建与身份（PersonAPI）：createPerson 默认值、姓名/性别/势力/rank/post/personality/importance+voice、标签与内存。
+ * 人物创建与身份(PersonAPI)：createPerson 默认值、姓名/性别/势力/rank/post/personality/importance+voice、标签与内存。
  */
 public class GearInPersonIdentity {
 

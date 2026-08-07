@@ -122,9 +122,9 @@ import com.fs.starfarer.api.campaign.econ.MarketAPI;
 import com.fs.starfarer.api.campaign.econ.MarketConditionAPI;
 
 /**
- * 本节示例：代码路径建市场的载体类（角色：市场工厂）。
+ * 本节示例：代码路径建市场的载体类(角色：市场工厂)。
  * 由 GearInSystemGenerator.generate 调用：每个实体一行 createMarket(...)，
- * 即可完成条件/产业/子市场填充与注册三步收尾（economy.addMarket / setMarket / setFaction）。
+ * 即可完成条件/产业/子市场填充与注册三步收尾(economy.addMarket / setMarket / setFaction)。
  */
 public class GearInMarketFactory {
 

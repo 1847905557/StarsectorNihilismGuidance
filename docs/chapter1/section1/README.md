@@ -39,6 +39,8 @@ Starsector/mods/GearIndustry/
 
 目录名 `GearIndustry` 最好是一个便于人阅读的名字，而为了便于分辨，最好和 `mod_info.json` 的 `id` 相同。而且，编者非常建议您保持目录名稳定，这样某些用户就不至于在 `mods` 文件夹里塞下几十个不同版本了。
 
+### 顶层目录职责速查表
+
 常见顶层目录的职责如下：
 
 | 目录 | 当前用途 |
@@ -81,6 +83,8 @@ Starsector/mods/GearIndustry/
 Starsector 的实际 MOD 文件常使用带注释或尾逗号的宽松 JSON；但教程示例将保持标准 JSON，便于编辑器和静态工具检查。
 
 :::
+
+### mod_info.json 字段速查表
 
 字段作用与缺失后果：
 

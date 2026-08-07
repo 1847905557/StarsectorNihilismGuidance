@@ -28,7 +28,15 @@
 
 ## 文件与 API 链路
 
-`TrailEntity` 接收世界路径节点；`DistortionEntity` 直接绘制三阶段冲击环；`FlareEntity` 通过模型矩阵确定世界位置和朝向。三者都继承 BoxUtil 的全局计时与图层状态，并分别交给 `CombatRenderingManager`。
+### 命中特效实体速查表
+
+| 实体 | 职责 |
+|---|---|
+| `TrailEntity` | 接收世界路径节点 |
+| `DistortionEntity` | 直接绘制三阶段冲击环 |
+| `FlareEntity` | 通过模型矩阵确定世界位置和朝向 |
+
+三者都继承 BoxUtil 的全局计时与图层状态，并分别交给 `CombatRenderingManager`。
 
 ### 用两个节点建立可见尾迹
 

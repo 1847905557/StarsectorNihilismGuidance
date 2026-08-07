@@ -30,6 +30,8 @@
 
 本节涉及的接口都在 `com.fs.starfarer.api.combat`：
 
+### 本节接口速查表
+
 | 接口 / 类型 | 本节角色 | 链路 |
 |---|---|---|
 | `ShipAPI` | 战斗实体入口 | `engine.getShips()` / `getPlayerShip()` 的返回元素 [C7-S2]；`getMutableStats()` 取得本节主角 |
@@ -43,10 +45,10 @@
 数据到 base 的链路 (谁给 `MutableStat` 定 base)：
 
 ```text
-ship_data.csv 列（max speed / max flux / flux dissipation ...）
-  → 船体 CSV 加载器（"max flux"、"flux dissipation" 列读入）
-  → 引擎规格 / 反应堆规格（hull spec 的引擎 / 反应堆规格）
-  → 舰船 stats 构造器（maxSpeed = new MutableStat(engineSpec.getMaxSpeed()) 等）
+ship_data.csv 列(max speed / max flux / flux dissipation ...)
+  → 船体 CSV 加载器("max flux"、"flux dissipation" 列读入)
+  → 引擎规格 / 反应堆规格(hull spec 的引擎 / 反应堆规格)
+  → 舰船 stats 构造器(maxSpeed = new MutableStat(engineSpec.getMaxSpeed()) 等)
   → MutableStat.base
 ```
 
@@ -54,12 +56,12 @@ ship_data.csv 列（max speed / max flux / flux dissipation ...）
 
 ```text
 modifyFlat / modifyPercent / modifyMult(稳定 ID, 值)
-  → MutableStat 三张表（flatMods / percentMods / multMods，均以 modifier ID 为键）
-  → 延迟 recompute（needsRecompute 置位后，下次读取才重算）
+  → MutableStat 三张表(flatMods / percentMods / multMods，均以 modifier ID 为键)
+  → 延迟 recompute(needsRecompute 置位后，下次读取才重算)
   → getModifiedValue() / getModifiedInt()
-  → 使用方：引擎控制器（maxSpeed、turnRate，每帧读）、
-    幅能追踪器（fluxCapacity / fluxDissipation，每帧重读）、
-    FleetMemberAPI（生涯侧 burn / 货舱 / 补给）、战斗引擎.getTimeMult() 等
+  → 使用方：引擎控制器(maxSpeed、turnRate，每帧读)、
+    幅能追踪器(fluxCapacity / fluxDissipation，每帧重读)、
+    FleetMemberAPI(生涯侧 burn / 货舱 / 补给)、战斗引擎.getTimeMult() 等
 ```
 
 stats 同时绑定三个既有对象：`getEntity()` 返回战斗实体 (仅战斗期非 null)、`getFleetMember()` 返回舰队成员、`getVariant()` 返回装配。base 的数值来源就是上一张图的数据链。
@@ -67,6 +69,8 @@ stats 同时绑定三个既有对象：`getEntity()` 返回战斗实体 (仅战�
 两张图给出的是全景：base 从哪来、修饰最终被谁读。接下来的问题是修饰本身怎么组织 —— 这正是 `MutableStat` 三张表的工作。
 
 ## MutableStat 的 modifier 体系
+
+### modifier 表速查表
 
 `MutableStat` 保存一个 base (构造时固定) 和三张修饰表，全部以 modifier ID (`StatMod.source`) 为键：
 
@@ -96,6 +100,8 @@ modified = (base + base * percentMod / 100 + flatMod) * mult
 
 :::
 
+### 方法速查表
+
 方法速查 (完整签名见 "建议参考项")：
 
 | 族 | 方法 | 语义 |
@@ -122,7 +128,7 @@ modifier ID (`StatMod.source`) 是修饰表唯一的键。以下规则全部有�
     *   原版引擎自己也这么做：`ShipEngineControllerAPI` 用常量 `"zero_flux_boost"` 与 `"engine_damage_penalty"` 每帧应用 / 解除；`Ship` 构造器与 `FleetMemberAPI.updateStats` 用 `"flux_capacitors"` / `"flux_vents"` 平铺修饰。
 2. **禁止**用每次调用都会变化的值拼接 modifier ID (帧号、时间戳、随机数、对象身份、自增计数器)。违反的可观察结果：每次 `modifyXxx` 都在表里**新增**一条条目 (percent 累加、flat 累加、mult 连乘)，`modified` 值单向漂移、只增不减；`unmodify(旧 ID)` 清不掉后加的条目，数值残留；条目数持续增长，一场战斗下来修饰表会膨胀到比您的舰队名单还长，而全程没有一条报错提醒您：
     *   修正：ID 必须是常量。
-3. **必须**理解 "同 ID 覆盖" 只在**同一张表**内成立。flat / percent / mult 三张表互相独立：同一个 ID 分别调 `modifyFlat` 与 `modifyPercent` 会得到两条条目，三条全部生效：
+3. **必须**理解 "同 ID 覆盖" 只在**同一张修饰表**内成立。flat / percent / mult 三张表互相独立：同一个 ID 分别调 `modifyFlat` 与 `modifyPercent` 会得到两条条目，三条全部生效：
     *   可观察结果：只改一个 ID 的 flat 值，percent 与 mult 不受影响；想一次清掉必须 `unmodify(source)` (同时清三类) 或分别 `unmodifyXxx`。
 4. **必须**成对设计解除路径：`modifyXxx(id, v)` 与 `unmodifyXxx(id)` 的 ID 必须逐字一致 (常量复用是唯一可靠做法)。违反的可观察结果：`modified` 不回 base、条目残留、无任何报错 (静默失效)。常见写法：先 `unmodifyFlat(id)` 再 `modifyFlat(id, ...)` 换值。
 5. **禁止**两个来源共用同一个 modifier ID (例如两个船插都写 `"speed_bonus"`)。可观察结果：后 apply 者覆盖先 apply 者，一方的加成 "凭空消失"，无报错；stats 每次重建时重放顺序决定谁赢，行为随加载顺序漂移。修正：每个来源用自己唯一的前缀 (本节示例用 `GearIn_ship_stats_probe_*` 命名空间)。
@@ -399,36 +405,36 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 完整最小例：ShipAPI / MutableShipStatsAPI / MutableStat 与 modifier ID。
  *
- * 本插件由战斗上下文注册（C7-S1 的插件模型），只在本场战斗内有效：
- * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存（C6-S3）；
- * - advance() 在暂停时仍会被调用，状态推进前必须先检查 engine.isPaused()（C7-S1）；
- * - getPlayerShip() 在玩家未部署时返回 "Command Shuttle" 假舰（C7-S2），
+ * 本插件由战斗上下文注册(C7-S1 的插件模型)，只在本场战斗内有效：
+ * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存(C6-S3)；
+ * - advance() 在暂停时仍会被调用，状态推进前必须先检查 engine.isPaused()(C7-S1)；
+ * - getPlayerShip() 在玩家未部署时返回 "Command Shuttle" 假舰(C7-S2)，
  *   写操作前用 isShuttlePod() 排除，避免把修饰加到假舰上；
  * - MutableShipStatsAPI 是舰船 stats 的入口：三个 MutableStat 修饰表
- *   （flat / percent / mult）各以 modifier ID 为键；同 ID 同类型调用是幂等覆盖，
- *   每帧重复应用是安全姿势（引擎自己的 zero_flux_boost 同款）；
+ *   (flat / percent / mult)各以 modifier ID 为键；同 ID 同类型调用是幂等覆盖，
+ *   每帧重复应用是安全姿势(引擎自己的 zero_flux_boost 同款)；
  * - modifier ID 必须稳定唯一：本节所有修饰 ID 是进程内常量，属本节专属命名空间。
  */
 public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInShipStatsProbe.class);
 
-    /** 稳定 modifier ID（本节专属命名空间，进程内不再变化；命名契约见 C1-S1）。 */
+    /** 稳定 modifier ID(本节专属命名空间，进程内不再变化；命名契约见 C1-S1)。 */
     private static final String MOD_SPEED_PERCENT = "GearIn_ship_stats_probe_speed_percent";
     private static final String MOD_SPEED_FLAT = "GearIn_ship_stats_probe_speed_flat";
     private static final String MOD_SPEED_MULT = "GearIn_ship_stats_probe_speed_mult";
     private static final String MOD_VOLATILE_PREFIX = "GearIn_ship_stats_probe_volatile_";
 
     /**
-     * 故障注入开关（对应"数值与修饰条目持续增长"故障）：
+     * 故障注入开关(对应"数值与修饰条目持续增长"故障)：
      * true 时每帧用自增 ID 追加一条 percent 修饰，观察 percentMods 只增不减、
      * modified 值持续漂移、unmodify 之后残留条目清不掉。
      */
     private static final boolean PROBE_VOLATILE_ID_FAULT = false;
 
-    /** 战斗推进时间（getTotalElapsedTime(false)，暂停不计）的三个阶段分界。 */
-    private static final float APPLY_AT = 2f;      // t=2s 起施加三种修饰（每帧重复，幂等）
-    private static final float OVERWRITE_AT = 12f; // t=12s 起把 percent 覆盖为 -20（同 ID 不同值）
+    /** 战斗推进时间(getTotalElapsedTime(false)，暂停不计)的三个阶段分界。 */
+    private static final float APPLY_AT = 2f;      // t=2s 起施加三种修饰(每帧重复，幂等)
+    private static final float OVERWRITE_AT = 12f; // t=12s 起把 percent 覆盖为 -20(同 ID 不同值)
     private static final float UNMODIFY_AT = 22f;  // t=22s 起全部解除
 
     private CombatEngineAPI engine;
@@ -444,11 +450,11 @@ public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine.isPaused()) {
-            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进（C7-S1）
+            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进(C7-S1)
         }
         ShipAPI ship = engine.getPlayerShip();
         if (ship == null || !ship.isAlive() || ship.isHulk() || ship.isShuttlePod()) {
-            return; // 部署阶段拿到的 "Command Shuttle" 假舰不做写操作（C7-S2）
+            return; // 部署阶段拿到的 "Command Shuttle" 假舰不做写操作(C7-S2)
         }
         MutableShipStatsAPI stats = ship.getMutableStats();
 

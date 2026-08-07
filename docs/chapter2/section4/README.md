@@ -23,7 +23,11 @@
 
 ## 武器调用效果类的机制
 
-与船插相同，游戏不会自动加载未注册的类 —— 需要在数据文件里写类名。武器侧有两个注册列：
+与船插相同，游戏不会自动加载未注册的类 —— 需要在数据文件里写类名。
+
+### 武器注册列速查表
+
+武器侧有两个注册列：
 
 | 注册列 | 写在哪个文件 | 调用时机 |
 |---|---|---|
@@ -114,7 +118,7 @@ import org.lwjgl.util.vector.Vector2f;
  */
 public class GearInBeamLogger implements BeamEffectPlugin {
 
-    /** 每累计多少秒打一行日志（参数）。 */
+    /** 每累计多少秒打一行日志(参数)。 */
     private static final float REPORT_INTERVAL = 1f;
 
     private float timeSinceLastReport;
@@ -149,6 +153,8 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ## 类名三处一致 (武器版)
 
+### 类名三处速查表
+
 注册列的值 = 完整类名，同样三处必须一致：
 
 | 位置 | 本例 (OnHit) |
@@ -158,15 +164,6 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 | 注册列值 | `data.scripts.gearin.combat.GearInHitLogger` |
 
 `package` 行与目录对应、前两处拼起来等于第三处 —— 与船插同一套规则，只是注册列从 `hull_mods.csv` 的 `script` 换成了 `.proj` 的 `onHitEffect` / `.wpn` 的 `beamEffect`。
-
-## 错误对照表
-
-| 症状 | 原因 | 修法 |
-|---|---|---|
-| `Problem loading class [data.scripts.gearin.combat.GearInHitLogger]` | 类名三处不一致，或类不存在 | 按类名三处一致 (武器版) 核对 |
-| 命中无日志、无光点 | `onHitEffect` 写错文件 (写到了 `.wpn`) 或键名拼错 | 确认写在弹体 `.proj` 上，键名 `onHitEffect` |
-| 光束无日志 | `beamEffect` 写到了非光束武器，或键名拼错 | 确认 `.wpn` 的 `specClass` 是 `"beam"`，键名 `beamEffect` |
-| 日志有但光点不出现 | 光点尺寸或持续时间过小 | 调整 `addHitParticle` 的 size 与 duration 参数 |
 
 ## 验证方案
 
@@ -186,10 +183,10 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ## 故障分析
 
-- **效果类没有触发：**注册列写进了错误文件、键名拼错，或 `beamEffect` 挂在非光束武器上时，日志和画面都会保持安静。核对 `.proj` 的 `onHitEffect` 与光束 `.wpn` 的 `beamEffect`，修正后重新命中目标。
-- **日志出现 `Problem loading class [...]`：**注册类名、包声明和文件路径没有指向同一个类。逐字核对三处名称，重启后确认异常消失。
-- **命中日志出现但光点不可见：**粒子的尺寸或持续时间过小。调大 `addHitParticle` 的第三个参数 `size` 与第五个参数 `duration`，再次命中后观察命中点。
-- **光束日志节奏不符：**`REPORT_INTERVAL` 表示两次输出之间的秒数，数值越大日志越稀。设为 `1f` 后持续照射目标，日志应每秒出现一行。
+- **效果类没有触发**：注册列写进了错误文件、键名拼错，或 `beamEffect` 挂在非光束武器上时，日志和画面都会保持安静。核对 `.proj` 的 `onHitEffect` 与光束 `.wpn` 的 `beamEffect`，修正后重新命中目标。
+- **日志出现 `Problem loading class [...]`**：注册类名、包声明和文件路径没有指向同一个类。逐字核对三处名称，重启后确认异常消失。
+- **命中日志出现但光点不可见**：粒子的尺寸或持续时间过小。调大 `addHitParticle` 的第三个参数 `size` 与第五个参数 `duration`，再次命中后观察命中点。
+- **光束日志节奏不符**：`REPORT_INTERVAL` 表示两次输出之间的秒数，数值越大日志越稀。设为 `1f` 后持续照射目标，日志应每秒出现一行。
 
 ## 总结
 

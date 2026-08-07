@@ -30,6 +30,8 @@
 
 示例插件要回答三个问题：这场战斗属于哪一类、两侧舰队各处于什么状态、时间推进了多少。答案分别来自三个接口家族，本节先认识它们。涉及的接口都在 `com.fs.starfarer.api.combat`(`FleetSide` 在 `com.fs.starfarer.api.mission`)：
 
+### 本节接口速查表
+
 | 接口 / 类型 | 本节角色 | 链路 |
 |---|---|---|
 | `CombatEngineAPI` | 状态 / 时间 / 遍历入口 | `Global.getCombatEngine()` 取得 ([C6-S3] 讲生命周期)；本节讲状态读取，写侧由音效与粒子示例使用 |
@@ -40,7 +42,7 @@
 | `IntervalUtil` | 定期间隔触发 (本节示例用它做周期日志) | `com.fs.starfarer.api.util` |
 | `FleetSide` | `PLAYER` / `ENEMY` 两侧 | `getFleetManager(FleetSide)` |
 
-`CombatEngineAPI` 状态访问器分组速查：
+### 状态访问器分组速查表
 
 | 分组 | 成员 | 语义 |
 |---|---|---|
@@ -88,7 +90,7 @@
 * 已标记移除、尚未执行移除的舰船也还在表里；
 * 停在甲板 (机库) 里的战机**不在**对象表里，但 `isAlive()` 仍为 `true`。
 
-实体存活性三个入口的语义：
+### 实体存活性速查表
 
 | 方法 | 语义 |
 |---|---|
@@ -107,6 +109,8 @@
 `engine.getFleetManager(FleetSide.PLAYER / ENEMY)` 与 `engine.getFleetManager(int owner)`(0 = 玩家侧、1 = 敌方侧) 返回两侧的 `CombatFleetManagerAPI`。
 
 注意：`getFleetManager(int)` 在战斗外的空引擎 / 已销毁的旧引擎上**不会**返回 null，而是新建一个空管理器返回 —— 所以 "拿不到管理器" 同样不能靠判 null，而要依靠引擎生命周期主题给出的阶段判据。
+
+### 舰队名单速查表
 
 管理器把舰队成员按状态分成五份名单，全部以快照副本 (Copy) 返回，修改副本不影响引擎：
 
@@ -138,7 +142,7 @@
 
 ## 判断战斗时间
 
-战斗时间语义：
+### 战斗时间语义速查表
 
 | 方法 | 语义 | 暂停时行为 |
 |---|---|---|
@@ -394,9 +398,9 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 完整最小例：战斗状态读取 —— 引擎状态、时间语义与舰队/舰船遍历。
  *
- * 本插件由战斗上下文注册（C7-S1 的插件模型），只在本场战斗内有效：
- * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存（C6-S3）；
- * - advance() 在暂停时仍会被调用（combatMap.advance 照常执行），
+ * 本插件由战斗上下文注册(C7-S1 的插件模型)，只在本场战斗内有效：
+ * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存(C6-S3)；
+ * - advance() 在暂停时仍会被调用(combatMap.advance 照常执行)，
  *   状态推进前必须先检查 engine.isPaused()；
  * - getShips() 包含残骸与等待移除的舰船，遍历必须用 isAlive() 过滤；
  * - 战机停在甲板时 isAlive() 仍为 true，但不在 getShips() 的列表里；
@@ -423,7 +427,7 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine.isPaused()) {
-            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进（C7-S1）
+            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进(C7-S1)
         }
         reportInterval.advance(amount);
         if (reportInterval.intervalElapsed()) {

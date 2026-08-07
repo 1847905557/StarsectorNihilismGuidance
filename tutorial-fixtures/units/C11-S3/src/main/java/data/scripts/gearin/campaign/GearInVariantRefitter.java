@@ -9,11 +9,11 @@ import com.fs.starfarer.api.combat.ShipVariantAPI;
 import com.fs.starfarer.api.loading.VariantSource;
 
 /**
- * 角色：克隆改装。演示 clone() 的深拷贝语义 —— 修改克隆（换武器、改幅能、改船插、
- * 改来源、重新生成武器组）不影响注册表原变体；并给出 stock 与 refit 的 OP 对照
- * （computeOPCost = 武器 OP + 船插 OP + vents + caps；getUnusedOP = 船体 OP - 已用 OP）。
+ * 角色：克隆改装。演示 clone() 的深拷贝语义 —— 修改克隆(换武器、改幅能、改船插、
+ * 改来源、重新生成武器组)不影响注册表原变体；并给出 stock 与 refit 的 OP 对照
+ * (computeOPCost = 武器 OP + 船插 OP + vents + caps；getUnusedOP = 船体 OP - 已用 OP)。
  *
- * 注册入口：GearInVariantLauncher.register()（跑一次即停）。
+ * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
  */
 public class GearInVariantRefitter implements EveryFrameScript {
 
@@ -50,10 +50,10 @@ public class GearInVariantRefitter implements EveryFrameScript {
         MutableCharacterStatsAPI stats = Global.getSector().getPlayerPerson().getStats();
         ShipVariantAPI stock = Global.getSettings().getVariant("brawler_Assault");
 
-        // 1) 克隆后修改装配：clone() 深拷贝全部集合（武器表、武器组逐组、船插、联队、模块变体；船体 spec 共享引用），修改克隆不影响原变体
+        // 1) 克隆后修改装配：clone() 深拷贝全部集合(武器表、武器组逐组、船插、联队、模块变体；船体 spec 共享引用)，修改克隆不影响原变体
         ShipVariantAPI refit = stock.clone();
         refit.clearSlot("WS 003");                    // 卸下旧武器
-        refit.addWeapon("WS 003", "railgun");         // 装上小实弹（brawler 的 WS 003 是 SMALL UNIVERSAL 硬点）
+        refit.addWeapon("WS 003", "railgun");         // 装上小实弹(brawler 的 WS 003 是 SMALL UNIVERSAL 硬点)
         refit.setNumFluxVents(14);
         refit.setNumFluxCapacitors(10);
         refit.addMod("hardenedsubsystems");

@@ -14,7 +14,7 @@ import org.boxutil.util.TransformUtil;
 import com.fs.starfarer.api.Global;
 
 /**
- * 字体与屏幕文本（BoxUtil 字体/绘制工具族）：FontDataManager.tryFont 解析 .fnt
+ * 字体与屏幕文本(BoxUtil 字体/绘制工具族)：FontDataManager.tryFont 解析 .fnt
  * 得到 FontMapData，TextFieldEntity 以窗口正交矩阵 + directDraw() 在渲染回调里
  * 绘制屏幕文本；文本修改后必须 setTextDataRefresh* + submitText() 才会上传。
  */
@@ -27,13 +27,13 @@ public class GearInTextField {
     private FontMapData font;
     private TextFieldEntity textEntity;
 
-    /** 创建时加载字体并创建文本实体；任一环节失败则文本功能禁用（内部判空）。 */
+    /** 创建时加载字体并创建文本实体；任一环节失败则文本功能禁用(内部判空)。 */
     public GearInTextField() {
         initFont();
         initTextEntity();
     }
 
-    /** 字体信息（供 init 日志）：未加载返回 "null"，否则 "路径/字号"。 */
+    /** 字体信息(供 init 日志)：未加载返回 "null"，否则 "路径/字号"。 */
     public String getFontInfo() {
         return font == null ? "null" : FONT_PATH + "/" + font.getFontSize();
     }
@@ -56,7 +56,7 @@ public class GearInTextField {
         }
     }
 
-    /** 屏幕空间绘制：只能在渲染回调（renderInUICoords）里调用（GL 命令时机）。 */
+    /** 屏幕空间绘制：只能在渲染回调(renderInUICoords)里调用(GL 命令时机)。 */
     public void drawAt(float x, float y) {
         if (textEntity == null || textEntity.hasDelete()) {
             return;

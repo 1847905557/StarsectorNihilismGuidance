@@ -37,7 +37,9 @@
 
 1. 加载期以 `id`、`type` 两列为键读取全部行；`type` 必须能解析为 `Description.Type` 枚举；每行以 `id + "_" + type` 为 UID 存入描述注册表。
 2. 运行期查询入口是公开 API：`Global.getSettings().getDescription(id, type)`(`com.fs.starfarer.api.SettingsAPI`，公开 API)，返回 `com.fs.starfarer.api.loading.Description` 对象。
-3. 使用方先按 "对象 → 查找键"(下表) 取描述，再按展示位置取 text1–text5 之一。
+3. 使用方先按 "对象 → 查找键" 取描述，再按展示位置取 text1–text5 之一。
+
+### 对象描述查找键速查表
 
 | 对象 | 描述键 (`id` 列)| 依据 |
 |---|---|---|
@@ -58,6 +60,8 @@ id,type,text1,text2,text3,text4,text5,notes
 
 - `id` 与 `type` 两列合成查找键 (例如 `GearIn_durin_WEAPON`)，`type` 必须是 `Description.Type` 的枚举名，**区分大小写**：
 
+### Description.Type 枚举速查表
+
 | 枚举值 | 用途 | 本教程范围 |
 |---|---|---|
 | `SHIP` | 舰船与战机 hull 的描述 | 本节 |
@@ -66,6 +70,8 @@ id,type,text1,text2,text3,text4,text5,notes
 | `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 | [C3-S8] |
 
 - `text1`–`text5` 的默认值与主要使用方：
+
+### 描述字段默认值速查表
 
 | 字段 | 默认值 | 语义与主要使用方 (加载器与公开 API)|
 |---|---|---|

@@ -28,7 +28,16 @@ OBJ 文件本身只描述几何；模型 ID、贴图材质与世界变换仍要�
 
 ## 文件与 API 链路
 
-`ModelManager` 从 `data/config/modFiles/BUtil_obj_data.csv` 取得模型数据；`ModelData` 保存几何缓冲和各贴图通道；`CommonEntity` 使用模型与默认光照；`TransformUtil` 构建与游戏坐标一致的模型矩阵。自定义生成网格时才需要直接调用 `MeshUtil` 计算法线或切线。
+### 模型加载 API 速查表
+
+| 对象 | 职责 |
+|---|---|
+| `ModelManager` | 从 `data/config/modFiles/BUtil_obj_data.csv` 取得模型数据 |
+| `ModelData` | 保存几何缓冲和各贴图通道 |
+| `CommonEntity` | 使用模型与默认光照 |
+| `TransformUtil` | 构建与游戏坐标一致的模型矩阵 |
+
+自定义生成网格时才需要直接调用 `MeshUtil` 计算法线或切线。
 
 ### 在 CSV 中登记模型 ID
 

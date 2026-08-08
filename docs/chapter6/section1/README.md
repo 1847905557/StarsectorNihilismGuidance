@@ -10,20 +10,20 @@
 
 完成后，您将能够：
 
-* 说出当前基线的运行时基线：游戏自带的 Java 17 运行时 (Zulu 17.0.10) 与它要求的字节码版本上限；
-* 在 IDE 中建立语言级别 17 的工程，把游戏侧公开 API(`com.fs.starfarer.api.*`) 作为唯一游戏侧编译依赖，并挂上 API 的源码附件；
-* 用 Gradle(本教程固定 9.6.0) 以 `toolchain 17` + `--release 17` 编译，把产物输出到 MOD 的 `jars/`；
-* 在 `mod_info.json` 写入 `jars` 数组，让游戏把 JAR 挂进脚本类路径；
-* 用 `starsector.log` 的三类日志 (jar 加载行、类加载异常、插件运行日志) 判断链路断在哪一段；
-* 解释编译 JAR 与即时编译源码的优先顺序，以及 "类在 jar 里但没有注册入口" 为什么不会有任何效果。
+- 说出当前基线的运行时基线：游戏自带的 Java 17 运行时 (Zulu 17.0.10) 与它要求的字节码版本上限；
+- 在 IDE 中建立语言级别 17 的工程，把游戏侧公开 API(`com.fs.starfarer.api.*`) 作为唯一游戏侧编译依赖，并挂上 API 的源码附件；
+- 用 Gradle(本教程固定 9.6.0) 以 `toolchain 17` + `--release 17` 编译，把产物输出到 MOD 的 `jars/`；
+- 在 `mod_info.json` 写入 `jars` 数组，让游戏把 JAR 挂进脚本类路径；
+- 用 `starsector.log` 的三类日志 (jar 加载行、类加载异常、插件运行日志) 判断链路断在哪一段；
+- 解释编译 JAR 与即时编译源码的优先顺序，以及 "类在 jar 里但没有注册入口" 为什么不会有任何效果。
 
 ## 前置知识
 
-* [C1-S1] 的 MOD 目录、`mod_info.json`、启动器与日志，以及游戏不从 `src/` 查找源码的路径规则；
-* [C2-S2] 的完整类名引用、注册入口和 `Problem loading class [...]` 异常含义；
-* [C7-S1] 的每帧回调、`BaseEveryFrameCombatPlugin` 和暂停语义；
-* 理解 Java 17 字节码上限、Gradle toolchain 与 `--release` 的关系；
-* 理解编译期依赖、运行时由游戏提供的公开 API 与 JAR 输出边界。
+- [C1-S1] 的 MOD 目录、`mod_info.json`、启动器与日志，以及游戏不从 `src/` 查找源码的路径规则；
+- [C2-S2] 的完整类名引用、注册入口和 `Problem loading class [...]` 异常含义；
+- [C7-S1] 的每帧回调、`BaseEveryFrameCombatPlugin` 和暂停语义；
+- 理解 Java 17 字节码上限、Gradle toolchain 与 `--release` 的关系；
+- 理解编译期依赖、运行时由游戏提供的公开 API 与 JAR 输出边界。
 
 ## 工具链基线
 
@@ -49,8 +49,8 @@
 
 游戏侧公开 API(`com.fs.starfarer.api.*`) 的编译面随游戏发行提供；`starsector.bat` 的 classpath 已包含它，**运行时 API 类由游戏提供**，所以：
 
-* MOD 构建时用 `compileOnly` 引用公开 API(`com.fs.starfarer.api.*`) 的编译面，它**不得**被打包进 MOD 自己的 JAR；
-* 教程基线只依赖公开 API 面；个别需要 `com.fs.starfarer.api.impl` 或实现类细节的 MOD 会额外把核心实现 jar 放上编译路径，本教程不采用这种做法。
+- MOD 构建时用 `compileOnly` 引用公开 API(`com.fs.starfarer.api.*`) 的编译面，它**不得**被打包进 MOD 自己的 JAR；
+- 教程基线只依赖公开 API 面；个别需要 `com.fs.starfarer.api.impl` 或实现类细节的 MOD 会额外把核心实现 jar 放上编译路径，本教程不采用这种做法。
 
 为什么是 `compileOnly`？运行时 API 类由游戏提供，MOD 只须在编译期引用它们，产物只包含自己的类。把 API 编译面打包进 JAR 只会让产物膨胀；重复类还可能被游戏侧的父加载器静默遮蔽，造成类身份混淆。
 
@@ -238,10 +238,10 @@ MOD 的 `settings.json` 会与全局设置按对象键合并，只提交自己�
 
 对应关系：
 
-* `extends BaseEveryFrameCombatPlugin`：提供全部 `EveryFrameCombatPlugin` 方法的空实现，只需覆写 `advance`；直接实现接口则要写满 4 个方法 [C7-S1]。
-* `Global.getLogger(GearInFrameLogger.class)`：log4j 记录器，输出到 `starsector-core\starsector.log`；全程不需要在编译期直接 import log4j。
-* `engine.isPaused()` 判断：暂停帧不累计 ([C7-S1] 的暂停语义)。
-* `engine.getTotalElapsedTime(false)`：战斗内累计秒数，不含暂停；`amount` 是本帧经过秒数。
+- `extends BaseEveryFrameCombatPlugin`：提供全部 `EveryFrameCombatPlugin` 方法的空实现，只需覆写 `advance`；直接实现接口则要写满 4 个方法 [C7-S1]。
+- `Global.getLogger(GearInFrameLogger.class)`：log4j 记录器，输出到 `starsector-core\starsector.log`；全程不需要在编译期直接 import log4j。
+- `engine.isPaused()` 判断：暂停帧不累计 ([C7-S1] 的暂停语义)。
+- `engine.getTotalElapsedTime(false)`：战斗内累计秒数，不含暂停；`amount` 是本帧经过秒数。
 
 构建命令 (在 `Starsector\mods\GearIndustry\` 目录执行)：
 
@@ -284,9 +284,9 @@ gradle jar
 
 预期结果：
 
-* 步骤 2：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jars\GearIndustry.jar` 存在。
-* 步骤 3：`starsector.log` 出现 jar 加载两行 —— `Getting ready to load jar file [Starsector\mods\GearIndustry\jars\GearIndustry.jar]` 与 `Loading jar files`，且没有由 `gear_in` 引起的 `ERROR`。
-* 步骤 4：运行 3 秒以上后，日志每隔约 3 秒出现一行 `GearIn FrameLogger tick at battle time ...`。这条日志只可能在类被成功加载并实例化后产生，证明 jar 内容、`jars` 声明、`plugins` 登记三段链路全部打通。
+- 步骤 2：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jars\GearIndustry.jar` 存在。
+- 步骤 3：`starsector.log` 出现 jar 加载两行 —— `Getting ready to load jar file [Starsector\mods\GearIndustry\jars\GearIndustry.jar]` 与 `Loading jar files`，且没有由 `gear_in` 引起的 `ERROR`。
+- 步骤 4：运行 3 秒以上后，日志每隔约 3 秒出现一行 `GearIn FrameLogger tick at battle time ...`。这条日志只可能在类被成功加载并实例化后产生，证明 jar 内容、`jars` 声明、`plugins` 登记三段链路全部打通。
 
 ## 故障分析
 
@@ -307,20 +307,20 @@ gradle jar
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.Global`：`getCombatEngine()`、`getLogger(Class)`(log4j 记录器入口)。
-* `com.fs.starfarer.api.ModSpecAPI`：`getJars()`(MOD 声明的 jar 列表)。
-* `com.fs.starfarer.api.SettingsAPI`：`getScriptClassLoader()`、`getInstanceOfScript(String)`(脚本类加载与实例化入口)。
-* `com.fs.starfarer.api.ModPlugin`：javadoc 注明应继承 `BaseModPlugin` 而非直接实现接口。
-* `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：`EveryFrameCombatPlugin` 的空实现基类。
-* `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：战斗每帧回调接口。
-* `com.fs.starfarer.api.combat.CombatEngineAPI`：`isPaused()`、`getTotalElapsedTime(boolean)`。
-* `data/config/settings.json`：`plugins` 段 (key → 完整类名)。
-* `mod_info.json`：`jars` 数组 (相对 MOD 根目录的 jar 路径)。
-* `build.gradle` / `settings.gradle`：Gradle 构建配置 (toolchain 17、`--release 17`、jar 输出到 `jars/`)。
-* `jars/GearIndustry.jar`：构建产物 (可用 `jar tf` 核对条目)。
-* `Starsector/starsector-core/starsector.log`：运行日志 (jar 加载行、类加载异常、插件日志)。
-* `Starsector/starsector-core/starsector.bat`：游戏启动命令 (`..\jre\bin\java.exe`，classpath 含游戏侧公开 API 编译面)。
-* `Starsector/jre/release`：自带 JRE 版本信息 (Zulu 17.0.10)。
+- `com.fs.starfarer.api.Global`：`getCombatEngine()`、`getLogger(Class)`(log4j 记录器入口)。
+- `com.fs.starfarer.api.ModSpecAPI`：`getJars()`(MOD 声明的 jar 列表)。
+- `com.fs.starfarer.api.SettingsAPI`：`getScriptClassLoader()`、`getInstanceOfScript(String)`(脚本类加载与实例化入口)。
+- `com.fs.starfarer.api.ModPlugin`：javadoc 注明应继承 `BaseModPlugin` 而非直接实现接口。
+- `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：`EveryFrameCombatPlugin` 的空实现基类。
+- `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：战斗每帧回调接口。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：`isPaused()`、`getTotalElapsedTime(boolean)`。
+- `data/config/settings.json`：`plugins` 段 (key → 完整类名)。
+- `mod_info.json`：`jars` 数组 (相对 MOD 根目录的 jar 路径)。
+- `build.gradle` / `settings.gradle`：Gradle 构建配置 (toolchain 17、`--release 17`、jar 输出到 `jars/`)。
+- `jars/GearIndustry.jar`：构建产物 (可用 `jar tf` 核对条目)。
+- `Starsector/starsector-core/starsector.log`：运行日志 (jar 加载行、类加载异常、插件日志)。
+- `Starsector/starsector-core/starsector.bat`：游戏启动命令 (`..\jre\bin\java.exe`，classpath 含游戏侧公开 API 编译面)。
+- `Starsector/jre/release`：自带 JRE 版本信息 (Zulu 17.0.10)。
 
 ::: details 完整成品：GearInFrameLogger
 

@@ -10,28 +10,28 @@
 
 完成后，您将能够：
 
-* 说出生涯舰队的三层对象链 (`SectorAPI.getPlayerFleet()` → `CampaignFleetAPI` → `FleetDataAPI` → `FleetMemberAPI`)，并解释成员集合的持久槽位、同步视图与派生状态；
-* 用 `FactoryAPI.createFleetMember` 创建成员，用 `addFleetMember` / `removeFleetMember` / `scuttle` 修改成员集合，并说出添加时的自动行为；
-* 区分四种成员视图的读取结果，按需求选择正确的遍历入口；
-* 读写成员保存态的身份、装配、舰长、船体状态与 CR / 维修；
-* 解释战斗准备判据、部署成本，以及后勤容量求和与封存豁免的语义；
-* 从症状定位成员读写相关的典型故障，并给出修正路径。
+- 说出生涯舰队的三层对象链 (`SectorAPI.getPlayerFleet()` → `CampaignFleetAPI` → `FleetDataAPI` → `FleetMemberAPI`)，并解释成员集合的持久槽位、同步视图与派生状态；
+- 用 `FactoryAPI.createFleetMember` 创建成员，用 `addFleetMember` / `removeFleetMember` / `scuttle` 修改成员集合，并说出添加时的自动行为；
+- 区分四种成员视图的读取结果，按需求选择正确的遍历入口；
+- 读写成员保存态的身份、装配、舰长、船体状态与 CR / 维修；
+- 解释战斗准备判据、部署成本，以及后勤容量求和与封存豁免的语义；
+- 从症状定位成员读写相关的典型故障，并给出修正路径。
 
 ## 前置知识
 
-* [C3-S1] 的生涯与战役域、装配与舰船共享注册表；
-* [C4-S1] 的无效装配 ID、路径日志与 `errorShipVariant` 回退；
-* [C6-S2] 的插件生命周期回调与持久数据标记；
-* [C6-S3] 的 `Global.getFactory()` 创建入口与阶段语义；
-* [C9-S1] 的生涯时钟、`EveryFrameScript` 注册时机与一次性判断。
+- [C3-S1] 的生涯与战役域、装配与舰船共享注册表；
+- [C4-S1] 的无效装配 ID、路径日志与 `errorShipVariant` 回退；
+- [C6-S2] 的插件生命周期回调与持久数据标记；
+- [C6-S3] 的 `Global.getFactory()` 创建入口与阶段语义；
+- [C9-S1] 的生涯时钟、`EveryFrameScript` 注册时机与一次性判断。
 
 ## 术语
 
 按术语约定，本节首次完整讲解一个词：
 
-* **舰队成员 (fleet member)**：API 名保留 `FleetMemberAPI`。一艘舰船或一个战机联队在生涯侧的保存态对象。
-    *   成员不是战斗实体 (`ShipAPI`)—— 战斗实体由成员在部署时实例化；成员承载船体 id、装配 (variant)、舰长、船体状态、CR、维修状态与后勤数值。
-    *   `FleetMemberType` 区分 `SHIP` / `FIGHTER_WING` / `NULL` 三种成员类型。
+- **舰队成员 (fleet member)**：API 名保留 `FleetMemberAPI`。一艘舰船或一个战机联队在生涯侧的保存态对象。
+    - 成员不是战斗实体 (`ShipAPI`)—— 战斗实体由成员在部署时实例化；成员承载船体 id、装配 (variant)、舰长、船体状态、CR、维修状态与后勤数值。
+    - `FleetMemberType` 区分 `SHIP` / `FIGHTER_WING` / `NULL` 三种成员类型。
 
 ## 梳理生涯舰队关系
 
@@ -81,10 +81,10 @@
 只有槽位列表随存档保存；视图与派生状态每次同步时由成员重算 —— 这样读档后集合自动自洽，成员增删也不需要手动维护任何视图或统计值。
 
 1. **持久槽位列表**：`members`—— 按槽位存储成员，槽位可被 `NULL_MEMBER` 占位 (`FleetMemberType.NULL`)。这是**唯一随存档保存**的成员层。
-    *   添加成员填入第一个空槽 (`findFirstUnusedIndex`)，按索引移除只在原槽放回 NULL(`removeFleetMemberAtIndex`)，整体移除才收缩 (`removeFleetMemberAndCollapseSlot`)。
+    - 添加成员填入第一个空槽 (`findFirstUnusedIndex`)，按索引移除只在原槽放回 NULL(`removeFleetMemberAtIndex`)，整体移除才收缩 (`removeFleetMemberAndCollapseSlot`)。
 2. **同步视图**：`membersWithoutNull`(不可变)、`sortedMembersWithoutNull`(按 hull size ordinal 降序 + fleet point cost 降序)、`sortedMembersWithoutNullWithFighters`。
-    *   战机展开经 `Utils.expandFighterWingsCampaign` 把每个联队展开成逐架成员；展开只取非封存且 CR > 0 的成员，封存成员排到末尾。
-    *   `syncMemberLists()` 重建这三个视图。
+    - 战机展开经 `Utils.expandFighterWingsCampaign` 把每个联队展开成逐架成员；展开只取非封存且 CR > 0 的成员，封存成员排到末尾。
+    - `syncMemberLists()` 重建这三个视图。
 3. **派生状态**：`fleetPointsUsed` / `effectiveStrength`、`cargo`(容量上限由成员重算)、`minCrew`、`travelSpeed`、`fuelPerLightYear`、burn level 三件套。全部在同步时重算。
 4. **瞬态层**：`snapshot`(`transient` 字段)——`takeSnapshot()` / `getSnapshot()` 的成员快照，**不随存档保存** (接口 "The snapshot is transient and will not be in the save file.")。
 
@@ -184,35 +184,35 @@ setVariant 保存的是传入引用
 
 ### 战斗准备语义
 
-* **CR(Combat Readiness)**：`getRepairTracker()` 返回 `RepairTrackerAPI`(`com.fs.starfarer.api.fleet.RepairTrackerAPI`)。
-    *   `getCR()` 返回 0–1，**已按船员占比修正**；`getBaseCR()` 不含船员修正；`getMaxCR()` 上限；`setCR(float)` 直接写入；`applyCREvent(float, String)` 施加 "近期事件"(显示在 CR 悬浮提示里)。
-    *   新成员 CR 初始 `0.5F`。CR 低于阈值会出现在战斗外 "无法部署"(见下)。
-* **部署判据**：`canBeDeployedForCombat()`(`FleetMemberAPI`)—— 封存 → `false`；战机且 CR ≤ 0 → `false`；否则要求 `CR >= noDeployCRPercent` 且 `crewFraction >= noDeployCrewPercent`(`settings.json`中为 0% 与 5%)。
-    *   **战斗准备是 "当前状态" 判据**：CR 或船员不足时返回 `false`，补给与时间可恢复。
-* **部署成本**：`getDeployCost()` 是 CR 占比 (`CRPerDeploymentPercent * CRToDeploy / 100`，战机乘联队数量；`FleetMemberAPI` "From 0 to 1, CR fraction. Multiplied by number of fighters if fighter wing.")。
-    *   `getDeploymentPointsCost()` 是部署点数 (战机乘数量)；`getDeploymentCostSupplies()` 是部署补给 (含最小 1 上限保护)。
-* **保存态与膨胀态**：`CampaignFleetAPI.getInflater()` 持有 `FleetInflater`(由 `FleetFactoryV3` 生成的舰队挂载)。
-    *   `inflateIfNeeded()` 在战役侧把保存态成员补全为完整装配态 (`CampaignFleetAPI.inflateIfNeeded`：inflater 存在、未膨胀、非中立势力时执行；`removeAfterInflating()` 为真则随后移除 inflater)；`deflate()` 回到保存态表达。
-    *   玩家舰队的成员默认即保存态，战斗部署时由战斗侧实例化。
+- **CR(Combat Readiness)**：`getRepairTracker()` 返回 `RepairTrackerAPI`(`com.fs.starfarer.api.fleet.RepairTrackerAPI`)。
+    - `getCR()` 返回 0–1，**已按船员占比修正**；`getBaseCR()` 不含船员修正；`getMaxCR()` 上限；`setCR(float)` 直接写入；`applyCREvent(float, String)` 施加 "近期事件"(显示在 CR 悬浮提示里)。
+    - 新成员 CR 初始 `0.5F`。CR 低于阈值会出现在战斗外 "无法部署"(见下)。
+- **部署判据**：`canBeDeployedForCombat()`(`FleetMemberAPI`)—— 封存 → `false`；战机且 CR ≤ 0 → `false`；否则要求 `CR >= noDeployCRPercent` 且 `crewFraction >= noDeployCrewPercent`(`settings.json`中为 0% 与 5%)。
+    - **战斗准备是 "当前状态" 判据**：CR 或船员不足时返回 `false`，补给与时间可恢复。
+- **部署成本**：`getDeployCost()` 是 CR 占比 (`CRPerDeploymentPercent * CRToDeploy / 100`，战机乘联队数量；`FleetMemberAPI` "From 0 to 1, CR fraction. Multiplied by number of fighters if fighter wing.")。
+    - `getDeploymentPointsCost()` 是部署点数 (战机乘数量)；`getDeploymentCostSupplies()` 是部署补给 (含最小 1 上限保护)。
+- **保存态与膨胀态**：`CampaignFleetAPI.getInflater()` 持有 `FleetInflater`(由 `FleetFactoryV3` 生成的舰队挂载)。
+    - `inflateIfNeeded()` 在战役侧把保存态成员补全为完整装配态 (`CampaignFleetAPI.inflateIfNeeded`：inflater 存在、未膨胀、非中立势力时执行；`removeAfterInflating()` 为真则随后移除 inflater)；`deflate()` 回到保存态表达。
+    - 玩家舰队的成员默认即保存态，战斗部署时由战斗侧实例化。
 
 能部署是一回事，舰队养不养得起是另一回事：容量、船员与补给消耗按成员求和，封存则把成员从这些负担中豁免出来。
 
 ### 后勤语义
 
-* **容量按成员求和**：`updateCargoCapacities` 遍历成员，把 `getFuelCapacity` / `getCargoCapacity` / `getMinCrew` / `getMaxCrew` / `getFuelUse` 累加 (战机按联队数量加权)。
-    *   写入 cargo 的 `maxFuel` / `maxCapacity` / `maxPersonnel`，并算出 `minCrew` 与 `fuelPerLightYear`；读取侧 `CampaignFleetAPI.getCargo()`(经 `SectorEntityToken.getCargo()`) 拿到 `CargoAPI`。
-* **burn level**：`getMaxBurnLevel()` 是**非封存**成员中最快者 (含 `getFleetwideMaxBurnMod`)；`getMinBurnLevel()` 是全体最慢者；`getBurnLevel()` 是有效 burn(含深超空间与舰队 mod 修正，上限 20)。
-    *   `CampaignFleetAPI.getCurrBurnLevel()` 是当前实际流速。
-* **封存 (mothball)**：`getRepairTracker().setMothballed(true)` 后：成员不进 `getCombatReadyMembersListCopy()`、排到 `getMembersInPriorityOrder()` 末尾、`canBeDeployedForCombat()` 恒 `false`。
-    *   stats 重算时补给月耗 × `supplyConsumptionMothballedMult`、cargo / fuel / maxCrew / minCrew 乘数置 0(`FleetMemberAPI.updateStats`)。
-    *   封存船**不贡献容量也不烧船员**，这正是 "封存闲置船" 的语义。
+- **容量按成员求和**：`updateCargoCapacities` 遍历成员，把 `getFuelCapacity` / `getCargoCapacity` / `getMinCrew` / `getMaxCrew` / `getFuelUse` 累加 (战机按联队数量加权)。
+    - 写入 cargo 的 `maxFuel` / `maxCapacity` / `maxPersonnel`，并算出 `minCrew` 与 `fuelPerLightYear`；读取侧 `CampaignFleetAPI.getCargo()`(经 `SectorEntityToken.getCargo()`) 拿到 `CargoAPI`。
+- **burn level**：`getMaxBurnLevel()` 是**非封存**成员中最快者 (含 `getFleetwideMaxBurnMod`)；`getMinBurnLevel()` 是全体最慢者；`getBurnLevel()` 是有效 burn(含深超空间与舰队 mod 修正，上限 20)。
+    - `CampaignFleetAPI.getCurrBurnLevel()` 是当前实际流速。
+- **封存 (mothball)**：`getRepairTracker().setMothballed(true)` 后：成员不进 `getCombatReadyMembersListCopy()`、排到 `getMembersInPriorityOrder()` 末尾、`canBeDeployedForCombat()` 恒 `false`。
+    - stats 重算时补给月耗 × `supplyConsumptionMothballedMult`、cargo / fuel / maxCrew / minCrew 乘数置 0(`FleetMemberAPI.updateStats`)。
+    - 封存船**不贡献容量也不烧船员**，这正是 "封存闲置船" 的语义。
 
 封存修正是延迟生效的
 
 stats 修正在下一次 `updateStats` 才写入 —— 改完封存标志后要触发同步 (如 `forceSync`) 再读数，否则读到的还是旧值。
 
-* **scuttle(拆解)**：`scuttle(member)` 移除成员并把拆解收益 (补给、燃料、重型机械，`getSuppliesFromScuttling` 等)、已装非 built-in 武器与战机 LPC、AI 核心放入 cargo。
-    *   拆解是**不可逆**的成员移除方式，与 `removeFleetMember` 的差别在于收益入舱。
+- **scuttle(拆解)**：`scuttle(member)` 移除成员并把拆解收益 (补给、燃料、重型机械，`getSuppliesFromScuttling` 等)、已装非 built-in 武器与战机 LPC、AI 核心放入 cargo。
+    - 拆解是**不可逆**的成员移除方式，与 `removeFleetMember` 的差别在于收益入舱。
 
 机制讲完，示例脚本需要在正确时机注册，才能观察到这些行为。
 
@@ -352,16 +352,16 @@ mods/GearIndustry/
 
 对应关系：
 
-* `implements EveryFrameScript`：`isDone()` 返回 `executed`(脚本执行后自停，引擎下一帧自动移除)；`runWhilePaused()` 返回 `false`(暂停时不执行)。
-* `REGISTER_MARK`：persistent data 判断键，用于判断脚本是否已在该存档执行过 (`"GearIn_FleetMemberScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不含任何工作单元编号变体。
-* `createFleetMember(FleetMemberType.SHIP, "...")`：创建入口。
-    *   `wolf_Assault` / `hammerhead_Elite` 是原版注册装配 id(`data/variants/wolf/wolf_Assault.variant`、`data/variants/hammerhead/hammerhead_Elite.variant`，variant id = 文件名去扩展名)。
-* `data.addFleetMember(...)`：入队入口；加入后 `getNumMembers()` / `getFleetPoints()` / `getCargo().getMaxCapacity()` 随之变化 —— 容量变化来自同步管线里的 `updateCargoCapacities`。
-* `getStatus().applyHullFractionDamage(0.3f)` / `repairFully()`：船体状态写入与恢复 (`hammerhead_Elite` 是普通舰船，单一状态槽，hull fraction 从 1.0 到 0.7 再回 1.0)。
-* `getRepairTracker().setCR(0.3f)` / `setMothballed(true)`：CR 与封存写入；`canBeDeployedForCombat()` 与 `getMembersInPriorityOrder()` 是 "当前状态" 读取。
-* `setVariant(wolf.getVariant(), true, true)`：装配写入 —— 非战机成员换装配后 `getHullId()` 从 `hammerhead` 变为 `wolf`(`setVariant` 同步更新 `specId`)，换回原装配恢复。
-    *   演示中 `hammerhead` 与 `wolf` 短暂共享同一装配引用且双方都不再改装配，属可控演示；生产代码避免长期共享装配引用。
-* 清理段 `removeFleetMember`：把两个演示成员移除，玩家舰队恢复初始状态 —— 演示脚本**不留副作用**，可反复读档重放。
+- `implements EveryFrameScript`：`isDone()` 返回 `executed`(脚本执行后自停，引擎下一帧自动移除)；`runWhilePaused()` 返回 `false`(暂停时不执行)。
+- `REGISTER_MARK`：persistent data 判断键，用于判断脚本是否已在该存档执行过 (`"GearIn_FleetMemberScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不含任何工作单元编号变体。
+- `createFleetMember(FleetMemberType.SHIP, "...")`：创建入口。
+    - `wolf_Assault` / `hammerhead_Elite` 是原版注册装配 id(`data/variants/wolf/wolf_Assault.variant`、`data/variants/hammerhead/hammerhead_Elite.variant`，variant id = 文件名去扩展名)。
+- `data.addFleetMember(...)`：入队入口；加入后 `getNumMembers()` / `getFleetPoints()` / `getCargo().getMaxCapacity()` 随之变化 —— 容量变化来自同步管线里的 `updateCargoCapacities`。
+- `getStatus().applyHullFractionDamage(0.3f)` / `repairFully()`：船体状态写入与恢复 (`hammerhead_Elite` 是普通舰船，单一状态槽，hull fraction 从 1.0 到 0.7 再回 1.0)。
+- `getRepairTracker().setCR(0.3f)` / `setMothballed(true)`：CR 与封存写入；`canBeDeployedForCombat()` 与 `getMembersInPriorityOrder()` 是 "当前状态" 读取。
+- `setVariant(wolf.getVariant(), true, true)`：装配写入 —— 非战机成员换装配后 `getHullId()` 从 `hammerhead` 变为 `wolf`(`setVariant` 同步更新 `specId`)，换回原装配恢复。
+    - 演示中 `hammerhead` 与 `wolf` 短暂共享同一装配引用且双方都不再改装配，属可控演示；生产代码避免长期共享装配引用。
+- 清理段 `removeFleetMember`：把两个演示成员移除，玩家舰队恢复初始状态 —— 演示脚本**不留副作用**，可反复读档重放。
 
 调用点 (工程片段 —— 方法所在类归插件生命周期类所有，本节只演示调用，不改动那些文件)：
 
@@ -417,15 +417,15 @@ fleet.getFleetData().addFleetMember(member);
 
 1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
 2. 新建生涯：确认 `starsector.log` 按顺序出现 `GearIn fleet member` 各日志行 (`start` / `created` / `added` / `iterate` / `damage` / `repair` / `CR` / `mothball` / `variant swap` / `variant restore` / `done`)。
-    *   观察 `start`、`added` 与 `done` 行的成员数。
+    - 观察 `start`、`added` 与 `done` 行的成员数。
 3. 界面核对：演示日志出现时打开舰队界面 (F 键)，确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
 4. 只执行一次：等待若干游戏日后日志无新增 `GearIn fleet member` 行；保存并读档后仍无新增 (`REGISTER_MARK` 已写入 persistent data，脚本不再注册)。
 
 预期结果：
 
-* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
 
-* **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
+- **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
 
     ```text
        GearIn fleet member start: members=<N> fleetPoints=<F> cargoCapacity=<C>
@@ -443,11 +443,11 @@ fleet.getFleetData().addFleetMember(member);
 
     其中 `<N>` 是初始成员数、`<F>` 是初始 fleet points、`<C>` 是初始 cargo 容量，均以实际日志为准；`firstPriority` 是玩家舰队第一个非封存成员的船名 (演示期间 `hammerhead` 被封存所以不在队首；玩家舰队为空时输出 `none`)。演示只执行一次，之后无任何 `GearIn fleet member` 日志。
 
-* **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
+- **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
 
-* **读档**：不出现任何 `GearIn fleet member` 日志 (`REGISTER_MARK` 已写入 persistent data、脚本不再注册)；玩家舰队与演示前一致。
+- **读档**：不出现任何 `GearIn fleet member` 日志 (`REGISTER_MARK` 已写入 persistent data、脚本不再注册)；玩家舰队与演示前一致。
 
-* 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
+- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
 ## 故障分析
 
@@ -473,18 +473,18 @@ fleet.getFleetData().addFleetMember(member);
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.campaign.CampaignFleetAPI`：舰队实体；成员集合入口、统计、战斗绑定、inflater。
-* `com.fs.starfarer.api.campaign.FleetDataAPI`：成员集合；增删遍历、四种成员视图、同步与快照。
-* `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员保存态；身份、装配、舰长、状态、数值。
-* `com.fs.starfarer.api.fleet.FleetMemberStatusAPI`：船体状态与维修 (`getHullFraction` / `repairFully` / `applyHullFractionDamage`)。
-* `com.fs.starfarer.api.fleet.RepairTrackerAPI`：CR 与封存 (`getCR` / `setCR` / `setMothballed`)。
-* `com.fs.starfarer.api.fleet.FleetMemberType`：成员类型枚举 (`SHIP` / `FIGHTER_WING` / `NULL`)。
-* `com.fs.starfarer.api.FactoryAPI`：成员创建入口 (`createFleetMember`)。
-* `com.fs.starfarer.api.campaign.SectorEntityToken`：舰队 cargo 读取入口 (`getCargo()`)。
-* `com.fs.starfarer.api.combat.ShipVariantAPI`：装配对象 (`setVariant` 的入参类型；`getHullVariantId` 读装配 id)。
-* `com.fs.starfarer.api.EveryFrameScript`：示例脚本接口 (`isDone` / `runWhilePaused` / `advance`)。
-* `data/config/settings.json`：部署判据基线 (`noDeployCRPercent` = 0、`noDeployCrewPercent` = 5)。
-* `data/variants/wolf/wolf_Assault.variant`、`data/variants/hammerhead/hammerhead_Elite.variant`：示例使用的原版装配 (variant id = 文件名去扩展名)。
+- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：舰队实体；成员集合入口、统计、战斗绑定、inflater。
+- `com.fs.starfarer.api.campaign.FleetDataAPI`：成员集合；增删遍历、四种成员视图、同步与快照。
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员保存态；身份、装配、舰长、状态、数值。
+- `com.fs.starfarer.api.fleet.FleetMemberStatusAPI`：船体状态与维修 (`getHullFraction` / `repairFully` / `applyHullFractionDamage`)。
+- `com.fs.starfarer.api.fleet.RepairTrackerAPI`：CR 与封存 (`getCR` / `setCR` / `setMothballed`)。
+- `com.fs.starfarer.api.fleet.FleetMemberType`：成员类型枚举 (`SHIP` / `FIGHTER_WING` / `NULL`)。
+- `com.fs.starfarer.api.FactoryAPI`：成员创建入口 (`createFleetMember`)。
+- `com.fs.starfarer.api.campaign.SectorEntityToken`：舰队 cargo 读取入口 (`getCargo()`)。
+- `com.fs.starfarer.api.combat.ShipVariantAPI`：装配对象 (`setVariant` 的入参类型；`getHullVariantId` 读装配 id)。
+- `com.fs.starfarer.api.EveryFrameScript`：示例脚本接口 (`isDone` / `runWhilePaused` / `advance`)。
+- `data/config/settings.json`：部署判据基线 (`noDeployCRPercent` = 0、`noDeployCrewPercent` = 5)。
+- `data/variants/wolf/wolf_Assault.variant`、`data/variants/hammerhead/hammerhead_Elite.variant`：示例使用的原版装配 (variant id = 文件名去扩展名)。
 
 ## 完整最小例
 

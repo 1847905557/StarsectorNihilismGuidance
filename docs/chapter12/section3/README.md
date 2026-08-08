@@ -10,36 +10,36 @@
 
 完成后，您将能够：
 
-* 说出生涯插件的注册与注销入口，以及 `getId()` 未覆写、id 撞车、未注册三种情况各自的可观察结果；
-* 区分 transient 与非 transient 插件的存档边界与注册时机；
-* 背出 `PickPriority` 的 7 级阶梯并解释竞争裁决规则 (取 `ordinal` 最高者、返回 `null` 即放弃、同优先级并列未定义)；
-* 从零编写一个 transient 生涯插件与最小交互对话框，并完成注册；
-* 用游戏内对话与 `starsector.log` 验证 picker 命中、优先级生效与 facts 写入；
-* 从症状定位八类典型故障：插件消失、重复咨询、抢走原版对话、点击实体无对话、picker 抛异常、facts 递归、同优先级竞争、序列化问题。
+- 说出生涯插件的注册与注销入口，以及 `getId()` 未覆写、id 撞车、未注册三种情况各自的可观察结果；
+- 区分 transient 与非 transient 插件的存档边界与注册时机；
+- 背出 `PickPriority` 的 7 级阶梯并解释竞争裁决规则 (取 `ordinal` 最高者、返回 `null` 即放弃、同优先级并列未定义)；
+- 从零编写一个 transient 生涯插件与最小交互对话框，并完成注册；
+- 用游戏内对话与 `starsector.log` 验证 picker 命中、优先级生效与 facts 写入；
+- 从症状定位八类典型故障：插件消失、重复咨询、抢走原版对话、点击实体无对话、picker 抛异常、facts 递归、同优先级竞争、序列化问题。
 
 ## 前置知识
 
-* [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-* [C2-S1] 的注册入口与回调模型；
-* [C3-S3] 的 `gear_industry` 势力定义；
-* [C3-S6]、[C3-S7] 的新档生成入口、行星与市场实体；
-* [C6-S1] 的 Java 构建与 JAR 输出；
-* [C6-S2] 的 `modPlugin` 生命周期与 `onGameLoad` 回调；
-* [C6-S3] 的 `Global.getSector()` 阶段语义；
-* [C9-S1] 的生涯脚本注册与持久数据判断；
-* [C12-S2] 的生涯事件监听器通道；
-* [C14-S3] 的 Rules 命令与 [C14-S4] 的 `$` 前缀记忆变量。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
+- [C2-S1] 的注册入口与回调模型；
+- [C3-S3] 的 `gear_industry` 势力定义；
+- [C3-S6]、[C3-S7] 的新档生成入口、行星与市场实体；
+- [C6-S1] 的 Java 构建与 JAR 输出；
+- [C6-S2] 的 `modPlugin` 生命周期与 `onGameLoad` 回调；
+- [C6-S3] 的 `Global.getSector()` 阶段语义；
+- [C9-S1] 的生涯脚本注册与持久数据判断；
+- [C12-S2] 的生涯事件监听器通道；
+- [C14-S3] 的 Rules 命令与 [C14-S4] 的 `$` 前缀记忆变量。
 
 ## 术语
 
 按术语约定，API 名保留源码大小写。本节首次完整讲解两个页面级术语：
 
-* **生涯插件 (CampaignPlugin)**：API 名保留 `CampaignPlugin`。
-    *   实现 `CampaignPlugin` 接口 (或继承 `BaseCampaignPlugin`) 并在生涯引擎注册的对象。
-    *   它不随帧推进 (那是 `EveryFrameScript`，见前置知识)，而是被动接受两类咨询：picker 咨询 (`pickXxx`，在生涯事件发生时被调用，决定 "由哪个插件实例处理") 与 facts 咨询 (`updateXxxFacts`，在记忆被读取时被调用，负责写规则事实)。
-* **picker(选择器)**：英文保留。
-    *   对一组已注册的生涯插件逐个调用同一个 `pickXxx` 方法、收集非 `null` 的 `PluginPick` 并按 `PickPriority` 裁决出唯一获胜者的机制。
-    *   返回 `null` 表示该插件放弃本次选择权。
+- **生涯插件 (CampaignPlugin)**：API 名保留 `CampaignPlugin`。
+    - 实现 `CampaignPlugin` 接口 (或继承 `BaseCampaignPlugin`) 并在生涯引擎注册的对象。
+    - 它不随帧推进 (那是 `EveryFrameScript`，见前置知识)，而是被动接受两类咨询：picker 咨询 (`pickXxx`，在生涯事件发生时被调用，决定 "由哪个插件实例处理") 与 facts 咨询 (`updateXxxFacts`，在记忆被读取时被调用，负责写规则事实)。
+- **picker(选择器)**：英文保留。
+    - 对一组已注册的生涯插件逐个调用同一个 `pickXxx` 方法、收集非 `null` 的 `PluginPick` 并按 `PickPriority` 裁决出唯一获胜者的机制。
+    - 返回 `null` 表示该插件放弃本次选择权。
 
 ## 注册入口与存档边界
 
@@ -64,9 +64,9 @@
 
 登记表写完后，下一个决定是生命周期：插件的状态要不要进存档，这直接决定注册代码写在哪里、写几次。`CampaignPlugin.isTransient()` 定义两种生命周期：
 
-* **transient(返回 `true`，`BaseCampaignPlugin` 默认值)**：插件数据不进存档 (`writeReplace` 写档前过滤)，**必须**在每次读档后重新注册 ——"it needs to be re-added to the game every time (in ModPlugin.onGameLoad())"。
-    *   注册入口是 `onGameLoad(boolean)`(新档与读档共用，见前置知识)。
-* **非 transient(返回 `false`)**：插件实例随存档保存，可以只注册一次 (`onNewGame`，或 `onGameLoad` 里的 `CLASS_MARK` 首次进入检查内 —— 成熟实例正是把 `registerPlugin` 放进前置单元的首次进入检查内)。代价：实例字段随存档序列化 (XStream 边界)，且卸载 MOD 后存档里残留实例。
+- **transient(返回 `true`，`BaseCampaignPlugin` 默认值)**：插件数据不进存档 (`writeReplace` 写档前过滤)，**必须**在每次读档后重新注册 ——"it needs to be re-added to the game every time (in ModPlugin.onGameLoad())"。
+    - 注册入口是 `onGameLoad(boolean)`(新档与读档共用，见前置知识)。
+- **非 transient(返回 `false`)**：插件实例随存档保存，可以只注册一次 (`onNewGame`，或 `onGameLoad` 里的 `CLASS_MARK` 首次进入检查内 —— 成熟实例正是把 `registerPlugin` 放进前置单元的首次进入检查内)。代价：实例字段随存档序列化 (XStream 边界)，且卸载 MOD 后存档里残留实例。
 
 transient 插件的注册禁止挂进一次性检查
 
@@ -99,9 +99,9 @@ transient 插件的注册禁止挂进一次性检查
 
 关键结论：
 
-* **返回 `null` = 放弃**：不参与竞争，把机会留给别的插件。这是每个 picker 的默认姿态 (`BaseCampaignPlugin` 的全部 picker 默认返回 `null`)。
-* **`PluginPick` 的 `plugin` 不能是 `null`**：裁决器只检查 `PluginPick` 非 `null` 就让它参选，获胜后调用点拿到的是 `.plugin`。
-    *   一个 `plugin == null` 的高优先级选择会**顶掉**其他插件的合法选择，而调用点多数把它当作 "无人处理"—— 点击实体后什么都不发生，连原版对话都不开。这场竞争唯一的成果，是让原版和您的插件都无话可说。
+- **返回 `null` = 放弃**：不参与竞争，把机会留给别的插件。这是每个 picker 的默认姿态 (`BaseCampaignPlugin` 的全部 picker 默认返回 `null`)。
+- **`PluginPick` 的 `plugin` 不能是 `null`**：裁决器只检查 `PluginPick` 非 `null` 就让它参选，获胜后调用点拿到的是 `.plugin`。
+    - 一个 `plugin == null` 的高优先级选择会**顶掉**其他插件的合法选择，而调用点多数把它当作 "无人处理"—— 点击实体后什么都不发生，连原版对话都不开。这场竞争唯一的成果，是让原版和您的插件都无话可说。
 
 同优先级并列的结果未定义
 
@@ -152,35 +152,35 @@ MOD 用 `MOD_GENERAL` 及以上就能稳定覆盖原版，用 `CORE_GENERAL` 则
 机制、速查与对照都清楚了，动手之前先记下写作约束。**必须** (违反后的可观察结果写在括号里)：
 
 1. **picker 无法处理时必须返回 `null`**("Return null if this CampaignPlugin implementation doesn't provide one.")。
-    *   返回 "占位实例" 或 `plugin == null` 的 `PluginPick` → 顶掉低优先级插件的合法选择后自身不可用：`showInteractionDialog` 拿到 `null` 插件直接返回 `false`(**点击实体什么都不发生，连原版对话都不开**，生涯状态)。
+    - 返回 "占位实例" 或 `plugin == null` 的 `PluginPick` → 顶掉低优先级插件的合法选择后自身不可用：`showInteractionDialog` 拿到 `null` 插件直接返回 `false`(**点击实体什么都不发生，连原版对话都不开**，生涯状态)。
 2. **picker 内不得抛出未处理异常**。
-    *   裁决器 `getPriorityPlugin` 没有 try/catch(插件登记表)，异常沿调用点冒泡 → 生涯流程中断、UI 报错 (日志 `ERROR` + 异常堆栈指向本插件的 picker)。
-    *   无法处理就返回 `null`，不要抛。
+    - 裁决器 `getPriorityPlugin` 没有 try/catch(插件登记表)，异常沿调用点冒泡 → 生涯流程中断、UI 报错 (日志 `ERROR` + 异常堆栈指向本插件的 picker)。
+    - 无法处理就返回 `null`，不要抛。
 3. **transient 插件必须在每次 `onGameLoad` 重新注册** ("needs to be re-added to the game every time (in ModPlugin.onGameLoad())")。
-    *   不注册 → 读档后插件缺失、picker 不响应、facts 不写，**无任何报错**。
+    - 不注册 → 读档后插件缺失、picker 不响应、facts 不写，**无任何报错**。
 4. **transient 插件的注册禁止挂进 persistent data 一次性检查** (机制推导：检查标记写入后注册不再执行，而 transient 实例不被存档保留)。
-    *   违反 → 新档一切正常，首次读档后插件永久消失且无报错 (这是与脚本注册策略最显著的差异 —— 脚本要一次性检查、transient 插件不能依赖它)。
+    - 违反 → 新档一切正常，首次读档后插件永久消失且无报错 (这是与脚本注册策略最显著的差异 —— 脚本要一次性检查、transient 插件不能依赖它)。
 5. **返回的 `PluginPick` 必须携带非 `null` 插件实例** (裁决器只检查 `PluginPick` 非 null，调用点只检查取出的 plugin)。
-    *   违反 → 高优先级 "废票" 顶掉其他 MOD 的合法选择 (见第 1 条的可观察结果)。
+    - 违反 → 高优先级 "废票" 顶掉其他 MOD 的合法选择 (见第 1 条的可观察结果)。
 6. **注册必须发生在生涯引擎建立之后** (`onGameLoad` / `onNewGame`)。
-    *   在 `onApplicationLoad` 注册 → `Global.getSector()` 为 `null`，NPE 启动中止。
+    - 在 `onApplicationLoad` 注册 → `Global.getSector()` 为 `null`，NPE 启动中止。
 7. **facts 回调内禁止调用会再次触发 facts 的 `getMemory()`**(典型：`updateGlobalFacts` 内调 `sector.getMemory()`、`updateEntityFacts` 内调 `entity.getMemory()`)。
-    *   每次 `getMemory()` 都会重跑全插件对应 facts(生涯引擎)，自我触发构成无限递归 → `StackOverflowError`。
-    *   读记忆用传入的 `memory` 参数或 `getMemoryWithoutUpdate()`。
+    - 每次 `getMemory()` 都会重跑全插件对应 facts(生涯引擎)，自我触发构成无限递归 → `StackOverflowError`。
+    - 读记忆用传入的 `memory` 参数或 `getMemoryWithoutUpdate()`。
 8. **禁止依赖同优先级并列的结果** ("what gets picked when multiple plugins have the same priority is undefined")。
-    *   实现是稳定排序取列表靠后者，但这是实现观察、非约定 → 与其他 MOD 同层竞争时谁生效不保证 (版本升级可能反转)。
-    *   要保证自己生效，用明确的层级差 (MOD 至少 `MOD_GENERAL`)。
+    - 实现是稳定排序取列表靠后者，但这是实现观察、非约定 → 与其他 MOD 同层竞争时谁生效不保证 (版本升级可能反转)。
+    - 要保证自己生效，用明确的层级差 (MOD 至少 `MOD_GENERAL`)。
 
 **建议** (违反的可观察结果写在括号里)：
 
-* **覆写 `getId()` 返回稳定唯一值** ("should be unique. Can be null, but shouldn't.")。返回 `null` → 注册不去重，transient 插件每次读档后实例累积，picker 被咨询多次、facts 重复写入 (日志成双)。
-* **插件 id 全局唯一、带 MOD 前缀** (如 `GearIn_CampaignPlugin`)。id 撞车 → 后注册的同 id 插件静默顶掉先注册者 (去重按 id 全局生效，跨 MOD 也如此)。
-* **默认 `isTransient()` 返回 `true`**("should be transient unless they need to save data")。一律返回 `false` → 插件实例随存档序列化 (XStream 边界风险、存档体积增长、卸载 MOD 后残留)，本可瞬态的状态被意外持久化。
-* **facts 写入的变量过期时间设为 `0`**("Any variables set here should have an expiration time of 0, since this method will be called every time the getMemory() method is called")。
-    *   非 0 过期 → 事实滞留，规则系统读到陈旧值、记忆被污染。
-* **facts 键使用 MOD 专属前缀** ("Mod-added facts should have their variable names use a mod-specific prefix to avoid conflicts")。无前缀 → 与原版 `$name`、`$relValue` 等键或别的 MOD 键互相覆盖。
-* **priority 按语义层级选择** (`MOD_GENERAL` 整体替换 / `MOD_SET` 一类情形 / `MOD_SPECIFIC` 特定遭遇 / `HIGHEST` 慎用)。用错层级 → 过度覆盖 (所有对话被换成自己的) 或覆盖不足 (被更高优先级插件顶掉)。
-* **picker 与 facts 里不做重活** (机制事实：pick 发生在对话打开、战斗创建等交互路径上；facts 在每次 `getMemory()` 时对全部插件重跑)。重活 → 卡顿、频繁重复执行。
+- **覆写 `getId()` 返回稳定唯一值** ("should be unique. Can be null, but shouldn't.")。返回 `null` → 注册不去重，transient 插件每次读档后实例累积，picker 被咨询多次、facts 重复写入 (日志成双)。
+- **插件 id 全局唯一、带 MOD 前缀** (如 `GearIn_CampaignPlugin`)。id 撞车 → 后注册的同 id 插件静默顶掉先注册者 (去重按 id 全局生效，跨 MOD 也如此)。
+- **默认 `isTransient()` 返回 `true`**("should be transient unless they need to save data")。一律返回 `false` → 插件实例随存档序列化 (XStream 边界风险、存档体积增长、卸载 MOD 后残留)，本可瞬态的状态被意外持久化。
+- **facts 写入的变量过期时间设为 `0`**("Any variables set here should have an expiration time of 0, since this method will be called every time the getMemory() method is called")。
+    - 非 0 过期 → 事实滞留，规则系统读到陈旧值、记忆被污染。
+- **facts 键使用 MOD 专属前缀** ("Mod-added facts should have their variable names use a mod-specific prefix to avoid conflicts")。无前缀 → 与原版 `$name`、`$relValue` 等键或别的 MOD 键互相覆盖。
+- **priority 按语义层级选择** (`MOD_GENERAL` 整体替换 / `MOD_SET` 一类情形 / `MOD_SPECIFIC` 特定遭遇 / `HIGHEST` 慎用)。用错层级 → 过度覆盖 (所有对话被换成自己的) 或覆盖不足 (被更高优先级插件顶掉)。
+- **picker 与 facts 里不做重活** (机制事实：pick 发生在对话打开、战斗创建等交互路径上；facts 在每次 `getMemory()` 时对全部插件重跑)。重活 → 卡顿、频繁重复执行。
 
 ## 实现生涯插件
 
@@ -291,8 +291,8 @@ Starsector\mods\GearIndustry\
 
 **picker 与 facts**：`pickInteractionDialogPlugin` 对 "齿轮工业" 势力的两类实体命中：
 
-* 舰队 (`instanceof CampaignFleetAPI` 分支)；
-* 市场实体 (`getMarket()` 分支)。
+- 舰队 (`instanceof CampaignFleetAPI` 分支)；
+- 市场实体 (`getMarket()` 分支)。
 
 命中时返回 `new PluginPick<>(new GearInInteractionDialog(), PickPriority.MOD_SPECIFIC)`。
 
@@ -316,14 +316,14 @@ Starsector\mods\GearIndustry\
 
 对应关系：
 
-* `extends BaseCampaignPlugin`：27 个方法全部有默认实现，只覆写 `getId` / `isTransient` / `pickInteractionDialogPlugin` / `updateGlobalFacts`。
-* `getId()` 返回 `"GearIn_CampaignPlugin"`：非 `null`、全局唯一、带 MOD 前缀 ——transient 插件每次读档重注册时被 `addPlugin` 按 id 顶替，不会累积 (插件登记表)。
-* `isTransient()` 返回 `true`：数据不进存档；这是 `BaseCampaignPlugin` 默认值，显式写出是为了讲明语义。
-* `pickInteractionDialogPlugin`：先判 `instanceof CampaignFleetAPI`(舰队势力匹配)，再判 `getMarket() != null`(市场实体势力匹配，覆盖行星/空间站)；命中返回 `MOD_SPECIFIC`(5 > 原版 `CORE_GENERAL` 0，必胜)；不命中返回 `null` 放弃。
-* `new PluginPick<>(new GearInInteractionDialog(), PickPriority.MOD_SPECIFIC)`：对话框实例在 pick 时现场创建 (原版 `CoreCampaignPluginImpl` 也是这个模式 ——picker 每次咨询都会新建实例，插件类必须无参可实例化)。
-* `updateGlobalFacts`：`memory.set(DEMO_GLOBAL_FACT, true, 0f)`——MOD 专属前缀 + 过期时间 0。
-* `GearInInteractionDialog implements InteractionDialogPlugin`：7 个方法全部来自接口 (`com.fs.starfarer.api.campaign.InteractionDialogPlugin`)，本节示例只实现了 `init` / `optionSelected`，其余空实现；
-    *   对话框类经同包静态常量 `GearInCampaignPlugin.DEMO_GLOBAL_FACT` 与插件类协作 (一文件一角色，两个类各自承担一个接口族)。
+- `extends BaseCampaignPlugin`：27 个方法全部有默认实现，只覆写 `getId` / `isTransient` / `pickInteractionDialogPlugin` / `updateGlobalFacts`。
+- `getId()` 返回 `"GearIn_CampaignPlugin"`：非 `null`、全局唯一、带 MOD 前缀 ——transient 插件每次读档重注册时被 `addPlugin` 按 id 顶替，不会累积 (插件登记表)。
+- `isTransient()` 返回 `true`：数据不进存档；这是 `BaseCampaignPlugin` 默认值，显式写出是为了讲明语义。
+- `pickInteractionDialogPlugin`：先判 `instanceof CampaignFleetAPI`(舰队势力匹配)，再判 `getMarket() != null`(市场实体势力匹配，覆盖行星/空间站)；命中返回 `MOD_SPECIFIC`(5 > 原版 `CORE_GENERAL` 0，必胜)；不命中返回 `null` 放弃。
+- `new PluginPick<>(new GearInInteractionDialog(), PickPriority.MOD_SPECIFIC)`：对话框实例在 pick 时现场创建 (原版 `CoreCampaignPluginImpl` 也是这个模式 ——picker 每次咨询都会新建实例，插件类必须无参可实例化)。
+- `updateGlobalFacts`：`memory.set(DEMO_GLOBAL_FACT, true, 0f)`——MOD 专属前缀 + 过期时间 0。
+- `GearInInteractionDialog implements InteractionDialogPlugin`：7 个方法全部来自接口 (`com.fs.starfarer.api.campaign.InteractionDialogPlugin`)，本节示例只实现了 `init` / `optionSelected`，其余空实现；
+    - 对话框类经同包静态常量 `GearInCampaignPlugin.DEMO_GLOBAL_FACT` 与插件类协作 (一文件一角色，两个类各自承担一个接口族)。
 
 对话框文字用英文
 
@@ -348,8 +348,8 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含两个 class 条目 (可用 `jar tf` 核对)：
 
-* `data/scripts/gearin/campaign/GearInCampaignPlugin.class`
-* `data/scripts/gearin/campaign/GearInInteractionDialog.class`
+- `data/scripts/gearin/campaign/GearInCampaignPlugin.class`
+- `data/scripts/gearin/campaign/GearInInteractionDialog.class`
 
 ## 关键故障实验：插件已注册但对话仍由原版处理
 
@@ -386,16 +386,16 @@ return new PluginPick<>(plugin, PickPriority.MOD_SPECIFIC);
 
 预期结果：
 
-* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInCampaignPlugin.class` 与 `data/scripts/gearin/campaign/GearInInteractionDialog.class`。
-* **注册**：新建生涯 (或读档) 后 `starsector.log` 出现一行 `GearIn campaign plugin registered`(来自调用点片段)；读档后再次出现同一行 (transient 插件每次读档重新注册，见 "生命周期与存档边界")。
-* **picker 命中**：进入齿轮星系 (累计工程生成的齿轮工业系统)，点击任一齿轮工业势力的行星 —— 弹出 `GearIn demo dialog`：
-    *   第一行显示 `routed by pickInteractionDialogPlugin() with PickPriority.MOD_SPECIFIC` 与目标名；
-    *   第二行显示 `Global fact [$gearIn_demoFact] = true`。
-    *   这证明：本插件的 pick 在竞争中原版 `CORE_GENERAL` 对话中胜出，且 `updateGlobalFacts` 已生效。
-* **事实刷新**：在对话框中选 `Refresh facts`—— 新增一行且 `= true`(每次 `getMemory()` 重跑 facts，值始终新鲜)；选 `Leave`—— 对话框关闭，返回生涯地图。
-* **放弃路径**：点击原版势力的行星、空间站、舰队或跳跃点时，仍由原版交互对话处理。
-* **读档**：保存后读档，`GearIn campaign plugin registered` 再次出现，齿轮工业实体仍打开演示对话框。
-* **参数演示**：把 `DEMO_FACTION_ID` 改为 `"pirates"` 并重新构建后，海盗势力实体打开演示对话框，齿轮工业实体回到原版交互对话。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInCampaignPlugin.class` 与 `data/scripts/gearin/campaign/GearInInteractionDialog.class`。
+- **注册**：新建生涯 (或读档) 后 `starsector.log` 出现一行 `GearIn campaign plugin registered`(来自调用点片段)；读档后再次出现同一行 (transient 插件每次读档重新注册，见 "生命周期与存档边界")。
+- **picker 命中**：进入齿轮星系 (累计工程生成的齿轮工业系统)，点击任一齿轮工业势力的行星 —— 弹出 `GearIn demo dialog`：
+    - 第一行显示 `routed by pickInteractionDialogPlugin() with PickPriority.MOD_SPECIFIC` 与目标名；
+    - 第二行显示 `Global fact [$gearIn_demoFact] = true`。
+    - 这证明：本插件的 pick 在竞争中原版 `CORE_GENERAL` 对话中胜出，且 `updateGlobalFacts` 已生效。
+- **事实刷新**：在对话框中选 `Refresh facts`—— 新增一行且 `= true`(每次 `getMemory()` 重跑 facts，值始终新鲜)；选 `Leave`—— 对话框关闭，返回生涯地图。
+- **放弃路径**：点击原版势力的行星、空间站、舰队或跳跃点时，仍由原版交互对话处理。
+- **读档**：保存后读档，`GearIn campaign plugin registered` 再次出现，齿轮工业实体仍打开演示对话框。
+- **参数演示**：把 `DEMO_FACTION_ID` 改为 `"pirates"` 并重新构建后，海盗势力实体打开演示对话框，齿轮工业实体回到原版交互对话。
 
 清理：把 `DEMO_FACTION_ID` 恢复为 `"gear_industry"`。
 
@@ -420,18 +420,18 @@ picker 是 "咨询制"：返回非 `null` 就接管这次处理，因此条件�
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.campaign.CampaignPlugin`：生涯插件接口 ——`PickPriority` 7 级枚举、19 个 picker、6 个 facts、`getId` / `isTransient`。
-* `com.fs.starfarer.api.campaign.BaseCampaignPlugin`：全部默认实现与 "继承而非实现" 的建议。
-* `com.fs.starfarer.api.PluginPick`：`plugin` + `priority` 公开字段与构造器。
-* `com.fs.starfarer.api.campaign.SectorAPI`：`registerPlugin` / `unregisterPlugin` / `getMemory` / `getPluginPicker` / `getGenericPlugins`。
-* `com.fs.starfarer.api.campaign.PluginPickerAPI`：公开聚合的 6 个 picker。
-* `com.fs.starfarer.api.campaign.GenericPluginManagerAPI`：另一套 int 优先级通用插件机制 (`pickPlugin`)。
-* `com.fs.starfarer.api.campaign.InteractionDialogPlugin`：交互对话框接口 (7 个方法)。
-* `com.fs.starfarer.api.campaign.InteractionDialogAPI`：`getTextPanel` / `getOptionPanel` / `setPromptText` / `dismiss` / `getInteractionTarget`。
-* `com.fs.starfarer.api.campaign.rules.MemoryAPI`：`set(key, value, expire)`、`getBoolean` 等记忆读写。
-* `com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`：原版核心生涯插件 ——`CORE_GENERAL` 默认、重生教程分支 `MOD_SPECIFIC`、facts 写 `$` 前缀变量。
-* `data/scripts/gearin/campaign`：本节两个示例类的包目录。
-* `Starsector/starsector-core/starsector.log`：注册与 picker 排查的主要依据。
+- `com.fs.starfarer.api.campaign.CampaignPlugin`：生涯插件接口 ——`PickPriority` 7 级枚举、19 个 picker、6 个 facts、`getId` / `isTransient`。
+- `com.fs.starfarer.api.campaign.BaseCampaignPlugin`：全部默认实现与 "继承而非实现" 的建议。
+- `com.fs.starfarer.api.PluginPick`：`plugin` + `priority` 公开字段与构造器。
+- `com.fs.starfarer.api.campaign.SectorAPI`：`registerPlugin` / `unregisterPlugin` / `getMemory` / `getPluginPicker` / `getGenericPlugins`。
+- `com.fs.starfarer.api.campaign.PluginPickerAPI`：公开聚合的 6 个 picker。
+- `com.fs.starfarer.api.campaign.GenericPluginManagerAPI`：另一套 int 优先级通用插件机制 (`pickPlugin`)。
+- `com.fs.starfarer.api.campaign.InteractionDialogPlugin`：交互对话框接口 (7 个方法)。
+- `com.fs.starfarer.api.campaign.InteractionDialogAPI`：`getTextPanel` / `getOptionPanel` / `setPromptText` / `dismiss` / `getInteractionTarget`。
+- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：`set(key, value, expire)`、`getBoolean` 等记忆读写。
+- `com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`：原版核心生涯插件 ——`CORE_GENERAL` 默认、重生教程分支 `MOD_SPECIFIC`、facts 写 `$` 前缀变量。
+- `data/scripts/gearin/campaign`：本节两个示例类的包目录。
+- `Starsector/starsector-core/starsector.log`：注册与 picker 排查的主要依据。
 
 ## 完整最小例
 

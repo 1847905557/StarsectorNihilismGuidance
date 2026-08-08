@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 用精确 MOD ID 分别检测 Nexerelin 与 LunaLib；
-* 让基础入口只加载不含第三方类型的外层桥接类；
-* 在检测通过后才触发持有 LunaLib 类型的嵌套适配器；
-* 为缺库和缺键定义明确的默认返回值；
-* 让每项缺库日志在一次应用运行中最多出现 1 次。
+- 用精确 MOD ID 分别检测 Nexerelin 与 LunaLib；
+- 让基础入口只加载不含第三方类型的外层桥接类；
+- 在检测通过后才触发持有 LunaLib 类型的嵌套适配器；
+- 为缺库和缺键定义明确的默认返回值；
+- 让每项缺库日志在一次应用运行中最多出现 1 次。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
 
@@ -139,11 +139,11 @@ return true;
 
 预期结果：
 
-* 4 种组合的两个布尔值分别为 `false/false`、`true/false`、`false/true`、`true/true`；
-* LunaLib 缺席时 100 次读取均返回 fallback，缺席日志为 1 条；
-* Nexerelin 缺席时 100 次报告只产生 1 条战略接入禁用日志；
-* LunaLib 字段存在时返回实际值，字段缺失时返回 fallback；
-* 两个库都缺席时基础内容仍可进入，没有 `NoClassDefFoundError`。
+- 4 种组合的两个布尔值分别为 `false/false`、`true/false`、`false/true`、`true/true`；
+- LunaLib 缺席时 100 次读取均返回 fallback，缺席日志为 1 条；
+- Nexerelin 缺席时 100 次报告只产生 1 条战略接入禁用日志；
+- LunaLib 字段存在时返回实际值，字段缺失时返回 fallback；
+- 两个库都缺席时基础内容仍可进入，没有 `NoClassDefFoundError`。
 
 ## 故障分析
 
@@ -158,9 +158,9 @@ return true;
 
 ## 建议参考项
 
-* `ModManagerAPI.isModEnabled`：判断可选 MOD 是否启用；
-* 适配器类：收敛第三方类型引用；
-* `starsector.log`：确认增强功能启用或降级。
+- `ModManagerAPI.isModEnabled`：判断可选 MOD 是否启用；
+- 适配器类：收敛第三方类型引用；
+- `starsector.log`：确认增强功能启用或降级。
 ::: details 完整成品：GearInCompatBridge
 
 ```java

@@ -10,16 +10,16 @@
 
 完成后，您将能够：
 
-* 说出市场从实体到经济集合的绑定顺序；
-* 选择已注册的条件、产业和子市场 ID；
-* 区分商品注册与市场经济流；
-* 在星球详情、交易面板和日志中验证市场存在。
+- 说出市场从实体到经济集合的绑定顺序；
+- 选择已注册的条件、产业和子市场 ID；
+- 区分商品注册与市场经济流；
+- 在星球详情、交易面板和日志中验证市场存在。
 
 ## 前置知识
 
-* [C3-S3] 的 GearIn 势力 ID；
-* [C3-S6] 的 GearIn Prime 实体；
-* `market_conditions.csv`、`industries.csv` 和 `submarkets.csv` 中的原版 ID。
+- [C3-S3] 的 GearIn 势力 ID；
+- [C3-S6] 的 GearIn Prime 实体；
+- `market_conditions.csv`、`industries.csv` 和 `submarkets.csv` 中的原版 ID。
 
 ## 先锁定市场的五条关系
 
@@ -176,10 +176,10 @@ public class GearInMarketFactory {
 
 预期结果：
 
-* GearIn Prime 的市场规模为 4；
-* 公开市场和仓储入口可用，市场势力为 `gear_industry`；
-* `population_4`、`spaceport` 等注册对象显示在详情中；
-* 日志没有 `Industry [...] not found`、`Market condition [...] not found` 或空实体绑定。
+- GearIn Prime 的市场规模为 4；
+- 公开市场和仓储入口可用，市场势力为 `gear_industry`；
+- `population_4`、`spaceport` 等注册对象显示在详情中；
+- 日志没有 `Industry [...] not found`、`Market condition [...] not found` 或空实体绑定。
 
 ## 故障分析
 
@@ -193,8 +193,8 @@ public class GearInMarketFactory {
 
 ## 建议参考项
 
-* `MarketAPI`：市场运行时对象；
-* `GearInMarketFactory`：本页完整模板；
-* `data/campaign/market_conditions.csv`：条件注册表；
-* `data/campaign/industries.csv`：产业注册表；
-* `data/campaign/submarkets.csv`：子市场注册表。
+- `MarketAPI`：市场运行时对象；
+- `GearInMarketFactory`：本页完整模板；
+- `data/campaign/market_conditions.csv`：条件注册表；
+- `data/campaign/industries.csv`：产业注册表；
+- `data/campaign/submarkets.csv`：子市场注册表。

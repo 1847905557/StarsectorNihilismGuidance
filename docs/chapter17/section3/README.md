@@ -10,15 +10,15 @@
 
 完成后，您将能够：
 
-* 在 `SectorManager` 可用后区分 Corvus 与随机星区；
-* 为 Corvus 模式登记固定出生实体，为随机星区选择已生成市场；
-* 从同一份 Nexerelin 势力配置读取起始舰队变体。
+- 在 `SectorManager` 可用后区分 Corvus 与随机星区；
+- 为 Corvus 模式登记固定出生实体，为随机星区选择已生成市场；
+- 从同一份 Nexerelin 势力配置读取起始舰队变体。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 分开处理两种星区
 
@@ -127,11 +127,11 @@ if (spawnEntityId == null) {
 
 预期结果：
 
-* 两种模式进入不同日志分支；
-* 固定模式返回 `corvus_spawnpoints.csv` 登记的实体；
-* 随机模式返回已生成 GearIn 市场的主实体；
-* 两个模式为同一舰队类型返回相同变体列表；
-* 没有有效市场时返回 `null`，调用方能够在放置玩家前中止开局并报告原因。
+- 两种模式进入不同日志分支；
+- 固定模式返回 `corvus_spawnpoints.csv` 登记的实体；
+- 随机模式返回已生成 GearIn 市场的主实体；
+- 两个模式为同一舰队类型返回相同变体列表；
+- 没有有效市场时返回 `null`，调用方能够在放置玩家前中止开局并报告原因。
 
 ## 故障分析
 
@@ -146,9 +146,9 @@ if (spawnEntityId == null) {
 
 ## 建议参考项
 
-* `SectorManager.isCorvusMode`：判断星区生成模式；
-* `corvus_spawnpoints.csv`：固定模式出生点；
-* `NexFactionConfig.getStartFleetForType`：读取起始舰队。
+- `SectorManager.isCorvusMode`：判断星区生成模式；
+- `corvus_spawnpoints.csv`：固定模式出生点；
+- `NexFactionConfig.getStartFleetForType`：读取起始舰队。
 ::: details 完整成品：GearInNexStartPlanner
 
 ```java

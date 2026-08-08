@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 在应用加载期初始化 GraphicsLib，并在初始化后读取 shader 能力；
-* 在战斗首帧创建一盏跟随舰船的 `StandardLight`；
-* 用武器开火状态驱动目标强度，并按帧时间平滑追赶；
-* 在玩家舰销毁时让常驻光源淡出并退出光源列表；
-* 从初始化时机、战斗本地数据和材质贴图定位灯光故障。
+- 在应用加载期初始化 GraphicsLib，并在初始化后读取 shader 能力；
+- 在战斗首帧创建一盏跟随舰船的 `StandardLight`；
+- 用武器开火状态驱动目标强度，并按帧时间平滑追赶；
+- 在玩家舰销毁时让常驻光源淡出并退出光源列表；
+- 从初始化时机、战斗本地数据和材质贴图定位灯光故障。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
 
@@ -131,12 +131,12 @@ boolean lightReady = lightShader != null && lightShader.isEnabled();
 
 预期结果：
 
-* 能力日志反映 shader、缓冲和 `LightShader` 的当前开关状态；
-* 光源以宿主局部偏移跟随舰船平移与转向，颜色与完整成品一致；
-* 任一武器开火时目标强度为 1.5，全部停火时目标强度为 0.45；
-* 60 FPS 与 30 FPS 下回落时长保持约 0.525 秒，不随帧率翻倍；
-* 玩家舰死亡后光源进入淡出，不永久残留在战场；
-* 光源 shader 关闭时报告过程和战斗逻辑没有未处理异常。
+- 能力日志反映 shader、缓冲和 `LightShader` 的当前开关状态；
+- 光源以宿主局部偏移跟随舰船平移与转向，颜色与完整成品一致；
+- 任一武器开火时目标强度为 1.5，全部停火时目标强度为 0.45；
+- 60 FPS 与 30 FPS 下回落时长保持约 0.525 秒，不随帧率翻倍；
+- 玩家舰死亡后光源进入淡出，不永久残留在战场；
+- 光源 shader 关闭时报告过程和战斗逻辑没有未处理异常。
 
 ## 故障分析
 
@@ -151,9 +151,9 @@ boolean lightReady = lightShader != null && lightShader.isEnabled();
 
 ## 建议参考项
 
-* `LightShader.addLight`：把动态光源加入当前战斗；
-* `StandardLight`：通过宿主与偏移配置跟随点光源；
-* `ShaderLib.getShaderAPI`：读取当前 LightShader 能力。
+- `LightShader.addLight`：把动态光源加入当前战斗；
+- `StandardLight`：通过宿主与偏移配置跟随点光源；
+- `ShaderLib.getShaderAPI`：读取当前 LightShader 能力。
 ::: details 完整成品：GearInLightCombatPlugin
 
 ```java

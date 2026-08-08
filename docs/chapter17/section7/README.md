@@ -10,15 +10,15 @@
 
 完成后，您将能够：
 
-* 按 LunaLib 的九列表格式定义开关、整数、浮点数、颜色和文本设置；
-* 用包装类型读取设置，并在 LunaLib 缺席或字段缺失时回退默认值；
-* 注册幂等监听器，让保存后的值进入下一次效果读取。
+- 按 LunaLib 的九列表格式定义开关、整数、浮点数、颜色和文本设置；
+- 用包装类型读取设置，并在 LunaLib 缺席或字段缺失时回退默认值；
+- 注册幂等监听器，让保存后的值进入下一次效果读取。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 定义 GearIn 设置字段
 
@@ -131,10 +131,10 @@ float scale = value == null ? 1.5f : value;
 
 预期结果：
 
-* 面板显示五个 GearIn 字段并使用对应控件类型；
-* 缺库或缺键时返回 Defs 默认值；
-* 保存 GearIn 设置时只触发一次监听器回调；
-* 下一次效果读取看到新值。
+- 面板显示五个 GearIn 字段并使用对应控件类型；
+- 缺库或缺键时返回 Defs 默认值；
+- 保存 GearIn 设置时只触发一次监听器回调；
+- 下一次效果读取看到新值。
 
 ## 故障分析
 
@@ -149,9 +149,9 @@ LunaLib 设置完整流程是九列 CSV 定义、包装类型读取、一次幂�
 
 ## 建议参考项
 
-* `LunaSettings.csv`：设置控件定义；
-* `LunaSettings`：运行时读取包装类型值；
-* `LunaSettingsListener`：保存后的变更通知。
+- `LunaSettings.csv`：设置控件定义；
+- `LunaSettings`：运行时读取包装类型值；
+- `LunaSettingsListener`：保存后的变更通知。
 ::: details 完整成品：GearInLunaSettingsDefs
 
 ```java

@@ -10,21 +10,21 @@
 
 完成后，您将能够：
 
-* 创建技能数据三件套 (注册行、`.skill` 定义、效果脚本) 并解释它们如何汇成 `SkillSpecAPI`；
-* 区分 `SkillEffectType` 各取值对应的效果接口、作用对象与应用入口；
-* 设置技能等级 0 / 1 / 2 与 `requiredSkillLevel` 门槛，并解释 `apply()` 的 `level` 参数来源；
-* 验证 effect id 的组成规则，并把它原样用作 modifier id；
-* 实现 `FleetTotalSource`，并在整备界面核对 fleet total 汇总行；
-* 从日志与界面症状定位注册、类型、等级与数值残留类故障。
+- 创建技能数据三件套 (注册行、`.skill` 定义、效果脚本) 并解释它们如何汇成 `SkillSpecAPI`；
+- 区分 `SkillEffectType` 各取值对应的效果接口、作用对象与应用入口；
+- 设置技能等级 0 / 1 / 2 与 `requiredSkillLevel` 门槛，并解释 `apply()` 的 `level` 参数来源；
+- 验证 effect id 的组成规则，并把它原样用作 modifier id；
+- 实现 `FleetTotalSource`，并在整备界面核对 fleet total 汇总行；
+- 从日志与界面症状定位注册、类型、等级与数值残留类故障。
 
 ## 前置知识
 
-* [C1-S1] 的 MOD 命名约定、数据键前缀、包路径与类名；
-* [C6-S1] 的 JAR 构建、脚本类加载与 `.skill` 文件注册；
-* [C6-S3] 的 `Global` 生命周期与生涯阶段判断；
-* [C7-S3] 的 `MutableStat` modifier ID、修饰公式与原样解除；
-* [C9-S3] 的 `FleetMemberAPI` 与成员 stats 落点；
-* [C11-S1] 的人物、captain、officer、`MutableCharacterStatsAPI`、`setSkillLevel` 与 `refreshCharacterStatsEffects`。
+- [C1-S1] 的 MOD 命名约定、数据键前缀、包路径与类名；
+- [C6-S1] 的 JAR 构建、脚本类加载与 `.skill` 文件注册；
+- [C6-S3] 的 `Global` 生命周期与生涯阶段判断；
+- [C7-S3] 的 `MutableStat` modifier ID、修饰公式与原样解除；
+- [C9-S3] 的 `FleetMemberAPI` 与成员 stats 落点；
+- [C11-S1] 的人物、captain、officer、`MutableCharacterStatsAPI`、`setSkillLevel` 与 `refreshCharacterStatsEffects`。
 
 ## 技能数据的三件套
 
@@ -67,9 +67,9 @@ skill_data.csv(按 id 读行，收集全部注册 id)
 
 注册完成后，读取入口在 `com.fs.starfarer.api.SettingsAPI`：
 
-* `Global.getSettings().getSkillSpec(String skillId)` (`com.fs.starfarer.api.SettingsAPI`)：读 `SkillSpecAPI`；未注册的 id 由 CSV spec 加载期静默返回 null。
-* `Global.getSettings().getSortedSkillIds()`：按 order 排序的技能 id 列表 (技能树 UI 用)。
-* `MutableCharacterStatsAPI` (`com.fs.starfarer.api.characters.MutableCharacterStatsAPI`) 的角色侧方法：`getSkillLevel(id)` / `setSkillLevel(id, level)` / `increaseSkill` / `hasSkill` / `refreshCharacterStatsEffects()`，技能状态与刷新入口都在这里。
+- `Global.getSettings().getSkillSpec(String skillId)` (`com.fs.starfarer.api.SettingsAPI`)：读 `SkillSpecAPI`；未注册的 id 由 CSV spec 加载期静默返回 null。
+- `Global.getSettings().getSortedSkillIds()`：按 order 排序的技能 id 列表 (技能树 UI 用)。
+- `MutableCharacterStatsAPI` (`com.fs.starfarer.api.characters.MutableCharacterStatsAPI`) 的角色侧方法：`getSkillLevel(id)` / `setSkillLevel(id, level)` / `increaseSkill` / `hasSkill` / `refreshCharacterStatsEffects()`，技能状态与刷新入口都在这里。
 
 注册只决定技能存在，每个效果作用到哪一组对象由本页下一小节的 `type` 决定。
 
@@ -104,14 +104,14 @@ skill_data.csv(按 id 读行，收集全部注册 id)
 
 作用对象定了，接下来是何时生效、按什么等级生效：
 
-* 技能等级只有 0 (未学) / 1 (已学) / 2 (精英)。UI 加点走 `increaseSkill` / `decreaseSkill`，钳制到 1 (非精英) 或 2 (`elite:true`)；`setSkillLevel(id, level)` 不钳制，直接写任意 float 并触发 `refreshCharacterStatsEffects`。
-* 每个 effectGroup 的 `requiredSkillLevel` (默认 1) 是门槛：`getSkillLevel(governingSkill) >= requiredSkillLevel` 的效果才进入应用列表 (如 `getShipEffects` 的过滤)。
-* `apply()` 收到的 `level` 参数 = `getSkillLevel(governingSkill)`，不是等级增量，也不会逐帧变化。
-* `effectBasedOnLevel` (默认 true) 只供 UI 的 tooltip 渲染读取：true 时标准 tooltip 追加渲染 `getEffectPerLevelDescription()`。
-* 引擎组合 effect id 并传入 `apply` / `unapply`：`<技能id>_<类型后缀>_<效果序号>`：
-    *   后缀：`SHIP→_ship_`、`ALL_SHIPS_IN_FLEET→_ships_`、`SHIP_FIGHTERS→_ship_fighters_`、`ALL_FIGHTERS_IN_FLEET→_all_fighters_`；
-    *   `CHARACTER_STATS` 与 `FLEET` 都是 `_stats_`、`GOVERNED_OUTPOST→_GO_`、`ALL_OUTPOSTS→_AO_`；
-    *   序号是效果在本技能平铺效果列表 (跨 effectGroups 累计) 中的下标；本节示例 `GearIn_gunnery` 的 Level1 (SHIP) 拿到的 id 是 `GearIn_gunnery_ship_1`。
+- 技能等级只有 0 (未学) / 1 (已学) / 2 (精英)。UI 加点走 `increaseSkill` / `decreaseSkill`，钳制到 1 (非精英) 或 2 (`elite:true`)；`setSkillLevel(id, level)` 不钳制，直接写任意 float 并触发 `refreshCharacterStatsEffects`。
+- 每个 effectGroup 的 `requiredSkillLevel` (默认 1) 是门槛：`getSkillLevel(governingSkill) >= requiredSkillLevel` 的效果才进入应用列表 (如 `getShipEffects` 的过滤)。
+- `apply()` 收到的 `level` 参数 = `getSkillLevel(governingSkill)`，不是等级增量，也不会逐帧变化。
+- `effectBasedOnLevel` (默认 true) 只供 UI 的 tooltip 渲染读取：true 时标准 tooltip 追加渲染 `getEffectPerLevelDescription()`。
+- 引擎组合 effect id 并传入 `apply` / `unapply`：`<技能id>_<类型后缀>_<效果序号>`：
+    - 后缀：`SHIP→_ship_`、`ALL_SHIPS_IN_FLEET→_ships_`、`SHIP_FIGHTERS→_ship_fighters_`、`ALL_FIGHTERS_IN_FLEET→_all_fighters_`；
+    - `CHARACTER_STATS` 与 `FLEET` 都是 `_stats_`、`GOVERNED_OUTPOST→_GO_`、`ALL_OUTPOSTS→_AO_`；
+    - 序号是效果在本技能平铺效果列表 (跨 effectGroups 累计) 中的下标；本节示例 `GearIn_gunnery` 的 Level1 (SHIP) 拿到的 id 是 `GearIn_gunnery_ship_1`。
 
 等级门槛是最容易落空的一处：把 `requiredSkillLevel` 写成 2 却不配 `elite:true`，这个门槛会一直等一个到不了的等级。
 
@@ -123,13 +123,13 @@ effect id 必须原样用作 modifier id
 
 效果按等级生效后，数值写进角色、舰船与舰队 stats；需要整备界面汇总展示的一类走 fleet total 管道：
 
-* 接口：`FleetTotalSource.getFleetTotalItem()` → `FleetTotalItem` (字段 `label` / `value` / `valueColor` / `labelColor` / `sortOrder` / `tooltipCreator`)。
-* 汇总：`getFleetTotals()` 遍历已学技能的全部效果，凡 `level >= requiredSkillLevel` 且脚本实例 `instanceof FleetTotalSource`，就取 `getFleetTotalItem()`：
-    *   按 `label + "_" + value` 去重 (两个技能 / 效果返回相同 label+value 只保留一行)，按 `sortOrder` 升序排成舰队构成表的行数据 (附 `skillLevels`，供 tooltip 列出贡献技能)。
-* 使用方：整备界面 (refit) 的舰队构成表 —— 界面把 `getPlayerStats().getFleetTotals()` 渲染成构成表行，`tooltipCreator` 挂可展开 tooltip；全库调用 `getFleetTotals()` 的地方只有这一处 (技能面板 tooltip 不读取它)。
-* 原版聚合做法：`BaseSkillEffectDescription.getOPTotal()` / `getCombatOPTotal()` / `getAutomatedPointsTotal()` (`com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription`)：
-    *   对舰队成员逐艘收集贡献 (`FleetMemberPointContrib`) 再汇总；
-    *   本节示例只演示最小管道 (静态值 + 自定义 tooltip)。
+- 接口：`FleetTotalSource.getFleetTotalItem()` → `FleetTotalItem` (字段 `label` / `value` / `valueColor` / `labelColor` / `sortOrder` / `tooltipCreator`)。
+- 汇总：`getFleetTotals()` 遍历已学技能的全部效果，凡 `level >= requiredSkillLevel` 且脚本实例 `instanceof FleetTotalSource`，就取 `getFleetTotalItem()`：
+    - 按 `label + "_" + value` 去重 (两个技能 / 效果返回相同 label+value 只保留一行)，按 `sortOrder` 升序排成舰队构成表的行数据 (附 `skillLevels`，供 tooltip 列出贡献技能)。
+- 使用方：整备界面 (refit) 的舰队构成表 —— 界面把 `getPlayerStats().getFleetTotals()` 渲染成构成表行，`tooltipCreator` 挂可展开 tooltip；全库调用 `getFleetTotals()` 的地方只有这一处 (技能面板 tooltip 不读取它)。
+- 原版聚合做法：`BaseSkillEffectDescription.getOPTotal()` / `getCombatOPTotal()` / `getAutomatedPointsTotal()` (`com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription`)：
+    - 对舰队成员逐艘收集贡献 (`FleetMemberPointContrib`) 再汇总；
+    - 本节示例只演示最小管道 (静态值 + 自定义 tooltip)。
 
 机制到这里已经齐全，接下来把三件套、等级与 fleet total 全部落成 GearIndustry 的一个真实技能。
 
@@ -332,11 +332,11 @@ Starsector\mods\GearIndustry\
 
 要点：
 
-* `elite:true` 允许技能到 2 级；第 2 个 effectGroup (`requiredSkillLevel:2`，`name:"Elite"`) 在 2 级才激活 —— 与 `gunnery_implants.skill` 同款结构。
-* 六个 effect 平铺后的序号：Level0=0、Level1=1、LevelShipFighters=2、LevelFleet=3、LevelStats=4、Level1A=5。由此引擎组合的 effect id：
-    *   `GearIn_gunnery_ship_1`、`GearIn_gunnery_ship_fighters_2`、`GearIn_gunnery_stats_3` (FLEET)、`GearIn_gunnery_stats_4` (CHARACTER\_STATS)、`GearIn_gunnery_ship_5` (精英)。
-    *   效果脚本必须原样使用。
-* `governingSkill` 未写 → 默认本技能 id：所有效果的等级判据都是 `GearIn_gunnery` 自己的等级。
+- `elite:true` 允许技能到 2 级；第 2 个 effectGroup (`requiredSkillLevel:2`，`name:"Elite"`) 在 2 级才激活 —— 与 `gunnery_implants.skill` 同款结构。
+- 六个 effect 平铺后的序号：Level0=0、Level1=1、LevelShipFighters=2、LevelFleet=3、LevelStats=4、Level1A=5。由此引擎组合的 effect id：
+    - `GearIn_gunnery_ship_1`、`GearIn_gunnery_ship_fighters_2`、`GearIn_gunnery_stats_3` (FLEET)、`GearIn_gunnery_stats_4` (CHARACTER\_STATS)、`GearIn_gunnery_ship_5` (精英)。
+    - 效果脚本必须原样使用。
+- `governingSkill` 未写 → 默认本技能 id：所有效果的等级判据都是 `GearIn_gunnery` 自己的等级。
 
 ### 数据文件：data\\characters\\skills\\skill\_data.csv(表头 + 本节行)
 
@@ -347,22 +347,22 @@ GearIn_gunnery,Gunnery,1025,2,1,0,"Precision gunnery drills: ballistic and energ
 
 要点：
 
-* `id` 与 `.skill` 的 `id` 逐字一致；`tier:2` (战斗系 2 阶)、`reqPoints:1` (消耗 1 技能点)。
-* `combat officer` 列 `TRUE`：军官也可以学。
-* `icon` 指向本 MOD 图标资源。**本单元无 PNG 资产**：冒烟时请临时把 icon 列指向原版 `graphics/icons/skills/gunnery_implants.png` (资源加载期会排队校验纹理，缺失会导致加载失败)；生产 MOD 必须自备图标 (资产不在本单元范围)。
+- `id` 与 `.skill` 的 `id` 逐字一致；`tier:2` (战斗系 2 阶)、`reqPoints:1` (消耗 1 技能点)。
+- `combat officer` 列 `TRUE`：军官也可以学。
+- `icon` 指向本 MOD 图标资源。**本单元无 PNG 资产**：冒烟时请临时把 icon 列指向原版 `graphics/icons/skills/gunnery_implants.png` (资源加载期会排队校验纹理，缺失会导致加载失败)；生产 MOD 必须自备图标 (资产不在本单元范围)。
 
 ### GearInGunnerySkill
 
 对应关系：
 
-* 外层类只是容器：嵌套类名 (`Level0` / `Level1` / `Level1A` / `LevelShipFighters` / `LevelFleet` / `LevelStats`) 与 `.skill` 的 `script` 值 (`GearInGunnerySkill$Level1` 等) 逐字对应 —— 原版 `GunneryImplants` 同款做法。
-* `Level1 implements ShipSkillEffect, FleetTotalSource`：同一个脚本类被两处调用 —— `SHIP` 效果重放时经 `getAsShipEffect()` 强转，`getFleetTotals()` 时经 `getAsFleetTotalSource()` 检查 `instanceof`：
-    *   两处都是**每次按类名重新实例化** (脚本类加载流程 `loadScriptInstance` → `newInstance()`)，效果类不能有带参构造器。
-* `apply` 里的 modifier id 全部用传入的 `id`：`modifyPercent(id, ...)` / `modifyFlat(id, ...)`，`unapply` 用同一个 `id` 调 `unmodify(id)` / `unmodifyFlat(id)`—— 稳定 ID 规则的直接应用 (规则见前置知识；引擎每次重放传入的 id 逐字相同)。
-* `Level1.getFleetTotalItem()` 返回 `label="Gunnery damage bonus"`、`value="+15%"`、`sortOrder=50` 与自定义 tooltip：这是 fleet total 行的最小完整形态；`TOOLTIP_WIDTH` 继承自 `BaseSkillEffectDescription`(450)。
-* `LevelFleet` / `LevelStats` 的 `getScopeDescription()` 返回 `FLEET`：这只是 tooltip 的 "作用范围" 文本；实际生效对象由 `type`(FLEET / CHARACTER\_STATS) 决定。
-* 五个 `apply` 各打一行 `GearIn gunnery ...` 日志：`id` 与 `level` 直接可见，是 "效果作用域 + 等级" 的现场表现。
-* `getEffectPerLevelDescription()` 返回 null：`.skill` 里 `effectBasedOnLevel:false`，tooltip 不渲染每级描述行 (本节不演示 per-level 描述)。
+- 外层类只是容器：嵌套类名 (`Level0` / `Level1` / `Level1A` / `LevelShipFighters` / `LevelFleet` / `LevelStats`) 与 `.skill` 的 `script` 值 (`GearInGunnerySkill$Level1` 等) 逐字对应 —— 原版 `GunneryImplants` 同款做法。
+- `Level1 implements ShipSkillEffect, FleetTotalSource`：同一个脚本类被两处调用 —— `SHIP` 效果重放时经 `getAsShipEffect()` 强转，`getFleetTotals()` 时经 `getAsFleetTotalSource()` 检查 `instanceof`：
+    - 两处都是**每次按类名重新实例化** (脚本类加载流程 `loadScriptInstance` → `newInstance()`)，效果类不能有带参构造器。
+- `apply` 里的 modifier id 全部用传入的 `id`：`modifyPercent(id, ...)` / `modifyFlat(id, ...)`，`unapply` 用同一个 `id` 调 `unmodify(id)` / `unmodifyFlat(id)`—— 稳定 ID 规则的直接应用 (规则见前置知识；引擎每次重放传入的 id 逐字相同)。
+- `Level1.getFleetTotalItem()` 返回 `label="Gunnery damage bonus"`、`value="+15%"`、`sortOrder=50` 与自定义 tooltip：这是 fleet total 行的最小完整形态；`TOOLTIP_WIDTH` 继承自 `BaseSkillEffectDescription`(450)。
+- `LevelFleet` / `LevelStats` 的 `getScopeDescription()` 返回 `FLEET`：这只是 tooltip 的 "作用范围" 文本；实际生效对象由 `type`(FLEET / CHARACTER\_STATS) 决定。
+- 五个 `apply` 各打一行 `GearIn gunnery ...` 日志：`id` 与 `level` 直接可见，是 "效果作用域 + 等级" 的现场表现。
+- `getEffectPerLevelDescription()` 返回 null：`.skill` 里 `effectBasedOnLevel:false`，tooltip 不渲染每级描述行 (本节不演示 per-level 描述)。
 
 ### 读取与调用点
 
@@ -393,7 +393,7 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 及六个内部类 (可用 `jar tf` 核对)：
 
-* `$Level0` / `$Level1` / `$Level1A` / `$LevelShipFighters` / `$LevelFleet` / `$LevelStats`
+- `$Level0` / `$Level1` / `$Level1A` / `$LevelShipFighters` / `$LevelFleet` / `$LevelStats`
 
 ### GearIn\_gunnery 完整流程速查表
 
@@ -448,25 +448,25 @@ stats.getMaxSpeed().unmodify(id);
 
 预期结果：
 
-* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类；启动后加载期无 `gear_in` 引起的 ERROR (注意 icon 列在冒烟期间指向原版图标，见 "完整最小例")。
-* **注册确认**：`starsector.log` 出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]` (loadSkills 的加载日志)，没有 `Skipping skill [...]` 或 `Skipping loading skill [...]` 两行。
-* **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (见读取与调用点片段) 生效后，日志立即出现。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类；启动后加载期无 `gear_in` 引起的 ERROR (注意 icon 列在冒烟期间指向原版图标，见 "完整最小例")。
+- **注册确认**：`starsector.log` 出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]` (loadSkills 的加载日志)，没有 `Skipping skill [...]` 或 `Skipping loading skill [...]` 两行。
+- **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (见读取与调用点片段) 生效后，日志立即出现。
 
     ```text
     GearIn gunnery stats apply: id=GearIn_gunnery_stats_4 level=1.0 commandPoints=+1 GearIn gunnery fleet apply: id=GearIn_gunnery_stats_3 level=1.0 burn=+2
     ```
 
     (FLEET 与 CHARACTER\_STATS 在 `refreshCharacterStatsEffects` 内即时重放；`_stats_3` / `_stats_4` 与 "技能等级" 一节的 effect id 组合规则一致。)
-* **stats 重建后 SHIP 效果**：打开舰队界面 (F 键，触发成员 stats 重建) 或进入一场战斗部署，日志出现。
+- **stats 重建后 SHIP 效果**：打开舰队界面 (F 键，触发成员 stats 重建) 或进入一场战斗部署，日志出现。
 
     ```text
     GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damage=+15% aim=+100%
     ```
 
     (hull 以实际玩家旗舰为准。) 战斗内载机起飞时出现 `GearIn gunnery fighters apply: id=GearIn_gunnery_ship_fighters_2 ... speed=+10%`。
-* **界面**：C 键技能树战斗系出现 "Gunnery" 行与 DESCRIPTION 文本；R 键整备界面舰队构成表出现 `Gunnery damage bonus +15%` 行，悬停显示自定义 tooltip；舰队面板 burn 提升 2 (最慢成员 burn ≥ 8 时)；战斗部署界面指挥点数 +1；玩家旗舰武器伤害倍率提升 (`GearIn_artizan` 等装配里实弹 / 能量武器 +15%，精英 +5%)，瞄准误差降低。
-* **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)` 后，日志追加 `GearIn gunnery elite apply: id=GearIn_gunnery_ship_5 level=2.0 hull=... damage=+5%`。
-* **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill` 后日志不再出现新 apply 行，burn / 指挥点数 / fleet total 行恢复基线；`unapply` 用同一 id 解除，数值无残留。
+- **界面**：C 键技能树战斗系出现 "Gunnery" 行与 DESCRIPTION 文本；R 键整备界面舰队构成表出现 `Gunnery damage bonus +15%` 行，悬停显示自定义 tooltip；舰队面板 burn 提升 2 (最慢成员 burn ≥ 8 时)；战斗部署界面指挥点数 +1；玩家旗舰武器伤害倍率提升 (`GearIn_artizan` 等装配里实弹 / 能量武器 +15%，精英 +5%)，瞄准误差降低。
+- **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)` 后，日志追加 `GearIn gunnery elite apply: id=GearIn_gunnery_ship_5 level=2.0 hull=... damage=+5%`。
+- **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill` 后日志不再出现新 apply 行，burn / 指挥点数 / fleet total 行恢复基线；`unapply` 用同一 id 解除，数值无残留。
 
 清理：删除 `onGameLoad` 中临时添加的 `setSkillLevel("GearIn_gunnery", ...)` 钩子，或把技能等级设为 `0f` 后移除该调用。
 
@@ -494,23 +494,23 @@ stats.getMaxSpeed().unmodify(id);
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.characters.SkillSpecAPI`：技能规格对象 (`getSkillSpec(id)` 的返回类型)；其内部类型 `SkillEffectSpecAPI` 承载 `getType` / `getAsXxxEffect` / `getRequiredSkillLevel` / `getUnlockedHullMods` 等效果字段访问。
-* `com.fs.starfarer.api.characters.SkillEffectType`：11 个效果类型枚举：
-    *   `SHIP` / `ALL_SHIPS_IN_FLEET` / `SHIP_FIGHTERS` / `ALL_FIGHTERS_IN_FLEET` / `CHARACTER_STATS` / `FLEET`
-    *   `HULLMOD_UNLOCK` / `ABILITY_UNLOCK` / `GOVERNED_OUTPOST` / `ALL_OUTPOSTS` / `DESCRIPTION`。
-* `com.fs.starfarer.api.characters.ShipSkillEffect` / `FleetStatsSkillEffect` / `CharacterStatsSkillEffect` / `MarketSkillEffect` / `DescriptionSkillEffect`：五个效果接口族，`apply` / `unapply` 的签名所在。
-* `com.fs.starfarer.api.characters.LevelBasedEffect`：效果接口的共同父接口，`getEffectDescription` / `getEffectPerLevelDescription` / `getScopeDescription` 与 `ScopeDescription` 枚举。
-* `com.fs.starfarer.api.characters.FleetTotalSource` / `FleetTotalItem`：fleet total 行的提供接口与数据对象 (`label` / `value` / `sortOrder` / `tooltipCreator`)。
-* `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：`getSkillLevel` / `setSkillLevel` / `increaseSkill` / `hasSkill` / `refreshCharacterStatsEffects` / `getCommandPoints` 所在。
-* `com.fs.starfarer.api.fleet.MutableFleetStatsAPI`：`getFleetwideMaxBurnMod` 等舰队 stats 访问器。
-* `com.fs.starfarer.api.SettingsAPI`：`getSkillSpec` / `getSortedSkillIds` 读取入口。
-* `com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription`：示例各效果类继承的基类 (`TOOLTIP_WIDTH` 与 fleet total 聚合做法)。
-* `data/characters/skills/skill_data.csv`：技能注册表 (id / order / tier / reqPoints / 角色 flags / tags / icon)。
-* `data/characters/skills/GearIn_gunnery.skill`：本节技能定义 (aptitude / 等级组 / 效果清单)。
-* `data/characters/skills/aptitude_data.csv`：能力树分组表 (`effect_skill_id` 列)。
-* `data/characters/skills/gunnery_implants.skill`：原版 SHIP + 精英组样例 (本节示例的蓝本)。
-* `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
-* `Starsector/starsector-core/starsector.log`：游戏运行日志 (注册与 apply 日志的核对位置)。
+- `com.fs.starfarer.api.characters.SkillSpecAPI`：技能规格对象 (`getSkillSpec(id)` 的返回类型)；其内部类型 `SkillEffectSpecAPI` 承载 `getType` / `getAsXxxEffect` / `getRequiredSkillLevel` / `getUnlockedHullMods` 等效果字段访问。
+- `com.fs.starfarer.api.characters.SkillEffectType`：11 个效果类型枚举：
+    - `SHIP` / `ALL_SHIPS_IN_FLEET` / `SHIP_FIGHTERS` / `ALL_FIGHTERS_IN_FLEET` / `CHARACTER_STATS` / `FLEET`
+    - `HULLMOD_UNLOCK` / `ABILITY_UNLOCK` / `GOVERNED_OUTPOST` / `ALL_OUTPOSTS` / `DESCRIPTION`。
+- `com.fs.starfarer.api.characters.ShipSkillEffect` / `FleetStatsSkillEffect` / `CharacterStatsSkillEffect` / `MarketSkillEffect` / `DescriptionSkillEffect`：五个效果接口族，`apply` / `unapply` 的签名所在。
+- `com.fs.starfarer.api.characters.LevelBasedEffect`：效果接口的共同父接口，`getEffectDescription` / `getEffectPerLevelDescription` / `getScopeDescription` 与 `ScopeDescription` 枚举。
+- `com.fs.starfarer.api.characters.FleetTotalSource` / `FleetTotalItem`：fleet total 行的提供接口与数据对象 (`label` / `value` / `sortOrder` / `tooltipCreator`)。
+- `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：`getSkillLevel` / `setSkillLevel` / `increaseSkill` / `hasSkill` / `refreshCharacterStatsEffects` / `getCommandPoints` 所在。
+- `com.fs.starfarer.api.fleet.MutableFleetStatsAPI`：`getFleetwideMaxBurnMod` 等舰队 stats 访问器。
+- `com.fs.starfarer.api.SettingsAPI`：`getSkillSpec` / `getSortedSkillIds` 读取入口。
+- `com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription`：示例各效果类继承的基类 (`TOOLTIP_WIDTH` 与 fleet total 聚合做法)。
+- `data/characters/skills/skill_data.csv`：技能注册表 (id / order / tier / reqPoints / 角色 flags / tags / icon)。
+- `data/characters/skills/GearIn_gunnery.skill`：本节技能定义 (aptitude / 等级组 / 效果清单)。
+- `data/characters/skills/aptitude_data.csv`：能力树分组表 (`effect_skill_id` 列)。
+- `data/characters/skills/gunnery_implants.skill`：原版 SHIP + 精英组样例 (本节示例的蓝本)。
+- `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
+- `Starsector/starsector-core/starsector.log`：游戏运行日志 (注册与 apply 日志的核对位置)。
 ::: details 完整成品：GearInGunnerySkill
 
 ```java

@@ -10,15 +10,15 @@ Nexerelin 只有读到 GearIn 的势力配置，才会把它纳入开局、外�
 
 完成后，您将能够：
 
-* 用 `mod_factions.csv` 把 GearIn 势力交给 Nexerelin 配置加载器；
-* 配置初始关系、关系边界、外交特性和联盟倾向；
-* 用运行期探针区分 "读到 GearIn 配置" 和 "静默回退默认配置"。
+- 用 `mod_factions.csv` 把 GearIn 势力交给 Nexerelin 配置加载器；
+- 配置初始关系、关系边界、外交特性和联盟倾向；
+- 用运行期探针区分 "读到 GearIn 配置" 和 "静默回退默认配置"。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 接入 Nexerelin 势力配置
 
@@ -142,11 +142,11 @@ gear_industry
 
 预期结果：
 
-* `NexConfig.getFactionConfig` 返回 `factionId=gear_industry`；
-* 新档列表出现 GearIn，外交事件可以选择它；
-* 独立势力与海盗关系始终处于各自边界内；
-* 日志出现 `playable=true`、`diplomacy=true` 和三项 alignment；
-* 当前联盟查询与联盟界面显示一致。
+- `NexConfig.getFactionConfig` 返回 `factionId=gear_industry`；
+- 新档列表出现 GearIn，外交事件可以选择它；
+- 独立势力与海盗关系始终处于各自边界内；
+- 日志出现 `playable=true`、`diplomacy=true` 和三项 alignment；
+- 当前联盟查询与联盟界面显示一致。
 
 ## 故障分析
 
@@ -161,9 +161,9 @@ Nexerelin 势力接入从唯一势力 ID 开始，CSV 行、JSON 文件名和 Ja
 
 ## 建议参考项
 
-* `NexConfig.getFactionConfig`：读取合并后的势力配置；
-* `NexFactionConfig`：势力外交与战略字段；
-* `AllianceManager.areFactionsAllied`：查询当前联盟关系。
+- `NexConfig.getFactionConfig`：读取合并后的势力配置；
+- `NexFactionConfig`：势力外交与战略字段；
+- `AllianceManager.areFactionsAllied`：查询当前联盟关系。
 ::: details 完整成品：GearInNexCompat
 
 ```java

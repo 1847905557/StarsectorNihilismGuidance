@@ -10,15 +10,15 @@ shader 编译失败若只留下黑屏，排错成本会很高。本节用 BoxUti
 
 完成后，您将能够：
 
-* 用 BoxUtil 创建并验证一对 GLSL 程序；
-* 缓存 `u_offset` 与 `u_time` 的 location，并在渲染段成对调用 `active()`/`close()`；
-* 在编译失败时保留旧程序或让渲染器安全失效，同时取得 BoxUtil 的日志。
+- 用 BoxUtil 创建并验证一对 GLSL 程序；
+- 缓存 `u_offset` 与 `u_time` 的 location，并在渲染段成对调用 `active()`/`close()`；
+- 在编译失败时保留旧程序或让渲染器安全失效，同时取得 BoxUtil 的日志。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 把编译失败变成可观察状态
 
@@ -117,10 +117,10 @@ gl_FragColor = vec4(pulse);
 
 预期结果：
 
-* BoxUtil 返回的程序对象有效；
-* 日志能列出 `u_offset` 和 `u_time` location；
-* 编译错误后重载保留旧程序，首次创建失败时渲染器不继续绘制；
-* `starsector.log` 记录资源路径和 InfoLog。
+- BoxUtil 返回的程序对象有效；
+- 日志能列出 `u_offset` 和 `u_time` location；
+- 编译错误后重载保留旧程序，首次创建失败时渲染器不继续绘制；
+- `starsector.log` 记录资源路径和 InfoLog。
 
 ## 故障分析
 
@@ -135,9 +135,9 @@ gl_FragColor = vec4(pulse);
 
 ## 建议参考项
 
-* `ShaderUtil.createShaderVFFormPath`：从路径创建 VF 程序；
-* `ShaderProgram.isValid`：确认程序可用；
-* InfoLog：定位 GLSL 编译与链接错误。
+- `ShaderUtil.createShaderVFFormPath`：从路径创建 VF 程序；
+- `ShaderProgram.isValid`：确认程序可用；
+- InfoLog：定位 GLSL 编译与链接错误。
 ::: details 完整成品：GearInPulseRenderer
 
 ```java

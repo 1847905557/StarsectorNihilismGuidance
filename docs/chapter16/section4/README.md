@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 用 `CampaignUtils` 按当前位置和关系查询附近敌对舰队；
-* 用舰队点数与距离构造一项可调的航路风险指标；
-* 在基础风险之后叠加玩家货舱的补给数量修正；
-* 只持久化最终数值，不持久化当前场景中的舰队引用；
-* 从位置、关系和持久键定位风险值异常。
+- 用 `CampaignUtils` 按当前位置和关系查询附近敌对舰队；
+- 用舰队点数与距离构造一项可调的航路风险指标；
+- 在基础风险之后叠加玩家货舱的补给数量修正；
+- 只持久化最终数值，不持久化当前场景中的舰队引用；
+- 从位置、关系和持久键定位风险值异常。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
 
@@ -129,11 +129,11 @@ List<CampaignFleetAPI> threats = CampaignUtils.getNearbyHostileFleets(point, 500
 
 预期结果：
 
-* 中立与友方舰队不贡献风险，同关系下舰队点数越高、距离越近，基础风险越高；
-* 29 单位补给触发 1.5 倍修正，30 单位不触发；
-* 消息同时显示等级与取整后的风险值，等级在 50 与 120 两个阈值处切换；
-* 读档后 `load()` 返回最近一次保存的数值；重新评估不会自动改写持久数据；
-* 敌舰离开半径并重新评估、保存后，读到的风险随之下降。
+- 中立与友方舰队不贡献风险，同关系下舰队点数越高、距离越近，基础风险越高；
+- 29 单位补给触发 1.5 倍修正，30 单位不触发；
+- 消息同时显示等级与取整后的风险值，等级在 50 与 120 两个阈值处切换；
+- 读档后 `load()` 返回最近一次保存的数值；重新评估不会自动改写持久数据；
+- 敌舰离开半径并重新评估、保存后，读到的风险随之下降。
 
 ## 故障分析
 
@@ -148,9 +148,9 @@ List<CampaignFleetAPI> threats = CampaignUtils.getNearbyHostileFleets(point, 500
 
 ## 建议参考项
 
-* `CampaignUtils.getNearbyHostileFleets`：按关系筛选附近舰队；
-* `CampaignFleetAPI.getFleetPoints`：提供舰队规模指标；
-* `SectorAPI.getPersistentData`：保存跨读档的最近风险。
+- `CampaignUtils.getNearbyHostileFleets`：按关系筛选附近舰队；
+- `CampaignFleetAPI.getFleetPoints`：提供舰队规模指标；
+- `SectorAPI.getPersistentData`：保存跨读档的最近风险。
 ::: details 完整成品：GearInRouteRiskAssessor
 
 ```java

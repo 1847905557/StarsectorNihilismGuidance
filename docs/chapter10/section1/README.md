@@ -10,36 +10,36 @@
 
 完成后，您将能够：
 
-* 说出市场 (market) 的结构：`MarketAPI` 名下挂哪些子集合 (身份与实体绑定、条件、产业、子市场、商品、人物、状态、memory、stats)，以及每个子集合从哪个 getter 进入；
-* 用代码路径在生涯里创建一个市场：`FactoryAPI.createMarket` → `setFactionId` / `setPrimaryEntity` → `addCondition` / `addIndustry` / `addSubmarket` → `EconomyAPI.addMarket` → `SectorEntityToken.setMarket`。
-    *   并复述 "缺任何一步的失败形态"；
-* 说出三种原版子市场 (`Submarkets.SUBMARKET_OPEN` / `SUBMARKET_BLACK` / `SUBMARKET_STORAGE`) 的插件行为差异：税率、合法性、库存上限与稳定度的关系、是否参与经济、用户交易的 `PlayerEconomyImpactMode`；
-* 说出经济循环 (`EconomyAPI.advance` → 经济推进器 → 每月 `economyIterPerMonth` 次迭代 → 月末步 `updateStockpileAndPrice`) 的节奏。
-    *   以及 `nextStep()` / `doubleStep()` / `tripleStep()` 只允许在 UI 交互路径调用、`EconomyUpdateListener` 必须经 `EconomyAPI.addUpdateListener` 注册这两条必须遵守的规则；
-* 说出开放状态族 (`setFreePort` / `setHidden` / `setPlayerOwned` / `setSurveyLevel` / `setEconGroup` / tag) 各自改变什么可观察行为；
-* 从症状定位典型故障：市场不出现、实体没有市场归属、`getCargoNullOk()` 判空失败、后台调 `nextStep` 卡顿、监听器永不回调、把全局基础价当市场价、误删同 id 全部条件、用 `getMemory()` 做纯读取等。
+- 说出市场 (market) 的结构：`MarketAPI` 名下挂哪些子集合 (身份与实体绑定、条件、产业、子市场、商品、人物、状态、memory、stats)，以及每个子集合从哪个 getter 进入；
+- 用代码路径在生涯里创建一个市场：`FactoryAPI.createMarket` → `setFactionId` / `setPrimaryEntity` → `addCondition` / `addIndustry` / `addSubmarket` → `EconomyAPI.addMarket` → `SectorEntityToken.setMarket`。
+    - 并复述 "缺任何一步的失败形态"；
+- 说出三种原版子市场 (`Submarkets.SUBMARKET_OPEN` / `SUBMARKET_BLACK` / `SUBMARKET_STORAGE`) 的插件行为差异：税率、合法性、库存上限与稳定度的关系、是否参与经济、用户交易的 `PlayerEconomyImpactMode`；
+- 说出经济循环 (`EconomyAPI.advance` → 经济推进器 → 每月 `economyIterPerMonth` 次迭代 → 月末步 `updateStockpileAndPrice`) 的节奏。
+    - 以及 `nextStep()` / `doubleStep()` / `tripleStep()` 只允许在 UI 交互路径调用、`EconomyUpdateListener` 必须经 `EconomyAPI.addUpdateListener` 注册这两条必须遵守的规则；
+- 说出开放状态族 (`setFreePort` / `setHidden` / `setPlayerOwned` / `setSurveyLevel` / `setEconGroup` / tag) 各自改变什么可观察行为；
+- 从症状定位典型故障：市场不出现、实体没有市场归属、`getCargoNullOk()` 判空失败、后台调 `nextStep` 卡顿、监听器永不回调、把全局基础价当市场价、误删同 id 全部条件、用 `getMemory()` 做纯读取等。
 
 ## 前置知识
 
-* [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-* [C3-S7] 的经济数据加载链与代码路径建市场收尾；
-* [C6-S2] 的 `modPlugin` 生命周期与持久数据标记；
-* [C6-S3] 的 `Global.getSector()` 阶段语义；
-* [C6-S4] 的 settings 读取；
-* [C7-S3] 的 `MutableStat` 与修饰值读取；
-* [C9-S1] 的 `SectorAPI.getEconomy()`、生涯时钟与 `EveryFrameScript` 注册；
-* [C9-S2] 的 `SectorEntityToken` 与地点容器挂载；
-* [C9-S3] 的生涯对象一次性脚本与 `REGISTER_MARK` 标记。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
+- [C3-S7] 的经济数据加载链与代码路径建市场收尾；
+- [C6-S2] 的 `modPlugin` 生命周期与持久数据标记；
+- [C6-S3] 的 `Global.getSector()` 阶段语义；
+- [C6-S4] 的 settings 读取；
+- [C7-S3] 的 `MutableStat` 与修饰值读取；
+- [C9-S1] 的 `SectorAPI.getEconomy()`、生涯时钟与 `EveryFrameScript` 注册；
+- [C9-S2] 的 `SectorEntityToken` 与地点容器挂载；
+- [C9-S3] 的生涯对象一次性脚本与 `REGISTER_MARK` 标记。
 
 ## 术语
 
 按术语约定，本节首次完整讲解以下词：
 
-* **市场 (market)**：API 名保留 `MarketAPI`。一个 "可交易的经济节点"，绑定在一个主实体 (行星、空间站、残骸等) 上，持有势力、规模、条件、产业、子市场、商品库存、人物与开放状态。涉及殖民地 (colony) 语义时页面会明确说 "殖民地"；本节 `market` 一律写 "市场"。
-* **子市场 (submarket)**：API 名保留 `SubmarketAPI`。市场下属的独立交易入口 (开放市场、黑市、仓库等)，每个子市场由静态 spec + 运行时 plugin + 自己的 cargo 组成。
-* **商品 (commodity)**：API 名保留 `CommodityOnMarketAPI`(市场内单商品对象) 与 `CommoditySpecAPI`(全局商品规格)。"商品流" 指商品在市场网络里以经济单位流动、最终反映为库存与价格的循环。
-* **库存 (stockpile)**：市场内单商品的存量，以 "经济单位刻度" 计量 (与用户 cargo 的原始单位不同，`CommoditySpecAPI.getEconUnit()` 是换算系数)。
-* **开放状态 (open state)**：一组改变市场可交易语义的开关，包括自由港 (free port)、隐藏 (hidden)、用户所有 (player-owned)、survey 等级、经济组 (econ group) 与 tag。
+- **市场 (market)**：API 名保留 `MarketAPI`。一个 "可交易的经济节点"，绑定在一个主实体 (行星、空间站、残骸等) 上，持有势力、规模、条件、产业、子市场、商品库存、人物与开放状态。涉及殖民地 (colony) 语义时页面会明确说 "殖民地"；本节 `market` 一律写 "市场"。
+- **子市场 (submarket)**：API 名保留 `SubmarketAPI`。市场下属的独立交易入口 (开放市场、黑市、仓库等)，每个子市场由静态 spec + 运行时 plugin + 自己的 cargo 组成。
+- **商品 (commodity)**：API 名保留 `CommodityOnMarketAPI`(市场内单商品对象) 与 `CommoditySpecAPI`(全局商品规格)。"商品流" 指商品在市场网络里以经济单位流动、最终反映为库存与价格的循环。
+- **库存 (stockpile)**：市场内单商品的存量，以 "经济单位刻度" 计量 (与用户 cargo 的原始单位不同，`CommoditySpecAPI.getEconUnit()` 是换算系数)。
+- **开放状态 (open state)**：一组改变市场可交易语义的开关，包括自由港 (free port)、隐藏 (hidden)、用户所有 (player-owned)、survey 等级、经济组 (econ group) 与 tag。
 
 ## 梳理市场创建关系
 
@@ -99,9 +99,9 @@
 
 `economy.addMarket` / `entity.setMarket` / `entity.setFaction` 缺一不可：
 
-* 只 `createMarket` 不 `addMarket`：市场不在经济集合里，`isInEconomy()` 返回 `false`(`Market.isInEconomy` 就是查 `economy.getMarket(id) != null`)，不出现在任何经济/UI 入口，商品流永不更新它 —— **可观察结果**：市场 "不存在"，代码侧无报错。
-* 不 `entity.setMarket`：实体与市场脱钩，交互入口 (进市场界面) 失效，`getPrimaryEntity()` 侧的市场归属为空 —— **可观察结果**：点击实体没有任何市场交互，日志无报错。
-* 不 `entity.setFaction`：实体仍显示原势力 (市场与实体势力不一致)。
+- 只 `createMarket` 不 `addMarket`：市场不在经济集合里，`isInEconomy()` 返回 `false`(`Market.isInEconomy` 就是查 `economy.getMarket(id) != null`)，不出现在任何经济/UI 入口，商品流永不更新它 —— **可观察结果**：市场 "不存在"，代码侧无报错。
+- 不 `entity.setMarket`：实体与市场脱钩，交互入口 (进市场界面) 失效，`getPrimaryEntity()` 侧的市场归属为空 —— **可观察结果**：点击实体没有任何市场交互，日志无报错。
+- 不 `entity.setFaction`：实体仍显示原势力 (市场与实体势力不一致)。
 
 `EconomyAPI.removeMarket(market)` 从集合移除。
 
@@ -113,8 +113,8 @@
 
 带参数用 `addCondition(id, param)`(`Market.addCondition`：非 suppressed 时立即 `plugin.apply(token)`)。读取：
 
-* `getCondition(id)` / `getFirstCondition(id)`：同 spec id 的**首个**实例；
-* `getSpecificCondition(token)`：按唯一 token 取**具体**实例。
+- `getCondition(id)` / `getFirstCondition(id)`：同 spec id 的**首个**实例；
+- `getSpecificCondition(token)`：按唯一 token 取**具体**实例。
 
 移除：`removeCondition(id)` **移除同 spec id 的全部实例**；`removeSpecificCondition(token)` 只移除 token 对应实例。
 
@@ -175,13 +175,13 @@
 
 **开放状态** (本节主题之一)：
 
-* **自由港**：`setFreePort(true)` 自动添加 `free_market` 条件 (`Market.setFreePort`，条件 id 为 `free_market`，plugin 为 `FreeMarket`)。
-    *   `isFreePort()` 为 true 时 `isIllegal(id)` **恒返回 false**—— 自由港市场一切商品合法。
-* **隐藏市场**：`setHidden(true)` 后市场**不提供任务、不参与会间接暴露其存在的事件/intel，且不参与经济。可观察结果**：商品流计算完全忽略它，任何 UI/任务系统不出现它。
-* **用户所有**：`setPlayerOwned(true)` 改变殖民地管理语义 (存档界面、收入、存储免费等)，并刷新用户的 outpost 效果。
-* **survey 等级**：`SurveyLevel.NONE / SEEN / PRELIMINARY / FULL`，`getSurveyLevel()` 读出；核心世界与代码路径建市场显式设 `FULL`(成熟实例的 `addMarketplace` 写法)。
-* **经济组**：`getEconGroup()` / `setEconGroup(String)`——"同一经济组的市场互相可见 ('nearby markets' 对话框等) 且只互相交易；默认 null 自成一组"。
-* **tag**：`addTag` / `removeTag` / `hasTag` / `getTags`—— 市场级标记 (与商品 tag、实体 tag 不同集合)。
+- **自由港**：`setFreePort(true)` 自动添加 `free_market` 条件 (`Market.setFreePort`，条件 id 为 `free_market`，plugin 为 `FreeMarket`)。
+    - `isFreePort()` 为 true 时 `isIllegal(id)` **恒返回 false**—— 自由港市场一切商品合法。
+- **隐藏市场**：`setHidden(true)` 后市场**不提供任务、不参与会间接暴露其存在的事件/intel，且不参与经济。可观察结果**：商品流计算完全忽略它，任何 UI/任务系统不出现它。
+- **用户所有**：`setPlayerOwned(true)` 改变殖民地管理语义 (存档界面、收入、存储免费等)，并刷新用户的 outpost 效果。
+- **survey 等级**：`SurveyLevel.NONE / SEEN / PRELIMINARY / FULL`，`getSurveyLevel()` 读出；核心世界与代码路径建市场显式设 `FULL`(成熟实例的 `addMarketplace` 写法)。
+- **经济组**：`getEconGroup()` / `setEconGroup(String)`——"同一经济组的市场互相可见 ('nearby markets' 对话框等) 且只互相交易；默认 null 自成一组"。
+- **tag**：`addTag` / `removeTag` / `hasTag` / `getTags`—— 市场级标记 (与商品 tag、实体 tag 不同集合)。
 
 #### [每帧推进 (advance)]
 
@@ -260,11 +260,11 @@ open / black 都是 `PLAYER_SELL_ONLY`—— **用户卖出**给市场会正向�
 
 #### [市场集合与商品注册表]
 
-* 集合：`getMarketsCopy()`(快照)/ `getMarket(id)`(精确 id，无则 null)/ `getNumMarkets()` / `getMarkets(loc)` / `getLocationsWithMarkets()` / `getStarSystemsWithMarkets()`。
-    *   `getMarketsInGroup(group)` / `getMarketsWithSameGroup(market)`(经济组语义见上文)。
-* 商品注册表：`getAllCommodityIds()` 返回全部已注册商品 id(来自 CSV spec 加载期的 `CommoditySpecAPI` 集合)；`getCommoditySpec(id)` 返回**全局规格** `CommoditySpecAPI`(基础价、econ unit、tag、demand class 等)。
-    *   **不等于**市场库存 —— 读取的是全局 spec，不表示该 commodity 在某个市场有库存、供给或需求。
-* `isSimMode()`：模拟模式 (战役/经济编辑器) 标记。
+- 集合：`getMarketsCopy()`(快照)/ `getMarket(id)`(精确 id，无则 null)/ `getNumMarkets()` / `getMarkets(loc)` / `getLocationsWithMarkets()` / `getStarSystemsWithMarkets()`。
+    - `getMarketsInGroup(group)` / `getMarketsWithSameGroup(market)`(经济组语义见上文)。
+- 商品注册表：`getAllCommodityIds()` 返回全部已注册商品 id(来自 CSV spec 加载期的 `CommoditySpecAPI` 集合)；`getCommoditySpec(id)` 返回**全局规格** `CommoditySpecAPI`(基础价、econ unit、tag、demand class 等)。
+    - **不等于**市场库存 —— 读取的是全局 spec，不表示该 commodity 在某个市场有库存、供给或需求。
+- `isSimMode()`：模拟模式 (战役/经济编辑器) 标记。
 
 #### [经济推进循环 (商品流)]
 
@@ -274,11 +274,11 @@ open / black 都是 `PLAYER_SELL_ONLY`—— **用户卖出**给市场会正向�
 
 1. **每月 `economyIterPerMonth` 次迭代** (settings 键 = 10)。跨月时重置剩余迭代数为 10，迭代间隔 = `(当月剩余天数) / 10` 游戏日。
 2. 每次迭代的任务链 (主重算任务)：重算全部市场条件/产业 → 按商品逐个构建 `CommodityMarketDataAPI` 可达图 → **当月最后一次迭代**才 `updateStockpileAndPrice` 写库存与价格。
-    *   随后依次执行市场重算、移民与整轮收尾。
+    - 随后依次执行市场重算、移民与整轮收尾。
 3. 每次迭代结束触发 `reportEconomyTick`(`EconomyTickListener`)，跨月触发 `reportEconomyMonthEnd`。
 4. 商品可达图 (`CommodityMarketDataAPI`)：每个商品一套，按 "本地生产 + 进口 + 短缺 + 低可达性" 拆解 `getAvailable()` 的修饰，隐藏市场跳过进口需求。
 5. `updateStockpileAndPriceV2`(主重算任务)：重算 demand/greed 修饰、写 `setStockpile`(经济单位刻度)、按短缺/过剩设置价格倍率上下限 (`economyDeficitPriceIncrPerUnit` / `economyExcessPriceDecrPerUnit` 等)。
-    *   **供需均为 0 的商品用户买入价 × `economyNoDemandPriceMult`(0.5)**。
+    - **供需均为 0 的商品用户买入价 × `economyNoDemandPriceMult`(0.5)**。
 
 `economyIntervalnGameDays` 不能用来推断经济频率
 
@@ -286,7 +286,7 @@ settings.json 中 `economyIntervalnGameDays` 键 (值 30) 的原文注释是 `# 
 
 #### [手动重算入口]
 
-* `nextStep()` / `doubleStep()` / `tripleStep()`：立即执行一/二/三步迭代 (含 `withStockpileUpdate=true`)。
+- `nextStep()` / `doubleStep()` / `tripleStep()`：立即执行一/二/三步迭代 (含 `withStockpileUpdate=true`)。
 
 `nextStep` 系列只允许在 UI 交互路径调用
 
@@ -296,15 +296,15 @@ settings.json 中 `economyIntervalnGameDays` 键 (值 30) 的原文注释是 `# 
 
 违反后的可观察结果：单帧阻塞明显超过一帧渲染时间，大存档下肉眼可见的卡顿/掉帧 (加载器稳定化也是这套入口)。
 
-* `forceStockpileUpdate(market)`：对市场全部非 `nonecon` 商品立即 `updateStockpileAndPrice`，适合 "改完供需想让库存立即反映" 的场景。
+- `forceStockpileUpdate(market)`：对市场全部非 `nonecon` 商品立即 `updateStockpileAndPrice`，适合 "改完供需想让库存立即反映" 的场景。
 
 #### [EconomyUpdateListener]
 
 `EconomyAPI.EconomyUpdateListener`(在 `EconomyAPI` 中声明) 三个方法：
 
-* `commodityUpdated(String commodityId)`(每个商品一次，逐商品通知)；
-* `economyUpdated()`(整轮结束一次，整轮收尾通知)；
-* `isEconomyListenerExpired()`(返回 true 的监听器**由引擎自动移除**)。
+- `commodityUpdated(String commodityId)`(每个商品一次，逐商品通知)；
+- `economyUpdated()`(整轮结束一次，整轮收尾通知)；
+- `isEconomyListenerExpired()`(返回 true 的监听器**由引擎自动移除**)。
 
 监听器注册必须走 `EconomyAPI.addUpdateListener()`
 
@@ -433,13 +433,13 @@ public boolean isEconomyListenerExpired() {
 
 全部巡检不遗留任何持久状态 (税率回滚、监听器整轮通知后自过期、脚本自停)：
 
-* `GearInMarketInspector`：巡检调度脚本 (`EveryFrameScript`)—— 注册判断 + 目标市场选择 + 经济基线 + 编排各日志器 + 注册自过期监听器；
-* `GearInMarketPicker`：目标市场选择器 —— 优先指定 id，查无时回退到第一个有开放子市场的市场；
-* `GearInMarketStructureLog`：市场结构日志器 —— 身份/势力/实体绑定/survey/开放状态/条件与产业 id 列表及人物数与同经济组市场数；
-* `GearInSubmarketLog`：子市场差异日志器 ——open/black/storage 的税率、势力、plugin 类、cargo 用到时才创建的语义与三个标志；
-* `GearInCommodityLog`：商品日志器 —— 演示商品的库存、可得量、供需上限、买卖价与合法性；
-* `GearInTariffProbe`：税率探针 —— 瞬时 `modifyFlat` 并当帧 `unmodifyFlat` 回滚，记录 before/during/after；
-* `GearInEconomyTickLog`：经济监听 (`EconomyUpdateListener`)—— 记录下一经济步的首次 `commodityUpdated` 与整轮 `economyUpdated`，之后自过期。
+- `GearInMarketInspector`：巡检调度脚本 (`EveryFrameScript`)—— 注册判断 + 目标市场选择 + 经济基线 + 编排各日志器 + 注册自过期监听器；
+- `GearInMarketPicker`：目标市场选择器 —— 优先指定 id，查无时回退到第一个有开放子市场的市场；
+- `GearInMarketStructureLog`：市场结构日志器 —— 身份/势力/实体绑定/survey/开放状态/条件与产业 id 列表及人物数与同经济组市场数；
+- `GearInSubmarketLog`：子市场差异日志器 ——open/black/storage 的税率、势力、plugin 类、cargo 用到时才创建的语义与三个标志；
+- `GearInCommodityLog`：商品日志器 —— 演示商品的库存、可得量、供需上限、买卖价与合法性；
+- `GearInTariffProbe`：税率探针 —— 瞬时 `modifyFlat` 并当帧 `unmodifyFlat` 回滚，记录 before/during/after；
+- `GearInEconomyTickLog`：经济监听 (`EconomyUpdateListener`)—— 记录下一经济步的首次 `commodityUpdated` 与整轮 `economyUpdated`，之后自过期。
 
 ### GearInMarketInspector：巡检调度脚本
 
@@ -485,12 +485,12 @@ public boolean isEconomyListenerExpired() {
 
 对应关系：
 
-* 巡检模式：`implements EveryFrameScript` 沿用生涯一次性脚本模式 ——`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除。
-* `REGISTER_MARK`：persistent data 标记键 (`"GearIn_MarketInspector"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入 `GearInModPlugin` 的 `CLASS_MARK` 标记 (旧档补注册规则见前置知识)。
-* `GearInMarketPicker.pick`：`economy.getMarket(id)` 精确 id 查找 + `hasSubmarket(Submarkets.SUBMARKET_OPEN)` 回退 —— 对应 "市场 id = economy.json entities 首实体 id" 的读取链路。
-* `GearInSubmarketLog.log`：`submarket.getCargoNullOk()` 判空后 `getCommodityQuantity`—— 演示 "库存用到时才创建、`getCargoNullOk()` 可能为 null" 的必须遵守的规则 (见 "库存 cargo 与合法性" 节)。
-* `GearInTariffProbe.log`：`modifyFlat("GearIn_inspect_tariff", 0.05f)` → `unmodifyFlat`—— `getTariff()` 是 `MutableStat`(前置知识已介绍)，当帧回滚、无持久残留；这是 "修改高频参数观察结果变化" 的最小任务链第 4 步。
-* `GearInEconomyTickLog`：`economy.addUpdateListener`—— 监听器**必须**走 `EconomyAPI.addUpdateListener`(见 "EconomyUpdateListener" 节)；`isEconomyListenerExpired()` 返回 true 后由引擎自动移除，不残留存档。
+- 巡检模式：`implements EveryFrameScript` 沿用生涯一次性脚本模式 ——`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除。
+- `REGISTER_MARK`：persistent data 标记键 (`"GearIn_MarketInspector"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入 `GearInModPlugin` 的 `CLASS_MARK` 标记 (旧档补注册规则见前置知识)。
+- `GearInMarketPicker.pick`：`economy.getMarket(id)` 精确 id 查找 + `hasSubmarket(Submarkets.SUBMARKET_OPEN)` 回退 —— 对应 "市场 id = economy.json entities 首实体 id" 的读取链路。
+- `GearInSubmarketLog.log`：`submarket.getCargoNullOk()` 判空后 `getCommodityQuantity`—— 演示 "库存用到时才创建、`getCargoNullOk()` 可能为 null" 的必须遵守的规则 (见 "库存 cargo 与合法性" 节)。
+- `GearInTariffProbe.log`：`modifyFlat("GearIn_inspect_tariff", 0.05f)` → `unmodifyFlat`—— `getTariff()` 是 `MutableStat`(前置知识已介绍)，当帧回滚、无持久残留；这是 "修改高频参数观察结果变化" 的最小任务链第 4 步。
+- `GearInEconomyTickLog`：`economy.addUpdateListener`—— 监听器**必须**走 `EconomyAPI.addUpdateListener`(见 "EconomyUpdateListener" 节)；`isEconomyListenerExpired()` 返回 true 后由引擎自动移除，不残留存档。
 
 调用点 (工程片段 —— 方法所在类归属插件生命周期主题，本节只演示调用，不改动既有文件)：
 
@@ -556,9 +556,9 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
 预期结果：
 
-* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下的七个类 (`GearInMarketInspector` 等)。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下的七个类 (`GearInMarketInspector` 等)。
 
-* **新建生涯**：`starsector.log` 依次出现：
+- **新建生涯**：`starsector.log` 依次出现：
 
     ```text
        GearIn market inspection start: markets=NN commodities=33
@@ -572,7 +572,7 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
     `Jangala` 是 corvus 星系核心市场 (`econ/corvus.json`：faction `hegemony`、size 6)，`onOrAt=on`(主实体是行星，无 `station` tag)；`survey` 以实际存档为准。
 
-* **条件与产业**：
+- **条件与产业**：
 
     ```text
        GearIn market conditions: count=6 ids=[population_6, inimical_biosphere, organics_plentiful, farmland_adequate, extreme_weather, habitable] GearIn market industries: count=7 ids=[population, farming, spaceport, mining, heavybatteries, militarybase, starfortress_mid]
@@ -580,7 +580,7 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
     (与 `econ/corvus.json` 的 `startingConditions` / `industries` 数组一致，以日志为准；其他市场看各自条目。)
 
-* **三种子市场**：
+- **三种子市场**：
 
     ```text
        GearIn submarket open_market: present=true name=Open Market tariff=0.300 faction=hegemony plugin=OpenMarketPlugin cargoNullOk=null supplies=0.0 open=true black=false freeTransfer=false GearIn submarket black_market: present=true name=Black Market tariff=0.000 faction=pirates plugin=BlackMarketPlugin cargoNullOk=null supplies=0.0 open=false black=true freeTransfer=false GearIn submarket storage: present=true name=Storage tariff=0.000 faction=player plugin=StoragePlugin cargoNullOk=null supplies=0.0 open=false black=false freeTransfer=true
@@ -588,7 +588,7 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
     核对：open 税率 = 市场税率 (原版默认 `0.3`，`FactionSpecAPI.tariffFraction` 默认值)；black 与 storage 恒 `0.000`；black 的势力是 `pirates`(`submarkets.csv`)、storage 是 `player`；`cargoNullOk=null` 表示该子市场 cargo 尚未被创建 (用到时才创建语义)—— 若某个市场曾被交互过则为 `created` 并带 supplies 数量；`freeTransfer=true` 只出现在 storage。
 
-* **商品** (数值随存档经济状态浮动，方向核对不变)：
+- **商品** (数值随存档经济状态浮动，方向核对不变)：
 
     ```text
        GearIn commodity supplies: stockpile=NNNN.N available=NNN maxSupply=NNN maxDemand=NNN illegal=false demandPrice(100)=NNN supplyPrice(100)=NNN GearIn commodity drugs: stockpile=NN.N available=N maxSupply=N maxDemand=N illegal=true demandPrice(100)=NNN supplyPrice(100)=NNN
@@ -596,9 +596,9 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
     `supplies` 的市场买入/卖出价在库存充足时接近基础价区间；`drugs` 对 hegemony 市场 `illegal=true`(非自由港)，开放市场不备货、黑市可交易 (`BlackMarketPlugin.isIllegalOnSubmarket` 恒 false)。
 
-* **人物与经济组**：`GearIn market people: count=N`(Jangala 的 NPC 人物数，以日志为准)；`GearIn market econGroup: group=null sameGroupMarkets=1`(默认 null 自成一组，`getMarketsWithSameGroup` 至少包含自己)。
+- **人物与经济组**：`GearIn market people: count=N`(Jangala 的 NPC 人物数，以日志为准)；`GearIn market econGroup: group=null sameGroupMarkets=1`(默认 null 自成一组，`getMarketsWithSameGroup` 至少包含自己)。
 
-* **税率回滚**：
+- **税率回滚**：
 
     ```text
        GearIn tariff probe: before=0.300 during=0.350 after=0.300
@@ -606,7 +606,7 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
     `during` 恒比 `before` 高 `0.05`，`after` 与 `before` 相等 —— 修改已被当帧回滚。
 
-* **经济监听器** (商品流通知的观察窗口)：注册日志后，在**下一个经济步** (每月 10 次迭代，间隔最多约当月剩余天数/10 个游戏日，未暂停时几十真实秒内) 出现：
+- **经济监听器** (商品流通知的观察窗口)：注册日志后，在**下一个经济步** (每月 10 次迭代，间隔最多约当月剩余天数/10 个游戏日，未暂停时几十真实秒内) 出现：
 
     ```text
        GearIn economy listener first commodityUpdated: <某个商品 id> GearIn economy listener economyUpdated (expiring)
@@ -614,11 +614,11 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
     之后不再出现 —— 监听器在整轮通知后由引擎自动移除 (`isEconomyListenerExpired()` 为 true)。暂停期间经济不推进，监听器日志会推迟到恢复后。
 
-* **读档**：不重复执行 (`REGISTER_MARK` 标记已置位)，也不出现 `inspection start` 日志；经济监听器若在读档前未触发，读档后继续等待下一个经济步 (监听器只持 boolean，随存档恢复无副作用)。
+- **读档**：不重复执行 (`REGISTER_MARK` 标记已置位)，也不出现 `inspection start` 日志；经济监听器若在读档前未触发，读档后继续等待下一个经济步 (监听器只持 boolean，随存档恢复无副作用)。
 
-* **参数演示**：注册前 `setTargetMarketId("asheru")`(不存在于原版的 id)→ 回退扫描生效，`structure` 行打印第一个有开放市场的市场而不是 `asheru`；改成 `"asharu"` → `structure` 行打印 `id=asharu ... faction=independent`。
+- **参数演示**：注册前 `setTargetMarketId("asheru")`(不存在于原版的 id)→ 回退扫描生效，`structure` 行打印第一个有开放市场的市场而不是 `asheru`；改成 `"asharu"` → `structure` 行打印 `id=asharu ... faction=independent`。
 
-* 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
+- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
 ## 故障分析
 
@@ -641,36 +641,36 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
 记忆要点：
 
-* 市场 id = `econ/*.json` `entities` 首实体 id；`getMarket(id)` 精确匹配、查无返回 null。
-* `addCondition` 返回 token：删具体实例用 `removeSpecificCondition(token)`，`removeCondition(id)` 删同 id 全部；产业 `addIndustry` 对不存在的 id 抛异常 (条件不校验)。
-* `getCargoNullOk()` 可能 null；`getMemory()` 触发全插件回调；`getAdmin()` 用到时才创建管理员 —— 三个 "用到时才创建/副作用" 入口。
-* `economyIterPerMonth = 10`、`economyIntervalnGameDays` 不参与经济；`nextStep` 系列禁止后台调用；监听器必须走 `addUpdateListener`。
-* 自由港 → `isIllegal` 全 false；隐藏市场 → 不参与任务/事件/intel/经济；同经济组市场只互相可见与交易。
+- 市场 id = `econ/*.json` `entities` 首实体 id；`getMarket(id)` 精确匹配、查无返回 null。
+- `addCondition` 返回 token：删具体实例用 `removeSpecificCondition(token)`，`removeCondition(id)` 删同 id 全部；产业 `addIndustry` 对不存在的 id 抛异常 (条件不校验)。
+- `getCargoNullOk()` 可能 null；`getMemory()` 触发全插件回调；`getAdmin()` 用到时才创建管理员 —— 三个 "用到时才创建/副作用" 入口。
+- `economyIterPerMonth = 10`、`economyIntervalnGameDays` 不参与经济；`nextStep` 系列禁止后台调用；监听器必须走 `addUpdateListener`。
+- 自由港 → `isIllegal` 全 false；隐藏市场 → 不参与任务/事件/intel/经济；同经济组市场只互相可见与交易。
 
 地点容器与实体挂载承载着市场主实体，舰队成员是生涯对象族的另一支；本节的 `REGISTER_MARK` 注册模式沿用生涯对象族的既有做法。市场的行为由三条链共同决定 —— 子市场的插件差异、经济循环的迭代节奏、开放状态的语义开关；产业供需、交易界面与殖民地管理都沿这些入口展开。
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.campaign.econ.MarketAPI`：市场接口全貌 —— 身份、实体绑定、条件、产业、商品、价格、人物、开放状态与每帧推进。
-* `com.fs.starfarer.api.campaign.econ.SubmarketAPI`：子市场运行时入口 (spec、plugin、cargo、税率、合法性)。
-* `com.fs.starfarer.api.campaign.SubmarketPlugin`：子市场插件角色 —— 税率、合法性、经济参与、用户交易影响 (`PlayerEconomyImpactMode` / `TransferAction`)。
-* `com.fs.starfarer.api.campaign.econ.EconomyAPI`：经济集合、商品注册表、手动重算入口与 `EconomyUpdateListener`(注册必须经 `addUpdateListener`)。
-* `com.fs.starfarer.api.campaign.econ.CommodityOnMarketAPI`：单商品数据 —— 库存、可得量、供需上限、交易修饰。
-* `com.fs.starfarer.api.campaign.econ.CommoditySpecAPI`：全局商品规格 —— 基础价、econ unit、demand class。
-* `com.fs.starfarer.api.campaign.econ.MarketConditionAPI`：条件实例 ——spec id 与唯一 token。
-* `com.fs.starfarer.api.impl.campaign.ids.Submarkets`：五个原版子市场 spec id 常量。
-* `com.fs.starfarer.api.impl.campaign.ids.Commodities`：原版商品 id 常量 (`SUPPLIES` / `DRUGS`)。
-* `com.fs.starfarer.api.impl.campaign.submarkets.BaseSubmarketPlugin`：子市场基类 —— 交易影响天数、cargo 用到时才创建、默认税率与合法性。
-* `com.fs.starfarer.api.impl.campaign.submarkets.OpenMarketPlugin` / `BlackMarketPlugin` / `StoragePlugin`：三种原版子市场的插件差异。
-* `com.fs.starfarer.api.combat.MutableStat`：税率等修饰统计 ——`modifyFlat` / `unmodifyFlat` / `getModifiedValue`。
-* `com.fs.starfarer.api.FactoryAPI`：`createMarket` 创建市场对象 (只建对象，不注册)。
-* `com.fs.starfarer.api.campaign.SectorEntityToken`：`getMarket` / `setMarket` 实体侧绑定。
-* `com.fs.starfarer.api.util.Misc`：`getStorageFeeFraction` 读取 `storageFreeFraction` 存值费率。
-* `data/campaign/econ/economy.json`：经济入口配置 ——`starSystems` 列表与 `defaultTariff`。
-* `data/campaign/econ/corvus.json`：示例市场条目 (`jangala` / `asharu`)。
-* `data/campaign/submarkets.csv`：五个原版子市场 spec(`script` 列即 plugin)。
-* `data/campaign/market_conditions.csv`：条件 spec(含 `free_market`)。
-* `data/config/settings.json`：经济参数键 (`economyIterPerMonth`、`economyPlayerTradeImpactMult`、`storageFreeFraction` 等)。
+- `com.fs.starfarer.api.campaign.econ.MarketAPI`：市场接口全貌 —— 身份、实体绑定、条件、产业、商品、价格、人物、开放状态与每帧推进。
+- `com.fs.starfarer.api.campaign.econ.SubmarketAPI`：子市场运行时入口 (spec、plugin、cargo、税率、合法性)。
+- `com.fs.starfarer.api.campaign.SubmarketPlugin`：子市场插件角色 —— 税率、合法性、经济参与、用户交易影响 (`PlayerEconomyImpactMode` / `TransferAction`)。
+- `com.fs.starfarer.api.campaign.econ.EconomyAPI`：经济集合、商品注册表、手动重算入口与 `EconomyUpdateListener`(注册必须经 `addUpdateListener`)。
+- `com.fs.starfarer.api.campaign.econ.CommodityOnMarketAPI`：单商品数据 —— 库存、可得量、供需上限、交易修饰。
+- `com.fs.starfarer.api.campaign.econ.CommoditySpecAPI`：全局商品规格 —— 基础价、econ unit、demand class。
+- `com.fs.starfarer.api.campaign.econ.MarketConditionAPI`：条件实例 ——spec id 与唯一 token。
+- `com.fs.starfarer.api.impl.campaign.ids.Submarkets`：五个原版子市场 spec id 常量。
+- `com.fs.starfarer.api.impl.campaign.ids.Commodities`：原版商品 id 常量 (`SUPPLIES` / `DRUGS`)。
+- `com.fs.starfarer.api.impl.campaign.submarkets.BaseSubmarketPlugin`：子市场基类 —— 交易影响天数、cargo 用到时才创建、默认税率与合法性。
+- `com.fs.starfarer.api.impl.campaign.submarkets.OpenMarketPlugin` / `BlackMarketPlugin` / `StoragePlugin`：三种原版子市场的插件差异。
+- `com.fs.starfarer.api.combat.MutableStat`：税率等修饰统计 ——`modifyFlat` / `unmodifyFlat` / `getModifiedValue`。
+- `com.fs.starfarer.api.FactoryAPI`：`createMarket` 创建市场对象 (只建对象，不注册)。
+- `com.fs.starfarer.api.campaign.SectorEntityToken`：`getMarket` / `setMarket` 实体侧绑定。
+- `com.fs.starfarer.api.util.Misc`：`getStorageFeeFraction` 读取 `storageFreeFraction` 存值费率。
+- `data/campaign/econ/economy.json`：经济入口配置 ——`starSystems` 列表与 `defaultTariff`。
+- `data/campaign/econ/corvus.json`：示例市场条目 (`jangala` / `asharu`)。
+- `data/campaign/submarkets.csv`：五个原版子市场 spec(`script` 列即 plugin)。
+- `data/campaign/market_conditions.csv`：条件 spec(含 `free_market`)。
+- `data/config/settings.json`：经济参数键 (`economyIterPerMonth`、`economyPlayerTradeImpactMult`、`storageFreeFraction` 等)。
 
 ## 完整最小例
 

@@ -10,17 +10,17 @@ BoxUtil 的 `SpriteEntity` 可以用一次实体提交绘制多份实例数据�
 
 完成后，您将能够：
 
-* 判断 BoxUtil 的配置开关与 shader 核心是否同时可用；
-* 为一个 `SpriteEntity` 构造 32 份带位置、速度、颜色和寿命的 `Instance2Data`；
-* 区分 CPU 列表、刷新范围、GPU 提交与实际绘制数量；
-* 根据 `CombatRenderingManager.addEntity()` 返回码处理入队失败；
-* 在 BoxUtil 渲染不可用时保留原版粒子反馈。
+- 判断 BoxUtil 的配置开关与 shader 核心是否同时可用；
+- 为一个 `SpriteEntity` 构造 32 份带位置、速度、颜色和寿命的 `Instance2Data`；
+- 区分 CPU 列表、刷新范围、GPU 提交与实际绘制数量；
+- 根据 `CombatRenderingManager.addEntity()` 返回码处理入队失败；
+- 在 BoxUtil 渲染不可用时保留原版粒子反馈。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
 
@@ -141,11 +141,11 @@ box.setRenderingCount(instances.size());
 
 预期结果：
 
-* BoxUtil 可用时，每次生成只入队 1 个实体，但 `renderingCount` 为 32；
-* 32 份实例的位置、速度、颜色、缩放和三段寿命均已写入并提交；
-* 缺少刷新、提交或绘制数量中的任一步时，验证能稳定复现空白或数量错误；
-* 入队失败时实体立即删除，不继续由调用侧推进；
-* shader 不可用时只生成原版粒子，战斗没有未处理异常。
+- BoxUtil 可用时，每次生成只入队 1 个实体，但 `renderingCount` 为 32；
+- 32 份实例的位置、速度、颜色、缩放和三段寿命均已写入并提交；
+- 缺少刷新、提交或绘制数量中的任一步时，验证能稳定复现空白或数量错误；
+- 入队失败时实体立即删除，不继续由调用侧推进；
+- shader 不可用时只生成原版粒子，战斗没有未处理异常。
 
 ## 故障分析
 
@@ -160,9 +160,9 @@ BoxUtil 实例渲染的关键不是 new 出对象，而是把 CPU 修改明确�
 
 ## 建议参考项
 
-* `SpriteEntity`：批量精灵实体；
-* `Instance2Data`：单个二维实例状态；
-* `CombatRenderingManager.addEntity`：加入 BoxUtil 战斗渲染队列。
+- `SpriteEntity`：批量精灵实体；
+- `Instance2Data`：单个二维实例状态；
+- `CombatRenderingManager.addEntity`：加入 BoxUtil 战斗渲染队列。
 ::: details 完整成品：GearInBoxEntity
 
 ```java

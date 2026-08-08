@@ -10,15 +10,15 @@
 
 完成后，您将能够：
 
-* 选择常驻插件的渲染层和有效剔除半径；
-* 在每次 render 使用点读取 BoxUtil 能力和运行时开关；
-* 在战斗结束和重复清理时准确统计并释放 GL 资源。
+- 选择常驻插件的渲染层和有效剔除半径；
+- 在每次 render 使用点读取 BoxUtil 能力和运行时开关；
+- 在战斗结束和重复清理时准确统计并释放 GL 资源。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 管理常驻能量场生命周期
 
@@ -111,12 +111,12 @@ if (!BoxConfigs.isShaderEnable()) return;
 
 预期结果：
 
-* 画面不被舰船主体错误遮挡；
-* 离开视口后插件停止渲染，回到视口后恢复；
-* 切换关闭后 drawCalls 停止增长；
-* 重复 cleanup 不产生二次删除错误；
-* 关闭区间没有 GL 提交，重新开启后渲染恢复；
-* cleanup 日志的 frames 与 drawCalls 能解释实际渲染次数。
+- 画面不被舰船主体错误遮挡；
+- 离开视口后插件停止渲染，回到视口后恢复；
+- 切换关闭后 drawCalls 停止增长；
+- 重复 cleanup 不产生二次删除错误；
+- 关闭区间没有 GL 提交，重新开启后渲染恢复；
+- cleanup 日志的 frames 与 drawCalls 能解释实际渲染次数。
 
 ## 故障分析
 
@@ -131,9 +131,9 @@ if (!BoxConfigs.isShaderEnable()) return;
 
 ## 建议参考项
 
-* `BaseCombatLayeredRenderingPlugin`：常驻分层渲染生命周期；
-* `BoxConfigs.isShaderEnable`：当前 shader 设置；
-* `ShaderProgram.delete` 与 `glDeleteBuffers`：释放 GL 资源。
+- `BaseCombatLayeredRenderingPlugin`：常驻分层渲染生命周期；
+- `BoxConfigs.isShaderEnable`：当前 shader 设置；
+- `ShaderProgram.delete` 与 `glDeleteBuffers`：释放 GL 资源。
 ::: details 完整成品：GearInShaderPlugin
 
 ```java

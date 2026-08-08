@@ -10,15 +10,15 @@
 
 完成后，您将能够：
 
-* 用正确的 concern ID 调整 GearIn 的战略优先级；
-* 在 StrategicAI 尚未创建时安全地等待，在创建后主动刷新一次会议；
-* 区分入侵规模倍率和复活全局条件，解释最终判断。
+- 用正确的 concern ID 调整 GearIn 的战略优先级；
+- 在 StrategicAI 尚未创建时安全地等待，在创建后主动刷新一次会议；
+- 区分入侵规模倍率和复活全局条件，解释最终判断。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 让战略 AI 获得可验证的行动入口
 
@@ -122,10 +122,10 @@ if (ai != null) {
 
 预期结果：
 
-* 两个配置中的 concern ID 能影响战略优先级；
-* AI 未建立时探针返回安全值，建立后可以刷新会议；
-* `getInvasionSizeMult()` 的组合倍率只被应用一次；
-* 复活探针准确反映管理器、事件开关、势力资格和次数上限。
+- 两个配置中的 concern ID 能影响战略优先级；
+- AI 未建立时探针返回安全值，建立后可以刷新会议；
+- `getInvasionSizeMult()` 的组合倍率只被应用一次；
+- 复活探针准确反映管理器、事件开关、势力资格和次数上限。
 
 ## 故障分析
 
@@ -140,9 +140,9 @@ if (ai != null) {
 
 ## 建议参考项
 
-* `StrategicAI.getAI`：取得势力战略 AI；
-* `InvasionFleetManager.getInvasionSizeMult`：读取入侵规模倍率；
-* `NexConfig`：全局战略、入侵与复活设置。
+- `StrategicAI.getAI`：取得势力战略 AI；
+- `InvasionFleetManager.getInvasionSizeMult`：读取入侵规模倍率；
+- `NexConfig`：全局战略、入侵与复活设置。
 ::: details 完整成品：GearInInvasionScaleProbe
 
 ```java

@@ -10,16 +10,16 @@
 
 完成后，您将能够：
 
-* 在 `data/config/custom_entities.json` 增加静态实体类型；
-* 用 `baseId` 继承一组稳定的默认显示参数；
-* 配置图标、精灵、地图名称、可发现性和发现经验；
-* 用 `addCustomEntity` 投放类型，并由 CUSTOM 描述完成界面闭环。
+- 在 `data/config/custom_entities.json` 增加静态实体类型；
+- 用 `baseId` 继承一组稳定的默认显示参数；
+- 配置图标、精灵、地图名称、可发现性和发现经验；
+- 用 `addCustomEntity` 投放类型，并由 CUSTOM 描述完成界面闭环。
 
 ## 前置知识
 
-* [C3-S4] 的数据文件合并和资源路径；
-* [C3-S6] 的 `addCustomEntity` 与轨道设置；
-* [C3-S8] 的 CUSTOM 描述键。
+- [C3-S4] 的数据文件合并和资源路径；
+- [C3-S6] 的 `addCustomEntity` 与轨道设置；
+- [C3-S8] 的 CUSTOM 描述键。
 
 ## 确定实体用途
 
@@ -146,10 +146,10 @@ anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 
 预期结果：
 
-* 实体有 GearIn 名称、图标和中继外观；
-* 进入检测范围后实体可被发现并获得发现经验；
-* 详情标题和正文来自 `GearIn_navigation_anchor,CUSTOM`；
-* 日志没有 `baseId`、贴图或实体类型缺失错误。
+- 实体有 GearIn 名称、图标和中继外观；
+- 进入检测范围后实体可被发现并获得发现经验；
+- 详情标题和正文来自 `GearIn_navigation_anchor,CUSTOM`；
+- 日志没有 `baseId`、贴图或实体类型缺失错误。
 
 ## 故障分析
 
@@ -163,7 +163,7 @@ anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 
 ## 建议参考项
 
-* `data/config/custom_entities.json`：自定义生涯实体类型；
-* `CustomEntitySpecAPI`：运行期实体 spec 字段；
-* `LocationAPI.addCustomEntity`：投放入口；
-* [C3-S8]：CUSTOM 描述挂接。
+- `data/config/custom_entities.json`：自定义生涯实体类型；
+- `CustomEntitySpecAPI`：运行期实体 spec 字段；
+- `LocationAPI.addCustomEntity`：投放入口；
+- [C3-S8]：CUSTOM 描述挂接。

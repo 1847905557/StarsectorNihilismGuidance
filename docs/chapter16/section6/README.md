@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 用 `MagicSettings` 一次读取并缓存光束与 HUD 配置；
-* 按帧时间推进 0–1 充能，并在满充时只触发一次攻击；
-* 选择最近可见敌舰，计算实际发射角度；
-* 用 `MagicFakeBeam` 生成一次瞬时伤害与短暂视觉；
-* 用固定 key 刷新 `MagicUI` 状态条，并从调用次数定位重复伤害。
+- 用 `MagicSettings` 一次读取并缓存光束与 HUD 配置；
+- 按帧时间推进 0–1 充能，并在满充时只触发一次攻击；
+- 选择最近可见敌舰，计算实际发射角度；
+- 用 `MagicFakeBeam` 生成一次瞬时伤害与短暂视觉；
+- 用固定 key 刷新 `MagicUI` 状态条，并从调用次数定位重复伤害。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
 
@@ -163,12 +163,12 @@ if (beamCharge >= 1f) {
 
 预期结果：
 
-* 设置只在角色构造时读取一次，日志值与本次战斗的光束参数一致；
-* 非暂停状态下每 2 秒尝试一次发射，有目标时计数增加并结算一次伤害；
-* 无目标时不生成光束、不增加计数，下一周期重新查询；
-* 固定 key 让 HUD 保持为一条，填充与 `beamCharge` 一致；
-* 暂停期间 HUD 继续刷新，充能与攻击停止推进；
-* 配置修改在重启并重新构造设置角色后生效。
+- 设置只在角色构造时读取一次，日志值与本次战斗的光束参数一致；
+- 非暂停状态下每 2 秒尝试一次发射，有目标时计数增加并结算一次伤害；
+- 无目标时不生成光束、不增加计数，下一周期重新查询；
+- 固定 key 让 HUD 保持为一条，填充与 `beamCharge` 一致；
+- 暂停期间 HUD 继续刷新，充能与攻击停止推进；
+- 配置修改在重启并重新构造设置角色后生效。
 
 ## 故障分析
 
@@ -183,9 +183,9 @@ if (beamCharge >= 1f) {
 
 ## 建议参考项
 
-* `MagicSettings`：读取合并后的 MOD 设置；
-* `MagicFakeBeam.spawnFakeBeam`：生成瞬时伤害光束；
-* `MagicUI.drawInterfaceStatusBar`：刷新玩家 HUD 状态条。
+- `MagicSettings`：读取合并后的 MOD 设置；
+- `MagicFakeBeam.spawnFakeBeam`：生成瞬时伤害光束；
+- `MagicUI.drawInterfaceStatusBar`：刷新玩家 HUD 状态条。
 ::: details 完整成品：GearInBeamCaster
 
 ```java

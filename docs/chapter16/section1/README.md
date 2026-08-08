@@ -10,17 +10,17 @@ GearIn 同时使用四个渲染与工具前置；缺少其中任何一个时，�
 
 完成后，您将能够：
 
-* 在 `mod_info.json` 中声明依赖 ID 与最低版本，让启动器在加载前完成硬依赖检查；
-* 从 `ModSpecAPI.getDependencies()` 读取当前 MOD 的依赖声明；
-* 用 `ModManagerAPI` 对齐声明、启用状态与实际安装版本；
-* 区分启动器拒绝加载与 Java 诊断日志各自能证明的事实；
-* 从 MOD ID、启用状态和版本信息定位依赖检查故障。
+- 在 `mod_info.json` 中声明依赖 ID 与最低版本，让启动器在加载前完成硬依赖检查；
+- 从 `ModSpecAPI.getDependencies()` 读取当前 MOD 的依赖声明；
+- 用 `ModManagerAPI` 对齐声明、启用状态与实际安装版本；
+- 区分启动器拒绝加载与 Java 诊断日志各自能证明的事实；
+- 从 MOD ID、启用状态和版本信息定位依赖检查故障。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确硬依赖检查需求
 
@@ -128,10 +128,10 @@ if (self == null) return;
 
 预期结果：
 
-* 四项依赖齐全时，日志准确列出 4 条声明，并报告各自的启用状态与安装版本；
-* BoxUtil 未启用时，启动器在进入游戏前阻止 GearIn 加载并指出缺失依赖；
-* 使用显示名查询时，故障发生在 `getModSpec("GearIn")` 返回 `null` 之后；
-* 恢复精确 ID 后，应用加载阶段没有未处理异常。
+- 四项依赖齐全时，日志准确列出 4 条声明，并报告各自的启用状态与安装版本；
+- BoxUtil 未启用时，启动器在进入游戏前阻止 GearIn 加载并指出缺失依赖；
+- 使用显示名查询时，故障发生在 `getModSpec("GearIn")` 返回 `null` 之后；
+- 恢复精确 ID 后，应用加载阶段没有未处理异常。
 
 ## 故障分析
 
@@ -146,9 +146,9 @@ if (self == null) return;
 
 ## 建议参考项
 
-* `mod_info.json`：硬依赖声明与最低版本；
-* `ModManagerAPI`：读取启用列表；
-* `ModDependencyAPI`：读取当前 MOD 声明的依赖项。
+- `mod_info.json`：硬依赖声明与最低版本；
+- `ModManagerAPI`：读取启用列表；
+- `ModDependencyAPI`：读取当前 MOD 声明的依赖项。
 ::: details 完整成品：GearInDependencyCheck
 
 ```java

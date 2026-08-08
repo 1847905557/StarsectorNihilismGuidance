@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 区分原版固定公开入口与 MOD 自有 JSON 路径；
-* 说明 `strings.json` 的加载、合并、分类和取值方式；
-* 说明 JSON 注释、尾逗号、编码和字段大小写边界；
-* 使用 `SettingsAPI.loadJSON` 读取 MOD 自有 JSON；
-* 从路径、BOM、JSON 语法、字段类型和缺失文本定位故障。
+- 区分原版固定公开入口与 MOD 自有 JSON 路径；
+- 说明 `strings.json` 的加载、合并、分类和取值方式；
+- 说明 JSON 注释、尾逗号、编码和字段大小写边界；
+- 使用 `SettingsAPI.loadJSON` 读取 MOD 自有 JSON；
+- 从路径、BOM、JSON 语法、字段类型和缺失文本定位故障。
 
 ## 前置知识
 
-* [C15-S1] 的文件读取概念、MOD 相对路径和 `modId`；
-* [C1-S1] 的 JSON 基础与 UTF-8 无 BOM 要求；
-* [C6-S3] 的 `Global.getSettings()` 和日志入口。
+- [C15-S1] 的文件读取概念、MOD 相对路径和 `modId`；
+- [C1-S1] 的 JSON 基础与 UTF-8 无 BOM 要求；
+- [C6-S3] 的 `Global.getSettings()` 和日志入口。
 
 ## 固定入口与自有路径
 
@@ -34,11 +34,11 @@
 
 各来源的 `strings.json` 按启用顺序合并：
 
-* 原版内容先进入结果，后续 MOD 依次合并；
-* 对象值按键递归合并；
-* 标量值由后加载来源覆盖前一个来源；
-* 数组按键的合并规则处理，`music_*`、长度为 4 的 `color` 或 `button` 数组，以及首元素为 `core_clearArray` 的数组可以整体替换；
-* `mod_info.json` 的 `fullOverrides` 可以整体替换某个文件。
+- 原版内容先进入结果，后续 MOD 依次合并；
+- 对象值按键递归合并；
+- 标量值由后加载来源覆盖前一个来源；
+- 数组按键的合并规则处理，`music_*`、长度为 4 的 `color` 或 `button` 数组，以及首元素为 `core_clearArray` 的数组可以整体替换；
+- `mod_info.json` 的 `fullOverrides` 可以整体替换某个文件。
 
 MOD 只需要写自己的键，原版和其他 MOD 的键会继续保留。相同 `(category, id)` 的文本会受启用顺序影响，因此自有分类和键应使用 MOD 前缀，避免覆盖已有文本。
 
@@ -62,8 +62,8 @@ String text = Global.getSettings().getString("GearIn_ui", "GearIn_text_hello");
 
 strings 的值可以包含两类占位符：
 
-* `$token` 不会由引擎自动替换，使用方必须在取值后替换；
-* `%s` 不会由引擎自动格式化，取值侧使用 `String.format` 传入参数。
+- `$token` 不会由引擎自动替换，使用方必须在取值后替换；
+- `%s` 不会由引擎自动格式化，取值侧使用 `String.format` 传入参数。
 
 例如，`$fleetName` 需要由舰队遭遇文本的使用方替换；`%s` 的参数数量和类型必须与模板一致。
 
@@ -129,9 +129,9 @@ JSON 路径继续遵守 [C15-S1] 的资源路径规则。`validateFileName` 会�
 
 预期结果：
 
-* JSON 返回 `GearIn_service` 和数值 `10`；
-* 双参调用只读取 `gear_in` 的资源；
-* 路径、编码、语法和字段类型正确时，启动日志没有 JSON 读取异常。
+- JSON 返回 `GearIn_service` 和数值 `10`；
+- 双参调用只读取 `gear_in` 的资源；
+- 路径、编码、语法和字段类型正确时，启动日志没有 JSON 读取异常。
 
 清理：删除入口类中的临时日志探针。
 
@@ -148,10 +148,10 @@ JSON 路径继续遵守 [C15-S1] 的资源路径规则。`validateFileName` 会�
 
 预期结果：
 
-* 原版与 `gear_in` 的 strings 文件都在启动阶段被加载；
-* `gear_in` 自有键可以通过双参 `getString` 读取；
-* 相同键由后加载来源覆盖；
-* 分类或键大小写不一致时返回 `Missing string: [<id>]`，日志记录 ERROR。
+- 原版与 `gear_in` 的 strings 文件都在启动阶段被加载；
+- `gear_in` 自有键可以通过双参 `getString` 读取；
+- 相同键由后加载来源覆盖；
+- 分类或键大小写不一致时返回 `Missing string: [<id>]`，日志记录 ERROR。
 
 清理：删除测试 MOD 中与原版冲突的键和日志探针，恢复测试前的 `strings.json`。
 
@@ -171,6 +171,6 @@ JSON 路径继续遵守 [C15-S1] 的资源路径规则。`validateFileName` 会�
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.SettingsAPI`：`loadJSON`、`getString` 和 `validateFileName`；
-* `data/strings/strings.json`：原版公开的本地化文本入口；
-* `data/config/`：MOD 自有 JSON 资源目录；
+- `com.fs.starfarer.api.SettingsAPI`：`loadJSON`、`getString` 和 `validateFileName`；
+- `data/strings/strings.json`：原版公开的本地化文本入口；
+- `data/config/`：MOD 自有 JSON 资源目录；

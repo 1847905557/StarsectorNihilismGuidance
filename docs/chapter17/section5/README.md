@@ -10,15 +10,15 @@ GearIn 的市场进入地面战后，原版定义不会自动理解专属产业�
 
 完成后，您将能够：
 
-* 在 `groundBattleDefs.json` 中登记 GearIn 产业和地面单位；
-* 为产业直接绑定插件类，并区分通用 `plugins` 表；
-* 用 `GBDataManager` 和 `GroundUnitDef` 在进入地面战前核对合并结果。
+- 在 `groundBattleDefs.json` 中登记 GearIn 产业和地面单位；
+- 为产业直接绑定插件类，并区分通用 `plugins` 表；
+- 用 `GBDataManager` 和 `GroundUnitDef` 在进入地面战前核对合并结果。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 接入地面战定义
 
@@ -122,10 +122,10 @@ String className = GBDataManager.getPluginsById().get(pluginId);
 
 预期结果：
 
-* `GBDataManager.getIndustryDef` 返回 GearIn 产业定义而非默认定义；
-* `GroundUnitDef.getUnitDef` 返回 GearIn 单位；
-* 产业插件类名和通用插件映射分别核对成功；
-* 地面战界面显示该产业贡献的部队数值。
+- `GBDataManager.getIndustryDef` 返回 GearIn 产业定义而非默认定义；
+- `GroundUnitDef.getUnitDef` 返回 GearIn 单位；
+- 产业插件类名和通用插件映射分别核对成功；
+- 地面战界面显示该产业贡献的部队数值。
 
 ## 故障分析
 
@@ -140,9 +140,9 @@ String className = GBDataManager.getPluginsById().get(pluginId);
 
 ## 建议参考项
 
-* `groundBattleDefs.json`：地面战合并定义；
-* `GBDataManager.getIndustryDef`：查询产业定义；
-* `GBDataManager.getPluginsById`：查询插件类映射。
+- `groundBattleDefs.json`：地面战合并定义；
+- `GBDataManager.getIndustryDef`：查询产业定义；
+- `GBDataManager.getPluginsById`：查询插件类映射。
 ::: details 完整成品：GearInGroundBattleProbe
 
 ```java

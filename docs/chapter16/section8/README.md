@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 从 `OnFireEffectPlugin` 为每枚发射物创建独立尾迹状态；
-* 为同一弹体分配并跨帧复用两条 MagicTrail ID；
-* 按时间间隔追加实体关联的尾迹节点；
-* 检测位置跳变，切断旧段并用新 ID 从新位置续接；
-* 在命中、淡出或离场时移除跟踪插件。
+- 从 `OnFireEffectPlugin` 为每枚发射物创建独立尾迹状态；
+- 为同一弹体分配并跨帧复用两条 MagicTrail ID；
+- 按时间间隔追加实体关联的尾迹节点；
+- 检测位置跳变，切断旧段并用新 ID 从新位置续接；
+- 在命中、淡出或离场时移除跟踪插件。
 
 ## 前置知识
 
-* [C7-S1] 的战斗插件、暂停守卫与每帧时间；
-* [C7-S4] 的战斗实体有效性与收尾；
-* 能够在武器 CSV 中为弹体武器注册 `OnFireEffectPlugin`。
+- [C7-S1] 的战斗插件、暂停守卫与每帧时间；
+- [C7-S4] 的战斗实体有效性与收尾；
+- 能够在武器 CSV 中为弹体武器注册 `OnFireEffectPlugin`。
 
 ## 明确尾迹生命周期
 
@@ -244,11 +244,11 @@ public class GearInMagicTrail implements OnFireEffectPlugin {
 
 预期结果：
 
-* 每枚弹体创建 1 个跟踪插件、2 条独立尾迹 ID；
-* 非暂停状态下每 0.05 秒最多追加一组两层节点；
-* 位置跳变超过 250 su 时，两条旧尾迹同时切断，新节点使用新 ID；
-* 命中、淡出或离场后，跟踪插件从引擎移除；
-* `starsector.log` 没有未处理异常。
+- 每枚弹体创建 1 个跟踪插件、2 条独立尾迹 ID；
+- 非暂停状态下每 0.05 秒最多追加一组两层节点；
+- 位置跳变超过 250 su 时，两条旧尾迹同时切断，新节点使用新 ID；
+- 命中、淡出或离场后，跟踪插件从引擎移除；
+- `starsector.log` 没有未处理异常。
 
 ## 故障分析
 
@@ -263,7 +263,7 @@ MagicTrail 的连续性由 "同一弹体、同一段飞行、同一 ID" 决定�
 
 ## 建议参考项
 
-* `MagicTrailPlugin.getUniqueID`：创建战斗内尾迹标识；
-* `MagicTrailPlugin.addTrailMemberSimple`：追加实体关联的尾迹节点；
-* `MagicTrailPlugin.cutTrailsOnEntity`：同时切断同一实体关联的现有尾迹；
-* `CombatEngineAPI.removePlugin`：结束单枚弹体的跟踪器。
+- `MagicTrailPlugin.getUniqueID`：创建战斗内尾迹标识；
+- `MagicTrailPlugin.addTrailMemberSimple`：追加实体关联的尾迹节点；
+- `MagicTrailPlugin.cutTrailsOnEntity`：同时切断同一实体关联的现有尾迹；
+- `CombatEngineAPI.removePlugin`：结束单枚弹体的跟踪器。

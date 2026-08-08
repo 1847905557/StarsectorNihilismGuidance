@@ -10,15 +10,15 @@
 
 完成后，您将能够：
 
-* 绑定 BoxUtil 的全局矩阵 UBO，并检查 block 名称与 binding；
-* 用可复用的模型矩阵让投影跟随舰船位置和 facing；
-* 把纹理绑定到明确的纹理单元，并在错误时定位 sampler 状态。
+- 绑定 BoxUtil 的全局矩阵 UBO，并检查 block 名称与 binding；
+- 用可复用的模型矩阵让投影跟随舰船位置和 facing；
+- 把纹理绑定到明确的纹理单元，并在错误时定位 sampler 状态。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 建立跟随舰船的纹理投影
 
@@ -117,11 +117,11 @@ GL20.glUniform1i(texLocation, 0);
 
 预期结果：
 
-* 相机移动与缩放后投影仍锚定世界；
-* 日志中的 location 均非 -1；
-* 舰船转向时纹理同角度旋转；
-* 投影显示纹理内容而非纯色或黑块；
-* UBO、uniform 和 sampler 提交没有 `-1` location 或 GL 错误日志。
+- 相机移动与缩放后投影仍锚定世界；
+- 日志中的 location 均非 -1；
+- 舰船转向时纹理同角度旋转；
+- 投影显示纹理内容而非纯色或黑块；
+- UBO、uniform 和 sampler 提交没有 `-1` location 或 GL 错误日志。
 
 ## 故障分析
 
@@ -136,9 +136,9 @@ GL20.glUniform1i(texLocation, 0);
 
 ## 建议参考项
 
-* `BUtilGlobalData`：BoxUtil 全局视口 UBO；
-* `ShaderProgram.getUBOIndex`：绑定 uniform block；
-* `glUniformMatrix4`：提交列主序模型矩阵。
+- `BUtilGlobalData`：BoxUtil 全局视口 UBO；
+- `ShaderProgram.getUBOIndex`：绑定 uniform block；
+- `glUniformMatrix4`：提交列主序模型矩阵。
 ::: details 完整成品：GearInShaderVisual
 
 ```java

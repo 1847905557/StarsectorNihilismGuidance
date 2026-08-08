@@ -10,23 +10,23 @@
 
 完成后，您将能够：
 
-* 说出战斗插件的三条注册路径 (settings `plugins` 段、战斗内 `addPlugin(...)`、战役 `MissionDefinitionAPI.addPlugin(...)`)，并解释每场战斗插件实例如何被创建与附加；
-* 说出插件回调的帧内顺序 (`processInputPreCoreControls` → `advance` → 渲染回调)，并解释 `init()` 已废弃的原因与 `advance()` 必须判 `engine == null` 的原因；
-* 用 `removePlugin(...)` / `hasPluginOfClass(...)` 管理插件的战斗内移除，并说出自移除时必须同时移除自己注册的引擎级监听器；
-* 说出公开监听器系统的三块注册表面 (引擎 / 舰船 / 统计) 与十类监听器各自的必须遵守的放置规则，以及放错层级后的可观察结果 (静默不生效、无报错)；
-* 说出引擎内部的事件监听器接口不是公开 API、MOD 代码不能实现它，并指出 MOD 侧对应的事件入口；
-* 解释为什么战斗结束没有清理回调，以及正确的收尾方式 —— 在 `advance()` 里用 `engine.isCombatOver()` 识别、随战斗结束由引擎销毁统一释放；
-* 从症状定位七类典型故障：`init()` 依赖、监听器放错层级、插件移除后监听器残留、跨战斗缓存引用、暂停期间状态推进、内部接口误用、收尾时机不可靠。
+- 说出战斗插件的三条注册路径 (settings `plugins` 段、战斗内 `addPlugin(...)`、战役 `MissionDefinitionAPI.addPlugin(...)`)，并解释每场战斗插件实例如何被创建与附加；
+- 说出插件回调的帧内顺序 (`processInputPreCoreControls` → `advance` → 渲染回调)，并解释 `init()` 已废弃的原因与 `advance()` 必须判 `engine == null` 的原因；
+- 用 `removePlugin(...)` / `hasPluginOfClass(...)` 管理插件的战斗内移除，并说出自移除时必须同时移除自己注册的引擎级监听器；
+- 说出公开监听器系统的三块注册表面 (引擎 / 舰船 / 统计) 与十类监听器各自的必须遵守的放置规则，以及放错层级后的可观察结果 (静默不生效、无报错)；
+- 说出引擎内部的事件监听器接口不是公开 API、MOD 代码不能实现它，并指出 MOD 侧对应的事件入口；
+- 解释为什么战斗结束没有清理回调，以及正确的收尾方式 —— 在 `advance()` 里用 `engine.isCombatOver()` 识别、随战斗结束由引擎销毁统一释放；
+- 从症状定位七类典型故障：`init()` 依赖、监听器放错层级、插件移除后监听器残留、跨战斗缓存引用、暂停期间状态推进、内部接口误用、收尾时机不可靠。
 
 ## 前置知识
 
-* [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-* [C3-S1] 的战役与生涯概念、测试战役入口；
-* [C6-S1] 的 Java 构建与 JAR 输出；
-* [C6-S3] 的引擎生命周期与跨战斗引用边界；
-* [C7-S1] 的战斗插件注册、每帧回调与暂停判断；
-* [C7-S2] 的 `isCombatOver()`、时间语义、实体遍历与存活性；
-* [C12-S2] 的生涯侧监听器通用概念。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
+- [C3-S1] 的战役与生涯概念、测试战役入口；
+- [C6-S1] 的 Java 构建与 JAR 输出；
+- [C6-S3] 的引擎生命周期与跨战斗引用边界；
+- [C7-S1] 的战斗插件注册、每帧回调与暂停判断；
+- [C7-S2] 的 `isCombatOver()`、时间语义、实体遍历与存活性；
+- [C12-S2] 的生涯侧监听器通用概念。
 
 ## 文件与 API 链路
 
@@ -88,9 +88,9 @@ OP 修正器 "Should be used with care, and ideally only through built-in hullmo
 
 插件适配器是引擎内部的适配层：
 
-* `advance` 把输入事件列表转成 `List<InputEventAPI>` 后透传 `plugin.advance(amount, events)`；
-* `renderInWorldCoords` / `renderInUICoords` 原样透传；
-* `init` 把当前战斗引擎实例传给 `plugin.init(...)`。
+- `advance` 把输入事件列表转成 `List<InputEventAPI>` 后透传 `plugin.advance(amount, events)`；
+- `renderInWorldCoords` / `renderInUICoords` 原样透传；
+- `init` 把当前战斗引擎实例传给 `plugin.init(...)`。
 
 ### 为什么存在插件适配器这一层
 
@@ -98,9 +98,9 @@ OP 修正器 "Should be used with care, and ideally only through built-in hullmo
 
 ### 帧内调用顺序
 
-* 输入：战斗状态处理输入，经战斗地图派发到每个插件适配器的 `processInputPreCoreControls`(引擎对特定异常做了抑制，其余异常包装后抛出)。
-* 推进：战斗地图推进时每个地形 (含插件适配器) 的 `advance` 都被调用。暂停分支同样执行。
-* 渲染：战斗地图的 `renderForeground` 等阶段调用插件适配器的 `renderInWorldCoords`。
+- 输入：战斗状态处理输入，经战斗地图派发到每个插件适配器的 `processInputPreCoreControls`(引擎对特定异常做了抑制，其余异常包装后抛出)。
+- 推进：战斗地图推进时每个地形 (含插件适配器) 的 `advance` 都被调用。暂停分支同样执行。
+- 渲染：战斗地图的 `renderForeground` 等阶段调用插件适配器的 `renderInWorldCoords`。
 
 ### init() 已废弃：为什么 `advance()` 必须先判空
 
@@ -118,8 +118,8 @@ OP 修正器 "Should be used with care, and ideally only through built-in hullmo
 
 ### 移除与战斗结束清理
 
-* `engine.removePlugin(plugin)`：从战斗地形列表里移除对应插件适配器，此后该插件**不再收到任何回调**。`hasPluginOfClass(Class)` 遍历同一份地形列表做类型查询。
-* **战斗结束没有清理回调**：`EveryFrameCombatPlugin` 没有 "战斗结束" 通知方法。战斗结束收尾时引擎销毁当前战斗实例：内部监听器表、战斗地图 (承载插件的对象)、`customData` 全部随之释放，实例被丢弃 —— 插件、引擎级监听器、战斗级共享状态一并释放。**插件与监听器随战斗结束 "被统一释放"，而不是 "收到通知后自己清理"**；需要在结束时刻做事的插件，必须在 `advance()` 里用 `engine.isCombatOver()` 识别时机。该方法在胜负标志置位且引擎内部结束 fader 完成后返回 `true`，此时战斗状态仍会进入结算或退出过渡。
+- `engine.removePlugin(plugin)`：从战斗地形列表里移除对应插件适配器，此后该插件**不再收到任何回调**。`hasPluginOfClass(Class)` 遍历同一份地形列表做类型查询。
+- **战斗结束没有清理回调**：`EveryFrameCombatPlugin` 没有 "战斗结束" 通知方法。战斗结束收尾时引擎销毁当前战斗实例：内部监听器表、战斗地图 (承载插件的对象)、`customData` 全部随之释放，实例被丢弃 —— 插件、引擎级监听器、战斗级共享状态一并释放。**插件与监听器随战斗结束 "被统一释放"，而不是 "收到通知后自己清理"**；需要在结束时刻做事的插件，必须在 `advance()` 里用 `engine.isCombatOver()` 识别时机。该方法在胜负标志置位且引擎内部结束 fader 完成后返回 `true`，此时战斗状态仍会进入结算或退出过渡。
 
 ### 禁止跨战斗缓存插件、监听器或引擎引用
 
@@ -153,10 +153,10 @@ OP 修正器 "Should be used with care, and ideally only through built-in hullmo
 
 ### 派发行为
 
-* 部署事件：战斗舰队管理器自动部署与战情室手动部署都会触发部署事件 —— 内部监听器派发一轮，`CombatListenerUtil.reportFleetMemberDeployed` 派发引擎级 `FleetMemberDeploymentListener`(舰船级分支在 util 里被注释掉，这就是 "只能引擎" 的实现依据)。
-* 伤害族：舰船/导弹命中结算先派发引擎级 `DamageDealtModifier` / `DamageTakenModifier`，再派发攻击者 / 目标舰船级；结算后 `reportDamageApplied` 派发引擎级 + 来源舰船级 `DamageListener`；船体伤害前 `notifyAboutToTakeHullDamage` 聚合引擎级 + 舰船级返回值，任一 `true` 抵消。
-* 范围与 OP：`CombatListenerUtil` 的范围修正只查舰船级表，OP 修正只查 stats 级表 —— 与 javadoc 放置规则一一对应。
-* 迭代纪律：引擎派发与 `CombatListenerUtil` 都**先拷贝列表再迭代** (`new ArrayList<>(...)`)，监听器表内部统一存储、`getListeners(Class)` 返回的是可迭代视图。**建议**：不要在监听器回调内部对同一张监听器表增删 (要增删先取快照)；同一场战斗重复注册同一类监听器前用 `hasListenerOfClass` 先判断是否已注册 (这是成熟实例的通用做法)。
+- 部署事件：战斗舰队管理器自动部署与战情室手动部署都会触发部署事件 —— 内部监听器派发一轮，`CombatListenerUtil.reportFleetMemberDeployed` 派发引擎级 `FleetMemberDeploymentListener`(舰船级分支在 util 里被注释掉，这就是 "只能引擎" 的实现依据)。
+- 伤害族：舰船/导弹命中结算先派发引擎级 `DamageDealtModifier` / `DamageTakenModifier`，再派发攻击者 / 目标舰船级；结算后 `reportDamageApplied` 派发引擎级 + 来源舰船级 `DamageListener`；船体伤害前 `notifyAboutToTakeHullDamage` 聚合引擎级 + 舰船级返回值，任一 `true` 抵消。
+- 范围与 OP：`CombatListenerUtil` 的范围修正只查舰船级表，OP 修正只查 stats 级表 —— 与 javadoc 放置规则一一对应。
+- 迭代纪律：引擎派发与 `CombatListenerUtil` 都**先拷贝列表再迭代** (`new ArrayList<>(...)`)，监听器表内部统一存储、`getListeners(Class)` 返回的是可迭代视图。**建议**：不要在监听器回调内部对同一张监听器表增删 (要增删先取快照)；同一场战斗重复注册同一类监听器前用 `hasListenerOfClass` 先判断是否已注册 (这是成熟实例的通用做法)。
 
 ### 内部事件监听接口：不是公开 API
 
@@ -172,9 +172,9 @@ OP 修正器 "Should be used with care, and ideally only through built-in hullmo
 
 与公开 API 的关系 (硬边界)：
 
-* **内部事件监听接口不在公开 API 编译面中，MOD 代码不能实现或注册它**。可观察结果：编译期报类找不到 (公开 API 编译面不含它)；即便通过内部类路径编译通过，它依赖的内部类型与注册表是引擎内部未公开的约定，任何版本都可能变动。
-* MOD 侧对应的事件入口是公开的 `com.fs.starfarer.api.combat.listeners`：部署事件 → `FleetMemberDeploymentListener`；伤害 → `DamageDealtModifier` / `DamageTakenModifier` / `DamageListener` / `HullDamageAboutToBeTakenListener`；"战斗结束" 本身没有事件，用 `advance()` + `engine.isCombatOver()`。
-* 内部接口仅作边界说明，不作为 API 引用。
+- **内部事件监听接口不在公开 API 编译面中，MOD 代码不能实现或注册它**。可观察结果：编译期报类找不到 (公开 API 编译面不含它)；即便通过内部类路径编译通过，它依赖的内部类型与注册表是引擎内部未公开的约定，任何版本都可能变动。
+- MOD 侧对应的事件入口是公开的 `com.fs.starfarer.api.combat.listeners`：部署事件 → `FleetMemberDeploymentListener`；伤害 → `DamageDealtModifier` / `DamageTakenModifier` / `DamageListener` / `HullDamageAboutToBeTakenListener`；"战斗结束" 本身没有事件，用 `advance()` + `engine.isCombatOver()`。
+- 内部接口仅作边界说明，不作为 API 引用。
 
 ## 状态归属与清理速查表
 
@@ -292,12 +292,12 @@ Starsector\mods\GearIndustry\
 
 对应关系：
 
-* `init` 里的注册：`engine.getListenerManager().hasListenerOfClass(...)` 判断 + `addListener(...)`(成熟实例的注册做法)，日志行 `GearIn lifecycle init:` 是注册成功的现场证明。
-* `advance` 的三个前置判断：`engine == null`(规则 5)、`engine.isPaused()`(规则 6)、`finalized`(防止同帧重复收尾)。
-* `advance` 的收尾识别：`engine.isCombatOver()` 为 `true` 时调用 `finalizeBattle()`—— 战斗结束没有回调，收尾必须在推进循环里自行识别 (规则 3)。
-* `finalizeBattle`：**先** `removeListener`(引擎级监听器不随插件移除，规则 2)**，再** `removePlugin(this)`(此后插件不再收到回调)。
-* `GearInDeploymentListener`：引擎级 `FleetMemberDeploymentListener`(必须遵守的放置规则：只能引擎)；`deployedCount` 是监听器自己持有的战斗级状态，随战斗结束释放。
-* `IntervalUtil(2f, 2f)`：固定 2 秒节奏的周期日志 (与战斗状态读取单元同款)。
+- `init` 里的注册：`engine.getListenerManager().hasListenerOfClass(...)` 判断 + `addListener(...)`(成熟实例的注册做法)，日志行 `GearIn lifecycle init:` 是注册成功的现场证明。
+- `advance` 的三个前置判断：`engine == null`(规则 5)、`engine.isPaused()`(规则 6)、`finalized`(防止同帧重复收尾)。
+- `advance` 的收尾识别：`engine.isCombatOver()` 为 `true` 时调用 `finalizeBattle()`—— 战斗结束没有回调，收尾必须在推进循环里自行识别 (规则 3)。
+- `finalizeBattle`：**先** `removeListener`(引擎级监听器不随插件移除，规则 2)**，再** `removePlugin(this)`(此后插件不再收到回调)。
+- `GearInDeploymentListener`：引擎级 `FleetMemberDeploymentListener`(必须遵守的放置规则：只能引擎)；`deployedCount` 是监听器自己持有的战斗级状态，随战斗结束释放。
+- `IntervalUtil(2f, 2f)`：固定 2 秒节奏的周期日志 (与战斗状态读取单元同款)。
 
 注册片段 (工程片段 —— 本节不改动前置单元所有文件，只演示调用)：
 
@@ -322,8 +322,8 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 (可用 `jar tf` 核对)：
 
-* `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class`
-* `data/scripts/gearin/combat/GearInDeploymentListener.class`
+- `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class`
+- `data/scripts/gearin/combat/GearInDeploymentListener.class`
 
 ## 关键故障实验：战斗结束后监听器仍在写日志
 
@@ -358,9 +358,9 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 
 预期结果：
 
-* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class` 与 `data/scripts/gearin/combat/GearInDeploymentListener.class`。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class` 与 `data/scripts/gearin/combat/GearInDeploymentListener.class`。
 
-* **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行。
+- **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行。
 
     ```text
     GearIn lifecycle init: deployment listener registered
@@ -368,7 +368,7 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 
     没有 `ERROR`。若已有战斗注册片段则每场战斗出现一次 (每场战斗都是新实例，必须遵守的规则：不跨战斗缓存)。
 
-* **周期报告**：战斗 (未暂停) 中每 2 秒出现一行。
+- **周期报告**：战斗 (未暂停) 中每 2 秒出现一行。
 
     ```text
     GearIn lifecycle: total=<秒数> combatOver=false
@@ -376,7 +376,7 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 
     `total` 稳步增长 (暂停期间无输出)。
 
-* **部署监听器**：任意成员部署时 (敌方 AI 自动部署、用户从后备手动部署都算) 出现一行。
+- **部署监听器**：任意成员部署时 (敌方 AI 自动部署、用户从后备手动部署都算) 出现一行。
 
     ```text
     GearIn deployed: ally=false fighterWing=false ship=<hullId>
@@ -384,7 +384,7 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 
     每场战斗的 `deployments=` 计数等于该场部署日志条数 (监听器状态随战斗归属)。
 
-* **战斗结束收尾**：胜负判定后 (结束动画期间) 出现一行。
+- **战斗结束收尾**：胜负判定后 (结束动画期间) 出现一行。
 
     ```text
     GearIn lifecycle finalize: deployments=<n> listener removed, plugin removed
@@ -392,7 +392,7 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 
     此后**不再有**周期报告与部署日志 —— 插件已 `removePlugin`、监听器已 `removeListener`；战斗淡出与结算照常进行 (收尾不依赖任何 "战斗结束回调"，规则 3)。
 
-* **跨战斗实例**：退出战斗再进一场，日志再次出现 `GearIn lifecycle init:`，且 `deployments=` 从头计数 —— 每场战斗新实例，旧引用全部作废 (规则 1)。
+- **跨战斗实例**：退出战斗再进一场，日志再次出现 `GearIn lifecycle init:`，且 `deployments=` 从头计数 —— 每场战斗新实例，旧引用全部作废 (规则 1)。
 
     没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInCombatLifecyclePlugin` / `GearInDeploymentListener`)。
 
@@ -417,18 +417,18 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：每帧战斗回调接口 (`processInputPreCoreControls` / `advance` / `renderInWorldCoords` / `renderInUICoords`)，`extends CombatEnginePlugin`。
-* `com.fs.starfarer.api.combat.CombatEnginePlugin`：插件父接口，`init` 已废弃 (不保证先于 `advance()` 被调用)。
-* `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：五个回调的空实现基类。
-* `com.fs.starfarer.api.combat.CombatEngineAPI`：当前战斗引擎接口，提供 `addPlugin` / `removePlugin` / `hasPluginOfClass` / `getListenerManager` / `getCustomData`。
-* `com.fs.starfarer.api.combat.ShipAPI` 与 `com.fs.starfarer.api.combat.MutableShipStatsAPI`：舰船级 / 统计级监听器表的取得与增删查。
-* `com.fs.starfarer.api.combat.listeners.CombatListenerManagerAPI`：监听器表统一接口 (`addListener` / `removeListener` / `removeListenerOfClass` / `hasListener` / `hasListenerOfClass` / `getListeners`)。
-* `com.fs.starfarer.api.combat.listeners.*`：公开监听器接口族，各类的必须遵守的放置规则见接口 javadoc。
-* `com.fs.starfarer.api.combat.listeners.CombatListenerUtil`：引擎内部派发入口 (伤害 / 范围 / OP / 部署)。
-* `com.fs.starfarer.api.combat.DeployedFleetMemberAPI`：部署成员信息 (`getMember` / `isFighterWing` / `getShip` / `isAlly` / `isStationModule`)。
-* `com.fs.starfarer.api.mission.FleetSide`：舰队侧枚举 (`PLAYER` / `ENEMY`)。
-* `com.fs.starfarer.api.util.IntervalUtil`：定期间隔触发工具 (本节示例用于周期日志)。
-* `data/config/settings.json`：原版配置，`plugins` 段按 "唯一 key → 完整类名" 登记每场战斗实例化的插件。
+- `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：每帧战斗回调接口 (`processInputPreCoreControls` / `advance` / `renderInWorldCoords` / `renderInUICoords`)，`extends CombatEnginePlugin`。
+- `com.fs.starfarer.api.combat.CombatEnginePlugin`：插件父接口，`init` 已废弃 (不保证先于 `advance()` 被调用)。
+- `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：五个回调的空实现基类。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：当前战斗引擎接口，提供 `addPlugin` / `removePlugin` / `hasPluginOfClass` / `getListenerManager` / `getCustomData`。
+- `com.fs.starfarer.api.combat.ShipAPI` 与 `com.fs.starfarer.api.combat.MutableShipStatsAPI`：舰船级 / 统计级监听器表的取得与增删查。
+- `com.fs.starfarer.api.combat.listeners.CombatListenerManagerAPI`：监听器表统一接口 (`addListener` / `removeListener` / `removeListenerOfClass` / `hasListener` / `hasListenerOfClass` / `getListeners`)。
+- `com.fs.starfarer.api.combat.listeners.*`：公开监听器接口族，各类的必须遵守的放置规则见接口 javadoc。
+- `com.fs.starfarer.api.combat.listeners.CombatListenerUtil`：引擎内部派发入口 (伤害 / 范围 / OP / 部署)。
+- `com.fs.starfarer.api.combat.DeployedFleetMemberAPI`：部署成员信息 (`getMember` / `isFighterWing` / `getShip` / `isAlly` / `isStationModule`)。
+- `com.fs.starfarer.api.mission.FleetSide`：舰队侧枚举 (`PLAYER` / `ENEMY`)。
+- `com.fs.starfarer.api.util.IntervalUtil`：定期间隔触发工具 (本节示例用于周期日志)。
+- `data/config/settings.json`：原版配置，`plugins` 段按 "唯一 key → 完整类名" 登记每场战斗实例化的插件。
 ::: details 完整成品：GearInCombatLifecyclePlugin
 
 ```java

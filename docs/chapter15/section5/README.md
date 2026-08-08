@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 为 MOD 组织 `GearIn_ui` 和 `GearIn_dialog` 分类；
-* 使用 `GearIn_text_*` 前缀命名自有键；
-* 实现 `GearInI18n` 的分类取值、`%s` 格式化和 `$token` 替换；
-* 区分代码驱动文本与 `descriptions.csv` 的对象描述文本；
-* 通过界面或日志观察本地化文本和缺失键结果。
+- 为 MOD 组织 `GearIn_ui` 和 `GearIn_dialog` 分类；
+- 使用 `GearIn_text_*` 前缀命名自有键；
+- 实现 `GearInI18n` 的分类取值、`%s` 格式化和 `$token` 替换；
+- 区分代码驱动文本与 `descriptions.csv` 的对象描述文本；
+- 通过界面或日志观察本地化文本和缺失键结果。
 
 ## 前置知识
 
-* [C15-S2] 的 `strings.json` 固定入口、双参 `getString`、缺失键和占位符规则；
-* [C1-S1] 的 MOD 目录结构与 `gear_in` 示例 MOD；
-* [C1-S7]、[C3-S8] 的 `descriptions.csv` 键规则与使用方。
+- [C15-S2] 的 `strings.json` 固定入口、双参 `getString`、缺失键和占位符规则；
+- [C1-S1] 的 MOD 目录结构与 `gear_in` 示例 MOD；
+- [C1-S7]、[C3-S8] 的 `descriptions.csv` 键规则与使用方。
 
 ## 本地化组织
 
@@ -118,11 +118,11 @@ public final class GearInI18n {
 
 预期结果：
 
-* 界面或日志出现 `你好，工坊。`；
-* `%s` 被依次替换为 `工坊之锤` 和 `Chicomoztoc`；
-* `$planetName` 在调用 `replaceToken` 后显示为 `Jangala`；
-* 缺失键返回 `Missing string: [GearIn_text_does_not_exist]`，日志记录 ERROR；
-* 对象描述继续来自 `descriptions.csv`，代码驱动文本来自 `strings.json`。
+- 界面或日志出现 `你好，工坊。`；
+- `%s` 被依次替换为 `工坊之锤` 和 `Chicomoztoc`；
+- `$planetName` 在调用 `replaceToken` 后显示为 `Jangala`；
+- 缺失键返回 `Missing string: [GearIn_text_does_not_exist]`，日志记录 ERROR；
+- 对象描述继续来自 `descriptions.csv`，代码驱动文本来自 `strings.json`。
 
 清理：删除临时日志或界面探针，恢复测试用的 `strings.json`。
 
@@ -140,7 +140,7 @@ public final class GearInI18n {
 
 ## 建议参考项
 
-* `data/strings/strings.json`：本节示例的分类和键；
-* `com.fs.starfarer.api.SettingsAPI.getString(String category, String id)`：双参取值入口；
-* `data.scripts.gearin.campaign.GearInI18n`：本节示例封装类；
-* `descriptions.csv`：对象风味文本的独立数据入口。
+- `data/strings/strings.json`：本节示例的分类和键；
+- `com.fs.starfarer.api.SettingsAPI.getString(String category, String id)`：双参取值入口；
+- `data.scripts.gearin.campaign.GearInI18n`：本节示例封装类；
+- `descriptions.csv`：对象风味文本的独立数据入口。

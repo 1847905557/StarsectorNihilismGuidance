@@ -10,16 +10,16 @@
 
 完成后，您将能够：
 
-* 在 `commodities.csv` 注册一个唯一商品 ID；
-* 根据需求类别、价格、堆叠和货舱占用选择字段；
-* 让势力文件引用该商品并在交易界面观察违禁标记；
-* 区分商品注册成功、商品描述挂接和经济流入三件事。
+- 在 `commodities.csv` 注册一个唯一商品 ID；
+- 根据需求类别、价格、堆叠和货舱占用选择字段；
+- 让势力文件引用该商品并在交易界面观察违禁标记；
+- 区分商品注册成功、商品描述挂接和经济流入三件事。
 
 ## 前置知识
 
-* [C1-S1] 的 MOD 目录、CSV 合并与 UTF-8 无 BOM 规则；
-* [C3-S3] 的势力文件路径与 `illegalCommodities` 字段；
-* 能够启用 Console Commands 并进入生涯市场。
+- [C1-S1] 的 MOD 目录、CSV 合并与 UTF-8 无 BOM 规则；
+- [C3-S3] 的势力文件路径与 `illegalCommodities` 字段；
+- 能够启用 Console Commands 并进入生涯市场。
 
 ## 确定商品身份
 
@@ -100,9 +100,9 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 
 预期结果：
 
-* 商品名称、ID、图标、堆叠和货舱占用均可观察；
-* 交易界面显示 GearIn 商品的违禁状态；
-* 日志没有 `Invalid illegal commodity id`、CSV 列错位或图标加载错误。
+- 商品名称、ID、图标、堆叠和货舱占用均可观察；
+- 交易界面显示 GearIn 商品的违禁状态；
+- 日志没有 `Invalid illegal commodity id`、CSV 列错位或图标加载错误。
 
 ## 故障分析
 
@@ -117,10 +117,10 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 
 ## 建议参考项
 
-* `data/campaign/commodities.csv`：商品注册表；
-* `data/world/factions/gear_industry.faction`：势力违禁商品入口；
-* `data/strings/descriptions.csv` 的 `RESOURCE`：商品货舱描述；
-* Console Commands 的 `addcommodity`：快速创建货舱验证状态。
+- `data/campaign/commodities.csv`：商品注册表；
+- `data/world/factions/gear_industry.faction`：势力违禁商品入口；
+- `data/strings/descriptions.csv` 的 `RESOURCE`：商品货舱描述；
+- Console Commands 的 `addcommodity`：快速创建货舱验证状态。
 
 ::: details 完整成品：商品注册与势力规则
 

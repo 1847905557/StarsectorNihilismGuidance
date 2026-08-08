@@ -10,18 +10,18 @@
 
 完成后，您将能够：
 
-* 使用 `Global.getSettings().getSettingsJSON()` 观察合并后的 settings 对象；
-* 使用 `getString`、`getFloat`、`getInt`、`getBoolean`、`getColor` 和 `optBoolean` 读取设置；
-* 说出 settings.json 的对象键合并和启动器关键键边界；
-* 解释 `getInt` 的截断、缺失键异常和可选键缺省值；
-* 识别 settings 缓存、内存修改与存档持久化之间的区别。
+- 使用 `Global.getSettings().getSettingsJSON()` 观察合并后的 settings 对象；
+- 使用 `getString`、`getFloat`、`getInt`、`getBoolean`、`getColor` 和 `optBoolean` 读取设置；
+- 说出 settings.json 的对象键合并和启动器关键键边界；
+- 解释 `getInt` 的截断、缺失键异常和可选键缺省值；
+- 识别 settings 缓存、内存修改与存档持久化之间的区别。
 
 ## 前置知识
 
-* [C6-S1] 的 Java 工具链、入口类和 `mod_info.json` 结构；
-* [C6-S2] 的生命周期回调；
-* [C6-S3] 的 `Global.getSettings()` 和日志入口；
-* [C1-S1] 的 MOD 数据文件编码要求。
+- [C6-S1] 的 Java 工具链、入口类和 `mod_info.json` 结构；
+- [C6-S2] 的生命周期回调；
+- [C6-S3] 的 `Global.getSettings()` 和日志入口；
+- [C1-S1] 的 MOD 数据文件编码要求。
 
 ## 读取设置数据
 
@@ -151,10 +151,10 @@ float refreshed = settings.getFloat("GearIn_loop_volume");
 
 预期结果：
 
-* 日志显示 `volume=0.8`、`serviceName=齿轮工业服务` 和 `enabled=true`；
-* 设置键缺失时，`optBoolean` 返回调用方提供的缺省值；
-* 类型不符时，严格读取方法在调用点抛出异常；
-* settings 读取不会产生 common 文件或修改 MOD 资源文件。
+- 日志显示 `volume=0.8`、`serviceName=齿轮工业服务` 和 `enabled=true`；
+- 设置键缺失时，`optBoolean` 返回调用方提供的缺省值；
+- 类型不符时，严格读取方法在调用点抛出异常；
+- settings 读取不会产生 common 文件或修改 MOD 资源文件。
 
 ## 故障分析
 
@@ -170,5 +170,5 @@ settings 读取有清晰的边界：对象键先合并，取值方法再按类�
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.SettingsAPI`：`getSettingsJSON`、`getString`、`getFloat`、`getInt`、`getBoolean`、`getColor`、`optBoolean`、`resetCached`；
-* `data/config/settings.json`：设置键和值的来源；
+- `com.fs.starfarer.api.SettingsAPI`：`getSettingsJSON`、`getString`、`getFloat`、`getInt`、`getBoolean`、`getColor`、`optBoolean`、`resetCached`；
+- `data/config/settings.json`：设置键和值的来源；

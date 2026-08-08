@@ -10,17 +10,17 @@ OBJ 文件本身只描述几何；模型 ID、贴图材质与世界变换仍要�
 
 完成后，您将能够：
 
-* 按 BoxUtil 1.5.4 的 9 列结构登记 OBJ 与材质贴图；
-* 用 `ModelManager` 验证模型 ID 并取得共享 `ModelData`；
-* 用 `TransformUtil` 建立与游戏世界坐标一致的模型矩阵；
-* 用 `CommonEntity` 组合模型、变换与默认光照；
-* 从 ID、模型有效性、贴图通道和尺度定位空白模型。
+- 按 BoxUtil 1.5.4 的 9 列结构登记 OBJ 与材质贴图；
+- 用 `ModelManager` 验证模型 ID 并取得共享 `ModelData`；
+- 用 `TransformUtil` 建立与游戏世界坐标一致的模型矩阵；
+- 用 `CommonEntity` 组合模型、变换与默认光照；
+- 从 ID、模型有效性、贴图通道和尺度定位空白模型。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
 
@@ -130,11 +130,11 @@ ModelData model = catalog.require("GearIn_gear");
 
 预期结果：
 
-* 精确模型 ID 返回有效、可复用的 `ModelData`；
-* `CommonEntity` 的模型矩阵与传入位置、朝向、缩放一致；
-* 默认光照能够区分漫反射、法线和发光通道的加载结果；
-* 错误大小写在创建实体前产生明确异常；
-* 有效实体入队后没有未处理异常。
+- 精确模型 ID 返回有效、可复用的 `ModelData`；
+- `CommonEntity` 的模型矩阵与传入位置、朝向、缩放一致；
+- 默认光照能够区分漫反射、法线和发光通道的加载结果；
+- 错误大小写在创建实体前产生明确异常；
+- 有效实体入队后没有未处理异常。
 
 ## 故障分析
 
@@ -149,9 +149,9 @@ ModelData model = catalog.require("GearIn_gear");
 
 ## 建议参考项
 
-* `ModelManager`：注册并查询模型数据；
-* `CommonEntity`：组合模型与材质；
-* `TransformUtil.createModelMatrixVanilla`：建立世界变换。
+- `ModelManager`：注册并查询模型数据；
+- `CommonEntity`：组合模型与材质；
+- `TransformUtil.createModelMatrixVanilla`：建立世界变换。
 ::: details 完整成品：GearInModelCatalog
 
 ```java

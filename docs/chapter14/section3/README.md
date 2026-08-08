@@ -10,27 +10,27 @@
 
 完成后，您将能够：
 
-* 创建自定义规则命令类 `GearInRuleCommand`，并完成 `ruleCommandPackages` 追加与 rules.csv 脚本列注册；
-* 解释 rulecmd 的实例化生命周期：每次调用新建实例、`execute(ruleId, dialog, params, memoryMap)` 四参签名、条件列与脚本列对返回值的不同处理、`dialog` 为 null 时异常的红字/重抛处理；
-* 解析 `Misc.Token` 参数，并核对 `getString` / `getFloat` / `getBoolean` / `getInt` 等方法的语义与陷阱；
-* 解释 `FireBest` / `FireAll` 的再入机制与约束：防自再入、终止性责任、`$fireAllTrigger` 与 `FireAllIntercept` 拦截，以及 Java 侧 (非规则上下文) 的再入调用点；
-* 验证完整最小例的注册、对话、再入与读档行为；
-* 从症状定位故障，沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核。
+- 创建自定义规则命令类 `GearInRuleCommand`，并完成 `ruleCommandPackages` 追加与 rules.csv 脚本列注册；
+- 解释 rulecmd 的实例化生命周期：每次调用新建实例、`execute(ruleId, dialog, params, memoryMap)` 四参签名、条件列与脚本列对返回值的不同处理、`dialog` 为 null 时异常的红字/重抛处理；
+- 解析 `Misc.Token` 参数，并核对 `getString` / `getFloat` / `getBoolean` / `getInt` 等方法的语义与陷阱；
+- 解释 `FireBest` / `FireAll` 的再入机制与约束：防自再入、终止性责任、`$fireAllTrigger` 与 `FireAllIntercept` 拦截，以及 Java 侧 (非规则上下文) 的再入调用点；
+- 验证完整最小例的注册、对话、再入与读档行为；
+- 从症状定位故障，沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核。
 
 ## 前置知识
 
-* [C6-S1] 的 JAR 构建、`mod_info.json` 的 JAR 声明与 API 依赖；
-* [C6-S2] 的 `modPlugin`、`onGameLoad` 与持久数据一次性判断；
-* [C14-S1] 的 `rules.csv` 七列、匹配流程、条件脚本语法、结果执行与 `$option` 回流；
-* [C14-S4] 的 `MemoryAPI` 过期、持久化与记忆键维护。
+- [C6-S1] 的 JAR 构建、`mod_info.json` 的 JAR 声明与 API 依赖；
+- [C6-S2] 的 `modPlugin`、`onGameLoad` 与持久数据一次性判断；
+- [C14-S1] 的 `rules.csv` 七列、匹配流程、条件脚本语法、结果执行与 `$option` 回流；
+- [C14-S4] 的 `MemoryAPI` 过期、持久化与记忆键维护。
 
 ## 术语
 
 按术语约定，本节首次完整讲解以下词；API 类名保留源码大小写：
 
-* **规则命令 (rule command)**：API 类名保留 `BaseCommandPlugin`(接口为 `CommandPlugin`)。rules.csv 条件/脚本列里第一个 token 不是变量的行即命令调用；命令类按 `ruleCommandPackages` 里的包名加简单类名定位。
-* **Rules 内存 (memory)**：见术语约定，归属 [C14-S4] (API 名保留 `MemoryAPI`)；本节只使用 `MemoryAPI.set/get` 的最小面。
-* **触发器 (trigger)**、**条件 (condition)**、**结果 (result)**、**规则 (rule)**：语义见规则系统页术语节，本节沿用。
+- **规则命令 (rule command)**：API 类名保留 `BaseCommandPlugin`(接口为 `CommandPlugin`)。rules.csv 条件/脚本列里第一个 token 不是变量的行即命令调用；命令类按 `ruleCommandPackages` 里的包名加简单类名定位。
+- **Rules 内存 (memory)**：见术语约定，归属 [C14-S4] (API 名保留 `MemoryAPI`)；本节只使用 `MemoryAPI.set/get` 的最小面。
+- **触发器 (trigger)**、**条件 (condition)**、**结果 (result)**、**规则 (rule)**：语义见规则系统页术语节，本节沿用。
 
 ## 注册与实例化
 
@@ -41,9 +41,9 @@
 规则行在资源加载期被解析成规则表达式 (`Rules.loadRules` 拆条件/脚本行并构造表达式)。解析到命令调用时，会定位命令类：
 
 1. 命令包列表来自 `settings.json` 的 `ruleCommandPackages`(`Starsector/starsector-core/data/config/settings.json`，原版 5 个包：`com.fs.starfarer.api.impl.campaign.rulecmd` 及其 `salvage` / `newgame` / `missions` / `academy` 子包)。
-    *   命令包列表在加载期只读取一次并缓存。
+    - 命令包列表在加载期只读取一次并缓存。
 2. MOD 可以在自己的 `data/config/settings.json` 里声明同名数组追加自己的包：`settings.json` 经文本读取工具的 `readJSONMerged` 合并，**数组追加** (`mergeJSON`；仅 `core_clearArray` 标记或 color/button/`music_*` 键走整体替换)。
-    *   合并发生在设置加载阶段 (读取 settings 的 JSON，由游戏启动器在资源加载前调用)，早于 `Rules.loadRules`，所以追加的包在命令解析时已就位。
+    - 合并发生在设置加载阶段 (读取 settings 的 JSON，由游戏启动器在资源加载前调用)，早于 `Rules.loadRules`，所以追加的包在命令解析时已就位。
 3. 命令类解析会逐包尝试 `Class.forName(pkg + "." + name, false, 脚本类加载器父加载器)` 并 `newInstance()`—— **加载期即实例化一次**，验证类存在、可实例化、无参构造可用；全部包都找不到时抛 `RuntimeException("Command [...] not found in packages:...")` → 资源加载崩溃、游戏启动中止。
 4. 脚本列的命令类还会被脚本类加载器记录，供 Janino 即时编译 MOD 根下以源码形式提供的命令类；jar 内类不依赖该机制。
 
@@ -69,9 +69,9 @@ public interface CommandPlugin {
 
 `BaseCommandPlugin`(`com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin`) 提供默认实现与工具方法：
 
-* `doesCommandAddOptions()` 默认 false；
-* `getOptionOrder` 默认 0；
-* 静态 `getEntityMemory(memoryMap)` (优先 `MemKeys.ENTITY` 否则 `MemKeys.LOCAL`)。
+- `doesCommandAddOptions()` 默认 false；
+- `getOptionOrder` 默认 0；
+- 静态 `getEntityMemory(memoryMap)` (优先 `MemKeys.ENTITY` 否则 `MemKeys.LOCAL`)。
 
 自定义命令只需继承它并覆写 `execute`。
 
@@ -124,11 +124,11 @@ public interface CommandPlugin {
 
 再入约束 (可观察后果见 "规则强度" 表)：
 
-* **共享上下文**：嵌套的匹配/执行使用同一 `memoryMap` 与同一 `dialog`—— 内层写记忆外层可见；内层非 keepOptions 的 `FireBest` 会清空外层对话的选项面板。
-* **终止性责任在编者**：引擎只跳过当前规则 id。
-    *   同一触发器内两条规则互相 `FireBest` 对方会无限递归 (A 命中 B，B 再入时跳过 B 命中 A，A 再入时跳过 A 命中 B...)，表现为游戏卡死/栈溢出；`dialog` 为 null 的上下文里异常会直接重抛。
-    *   再入时把 `ruleId` 原样透传给 `getAllMatching(ruleId, params.get(0).string, ...)` 是保留 currentRule 的标准写法。
-* **随机源单次**：`RulesAPI.setRandomForNextRulePick` 只影响下一次 pick，用后即清 —— 多层再入里多个 pick 依次消费该随机源，不能当全局随机源。
+- **共享上下文**：嵌套的匹配/执行使用同一 `memoryMap` 与同一 `dialog`—— 内层写记忆外层可见；内层非 keepOptions 的 `FireBest` 会清空外层对话的选项面板。
+- **终止性责任在编者**：引擎只跳过当前规则 id。
+    - 同一触发器内两条规则互相 `FireBest` 对方会无限递归 (A 命中 B，B 再入时跳过 B 命中 A，A 再入时跳过 A 命中 B...)，表现为游戏卡死/栈溢出；`dialog` 为 null 的上下文里异常会直接重抛。
+    - 再入时把 `ruleId` 原样透传给 `getAllMatching(ruleId, params.get(0).string, ...)` 是保留 currentRule 的标准写法。
+- **随机源单次**：`RulesAPI.setRandomForNextRulePick` 只影响下一次 pick，用后即清 —— 多层再入里多个 pick 依次消费该随机源，不能当全局随机源。
 
 常见坑：同触发器互相 FireBest 会无限递归
 
@@ -177,9 +177,9 @@ public interface CommandPlugin {
 
 在先修单元建立起的 MOD 布局与 `data/campaign/rules.csv` 之上新增：
 
-* 一份追加行 (本节 `GearIn_rules_cmd_*` 前缀)；
-* `data/config/settings.json` 追加 `ruleCommandPackages` 键；
-* 两个 Java 类 (`GearInRuleCommand` 与入口支撑 `GearInRuleCmdOpener`)。
+- 一份追加行 (本节 `GearIn_rules_cmd_*` 前缀)；
+- `data/config/settings.json` 追加 `ruleCommandPackages` 键；
+- 两个 Java 类 (`GearInRuleCommand` 与入口支撑 `GearInRuleCmdOpener`)。
 
 不新增其它资源、不修改任何既有文件：
 
@@ -371,17 +371,17 @@ public class GearInRuleCmdOpener implements EveryFrameScript {
 
 对应关系：
 
-* `extends BaseCommandPlugin`：只需覆写 `execute`；`doesCommandAddOptions()` 默认 false，所以本命令是**非选项型**命令，在脚本阶段由 `runScript` 正常执行。
-* `MEM_KEY_LAST = "$GearIn_rulecmd_last"`：命令写入的记忆键，与 rules.csv 条件列 `$GearIn_rulecmd_last >= 2` 逐字一致 (含 `$` 前缀；无过期，深度语义归 "Rules 内存" 单元)。
-    *   `getEntityMemory(memoryMap)` 在无活动人物时返回 `MemKeys.LOCAL`，即对话交互目标的实体记忆 (`RuleBasedInteractionDialogPluginImpl` 的 `updateMemory`)。
-* 参数解析三连：`getString`(触发器名，字面量直取)、`getFloat`(`2` → 2.0f)、`getBoolean`(`true` → true；若写成 `1`/`0` 则恒为 false，见 "规则强度" 表)。
-* 再入：`FireBest.fire(ruleId, dialog, memoryMap, trigger + (keepOptions ? " true" : ""))`——ruleId 原样透传 (引擎跳过同 id 规则)，`" true"` 成为 FireBest 的第二个参数 (keepOptions)。
-    *   keepOptions 只在目标规则带选项时可见，本节目标规则无选项，仅经日志观察参数解析与传递。
-* `dialog == null` 检查：非对话触发 (如面板再入) 时 `dialog` 为 null，直接再入会在 `performTokenReplacement` 的 `getInteractionTarget` 处 NPE(见 "规则强度" 表)。
-* `GearInRuleCmdOpener`：与规则系统页的 `GearInRulesIntro` 同款的一次性 `EveryFrameScript`；`REGISTER_MARK` 键 `"GearIn_RuleCmdOpener"` 与调用点片段逐字一致；`new RuleBasedInteractionDialogPluginImpl("GearInRuleCmdOpener")` 自定义初始 trigger，候选池只有本节规则。
-* welcome 规则文本里的 `$playerName` 由 token 替换链换成本档人物名；`SetShortcut` 把 ESC 绑定到 `GearIn_rules_cmd_leave`。
-* `GearIn_rules_cmd_more` 脚本列再次调用命令 (amount=3) 演示 FireBest 再入；`GearIn_rules_cmd_all` 用内置 `FireAll` 再入同一触发器演示 "全部命中规则" (`FireAllIntercept` 只拦截 `$fireAllTrigger == PopulateOptions` 等，本触发器不受影响)。
-* 记忆键 `$GearIn_rulecmd_last` / `$option` 的过期、持久化与维护语义归 "Rules 内存" 单元；本节只保证演示流程内的取值逻辑。
+- `extends BaseCommandPlugin`：只需覆写 `execute`；`doesCommandAddOptions()` 默认 false，所以本命令是**非选项型**命令，在脚本阶段由 `runScript` 正常执行。
+- `MEM_KEY_LAST = "$GearIn_rulecmd_last"`：命令写入的记忆键，与 rules.csv 条件列 `$GearIn_rulecmd_last >= 2` 逐字一致 (含 `$` 前缀；无过期，深度语义归 "Rules 内存" 单元)。
+    - `getEntityMemory(memoryMap)` 在无活动人物时返回 `MemKeys.LOCAL`，即对话交互目标的实体记忆 (`RuleBasedInteractionDialogPluginImpl` 的 `updateMemory`)。
+- 参数解析三连：`getString`(触发器名，字面量直取)、`getFloat`(`2` → 2.0f)、`getBoolean`(`true` → true；若写成 `1`/`0` 则恒为 false，见 "规则强度" 表)。
+- 再入：`FireBest.fire(ruleId, dialog, memoryMap, trigger + (keepOptions ? " true" : ""))`——ruleId 原样透传 (引擎跳过同 id 规则)，`" true"` 成为 FireBest 的第二个参数 (keepOptions)。
+    - keepOptions 只在目标规则带选项时可见，本节目标规则无选项，仅经日志观察参数解析与传递。
+- `dialog == null` 检查：非对话触发 (如面板再入) 时 `dialog` 为 null，直接再入会在 `performTokenReplacement` 的 `getInteractionTarget` 处 NPE(见 "规则强度" 表)。
+- `GearInRuleCmdOpener`：与规则系统页的 `GearInRulesIntro` 同款的一次性 `EveryFrameScript`；`REGISTER_MARK` 键 `"GearIn_RuleCmdOpener"` 与调用点片段逐字一致；`new RuleBasedInteractionDialogPluginImpl("GearInRuleCmdOpener")` 自定义初始 trigger，候选池只有本节规则。
+- welcome 规则文本里的 `$playerName` 由 token 替换链换成本档人物名；`SetShortcut` 把 ESC 绑定到 `GearIn_rules_cmd_leave`。
+- `GearIn_rules_cmd_more` 脚本列再次调用命令 (amount=3) 演示 FireBest 再入；`GearIn_rules_cmd_all` 用内置 `FireAll` 再入同一触发器演示 "全部命中规则" (`FireAllIntercept` 只拦截 `$fireAllTrigger == PopulateOptions` 等，本触发器不受影响)。
+- 记忆键 `$GearIn_rulecmd_last` / `$option` 的过期、持久化与维护语义归 "Rules 内存" 单元；本节只保证演示流程内的取值逻辑。
 
 调用点 (工程片段 —— 方法所在类由前置单元所有，本节只演示调用，不改动那些文件)：
 
@@ -421,13 +421,13 @@ gradle jar
 
 预期结果：
 
-* **游戏构建**：`BUILD SUCCESSFUL`；`jar tf` 列出 `data/scripts/gearin/rules/GearInRuleCommand.class` 与 `data/scripts/gearin/rules/GearInRuleCmdOpener.class`。
-* **规则注册**：`starsector.log` 出现 `Loading CSV data from [...rules.csv]` 与本节 5 条 `Loading rule: GearIn_rules_cmd_*` 行 (由 `Rules.loadRules` 打印)；标准输出出现 `WARNING: variable [$GearIn_rulecmd_last] only used once; rule id: [GearIn_rules_cmd_result]`(`System.out.println`，非日志；单次使用变量属正常现象)；加载期无 `Command [...] not found in packages` / `Duplicate key` 等规则加载异常。
-* **对话完整流程**：日志出现 `GearIn rulecmd opener dialog shown=true`，对话弹出；文本面板按顺序显示两段：welcome 文本 (含玩家名) 与 "再入命中文本：命令把 amount=2 写入 $GearIn\_rulecmd\_last，FireBest 再入本触发器后条件成立。"(welcome 的 `FireBest` 再入在 `applyRule` 的 `addText` 之后、`runScript` 阶段执行)；选项面板按 order 显示 "FireBest 再入"(order 0) 与 "FireAll 再入"(order 5)；日志出现 `GearInRuleCommand: ruleId=GearIn_rules_cmd_welcome trigger=GearInRuleCmdResult amount=2.0 keepOptions=true fired=true`；按 ESC 等效 "结束"(`SetShortcut` 生效)。
-* **FireBest 再入**：`$option` 回流 `DialogOptionSelected`，`more` 规则命中，其脚本列再次调用命令 (amount=3) 再入同一触发器，`result` 规则再次命中追加一段 "再入命中文本"；日志出现 `GearInRuleCommand: ruleId=GearIn_rules_cmd_more trigger=GearInRuleCmdResult amount=3.0 keepOptions=false fired=true`。
-* **FireAll 再入**：`all` 规则命中；`FireAll GearInRuleCmdResult` 再入执行全部命中规则，`result` 规则再次命中追加一段 "再入命中文本"；日志无 `GearInRuleCommand` 行 (FireAll 是内置命令)。
-* **结束与读档**：`DismissDialog` 关闭对话，游戏恢复；读档后不出现 `GearIn rulecmd opener dialog shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关；对话本身不随存档保存)。
-* 全程无 `gear_in` 引起的 `ERROR` 日志。
+- **游戏构建**：`BUILD SUCCESSFUL`；`jar tf` 列出 `data/scripts/gearin/rules/GearInRuleCommand.class` 与 `data/scripts/gearin/rules/GearInRuleCmdOpener.class`。
+- **规则注册**：`starsector.log` 出现 `Loading CSV data from [...rules.csv]` 与本节 5 条 `Loading rule: GearIn_rules_cmd_*` 行 (由 `Rules.loadRules` 打印)；标准输出出现 `WARNING: variable [$GearIn_rulecmd_last] only used once; rule id: [GearIn_rules_cmd_result]`(`System.out.println`，非日志；单次使用变量属正常现象)；加载期无 `Command [...] not found in packages` / `Duplicate key` 等规则加载异常。
+- **对话完整流程**：日志出现 `GearIn rulecmd opener dialog shown=true`，对话弹出；文本面板按顺序显示两段：welcome 文本 (含玩家名) 与 "再入命中文本：命令把 amount=2 写入 $GearIn\_rulecmd\_last，FireBest 再入本触发器后条件成立。"(welcome 的 `FireBest` 再入在 `applyRule` 的 `addText` 之后、`runScript` 阶段执行)；选项面板按 order 显示 "FireBest 再入"(order 0) 与 "FireAll 再入"(order 5)；日志出现 `GearInRuleCommand: ruleId=GearIn_rules_cmd_welcome trigger=GearInRuleCmdResult amount=2.0 keepOptions=true fired=true`；按 ESC 等效 "结束"(`SetShortcut` 生效)。
+- **FireBest 再入**：`$option` 回流 `DialogOptionSelected`，`more` 规则命中，其脚本列再次调用命令 (amount=3) 再入同一触发器，`result` 规则再次命中追加一段 "再入命中文本"；日志出现 `GearInRuleCommand: ruleId=GearIn_rules_cmd_more trigger=GearInRuleCmdResult amount=3.0 keepOptions=false fired=true`。
+- **FireAll 再入**：`all` 规则命中；`FireAll GearInRuleCmdResult` 再入执行全部命中规则，`result` 规则再次命中追加一段 "再入命中文本"；日志无 `GearInRuleCommand` 行 (FireAll 是内置命令)。
+- **结束与读档**：`DismissDialog` 关闭对话，游戏恢复；读档后不出现 `GearIn rulecmd opener dialog shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关；对话本身不随存档保存)。
+- 全程无 `gear_in` 引起的 `ERROR` 日志。
 
 ## 故障分析
 
@@ -453,17 +453,17 @@ gradle jar
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.campaign.rules.CommandPlugin`：rulecmd 接口三方法 (`execute` / `doesCommandAddOptions` / `getOptionOrder`)。
-* `com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin`：默认实现与静态 `getEntityMemory`。
-* `com.fs.starfarer.api.impl.campaign.rulecmd.FireBest`：再入命令 (静态 `fire`、`applyRule`、keepOptions 语义)。
-* `com.fs.starfarer.api.impl.campaign.rulecmd.FireAll`：再入命令 (`$fireAllTrigger` 与 `FireAllIntercept` 拦截)。
-* `com.fs.starfarer.api.util.Misc`：`tokenize` 与 `Token` 参数解析方法族。
-* `com.fs.starfarer.api.campaign.rules.MemoryAPI`：Rules 记忆读写 (本节只使用 `set` / `get` 最小面)。
-* `com.fs.starfarer.api.campaign.rules.RulesAPI`：`getAllMatching` / `getBestMatching` / `setRandomForNextRulePick`。
-* `com.fs.starfarer.api.campaign.rules.RuleAPI`：`runScript`(javadoc 声明 `dialog` 可为 null)。
-* `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl`：规则驱动对话插件 (`fireBest` / `fireAll` / `optionSelected`)。
-* `com.fs.starfarer.api.campaign.InteractionDialogAPI`：对话面板接口 (`getOptionPanel` / `getTextPanel` / `dismiss`)。
-* `data/config/settings.json`(MOD 侧)：追加 `ruleCommandPackages` 数组 (本节示例新增键)。
-* `data/campaign/rules.csv`(MOD 侧)：本节 `GearIn_rules_cmd_*` 行 (示例所有权)。
-* `Starsector/starsector-core/data/config/settings.json`：`ruleCommandPackages` 原版 5 包。
-* `Starsector/starsector-core/data/campaign/rules.csv`：原版规则表 (`FireAllIntercept` 唯一拦截规则所在)。
+- `com.fs.starfarer.api.campaign.rules.CommandPlugin`：rulecmd 接口三方法 (`execute` / `doesCommandAddOptions` / `getOptionOrder`)。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin`：默认实现与静态 `getEntityMemory`。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.FireBest`：再入命令 (静态 `fire`、`applyRule`、keepOptions 语义)。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.FireAll`：再入命令 (`$fireAllTrigger` 与 `FireAllIntercept` 拦截)。
+- `com.fs.starfarer.api.util.Misc`：`tokenize` 与 `Token` 参数解析方法族。
+- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：Rules 记忆读写 (本节只使用 `set` / `get` 最小面)。
+- `com.fs.starfarer.api.campaign.rules.RulesAPI`：`getAllMatching` / `getBestMatching` / `setRandomForNextRulePick`。
+- `com.fs.starfarer.api.campaign.rules.RuleAPI`：`runScript`(javadoc 声明 `dialog` 可为 null)。
+- `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl`：规则驱动对话插件 (`fireBest` / `fireAll` / `optionSelected`)。
+- `com.fs.starfarer.api.campaign.InteractionDialogAPI`：对话面板接口 (`getOptionPanel` / `getTextPanel` / `dismiss`)。
+- `data/config/settings.json`(MOD 侧)：追加 `ruleCommandPackages` 数组 (本节示例新增键)。
+- `data/campaign/rules.csv`(MOD 侧)：本节 `GearIn_rules_cmd_*` 行 (示例所有权)。
+- `Starsector/starsector-core/data/config/settings.json`：`ruleCommandPackages` 原版 5 包。
+- `Starsector/starsector-core/data/campaign/rules.csv`：原版规则表 (`FireAllIntercept` 唯一拦截规则所在)。

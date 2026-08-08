@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 说明主动读取 MOD 文件对数据组织和迭代的作用；
-* 使用 `SettingsAPI.loadText` 读取 MOD 内文本；
-* 写出 MOD 根目录相对路径和 `/` 分隔规则；
-* 区分单参读取与 `modId` 限定读取；
-* 从路径错误、BOM 和 MOD ID 错误定位文本读取故障。
+- 说明主动读取 MOD 文件对数据组织和迭代的作用；
+- 使用 `SettingsAPI.loadText` 读取 MOD 内文本；
+- 写出 MOD 根目录相对路径和 `/` 分隔规则；
+- 区分单参读取与 `modId` 限定读取；
+- 从路径错误、BOM 和 MOD ID 错误定位文本读取故障。
 
 ## 前置知识
 
-* [C1-S1] 的 MOD 目录、`mod_info.json` 和 UTF-8 无 BOM 要求；
-* [C6-S1] 的 Java 构建与入口类；
-* [C6-S3] 的 `Global.getSettings()` 和日志入口。
+- [C1-S1] 的 MOD 目录、`mod_info.json` 和 UTF-8 无 BOM 要求；
+- [C6-S1] 的 Java 构建与入口类；
+- [C6-S3] 的 `Global.getSettings()` 和日志入口。
 
 ## 为什么先读取文本
 
@@ -68,9 +68,9 @@ GearIn file loading is ready.
 
 预期结果：
 
-* 两次读取都返回 `GearIn file loading is ready.`；
-* 双参调用只读取 `gear_in` 的资源；
-* 路径、来源和编码正确时，启动日志没有文本读取异常。
+- 两次读取都返回 `GearIn file loading is ready.`；
+- 双参调用只读取 `gear_in` 的资源；
+- 路径、来源和编码正确时，启动日志没有文本读取异常。
 
 清理：删除入口类中的临时日志探针。
 
@@ -87,6 +87,6 @@ GearIn file loading is ready.
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.SettingsAPI`：`loadText` 和 `validateFileName`；
-* `data/config/`：MOD 自有文本资源可以使用的目录；
-* `mod_info.json`：MOD ID 来源。
+- `com.fs.starfarer.api.SettingsAPI`：`loadText` 和 `validateFileName`；
+- `data/config/`：MOD 自有文本资源可以使用的目录；
+- `mod_info.json`：MOD ID 来源。

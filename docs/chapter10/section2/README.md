@@ -10,36 +10,36 @@
 
 完成后，您将能够：
 
-* 在 `industries.csv` 中登记产业行，并解释从 CSV 行到运行时 `Industry` 实例的注册链；
-* 区分 `Industry` / `BaseIndustry` 生命周期五个回调的时机与职责，并说出市场侧的两个驱动点；
-* 用 `supply(...)` / `demand(...)` 在 `apply()` 里声明供需，用 `getMaxDeficit` / `applyDeficitToProduction` 实现缺货削减；
-* 设置建设、升级与降级链，解释 `startUpgrading` → `finishBuildingOrUpgrading` 的完成行为与状态迁移；
-* 安装与卸载 AI core，解释四个修饰钩子的成对撤销语义；
-* 施放与解除 disruption，并解释它的内存键、中断表现与三个原版触发方；
-* 从症状定位产业注册、供需、升级、AI core 与 disruption 的典型故障，并给出修正路径。
+- 在 `industries.csv` 中登记产业行，并解释从 CSV 行到运行时 `Industry` 实例的注册链；
+- 区分 `Industry` / `BaseIndustry` 生命周期五个回调的时机与职责，并说出市场侧的两个驱动点；
+- 用 `supply(...)` / `demand(...)` 在 `apply()` 里声明供需，用 `getMaxDeficit` / `applyDeficitToProduction` 实现缺货削减；
+- 设置建设、升级与降级链，解释 `startUpgrading` → `finishBuildingOrUpgrading` 的完成行为与状态迁移；
+- 安装与卸载 AI core，解释四个修饰钩子的成对撤销语义；
+- 施放与解除 disruption，并解释它的内存键、中断表现与三个原版触发方；
+- 从症状定位产业注册、供需、升级、AI core 与 disruption 的典型故障，并给出修正路径。
 
 ## 前置知识
 
-* [C1-S1] 的 MOD 目录、命名约定与 `starsector.log` 日志位置；
-* [C3-S7] 的经济 JSON、市场加载时机与 `industries` 数据结构；
-* [C6-S2] 的插件生命周期与持久数据标记；
-* [C6-S4] 的 settings 读取；
-* [C7-S3] 的 `MutableStat` 与修饰值；
-* [C9-S1] 的 `SectorAPI.getEconomy()`、生涯时钟与游戏日换算；
-* [C9-S3] 的生涯对象一次性注册判断；
-* [C10-S1] 的市场与产业访问入口、产业 ID 校验、经济循环节奏与监听器注册。
+- [C1-S1] 的 MOD 目录、命名约定与 `starsector.log` 日志位置；
+- [C3-S7] 的经济 JSON、市场加载时机与 `industries` 数据结构；
+- [C6-S2] 的插件生命周期与持久数据标记；
+- [C6-S4] 的 settings 读取；
+- [C7-S3] 的 `MutableStat` 与修饰值；
+- [C9-S1] 的 `SectorAPI.getEconomy()`、生涯时钟与游戏日换算；
+- [C9-S3] 的生涯对象一次性注册判断；
+- [C10-S1] 的市场与产业访问入口、产业 ID 校验、经济循环节奏与监听器注册。
 
 ## 术语
 
 按术语约定，本节首次完整讲解以下词：
 
-* **产业 (industry)**：API 名保留 `Industry`。挂在一个市场下的 "生产/服务单元"，由静态 spec(`industries.csv` 行)+ 运行时实例 (plugin 列类名) 组成，承载供需、收入、维护费、AI core、特殊物品、改良与 disruption 等状态。与市场条件 (`MarketConditionAPI`) 并列但生命周期更重。
-* **供需修饰 (supply/demand modifier)**：`MutableCommodityQuantity.getQuantity()` 上的 `MutableStat` flat 修饰。
-    *   产业的 `supply(...)` / `demand(...)` 以 `"ind_<id>[_<n>]"` 为修饰 id 写入数量；
-    *   `supplyBonus` / `demandReduction` 是产业级 "产量加一 / 需求减一" 统计项，写入时合并为 `"ind_sb"` / `"ind_dr"`。
-* **建设与升级 (building / upgrading)**：`isBuilding()` = 建设中 (含首次建设与升级)；`isUpgrading()` = 建设中且 `upgradeId != null`。`isFunctional()` = 非 disruption 且非 "建设中且未升级"。
-* **AI core**：安装到产业上的三种商品化智能核心 (`alpha_core` / `beta_core` / `gamma_core`)，提供供需、维护费与 (自定义) 统计修饰，并提高 Luddic Path 的关注度 (`getPatherInterest`)。
-* **disruption(中断)**：产业被外部行动 (突袭、审查) 打停的一段带倒计时的状态，存于市场 memory(key 含产业类名)。中断期间产业不产出、不推进建设。
+- **产业 (industry)**：API 名保留 `Industry`。挂在一个市场下的 "生产/服务单元"，由静态 spec(`industries.csv` 行)+ 运行时实例 (plugin 列类名) 组成，承载供需、收入、维护费、AI core、特殊物品、改良与 disruption 等状态。与市场条件 (`MarketConditionAPI`) 并列但生命周期更重。
+- **供需修饰 (supply/demand modifier)**：`MutableCommodityQuantity.getQuantity()` 上的 `MutableStat` flat 修饰。
+    - 产业的 `supply(...)` / `demand(...)` 以 `"ind_<id>[_<n>]"` 为修饰 id 写入数量；
+    - `supplyBonus` / `demandReduction` 是产业级 "产量加一 / 需求减一" 统计项，写入时合并为 `"ind_sb"` / `"ind_dr"`。
+- **建设与升级 (building / upgrading)**：`isBuilding()` = 建设中 (含首次建设与升级)；`isUpgrading()` = 建设中且 `upgradeId != null`。`isFunctional()` = 非 disruption 且非 "建设中且未升级"。
+- **AI core**：安装到产业上的三种商品化智能核心 (`alpha_core` / `beta_core` / `gamma_core`)，提供供需、维护费与 (自定义) 统计修饰，并提高 Luddic Path 的关注度 (`getPatherInterest`)。
+- **disruption(中断)**：产业被外部行动 (突袭、审查) 打停的一段带倒计时的状态，存于市场 memory(key 含产业类名)。中断期间产业不产出、不推进建设。
 
 ## 梳理产业升级关系
 
@@ -75,7 +75,7 @@
 
 1. 加载器把每一行读成 `IndustrySpecAPI`，`id` 列成为 spec key(缺失/重复语义与 `hull_mods.csv` 的 `readCSVMerged` 一致：同文件重复 id 抛异常、跨文件重复后读行跳过 ——"产业不出现且无报错" 首选排查方向)；
 2. `MarketAPI.addIndustry(id)` 或 `instantiateIndustry(id)` 从 CSV spec 加载期的注册表按 id 取 `IndustrySpecAPI`，查不到**抛 `RuntimeException("Industry [" + id + "] not found")`**(`Market.addIndustry`)。
-    *   与条件不同：`addCondition` 不校验 id，产业校验；
+    - 与条件不同：`addCondition` 不校验 id，产业校验；
 3. `spec.getNewPluginInstance(market)` 无参实例化产业类 (`plugin` 列类名必须存在且可无参实例化，否则类加载失败)；
 4. `addIndustry(id, params)` 带参数时先 `initWithParams(params)`(经济 JSON 的 `[id, param...]` 数组元素：识别 AI core id 与 params 匹配本产业 id 的特殊物品)；
 5. 产业加入 `market.getIndustries()` 后**立即 `apply()`**——`addIndustry` 本身不校验 `isAvailableToBuild()`，代码路径可以给任何市场直接挂产业。
@@ -114,10 +114,10 @@
 
 市场侧的两个驱动点 (`Market`)：
 
-* `Market.advance(amount)`：**稳定度取整值变化时**触发 `reapplyConditions()` + `reapplyIndustries()` + `updatePrices()`。
-    *   随后对 `new ArrayList<>(industries)` 逐个 `advance(amount)`—— 产业每帧推进挂在市场推进上；
-* `Market.reapplyIndustries()`：`getAdmin().getStats().refreshGovernedOutpostEffects(this)` → 对每个产业 `unapply()` + `apply()`。
-    *   随后 `PopulationAndInfrastructure.modifyUpkeepByHazardRating(market, "upkeep_hazard_mod")`(维护费 × 危险度修饰统一在产业重算尾部补上)。
+- `Market.advance(amount)`：**稳定度取整值变化时**触发 `reapplyConditions()` + `reapplyIndustries()` + `updatePrices()`。
+    - 随后对 `new ArrayList<>(industries)` 逐个 `advance(amount)`—— 产业每帧推进挂在市场推进上；
+- `Market.reapplyIndustries()`：`getAdmin().getStats().refreshGovernedOutpostEffects(this)` → 对每个产业 `unapply()` + `apply()`。
+    - 随后 `PopulationAndInfrastructure.modifyUpkeepByHazardRating(market, "upkeep_hazard_mod")`(维护费 × 危险度修饰统一在产业重算尾部补上)。
 
 必须遵守的规则：供需与统计修饰只能写在 `apply()` 里
 
@@ -131,19 +131,19 @@
 
 `BaseIndustry` 持有 `supply` / `demand` 两个 `Map<String, MutableCommodityQuantity>`；`getSupply(id)` / `getDemand(id)` 用到时才创建条目。
 
-* **写入**：`supply(modId, commodityId, quantity, desc)` / `demand(...)` 在 `getQuantity()`(`MutableStat`) 上 `modifyFlat`；`quantity == 0` 时 `unmodifyFlat`("清掉这条供需" 的正式写法)。
-    *   默认 modId 族 = `"ind_<id>"`(索引 0) 与 `"ind_<id>_<n>"`；`quantity > 0` 时把 `supplyBonus` / `demandReduction` 的生效值合并写入 `"ind_sb"` / `"ind_dr"`——**alpha core 的 "产量 +1" 就是这条路径**。
-* **收入与维护**：`updateIncomeAndUpkeep()` → `applyIncomeAndUpkeep(size)`：`sizeMult = max(1, market.getSize() - 2)`。
-    *   `income = (int)(spec.getIncome() × sizeMult)` 写 `"ind_base"` flat + `"ind_stability"` mult(市场收入倍率)；`upkeep = (int)(spec.getUpkeep() × sizeMult)` 写 `"ind_base"` + `"ind_hazard"` mult(市场维护倍率)。
-    *   随后 `applyAICoreToIncomeAndUpkeep()`(alpha/beta → `"ind_core"` × `UPKEEP_MULT = 0.75`，gamma 无)；**`!isFunctional()` 时收入修饰被移除** —— 建设中与中断中的产业不产生收入。
-* **缺货**：`getMaxDeficit(commodityIds...)` 返回 `(商品, 缺口)`，缺口 = `getDemand(id).getQuantity().getModifiedInt() − market.getCommodityData(id).getAvailable()`。
-    *   `getAllDeficit(...)` 返回全部正缺口列表；`applyDeficitToProduction(index, deficit, commodities...)` 对列出的商品写负供给 (desc 为 "X shortage")。
-    *   **且只对已声明过供给的商品生效** (`if (getSupply(commodity).getQuantity().isUnmodified()) continue;`)。
-* **读取 (经济步)**：经济步每次迭代重建商品可达图 (`CommodityMarketDataAPI` 构造器)：对每个市场、每个商品调 `updateMaxSupplyAndDemand()`(`CommodityOnMarketAPI.updateMaxSupplyAndDemand`)。
-    *   **maxSupply / maxDemand = 该市场所有产业中同商品供需的最大值** (不是总和)，同时记下该产业对 max 值的合法性判定 (`isSupplyLegal` / `isDemandLegal`)。
-    *   主商品 (`CommoditySpecAPI.isPrimary()`) 的 maxDemand 还会沿 demand class 传播给同类的其他商品。
-    *   价格与库存写入沿用市场与商品流主题已介绍的 `updateStockpileAndPriceV2`。
-    *   需求侧定价按商品的 `demand class`(`commodities.csv` 的 `demand class` 列：`supplies` / `fuel` / `crew` / `organics` / `heavy_machinery` / `domestic_goods` / `drugs` 等) 聚合到 `MarketDemandAPI`。
+- **写入**：`supply(modId, commodityId, quantity, desc)` / `demand(...)` 在 `getQuantity()`(`MutableStat`) 上 `modifyFlat`；`quantity == 0` 时 `unmodifyFlat`("清掉这条供需" 的正式写法)。
+    - 默认 modId 族 = `"ind_<id>"`(索引 0) 与 `"ind_<id>_<n>"`；`quantity > 0` 时把 `supplyBonus` / `demandReduction` 的生效值合并写入 `"ind_sb"` / `"ind_dr"`——**alpha core 的 "产量 +1" 就是这条路径**。
+- **收入与维护**：`updateIncomeAndUpkeep()` → `applyIncomeAndUpkeep(size)`：`sizeMult = max(1, market.getSize() - 2)`。
+    - `income = (int)(spec.getIncome() × sizeMult)` 写 `"ind_base"` flat + `"ind_stability"` mult(市场收入倍率)；`upkeep = (int)(spec.getUpkeep() × sizeMult)` 写 `"ind_base"` + `"ind_hazard"` mult(市场维护倍率)。
+    - 随后 `applyAICoreToIncomeAndUpkeep()`(alpha/beta → `"ind_core"` × `UPKEEP_MULT = 0.75`，gamma 无)；**`!isFunctional()` 时收入修饰被移除** —— 建设中与中断中的产业不产生收入。
+- **缺货**：`getMaxDeficit(commodityIds...)` 返回 `(商品, 缺口)`，缺口 = `getDemand(id).getQuantity().getModifiedInt() − market.getCommodityData(id).getAvailable()`。
+    - `getAllDeficit(...)` 返回全部正缺口列表；`applyDeficitToProduction(index, deficit, commodities...)` 对列出的商品写负供给 (desc 为 "X shortage")。
+    - **且只对已声明过供给的商品生效** (`if (getSupply(commodity).getQuantity().isUnmodified()) continue;`)。
+- **读取 (经济步)**：经济步每次迭代重建商品可达图 (`CommodityMarketDataAPI` 构造器)：对每个市场、每个商品调 `updateMaxSupplyAndDemand()`(`CommodityOnMarketAPI.updateMaxSupplyAndDemand`)。
+    - **maxSupply / maxDemand = 该市场所有产业中同商品供需的最大值** (不是总和)，同时记下该产业对 max 值的合法性判定 (`isSupplyLegal` / `isDemandLegal`)。
+    - 主商品 (`CommoditySpecAPI.isPrimary()`) 的 maxDemand 还会沿 demand class 传播给同类的其他商品。
+    - 价格与库存写入沿用市场与商品流主题已介绍的 `updateStockpileAndPriceV2`。
+    - 需求侧定价按商品的 `demand class`(`commodities.csv` 的 `demand class` 列：`supplies` / `fuel` / `crew` / `organics` / `heavy_machinery` / `domestic_goods` / `drugs` 等) 聚合到 `MarketDemandAPI`。
 
 背景：为什么商品流按 "最大值" 而非 "总和" 统计
 
@@ -196,18 +196,18 @@ tooltip 的升级入口只在 `getSpec().getUpgrade() != null && !isBuilding()` 
 
 ### AI core 链
 
-* 安装：`setAICoreId(String)` 写入 `aiCoreId`；`canInstallAICores()` 默认 true(`population` 等少数产业覆写为 false 的语义以各自类为准)。
-    *   UI 安装/卸下走 AI core 选择对话框 (产业交互对话框)。
-* 应用：`apply()` → `applyAICoreModifiers()` 按 core 派发四个**空实现钩子**：`applyAlphaCoreModifiers` / `applyBetaCoreModifiers` / `applyGammaCoreModifiers` / `applyNoAICoreModifiers`。
-    *   自定义核心效果写这里。
-* 供需侧 (`updateAICoreToSupplyAndDemandModifiers`)：alpha → `supplyBonus +1` 且 `demandReduction +1`；beta / gamma → 仅 `demandReduction +1`。
-    *   "产量 +1 / 需求 −1 单位" 就是 `SUPPLY_BONUS = 1` / `DEMAND_REDUCTION = 1`。
-* 维护侧 (`applyAICoreToIncomeAndUpkeep`)：alpha / beta → 维护费 × `0.75`(`"ind_core"` mult)；gamma → 无。
-* 关注度：`getPatherInterest()`：alpha +4 / beta +2 / gamma +1，另加特殊物品的 pather tag 权重。
-* 卸载/移除：`unapply()` 第一步调 `applyNoAICoreModifiers()`—— **自定义核心修饰必须在这里成对撤销**。
-    *   `notifyBeingRemoved(mode, forUpgrade)` 在非升级移除时把 `aiCoreId` 与特殊物品返还给 cargo(`REMOTE` 交互进存储、其余进用户舰队)。
-* 管理员人物：`AICoreAdminPlugin`(`com.fs.starfarer.api.campaign.AICoreAdminPlugin`) 唯一方法是 `PersonAPI createPerson(String aiCoreId, String factionId, long seed)`。
-    *   由实现类 (原版 `AICoreAdminPluginImpl`) 使用，用于把 AI core 变成殖民地管理员/官员。
+- 安装：`setAICoreId(String)` 写入 `aiCoreId`；`canInstallAICores()` 默认 true(`population` 等少数产业覆写为 false 的语义以各自类为准)。
+    - UI 安装/卸下走 AI core 选择对话框 (产业交互对话框)。
+- 应用：`apply()` → `applyAICoreModifiers()` 按 core 派发四个**空实现钩子**：`applyAlphaCoreModifiers` / `applyBetaCoreModifiers` / `applyGammaCoreModifiers` / `applyNoAICoreModifiers`。
+    - 自定义核心效果写这里。
+- 供需侧 (`updateAICoreToSupplyAndDemandModifiers`)：alpha → `supplyBonus +1` 且 `demandReduction +1`；beta / gamma → 仅 `demandReduction +1`。
+    - "产量 +1 / 需求 −1 单位" 就是 `SUPPLY_BONUS = 1` / `DEMAND_REDUCTION = 1`。
+- 维护侧 (`applyAICoreToIncomeAndUpkeep`)：alpha / beta → 维护费 × `0.75`(`"ind_core"` mult)；gamma → 无。
+- 关注度：`getPatherInterest()`：alpha +4 / beta +2 / gamma +1，另加特殊物品的 pather tag 权重。
+- 卸载/移除：`unapply()` 第一步调 `applyNoAICoreModifiers()`—— **自定义核心修饰必须在这里成对撤销**。
+    - `notifyBeingRemoved(mode, forUpgrade)` 在非升级移除时把 `aiCoreId` 与特殊物品返还给 cargo(`REMOTE` 交互进存储、其余进用户舰队)。
+- 管理员人物：`AICoreAdminPlugin`(`com.fs.starfarer.api.campaign.AICoreAdminPlugin`) 唯一方法是 `PersonAPI createPerson(String aiCoreId, String factionId, long seed)`。
+    - 由实现类 (原版 `AICoreAdminPluginImpl`) 使用，用于把 AI core 变成殖民地管理员/官员。
 
 ### Disruption 链
 
@@ -220,9 +220,9 @@ tooltip 的升级入口只在 `getSpec().getUpgrade() != null && !isBuilding()` 
 同一市场内两个不同 spec id 但共用同一 plugin 类的产业 (原版 farming / aquaculture 都 `extends Farming`) 共享同一个 key：对其中一个施放 disruption，另一个也会被中断。这类产业必须覆写 `getDisruptedKey()` 区分 (如加 spec id 后缀)。
 
 2. 施加：`setDisrupted(float days)` = `setDisrupted(days, false)`；`setDisrupted(days, useMax)` 先过 `canBeDisrupted()`(默认 true；`population` 覆写为 false)。
-    *   `useMax = true` 时取 `max(现有剩余, days)`(`MemoryAPI.getExpire(key)`)，`useMax = false` 直接覆盖。
-    *   `dur <= 0` 时 `memory.unset(key)`，否则 `memory.set(key, true, dur)`(带天数的过期标记)。
-    *   从未中断变中断时调 `notifyDisrupted()`。
+    - `useMax = true` 时取 `max(现有剩余, days)`(`MemoryAPI.getExpire(key)`)，`useMax = false` 直接覆盖。
+    - `dur <= 0` 时 `memory.unset(key)`，否则 `memory.set(key, true, dur)`(带天数的过期标记)。
+    - 从未中断变中断时调 `notifyDisrupted()`。
 3. 读取：`isDisrupted()` = `memory.is(key, true)`；`getDisruptedDays()` = `memory.getExpire(key)`(负数归零)；
 4. 结束：`advance(amount)` 检测 `isDisrupted()` 从 true 翻回 false → `disruptionFinished()`(两个钩子默认空实现)。
 
@@ -236,11 +236,11 @@ tooltip 显示红字 `Operations disrupted! X days until return to normal functi
 
 三个原版触发方 (都在公开 API 面 `com.fs.starfarer.api.impl.campaign.*`)：
 
-* **陆战队突袭**：`MarketCMD`(`com.fs.starfarer.api.impl.campaign.rulecmd.salvage.MarketCMD`) 的 "中断产业" 目标用 `DisruptIndustryRaidObjectivePluginImpl`。
-    *   时长 = `marineTokens × spec.getDisruptDanger().disruptionDays − 已中断天数`，`disruptDanger` 列取值见 `RaidDangerLevel` 枚举 (NONE 60 / MINIMAL 50 / LOW 40 / MEDIUM 30 / HIGH 20 / EXTREME 10 天)；
-* **Hegemony AI 审查**：`com.fs.starfarer.api.impl.campaign.intel.inspection.HIActionStage` 以 `curr.setDisrupted((intel.getRandom().nextFloat() * 45f) + 15f)` 施放 ——15–60 天；
-* **Luddic Path 细胞**：`com.fs.starfarer.api.impl.campaign.intel.bases.LuddicPathCellsIntel` 以 `target.setDisrupted(disruptionDur, true)` 施放。
-    *   `useMax = true` 保留较长剩余时间。
+- **陆战队突袭**：`MarketCMD`(`com.fs.starfarer.api.impl.campaign.rulecmd.salvage.MarketCMD`) 的 "中断产业" 目标用 `DisruptIndustryRaidObjectivePluginImpl`。
+    - 时长 = `marineTokens × spec.getDisruptDanger().disruptionDays − 已中断天数`，`disruptDanger` 列取值见 `RaidDangerLevel` 枚举 (NONE 60 / MINIMAL 50 / LOW 40 / MEDIUM 30 / HIGH 20 / EXTREME 10 天)；
+- **Hegemony AI 审查**：`com.fs.starfarer.api.impl.campaign.intel.inspection.HIActionStage` 以 `curr.setDisrupted((intel.getRandom().nextFloat() * 45f) + 15f)` 施放 ——15–60 天；
+- **Luddic Path 细胞**：`com.fs.starfarer.api.impl.campaign.intel.bases.LuddicPathCellsIntel` 以 `target.setDisrupted(disruptionDur, true)` 施放。
+    - `useMax = true` 保留较长剩余时间。
 
 AI core 提高 Luddic Path 的关注度，disruption 正是外部行动打断产业的方式 —— 它的状态存放位置与其他字段都不同。
 
@@ -369,8 +369,8 @@ if (market != null
 GearIn_training_industry,GearIn Training Industry,20,60,,2,,militarybase,"training, industry, industrial",,graphics/icons/industry/light_industry.png,data.scripts.gearin.campaign.GearInTrainingIndustry,"A facility that puts recruits through a rigorous training regimen, turning idle hands into serviceable crew.",250,LOW
 ```
 
-* `build time = 60`(游戏日)、`upkeep = 2`、`upgrade = militarybase`、`tags` 含 `industry`(`isIndustry()` 为 true，占产业位)、`disruptDanger = LOW`(40 天/令牌，见 `RaidDangerLevel`)；
-* `image` 列用原版路径 `graphics/icons/industry/light_industry.png` 占位 (全局资源集解析，核心自带该贴图；本节无资产，MOD 发布时替换为自己的贴图)。
+- `build time = 60`(游戏日)、`upkeep = 2`、`upgrade = militarybase`、`tags` 含 `industry`(`isIndustry()` 为 true，占产业位)、`disruptDanger = LOW`(40 天/令牌，见 `RaidDangerLevel`)；
+- `image` 列用原版路径 `graphics/icons/industry/light_industry.png` 占位 (全局资源集解析，核心自带该贴图；本节无资产，MOD 发布时替换为自己的贴图)。
 
 目录结构 (沿用既有示例页的布局，只新增加粗两项)：
 
@@ -392,13 +392,13 @@ Starsector\mods\GearIndustry\
 
 对应关系：
 
-* `implements` 侧：`extends BaseIndustry` 继承全部默认行为 (供需 map、收入/维护 stat、建设状态、AI core 派发、disruption memory 键)；类只写四类扩展点 —— `apply()` / `unapply()`、AI core 成对钩子、disruption 钩子、两个静态观察助手。
-* `INDUSTRY_ID` 与 `industries.csv` 的 `id` 列、`plugin` 列与本类全名**三者逐字一致** (`Market.addIndustry` 按 id 查 spec、按 plugin 类名实例化)。
-* `UPGRADE_TARGET_ID = "militarybase"`：只用于与 CSV 行互相核对，运行时不读取它 —— 升级链真正使用的是 `getSpec().getUpgrade()`(CSV `upgrade` 列)。
-    *   升级完成时 `finishBuildingOrUpgrading` 会 `removeIndustry` + `addIndustry("militarybase")` 并迁移 AI core / 改良 / 特殊物品 (`BaseIndustry`)。
-* `apply()` 里 `super.apply(true)` 先跑基类汇总 (供需 bonus、收入/维护、AI core、改良)，再写本产业的供需与缺货削减；`isFunctional()` 为 false(建设中/中断) 时清空供给。
-* `applyAlphaCoreModifiers` / `applyNoAICoreModifiers` 用 `getModId(2)`(= `"ind_GearIn_training_industry_2"`) 成对加减稳定度：安装 alpha core 市场稳定度 +1，卸下/重算即撤销 (成对写法见 "规则强度" 的规则)。
-* `runDisruptionProbe` 全程用公开 API(`setDisrupted` / `isDisrupted` / `getDisruptedDays` / `setDisrupted(0f)`)，当帧清除、无持久残留 (`setDisrupted(0f)` → `memory.unset(key)`)。
+- `implements` 侧：`extends BaseIndustry` 继承全部默认行为 (供需 map、收入/维护 stat、建设状态、AI core 派发、disruption memory 键)；类只写四类扩展点 —— `apply()` / `unapply()`、AI core 成对钩子、disruption 钩子、两个静态观察助手。
+- `INDUSTRY_ID` 与 `industries.csv` 的 `id` 列、`plugin` 列与本类全名**三者逐字一致** (`Market.addIndustry` 按 id 查 spec、按 plugin 类名实例化)。
+- `UPGRADE_TARGET_ID = "militarybase"`：只用于与 CSV 行互相核对，运行时不读取它 —— 升级链真正使用的是 `getSpec().getUpgrade()`(CSV `upgrade` 列)。
+    - 升级完成时 `finishBuildingOrUpgrading` 会 `removeIndustry` + `addIndustry("militarybase")` 并迁移 AI core / 改良 / 特殊物品 (`BaseIndustry`)。
+- `apply()` 里 `super.apply(true)` 先跑基类汇总 (供需 bonus、收入/维护、AI core、改良)，再写本产业的供需与缺货削减；`isFunctional()` 为 false(建设中/中断) 时清空供给。
+- `applyAlphaCoreModifiers` / `applyNoAICoreModifiers` 用 `getModId(2)`(= `"ind_GearIn_training_industry_2"`) 成对加减稳定度：安装 alpha core 市场稳定度 +1，卸下/重算即撤销 (成对写法见 "规则强度" 的规则)。
+- `runDisruptionProbe` 全程用公开 API(`setDisrupted` / `isDisrupted` / `getDisruptedDays` / `setDisrupted(0f)`)，当帧清除、无持久残留 (`setDisrupted(0f)` → `memory.unset(key)`)。
 
 观察助手可以复用
 
@@ -469,20 +469,20 @@ market.addIndustry(industryId);
 前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段)、`data\campaign\industries.csv` 注册行、`GearInTrainingIndustry` 类。
 
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，`BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`。
-    *   确认 `data\campaign\industries.csv` 合并后 `SettingsAPI.getIndustrySpec("GearIn_training_industry")` 返回非 null(可用日志或加载期检查)。
+    - 确认 `data\campaign\industries.csv` 合并后 `SettingsAPI.getIndustrySpec("GearIn_training_industry")` 返回非 null(可用日志或加载期检查)。
 2. 代码安装：新建生涯，在 `starsector.log` 中观察产业安装与中断探针记录。
 3. 读档：保存后读档，不出现重复安装日志 (`REGISTER_MARK` 已置位)。
 4. 用户殖民地建设：殖民 (size 3 以下注意产业位上限 1)→ 产业列表出现 `GearIn Training Industry` → 建造 (建设期 `functional=false`)→ 60 游戏日后 `functional=true`。
-    *   点击升级 → 完成后产业变为 `Military Base`(见 "预期结果" 第 4条)。
+    - 点击升级 → 完成后产业变为 `Military Base`(见 "预期结果" 第 4条)。
 5. AI core：安装 alpha core → `applied` 日志 `aiCore=alpha_core`、市场稳定度 +1；卸下 → 稳定度修饰消失。
 6. disruption 实战：装 core 后等待 Hegemony AI 审查，或对殖民地执行陆战队 "中断产业" 突袭 → `notifyDisrupted` 日志 + tooltip `Operations disrupted!` + 收入消失。
-    *   时间到 → `disruptionFinished` 日志 + 恢复 (见 "预期结果" 第 6条)。
+    - 时间到 → `disruptionFinished` 日志 + 恢复 (见 "预期结果" 第 6条)。
 
 预期结果：
 
-* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`；`data\campaign\industries.csv` 已含本节注册行 (CSV 合并，勿改动核心文件)。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`；`data\campaign\industries.csv` 已含本节注册行 (CSV 合并，勿改动核心文件)。
 
-* **代码安装 (corvus\_IIIa (Garnir)，size 3 海盗市场)**：新建生涯，`starsector.log` 依次出现。
+- **代码安装 (corvus\_IIIa (Garnir)，size 3 海盗市场)**：新建生涯，`starsector.log` 依次出现。
 
     ```text
     GearIn training industry applied: market=Garnir size=3 supplyCrew=1 demandSupplies=3 demandCrew=1 income=0 upkeep=NN aiCore=none disrupted=false functional=true GearIn training industry state: market=Garnir id=GearIn_training_industry supply=[crew=1] demand=[supplies=3, crew=1] income=0 upkeep=NN buildProgress=0.0/60.0 building=false upgrading=false functional=true disrupted=false aiCore=none upgrade=militarybase
@@ -490,7 +490,7 @@ market.addIndustry(industryId);
 
     数值核对：size 3 → `supplyCrew = max(1, 3-2) = 1`、`demandSupplies = 3`、`demandCrew = max(1, 3/2) = 1`；`income = 0`(spec 收入列空)；`upkeep = 2 × max(1, size-2) × 市场维护倍率`(以日志为准)；缺货削减只在 corvus\_IIIa (Garnir) 的 supplies 可得量不足 3 时把 `supplyCrew` 压到 0/负数区间 (tooltip 图标同步变红)。
 
-* **disruption 探针** (同一批日志)：
+- **disruption 探针** (同一批日志)：
 
     ```text
     GearIn training industry disruption probe: before disrupted=false days=0.0 GearIn training industry disruption probe: during disrupted=true days=10.0 functional=false progress=Disrupted: 10 days left GearIn training industry disruption probe: after disrupted=false days=0.0
@@ -498,17 +498,17 @@ market.addIndustry(industryId);
 
     核对：`during` 行 `functional=false`(`isFunctional()` 在中断时恒 false)、`progress` 显示 `Disrupted: 10 days left`(`getBuildOrUpgradeProgressText` 的中断分支)；`setDisrupted(0f)` 后 memory key 被 unset，`after` 恢复。市场内存里残留键 `$core_disrupted_GearInTrainingIndustry`(10 天过期)，可用 `DumpMemory` 或内存检查核对。
 
-* **建设与升级 (用户殖民地路径)**：用户殖民后产业列表出现 `GearIn Training Industry`(`isAvailableToBuild` 要求市场有 `population` 且无 `MARKET_NO_INDUSTRIES_ALLOWED` tag；size 1–3 的殖民地产业位上限 1，注意是否占满)；建造后 `applied` 日志的 `functional=false`(`isBuilding` 中，tooltip 显示 "Currently under construction and not producing anything")；`advance` 按 `convertToDays(amount)` 累积 60 个游戏日后完成，`applied` 日志恢复 `functional=true`。点击升级：确认扣款后 `startUpgrading()`，完成后产业被替换为 `Military Base`(`militarybase` 行)，AI core / 改良 / 特殊物品迁移 (`finishBuildingOrUpgrading`)。
+- **建设与升级 (用户殖民地路径)**：用户殖民后产业列表出现 `GearIn Training Industry`(`isAvailableToBuild` 要求市场有 `population` 且无 `MARKET_NO_INDUSTRIES_ALLOWED` tag；size 1–3 的殖民地产业位上限 1，注意是否占满)；建造后 `applied` 日志的 `functional=false`(`isBuilding` 中，tooltip 显示 "Currently under construction and not producing anything")；`advance` 按 `convertToDays(amount)` 累积 60 个游戏日后完成，`applied` 日志恢复 `functional=true`。点击升级：确认扣款后 `startUpgrading()`，完成后产业被替换为 `Military Base`(`militarybase` 行)，AI core / 改良 / 特殊物品迁移 (`finishBuildingOrUpgrading`)。
 
-* **AI core**：往产业装 alpha core(AI core 选择对话框)：`applied` 日志 `aiCore=alpha_core`；市场稳定度 +1(`applyAlphaCoreModifiers` 的 `ind_GearIn_training_industry_2` 修饰)；tooltip 的 alpha 描述显示维护费 −25%(`UPKEEP_MULT = 0.75`)、需求 −1、产量 +1(`DEMAND_REDUCTION` / `SUPPLY_BONUS = 1`)；卸下 core 后稳定度修饰消失 (`applyNoAICoreModifiers`)。`getPatherInterest` = 4(alpha) 会提高 Luddic Path 对该市场的兴趣。
+- **AI core**：往产业装 alpha core(AI core 选择对话框)：`applied` 日志 `aiCore=alpha_core`；市场稳定度 +1(`applyAlphaCoreModifiers` 的 `ind_GearIn_training_industry_2` 修饰)；tooltip 的 alpha 描述显示维护费 −25%(`UPKEEP_MULT = 0.75`)、需求 −1、产量 +1(`DEMAND_REDUCTION` / `SUPPLY_BONUS = 1`)；卸下 core 后稳定度修饰消失 (`applyNoAICoreModifiers`)。`getPatherInterest` = 4(alpha) 会提高 Luddic Path 对该市场的兴趣。
 
-* **中断的实战触发**：给装 core 的殖民地等待 Hegemony AI 审查 intel(15–60 天)，或对该市场执行陆战队 "中断产业" 突袭 (时长 = 令牌数 × `disruptDanger.disruptionDays`，本行 LOW = 40 天/令牌)——`notifyDisrupted` 日志出现，tooltip 显示 `Operations disrupted!`，收入消失、建设暂停；时间到后 `disruptionFinished` 日志出现，恢复。
+- **中断的实战触发**：给装 core 的殖民地等待 Hegemony AI 审查 intel(15–60 天)，或对该市场执行陆战队 "中断产业" 突袭 (时长 = 令牌数 × `disruptDanger.disruptionDays`，本行 LOW = 40 天/令牌)——`notifyDisrupted` 日志出现，tooltip 显示 `Operations disrupted!`，收入消失、建设暂停；时间到后 `disruptionFinished` 日志出现，恢复。
 
-* **读档**：不重复安装 (`REGISTER_MARK` 已置位)，不出现 `applied` / `state` / `probe` 日志；`doPreSaveCleanup` / `doPostSaveRestore` 之后供需由 `apply()` 重建 —— 读档后 `state` 日志 (手动触发) 的 supply/demand 与读档前一致。
+- **读档**：不重复安装 (`REGISTER_MARK` 已置位)，不出现 `applied` / `state` / `probe` 日志；`doPreSaveCleanup` / `doPostSaveRestore` 之后供需由 `apply()` 重建 —— 读档后 `state` 日志 (手动触发) 的 supply/demand 与读档前一致。
 
-* 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
+- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
-    **预期结果**：以上操作与核对结果全部符合。
+**预期结果**：以上操作与核对结果全部符合。
 
 清理：调用 `market.removeIndustry(GearInTrainingIndustry.INDUSTRY_ID, null, false)`；产业移除后，"applied" 日志消失、稳定度修饰撤销，已安装的 alpha core 返回用户 cargo。
 
@@ -534,45 +534,45 @@ market.addIndustry(industryId);
 
 记忆要点：
 
-* CSV `id` 必须与 `addIndustry` 参数逐字一致；`upgrade` / `downgrade` 列目标必须已注册。
-* `supply` / `demand` / 收入 / 维护只写在 `apply()`；缺货削减前先 `supply(...)`。
-* `getModId(n)` = `"ind_<id>_<n>"`；AI core 修饰成对 (`applyXxxCoreModifiers` ↔ `applyNoAICoreModifiers`)。
-* `setDisrupted(days, useMax)`：`useMax=true` 保留较大剩余；`setDisrupted(0)` 解除；同市场同 Java 类的多产业共享 disruption key。
-* 产业位 = `maxIndustries[size-1]`(size 1–3 都是 1)；`isFunctional()` = 非中断 ∧ 非 "建设中且未升级"。
+- CSV `id` 必须与 `addIndustry` 参数逐字一致；`upgrade` / `downgrade` 列目标必须已注册。
+- `supply` / `demand` / 收入 / 维护只写在 `apply()`；缺货削减前先 `supply(...)`。
+- `getModId(n)` = `"ind_<id>_<n>"`；AI core 修饰成对 (`applyXxxCoreModifiers` ↔ `applyNoAICoreModifiers`)。
+- `setDisrupted(days, useMax)`：`useMax=true` 保留较大剩余；`setDisrupted(0)` 解除；同市场同 Java 类的多产业共享 disruption key。
+- 产业位 = `maxIndustries[size-1]`(size 1–3 都是 1)；`isFunctional()` = 非中断 ∧ 非 "建设中且未升级"。
 
 从逻辑上看，产业不是孤立对象：市场与商品流的经济循环 (经济步) 是产业供需的使用端，时钟与游戏日换算 (`getClock().convertToDays`) 是建设进度的换算来源，`MutableStat` 承载全部数量修饰；本节示例的 `REGISTER_MARK` 一次性标记沿用既有生涯注册示例的写法。产业写完并注册后，它在市场里的可见性 (tooltip 数字、商品流、价格、突袭中断) 全部由这些既有机制承接 —— 本节只负责把产业自身的四条链写对。
 
 ## 建议参考项
 
-* Java API(包路径)：
-    *   `com.fs.starfarer.api.campaign.econ.Industry`—— 产业接口全貌：生命周期五回调、供需、建设/升级、AI core、disruption、特殊物品/改良。
-    *   `com.fs.starfarer.api.loading.IndustrySpecAPI`—— `industries.csv` 全部列字段的 getter/setter 与 `getNewPluginInstance` 无参实例化。
-    *   `com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry`—— 产业公共基类：`apply(boolean)` 顺序、供需写入与 `ind_sb` / `ind_dr` 合并、`applyDeficitToProduction`、`applyIncomeAndUpkeep`、`advance`、建设/升级/降级链、AI core 派发与四钩子、`getPatherInterest`、disruption 系列 (`getDisruptedKey` / `setDisrupted` / `getDisruptedDays` / `canBeDisrupted` / `isDisrupted`)、`doPreSaveCleanup` / `doPostSaveRestore`、`initWithParams`、`isAvailableToBuild`、tooltip 渲染。
-    *   `com.fs.starfarer.api.impl.campaign.econ.impl.LightIndustry`——`apply()` 标准写法范例 (先声明供需、再挂缺货削减)。
-    *   `com.fs.starfarer.api.impl.campaign.econ.impl.PopulationAndInfrastructure`——`MAX_INDUSTRIES` 写入、超限稳定度惩罚、`getMaxIndustries(size)`、`canBeDisrupted() = false`。
-    *   `com.fs.starfarer.api.impl.campaign.econ.impl.ConstructionQueue`—— 建设队列容器与 `addToEnd`；
-    *   `com.fs.starfarer.api.campaign.econ.MutableCommodityQuantity`—— 商品 id + `MutableStat` 数量；
-    *   `com.fs.starfarer.api.campaign.AICoreAdminPlugin`——`createPerson(aiCoreId, factionId, seed)`，把 AI core 变成殖民地管理员/官员。
-    *   `com.fs.starfarer.api.impl.campaign.ids.Industries`——tag 常量 `TAG_INDUSTRY` / `TAG_STRUCTURE` / `TAG_POPULATION`。
-    *   `com.fs.starfarer.api.impl.campaign.ids.Commodities`—— `SUPPLIES` / `CREW` / `ALPHA_CORE` / `BETA_CORE` / `GAMMA_CORE`。
-    *   `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.MarketCMD`——`RaidDangerLevel.disruptionDays` 与突袭 "中断产业" 时长计算。
-    *   `com.fs.starfarer.api.impl.campaign.graid.DisruptIndustryRaidObjectivePluginImpl`—— 突袭中断目标的 `disruptDanger` 使用与 `setDisrupted` 施放。
-    *   `com.fs.starfarer.api.impl.campaign.intel.inspection.HIActionStage`——Hegemony AI 审查对产业施放 15–60 天 disruption。
-    *   `com.fs.starfarer.api.impl.campaign.intel.bases.LuddicPathCellsIntel`—— Luddic Path 细胞以 `setDisrupted(dur, true)` 施放并保留较长剩余。
-    *   `com.fs.starfarer.api.util.Misc`—— `getMaxIndustries` / `getNumIndustries` / `getCurrentlyBeingConstructed` / `OVER_MAX_INDUSTRIES_PENALTY`。
-    *   `com.fs.starfarer.api.SettingsAPI`——`getIndustrySpec(id)` 只读查询产业注册表；
-    *   `com.fs.starfarer.api.campaign.econ.MarketAPI`—— 产业访问族 (`addIndustry` / `getIndustry` / `hasIndustry` / `hasFunctionalIndustry` / `removeIndustry` / `instantiateIndustry`) 与 `getConstructionQueue`。
-    *   `Market`——`addIndustry` / `instantiateIndustry` / `removeIndustry` / `reapplyIndustries`、`advance` 稳定度重算与产业推进。
-    *   `CommodityOnMarketAPI`——`updateMaxSupplyAndDemand` 同商品取最大值与合法性、`getAvailable` / `getMaxSupply` / `getMaxDemand`。
-    *   `CommodityMarketDataAPI`—— 经济步使用产业供需 (`updateMaxSupplyAndDemand`、demand class 传播)。
-    *   产业交互对话框 —— 升级/降级/关停 UI 使用方、退款计算。
-* 原版数据 (相对路径)：
-    *   `data/campaign/industries.csv`—— 产业静态表：15 列表头与 `population` / `spaceport` / `militarybase` / `heavybatteries` 等原版行。
-    *   `data/campaign/commodities.csv`—— `demand class` 列 (supplies / fuel / crew / organics / heavy\_machinery / domestic\_goods / drugs 等)。
-    *   `data/campaign/econ/corvus.json`—— 市场 `industries` 数组写法 (纯 id 字符串与 `[id, param...]`)。
-    *   `data/config/settings.json`——`maxIndustries` 数组、`overMaxIndustriesPenalty`、`industryRefundFraction`、`industryImproveBase`。
-* 本节示例：
-    *   `data/scripts/gearin/campaign/GearInTrainingIndustry`—— 训练产业类。
+- Java API(包路径)：
+    - `com.fs.starfarer.api.campaign.econ.Industry`—— 产业接口全貌：生命周期五回调、供需、建设/升级、AI core、disruption、特殊物品/改良。
+    - `com.fs.starfarer.api.loading.IndustrySpecAPI`—— `industries.csv` 全部列字段的 getter/setter 与 `getNewPluginInstance` 无参实例化。
+    - `com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry`—— 产业公共基类：`apply(boolean)` 顺序、供需写入与 `ind_sb` / `ind_dr` 合并、`applyDeficitToProduction`、`applyIncomeAndUpkeep`、`advance`、建设/升级/降级链、AI core 派发与四钩子、`getPatherInterest`、disruption 系列 (`getDisruptedKey` / `setDisrupted` / `getDisruptedDays` / `canBeDisrupted` / `isDisrupted`)、`doPreSaveCleanup` / `doPostSaveRestore`、`initWithParams`、`isAvailableToBuild`、tooltip 渲染。
+    - `com.fs.starfarer.api.impl.campaign.econ.impl.LightIndustry`——`apply()` 标准写法范例 (先声明供需、再挂缺货削减)。
+    - `com.fs.starfarer.api.impl.campaign.econ.impl.PopulationAndInfrastructure`——`MAX_INDUSTRIES` 写入、超限稳定度惩罚、`getMaxIndustries(size)`、`canBeDisrupted() = false`。
+    - `com.fs.starfarer.api.impl.campaign.econ.impl.ConstructionQueue`—— 建设队列容器与 `addToEnd`；
+    - `com.fs.starfarer.api.campaign.econ.MutableCommodityQuantity`—— 商品 id + `MutableStat` 数量；
+    - `com.fs.starfarer.api.campaign.AICoreAdminPlugin`——`createPerson(aiCoreId, factionId, seed)`，把 AI core 变成殖民地管理员/官员。
+    - `com.fs.starfarer.api.impl.campaign.ids.Industries`——tag 常量 `TAG_INDUSTRY` / `TAG_STRUCTURE` / `TAG_POPULATION`。
+    - `com.fs.starfarer.api.impl.campaign.ids.Commodities`—— `SUPPLIES` / `CREW` / `ALPHA_CORE` / `BETA_CORE` / `GAMMA_CORE`。
+    - `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.MarketCMD`——`RaidDangerLevel.disruptionDays` 与突袭 "中断产业" 时长计算。
+    - `com.fs.starfarer.api.impl.campaign.graid.DisruptIndustryRaidObjectivePluginImpl`—— 突袭中断目标的 `disruptDanger` 使用与 `setDisrupted` 施放。
+    - `com.fs.starfarer.api.impl.campaign.intel.inspection.HIActionStage`——Hegemony AI 审查对产业施放 15–60 天 disruption。
+    - `com.fs.starfarer.api.impl.campaign.intel.bases.LuddicPathCellsIntel`—— Luddic Path 细胞以 `setDisrupted(dur, true)` 施放并保留较长剩余。
+    - `com.fs.starfarer.api.util.Misc`—— `getMaxIndustries` / `getNumIndustries` / `getCurrentlyBeingConstructed` / `OVER_MAX_INDUSTRIES_PENALTY`。
+    - `com.fs.starfarer.api.SettingsAPI`——`getIndustrySpec(id)` 只读查询产业注册表；
+    - `com.fs.starfarer.api.campaign.econ.MarketAPI`—— 产业访问族 (`addIndustry` / `getIndustry` / `hasIndustry` / `hasFunctionalIndustry` / `removeIndustry` / `instantiateIndustry`) 与 `getConstructionQueue`。
+    - `Market`——`addIndustry` / `instantiateIndustry` / `removeIndustry` / `reapplyIndustries`、`advance` 稳定度重算与产业推进。
+    - `CommodityOnMarketAPI`——`updateMaxSupplyAndDemand` 同商品取最大值与合法性、`getAvailable` / `getMaxSupply` / `getMaxDemand`。
+    - `CommodityMarketDataAPI`—— 经济步使用产业供需 (`updateMaxSupplyAndDemand`、demand class 传播)。
+    - 产业交互对话框 —— 升级/降级/关停 UI 使用方、退款计算。
+- 原版数据 (相对路径)：
+    - `data/campaign/industries.csv`—— 产业静态表：15 列表头与 `population` / `spaceport` / `militarybase` / `heavybatteries` 等原版行。
+    - `data/campaign/commodities.csv`—— `demand class` 列 (supplies / fuel / crew / organics / heavy\_machinery / domestic\_goods / drugs 等)。
+    - `data/campaign/econ/corvus.json`—— 市场 `industries` 数组写法 (纯 id 字符串与 `[id, param...]`)。
+    - `data/config/settings.json`——`maxIndustries` 数组、`overMaxIndustriesPenalty`、`industryRefundFraction`、`industryImproveBase`。
+- 本节示例：
+    - `data/scripts/gearin/campaign/GearInTrainingIndustry`—— 训练产业类。
 
 ## 完整最小例
 

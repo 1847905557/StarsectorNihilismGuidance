@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 说出新档生成入口的调用顺序；
-* 把恒星、行星、自定义实体和跳跃点放进同一星系；
-* 判断 `initStar`、`addPlanet`、`addCustomEntity` 与 `autogenerateHyperspaceJumpPoints` 的职责；
-* 用星图、轨道和实体可见性验证生成结果。
+- 说出新档生成入口的调用顺序；
+- 把恒星、行星、自定义实体和跳跃点放进同一星系；
+- 判断 `initStar`、`addPlanet`、`addCustomEntity` 与 `autogenerateHyperspaceJumpPoints` 的职责；
+- 用星图、轨道和实体可见性验证生成结果。
 
 ## 前置知识
 
-* [C3-S3] 的 GearIn 势力 ID；
-* [C3-S4] 的 `GearIn_ember_world`；
-* [C3-S5] 的 `GearIn_navigation_anchor`；
-* [C6-S2] 的完整 ModPlugin 生命周期属于后续章节，本页只复用既有入口。
+- [C3-S3] 的 GearIn 势力 ID；
+- [C3-S4] 的 `GearIn_ember_world`；
+- [C3-S5] 的 `GearIn_navigation_anchor`；
+- [C6-S2] 的完整 ModPlugin 生命周期属于后续章节，本页只复用既有入口。
 
 ## 先把对象放入正确的顺序
 
@@ -206,10 +206,10 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 
 预期结果：
 
-* 新档创建后出现 GearIn 星系；
-* GearIn Prime 使用 [C3-S4] 的余烬世界类型；
-* 导航锚使用 [C3-S5] 的自定义实体类型并属于 GearIn；
-* 手动跳跃点进入实体集合并生成超空间侧入口。
+- 新档创建后出现 GearIn 星系；
+- GearIn Prime 使用 [C3-S4] 的余烬世界类型；
+- 导航锚使用 [C3-S5] 的自定义实体类型并属于 GearIn；
+- 手动跳跃点进入实体集合并生成超空间侧入口。
 
 ## 故障分析
 
@@ -223,8 +223,8 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 
 ## 建议参考项
 
-* `SectorGeneratorPlugin`：星系生成器契约；
-* `StarSystemAPI`：恒星系对象与实体容器；
-* [C3-S4]：行星/恒星类型；
-* [C3-S5]：自定义实体类型；
-* `starmap.json`：超空间位置注册。
+- `SectorGeneratorPlugin`：星系生成器契约；
+- `StarSystemAPI`：恒星系对象与实体容器；
+- [C3-S4]：行星/恒星类型；
+- [C3-S5]：自定义实体类型；
+- `starmap.json`：超空间位置注册。

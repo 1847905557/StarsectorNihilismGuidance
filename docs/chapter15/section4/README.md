@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 定位 `<存档目录>/common/` 和 MOD 专属文件；
-* 使用原版入口或 LazyLib 读取 common 文本与 JSON；
-* 使用 `writeTextFileToCommon`、`writeJSONToCommon` 或 `CommonDataJSONObject.save()` 写入数据；
-* 组织读 —— 改 —— 写流程，处理缺失字段、版本迁移和未知字段；
-* 从文件内容、重启结果和日志定位 common 读写故障。
+- 定位 `<存档目录>/common/` 和 MOD 专属文件；
+- 使用原版入口或 LazyLib 读取 common 文本与 JSON；
+- 使用 `writeTextFileToCommon`、`writeJSONToCommon` 或 `CommonDataJSONObject.save()` 写入数据；
+- 组织读 —— 改 —— 写流程，处理缺失字段、版本迁移和未知字段；
+- 从文件内容、重启结果和日志定位 common 读写故障。
 
 ## 前置知识
 
-* [C6-S2] 的生涯生命周期回调；
-* [C6-S3] 的 `Global.getSettings()`；
-* [C15-S2] 的 JSON 结构、字段读取和编码规则。
+- [C6-S2] 的生涯生命周期回调；
+- [C6-S3] 的 `Global.getSettings()`；
+- [C15-S2] 的 JSON 结构、字段读取和编码规则。
 
 ## common 的位置与语义
 
@@ -66,11 +66,11 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json"))
 
 预期结果：
 
-* 读取路径指向当前存档的 `common` 目录；
-* 已有字段按文件值读取；
-* 缺失文件或字段不会让读取流程失去可运行状态；
-* 版本迁移后对象包含当前代码要求的字段；
-* 未知字段仍保留在读取对象中。
+- 读取路径指向当前存档的 `common` 目录；
+- 已有字段按文件值读取；
+- 缺失文件或字段不会让读取流程失去可运行状态；
+- 版本迁移后对象包含当前代码要求的字段；
+- 未知字段仍保留在读取对象中。
 
 ## 写入 common
 
@@ -127,12 +127,12 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json"))
 
 预期结果：
 
-* common 文件位于当前存档的 `common` 目录；
-* 写入后重新加载能读到递增后的 `battles`；
-* 未知字段保持不变；
-* 旧版本文件迁移到当前 `schema`；
-* 内容未变化时不会产生不必要的 JSON 写入；
-* 写入失败时原文件仍可读取，并有明确错误日志。
+- common 文件位于当前存档的 `common` 目录；
+- 写入后重新加载能读到递增后的 `battles`；
+- 未知字段保持不变；
+- 旧版本文件迁移到当前 `schema`；
+- 内容未变化时不会产生不必要的 JSON 写入；
+- 写入失败时原文件仍可读取，并有明确错误日志。
 
 清理：删除测试存档中的 `gear_in/state.json` 或恢复测试前的文件内容。
 
@@ -155,9 +155,9 @@ common 是存档持久数据空间。读取时处理缺失字段和版本迁移�
 
 ## 建议参考项
 
-* `SettingsAPI.readJSONFromCommon`：原版 common JSON 读取入口；
-* `SettingsAPI.writeTextFileToCommon`：common 文本写入；
-* `SettingsAPI.writeJSONToCommon`：common JSON 写入；
-* `JSONUtils.loadCommonJSON`：LazyLib common JSON 读取入口；
-* `CommonDataJSONObject.save()`：LazyLib JSON 写盘入口；
-* `<存档目录>/common/`：存档持久化文件位置。
+- `SettingsAPI.readJSONFromCommon`：原版 common JSON 读取入口；
+- `SettingsAPI.writeTextFileToCommon`：common 文本写入；
+- `SettingsAPI.writeJSONToCommon`：common JSON 写入；
+- `JSONUtils.loadCommonJSON`：LazyLib common JSON 读取入口；
+- `CommonDataJSONObject.save()`：LazyLib JSON 写盘入口；
+- `<存档目录>/common/`：存档持久化文件位置。

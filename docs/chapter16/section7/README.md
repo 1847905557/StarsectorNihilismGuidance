@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 判断 `MagicCampaign` 工具是否处于有效生涯上下文；
-* 用 `MagicVariables` 和原版星区服务记录生成前的环境；
-* 为残骸选择变体 ID、损伤状态、发现奖励和轨道；
-* 读取 `createDerelict()` 返回的实体 ID，交给任务或生成器继续管理；
-* 从回收 special、轨道中心和调用场景定位残骸故障。
+- 判断 `MagicCampaign` 工具是否处于有效生涯上下文；
+- 用 `MagicVariables` 和原版星区服务记录生成前的环境；
+- 为残骸选择变体 ID、损伤状态、发现奖励和轨道；
+- 读取 `createDerelict()` 返回的实体 ID，交给任务或生成器继续管理；
+- 从回收 special、轨道中心和调用场景定位残骸故障。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
 
@@ -132,11 +132,11 @@ MagicCampaign.createDerelict(variantId, condition,
 
 预期结果：
 
-* 有效生涯中生成一艘处于 200 su、30 天圆形轨道的残骸；
-* 残骸可被发现，发现经验采用 MagicLib 默认值；
-* `recoverable=true` 的实体具备舰船回收 special，`false` 的对照实体没有该流程；
-* 日志同时记录残骸 ID 与轨道中心 ID，便于任务后续定位；
-* 非生涯上下文只记录警告，不尝试访问星区对象。
+- 有效生涯中生成一艘处于 200 su、30 天圆形轨道的残骸；
+- 残骸可被发现，发现经验采用 MagicLib 默认值；
+- `recoverable=true` 的实体具备舰船回收 special，`false` 的对照实体没有该流程；
+- 日志同时记录残骸 ID 与轨道中心 ID，便于任务后续定位；
+- 非生涯上下文只记录警告，不尝试访问星区对象。
 
 ## 故障分析
 
@@ -151,9 +151,9 @@ MagicCampaign.createDerelict(variantId, condition,
 
 ## 建议参考项
 
-* `MagicCampaign.createDerelict`：创建残骸、设置发现属性、轨道与回收 special；
-* `ShipRecoverySpecial.ShipCondition`：选择残骸的舰船状态；
-* `MagicVariables.getSectorSize`：读取 MagicLib 计算的星区尺寸。
+- `MagicCampaign.createDerelict`：创建残骸、设置发现属性、轨道与回收 special；
+- `ShipRecoverySpecial.ShipCondition`：选择残骸的舰船状态；
+- `MagicVariables.getSectorSize`：读取 MagicLib 计算的星区尺寸。
 ::: details 完整成品：GearInCampaignTools
 
 ```java

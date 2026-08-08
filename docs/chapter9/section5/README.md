@@ -10,31 +10,31 @@
 
 完成后，您将能够：
 
-* 解释两个服务入口的进入方式：
-    *   `SectorAPI.getFaction(id)` / `getAllFactions()` / `getPlayerFaction()`；
-    *   `SectorEntityToken.getCargo()`(玩家舰队 `CampaignFleetAPI.getCargo()`、子市场 `SubmarketAPI.getCargo()`)；
-* 区分 `FactionAPI` 的分组 (身份、显示与颜色、关系、资源集合、经济字段、随机人物、doctrine/production/spec) 与关系语义：
-    *   全局对表、`-1..1` 钳位、`adjustRelationship` 直接加、`setRelationship` 直写；
-    *   `isHostileTo` = 关系等级 ≤ `HOSTILE`、`getRelToPlayer()` 包装；
-* 解释 `CargoAPI` 的栈模型 (stack 集合 + credits + 容量统计)、四类写入入口 (资源 / 武器 / 战机芯片 / 特殊物品) 与 `removeItems` 的 NULL 占位栈语义， 并遵守 `getMothballedShips()` 必须先 `initMothballedShips(factionId)` 的必须规则；
-* 从症状定位故障 (见 "故障分析" 节)，并沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核 (沿用本节完整最小例的任务链)。
+- 解释两个服务入口的进入方式：
+    - `SectorAPI.getFaction(id)` / `getAllFactions()` / `getPlayerFaction()`；
+    - `SectorEntityToken.getCargo()`(玩家舰队 `CampaignFleetAPI.getCargo()`、子市场 `SubmarketAPI.getCargo()`)；
+- 区分 `FactionAPI` 的分组 (身份、显示与颜色、关系、资源集合、经济字段、随机人物、doctrine/production/spec) 与关系语义：
+    - 全局对表、`-1..1` 钳位、`adjustRelationship` 直接加、`setRelationship` 直写；
+    - `isHostileTo` = 关系等级 ≤ `HOSTILE`、`getRelToPlayer()` 包装；
+- 解释 `CargoAPI` 的栈模型 (stack 集合 + credits + 容量统计)、四类写入入口 (资源 / 武器 / 战机芯片 / 特殊物品) 与 `removeItems` 的 NULL 占位栈语义， 并遵守 `getMothballedShips()` 必须先 `initMothballedShips(factionId)` 的必须规则；
+- 从症状定位故障 (见 "故障分析" 节)，并沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核 (沿用本节完整最小例的任务链)。
 
 ## 前置知识
 
-* [C6-S2] 的 `modPlugin` 生命周期与持久数据标记；
-* [C6-S3] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
-* [C7-S3] 的普通字段与 `MutableStat` 的区别；
-* [C9-S1] 的 `SectorAPI` 星区入口、`onGameLoad` 注册与 `REGISTER_MARK` 判断；
-* [C9-S3] 的玩家舰队、成员、`FleetDataAPI.getMothballedShips()` 与 `CampaignFleetAPI.getCargo()`；
-* [C10-S2] 的子市场 cargo 创建时机、`getCargoNullOk()` 判空与 `Commodities` 商品 ID；
-* 理解 `FactionAPI.getTariffFraction()` 读取势力规格中的普通数值。
+- [C6-S2] 的 `modPlugin` 生命周期与持久数据标记；
+- [C6-S3] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
+- [C7-S3] 的普通字段与 `MutableStat` 的区别；
+- [C9-S1] 的 `SectorAPI` 星区入口、`onGameLoad` 注册与 `REGISTER_MARK` 判断；
+- [C9-S3] 的玩家舰队、成员、`FleetDataAPI.getMothballedShips()` 与 `CampaignFleetAPI.getCargo()`；
+- [C10-S2] 的子市场 cargo 创建时机、`getCargoNullOk()` 判空与 `Commodities` 商品 ID；
+- 理解 `FactionAPI.getTariffFraction()` 读取势力规格中的普通数值。
 
 ## 术语
 
 按术语约定，本节首次完整讲解两个词；API 类名保留源码大小写：
 
-* **势力 (faction)**：API 名保留 `FactionAPI`。一个身份完整的派系对象：id、显示名、颜色、关系表、已知资源集合、随机人物与 `.faction` 规格。玩家自身也是一个势力 (`Factions.PLAYER`)。
-* **货物 (cargo)**：API 名保留 `CargoAPI`。实体 (舰队、战利品、子市场、市场) 持有的货物容器：栈集合 + 信用 (credits)+ 容量统计。单个货物条目是 `CargoStackAPI`(栈)。
+- **势力 (faction)**：API 名保留 `FactionAPI`。一个身份完整的派系对象：id、显示名、颜色、关系表、已知资源集合、随机人物与 `.faction` 规格。玩家自身也是一个势力 (`Factions.PLAYER`)。
+- **货物 (cargo)**：API 名保留 `CargoAPI`。实体 (舰队、战利品、子市场、市场) 持有的货物容器：栈集合 + 信用 (credits)+ 容量统计。单个货物条目是 `CargoStackAPI`(栈)。
 
 ## 梳理势力货舱关系
 
@@ -69,15 +69,15 @@
 **关系语义 (全局对表)**：
 
 1. 关系存储在一张**全局对表**里：键 `idA_idB` 与 `idB_idA` 共享同一个对条目，新对默认 `0.0`(同势力对默认 `1.0`)；写入时把值钳位到 `[-1, 1]`。
-    *   因此 `getRelationship(id)` 读到的是 "该势力视角下与目标势力" 的值，读取未建立的对会**用到时才创建**默认 0 的对条目。
+    - 因此 `getRelationship(id)` 读到的是 "该势力视角下与目标势力" 的值，读取未建立的对会**用到时才创建**默认 0 的对条目。
 2. `getRelationship(id)` 直接返回对表值；`getRelationshipLevel(id)` = `RepLevel.getLevelFor(值)`。
-    *   `RepLevel` 阈值：`T1=0.09`、`T2=0.24`、`T3=0.49`、`T4=0.74`；`getMin()` 不包含边界、`getMax()` 包含边界。
+    - `RepLevel` 阈值：`T1=0.09`、`T2=0.24`、`T3=0.49`、`T4=0.74`；`getMin()` 不包含边界、`getMax()` 包含边界。
 3. `adjustRelationship(id, delta)` **直接相加**并经 `setValue` 钳位，不触发任何监听；`adjustRelationship(id, delta, limit)` 按 `limit` 等级封顶/封底 (正方向默认 `COOPERATIVE`、负方向默认 `VENGEFUL`)。
-    *   `setRelationship(id, float)` 直写；`setRelationship(id, RepLevel)` 写到等级边界：`NEUTRAL` = 0、正级 = `getMin()+0.01`、负级 = `-getMin()-0.01`。
+    - `setRelationship(id, float)` 直写；`setRelationship(id, RepLevel)` 写到等级边界：`NEUTRAL` = 0、正级 = `getMin()+0.01`、负级 = `-getMin()-0.01`。
 4. `isHostileTo(id)` = `isAtBest(id, HOSTILE)`：关系等级 ≤ `HOSTILE` 即敌对。
 5. 玩家视角包装：`getRelToPlayer()` 返回 `RelationshipAPI`(`com.fs.starfarer.api.characters.RelationshipAPI`：`getRel()`、`getLevel()`)；玩家势力对玩家自己 = 同势力对默认 `1.0`。至少在这张对表里，每个势力与自己永远是满分关系。
 6. **玩家声望 action 的正规路径**是 `SectorAPI.adjustPlayerReputation(action, factionId/person)`("This method will pick the highest-priority ReputationActionResponsePlugin and call its handlePlayerReputationAction() method"；原版 `AdjustRep` rulecmd 同款调用，`com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`)。
-    *   `FactionAPI` 的关系写入是**原始写入**，不经过 response plugin 的 delta 计算，也不产生声望监听通知。
+    - `FactionAPI` 的关系写入是**原始写入**，不经过 response plugin 的 delta 计算，也不产生声望监听通知。
 
 ### 货物 (CargoAPI)
 
@@ -85,9 +85,9 @@
 
 `CargoAPI`(`com.fs.starfarer.api.campaign.CargoAPI`) 是纯接口，结构分三块：
 
-* **栈集合**：`stacks` 字段，`getStacksCopy()` 返回副本；
-* **信用**：`credits` 字段，`getCredits()` 返回 `MutableValue`——`com.fs.starfarer.api.util.MutableValue`： `get()` / `set()` / `add()` / `subtract()`；
-* **容量统计**：`maxCapacity` / `maxFuel` / `maxPersonnel` / `spaceUsed`。
+- **栈集合**：`stacks` 字段，`getStacksCopy()` 返回副本；
+- **信用**：`credits` 字段，`getCredits()` 返回 `MutableValue`——`com.fs.starfarer.api.util.MutableValue`： `get()` / `set()` / `add()` / `subtract()`；
+- **容量统计**：`maxCapacity` / `maxFuel` / `maxPersonnel` / `spaceUsed`。
 
 ### CargoAPI 读写分族速查表
 
@@ -304,13 +304,13 @@ Starsector\mods\GearIndustry\
 
 ### 行为要点
 
-* `extends GearInOneShotScript`：沿用脚本节的一次性演示模式 —— 首帧 `advance()` 执行一次 `runDemo()`，`isDone()` 置位后引擎下一帧自动移除。
-* `REGISTER_MARK`：persistent data 标记键 —— 两个脚本各自独立 (`GearIn_FactionServices` / `GearIn_CargoServices`)。
-    *   **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入既有插件的 `CLASS_MARK` 标记。
-* 势力段：`getFaction(id)` / `getPlayerFaction()` 入口；关系写入演示 `adjustRelationship(+0.05)` → `setRelationship(原值)` 同帧精确回滚。
-    *   关系写入有 `[-1,1]` 钳位，原值必在 `[-1,1]` 内，回滚必然精确；`getRelToPlayer()` 对玩家势力自己返回 `1.0`(同势力对默认值)。
-* 货物段：`addSupplies(100)` / `addFuel(50)` / `addMarines(10)` 后同量 remove 回滚，`supplies/fuel/marines` 终值恒等于初值。
-    *   `stacks after` = `stacks during`(`removeItems` 留下 NULL 占位栈)，`nullAfter` = 本演示新腾空的栈数 (0–3，取决于演示前是否已有对应栈)。
+- `extends GearInOneShotScript`：沿用脚本节的一次性演示模式 —— 首帧 `advance()` 执行一次 `runDemo()`，`isDone()` 置位后引擎下一帧自动移除。
+- `REGISTER_MARK`：persistent data 标记键 —— 两个脚本各自独立 (`GearIn_FactionServices` / `GearIn_CargoServices`)。
+    - **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入既有插件的 `CLASS_MARK` 标记。
+- 势力段：`getFaction(id)` / `getPlayerFaction()` 入口；关系写入演示 `adjustRelationship(+0.05)` → `setRelationship(原值)` 同帧精确回滚。
+    - 关系写入有 `[-1,1]` 钳位，原值必在 `[-1,1]` 内，回滚必然精确；`getRelToPlayer()` 对玩家势力自己返回 `1.0`(同势力对默认值)。
+- 货物段：`addSupplies(100)` / `addFuel(50)` / `addMarines(10)` 后同量 remove 回滚，`supplies/fuel/marines` 终值恒等于初值。
+    - `stacks after` = `stacks during`(`removeItems` 留下 NULL 占位栈)，`nullAfter` = 本演示新腾空的栈数 (0–3，取决于演示前是否已有对应栈)。
 
 ### 调用点片段
 
@@ -369,18 +369,18 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含三个类的 `.class` 条目。
 2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按顺序出现两个脚本的日志行 (势力段 ×4、货物段 ×2 组)，且**没有**旧复合演示的收尾 `done` 行。
-    *   观察 `write-rollback` 行的初值、中间值与终值。
+    - 观察 `write-rollback` 行的初值、中间值与终值。
 3. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位)。
 4. **参数演示 (可选)**：把势力段 `adjustRelationship(Factions.PLAYER, 0.05f)` 的 delta 改成 `0.2f` 重新构建：`write-rollback` 行中间值比初值高 `0.20`，终值仍与初值相等 (回滚精确性验证)。
 
 预期结果：
 
-* **关系/货物核对**：`write-rollback` 行的第二段恒比第一段高 `0.05`(起始关系接近 `1.0` 时被钳位则例外，新档霸主关系不会)，第三段与第一段相等。
-* **固定值**：`drugsIllegal=false`、`illegalCount=0`(新档玩家势力无非法商品声明)、`relToPlayer=1.00(Cooperative)`(玩家势力对玩家自己 = 同势力对默认 `1.0`)。
-* **执行次数**：日志段的顺序与调用点片段的注册顺序一致 (势力 → 货物)，两个脚本各自只执行一次。
-* **读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位、脚本不再注册)。
-* **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
-* **其余数值**：以实际存档为准。
+- **关系/货物核对**：`write-rollback` 行的第二段恒比第一段高 `0.05`(起始关系接近 `1.0` 时被钳位则例外，新档霸主关系不会)，第三段与第一段相等。
+- **固定值**：`drugsIllegal=false`、`illegalCount=0`(新档玩家势力无非法商品声明)、`relToPlayer=1.00(Cooperative)`(玩家势力对玩家自己 = 同势力对默认 `1.0`)。
+- **执行次数**：日志段的顺序与调用点片段的注册顺序一致 (势力 → 货物)，两个脚本各自只执行一次。
+- **读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位、脚本不再注册)。
+- **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
+- **其余数值**：以实际存档为准。
 
 清理：把 `adjustRelationship(Factions.PLAYER, 0.2f)` 恢复为 `adjustRelationship(Factions.PLAYER, 0.05f)`。
 
@@ -404,20 +404,20 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.Global`—— 全局入口：`getSector()`、`getLogger()`。
-* `com.fs.starfarer.api.campaign.SectorAPI`—— 生涯引擎入口。
-    *   关系与货物入口都能从这里进入：`getFaction` / `getAllFactions` / `getPlayerFaction` / `getPlayerFleet` / `adjustPlayerReputation` / `getPersistentData` / `addScript`。
-* `com.fs.starfarer.api.campaign.FactionAPI`—— 势力接口：身份、颜色、关系读写、已知资源集合、经济字段与 doctrine/production/spec。
-* `com.fs.starfarer.api.characters.RelationshipAPI`—— 关系值包装：`getRel()` / `getLevel()`。
-* `com.fs.starfarer.api.campaign.CargoAPI`—— 货物容器：分族读写、容量统计、`getStacksCopy()`、`removeEmptyStacks()`。
-* `com.fs.starfarer.api.campaign.CargoStackAPI`—— 货物单栈：类型、数据、大小与 `isNull()` 占位判定。
-* `com.fs.starfarer.api.util.MutableValue`——credits 的可变值容器：`get` / `set` / `add` / `subtract`。
-* `com.fs.starfarer.api.campaign.RepLevel`—— 关系等级枚举与阈值：`getLevelFor`、`getMin` / `getMax` 边界语义。
-* `com.fs.starfarer.api.campaign.SectorEntityToken`、`CampaignFleetAPI`——`getCargo()` 货物入口；
-* `com.fs.starfarer.api.util.Misc`—— 文本与高亮颜色常量 (`getTextColor` / `getGrayColor` 等)。
-* `com.fs.starfarer.api.impl.campaign.ids.Factions`、`Commodities`——id 常量：势力 / 商品。
-* `com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`—— 原版声望 action rulecmd：`adjustPlayerReputation` 的原版调用参考。
-* `data/scripts/gearin/campaign/`—— 本节三个示例类所在目录 (MOD 内相对路径)。
+- `com.fs.starfarer.api.Global`—— 全局入口：`getSector()`、`getLogger()`。
+- `com.fs.starfarer.api.campaign.SectorAPI`—— 生涯引擎入口。
+    - 关系与货物入口都能从这里进入：`getFaction` / `getAllFactions` / `getPlayerFaction` / `getPlayerFleet` / `adjustPlayerReputation` / `getPersistentData` / `addScript`。
+- `com.fs.starfarer.api.campaign.FactionAPI`—— 势力接口：身份、颜色、关系读写、已知资源集合、经济字段与 doctrine/production/spec。
+- `com.fs.starfarer.api.characters.RelationshipAPI`—— 关系值包装：`getRel()` / `getLevel()`。
+- `com.fs.starfarer.api.campaign.CargoAPI`—— 货物容器：分族读写、容量统计、`getStacksCopy()`、`removeEmptyStacks()`。
+- `com.fs.starfarer.api.campaign.CargoStackAPI`—— 货物单栈：类型、数据、大小与 `isNull()` 占位判定。
+- `com.fs.starfarer.api.util.MutableValue`——credits 的可变值容器：`get` / `set` / `add` / `subtract`。
+- `com.fs.starfarer.api.campaign.RepLevel`—— 关系等级枚举与阈值：`getLevelFor`、`getMin` / `getMax` 边界语义。
+- `com.fs.starfarer.api.campaign.SectorEntityToken`、`CampaignFleetAPI`——`getCargo()` 货物入口；
+- `com.fs.starfarer.api.util.Misc`—— 文本与高亮颜色常量 (`getTextColor` / `getGrayColor` 等)。
+- `com.fs.starfarer.api.impl.campaign.ids.Factions`、`Commodities`——id 常量：势力 / 商品。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`—— 原版声望 action rulecmd：`adjustPlayerReputation` 的原版调用参考。
+- `data/scripts/gearin/campaign/`—— 本节三个示例类所在目录 (MOD 内相对路径)。
 
 ## 完整最小例
 

@@ -10,21 +10,21 @@
 
 完成后，您将能够：
 
-* 列出 `CombatEngineAPI` 状态访问器的四个分组，并说出代表方法的返回类型与语义；
-* 用 `getShips()` 配合 `isAlive()` 正确遍历在场舰船，并解释残骸与停驻战机需要专门处理的原因；
-* 用 `CombatFleetManagerAPI` 的五份名单与 `getDeployedCopyDFM()` 读取两侧舰队的部署状态；
-* 区分战斗时间的四种语义，并解释暂停时 `advance()` 仍被调用而 `getElapsedInLastFrame()` 不为 0 的原因；
-* 识别 `getPlayerShip()` 返回的 "Command Shuttle" 假舰，并用正确判据确认玩家部署状态；
-* 从日志症状定位七类典型故障：残骸统计错误、暂停期间状态累计、玩家舰判据失效、跨战斗缓存实体引用、两种累计时间选错、时间倍率二次缩放、误用 `getWinningSideId()` 判断结束。
+- 列出 `CombatEngineAPI` 状态访问器的四个分组，并说出代表方法的返回类型与语义；
+- 用 `getShips()` 配合 `isAlive()` 正确遍历在场舰船，并解释残骸与停驻战机需要专门处理的原因；
+- 用 `CombatFleetManagerAPI` 的五份名单与 `getDeployedCopyDFM()` 读取两侧舰队的部署状态；
+- 区分战斗时间的四种语义，并解释暂停时 `advance()` 仍被调用而 `getElapsedInLastFrame()` 不为 0 的原因；
+- 识别 `getPlayerShip()` 返回的 "Command Shuttle" 假舰，并用正确判据确认玩家部署状态；
+- 从日志症状定位七类典型故障：残骸统计错误、暂停期间状态累计、玩家舰判据失效、跨战斗缓存实体引用、两种累计时间选错、时间倍率二次缩放、误用 `getWinningSideId()` 判断结束。
 
 ## 前置知识
 
-* [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-* [C3-S1] 的模拟战入口、战役与生涯概念；
-* [C6-S1] 的 Java 构建与 JAR 输出；
-* [C6-S3] 的 `Global` 生命周期、战斗引擎阶段与跨战斗引用边界；
-* [C7-S1] 的 `addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 回调与暂停检查；
-* [C7-S3] 的 `MutableStat` 与 `getTimeMult()` 返回值。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
+- [C3-S1] 的模拟战入口、战役与生涯概念；
+- [C6-S1] 的 Java 构建与 JAR 输出；
+- [C6-S3] 的 `Global` 生命周期、战斗引擎阶段与跨战斗引用边界；
+- [C7-S1] 的 `addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 回调与暂停检查；
+- [C7-S3] 的 `MutableStat` 与 `getTimeMult()` 返回值。
 
 ## 文件与 API 链路
 
@@ -57,9 +57,9 @@
 
 ### 读取战斗引擎
 
-* `isInCampaign()`：这场战斗发生在生涯里 (含生涯内的模拟战) 返回 `true`；战役 (mission) 与主菜单模拟战返回 `false`(API javadoc："true if this battle is inside the campaign, false otherwise (i.e., mission or simulation, including in-campaign simulations)")。
-* `isInCampaignSim()` / `isSimulation()` / `isMission()`：三层细分 —— 生涯内模拟战只有 `isInCampaignSim()` 为 `true`；主菜单模拟战 `isSimulation()` 为 `true`；战役 `isMission()` 为 `true` 且 `getMissionId()` 返回战役 ID(如 `GearIn_test` 测试战役)。
-* 用途：同一段逻辑在不同战斗类型下行为不同时 (例如只在生涯遭遇战里开启某机制)，先读这几个标志，不要在 `init` 里猜。
+- `isInCampaign()`：这场战斗发生在生涯里 (含生涯内的模拟战) 返回 `true`；战役 (mission) 与主菜单模拟战返回 `false`(API javadoc："true if this battle is inside the campaign, false otherwise (i.e., mission or simulation, including in-campaign simulations)")。
+- `isInCampaignSim()` / `isSimulation()` / `isMission()`：三层细分 —— 生涯内模拟战只有 `isInCampaignSim()` 为 `true`；主菜单模拟战 `isSimulation()` 为 `true`；战役 `isMission()` 为 `true` 且 `getMissionId()` 返回战役 ID(如 `GearIn_test` 测试战役)。
+- 用途：同一段逻辑在不同战斗类型下行为不同时 (例如只在生涯遭遇战里开启某机制)，先读这几个标志，不要在 `init` 里猜。
 
 ### 读取玩家舰船
 
@@ -74,9 +74,9 @@
 
 ### 判断战斗结果
 
-* `isCombatOver()`：战斗结束标志置位**且**结束淡出动画播放完才返回 `true`。可观察结果：胜负判定到淡出完成之间有一个窗口，`isCombatOver()` 仍为 `false`。
-* `getWinningSideId()`：API javadoc 原文 "0 = player, 1 = enemy, 2 = player allies, no player ships left."；胜负未定时返回 -1(初始默认值)。因此**禁止**把 `getWinningSideId() != -1` 当作 "战斗已结束" 判据 —— 它代表的是 "胜者侧"，结束判定必须用 `isCombatOver()`。
-* `setCombatNotOverFor(float)` / `getCombatNotOverFor()`：把战斗强制延续一段时间 (防止按败北条件提前收场)；结束判定对 "败北" 还要求战斗时间累计超过 30 秒 —— 战斗开始 30 秒内不会因一方 "被击败" 而结束。
+- `isCombatOver()`：战斗结束标志置位**且**结束淡出动画播放完才返回 `true`。可观察结果：胜负判定到淡出完成之间有一个窗口，`isCombatOver()` 仍为 `false`。
+- `getWinningSideId()`：API javadoc 原文 "0 = player, 1 = enemy, 2 = player allies, no player ships left."；胜负未定时返回 -1(初始默认值)。因此**禁止**把 `getWinningSideId() != -1` 当作 "战斗已结束" 判据 —— 它代表的是 "胜者侧"，结束判定必须用 `isCombatOver()`。
+- `setCombatNotOverFor(float)` / `getCombatNotOverFor()`：把战斗强制延续一段时间 (防止按败北条件提前收场)；结束判定对 "败北" 还要求战斗时间累计超过 30 秒 —— 战斗开始 30 秒内不会因一方 "被击败" 而结束。
 
 战斗类型与结束条件清楚了，接下来读取场上到底有哪些舰船 —— 引擎对象表和舰队管理器提供两条互补的路径。
 
@@ -86,9 +86,9 @@
 
 `engine.getShips()` 返回引擎对象表里的全部 `ShipAPI`，它**不是** "存活舰船列表"：
 
-* 残骸 (`isHulk() == true`) 仍在对象表里 (引擎自身的推进循环遍历时也要跳过残骸)；
-* 已标记移除、尚未执行移除的舰船也还在表里；
-* 停在甲板 (机库) 里的战机**不在**对象表里，但 `isAlive()` 仍为 `true`。
+- 残骸 (`isHulk() == true`) 仍在对象表里 (引擎自身的推进循环遍历时也要跳过残骸)；
+- 已标记移除、尚未执行移除的舰船也还在表里；
+- 停在甲板 (机库) 里的战机**不在**对象表里，但 `isAlive()` 仍为 `true`。
 
 ### 实体存活性速查表
 
@@ -124,9 +124,9 @@
 
 遍历已部署成员用 `getDeployedCopyDFM()`(`List<DeployedFleetMemberAPI>`)：每个元素把 "部署记录" 与 "场上实体" 连起来：
 
-* `getMember()` 是 `FleetMemberAPI`(生涯侧身份，完整讲解见生涯主题)。
-* `getShip()` 是场上 `ShipAPI`(战机联队返回联队长机)；
-* `isFighterWing()` / `isStationModule()` / `isAlly()` 是常用过滤。
+- `getMember()` 是 `FleetMemberAPI`(生涯侧身份，完整讲解见生涯主题)。
+- `getShip()` 是场上 `ShipAPI`(战机联队返回联队长机)；
+- `isFighterWing()` / `isStationModule()` / `isAlly()` 是常用过滤。
 
 需要按成员定位场上实体时用 `getShipFor(FleetMemberAPI)`(未部署返回 null) 与 `getDeployedFleetMember(ShipAPI)`。
 
@@ -160,9 +160,9 @@
 
 选哪种累计时间的决策：
 
-* 需要 "战斗推进了多少" 用 `getTotalElapsedTime(false)`(败北判定的 30 秒门槛用的就是这条累计)；
-* 需要 "玩家实际经历了多久"(含暂停发呆) 用 `getTotalElapsedTime(true)`；
-* 逐帧推进用 `amount` / `getElapsedInLastFrame()`。
+- 需要 "战斗推进了多少" 用 `getTotalElapsedTime(false)`(败北判定的 30 秒门槛用的就是这条累计)；
+- 需要 "玩家实际经历了多久"(含暂停发呆) 用 `getTotalElapsedTime(true)`；
+- 逐帧推进用 `amount` / `getElapsedInLastFrame()`。
 
 语义齐全之后，把它们写进一个可运行的插件，让日志替您说出这些状态。
 
@@ -277,12 +277,12 @@ Starsector\mods\GearIndustry\
 
 对应关系：
 
-* `init` 里的 `battle init` 行：读战斗上下文四标志 + `getMissionId()`，用 `GearIn_test` 战役验证 "这场是 mission"。
-* `advance` 的 `if (engine.isPaused()) return;`：把时间语义的第 1 条落成代码 —— 暂停时不推进状态，报告节奏也随之停摆；恢复后 `total` 与 `totalWithPause` 的差值就是暂停时长的现场证明。
-* `logEngineTime`：把 "时间语义" 表变成日志 ——`total` / `totalWithPause` / `lastFrame` / `timeMult` / `contact` / `fleetsInContact` / `combatOver` / `winner` 一次打印。
-* `logFleetManagers`：两侧管理器的五份名单大小 + `getDeployedCopyDFM()` 遍历 (跳过 `isFighterWing()` / `isStationModule()`，只数存活主力舰 —— 已部署成员遍历的成熟做法)。
-* `logShips`：`getShips()` + `isAlive()` 过滤分成 alive / notAlive 两堆 (残骸与刚移除的舰计入 notAlive)；`playerShip` 行核对 `getPlayerShip()` 永不 null 的判据 (部署阶段显示 `shuttlepod_xfer` 假舰、`playerInPlay=false`)。
-* `IntervalUtil(2f, 2f)`：固定 2 秒节奏的周期触发器 (`advance` + `intervalElapsed()` 每帧调用)。
+- `init` 里的 `battle init` 行：读战斗上下文四标志 + `getMissionId()`，用 `GearIn_test` 战役验证 "这场是 mission"。
+- `advance` 的 `if (engine.isPaused()) return;`：把时间语义的第 1 条落成代码 —— 暂停时不推进状态，报告节奏也随之停摆；恢复后 `total` 与 `totalWithPause` 的差值就是暂停时长的现场证明。
+- `logEngineTime`：把 "时间语义" 表变成日志 ——`total` / `totalWithPause` / `lastFrame` / `timeMult` / `contact` / `fleetsInContact` / `combatOver` / `winner` 一次打印。
+- `logFleetManagers`：两侧管理器的五份名单大小 + `getDeployedCopyDFM()` 遍历 (跳过 `isFighterWing()` / `isStationModule()`，只数存活主力舰 —— 已部署成员遍历的成熟做法)。
+- `logShips`：`getShips()` + `isAlive()` 过滤分成 alive / notAlive 两堆 (残骸与刚移除的舰计入 notAlive)；`playerShip` 行核对 `getPlayerShip()` 永不 null 的判据 (部署阶段显示 `shuttlepod_xfer` 假舰、`playerInPlay=false`)。
+- `IntervalUtil(2f, 2f)`：固定 2 秒节奏的周期触发器 (`advance` + `intervalElapsed()` 每帧调用)。
 
 注册片段 (工程片段 —— 本节不改动既有文件，只演示调用)：
 
@@ -336,12 +336,12 @@ if (engine.getFleetManager(FleetSide.PLAYER).getDeployedCopy().isEmpty()) { retu
 
 预期结果：
 
-* **游戏构建**：`BUILD SUCCESSFUL`；`jar tf` 能看到 `data/scripts/gearin/combat/GearInCombatStatePlugin.class`
-* **战役冒烟**：`starsector.log` 出现一行：
-* **暂停语义**：暂停期间**没有**报告输出 (暂停检查生效)；恢复后的下一条 `GearIn time:` 里 `totalWithPause` 比暂停前约多 10 秒，而 `total` 增长远小于 10 秒 —— 两条累计的差值就是暂停时长
-* **残骸过滤**：`alive` 减 1、`notAlive` 加 1(残骸计入 notAlive 而不是消失)
-* **玩家舰判据**：部署阶段 (玩家尚未部署任何舰船)`playerShip=shuttlepod_xfer`、`playerAlive=true`、`playerInPlay=false`；部署玩家舰后 `playerShip` 变为玩家舰的 hull id、`playerInPlay=true`。战役开局即设置玩家舰，通常直接看到玩家舰
-* **战斗结束**：战斗收尾时 `combatOver=true`、`winner=0`(玩家胜) 或 `1`(敌方胜)；结束动画期间 `combatOver` 已为 true 但画面尚未淡出到结算
+- **游戏构建**：`BUILD SUCCESSFUL`；`jar tf` 能看到 `data/scripts/gearin/combat/GearInCombatStatePlugin.class`
+- **战役冒烟**：`starsector.log` 出现一行：
+- **暂停语义**：暂停期间**没有**报告输出 (暂停检查生效)；恢复后的下一条 `GearIn time:` 里 `totalWithPause` 比暂停前约多 10 秒，而 `total` 增长远小于 10 秒 —— 两条累计的差值就是暂停时长
+- **残骸过滤**：`alive` 减 1、`notAlive` 加 1(残骸计入 notAlive 而不是消失)
+- **玩家舰判据**：部署阶段 (玩家尚未部署任何舰船)`playerShip=shuttlepod_xfer`、`playerAlive=true`、`playerInPlay=false`；部署玩家舰后 `playerShip` 变为玩家舰的 hull id、`playerInPlay=true`。战役开局即设置玩家舰，通常直接看到玩家舰
+- **战斗结束**：战斗收尾时 `combatOver=true`、`winner=0`(玩家胜) 或 `1`(敌方胜)；结束动画期间 `combatOver` 已为 true 但画面尚未淡出到结算
 
 ## 故障分析
 
@@ -363,18 +363,18 @@ if (engine.getFleetManager(FleetSide.PLAYER).getDeployedCopy().isEmpty()) { retu
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.combat.CombatEngineAPI`(公开 API)：状态访问器、遍历入口与时间语义的签名源头。
-* `com.fs.starfarer.api.combat.CombatFleetManagerAPI`(公开 API)：五份名单、`getDeployedCopyDFM()` 与成员定位。
-* `com.fs.starfarer.api.combat.ShipAPI` / `com.fs.starfarer.api.combat.CombatEntityAPI`(公开 API)：单舰与实体状态访问器 (`isAlive()` / `isHulk()` / `isEntityInPlay()`)。
-* `com.fs.starfarer.api.combat.DeployedFleetMemberAPI`(公开 API)：部署记录与场上实体的连接 (`getMember()` / `getShip()` / `isFighterWing()`)。
-* `com.fs.starfarer.api.fleet.FleetMemberAPI`(公开 API)：`getMember()` 的返回类型，生涯侧身份。
-* `com.fs.starfarer.api.combat.EveryFrameCombatPlugin` / `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`(公开 API)：插件骨架与回调签名。
-* `com.fs.starfarer.api.util.IntervalUtil`(公开 API)：定期间隔触发器。
-* `com.fs.starfarer.api.mission.FleetSide`(公开 API)：`PLAYER` / `ENEMY` 两侧。
-* `com.fs.starfarer.api.Global`(公开 API)：`getCombatEngine()` / `getCurrentState()` / `getLogger()` 入口。
-* `data/config/settings.json`：`combatSpeedMult` 帧 dt 全局倍率配置。
-* `docs/chapter7/section1/README.md`：战斗插件模型、注册入口与暂停检查。
-* `docs/chapter6/section3/README.md`：引擎生命周期、阶段判据与跨战斗缓存禁令。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`(公开 API)：状态访问器、遍历入口与时间语义的签名源头。
+- `com.fs.starfarer.api.combat.CombatFleetManagerAPI`(公开 API)：五份名单、`getDeployedCopyDFM()` 与成员定位。
+- `com.fs.starfarer.api.combat.ShipAPI` / `com.fs.starfarer.api.combat.CombatEntityAPI`(公开 API)：单舰与实体状态访问器 (`isAlive()` / `isHulk()` / `isEntityInPlay()`)。
+- `com.fs.starfarer.api.combat.DeployedFleetMemberAPI`(公开 API)：部署记录与场上实体的连接 (`getMember()` / `getShip()` / `isFighterWing()`)。
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`(公开 API)：`getMember()` 的返回类型，生涯侧身份。
+- `com.fs.starfarer.api.combat.EveryFrameCombatPlugin` / `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`(公开 API)：插件骨架与回调签名。
+- `com.fs.starfarer.api.util.IntervalUtil`(公开 API)：定期间隔触发器。
+- `com.fs.starfarer.api.mission.FleetSide`(公开 API)：`PLAYER` / `ENEMY` 两侧。
+- `com.fs.starfarer.api.Global`(公开 API)：`getCombatEngine()` / `getCurrentState()` / `getLogger()` 入口。
+- `data/config/settings.json`：`combatSpeedMult` 帧 dt 全局倍率配置。
+- `docs/chapter7/section1/README.md`：战斗插件模型、注册入口与暂停检查。
+- `docs/chapter6/section3/README.md`：引擎生命周期、阶段判据与跨战斗缓存禁令。
 
 ::: details 完整成品：GearInCombatStatePlugin
 

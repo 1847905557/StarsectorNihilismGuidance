@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 用 `AIUtils` 限定点防御需要考虑的敌方导弹范围；
-* 在评分前用 `WeaponUtils` 排除射界外目标；
-* 把伤害、EMP 与距离组合成可观察的威胁分；
-* 每帧只选择一个最高威胁目标并驱动炮塔转向；
-* 从射界、评分分母和控制权定位点防御失效。
+- 用 `AIUtils` 限定点防御需要考虑的敌方导弹范围；
+- 在评分前用 `WeaponUtils` 排除射界外目标；
+- 把伤害、EMP 与距离组合成可观察的威胁分；
+- 每帧只选择一个最高威胁目标并驱动炮塔转向；
+- 从射界、评分分母和控制权定位点防御失效。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
 
@@ -136,11 +136,11 @@ if (WeaponUtils.isWithinArc(missile, weapon)) {
 
 预期结果：
 
-* 1400 su 外目标不进入候选列表，射界外目标不进入评分；
-* 两个目标均在射界内时，返回值对应威胁分较高者；
-* 每帧最多返回一个 `MissileAPI`，该目标存在时炮塔才接受转向指令；
-* 目标离开范围或消失后，下一帧重新选择剩余目标；
-* `starsector.log` 没有未处理异常。
+- 1400 su 外目标不进入候选列表，射界外目标不进入评分；
+- 两个目标均在射界内时，返回值对应威胁分较高者；
+- 每帧最多返回一个 `MissileAPI`，该目标存在时炮塔才接受转向指令；
+- 目标离开范围或消失后，下一帧重新选择剩余目标；
+- `starsector.log` 没有未处理异常。
 
 ## 故障分析
 
@@ -155,9 +155,9 @@ if (WeaponUtils.isWithinArc(missile, weapon)) {
 
 ## 建议参考项
 
-* `AIUtils.getNearbyEnemyMissiles`：取得当前帧导弹候选；
-* `WeaponUtils.isWithinArc`：确认武器射界；
-* `WeaponUtils.aimTowardsPoint`：驱动炮塔朝指定坐标转向。
+- `AIUtils.getNearbyEnemyMissiles`：取得当前帧导弹候选；
+- `WeaponUtils.isWithinArc`：确认武器射界；
+- `WeaponUtils.aimTowardsPoint`：驱动炮塔朝指定坐标转向。
 ::: details 完整成品：GearInMissileThreat
 
 ```java

@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 用 `EllipseUtils` 围绕固定起点生成一组带朝向的候选坐标；
-* 用 `CollisionUtils` 排除移动线段穿过战斗实体的候选；
-* 用距离与最短角差建立可解释的评分；
-* 在候选确定前隔离引擎持有的可变位置向量；
-* 把唯一结果交给战术系统，并为无可用落点保留取消分支。
+- 用 `EllipseUtils` 围绕固定起点生成一组带朝向的候选坐标；
+- 用 `CollisionUtils` 排除移动线段穿过战斗实体的候选；
+- 用距离与最短角差建立可解释的评分；
+- 在候选确定前隔离引擎持有的可变位置向量；
+- 把唯一结果交给战术系统，并为无可用落点保留取消分支。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
 
@@ -125,11 +125,11 @@ Vector2f origin = new Vector2f(ship.getLocation());
 
 预期结果：
 
-* 每次规划固定生成 12 个候选，碰撞候选不会进入评分；
-* 正前方畅通时角差代价使落点保持靠近舰首方向，受阻后结果转向仍可通行的一侧；
-* 全部候选受阻时返回 `null`，舰船坐标保持不变；
-* 修正后 12 次筛选共用同一份起点数值，最终只写入一次舰船位置；
-* `starsector.log` 没有未处理异常。
+- 每次规划固定生成 12 个候选，碰撞候选不会进入评分；
+- 正前方畅通时角差代价使落点保持靠近舰首方向，受阻后结果转向仍可通行的一侧；
+- 全部候选受阻时返回 `null`，舰船坐标保持不变；
+- 修正后 12 次筛选共用同一份起点数值，最终只写入一次舰船位置；
+- `starsector.log` 没有未处理异常。
 
 ## 故障分析
 
@@ -144,9 +144,9 @@ Vector2f origin = new Vector2f(ship.getLocation());
 
 ## 建议参考项
 
-* `EllipseUtils.getPointOnEllipse`：生成带旋转的候选点；
-* `CollisionUtils.getCollisionPoint`：检查移动线段与实体碰撞；
-* `MathUtils.getShortestRotation`：计算带环绕的最短角差。
+- `EllipseUtils.getPointOnEllipse`：生成带旋转的候选点；
+- `CollisionUtils.getCollisionPoint`：检查移动线段与实体碰撞；
+- `MathUtils.getShortestRotation`：计算带环绕的最短角差。
 ::: details 完整成品：GearInJumpCandidate
 
 ```java

@@ -10,34 +10,34 @@
 
 完成后，您将能够：
 
-* 创建人物 (空白与势力随机两个入口)，并核对人物对象的默认值表；
-* 读写人物的身份与档案字段，区分 `getMemory()` 与 `getMemoryWithoutUpdate()` 两条记忆读取路径；
-* 解释关系三族的存储方式、`RepLevel` 九档阈值与档位判定；
-* 用 `setRelationship` / `adjustRelationship` / `ensureAtBest` / `ensureAtWorst` 修改关系，并核对返回值与数值落点；
-* 分配 captain 与 officer，说明舰长对战斗 AI 与成员统计的作用；
-* 把人物挂入四个持久归属入口，并解释局部变量人物不被保存的后果；
-* 从日志与界面症状定位人物相关的典型故障。
+- 创建人物 (空白与势力随机两个入口)，并核对人物对象的默认值表；
+- 读写人物的身份与档案字段，区分 `getMemory()` 与 `getMemoryWithoutUpdate()` 两条记忆读取路径；
+- 解释关系三族的存储方式、`RepLevel` 九档阈值与档位判定；
+- 用 `setRelationship` / `adjustRelationship` / `ensureAtBest` / `ensureAtWorst` 修改关系，并核对返回值与数值落点；
+- 分配 captain 与 officer，说明舰长对战斗 AI 与成员统计的作用；
+- 把人物挂入四个持久归属入口，并解释局部变量人物不被保存的后果；
+- 从日志与界面症状定位人物相关的典型故障。
 
 ## 前置知识
 
-* [C3-S1] 的生涯与战役域区别；
-* [C6-S2] 的插件生命周期回调与持久数据标记；
-* [C6-S3] 的 `Global.getFactory()` 创建入口与阶段语义；
-* [C9-S1] 的生涯脚本注册与一次性判断；
-* [C9-S3] 的舰队成员、舰长、旗舰与 `FleetDataAPI`；
-* [C10-S1] 的市场人物、通信目录与 `MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`。
+- [C3-S1] 的生涯与战役域区别；
+- [C6-S2] 的插件生命周期回调与持久数据标记；
+- [C6-S3] 的 `Global.getFactory()` 创建入口与阶段语义；
+- [C9-S1] 的生涯脚本注册与一次性判断；
+- [C9-S3] 的舰队成员、舰长、旗舰与 `FleetDataAPI`；
+- [C10-S1] 的市场人物、通信目录与 `MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`。
 
 ## 术语
 
 按术语约定，本节首次完整讲解以下词：
 
-* **人物 (person)**：API 名保留 `PersonAPI`。生涯里代表一个 "人" 的对象，承载身份 (姓名/性别/rank/post/头像/势力)、记忆、标签、对玩家关系、角色数值与归属 (captain、officer、市场、important people)。
-* **关系 (relationship)**：两两之间的声望数值与档位。势力之间/势力对玩家走 `FactionAPI` 关系族；人物对玩家走 `RelationshipAPI`。数值范围 \[-1, 1\]，档位由 `RepLevel` 分段。
-* **声誉档位 (RepLevel)**：API 名保留 `RepLevel`。
-    *   九档枚举：`VENGEFUL` / `HOSTILE` / `INHOSPITABLE` / `SUSPICIOUS` / `NEUTRAL` / `FAVORABLE` / `WELCOMING` / `FRIENDLY` / `COOPERATIVE`。
-    *   正向阈值 0.09 / 0.24 / 0.49 / 0.74，负向对称。
-* **captain(舰长)**：舰队成员的指挥官。决定该成员/战斗舰船的统计修正与战斗 AI personality。
-* **officer(军官)**：`OfficerDataAPI` 包装的人物，带 XP、等级与技能选择；隶属舰队 roster(`FleetDataAPI` 军官集合)，被 `setCaptain` 到某个成员上时指挥该船。
+- **人物 (person)**：API 名保留 `PersonAPI`。生涯里代表一个 "人" 的对象，承载身份 (姓名/性别/rank/post/头像/势力)、记忆、标签、对玩家关系、角色数值与归属 (captain、officer、市场、important people)。
+- **关系 (relationship)**：两两之间的声望数值与档位。势力之间/势力对玩家走 `FactionAPI` 关系族；人物对玩家走 `RelationshipAPI`。数值范围 \[-1, 1\]，档位由 `RepLevel` 分段。
+- **声誉档位 (RepLevel)**：API 名保留 `RepLevel`。
+    - 九档枚举：`VENGEFUL` / `HOSTILE` / `INHOSPITABLE` / `SUSPICIOUS` / `NEUTRAL` / `FAVORABLE` / `WELCOMING` / `FRIENDLY` / `COOPERATIVE`。
+    - 正向阈值 0.09 / 0.24 / 0.49 / 0.74，负向对称。
+- **captain(舰长)**：舰队成员的指挥官。决定该成员/战斗舰船的统计修正与战斗 AI personality。
+- **officer(军官)**：`OfficerDataAPI` 包装的人物，带 XP、等级与技能选择；隶属舰队 roster(`FleetDataAPI` 军官集合)，被 `setCaptain` 到某个成员上时指挥该船。
 
 ## 人物对象与 API 面
 
@@ -198,43 +198,43 @@ limit 只是 "本次调整的方向边界"
 
 #### 生涯侧 captain(FleetMemberAPI)
 
-* 默认舰长：成员自带默认舰长 `steady`(前序页面已记录 "自动补默认舰长")。保存压缩时，**steady + 空姓名 + level ≤ 1 的默认舰长不落盘** ——"读档后默认舰长消失" 是正常语义。
-* `FleetMemberAPI.getCaptain()`：**玩家旗舰特例** —— 成员是玩家舰队旗舰时返回玩家人物。
-    *   否则返回缓存的 `captain` 字段 (null 时延迟创建默认舰长并设势力)。
-    *   `FleetMemberAPI.setCaptain(PersonAPI)` 写回并触发成员 stats 重算。
+- 默认舰长：成员自带默认舰长 `steady`(前序页面已记录 "自动补默认舰长")。保存压缩时，**steady + 空姓名 + level ≤ 1 的默认舰长不落盘** ——"读档后默认舰长消失" 是正常语义。
+- `FleetMemberAPI.getCaptain()`：**玩家旗舰特例** —— 成员是玩家舰队旗舰时返回玩家人物。
+    - 否则返回缓存的 `captain` 字段 (null 时延迟创建默认舰长并设势力)。
+    - `FleetMemberAPI.setCaptain(PersonAPI)` 写回并触发成员 stats 重算。
 
 玩家旗舰的舰长读回恒是玩家人物
 
 成员是玩家舰队旗舰时 `getCaptain()` 直接返回玩家人物，读路径覆盖写入 —— 把自定义舰长挂到旗舰再读回，读到的仍是玩家人物。自定义舰长请放非旗舰成员 (本节示例即如此)。
 
-* 舰长对成员的影响：`captain.getStats().applyPersonalToStats(stats, hullSize)` 把舰长个人技能应用到成员 `MutableShipStatsAPI`。
-* 反查：`FleetDataAPI.getMemberWithCaptain(PersonAPI)` 按同一性找舰长所在成员。
-* 舰队指挥官：默认是 `steady` 人物；`CampaignFleetAPI.getCommander()` / `setCommander(PersonAPI)`：
-    *   新档 `setPlayerFleet` 把玩家人物同时设为旗舰舰长与舰队指挥官。
+- 舰长对成员的影响：`captain.getStats().applyPersonalToStats(stats, hullSize)` 把舰长个人技能应用到成员 `MutableShipStatsAPI`。
+- 反查：`FleetDataAPI.getMemberWithCaptain(PersonAPI)` 按同一性找舰长所在成员。
+- 舰队指挥官：默认是 `steady` 人物；`CampaignFleetAPI.getCommander()` / `setCommander(PersonAPI)`：
+    - 新档 `setPlayerFleet` 把玩家人物同时设为旗舰舰长与舰队指挥官。
 
 #### 战斗侧 captain(ShipAPI)
 
-* 部署链：成员部署为战斗舰船时，`getCaptain()` 与 `getFleetCommander()` 传入战斗侧：
-    *   `ShipAPI.getCaptain()`(`com.fs.starfarer.api.combat.ShipAPI`) 返回战斗舰船舰长，`getOriginalCaptain()` 返回部署初始舰长，`getFleetCommander()` 返回关联的舰队指挥官。
-* **中途换舰长会改统计**：`ShipAPI.setCaptain(PersonAPI)` 先解除旧舰长的个人技能 (含子模块)，再挂新舰长。
-* **personality 决定战斗 AI**：战斗舰船的 personality 取舰长 personality id(舰长缺失时用装配的 fallback personality)。
+- 部署链：成员部署为战斗舰船时，`getCaptain()` 与 `getFleetCommander()` 传入战斗侧：
+    - `ShipAPI.getCaptain()`(`com.fs.starfarer.api.combat.ShipAPI`) 返回战斗舰船舰长，`getOriginalCaptain()` 返回部署初始舰长，`getFleetCommander()` 返回关联的舰队指挥官。
+- **中途换舰长会改统计**：`ShipAPI.setCaptain(PersonAPI)` 先解除旧舰长的个人技能 (含子模块)，再挂新舰长。
+- **personality 决定战斗 AI**：战斗舰船的 personality 取舰长 personality id(舰长缺失时用装配的 fallback personality)。
 
 #### officer(OfficerDataAPI)
 
-* 包装与 roster：`Global.getFactory().createOfficerData(person)`(`com.fs.starfarer.api.FactoryAPI`)：
-    *   → `FleetDataAPI.addOfficer(PersonAPI)` / `addOfficer(OfficerDataAPI)` / `getOfficersCopy()` / `removeOfficer(PersonAPI)`(`com.fs.starfarer.api.campaign.FleetDataAPI`)。
-    *   `FleetDataAPI`：`addOfficer` 写入 roster 并 `person.setFleet(fleet)`(PersonAPI 版还会把人物势力设为舰队势力)。
-    *   `removeOfficer` 移出并 `setFleet(null)`。
-* `OfficerDataAPI`(`com.fs.starfarer.api.characters.OfficerDataAPI`)：
-    *   `getPerson()` / `setPerson(PersonAPI)`、`addXP(long[, TextPanelAPI[, boolean]])`、`canLevelUp()`；
-    *   `makeSkillPicks([Random])`、`getSkillPicks()`、`levelUp(String skillId[, Random])`。
-* 升级链 (`OfficerDataAPI`)：
-    *   `addXP` 走 `settings.json` 的 `officerLevelUp` 插件 (`com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`)。
-    *   **`$isMercenary` 记忆为 true 的佣兵人物 addXP 直接返回** (`Misc.isMercenary` 读 memory `$isMercenary`，`com.fs.starfarer.api.util.Misc`)。
-    *   XP 达到下一级阈值 (`TOTAL_XP_PER_LEVEL × officerXPRequiredMult(4)`，`com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`) 且等级 ≤ `officerMaxLevel(5)`(settings) 时可升级。
-    *   `canLevelUp()` 满足时 `addXP` 自动 `makeSkillPicks()`；`makeSkillPicks()` **每次调用都重掷选项**。
-    *   `levelUp(skillId)` 等级 +1、技能 +1 级并清空重掷。
-* 军官上舰 = 把 officer 的人物 `setCaptain` 到成员 (原版军官面板的 "命令舰船" 即此语义)。
+- 包装与 roster：`Global.getFactory().createOfficerData(person)`(`com.fs.starfarer.api.FactoryAPI`)：
+    - → `FleetDataAPI.addOfficer(PersonAPI)` / `addOfficer(OfficerDataAPI)` / `getOfficersCopy()` / `removeOfficer(PersonAPI)`(`com.fs.starfarer.api.campaign.FleetDataAPI`)。
+    - `FleetDataAPI`：`addOfficer` 写入 roster 并 `person.setFleet(fleet)`(PersonAPI 版还会把人物势力设为舰队势力)。
+    - `removeOfficer` 移出并 `setFleet(null)`。
+- `OfficerDataAPI`(`com.fs.starfarer.api.characters.OfficerDataAPI`)：
+    - `getPerson()` / `setPerson(PersonAPI)`、`addXP(long[, TextPanelAPI[, boolean]])`、`canLevelUp()`；
+    - `makeSkillPicks([Random])`、`getSkillPicks()`、`levelUp(String skillId[, Random])`。
+- 升级链 (`OfficerDataAPI`)：
+    - `addXP` 走 `settings.json` 的 `officerLevelUp` 插件 (`com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`)。
+    - **`$isMercenary` 记忆为 true 的佣兵人物 addXP 直接返回** (`Misc.isMercenary` 读 memory `$isMercenary`，`com.fs.starfarer.api.util.Misc`)。
+    - XP 达到下一级阈值 (`TOTAL_XP_PER_LEVEL × officerXPRequiredMult(4)`，`com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`) 且等级 ≤ `officerMaxLevel(5)`(settings) 时可升级。
+    - `canLevelUp()` 满足时 `addXP` 自动 `makeSkillPicks()`；`makeSkillPicks()` **每次调用都重掷选项**。
+    - `levelUp(skillId)` 等级 +1、技能 +1 级并清空重掷。
+- 军官上舰 = 把 officer 的人物 `setCaptain` 到成员 (原版军官面板的 "命令舰船" 即此语义)。
 
 #### 归属四入口 (持久化边界)
 
@@ -245,7 +245,7 @@ limit 只是 "本次调整的方向边界"
 1. **成员舰长**：`FleetMemberAPI.setCaptain(person)`(成员在 `FleetDataAPI` 里)；
 2. **市场人物**：`MarketAPI.addPerson(person)`(同时写 `person.setMarket(market)`)**，通信目录条目必须另行 `getCommDirectory().addPerson(person)` 维护** (`MarketAPI.addPerson` 不会自动建目录条目)；
 3. **重要人物**：`SectorAPI.getImportantPeople()` → `ImportantPeopleAPI.addPerson` / `containsPerson` / `removePerson` / `getData(person)`(`com.fs.starfarer.api.characters.ImportantPeopleAPI`)：
-    *   `checkOutPerson(person, reasonId)` / `returnPerson(person, reasonId)`；
+    - `checkOutPerson(person, reasonId)` / `returnPerson(person, reasonId)`；
 4. **officer roster**：`FleetDataAPI.addOfficer`(见上)。
 
 只存在于局部变量、未被任何持久集合引用的人物，帧结束后即被回收 —— **不会被保存，也不会报错**。
@@ -418,11 +418,11 @@ mods/GearIndustry/
 
 人物对玩家关系 (`RelationshipAPI` / `RepLevel`)：
 
-* `getRelToPlayer()` 延迟创建 (默认 `rel=0.00 level=NEUTRAL`)；
-* `adjustRelationship(0.3f, null)`(无 limit，正向默认封顶 `COOPERATIVE.getMax()` 即 1.0)；
-* `setLevel(COOPERATIVE)` 落 `0.75`；
-* `setLevel(HOSTILE)` 落 `-0.50`(`min+0.01` / `-min-0.01` 语义)；
-* `setRel(0)` 复位。
+- `getRelToPlayer()` 延迟创建 (默认 `rel=0.00 level=NEUTRAL`)；
+- `adjustRelationship(0.3f, null)`(无 limit，正向默认封顶 `COOPERATIVE.getMax()` 即 1.0)；
+- `setLevel(COOPERATIVE)` 落 `0.75`；
+- `setLevel(HOSTILE)` 落 `-0.50`(`min+0.01` / `-min-0.01` 语义)；
+- `setRel(0)` 复位。
 
 五步日志覆盖 "数值连续、档位分段"。
 
@@ -440,22 +440,22 @@ mods/GearIndustry/
 
 军官 (`OfficerDataAPI`)：
 
-* `hegemony.createRandomPerson()` 势力随机人物 (随机姓名/肖像/voice，personality 恒 `steady`)→ `createOfficerData` → `addOfficer`(`personB.getFleet() == playerFleet` 联动)；
-* `addXP(100000)`(`officerMaxLevel=5` 内不封顶)→ `canLevelUp()`(≥ 2 级阈值 48000)；
-* `makeSkillPicks()`(4 个候选)→ `levelUp(pick)`(level 2、技能 1 级)；
-* `hammerhead.setCaptain(personB)` 军官上舰 → `removeOfficer`(`getFleet()` 回 null)。
+- `hegemony.createRandomPerson()` 势力随机人物 (随机姓名/肖像/voice，personality 恒 `steady`)→ `createOfficerData` → `addOfficer`(`personB.getFleet() == playerFleet` 联动)；
+- `addXP(100000)`(`officerMaxLevel=5` 内不封顶)→ `canLevelUp()`(≥ 2 级阈值 48000)；
+- `makeSkillPicks()`(4 个候选)→ `levelUp(pick)`(level 2、技能 1 级)；
+- `hammerhead.setCaptain(personB)` 军官上舰 → `removeOfficer`(`getFleet()` 回 null)。
 
 ### GearInFactionRelation
 
 势力间关系 (`FactionAPI` 关系族，hegemony vs tritachyon)：确定性序列 + 同帧回滚：
 
-* `setRelationship(0)` 归一；
-* `adjustRelationship(+0.15)` 落 `0.15 FAVORABLE`；
-* `adjustRelationship(+0.9, COOPERATIVE)` 封顶 `1.00 changed=true`；
-* `setRelationship(HOSTILE)` 落 `-0.50`、`isHostileTo=true`；
-* `adjustRelationship(-0.2, VENGEFUL)` 落 `-0.70` **但档位仍 HOSTILE**(数值连续、档位分段)；
-* `ensureAtWorst(WELCOMING)` 落 `0.25 ensured=true`(抬高关系用 `ensureAtWorst`；`ensureAtBest` 只拉低不抬高，此刻调用它返回 false、值不变)；
-* `setRelationship(原值)` 精确恢复。
+- `setRelationship(0)` 归一；
+- `adjustRelationship(+0.15)` 落 `0.15 FAVORABLE`；
+- `adjustRelationship(+0.9, COOPERATIVE)` 封顶 `1.00 changed=true`；
+- `setRelationship(HOSTILE)` 落 `-0.50`、`isHostileTo=true`；
+- `adjustRelationship(-0.2, VENGEFUL)` 落 `-0.70` **但档位仍 HOSTILE**(数值连续、档位分段)；
+- `ensureAtWorst(WELCOMING)` 落 `0.25 ensured=true`(抬高关系用 `ensureAtWorst`；`ensureAtBest` 只拉低不抬高，此刻调用它返回 false、值不变)；
+- `setRelationship(原值)` 精确恢复。
 
 **协作关系**：协调器持有共享对象 (人物 A、wolf、hammerhead)，角色小类以 `run(...)` 参数接收 (包内协作，不跨单元)，保持 "同一人物对象贯穿身份 → 关系 → 注册 → 舰长" 的演示语义；
 
@@ -514,27 +514,27 @@ sector.getImportantPeople().addPerson(person);
 
 1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
 2. 新建生涯：确认 `starsector.log` 按顺序出现全部 `GearIn person lesson` 日志行：
-    *   含 `start` / `flagship` / `members` / `personA defaults` / `personA identity` / `tagsMemory` / 五条 `relToPlayer` / `market` / `importantPeople`。
-    *   含 `captain default` / `captain set` / `personB random` / `officer add` / `officer xp` / `officer levelUp` / `officer captain` / `officer remove` / 七条 `factionRel` / `done`。
-    *   关键核对：`captainIsPlayerPerson=true`、`personA defaults` 六项默认值、`rank=Commander`、`post=Fleet Commander`、`relToPlayer` 五步 0.00→0.30→0.75→-0.50→0.00。
-    *   `factionRel` 序列 0.00→0.15→1.00→-0.50→-0.70→0.25→原值、`done` 行成员数与 `start` 一致。
-    *   观察完整日志序列与数值变化。
+    - 含 `start` / `flagship` / `members` / `personA defaults` / `personA identity` / `tagsMemory` / 五条 `relToPlayer` / `market` / `importantPeople`。
+    - 含 `captain default` / `captain set` / `personB random` / `officer add` / `officer xp` / `officer levelUp` / `officer captain` / `officer remove` / 七条 `factionRel` / `done`。
+    - 关键核对：`captainIsPlayerPerson=true`、`personA defaults` 六项默认值、`rank=Commander`、`post=Fleet Commander`、`relToPlayer` 五步 0.00→0.30→0.75→-0.50→0.00。
+    - `factionRel` 序列 0.00→0.15→1.00→-0.50→-0.70→0.25→原值、`done` 行成员数与 `start` 一致。
+    - 观察完整日志序列与数值变化。
 3. 界面核对：演示日志出现时打开舰队界面 (F 键)，确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
 4. 只执行一次：等待若干游戏日后日志无新增 `GearIn person lesson` 行；保存并读档后仍无新增 (`REGISTER_MARK` 门已关)；读档后势力关系面板中 hegemony 与 tritachyon 的数值与演示前一致 (同帧回滚)。
 
 预期结果：
 
-* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
-* **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
+- **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现。
 
     ```text
     GearIn person lesson start: members=<N> playerFaction=player playerPerson=<玩家名> GearIn person lesson flagship: name=<旗舰船名> captainIsPlayerPerson=true GearIn person lesson members: added wolf=<船名> hammerhead=<船名> count=<N+2> GearIn person lesson personA defaults: id=p_<uid> personality=steady name='' rankId=spaceCommander postId=fleetCommander faction=neutral portraitIsDefault=true importance=MEDIUM GearIn person lesson personA identity: name=Aster Vance female=true rank=Commander post=Fleet Commander personality=reckless faction=hegemony voice=<soldier|official|aristo 之一> GearIn person lesson tagsMemory: hasTag=true tags=1 memory=42 GearIn person lesson relToPlayer default: rel=0.00 level=NEUTRAL hostile=false GearIn person lesson relToPlayer adjust: rel=0.30 level=WELCOMING GearIn person lesson relToPlayer cooperative: rel=0.75 level=COOPERATIVE GearIn person lesson relToPlayer hostile: rel=-0.50 level=HOSTILE hostile=true GearIn person lesson relToPlayer reset: rel=0.00 level=NEUTRAL GearIn person lesson market: id=jangala inAfterAdd=true personMarketLinked=true inAfterRemove=false GearIn person lesson importantPeople: containsAfterAdd=true dataLinked=true containsAfterRemove=false GearIn person lesson captain default: personality=steady name='' level=1 GearIn person lesson captain set: sameCaptain=true memberWithCaptainFound=true GearIn person lesson personB random: name=<随机名> female=<true|false> faction=hegemony personality=steady portraitIsDefault=false GearIn person lesson officer add: count=<M+1> fleetLinked=true GearIn person lesson officer xp: xp=<X> -> <X+100000> canLevelUp=true picks=4 GearIn person lesson officer levelUp: level=2 skill=<技能id> skillLevel=1.0 GearIn person lesson officer captain: sameCaptain=true memberWithCaptainFound=true officerInRoster=true GearIn person lesson officer remove: count=<M> fleetLinked=true GearIn person lesson factionRel start: original=<O> normalized=0.00 level=NEUTRAL GearIn person lesson factionRel adjust: value=0.15 level=FAVORABLE GearIn person lesson factionRel cap: value=1.00 level=COOPERATIVE changed=true GearIn person lesson factionRel hostile: value=-0.50 level=HOSTILE hostileTo=true GearIn person lesson factionRel vengefulCap: value=-0.70 level=HOSTILE GearIn person lesson factionRel ensure: value=0.25 level=WELCOMING ensured=true GearIn person lesson factionRel restore: value=<O> level=<原档位> GearIn person lesson done: members=<N> (initial <N>)
     ```
 
     其中 `<N>` 是初始成员数、`<M>` 是初始军官数、`<O>` 是存档里 hegemony 对 tritachyon 的关系原值、`<X>` 是人物 B 初始 XP(新档为 0)，均以实际日志为准；`voice` 是 hegemony `HIGH` 声音池三选一；`picks=4` 是新档典型值 (以日志为准，≥1)；`skill` 是重掷后的第一个军官技能候选。关系序列各行的数值/档位是**确定性**的：`0.15→FAVORABLE`、`1.00→COOPERATIVE changed=true`、`-0.50→HOSTILE hostileTo=true`、`-0.70 档位仍 HOSTILE`、`0.25→WELCOMING ensured=true`、`restore` 与原值一致。演示只执行一次，之后无任何 `GearIn person lesson` 日志。
-* **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
-* **读档**：不出现任何 `GearIn person lesson` 日志 (`REGISTER_MARK` 门已关、脚本不再注册)；玩家舰队与演示前一致；`hegemony` 与 `tritachyon` 的关系面板数值与演示前一致 (同帧回滚生效)。
-* **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
+- **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
+- **读档**：不出现任何 `GearIn person lesson` 日志 (`REGISTER_MARK` 门已关、脚本不再注册)；玩家舰队与演示前一致；`hegemony` 与 `tritachyon` 的关系面板数值与演示前一致 (同帧回滚生效)。
+- **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
 
 ## 故障分析
 
@@ -562,32 +562,32 @@ sector.getImportantPeople().addPerson(person);
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.characters.PersonAPI`：人物接口全貌 —— 身份、rank/post、头像、势力、记忆、标签、personality、importance/voice、AI core、归属、角色数值与联系。
-* `com.fs.starfarer.api.FactoryAPI`：人物创建入口 (`createPerson` / `createOfficerData`)。
-* `com.fs.starfarer.api.campaign.FactionAPI`：势力关系族 (`adjustRelationship` 两版 / `setRelationship` 两版 / `ensureAtBest` / `ensureAtWorst` / `getRelationshipLevel` / `isHostileTo`) 与 `createRandomPerson`。
-* `com.fs.starfarer.api.campaign.RepLevel`：九档声誉档位枚举与阈值判定 (`getLevelFor` / `getMin` / `getMax` / `isAtWorst` / `isPositive` / `isNegative`)。
-* `com.fs.starfarer.api.characters.RelationshipAPI`：人物对玩家关系 (`getRel` / `setRel` / `getLevel` / `setLevel` / `adjustRelationship` / `ensureAtBest` / `ensureAtWorst` / `isHostile`)。
-* `com.fs.starfarer.api.characters.OfficerDataAPI`：军官包装 (`getPerson` / `setPerson` / `addXP` / `canLevelUp` / `makeSkillPicks` / `getSkillPicks` / `levelUp`)。
-* `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：角色数值 (`getLevel` / `getXP` / `getSkillLevel` / `increaseSkill` / `refreshCharacterStatsEffects`)。
-* `com.fs.starfarer.api.characters.ImportantPeopleAPI`：重要人物集合 (`addPerson` / `containsPerson` / `removePerson` / `getData` / `checkOutPerson` / `returnPerson`)。
-* `com.fs.starfarer.api.characters.MarketPostPersonFilter`：按条件选人的 checkout 过滤。
-* `com.fs.starfarer.api.characters.FullName`：姓名对象与 `Gender` 枚举。
-* `com.fs.starfarer.api.campaign.PersonImportance`：重要性五档与 `getValue()`。
-* `com.fs.starfarer.api.campaign.SectorAPI`：`getEconomy` / `getPlayerPerson` / `getImportantPeople` / `getPlayerFaction` / `getFaction`。
-* `com.fs.starfarer.api.campaign.CampaignFleetAPI`：舰队指挥官 (`getCommander` / `setCommander` / `getCommanderStats`) 与 `getFlagship`。
-* `com.fs.starfarer.api.campaign.FleetDataAPI`：军官集合 (`getOfficersCopy` / `addOfficer` / `removeOfficer`) 与 `getMemberWithCaptain`。
-* `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员舰长 (`getCaptain` / `setCaptain` / `getShipName`)。
-* `com.fs.starfarer.api.combat.ShipAPI`：战斗侧舰长 (`getCaptain` / `getOriginalCaptain` / `setCaptain` / `getFleetCommander`)。
-* `com.fs.starfarer.api.campaign.econ.MarketAPI`：市场人物 (`getCommDirectory` / `addPerson` / `removePerson` / `getPeopleCopy`)。
-* `com.fs.starfarer.api.impl.campaign.ids.Ranks`：rank/post 常量 (`SPACE_COMMANDER` / `POST_FLEET_COMMANDER` 等)。
-* `com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`：`officerLevelUp` 插件实现 (XP 阈值、每级候选)。
-* `com.fs.starfarer.api.plugins.OfficerLevelupPlugin`：军官升级插件接口。
-* `com.fs.starfarer.api.util.Misc`：`isMercenary`(读 memory `$isMercenary`)。
-* `data/characters/personalities.csv`：personality 注册表 (原版 5 个 id、任务权重列)。
-* `data/characters/person_names.csv`：姓名池 (usage `f`/`l`、category)。
-* `data/world/factions/default_ranks.json`：rank/post 显示名的默认来源 (`spaceCommander` / `fleetCommander`)。
-* `data/world/factions/hegemony.faction`：`ranks` 段覆写与 `voices` 声音池 (`LOW` / `MEDIUM` / `HIGH`)。
-* `data/config/settings.json`：`default_portrait`、`officerLevelUp` 插件、`officerXPRequiredMult`、`officerMaxLevel`。
+- `com.fs.starfarer.api.characters.PersonAPI`：人物接口全貌 —— 身份、rank/post、头像、势力、记忆、标签、personality、importance/voice、AI core、归属、角色数值与联系。
+- `com.fs.starfarer.api.FactoryAPI`：人物创建入口 (`createPerson` / `createOfficerData`)。
+- `com.fs.starfarer.api.campaign.FactionAPI`：势力关系族 (`adjustRelationship` 两版 / `setRelationship` 两版 / `ensureAtBest` / `ensureAtWorst` / `getRelationshipLevel` / `isHostileTo`) 与 `createRandomPerson`。
+- `com.fs.starfarer.api.campaign.RepLevel`：九档声誉档位枚举与阈值判定 (`getLevelFor` / `getMin` / `getMax` / `isAtWorst` / `isPositive` / `isNegative`)。
+- `com.fs.starfarer.api.characters.RelationshipAPI`：人物对玩家关系 (`getRel` / `setRel` / `getLevel` / `setLevel` / `adjustRelationship` / `ensureAtBest` / `ensureAtWorst` / `isHostile`)。
+- `com.fs.starfarer.api.characters.OfficerDataAPI`：军官包装 (`getPerson` / `setPerson` / `addXP` / `canLevelUp` / `makeSkillPicks` / `getSkillPicks` / `levelUp`)。
+- `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：角色数值 (`getLevel` / `getXP` / `getSkillLevel` / `increaseSkill` / `refreshCharacterStatsEffects`)。
+- `com.fs.starfarer.api.characters.ImportantPeopleAPI`：重要人物集合 (`addPerson` / `containsPerson` / `removePerson` / `getData` / `checkOutPerson` / `returnPerson`)。
+- `com.fs.starfarer.api.characters.MarketPostPersonFilter`：按条件选人的 checkout 过滤。
+- `com.fs.starfarer.api.characters.FullName`：姓名对象与 `Gender` 枚举。
+- `com.fs.starfarer.api.campaign.PersonImportance`：重要性五档与 `getValue()`。
+- `com.fs.starfarer.api.campaign.SectorAPI`：`getEconomy` / `getPlayerPerson` / `getImportantPeople` / `getPlayerFaction` / `getFaction`。
+- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：舰队指挥官 (`getCommander` / `setCommander` / `getCommanderStats`) 与 `getFlagship`。
+- `com.fs.starfarer.api.campaign.FleetDataAPI`：军官集合 (`getOfficersCopy` / `addOfficer` / `removeOfficer`) 与 `getMemberWithCaptain`。
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员舰长 (`getCaptain` / `setCaptain` / `getShipName`)。
+- `com.fs.starfarer.api.combat.ShipAPI`：战斗侧舰长 (`getCaptain` / `getOriginalCaptain` / `setCaptain` / `getFleetCommander`)。
+- `com.fs.starfarer.api.campaign.econ.MarketAPI`：市场人物 (`getCommDirectory` / `addPerson` / `removePerson` / `getPeopleCopy`)。
+- `com.fs.starfarer.api.impl.campaign.ids.Ranks`：rank/post 常量 (`SPACE_COMMANDER` / `POST_FLEET_COMMANDER` 等)。
+- `com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`：`officerLevelUp` 插件实现 (XP 阈值、每级候选)。
+- `com.fs.starfarer.api.plugins.OfficerLevelupPlugin`：军官升级插件接口。
+- `com.fs.starfarer.api.util.Misc`：`isMercenary`(读 memory `$isMercenary`)。
+- `data/characters/personalities.csv`：personality 注册表 (原版 5 个 id、任务权重列)。
+- `data/characters/person_names.csv`：姓名池 (usage `f`/`l`、category)。
+- `data/world/factions/default_ranks.json`：rank/post 显示名的默认来源 (`spaceCommander` / `fleetCommander`)。
+- `data/world/factions/hegemony.faction`：`ranks` 段覆写与 `voices` 声音池 (`LOW` / `MEDIUM` / `HIGH`)。
+- `data/config/settings.json`：`default_portrait`、`officerLevelUp` 插件、`officerXPRequiredMult`、`officerMaxLevel`。
 
 ## 完整最小例
 

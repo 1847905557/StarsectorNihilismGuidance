@@ -10,15 +10,15 @@
 
 完成后，您将能够：
 
-* 让 Nexerelin 通过配置加载 GearIn 特遣队命名器；
-* 处理来源市场缺失和名称重复请求；
-* 注册一次持久监听器，分别记录入侵回合、结束和市场转移。
+- 让 Nexerelin 通过配置加载 GearIn 特遣队命名器；
+- 处理来源市场缺失和名称重复请求；
+- 注册一次持久监听器，分别记录入侵回合、结束和市场转移。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 让特遣队与入侵事件留下可追踪标识
 
@@ -122,11 +122,11 @@ public class GearInSpecialForcesNamer implements SpecialForcesNamer {
 
 预期结果：
 
-* 生成特遣队时进入 `GearInSpecialForcesNamer`；
-* 正常与缺失 origin 都返回非空名称；
-* 连续请求能得到不同编号候选；
-* 每次入侵结束只出现一条 `finished` 与 `transfer` 日志；
-* 重启或重复初始化不会增加持久监听器副本。
+- 生成特遣队时进入 `GearInSpecialForcesNamer`；
+- 正常与缺失 origin 都返回非空名称；
+- 连续请求能得到不同编号候选；
+- 每次入侵结束只出现一条 `finished` 与 `transfer` 日志；
+- 重启或重复初始化不会增加持久监听器副本。
 
 ## 故障分析
 
@@ -141,9 +141,9 @@ public class GearInSpecialForcesNamer implements SpecialForcesNamer {
 
 ## 建议参考项
 
-* `SpecialForcesNamer`：特遣队命名接口；
-* `InvasionListener`：入侵与市场转移回调；
-* `specialForcesNamerClass`：势力配置中的命名器入口。
+- `SpecialForcesNamer`：特遣队命名接口；
+- `InvasionListener`：入侵与市场转移回调；
+- `specialForcesNamerClass`：势力配置中的命名器入口。
 ::: details 完整成品：GearInInvasionReporter
 
 ```java

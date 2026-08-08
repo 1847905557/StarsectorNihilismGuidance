@@ -10,23 +10,23 @@
 
 完成后，您将能够：
 
-* 列出 `Global` 的完整访问器清单 (七个 getter、两个 `@Deprecated` 别名、两个静态标志、一组 setter)，并说出每个成员的返回类型与用途；
-* 按 "资源加载期 / 主菜单 / 生涯 / 战斗" 四个阶段说出各 getter 的 null 语义，并解释为什么 "用 `getSector()` / `getCombatEngine()` 是否为 null 判断当前阶段" 不可靠；
-* 用 `Global.getCurrentState()`(返回 `GameState`) 正确判断当前阶段，并说出 `LOADING_SAVE` 标志的置位窗口；
-* 用 `Global.getLogger(Class)` 记录日志并说出输出位置；
-* 用 `Global.getSoundPlayer()` 播放 UI 音效、位置音效与循环音效，解释声道约定、`loc`/`vel` 非 null 约定与循环 "每帧续期" 约定；
-* 从症状定位六类典型故障：加载期空指针、战斗外引擎误用、跨战斗缓存引用、退出主菜单后使用旧生涯引用、`vel` 为 null 的空指针、未注册 sound ID 的运行期异常。
+- 列出 `Global` 的完整访问器清单 (七个 getter、两个 `@Deprecated` 别名、两个静态标志、一组 setter)，并说出每个成员的返回类型与用途；
+- 按 "资源加载期 / 主菜单 / 生涯 / 战斗" 四个阶段说出各 getter 的 null 语义，并解释为什么 "用 `getSector()` / `getCombatEngine()` 是否为 null 判断当前阶段" 不可靠；
+- 用 `Global.getCurrentState()`(返回 `GameState`) 正确判断当前阶段，并说出 `LOADING_SAVE` 标志的置位窗口；
+- 用 `Global.getLogger(Class)` 记录日志并说出输出位置；
+- 用 `Global.getSoundPlayer()` 播放 UI 音效、位置音效与循环音效，解释声道约定、`loc`/`vel` 非 null 约定与循环 "每帧续期" 约定；
+- 从症状定位六类典型故障：加载期空指针、战斗外引擎误用、跨战斗缓存引用、退出主菜单后使用旧生涯引用、`vel` 为 null 的空指针、未注册 sound ID 的运行期异常。
 
 ## 前置知识
 
-* [C1-S1] 的 MOD 目录结构与 `starsector.log` 使用方法；
-* [C3-S1] 的生涯对象、测试战役与装配部署；
-* [C5-S1] 的 OGG 资源规格；
-* [C5-S2] 的声音注册、sound ID 匹配与合并规则；
-* [C5-S3] 的声音消费入口与播放约定；
-* [C6-S1] 的 Java 编译、JAR 输出与 MOD 声明链路；
-* [C6-S2] 的 `modPlugin` 生命周期与 `onApplicationLoad` 阶段边界；
-* [C7-S1] 的战斗插件与每帧回调模型。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 使用方法；
+- [C3-S1] 的生涯对象、测试战役与装配部署；
+- [C5-S1] 的 OGG 资源规格；
+- [C5-S2] 的声音注册、sound ID 匹配与合并规则；
+- [C5-S3] 的声音消费入口与播放约定；
+- [C6-S1] 的 Java 编译、JAR 输出与 MOD 声明链路；
+- [C6-S2] 的 `modPlugin` 生命周期与 `onApplicationLoad` 阶段边界；
+- [C7-S1] 的战斗插件与每帧回调模型。
 
 ## 文件与 API 链路
 
@@ -81,12 +81,12 @@ Global 的引用由内核在固定的时机登记 (调用点详见 "生命周期
 
 1. **`getSettings()` 与 `getSoundPlayer()` 在游戏循环开始前就已就位**：内核在游戏循环启动前完成 `Global.setSettings(...)`，游戏启动入口再在注册各阶段状态之前完成 `Global.setSoundPlayer(...)`。因此任何 MOD 入口 —— 包括资源加载期的 `onApplicationLoad`—— 拿到两者都**非 null**。
 2. **`getSector()` / `getFactory()` 只在第一个生涯引擎创建之前为 null**，即资源加载期 (`onApplicationLoad` 阶段，即 modPlugin 生命周期禁令所辖的窗口)；一旦创建，`Global` 的引用**只会被替换、不会被置回 null**。
-    *   退出生涯回主菜单并不清空 `Global`：`Global` 对生涯引擎的引用在退出后仍然保留 (不会置回 null)，`getSector()` 仍返回旧对象。
-    *   可观察结果：退出到主菜单后 `getSector()` 仍返回**旧生涯引擎对象 (非 null)**，其数据已随存档关闭而失效。
-    *   因此 "是否在生涯中" **必须** 用 `Global.getCurrentState() == GameState.CAMPAIGN` 判断，不能依赖 `getSector() == null`。
+    - 退出生涯回主菜单并不清空 `Global`：`Global` 对生涯引擎的引用在退出后仍然保留 (不会置回 null)，`getSector()` 仍返回旧对象。
+    - 可观察结果：退出到主菜单后 `getSector()` 仍返回**旧生涯引擎对象 (非 null)**，其数据已随存档关闭而失效。
+    - 因此 "是否在生涯中" **必须** 用 `Global.getCurrentState() == GameState.CAMPAIGN` 判断，不能依赖 `getSector() == null`。
 3. **`getCombatEngine()` 的战斗外取值不是 null，而是空引擎**：战斗引擎的首次创建发生在主菜单初始化阶段 —— 首次初始化生涯引擎时会一并创建；每场战斗结束后，内核先销毁旧引擎 (用 `Global.setCombatEngine(null)` 清空引用)，**再立即重建**一个新引擎。
-    *   可观察结果：战斗外 `getCombatEngine()` 非 null 而是刚重建的空引擎；战斗结束后缓存的旧引用是已清空的死对象 (`getShips()` 为空；`getPlayerShip()` 也不是 null—— 它**永不返回 null**，`playerShip` 未设置时延迟创建 "Command Shuttle" 假舰)。
-    *   因此：**禁止**跨战斗缓存引擎引用，每次需要时现取；"是否在战斗中" 用 `getCurrentState() == GameState.COMBAT` 判断；"用户是否已部署" **禁止** 用 `getPlayerShip() == null` 判断 (战斗内该表达式恒为 `false`，依赖它的分支永远不执行、静默失效)，应读 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()` 是否非空 (判据细则见战斗域部署判断主题)。
+    - 可观察结果：战斗外 `getCombatEngine()` 非 null 而是刚重建的空引擎；战斗结束后缓存的旧引用是已清空的死对象 (`getShips()` 为空；`getPlayerShip()` 也不是 null—— 它**永不返回 null**，`playerShip` 未设置时延迟创建 "Command Shuttle" 假舰)。
+    - 因此：**禁止**跨战斗缓存引擎引用，每次需要时现取；"是否在战斗中" 用 `getCurrentState() == GameState.COMBAT` 判断；"用户是否已部署" **禁止** 用 `getPlayerShip() == null` 判断 (战斗内该表达式恒为 `false`，依赖它的分支永远不执行、静默失效)，应读 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()` 是否非空 (判据细则见战斗域部署判断主题)。
 4. **`getCurrentState()` 由当前所处阶段实时计算**：处于战斗状态 → `COMBAT`，处于生涯状态 → `CAMPAIGN`，处于主菜单 → `TITLE`，其余状态 (资源加载等)→ `null`。它是阶段判断的唯一可靠入口。
 
 为什么 `getCurrentState()` 返回 null 也是有效信号？
@@ -114,9 +114,9 @@ private static final Logger LOG = Global.getLogger(GearInGlobalAccess.class);
 Global.getLogger(GearInGlobalAccess.class).info("任意内容");
 ```
 
-* 输出位置：`Starsector\starsector-core\starsector.log`。
-* 级别：`debug` / `info` / `warn` / `error`；生命周期与故障排查日志用 `info`，可恢复的异常情况用 `warn`/`error`。
-* 常用形态：入口回调打一行 (同 modPlugin 生命周期示例)、数值检查、故障注入验证。
+- 输出位置：`Starsector\starsector-core\starsector.log`。
+- 级别：`debug` / `info` / `warn` / `error`；生命周期与故障排查日志用 `info`，可恢复的异常情况用 `warn`/`error`。
+- 常用形态：入口回调打一行 (同 modPlugin 生命周期示例)、数值检查、故障注入验证。
 
 ## 播放界面音效
 
@@ -132,9 +132,9 @@ Global.getLogger(GearInGlobalAccess.class).info("任意内容");
 
 其他常用成员 (约定均出自 `SoundPlayerAPI` javadoc)：
 
-* `playCustomMusic(int fadeOutIfAny, int fadeIn, String musicSetId)`：切换音乐集；**淡入淡出秒数必须是整数** (javadoc 原文 "have to be whole numbers")，`musicSetId` 传 `null` 停止当前曲且不换新曲。
-* `getCurrentMusicId()`：返回当前曲目 ID；无播放时返回字符串 `"nothing"`(javadoc 原文)。
-* `restartCurrentMusic()` / `getCurrentMusicId()` / `playCustomMusic` / `setSuspendDefaultMusicPlayback`：javadoc 标注线程安全，可从非主循环线程调用。
+- `playCustomMusic(int fadeOutIfAny, int fadeIn, String musicSetId)`：切换音乐集；**淡入淡出秒数必须是整数** (javadoc 原文 "have to be whole numbers")，`musicSetId` 传 `null` 停止当前曲且不换新曲。
+- `getCurrentMusicId()`：返回当前曲目 ID；无播放时返回字符串 `"nothing"`(javadoc 原文)。
+- `restartCurrentMusic()` / `getCurrentMusicId()` / `playCustomMusic` / `setSuspendDefaultMusicPlayback`：javadoc 标注线程安全，可从非主循环线程调用。
 
 未注册 ID 的行为：引用未注册的 sound ID 时，播放调用抛 `RuntimeException`，消息为 `Sound set with id [...] not found`—— 这是运行期异常，在调用点抛出 (声音消费主题的故障分析有完整定位流程)。
 
@@ -203,10 +203,10 @@ Starsector\mods\GearIndustry\
 
 对应关系：
 
-* `Global.getLogger(GearInGlobalAccess.class)`：类内缓存一份日志器 (见 "Logger" 节)。
-* `isInCombat()`：阶段判断唯一可靠做法 ——`getCurrentState() == GameState.COMBAT`，不依赖 `getCombatEngine()` 是否为 null(生命周期规则 3)。
-* `logAccessorState()`：把生命周期表变成日志；`sector == null` / `engine == null` 只在资源加载期出现 (规则 2、3)。
-* `Global.LOADING_SAVE`：读档回调窗口内为 `true`(规则 5)。
+- `Global.getLogger(GearInGlobalAccess.class)`：类内缓存一份日志器 (见 "Logger" 节)。
+- `isInCombat()`：阶段判断唯一可靠做法 ——`getCurrentState() == GameState.COMBAT`，不依赖 `getCombatEngine()` 是否为 null(生命周期规则 3)。
+- `logAccessorState()`：把生命周期表变成日志；`sector == null` / `engine == null` 只在资源加载期出现 (规则 2、3)。
+- `Global.LOADING_SAVE`：读档回调窗口内为 `true`(规则 5)。
 
 ### 核对音效访问源码
 
@@ -216,8 +216,8 @@ Starsector\mods\GearIndustry\
 
 对应关系：
 
-* `SOUND_ID_SYSTEM_LOOP` / `SOUND_ID_WEAPON_FIRE`：复用既有声音注册的 ID(声音资产与注册主题)，不新增 ID。
-* `playUISound` / `playPositionalSound` / `playLoopSound`：对应 SoundPlayerAPI 三约定 (见上表)；`vel` 用拷贝构造避免引用被引擎后续改写；`playLoopSound` 保留引擎参数以承载 "战斗插件 advance 上下文" 的调用形态。
+- `SOUND_ID_SYSTEM_LOOP` / `SOUND_ID_WEAPON_FIRE`：复用既有声音注册的 ID(声音资产与注册主题)，不新增 ID。
+- `playUISound` / `playPositionalSound` / `playLoopSound`：对应 SoundPlayerAPI 三约定 (见上表)；`vel` 用拷贝构造避免引用被引擎后续改写；`playLoopSound` 保留引擎参数以承载 "战斗插件 advance 上下文" 的调用形态。
 
 调用点 (工程片段 —— 方法所在类由既有章节持有，本节只演示调用，不改动那些类)：
 
@@ -300,8 +300,8 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
 
 预期结果：
 
-* 游戏构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`。
-* 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
+- 游戏构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`。
+- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
 ## 故障分析
 
@@ -320,25 +320,25 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
 
 `Global` 是进程级静态中枢，提供七个 getter、两个弃用别名、两个静态标志与一组 setter。记忆要点：
 
-* **全程可用**：`getSettings()`、`getSoundPlayer()`、`getLogger()`(游戏循环启动前就已就位)。
-* **资源加载期为 null**：`getSector()`、`getFactory()`、`getCombatEngine()`、`getCurrentState()`；`onApplicationLoad` 里访问生涯/战斗对象就是空指针 (modPlugin 生命周期禁令的精确语义)。
-* **创建后不再回到 null**：sector/factory 只被替换；combatEngine 每场战斗结束销毁后立即重建。因此阶段判断**必须**用 `getCurrentState()`，引用**禁止**跨存档/跨战斗缓存。
-* **`getPlayerShip()` 永不返回 null**：`playerShip` 未设置时延迟创建 "Command Shuttle" 假舰；判断 "用户是否已部署" 用 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()`，**禁止**用 `getPlayerShip() == null`(判据细则见战斗域部署判断主题)。
-* **setter 禁止调用**：内核生命周期专用，调用即脱钩。
-* **声音入口三约定**：`playUISound` 素材应双声道；`playSound` 素材必须 mono 且 `loc`/`vel` 非 null； `playLoop` 必须每帧续期且 `playingEntity` 必填；未注册 ID 在调用点抛 `Sound set with id [...] not found`。
+- **全程可用**：`getSettings()`、`getSoundPlayer()`、`getLogger()`(游戏循环启动前就已就位)。
+- **资源加载期为 null**：`getSector()`、`getFactory()`、`getCombatEngine()`、`getCurrentState()`；`onApplicationLoad` 里访问生涯/战斗对象就是空指针 (modPlugin 生命周期禁令的精确语义)。
+- **创建后不再回到 null**：sector/factory 只被替换；combatEngine 每场战斗结束销毁后立即重建。因此阶段判断**必须**用 `getCurrentState()`，引用**禁止**跨存档/跨战斗缓存。
+- **`getPlayerShip()` 永不返回 null**：`playerShip` 未设置时延迟创建 "Command Shuttle" 假舰；判断 "用户是否已部署" 用 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()`，**禁止**用 `getPlayerShip() == null`(判据细则见战斗域部署判断主题)。
+- **setter 禁止调用**：内核生命周期专用，调用即脱钩。
+- **声音入口三约定**：`playUISound` 素材应双声道；`playSound` 素材必须 mono 且 `loc`/`vel` 非 null； `playLoop` 必须每帧续期且 `playingEntity` 必填；未注册 ID 在调用点抛 `Sound set with id [...] not found`。
 
 这些纪律的内核可以压缩为一句话：先问阶段 (`getCurrentState()`)，再取入口。沿同一条链路继续深挖，`getSettings()` 的注册与字段体系、以及声音消费在 UI / 位置 / 循环之外的管理方法，都是本节入口清单的自然延伸。
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.Global`：进程级静态中枢 —— 访问器、静态标志与 setter 组所在。
-* `com.fs.starfarer.api.GameState`：`TITLE` / `CAMPAIGN` / `COMBAT` 阶段枚举。
-* `com.fs.starfarer.api.SoundPlayerAPI`：`playUISound` / `playSound` / `playLoop` 三约定与音乐方法。
-* `com.fs.starfarer.api.FactoryAPI`：生涯对象工厂 (`createFleetMember` / `createCargo` / `createPerson` / `createMemory`)。
-* `com.fs.starfarer.api.combat.CombatEntityAPI`：`getLocation()` / `getVelocity()`。
-* `org.apache.log4j.Logger`：`Global.getLogger(Class)` 返回的日志器类型。
-* `data/scripts/gearin/`：本节两个示例类所在目录 (`GearInGlobalAccess` / `GearInSoundPlayer`)。
-* `Starsector\starsector-core\starsector.log`：日志输出位置。
+- `com.fs.starfarer.api.Global`：进程级静态中枢 —— 访问器、静态标志与 setter 组所在。
+- `com.fs.starfarer.api.GameState`：`TITLE` / `CAMPAIGN` / `COMBAT` 阶段枚举。
+- `com.fs.starfarer.api.SoundPlayerAPI`：`playUISound` / `playSound` / `playLoop` 三约定与音乐方法。
+- `com.fs.starfarer.api.FactoryAPI`：生涯对象工厂 (`createFleetMember` / `createCargo` / `createPerson` / `createMemory`)。
+- `com.fs.starfarer.api.combat.CombatEntityAPI`：`getLocation()` / `getVelocity()`。
+- `org.apache.log4j.Logger`：`Global.getLogger(Class)` 返回的日志器类型。
+- `data/scripts/gearin/`：本节两个示例类所在目录 (`GearInGlobalAccess` / `GearInSoundPlayer`)。
+- `Starsector\starsector-core\starsector.log`：日志输出位置。
 
 ::: details 完整成品：GearInGlobalAccess
 

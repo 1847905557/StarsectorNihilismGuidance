@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 在 `data/config/settings.json` 的 `plugins` 段注册每帧插件，并遵守 key 唯一、值为完整类名两条规则；
-* 解释插件生命周期：每场战斗开始时为每个注册类创建新实例，之后每帧调用实例的 `advance`，战斗结束实例销毁；
-* 用 `engine.isPaused()` 写对暂停期间的状态推进，并解释暂停期间 `advance` 仍然每帧被调用的原因；
-* 从症状定位插件五类典型故障：无行为、`Problem loading class`、暂停期间状态照常推进、第一帧空指针、第二场战斗数值接着涨。
+- 在 `data/config/settings.json` 的 `plugins` 段注册每帧插件，并遵守 key 唯一、值为完整类名两条规则；
+- 解释插件生命周期：每场战斗开始时为每个注册类创建新实例，之后每帧调用实例的 `advance`，战斗结束实例销毁；
+- 用 `engine.isPaused()` 写对暂停期间的状态推进，并解释暂停期间 `advance` 仍然每帧被调用的原因；
+- 从症状定位插件五类典型故障：无行为、`Problem loading class`、暂停期间状态照常推进、第一帧空指针、第二场战斗数值接着涨。
 
 ## 前置知识
 
-* [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-* [C3-S1] 的模拟战入口与战斗验证方法；
-* [C6-S1] 的 Java 构建、JAR 输出与入口类；
-* [C6-S3] 的 `Global` 生命周期、战斗引擎实例边界与跨战斗引用规则。
+- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
+- [C3-S1] 的模拟战入口与战斗验证方法；
+- [C6-S1] 的 Java 构建、JAR 输出与入口类；
+- [C6-S3] 的 `Global` 生命周期、战斗引擎实例边界与跨战斗引用规则。
 
 ## 判断战斗帧语义
 
@@ -46,8 +46,8 @@ advance(float amount, List<InputEventAPI> events)
 
 两条规则 (与船插的 CSV 注册同一逻辑)：
 
-* **key 唯一**：`gearInPauseAwarePlugin` 全局唯一，带 `GearIn_` 前缀的可读命名同理。key 与其他来源重复时后读覆盖先读 —— 您的插件可能被别人的覆盖，通常还没报错。
-* **值是完整类名**：包名.类名，必须与文件里的 `package` + `class` 完全一致。
+- **key 唯一**：`gearInPauseAwarePlugin` 全局唯一，带 `GearIn_` 前缀的可读命名同理。key 与其他来源重复时后读覆盖先读 —— 您的插件可能被别人的覆盖，通常还没报错。
+- **值是完整类名**：包名.类名，必须与文件里的 `package` + `class` 完全一致。
 
 游戏启动时读取这个类名并注册；**每场战斗开始时为它创建一个新实例**，之后每帧调用实例的 `advance`；战斗结束实例销毁。`engine.addPlugin(...)` 是战斗内的另一种注册方式 (本节示例之外的插件用它)，完整注册与移除见 [C7-S5]。
 
@@ -130,10 +130,10 @@ private void report(CombatEngineAPI engine) {
 
 要点：
 
-* **`extends BaseEveryFrameCombatPlugin`**：基类提供其余回调 (输入处理、渲染等) 的空实现，只需覆写 `advance`。
-* **5 个字段**：插件自己记的数 (累计秒数、距上次报告多久、调用次数、暂停帧次数)。字段随实例生存：每场战斗一个新实例，数字从零开始 —— **不要**把实例缓存到下一场战斗，否则 `elapsed` 会从上一场接着涨。
-* **`advance` 三件事按顺序**：`calls++` 在暂停检查**之前** (暂停帧也计数，这是 "暂停期间回调照常执行" 的观测点)；引擎引用**用到时才取** (`init()` 已废弃、不保证先于 `advance` 调用)；**暂停检查** `if (engine.isPaused()) { pausedCalls++; return; }` —— 暂停帧只计数、不推进状态。
-* **`report`**：`Global.getLogger(...)` 写日志；`addFloatingText(...)` 在玩家舰船位置显示浮动文字 (3 秒后消失)。
+- **`extends BaseEveryFrameCombatPlugin`**：基类提供其余回调 (输入处理、渲染等) 的空实现，只需覆写 `advance`。
+- **5 个字段**：插件自己记的数 (累计秒数、距上次报告多久、调用次数、暂停帧次数)。字段随实例生存：每场战斗一个新实例，数字从零开始 —— **不要**把实例缓存到下一场战斗，否则 `elapsed` 会从上一场接着涨。
+- **`advance` 三件事按顺序**：`calls++` 在暂停检查**之前** (暂停帧也计数，这是 "暂停期间回调照常执行" 的观测点)；引擎引用**用到时才取** (`init()` 已废弃、不保证先于 `advance` 调用)；**暂停检查** `if (engine.isPaused()) { pausedCalls++; return; }` —— 暂停帧只计数、不推进状态。
+- **`report`**：`Global.getLogger(...)` 写日志；`addFloatingText(...)` 在玩家舰船位置显示浮动文字 (3 秒后消失)。
 
 ## 观察暂停行为
 
@@ -179,9 +179,9 @@ if (engine.isPaused()) { return; } elapsed += amount; report(engine);
 
 预期结果：
 
-* 约 15 秒后 `starsector.log` 出现 `GearIn: elapsed ...s, calls ... (paused 0)` 形态的报告，玩家舰船位置出现过一行白色浮动文字 (约 3 秒后消失)；
-* 暂停约 20 秒期间没有新报告；恢复后第一次报告的 `elapsed` 与暂停前连续 (暂停的 20 秒未被计入)，`calls` 明显大于按帧率推算的调用数 —— 暂停期间回调照常执行，状态被暂停检查拦下；
-* `starsector.log` 没有与 `GearInPauseAwarePlugin` 相关的 `ERROR`。
+- 约 15 秒后 `starsector.log` 出现 `GearIn: elapsed ...s, calls ... (paused 0)` 形态的报告，玩家舰船位置出现过一行白色浮动文字 (约 3 秒后消失)；
+- 暂停约 20 秒期间没有新报告；恢复后第一次报告的 `elapsed` 与暂停前连续 (暂停的 20 秒未被计入)，`calls` 明显大于按帧率推算的调用数 —— 暂停期间回调照常执行，状态被暂停检查拦下；
+- `starsector.log` 没有与 `GearInPauseAwarePlugin` 相关的 `ERROR`。
 
 ## 故障分析
 
@@ -201,12 +201,12 @@ if (engine.isPaused()) { return; } elapsed += amount; report(engine);
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：每帧回调接口 (`advance`、`processInputPreCoreControls`、两个 `render...`，暂停期间照常被调用)。
-* `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：全部空实现的基类，示例继承它只覆写 `advance`。
-* `com.fs.starfarer.api.combat.CombatEngineAPI`：`isPaused()`、`getElapsedInLastFrame()`(暂停时返回当前帧值)、`addPlugin` / `removePlugin`、`getPlayerShip()`、`addFloatingText(...)`。
-* `com.fs.starfarer.api.Global`：`getLogger(Class)`(输出到 `starsector.log`)、`getCombatEngine()` (战斗外返回非 null 空引擎，仅资源加载期为 `null`)。
-* `data/config/settings.json`：`plugins` 段注册入口 (游戏本体与所有 MOD 同路径文件深合并，key 全局唯一)。
-* `Starsector/starsector-core/starsector.log`：运行日志，插件 `Global.getLogger(...)` 的输出位置。
+- `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：每帧回调接口 (`advance`、`processInputPreCoreControls`、两个 `render...`，暂停期间照常被调用)。
+- `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：全部空实现的基类，示例继承它只覆写 `advance`。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：`isPaused()`、`getElapsedInLastFrame()`(暂停时返回当前帧值)、`addPlugin` / `removePlugin`、`getPlayerShip()`、`addFloatingText(...)`。
+- `com.fs.starfarer.api.Global`：`getLogger(Class)`(输出到 `starsector.log`)、`getCombatEngine()` (战斗外返回非 null 空引擎，仅资源加载期为 `null`)。
+- `data/config/settings.json`：`plugins` 段注册入口 (游戏本体与所有 MOD 同路径文件深合并，key 全局唯一)。
+- `Starsector/starsector-core/starsector.log`：运行日志，插件 `Global.getLogger(...)` 的输出位置。
 
 ::: details 完整成品：GearInPauseAwarePlugin
 

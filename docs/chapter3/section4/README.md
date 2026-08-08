@@ -10,16 +10,16 @@
 
 完成后，您将能够：
 
-* 在 `data/config/planets.json` 注册一个新行星类型；
-* 选择纹理、图标、大气、云层、旋转和描述键；
-* 判断 `isStar`、资源路径和颜色数组对加载结果的影响；
-* 把新类型接到既有 `addPlanet` 调用并在新档中观察。
+- 在 `data/config/planets.json` 注册一个新行星类型；
+- 选择纹理、图标、大气、云层、旋转和描述键；
+- 判断 `isStar`、资源路径和颜色数组对加载结果的影响；
+- 把新类型接到既有 `addPlanet` 调用并在新档中观察。
 
 ## 前置知识
 
-* [C3-S6] 的星系生成入口和 `addPlanet` 参数顺序；
-* [C3-S8] 的 `PLANET` 描述键；
-* 能够启动新档并进入 GearIn 星系。
+- [C3-S6] 的星系生成入口和 `addPlanet` 参数顺序；
+- [C3-S8] 的 `PLANET` 描述键；
+- 能够启动新档并进入 GearIn 星系。
 
 ## 定义星体外观
 
@@ -145,10 +145,10 @@ PlanetAPI prime = system.addPlanet(
 
 预期结果：
 
-* GearIn Prime 使用 `GearIn_ember_world` 的橙红大气与云层；
-* 星图图标使用 `iconColor` 的橙色；
-* 行星详情显示 [C3-S8] 的 `PLANET` 描述；
-* 第二颗行星仍按原版类型显示。
+- GearIn Prime 使用 `GearIn_ember_world` 的橙红大气与云层；
+- 星图图标使用 `iconColor` 的橙色；
+- 行星详情显示 [C3-S8] 的 `PLANET` 描述；
+- 第二颗行星仍按原版类型显示。
 
 ## 故障分析
 
@@ -162,7 +162,7 @@ PlanetAPI prime = system.addPlanet(
 
 ## 建议参考项
 
-* `data/config/planets.json`：行星与恒星类型注册表；
-* `PlanetSpecAPI`：运行期类型字段与描述键；
-* [C3-S6]：`initStar`、`addPlanet` 和星系生成顺序；
-* [C3-S8]：PLANET 描述挂接。
+- `data/config/planets.json`：行星与恒星类型注册表；
+- `PlanetSpecAPI`：运行期类型字段与描述键；
+- [C3-S6]：`initStar`、`addPlanet` 和星系生成顺序；
+- [C3-S8]：PLANET 描述挂接。

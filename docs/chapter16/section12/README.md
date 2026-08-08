@@ -10,17 +10,17 @@
 
 完成后，您将能够：
 
-* 用 `FontDataManager.tryFont()` 加载并验证 `.fnt` 字体数据；
-* 创建 `TextFieldEntity`，配置窗口正交矩阵并提交文本变化；
-* 用 `NumberObject` 绘制不需要重建字形的动态数值；
-* 用 `UIBorderObject` 建立固定尺寸面板边界；
-* 只在 `renderInUICoords()` 调用直接绘制入口。
+- 用 `FontDataManager.tryFont()` 加载并验证 `.fnt` 字体数据；
+- 创建 `TextFieldEntity`，配置窗口正交矩阵并提交文本变化；
+- 用 `NumberObject` 绘制不需要重建字形的动态数值；
+- 用 `UIBorderObject` 建立固定尺寸面板边界；
+- 只在 `renderInUICoords()` 调用直接绘制入口。
 
 ## 前置知识
 
-* [C6-S2] 理解 Java 类、方法、字段与入口插件；
-* [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-* 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C6-S2] 理解 Java 类、方法、字段与入口插件；
+- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
 
@@ -148,11 +148,11 @@ public void renderInUICoords(ViewportAPI viewport) {
 
 预期结果：
 
-* 字体和文本 shader 有效时，标签字符数据成功提交；
-* `NumberObject` 直接绘制三项动态整数，无需为每次变化重建文本；
-* `UIBorderObject` 使用稳定的 240 × 104 像素尺寸；
-* 分辨率变化后面板仍以 20 像素边距锚定右上角；
-* 逻辑更新与直接绘制分属各自回调，界面没有未处理异常。
+- 字体和文本 shader 有效时，标签字符数据成功提交；
+- `NumberObject` 直接绘制三项动态整数，无需为每次变化重建文本；
+- `UIBorderObject` 使用稳定的 240 × 104 像素尺寸；
+- 分辨率变化后面板仍以 20 像素边距锚定右上角；
+- 逻辑更新与直接绘制分属各自回调，界面没有未处理异常。
 
 ## 故障分析
 
@@ -167,9 +167,9 @@ public void renderInUICoords(ViewportAPI viewport) {
 
 ## 建议参考项
 
-* `FontDataManager`：加载与查询字体数据；
-* `TextFieldEntity`：排版和提交文本实例；
-* `renderInUICoords`：屏幕空间直接绘制入口。
+- `FontDataManager`：加载与查询字体数据；
+- `TextFieldEntity`：排版和提交文本实例；
+- `renderInUICoords`：屏幕空间直接绘制入口。
 ::: details 完整成品：GearInStatusPanel
 
 ```java

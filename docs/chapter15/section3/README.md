@@ -10,18 +10,18 @@
 
 完成后，您将能够：
 
-* 使用 `loadCSV` 读取列名映射的对象数组；
-* 使用 `getMergedSpreadsheetData` 读取跨 MOD 合并表；
-* 使用 `getMergedSpreadsheetDataForMod` 读取指定 master 文件并允许外部 MOD 覆盖行；
-* 区分单文件读取、合并读取和 JSON 合并；
-* 根据重复键、路径和 master 归属定位表格读取故障。
+- 使用 `loadCSV` 读取列名映射的对象数组；
+- 使用 `getMergedSpreadsheetData` 读取跨 MOD 合并表；
+- 使用 `getMergedSpreadsheetDataForMod` 读取指定 master 文件并允许外部 MOD 覆盖行；
+- 区分单文件读取、合并读取和 JSON 合并；
+- 根据重复键、路径和 master 归属定位表格读取故障。
 
 ## 前置知识
 
-* [C1-S2] 的 CSV 表头、引号和 ID 规则；
-* [C3-S8] 的描述表键与合并语义；
-* [C15-S1] 的 MOD 相对路径和 `modId` 限定读取；
-* [C15-S2] 的 JSON 单文件读取。
+- [C1-S2] 的 CSV 表头、引号和 ID 规则；
+- [C3-S8] 的描述表键与合并语义；
+- [C15-S1] 的 MOD 相对路径和 `modId` 限定读取；
+- [C15-S2] 的 JSON 单文件读取。
 
 ## 单文件与合并入口
 
@@ -73,10 +73,10 @@ GearIn_service,工坊服务,10
 
 预期结果：
 
-* 单文件读取返回 `GearIn_service` 的原始字段；
-* 普通合并包含所有来源的非冲突行；
-* master 合并按同键替换 master 行；
-* 键不重复、路径正确时，读取日志没有表格解析异常。
+- 单文件读取返回 `GearIn_service` 的原始字段；
+- 普通合并包含所有来源的非冲突行；
+- master 合并按同键替换 master 行；
+- 键不重复、路径正确时，读取日志没有表格解析异常。
 
 清理：删除测试 MOD 的覆盖行和临时日志探针。
 
@@ -94,7 +94,7 @@ CSV 和 JSON 的读取入口由数据所有权决定。单文件入口读取自�
 
 ## 建议参考项
 
-* `SettingsAPI.loadCSV`：单文件读取；
-* `SettingsAPI.getMergedSpreadsheetData`：普通合并表；
-* `SettingsAPI.getMergedSpreadsheetDataForMod`：带 master 的合并表；
-* `SettingsAPI.getMergedJSON`：对象键递归合并。
+- `SettingsAPI.loadCSV`：单文件读取；
+- `SettingsAPI.getMergedSpreadsheetData`：普通合并表；
+- `SettingsAPI.getMergedSpreadsheetDataForMod`：带 master 的合并表；
+- `SettingsAPI.getMergedJSON`：对象键递归合并。

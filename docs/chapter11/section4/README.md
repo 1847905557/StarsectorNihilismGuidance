@@ -10,29 +10,29 @@
 
 完成后，您将能够：
 
-* 解释状态交接链的四个环节 (装配 → 成员 stats、人物技能 → 成员 stats、成员 stats → 战斗实体、`MutableStat` 重算语义) 与各自的触发入口；
-* 验证 stats 重建 "整体新建 + 按固定序列重放" 的行为，并区分跨重建保留与丢弃的修改；
-* 区分个人通道与舰队通道的归属条件：舰长个人技能 (SHIP 族) 需成员入队 (`getFleetData() != null`)，舰队指挥官舰队向技能 (ALL\_SHIPS\_IN\_FLEET) 经 `applyFleetwideToStats` 应用且跳过战机；
-* 按部署链顺序解释战斗 stats 的建立过程 (新造 → `ShipAPI` 对象创建时绑定实体并重放 → 入引擎 → 战斗内换舰长)，并核对每步的生效时机；
-* 解释 `MutableStat` 的延迟重算 (读 `getModifiedValue()` 才重算) 与同 ID 同类型幂等覆盖，识别引擎保留 ID 清单；
-* 从可观察症状定位典型故障：生涯侧数值 "自己变回去"、换舰长后 stats 无变化、界面数值不刷新、生涯与部署数值对不上、战斗内换舰长旧加成残留、自定义 modifier 被引擎覆盖、重放入口内递归栈溢出、跨战斗缓存失效。
+- 解释状态交接链的四个环节 (装配 → 成员 stats、人物技能 → 成员 stats、成员 stats → 战斗实体、`MutableStat` 重算语义) 与各自的触发入口；
+- 验证 stats 重建 "整体新建 + 按固定序列重放" 的行为，并区分跨重建保留与丢弃的修改；
+- 区分个人通道与舰队通道的归属条件：舰长个人技能 (SHIP 族) 需成员入队 (`getFleetData() != null`)，舰队指挥官舰队向技能 (ALL\_SHIPS\_IN\_FLEET) 经 `applyFleetwideToStats` 应用且跳过战机；
+- 按部署链顺序解释战斗 stats 的建立过程 (新造 → `ShipAPI` 对象创建时绑定实体并重放 → 入引擎 → 战斗内换舰长)，并核对每步的生效时机；
+- 解释 `MutableStat` 的延迟重算 (读 `getModifiedValue()` 才重算) 与同 ID 同类型幂等覆盖，识别引擎保留 ID 清单；
+- 从可观察症状定位典型故障：生涯侧数值 "自己变回去"、换舰长后 stats 无变化、界面数值不刷新、生涯与部署数值对不上、战斗内换舰长旧加成残留、自定义 modifier 被引擎覆盖、重放入口内递归栈溢出、跨战斗缓存失效。
 
 ## 前置知识
 
-* [C4-S3] 的模块船、模块船生成流程与独立 `ShipAPI` 实体；
-* [C6-S2] 的 `GearInModPlugin` 所有权与 `onGameLoad` 注册检查；
-* [C7-S3] 的 `MutableStat`、修饰公式、modifier ID 稳定性与 `unmodify`；
-* [C9-S3] 的 `FleetMemberAPI` 变体、stats、成员加入与 `setCaptain`；
-* [C11-S1] 的人物、`PersonAPI.getStats()`、舰长与默认舰长保存；
-* [C11-S2] 的技能效果作用域、`refreshCharacterStatsEffects` 与 effect ID；
-* [C11-S3] 的 `ShipVariantAPI.clone()`、`setSource`、`toJSONObject` 与部署期变体修改。
+- [C4-S3] 的模块船、模块船生成流程与独立 `ShipAPI` 实体；
+- [C6-S2] 的 `GearInModPlugin` 所有权与 `onGameLoad` 注册检查；
+- [C7-S3] 的 `MutableStat`、修饰公式、modifier ID 稳定性与 `unmodify`；
+- [C9-S3] 的 `FleetMemberAPI` 变体、stats、成员加入与 `setCaptain`；
+- [C11-S1] 的人物、`PersonAPI.getStats()`、舰长与默认舰长保存；
+- [C11-S2] 的技能效果作用域、`refreshCharacterStatsEffects` 与 effect ID；
+- [C11-S3] 的 `ShipVariantAPI.clone()`、`setSource`、`toJSONObject` 与部署期变体修改。
 
 ## 术语
 
 本节首次完整讲解两个交接语义词；`MutableStat` 与 `FleetMemberAPI` 的中文写法与首次讲解位置见术语约定表：
 
-* **状态交接 (handoff)**：状态从一个对象流向下一个对象的过程 —— 装配内容流入成员 stats、人物技能流入成员 stats、成员 stats 流入战斗舰船。交接经 `MutableShipStatsAPI` 进行，交接的完成标志是 "stats 对象被 (重新) 构造并重放"。
-* **stats 重建 (stats rebuild)**：`FleetMemberAPI.updateStats()` 整体新建 stats 对象并按固定序列重放全部效果的行为。重建是交接的 "结算时刻"：重建后生效的修改保留，重建前直接写在旧对象上的修改被丢弃。
+- **状态交接 (handoff)**：状态从一个对象流向下一个对象的过程 —— 装配内容流入成员 stats、人物技能流入成员 stats、成员 stats 流入战斗舰船。交接经 `MutableShipStatsAPI` 进行，交接的完成标志是 "stats 对象被 (重新) 构造并重放"。
+- **stats 重建 (stats rebuild)**：`FleetMemberAPI.updateStats()` 整体新建 stats 对象并按固定序列重放全部效果的行为。重建是交接的 "结算时刻"：重建后生效的修改保留，重建前直接写在旧对象上的修改被丢弃。
 
 ## 梳理状态传递关系
 
@@ -109,16 +109,16 @@
 
 基值之后是加成：人物技能要在 stats 重建时被重放进去，才谈得上生效。技能重放有两条通道：
 
-* **个人通道** `applyPersonalToStats(stats, hullSize)`：遍历 `getShipEffects()`(`type == SHIP` 且 `getSkillLevel(governingSkill) >= requiredSkillLevel`)，逐效果 `apply(stats, hullSize, effectId, level)`：
-    *   effect id 是 `<技能id>_ship_<序号>`——"effect id 即 modifier id" 的规则在这里落地。
-* **舰队通道** `applyFleetwideToStats(stats, hullSize)`：遍历 `getAllShipsInFleetEffects()`(`type == ALL_SHIPS_IN_FLEET`)，**跳过 `hullSize == FIGHTER`**。
+- **个人通道** `applyPersonalToStats(stats, hullSize)`：遍历 `getShipEffects()`(`type == SHIP` 且 `getSkillLevel(governingSkill) >= requiredSkillLevel`)，逐效果 `apply(stats, hullSize, effectId, level)`：
+    - effect id 是 `<技能id>_ship_<序号>`——"effect id 即 modifier id" 的规则在这里落地。
+- **舰队通道** `applyFleetwideToStats(stats, hullSize)`：遍历 `getAllShipsInFleetEffects()`(`type == ALL_SHIPS_IN_FLEET`)，**跳过 `hullSize == FIGHTER`**。
 
 舰长侧触发点 (都会走到 `updateStats`)：
 
-* `FleetMemberAPI.setCaptain(person)`(`FleetMemberAPI`)：人物变化且 `withStatsUpdate`(默认 true)→ `updateStats()`。
-* `FleetMemberAPI.setFleetCommanderForStats(person, fleetData)`：**只存 `fleetCommanderForStats` 并 `setStatUpdateNeeded(true)`**—— 不立即重建，下一次 `getStats()` 才重建：
-    *   注意实现里第二个参数 `fleetData` **被忽略**，舰队数据始终来自成员自己的 `fleetData`。
-* `getStats()` 延迟重建：`statUpdateNeeded == true` 时先 `updateStats()` 再返回；`setStatUpdateNeeded(true)` 还会使缓存的强度值失效。
+- `FleetMemberAPI.setCaptain(person)`(`FleetMemberAPI`)：人物变化且 `withStatsUpdate`(默认 true)→ `updateStats()`。
+- `FleetMemberAPI.setFleetCommanderForStats(person, fleetData)`：**只存 `fleetCommanderForStats` 并 `setStatUpdateNeeded(true)`**—— 不立即重建，下一次 `getStats()` 才重建：
+    - 注意实现里第二个参数 `fleetData` **被忽略**，舰队数据始终来自成员自己的 `fleetData`。
+- `getStats()` 延迟重建：`statUpdateNeeded == true` 时先 `updateStats()` 再返回；`setStatUpdateNeeded(true)` 还会使缓存的强度值失效。
 
 成员侧前提：第 3 步的 `applyPersonalToStats` 有 `getFleetData() != null` 条件 —— **未入队的成员换舰长，stats 没有任何变化** (`GearInCaptainToMember` 的 preJoin 步骤即此)。
 
@@ -154,10 +154,10 @@
 
 `ShipAPI` 对象构造：
 
-* `stats.setEntity(this)` / `stats.setFleetMember(member)`—— 战斗 stats 与实体互相绑定，`MutableShipStatsAPI.getEntity()` 由此非 null；
-* 全部船插 `applyEffectsBeforeShipCreation`(重放时)；
-* `setCaptain(captain)` → `applyPersonalToShip`(舰长技能)：个人 SHIP 技能 + `applyPersonalAfterShipCreationToShip`(含系统/相位数值烘焙 `updateValuesFromStats`)+ 指挥官 `applyFleetwideToShip`；
-* `flux_capacitors`/`flux_vents` 再写一次 —— 与生涯序列同 ID 幂等。
+- `stats.setEntity(this)` / `stats.setFleetMember(member)`—— 战斗 stats 与实体互相绑定，`MutableShipStatsAPI.getEntity()` 由此非 null；
+- 全部船插 `applyEffectsBeforeShipCreation`(重放时)；
+- `setCaptain(captain)` → `applyPersonalToShip`(舰长技能)：个人 SHIP 技能 + `applyPersonalAfterShipCreationToShip`(含系统/相位数值烘焙 `updateValuesFromStats`)+ 指挥官 `applyFleetwideToShip`；
+- `flux_capacitors`/`flux_vents` 再写一次 —— 与生涯序列同 ID 幂等。
 
 入引擎：`CombatEngineAPI.addObjectToEngine`(`CombatEngineAPI`)→ 触发全部船插的第三时机—— **每个战斗实体只触发一次**。
 
@@ -171,14 +171,14 @@
 
 前三环节的每一次重放都依赖同一套底层语义：为什么同一序列重放任意次数值不变、引擎为什么敢在多个时机重复写入？答案在 `MutableStat` 本身。它是公开 API 类 (`com.fs.starfarer.api.combat.MutableStat`，公开具体类)：
 
-* **延迟重算**：`modifyFlat`/`modifyPercent`/`modifyMult`/`setBaseValue` 只做标记，`getModifiedValue()`/ `getFlatMod()`/`getPercentMod()`/`getMult()` 读取时才真正重算：
-    *   `modified = base + base*percent/100 + flat`，再 `* mult`。
-* **同 ID 幂等**：`modifyFlat(source, value)` 在 "同 source 已存在且值相同" 时只更新描述；`unmodify(source)` 同时清理三类。交接链的 "重放任意次不翻倍" 完全依赖这套语义。
-* **引擎保留 ID**(本节列全，均不可占用)：
-    *   `flux_capacitors`/`flux_vents`(`FleetMemberAPI.updateStats`、`ShipAPI` 对象构造)；
-    *   `cr_effect`(`CRPluginImpl.applyCRToStats`，`com.fs.starfarer.api.impl.combat.CRPluginImpl`，按 CR 写故障率/机动性/伤害修正)。
-    *   `crew skill bonus`/`crew understrength`(`CRPluginImpl.applyMaxCRCrewModifiers`，`maxCombatReadiness`)。
-    *   `mothballed_mod_id`(`FleetMemberAPI`)。
+- **延迟重算**：`modifyFlat`/`modifyPercent`/`modifyMult`/`setBaseValue` 只做标记，`getModifiedValue()`/ `getFlatMod()`/`getPercentMod()`/`getMult()` 读取时才真正重算：
+    - `modified = base + base*percent/100 + flat`，再 `* mult`。
+- **同 ID 幂等**：`modifyFlat(source, value)` 在 "同 source 已存在且值相同" 时只更新描述；`unmodify(source)` 同时清理三类。交接链的 "重放任意次不翻倍" 完全依赖这套语义。
+- **引擎保留 ID**(本节列全，均不可占用)：
+    - `flux_capacitors`/`flux_vents`(`FleetMemberAPI.updateStats`、`ShipAPI` 对象构造)；
+    - `cr_effect`(`CRPluginImpl.applyCRToStats`，`com.fs.starfarer.api.impl.combat.CRPluginImpl`，按 CR 写故障率/机动性/伤害修正)。
+    - `crew skill bonus`/`crew understrength`(`CRPluginImpl.applyMaxCRCrewModifiers`，`maxCombatReadiness`)。
+    - `mothballed_mod_id`(`FleetMemberAPI`)。
 
 同一来源 ID 写不同值，后写者静默覆盖
 
@@ -372,30 +372,30 @@ Starsector\mods\GearIndustry\
 
 对应关系与观察点 (原演示的 8 步观察点，按类归属)：
 
-* 四个类统一沿用既有的一次性演示模式：`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除；`REGISTER_MARK` **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致，且每个类独立成键、不挂进既有插件的 `CLASS_MARK` 门。
-* 观察点 1(`GearInVariantToStats` 步骤 1—— 基线绑定)：`createFleetMember(SHIP, "wolf_Assault")` 构造即 `updateStats`(`FleetMemberAPI`)，此时成员未入队：
-    *   `variantShared=true`(`stats.getVariant() == wolf.getVariant()`，同一引用，stats 对象持有变体引用) 与 `memberLinked=true`(`stats.getFleetMember() == wolf`) 是 "交接已绑定" 的现场证明。
-* 观察点 2(`GearInCaptainToMember` 步骤 1—— 未入队换舰长)：`gunner.getStats().setSkillLevel("gunnery_implants", 1f)` 只重放 CHARACTER\_STATS / FLEET 效果 (`gunnery_implants` 没有这两类)：
-    *   `setCaptain(gunner)` 触发重建，但 `getFleetData()` 为 null → `applyPersonalToStats` 被跳过 → `recoil=1.000 aim=0.000`。
-* 观察点 3(`GearInCaptainToMember` 步骤 2—— 入队生效)：`addFleetMember`(写 `fleetData` 并 `setSyncNeeded`) 后显式 `updateStats()`—— 个人技能开始应用：
-    *   `gunnery_implants` L1 的三个 Level 效果：
-        *   Level2：`getAutofireAimAccuracy().modifyFlat(id, 1.0)`(`com.fs.starfarer.api.impl.campaign.skills.GunneryImplants`)。
-        *   Level3：`getBallisticWeaponRangeBonus()` / `getEnergyWeaponRangeBonus().modifyPercent(id, 15)`。
-        *   Level1：`getMaxRecoilMult().modifyMult(id, 1 - 0.01*25)`。
+- 四个类统一沿用既有的一次性演示模式：`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除；`REGISTER_MARK` **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致，且每个类独立成键、不挂进既有插件的 `CLASS_MARK` 门。
+- 观察点 1(`GearInVariantToStats` 步骤 1—— 基线绑定)：`createFleetMember(SHIP, "wolf_Assault")` 构造即 `updateStats`(`FleetMemberAPI`)，此时成员未入队：
+    - `variantShared=true`(`stats.getVariant() == wolf.getVariant()`，同一引用，stats 对象持有变体引用) 与 `memberLinked=true`(`stats.getFleetMember() == wolf`) 是 "交接已绑定" 的现场证明。
+- 观察点 2(`GearInCaptainToMember` 步骤 1—— 未入队换舰长)：`gunner.getStats().setSkillLevel("gunnery_implants", 1f)` 只重放 CHARACTER\_STATS / FLEET 效果 (`gunnery_implants` 没有这两类)：
+    - `setCaptain(gunner)` 触发重建，但 `getFleetData()` 为 null → `applyPersonalToStats` 被跳过 → `recoil=1.000 aim=0.000`。
+- 观察点 3(`GearInCaptainToMember` 步骤 2—— 入队生效)：`addFleetMember`(写 `fleetData` 并 `setSyncNeeded`) 后显式 `updateStats()`—— 个人技能开始应用：
+    - `gunnery_implants` L1 的三个 Level 效果：
+        - Level2：`getAutofireAimAccuracy().modifyFlat(id, 1.0)`(`com.fs.starfarer.api.impl.campaign.skills.GunneryImplants`)。
+        - Level3：`getBallisticWeaponRangeBonus()` / `getEnergyWeaponRangeBonus().modifyPercent(id, 15)`。
+        - Level1：`getMaxRecoilMult().modifyMult(id, 1 - 0.01*25)`。
     *   结果 `recoil=0.750 aim=1.000 ballisticRange=15.0 energyRange=15.0`；
     *   日志里的 `count` 读 `getNumMembers()`，会触发一次全量舰队同步 (`FleetDataAPI.syncIfNeeded`)，全员 `updateStats` 再跑一遍 —— 同 ID 幂等，数值不变。
-* 观察点 4(`GearInStatsRebuild` 步骤 2—— 重建即丢弃)：`modifyFlat("GearIn_transient_speed", 25f)` 直接写 `getStats()` 返回值 → `speed` 增 25：
-    *   `updateStats()` 整体新建对象 (`rebuiltNewObject=true`)→ 修改被丢弃 (`speedAfterRebuild` 回到 `speedBefore`)。
-    *   **这是 "重建即丢弃" 的现场证明**。
-* 观察点 4b(`GearInStatsRebuild` 步骤 3—— 延迟重建)：`setStatUpdateNeeded(true)` 只置标记；`getStats()` 延迟重建 → `sameObjectAsBefore=false`。
-* 观察点 5(`GearInVariantToStats` 步骤 2—— 装配 → stats)：克隆装配加 5 电容 + 5 散热，`setVariant(refit, false, true)`：`withRefit=false` 跳过 CR 影响计算 (`computeVariantDiffCRImpact`)，`withStatsUpdate=true` 立即重建：
-    *   `flux_capacitors` = `numCaps * 200`(settings.json 的 `fluxPerCapacitor:200`)、`flux_vents` = `numVents * 10` (`dissipationPerVent:10`)→ 幅能容量 `+1000`、散耗 `+50`，与船插/CR 贡献无关，**确定性**。
-    *   `sharedVariant=true`(`setVariant` 传入引用不克隆，重建后 stats 仍指向同一变体)、`specId=wolf_Assault`。
-* 观察点 6(`GearInCaptainToMember` 步骤 3—— 换舰长恢复)：`setCaptain(plain)`(无技能默认人物)→ 立即重建 → `recoil 0.750 -> 1.000`。
-* 观察点 7(`GearInCommanderToMember`—— 指挥官 → 成员)：`setFleetCommanderForStats(commander, fleetData)` 只标记 (第二参数被忽略)；`getStats()` 延迟重建 → `applyFleetwideToStats`：
-    *   `crew_training` Level1 (`getMaxCombatReadiness().modifyFlat(id, crBonus*0.01)`，`com.fs.starfarer.api.impl.campaign.skills.CrewTraining`，非民用船生效)→ `maxCR` 上升。
-    *   置 `null` 后回退 `fleetData.getCommander()`(玩家)→ 恢复原值。
-* 观察点 8(清理)：四个类各自 `removeFleetMember(wolf)` → 玩家舰队成员数与初始一致 (同步延迟到下一次同步，`getNumMembers()` 会立即同步)。演示脚本**不留副作用** (人物对象只存在于局部变量，不被任何持久集合引用)。
+- 观察点 4(`GearInStatsRebuild` 步骤 2—— 重建即丢弃)：`modifyFlat("GearIn_transient_speed", 25f)` 直接写 `getStats()` 返回值 → `speed` 增 25：
+    - `updateStats()` 整体新建对象 (`rebuiltNewObject=true`)→ 修改被丢弃 (`speedAfterRebuild` 回到 `speedBefore`)。
+    - **这是 "重建即丢弃" 的现场证明**。
+- 观察点 4b(`GearInStatsRebuild` 步骤 3—— 延迟重建)：`setStatUpdateNeeded(true)` 只置标记；`getStats()` 延迟重建 → `sameObjectAsBefore=false`。
+- 观察点 5(`GearInVariantToStats` 步骤 2—— 装配 → stats)：克隆装配加 5 电容 + 5 散热，`setVariant(refit, false, true)`：`withRefit=false` 跳过 CR 影响计算 (`computeVariantDiffCRImpact`)，`withStatsUpdate=true` 立即重建：
+    - `flux_capacitors` = `numCaps * 200`(settings.json 的 `fluxPerCapacitor:200`)、`flux_vents` = `numVents * 10` (`dissipationPerVent:10`)→ 幅能容量 `+1000`、散耗 `+50`，与船插/CR 贡献无关，**确定性**。
+    - `sharedVariant=true`(`setVariant` 传入引用不克隆，重建后 stats 仍指向同一变体)、`specId=wolf_Assault`。
+- 观察点 6(`GearInCaptainToMember` 步骤 3—— 换舰长恢复)：`setCaptain(plain)`(无技能默认人物)→ 立即重建 → `recoil 0.750 -> 1.000`。
+- 观察点 7(`GearInCommanderToMember`—— 指挥官 → 成员)：`setFleetCommanderForStats(commander, fleetData)` 只标记 (第二参数被忽略)；`getStats()` 延迟重建 → `applyFleetwideToStats`：
+    - `crew_training` Level1 (`getMaxCombatReadiness().modifyFlat(id, crBonus*0.01)`，`com.fs.starfarer.api.impl.campaign.skills.CrewTraining`，非民用船生效)→ `maxCR` 上升。
+    - 置 `null` 后回退 `fleetData.getCommander()`(玩家)→ 恢复原值。
+- 观察点 8(清理)：四个类各自 `removeFleetMember(wolf)` → 玩家舰队成员数与初始一致 (同步延迟到下一次同步，`getNumMembers()` 会立即同步)。演示脚本**不留副作用** (人物对象只存在于局部变量，不被任何持久集合引用)。
 
 构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
 
@@ -437,17 +437,17 @@ stats.getMaxSpeed().modifyFlat(id, 5f);
 
 预期结果：
 
-* **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInVariantToStats.class` 等四个类的 class 条目。
-* **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 按注册顺序依次出现以下日志 (`<N>` 为初始成员数；数值以实际为准，但标出的关系是确定性的)：
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInVariantToStats.class` 等四个类的 class 条目。
+- **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 按注册顺序依次出现以下日志 (`<N>` 为初始成员数；数值以实际为准，但标出的关系是确定性的)：
 
     ```text
     GearIn variantToStats baseline: hull=wolf specId=wolf_Assault caps=9 vents=10 fluxCap base=2250 mod=<2250+1800+fluxdistributor贡献> fluxDiss base=150 mod=<150+100+fluxdistributor贡献> speed=<150.0> maxCR=<0.200~0.700 视船员> variantShared=true memberLinked=true GearIn variantToStats refit: caps 9->14 vents 10->15 fluxCap <a>-><a+1000> (+1000) fluxDiss <b>-><b+50> (+50) sharedVariant=true specId=wolf_Assault GearIn captainToMember start: members=<N> GearIn captainToMember preJoin: recoil=1.000 aim=0.000 (skills not applied, member not in fleet) GearIn captainToMember joined: count=<N+1> recoil=0.750 aim=1.000 ballisticRange=15.0 energyRange=15.0 GearIn captainToMember swap: recoil 0.750 -> 1.000 (restored) GearIn captainToMember done: members=<N> (initial <N>) GearIn commanderToMember start: members=<N> GearIn commanderToMember: maxCR <c> -> <c+crewTraining加成> (crewTraining) -> <c> (reset) GearIn commanderToMember done: members=<N> (initial <N>) GearIn statsRebuild start: members=<N> GearIn statsRebuild transient: speed <150.0> -> <175.0> (with transient), rebuiltNewObject=true speedAfterRebuild=<150.0> GearIn statsRebuild lazy: sameObjectAsBefore=false GearIn statsRebuild done: members=<N> (initial <N>)
     ```
 
     要点核对：`variantToStats baseline` 的 `variantShared=true`/`memberLinked=true`(stats 与变体、成员双向绑定)；`captainToMember preJoin` 的 `1.000/0.000`(未入队不应用技能)；`captainToMember joined` 的 `0.750/1.000/15.0/15.0`(入队后技能生效，`gunnery_implants` L1 的 recoil/aim/range)；`statsRebuild transient` 的 `rebuiltNewObject=true` 与 `speedAfterRebuild` 回落 (重建即丢弃)；`variantToStats refit` 的 `+1000/+50` 与 `sharedVariant=true`(装配 → stats 交接与引用共享)；`captainToMember swap` 的 `0.750 -> 1.000`(换人立即重算并恢复)；`commanderToMember` 的 "中间值 > 前后值且恢复值 == 初始值"(舰队指挥官 → 成员 stats 交接)；四个 `done` 行成员数均与各自 `start` 行一致 (无残留)。类间顺序以注册顺序为准，类内顺序确定。
-* **报错定位**：若日志出现某个演示类的 ERROR 堆栈 (前缀 `GearIn variantToStats / captainToMember / commanderToMember / statsRebuild`)，说明该步抛错 —— 按堆栈对照 "规则强度" 节定位 (最常见的是引用了不存在的技能 id 或装配 id)。
-* **读档**：不重复执行演示 (四个 `REGISTER_MARK` 键已关)；玩家舰队构成与演示前一致。
-* **退出到主菜单**：脚本停止 (生涯状态不再运行)；回主菜单后再进档按第 5 条继续。
+- **报错定位**：若日志出现某个演示类的 ERROR 堆栈 (前缀 `GearIn variantToStats / captainToMember / commanderToMember / statsRebuild`)，说明该步抛错 —— 按堆栈对照 "规则强度" 节定位 (最常见的是引用了不存在的技能 id 或装配 id)。
+- **读档**：不重复执行演示 (四个 `REGISTER_MARK` 键已关)；玩家舰队构成与演示前一致。
+- **退出到主菜单**：脚本停止 (生涯状态不再运行)；回主菜单后再进档按第 5 条继续。
 
 ## 故障分析
 
@@ -469,29 +469,29 @@ stats.getMaxSpeed().modifyFlat(id, 5f);
 
 记忆要点：
 
-* 交接的结算时刻是 `updateStats`：新建 stats、按序重放、同 ID 幂等；要跨结算保留的修改必须挂在重放入口。
-* 舰长技能要 "入队才生效"(`getFleetData() != null`)；舰队向技能跳过战机。
-* `setVariant` 传引用不克隆，stats 与成员共享变体；部署链每场新造战斗 stats，禁止跨战斗缓存。
-* 战斗内换舰长 = 解挂旧 + 挂新 (含子模块)，立即生效；`getPersonality` 来自舰长。
-* 调试先看对象同一性 (`before != after`)，再谈数值。
+- 交接的结算时刻是 `updateStats`：新建 stats、按序重放、同 ID 幂等；要跨结算保留的修改必须挂在重放入口。
+- 舰长技能要 "入队才生效"(`getFleetData() != null`)；舰队向技能跳过战机。
+- `setVariant` 传引用不克隆，stats 与成员共享变体；部署链每场新造战斗 stats，禁止跨战斗缓存。
+- 战斗内换舰长 = 解挂旧 + 挂新 (含子模块)，立即生效；`getPersonality` 来自舰长。
+- 调试先看对象同一性 (`before != after`)，再谈数值。
 
 这条链闭合后的意义在于：生涯侧与战斗侧各自维护自己的 stats，跨场景只通过 "重建 + 重放" 传递语义、不共享对象 —— 因此任何 "跨战斗缓存" 的尝试都必然读到过期对象，而任何 "挂在重放入口" 的修改都天然获得幂等性。生涯侧的脚本时序、事件与存档主题都可沿用本节的注册判断模式 (每注册项独立 persistent data 键) 与 "先问重放入口、再问来源 ID" 的排查顺序；变体本身的语义 (克隆、来源、武器组改写) 也始终以本节的 `setVariant` 引用共享规则为落点。
 
 ## 建议参考项
 
-* `com.fs.starfarer.api.combat.MutableStat`：公开类即实现 —— 延迟重算、同 ID 幂等覆盖、`unmodify(source)` 清三类 (环节四)。
-* `com.fs.starfarer.api.combat.MutableShipStatsAPI`：成员/战斗 stats 的统一接口与数值访问器：
-    *   数值访问器：`getFluxCapacity`、`getMaxSpeed`、`getMaxCombatReadiness`、`getAutofireAimAccuracy`、`getMaxRecoilMult`。
-    *   射程与对象访问器：`getBallisticWeaponRangeBonus`、`getEnergyWeaponRangeBonus`、`getVariant`、`getFleetMember`、`getEntity`。
-* `com.fs.starfarer.api.fleet.FleetMemberAPI`：生涯侧成员入口 ——`getStats`、`setCaptain`、`setVariant`、`setStatUpdateNeeded`、`setFleetCommanderForStats`、`updateStats`。
-* `com.fs.starfarer.api.characters.PersonAPI` 与 `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：人物与技能等级入口 (`setSkillLevel`、`refreshCharacterStatsEffects`)。
-* `com.fs.starfarer.api.combat.ShipAPI`：战斗实体 ——`getMutableStats`、`getCaptain`、`getOriginalCaptain`、`setCaptain`、`getFleetCommander`。
-* `com.fs.starfarer.api.combat.ShipHullSpecAPI`：船体 spec——`getFluxCapacity`/`getFluxDissipation` 是幅能基值来源，嵌套 `EngineSpecAPI`。
-* `com.fs.starfarer.api.impl.combat.CRPluginImpl`：`cr_effect` / `crew skill bonus` / `crew understrength` 保留 ID 的引擎写入方。
-* `com.fs.starfarer.api.impl.campaign.skills.GunneryImplants` 与 `com.fs.starfarer.api.impl.campaign.skills.CrewTraining`：本节演示使用的原版技能效果类。
-* `data/scripts/gearin/campaign`：本节四个演示类 (`GearInVariantToStats`、`GearInCaptainToMember`、`GearInCommanderToMember`、`GearInStatsRebuild`) 所在的 MOD 源码包。
-* `data/config/settings.json`：`fluxPerCapacitor:200`、`dissipationPerVent:10` 的出处。
-* `data/hulls/ship_data.csv` 与 `data/variants/wolf/wolf_Assault.variant`：演示基线数据 (wolf 的 `max flux`/ `flux dissipation`/`max speed`；`fluxCapacitors:9`/`fluxVents:10`)。
+- `com.fs.starfarer.api.combat.MutableStat`：公开类即实现 —— 延迟重算、同 ID 幂等覆盖、`unmodify(source)` 清三类 (环节四)。
+- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：成员/战斗 stats 的统一接口与数值访问器：
+    - 数值访问器：`getFluxCapacity`、`getMaxSpeed`、`getMaxCombatReadiness`、`getAutofireAimAccuracy`、`getMaxRecoilMult`。
+    - 射程与对象访问器：`getBallisticWeaponRangeBonus`、`getEnergyWeaponRangeBonus`、`getVariant`、`getFleetMember`、`getEntity`。
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：生涯侧成员入口 ——`getStats`、`setCaptain`、`setVariant`、`setStatUpdateNeeded`、`setFleetCommanderForStats`、`updateStats`。
+- `com.fs.starfarer.api.characters.PersonAPI` 与 `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：人物与技能等级入口 (`setSkillLevel`、`refreshCharacterStatsEffects`)。
+- `com.fs.starfarer.api.combat.ShipAPI`：战斗实体 ——`getMutableStats`、`getCaptain`、`getOriginalCaptain`、`setCaptain`、`getFleetCommander`。
+- `com.fs.starfarer.api.combat.ShipHullSpecAPI`：船体 spec——`getFluxCapacity`/`getFluxDissipation` 是幅能基值来源，嵌套 `EngineSpecAPI`。
+- `com.fs.starfarer.api.impl.combat.CRPluginImpl`：`cr_effect` / `crew skill bonus` / `crew understrength` 保留 ID 的引擎写入方。
+- `com.fs.starfarer.api.impl.campaign.skills.GunneryImplants` 与 `com.fs.starfarer.api.impl.campaign.skills.CrewTraining`：本节演示使用的原版技能效果类。
+- `data/scripts/gearin/campaign`：本节四个演示类 (`GearInVariantToStats`、`GearInCaptainToMember`、`GearInCommanderToMember`、`GearInStatsRebuild`) 所在的 MOD 源码包。
+- `data/config/settings.json`：`fluxPerCapacitor:200`、`dissipationPerVent:10` 的出处。
+- `data/hulls/ship_data.csv` 与 `data/variants/wolf/wolf_Assault.variant`：演示基线数据 (wolf 的 `max flux`/ `flux dissipation`/`max speed`；`fluxCapacitors:9`/`fluxVents:10`)。
 
 ## 完整最小例
 

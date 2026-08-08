@@ -21,7 +21,7 @@
 
 - [C1-S1] 的 MOD ID、`GearIn_` 命名、包路径与类名规则；
 - [C2-S2] 的 `hull_mods.csv` 数据行、`HullModSpecAPI` 与船插注册字段；
-- [C3-S1] 的 `GearIn_test` 测试战役与舰船装配；
+- [C4-S1] 的 `GearIn_test` 测试战役与舰船装配；
 - [C6-S1] 的 Java 构建与 JAR 输出；
 - [C6-S3] 的 `Global` 生命周期与跨战斗引用边界；
 - [C7-S2] 的战斗状态读取与时间语义；
@@ -322,7 +322,7 @@ public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAP
 
 ## 验证方案
 
-前置数据：MOD 布局与编译链路 [C6-S1]、本节 `hull_mods.csv` 行 (含 `sModDesc`)、示例类 `GearInArmorTrainingHullMod` 已编入 `jars/GearIndustry.jar`、测试战役 `GearIn_test`([C3-S1]，用户舰 `GearIn_artizan`)。
+前置数据：MOD 布局与编译链路 [C6-S1]、本节 `hull_mods.csv` 行 (含 `sModDesc`)、示例类 `GearInArmorTrainingHullMod` 已编入 `jars/GearIndustry.jar`、测试战役 `GearIn_test`([C4-S1]，用户舰 `GearIn_artizan`)。
 
 1. 构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`。
 2. 注册与 tooltip：启动到生涯，在装配界面找到 "装甲训练"，悬停核对 desc 与 "S-mod bonus" 段落；搜索 `starsector.log` 中的注册行与错误。

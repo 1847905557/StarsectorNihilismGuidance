@@ -20,7 +20,7 @@
 ## 前置知识
 
 - [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-- [C3-S1] 的模拟战入口与测试战役；
+- [C4-S1] 的测试战役，以及 [C4-S2] 的模拟战入口；
 - [C6-S1] 的 Java 构建与 JAR 输出；
 - [C6-S3] 的 `Global` 生命周期与跨战斗引用边界；
 - [C7-S1] 的战斗插件注册与暂停判断；
@@ -352,7 +352,7 @@ public void advance(float amount) { advanceState(amount); } public void render(C
 
 ## 验证方案
 
-前置数据：[C6-S1] 的 MOD 布局 + [C7-S1] 的战斗插件接入 + [C7-S5] 的战斗生命周期插件 (其部署监听器已加入本节注册片段) + 本节的 `GearInLayeredRenderer` + [C3-S1] 的 `GearIn_test` 测试战役。
+前置数据：[C6-S1] 的 MOD 布局 + [C7-S1] 的战斗插件接入 + [C7-S5] 的战斗生命周期插件 (其部署监听器已加入本节注册片段) + 本节的 `GearInLayeredRenderer` + [C4-S1] 的 `GearIn_test` 测试战役。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
 2. **战役验证**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 中观察分层渲染初始化记录。

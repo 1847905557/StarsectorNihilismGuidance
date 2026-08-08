@@ -530,7 +530,7 @@ for (DamagingProjectileAPI p : engine.getProjectiles()) { report(p); }
 
 ## 验证方案
 
-前置数据：前置知识中的 MOD 布局与战斗插件接入 (含本节注册片段)、六个示例类源码 (见上)、`GearIn_test` 测试战役 [C3-S1]。
+前置数据：前置知识中的 MOD 布局与战斗插件接入 (含本节注册片段)、六个示例类源码 (见上)、`GearIn_test` 测试战役 [C4-S1]。
 
 1. **构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/` 下的六个类。
 2. **战役冒烟**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 核对 `GearIn flow init: damage listeners registered on engine`：
@@ -546,7 +546,7 @@ for (DamagingProjectileAPI p : engine.getProjectiles()) { report(p); }
 预期结果：
 
 - **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/` 下的六个类。
-- **初始化**：进入 `GearIn_test` 战役 [C3-S1] 一场战斗，`starsector.log` 出现 `GearIn flow init: damage listeners registered on engine`：
+- **初始化**：进入 `GearIn_test` 战役 [C4-S1] 一场战斗，`starsector.log` 出现 `GearIn flow init: damage listeners registered on engine`：
     - 随后 (部署玩家舰后) 每 3 秒出现 `GearIn weapon ...` / `GearIn projectiles: ...` / `GearIn beam ...` 周期报告；没有 `gear_in` 引起的 `ERROR`。
 - **开火 → 射弹生成**：武器开火后下一帧出现 `GearIn spawn <specId> spawnType=BALLISTIC fromMissile=false weapon=... source=... damage=... emp=...`：
     - 发射导弹时同一条日志的 `spawnType=MISSILE`(导弹同时计入 `getProjectiles()` 与 `getMissiles()`，周期报告里 `total` 与 `missiles` 一致增长)。

@@ -24,7 +24,7 @@
 - [C6-S3] 的 `Global.getSector()` 阶段语义；
 - [C7-S2] 的战斗域 `reportPlayerEngagement` 与 `EngagementResultAPI`；
 - [C9-S1] 的 `SectorAPI` 监听器和脚本列表、`EveryFrameScript`、暂停语义与注册标记；
-- [C10-S1] 的市场交易回调 `reportPlayerMarketTransaction`；
+- [C10-S3] 的市场交易回调 `reportPlayerMarketTransaction`；
 - [C9-S5] 的势力关系与 `SectorAPI.adjustPlayerReputation`；
 - [C12-S1] 的脚本序列化边界与 `advance(amount)` 的真实秒语义。
 

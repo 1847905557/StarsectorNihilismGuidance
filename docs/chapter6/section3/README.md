@@ -20,7 +20,7 @@
 ## 前置知识
 
 - [C1-S1] 的 MOD 目录结构与 `starsector.log` 使用方法；
-- [C3-S1] 的生涯对象、测试战役与装配部署；
+- [C4-S1] 的生涯对象、测试战役与装配部署；
 - [C5-S1] 的 OGG 资源规格；
 - [C5-S2] 的声音注册、sound ID 匹配与合并规则；
 - [C5-S3] 的声音消费入口与播放约定；
@@ -37,7 +37,7 @@
 | `Global` 入口 | 返回 | 链路下游 (本教程页面) |
 |---|---|---|
 | `getSettings()` | `SettingsAPI` | 设置、规则与静态数据 ([C6-S4] 精确聚焦；Chapter 14 页面消费规则) |
-| `getSector()` | `SectorAPI` | 生涯域 ([C3-S1]、Chapter 9 页面) |
+| `getSector()` | `SectorAPI` | 生涯域 ([C4-S1]、Chapter 9 页面) |
 | `getCombatEngine()` | `CombatEngineAPI` | 战斗域 ([C7-S1] 起的战斗插件) |
 | `getSoundPlayer()` | `SoundPlayerAPI` | 声音注册链 [C5-S2] 与使用方 [C5-S3] |
 | `getFactory()` | `FactoryAPI` | 生涯对象工厂 (本节) |
@@ -274,7 +274,7 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
 
 ## 验证方案
 
-前置数据：MOD 工程布局与编译链路 [C6-S1]、`GearInModPlugin` 生命周期类与持久数据门 [C6-S2]，并已接入本节两个调用点片段、`GearInGlobalAccess` / `GearInSoundPlayer` 两个工具类 (本节，代码见上)、声音资产与注册 [C5-S1] / [C5-S2]：`GearIn_system_loop`、`GearIn_weapon_fire`、`GearIn_test` 测试战役 [C3-S1]。
+前置数据：MOD 工程布局与编译链路 [C6-S1]、`GearInModPlugin` 生命周期类与持久数据门 [C6-S2]，并已接入本节两个调用点片段、`GearInGlobalAccess` / `GearInSoundPlayer` 两个工具类 (本节，代码见上)、声音资产与注册 [C5-S1] / [C5-S2]：`GearIn_system_loop`、`GearIn_weapon_fire`、`GearIn_test` 测试战役 [C4-S1]。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，再用 `jar tf jars\GearIndustry.jar` 核对两个工具类。
 

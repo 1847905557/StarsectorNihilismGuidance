@@ -1,329 +1,321 @@
-# 制作一艘模块船
+# 为舰船加入外观风格
 
-本节制作 `窑-级 (Kiln)` 模块巡洋舰及其第一个舰体模块。主体与模块都按完整舰船注册，再由主体槽位和装配文件确定连接位置与所用模块。
+本节为 `GearIn_artizan` 注册并应用 `GEAR_TECH` 外观风格，使舰船在战斗、大地图和超空间中保持一致的视觉与声音特征。舰船风格与引擎风格分别控制护盾、损伤、武器盖板、引擎火焰和航迹等表现。
 
 *本节预期阅读时间：~10 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：~20 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 在 `.ship` 中定义 `STATION_MODULE` 槽位，说出模块挂载位置与朝向的来源；
-- 在 `ship_data.csv` 中登记主体行 (`SHIP_WITH_MODULES`) 与模块行 (`UNBOARDABLE`、`HIDE_IN_CODEX`、`MODULE`)，并说出每条硬性要求违反后的可观察结果；
-- 在主体装配 `.variant` 中用 `modules` 字段把模块装配挂到槽位 (对象与数组两种写法都认识)；
-- 说出模块的加载与运行态链路：`.ship` 槽位 → 装配 `modules` 映射 → 部署时模块船生成流程生成独立实体 → 每帧绑定到主体槽位；
-- 从部署画面与 `starsector.log` 定位模块缺失、槽位 ID 错误、模块装配 ID 错误三类故障。
+- 在 `data/config/hull_styles.json` 中定义自定义舰船风格 (本例 `GEAR_TECH`)；
+- 在 `data/config/engine_styles.json` 中定义自定义引擎风格 (本例 `GEAR_TECH`)；
+- 把风格接入 `.ship` 文件 (顶层 `style` 与 `engineSlots` 的 `style`)；
+- 说清风格与势力、舰船、声音集和材质的完整关联流程；
+- 从 `starsector.log` 定位风格相关的加载失败与战斗内错误。
 
 ## 前置知识
 
-- [C1-S2] 的舰船贴图、`.ship` 几何定义、槽位和 `ship_data.csv` 注册流程；
-- [C1-S5] 的武器注册与 `GearIn_durin` 使用方法；
-- [C3-S1] 的测试战役、装配导出和 `.variant` 字段结构。
+- [C1-S1] 的 MOD 根目录、全局 ID、`data/config` 与 `sounds/` 目录及同路径文件合并规则；
+- [C1-S2] 的 `.ship` 结构、`ship_data.csv` 注册、`GearIn_artizan` 与 `Addship` 使用方法；
+- [C4-S2] 的模拟战入口、装配部署和战斗观察方法。
 
-## 文件与 API 链路
+## 梳理舰船外观关系
 
-### 模块船文件速查表
-
-模块船涉及 4 类文件，链路如下：
+### 舰船外观文件速查表
 
 | 文件 | 注册入口 | 产物 | 使用方 |
 |---|---|---|---|
-| `data/hulls/GearIn_kiln.ship`(含 `STATION_MODULE` 槽位)| `.ship` 文件加载入口 | `ShipHullSpecAPI`(`WeaponSlotAPI` 的 `type: STATION_MODULE`)| 装配的 `getModuleSlots()`；部署时的模块生成 |
-| `data/hulls/GearIn_kiln_module.ship` | 同上 | 模块船体 (含可选 `moduleAnchor`)| 模块实体创建；舰队列表预览的尺寸计算 |
-| `data/hulls/ship_data.csv` 两行 | CSV 行加载入口 | 船体 hints 与 tags | `ShipAPI` 对象构造 (`isShipWithModules`)、部署分支、交易界面 |
-| `data/variants/GearIn_kiln_combat.variant`(`modules` 字段)| 装配 JSON 解析与注册 | `ShipVariantAPI`(`stationModules`：槽位 ID → 模块装配 ID)| `getModuleVariant()`、部署生成、装配界面 |
-| `data/variants/GearIn_kiln_module_combat.variant` | 同上 | 模块装配 (与普通装配同构)| 模块实体创建 |
+| `data/config/hull_styles.json` | 加载入口 `loadEngineAndHullStyles()`(加载早期，先于全部船体数据) | 舰船风格数据 | `.ship` 顶层 `style`；战役/战斗渲染与声音系统 |
+| `data/config/engine_styles.json` | 同上 | 引擎风格数据 | `.ship` 的 `engineSlots[].style`；战斗生成舰船时应用到引擎槽 |
+| `data/config/sounds.json` | 加载入口 `loadSoundSets()` | 声音集数据 | hull style 的 9 个声音字段 (`engineLoopSet` 等)；`.ogg` 文件同时进入加载队列 |
+| `data/hulls/<id>.ship` | 解析入口 `loadHullSpec()` | `ShipHullSpecAPI` | 装配、控制台、势力舰队生成 |
 
-公开 API(`com.fs.starfarer.api`)：
+同路径 JSON 的合并规则与前置知识一致：读取同名 JSON 时，原版与各 MOD 的条目按对象键合并，后加载者覆盖同 key。
 
-- `com.fs.starfarer.api.combat.ShipVariantAPI`：`getModuleSlots()`(只返回映射到 `STATION_MODULE` 槽位的槽位)、`getStationModules()`(返回槽位 → 装配 ID 的原始映射)、`getModuleVariant(slotId)` / `setModuleVariant(slotId, variant)`。
-- `com.fs.starfarer.api.combat.ShipAPI`：`getParentStation()` / `setParentStation()`、`getStationSlot()` / `setStationSlot()`、`isShipWithModules()`、`getChildModulesCopy()`、`getModuleOffset()`、`isStation()` / `isStationModule()`。
-- `com.fs.starfarer.api.loading.WeaponSlotAPI`：`isStationModule()`、`computePosition()`(槽位在舰船坐标系中的位置)、`computeMidArcAngle()`(槽位朝向的中间角)。
-- `com.fs.starfarer.api.combat.ShipHullSpecAPI`：`getModuleAnchor()`、`ShipTypeHints` 枚举 (`STATION`、`SHIP_WITH_MODULES`、`MODULE`、`UNDER_PARENT`、`INDEPENDENT_ROTATION`)。
+因此 `hull_styles.json`、`engine_styles.json`、`sounds.json` 都只需提交自己新增的键，不要复制整份原版文件。
 
-**两类模块船的 hint 分界**：可驾驶的模块船主体 (原版 `onslaught_mk1`、`station_small`) 用 `SHIP_WITH_MODULES`；空间站 (原版 `station1`–`station3`、`remnant_station2`) 用 `STATION`。
+风格**不直接挂在势力上**。势力数据 (`data/world/factions/`) 不声明风格；势力舰队的整体观感来自它的每一艘船在 `.ship` 里引用同一组风格 ID。因此 "做一个势力风格"，实际是让本 MOD 势力舰船统一引用本 MOD 的风格 ID。
 
-部署时两者都会生成模块，但 `STATION` 另有 "无法手动操控" 的 AI 语义 (hints 各取值的完整含义在舰船制作知识中有讲解)。
+## 设置舰船风格
 
-## 完整最小例
+舰船风格文件位于 `data/config` 文件夹内的 `hull_styles.json`。它控制护盾颜色、V 排粒子、各类音效与贴图材质。
 
-### 准备主体与模块贴图
+**最稳妥的做法是复制粘贴修改原版的舰船风格** —— 原版条目保留了读取所需的完整字段，不容易漏字段。
 
-一艘模块船往往由至少 2 个模块组成。这些模块本身都是舰船，因此需要先准备好它们的贴图。本例的主体 `窑-级` 由 `狮鹫`、模块由 `苍鹭` 的贴图简单修改而来，耗时不超过 20 秒：
-
-![](./GearIn_kiln.png)
-
-主体贴图，宽高仍按舰船贴图的规则保持 2 的倍数。
-
-![](./GearIn_kiln_module.png)
-
-模块贴图。模块通常比主体小得多，主体只挂这一个模块即可跑通全流程。
-
-### 制作主体与模块船体
-
-为它们分别分配 `GearIn_kiln` 和 `GearIn_kiln_module` 的舰船 ID，然后按舰船制作流程在编辑器里做出两个 `.ship` 文件：
-
-![](./main.png)
-
-主体的 `.ship` 制作：质量中心、碰撞圈、护盾、槽位与引擎照常设置。
-
-![](./sub.png)
-
-模块的 `.ship` 制作。
-
-::: tip 模块可以不设引擎
-
-模块的位置和朝向由主体槽位决定，它自己几乎不需要推进引擎。原版的模块船体 (如 `derelict_mothership_pod_m_left.ship`) 就没有 `engineSlots`。
-
-:::
-
-::: caution 护盾中心与护盾范围必须保留
-
-哪怕模块设计上无盾 (`shield type: NONE`)，`shieldCenter` 与 `shieldRadius` 也不能删：`.ship` 加载器无条件读取 `shieldCenter`(`getVector2f`) 与 `shieldRadius`(`getInt`)，缺失会让该船体加载失败 —— 日志抛 JSONException，启动阶段中断。
-
-:::
-
-### 添加模块槽位
-
-主体必须带有 `STATION_MODULE` 类型 (编辑器里显示为 Station Module) 的槽位，这是安装模块所需的槽位：
-
-![](./main_slot_1.png)
-
-在槽位编辑里把槽位类型改为 `STATION_MODULE`，并为它取一个语义化 ID(本例为 `MODULE_0`；原版空间站用 `WS 001` 这类编号，用 `SUPPORT_L`、`HEAVY_L` 这类语义名也可以)。
-
-![](./main_slot_2.png)
-
-`STATION_MODULE` 槽位与普通武器槽共享同一套字段：`angle`(模块的基准朝向)、`arc`(模块朝向允许的摆动范围)、`locations`(槽位在主体坐标系中的位置，即模块的挂载点)。
-
-槽位 ID 是大小写敏感的字符串，装配的 `modules` 字段必须逐字引用它。
-
-### 登记舰船数据
-
-打开 `data/hulls/ship_data.csv`，为主体与模块各加一行。
-
-以下示例文件同时保留了原版标本行 (`#` 注释) 与本 MOD 已有舰船行 (`GearIn_slag`、`GearIn_forging`、`GearIn_furnaceman` 来自舰船制作示例，`GearIn_artizan` 来自舰船系统示例)，您需要追加的是最后两行：
-
-```csv {10,11}
-name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
-#Lasher,lasher,Frigate,Low Tech,ammofeed,5,1750,300,2100,1750,140,55,,120,110,90,60,90,200,FRONT,,210,0.4,1,,,25,50,40,25,1,25,10,9000,8,10,240,0.25,4,4,,,,,,,,"lowtech_bp, merc, ind",,,,0.4,2,2,,204
-#Hammerhead,hammerhead,Destroyer,Midline,ammofeed,10,5000,500,4200,4167,250,95,,90,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,"midline_bp, merc, ind",,,,0.5,2,3,,300
-#Eagle,eagle,Cruiser,Midline,maneuveringjets,14,8000,1000,11000,12000,700,155,,60,40,30,15,20,1200,FRONT,,270,0.4,0.8,,,150,250,150,100,3,33,8,120000,3,12,480,0.25,20,20,,,,,,,,"rare_bp, merc, ind",,,,0.5,2,3,,401
-#Conquest,conquest,Battlecruiser,Midline,maneuveringjets,24,12000,1200,20000,30000,1200,315,,45,20,15,6,4,2500,OMNI,,90,0.4,1.4,,,400,500,300,300,10,30,8,300000,3,15,600,0.25,40,40,,,,,,,,"rare_bp, merc",,,,0.5,2,4,,503
-炉渣,GearIn_slag,,未知,flarelauncher_fighter,,750,100,200,,100,0,,180,400,350,90,180,30,NONE,,0,0,0,,,1,1,,,,,,,,,,,,,,,,,,,,,,,,0,,,,104
-锻件,GearIn_forging,相位护卫舰,未知,ammofeed,6,2000,350,1200,2000,100,35,,90,120,90,45,90,200,PHASE,phasecloak,90,,,0.075,0.075,4,10,10,20,1,20,9,26000,10,20,180,0.25,6,6,,,,,,,PHASE,GearIn_bp,,,,0.5,2,2,,228
-工匠,GearIn_artizan,驱逐舰,未知,GearIn_burstdrive,10,5000,500,3800,4167,200,95,,80,60,40,30,60,400,PHASE,GearIn_resistfield,,,,0.1,0,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,GearIn_bp,,,,0.5,2,3,,300
-看炉人,GearIn_furnaceman,轻型航母,未知,targetingfeed,11,4500,400,3000,2813,225,75,2,75,50,30,25,25,450,FRONT,,300,0.4,0.8,,,90,150,40,40,2,20,9,52000,5,15,360,0.25,11,13,,,,,,,CARRIER,"GearIn_bp",,,,0.5,2,3,,318
-窑,GearIn_kiln,模块巡洋舰,Midline,maneuveringjets,15,10000,1250,10000,,500,165,,60,40,30,15,20,1500,FRONT,,210,0.4,0.8,,,200,300,150,150,4,38,8,125000,4,12,480,0.25,25,25,,,,,,,SHIP_WITH_MODULES,"GearIn_bp",,,,0.5,2,4,,401.5
-,GearIn_kiln_module,模块,Midline,,10,5000,500,3000,,250,60,,0,0,0,10,10,300,NONE,,0,0,0,,,0,0,0,0,1,0,,40000,,1,,,0,0,,,,,,,"UNBOARDABLE, HIDE_IN_CODEX, MODULE",,,,,0.5,2,3,,300
-```
-
-::: caution 船体行的 hints 必须写对
-
-- 模块行的 `hints` 必须带 `UNBOARDABLE` 和 `HIDE_IN_CODEX`：前者保证它不可被打捞，后者保证它不出现在数据库中 (原版模块行全部带这两个值)。原版模块还带 `MODULE`，标记模块身份，交易界面等列表会按模块处理它。
-- **主体行的 `hints` 必须带 `SHIP_WITH_MODULES`**，否则模块会在某些场合丢失：战斗部署时根本不生成模块 (详见 "运行态" 与 "战斗中模块完全不生成" 故障条目)。
-
-:::
-
-::: tip 模块的数据可以精简
-
-- 模块的舰级名 (`designation`) 可以不填。
-- 模块的后勤数据应当尽可能接近于 "无"：0 船员、0 货舱、0 燃料，`supplies/rec` 与 `supplies/mo` 为 0。
-- 模块行的 `tags` 不应该包含任何诸如 `x_bp` 或 `merc` 之类的蓝图/销售 tag—— 模块不是通过蓝图或市场渠道获得的舰船。原版模块行 (如 `platform1`) 的 tags 为空。模块的行为类 tag(`module_unselectable` 等) 见下文运行态一节。
-
-:::
-
-测试战役模板会自动把本 MOD 所有非战机装配加入用户舰队，因此 `GearIn_kiln` 与 `GearIn_kiln_module` 都会出现。此时部署主体，可以看到它没有模块 —— 这正是下一步要解决的。
-
-### 制作主体与模块装配
-
-**因为模块只能通过装配文件的 `modules` 字段挂载，游戏内没有任何正常方法为它添加模块，必须要有一个 "带模块的主体装配"**，这艘船才会默认带有模块。
-
-使用测试战役分别为主体和模块制作一个装配 (模块的自动空装配也在舰队列表里，直接改装它即可)：
-
-![](./variant_make.png)
-
-在装配界面为 `窑-级` 装上武器与船插，并为模块也做一份装配，游戏会把它们导出到存档目录 (`\Starsector\saves\missions\GearIn_test\`)。
-
-### 整理正式装配
-
-把导出的两个文件放入 MOD 的 `data/variants` 文件夹，修改文件名并同步修改文件内部的 `variantId` 等参数 (装配导出-改名流程)：
-
-![](./variant_rename.png)
-
-本例得到两个文件：`GearIn_kiln_combat.variant`(主体，`hullId: GearIn_kiln`) 与 `GearIn_kiln_module_combat.variant` (模块，`hullId: GearIn_kiln_module`)。
-
-模块装配与普通装配没有结构区别，只是它的 `hullId` 指向模块船体。
-
-### 挂载模块装配
-
-打开原版的 `data\variants\stations\station_small_Standard.variant`，可以看到类似这样的一段：
+本例以 `LOW_TECH` 为底，把配色改成齿轮工业的黄铜色系：
 
 ```json
-    "modules": {
-        "WS 001": "platform1_Standard",
-        "WS 002": "platform1_Standard",
-        "WS 003": "platform1_Standard",
-        "WS 004": "platform1_Standard"
-    }
-```
-
-这就是模块在装配文件里的设置方案：**槽位 ID → 模块装配 ID** 的对象。把它略加修改后，插入本例的 `GearIn_kiln_combat.variant`：
-
-```json {15-18}
 {
-    "displayName": "Combat",
-    "fluxCapacitors": 23,
-    "fluxVents": 30,
-    "hullId": "GearIn_kiln",
-    "hullMods": [
-        "heavyarmor",
-        "auxiliarythrusters",
-        "targetingunit"
-    ],
-    "permaMods": [],
-    "sMods": [],
-    "variantId": "GearIn_kiln_combat",
-    "goalVariant": true,
-    "modules": {
-        # 注意：左边是槽位 ID，右边是模块的装配 ID
-        "MODULE_0": "GearIn_kiln_module_combat"
-    },
-    "weaponGroups": [
-        {
-            "autofire": false,
-            "mode": "LINKED",
-            "weapons": {
-                "WS0004": "GearIn_durin",
-                "WS0005": "GearIn_durin",
-                "WS0011": "GearIn_durin"
-            }
-        },
-        {
-            "autofire": false,
-            "mode": "ALTERNATING",
-            "weapons": {
-                "WS0006": "sabotpod",
-                "WS0007": "sabotpod"
-            }
-        },
-        {
-            "autofire": true,
-            "mode": "LINKED",
-            "weapons": {"WS0001": "heavyac"}
-        },
-        {
-            "autofire": true,
-            "mode": "LINKED",
-            "weapons": {
-                "WS0002": "vulcan",
-                "WS0003": "vulcan",
-                "WS0008": "vulcan",
-                "WS0009": "vulcan",
-                "WS0010": "vulcan"
-            }
-        }
-    ]
+	"GEAR_TECH":{ # 舰船风格 ID。不得使用文件头保留 ID(见下)
+		"hyperspaceJitterColor":[255,170,60,200], # 建议保留：舰船在超空间航行时的光芒颜色
+		"baseCampaignExplosionColor":[255,150,50,255], # 建议保留：大地图爆炸颜色
+		"baseCombatExplosionColor":[255,150,50,255], # 建议保留：战斗爆炸颜色 (闪光)
+		"combatExplosionNonFlashColorOverride":[255,180,90,255], # 可选：战斗爆炸的非闪光部分 (更蓬松的爆炸)
+		"fighterRepairFlickerColor":[255,170,60,255], # 建议保留：甲板维修战机时冒火花的颜色
+		"fighterChipIconColor":[255,200,120,255], # 可选，默认同 fighterRepairFlickerColor：战机 LPC 颜色
+		"weaponDisabledExplosionColor":[255,170,60,255], # 建议保留：武器下线冒火花的颜色
+		"shieldRingColor":[255,215,140,255], # 建议保留：护盾外圈颜色
+		"shieldInnerColor":[255,140,40,70], # 建议保留：护盾内圈颜色
+		"fluxVentCoreColor":[255,235,200,255], # 建议保留：V 排 (幅能排放) 核心颜色
+		"fluxVentFringeColor":[255,120,0,255], # 建议保留：V 排外圈颜色
+		"fluxVentTextureSheet":"graphics/fx/nebula_colorless.png", # 可选：V 排外圈材质
+		"fluxVentRadialTexture":"graphics/fx/radial_fx.png", # 可选：V 排核心材质
+		"engineLoopSet":"engine_loop", # 引擎循环音效：sounds.json 中的声音集 ID
+		"engineAccelerateSet":"engine_accelerate", # 零幅能加速瞬间音效：sounds.json 中的声音集 ID
+		"empLoopSet":"emp_loop", # EMP 过载相关循环音效
+		"fluxLoopSet":"flux_loop", # V 排循环音效
+		"ventFluxSet":"vent_flux", # V 排瞬间音效
+		"shieldBurnoutSet":"shield_burnout", # 护盾过载瞬间音效
+		"shieldLowerSet":"shield_lower", # 护盾关闭音效
+		"shieldRaiseSet":"shield_raise", # 护盾开启音效
+		"explosionShipSet":"explosion_ship", # 舰船爆炸音效
+		"damageDecalSheet":"graphics/damage/damage_decal_sheet_base.png", # 损伤贴图
+		"damageDecalGlowSheet":"graphics/damage/damage_decal_sheet_glow.png", # 带光效的损伤贴图
+
+		# 武器盖板配色：coversColorShiftAmount 为 0~1，越大越接近舰体颜色；
+		# coversMatchShipBrightness 让盖板亮度跟随舰体亮度。
+		# 注意：旧教程示例里的 colorShiftCovers 键在 RC8 不被读取，写不写都不生效，请勿依赖。
+		"coversColorShiftAmount":0.6,
+		"coversMatchShipBrightness":true,
+
+		# 武器盖板贴图 (最小例复用原版材质，可换成自己的盖板贴图)
+		"slotCoverSmallTurret":"graphics/weapons/covers/cover_turret_lowtech_small.png",
+		"slotCoverSmallHardpoint":"graphics/weapons/covers/cover_hardpoint_lowtech_small.png",
+		"slotCoverMediumTurret":"graphics/weapons/covers/cover_turret_lowtech_medium.png",
+		"slotCoverMediumHardpoint":"graphics/weapons/covers/cover_hardpoint_lowtech_medium.png",
+		"slotCoverLargeTurret":"graphics/weapons/covers/cover_turret_lowtech_large.png",
+		"slotCoverLargeHardpoint":"graphics/weapons/covers/cover_hardpoint_lowtech_large.png",
+
+		# D 插覆盖贴图 (舰船安装 D 插件后的船体贴花)
+		"dHullOverlayLight":"graphics/damage/dmod_overlay_lowtech_light.png",
+		"dHullOverlayMedium":"graphics/damage/dmod_overlay_lowtech_medium.png",
+		"dHullOverlayHeavy":"graphics/damage/dmod_overlay_lowtech_heavy.png",
+	},
 }
 ```
 
-几点说明：
+保存到 `\Starsector\mods\GearIndustry\data\config\hull_styles.json`。同路径文件按对象键合并，因此只放 `GEAR_TECH` 这一个键即可。
 
-- `modules` 的对象写法是 `"槽位 ID": "模块装配 ID"`；装配 JSON 解析也接受**数组写法**：`[{"WS 024": "remnant_armour3_Standard"}]`，原版 `remnant_station2_Standard.variant` 就用数组写法，且数组条目之间可以写 `#` 注释 (游戏的装配解析会剥离注释)。
-- 槽位 ID 必须逐字等于主体 `.ship` 里 `STATION_MODULE` 槽位的 id；模块装配 ID 必须逐字等于模块装配文件的 `variantId`。两者都是大小写敏感字符串。
-- 如果一个有模块槽位的 hull 不想挂模块，`modules` 可以写成空数组 `"modules": []`—— 主体部署时不会有模块，但加载完全合法。
+::: warning 舰船风格的 9 个颜色字段：缺键不报错
 
-`窑-级` 模块巡洋舰现在默认带有模块了：
+舰船风格读取器对以下 9 个颜色字段**缺键时不抛异常**，而是静默回退为白色 (读取颜色的工具方法在键缺失时返回 `Color.white`)：`hyperspaceJitterColor`、`baseCampaignExplosionColor`、`baseCombatExplosionColor`、`fighterRepairFlickerColor`、`weaponDisabledExplosionColor`、`shieldRingColor`、`shieldInnerColor`、`fluxVentCoreColor`、`fluxVentFringeColor`。
 
-![](./module_done.png)
+后果：漏掉某个颜色键，游戏照常加载、**不会**中断，但对应的护盾/爆炸/V 排颜色会变成白色，观感与原版色系不一致且没有任何报错。真正会让 `loadEngineAndHullStyles()` 阶段抛错的是**值格式非法**：颜色数组不足 4 个元素抛 `Color array with id [...] has less than 4 elements`，JSON 语法错误抛对应解析异常 —— 游戏在加载进度条阶段直接失败，无法进入主菜单。所以**请复制原版条目再改数值，不要手写精简版** (漏键虽不报错，但观感会静默劣化)。
+
+:::
+
+::: caution 舰船风格 ID 的保留清单
+
+`hull_styles.json` 文件头声明了禁止使用的保留 ID：`"sounds"`、`"DEFAULT"`、`"FIGHTER"`、`"FRIGATE"`、`"DESTROYER"`、`"CRUISER"`、`"CAPITAL_SHIP"`；`engine_styles.json` 保留 `"CUSTOM"`。
+
+违反后的可观察结果：声音集按 "风格 ID 与船体分级名" 共用同一张键表分档 (声音集查找时先用风格 ID、再用 `FRIGATE` 等分级名查同一个表)，风格 ID 取 `FRIGATE`、`DESTROYER` 这类名字会与分级分档键冲突，引擎与护盾声音的档位选择错乱。请用 `GEAR_TECH` 这类带前缀的自定义名。
+
+`CUSTOM` 不得注册。解析器会先查全局注册表；注册后 `styleSpec` 内联分支不再执行。
+
+:::
 
 ### 验证方案
 
-前置数据：本节制作的全部文件 ——、`GearIn_kiln.ship`(含 `MODULE_0` 的 `STATION_MODULE` 槽位)、`GearIn_kiln_module.ship`、`ship_data.csv` 两行、`data/variants/GearIn_kiln_combat.variant`(含 `modules`) 与 `GearIn_kiln_module_combat.variant`。
+前置数据：前导的 `mod_info.json`[C1-S1]、`GearIn_artizan.ship` 与 `ship_data.csv`[C1-S2]、本节的 `hull_styles.json`。
 
-1. 启动游戏，在日志中观察两条 `Loading variant [...]` 记录。
-2. 进入测试战役，观察舰队列表中的 `窑-级`，然后部署该舰船。
-3. 在装配界面选中模块并改装其武器，再把主体的 `goalVariant` 装配加入自动装配候选。
-4. 在战斗中击毁模块，退出战斗后重新部署并观察主体与模块状态。
+1. 勾选 `gear_in` 启动游戏，进入主菜单。
+2. 打开 `Starsector/starsector-core/starsector.log` 检查加载记录。
 
 预期结果：
 
-- 启动后日志出现 `Loading variant [data/variants/GearIn_kiln_combat.variant]` 与 `Loading variant [data/variants/GearIn_kiln_module_combat.variant]`，没有相关 `ERROR`。
-- 测试战役的舰队列表里 `窑-级` 的预览包含模块 (整体尺寸由 `getSizeWithModules` 计算)；部署后主体与模块实体同时出现，模块位置在槽位处、朝向沿槽位角，随主体平移旋转而移动。
-- 装配界面里点击模块可以改装它的武器与船插 (本例模块 `ordnance points` 为 60，可选中)；`goalVariant: true` 让主体装配出现在自动装配候选里。
-- 模块被摧毁后主体仍可继续作战；返回舰队后模块按战斗记录的状态呈现。
-- 战场中模块与主体各自显示独立的血条与状态 (默认都显示；需要隐藏时用 `module_no_status_bar` / `module_hull_bar_only`)。
+- 日志出现 `Loading hull style data`，无 `ERROR`，没有与 `GEAR_TECH` 相关的异常。
 
-## 运行态：模块如何生成与绑定
+## 设置引擎风格
 
-### 部署时：模块船生成
+引擎风格文件位于 `data/config` 文件夹内的 `engine_styles.json`，控制引擎火焰颜色、航迹颜色、粒子参数与材质。同样复制原版条目修改。本例以 `LOW_TECH` 为底做黄铜色烟雾航迹：
 
-把模块挂到主体上发生在**部署**阶段，而不是装配加载阶段：
+```json
+{
+	"GEAR_TECH":{ # 引擎风格 ID，不得使用保留 ID "CUSTOM"
+		"engineColor":[255,150,40,255], # 建议保留：引擎火焰颜色
+		"engineCampaignColor":[220,110,50,255], # 可选，默认同 engineColor：引擎火焰在大地图的颜色
+		"contrailParticleSizeMult":3, # 必填 (PARTICLES 模式)：引擎航迹粒子大小倍率
+		"contrailParticleDuration":2, # 必填 (PARTICLES 模式)：航迹粒子持续时间
+		"contrailParticleFinalSizeMult":2.5, # 可选，默认 0.5：航迹粒子随延长而放大的倍率
+		"contrailMaxSpeedMult":0.5, # 必填：航迹飘出速率
+		"contrailAngularVelocityMult":0.3, # 必填：航迹角速度飘出速率
+		"contrailColor":[70,60,50,60], # 建议保留：引擎航迹颜色
+		"contrailCampaignColor":[220,110,50,70], # 可选，默认同 contrailColor：航迹在大地图的颜色
+		"type":"SMOKE" # 必填：GLOW(淡光、加法混合) 或 SMOKE(烟雾、常规混合)
+	},
+}
+```
 
-1. `CombatFleetManagerAPI` 部署舰队成员时，先检查 `成员是空间站 (STATION) 或船体带 SHIP_WITH_MODULES`；只有命中才走模块船生成流程生成模块。
-2. 模块船生成流程遍历主体装配的 `getStationModules()`(槽位 → 模块装配 ID)；对每个 `isStationModule()` 为真的槽位，用模块装配创建一个新 `FleetMemberAPI` 与 `ShipAPI` 实体。
-3. 新实体被放置到 `槽位.computePosition(主体, 模块锚点)`，朝向设为 `槽位.computeMidArcAngle(主体)`(即槽位的中间角)，随后 `setParentStation(主体)`、`setStationSlot(槽位)`，并加入主体的 `getChildModules()`。
-4. 模块实体和主体一样是完整的 `ShipAPI`：有自己的装甲格、幅能、武器组、战术系统和 AI(`pickShipAIPlugin` 为它挑选 AI)。
+保存到 `\Starsector\mods\GearIndustry\data\config\engine_styles.json`。
 
-如果主体装配里根本没有 `modules` 字段，或模块 ID 无法解析，这一步会得到 "没有模块的主体" 或部署报错 (详见故障分析)。
+::: caution 引擎风格的必填字段
 
-### 每帧：模块被钉在槽位上
+引擎风格读取器必填：`type`(只能填 `GLOW` 或 `SMOKE`；缺键抛 `Key [type] is required`，枚举之外的值如手误写成 `GLOWW` 抛 `Key [type] has invalid value`)、`contrailMaxSpeedMult`、`contrailAngularVelocityMult`；在 `PARTICLES` 模式下还必填 `contrailParticleSizeMult`、`contrailParticleDuration`。`engineColor` 与 `contrailColor` **不是必填** —— 缺键不抛异常，与舰船风格的颜色同理静默回退为白色。
 
-主体移动后，`CombatEngineAPI.updateStationModuleLocations` 每帧把每个子模块的位置重新设回 `槽位.computePosition(主体, 模块锚点)`，因此**模块永远跟随主体的平移与旋转**。
+违反后的可观察结果：缺失/非法必填键会让条目解析失败、游戏在加载阶段整体失败，无法进入主菜单 (`starsector.log` 记录 `Key [...] is required`、`JSONObject[...] not found.` 或 `invalid value`)。
 
-默认情况下模块的朝向也会被强制设为槽位中间角；只有模块船体的 hints 带 `INDEPENDENT_ROTATION` 时才保留自己的朝向 (位置仍跟随)。
+:::
 
-模块船体的 `moduleAnchor`(可选字段，由 `.ship` 加载器读取) 决定模块以自身哪个点为锚挂到槽位上；缺省时以槽位位置为锚。视觉上模块贴图与槽位对不齐时，用 `moduleAnchor` 微调。
+### 光带型航迹 (OMEGA 型)
 
-### 战斗外的模块
+若您希望做欧米伽型光带航迹，参考 `OMEGA` 条目里多出来的字段：
 
-- 舰队列表与船体预览会显示模块：舰队列表界面直接读取装配的模块槽位渲染模块贴图，`getSizeWithModules()` 会把模块计入舰船整体预览尺寸。所以**即使主体缺 `SHIP_WITH_MODULES`，舰队列表里也看得到模块** —— 这正是 "某些场合模块丢失" 的反差来源。
-- 模块的损伤状态按槽位记录在主体的 `FleetMemberStatusAPI` 里，部署时按槽位恢复；模块在战斗中被摧毁或脱离后，下次部署时按记录的状态呈现，而不只是 "满血复活"。
+```json
+		"GEAR_TECH_OMEGA":{ # 光带型风格：mode 为 QUAD_STRIP
+			"mode":"QUAD_STRIP", # 粒子模式或光带模式，决定读取哪一组参数
+			"contrailDuration":1.5, # 必填 (QUAD_STRIP 模式)：光带持续时间
+			"contrailWidthMult":0.67, # 必填 (QUAD_STRIP 模式)：光带宽度
+			"contrailWidthAddedFractionAtEnd":-1, # 可选，字段缺失时默认 0.5：显式 0 表示不附加末端宽度，小于 0 末端窄，大于 0 末端宽
+			"contrailMinSeg":5, # 可选，默认 5：光带每一小节的渲染长度
+			"contrailMaxSpeedMult":1, # 必填：见上文
+			"contrailAngularVelocityMult":0, # 必填：见上文
+			"contrailColor":[50,50,255,75], # 建议保留：见上文
 
-### 装配界面里的模块
+			"glowSprite":"graphics/fx/engineglow32b.png", # 光带材质
+			"glowOutline":"graphics/fx/engineflame32b.png", # 光带外部材质
+			"omegaMode":true, # 建议开启：光带会在停止加速时切断
+			"glowSizeMult":1, # 光带外扩泛光的大小
+			"glowAlternateColor":[50,50,255,255], # 光带外扩泛光的末端颜色
 
-主体在装配界面里会显示其模块；模块是否**可被选中改装**由模块船体的 `ordnance points` 决定：装配点上限为 0 的模块默认无法被选中 (装配面板按 `getOrdnancePoints() > 0` 判定)。
+			"engineColor":[150,50,255,255], # 建议保留
+			"type":"GLOW" # 必填
+		},
+```
 
-### 模块行为 tag 速查表
+`type`、`contrailMaxSpeedMult`、`contrailAngularVelocityMult` 在两个模式下都必填；`QUAD_STRIP` 模式额外必填 `contrailDuration` 与 `contrailWidthMult`。
 
-模块的下列行为 tag 放在模块行的 `tags` 列 (会被加载器复制到船体 tag 上)：
+`mode` 不是必填 (缺省默认 `PARTICLES`)；`engineColor`、`contrailColor` 缺键不抛异常 (静默回退为白色，与上一节同理)。
 
-| 英文 | 实际意义 | 使用位置 |
-| --- | --- | --- |
-| `module_unselectable` | 模块无法被选中 | 装配界面的装配面板 (强制不可选)|
-| `module_refit_bright` | 模块在装配界面时不会默认暗下 | 装配界面的装配面板 |
-| `module_no_status_bar` | 模块在战斗中不显示状态属性条 | 战斗瞄准环渲染器 |
-| `module_hull_bar_only` | 模块在战斗中不显示幅能属性条 | 战斗瞄准环渲染器 |
+省略任何必填键或填错 `type`，后果与上一节相同：加载阶段整体失败。
+
+::: tip 内联引擎风格 (进阶)
+
+引擎槽除了引用 `engine_styles.json` 的 ID，还可以在 `.ship` 的引擎槽里直接内联一整份风格对象：`"style": "CUSTOM"` 配合 `"styleSpec": { ... }`。该分支要求全局注册表中不存在 `CUSTOM`，因此这个保留 ID 不得注册；内联对象同样必须包含全部必填键。普通 MOD 不需要这个功能，按 ID 引用即可。
+
+:::
+
+### 验证方案
+
+前置数据：本节的 `engine_styles.json`；已按 "接入舰船" 一节完成接入的 `GearIn_artizan.ship`(顶层与引擎槽 `style` 均指向 `GEAR_TECH`)。
+
+1. 勾选 `gear_in` 启动游戏进入主菜单，确认 `starsector.log` 出现 `Loading engine style data`。
+2. 用控制台执行 `Addship GearIn_artizan`，并部署进模拟战。
+3. 给舰船装推进并全速航行。
+4. 开启并关闭护盾。
+5. 触发 V 排与过载。
+6. 击毁一艘舰船。
+7. 退出战斗后进入大地图，观察超空间光芒与舰队爆炸颜色。
+
+预期结果：
+
+- 游戏启动无 `ERROR`，`starsector.log` 出现 `Loading hull style data`、`Loading engine style data`、`Loading sound sets`，没有与 `GEAR_TECH` 相关的异常。
+- 控制台 `Addship GearIn_artizan` 部署进模拟战：护盾外圈/内圈为黄铜色，开启与关闭护盾有声音；引擎火焰与航迹为黄铜色烟雾；V 排粒子颜色与纹理符合 `GEAR_TECH`；过载与爆炸颜色为黄铜色系；声音为原版通用引擎声 (未注册自定义声音集时)。
+- 大地图：超空间光芒与爆炸颜色为 `GEAR_TECH` 的取值。
+- 舰船编辑器导入 `GearIndustry` 后可直接选择 `GEAR_TECH` 风格。
+
+## 接入舰船
+
+在 `GearIn_artizan.ship` 中，把顶层舰船风格替换为自定义 ID：
+
+```json
+  "style": "GEAR_TECH",
+```
+
+然后把 `engineSlots` 中每个引擎槽的 `style` 也替换为自定义 ID：
+
+```json
+  "engineSlots": [
+    {
+      "location": [ 12.0, -30.0 ],
+        "width": 14,
+      "length": 20,
+      "angle": 0,
+      "style": "GEAR_TECH",
+      "contrailSize": 128
+    }
+  ],
+```
+
+保存即可生效。顶层 `style` 与引擎槽 `style` 是两个独立的解析路径：前者查 `hull_styles.json`，后者查 `engine_styles.json`，不要混用。
+
+搭配舰船编辑器：在设置完舰船风格和引擎风格后，可以在舰船编辑器的 "导入 MOD" 功能中把 `GearIndustry` 导入，直接在编辑器内选择自定义风格。
+
+## 声音与材质的完整关联流程
+
+hull style 是 "声音与材质的总线"：
+
+- 声音：风格里的 9 个 `*Set` 字段都是 `sounds.json` 的声音集 ID。
+  - 战斗生成舰船时，`ShipEngineControllerAPI` 用 `engineLoopSet`/`engineAccelerateSet`、`Shield` 用 `shieldRaiseSet`/`shieldLowerSet`、`FluxTrackerAPI` 用 `shieldBurnoutSet`(过载音)、爆炸音效播放器用 `explosionShipSet` 等去取对应的声音集。
+- 材质：`damageDecal*`(损伤贴花)、`slotCover*`(武器盖板)、`dHullOverlay*`(D 插覆盖)、`fluxVent*`(V 排粒子)、`glowSprite`/`glowOutline`(光带) 等路径在加载阶段全部进入贴图资源队列。
+- 战役：生涯引擎用 `hyperspaceJitterColor` 画超空间光芒，战役爆炸用 `baseCampaignExplosionColor`，战斗爆炸用 `baseCombatExplosionColor`。
+
+因此 "让声音也换掉" 需要三步完整流程：**① `sounds.json` 注册声音集 → ② hull style 的 `*Set` 字段引用该声音集 ID → ③ 声音集内的 `.ogg` 文件真实存在**。
+
+最小例第 ② 步引用了原版声音集 (`engine_loop` 等)，第 ①③ 步都由原版提供，所以零资产也能出声。
+
+原版声音集是分档的：`sounds` 数组列文件，再用 `FIGHTER`/`FRIGATE`/`DESTROYER`/`CRUISER`/`CAPITAL_SHIP` 五个键按船体分级选档：
+
+```json
+{
+	"GearIn_engine_loop":{ # 声音集 ID，供 hull style 的 engineLoopSet 引用
+		"sounds":[
+			{"file":"sounds/sfx_engines/GearIn_engine_fighter.ogg","pitch":1,"volume":1}, # index: 0
+			{"file":"sounds/sfx_engines/GearIn_engine_frigate.ogg","pitch":1,"volume":1}, # index: 1
+			{"file":"sounds/sfx_engines/GearIn_engine_destroyer.ogg","pitch":1,"volume":1}, # index: 2
+			{"file":"sounds/sfx_engines/GearIn_engine_cruiser.ogg","pitch":1,"volume":1}, # index: 3
+			{"file":"sounds/sfx_engines/GearIn_engine_capital.ogg","pitch":1,"volume":1} # index: 4
+		],
+		"FIGHTER":{"sounds":[0], "pitch":1, "volume":0.2},
+		"FRIGATE":{"sounds":[1], "pitch":1, "volume":0.3},
+		"DESTROYER":{"sounds":[2], "pitch":1, "volume":0.4},
+		"CRUISER":{"sounds":[3], "pitch":1, "volume":0.5},
+		"CAPITAL_SHIP":{"sounds":[4], "pitch":1, "volume":0.6}
+	},
+}
+```
+
+保存为 `\Starsector\mods\GearIndustry\data\config\sounds.json`，`.ogg` 文件放入 MOD 的 `sounds/` 目录 (路径相对 MOD 根目录)，再把 hull style 的 `engineLoopSet` 改为 `"GearIn_engine_loop"`。
+
+`engineAccelerateSet`、`fluxLoopSet`、`ventFluxSet`、`shieldRaiseSet`、`shieldLowerSet` 等按同一模式各注册一套 (本节不给具体音频资产，请用您自己的录音或音效素材，名称保持 `GearIn_<subject>` 前缀)。
+
+::: caution 自定义风格的声音：必须遵守
+
+**若没有为自定义 hull style 注册并引用自定义声音集，风格会静默回落到原版通用声音**：舰船风格数据对 9 个声音字段都有默认值 (`engine_loop`、`engine_accelerate`、`emp_loop`、`flux_loop`、`vent_flux`、`shield_burnout`、`shield_lower`、`shield_raise`、`explosion_ship`)，所有原版风格共享这一套。这不是报错，但引擎声、护盾声会听上去与原版一致，观感与自定义配色不一致。
+
+一旦风格里写入了自定义声音集 ID(例如 `"engineLoopSet": "GearIn_engine_loop"`)，该 ID **必须**存在于 `sounds.json`。违反后的可观察结果：加载阶段不报错，但舰船进入战斗、创建引擎控制器时抛 `NullPointerException`(`starsector.log` 记录指向内部实现 `ShipEngineController` 的构造链)，舰船无法正常部署；声音集里注册的 `.ogg` 路径不存在时，加载阶段直接失败 (声音资源加载任务报错)，游戏无法进入主菜单。
+
+:::
 
 ## 故障分析
 
-- **战斗中模块完全不生成**：主体 CSV 行的 hints 缺少或拼错 `SHIP_WITH_MODULES` 时，部署分支不会进入模块船生成流程；舰队列表和预览仍可能显示模块。给主体 hints 加上 `SHIP_WITH_MODULES`，重新部署后模块应随主体生成。
-- **模块槽位被静默跳过**：`modules` 的键能找到真实槽位，但该槽位不是 `STATION_MODULE` 时，部署流程会跳过它。让键逐字对应 `.ship` 中的 `STATION_MODULE` 槽位 ID，重新部署后该位置应生成模块。
-- **部署模块时抛出空引用**：`modules` 的槽位 ID 在 hull 上不存在时，`getHullSpec().getWeaponSlot(id)` 返回 null，模块生成处会在部署期失败。用编辑器确认槽位 ID 并同步映射键，再次部署后不应出现空引用。
-- **装配加载正常但进入战斗时报错**：`modules` 只保存字符串映射，加载期不会校验模块装配 ID；部署时 `getModuleVariant` 返回 null 才会抛出空引用或 variant 错误。确认模块装配已注册且 `variantId` 逐字一致，重新进入战斗后应生成模块成员。
-- **模块装配在加载阶段直接失败**：模块 variant 的 `hullId` 与注册船体不一致时，`Loading variant [...]` 后会抛出 `Ship hull spec [...] not found!`。让 `hullId` 等于模块 `.ship` 和 `ship_data.csv` 的 ID，重启后 variant 应完成加载。
-- **模块在装配界面无法选中**：模块船体的 `ordnance points` 为 0，或 tags 包含 `module_unselectable` 时，模块按钮不会接受点击。需要改装时提供装配点并移除该 tag；重新打开装配界面后模块应可选。
-- **无盾模块的船体文件加载失败**：删除 `shieldCenter` 或 `shieldRadius` 会让 `.ship` 加载器的 `getVector2f`、`getInt` 抛出 JSONException。保留这两个字段，只把 `shield type` 设为 `NONE`；重启后无盾模块应正常加载。
+- **加载进度条阶段出现风格键或颜色数组错误**：`engine_styles.json` 缺少必填键、颜色数组不足 4 个元素，或 `type` 不是 `GLOW`、`SMOKE` 时，日志会出现 `Key [...] is required`、`invalid value` 或颜色数组错误。补齐字段后重启，风格表应完成加载；`hull_styles.json` 缺少颜色字段时会回退为白色，非法值和 JSON 语法才会中断加载。
+- **加载阶段失败且日志指向 `.ship`**：顶层 `style` 缺失会抛出 `JSONObject["style"] not found.`，引用不存在的 hull style 时会在读取护盾颜色处抛 NPE。让 `.ship` 的 `style` 与 `hull_styles.json` ID 逐字一致，重启后船体应完成加载。
+- **`Addship` 部署时抛 NPE 且舰船无法入场**：`engineSlots` 的 `style` 指向未注册的 engine style，战斗实体生成时会取得 null。改用已注册 ID 或补齐 `engine_styles.json` 条目，再次部署后舰船应正常入场。
+- **部署时 NPE 堆栈指向 `ShipEngineController` 构造链或 `Shield`**：hull style 引用了 `sounds.json` 中不存在的声音集 ID。注册对应声音集或改用现有 ID，重新部署后引擎与护盾应完成初始化。
+- **启动时声音资源加载失败**：`sounds.json` 中的 `.ogg` 路径不存在，或大小写与文件不一致。核对 `file` 相对 MOD 根目录的路径，重启后声音资源应完成加载。
+- **势力舰队生成时出现风格加载错误**：舰队装配引用的 `.ship` 可能带有损坏的风格或声音集关系。沿 `.ship`、风格 ID、声音集 ID 逐层核对，重新生成舰队后错误应消失。
+- **护盾和引擎声音仍像原版风格**：未引用自定义声音集时，hull style 会使用原版通用声音。按 "声音与材质的完整关联流程" 注册并引用自定义 ID，重新部署后应听到目标声音。
 
 ## 总结
 
-模块船是 "船中船"：主体与模块各自走完完整的舰船制作链 (贴图 → `.ship` → `ship_data.csv` 注册)，再通过两个文件组装 —— 主体 `.ship` 的 `STATION_MODULE` 槽位声明挂载点，主体装配的 `modules` 字段声明 "槽位 → 模块装配 ID" 的映射。
+本节完成了一条从数据到观感的完整流程：`.ship` 顶层 `style` 查 `hull_styles.json`，`engineSlots[].style` 查 `engine_styles.json`，两个文件都在加载早期注册、按对象键合并，势力通过其舰船间接获得统一观感；
 
-运行态上，模块不是主体的一部分渲染，而是部署时由模块船生成流程生成的独立 `ShipAPI` 实体，被逐帧钉在槽位上并随主体移动。
+hull style 是声音与材质的总线 ——9 个声音字段指向 `sounds.json` 的声音集，材质字段指向贴图资源，任何一环缺失都会带来可定位的失败 (加载期崩溃或战斗期 NPE)。
 
-调试模块船时按三层排查：加载期 (`modules` 是字符串映射，**不校验** —— 所以加载期错误几乎都来自 `hullId` 或 `.ship` 本身)、部署期 (槽位 ID 错 → 静默跳过或抛异常；模块装配 ID 错 → 部署报错)、运行期 (`SHIP_WITH_MODULES` 缺失 → 战斗里根本没有模块，但列表里看得到)。
+最小例零资产可用，自定义声音则必须完成 "注册声音集 → 风格引用 → `.ogg` 存在" 三步完整流程。
 
-测试战役配合 `starsector.log` 足够覆盖这三层。遇到模块相关的加载或部署异常时，可以按这条流程分层定位到具体文件。
+这套 "注册 → 引用 → 资产存在" 的机制是自定义视觉与声音数据的共同基础：新增舰船变体、势力配色或自定义音效时，只要沿同一条流程补齐数据文件，本节的加载期与战斗期排查方法即可复用。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.ShipVariantAPI`：`getModuleSlots()`、`getStationModules()`、`getModuleVariant(slotId)` / `setModuleVariant(slotId, variant)`—— 模块槽位与模块装配映射的读写入口。
-- `com.fs.starfarer.api.combat.ShipAPI`：`isShipWithModules()`、`getParentStation()` / `getStationSlot()`、`getChildModulesCopy()`、`getModuleOffset()`、`isStation()` / `isStationModule()`—— 主体与模块实体的运行态关系。
-- `com.fs.starfarer.api.loading.WeaponSlotAPI`：`isStationModule()`、`computePosition()`、`computeMidArcAngle()`—— 模块槽位的判定与挂载几何。
-- `com.fs.starfarer.api.combat.ShipHullSpecAPI`：`getModuleAnchor()` 与 `ShipTypeHints` 枚举 (`STATION`、`SHIP_WITH_MODULES`、`MODULE`、`UNDER_PARENT`、`INDEPENDENT_ROTATION`)。
-- `data/hulls/GearIn_kiln.ship` 与 `data/hulls/GearIn_kiln_module.ship`：主体的 `STATION_MODULE` 槽位与模块船体 (含可选 `moduleAnchor`)。
-- `data/hulls/ship_data.csv`：主体行 (`SHIP_WITH_MODULES`) 与模块行 (`UNBOARDABLE, HIDE_IN_CODEX, MODULE`) 的 hints/tags。
-- `data/variants/GearIn_kiln_combat.variant` 与 `data/variants/GearIn_kiln_module_combat.variant`：`modules` 字段与模块装配示例。
-- `data/variants/stations/station_small_Standard.variant` 与 `data/variants/stations/remnant_station2_Standard.variant`：原版 `modules` 对象/数组两种写法参照。
-- `Starsector/starsector-core/starsector.log`：加载期与部署期异常的定位入口。
+- `data/config/hull_styles.json`：舰船风格定义，字段全集与保留 ID 清单见文件头注释。
+- `data/config/engine_styles.json`：引擎风格定义，含 `OMEGA` 光带参数与保留 ID `CUSTOM`。
+- `data/config/sounds.json`：声音集注册与按船体分级的分档结构。
+- `data/hulls/GearIn_artizan.ship`：顶层 `style` 与 `engineSlots[].style` 的接入位置。
+- `data/world/factions/`：势力数据目录，势力文件不声明风格，观感经舰船间接关联。
+- `hull_styles.json`、`engine_styles.json` 与 `sounds.json` 的加载入口方法：`loadEngineAndHullStyles()` 与 `loadSoundSets()`。
+- `data/hulls/<id>.ship` 的解析入口方法 `loadHullSpec()`：解析顶层 `style` 与引擎槽 `style` 的接入。
+- `Starsector/starsector-core/starsector.log`：风格加载与战斗期错误的排查入口。

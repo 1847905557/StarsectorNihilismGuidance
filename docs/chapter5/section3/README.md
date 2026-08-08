@@ -22,11 +22,11 @@
 
 - [C5-S1] 的 OGG 路径、声道、循环边界与响度要求；
 - [C5-S2] 的 `sounds.json` 注册、`music` 分类、sound ID 匹配与追加/替换合并规则；
-- [C4-S2] 的 hull style 声音字段与声音集分档；
+- [C4-S3] 的 hull style 声音字段与声音集分档；
 - [C1-S5] 的 `GearIn_durin.wpn` 与 `fireSoundOne`、`fireSoundTwo` 字段；
 - [C2-S3] 的战术系统文件、效果脚本类名和脚本路径规则；
 - [C7-S1] 的每帧回调与暂停语义；
-- [C3-S1] 的测试战役、舰船装配与部署操作。
+- [C4-S1] 的测试战役、舰船装配与部署操作。
 
 ## 梳理音频播放关系
 
@@ -51,7 +51,7 @@ data/config/sounds.json          注册层 (C5-S2)：sound ID → 路径与播�
 | 武器开火 | `.wpn` 的 `fireSoundOne`/`fireSoundTwo` | 导弹、实弹与光束武器 | `GearIn_weapon_fire` |
 | 武器/导弹位置音效 | 代码 `playSound(id, pitch, volume, loc, vel)` | 位置音效播放器；冲击音播放器 | 代码示例 |
 | 战术系统 | `.system` 的 `useSound`/`loopSound`/`deactivateSound`/`outOfUsesSound` | 战斗系统实现 | `GearIn_system_loop` |
-| 引擎与舰船风格 | hull style 的 `engineLoopSet`/`engineAccelerateSet` 等 9 个字段 | `ShipEngineControllerAPI`/`ShieldAPI`/`FluxTrackerAPI`/冲击音播放器 | 沿用 [C4-S2] 原版声音集 |
+| 引擎与舰船风格 | hull style 的 `engineLoopSet`/`engineAccelerateSet` 等 9 个字段 | `ShipEngineControllerAPI`/`ShieldAPI`/`FluxTrackerAPI`/冲击音播放器 | 沿用 [C4-S3] 原版声音集 |
 | UI | 代码 `playUISound(id, pitch, volume)`、`playUILoop` | 战役/战斗 UI 各调用点 | `GearIn_weapon_fire`(复用示例)|
 | 环境地形 | `data/campaign/terrain.json` 的 `loopOne`..`loopFour`、`musicSuppression`、`custom` | `BaseTerrain.advance` → `playLoop` + `suppressMusic`；地形插件 `stormSound`/`gain`/`gainHF` | 机制说明 |
 | 音乐 | `settings.json` 的 `plugins.musicPlugin` 注册选曲插件；代码 `playCustomMusic` | `MusicPlayerPlugin`/`MusicPlayerPluginImpl`、音乐播放器基类 | `GearIn_market_theme` |
@@ -445,7 +445,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ### 验证方案
 
-前置数据：三个 OGG[C5-S1]、`data/config/sounds.json`[C5-S2]、`data/weapons/GearIn_durin.wpn`[C1-S5]、`data/shipsystems/GearIn_burstdrive.system`[C2-S3]、测试战役 `GearIn_test`[C3-S1]、本节的 `settings.json` 与新类 `GearInMusicPlayerPlugin`。
+前置数据：三个 OGG[C5-S1]、`data/config/sounds.json`[C5-S2]、`data/weapons/GearIn_durin.wpn`[C1-S5]、`data/shipsystems/GearIn_burstdrive.system`[C2-S3]、测试战役 `GearIn_test`[C4-S1]、本节的 `settings.json` 与新类 `GearInMusicPlayerPlugin`。
 
 1. 启用 `gear_in` 启动到主菜单，检查 `Starsector\starsector-core\starsector.log` 中的声音注册记录。
 2. 进入 `GearIn_test` 测试战役，使用装有 `GearIn_durin` 的舰船开火，听取武器开火音。

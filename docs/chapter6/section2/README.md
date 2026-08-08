@@ -20,7 +20,7 @@
 
 - [C1-S1] 的 MOD 目录、`mod_info.json` 可选字段、启动器与 `starsector.log`；
 - [C2-S1] 的注册、回调与完整类名一致规则；
-- [C3-S6] 的新档生成入口 `onNewGame()` 与 `GearInSystemGenPlugin` 类；
+- [C3-S3] 的新档生成入口 `onNewGame()` 与 `GearInSystemGenPlugin` 类；
 - [C6-S1] 的 `src` 到 JAR 编译链、`mod_info.json` 的 `jars` 声明和 JAR 类优先规则。
 
 ## 文件与 API 链路
@@ -242,7 +242,7 @@ Starsector/mods/GearIndustry/
 ```java
     @Override
     public void onNewGame() {
-        // C3-S6：新档生成入口 (齿轮工业星系与关系播种)，累计工程保留
+        // C3-S3：新档生成入口 (齿轮工业星系与关系播种)，累计工程保留
         new data.scripts.gearin.campaign.GearInSystemGenerator().generate(Global.getSector());
         seedRelations(Global.getSector());
         log("onNewGame");
@@ -281,7 +281,7 @@ public void onGameLoad(boolean newGame) { Global.getSector().addScript(new GearI
 
 ## 验证方案
 
-前置数据：编译 JAR 链路建立的 MOD 布局 [C6-S1]——`mod_info.json`(追加本节 `modPlugin` 字段)、`build.gradle`、`settings.gradle`、入口类 `GearInModPlugin`(累计工程另含新档生成页的补全片段，[C3-S6])。
+前置数据：编译 JAR 链路建立的 MOD 布局 [C6-S1]——`mod_info.json`(追加本节 `modPlugin` 字段)、`build.gradle`、`settings.gradle`、入口类 `GearInModPlugin`(累计工程另含新档生成页的补全片段，[C3-S3])。
 
 1. 在 MOD 根目录 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/GearInModPlugin.class`。
 2. 启动游戏勾选 "齿轮工业"，进入主菜单后退出；在 `starsector.log` 中观察生命周期记录。

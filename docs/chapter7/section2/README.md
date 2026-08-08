@@ -20,7 +20,7 @@
 ## 前置知识
 
 - [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-- [C3-S1] 的模拟战入口、战役与生涯概念；
+- [C4-S1] 的战役与生涯概念，以及 [C4-S2] 的模拟战入口；
 - [C6-S1] 的 Java 构建与 JAR 输出；
 - [C6-S3] 的 `Global` 生命周期、战斗引擎阶段与跨战斗引用边界；
 - [C7-S1] 的 `addPlugin(...)` 注册、`EveryFrameCombatPlugin.advance` 回调与暂停检查；
@@ -325,7 +325,7 @@ if (engine.getFleetManager(FleetSide.PLAYER).getDeployedCopy().isEmpty()) { retu
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 [C6-S1] 与战斗插件接入 ([C7-S1]，含注册片段)、`GearInCombatStatePlugin` 类、`GearIn_test` 测试战役 [C3-S1]。
+前置数据：既有 MOD 布局 [C6-S1] 与战斗插件接入 ([C7-S1]，含注册片段)、`GearInCombatStatePlugin` 类、`GearIn_test` 测试战役 [C4-S1]。
 
 1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，并核对 `jar tf jars\GearIndustry.jar` 的内容。
 2. 进入 `GearIn_test` 战役一场战斗，让插件运行数秒。

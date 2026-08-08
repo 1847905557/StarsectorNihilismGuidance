@@ -22,8 +22,8 @@
 
 - [C1-S6] 的舰船船体、`.ship` 文件、内置三件套与装配构建期和部署期错误边界；
 - [C2-S2] 的船插、`hull_mods.csv` 与效果类实例；
-- [C3-S1] 的战役装配结构、字段要求与任务导出流程；
-- [C4-S3] 的模块船、`modules` 字段加载与部署期实体；
+- [C4-S1] 的战役装配结构、字段要求与任务导出流程；
+- [C4-S4] 的模块船、`modules` 字段加载与部署期实体；
 - [C6-S2] 的 `GearInModPlugin` 所有权与 `onGameLoad` 回调；
 - [C9-S1] 的生涯每帧脚本注册；
 - [C9-S3] 的 `FleetMemberAPI.getVariant()`、`setVariant(...)` 与装配引用边界。

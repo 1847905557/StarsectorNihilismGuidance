@@ -67,7 +67,7 @@ id,type,text1,text2,text3,text4,text5,notes
 | `SHIP` | 舰船与战机 hull 的描述 | 本节 |
 | `WEAPON` | 武器描述 | 本节 |
 | `SHIP_SYSTEM` | 战术系统描述 | 本节 (观察原版行，不新建)|
-| `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 | [C3-S8] |
+| `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 | [C3-S4] |
 
 - `text1`–`text5` 的默认值与主要使用方：
 

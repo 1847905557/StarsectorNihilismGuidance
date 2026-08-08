@@ -21,7 +21,7 @@
 ## 前置知识
 
 - [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-- [C3-S1] 的战役与生涯概念、测试战役入口；
+- [C4-S1] 的战役与生涯概念、测试战役入口；
 - [C6-S1] 的 Java 构建与 JAR 输出；
 - [C6-S3] 的引擎生命周期与跨战斗引用边界；
 - [C7-S1] 的战斗插件注册、每帧回调与暂停判断；
@@ -349,7 +349,7 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 
 ## 验证方案
 
-前置数据：MOD 布局与编译链路 [C6-S1]、战斗插件接入与注册片段 [C7-S1]、`GearIn_test` 测试战役 [C3-S1]、本节两个类，随编译进入 `jars\GearIndustry.jar`。
+前置数据：MOD 布局与编译链路 [C6-S1]、战斗插件接入与注册片段 [C7-S1]、`GearIn_test` 测试战役 [C4-S1]、本节两个类，随编译进入 `jars\GearIndustry.jar`。
 
 1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个类的 `.class`。
 2. 战斗初始化：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察生命周期初始化记录。

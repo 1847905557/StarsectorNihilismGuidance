@@ -21,7 +21,7 @@
 
 - [C6-S2] 的 `modPlugin` 生命周期与注册判断；
 - [C6-S3] 的 `Global.getSector()` 阶段语义；
-- [C10-S1] 的 `MarketAPI` 与市场条件过滤；
+- [C10-S3] 的 `MarketAPI` 与市场条件过滤；
 - [C9-S6] 的交互对话框面板、`showInteractionDialog` 与插件生命周期；
 - [C11-S1] 的人物、关系与市场稳定随机人物；
 - [C12-S1] 的 `advance(amount)` 真实秒语义与 `Misc.getDays` 换算；

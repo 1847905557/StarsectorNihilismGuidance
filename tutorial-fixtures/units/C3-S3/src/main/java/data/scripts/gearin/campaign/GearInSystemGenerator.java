@@ -1,0 +1,63 @@
+package data.scripts.gearin.campaign;
+
+import java.awt.Color;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.JumpPointAPI;
+import com.fs.starfarer.api.campaign.PlanetAPI;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.campaign.SectorEntityToken;
+import com.fs.starfarer.api.campaign.SectorGeneratorPlugin;
+import com.fs.starfarer.api.campaign.StarSystemAPI;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+
+/**
+ * 本节示例：使用原版类型制作一个带市场、恒星、行星、生涯实体与跳跃点的星系。
+ * 实现 SectorGeneratorPlugin 只是采用生成器的 "契约" 写法 (原版 data.scripts.world.SectorGen
+ * 就是 SectorGeneratorPlugin)；实际调用入口是 ModPlugin.onNewGame，见 GearInSystemGenPlugin。
+ */
+public class GearInSystemGenerator implements SectorGeneratorPlugin {
+
+	@Override
+	public void generate(SectorAPI sector) {
+		StarSystemAPI system = sector.createStarSystem("GearIn");
+		system.setBackgroundTextureFilename("graphics/backgrounds/background2.jpg");
+		system.setLightColor(new Color(200, 200, 210));
+
+		// 恒星 id "gearin" 同时是星系在 starmap.json 里的注册键：initStar 会用它查
+		// data/campaign/starmap.json 的 starSystemLocations，把结果设为星系在超空间中的坐标。
+		// 不提供该键 (又不手动 setLocation) 时，星系会定位在超空间原点 (0,0)。
+		PlanetAPI star = system.initStar("gearin", "star_yellow", 600f, 550f, 3f, 0.75f, 1f);
+
+		// addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)
+		PlanetAPI prime = system.addPlanet("GearIn_planet1", star, "GearIn Prime", "terran", 55, 150, 3200, 120);
+		PlanetAPI second = system.addPlanet("GearIn_planet2", star, "GearIn Second", "barren", 200, 90, 5200, 200);
+
+		// 使用原版通讯中继类型，factionId 仍指向本章注册的 GearIn 势力。
+		SectorEntityToken stable = system.addCustomEntity("GearIn_stable", "GearIn 通讯中继", "comm_relay", "gear_industry");
+		stable.setCircularOrbitPointingDown(star, 90, 2200, 100);
+
+		// 最小市场只使用原版条件、产业与子市场，让新星系能够打开交易界面。
+		MarketAPI market = Global.getFactory().createMarket(prime.getId(), prime.getName(), 4);
+		market.setFactionId("gear_industry");
+		market.setPrimaryEntity(prime);
+		market.setSurveyLevel(MarketAPI.SurveyLevel.FULL);
+		market.addCondition("population_4");
+		market.addIndustry("population");
+		market.addIndustry("spaceport");
+		market.addSubmarket("open_market");
+		market.addSubmarket("storage");
+		sector.getEconomy().addMarket(market, true);
+		prime.setMarket(market);
+		prime.setFaction("gear_industry");
+
+		// 手动跳跃点：创建后必须 addEntity 加入星系，autogenerate 阶段才会为它生成超空间侧入口
+		JumpPointAPI jump = Global.getFactory().createJumpPoint("GearIn_jump", "GearIn 跳跃点");
+		jump.setCircularOrbit(star, 300, 1800, 100);
+		jump.setRelatedPlanet(prime);
+		system.addEntity(jump);
+
+		// 必须调用 (或用带超空间坐标的 initStar 变体)，否则星系没有通向超空间的跳跃点，玩家无法到达
+		system.autogenerateHyperspaceJumpPoints(true, true);
+
+	}
+}

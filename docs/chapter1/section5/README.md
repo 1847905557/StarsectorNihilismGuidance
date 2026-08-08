@@ -712,7 +712,7 @@ CSV 的导弹行会直接修改它引用的弹体 spec：当原版 `暴风 MLRS`
 | noCollisionWhileFading      | 如果设为 true，则引擎熄火后不再有撞击判定。不填默认为否      |
 | renderTargetIndicator       | 如果设为 false，则导弹被敌方发射时下方不会出现红色棱形指示标。不填默认为是 |
 | engineSpec                  | 导弹的机动性设置，在本例顺序分别是 `转向加速度`、`最大转向速度`、`加速度` 和 `减速度` |
-| engineSlots                 | 导弹的引擎设置，一个导弹可以有多个引擎，它们的 `id` 必须不同。引擎的 `styleSpec` 属性与 [C4-S2] 的引擎风格相关。|
+| engineSlots                 | 导弹的引擎设置，一个导弹可以有多个引擎，它们的 `id` 必须不同。引擎的 `styleSpec` 属性与 [C4-S3] 的引擎风格相关。|
 
 据此修改它的弹体 ID、贴图和爆炸颜色等属性：
 

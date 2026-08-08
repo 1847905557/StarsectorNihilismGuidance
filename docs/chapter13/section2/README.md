@@ -21,7 +21,7 @@
 
 ## 前置知识
 
-- [C3-S1] 的战役与 `MissionDefinitionAPI` 对照关系；
+- [C4-S1] 的战役与 `MissionDefinitionAPI` 对照关系；
 - [C6-S2] 的 `modPlugin` 生命周期与加载期数据读取；
 - [C6-S3] 的 `Global.getSector()` 阶段语义；
 - [C9-S6] 的交互对话框、Intel 登记与 `SectorAPI.adjustPlayerReputation`；

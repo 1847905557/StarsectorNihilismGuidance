@@ -14,7 +14,7 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
  * 见页面正文) 在每次读档后重新注册；registerPlugin 按 getId() 去重，重复注册只会
  * 替换旧实例，不会叠加。
  *
- * pickInteractionDialogPlugin：对 "齿轮工业"(C3-S2 注册的势力 id) 的舰队与市场实体
+ * pickInteractionDialogPlugin：对 "齿轮工业"(C10-S1 注册的势力 id) 的舰队与市场实体
  * 返回 GearInInteractionDialog(PickPriority.MOD_SPECIFIC)；对其他实体返回 null，即放弃本次
  * 选择权，由原版 CORE_GENERAL 对话继续生效。
  *
@@ -25,7 +25,7 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
  */
 public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
-    /** 演示触发势力：齿轮工业势力 id(C3-S2 定义，本节只消费不定义)。 */
+    /** 演示触发势力：齿轮工业势力 id(C10-S1 定义，本节只消费不定义)。 */
     public static final String DEMO_FACTION_ID = "gear_industry";
 
     /** updateGlobalFacts 写入的演示事实键：MOD 专属前缀 + 过期时间 0。 */

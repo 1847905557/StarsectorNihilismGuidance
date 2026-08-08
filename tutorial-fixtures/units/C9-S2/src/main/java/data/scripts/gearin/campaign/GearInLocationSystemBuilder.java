@@ -15,7 +15,7 @@ import com.fs.starfarer.api.campaign.StarSystemAPI;
 public class GearInLocationSystemBuilder {
 	/** 演示星系查询键：SectorAPI.getStarSystem 用 optionalUniqueId 或基名小写匹配。 */
 	public static final String SYSTEM_UNIQUE_ID = "GearIn_demo";
-	/** 本单元专属实体 ID(与 C3-S6 的 GearIn 星系既有 ID 互不冲突)。 */
+	/** 本单元专属实体 ID(与 C3-S3 的 GearIn 星系既有 ID 互不冲突)。 */
 	public static final String STAR_ID = "GearIn_demo_star";
 	public static final String PLANET_ID = "GearIn_demo_planet1";
 	public static final String BEACON_ID = "GearIn_demo_beacon";
@@ -47,7 +47,7 @@ public class GearInLocationSystemBuilder {
 
 		// addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)；
 		// 非恒星行星会被自动挂一个 condition-only 市场 (Misc.initConditionMarket)，
-		// 因此 addPlanet 之后 getMarket() 立即非 null(正式市场流程归 C10-S1)。
+		// 因此 addPlanet 之后 getMarket() 立即非 null(正式市场流程归 C10-S2)。
 		PlanetAPI planet = system.addPlanet(PLANET_ID, star, "GearIn Demo Prime", "terran", 55, 150, 3200, 120);
 
 		// 自定义实体：type 是 data/config/custom_entities.json 里的键 ("stable_location" 为原版键)，

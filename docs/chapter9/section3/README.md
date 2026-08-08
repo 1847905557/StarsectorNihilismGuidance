@@ -19,8 +19,8 @@
 
 ## 前置知识
 
-- [C3-S1] 的生涯与战役域、装配与舰船共享注册表；
-- [C4-S1] 的无效装配 ID、路径日志与 `errorShipVariant` 回退；
+- [C4-S1] 的生涯与战役域、装配与舰船共享注册表；
+- [C4-S2] 的无效装配 ID、路径日志与 `errorShipVariant` 回退；
 - [C6-S2] 的插件生命周期回调与持久数据标记；
 - [C6-S3] 的 `Global.getFactory()` 创建入口与阶段语义；
 - [C9-S1] 的生涯时钟、`EveryFrameScript` 注册时机与一次性判断。

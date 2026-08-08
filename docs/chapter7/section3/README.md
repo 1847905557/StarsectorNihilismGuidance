@@ -20,7 +20,7 @@
 
 - [C1-S1] 的 MOD ID、`GearIn_` 命名、包路径与类名规则；
 - [C1-S2] 的 `ship_data.csv` 船体登记和数值列；
-- [C3-S1] 的战役入口与 `GearIn_test` 测试战役；
+- [C4-S1] 的战役入口与 `GearIn_test` 测试战役；
 - [C6-S1] 的 Java 构建与 JAR 输出；
 - [C6-S3] 的 `Global` 生命周期、空引擎阶段与跨战斗引用边界；
 - [C7-S1] 的战斗插件注册、每帧回调与暂停检查；
@@ -325,7 +325,7 @@ stats.getMaxSpeed().modifyFlat(MODIFIER_ID, 5f);
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与战斗插件接入 (含本节注册片段)、`GearInShipStatsProbe` 源码、`GearIn_test` 测试战役 ([C3-S1]，玩家舰 `GearIn_artizan`)。
+前置数据：既有 MOD 布局与战斗插件接入 (含本节注册片段)、`GearInShipStatsProbe` 源码、`GearIn_test` 测试战役 ([C4-S1]，玩家舰 `GearIn_artizan`)。
 
 1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
 2. **战役运行**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 观察 `GearIn stats probe` 相关记录。

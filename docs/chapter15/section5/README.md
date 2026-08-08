@@ -20,7 +20,7 @@
 
 - [C15-S2] 的 `strings.json` 固定入口、双参 `getString`、缺失键和占位符规则；
 - [C1-S1] 的 MOD 目录结构与 `gear_in` 示例 MOD；
-- [C1-S7]、[C3-S8] 的 `descriptions.csv` 键规则与使用方。
+- [C1-S7]、[C3-S4] 的 `descriptions.csv` 键规则与使用方。
 
 ## 本地化组织
 

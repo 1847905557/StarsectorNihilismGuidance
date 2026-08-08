@@ -19,7 +19,7 @@
 
 ## 前置知识
 
-- [C4-S3] 的模块船、模块船生成流程与独立 `ShipAPI` 实体；
+- [C4-S4] 的模块船、模块船生成流程与独立 `ShipAPI` 实体；
 - [C6-S2] 的 `GearInModPlugin` 所有权与 `onGameLoad` 注册检查；
 - [C7-S3] 的 `MutableStat`、修饰公式、modifier ID 稳定性与 `unmodify`；
 - [C9-S3] 的 `FleetMemberAPI` 变体、stats、成员加入与 `setCaptain`；

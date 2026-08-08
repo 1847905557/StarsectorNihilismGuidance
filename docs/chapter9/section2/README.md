@@ -19,7 +19,7 @@
 
 ## 前置知识
 
-- [C3-S6] 的星系创建 API：`createStarSystem`、`initStar`、`addPlanet`、`addCustomEntity` 与 `autogenerateHyperspaceJumpPoints`；
+- [C3-S3] 的星系创建 API：`createStarSystem`、`initStar`、`addPlanet`、`addCustomEntity` 与 `autogenerateHyperspaceJumpPoints`；
 - [C6-S2] 的 `modPlugin` 生命周期回调与持久数据标记；
 - [C6-S3] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
 - [C9-S1] 的引擎级 `EveryFrameScript` 推进、暂停冻结、战斗期边界与一次性注册；
@@ -65,7 +65,7 @@
 | 脚本 | `addScript` / `removeScript` / `removeScriptsOfClass` / `getScripts` | 地点级每帧脚本，推进节奏跟随地点 (见 "访问状态" 节) |
 | 状态 | `isCurrentLocation` / `activeThisFrame` / `isHyperspace` / `isNebula` / `isDeepSpace` / `getLastPlayerVisitTimestamp` / `getDaysSinceLastPlayerVisit` | 访问状态 (见 "访问状态" 节) |
 | 数据 | `getPersistentData` / `getMemoryWithoutUpdate` | 地点级持久 Map 与 memory |
-| 背景 | `getBackgroundTextureFilename` / `setBackgroundTextureFilename` / `setBackgroundOffset` / `getBackgroundColorShifter` | 背景贴图与偏移 (星系创建主题已用，[C3-S6]) |
+| 背景 | `getBackgroundTextureFilename` / `setBackgroundTextureFilename` / `setBackgroundOffset` / `getBackgroundColorShifter` | 背景贴图与偏移 (星系创建主题已用，[C3-S3]) |
 | 星系特化 | `isInConstellation` / `getConstellation` | 恒星系实现为星座成员判断，超空间恒为 false / null |
 
 容器关键行为：
@@ -106,7 +106,7 @@
 | 签名 | 超空间坐标 | 超空间锚点 | 其他 |
 |---|---|---|---|
 | `initStar(id, type, radius, coronaSize)` | 不设置 | 不生成 | 默认日冕参数 `windBurnLevel=10` / `flareProbability=0.25` / `crLossMult=3` |
-| `initStar(id, type, radius, coronaSize, windBurn, flare, crLoss)` | 用恒星 id 查 starmap.json 的 `starSystemLocations`(查不到保持 (0,0)，[C3-S6] 知识) | **不生成** | 完整日冕参数；[C3-S6] 的 `GearIn` 星系用此变体 |
+| `initStar(id, type, radius, coronaSize, windBurn, flare, crLoss)` | 用恒星 id 查 starmap.json 的 `starSystemLocations`(查不到保持 (0,0)，[C3-S3] 知识) | **不生成** | 完整日冕参数；[C3-S3] 的 `GearIn` 星系用此变体 |
 | `initStar(id, type, radius, hyperX, hyperY, coronaSize)` | 显式设置 | **自动生成超空间锚点** | 本节示例用此变体；跳跃点仍由 `autogenerateHyperspaceJumpPoints` 生成 |
 
 `initStar` 内部：移除旧星、创建新恒星实体并加入容器、按变体查 starmap 或写坐标、`addCorona`。
@@ -163,7 +163,7 @@ token 的两个陷阱 (本节重点)
 
 `addPlanet` 的自动市场 (`com.fs.starfarer.api.util.Misc.initConditionMarket` 实现)：非恒星行星建 `"market_" + 行星id`、neutral、`setPlanetConditionMarketOnly(true)` 的市场并 `planet.setMarket(market)`。
 
-所以 `addPlanet` 之后 `getMarket()` 立即非 null(这是 "仅条件市场"：只装行星条件、不进经济列表；正式市场流程见 [C10-S1])。
+所以 `addPlanet` 之后 `getMarket()` 立即非 null(这是 "仅条件市场"：只装行星条件、不进经济列表；正式市场流程见 [C10-S2])。
 
 ### 实体容器查询
 
@@ -684,7 +684,7 @@ import com.fs.starfarer.api.campaign.StarSystemAPI;
 public class GearInLocationSystemBuilder {
 	/** 演示星系查询键：SectorAPI.getStarSystem 用 optionalUniqueId 或基名小写匹配。 */
 	public static final String SYSTEM_UNIQUE_ID = "GearIn_demo";
-	/** 本单元专属实体 ID(与 C3-S6 的 GearIn 星系既有 ID 互不冲突)。 */
+	/** 本单元专属实体 ID(与 C3-S3 的 GearIn 星系既有 ID 互不冲突)。 */
 	public static final String STAR_ID = "GearIn_demo_star";
 	public static final String PLANET_ID = "GearIn_demo_planet1";
 	public static final String BEACON_ID = "GearIn_demo_beacon";
@@ -716,7 +716,7 @@ public class GearInLocationSystemBuilder {
 
 		// addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)；
 		// 非恒星行星会被自动挂一个 condition-only 市场 (Misc.initConditionMarket)，
-		// 因此 addPlanet 之后 getMarket() 立即非 null(正式市场流程归 C10-S1)。
+		// 因此 addPlanet 之后 getMarket() 立即非 null(正式市场流程归 C10-S2)。
 		PlanetAPI planet = system.addPlanet(PLANET_ID, star, "GearIn Demo Prime", "terran", 55, 150, 3200, 120);
 
 		// 自定义实体：type 是 data/config/custom_entities.json 里的键 ("stable_location" 为原版键)，

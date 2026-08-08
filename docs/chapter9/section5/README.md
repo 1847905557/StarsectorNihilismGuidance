@@ -26,7 +26,7 @@
 - [C7-S3] 的普通字段与 `MutableStat` 的区别；
 - [C9-S1] 的 `SectorAPI` 星区入口、`onGameLoad` 注册与 `REGISTER_MARK` 判断；
 - [C9-S3] 的玩家舰队、成员、`FleetDataAPI.getMothballedShips()` 与 `CampaignFleetAPI.getCargo()`；
-- [C10-S2] 的子市场 cargo 创建时机、`getCargoNullOk()` 判空与 `Commodities` 商品 ID；
+- [C10-S3] 的子市场 cargo 创建时机、`getCargoNullOk()` 判空与 `Commodities` 商品 ID；
 - 理解 `FactionAPI.getTariffFraction()` 读取势力规格中的普通数值。
 
 ## 术语
@@ -45,7 +45,7 @@
 | 服务 | 进入方式 | 核心接口 |
 |---|---|---|
 | 势力 | `Global.getSector().getFaction(id)` / `getAllFactions()` / `getPlayerFaction()` | `FactionAPI` |
-| 货物 | `SectorEntityToken.getCargo()`(玩家舰队 `CampaignFleetAPI.getCargo()` 经 `SectorEntityToken` 实现；子市场 `SubmarketAPI.getCargo()` 见前置知识 [C10-S2]) | `CargoAPI` / `CargoStackAPI` |
+| 货物 | `SectorEntityToken.getCargo()`(玩家舰队 `CampaignFleetAPI.getCargo()` 经 `SectorEntityToken` 实现；子市场 `SubmarketAPI.getCargo()` 见前置知识 [C10-S3]) | `CargoAPI` / `CargoStackAPI` |
 
 ### 势力 (FactionAPI)
 

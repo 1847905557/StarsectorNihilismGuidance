@@ -20,12 +20,12 @@
 
 ## 前置知识
 
-- [C3-S1] 的生涯与战役域区别；
+- [C4-S1] 的生涯与战役域区别；
 - [C6-S2] 的插件生命周期回调与持久数据标记；
 - [C6-S3] 的 `Global.getFactory()` 创建入口与阶段语义；
 - [C9-S1] 的生涯脚本注册与一次性判断；
 - [C9-S3] 的舰队成员、舰长、旗舰与 `FleetDataAPI`；
-- [C10-S1] 的市场人物、通信目录与 `MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`。
+- [C10-S3] 的市场人物、通信目录与 `MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`。
 
 ## 术语
 

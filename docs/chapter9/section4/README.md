@@ -75,7 +75,7 @@
 |---|---|
 | `(MarketAPI source, String fleetType, 六点数..., float qualityMod)` | `init(source, ...)`：`locInHyper = source.getLocationInHyperspace()`、`factionId = source.getFactionId()`、`timestamp = Global.getSector().getClock().getTimestamp()`、`updateQualityAndProducerFromSourceMarket()`(质量 = `Misc.getShipQuality(source, factionId)`) |
 | `(MarketAPI source, Vector2f locInHyper, String factionId, Float qualityOverride, String fleetType, 六点数..., float qualityMod)` | 同上，另显式设 `locInHyper` / `factionId` / `qualityOverride` |
-| `(Vector2f locInHyper, String factionId, Float qualityOverride, String fleetType, 六点数..., float qualityMod)` | 无市场版本：只写字段，**不**调用 `updateQualityAndProducerFromSourceMarket`(质量取字段默认值 0) |
+| `(Vector2f locInHyper, String factionId, Float qualityOverride, String fleetType, 六点数..., float qualityMod)` | 无市场版本：只写字段；`createFleet` 在没有 `qualityOverride` 时会建立 fake market 并重算质量 |
 
 `setSource(MarketAPI source, boolean updateQuality)`：换来源市场；`updateQuality=true` 时重算质量。
 
@@ -108,7 +108,7 @@ V1 的 pts 是尺寸当量不是 fleet points，V3 修正了这一点。
 
 fake market 意味着什么
 
-fake market 意味着质量 0.5、无市场势力贡献 —— 这解释了 "无市场版本 + 无 qualityOverride" 时舰队满船 D 插的根源。
+fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市场质量计算，不能把它当作固定 `0.5`，也不能据此断言舰队必定满船 D 插。
 
 3. **空舰队创建** (`createEmptyFleet(factionId, fleetType, market)`)：`Global.getFactory().createEmptyFleet(factionId, faction.getFleetTypeName(fleetType), true)`(`FactoryAPI.createEmptyFleet`，`aiMode=true`—— 关闭补给/燃料消耗、事故与船员需求)。
     - 写内存 `$fleetType`(`MemFlags.MEMORY_KEY_FLEET_TYPE`) 与 `$sourceMarket`(`MEMORY_KEY_SOURCE_MARKET`；fake 市场除外)。
@@ -277,8 +277,8 @@ fake market 意味着质量 0.5、无市场势力贡献 —— 这解释了 "无
 
 前文散落在各节的约束里，以下几条违反后有明确可观察结果；做完整最小例之前先过一遍：
 
-1. **质量必须来自市场**。`FleetParamsV3.source` 要求经 `setSource(market, true)`、市场构造器或 `updateQualityAndProducerFromSourceMarket()` 设置来源；否则 `params.quality` 停留在 0，`createFleet` 里有效质量 = 0 → 平均 D 插 `(1-0)/0.2 = 5` 个/船、武器 tier 概率趋近下限，舰队战力明显低于同势力原版舰队。
-2. **质量优先级：`qualityOverride` > `quality + qualityMod`**。不设 `qualityOverride` 时 `qualityMod` 才叠加到市场质量上；同时设置时 `qualityMod` 被无视，只设 `qualityMod` 不设来源时质量仍为 0。
+1. **质量必须来自市场**。`FleetParamsV3.source` 要求经 `setSource(market, true)`、市场构造器或 `updateQualityAndProducerFromSourceMarket()` 设置来源；没有市场且没有 `qualityOverride` 时，`createFleet` 会建立 fake market 并重算质量，最终质量受 `+0.5` 基础值、进口惩罚和 doctrine 贡献差影响，通常约为 `0.25–0.5`，平均 D 插约为 `(1-quality)/0.2`。
+2. **质量优先级：`qualityOverride` > `quality + qualityMod`**。不设 `qualityOverride` 时 `qualityMod` 才叠加到市场质量上；同时设置时 `qualityMod` 被无视。没有来源市场时工厂会使用 fake market 重算质量。
 3. **点数是目标不是硬上限**。"舰队点数与请求不符" 是**正常现象**，实际受市场供应、`maxShipsInAIFleet` 裁剪与角色缺货影响；需要还原请求值用 `Misc.getSpawnFPMult(fleet)`。
 4. **`flagshipVariantId` / `flagshipVariant` 只在 `getFlagship()` 非 null 时应用**，且 `setVariant(variant, false, true)` 会连船体一起换。舰队为空时不生效；指定了异 hull 的旗舰变体后，旗舰船体与角色会与抽选时不同。
 5. **`setFlagship(member)` 的副作用必须接受**：其他成员舰长被重置为默认、新旗舰舰长 = 舰队指挥官。旗舰读回 `getCaptain() == getCommander()`；不要用逐成员 `setCaptain` 对抗该语义。
@@ -418,7 +418,7 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\campaign\
-│       └── GearInFleetFactory   # 本节新增(归本节所有)
+│       └── GearInFleetFactory   # 本节新增 (归本节所有)
 └── jars\
 ```
 
@@ -515,7 +515,7 @@ location.spawnFleet(market.getPrimaryEntity(), 0f, 0f, fleet);
 
 ## 故障分析
 
-- **生成舰队的战力奇低**：无市场构造器没有提供来源质量，且 `qualityOverride` 为空时，有效质量保持为 0。使用 market 构造器、`setSource(market, true)` 或显式质量覆盖。
+- **生成舰队的战力奇低**：来源市场的质量偏低，或 `qualityMod` 进一步降低了有效质量。记录 inflater 的 `getQuality()`；需要固定测试条件时，使用 market 构造器、`setSource(market, true)` 或显式 `qualityOverride` 后重新生成。
 - **舰队生成时启动中止**：`createFleet` 被放在 `onApplicationLoad`，此时 `Global.getSector()` 仍为 null。把注册放入 `onGameLoad` 的一次性判断块。
 - **指定 `flagshipVariantId` 后旗舰没换**：装配 ID 无效、舰队为空，或同时设置了两个旗舰字段。用 `getAllVariantIds()` 核对 ID，并确认生成成员数大于 0。
 - **指挥官和军官完全没有生成**：`withOfficers=false` 或成员列表为空都会跳过创建。启用军官生成，并先解决舰队成员为空的问题。
@@ -532,7 +532,7 @@ location.spawnFleet(market.getPrimaryEntity(), 0f, 0f, fleet);
 
 本节把 "生涯舰队" 从参数到投放串成一条完整链：`FleetParamsV3` 决定来源与预算，`FleetFactoryV3.createFleet` 按十步把它变成带成员的舰队，`FleetInflater` 在需要完整装配时按质量补全，`LocationAPI.spawnFleet` 最后把它放进地点容器。每个环节断掉时症状都不同：质量没取到 → 满船 D 插；没投放 → 地图上查无此舰队且无报错；膨胀前读装配 → 拿到生成态。
 
-排错与复用记住四条判断。其一，点数是目标不是硬上限，实际点数受供应与裁剪影响，还原请求值用 `$spawnFPMult`。其二，质量优先级 `qualityOverride` > `quality + qualityMod`，质量必须来自市场，否则为 0，D 插平均 `(1-quality)/0.2` 个/船。其三，膨胀是延迟的：`createFleet` 只挂 inflater，`persistent=true` 时膨胀后保留，同 `seed` 重膨胀结果一致。其四，`setFlagship` 会把旗舰舰长设为指挥官并重置其他成员舰长，读回 `getCaptain() == getCommander()` 是设计行为而非故障。
+排错与复用记住四条判断。其一，点数是目标不是硬上限，实际点数受供应与裁剪影响，还原请求值用 `$spawnFPMult`。其二，质量优先级 `qualityOverride` > `quality + qualityMod`；没有来源市场时工厂会建立 fake market 并重算质量，D 插平均为 `(1-quality)/0.2` 个/船。其三，膨胀是延迟的：`createFleet` 只挂 inflater，`persistent=true` 时膨胀后保留，同 `seed` 重膨胀结果一致。其四，`setFlagship` 会把旗舰舰长设为指挥官并重置其他成员舰长，读回 `getCaptain() == getCommander()` 是设计行为而非故障。
 
 舰队行为 (任务、AI) 与舰队间交互的主题会直接使用本节生成的舰队对象；成员对象、人物与变体三个主题则是本节三块底座。
 
@@ -592,28 +592,28 @@ import com.fs.starfarer.api.loading.VariantSource;
 import com.fs.starfarer.api.util.Misc;
 
 /**
- * 完整最小例：生涯舰队工厂(FleetParamsV3 -> FleetFactoryV3.createFleet -> inflate -> spawn)。
+ * 完整最小例：生涯舰队工厂 (FleetParamsV3 -> FleetFactoryV3.createFleet -> inflate -> spawn)。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控
  * (沿用既有模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
  *
- * 行为：挂载后第一次 advance() 执行一次演示序列并自停(isDone()=true，引擎下一帧自动移除本脚本)：
- *   1. 基线：选定演示市场(优先 jangala)，记录地点/锚点与市场质量；
+ * 行为：挂载后第一次 advance() 执行一次演示序列并自停 (isDone()=true，引擎下一帧自动移除本脚本)：
+ *   1. 基线：选定演示市场 (优先 jangala)，记录地点/锚点与市场质量；
  *   2. FleetParamsV3(market 构造器：source/quality/timestamp 一次就位)，qualityOverride=0.6
- *      压质量(平均 D 插约 2 个/船，可观察)，flagshipVariantId 指定旗舰变体；
+ *      压质量 (平均 D 插约 2 个/船，可观察)，flagshipVariantId 指定旗舰变体；
  *   3. FleetFactoryV3.createFleet：记录舰队名/势力/类型/成员数/战机数/FP；
  *   4. 旗舰与指挥官：flagship hull 与变体、舰长是否就是舰队指挥官、指挥官等级/personality、军官数；
  *   5. 膨胀前状态：isInflated=false、inflater 已挂载、inflater.getQuality()==0.6；
- *   6. inflateIfNeeded 后：isInflated=true、inflater 保留(persistent=true)、
- *      成员变体来源 REFIT、D 插总数(质量 0.6 -> 平均 2 个/船)；
+ *   6. inflateIfNeeded 后：isInflated=true、inflater 保留 (persistent=true)、
+ *      成员变体来源 REFIT、D 插总数 (质量 0.6 -> 平均 2 个/船)；
  *   7. 内存键：$fleetType / $sourceMarket / $salvageSeed / $spawnFPMult；
  *   8. 投放：location.spawnFleet(anchor, 0, 0, fleet) -> 入容器、坐标=锚点坐标、isAlive=true；
- *   9. 对照：FleetFactory.createPatrol(V1 固定模板)生成快速巡逻队并投放；
+ *   9. 对照：FleetFactory.createPatrol(V1 固定模板) 生成快速巡逻队并投放；
  *  10. 清理：同帧 removeEntity 移除两支舰队，不留任何持久副作用。
  */
 public class GearInFleetFactory implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_FleetFactory";
 
     private static final Logger LOG = Global.getLogger(GearInFleetFactory.class);
@@ -622,7 +622,7 @@ public class GearInFleetFactory implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInFleetFactory() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -665,12 +665,12 @@ public class GearInFleetFactory implements EveryFrameScript {
                 market.getId(), market.getSize(), location.getId(),
                 Misc.getShipQuality(market, market.getFactionId())));
 
-        // --- 1. FleetParamsV3：market 构造器(source + quality + timestamp 一次就位)---
+        // --- 1. FleetParamsV3：market 构造器 (source + quality + timestamp 一次就位)---
         // combatPts=40, freighterPts=12, tankerPts=6；总点数 58 -> getMinPreferredMarketSize=5
         FleetParamsV3 params = new FleetParamsV3(market, FleetTypes.PATROL_MEDIUM,
                 40f, 12f, 6f, 0f, 0f, 0f, 0f);
         params.qualityOverride = 0.6f;          // 覆盖市场质量：quality=0.6 -> 平均 D 插 (1-0.6)/0.2 = 2 个/船
-        params.flagshipVariantId = "tempest_Attack"; // 旗舰装配覆盖(换 hull 为 tempest)
+        params.flagshipVariantId = "tempest_Attack"; // 旗舰装配覆盖 (换 hull 为 tempest)
         params.officerLevelBonus = 1;           // 军官/指挥官等级 +1
         LOG.info(String.format(
                 "GearIn fleet factory params: faction=%s fleetType=%s marketQuality=%.2f qualityOverride=%.2f totalPts=%.0f",
@@ -730,7 +730,7 @@ public class GearInFleetFactory implements EveryFrameScript {
                 fleet.getMemoryWithoutUpdate().getLong(MemFlags.SALVAGE_SEED),
                 Misc.getSpawnFPMult(fleet)));
 
-        // --- 7. 投放：入容器 + 定位(锚点坐标 + 偏移)+ setNoEngaging(3s) ---
+        // --- 7. 投放：入容器 + 定位 (锚点坐标 + 偏移)+ setNoEngaging(3s) ---
         float anchorX = anchor.getLocation().x;
         float anchorY = anchor.getLocation().y;
         location.spawnFleet(anchor, 0f, 0f, fleet);
@@ -739,7 +739,7 @@ public class GearInFleetFactory implements EveryFrameScript {
                 fleet.getContainingLocation() == location,
                 fleet.getLocation().x, fleet.getLocation().y, anchorX, anchorY, fleet.isAlive()));
 
-        // --- 8. 对照：FleetFactory(V1)固定模板 createPatrol ---
+        // --- 8. 对照：FleetFactory(V1) 固定模板 createPatrol ---
         CampaignFleetAPI patrol = FleetFactory.createPatrol(market, FleetFactory.PatrolType.FAST);
         List<FleetMemberAPI> patrolMembers = patrol.getFleetData().getMembersListCopy();
         LOG.info(String.format(

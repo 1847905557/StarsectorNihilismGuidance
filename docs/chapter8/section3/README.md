@@ -393,7 +393,7 @@ LOG.info("GearIn onHit " + projectile.getProjectileSpecId()
 data\weapons\GearIn_test_rotor.wpn         # 弹丸武器：GearInWeaponFrameEffect(everyFrameEffect)+ 动画 / 内置视觉字段
 data\weapons\GearIn_test_beam.wpn          # 光束武器：GearInWeaponFrameEffect(everyFrameEffect)+ GearInBeamHitEffect(beamEffect)
 data\weapons\proj\GearIn_test_shot.proj    # 弹体 spec：GearInOnFireEffect / GearInOnHitEffect(onFireEffect / onHitEffect)
-graphics\weapons\gearin\GearIn_test_rotor_turret_base00.png     # 帧 0(您自备，命名规则见"帧贴图命名规则")
+graphics\weapons\gearin\GearIn_test_rotor_turret_base00.png     # 帧 0(您自备，命名规则见 "帧贴图命名规则")
 graphics\weapons\gearin\GearIn_test_rotor_turret_base01.png     # 帧 1
 graphics\weapons\gearin\GearIn_test_rotor_turret_base02.png     # 帧 2
 graphics\weapons\gearin\GearIn_test_rotor_turret_base03.png     # 帧 3
@@ -593,9 +593,9 @@ import com.fs.starfarer.api.combat.WeaponEffectPluginWithInit;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 武器逐帧效果(.wpn everyFrameEffect 注册列，每把武器一个实例)。
- * 构造时 init(weapon)；之后每帧在本帧"转向 / 开火之前"回调 advance、操作完成后
- * 回调 advanceAfter。演示 AnimationAPI 程序化控制贴图动画(play / pause / setFrame)。
+ * 武器逐帧效果 (.wpn everyFrameEffect 注册列，每把武器一个实例)。
+ * 构造时 init(weapon)；之后每帧在本帧 "转向 / 开火之前" 回调 advance、操作完成后
+ * 回调 advanceAfter。演示 AnimationAPI 程序化控制贴图动画 (play / pause / setFrame)。
  */
 public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
         EveryFrameWeaponEffectPluginWithAdvanceAfter {
@@ -615,8 +615,8 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
     }
     @Override
     public void advance(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
-        // 本帧转向 / 开火等操作之前；闲置且冷却完成时冻结回 0 帧(BlinkerEffect
-        // 同款姿势)，否则恢复播放(play() 覆盖 alwaysAnimate:false 的数据默认)。
+        // 本帧转向 / 开火等操作之前；闲置且冷却完成时冻结回 0 帧 (BlinkerEffect
+        // 同款姿势)，否则恢复播放 (play() 覆盖 alwaysAnimate:false 的数据默认)。
         AnimationAPI animation = weapon.getAnimation();
         if (animation != null) {
             boolean idle = weapon.getChargeLevel() <= 0f
@@ -649,7 +649,7 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
     }
     @Override
     public void advanceAfter(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
-        // 本帧操作完成后(WithAdvanceAfter)：弹药扣减已生效，可观察操作后状态。
+        // 本帧操作完成后 (WithAdvanceAfter)：弹药扣减已生效，可观察操作后状态。
         if (weapon.isFiring()) {
             afterReportInterval.advance(amount);
             if (afterReportInterval.intervalElapsed()) {
@@ -683,23 +683,23 @@ import com.fs.starfarer.api.combat.CombatEntityAPI;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 光束效果(.wpn beamEffect 注册列，仅光束武器；每条光束射线一个实例)。
+ * 光束效果 (.wpn beamEffect 注册列，仅光束武器；每条光束射线一个实例)。
  * 射线创建与销毁时调 reset()(实现 BeamEffectPluginWithReset 时)，开火 / 充能
- * 期间每帧回调 advance。本类只消费"本帧"光束命中状态并生成纯视觉命中粒子，
+ * 期间每帧回调 advance。本类只消费 "本帧" 光束命中状态并生成纯视觉命中粒子，
  * 不修改任何游戏数值。
  */
 public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWithReset {
 
     private static final Logger LOG = Global.getLogger(GearInBeamHitEffect.class);
 
-    /** 命中粒子节流器(光束 0.1 秒结算一次，逐帧撒粒子会过密)。 */
+    /** 命中粒子节流器 (光束 0.1 秒结算一次，逐帧撒粒子会过密)。 */
     private final IntervalUtil sparkInterval = new IntervalUtil(0.15f, 0.15f);
-    /** 上一帧命中状态(仅用于命中边沿日志，不跨实例复用)。 */
+    /** 上一帧命中状态 (仅用于命中边沿日志，不跨实例复用)。 */
     private boolean lastDidDamage = false;
 
     @Override
     public void reset() {
-        // 射线创建与销毁各调一次(光束射线构造器 / 光束武器.destroyBeamRays)：
+        // 射线创建与销毁各调一次 (光束射线构造器 / 光束武器.destroyBeamRays)：
         // 跨射线状态在这里复位。
         lastDidDamage = false;
         LOG.info("GearIn beam fx reset (ray created or destroyed)");
@@ -707,7 +707,7 @@ public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWi
 
     @Override
     public void advance(float amount, CombatEngineAPI engine, BeamAPI beam) {
-        // 每帧只消费本帧光束状态(规则 2：didDamageThisFrame / getDamageTarget
+        // 每帧只消费本帧光束状态 (规则 2：didDamageThisFrame / getDamageTarget
         // 只对本帧结算语义有效，禁止缓存跨帧使用)。
         boolean didDamage = beam.didDamageThisFrame();
         CombatEntityAPI target = beam.getDamageTarget();
@@ -717,8 +717,8 @@ public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWi
                     + " brightness=" + beam.getBrightness());
         }
         if (didDamage) {
-            // 纯视觉命中火花：以本帧射线端点(上一帧端点)为基准撒粒子，不造成伤害。
-            // 光束伤害按 0.1 秒间隔结算(C7-S4)；IonBeamEffect 的替代写法是用
+            // 纯视觉命中火花：以本帧射线端点 (上一帧端点) 为基准撒粒子，不造成伤害。
+            // 光束伤害按 0.1 秒间隔结算 (C7-S4)；IonBeamEffect 的替代写法是用
             // beam.getDamage().getDpsDuration() 推进节流器，让粒子节奏跟随真实结算。
             sparkInterval.advance(amount);
             if (sparkInterval.intervalElapsed()) {
@@ -748,7 +748,7 @@ import com.fs.starfarer.api.combat.OnFireEffectPlugin;
 import com.fs.starfarer.api.combat.WeaponAPI;
 
 /**
- * 开火回调(.proj onFireEffect 注册列，每武器一个实例)。
+ * 开火回调 (.proj onFireEffect 注册列，每武器一个实例)。
  * 武器开火生成射弹后回调一次，参数是刚生成的那一颗射弹，
  * 禁止缓存跨发射使用。本类只观察并打日志，不修改任何游戏数值。
  */
@@ -758,7 +758,7 @@ public class GearInOnFireEffect implements OnFireEffectPlugin {
 
     @Override
     public void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon, CombatEngineAPI engine) {
-        // 参数是"本发射弹"上下文：射弹刚生成，速度 / 朝向已就绪
+        // 参数是 "本发射弹" 上下文：射弹刚生成，速度 / 朝向已就绪
         // (原版 CanisterFlakPlugin 在此改写弹速与旋转，本节只观察)。
         LOG.info("GearIn onFire " + projectile.getProjectileSpecId()
                 + " weapon=" + (weapon == null ? "null" : weapon.getId())
@@ -786,7 +786,7 @@ import com.fs.starfarer.api.combat.OnHitEffectPlugin;
 import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
 
 /**
- * 命中回调(.proj onHitEffect 注册列，每射弹一个实例)。
+ * 命中回调 (.proj onHitEffect 注册列，每射弹一个实例)。
  * 射弹命中结算时回调一次，参数是本次命中结算结果，
  * 禁止缓存跨命中使用。本类只观察并打日志，不修改任何游戏数值。
  */

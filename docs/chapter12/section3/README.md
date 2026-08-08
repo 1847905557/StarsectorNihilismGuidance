@@ -333,7 +333,7 @@ Starsector\mods\GearIndustry\
 
 ```java
     // GearInModPlugin(前置单元所有)onGameLoad(boolean newGame) 内新增本节注册块。
-    // transient 插件必须每次读档都重新注册：不要挂 persistent data 门(门关后插件将永远缺失，
+    // transient 插件必须每次读档都重新注册：不要挂 persistent data 门 (门关后插件将永远缺失，
     // 且 transient 实例不进存档、无法靠读档恢复)。
     // registerPlugin 内部按 getId() 去重：重复注册只会替换旧实例，不会叠加。
     Global.getSector().registerPlugin(new GearInCampaignPlugin());
@@ -448,20 +448,20 @@ import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 
 /**
- * 完整最小例：生涯插件(CampaignPlugin)的注册、picker、优先级与生命周期。
+ * 完整最小例：生涯插件 (CampaignPlugin) 的注册、picker、优先级与生命周期。
  *
- * 本类是 transient 生涯插件：数据不进存档，必须由调用点(GearInModPlugin.onGameLoad，
- * 见页面正文)在每次读档后重新注册；registerPlugin 按 getId() 去重，重复注册只会
+ * 本类是 transient 生涯插件：数据不进存档，必须由调用点 (GearInModPlugin.onGameLoad，
+ * 见页面正文) 在每次读档后重新注册；registerPlugin 按 getId() 去重，重复注册只会
  * 替换旧实例，不会叠加。
  *
- * pickInteractionDialogPlugin：对"齿轮工业"(C3-S2 注册的势力 id)的舰队与市场实体
+ * pickInteractionDialogPlugin：对 "齿轮工业"(C3-S2 注册的势力 id) 的舰队与市场实体
  * 返回 GearInInteractionDialog(PickPriority.MOD_SPECIFIC)；对其他实体返回 null，即放弃本次
  * 选择权，由原版 CORE_GENERAL 对话继续生效。
  *
  * updateGlobalFacts：每次 sector.getMemory() 都会重新执行；写入的演示事实使用 MOD
  * 专属前缀且过期时间为 0，符合 API 对 facts 写法的要求。
  *
- * 被 picker 选中的对话框由同包类 GearInInteractionDialog 承担(一文件一角色，见该文件)。
+ * 被 picker 选中的对话框由同包类 GearInInteractionDialog 承担 (一文件一角色，见该文件)。
  */
 public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
@@ -479,7 +479,7 @@ public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
     @Override
     public boolean isTransient() {
-        // transient：不随存档保存，每次读档后必须重新注册(见页面调用点片段)。
+        // transient：不随存档保存，每次读档后必须重新注册 (见页面调用点片段)。
         return true;
     }
 
@@ -497,7 +497,7 @@ public class GearInCampaignPlugin extends BaseCampaignPlugin {
                 && DEMO_FACTION_ID.equals(interactionTarget.getMarket().getFactionId())) {
             return new PluginPick<>(new GearInInteractionDialog(), PickPriority.MOD_SPECIFIC);
         }
-        return null; // 不处理：把选择权留给其他插件(原版 CORE_GENERAL 对话)
+        return null; // 不处理：把选择权留给其他插件 (原版 CORE_GENERAL 对话)
     }
 
     @Override
@@ -525,15 +525,15 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.combat.EngagementResultAPI;
 
 /**
- * 完整最小例：被生涯插件 picker 选中的交互对话框(InteractionDialogPlugin 角色)。
+ * 完整最小例：被生涯插件 picker 选中的交互对话框 (InteractionDialogPlugin 角色)。
  *
  * 由 GearInCampaignPlugin.pickInteractionDialogPlugin 在 pick 时现场创建并以
- * PickPriority.MOD_SPECIFIC 返回，证明"本插件的选择胜出"与"facts 已写入"，
- * 提供"刷新事实"与"离开"两个选项。
+ * PickPriority.MOD_SPECIFIC 返回，证明 "本插件的选择胜出" 与 "facts 已写入"，
+ * 提供 "刷新事实" 与 "离开" 两个选项。
  *
  * refreshFact() 读 Global.getSector().getMemory()—— 这次读取本身会触发全插件
- * (含 GearInCampaignPlugin)的 updateGlobalFacts，因此显示值必然反映
- * "已注册 + facts 生效"两个事实；这里只读不写，不构成递归。
+ * (含 GearInCampaignPlugin) 的 updateGlobalFacts，因此显示值必然反映
+ * "已注册 + facts 生效" 两个事实；这里只读不写，不构成递归。
  */
 public class GearInInteractionDialog implements InteractionDialogPlugin {
 

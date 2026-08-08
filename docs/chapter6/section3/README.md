@@ -49,11 +49,11 @@ Global 的引用由内核在固定的时机登记 (调用点详见 "生命周期
 ```text
 启动器.launch                   → setSettings(启动器设置.getSettingsAPI())
                                      (游戏循环启动前，任何 MOD 入口都非 null)
-内核战斗入口.main               → setSoundPlayer(new 声音播放实现())
+内核战斗入口.main               → setSoundPlayer(new 声音播放实现 ())
                                      (AppDriver 各状态注册之前)
 生涯引擎.setInstance            → setSector(instance) + setFactory(instance)
                                      (新档/读档时；主菜单首次初始化也会临时创建一次)
-战斗引擎.getInstance            → setCombatEngine(new 战斗引擎())   (用到时才创建)
+战斗引擎.getInstance            → setCombatEngine(new 战斗引擎 ())   (用到时才创建)
 战斗引擎.destroyInstance        → setCombatEngine(null)                  (销毁)
 游戏管理器.loadGame             → Global.LOADING_SAVE = true / false     (读档窗口)
 ```
@@ -93,7 +93,7 @@ Global 的引用由内核在固定的时机登记 (调用点详见 "生命周期
 
 `GameState` 枚举只有三个可枚举值 (`TITLE` / `CAMPAIGN` / `COMBAT`)，资源加载期、MOD 加载期都落在 null 区间 —— 返回 null 不是 "出错"，而是 "阶段不在可枚举状态内"。判断逻辑把 null 与三个枚举值并列处理，才能覆盖全部阶段。
 
-5. **`LOADING_SAVE` 的置位窗口**：读档流程开始时置 `true`，读档流程结束置 `false`(错误路径与 finally 都会复位)；`onEnabled` / `onGameLoad` 回调位于该窗口内，因此这两个回调里 `LOADING_SAVE == true`。常用于跳过读档期间不合适的 UI/动画逻辑。
+5. **`LOADING_SAVE` 的置位窗口**：只有读档路径在开始时置 `true`、结束时置 `false`(错误路径与 finally 都会复位)；读档路径的 `onEnabled` / `onGameLoad(false)` 回调位于该窗口内。新建生涯的 `onGameLoad(true)` 执行时该标志保持 `false`。常用于跳过读档期间不合适的 UI/动画逻辑。
 6. **setter 禁令**：五个 setter 的唯一调用点都在内核生命周期内部 (游戏启动、生涯引擎初始化、战斗引擎创建与销毁)，MOD 代码没有任何正当调用场景，**禁止**调用。可观察结果：手动改写 Global 引用后，所有依赖 `Global` 的代码 (包括原版) 读到与引擎实际状态不符的对象 —— 例如战斗外 `setCombatEngine(...)` 后 `getCombatEngine()` 指向一个不被推进的空壳，行为未定义。
 
 本节三条必须遵守的规则
@@ -189,9 +189,9 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\
-│       ├── GearInModPlugin      # 既有 modPlugin 生命周期类(C6-S2)；本节只在其回调里调用示例方法
+│       ├── GearInModPlugin      # 既有 modPlugin 生命周期类 (C6-S2)；本节只在其回调里调用示例方法
 │       ├── GearInGlobalAccess   # 本节新增：访问器观测与阶段判断
-│       └── GearInSoundPlayer    # 本节新增：声音播放入口(三契约)
+│       └── GearInSoundPlayer    # 本节新增：声音播放入口 (三契约)
 └── jars\
 ```
 
@@ -206,7 +206,7 @@ Starsector\mods\GearIndustry\
 - `Global.getLogger(GearInGlobalAccess.class)`：类内缓存一份日志器 (见 "Logger" 节)。
 - `isInCombat()`：阶段判断唯一可靠做法 ——`getCurrentState() == GameState.COMBAT`，不依赖 `getCombatEngine()` 是否为 null(生命周期规则 3)。
 - `logAccessorState()`：把生命周期表变成日志；`sector == null` / `engine == null` 只在资源加载期出现 (规则 2、3)。
-- `Global.LOADING_SAVE`：读档回调窗口内为 `true`(规则 5)。
+- `Global.LOADING_SAVE`：只有读档回调窗口内为 `true`；新建生涯回调期间为 `false`(规则 5)。
 
 ### 核对音效访问源码
 
@@ -222,7 +222,7 @@ Starsector\mods\GearIndustry\
 调用点 (工程片段 —— 方法所在类由既有章节持有，本节只演示调用，不改动那些类)：
 
 ```java
-    // GearInModPlugin(modPlugin 生命周期类)内新增两行调用
+    // GearInModPlugin(modPlugin 生命周期类) 内新增两行调用
     @Override
     public void onApplicationLoad() throws Exception {
         GearInGlobalAccess.logAccessorState(); // 预期：state=null, sector=false, engine=false
@@ -231,14 +231,14 @@ Starsector\mods\GearIndustry\
 
     @Override
     public void onGameLoad(boolean newGame) {
-        GearInGlobalAccess.logAccessorState(); // 预期：state=CAMPAIGN, sector=true, engine=true, loadingSave=true
+        GearInGlobalAccess.logAccessorState(); // 读档时预期：state=CAMPAIGN, sector=true, engine=true, loadingSave=true
         // ... 原有 CLASS_MARK 门
     }
 ```
 
 ```java
-    // GearInFrameLogger(战斗每帧日志类)的 advance() 内加一段(沿用每帧回调模型)
-    // 战斗内 getPlayerShip() 永不返回 null(延迟重建"Command Shuttle"假舰)，无需判空
+    // GearInFrameLogger(战斗每帧日志类) 的 advance() 内加一段 (沿用每帧回调模型)
+    // 战斗内 getPlayerShip() 永不返回 null(延迟重建 "Command Shuttle" 假舰)，无需判空
     if (GearInGlobalAccess.isInCombat()) {
         GearInSoundPlayer.playLoopSound(engine, engine.getPlayerShip());
     }
@@ -292,7 +292,7 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
     GearIn state=CAMPAIGN settings=true soundPlayer=true sector=true engine=true loadingSave=true
     ```
 
-    (读档与新建都经过 `onGameLoad`；`loadingSave=true` 证明回调位于读档窗口内) 且没有步骤 1 的两条 `WARN`；读档重复确认。
+    (读档与新建都经过 `onGameLoad`；读档时 `loadingSave=true`，新档时为 `false`) 且没有步骤 1 的两条 `WARN`；读档重复确认。
 
 4. **战斗**：进入 `GearIn_test` 测试战役的一场战斗，日志出现 `GearIn state=COMBAT ...`；若已接入 `playLoopSound` 调用点，战斗内持续听到 `GearIn_system_loop` 循环音，战斗结束 (回到生涯) 后循环淡出停止，日志回到 `state=CAMPAIGN`。
 
@@ -325,7 +325,7 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
 - **创建后不再回到 null**：sector/factory 只被替换；combatEngine 每场战斗结束销毁后立即重建。因此阶段判断**必须**用 `getCurrentState()`，引用**禁止**跨存档/跨战斗缓存。
 - **`getPlayerShip()` 永不返回 null**：`playerShip` 未设置时延迟创建 "Command Shuttle" 假舰；判断 "用户是否已部署" 用 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()`，**禁止**用 `getPlayerShip() == null`(判据细则见战斗域部署判断主题)。
 - **setter 禁止调用**：内核生命周期专用，调用即脱钩。
-- **声音入口三约定**：`playUISound` 素材应双声道；`playSound` 素材必须 mono 且 `loc`/`vel` 非 null； `playLoop` 必须每帧续期且 `playingEntity` 必填；未注册 ID 在调用点抛 `Sound set with id [...] not found`。
+- **声音入口三约定**：`playUISound` 素材应双声道；`playSound` 素材必须 mono 且 `loc`/`vel` 非 null；`playLoop` 必须每帧续期且 `playingEntity` 必填；未注册 ID 在调用点抛 `Sound set with id [...] not found`。
 
 这些纪律的内核可以压缩为一句话：先问阶段 (`getCurrentState()`)，再取入口。沿同一条链路继续深挖，`getSettings()` 的注册与字段体系、以及声音消费在 UI / 位置 / 循环之外的管理方法，都是本节入口清单的自然延伸。
 
@@ -356,7 +356,7 @@ import com.fs.starfarer.api.combat.CombatEngineAPI;
  * 角色：Global 静态访问器观测与阶段判断工具。
  *
  * 全部方法是静态工具，可从任何已注册的脚本/插件调用：
- * - 资源加载期(C6-S2 的 onApplicationLoad)：getSector()/getCombatEngine() 为 null，
+ * - 资源加载期 (C6-S2 的 onApplicationLoad)：getSector()/getCombatEngine() 为 null，
  *   只能读 getSettings()/getSoundPlayer()/getLogger()；
  * - 生涯回调与生涯脚本：getSector() 可用；
  * - 战斗插件：getCombatEngine() 是当前战斗引擎，必须每帧现取，不得跨战斗缓存。
@@ -365,7 +365,7 @@ import com.fs.starfarer.api.combat.CombatEngineAPI;
  */
 public class GearInGlobalAccess {
 
-    /** 日志器：进程级，任何阶段可用(org.apache.log4j.Logger，输出到 starsector.log)。 */
+    /** 日志器：进程级，任何阶段可用 (org.apache.log4j.Logger，输出到 starsector.log)。 */
     private static final Logger LOG = Global.getLogger(GearInGlobalAccess.class);
 
     private GearInGlobalAccess() {
@@ -377,7 +377,7 @@ public class GearInGlobalAccess {
         return Global.getCurrentState() == GameState.COMBAT;
     }
 
-    /** 访问器巡览：记录当前阶段与各入口的可用性(注意资源加载期 sector/engine 为 null)。 */
+    /** 访问器巡览：记录当前阶段与各入口的可用性 (注意资源加载期 sector/engine 为 null)。 */
     public static void logAccessorState() {
         GameState state = Global.getCurrentState();
         SectorAPI sector = Global.getSector();
@@ -412,13 +412,13 @@ import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.CombatEntityAPI;
 
 /**
- * 角色：SoundPlayerAPI 声音播放入口(UI / 位置 / 循环三契约)。
+ * 角色：SoundPlayerAPI 声音播放入口 (UI / 位置 / 循环三契约)。
  *
  * 全部方法是静态工具，可从任何已注册的脚本/插件调用；getSoundPlayer() 在
  * 任何阶段都非 null(Global 生命周期规则 1)，因此无需判空。
  *
  * 声音 ID GearIn_system_loop / GearIn_weapon_fire 由 C5-S1 声明、C5-S2 注册，
- * 本单元只消费(完整消费者族谱见 C5-S3)。
+ * 本单元只消费 (完整消费者族谱见 C5-S3)。
  */
 public class GearInSoundPlayer {
 
@@ -429,7 +429,7 @@ public class GearInSoundPlayer {
         // 工具类：不实例化
     }
 
-    /** UI 音效：素材应为双声道(API 注释 "UI sound files should be stereo")。 */
+    /** UI 音效：素材应为双声道 (API 注释 "UI sound files should be stereo")。 */
     public static void playUISound(float pitch, float volume) {
         Global.getSoundPlayer().playUISound(SOUND_ID_WEAPON_FIRE, pitch, volume);
     }

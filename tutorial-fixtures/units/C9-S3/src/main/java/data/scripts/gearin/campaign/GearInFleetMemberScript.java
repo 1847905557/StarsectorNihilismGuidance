@@ -13,12 +13,12 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 完整最小例：生涯舰队成员(FleetMemberAPI)与舰队数据(FleetDataAPI)。
+ * 完整最小例：生涯舰队成员 (FleetMemberAPI) 与舰队数据 (FleetDataAPI)。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控
  * (沿用既有 CLASS_MARK 门控模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
  *
- * 行为：挂载后第一次 advance() 执行一次演示序列并自停(isDone()=true，引擎下一帧自动移除本脚本)：
+ * 行为：挂载后第一次 advance() 执行一次演示序列并自停 (isDone()=true，引擎下一帧自动移除本脚本)：
  *   1. 读取玩家舰队初始成员数与 fleet points、cargo 容量；
  *   2. 用 Global.getFactory().createFleetMember 创建 wolf_Assault 与 hammerhead_Elite 两个 SHIP 成员；
  *   3. 分别 addFleetMember 加入玩家舰队，记录加入前后成员数、fleet points、cargo 容量变化；
@@ -33,7 +33,7 @@ import com.fs.starfarer.api.fleet.FleetMemberType;
  */
 public class GearInFleetMemberScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本脚本是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_FleetMemberScript";
 
     private static final Logger LOG = Global.getLogger(GearInFleetMemberScript.class);
@@ -42,7 +42,7 @@ public class GearInFleetMemberScript implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInFleetMemberScript() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -75,7 +75,7 @@ public class GearInFleetMemberScript implements EveryFrameScript {
                 "GearIn fleet member start: members=%d fleetPoints=%.0f cargoCapacity=%.0f",
                 initialCount, initialFleetPoints, initialCargo));
 
-        // --- 创建成员(先不入队)---
+        // --- 创建成员 (先不入队)---
         FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
         FleetMemberAPI hammerhead = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "hammerhead_Elite");
         LOG.info(String.format(

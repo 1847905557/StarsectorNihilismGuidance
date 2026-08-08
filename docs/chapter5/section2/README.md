@@ -26,11 +26,11 @@
 本节处于声音链的注册层：
 
 ```text
-sounds/.../*.ogg          资源层(C5-S1)：三个 OGG、路径与规格
+sounds/.../*.ogg          资源层 (C5-S1)：三个 OGG、路径与规格
         ↓ 相对于 MOD 根目录的路径
-data/config/sounds.json   注册层(本节)：sound ID → OGG 路径与播放参数
+data/config/sounds.json   注册层 (本节)：sound ID → OGG 路径与播放参数
         ↓ sound ID
-SoundPlayerAPI / .wpn     消费层(C5-S3)：代码按 ID 播放、数据按 ID 引用
+SoundPlayerAPI / .wpn     消费层 (C5-S3)：代码按 ID 播放、数据按 ID 引用
 ```
 
 代码使用方通过 `Global.getSoundPlayer()` 拿到的 `SoundPlayerAPI` 按 ID 播放；数据使用方用 `.wpn` 的 `fireSoundOne` / `fireSoundTwo` 字段按 ID 引用。

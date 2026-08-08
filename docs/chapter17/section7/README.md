@@ -30,7 +30,7 @@
 |---|---|---|---|
 | `GearIn_trails_enabled` | Boolean | true | — |
 | `GearIn_max_entries` | Int | 12 | 1–64 |
-| `GearIn_pulse_delay` | Float | 1.5 | 0.1–10 |
+| `GearIn_pulse_delay` | Double | 1.5 | 0.1–10 |
 | `GearIn_marker_color` | Color | `#f22e6e` | — |
 | `GearIn_label_text` | String | GearIn | — |
 
@@ -44,14 +44,14 @@
 
 ```csv
 fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab
-GearIn_trails_enabled,Show GearIn trails,Boolean,true,,, , ,GearIn
+GearIn_trails_enabled,Show GearIn trails,Boolean,true,,,,,GearIn
 GearIn_max_entries,Maximum entries,Int,12,,,1,64,GearIn
-GearIn_pulse_delay,Pulse delay,Float,1.5,,,0.1,10,GearIn
-GearIn_marker_color,Marker color,Color,#f22e6e,,,,GearIn
-GearIn_label_text,Label text,String,GearIn,,,,GearIn
+GearIn_pulse_delay,Pulse delay,Double,1.5,,,0.1,10,GearIn
+GearIn_marker_color,Marker color,Color,#f22e6e,,,,,GearIn
+GearIn_label_text,Label text,String,GearIn,,,,,GearIn
 ```
 
-空白列仍要保留，列数少一列会导致整行无法解析。`fieldID` 要与 Java 中的 key 逐字一致。
+空白列仍要保留。缺少必需列时可能抛异常；只缺尾部可选 JSON 键时使用默认值；漏掉中间占位会使后续值错列。`fieldID` 要与 Java 中的 key 逐字一致。
 
 完成信号：LunaLib 面板显示五个 GearIn 字段，整数范围为 1–64，脉冲间隔范围为 0.1–10。
 
@@ -102,7 +102,8 @@ public void settingsChanged(String modId) {
 下面是**局部故障片段**：
 
 ```java
-double scale = LunaSettings.getFloat("gear_in", "GearIn_pulse_delay");
+Float value = LunaSettings.getFloat("gear_in", "GearIn_pulse_delay");
+float scale = value;
 ```
 
 实际症状：CSV 键缺失时保存设置触发 NullPointerException。
@@ -127,7 +128,8 @@ float scale = value == null ? 1.5f : value;
 1. 构建示例 MOD，确认 LunaLib 存在时三个设置类能够编译。
 2. 打开 LunaLib 面板，修改轨迹开关、条目上限、脉冲间隔、颜色和标签。
 3. 保存设置，观察下一次效果读取和日志中的当前值。
-4. 禁用 LunaLib 后启动一次，确认所有 getter 返回默认值且没有类加载异常。
+4. 将脉冲间隔设置为范围外的值并保存，确认面板按 CSV 的最小值和最大值处理输入。
+5. 禁用 LunaLib 后启动一次，确认所有 getter 返回默认值且没有类加载异常。
 
 预期结果：
 
@@ -135,6 +137,7 @@ float scale = value == null ? 1.5f : value;
 - 缺库或缺键时返回 Defs 默认值；
 - 保存 GearIn 设置时只触发一次监听器回调；
 - 下一次效果读取看到新值。
+- 保存范围外的脉冲间隔后，读取到的值仍在 `0.1–10` 范围内。
 
 ## 故障分析
 
@@ -199,7 +202,7 @@ import lunalib.lunaSettings.LunaSettingsListener;
 /**
  * 变更通知角色：注册/注销 LunaSettings 监听器，在设置界面保存后按本 MOD 过滤并
  * 重读输出当前生效值。addSettingsListener 不去重，注册前必须用
- * hasSettingsListenerOfClass 幂等查询(重复注册会让同一次保存触发多次回调)。
+ * hasSettingsListenerOfClass 幂等查询 (重复注册会让同一次保存触发多次回调)。
  *
  * 监听器实例在门控通过之后才创建 —— 类加载路径不触碰 lunalib.**，LunaLib 未启用
  * 时调用本类不会抛 NoClassDefFoundError；缺库处理方式见 C17-S1。
@@ -214,7 +217,7 @@ public class GearInLunaSettingsListener {
     }
 
     /**
-     * 注册(幂等)：LunaLib 未启用时跳过并写 warn。注册入口见页面正文的接入片段
+     * 注册 (幂等)：LunaLib 未启用时跳过并写 warn。注册入口见页面正文的接入片段
      * (GearInModPlugin.onGameLoad 一行)；监听器实例在门控之后才创建。
      */
     public static void registerListener() {
@@ -240,7 +243,7 @@ public class GearInLunaSettingsListener {
         LOG.info("GearIn luna settings: listener registered");
     }
 
-    /** 取消注册(测试清理或卸载场景)。 */
+    /** 取消注册 (测试清理或卸载场景)。 */
     public static void unregisterListener() {
         if (!GearInLunaSettingsReader.isLunaLibEnabled()) {
             return;
@@ -251,7 +254,7 @@ public class GearInLunaSettingsListener {
         }
     }
 
-    /** 输出当前生效值：用于对照设置界面与用户设置文件(进档时可调用一次)。 */
+    /** 输出当前生效值：用于对照设置界面与用户设置文件 (进档时可调用一次)。 */
     public static void logCurrentValues() {
         LOG.info("GearIn luna settings: trails=" + GearInLunaSettingsReader.isTrailsEnabled()
                 + " maxEntries=" + GearInLunaSettingsReader.getMaxEntries()
@@ -280,9 +283,9 @@ import com.fs.starfarer.api.Global;
 import lunalib.lunaSettings.LunaSettings;
 
 /**
- * 运行时读取角色：门控读取 LunaLib 设置(LunaSettings 静态读取 API)。
+ * 运行时读取角色：门控读取 LunaLib 设置 (LunaSettings 静态读取 API)。
  * 每个 getter 都是三段式：先按 C17-S1 检查 isModEnabled("lunalib")，
- * 再调用 LunaSettings.getX，返回 null 时回退代码内默认值(Defs)。
+ * 再调用 LunaSettings.getX，返回 null 时回退代码内默认值 (Defs)。
  * 类自身不引用 lunalib.** 于类加载路径，未启用时可直接安全调用。
  */
 public class GearInLunaSettingsReader {
@@ -314,7 +317,7 @@ public class GearInLunaSettingsReader {
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
     }
 
-    /** 脉冲间隔(秒)：CSV 里是 Double 类型，读取时用 getFloat(从保存的 double 转换)。 */
+    /** 脉冲间隔 (秒)：CSV 里是 Double 类型，读取时用 getFloat(从保存的 double 转换)。 */
     public static float getPulseDelay() {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
@@ -323,7 +326,7 @@ public class GearInLunaSettingsReader {
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
     }
 
-    /** 标记颜色：Color 设置，保存/读取十六进制字符串(# 前缀可省略)。 */
+    /** 标记颜色：Color 设置，保存/读取十六进制字符串 (# 前缀可省略)。 */
     public static Color getMarkerColor() {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_MARKER_COLOR;

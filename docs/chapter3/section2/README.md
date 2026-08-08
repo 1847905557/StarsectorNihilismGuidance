@@ -64,10 +64,10 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 
 ### 验证货舱对象
 
-使用 Console Commands 的 `addcommodity` 给玩家舰队添加 10 单位，然后在货舱和交易面板观察同一个 ID。
+使用 Console Commands 的 `additem` 给玩家舰队添加 10 单位，然后在货舱和交易面板观察同一个 ID。
 
 ```text
-addcommodity GearIn_tempered_alloy 10
+additem GearIn_tempered_alloy 10
 ```
 
 完成信号：货舱出现 "Tempered Alloy ×10"，图标来自 `graphics/icons/cargo/materials.png`。
@@ -80,7 +80,7 @@ addcommodity GearIn_tempered_alloy 10
 Tempered Alloy,GearIn_tempered_alloy,unknown_class,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,60000,1,,
 ```
 
-实际症状：启动阶段加载商品失败，GearIn 不能进入主菜单。
+实际症状：进入使用该商品需求类别的市场时，运行时堆栈在解析 `demand class` 处失败。
 
 原因：`demand class` 被用来查找商品经济类别，`unknown_class` 没有对应注册商品。
 
@@ -90,13 +90,13 @@ Tempered Alloy,GearIn_tempered_alloy,unknown_class,180,700,3,1,,"industrial, exp
 Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,60000,1,,
 ```
 
-复验：重启后确认加载日志出现商品 ID，再执行 `addcommodity GearIn_tempered_alloy 10`。
+复验：改回已注册的需求类别后，重新进入 GearIn 市场，确认运行时不再报错。
 
 ## 验证方案
 
 1. 启动游戏，观察 `starsector.log` 中 `commodities.csv` 的加载记录。
 2. 进入 GearIn 市场，确认 `GearIn_tempered_alloy` 被势力规则识别为违禁品。
-3. 执行 `addcommodity GearIn_tempered_alloy 10`，打开货舱和交易界面。
+3. 执行 `additem GearIn_tempered_alloy 10`，打开货舱和交易界面。
 
 预期结果：
 
@@ -106,7 +106,7 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 
 ## 故障分析
 
-- **货舱里没有商品**：先核对 `commodities.csv` 路径、商品 ID 和控制台拼写。商品注册只建立 spec，市场库存仍需要控制台、产业或经济生成链提供数量。修正后再次执行 `addcommodity GearIn_tempered_alloy 10`，货舱应增加 10 单位商品。
+- **货舱里没有商品**：先核对 `commodities.csv` 路径、商品 ID 和控制台拼写。商品注册只建立 spec，市场库存仍需要控制台、产业或经济生成链提供数量。修正后再次执行 `additem GearIn_tempered_alloy 10`，货舱应增加 10 单位商品。
 - **商品名称异常**：检查 `commodities.csv` 的 `name` 列及 CSV 列位。修正后重启游戏并重新添加商品，货舱应显示 `Tempered Alloy`。
 - **商品描述缺失**：检查 [C3-S8] 的 `RESOURCE` 行是否使用相同商品 ID。`commodities.csv` 的 `desc` 列不承担货舱描述。修正后重新打开货舱详情，描述文本应正常显示。
 - **势力文件加载失败**：检查 `illegalCommodities` 中的 ID 是否逐字等于商品注册 ID，并确认商品行已经成功注册。修正后重启游戏，日志不应再出现 `Invalid illegal commodity id`，交易界面应标记该商品为违禁品。
@@ -120,7 +120,7 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 - `data/campaign/commodities.csv`：商品注册表；
 - `data/world/factions/gear_industry.faction`：势力违禁商品入口；
 - `data/strings/descriptions.csv` 的 `RESOURCE`：商品货舱描述；
-- Console Commands 的 `addcommodity`：快速创建货舱验证状态。
+- Console Commands 的 `additem`：快速创建货舱验证状态。
 
 ::: details 完整成品：商品注册与势力规则
 

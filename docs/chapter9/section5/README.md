@@ -16,7 +16,7 @@
 - 区分 `FactionAPI` 的分组 (身份、显示与颜色、关系、资源集合、经济字段、随机人物、doctrine/production/spec) 与关系语义：
     - 全局对表、`-1..1` 钳位、`adjustRelationship` 直接加、`setRelationship` 直写；
     - `isHostileTo` = 关系等级 ≤ `HOSTILE`、`getRelToPlayer()` 包装；
-- 解释 `CargoAPI` 的栈模型 (stack 集合 + credits + 容量统计)、四类写入入口 (资源 / 武器 / 战机芯片 / 特殊物品) 与 `removeItems` 的 NULL 占位栈语义， 并遵守 `getMothballedShips()` 必须先 `initMothballedShips(factionId)` 的必须规则；
+- 解释 `CargoAPI` 的栈模型 (stack 集合 + credits + 容量统计)、四类写入入口 (资源 / 武器 / 战机芯片 / 特殊物品) 与 `removeItems` 的 NULL 占位栈语义，并遵守 `getMothballedShips()` 必须先 `initMothballedShips(factionId)` 的必须规则；
 - 从症状定位故障 (见 "故障分析" 节)，并沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核 (沿用本节完整最小例的任务链)。
 
 ## 前置知识
@@ -86,7 +86,7 @@
 `CargoAPI`(`com.fs.starfarer.api.campaign.CargoAPI`) 是纯接口，结构分三块：
 
 - **栈集合**：`stacks` 字段，`getStacksCopy()` 返回副本；
-- **信用**：`credits` 字段，`getCredits()` 返回 `MutableValue`——`com.fs.starfarer.api.util.MutableValue`： `get()` / `set()` / `add()` / `subtract()`；
+- **信用**：`credits` 字段，`getCredits()` 返回 `MutableValue`——`com.fs.starfarer.api.util.MutableValue`：`get()` / `set()` / `add()` / `subtract()`；
 - **容量统计**：`maxCapacity` / `maxFuel` / `maxPersonnel` / `spaceUsed`。
 
 ### CargoAPI 读写分族速查表
@@ -256,7 +256,7 @@ if (!Global.getSector().getPersistentData().containsKey(
 
 ## 组装势力货舱实现
 
-两条链的约束已经列全，现在把它们放进同一个可运行的最小例，每个语义都有可观察的落点。您在既有 MOD 工程 (布局与插件入口 `GearInModPlugin`) 之上新增三个类：一个抽象基类与两个服务演示脚本。 一文件一角色，不新增任何资源文件；两个脚本在 `onGameLoad` 各自注册，首个 `advance()` 各执行一次演示并自停：
+两条链的约束已经列全，现在把它们放进同一个可运行的最小例，每个语义都有可观察的落点。您在既有 MOD 工程 (布局与插件入口 `GearInModPlugin`) 之上新增三个类：一个抽象基类与两个服务演示脚本。一文件一角色，不新增任何资源文件；两个脚本在 `onGameLoad` 各自注册，首个 `advance()` 各执行一次演示并自停：
 
 ```text
 Starsector\mods\GearIndustry\
@@ -266,9 +266,9 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\campaign\
-│       ├── GearInOneShotScript          # 本节新增(抽象基类，不参与注册)
-│       ├── GearInFactionServicesScript  # 本节新增(势力段脚本)
-│       └── GearInCargoServicesScript    # 本节新增(货物段脚本)
+│       ├── GearInOneShotScript          # 本节新增 (抽象基类，不参与注册)
+│       ├── GearInFactionServicesScript  # 本节新增 (势力段脚本)
+│       └── GearInCargoServicesScript    # 本节新增 (货物段脚本)
 └── jars\
 ```
 
@@ -396,11 +396,11 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 
 ## 总结
 
-本节把两个服务入口讲成两条链，并在完整最小例里组合使用： 势力链从 `SectorAPI.getFaction(id)` / `getPlayerFaction()` 进入 `FactionAPI`，关系读写经过全局对表 (双向共享、`-1..1` 钳位、对条目用到时才建)； 货物链从 `SectorEntityToken.getCargo()` 进入 `CargoAPI`，读写按分族进行，栈是存储细节而不是数量真相。
+本节把两个服务入口讲成两条链，并在完整最小例里组合使用：势力链从 `SectorAPI.getFaction(id)` / `getPlayerFaction()` 进入 `FactionAPI`，关系读写经过全局对表 (双向共享、`-1..1` 钳位、对条目用到时才建)；货物链从 `SectorEntityToken.getCargo()` 进入 `CargoAPI`，读写按分族进行，栈是存储细节而不是数量真相。
 
-排错时先记住两条判断：关系写入是**原始写入** (无监听、钳位 `[-1,1]`)，玩家声望 action 走 `adjustPlayerReputation`； `getMothballedShips()` 必须先 `initMothballedShips`，`getStacksCopy()` 含 NULL 占位栈。本节演示的 "写入后立即精确回滚" 写法，让验证可以在不遗留任何持久状态的前提下完成。
+排错时先记住两条判断：关系写入是**原始写入** (无监听、钳位 `[-1,1]`)，玩家声望 action 走 `adjustPlayerReputation`；`getMothballedShips()` 必须先 `initMothballedShips`，`getStacksCopy()` 含 NULL 占位栈。本节演示的 "写入后立即精确回滚" 写法，让验证可以在不遗留任何持久状态的前提下完成。
 
-脚本注册标记与 `Global` 阶段语义是本节底座；`REGISTER_MARK` 注册模式沿用既有脚本节 "每个注册项用各自的键" 的惯例。 本节只覆盖两个入口的常用高频面；制作情报与交互对话框的方法见 [C9-S6]。
+脚本注册标记与 `Global` 阶段语义是本节底座；`REGISTER_MARK` 注册模式沿用既有脚本节 "每个注册项用各自的键" 的惯例。本节只覆盖两个入口的常用高频面；制作情报与交互对话框的方法见 [C9-S6]。
 
 ## 建议参考项
 
@@ -432,9 +432,9 @@ import com.fs.starfarer.api.EveryFrameScript;
  * 一次性演示脚本基类：挂载后第一次 advance() 执行一次子类实现的 runDemo() 并自停
  * (isDone() 返回 true，引擎在下一帧自动从脚本列表移除本脚本)。
  *
- * 两个服务演示脚本(势力 / 货物)都继承本类，各自只实现 runDemo()，
+ * 两个服务演示脚本 (势力 / 货物) 都继承本类，各自只实现 runDemo()，
  * 避免每个演示类重复 EveryFrameScript 的骨架方法。本类是抽象基类，不参与任何注册；
- * 各子类的注册在 onGameLoad 的 persistent data 门内各自执行(见页面调用点片段)。
+ * 各子类的注册在 onGameLoad 的 persistent data 门内各自执行 (见页面调用点片段)。
  */
 public abstract class GearInOneShotScript implements EveryFrameScript {
 
@@ -442,7 +442,7 @@ public abstract class GearInOneShotScript implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInOneShotScript() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -485,17 +485,17 @@ import com.fs.starfarer.api.impl.campaign.ids.Commodities;
 import com.fs.starfarer.api.impl.campaign.ids.Factions;
 
 /**
- * 完整最小例(势力段)：FactionAPI 常用入口演示脚本。
+ * 完整最小例 (势力段)：FactionAPI 常用入口演示脚本。
  *
  * 注册入口：onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控。
  *
- * 行为：读取玩家势力身份/颜色与对霸主/海盗/独立势力的关系(数值、等级、敌对判定、getRelToPlayer
- * 包装)；对霸主 adjustRelationship(+0.05) 后立即 setRelationship 精确回滚("写入后必须回滚"
+ * 行为：读取玩家势力身份/颜色与对霸主/海盗/独立势力的关系 (数值、等级、敌对判定、getRelToPlayer
+ * 包装)；对霸主 adjustRelationship(+0.05) 后立即 setRelationship 精确回滚 ("写入后必须回滚"
  * 基线写法)；读取 tariff/toll/fine、非法商品、已知资源集合规模、isShowInIntelTab。不遗留持久状态。
  */
 public class GearInFactionServicesScript extends GearInOneShotScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本脚本是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_FactionServices";
 
     private static final Logger LOG = Global.getLogger(GearInFactionServicesScript.class);
@@ -531,7 +531,7 @@ public class GearInFactionServicesScript extends GearInOneShotScript {
                 playerFaction.getRelationshipLevel(Factions.INDEPENDENT).getDisplayName(),
                 playerFaction.isHostileTo(Factions.INDEPENDENT)));
 
-        // 关系写入并精确回滚：adjustRelationship 直接加、setRelationship 直写原值(势力管理器钳位 [-1,1])
+        // 关系写入并精确回滚：adjustRelationship 直接加、setRelationship 直写原值 (势力管理器钳位 [-1,1])
         float relBefore = hegemony.getRelationship(Factions.PLAYER);
         hegemony.adjustRelationship(Factions.PLAYER, 0.05f);
         float relDuring = hegemony.getRelationship(Factions.PLAYER);
@@ -572,17 +572,17 @@ import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Commodities;
 
 /**
- * 完整最小例(货物段)：CargoAPI 常用入口演示脚本。
+ * 完整最小例 (货物段)：CargoAPI 常用入口演示脚本。
  *
  * 注册入口：onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控。
  *
  * 行为：读取玩家舰队补给/燃料/陆战队员/信用/空间/栈数基线；addSupplies(100)/addFuel(50)/addMarines(10)
- * 后读取中间值，再 remove 同量回滚并读取终值(验证数值精确复原)；读取重型机械商品量与栈列表
- * 前几条(CargoStackAPI 的 type/data/size/isNull)。不遗留持久状态。
+ * 后读取中间值，再 remove 同量回滚并读取终值 (验证数值精确复原)；读取重型机械商品量与栈列表
+ * 前几条 (CargoStackAPI 的 type/data/size/isNull)。不遗留持久状态。
  */
 public class GearInCargoServicesScript extends GearInOneShotScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本脚本是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_CargoServices";
 
     private static final Logger LOG = Global.getLogger(GearInCargoServicesScript.class);
@@ -629,7 +629,7 @@ public class GearInCargoServicesScript extends GearInOneShotScript {
         LOG.info(String.format("GearIn campaign services cargo stacks: before=%d during=%d after=%d nullAfter=%d",
                 stacksBefore, stacksDuring, stacksAfter, nullStacksAfter));
 
-        // 栈列表前三条(CargoStackAPI：type / data / size / isNull)
+        // 栈列表前三条 (CargoStackAPI：type / data / size / isNull)
         List<CargoStackAPI> stacks = cargo.getStacksCopy();
         int stacksShown = Math.min(3, stacks.size());
         for (int i = 0; i < stacksShown; i++) {

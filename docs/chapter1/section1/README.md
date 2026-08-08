@@ -179,7 +179,7 @@ MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用�
 
 - **启动器中没有 GearIn MOD**：`mod_info.json` 不在 MOD 的直接根目录，或文件实际名为 `mod_info.json.txt` 时，启动器不会把该目录加入 Mods 列表。确认路径恰好是 `Starsector/mods/GearIndustry/mod_info.json`，并让编辑器显示文件扩展名；重新打开启动器后，列表应出现 "齿轮工业"。
 - **日志报告 manifest 解析失败**：JSON 缺少引号、逗号或花括号，文件带 BOM、编码并非 UTF-8，或缺少 `id`、`name`、`description` 时，`starsector.log` 会记录 `Error loading mod from [MOD 目录]` 和解析堆栈。恢复本节的标准 JSON，再逐字段修改并以 UTF-8 无 BOM 保存；重启后日志不应再出现该错误，MOD 应进入列表。
-- **启动器将 MOD 标红并禁止勾选**：`gameVersion` 缺失或主版本与当前游戏不符时，启动器会提示 "Error: this mod requires a different version of the game."；已经启用的 MOD 会在下次启动时被取消勾选。将版本写为本教程使用的 `0.98a-RC8`；仅 RC 编号或小版本不同 (如 `0.98a-RC6`) 时，启动器最多显示黄色警告。
+- **启动器将 MOD 标红并禁止勾选**：`gameVersion` 缺失时，启动器会提示 "Error: this mod does not specify which version of the game it requires and can not be enabled."；主版本不匹配时会显示 "Error: this mod requires a different version of the game."。已经启用的 MOD 会在下次启动时被取消勾选。将版本写为本教程使用的 `0.98a-RC8`；仅 RC 编号或小版本不同 (如 `0.98a-RC6`) 时，启动器最多显示黄色警告。
 - **添加数据后出现重复条目或错误对象**：使用 `test_ship`、`my_weapon` 等常见 ID，或复制数据后保留原 ID，会让多个来源争用同一注册表键。将 ID 改为 `GearIn_<语义名>` 形式，例如 `GearIn_artizan`，并同步全部引用；重启后不应再出现 duplicate、unknown ID 或对象替换现象。
 
 ## 总结

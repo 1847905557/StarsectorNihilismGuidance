@@ -100,7 +100,7 @@ Intel 条目只是展示层，任务的状态与推进逻辑在 `HubMission` 接
 
 ### HubMission 接口方法速查表
 
-`HubMission`(16 个方法)：
+`HubMission` 的任务约定如下：
 
 | 方法 | 语义 |
 |---|---|
@@ -312,7 +312,7 @@ protected List<Abortable> changes = ...;
 
 **地图标记与 Intel 展示**：`makeImportant(person/entity/market, flag, Enum... stages)` 按阶段登记地图重要标记 (`ImportanceData`)。
 
-`getMapLocation(map)` 默认返回当前阶段第一个重要实体的位置 (不可发现实体回退星系中心)—— 任务 Intel 的地图定位**不需要覆写**，只要登记了 `makeImportant`。
+`getMapLocation(map)` 默认返回当前阶段第一个重要实体的位置；可发现实体回退星系中心，不可发现实体保留实体自身位置 —— 任务 Intel 的地图定位**不需要覆写**，只要登记了 `makeImportant`。
 
 `addDescriptionForNonEndStage` 与 `addNextStepText` 按当前阶段写 Intel 描述与下一步；`addDescriptionForCurrentStage` 对终态自动输出成功/失败/放弃文案。
 
@@ -367,7 +367,7 @@ endTrigger();                                                 // 必须成对
 
 2. `BarEventSpec`(`com.fs.starfarer.api.loading.BarEventSpec`)：`plugin` 必填；`isMission()` 判定 plugin 是 `HubMissionWithBarEvent` 子类。
 
-3. `BarEventManager.readResolve()` → `updateBarEventCreatorsFromSpecs()`(调度器为每个无 creator 的 spec 自动建 `SpecBarEventCreator`)。
+3. `BarEventManager.readResolve()` → `updateBarEventCreatorsFromSpecs()`(调度器为每个尚无 auto-added creator 的 spec 建立 `SpecBarEventCreator`；手工 creator 可以与自动项并存)。
 
 4. `SpecBarEventCreator.createBarEvent()`：`spec.isMission()` → `new HubMissionBarEventWrapper(specId)`。
 
@@ -377,7 +377,7 @@ endTrigger();                                                 // 必须成对
 
     - `setGenRandom(genRandom)` → `mission.shouldShowAtMarket(market)`。6. `addPromptAndOption`：`mission.createAndAbortIfFailed(market, true)`；创建失败 (`isMissionCreationAborted()`) 则本次不展示。
     - 否则把 LOCAL 内存切到任务人、`updateInteractionData`、`FireBest` 触发 `<prefix>_blurbBar` 与 `<prefix>_optionBar` 规则。
-6. 用户点选后 rules 走 `contact_acceptBar` → **`BarCMD accept $missionId`**(`BarCMD` 的 `accept` 分支)：按 `getBarEventId()` 找到 wrapper → `BarEventManager.notifyWasInteractedWith(w)`(酒吧事件的交互收尾)：
+6. 用户点选后 rules 走 `contact_acceptBar` → **`BarCMD accept $missionId`**(`BarCMD` 的 `accept` 分支)：返回首个满足 `optionId.startsWith(mission.getTriggerPrefix())` 的 wrapper → `BarEventManager.notifyWasInteractedWith(w)`(酒吧事件的交互收尾)。当前示例的事件 ID 与 trigger prefix 相同，因此结果不变：
 
     - `w.getMission().accept(dialog, memoryMap)`—— 进入 "生命周期四段" 的接受段。
 
@@ -422,7 +422,7 @@ rules 侧的 `$gearInHub_ref` / `$gearInHub_stage` / `gearInHub_blurbBar` / `gea
 | mission ref 键**必须** MOD 专属且唯一 | `set*MissionRef` 对已占用键返回 false | 与其他 MOD 撞键：任务创建被拒 (`create` 返回 false → 任务不出现)；同 MOD 两个任务共用一键则后建者失败 |
 | bar 路线任务类**必须**继承 `HubMissionWithBarEvent` | `BarEventSpec.isMission()` 按此分派 | plugin 类型错位：wrapper 不创建、任务被当普通 `PortsideBarEvent` 反射实例化 —— 构造/类型错误，酒吧选项不出现或报错 (酒吧事件陷阱 "plugin 类型错位" 同源) |
 | 完成/失败/放弃路径**必须**落在 `successStages` / `failStages` / `abandonStage` 集合内 | `setCurrentStage` 只对这些集合结算 | 阶段切到集合外对象：任务不结束、只发 NEXT\_STEP\_UPDATE，永久 "进行中" |
-| 时限失效**必须**有对应失败阶段 (`setTimeLimit(failStage, ...)` 的第一参) | 时限分支的切换目标语义 | `advanceImpl` 时限分支切到一个非失败阶段：任务 "卡死" 且每次帧推进都重复切 |
+| 时限失效**必须**有对应失败阶段 (`setTimeLimit(failStage, ...)` 的第一参) | 时限分支的切换目标语义 | `advanceImpl` 时限分支只执行一次；切到非失败/集合外阶段后任务永久 "进行中"、无奖励无结算 |
 
 **建议 (违反的可观察结果附上)**：
 
@@ -549,11 +549,11 @@ Starsector\mods\GearIndustry\
 ├── mod_info.json
 ├── data\
 │   └── campaign\
-│       ├── bar_events.csv    # 追加一行(见"注册入口与消费者闭环"节)
-│       └── rules.csv         # 追加规则片段(见下方)
+│       ├── bar_events.csv    # 追加一行 (见 "注册入口与消费者闭环" 节)
+│       └── rules.csv         # 追加规则片段 (见下方)
 ├── src\
 │   └── data\scripts\gearin\campaign\
-│       └── GearInHubMission   # 本节新增(归本节所有)
+│       └── GearInHubMission   # 本节新增 (归本节所有)
 └── jars\
 ```
 
@@ -693,7 +693,7 @@ return true;
 - **同一任务同时存在两个实例**：创建时没有检查已占用的 mission ref。`setPersonMissionRef` 返回 false 时让 `create` 失败，重复抽取后确认旧 ref 未被覆盖。
 - **保存或读档时任务字段报错**：任务保存了对话句柄或其他不可序列化引用。持久字段只保留可序列化状态，瞬态句柄标记为 `transient` 并按需重建；完成一次保存和读档复验。
 - **联系人任务板没有该任务**：联系人 ID、tag、声望、importance 或前置任务条件未通过 `PersonMissionSpec` 过滤。逐项对照目标联系人和 CSV 字段，刷新任务板后确认选项出现。
-- **Intel 地图定位到星系中心**：当前阶段的主要实体不可发现，地图只能回退到星系中心。指定一个可发现的 primary objective，或覆写地图位置方法；重开 Intel 地图核对标记。
+- **Intel 地图定位到星系中心**：当前阶段的主要实体可被发现，默认地图位置因此隐藏精确坐标并回退到星系中心。需要公开精确位置时覆写地图位置方法；重开 Intel 地图核对标记。
 - **Intel 地图标记消失**：被登记的重要实体已经死亡，地图定位会跳过它。改用仍存活的阶段目标并更新 primary objective，再确认标记恢复。
 
 ## 总结
@@ -706,7 +706,7 @@ return true;
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMission`：任务约定接口 (11 个方法)。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMission`：任务约定接口；`getBlurbText()` 已弃用。
 - `com.fs.starfarer.api.impl.campaign.missions.hub.BaseHubMission`：任务基类 (生命周期 / 阶段 / 完成检测 / 奖励与生成辅助)。
 - `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithTriggers`：触发器 API(`begin*Trigger` / `trigger*` 动作族 / `endTrigger`)。
 - `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithSearch`：目标选择要求系统 (`require*` / `prefer*` / `pick*`)。
@@ -754,15 +754,15 @@ import com.fs.starfarer.api.ui.TooltipMakerAPI;
 import com.fs.starfarer.api.util.Misc;
 
 /**
- * 完整最小例：枢纽任务(HubMission)——Intel、阶段、目标与事件链。
+ * 完整最小例：枢纽任务 (HubMission)——Intel、阶段、目标与事件链。
  *
  * 任务 ID：gearInHub(bar_events.csv 的 mission id 列 = 本类在 CSV 的 spec id；
  * 该 ID 的消费者：HubMissionBarEventWrapper.setMissionId、规则分类前缀
  * gearInHub_blurbBar / gearInHub_optionBar、交互内存键 $gearInHub_stage、
  * mission ref 键 $gearInHub_ref)。本节所有权，不含工作单元编号变体。
  *
- * 注册入口：data/campaign/bar_events.csv 一行(plugin 列 = 本类全名)+ rules.csv
- * 六条规则(blurbBar / optionBar / startBar / 任务文本 / 数据收讫 / 交付结算)，见页面正文。
+ * 注册入口：data/campaign/bar_events.csv 一行 (plugin 列 = 本类全名)+ rules.csv
+ * 六条规则 (blurbBar / optionBar / startBar / 任务文本 / 数据收讫 / 交付结算)，见页面正文。
  * 展示链路：BarEventManager -> SpecBarEventCreator(isMission 判定)->
  * HubMissionBarEventWrapper -> shouldShowAtMarket / createAndAbortIfFailed(true)
  * -> updateInteractionData -> FireBest gearInHub_blurbBar / gearInHub_optionBar。
@@ -773,15 +773,15 @@ import com.fs.starfarer.api.util.Misc;
  * 1. Intel：本类经 BaseHubMission 继承 BaseIntelPlugin——accept 时 addIntel
  *    (Intel 界面可见)+ addScript(每帧推进)，结束时 endAfterDelay(3 游戏日)
  *    -> notifyEnded -> removeScript；
- * 2. 阶段：Stage 枚举四态(CONTACT -> RETURN -> COMPLETED / FAILED)，
+ * 2. 阶段：Stage 枚举四态 (CONTACT -> RETURN -> COMPLETED / FAILED)，
  *    setCurrentStage 切阶段时登记/解除 makeImportant 地图标记并发送下一步更新；
- * 3. 目标完成检测三通道：对话驱动(rules 写 $gearInHub_dataReceived /
+ * 3. 目标完成检测三通道：对话驱动 (rules 写 $gearInHub_dataReceived /
  *    $gearInHub_delivered + Call $gearInHub_ref updateStage，走 MemoryBooleanChecker
- *    连接)、帧推进轮询(tracker 每 0.09-0.11 游戏天查连接)、时限
+ *    连接)、帧推进轮询 (tracker 每 0.09-0.11 游戏天查连接)、时限
  *    (setTimeLimit(Stage.FAILED, 60, null) 到期切失败)；
  * 4. 事件链：两个一次性触发器 —— 进入 RETURN 阶段时写全局内存标记
- *    (AlwaysTrueChecker)，任务进行满 30 游戏天时写半程标记(DaysElapsedChecker)；
- * 5. 奖励：信用点(按距离与质量折算)与双声望(人物 MEDIUM / 势力 LOW)。
+ *    (AlwaysTrueChecker)，任务进行满 30 游戏天时写半程标记 (DaysElapsedChecker)；
+ * 5. 奖励：信用点 (按距离与质量折算) 与双声望 (人物 MEDIUM / 势力 LOW)。
  */
 public class GearInHubMission extends HubMissionWithBarEvent {
 
@@ -805,7 +805,7 @@ public class GearInHubMission extends HubMissionWithBarEvent {
 
     @Override
     public boolean shouldShowAtMarket(MarketAPI market) {
-        // 酒吧路线：create() 之前被调用(HubMissionBarEventWrapper.shouldShowAtMarket)。
+        // 酒吧路线：create() 之前被调用 (HubMissionBarEventWrapper.shouldShowAtMarket)。
         // 本示例任何有太空港的市场都可出现。
         return market.hasSpaceport();
     }
@@ -813,7 +813,7 @@ public class GearInHubMission extends HubMissionWithBarEvent {
     @Override
     protected boolean create(MarketAPI createdAt, boolean barEvent) {
         if (barEvent) {
-            // 酒吧路线需要自己生成给任务者(联系人路线由 hub 的 getPerson() 提供)。
+            // 酒吧路线需要自己生成给任务者 (联系人路线由 hub 的 getPerson() 提供)。
             setGiverRank(Ranks.CITIZEN);
             setGiverPost(Ranks.POST_TRADER);
             setGiverImportance(pickImportance());
@@ -851,7 +851,7 @@ public class GearInHubMission extends HubMissionWithBarEvent {
         setSuccessStage(Stage.COMPLETED);
         setFailureStage(Stage.FAILED);
 
-        // ---- 目标完成检测：内存标志连接(对话驱动，rules 置位 + Call updateStage)----
+        // ---- 目标完成检测：内存标志连接 (对话驱动，rules 置位 + Call updateStage)----
         setStageOnMemoryFlag(Stage.RETURN, sourceContact, "$gearInHub_dataReceived");
         setStageOnMemoryFlag(Stage.COMPLETED, giver, "$gearInHub_delivered");
 
@@ -863,11 +863,11 @@ public class GearInHubMission extends HubMissionWithBarEvent {
         makeImportant(giver, "$gearInHub_returnMark", Stage.RETURN);
 
         // ---- 事件链：一次性触发器 ----
-        // 进入 RETURN 阶段即写全局标记(AlwaysTrueChecker 恒真，进阶段即触发)。
+        // 进入 RETURN 阶段即写全局标记 (AlwaysTrueChecker 恒真，进阶段即触发)。
         beginCustomTrigger(new AlwaysTrueChecker(), Stage.RETURN);
         triggerSetGlobalMemoryValue("$gearInHub_enteredReturn", true);
         endTrigger();
-        // 任务进行满 30 游戏天(无论停在哪个阶段)写半程标记。
+        // 任务进行满 30 游戏天 (无论停在哪个阶段) 写半程标记。
         // 注意：beginDaysElapsedTrigger(float, Object...) 与 (float, Object, Object...)
         // 两个重载在三个实参时会歧义，这里直接用它内部构造的 DaysElapsedChecker。
         beginCustomTrigger(new DaysElapsedChecker(MISSION_DAYS / 2f, this), Stage.CONTACT, Stage.RETURN);
@@ -887,7 +887,7 @@ public class GearInHubMission extends HubMissionWithBarEvent {
 
     @Override
     protected void updateInteractionDataImpl() {
-        // 写规则变量(LOCAL 人物内存，随档持久；$gearInHub_stage 由基类自动写)。
+        // 写规则变量 (LOCAL 人物内存，随档持久；$gearInHub_stage 由基类自动写)。
         set("$gearInHub_reward", Misc.getWithDGS(reward));
         set("$gearInHub_targetMarketName", targetMarket.getName());
         set("$gearInHub_dist", getDistanceLY(targetMarket));

@@ -1,6 +1,6 @@
-# 用 BoxUtil 为舰船与弹体添加动态光照
+# 用 BoxUtil 加载 OBJ 模型并配置材质
 
-BoxUtil 提供点、线、聚光、区域与无限光五种形态，它们的选择应由发光对象决定。本节用点光表现弹体、线光表现光束、聚光表现舰首，并检查实体材质是否已登记。
+OBJ 文件本身只描述几何；模型 ID、贴图材质与世界变换仍要由 BoxUtil 数据表和 Java 代码组合。本节先确认 ModelManager 已注册模型，再为实体建立平移、旋转和缩放矩阵。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,11 +10,11 @@ BoxUtil 提供点、线、聚光、区域与无限光五种形态，它们的选
 
 完成后，您将能够：
 
-- 根据发光对象的几何选择点、线、聚光、区域或无限光；
-- 为局部光源配置世界位置、颜色、强度、衰减半径与寿命；
-- 为有方向的光源同步朝向，为无限光关闭距离衰减；
-- 在创建照明前核对舰船、导弹、弹体和光束的注册数据；
-- 从长度、锥角、材质集合和入队结果定位照明故障。
+- 登记 BoxUtil 的 OBJ 与材质贴图；
+- 用 `ModelManager` 验证模型 ID 并取得共享 `ModelData`；
+- 用 `TransformUtil` 建立与游戏世界坐标一致的模型矩阵；
+- 用 `CommonEntity` 组合模型、变换与默认光照；
+- 从 ID、模型有效性、贴图通道和尺度定位空白模型。
 
 ## 前置知识
 
@@ -24,219 +24,178 @@ BoxUtil 提供点、线、聚光、区域与无限光五种形态，它们的选
 
 ## 明确当前需求
 
-弹体掠过船体时产生局部亮点，光束沿长度照亮装甲，舰首聚光随 facing 转动；关闭实体光照后，玩法状态保持不变。
+战斗开始后，玩家舰旁显示一个小型齿轮模型；舰船转向时模型保持自身角度，贴图缺失时日志明确指出模型 ID 或材质项。
 
 ## 文件与 API 链路
 
-五类 Light 都继承 `BaseIlluminantData`，共享位置、颜色、强度、衰减和全局计时；`LinearLight`、`SpotLight` 与 `AreaLight` 再增加各自几何状态。`EntityShadingDataManager` 分别查询舰船、导弹材质集合，以及弹体、光束、引擎的发光注册。
+### 模型加载 API 速查表
 
-### 光源选型速查表
+| 对象 | 职责 |
+|---|---|
+| `ModelManager` | 从 `data/config/modFiles/BUtil_obj_data.csv` 取得模型数据 |
+| `ModelData` | 保存几何缓冲和各贴图通道 |
+| `CommonEntity` | 使用模型与默认光照 |
+| `TransformUtil` | 构建与游戏坐标一致的模型矩阵 |
 
-| 发光对象 | 光源类型 | 关键几何参数 |
-|---|---|---|
-| 弹体 | `PointLight` | 各向发散，衰减半径 180 su |
-| 光束 | `LinearLight` | 长度 240 su，柱半径 18 su |
-| 舰首 | `SpotLight` | 锥角 18°，朝向随舰首同步 |
-| 大面积面板 | `AreaLight` | 尺寸 180 × 70 su |
-| 全局环境 | `InfiniteLight` | 低强度，关闭距离衰减 |
+自定义生成网格时才需要直接调用 `MeshUtil` 计算法线或切线。
 
-### 为弹体选择 PointLight
+### 在 CSV 中登记模型 ID
 
-**插入位置：`GearInLightFactory.createFiveKinds()`。** 创建各向发散的短程光源，并写入通用局部光参数。
+**插入位置：`data/config/modFiles/BUtil_obj_data.csv` 的 GearIn 行。** 按表头关联 OBJ、漫反射、法线、复杂、发光和切线贴图；空通道保留空字段。
 
-```java
-PointLight projectileLight = new PointLight();
-configure(projectileLight, location, new Color(90, 220, 255), 1.2f, 180f);
+```csv
+GearIn_gear,data/models/GearIn_gear.obj,data/models/GearIn_gear_diffuse.png,data/models/GearIn_gear_normal.png,,data/models/GearIn_gear_emissive.png,,,F32
 ```
 
-完成信号：弹体附近船体得到局部照明。
+完成信号：ModelManager.containsModelID 返回 true。
 
-### 为光束选择 LinearLight
+### 在创建实体前确认模型存在
 
-**插入位置：`createFiveKinds()`。** 按光束长度和柱半径设置线形光源，再复用通用配置。
-
-```java
-LinearLight beamLight = new LinearLight();
-beamLight.setLength(240f);
-beamLight.setCylinderRadius(18f);
-```
-
-完成信号：整段光束附近都有照明，而非只有起点。
-
-### 为舰首选择 SpotLight
-
-**插入位置：`createFiveKinds()`。** 设置锥角并同步舰首朝向。
+**插入位置：`GearInModelCatalog.require()`。** 把未知 ID 改成明确参数错误。
 
 ```java
-SpotLight spot = new SpotLight();
-spot.setCone(18f);
-spot.setFacingScale(facing, 1f, 1f);
+if (!ModelManager.containsModelID(modelId)) {
+    throw new IllegalArgumentException("Unknown BoxUtil model: " + modelId);
+}
 ```
 
-完成信号：舰首前方出现有边界的锥形照明。
+完成信号：错误日志包含未知 modelId。
 
-### 按对象选择 Area 与 Infinite
+### 取得已解析的 ModelData
 
-**插入位置：`createFiveKinds()` 返回前。** 区域光覆盖面板；无限光使用低强度并关闭距离衰减，避免把局部参数误套到全局光。
+**插入位置：`require()` 返回处。** 复用 BoxUtil 启动期加载结果，并让实体构造器再次检查 `model.isValid()`。
 
 ```java
-AreaLight area = new AreaLight();
-area.setSize(180f, 70f);
-InfiniteLight ambient = new InfiniteLight();
-ambient.setStrength(0.12f);
-ambient.setNoneAttenuation();
+ModelData model = ModelManager.getModelData(modelId);
 ```
 
-完成信号：大面积对象不会被单点热点破坏。
+完成信号：返回对象包含模型缓冲与材质引用。
 
-### 在创建光源前确认照明数据
+### 组合模型与世界变换
 
-**插入位置：`GearInShadingProbe`。** 先按舰船与导弹 ID 查询材质集合，再按弹体或光束 ID 查询发光注册。
+**插入位置：`GearInModelTransform.create()`。** 先用有效 `ModelData` 创建 `CommonEntity`，再把坐标、舰首角和缩放写入同一 `Matrix4f`。
 
 ```java
-boolean shipReady = EntityShadingDataManager.haveEntityTextureSet(hullId);
-boolean missileReady = EntityShadingDataManager.haveMissileTextureSet(missileId);
-boolean projectileReady = EntityShadingDataManager.haveProjectileIlluminantData(projectileId);
-boolean beamReady = EntityShadingDataManager.haveBeamIlluminantData(weaponId);
+CommonEntity entity = new CommonEntity(model, true);
+entity.setModelMatrix(TransformUtil.createModelMatrixVanilla(
+        location, facing, scale, matrix));
 ```
 
-完成信号：缺少数据时跳过光源并给出具体 ID。
+完成信号：实体持有同一份共享模型缓冲，模型矩阵包含本次位置、角度和缩放。
+
+### 建立可观察的基础光照
+
+**插入位置：`create()` 返回前。** 先使用 `CommonEntity` 的默认光照证明法线与材质通道可读；动态光源留到 [C16-S15]。
+
+```java
+entity.setDefaultLight();
+return entity;
+```
+
+完成信号：GearIn 齿轮以漫反射、法线和发光通道渲染，朝向与传入 `facing` 一致。
 
 ## 排查关键故障
 
 下面是**局部故障片段**：
 
 ```java
-LinearLight light = new LinearLight();
-light.setLength(0f);
+ModelData model = ModelManager.getModelData("GearIn_Gear");
 ```
 
-实际症状：光束视觉存在，但船体完全没有沿线照明。
+实际症状：实体成功创建但完全空白，日志中没有文件读取异常。
 
-原因：线光长度为 0，照明体退化为无有效范围。
+原因：模型 ID 大小写与 CSV 的 `GearIn_gear` 不一致，`getModelData()` 返回 `null`；直接构造实体把真正的查询错误推迟成空白画面或空引用。
 
 下面是**局部修正片段**：
 
 ```java
-light.setLength(beam.getLength());
+ModelData model = catalog.require("GearIn_gear");
 ```
 
-复验：让光束横跨一艘大型舰，分别记录长度为 0 和 240 su 时的照明范围，确认沿线亮度只在修正后出现。
+复验：用精确 ID 创建实体并记录 `model.isValid()`；再故意改大小写，确认在创建 GPU 实体之前得到明确错误。
 
 ## 完整最小例
 
-工厂返回 5 个已经配置位置、颜色、强度和 1 秒寿命的 `BaseIlluminantData`；调用方逐项入队。探针只回答注册状态，不创建 GPU 对象。
+目录类只负责模型注册表查询，变换类只接受有效 `ModelData` 并返回配置好矩阵与默认光照的 `CommonEntity`。战斗接线仍需检查 `CombatRenderingManager.addEntity()` 返回码。
 
 ## 验证方案
 
-前置数据：BoxUtil 实体照明已启用，测试舰船和导弹已在 shading 数据表登记，战斗接线能逐项入队工厂结果。
+前置数据：9 列模型 CSV 已被 BoxUtil 加载，OBJ、diffuse、normal 与 emissive 文件均存在，战斗接线能把返回实体入队。
 
-1. 先调用探针，记录舰船材质、导弹材质、弹体发光与光束发光 4 个布尔结果。
-2. 在同一命中点创建五类光源，核对返回数组长度为 5，局部光总寿命均为 1 秒。
-3. 让弹体点光经过船体，观察 180 su 衰减范围；让 240 su 线光横跨大型舰。
-4. 改变传入 `facing`，确认聚光和无限光方向同步变化。
-5. 移除舰船 normal 材质注册并重启，比较光源存在时的船体响应。
-6. 把线光长度改为 0 复现故障，再恢复 240 su。
+1. 启动后核对 `ModelManager.containsModelID("GearIn_gear")` 和 `ModelData.isValid()`。
+2. 在玩家舰旁创建比例为 `(1, 1)` 的实体，核对位置和朝向。
+3. 把比例改为 `(0.5, 0.5)`，确认世界尺寸减半而模型缓冲仍被复用。
+4. 分别移除 emissive、normal 路径并重启，观察材质通道变化和加载日志。
+5. 把 ID 改为 `GearIn_Gear`，确认目录类在实体创建前抛出带 ID 的参数错误。
 
 预期结果：
 
-- 探针分别反映 2 类材质集合和 2 类发光数据的真实注册状态；
-- 点光、线光、聚光、区域光和无限光使用不同几何参数；
-- 局部光具有明确衰减半径，无限光使用低强度且不随距离衰减；
-- 聚光与无限光方向随传入朝向改变；
-- 材质集合缺失时能区分 "光源未创建" 和 "表面没有材质响应"；
-- 完整配置下战斗没有未处理异常。
+- 精确模型 ID 返回有效、可复用的 `ModelData`；
+- `CommonEntity` 的模型矩阵与传入位置、朝向、缩放一致；
+- 默认光照能够区分漫反射、法线和发光通道的加载结果；
+- 错误大小写在创建实体前产生明确异常；
+- 有效实体入队后没有未处理异常。
 
 ## 故障分析
 
-- **光束存在但船体没有沿线照明**：线光长度为零，照明体没有有效覆盖范围。设置非零长度并核对目标舰材质，同场景对比后确认沿线亮度出现。
-- **光源存在但船体没有材质响应**：`EntityShadingDataManager` 中没有目标纹理集合。注册材质数据，重新进入战斗确认船体受光。
-- **聚光方向保持固定**：每帧没有同步宿主舰船的 facing。推进时更新方向，旋转舰船后确认光锥跟随。
-- **无限光覆盖了全部颜色**：强度和衰减没有按场景限制。降低强度并设置合适的颜色贡献，再比较开关光源前后的画面。
+- **实体创建后完全空白**：模型 ID 大小写与 CSV 不一致，或 `ModelData.isValid()` 为 false。先通过 `require()` 验证数据，再构造实体；修正后确认模型可见。
+- **模型整体显示为黑色**：漫反射贴图或材质数据没有注册。补齐材质引用，重新载入后确认基础颜色出现。
+- **光照方向与模型表面相反**：OBJ 的法线或切线方向不一致。修正并重新导出网格，再旋转光源确认明暗方向正确。
+- **模型位置正确但比例巨大**：OBJ 单位与世界缩放没有统一。调整导出单位或模型矩阵缩放，重新显示后与舰船尺寸对照。
 
 ## 总结
 
-五种光源解决不同几何问题。先按发光对象选形态，再确认材质与照明数据已经注册，最后同步位置和朝向；把所有效果都塞进 PointLight 只会得到错误的亮度分布。
+模型加载分成数据注册、存在性确认、模型取得和世界变换。先让 ID 查询失败得足够明确，再处理法线、材质和尺度，排错顺序会短很多。
 
 ## 建议参考项
 
-- `PointLight`、`LinearLight`、`SpotLight`：局部动态光；
-- `AreaLight`、`InfiniteLight`：区域与全局方向照明；
-- `EntityShadingDataManager`：查询材质和照明注册数据。
-::: details 完整成品：GearInLightFactory
+- `ModelManager`：注册并查询模型数据；
+- `CommonEntity`：组合模型与材质；
+- `TransformUtil.createModelMatrixVanilla`：建立世界变换。
+::: details 完整成品：GearInModelCatalog
 
 ```java
 package data.scripts.gearin.lib;
 
-import java.awt.Color;
+import org.boxutil.manager.ModelManager;
+import org.boxutil.units.standard.attribute.ModelData;
 
-import org.boxutil.base.BaseIlluminantData;
-import org.boxutil.units.standard.light.AreaLight;
-import org.boxutil.units.standard.light.InfiniteLight;
-import org.boxutil.units.standard.light.LinearLight;
-import org.boxutil.units.standard.light.PointLight;
-import org.boxutil.units.standard.light.SpotLight;
-import org.lwjgl.util.vector.Vector2f;
-
-public final class GearInLightFactory {
-    public BaseIlluminantData[] createFiveKinds(Vector2f location, float facing) {
-        PointLight point = new PointLight();
-        configure(point, location, new Color(90, 220, 255), 1.2f, 180f);
-        AreaLight area = new AreaLight();
-        area.setSize(180f, 70f);
-        configure(area, location, new Color(80, 170, 255), 0.7f, 260f);
-        LinearLight linear = new LinearLight();
-        linear.setLength(240f);
-        linear.setCylinderRadius(18f);
-        configure(linear, location, new Color(100, 230, 255), 1f, 220f);
-        SpotLight spot = new SpotLight();
-        spot.setCone(18f);
-        spot.setFacingScale(facing, 1f, 1f);
-        configure(spot, location, new Color(180, 235, 255), 0.9f, 320f);
-        InfiniteLight infinite = new InfiniteLight();
-        infinite.setColor(new Color(90, 110, 150));
-        infinite.setStrength(0.12f);
-        infinite.setFacingScale(facing, 1f, 1f);
-        infinite.setNoneAttenuation();
-        infinite.setGlobalTimer(0.1f, 0.3f, 0.6f);
-        return new BaseIlluminantData[] {point, linear, spot, area, infinite};
-    }
-
-    private void configure(BaseIlluminantData light, Vector2f location,
-            Color color, float strength, float radius) {
-        light.setLocation(location);
-        light.setColor(color);
-        light.setStrength(strength);
-        light.setAttenuationRadius(radius);
-        light.setGlobalTimer(0.1f, 0.3f, 0.6f);
+public final class GearInModelCatalog {
+    public ModelData require(String modelId) {
+        if (!ModelManager.containsModelID(modelId)) {
+            throw new IllegalArgumentException("Unknown BoxUtil model: " + modelId);
+        }
+        return ModelManager.getModelData(modelId);
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInShadingProbe
+::: details 完整成品：GearInModelTransform
 
 ```java
 package data.scripts.gearin.lib;
 
-import org.boxutil.manager.EntityShadingDataManager;
+import org.boxutil.units.standard.attribute.ModelData;
+import org.boxutil.units.standard.entity.CommonEntity;
+import org.boxutil.util.TransformUtil;
+import org.lwjgl.util.vector.Matrix4f;
+import org.lwjgl.util.vector.Vector2f;
 
-public final class GearInShadingProbe {
-    public boolean hasShipTextures(String hullId) {
-        return EntityShadingDataManager.haveEntityTextureSet(hullId);
-    }
+public final class GearInModelTransform {
+    private final Matrix4f matrix = new Matrix4f();
 
-    public boolean hasMissileTextures(String missileId) {
-        return EntityShadingDataManager.haveMissileTextureSet(missileId);
-    }
-
-    public boolean hasProjectileLight(String projectileId) {
-        return EntityShadingDataManager.haveProjectileIlluminantData(projectileId);
-    }
-
-    public boolean hasBeamLight(String weaponId) {
-        return EntityShadingDataManager.haveBeamIlluminantData(weaponId);
+    public CommonEntity create(ModelData model, Vector2f location,
+            float facing, Vector2f scale) {
+        if (model == null || !model.isValid()) {
+            throw new IllegalArgumentException("BoxUtil model is not valid");
+        }
+        CommonEntity entity = new CommonEntity(model, true);
+        entity.setModelMatrix(TransformUtil.createModelMatrixVanilla(
+                location, facing, scale, matrix));
+        entity.setDefaultLight();
+        return entity;
     }
 }
 ```

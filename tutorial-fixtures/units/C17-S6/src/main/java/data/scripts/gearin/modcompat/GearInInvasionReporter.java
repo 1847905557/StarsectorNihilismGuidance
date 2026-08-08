@@ -5,6 +5,7 @@ import java.util.List;
 import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI;
 import com.fs.starfarer.api.campaign.CampaignFleetAPI;
 import com.fs.starfarer.api.campaign.CargoAPI;
 import com.fs.starfarer.api.campaign.FactionAPI;
@@ -19,7 +20,10 @@ public final class GearInInvasionReporter implements InvasionListener {
     private static final Logger LOG = Global.getLogger(GearInInvasionReporter.class);
 
     public static void register() {
-        Global.getSector().getListenerManager().addListener(new GearInInvasionReporter(), true);
+        ListenerManagerAPI listeners = Global.getSector().getListenerManager();
+        if (!listeners.hasListenerOfClass(GearInInvasionReporter.class)) {
+            listeners.addListener(new GearInInvasionReporter(), true);
+        }
     }
 
     @Override

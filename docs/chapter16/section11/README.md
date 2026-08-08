@@ -1,6 +1,6 @@
-# 用 BoxUtil 组合尾迹、扭曲与镜头光斑
+# 用 BoxUtil 绘制线段、圆环与曲线光束
 
-一次有重量的命中需要三个时间尺度：尾迹说明弹体从哪里来，扭曲表现冲击波，光斑给出瞬间亮点。本节分别创建三类实体，再由同一命中入口协调它们的寿命。
+战术范围提示和能量束都由节点组成，但两者需要不同的插值与材质策略。本节先用 SegmentEntity 画稳定圆环，再用 CurveEntity 画带弯曲的光束，并明确节点提交时机。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,11 +10,11 @@
 
 完成后，您将能够：
 
-- 用 `TrailEntity` 把命中前后的两个世界坐标连接成渐隐路径；
-- 用 `DistortionEntity` 配置位置、三阶段尺寸、强度和环硬度；
-- 用 `FlareEntity` 配置位置、朝向、颜色、混合和寿命；
-- 为三个实体分别选择图层与全局计时；
-- 独立处理每次入队返回码，并删除失败实体。
+- 根据折线与平滑曲线的差异选择 `SegmentEntity` 或 `CurveEntity`；
+- 用实体初始化方法生成圆环和曲线光束的节点；
+- 配置纹理流速与暂停策略；
+- 在节点变化后标记刷新范围并重新提交；
+- 把构造完成的实体交给战斗渲染管理器，并处理入队失败。
 
 ## 前置知识
 
@@ -24,224 +24,178 @@
 
 ## 明确当前需求
 
-能量弹命中后，旧路径留下渐隐尾迹，命中点产生扩张扭曲和短促横向光斑；任一 shader 路径关闭时，其余效果仍可独立显示。
+玩家舰周围显示一圈缓慢流动的 600 su 范围环；战斗接线在武器开火时从舰首创建一条平滑曲线光束。两个构造器只负责节点和材质状态，调用方负责入队、更新与删除。
 
 ## 文件与 API 链路
 
-### 命中特效实体速查表
+### 线段与曲线实体速查表
 
-| 实体 | 职责 |
+| 实体 | 适用形状 |
 |---|---|
-| `TrailEntity` | 接收世界路径节点 |
-| `DistortionEntity` | 直接绘制三阶段冲击环 |
-| `FlareEntity` | 通过模型矩阵确定世界位置和朝向 |
+| `SegmentEntity` | 线段、折线、圆与椭圆 |
+| `CurveEntity` | 平滑曲线插值 |
 
-三者都继承 BoxUtil 的全局计时与图层状态，并分别交给 `CombatRenderingManager`。
+两者都在客户端节点列表和 GPU 节点缓冲之间保留明确的提交边界，构造完成后由 `CombatRenderingManager` 加入当前战斗。
 
-### 用两个节点建立可见尾迹
+### 初始化战术范围圆环
 
-**插入位置：`GearInBoxTrailEffect.make()`。** 设置首尾宽度、颜色并追加路径点。
+**插入位置：`GearInSegmentPainter.makeRangeRing()`。** 一次生成圆环节点与颜色。
 
 ```java
-trail.addNode(first);
-trail.addNode(second);
-trail.submitNodes();
+SegmentEntity ring = new SegmentEntity();
+ring.initCircle(center, radius, Color.CYAN, Color.WHITE, 5f);
 ```
 
-完成信号：返回对象至少有两个节点。
+完成信号：返回的 SegmentEntity 拥有有效节点。
 
-### 让尾迹从亮宽过渡到透明细线
+### 让纹理沿圆环缓慢流动
 
-**插入位置：`make()` 的颜色与宽度设置处。** 把方向感写进首尾状态，并给尾迹 1 秒总寿命。
+**插入位置：`makeRangeRing()` 的纹理设置处。** 设置纹理速度并选择暂停策略。
 
 ```java
-trail.setStartWidth(28f);
-trail.setEndWidth(2f);
-trail.setEndColor(new Color(20, 80, 255, 0));
-trail.setGlobalTimer(0.05f, 0.15f, 0.8f);
+ring.setTextureSpeed(0.15f);
+ring.setFlowWhenPaused(false);
 ```
 
-完成信号：弹体后方逐渐变细并淡出。
+完成信号：非暂停时纹理偏移持续变化。
 
-### 配置三阶段扭曲尺寸
+### 提交圆环节点
 
-**插入位置：`GearInImpactSpecialFX.makeDistortion()`。** 先写命中位置，再让冲击从 20 su 扩张到 180 su，强度从 0 升到 0.8 后回到 0。
+**插入位置：`makeRangeRing()` 返回前。** 把节点数组上传到渲染端。
 
 ```java
-distortion.setLocation(location);
-distortion.setSizeIn(20f, 20f);
-distortion.setSizeFull(120f, 120f);
-distortion.setSizeOut(180f, 180f);
-distortion.setPowerIn(0f);
-distortion.setPowerFull(0.8f);
-distortion.setPowerOut(0f);
-distortion.setGlobalTimer(0.05f, 0.1f, 0.55f);
+byte state = ring.submitNodes();
 ```
 
-完成信号：命中点出现扩张环而非固定圆斑。
+完成信号：submitNodes 返回成功状态且圆环出现。
 
-### 配置横向镜头光斑
+### 初始化平滑曲线光束
 
-**插入位置：`GearInImpactSpecialFX.makeFlare()`。** 设置命中位置、弹体朝向、长宽、颜色、混合和 0.4 秒总寿命。
+**插入位置：`GearInCurveBeam.make()`。** 用起点、长度、颜色、宽度和曲率建立曲线。
 
 ```java
-flare.setLocation(location);
-flare.setFacingScale(facing, 1f, 1f);
-flare.setSize(180f, 28f);
-flare.setCoreColor(Color.WHITE);
-flare.setFringeColor(new Color(70, 200, 255, 180));
-flare.setAdditiveBlend();
-flare.setGlobalTimer(0.05f, 0.05f, 0.3f);
+CurveEntity beam = new CurveEntity();
+beam.initSmoothLine(start, length, Color.CYAN, Color.WHITE, 9f, 0.35f);
 ```
 
-完成信号：命中瞬间出现白芯青边的短光斑。
+完成信号：光束从舰首延伸且边缘平滑。
 
-### 分别处理三个入队结果
+### 把构造结果加入当前战斗
 
-**插入位置：命中效果入口。** 每个实体独立检查返回码并释放失败项。
+**插入位置：战斗接线取得圆环或光束后。** 根据返回码决定实体是否已经交给 BoxUtil 管理。
 
 ```java
-for (RenderDataAPI effect : effects) {
-    byte state = CombatRenderingManager.addEntity(effect);
-    if (state != BoxEnum.STATE_SUCCESS) effect.delete();
+byte state = CombatRenderingManager.addEntity(beam);
+if (state != BoxEnum.STATE_SUCCESS) {
+    beam.delete();
 }
 ```
 
-完成信号：关闭扭曲时尾迹与光斑仍可出现。
+完成信号：成功时实体进入当前战斗；失败时资源立即删除，调用侧不再更新该对象。
 
 ## 排查关键故障
 
 下面是**局部故障片段**：
 
 ```java
-CombatRenderingManager.addEntity(distortion);
-CombatRenderingManager.addEntity(flare);
+beam.addNode(node);
+return beam;
 ```
 
-实际症状：关闭 distortion shader 后，命中效果偶发积累无效对象并增加显存占用。
+实际症状：调试器能看到节点列表增长，画面中的光束保持旧形状。
 
-原因：调用方忽略入队返回码，也没有释放失败实体。
+原因：修改客户端节点后没有标记刷新并 submitNodes。
 
 下面是**局部修正片段**：
 
 ```java
-byte state = CombatRenderingManager.addEntity(effect);
-if (state != BoxEnum.STATE_SUCCESS) effect.delete();
+beam.setNodeRefreshAllFromCurrentIndex();
+beam.submitNodes();
 ```
 
-复验：关闭单项效果并连续命中 100 次，分别统计三个 `addEntity()` 返回码，确认其余效果正常且每个失败对象都执行删除。
+复验：移动末端控制点，确认下一帧曲线形状同步变化。
 
 ## 完整最小例
 
-两个完整类只构造效果。命中入口传入两个轨迹点、命中位置和弹体朝向，再逐项入队；构造器已经写好世界位置、图层与寿命。
+两个完整类是形状构造器：返回前已经提交初始节点，并禁止暂停时纹理继续流动。动态控制器若修改 `getNodes()` 中的数据，仍需执行故障修正片段中的刷新与提交。
 
 ## 验证方案
 
-前置数据：BoxUtil 三项渲染路径可用，弹体命中效果能提供上一采样点、命中点与飞行朝向。
+前置数据：BoxUtil 渲染核心可用，战斗接线能在初始化时创建圆环，并在测试输入时创建曲线光束。
 
-1. 触发一次命中，确认尾迹连接两个输入点，并在 1 秒内渐细、淡出。
-2. 核对扭曲中心位于命中点，尺寸按 20、120、180 su 三阶段扩张，总寿命为 0.7 秒。
-3. 核对光斑位于同一命中点，长轴沿弹体朝向，总寿命为 0.4 秒。
-4. 暂停战斗，确认三个实体的全局计时不推进；恢复后继续退出阶段。
-5. 分别关闭或破坏一项渲染路径，连续触发 100 次并统计入队失败与删除次数。
+1. 以玩家舰坐标和 600 su 半径创建圆环，核对 `submitNodes()` 状态与入队返回码。
+2. 观察纹理以 0.15 的速度沿圆环流动；暂停后偏移保持不变。
+3. 以舰首位置和测试长度创建曲线，核对 9 su 宽度、0.35 曲率与 0.4 纹理速度。
+4. 修改曲线末端节点但省略重新提交，确认画面保持旧形状。
+5. 恢复刷新范围与 `submitNodes()`，确认下一帧显示新形状。
+6. 让入队返回失败状态，确认对应实体执行 `delete()`。
 
 预期结果：
 
-- 尾迹至少有两个节点，并按首尾宽度、颜色和全局计时变化；
-- 扭曲的位置、尺寸、强度和环硬度都来自命中参数与构造器状态；
-- 光斑位置与朝向正确，使用白芯青边的加法混合；
-- 三个实体的入队与失败清理互不依赖；
-- 单项失败不会阻止其余效果，连续命中后没有未处理异常。
+- 圆环与曲线的初始节点在返回构造器前完成提交；
+- 非暂停时纹理偏移按各自速度变化，暂停时保持不变；
+- 实体只有在 `addEntity()` 成功后才由渲染管理器持有；
+- 客户端节点变化不会自动出现在画面，刷新并提交后才同步；
+- 入队失败的实体被删除，战斗没有未处理异常。
 
 ## 故障分析
 
-- **关闭扭曲后无效对象持续积累**：调用方忽略入队返回码，也没有释放失败实体。逐项检查状态，失败时立即 `delete()`；重复触发 100 次后确认失败数与删除数一致。
-- **尾迹不可见**：节点少于两个，或没有执行 `submitNodes`。补齐首尾节点并提交，再观察尾迹出现在实体后方。
-- **扭曲方向与预期相反**：`power` 使用了负值，或内外尺寸参数顺序错误。修正符号和尺寸顺序，重新触发确认扭曲方向一致。
-- **光斑遮住整个画面**：宽高按屏幕像素填写，但实体使用世界尺度。按世界单位缩小尺寸，重新显示确认光斑只覆盖目标区域。
+- **节点列表变化但画面保持旧形状**：修改客户端节点后没有标记刷新并调用 `submitNodes()`。移动末端控制点并完成两步提交，确认渲染形状同步变化。
+- **圆环缺少一段**：节点数量或闭合参数不完整。重新初始化闭合圆环，检查首尾节点连接后再观察完整轮廓。
+- **曲线出现尖角**：插值数量过低，或控制点顺序反转。增加插值并按路径顺序提交控制点，重新观察曲线平滑度。
+- **暂停时纹理仍在流动**：`flowWhenPaused` 与目标语义相反。设置为 false，暂停战斗后确认纹理速度停止。
 
 ## 总结
 
-三个效果共享触发点，各自拥有节点、尺寸和寿命。独立创建、独立入队、独立失败，组合效果才能在配置降级时保持可控。
+SegmentEntity 与 CurveEntity 都依赖节点提交，但服务的形状不同。先选适合成果的实体，再把节点修改范围和提交时机控制清楚，曲线才不会用每帧全量上传换取表面稳定。
 
 ## 建议参考项
 
-- `TrailEntity`：路径型尾迹；
-- `DistortionEntity`：环形空间扭曲；
-- `FlareEntity`：核心与边缘可调的光斑。
-::: details 完整成品：GearInBoxTrailEffect
+- `SegmentEntity.initCircle`：快速建立圆环节点；
+- `CurveEntity.initSmoothLine`：建立平滑曲线；
+- `submitNodes`：把节点修改提交到渲染端。
+::: details 完整成品：GearInCurveBeam
 
 ```java
 package data.scripts.gearin.lib;
 
 import java.awt.Color;
 
-import org.boxutil.units.standard.entity.TrailEntity;
+import org.boxutil.units.standard.entity.CurveEntity;
 import org.lwjgl.util.vector.Vector2f;
 
-import com.fs.starfarer.api.combat.CombatEngineLayers;
-
-public final class GearInBoxTrailEffect {
-    public TrailEntity make(Vector2f first, Vector2f second) {
-        TrailEntity trail = new TrailEntity();
-        trail.setStartWidth(28f);
-        trail.setEndWidth(2f);
-        trail.setStartColor(new Color(80, 230, 255, 220));
-        trail.setEndColor(new Color(20, 80, 255, 0));
-        trail.addNode(first);
-        trail.addNode(second);
-        trail.setFlowWhenPaused(false);
-        trail.setGlobalTimer(0.05f, 0.15f, 0.8f);
-        trail.setLayer(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
-        trail.submitNodes();
-        return trail;
+public final class GearInCurveBeam {
+    public CurveEntity make(Vector2f start, float length) {
+        CurveEntity beam = new CurveEntity();
+        beam.initSmoothLine(start, length, Color.CYAN, Color.WHITE, 9f, 0.35f);
+        beam.setTextureSpeed(0.4f);
+        beam.setFlowWhenPaused(false);
+        beam.submitNodes();
+        return beam;
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInImpactSpecialFX
+::: details 完整成品：GearInSegmentPainter
 
 ```java
 package data.scripts.gearin.lib;
 
 import java.awt.Color;
 
-import org.boxutil.units.standard.entity.DistortionEntity;
-import org.boxutil.units.standard.entity.FlareEntity;
+import org.boxutil.units.standard.entity.SegmentEntity;
 import org.lwjgl.util.vector.Vector2f;
 
-import com.fs.starfarer.api.combat.CombatEngineLayers;
-
-public final class GearInImpactSpecialFX {
-    public DistortionEntity makeDistortion(Vector2f location) {
-        DistortionEntity distortion = new DistortionEntity();
-        distortion.setLocation(location);
-        distortion.setSizeIn(20f, 20f);
-        distortion.setSizeFull(120f, 120f);
-        distortion.setSizeOut(180f, 180f);
-        distortion.setPowerIn(0f);
-        distortion.setPowerFull(0.8f);
-        distortion.setPowerOut(0f);
-        distortion.setInnerFull(0.1f, 0.1f);
-        distortion.setRingHardness(0.75f);
-        distortion.setGlobalTimer(0.05f, 0.1f, 0.55f);
-        return distortion;
-    }
-
-    public FlareEntity makeFlare(Vector2f location, float facing) {
-        FlareEntity flare = new FlareEntity();
-        flare.setLocation(location);
-        flare.setFacingScale(facing, 1f, 1f);
-        flare.setSize(180f, 28f);
-        flare.setCoreColor(Color.WHITE);
-        flare.setFringeColor(new Color(70, 200, 255, 180));
-        flare.setSmooth();
-        flare.setAdditiveBlend();
-        flare.setGlobalTimer(0.05f, 0.05f, 0.3f);
-        flare.setLayer(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
-        return flare;
+public final class GearInSegmentPainter {
+    public SegmentEntity makeRangeRing(Vector2f center, float radius) {
+        SegmentEntity ring = new SegmentEntity();
+        ring.initCircle(center, radius, new Color(30, 210, 255, 220), Color.WHITE, 5f);
+        ring.setTextureSpeed(0.15f);
+        ring.setFlowWhenPaused(false);
+        ring.submitNodes();
+        return ring;
     }
 }
 ```

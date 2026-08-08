@@ -9,7 +9,7 @@ import com.fs.starfarer.api.loading.VariantSource;
 
 /**
  * 角色：模块变体覆盖。演示 stationModules / getModuleVariant / setModuleVariant——
- * setModuleVariant 只接受非 STOCK 来源的覆盖(STOCK/null 都会被当作"移除覆盖"处理)。
+ * setModuleVariant 只接受非 STOCK 来源的覆盖 (STOCK/null 都会被当作 "移除覆盖" 处理)。
  *
  * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
  */
@@ -46,7 +46,7 @@ public class GearInModuleOverrider implements EveryFrameScript {
 
     private void runOnce() {
         // stationModules 是 slotId -> variantId 映射；getModuleVariant 按槽取模块变体，
-        // setModuleVariant 只接受非 STOCK 来源的覆盖(STOCK/null 都会被当作"移除覆盖"处理)
+        // setModuleVariant 只接受非 STOCK 来源的覆盖 (STOCK/null 都会被当作 "移除覆盖" 处理)
         ShipVariantAPI station = Global.getSettings().getVariant("station1_Standard");
         ShipVariantAPI moduleStock = station.getModuleVariant("WS 009");
         ShipVariantAPI stationCopy = station.clone();

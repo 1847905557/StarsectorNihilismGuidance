@@ -7,8 +7,8 @@ import com.fs.starfarer.api.campaign.econ.MarketAPI;
 import com.fs.starfarer.api.combat.MutableStat;
 
 /**
- * 税率探针：对市场税率(MutableStat)做瞬时 modifyFlat 并当帧 unmodifyFlat 回滚，
- * 记录生效值 before/during/after，演示"修改高频参数观察结果变化"的最小任务链。
+ * 税率探针：对市场税率 (MutableStat) 做瞬时 modifyFlat 并当帧 unmodifyFlat 回滚，
+ * 记录生效值 before/during/after，演示 "修改高频参数观察结果变化" 的最小任务链。
  * 由巡检脚本 GearInMarketInspector 选定目标市场后调用，无持久残留。
  */
 public class GearInTariffProbe {

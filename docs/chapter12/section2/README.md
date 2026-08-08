@@ -120,7 +120,7 @@ if (!this.isPaused()) {
 
 派发：所有类型化事件由公开 API 的 `ListenerUtil`(`com.fs.starfarer.api.campaign.listeners.ListenerUtil`) 静态方法族派发。
 
-模式统一为 `for (X x : Global.getSector().getListenerManager().getListeners(X.class)) { x.report...( ... ); }`(约 50 个事件方法)。
+模式统一为 `for (X x : Global.getSector().getListenerManager().getListeners(X.class)) { x.report...(...); }`(约 50 个事件方法)。
 
 类型化接口 40 余个，都在 `com.fs.starfarer.api.campaign.listeners` 包下：
 
@@ -302,9 +302,9 @@ Starsector/mods/GearIndustry/
 ├── data/
 ├── src/
 │   └── data/scripts/gearin/campaign/
-│       ├── GearInCampaignListener        # 本节新增(通道一：Sector 级监听器)
-│       ├── GearInListenerLifecycleScript # 本节新增(通道一：生命周期脚本，与监听器配对)
-│       └── GearInLocationChangeListener  # 本节新增(通道二：ListenerManagerAPI 类型化监听器)
+│       ├── GearInCampaignListener        # 本节新增 (通道一：Sector 级监听器)
+│       ├── GearInListenerLifecycleScript # 本节新增 (通道一：生命周期脚本，与监听器配对)
+│       └── GearInLocationChangeListener  # 本节新增 (通道二：ListenerManagerAPI 类型化监听器)
 └── jars/
 ```
 
@@ -345,7 +345,7 @@ Starsector/mods/GearIndustry/
     SectorAPI sector = Global.getSector();
 
     // 通道一：监听器 + 生命周期脚本配对注册。addListener 按同一性去重，但 addScript 不去重，
-    // 因此整个注册块必须用 REGISTER_MARK 门控(硬规则 2)。
+    // 因此整个注册块必须用 REGISTER_MARK 门控 (硬规则 2)。
     if (!sector.getPersistentData().containsKey(GearInCampaignListener.REGISTER_MARK)) {
         sector.getPersistentData().put(GearInCampaignListener.REGISTER_MARK, true);
         GearInCampaignListener listener = new GearInCampaignListener();
@@ -355,7 +355,7 @@ Starsector/mods/GearIndustry/
     }
 
     // 通道二：类型化监听器，transient 注册。读档后 transient 仓库被清空，
-    // hasListenerOfClass 判空补注册(硬规则 4)；ListenerManagerAPI 不去重，别去掉这个判空。
+    // hasListenerOfClass 判空补注册 (硬规则 4)；ListenerManagerAPI 不去重，别去掉这个判空。
     if (!sector.getListenerManager().hasListenerOfClass(GearInLocationChangeListener.class)) {
         sector.getListenerManager().addListener(new GearInLocationChangeListener(), true);
     }
@@ -366,7 +366,7 @@ Starsector/mods/GearIndustry/
 ```java
     GearInCampaignListener listener = new GearInCampaignListener();
     GearInListenerLifecycleScript script = new GearInListenerLifecycleScript(listener);
-    script.setDaysToLive(30); // 约 30 个游戏日(约 300 真实秒)后自停并移除监听器
+    script.setDaysToLive(30); // 约 30 个游戏日 (约 300 真实秒) 后自停并移除监听器
     sector.addListener(listener);
     sector.addScript(script);
 ```
@@ -502,15 +502,15 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.combat.EngagementResultAPI;
 
 /**
- * 完整最小例：Sector 级生涯事件监听器(CampaignEventListener 角色)。
- * 注册入口：onGameLoad 门控块(页面调用点片段，REGISTER_MARK 一次性门控)。
+ * 完整最小例：Sector 级生涯事件监听器 (CampaignEventListener 角色)。
+ * 注册入口：onGameLoad 门控块 (页面调用点片段，REGISTER_MARK 一次性门控)。
  * 注册与自停由配对脚本 GearInListenerLifecycleScript 管理 —— 脚本到期后显式
- * removeListener：脚本结束不等于监听器移除(硬规则)。BaseCampaignEventListener
- * 提供全接口 21 方法的空实现，本类只覆写关心的事件边界(市场/贸易/战斗/舰队/声望)。
+ * removeListener：脚本结束不等于监听器移除 (硬规则)。BaseCampaignEventListener
+ * 提供全接口 21 方法的空实现，本类只覆写关心的事件边界 (市场/贸易/战斗/舰队/声望)。
  */
 public class GearInCampaignListener extends BaseCampaignEventListener {
 
-    /** 存档持久化标记：本监听器及其生命周期脚本是否已在该存档注册过(随存档保存)。 */
+    /** 存档持久化标记：本监听器及其生命周期脚本是否已在该存档注册过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_CampaignListener";
 
     private static final Logger LOG = Global.getLogger(GearInCampaignListener.class);
@@ -614,13 +614,13 @@ import com.fs.starfarer.api.campaign.CampaignClockAPI;
 import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
- * 完整最小例：监听器生命周期脚本(EveryFrameScript 角色)。
+ * 完整最小例：监听器生命周期脚本 (EveryFrameScript 角色)。
  *
- * 与 GearInCampaignListener(监听器角色)配对：原组合类拆分出的脚本半身。
- * 注册入口：onGameLoad 门控块内与监听器一同注册(sector.addScript(this))。
+ * 与 GearInCampaignListener(监听器角色) 配对：原组合类拆分出的脚本半身。
+ * 注册入口：onGameLoad 门控块内与监听器一同注册 (sector.addScript(this))。
  * 职责：按游戏天累计挂载时长，daysToLive >= 0 且到期时显式
  * sector.removeListener(listener) 并自停 ——isDone() 只清理脚本列表，
- * 监听器注册表必须单独移除，否则事件继续派发且实例随存档序列化(硬规则)。
+ * 监听器注册表必须单独移除，否则事件继续派发且实例随存档序列化 (硬规则)。
  */
 public class GearInListenerLifecycleScript implements EveryFrameScript {
 
@@ -629,7 +629,7 @@ public class GearInListenerLifecycleScript implements EveryFrameScript {
     /** 受管监听器：到期时由本脚本显式移除。 */
     private GearInCampaignListener listener;
 
-    /** 挂载以来的游戏天数(精确累加，保留小数)；随存档序列化，读档后继续累计。 */
+    /** 挂载以来的游戏天数 (精确累加，保留小数)；随存档序列化，读档后继续累计。 */
     private float daysActive = 0f;
 
     /** 演示参数：挂载满多少游戏天后自停并移除监听器；< 0 表示常驻不停止。 */
@@ -662,7 +662,7 @@ public class GearInListenerLifecycleScript implements EveryFrameScript {
         SectorAPI sector = Global.getSector();
         CampaignClockAPI clock = sector.getClock();
 
-        // amount 是上一帧真实秒数；经时钟换算才是本帧的游戏天数(10 真实秒 = 1 游戏日)。
+        // amount 是上一帧真实秒数；经时钟换算才是本帧的游戏天数 (10 真实秒 = 1 游戏日)。
         daysActive += clock.convertToDays(amount);
 
         if (daysToLive >= 0 && daysActive >= daysToLive) {
@@ -691,23 +691,23 @@ import com.fs.starfarer.api.campaign.LocationAPI;
 import com.fs.starfarer.api.campaign.listeners.CurrentLocationChangedListener;
 
 /**
- * 完整最小例：经 ListenerManagerAPI 注册的类型化监听器(typed listener)。
+ * 完整最小例：经 ListenerManagerAPI 注册的类型化监听器 (typed listener)。
  *
- * 与 GearInCampaignListener(Sector 级 CampaignEventListener 通道)不同，本类走的是
+ * 与 GearInCampaignListener(Sector 级 CampaignEventListener 通道) 不同，本类走的是
  * 第二条通道：SectorAPI.getListenerManager().addListener(listener, isTransient) 注册、
  * removeListener(this) 移除，事件由 ListenerUtil 按接口类型派发
  * (本类对应 CurrentLocationChangedListener，派发点在生涯引擎的 advance
  * 检测到当前地点变化时)。
  *
  * 注册入口：onGameLoad(调用点片段见页面正文)，用 transient=true 注册 ——
- * transient 监听器不随存档保存(ListenerManagerAPI 的 transientListeners 仓库读档时
+ * transient 监听器不随存档保存 (ListenerManagerAPI 的 transientListeners 仓库读档时
  * 重建为空)，因此读档后必须重新注册；调用点用 hasListenerOfClass 判空
  * 再补注册即可覆盖旧档。
  *
  * 演示点：
- * 1. reportCurrentLocationChanged(prev, curr)：玩家当前地点变化(进出超空间、进入星系)时触发；
+ * 1. reportCurrentLocationChanged(prev, curr)：玩家当前地点变化 (进出超空间、进入星系) 时触发；
  * 2. 自移除：触发满 reportsLeft 次后 removeListener(this) 并打日志 —— 监听器在不再需要时
- *    必须在合适时机移除，否则事件持续派发(硬规则)；
+ *    必须在合适时机移除，否则事件持续派发 (硬规则)；
  * 3. 全部字段可随存档序列化；本类字段不涉及瞬态句柄。
  */
 public class GearInLocationChangeListener implements CurrentLocationChangedListener {
@@ -718,7 +718,7 @@ public class GearInLocationChangeListener implements CurrentLocationChangedListe
     private int reportsLeft = 5;
 
     public GearInLocationChangeListener() {
-        // 空构造：注册由调用方执行(onGameLoad，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad，见页面调用点片段)
     }
 
     @Override

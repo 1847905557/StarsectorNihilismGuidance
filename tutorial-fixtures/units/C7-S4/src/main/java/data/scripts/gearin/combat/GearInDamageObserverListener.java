@@ -12,7 +12,7 @@ import com.fs.starfarer.api.combat.listeners.DamageListener;
 import com.fs.starfarer.api.combat.listeners.DamageTakenModifier;
 
 /**
- * 引擎级伤害监听器(结算前修改 + 结算后报告)：由 GearInFlowObserverPlugin.init()
+ * 引擎级伤害监听器 (结算前修改 + 结算后报告)：由 GearInFlowObserverPlugin.init()
  * 接入 engine.getListenerManager()，每次伤害结算都会回调。本类不改数值 ——
  * 要修改只能走 damage.getModifier() 并返回修改 id(硬规范 6)，修改方法一律返回 null。
  */

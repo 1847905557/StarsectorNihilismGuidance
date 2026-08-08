@@ -99,7 +99,7 @@ MOD 正常启用，但 `getEnabledModPlugins` 对 `null` 类名直接跳过 —�
 
 ### 处理 Codex 生成
 
-`onAboutToStartGeneratingCodex()`、`onAboutToLinkCodexEntries()`、`onCodexDataGenerated()` 在 Codex 数据生成阶段按 "开始生成 → 链接条目 → 生成完成" 调用 (API javadoc；Codex 生成器的调用点不在本教程核对范围内)。
+`onAboutToStartGeneratingCodex()`、`onAboutToLinkCodexEntries()`、`onCodexDataGenerated()` 在 Codex 数据生成阶段按 "开始生成 → 链接条目 → 生成完成" 调用。这个顺序来自 `CodexDataV2` 的实际调用链，不是 `ModPlugin` 的 javadoc 承诺。
 
 成熟实例在 `onCodexDataGenerated()` 里为 Codex 条目写关联。本节示例不使用它们。
 
@@ -216,7 +216,7 @@ if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
 Starsector/mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
-├── mod_info.json          # 追加 modPlugin 字段(见上)
+├── mod_info.json          # 追加 modPlugin 字段 (见上)
 ├── data/
 ├── src/
 │   └── data/scripts/gearin/GearInModPlugin   # 本节新增
@@ -242,7 +242,7 @@ Starsector/mods/GearIndustry/
 ```java
     @Override
     public void onNewGame() {
-        // C3-S6：新档生成入口(齿轮工业星系与关系播种)，累计工程保留
+        // C3-S6：新档生成入口 (齿轮工业星系与关系播种)，累计工程保留
         new data.scripts.gearin.campaign.GearInSystemGenerator().generate(Global.getSector());
         seedRelations(Global.getSector());
         log("onNewGame");
@@ -354,11 +354,11 @@ import com.fs.starfarer.api.impl.campaign.shared.SharedData;
 /**
  * 完整最小例：ModPlugin 生命周期、注册与存档入口。
  * mod_info.json 的 modPlugin 字段指向本类。
- * 每个回调打印一行日志；"首次进入存档"的一次性初始化用 sector persistent data 门控(CLASS_MARK 模式)。
+ * 每个回调打印一行日志；"首次进入存档" 的一次性初始化用 sector persistent data 门控 (CLASS_MARK 模式)。
  */
 public class GearInModPlugin extends BaseModPlugin {
 
-    /** 存档持久化标记：本 MOD 是否已完成首次进入初始化(随存档保存)。 */
+    /** 存档持久化标记：本 MOD 是否已完成首次进入初始化 (随存档保存)。 */
     public static final String CLASS_MARK = "GearInModPlugin";
 
     @Override

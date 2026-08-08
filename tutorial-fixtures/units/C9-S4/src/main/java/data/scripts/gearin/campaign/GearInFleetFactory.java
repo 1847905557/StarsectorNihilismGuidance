@@ -22,28 +22,28 @@ import com.fs.starfarer.api.loading.VariantSource;
 import com.fs.starfarer.api.util.Misc;
 
 /**
- * 完整最小例：生涯舰队工厂(FleetParamsV3 -> FleetFactoryV3.createFleet -> inflate -> spawn)。
+ * 完整最小例：生涯舰队工厂 (FleetParamsV3 -> FleetFactoryV3.createFleet -> inflate -> spawn)。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控
  * (沿用既有模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
  *
- * 行为：挂载后第一次 advance() 执行一次演示序列并自停(isDone()=true，引擎下一帧自动移除本脚本)：
- *   1. 基线：选定演示市场(优先 jangala)，记录地点/锚点与市场质量；
+ * 行为：挂载后第一次 advance() 执行一次演示序列并自停 (isDone()=true，引擎下一帧自动移除本脚本)：
+ *   1. 基线：选定演示市场 (优先 jangala)，记录地点/锚点与市场质量；
  *   2. FleetParamsV3(market 构造器：source/quality/timestamp 一次就位)，qualityOverride=0.6
- *      压质量(平均 D 插约 2 个/船，可观察)，flagshipVariantId 指定旗舰变体；
+ *      压质量 (平均 D 插约 2 个/船，可观察)，flagshipVariantId 指定旗舰变体；
  *   3. FleetFactoryV3.createFleet：记录舰队名/势力/类型/成员数/战机数/FP；
  *   4. 旗舰与指挥官：flagship hull 与变体、舰长是否就是舰队指挥官、指挥官等级/personality、军官数；
  *   5. 膨胀前状态：isInflated=false、inflater 已挂载、inflater.getQuality()==0.6；
- *   6. inflateIfNeeded 后：isInflated=true、inflater 保留(persistent=true)、
- *      成员变体来源 REFIT、D 插总数(质量 0.6 -> 平均 2 个/船)；
+ *   6. inflateIfNeeded 后：isInflated=true、inflater 保留 (persistent=true)、
+ *      成员变体来源 REFIT、D 插总数 (质量 0.6 -> 平均 2 个/船)；
  *   7. 内存键：$fleetType / $sourceMarket / $salvageSeed / $spawnFPMult；
  *   8. 投放：location.spawnFleet(anchor, 0, 0, fleet) -> 入容器、坐标=锚点坐标、isAlive=true；
- *   9. 对照：FleetFactory.createPatrol(V1 固定模板)生成快速巡逻队并投放；
+ *   9. 对照：FleetFactory.createPatrol(V1 固定模板) 生成快速巡逻队并投放；
  *  10. 清理：同帧 removeEntity 移除两支舰队，不留任何持久副作用。
  */
 public class GearInFleetFactory implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_FleetFactory";
 
     private static final Logger LOG = Global.getLogger(GearInFleetFactory.class);
@@ -52,7 +52,7 @@ public class GearInFleetFactory implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInFleetFactory() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -95,12 +95,12 @@ public class GearInFleetFactory implements EveryFrameScript {
                 market.getId(), market.getSize(), location.getId(),
                 Misc.getShipQuality(market, market.getFactionId())));
 
-        // --- 1. FleetParamsV3：market 构造器(source + quality + timestamp 一次就位)---
+        // --- 1. FleetParamsV3：market 构造器 (source + quality + timestamp 一次就位)---
         // combatPts=40, freighterPts=12, tankerPts=6；总点数 58 -> getMinPreferredMarketSize=5
         FleetParamsV3 params = new FleetParamsV3(market, FleetTypes.PATROL_MEDIUM,
                 40f, 12f, 6f, 0f, 0f, 0f, 0f);
         params.qualityOverride = 0.6f;          // 覆盖市场质量：quality=0.6 -> 平均 D 插 (1-0.6)/0.2 = 2 个/船
-        params.flagshipVariantId = "tempest_Attack"; // 旗舰装配覆盖(换 hull 为 tempest)
+        params.flagshipVariantId = "tempest_Attack"; // 旗舰装配覆盖 (换 hull 为 tempest)
         params.officerLevelBonus = 1;           // 军官/指挥官等级 +1
         LOG.info(String.format(
                 "GearIn fleet factory params: faction=%s fleetType=%s marketQuality=%.2f qualityOverride=%.2f totalPts=%.0f",
@@ -160,7 +160,7 @@ public class GearInFleetFactory implements EveryFrameScript {
                 fleet.getMemoryWithoutUpdate().getLong(MemFlags.SALVAGE_SEED),
                 Misc.getSpawnFPMult(fleet)));
 
-        // --- 7. 投放：入容器 + 定位(锚点坐标 + 偏移)+ setNoEngaging(3s) ---
+        // --- 7. 投放：入容器 + 定位 (锚点坐标 + 偏移)+ setNoEngaging(3s) ---
         float anchorX = anchor.getLocation().x;
         float anchorY = anchor.getLocation().y;
         location.spawnFleet(anchor, 0f, 0f, fleet);
@@ -169,7 +169,7 @@ public class GearInFleetFactory implements EveryFrameScript {
                 fleet.getContainingLocation() == location,
                 fleet.getLocation().x, fleet.getLocation().y, anchorX, anchorY, fleet.isAlive()));
 
-        // --- 8. 对照：FleetFactory(V1)固定模板 createPatrol ---
+        // --- 8. 对照：FleetFactory(V1) 固定模板 createPatrol ---
         CampaignFleetAPI patrol = FleetFactory.createPatrol(market, FleetFactory.PatrolType.FAST);
         List<FleetMemberAPI> patrolMembers = patrol.getFleetData().getMembersListCopy();
         LOG.info(String.format(

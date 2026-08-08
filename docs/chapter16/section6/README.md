@@ -1,389 +1,147 @@
-# 用 MagicLib 制作可调脉冲光束与状态条
+# 让 GraphicsLib 管理纹理资源
 
-脉冲光束需要三个部分同时成立：设置决定颜色与伤害，`MagicFakeBeam` 在一次调用中结算命中，`MagicUI` 持续刷新玩家状态条。本节让光束每 2 秒自动向最近敌舰发射一次，并让 HUD 同步显示充能与累计发射次数。
+舰船灯光已经接通，但材质、法线和表面贴图的取得时机仍会改变首帧表现。本节把纹理登记、实际加载、法线生成和预载开关分开，沿用 [C16-S5] 的报告器观察每种选择的结果。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：~14 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~20 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 用 `MagicSettings` 一次读取并缓存光束与 HUD 配置；
-- 按帧时间推进 0–1 充能，并在满充时只触发一次攻击；
-- 选择最近可见敌舰，计算实际发射角度；
-- 用 `MagicFakeBeam` 生成一次瞬时伤害与短暂视觉；
-- 用固定 key 刷新 `MagicUI` 状态条，并从调用次数定位重复伤害。
+- 区分 `TextureData.getTextureData()` 与带自动生成参数的查询；
+- 选择 `mapSpriteToMNSWithAutoGen()` 或 `autoGenNormalMap()` 的调用位置；
+- 判断 `preloadAllMaps` 对首次使用和战斗驻留的影响；
+- 用 [C16-S5] 的 `GearInLightReporter` 核对 `TextureEntry` 是否真正可用。
 
 ## 前置知识
 
-- [C6-S2] 理解 Java 类、方法、字段与入口插件；
-- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C16-S5] 已完成 GraphicsLib 初始化和舰船灯光接线；
+- 了解舰船的 material、normal 和 surface 贴图用途；
+- 能够读取 `starsector.log` 中的纹理查询结果。
 
-## 明确当前需求
+## 先把三种贴图需求分开
 
-玩家舰每 2 秒完成一次充能，随后向最近可见敌舰发射短促光束；命中在调用当帧结算，HUD 同时显示下一次发射的充能进度和累计次数。修改配置并重启后，宽度、射程、颜色、伤害与 EMP 随之变化。
+灯光 shader 读取的不是同一个纹理对象。material 决定受光颜色，normal 决定法线方向，surface 提供额外表面信息；先确认缺的是哪一类，才能选择查询或生成路径。
 
-## 文件与 API 链路
+### 纹理资源选择速查表
 
-### 脉冲光束 API 职责速查表
+| 需求 | 入口 | 结果 |
+|---|---|---|
+| 只查询已登记条目 | `getTextureData()` | 不主动生成缺失的法线贴图 |
+| 查询并允许自动补全 | `getTextureDataWithAutoGen()` | 按参数尝试取得或生成目标条目 |
+| 从原始精灵建立三图关系 | `mapSpriteToMNSWithAutoGen()` | 登记 material、normal 和 surface 的映射 |
+| 只生成法线贴图 | `autoGenNormalMap()` | 返回生成后的法线精灵 |
 
-| 对象 | 职责 |
-|---|---|
-| `MagicSettings` | 从 `modSettings.json` 的 `gear_in` 段读取值 |
-| `AIUtils` 与 `VectorUtils` | 选择目标并计算角度 |
-| `MagicFakeBeam` | 完成射线、视觉与伤害 |
-| `MagicUI` | 为玩家舰绘制状态条，并要求定期刷新唯一 key |
+## 查询已经登记的条目
 
-### 缓存光束与界面配置
-
-**插入位置：`GearInMagicSettings` 构造方法。** 缓存宽度、射程、伤害、EMP 与颜色，避免每帧解析设置。
+**插入位置：`GearInLightReporter.describeTexture()`。** 先使用普通查询确认登记表中是否已有条目。
 
 ```java
-beamWidth = MagicSettings.getFloat(CONFIG_SECTION, "beam_width");
-beamRange = MagicSettings.getFloat(CONFIG_SECTION, "beam_range");
-beamDamage = MagicSettings.getFloat(CONFIG_SECTION, "beam_damage");
-beamCoreColor = MagicSettings.getColorRGB(CONFIG_SECTION, "beam_color_core");
+TextureEntry normal = TextureData.getTextureData(
+        hullId, TextureDataType.NORMAL_MAP, ObjectType.SHIP, 0);
 ```
 
-完成信号：构造日志一次打印 `width`、`range`、`damage`、`emp`、持续时间、颜色和标签。
+完成信号：日志能区分 `normal=none` 和拥有有效纹理 ID 的条目。
 
-### 推进自动充能
+## 允许查询路径自动补全
 
-**插入位置：`GearInBeamCaster.advance()`。** 用帧时间推进充能，达到 1 时清零并触发一次发射。
+**插入位置：需要兼容缺少 normal map 的消费入口。** 把宿主对象和 `unloadedOk` 一并交给带自动生成参数的查询。
 
 ```java
-beamCharge += amount / BEAM_INTERVAL;
-if (beamCharge >= 1f) {
-    beamCharge = 0f;
-    fireBeam();
-}
+TextureEntry normal = TextureData.getTextureDataWithAutoGen(
+        hullId, TextureDataType.NORMAL_MAP, ObjectType.SHIP, 0,
+        ship, true);
 ```
 
-完成信号：非暂停状态下约 2 秒触发一次；一次 `advance()` 至多调用一次 `fireBeam()`。
+完成信号：原始舰船没有独立 normal map 时，查询仍能得到可供 shader 使用的条目，或明确返回 `null`。
 
-### 选择目标并计算角度
+## 从精灵登记材质关系
 
-**插入位置：`GearInBeamCaster.fireBeam()` 的目标检查后。** 选择最近可见敌舰，并从玩家舰位置计算世界角度。
+**插入位置：MOD 的应用加载期资源准备入口。** 当同一舰船需要从原始精灵建立三图关系时，使用统一映射入口。
 
 ```java
-ShipAPI enemy = AIUtils.getNearestEnemy(player);
-if (enemy == null) {
-    return;
-}
-Vector2f from = player.getLocation();
-float angle = VectorUtils.getAngle(from, enemy.getLocation());
+TextureData.mapSpriteToMNSWithAutoGen(
+        hullId, spriteName, ObjectType.SHIP, 0, true, false);
 ```
 
-完成信号：没有敌舰时记录诊断并跳过发射；目标移动到另一侧后，光束角度随目标改变。
+完成信号：后续 material、normal 和 surface 查询使用同一个 hull ID，并各自返回对应条目。
 
-### 结算一次伪光束
+## 单独生成缺失的法线贴图
 
-**插入位置：`fireBeam()` 的目标分支。** 一次调用同时生成视觉与瞬时伤害。
+**插入位置：确认只缺 normal map 的资源分支。** 不重新登记已有 material 和 surface，只生成缺失的法线对象。
 
 ```java
-MagicFakeBeam.spawnFakeBeam(engine, from, settings.beamRange, angle,
-        settings.beamWidth, settings.beamFull, settings.beamFading,
-        settings.beamImpactSize, settings.beamCoreColor,
-        settings.beamFringeColor, settings.beamDamage,
-        DamageType.ENERGY, settings.beamEmp, player);
+SpriteAPI normalSprite = TextureData.autoGenNormalMap(
+        spriteName, hullId, ObjectType.SHIP, 0);
 ```
 
-完成信号：`beamCount` 每次成功调用后增加 1，目标在该帧受到一次伤害，视觉按配置继续保留。
+完成信号：生成结果可以通过 `TextureEntry` 查询，并在灯光 shader 开启时改变舰船受光方向。
 
-### 用唯一 key 刷新状态条
+## 选择战斗前预载还是首次使用加载
 
-**插入位置：`GearInHudBar.refresh()`。** 使用固定 key、当前充能和累计次数刷新同一条 HUD 项。
+**插入位置：GraphicsLib 的 `GRAPHICS_OPTIONS.ini`。** `preloadAllMaps` 决定已登记贴图是否在战斗前集中加载。
 
-```java
-MagicUI.drawInterfaceStatusBar(player, HUD_BAR_KEY, beam.getBeamCharge(),
-        settings.beamCoreColor, settings.beamFringeColor, 0f,
-        "Beam charge", beam.getBeamCount());
+```ini
+preloadAllMaps=false
 ```
 
-完成信号：HUD 只有一条 `Beam charge`，填充从 0 走向 1，右侧数字在成功发射后增加。
+保持关闭时，首个使用点可能承担加载成本；打开时，GraphicsLib 会在预载路径集中处理已启用的贴图，代价是更早占用显存。
 
-### 安排刷新与暂停顺序
-
-**插入位置：战斗插件 `advance()`。** HUD 先刷新，再由暂停守卫决定是否推进充能。
-
-```java
-if (settings.hudEnabled) {
-    hud.refresh(engine);
-}
-if (engine.isPaused()) {
-    return;
-}
-beam.advance(amount);
-```
-
-完成信号：暂停期间状态条不会因停止刷新而超时消失，充能数值保持不变。
+完成信号：切换设置后，首个使用点的日志和首帧耗时发生可观察变化，纹理条目仍能被 [C16-S5] 报告器查询。
 
 ## 排查关键故障
 
 下面是**局部故障片段**：
 
 ```java
-MagicFakeBeam.spawnFakeBeam(...);
-MagicFakeBeam.spawnFakeBeam(...);
+TextureEntry normal = TextureData.getTextureData(
+        hullId, TextureDataType.NORMAL_MAP, ObjectType.SHIP, 0);
 ```
 
-实际症状：画面看似一束更亮的光，目标却在同一帧受到两次伤害。
+实际症状：舰船有 material 贴图，灯光却没有法线方向变化。
 
-原因：伪光束每次调用都会即时结算伤害，视觉持续时间不代表持续伤害。
+原因：普通查询只读取已登记条目，不会替缺失的 normal map 自动生成资源。
 
 下面是**局部修正片段**：
 
 ```java
-beamCharge += amount / BEAM_INTERVAL;
-if (beamCharge >= 1f) {
-    beamCharge = 0f;
-    fireBeam();
-}
+TextureEntry normal = TextureData.getTextureDataWithAutoGen(
+        hullId, TextureDataType.NORMAL_MAP, ObjectType.SHIP, 0,
+        ship, true);
 ```
 
-复验：记录相邻两次 `beamCount` 变化、调用前后的目标装甲或船体值，确认每个 2 秒周期只增加一次计数并结算一次伤害。
-
-## 完整最小例
-
-设置、攻击与 HUD 分成三个角色。战斗插件负责按 "刷新 HUD、暂停判断、推进充能" 的顺序接线，完整类不假定任何按键或舰船系统状态。
+复验：重新进入战斗，核对 `normal` 条目和舰船受光方向；如果仍为 `null`，检查原始 sprite 路径和自动生成开关。
 
 ## 验证方案
 
-前置数据：`modSettings.json` 的 `gear_in` 段包含完整的 `beam_*` 键，三个角色已经由战斗插件构造和接线。
-
-1. 进入战斗，核对一次 `GearIn magic settings` 日志中的最终配置。
-2. 保持一艘敌舰可见，观察 HUD 在 2 秒内从 0 充到 1，随后清零并使右侧计数增加 1。
-3. 记录目标发射前后的装甲或船体值，确认每次计数变化只对应一次伤害。
-4. 移走所有敌舰并等待满充，确认日志出现 `no enemy in sight`，计数不增加。
-5. 暂停超过 5 秒，确认状态条仍在、充能不推进；恢复后继续充能。
-6. 修改颜色与伤害配置并重启，核对设置日志、光束颜色和单次伤害同时变化。
+1. 保持 [C16-S5] 的 `GearInLightReporter`，记录同一 hull ID 的 material、normal 和 surface 查询结果。
+2. 对完整三图舰船使用普通查询，确认三类条目都可取得。
+3. 对缺少 normal map 的舰船先使用普通查询，再改用自动生成查询，比较返回值和首帧日志。
+4. 切换 `preloadAllMaps`，分别在战斗前和首次使用时记录纹理加载日志与首帧耗时。
+5. 战斗结束后再次读取条目，确认预载策略没有让查询关系丢失。
 
 预期结果：
 
-- 设置只在角色构造时读取一次，日志值与本次战斗的光束参数一致；
-- 非暂停状态下每 2 秒尝试一次发射，有目标时计数增加并结算一次伤害；
-- 无目标时不生成光束、不增加计数，下一周期重新查询；
-- 固定 key 让 HUD 保持为一条，填充与 `beamCharge` 一致；
-- 暂停期间 HUD 继续刷新，充能与攻击停止推进；
-- 配置修改在重启并重新构造设置角色后生效。
+- 普通查询只报告已登记的条目；
+- 自动生成查询能够处理允许补全的缺失 normal map；
+- 三图映射使用同一 hull ID；
+- 预载开关改变加载时机，不改变条目之间的映射关系。
 
 ## 故障分析
 
-- **一次充能造成两次伤害**：`spawnFakeBeam()` 每次调用都会立即结算，视觉持续时间不会增加伤害次数。让充能状态只调用一次 `fireBeam()`，再用 `beamCount` 与命中日志核对。
-- **错误配置没有抛异常**：`MagicSettings` 对缺键或类型错误返回缺省值并写警告。核对构造日志，修正配置后确认射程和伤害不再为缺省值。
-- **HUD 状态条约五秒后消失**：状态条没有持续刷新，或刷新被暂停判断跳过。把 `refresh()` 放在暂停判断之前并保持固定 key，继续战斗确认条形状态仍在。
-- **AI 舰没有显示状态条**：`MagicUI` 只在玩家舰且 HUD 可见时绘制。将验证目标换为玩家舰，确认状态条出现；AI 舰保持无 HUD 的预期。
+- **`normal` 始终为 `null`**：查询使用了普通入口，且资源没有登记 normal map。改用自动生成查询或先建立三图映射，再通过 [C16-S5] 报告器复验。
+- **首帧出现明显卡顿**：贴图在战斗首次使用时才加载。启用预载并比较下一场战斗的首帧日志，确认加载成本移到战斗前。
+- **自动生成后灯光仍无方向变化**：生成的法线条目没有使用与舰船相同的 hull ID。核对映射键和 `ObjectType.SHIP`，重新查询三类条目。
 
 ## 总结
 
-`MagicSettings` 决定本次战斗使用的参数，`GearInBeamCaster` 每 2 秒尝试一次攻击，`MagicUI` 负责持续反馈。计数只在成功生成光束后增加，因此它既是 HUD 信息，也是核对伤害调用次数的直接证据。
+纹理问题先判断条目是否登记，再选择普通查询、自动补全、三图映射或单独生成。`preloadAllMaps` 只改变加载时机和显存占用，不能替代资源登记；[C16-S5] 的报告日志负责确认最终消费侧拿到的条目。
 
 ## 建议参考项
 
-- `MagicSettings`：读取合并后的 MOD 设置；
-- `MagicFakeBeam.spawnFakeBeam`：生成瞬时伤害光束；
-- `MagicUI.drawInterfaceStatusBar`：刷新玩家 HUD 状态条。
-::: details 完整成品：GearInBeamCaster
-
-```java
-package data.scripts.gearin.lib;
-
-import org.apache.log4j.Logger;
-import org.lazywizard.lazylib.VectorUtils;
-import org.lazywizard.lazylib.combat.AIUtils;
-import org.lwjgl.util.vector.Vector2f;
-import org.magiclib.util.MagicFakeBeam;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.DamageType;
-import com.fs.starfarer.api.combat.ShipAPI;
-
-/** 伪光束(MagicFakeBeam)：每 BEAM_INTERVAL 秒向最近可见敌舰发射一条伪光束。
- * 伤害瞬时结算，持续视觉时间不等于持续伤害时间；光束不会被中途物体截断；
- * HIGH_EXPLOSIVE 对装甲全额伤害(原版有折减)，本类用 ENERGY 规避。 */
-public class GearInBeamCaster {
-    private static final Logger LOG = Global.getLogger(GearInBeamCaster.class);
-    private static final float BEAM_INTERVAL = 2f; // 光束发射间隔(秒)；伤害瞬时，视觉时长由 modSettings.json 控制
-
-    private final GearInMagicSettings settings;
-    private CombatEngineAPI engine;
-    private float beamCharge; // 0..1：充能进度，HUD 状态条显示它
-    private int beamCount;
-
-    public GearInBeamCaster(GearInMagicSettings settings) {
-        this.settings = settings;
-    }
-
-    /** 战斗 init 时注入引擎(由接线类调用)。 */
-    public void init(CombatEngineAPI engine) {
-        this.engine = engine;
-    }
-
-    /** 每帧推进充能，满 1 发射并清零；只在非暂停推进(暂停守卫由接线类负责)。 */
-    public void advance(float amount) {
-        beamCharge += amount / BEAM_INTERVAL;
-        if (beamCharge >= 1f) {
-            beamCharge = 0f;
-            fireBeam();
-        }
-    }
-
-    public float getBeamCharge() { return beamCharge; }
-    public int getBeamCount() { return beamCount; }
-
-    /** 向最近可见敌舰发射一条伪光束：视觉立即生成，伤害在调用内瞬时结算。 */
-    private void fireBeam() {
-        ShipAPI player = engine.getPlayerShip();
-        if (player == null || !player.isAlive()) {
-            return;
-        }
-        ShipAPI enemy = AIUtils.getNearestEnemy(player); // @Nullable：判空方式见 C16-S3
-        if (enemy == null) {
-            LOG.info("GearIn magic beam: no enemy in sight");
-            return;
-        }
-        Vector2f from = player.getLocation();
-        float angle = VectorUtils.getAngle(from, enemy.getLocation());
-        MagicFakeBeam.spawnFakeBeam(
-                engine,
-                from,
-                settings.beamRange,
-                angle,
-                settings.beamWidth,
-                settings.beamFull,
-                settings.beamFading,
-                settings.beamImpactSize,
-                settings.beamCoreColor,
-                settings.beamFringeColor,
-                settings.beamDamage,
-                DamageType.ENERGY,
-                settings.beamEmp,
-                player);
-        beamCount++;
-        LOG.info("GearIn magic beam: #" + beamCount + " damage=" + settings.beamDamage
-                + " emp=" + settings.beamEmp + " width=" + settings.beamWidth
-                + " range=" + settings.beamRange + " tags=" + settings.beamTags);
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInHudBar
-
-```java
-package data.scripts.gearin.lib;
-
-import org.magiclib.util.MagicUI;
-
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.ShipAPI;
-
-/** 战斗 HUD 状态条(MagicUI)：以固定 key 刷新玩家舰状态条。
- * 只注册数据，绘制由 MagicLib 的 MagicRenderPlugin(settings plugins 注册的
- * 战斗插件)每帧完成；状态条约 5 秒不被刷新就会被移除(含暂停时间)，因此
- * 刷新调用必须放在暂停守卫之前。 */
-public class GearInHudBar {
-
-    /** 战斗 HUD 状态条 key：MagicLib 要求对本 MOD 唯一；换 key 会生成另一条状态条。 */
-    private static final String HUD_BAR_KEY = "gear_in_beam_charge";
-
-    private final GearInBeamCaster beam;
-    private final GearInMagicSettings settings;
-
-    public GearInHudBar(GearInBeamCaster beam, GearInMagicSettings settings) {
-        this.beam = beam;
-        this.settings = settings;
-    }
-
-    /** 刷新状态条：填充进度 = 光束充能，颜色复用光束颜色(改配置 → 光束与状态条一起变色)。 */
-    public void refresh(CombatEngineAPI engine) {
-        ShipAPI player = engine.getPlayerShip();
-        if (player == null) {
-            return;
-        }
-        MagicUI.drawInterfaceStatusBar(
-                player,
-                HUD_BAR_KEY,            // 固定 key：改变文本不会生成新条(无 key 重载用文本兼作 key)
-                beam.getBeamCharge(),   // 0..1 的填充进度
-                settings.beamCoreColor,   // 填充色；null 时用原版 HUD 绿
-                settings.beamFringeColor, // 边框色；null 时用原版 HUD 绿
-                0f,                     // 第二段填充(类硬幅能)，0 即关闭
-                "Beam charge",
-                beam.getBeamCount());   // 右侧数字，0..999999
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInMagicSettings
-
-```java
-package data.scripts.gearin.lib;
-
-import java.awt.Color;
-import java.util.List;
-
-import org.apache.log4j.Logger;
-import org.magiclib.util.MagicSettings;
-
-import com.fs.starfarer.api.Global;
-
-/** 设置接入(MagicSettings)：从 data/config/modSettings.json 的 "gear_in" 段读取
- * 光束与 HUD 配置，构造时缓存一次、不在每帧解析(MagicSettings javadoc 建议)。
- * 键缺失返回类型缺省值(false / 0 / Color.RED / 空集合)并写 warn 日志，不抛
- * 异常 —— 缺省值会参与后续运行语义，业务开关不要依赖缺省值。 */
-public class GearInMagicSettings {
-
-    private static final Logger LOG = Global.getLogger(GearInMagicSettings.class);
-
-    /** data/config/modSettings.json 中本 MOD 的段名(= MOD id "gear_in")。 */
-    private static final String CONFIG_SECTION = "gear_in";
-
-    /** HUD 状态条总开关。 */
-    public final boolean hudEnabled;
-    /** 光束宽度 / 射程 / 伤害 / EMP(数值键缺省 0)。 */
-    public final float beamWidth;
-    public final float beamRange;
-    public final float beamDamage;
-    public final float beamEmp;
-    /** 全亮与淡出时长(秒)：只控制视觉，不影响伤害结算。 */
-    public final float beamFull;
-    public final float beamFading;
-    /** 命中光斑尺寸。 */
-    public final float beamImpactSize;
-    /** 光束核心 / 边缘颜色(缺省 Color.RED)。 */
-    public final Color beamCoreColor;
-    public final Color beamFringeColor;
-    /** 光束标签列表(缺省空集合)。 */
-    public final List<String> beamTags;
-
-    public GearInMagicSettings() {
-        hudEnabled = MagicSettings.getBoolean(CONFIG_SECTION, "hud_enabled");
-        beamWidth = MagicSettings.getFloat(CONFIG_SECTION, "beam_width");
-        beamRange = MagicSettings.getFloat(CONFIG_SECTION, "beam_range");
-        beamDamage = MagicSettings.getFloat(CONFIG_SECTION, "beam_damage");
-        beamEmp = MagicSettings.getFloat(CONFIG_SECTION, "beam_emp");
-        beamFull = MagicSettings.getFloat(CONFIG_SECTION, "beam_full");
-        beamFading = MagicSettings.getFloat(CONFIG_SECTION, "beam_fading");
-        beamImpactSize = MagicSettings.getFloat(CONFIG_SECTION, "beam_impact_size");
-        beamCoreColor = MagicSettings.getColorRGB(CONFIG_SECTION, "beam_color_core");
-        beamFringeColor = MagicSettings.getColorRGB(CONFIG_SECTION, "beam_color_fringe");
-        beamTags = MagicSettings.getList(CONFIG_SECTION, "beam_tags");
-        LOG.info("GearIn magic settings: hud=" + hudEnabled
-                + " width=" + beamWidth + " range=" + beamRange
-                + " damage=" + beamDamage + " emp=" + beamEmp
-                + " full=" + beamFull + " fading=" + beamFading
-                + " impact=" + beamImpactSize
-                + " core=(" + beamCoreColor.getRed() + "," + beamCoreColor.getGreen() + "," + beamCoreColor.getBlue() + ")"
-                + " tags=" + beamTags);
-    }
-}
-```
-
-:::
+- `TextureData.getTextureData`：查询已登记条目；
+- `TextureData.getTextureDataWithAutoGen`：允许自动补全的查询；
+- `TextureData.mapSpriteToMNSWithAutoGen`：建立三图映射；
+- `GraphicsLibSettings.preloadAllMaps`：读取预载开关。

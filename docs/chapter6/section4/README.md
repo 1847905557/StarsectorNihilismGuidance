@@ -43,7 +43,7 @@
 | `getFloat(String key)` | 浮点数 | 抛 `RuntimeException` |
 | `getInt(String key)` | 整数 | 先按浮点读取，再截断小数；缺失抛 `RuntimeException` |
 | `getBoolean(String key)` | 布尔值 | 抛 `RuntimeException` |
-| `getColor(String key)` | 颜色数组或颜色名 | 抛 `RuntimeException` |
+| `getColor(String key)` | 4 元素 RGBA 数组 | 键缺失返回并缓存 `Color.white`；类型不符时抛 `RuntimeException` |
 | `optBoolean(String key, boolean fallback)` | 布尔值 | 返回传入的缺省值 |
 | `getSettingsJSON()` | 合并后的 JSON 对象 | 直接访问对象；类型由调用侧判断 |
 

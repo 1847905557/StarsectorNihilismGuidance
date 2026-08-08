@@ -15,31 +15,31 @@ import com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent;
 import com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager;
 
 /**
- * 完整最小例：酒吧事件(PortsideBarEvent)—— 酒吧选项、事件对话与生命周期收尾。
+ * 完整最小例：酒吧事件 (PortsideBarEvent)—— 酒吧选项、事件对话与生命周期收尾。
  *
  * 事件 ID：BaseBarEvent.getBarEventId() 默认返回类简单名，本示例不覆写，
  * 事件 ID 为 "GearInBarEvent"。该 ID 的消费者：BarEventManager 抽取时按
- * creator 的 getBarEventId() 去重(同一 ID 同时只有一个活跃事件)；BarCMD 展示后
+ * creator 的 getBarEventId() 去重 (同一 ID 同时只有一个活跃事件)；BarCMD 展示后
  * 把 event.getBarEventId() 写入市场内存 $BarCMD_shownEvents(带过期时间)，
  * 下次进入同一市场时按 ID 匹配复现同一组事件。
  *
  * 生命周期：
  * 1. 抽取与入列：creator.createBarEvent() 创建实例；BarEventManager 把它加入
- *    active 跟踪器(时长 = getBarEventActiveDuration())并写入 PortsideBarData 活动列表；
+ *    active 跟踪器 (时长 = getBarEventActiveDuration()) 并写入 PortsideBarData 活动列表；
  * 2. 显示：玩家进入酒吧时 BarCMD.showOptions() 遍历活动列表，经
  *    shouldShowAtMarket() 过滤、addPromptAndOption() 写入提示与选项 ——
- *    选项的 optionData 必须是事件自身(this)，BarCMD.optionSelected() 只对
+ *    选项的 optionData 必须是事件自身 (this)，BarCMD.optionSelected() 只对
  *    optionData instanceof PortsideBarEvent 进入 BarEventDialogPlugin 事件对话；
  * 3. 对话：BarEventDialogPlugin.init() 调 event.init() 接管对话面板；每次点选
  *    经 event.optionSelected()；isDialogFinished() 返回 true 时回到酒吧
  *    (endWithContinue() 决定是否先显示 "Continue")；
  * 4. 收尾：玩家与事件交互后必须调 BarEventManager.getInstance()
  *    .notifyWasInteractedWith(this)—— 把事件从活动列表与 active 跟踪器移除，
- *    并把 creator 置入 accepted 超时(默认 60-90 游戏天)，否则事件会在
+ *    并把 creator 置入 accepted 超时 (默认 60-90 游戏天)，否则事件会在
  *    active 时长内继续出现在同一市场、creator 也只能拿到普通超时。
  *
  * 演示内容：酒吧里一位落魄船员兜售一份补给藏匿点的情报。玩家可以花 500 信用点
- * 买下坐标(真实写入玩家舰队 cargo credits)，或婉拒、或直接离开；
+ * 买下坐标 (真实写入玩家舰队 cargo credits)，或婉拒、或直接离开；
  * 三个分支都以 notifyWasInteractedWith 收尾，验证 accepted 超时路径。
  */
 public class GearInBarEvent extends BaseBarEvent {
@@ -51,19 +51,19 @@ public class GearInBarEvent extends BaseBarEvent {
     public static final String OPTION_DECLINE = "gearIn_barDecline";
     public static final String OPTION_LEAVE = "gearIn_barLeave";
 
-    /** 买下情报的信用点价格(真实从玩家舰队 cargo 扣减)。 */
+    /** 买下情报的信用点价格 (真实从玩家舰队 cargo 扣减)。 */
     public static final int INFO_PRICE = 500;
 
     @Override
     public boolean shouldShowAtMarket(MarketAPI market) {
-        // BaseBarEvent 默认：shownAt == null 或 == 当前市场才显示(首次展示后锁定单一市场)。
+        // BaseBarEvent 默认：shownAt == null 或 == 当前市场才显示 (首次展示后锁定单一市场)。
         boolean ok = super.shouldShowAtMarket(market);
         if (!ok) {
             LOG.info("GearIn bar event: skip " + market.getName()
                     + " (shownAt locked to " + getShownAt() + ")");
             return false;
         }
-        // 演示市场条件：只出现在有太空港的市场(新档可访问的核心市场基本满足)。
+        // 演示市场条件：只出现在有太空港的市场 (新档可访问的核心市场基本满足)。
         if (!market.hasSpaceport()) {
             LOG.info("GearIn bar event: skip " + market.getName() + " (no spaceport)");
             return false;
@@ -83,7 +83,7 @@ public class GearInBarEvent extends BaseBarEvent {
         text.addPara("A disheveled spacer at the bar is telling anyone who will listen about a cache "
                 + "of supplies drifting somewhere in this system.");
 
-        // 关键机制：选项的 optionData 必须是事件自身(this)。BarCMD.optionSelected()
+        // 关键机制：选项的 optionData 必须是事件自身 (this)。BarCMD.optionSelected()
         // 只对 optionData instanceof PortsideBarEvent 才创建 BarEventDialogPlugin，
         // 进入事件对话；换成字符串或其他对象则落入规则对话框分支。
         dialog.getOptionPanel().addOption("Listen to the spacer's story", this);
@@ -93,7 +93,7 @@ public class GearInBarEvent extends BaseBarEvent {
     public void init(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
         super.init(dialog, memoryMap);
         LOG.info("GearIn bar event: dialog init (event id=" + getBarEventId() + ")");
-        // 对话每次进入都重置完成标记(BaseBarEvent.init 不清 done，需要自行重置)。
+        // 对话每次进入都重置完成标记 (BaseBarEvent.init 不清 done，需要自行重置)。
         done = false;
         showRumor();
     }
@@ -104,7 +104,7 @@ public class GearInBarEvent extends BaseBarEvent {
         text.addPara("You sit down across from the spacer and buy them a drink. Once the drink is "
                 + "half-gone, they lower their voice and tell you about a cargo pod that drifted off "
                 + "a burning freighter - still full of supplies, just waiting to be found. "
-                + "\"I'd sell you the coordinates for a song,\" they say.");
+                + "\"I'd sell you the coordinates for a song,\"they say.");
         options.clearOptions();
         options.addOption("Buy the coordinates (" + INFO_PRICE + " credits)", OPTION_ACCEPT);
         options.addOption("Hear them out but decline", OPTION_DECLINE);
@@ -138,7 +138,7 @@ public class GearInBarEvent extends BaseBarEvent {
         }
     }
 
-    /** 对话收尾：置完成标记并通知 manager 移除本事件(creator 进入 accepted 超时)。 */
+    /** 对话收尾：置完成标记并通知 manager 移除本事件 (creator 进入 accepted 超时)。 */
     private void finish() {
         done = true;
         BarEventManager.getInstance().notifyWasInteractedWith(this);
@@ -153,7 +153,7 @@ public class GearInBarEvent extends BaseBarEvent {
 
     @Override
     public void advance(float amount) {
-        // 事件在活动列表中每帧被 PortsideBarData.advance 推进(未暂停时)；
+        // 事件在活动列表中每帧被 PortsideBarData.advance 推进 (未暂停时)；
         // 本示例没有时间逻辑，保留空实现。需要限时消失的事件在这里推进
         // 倒计时并在到期时由 shouldRemoveEvent() 返回 true。
     }

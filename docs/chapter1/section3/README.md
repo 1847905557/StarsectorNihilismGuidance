@@ -38,9 +38,9 @@
 
 ![航母与战机贴图在 graphics/ships 目录中的位置](./storage.png)
 
-`守炉人-级(Furnaceman)` 航母，ID 为 `GearIn_furnaceman`。
+`守炉人-级 (Furnaceman)` 航母，ID 为 `GearIn_furnaceman`。
 
-`炉渣-级(Slag)` 战机，ID 为 `GearIn_slag`。
+`炉渣-级 (Slag)` 战机，ID 为 `GearIn_slag`。
 
 ## 制作航母舰船文件
 
@@ -56,7 +56,7 @@
 
 ::: caution 甲板设置
 
-每个甲板**必须设置至少 2 个港口 (Port)**。港口数为 0 或 1 的甲板可能会让战机直接从舰船中心生成。
+每个甲板建议设置至少 2 个港口 (Port)。港口数为 0 时战机从舰船中心生成；港口数为 1 时从该港口生成。
 
 建议每个甲板至少拥有 4 个港口。
 
@@ -287,6 +287,8 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 | refit                | 战机整备所需秒数                                             |
 | base value           | 每联队的成本价                                               |
 
+原版 `MilitarySubmarketPlugin` 等通过 `addFighters` 生成常规市场战机池时，只纳入 tier 不大于 3 的联队。这个限制属于上述原版调用链；直接生成或显式添加联队不受该筛选限制。
+
 ### wing_data.csv tags 速查表
 
 **本表未列出的 tags 与战机性能无关，例如 `rare_bp`，照抄原版样本即可。**
@@ -331,7 +333,7 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 ## 故障分析
 
 - **`Addship` 找不到航母**：`ship_data.csv` 的 `GearIn_furnaceman` 行未加载，或 `.ship`、CSV 与装配引用的船体 ID 不一致。统一 ID 并重启游戏后，`Addship GearIn_furnaceman` 应能生成航母。
-- **航母战机从舰体中心生成**：对应甲板的港口数为 0 或 1，无法提供正确的出入路径。在舰船编辑器中补齐并保存甲板港口，重新开战后，战机应从设定位置起飞。
+- **航母战机从舰体中心生成**：对应甲板没有港口，无法提供出入位置。在舰船编辑器中补齐并保存甲板港口，重新开战后，战机应从设定位置起飞。
 - **联队无法补充或返航**：战机船体的 `hullSize` 不是 `FIGHTER`，或 wing、variant、hull 三段 ID 没有依次指向现有对象。修正引用后重新部署航母，损失的战机应能补充，存活战机应能返航。
 - **`Addwing` 报 unknown wing**：`wing_data.csv` 的 ID 未加载，或命令中误用了 hull 或 variant ID。核对并使用 wing ID，重启后 `Addwing` 应能生成完整联队。
 - **战机生成后没有武器**：variant 中的槽位 ID 与 `.ship` 不一致，武器无法挂载到目标槽位。统一槽位 ID 并重新生成联队，战机应携带装配定义的武器。

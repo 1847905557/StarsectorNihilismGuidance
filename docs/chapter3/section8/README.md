@@ -80,7 +80,7 @@ GearIn_description_esc_comma,SHIP,"This is a test ship, with a comma in its name
 
 ```csv
 # 错误：裸引号不成对，启动期报 Mismatched quotes
-GearIn_description_esc_quote,SHIP,这艘船被称为"工坊之锤"。,,,,,
+GearIn_description_esc_quote,SHIP,这艘船被称为 "工坊之锤"。,,,,,
 
 # 正确：字段内引号写双份，整个字段加引号
 GearIn_description_esc_quote,SHIP,"这艘船被称为""工坊之锤""。",,,,,
@@ -179,7 +179,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
     - text1：实体 tooltip 正文、自定义实体详情、`PrintDescription` 规则命令的第 1 段；
     - text2：实体的默认标题/名称 —— 实体 tooltip 的标题优先取它 (空间站与带自定义描述的小行星：`hasText2() ? getText2() : 实体名`)；
     - text3：行星接触后显示的文本 (`PlanetInteractionDialogPluginImpl` 进入对话时若 `hasText3()` 先显示 text3)；
-    - text4/text5：`PrintDescription` 命令的第 4/5 段，无使用方时无作用。
+    - text4/text5：`SHIP_SYSTEM` 行在装配面板和图鉴系统详情中有消费方；`CUSTOM` 行的 text4/text5 无对应消费方，写入后不生效。
 - 优先级：行星/实体的 tooltip 与详情面板中，`customDescriptionId` 非空时 `CUSTOM` 行**覆盖** `PLANET` 行。
 - 原版参考行：`orbital_dockyard,CUSTOM,"An orbital dockyard, ..."`；自定义行星描述的常见写法是每颗行星一个 `CUSTOM` 键。
 
@@ -266,7 +266,7 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
 - 通讯 → 势力信息面板与数据库 → 势力详情：`luddic_church` 等 `FACTION` 行 text1 逐段显示；
 - 悬停超空间星云、环带等地形：`TERRAIN` 行 text1 显示；
 - 进入战斗悬停 C2 命令 (攻击/护航/撤退等)：tooltip 正文等于对应 `ACTION_TOOLTIP` 行 text1；
-- 数据库 → 图库：条目标题等于 `GALLERY` 行 text1，详情页正文为 text2 段落 (`"…"` 包裹段斜体)；
+- 数据库 → 图库：条目标题等于 `GALLERY` 行 text1，详情页正文为 text2 段落 (`"..."` 包裹段斜体)；
 - 悬停空间站：tooltip 标题取 `CUSTOM` 行的 text2(无自定义描述的行显示站名)。
 - **武器署名规则回归**：悬停任意 text2 以 `-` 开头的原版武器 (如欧米伽武器)，tooltip 的 text1 第一段为斜体且带署名行；GearIn 三门武器 (text2 无 `-` 前缀)tooltip 正常显示。
 - **基础对象链验证**：货舱显示回火合金 RESOURCE 文本，GearIn Prime 显示 PLANET 文本，势力详情显示 FACTION 文本，导航锚显示 CUSTOM 标题与正文；GearIn 舰船、武器和系统描述照旧显示。

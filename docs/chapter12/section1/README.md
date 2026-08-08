@@ -72,16 +72,16 @@
 | `convertToSeconds(days)` | `float` | 游戏天 → 真实秒 |
 | `convertToMonths(amount)` | `float` | 真实秒 → 游戏月 (÷10÷30) |
 | `getTimestamp()` | `long` | 日历毫秒；暂停时冻结；跨存档安全的间隔基准 |
-| `getElapsedDaysSince(ts)` | `float` | 从 `ts` 到现在的真实天数；`ts == 0` 返回 `Float.MAX_VALUE` |
+| `getElapsedDaysSince(ts)` | `float` | 从 `ts` 到现在的游戏天数；`ts == 0` 返回 `Float.MAX_VALUE` |
 | `createClock(ts)` | `CampaignClockAPI` | 按时间戳建独立时钟 (局部计时) |
 | `isFastForwardIteration()` | `boolean` | 本次推进来自加速帧的第 2 次及以后的迭代 (第 1 次连调时为 false；`SectorAPI.isFastForwardIteration()`) |
 
 - **基线：10 真实秒 = 1 游戏日** (`SECONDS_PER_GAME_DAY = 10.0F`)。`convertToDays(秒)` = 秒 ÷ 10；`convertToSeconds(天)` = 天 × 10；`convertToMonths(秒)` = 秒 ÷ 10 ÷ 30。
 - **日历按整游戏秒推进**：`advance(float)` 的实作是 `(int)(秒 / secondsPerDay * 86400)`，把整游戏秒加进日历；每帧独立截断，余数不结转。
     - 推论一：`getDay()` / `getDateString()` / `getTimestamp()` 全部来自这个日历，因此是整秒粒度；而 `convertToDays(amount)` 的累加保留小数。
-    - 推论二：长时间游玩后两者会错位 —— 每帧损失不足 1 游戏秒，60 FPS 下一小时约损失 1 个游戏天量级的日历时间 (帧率越高损失越快)。
+    - 推论二：长期漂移等于各帧被截去的小数游戏秒之和，取决于实际帧时分布；帧率本身不能确定漂移量或趋势。
     - 结论：**以日历为准 (跨日检测) 与以累加器为准 (`convertToDays` 累加) 是两种不同的时间基准**：短会话一致、长会话错位；统计型进度用累加器，日历事件用跨日检测。
-- **`getElapsedDaysSince(ts)`**：`(now - ts) / 86400000`，返回真实天数；`ts == 0` 时返回 `Float.MAX_VALUE` —— 计算未初始化间隔时不要传 0。
+- **`getElapsedDaysSince(ts)`**：`(now - ts) / 86400000`，返回游戏天数；`ts == 0` 时返回 `Float.MAX_VALUE` —— 计算未初始化间隔时不要传 0。
 - **`getTimestamp()`** 是日历毫秒值，暂停时冻结；`createClock(ts)` 按时间戳建独立时钟做局部计时。
 - **读档重建**：`readResolve()` 按保存的时间戳重建内部日历，读档后时钟从存档时刻继续 —— 您在读档前度过的真实时间，游戏日历一概不认。
 
@@ -218,8 +218,8 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\campaign\
-│       ├── GearInCalendarDayScript     # 模式 A：日历跨日检测(本节新增)
-│       └── GearInDayAccumulatorScript  # 模式 B：天数累加器 + daysToRun 自停(本节新增)
+│       ├── GearInCalendarDayScript     # 模式 A：日历跨日检测 (本节新增)
+│       └── GearInDayAccumulatorScript  # 模式 B：天数累加器 + daysToRun 自停 (本节新增)
 └── jars\
 ```
 
@@ -252,7 +252,7 @@ Starsector\mods\GearIndustry\
 调用点 (工程片段 —— 方法所在类归 [C6-S2] 所有，本节只演示调用，不改动那些文件)：
 
 ```java
-    // onGameLoad(boolean newGame) 内新增本节注册块(GearInModPlugin 归 C6-S2 所有)。
+    // onGameLoad(boolean newGame) 内新增本节注册块 (GearInModPlugin 归 C6-S2 所有)。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
     if (!Global.getSector().getPersistentData().containsKey(GearInCalendarDayScript.REGISTER_MARK)) {
         Global.getSector().getPersistentData().put(GearInCalendarDayScript.REGISTER_MARK, true);
@@ -262,7 +262,7 @@ Starsector\mods\GearIndustry\
         Global.getSector().getPersistentData().put(GearInDayAccumulatorScript.REGISTER_MARK, true);
         Global.getSector().addScript(new GearInDayAccumulatorScript());
     }
-    // 可选冗余查重(C6-S2 建议：hasScript 与 persistent data 门互为冗余)：
+    // 可选冗余查重 (C6-S2 建议：hasScript 与 persistent data 门互为冗余)：
     if (!Global.getSector().hasScript(GearInCalendarDayScript.class)) {
         Global.getSector().addScript(new GearInCalendarDayScript());
     }
@@ -281,8 +281,8 @@ Starsector\mods\GearIndustry\
 
 ```java
     GearInDayAccumulatorScript script = new GearInDayAccumulatorScript();
-    script.setTickEveryDays(1);  // 每 1 个游戏日一次例程(默认)
-    script.setDaysToRun(30);     // 约 30 个游戏日(约 300 真实秒)后自停
+    script.setTickEveryDays(1);  // 每 1 个游戏日一次例程 (默认)
+    script.setDaysToRun(30);     // 约 30 个游戏日 (约 300 真实秒) 后自停
     Global.getSector().addScript(script);
 ```
 
@@ -395,23 +395,23 @@ import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
  * 每日/周期脚本模式 A：日历跨日检测。dateKey = cycle * 10000 + month * 100 + day，
- * 把日历日期折叠为整数键，与上次比较，变化即"新的一天"；每个游戏日恰好触发一次
- * (首帧只初始化不打印)。单帧跨多个游戏日(加速、新档推进)时一帧只报一次 ——
+ * 把日历日期折叠为整数键，与上次比较，变化即 "新的一天"；每个游戏日恰好触发一次
+ * (首帧只初始化不打印)。单帧跨多个游戏日 (加速、新档推进) 时一帧只报一次 ——
  * 日历事件一帧至多一次是正常行为，需要逐日补触发的逻辑请改用天数累加器
  * (本单元 GearInDayAccumulatorScript)。runWhilePaused() 返回 false；字段只有
- * int，可随存档序列化(XStream 存档边界)，脚本随存档保存、读档后继续。
+ * int，可随存档序列化 (XStream 存档边界)，脚本随存档保存、读档后继续。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，注册前用 persistent data
- * 键 REGISTER_MARK 做一次性门控(C6-S2 的 CLASS_MARK 模式)，键与调用点片段逐字一致。
+ * 键 REGISTER_MARK 做一次性门控 (C6-S2 的 CLASS_MARK 模式)，键与调用点片段逐字一致。
  */
 public class GearInCalendarDayScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档注册过(随存档保存)。 */
+    /** 存档持久化标记：本脚本是否已在该存档注册过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_CalendarDayScript";
 
     private static final Logger LOG = Global.getLogger(GearInCalendarDayScript.class);
 
-    /** 跨日判定键(cycle * 10000 + month * 100 + day)；-1 表示尚未初始化。 */
+    /** 跨日判定键 (cycle * 10000 + month * 100 + day)；-1 表示尚未初始化。 */
     private int lastDateKey = -1;
 
     @Override
@@ -457,23 +457,23 @@ import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
  * 每日/周期脚本模式 B：天数累加器。amount 是上一帧真实秒数，必须经
- * clock.convertToDays(amount) 换算成游戏天(10 真实秒 = 1 游戏日)；
- * 余数跨帧保留；单帧跨多个游戏日(加速、新档推进)时 while 逐日补触发；
+ * clock.convertToDays(amount) 换算成游戏天 (10 真实秒 = 1 游戏日)；
+ * 余数跨帧保留；单帧跨多个游戏日 (加速、新档推进) 时 while 逐日补触发；
  * daysToRun >= 0 时累计满该游戏天数后 isDone() 返回 true，引擎下一帧
- * 自动移除；全部字段可随存档序列化(XStream 存档边界)，读档后继续。
- * 注册入口：onGameLoad 的 persistent data 门内(REGISTER_MARK 一次性门控，C6-S2 的 CLASS_MARK 模式)。
+ * 自动移除；全部字段可随存档序列化 (XStream 存档边界)，读档后继续。
+ * 注册入口：onGameLoad 的 persistent data 门内 (REGISTER_MARK 一次性门控，C6-S2 的 CLASS_MARK 模式)。
  */
 public class GearInDayAccumulatorScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档注册过(随存档保存)。 */
+    /** 存档持久化标记：本脚本是否已在该存档注册过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_DayAccumulatorScript";
     private static final Logger LOG = Global.getLogger(GearInDayAccumulatorScript.class);
 
-    /** 挂载以来的游戏天数(精确累加，保留小数)；随存档序列化，读档后继续累计。 */
+    /** 挂载以来的游戏天数 (精确累加，保留小数)；随存档序列化，读档后继续累计。 */
     private float daysSinceMount = 0f;
     /** 例程周期余数：累计满 tickEveryDays 个游戏天触发一次每日例程。 */
     private float daysAccumulator = 0f;
-    /** 已执行的每日例程次数(跨存档累计)。 */
+    /** 已执行的每日例程次数 (跨存档累计)。 */
     private int routineCount = 0;
     /** 演示参数：每多少个游戏天执行一次例程；默认 1(每日一次)。 */
     private int tickEveryDays = 1;
@@ -505,7 +505,7 @@ public class GearInDayAccumulatorScript implements EveryFrameScript {
         SectorAPI sector = Global.getSector();
         CampaignClockAPI clock = sector.getClock();
 
-        // amount 是上一帧真实秒数；经时钟换算才是本帧的游戏天数(10 真实秒 = 1 游戏日)。
+        // amount 是上一帧真实秒数；经时钟换算才是本帧的游戏天数 (10 真实秒 = 1 游戏日)。
         float daysThisFrame = clock.convertToDays(amount);
         daysSinceMount += daysThisFrame;
         daysAccumulator += daysThisFrame;

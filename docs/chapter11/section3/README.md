@@ -326,7 +326,7 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\campaign\
-│       ├── GearInVariantLauncher      # 本节新增：注册载体(归本节所有)
+│       ├── GearInVariantLauncher      # 本节新增：注册载体 (归本节所有)
 │       ├── GearInVariantReader        # 注册表读取
 │       ├── GearInVariantRefitter      # 克隆改装
 │       ├── GearInWeaponGroupBuilder   # 武器组生成
@@ -426,13 +426,13 @@ final class GearInVariantLog {
 调用点 (工程片段 —— 方法所在类由前置生命周期例持有，本节只演示调用，不改动那些文件)：
 
 ```java
-    // GearInModPlugin(前置生命周期例持有)的 onGameLoad(boolean newGame) 内新增本节注册块。
+    // GearInModPlugin(前置生命周期例持有) 的 onGameLoad(boolean newGame) 内新增本节注册块。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
     if (!Global.getSector().getPersistentData().containsKey(GearInVariantLauncher.REGISTER_MARK)) {
         Global.getSector().getPersistentData().put(GearInVariantLauncher.REGISTER_MARK, true);
         GearInVariantLauncher.register(Global.getSector());
     }
-    // 可选冗余查重(建议：hasScript 与 persistent data 门互为冗余)：
+    // 可选冗余查重 (建议：hasScript 与 persistent data 门互为冗余)：
     if (!Global.getSector().hasScript(GearInVariantReader.class)) {
         GearInVariantLauncher.register(Global.getSector());
     }
@@ -549,17 +549,17 @@ package data.scripts.gearin.campaign;
 import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
- * 角色：注册载体(薄接线类)。onGameLoad 的一次性门控通过后调用 register()，
- * 把本节五个角色脚本(读取 / 克隆改装 / 武器组 / 模块覆盖 / 序列化)逐一挂进生涯。
+ * 角色：注册载体 (薄接线类)。onGameLoad 的一次性门控通过后调用 register()，
+ * 把本节五个角色脚本 (读取 / 克隆改装 / 武器组 / 模块覆盖 / 序列化) 逐一挂进生涯。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，注册前用 sector persistent
- * data 键 REGISTER_MARK 做一次性门控(C6-S2 的 CLASS_MARK 模式，模式同 C9-S1
+ * data 键 REGISTER_MARK 做一次性门控 (C6-S2 的 CLASS_MARK 模式，模式同 C9-S1
  * 的 GearInSectorClockScript)。每个角色脚本首次 advance() 后 isDone() 置 true，
  * 引擎下一帧自动移除 —— 整套演示在首个生涯帧内顺序完成，读档后不再重复。
  */
 public final class GearInVariantLauncher {
 
-    /** 存档持久化标记：本组演示脚本是否已在该存档注册过(随存档保存)。 */
+    /** 存档持久化标记：本组演示脚本是否已在该存档注册过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_VariantLauncher";
 
     private GearInVariantLauncher() {
@@ -592,8 +592,8 @@ import com.fs.starfarer.api.combat.ShipVariantAPI;
 
 /**
  * 角色：注册表读取。演示 SettingsAPI.getVariant 的注册表读取与来源判定 ——
- * 股票变体 brawler_Assault(STOCK)的身份 / 装配 / OP 摘要、自动空装配 brawler_Hull
- * (HULL 来源，source == HULL、isEmptyHullVariant() == true)与注册表变体总数。
+ * 股票变体 brawler_Assault(STOCK) 的身份 / 装配 / OP 摘要、自动空装配 brawler_Hull
+ * (HULL 来源，source == HULL、isEmptyHullVariant() == true) 与注册表变体总数。
  *
  * 注册入口：GearInVariantLauncher.register()(跑一次即停：首次 advance() 后 isDone() 置 true)。
  */
@@ -666,8 +666,8 @@ import com.fs.starfarer.api.combat.ShipVariantAPI;
 import com.fs.starfarer.api.loading.VariantSource;
 
 /**
- * 角色：克隆改装。演示 clone() 的深拷贝语义 —— 修改克隆(换武器、改幅能、改船插、
- * 改来源、重新生成武器组)不影响注册表原变体；并给出 stock 与 refit 的 OP 对照
+ * 角色：克隆改装。演示 clone() 的深拷贝语义 —— 修改克隆 (换武器、改幅能、改船插、
+ * 改来源、重新生成武器组) 不影响注册表原变体；并给出 stock 与 refit 的 OP 对照
  * (computeOPCost = 武器 OP + 船插 OP + vents + caps；getUnusedOP = 船体 OP - 已用 OP)。
  *
  * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
@@ -707,10 +707,10 @@ public class GearInVariantRefitter implements EveryFrameScript {
         MutableCharacterStatsAPI stats = Global.getSector().getPlayerPerson().getStats();
         ShipVariantAPI stock = Global.getSettings().getVariant("brawler_Assault");
 
-        // 1) 克隆后修改装配：clone() 深拷贝全部集合(武器表、武器组逐组、船插、联队、模块变体；船体 spec 共享引用)，修改克隆不影响原变体
+        // 1) 克隆后修改装配：clone() 深拷贝全部集合 (武器表、武器组逐组、船插、联队、模块变体；船体 spec 共享引用)，修改克隆不影响原变体
         ShipVariantAPI refit = stock.clone();
         refit.clearSlot("WS 003");                    // 卸下旧武器
-        refit.addWeapon("WS 003", "railgun");         // 装上小实弹(brawler 的 WS 003 是 SMALL UNIVERSAL 硬点)
+        refit.addWeapon("WS 003", "railgun");         // 装上小实弹 (brawler 的 WS 003 是 SMALL UNIVERSAL 硬点)
         refit.setNumFluxVents(14);
         refit.setNumFluxCapacitors(10);
         refit.addMod("hardenedsubsystems");
@@ -755,7 +755,7 @@ import com.fs.starfarer.api.loading.WeaponGroupSpec;
 /**
  * 角色：武器组生成。演示空装配装武器但无武器组时的
  * hasUnassignedWeapons() == true，以及 autoGenerateWeaponGroups() 按 AI hints / 弧线 /
- * 尺寸重新聚类补组(同型武器必合并为一组，最多 7 组)。
+ * 尺寸重新聚类补组 (同型武器必合并为一组，最多 7 组)。
  *
  * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
  */
@@ -825,7 +825,7 @@ import com.fs.starfarer.api.loading.VariantSource;
 
 /**
  * 角色：模块变体覆盖。演示 stationModules / getModuleVariant / setModuleVariant——
- * setModuleVariant 只接受非 STOCK 来源的覆盖(STOCK/null 都会被当作"移除覆盖"处理)。
+ * setModuleVariant 只接受非 STOCK 来源的覆盖 (STOCK/null 都会被当作 "移除覆盖" 处理)。
  *
  * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
  */
@@ -862,7 +862,7 @@ public class GearInModuleOverrider implements EveryFrameScript {
 
     private void runOnce() {
         // stationModules 是 slotId -> variantId 映射；getModuleVariant 按槽取模块变体，
-        // setModuleVariant 只接受非 STOCK 来源的覆盖(STOCK/null 都会被当作"移除覆盖"处理)
+        // setModuleVariant 只接受非 STOCK 来源的覆盖 (STOCK/null 都会被当作 "移除覆盖" 处理)
         ShipVariantAPI station = Global.getSettings().getVariant("station1_Standard");
         ShipVariantAPI moduleStock = station.getModuleVariant("WS 009");
         ShipVariantAPI stationCopy = station.clone();

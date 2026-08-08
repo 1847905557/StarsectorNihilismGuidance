@@ -9,17 +9,17 @@ import com.fs.starfarer.api.impl.campaign.ids.Commodities;
 import com.fs.starfarer.api.impl.campaign.ids.Factions;
 
 /**
- * 完整最小例(势力段)：FactionAPI 常用入口演示脚本。
+ * 完整最小例 (势力段)：FactionAPI 常用入口演示脚本。
  *
  * 注册入口：onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控。
  *
- * 行为：读取玩家势力身份/颜色与对霸主/海盗/独立势力的关系(数值、等级、敌对判定、getRelToPlayer
- * 包装)；对霸主 adjustRelationship(+0.05) 后立即 setRelationship 精确回滚("写入后必须回滚"
+ * 行为：读取玩家势力身份/颜色与对霸主/海盗/独立势力的关系 (数值、等级、敌对判定、getRelToPlayer
+ * 包装)；对霸主 adjustRelationship(+0.05) 后立即 setRelationship 精确回滚 ("写入后必须回滚"
  * 基线写法)；读取 tariff/toll/fine、非法商品、已知资源集合规模、isShowInIntelTab。不遗留持久状态。
  */
 public class GearInFactionServicesScript extends GearInOneShotScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本脚本是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_FactionServices";
 
     private static final Logger LOG = Global.getLogger(GearInFactionServicesScript.class);
@@ -55,7 +55,7 @@ public class GearInFactionServicesScript extends GearInOneShotScript {
                 playerFaction.getRelationshipLevel(Factions.INDEPENDENT).getDisplayName(),
                 playerFaction.isHostileTo(Factions.INDEPENDENT)));
 
-        // 关系写入并精确回滚：adjustRelationship 直接加、setRelationship 直写原值(势力管理器钳位 [-1,1])
+        // 关系写入并精确回滚：adjustRelationship 直接加、setRelationship 直写原值 (势力管理器钳位 [-1,1])
         float relBefore = hegemony.getRelationship(Factions.PLAYER);
         hegemony.adjustRelationship(Factions.PLAYER, 0.05f);
         float relDuring = hegemony.getRelationship(Factions.PLAYER);

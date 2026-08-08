@@ -11,7 +11,7 @@ import com.fs.starfarer.api.campaign.StarSystemAPI;
 
 /**
  * 本节示例：制作一个带恒星、行星、自定义实体与跳跃点的星系。
- * 实现 SectorGeneratorPlugin 只是采用生成器的"契约"写法(原版 data.scripts.world.SectorGen
+ * 实现 SectorGeneratorPlugin 只是采用生成器的 "契约" 写法 (原版 data.scripts.world.SectorGen
  * 就是 SectorGeneratorPlugin)；实际调用入口是 ModPlugin.onNewGame，见 GearInSystemGenPlugin。
  * 市场绑定由 C3-S7 的 GearInMarketFactory 负责，本类只保留世界对象生成。
  */
@@ -25,7 +25,7 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 
 		// 恒星 id "gearin" 同时是星系在 starmap.json 里的注册键：initStar 会用它查
 		// data/campaign/starmap.json 的 starSystemLocations，把结果设为星系在超空间中的坐标。
-		// 不提供该键(又不手动 setLocation)时，星系会定位在超空间原点 (0,0)。
+		// 不提供该键 (又不手动 setLocation) 时，星系会定位在超空间原点 (0,0)。
 		PlanetAPI star = system.initStar("gearin", "star_white", 600f, 550f, 3f, 0.75f, 1f);
 
 		// addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)
@@ -42,7 +42,7 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 		jump.setRelatedPlanet(prime);
 		system.addEntity(jump);
 
-		// 必须调用(或用带超空间坐标的 initStar 变体)，否则星系没有通向超空间的跳跃点，玩家无法到达
+		// 必须调用 (或用带超空间坐标的 initStar 变体)，否则星系没有通向超空间的跳跃点，玩家无法到达
 		system.autogenerateHyperspaceJumpPoints(true, true);
 
 	}

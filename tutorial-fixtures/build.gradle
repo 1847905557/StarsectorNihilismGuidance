@@ -25,8 +25,8 @@ def javaUnitIds = [
 	"C12-S1", "C12-S2", "C12-S3", "C13-S1", "C13-S2",
 	"C14-S1", "C14-S3", "C14-S4",
 	"C15-S5",
-	"C16-S1", "C16-S2", "C16-S3", "C16-S4", "C16-S5", "C16-S6", "C16-S7", "C16-S8",
-	"C16-S9", "C16-S10", "C16-S11", "C16-S12", "C16-S13", "C16-S14", "C16-S15",
+	"C16-S2", "C16-S3", "C16-S4", "C16-S5", "C16-S7", "C16-S8", "C16-S9",
+	"C16-S10", "C16-S11", "C16-S12", "C16-S13", "C16-S14", "C16-S15", "C16-S16",
 	"C17-S1", "C17-S2", "C17-S3", "C17-S4", "C17-S5", "C17-S6", "C17-S7",
 	"C18-S1", "C18-S2", "C18-S3", "C18-S4"
 ]
@@ -80,7 +80,7 @@ def compileTasks = javaUnitIds.collect { unitId ->
 
 tasks.register("compileAllFixtures") {
 	group = "verification"
-	description = "Compiles all 68 isolated tutorial Java fixture units."
+	description = "Compiles all isolated tutorial Java fixture units."
 	dependsOn compileTasks
 }
 

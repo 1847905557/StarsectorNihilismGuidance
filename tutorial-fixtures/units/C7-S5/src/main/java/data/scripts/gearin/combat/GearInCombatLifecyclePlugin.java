@@ -15,14 +15,14 @@ import com.fs.starfarer.api.util.IntervalUtil;
  * 完整最小例：战斗插件与引擎级监听器的生命周期、移除与状态归属。
  *
  * 生命周期事实：
- * - init() 已废弃：不保证在 advance() 前被调用(CombatEnginePlugin 的 API 注释)，
+ * - init() 已废弃：不保证在 advance() 前被调用 (CombatEnginePlugin 的 API 注释)，
  *   advance() 必须先判 engine == null；
  * - advance() 在暂停时仍会被调用，状态推进前必须先检查 engine.isPaused()(C7-S1)；
  * - 战斗结束没有回调：插件必须在 advance() 里用 engine.isCombatOver() 自行识别收尾时机，
- *   此时引擎仍存活，并将进入结算或退出过渡(C7-S2)；
+ *   此时引擎仍存活，并将进入结算或退出过渡 (C7-S2)；
  * - 引擎级监听器不随插件移除而注销：插件调用 engine.removePlugin(this) 自移除时，
  *   必须同时把注册到 engine.getListenerManager() 的监听器 removeListener 掉；
- * - 引擎、插件、监听器与舰船引用禁止跨战斗缓存(C6-S3)：本类所有状态
+ * - 引擎、插件、监听器与舰船引用禁止跨战斗缓存 (C6-S3)：本类所有状态
  *   都只属于当前这场战斗，战斗结束由引擎销毁统一释放。
  */
 public class GearInCombatLifecyclePlugin extends BaseEveryFrameCombatPlugin {
@@ -54,7 +54,7 @@ public class GearInCombatLifecyclePlugin extends BaseEveryFrameCombatPlugin {
             return; // init() 不保证先于 advance() 执行，必须判 null
         }
         if (engine.isPaused()) {
-            return; // 暂停守卫(C7-S1)
+            return; // 暂停守卫 (C7-S1)
         }
         if (finalized) {
             return;

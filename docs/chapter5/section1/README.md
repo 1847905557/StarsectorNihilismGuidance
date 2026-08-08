@@ -25,11 +25,11 @@
 本节的声音文件位于链路的资源层；注册和消费分别见 [C5-S2]、[C5-S3]：
 
 ```text
-sounds/.../*.ogg          资源层(本节)：合法 OGG、首尾无缝、路径稳定、许可清楚
+sounds/.../*.ogg          资源层 (本节)：合法 OGG、首尾无缝、路径稳定、许可清楚
         ↓ 相对于 MOD 根目录的路径
-data/config/sounds.json   注册层(C5-S2)：sound ID → OGG 路径与播放参数
+data/config/sounds.json   注册层 (C5-S2)：sound ID → OGG 路径与播放参数
         ↓ sound ID
-SoundPlayerAPI            消费层(C5-S3)：Global.getSoundPlayer() 按 ID 播放
+SoundPlayerAPI            消费层 (C5-S3)：Global.getSoundPlayer() 按 ID 播放
 ```
 
 两个事实决定素材必须在本节做好：

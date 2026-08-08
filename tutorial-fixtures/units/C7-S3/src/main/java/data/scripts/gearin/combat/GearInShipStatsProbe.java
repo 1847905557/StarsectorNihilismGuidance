@@ -16,14 +16,14 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 完整最小例：ShipAPI / MutableShipStatsAPI / MutableStat 与 modifier ID。
  *
- * 本插件由战斗上下文注册(C7-S1 的插件模型)，只在本场战斗内有效：
- * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存(C6-S3)；
+ * 本插件由战斗上下文注册 (C7-S1 的插件模型)，只在本场战斗内有效：
+ * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存 (C6-S3)；
  * - advance() 在暂停时仍会被调用，状态推进前必须先检查 engine.isPaused()(C7-S1)；
- * - getPlayerShip() 在玩家未部署时返回 "Command Shuttle" 假舰(C7-S2)，
+ * - getPlayerShip() 在玩家未部署时返回 "Command Shuttle" 假舰 (C7-S2)，
  *   写操作前用 isShuttlePod() 排除，避免把修饰加到假舰上；
  * - MutableShipStatsAPI 是舰船 stats 的入口：三个 MutableStat 修饰表
- *   (flat / percent / mult)各以 modifier ID 为键；同 ID 同类型调用是幂等覆盖，
- *   每帧重复应用是安全姿势(引擎自己的 zero_flux_boost 同款)；
+ *   (flat / percent / mult) 各以 modifier ID 为键；同 ID 同类型调用是幂等覆盖，
+ *   每帧重复应用是安全姿势 (引擎自己的 zero_flux_boost 同款)；
  * - modifier ID 必须稳定唯一：本节所有修饰 ID 是进程内常量，属本节专属命名空间。
  */
 public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
@@ -37,14 +37,14 @@ public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
     private static final String MOD_VOLATILE_PREFIX = "GearIn_ship_stats_probe_volatile_";
 
     /**
-     * 故障注入开关(对应"数值与修饰条目持续增长"故障)：
+     * 故障注入开关 (对应 "数值与修饰条目持续增长" 故障)：
      * true 时每帧用自增 ID 追加一条 percent 修饰，观察 percentMods 只增不减、
      * modified 值持续漂移、unmodify 之后残留条目清不掉。
      */
     private static final boolean PROBE_VOLATILE_ID_FAULT = false;
 
-    /** 战斗推进时间(getTotalElapsedTime(false)，暂停不计)的三个阶段分界。 */
-    private static final float APPLY_AT = 2f;      // t=2s 起施加三种修饰(每帧重复，幂等)
+    /** 战斗推进时间 (getTotalElapsedTime(false)，暂停不计) 的三个阶段分界。 */
+    private static final float APPLY_AT = 2f;      // t=2s 起施加三种修饰 (每帧重复，幂等)
     private static final float OVERWRITE_AT = 12f; // t=12s 起把 percent 覆盖为 -20(同 ID 不同值)
     private static final float UNMODIFY_AT = 22f;  // t=22s 起全部解除
 
@@ -61,11 +61,11 @@ public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine.isPaused()) {
-            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进(C7-S1)
+            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进 (C7-S1)
         }
         ShipAPI ship = engine.getPlayerShip();
         if (ship == null || !ship.isAlive() || ship.isHulk() || ship.isShuttlePod()) {
-            return; // 部署阶段拿到的 "Command Shuttle" 假舰不做写操作(C7-S2)
+            return; // 部署阶段拿到的 "Command Shuttle" 假舰不做写操作 (C7-S2)
         }
         MutableShipStatsAPI stats = ship.getMutableStats();
 

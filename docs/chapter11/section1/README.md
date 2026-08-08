@@ -98,7 +98,7 @@ personality id 必须来自注册表
 
 `personalities.csv` 之外的 id 使 `getPersonalityAPI()` 返回 null(CSV spec 加载期的查询对未知 id 静默返回 null、不报错)。
 
-问题延迟到使用点：保存时写档失败 (`NullPointerException`)。
+问题在首次解引用返回的 null personality 时暴露 (`NullPointerException`)。
 
 原版合法 id 恰 5 个：`timid` / `cautious` / `steady` / `aggressive` / `reckless`。
 
@@ -118,11 +118,11 @@ voice 即 memory `$voice`。
 
 纯读取用 `getMemoryWithoutUpdate()`：同样延迟创建记忆对象，但没有回调。
 
-**人物数据文件** (加载链：CSV spec 加载期读入、姓名池)：`data/characters/personalities.csv`(`id,name,desc,bravery` + 12 个任务权重列)
+**人物数据文件** (加载链：CSV spec 加载期读入、姓名池)：`data/characters/personalities.csv` (`id,name,desc,bravery` + 任务权重列)
 
-原版 id 恰 5 个：`timid` / `cautious` / `steady` / `aggressive` / `reckless`，bravery 全为 5。
+原版 id 为 `timid` / `cautious` / `steady` / `aggressive` / `reckless`，bravery 全为 5。
 
-`data/characters/person_names.csv`(姓名池，usage `f`/`l`，category 如 `fringe`/`core`/`pirate`，随机姓名按势力 spec 的名字段加权)。
+`data/characters/person_names.csv` (姓名池，usage `f`/`l`，category 如 `fringe`/`future`/`pirate`，随机姓名按势力 spec 的名字段加权)。
 
 `personalities.csv` 的权重列 (`CAPTURE`/`PATROL`/`INTERCEPT`/`ASSAULT` 等) 是舰船 AI 行为权重。
 
@@ -248,7 +248,7 @@ limit 只是 "本次调整的方向边界"
     - `checkOutPerson(person, reasonId)` / `returnPerson(person, reasonId)`；
 4. **officer roster**：`FleetDataAPI.addOfficer`(见上)。
 
-只存在于局部变量、未被任何持久集合引用的人物，帧结束后即被回收 —— **不会被保存，也不会报错**。
+只存在于局部变量、未被任何持久集合引用的人物不会进入存档；没有其它强引用后，才可能由垃圾回收器回收，具体时机不由帧边界保证。
 
 市场人物不等于通信目录联系人
 
@@ -273,7 +273,7 @@ API 面里最反直觉的几处已经标了容器警告，下面把必须遵守�
 | "设置档位" 用 `setRelationship(id, RepLevel)`(或 `ensureAtBest`/`ensureAtWorst`)；`adjustRelationship(delta, limit)` 的 limit 只是单次调整的方向边界 | 必须 | 数值落在限位内但档位与预期不符 (1.00 − 0.5 落 0.50 = `FRIENDLY` 而非 `HOSTILE`) |
 | `adjustRelationship` 的 delta 为 0 时 (三参版) 不产生任何修改并返回 false | 必须 | 返回值 false、值不变，误以为调用成功 |
 | 关系数值恒被钳制在 \[-1, 1\] (`RelationshipAPI.setRel` 等写入方法均钳制) | 必须 | 写入越界值后读回被截断 (如写 1.5 读回 1.0) |
-| personality id 必须来自 `personalities.csv` 注册表 (原版 5 个：`timid`/`cautious`/`steady`/`aggressive`/`reckless`) | 必须 | 未知 id 使 `getPersonalityAPI()` 返回 null(CSV spec 加载期的查询静默返回 null)，保存时写档失败 (`NullPointerException`) |
+| personality id 必须来自 `personalities.csv` 注册表 (原版 5 个：`timid`/`cautious`/`steady`/`aggressive`/`reckless`) | 必须 | 未知 id 使 `getPersonalityAPI()` 返回 null，首次解引用时抛 `NullPointerException` |
 | `OfficerDataAPI.makeSkillPicks()` 每次调用都会重掷选项；已展示给玩家的可选项必须维持同一对象状态 | 必须 | 玩家看到的可选技能列表与展示不一致 |
 | `ImportantPeopleAPI.checkOutPerson(person, reasonId)` 必须配对 `returnPerson`；未归还时同 reason 的按条件选人会跳过该人物 | 必须 | 任务/事件生成时该人物不再被选中 (`MarketPostPersonFilter`) |
 | `PersonAPI.setMarket(market)` 只写人物字段；市场 roster 必须由 `MarketAPI.addPerson` 维护 (反向：`person.setMarket` 不会把人物放进市场列表) | 必须 | 人物字段显示在市场，但市场列表与通信目录查不到 |
@@ -377,11 +377,11 @@ mods/GearIndustry/
 ├── data/
 ├── src/
 │   └── data/scripts/gearin/campaign/
-│       ├── GearInPersonScript         # 本节新增(归本节所有)：协调器
+│       ├── GearInPersonScript         # 本节新增 (归本节所有)：协调器
 │       ├── GearInBaseline             # 基线快照
 │       ├── GearInPersonIdentity       # 人物创建与身份
 │       ├── GearInPersonRelationship   # 人物对玩家关系
-│       ├── GearInPersonRegistration   # 人物注册(归属入口)
+│       ├── GearInPersonRegistration   # 人物注册 (归属入口)
 │       ├── GearInCaptain              # 舰长
 │       ├── GearInOfficer              # 军官
 │       └── GearInFactionRelation      # 势力间关系
@@ -539,7 +539,7 @@ sector.getImportantPeople().addPerson(person);
 ## 故障分析
 
 - **读档后人物消失**：人物只保存在脚本局部变量中，没有进入持久集合。将人物挂入成员 captain、市场 people 与 comm、important people 或 officer roster；保存并读档后确认同一身份仍可取得。
-- **保存时出现 `NullPointerException`**：`setPersonality` 使用了 `personalities.csv` 中不存在的 ID，空 spec 到写档时才暴露。改用已注册的 personality ID，再保存一次确认日志不再报错。
+- **使用人格 API 时出现 `NullPointerException`**：`setPersonality` 使用了 `personalities.csv` 中不存在的 ID。改用已注册的 personality ID，确认 `getPersonalityAPI()` 返回非 null 后再调用其方法。
 - **`adjustRelationship` 返回 `false`**：三参版的 delta 为 `0`，或调整方向被 limit 拦截，因此关系值没有变化。设置档位使用 `setRelationship`，限制上界或下界使用 `ensureAtBest`、`ensureAtWorst`；随后重新读取关系值与档位。
 - **关系档位没有随数值变化**：关系值尚未越过 `RepLevel` 的分段边界。需要确定档位时直接传入 `RepLevel` 调用 `setRelationship`，再同时记录数值和档位复验。
 - **市场人物没有出现在通信目录**：`market.addPerson` 只加入市场 roster。再调用 `market.getCommDirectory().addPerson`，重开通信目录确认联系人可见。
@@ -583,7 +583,7 @@ sector.getImportantPeople().addPerson(person);
 - `com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`：`officerLevelUp` 插件实现 (XP 阈值、每级候选)。
 - `com.fs.starfarer.api.plugins.OfficerLevelupPlugin`：军官升级插件接口。
 - `com.fs.starfarer.api.util.Misc`：`isMercenary`(读 memory `$isMercenary`)。
-- `data/characters/personalities.csv`：personality 注册表 (原版 5 个 id、任务权重列)。
+- `data/characters/personalities.csv`：personality 注册表 (原版 id 与任务权重列)。
 - `data/characters/person_names.csv`：姓名池 (usage `f`/`l`、category)。
 - `data/world/factions/default_ranks.json`：rank/post 显示名的默认来源 (`spaceCommander` / `fleetCommander`)。
 - `data/world/factions/hegemony.faction`：`ranks` 段覆写与 `voices` 声音池 (`LOW` / `MEDIUM` / `HIGH`)。
@@ -607,12 +607,12 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 人物专题一次性演示脚本(协调器)：编排各角色小类并负责演示成员与清理，自停脚本。
+ * 人物专题一次性演示脚本 (协调器)：编排各角色小类并负责演示成员与清理，自停脚本。
  * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK 一次性守卫；全程同帧回滚。
  */
 public class GearInPersonScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_PersonLesson";
 
     private static final Logger LOG = Global.getLogger(GearInPersonScript.class);
@@ -660,7 +660,7 @@ public class GearInPersonScript implements EveryFrameScript {
         new GearInPersonRelationship().run(personA);
         new GearInPersonRegistration().run(sector, personA);
 
-        // 舰长；人物 B 与军官；势力关系(同帧回滚)
+        // 舰长；人物 B 与军官；势力关系 (同帧回滚)
         new GearInCaptain().run(wolf, personA, fleetData);
         new GearInOfficer().run(sector, hammerhead, fleetData, sector.getPlayerFleet());
         new GearInFactionRelation().run(sector);
@@ -691,7 +691,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 
 /**
- * 基线快照(演示前置观察)：玩家舰队成员数/玩家势力/玩家人物，及玩家旗舰 getCaptain() 特例。
+ * 基线快照 (演示前置观察)：玩家舰队成员数/玩家势力/玩家人物，及玩家旗舰 getCaptain() 特例。
  */
 public class GearInBaseline {
 
@@ -733,7 +733,7 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Ranks;
 
 /**
- * 人物创建与身份(PersonAPI)：createPerson 默认值、姓名/性别/势力/rank/post/personality/importance+voice、标签与内存。
+ * 人物创建与身份 (PersonAPI)：createPerson 默认值、姓名/性别/势力/rank/post/personality/importance+voice、标签与内存。
  */
 public class GearInPersonIdentity {
 
@@ -785,7 +785,7 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.characters.RelationshipAPI;
 
 /**
- * 人物对玩家关系(RelationshipAPI / RepLevel)：延迟默认 -> adjustRelationship -> setLevel -> setRel 复位。
+ * 人物对玩家关系 (RelationshipAPI / RepLevel)：延迟默认 -> adjustRelationship -> setLevel -> setRel 复位。
  */
 public class GearInPersonRelationship {
 
@@ -834,7 +834,7 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
 
 /**
- * 人物注册(归属入口)：市场通讯录 addPerson/removePerson 双向交接，重要人物 addPerson/contains/getData/removePerson。
+ * 人物注册 (归属入口)：市场通讯录 addPerson/removePerson 双向交接，重要人物 addPerson/contains/getData/removePerson。
  */
 public class GearInPersonRegistration {
 
@@ -892,7 +892,7 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 
 /**
- * 舰长(captain)：默认舰长读取(steady/空名/level 1)、setCaptain 交接与 getMemberWithCaptain 反查。
+ * 舰长 (captain)：默认舰长读取 (steady/空名/level 1)、setCaptain 交接与 getMemberWithCaptain 反查。
  */
 public class GearInCaptain {
 
@@ -932,7 +932,7 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 
 /**
- * 军官(OfficerDataAPI)：势力随机人物 -> 包装入 roster -> XP/技能候选/升级 -> 上舰 -> 移除。
+ * 军官 (OfficerDataAPI)：势力随机人物 -> 包装入 roster -> XP/技能候选/升级 -> 上舰 -> 移除。
  */
 public class GearInOfficer {
 
@@ -998,7 +998,7 @@ import com.fs.starfarer.api.campaign.RepLevel;
 import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
- * 势力间关系(FactionAPI 关系族)：setRelationship / adjustRelationship / ensureAtWorst 确定性序列 + 同帧回滚。
+ * 势力间关系 (FactionAPI 关系族)：setRelationship / adjustRelationship / ensureAtWorst 确定性序列 + 同帧回滚。
  */
 public class GearInFactionRelation {
 

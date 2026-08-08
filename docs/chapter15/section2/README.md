@@ -171,6 +171,6 @@ JSON 路径继续遵守 [C15-S1] 的资源路径规则。`validateFileName` 会�
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.SettingsAPI`：`loadJSON`、`getString` 和 `validateFileName`；
+- `com.fs.starfarer.api.SettingsAPI`：`loadJSON`、`getString`；路径安全校验由读取入口内部执行。
 - `data/strings/strings.json`：原版公开的本地化文本入口；
 - `data/config/`：MOD 自有 JSON 资源目录；

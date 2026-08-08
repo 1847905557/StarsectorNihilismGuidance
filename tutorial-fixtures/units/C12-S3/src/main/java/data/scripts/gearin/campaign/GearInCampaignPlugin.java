@@ -8,20 +8,20 @@ import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 
 /**
- * 完整最小例：生涯插件(CampaignPlugin)的注册、picker、优先级与生命周期。
+ * 完整最小例：生涯插件 (CampaignPlugin) 的注册、picker、优先级与生命周期。
  *
- * 本类是 transient 生涯插件：数据不进存档，必须由调用点(GearInModPlugin.onGameLoad，
- * 见页面正文)在每次读档后重新注册；registerPlugin 按 getId() 去重，重复注册只会
+ * 本类是 transient 生涯插件：数据不进存档，必须由调用点 (GearInModPlugin.onGameLoad，
+ * 见页面正文) 在每次读档后重新注册；registerPlugin 按 getId() 去重，重复注册只会
  * 替换旧实例，不会叠加。
  *
- * pickInteractionDialogPlugin：对"齿轮工业"(C3-S2 注册的势力 id)的舰队与市场实体
+ * pickInteractionDialogPlugin：对 "齿轮工业"(C3-S2 注册的势力 id) 的舰队与市场实体
  * 返回 GearInInteractionDialog(PickPriority.MOD_SPECIFIC)；对其他实体返回 null，即放弃本次
  * 选择权，由原版 CORE_GENERAL 对话继续生效。
  *
  * updateGlobalFacts：每次 sector.getMemory() 都会重新执行；写入的演示事实使用 MOD
  * 专属前缀且过期时间为 0，符合 API 对 facts 写法的要求。
  *
- * 被 picker 选中的对话框由同包类 GearInInteractionDialog 承担(一文件一角色，见该文件)。
+ * 被 picker 选中的对话框由同包类 GearInInteractionDialog 承担 (一文件一角色，见该文件)。
  */
 public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
@@ -39,7 +39,7 @@ public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
     @Override
     public boolean isTransient() {
-        // transient：不随存档保存，每次读档后必须重新注册(见页面调用点片段)。
+        // transient：不随存档保存，每次读档后必须重新注册 (见页面调用点片段)。
         return true;
     }
 
@@ -57,7 +57,7 @@ public class GearInCampaignPlugin extends BaseCampaignPlugin {
                 && DEMO_FACTION_ID.equals(interactionTarget.getMarket().getFactionId())) {
             return new PluginPick<>(new GearInInteractionDialog(), PickPriority.MOD_SPECIFIC);
         }
-        return null; // 不处理：把选择权留给其他插件(原版 CORE_GENERAL 对话)
+        return null; // 不处理：把选择权留给其他插件 (原版 CORE_GENERAL 对话)
     }
 
     @Override

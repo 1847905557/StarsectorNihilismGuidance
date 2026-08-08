@@ -86,14 +86,14 @@
     - `getDay()` 返回 1–31；`getHour()` 返回 0–23。
 - **换算基线：10 真实秒 = 1 游戏日**：`SECONDS_PER_GAME_DAY = 10.0F`。`convertToDays(真实秒)` = 秒 ÷ 10；`convertToSeconds(游戏天)` = 天 × 10；`convertToMonths(真实秒)` = 秒 ÷ 10 ÷ 30。
 - **日期字符串**：`getDateString()` = `"Mar 2, c206"` 形态；`getShortDate()` = `"206.3.2"` 形态；`getShortMonthString()` = 三字母月份。
-- **时间戳与间隔**：`getTimestamp()` 返回内部日历毫秒值；`getElapsedDaysSince(ts)` 返回从 `ts` 到现在的真实天数 (`(now - ts) / 86400000`)。
+- **时间戳与间隔**：`getTimestamp()` 返回内部日历毫秒值；`getElapsedDaysSince(ts)` 返回从 `ts` 到现在的游戏天数 (`(now - ts) / 86400000`)。
     - **参数为 `0` 时返回 `Float.MAX_VALUE`**，计算 "未初始化" 的间隔时不要传 0。
 - **`createClock(long timestamp)`**：按时间戳新建一个时钟实例 (对齐 "从某时刻起算" 的局部计时)。
 - **时钟只在未暂停时前进**：引擎的每帧推进里 `clock.advance(amount)` 只在 `!isPaused()` 分支执行；暂停时 `getTimestamp()` / 日期全部冻结。
     - `readResolve` 在读档时按保存的时间戳重建内部日历，读档后时钟从存档时刻继续。
-- **新档时间推进**：新建生涯时引擎进入 `isInFastAdvance()` 窗口 (新档流程置位、复位)。
-    - 以 `2.5` 秒步长连推约 600 真实秒 + 收尾约 2 秒，合计约 **60.2 游戏日 (约两个月)**；随后才调用 `onNewGameAfterTimePass` 与 `onGameLoad(true)`。
-    - 因此新档在 `onGameLoad` 里读到的时钟大约在 **206.3.2**。
+- **新档时间推进**：`CharacterCreationData.isWithTimePass()` 为 true 时，引擎进入 `isInFastAdvance()` 窗口；关闭该选项则不执行这段预推进。
+    - 开启时以 `2.5` 秒步长连推约 600 真实秒 + 收尾约 2 秒，合计约 **60.2 游戏日 (约两个月)**；随后才调用 `onNewGameAfterTimePass` 与 `onGameLoad(true)`。
+    - 开启时，`onGameLoad` 读到的时钟大约在 **206.3.2**。
 
 把秒当游戏天
 
@@ -116,7 +116,7 @@
 | `getDateString()` | `String` | `"Mar 2, c206"` 形态 |
 | `getShortDate()` | `String` | `"206.3.2"` 形态 (年.月.日) |
 | `getTimestamp()` | `long` | 内部日历毫秒；暂停时冻结 |
-| `getElapsedDaysSince(ts)` | `float` | 从 `ts` 到现在的真实天数；`ts == 0` 返回 `Float.MAX_VALUE` |
+| `getElapsedDaysSince(ts)` | `float` | 从 `ts` 到现在的游戏天数；`ts == 0` 返回 `Float.MAX_VALUE` |
 | `convertToDays(真实秒)` | `float` | 秒 ÷ 10(`amount` 参数的正确换算) |
 | `convertToSeconds(游戏天)` | `float` | 天 × 10 |
 | `convertToMonths(真实秒)` | `float` | 秒 ÷ 10 ÷ 30 |
@@ -257,7 +257,7 @@ Starsector\mods\GearIndustry\
 ├── data\
 ├── src\
 │   └── data\scripts\gearin\campaign\
-│       └── GearInSectorClockScript   # 本节新增(归本节所有)
+│       └── GearInSectorClockScript   # 本节新增 (归本节所有)
 └── jars\
 ```
 
@@ -275,13 +275,13 @@ Starsector\mods\GearIndustry\
 调用点 (工程片段 —— 方法所在类由前置生命周期例持有，本节只演示调用，不改动那些文件)：
 
 ```java
-    // GearInModPlugin(前置生命周期例持有)的 onGameLoad(boolean newGame) 内新增本节注册块。
+    // GearInModPlugin(前置生命周期例持有) 的 onGameLoad(boolean newGame) 内新增本节注册块。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
     if (!Global.getSector().getPersistentData().containsKey(GearInSectorClockScript.REGISTER_MARK)) {
         Global.getSector().getPersistentData().put(GearInSectorClockScript.REGISTER_MARK, true);
         Global.getSector().addScript(new GearInSectorClockScript());
     }
-    // 可选冗余查重(建议：hasScript 与 persistent data 门互为冗余)：
+    // 可选冗余查重 (建议：hasScript 与 persistent data 门互为冗余)：
     if (!Global.getSector().hasScript(GearInSectorClockScript.class)) {
         Global.getSector().addScript(new GearInSectorClockScript());
     }
@@ -293,7 +293,7 @@ Starsector\mods\GearIndustry\
 
 ```java
     GearInSectorClockScript script = new GearInSectorClockScript();
-    script.setDaysToRun(30); // 约 30 个游戏日(约 5 分钟游戏时间)后自停
+    script.setDaysToRun(30); // 约 30 个游戏日 (约 5 分钟游戏时间) 后自停
     Global.getSector().addScript(script);
 ```
 
@@ -347,7 +347,7 @@ sector.addScript(new GearInSectorClockScript());
     GearIn clock script mounted at Mar 2, c206 GearIn clock day change: Mar 2, c206 (short=206.3.2) | this frame=0.0017 game days | since mount=0.0 game days
     ```
 
-    随后**每 10 真实秒** (未暂停、未加速) 出现一条新的跨日日志，日期逐日前进、`since mount` 逐日 +1.0。挂载日期约 206.3.2 —— 新档时间推进约 60.2 游戏日 (约两个月) 后才是玩家开始游玩的时间点；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
+    随后**每 10 真实秒** (未暂停、未加速) 出现一条新的跨日日志，日期逐日前进、`since mount` 逐日 +1.0。启用 `withTimePass` 时，挂载日期约为 206.3.2；启动与游玩全程无 `gear_in` 引起的 `ERROR`。
 
 - 暂停 (空格)：跨日日志停止 (脚本冻结、时钟冻结)；恢复后继续，`since mount` 不因暂停丢失进度。
 
@@ -393,7 +393,7 @@ sector.addScript(new GearInSectorClockScript());
 - 引擎遍历快照：`advance` 里 `addScript` 的新脚本**下一帧**才推进。
 - 暂停 (空格) 时：脚本默认冻结、时钟冻结、经济冻结；加速 (按住 Shift) 时每帧推进两次；**战斗期间生涯引擎完全不推进**。
 - 纪元 206-01-01；`getCycle()` 是年、`getMonth()` 1–12、`getDay()` 1–31；`getElapsedDaysSince(0)` 返回 `Float.MAX_VALUE`。
-- 新档在 `onGameLoad` 时时钟已推进约 60.2 游戏日 (约 206.3.2)。
+- 启用 `withTimePass` 时，新档在 `onGameLoad` 前推进约 60.2 游戏日；关闭时不执行这段预推进。
 
 引擎级脚本只是生涯异步逻辑的一半：实体级脚本随实体生命周期走、事件监听器挂在星区上，它们是这条链的逻辑延伸；而贯穿始终的两块底座是 "首次进入存档" 的 `CLASS_MARK` 标记与 `Global` 阶段语义 —— 所有注册与读取都建立在生涯引擎建立之后。
 
@@ -422,23 +422,23 @@ import com.fs.starfarer.api.campaign.CampaignClockAPI;
 import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
- * 完整最小例：SectorAPI 注册的生涯每帧脚本(EveryFrameScript)。
+ * 完整最小例：SectorAPI 注册的生涯每帧脚本 (EveryFrameScript)。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，注册前用 hasScript() 查重，
- * 并用 sector persistent data 键 REGISTER_MARK 做一次性门控(C6-S2 的 CLASS_MARK 模式)。
+ * 并用 sector persistent data 键 REGISTER_MARK 做一次性门控 (C6-S2 的 CLASS_MARK 模式)。
  *
- * 行为：每个游戏日跨日时打印一行日志(当前日期、本帧折合的游戏天数、挂载以来经过的游戏天数)；
+ * 行为：每个游戏日跨日时打印一行日志 (当前日期、本帧折合的游戏天数、挂载以来经过的游戏天数)；
  * 默认 runWhilePaused() 返回 false：引擎暂停时脚本不推进、生涯时钟也不前进；
  * daysToRun >= 0 时挂载满该天数后 isDone() 返回 true，引擎在下一帧自动从 scripts 列表移除本脚本。
  */
 public class GearInSectorClockScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档注册过(随存档保存)。 */
+    /** 存档持久化标记：本脚本是否已在该存档注册过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_SectorClockScript";
 
     private static final Logger LOG = Global.getLogger(GearInSectorClockScript.class);
 
-    /** 跨日判定键(cycle * 10000 + month * 100 + day)；-1 表示尚未初始化。 */
+    /** 跨日判定键 (cycle * 10000 + month * 100 + day)；-1 表示尚未初始化。 */
     private int lastDateKey = -1;
 
     /** 脚本第一次 advance() 时的时钟时间戳；随存档序列化，读档后继续累计。 */
@@ -454,7 +454,7 @@ public class GearInSectorClockScript implements EveryFrameScript {
     private boolean done = false;
 
     public GearInSectorClockScript() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     /** 修改运行天数上限；改回 -1 恢复常驻。 */

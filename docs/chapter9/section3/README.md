@@ -83,7 +83,7 @@
 1. **持久槽位列表**：`members`—— 按槽位存储成员，槽位可被 `NULL_MEMBER` 占位 (`FleetMemberType.NULL`)。这是**唯一随存档保存**的成员层。
     - 添加成员填入第一个空槽 (`findFirstUnusedIndex`)，按索引移除只在原槽放回 NULL(`removeFleetMemberAtIndex`)，整体移除才收缩 (`removeFleetMemberAndCollapseSlot`)。
 2. **同步视图**：`membersWithoutNull`(不可变)、`sortedMembersWithoutNull`(按 hull size ordinal 降序 + fleet point cost 降序)、`sortedMembersWithoutNullWithFighters`。
-    - 战机展开经 `Utils.expandFighterWingsCampaign` 把每个联队展开成逐架成员；展开只取非封存且 CR > 0 的成员，封存成员排到末尾。
+    - 战机展开经 `Utils.expandFighterWingsCampaign` 为每个 fitted wing 槽生成一条 `FIGHTER_WING` 成员；联队内战机数量仍保存在联队数据中。展开只取非封存且 CR > 0 的成员，封存成员排到末尾。
     - `syncMemberLists()` 重建这三个视图。
 3. **派生状态**：`fleetPointsUsed` / `effectiveStrength`、`cargo`(容量上限由成员重算)、`minCrew`、`travelSpeed`、`fuelPerLightYear`、burn level 三件套。全部在同步时重算。
 4. **瞬态层**：`snapshot`(`transient` 字段)——`takeSnapshot()` / `getSnapshot()` 的成员快照，**不随存档保存** (接口 "The snapshot is transient and will not be in the save file.")。
@@ -149,7 +149,7 @@ addFleetMember 禁止传 null
 | `getMembersListCopy()` | 成员副本 (含战机联队，每个联队 1 条；无 NULL 占位)，最常用 |
 | `getCombatReadyMembersListCopy()` | 非封存且 `canBeDeployedForCombat()` 的成员 |
 | `getMembersInPriorityOrder()` | 非封存成员在前、封存成员在后，类内保持原顺序 |
-| `getMembersListWithFightersCopy()` | 战机联队按联队数量逐架展开的完整列表 (`Utils.expandFighterWingsCampaign`；仅非封存且 CR > 0 的联队展开，封存排末尾) |
+| `getMembersListWithFightersCopy()` | 每个 fitted wing 槽对应一条 `FIGHTER_WING` 成员；仅展开非封存且 CR > 0 的联队 |
 
 另有 `getMemberWithCaptain(PersonAPI)` 按舰长查成员、`getNumMembers()`、`getFleetPointsUsed()`。成员级实体脚本与视图偏移 (`FleetMemberViewAPI`) 不在本节范围。
 
@@ -190,7 +190,7 @@ setVariant 保存的是传入引用
 - **部署判据**：`canBeDeployedForCombat()`(`FleetMemberAPI`)—— 封存 → `false`；战机且 CR ≤ 0 → `false`；否则要求 `CR >= noDeployCRPercent` 且 `crewFraction >= noDeployCrewPercent`(`settings.json`中为 0% 与 5%)。
     - **战斗准备是 "当前状态" 判据**：CR 或船员不足时返回 `false`，补给与时间可恢复。
 - **部署成本**：`getDeployCost()` 是 CR 占比 (`CRPerDeploymentPercent * CRToDeploy / 100`，战机乘联队数量；`FleetMemberAPI` "From 0 to 1, CR fraction. Multiplied by number of fighters if fighter wing.")。
-    - `getDeploymentPointsCost()` 是部署点数 (战机乘数量)；`getDeploymentCostSupplies()` 是部署补给 (含最小 1 上限保护)。
+    - `getDeploymentPointsCost()` 是部署点数 (战机乘数量)；`getDeploymentCostSupplies()` 先舍入部署补给，再应用最小 1 的下限保护。
 - **保存态与膨胀态**：`CampaignFleetAPI.getInflater()` 持有 `FleetInflater`(由 `FleetFactoryV3` 生成的舰队挂载)。
     - `inflateIfNeeded()` 在战役侧把保存态成员补全为完整装配态 (`CampaignFleetAPI.inflateIfNeeded`：inflater 存在、未膨胀、非中立势力时执行；`removeAfterInflating()` 为真则随后移除 inflater)；`deflate()` 回到保存态表达。
     - 玩家舰队的成员默认即保存态，战斗部署时由战斗侧实例化。
@@ -204,7 +204,8 @@ setVariant 保存的是传入引用
 - **burn level**：`getMaxBurnLevel()` 是**非封存**成员中最快者 (含 `getFleetwideMaxBurnMod`)；`getMinBurnLevel()` 是全体最慢者；`getBurnLevel()` 是有效 burn(含深超空间与舰队 mod 修正，上限 20)。
     - `CampaignFleetAPI.getCurrBurnLevel()` 是当前实际流速。
 - **封存 (mothball)**：`getRepairTracker().setMothballed(true)` 后：成员不进 `getCombatReadyMembersListCopy()`、排到 `getMembersInPriorityOrder()` 末尾、`canBeDeployedForCombat()` 恒 `false`。
-    - stats 重算时补给月耗 × `supplyConsumptionMothballedMult`、cargo / fuel / maxCrew / minCrew 乘数置 0(`FleetMemberAPI.updateStats`)。
+    - 该调用立即执行成员 `updateStats`，并标记舰队数据等待同步。成员 stats 此时已经重算；舰队容量等派生数据在同步后更新。
+    - 封存 stats 把补给月耗乘以 `supplyConsumptionMothballedMult`，并把 cargo / fuel / maxCrew / minCrew 乘数置 0。
     - 封存船**不贡献容量也不烧船员**，这正是 "封存闲置船" 的语义。
 
 封存修正是延迟生效的
@@ -344,7 +345,7 @@ mods/GearIndustry/
 ├── data/
 ├── src/
 │   └── data/scripts/gearin/campaign/
-│       └── GearInFleetMemberScript   # 本节新增(归本节所有)
+│       └── GearInFleetMemberScript   # 本节新增 (归本节所有)
 └── jars/
 ```
 
@@ -455,7 +456,7 @@ fleet.getFleetData().addFleetMember(member);
 - **`addFleetMember` 抛出 `Attempting to add null fleet member`**：调用方把 null 传给了集合。检查自定义创建入口的返回值，确认非 null 后再入队。
 - **同一成员被加入两轮**：注册脚本缺少一次性判断，每次读档都会重新执行添加逻辑。使用 `REGISTER_MARK` 门控，连续读档后核对成员数量。
 - **重复调用 `addFleetMember` 没有任何变化**：同一对象引用已经在舰队集合中。通过 `getMembersListCopy()` 按 `getId()` 判断是否已入队。
-- **战机联队只被计为一个成员**：`getMembersListCopy()` 与 `getNumMembers()` 按联队对象计数。逐架统计使用 `getMembersListWithFightersCopy()`；封存或零 CR 联队不会展开。
+- **战机联队只被计为一个成员**：`getMembersListCopy()` 与 `getNumMembers()` 按联队对象计数。`getMembersListWithFightersCopy()` 按 fitted wing 槽生成成员，不按单架战机展开；封存或零 CR 联队不会展开。
 - **`getSnapshot()` 读档后为空**：snapshot 是瞬态字段，不进入存档。持久成员状态读取 `getMembersListCopy()`；快照只用于战斗前或销毁前的临时比较。
 - **修改装配后战斗中仍是旧船**：`FleetMemberAPI.setVariant` 只修改保存态，已部署实体不会跟随变化。生涯侧使用 `setVariant(variant, true, true)`，战斗实体在部署侧处理。
 - **战斗准备列表里没有低 CR 舰船**：CR 低于部署门槛，或船员比例低于默认 5%，都会让 `canBeDeployedForCombat()` 返回 false。核对 `getCR()` 与 `getCrewFraction()`，补充船员并等待 CR 恢复。
@@ -506,12 +507,12 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 完整最小例：生涯舰队成员(FleetMemberAPI)与舰队数据(FleetDataAPI)。
+ * 完整最小例：生涯舰队成员 (FleetMemberAPI) 与舰队数据 (FleetDataAPI)。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控
  * (沿用既有 CLASS_MARK 门控模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
  *
- * 行为：挂载后第一次 advance() 执行一次演示序列并自停(isDone()=true，引擎下一帧自动移除本脚本)：
+ * 行为：挂载后第一次 advance() 执行一次演示序列并自停 (isDone()=true，引擎下一帧自动移除本脚本)：
  *   1. 读取玩家舰队初始成员数与 fleet points、cargo 容量；
  *   2. 用 Global.getFactory().createFleetMember 创建 wolf_Assault 与 hammerhead_Elite 两个 SHIP 成员；
  *   3. 分别 addFleetMember 加入玩家舰队，记录加入前后成员数、fleet points、cargo 容量变化；
@@ -526,7 +527,7 @@ import com.fs.starfarer.api.fleet.FleetMemberType;
  */
 public class GearInFleetMemberScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本脚本是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_FleetMemberScript";
 
     private static final Logger LOG = Global.getLogger(GearInFleetMemberScript.class);
@@ -535,7 +536,7 @@ public class GearInFleetMemberScript implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInFleetMemberScript() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -568,7 +569,7 @@ public class GearInFleetMemberScript implements EveryFrameScript {
                 "GearIn fleet member start: members=%d fleetPoints=%.0f cargoCapacity=%.0f",
                 initialCount, initialFleetPoints, initialCargo));
 
-        // --- 创建成员(先不入队)---
+        // --- 创建成员 (先不入队)---
         FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
         FleetMemberAPI hammerhead = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "hammerhead_Elite");
         LOG.info(String.format(

@@ -9,7 +9,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 
 /**
- * 基线快照(演示前置观察)：玩家舰队成员数/玩家势力/玩家人物，及玩家旗舰 getCaptain() 特例。
+ * 基线快照 (演示前置观察)：玩家舰队成员数/玩家势力/玩家人物，及玩家旗舰 getCaptain() 特例。
  */
 public class GearInBaseline {
 

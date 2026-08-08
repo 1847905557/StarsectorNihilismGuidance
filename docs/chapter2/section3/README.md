@@ -95,7 +95,7 @@ name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u 
 
 其余参数：
 
-- **`toggle`**：`TRUE` = 开关式，再按一次才关闭 (本系统如此)；留空 = 按时开、松手关。
+- **`toggle`**：`TRUE` = 开关式，再按一次才关闭 (本系统如此)；留空 = 非开关式，按一次后完整运行 `charge up → active → down → cooldown` 周期。
 - **`max uses`**：充能次数，留空 = 无限。
 - **`noAccel`/`noFiring`/`noTurning` 等 `no*` 列**：激活期间禁止的行为，`TRUE` = 禁止。本行禁止了开火、转向、平移与加速 —— 激活期间无法进行这些操作。
 
@@ -173,7 +173,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 至此四段链路完成。重启游戏验证：
 
 1. 日志出现 `Loading ship system [data/shipsystems/GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，无 `ERROR`；
-2. 控制台 `Addship GearIn_artizan` 进模拟战，按 U：约 2 秒前摇内速度平滑升至 +200，左下角出现 `engine power increased`；本系统是开关式，再按 U 关闭；
+2. 控制台 `Addship GearIn_artizan` 进模拟战，按 F：约 2 秒前摇内速度平滑升至 +200，左下角出现 `engine power increased`；本系统是开关式，再按 F 关闭；
 3. 关闭后约 1 秒后摇内按基础速度减速，随后约 10 秒冷却，HUD 显示冷却进度。
 
 ## 参数调整实验
@@ -278,14 +278,14 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 前置数据：本节注册并挂载的 `GearIn_burstdrive` 与 `GearIn_resistfield` 战术系统。
 
 1. 重启游戏，在 `starsector.log` 中观察战术系统加载记录。
-2. 进入模拟战，按 U 激活和关闭燃烧驱动，观察前摇、后摇与冷却。
+2. 进入模拟战，按 F 激活和关闭燃烧驱动，观察前摇、后摇与冷却。
 3. 调整 `SPEED_BONUS`、`active` 或 `cooldown` 后重启，比较行为差异。
 4. 使用右键抵抗力场，观察状态文字、持续时间与减伤效果。
 
 预期结果：
 
 - 日志出现 `Loading ship system [data/shipsystems/GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，且没有相关 `ERROR`。
-- 前摇约 2 秒内速度与加速度平滑升至 +200；左下角状态栏出现 `engine power increased`；开关式 (`toggle=TRUE`) 再按 U 关闭。
+- 前摇约 2 秒内速度与加速度平滑升至 +200；左下角状态栏出现 `engine power increased`；开关式 (`toggle=TRUE`) 再按 F 关闭。
 - 关闭后约 1 秒后摇内按基础速度减速；随后约 10 秒冷却，冷却结束可再次激活。
 - 参数实验 (`SPEED_BONUS`、`active`、`cooldown`) 各自产生可感知的行为差异。
 - 状态文字、时长与减伤数值 (高爆/EMP 最高 75%、动能/能量最高 50%) 符合预期。

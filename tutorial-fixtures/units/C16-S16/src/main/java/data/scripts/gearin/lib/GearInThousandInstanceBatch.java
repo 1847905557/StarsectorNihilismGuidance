@@ -6,6 +6,7 @@ import java.util.List;
 import org.boxutil.base.api.InstanceDataAPI;
 import org.boxutil.units.standard.attribute.Instance2Data;
 import org.boxutil.units.standard.entity.SpriteEntity;
+import org.boxutil.manager.CombatRenderingManager;
 
 public final class GearInThousandInstanceBatch {
     public void submit(SpriteEntity entity, GearInBatchPool pool, int count) {
@@ -33,5 +34,13 @@ public final class GearInThousandInstanceBatch {
             pool.release((Instance2Data) item);
         }
         entity.resetInstanceData();
+    }
+
+    public boolean removeAndRelease(SpriteEntity entity, GearInBatchPool pool) {
+        boolean removed = CombatRenderingManager.removeEntity(entity);
+        if (removed) {
+            release(entity, pool);
+        }
+        return removed;
     }
 }

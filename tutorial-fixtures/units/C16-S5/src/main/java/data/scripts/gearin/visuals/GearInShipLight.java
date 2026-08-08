@@ -12,9 +12,9 @@ import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.WeaponAPI;
 
 /**
- * 挂接到玩家舰船的常驻点光源实体(光源实体类)。
+ * 挂接到玩家舰船的常驻点光源实体 (光源实体类)。
  *
- * 生命周期：战斗首帧由 GearInLightCombatPlugin 驱动 update 时创建(此时战斗
+ * 生命周期：战斗首帧由 GearInLightCombatPlugin 驱动 update 时创建 (此时战斗
  * LocalData 已存在，addLight 不再静默跳过)，makePermanent 关闭 60 秒 failsafe；
  * 玩家舰船死亡后 fadeOut(1f) 自灭，由 LightShader.advance 在 intensity 归零后移除。
  */

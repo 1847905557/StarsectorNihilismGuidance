@@ -10,9 +10,9 @@ import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.StarSystemAPI;
 
 /**
- * 角色：访问状态记录(isCurrentLocation / activeThisFrame / isInCurrentLocation /
+ * 角色：访问状态记录 (isCurrentLocation / activeThisFrame / isInCurrentLocation /
  * isAlive / isEnteredByPlayer / getDaysSinceLastPlayerVisit)，三条日志
- * (location 变化、进入演示星系、周期摘要)由 GearInLocationScript 调用。
+ * (location 变化、进入演示星系、周期摘要) 由 GearInLocationScript 调用。
  */
 public class GearInAccessStateLogger {
 	private static final Logger LOG = Global.getLogger(GearInAccessStateLogger.class);
@@ -81,7 +81,7 @@ public class GearInAccessStateLogger {
 				entities.contains(beacon)));
 	}
 
-	/** Float.MAX_VALUE 表示从未访问过(getDaysSinceLastPlayerVisit 语义)。 */
+	/** Float.MAX_VALUE 表示从未访问过 (getDaysSinceLastPlayerVisit 语义)。 */
 	private static String formatDays(float days) {
 		if (days >= Float.MAX_VALUE) {
 			return "never";

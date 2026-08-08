@@ -39,7 +39,7 @@ import com.fs.starfarer.api.combat.ShipAPI.HullSize;
  */
 public class GearInSpeedBooster extends BaseHullMod {
 
-    /** 速度加成百分比(参数：改这个数字，其余不动)。 */
+    /** 速度加成百分比 (参数：改这个数字，其余不动)。 */
     private static final float SPEED_PERCENT = 10f;
 
     @Override

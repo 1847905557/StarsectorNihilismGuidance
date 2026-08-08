@@ -32,6 +32,9 @@ public final class GearInNexStartPlanner {
 
     public List<String> chooseFleet(String factionId, String fleetType) {
         NexFactionConfig config = NexConfig.getFactionConfig(factionId);
+        if (NexFactionConfig.StartFleetType.getType(fleetType) == null) {
+            throw new IllegalArgumentException("Unknown start fleet type: " + fleetType);
+        }
         return config.getStartFleetForType(fleetType, false, 0);
     }
 }

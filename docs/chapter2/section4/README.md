@@ -118,7 +118,7 @@ import org.lwjgl.util.vector.Vector2f;
  */
 public class GearInBeamLogger implements BeamEffectPlugin {
 
-    /** 每累计多少秒打一行日志(参数)。 */
+    /** 每累计多少秒打一行日志 (参数)。 */
     private static final float REPORT_INTERVAL = 1f;
 
     private float timeSinceLastReport;

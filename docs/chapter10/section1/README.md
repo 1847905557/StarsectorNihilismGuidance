@@ -89,9 +89,9 @@
 4. `economy.addMarket(market, withJunkAndChatter)` 注册进经济集合 (`withJunkAndChatter = true` 会加 junk 与无线电喧闹)。
 5. `entity.setMarket(market)`(以及 `entity.setFaction(...)`) 把实体绑到市场。
 
-成熟实例的 `addMarketplace` 工具正是这条链的原版用法：`createMarket(primaryEntity.getId(), ...)` → `setFactionId` → `setPrimaryEntity` → `getTariff().modifyFlat("generator", tarrif)` → `addSubmarket` ×N。
+0.98a 没有 `addMarketplace` 工具；使用 `Misc.initEconomyMarket` 或手动执行这条链：`createMarket(primaryEntity.getId(), ...)` → `setFactionId` → `setPrimaryEntity` → `getTariff().modifyFlat("generator", tarrif)` → `addSubmarket` ×N。
 
-随后 `addCondition` ×N(`free_port` 条件同时 `setFreePort(true)`)→ `addIndustry` ×N。
+随后 `addCondition` ×N(`free_market` 条件同时 `setFreePort(true)`)→ `addIndustry` ×N。
 
 随后 `globalEconomy.addMarket(newMarket, true)` → `primaryEntity.setMarket(newMarket)` → `primaryEntity.setFaction(factionID)`。
 
@@ -120,11 +120,11 @@
 
 **必须记住这个不对称性**：多实例条件 (同 id 出现多次) 想删一个，用 token；用 id 会把所有副本一起删掉 —— **可观察结果**：同名条件全部消失。
 
-`reapplyConditions()` 逐个 `unapply`/`apply`(suppressed 的跳过)；`suppressCondition(id)` 隐藏条件显示与生效但保留实例，配对 `unsuppressCondition(id)` 恢复。
+`reapplyConditions()` 逐个 `unapply`/`apply`(suppressed 的跳过)；`suppressCondition(id)` 只抑制重算时的生效，保留实例与显示，配对 `unsuppressCondition(id)` 恢复。
 
 条件 plugin 生命周期 (`MarketConditionPlugin`)：`init(market, condition)` → `setParam`(可选)→ `apply(id)` → 每帧 `advance`(`runWhilePaused()` 决定暂停时是否推进)→ 移除/重算时 `unapply(id)`。
 
-**产业 (industry)**：`getIndustries()` 返回 `Industry` 列表；`addIndustry(id)` 幂等 (已存在则跳过)，spec 不存在时**抛 `RuntimeException("Industry [...] not found")`**—— 注意这与条件不同：条件 id 不校验、产业 id 校验。
+**产业 (industry)**：`getIndustries()` 返回 `Industry` 列表；`addIndustry(id)` 幂等 (已存在则跳过)，spec 不存在时**抛 `RuntimeException("Industry [...] not found")`**。`addCondition(id)` 对不存在的条件 spec 同样抛出运行时异常。
 
 `getIndustry(id)` / `hasIndustry(id)` 按 id 查；`hasFunctionalIndustry(id)` 额外要求 `isFunctional()`(被封禁/损坏的产业不算)；
 
@@ -147,7 +147,7 @@
 | 成员 | 语义 |
 |---|---|
 | `getStockpile()` / `setStockpile(float)` | 当前库存 (经济单位刻度) |
-| `getAvailable()` | 当前可得量 (本地生产 + 进口 − 短缺，`getAvailableStat()` 的修饰后值) |
+| `getAvailable()` | 当前可得量 (`getAvailableStat()` 的修饰后值，含低可达性扣减) |
 | `getMaxSupply()` / `getMaxDemand()` | 供需上限 (产业重算后) |
 | `getDemandClass()` / `getDemand()` | 需求类与 `MarketDemandAPI`(`getDemandValue()`) |
 | `getTradeMod()` / `getTradeModPlus()` / `getTradeModMinus()` | 用户交易写入的 120 天衰减修饰 (见 "用户交易对经济的影响") |
@@ -177,10 +177,10 @@
 
 - **自由港**：`setFreePort(true)` 自动添加 `free_market` 条件 (`Market.setFreePort`，条件 id 为 `free_market`，plugin 为 `FreeMarket`)。
     - `isFreePort()` 为 true 时 `isIllegal(id)` **恒返回 false**—— 自由港市场一切商品合法。
-- **隐藏市场**：`setHidden(true)` 后市场**不提供任务、不参与会间接暴露其存在的事件/intel，且不参与经济。可观察结果**：商品流计算完全忽略它，任何 UI/任务系统不出现它。
+- **隐藏市场**：`setHidden(true)` 后市场不提供会暴露其存在的任务、事件或 intel。商品计算跳过该市场的进口需求；可达图、库存和价格路径仍可能使用它。
 - **用户所有**：`setPlayerOwned(true)` 改变殖民地管理语义 (存档界面、收入、存储免费等)，并刷新用户的 outpost 效果。
-- **survey 等级**：`SurveyLevel.NONE / SEEN / PRELIMINARY / FULL`，`getSurveyLevel()` 读出；核心世界与代码路径建市场显式设 `FULL`(成熟实例的 `addMarketplace` 写法)。
-- **经济组**：`getEconGroup()` / `setEconGroup(String)`——"同一经济组的市场互相可见 ('nearby markets' 对话框等) 且只互相交易；默认 null 自成一组"。
+- **survey 等级**：`SurveyLevel.NONE / SEEN / PRELIMINARY / FULL`，`getSurveyLevel()` 读出；核心世界与代码路径建市场时显式设 `FULL`。
+- **经济组**：`getEconGroup()` / `setEconGroup(String)`—— 同一经济组的市场互相可见且只互相交易；所有 null 组市场属于同一组。
 - **tag**：`addTag` / `removeTag` / `hasTag` / `getTags`—— 市场级标记 (与商品 tag、实体 tag 不同集合)。
 
 #### [每帧推进 (advance)]
@@ -507,7 +507,7 @@ public boolean isEconomyListenerExpired() {
 
 ```java
     GearInMarketInspector inspector = new GearInMarketInspector();
-    inspector.setTargetMarketId("asharu"); // corvus 星系的独立势力市场(economy.json 首实体 id 即市场 id)
+    inspector.setTargetMarketId("asharu"); // corvus 星系的独立势力市场 (economy.json 首实体 id 即市场 id)
     Global.getSector().addScript(inspector);
 ```
 
@@ -596,7 +596,7 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
     `supplies` 的市场买入/卖出价在库存充足时接近基础价区间；`drugs` 对 hegemony 市场 `illegal=true`(非自由港)，开放市场不备货、黑市可交易 (`BlackMarketPlugin.isIllegalOnSubmarket` 恒 false)。
 
-- **人物与经济组**：`GearIn market people: count=N`(Jangala 的 NPC 人物数，以日志为准)；`GearIn market econGroup: group=null sameGroupMarkets=1`(默认 null 自成一组，`getMarketsWithSameGroup` 至少包含自己)。
+- **人物与经济组**：`GearIn market people: count=N`(Jangala 的 NPC 人物数，以日志为准)；`GearIn market econGroup: group=null sameGroupMarkets=M`，其中 `M` 是当前经济中 null 组市场总数。
 
 - **税率回滚**：
 
@@ -642,10 +642,10 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 记忆要点：
 
 - 市场 id = `econ/*.json` `entities` 首实体 id；`getMarket(id)` 精确匹配、查无返回 null。
-- `addCondition` 返回 token：删具体实例用 `removeSpecificCondition(token)`，`removeCondition(id)` 删同 id 全部；产业 `addIndustry` 对不存在的 id 抛异常 (条件不校验)。
+- `addCondition` 返回 token：删具体实例用 `removeSpecificCondition(token)`，`removeCondition(id)` 删同 id 全部；条件与产业的 spec id 不存在时，添加入口都会抛出运行时异常。
 - `getCargoNullOk()` 可能 null；`getMemory()` 触发全插件回调；`getAdmin()` 用到时才创建管理员 —— 三个 "用到时才创建/副作用" 入口。
 - `economyIterPerMonth = 10`、`economyIntervalnGameDays` 不参与经济；`nextStep` 系列禁止后台调用；监听器必须走 `addUpdateListener`。
-- 自由港 → `isIllegal` 全 false；隐藏市场 → 不参与任务/事件/intel/经济；同经济组市场只互相可见与交易。
+- 自由港 → `isIllegal` 全 false；隐藏市场跳过进口需求；同经济组市场只互相可见与交易。
 
 地点容器与实体挂载承载着市场主实体，舰队成员是生涯对象族的另一支；本节的 `REGISTER_MARK` 注册模式沿用生涯对象族的既有做法。市场的行为由三条链共同决定 —— 子市场的插件差异、经济循环的迭代节奏、开放状态的语义开关；产业供需、交易界面与殖民地管理都沿这些入口展开。
 
@@ -687,14 +687,14 @@ import com.fs.starfarer.api.campaign.econ.EconomyAPI;
 import com.fs.starfarer.api.campaign.econ.MarketAPI;
 
 /**
- * 市场巡检脚本(EveryFrameScript 角色)：挂载后第一次 advance() 执行一次市场/子市场/
- * 经济对象巡检序列并自停(isDone()=true，引擎下一帧自动移除本脚本)。注册入口：生涯回调
+ * 市场巡检脚本 (EveryFrameScript 角色)：挂载后第一次 advance() 执行一次市场/子市场/
+ * 经济对象巡检序列并自停 (isDone()=true，引擎下一帧自动移除本脚本)。注册入口：生涯回调
  * onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控
  * (沿用既有模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
  */
 public class GearInMarketInspector implements EveryFrameScript {
 
-    /** 存档持久化标记：本巡检是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本巡检是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_MarketInspector";
 
     private static final Logger LOG = Global.getLogger(GearInMarketInspector.class);
@@ -706,10 +706,10 @@ public class GearInMarketInspector implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInMarketInspector() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
-    /** 修改巡检目标市场；改回 null 时回退到"第一个有开放市场的市场"。 */
+    /** 修改巡检目标市场；改回 null 时回退到 "第一个有开放市场的市场"。 */
     public void setTargetMarketId(String targetMarketId) {
         this.targetMarketId = targetMarketId;
     }
@@ -772,7 +772,7 @@ import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
 
 /**
  * 目标市场选择器：优先按指定 id 取市场；id 为空或查无此市场时回退扫描，
- * 取第一个有开放市场(open_market 子市场)的市场，仍找不到返回 null。
+ * 取第一个有开放市场 (open_market 子市场) 的市场，仍找不到返回 null。
  * 供巡检脚本 GearInMarketInspector 编排时调用。
  */
 public class GearInMarketPicker {
@@ -992,8 +992,8 @@ import com.fs.starfarer.api.campaign.econ.MarketAPI;
 import com.fs.starfarer.api.combat.MutableStat;
 
 /**
- * 税率探针：对市场税率(MutableStat)做瞬时 modifyFlat 并当帧 unmodifyFlat 回滚，
- * 记录生效值 before/during/after，演示"修改高频参数观察结果变化"的最小任务链。
+ * 税率探针：对市场税率 (MutableStat) 做瞬时 modifyFlat 并当帧 unmodifyFlat 回滚，
+ * 记录生效值 before/during/after，演示 "修改高频参数观察结果变化" 的最小任务链。
  * 由巡检脚本 GearInMarketInspector 选定目标市场后调用，无持久残留。
  */
 public class GearInTariffProbe {
@@ -1033,7 +1033,7 @@ import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.econ.EconomyAPI.EconomyUpdateListener;
 
 /**
- * 经济更新监听器(EconomyUpdateListener 角色)：记录下一个经济步的第一次
+ * 经济更新监听器 (EconomyUpdateListener 角色)：记录下一个经济步的第一次
  * commodityUpdated 与整轮 economyUpdated，之后 isEconomyListenerExpired() 返回 true，
  * 引擎在下一个经济步自动从监听器列表移除。
  *

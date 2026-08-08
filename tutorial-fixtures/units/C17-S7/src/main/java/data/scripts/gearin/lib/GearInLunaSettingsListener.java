@@ -12,7 +12,7 @@ import lunalib.lunaSettings.LunaSettingsListener;
 /**
  * 变更通知角色：注册/注销 LunaSettings 监听器，在设置界面保存后按本 MOD 过滤并
  * 重读输出当前生效值。addSettingsListener 不去重，注册前必须用
- * hasSettingsListenerOfClass 幂等查询(重复注册会让同一次保存触发多次回调)。
+ * hasSettingsListenerOfClass 幂等查询 (重复注册会让同一次保存触发多次回调)。
  *
  * 监听器实例在门控通过之后才创建 —— 类加载路径不触碰 lunalib.**，LunaLib 未启用
  * 时调用本类不会抛 NoClassDefFoundError；缺库处理方式见 C17-S1。
@@ -27,7 +27,7 @@ public class GearInLunaSettingsListener {
     }
 
     /**
-     * 注册(幂等)：LunaLib 未启用时跳过并写 warn。注册入口见页面正文的接入片段
+     * 注册 (幂等)：LunaLib 未启用时跳过并写 warn。注册入口见页面正文的接入片段
      * (GearInModPlugin.onGameLoad 一行)；监听器实例在门控之后才创建。
      */
     public static void registerListener() {
@@ -53,7 +53,7 @@ public class GearInLunaSettingsListener {
         LOG.info("GearIn luna settings: listener registered");
     }
 
-    /** 取消注册(测试清理或卸载场景)。 */
+    /** 取消注册 (测试清理或卸载场景)。 */
     public static void unregisterListener() {
         if (!GearInLunaSettingsReader.isLunaLibEnabled()) {
             return;
@@ -64,7 +64,7 @@ public class GearInLunaSettingsListener {
         }
     }
 
-    /** 输出当前生效值：用于对照设置界面与用户设置文件(进档时可调用一次)。 */
+    /** 输出当前生效值：用于对照设置界面与用户设置文件 (进档时可调用一次)。 */
     public static void logCurrentValues() {
         LOG.info("GearIn luna settings: trails=" + GearInLunaSettingsReader.isTrailsEnabled()
                 + " maxEntries=" + GearInLunaSettingsReader.getMaxEntries()

@@ -1,340 +1,269 @@
-# 用 BoxUtil 制作批量粒子与精灵实体
+# 用 MagicLib 为导弹制作可切断尾迹
 
-BoxUtil 的 `SpriteEntity` 可以用一次实体提交绘制多份实例数据。本节让玩家舰周围每两秒生成一圈 32 份青色粒子，并把 CPU 侧实例、GPU 提交和渲染数量三个动作明确分开。
+导弹瞬移最容易暴露尾迹的生命周期错误：弹体到了新位置，旧节点仍从原处连来。本节为每枚发射物建立独立跟踪器，按固定间隔追加两层尾迹，并在位置跳变、命中、淡出或离场时切断关联。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：~22 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~40 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 判断 BoxUtil 的配置开关与 shader 核心是否同时可用；
-- 为一个 `SpriteEntity` 构造 32 份带位置、速度、颜色和寿命的 `Instance2Data`；
-- 区分 CPU 列表、刷新范围、GPU 提交与实际绘制数量；
-- 根据 `CombatRenderingManager.addEntity()` 返回码处理入队失败；
-- 在 BoxUtil 渲染不可用时保留原版粒子反馈。
+- 从 `OnFireEffectPlugin` 为每枚发射物创建独立尾迹状态；
+- 为同一弹体分配并跨帧复用两条 MagicTrail ID；
+- 按时间间隔追加实体关联的尾迹节点；
+- 检测位置跳变，切断旧段并用新 ID 从新位置续接；
+- 在命中、淡出或离场时移除跟踪插件。
 
 ## 前置知识
 
-- [C6-S2] 理解 Java 类、方法、字段与入口插件；
-- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C7-S1] 的战斗插件、暂停守卫与每帧时间；
+- [C7-S4] 的战斗实体有效性与收尾；
+- 能够在武器 CSV 中为弹体武器注册 `OnFireEffectPlugin`。
 
-## 明确当前需求
+## 明确尾迹生命周期
 
-进入战斗后，玩家舰周围每 2 秒出现一圈 32 个方形粒子，四档半径让轮廓具有厚度；BoxUtil shader 不可用时，原版平滑粒子承担同一可观察反馈。
+测试导弹持续飞行时应显示内层实体和外层辉光。把弹体瞬移超过 250 su 后，旧尾迹留在原处淡出，新尾迹从传送终点开始；两段之间没有横跨战场的连接。弹体命中或进入淡出后，不再产生新节点。
 
 ## 文件与 API 链路
 
-### 粒子实例 API 职责速查表
+武器发射回调提供 `DamagingProjectileAPI` 与当前 `CombatEngineAPI`。每枚弹体对应一个 `TrailTracker`；跟踪器从 `MagicTrailPlugin.getUniqueID()` 取得两条 ID，用 `addTrailMemberSimple()` 追加节点，用 `cutTrailsOnEntity()` 结束实体关联，最后通过 `CombatEngineAPI.removePlugin()` 退出本场战斗。
 
-| 对象 | 职责 |
-|---|---|
-| `SpriteEntity` | 持有材质和实例集合 |
-| `Instance2Data` | 描述单个粒子的世界坐标、速度、颜色、缩放与计时 |
-| `CombatRenderingManager` | 接收实体 |
-| `BoxEnum` | 返回码决定实体所有权是否已经交给渲染管理器 |
+### 为每枚发射物建立跟踪器
 
-### 确认 BoxUtil 渲染路径可用
-
-**插入位置：`GearInBoxEntity.init()`。** 在 GL 上下文建立后检查配置和 `ShaderCore`。
+**插入位置：`GearInMagicTrail.onFire()`。** 不把 ID 放在武器效果实例上，而是让每枚发射物拥有自己的跟踪插件。
 
 ```java
-boxAvailable = BoxConfigs.isShaderEnable() && ShaderCore.isValid();
-```
-
-完成信号：关闭 shader 时插件进入原版粒子分支。
-
-### 创建一份精灵实体
-
-**插入位置：`GearInBoxSpawner.spawnBox()`。** 选择贴图、颜色、图层与混合方式。
-
-```java
-SpriteEntity box = new SpriteEntity(sprite);
-box.getMaterialData().setColor(Color.CYAN);
-box.setLayer(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
-```
-
-完成信号：实体材质为青色加法混合。
-
-### 建立三十二份环形实例
-
-**插入位置：`spawnBox()` 的 `instances` 构造处。** 均分角度并交错四档半径，再写入世界坐标、舰船速度、颜色、缩放与三段计时。
-
-```java
-for (int i = 0; i < PARTICLE_COUNT; i++) {
-    float angle = player.getFacing() + i * 360f / PARTICLE_COUNT;
-    float radius = 50f + (i % 4) * 18f;
-    Instance2Data data = new Instance2Data();
-    data.setLocation(MathUtils.getPoint(player.getLocation(), radius, angle));
-    data.setVelocity(player.getVelocity());
-    data.setColor(new Color(100, 220, 255, 210));
-    data.setTimer(BOX_IN, BOX_FULL, BOX_OUT);
-    instances.add(data);
+public void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon,
+        CombatEngineAPI engine) {
+    engine.addPlugin(new TrailTracker(projectile));
 }
 ```
 
-完成信号：CPU 列表包含 32 份实例，所有位置都围绕本次生成时的玩家舰坐标。
+完成信号：连续发射两枚导弹时，各自形成独立尾迹，节点不会串到另一枚弹体上。
 
-### 完成 refresh、submit 与 count
+### 初始化贴图与两条尾迹 ID
 
-**插入位置：`setInstanceData()` 之后。** 把修改范围提交到 GPU，并声明实际绘制数。
-
-```java
-box.setInstanceDataRefreshAllFromCurrentIndex();
-box.submitInstanceData();
-box.setRenderingCount(instances.size());
-```
-
-完成信号：粒子真正进入画面。
-
-### 处理入队失败
-
-**插入位置：`CombatRenderingManager.addEntity()` 返回后。** 失败时立即释放实体资源。
+**插入位置：`TrailTracker.init()`。** 贴图使用 MagicLib 在 `fx` 分类注册的资源，每条尾迹只在初始化或切断后取得一次 ID。
 
 ```java
-byte result = CombatRenderingManager.addEntity(box);
-if (result != BoxEnum.STATE_SUCCESS) box.delete();
+bodySprite = Global.getSettings().getSprite("fx", "base_trail_smooth");
+glowSprite = Global.getSettings().getSprite("fx", "base_trail_contrail");
+bodyTrailId = MagicTrailPlugin.getUniqueID();
+glowTrailId = MagicTrailPlugin.getUniqueID();
+lastLocation = new Vector2f(projectile.getLocation());
+addSegments();
 ```
 
-完成信号：日志出现返回码，战斗继续运行。
+完成信号：发射当帧已经登记首组节点，后续帧继续复用相同的两条 ID。
 
-## 排查关键故障
+### 按固定间隔追加两层节点
+
+**插入位置：`TrailTracker.advance()` 的有效弹体分支。** 累积非暂停时间，每 0.05 秒登记一组节点。
+
+```java
+segmentTimer += amount;
+if (segmentTimer >= SEGMENT_INTERVAL) {
+    segmentTimer = 0f;
+    addSegments();
+}
+```
+
+完成信号：帧率变化时节点密度由时间间隔控制；实体层与辉光层沿同一路径连续延伸。
+
+### 在位置跳变后换用新 ID
+
+**插入位置：追加节点之前。** 比较上一帧和当前帧坐标；超过 250 su 时先切断全部实体关联尾迹，再为两层分别取得新 ID。
+
+```java
+if (MathUtils.getDistance(lastLocation, projectile.getLocation())
+        > TELEPORT_DISTANCE) {
+    MagicTrailPlugin.cutTrailsOnEntity(projectile);
+    bodyTrailId = MagicTrailPlugin.getUniqueID();
+    glowTrailId = MagicTrailPlugin.getUniqueID();
+}
+```
+
+完成信号：传送前的节点按自身寿命淡出，传送后的首个节点不会连接到旧坐标。
+
+### 在弹体终止时停止跟踪
+
+**插入位置：`advance()` 的暂停守卫之后。** 命中、淡出或离场都意味着不再追加节点；切断后同时移除本枚弹体的跟踪插件。
+
+```java
+if (!engine.isEntityInPlay(projectile)
+        || projectile.isFading() || projectile.didDamage()) {
+    cutAndRemove();
+    return;
+}
+```
+
+完成信号：弹体消失后旧节点只按各自的 `in/main/out` 时长淡出，插件不再留在每帧列表中空转。
+
+## 让尾迹无法连成线
 
 下面是**局部故障片段**：
 
 ```java
-box.setInstanceData(instances);
-CombatRenderingManager.addEntity(box);
+float trailId = MagicTrailPlugin.getUniqueID();
+MagicTrailPlugin.addTrailMemberSimple(projectile, trailId, sprite, location,
+        0f, facing, 14f, 3f, color, 0.8f, 0.05f, 0.2f, 0.8f, true);
 ```
 
-实际症状：实体成功入队，日志也没有异常，画面却完全空白。
+实际症状：每次追加都属于一条新尾迹，画面只剩彼此独立的短节点，无法形成连续条带。
 
-原因：实例只留在 CPU 集合，缺少 refresh、submit 与 renderingCount。
+原因：MagicTrail 用 ID 把跨帧节点归入同一条轨迹。ID 的生命周期必须覆盖整段连续飞行。
 
 下面是**局部修正片段**：
 
 ```java
-box.setInstanceDataRefreshAllFromCurrentIndex();
-box.submitInstanceData();
-box.setRenderingCount(instances.size());
+bodyTrailId = MagicTrailPlugin.getUniqueID();
+// 后续 addTrailMemberSimple() 持续复用 bodyTrailId。
 ```
 
-复验：先记录日志中的 `instances=32`，再恢复三步提交进入战斗，确认 32 份实例同时出现。
+复验：让导弹直飞 2 秒，记录 ID 只在初始化时产生；再瞬移一次，确认 ID 只在切断点更新。
 
 ## 完整最小例
 
-接线插件每 2 秒调用一次生成器。生成器只创建一项 `SpriteEntity`，32 份粒子都通过同一实例列表提交；原版降级分支不创建 BoxUtil 资源。
+完整类既是武器发射效果，也是每枚弹体跟踪器的创建入口。两层尾迹都与弹体关联，因此一次 `cutTrailsOnEntity()` 可以同时结束它们。
 
-## 验证方案
-
-前置数据：BoxUtil 已完成全局初始化，粒子贴图路径有效，战斗插件已经注册。
-
-1. 进入战斗并等待 2 秒，搜索 `GearIn box` 日志，核对 `instances=32`。
-2. 暂停战斗，确认生成计时停止；恢复后等待下一组出现。
-3. 观察 32 份粒子分布在 50、68、86、104 su 四档半径，并继承生成瞬间的玩家舰速度。
-4. 临时移除 `submitInstanceData()`，确认实体入队但画面缺少实例；恢复完整提交链复验。
-5. 关闭 BoxUtil shader，重启战斗并确认日志进入原版平滑粒子分支。
-6. 制造入队失败条件时，核对返回码警告和 `delete()` 清理路径。
-
-预期结果：
-
-- BoxUtil 可用时，每次生成只入队 1 个实体，但 `renderingCount` 为 32；
-- 32 份实例的位置、速度、颜色、缩放和三段寿命均已写入并提交；
-- 缺少刷新、提交或绘制数量中的任一步时，验证能稳定复现空白或数量错误；
-- 入队失败时实体立即删除，不继续由调用侧推进；
-- shader 不可用时只生成原版粒子，战斗没有未处理异常。
-
-## 故障分析
-
-- **实体入队后画面仍然空白**：实例只留在 CPU 集合，没有完成 refresh、submit 和 `renderingCount` 设置。补齐三步后，日志与画面应同时显示 32 份实例。
-- **粒子只显示一份**：`renderingCount` 仍为 1，或实例列表只添加了一项。对照日志中的 `instances` 和提交数量，修正后确认显示数量一致。
-- **颜色正确但位置不动**：`ControlData` 没有在 `advance` 中更新实例。每帧写入新位置并提交，移动舰船后确认精灵跟随。
-- **战斗退出后资源持续增长**：入队失败或结束路径没有调用 `delete`。在退出回调清理全部实体，结束战斗后确认 BoxUtil 资源计数回落。
-
-## 总结
-
-BoxUtil 实例渲染的关键不是 new 出对象，而是把 CPU 修改明确提交给渲染端。写实例、标记刷新、提交和设置数量是四个独立动作；返回码与释放路径同样属于成品。
-
-## 建议参考项
-
-- `SpriteEntity`：批量精灵实体；
-- `Instance2Data`：单个二维实例状态；
-- `CombatRenderingManager.addEntity`：加入 BoxUtil 战斗渲染队列。
-::: details 完整成品：GearInBoxEntity
+::: details 完整成品：GearInMagicTrail
 
 ```java
-package data.scripts.gearin.lib;
+package data.scripts.gearin.visuals;
 
+import java.awt.Color;
 import java.util.List;
 
-import org.apache.log4j.Logger;
-import org.boxutil.BoxUtilModPlugin;
-import org.boxutil.config.BoxConfigs;
-import org.boxutil.manager.ShaderCore;
+import org.lazywizard.lazylib.MathUtils;
+import org.lwjgl.util.vector.Vector2f;
+import org.magiclib.plugins.MagicTrailPlugin;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.DamagingProjectileAPI;
+import com.fs.starfarer.api.combat.OnFireEffectPlugin;
+import com.fs.starfarer.api.combat.WeaponAPI;
+import com.fs.starfarer.api.graphics.SpriteAPI;
 import com.fs.starfarer.api.input.InputEventAPI;
 
-/**
- * 完整最小例的接线载体：BoxUtil 初始化(initLater 守卫)、可用性判据与生成
- * 计时在这里，实体生成委托给 GearInBoxSpawner；
- * 由既有战斗插件在 init() 中 addPlugin 注册(C7-S1 模型)，只在本场战斗内有效。
- */
-public class GearInBoxEntity extends BaseEveryFrameCombatPlugin {
-
-    private static final Logger LOG = Global.getLogger(GearInBoxEntity.class);
-
-    /** 生成间隔(秒)。 */
-    private static final float SPAWN_INTERVAL = 2f;
-
-    private CombatEngineAPI engine;
-
-    /** 初始化可用性：配置开关 && GPU 资源有效，二者共同决定 shader 渲染入口可用性。 */
-    private boolean boxAvailable;
-
-    private GearInBoxSpawner spawner;
-    private float spawnTimer;
+public class GearInMagicTrail implements OnFireEffectPlugin {
 
     @Override
-    public void init(CombatEngineAPI engine) {
-        this.engine = engine;
-        // initLater 在 OpenGL context 创建后调用；isGlobalInitialized() 守卫保证只初始化一次
-        if (!BoxUtilModPlugin.isGlobalInitialized()) {
-            BoxUtilModPlugin.initLater();
-        }
-        boxAvailable = BoxConfigs.isShaderEnable() && ShaderCore.isValid();
-        spawner = new GearInBoxSpawner(engine, boxAvailable);
-        LOG.info("GearIn box init: shaderEnable=" + BoxConfigs.isShaderEnable()
-                + " shaderCoreValid=" + ShaderCore.isValid()
-                + " available=" + boxAvailable);
+    public void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon,
+            CombatEngineAPI engine) {
+        engine.addPlugin(new TrailTracker(projectile));
     }
 
-    @Override
-    public void advance(float amount, List<InputEventAPI> events) {
-        if (engine == null) {
-            return; // 防御性判空(C2-S1 同款姿势)
+    private static final class TrailTracker extends BaseEveryFrameCombatPlugin {
+        private static final float SEGMENT_INTERVAL = 0.05f;
+        private static final float TELEPORT_DISTANCE = 250f;
+
+        private final DamagingProjectileAPI projectile;
+        private CombatEngineAPI engine;
+        private SpriteAPI bodySprite;
+        private SpriteAPI glowSprite;
+        private float bodyTrailId;
+        private float glowTrailId;
+        private float segmentTimer;
+        private Vector2f lastLocation;
+
+        private TrailTracker(DamagingProjectileAPI projectile) {
+            this.projectile = projectile;
         }
-        if (engine.isPaused()) {
-            return; // 暂停守卫：实体生成只在非暂停推进
+
+        @Override
+        public void init(CombatEngineAPI engine) {
+            this.engine = engine;
+            bodySprite = Global.getSettings().getSprite("fx", "base_trail_smooth");
+            glowSprite = Global.getSettings().getSprite("fx", "base_trail_contrail");
+            bodyTrailId = MagicTrailPlugin.getUniqueID();
+            glowTrailId = MagicTrailPlugin.getUniqueID();
+            lastLocation = new Vector2f(projectile.getLocation());
+            addSegments();
         }
-        spawnTimer += amount;
-        if (spawnTimer >= SPAWN_INTERVAL) {
-            spawnTimer = 0f;
-            spawner.spawnBox();
+
+        @Override
+        public void advance(float amount, List<InputEventAPI> events) {
+            if (engine == null || engine.isPaused()) {
+                return;
+            }
+            if (!engine.isEntityInPlay(projectile)
+                    || projectile.isFading() || projectile.didDamage()) {
+                cutAndRemove();
+                return;
+            }
+            if (MathUtils.getDistance(lastLocation, projectile.getLocation())
+                    > TELEPORT_DISTANCE) {
+                MagicTrailPlugin.cutTrailsOnEntity(projectile);
+                bodyTrailId = MagicTrailPlugin.getUniqueID();
+                glowTrailId = MagicTrailPlugin.getUniqueID();
+            }
+            segmentTimer += amount;
+            if (segmentTimer >= SEGMENT_INTERVAL) {
+                segmentTimer = 0f;
+                addSegments();
+            }
+            lastLocation.set(projectile.getLocation());
+        }
+
+        private void addSegments() {
+            Vector2f location = projectile.getLocation();
+            float facing = projectile.getFacing();
+            MagicTrailPlugin.addTrailMemberSimple(
+                    projectile, bodyTrailId, bodySprite, location,
+                    0f, facing, 14f, 3f, new Color(120, 220, 255),
+                    0.8f, 0.05f, 0.2f, 0.8f, true);
+            MagicTrailPlugin.addTrailMemberSimple(
+                    projectile, glowTrailId, glowSprite, location,
+                    0f, facing, 22f, 6f, new Color(60, 120, 255),
+                    0.55f, 0.05f, 0.15f, 0.6f, true);
+        }
+
+        private void cutAndRemove() {
+            MagicTrailPlugin.cutTrailsOnEntity(projectile);
+            engine.removePlugin(this);
         }
     }
-
 }
 ```
 
 :::
 
-::: details 完整成品：GearInBoxSpawner
+## 验证方案
 
-```java
-package data.scripts.gearin.lib;
+前置数据：武器已经注册 `GearInMagicTrail`，MagicLib 的两张 `fx` 贴图可读取，测试入口能够移动仍在场的弹体。
 
-import java.awt.Color;
-import java.util.ArrayList;
-import java.util.List;
+1. 连续发射两枚导弹，观察每枚弹体各自拥有内层与辉光层。
+2. 让第一枚直飞至少 2 秒，确认尾迹连续，第二枚的节点没有接入第一枚。
+3. 把仍在飞行的弹体瞬移 600 su，观察旧段与新段之间没有连接线。
+4. 暂停 2 秒，确认弹体和尾迹节点都停止推进；恢复后继续生成。
+5. 让导弹命中目标，再观察已有节点淡出，命中点之后不再新增节点。
 
-import org.apache.log4j.Logger;
-import org.boxutil.base.api.InstanceDataAPI;
-import org.boxutil.define.BoxEnum;
-import org.boxutil.manager.CombatRenderingManager;
-import org.boxutil.units.standard.attribute.Instance2Data;
-import org.boxutil.units.standard.entity.SpriteEntity;
-import org.lazywizard.lazylib.MathUtils;
+预期结果：
 
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.CombatEngineLayers;
-import com.fs.starfarer.api.combat.ShipAPI;
-import com.fs.starfarer.api.graphics.SpriteAPI;
+- 每枚弹体创建 1 个跟踪插件、2 条独立尾迹 ID；
+- 非暂停状态下每 0.05 秒最多追加一组两层节点；
+- 位置跳变超过 250 su 时，两条旧尾迹同时切断，新节点使用新 ID；
+- 命中、淡出或离场后，跟踪插件从引擎移除；
+- `starsector.log` 没有未处理异常。
 
-/**
- * 方框实体生成(BoxUtil Entity / 实例数据工具族)：SpriteEntity + Instance2Data，
- * 写入实例字段只是客户端状态，必须 setInstanceDataRefreshAllFromCurrentIndex() +
- * submitInstanceData() + setRenderingCount() 完成提交(addInstanceData 成功
- * 不等于 GPU 已上传)；addEntity 返回非 STATE_SUCCESS 时显式 delete()；
- * BoxUtil 不可用时回退原版粒子(降级分支)。
- */
-public class GearInBoxSpawner {
+## 故障分析
 
-    private static final Logger LOG = Global.getLogger(GearInBoxSpawner.class);
-    private static final String SPRITE_PATH = "graphics/fx/particlealpha32sq.png";
-    private static final float BOX_IN = 0.2f;
-    private static final float BOX_FULL = 1.5f;
-    private static final float BOX_OUT = 0.5f;
-    private static final int PARTICLE_COUNT = 32;
+- **尾迹只有一串短亮点**：每次追加都重新取得 ID，节点没有落到同一条尾迹。把 ID 保存在弹体跟踪器中，只在初始化或切段时更新；连续飞行后确认节点保持连接。
+- **传送后出现横跨战场的直线**：位置跳变检测发生在追加节点之后，旧段已经跨过跳跃。先比较上一帧坐标并调用切断，再提交新位置节点；传送一次确认两段尾迹分离。
+- **两枚导弹的尾迹连在一起**：ID 保存在共享武器效果字段。让 `onFire()` 为每枚 `DamagingProjectileAPI` 创建独立跟踪器，分别观察两枚导弹的尾迹。
+- **弹体消失后插件仍在推进**：终止分支只切断尾迹，没有移除跟踪器。同步调用 `engine.removePlugin(this)`，移除弹体后确认插件不再执行。
 
-    private final CombatEngineAPI engine;
-    private final boolean boxAvailable;
-    private int boxCount;
+## 总结
 
-    public GearInBoxSpawner(CombatEngineAPI engine, boolean boxAvailable) {
-        this.engine = engine;
-        this.boxAvailable = boxAvailable;
-    }
+MagicTrail 的连续性由 "同一弹体、同一段飞行、同一 ID" 决定。发射时建立状态，飞行时按时间追加，位置跳变时切段换 ID，实体终止时切断并移除跟踪器；这四个边界共同保证尾迹既连续，又不会跨越不连续的位置。
 
-    public void spawnBox() {
-        ShipAPI player = engine.getPlayerShip();
-        if (player == null || !player.isAlive()) {
-            return;
-        }
-        if (!boxAvailable) {
-            // 降级分支：shader 渲染入口不可用时，BoxUtil 实体不能作为唯一视觉输出
-            engine.addSmoothParticle(player.getLocation(), player.getVelocity(),
-                    24f, 0.6f, BOX_IN + BOX_FULL + BOX_OUT, Color.CYAN);
-            LOG.info("GearIn box: box unavailable, vanilla fallback particle");
-            return;
-        }
-        SpriteAPI sprite = Global.getSettings().getSprite(SPRITE_PATH);
-        SpriteEntity box = new SpriteEntity(sprite);
-        box.getMaterialData().setColor(Color.CYAN);
-        box.setLayer(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
-        box.setAdditiveBlend();
-        List<InstanceDataAPI> instances = new ArrayList<>();
-        for (int i = 0; i < PARTICLE_COUNT; i++) {
-            float angle = player.getFacing() + i * 360f / PARTICLE_COUNT;
-            float radius = 50f + (i % 4) * 18f;
-            Instance2Data data = new Instance2Data();
-            data.setLocation(MathUtils.getPoint(player.getLocation(), radius, angle));
-            data.setVelocity(player.getVelocity());
-            data.setFacing(angle);
-            data.setTurnRate(90f);
-            data.setScale(0.6f, 0.6f);
-            data.setScaleRate(0.5f, 0.5f);
-            data.setColor(new Color(100, 220, 255, 210));
-            data.setTimer(BOX_IN, BOX_FULL, BOX_OUT);
-            instances.add(data);
-        }
-        // 实例数据提交链：写字段只是客户端状态，refresh + submit + count 才是提交点
-        box.setInstanceData(instances);
-        box.setInstanceDataRefreshAllFromCurrentIndex();
-        box.submitInstanceData();
-        box.setRenderingCount(instances.size());
-        box.setAlwaysRefreshInstanceData(true);
-        // 生命周期：全局计时到期后实体退出渲染
-        box.setGlobalTimer(BOX_IN, BOX_FULL, BOX_OUT);
-        byte result = CombatRenderingManager.addEntity(box);
-        if (result != BoxEnum.STATE_SUCCESS) {
-            box.delete(); // 入队失败：显式删除，不能当已入队继续推进
-            LOG.warn("GearIn box: addEntity failed result=" + result);
-            return;
-        }
-        boxCount++;
-        LOG.info("GearIn box: #" + boxCount
-                + " instances=" + instances.size()
-                + " hull=" + player.getHullSpec().getHullName()
-                + " layer=" + box.getCombatLayer());
-    }
-}
-```
+## 建议参考项
 
-:::
+- `MagicTrailPlugin.getUniqueID`：创建战斗内尾迹标识；
+- `MagicTrailPlugin.addTrailMemberSimple`：追加实体关联的尾迹节点；
+- `MagicTrailPlugin.cutTrailsOnEntity`：同时切断同一实体关联的现有尾迹；
+- `CombatEngineAPI.removePlugin`：结束单枚弹体的跟踪器。

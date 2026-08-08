@@ -75,7 +75,7 @@
 
 1. 加载器把每一行读成 `IndustrySpecAPI`，`id` 列成为 spec key(缺失/重复语义与 `hull_mods.csv` 的 `readCSVMerged` 一致：同文件重复 id 抛异常、跨文件重复后读行跳过 ——"产业不出现且无报错" 首选排查方向)；
 2. `MarketAPI.addIndustry(id)` 或 `instantiateIndustry(id)` 从 CSV spec 加载期的注册表按 id 取 `IndustrySpecAPI`，查不到**抛 `RuntimeException("Industry [" + id + "] not found")`**(`Market.addIndustry`)。
-    - 与条件不同：`addCondition` 不校验 id，产业校验；
+    - 条件与产业都会校验 spec id；不存在时，添加入口立即抛出运行时异常；
 3. `spec.getNewPluginInstance(market)` 无参实例化产业类 (`plugin` 列类名必须存在且可无参实例化，否则类加载失败)；
 4. `addIndustry(id, params)` 带参数时先 `initWithParams(params)`(经济 JSON 的 `[id, param...]` 数组元素：识别 AI core id 与 params 匹配本产业 id 的特殊物品)；
 5. 产业加入 `market.getIndustries()` 后**立即 `apply()`**——`addIndustry` 本身不校验 `isAvailableToBuild()`，代码路径可以给任何市场直接挂产业。
@@ -89,8 +89,6 @@
 `Industry`(`com.fs.starfarer.api.campaign.econ.Industry`) 是纯接口；`BaseIndustry`(`com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry`) 是产业公共基类。
 
 `BaseIndustry` 归属默认状态 (`supply` / `demand` map、`income` / `upkeep` stat、`building` / `buildProgress` / `upgradeId` / `aiCoreId` / `improved` / `special` 字段) 与各链路默认行为。
-
-原版 17 个产业类全部 `extends BaseIndustry`(`com.fs.starfarer.api.impl.campaign.econ.impl` 包)。
 
 ### 产业生命周期回调速查表
 
@@ -196,7 +194,7 @@ tooltip 的升级入口只在 `getSpec().getUpgrade() != null && !isBuilding()` 
 
 ### AI core 链
 
-- 安装：`setAICoreId(String)` 写入 `aiCoreId`；`canInstallAICores()` 默认 true(`population` 等少数产业覆写为 false 的语义以各自类为准)。
+- 安装：`setAICoreId(String)` 写入 `aiCoreId`；所有原版产业的 `canInstallAICores()` 默认返回 true，包含 population。
     - UI 安装/卸下走 AI core 选择对话框 (产业交互对话框)。
 - 应用：`apply()` → `applyAICoreModifiers()` 按 core 派发四个**空实现钩子**：`applyAlphaCoreModifiers` / `applyBetaCoreModifiers` / `applyGammaCoreModifiers` / `applyNoAICoreModifiers`。
     - 自定义核心效果写这里。
@@ -237,7 +235,7 @@ tooltip 显示红字 `Operations disrupted! X days until return to normal functi
 三个原版触发方 (都在公开 API 面 `com.fs.starfarer.api.impl.campaign.*`)：
 
 - **陆战队突袭**：`MarketCMD`(`com.fs.starfarer.api.impl.campaign.rulecmd.salvage.MarketCMD`) 的 "中断产业" 目标用 `DisruptIndustryRaidObjectivePluginImpl`。
-    - 时长 = `marineTokens × spec.getDisruptDanger().disruptionDays − 已中断天数`，`disruptDanger` 列取值见 `RaidDangerLevel` 枚举 (NONE 60 / MINIMAL 50 / LOW 40 / MEDIUM 30 / HIGH 20 / EXTREME 10 天)；
+    - 新增中断量 = `marineTokens × spec.getDisruptDanger().disruptionDays`，随后按既有中断天数施加阻尼，并把结果加到已中断时长；`disruptDanger` 列取值见 `RaidDangerLevel` 枚举 (NONE 60 / MINIMAL 50 / LOW 40 / MEDIUM 30 / HIGH 20 / EXTREME 10 天)；
 - **Hegemony AI 审查**：`com.fs.starfarer.api.impl.campaign.intel.inspection.HIActionStage` 以 `curr.setDisrupted((intel.getRandom().nextFloat() * 45f) + 15f)` 施放 ——15–60 天；
 - **Luddic Path 细胞**：`com.fs.starfarer.api.impl.campaign.intel.bases.LuddicPathCellsIntel` 以 `target.setDisrupted(disruptionDur, true)` 施放。
     - `useMax = true` 保留较长剩余时间。
@@ -381,10 +379,10 @@ Starsector\mods\GearIndustry\
 ├── mod_info.json
 ├── data\
 │   └── campaign\
-│       └── industries.csv      # 新增本节注册行(CSV 合并，勿改核心文件)
+│       └── industries.csv      # 新增本节注册行 (CSV 合并，勿改核心文件)
 ├── src\
 │   └── data\scripts\gearin\campaign\
-│       └── GearInTrainingIndustry    # 本节新增(归本节所有)
+│       └── GearInTrainingIndustry    # 本节新增 (归本节所有)
 └── jars\
 ```
 
@@ -502,7 +500,7 @@ market.addIndustry(industryId);
 
 - **AI core**：往产业装 alpha core(AI core 选择对话框)：`applied` 日志 `aiCore=alpha_core`；市场稳定度 +1(`applyAlphaCoreModifiers` 的 `ind_GearIn_training_industry_2` 修饰)；tooltip 的 alpha 描述显示维护费 −25%(`UPKEEP_MULT = 0.75`)、需求 −1、产量 +1(`DEMAND_REDUCTION` / `SUPPLY_BONUS = 1`)；卸下 core 后稳定度修饰消失 (`applyNoAICoreModifiers`)。`getPatherInterest` = 4(alpha) 会提高 Luddic Path 对该市场的兴趣。
 
-- **中断的实战触发**：给装 core 的殖民地等待 Hegemony AI 审查 intel(15–60 天)，或对该市场执行陆战队 "中断产业" 突袭 (时长 = 令牌数 × `disruptDanger.disruptionDays`，本行 LOW = 40 天/令牌)——`notifyDisrupted` 日志出现，tooltip 显示 `Operations disrupted!`，收入消失、建设暂停；时间到后 `disruptionFinished` 日志出现，恢复。
+- **中断的实战触发**：给装 core 的殖民地等待 Hegemony AI 审查 intel(15–60 天)，或对该市场执行陆战队 "中断产业" 突袭 (新增中断量以令牌数 × `disruptDanger.disruptionDays` 为基准，并按既有中断时长阻尼)——`notifyDisrupted` 日志出现，tooltip 显示 `Operations disrupted!`，收入消失、建设暂停；时间到后 `disruptionFinished` 日志出现，恢复。
 
 - **读档**：不重复安装 (`REGISTER_MARK` 已置位)，不出现 `applied` / `state` / `probe` 日志；`doPreSaveCleanup` / `doPostSaveRestore` 之后供需由 `apply()` 重建 —— 读档后 `state` 日志 (手动触发) 的 supply/demand 与读档前一致。
 
@@ -530,7 +528,7 @@ market.addIndustry(industryId);
 
 ## 总结
 
-本节把产业讲成四条链：注册链让 CSV 行变成可实例化的 `Industry`，生命周期链决定状态何时重算，供需与建设升级链决定产业如何参与经济循环，AI core 与 disruption 链决定它的修饰与被打断的方式。产业 id 校验比市场条件严格，升级与降级都走同一条完成链，disruption 状态存在市场 memory 而非产业对象里 —— 这三条是本节最容易被绕进去的地方。
+本节把产业讲成四条链：注册链让 CSV 行变成可实例化的 `Industry`，生命周期链决定状态何时重算，供需与建设升级链决定产业如何参与经济循环，AI core 与 disruption 链决定它的修饰与被打断的方式。条件与产业都会在添加时校验 spec id，升级与降级都走同一条完成链，disruption 状态存在市场 memory 而非产业对象里 —— 这三条是本节最容易被绕进去的地方。
 
 记忆要点：
 
@@ -592,18 +590,18 @@ import com.fs.starfarer.api.impl.campaign.ids.Commodities;
 import com.fs.starfarer.api.util.Pair;
 
 /**
- * 完整最小例：产业(Industry)注册、供需、升级、AI core 与 disruption 演示。
+ * 完整最小例：产业 (Industry) 注册、供需、升级、AI core 与 disruption 演示。
  *
- * 注册入口：industries.csv 一行(plugin 列 = 本类全名，id = INDUSTRY_ID)。市场侧由
+ * 注册入口：industries.csv 一行 (plugin 列 = 本类全名，id = INDUSTRY_ID)。市场侧由
  * MarketAPI.addIndustry / instantiateIndustry 消费；演示安装点片段见页面正文
  * (GearInModPlugin 的 onGameLoad，persistent data 键 REGISTER_MARK 一次性门控)。
  *
  * 行为：
- *   1. apply() 声明供需：需求 SUPPLIES(训练耗材)与 CREW(教官)，供给 CREW(结业船员)；
- *      supplies 缺货时按缺口削减船员产出(applyDeficitToProduction)。
- *   2. 收入/维护由 spec(income=0, upkeep=2)经 applyIncomeAndUpkeep 写入。
- *   3. AI core：alpha 额外给市场 +1 稳定度(applyAlphaCoreModifiers / applyNoAICoreModifiers
- *      成对)；供需/维护侧走 BaseIndustry 默认(alpha: 产量+1、需求-1、维护×0.75)。
+ *   1. apply() 声明供需：需求 SUPPLIES(训练耗材) 与 CREW(教官)，供给 CREW(结业船员)；
+ *      supplies 缺货时按缺口削减船员产出 (applyDeficitToProduction)。
+ *   2. 收入/维护由 spec(income=0, upkeep=2) 经 applyIncomeAndUpkeep 写入。
+ *   3. AI core：alpha 额外给市场 +1 稳定度 (applyAlphaCoreModifiers / applyNoAICoreModifiers
+ *      成对)；供需/维护侧走 BaseIndustry 默认 (alpha: 产量+1、需求-1、维护×0.75)。
  *   4. disruption：notifyDisrupted / disruptionFinished 打日志；setDisrupted 由外部触发
  *      (突袭、AI 审查、Luddic Path)，中断期间 isFunctional()=false、建设暂停。
  *
@@ -615,10 +613,10 @@ public class GearInTrainingIndustry extends BaseIndustry {
     /** 产业 id：与 industries.csv 的 id 列逐字一致。 */
     public static final String INDUSTRY_ID = "GearIn_training_industry";
 
-    /** 存档持久化标记：演示安装是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：演示安装是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_TrainingIndustry";
 
-    /** industries.csv upgrade 列目标(原版产业 id，本节只消费不定义)。 */
+    /** industries.csv upgrade 列目标 (原版产业 id，本节只消费不定义)。 */
     public static final String UPGRADE_TARGET_ID = "militarybase";
 
     private static final Logger LOG = Global.getLogger(GearInTrainingIndustry.class);
@@ -635,7 +633,7 @@ public class GearInTrainingIndustry extends BaseIndustry {
         demand(Commodities.CREW, Math.max(1, size / 2), "Instructors");
         supply(Commodities.CREW, Math.max(1, size - 2), "Trained crew");
 
-        // supplies 缺口会削减船员产出(只对已声明供给的商品生效)
+        // supplies 缺口会削减船员产出 (只对已声明供给的商品生效)
         Pair<String, Integer> deficit = getMaxDeficit(Commodities.SUPPLIES);
         applyDeficitToProduction(1, deficit, Commodities.CREW);
 
@@ -660,7 +658,7 @@ public class GearInTrainingIndustry extends BaseIndustry {
         super.unapply(); // 先 applyNoAICoreModifiers，再撤销改良/移民/特殊物品
     }
 
-    // ---- AI core：自定义修饰必须成对(apply / unapply 对称) ----
+    // ---- AI core：自定义修饰必须成对 (apply / unapply 对称) ----
 
     @Override
     protected void applyAlphaCoreModifiers() {
@@ -673,7 +671,7 @@ public class GearInTrainingIndustry extends BaseIndustry {
         market.getStability().unmodifyFlat(getModId(2));
     }
 
-    // ---- disruption 钩子(默认空实现，这里只打日志观察) ----
+    // ---- disruption 钩子 (默认空实现，这里只打日志观察) ----
 
     @Override
     protected void notifyDisrupted() {
@@ -688,7 +686,7 @@ public class GearInTrainingIndustry extends BaseIndustry {
     }
 
     /**
-     * 观察助手：把目标市场里本产业的状态打一条日志(含供需明细)。
+     * 观察助手：把目标市场里本产业的状态打一条日志 (含供需明细)。
      * 供调用点、控制台与排障复用；市场无该产业时打印 not present。
      */
     public static void logState(MarketAPI market) {
@@ -727,7 +725,7 @@ public class GearInTrainingIndustry extends BaseIndustry {
     }
 
     /**
-     * 探针助手：对目标市场里本产业施放 10 天 disruption 并立即清除(useMax=false 覆盖语义)，
+     * 探针助手：对目标市场里本产业施放 10 天 disruption 并立即清除 (useMax=false 覆盖语义)，
      * 打印 前后/期间 三态。只用于验证 setDisrupted / isDisrupted / getDisruptedDays 链路。
      */
     public static void runDisruptionProbe(MarketAPI market) {

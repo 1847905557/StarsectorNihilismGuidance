@@ -35,7 +35,7 @@
 
 ![](./storage.png)
 
-`锻件-级(Forging)` 相位护卫舰，ID 为 `GearIn_forging`。
+`锻件-级 (Forging)` 相位护卫舰，ID 为 `GearIn_forging`。
 
 ## 制作相位舰船文件
 

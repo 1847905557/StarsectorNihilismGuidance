@@ -39,7 +39,7 @@
 ### 交接链总览
 
 ```text
-装配(ShipVariantAPI)
+装配 (ShipVariantAPI)
   │  舰船统计对象.create(variant)：引擎/反应堆数值成为各 MutableStat 的 base
   │  FleetMemberAPI.updateStats：船插 applyEffectsBeforeShipCreation + flux_capacitors/flux_vents + CR/船员
   ▼
@@ -48,14 +48,14 @@
   │  setCaptain / setFleetCommanderForStats / setVariant(withStatsUpdate) / 舰队同步 / 读档
   │  └ 触发 updateStats 重建
   │
-人物技能(PersonAPI.getStats() → MutableCharacterStatsAPI)
+人物技能 (PersonAPI.getStats() → MutableCharacterStatsAPI)
   │  applyPersonalToStats(SHIP 族，舰长，需成员入队)
   │  applyFleetwideToStats(ALL_SHIPS_IN_FLEET，舰队指挥官)
   ▼
 战斗 stats(舰船对象创建新造 → ShipAPI 对象绑定实体并重放)
   │  CombatEngineAPI.addObjectToEngine → applyEffectsAfterShipAddedToCombatEngine(一次)
   ▼
-战斗实体(ShipAPI)
+战斗实体 (ShipAPI)
 ```
 
 为什么交接链要存在
@@ -159,7 +159,7 @@
 - `setCaptain(captain)` → `applyPersonalToShip`(舰长技能)：个人 SHIP 技能 + `applyPersonalAfterShipCreationToShip`(含系统/相位数值烘焙 `updateValuesFromStats`)+ 指挥官 `applyFleetwideToShip`；
 - `flux_capacitors`/`flux_vents` 再写一次 —— 与生涯序列同 ID 幂等。
 
-入引擎：`CombatEngineAPI.addObjectToEngine`(`CombatEngineAPI`)→ 触发全部船插的第三时机—— **每个战斗实体只触发一次**。
+入引擎：`CombatEngineAPI.addObjectToEngine`(`CombatEngineAPI`)→ 触发全部船插的第三时机 —— **每个战斗实体只触发一次**。
 
 模块船走同一条链：模块船生成流程 (舰船对象创建) 为每个模块变体新建 `FleetMemberAPI` 再创建舰船对象。
 
@@ -311,8 +311,8 @@ Starsector\mods\GearIndustry\
 ├── src\
 │   └── data\scripts\gearin\campaign\
 │       ├── GearInVariantToStats    # 环节一：装配 → stats(本节新增)
-│       ├── GearInCaptainToMember   # 环节二(个人)：技能 → 成员 stats
-│       ├── GearInCommanderToMember # 环节二(舰队向)：指挥官 → 成员 stats
+│       ├── GearInCaptainToMember   # 环节二 (个人)：技能 → 成员 stats
+│       ├── GearInCommanderToMember # 环节二 (舰队向)：指挥官 → 成员 stats
 │       └── GearInStatsRebuild      # 环节四：stats 重建与惰性重算
 └── jars\
 ```
@@ -510,23 +510,23 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 环节一：装配 -> stats 交接(舰船 stats 基值与 setVariant 重算)。
+ * 环节一：装配 -> stats 交接 (舰船 stats 基值与 setVariant 重算)。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
- * REGISTER_MARK 一次性门控(每个注册项用各自的键)。
+ * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  *
- * 行为：挂载后第一次 advance() 执行一次演示并自停(isDone()=true，引擎下一帧自动移除)：
- *   1. 基线：创建 wolf_Assault 成员(未入队)，读取舰船 stats 基值(幅能/速度/CR)与
+ * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
+ *   1. 基线：创建 wolf_Assault 成员 (未入队)，读取舰船 stats 基值 (幅能/速度/CR) 与
  *      stats.getVariant() / getFleetMember() 的对象关系；
  *   2. 装配 -> stats：克隆装配加 5 电容 + 5 散热后 setVariant(withRefit=false,
  *      withStatsUpdate=true)，幅能容量 +5*200、幅能散耗 +5*10(引擎保留 ID 的 flat 写入)，
  *      stats.getVariant() 与传入变体同一引用。
  *
- * 演示全程同帧回滚(只留下 REGISTER_MARK 键)，不遗留任何持久状态。
+ * 演示全程同帧回滚 (只留下 REGISTER_MARK 键)，不遗留任何持久状态。
  */
 public class GearInVariantToStats implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_VariantToStats";
 
     private static final Logger LOG = Global.getLogger(GearInVariantToStats.class);
@@ -535,7 +535,7 @@ public class GearInVariantToStats implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInVariantToStats() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -616,23 +616,23 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 环节二(个人)：舰长技能 -> 成员 stats 交接(applyPersonalToStats)。
+ * 环节二 (个人)：舰长技能 -> 成员 stats 交接 (applyPersonalToStats)。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
- * REGISTER_MARK 一次性门控(每个注册项用各自的键)。
+ * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  *
- * 行为：挂载后第一次 advance() 执行一次演示并自停(isDone()=true，引擎下一帧自动移除)：
+ * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
  *   1. 未入队换舰长：setCaptain 触发 updateStats，但舰长个人技能不应用
  *      (updateStats 的舰队条件：getFleetData() 为 null 时跳过 applyPersonalToStats)；
- *   2. 入队 + 显式 updateStats：个人技能(gunnery_implants L1)开始应用，
+ *   2. 入队 + 显式 updateStats：个人技能 (gunnery_implants L1) 开始应用，
  *      后坐力倍率 1.0 -> 0.75、自动瞄准 0.0 -> 1.0、实弹/能量射程 +15%；
  *   3. 入队换舰长：setCaptain 立即重算，换回无技能人物后数值恢复。
  *
- * 演示全程同帧回滚(只留下 REGISTER_MARK 键与演示成员的增删)，不遗留任何持久状态。
+ * 演示全程同帧回滚 (只留下 REGISTER_MARK 键与演示成员的增删)，不遗留任何持久状态。
  */
 public class GearInCaptainToMember implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_CaptainToMember";
 
     private static final Logger LOG = Global.getLogger(GearInCaptainToMember.class);
@@ -641,7 +641,7 @@ public class GearInCaptainToMember implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInCaptainToMember() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -679,7 +679,7 @@ public class GearInCaptainToMember implements EveryFrameScript {
                 wolf.getStats().getMaxRecoilMult().getModifiedValue(),
                 wolf.getStats().getAutofireAimAccuracy().getModifiedValue()));
 
-        // --- 2. 入队 + 显式 updateStats：个人技能开始应用(getFleetData() 已非 null) ---
+        // --- 2. 入队 + 显式 updateStats：个人技能开始应用 (getFleetData() 已非 null) ---
         fleetData.addFleetMember(wolf);
         wolf.updateStats();
         LOG.info(String.format(
@@ -724,22 +724,22 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 环节二(舰队向)：舰队指挥官 -> 成员 stats 交接(applyFleetwideToStats)。
+ * 环节二 (舰队向)：舰队指挥官 -> 成员 stats 交接 (applyFleetwideToStats)。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
- * REGISTER_MARK 一次性门控(每个注册项用各自的键)。
+ * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  *
- * 行为：挂载后第一次 advance() 执行一次演示并自停(isDone()=true，引擎下一帧自动移除)：
- *   1. 建成员并入队：stats 只含装配基值(无任何技能加成)；
+ * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
+ *   1. 建成员并入队：stats 只含装配基值 (无任何技能加成)；
  *   2. setFleetCommanderForStats 挂 crew_training(ALL_SHIPS_IN_FLEET)，getStats()
  *      惰性重建后 maxCombatReadiness 上升；
  *   3. 置回 null：舰队向加成撤销，数值恢复。
  *
- * 演示全程同帧回滚(只留下 REGISTER_MARK 键与演示成员的增删)，不遗留任何持久状态。
+ * 演示全程同帧回滚 (只留下 REGISTER_MARK 键与演示成员的增删)，不遗留任何持久状态。
  */
 public class GearInCommanderToMember implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_CommanderToMember";
 
     private static final Logger LOG = Global.getLogger(GearInCommanderToMember.class);
@@ -748,7 +748,7 @@ public class GearInCommanderToMember implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInCommanderToMember() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -776,7 +776,7 @@ public class GearInCommanderToMember implements EveryFrameScript {
         int initialCount = fleetData.getNumMembers();
         LOG.info(String.format("GearIn commanderToMember start: members=%d", initialCount));
 
-        // --- 1. 建成员并入队：stats 只含装配基值(无任何技能加成) ---
+        // --- 1. 建成员并入队：stats 只含装配基值 (无任何技能加成) ---
         FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
         fleetData.addFleetMember(wolf);
         float maxCRBefore = wolf.getStats().getMaxCombatReadiness().getModifiedValue();
@@ -820,21 +820,21 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 环节四：MutableStat 重建与惰性重算(updateStats 整体新建舰船 stats)。
+ * 环节四：MutableStat 重建与惰性重算 (updateStats 整体新建舰船 stats)。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
- * REGISTER_MARK 一次性门控(每个注册项用各自的键)。
+ * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  *
- * 行为：挂载后第一次 advance() 执行一次演示并自停(isDone()=true，引擎下一帧自动移除)：
+ * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
  *   1. 运行时 transient modifier 不跨重建：直接 modifyFlat 到 getStats() 返回值，
- *      updateStats 后 stats 对象整体重建(对象同一性为 false)、修改被丢弃；
+ *      updateStats 后 stats 对象整体重建 (对象同一性为 false)、修改被丢弃；
  *   2. 惰性重建：setStatUpdateNeeded(true) 后下一次 getStats() 才重建。
  *
- * 演示全程同帧回滚(只留下 REGISTER_MARK 键与演示成员的增删)，不遗留任何持久状态。
+ * 演示全程同帧回滚 (只留下 REGISTER_MARK 键与演示成员的增删)，不遗留任何持久状态。
  */
 public class GearInStatsRebuild implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_StatsRebuild";
 
     private static final Logger LOG = Global.getLogger(GearInStatsRebuild.class);
@@ -843,7 +843,7 @@ public class GearInStatsRebuild implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInStatsRebuild() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override
@@ -871,7 +871,7 @@ public class GearInStatsRebuild implements EveryFrameScript {
         int initialCount = fleetData.getNumMembers();
         LOG.info(String.format("GearIn statsRebuild start: members=%d", initialCount));
 
-        // --- 1. 建成员并入队(无舰长：updateStats 重放时无技能加成干扰) ---
+        // --- 1. 建成员并入队 (无舰长：updateStats 重放时无技能加成干扰) ---
         FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
         fleetData.addFleetMember(wolf);
         wolf.updateStats();

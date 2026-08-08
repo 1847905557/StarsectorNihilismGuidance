@@ -142,7 +142,7 @@ rulecmd 参数内需要替换时用 `Misc.Token.getStringWithTokenReplacement`�
 | 舰队遭遇对话 `FleetInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl` | `reinit` 用 `getBestMatching(null, "BeginFleetEncounter", ...)` 决定是否给 "Continue" 选项；开通讯 (`OPEN_COMM`) 时内嵌 `RuleBasedInteractionDialogPluginImpl` 并 `fireBest("OpenCommLink")`，无匹配则报 "only get static" |
 | 非对话面板 (规则记忆组装) | 非对话文本面板 (内部实现) | 组装简化 memoryMap 后 `FireBest.fire(...)` 面板文本 trigger(使用例：已选阵营信息面板的 `RelationshipLevelDesc`) |
 
-原版 `rules.csv`：7 列、9749 条非注释规则、800 个不同 trigger，大族为：
+原版 `rules.csv` 有 10270 条非注释记录，其中 521 条 ID 为空并被跳过；最终加载 9749 条规则，分属 800 个 trigger。大族为：
 
 - `DialogOptionSelected`(6050)；
 - `PopulateOptions` (334)；
@@ -153,7 +153,7 @@ rulecmd 参数内需要替换时用 `Misc.Token.getStringWithTokenReplacement`�
 - `MarketPostDock`(32)；
 - `TradePanelFlavorText`(23)。
 
-`DialogOptionSelected` 全部 6050 条都带条件 (无空条件行)：原版选项必须回流 `$option ==` 条件。
+6050 条 `DialogOptionSelected` 规则都有非空条件：6048 条包含 `$option ==`，另 2 条用状态旗标接管下一次选项选择。
 
 ## 规则强度速查表
 
@@ -187,10 +187,10 @@ Starsector\mods\GearIndustry\
 ├── mod_info.json
 ├── data\
 │   └── campaign\
-│       └── rules.csv                     # 本节新增：GearIn_rules_intro_* 规则(本节示例所有权)
+│       └── rules.csv                     # 本节新增：GearIn_rules_intro_* 规则 (本节示例所有权)
 ├── src\
 │   └── data\scripts\gearin\rules\
-│       └── GearInRulesIntro             # 本节新增：Java 消费入口(归本节所有)
+│       └── GearInRulesIntro             # 本节新增：Java 消费入口 (归本节所有)
 └── jars\
 ```
 
@@ -201,12 +201,12 @@ Starsector\mods\GearIndustry\
 ```csv
 id,trigger,conditions,script,text,options,notes
 GearIn_rules_intro_welcome,GearInRulesIntro,,"ShowDefaultVisual
-SetShortcut GearIn_rules_intro_leave ""ESCAPE""","欢迎，$playerName。这个对话框完全由 data/campaign/rules.csv 驱动：列、匹配、条件、结果与文本。
+SetShortcut GearIn_rules_intro_leave ""ESCAPE"""," 欢迎，$playerName。这个对话框完全由 data/campaign/rules.csv 驱动：列、匹配、条件、结果与文本。
 OR
 再次见到您，$playerName。规则系统按独占一行的 OR 把 text 列拆成多条变体，每次随机取一条。","GearIn_rules_intro_open:查看详情
-5:GearIn_rules_intro_leave:结束","本节示例所有权 GearIn_rules_intro_*"
+5:GearIn_rules_intro_leave:结束 ","本节示例所有权 GearIn_rules_intro_*"
 GearIn_rules_intro_add_a,GearInRulesIntroAdd,,,FireAll 附加文本：条件为空，必然追加。,,
-GearIn_rules_intro_add_b,GearInRulesIntroAdd,RollProbability 0.0,,FireAll 附加文本：命令条件恒假(RollProbability 0.0)，永不追加。,,
+GearIn_rules_intro_add_b,GearInRulesIntroAdd,RollProbability 0.0,,FireAll 附加文本：命令条件恒假 (RollProbability 0.0)，永不追加。,,
 GearIn_rules_intro_open,DialogOptionSelected,$option == GearIn_rules_intro_open,"$GearIn_rules_intro_opens = 1 0
 FireAll GearInRulesIntroAdd
 FireBest GearInRulesIntroDetail",,,
@@ -251,17 +251,17 @@ import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
  * 完整最小例：rules.csv 数据驱动对话的 Java 消费入口。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK
- * 一次性门控(沿用 C9-S1 / C9-S5 的既有模式，每个注册项用各自的键)。
+ * 一次性门控 (沿用 C9-S1 / C9-S5 的既有模式，每个注册项用各自的键)。
  *
  * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个初始
  * trigger 为 GearInRulesIntro 的对话；对话的文本、脚本与选项全部来自 data/campaign/rules.csv
  * 中本节拥有的 GearIn_rules_intro_* 规则 ——Java 侧不写任何文本与选项。
- * 验证闭环：注册入口(本类 + onGameLoad 门控)→ 数据文件(rules.csv)→ 运行消费者
- * (RuleBasedInteractionDialogPluginImpl → Rules 引擎)→ 可观察结果(对话文本与日志)。
+ * 验证闭环：注册入口 (本类 + onGameLoad 门控)→ 数据文件 (rules.csv)→ 运行消费者
+ * (RuleBasedInteractionDialogPluginImpl → Rules 引擎)→ 可观察结果 (对话文本与日志)。
  */
 public class GearInRulesIntro implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_RulesIntro";
 
     private static final Logger LOG = Global.getLogger(GearInRulesIntro.class);
@@ -270,7 +270,7 @@ public class GearInRulesIntro implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInRulesIntro() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override

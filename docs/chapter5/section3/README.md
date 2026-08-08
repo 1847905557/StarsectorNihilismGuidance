@@ -31,9 +31,9 @@
 ## 梳理音频播放关系
 
 ```text
-sounds/.../*.ogg                 资源层(C5-S1)：三个 OGG
+sounds/.../*.ogg                 资源层 (C5-S1)：三个 OGG
         ↓ 相对于 MOD 根目录的路径
-data/config/sounds.json          注册层(C5-S2)：sound ID → 路径与播放参数
+data/config/sounds.json          注册层 (C5-S2)：sound ID → 路径与播放参数
         ↓ sound ID
 数据消费者                         代码消费者
   .wpn fireSoundOne/fireSoundTwo   Global.getSoundPlayer().playUISound
@@ -69,11 +69,12 @@ data/config/sounds.json          注册层(C5-S2)：sound ID → 路径与播放
 | `playLoop(String id, Object playingEntity, float pitch, float volume, Vector2f loc, Vector2f vel)` | 位置循环音效 | 是 | **必须每帧调用**，否则循环淡出；`playingEntity` 必填 (同实体同循环只播一个)；素材建议 mono |
 | `playLoop(..., float fadeIn, float fadeOut)` | 同上，指定淡入/淡出秒数 | 是 | 同上 |
 | `playUILoop(String id, float pitch, float volume)` | UI 循环音效 | 否 | 每帧续期规则同 `playLoop` |
-| `playCustomMusic(int fadeOutIfAny, int fadeIn, String musicSetId)` | 手动播放音乐集 | — | 淡入/淡出秒数**必须为整数** ("have to be whole numbers")；`musicSetId` 传 `null` 停止当前曲目 |
-| `playCustomMusic(..., boolean looping)` | 同上，指定是否循环 | — | 同上 |
+| `playCustomMusic(int fadeOutIfAny, int fadeIn, String musicSetId)` | 手动播放音乐集 | — | 线程安全；淡入/淡出秒数必须为整数；`null` 停止当前曲目 |
+| `playCustomMusic(..., boolean looping)` | 同上，指定是否循环 | — | 线程安全；其余约束同上 |
 | `setSuspendDefaultMusicPlayback(boolean)` | 阻止默认选曲自动开始新曲目 | — | 与 `playCustomMusic` 配合 |
 | `getCurrentMusicId()` | 当前曲目；无播放时返回字符串 `"nothing"` | — | 线程安全 |
-| `restartCurrentMusic()`/`pauseMusic()`/`pauseCustomMusic()`/`resumeCustomMusic()` | 音乐控制 | — | 线程安全 |
+| `restartCurrentMusic()` | 重新开始当前音乐 | — | 线程安全 |
+| `pauseMusic()` / `pauseCustomMusic()` / `resumeCustomMusic()` | 暂停或恢复音乐 | — | 无公开线程安全保证 |
 | `applyLowPassFilter(float gain, float gainHF)` | 低通滤波 (深渊等场景)| — | — |
 
 一次性播放 (`playUISound`/`playSound`) 返回 `SoundAPI` 句柄，可 `stop()`、`setVolume()`、`setPitch()`、`setLocation()`、`isPlaying()`；`playLoop` 不返回句柄，靠每帧续期控制。
@@ -126,7 +127,7 @@ ID 与注册层条目完全一致 (大小写敏感)。开火瞬间播放 `GearIn
 
 此前已述：`loadSoundSets` 加载期不校验声音引用，错误延迟到战斗期。
 
-`.wpn` 的 `fireSoundOne`/`fireSoundTwo` 引用未注册 ID 时，武器首次开火抛 `NullPointerException` (声音集查找对未注册 ID 返回空，随后解引用崩溃)，`starsector.log` 出现指向武器开火实现的堆栈。
+对教程中的弹道/导弹武器，`fireSoundTwo` 引用未注册 ID 时静默无声，`fireSoundOne` 引用未注册 ID 时在前摇播放处抛 `NullPointerException`。光束武器的两个声音字段都没有空值守卫，未注册时会在开火处抛 `NullPointerException`。
 
 ID 大小写不一致同样触发。
 
@@ -269,7 +270,9 @@ MOD 接入环境音的路径是自定义地形类型 (实现 `CampaignTerrainPlu
 
 `playCustomMusic(fadeOutIfAny, fadeIn, musicSetId)` 直接播放指定音乐集：淡入/淡出秒数必须为整数，`musicSetId` 传 `null` 停止当前曲目；`setSuspendDefaultMusicPlayback(true)` 阻止默认选曲自动开始新曲目，配合手动播放使用。
 
-未注册的音乐集 ID 在播放请求时解析为 `null` 后抛 NPE(音乐播放线程)。
+未注册的音乐集 ID 在同步调用 `playCustomMusic` 时解析为 `null`，NPE 从调用线程抛出。
+
+后台音乐线程的播放路径会捕获异常并记录 warn。
 
 因此**音乐 ID 必须注册在 `music` 分类** —— 普通音效条目不会被音乐播放器识别 (注册层已述)。
 
@@ -459,8 +462,8 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 ## 故障分析
 
 - **开火完全无声，但其他音效正常**：依次核对 `.wpn` 的 `fireSoundTwo`、`sounds.json` 条目和 OGG 路径。三处 ID 区分大小写；修正后重新开火，应能听到注册声音。
-- **开火瞬间抛出 NPE**：`fireSoundOne` 或 `fireSoundTwo` 引用了未注册 ID，声音集查找返回空值后被解引用。同步注册该 ID，或改回已存在的原版 ID。
-- **系统激活时没有循环声**：先区分激活音是否存在。只有循环音缺失时，核对 `loopSound` 与循环素材；两种声音都缺失时，同时核对 `useSound`。
+- **开火瞬间抛出 NPE**：弹道/导弹武器优先核对 `fireSoundOne`；光束武器核对两个声音字段。同步注册对应 ID，或改回已存在的原版 ID。
+- **系统激活时没有循环声**：四个 `.system` 声音字段都有空值守卫；`loopSound` 留空时循环声静默。核对 `loopSound` 与循环素材；两种声音都缺失时，同时核对 `useSound`。
 - **系统激活时因声音配置抛出 NPE**：`.system` 的 `loopSound` 指向未注册 ID，系统实现构造时取得了空值。补齐声音注册后重新激活系统。
 - **`playLoop` 不响或断断续续**：每帧没有续播、`playingEntity` 不稳定、距离超过 2500 或 `volume <= 0` 都会中断循环。把调用放进每帧回调，并持续传入同一个实体后复验。
 - **`playUISound` 报 `Sound set with id [...] not found`**：声音 ID 未注册或大小写不一致。核对注册条目后再次触发 UI 声音。

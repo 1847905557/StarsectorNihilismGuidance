@@ -8,10 +8,10 @@ import com.fs.starfarer.api.campaign.CampaignUIAPI;
 import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
 
 /**
- * 完整最小例：对话入口(支撑类，示例所有权主类为 GearInRuleCommand)。
+ * 完整最小例：对话入口 (支撑类，示例所有权主类为 GearInRuleCommand)。
  *
  * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
- * REGISTER_MARK 一次性门控(沿用 C9-S1 / C14-S1 的模式，每个注册项用各自的键)。
+ * REGISTER_MARK 一次性门控 (沿用 C9-S1 / C14-S1 的模式，每个注册项用各自的键)。
  *
  * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个
  * 初始 trigger 为 GearInRuleCmdOpener 的对话；对话的文本、脚本与选项全部来自
@@ -20,7 +20,7 @@ import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
  */
 public class GearInRuleCmdOpener implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过(随存档保存)。 */
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_RuleCmdOpener";
 
     private static final Logger LOG = Global.getLogger(GearInRuleCmdOpener.class);
@@ -29,7 +29,7 @@ public class GearInRuleCmdOpener implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInRuleCmdOpener() {
-        // 空构造：注册由调用方执行(onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
     }
 
     @Override

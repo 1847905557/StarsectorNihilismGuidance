@@ -26,7 +26,7 @@
 
 ## 文件与 API 链路
 
-`StrategicAI.getAI` 从势力内存读取已经创建的 AI；`strategyPriorityMults` 使用 `strategicAIConfig.json` 中的 concern ID；`InvasionFleetManager.getInvasionSizeMult` 返回已组合的势力与全局入侵倍率；`SectorManager` 和 `NexConfig` 共同决定复活是否有机会执行。
+`StrategicAI.getAI` 从 sector persistent-data map 读取已经创建的 AI；`StrategicAI.addAIIfNeeded` 在缺少实例时负责补建；`strategyPriorityMults` 使用 `strategicAIConfig.json` 中的 concern ID；`InvasionFleetManager.getInvasionSizeMult` 返回已组合的势力与全局入侵倍率；`SectorManager` 和 `NexConfig` 共同决定复活是否有机会执行。
 
 ### 允许 GearIn 参加战略系统
 
@@ -46,14 +46,22 @@
 
 ### 确认 StrategicAI 已创建
 
-**插入位置：`GearInStrategicAIProbe.concernCount()` 与 `forceMeetingIfReady()`。** 先用 `null` 守卫确认 AI 生命周期，再在安全时机强制刷新会议。
+**插入位置：`GearInStrategicAIProbe.concernCount()`、`forceMeetingIfReady()` 与 `ensureAI()`。** 先从 sector persistent-data map 读取，再用 `null` 守卫确认 AI 生命周期；需要补建时调用 `addAIIfNeeded()`。
 
 ```java
 StrategicAI ai = StrategicAI.getAI(factionId);
 return ai == null ? 0 : ai.getExistingConcerns().size();
 ```
 
-调用 `forceMeeting()` 只应发生在 `getAI()` 返回非空之后；新档创建早期返回 `0` 是 "尚未建立" 的可观察状态，不等于没有战略 concern。
+`getAI()` 实际读取 `StrategicAI.getAIsMap()`；新档创建早期 map 尚未写入该势力时会返回 `null`。调用 `forceMeeting()` 只应发生在返回非空之后。
+
+```java
+public boolean ensureAI(String factionId) {
+    StrategicAI before = StrategicAI.getAI(factionId);
+    StrategicAI created = StrategicAI.addAIIfNeeded(factionId);
+    return before == null && (created != null || StrategicAI.getAI(factionId) != null);
+}
+```
 
 完成信号：早期探针返回 `0`，进入生涯后可主动刷新并读取 concern 数量。
 
@@ -69,6 +77,29 @@ return baseSize * combined;
 `getInvasionSizeMult()` 已经计算 `1 + invasionFleetSizeMod` 并乘上 `NexConfig.invasionFleetSizeMult`，调用方只再乘一次基础规模。
 
 完成信号：修改势力或全局倍率中的任意一项，估算值只按该项变化一次。
+
+### 拆开三种事件的后处理
+
+**插入位置：`GearInInvasionScaleProbe.applyEventPostProcessing()`。** 先取得基础规模，再应用共同倍率和事件自己的后处理；invasion 不附加事件倍率，respawn 使用 `RESPAWN_SIZE_MULT`，blockade 先保证最小规模，再乘 `BLOCKADE_SIZE_MULT` 并加入固定 FP。
+
+```java
+float fp = baseSize;
+if (type == InvasionFleetManager.EventType.BLOCKADE) {
+    fp = Math.max(fp, InvasionFleetManager.MIN_BLOCKADE_SIZE);
+}
+fp *= InvasionFleetManager.getInvasionSizeMult(factionId);
+if (type == InvasionFleetManager.EventType.RESPAWN) {
+    fp *= InvasionFleetManager.RESPAWN_SIZE_MULT;
+} else if (type == InvasionFleetManager.EventType.BLOCKADE) {
+    fp = fp * InvasionFleetManager.BLOCKADE_SIZE_MULT
+            + InvasionFleetManager.BLOCKADE_FLAT_FP_BONUS;
+}
+return fp;
+```
+
+目标筛选仍由事件类型自己的入口负责：blockade 检查 `canBlockade` 或伤害型 concern，respawn 额外受复活资格和目标权重影响。不能把这些资格条件折叠进 `getInvasionSizeMult()`。
+
+完成信号：相同基础规模下，三种事件的最终 FP 能分别解释共同倍率、最小规模、固定加成和事件倍率。
 
 ### 把复活作为独立策略验证
 
@@ -115,16 +146,21 @@ if (ai != null) {
 
 ## 验证方案
 
-1. 构建示例 MOD，确认两个探针的方法签名与 Nexerelin 0.11.3x 匹配。
-2. 进入战略 AI 已建立的生涯，刷新一次会议并记录 concern 数量。
-3. 分别修改 `invasionFleetSizeMod` 与全局 `invasionFleetSizeMult`，比较估算值变化。
-4. 打开复活设置，记录 `respawnAllowedByRules()` 在达到次数上限前后的返回值。
+1. 构建示例 MOD，确认两个探针的方法签名与当前 `ExerelinCore.jar` 匹配。
+2. 在新档、读档和 AI 缺失三种时机分别记录 persistent-data map 的条目数、`getAI()` 返回值和 `ensureAI()` 结果。
+3. 进入战略 AI 已建立的生涯，刷新一次会议并记录 concern 数量。
+4. 分别修改 `invasionFleetSizeMod` 与全局 `invasionFleetSizeMult`，比较估算值变化。
+5. 对 invasion、blockade 和 respawn 使用同一基础规模，分别记录最小规模、事件倍率和固定 FP。
+6. 打开复活设置，记录 `respawnAllowedByRules()` 在达到次数上限前后的返回值，并核对目标资格。
 
 预期结果：
 
 - 两个配置中的 concern ID 能影响战略优先级；
 - AI 未建立时探针返回安全值，建立后可以刷新会议；
+- AI 缺失时 `ensureAI()` 补建实例，map 条目数增加 1；
 - `getInvasionSizeMult()` 的组合倍率只被应用一次；
+- blockade 的最小规模、1.2 倍事件倍率和 120 FP 固定加成分别可见；
+- respawn 的 1.2 倍事件倍率不会被误写成 invasion 的共同倍率；
 - 复活探针准确反映管理器、事件开关、势力资格和次数上限。
 
 ## 故障分析
@@ -132,6 +168,8 @@ if (ai != null) {
 - **新档创建早期出现 `NullPointerException`**：Nexerelin 尚未建立该势力的 `StrategicAI`。保留 null 守卫并延迟到进入生涯后调用 `forceMeeting()`，确认探针能够取得 AI。
 - **战略 AI 存在但不扩张**：`canInvade`、全局 `enableInvasions` 或 concern 的 `canInvade` 标签未满足。逐项启用后推进战略周期，确认生成入侵行动。
 - **入侵舰队规模异常大**：调用方在 `getInvasionSizeMult()` 结果上又乘了一次全局倍率。移除重复乘法，再比较基础规模与最终规模。
+- **封锁舰队规模偏小**：只应用了共同倍率，没有先执行 `MIN_BLOCKADE_SIZE` 和 blockade 的固定后处理。按事件类型逐项记录，再比较最终 FP。
+- **复活舰队被当作普通入侵**：没有应用 `RESPAWN_SIZE_MULT` 或复活目标筛选。使用 `EventType.RESPAWN` 分支复验规模和目标。
 - **被消灭势力没有复活**：复活开关、敌对舰队事件、入侵开关、次数上限、势力资格或检查间隔未满足。逐项核对并推进到下一检查周期，确认复活事件生成。
 
 ## 总结
@@ -142,6 +180,7 @@ if (ai != null) {
 
 - `StrategicAI.getAI`：取得势力战略 AI；
 - `InvasionFleetManager.getInvasionSizeMult`：读取入侵规模倍率；
+- `InvasionFleetManager.EventType`：区分 invasion、blockade 和 respawn；
 - `NexConfig`：全局战略、入侵与复活设置。
 ::: details 完整成品：GearInInvasionScaleProbe
 
@@ -155,6 +194,22 @@ public final class GearInInvasionScaleProbe {
         float combined = InvasionFleetManager.getInvasionSizeMult(factionId);
         return baseSize * combined;
     }
+
+    public float applyEventPostProcessing(String factionId, float baseSize,
+            InvasionFleetManager.EventType type) {
+        float fp = baseSize;
+        if (type == InvasionFleetManager.EventType.BLOCKADE) {
+            fp = Math.max(fp, InvasionFleetManager.MIN_BLOCKADE_SIZE);
+        }
+        fp *= InvasionFleetManager.getInvasionSizeMult(factionId);
+        if (type == InvasionFleetManager.EventType.RESPAWN) {
+            fp *= InvasionFleetManager.RESPAWN_SIZE_MULT;
+        } else if (type == InvasionFleetManager.EventType.BLOCKADE) {
+            fp = fp * InvasionFleetManager.BLOCKADE_SIZE_MULT
+                    + InvasionFleetManager.BLOCKADE_FLAT_FP_BONUS;
+        }
+        return fp;
+    }
 }
 ```
 
@@ -165,14 +220,27 @@ public final class GearInInvasionScaleProbe {
 ```java
 package data.scripts.gearin.modcompat;
 
+import java.util.Map;
+
 import exerelin.campaign.SectorManager;
 import exerelin.campaign.ai.StrategicAI;
 import exerelin.utilities.NexConfig;
 
 public final class GearInStrategicAIProbe {
+    public int aiMapSize() {
+        Map<String, StrategicAI> ais = StrategicAI.getAIsMap();
+        return ais.size();
+    }
+
     public int concernCount(String factionId) {
         StrategicAI ai = StrategicAI.getAI(factionId);
         return ai == null ? 0 : ai.getExistingConcerns().size();
+    }
+
+    public boolean ensureAI(String factionId) {
+        StrategicAI before = StrategicAI.getAI(factionId);
+        StrategicAI created = StrategicAI.addAIIfNeeded(factionId);
+        return before == null && (created != null || StrategicAI.getAI(factionId) != null);
     }
 
     public boolean forceMeetingIfReady(String factionId) {

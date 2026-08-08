@@ -166,15 +166,15 @@ devMode 下 `DumpMemory` 显示键列表与 `(e=<剩余天数>)`；`getExpire` �
 |---|---|
 | sector 记忆 | 生涯引擎推进 |
 | 玩家记忆 (characterData) | 生涯引擎推进 |
-| 势力记忆 | 生涯引擎推进，势力自身同步 |
-| 实体记忆 | 所属实体推进 (由地点推进驱动) |
-| 地点记忆 | 地点自身推进 |
-| 市场记忆 | 市场自身推进 |
-| 人物记忆 | 人物自身推进 |
+| 势力记忆 | 生涯引擎调用 `Faction.advance` |
+| 实体记忆 | 所属地点推进实体 |
+| 地点记忆 | 生涯引擎调用 `BaseLocation.advance` |
+| 市场记忆 | 普通市场由经济系统推进；行星条件市场由实体推进 |
+| 人物记忆 | 所属舰队、市场或 `ImportantPeople` 推进 |
 
 为什么推进是引擎的责任。
 
-记忆是运行时对象，没有集中的 "时钟循环"——sector、玩家、势力、实体、地点、市场、人物各有各的推进点，只是全部汇聚到同一个 `Memory.advance`。MOD 代码既不需要也不应手动驱动 (见 "规则强度" 表的必须级条目)。
+这些上层调用链最终都进入 `Memory.advance`。MOD 代码既不需要也不应手动驱动。
 
 另外：记忆是延迟创建的 ——`getMemory()` / `getMemoryWithoutUpdate()` 首次调用才创建实例 (如实体记忆)，此后该对象序列化时记忆一并入库。
 
@@ -248,10 +248,10 @@ Starsector\mods\GearIndustry\
 ├── mod_info.json
 ├── data\
 │   └── campaign\
-│       └── rules.csv                     # 追加本节 GearIn_memory_* 规则行(本节示例所有权)
+│       └── rules.csv                     # 追加本节 GearIn_memory_* 规则行 (本节示例所有权)
 ├── src\
 │   └── data\scripts\gearin\rules\
-│       ├── GearInMemoryKeys              # 键常量数据类(8 个记忆键，本节示例所有权)
+│       ├── GearInMemoryKeys              # 键常量数据类 (8 个记忆键，本节示例所有权)
 │       ├── GearInMemoryWriter            # 记忆写入与读回脚本
 │       ├── GearInPersistentDataCounter   # PersistentData 跨存档计数脚本
 │       ├── GearInMemoryMapAssembler      # memoryMap 组装与变量解析脚本
@@ -264,13 +264,13 @@ Starsector\mods\GearIndustry\
 
 ```csv
 id,trigger,conditions,script,text,options,notes
-GearIn_memory_welcome,GearInMemoryDialog,,,"global 槽位(Java 写入、无过期)：$global.GearIn_memory_tag；计数键(1000 游戏天过期)：$global.GearIn_memory_counter；本地槽位(无点号回落 local)：$GearIn_memory_fleetKey。","GearIn_memory_verify:验证内存键
-GearIn_memory_leave:结束","本节示例所有权 GearIn_memory_*"
+GearIn_memory_welcome,GearInMemoryDialog,,,"global 槽位 (Java 写入、无过期)：$global.GearIn_memory_tag；计数键 (1000 游戏天过期)：$global.GearIn_memory_counter；本地槽位 (无点号回落 local)：$GearIn_memory_fleetKey。","GearIn_memory_verify:验证内存键
+GearIn_memory_leave:结束 ","本节示例所有权 GearIn_memory_*"
 GearIn_memory_verify,DialogOptionSelected,$option == GearIn_memory_verify,"$player.GearIn_memory_lastAction = verify 0
 FireBest GearInMemoryResult",,,
 GearIn_memory_result_expired,GearInMemoryResult,$global.GearIn_memory_probe,,过期键判真演示：$global.GearIn_memory_probe 已在 Java 侧 expire 0 移除，本规则条件恒假、不会命中。,,
 GearIn_memory_result_alive,GearInMemoryResult,"$global.GearIn_memory_counter >= 1
-!$global.GearIn_memory_probe",,"命中：$global.GearIn_memory_counter >= 1 且 $global.GearIn_memory_probe 已过期(判真 false)。$player.GearIn_memory_lastAction 已写入玩家内存(expire 0)—— 关闭对话后第一个推进帧移除。",GearIn_memory_leave:结束,
+!$global.GearIn_memory_probe",," 命中：$global.GearIn_memory_counter >= 1 且 $global.GearIn_memory_probe 已过期 (判真 false)。$player.GearIn_memory_lastAction 已写入玩家内存 (expire 0)—— 关闭对话后第一个推进帧移除。",GearIn_memory_leave:结束,
 GearIn_memory_leave,DialogOptionSelected,$option == GearIn_memory_leave,DismissDialog,,,
 ```
 
@@ -294,29 +294,29 @@ GearIn_memory_leave,DialogOptionSelected,$option == GearIn_memory_leave,DismissD
 package data.scripts.gearin.rules;
 
 /**
- * 本节记忆键常量(GearIn_memory_* 数据所有权)：写入、验证、解析、对话各脚本
- * 共用，键值与 rules.csv 条件/文本逐字一致(含 $ 前缀与大小写)。记忆键必须
- * 以 $ 开头(Memory.set 硬校验)；PersistentData 键不在此列，由各自的脚本持有。
+ * 本节记忆键常量 (GearIn_memory_* 数据所有权)：写入、验证、解析、对话各脚本
+ * 共用，键值与 rules.csv 条件/文本逐字一致 (含 $ 前缀与大小写)。记忆键必须
+ * 以 $ 开头 (Memory.set 硬校验)；PersistentData 键不在此列，由各自的脚本持有。
  */
 public final class GearInMemoryKeys {
 
     private GearInMemoryKeys() {
     }
 
-    /** sector 内存：无过期键(两参 set)。 */
+    /** sector 内存：无过期键 (两参 set)。 */
     public static final String KEY_TAG = "$GearIn_memory_tag";
-    /** sector 内存：1000 游戏天过期键(三参 set)。 */
+    /** sector 内存：1000 游戏天过期键 (三参 set)。 */
     public static final String KEY_COUNTER = "$GearIn_memory_counter";
-    /** sector 内存：expire 0 键 —— 下一个未暂停推进帧被移除(rules.csv 用它演示判真)。 */
+    /** sector 内存：expire 0 键 —— 下一个未暂停推进帧被移除 (rules.csv 用它演示判真)。 */
     public static final String KEY_PROBE = "$GearIn_memory_probe";
     /** sector 内存：expire() 重设与两参 set 清除过期演示键。 */
     public static final String KEY_REARM = "$GearIn_memory_rearm";
-    /** sector 内存：required 依赖演示(子键消失 → 父键递归移除)。 */
+    /** sector 内存：required 依赖演示 (子键消失 → 父键递归移除)。 */
     public static final String KEY_REQUIRED_CHILD = "$GearIn_memory_required_child";
     public static final String KEY_REQUIRED_PARENT = "$GearIn_memory_required_parent";
     /** 玩家内存：MemKeys.PLAYER 槽位读法演示。 */
     public static final String KEY_PLAYER = "$GearIn_memory_player";
-    /** 舰队内存：无点号变量回落 local 槽位演示(rules.csv 的 $GearIn_memory_fleetKey)。 */
+    /** 舰队内存：无点号变量回落 local 槽位演示 (rules.csv 的 $GearIn_memory_fleetKey)。 */
     public static final String KEY_FLEET = "$GearIn_memory_fleetKey";
 }
 ```
@@ -342,8 +342,8 @@ import com.fs.starfarer.api.campaign.CampaignFleetAPI;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 
 /**
- * 记忆写入与读回脚本(EveryFrameScript)：读档首个未暂停帧写入全部记忆键并立即
- * 读回验证(键常量见 GearInMemoryKeys)。probe 键(expire 0)的「写入后立即读回」
+ * 记忆写入与读回脚本 (EveryFrameScript)：读档首个未暂停帧写入全部记忆键并立即
+ * 读回验证 (键常量见 GearInMemoryKeys)。probe 键 (expire 0) 的「写入后立即读回」
  * 必须在同一方法内完成 —— 跨脚本同帧执行顺序未定义，独立读回可能错过其存在状态。
  */
 public class GearInMemoryWriter implements EveryFrameScript {
@@ -379,7 +379,7 @@ public class GearInMemoryWriter implements EveryFrameScript {
         sector.set(GearInMemoryKeys.KEY_REQUIRED_PARENT, true);
         sector.addRequired(GearInMemoryKeys.KEY_REQUIRED_PARENT, GearInMemoryKeys.KEY_REQUIRED_CHILD);
 
-        LOG.info("GearInMemoryWriter: 记忆键必须 $ 前缀(Memory.set 对无 $ 键抛 RuntimeException)");
+        LOG.info("GearInMemoryWriter: 记忆键必须 $ 前缀 (Memory.set 对无 $ 键抛 RuntimeException)");
         LOG.info("GearInMemoryWriter: contains(KEY_TAG)="
                 + sector.contains(GearInMemoryKeys.KEY_TAG)
                 + " getString=" + sector.getString(GearInMemoryKeys.KEY_TAG)
@@ -432,14 +432,14 @@ import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
 
 /**
- * PersistentData 跨存档计数脚本(EveryFrameScript)：每档一次累加运行计数并记录
- * 上次值 —— 直接可观察 PersistentData 随存档保存与恢复(新档 run 1、读档 run N
+ * PersistentData 跨存档计数脚本 (EveryFrameScript)：每档一次累加运行计数并记录
+ * 上次值 —— 直接可观察 PersistentData 随存档保存与恢复 (新档 run 1、读档 run N
  * 递增)。故意不加一次性 REGISTER_MARK 门控：每次读档都重跑才能看到递增；
- * 注册项使用各自的 persistent data 键(C6-S2 纪律)。
+ * 注册项使用各自的 persistent data 键 (C6-S2 纪律)。
  */
 public class GearInPersistentDataCounter implements EveryFrameScript {
 
-    /** PersistentData 键：与记忆键相反，不需要 $ 前缀(随存档序列化的普通键)。 */
+    /** PersistentData 键：与记忆键相反，不需要 $ 前缀 (随存档序列化的普通键)。 */
     public static final String PERSIST_KEY_RUNS = "GearIn_memory_runs";
 
     private static final Logger LOG = Global.getLogger(GearInPersistentDataCounter.class);
@@ -496,8 +496,8 @@ import com.fs.starfarer.api.campaign.rules.MemKeys;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 
 /**
- * memoryMap 组装脚本(EveryFrameScript)：落键后按 MemKeys 槽位组装与对话框插件
- * 同构的 memoryMap，解析 $global. / $player. / 无点号变量(复现变量解析规则)。
+ * memoryMap 组装脚本 (EveryFrameScript)：落键后按 MemKeys 槽位组装与对话框插件
+ * 同构的 memoryMap，解析 $global. / $player. / 无点号变量 (复现变量解析规则)。
  */
 public class GearInMemoryMapAssembler implements EveryFrameScript {
 
@@ -521,7 +521,7 @@ public class GearInMemoryMapAssembler implements EveryFrameScript {
         }
         MemoryAPI sector = Global.getSector().getMemoryWithoutUpdate();
         if (!sector.contains(GearInMemoryKeys.KEY_TAG)) {
-            return; // 等写入脚本落键(同帧顺序未定义，用键状态对齐)
+            return; // 等写入脚本落键 (同帧顺序未定义，用键状态对齐)
         }
         Map<String, MemoryAPI> memoryMap = new HashMap<>();
         memoryMap.put(MemKeys.GLOBAL, sector);
@@ -542,7 +542,7 @@ public class GearInMemoryMapAssembler implements EveryFrameScript {
     }
 
     /**
-     * 复现 Rules 引擎的变量解析(Misc.Token.getVarNameAndMemory)：
+     * 复现 Rules 引擎的变量解析 (Misc.Token.getVarNameAndMemory)：
      * "$memkey.name" → 取 memoryMap 的 memkey 槽位，读其中的 $name 键；
      * 无点号 → 回落 local 槽位。memoryMap 中没有该槽位时同样回落 local。
      */
@@ -583,12 +583,12 @@ import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 
 /**
- * 过期与依赖清理验证脚本(EveryFrameScript)：写入脚本落键(KEY_TAG 存在)且
+ * 过期与依赖清理验证脚本 (EveryFrameScript)：写入脚本落键 (KEY_TAG 存在) 且
  * expire 0 的 probe 键已被 Memory.advance 移除后，记录移除结果，再 unset 一个
  * required 子键验证父键被递归移除。
  *
  * 时序对齐：probe 每次读档都被写入脚本重新写入并移除，故「tag 存在 && probe
- * 不存在」是稳定的验证时机(同帧执行顺序未定义，用键状态对齐)。
+ * 不存在」是稳定的验证时机 (同帧执行顺序未定义，用键状态对齐)。
  */
 public class GearInMemoryExpiryVerifier implements EveryFrameScript {
 
@@ -651,9 +651,9 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
 
 /**
- * 规则对话打开脚本(EveryFrameScript)：记忆写入与过期验证完成(KEY_TAG 存在、
- * probe 已被移除)后，打开初始 trigger 为 GearInMemoryDialog 的对话 —— 对话文本、
- * 条件与选项全部来自 rules.csv 中本节拥有的 GearIn_memory_* 规则($global. /
+ * 规则对话打开脚本 (EveryFrameScript)：记忆写入与过期验证完成 (KEY_TAG 存在、
+ * probe 已被移除) 后，打开初始 trigger 为 GearInMemoryDialog 的对话 —— 对话文本、
+ * 条件与选项全部来自 rules.csv 中本节拥有的 GearIn_memory_* 规则 ($global. /
  * $player. / 无点号回落 local 三种读法 + $player. 赋值 0 天过期)。
  */
 public class GearInMemoryDialog implements EveryFrameScript {
@@ -683,7 +683,7 @@ public class GearInMemoryDialog implements EveryFrameScript {
         MemoryAPI sector = Global.getSector().getMemoryWithoutUpdate();
         if (!sector.contains(GearInMemoryKeys.KEY_TAG)
                 || sector.contains(GearInMemoryKeys.KEY_PROBE)) {
-            return; // 等写入与过期演示完成(probe 移除后)再弹对话，日志顺序可预期
+            return; // 等写入与过期演示完成 (probe 移除后) 再弹对话，日志顺序可预期
         }
         CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
         if (fleet == null) {
@@ -721,7 +721,7 @@ public class GearInMemoryDialog implements EveryFrameScript {
 
 ```java
     // GearInModPlugin(C6-S2 所有)onGameLoad(boolean newGame) 内新增本节注册块。
-    // 故意不加一次性门控：五个脚本每次读档都重跑(run N 递增、键重写)，才能观察
+    // 故意不加一次性门控：五个脚本每次读档都重跑 (run N 递增、键重写)，才能观察
     // PersistentData 跨存档恢复与内存键重写；持久数据键使用各自的注册项键
     // (GearIn_memory_runs)，不挂进插件已有的 CLASS_MARK 门。
     Global.getSector().addScript(new GearInMemoryWriter());
@@ -765,7 +765,7 @@ gradle jar
     - `required 依赖 getRequired(KEY_REQUIRED_PARENT)=[$GearIn_memory_required_child]`；
     - `sector 内存键 = [$GearIn_memory_counter, $GearIn_memory_probe, $GearIn_memory_rearm, $GearIn_memory_required_child, $GearIn_memory_required_parent, $GearIn_memory_tag]`(全部 `$` 前缀)。
 - **memoryMap 组装与解析 (`KEY_TAG` 落键后的未暂停帧，写入同帧或下一帧，取决于同帧脚本顺序)**：`GearInMemoryMapAssembler: memoryMap 槽位 = [global, local, player]`；三个解析结果：`$global.GearIn_memory_tag = GearInReady`、`$player.GearIn_memory_player = true`、`$GearIn_memory_fleetKey(无点号回落 local)= fleet-local`。
-- **probe 移除与对话弹出 (probe 被移除后的第一个未暂停帧)**：`GearInMemoryExpiryVerifier: 下一推进帧后 contains(KEY_PROBE)=false getString=null(expire 0 的键已被 Memory.advance 移除)`；`unset(KEY_REQUIRED_CHILD) 后 contains(child)=false contains(parent)=false(required 依赖：…父键被递归移除)`；同时 `GearInMemoryDialog: dialog shown=true`，对话弹出：
+- **probe 移除与对话弹出 (probe 被移除后的第一个未暂停帧)**：`GearInMemoryExpiryVerifier: 下一推进帧后 contains(KEY_PROBE)=false getString=null(expire 0 的键已被 Memory.advance 移除)`；`unset(KEY_REQUIRED_CHILD) 后 contains(child)=false contains(parent)=false(required 依赖：...父键被递归移除)`；同时 `GearInMemoryDialog: dialog shown=true`，对话弹出：
     - 文本三行分别替换出 `GearInReady`、`1.0`、`fleet-local`(`$global.` / 无点号回落 local 两种 token 替换路径)；
     - 选项面板按声明顺序显示 "验证内存键" 与 "结束"。
     - 若该帧正有其它对话/界面排队，弹窗顺延到后续未暂停帧 (对话脚本不置 done，自动重试)。

@@ -76,7 +76,7 @@
 | 声明 | `mod_info.json` 的 `jars` 数组 | `ModManagerAPI` 解析 (公开只读面为 `ModSpecAPI.getJars()`) |
 | 挂载 | 游戏启动期 | 把 `<MOD 根目录>/<jars 声明值>` 逐项加入脚本类加载器的 jar 列表，日志 `Getting ready to load jar file [...]` 与 `Loading jar files` |
 | 解析 | 脚本类加载器 (`URLClassLoader`) | 脚本类按完整类名 `Class.forName`；jar 类优先于即时编译源码 (Janino 源码编译器是 jar 类加载器的子加载器，父加载器优先) |
-| 注册与实例化 | `data\config\settings.json` 的 `plugins` 段 | CSV spec 加载期把 key→类名注册进脚本类加载器；每场战斗对 `EveryFrameCombatPlugin` 类型创建新实例并附加 |
+| 注册与实例化 | `data\config\settings.json` 的 `plugins` 段 | 资源加载期由 `loadStarmap()` 注册，先于 CSV spec；每场战斗创建新实例并附加 |
 
 运行期取得脚本类加载器的公开 API：`SettingsAPI.getScriptClassLoader()`；按完整类名创建实例：`SettingsAPI.getInstanceOfScript(String)`。本节不调用它们，只作阅读链路的对照。
 
@@ -238,7 +238,7 @@ MOD 的 `settings.json` 会与全局设置按对象键合并，只提交自己�
 
 对应关系：
 
-- `extends BaseEveryFrameCombatPlugin`：提供全部 `EveryFrameCombatPlugin` 方法的空实现，只需覆写 `advance`；直接实现接口则要写满 4 个方法 [C7-S1]。
+- `extends BaseEveryFrameCombatPlugin`：提供全部 `EveryFrameCombatPlugin` 方法的空实现，只需覆写 `advance`；直接实现接口则要写满 5 个方法 (含弃用的 `init`) [C7-S1]。
 - `Global.getLogger(GearInFrameLogger.class)`：log4j 记录器，输出到 `starsector-core\starsector.log`；全程不需要在编译期直接 import log4j。
 - `engine.isPaused()` 判断：暂停帧不累计 ([C7-S1] 的暂停语义)。
 - `engine.getTotalElapsedTime(false)`：战斗内累计秒数，不含暂停；`amount` 是本帧经过秒数。
@@ -285,7 +285,7 @@ gradle jar
 预期结果：
 
 - 步骤 2：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jars\GearIndustry.jar` 存在。
-- 步骤 3：`starsector.log` 出现 jar 加载两行 —— `Getting ready to load jar file [Starsector\mods\GearIndustry\jars\GearIndustry.jar]` 与 `Loading jar files`，且没有由 `gear_in` 引起的 `ERROR`。
+- 步骤 3：`starsector.log` 先出现前缀为 `Getting ready to load jar file [` 的准备日志，方括号内解析结果包含 `mods\GearIndustry\jars\GearIndustry.jar`，随后出现 `Loading jar files`；安装根目录部分以本机实际路径为准，且没有由 `gear_in` 引起的 `ERROR`。
 - 步骤 4：运行 3 秒以上后，日志每隔约 3 秒出现一行 `GearIn FrameLogger tick at battle time ...`。这条日志只可能在类被成功加载并实例化后产生，证明 jar 内容、`jars` 声明、`plugins` 登记三段链路全部打通。
 
 ## 故障分析

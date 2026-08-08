@@ -76,10 +76,12 @@ spec 加载流程对每个 faction 文件按固定顺序解析字段。**必填*
 ### 配置舰船池
 
 1. 加载期 `loadFactionList` 处理每个 `known*` / `priority*` 块：`tags` 数组里的每个 tag，遍历对应注册表 (`knownShips` 遍历全部船体、`knownWeapons` 遍历全部武器、`knownFighters` 遍历全部战机联队、`knownHullMods` 遍历全部船插)，凡对象带任一 tag 即加入集合；`hulls` / `weapons` / `fighters` / `hullMods` 数组则把 ID 直接加入集合。**拼错的 tag 或 ID 不会报错** —— 只是匹配不到任何对象，静默得到一个更小的舰船池。
-2. 装配角色的来源有两层。第一层是**全 MOD 共享**的 `data/world/factions/default_ship_roles.json`：这是合并读取的 JSON(`readJSONMerged`)，角色对象按键逐层合并、装配条目按 variant ID 覆盖，因此 **MOD 只提交自己的角色条目，不要整份复制原版文件** (复制会覆盖原版的角色对象，让所有原版势力失去对应角色的装配条目)。每个角色是一个对象：`variantId → 权重`，另有三个特殊键：`includeDefault: true`(把原版同名角色的条目复制进来)、`fallback` / `fallback2`(角色回退)。角色条目 (`RoleEntryAPI`) 创建时**立即按 ID 查装配** (`_wing` 结尾的 ID 走联队查找的历史兼容路径，原版数据不使用它)；装配查不到抛 `Ship hull variant [X] not found!`，加载中断。
-3. 第二层是势力文件自己的 `shipRoles`(对象结构与 default_ship_roles.json 相同；内部 `doctrine` 键是旧版遗留，本节不展开)。`FactionAPI.pickShip(role, params)` 在选择时优先用势力自己的角色；角色缺失或为空时回退到共享的 `default_ship_roles.json`(`FactionSpecAPI.getDefaultShipRoles()`)。
+2. 装配角色的来源有两层。第一层是**全 MOD 共享**的 `data/world/factions/default_ship_roles.json`：这是合并读取的 JSON(`readJSONMerged`)，角色对象按键逐层合并、装配条目按 variant ID 覆盖，因此 **MOD 只提交自己的角色条目，不要整份复制原版文件** (整份复制会用同键条目的副本值覆盖原版值，版本不同步时会留下陈旧配置，但不会删除原版角色)。每个角色是一个对象：`variantId → 权重`，另有三个特殊键：`includeDefault: true`(把原版同名角色的条目复制进来)、`fallback` / `fallback2`(角色回退)。角色条目 (`RoleEntryAPI`) 创建时**立即按 ID 查装配** (`_wing` 结尾的 ID 走联队查找的历史兼容路径，原版数据不使用它)；装配查不到抛 `Ship hull variant [X] not found!`，加载中断。
+3. 第二层是势力文件自己的 `shipRoles`(对象结构与 default_ship_roles.json 相同；内部 `doctrine` 键是旧版遗留，本节不展开)。`FactionAPI.pickShip(role, params)` 在选择时优先用势力自己的角色；角色缺失或为空时回退到共享的 `default_ship_roles.json`(内部 `com.fs.starfarer.loading.FactionSpec.getDefaultShipRoles()` 静态方法，公开接口不提供该方法)。
 4. **舰船池完整流程**：`pickShip` 内部对每个角色条目做过滤 —— 条目装配的船体必须在该势力的 `knownShips` 里 (`knowsShip`)，再乘上 `hullFrequency` 里该船体的倍率；`variantOverrides` 命中的装配按覆盖权重参与。这就是 "势力只出自己舰船池里的船" 的机制。过滤结果按权重随机抽取，`ShipPickMode` 控制范围 (`ALL` / `PRIORITY_ONLY` / `PRIORITY_THEN_ALL` / `IMPORTED`)，`priorityShips` / `priorityWeapons` / `priorityFighters` 在优先级模式下优先被抽取。权重结果带缓存，运行时改动舰船池后要调 `clearShipRoleCache()` 才会反映 (常见陷阱：缓存不会自动失效，改动池后容易漏调)。
 5. 其它只读入口：`getNumAvailableForRole(role, mode)`、`getApproximateMaxFPPerFleet(mode)`、`knowsShip / knowsWeapon / knowsFighter / knowsHullMod`。
+
+`knownHullMods` 启用 tag 过滤时，always-unlocked 船插也会加入集合，不要求命中这些 tag。
 
 ::: warning 拼错的 tag 或 ID 只会静默缩小舰船池
 
@@ -242,8 +244,8 @@ data/world/factions/gear_industry.faction
 		"encounter_hostile":"music_hegemony_encounter_hostile",
 		"encounter_friendly":"music_hegemony_encounter_friendly",
 	},
-	"internalComms":"hegemony_internal",  # 内部频道 ID，须在 data/campaign/channels.json 中注册(本节沿用原版频道)
-	"portraits":{             # 人物头像池(键必须存在；数组可省略，条目入资源队列)
+	"internalComms":"hegemony_internal",  # 内部频道 ID，须在 data/campaign/channels.json 中注册 (本节沿用原版频道)
+	"portraits":{             # 人物头像池 (键必须存在；数组可省略，条目入资源队列)
 		"standard_male":[
 			"graphics/portraits/portrait_hegemony01.png",
 			"graphics/portraits/portrait_mercenary03.png",
@@ -261,14 +263,14 @@ data/world/factions/gear_industry.faction
 			"factionLeader":{"name":"总工程师"},
 		},
 	},
-	"voices":{                # 联络人类型权重(spacer/faithful/pather/business/official/soldier/scientist/villain/aristo)
+	"voices":{                # 联络人类型权重 (spacer/faithful/pather/business/official/soldier/scientist/villain/aristo)
 		"LOW":{"soldier":5,"spacer":5},
 		"MEDIUM":{"official":5,"soldier":5},
 		"HIGH":{"official":5,"aristo":2},
 	},
 	"custom":{
 		# 本地可核验的消费方只有 engageWhenEvenStrength(舰队 AI：势均力敌时也主动进攻)。
-		# 其余键是原版文件的惯例内容(offersCommissions、buysAICores、caresAboutAtrocities、
+		# 其余键是原版文件的惯例内容 (offersCommissions、buysAICores、caresAboutAtrocities、
 		# punitiveExpeditionData、postsNoBounties、allowsTransponderOffTrade、decentralized、
 		# pirateBehavior、makesPirateBases、fightToTheLast、gaVIPMission 等)，它们的消费方大多在
 		# 本教程可验证切片之外：照原样保留即可，但不要把势力行为的关键逻辑寄托在未核验的键上。
@@ -315,7 +317,7 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 
 角色表就是共享的 `default_ship_roles.json`：没有它 (或没有本 MOD 的条目)，装配就不会出现在生涯舰队里，势力只能回退到原版装配。
 
-在 MOD 中新建 `data/world/factions/default_ship_roles.json`，**只提交自己的角色条目** (这个文件跨来源按角色对象合并，整份复制原版文件会覆盖原版角色，害到所有原版势力)：
+在 MOD 中新建 `data/world/factions/default_ship_roles.json`，**只提交自己的角色条目** (这个文件跨来源按角色对象合并；整份复制会覆盖同键条目，版本不同步时留下陈旧配置)：
 
 ```json
 {
@@ -327,7 +329,7 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 
 ::: caution 只提交自己的角色条目，禁止整份复制原版文件
 
-`default_ship_roles.json` 跨来源按角色对象合并：整份复制原版文件会覆盖原版角色对象，让所有原版势力失去对应角色的装配条目 —— 没有报错，很难察觉。MOD 只提交自己的角色条目。
+`default_ship_roles.json` 跨来源按角色对象合并：整份复制原版文件会用同键条目的副本值覆盖原版值，版本不同步时会留下陈旧配置，但不会删除原版角色。MOD 只提交自己的角色条目。
 
 :::
 
@@ -464,7 +466,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 - `com.fs.starfarer.api.Global` —— 全局入口：`getSector().getFaction(id)` 取势力运行时对象。
 - `com.fs.starfarer.api.campaign.FactionAPI` —— 势力运行时接口：关系读写、舰船池查询与角色抽取 (`pickShip` 等)。
 - `com.fs.starfarer.api.campaign.FactionDoctrineAPI` —— 舰队学说运行时接口；
-- `com.fs.starfarer.api.campaign.FactionSpecAPI` —— 势力 spec 只读接口 (`knownShips`、`hullFrequency`、`getDefaultShipRoles` 等)。
+- `com.fs.starfarer.api.campaign.FactionSpecAPI` —— 势力 spec 只读接口 (`knownShips`、`hullFrequency` 等)；共享默认角色由内部 `FactionSpec.getDefaultShipRoles()` 提供，公开接口不包含该方法。
 - `com.fs.starfarer.api.campaign.RepLevel` —— 关系等级枚举与阈值 (`T1..T4` = 0.09 / 0.24 / 0.49 / 0.74)。
 - `data/world/factions/factions.csv` —— 势力注册表 (按行合并，表头 `faction`)。
 - `data/world/factions/gear_industry.faction` —— 本节示例势力文件 (完整字段形态)；

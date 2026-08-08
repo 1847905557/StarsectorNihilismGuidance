@@ -52,14 +52,14 @@
 	"GEAR_TECH":{ # 舰船风格 ID。不得使用文件头保留 ID(见下)
 		"hyperspaceJitterColor":[255,170,60,200], # 建议保留：舰船在超空间航行时的光芒颜色
 		"baseCampaignExplosionColor":[255,150,50,255], # 建议保留：大地图爆炸颜色
-		"baseCombatExplosionColor":[255,150,50,255], # 建议保留：战斗爆炸颜色(闪光)
-		"combatExplosionNonFlashColorOverride":[255,180,90,255], # 可选：战斗爆炸的非闪光部分(更蓬松的爆炸)
+		"baseCombatExplosionColor":[255,150,50,255], # 建议保留：战斗爆炸颜色 (闪光)
+		"combatExplosionNonFlashColorOverride":[255,180,90,255], # 可选：战斗爆炸的非闪光部分 (更蓬松的爆炸)
 		"fighterRepairFlickerColor":[255,170,60,255], # 建议保留：甲板维修战机时冒火花的颜色
 		"fighterChipIconColor":[255,200,120,255], # 可选，默认同 fighterRepairFlickerColor：战机 LPC 颜色
 		"weaponDisabledExplosionColor":[255,170,60,255], # 建议保留：武器下线冒火花的颜色
 		"shieldRingColor":[255,215,140,255], # 建议保留：护盾外圈颜色
 		"shieldInnerColor":[255,140,40,70], # 建议保留：护盾内圈颜色
-		"fluxVentCoreColor":[255,235,200,255], # 建议保留：V 排(幅能排放)核心颜色
+		"fluxVentCoreColor":[255,235,200,255], # 建议保留：V 排 (幅能排放) 核心颜色
 		"fluxVentFringeColor":[255,120,0,255], # 建议保留：V 排外圈颜色
 		"fluxVentTextureSheet":"graphics/fx/nebula_colorless.png", # 可选：V 排外圈材质
 		"fluxVentRadialTexture":"graphics/fx/radial_fx.png", # 可选：V 排核心材质
@@ -81,7 +81,7 @@
 		"coversColorShiftAmount":0.6,
 		"coversMatchShipBrightness":true,
 
-		# 武器盖板贴图(最小例复用原版材质，可换成自己的盖板贴图)
+		# 武器盖板贴图 (最小例复用原版材质，可换成自己的盖板贴图)
 		"slotCoverSmallTurret":"graphics/weapons/covers/cover_turret_lowtech_small.png",
 		"slotCoverSmallHardpoint":"graphics/weapons/covers/cover_hardpoint_lowtech_small.png",
 		"slotCoverMediumTurret":"graphics/weapons/covers/cover_turret_lowtech_medium.png",
@@ -89,7 +89,7 @@
 		"slotCoverLargeTurret":"graphics/weapons/covers/cover_turret_lowtech_large.png",
 		"slotCoverLargeHardpoint":"graphics/weapons/covers/cover_hardpoint_lowtech_large.png",
 
-		# D 插覆盖贴图(舰船安装 D 插件后的船体贴花)
+		# D 插覆盖贴图 (舰船安装 D 插件后的船体贴花)
 		"dHullOverlayLight":"graphics/damage/dmod_overlay_lowtech_light.png",
 		"dHullOverlayMedium":"graphics/damage/dmod_overlay_lowtech_medium.png",
 		"dHullOverlayHeavy":"graphics/damage/dmod_overlay_lowtech_heavy.png",
@@ -111,7 +111,9 @@
 
 `hull_styles.json` 文件头声明了禁止使用的保留 ID：`"sounds"`、`"DEFAULT"`、`"FIGHTER"`、`"FRIGATE"`、`"DESTROYER"`、`"CRUISER"`、`"CAPITAL_SHIP"`；`engine_styles.json` 保留 `"CUSTOM"`。
 
-违反后的可观察结果：声音集按 "风格 ID 与船体分级名" 共用同一张键表分档 (声音集查找时先用风格 ID、再用 `FRIGATE` 等分级名查同一个表)，风格 ID 取 `FRIGATE`、`DESTROYER` 这类名字会与分级分档键冲突，引擎与护盾声音的档位选择错乱；`"CUSTOM"` 是引擎槽 "内联风格" 的标记值，用它做风格 ID 会让引擎槽解析走内联分支。请用 `GEAR_TECH` 这类带前缀的自定义名。
+违反后的可观察结果：声音集按 "风格 ID 与船体分级名" 共用同一张键表分档 (声音集查找时先用风格 ID、再用 `FRIGATE` 等分级名查同一个表)，风格 ID 取 `FRIGATE`、`DESTROYER` 这类名字会与分级分档键冲突，引擎与护盾声音的档位选择错乱。请用 `GEAR_TECH` 这类带前缀的自定义名。
+
+`CUSTOM` 不得注册。解析器会先查全局注册表；注册后 `styleSpec` 内联分支不再执行。
 
 :::
 
@@ -135,14 +137,14 @@
 	"GEAR_TECH":{ # 引擎风格 ID，不得使用保留 ID "CUSTOM"
 		"engineColor":[255,150,40,255], # 建议保留：引擎火焰颜色
 		"engineCampaignColor":[220,110,50,255], # 可选，默认同 engineColor：引擎火焰在大地图的颜色
-		"contrailParticleSizeMult":3, # 必填(PARTICLES 模式)：引擎航迹粒子大小倍率
-		"contrailParticleDuration":2, # 必填(PARTICLES 模式)：航迹粒子持续时间
+		"contrailParticleSizeMult":3, # 必填 (PARTICLES 模式)：引擎航迹粒子大小倍率
+		"contrailParticleDuration":2, # 必填 (PARTICLES 模式)：航迹粒子持续时间
 		"contrailParticleFinalSizeMult":2.5, # 可选，默认 0.5：航迹粒子随延长而放大的倍率
 		"contrailMaxSpeedMult":0.5, # 必填：航迹飘出速率
 		"contrailAngularVelocityMult":0.3, # 必填：航迹角速度飘出速率
 		"contrailColor":[70,60,50,60], # 建议保留：引擎航迹颜色
 		"contrailCampaignColor":[220,110,50,70], # 可选，默认同 contrailColor：航迹在大地图的颜色
-		"type":"SMOKE" # 必填：GLOW(淡光、加法混合)或 SMOKE(烟雾、常规混合)
+		"type":"SMOKE" # 必填：GLOW(淡光、加法混合) 或 SMOKE(烟雾、常规混合)
 	},
 }
 ```
@@ -164,9 +166,9 @@
 ```json
 		"GEAR_TECH_OMEGA":{ # 光带型风格：mode 为 QUAD_STRIP
 			"mode":"QUAD_STRIP", # 粒子模式或光带模式，决定读取哪一组参数
-			"contrailDuration":1.5, # 必填(QUAD_STRIP 模式)：光带持续时间
-			"contrailWidthMult":0.67, # 必填(QUAD_STRIP 模式)：光带宽度
-			"contrailWidthAddedFractionAtEnd":-1, # 可选，默认 0.5：光带尾部的宽度，0 为默认，小于 0 末端窄，大于 0 末端宽
+			"contrailDuration":1.5, # 必填 (QUAD_STRIP 模式)：光带持续时间
+			"contrailWidthMult":0.67, # 必填 (QUAD_STRIP 模式)：光带宽度
+			"contrailWidthAddedFractionAtEnd":-1, # 可选，字段缺失时默认 0.5：显式 0 表示不附加末端宽度，小于 0 末端窄，大于 0 末端宽
 			"contrailMinSeg":5, # 可选，默认 5：光带每一小节的渲染长度
 			"contrailMaxSpeedMult":1, # 必填：见上文
 			"contrailAngularVelocityMult":0, # 必填：见上文
@@ -191,7 +193,7 @@
 
 ::: tip 内联引擎风格 (进阶)
 
-引擎槽除了引用 `engine_styles.json` 的 ID，还可以在 `.ship` 的引擎槽里直接内联一整份风格对象：`"style": "CUSTOM"` 配合 `"styleSpec": { ... }`。内联对象同样必须包含全部必填键。普通 MOD 不需要这个功能，按 ID 引用即可。
+引擎槽除了引用 `engine_styles.json` 的 ID，还可以在 `.ship` 的引擎槽里直接内联一整份风格对象：`"style": "CUSTOM"` 配合 `"styleSpec": { ... }`。该分支要求全局注册表中不存在 `CUSTOM`，因此这个保留 ID 不得注册；内联对象同样必须包含全部必填键。普通 MOD 不需要这个功能，按 ID 引用即可。
 
 :::
 
@@ -228,7 +230,7 @@
   "engineSlots": [
     {
       "location": [ 12.0, -30.0 ],
-      "size": 14,
+        "width": 14,
       "length": 20,
       "angle": 0,
       "style": "GEAR_TECH",
@@ -283,7 +285,7 @@ hull style 是 "声音与材质的总线"：
 
 **若没有为自定义 hull style 注册并引用自定义声音集，风格会静默回落到原版通用声音**：舰船风格数据对 9 个声音字段都有默认值 (`engine_loop`、`engine_accelerate`、`emp_loop`、`flux_loop`、`vent_flux`、`shield_burnout`、`shield_lower`、`shield_raise`、`explosion_ship`)，所有原版风格共享这一套。这不是报错，但引擎声、护盾声会听上去与原版一致，观感与自定义配色不一致。
 
-一旦风格里写入了自定义声音集 ID(例如 `"engineLoopSet": "GearIn_engine_loop"`)，该 ID **必须**存在于 `sounds.json`。违反后的可观察结果：加载阶段不报错，但舰船进入战斗、创建引擎控制器时抛 `NullPointerException`(`starsector.log` 记录指向 `ShipEngineControllerAPI` 的堆栈)，舰船无法正常部署；声音集里注册的 `.ogg` 路径不存在时，加载阶段直接失败 (声音资源加载任务报错)，游戏无法进入主菜单。
+一旦风格里写入了自定义声音集 ID(例如 `"engineLoopSet": "GearIn_engine_loop"`)，该 ID **必须**存在于 `sounds.json`。违反后的可观察结果：加载阶段不报错，但舰船进入战斗、创建引擎控制器时抛 `NullPointerException`(`starsector.log` 记录指向内部实现 `ShipEngineController` 的构造链)，舰船无法正常部署；声音集里注册的 `.ogg` 路径不存在时，加载阶段直接失败 (声音资源加载任务报错)，游戏无法进入主菜单。
 
 :::
 
@@ -292,7 +294,7 @@ hull style 是 "声音与材质的总线"：
 - **加载进度条阶段出现风格键或颜色数组错误**：`engine_styles.json` 缺少必填键、颜色数组不足 4 个元素，或 `type` 不是 `GLOW`、`SMOKE` 时，日志会出现 `Key [...] is required`、`invalid value` 或颜色数组错误。补齐字段后重启，风格表应完成加载；`hull_styles.json` 缺少颜色字段时会回退为白色，非法值和 JSON 语法才会中断加载。
 - **加载阶段失败且日志指向 `.ship`**：顶层 `style` 缺失会抛出 `JSONObject["style"] not found.`，引用不存在的 hull style 时会在读取护盾颜色处抛 NPE。让 `.ship` 的 `style` 与 `hull_styles.json` ID 逐字一致，重启后船体应完成加载。
 - **`Addship` 部署时抛 NPE 且舰船无法入场**：`engineSlots` 的 `style` 指向未注册的 engine style，战斗实体生成时会取得 null。改用已注册 ID 或补齐 `engine_styles.json` 条目，再次部署后舰船应正常入场。
-- **部署时 NPE 堆栈指向 `ShipEngineControllerAPI` 或 `Shield`**：hull style 引用了 `sounds.json` 中不存在的声音集 ID。注册对应声音集或改用现有 ID，重新部署后引擎与护盾应完成初始化。
+- **部署时 NPE 堆栈指向 `ShipEngineController` 构造链或 `Shield`**：hull style 引用了 `sounds.json` 中不存在的声音集 ID。注册对应声音集或改用现有 ID，重新部署后引擎与护盾应完成初始化。
 - **启动时声音资源加载失败**：`sounds.json` 中的 `.ogg` 路径不存在，或大小写与文件不一致。核对 `file` 相对 MOD 根目录的路径，重启后声音资源应完成加载。
 - **势力舰队生成时出现风格加载错误**：舰队装配引用的 `.ship` 可能带有损坏的风格或声音集关系。沿 `.ship`、风格 ID、声音集 ID 逐层核对，重新生成舰队后错误应消失。
 - **护盾和引擎声音仍像原版风格**：未引用自定义声音集时，hull style 会使用原版通用声音。按 "声音与材质的完整关联流程" 注册并引用自定义 ID，重新部署后应听到目标声音。

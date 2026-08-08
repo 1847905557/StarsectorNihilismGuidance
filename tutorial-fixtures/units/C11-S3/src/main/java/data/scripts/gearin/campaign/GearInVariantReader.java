@@ -9,8 +9,8 @@ import com.fs.starfarer.api.combat.ShipVariantAPI;
 
 /**
  * 角色：注册表读取。演示 SettingsAPI.getVariant 的注册表读取与来源判定 ——
- * 股票变体 brawler_Assault(STOCK)的身份 / 装配 / OP 摘要、自动空装配 brawler_Hull
- * (HULL 来源，source == HULL、isEmptyHullVariant() == true)与注册表变体总数。
+ * 股票变体 brawler_Assault(STOCK) 的身份 / 装配 / OP 摘要、自动空装配 brawler_Hull
+ * (HULL 来源，source == HULL、isEmptyHullVariant() == true) 与注册表变体总数。
  *
  * 注册入口：GearInVariantLauncher.register()(跑一次即停：首次 advance() 后 isDone() 置 true)。
  */

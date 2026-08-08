@@ -4,11 +4,17 @@ import java.awt.Color;
 
 import org.boxutil.units.standard.entity.DistortionEntity;
 import org.boxutil.units.standard.entity.FlareEntity;
+import org.boxutil.units.standard.attribute.Instance2Data;
+import org.boxutil.util.RenderingUtil;
 import org.lwjgl.util.vector.Vector2f;
 
 import com.fs.starfarer.api.combat.CombatEngineLayers;
 
 public final class GearInImpactSpecialFX {
+    public Instance2Data makeDefaultDistortion(boolean additive, float duration) {
+        return RenderingUtil.SpecialFX.addDefaultDistortion(additive, duration);
+    }
+
     public DistortionEntity makeDistortion(Vector2f location) {
         DistortionEntity distortion = new DistortionEntity();
         distortion.setLocation(location);

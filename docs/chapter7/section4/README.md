@@ -106,8 +106,8 @@
     - `BEAM` / `BALLISTIC_AS_BEAM` → 光束脉冲射线；
     - `MissileSpecAPI` → 导弹实体；
     - `DamagingExplosionSpec` → 爆炸实体。
-4. 若产物是 `DamagingProjectileAPI`，回调 `onFireEffect.onFire(projectile, weapon, engine)`——`onFire` 收到的就是**刚生成的那一个**射弹对象；若该武器的 `everyFrameEffect` 本身也实现了 `OnFireEffectPlugin`，同一个效果对象还会再被调一次。
-5. 炮口火光粒子 (视口附近才生成)、炮管闪光复位。
+4. 炮口火光粒子 (视口附近才生成)、炮管闪光复位。
+5. 若产物是 `DamagingProjectileAPI`，回调 `onFireEffect.onFire(projectile, weapon, engine)`——`onFire` 收到的就是**刚生成的那一个**射弹对象；若该武器的 `everyFrameEffect` 本身也实现了 `OnFireEffectPlugin`，同一个效果对象还会再被调一次。
 
 炮管模式：`LINKED` 一次齐射全部炮管；`DUAL` 双管交替偏移。
 
@@ -367,7 +367,7 @@ Starsector\mods\GearIndustry\
 │       ├── GearInGlobalAccess         # C6-S3 所有；本节只消费
 │       └── combat\
 │           ├── GearInCombatStatePlugin   # C7-S2 所有；本节只消费
-│           ├── GearInFlowObserverPlugin  # 本节新增(六类)
+│           ├── GearInFlowObserverPlugin  # 本节新增 (六类)
 │           ├── GearInDamageObserverListener
 │           ├── GearInWeaponFlowEffect
 │           ├── GearInShotOnFireEffect
@@ -639,10 +639,10 @@ import com.fs.starfarer.api.input.InputEventAPI;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 战斗插件观察者：由战斗上下文 addPlugin 注册(C7-S1 模型)。
+ * 战斗插件观察者：由战斗上下文 addPlugin 注册 (C7-S1 模型)。
  * init() 把伤害监听器接入引擎，每帧识别新生成的射弹，并按 3 秒节奏
- * 触发武器 / 射弹 / 导弹 / 光束的运行态报告(实现见 GearInStateReport)。
- * 暂停守卫：暂停时武器 / 射弹 / 光束都不推进，只有插件 advance 仍被调用(C7-S1)。
+ * 触发武器 / 射弹 / 导弹 / 光束的运行态报告 (实现见 GearInStateReport)。
+ * 暂停守卫：暂停时武器 / 射弹 / 光束都不推进，只有插件 advance 仍被调用 (C7-S1)。
  */
 public class GearInFlowObserverPlugin extends BaseEveryFrameCombatPlugin {
 
@@ -650,7 +650,7 @@ public class GearInFlowObserverPlugin extends BaseEveryFrameCombatPlugin {
 
     private CombatEngineAPI engine;
     private final IntervalUtil reportInterval = new IntervalUtil(3f, 3f);
-    /** 已见过的射弹(specId + 实体身份码)，用于逐帧识别"新生成"的射弹。 */
+    /** 已见过的射弹 (specId + 实体身份码)，用于逐帧识别 "新生成" 的射弹。 */
     private final Set<String> seenProjectiles = new HashSet<>();
 
     @Override
@@ -675,7 +675,7 @@ public class GearInFlowObserverPlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
-    /** 逐帧识别新生成的射弹(含导弹与光束脉冲)，打印生成时刻的运行态。 */
+    /** 逐帧识别新生成的射弹 (含导弹与光束脉冲)，打印生成时刻的运行态。 */
     private void trackNewProjectiles() {
         for (DamagingProjectileAPI projectile : engine.getProjectiles()) {
             if (seenProjectiles.add(keyOf(projectile))) {
@@ -715,7 +715,7 @@ import com.fs.starfarer.api.combat.listeners.DamageListener;
 import com.fs.starfarer.api.combat.listeners.DamageTakenModifier;
 
 /**
- * 引擎级伤害监听器(结算前修改 + 结算后报告)：由 GearInFlowObserverPlugin.init()
+ * 引擎级伤害监听器 (结算前修改 + 结算后报告)：由 GearInFlowObserverPlugin.init()
  * 接入 engine.getListenerManager()，每次伤害结算都会回调。本类不改数值 ——
  * 要修改只能走 damage.getModifier() 并返回修改 id(硬规范 6)，修改方法一律返回 null。
  */
@@ -776,7 +776,7 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 武器逐帧效果：只有把本类类名写进 .wpn 的 everyFrameEffect 字段时，
  * 游戏才会为每把武器创建独立实例并回调 init(weapon) / advance / advanceAfter。
- * advance 在本帧转向 / 开火等操作之前(API javadoc 原文 "Called before this frame's
+ * advance 在本帧转向 / 开火等操作之前 (API javadoc 原文 "Called before this frame's
  * operations for the weapon - turning, firing, etc.")，记录开火切换；
  * advanceAfter 在操作完成后按 2 秒节奏打印弹药 / 冷却 / 充能状态。
  */
@@ -785,7 +785,7 @@ public class GearInWeaponFlowEffect implements EveryFrameWeaponEffectPluginWithA
 
     private static final Logger LOG = Global.getLogger(GearInWeaponFlowEffect.class);
 
-    /** 开火状态(每个武器效果实例各有一份)。 */
+    /** 开火状态 (每个武器效果实例各有一份)。 */
     private boolean wasFiring = false;
     private final IntervalUtil weaponReportInterval = new IntervalUtil(2f, 2f);
 
@@ -807,7 +807,7 @@ public class GearInWeaponFlowEffect implements EveryFrameWeaponEffectPluginWithA
 
     @Override
     public void advanceAfter(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
-        // 本帧武器操作完成后(EveryFrameWeaponEffectPluginWithAdvanceAfter)
+        // 本帧武器操作完成后 (EveryFrameWeaponEffectPluginWithAdvanceAfter)
         weaponReportInterval.advance(amount);
         if (weapon.isFiring() && weaponReportInterval.intervalElapsed()) {
             LOG.info("GearIn weapon " + weapon.getId() + " after-frame:"
@@ -837,8 +837,8 @@ import com.fs.starfarer.api.combat.WeaponAPI;
 
 /**
  * 射弹开火回调：只有把本类类名写进 .proj 的 onFireEffect 字段时才会被调用。
- * onFire 收到的就是刚生成的那一个射弹对象(fireShot 生成后回调)；
- * 参数都是"本次事件上下文"，禁止跨发缓存(硬规范 2)。
+ * onFire 收到的就是刚生成的那一个射弹对象 (fireShot 生成后回调)；
+ * 参数都是 "本次事件上下文"，禁止跨发缓存 (硬规范 2)。
  */
 public class GearInShotOnFireEffect implements OnFireEffectPlugin {
 
@@ -875,8 +875,8 @@ import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
 
 /**
  * 射弹命中回调：只有把本类类名写进 .proj 的 onHitEffect 字段时才会被调用
- * (射弹 / 导弹 / 光束脉冲命中结算时触发)。参数都是"本次命中上下文"，
- * 禁止跨命中缓存(硬规范 2)。
+ * (射弹 / 导弹 / 光束脉冲命中结算时触发)。参数都是 "本次命中上下文"，
+ * 禁止跨命中缓存 (硬规范 2)。
  */
 public class GearInShotOnHitEffect implements OnHitEffectPlugin {
 
@@ -942,7 +942,7 @@ public class GearInStateReport {
         }
     }
 
-    /** 射弹集合与导弹子集：getProjectiles() 已包含导弹(API javadoc "Includes missiles.")，不要叠加统计。 */
+    /** 射弹集合与导弹子集：getProjectiles() 已包含导弹 (API javadoc "Includes missiles.")，不要叠加统计。 */
     public static void logProjectiles(CombatEngineAPI engine) {
         List<DamagingProjectileAPI> projectiles = engine.getProjectiles();
         List<MissileAPI> missiles = engine.getMissiles();

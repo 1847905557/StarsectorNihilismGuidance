@@ -87,6 +87,6 @@ GearIn file loading is ready.
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.SettingsAPI`：`loadText` 和 `validateFileName`；
+- `com.fs.starfarer.api.SettingsAPI`：`loadText`；路径安全校验由引擎内部 `validateFileName` 在读取入口自动执行。
 - `data/config/`：MOD 自有文本资源可以使用的目录；
 - `mod_info.json`：MOD ID 来源。

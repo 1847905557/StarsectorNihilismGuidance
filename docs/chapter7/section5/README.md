@@ -82,8 +82,8 @@ OP 修正器 "Should be used with care, and ideally only through built-in hullmo
 
 ### 注册：三条路径
 
-1. **settings `plugins` 段 (三类注册入口中的第二种)**：`settings.json` 的 `plugins` 段按 "唯一 key → 完整类名" 登记。该类必须继承 `EveryFrameCombatPlugin`。每场战斗开始时，引擎把 `plugins` 段登记的所有插件类各自实例化 (`Class.forName(...).newInstance()`)，每个实例包成插件适配器附加为战斗地形 —— **每场战斗都是全新实例**，跨战斗不共享插件字段。
-2. **战斗内 `addPlugin(...)`(三类注册入口中的第三种)**：`engine.addPlugin(plugin)` 先把插件包成插件适配器附加为地形，再在方法内调用 `plugin.init(this)`(与 API 注释 "Plugin has its init method called inside this method." 一致)。
+1. **settings `plugins` 段**：`settings.json` 的 `plugins` 段按 "唯一 key → 完整类名" 登记。该类必须继承 `EveryFrameCombatPlugin`。每场战斗开始时，引擎把 `plugins` 段登记的所有插件类各自实例化 (`Class.forName(...).newInstance()`)，每个实例包成插件适配器附加为战斗地形 —— **每场战斗都是全新实例**，跨战斗不共享插件字段。
+2. **战斗内 `addPlugin(...)`**：`engine.addPlugin(plugin)` 先把插件包成插件适配器附加为地形，再在方法内调用 `plugin.init(this)`(与 API 注释 "Plugin has its init method called inside this method." 一致)。
 3. **战役 `MissionDefinitionAPI.addPlugin(...)`(战役定义侧的注册入口)**：战役定义的 `MissionDefinitionAPI` 接口也有 `addPlugin(EveryFrameCombatPlugin)`，内部把插件包成同一个插件适配器加入触发列表。三种路径最终都落到 "插件适配器持有插件实例、挂在战斗地图上"。
 
 插件适配器是引擎内部的适配层：
@@ -156,7 +156,9 @@ OP 修正器 "Should be used with care, and ideally only through built-in hullmo
 - 部署事件：战斗舰队管理器自动部署与战情室手动部署都会触发部署事件 —— 内部监听器派发一轮，`CombatListenerUtil.reportFleetMemberDeployed` 派发引擎级 `FleetMemberDeploymentListener`(舰船级分支在 util 里被注释掉，这就是 "只能引擎" 的实现依据)。
 - 伤害族：舰船/导弹命中结算先派发引擎级 `DamageDealtModifier` / `DamageTakenModifier`，再派发攻击者 / 目标舰船级；结算后 `reportDamageApplied` 派发引擎级 + 来源舰船级 `DamageListener`；船体伤害前 `notifyAboutToTakeHullDamage` 聚合引擎级 + 舰船级返回值，任一 `true` 抵消。
 - 范围与 OP：`CombatListenerUtil` 的范围修正只查舰船级表，OP 修正只查 stats 级表 —— 与 javadoc 放置规则一一对应。
-- 迭代纪律：引擎派发与 `CombatListenerUtil` 都**先拷贝列表再迭代** (`new ArrayList<>(...)`)，监听器表内部统一存储、`getListeners(Class)` 返回的是可迭代视图。**建议**：不要在监听器回调内部对同一张监听器表增删 (要增删先取快照)；同一场战斗重复注册同一类监听器前用 `hasListenerOfClass` 先判断是否已注册 (这是成熟实例的通用做法)。
+- `getListeners(Class)` 返回监听器仓库内部的可变 `ArrayList`。
+- 部署监听器派发会直接迭代这张后备列表，回调中增删同一列表存在并发修改风险。
+- 需要稳定遍历时先复制快照；重复注册前用 `hasListenerOfClass` 判断。
 
 ### 内部事件监听接口：不是公开 API
 
@@ -302,7 +304,7 @@ Starsector\mods\GearIndustry\
 注册片段 (工程片段 —— 本节不改动前置单元所有文件，只演示调用)：
 
 ```java
-    // 已有战斗插件(战斗插件模型单元的拥有者类)的 init() 内新增一行
+    // 已有战斗插件 (战斗插件模型单元的拥有者类) 的 init() 内新增一行
     @Override
     public void init(CombatEngineAPI engine) {
         engine.addPlugin(new GearInCombatLifecyclePlugin());
@@ -405,7 +407,7 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 - **监听器注册后从不回调**：监听器被挂在错误层级。按照监听器家族分别放入引擎、舰船或 stats 的监听器表，重新触发对应事件。
 - **暂停期间计时照常推进**：`advance()` 或 `AdvanceableListener.advance` 没有检查暂停。状态变化前调用 `engine.isPaused()`。
 - **导入监听接口时编译失败**：代码引用了不在公开 API 编译面中的内部接口。改用 `com.fs.starfarer.api.combat.listeners` 下的公开接口；战斗结束改用 `isCombatOver()` 轮询。
-- **回调内增删监听器时重复派发或抛 `ConcurrentModificationException`**：自定义派发直接遍历了可变视图。增删前复制快照，或延后到下一次 `advance()`。
+- **回调内增删监听器时重复派发或抛 `ConcurrentModificationException`**：回调修改了正在被直接迭代的后备列表。遍历前复制快照，或把增删延后到下一次 `advance()`。
 
 ## 总结
 
@@ -449,14 +451,14 @@ import com.fs.starfarer.api.util.IntervalUtil;
  * 完整最小例：战斗插件与引擎级监听器的生命周期、移除与状态归属。
  *
  * 生命周期事实：
- * - init() 已废弃：不保证在 advance() 前被调用(CombatEnginePlugin 的 API 注释)，
+ * - init() 已废弃：不保证在 advance() 前被调用 (CombatEnginePlugin 的 API 注释)，
  *   advance() 必须先判 engine == null；
  * - advance() 在暂停时仍会被调用，状态推进前必须先检查 engine.isPaused()(C7-S1)；
  * - 战斗结束没有回调：插件必须在 advance() 里用 engine.isCombatOver() 自行识别收尾时机，
- *   此时引擎仍存活，并将进入结算或退出过渡(C7-S2)；
+ *   此时引擎仍存活，并将进入结算或退出过渡 (C7-S2)；
  * - 引擎级监听器不随插件移除而注销：插件调用 engine.removePlugin(this) 自移除时，
  *   必须同时把注册到 engine.getListenerManager() 的监听器 removeListener 掉；
- * - 引擎、插件、监听器与舰船引用禁止跨战斗缓存(C6-S3)：本类所有状态
+ * - 引擎、插件、监听器与舰船引用禁止跨战斗缓存 (C6-S3)：本类所有状态
  *   都只属于当前这场战斗，战斗结束由引擎销毁统一释放。
  */
 public class GearInCombatLifecyclePlugin extends BaseEveryFrameCombatPlugin {
@@ -488,7 +490,7 @@ public class GearInCombatLifecyclePlugin extends BaseEveryFrameCombatPlugin {
             return; // init() 不保证先于 advance() 执行，必须判 null
         }
         if (engine.isPaused()) {
-            return; // 暂停守卫(C7-S1)
+            return; // 暂停守卫 (C7-S1)
         }
         if (finalized) {
             return;
@@ -530,7 +532,7 @@ import com.fs.starfarer.api.combat.listeners.FleetMemberDeploymentListener;
 
 /**
  * 引擎级部署监听器：FleetMemberDeploymentListener 只能注册到引擎，
- * 注册到舰船不会生效(CombatListenerUtil 只查引擎级表)。
+ * 注册到舰船不会生效 (CombatListenerUtil 只查引擎级表)。
  * 部署计数是本场战斗的状态，随战斗结束与监听器一起释放。
  * 绑定位置：由 GearInCombatLifecyclePlugin.init() 注册到 engine.getListenerManager()。
  */

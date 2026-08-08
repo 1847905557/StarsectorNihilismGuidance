@@ -57,8 +57,8 @@
 
 ### 读取战斗引擎
 
-- `isInCampaign()`：这场战斗发生在生涯里 (含生涯内的模拟战) 返回 `true`；战役 (mission) 与主菜单模拟战返回 `false`(API javadoc："true if this battle is inside the campaign, false otherwise (i.e., mission or simulation, including in-campaign simulations)")。
-- `isInCampaignSim()` / `isSimulation()` / `isMission()`：三层细分 —— 生涯内模拟战只有 `isInCampaignSim()` 为 `true`；主菜单模拟战 `isSimulation()` 为 `true`；战役 `isMission()` 为 `true` 且 `getMissionId()` 返回战役 ID(如 `GearIn_test` 测试战役)。
+- `isInCampaign()`：返回目标是生涯状态且当前战斗不是模拟战才为 `true`；战役 (mission) 与模拟战 (包括生涯内模拟战) 返回 `false`。
+- `isInCampaignSim()` / `isSimulation()` / `isMission()`：三层细分 —— 生涯内模拟战的 `isInCampaignSim()` 与 `isSimulation()` 均为 `true`、`isInCampaign()` 为 `false`；主菜单模拟战只有 `isSimulation()` 为 `true`；战役 `isMission()` 为 `true` 且 `getMissionId()` 返回战役 ID(如 `GearIn_test` 测试战役)。
 - 用途：同一段逻辑在不同战斗类型下行为不同时 (例如只在生涯遭遇战里开启某机制)，先读这几个标志，不要在 `init` 里猜。
 
 ### 读取玩家舰船
@@ -398,9 +398,9 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 完整最小例：战斗状态读取 —— 引擎状态、时间语义与舰队/舰船遍历。
  *
- * 本插件由战斗上下文注册(C7-S1 的插件模型)，只在本场战斗内有效：
- * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存(C6-S3)；
- * - advance() 在暂停时仍会被调用(combatMap.advance 照常执行)，
+ * 本插件由战斗上下文注册 (C7-S1 的插件模型)，只在本场战斗内有效：
+ * - 引擎引用在 init() 中保存，只在本场战斗使用；禁止跨战斗缓存 (C6-S3)；
+ * - advance() 在暂停时仍会被调用 (combatMap.advance 照常执行)，
  *   状态推进前必须先检查 engine.isPaused()；
  * - getShips() 包含残骸与等待移除的舰船，遍历必须用 isAlive() 过滤；
  * - 战机停在甲板时 isAlive() 仍为 true，但不在 getShips() 的列表里；
@@ -427,7 +427,7 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine.isPaused()) {
-            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进(C7-S1)
+            return; // 暂停守卫：暂停时 advance 仍会被调用，状态不得推进 (C7-S1)
         }
         reportInterval.advance(amount);
         if (reportInterval.intervalElapsed()) {

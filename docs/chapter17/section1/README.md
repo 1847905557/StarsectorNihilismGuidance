@@ -28,7 +28,7 @@
 
 ## 文件与 API 链路
 
-`ModManagerAPI.isModEnabled` 判断启用状态；入口类只引用 `GearInCompatBridge`；外层桥接类只包含原版类型；私有 `LunaAdapter` 直接引用 LunaLib，并且只在启用分支首次调用时加载。两个静态布尔值分别限制 Nexerelin 与 LunaLib 的缺席日志。
+`ModManagerAPI.isModEnabled` 判断启用状态；入口类只引用 `GearInCompatBridge`；外层桥接类只包含原版类型；私有 `LunaAdapter` 直接引用 LunaLib，并且只在启用分支首次调用时加载。`lunalib` 是库启用 ID，`gear_in` 是设置拥有者 ID。
 
 ### 用准确 MOD id 判断启用状态
 
@@ -83,11 +83,18 @@ if (!lunaMissingReported) {
 **插入位置：`LunaAdapter.getFullGraphicEffect()`。** 在拆箱前提供调用方默认值。
 
 ```java
-Boolean value = LunaSettings.getBoolean("gear_in", "showFx");
+Boolean value = LunaSettings.getBoolean(SETTINGS_OWNER_MOD_ID, "GearIn_fullGraphicEffect");
 return value == null ? true : value;
 ```
 
 完成信号：缺键时使用页面声明的默认设置。
+
+**插入位置：`data/config/LunaSettings.csv`。** 注册同一个字段 ID。
+
+```csv
+fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab
+GearIn_fullGraphicEffect,Full graphic effect,Boolean,true,,,,,GearIn
+```
 
 ## 排查关键故障
 
@@ -96,7 +103,7 @@ return value == null ? true : value;
 ```java
 if (Global.getSettings().getModManager().isModEnabled("lunalib")) {
 }
-LunaSettings.getBoolean("gear_in", "showFx");
+LunaSettings.getBoolean("gear_in", "GearIn_fullGraphicEffect");
 ```
 
 实际症状：未安装 LunaLib 时仍抛 NoClassDefFoundError。
@@ -134,8 +141,9 @@ return true;
 1. 启动并读档，记录两个 `is*Enabled()` 的返回值。
 2. 连续调用 `getFullGraphicEffect(true)` 100 次，记录返回值和缺席日志条数。
 3. 连续调用 `reportNexerelinFallback()` 100 次，记录 Nexerelin 缺席日志条数。
-4. LunaLib 启用时分别测试设置值 true、false 和字段缺失。
-5. 两个库都缺席时进入基础战斗与生涯界面，确认非兼容内容可用。
+4. LunaLib 启用时分别测试设置值 true、false 和字段缺失，并在另一个 MOD 中建立同名字段。
+5. 修改另一个 MOD 的同名字段，确认 GearIn 的读取结果保持不变。
+6. 两个库都缺席时进入基础战斗与生涯界面，确认非兼容内容可用。
 
 预期结果：
 
@@ -143,6 +151,7 @@ return true;
 - LunaLib 缺席时 100 次读取均返回 fallback，缺席日志为 1 条；
 - Nexerelin 缺席时 100 次报告只产生 1 条战略接入禁用日志；
 - LunaLib 字段存在时返回实际值，字段缺失时返回 fallback；
+- 另一个 MOD 的同名字段变化不会改变 GearIn 的读取结果；
 - 两个库都缺席时基础内容仍可进入，没有 `NoClassDefFoundError`。
 
 ## 故障分析
@@ -171,6 +180,7 @@ import com.fs.starfarer.api.Global;
 public final class GearInCompatBridge {
     public static final String NEX_MOD_ID = "nexerelin";
     public static final String LUNA_MOD_ID = "lunalib";
+    public static final String SETTINGS_OWNER_MOD_ID = "gear_in";
     public static final String FULL_GRAPHIC_FIELD = "GearIn_fullGraphicEffect";
 
     private static boolean nexMissingReported;
@@ -210,7 +220,7 @@ public final class GearInCompatBridge {
     private static final class LunaAdapter {
         private static boolean getFullGraphicEffect(boolean fallback) {
             Boolean value = lunalib.lunaSettings.LunaSettings.getBoolean(
-                    LUNA_MOD_ID, FULL_GRAPHIC_FIELD);
+                    SETTINGS_OWNER_MOD_ID, FULL_GRAPHIC_FIELD);
             return value == null ? fallback : value;
         }
     }

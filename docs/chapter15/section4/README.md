@@ -24,7 +24,7 @@
 
 ## common 的位置与语义
 
-游戏存档目录由启动器决定，MOD 不应把绝对路径写入代码。相对 common 文件名由 MOD 自己命名，例如 `gear_in/state.json`；实际文件位于 `<存档目录>/common/gear_in/state.json`。
+游戏存档目录由启动器决定，MOD 不应把绝对路径写入代码。相对 common 文件名由 MOD 自己命名，例如 `gear_in/state.json`；实际文件位于 `<存档目录>/common/gear_in/state.json.data`。
 
 MOD 资源目录提供随 MOD 发布的只读输入，common 则保存运行期间产生的持久状态。common 文件属于当前用户数据；代码只读写自己的相对文件，不覆盖其他 MOD 的内容。
 
@@ -33,7 +33,10 @@ MOD 资源目录提供随 MOD 发布的只读输入，common 则保存运行期�
 原版 `SettingsAPI` 提供 common 文本和 JSON 读取入口。LazyLib `JSONUtils.loadCommonJSON` 返回 `CommonDataJSONObject`，可以使用 `get`、`has` 和 `opt` 方法读取字段。
 
 ```java
-JSONObject state = Global.getSettings().readJSONFromCommon("gear_in/state.json");
+JSONObject state = new JSONObject();
+if (Global.getSettings().fileExistsInCommon("gear_in/state.json")) {
+    state = Global.getSettings().readJSONFromCommon("gear_in/state.json", false);
+}
 int battles = state.optInt("battles", 0);
 String schema = state.optString("schema", "1");
 ```
@@ -45,7 +48,7 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json"))
 }
 ```
 
-文件不存在时，读取结果可能是空对象或空文本，具体取决于入口。代码把缺失文件和缺失键作为初始化状态，并在内存中补齐可运行值。
+文件不存在时，文本入口返回空字符串，LazyLib `loadCommonJSON` 捕获解析异常并返回空对象。原版 `readJSONFromCommon` 会抛 `JSONException`，因此直接读取前先检查文件是否存在。
 
 ### 版本字段
 
@@ -93,7 +96,7 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json"))
 }
 ```
 
-`put` 只改变内存对象；`close()` 不代替 `save()`。写入后重新加载文件，才能确认磁盘内容已经更新。
+`put` 先改变内存对象；`close()` 会调用 `save()` 完成写盘。try-with-resources 块结束时数据即保存，显式 `save()` 用于块内提前持久化；写入后重新加载文件，才能确认磁盘内容已经更新。
 
 ### 读 —— 改 —— 写与迁移
 
@@ -142,7 +145,7 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json"))
 - **读取可选字段时抛出异常**：代码直接对缺失键使用 `get`。初始化字段改用 `opt` 或先调用 `has`，再用旧存档复验。
 - **旧存档载入后行为异常**：数据缺少版本字段，或迁移分支没有覆盖该版本。先读取版本并执行对应迁移，再核对升级后的字段。
 - **升级后未知字段消失**：迁移时重建了只含已知字段的新对象。改为在原对象上补充和转换字段，保存后确认未知键仍在。
-- **重启后数值恢复为零**：代码只修改内存 JSON，没有调用 common 写入入口。集中调用 `save()` 或 `writeJSONToCommon`，重启后重新读取数值。
+- **重启后数值恢复为零**：普通 `JSONObject` 只在内存中修改，没有传给 common 写入入口；或 `CommonDataJSONObject` 既未显式保存也未关闭。调用对应写入入口，或让 try-with-resources 正常关闭对象，重启后重新读取数值。
 - **文件内容被缺省值覆盖**：载入时把完整缺省对象写回了已有文件。只为缺失键填充默认值，保存后确认用户字段未变化。
 - **用户设置被自动改回**：代码直接写入了设置库管理的 common 文件。改由设置库读取和保存，再重启确认面板值保持一致。
 - **写入后 common 文件无法解析**：写入过程覆盖了原文件且失败时没有保留副本。使用原子写入入口并保留旧文件，再写入和读取一次确认 JSON 完整。

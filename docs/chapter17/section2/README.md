@@ -135,7 +135,7 @@ gear_industry
 
 ## 验证方案
 
-1. 构建示例 MOD，确认两个探针类能够在 Nexerelin 0.11.3x 环境下编译。
+1. 构建示例 MOD，确认两个探针类能够针对当前安装的 `ExerelinCore.jar` 编译。
 2. 启动新档，确认 GearIn 出现在势力选择列表，并记录探针输出。
 3. 触发至少一次外交关系变化，核对独立势力与海盗关系没有越过配置边界。
 4. 查看联盟界面，确认实际联盟状态与探针的 `alliedWithHegemony` 输出一致。
@@ -176,14 +176,14 @@ import exerelin.world.ExerelinCorvusLocations;
 
 /**
  * Nexerelin 软依赖适配器：把对 exerelin.* 的直接引用全部收敛在本类，
- * 工程里只有本类与特遣队命名器(GearInSpecialForcesNamer，仅被 Nexerelin
- * 按配置类名加载)出现 exerelin.* 类名。
+ * 工程里只有本类与特遣队命名器 (GearInSpecialForcesNamer，仅被 Nexerelin
+ * 按配置类名加载) 出现 exerelin.* 类名。
  *
- * 调用链(软依赖组合判据)：
+ * 调用链 (软依赖组合判据)：
  *   isModEnabled 判定 MOD 启用状态 -> SectorManager.getManager() 判管理器
- *   是否已创建(null 守卫)-> isCorvusMode() 判当前模式。
- * NexConfig.getFactionConfig 读取本 MOD 势力配置(经 mod_factions.csv 注册)；
- * ExerelinCorvusLocations 读取本 MOD 的出生点行(corvus_spawnpoints.csv)。
+ *   是否已创建 (null 守卫)-> isCorvusMode() 判当前模式。
+ * NexConfig.getFactionConfig 读取本 MOD 势力配置 (经 mod_factions.csv 注册)；
+ * ExerelinCorvusLocations 读取本 MOD 的出生点行 (corvus_spawnpoints.csv)。
  * Nexerelin 未启用时全部回落降级值，不抛异常。
  */
 public class GearInNexCompat {
@@ -197,7 +197,7 @@ public class GearInNexCompat {
     private GearInNexCompat() {
     }
 
-    /** 判据一：Nexerelin 是否在启用列表(启动器 MOD 管理器按 id 逐字比较，大小写敏感)。 */
+    /** 判据一：Nexerelin 是否在启用列表 (启动器 MOD 管理器按 id 逐字比较，大小写敏感)。 */
     public static boolean isNexEnabled() {
         return Global.getSettings().getModManager().isModEnabled(NEX_MOD_ID);
     }
@@ -218,8 +218,8 @@ public class GearInNexCompat {
 
     /**
      * 读取本 MOD 势力配置的 marketSpawnWeight(随机星域模式的市场份额倍率)。
-     * NexConfig.getFactionConfig 未注册时回退默认配置(neutral)，不抛异常 ——
-     * "读到的不是自己的配置"是该 API 的静默失败模式(mod_factions.csv 漏写时
+     * NexConfig.getFactionConfig 未注册时回退默认配置 (neutral)，不抛异常 ——
+     * "读到的不是自己的配置" 是该 API 的静默失败模式 (mod_factions.csv 漏写时
      * playableFaction 读回 false)。
      */
     public static float getFactionMarketSpawnWeight(String factionId) {

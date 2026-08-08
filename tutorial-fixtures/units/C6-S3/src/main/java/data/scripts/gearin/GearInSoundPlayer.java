@@ -7,13 +7,13 @@ import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.CombatEntityAPI;
 
 /**
- * 角色：SoundPlayerAPI 声音播放入口(UI / 位置 / 循环三契约)。
+ * 角色：SoundPlayerAPI 声音播放入口 (UI / 位置 / 循环三契约)。
  *
  * 全部方法是静态工具，可从任何已注册的脚本/插件调用；getSoundPlayer() 在
  * 任何阶段都非 null(Global 生命周期规则 1)，因此无需判空。
  *
  * 声音 ID GearIn_system_loop / GearIn_weapon_fire 由 C5-S1 声明、C5-S2 注册，
- * 本单元只消费(完整消费者族谱见 C5-S3)。
+ * 本单元只消费 (完整消费者族谱见 C5-S3)。
  */
 public class GearInSoundPlayer {
 
@@ -24,7 +24,7 @@ public class GearInSoundPlayer {
         // 工具类：不实例化
     }
 
-    /** UI 音效：素材应为双声道(API 注释 "UI sound files should be stereo")。 */
+    /** UI 音效：素材应为双声道 (API 注释 "UI sound files should be stereo")。 */
     public static void playUISound(float pitch, float volume) {
         Global.getSoundPlayer().playUISound(SOUND_ID_WEAPON_FIRE, pitch, volume);
     }

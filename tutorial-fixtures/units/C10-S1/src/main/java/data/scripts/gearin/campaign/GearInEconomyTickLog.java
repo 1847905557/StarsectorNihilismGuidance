@@ -6,7 +6,7 @@ import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.econ.EconomyAPI.EconomyUpdateListener;
 
 /**
- * 经济更新监听器(EconomyUpdateListener 角色)：记录下一个经济步的第一次
+ * 经济更新监听器 (EconomyUpdateListener 角色)：记录下一个经济步的第一次
  * commodityUpdated 与整轮 economyUpdated，之后 isEconomyListenerExpired() 返回 true，
  * 引擎在下一个经济步自动从监听器列表移除。
  *

@@ -18,15 +18,15 @@ import com.fs.starfarer.api.ui.TooltipMakerAPI;
 import com.fs.starfarer.api.util.Misc;
 
 /**
- * 完整最小例：枢纽任务(HubMission)——Intel、阶段、目标与事件链。
+ * 完整最小例：枢纽任务 (HubMission)——Intel、阶段、目标与事件链。
  *
  * 任务 ID：gearInHub(bar_events.csv 的 mission id 列 = 本类在 CSV 的 spec id；
  * 该 ID 的消费者：HubMissionBarEventWrapper.setMissionId、规则分类前缀
  * gearInHub_blurbBar / gearInHub_optionBar、交互内存键 $gearInHub_stage、
  * mission ref 键 $gearInHub_ref)。本节所有权，不含工作单元编号变体。
  *
- * 注册入口：data/campaign/bar_events.csv 一行(plugin 列 = 本类全名)+ rules.csv
- * 六条规则(blurbBar / optionBar / startBar / 任务文本 / 数据收讫 / 交付结算)，见页面正文。
+ * 注册入口：data/campaign/bar_events.csv 一行 (plugin 列 = 本类全名)+ rules.csv
+ * 六条规则 (blurbBar / optionBar / startBar / 任务文本 / 数据收讫 / 交付结算)，见页面正文。
  * 展示链路：BarEventManager -> SpecBarEventCreator(isMission 判定)->
  * HubMissionBarEventWrapper -> shouldShowAtMarket / createAndAbortIfFailed(true)
  * -> updateInteractionData -> FireBest gearInHub_blurbBar / gearInHub_optionBar。
@@ -37,15 +37,15 @@ import com.fs.starfarer.api.util.Misc;
  * 1. Intel：本类经 BaseHubMission 继承 BaseIntelPlugin——accept 时 addIntel
  *    (Intel 界面可见)+ addScript(每帧推进)，结束时 endAfterDelay(3 游戏日)
  *    -> notifyEnded -> removeScript；
- * 2. 阶段：Stage 枚举四态(CONTACT -> RETURN -> COMPLETED / FAILED)，
+ * 2. 阶段：Stage 枚举四态 (CONTACT -> RETURN -> COMPLETED / FAILED)，
  *    setCurrentStage 切阶段时登记/解除 makeImportant 地图标记并发送下一步更新；
- * 3. 目标完成检测三通道：对话驱动(rules 写 $gearInHub_dataReceived /
+ * 3. 目标完成检测三通道：对话驱动 (rules 写 $gearInHub_dataReceived /
  *    $gearInHub_delivered + Call $gearInHub_ref updateStage，走 MemoryBooleanChecker
- *    连接)、帧推进轮询(tracker 每 0.09-0.11 游戏天查连接)、时限
+ *    连接)、帧推进轮询 (tracker 每 0.09-0.11 游戏天查连接)、时限
  *    (setTimeLimit(Stage.FAILED, 60, null) 到期切失败)；
  * 4. 事件链：两个一次性触发器 —— 进入 RETURN 阶段时写全局内存标记
- *    (AlwaysTrueChecker)，任务进行满 30 游戏天时写半程标记(DaysElapsedChecker)；
- * 5. 奖励：信用点(按距离与质量折算)与双声望(人物 MEDIUM / 势力 LOW)。
+ *    (AlwaysTrueChecker)，任务进行满 30 游戏天时写半程标记 (DaysElapsedChecker)；
+ * 5. 奖励：信用点 (按距离与质量折算) 与双声望 (人物 MEDIUM / 势力 LOW)。
  */
 public class GearInHubMission extends HubMissionWithBarEvent {
 
@@ -69,7 +69,7 @@ public class GearInHubMission extends HubMissionWithBarEvent {
 
     @Override
     public boolean shouldShowAtMarket(MarketAPI market) {
-        // 酒吧路线：create() 之前被调用(HubMissionBarEventWrapper.shouldShowAtMarket)。
+        // 酒吧路线：create() 之前被调用 (HubMissionBarEventWrapper.shouldShowAtMarket)。
         // 本示例任何有太空港的市场都可出现。
         return market.hasSpaceport();
     }
@@ -77,7 +77,7 @@ public class GearInHubMission extends HubMissionWithBarEvent {
     @Override
     protected boolean create(MarketAPI createdAt, boolean barEvent) {
         if (barEvent) {
-            // 酒吧路线需要自己生成给任务者(联系人路线由 hub 的 getPerson() 提供)。
+            // 酒吧路线需要自己生成给任务者 (联系人路线由 hub 的 getPerson() 提供)。
             setGiverRank(Ranks.CITIZEN);
             setGiverPost(Ranks.POST_TRADER);
             setGiverImportance(pickImportance());
@@ -115,7 +115,7 @@ public class GearInHubMission extends HubMissionWithBarEvent {
         setSuccessStage(Stage.COMPLETED);
         setFailureStage(Stage.FAILED);
 
-        // ---- 目标完成检测：内存标志连接(对话驱动，rules 置位 + Call updateStage)----
+        // ---- 目标完成检测：内存标志连接 (对话驱动，rules 置位 + Call updateStage)----
         setStageOnMemoryFlag(Stage.RETURN, sourceContact, "$gearInHub_dataReceived");
         setStageOnMemoryFlag(Stage.COMPLETED, giver, "$gearInHub_delivered");
 
@@ -127,11 +127,11 @@ public class GearInHubMission extends HubMissionWithBarEvent {
         makeImportant(giver, "$gearInHub_returnMark", Stage.RETURN);
 
         // ---- 事件链：一次性触发器 ----
-        // 进入 RETURN 阶段即写全局标记(AlwaysTrueChecker 恒真，进阶段即触发)。
+        // 进入 RETURN 阶段即写全局标记 (AlwaysTrueChecker 恒真，进阶段即触发)。
         beginCustomTrigger(new AlwaysTrueChecker(), Stage.RETURN);
         triggerSetGlobalMemoryValue("$gearInHub_enteredReturn", true);
         endTrigger();
-        // 任务进行满 30 游戏天(无论停在哪个阶段)写半程标记。
+        // 任务进行满 30 游戏天 (无论停在哪个阶段) 写半程标记。
         // 注意：beginDaysElapsedTrigger(float, Object...) 与 (float, Object, Object...)
         // 两个重载在三个实参时会歧义，这里直接用它内部构造的 DaysElapsedChecker。
         beginCustomTrigger(new DaysElapsedChecker(MISSION_DAYS / 2f, this), Stage.CONTACT, Stage.RETURN);
@@ -151,7 +151,7 @@ public class GearInHubMission extends HubMissionWithBarEvent {
 
     @Override
     protected void updateInteractionDataImpl() {
-        // 写规则变量(LOCAL 人物内存，随档持久；$gearInHub_stage 由基类自动写)。
+        // 写规则变量 (LOCAL 人物内存，随档持久；$gearInHub_stage 由基类自动写)。
         set("$gearInHub_reward", Misc.getWithDGS(reward));
         set("$gearInHub_targetMarketName", targetMarket.getName());
         set("$gearInHub_dist", getDistanceLY(targetMarket));

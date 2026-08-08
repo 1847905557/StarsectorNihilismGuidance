@@ -122,9 +122,9 @@ import com.fs.starfarer.api.campaign.econ.MarketAPI;
 import com.fs.starfarer.api.campaign.econ.MarketConditionAPI;
 
 /**
- * 本节示例：代码路径建市场的载体类(角色：市场工厂)。
+ * 本节示例：代码路径建市场的载体类 (角色：市场工厂)。
  * 由 GearInSystemGenerator.generate 调用：每个实体一行 createMarket(...)，
- * 即可完成条件/产业/子市场填充与注册三步收尾(economy.addMarket / setMarket / setFaction)。
+ * 即可完成条件/产业/子市场填充与注册三步收尾 (economy.addMarket / setMarket / setFaction)。
  */
 public class GearInMarketFactory {
 
@@ -185,7 +185,7 @@ public class GearInMarketFactory {
 
 - **行星有市场图标但交易面板打不开**：检查 `Global.getSector().getEconomy().addMarket`、`entity.setMarket` 和 `entity.setFaction` 是否全部执行。三处分别负责经济集合、实体关系和势力归属。补齐调用后创建新档，点击行星应能打开交易面板。
 - **市场条件或产业没有出现**：逐字核对注册表 ID。`population_4`、`spaceport` 和 `open_market` 是不同文件里的 spec，拼写错误会在添加阶段暴露。修正后创建新档，市场详情应列出对应条件、产业和子市场。
-- **商品注册成功但市场没有库存**：商品注册只建立商品 spec；市场库存需要经济迭代、产业供需或控制台添加。先用 `addcommodity` 确认商品可进入货舱，再核对产业供需来源；经济迭代后，交易界面应出现相应库存。
+- **商品注册成功但市场没有库存**：商品注册只建立商品 spec；市场库存需要经济迭代、产业供需或控制台添加。先用 `additem` 确认商品可进入货舱，再核对产业供需来源；经济迭代后，交易界面应出现相应库存。
 
 ## 总结
 

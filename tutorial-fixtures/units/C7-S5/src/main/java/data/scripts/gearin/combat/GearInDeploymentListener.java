@@ -9,7 +9,7 @@ import com.fs.starfarer.api.combat.listeners.FleetMemberDeploymentListener;
 
 /**
  * 引擎级部署监听器：FleetMemberDeploymentListener 只能注册到引擎，
- * 注册到舰船不会生效(CombatListenerUtil 只查引擎级表)。
+ * 注册到舰船不会生效 (CombatListenerUtil 只查引擎级表)。
  * 部署计数是本场战斗的状态，随战斗结束与监听器一起释放。
  * 绑定位置：由 GearInCombatLifecyclePlugin.init() 注册到 engine.getListenerManager()。
  */

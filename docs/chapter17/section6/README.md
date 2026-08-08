@@ -12,7 +12,7 @@
 
 - 让 Nexerelin 通过配置加载 GearIn 特遣队命名器；
 - 处理来源市场缺失和名称重复请求；
-- 注册一次持久监听器，分别记录入侵回合、结束和市场转移。
+- 注册一次瞬态监听器，分别记录入侵回合、结束和市场转移；读档后由生涯初始化入口重新注册。
 
 ## 前置知识
 
@@ -61,7 +61,7 @@ return num + ordinalSuffix(num) + " " + marketName + " Forgeguard";
 
 ### 记录入侵结果和市场转移
 
-**插入位置：`GearInInvasionReporter` 的四个回调和 `register()`。** 保存市场 ID、回合强度、胜负和新所有者，并用持久监听器接入场景。
+**插入位置：`GearInInvasionReporter` 的四个回调和 `register()`。** 保存市场 ID、回合强度、胜负和新所有者，并用瞬态监听器接入场景。
 
 ```java
 LOG.info("GearIn invasion finished: " + market.getId() + " success=" + success);
@@ -70,11 +70,13 @@ LOG.info("GearIn invasion finished: " + market.getId() + " success=" + success);
 注册片段：
 
 ```java
-Global.getSector().getListenerManager()
-        .addListener(new GearInInvasionReporter(), true);
+ListenerManagerAPI listeners = Global.getSector().getListenerManager();
+if (!listeners.hasListenerOfClass(GearInInvasionReporter.class)) {
+    listeners.addListener(new GearInInvasionReporter(), true);
+}
 ```
 
-完成信号：每次入侵结束只出现一条 `finished` 与 `transfer` 日志。
+完成信号：重复调用注册入口仍只有一个监听器实例；每次入侵结束只出现一条 `finished` 与 `transfer` 日志。
 
 ### 入侵回调职责速查表
 
@@ -116,7 +118,7 @@ public class GearInSpecialForcesNamer implements SpecialForcesNamer {
 ## 验证方案
 
 1. 构建示例 MOD，确认命名器和监听器都能编译。
-2. 在生涯初始化阶段调用 `GearInInvasionReporter.register()` 一次。
+2. 在生涯初始化阶段调用 `GearInInvasionReporter.register()`，并在读档后的初始化入口再次调用。
 3. 生成 GearIn 特遣队，记录来源市场存在和缺失两种名称。
 4. 完成一轮入侵，按回合、结束和市场转移顺序核对日志。
 
@@ -126,7 +128,7 @@ public class GearInSpecialForcesNamer implements SpecialForcesNamer {
 - 正常与缺失 origin 都返回非空名称；
 - 连续请求能得到不同编号候选；
 - 每次入侵结束只出现一条 `finished` 与 `transfer` 日志；
-- 重启或重复初始化不会增加持久监听器副本。
+- 重启或重复初始化不会增加瞬态监听器副本；读档后再次注册仍只保留一个实例。
 
 ## 故障分析
 
@@ -137,7 +139,7 @@ public class GearInSpecialForcesNamer implements SpecialForcesNamer {
 
 ## 总结
 
-命名器必须能被配置加载、能处理 `origin` 缺失，也要接受重复请求。事件监听器按事件阶段记录不同事实；持久注册一次，日志才会与一次入侵对应。
+命名器必须能被配置加载、能处理 `origin` 缺失，也要接受重复请求。事件监听器按事件阶段记录不同事实；每次生涯初始化只幂等注册一个瞬态监听器，读档后重新注册，日志才会与一次入侵对应。
 
 ## 建议参考项
 
@@ -154,6 +156,7 @@ import java.util.List;
 import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI;
 import com.fs.starfarer.api.campaign.CampaignFleetAPI;
 import com.fs.starfarer.api.campaign.CargoAPI;
 import com.fs.starfarer.api.campaign.FactionAPI;
@@ -168,7 +171,10 @@ public final class GearInInvasionReporter implements InvasionListener {
     private static final Logger LOG = Global.getLogger(GearInInvasionReporter.class);
 
     public static void register() {
-        Global.getSector().getListenerManager().addListener(new GearInInvasionReporter(), true);
+        ListenerManagerAPI listeners = Global.getSector().getListenerManager();
+        if (!listeners.hasListenerOfClass(GearInInvasionReporter.class)) {
+            listeners.addListener(new GearInInvasionReporter(), true);
+        }
     }
 
     @Override
@@ -219,7 +225,7 @@ import exerelin.campaign.intel.specialforces.namer.SpecialForcesNamer;
  * 特遣队命名器：实现 Nexerelin 的 SpecialForcesNamer 接口。
  * 注册方式：gear_industry.json 的 specialForcesNamerClass 指向本类；
  * 由 Nexerelin 在生成特遣队时经脚本类加载器 loadClass + newInstance
- * (无参构造)后调用 getFleetName，至多重试 25 次直到名字不重复。
+ * (无参构造) 后调用 getFleetName，至多重试 25 次直到名字不重复。
  *
  * 命名形如 "1st GearIn Prime Forgeguard"：以起源市场命名，编号随机，
  * 降低与既有特遣队撞名概率；origin 缺失时回退势力首个市场，再回退 "GearIn"。

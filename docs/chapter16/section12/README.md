@@ -1,6 +1,6 @@
-# 用 BoxUtil 排版文本、数值与界面边框
+# 用 BoxUtil 组合尾迹、扭曲与镜头光斑
 
-调试文字若只用日志，玩家看不到即时状态；若每帧重建字形，又会浪费渲染预算。本节加载一次字体，用 `TextFieldEntity` 保存三行标签，再用 `NumberObject` 和 `UIBorderObject` 直接绘制右上角状态面板。
+一次有重量的命中需要三个时间尺度：尾迹说明弹体从哪里来，扭曲表现冲击波，光斑给出瞬间亮点。本节分别创建三类实体，再由同一命中入口协调它们的寿命。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,11 +10,12 @@
 
 完成后，您将能够：
 
-- 用 `FontDataManager.tryFont()` 加载并验证 `.fnt` 字体数据；
-- 创建 `TextFieldEntity`，配置窗口正交矩阵并提交文本变化；
-- 用 `NumberObject` 绘制不需要重建字形的动态数值；
-- 用 `UIBorderObject` 建立固定尺寸面板边界；
-- 只在 `renderInUICoords()` 调用直接绘制入口。
+- 用 `TrailEntity` 把命中前后的两个世界坐标连接成渐隐路径；
+- 用 `DistortionEntity` 配置位置、三阶段尺寸、强度和环硬度；
+- 用 `RenderingUtil.SpecialFX.addDefaultDistortion()` 取得共享默认畸变实例；
+- 用 `FlareEntity` 配置位置、朝向、颜色、混合和寿命；
+- 为三个实体分别选择图层与全局计时；
+- 独立处理每次入队返回码，并删除失败实体。
 
 ## 前置知识
 
@@ -24,322 +25,245 @@
 
 ## 明确当前需求
 
-左上角显示粒子批次、活动实体数和最近一次提交结果；数值变化时文本更新，窗口缩放后仍保持边距。
+能量弹命中后，旧路径留下渐隐尾迹，命中点产生扩张扭曲和短促横向光斑；任一 shader 路径关闭时，其余效果仍可独立显示。
 
 ## 文件与 API 链路
 
-### 界面绘制对象速查表
+### 命中特效实体速查表
 
-| 对象 | 职责 |
+| 实体 | 职责 |
 |---|---|
-| `FontDataManager` | 解析 `.fnt` 并返回 `FontMapData` |
-| `TextFieldEntity` | 把文本转换成可提交的字符数据 |
-| `NumberObject` | 直接用数字 shader 绘制数值 |
-| `UIBorderObject` | 使用九宫格资源绘制固定边框 |
+| `TrailEntity` | 接收世界路径节点 |
+| `DistortionEntity` | 直接绘制三阶段冲击环 |
+| `FlareEntity` | 通过模型矩阵确定世界位置和朝向 |
 
-后三者的绘制命令都必须出现在 UI 渲染回调。
+三者都继承 BoxUtil 的全局计时与图层状态，并分别交给 `CombatRenderingManager`。
 
-### 加载并验证字体数据
+### 用两个节点建立可见尾迹
 
-**插入位置：`GearInTextField.initFont()`。** 用 MOD 资源路径解析 `.fnt`，并保留失败日志。
+**插入位置：`GearInBoxTrailEffect.make()`。** 设置首尾宽度、颜色并追加路径点。
 
 ```java
-font = FontDataManager.tryFont("graphics/fonts/insignia15LTaa.fnt");
-if (font == null || !font.isValid()) {
-    LOG.warn("GearIn box: font load failed");
+trail.addNode(first);
+trail.addNode(second);
+trail.submitNodes();
+```
+
+完成信号：返回对象至少有两个节点。
+
+### 让尾迹从亮宽过渡到透明细线
+
+**插入位置：`make()` 的颜色与宽度设置处。** 把方向感写进首尾状态，并给尾迹 1 秒总寿命。
+
+```java
+trail.setStartWidth(28f);
+trail.setEndWidth(2f);
+trail.setEndColor(new Color(20, 80, 255, 0));
+trail.setGlobalTimer(0.05f, 0.15f, 0.8f);
+```
+
+完成信号：弹体后方逐渐变细并淡出。
+
+### 配置三阶段扭曲尺寸
+
+**插入位置：`GearInImpactSpecialFX.makeDistortion()`。** 先写命中位置，再让冲击从 20 su 扩张到 180 su，强度从 0 升到 0.8 后回到 0。
+
+```java
+distortion.setLocation(location);
+distortion.setSizeIn(20f, 20f);
+distortion.setSizeFull(120f, 120f);
+distortion.setSizeOut(180f, 180f);
+distortion.setPowerIn(0f);
+distortion.setPowerFull(0.8f);
+distortion.setPowerOut(0f);
+distortion.setGlobalTimer(0.05f, 0.1f, 0.55f);
+```
+
+完成信号：命中点出现扩张环而非固定圆斑。
+
+### 比较默认畸变与手动实体
+
+**插入位置：需要统一默认冲击参数的命中入口。** 默认控制器返回 `Instance2Data`，适合直接复用共享默认时序；仍需按入队返回码处理实例所有权。
+
+```java
+Instance2Data defaultDistortion = RenderingUtil.SpecialFX
+        .addDefaultDistortion(true, 0.7f);
+```
+
+完成信号：默认路径返回可入队的实例或明确返回 `null`；手动 `DistortionEntity` 仍保留自定义尺寸、强度和环硬度。
+
+### 配置横向镜头光斑
+
+**插入位置：`GearInImpactSpecialFX.makeFlare()`。** 设置命中位置、弹体朝向、长宽、颜色、混合和 0.4 秒总寿命。
+
+```java
+flare.setLocation(location);
+flare.setFacingScale(facing, 1f, 1f);
+flare.setSize(180f, 28f);
+flare.setCoreColor(Color.WHITE);
+flare.setFringeColor(new Color(70, 200, 255, 180));
+flare.setAdditiveBlend();
+flare.setGlobalTimer(0.05f, 0.05f, 0.3f);
+```
+
+完成信号：命中瞬间出现白芯青边的短光斑。
+
+### 分别处理三个入队结果
+
+**插入位置：命中效果入口。** 每个实体独立检查返回码并释放失败项。
+
+```java
+for (RenderDataAPI effect : effects) {
+    byte state = CombatRenderingManager.addEntity(effect);
+    if (state != BoxEnum.STATE_SUCCESS) effect.delete();
 }
 ```
 
-完成信号：`getFontInfo()` 返回字体路径与原始字号；失败时文本角色保持禁用。
-
-### 建立窗口空间文本实体
-
-**插入位置：`GearInTextField.initTextEntity()`。** 确认文本 shader 可用，再创建字段、设置画布尺寸与窗口正交矩阵。
-
-```java
-textEntity = new TextFieldEntity(font, true);
-textEntity.setFieldSize(1024f, 128f);
-textEntity.addText("", 12f, Color.WHITE, false, false, false, false, 0);
-textEntity.setCustomPrimeMatrix();
-textEntity.setPrimeMatrix(TransformUtil.createWindowOrthoMatrix(null));
-```
-
-完成信号：文本实体有效，屏幕坐标不会被战斗相机缩放。
-
-### 只在字符串变化时刷新
-
-**插入位置：`GearInTextField.setText()`。** 比较旧值，修改 `TextData.text` 后标记刷新范围并提交。
-
-```java
-TextFieldEntity.TextData message = textEntity.getTextDataList().get(0);
-if (text.equals(message.text)) return;
-message.text = text;
-textEntity.setTextDataRefreshAllFromCurrentIndex();
-textEntity.submitText();
-```
-
-完成信号：静止数值期间没有重复提交。
-
-### 配置数字与固定边框
-
-**插入位置：`GearInStatusPanel` 构造方法。** 边框固定为 240 × 104 像素，数字保留 4 位整数和 0 位小数。
-
-```java
-border.setSize(240f, 104f);
-border.setColor(0.25f, 0.85f, 1f, 0.9f);
-number.setIntegerLength(4);
-number.setDecimalLength(0);
-```
-
-完成信号：边框 `isSizeValid()` 为真，三项整数使用相同的宽高和颜色参数。
-
-### 在 UI 回调发出直接绘制
-
-**插入位置：战斗插件 `renderInUICoords()`。** 调用状态面板的 `render()`，由它按当前分辨率计算右上角锚点并依次绘制边框、标签和三项数字。
-
-```java
-float x = screenWidth - PANEL_WIDTH - SCREEN_MARGIN;
-float y = screenHeight - PANEL_HEIGHT - SCREEN_MARGIN;
-border.render(x, y);
-labels.drawAt(x + 16f, y + PANEL_HEIGHT - 24f);
-number.render(batches, new Vector2f(x + 160f, y + 68f),
-        0f, 12f, 18f, false);
-```
-
-完成信号：`advance()` 只调用 `update()` 保存三个整数，UI 回调负责全部 GL 绘制。
+完成信号：关闭扭曲时尾迹与光斑仍可出现。
 
 ## 排查关键故障
 
 下面是**局部故障片段**：
 
 ```java
-public void advance(float amount) {
-    textField.drawAt(20f, 20f);
-}
+CombatRenderingManager.addEntity(distortion);
+CombatRenderingManager.addEntity(flare);
 ```
 
-实际症状：部分机器文字不显示，或后续 UI 的 GL 状态异常。
+实际症状：关闭 distortion shader 后，命中效果偶发积累无效对象并增加显存占用。
 
-原因：directDraw 在逻辑推进回调发出，没有处于正确渲染上下文。
+原因：调用方忽略入队返回码，也没有释放失败实体。
 
 下面是**局部修正片段**：
 
 ```java
-public void renderInUICoords(ViewportAPI viewport) {
-    textField.drawAt(20f, 20f);
-}
+byte state = CombatRenderingManager.addEntity(effect);
+if (state != BoxEnum.STATE_SUCCESS) effect.delete();
 ```
 
-复验：把绘制移入 UI 回调，连续切换暂停、战斗界面和两种分辨率，确认文本、数字与边框保持同一锚点。
+复验：关闭单项效果并连续命中 100 次，分别统计三个 `addEntity()` 返回码，确认其余效果正常且每个失败对象都执行删除。
 
 ## 完整最小例
 
-`GearInTextField` 管理字体、字符数据与文本直接绘制；`GearInStatusPanel` 管理固定布局、数字和边框。战斗插件在逻辑回调更新数值，在 UI 回调调用一次 `render()`。
+两个完整类只构造效果。命中入口传入两个轨迹点、命中位置和弹体朝向，再逐项入队；构造器已经写好世界位置、图层与寿命。
 
 ## 验证方案
 
-前置数据：BoxUtil 字体、文本和数字 shader 可用，战斗插件持有一个 `GearInStatusPanel`。
+前置数据：BoxUtil 三项渲染路径可用，弹体命中效果能提供上一采样点、命中点与飞行朝向。
 
-1. 进入战斗，核对字体路径、原始字号和文本 shader 状态。
-2. 调用 `update(12, 34, 0)`，在 UI 回调中渲染面板，核对三行标签与三个整数。
-3. 连续 60 帧传入相同值，确认 `TextFieldEntity` 不重复提交标签字符数据。
-4. 把窗口切换到另一分辨率，确认面板右边和上边仍各保留 20 像素边距。
-5. 把 `render()` 临时移到 `advance()` 复现 GL 时机故障，再恢复到 UI 回调。
+1. 触发一次命中，确认尾迹连接两个输入点，并在 1 秒内渐细、淡出。
+2. 核对扭曲中心位于命中点，尺寸按 20、120、180 su 三阶段扩张，总寿命为 0.7 秒。
+3. 核对光斑位于同一命中点，长轴沿弹体朝向，总寿命为 0.4 秒。
+4. 用默认畸变路径连续触发 100 次，记录返回 `null` 的次数、入队次数和持续时间。
+5. 暂停战斗，确认三个实体的全局计时不推进；恢复后继续退出阶段。
+6. 分别关闭或破坏一项渲染路径，连续触发 100 次并统计入队失败与删除次数。
 
 预期结果：
 
-- 字体和文本 shader 有效时，标签字符数据成功提交；
-- `NumberObject` 直接绘制三项动态整数，无需为每次变化重建文本；
-- `UIBorderObject` 使用稳定的 240 × 104 像素尺寸；
-- 分辨率变化后面板仍以 20 像素边距锚定右上角；
-- 逻辑更新与直接绘制分属各自回调，界面没有未处理异常。
+- 尾迹至少有两个节点，并按首尾宽度、颜色和全局计时变化；
+- 扭曲的位置、尺寸、强度和环硬度都来自命中参数与构造器状态；
+- 光斑位置与朝向正确，使用白芯青边的加法混合；
+- 默认畸变的复用次数、空值数和持续时间可与手动实体分开记录；
+- 三个实体的入队与失败清理互不依赖；
+- 单项失败不会阻止其余效果，连续命中后没有未处理异常。
 
 ## 故障分析
 
-- **文字不显示**：直接绘制发生在逻辑推进回调，没有进入正确渲染上下文。把面板 `render()` 移入 `renderInUICoords()`，再确认文字、数值和边框同时出现。
-- **更新后文字仍是旧值**：`setText` 后漏掉 refresh 或 `submitText`。补齐字形重建与提交，再改变数值确认显示同步更新。
-- **中文显示为方框**：字体数据不包含对应字形。换用覆盖目标字符集的字体并重新提交文本，确认中文能够显示。
-- **边框随文字长度跳动**：面板宽高直接依赖当前文本尺寸。使用固定或受约束的面板尺寸，连续更新长短文本后确认边框稳定。
+- **关闭扭曲后无效对象持续积累**：调用方忽略入队返回码，也没有释放失败实体。逐项检查状态，失败时立即 `delete()`；重复触发 100 次后确认失败数与删除数一致。
+- **尾迹不可见**：节点少于两个，或没有执行 `submitNodes`。补齐首尾节点并提交，再观察尾迹出现在实体后方。
+- **扭曲方向与预期相反**：`power` 使用了负值，或内外尺寸参数顺序错误。修正符号和尺寸顺序，重新触发确认扭曲方向一致。
+- **默认畸变没有返回实例**：BoxUtil 畸变开关未启用或共享控制器不可用。记录 `addDefaultDistortion()` 的空值结果，改用手动实体只作为对照，不把空值继续提交。
+- **光斑遮住整个画面**：宽高按屏幕像素填写，但实体使用世界尺度。按世界单位缩小尺寸，重新显示确认光斑只覆盖目标区域。
 
 ## 总结
 
-文本实体的昂贵步骤是字形刷新与提交，绘制入口则受渲染阶段约束。让数据更新、字形重建和 directDraw 分属正确时机，调试面板才能既即时又稳定。
+三个效果共享触发点，各自拥有节点、尺寸和寿命。独立创建、独立入队、独立失败，组合效果才能在配置降级时保持可控。
 
 ## 建议参考项
 
-- `FontDataManager`：加载与查询字体数据；
-- `TextFieldEntity`：排版和提交文本实例；
-- `renderInUICoords`：屏幕空间直接绘制入口。
-::: details 完整成品：GearInStatusPanel
+- `TrailEntity`：路径型尾迹；
+- `DistortionEntity`：环形空间扭曲；
+- `FlareEntity`：核心与边缘可调的光斑。
+- `RenderingUtil.SpecialFX.addDefaultDistortion`：取得共享默认畸变实例。
+::: details 完整成品：GearInBoxTrailEffect
 
 ```java
 package data.scripts.gearin.lib;
 
 import java.awt.Color;
 
-import org.boxutil.units.standard.misc.NumberObject;
-import org.boxutil.units.standard.misc.UIBorderObject;
+import org.boxutil.units.standard.entity.TrailEntity;
 import org.lwjgl.util.vector.Vector2f;
 
-import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineLayers;
 
-public final class GearInStatusPanel {
-    private static final float PANEL_WIDTH = 240f;
-    private static final float PANEL_HEIGHT = 104f;
-    private static final float SCREEN_MARGIN = 20f;
-
-    private final GearInTextField labels = new GearInTextField();
-    private final NumberObject number = new NumberObject();
-    private final UIBorderObject border = new UIBorderObject(false, true);
-
-    private int batches;
-    private int activeEntities;
-    private int lastSubmitState;
-
-    public GearInStatusPanel() {
-        border.setSize(PANEL_WIDTH, PANEL_HEIGHT);
-        border.setColor(0.25f, 0.85f, 1f, 0.9f);
-        number.setColor(new Color(110, 225, 255));
-        number.setIntegerLength(4);
-        number.setDecimalLength(0);
-        labels.setText("BATCHES\nACTIVE\nSUBMIT");
-    }
-
-    public void update(int batches, int activeEntities, int lastSubmitState) {
-        this.batches = batches;
-        this.activeEntities = activeEntities;
-        this.lastSubmitState = lastSubmitState;
-    }
-
-    public void render() {
-        float x = Global.getSettings().getScreenWidthPixels()
-                - PANEL_WIDTH - SCREEN_MARGIN;
-        float y = Global.getSettings().getScreenHeightPixels()
-                - PANEL_HEIGHT - SCREEN_MARGIN;
-        border.render(x, y);
-        labels.drawAt(x + 16f, y + PANEL_HEIGHT - 24f);
-        number.render(batches, new Vector2f(x + 160f, y + 68f),
-                0f, 12f, 18f, false);
-        number.render(activeEntities, new Vector2f(x + 160f, y + 42f),
-                0f, 12f, 18f, false);
-        number.render(lastSubmitState, new Vector2f(x + 160f, y + 16f),
-                0f, 12f, 18f, false);
+public final class GearInBoxTrailEffect {
+    public TrailEntity make(Vector2f first, Vector2f second) {
+        TrailEntity trail = new TrailEntity();
+        trail.setStartWidth(28f);
+        trail.setEndWidth(2f);
+        trail.setStartColor(new Color(80, 230, 255, 220));
+        trail.setEndColor(new Color(20, 80, 255, 0));
+        trail.addNode(first);
+        trail.addNode(second);
+        trail.setFlowWhenPaused(false);
+        trail.setGlobalTimer(0.05f, 0.15f, 0.8f);
+        trail.setLayer(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
+        trail.submitNodes();
+        return trail;
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInTextField
+::: details 完整成品：GearInImpactSpecialFX
 
 ```java
 package data.scripts.gearin.lib;
 
 import java.awt.Color;
 
-import org.apache.log4j.Logger;
-import org.boxutil.base.BaseShaderData;
-import org.boxutil.define.BoxEnum;
-import org.boxutil.manager.FontDataManager;
-import org.boxutil.manager.ShaderCore;
-import org.boxutil.units.standard.attribute.FontMapData;
-import org.boxutil.units.standard.entity.TextFieldEntity;
-import org.boxutil.util.TransformUtil;
+import org.boxutil.units.standard.entity.DistortionEntity;
+import org.boxutil.units.standard.entity.FlareEntity;
+import org.boxutil.units.standard.attribute.Instance2Data;
+import org.boxutil.util.RenderingUtil;
+import org.lwjgl.util.vector.Vector2f;
 
-import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineLayers;
 
-/**
- * 字体与屏幕文本(BoxUtil 字体/绘制工具族)：FontDataManager.tryFont 解析 .fnt
- * 得到 FontMapData，TextFieldEntity 以窗口正交矩阵 + directDraw() 在渲染回调里
- * 绘制屏幕文本；文本修改后必须 setTextDataRefresh* + submitText() 才会上传。
- */
-public class GearInTextField {
-
-    private static final Logger LOG = Global.getLogger(GearInTextField.class);
-    private static final String FONT_PATH = "graphics/fonts/insignia15LTaa.fnt";
-    private static final float TEXT_SIZE = 12f;
-
-    private FontMapData font;
-    private TextFieldEntity textEntity;
-
-    /** 创建时加载字体并创建文本实体；任一环节失败则文本功能禁用(内部判空)。 */
-    public GearInTextField() {
-        initFont();
-        initTextEntity();
+public final class GearInImpactSpecialFX {
+    public Instance2Data makeDefaultDistortion(boolean additive, float duration) {
+        return RenderingUtil.SpecialFX.addDefaultDistortion(additive, duration);
     }
 
-    /** 字体信息(供 init 日志)：未加载返回 "null"，否则 "路径/字号"。 */
-    public String getFontInfo() {
-        return font == null ? "null" : FONT_PATH + "/" + font.getFontSize();
+    public DistortionEntity makeDistortion(Vector2f location) {
+        DistortionEntity distortion = new DistortionEntity();
+        distortion.setLocation(location);
+        distortion.setSizeIn(20f, 20f);
+        distortion.setSizeFull(120f, 120f);
+        distortion.setSizeOut(180f, 180f);
+        distortion.setPowerIn(0f);
+        distortion.setPowerFull(0.8f);
+        distortion.setPowerOut(0f);
+        distortion.setInnerFull(0.1f, 0.1f);
+        distortion.setRingHardness(0.75f);
+        distortion.setGlobalTimer(0.05f, 0.1f, 0.55f);
+        return distortion;
     }
 
-    /** 更新屏幕文本：改 TextData.text 后必须 refresh + submitText() 才会上传。 */
-    public void setText(String text) {
-        if (textEntity == null) {
-            return;
-        }
-        TextFieldEntity.TextData message = textEntity.getTextDataList().get(0);
-        if (text.equals(message.text)) {
-            return;
-        }
-        message.text = text;
-        textEntity.setTextDataRefreshIndex(0);
-        textEntity.setTextDataRefreshAllFromCurrentIndex();
-        byte result = textEntity.submitText();
-        if (result != BoxEnum.STATE_SUCCESS) {
-            textEntity.setShouldRenderingCharCount(0);
-        }
-    }
-
-    /** 屏幕空间绘制：只能在渲染回调(renderInUICoords)里调用(GL 命令时机)。 */
-    public void drawAt(float x, float y) {
-        if (textEntity == null || textEntity.hasDelete()) {
-            return;
-        }
-        textEntity.setLocation(x, y);
-        textEntity.setFacingScale(0f, getFontScale(), getFontScale());
-        textEntity.directDraw();
-    }
-
-    /** 字体数据加载：FontDataManager.tryFont 解析 .fnt 并登记到字体表。 */
-    private void initFont() {
-        font = FontDataManager.tryFont(FONT_PATH);
-        if (font == null || !font.isValid()) {
-            LOG.warn("GearIn box: font load failed: " + FONT_PATH);
-        }
-    }
-
-    /** 文本实体创建：字体或文本程序不可用时禁用文本并写 warn。 */
-    private void initTextEntity() {
-        if (font == null) {
-            return;
-        }
-        if (!ShaderCore.isInitialized()) {
-            LOG.warn("GearIn box: shader core not initialized, text disabled");
-            return;
-        }
-        BaseShaderData program = ShaderCore.getTextProgram();
-        if (program == null || !program.isValid()) {
-            LOG.warn("GearIn box: text program invalid, text disabled");
-            return;
-        }
-        textEntity = new TextFieldEntity(font, true);
-        if (!textEntity.isValid()) {
-            textEntity.delete();
-            textEntity = null;
-            LOG.warn("GearIn box: text field entity invalid, text disabled");
-            return;
-        }
-        textEntity.setFieldSize(1024f, 128f);
-        textEntity.addText("", TEXT_SIZE, Color.WHITE, false, false, false, false, 0);
-        textEntity.setMappingModeSubmitData(false);
-        textEntity.setCustomPrimeMatrix();
-        textEntity.setPrimeMatrix(TransformUtil.createWindowOrthoMatrix(null));
-        textEntity.setGlobalColor(Color.WHITE);
-    }
-
-    private float getFontScale() {
-        return Math.abs(font.getFontSize()) > 0f ? TEXT_SIZE / Math.abs(font.getFontSize()) : 1f;
+    public FlareEntity makeFlare(Vector2f location, float facing) {
+        FlareEntity flare = new FlareEntity();
+        flare.setLocation(location);
+        flare.setFacingScale(facing, 1f, 1f);
+        flare.setSize(180f, 28f);
+        flare.setCoreColor(Color.WHITE);
+        flare.setFringeColor(new Color(70, 200, 255, 180));
+        flare.setSmooth();
+        flare.setAdditiveBlend();
+        flare.setGlobalTimer(0.05f, 0.05f, 0.3f);
+        flare.setLayer(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
+        return flare;
     }
 }
 ```

@@ -39,7 +39,7 @@ public class GearInStateReport {
         }
     }
 
-    /** 射弹集合与导弹子集：getProjectiles() 已包含导弹(API javadoc "Includes missiles.")，不要叠加统计。 */
+    /** 射弹集合与导弹子集：getProjectiles() 已包含导弹 (API javadoc "Includes missiles.")，不要叠加统计。 */
     public static void logProjectiles(CombatEngineAPI engine) {
         List<DamagingProjectileAPI> projectiles = engine.getProjectiles();
         List<MissileAPI> missiles = engine.getMissiles();

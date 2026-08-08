@@ -15,9 +15,9 @@ import com.fs.starfarer.api.combat.EngagementResultAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Factions;
 
 /**
- * 完整最小例(对话框插件)：演示交互对话框(InteractionDialogPlugin)。
+ * 完整最小例 (对话框插件)：演示交互对话框 (InteractionDialogPlugin)。
  * 绑定位置：GearInDialogServicesScript 经 CampaignUIAPI.showInteractionDialog(plugin,
- * target) 打开(target 传 null)。optionSelected 的 optionText 是显示文本、optionData 是
+ * target) 打开 (target 传 null)。optionSelected 的 optionText 是显示文本、optionData 是
  * addOption 传入的 id，分支判断必须用 optionData；未使用的回调保留空实现。
  */
 public class GearInServicesDialog implements InteractionDialogPlugin {
@@ -71,7 +71,7 @@ public class GearInServicesDialog implements InteractionDialogPlugin {
         }
     }
 
-    // 未使用的回调保留空实现(InteractionDialogPlugin 要求全部实现)。
+    // 未使用的回调保留空实现 (InteractionDialogPlugin 要求全部实现)。
     @Override public void optionMousedOver(String optionText, Object optionData) {}
     @Override public void advance(float amount) {}
     @Override public void backFromEngagement(EngagementResultAPI battleResult) {}

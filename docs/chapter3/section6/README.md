@@ -114,7 +114,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
 /**
  * 本节示例：最小形态的 ModPlugin，本节的生成入口类。
  * mod_info.json 的 modPlugin 字段指向本类；游戏在新建生涯时调用 onNewGame()。
- * ModPlugin 各回调的完整生命周期由 C6-S2 讲解(其所有权示例类 GearInModPlugin
+ * ModPlugin 各回调的完整生命周期由 C6-S2 讲解 (其所有权示例类 GearInModPlugin
  * 位于 data.scripts.gearin 包)，本节只保留 onNewGame() 这一个生成入口。
  */
 public class GearInSystemGenPlugin extends BaseModPlugin {
@@ -122,11 +122,11 @@ public class GearInSystemGenPlugin extends BaseModPlugin {
 	@Override
 	public void onNewGame() {
 		// 生成入口：新档时序里，所有 MOD 的 onNewGame 在原版 SectorGen、
-		// generators.csv 插件之后、程序化生成(SectorProcGen)与经济加载(economy.json)之前调用，
-		// 因此这里生成的星系与实体能被后续步骤消费(市场数据路径、程序化生成)。
+		// generators.csv 插件之后、程序化生成 (SectorProcGen) 与经济加载 (economy.json) 之前调用，
+		// 因此这里生成的星系与实体能被后续步骤消费 (市场数据路径、程序化生成)。
 		new GearInSystemGenerator().generate(Global.getSector());
 
-		// 关系播种的挂载点：faction 文件不定义势力间关系，只能由代码设置(见势力单元的关系小节)
+		// 关系播种的挂载点：faction 文件不定义势力间关系，只能由代码设置 (见势力单元的关系小节)
 		seedRelations(Global.getSector());
 	}
 
@@ -158,7 +158,7 @@ import com.fs.starfarer.api.campaign.StarSystemAPI;
 
 /**
  * 本节示例：制作一个带恒星、行星、自定义实体与跳跃点的星系。
- * 实现 SectorGeneratorPlugin 只是采用生成器的"契约"写法(原版 data.scripts.world.SectorGen
+ * 实现 SectorGeneratorPlugin 只是采用生成器的 "契约" 写法 (原版 data.scripts.world.SectorGen
  * 就是 SectorGeneratorPlugin)；实际调用入口是 ModPlugin.onNewGame，见 GearInSystemGenPlugin。
  * 市场绑定由 C3-S7 的 GearInMarketFactory 负责，本类只保留世界对象生成。
  */
@@ -172,7 +172,7 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 
 		// 恒星 id "gearin" 同时是星系在 starmap.json 里的注册键：initStar 会用它查
 		// data/campaign/starmap.json 的 starSystemLocations，把结果设为星系在超空间中的坐标。
-		// 不提供该键(又不手动 setLocation)时，星系会定位在超空间原点 (0,0)。
+		// 不提供该键 (又不手动 setLocation) 时，星系会定位在超空间原点 (0,0)。
 		PlanetAPI star = system.initStar("gearin", "star_white", 600f, 550f, 3f, 0.75f, 1f);
 
 		// addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)
@@ -189,7 +189,7 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 		jump.setRelatedPlanet(prime);
 		system.addEntity(jump);
 
-		// 必须调用(或用带超空间坐标的 initStar 变体)，否则星系没有通向超空间的跳跃点，玩家无法到达
+		// 必须调用 (或用带超空间坐标的 initStar 变体)，否则星系没有通向超空间的跳跃点，玩家无法到达
 		system.autogenerateHyperspaceJumpPoints(true, true);
 
 	}

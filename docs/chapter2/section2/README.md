@@ -77,7 +77,7 @@ import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ShipAPI.HullSize;
 
 /**
- * 稳定化推进器：按舰船大小提供小幅最大速度加成，与不稳定推进器(unstable_injector)互斥。
+ * 稳定化推进器：按舰船大小提供小幅最大速度加成，与不稳定推进器 (unstable_injector) 互斥。
  * 注册在 hull_mods.csv 的 script 列；效果类每个应用会话只实例化一次。
  */
 public class GearInStableInjectorHullMod extends BaseHullMod {

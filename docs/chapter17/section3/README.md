@@ -13,6 +13,7 @@
 - 在 `SectorManager` 可用后区分 Corvus 与随机星区；
 - 为 Corvus 模式登记固定出生实体，为随机星区选择已生成市场；
 - 从同一份 Nexerelin 势力配置读取起始舰队变体。
+- 区分固定 `fleetType`、`RANDOM` 候选和无法解析的舰队类型。
 
 ## 前置知识
 
@@ -89,6 +90,26 @@ return NexConfig.getFactionConfig(factionId)
 
 完成信号：两个模式对同一个 `fleetType` 返回相同的变体 ID 列表。
 
+### 让配置选择随机开局舰队
+
+**插入位置：`GearInNexStartPlanner.chooseFleet()` 的调用方。** 传入 `RANDOM` 时由 Nexerelin 从允许随机选择的舰队类型中挑选；固定类型仍直接读取对应配置。
+
+```java
+List<String> fleet = planner.chooseFleet(factionId, "RANDOM");
+```
+
+完成信号：多次新档得到的舰队类型可能不同，但每次结果都来自允许的起始舰队集合。
+
+### 先拒绝无法解析的舰队类型
+
+**插入位置：请求进入 `getStartFleetForType()` 之前。** 用 `StartFleetType.getType()` 判断键是否存在，避免把拼写错误当成随机类型。
+
+```java
+boolean valid = NexFactionConfig.StartFleetType.getType(fleetType) != null;
+```
+
+完成信号：固定类型和 `RANDOM` 进入配置读取，未知类型在玩家放置前返回明确错误。
+
 ## 排查关键故障
 
 下面是**局部故障片段**：
@@ -123,7 +144,9 @@ if (spawnEntityId == null) {
 1. 构建示例 MOD，确认 `MarketAPI`、`NexUtilsFaction` 与开局配置方法签名匹配。
 2. 创建 Corvus 新档，记录出生实体 ID 和起始舰队变体列表。
 3. 创建随机星区新档，再次记录实体 ID 和同类型舰队列表。
-4. 临时把 GearIn 的随机星区生成权重设为 `0`，确认规划器返回 `null`，而不是一个伪造实体 ID。
+4. 以固定类型创建 1 次开局，再以 `RANDOM` 创建多次开局，记录舰队规模与类型来源。
+5. 传入未知 `fleetType`，确认规划器在玩家放置前返回错误。
+6. 临时把 GearIn 的随机星区生成权重设为 `0`，确认规划器返回 `null`，而不是一个伪造实体 ID。
 
 预期结果：
 
@@ -131,6 +154,8 @@ if (spawnEntityId == null) {
 - 固定模式返回 `corvus_spawnpoints.csv` 登记的实体；
 - 随机模式返回已生成 GearIn 市场的主实体；
 - 两个模式为同一舰队类型返回相同变体列表；
+- `RANDOM` 只从允许随机的起始舰队类型中选择；
+- 未知舰队类型不会静默退回 `RANDOM`；
 - 没有有效市场时返回 `null`，调用方能够在放置玩家前中止开局并报告原因。
 
 ## 故障分析
@@ -139,6 +164,7 @@ if (spawnEntityId == null) {
 - **Corvus 模式出生在星区中心**：CSV 路径、表头或 `entityID` 与已创建 token 不一致。改用真实实体 ID，创建固定模式新档后确认玩家出现在目标实体附近。
 - **随机模式没有 GearIn 市场**：生成权重、势力启用状态或市场生成条件不满足。检查 `getFactionMarkets(factionId)` 的数量，修正配置后确认返回值大于零。
 - **初始舰队为空**：请求的 `fleetType` 与 `startShips` 键不一致，且 fallback 已关闭。记录请求类型和返回列表，修正配置键后确认舰队成员生成。
+- **随机开局出现不允许的舰队类型**：调用方把任意字符串直接交给随机分支。先用 `StartFleetType.getType()` 和候选标志过滤，再创建新档比较结果。
 
 ## 总结
 
@@ -149,6 +175,7 @@ if (spawnEntityId == null) {
 - `SectorManager.isCorvusMode`：判断星区生成模式；
 - `corvus_spawnpoints.csv`：固定模式出生点；
 - `NexFactionConfig.getStartFleetForType`：读取起始舰队。
+- `NexFactionConfig.StartFleetType`：判断固定类型与 `RANDOM` 候选。
 ::: details 完整成品：GearInNexStartPlanner
 
 ```java
@@ -186,6 +213,9 @@ public final class GearInNexStartPlanner {
 
     public List<String> chooseFleet(String factionId, String fleetType) {
         NexFactionConfig config = NexConfig.getFactionConfig(factionId);
+        if (NexFactionConfig.StartFleetType.getType(fleetType) == null) {
+            throw new IllegalArgumentException("Unknown start fleet type: " + fleetType);
+        }
         return config.getStartFleetForType(fleetType, false, 0);
     }
 }

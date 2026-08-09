@@ -28,14 +28,13 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  * - shader 没有注册表 ID(区别于 CSV/JSON/spec 注册链)：.vert/.frag 以 MOD 根目录
  *   相对路径为身份，约定放在 data/shaders/(GraphicsLib data/shaders/post/pre.vert、
  *   data/shaders/ 同款布局)，路径必须用 / 分隔 (SettingsAPI.loadText javadoc
- *   硬规则)；反斜杠、盘符冒号、.. 与首字符 / 会在读取前被 validateFileName 直接拒绝
- *   (启动器设置的 validateFileName 抛 RuntimeException)；
+ *   硬规则)；反斜杠、盘符冒号、.. 与首字符 / 会在读取前被直接拒绝并抛 RuntimeException；
  * - 读取端行为 (文本读取工具的 readText)：按 UTF-8 解码并把全部 \r 剥除，不剥离
  *   BOM—— 源文件必须 UTF-8 无 BOM(BOM 字符会进入 GLSL 源码导致编译失败)，CRLF 安全；
  *   loadText 本身不打日志，编译/链接日志由 MOD 侧写入 starsector.log；
  * - 编译/链接链 (延续 C18-S1)：glCreateShader -> glShaderSource -> glCompileShader ->
  *   glGetShaderi(GL_COMPILE_STATUS)；glCreateProgram -> glAttachShader ->
- *   glBindAttribLocation(链接前固定)-> glLinkProgram -> glGetProgrami(GL_LINK_STATUS)；
+ *   glLinkProgram -> glGetProgrami(GL_LINK_STATUS)；
  *   失败时读取 glGetShaderInfoLog / glGetProgramInfoLog(含行号与原因) 并以 ERROR 写入
  *   starsector.log，然后删除对象 (GraphicsLib ShaderLib.createShader/loadShader 同款)；
  * - 生命周期四环节：加载 (每场战斗 init 内执行，不跨战斗缓存)-> 使用 (render 回调内

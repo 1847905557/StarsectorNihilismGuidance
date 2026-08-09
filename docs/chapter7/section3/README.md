@@ -28,7 +28,7 @@
 
 ## 文件与 API 链路
 
-本节涉及的接口都在 `com.fs.starfarer.api.combat`：
+本节涉及的接口都在 `com.fs.starfarer.api.combat`(`DynamicStatsAPI` 在 `api.util`)：
 
 ### 本节接口速查表
 
@@ -125,7 +125,7 @@ modifier ID (`StatMod.source`) 是修饰表唯一的键。以下规则全部有�
 
 1. **必须**使用稳定且唯一的 modifier ID。同一来源对同一 stat 的每一次写入，ID 必须逐字相同 (建议用常量)：
     - 船插场景直接用自己的 hullmod id 参数 ——`applyEffectsBeforeShipCreation(HullSize, MutableShipStatsAPI, String id)` 的 `id` 就是为此提供的，直接 `modifyPercent(id, ...)` 即可。
-    - 原版引擎自己也这么做：`ShipEngineControllerAPI` 用常量 `"zero_flux_boost"` 与 `"engine_damage_penalty"` 每帧应用 / 解除；`Ship` 构造器与 `FleetMemberAPI.updateStats` 用 `"flux_capacitors"` / `"flux_vents"` 平铺修饰。
+    - 原版引擎自己也这么做：引擎在推进器控制中用常量 `"zero_flux_boost"` 与 `"engine_damage_penalty"` 每帧应用 / 解除；`Ship` 构造器与 `FleetMemberAPI.updateStats` 用 `"flux_capacitors"` / `"flux_vents"` 平铺修饰。
 2. **禁止**用每次调用都会变化的值拼接 modifier ID (帧号、时间戳、随机数、对象身份、自增计数器)。违反的可观察结果：每次 `modifyXxx` 都在表里**新增**一条条目 (percent 累加、flat 累加、mult 连乘)，`modified` 值单向漂移、只增不减；`unmodify(旧 ID)` 清不掉后加的条目，数值残留；条目数持续增长，一场战斗下来修饰表会膨胀到比您的舰队名单还长，而全程没有一条报错提醒您：
     - 修正：ID 必须是常量。
 3. **必须**理解 "同 ID 覆盖" 只在**同一张修饰表**内成立。flat / percent / mult 三张表互相独立：同一个 ID 分别调 `modifyFlat` 与 `modifyPercent` 会得到两条条目，三条全部生效：
@@ -152,8 +152,8 @@ modifier 写进表里只是第一步，还要知道这些表在什么时机被�
     - `"flux_capacitors"` / `"flux_vents"` 平铺修饰、`"mothballed_mod_id"` 封存修饰、`getDynamic().removeUmodified()`。
     - 只要 `statUpdateNeeded` (改装配、换舰长、进出舰队界面等) 就会重建重放。
 2. **战斗侧：舰船对象创建**。同样先按装配重建 stats 集合、重放舰队指挥官技能与 buff，随后创建舰船实体 (传入重建出的 stats 与装配)。
-    - `Ship` 构造器里再次对全部船插调用 `applyEffectsBeforeShipCreation`，然后 `applyEffectsAfterShipCreation(ship, id)`。
-3. **加入战斗引擎：`CombatEngineAPI.addObjectToEngine`** 对每艘新舰调用 `applyEffectsAfterShipAddedToCombatEngine()`，触发船插的 `applyEffectsAfterShipAddedToCombatEngine(ship, id)`：
+    - `Ship` 构造器里再次对全部船插调用 `applyEffectsBeforeShipCreation`；`applyEffectsAfterShipCreation(ship, id)` 在引擎创建舰船实体的工厂方法里调用。
+3. **加入战斗引擎：引擎内部 `addObjectToEngine`** 对每艘新舰调用 `applyEffectsAfterShipAddedToCombatEngine()`，触发船插的 `applyEffectsAfterShipAddedToCombatEngine(ship, id)`：
     - API javadoc 原文 "Only called once. Not called again if the ship is removed and then added back to the engine."(默认空实现)。
 
 由此得到必须遵守的规则：

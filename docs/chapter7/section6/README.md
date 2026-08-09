@@ -129,7 +129,7 @@ JUST_BELOW_WIDGETS       ─┘
 
 ```java
 if (viewport.isNearViewport(this.getLocation(), this.plugin.getRenderRadius())) {
-    this.plugin.render(engine, viewport);
+    this.plugin.render(layer, viewport);
 }
 ```
 
@@ -151,7 +151,7 @@ if (viewport.isNearViewport(this.getLocation(), this.plugin.getRenderRadius())) 
 
 两条实现事实构成清理纪律的骨架：
 
-1. **实体移除时引擎调用 `cleanup()`**：`executeRemoves` → `removeObjectFromEngine` → `renderer.remove(...)` + `entity.cleanup()` 转发 `plugin.cleanup()`。触发实体移除的唯一主动途径是 `isExpired()` 返回 true 排队或 `engine.removeEntity(...)`。
+1. **实体移除时引擎调用 `cleanup()`**：`executeRemoves` → `removeObjectFromEngine` → `renderer.remove(...)` + `entity.cleanup()` 转发 `plugin.cleanup()`。触发实体移除的主动途径有：`isExpired()` 返回 true 排队、`engine.removeEntity(...)`、`engine.removeObject(...)`。
 2. **战斗结束 `destroyInstance` 不调用 `cleanup()`**：它只是 `objects.clear()` 并把 `renderer`、`combatMap` 等字段置 null，对任何实体都不调 `cleanup()`。
 
 所以 "必须随战斗清理" 的正解是：**在 `advance()` 里主动失效 (`isExpired()` 转 true)，让引擎走正常移除路径调用 `cleanup()`**。
@@ -171,7 +171,7 @@ if (viewport.isNearViewport(this.getLocation(), this.plugin.getRenderRadius())) 
 | 3 | **必须** | 不能在 `cleanup()` 上赌 "战斗结束时会被调用"：`destroyInstance` 只清空对象表不调 `cleanup()`；插件必须在 `advance()` 里主动失效 (`isExpired()` → true) 驱动引擎移除 | 舰船已死/已脱离的插件继续渲染到战斗结束；战斗结束时资源静默丢失、`cleanup()` 永不执行 |
 | 4 | **必须** | 渲染位置同步到承载实体 `entity.getLocation()`，且 `getRenderRadius()` 覆盖绘制范围 | 位置不同步 → 图形画在战场原点或旧位置；半径过小 → 图形在视口内 "凭空消失"(`isNearViewport` 剔除)；半径过大 → 离屏仍绘制，性能损耗 |
 | 5 | **必须** | `getActiveLayers()` 精确声明需要的层，`render` 回调内按 `layer` 参数分支 | 漏层 → 图形不出现或被下层遮挡；多激活层不分支 → 同一图形每帧重复绘制 (叠加变亮/闪烁)，同帧多图层内容互相污染 |
-| 6 | **必须** | 插件、引擎与舰船引用禁止跨战斗缓存 (前置单元的跨战斗缓存纪律同规；每场战斗用 `init` 里 `Global.getCombatEngine()` 取引擎) | 第二场战斗起引用全部失效且无报错：旧引擎已被 `destroyInstance` 丢弃、旧舰 `isAlive()` 恒为 false，插件被自己的失效逻辑立刻清掉或绘制异常 |
+| 6 | **必须** | 插件、引擎与舰船引用禁止跨战斗缓存 (前置单元的跨战斗缓存纪律同规；每场战斗用 `init` 里 `Global.getCombatEngine()` 取引擎) | 第二场战斗起引用部分失效：旧引擎已被 `destroyInstance` 丢弃、旧舰 `isEntityInPlay()` 恒为 false，`isAlive()` 仍返回 true，依赖 `isAlive()` 清理的插件不会被清掉 |
 | 7 | 建议 | `advance()` 保留 `engine == null` 与 `engine.isPaused()` 判断 (成熟实例一致做法) | 无功能错误 (init 保证先执行、暂停分支不推进实体)；判断是防基线变动的防御 |
 | 8 | 建议 | `render()` 开头设置自己需要的 GL 状态 (如 `GL_BLEND` 与混合函数)；结束时解除 VAO / VBO 绑定、关闭自己激活的程序 | 不解除绑定会让后续图元沿用插件设置的状态；本教程不把 "引擎每层重置 GL 状态" 当作承诺，成熟实例全部自己收尾 |
 | 9 | 建议 | `getRenderRadius()` 按实际覆盖范围取值；需要全局常驻时才用 `Float.MAX_VALUE`(调试用途) | 无功能错误，只有性能成本 |
@@ -207,7 +207,7 @@ advance(0f);
 LOG.info("GearIn layered renderer init: layers=" + getActiveLayers());
 ```
 
-新增行为：插件取得引擎和承载实体，并在首次渲染前同步位置。完成信号：初始化日志列出唯一图层，首帧方框出现在目标舰船处而不是战场原点。
+新增行为：插件取得引擎和承载实体，并在首次渲染前同步位置。完成信号：初始化日志列出唯一图层；部署对话框暂停期间方框画在战场原点 (init 里的 `advance(0f)` 被暂停守卫跳过)，取消部署后首帧同步到目标舰船处。
 
 ### 同步位置并触发失效
 
@@ -307,7 +307,7 @@ Starsector\mods\GearIndustry\
 对应关系：
 
 - 构造器设 `layer = ABOVE_SHIPS_AND_MISSILES_LAYER`：`BaseCombatLayeredRenderingPlugin` 的受保护字段，`getActiveLayers()` 返回 `EnumSet.of(layer)`(规则 5 的单一图层版本)。
-- `init` 三件事：`super.init(entity)` 存承载实体、`engine = Global.getCombatEngine()` 取引擎 (每场战斗新取，规则 6)、`advance(0f)` 立即同步位置 (成熟实例同款做法)。
+- `init` 三件事：`super.init(entity)` 存承载实体、`engine = Global.getCombatEngine()` 取引擎 (每场战斗新取，规则 6)、`advance(0f)` 同步位置 (成熟实例同款做法；部署对话框暂停期间 `advance` 被暂停守卫跳过，恢复后首帧才同步)。
 - `advance` 的失效链：`!engine.isEntityInPlay(trackedShip) || !trackedShip.isAlive()` → `valid = false` → `isExpired()` 转 true → 引擎下一轮移除实体并调 `cleanup()`(规则 3)。位置同步 `entity.getLocation().set(...)`(规则 4)。
 - `getRenderRadius()` 返回 `MARKER_SIZE`：覆盖 120 世界单位的方框 (规则 4)。
 - `render`：**只在这里**用 GL 原语绘制 (规则 1)；开头设置 `GL_BLEND` 与混合函数 (建议 8 的开启侧)；战斗 viewport 的 `getAlphaMult()` 保持 1.0，战斗结束淡出由引擎全屏变暗处理；顶点直接提交世界坐标。
@@ -490,7 +490,7 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点
+        advance(0f); // 立即同步一次位置 (部署暂停期被守卫跳过，恢复后首帧生效)
         LOG.info("GearIn layered renderer init: layers=" + getActiveLayers());
     }
 

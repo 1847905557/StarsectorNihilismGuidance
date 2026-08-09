@@ -11,8 +11,9 @@ import org.lwjgl.util.vector.Vector2f;
 import com.fs.starfarer.api.combat.CombatEngineLayers;
 
 public final class GearInImpactSpecialFX {
-    public Instance2Data makeDefaultDistortion(boolean additive, float duration) {
-        return RenderingUtil.SpecialFX.addDefaultDistortion(additive, duration);
+    /** BoxUtil 缺陷：首参实为 isCampaign(战役管线)，命名易误导调用方。战斗入口应传 false。 */
+    public Instance2Data makeDefaultDistortion(boolean isCampaign, float duration) {
+        return RenderingUtil.SpecialFX.addDefaultDistortion(isCampaign, duration);
     }
 
     public DistortionEntity makeDistortion(Vector2f location) {

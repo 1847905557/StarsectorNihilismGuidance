@@ -67,7 +67,7 @@
 
 1. **加载时机**：CSV spec 加载期，`loadStarmap` 末尾调用 `Rules.loadRules`—— 一次游戏启动只加载一次，规则表不属于存档数据。
 2. **合并读取**：文本读取工具的 `readCSV(["id"], "data/campaign/rules.csv", true, true)`：
-    - 打开原版与所有启用 MOD 的同路径资源；某个 MOD 把该路径列入 `fullOverrides` 时整文件替换；
+    - 打开原版与所有启用 MOD 的同路径资源；某个 MOD 把该路径列入 `replace` 时整文件替换；
     - **同文件**内重复 id → `RuntimeException("Duplicate key [...] while loading [...]")`，加载崩溃；
     - **跨文件**重复 id → 按资源处理顺序先到先得，后处理文件中的同 id 行**静默跳过** (无任何报错)；
     - 每份文件读取前过 `replaceSmartQuotes`(`readCSV` 第 4 参为 true，spec 加载期执行 `replaceSmartQuotes`)。
@@ -266,7 +266,7 @@ public class GearInRulesIntro implements EveryFrameScript {
 
     private static final Logger LOG = Global.getLogger(GearInRulesIntro.class);
 
-    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
+    /** 演示是否已执行；置位后 isDone() 返回 true，引擎在置位同一次推进中自动移除本脚本。 */
     private boolean executed = false;
 
     public GearInRulesIntro() {
@@ -301,7 +301,7 @@ public class GearInRulesIntro implements EveryFrameScript {
 
 对应关系：
 
-- `implements EveryFrameScript`：沿用一次性演示模式 ——`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除。
+- `implements EveryFrameScript`：沿用一次性演示模式 ——`executed` 置位后 `isDone()` 返回 true，引擎在置位同一次推进中自动移除。
 - `REGISTER_MARK`：persistent data 注册判断键 (`"GearIn_RulesIntro"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
 - `new RuleBasedInteractionDialogPluginImpl("GearInRulesIntro")`：自定义初始 trigger(原版默认 `OpenInteractionDialog` 有 121 条规则，会与演示规则混战；自定义 trigger 保证候选池只有本节规则，`FleetInteractionDialogPluginImpl` / 非对话面板文本触发同样使用自定义 trigger)。
 - `showInteractionDialog(plugin, playerFleet)`：交互目标非 null(`init` 里 `getInteractionTarget().getMemory()` 依赖它)；返回值记入日志 (对话框打开失败时用于定位的防御写法)。

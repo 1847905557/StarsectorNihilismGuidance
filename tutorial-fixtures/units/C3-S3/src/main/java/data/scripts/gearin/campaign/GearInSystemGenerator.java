@@ -56,7 +56,7 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 		jump.setRelatedPlanet(prime);
 		system.addEntity(jump);
 
-		// 必须调用 (或用带超空间坐标的 initStar 变体)，否则星系没有通向超空间的跳跃点，玩家无法到达
+		// 必须调用，否则星系没有通向超空间的跳跃点，玩家无法到达
 		system.autogenerateHyperspaceJumpPoints(true, true);
 
 	}

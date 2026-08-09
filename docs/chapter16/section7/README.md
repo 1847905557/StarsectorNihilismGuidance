@@ -204,7 +204,7 @@ import com.fs.starfarer.api.combat.ShipAPI;
 
 /** 伪光束 (MagicFakeBeam)：每 BEAM_INTERVAL 秒向最近可见敌舰发射一条伪光束。
  * 伤害瞬时结算，持续视觉时间不等于持续伤害时间；光束不会被中途物体截断；
- * HIGH_EXPLOSIVE 对装甲全额伤害 (原版有折减)，本类用 ENERGY 规避。 */
+ * HIGH_EXPLOSIVE 对装甲 200% 伤害、对护盾 50% (折减在护盾侧)，本类用 ENERGY 规避。 */
 public class GearInBeamCaster {
     private static final Logger LOG = Global.getLogger(GearInBeamCaster.class);
     private static final float BEAM_INTERVAL = 2f; // 光束发射间隔 (秒)；伤害瞬时，视觉时长由 modSettings.json 控制

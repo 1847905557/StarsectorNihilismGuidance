@@ -102,10 +102,15 @@ List<String> fleet = planner.chooseFleet(factionId, "RANDOM");
 
 ### 先拒绝无法解析的舰队类型
 
-**插入位置：请求进入 `getStartFleetForType()` 之前。** 用 `StartFleetType.getType()` 判断键是否存在，避免把拼写错误当成随机类型。
+**插入位置：请求进入 `getStartFleetForType()` 之前。** 用 try/catch 接住 `StartFleetType.getType()` 对未知键抛出的 `IllegalArgumentException`，避免把拼写错误当成随机类型。
 
 ```java
-boolean valid = NexFactionConfig.StartFleetType.getType(fleetType) != null;
+boolean valid = true;
+try {
+    NexFactionConfig.StartFleetType.getType(fleetType);
+} catch (IllegalArgumentException e) {
+    valid = false;
+}
 ```
 
 完成信号：固定类型和 `RANDOM` 进入配置读取，未知类型在玩家放置前返回明确错误。
@@ -213,7 +218,9 @@ public final class GearInNexStartPlanner {
 
     public List<String> chooseFleet(String factionId, String fleetType) {
         NexFactionConfig config = NexConfig.getFactionConfig(factionId);
-        if (NexFactionConfig.StartFleetType.getType(fleetType) == null) {
+        try {
+            NexFactionConfig.StartFleetType.getType(fleetType);
+        } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Unknown start fleet type: " + fleetType);
         }
         return config.getStartFleetForType(fleetType, false, 0);

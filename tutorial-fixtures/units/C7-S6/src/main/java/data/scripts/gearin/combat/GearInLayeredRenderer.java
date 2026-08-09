@@ -61,7 +61,7 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点
+        advance(0f); // 立即同步一次位置 (部署暂停期被守卫跳过，恢复后首帧生效)
         LOG.info("GearIn layered renderer init: layers=" + getActiveLayers());
     }
 

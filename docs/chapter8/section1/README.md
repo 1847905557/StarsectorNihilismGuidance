@@ -93,7 +93,7 @@ advanceInCampaign：CampaignFleetAPI.advance 每成员；FleetDataAPI 同步时 
 | `init(HullModSpecAPI spec)` | spec 就绪后、首次使用效果时 | `HullModSpecAPI.getEffect()` 用到时才实例化 | `BaseHullMod` 用它保存 spec；`isSMod` / `isBuiltIn` / `hasSModEffect` 都依赖 spec 非 null |
 | `applyEffectsBeforeShipCreation(HullSize, MutableShipStatsAPI, String id)` | 生涯 stats 每次重建重放；战斗舰船构造 | `FleetMemberAPI.updateStats`；`ShipAPI` 对象构造 | 改 stats 的唯一正式入口 (前置讲解必须遵守的规则)；`id` 参数就是本船插的 spec id，直接用作修饰 ID；S-mod 分支也在这里 |
 | `applyEffectsAfterShipCreation(ShipAPI, String id)` | 战斗侧舰船实体创建后；装配界面预览舰也会创建 | 舰船对象创建流程 (`createStats=true` 时)；装配界面预览面板同样按 (variant, true, ...) 创建舰船对象 | **不承担 stats 修改** (API javadoc 原文："Effects applied here should NOT affect ship stats as this does not get called from the campaign.")；监听器注册的正式位置 |
-| `applyEffectsAfterShipAddedToCombatEngine(ShipAPI, String id)` | 舰船第一次加入战斗引擎 | 战斗舰船对象上的防重复标记 ← `CombatEngineAPI.addObjectToEngine` | **每艘船只回调一次** (API javadoc 原文："Only called once. Not called again if the ship is removed and then added back to the engine.")；做一次性战斗初始化 (本节示例用它打日志证明) |
+| `applyEffectsAfterShipAddedToCombatEngine(ShipAPI, String id)` | 舰船第一次加入战斗引擎 | 战斗舰船对象上的防重复标记 ← 引擎内部 `addObjectToEngine` | **每艘船只回调一次** (API javadoc 原文："Only called once. Not called again if the ship is removed and then added back to the engine.")；做一次性战斗初始化 (本节示例用它打日志证明) |
 | `advanceInCombat(ShipAPI, float amount)` | 战斗中每帧 | 战斗舰船对象的每帧推进遍历 `getVariant().getAllMods()` | **暂停时不调用** (API javadoc 原文："Not called while paused.")；无状态写入合法 (前置讲解的每帧幂等做法)，跨船状态不行 |
 | `advanceInCampaign(FleetMemberAPI, float amount)` | 生涯每帧；舰队数据重同步时 `amount=0` | `CampaignFleetAPI.advance` 每成员；`FleetDataAPI` 同步时 | **暂停时不调用**；API javadoc 原文："Not called while paused. But, called when the fleet data needs to be re-synced, with amount=0 (such as if, say, a fleet member is moved around in the fleet screen.)" |
 | `applyEffectsToFighterSpawnedByShip(ShipAPI fighter, ShipAPI ship, String id)` | 航母舰船生成战机后 | 战机出生链 | 效果向母舰生成的战机传播；本节不展开，示例不实现 |
@@ -141,7 +141,7 @@ if (sMod) {
 - `isSModEffectAPenalty()` 返回 true 时 S-mod 段用 "penalty" 样式 (`BaseHullMod.addSModSection`)—— 高成本船插的 S-mod 可能是惩罚。
 - `hasSModEffectSection`：结合内置 / 增强内置 / 惩罚语义决定是否显示；内置且未增强时显示 "enhanced built-in" 说明文本：
     - ("This effect only applies if this built-in hullmod is enhanced using a %s. Doing this does not count against the maximum number of s-mods a ship can have.")。
-- `sModDesc` 为空时 tooltip 显示 "Aside from removing its ordnance point cost, this hullmod gains no extra effect from being built into the hull using a story point."—— 没有效果不等于不能内置。
+- `sModDesc` 为空 (或 `hasSModEffect()` 为 false) 时 `hasSModEffectSection()` 直接返回 false，装配界面不显示任何 S-mod 效果段 (含标题与说明文本)—— 没有效果不等于不能内置，只是没有效果段。
 
 ### 上限、故事点与奖励经验
 

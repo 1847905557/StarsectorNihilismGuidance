@@ -38,7 +38,7 @@
 - 对象值按键递归合并；
 - 标量值由后加载来源覆盖前一个来源；
 - 数组按键的合并规则处理，`music_*`、长度为 4 的 `color` 或 `button` 数组，以及首元素为 `core_clearArray` 的数组可以整体替换；
-- `mod_info.json` 的 `fullOverrides` 可以整体替换某个文件。
+- `mod_info.json` 的 `replace` 可以整体替换某个文件。
 
 MOD 只需要写自己的键，原版和其他 MOD 的键会继续保留。相同 `(category, id)` 的文本会受启用顺序影响，因此自有分类和键应使用 MOD 前缀，避免覆盖已有文本。
 
@@ -65,7 +65,7 @@ strings 的值可以包含两类占位符：
 - `$token` 不会由引擎自动替换，使用方必须在取值后替换；
 - `%s` 不会由引擎自动格式化，取值侧使用 `String.format` 传入参数。
 
-例如，`$fleetName` 需要由舰队遭遇文本的使用方替换；`%s` 的参数数量和类型必须与模板一致。
+例如，`$faction`、`$fleetOrShip` 等令牌由舰队遭遇文本的使用方替换；`%s` 的参数数量和类型必须与模板一致。
 
 ## 原版分类速查表
 
@@ -73,7 +73,7 @@ strings 的值可以包含两类占位符：
 
 | 分类 | 内容 | 键风格 | 主要使用方 | 键数 |
 | --- | --- | --- | --- | ---: |
-| `fleetInteractionDialog` | 生涯舰队遭遇对话：交战、追击、撤退、接舷、打捞和友军增援 | 大量 `$faction`、`$fleetName`、`$fleetOrShip` 等令牌 | 舰队遭遇对话 | 160 |
+| `fleetInteractionDialog` | 生涯舰队遭遇对话：交战、追击、撤退、接舷、打捞和友军增援 | 大量 `$faction`、`$fleetOrShip` 等令牌 | 舰队遭遇对话 | 160 |
 | `campaignHelp` | 首次生涯提示和低 CR、低补给等提示 | 键后缀使用 `_text`、`_dismiss` 或 `_action` | 生涯帮助弹窗 | 63 |
 | `jumpPointInteractionDialog` | 跳跃点交互：`approach`、`starAnchor`、`noFuel`、`noExits` 等 | `$fleetOrShip` | 跳跃点交互对话 | 5 |
 | `planetInteractionDialog` | 行星接近文本：`approach` | `$fleetOrShip`、`$planetName` | 行星交互对话 | 1 |
@@ -104,7 +104,7 @@ String serviceId = services.getString("serviceId");
 int interval = services.optInt("interval", 10);
 ```
 
-JSON 路径继续遵守 [C15-S1] 的资源路径规则。`validateFileName` 会拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径。`getString` 等强制取值方法在字段缺失或类型不符时抛出异常；允许字段缺失时使用 `optString`、`optInt` 等入口并提供明确的替代值。
+JSON 路径继续遵守 [C15-S1] 的资源路径规则。引擎在读取前拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径。`getString` 在字段缺失时抛出异常；类型不符时静默转为字符串 (`getInt`/`getBoolean` 等才有类型检查)。允许字段缺失时使用 `optString`、`optInt` 等入口并提供明确的替代值。
 
 ### 自有 JSON 最小实例
 
@@ -159,7 +159,7 @@ JSON 路径继续遵守 [C15-S1] 的资源路径规则。`validateFileName` 会�
 
 - **JSON 在首字符处解析失败**：文件带有 BOM。以 UTF-8 无 BOM 重新保存，再调用 `loadJSON` 确认对象建立。
 - **JSON 报告括号或字符串错误**：对象结构、引号或逗号不合法。根据错误位置修正相邻字段，再次加载确认异常消失。
-- **读取字段时抛出异常**：字段缺失或值类型与读取方法不符。核对字段名和类型，允许缺失时改用对应 `opt` 方法；重新读取并检查返回值。
+- **读取字段时抛出异常**：字段缺失。核对字段名和类型，允许缺失时改用对应 `opt` 方法；重新读取并检查返回值。
 - **双参读取出现空对象异常**：传入的 `modId` 与已启用 MOD 不一致。核对 `mod_info.json` 的 `id` 和启用状态，再读取同一资源。
 - **自有 JSON 没有产生任何业务结果**：文件没有使用方，固定路径只负责资源加载。通过 `loadJSON` 主动读取并解释字段，运行后确认对应状态发生变化。
 - **strings 文本被其他内容替换**：分类或键与后加载来源重复。为自有分类和键添加 MOD 前缀，重启后核对返回文本。

@@ -161,7 +161,7 @@ public void advance(float amount) {
 }
 ```
 
-完成信号：每个子类只执行一次 `runDemo`，随后 `isDone()` 返回 `true`，引擎在下一帧移除脚本。
+完成信号：每个子类只执行一次 `runDemo`，随后 `isDone()` 返回 `true`，引擎同帧紧随其后移除脚本。
 
 ### 读取三组势力关系
 
@@ -304,7 +304,7 @@ Starsector\mods\GearIndustry\
 
 ### 行为要点
 
-- `extends GearInOneShotScript`：沿用脚本节的一次性演示模式 —— 首帧 `advance()` 执行一次 `runDemo()`，`isDone()` 置位后引擎下一帧自动移除。
+- `extends GearInOneShotScript`：沿用脚本节的一次性演示模式 —— 首帧 `advance()` 执行一次 `runDemo()`，`isDone()` 置位后引擎同帧紧随其后自动移除。
 - `REGISTER_MARK`：persistent data 标记键 —— 两个脚本各自独立 (`GearIn_FactionServices` / `GearIn_CargoServices`)。
     - **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入既有插件的 `CLASS_MARK` 标记。
 - 势力段：`getFaction(id)` / `getPlayerFaction()` 入口；关系写入演示 `adjustRelationship(+0.05)` → `setRelationship(原值)` 同帧精确回滚。
@@ -376,7 +376,7 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 预期结果：
 
 - **关系/货物核对**：`write-rollback` 行的第二段恒比第一段高 `0.05`(起始关系接近 `1.0` 时被钳位则例外，新档霸主关系不会)，第三段与第一段相等。
-- **固定值**：`drugsIllegal=false`、`illegalCount=0`(新档玩家势力无非法商品声明)、`relToPlayer=1.00(Cooperative)`(玩家势力对玩家自己 = 同势力对默认 `1.0`)。
+- **固定值**：`drugsIllegal=true`、`illegalCount=4`(原版 `player.faction` 声明 4 种非法商品)、`relToPlayer=1.00(Cooperative)`(玩家势力对玩家自己 = 同势力对默认 `1.0`)。
 - **执行次数**：日志段的顺序与调用点片段的注册顺序一致 (势力 → 货物)，两个脚本各自只执行一次。
 - **读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位、脚本不再注册)。
 - **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
@@ -430,7 +430,7 @@ import com.fs.starfarer.api.EveryFrameScript;
 
 /**
  * 一次性演示脚本基类：挂载后第一次 advance() 执行一次子类实现的 runDemo() 并自停
- * (isDone() 返回 true，引擎在下一帧自动从脚本列表移除本脚本)。
+ * (isDone() 返回 true，引擎同帧紧随其后自动从脚本列表移除本脚本)。
  *
  * 两个服务演示脚本 (势力 / 货物) 都继承本类，各自只实现 runDemo()，
  * 避免每个演示类重复 EveryFrameScript 的骨架方法。本类是抽象基类，不参与任何注册；
@@ -438,7 +438,7 @@ import com.fs.starfarer.api.EveryFrameScript;
  */
 public abstract class GearInOneShotScript implements EveryFrameScript {
 
-    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
+    /** 演示是否已执行；置位后 isDone() 返回 true，引擎同帧紧随其后自动移除本脚本。 */
     private boolean executed = false;
 
     public GearInOneShotScript() {

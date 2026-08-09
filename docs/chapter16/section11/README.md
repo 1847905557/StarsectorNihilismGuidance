@@ -44,6 +44,7 @@
 ```java
 SegmentEntity ring = new SegmentEntity();
 ring.initCircle(center, radius, Color.CYAN, Color.WHITE, 5f);
+ring.setInterpolation((short) 64);
 ```
 
 完成信号：返回的 SegmentEntity 拥有有效节点。
@@ -71,7 +72,7 @@ byte state = ring.submitNodes();
 
 ### 初始化平滑曲线光束
 
-**插入位置：`GearInCurveBeam.make()`。** 用起点、长度、颜色、宽度和曲率建立曲线。
+**插入位置：`GearInCurveBeam.make()`。** 用起点、长度、颜色、宽度和混合系数建立曲线。
 
 ```java
 CurveEntity beam = new CurveEntity();
@@ -82,9 +83,10 @@ beam.initSmoothLine(start, length, Color.CYAN, Color.WHITE, 9f, 0.35f);
 
 ### 把构造结果加入当前战斗
 
-**插入位置：战斗接线取得圆环或光束后。** 根据返回码决定实体是否已经交给 BoxUtil 管理。
+**插入位置：战斗接线取得圆环或光束后。** 先 `setLayer()` 指定渲染层 (实体默认 layer 为 null，`addEntity` 对 null 层恒返回 STATE_FAILED)，再根据返回码决定实体是否已经交给 BoxUtil 管理。
 
 ```java
+beam.setLayer(CombatEngineLayers.ABOVE_SHIPS_LAYER);
 byte state = CombatRenderingManager.addEntity(beam);
 if (state != BoxEnum.STATE_SUCCESS) {
     beam.delete();
@@ -125,7 +127,7 @@ beam.submitNodes();
 
 1. 以玩家舰坐标和 600 su 半径创建圆环，核对 `submitNodes()` 状态与入队返回码。
 2. 观察纹理以 0.15 的速度沿圆环流动；暂停后偏移保持不变。
-3. 以舰首位置和测试长度创建曲线，核对 9 su 宽度、0.35 曲率与 0.4 纹理速度。
+3. 以舰首位置和测试长度创建曲线，核对 9 su 宽度、0.35 混合系数与 0.4 纹理速度。
 4. 修改曲线末端节点但省略重新提交，确认画面保持旧形状。
 5. 恢复刷新范围与 `submitNodes()`，确认下一帧显示新形状。
 6. 让入队返回失败状态，确认对应实体执行 `delete()`。
@@ -192,6 +194,7 @@ public final class GearInSegmentPainter {
     public SegmentEntity makeRangeRing(Vector2f center, float radius) {
         SegmentEntity ring = new SegmentEntity();
         ring.initCircle(center, radius, new Color(30, 210, 255, 220), Color.WHITE, 5f);
+        ring.setInterpolation((short) 64);
         ring.setTextureSpeed(0.15f);
         ring.setFlowWhenPaused(false);
         ring.submitNodes();

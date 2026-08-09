@@ -167,7 +167,7 @@ voice 即 memory `$voice`。
 | 成员 | 语义 |
 |---|---|
 | `adjustRelationship(String id, float delta)` | 直接加 delta(无 limit，只受 ±1 钳制) |
-| `adjustRelationship(String id, float delta, RepLevel limit)` | 带 limit：delta 为 0 直接返回 false；正 delta 上限 = `limit.getMax()`(limit 为负档时 = `-min-0.01`)，负 delta 下限 = `-limit.getMax()`(limit 为正档时 = `min+0.01`)；值未越过限制返回 false |
+| `adjustRelationship(String id, float delta, RepLevel limit)` | 带 limit：delta 为 0 直接返回 false；正 delta 上限 = `limit.getMax()`(limit 为负档时 = `-min-0.01`)，负 delta 下限 = `-limit.getMax()`(limit 为正档时 = `min+0.01`)；调整后值仍在限内 → **返回 true 并写入**，仅 delta 为 0 或被 limit 完全拦截 (值未变化) 时返回 false |
 | `setRelationship(String id, float newValue)` / `setRelationship(String id, RepLevel level)` | 精确写值 / 按档位落点 (见上表) |
 | `ensureAtBest(String id, RepLevel)` / `ensureAtWorst(String id, RepLevel)` | 当前档位不满足时写入边界值并返回 true |
 | `getRelationship(String id)` / `getRelationshipLevel(String)` / `getRepInt(String)` | 值 / 档位 / 百分制整数 (`RepLevel.getRepInt`) |

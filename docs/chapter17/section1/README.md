@@ -80,14 +80,14 @@ if (!lunaMissingReported) {
 
 ### 对包装类型返回值处理 null
 
-**插入位置：`LunaAdapter.getFullGraphicEffect()`。** 在拆箱前提供调用方默认值。
+**插入位置：`LunaAdapter.getFullGraphicEffect(boolean fallback)`。** 在拆箱前回退到调用方默认值。
 
 ```java
 Boolean value = LunaSettings.getBoolean(SETTINGS_OWNER_MOD_ID, "GearIn_fullGraphicEffect");
-return value == null ? true : value;
+return value == null ? fallback : value;
 ```
 
-完成信号：缺键时使用页面声明的默认设置。
+完成信号：字段存在时返回实际值，缺键时返回调用方传入的 `fallback`。
 
 **插入位置：`data/config/LunaSettings.csv`。** 注册同一个字段 ID。
 

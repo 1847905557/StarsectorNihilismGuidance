@@ -33,7 +33,7 @@
 |---|---|---|
 | 声明 | `mod_info.json` 的 `modPlugin` | 可选字段：启动时读取，缺失时为 `null` |
 | 登记 | 资源加载期 | 每个已启用 MOD 的 `modPlugin` 类名注册进脚本类加载器；`null` 类名会被跳过 |
-| 实例化 | `ModManagerAPI.getEnabledModPlugins()` | 首次调用时按 `coreLifecyclePlugin`(原版 `CoreLifecyclePluginImpl`，恒为列表第一个)→ 各 MOD 顺序，经脚本类加载器按类名创建实例 (`Class.forName` + `newInstance`，失败抛 `Problem loading class [...]`)，创建结果**缓存复用**；`modPlugin` 为 `null` 的 MOD 直接跳过 |
+| 实例化 | `ModManagerAPI.getEnabledModPlugins()` | 首次调用时按 `coreLifecyclePlugin`(原版 `CoreLifecyclePluginImpl`，恒为列表第一个)→ 各 MOD 顺序，经脚本类加载器按类名创建实例 (`Class.forName` + `newInstance`)，创建结果**缓存复用**；类名错误在加载期抛 `Error loading [...]`；`modPlugin` 为 `null` 的 MOD 直接跳过 |
 | 回调派发 | 游戏管理器 / MOD 启用记录 / 战斗状态 | 新档、读档、保存、F8 重载各节点对缓存列表循环调用 |
 | 首次进入门 | `SectorAPI.getPersistentData()` | 返回随存档保存的 `Map<String, Object>`；`CLASS_MARK` 模式用它做一次性初始化门 |
 | 实例化 (特例) | 启用状态通知 | `onEnabled` 触发时**每次都新建一个实例**再调用，与上面缓存的实例不是同一个对象 |
@@ -109,7 +109,7 @@ MOD 正常启用，但 `getEnabledModPlugins` 对 `null` 类名直接跳过 —�
 
 声明只有几行，违规后果都发生在启动期，先看两条必须满足的规则：
 
-- `modPlugin` 的值**必须**是脚本类加载器能 `Class.forName` 实例化的完整类名。类不存在、包名/类名拼错 → 首次 `getEnabledModPlugins()`(启动资源加载期) 抛 `Problem loading class [data.scripts.gearin.GearInModPlugin]`**，启动失败**。
+- `modPlugin` 的值**必须**是脚本类加载器能 `Class.forName` 实例化的完整类名。类不存在、包名/类名拼错 → 启动资源加载期抛 `Error loading [data.scripts.gearin.GearInModPlugin]`(原因是 ClassNotFoundException)**，启动失败**。
 - `modPlugin` 指向的类**必须**继承 `BaseModPlugin`(或实现 `ModPlugin` 全部 19 个方法)。类不是 `ModPlugin` 实现 → `getEnabledModPlugins` 里的强制转换抛 `ClassCastException`**，启动失败**。直接实现接口而非继承基类 → 编译期必须写满 19 个方法，基类用空实现作默认值 (`com.fs.starfarer.api.BaseModPlugin` javadoc 明确建议继承：将来 API 新增方法时基类会补空实现，直接实现接口的 MOD 会被破坏编译)。
 
 ::: caution 回调内不得抛出未处理异常
@@ -306,7 +306,7 @@ public void onGameLoad(boolean newGame) { Global.getSector().addScript(new GearI
 
 ## 故障分析
 
-- **启动时报 `Problem loading class [data.scripts.gearin.GearInModPlugin]`**：`modPlugin`、包名、目录或 jar 内容不一致。用 `jar tf` 核对类路径，再与 `modPlugin` 值逐段对照。
+- **启动时报 `Error loading [data.scripts.gearin.GearInModPlugin]`**：`modPlugin`、包名、目录或 jar 内容不一致。用 `jar tf` 核对类路径，再与 `modPlugin` 值逐段对照。
 - **启动时报 `ClassCastException`**：入口类没有实现 `ModPlugin`。让类继承 `BaseModPlugin`，重新构建后启动。
 - **游戏正常但没有任何 `GearIn lifecycle:` 日志**：`mod_info.json` 没有有效的 `modPlugin` 字段。补上完整类名并重启，首个应用回调应写入日志。
 - **`onApplicationLoad` 抛出 `NullPointerException`**：该阶段访问了尚未建立的 `Global.getSector()`。把生涯状态操作移入 `onGameLoad` 或 `onNewGame`。

@@ -134,7 +134,7 @@ devMode 下 `DumpMemory` 显示键列表与 `(e=<剩余天数>)`；`getExpire` �
 3. 槽位名不在 memoryMap 里 → **同样回落 `local`**，用原始串 `$memkey.name` 作键名；
 4. `local` 也不存在 → `RuleException("No memory found for keys: ...")`。
 
-**槽位选择决定键的可见范围**：`$global.xxx` 与 `$xxx`(local) 可能同时存在同名字段，规则读到的是槽位解析的结果 ——`$global.xxx` 拼成 `$xxx` 不报错，只会 "静默读错槽位" (见 "规则条件静默不命中")。
+**槽位选择决定键的可见范围**：`$global.xxx` 与 `$xxx`(local) 可能同时存在同名字段，规则读到的是槽位解析的结果 —— 槽位缺失回落 `local` 时**键名保留原始串** `$global.xxx`，不报错，但读的是 local 槽位里的 `$global.xxx` 键；若该键不存在，条件静默不命中 (见 "规则条件静默不命中")。
 
 文本 token 替换 (`Misc.replaceTokensFromMemory`) 同样按 memoryMap 槽位展开：`local` 优先、各记忆键按长度降序，替换 `$<memkey>.<key>` 与 `$<key>` 两种形态；
 
@@ -227,8 +227,8 @@ javadoc 明确它 "可被不属于存档的类 (`ModPlugin` 或 transient `Campa
 | `expire(key, 负值)` 取消过期 | 事实 | 键永不过期；`getExpire` 返回 -1 |
 | 过期只在生涯非暂停时推进 | 事实 | 对话打开 (生涯暂停) 期间 `expire 0` 的键不消失；对话关闭后的第一个推进帧才移除 |
 | 一次性 flag 必须用 `= true 0` / `expire 0` 形态 (`RuleBasedInteractionDialogPluginImpl` 写 `$option` 的实现；[C14-S2] 模式) | 建议 | 不带第三 token 的赋值是永久键：flag 跨会话残留，`!$player.<flag>` 条件永假 |
-| `getBoolean` 缺失键与显式 false 无法区分 | 事实 | `!$flag` 在 flag 从未写过时判真 false—— 条件 "不命中且无报错" |
-| memoryMap 槽位缺失/无点号时变量回落 `local`(`Misc` 的 `Token` 解析) | 事实 | `$global.xxx` 拼成 `$xxx` 不报错：读的是 local 槽位的同名键 —— 条件静默变假或读错值 |
+| `getBoolean` 缺失键与显式 false 无法区分 | 事实 | `!$flag` 在 flag 从未写过时判真 true—— 条件命中 (`!` 分支对缺失键执行 `!memory.getBoolean(key)`，缺失键 getBoolean 返回 false) |
+| memoryMap 槽位缺失/无点号时变量回落 `local`(`Misc` 的 `Token` 解析) | 事实 | 回落时**键名保留原始串**：槽位缺失读 local 里的 `$global.xxx` 键，无点号则读 `$xxx`—— 键不存在则条件静默不命中，不会报错 |
 | 实体/市场引用入记忆存档转 `enRef_`/`mRef_`，解析不到删键 | 事实 | 读档后实体已销毁 → 键整体消失且无报错；不要用记忆判断 "实体是否还活着" |
 | PersistentData 键无需 `$` 前缀、随存档保存 (`SectorAPI`) | 事实 | 无错误 —— 与记忆键的命名约束差异是设计，不是 bug |
 | 每个注册项用各自 persistent data 键 ([C6-S2] / [C9-S1] 延续) | 必须 | 共用一键互相覆盖；新注册项并入既有 CLASS\_MARK 检查 → 旧档永不注册 |
@@ -757,7 +757,7 @@ gradle jar
 
 - **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/` 下 `GearInMemoryKeys`、`GearInMemoryWriter`、`GearInPersistentDataCounter`、`GearInMemoryMapAssembler`、`GearInMemoryExpiryVerifier`、`GearInMemoryDialog` 六个类的 `.class`。
 - **规则注册 (加载期)**：启动日志出现本节 5 条 `Loading rule: GearIn_memory_welcome` / `..._verify` / `..._result_expired` / `..._result_alive` / `..._leave`—— 规则行确实被读进内存的静态证明。
-- **新档首次进入生涯 (首个未暂停推进帧)**：`starsector.log` 出现 `GearInPersistentDataCounter: PersistentData 运行计数 run 1(新档首次 = 1；读档恢复上次值 = null)`；随后写入脚本输出：
+- **新档首次进入生涯 (首个未暂停推进帧)**：`starsector.log` 先出现写入脚本输出 (引擎按注册顺序推进脚本，`GearInMemoryWriter` 注册在 `GearInPersistentDataCounter` 之前)，随后出现 `GearInPersistentDataCounter: PersistentData 运行计数 run 1(新档首次 = 1；读档恢复上次值 = null)`；写入脚本输出：
     - `GearInMemoryWriter: contains(KEY_TAG)=true getString=GearInReady is(key,"GearInReady")=true`；
     - `getFloat(KEY_COUNTER)=1.0 is(key,1f)=true between(0,2)=true getExpire=1000.0(游戏天)`；
     - `KEY_PROBE(expire 0)contains=true getBoolean=true getExpire=0.0`；

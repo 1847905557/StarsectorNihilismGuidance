@@ -140,7 +140,7 @@ GearIn_combat_desc_forging,SHIP,"锻件-级相位护卫舰围绕一门中型实�
 - **弯引号**：加载时会把弯引号 (" " ' ') 替换为直引号 (`replaceSmartQuotes`)，所以不要依赖弯引号保留原样 (原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步归一化)。
 - **键唯一**：`id + type` 在同一文件内**必须**唯一，否则加载期抛异常 (见故障分析)。
 - 也不要重定义原版或其他 MOD 已存在的 `id + type` 组合：跨文件合并时先被枚举到的文件的行生效，后到的同键行被**静默跳过** (读 CSV 时的去重分支)，覆盖顺序不是可以依赖的约定。
-- 需要整体替换某个数据文件时，支持在 `mod_info.json` 的 `replace` 数组里声明；`fullOverrides` 的文件读取语义见 [C15-S2]。
+- 需要整体替换某个数据文件时，支持在 `mod_info.json` 的 `replace` 数组里声明 (文件读取语义见 [C15-S2])。
 
 原版参考行 (`Starsector/starsector-core/data/strings/descriptions.csv`，仅观察不修改)：
 
@@ -184,7 +184,7 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 ## 故障分析
 
-- **启动即失败并出现 `Invalid type of description: [null]`**：某行 `type` 列不是枚举名，常见原因是拼写、大小写或多余空格。描述加载会在枚举解析失败时抛出 `RuntimeException`；改为与 `Type` 枚举逐字符一致并重启，日志应完成解析。
+- **启动即失败并出现 `Key [type] has invalid value [...]`**：某行 `type` 列不是枚举名，常见原因是拼写、大小写或多余空格。改为与 `Type` 枚举逐字符一致并重启，日志应完成解析。原版中 `Invalid type of description` 消息分支不可达，属原版死代码。
 - **启动即失败并出现 `Duplicate key [...] while loading [data/strings/descriptions.csv ...]`**：同一文件内存在相同的 `id + type` 组合。保证键串 `id | type |` 在文件内唯一并重启，重复键异常应消失。
 - **启动即失败并出现 `JSONObject["id"] not found`**：文件带 BOM 或表头被污染，第一列可能被读成 `\ufeffid`。以 UTF-8 无 BOM 保存文件并重启，加载器应能按 `id` 读取表头。
 - **对象缺描述行并显示 `No description... yet`**：武器行 ID 写错、`.ship` 的 `descriptionId` 不存在，或对象没有描述行时，查询会返回占位描述对象。补齐描述行或改正键的大小写后重新打开对象详情，正文应替换占位文本。
@@ -194,7 +194,7 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 - **装配界面系统行显示整段长文**：系统描述缺少 text3，界面会回退到 text1。补充短的 text3，并用 text4 的 `|` 分隔需要高亮的片段；重新打开装配界面，行内文本应按字段分段。
 - **战机详情显示占位文本而装配界面正常**：战机 hull 写了 `descriptionId` 时，装配界面按该键查找，而数据库战机详情直接按 `hullId` 查找。删除战机 hull 的 `descriptionId` (本例使用 `GearIn_slag`)，重新打开两处详情后，文本应一致。
 - **文本错位、截断或串到其他列**：字段中的英文逗号或换行没有加引号，会造成列切分错位、键值改变或列数异常。给含这些字符的字段加引号并重新运行结构检查，重新加载后各列应回到预期位置。
-- **重定义已有 `id + type` 后没有效果**：跨文件合并时，先枚举到的同键行生效，后到的行会被静默跳过。不要重定义既有键；确需整体替换时使用 `replace` (fullOverrides 整文件替换)，重启后再观察目标对象。
+- **重定义已有 `id + type` 后没有效果**：跨文件合并时，先枚举到的同键行生效，后到的行会被静默跳过。不要重定义既有键；确需整体替换时使用 `replace` 整文件替换，重启后再观察目标对象。
 
 ## 总结
 

@@ -52,7 +52,7 @@ public class GearInSpeedBooster extends BaseHullMod {
 
 这个文件只有四类内容：
 
-- **`package` 行**：类的存放目录。`data.scripts.gearin.hullmods` 对应 `src/data/scripts/gearin/hullmods/`，文件必须放在该目录下。按模板使用。
+- **`package` 行**：类的存放目录。`data.scripts.gearin.hullmods` 对应 MOD 根下的 `data/scripts/gearin/hullmods/`，文件必须放在该目录下。按模板使用。
 - **`import` 行**：向游戏借用的工具 (日志、船插基类、数值修改器)。按模板使用，不认识的名称不影响本节操作。
 - **`public class GearInSpeedBooster extends BaseHullMod`**：类的名字。两条规则**：类名必须与文件名一致** (文件 `GearInSpeedBooster.java` 对应类名 `GearInSpeedBooster`)；`extends BaseHullMod` 表示采用船插的标准模板。按模板使用。
 - **`SPEED_PERCENT = 10f`**：本节唯一的参数 —— 速度加成百分比。改为 `50f` 即加成 50%。`f` 是小数标记，`10f` 与 `10.0f` 等价。
@@ -78,24 +78,9 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 - **`id` 列** (第 2 列)：船插的全局唯一标识，`GearIn_` 前缀是 ID 纪律 [C1-S1]。本行是 `GearIn_speed_booster`。
 - **`cost_*` 四列**：装配点消耗 —— 护卫舰 3、驱逐 6、巡洋 9、主力 12。修改这四个数字可调整成本。
 - **`script` 列**：类的完整名。这就是注册：游戏在数据中读到这个类名，需要时加载它。类名必须与文件中的 `class GearInSpeedBooster` 一字不差。
-- **`desc` 列**：装配界面显示的描述文字。引号内的文字可修改。
+- **`desc` 列**：装配界面显示的描述文字。引号内的文字可修改
 
-## 修改参数与观察
-
-1. 把 `SPEED_PERCENT` 从 `10f` 改为 `50f`，保存文件。
-2. 重启游戏。开发期的编译方式是：`data/scripts/` 目录下的源码由游戏**启动时自动编译**，改完代码重启即生效，不需要任何构建工具。正式工程化 (编译进 JAR) 在 [C6-S1]，类名规则不变。
-3. 进入模拟战，把 [C1-S2] 建立的舰船开进装配界面，安装 "加速器"。
-4. 观察两处结果：装配界面的 tooltip 显示速度加成 **50%**；退出游戏后打开 `Starsector/starsector-core/starsector.log`，搜索 `GearIn_speed_booster`，能看到代码里写入的那行日志 —— 这行日志证明游戏确实调用了您的代码。
-
-::: tip 建议
-
-验证前清空 `starsector.log` 再重启游戏，本次运行产生的新行会更容易定位。
-
-:::
-
-改回 `10f` 再重启，加成回到 10%——"修改 —— 重启 —— 观察" 的流程至此建立，后续代码操作继续沿用这组核对动作。
-
-## 参数的写法
+## Java 中参数的写法
 
 - **小数带 `f`**：`10f`、`0.5f`、`3.14f`。游戏数值几乎都是浮点数，写数字时带 `f` 结尾是固定习惯。
 - **`modifyPercent` 加的是百分比**：`modifyPercent(id, 10f)` = 最大速度 +10%。
@@ -103,7 +88,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 ::: warning 修改后无变化时的排查顺序
 
-① 文件保存在 `gear_in` 的 `src/data/scripts/...` 下；② 游戏确实重启过；③ 装配界面确实安装了船插。三项确认后仍无变化，见下方故障分析。
+① 文件保存在 `gear_in` 的 `data/scripts/...` 下；② 游戏确实重启过；③ 装配界面确实安装了船插。三项确认后仍无变化，见下方故障分析。
 
 :::
 
@@ -112,25 +97,28 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 前置数据：[C1-S2] 建立的舰船、本节注册的 `GearIn_speed_booster` 船插与 `GearInSpeedBooster.java`。
 
 1. 从装配界面、模拟战与 `Starsector/starsector-core/starsector.log`开始验证。
-2. 把 `SPEED_PERCENT` 改为 `50f`，保存并重启游戏。
-3. 在装配界面为测试舰船安装 "加速器"，核对 tooltip 与速度数值。
-4. 进入模拟战观察舰船速度，退出后在日志中搜索 `GearIn_speed_booster`。
+2. 在装配界面为测试舰船安装 "加速器"，核对 tooltip 与速度数值。
+3. 进入模拟战观察舰船速度，退出后在日志中搜索 `GearIn_speed_booster`。
+4. 把 `SPEED_PERCENT` 改为 `50f`，保存并重启游戏。
+5. 在装配界面为测试舰船安装 "加速器"，核对 tooltip 与速度数值。
+6. 进入模拟战观察舰船速度，退出后在日志中搜索 `GearIn_speed_booster`。
 
 预期结果：
 
-- 装配界面出现 "加速器"，tooltip 显示 "提高舰船最大速度 50%"(修改参数后)；
-- `starsector.log` 出现一行 `GearIn_speed_booster applied`；
-- 模拟战里舰船速度明显高于未安装时。
+- 装配界面出现 "加速器"，tooltip 始终显示 CSV `desc` 列文本 "提高舰船最大速度 10%"(描述数字未修改)；
+- `starsector.log` 出现两行相隔甚远的 `GearIn_speed_booster applied`；
+- 第一次测试中，模拟战里舰船速度略高于未安装时。
+- 第二次测试中，模拟战里舰船速度明显高于未安装时。
 
 清理：把 `SPEED_PERCENT` 恢复为 `10f`。
 
 ## 故障分析
 
-- **类能编译但没有效果**：`hull_mods.csv` 缺少对应行，或 `script` 列写错时，游戏和日志都没有本船插的反应。文件必须位于 MOD 根的 `data/hullmods/hull_mods.csv`，保留表头行并以 UTF-8 无 BOM 保存；核对 CSV 路径与完整类名，重启后确认加成出现。
-- **日志出现 `Problem loading class`**：`script` 列、`package` 行和 `class` 行没有指向同一个类。逐一对照文件名、`class` 后的名字与 `script` 列三处文本，重启后确认日志不再报告该异常。
+- **类能编译但没有效果**：`hull_mods.csv` 缺少对应行时，类未被注册，游戏和日志都没有本船插的反应；`script` 列写错 (类名对应不到任何源码) 时该名字已进入启动编译队列，加载会在 `Error loading [...]` 处中断，不会静默。文件必须位于 MOD 根的 `data/hullmods/hull_mods.csv`，保留表头行并以 UTF-8 无 BOM 保存；核对 CSV 路径与完整类名，重启后确认加成出现。
+- **日志出现 `Error loading [...]`**：`script` 列、`package` 行和 `class` 行没有指向同一个类。逐一对照文件名、`class` 后的名字与 `script` 列三处文本，重启后确认日志不再报告该异常。
 - **日志报告 `Error loading [...]` 并带行号**：漏分号、括号不配对等 Java 书写错误会在日志中带行号报告。按报错行号对照本节代码逐字检查，修正后重启。
 - **修改参数后加成不变**：当前编辑的可能是另一份文件，或游戏仍在使用重启前加载的类。确认文件属于 `gear_in` 的 `GearInSpeedBooster.java`，重启后重新查看 tooltip。
-- **船插已装但数值没有变化**：观察对象错误时 (tooltip 已是 50% 而舰船本身基础速度较低)，差异容易被忽略。用装配界面的速度数值对比安装前后。
+- **船插已装但数值没有变化**：观察对象错误时 (tooltip 恒为 desc 列文本的 10%，参数修改只反映在统计面板与游戏内数值)，差异容易被忽略。用装配界面的速度数值对比安装前后。
 - **日志文字没出现**：日志级别过滤或搜索词不对时，游戏内行为可以正常而搜索不到完整句子。验证前清空 `starsector.log`，再搜索稳定标识 `GearIn_speed_booster`。
 
 ## 总结
@@ -143,7 +131,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 ## 建议参考项
 
 - `data/hullmods/hull_mods.csv`：船插登记文件 (`script` 列 = 类名，`id` 列 = 唯一标识)。
-- `src/data/scripts/gearin/hullmods/GearInSpeedBooster.java`：本节最小船插效果类。
+- `data/scripts/gearin/hullmods/GearInSpeedBooster.java`：本节最小船插效果类。
 - `data.scripts.gearin.hullmods.GearInSpeedBooster`：类的完整名 (注册用)。
 - `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证回调被调用的位置)。
 - `com.fs.starfarer.api.combat.MutableShipStatsAPI`：数值修改入口 (`getMaxSpeed()` 等；本节的 `modifyPercent` 作用于其返回对象)。

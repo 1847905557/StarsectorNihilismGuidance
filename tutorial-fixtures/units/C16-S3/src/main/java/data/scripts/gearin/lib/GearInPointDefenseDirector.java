@@ -3,6 +3,8 @@ package data.scripts.gearin.lib;
 import org.lazywizard.lazylib.combat.AIUtils;
 import org.lazywizard.lazylib.combat.WeaponUtils;
 
+import com.fs.starfarer.api.Global;
+
 import com.fs.starfarer.api.combat.MissileAPI;
 import com.fs.starfarer.api.combat.WeaponAPI;
 
@@ -23,7 +25,7 @@ public final class GearInPointDefenseDirector {
             }
         }
         if (best != null) {
-            WeaponUtils.aimTowardsPoint(weapon, best.getLocation(), 0f);
+            WeaponUtils.aimTowardsPoint(weapon, best.getLocation(), Global.getCombatEngine().getElapsedInLastFrame());
         }
         return best;
     }

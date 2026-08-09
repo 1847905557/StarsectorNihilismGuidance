@@ -33,7 +33,7 @@ GearIn 的熔炼厂产出一种 "回火合金"。它是货舱里的普通商品�
 
 ```csv
 name,id,demand class,base price,export value,price variability,utility,origin,tags,stack size,cargo space,icon,sound id,sound id drop,order,economyTier,econUnitOrigUnused,econUnit,baseRaidDanger,eU * base value,iconWidthMult,plugin,desc
-Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,60000,1,,
+Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,108000,1,,
 ```
 
 完成信号：日志加载 `GearIn_tempered_alloy`，且没有重复 ID 错误。
@@ -43,7 +43,7 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 `heavy_machinery` 是需求类别，不代表商品会自动出现在某个产业库存。非主商品的基础价格会按需求类别和 `utility` 计算，因此先选已有类别，避免凭空创建经济分类。
 
 ```csv
-Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,60000,1,,
+Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,108000,1,,
 ```
 
 完成信号：货舱单位体积为 1，堆叠上限为 1000，价格面板能读出商品的基础值。
@@ -77,7 +77,7 @@ additem GearIn_tempered_alloy 10
 下面是**局部故障片段**：
 
 ```csv
-Tempered Alloy,GearIn_tempered_alloy,unknown_class,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,60000,1,,
+Tempered Alloy,GearIn_tempered_alloy,unknown_class,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,108000,1,,
 ```
 
 实际症状：进入使用该商品需求类别的市场时，运行时堆栈在解析 `demand class` 处失败。
@@ -87,7 +87,7 @@ Tempered Alloy,GearIn_tempered_alloy,unknown_class,180,700,3,1,,"industrial, exp
 下面是**局部修正片段**：
 
 ```csv
-Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,60000,1,,
+Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,108000,1,,
 ```
 
 复验：改回已注册的需求类别后，重新进入 GearIn 市场，确认运行时不再报错。
@@ -126,7 +126,7 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 
 ```csv
 name,id,demand class,base price,export value,price variability,utility,origin,tags,stack size,cargo space,icon,sound id,sound id drop,order,economyTier,econUnitOrigUnused,econUnit,baseRaidDanger,eU * base value,iconWidthMult,plugin,desc
-Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,60000,1,,
+Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,108000,1,,
 ```
 
 ```json

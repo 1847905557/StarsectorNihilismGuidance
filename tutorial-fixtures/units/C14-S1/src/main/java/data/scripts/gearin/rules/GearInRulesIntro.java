@@ -26,7 +26,7 @@ public class GearInRulesIntro implements EveryFrameScript {
 
     private static final Logger LOG = Global.getLogger(GearInRulesIntro.class);
 
-    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
+    /** 演示是否已执行；置位后 isDone() 返回 true，引擎在置位同一次推进中自动移除本脚本。 */
     private boolean executed = false;
 
     public GearInRulesIntro() {

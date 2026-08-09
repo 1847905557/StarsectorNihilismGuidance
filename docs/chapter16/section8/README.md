@@ -102,7 +102,7 @@ MagicCampaign.createDerelict(variantId, condition,
         true, null, false, orbitCenter, 0f, 200f, 30f);
 ```
 
-实际症状：残骸正常出现，但打捞界面永远不提供恢复舰船。
+实际症状：残骸正常出现，但打捞界面只提供故事点回收选项，没有常规回收流程。
 
 原因：九参数重载的第五个布尔值是 `recoverable`。传入 `false` 时，MagicLib 仍创建并配置残骸，但不会通过 `Misc.setSalvageSpecial()` 挂接舰船回收 special。
 
@@ -140,7 +140,7 @@ MagicCampaign.createDerelict(variantId, condition,
 
 ## 故障分析
 
-- **残骸出现但没有回收流程**：九参数重载的 `recoverable` 为 false，没有挂接回收 special。改为 true，重新创建实体并确认回收选项出现。
+- **残骸出现但只有故事点回收流程**：九参数重载的 `recoverable` 为 false，没有挂载回收 special，但故事点回收选项仍会出现。改为 true 可获得常规回收流程。
 - **残骸没有出现**：variant ID 无法解析，或对应 variant 没有随 MOD 发布。核对注册 ID 和加载日志，再运行创建调用确认实体返回非 null。
 - **残骸出现在错误星系**：`orbitCenter` 来自另一个星系，或实体尚未加入星区。使用任务目标实体作为轨道中心，进入星图核对位置。
 - **任务失败后残骸仍然存在**：清理阶段没有保存并移除创建的 token。把实体加入任务清理列表，失败任务结束并读档确认 token 消失。

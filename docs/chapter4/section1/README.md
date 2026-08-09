@@ -55,7 +55,7 @@ Starsector 有两个主要游玩入口，本节开始会经常把两者并列：
 
 1. 用户点击战役条目，游戏加载并实例化脚本类 `data.missions.<id>.MissionDefinition`，随后调用它的 `defineMission(MissionDefinitionAPI api)`。
 2. 脚本通过 `MissionDefinitionAPI` 写入两侧舰队 (`initFleet` + `addToFleet`)、地图 (`initMap`、`addNebula`、`addObjective`、`addAsteroidField`)、说明 (`setFleetTagline`、`addBriefingItem`) 等。
-3. 游戏用写入结果创建战斗。`defineMission` 每次进入战役详情/战斗都会执行，脚本里的静态状态会跨多次调用保留。
+3. 游戏用写入结果创建战斗。`defineMission` 只在进入或重选战役详情页时执行一次；战斗启动直接复用已建预览，不再调用。脚本里的静态状态会跨多次调用保留。
 
 ### 装配注册链路
 
@@ -235,10 +235,10 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 预期结果：
 
-- 启动游戏后，主菜单 Missions 列表出现 "一次好买卖"(`GearIn_test`) 条目；点击后详情页显示图标、背景、`mission_text.txt` 文本与 "Tactical Objectives" 下的 `TEST` 条目；日志出现 `Loading missions`，且没有相关 `ERROR`。
+- 启动游戏后，主菜单 Missions 列表出现 "一次好买卖"(`GearIn_test`) 条目；点击后详情页显示图标、背景、`mission_text.txt` 文本与 "Tactical Briefing" 下的 `TEST` 条目；日志出现 `Loading missions`，且没有相关 `ERROR`。
 - 部署后用户舰队列出本 MOD 所有船体 (每个 hull 至少一个条目，尚未制作装配的以空装配形态出现)，敌方为余烬空间站；地图含星云、传感器阵列、通讯中继、导航信标和小行星带。
 - 在装配界面修改任何一艘船并返回后，`Starsector\saves\missions\GearIn_test\` 出现 `mission_GearIn_test_ship_0.variant`，内容即该船当前装配。
-- 把导出文件剪贴到 `data/variants`、改名并改 `variantId` 后重启游戏：日志出现 `Loading variant [data/variants/GearIn_artizan_combat.variant]`；设置 `goalVariant: true` 后，该装配出现在装配界面的自动装配列表。
+- 把导出文件剪贴到 `data/variants`、改名并改 `variantId` 后重启游戏：日志出现 `Loading variant [data\variants\GearIn_artizan_combat.variant]`；设置 `goalVariant: true` 后，该装配出现在装配界面的自动装配列表。
 - 常规战役按同样方式注册后出现在 Missions 列表，且使用您自己的装配与文案。
 
 清理：删除 `Starsector\saves\missions\GearIn_test\`(启动时会读回其中的装配)。
@@ -360,7 +360,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 ## 故障分析
 
-- **Missions 列表里没有您的战役**：`mission_list.csv` 缺失、表头不是 `mission`、战役行以 `#` 开头，或文件夹不在 MOD 的 `data/missions` 中时，列表不会出现条目。确认 CSV 第一行是 `mission`、第二行是战役 ID，且目录为 `data/missions\GearIn_test`；重启后列表应出现战役。
+- **Missions 列表里没有您的战役**：战役行以 `#` 开头时列表不会出现条目；已注册的战役文件夹缺失不会静默缺条目，而是加载中断 (见下一条)。`mission_list.csv` 缺失仅贡献 0 行、列表为空 (不中断加载)；表头不是 `mission` 时 `readCSV` 对每行取 `mission` 键会直接抛异常、中断整个加载。确认 CSV 第一行是 `mission`、第二行是战役 ID，且目录为 `data/missions\GearIn_test`；重启后列表应出现战役。
 - **游戏加载中断，进不了主菜单**：已注册的战役文件夹、`descriptor.json`、`mission_text.txt` 或图标缺失，JSON 语法错误，或 `title`、`difficulty`、`icon` 任一必填字段缺失时，`Loading missions` 后会出现异常堆栈。补齐文件和字段并确认图标真实存在，重启后应进入主菜单。
 - **战役出现但点击时报错无法进入**：`MissionDefinition` 源文件缺失，或包名、类名不是 `data.missions.<ID>.MissionDefinition` 时，点击会抛出 `Problem loading class [data.missions.<ID>.MissionDefinition]`。让包名逐字匹配战役 ID，并把类放入 `data/missions\<ID>\`；再次点击应进入战役。
 - **战役里没有自己的船**：`prefix` 拼写或大小写错误，或过滤条件使用了错误前缀。`getAllVariantIds()` 遍历装配 ID，船体过滤应读取 `variant.getHullSpec().getHullId()`；将前缀统一为 `GearIn_` 后重新进入，舰队应列出 GearIn 船体。

@@ -58,12 +58,12 @@
 
 | 方法 | 语义 |
 |---|---|
-| `ShipVariantAPI getVariant(String variantId)` | 注册表未命中时回退读取存档内变体；两处都未命中 → 抛 `RuntimeException("Ship hull variant [...] not found!")`，**无回退** |
+| `ShipVariantAPI getVariant(String variantId)` | 注册表未命中时回退读取存档内变体；两处都未命中 → `SettingsAPI.getVariant` 返回 null(不抛异常) |
 | `List<String> getAllVariantIds()` | 全部已注册 id 的副本 |
 | `ShipVariantAPI createEmptyVariant(String hullVariantId, ShipHullSpecAPI hullSpec)` | 代码构造空变体 (注意这不注册进注册表，也不设 `HULL` 来源) |
 | `int computeNumFighterBays(ShipVariantAPI variant)` | 按变体算战机甲板数 |
 
-注意 `SettingsAPI.getVariant` 的 "抛异常无回退" 只对**注册表读取路径**成立：`FleetMemberAPI` 按 id 建成员时未命中走的是 `errorShipVariant` 回退 (默认 `nebula_Standard`)＋日志堆栈 (该回退在模拟战与标题演示章节已讲)。
+注意 `SettingsAPI.getVariant` 未命中返回 null；"Ship hull variant not found!" 只在引擎内部路径抛。`FleetMemberAPI` 按 id 建成员时未命中走的是 `errorShipVariant` 回退 (默认 `nebula_Standard`)＋日志堆栈 (该回退在模拟战与标题演示章节已讲)。
 
 两条路径不要混为一谈。
 
@@ -225,7 +225,7 @@
 5. **禁止**试图用 `addWeapon` 改内置武器槽、用 `removeMod` 移除内置/perma 船插 —— 两者都静默不生效，装配不变且无任何报错。
 6. `setModuleVariant` 的变体参数**必须**是非 STOCK 来源；传 STOCK 或 `null` 都按 "移除覆盖" 静默处理。
 7. **禁止**跨文件重复 `variantId`—— 后者静默跳过，"装配不出现" 的首选排查方向 (战役制作章节)。
-8. 未注册 id 走 `SettingsAPI.getVariant` → 抛 `Ship hull variant [...] not found!`；走 `FleetMemberAPI` 路径 → `errorShipVariant` 回退 (模拟战与标题演示章节)。两条路径行为不同，排查时先分清。
+8. 未注册 id 走 `SettingsAPI.getVariant` → 返回 null；走 `FleetMemberAPI` 路径 → `errorShipVariant` 回退 (模拟战与标题演示章节)。两条路径行为不同，排查时先分清。
 
 **建议**：
 
@@ -263,7 +263,7 @@ refit.clearSlot("WS 003");
 refit.addWeapon("WS 003", "railgun");
 refit.setNumFluxVents(14);
 refit.setNumFluxCapacitors(10);
-refit.addMod("hardenedsubsystems");
+refit.addMod("hardened_subsystems");
 refit.removeMod("reinforcedhull");
 refit.setSource(VariantSource.REFIT);
 refit.setVariantDisplayName("GearIn Refit");
@@ -485,10 +485,10 @@ variant.addWeapon("WS 001", "lightmg");
 - **新建生涯**：`starsector.log` 按注册顺序出现以下日志 (数值以实际游戏为准)：
 
     ```text
-    GearIn stock: id=brawler_Assault displayName=Assault hull=brawler source=STOCK isStockVariant=true isEmptyHullVariant=false weapons=[WS 001, WS 002, WS 003, WS 004] mods=[fluxbreakers, reinforcedhull] wings=[] vents=10 caps=8 op=... unused=... GearIn hull empty variant: id=brawler_Hull source=HULL isStockVariant=false isEmptyHullVariant=true displayName=Custom GearIn refit clone: id=brawler_Assault displayName=GearIn Refit hull=brawler source=REFIT isStockVariant=false isEmptyHullVariant=false weapons=[...] mods=[fluxbreakers, hardenedsubsystems] wings=[] vents=14 caps=10 op=... unused=... GearIn clone isolation: stock WS 003=annihilator vents=10 caps=8 hasReinforcedHull=true GearIn from empty: groups=0 hasUnassignedWeapons=true GearIn from empty groups after autoGenerateWeaponGroups: LINKED[[WS 003, WS 004]] GearIn OP: stock=... refit=... hullOP=... unusedRefit=... GearIn modules: stationModules={WS 006=module_armour3_Standard, ...} module WS 009=module_large1_lowtech_Standard override=module_large1_lowtech_Standard overrideSource=REFIT GearIn refit JSON: { "displayName": "GearIn Refit", "hullId": "brawler", "variantId": "brawler_Assault", ... } GearIn registered variant count: 900+
+    GearIn stock: id=brawler_Assault displayName=Assault hull=brawler source=STOCK isStockVariant=true isEmptyHullVariant=false weapons=[WS 001, WS 002, WS 003, WS 004] mods=[fluxbreakers, reinforcedhull] wings=[] vents=10 caps=8 op=... unused=... GearIn hull empty variant: id=brawler_Hull source=HULL isStockVariant=false isEmptyHullVariant=true displayName=Custom GearIn refit clone: id=brawler_Assault displayName=GearIn Refit hull=brawler source=REFIT isStockVariant=false isEmptyHullVariant=false weapons=[...] mods=[fluxbreakers, hardened_subsystems] wings=[] vents=14 caps=10 op=... unused=... GearIn clone isolation: stock WS 003=annihilator vents=10 caps=8 hasReinforcedHull=true GearIn from empty: groups=0 hasUnassignedWeapons=true GearIn from empty groups after autoGenerateWeaponGroups: LINKED[[WS 003, WS 004]] GearIn OP: stock=... refit=... hullOP=... unusedRefit=... GearIn modules: stationModules={WS 006=module_armour3_Standard, ...} module WS 009=module_large1_lowtech_Standard override=module_large1_lowtech_Standard overrideSource=REFIT GearIn refit JSON: { "displayName": "GearIn Refit", "hullId": "brawler", "variantId": "brawler_Assault", ... } GearIn registered variant count: 647
     ```
 
-    要点核对：`brawler_Hull` 的 `isStockVariant=false` 且 `isEmptyHullVariant=true`(来源是 HULL 不是 STOCK)；`refit clone` 的来源是 REFIT、`reinforcedhull` 已被移除、`hardenedsubsystems` 已加入、vents/caps 变成 14/10；`clone isolation` 一行证明原注册表变体未被污染 (WS 003 仍是 `annihilator`、幅能 10/8)；`overrideSource=REFIT` 证明非 STOCK 覆盖已挂上。
+    要点核对：`brawler_Hull` 的 `isStockVariant=false` 且 `isEmptyHullVariant=true`(来源是 HULL 不是 STOCK)；`refit clone` 的来源是 REFIT、`reinforcedhull` 已被移除、`hardened_subsystems` 已加入、vents/caps 变成 14/10；`clone isolation` 一行证明原注册表变体未被污染 (WS 003 仍是 `annihilator`、幅能 10/8)；`overrideSource=REFIT` 证明非 STOCK 覆盖已挂上。
 - **各脚本错误行**：若日志出现任一脚本角色的 ERROR 行 (含堆栈)：
     - `GearIn variant reader failed` / `GearIn variant refitter failed` / `GearIn weapon group builder failed`
     - `GearIn module overrider failed` 或 `GearIn variant serializer failed`；
@@ -501,7 +501,7 @@ variant.addWeapon("WS 001", "lightmg");
 
 - **装配没有出现在注册表中**：变体 ID 重复，或文件没有放在 `data/variants` 下并使用 `.variant` 后缀。调整文件位置并换用唯一 ID，再用 `getAllVariantIds()` 确认该项存在。
 - **加载变体时启动中止**：文件缺少必填键，或引用了不存在的 hull、武器 ID。根据日志中的 `JSONException` 或 `spec [...] not found` 核对数据；重启后确认加载越过该文件。
-- **`getVariant` 抛出 `Ship hull variant [...] not found!`**：注册表和存档都没有与传入 ID 完全匹配的变体。用 `getAllVariantIds()` 核对大小写与拼写，再重新调用读取入口。
+- **`getVariant` 返回 null**：注册表和存档都没有与传入 ID 完全匹配的变体。用 `getAllVariantIds()` 核对大小写与拼写，再重新调用读取入口。
 - **部署时报告槽位不存在**：`addWeapon` 接受了 hull 中没有的槽位 ID，错误到构建舰船时才暴露。写入前通过 `getSlot` 或 `getAllWeaponSlots` 核对槽位，再部署同一装配。
 - **修改一艘船后同装配舰船全部变化**：代码直接修改了 `SettingsAPI.getVariant` 返回的共享对象。先 `clone()`，修改后通过 `setVariant` 写回目标成员；重新读取其他成员确认没有被污染。
 - **读档后装配恢复原状**：克隆保留了 STOCK 或 HULL 来源，成员没有按改装结果落档。修改前调用 `setSource(VariantSource.REFIT)`，保存并读档后复查武器与船插。
@@ -631,7 +631,7 @@ public class GearInVariantReader implements EveryFrameScript {
     private void runOnce() {
         MutableCharacterStatsAPI stats = Global.getSector().getPlayerPerson().getStats();
 
-        // 1) 注册表读取：缺失 id 抛 RuntimeException "Ship hull variant [...] not found!"
+        // 1) 注册表读取：缺失 id 返回 null
         //    (变体注册表的 getVariant，注册表未命中时还会回退查询存档变体数据)
         ShipVariantAPI stock = Global.getSettings().getVariant("brawler_Assault");
         GearInVariantLog.logVariant("stock", stock, stats);
@@ -713,7 +713,7 @@ public class GearInVariantRefitter implements EveryFrameScript {
         refit.addWeapon("WS 003", "railgun");         // 装上小实弹 (brawler 的 WS 003 是 SMALL UNIVERSAL 硬点)
         refit.setNumFluxVents(14);
         refit.setNumFluxCapacitors(10);
-        refit.addMod("hardenedsubsystems");
+        refit.addMod("hardened_subsystems");
         refit.removeMod("reinforcedhull");
         refit.setSource(VariantSource.REFIT);
         refit.setVariantDisplayName("GearIn Refit");

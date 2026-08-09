@@ -73,7 +73,7 @@
 
 实例化时机是条件实例创建时 (创建流程见下)，不是 CSV 加载时。
 
-**交叉校验的完整流程**：procgen 表 `data/campaign/procgen/condition_gen_data.csv` 的每一行 (除 `_nopick` 后缀) 必须在 `market_conditions.csv` 有对应行。
+**交叉校验的完整流程**：procgen 表 `data/campaign/procgen/condition_gen_data.csv` 的每一行 (除 `_no_pick` 后缀) 必须在 `market_conditions.csv` 有对应行。
 
 否则**加载期**抛 `RuntimeException("[...] is not a valid market condition, was loading: condition_gen_data.csv")`。
 
@@ -144,7 +144,7 @@
 
 survey 是**两层**状态，别混用：
 
-- **市场级 `SurveyLevel`**(`NONE / SEEN / PRELIMINARY / FULL`)：用户对行星的勘测进度。规则读取器把 `$isSurveyed` / `$surveyLevel` 写进市场 memory。
+- **市场级 `SurveyLevel`**(`NONE / SEEN / PRELIMINARY / FULL`)：用户对行星的勘测进度。`CampaignPlugin.updateMarketFacts` 把 `$isSurveyed` / `$surveyLevel` 写进市场 memory。
 - **条件级 `isSurveyed` / `requiresSurveying`**：单条条件的勘测状态。`requiresSurveying()` 查 `condition_gen_data.csv` 对应行的 `reqSurvey` 列 (表内 `ore_sparse` / `ore_abundant` / `ruins_*` 等资源类条件为 `TRUE`)。
 
 ### 条件 survey 初始值速查表
@@ -170,7 +170,7 @@ survey 是**两层**状态，别混用：
 - `reapplyCondition(token)`：单实例 `unapply` +(未 suppressed)`apply`；**不检查 surveyed**—— 两个重算入口的检查条件不同。
 - 未勘测条件的可观察行为：`addCondition` 当帧效果已生效 (apply 不查 surveyed)，**下一次重算后效果消失** (unapply 执行、apply 被跳过)；勘测完成后恢复。
 - UI 侧：勘测扫描面板与勘测结果面板只展示 `isSurveyed()` 为 true 的条件。
-- 条件市场的重算只查 surveyed、不查 suppression(这类市场对 suppression 族是空实现)。
+- 运行期条件市场是常规 `Market` 实例，重算同时检查 surveyed 与 suppression。
 
 ### suppression 语义
 
@@ -432,10 +432,10 @@ MarketConditionAPI condition = market.getSpecificCondition(token);
 - **add 与 applied**(token 随机后缀以日志为准)：
 
     ```text
-    GearIn condition lifecycle add: id=GearIn_ore_deposits token=GearIn_ore_deposits_xxxxx plugin=GearInOreCondition planetary=true surveyed=true reqSurvey=false genSpec=null specOrder=50 icon=graphics/hullmods/generic_mod.png GearIn condition lifecycle add: desc=Rich, dense ore veins run deep beneath the surface of Jangala, hinting at profitable mining opportunities. GearIn condition lifecycle applied: hazard=1.40 hazardModSource=GearIn_ore_deposits_xxxxx hazardModValue=0.15 accessibilityFlat=1.10 accModValue=0.10 GearIn condition lifecycle tokens: $marketName=Jangala $marketFaction=Hegemony
+    GearIn condition lifecycle add: id=GearIn_ore_deposits token=GearIn_ore_deposits_xxxxx plugin=GearInOreCondition planetary=true surveyed=true reqSurvey=false genSpec=null specOrder=50 icon=graphics/hullmods/generic_mod.png GearIn condition lifecycle add: desc=Rich, dense ore veins run deep beneath the surface of $marketName, hinting at profitable mining opportunities. GearIn condition lifecycle applied: hazard=1.40 hazardModSource=GearIn_ore_deposits_xxxxx hazardModValue=0.15 accessibilityFlat=1.10 accModValue=0.10 GearIn condition lifecycle tokens: $marketName=Jangala $marketFaction=Hegemony
     ```
 
-    核对：`plugin=GearInOreCondition`(script 列生效)；`planetary=true`(CSV 列生效)；`surveyed=true`、`reqSurvey=false`、`genSpec=null`(无 procgen 行 → 默认已勘测)；`icon` 是回退的 `graphics/hullmods/generic_mod.png`(icon 列留空)；`hazardModSource` 与 `token` 相同 (modifier source = 实例 token)；`desc` 里的 `$marketName` 已由 token 替换链填充 (替换发生在 tooltip 创建时，`$marketName` 值等于市场名)。
+    核对：`plugin=GearInOreCondition`(script 列生效)；`planetary=true`(CSV 列生效)；`surveyed=true`、`reqSurvey=false`、`genSpec=null`(无 procgen 行 → 默认已勘测)；`icon` 是回退的 `graphics/hullmods/generic_mod.png`(icon 列留空)；`hazardModSource` 与 `token` 相同 (modifier source = 实例 token)；`desc` 打印的是 `spec.getDesc()` 的**原始文本** (含字面 `$marketName`)——token 替换只发生在 tooltip 创建时，演示脚本从不创建 tooltip，日志不会看到替换值。
 
 - **多实例 + param**：
 
@@ -516,7 +516,7 @@ MarketConditionAPI condition = market.getSpecificCondition(token);
 
 - **注册链**：`market_conditions.csv`(九字段：`name,id,tags,planetary,decivRemove,script,desc,icon,order`)→ CSV spec 加载期 (`readCSV("id", ...)` 合并、`registerScriptClass`、icon 回退、`putSpec`)→ `addCondition(id)` 实例化 (spec 缺失抛异常)→ plugin 生命周期。MOD 追加一行即注册；加载日志 `Loading condition: <id>` 是注册成功的第一个可观察信号。
 - **生命周期链**：`init(market, condition)` → `setParam(param)` → `apply(token)` → 每帧 `advance(amount)`(`runWhilePaused()` 决定暂停时是否推进)→ `unapply(token)`(移除/重算时)。`isTransient()` 决定 plugin 是否进存档；transient 插件读档重建不重放 `setParam`。
-- **重算链**：三个触发点 (经济迭代、稳定度变化 `MarketAPI.advance`、手动调用)→ `reapplyConditions()`(全部)/ `reapplyCondition(token)`(单个)→ 每实例 `unapply` + 按 **surveyed && !suppressed** 两类检查 `apply`。
+- **重算链**：三个触发点 (经济迭代、稳定度变化 `MarketAPI.advance`、手动调用)→ `reapplyConditions()`(全部)/ `reapplyCondition(token)`(单个)→ 每实例 `unapply` + 按检查条件 `apply`。两个入口的检查条件不同：`reapplyConditions()` 跳过未勘测或已抑制的实例 (**surveyed && !suppressed**)，`reapplyCondition(token)` 只跳过已抑制的实例 (不查 surveyed)。
 
 记忆要点：
 

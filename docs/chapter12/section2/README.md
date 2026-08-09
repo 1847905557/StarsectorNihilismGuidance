@@ -114,7 +114,7 @@ if (!this.isPaused()) {
 
 实现 (`ListenerManagerAPI`)：内部由两个仓库构成 ——`listeners`(持久) 与 `transientListeners`(transient，读档时重建)。语义要点：
 
-- `addListener` / `addListener(listener, true)` 直接写入对应仓库，**`ListenerManagerAPI` 自身没有任何去重检查** (与通道一的 `contains` 去重不同；不要依赖 "重复注册会被自动去重")。
+- `addListener` / `addListener(listener, true)` 直接写入对应仓库；仓库内部先判等、已存在即拒绝写入 (与通道一的 `contains` 去重行为相同，仅检查位置不同 —— 重复注册会被静默丢弃)。
 - `removeListener` 同时清两个仓库；`removeListenerOfClass` 遍历两个仓库的**快照**逐个移除 (安全改列表)；`getListeners` 返回两仓库并集的新列表，派发侧遍历的是这份副本。
 - 持久性：`ListenerManagerAPI` 实例随存档保存；transient 仓库读档后必然清空。
 
@@ -355,7 +355,7 @@ Starsector/mods/GearIndustry/
     }
 
     // 通道二：类型化监听器，transient 注册。读档后 transient 仓库被清空，
-    // hasListenerOfClass 判空补注册 (硬规则 4)；ListenerManagerAPI 不去重，别去掉这个判空。
+    // hasListenerOfClass 判空补注册 (硬规则 4)；transient 仓库读档必清空，别去掉这个判空。
     if (!sector.getListenerManager().hasListenerOfClass(GearInLocationChangeListener.class)) {
         sector.getListenerManager().addListener(new GearInLocationChangeListener(), true);
     }

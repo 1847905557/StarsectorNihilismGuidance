@@ -97,7 +97,7 @@ public class GearInSpecialForcesNamer {
 }
 ```
 
-实际症状：特遣队照常生成，但使用 Nexerelin 默认名称，日志出现类实例化失败。
+实际症状：特遣队照常生成，但名称变为 "error"，日志出现类实例化失败。
 
 原因：配置加载要求公开无参构造，并且类必须实现 `SpecialForcesNamer`；带参数构造器无法由脚本类加载器直接创建。
 
@@ -132,7 +132,7 @@ public class GearInSpecialForcesNamer implements SpecialForcesNamer {
 
 ## 故障分析
 
-- **特遣队使用 Nexerelin 默认名称**：配置类无法实例化，通常缺少公开无参构造或没有实现 `SpecialForcesNamer`。修正后重启并生成 GearIn 特遣队，确认名称包含 `Forgeguard`。
+- **特遣队名称变为 "error"**：配置类无法实例化，通常缺少公开无参构造或没有实现 `SpecialForcesNamer`。修正后重启并生成 GearIn 特遣队，确认名称包含 `Forgeguard`。
 - **特遣队名称频繁重复**：编号范围只提供候选，管理器仍可能重复请求。把来源市场和序数同时纳入名称，并保留去重重试；连续生成后核对名称分布。
 - **`origin` 为 null 时命名器崩溃**：代码没有市场和固定文本两级备用值。先检查 origin，再查询势力市场，最后回退到 `GearIn`；用无来源舰队复验。
 - **一次入侵产生重复日志**：`register()` 从多个入口加入了同类监听器。保留唯一生涯初始化入口或注册前检查现有实例，再触发一次入侵确认每阶段只有一条日志。

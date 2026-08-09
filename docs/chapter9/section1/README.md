@@ -73,7 +73,8 @@
     - 也就是说，"脚本随不随存档保存" 由字段的 `transient` 修饰决定：**`scripts` 随存档保存，`transientScripts` 不随存档保存**。
     - 这是 `addScript` 与 `addTransientScript` 的唯一行为差别，注册入口的选择直接决定跨存档行为。
 3. 实体级脚本是另一条平行线：实体对象也持有自己的 `scripts` 列表并逐实体推进，舰队脚本用 `CampaignFleetAPI.addScript(...)` 挂载 (成熟实例的通用做法)。
-    - 实体级脚本随实体生命周期走，`EveryFrameScriptWithCleanup.cleanup()` 只在附着实体被移除时调用。
+    - 实体级脚本随实体生命周期走；注意 `EveryFrameScriptWithCleanup.cleanup()` 不会被引擎调用。
+    - **原版 API 文档缺陷**：该接口的 javadoc 声称 "附着实体被移除时调用 cleanup()"，引擎实际从不调用。实现该接口的 `cleanup()` 永远不会被执行。
     - 本节示例用引擎级 `addScript`；实体级脚本按对象生命周期注册。
 
 ### 时间系统 (CampaignClockAPI)
@@ -109,7 +110,7 @@
 
 | 方法 | 返回 | 语义 |
 |---|---|---|
-| `getCycle()` | `int` | 年 (纪元 206 起；存档界面与 `getCycleString()` 写作 `c206`) |
+| `getCycle()` | `int` | 年 (纪元 206 起；存档界面写作 `Cycle 206, Mar 2` 格式，`getCycleString()` 写作 `c206`) |
 | `getMonth()` | `int` | 月，1–12(1 = January) |
 | `getDay()` | `int` | 日，1–31 |
 | `getHour()` | `int` | 时，0–23 |
@@ -141,7 +142,7 @@
 1. 引擎遍历的是**列表快照** (`new ArrayList<>(this.scripts)`)，因此脚本在 `advance()` 里安全地 `addScript` / `removeScript` 不会抛 `ConcurrentModificationException`。
     - 代价是**在 advance 里新加的脚本要到下一帧才开始推进**。
 2. 对每个脚本：先查 `isDone()`—— 为真直接移除 (不调 `advance`)；否则查 `runWhilePaused() || !isPaused()`—— 为真才调 `advance(amount)`；`advance` 返回后再查一次 `isDone()`，为真则移除。
-3. 移除的三个入口：`isDone()` 自动清理 (引擎下一帧生效)；`removeScript(script)` 按**对象同一性**移除；`removeScriptsOfClass(Class)` 按**精确类** (`getClass() == clazz`，子类不算) 批量移除。
+3. 移除的三个入口：`isDone()` 自动清理 (引擎在 `advance` 返回后同帧移除)；`removeScript(script)` 按**对象同一性**移除；`removeScriptsOfClass(Class)` 按**精确类** (`getClass() == clazz`，子类不算) 批量移除。
 4. `hasScript(Class)` 用 `isInstance` 判断 (**子类实例也算命中**)，与 `removeScriptsOfClass` 的精确类语义不同 —— 查重用 `hasScript`，批量删用 `removeScriptsOfClass`，别混用。
 5. **`addScript` 不去重**：直接 `scripts.add(...)`。同一实例或等价实例重复注册会各自推进，这是 "日志成双、行为叠加" 的根源。
 6. 引擎自身也会注册自己的内置脚本 —— 引擎级脚本不是 MOD 专属机制。
@@ -363,7 +364,7 @@ sector.addScript(new GearInSectorClockScript());
     GearIn clock script done: 30 game days elapsed, isDone()=true
     ```
 
-    之后不再有跨日日志 —— 引擎在置位后的下一帧从 `scripts` 列表移除了脚本 (可验证 `Global.getSector().hasScript(GearInSectorClockScript.class)` 为 `false`)。
+    之后不再有跨日日志 —— 引擎在置位后的同一帧 (`advance` 返回后的复查) 从 `scripts` 列表移除了脚本 (可验证 `Global.getSector().hasScript(GearInSectorClockScript.class)` 为 `false`)。
 
 - 退出到主菜单：脚本停止推进 (生涯引擎不再推进)；回到主菜单后再进档 (读档) 按第 5 条继续。
 
@@ -402,7 +403,7 @@ sector.addScript(new GearInSectorClockScript());
 - `com.fs.starfarer.api.campaign.SectorAPI`：星区根对象 —— 时钟、脚本、持久数据、记忆、暂停等入口。
 - `com.fs.starfarer.api.campaign.CampaignClockAPI`：生涯时钟 —— 日期/时间戳读取与秒 ⇄ 游戏日换算。
 - `com.fs.starfarer.api.EveryFrameScript`：生涯按帧脚本接口 ——`isDone` / `runWhilePaused` / `advance` 三方法约定。
-- `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：带 `cleanup()` 的脚本接口，附着实体被移除时调用。
+- `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：带 `cleanup()` 的脚本接口；引擎从不调用 `cleanup()`。
 - `com.fs.starfarer.api.Global`：`getSector()` / `getLogger()` 全局入口。
 - `data.scripts.gearin.campaign.GearInSectorClockScript`：本节示例类 (完整最小例源码)。
 - `data/config/settings.json`：`campaignSpeedupMult` 等生涯设置 (加速倍数)。
@@ -429,7 +430,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  *
  * 行为：每个游戏日跨日时打印一行日志 (当前日期、本帧折合的游戏天数、挂载以来经过的游戏天数)；
  * 默认 runWhilePaused() 返回 false：引擎暂停时脚本不推进、生涯时钟也不前进；
- * daysToRun >= 0 时挂载满该天数后 isDone() 返回 true，引擎在下一帧自动从 scripts 列表移除本脚本。
+ * daysToRun >= 0 时挂载满该天数后 isDone() 返回 true，引擎在 isDone() 置位的同一次推进中从 scripts 列表移除本脚本。
  */
 public class GearInSectorClockScript implements EveryFrameScript {
 
@@ -450,7 +451,7 @@ public class GearInSectorClockScript implements EveryFrameScript {
     /** 演示参数：是否在引擎暂停时仍推进；默认 false(暂停即停表)。 */
     private boolean runWhilePaused = false;
 
-    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
+    /** 完成标记：isDone() 返回 true 后引擎在置位同一次推进中自动移除本脚本。 */
     private boolean done = false;
 
     public GearInSectorClockScript() {

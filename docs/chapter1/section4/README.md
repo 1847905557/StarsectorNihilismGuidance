@@ -120,7 +120,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 ## 故障分析
 
 - **相位舰加载时报缺图**：`_glow1`、`_glow2` 名称或目录错误，两张图必须与主贴图同目录并使用规定后缀。改正贴图路径和大小写后重启，日志不应再报告缺少相位贴图。
-- **相位舰加载时报系统缺失**：`shield type` 与 `defense id` 写反，前者必须是 `PHASE`，后者必须是可用系统 ID。修正字段后重新生成舰船，相位系统应能在装配界面和战斗中出现。
+- **相位舰加载报错**：两列写反时，加载期抛 `Key [shield type] has invalid value [phasecloak]`；`defense id` 写 `PHASE` 则实例化时抛空指针。正确写法：前者 `PHASE`，后者填实际相位系统 ID(如 `phasecloak`)。修正后重新生成舰船，相位系统应能在装配界面和战斗中出现。
 
 ## 总结
 

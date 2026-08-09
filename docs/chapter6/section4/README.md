@@ -49,7 +49,7 @@
 
 ### 刷新设置缓存
 
-`getFloat`、`getBoolean`、`getInt` 和 `getColor` 可能使用进程级缓存。直接修改 `getSettingsJSON()` 返回的对象后，需要调用 `resetCached()`，否则后续读取可能继续看到旧缓存。
+`getFloat`、`getBoolean`、`getInt` 使用进程级缓存，修改设置对象后需调用 `resetCached()`。`getColor` 的缓存不被 `resetCached()` 清除，只能重载设置刷新。
 
 `setFloat` 和 `setBoolean` 只修改内存中的 settings 对象，不会写回 MOD 目录，也不会形成存档持久化。需要保存跨启动数据时，使用 Chapter 15 的 common 写入入口。
 
@@ -160,7 +160,7 @@ float refreshed = settings.getFloat("GearIn_loop_volume");
 
 - **严格读取抛出 `RuntimeException`**：键不存在或 JSON 类型不符。核对 `settings.json` 的键名和类型，修正后重新载入配置，读取应返回目标值。
 - **`getInt` 的结果丢失小数**：该方法通过 `getFloat` 读取后执行整数截断。需要小数时改用 `getFloat`，重新打印结果应保留小数部分。
-- **修改 JSON 后读取仍是旧值**：直接修改 `getSettingsJSON()` 返回对象却没有调用 `resetCached()`，缓存仍然有效。清理缓存后再读取，日志应显示新值。
+- **修改 JSON 后读取仍是旧值**：直接修改 `getSettingsJSON()` 返回对象却没有调用 `resetCached()`，缓存仍然有效。清理缓存后再读取，日志应显示新值；`getColor` 例外，其缓存只能重载设置刷新。
 - **设置在重启后消失**：`setFloat` 和 `setBoolean` 只修改内存。跨启动数据写入 common，重启后重新读取 common，值应保持不变。
 - **提交启动器关键键后数值没有变化**：这些键由启动器管理，MOD 中的同名键不属于可覆盖设置。改用启动器提供的入口或换一个自有键，重启后观察对应设置是否生效。
 

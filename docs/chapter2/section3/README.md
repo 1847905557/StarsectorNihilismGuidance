@@ -71,12 +71,12 @@
 
 ## 注册战术系统参数
 
-在 MOD 的 `data\shipsystems\ship_systems.csv` 里，从原版复制 `#Burn Drive` 那一行，只改 `name` 与 `id`：
+在 MOD 的 `data\shipsystems\ship_systems.csv` 里，从原版复制 `Burn Drive` 那一行，只改 `name` 与 `id`：
 
 ```text
 name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle,noDissipation,noHardDissipation,hardFlux,noFiring,noTurning,noStrafing,noAccel,noShield,noVent,isPhaseCloak,tags,icon
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,
-#Burn Drive,burndrive,1,,,,,,,,,2,5,1,10,TRUE,,,,,TRUE,TRUE,TRUE,TRUE,,,movement,graphics/icons/hullsys/burn_drive.png
+Burn Drive,burndrive,1,,,,,,,,,2,5,1,10,TRUE,,,,,TRUE,TRUE,TRUE,TRUE,,,movement,graphics/icons/hullsys/burn_drive.png
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,
 燃烧驱动,GearIn_burstdrive,1,,,,,,,,,2,5,1,10,TRUE,,,,,TRUE,TRUE,TRUE,TRUE,,,movement,graphics/icons/hullsys/burn_drive.png
 ```
@@ -97,9 +97,9 @@ name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u 
 
 - **`toggle`**：`TRUE` = 开关式，再按一次才关闭 (本系统如此)；留空 = 非开关式，按一次后完整运行 `charge up → active → down → cooldown` 周期。
 - **`max uses`**：充能次数，留空 = 无限。
-- **`noAccel`/`noFiring`/`noTurning` 等 `no*` 列**：激活期间禁止的行为，`TRUE` = 禁止。本行禁止了开火、转向、平移与加速 —— 激活期间无法进行这些操作。
+- **`noAccel`/`noFiring`/`noTurning` 等 `no*` 列**：激活期间禁止的行为，`TRUE` = 禁止。本行禁止了转向、平移、加速与护盾 —— 激活期间无法转向、平移或加速，护盾强制关闭；开火不受禁止。
 
-`f/s`、`f/u` 系列与 `cr/u` 等列按模板使用；本页只保留原版幅能费率字段，不展开额外调参。复制原版行时保留表头与 `#` 注释行，只改目标行的 `name` 与 `id`。
+`f/s`、`f/u` 系列与 `cr/u` 等列按模板使用；本页只保留原版幅能费率字段，不展开额外调参。复制原版行时保留表头，只改目标行的 `name` 与 `id`。
 
 ## 实现战术系统效果
 
@@ -172,7 +172,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 至此四段链路完成。重启游戏验证：
 
-1. 日志出现 `Loading ship system [data/shipsystems/GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，无 `ERROR`；
+1. 日志出现 `Loading ship system [data\shipsystems\GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，无 `ERROR`；
 2. 控制台 `Addship GearIn_artizan` 进模拟战，按 F：约 2 秒前摇内速度平滑升至 +200，左下角出现 `engine power increased`；本系统是开关式，再按 F 关闭；
 3. 关闭后约 1 秒后摇内按基础速度减速，随后约 10 秒冷却，HUD 显示冷却进度。
 
@@ -284,7 +284,7 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
 预期结果：
 
-- 日志出现 `Loading ship system [data/shipsystems/GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，且没有相关 `ERROR`。
+- 日志出现 `Loading ship system [data\shipsystems\GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，且没有相关 `ERROR`。
 - 前摇约 2 秒内速度与加速度平滑升至 +200；左下角状态栏出现 `engine power increased`；开关式 (`toggle=TRUE`) 再按 F 关闭。
 - 关闭后约 1 秒后摇内按基础速度减速；随后约 10 秒冷却，冷却结束可再次激活。
 - 参数实验 (`SPEED_BONUS`、`active`、`cooldown`) 各自产生可感知的行为差异。
@@ -293,10 +293,10 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 ## 故障分析
 
 - **游戏加载时报 `Fatal: ship_systems.csv is missing systems`**：`.system` 已创建，但 CSV 没有对应行或行首仍有 `#`。补回 `GearIn_burstdrive` 数据行并取消注释，重启后确认加载继续。
-- **系统数值全为零**：CSV 行与 `.system` 使用了不同 ID，日志会出现 `not found in store`，按键后系统瞬间结束。统一两处 ID，重新进入战斗后核对持续时间。
+- **系统数值全为零、按键瞬间结束**：CSV 行与 `.system` 两处 ID 一致、但 `charge up`/`active`/`down`/`cooldown` 数值为空时，状态机一帧内跑完整个周期。注意：两处 ID 不一致不会造成 "瞬间结束"—— 加载期即抛 `Fatal: ship_systems.csv is missing systems` 中断 (日志至多先出现一行 `not found in store` 警告)。统一两处 ID 并填上数值，重新进入战斗后核对持续时间。
 - **舰船部署时报 `System with id [...] not found`**：船体的 `system id` 拼错，或对应系统尚未注册。核对 `.ship`、`.system` 与 CSV 三处 ID，修正后重新部署。
 - **冷却结束后效果仍然残留**：`unapply` 没有撤销 `apply` 写入的修饰。使用同一 source id 成对撤销，再次完整激活并等待冷却结束。
-- **日志出现 `Problem loading class [...]`**：`statsScript` 类名、包声明和文件路径不一致，或文件错误地放在 `src\` 前缀下。将类放在 MOD 根目录对应包路径，统一三处名称后重启。
+- **日志出现 `Error loading [...]`**：`statsScript` 类名、包声明和文件路径不一致，或文件错误地放在 `src\` 前缀下。将类放在 MOD 根目录对应包路径，统一三处名称后重启。
 
 ## 总结
 

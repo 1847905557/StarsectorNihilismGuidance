@@ -26,8 +26,8 @@ import com.fs.starfarer.api.util.Pair;
  *   4. disruption：notifyDisrupted / disruptionFinished 打日志；setDisrupted 由外部触发
  *      (突袭、AI 审查、Luddic Path)，中断期间 isFunctional()=false、建设暂停。
  *
- * 演示全程可清理：removeIndustry(GearInTrainingIndustry.INDUSTRY_ID, null, false) 即返还
- * AI core 并撤销全部修饰。
+ * 演示全程可清理：removeIndustry(GearInTrainingIndustry.INDUSTRY_ID, null, false) 撤销全部修饰；
+ * mode 为 null 时 AI core 直接丢失、不返还。
  */
 public class GearInTrainingIndustry extends BaseIndustry {
 

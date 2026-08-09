@@ -56,7 +56,7 @@ public class GearInVariantRefitter implements EveryFrameScript {
         refit.addWeapon("WS 003", "railgun");         // 装上小实弹 (brawler 的 WS 003 是 SMALL UNIVERSAL 硬点)
         refit.setNumFluxVents(14);
         refit.setNumFluxCapacitors(10);
-        refit.addMod("hardenedsubsystems");
+        refit.addMod("hardened_subsystems");
         refit.removeMod("reinforcedhull");
         refit.setSource(VariantSource.REFIT);
         refit.setVariantDisplayName("GearIn Refit");

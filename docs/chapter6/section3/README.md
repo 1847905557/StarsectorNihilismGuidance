@@ -136,7 +136,7 @@ Global.getLogger(GearInGlobalAccess.class).info("任意内容");
 - `getCurrentMusicId()`：返回当前曲目 ID；无播放时返回字符串 `"nothing"`(javadoc 原文)。
 - `restartCurrentMusic()` / `getCurrentMusicId()` / `playCustomMusic` / `setSuspendDefaultMusicPlayback`：javadoc 标注线程安全，可从非主循环线程调用。
 
-未注册 ID 的行为：引用未注册的 sound ID 时，播放调用抛 `RuntimeException`，消息为 `Sound set with id [...] not found`—— 这是运行期异常，在调用点抛出 (声音消费主题的故障分析有完整定位流程)。
+未注册 ID 的行为：`playUISound` 抛 `RuntimeException`，消息为 `Sound set with id [...]  not found`(原版该消息是双空格)；`playSound`/`playLoop` 则直接抛 `NullPointerException`。这是运行期异常，在调用点抛出 (声音消费主题的故障分析有完整定位流程)。
 
 注意声音播放实现对 `null` ID 是宽容的 (`playUISound`/`playSound` 返回 `null`、`playLoop` 忽略)，但宽容不是可以依赖的行为：ID 拼错或未注册照样抛异常。
 
@@ -313,7 +313,7 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
 - **循环音效自行停止**：`playLoop` 没有在每帧回调中续期。把调用移入 `advance`，并持续使用稳定的 `playingEntity`。
 - **位置音效无法正确定位**：`playSound` 使用了双声道素材。位置音效改用 mono 素材后，在不同距离重新试听。
 - **UI 音效播放异常**：`playUISound` 使用了单声道素材。替换为双声道素材并重新触发界面操作。
-- **播放时报 `Sound set with id [...] not found`**：sound ID 未注册或大小写不一致。核对注册表后再次调用。
+- **`playUISound` 时报 `Sound set with id [...] not found`**：sound ID 未注册或大小写不一致。核对注册表后再次调用；`playSound`/`playLoop` 未注册时抛的是 `NullPointerException`。
 - **调用 `Global` setter 后全局行为错乱**：MOD 代码使用了 `setCombatEngine`、`setSector` 等内核入口。删除 setter 调用，改从正确 getter 获取对象；跨存档状态放入持久数据。
 
 ## 总结
@@ -325,7 +325,7 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
 - **创建后不再回到 null**：sector/factory 只被替换；combatEngine 每场战斗结束销毁后立即重建。因此阶段判断**必须**用 `getCurrentState()`，引用**禁止**跨存档/跨战斗缓存。
 - **`getPlayerShip()` 永不返回 null**：`playerShip` 未设置时延迟创建 "Command Shuttle" 假舰；判断 "用户是否已部署" 用 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()`，**禁止**用 `getPlayerShip() == null`(判据细则见战斗域部署判断主题)。
 - **setter 禁止调用**：内核生命周期专用，调用即脱钩。
-- **声音入口三约定**：`playUISound` 素材应双声道；`playSound` 素材必须 mono 且 `loc`/`vel` 非 null；`playLoop` 必须每帧续期且 `playingEntity` 必填；未注册 ID 在调用点抛 `Sound set with id [...] not found`。
+- **声音入口三约定**：`playUISound` 素材应双声道；`playSound` 素材必须 mono 且 `loc`/`vel` 非 null；`playLoop` 必须每帧续期且 `playingEntity` 必填；未注册 ID 在调用点抛异常 (`playUISound` 为 `RuntimeException`，其余为 NPE)。
 
 这些纪律的内核可以压缩为一句话：先问阶段 (`getCurrentState()`)，再取入口。沿同一条链路继续深挖，`getSettings()` 的注册与字段体系、以及声音消费在 UI / 位置 / 循环之外的管理方法，都是本节入口清单的自然延伸。
 

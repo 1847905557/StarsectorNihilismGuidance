@@ -4,7 +4,7 @@ import com.fs.starfarer.api.EveryFrameScript;
 
 /**
  * 一次性演示脚本基类：挂载后第一次 advance() 执行一次子类实现的 runDemo() 并自停
- * (isDone() 返回 true，引擎在下一帧自动从脚本列表移除本脚本)。
+ * (isDone() 返回 true，引擎同帧紧随其后自动从脚本列表移除本脚本)。
  *
  * 两个服务演示脚本 (势力 / 货物) 都继承本类，各自只实现 runDemo()，
  * 避免每个演示类重复 EveryFrameScript 的骨架方法。本类是抽象基类，不参与任何注册；
@@ -12,7 +12,7 @@ import com.fs.starfarer.api.EveryFrameScript;
  */
 public abstract class GearInOneShotScript implements EveryFrameScript {
 
-    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
+    /** 演示是否已执行；置位后 isDone() 返回 true，引擎同帧紧随其后自动移除本脚本。 */
     private boolean executed = false;
 
     public GearInOneShotScript() {

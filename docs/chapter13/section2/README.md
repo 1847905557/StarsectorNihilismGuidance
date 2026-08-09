@@ -82,7 +82,7 @@ MOD 侧几乎不直接实现它，而是继承 `BaseIntelPlugin`(`com.fs.starfar
 | 方法 | 语义 |
 |---|---|
 | `addIntel(plugin)` / `addIntel(plugin, forceNoMessage)` / `addIntel(plugin, forceNoMessage, textPanel)` | 立即登记：置 `playerVisibleTimestamp`、调 `reportMadeVisibleToPlayer`、默认 `autoAddCampaignMessage()` 加一条通信消息 (`forceNoMessage` / `textPanel` 两个变体改写消息去向) |
-| `queueIntel(plugin, maxCommQueueDays)` / `queueIntel(plugin)` | 进通信队列；`IntelManagerAPI.advance` 每帧 (未暂停) 检查 `canMakeVisibleToPlayer(relay)` 或 `forceAddNextFrame()`，可见则 `addIntel`—— 前 3 条单独显示、第 4 条起合并进 `NewMessagesIntel` |
+| `queueIntel(plugin, maxCommQueueDays)` / `queueIntel(plugin)` | 进通信队列；`IntelManagerAPI.advance` 每帧 (未暂停) 检查 `canMakeVisibleToPlayer(relay)` 或 `forceAddNextFrame()`，可见则 `addIntel`—— 前 3 条单独显示；本帧可见条数超过 4 时，第 4 条起合并进 `NewMessagesIntel` |
 | `removeIntel(plugin)` | 从 intel 表与通信队列同时移除；确实移除了才调 `reportRemovedIntel` |
 | `hasIntel(plugin)` / `getIntel()` / `getIntel(Class)` / `getFirstIntel(Class)` | 查询 |
 
@@ -273,7 +273,7 @@ protected List<Abortable> changes = ...;
 |---|---|---|
 | `setStageOnGlobalFlag(to, flag)` | 全局内存布尔标志为 true → 进 `to` | `GlobalBooleanChecker` |
 | `setStageOnMemoryFlag(to, HasMemory, flag)` / `setStageOnMemoryFlag(to, MemoryAPI, flag)` | 指定对象内存布尔标志 → 进 `to` | `MemoryBooleanChecker` |
-| `setStageOnDaysElapsed(to, days)` | 从任务开始累计满天数 → 进 `to` | `DaysElapsedChecker` |
+| `setStageOnDaysElapsed(to, days)` | 内部以 `getData(null)` 构造检查器，条件求值必 NPE，不可用 | `DaysElapsedChecker` |
 | `setStageOnEntityNotAlive(to, entity)` | 实体死亡/失效 → 进 `to` | `EntityNotAliveChecker` |
 | `setStageOnEnteredLocation(to, location)` | 用户进入地点 → 进 `to` | `EnteredLocationChecker` |
 | `setStageInRangeOfEntity(to, entity, range)` | 用户进入实体范围 → 进 `to` | `InRangeOfEntityChecker` |
@@ -377,14 +377,14 @@ endTrigger();                                                 // 必须成对
 
     - `setGenRandom(genRandom)` → `mission.shouldShowAtMarket(market)`。6. `addPromptAndOption`：`mission.createAndAbortIfFailed(market, true)`；创建失败 (`isMissionCreationAborted()`) 则本次不展示。
     - 否则把 LOCAL 内存切到任务人、`updateInteractionData`、`FireBest` 触发 `<prefix>_blurbBar` 与 `<prefix>_optionBar` 规则。
-6. 用户点选后 rules 走 `contact_acceptBar` → **`BarCMD accept $missionId`**(`BarCMD` 的 `accept` 分支)：返回首个满足 `optionId.startsWith(mission.getTriggerPrefix())` 的 wrapper → `BarEventManager.notifyWasInteractedWith(w)`(酒吧事件的交互收尾)。当前示例的事件 ID 与 trigger prefix 相同，因此结果不变：
+7. 用户点选后 rules 走 `contact_acceptBar` → **`BarCMD accept $missionId`**(`BarCMD` 的 `accept` 分支)：返回首个满足 `optionId.startsWith(mission.getTriggerPrefix())` 的 wrapper → `BarEventManager.notifyWasInteractedWith(w)`(酒吧事件的交互收尾)。当前示例的事件 ID 与 trigger prefix 相同，因此结果不变：
 
     - `w.getMission().accept(dialog, memoryMap)`—— 进入 "生命周期四段" 的接受段。
 
 **路线 B：联系人任务板 (person\_missions.csv + `BaseMissionHub`)**：
 
 1. `data/campaign/person_missions.csv` 一行 (CSV spec 加载期读取；17 列)：
-    - `demo_dcm,demo_aegle,,,,,10,10,30,FRIENDLY,,,,,,graphics/icons/missions/dead_drop.png,data.scripts.campaign.missions.DemoMission` (示例行)。
+    - `gaData,sebestyen,,,,,10,30,60,INHOSPITABLE,,,,,,graphics/icons/missions/data_retrieval.png,com.fs.starfarer.api.impl.campaign.missions.academy.GADataFromRuins` (原版行，`data/campaign/person_missions.csv`)。
 2. `PersonMissionSpec`(`com.fs.starfarer.api.loading.PersonMissionSpec`)：
     - `person id` / `tagsAll` / `tagsAny` / `tagsNotAny` / `freq` / `min-max timeout`
     - `min-max rep` / `importance` / `reqMission*` / `icon` / `plugin`。

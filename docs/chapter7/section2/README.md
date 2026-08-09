@@ -76,7 +76,7 @@
 
 - `isCombatOver()`：战斗结束标志置位**且**结束淡出动画播放完才返回 `true`。可观察结果：胜负判定到淡出完成之间有一个窗口，`isCombatOver()` 仍为 `false`。
 - `getWinningSideId()`：API javadoc 原文 "0 = player, 1 = enemy, 2 = player allies, no player ships left."；胜负未定时返回 -1(初始默认值)。因此**禁止**把 `getWinningSideId() != -1` 当作 "战斗已结束" 判据 —— 它代表的是 "胜者侧"，结束判定必须用 `isCombatOver()`。
-- `setCombatNotOverFor(float)` / `getCombatNotOverFor()`：把战斗强制延续一段时间 (防止按败北条件提前收场)；结束判定对 "败北" 还要求战斗时间累计超过 30 秒 —— 战斗开始 30 秒内不会因一方 "被击败" 而结束。
+- `setCombatNotOverFor(float)` / `getCombatNotOverFor()`：把战斗强制延续一段时间 (防止按败北条件提前收场)；结束判定对 "败北" 还要求战斗时间累计超过 30 秒 —— 已部署舰船全灭时战斗立即结束，不受此门槛限制。
 
 战斗类型与结束条件清楚了，接下来读取场上到底有哪些舰船 —— 引擎对象表和舰队管理器提供两条互补的路径。
 
@@ -134,7 +134,7 @@
 
 ::: warning 禁止跨战斗缓存实体引用
 
-从名单 (`getShips()` / `getDeployedCopyDFM()` 等) 拿到的 `ShipAPI` / 列表**禁止**跨战斗缓存 —— 战斗结束后引擎销毁重建，旧实体的 `isAlive()` 委托给**新**引擎实例判定，在新引擎里任何旧舰都不在对象表中，`isAlive()` / `isEntityInPlay()` 恒为 `false`；列表本身也只反映获取那一刻的状态。可观察结果：第二场战斗起缓存引用 "数据还在但全部判定失效"，且无任何报错 (与既有引擎引用禁令同一条纪律的实体侧)。这里的 "销毁" 即 `destroyInstance`：它属于引擎内部方法 (非公开 API)，本节用作 "战斗结束销毁" 的简称，插件自身没有该方法。
+从名单 (`getShips()` / `getDeployedCopyDFM()` 等) 拿到的 `ShipAPI` / 列表**禁止**跨战斗缓存 —— 战斗结束后引擎销毁重建，旧实体的 `isAlive()` 委托给**新**引擎实例判定：在新引擎里旧舰不在对象表中，`isEntityInPlay()` 恒为 `false`；`isAlive()` 只查 `wasRemoved`，上局存活舰返回 `true`。列表本身也只反映获取那一刻的状态。可观察结果：第二场战斗起缓存引用 "数据还在但判定混乱"，且无任何报错 (与既有引擎引用禁令同一条纪律的实体侧)。这里的 "销毁" 即 `destroyInstance`：它属于引擎内部方法 (非公开 API)，本节用作 "战斗结束销毁" 的简称，插件自身没有该方法。
 
 :::
 
@@ -160,7 +160,7 @@
 
 选哪种累计时间的决策：
 
-- 需要 "战斗推进了多少" 用 `getTotalElapsedTime(false)`(败北判定的 30 秒门槛用的就是这条累计)；
+- 需要 "战斗推进了多少" 用 `getTotalElapsedTime(false)`(败北判定的 30 秒门槛用的就是这条累计；已部署全灭时绕过门槛)；
 - 需要 "玩家实际经历了多久"(含暂停发呆) 用 `getTotalElapsedTime(true)`；
 - 逐帧推进用 `amount` / `getElapsedInLastFrame()`。
 
@@ -281,7 +281,7 @@ Starsector\mods\GearIndustry\
 - `advance` 的 `if (engine.isPaused()) return;`：把时间语义的第 1 条落成代码 —— 暂停时不推进状态，报告节奏也随之停摆；恢复后 `total` 与 `totalWithPause` 的差值就是暂停时长的现场证明。
 - `logEngineTime`：把 "时间语义" 表变成日志 ——`total` / `totalWithPause` / `lastFrame` / `timeMult` / `contact` / `fleetsInContact` / `combatOver` / `winner` 一次打印。
 - `logFleetManagers`：两侧管理器的五份名单大小 + `getDeployedCopyDFM()` 遍历 (跳过 `isFighterWing()` / `isStationModule()`，只数存活主力舰 —— 已部署成员遍历的成熟做法)。
-- `logShips`：`getShips()` + `isAlive()` 过滤分成 alive / notAlive 两堆 (残骸与刚移除的舰计入 notAlive)；`playerShip` 行核对 `getPlayerShip()` 永不 null 的判据 (部署阶段显示 `shuttlepod_xfer` 假舰、`playerInPlay=false`)。
+- `logShips`：`getShips()` + `isAlive()` 过滤分成 alive / notAlive 两堆 (残骸与刚移除的舰计入 notAlive)；`playerShip` 行核对 `getPlayerShip()` 永不 null 的判据 (部署阶段显示 `shuttlepod` 假舰、`playerInPlay=false`)。
 - `IntervalUtil(2f, 2f)`：固定 2 秒节奏的周期触发器 (`advance` + `intervalElapsed()` 每帧调用)。
 
 注册片段 (工程片段 —— 本节不改动既有文件，只演示调用)：
@@ -340,15 +340,15 @@ if (engine.getFleetManager(FleetSide.PLAYER).getDeployedCopy().isEmpty()) { retu
 - **战役冒烟**：`starsector.log` 出现一行：
 - **暂停语义**：暂停期间**没有**报告输出 (暂停检查生效)；恢复后的下一条 `GearIn time:` 里 `totalWithPause` 比暂停前约多 10 秒，而 `total` 增长远小于 10 秒 —— 两条累计的差值就是暂停时长
 - **残骸过滤**：`alive` 减 1、`notAlive` 加 1(残骸计入 notAlive 而不是消失)
-- **玩家舰判据**：部署阶段 (玩家尚未部署任何舰船)`playerShip=shuttlepod_xfer`、`playerAlive=true`、`playerInPlay=false`；部署玩家舰后 `playerShip` 变为玩家舰的 hull id、`playerInPlay=true`。战役开局即设置玩家舰，通常直接看到玩家舰
-- **战斗结束**：战斗收尾时 `combatOver=true`、`winner=0`(玩家胜) 或 `1`(敌方胜)；结束动画期间 `combatOver` 已为 true 但画面尚未淡出到结算
+- **玩家舰判据**：部署阶段 (玩家尚未部署任何舰船)`playerShip=shuttlepod`(日志打印 hull id；假舰 variant 为 `shuttlepod_xfer`)、`playerAlive=false`、`playerInPlay=false`；部署玩家舰后 `playerShip` 变为玩家舰的 hull id、`playerInPlay=true`。战役开局即设置玩家舰，通常直接看到玩家舰
+- **战斗结束**：战斗收尾时 `combatOver=true`、`winner=0`(玩家胜) 或 `1`(敌方胜)；结束动画期间 `combatOver` 仍为 false，淡出完成后才变 true
 
 ## 故障分析
 
 - **击毁敌舰后存活数不降**：直接统计 `engine.getShips()` 会把尚未移除的残骸算进去。遍历时用 `isAlive()` 过滤存活舰船；需要识别残骸时再检查 `isHulk()`。击毁一艘敌舰后复查计数，数值应当立即减少。
 - **暂停期间累计仍然增长**：暂停不会中断 `advance()` 回调，缺少 `engine.isPaused()` 守卫时，计时和进度会继续推进。状态更新前加入暂停检查，解除暂停后，累计值应与 `getTotalElapsedTime(false)` 保持一致。
 - **玩家未部署分支从不执行**：`getPlayerShip()` 在玩家舰尚未设置时会返回 `shuttlepod_xfer` 的 `Command Shuttle` 假舰，因此 null 判断无法识别未部署状态。改读 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()`；重新进入部署阶段时，未部署分支应当执行。
-- **第二场战斗中的缓存舰船全部失效**：旧舰不在新引擎的对象表中，跨战斗保存的舰船或列表会让 `isAlive()` 和 `isEntityInPlay()` 持续返回 `false`。每次使用时从当前引擎或舰队管理器重新取得对象；连续进入两场战斗后，第二场的状态读取应恢复正常。
+- **第二场战斗中的缓存舰船判定混乱**：旧舰不在新引擎的对象表中，跨战斗保存的舰船或列表会让 `isEntityInPlay()` 持续返回 `false`，而 `isAlive()` 仍可能返回 `true`。每次使用时从当前引擎或舰队管理器重新取得对象；连续进入两场战斗后，第二场的状态读取应恢复正常。
 - **战斗计时包含错误的暂停区间**：`getTotalElapsedTime(true)` 包含暂停时间，`false` 版本只累计战斗推进时间。推进判定使用 `false`，演出等真实经历时间使用 `true`，逐帧累计使用 `amount` 或 `getElapsedInLastFrame()`。暂停 10 秒后解除，所选计时值应只按目标语义变化。
 - **时间倍率改变后计时偏移**：传入 `advance(amount)` 的 `amount` 已受 `getTimeMult()` 与 `combatSpeedMult` 缩放，再乘一次倍率会重复计算。直接累计 `amount` 或读取 `getElapsedInLastFrame()`；触发慢动作后，自己的计时应与 `getTotalElapsedTime(false)` 保持同一变化方向和速率。
 - **结算逻辑在退场动画前执行**：`getWinningSideId()` 在胜者确定时已经返回侧别，而 `isCombatOver()` 要等结束淡出完成才变为 `true`。用 `isCombatOver()` 触发结算，只用 `getWinningSideId()` 判断胜者；复验时，结算应在退场动画结束后执行。

@@ -40,7 +40,7 @@
 }
 ```
 
-`military` 和 `economic` 是 concern 标签，不是可供 `strategyPriorityMults` 查找的键；写入它们不会改变上述两个 concern 的优先级。
+`military` 和 `economy` 是 concern 标签，不是可供 `strategyPriorityMults` 查找的键；写入它们不会改变上述两个 concern 的优先级。
 
 完成信号：战略会议中的 Vulnerable Enemy Target 权重上升，Competition 权重下降。
 

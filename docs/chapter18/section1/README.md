@@ -187,7 +187,7 @@ public class GearInBasicShaderRenderer extends BaseCombatLayeredRenderingPlugin 
 
     private static final Logger LOG = Global.getLogger(GearInBasicShaderRenderer.class);
 
-    /** shader 资源路径 (MOD 根目录相对路径，必须用 /，SettingsAPI.loadText javadoc)。 */
+    /** shader 资源路径 (MOD 根目录相对路径，必须用 /)。 */
     private static final String VERT_PATH = "data/shaders/GearIn_basic_shader.vert";
     private static final String FRAG_PATH = "data/shaders/GearIn_basic_shader.frag";
 

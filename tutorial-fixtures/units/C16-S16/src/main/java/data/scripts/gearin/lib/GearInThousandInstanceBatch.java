@@ -37,10 +37,7 @@ public final class GearInThousandInstanceBatch {
     }
 
     public boolean removeAndRelease(SpriteEntity entity, GearInBatchPool pool) {
-        boolean removed = CombatRenderingManager.removeEntity(entity);
-        if (removed) {
-            release(entity, pool);
-        }
-        return removed;
+        // removeEntity 已清理实例数据；再次 release 会遍历已置 null 的 instanceData 抛 NPE
+        return CombatRenderingManager.removeEntity(entity);
     }
 }

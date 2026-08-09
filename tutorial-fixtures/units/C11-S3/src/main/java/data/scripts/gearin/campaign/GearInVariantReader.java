@@ -48,7 +48,7 @@ public class GearInVariantReader implements EveryFrameScript {
     private void runOnce() {
         MutableCharacterStatsAPI stats = Global.getSector().getPlayerPerson().getStats();
 
-        // 1) 注册表读取：缺失 id 抛 RuntimeException "Ship hull variant [...] not found!"
+        // 1) 注册表读取：缺失 id 返回 null
         //    (变体注册表的 getVariant，注册表未命中时还会回退查询存档变体数据)
         ShipVariantAPI stock = Global.getSettings().getVariant("brawler_Assault");
         GearInVariantLog.logVariant("stock", stock, stats);

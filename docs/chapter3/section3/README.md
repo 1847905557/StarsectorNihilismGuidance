@@ -28,7 +28,7 @@
 
 `createStarSystem → initStar → addPlanet → addCustomEntity → createJumpPoint → autogenerateHyperspaceJumpPoints`
 
-每一步都会把一个可观察对象加入同一个 `StarSystemAPI` 容器。类型由数据文件提供，位置由生成器提供。
+链上各步创建的实体最终要加入星系容器：`addPlanet` / `addCustomEntity` 会自动加入容器，但 `createJumpPoint` 只创建不加入，需要显式 `system.addEntity(...)` (见下文故障分析)。类型由数据文件提供，位置由生成器提供。
 
 ## 逐步接通生成入口
 
@@ -221,7 +221,7 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 		jump.setRelatedPlanet(prime);
 		system.addEntity(jump);
 
-		// 必须调用 (或用带超空间坐标的 initStar 变体)，否则星系没有通向超空间的跳跃点，玩家无法到达
+		// 必须调用，否则星系没有通向超空间的跳跃点，玩家无法到达
 		system.autogenerateHyperspaceJumpPoints(true, true);
 
 	}

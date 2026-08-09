@@ -138,7 +138,7 @@ private void report(CombatEngineAPI engine) {
 ## 观察暂停行为
 
 1. 重启游戏，进模拟战 (有玩家舰船)，正常跑约 15 秒；
-2. 打开 `starsector.log`：出现 `GearIn: elapsed 15s, calls 900 (paused 0)` 之类的报告 —— `calls` 约等于秒数 × 60，这正是每帧被调用一次的表现；
+2. 打开 `starsector.log`：出现 `GearIn: elapsed 10s, calls 600 (paused 0)` 之类的报告 —— `calls` 约等于秒数 × 60，这正是每帧被调用一次的表现；
 3. 按 ESC 暂停约 20 秒再恢复：暂停期间**没有**新报告；恢复后第一次报告的 `elapsed` 与暂停前连续 (暂停的 20 秒没被计入)，而 `calls` 明显多了一大截 —— 暂停期间 `advance` 一直在被调用，只是被暂停检查拦下了；
 4. 故障注入：删掉 `advance` 里的暂停检查段 (`if (engine.isPaused()) {...return;}`)，重启、进战斗、暂停 20 秒 —— 恢复后 `elapsed` 照常涨了 20 秒。改回后恢复。
 

@@ -71,7 +71,7 @@ entity.setFaction("gear_industry");
 
 ### 调用市场工厂
 
-插入位置：[C3-S3] 的 `GearInSystemGenerator.generate()` 末尾，跳跃点生成完成之后；同时在文件顶部导入 `java.util.List`。
+插入位置：[C3-S3] 的 `GearInSystemGenerator.generate()` 末尾，跳跃点生成完成之后。先删除生成器内已内联创建的同 ID 市场块；同时在文件顶部导入 `java.util.List`。
 
 ```java
 GearInMarketFactory marketFactory = new GearInMarketFactory();

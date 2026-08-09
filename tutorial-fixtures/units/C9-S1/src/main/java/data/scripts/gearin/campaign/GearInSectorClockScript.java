@@ -15,7 +15,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  *
  * 行为：每个游戏日跨日时打印一行日志 (当前日期、本帧折合的游戏天数、挂载以来经过的游戏天数)；
  * 默认 runWhilePaused() 返回 false：引擎暂停时脚本不推进、生涯时钟也不前进；
- * daysToRun >= 0 时挂载满该天数后 isDone() 返回 true，引擎在下一帧自动从 scripts 列表移除本脚本。
+ * daysToRun >= 0 时挂载满该天数后 isDone() 返回 true，引擎在 isDone() 置位的同一次推进中从 scripts 列表移除本脚本。
  */
 public class GearInSectorClockScript implements EveryFrameScript {
 
@@ -36,7 +36,7 @@ public class GearInSectorClockScript implements EveryFrameScript {
     /** 演示参数：是否在引擎暂停时仍推进；默认 false(暂停即停表)。 */
     private boolean runWhilePaused = false;
 
-    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
+    /** 完成标记：isDone() 返回 true 后引擎在置位同一次推进中自动移除本脚本。 */
     private boolean done = false;
 
     public GearInSectorClockScript() {

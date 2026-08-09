@@ -105,7 +105,7 @@
 
 | 签名 | 超空间坐标 | 超空间锚点 | 其他 |
 |---|---|---|---|
-| `initStar(id, type, radius, coronaSize)` | 不设置 | 不生成 | 默认日冕参数 `windBurnLevel=10` / `flareProbability=0.25` / `crLossMult=3` |
+| `initStar(id, type, radius, coronaSize)` | 设置 (查 starmap.json 的 `starSystemLocations`，与 7 参一致)| 不生成 | 默认日冕参数 `windBurnLevel=10` / `flareProbability=0.25` / `crLossMult=3` |
 | `initStar(id, type, radius, coronaSize, windBurn, flare, crLoss)` | 用恒星 id 查 starmap.json 的 `starSystemLocations`(查不到保持 (0,0)，[C3-S3] 知识) | **不生成** | 完整日冕参数；[C3-S3] 的 `GearIn` 星系用此变体 |
 | `initStar(id, type, radius, hyperX, hyperY, coronaSize)` | 显式设置 | **自动生成超空间锚点** | 本节示例用此变体；跳跃点仍由 `autogenerateHyperspaceJumpPoints` 生成 |
 
@@ -528,8 +528,8 @@ return system;
 - **实体查得到但地图上不显示**：`addCustomEntity` 后没有设置位置，实体仍在 (0,0)。创建后立即调用 `setFixedLocation` 或 `setCircularOrbit`。
 - **token 调用 `setFixedLocation` 后完全不动**：`LocationToken.setFixedLocation` 是空实现。使用 `setLocation` 写坐标；需要轨道时先 `addEntity`，再调用 `setCircularOrbit`。
 - **`isAlive()` 对 token 始终返回 true**：token 的实现不反映容器归属。访问状态使用 `isInCurrentLocation()` 或 `getContainingLocation()`；普通实体的容器持有才使用 `isAlive()`。
-- **`getEntityById` 返回 null，但实体仍然存在**：查询 ID 大小写不一致，或代码复用了过期结果。ID 使用常量并逐字一致；每次需要时重新查询。
-- **删除星系时抛出 `ConcurrentModificationException`**：脚本在遍历 `getStarSystems()` 时直接调用了 `removeStarSystem`。改用 `removeStarSystemNextFrame`，让引擎在遍历结束后处理删除。
+- **`getEntityById` 返回 null，但实体仍然存在**：最常见的原因是代码复用了过期结果 (实体被移除后旧 ID 不再命中)。查询 ID 大小写不一致不会导致 null—— 缓存未命中后还有大小写不敏感的回退扫描 (见上)。ID 使用常量并逐字一致；每次需要时重新查询。
+- **删除星系时抛出 `ConcurrentModificationException`**：CME 来自引擎对活星系列表的遍历 (非当前地点的脚本在引擎推进循环内调用 `removeStarSystem` 时触发)；脚本自己遍历 `getStarSystems()`(返回副本) 不会抛。改用 `removeStarSystemNextFrame`，让引擎在遍历结束后处理删除。
 - **地点级判据让所有实体都像在当前地点**：`location.isCurrentLocation()` 只判断地点本身。判断实体时改用 `entity.isInCurrentLocation()`。
 - **离开星系后脚本日志变慢且 `amount` 跳变**：非当前地点每 60 帧合并推进一次。实时逻辑挂在引擎级脚本，地点级脚本只处理该地点内的行为。
 - **读档后脚本中的地点引用行为错乱**：字段保存了瞬态的当前地点或 UI 引用。只保存持久对象与可序列化标量，引擎入口每次通过 `Global.getSector()` 获取。
@@ -711,7 +711,7 @@ public class GearInLocationSystemBuilder {
 		system.setOptionalUniqueId(SYSTEM_UNIQUE_ID);
 
 		// 6 参数 initStar：同时把星系定位到超空间坐标 (7500, 8500)，并自动生成超空间锚点；
-		// 7 参数 initStar 不生成锚点、不设坐标 (只查 starmap.json 的 starSystemLocations)。
+		// 7 参数 initStar 不生成锚点；坐标查 starmap.json 的 starSystemLocations 写入。
 		PlanetAPI star = system.initStar(STAR_ID, "star_white", 600f, 7500f, 8500f, 400f);
 
 		// addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)；

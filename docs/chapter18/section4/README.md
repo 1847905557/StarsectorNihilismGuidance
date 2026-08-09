@@ -322,13 +322,12 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         return true;
     }
 
-    /** 取采样贴图；文件未加载时返回 false(getSprite 单参形态要求文件已加载)。 */
+    /**
+     * 取采样贴图；文件未加载时 getTextureId() 返回 0，投影渲染为黑/不可见。
+     * 原版单参 getSprite 永不返回 null，缺键时返回纹理为 null 的 Sprite—— 原版用返回 0 代替失败信号。
+     */
     private boolean loadSprite() {
         sprite = Global.getSettings().getSprite(SPRITE_PATH);
-        if (sprite == null) {
-            LOG.error("GearIn shader plugin: sprite not loaded: " + SPRITE_PATH);
-            return false;
-        }
         return true;
     }
 
@@ -480,7 +479,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
 
 :::
 
-::: details 完整成品：GearIn_field_shader
+::: details 完整成品：GearIn_field_shader.frag
 
 ```glsl
 #version 430
@@ -512,7 +511,7 @@ void main() {
 
 :::
 
-::: details 完整成品：GearIn_field_shader
+::: details 完整成品：GearIn_field_shader.vert
 
 ```glsl
 #version 430

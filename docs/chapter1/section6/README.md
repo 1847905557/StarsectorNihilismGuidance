@@ -28,7 +28,7 @@
 
 ### 内置组件键速查表
 
-原版 `onslaught.ship` 中，`builtInMods` 与 `builtInWeapons` 紧邻 `weaponSlots` 数组之后：
+原版 `onslaught.ship` 中，`builtInMods` 与 `builtInWeapons` 位于文件前部；`weaponSlots` 是文件最后的数组：
 
 | 键 | JSON 类型 | 含义 | 原版参考 |
 |---|---|---|---|
@@ -83,7 +83,7 @@
 
 槽位与普通槽位一样有三个关键维度：`mount`(形态：TURRET/HARDPOINT/HIDDEN)、`type`(类型：`BUILT_IN` 表示内置槽位)、`size`(大小，与所装武器一致)。
 
-`mount` 与 `type` 相互独立：原版攻势的两门内置 TPC 槽位是 `"mount": "HARDPOINT"`、`"arc": 5`(武器固定朝向)，守卫者的内置槽位则是 `"mount": "TURRET"`。
+`mount` 与 `type` 相互独立：原版攻势的两门内置 TPC 槽位是 `"mount": "HARDPOINT"`、`"arc": 5`(武器固定朝向)，监视者的内置槽位则是 `"mount": "TURRET"`。
 
 装饰槽位同理，例如原版 `buffalo.ship` 是 `"mount": "TURRET"` 配 `"type": "DECORATIVE"`。
 
@@ -141,7 +141,7 @@
 - **武器 ID 必须真实存在**：`setHullSpec` 按武器 ID 查询武器注册表，未知 ID 会在装配构建时抛 `Weapon spec [<id>] not found!`(见故障分析)。
 - **建议清空掉落标签**：内置武器通常不希望出现在市场和打捞中。
 - 此前武器数据章节给出的提示同样适用：清空或精简 `weapon_data.csv` 行的 `tags`。
-- 需要彻底隐藏时可用 `SYSTEM` hint(原版 `tpc` 就是 `SYSTEM, SHOW_IN_CODEX`，默认不出现在数据库、不掉落)。
+- 需要彻底隐藏时可用 `SYSTEM` hint(`SYSTEM` 单独使用时条目不出现在数据库；原版 `tpc` 是 `SYSTEM, SHOW_IN_CODEX`，`SHOW_IN_CODEX` 使其仍出现在数据库、不掉落)。
 
 ### 验证方案
 
@@ -267,7 +267,7 @@
 - **占据前几个甲板**：`setHullSpec` 按顺序把内置战机填入甲板 0、1、2...(`setWingId(i, ...)` 对内置甲板索引强制使用内置战机)。
 - 本例中 `GearIn_slag_wing` 占据守炉人的第一个甲板，第二个甲板仍可在装配界面正常装配。
 - **不可更换**：`setWingId` 对内置甲板索引强制覆盖；装配界面的 "清空战机槽" 按 `isBuiltInWing` 判断、跳过内置甲板。
-- **不占装配点**：`computeWeaponOPCost` 的战机循环跳过内置战机；舰队成员的造价与 CR 计算也使用 `getNonBuiltInWings()` 排除内置战机。
+- **不占装配点**：`computeWeaponOPCost` 的战机循环跳过内置战机；舰队成员的造价计算也使用 `getNonBuiltInWings()` 排除内置战机。
 - **战机 ID 必须真实存在** (`wing_data.csv` 的 `id` 列)：未知 ID 不会报错，而是该甲板**静默不生成联队** (见故障分析)。
 
 ### 验证方案

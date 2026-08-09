@@ -13,7 +13,7 @@
 - 说出船插的组成：`hull_mods.csv` 的一行数据 + 一个 Java 效果类；
 - 用类名三处一致规则核对任何船插：文件名、`class` 后的名字、CSV `script` 列；
 - 读懂效果类中四类内容：按舰船大小给出的数值参数、描述联动 (`%s`)、安装限制 (互斥)、固定句式 (`modifyFlat`/`modifyPercent`)；
-- 独立排查 "装配界面找不到船插" 与 "`Problem loading class`" 两类故障。
+- 独立排查 "装配界面找不到船插" 与 "`Error loading`" 两类故障。
 
 ## 前置知识
 
@@ -33,7 +33,7 @@
 | 文件内：`public class` 后的名字 | `GearInStableInjectorHullMod` |
 | CSV：`script` 列 | `data.scripts.gearin.hullmods.GearInStableInjectorHullMod` |
 
-规则：前两处拼起来必须等于第三处 (`data.scripts.gearin.hullmods` 来自 `package` 行，对应 `data/scripts/gearin/hullmods/` 目录)。任何一处不一致，游戏都找不到类，报 `Problem loading class [...]`。本节末尾的故障注入会触发一次。
+规则：前两处拼起来必须等于第三处 (`data.scripts.gearin.hullmods` 来自 `package` 行，对应 `data/scripts/gearin/hullmods/` 目录)。任何一处不一致，游戏都找不到类，加载期报 `Error loading [...]`。本节末尾的故障注入会触发一次。
 
 ## 完整最小例：稳定化推进器
 
@@ -46,7 +46,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 稳定化推进器,GearIn_stable_injector,0,,,"engines, merc, standard",引擎,2500,TRUE,,,5,10,15,25,data.scripts.gearin.hullmods.GearInStableInjectorHullMod,"提高舰船最大速度 %s/%s/%s/%s 单位/秒，随舰船大小变化。不兼容 不稳定推进器。","提高舰船最大速度。",,graphics/hullmods/GearIn_stable_injector.png
 ```
 
-20 列中，本节只关注 8 列，其余按模板使用：
+20 列中，本节只关注 9 列，其余按模板使用：
 
 - **`id`**：船插的唯一标识，`GearIn_` 前缀。装配点、脚本、其他船插引用它都用这个值。
 - **`cost_frigate` / `cost_dest` / `cost_cruiser` / `cost_capital`**：四档舰船的装配点消耗 (本例 5/10/15/25)。四列都必须填数字 —— 即使船插只会被内置也填 `0`，留空会让游戏加载中断。
@@ -136,7 +136,7 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 
 **② 描述联动 (`getDescriptionParam`)**
 
-CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四档加成填进去。修改 `SPEED_BONUS` 的数字后，描述里的高亮数值自动跟着变，不需要改 CSV 里的描述文字。`%s` 的数量必须与方法返回值的数量一致，多了少了都会让 tooltip 出现空位。
+CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四档加成填进去。修改 `SPEED_BONUS` 的数字后，描述里的高亮数值自动跟着变，不需要改 CSV 里的描述文字。`%s` 多于返回值时，多余占位符显示 "null"；少于时多余参数被忽略。
 
 **③ 安装限制 (`isApplicableToShip` + `getUnapplicableReason`)**
 
@@ -169,10 +169,10 @@ CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四�
 ## 故障注入：触发类名不一致
 
 1. 把 CSV `script` 列改为 `data.scripts.gearin.hullmods.NoSuchClass`，保存、重启；
-2. 打开装配界面查看本船插的 tooltip，或让游戏生成这艘船 —— 日志出现 `Problem loading class [data.scripts.gearin.hullmods.NoSuchClass]`；
+2. 打开装配界面查看本船插的 tooltip，或让游戏生成这艘船 —— 加载期报 `Error loading [data.scripts.gearin.hullmods.NoSuchClass]`，无法进入装配界面；
 3. 改回正确类名，重启，确认恢复。
 
-这个报错就是类名三处一致被破坏的可观察结果。类名改错时游戏会明确报 `Problem loading class`—— 相比静默失败，这已经算客气。之后在任何船插、武器、战术系统上见到这个报错，首先核对类名三处。
+这个报错就是类名三处一致被破坏的可观察结果。类名改错时游戏会明确报 `Error loading [...]`—— 相比静默失败，这已经算客气。之后在任何船插、武器、战术系统上见到这个报错，首先核对类名三处。
 
 ## 验证方案
 
@@ -196,7 +196,7 @@ CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四�
 - **装配界面找不到船插**：先确认 CSV 行存在、`id` 使用唯一的 `GearIn_` 前缀，并在调试期设置 `unlocked=TRUE`。随后核对 `script` 列；修正后重启，船插应出现在装配列表中。
 - **加载中断并报告 `JSONException`**：必填列缺失或某个 `cost_*` 留空会破坏数据行。补齐四档数字后重启，加载过程应越过该 CSV。
 - **加载中断并报告 `Duplicate key`**：同一文件内存在重复 `id`。为每行保留唯一 ID，重启后确认重复键异常消失。
-- **日志出现 `Problem loading class [...]`**：注册类名、包声明和文件路径没有指向同一个类。源码应位于 `data/scripts/gearin/hullmods/` 对应包路径，三处文本必须逐字一致。
+- **加载期报 `Error loading [...]`**：注册类名、包声明和文件路径没有指向同一个类。源码应位于 `data/scripts/gearin/hullmods/` 对应包路径，三处文本必须逐字一致。
 - **速度加成没有生效**：数值修改写进 `applyEffectsAfterShipCreation` 时，生涯侧不会执行它。把 `modifyFlat(...)` 移入 `applyEffectsBeforeShipCreation`，重新部署舰船后核对速度。
 - **两个船插数值互相覆盖**：多个船插共用 `modifyFlat("bonus", ...)` 之类的硬编码 source id。改用回调传入的船插 `id`，同时安装两个船插后确认修饰分别存在。
 - **互斥限制没有生效**：数据行本身不会建立互斥判断。补齐 `isApplicableToShip` 与 `getUnapplicableReason`，装配界面应拒绝不兼容组合并显示原因。

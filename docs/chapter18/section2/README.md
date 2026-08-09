@@ -38,7 +38,7 @@ shader 编译失败若只留下黑屏，排错成本会很高。本节用 BoxUti
 
 ### 从两个 MOD 相对路径创建程序
 
-**插入位置：\[GearInPulseRenderer.createProgram()\]。** 一次完成读取、编译与链接。
+**插入位置：\[GearInPulseRenderer.loadProgram()\]。** 一次完成读取、编译与链接。
 
 ```java
 LOG.info("GearIn pulse shader paths: vert=" + VERT_PATH + ", frag=" + FRAG_PATH);
@@ -49,7 +49,7 @@ int id = ShaderUtil.createShaderVFFormPath(getClass().getName(), VERT_PATH, FRAG
 
 ### 用 ShaderProgram 保存句柄
 
-**插入位置：\[createProgram() 的下一行\]。** 统一 program 有效性与删除入口。
+**插入位置：\[loadProgram() 的下一行\]。** 统一 program 有效性与删除入口。
 
 ```java
 program = new ShaderProgram(id);
@@ -59,7 +59,7 @@ program = new ShaderProgram(id);
 
 ### 创建后缓存 uniform location
 
-**插入位置：\[createProgram() 初始化段\]。** 避免 render 中每帧查名称。
+**插入位置：\[loadProgram() 初始化段\]。** 避免 render 中每帧查名称。
 
 ```java
 program.location = new int[] {
@@ -72,24 +72,25 @@ program.location = new int[] {
 
 ### 失败时删除并进入原版反馈
 
-**插入位置：\[createProgram() 的失败分支\]。** 禁止绑定无效程序。
+**插入位置：\[loadProgram() 的失败分支\]。** 禁止绑定无效程序。
 
 ```java
 if (!program.isValid()) {
     program.delete();
     program = null;
-    ship.setJitter(this, Color.CYAN, 0.5f, 3, 4f);
+    LOG.error("GearIn pulse shader: loadProgram failed, renderer disabled");
+    return false;
 }
 ```
 
-完成信号：编译错误后战斗继续且护盾使用备用颜色。
+完成信号：编译错误后 `loadProgram` 返回 false，renderer 自废 —— 渲染器整体失效、战斗继续 (没有备用颜色反馈)。
 
 ## 排查关键故障
 
 下面是**局部故障片段**：
 
 ```java
-float pulse = u_time;
+float pulse = u_time
 gl_FragColor = vec4(pulse);
 ```
 
@@ -126,7 +127,7 @@ gl_FragColor = vec4(pulse);
 ## 故障分析
 
 - **护盾不可见且日志包含片元 shader 编译错误**：源码缺少分号，程序无法建立。先用 InfoLog 定位行号，再修正语法并确认 `program.isValid()` 为 true。
-- **日志报告 shader 文件不存在**：路径使用反斜杠或游戏根绝对路径。改用 MOD 根目录下的正斜杠相对路径，重新加载确认文件被读取。
+- **启动即抛未捕获异常**：路径含反斜杠、盘符或 `..` 时，引擎在读取前就抛 RuntimeException(BoxUtil 只捕获 IOException)，不会出现 "文件不存在" 日志。改用 MOD 根目录下的正斜杠相对路径。
 - **program 有效但画面空白**：`u_offset` 没有提交，或片元输出透明度为零。记录 uniform location 和最终 alpha，修正后确认护盾可见。
 - **每次重载后显存增加**：失败的临时 `ShaderProgram` 未删除，或 cleanup 没有调用 `program.delete()`。补齐两条释放路径，连续重载后确认程序对象计数稳定。
 
@@ -172,14 +173,13 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  * - shader 没有注册表 ID(区别于 CSV/JSON/spec 注册链)：.vert/.frag 以 MOD 根目录
  *   相对路径为身份，约定放在 data/shaders/(GraphicsLib data/shaders/post/pre.vert、
  *   data/shaders/ 同款布局)，路径必须用 / 分隔 (SettingsAPI.loadText javadoc
- *   硬规则)；反斜杠、盘符冒号、.. 与首字符 / 会在读取前被 validateFileName 直接拒绝
- *   (启动器设置的 validateFileName 抛 RuntimeException)；
+ *   硬规则)；反斜杠、盘符冒号、.. 与首字符 / 会在读取前被直接拒绝并抛 RuntimeException；
  * - 读取端行为 (文本读取工具的 readText)：按 UTF-8 解码并把全部 \r 剥除，不剥离
  *   BOM—— 源文件必须 UTF-8 无 BOM(BOM 字符会进入 GLSL 源码导致编译失败)，CRLF 安全；
  *   loadText 本身不打日志，编译/链接日志由 MOD 侧写入 starsector.log；
  * - 编译/链接链 (延续 C18-S1)：glCreateShader -> glShaderSource -> glCompileShader ->
  *   glGetShaderi(GL_COMPILE_STATUS)；glCreateProgram -> glAttachShader ->
- *   glBindAttribLocation(链接前固定)-> glLinkProgram -> glGetProgrami(GL_LINK_STATUS)；
+ *   glLinkProgram -> glGetProgrami(GL_LINK_STATUS)；
  *   失败时读取 glGetShaderInfoLog / glGetProgramInfoLog(含行号与原因) 并以 ERROR 写入
  *   starsector.log，然后删除对象 (GraphicsLib ShaderLib.createShader/loadShader 同款)；
  * - 生命周期四环节：加载 (每场战斗 init 内执行，不跨战斗缓存)-> 使用 (render 回调内

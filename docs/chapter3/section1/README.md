@@ -80,7 +80,7 @@ data/world/factions/gear_industry.faction
 | `displayName` | 普通势力名称 | 字段缺失会中断加载 |
 | `displayNameWithArticle` | 带冠词语境中的名称 | 字段缺失会中断加载 |
 | `logo` | 情报界面大旗 | 字段或贴图缺失会中断加载 |
-| `crest` | 通讯和市场等位置的小旗 | 路径错误会在资源加载阶段报错 |
+| `crest` | 市场、收入、勘测、百科等界面的小旗 | 路径错误会在资源加载阶段报错 |
 | `names` | 随机人物名称来源 | 对象缺失会中断加载 |
 | `portraits` | 随机人物头像池 | 对象缺失会中断加载，错误贴图路径会报告资源错误 |
 
@@ -93,13 +93,13 @@ data/world/factions/gear_industry.faction
 1. 启动游戏并等待主菜单完成加载。
 2. 在 `starsector.log` 中查找 `Loading gear_industry faction`。
 3. 新建或读取生涯，打开情报界面的势力列表。
-4. 选择齿轮工业，核对显示名称、颜色、logo 和 crest。
+4. 选择齿轮工业，核对显示名称、颜色和 logo。
 
 预期结果：
 
 - 日志确认 `gear_industry` 势力已经加载，随后没有 faction JSON 或贴图异常；
 - 情报界面出现齿轮工业；
-- 势力名称、主色、大旗和小旗与 faction 文件一致；
+- 势力名称、主色和大旗与 faction 文件一致；
 - `Global.getSector().getFaction("gear_industry")` 能够取得势力对象。
 
 ## 故障分析

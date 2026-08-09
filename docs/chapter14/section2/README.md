@@ -110,15 +110,15 @@
     - 实体条件类 (`beaconOpenDialog`：`$tag:warning_beacon`；`marketOpen`：`$hasMarket` → `ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`，即市场场景的入口)。
 - **`PopulateOptions`(334 条)**：菜单填充器，由规则脚本 `FireAll` 调用 (不是插件直接触发)。
     - 所有选项规则必须用状态条件限定，否则该选项会一直出现或一直不出现。
-    - 市场菜单用 `$menuState == main` + `$hasMarket` + `$tradeMode != NONE` (如 `marketCommDir`、`marketOptBar`、`marketOptTradeMulti`、`marketAddOptionLeave`)。
+    - 市场菜单用 `$menuState == main` + `$hasMarket` + `$tradeMode != NONE` (如 `marketOptBar`、`marketOptTradeMulti`)。例外：`marketCommDir`、`marketAddOptionLeave` 不含 `$tradeMode != NONE`。
     - 舰队对话菜单用 `$menuState == fleetConvMain`；
     - 人物对话用 `$isPerson`(`convOptionLeave`：`cutCommLink:Cut the comm link`)。
-- **`DialogOptionSelected`(6050 条)**：选项回流唯一使用方 (`RuleBasedInteractionDialogPluginImpl.optionSelected`：本地记忆写 `$option`、`expire 0`、`fireBest("DialogOptionSelected")`)。
+- **`DialogOptionSelected`(6050 条)**：选项回流默认使用方 (`RuleBasedInteractionDialogPluginImpl.optionSelected`：本地记忆写 `$option`、`expire 0`、`fireBest("DialogOptionSelected")`)。
     - 其中 6048 条用 `$option ==` 绑定具体选项，另 2 条用状态旗标接管下一次选择。
     - 本节补充两个非默认回流方：`BarCMD.optionSelected` 对酒吧字符串选项同样写 `$option` 并 `FireBest "DialogOptionSelected"`；`NewGameDialogPluginImpl.optionSelected` 写 `$option` 后触发的是 **`NewGameOptionSelected`**(见任务场景)。
 - **`PickGreeting`(199 条)**：人物通讯问候。
     - 派发链：通讯目录点选人物 → 通讯面板触发 `FireBest "OpenCDE"` → `OpenCDE` 规则 `convDefault` 脚本 `FireBest PickGreeting`：
-        - 问候规则按 `$isContact`、`$id`(人物)、声望等条件选一条，展示 `ShowPersonVisual` + 问候文本 + 选项 (`FireAll PopulateOptions` 或直接列选项)。
+        - 问候规则按人物 id、`$voice`、`$postId`、剧情 flag 等条件选一条，展示 `ShowPersonVisual` + 问候文本 + 选项 (`FireAll PopulateOptions` 或直接列选项)。
     *   `NPCCommsRequest` 触发器 (`npcCommsAccept` 规则脚本 `FireBest`) 处理 NPC 主动通讯请求。
     *   以问候 trigger 为初始 trigger、或自定义问候子 trigger(`FireBest` 分派 + `score:` 加分) 都是常见扩展写法。
 - **`OpenCommLink`(183 条)**：舰队通讯对话。
@@ -217,7 +217,7 @@ flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，�
 酒吧场景是 "市场菜单 → 临时选项 → 事件对话 → 返回" 的完整流程 (`BarCMD` 既是 rulecmd 也是对话插件，`com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`)：
 
 1. **进入**：市场菜单 `marketVisitBar`(`marketOptBar` 规则，选项 order 5)→ `bar_optionSel` 规则 (`$option == marketVisitBar`)：
-    - `FireBest BarShuttleDownPrintDesc` + `FireBest BarPrintDesc`(10 条，`ShowImageVisual space_bar` + 描述文本)。
+    - `FireBest BarShuttleDownPrintDesc` + `FireBest BarPrintDesc`(10 条，`ShowImageVisual` + 描述文本；其中 6 条用势力专属图)。
     - `BarCMD showOptions`。
 2. **展示选项**：`BarCMD.showOptions`：
     - `dialog.getOptionPanel().clearOptions()`
@@ -255,7 +255,7 @@ flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，�
 1. **入口**：人物对话菜单 `PopulateOptions` 规则 `addMHubOption`(条件 `$isPerson` + `MissionHubCMD hasHub` + `Call $mHub setMHOptionText`) 加 `5:mh_open:$mh_openOptionText` ("Do you have any work for me?")。
     - `$mHub` = `BaseMissionHub.KEY`，`setMHOptionText` 写 `$mh_openOptionText`。
 2. **列表**：点 `mh_open` → `openMhubOptionSel` 规则：`Call $mHub prepare` → `FireBest MHOpenText` →`Call $mHub listMissions` → `SetEnabled mh_open false`。
-    - `MHOpenText`(2 条：`contactMHOpenText` / `asebMHOpenText`)→ `FireBest ContactPreMissionListText`(4 条，按 `$mh_count` / `$mh_firstInlineBlurb` / `$mHub_contactSuspended` 打印列表前文本)。
+    - `MHOpenText`(2 条：`contactMHOpenText` / `asebMHOpenText`)→ 分别 `FireBest ContactPreMissionListText`(4 条，按 `$mh_count` / `$mh_firstInlineBlurb` / `$mHub_contactSuspended` 打印列表前文本) 与 `FireBest AsebPreMissionListText`(3 条，Sebestyen 专用)。
 3. **展开**：`BaseMissionHub.listMissions` 对每份 offered mission：
     - `FireBest <前缀>_blurb true` / `FireBest <前缀>_option true`(每条任务各 1 条规则，如 `hijack_blurb` / `hijack_option`)。
     - 随后 `FireBest AddMHCloseOption true`(5 条：`mh_close` 选项 + `SetShortcut mh_close "ESCAPE"`)。
@@ -448,7 +448,7 @@ gradle jar
 - `data/campaign/rules.csv`(MOD 侧)：本节示例追加行所在文件，规则 id 前缀 `GearIn_rules_scene_*`。
 - `Starsector\starsector-core\data\campaign\rules.csv`(原版)：五类场景 trigger 的平台规则表：
     - 本节引用的回退规则 (`marketOpen` / `marketDock` / `marketPostOpenDefault` / `greetingFallthrough` / `initial_AnyFleet` / `marketReturnFromBar` 等) 的参照来源。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.RuleBasedInteractionDialogPluginImpl`：交互对话框插件，对话场景 trigger 的主要派发点与 `$option` 回流实现。
+- `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl`：交互对话框插件，对话场景 trigger 的主要派发点与 `$option` 回流实现。
 - `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`：舰队遭遇与通讯对话插件，`BeginFleetEncounter` / `OpenCommLink` 的派发点。
 - `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`：酒吧场景的 rulecmd 与对话插件，`AddBarEvents` / `ReturnFromBar` 派发与字符串选项回流。
 - `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent`：写临时 bar 选项的 rulecmd(`$core_tempBarEvents` 记忆键)。

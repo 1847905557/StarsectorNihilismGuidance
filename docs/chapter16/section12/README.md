@@ -14,7 +14,7 @@
 - 用 `DistortionEntity` 配置位置、三阶段尺寸、强度和环硬度；
 - 用 `RenderingUtil.SpecialFX.addDefaultDistortion()` 取得共享默认畸变实例；
 - 用 `FlareEntity` 配置位置、朝向、颜色、混合和寿命；
-- 为三个实体分别选择图层与全局计时；
+- 为尾迹与光斑选择图层，并为三个实体设置全局计时。扭曲固定绘制在最高层；
 - 独立处理每次入队返回码，并删除失败实体。
 
 ## 前置知识
@@ -87,7 +87,7 @@ distortion.setGlobalTimer(0.05f, 0.1f, 0.55f);
 
 ```java
 Instance2Data defaultDistortion = RenderingUtil.SpecialFX
-        .addDefaultDistortion(true, 0.7f);
+        .addDefaultDistortion(false, 0.7f);
 ```
 
 完成信号：默认路径返回可入队的实例或明确返回 `null`；手动 `DistortionEntity` 仍保留自定义尺寸、强度和环硬度。
@@ -130,9 +130,7 @@ CombatRenderingManager.addEntity(distortion);
 CombatRenderingManager.addEntity(flare);
 ```
 
-实际症状：关闭 distortion shader 后，命中效果偶发积累无效对象并增加显存占用。
-
-原因：调用方忽略入队返回码，也没有释放失败实体。
+实际症状：关闭 distortion shader 后，命中效果不再渲染扭曲。入队与回收不受影响。
 
 下面是**局部修正片段**：
 
@@ -172,7 +170,7 @@ if (state != BoxEnum.STATE_SUCCESS) effect.delete();
 - **关闭扭曲后无效对象持续积累**：调用方忽略入队返回码，也没有释放失败实体。逐项检查状态，失败时立即 `delete()`；重复触发 100 次后确认失败数与删除数一致。
 - **尾迹不可见**：节点少于两个，或没有执行 `submitNodes`。补齐首尾节点并提交，再观察尾迹出现在实体后方。
 - **扭曲方向与预期相反**：`power` 使用了负值，或内外尺寸参数顺序错误。修正符号和尺寸顺序，重新触发确认扭曲方向一致。
-- **默认畸变没有返回实例**：BoxUtil 畸变开关未启用或共享控制器不可用。记录 `addDefaultDistortion()` 的空值结果，改用手动实体只作为对照，不把空值继续提交。
+- **默认畸变没有返回实例**：发生在 3D 模式、forceDelete 或实体未初始化等情形，与畸变开关无关。记录 `addDefaultDistortion()` 的空值结果，改用手动实体只作为对照，不把空值继续提交。
 - **光斑遮住整个画面**：宽高按屏幕像素填写，但实体使用世界尺度。按世界单位缩小尺寸，重新显示确认光斑只覆盖目标区域。
 
 ## 总结
@@ -233,8 +231,9 @@ import org.lwjgl.util.vector.Vector2f;
 import com.fs.starfarer.api.combat.CombatEngineLayers;
 
 public final class GearInImpactSpecialFX {
-    public Instance2Data makeDefaultDistortion(boolean additive, float duration) {
-        return RenderingUtil.SpecialFX.addDefaultDistortion(additive, duration);
+    /** BoxUtil 缺陷：首参实为 isCampaign(战役管线)，命名易误导调用方。战斗入口应传 false。 */
+    public Instance2Data makeDefaultDistortion(boolean isCampaign, float duration) {
+        return RenderingUtil.SpecialFX.addDefaultDistortion(isCampaign, duration);
     }
 
     public DistortionEntity makeDistortion(Vector2f location) {

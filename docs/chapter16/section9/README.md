@@ -20,7 +20,7 @@
 
 - [C7-S1] 的战斗插件、暂停守卫与每帧时间；
 - [C7-S4] 的战斗实体有效性与收尾；
-- 能够在武器 CSV 中为弹体武器注册 `OnFireEffectPlugin`。
+- 能够在 `.proj` 中为弹体武器注册 `OnFireEffectPlugin`。
 
 ## 明确尾迹生命周期
 

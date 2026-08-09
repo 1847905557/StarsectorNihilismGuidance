@@ -82,7 +82,7 @@ transient 插件的注册禁止挂进一次性检查
 
 `getId()` 与去重的联动：transient 插件每次读档重新注册时，若 `getId()` 返回稳定非 `null` 值，`addPlugin` 先按 id 移除旧实例再追加 —— **重复注册是幂等的** (不会叠加)。
 
-若返回 `null`(未覆写，`BaseCampaignPlugin` 默认)，每次读档后新旧实例并存，picker 被逐个咨询、facts 重复执行。
+若返回 `null`(未覆写，`BaseCampaignPlugin` 默认)，同一会话内的重复注册不去重、实例直接追加；但 transient 实例写档时已被过滤，读档后不会与旧实例并存。
 
 ## 竞争裁决与优先级
 
@@ -173,7 +173,7 @@ MOD 用 `MOD_GENERAL` 及以上就能稳定覆盖原版，用 `CORE_GENERAL` 则
 
 **建议** (违反的可观察结果写在括号里)：
 
-- **覆写 `getId()` 返回稳定唯一值** ("should be unique. Can be null, but shouldn't.")。返回 `null` → 注册不去重，transient 插件每次读档后实例累积，picker 被咨询多次、facts 重复写入 (日志成双)。
+- **覆写 `getId()` 返回稳定唯一值** ("should be unique. Can be null, but shouldn't.")。返回 `null` → 注册不去重：会话内同一插件被注册多次会叠加，picker 被咨询多次、facts 重复写入 (日志成双)。transient 实例写档即被过滤，跨读档不会累积。
 - **插件 id 全局唯一、带 MOD 前缀** (如 `GearIn_CampaignPlugin`)。id 撞车 → 后注册的同 id 插件静默顶掉先注册者 (去重按 id 全局生效，跨 MOD 也如此)。
 - **默认 `isTransient()` 返回 `true`**("should be transient unless they need to save data")。一律返回 `false` → 插件实例随存档序列化 (XStream 边界风险、存档体积增长、卸载 MOD 后残留)，本可瞬态的状态被意外持久化。
 - **facts 写入的变量过期时间设为 `0`**("Any variables set here should have an expiration time of 0, since this method will be called every time the getMemory() method is called")。
@@ -402,7 +402,7 @@ return new PluginPick<>(plugin, PickPriority.MOD_SPECIFIC);
 ## 故障分析
 
 - **读档后自定义对话消失**：transient 插件只在新档阶段注册，读档时实例已经被清除。改为在每次 `onGameLoad` 无条件注册，读档后再次点击目标实体确认自定义对话恢复。
-- **每次读档后 picker 日志都会增加**：插件没有稳定 `getId()`，重复注册无法替换旧实例。返回唯一且固定的 ID，连续读档后确认每次咨询只记录一次。
+- **每次读档后 picker 日志都会增加**：非 transient 插件实例随存档恢复后，又在 `onGameLoad` 里无条件重新注册；`getId()` 为 null 时注册不去重、直接追加。返回唯一且固定的 ID (transient 插件每次读档重建实例，天然只留一份)，连续读档后确认每次咨询只记录一次。
 - **其他势力也打开自定义对话**：picker 的命中条件只检查了宽泛实体类型。加入势力 ID、tag 或记忆标志条件，其余目标返回 `null`；逐个点击不同势力实体复验。
 - **目标实体仍打开原版对话**：插件与原版使用同一优先级，并列结果受注册顺序影响。选择与职责相符的 MOD 优先级，重载后确认目标稳定由本插件处理。
 - **点击目标后没有任何对话**：picker 返回了插件字段为 null 的 `PluginPick`，或在选择阶段抛出异常。无法处理时直接返回 `null`，并消除 picker 内异常；再次点击确认原版或自定义对话能够打开。

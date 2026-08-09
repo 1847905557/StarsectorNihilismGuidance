@@ -124,17 +124,16 @@ CombatRenderingManager.addEntity(box);
 
 实际症状：实体成功入队，日志也没有异常，画面却完全空白。
 
-原因：实例只留在 CPU 集合，缺少 refresh、submit 与 renderingCount。
+原因：实例只留在 CPU 集合，缺少 submit 与 renderingCount。(新建实体时 `submitInstanceData()` 内部会自动全量 refresh，显式 refresh 不是必需步骤。)
 
 下面是**局部修正片段**：
 
 ```java
-box.setInstanceDataRefreshAllFromCurrentIndex();
 box.submitInstanceData();
 box.setRenderingCount(instances.size());
 ```
 
-复验：先记录日志中的 `instances=32`，再恢复三步提交进入战斗，确认 32 份实例同时出现。
+复验：先记录日志中的 `instances=32`，再恢复两步提交进入战斗，确认 32 份实例同时出现。
 
 ## 完整最小例
 
@@ -156,14 +155,14 @@ box.setRenderingCount(instances.size());
 
 - BoxUtil 可用时，每次生成只入队 1 个实体，但 `renderingCount` 为 32；
 - 32 份实例的位置、速度、颜色、缩放和三段寿命均已写入并提交；
-- 缺少刷新、提交或绘制数量中的任一步时，验证能稳定复现空白或数量错误；
+- 缺少提交或绘制数量中的任一步时，验证能稳定复现空白或数量错误。新建实体时省略显式刷新不会空白；
 - 入队失败时实体立即删除，不继续由调用侧推进；
 - shader 不可用时只生成原版粒子，战斗没有未处理异常。
 - 同步兼容设置只改变 BoxUtil 同步路径；能力不可用时仍进入原版粒子降级。
 
 ## 故障分析
 
-- **实体入队后画面仍然空白**：实例只留在 CPU 集合，没有完成 refresh、submit 和 `renderingCount` 设置。补齐三步后，日志与画面应同时显示 32 份实例。
+- **实体入队后画面仍然空白**：实例只留在 CPU 集合，没有完成 submit 和 `renderingCount` 设置。补齐这两步 (显式 refresh 对新建实体冗余) 后，日志与画面应同时显示 32 份实例。
 - **粒子只显示一份**：`renderingCount` 仍为 1，或实例列表只添加了一项。对照日志中的 `instances` 和提交数量，修正后确认显示数量一致。
 - **颜色正确但位置不动**：`ControlData` 没有在 `advance` 中更新实例。每帧写入新位置并提交，移动舰船后确认精灵跟随。
 - **战斗退出后资源持续增长**：入队失败或结束路径没有调用 `delete`。在退出回调清理全部实体，结束战斗后确认 BoxUtil 资源计数回落。

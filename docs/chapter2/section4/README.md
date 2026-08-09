@@ -80,7 +80,7 @@ public class GearInHitLogger implements OnHitEffectPlugin {
 
 ### 注册命中效果
 
-打开 [C1-S5] 制作的火炮的弹体文件 (`data/weapons/GearIn_durin_shot.proj` 之类)，在 JSON 中加一行：
+打开 [C1-S5] 制作的火炮的弹体文件 (`data/weapons/proj/GearIn_durin_shot.proj` 之类)，在 JSON 中加一行：
 
 ```json
 "onHitEffect": "data.scripts.gearin.combat.GearInHitLogger",
@@ -200,5 +200,5 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 - `com.fs.starfarer.api.combat.BeamEffectPlugin`：光束每帧回调接口 (`advance(float, CombatEngineAPI, BeamAPI)`)。
 - `com.fs.starfarer.api.combat.CombatEngineAPI`：`addHitParticle(...)`(命中点粒子) 等。
 - `com.fs.starfarer.api.combat.BeamAPI`：`getRayEndPrevFrame()`(上一帧光束末端位置)。
-- `data/weapons/*.proj`：弹体文件 (`onHitEffect` 注册列)。
+- `data/weapons/proj/*.proj`：弹体文件 (`onHitEffect` 注册列)。
 - `data/weapons/*.wpn`：武器文件 (`beamEffect` 注册列，仅 `specClass: "beam"`)。

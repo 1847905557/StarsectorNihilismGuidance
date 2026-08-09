@@ -113,13 +113,11 @@ entity.resetInstanceData();
 **插入位置：`GearInThousandInstanceBatch.removeAndRelease()`。** 管理器移除决定渲染所有权是否已经结束，池回收只能发生在移除成功之后。
 
 ```java
-boolean removed = CombatRenderingManager.removeEntity(entity);
-if (removed) {
-    release(entity, pool);
-}
+// removeEntity 已清理实例数据；再次 release 会遍历已置 null 的 instanceData 抛 NPE
+return CombatRenderingManager.removeEntity(entity);
 ```
 
-完成信号：实体不再出现在管理器中，1000 份实例进入池；重复 `removeEntity()` 返回 `false`，不会重复归还。
+完成信号：实体不再出现在管理器中；重复 `removeEntity()` 仍返回 `true`，但不会重复归还。
 
 ## 排查关键故障
 
@@ -156,7 +154,7 @@ entity.submitInstanceData();
 1. 使用 `count=1000` 首次提交，核对 40 × 25 网格、`renderingCount=1000` 和 1 次上传。
 2. 修改索引 400–499 的位置，调用 `updateRange(entity, 400, 100)`，核对刷新区间和上传次数。
 3. 从渲染管理器移除实体后调用 `release()`，确认池容量变为 1000，实体实例数据清空。
-4. 通过 `removeAndRelease()` 移除实体，再次调用移除入口，确认第二次返回 `false`。
+4. 通过 `removeAndRelease()` 移除实体，再次调用移除入口，确认第二次仍返回 `true`。
 5. 再次提交 1000 项，统计新建 `Instance2Data` 数量应为 0。
 6. 连续执行 10 轮提交、移除和归还，记录每轮池容量与上传次数。
 7. 把 `submitInstanceData()` 放入实例循环复现故障，再恢复单次提交。
@@ -177,7 +175,7 @@ entity.submitInstanceData();
 - **画面只显示前一部分实例**：`renderingCount` 小于实例集合大小。将绘制数量设为本批有效实例数，再核对日志计数与画面数量一致。
 - **复用实例仍带着旧位置**：对象归还池前没有重置状态。`release` 时清理位置、颜色和寿命，重新 acquire 后确认字段为初始值。
 - **对象池启用后每帧仍有大量分配**：`advance` 中反复创建临时列表、颜色或向量。复用这些临时对象，再比较分配计数和帧时间。
-- **归还后画面仍读取旧实例**：实体仍在渲染管理器中就先归还了池。先确认 `removeEntity()` 返回 `true`，再归还并重复生成一批实例。
+- **归还后画面仍读取旧实例**：实体仍在渲染管理器中就先归还了池。先 `removeEntity()`(其返回 true 时实例数据已清理，无需再归还)，再重复生成一批实例。
 
 ## 总结
 
@@ -262,11 +260,8 @@ public final class GearInThousandInstanceBatch {
     }
 
     public boolean removeAndRelease(SpriteEntity entity, GearInBatchPool pool) {
-        boolean removed = CombatRenderingManager.removeEntity(entity);
-        if (removed) {
-            release(entity, pool);
-        }
-        return removed;
+        // removeEntity 已清理实例数据；再次 release 会遍历已置 null 的 instanceData 抛 NPE
+        return CombatRenderingManager.removeEntity(entity);
     }
 }
 ```

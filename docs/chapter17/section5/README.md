@@ -47,7 +47,7 @@ GearIn 的市场进入地面战后，原版定义不会自动理解专属产业�
 
 ### 登记地面战插件类
 
-**插入位置：`groundBattleDefs.json` 的 `unitTypes` 对象。** 登记一类可在地面战界面出现的 GearIn 单位；完整插件类仍写在单位自身的 `plugin` 或 `pluginClass` 字段。
+**插入位置：`groundBattleDefs.json` 的 `unitTypes` 对象。** 登记一类可在地面战界面出现的 GearIn 单位；完整插件类写在单位自身的 `pluginClass` 字段。`plugin` 是产业条目的字段。
 
 ```json
 "GearIn_line_infantry": {

@@ -11,7 +11,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * 每日/周期脚本模式 B：天数累加器。amount 是上一帧真实秒数，必须经
  * clock.convertToDays(amount) 换算成游戏天 (10 真实秒 = 1 游戏日)；
  * 余数跨帧保留；单帧跨多个游戏日 (加速、新档推进) 时 while 逐日补触发；
- * daysToRun >= 0 时累计满该游戏天数后 isDone() 返回 true，引擎下一帧
+ * daysToRun >= 0 时累计满该游戏天数后 isDone() 返回 true，引擎在置位同一次推进中
  * 自动移除；全部字段可随存档序列化 (XStream 存档边界)，读档后继续。
  * 注册入口：onGameLoad 的 persistent data 门内 (REGISTER_MARK 一次性门控，C6-S2 的 CLASS_MARK 模式)。
  */
@@ -31,7 +31,7 @@ public class GearInDayAccumulatorScript implements EveryFrameScript {
     private int tickEveryDays = 1;
     /** 演示参数：最多运行多少游戏天后自停；< 0 表示常驻不停止。 */
     private int daysToRun = -1;
-    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
+    /** 完成标记：isDone() 返回 true 后引擎在置位同一次推进中自动移除本脚本。 */
     private boolean done = false;
     /** 修改例程周期；周期至少为 1 个游戏天。 */
     public void setTickEveryDays(int tickEveryDays) {

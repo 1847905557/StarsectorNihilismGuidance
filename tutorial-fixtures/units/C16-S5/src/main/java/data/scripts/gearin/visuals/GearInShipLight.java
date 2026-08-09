@@ -23,7 +23,7 @@ public class GearInShipLight {
     private static final Logger LOG = Global.getLogger(GearInShipLight.class);
 
     /** 挂接到玩家舰船的暖色点光源参数。 */
-    private static final Vector2f OFFSET = new Vector2f(0f, 60f);
+    private static final Vector2f OFFSET = new Vector2f(-60f, 0f);
     private static final float BASE_INTENSITY = 0.45f;
     private static final float FIRING_INTENSITY = 1.5f;
     private static final float INTENSITY_CHANGE_PER_SECOND = 2f;

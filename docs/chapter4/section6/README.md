@@ -156,7 +156,7 @@ anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 
 - 实体有 GearIn 名称、图标和中继外观；
 - 进入检测范围后实体可被发现并获得发现经验；
-- 详情标题和正文来自 `GearIn_navigation_anchor,CUSTOM`；
+- 详情标题来自实体名，正文来自 `GearIn_navigation_anchor,CUSTOM` 的 text1；
 - 日志没有 `baseId`、贴图或实体类型缺失错误。
 
 ## 故障分析

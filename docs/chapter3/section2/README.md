@@ -36,7 +36,7 @@
 
 1. 加载期 `loadFactionList` 处理每个 `known*` / `priority*` 块：`tags` 数组里的每个 tag，遍历对应注册表 (`knownShips` 遍历全部船体、`knownWeapons` 遍历全部武器、`knownFighters` 遍历全部战机联队、`knownHullMods` 遍历全部船插)，凡对象带任一 tag 即加入集合；`hulls` / `weapons` / `fighters` / `hullMods` 数组则把 ID 直接加入集合。**拼错的 tag 或 ID 不会报错** —— 只是匹配不到任何对象，静默得到一个更小的舰船池。
 2. 装配角色的来源有两层。第一层是**全 MOD 共享**的 `data/world/factions/default_ship_roles.json`：这是合并读取的 JSON(`readJSONMerged`)，角色对象按键逐层合并、装配条目按 variant ID 覆盖，因此 **MOD 只提交自己的角色条目，不要整份复制原版文件** (整份复制会用同键条目的副本值覆盖原版值，版本不同步时会留下陈旧配置，但不会删除原版角色)。每个角色是一个对象：`variantId → 权重`，另有三个特殊键：`includeDefault: true`(把原版同名角色的条目复制进来)、`fallback` / `fallback2`(备用角色)。角色条目 (`RoleEntryAPI`) 创建时**立即按 ID 查装配** (`_wing` 结尾的 ID 走联队查找的历史兼容路径，原版数据不使用它)；装配查不到抛 `Ship hull variant [X] not found!`，加载中断。
-3. 第二层是势力文件自己的 `shipRoles`(对象结构与 default_ship_roles.json 相同；内部 `doctrine` 键是旧版遗留，本节不展开)。`FactionAPI.pickShip(role, params)` 在选择时优先用势力自己的角色；角色缺失或为空时改用共享的 `default_ship_roles.json`(内部 `com.fs.starfarer.loading.FactionSpec.getDefaultShipRoles()` 静态方法，公开接口不提供该方法)。
+3. 第二层是势力文件自己的 `shipRoles`(对象结构与 default_ship_roles.json 相同；内部 `doctrine` 键是旧版遗留，本节不展开)。`FactionAPI.pickShip(role, params)` 在选择时优先用势力自己的角色；角色缺失或为空时改用共享的 `default_ship_roles.json`。
 4. **舰船池完整流程**：`pickShip` 内部对每个角色条目做过滤 —— 条目装配的船体必须在该势力的 `knownShips` 里 (`knowsShip`)，再乘上 `hullFrequency` 里该船体的倍率；`variantOverrides` 命中的装配按覆盖权重参与。这就是 "势力只出自己舰船池里的船" 的机制。过滤结果按权重随机抽取，`ShipPickMode` 控制范围 (`ALL` / `PRIORITY_ONLY` / `PRIORITY_THEN_ALL` / `IMPORTED`)，`priorityShips` / `priorityWeapons` / `priorityFighters` 在优先级模式下优先被抽取。权重结果带缓存，运行时改动舰船池后要调 `clearShipRoleCache()` 才会反映 (常见陷阱：缓存不会自动失效，改动池后容易漏调)。
 5. 其它只读入口：`getNumAvailableForRole(role, mode)`、`getApproximateMaxFPPerFleet(mode)`、`knowsShip / knowsWeapon / knowsFighter / knowsHullMod`。
 
@@ -329,28 +329,28 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 
 ## 实用势力包 (bp) 与其它生成型 tags 速查表
 
-下表 tag 存在性来自 `data/weapons/weapon_data.csv`、`data/hulls/ship_data.csv`、`data/hulls/wing_data.csv`、`data/hullmods/hull_mods.csv`；"引用它的势力文件" 来自 `data/world/factions/*.faction`。**不在本表上的数据均为与势力包 (bp) 和生成均无关的 tags。**
+下表 tag 存在性来自 `data/weapons/weapon_data.csv`、`data/hulls/ship_data.csv`、`data/hulls/wing_data.csv`、`data/hullmods/hull_mods.csv`；"引用它的势力文件" 来自 `data/world/factions/*.faction`。**原版势力文件还引用本表外的生成 tag：`LG_bp`、`LC_bp`、`dweller`、`threat`。**
 
 | tag | 原版数据中存在性 | 引用它的原版势力文件 | 实际意义 |
 |---|---|---|---|
 | `base_bp` | 是 (20 船体、16 武器、2 联队)| 海盗、卢德左径、derelict、余晖、欧米伽、玩家势力 | 通用默认池 tag，构成上述势力的舰船/武器池主体；玩家势力的 known* 也引用它 |
-| `lowtech_bp` / `midline_bp` / `hightech_bp` / `missile_bp` | 是 (低科/中科/高科/导弹各若干)| 海盗、卢德左径、余晖 | 科技线 tag。注意：**不是所有对应科技的组件都在其中**；RC8 的多数正规势力 (霸主、自由联盟、英仙座联盟、辛达强权、卢德教会等) 不再依赖这些 tag，而是在 `hulls` 数组里显式列出舰船 |
+| `lowtech_bp` / `midline_bp` / `hightech_bp` / `missile_bp` | 是 (低科/中科/高科/导弹各若干)| 海盗、卢德左径、余晖 | 科技线 tag。注意：**不是所有对应科技的组件都在其中**；多数正规势力 (霸主、英仙座联盟、辛达强权、卢德教会等) 不再依赖这些 tag，而是在 `hulls` 数组里显式列出舰船 |
 | `pirate_bp` | 是 | 海盗 | 海盗改造型 (D 插变体) 蓝图 tag |
 | `LP_bp` | 是 | 卢德左径 | 左径安超 (LP) 型改造包，只有卢德左径拥有它 |
 | `XIV_bp` / `heg_aux_bp` | 否 (不在数据 CSV，只作势力内 tag)| 霸主 | 第十四军团 (XIV) / 霸主辅助军 (A) 型改造包，只有霸主拥有它 |
-| `hegemony` | 是 | 霸主 | 霸主势力专属 tag |
-| `ind` / `independent` | 是 | 自由联盟、mercenary、拾荒者 | 自由联盟势力 tag(拾荒者的文件也用它)|
-| `persean` | 是 | 英仙座联盟 | 英仙座联盟势力 tag |
-| `tritachyon` | 是 | 速子科技 | 速子科技势力 tag |
-| `luddic_church` | 是 | 卢德教会 | 卢德教会势力 tag |
-| `luddic_path` | 是 | 卢德左径 | 卢德左径势力 tag |
-| `lions_guard` | 是 | 狮心守卫 (文件也引用辛达强权 tag)| 狮心守卫势力 tag，辛达强权的少量特殊舰队使用 |
-| `sindrian_diktat` | 是 | 辛达强权、狮心守卫 | 辛达强权势力 tag |
-| `pirates` | 是 | 海盗 | 海盗势力 tag |
+| `hegemony` | 否 (只作势力内 tag)| 霸主 | 霸主势力专属 tag |
+| `ind` | 是 | 非势力团体、拾荒者 | 非势力团体 tag (拾荒者的文件也用它)|
+| `persean` | 否 (只作势力内 tag)| 英仙座联盟 | 英仙座联盟势力 tag |
+| `tritachyon` | 否 (只作势力内 tag)| 速子科技 | 速子科技势力 tag |
+| `luddic_church` | 否 (只作势力内 tag)| 卢德教会 | 卢德教会势力 tag |
+| `luddic_path` | 否 (只作势力内 tag)| 卢德左径 | 卢德左径势力 tag |
+| `lions_guard` | 否 (只作势力内 tag)| 狮心守卫 (文件也引用辛达强权 tag)| 狮心守卫势力 tag，辛达强权的少量特殊舰队使用 |
+| `sindrian_diktat` | 否 (只作势力内 tag)| 辛达强权、狮心守卫 | 辛达强权势力 tag |
+| `pirates` | 否 (只作势力内 tag)| 海盗 | 海盗势力 tag |
 | `derelict` | 是 | derelict | 遗弃船 (绿粽子) 势力 tag |
 | `remnant` | 是 | 余晖 | 余晖势力 tag |
 | `omega` | 是 | 欧米伽 | 欧米伽势力 tag |
-| `merc` | 是 (大量武器与船插带此 tag，如 armoredweapons)| mercenary | 佣兵系 tag，自由联盟的佣兵舰队使用；使用方在生涯舰队生成代码 |
+| `merc` | 是 (大量武器与船插带此 tag，如 armoredweapons)| mercenary | 佣兵系 tag，非势力团体的佣兵舰队使用；使用方在生涯舰队生成代码 |
 | `rare_bp` | 是 (82 处)| 无 (所有势力默认不拥有)| 稀有蓝图 tag：`campaign/procgen/drop_groups.csv` 的蓝图掉落池只挑带 `rare_bp` 的组件，因此它决定组件能否在野外掉落/挖坟得出 |
 | `restricted` | 是 (42 处)| 无 | 限制级：默认不出现在数据库与掉落 (掉落池显式排除 `!restricted`)，适合隐藏数据 |
 | `no_drop` | 是 | 无 | 不会在战后掉落 (掉落池显式排除)|
@@ -378,7 +378,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 - **势力完全没有出现**：`factions.csv` 缺失、表头不是 `faction`、行首带 `#`、路径错误，或 faction 文件缺少 `id` 时，日志不会出现 `Loading gear_industry faction`。确认 CSV 第一行是 `faction`，第二行是相对 MOD 根目录的完整路径，并以 UTF-8 无 BOM 保存；重启后日志应加载该势力。
 - **游戏加载中断，进不了主菜单**：faction JSON 语法错误，必填字段或 `factionDoctrine` 的整数键缺失，或 `illegalCommodities` 引用了无效商品 ID 时，`Loading factions` 后会抛出 `JSONException` 或 `RuntimeException`。补齐字段并从 `data/campaign/commodities.csv` 选取有效 ID，重启后应进入主菜单。
 - **势力 ID 与其他来源冲突**：两份 faction 文件产生相同 `id` 时，加载会出现 `Spec of class [...] with id [X] already exists`。改用全局唯一 ID，并对照 `data/world/factions/factions.csv`；重启后重复 spec 异常应消失。
-- **势力舰队里没有自己的船**：`default_ship_roles.json` 缺失、装配 ID 拼错，或目标装配尚未注册时，`pickShip` 会改用共享默认角色表并抽取原版装配。只提交自己的舰船装配角色并核对 `data/variants` 中的 ID；重新生成舰队后应出现 GearIn 船只，联队继续由航母装配的 `wings` 数组提供。
+- **势力舰队里没有自己的船**：`default_ship_roles.json` 缺失或为空时 `pickShip` 会改用共享默认角色表并抽取原版装配；装配 ID 拼错或目标装配尚未注册时不会回退 —— 角色表在创建阶段立即校验，抛 `Ship hull variant [X] not found!` 中断加载。只提交自己的舰船装配角色并核对 `data/variants` 中的 ID；重新生成舰队后应出现 GearIn 船只，联队继续由航母装配的 `wings` 数组提供。
 - **加载中断并报告 `Ship hull variant [X] not found!`**：`default_ship_roles.json` 或 faction `shipRoles` 中的 ID 无法解析时，`RoleEntryAPI` 会在创建阶段立即校验；以 `_wing` 结尾的 ID 按联队查询。删除无效条目或改成已注册 variant、wing ID，重启后应完成角色表加载。
 - **某些势力舰船始终不出现**：`hullFrequency` 为 0、船体不在 `knownShips`，或它在普通池中被概率选择淹没时，生成结果会静默缺少该船。把倍率设为大于 0，核对 `knownShips.tags` 与 `ship_data.csv` 的 tags，必要时加入 `priorityShips`；重复生成后应能观察到目标船体。
 - **应当敌对的势力保持中立**：关系设置代码没有接入生涯回调时，新势力会保持 0.0 的 `RepLevel.NEUTRAL`，巡逻队相遇也不会交战。把关系设置接入 MOD 的生涯生成回调，并用 `isHostileTo` 核对 `HOSTILE` 或更差的等级 (≤ -0.49)；重新创建新档后双方应按关系行动。
@@ -410,7 +410,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 - `com.fs.starfarer.api.Global` —— 全局入口：`getSector().getFaction(id)` 取势力运行时对象。
 - `com.fs.starfarer.api.campaign.FactionAPI` —— 势力运行时接口：关系读写、舰船池查询与角色抽取 (`pickShip` 等)。
 - `com.fs.starfarer.api.campaign.FactionDoctrineAPI` —— 舰队学说运行时接口；
-- `com.fs.starfarer.api.campaign.FactionSpecAPI` —— 势力 spec 只读接口 (`knownShips`、`hullFrequency` 等)；共享默认角色由内部 `FactionSpec.getDefaultShipRoles()` 提供，公开接口不包含该方法。
+- `com.fs.starfarer.api.campaign.FactionSpecAPI` —— 势力 spec 只读接口 (`knownShips`、`hullFrequency` 等)；共享默认角色由引擎内部提供，公开接口不包含对应方法。
 - `com.fs.starfarer.api.campaign.RepLevel` —— 关系等级枚举与阈值 (`T1..T4` = 0.09 / 0.24 / 0.49 / 0.74)。
 - `data/world/factions/factions.csv` —— 势力注册表 (按行合并，表头 `faction`)。
 - `data/world/factions/gear_industry.faction` —— 本节示例势力文件 (完整字段形态)；

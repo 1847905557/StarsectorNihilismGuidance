@@ -65,7 +65,7 @@ data/config/sounds.json          注册层 (C5-S2)：sound ID → 路径与播�
 | 方法 | 用途 | 位置音效 | 硬性要求 |
 |---|---|---|---|
 | `playUISound(String id, float pitch, float volume)` | 一次性 UI 音效，无位置 | 否 | 素材建议 stereo("UI sound files should be stereo")|
-| `playSound(String id, float pitch, float volume, Vector2f loc, Vector2f vel)` | 战斗/大地图位置音效 | 是 | 素材**必须为 mono**("Sound file must be *mono* for it to be properly played within the engine")；距监听点超过 2500 不播放 |
+| `playSound(String id, float pitch, float volume, Vector2f loc, Vector2f vel)` | 战斗/大地图位置音效 | 是 | 素材**必须为 mono**("Sound file must be *mono* for it to be properly played within the engine")；距监听点超过当前场景阈值不播放：战役 2500、战斗中 1800 |
 | `playLoop(String id, Object playingEntity, float pitch, float volume, Vector2f loc, Vector2f vel)` | 位置循环音效 | 是 | **必须每帧调用**，否则循环淡出；`playingEntity` 必填 (同实体同循环只播一个)；素材建议 mono |
 | `playLoop(..., float fadeIn, float fadeOut)` | 同上，指定淡入/淡出秒数 | 是 | 同上 |
 | `playUILoop(String id, float pitch, float volume)` | UI 循环音效 | 否 | 每帧续期规则同 `playLoop` |
@@ -121,7 +121,7 @@ data/config/sounds.json          注册层 (C5-S2)：sound ID → 路径与播�
 	"fireSoundTwo":"GearIn_weapon_fire",
 ```
 
-ID 与注册层条目完全一致 (大小写敏感)。开火瞬间播放 `GearIn_weapon_fire`；多门同型炮同时开火各自独立播放 (一次性实例，不互相打断，除非开启 `stopPreviousFireSound`)。
+ID 与注册层条目完全一致 (大小写敏感)。开火瞬间播放 `GearIn_weapon_fire`；多门同型炮同时开火会被去重：300 单位内同音源 (同文件、音量音高差 <0.2) 只响一声。
 
 ::: caution 必须：.wpn 引用的 sound ID 必须已注册
 
@@ -167,7 +167,7 @@ ID 大小写不一致同样触发。
 
 1. **必须每帧调用，否则淡出。**循环管理器每帧把 "本帧未续期" 的循环加入淡出列表 (默认 0.5 秒淡入/淡出)。
 2. **`playingEntity` 必填且用于去重。**同一实体对同一循环只保留一个实例 (循环管理器按所属实体合并去重)。不传或每帧传新对象，会失去 "同实体同循环只播一个" 的保证。
-3. **距离衰减与上限。**距监听点超过 2500 不播放；活动循环数达到上限时替换最远的一个。
+3. **距离衰减与上限。**距监听点超过当前场景阈值不播放：战役 2500、战斗中 1800；活动循环数达到上限时替换最远的一个。
 4. **素材建议 mono**(API 注释)，位置循环在空间中有声像。
 
 代码接入形态 (挂到战术系统效果脚本，完整文件见 "完整最小例")：
@@ -221,7 +221,7 @@ if (state == ShipSystemStatsScript.State.IN && effectLevel < 0.05f) {
 
 ::: caution 必须：playUISound 引用的 ID 必须已注册
 
-调用瞬间抛 `RuntimeException("Sound set with id [...] not found")`，不是静默失败，也不是加载期错误。
+调用瞬间抛 `RuntimeException("Sound set with id [...]  not found")`，不是静默失败，也不是加载期错误。
 
 `playSound`/`playLoop` 对未注册 ID 则是 NPE(声音集查找返回空后解引用)。两类失败都在运行期。
 
@@ -463,10 +463,10 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 - **开火完全无声，但其他音效正常**：依次核对 `.wpn` 的 `fireSoundTwo`、`sounds.json` 条目和 OGG 路径。三处 ID 区分大小写；修正后重新开火，应能听到注册声音。
 - **开火瞬间抛出 NPE**：弹道/导弹武器优先核对 `fireSoundOne`；光束武器核对两个声音字段。同步注册对应 ID，或改回已存在的原版 ID。
-- **系统激活时没有循环声**：四个 `.system` 声音字段都有空值守卫；`loopSound` 留空时循环声静默。核对 `loopSound` 与循环素材；两种声音都缺失时，同时核对 `useSound`。
-- **系统激活时因声音配置抛出 NPE**：`.system` 的 `loopSound` 指向未注册 ID，系统实现构造时取得了空值。补齐声音注册后重新激活系统。
-- **`playLoop` 不响或断断续续**：每帧没有续播、`playingEntity` 不稳定、距离超过 2500 或 `volume <= 0` 都会中断循环。把调用放进每帧回调，并持续传入同一个实体后复验。
-- **`playUISound` 报 `Sound set with id [...] not found`**：声音 ID 未注册或大小写不一致。核对注册条目后再次触发 UI 声音。
+- **系统激活时没有循环声 (含 `loopSound` 未注册的情况)**：四个 `.system` 声音字段都有空值守卫；未注册 ID 经注册表解析为 null，与留空同等对待 —— 循环声静默，不抛 NPE。核对 `loopSound` 与循环素材；两种声音都缺失时，同时核对 `useSound`。
+- **系统激活时没有循环声 (续)**：`.system` 的 `loopSound` 指向未注册 ID 时，四个字段的空值守卫会把未注册与留空同等对待 —— 循环声静默，不会抛 NPE。补齐声音注册后重新激活系统。
+- **`playLoop` 不响或断断续续**：每帧没有续播、`playingEntity` 不稳定、距离超过战斗内 1800 / 生涯大地图 2500 的阈值或 `volume <= 0` 都会中断循环。把调用放进每帧回调，并持续传入同一个实体后复验。
+- **`playUISound` 报 `Sound set with id [...]  not found`**：声音 ID 未注册或大小写不一致。核对注册条目后再次触发 UI 声音。
 - **部署舰船时在 `ShipEngineControllerAPI` 抛出 NPE**：hull style 引用了未注册的引擎声音集。本节三个声音 ID 均不用于引擎，出现该堆栈时直接检查风格文件。
 - **市场音乐仍是原版**：确认 `settings.json` 的 `plugins.musicPlugin` 已合并为正确类名，类继承 `MusicPlayerPluginImpl`，并检查市场 `$musicSetId` 是否覆盖了选曲结果。修正后重新进入市场。
 - **`playCustomMusic` 后没有音乐**：音乐 ID 必须注册在 `music` 分类，普通音效条目不会被音乐播放器识别。补齐分类后使用整数 fade 参数再次播放。
@@ -478,7 +478,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 三个 ID 与资源与注册层声明逐字一致，完整流程走通。
 
-所有 ID 引用必须指向已注册条目，未注册的后果全部在运行期 (武器/系统 NPE、UI 抛 `Sound set with id not found`、音乐播放 NPE)，加载期不校验引用。
+所有 ID 引用必须指向已注册条目，未注册的后果全部在运行期 (武器 NPE、UI 抛 `Sound set with id not found`、音乐播放 NPE；`.system` 的四个声音字段例外 —— 空值守卫、未注册时静默)，加载期不校验引用。
 
 同一套 "注册 → 引用 → 素材存在" 的完整流程可平移到任何新声音 —— 自定义引擎声沿用 "注册分档复合集 → hull style 引用 → `.ogg` 存在"，自定义地形环境音沿用 "`terrain.json` 注册 → 地形插件播放"。
 

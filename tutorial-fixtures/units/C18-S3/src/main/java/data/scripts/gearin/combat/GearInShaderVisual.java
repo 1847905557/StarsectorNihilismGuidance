@@ -107,7 +107,7 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
             valid = false; // 初始化失败：不渲染，等引擎正常移除
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点 (C7-S6 同款姿势)
+        advance(0f); // 立即同步一次位置，避免首帧被剔除 (剔除依据是承载实体的位置)
         LOG.info("GearIn shader visual init: u_model=" + program.location[0]
                 + ", u_size=" + program.location[1]
                 + ", u_time=" + program.location[2]
@@ -168,13 +168,12 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
         return true;
     }
 
-    /** 取采样贴图；文件未加载时返回 false(getSprite 单参形态要求文件已加载)。 */
+    /**
+     * 取采样贴图；文件未加载时 getTextureId() 返回 0，投影渲染为黑/不可见。
+     * 原版单参 getSprite 永不返回 null，缺键时返回纹理为 null 的 Sprite—— 原版用返回 0 代替失败信号。
+     */
     private boolean loadSprite() {
         sprite = Global.getSettings().getSprite(SPRITE_PATH);
-        if (sprite == null) {
-            LOG.error("GearIn shader visual: sprite not loaded: " + SPRITE_PATH);
-            return false;
-        }
         return true;
     }
 

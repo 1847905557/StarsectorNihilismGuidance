@@ -29,7 +29,7 @@
 
 数据文件是 MOD 内的 `data/strings/descriptions.csv`。**这个路径本身就是注册入口**：加载器按固定路径遍历原版与全部已启用 MOD 的同名文件并合并 (由文本读取工具读入)，MOD 不需要任何额外注册。
 
-需要整体替换某个文件时，支持在 `mod_info.json` 里声明 `fullOverrides`(该机制属于文件加载配置主题，此处不展开)。
+需要整体替换某个文件时，支持在 `mod_info.json` 里声明 `replace`(该机制属于文件加载配置主题，此处不展开)。
 
 加载与查询共三步：
 
@@ -51,7 +51,7 @@
 | `ASTEROID` | 固定写 `asteroid` | 小行星 tooltip(标题 text2、正文 text1) |
 | `FACTION` | 势力 ID | 通讯界面的势力信息面板、数据库势力详情 |
 | `TERRAIN` | 地形插件的 `getTerrainId()`；超空间地形另有 `_abyssal`/`_normal`/`_deep`/`_storm` 变体键 | 星系地形 tooltip 正文 |
-| `ACTION_TOOLTIP` | 战斗命令名的小写形式 (如 `avoid`、`attack`) | C2 命令 tooltip 正文 text1、命令显示名 text2 |
+| `ACTION_TOOLTIP` | 战斗命令名的小写形式 (如 `avoid`、`assault`) | C2 命令 tooltip 正文 text1、命令显示名 text2 |
 | `GALLERY` | `graphics/illustrations` 下的插图贴图键 | 数据库图库：text1 标题、text2 正文、text3 隐藏/解锁控制 |
 | `CUSTOM` | 任意键，经 `SectorEntityToken.setCustomDescriptionId()` 关联到实体 | 实体 tooltip、行星接触文本、`PrintDescription` 规则命令等 |
 
@@ -60,7 +60,7 @@
 - **`id + type` 两列合成查找键**，`type` 是枚举名、区分大小写；`id` 或 `type` 为空的行被静默跳过。
 - **没有 "战机联队 (FIGHTER\_WING)" 类型**：战机复用其 hull 的 `SHIP` 行 (战斗对象描述的基础讲解已详述)。
 - **船插、市场条件、特殊物品不在 descriptions.csv 里**：它们的描述写在各自 CSV 的 `desc` 列 (见 "非 descriptions.csv 描述来源速查表")。
-- `RESOURCE`/`PLANET`/`FACTION`/`TERRAIN`/`ASTEROID`/`ACTION_TOOLTIP`/`GALLERY` 与武器、系统一样，键**锁定在对象 ID 上，无法另起别名**；只有 `SHIP`(经 `.ship` 的 `descriptionId`) 与 `CUSTOM`(键完全自取) 可以自由命名。
+- `RESOURCE`/`FACTION`/`TERRAIN`/`ASTEROID`/`ACTION_TOOLTIP`/`GALLERY` 与武器、系统一样，键**锁定在对象 ID 上，无法另起别名**；`PLANET`、`SHIP` 与 `CUSTOM` 可以自由命名 ——`PLANET` 经行星类型的 `descriptionId` (缺省等于类型键，多个类型可共享同一键，见下)、`SHIP` 经 `.ship` 的 `descriptionId`、`CUSTOM` 键完全自取。
 
 ## CSV 转义规则 (必须遵守的规则)
 
@@ -120,7 +120,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 这三个类型的键规则、列语义与主要使用方已在前置讲解中给出，本节只补充两点此前未展开的使用方细节：
 
 - **武器 text2 的署名规则**：货舱武器 tooltip 与数据库武器详情中，若 text2 以 `-` 开头 (原版惯例为署名，如欧米伽武器)，text1 第一段渲染为斜体，并把 `-` 开头的 text2 作为署名行附加；text2 不以 `-` 开头时正常显示。装配列表副标题仍然优先取 `weapon_data.csv` 的 `primaryRoleStr`，text2 只是备用值。
-- **舰船 text3 的 "未知条目" 用途**：数据库船体详情中，hull 带 `ship_limited_tooltip` tag(原版欧米伽舰船一类未注册条目) 时，详情正文显示 text3；缺 text3 时显示默认的 `UNKNOWN ENTRY` 文本。
+- **舰船 text3 的 "未知条目" 用途**：数据库船体详情中，`variant` 带 `ship_limited_tooltip` tag 时，详情正文显示 text3；缺 text3 时显示默认的 `UNKNOWN ENTRY` 文本。该 tag 需写入 variant 文件 (原版欧米伽舰船不带此 tag；受限 tooltip 走 hull 级 `limited_tooltip_if_locked`)。
 
 ### RESOURCE：货物描述
 
@@ -157,7 +157,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 
 ### ACTION\_TOOLTIP：战斗命令描述
 
-- 键：C2 命令名的小写形式 (如 `avoid`、`attack`)。
+- 键：C2 命令名的小写形式 (如 `avoid`、`assault`)。
 - 使用方：战术界面的命令 tooltip 正文取 text1；命令显示名在无任务类型时用 text2 当显示名。
 - 原版参考行：`avoid,ACTION_TOOLTIP,"Order your fleet to avoid this enemy if at all possible. ...",Avoid`。
 - 注意：C2 命令类型是枚举、不可扩展，MOD 无法新增命令；重定义原版已有的命令键也会因跨文件先到先得而不生效。
@@ -174,7 +174,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 
 ### CUSTOM：生涯实体自定义描述
 
-- 键：任意字符串，由代码关联：`SectorEntityToken.setCustomDescriptionId(id)`(公开 API)。行星、跳跃点、空间站、自定义实体等 `SectorEntityToken` 都可以使用。**这是 11 个类型中唯一 "键完全自取" 的类型**。
+- 键：任意字符串，由代码关联：`SectorEntityToken.setCustomDescriptionId(id)`(公开 API)。行星、跳跃点、空间站、自定义实体等 `SectorEntityToken` 都可以使用。**这是 11 个类型中唯一无默认绑定、"键完全自取" 的类型** (SHIP/PLANET 经 `descriptionId` 另起别名时，缺省仍各自回落 hull 类型与行星类型键)。
 - 使用方与列语义：
     - text1：实体 tooltip 正文、自定义实体详情、`PrintDescription` 规则命令的第 1 段；
     - text2：实体的默认标题/名称 —— 实体 tooltip 的标题优先取它 (空间站与带自定义描述的小行星：`hasText2() ? getText2() : 实体名`)；
@@ -255,7 +255,7 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
 
 预期结果：
 
-- **启动日志**：出现 `Loading descriptions` 与 `Loading CSV data from [mod: .../descriptions.csv]` 日志，`starsector.log` 无 `ERROR`。
+- **启动日志**：出现 `Loading descriptions` 与 `Loading CSV data from [DIRECTORY: <MOD根目录>]` 日志，`starsector.log` 无 `ERROR`。
 - **原版行的使用位置**：不修改原版文件，分别观察各类型的显示位置。
 - 货舱/交易界面悬停 `supplies`：tooltip 正文等于 `supplies` 的 `RESOURCE` 行 text1；
 - 悬停行星 (如任一宜居行星) 与打开行星详情：正文等于该行星类型键的 `PLANET` 行 text1；
@@ -288,8 +288,8 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
 
 键的规律只有两类：
 
-- 锁定在对象 ID 上 (`WEAPON`、`SHIP_SYSTEM`、`RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`)。
-- 由对象显式关联 (`SHIP` 经 `.ship` 的 `descriptionId`、`CUSTOM` 经 `setCustomDescriptionId`)。
+- 锁定在对象 ID 上 (`WEAPON`、`SHIP_SYSTEM`、`RESOURCE`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`)。
+- 由对象显式关联或经 `descriptionId` 另起别名 (`SHIP` 经 `.ship` 的 `descriptionId`、`PLANET` 经行星类型的 `descriptionId` (缺省等于类型键)、`CUSTOM` 经 `setCustomDescriptionId`)。
 
 CSV 转义必须遵守的规则只有四条：含引号/逗号/换行的字段必须加引号、字段内引号写双份、行首 `#` 是注释、键全文件唯一 —— 违反的后果分别是文本错位与加载期失败，全部可观察。
 

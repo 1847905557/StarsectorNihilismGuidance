@@ -152,7 +152,7 @@ if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
 
 ### 酒吧显示 (BarCMD.showOptions)
 
-事件在活动列表里就绪后，还差最后一步：玩家进入酒吧时，事件如何被挑出来显示。玩家在星球/空间站交互里选 "Visit the bar"(`marketVisitBar` 选项，`data/campaign/rules.csv`) 触发 `bar_optionSel` 规则。
+事件在活动列表里就绪后，还差最后一步：玩家进入酒吧时，事件如何被挑出来显示。玩家在星球/空间站交互里选 "Take a shuttle down to visit a dockside bar"(`marketVisitBar` 选项，`data/campaign/rules.csv`) 触发 `bar_optionSel` 规则。
 
 随后依次执行 `FireBest BarShuttleDownPrintDesc` / `FireBest BarPrintDesc` / `BarCMD showOptions`。
 
@@ -460,7 +460,7 @@ BarEventManager.getInstance().notifyWasInteractedWith(this);
 - **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到两个类的 `.class`。
 - **跳过/完成教程后**：
 
-    - 进入任一有太空港的市场 (如 Corvus 星系的 Jangala)，交互里选 "Visit the bar"；`starsector.log` 出现。
+    - 进入任一有太空港的市场 (如 Corvus 星系的 Jangala)，交互里选 "Take a shuttle down to visit a dockside bar"；`starsector.log` 出现。
 
     ```text
     GearIn bar event: creator picked, creating event (id=GearInBarEvent)

@@ -1,6 +1,6 @@
 # 制作火炮、光束与导弹
 
-本节将引导您制作远行星号常见的原版武器，包括两门射弹武器 (即，一门火炮武器和一门导弹武器)，和一门光束武器。除此之外，还包括射弹武器的实际弹体。本节将简单解析 `.wpn` 武器定义、`.proj` 弹体定义和 `data/hulls/weapon_data.csv.csv` 文件。
+本节将引导您制作远行星号常见的原版武器，包括两门射弹武器 (即，一门火炮武器和一门导弹武器)，和一门光束武器。除此之外，还包括射弹武器的实际弹体。本节将简单解析 `.wpn` 武器定义、`.proj` 弹体定义和 `data/weapons/weapon_data.csv` 文件。
 
 *本节预期阅读时间：~20 分钟。*
 
@@ -439,7 +439,7 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 | name              | 武器名称                                                     |
 | id                | 武器 ID                                                      |
 | tier              | 科技等级，正常范围是 0~3，大于 3 将导致不会市场上正常出现。科技等级越大则越稀有且购买所需关系越高。|
-| rarity            | 稀有度，数字越小越罕见，大于 1 时被视为 1，小于 0 时被视为 0 |
+| rarity            | 稀有度，数字越小越罕见，直接作为抽选权重，仅 ≤0 不入池       |
 | base value        | 武器的成本价                                                 |
 | range             | 对于非导弹武器而言是武器的射程，对于导弹武器而言是 AI 理解中的武器射程 |
 | damage/second     | 每秒伤害，仅对光束武器有效                                   |
@@ -453,7 +453,7 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 | reload size       | 每秒弹药恢复量不为空时，每波次恢复多少枚弹药                 |
 | type              | 伤害类型，可以是 `KINETIC`、`ENERGY`、`HIGH_EXPLOSIVE` 或 `FRAGMENTATION`，分别是动能、能量、高爆和破片。还可以是 `OTHER` 但极度不建议使用 |
 | energy/shot       | 每发产生幅能，仅对非光束武器有效                             |
-| energy/second     | 每秒产生幅能，仅对光束武器有效                               |
+| energy/second     | 每秒产生幅能；非光束武器同样读取，并在前摇期间按该速率扣幅能 |
 | chargeup          | 对于非光束武器而言是开火前摇，对于光束武器而言是光束从不存在渐入为存在的时间 |
 | chargedown        | 对于非光束武器而言是开火后摇，对于光束武器而言是光束从存在渐出为不存在的时间 |
 | burst size        | 对于非光束武器而言是每波发射弹数，对于光束武器而言，填写了此数据后武器变为爆发光束，是爆发光束的爆发时长 |
@@ -472,7 +472,7 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 | hints             | 进阶内容，常用写法见本页的武器 Hints 速查表               |
 | tags              | 进阶内容，常用写法见本页的武器 tags 速查表                |
 | groupTag          | 如果本项不为空，则本项相同的武器将优先编入同一组，且优先在本组不编入其它武器 |
-| tech/manufacturer | 科技类型，原版包括诸如核心纪元、主宰纪元等，可随意填写     |
+| tech/manufacturer | 科技类型，原版包括诸如低端科技、中线科技等，可随意填写     |
 | primaryRoleStr    | 武器类型，文字描述                                           |
 | speedStr          | 导弹飞行速度，文字描述，非导弹武器建议留空                   |
 | trackingStr       | 导弹跟踪能力，文字描述，非导弹武器建议留空                   |
@@ -543,7 +543,7 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 | ----------------------- | ------------------------------------------------------------ |
 | id                      | 弹体的 ID                                                    |
 | specClass               | 弹体类型，`projectile` 是正常射弹，`missile` 是导弹。导弹、鱼雷、惯性炸弹都算 `missile` |
-| spawnType               | 生成类型，对于 `projectile` 而言仅允许 `BALLISTIC` 和 `BALLISTIC_AS_BEAM`，其它类型会产生各类意料之外的 BUG |
+| spawnType               | 生成类型；`projectile` 可用 `BALLISTIC`、`BALLISTIC_AS_BEAM`、`PLASMA`、`BEAM`、`MISSILE`、`OTHER`。原版等离子炮即用 `PLASMA` |
 | onHitEffect             | 弹体的命中特效代码路径，不填默认为无特效                     |
 | onFireEffect            | 弹体的开火特效代码路径，不填默认为无特效                     |
 | collisionClass          | 弹体的碰撞类型。`BALLISTIC` 类型的弹体用 `PROJECTILE_FF`(能命中包括友方在内的舰船，有友伤) 或 `PROJECTILE_NO_FF`(只命中敌方，无友伤)。`BALLISTIC_AS_BEAM` 类型的弹体用 `RAY`(能命中包括友方在内的舰船) 或 `RAY_FIGHTER`(只命中敌方舰船与战机)。全部碰撞类型：`NONE`、`RAY`、`RAY_FIGHTER`、`FIGHTER`、`SHIP`、`PROJECTILE_NO_FF`、`PROJECTILE_FF`、`MISSILE_NO_FF`、`MISSILE_FF`、`HITS_SHIPS_AND_ASTEROIDS`、`HITS_SHIPS_ONLY_FF`、`HITS_SHIPS_ONLY_NO_FF`、`PROJECTILE_FIGHTER`、`ASTEROID`、`PLANET`、`GAS_CLOUD`、`STAR`(后几类用于实体，弹体不会用到)|
@@ -556,7 +556,7 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 | fringeColor             | 弹体边缘部分的颜色                                           |
 | glowColor               | 弹体光效颜色                                                 |
 | bulletSprite            | 弹体贴图位置                                                 |
-| textureType             | 弹体材质，若不填则下方两个数据不被读取                       |
+| textureType             | 弹体材质，缺省为 SMOOTH；textureScrollSpeed/pixelsPerTexel 与其无关、总是被读取                       |
 | textureScrollSpeed      | 弹体材质滚动速率                                             |
 | pixelsPerTexel          | 弹体材质拉伸程度                                             |
 | behaviorSpec            | 弹体的行为设置，一般来说用来制作高射炮型溅射                 |
@@ -815,7 +815,7 @@ CSV 的导弹行会直接修改它引用的弹体 spec：当原版 `暴风 MLRS`
 | ---------------------------- | ------------------------------------------------------------ |
 | ANTI_FTR                     | 让 AI 认为这种武器主要用于对抗战机                           |
 | AUTOZOOM                     | 使视点自动与目标对齐，**极度不建议使用**                     |
-| BOMB                         | 仅对导弹武器有效，让 AI 尽可能频繁且无脑地使用此武器         |
+| BOMB                         | 对任意类型武器生效，让 AI 尽可能频繁且无脑地使用此武器       |
 | CONSERVE_1                   | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 1 轮发射量以供不时之需 |
 | CONSERVE_2                   | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 2 轮发射量以供不时之需 |
 | CONSERVE_3                   | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 3 轮发射量以供不时之需 |

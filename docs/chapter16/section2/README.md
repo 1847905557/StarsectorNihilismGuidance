@@ -35,7 +35,7 @@ GearIn 相位驱动器要向舰首前方跃迁约 700 su，但战场中央有大
 **插入位置：`GearInSafeJumpPlanner.find()` 的循环开头。** 在舰首前方 180 度范围均匀取点。
 
 ```java
-float angle = facing - 90f + i * 180f / 11f;
+float angle = -90f + i * 180f / 11f;
 Vector2f point = EllipseUtils.getPointOnEllipse(origin, 700f, 420f, facing, angle);
 ```
 
@@ -135,7 +135,7 @@ Vector2f origin = new Vector2f(ship.getLocation());
 
 - **计算候选时舰船位置不断变化**：候选变量直接引用了 `ship.getLocation()`。复制起点后再计算，最终结果确定前不写回引擎向量；运行一轮规划确认舰船只移动一次。
 - **规划器始终返回 null**：阻挡列表包含正在跃迁的舰船本身。调用前排除该舰船，再确认至少一个无阻挡候选能够返回。
-- **候选点左右颠倒**：`EllipseUtils` 的旋转角与候选参数使用了不同角度基准。统一使用游戏世界角度，记录舰首朝向并核对左右候选位置。
+- **候选点左右颠倒**：点方向 = `offset + angle`(单一度数制)，检查两角相加方向与正负号。
 - **终点安全但移动路径擦过模块**：阻挡列表遗漏模块实体，或只检查了终点。加入模块并检测完整移动线段，再观察跃迁路径不再穿过实体。
 
 ## 总结
@@ -196,7 +196,7 @@ public final class GearInSafeJumpPlanner {
             List<CombatEntityAPI> blockers) {
         GearInJumpCandidate best = null;
         for (int i = 0; i < CANDIDATE_COUNT; i++) {
-            float angle = facing - 90f + i * 180f / (CANDIDATE_COUNT - 1f);
+            float angle = -90f + i * 180f / (CANDIDATE_COUNT - 1f);
             Vector2f point = EllipseUtils.getPointOnEllipse(origin, 700f, 420f, facing, angle);
             if (crossesBlocker(origin, point, blockers)) {
                 continue;

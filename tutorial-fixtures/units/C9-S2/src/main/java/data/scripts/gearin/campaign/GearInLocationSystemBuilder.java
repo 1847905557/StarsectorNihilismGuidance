@@ -42,7 +42,7 @@ public class GearInLocationSystemBuilder {
 		system.setOptionalUniqueId(SYSTEM_UNIQUE_ID);
 
 		// 6 参数 initStar：同时把星系定位到超空间坐标 (7500, 8500)，并自动生成超空间锚点；
-		// 7 参数 initStar 不生成锚点、不设坐标 (只查 starmap.json 的 starSystemLocations)。
+		// 7 参数 initStar 不生成锚点；坐标查 starmap.json 的 starSystemLocations 写入。
 		PlanetAPI star = system.initStar(STAR_ID, "star_white", 600f, 7500f, 8500f, 400f);
 
 		// addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)；

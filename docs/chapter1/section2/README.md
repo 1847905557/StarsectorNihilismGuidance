@@ -96,7 +96,7 @@
 
 ::: caution 蓝圈设置
 
-蓝圈**必须**全部在黄圈的范围内。否则护盾判定圈会探出船体碰撞体积：导致超出黄圈范围的护盾基本失效，判定与视觉错位。
+蓝圈与黄圈相互独立。护盾命中判定只使用护盾自身半径与朝向，渲染同样按自身半径；蓝圈超出黄圈的部分照常生效。
 
 蓝圈**非常建议**覆盖整个贴图，否则将产生某些预期之外的后果：贴图露出护盾的部分没有护盾保护，敌方弹丸会直接命中护盾范围外的装甲，而这可不是一个好的设计。
 
@@ -110,7 +110,7 @@
 
 ::: caution 碰撞箱设置
 
-碰撞箱的每一个端点都**必须**在有完全不透明像素的位置，否则可能在装甲完好的情况下异常损失结构：端点悬空时对应的装甲格没有贴图遮挡，被命中后伤害会绕过装甲漏到结构。
+碰撞箱端点的位置与伤害无关：装甲网格取自贴图包围盒，不读像素；结构伤害只发生在装甲耗尽后。
 
 碰撞箱**不应该**过度密集，否则会显著影响您的游戏性能。
 
@@ -217,7 +217,7 @@
 | MIDLINE                 | 蓝色护盾                 |
 | HIGH_TECH               | 蓝色护盾                 |
 
-对于 `hullId` 和 `hullName` 两项，它们目前仅作为占位符，理论上没有作用，但编者建议您全部填写舰船 ID。
+对于 `hullId` 和 `hullName` 两项：`hullId` 是船体注册的主键，必须与 `ship_data.csv` 的 `id` 列一致，不一致时 CSV 行不会应用到该船体；`hullName` 会被 CSV 的 `name` 列覆盖，但编者建议您全部填写。
 
 ![工匠级舰船文件的最终编辑器预览](./normal_finale.png)
 
@@ -262,7 +262,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ### ship_data.csv 数据列速查表
 
-**不在本表上的数据要么是游戏已不再读取的旧列 (如 8/6/5/4%)，要么是对于当前阶段而言过于深入的进阶列 (如 logistics n/a reason、codex variant id、c/s 等)。对于这些列，编者建议您照抄原版样本的值即可。**
+**不在本表上的数据要么是游戏已不再读取的旧列 (如 8/6/5/4%、c/s、c/f、f/s、f/f、crew/s、crew/f、number、range)，要么是对于当前阶段而言过于深入的进阶列 (如 logistics n/a reason、codex variant id)。对于这些列，编者建议您照抄原版样本的值即可。**
 
 | 英文              | 实际意义                                                     |
 | ----------------- | ------------------------------------------------------------ |
@@ -299,7 +299,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 | max burn          | 大地图中最大速度                                             |
 | base value        | 成本价                                                       |
 | cr %/day          | 在补给充足的情况下，每日回复的 `CR` 数量                       |
-| CR to deploy      | 部署所需的最低 `CR` 比例，每次部署也会消耗等量 `CR`(如 12 表示 12%)|
+| CR to deploy      | 每次部署消耗的 `CR` 比例 (如 12 表示 12%)；部署最低 `CR` 门槛由全局 `noDeployCRPercent` 决定|
 | peak CR sec       | 峰值时间                                                     |
 | CR loss/sec       | 当峰值时间耗尽后，每秒下降的 `CR` 量                           |
 | supplies/rec      | 部署点，且还是每次部署消耗的补给数量                         |
@@ -343,7 +343,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 当您按照您的意愿填写完毕舰船数据之后，这艘船就能被游戏读取了。目前您还没有为它添加合理的获取方式，因此您只能使用 `控制台` 的 `Addship [您的舰船 ID]` 来获取它。
 
-控制台来自 Console Commands MOD(可在 FOSSIC 论坛下载并安装)；命令名不区分大小写，但 ID 区分大小写。
+控制台来自 Console Commands MOD(可在 FOSSIC 论坛下载并安装)；命令名与 ID 均不区分大小写 (AddShip 还会补 `_Hull` 重试)。
 
 `Addship` 接收的是装配 ID—— 游戏加载船体时会自动生成一个空的 `<hullId>_Hull` 装配，因此直接输入 `Addship GearIn_artizan_Hull` 即可。
 

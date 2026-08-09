@@ -33,7 +33,7 @@
 
 编译 MOD 时**必须**把字节码目标定在 Java 17 或更低 (`--release 17`)；
 
-用更高版本 JDK 的默认目标 (如 JDK 21 默认 target 21) 编译的 class，游戏加载时会抛 `UnsupportedClassVersionError`(日志出现 `class file has wrong version`)，表现为启动或战斗开始时报错。
+用更高版本 JDK 的默认目标 (如 JDK 21 默认 target 21) 编译的 class，游戏加载时会抛 `UnsupportedClassVersionError`(日志出现 "Compiled for the wrong version of Java, change the compile target to Java 7")，表现为启动或战斗开始时报错。
 
 任意已安装的 JDK 17 都可以直接作为编译工具；游戏自带的 `Starsector\jre` 与 JDK 17 是同一发行版。JDK 17 与更高版本 JDK 可以并存，关键是编译目标必须低于等于 17。
 

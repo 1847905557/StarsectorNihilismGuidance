@@ -121,7 +121,7 @@ getSystemRegenBonus().computeEffective(spec.regen)       → getRegen(stats)
     - 非开关式 (`toggle` 空/`FALSE`)：`timer >= active` → `OUT`(自动结束)；
     - 开关式 (`toggle=TRUE`) 且 `active > 0`：同样按 `timer >= active` 自动结束 (例如原版 Burn Drive `active=5`，开满 5 秒自动关)；
     - 开关式且 `active` 为 0(如原版 Fortress Shield)：时长分支整体跳过，系统**无限保持 `ACTIVE`**，直到再次激活请求到来且 `canBeDeactivated()` → `OUT`(开关式分支的手动关闭)。
-5. **OUT**：`timer += dt`；`timer >= down` → `state = COOLDOWN`、`timer = 0`、回调 `systemDeactivated()`。
+5. **OUT**：`timer += dt`；`timer >= down` → `state = COOLDOWN`、`timer = timer - chargeDownTime`(结转溢出量)、回调 `systemDeactivated()`。
 6. **COOLDOWN**：`timer += dt`；`timer >= cooldown` → `state = IDLE`、回调 `systemCooldownFinished()`。`cooldown` 为 0 时冷却段只存在一帧。
 
 激活请求的来源：用户按默认系统键 F 或重新绑定后的系统键，AI 调 `ShipAPI.useSystem()`(→ `giveCommand(USE_SYSTEM)`；命令处理把参数坐标传给 `system.fire(param)`)。右键是护盾命令，只可能改变当前目标或鼠标世界坐标，不会发出系统使用命令。系统对象的 `fire(loc)` 只记录 `targetLoc` 并置激活请求标志。
@@ -198,7 +198,7 @@ getSystemRegenBonus().computeEffective(spec.regen)       → getRegen(stats)
 
 8. **`aiScript` 只在 `aiType: "CUSTOM"` 时被使用**。`createSystemAI` 按 `aiType` 枚举分派到内置 AI 类 (EMP → 原版 EMP 系统 AI、相位 → 原版相位隐形系统 AI 等)，唯一走 `getAIScript()` 的分支是 CUSTOM。
     - `aiType: "NONE"` 不创建任何系统 AI(返回 null)。
-    - `aiType` 缺失、拼错或与 `type` 不配对时，**舰船部署生成 AI 的瞬间**抛 `RuntimeException("Error creating AI of type [...] for ship system [...]")`，该舰船无法进入战斗 —— 与数据面单元故障分析中的同一可观察结果。
+    - `aiType` 缺失或拼错时，`.system` 加载期即抛 `Key [aiType] is required` 或 `Key [aiType] has invalid value [...]`；与 `type` 不配对才在部署期抛包装后的 `Error creating AI of type [...]`，该舰船无法进入战斗。
     - `aiType: CUSTOM` 而 `aiScript` 缺失/类名错时同样在部署期失败 (`getAIScript()` 返回 null → `init` 空指针被包装；类名错则 `Problem loading class [...]`)。
 9. **statsScript 与 aiScript 是同名类的两个独立实例**。`getStatsScript()` 与 `getAIScript()` 各自经脚本类加载器按类名创建实例 —— 类缓存共享，但**每次 `newInstance()`**。
     - 一个类同时挂两个角色时，stats 实例与 AI 实例的**实例字段互不共享**；共享逻辑必须走静态方法 (本节示例的全部目标逻辑都是静态的) 或 `ship.setCustomData`。
@@ -381,6 +381,7 @@ Starsector\mods\GearIndustry\
     "range": 800,
     "useSound": "system_targeting_feed",
     "deactivateSound": "gun_out_of_ammo",
+    "outOfUsesSound": "gun_out_of_ammo",
     "aiHints": {
         "threatRange": 800,
         "threatAmount": 1,
@@ -392,7 +393,7 @@ Starsector\mods\GearIndustry\
 
 ```csv
 name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle,noDissipation,noHardDissipation,hardFlux,noFiring,noTurning,noStrafing,noAccel,noShield,noVent,isPhaseCloak,tags,icon
-目标锁定,GearIn_targetingsystem,1,,,,,,,,,0.5,4,0.5,3,,,,,,,,,,,offensive,graphics/icons/hullsys/targeting_feed.png
+目标锁定,GearIn_targetingsystem,1,,,,,,,,,0.5,4,0.5,3,,,,,,,,,,,,offensive,graphics/icons/hullsys/targeting_feed.png
 ```
 
 ### 测试舰挂载要还原
@@ -484,7 +485,7 @@ ShipAPI locked = pickTarget(ship);
 
 ## 故障分析
 
-- **部署期报告 `Error creating AI of type [...] for ship system [...]`**：`aiType` 缺失、拼错，或 `CUSTOM` 没有可实例化的 `aiScript` 时，`createSystemAI` 会在舰船部署阶段抛出包装后的 `RuntimeException`。设置 `aiType: "CUSTOM"` 并让 `aiScript` 完整类名与包名、路径一致；重新部署后 AI 应完成创建。
+- **加载期报 `Key [aiType] is required` / `Key [aiType] has invalid value [...]`**：`aiType` 缺失或拼错时，`.system` 数据加载期即抛出，不会进入部署。修正 `aiType` 后重启；与 `type` 不配对才在部署期抛 `Error creating AI of type [...]`。
 - **AI 从不使用系统**：`GearIn targeting AI init` 已出现而 `lock` 缺失、状态停在 `IDLE`，说明实体、存活、CR、冷却、弹药、节流或目标判据提前返回。按该判断链逐项核对，确保目标可见、同侧关系正确且在射程内；修正后应出现 `lock` 和状态迁移日志。
 - **AI 激活后加成约一秒便消失**：AI 只在激活前写一次 flag 时，`IN` 与 `ACTIVE` 总时长会超过 flag 的 1 秒寿命，stats 随后读到 null。AI 在 `system.isActive()` 期间持续刷新 flag，复验时整个 `ACTIVE` 段的速度与状态文字应保持稳定。
 - **用户手动激活后没有锁定加成**：用户舰没有 AI 写入 flag，stats 只读 flag 时会始终得到 null。`pickTarget` 先读 flag，再回退到 `getShipTarget()`；手动选中目标并激活后，应获得与 AI 舰相同的锁定加成。

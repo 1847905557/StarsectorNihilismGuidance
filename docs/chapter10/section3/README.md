@@ -89,7 +89,7 @@
 4. `economy.addMarket(market, withJunkAndChatter)` 注册进经济集合 (`withJunkAndChatter = true` 会加 junk 与无线电喧闹)。
 5. `entity.setMarket(market)`(以及 `entity.setFaction(...)`) 把实体绑到市场。
 
-0.98a 没有 `addMarketplace` 工具；使用 `Misc.initEconomyMarket` 或手动执行这条链：`createMarket(primaryEntity.getId(), ...)` → `setFactionId` → `setPrimaryEntity` → `getTariff().modifyFlat("generator", tarrif)` → `addSubmarket` ×N。
+建议使用 `Misc.initEconomyMarket` 或手动执行这条链：`createMarket(primaryEntity.getId(), ...)` → `setFactionId` → `setPrimaryEntity` → `getTariff().modifyFlat("generator", tarrif)` → `addSubmarket` ×N。
 
 随后 `addCondition` ×N(`free_market` 条件同时 `setFreePort(true)`)→ `addIndustry` ×N。
 
@@ -159,7 +159,9 @@
 
 `CommoditySpecAPI.getBasePrice()` 是全局基础价，**禁止**当市场买卖价用 (市场价必须走价格接口)。
 
-`updatePrices()` 重算全部商品的 `updateCalc()`；`updatePriceMult()` 按稳定度更新本地价格倍率。
+`updatePrices()` 重算全部商品的 `updateCalc()`；`updatePriceMult()` 在 0.98a 是空实现。
+
+**原版 javadoc 缺陷**：`updatePriceMult` 的 javadoc 声称 "按稳定度更新本地价格倍率"，实现却是空方法。调用它不会有任何效果。
 
 #### [人物与开放状态]
 
@@ -226,7 +228,7 @@ id 常量在 `com.fs.starfarer.api.impl.campaign.ids.Submarkets`(`SUBMARKET_OPEN
 | 行为 | open\_market(`OpenMarketPlugin`) | black\_market(`BlackMarketPlugin`) | storage(`StoragePlugin`) |
 |---|---|---|---|
 | 税率 `getTariff()` | 市场税率 `market.getTariff().getModifiedValue()`(基类默认) | **恒 0** | **恒 0** |
-| 合法性 | `shouldHaveCommodity = !market.isIllegal(com)`：只备货合法商品；交易时 `isIllegalOnSubmarket` 基类默认 = `market.isIllegal` | `isIllegalOnSubmarket` **恒 false**：什么都能交易 | 用户市场/中立势力市场全部合法，否则走基类 |
+| 合法性 | `shouldHaveCommodity = !market.isIllegal(com)`：只备货合法商品；交易时 `isIllegalOnSubmarket` 基类默认 = `market.isIllegal` | `isIllegalOnSubmarket` **恒 false**：什么都能交易 | 用户市场全部合法；中立势力仅舰船重载豁免，商品仍走基类 |
 | 库存上限与稳定度 | `limit *= 0.25 + 0.75 * (stability/10)`：**稳定度越高货越多** (spec desc 原文) | `limit *= 0.25 + 0.75 * (1 - stability/10)`：**稳定度越低货越多** | 不参与经济，无商品流库存 |
 | 经济参与 | 基类 `isParticipatesInEconomy() = true` | true | **false**：用户存取不影响经济 |
 | 用户交易影响 | `getPlayerEconomyImpactMode() = PLAYER_SELL_ONLY` | `PLAYER_SELL_ONLY` | 无 (不参与经济，`reportPlayerMarketTransaction` 直接返回) |
@@ -575,7 +577,7 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 - **条件与产业**：
 
     ```text
-       GearIn market conditions: count=6 ids=[population_6, inimical_biosphere, organics_plentiful, farmland_adequate, extreme_weather, habitable] GearIn market industries: count=7 ids=[population, farming, spaceport, mining, heavybatteries, militarybase, starfortress_mid]
+       GearIn market conditions: count=6 ids=[habitable, population_6, inimical_biosphere, organics_plentiful, farmland_adequate, extreme_weather] GearIn market industries: count=7 ids=[population, farming, spaceport, mining, heavybatteries, militarybase, starfortress_mid]
     ```
 
     (与 `econ/corvus.json` 的 `startingConditions` / `industries` 数组一致，以日志为准；其他市场看各自条目。)

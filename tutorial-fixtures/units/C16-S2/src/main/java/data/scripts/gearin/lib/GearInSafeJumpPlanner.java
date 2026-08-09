@@ -16,7 +16,7 @@ public final class GearInSafeJumpPlanner {
             List<CombatEntityAPI> blockers) {
         GearInJumpCandidate best = null;
         for (int i = 0; i < CANDIDATE_COUNT; i++) {
-            float angle = facing - 90f + i * 180f / (CANDIDATE_COUNT - 1f);
+            float angle = -90f + i * 180f / (CANDIDATE_COUNT - 1f);
             Vector2f point = EllipseUtils.getPointOnEllipse(origin, 700f, 420f, facing, angle);
             if (crossesBlocker(origin, point, blockers)) {
                 continue;

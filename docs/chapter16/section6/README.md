@@ -55,7 +55,7 @@ TextureEntry normal = TextureData.getTextureDataWithAutoGen(
         ship, true);
 ```
 
-完成信号：原始舰船没有独立 normal map 时，查询仍能得到可供 shader 使用的条目，或明确返回 `null`。
+完成信号：原始舰船没有独立 normal map 时，查询仍能得到可供 shader 使用的条目；`unloadedOk` 为 true 时缺失资源返回空条目 (`sprite == null`) 而非 `null`。
 
 ## 从精灵登记材质关系
 
@@ -77,15 +77,19 @@ SpriteAPI normalSprite = TextureData.autoGenNormalMap(
         spriteName, hullId, ObjectType.SHIP, 0);
 ```
 
-完成信号：生成结果可以通过 `TextureEntry` 查询，并在灯光 shader 开启时改变舰船受光方向。
+完成信号：生成结果可以直接用于 shader 并改变舰船受光方向 (`autoGenNormalMap` 不登记条目，无法经 `TextureEntry` 查询)。
 
 ## 选择战斗前预载还是首次使用加载
 
 **插入位置：GraphicsLib 的 `GRAPHICS_OPTIONS.ini`。** `preloadAllMaps` 决定已登记贴图是否在战斗前集中加载。
 
-```ini
-preloadAllMaps=false
+```json
+{
+  "preloadAllMaps": false
+}
 ```
+
+实际文件是带 `#` 注释的 JSON 格式 (如 `"preloadAllMaps": false, # 默认: false`)，不是 `key=value` 的 INI。
 
 保持关闭时，首个使用点可能承担加载成本；打开时，GraphicsLib 会在预载路径集中处理已启用的贴图，代价是更早占用显存。
 
@@ -112,7 +116,7 @@ TextureEntry normal = TextureData.getTextureDataWithAutoGen(
         ship, true);
 ```
 
-复验：重新进入战斗，核对 `normal` 条目和舰船受光方向；如果仍为 `null`，检查原始 sprite 路径和自动生成开关。
+复验：重新进入战斗，核对 `normal` 条目和舰船受光方向；如果条目为空 (`sprite == null`)，检查原始 sprite 路径和自动生成开关。
 
 ## 验证方案
 
@@ -144,4 +148,4 @@ TextureEntry normal = TextureData.getTextureDataWithAutoGen(
 - `TextureData.getTextureData`：查询已登记条目；
 - `TextureData.getTextureDataWithAutoGen`：允许自动补全的查询；
 - `TextureData.mapSpriteToMNSWithAutoGen`：建立三图映射；
-- `GraphicsLibSettings.preloadAllMaps`：读取预载开关。
+- `GraphicsLibSettings.preloadAllMaps()`：读取预载开关。

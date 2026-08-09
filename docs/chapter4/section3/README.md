@@ -212,7 +212,7 @@
 预期结果：
 
 - 游戏启动无 `ERROR`，`starsector.log` 出现 `Loading hull style data`、`Loading engine style data`、`Loading sound sets`，没有与 `GEAR_TECH` 相关的异常。
-- 控制台 `Addship GearIn_artizan` 部署进模拟战：护盾外圈/内圈为黄铜色，开启与关闭护盾有声音；引擎火焰与航迹为黄铜色烟雾；V 排粒子颜色与纹理符合 `GEAR_TECH`；过载与爆炸颜色为黄铜色系；声音为原版通用引擎声 (未注册自定义声音集时)。
+- 控制台 `Addship GearIn_artizan` 部署进模拟战：护盾外圈/内圈为黄铜色，开启与关闭护盾有声音；引擎火焰与航迹为黄铜色烟雾；V 排粒子颜色与纹理符合 `GEAR_TECH`；爆炸颜色为黄铜色系，过载电弧为蓝紫色 (150,150,255)(未设 `overloadColor` 的回退色)；声音为原版通用引擎声 (未注册自定义声音集时)。
 - 大地图：超空间光芒与爆炸颜色为 `GEAR_TECH` 的取值。
 - 舰船编辑器导入 `GearIndustry` 后可直接选择 `GEAR_TECH` 风格。
 
@@ -285,7 +285,7 @@ hull style 是 "声音与材质的总线"：
 
 **若没有为自定义 hull style 注册并引用自定义声音集，风格会静默回落到原版通用声音**：舰船风格数据对 9 个声音字段都有默认值 (`engine_loop`、`engine_accelerate`、`emp_loop`、`flux_loop`、`vent_flux`、`shield_burnout`、`shield_lower`、`shield_raise`、`explosion_ship`)，所有原版风格共享这一套。这不是报错，但引擎声、护盾声会听上去与原版一致，观感与自定义配色不一致。
 
-一旦风格里写入了自定义声音集 ID(例如 `"engineLoopSet": "GearIn_engine_loop"`)，该 ID **必须**存在于 `sounds.json`。违反后的可观察结果：加载阶段不报错，但舰船进入战斗、创建引擎控制器时抛 `NullPointerException`(`starsector.log` 记录指向内部实现 `ShipEngineController` 的构造链)，舰船无法正常部署；声音集里注册的 `.ogg` 路径不存在时，加载阶段直接失败 (声音资源加载任务报错)，游戏无法进入主菜单。
+一旦风格里写入了自定义声音集 ID(例如 `"engineLoopSet": "GearIn_engine_loop"`)，该 ID **必须**存在于 `sounds.json`。违反后的可观察结果：加载阶段不报错，但舰船进入战斗、创建引擎控制器时抛 `NullPointerException`(`starsector.log` 记录指向引擎控制器实现的构造链)，舰船无法正常部署；声音集里注册的 `.ogg` 路径不存在时，加载阶段直接失败 (声音资源加载任务报错)，游戏无法进入主菜单。
 
 :::
 
@@ -294,7 +294,7 @@ hull style 是 "声音与材质的总线"：
 - **加载进度条阶段出现风格键或颜色数组错误**：`engine_styles.json` 缺少必填键、颜色数组不足 4 个元素，或 `type` 不是 `GLOW`、`SMOKE` 时，日志会出现 `Key [...] is required`、`invalid value` 或颜色数组错误。补齐字段后重启，风格表应完成加载；`hull_styles.json` 缺少颜色字段时会回退为白色，非法值和 JSON 语法才会中断加载。
 - **加载阶段失败且日志指向 `.ship`**：顶层 `style` 缺失会抛出 `JSONObject["style"] not found.`，引用不存在的 hull style 时会在读取护盾颜色处抛 NPE。让 `.ship` 的 `style` 与 `hull_styles.json` ID 逐字一致，重启后船体应完成加载。
 - **`Addship` 部署时抛 NPE 且舰船无法入场**：`engineSlots` 的 `style` 指向未注册的 engine style，战斗实体生成时会取得 null。改用已注册 ID 或补齐 `engine_styles.json` 条目，再次部署后舰船应正常入场。
-- **部署时 NPE 堆栈指向 `ShipEngineController` 构造链或 `Shield`**：hull style 引用了 `sounds.json` 中不存在的声音集 ID。注册对应声音集或改用现有 ID，重新部署后引擎与护盾应完成初始化。
+- **部署时 NPE 堆栈指向引擎控制器构造链或 `Shield`**：hull style 引用了 `sounds.json` 中不存在的声音集 ID。注册对应声音集或改用现有 ID，重新部署后引擎与护盾应完成初始化。
 - **启动时声音资源加载失败**：`sounds.json` 中的 `.ogg` 路径不存在，或大小写与文件不一致。核对 `file` 相对 MOD 根目录的路径，重启后声音资源应完成加载。
 - **势力舰队生成时出现风格加载错误**：舰队装配引用的 `.ship` 可能带有损坏的风格或声音集关系。沿 `.ship`、风格 ID、声音集 ID 逐层核对，重新生成舰队后错误应消失。
 - **护盾和引擎声音仍像原版风格**：未引用自定义声音集时，hull style 会使用原版通用声音。按 "声音与材质的完整关联流程" 注册并引用自定义 ID，重新部署后应听到目标声音。

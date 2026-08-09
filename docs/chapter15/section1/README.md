@@ -44,7 +44,7 @@ String notesFromMod = Global.getSettings().loadText(
 
 ### 路径与编码边界
 
-`validateFileName` 在读取前拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径。资源路径使用 `/`，文件位于 MOD 目录内；绝对路径 (含盘符) 不属于资源读取入口。
+引擎在读取前拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径。资源路径使用 `/`，文件位于 MOD 目录内；绝对路径 (含盘符) 不属于资源读取入口。
 
 文件带 BOM 时，BOM 会进入返回文本的首字符。文件找不到、路径非法和 MOD ID 找不到分别在读取调用点产生异常，排查时先核对入口、相对路径和文件编码。
 
@@ -87,6 +87,6 @@ GearIn file loading is ready.
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.SettingsAPI`：`loadText`；路径安全校验由引擎内部 `validateFileName` 在读取入口自动执行。
+- `com.fs.starfarer.api.SettingsAPI`：`loadText`；路径安全校验由引擎在读取入口自动执行。
 - `data/config/`：MOD 自有文本资源可以使用的目录；
 - `mod_info.json`：MOD ID 来源。

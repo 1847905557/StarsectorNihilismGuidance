@@ -47,7 +47,7 @@
 
 | 层 | 进入方式 | 职责 |
 |---|---|---|
-| 舰队实体 | `SectorAPI.getPlayerFleet()` / `getFleetById` 等 | `CampaignFleetAPI`(`com.fs.starfarer.api.campaign.CampaignFleetAPI`)：舰队身份、坐标、速度、势力、成员集合入口、统计、战斗绑定、inflater |
+| 舰队实体 | `SectorAPI.getPlayerFleet()` / `LocationAPI.getFleets()` 等 | `CampaignFleetAPI`(`com.fs.starfarer.api.campaign.CampaignFleetAPI`)：舰队身份、坐标、速度、势力、成员集合入口、统计、战斗绑定、inflater |
 | 成员集合 | `CampaignFleetAPI.getFleetData()` | `FleetDataAPI`(`com.fs.starfarer.api.campaign.FleetDataAPI`)：成员增删遍历、旗舰、军官、同步、快照、容量与 burn 计算 |
 | 单个成员 | `FleetDataAPI` 各列表 / `CampaignFleetAPI.getFlagship()` | `FleetMemberAPI`(`com.fs.starfarer.api.fleet.FleetMemberAPI`)：成员保存态全部字段与数值 |
 
@@ -201,16 +201,17 @@ setVariant 保存的是传入引用
 
 - **容量按成员求和**：`updateCargoCapacities` 遍历成员，把 `getFuelCapacity` / `getCargoCapacity` / `getMinCrew` / `getMaxCrew` / `getFuelUse` 累加 (战机按联队数量加权)。
     - 写入 cargo 的 `maxFuel` / `maxCapacity` / `maxPersonnel`，并算出 `minCrew` 与 `fuelPerLightYear`；读取侧 `CampaignFleetAPI.getCargo()`(经 `SectorEntityToken.getCargo()`) 拿到 `CargoAPI`。
-- **burn level**：`getMaxBurnLevel()` 是**非封存**成员中最快者 (含 `getFleetwideMaxBurnMod`)；`getMinBurnLevel()` 是全体最慢者；`getBurnLevel()` 是有效 burn(含深超空间与舰队 mod 修正，上限 20)。
+- **burn level**：`getMaxBurnLevel()` 是**非封存**成员中最快者；`getMinBurnLevel()` 是全体最慢者；`getBurnLevel()` 是有效 burn(含深超空间与舰队 mod 修正，上限 20)。
+    - **原版 javadoc 缺陷**：`getMaxBurnLevel` 的 javadoc 声称含 `getFleetwideMaxBurnMod`，实现并不含。舰队级 mod 只作用于 `getBurnLevel()`。
     - `CampaignFleetAPI.getCurrBurnLevel()` 是当前实际流速。
 - **封存 (mothball)**：`getRepairTracker().setMothballed(true)` 后：成员不进 `getCombatReadyMembersListCopy()`、排到 `getMembersInPriorityOrder()` 末尾、`canBeDeployedForCombat()` 恒 `false`。
     - 该调用立即执行成员 `updateStats`，并标记舰队数据等待同步。成员 stats 此时已经重算；舰队容量等派生数据在同步后更新。
     - 封存 stats 把补给月耗乘以 `supplyConsumptionMothballedMult`，并把 cargo / fuel / maxCrew / minCrew 乘数置 0。
     - 封存船**不贡献容量也不烧船员**，这正是 "封存闲置船" 的语义。
 
-封存修正是延迟生效的
+封存修正立即生效
 
-stats 修正在下一次 `updateStats` 才写入 —— 改完封存标志后要触发同步 (如 `forceSync`) 再读数，否则读到的还是旧值。
+`setMothballed(true)` 在状态变化时立即执行成员 `updateStats` 并标记舰队同步；且 `getCargo()` / `getMembers()` / `getNumMembers()` 等读取路径本身先触发 `syncIfNeeded` —— 改完封存标志直接读数即可，无需手动 `forceSync`。
 
 - **scuttle(拆解)**：`scuttle(member)` 移除成员并把拆解收益 (补给、燃料、重型机械，`getSuppliesFromScuttling` 等)、已装非 built-in 武器与战机 LPC、AI 核心放入 cargo。
     - 拆解是**不可逆**的成员移除方式，与 `removeFleetMember` 的差别在于收益入舱。
@@ -460,7 +461,7 @@ fleet.getFleetData().addFleetMember(member);
 - **`getSnapshot()` 读档后为空**：snapshot 是瞬态字段，不进入存档。持久成员状态读取 `getMembersListCopy()`；快照只用于战斗前或销毁前的临时比较。
 - **修改装配后战斗中仍是旧船**：`FleetMemberAPI.setVariant` 只修改保存态，已部署实体不会跟随变化。生涯侧使用 `setVariant(variant, true, true)`，战斗实体在部署侧处理。
 - **战斗准备列表里没有低 CR 舰船**：CR 低于部署门槛，或船员比例低于默认 5%，都会让 `canBeDeployedForCombat()` 返回 false。核对 `getCR()` 与 `getCrewFraction()`，补充船员并等待 CR 恢复。
-- **封存后仍显示补给消耗和货舱容量**：封存修饰要到 stats 同步时才写入。调用 `CampaignFleetAPI.forceSync()`，或读取 `getMembers()` 触发同步后再检查数值。
+- **封存后仍显示补给消耗和货舱容量**：封存修饰立即写入成员 stats(`setMothballed` 同步执行成员 `updateStats`)，只有舰队级求和 (补给消耗、货舱容量) 延迟到舰队同步时更新。读取 `getMembers()` 等路径会自动触发同步，无需手动 `forceSync()`。
 - **`setFlagship` 后其他成员舰长被重置**：该方法会为其他舰船设置全零属性新人，并让新旗舰使用舰队指挥官。按这一语义安排调用，不要再逐成员调用 `setCaptain` 对抗。
 - **演示日志出现但舰队没有变化**：脚本注册在错误生命周期阶段，或操作的不是当前玩家舰队。将注册放入 `onGameLoad` 的一次性判断块，并从 `Global.getSector().getPlayerFleet()` 重新取得目标。
 
@@ -468,7 +469,7 @@ fleet.getFleetData().addFleetMember(member);
 
 本节把生涯舰队讲成一条链：入口 (`SectorAPI.getPlayerFleet()` → `CampaignFleetAPI`) → 集合 (`getFleetData()` → `FleetDataAPI`) → 成员 (`FleetMemberAPI`)。整条链上有三条反复用到的判断：创建不等于入队，改集合后要想到同步，保存态与战斗态分离 —— 演示脚本正是围绕这三条展开的。
 
-排错时先按症状定位层：成员数量与遍历顺序的问题查集合视图与同步时机，数值没变或读档丢失的问题查保存态字段与瞬态层，部署与后勤的问题查 CR、船员与封存判据。封存修正延迟生效是最常被忽略的一处 —— 改完封存标志先触发同步再读数。
+排错时先按症状定位层：成员数量与遍历顺序的问题查集合视图与同步时机，数值没变或读档丢失的问题查保存态字段与瞬态层，部署与后勤的问题查 CR、船员与封存判据。封存修正立即写入成员 stats、只有舰队级求和延迟到同步，这是最常被忽略的一处 —— 改完封存标志直接读数即可，读取会自动触发同步。
 
 这条对象链到此已经形成完整流程。舰队坐标写入、任务与 AI 调度位于集合层之上，市场补给来源落在经济系统一侧；本节的成员读写语义是这些操作的共同底座。
 

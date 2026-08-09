@@ -41,13 +41,13 @@ OBJ 文件本身只描述几何；模型 ID、贴图材质与世界变换仍要�
 
 ### 在 CSV 中登记模型 ID
 
-**插入位置：`data/config/modFiles/BUtil_obj_data.csv` 的 GearIn 行。** 按表头关联 OBJ、漫反射、法线、复杂、发光和切线贴图；空通道保留空字段。
+**插入位置：`data/config/modFiles/BUtil_obj_data.csv` 的 GearIn 行。** 按表头关联 OBJ、漫反射、法线、复杂、发光和切线贴图；空通道保留空字段。启动期只加载单文件 (无跨 MOD 行合并、资源优先级首个命中)，默认命名下 BoxUtil 自带 CSV 恒胜出 ——GearIn 行需并入该文件，另建同名文件不会生效。
 
 ```csv
 GearIn_gear,data/models/GearIn_gear.obj,data/models/GearIn_gear_diffuse.png,data/models/GearIn_gear_normal.png,,data/models/GearIn_gear_emissive.png,,,F32
 ```
 
-完成信号：ModelManager.containsModelID 返回 true。
+完成信号：GearIn 行并入生效后，ModelManager.containsModelID 返回 true。
 
 ### 在创建实体前确认模型存在
 
@@ -63,7 +63,7 @@ if (!ModelManager.containsModelID(modelId)) {
 
 ### 取得已解析的 ModelData
 
-**插入位置：`require()` 返回处。** 复用 BoxUtil 启动期加载结果，并让实体构造器再次检查 `model.isValid()`。
+**插入位置：`require()` 返回处。** 从 `ModelManager` 取得已加载的模型数据，并让实体构造器再次检查 `model.isValid()`。
 
 ```java
 ModelData model = ModelManager.getModelData(modelId);
@@ -102,9 +102,9 @@ return entity;
 ModelData model = ModelManager.getModelData("GearIn_Gear");
 ```
 
-实际症状：实体成功创建但完全空白，日志中没有文件读取异常。
+实际症状：构造实体时立即抛空指针异常，实体从未创建、从未入队。
 
-原因：模型 ID 大小写与 CSV 的 `GearIn_gear` 不一致，`getModelData()` 返回 `null`；直接构造实体把真正的查询错误推迟成空白画面或空引用。
+原因：模型 ID 大小写与 CSV 的 `GearIn_gear` 不一致，`getModelData()` 返回 `null`；`new CommonEntity(model, true)` 在构造期就解引用 model 同步贴图，直接抛 NPE—— 不存在 "实体成功创建但空白" 的中间态。
 
 下面是**局部修正片段**：
 
@@ -120,7 +120,7 @@ ModelData model = catalog.require("GearIn_gear");
 
 ## 验证方案
 
-前置数据：9 列模型 CSV 已被 BoxUtil 加载，OBJ、diffuse、normal 与 emissive 文件均存在，战斗接线能把返回实体入队。
+前置数据：GearIn 行已并入 BoxUtil 启动期加载的 9 列模型 CSV，OBJ、diffuse、normal 与 emissive 文件均存在，战斗接线能把返回实体入队。
 
 1. 启动后核对 `ModelManager.containsModelID("GearIn_gear")` 和 `ModelData.isValid()`。
 2. 在玩家舰旁创建比例为 `(1, 1)` 的实体，核对位置和朝向。
@@ -138,7 +138,7 @@ ModelData model = catalog.require("GearIn_gear");
 
 ## 故障分析
 
-- **实体创建后完全空白**：模型 ID 大小写与 CSV 不一致，或 `ModelData.isValid()` 为 false。先通过 `require()` 验证数据，再构造实体；修正后确认模型可见。
+- **构造实体时抛空指针异常**：模型 ID 大小写与 CSV 不一致 (`getModelData()` 返回 null，`new CommonEntity(model, true)` 构造期即 NPE)，或 `ModelData.isValid()` 为 false。先通过 `require()` 验证数据，再构造实体；修正后确认模型可见。
 - **模型整体显示为黑色**：漫反射贴图或材质数据没有注册。补齐材质引用，重新载入后确认基础颜色出现。
 - **光照方向与模型表面相反**：OBJ 的法线或切线方向不一致。修正并重新导出网格，再旋转光源确认明暗方向正确。
 - **模型位置正确但比例巨大**：OBJ 单位与世界缩放没有统一。调整导出单位或模型矩阵缩放，重新显示后与舰船尺寸对照。

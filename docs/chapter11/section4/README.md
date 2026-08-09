@@ -53,7 +53,7 @@
   │  applyFleetwideToStats(ALL_SHIPS_IN_FLEET，舰队指挥官)
   ▼
 战斗 stats(舰船对象创建新造 → ShipAPI 对象绑定实体并重放)
-  │  CombatEngineAPI.addObjectToEngine → applyEffectsAfterShipAddedToCombatEngine(一次)
+  │  CombatEngineAPI.addEntity(CombatEntityAPI) → applyEffectsAfterShipAddedToCombatEngine(一次)
   ▼
 战斗实体 (ShipAPI)
 ```
@@ -159,7 +159,7 @@
 - `setCaptain(captain)` → `applyPersonalToShip`(舰长技能)：个人 SHIP 技能 + `applyPersonalAfterShipCreationToShip`(含系统/相位数值烘焙 `updateValuesFromStats`)+ 指挥官 `applyFleetwideToShip`；
 - `flux_capacitors`/`flux_vents` 再写一次 —— 与生涯序列同 ID 幂等。
 
-入引擎：`CombatEngineAPI.addObjectToEngine`(`CombatEngineAPI`)→ 触发全部船插的第三时机 —— **每个战斗实体只触发一次**。
+入引擎：`CombatEngineAPI.addEntity(CombatEntityAPI)`→ 触发全部船插的第三时机 —— **每个战斗实体只触发一次**。
 
 模块船走同一条链：模块船生成流程 (舰船对象创建) 为每个模块变体新建 `FleetMemberAPI` 再创建舰船对象。
 
@@ -198,7 +198,7 @@
 | 舰队同步 `syncIfNeeded` | 全员 `updateStats()` + 舰队向技能二次重放 | `FleetDataAPI` |
 | 部署 (舰船对象创建) | 新造战斗 stats 并完整重放 (环节三) | `FleetMemberAPI` |
 | 战斗内 `ShipAPI.setCaptain` | 解挂旧/挂新个人技能 (含子模块)，立即生效 | `ShipAPI` |
-| 入引擎 `addObjectToEngine` | 船插第三时机，每实体一次 | `CombatEngineAPI`、`ShipAPI` |
+| 入引擎 `addEntity` | 船插第三时机，每实体一次 | `CombatEngineAPI`、`ShipAPI` |
 
 ## 规则强度速查表
 
@@ -265,7 +265,7 @@ fleetData.addFleetMember(wolf);
 wolf.updateStats();
 ```
 
-完成信号：后坐力倍率变为 0.750，自动瞄准变为 1.000，实弹与能量武器射程各增加 15%。同一人物在未入队成员上只会得到基线值。
+完成信号：后坐力倍率变为 0.750，自动瞄准变为 1.250，实弹与能量武器射程各增加 15%。同一人物在未入队成员上只会得到基线值。
 
 ### 让舰队指挥官影响成员
 
@@ -376,13 +376,13 @@ Starsector\mods\GearIndustry\
 - 观察点 1(`GearInVariantToStats` 步骤 1—— 基线绑定)：`createFleetMember(SHIP, "wolf_Assault")` 构造即 `updateStats`(`FleetMemberAPI`)，此时成员未入队：
     - `variantShared=true`(`stats.getVariant() == wolf.getVariant()`，同一引用，stats 对象持有变体引用) 与 `memberLinked=true`(`stats.getFleetMember() == wolf`) 是 "交接已绑定" 的现场证明。
 - 观察点 2(`GearInCaptainToMember` 步骤 1—— 未入队换舰长)：`gunner.getStats().setSkillLevel("gunnery_implants", 1f)` 只重放 CHARACTER\_STATS / FLEET 效果 (`gunnery_implants` 没有这两类)：
-    - `setCaptain(gunner)` 触发重建，但 `getFleetData()` 为 null → `applyPersonalToStats` 被跳过 → `recoil=1.000 aim=0.000`。
+    - `setCaptain(gunner)` 触发重建，但 `getFleetData()` 为 null → `applyPersonalToStats` 被跳过 → `recoil=1.000 aim=-0.500`。
 - 观察点 3(`GearInCaptainToMember` 步骤 2—— 入队生效)：`addFleetMember`(写 `fleetData` 并 `setSyncNeeded`) 后显式 `updateStats()`—— 个人技能开始应用：
     - `gunnery_implants` L1 的三个 Level 效果：
         - Level2：`getAutofireAimAccuracy().modifyFlat(id, 1.0)`(`com.fs.starfarer.api.impl.campaign.skills.GunneryImplants`)。
         - Level3：`getBallisticWeaponRangeBonus()` / `getEnergyWeaponRangeBonus().modifyPercent(id, 15)`。
         - Level1：`getMaxRecoilMult().modifyMult(id, 1 - 0.01*25)`。
-    *   结果 `recoil=0.750 aim=1.000 ballisticRange=15.0 energyRange=15.0`；
+    *   结果 `recoil=0.750 aim=1.250 ballisticRange=15.0 energyRange=15.0`；
     *   日志里的 `count` 读 `getNumMembers()`，会触发一次全量舰队同步 (`FleetDataAPI.syncIfNeeded`)，全员 `updateStats` 再跑一遍 —— 同 ID 幂等，数值不变。
 - 观察点 4(`GearInStatsRebuild` 步骤 2—— 重建即丢弃)：`modifyFlat("GearIn_transient_speed", 25f)` 直接写 `getStats()` 返回值 → `speed` 增 25：
     - `updateStats()` 整体新建对象 (`rebuiltNewObject=true`)→ 修改被丢弃 (`speedAfterRebuild` 回到 `speedBefore`)。
@@ -441,10 +441,10 @@ stats.getMaxSpeed().modifyFlat(id, 5f);
 - **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 按注册顺序依次出现以下日志 (`<N>` 为初始成员数；数值以实际为准，但标出的关系是确定性的)：
 
     ```text
-    GearIn variantToStats baseline: hull=wolf specId=wolf_Assault caps=9 vents=10 fluxCap base=2250 mod=<2250+1800+fluxdistributor贡献> fluxDiss base=150 mod=<150+100+fluxdistributor贡献> speed=<150.0> maxCR=<0.200~0.700 视船员> variantShared=true memberLinked=true GearIn variantToStats refit: caps 9->14 vents 10->15 fluxCap <a>-><a+1000> (+1000) fluxDiss <b>-><b+50> (+50) sharedVariant=true specId=wolf_Assault GearIn captainToMember start: members=<N> GearIn captainToMember preJoin: recoil=1.000 aim=0.000 (skills not applied, member not in fleet) GearIn captainToMember joined: count=<N+1> recoil=0.750 aim=1.000 ballisticRange=15.0 energyRange=15.0 GearIn captainToMember swap: recoil 0.750 -> 1.000 (restored) GearIn captainToMember done: members=<N> (initial <N>) GearIn commanderToMember start: members=<N> GearIn commanderToMember: maxCR <c> -> <c+crewTraining加成> (crewTraining) -> <c> (reset) GearIn commanderToMember done: members=<N> (initial <N>) GearIn statsRebuild start: members=<N> GearIn statsRebuild transient: speed <150.0> -> <175.0> (with transient), rebuiltNewObject=true speedAfterRebuild=<150.0> GearIn statsRebuild lazy: sameObjectAsBefore=false GearIn statsRebuild done: members=<N> (initial <N>)
+    GearIn variantToStats baseline: hull=wolf specId=wolf_Assault caps=9 vents=10 fluxCap base=2250 mod=<2250+1800> fluxDiss base=150 mod=<150+100+fluxdistributor贡献> speed=<135.0> maxCR=<0.200~0.700 视船员> variantShared=true memberLinked=true GearIn variantToStats refit: caps 9->14 vents 10->15 fluxCap <a>-><a+1000> (+1000) fluxDiss <b>-><b+50> (+50) sharedVariant=true specId=wolf_Assault GearIn captainToMember start: members=<N> GearIn captainToMember preJoin: recoil=1.000 aim=-0.500 (skills not applied, member not in fleet) GearIn captainToMember joined: count=<N+1> recoil=0.750 aim=1.250 ballisticRange=15.0 energyRange=15.0 GearIn captainToMember swap: recoil 0.750 -> 1.000 (restored) GearIn captainToMember done: members=<N> (initial <N>) GearIn commanderToMember start: members=<N> GearIn commanderToMember: maxCR <c> -> <c+crewTraining加成> (crewTraining) -> <c> (reset) GearIn commanderToMember done: members=<N> (initial <N>) GearIn statsRebuild start: members=<N> GearIn statsRebuild transient: speed <135.0> -> <160.0> (with transient), rebuiltNewObject=true speedAfterRebuild=<135.0> GearIn statsRebuild lazy: sameObjectAsBefore=false GearIn statsRebuild done: members=<N> (initial <N>)
     ```
 
-    要点核对：`variantToStats baseline` 的 `variantShared=true`/`memberLinked=true`(stats 与变体、成员双向绑定)；`captainToMember preJoin` 的 `1.000/0.000`(未入队不应用技能)；`captainToMember joined` 的 `0.750/1.000/15.0/15.0`(入队后技能生效，`gunnery_implants` L1 的 recoil/aim/range)；`statsRebuild transient` 的 `rebuiltNewObject=true` 与 `speedAfterRebuild` 回落 (重建即丢弃)；`variantToStats refit` 的 `+1000/+50` 与 `sharedVariant=true`(装配 → stats 交接与引用共享)；`captainToMember swap` 的 `0.750 -> 1.000`(换人立即重算并恢复)；`commanderToMember` 的 "中间值 > 前后值且恢复值 == 初始值"(舰队指挥官 → 成员 stats 交接)；四个 `done` 行成员数均与各自 `start` 行一致 (无残留)。类间顺序以注册顺序为准，类内顺序确定。
+    要点核对：`variantToStats baseline` 的 `variantShared=true`/`memberLinked=true`(stats 与变体、成员双向绑定)；`captainToMember preJoin` 的 `1.000/-0.500`(未入队不应用技能)；`captainToMember joined` 的 `0.750/1.250/15.0/15.0`(入队后技能生效，`gunnery_implants` L1 的 recoil/aim/range)；`statsRebuild transient` 的 `rebuiltNewObject=true` 与 `speedAfterRebuild` 回落 (重建即丢弃)；`variantToStats refit` 的 `+1000/+50` 与 `sharedVariant=true`(装配 → stats 交接与引用共享)；`captainToMember swap` 的 `0.750 -> 1.000`(换人立即重算并恢复)；`commanderToMember` 的 "中间值 > 前后值且恢复值 == 初始值"(舰队指挥官 → 成员 stats 交接)；四个 `done` 行成员数均与各自 `start` 行一致 (无残留)。类间顺序以注册顺序为准，类内顺序确定。
 - **报错定位**：若日志出现某个演示类的 ERROR 堆栈 (前缀 `GearIn variantToStats / captainToMember / commanderToMember / statsRebuild`)，说明该步抛错 —— 按堆栈对照 "规则强度" 节定位 (最常见的是引用了不存在的技能 id 或装配 id)。
 - **读档**：不重复执行演示 (四个 `REGISTER_MARK` 键已关)；玩家舰队构成与演示前一致。
 - **退出到主菜单**：脚本停止 (生涯状态不再运行)；回主菜单后再进档按第 5 条继续。

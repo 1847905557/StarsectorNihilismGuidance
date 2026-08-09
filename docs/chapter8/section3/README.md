@@ -16,7 +16,7 @@
 - 使用 `weapon.getAnimation()` 的 `AnimationAPI`(`play` / `pause` / `setFrame` / `setFrameRate`) 程序化控制动画，并说明两条渲染约束：`getAnimation()` 对非动画武器返回 null、`getSprite()` 上设置的 alpha 与角度会被渲染前覆盖；
 - 区分 `animationType` 的取值 (`NONE` / `GLOW` / `MUZZLE_FLASH` / `GLOW_AND_FLASH` / `SMOKE`) 与 `muzzleFlashSpec` / `smokeSpec` / `visualRecoil` 的角色、触发条件与可观察结果；
 - 解释 `BeamEffectPlugin` 的每帧回调与 `BeamEffectPluginWithReset.reset()` 的调用窗口 (射线创建与销毁)，并只消费本帧光束状态 (`didDamageThisFrame` / `getDamageTarget`)；
-- 用 `starsector.log` 与视口粒子从症状定位本节列出的八类典型故障。
+- 用 `starsector.log` 与视口粒子从症状定位本节列出的九类典型故障。
 
 ## 前置知识
 
@@ -91,7 +91,7 @@
 
 动画武器 (`numFrames > 1`) 的帧由引擎每帧推进 (弹丸与光束武器同构)，推进条件：
 
-1. **只有开火、充能 (charge state 非 IDLE) 或 `alwaysAnimate:true` 时动画才走帧**；其余时间停在当前帧 (通常 0 帧)。
+1. **开火、充能 (charge state 非 IDLE)、`alwaysAnimate:true`、当前帧号非 0 或 `playing` 时，动画继续走帧**；其余时间停在当前帧 (通常 0 帧)。
 2. `animateWhileFiring:false` 时，开火中动画几乎冻结 (时间倍率 0.001)。
 3. `burstDelay > 0` 的连射武器在冷却超过 burstDelay 且不在 burst 内时完全冻结 (倍率 0)。
 4. 帧循环环绕：`currFrame += 时间 × frameRate`，超过 `numFrames` 回绕 (`Animation.advance`)。
@@ -110,7 +110,7 @@ graphics/weapons/rotary/rotary_cannon_turret_base02.png   # 帧 2
 graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 ```
 
-帧贴图在**武器实例构造时**逐帧加载；基路径不以 `00.png` 结尾时帧 0 路径推导错位 (替换不命中，帧文件拼出错误文件名)，帧文件缺失则在武器创建阶段加载失败 —— 部署舰船时即报错，不会延迟到渲染。命名规则是必须遵守的 (规则 3)。
+帧贴图在**武器实例构造时**逐帧加载；基路径不以 `00.png` 结尾时帧 0 路径推导错位 (替换不命中，帧文件拼出错误文件名)。帧 0 (即主贴图) 文件缺失时构造期抛 NPE —— 部署舰船时即报错；后续帧缺失不报错，仅对应帧渲染空白。命名规则是必须遵守的 (规则 3)。
 
 ### AnimationAPI 程序化控制
 
@@ -188,7 +188,7 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 
 - 注册列 `beamEffect` 只在 `specClass: beam` 的 `.wpn` 上被读取；写到弹丸武器 `.wpn` 上**静默不生效**。
 - 实例：每条光束射线实体构造时调 `getSpec().getBeamEffect()` → **每条射线独立实例**；实现 `BeamEffectPluginWithReset` 的实例在射线创建与销毁时收到 `reset()`—— 跨射线状态在这里复位。
-- 每帧调用：射线在开火 / 充能期间存在，光束武器每帧对每条射线调一次 `advance(amount, engine, beam)`。调用点在端点更新前后的位置随命中与否变化：**射线被目标截短 (命中) 时在更新 `to` 端点之后调用，未命中时在更新之前调用** —— 效果里读 `beam.getTo()` 的语义随命中状态不同，命中时读到本帧截短端点，未命中时读到上一帧端点。
+- 每帧调用：射线在开火 / 充能期间存在，光束武器每帧对每条射线调一次 `advance(amount, engine, beam)`。调用点由上一帧射线长度决定：**长度 ≤0.1(新射线首帧) 在更新 `to` 端点之后调用，其余帧 (含命中截短) 都在更新之前调用**，与命中与否无关。
 - 光束伤害是 DPS 语义按 0.1 秒结算 [C7-S4]；`beam.getDamage().getDpsDuration()` 在结算帧返回累计时长、其余帧为 0—— 原版 `IonBeamEffect` 用 `dpsDuration` 推进 `IntervalUtil`(并处理快速时间下的 `wasZero` 边沿)，使特效节奏跟随真实伤害结算。
 - `didDamageThisFrame()` / `getDamageTarget()` 只对本帧结算语义有效 ([C7-S4] 规则 5 同规)：光束逐帧可能切换命中目标，禁止把上一帧目标缓存跨帧使用。
 
@@ -549,7 +549,7 @@ public class GearInWeaponFrameEffect implements EveryFrameWeaponEffectPlugin { }
 - **`beamEffect` 没有任何行为**：注册列写在弹丸武器的 `.wpn` 中时，引擎不会创建光束效果实例。让武器使用 `specClass: beam`，或改绑 `everyFrameEffect`；重新开火后应出现对应日志。
 - **`getAnimation()` 抛出 NPE**：静态贴图武器的 `getAnimation()` 返回 null。调用动画方法前先判空，重新部署静态武器后不应再出现异常。
 - **动画停在第 0 帧**：`numFrames` 保持 1、`alwaysAnimate:false` 且武器闲置，或调用 `pause()` 后没有调用 `play()`，都会让帧号停住。核对 `.wpn` 的播放条件并让 `pause()`、`play()` 成对使用；开火后帧号应按配置循环。
-- **部署时报告帧文件加载错误**：基贴图路径没有以 `00.png` 结尾，或所需帧文件缺失。按命名规则补齐全部帧，重新部署后应完成动画资源加载。
+- **部署时 NPE 或动画空白**：帧 0 (主贴图) 文件缺失 → 构造期 NPE；基贴图路径没有以 `00.png` 结尾或后续帧缺失 → 对应帧纹理为空、渲染空白。按命名规则补齐全部帧，重新部署后应完成动画资源加载。
 - **动画帧画面错位**：各帧贴图的尺寸或主体对齐点不一致。统一画布和主体位置后重新播放，切帧时图像应保持稳定。
 - **光束命中后没有火花**：`didDamageThisFrame()` 为 false、命中点在视口外，或用结算帧外为 0 的 `dpsDuration` 推进节流器时，粒子不会生成。先用 `hit start` 日志确认命中，把节流推进改用 `amount` 或 `IonBeamEffect` 的边沿处理；持续照射时应每 0.15 秒出现火花。
 - **第二场战斗仍在使用失效实体**：回调参数被保存并跨帧或跨战斗复用时，旧实体不属于当前引擎。参数只在当前回调内消费，需要持续状态时每帧从 `weapon.getBeams()` 或 `engine.getProjectiles()` 查询；第二场战斗应取得新实体。

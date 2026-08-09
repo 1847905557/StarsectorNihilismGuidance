@@ -54,7 +54,7 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
     - **`addIntel` 绕过通信中继可见性检查** ——`IntelInfoPlugin.canMakeVisibleToPlayer` "Only checked if adding using IntelManager.queueIntel(). addIntel() bypasses this and all other checks."。
     - `addIntel(plugin, forceNoMessage)` / `addIntel(plugin, forceNoMessage, textPanel)` 控制消息行为。
 2. **`queueIntel(plugin[, maxCommQueueDays])`**(`IntelManagerAPI`) 加入通信队列；玩家进入通信中继范围或 `forceAddNextFrame()` 时，转为可见 intel 并出队。
-    - 同批最多 3 条、第 4 条起合并为一条 "New messages" 汇总。
+    - 同批最多 4 条单独弹出，第 5 条起合并为一条 "New intel (N)" 汇总。
 
 **每帧推进与清理**：未暂停且有玩家舰队时，情报管理器每帧推进，通信队列的可见性检查与 `removeAllThatShouldBeRemoved()` 都在这条路径上：`shouldRemoveIntel()` 返回 true 的情报被移除并调 `reportRemovedIntel()`；`IntelManagerAPI.removeIntel` 会同时移除并出队。
 
@@ -262,7 +262,7 @@ Starsector\mods\GearIndustry\
 
 ### GearInServicesIntel(情报插件)
 
-**职责**：自定义情报插件 (`BaseIntelPlugin` 子类)—— 实现名称/图标/小描述/Intel 标签；`getIcon()` 返回 null 走默认图标；`getIntelTags(map)` 先调 `super.getIntelTags(map)`(基类默认实现内部已做 null 判断) 再追加自定义 tag。
+**职责**：自定义情报插件 (`BaseIntelPlugin` 子类)—— 实现名称/图标/小描述/Intel 标签；`getIcon()` 返回 null 时不显示图标；`getIntelTags(map)` 先调 `super.getIntelTags(map)`(基类默认实现内部已做 null 判断) 再追加自定义 tag。
 
 **绑定注册入口**：由 `GearInIntelServicesScript` 经 `IntelManagerAPI.addIntel(plugin)` 登记 (`addIntel` 绕过可见性检查，立即置玩家可见时间戳并弹出左下消息)。
 
@@ -585,7 +585,7 @@ import com.fs.starfarer.api.util.Misc;
  * 绑定位置：由 GearInIntelServicesScript 经 IntelManagerAPI.addIntel(plugin) 登记
  * (addIntel 绕过可见性检查，立即置玩家可见时间戳并弹出左下消息)。
  *
- * 契约要点：getIcon() 返回 null 时 Intel 页面使用默认图标 (IntelInfoPlugin
+ * 契约要点：getIcon() 返回 null 时 Intel 页面不显示图标 (IntelInfoPlugin
  * "40x40, no icon if null.")；getIntelTags(map) 必须处理 map 为 null
  * ("Method NEEDS to handle map being null gracefully.")—— 本类先调
  * super.getIntelTags(map)，基类默认实现内部已做 null 判断，再追加自定义 tag。

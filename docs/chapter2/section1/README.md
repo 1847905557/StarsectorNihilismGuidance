@@ -50,11 +50,11 @@ public class GearInSpeedBooster extends BaseHullMod {
 }
 ```
 
-这个文件只有四类内容：
+这个文件只有五类内容：
 
 - **`package` 行**：类的存放目录。`data.scripts.gearin.hullmods` 对应 MOD 根下的 `data/scripts/gearin/hullmods/`，文件必须放在该目录下。按模板使用。
 - **`import` 行**：向游戏借用的工具 (日志、船插基类、数值修改器)。按模板使用，不认识的名称不影响本节操作。
-- **`public class GearInSpeedBooster extends BaseHullMod`**：类的名字。两条规则**：类名必须与文件名一致** (文件 `GearInSpeedBooster.java` 对应类名 `GearInSpeedBooster`)；`extends BaseHullMod` 表示采用船插的标准模板。按模板使用。
+- **`public class GearInSpeedBooster extends BaseHullMod`**：类的名字。两条规则：类名必须与文件名一致 (文件 `GearInSpeedBooster.java` 对应类名 `GearInSpeedBooster`)；`extends BaseHullMod` 表示采用船插的标准模板。按模板使用。
 - **`SPEED_PERCENT = 10f`**：本节唯一的参数 —— 速度加成百分比。改为 `50f` 即加成 50%。`f` 是小数标记，`10f` 与 `10.0f` 等价。
 - **方法 `applyEffectsBeforeShipCreation` 及其两行**：按模板使用，方法签名的参数不需要全部理解。方法体内两行各有用途：`modifyPercent(id, SPEED_PERCENT)` 是 "给最大速度加百分之几" 的固定句式；`Global.getLogger(...).info("...")` 向游戏日志写入一行文字 —— 引号内的文字可修改，改成什么，日志里就出现什么。
 

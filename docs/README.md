@@ -108,6 +108,6 @@ Chapter 4–5 继续处理装配、战役、模块船、自定义实体、文本
 
 技术支持：**AnyIDElse**、**AutumnHeart**、**Jaylyn**
 
-***
+---
 
 最终/一切解释权归 **Nihilist** 所有。

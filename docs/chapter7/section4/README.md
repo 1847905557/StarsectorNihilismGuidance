@@ -13,7 +13,7 @@
 - 区分 `getProjectiles()`、`getMissiles()`、`getBeams()` 三个对象集合的语义：`getProjectiles()` **包含**导弹 (API javadoc 原文 "Includes missiles.") 与光束脉冲射线，`getMissiles()` 是导弹子集，`getBeams()` 只含光束武器实体 —— 并解释为什么叠加前两个会重复统计；
 - 说出武器开火流的回调顺序：`EveryFrameWeaponEffectPlugin.advance`(本帧转向/开火**之前**)→ 本帧核心操作 → `EveryFrameWeaponEffectPluginWithAdvanceAfter.advanceAfter`(**之后**)，以及 `fireShot` 内部 "先扣弹药、失败则不生成射弹、生成后再回调 `onFire`" 的次序；
 - 列出射弹生命周期的关键状态 (`getElapsed` / `isFading` / `didDamage` / `getDamageTarget` / `getWeapon` 可为 null / 射弹不能命中 source) 与对应的可观察结果；
-- 解释导弹五项特殊行为：
+- 解释导弹七项特殊行为：
     - 装填判定 (未装填碰撞不结算伤害)；
     - 熄火 fizzle 流程 (`flameOut` / 碰撞类切换 / 淡出减伤)；
     - EMP 电弧抗性 (`empResistance` 计数)；
@@ -149,7 +149,7 @@
 
 ## 导弹特殊行为 (MissileAPI)
 
-导弹在射弹生命周期之上叠加五项特殊行为，日志里最先读出的通常是装填与熄火状态：
+导弹在射弹生命周期之上叠加七项特殊行为，日志里最先读出的通常是装填与熄火状态：
 
 - **装填 (arming)**：`isArmed()` = `forceAlwaysArmed || (elapsed >= armingTime && (!isFizzling() || armedWhileFizzling))` (`armingTime` 来自 `MissileSpecAPI.getArmingTime()`)：
     - **未装填的导弹碰撞不结算伤害**：碰撞处理器遇到未装填导弹 (或两枚都未装填的导弹对撞) 直接走物理碰撞处理并返回。

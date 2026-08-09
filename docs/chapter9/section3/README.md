@@ -153,7 +153,7 @@ addFleetMember 禁止传 null
 
 另有 `getMemberWithCaptain(PersonAPI)` 按舰长查成员、`getNumMembers()`、`getFleetPointsUsed()`。成员级实体脚本与视图偏移 (`FleetMemberViewAPI`) 不在本节范围。
 
-成员进入集合后，读写的落点就是它的保存态。`FleetMemberAPI` 按功能分七组：
+成员进入集合后，读写的落点就是它的保存态。`FleetMemberAPI` 按功能分八组：
 
 ### FleetMemberAPI：身份、装配、舰长、数值
 

@@ -38,11 +38,11 @@
 
 :::
 
-![由锤头与斗士贴图拼接出的舰船草图](./ship_making.png)
+![由锤头与斗士贴图拼接出的舰船草图](./ship_making.png "ship_making.png")
 
 完成品如下，若您需要 (如果您真的看得上的话)，可以随意取用：
 
-![完成简单涂抹和颜色修正后的工匠级贴图](./GearIn_artizan.png)
+![完成简单涂抹和颜色修正后的工匠级贴图](./GearIn_artizan.png "GearIn_artizan.png")
 
 ## 命名并将贴图放入正确的位置
 
@@ -56,13 +56,13 @@
 
 最后放入对应贴图文件夹 (`graphics/ships`)：
 
-![GearIn_artizan 贴图在 graphics/ships 目录中的位置](./rename_into.png)
+![GearIn_artizan 贴图在 graphics/ships 目录中的位置](./rename_into.png "rename_into.png")
 
 ## 制作舰船文件
 
 打开此前您下载的舰船编辑器，选择游戏目录。
 
-![舰船编辑器中的游戏目录选择界面](./select_game.png)
+![舰船编辑器中的游戏目录选择界面](./select_game.png "select_game.png")
 
 ### 开始制作
 
@@ -70,7 +70,7 @@
 
 制作舰船文件的流程十分明确：**导入贴图，然后从按键 C 开始一路向下**。
 
-![舰船编辑器中的船体制作流程按键](./progress.png)
+![舰船编辑器中的船体制作流程按键](./progress.png "progress.png")
 
 ### 设置碰撞圈
 
@@ -86,7 +86,7 @@
 
 :::
 
-![舰船编辑器中的质量中心和碰撞圈设置](./mass.png)
+![舰船编辑器中的质量中心和碰撞圈设置](./mass.png "mass.png")
 
 ### 设置护盾范围
 
@@ -102,7 +102,7 @@
 
 :::
 
-![舰船编辑器中的护盾中心和护盾范围设置](./shield.png)
+![舰船编辑器中的护盾中心和护盾范围设置](./shield.png "shield.png")
 
 ### 设置碰撞箱
 
@@ -118,7 +118,7 @@
 
 :::
 
-![舰船编辑器中的舰船碰撞箱设置](./bounds.png)
+![舰船编辑器中的舰船碰撞箱设置](./bounds.png "bounds.png")
 
 ### 设置槽位
 
@@ -169,7 +169,7 @@
 | arc            | 槽位射角大小                                                 |
 | renderOrderMod | 槽位渲染高度补正。在默认情况下，大型武器高于中型武器高于小型武器，炮塔武器高于固定点武器。可以通过调整此数据来调整武器渲染高度，数字越大越倾向于渲染在上层 |
 
-![舰船编辑器中的武器槽设置](./weapon.png)
+![舰船编辑器中的武器槽设置](./weapon.png "weapon.png")
 
 ### 设置引擎
 
@@ -189,7 +189,7 @@
 | OMEGA                   | 紫色，带有光带拖尾       |
 | COBRA_BOMBER            | 红色，带有大光晕         |
 
-![舰船编辑器中的引擎位置与风格设置](./engines.png)
+![舰船编辑器中的引擎位置与风格设置](./engines.png "engines.png")
 
 ### 设置甲板？
 
@@ -219,13 +219,13 @@
 
 对于 `hullId` 和 `hullName` 两项：`hullId` 是船体注册的主键，必须与 `ship_data.csv` 的 `id` 列一致，不一致时 CSV 行不会应用到该船体；`hullName` 会被 CSV 的 `name` 列覆盖，但编者建议您全部填写。
 
-![工匠级舰船文件的最终编辑器预览](./normal_finale.png)
+![工匠级舰船文件的最终编辑器预览](./normal_finale.png "normal_finale.png")
 
 按 V 保存。
 
-![舰船编辑器保存船体文件的第一步](./save_1.png)
+![舰船编辑器保存船体文件的第一步](./save_1.png "save_1.png")
 
-![舰船编辑器保存船体文件的路径选择](./save_2.png)
+![舰船编辑器保存船体文件的路径选择](./save_2.png "save_2.png")
 
 您已经完成了制作一艘船最麻烦的部分了。
 
@@ -349,7 +349,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 但在做下一步之前，强烈推荐您亲自试一下您制作的舰船。
 
-![工匠级驱逐舰在战斗中的实际表现](./battle.png)
+![工匠级驱逐舰在战斗中的实际表现](./battle.png "battle.png")
 
 这艘 `工匠-级` 驱逐舰的表现相当不错，可以利用源源不断的火箭弹进行近距离压制，不过一旦被同等重火力盯上就会陷入僵局，而且难以利用它的战术系统。
 

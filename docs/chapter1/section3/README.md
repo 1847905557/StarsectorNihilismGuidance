@@ -24,9 +24,9 @@
 
 相信获取贴图的部分已经无需赘述了，这些被提供的贴图制作时长共计不到 1 分钟：
 
-![守炉人级航母贴图](./GearIn_furnaceman.png)
+![守炉人级航母贴图](./GearIn_furnaceman.png "GearIn_furnaceman.png")
 
-![炉渣级战机贴图](./GearIn_slag.png)
+![炉渣级战机贴图](./GearIn_slag.png "GearIn_slag.png")
 
 ## 命名并将贴图放入正确的位置
 
@@ -36,7 +36,7 @@
 
 :::
 
-![航母与战机贴图在 graphics/ships 目录中的位置](./storage.png)
+![航母与战机贴图在 graphics/ships 目录中的位置](./storage.png "storage.png")
 
 `守炉人-级 (Furnaceman)` 航母，ID 为 `GearIn_furnaceman`。
 
@@ -48,7 +48,7 @@
 
 按照与寻常舰船无异的过程，制作 `守炉人-级` 航母的舰船文件，但有额外的 1 步。
 
-![舰船编辑器中的守炉人级航母](./carrier_make.png)
+![舰船编辑器中的守炉人级航母](./carrier_make.png "carrier_make.png")
 
 ### 设置甲板
 
@@ -62,7 +62,7 @@
 
 :::
 
-![舰船编辑器中的航母甲板港口设置](./carrier_port.png)
+![舰船编辑器中的航母甲板港口设置](./carrier_port.png "carrier_port.png")
 
 **每一个图标右下角的数字说明它属于第 x 个甲板**，由于 `守炉人-级` 航母只有 2 个甲板，所以右下角最大数字为 2**。而图标的数量则说明这个甲板有多少个港口**。
 
@@ -108,7 +108,7 @@ tag 也作了与 `工匠-级` 相似的处理。
 - 战机从甲板港口生成，联队补充与返航正常；
 - 日志中没有 `GearIn_furnaceman` 相关的错误。
 
-![守炉人级航母在战斗中投放战机](./carrier_play.png)
+![守炉人级航母在战斗中投放战机](./carrier_play.png "carrier_play.png")
 
 ## 制作战机舰船文件
 
@@ -124,7 +124,7 @@ tag 也作了与 `工匠-级` 相似的处理。
 
 :::
 
-![舰船编辑器中的炉渣级战机](./fighter_make.png)
+![舰船编辑器中的炉渣级战机](./fighter_make.png "fighter_make.png")
 
 ## 制作战机舰船的数据
 
@@ -158,7 +158,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 继续复制黏贴。打开原版的 `variants/fighters/` 文件夹，找到 `阔剑-级` 的装配，将其复制到您 MOD 的对应位置。然后将文件名改为 `舰船 ID + 某个后缀`，一般来说推荐后缀为 `normal` 或 `variant`：
 
-![炉渣级战机装配文件的命名与存放位置](./fighter_rename.png)
+![炉渣级战机装配文件的命名与存放位置](./fighter_rename.png "fighter_rename.png")
 
 然后打开文件，准备修改：
 
@@ -328,7 +328,7 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 - 战机的数据符合预期，`role desc` 显示为 `重型战机`，在战斗机一栏出现；
 - 日志中没有 `GearIn_slag_wing` 相关的错误。
 
-![炉渣级战机联队在战斗中的表现](./fighter_play.png)
+![炉渣级战机联队在战斗中的表现](./fighter_play.png "fighter_play.png")
 
 ## 故障分析
 

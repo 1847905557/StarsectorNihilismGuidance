@@ -129,7 +129,7 @@
     },
 ```
 
-![](./built_weapon.png)
+![工匠级船体文件中的内置武器配置](./built_weapon.png "built_weapon.png")
 
 ### 内置武器的行为
 
@@ -212,7 +212,7 @@
     ],
 ```
 
-![](./built_hullmod.png)
+![锻件级船体文件中的内置相位船插配置](./built_hullmod.png "built_hullmod.png")
 
 `builtInMods` 数组里的每个元素是**船插 ID**，取值来自 `hull_mods.csv` 的 `id` 列。
 
@@ -260,7 +260,7 @@
 ],
 ```
 
-![](./built_wing.png)
+![守炉人级船体文件中的内置炉渣联队配置](./built_wing.png "built_wing.png")
 
 ### 内置战机行为
 

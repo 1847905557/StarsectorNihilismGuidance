@@ -1,22 +1,40 @@
+import { Editor } from '@tiptap/core'
+import {
+  Bold,
+  Braces,
+  Code2,
+  Italic,
+  List,
+  ListOrdered,
+  Minus,
+  Quote,
+  Redo2,
+  RefreshCw,
+  Save,
+  Table2,
+  Undo2,
+  X,
+} from 'lucide-vue-next'
+import { defineComponent, h, onBeforeUnmount, ref, watch, type Component } from 'vue'
 import { defineClientConfig, usePageData } from 'vuepress/client'
-import { defineComponent, h, ref } from 'vue'
 
-/**
- * dev-only 就地文字编辑（2026-08-02 重写）：
- * - 右下角常驻按钮 [编辑文字]：点击进入编辑模式；
- * - 编辑模式下正文文字块（段落/标题/列表项/代码块）contenteditable 可直接修改；
- * - 右下角按钮区切换为 [提交] [取消]：提交逐块 POST /__api/edit-block 写回本地
- *   markdown 并刷新页面；取消放弃修改（有未提交修改时先确认）。
- * - 写回安全性在服务端（plugin-dev-edit.ts 的 writeSafe：空内容拒绝、
- *   行数骤减拒绝、写前备份、原子写）。
- * 非 dev 环境不渲染。
- */
+import {
+  createEditorExtensions,
+  insertVpContainer,
+  normalizeEditableContent,
+} from './dev-edit-model.js'
 
-interface EditState {
-  el: HTMLElement
-  oldText: string
-  oldHtml: string
-  changed: boolean
+interface DevPageData {
+  filePathRelative?: string | null
+  devEditRevision?: string
+}
+
+interface EditResponse {
+  ok?: boolean
+  revision?: string
+  code?: string
+  error?: string
+  diagnostics?: string[]
 }
 
 const DevEditButton = defineComponent({
@@ -25,192 +43,362 @@ const DevEditButton = defineComponent({
     const page = usePageData()
     const editing = ref(false)
     const saving = ref(false)
+    const dirty = ref(false)
     const confirmingCancel = ref(false)
+    const refreshRequired = ref(false)
     const status = ref('')
-    let states: EditState[] = []
+    const editorVersion = ref(0)
+    let editor: Editor | null = null
+    let contentElement: HTMLElement | null = null
+    let originalHtml = ''
+    let editingRevision = ''
+    let expectedRevision = ''
+    let hmrTimer: ReturnType<typeof setTimeout> | null = null
 
-    const isEditable = (el: Element): boolean => {
-      if (el.matches('p, h1, h2, h3, h4, h5, h6, pre')) return true
-      if (el.matches('li')) return !el.querySelector('ul, ol') // 嵌套列表不支持
-      return false
+    const currentPage = (): DevPageData => page.value as unknown as DevPageData
+
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (!editing.value || !dirty.value) return
+      event.preventDefault()
+      event.returnValue = ''
     }
 
-    const collectBlocks = (): EditState[] => {
-      // 正文容器：默认主题为 .theme-default-content，本站自定义布局为 #content
-      const content =
-        document.querySelector('.theme-default-content') ??
-        document.querySelector('#content') ??
-        document.querySelector('main')
-      if (!content) return []
-      const list: EditState[] = []
-      content.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, pre').forEach((el) => {
-        if (!isEditable(el)) return
-        const e = el as HTMLElement
-        if (!e.innerText.trim()) return
-        list.push({ el: e, oldText: e.innerText.trim(), oldHtml: e.innerHTML, changed: false })
-      })
-      return list
+    const blockNavigation = (event: MouseEvent) => {
+      if (!editing.value || !dirty.value) return
+      const target = event.target as Element | null
+      if (!target?.closest('a')) return
+      event.preventDefault()
+      event.stopPropagation()
+      status.value = '请先提交或取消当前编辑'
     }
 
-    /** 块当前 HTML：克隆后剔除页面装饰元素（header-anchor），避免污染写回 */
-    const blockHtml = (el: HTMLElement): string => {
-      const clone = el.cloneNode(true) as HTMLElement
-      clone.querySelectorAll('.header-anchor').forEach((n) => n.remove())
-      return clone.innerHTML
+    const clearHmrTimer = () => {
+      if (hmrTimer) clearTimeout(hmrTimer)
+      hmrTimer = null
+    }
+
+    const destroyEditor = (restoreOriginal: boolean) => {
+      clearHmrTimer()
+      editor?.destroy()
+      editor = null
+      if (restoreOriginal && contentElement) contentElement.innerHTML = originalHtml
+      window.removeEventListener('beforeunload', beforeUnload)
+      document.removeEventListener('click', blockNavigation, true)
+      contentElement?.classList.remove('dev-edit-content')
+      contentElement = null
+      originalHtml = ''
+      editingRevision = ''
+      expectedRevision = ''
+      editing.value = false
+      saving.value = false
+      dirty.value = false
+      confirmingCancel.value = false
+      refreshRequired.value = false
+      status.value = ''
+    }
+
+    const containsNewImage = (event: ClipboardEvent | DragEvent): boolean => {
+      const transfer = 'clipboardData' in event ? event.clipboardData : event.dataTransfer
+      if (!transfer) return false
+      if (Array.from(transfer.files).some((file) => file.type.startsWith('image/'))) return true
+      return /<img\b/i.test(transfer.getData('text/html'))
     }
 
     const enterEditMode = () => {
-      if (!page.value.filePathRelative) {
-        status.value = '该页面没有对应的本地 .md 文件'
+      const filePath = currentPage().filePathRelative
+      const revision = currentPage().devEditRevision
+      const content = document.querySelector<HTMLElement>('#content')
+      if (!filePath || !revision) {
+        status.value = '该页面缺少可编辑源文件或源版本'
         return
       }
-      states = collectBlocks()
-      if (states.length === 0) {
-        status.value = '页面内没有可编辑的文字块'
+      if (!content) {
+        status.value = '页面缺少 #content 正文容器'
         return
       }
-      states.forEach((s) => {
-        s.el.setAttribute('contenteditable', 'true')
-        s.el.setAttribute('spellcheck', 'false')
-        s.el.classList.add('dev-edit-block')
-        s.el.addEventListener('input', () => {
-          s.changed = s.el.innerText.trim() !== s.oldText
-        })
+      contentElement = content
+      originalHtml = content.innerHTML
+      editingRevision = revision
+      const normalized = normalizeEditableContent(content)
+      content.innerHTML = ''
+      content.classList.add('dev-edit-content')
+      editor = new Editor({
+        element: content,
+        extensions: createEditorExtensions(),
+        content: normalized,
+        parseOptions: { preserveWhitespace: 'full' },
+        editorProps: {
+          attributes: {
+            class: 'dev-edit-surface',
+            spellcheck: 'false',
+          },
+          handlePaste: (_view, event) => {
+            if (!containsNewImage(event)) return false
+            status.value = '在线编辑只允许移动或删除现有图片'
+            return true
+          },
+          handleDrop: (_view, event, _slice, moved) => {
+            if (moved || !containsNewImage(event)) return false
+            status.value = '在线编辑只允许移动或删除现有图片'
+            return true
+          },
+        },
+        onUpdate: () => {
+          dirty.value = true
+          editorVersion.value += 1
+        },
+        onSelectionUpdate: () => {
+          editorVersion.value += 1
+        },
       })
+      window.addEventListener('beforeunload', beforeUnload)
+      document.addEventListener('click', blockNavigation, true)
       editing.value = true
       status.value = ''
     }
 
-    const exitEditMode = () => {
-      states.forEach((s) => {
-        s.el.removeAttribute('contenteditable')
-        s.el.removeAttribute('spellcheck')
-        s.el.classList.remove('dev-edit-block')
-      })
-      states = []
-      editing.value = false
-      saving.value = false
-      confirmingCancel.value = false
-      status.value = ''
-    }
-
     const submit = async () => {
-      if (!page.value.filePathRelative) return
-      const changed = states.filter((s) => s.changed)
-      if (changed.length === 0) {
-        exitEditMode()
+      const filePath = currentPage().filePathRelative
+      if (!editor || !filePath || saving.value) return
+      if (!dirty.value) {
+        destroyEditor(true)
         return
       }
       saving.value = true
-      status.value = `正在写回（${changed.length} 处）…`
+      editor.setEditable(false)
+      status.value = '正在恢复并校验整页 Markdown...'
       try {
-        for (const s of changed) {
-          const resp = await fetch('/__api/edit-block', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              path: page.value.filePathRelative,
-              oldText: s.oldText,
-              newHtml: blockHtml(s.el),
-            }),
-          })
-          const data = (await resp.json()) as { ok?: boolean; error?: string }
-          if (!resp.ok || !data.ok) {
-            status.value = `写回失败：${data.error ?? resp.status}（刷新后可重试）`
-            saving.value = false
-            return
-          }
+        const response = await fetch('/__api/edit-page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: filePath,
+            revision: editingRevision,
+            html: editor.getHTML(),
+          }),
+        })
+        const data = (await response.json()) as EditResponse
+        if (!response.ok || !data.ok || !data.revision) {
+          const details = data.diagnostics?.join('；') ?? data.error ?? String(response.status)
+          status.value = `${data.code === 'revision-conflict' ? '版本冲突' : '写回失败'}：${details}`
+          saving.value = false
+          editor.setEditable(true)
+          return
         }
-        status.value = '已写回 ✓ 正在刷新…'
-        setTimeout(() => location.reload(), 600)
-      } catch (e) {
-        status.value = `写回失败：${(e as Error).message}`
+        expectedRevision = data.revision
+        dirty.value = false
+        status.value = '已写回，正在等待页面热更新...'
+        hmrTimer = setTimeout(() => {
+          saving.value = false
+          refreshRequired.value = true
+          status.value = '文件已写回，页面热更新超时'
+        }, 5000)
+      } catch (error) {
+        status.value = `写回失败：${(error as Error).message}`
         saving.value = false
+        editor.setEditable(true)
       }
     }
 
     const cancel = () => {
-      if (states.some((s) => s.changed)) {
-        // 有未提交修改：右下角内联确认，不用浏览器弹窗
+      if (dirty.value) {
         confirmingCancel.value = true
         return
       }
-      exitEditMode()
+      destroyEditor(true)
     }
 
-    const confirmDiscard = () => {
-      // 还原已修改块的 DOM（所见即所得：取消后页面恢复原样）
-      states.forEach((s) => {
-        if (s.changed) s.el.innerHTML = s.oldHtml
-      })
-      exitEditMode()
+    watch(
+      () => currentPage().devEditRevision,
+      (revision) => {
+        if (!editing.value || !expectedRevision || revision !== expectedRevision) return
+        destroyEditor(false)
+      },
+    )
+
+    watch(
+      () => currentPage().filePathRelative,
+      (_next, previous) => {
+        if (previous && editing.value) destroyEditor(false)
+      },
+    )
+
+    onBeforeUnmount(() => destroyEditor(false))
+
+    const run = (command: (current: Editor) => boolean) => {
+      if (!editor || saving.value) return
+      command(editor)
+      editorVersion.value += 1
     }
+
+    const iconButton = (
+      label: string,
+      icon: Component,
+      command: (current: Editor) => boolean,
+      active = false,
+    ) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: ['dev-edit-icon-btn', active ? 'active' : ''],
+          title: label,
+          'aria-label': label,
+          disabled: saving.value,
+          onClick: () => run(command),
+        },
+        [h(icon, { size: 17, strokeWidth: 2 })],
+      )
+
+    const blockSelect = () => {
+      editorVersion.value
+      const value = editor?.isActive('heading', { level: 1 })
+        ? 'h1'
+        : editor?.isActive('heading', { level: 2 })
+          ? 'h2'
+          : editor?.isActive('heading', { level: 3 })
+            ? 'h3'
+            : 'p'
+      return h(
+        'select',
+        {
+          class: 'dev-edit-select',
+          title: '段落类型',
+          value,
+          disabled: saving.value,
+          onChange: (event: Event) => {
+            const selected = (event.target as HTMLSelectElement).value
+            run((current) =>
+              selected === 'p'
+                ? current.chain().focus().setParagraph().run()
+                : current.chain().focus().setHeading({ level: Number(selected.slice(1)) as 1 | 2 | 3 }).run(),
+            )
+          },
+        },
+        [
+          h('option', { value: 'p' }, '正文'),
+          h('option', { value: 'h1' }, 'H1'),
+          h('option', { value: 'h2' }, 'H2'),
+          h('option', { value: 'h3' }, 'H3'),
+        ],
+      )
+    }
+
+    const containerSelect = () =>
+      h(
+        'select',
+        {
+          class: 'dev-edit-select',
+          title: '插入 VuePress 容器',
+          value: '',
+          disabled: saving.value,
+          onChange: (event: Event) => {
+            const select = event.target as HTMLSelectElement
+            if (editor && select.value) insertVpContainer(editor, select.value)
+            select.value = ''
+          },
+        },
+        [
+          h('option', { value: '', disabled: true }, '插入容器'),
+          ...['info', 'tip', 'warning', 'caution', 'details'].map((type) =>
+            h('option', { value: type }, type),
+          ),
+        ],
+      )
 
     return () => {
-      // 全部样式走主题 CSS 变量（--vp-*），明亮/黑暗模式自动适配
-      const styles = [
-        '.dev-edit-block{outline:1px dashed var(--vp-c-accent);outline-offset:2px;cursor:text;border-radius:2px;transition:outline-color .2s,background-color .2s}',
-        '.dev-edit-block:hover{outline-color:var(--vp-c-accent-hover);background-color:var(--vp-c-accent-soft)}',
-        '.dev-edit-block:focus{outline:2px solid var(--vp-c-accent);background-color:var(--vp-c-accent-soft)}',
-        '.dev-edit-fab{position:fixed;right:18px;bottom:18px;z-index:9999;display:flex;align-items:center;gap:8px}',
-        '.dev-edit-panel{display:flex;align-items:center;gap:8px;background:var(--vp-c-bg);border:1px solid var(--vp-c-border);border-radius:10px;box-shadow:0 4px 16px var(--vp-c-shadow);padding:8px 12px}',
-        '.dev-edit-panel-confirm{flex-direction:column;align-items:flex-end;border-color:var(--vp-c-red-soft);gap:10px}',
-        '.dev-edit-btn{padding:8px 14px;border-radius:8px;border:1px solid var(--vp-c-border);background:var(--vp-c-bg);color:var(--vp-c-text);cursor:pointer;font:14px var(--font-family);transition:background-color .2s,border-color .2s,color .2s}',
-        '.dev-edit-btn:hover{background:var(--vp-c-control-hover);border-color:var(--vp-c-border-hard)}',
-        '.dev-edit-btn:disabled{opacity:.6;cursor:default}',
+      editorVersion.value
+      const styles = h('style', {}, [
+        '.dev-edit-fab{position:fixed;right:18px;bottom:18px;z-index:9999;display:flex;align-items:flex-end;gap:8px;max-width:calc(100vw - 36px)}',
+        '.dev-edit-panel{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;background:var(--vp-c-bg);border:1px solid var(--vp-c-border);border-radius:8px;box-shadow:0 4px 16px var(--vp-c-shadow);padding:8px}',
+        '.dev-edit-panel-confirm{flex-direction:column;align-items:flex-end;border-color:var(--vp-c-red-soft)}',
+        '.dev-edit-btn,.dev-edit-icon-btn,.dev-edit-select{height:34px;border:1px solid var(--vp-c-border);border-radius:6px;background:var(--vp-c-bg);color:var(--vp-c-text);font:14px var(--font-family)}',
+        '.dev-edit-btn{padding:0 12px;cursor:pointer}.dev-edit-icon-btn{width:34px;padding:0;display:grid;place-items:center;cursor:pointer}.dev-edit-select{padding:0 7px}',
+        '.dev-edit-btn:hover,.dev-edit-icon-btn:hover,.dev-edit-icon-btn.active,.dev-edit-select:hover{background:var(--vp-c-control-hover);border-color:var(--vp-c-accent)}',
+        '.dev-edit-btn:disabled,.dev-edit-icon-btn:disabled,.dev-edit-select:disabled{opacity:.55;cursor:default}',
         '.dev-edit-btn-primary{background:var(--vp-c-accent-bg);border-color:var(--vp-c-accent-bg);color:var(--vp-c-accent-text)}',
-        '.dev-edit-btn-primary:hover{background:var(--vp-c-accent-hover);border-color:var(--vp-c-accent-hover)}',
         '.dev-edit-btn-danger{background:var(--vp-c-red-soft);border-color:var(--vp-c-red-soft);color:var(--vp-c-red-text)}',
-        '.dev-edit-btn-danger:hover{background:var(--vp-c-red-bg);border-color:var(--vp-c-red-bg)}',
-        '.dev-edit-hint{color:var(--vp-c-text-mute);font:13px var(--font-family)}',
-        '.dev-edit-status{color:var(--vp-c-red-text);font:13px var(--font-family)}',
-        '.dev-edit-confirm-text{color:var(--vp-c-red-text);font:13px var(--font-family)}',
-        '.dev-edit-status-bubble{color:var(--vp-c-red-text);background:var(--vp-c-bg);border:1px solid var(--vp-c-border);padding:4px 8px;border-radius:6px;box-shadow:0 2px 8px var(--vp-c-shadow);font:13px var(--font-family)}',
-      ]
-      const styleEl = h('style', {}, styles)
+        '.dev-edit-status{max-width:520px;color:var(--vp-c-red-text);background:var(--vp-c-bg);border:1px solid var(--vp-c-border);padding:7px 9px;border-radius:6px;box-shadow:0 2px 8px var(--vp-c-shadow);font:13px var(--font-family);overflow-wrap:anywhere}',
+        '.dev-edit-content{outline:2px solid var(--vp-c-accent);outline-offset:10px;min-height:40vh}.dev-edit-surface{outline:none;min-height:40vh}',
+        '.dev-edit-surface img{cursor:grab}.dev-edit-surface img.ProseMirror-selectednode{outline:3px solid var(--vp-c-accent)}',
+        '.dev-edit-container{border:1px solid var(--vp-c-border);padding:12px 16px}.dev-edit-container-title{display:block;width:100%;box-sizing:border-box;border:0;border-bottom:1px solid var(--vp-c-border);background:transparent;color:var(--vp-c-text);font-weight:600;padding:4px 0 8px;margin-bottom:8px;outline:none}',
+        '.dev-edit-container-content>:first-child{margin-top:0}.dev-edit-container-content>:last-child{margin-bottom:0}',
+        '.dev-edit-auto-list{border:1px dashed var(--vp-c-border);color:var(--vp-c-text-mute);padding:10px 12px;border-radius:4px}',
+        '.dev-edit-surface pre{position:relative}.dev-edit-surface pre[data-language]::before{content:attr(data-language);position:absolute;right:10px;top:6px;color:var(--vp-c-text-mute);font:12px var(--font-family)}',
+        '@media (max-width:719px){.dev-edit-fab{right:10px;bottom:10px;max-width:calc(100vw - 20px)}.dev-edit-panel{max-height:46vh;overflow:auto}}',
+      ])
 
       if (!editing.value) {
         return [
-          styleEl,
+          styles,
           h('div', { class: 'dev-edit-fab' }, [
-            status.value
-              ? h('span', { class: 'dev-edit-status-bubble' }, status.value)
-              : null,
-            h('button', { class: 'dev-edit-btn dev-edit-btn-primary', onClick: enterEditMode }, '编辑文字'),
+            status.value ? h('span', { class: 'dev-edit-status' }, status.value) : null,
+            h(
+              'button',
+              { class: 'dev-edit-btn dev-edit-btn-primary', onClick: enterEditMode },
+              '编辑页面',
+            ),
+          ]),
+        ]
+      }
+
+      if (confirmingCancel.value) {
+        return [
+          styles,
+          h('div', { class: 'dev-edit-fab dev-edit-panel dev-edit-panel-confirm' }, [
+            h('span', { class: 'dev-edit-status' }, '有未提交的修改，确定放弃？'),
+            h('div', { style: { display: 'flex', gap: '8px' } }, [
+              h(
+                'button',
+                { class: 'dev-edit-btn dev-edit-btn-danger', onClick: () => destroyEditor(true) },
+                '确定放弃',
+              ),
+              h(
+                'button',
+                { class: 'dev-edit-btn', onClick: () => (confirmingCancel.value = false) },
+                '继续编辑',
+              ),
+            ]),
           ]),
         ]
       }
 
       return [
-        styleEl,
-        confirmingCancel.value
-          ? h(
-              'div',
-              { class: 'dev-edit-fab dev-edit-panel dev-edit-panel-confirm' },
-              [
-                h('span', { class: 'dev-edit-confirm-text' }, '有未提交的修改，确定放弃？'),
-                h('div', { style: { display: 'flex', gap: '8px' } }, [
-                  h('button', { class: 'dev-edit-btn dev-edit-btn-danger', onClick: confirmDiscard }, '确定放弃'),
-                  h('button', { class: 'dev-edit-btn', onClick: () => (confirmingCancel.value = false) }, '继续编辑'),
-                ]),
-              ],
-            )
-          : h(
-              'div',
-              { class: 'dev-edit-fab dev-edit-panel' },
-              [
-                h('span', { class: 'dev-edit-hint' }, '点击文字直接修改'),
-                h(
-                  'button',
-                  { class: 'dev-edit-btn dev-edit-btn-primary', onClick: submit, disabled: saving.value },
-                  saving.value ? '提交中…' : '提交',
-                ),
-                h('button', { class: 'dev-edit-btn', onClick: cancel }, '取消'),
-                status.value
-                  ? h('span', { class: 'dev-edit-status' }, status.value)
-                  : null,
-              ],
+        styles,
+        h('div', { class: 'dev-edit-fab', 'data-testid': 'dev-edit-toolbar' }, [
+          status.value ? h('span', { class: 'dev-edit-status' }, status.value) : null,
+          h('div', { class: 'dev-edit-panel' }, [
+            iconButton('撤销', Undo2, (current) => current.chain().focus().undo().run()),
+            iconButton('重做', Redo2, (current) => current.chain().focus().redo().run()),
+            blockSelect(),
+            iconButton('粗体', Bold, (current) => current.chain().focus().toggleBold().run(), Boolean(editor?.isActive('bold'))),
+            iconButton('斜体', Italic, (current) => current.chain().focus().toggleItalic().run(), Boolean(editor?.isActive('italic'))),
+            iconButton('行内代码', Braces, (current) => current.chain().focus().toggleCode().run(), Boolean(editor?.isActive('code'))),
+            iconButton('无序列表', List, (current) => current.chain().focus().toggleBulletList().run(), Boolean(editor?.isActive('bulletList'))),
+            iconButton('有序列表', ListOrdered, (current) => current.chain().focus().toggleOrderedList().run(), Boolean(editor?.isActive('orderedList'))),
+            iconButton('引用', Quote, (current) => current.chain().focus().toggleBlockquote().run(), Boolean(editor?.isActive('blockquote'))),
+            iconButton('代码围栏', Code2, (current) => current.chain().focus().toggleCodeBlock().run(), Boolean(editor?.isActive('codeBlock'))),
+            iconButton('表格', Table2, (current) => current.chain().focus().insertTable({ rows: 3, cols: 2, withHeaderRow: true }).run()),
+            iconButton('水平线', Minus, (current) => current.chain().focus().setHorizontalRule().run()),
+            containerSelect(),
+            refreshRequired.value
+              ? iconButton('刷新页面', RefreshCw, () => {
+                  location.reload()
+                  return true
+                })
+              : null,
+            h(
+              'button',
+              { class: 'dev-edit-btn dev-edit-btn-primary', disabled: saving.value, onClick: submit },
+              [h(Save, { size: 16 }), saving.value ? '校验中' : '提交'],
             ),
+            h(
+              'button',
+              { class: 'dev-edit-icon-btn', title: '取消', 'aria-label': '取消', onClick: cancel },
+              [h(X, { size: 17 })],
+            ),
+          ]),
+        ]),
       ]
     }
   },

@@ -234,11 +234,11 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
 
 下面三张截图依次示意武器、舰船与行星/生涯实体描述在界面中的显示位置 (旧版界面截图，仅作位置示意)：
 
-![](./desc_weapon.png)
+![武器描述在界面中的显示位置](./desc_weapon.png "desc_weapon.png")
 
-![](./desc_ship.png)
+![舰船描述在界面中的显示位置](./desc_ship.png "desc_ship.png")
 
-![](./desc_planet.png)
+![行星与生涯实体描述在界面中的显示位置](./desc_planet.png "desc_planet.png")
 
 ### 验证方案
 

@@ -53,11 +53,11 @@
 
 一艘模块船往往由至少 2 个模块组成。这些模块本身都是舰船，因此需要先准备好它们的贴图。本例的主体 `窑-级` 由 `狮鹫`、模块由 `苍鹭` 的贴图简单修改而来，耗时不超过 20 秒：
 
-![](./GearIn_kiln.png)
+![窑级模块巡洋舰的主体贴图](./GearIn_kiln.png "GearIn_kiln.png")
 
 主体贴图，宽高仍按舰船贴图的规则保持 2 的倍数。
 
-![](./GearIn_kiln_module.png)
+![窑级模块巡洋舰的模块贴图](./GearIn_kiln_module.png "GearIn_kiln_module.png")
 
 模块贴图。模块通常比主体小得多，主体只挂这一个模块即可跑通全流程。
 
@@ -65,11 +65,11 @@
 
 为它们分别分配 `GearIn_kiln` 和 `GearIn_kiln_module` 的舰船 ID，然后按舰船制作流程在编辑器里做出两个 `.ship` 文件：
 
-![](./main.png)
+![舰船编辑器中的窑级主体船体](./main.png "main.png")
 
 主体的 `.ship` 制作：质量中心、碰撞圈、护盾、槽位与引擎照常设置。
 
-![](./sub.png)
+![舰船编辑器中的窑级模块船体](./sub.png "sub.png")
 
 模块的 `.ship` 制作。
 
@@ -89,11 +89,11 @@
 
 主体必须带有 `STATION_MODULE` 类型 (编辑器里显示为 Station Module) 的槽位，这是安装模块所需的槽位：
 
-![](./main_slot_1.png)
+![舰船编辑器中的模块槽位类型设置](./main_slot_1.png "main_slot_1.png")
 
 在槽位编辑里把槽位类型改为 `STATION_MODULE`，并为它取一个语义化 ID(本例为 `MODULE_0`；原版空间站用 `WS 001` 这类编号，用 `SUPPORT_L`、`HEAVY_L` 这类语义名也可以)。
 
-![](./main_slot_2.png)
+![舰船编辑器中的模块槽位位置与朝向设置](./main_slot_2.png "main_slot_2.png")
 
 `STATION_MODULE` 槽位与普通武器槽共享同一套字段：`angle`(模块的基准朝向)、`arc`(模块朝向允许的摆动范围)、`locations`(槽位在主体坐标系中的位置，即模块的挂载点)。
 
@@ -142,7 +142,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 使用测试战役分别为主体和模块制作一个装配 (模块的自动空装配也在舰队列表里，直接改装它即可)：
 
-![](./variant_make.png)
+![测试战役中制作主体与模块装配](./variant_make.png "variant_make.png")
 
 在装配界面为 `窑-级` 装上武器与船插，并为模块也做一份装配，游戏会把它们导出到存档目录 (`\Starsector\saves\missions\GearIn_test\`)。
 
@@ -150,7 +150,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 把导出的两个文件放入 MOD 的 `data/variants` 文件夹，修改文件名并同步修改文件内部的 `variantId` 等参数 (装配导出-改名流程)：
 
-![](./variant_rename.png)
+![主体与模块装配文件的命名结果](./variant_rename.png "variant_rename.png")
 
 本例得到两个文件：`GearIn_kiln_combat.variant`(主体，`hullId: GearIn_kiln`) 与 `GearIn_kiln_module_combat.variant` (模块，`hullId: GearIn_kiln_module`)。
 
@@ -236,7 +236,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 `窑-级` 模块巡洋舰现在默认带有模块了：
 
-![](./module_done.png)
+![窑级模块巡洋舰挂载模块后的战斗效果](./module_done.png "module_done.png")
 
 ### 验证方案
 

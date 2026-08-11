@@ -60,7 +60,7 @@ GearIn_artizan_combat
 - `GearIn_artizan_combat` 是前序装配注册单元的既有装配 (hull 为船体注册的 `GearIn_artizan`)，本节只使用、不新增装配 ID；
 - 保存即生效，无需其他注册：下次启动游戏时随 `loadCampaignData` 一起加载。
 
-![](./sim.png)
+![模拟战中的原版与 MOD 敌方舰队列表](./sim.png "sim.png")
 
 *模拟战中的敌方舰队 (原版 30 个对手与 MOD 装配的混合)*
 

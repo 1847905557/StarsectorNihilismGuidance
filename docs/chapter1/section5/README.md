@@ -35,25 +35,25 @@
 
 所以先准备它们的贴图：
 
-![](./GearIn_durin_turret_base.png)
+![都林自动炮的炮塔主体贴图](./GearIn_durin_turret_base.png "GearIn_durin_turret_base.png")
 
-![](./GearIn_durin_turret_recoil.png)
+![都林自动炮的炮塔炮管贴图](./GearIn_durin_turret_recoil.png "GearIn_durin_turret_recoil.png")
 
-![](./GearIn_durin_hardpoint_base.png)
+![都林自动炮的固定槽位主体贴图](./GearIn_durin_hardpoint_base.png "GearIn_durin_hardpoint_base.png")
 
-![](./GearIn_durin_hardpoint_recoil.png)
+![都林自动炮的固定槽位炮管贴图](./GearIn_durin_hardpoint_recoil.png "GearIn_durin_hardpoint_recoil.png")
 
-![](./GearIn_uri_turret_base.png)
+![乌里光束炮的炮塔主体贴图](./GearIn_uri_turret_base.png "GearIn_uri_turret_base.png")
 
-![](./GearIn_uri_turret_glow.png)
+![乌里光束炮的炮塔光效贴图](./GearIn_uri_turret_glow.png "GearIn_uri_turret_glow.png")
 
-![](./GearIn_uri_hardpoint_base.png)
+![乌里光束炮的固定槽位主体贴图](./GearIn_uri_hardpoint_base.png "GearIn_uri_hardpoint_base.png")
 
-![](./GearIn_uri_hardpoint_glow.png)
+![乌里光束炮的固定槽位光效贴图](./GearIn_uri_hardpoint_glow.png "GearIn_uri_hardpoint_glow.png")
 
-![](./GearIn_dwalin_turret_base.png)
+![德瓦林发射架的炮塔主体贴图](./GearIn_dwalin_turret_base.png "GearIn_dwalin_turret_base.png")
 
-![](./GearIn_dwalin_hardpoint_base.png)
+![德瓦林发射架的固定槽位主体贴图](./GearIn_dwalin_hardpoint_base.png "GearIn_dwalin_hardpoint_base.png")
 
 耗时约 45 秒。
 
@@ -73,7 +73,7 @@
 
 最后，把这些武器放入 `graphics/weapons` 武器贴图文件夹内：
 
-![](./weapons.png)
+![新武器贴图在武器目录中的位置](./weapons.png "weapons.png")
 
 ## 制作武器文件
 
@@ -498,11 +498,11 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 - 开火表现与 `.wpn`/`.proj` 一致。
 - `starsector.log` 中三个 GearIn ID 均无加载或运行时错误。
 
-![](./weapon_test_1.png)
+![都林自动炮在装配界面中的测试结果](./weapon_test_1.png "weapon_test_1.png")
 
-![](./weapon_test_2.png)
+![乌里光束炮在装配界面中的测试结果](./weapon_test_2.png "weapon_test_2.png")
 
-![](./weapon_test_3.png)
+![德瓦林发射架在装配界面中的测试结果](./weapon_test_3.png "weapon_test_3.png")
 
 ## 新弹体与新导弹
 
@@ -617,7 +617,7 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 }
 ```
 
-![](./bullet_change.png)
+![都林自动炮更换红色弹体后的战斗效果](./bullet_change.png "bullet_change.png")
 
 其它简单调整也是如此。
 
@@ -760,7 +760,7 @@ CSV 的导弹行会直接修改它引用的弹体 spec：当原版 `暴风 MLRS`
 
 临时赶工做一份导弹弹体图片：
 
-![](./GearIn_dwalin_rocket.png)
+![德瓦林发射架的导弹弹体贴图](./GearIn_dwalin_rocket.png "GearIn_dwalin_rocket.png")
 
 然后把它放入 `graphics/missiles` 目录，这个目录约定俗成用来存放各类弹体。
 
@@ -801,7 +801,7 @@ CSV 的导弹行会直接修改它引用的弹体 spec：当原版 `暴风 MLRS`
 }
 ```
 
-![](./missile_change.png)
+![德瓦林发射架更换导弹弹体后的战斗效果](./missile_change.png "missile_change.png")
 
 ## 命中特效？开火特效？每帧插件？
 

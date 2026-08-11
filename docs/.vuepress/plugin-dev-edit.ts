@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import {
   copyFileSync,
@@ -7,49 +9,72 @@ import {
   renameSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 
-import MarkdownIt from 'markdown-it'
-import TurndownService from 'turndown'
 import type { Plugin } from 'vuepress'
 
-/**
- * dev-only 网页内编辑插件：
- * - vite 插件（configureServer 仅 dev 执行）：
- *   - GET  /__api/read?path=       读取文件内容
- *   - POST /__api/edit             整页写回
- *   - POST /__api/edit-block       单块就地编辑写回（所见即所得）
- * - client 端：正文就地编辑（见 client/dev-edit-client.ts）
- * build 产物不含中间件；client 在非 dev 环境不渲染。
- *
- * 写回安全（2026-08-02 加固，教训：edit 接口曾把文件写成 0 字节）：
- * 1. 空内容 / 纯空白内容一律拒绝；
- * 2. edit-block 结果行数骤减（< 原行数 50% 或 < 3 行）一律拒绝；
- * 3. 写前先把原文件备份到 .cursor/tutorial-work/backups/edit-writes/；
- * 4. 临时文件 + rename 原子写，杜绝半写/零写；
- * 5. 每次写回打印日志。
- */
-
 const CLIENT_FILE = fileURLToPath(new URL('./client/dev-edit-client.ts', import.meta.url)).replace(/\\/g, '/')
-
+const RESTORE_SCRIPT = fileURLToPath(
+  new URL('../../.zcode/tools/restore_markdown.py', import.meta.url),
+)
 const BACKUP_DIR = resolve(process.cwd(), '.cursor', 'tutorial-work', 'backups', 'edit-writes')
+const MAX_BODY_BYTES = 8 * 1024 * 1024
 
-const encode = (content: string): string => {
-  // 契约：UTF-8 无 BOM、CRLF-only、文件尾单个 CRLF
-  let c = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-  c = c.replace(/\n+$/, '\n')
-  return c.replace(/\n/g, '\r\n')
+interface ReqLike {
+  url?: string
+  method?: string
+  on?: (event: string, callback: (chunk?: Buffer) => void) => void
 }
 
-/** 校验 + 备份 + 原子写。任何失败都抛错，调用方转 500。 */
-const writeSafe = (target: string, content: string, context: string): void => {
-  if (!content.trim()) {
-    throw new Error('拒绝写回：内容为空（禁止用空内容覆盖文件）')
-  }
+interface ResLike {
+  statusCode?: number
+  setHeader?: (key: string, value: string) => void
+  end?: (body?: string) => void
+}
+
+interface RestoreAsset {
+  name: string
+  size: number
+  base64: string
+}
+
+interface RestoreResult {
+  ok?: boolean
+  markdown?: string
+  diagnostics?: string[]
+  assets?: RestoreAsset[]
+}
+
+interface EditRequest {
+  path?: string
+  revision?: string
+  html?: string
+}
+
+const encode = (content: string): string => {
+  let normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  normalized = normalized.replace(/\n+$/, '\n')
+  return normalized.replace(/\n/g, '\r\n')
+}
+
+export const sourceRevision = (content: string | Buffer): string =>
+  createHash('sha256').update(content).digest('hex')
+
+export const resolveEditTarget = (docsDir: string, relativePath: string): string | null => {
+  if (!relativePath.endsWith('.md') || relativePath.includes('\0')) return null
+  const target = resolve(docsDir, relativePath)
+  return target.startsWith(resolve(docsDir) + sep) && existsSync(target) ? target : null
+}
+
+const writeJson = (response: ResLike, status: number, value: unknown): void => {
+  response.statusCode = status
+  response.setHeader?.('Content-Type', 'application/json; charset=utf-8')
+  response.end?.(JSON.stringify(value))
+}
+
+const writeSafe = (target: string, content: string): string => {
+  if (!content.trim()) throw new Error('拒绝写回：恢复后的 Markdown 为空')
   const encoded = encode(content)
-  if (!encoded.trim()) {
-    throw new Error('拒绝写回：编码后内容为空')
-  }
   const now = new Date()
   const stamp =
     now.getFullYear() +
@@ -60,291 +85,200 @@ const writeSafe = (target: string, content: string, context: string): void => {
     String(now.getMinutes()).padStart(2, '0') +
     String(now.getSeconds()).padStart(2, '0')
   mkdirSync(BACKUP_DIR, { recursive: true })
-  const rel = target.split(sep).slice(-3).join('_')
-  const backup = join(BACKUP_DIR, `${stamp}_${rel}.bak`)
+  const relativeName = target.split(sep).slice(-3).join('_')
+  const backup = join(BACKUP_DIR, `${stamp}_${relativeName}.bak`)
   copyFileSync(target, backup)
-  const tmp = target + '.tmp-' + process.pid
-  writeFileSync(tmp, encoded, 'utf-8')
-  renameSync(tmp, target)
+  const temporary = `${target}.tmp-${process.pid}`
+  writeFileSync(temporary, encoded, { encoding: 'utf-8', flag: 'wx' })
+  renameSync(temporary, target)
+  const revision = sourceRevision(Buffer.from(encoded, 'utf-8'))
   console.log(
-    `[dev-edit] ${context} 写回 ${rel}（${Buffer.byteLength(encoded, 'utf-8')} 字节），备份 ${backup}`,
+    `[dev-edit] 写回 ${relativeName}（${Buffer.byteLength(encoded, 'utf-8')} 字节），备份 ${backup}`,
   )
+  return revision
 }
 
-/** 源 markdown 原文 → 纯文本（用于与编辑前 innerText 匹配定位） */
-const plainText = (src: string): string =>
-  src
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/`{1,3}([^`]+)`{1,3}/g, '$1')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/~~([^~]+)~~/g, '$1')
-    .replace(/<br\s*\/?>/gi, '')
-    .trim()
+const collectBody = (request: ReqLike): Promise<Buffer> =>
+  new Promise((resolveBody, rejectBody) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    let settled = false
+    request.on?.('data', (chunk) => {
+      if (settled || !chunk) return
+      size += chunk.length
+      if (size > MAX_BODY_BYTES) {
+        settled = true
+        rejectBody(new RangeError('request body exceeds 8 MiB'))
+        return
+      }
+      chunks.push(chunk)
+    })
+    request.on?.('end', () => {
+      if (settled) return
+      settled = true
+      resolveBody(Buffer.concat(chunks))
+    })
+  })
 
-/** 块转换后把 Section 链接还原为唯一源码形式 [C1-S1]。 */
-export const restoreSpLinks = (mdText: string): string =>
-  mdText.replace(
-    /\[(?:\\?\[)?(C([1-9]\d*)-S([1-9]\d*))(?:\\?\])?\]\([^)]*chapter([1-9]\d*)\/section([1-9]\d*)\/\)/g,
-    (source, label, labelChapter, labelSection, targetChapter, targetSection) => {
-      if (labelChapter !== targetChapter || labelSection !== targetSection) return source
-      return `[${label}]`
-    },
-  )
+export const runMarkdownRestore = (
+  html: string,
+  target: string,
+  docsDir: string,
+): Promise<RestoreResult> =>
+  new Promise((resolveResult, rejectResult) => {
+    const executable = process.env.DEV_EDIT_PYTHON || 'python'
+    const child = spawn(executable, ['-B', RESTORE_SCRIPT, '--stdin-json'], {
+      cwd: process.cwd(),
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
+    const stdout: Buffer[] = []
+    const stderr: Buffer[] = []
+    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk))
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk))
+    child.on('error', rejectResult)
+    child.on('close', () => {
+      const output = Buffer.concat(stdout).toString('utf-8')
+      try {
+        const result = JSON.parse(output) as RestoreResult
+        resolveResult(result)
+      } catch (error) {
+        const detail = Buffer.concat(stderr).toString('utf-8').trim()
+        rejectResult(
+          new Error(`恢复器返回了无效 JSON：${(error as Error).message}${detail ? `；${detail}` : ''}`),
+        )
+      }
+    })
+    child.stdin.end(
+      JSON.stringify({
+        html: `<main><div id="content">${html}</div></main>`,
+        path: target,
+        docsRoot: docsDir,
+      }),
+    )
+  })
 
-const mdParser = new MarkdownIt()
-const turndown = new TurndownService({ codeBlockStyle: 'fenced', headingStyle: 'atx' })
-
-interface ReqLike {
-  url?: string
-  method?: string
-  on?: (ev: string, cb: (chunk: Buffer) => void) => void
+export const validateRestoredAssets = (target: string, assets: RestoreAsset[]): string[] => {
+  const diagnostics: string[] = []
+  for (const asset of assets) {
+    if (basename(asset.name) !== asset.name || asset.name.includes('..')) {
+      diagnostics.push(`内联图片文件名非法：${asset.name}`)
+      continue
+    }
+    const assetPath = join(dirname(target), asset.name)
+    if (!existsSync(assetPath)) {
+      diagnostics.push(`在线编辑只允许引用现有图片资产：${asset.name}`)
+      continue
+    }
+    const restored = Buffer.from(asset.base64, 'base64')
+    if (restored.length !== asset.size || !readFileSync(assetPath).equals(restored)) {
+      diagnostics.push(`内联图片内容与页面资产不一致：${asset.name}`)
+    }
+  }
+  return diagnostics
 }
 
-interface ResLike {
-  statusCode?: number
-  setHeader?: (k: string, v: string) => void
-  end?: (body?: string) => void
-}
-
-/** vite 插件：dev 中间件（configureServer 仅 dev 模式调用） */
 export const devEditVitePlugin = () => {
   const docsDir = resolve(process.cwd(), 'docs')
   return {
     name: 'dev-edit-middleware',
-    configureServer(server: { middlewares: { use: (h: (req: unknown, res: unknown, next?: unknown) => void) => void } }) {
-      console.log('[dev-edit] middleware registered')
-      server.middlewares.use((req, res, next) => {
-        const r = req as ReqLike
-        const w = res as ResLike
-        const url = r.url ?? ''
+    configureServer(server: {
+      middlewares: {
+        use: (handler: (request: unknown, response: unknown, next?: () => void) => void) => void
+      }
+    }) {
+      console.log('[dev-edit] full-page middleware registered')
+      server.middlewares.use((request, response, next) => {
+        const req = request as ReqLike
+        const res = response as ResLike
+        const url = req.url ?? ''
         if (!url.startsWith('/__api/')) {
           next?.()
           return
         }
-
-        /** 路径白名单校验：docs 内的 .md 且文件必须存在 */
-        const resolveTarget = (): string | null => {
-          const u = new URL(url, 'http://localhost')
-          const rel = u.searchParams.get('path') ?? ''
-          if (!rel.endsWith('.md') || rel.includes('\0')) return null
-          const target = resolve(docsDir, rel)
-          if (!target.startsWith(docsDir + sep) || !existsSync(target)) return null
-          return target
+        if (url !== '/__api/edit-page') {
+          writeJson(res, 404, { ok: false, error: 'not found' })
+          return
         }
-
-        // GET /__api/read?path=xxx —— 读取文件内容（供编辑框加载）
-        if (url.startsWith('/__api/read')) {
-          if (r.method !== 'GET') {
-            w.statusCode = 405
-            w.end?.('method not allowed')
-            return
-          }
-          const target = resolveTarget()
-          if (!target) {
-            w.statusCode = 400
-            w.end?.(JSON.stringify({ ok: false, error: 'path not allowed or missing' }))
-            return
-          }
-          try {
-            w.statusCode = 200
-            w.setHeader?.('Content-Type', 'application/json')
-            w.end?.(JSON.stringify({ ok: true, content: readFileSync(target, 'utf-8') }))
-          } catch (e) {
-            w.statusCode = 500
-            w.end?.(JSON.stringify({ ok: false, error: (e as Error).message }))
-          }
+        if (req.method !== 'POST') {
+          writeJson(res, 405, { ok: false, error: 'method not allowed' })
           return
         }
 
-        // POST /__api/edit —— 校验后写回
-        // 注意：必须精确匹配 /__api/edit（edit-block 是它的前缀子路由），
-        // 且 edit-block 的判断必须排在本分支之前，否则会被吞掉。
-        if (url === '/__api/edit') {
-          if (r.method !== 'POST') {
-            w.statusCode = 405
-            w.end?.('method not allowed')
-            return
-          }
-          const chunks: Buffer[] = []
-          r.on?.('data', (c) => chunks.push(c))
-          r.on?.('end', () => {
+        void collectBody(req)
+          .then(async (rawBody) => {
+            let body: EditRequest
             try {
-              const body = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
-                path?: string
-                content?: string
-              }
-              const rel = body.path ?? ''
-              if (!rel.endsWith('.md') || rel.includes('\0')) {
-                w.statusCode = 400
-                w.end?.(JSON.stringify({ ok: false, error: 'invalid path' }))
-                return
-              }
-              const target = resolve(docsDir, rel)
-              if (!target.startsWith(docsDir + sep) || !existsSync(target)) {
-                w.statusCode = 400
-                w.end?.(JSON.stringify({ ok: false, error: 'path not allowed or missing' }))
-                return
-              }
-              try {
-                writeSafe(target, body.content ?? '', '/__api/edit')
-              } catch (err) {
-                w.statusCode = 400
-                w.end?.(JSON.stringify({ ok: false, error: (err as Error).message }))
-                return
-              }
-              w.statusCode = 200
-              w.setHeader?.('Content-Type', 'application/json')
-              w.end?.(JSON.stringify({ ok: true }))
-            } catch (e) {
-              w.statusCode = 500
-              w.end?.(JSON.stringify({ ok: false, error: (e as Error).message }))
+              body = JSON.parse(rawBody.toString('utf-8')) as EditRequest
+            } catch (error) {
+              writeJson(res, 400, { ok: false, error: `invalid JSON: ${(error as Error).message}` })
+              return
+            }
+            const relativePath = body.path ?? ''
+            const target = resolveEditTarget(docsDir, relativePath)
+            if (!target || typeof body.revision !== 'string' || typeof body.html !== 'string') {
+              writeJson(res, 400, { ok: false, error: 'invalid path, revision, or html' })
+              return
+            }
+            const current = readFileSync(target)
+            const currentRevision = sourceRevision(current)
+            if (body.revision !== currentRevision) {
+              writeJson(res, 409, {
+                ok: false,
+                code: 'revision-conflict',
+                error: '源文件已被其他操作修改，请保留当前编辑内容并刷新后处理',
+              })
+              return
+            }
+
+            let restored: RestoreResult
+            try {
+              restored = await runMarkdownRestore(body.html, target, docsDir)
+            } catch (error) {
+              writeJson(res, 500, { ok: false, error: (error as Error).message })
+              return
+            }
+            if (!restored.ok || typeof restored.markdown !== 'string') {
+              writeJson(res, 422, {
+                ok: false,
+                code: 'validation-failed',
+                diagnostics: restored.diagnostics ?? ['恢复器未返回 Markdown'],
+              })
+              return
+            }
+            const assetDiagnostics = validateRestoredAssets(target, restored.assets ?? [])
+            if (assetDiagnostics.length) {
+              writeJson(res, 422, {
+                ok: false,
+                code: 'validation-failed',
+                diagnostics: assetDiagnostics,
+              })
+              return
+            }
+            try {
+              const revision = writeSafe(target, restored.markdown)
+              writeJson(res, 200, { ok: true, revision })
+            } catch (error) {
+              writeJson(res, 500, { ok: false, error: (error as Error).message })
             }
           })
-          return
-        }
-
-        // POST /__api/edit-block —— 单块就地编辑写回（所见即所得）
-        if (url.startsWith('/__api/edit-block')) {
-          if (r.method !== 'POST') {
-            w.statusCode = 405
-            w.end?.('method not allowed')
-            return
-          }
-          const chunks: Buffer[] = []
-          r.on?.('data', (c) => chunks.push(c))
-          r.on?.('end', () => {
-            try {
-              const body = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
-                path?: string
-                oldText?: string
-                newHtml?: string
-              }
-              const rel = body.path ?? ''
-              if (!rel.endsWith('.md') || rel.includes('\0')) {
-                w.statusCode = 400
-                w.end?.(JSON.stringify({ ok: false, error: 'invalid path' }))
-                return
-              }
-              const target = resolve(docsDir, rel)
-              if (!target.startsWith(docsDir + sep) || !existsSync(target)) {
-                w.statusCode = 400
-                w.end?.(JSON.stringify({ ok: false, error: 'path not allowed or missing' }))
-                return
-              }
-              const oldText = (body.oldText ?? '').trim()
-              const newHtml = body.newHtml ?? ''
-              if (!oldText || !newHtml) {
-                w.statusCode = 400
-                w.end?.(JSON.stringify({ ok: false, error: 'empty oldText/newHtml' }))
-                return
-              }
-              const source = readFileSync(target, 'utf-8')
-              const tokens = mdParser.parse(source, {})
-              // 收集可编辑文本块（扁平 token 流，按序）
-              // 注意：段落/标题的正文在 inline token 上，容器类型是 paragraph_open / heading_open
-              interface Block {
-                start: number
-                end: number
-                raw: string
-                plain: string
-                fence: boolean
-                heading: boolean
-                level: number
-              }
-              const blocks: Block[] = []
-              let pending: { kind: 'paragraph' | 'heading'; level: number; map: [number, number] | null } | null = null
-              for (const t of tokens) {
-                if (t.type === 'paragraph_open' || t.type === 'heading_open') {
-                  pending = {
-                    kind: t.type === 'heading_open' ? 'heading' : 'paragraph',
-                    level: t.type === 'heading_open' ? Number(t.tag?.[1] ?? 1) : 0,
-                    map: t.map,
-                  }
-                } else if (t.type === 'inline' && pending && t.map) {
-                  blocks.push({
-                    start: pending.map?.[0] ?? 0,
-                    end: pending.map?.[1] ?? 0,
-                    raw: t.content,
-                    plain: plainText(t.content),
-                    fence: false,
-                    heading: pending.kind === 'heading',
-                    level: pending.level,
-                  })
-                  pending = null
-                } else if (t.type === 'paragraph_close' || t.type === 'heading_close') {
-                  pending = null
-                } else if (t.type === 'fence') {
-                  blocks.push({ start: t.map?.[0] ?? 0, end: t.map?.[1] ?? 0, raw: t.content, plain: t.content.trim(), fence: true, heading: false, level: 0 })
-                }
-              }
-              const idx = blocks.findIndex((b) => b.plain === oldText)
-              if (idx < 0) {
-                w.statusCode = 404
-                w.end?.(JSON.stringify({ ok: false, error: 'block not found (页面已变化？请刷新后重试)' }))
-                return
-              }
-              const block = blocks[idx]
-              let newMd = turndown.turndown(newHtml).trim()
-              newMd = restoreSpLinks(newMd)
-              const lines = source.split(/\r\n|\n/)
-              const eol = source.includes('\r\n') ? '\r\n' : '\n'
-              if (block.fence) {
-                const inner = newMd.replace(/^```[^\n]*\n?/, '').replace(/\n?```\s*$/, '')
-                const newLines = inner.split('\n')
-                lines.splice(block.start + 1, Math.max(0, block.end - block.start - 2), ...newLines)
-              } else if (block.heading) {
-                // 标题：保留 # 标记（第一行加 #x，续行不再加）
-                const marker = '#'.repeat(block.level) + ' '
-                const newLines = newMd.split('\n').map((l, i) => (i === 0 ? marker + l : l))
-                lines.splice(block.start, Math.max(1, block.end - block.start), ...newLines)
-              } else {
-                // 段落/列表项：若原行是列表项，保留列表标记（第一行加标记，续行缩进两格）
-                const orig = lines[block.start] ?? ''
-                const listMatch = /^(\s*(?:[-*+]|\d+\.)\s+)/.exec(orig)
-                const newLines = newMd.split('\n').map((l, i) => {
-                  if (i === 0) return listMatch ? listMatch[1] + l : l
-                  return listMatch ? '  ' + l : l
-                })
-                lines.splice(block.start, Math.max(1, block.end - block.start), ...newLines)
-              }
-              // 行数骤减防御：整页行数不允许跌破原行数 50%（且至少 3 行），防 splice 灾难性误写
-              const resultLines = lines.join(eol).split(/\r\n|\n/)
-              const originalLines = source.split(/\r\n|\n/).length
-              if (
-                resultLines.length < 3 ||
-                resultLines.length < Math.floor(originalLines * 0.5)
-              ) {
-                w.statusCode = 400
-                w.end?.(
-                  JSON.stringify({
-                    ok: false,
-                    error: `拒绝写回：行数从 ${originalLines} 骤减到 ${resultLines.length}`,
-                  }),
-                )
-                return
-              }
-              writeSafe(target, lines.join(eol), '/__api/edit-block')
-              w.statusCode = 200
-              w.setHeader?.('Content-Type', 'application/json')
-              w.end?.(JSON.stringify({ ok: true }))
-            } catch (e) {
-              w.statusCode = 500
-              w.end?.(JSON.stringify({ ok: false, error: (e as Error).message }))
+          .catch((error) => {
+            if (error instanceof RangeError) {
+              writeJson(res, 413, { ok: false, error: error.message })
+            } else {
+              writeJson(res, 500, { ok: false, error: (error as Error).message })
             }
           })
-          return
-        }
-
-        w.statusCode = 404
-        w.end?.('not found')
       })
     },
   }
 }
 
-/** VuePress 插件：注入 client 端编辑 UI */
-export const devEditPlugin = (): Plugin => ({
+export const devEditPlugin = (): Plugin => (app) => ({
   name: 'dev-edit',
-  clientConfigFile: CLIENT_FILE,
+  clientConfigFile: app.env.isDev ? CLIENT_FILE : undefined,
+  extendsPage: (page) => {
+    if (!app.env.isDev || !page.filePath || !existsSync(page.filePath)) return
+    ;(page.data as Record<string, unknown>).devEditRevision = sourceRevision(readFileSync(page.filePath))
+  },
 })

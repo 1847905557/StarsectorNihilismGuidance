@@ -88,7 +88,7 @@ GearIn_test
 
 随机挑选一个原版战役，例如 `Starsector\starsector-core\data\missions\afistfulofcredits`，把它文件夹里的所有东西复制到 `Starsector\mods\GearIndustry\data\missions\GearIn_test\`：
 
-![](./mission_folder.png)
+![测试战役模板文件夹的完整内容](./mission_folder.png "mission_folder.png")
 
 原版战役文件夹包含 `descriptor.json`、`icon.jpg`、`mission_text.txt` 和一个存放 `MissionDefinition` 类的源文件。接下来逐个修改。
 
@@ -221,7 +221,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 模板替换完毕后即可直接使用，无需后期修正。部署后的战斗画面如下图所示，用户舰队自动列出本 MOD 的所有舰船：
 
-![](./mission_test.png)
+![测试战役中自动列出的 MOD 舰船](./mission_test.png "mission_test.png")
 
 ### 验证方案
 
@@ -249,7 +249,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 被装配过的舰船，会在存档目录的 `missions\<mission_id>` 下自动生成装配文件：
 
-![](./variant_export.png)
+![测试战役导出的舰船装配文件](./variant_export.png "variant_export.png")
 
 位置是 `Starsector\saves\missions\GearIn_test\`，文件名为 `mission_GearIn_test_ship_0.variant`(第一个进列表的船序号为 0)。它的 `variantId` 是 `mission_GearIn_test_ship_0`。
 

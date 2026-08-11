@@ -23,7 +23,7 @@
 
 我们再次花费宝贵的 30 秒，糊出一张贴图：
 
-![](./GearIn_forging.png)
+![锻件级相位护卫舰贴图](./GearIn_forging.png "GearIn_forging.png")
 
 ## 命名并将贴图放入正确的位置
 
@@ -33,7 +33,7 @@
 
 :::
 
-![](./storage.png)
+![锻件级贴图在相位舰目录中的位置](./storage.png "storage.png")
 
 `锻件-级 (Forging)` 相位护卫舰，ID 为 `GearIn_forging`。
 
@@ -43,7 +43,7 @@
 
 **即使是相位舰，也必须设置合理的护盾范围**。
 
-![](./phase_make.png)
+![舰船编辑器中的锻件级相位护卫舰](./phase_make.png "phase_make.png")
 
 ## 制作相位舰船的数据
 
@@ -86,13 +86,13 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 **因为相位舰船还需要 2 个额外的光效贴图文件**，作为进入相位后的亮紫色/粉色尾迹。所幸粗糙贴图的处理一直都不是什么难事：
 
-![](./GearIn_forging_glow1.png)![](./GearIn_forging_glow2.png)
+![锻件级相位护卫舰的第一张相位光效贴图](./GearIn_forging_glow1.png "GearIn_forging_glow1.png")![锻件级相位护卫舰的第二张相位光效贴图](./GearIn_forging_glow2.png "GearIn_forging_glow2.png")
 
 在明亮模式下看不到它们吗？
 
 如果您不愿意切换黑暗模式，编者将帮您切换：
 
-![](./phase_glow.png)
+![黑色背景下的锻件级相位光效贴图](./phase_glow.png "phase_glow.png")
 
 ::: caution 光效贴图文件
 
@@ -115,7 +115,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 - 右键可进入/退出相位，出现亮紫粉色光效，与 `_glow1`/`_glow2` 贴图一致；
 - 日志中没有 `GearIn_forging` 相关的错误。
 
-![](./phase_play.png)
+![锻件级相位护卫舰在战斗中进入相位](./phase_play.png "phase_play.png")
 
 ## 故障分析
 

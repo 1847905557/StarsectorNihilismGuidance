@@ -515,18 +515,53 @@ location.spawnFleet(market.getPrimaryEntity(), 0f, 0f, fleet);
 
 ## 故障分析
 
-- **生成舰队的战力奇低**：来源市场的质量偏低，或 `qualityMod` 进一步降低了有效质量。记录 inflater 的 `getQuality()`；需要固定测试条件时，使用 market 构造器、`setSource(market, true)` 或显式 `qualityOverride` 后重新生成。
-- **舰队生成时启动中止**：`createFleet` 被放在 `onApplicationLoad`，此时 `Global.getSector()` 仍为 null。把注册放入 `onGameLoad` 的一次性判断块。
-- **指定 `flagshipVariantId` 后旗舰没换**：装配 ID 无效或舰队为空。用 `getAllVariantIds()` 核对 ID，并确认生成成员数大于 0。
-- **指挥官和军官完全没有生成**：`withOfficers=false` 或成员列表为空都会跳过创建。启用军官生成，并先解决舰队成员为空的问题。
-- **生成后读取装配时看不到武器**：舰队尚未膨胀，成员仍保留角色变体。需要完整装配时先调用 `fleet.inflateIfNeeded()`。
-- **舰队创建成功但地图与 `getFleets()` 都找不到**：对象没有进入地点容器。使用 `spawnFleet`，或先 `addEntity` 再设置位置。
-- **舰队堆在原点或偏移方向错误**：`spawnFleet` 的 anchor 传了 null。传入 `market.getPrimaryEntity()` 等实际锚点，偏移量会在锚点坐标上累加。
-- **每次读档都会多出一支舰队**：注册缺少独立的 persistent data 标记。使用本节 `REGISTER_MARK`，连续读档后确认生成只执行一次。
-- **跨创建时舰队装配无法复现**：默认 random 让新创建使用不同 seed。设置 `params.random = new Random(固定种子)`，重新创建后比较装配。
-- **实际舰队点数明显低于请求值**：市场供应、30 舰上限和角色点数分配都会裁剪结果。用 `Misc.getSpawnFPMult(fleet)` 还原请求值，再核对角色配置。
-- **D 插数量过多或为零**：代码混用了 `qualityOverride` 与市场质量，或误读了 `qualityPerDMod`。读取 inflater 的 `getQuality()`，质量 0.6 时平均 2 个，质量 1.0 时平均 0 个。
-- **投放后舰队立刻进入交战**：手动 `addEntity` 路径没有附加免战时间。优先使用 `spawnFleet`；自定义投放时调用 `fleet.setNoEngaging(...)`。
+- **生成舰队的战力奇低**：来源市场的质量偏低，或 `qualityMod` 进一步降低了有效质量。
+
+    - **解决方案**：记录 inflater 的 `getQuality()`；需要固定测试条件时，使用 market 构造器、`setSource(market, true)` 或显式 `qualityOverride`，重新生成。
+
+- **舰队生成时启动中止**：`createFleet` 被放在 `onApplicationLoad`，此时 `Global.getSector()` 仍为 null。
+
+    - **解决方案**：把注册放入 `onGameLoad` 的一次性判断块。
+
+- **指定 `flagshipVariantId` 后旗舰没换**：装配 ID 无效或舰队为空。
+
+    - **解决方案**：用 `getAllVariantIds()` 核对 ID，并确认生成成员数大于 0。
+
+- **指挥官和军官完全没有生成**：`withOfficers=false` 或成员列表为空都会跳过创建。
+
+    - **解决方案**：启用军官生成，并先解决舰队成员为空的问题。
+
+- **生成后读取装配时看不到武器**：舰队尚未膨胀，成员仍保留角色变体。
+
+    - **解决方案**：需要完整装配时先调用 `fleet.inflateIfNeeded()`。
+
+- **舰队创建成功但地图与 `getFleets()` 都找不到**：对象没有进入地点容器。
+
+    - **解决方案**：使用 `spawnFleet`，或先 `addEntity` 再设置位置。
+
+- **舰队堆在原点或偏移方向错误**：`spawnFleet` 的 anchor 传了 null。
+
+    - **解决方案**：传入 `market.getPrimaryEntity()` 等实际锚点。
+
+- **每次读档都会多出一支舰队**：注册缺少独立的 persistent data 标记。
+
+    - **解决方案**：使用本节 `REGISTER_MARK`。
+
+- **跨创建时舰队装配无法复现**：默认 random 让新创建使用不同 seed。
+
+    - **解决方案**：设置 `params.random = new Random(固定种子)`。
+
+- **实际舰队点数明显低于请求值**：市场供应、30 舰上限和角色点数分配都会裁剪结果。
+
+    - **解决方案**：用 `Misc.getSpawnFPMult(fleet)` 还原请求值，再核对角色配置。
+
+- **D 插数量过多或为零**：代码混用了 `qualityOverride` 与市场质量，或误读了 `qualityPerDMod`。质量 0.6 时平均 2 个，质量 1.0 时平均 0 个。
+
+    - **解决方案**：读取 inflater 的 `getQuality()` 核对质量取值。
+
+- **投放后舰队立刻进入交战**：手动 `addEntity` 路径没有附加免战时间。
+
+    - **解决方案**：优先使用 `spawnFleet`；自定义投放时调用 `fleet.setNoEngaging(...)`。
 
 ## 总结
 

@@ -67,6 +67,44 @@ describe('restore process boundary', () => {
     expect(result.markdown).toContain('```java')
   })
 
+  it('transports complex Unicode Tiptap HTML without JSON ambiguity', async () => {
+    const { docs, page } = fixture()
+    const result = await runMarkdownRestore(
+      '<h1>虚无主义教程 (Nihilism Guidance)</h1>' +
+        '<p>调整“此处”这个字，并保留 "双引号"。</p>' +
+        '<div data-vp-container="tip" data-vp-title="技能要求？">' +
+        '<p><strong>代码</strong>：保留中文属性与标点。</p></div>' +
+        '<pre data-language="json"><code class="language-json">{"key": "值"}</code></pre>',
+      page,
+      docs,
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.markdown).toContain('调整 "此处" 这个字')
+    expect(result.markdown).toContain('::: tip 技能要求？')
+    expect(result.markdown).toContain('{"key": "值"}')
+  })
+
+  it('merges continuous marks split by a Tiptap link boundary', async () => {
+    const { docs, page } = fixture()
+    const result = await runMarkdownRestore(
+      '<h1>标题</h1>' +
+        '<p><strong>前文</strong><a href="https://example.com/"><strong>链接</strong></a>' +
+        '<strong>后文</strong></p>' +
+        '<p><em>斜体前</em><a href="https://example.com/"><em>斜体链接</em></a>' +
+        '<em>斜体后</em></p>' +
+        '<p><s>删除前</s><a href="https://example.com/"><s>删除链接</s></a>' +
+        '<s>删除后</s></p>',
+      page,
+      docs,
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.markdown).toContain('**前文[链接](https://example.com/) 后文**')
+    expect(result.markdown).toContain('*斜体前[斜体链接](https://example.com/) 斜体后*')
+    expect(result.markdown).toContain('~~删除前[删除链接](https://example.com/) 删除后~~')
+  })
+
   it('returns structured diagnostics for an empty document', async () => {
     const { docs, page } = fixture()
     const result = await runMarkdownRestore('', page, docs)

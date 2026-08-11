@@ -290,12 +290,29 @@ gradle jar
 
 ## 故障分析
 
-- **编译时报 `cannot find symbol`**：`com.fs.starfarer.api.*` 没有进入 classpath，或 IDE 语言级别低于 17。按本节 `build.gradle` 配置 `compileOnly`，确认 Project SDK 为 17 后重新构建。
-- **日志没有 jar 加载行**：`mod_info.json` 缺少 `jars` 字段、MOD 没有启用，或 jar 声明属于未启用的 MOD。确认 manifest 含 `"jars": ["jars/GearIndustry.jar"]`，启用 MOD 后重启。
-- **日志有 jar 加载行，但引用类时报 `Problem loading class`**：声明路径可能指向不存在的文件，或 jar 内没有对应完整类名。先把声明改成正确的相对路径，再用 `jar tf` 对照包名和类名。
-- **日志报告 `UnsupportedClassVersionError`**：class 文件版本高于游戏的 Java 17。保留 `toolchain 17` 与 `options.release = 17`，重新构建 jar 后复验。
-- **类在 jar 里但游戏没有任何行为**：该类没有被注册入口按名引用。通过 `settings.json` 的 `plugins`、`mod_info.json` 的 `modPlugin`[C6-S2] 或数据文件的 `script` 列 [C2-S2] 接入，再观察对应日志。
-- **修改源码并重启后行为仍是旧版本**：MOD 根目录残留同名源码，或 jar 没有重新构建。删除重复源码，以 jar 为唯一来源，并在启动前重新执行 `gradle jar`。
+- **编译时报 `cannot find symbol`**：`com.fs.starfarer.api.*` 没有进入 classpath，或 IDE 语言级别低于 17。
+
+    - **解决方案**：按本节 `build.gradle` 配置 `compileOnly`，确认 Project SDK 为 17 后重新构建。
+
+- **日志没有 jar 加载行**：`mod_info.json` 缺少 `jars` 字段、MOD 没有启用，或 jar 声明属于未启用的 MOD。
+
+    - **解决方案**：确认 manifest 含 `"jars": ["jars/GearIndustry.jar"]`，启用 MOD 后重启。
+
+- **日志有 jar 加载行，但引用类时报 `Problem loading class`**：声明路径可能指向不存在的文件，或 jar 内没有对应完整类名。
+
+    - **解决方案**：把声明改成正确的相对路径，再用 `jar tf` 对照包名和类名。
+
+- **日志报告 `UnsupportedClassVersionError`**：class 文件版本高于游戏的 Java 17。
+
+    - **解决方案**：保留 `toolchain 17` 与 `options.release = 17`，重新构建 jar。
+
+- **类在 jar 里但游戏没有任何行为**：该类没有被注册入口按名引用。
+
+    - **解决方案**：通过 `settings.json` 的 `plugins`、`mod_info.json` 的 `modPlugin`[C6-S2] 或数据文件的 `script` 列 [C2-S2] 接入。
+
+- **修改源码并重启后行为仍是旧版本**：MOD 根目录残留同名源码，或 jar 没有重新构建。
+
+    - **解决方案**：删除重复源码，以 jar 为唯一来源，并在启动前重新执行 `gradle jar`。
 
 ## 总结
 

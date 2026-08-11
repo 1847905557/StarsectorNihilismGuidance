@@ -514,17 +514,49 @@ market.addIndustry(industryId);
 
 验证方案中的故障注入直接复现对应症状；每项从实际日志或界面现象开始。
 
-- **`addIndustry` 抛 `Industry [...] not found`**：CSV 缺少对应 ID、行被重复覆盖或调用 ID 拼错。用 `SettingsAPI.getIndustrySpec(id)` 确认注册，再逐字核对 CSV 与调用点。
-- **读档后产业供需消失**：供需写在构造器或 `init`，而不是每次重算都会调用的 `apply()`。把供需与统计修饰移入 `apply()`。
-- **缺货时产量没有减少**：缺货削减前没有先声明对应商品的 supply。先完成 `demand`/`supply`，再调用 `applyDeficitToProduction`。
-- **升级启动或完成时报错**：`upgrade` 指向未注册产业 ID。补齐注册或修改升级目标，确认目标 MOD 已启用。
-- **卸下 AI core 后效果仍然存在**：`applyAlphaCoreModifiers` 与 `applyNoAICoreModifiers` 没有成对撤销。为每个 AI core 修饰提供对应的移除逻辑。
-- **升级时 AI core 或特殊物品被复制**：自定义代码调用了 `removeIndustry(..., false)`。让升级流程使用 `forUpgrade=true` 的原版链路。
-- **同市场两个产业同时中断**：不同产业共用 Java 类却共用默认 disruption key。覆写 `getDisruptedKey()`，把 spec ID 纳入 key。
-- **把 `getMaxDeficit` 当成总需求**：它返回的是 `max(0, demand - available)`。总需求读取 `getDemand(id).getQuantity().getModifiedValue()`。
-- **界面把中断天数显示成建设剩余时间**：`getDisruptedDays()` 与建设进度是两套读数。分别使用中断天数和 `buildTime - buildProgress`。
-- **修改供需后当前帧数值没有变化**：经济数据在经济步中抓取。等待一个经济步，或对目标市场调用 `EconomyAPI.forceStockpileUpdate(market)`。
-- **`supply(com, 0)` 没有清掉全部供给**：0 只撤销当前 modId 的修饰。使用对应的 `unmodifyFlat`，并检查其他修饰来源。
+- **`addIndustry` 抛 `Industry [...] not found`**：CSV 缺少对应 ID、行被重复覆盖或调用 ID 拼错。
+
+    - **解决方案**：用 `SettingsAPI.getIndustrySpec(id)` 确认注册，再逐字核对 CSV 与调用点。
+
+- **读档后产业供需消失**：供需写在构造器或 `init`，而不是每次重算都会调用的 `apply()`。
+
+    - **解决方案**：把供需与统计修饰移入 `apply()`。
+
+- **缺货时产量没有减少**：缺货削减前没有先声明对应商品的 supply。
+
+    - **解决方案**：先完成 `demand`/`supply`，再调用 `applyDeficitToProduction`。
+
+- **升级启动或完成时报错**：`upgrade` 指向未注册产业 ID。
+
+    - **解决方案**：补齐注册或修改升级目标，确认目标 MOD 已启用。
+
+- **卸下 AI core 后效果仍然存在**：`applyAlphaCoreModifiers` 与 `applyNoAICoreModifiers` 没有成对撤销。
+
+    - **解决方案**：为每个 AI core 修饰提供对应的移除逻辑。
+
+- **升级时 AI core 或特殊物品被复制**：自定义代码调用了 `removeIndustry(..., false)`。
+
+    - **解决方案**：让升级流程使用 `forUpgrade=true` 的原版链路。
+
+- **同市场两个产业同时中断**：不同产业共用 Java 类却共用默认 disruption key。
+
+    - **解决方案**：覆写 `getDisruptedKey()`，把 spec ID 纳入 key。
+
+- **把 `getMaxDeficit` 当成总需求**：它返回的是 `max(0, demand - available)`。
+
+    - **解决方案**：总需求读取 `getDemand(id).getQuantity().getModifiedValue()`。
+
+- **界面把中断天数显示成建设剩余时间**：`getDisruptedDays()` 与建设进度是两套读数。
+
+    - **解决方案**：分别使用中断天数和 `buildTime - buildProgress`。
+
+- **修改供需后当前帧数值没有变化**：经济数据在经济步中抓取。
+
+    - **解决方案**：等待一个经济步，或对目标市场调用 `EconomyAPI.forceStockpileUpdate(market)`。
+
+- **`supply(com, 0)` 没有清掉全部供给**：0 只撤销当前 modId 的修饰。
+
+    - **解决方案**：使用对应的 `unmodifyFlat`，并检查其他修饰来源。
 
 ## 总结
 

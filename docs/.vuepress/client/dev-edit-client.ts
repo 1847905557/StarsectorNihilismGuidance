@@ -179,8 +179,9 @@ const DevEditButton = defineComponent({
         })
         const data = (await response.json()) as EditResponse
         if (!response.ok || !data.ok || !data.revision) {
-          const details = data.diagnostics?.join('；') ?? data.error ?? String(response.status)
-          status.value = `${data.code === 'revision-conflict' ? '版本冲突' : '写回失败'}：${details}`
+          const failure = data.code === 'revision-conflict' ? '版本冲突' : '写回失败'
+          const details = data.diagnostics?.join('\n') ?? data.error ?? String(response.status)
+          status.value = data.diagnostics?.length ? `${failure}：\n${details}` : `${failure}：${details}`
           saving.value = false
           editor.setEditable(true)
           return
@@ -318,13 +319,20 @@ const DevEditButton = defineComponent({
         '.dev-edit-btn:disabled,.dev-edit-icon-btn:disabled,.dev-edit-select:disabled{opacity:.55;cursor:default}',
         '.dev-edit-btn-primary{background:var(--vp-c-accent-bg);border-color:var(--vp-c-accent-bg);color:var(--vp-c-accent-text)}',
         '.dev-edit-btn-danger{background:var(--vp-c-red-soft);border-color:var(--vp-c-red-soft);color:var(--vp-c-red-text)}',
-        '.dev-edit-status{max-width:520px;color:var(--vp-c-red-text);background:var(--vp-c-bg);border:1px solid var(--vp-c-border);padding:7px 9px;border-radius:6px;box-shadow:0 2px 8px var(--vp-c-shadow);font:13px var(--font-family);overflow-wrap:anywhere}',
+        '.dev-edit-status{display:block;max-width:520px;max-height:min(50vh,360px);overflow:auto;white-space:pre-wrap;line-height:1.5;color:var(--vp-c-red-text);background:var(--vp-c-bg);border:1px solid var(--vp-c-border);padding:7px 9px;border-radius:6px;box-shadow:0 2px 8px var(--vp-c-shadow);font:13px var(--font-family);overflow-wrap:anywhere}',
         '.dev-edit-content{outline:2px solid var(--vp-c-accent);outline-offset:10px;min-height:40vh}.dev-edit-surface{outline:none;min-height:40vh}',
         '.dev-edit-surface img{cursor:grab}.dev-edit-surface img.ProseMirror-selectednode{outline:3px solid var(--vp-c-accent)}',
         '.dev-edit-container{border:1px solid var(--vp-c-border);padding:12px 16px}.dev-edit-container-title{display:block;width:100%;box-sizing:border-box;border:0;border-bottom:1px solid var(--vp-c-border);background:transparent;color:var(--vp-c-text);font-weight:600;padding:4px 0 8px;margin-bottom:8px;outline:none}',
         '.dev-edit-container-content>:first-child{margin-top:0}.dev-edit-container-content>:last-child{margin-bottom:0}',
         '.dev-edit-auto-list{border:1px dashed var(--vp-c-border);color:var(--vp-c-text-mute);padding:10px 12px;border-radius:4px}',
-        '.dev-edit-surface pre{position:relative}.dev-edit-surface pre[data-language]::before{content:attr(data-language);position:absolute;right:10px;top:6px;color:var(--vp-c-text-mute);font:12px var(--font-family)}',
+        '.dev-edit-code{margin:16px 0;border:1px solid var(--vp-c-border);border-left:3px solid var(--vp-c-accent);border-radius:6px;overflow:hidden;background:var(--code-c-bg);transition:border-color .15s,box-shadow .15s}',
+        '.dev-edit-code:focus-within{border-color:var(--vp-c-accent);box-shadow:0 0 0 2px var(--vp-c-accent-soft)}',
+        '.dev-edit-code-header{height:38px;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--vp-c-bg-alt);border-bottom:1px solid var(--vp-c-border);color:var(--vp-c-text-mute);font:12px var(--font-family)}',
+        '.dev-edit-code-kind{height:22px;display:inline-flex;align-items:center;padding:0 7px;border-radius:4px;background:var(--vp-c-control);color:var(--vp-c-text);font-weight:700}',
+        '.dev-edit-code-language,.dev-edit-code-highlights{height:26px;box-sizing:border-box;border:1px solid var(--vp-c-border);border-radius:4px;background:var(--vp-c-bg);color:var(--vp-c-text);font:12px var(--font-family);outline:none}',
+        '.dev-edit-code-language{width:126px;padding:0 6px}.dev-edit-code-highlights{width:78px;padding:0 7px}.dev-edit-code-highlight-label{margin-left:auto}',
+        '.dev-edit-code-language:focus,.dev-edit-code-highlights:focus{border-color:var(--vp-c-accent)}.dev-edit-code-highlights:invalid{border-color:var(--vp-c-red)}',
+        '.dev-edit-code pre{position:relative;margin:0!important;border-radius:0!important;min-height:72px;padding:18px!important;background:var(--code-c-bg)!important}.dev-edit-code code{display:block;min-height:36px}',
         '@media (max-width:719px){.dev-edit-fab{right:10px;bottom:10px;max-width:calc(100vw - 20px)}.dev-edit-panel{max-height:46vh;overflow:auto}}',
       ])
 

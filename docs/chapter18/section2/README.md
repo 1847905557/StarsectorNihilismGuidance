@@ -126,10 +126,21 @@ gl_FragColor = vec4(pulse);
 
 ## 故障分析
 
-- **护盾不可见且日志包含片元 shader 编译错误**：源码缺少分号，程序无法建立。先用 InfoLog 定位行号，再修正语法并确认 `program.isValid()` 为 true。
-- **启动即抛未捕获异常**：路径含反斜杠、盘符或 `..` 时，引擎在读取前就抛 RuntimeException(BoxUtil 只捕获 IOException)，不会出现 "文件不存在" 日志。改用 MOD 根目录下的正斜杠相对路径。
-- **program 有效但画面空白**：`u_offset` 没有提交，或片元输出透明度为零。记录 uniform location 和最终 alpha，修正后确认护盾可见。
-- **每次重载后显存增加**：失败的临时 `ShaderProgram` 未删除，或 cleanup 没有调用 `program.delete()`。补齐两条释放路径，连续重载后确认程序对象计数稳定。
+- **护盾不可见且日志包含片元 shader 编译错误**：源码缺少分号，程序无法建立。
+
+    - **解决方案**：先用 InfoLog 定位行号，再修正语法。
+
+- **启动即抛未捕获异常**：路径含反斜杠、盘符或 `..` 时，引擎在读取前就抛 RuntimeException(BoxUtil 只捕获 IOException)，不会出现 "文件不存在" 日志。
+
+    - **解决方案**：改用 MOD 根目录下的正斜杠相对路径。
+
+- **program 有效但画面空白**：`u_offset` 没有提交，或片元输出透明度为零。
+
+    - **解决方案**：记录 uniform location 和最终 alpha，修正后重新提交。
+
+- **每次重载后显存增加**：失败的临时 `ShaderProgram` 未删除，或 cleanup 没有调用 `program.delete()`。
+
+    - **解决方案**：补齐两条释放路径。
 
 ## 总结
 

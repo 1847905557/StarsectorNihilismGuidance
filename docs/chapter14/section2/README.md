@@ -422,18 +422,53 @@ gradle jar
 
 ## 故障分析
 
-- **市场选项只剩 `Leave`**：覆盖 `MarketPostDock` 后没有复刻设置 `$menuState` 和填充选项的职责。执行 `$menuState = main 0` 与 `FireAll PopulateOptions`，重新停靠后确认主菜单恢复。
-- **再次停靠时自定义文本消失**：一次性 memory flag 已经置位，条件不再成立。用 `DumpMemory` 确认该键；需要重复展示时改用可重置条件，再次停靠复验。
-- **酒吧没有临时选项**：`AddBarEvents` 的市场条件不匹配，或没有进入 `BarCMD.showOptions`。核对 `$market.id`，重新打开目标市场酒吧确认选项被当轮重建。
-- **点击酒吧选项后面板空白**：回流规则只写了文本，没有添加后续选项。补充 options 列或调用菜单填充 trigger，再次点击确认返回选项出现。
-- **舰队遭遇没有自定义呼叫文本**：`BeginFleetEncounter` 候选分数低于剧情规则，或条件未命中。核对势力、敌对状态和 score，在遭遇主菜单确认胜出的文本。
-- **通讯问候仍为原版**：拒绝通讯规则得分更高，或应答器条件不满足。按目标行为调整条件与 score，再接受通讯确认自定义问候出现。
-- **任务列表显示 `No blurb found`**：规则 trigger 与 `getTriggerPrefix()` 生成的名称不一致。统一 `_blurb`、`_option`、`_blurbBar` 和 `_optionBar` 前缀，刷新任务列表确认红字消失。
-- **新游戏对话没有演示选项**：规则没有挂在 `AddNewGameChoices`，或回流 trigger 写成了生涯对话版本。使用 `NewGameOptionSelected` 并满足 devMode 条件，重开新游戏对话确认选项出现。
-- **交易面板规则报错**：`TradePanelFlavorText` 使用了依赖真实对话框的命令。只保留 `AddText` 和交易模式变量判断，再打开交易面板确认文本正常显示。
-- **对话只有文本没有选项**：`$menuState` 或事实键未让 `PopulateOptions` 命中。核对当前 memory 值并修正菜单状态，重新触发后确认至少有返回选项。
-- **规则未触发且日志无异常**：规则 ID 跨文件重复，或派发点的 trigger 拼写不一致。改用唯一前缀并逐字核对 trigger，再确认 `Loading rule:` 和运行文本同时出现。
-- **`$option` 条件始终为 false**：该条件写在非选项回流 trigger 中，没有任何插件写入 `$option`。把判断移到 `DialogOptionSelected`、`NewGameOptionSelected` 或酒吧回流路径，再点击选项复验。
+- **市场选项只剩 `Leave`**：覆盖 `MarketPostDock` 后没有复刻设置 `$menuState` 和填充选项的职责。
+
+    - **解决方案**：执行 `$menuState = main 0` 与 `FireAll PopulateOptions`。
+
+- **再次停靠时自定义文本消失**：一次性 memory flag 已经置位，条件不再成立。
+
+    - **解决方案**：用 `DumpMemory` 确认该键；需要重复展示时改用可重置条件。
+
+- **酒吧没有临时选项**：`AddBarEvents` 的市场条件不匹配，或没有进入 `BarCMD.showOptions`。
+
+    - **解决方案**：核对 `$market.id`。
+
+- **点击酒吧选项后面板空白**：回流规则只写了文本，没有添加后续选项。
+
+    - **解决方案**：补充 options 列或调用菜单填充 trigger。
+
+- **舰队遭遇没有自定义呼叫文本**：`BeginFleetEncounter` 候选分数低于剧情规则，或条件未命中。
+
+    - **解决方案**：核对势力、敌对状态和 score。
+
+- **通讯问候仍为原版**：拒绝通讯规则得分更高，或应答器条件不满足。
+
+    - **解决方案**：按目标行为调整条件与 score。
+
+- **任务列表显示 `No blurb found`**：规则 trigger 与 `getTriggerPrefix()` 生成的名称不一致。
+
+    - **解决方案**：统一 `_blurb`、`_option`、`_blurbBar` 和 `_optionBar` 前缀。
+
+- **新游戏对话没有演示选项**：规则没有挂在 `AddNewGameChoices`，或回流 trigger 写成了生涯对话版本。
+
+    - **解决方案**：使用 `NewGameOptionSelected` 并满足 devMode 条件。
+
+- **交易面板规则报错**：`TradePanelFlavorText` 使用了依赖真实对话框的命令。
+
+    - **解决方案**：只保留 `AddText` 和交易模式变量判断。
+
+- **对话只有文本没有选项**：`$menuState` 或事实键未让 `PopulateOptions` 命中。
+
+    - **解决方案**：核对当前 memory 值并修正菜单状态。
+
+- **规则未触发且日志无异常**：规则 ID 跨文件重复，或派发点的 trigger 拼写不一致。
+
+    - **解决方案**：改用唯一前缀并逐字核对 trigger。
+
+- **`$option` 条件始终为 false**：该条件写在非选项回流 trigger 中，没有任何插件写入 `$option`。
+
+    - **解决方案**：把判断移到 `DialogOptionSelected`、`NewGameOptionSelected` 或酒吧回流路径。
 
 ## 总结
 

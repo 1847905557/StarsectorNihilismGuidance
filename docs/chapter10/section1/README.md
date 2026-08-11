@@ -106,10 +106,21 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 
 ## 故障分析
 
-- **货舱里没有商品**：先核对 `commodities.csv` 路径、商品 ID 和控制台拼写。商品注册只建立 spec，市场库存仍需要控制台、产业或经济生成链提供数量。修正后再次执行 `additem GearIn_tempered_alloy 10`，货舱应增加 10 单位商品。
-- **商品名称异常**：检查 `commodities.csv` 的 `name` 列及 CSV 列位。修正后重启游戏并重新添加商品，货舱应显示 `Tempered Alloy`。
-- **商品描述缺失**：检查 [C3-S4] 的 `RESOURCE` 行是否使用相同商品 ID。`commodities.csv` 的 `desc` 列不承担货舱描述。修正后重新打开货舱详情，描述文本应正常显示。
-- **势力文件加载失败**：检查 `illegalCommodities` 中的 ID 是否逐字等于商品注册 ID，并确认商品行已经成功注册。修正后重启游戏，日志不应再出现 `Invalid illegal commodity id`，交易界面应标记该商品为违禁品。
+- **货舱里没有商品**：商品注册只建立 spec，市场库存仍需要控制台、产业或经济生成链提供数量。
+
+    - **解决方案**：核对 `commodities.csv` 路径、商品 ID 和控制台拼写，再执行 `additem GearIn_tempered_alloy 10`。
+
+- **商品名称异常**：`commodities.csv` 的 `name` 列或 CSV 列位有误。
+
+    - **解决方案**：修正后重启游戏并重新添加商品。
+
+- **商品描述缺失**：货舱描述来自 [C3-S4] 的 `RESOURCE` 行，`commodities.csv` 的 `desc` 列不承担货舱描述。
+
+    - **解决方案**：核对 [C3-S4] 的 `RESOURCE` 行是否使用相同商品 ID，修正后重新打开货舱详情。
+
+- **势力文件加载失败**：`illegalCommodities` 中的 ID 与商品注册 ID 不一致，或商品行没有成功注册。
+
+    - **解决方案**：核对 `illegalCommodities` 中的 ID 是否逐字等于商品注册 ID，并确认商品行已经成功注册，修正后重启游戏。
 
 ## 总结
 

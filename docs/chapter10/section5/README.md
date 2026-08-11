@@ -501,14 +501,37 @@ MarketConditionAPI condition = market.getSpecificCondition(token);
 
 ## 故障分析
 
-- **条件完全不出现**：ID 重复、文件路径错误或 CSV 行没有进入合并表时，日志不会出现 `Loading condition: <id>`。先确认注册日志，再换用唯一 ID。
-- **`addCondition` 抛 `Market condition [...] not found`**：调用 ID 没有对应 spec。逐字核对 CSV 的 `id` 与 `ORE_DEPOSITS` 常量。
-- **删除一个条件却把同 ID 全删**：`removeCondition(id)` 面向 spec ID。保存 `addCondition` 返回的 token，改用 `removeSpecificCondition(token)`。
-- **读档后条件参数恢复默认**：transient 插件不会保存 `setParam` 状态。改用 `BaseMarketConditionPlugin2`，或把参数保存到市场 memory / persistent data。
-- **抑制条件后效果仍在**：`suppressCondition` 只修改集合，效果要到下一次重算才撤销。需要立即更新时调用 `reapplyConditions()`，解除时配对 `unsuppressCondition(id)`。
-- **未 survey 条件在重算后消失**：`reqSurvey=TRUE` 的条件只有在 `isSurveyed()` 后才会重新 apply。完成勘测，或让自定义条件不进入 procgen 检查。
-- **同 spec ID 的多个实例互相覆盖**：modifier source 使用了 spec ID。改用 `id` 参数或 `getModId()`，让每个 token 拥有独立修饰。
-- **条件图标路径错误导致加载失败**：`icon` 指向不存在的贴图。留空以使用 `graphics/hullmods/generic_mod.png`，或补齐真实文件。
+- **条件完全不出现**：ID 重复、文件路径错误或 CSV 行没有进入合并表时，日志不会出现 `Loading condition: <id>`。
+
+    - **解决方案**：先确认注册日志，再换用唯一 ID。
+
+- **`addCondition` 抛 `Market condition [...] not found`**：调用 ID 没有对应 spec。
+
+    - **解决方案**：逐字核对 CSV 的 `id` 与 `ORE_DEPOSITS` 常量。
+
+- **删除一个条件却把同 ID 全删**：`removeCondition(id)` 面向 spec ID。
+
+    - **解决方案**：保存 `addCondition` 返回的 token，改用 `removeSpecificCondition(token)`。
+
+- **读档后条件参数恢复默认**：transient 插件不会保存 `setParam` 状态。
+
+    - **解决方案**：改用 `BaseMarketConditionPlugin2`，或把参数保存到市场 memory / persistent data。
+
+- **抑制条件后效果仍在**：`suppressCondition` 只修改集合，效果要到下一次重算才撤销。
+
+    - **解决方案**：需要立即更新时调用 `reapplyConditions()`，解除时配对 `unsuppressCondition(id)`。
+
+- **未 survey 条件在重算后消失**：`reqSurvey=TRUE` 的条件只有在 `isSurveyed()` 后才会重新 apply。
+
+    - **解决方案**：完成勘测，或让自定义条件不进入 procgen 检查。
+
+- **同 spec ID 的多个实例互相覆盖**：modifier source 使用了 spec ID。
+
+    - **解决方案**：改用 `id` 参数或 `getModId()`，让每个 token 拥有独立修饰。
+
+- **条件图标路径错误导致加载失败**：`icon` 指向不存在的贴图。
+
+    - **解决方案**：留空以使用 `graphics/hullmods/generic_mod.png`，或补齐真实文件。
 
 ## 总结
 

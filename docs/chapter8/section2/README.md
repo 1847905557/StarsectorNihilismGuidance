@@ -485,15 +485,41 @@ ShipAPI locked = pickTarget(ship);
 
 ## 故障分析
 
-- **加载期报 `Key [aiType] is required` / `Key [aiType] has invalid value [...]`**：`aiType` 缺失或拼错时，`.system` 数据加载期即抛出，不会进入部署。修正 `aiType` 后重启；与 `type` 不配对才在部署期抛 `Error creating AI of type [...]`。
-- **AI 从不使用系统**：`GearIn targeting AI init` 已出现而 `lock` 缺失、状态停在 `IDLE`，说明实体、存活、CR、冷却、弹药、节流或目标判据提前返回。按该判断链逐项核对，确保目标可见、同侧关系正确且在射程内；修正后应出现 `lock` 和状态迁移日志。
-- **AI 激活后加成约一秒便消失**：AI 只在激活前写一次 flag 时，`IN` 与 `ACTIVE` 总时长会超过 flag 的 1 秒寿命，stats 随后读到 null。AI 在 `system.isActive()` 期间持续刷新 flag，复验时整个 `ACTIVE` 段的速度与状态文字应保持稳定。
-- **用户手动激活后没有锁定加成**：用户舰没有 AI 写入 flag，stats 只读 flag 时会始终得到 null。`pickTarget` 先读 flag，再回退到 `getShipTarget()`；手动选中目标并激活后，应获得与 AI 舰相同的锁定加成。
-- **用户按 F 后没有状态变化**：`isUsable` 为 false，或幅能、弹药、冷却条件不满足时，激活请求会被丢弃，连续尝试约 2 秒后才播放失败音。核对目标与资源条件，并用 `getInfoText` 显示 `NO TARGET` 等原因；条件满足后按 F，状态应进入 `IN`。
-- **系统进入 `ACTIVE` 后立即转入 `OUT`**：`flux/second` 超过舰船净耗散能力时，状态机无法继续扣除幅能，会在一帧或数帧后提前结束。降低每秒幅能或增加耗散，重新激活后 `ACTIVE` 应持续到配置时长。
-- **系统结束后速度倍率仍然残留**：`apply` 的 `modifyMult` 与 `unapply` 的 `unmodify` 使用不同 modifier ID，或某个分支只写入而未撤销。统一使用引擎传入的 `id`，并在 `OUT` 与 `unapply` 中撤销同一 ID；系统结束后速度应回到基础值。
-- **第二场战斗的目标锁定全部失败**：把 `ShipAPI` 保存到静态字段或跨战斗 custom data 后，当前引擎会判定旧实体不在场，`isAlive()` 与 `isEntityInPlay()` 持续为 false。目标只在本帧决策和回调内使用，让 AI 与 stats 实例随每场战斗重建；进入第二场后应重新取得有效目标。
-- **AI 高频尝试并刷屏**：`ShipSystemAIScript.advance` 每帧调用，缺少节流会让全量扫描、开关尝试和日志每帧发生。使用 `IntervalUtil` 将决策间隔设为 0.2–0.3 秒；多舰测试时日志频率和帧时间应恢复稳定。
+- **加载期报 `Key [aiType] is required` / `Key [aiType] has invalid value [...]`**：`aiType` 缺失或拼错时，`.system` 数据加载期即抛出，不会进入部署。
+
+    - **解决方案**：修正 `aiType` 后重启。
+
+- **AI 从不使用系统**：`GearIn targeting AI init` 已出现而 `lock` 缺失、状态停在 `IDLE`，说明实体、存活、CR、冷却、弹药、节流或目标判据提前返回。
+
+    - **解决方案**：按该判断链逐项核对，确保目标可见、同侧关系正确且在射程内。
+
+- **AI 激活后加成约一秒便消失**：AI 只在激活前写一次 flag 时，`IN` 与 `ACTIVE` 总时长会超过 flag 的 1 秒寿命，stats 随后读到 null。
+
+    - **解决方案**：AI 在 `system.isActive()` 期间持续刷新 flag。
+
+- **用户手动激活后没有锁定加成**：用户舰没有 AI 写入 flag，stats 只读 flag 时会始终得到 null。
+
+    - **解决方案**：`pickTarget` 先读 flag，再回退到 `getShipTarget()`。
+
+- **用户按 F 后没有状态变化**：`isUsable` 为 false，或幅能、弹药、冷却条件不满足时，激活请求会被丢弃，连续尝试约 2 秒后才播放失败音。
+
+    - **解决方案**：核对目标与资源条件，并用 `getInfoText` 显示 `NO TARGET` 等原因。
+
+- **系统进入 `ACTIVE` 后立即转入 `OUT`**：`flux/second` 超过舰船净耗散能力时，状态机无法继续扣除幅能，会在一帧或数帧后提前结束。
+
+    - **解决方案**：降低每秒幅能或增加耗散，重新激活。
+
+- **系统结束后速度倍率仍然残留**：`apply` 的 `modifyMult` 与 `unapply` 的 `unmodify` 使用不同 modifier ID，或某个分支只写入而未撤销。
+
+    - **解决方案**：统一使用引擎传入的 `id`，并在 `OUT` 与 `unapply` 中撤销同一 ID。
+
+- **第二场战斗的目标锁定全部失败**：把 `ShipAPI` 保存到静态字段或跨战斗 custom data 后，当前引擎会判定旧实体不在场，`isAlive()` 与 `isEntityInPlay()` 持续为 false。
+
+    - **解决方案**：目标只在本帧决策和回调内使用，让 AI 与 stats 实例随每场战斗重建。
+
+- **AI 高频尝试并刷屏**：`ShipSystemAIScript.advance` 每帧调用，缺少节流会让全量扫描、开关尝试和日志每帧发生。
+
+    - **解决方案**：使用 `IntervalUtil` 将决策间隔设为 0.2–0.3 秒。
 
 ## 总结
 

@@ -400,14 +400,37 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 
 ## 故障分析
 
-- **首次 `advance()` 抛出空指针**：`init()` 已废弃，不保证先于 `advance()` 调用。使用 `engine` 字段前先判 null，初始状态放在构造器或注册点。
-- **插件移除后部署日志仍在打印**：`removePlugin(this)` 不会移除引擎级监听器。先调用 `removeListener(listener)`，再移除插件。
-- **收尾代码从不执行**：公开 API 没有战斗结束事件。将收尾判断放进 `advance()`，用 `engine.isCombatOver()` 触发；需要跨战斗保存的数据写入生涯侧。
-- **第二场战斗的引用全部失效**：插件、监听器或 `ShipAPI` 被缓存到了静态字段或生涯对象。每场战斗重新注册并获取引用。
-- **监听器注册后从不回调**：监听器被挂在错误层级。按照监听器家族分别放入引擎、舰船或 stats 的监听器表，重新触发对应事件。
-- **暂停期间计时照常推进**：`advance()` 或 `AdvanceableListener.advance` 没有检查暂停。状态变化前调用 `engine.isPaused()`。
-- **导入监听接口时编译失败**：代码引用了不在公开 API 编译面中的内部接口。改用 `com.fs.starfarer.api.combat.listeners` 下的公开接口；战斗结束改用 `isCombatOver()` 轮询。
-- **回调内增删监听器时重复派发或抛 `ConcurrentModificationException`**：回调修改了正在被直接迭代的后备列表。遍历前复制快照，或把增删延后到下一次 `advance()`。
+- **首次 `advance()` 抛出空指针**：`init()` 已废弃，不保证先于 `advance()` 调用。
+
+    - **解决方案**：使用 `engine` 字段前先判 null，初始状态放在构造器或注册点。
+
+- **插件移除后部署日志仍在打印**：`removePlugin(this)` 不会移除引擎级监听器。
+
+    - **解决方案**：先调用 `removeListener(listener)`，再移除插件。
+
+- **收尾代码从不执行**：公开 API 没有战斗结束事件。
+
+    - **解决方案**：将收尾判断放进 `advance()`，用 `engine.isCombatOver()` 触发；需要跨战斗保存的数据写入生涯侧。
+
+- **第二场战斗的引用全部失效**：插件、监听器或 `ShipAPI` 被缓存到了静态字段或生涯对象。
+
+    - **解决方案**：每场战斗重新注册并获取引用。
+
+- **监听器注册后从不回调**：监听器被挂在错误层级。
+
+    - **解决方案**：按照监听器家族分别放入引擎、舰船或 stats 的监听器表，重新触发对应事件。
+
+- **暂停期间计时照常推进**：`advance()` 或 `AdvanceableListener.advance` 没有检查暂停。
+
+    - **解决方案**：状态变化前调用 `engine.isPaused()`。
+
+- **导入监听接口时编译失败**：代码引用了不在公开 API 编译面中的内部接口。
+
+    - **解决方案**：改用 `com.fs.starfarer.api.combat.listeners` 下的公开接口；战斗结束改用 `isCombatOver()` 轮询。
+
+- **回调内增删监听器时重复派发或抛 `ConcurrentModificationException`**：回调修改了正在被直接迭代的后备列表。
+
+    - **解决方案**：遍历前复制快照，或把增删延后到下一次 `advance()`。
 
 ## 总结
 

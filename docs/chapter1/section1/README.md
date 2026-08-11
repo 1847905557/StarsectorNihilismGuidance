@@ -2,9 +2,9 @@
 
 本节将引导您创建一个能被 Starsector 识别的空 MOD，解释 `mod_info.json` 的内容，并确定整套教程都会沿用的 ID 规则。
 
-*本节预期阅读时间：~6 分钟。*
+*本节预期阅读时间：\~6 分钟。*
 
-*本节预期操作时间：~5 分钟。*
+*本节预期操作时间：\~5 分钟。*
 
 ## 学习目标
 
@@ -25,7 +25,7 @@
 
 每个 MOD 是 `Starsector/mods/` 下的一个直接子目录。启动器和游戏进程都会扫描这里的直接子目录，只把 "根目录里存在 `mod_info.json`" 的目录当作候选 MOD。
 
-目录内没有这个文件、或文件解析失败、或缺必需字段时，该目录会被整体跳过，不会出现在 MOD 列表中。
+目录内没有这个文件、或文件解析失败、或缺必需字段时，该目录会被整体跳过，内含的不完整 MOD (或其实根本不是 MOD) 将不会出现在 MOD 列表中。
 
 本教程使用以下根目录：
 
@@ -53,7 +53,7 @@ Starsector/mods/GearIndustry/
 
 现在只需要创建根目录和 `mod_info.json`。其他目录在需要时再建。
 
-## 完善一个最基础的 mod_info.json
+## 完善一个最基础的 mod\_info.json
 
 在 `Starsector/mods/GearIndustry/mod_info.json` 写入：
 
@@ -78,29 +78,29 @@ Starsector/mods/GearIndustry/
 
 :::
 
-::: info 为什么示例使用标准 JSON
+::: info 示例使用标准 JSON
 
-Starsector 的实际 MOD 文件常使用带注释或尾逗号的宽松 JSON；但教程示例将保持标准 JSON，便于编辑器和静态工具检查。
+Starsector 实际上使用的是 允许注释/允许尾逗号/允许\#型注释 的宽松 JSON (也称为 ALEXSON)；但教程示例将保持标准 JSON，这便于编辑器和静态工具检查，也有利于您的身心健康。
 
 :::
 
-### mod_info.json 字段速查表
+### mod\_info.json 字段速查表
 
 字段作用与缺失后果：
 
 | 字段 | 是否必需 | 作用 |
-|---|---:|---|
+|---|---|---|
 | `id` | 是 | MOD 的唯一稳定标识。缺失或格式错误会让整个目录解析失败 |
 | `name` | 是 | 启动器显示名称。缺失会让整个目录解析失败 |
 | `author` | 否 | 作者或团队名称。缺失只影响启动器信息面板 |
-| `version`| 建议 | 当前版本。缺失时启动器版本位置留空 |
+| `version` | 建议 | 当前版本。缺失时启动器版本位置留空 |
 | `description` | 是 | 启动器信息面板中的说明。缺失会让整个目录解析失败 |
 | `gameVersion` | 是 | 游戏版本。缺失或与当前游戏 major 不符时，启动器显示红色错误且无法勾选 |
 | `dependencies` | 按需 | 本页不使用 |
 | `jars` | 按需 | 本页不使用 |
 | `modPlugin` | 按需 | 本页不使用 |
 
-::: caution 不要提前填写 `jars`/`modPlugin`
+::: caution 不要提前填写 jars/modPlugin
 
 本节的 MOD 还没有 Java 代码，因此不要提前填写这两个字段。指向不存在 JAR 或类的入口会在启动阶段报错并导致加载失败。
 
@@ -108,7 +108,7 @@ Starsector 的实际 MOD 文件常使用带注释或尾逗号的宽松 JSON；�
 
 ## ID 与前缀
 
-同一次游戏启动中，MOD 会把大量数据合并到共享注册表。由于舰船、武器、战机、船插、战术系统、势力和字符串 key 都可能与其他 MOD 发生同名冲突，编者非常建议您提前准备一个自己的独特前缀。
+大量不同的 MOD 会加载大量数据，导致舰船、武器、战机、船插、战术系统、势力和字符串 key 都可能与其他 MOD 发生同名冲突。因此。编者非常建议您提前准备一个自己的独特前缀。
 
 而且，准备独特前缀，也有助于防止您背上一些与您无关的报错黑锅。
 
@@ -120,10 +120,6 @@ MOD ID:       gear_in
 Java 包前缀:  data.scripts.gearin.<domain>
 ```
 
-`<domain>` 按语义域组织 (`combat`、`campaign`、`rules` 等)，类名形如 `GearIn<Subject>`。
-
-例如 `data.scripts.gearin.combat.GearInShipStatsProbe`；数据注册继续沿用这一命名约定。
-
 数据 ID 只表达对象含义，例如：
 
 ```text
@@ -131,20 +127,30 @@ GearIn_artizan
 GearIn_faction_name
 ```
 
-MOD ID `gear_in` 使用小写 ASCII、数字和下划线，可以减少路径大小写、CSV 引用和跨平台打包问题；`name` 可以本地化。`id` 一旦被存档、装配或其他 MOD 引用就应保持稳定。
+最好不要用太过偏门的字符，以免各类路径大小写、CSV 引用和跨平台打包问题；且为了后续长期维护考虑，各类 `id` 应保持稳定。
+
+::: info 除此之外...
+
+`<domain>` 按语义域组织 (`combat`、`campaign`、`rules` 等)，类名形如 `GearIn<Subject>`。
+
+例如 `data.scripts.gearin.combat.GearInShipStatsProbe`；数据注册继续沿用这一命名约定。
+
+如果上面这两行您没听懂，也没关系，目前暂时用不上。
+
+:::
 
 ## 数据合并与覆盖
 
-MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用各自的合并逻辑，但排错时可以先遵循四条规则：
+MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用各自的合并逻辑，但排错时可以先查下列易错项：
 
-1. 把 ID 当成全局名称。
-2. 重复 ID 可能覆盖、合并或导致加载错误，结果取决于具体注册表。
-3. 把相对路径当成资源地址。
-4. 相同资源路径可能让后加载内容遮蔽先加载内容。
+1. ID 重复。
+2. 路径重复。
+3. 把 ID 当成全局名称。
+4. 把路径填成了 ID，反之亦然。
 
-::: warning 常见坑：不要复制整份原版文件
+::: warning 不要复制整份原版文件
 
-不要复制整份原版 CSV 或 JSON 后只改一行。文件内应该只包含当前 MOD 拥有的行、对象和资源，并为它们加固定前缀。
+不要复制整份原版 CSV 或 JSON 后只改一行。文件内应该只包含你希望增添的内容。
 
 :::
 
@@ -152,13 +158,13 @@ MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用�
 
 ## 日志
 
-游戏日志位于 `Starsector/starsector-core/starsector.log`，是排查问题的主要依据：MOD 是否被扫描到、加载过程发生了什么、异常和堆栈在哪，都记录在这份日志里。
+游戏日志位于 `Starsector/starsector-core/starsector.log`，包罗万象，是排查问题的主要依据。
 
 对于本实例 MOD 而言，游戏启动器扫描 MOD 时将记录 `Found mod: gear_in [...]`，关键文件解析失败时将记录 `Error loading mod from [MOD 目录]` 及异常堆栈。
 
 **本节的 "验证方案" 和 "故障分析" 都以这份日志为对照。**
 
-您可能此前在论坛上见过或用过[某些用于辅助检查日志的工具](https://www.fossic.org/thread-2751-1-1.html)，但本教程要求您直接阅读日志。作为一个合格的 Modder，您必须学会手撕日志，调试才能沿着实际错误继续进行。
+您可能此前在论坛上见过或用过[某些用于辅助检查日志的工具](https://www.fossic.org/thread-2751-1-1.html)，但本教程要求您直接阅读日志。作为一个合格的 Modder，您必须学会手撕日志，才能更有效率地找到问题。
 
 ## 验证方案
 
@@ -177,18 +183,29 @@ MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用�
 
 ## 故障分析
 
-- **启动器中没有 GearIn MOD**：`mod_info.json` 不在 MOD 的直接根目录，或文件实际名为 `mod_info.json.txt` 时，启动器不会把该目录加入 Mods 列表。确认路径恰好是 `Starsector/mods/GearIndustry/mod_info.json`，并让编辑器显示文件扩展名；重新打开启动器后，列表应出现 "齿轮工业"。
-- **日志报告 manifest 解析失败**：JSON 缺少引号、逗号或花括号，文件带 BOM、编码并非 UTF-8，或缺少 `id`、`name`、`description` 时，`starsector.log` 会记录 `Error loading mod from [MOD 目录]` 和解析堆栈。恢复本节的标准 JSON，再逐字段修改并以 UTF-8 无 BOM 保存；重启后日志不应再出现该错误，MOD 应进入列表。
-- **启动器将 MOD 标红并禁止勾选**：`gameVersion` 缺失时，启动器会提示 "Error: this mod does not specify which version of the game it requires and can not be enabled."；主版本不匹配时会显示 "Error: this mod requires a different version of the game."。已经启用的 MOD 会在下次启动时被取消勾选。将版本写为本教程使用的 `0.98a-RC8`；仅 RC 编号或小版本不同 (如 `0.98a-RC6`) 时视为完全兼容 (绿色、无警告)。
-- **添加数据后出现重复条目或错误对象**：使用 `test_ship`、`my_weapon` 等常见 ID，或复制数据后保留原 ID，会让多个来源争用同一注册表键。将 ID 改为 `GearIn_<语义名>` 形式，例如 `GearIn_artizan`，并同步全部引用；重启后不应再出现 duplicate、unknown ID 或对象替换现象。
+- **启动器中没有 GearIn MOD**：`mod_info.json` 不在 MOD 的直接根目录，或文件实际名被写成了 `mod_info.json.txt`。这个问题常见于 Windows。
+
+    - **解决方案**：确认文件恰好是 `Starsector/mods/GearIndustry/mod_info.json`。
+
+- **日志报告 manifest 解析失败**：JSON 缺少引号、逗号或花括号，文件带 BOM、编码并非 UTF-8，或缺少 `id`、`name`、`description` 时，`starsector.log` 会记录 `Error loading mod from [MOD 目录]` 和解析堆栈。
+
+    - **解决方案**：逐字检查 JSON 是否写错，并以 UTF-8 无 BOM 保存。
+
+- **启动器将 MOD 标红并禁止勾选**：`gameVersion` 缺失时，启动器会提示 "Error: this mod does not specify which version of the game it requires and can not be enabled."；主版本不匹配时会显示 "Error: this mod requires a different version of the game."。已经启用的 MOD 会在下次启动时被取消勾选。
+
+    - **解决方案**：将版本写为本教程使用的 `0.98a-RC8`。
+
+- **添加数据后出现重复条目或错误对象**：使用了 `test_ship`、`my_weapon` 等常见 ID，或复制数据后保留原 ID。非常可能导致 ID 重复。
+
+    - **解决方案**：将 ID 改为 `GearIn_<语义名>` 形式，例如 `GearIn_artizan`，并同步全部引用。
 
 ## 总结
 
-一个可加载 MOD 的最简流程是：`Starsector/mods` 下的独立根目录、根目录中的 `mod_info.json`、稳定 MOD ID、与当前游戏一致的 `gameVersion`，以及启动器和日志两处验证。
+只要在`Starsector/mods` 下的某个新建文件夹中加入正确的的 `mod_info.json`，您就完全可以开始自称为一个 Modder。
 
-这套流程一旦成立，MOD 内容 —— 无论是数据行还是 Java 入口 —— 都只是向这套已验证的目录与 ID 体系中登记对象。加载类故障也因此总能先归因到这套流程中的某一环，再向对应的使用方深入排查。
+感想如何？
 
-恭喜，您正式开始了您的 Modding 旅程。
+总而言之，恭喜，您正式开始了您的 Modding 旅程。
 
 ## 建议参考项
 

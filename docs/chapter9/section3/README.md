@@ -453,17 +453,49 @@ fleet.getFleetData().addFleetMember(member);
 
 ## 故障分析
 
-- **成员数不变且日志没有 added 行**：代码只调用了 `createFleetMember`，没有把保存态成员加入集合。使用玩家舰队的 `FleetDataAPI.addFleetMember(...)`，随后确认成员数增加。
-- **`addFleetMember` 抛出 `Attempting to add null fleet member`**：调用方把 null 传给了集合。检查自定义创建入口的返回值，确认非 null 后再入队。
-- **同一成员被加入两轮**：注册脚本缺少一次性判断，每次读档都会重新执行添加逻辑。使用 `REGISTER_MARK` 门控，连续读档后核对成员数量。
-- **重复调用 `addFleetMember` 没有任何变化**：同一对象引用已经在舰队集合中。通过 `getMembersListCopy()` 按 `getId()` 判断是否已入队。
+- **成员数不变且日志没有 added 行**：代码只调用了 `createFleetMember`，没有把保存态成员加入集合。
+
+    - **解决方案**：使用玩家舰队的 `FleetDataAPI.addFleetMember(...)`。
+
+- **`addFleetMember` 抛出 `Attempting to add null fleet member`**：调用方把 null 传给了集合。
+
+    - **解决方案**：检查自定义创建入口的返回值，确认非 null 后再入队。
+
+- **同一成员被加入两轮**：注册脚本缺少一次性判断，每次读档都会重新执行添加逻辑。
+
+    - **解决方案**：使用 `REGISTER_MARK` 门控。
+
+- **重复调用 `addFleetMember` 没有任何变化**：同一对象引用已经在舰队集合中。
+
+    - **解决方案**：通过 `getMembersListCopy()` 按 `getId()` 判断是否已入队。
+
 - **战机联队只被计为一个成员**：`getMembersListCopy()` 与 `getNumMembers()` 按联队对象计数。`getMembersListWithFightersCopy()` 按 fitted wing 槽生成成员，不按单架战机展开；封存或零 CR 联队不会展开。
-- **`getSnapshot()` 读档后为空**：snapshot 是瞬态字段，不进入存档。持久成员状态读取 `getMembersListCopy()`；快照只用于战斗前或销毁前的临时比较。
-- **修改装配后战斗中仍是旧船**：`FleetMemberAPI.setVariant` 只修改保存态，已部署实体不会跟随变化。生涯侧使用 `setVariant(variant, true, true)`，战斗实体在部署侧处理。
-- **战斗准备列表里没有低 CR 舰船**：CR 低于部署门槛，或船员比例低于默认 5%，都会让 `canBeDeployedForCombat()` 返回 false。核对 `getCR()` 与 `getCrewFraction()`，补充船员并等待 CR 恢复。
-- **封存后仍显示补给消耗和货舱容量**：封存修饰立即写入成员 stats(`setMothballed` 同步执行成员 `updateStats`)，只有舰队级求和 (补给消耗、货舱容量) 延迟到舰队同步时更新。读取 `getMembers()` 等路径会自动触发同步，无需手动 `forceSync()`。
-- **`setFlagship` 后其他成员舰长被重置**：该方法会为其他舰船设置全零属性新人，并让新旗舰使用舰队指挥官。按这一语义安排调用，不要再逐成员调用 `setCaptain` 对抗。
-- **演示日志出现但舰队没有变化**：脚本注册在错误生命周期阶段，或操作的不是当前玩家舰队。将注册放入 `onGameLoad` 的一次性判断块，并从 `Global.getSector().getPlayerFleet()` 重新取得目标。
+
+    - **解决方案**：按计数目的选择接口：联队对象数使用 `getNumMembers()`，展开成员使用 `getMembersListWithFightersCopy()`。
+
+- **`getSnapshot()` 读档后为空**：snapshot 是瞬态字段，不进入存档。
+
+    - **解决方案**：持久成员状态读取 `getMembersListCopy()`；快照只用于战斗前或销毁前的临时比较。
+
+- **修改装配后战斗中仍是旧船**：`FleetMemberAPI.setVariant` 只修改保存态，已部署实体不会跟随变化。
+
+    - **解决方案**：生涯侧使用 `setVariant(variant, true, true)`，战斗实体在部署侧处理。
+
+- **战斗准备列表里没有低 CR 舰船**：CR 低于部署门槛，或船员比例低于默认 5%，都会让 `canBeDeployedForCombat()` 返回 false。
+
+    - **解决方案**：核对 `getCR()` 与 `getCrewFraction()`，补充船员并等待 CR 恢复。
+
+- **封存后仍显示补给消耗和货舱容量**：封存修饰立即写入成员 stats(`setMothballed` 同步执行成员 `updateStats`)，只有舰队级求和 (补给消耗、货舱容量) 延迟到舰队同步时更新。
+
+    - **解决方案**：读取 `getMembers()` 等路径自动触发同步，无需手动 `forceSync()`。
+
+- **`setFlagship` 后其他成员舰长被重置**：该方法会为其他舰船设置全零属性新人，并让新旗舰使用舰队指挥官。
+
+    - **解决方案**：按这一语义安排调用，不要再逐成员调用 `setCaptain` 对抗。
+
+- **演示日志出现但舰队没有变化**：脚本注册在错误生命周期阶段，或操作的不是当前玩家舰队。
+
+    - **解决方案**：将注册放入 `onGameLoad` 的一次性判断块，并从 `Global.getSector().getPlayerFleet()` 重新取得目标。
 
 ## 总结
 

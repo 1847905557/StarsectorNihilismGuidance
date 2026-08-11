@@ -1,6 +1,7 @@
 import { Node, mergeAttributes, type Editor, type Extension } from '@tiptap/core'
 import CodeBlock from '@tiptap/extension-code-block'
 import Image from '@tiptap/extension-image'
+import { BulletList, ListItem, OrderedList } from '@tiptap/extension-list'
 import Link from '@tiptap/extension-link'
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table'
 import StarterKit from '@tiptap/starter-kit'
@@ -71,6 +72,16 @@ const normalizeAutomaticSectionList = (root: HTMLElement): void => {
   })
 }
 
+const normalizeListTightness = (root: HTMLElement): void => {
+  root.querySelectorAll('ul, ol').forEach((list) => {
+    const items = Array.from(list.children).filter((child) => child.matches('li'))
+    const tight = items.every((item) =>
+      !Array.from(item.children).some((child) => child.matches('p')),
+    )
+    list.setAttribute('data-dev-list-tight', String(tight))
+  })
+}
+
 export const normalizeEditableContent = (content: HTMLElement): string => {
   const root = content.cloneNode(true) as HTMLElement
   root.querySelectorAll('.header-anchor').forEach((node) => {
@@ -85,6 +96,7 @@ export const normalizeEditableContent = (content: HTMLElement): string => {
   normalizeCodeBlocks(root)
   normalizeContainers(root)
   normalizeAutomaticSectionList(root)
+  normalizeListTightness(root)
   return root.innerHTML
 }
 
@@ -136,7 +148,131 @@ const DevCodeBlock = CodeBlock.extend({
       ],
     ]
   },
+  addNodeView() {
+    return ({ node, editor, getPos }) => {
+      let currentNode = node
+      const dom = document.createElement('div')
+      dom.className = 'dev-edit-code'
+      const header = document.createElement('div')
+      header.className = 'dev-edit-code-header'
+      header.contentEditable = 'false'
+      const kind = document.createElement('span')
+      kind.className = 'dev-edit-code-kind'
+      kind.textContent = 'CODE'
+      const language = document.createElement('select')
+      language.className = 'dev-edit-code-language'
+      language.setAttribute('aria-label', '代码语言')
+      const commonLanguages = [
+        '',
+        'text',
+        'java',
+        'json',
+        'csv',
+        'yaml',
+        'xml',
+        'html',
+        'css',
+        'javascript',
+        'typescript',
+        'bash',
+        'powershell',
+        'ini',
+        'properties',
+        'gradle',
+        'glsl',
+      ]
+      const setLanguageOptions = (value: string) => {
+        const values = value && !commonLanguages.includes(value)
+          ? [...commonLanguages, value]
+          : commonLanguages
+        language.replaceChildren(
+          ...values.map((item) => {
+            const option = document.createElement('option')
+            option.value = item
+            option.textContent = item ? item.toUpperCase() : 'TEXT'
+            return option
+          }),
+        )
+        language.value = value
+      }
+      const highlightLabel = document.createElement('span')
+      highlightLabel.className = 'dev-edit-code-highlight-label'
+      highlightLabel.textContent = '高亮'
+      const highlights = document.createElement('input')
+      highlights.className = 'dev-edit-code-highlights'
+      highlights.type = 'text'
+      highlights.inputMode = 'numeric'
+      highlights.placeholder = '2,4,6'
+      highlights.setAttribute('aria-label', '代码高亮行')
+      const pre = document.createElement('pre')
+      const contentDOM = document.createElement('code')
+      pre.append(contentDOM)
+      header.append(kind, language, highlightLabel, highlights)
+      dom.append(header, pre)
+
+      const updateAttributes = (attributes: Record<string, unknown>) => {
+        const position = getPos()
+        if (typeof position !== 'number') return
+        editor.view.dispatch(
+          editor.state.tr.setNodeMarkup(position, undefined, {
+            ...currentNode.attrs,
+            ...attributes,
+          }),
+        )
+      }
+      const syncControls = () => {
+        const currentLanguage = String(currentNode.attrs.language ?? '')
+        if (language.value !== currentLanguage) setLanguageOptions(currentLanguage)
+        const currentHighlights = String(currentNode.attrs.highlightLines ?? '')
+        if (highlights.value !== currentHighlights) highlights.value = currentHighlights
+      }
+      setLanguageOptions(String(node.attrs.language ?? ''))
+      highlights.value = String(node.attrs.highlightLines ?? '')
+      language.addEventListener('change', () => {
+        updateAttributes({ language: language.value || null })
+      })
+      highlights.addEventListener('input', () => {
+        const value = highlights.value.trim()
+        const valid = !value || /^\d+(?:,\d+)*$/.test(value)
+        highlights.setCustomValidity(valid ? '' : '高亮行必须使用逗号分隔的正整数')
+        if (valid) updateAttributes({ highlightLines: value })
+      })
+
+      return {
+        dom,
+        contentDOM,
+        update(updatedNode) {
+          if (updatedNode.type.name !== 'codeBlock') return false
+          currentNode = updatedNode
+          syncControls()
+          return true
+        },
+        stopEvent(event) {
+          return header.contains(event.target as globalThis.Node)
+        },
+        ignoreMutation(mutation) {
+          return header.contains(mutation.target)
+        },
+      }
+    }
+  },
 })
+
+const listTightAttributes = function (this: { parent?: () => Record<string, unknown> }) {
+  return {
+    ...this.parent?.(),
+    tight: {
+      default: true,
+      parseHTML: (element: HTMLElement) => element.getAttribute('data-dev-list-tight') !== 'false',
+      renderHTML: (attributes: Record<string, unknown>) => ({
+        'data-dev-list-tight': attributes.tight === false ? 'false' : 'true',
+      }),
+    },
+  }
+}
+
+const DevBulletList = BulletList.extend({ addAttributes: listTightAttributes })
+const DevOrderedList = OrderedList.extend({ addAttributes: listTightAttributes })
 
 const alignedCellAttributes = function (this: { parent?: () => Record<string, unknown> }) {
   return {
@@ -255,8 +391,15 @@ export const createEditorExtensions = (): Extension[] => [
   StarterKit.configure({
     codeBlock: false,
     link: false,
+    listItem: false,
+    bulletList: false,
+    orderedList: false,
+    listKeymap: false,
     heading: { levels: [1, 2, 3, 4, 5, 6] },
   }),
+  ListItem,
+  DevBulletList,
+  DevOrderedList,
   DevLink.configure({ openOnClick: false }),
   DevCodeBlock.configure({ enableTabIndentation: true, tabSize: 4 }),
   Image.configure({ inline: true, allowBase64: true }),

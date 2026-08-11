@@ -524,16 +524,45 @@ return system;
 
 ## 故障分析
 
-- **超空间里没有入口，玩家无法到达**：6 参数 `initStar` 只生成锚点，不生成跳跃点。调用 `autogenerateHyperspaceJumpPoints(true, false)`，随后在超空间地图核对入口。
-- **实体查得到但地图上不显示**：`addCustomEntity` 后没有设置位置，实体仍在 (0,0)。创建后立即调用 `setFixedLocation` 或 `setCircularOrbit`。
-- **token 调用 `setFixedLocation` 后完全不动**：`LocationToken.setFixedLocation` 是空实现。使用 `setLocation` 写坐标；需要轨道时先 `addEntity`，再调用 `setCircularOrbit`。
-- **`isAlive()` 对 token 始终返回 true**：token 的实现不反映容器归属。访问状态使用 `isInCurrentLocation()` 或 `getContainingLocation()`；普通实体的容器持有才使用 `isAlive()`。
-- **`getEntityById` 返回 null，但实体仍然存在**：最常见的原因是代码复用了过期结果 (实体被移除后旧 ID 不再命中)。查询 ID 大小写不一致不会导致 null—— 缓存未命中后还有大小写不敏感的回退扫描 (见上)。ID 使用常量并逐字一致；每次需要时重新查询。
-- **删除星系时抛出 `ConcurrentModificationException`**：CME 来自引擎对活星系列表的遍历 (非当前地点的脚本在引擎推进循环内调用 `removeStarSystem` 时触发)；脚本自己遍历 `getStarSystems()`(返回副本) 不会抛。改用 `removeStarSystemNextFrame`，让引擎在遍历结束后处理删除。
-- **地点级判据让所有实体都像在当前地点**：`location.isCurrentLocation()` 只判断地点本身。判断实体时改用 `entity.isInCurrentLocation()`。
-- **离开星系后脚本日志变慢且 `amount` 跳变**：非当前地点每 60 帧合并推进一次。实时逻辑挂在引擎级脚本，地点级脚本只处理该地点内的行为。
-- **读档后脚本中的地点引用行为错乱**：字段保存了瞬态的当前地点或 UI 引用。只保存持久对象与可序列化标量，引擎入口每次通过 `Global.getSector()` 获取。
-- **战斗期间实体和地点状态停止变化**：战斗会暂停生涯推进，因此访问状态和 `GearIn loc` 日志同时冻结。返回生涯后应自动恢复。
+- **超空间里没有入口，玩家无法到达**：6 参数 `initStar` 只生成锚点，不生成跳跃点。
+
+    - **解决方案**：调用 `autogenerateHyperspaceJumpPoints(true, false)`。
+
+- **实体查得到但地图上不显示**：`addCustomEntity` 后没有设置位置，实体仍在 (0,0)。
+
+    - **解决方案**：创建后立即调用 `setFixedLocation` 或 `setCircularOrbit`。
+
+- **token 调用 `setFixedLocation` 后完全不动**：`LocationToken.setFixedLocation` 是空实现。
+
+    - **解决方案**：使用 `setLocation` 写坐标；需要轨道时先 `addEntity`，再调用 `setCircularOrbit`。
+
+- **`isAlive()` 对 token 始终返回 true**：token 的实现不反映容器归属。
+
+    - **解决方案**：访问状态使用 `isInCurrentLocation()` 或 `getContainingLocation()`；普通实体的容器持有才使用 `isAlive()`。
+
+- **`getEntityById` 返回 null，但实体仍然存在**：最常见的原因是代码复用了过期结果 (实体被移除后旧 ID 不再命中)。查询 ID 大小写不一致不会导致 null—— 缓存未命中后还有大小写不敏感的回退扫描 (见上)。
+
+    - **解决方案**：ID 使用常量并逐字一致；每次需要时重新查询。
+
+- **删除星系时抛出 `ConcurrentModificationException`**：CME 来自引擎对活星系列表的遍历 (非当前地点的脚本在引擎推进循环内调用 `removeStarSystem` 时触发)；脚本自己遍历 `getStarSystems()`(返回副本) 不会抛。
+
+    - **解决方案**：改用 `removeStarSystemNextFrame`，让引擎在遍历结束后处理删除。
+
+- **地点级判据让所有实体都像在当前地点**：`location.isCurrentLocation()` 只判断地点本身。
+
+    - **解决方案**：判断实体时改用 `entity.isInCurrentLocation()`。
+
+- **离开星系后脚本日志变慢且 `amount` 跳变**：非当前地点每 60 帧合并推进一次。
+
+    - **解决方案**：实时逻辑挂在引擎级脚本，地点级脚本只处理该地点内的行为。
+
+- **读档后脚本中的地点引用行为错乱**：字段保存了瞬态的当前地点或 UI 引用。
+
+    - **解决方案**：只保存持久对象与可序列化标量，引擎入口每次通过 `Global.getSector()` 获取。
+
+- **战斗期间实体和地点状态停止变化**：战斗会暂停生涯推进，因此访问状态和 `GearIn loc` 日志同时冻结，属预期行为。
+
+    - **解决方案**：战斗期需要观察时，从战斗侧回调读取实体和地点状态。
 
 ## 总结
 

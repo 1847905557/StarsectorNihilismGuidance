@@ -538,19 +538,57 @@ sector.getImportantPeople().addPerson(person);
 
 ## 故障分析
 
-- **读档后人物消失**：人物只保存在脚本局部变量中，没有进入持久集合。将人物挂入成员 captain、市场 people 与 comm、important people 或 officer roster；保存并读档后确认同一身份仍可取得。
-- **使用人格 API 时出现 `NullPointerException`**：`setPersonality` 使用了 `personalities.csv` 中不存在的 ID。改用已注册的 personality ID，确认 `getPersonalityAPI()` 返回非 null 后再调用其方法。
-- **`adjustRelationship` 返回 `false`**：三参版的 delta 为 `0`，或调整方向被 limit 拦截，因此关系值没有变化。设置档位使用 `setRelationship`，限制上界或下界使用 `ensureAtBest`、`ensureAtWorst`；随后重新读取关系值与档位。
-- **关系档位没有随数值变化**：关系值尚未越过 `RepLevel` 的分段边界。需要确定档位时直接传入 `RepLevel` 调用 `setRelationship`，再同时记录数值和档位复验。
-- **市场人物没有出现在通信目录**：`market.addPerson` 只加入市场 roster。再调用 `market.getCommDirectory().addPerson`，重开通信目录确认联系人可见。
-- **军官获得的 XP 始终为零**：人物 memory 中的 `$isMercenary` 为 true，`OfficerDataAPI.addXP` 会直接返回。解除佣兵标记或改用普通军官，再比较调用前后的 XP。
-- **军官技能选项发生变化**：展示 `getSkillPicks()` 后又调用了 `makeSkillPicks()`，旧选项被清空并重掷。只在生成阶段调用一次，并在同一个 `OfficerDataAPI` 上复查列表。
-- **任务始终选不到指定人物**：人物以相同 reason 被 checkout 后没有归还，筛选器会拒绝再次选取。调用 `returnPerson(person, reasonId)`，再运行一次选人流程。
-- **演示人物在读档后仍然存在**：异常发生在 `addPerson` 与 `removePerson` 之间，而 `REGISTER_MARK` 已阻止演示重放。补齐同帧清理并清除该标记，再运行、保存和读档确认没有残留。
-- **人物好感与势力声望不一致**：代码混用了人物的 `RelationshipAPI` 与势力的 `FactionAPI` 关系。按界面对象选择对应接口，再分别读取两侧数值核对。
-- **旗舰舰长始终显示为玩家**：`FleetMemberAPI.getCaptain()` 对玩家旗舰固定返回玩家人物。将自定义舰长放到非旗舰成员，并从该成员重新读取舰长。
-- **读取 memory 时回调数量异常**：每帧调用 `person.getMemory()` 会触发人物事实更新插件。纯读取改用 `getMemoryWithoutUpdate()`，再比较日志频率和帧耗时。
-- **读档后默认舰长对象发生变化**：未显式设置的低等级默认舰长不会作为稳定人物保存。需要稳定身份时调用 `setCaptain` 写入自定义人物，读档后再核对人物 ID。
+- **读档后人物消失**：人物只保存在脚本局部变量中，没有进入持久集合。
+
+    - **解决方案**：将人物挂入成员 captain、市场 people 与 comm、important people 或 officer roster。
+
+- **使用人格 API 时出现 `NullPointerException`**：`setPersonality` 使用了 `personalities.csv` 中不存在的 ID。
+
+    - **解决方案**：改用已注册的 personality ID，确认 `getPersonalityAPI()` 返回非 null 后再调用其方法。
+
+- **`adjustRelationship` 返回 `false`**：三参版的 delta 为 `0`，或调整方向被 limit 拦截，因此关系值没有变化。
+
+    - **解决方案**：设置档位使用 `setRelationship`，限制上界或下界使用 `ensureAtBest`、`ensureAtWorst`。
+
+- **关系档位没有随数值变化**：关系值尚未越过 `RepLevel` 的分段边界。
+
+    - **解决方案**：需要确定档位时直接传入 `RepLevel` 调用 `setRelationship`。
+
+- **市场人物没有出现在通信目录**：`market.addPerson` 只加入市场 roster。
+
+    - **解决方案**：再调用 `market.getCommDirectory().addPerson`。
+
+- **军官获得的 XP 始终为零**：人物 memory 中的 `$isMercenary` 为 true，`OfficerDataAPI.addXP` 会直接返回。
+
+    - **解决方案**：解除佣兵标记或改用普通军官。
+
+- **军官技能选项发生变化**：展示 `getSkillPicks()` 后又调用了 `makeSkillPicks()`，旧选项被清空并重掷。
+
+    - **解决方案**：只在生成阶段调用一次。
+
+- **任务始终选不到指定人物**：人物以相同 reason 被 checkout 后没有归还，筛选器会拒绝再次选取。
+
+    - **解决方案**：调用 `returnPerson(person, reasonId)`，再运行一次选人流程。
+
+- **演示人物在读档后仍然存在**：异常发生在 `addPerson` 与 `removePerson` 之间，而 `REGISTER_MARK` 已阻止演示重放。
+
+    - **解决方案**：补齐同帧清理并清除该标记。
+
+- **人物好感与势力声望不一致**：代码混用了人物的 `RelationshipAPI` 与势力的 `FactionAPI` 关系。
+
+    - **解决方案**：按界面对象选择对应接口。
+
+- **旗舰舰长始终显示为玩家**：`FleetMemberAPI.getCaptain()` 对玩家旗舰固定返回玩家人物。
+
+    - **解决方案**：将自定义舰长放到非旗舰成员。
+
+- **读取 memory 时回调数量异常**：每帧调用 `person.getMemory()` 会触发人物事实更新插件。
+
+    - **解决方案**：纯读取改用 `getMemoryWithoutUpdate()`。
+
+- **读档后默认舰长对象发生变化**：未显式设置的低等级默认舰长不会作为稳定人物保存。
+
+    - **解决方案**：需要稳定身份时调用 `setCaptain` 写入自定义人物。
 
 ## 总结
 

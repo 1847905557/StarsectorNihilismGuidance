@@ -461,16 +461,45 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ## 故障分析
 
-- **开火完全无声，但其他音效正常**：依次核对 `.wpn` 的 `fireSoundTwo`、`sounds.json` 条目和 OGG 路径。三处 ID 区分大小写；修正后重新开火，应能听到注册声音。
-- **开火瞬间抛出 NPE**：弹道/导弹武器优先核对 `fireSoundOne`；光束武器核对两个声音字段。同步注册对应 ID，或改回已存在的原版 ID。
-- **系统激活时没有循环声 (含 `loopSound` 未注册的情况)**：四个 `.system` 声音字段都有空值守卫；未注册 ID 经注册表解析为 null，与留空同等对待 —— 循环声静默，不抛 NPE。核对 `loopSound` 与循环素材；两种声音都缺失时，同时核对 `useSound`。
-- **系统激活时没有循环声 (续)**：`.system` 的 `loopSound` 指向未注册 ID 时，四个字段的空值守卫会把未注册与留空同等对待 —— 循环声静默，不会抛 NPE。补齐声音注册后重新激活系统。
-- **`playLoop` 不响或断断续续**：每帧没有续播、`playingEntity` 不稳定、距离超过战斗内 1800 / 生涯大地图 2500 的阈值或 `volume <= 0` 都会中断循环。把调用放进每帧回调，并持续传入同一个实体后复验。
-- **`playUISound` 报 `Sound set with id [...]  not found`**：声音 ID 未注册或大小写不一致。核对注册条目后再次触发 UI 声音。
-- **部署舰船时在 `ShipEngineControllerAPI` 抛出 NPE**：hull style 引用了未注册的引擎声音集。本节三个声音 ID 均不用于引擎，出现该堆栈时直接检查风格文件。
-- **市场音乐仍是原版**：确认 `settings.json` 的 `plugins.musicPlugin` 已合并为正确类名，类继承 `MusicPlayerPluginImpl`，并检查市场 `$musicSetId` 是否覆盖了选曲结果。修正后重新进入市场。
-- **`playCustomMusic` 后没有音乐**：音乐 ID 必须注册在 `music` 分类，普通音效条目不会被音乐播放器识别。补齐分类后使用整数 fade 参数再次播放。
-- **`playCustomMusic` 后日志出现 NPE**：音乐 ID 没有解析到有效音乐条目。核对 `music` 分类和 ID 大小写；需要阻止默认音乐立即换回时，再设置 `setSuspendDefaultMusicPlayback(true)`。
+- **开火完全无声，但其他音效正常**：`fireSoundTwo`、`sounds.json` 条目和 OGG 路径三处 ID 区分大小写。
+
+    - **解决方案**：依次核对三处 ID，修正后重新开火。
+
+- **开火瞬间抛出 NPE**：弹道/导弹武器优先核对 `fireSoundOne`；光束武器核对两个声音字段。
+
+    - **解决方案**：同步注册对应 ID，或改回已存在的原版 ID。
+
+- **系统激活时没有循环声 (含 `loopSound` 未注册的情况)**：四个 `.system` 声音字段都有空值守卫；未注册 ID 经注册表解析为 null，与留空同等对待 —— 循环声静默，不抛 NPE。
+
+    - **解决方案**：核对 `loopSound` 与循环素材；两种声音都缺失时，同时核对 `useSound`。
+
+- **系统激活时没有循环声 (续)**：`.system` 的 `loopSound` 指向未注册 ID 时，四个字段的空值守卫会把未注册与留空同等对待 —— 循环声静默，不会抛 NPE。
+
+    - **解决方案**：补齐声音注册后重新激活系统。
+
+- **`playLoop` 不响或断断续续**：每帧没有续播、`playingEntity` 不稳定、距离超过战斗内 1800 / 生涯大地图 2500 的阈值或 `volume <= 0` 都会中断循环。
+
+    - **解决方案**：把调用放进每帧回调，并持续传入同一个实体。
+
+- **`playUISound` 报 `Sound set with id [...]  not found`**：声音 ID 未注册或大小写不一致。
+
+    - **解决方案**：核对注册条目后再次触发 UI 声音。
+
+- **部署舰船时在 `ShipEngineControllerAPI` 抛出 NPE**：hull style 引用了未注册的引擎声音集。本节三个声音 ID 均不用于引擎。
+
+    - **解决方案**：出现该堆栈时直接检查风格文件。
+
+- **市场音乐仍是原版**：`plugins.musicPlugin` 未指向正确类名，或市场 `$musicSetId` 覆盖了选曲结果。
+
+    - **解决方案**：确认 `settings.json` 的 `plugins.musicPlugin` 已合并为正确类名，类继承 `MusicPlayerPluginImpl`，检查市场 `$musicSetId`，修正后重新进入市场。
+
+- **`playCustomMusic` 后没有音乐**：音乐 ID 必须注册在 `music` 分类，普通音效条目不会被音乐播放器识别。
+
+    - **解决方案**：补齐分类后使用整数 fade 参数再次播放。
+
+- **`playCustomMusic` 后日志出现 NPE**：音乐 ID 没有解析到有效音乐条目。
+
+    - **解决方案**：核对 `music` 分类和 ID 大小写；需要阻止默认音乐立即换回时，再设置 `setSuspendDefaultMusicPlayback(true)`。
 
 ## 总结
 

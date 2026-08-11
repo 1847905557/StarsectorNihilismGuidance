@@ -372,14 +372,37 @@ public void optionSelected(String optionText, Object optionData) {
 
 ## 故障分析
 
-- **`showInteractionDialog` 返回 false 且对话框没有出现**：生涯 UI 已有对话框时，后续打开请求会被拒绝。调用前检查 `CampaignUIAPI.isShowingDialog()`，并记录返回值；在 UI 空闲时重试，日志应显示 `shown=true`，对话框应正常出现。
-- **日志已有情报记录但 Intel 页没有条目**：`queueIntel` 会让情报等待通信中继可见性检查，舰队不在范围内且未设置 `forceAddNextFrame` 时，`getIntel()` 暂时查不到它。需要立即显示时改用 `addIntel`；需要延迟可见时配置 `setPostingLocation` 和 `setPostingRangeLY`。满足所选条件后，条目应进入 Intel 页。
-- **情报始终不消失**：直接实现 `IntelInfoPlugin` 而未提供结束语义时，情报会一直保留在页面和存档中。继承 `BaseIntelPlugin`，并用 `endAfterDelay()` 或 `endImmediately()` 结束；等待清理后，`shouldRemoveIntel()` 应返回 `true`，条目应从页面消失。
-- **`getIntelTags(map)` 抛出 NPE**：该方法可能在 `map` 为 null 时调用，直接解引用 `map.getPlayerFleet()` 会使地图提示或 Intel 页渲染中止。先判 null，或调用已处理 null 的 `super.getIntelTags(map)`；重新打开页面后不应再出现 NPE。
-- **点击对话框选项后没有反应**：`optionSelected` 的 `optionText` 是显示文本，`optionData` 才是 `addOption` 传入的 ID。改用 `OPTION_FACTION.equals(optionData)` 判断分支；再次点击后，文本面板和日志都应出现对应内容。
-- **对话框无法关闭**：未绑定关闭选项或 `setOptionOnEscape` 时，点击关闭和 ESC 都无法进入退出分支。用 `setOptionOnEscape(text, optionId)` 绑定 ESC，并在关闭回调中调用 `dismiss()`；按钮和 ESC 应当关闭同一个对话框。
-- **游戏在进入生涯前因服务注册中止**：`onApplicationLoad` 阶段的 `Global.getSector()` 仍为 null，在此访问生涯服务会抛出 NPE。把注册移到 `onGameLoad` 的一次性注册判断内；重启并载入存档后，脚本应正常推进且日志只记录一次注册。
-- **`MessageIntel` 点击后跳转到意外页面**：把纯消息绑定 `MessageClickAction` 或加入情报管理器，会赋予它不符合用途的交互路径。纯消息只通过 `CampaignUIAPI.addMessage(intel)` 投入左下消息区；需要 Intel 页面条目时改用 `BaseIntelPlugin` 子类和 `addIntel`。复验时，纯消息应留在消息区且不发生页面跳转。
+- **`showInteractionDialog` 返回 false 且对话框没有出现**：生涯 UI 已有对话框时，后续打开请求会被拒绝。
+
+    - **解决方案**：调用前检查 `CampaignUIAPI.isShowingDialog()`，并记录返回值，在 UI 空闲时重试。
+
+- **日志已有情报记录但 Intel 页没有条目**：`queueIntel` 会让情报等待通信中继可见性检查，舰队不在范围内且未设置 `forceAddNextFrame` 时，`getIntel()` 暂时查不到它。
+
+    - **解决方案**：需要立即显示时改用 `addIntel`；需要延迟可见时配置 `setPostingLocation` 和 `setPostingRangeLY`。
+
+- **情报始终不消失**：直接实现 `IntelInfoPlugin` 而未提供结束语义时，情报会一直保留在页面和存档中。
+
+    - **解决方案**：继承 `BaseIntelPlugin`，并用 `endAfterDelay()` 或 `endImmediately()` 结束。
+
+- **`getIntelTags(map)` 抛出 NPE**：该方法可能在 `map` 为 null 时调用，直接解引用 `map.getPlayerFleet()` 会使地图提示或 Intel 页渲染中止。
+
+    - **解决方案**：先判 null，或调用已处理 null 的 `super.getIntelTags(map)`。
+
+- **点击对话框选项后没有反应**：`optionSelected` 的 `optionText` 是显示文本，`optionData` 才是 `addOption` 传入的 ID。
+
+    - **解决方案**：改用 `OPTION_FACTION.equals(optionData)` 判断分支。
+
+- **对话框无法关闭**：未绑定关闭选项或 `setOptionOnEscape` 时，点击关闭和 ESC 都无法进入退出分支。
+
+    - **解决方案**：用 `setOptionOnEscape(text, optionId)` 绑定 ESC，并在关闭回调中调用 `dismiss()`。
+
+- **游戏在进入生涯前因服务注册中止**：`onApplicationLoad` 阶段的 `Global.getSector()` 仍为 null，在此访问生涯服务会抛出 NPE。
+
+    - **解决方案**：把注册移到 `onGameLoad` 的一次性注册判断内。
+
+- **`MessageIntel` 点击后跳转到意外页面**：把纯消息绑定 `MessageClickAction` 或加入情报管理器，会赋予它不符合用途的交互路径。
+
+    - **解决方案**：纯消息只通过 `CampaignUIAPI.addMessage(intel)` 投入左下消息区；需要 Intel 页面条目时改用 `BaseIntelPlugin` 子类和 `addIntel`。
 
 ## 总结
 

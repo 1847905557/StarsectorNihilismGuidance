@@ -446,17 +446,49 @@ if (!sector.getListenerManager().hasListenerOfClass(
 
 ## 故障分析
 
-- **监听器没有产生任何日志**：对象没有加入 sector 或 `ListenerManagerAPI` 的注册表。把注册放在 `onGameLoad` 或 `onNewGame`，重新进档后触发一次对应事件。
-- **`onApplicationLoad` 抛出空指针异常**：该阶段尚未创建 sector，注册代码解引用了 `Global.getSector()`。将生涯监听器注册移到游戏载入回调，重启后确认应用加载完成。
-- **同一事件回调两次**：对象同时进入两条监听通道，或读档时重复注册。只保留一条通道并使用独立 `REGISTER_MARK`；连续读档后确认每次事件只有一条日志。
-- **读档后事件不再触发**：transient 监听器在读档时被清空。载入回调中用 `hasListenerOfClass` 判空补注册，再触发事件确认日志恢复。
-- **脚本结束后事件仍在触发**：`isDone()` 只移除脚本，没有清理监听器注册。到期时显式调用 `removeListener`，确认自停日志之后不再出现事件日志。
-- **超时监听器迟迟不移除**：`daysToKeep` 使用游戏天，并在暂停期间停止扣减。按游戏天设置期限，恢复推进后确认监听器到期消失。
-- **生命周期脚本第一帧就消失**：`isDone()` 初始返回 true，清理监听器的 `advance` 路径没有执行。让完成标记初始为 false，再确认脚本先推进、到期后成对移除监听器。
-- **舰队事件日志持续刷屏**：回调接收了所有 AI 舰队事件。按 `fleet.isPlayerFleet()`、势力 ID 或业务条件过滤，再观察日志只保留目标舰队。
-- **玩家战斗次数偏高**：统计使用了反映战斗过程的 `reportBattleOccurred`。玩家结算改用 `reportPlayerEngagement` 与 `didPlayerWin()`；重跑一场战斗并核对计数只增加一次。
-- **市场业务执行两次**：同一逻辑分别注册为 `CampaignEventListener` 和 `ColonyInteractionListener`。为该业务选择一个通道，或明确拆分职责；再次打开市场确认动作只执行一次。
-- **旧存档始终没有监听器**：注册复用了已置位的其他功能标记。为监听器使用独立 `REGISTER_MARK`，载入旧档后确认标记和监听器同时存在。
+- **监听器没有产生任何日志**：对象没有加入 sector 或 `ListenerManagerAPI` 的注册表。
+
+    - **解决方案**：把注册放在 `onGameLoad` 或 `onNewGame`。
+
+- **`onApplicationLoad` 抛出空指针异常**：该阶段尚未创建 sector，注册代码解引用了 `Global.getSector()`。
+
+    - **解决方案**：将生涯监听器注册移到游戏载入回调，重启。
+
+- **同一事件回调两次**：对象同时进入两条监听通道，或读档时重复注册。
+
+    - **解决方案**：只保留一条通道并使用独立 `REGISTER_MARK`。
+
+- **读档后事件不再触发**：transient 监听器在读档时被清空。
+
+    - **解决方案**：载入回调中用 `hasListenerOfClass` 判空补注册。
+
+- **脚本结束后事件仍在触发**：`isDone()` 只移除脚本，没有清理监听器注册。
+
+    - **解决方案**：到期时显式调用 `removeListener`。
+
+- **超时监听器迟迟不移除**：`daysToKeep` 使用游戏天，并在暂停期间停止扣减。
+
+    - **解决方案**：按游戏天设置期限。
+
+- **生命周期脚本第一帧就消失**：`isDone()` 初始返回 true，清理监听器的 `advance` 路径没有执行。
+
+    - **解决方案**：让完成标记初始为 false，到期后成对移除监听器。
+
+- **舰队事件日志持续刷屏**：回调接收了所有 AI 舰队事件。
+
+    - **解决方案**：按 `fleet.isPlayerFleet()`、势力 ID 或业务条件过滤。
+
+- **玩家战斗次数偏高**：统计使用了反映战斗过程的 `reportBattleOccurred`。
+
+    - **解决方案**：玩家结算改用 `reportPlayerEngagement` 与 `didPlayerWin()`。
+
+- **市场业务执行两次**：同一逻辑分别注册为 `CampaignEventListener` 和 `ColonyInteractionListener`。
+
+    - **解决方案**：为该业务选择一个通道，或明确拆分职责。
+
+- **旧存档始终没有监听器**：注册复用了已置位的其他功能标记。
+
+    - **解决方案**：为监听器使用独立 `REGISTER_MARK`。
 
 ## 总结
 

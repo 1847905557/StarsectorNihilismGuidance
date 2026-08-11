@@ -564,14 +564,37 @@ for (DamagingProjectileAPI p : engine.getProjectiles()) { report(p); }
 
 ## 故障分析
 
-- **导弹被统计两次**：`getProjectiles()` 已包含导弹和光束脉冲，`getMissiles()` 是导弹子集；叠加两个集合会让计数虚高。总数只使用 `getProjectiles()`，需要导弹字段时再查 `getMissiles()`；重新发射测试后，统计值应与实际对象数一致。
-- **武器数值在所有同 ID 实例间漂移**：直接调用 `weapon.getSpec().setMaxAmmo(...)` 会修改共享 spec，并跨战斗影响同类武器。先调用 `ensureClonedSpec()` 切到私有克隆，再修改；重新开两场战斗，只有目标实例的弹药值应变化。
-- **`onFire` 或 `onHit` 方法没有执行**：类实现接口并不等于数据实例已绑定，`.proj` 缺少 `onFireEffect` 或 `onHitEffect` 时方法会静默失效。填入完整类名并重启；若类名错误，日志会出现 `Problem loading class [...]`，修正后开火和命中日志应出现。
-- **导弹命中目标却没有伤害**：导弹可能仍在 `armingTime` 内，熄火后 `armedWhileFizzling=false`，或淡出期间 `reduceDamageWhileFading` 把伤害降到接近 0。核对 spec 字段和命中时刻，用 `MissileAPI.isArmed()` 逐帧确认；在已装填且未淡出时命中，伤害和命中粒子应出现。
-- **EMP 电弧命中后导弹立即熄火**：默认 `empResistance=0` 时，非 EMP 伤害的 EMP 电弧会直接调用 `flameOut()`，导弹失去制导并坠落。需要抗性时设置 `setEmpResistance(n)`；重新受击后，抗性值大于 0 的导弹应继续飞行，而 EMP 伤害仍按原规则结算。
-- **光束逻辑继续使用上一帧目标**：把 `beam.getDamageTarget()` 存进字段跨帧后，旧目标即使死亡或离开射线，本帧仍会被处理。只在 `BeamEffectPlugin.advance` 当前帧读取 `didDamageThisFrame` 和 `getDamageTarget()`；目标离开射线后，日志应立即显示空目标。
-- **伤害修改不生效或残留到下一次攻击**：直接调用 `damage.setDamage(x)`，或返回的 modifier ID 与实际修改 ID 不一致，会绕过引擎的应用和还原流程。只使用 `damage.getModifier().modify*(id, ...)` 并返回同一 ID；重放淡出射弹和连续光束，乘数应按本次攻击独立生效。
-- **射弹按预期命中发射舰**：正常射弹不会命中 source，只有 `HITS_SHIPS_AND_ASTEROIDS` 碰撞类、熄火导弹和 `MISSILE_FF` 爆炸弹等豁免路径可能回砸。先确认碰撞类和 `DamagingProjectileAPI.getSource()`，需要回砸时明确使用相应豁免；测试后命中关系应符合碰撞类定义。
+- **导弹被统计两次**：`getProjectiles()` 已包含导弹和光束脉冲，`getMissiles()` 是导弹子集；叠加两个集合会让计数虚高。
+
+    - **解决方案**：总数只使用 `getProjectiles()`，需要导弹字段时再查 `getMissiles()`。
+
+- **武器数值在所有同 ID 实例间漂移**：直接调用 `weapon.getSpec().setMaxAmmo(...)` 会修改共享 spec，并跨战斗影响同类武器。
+
+    - **解决方案**：先调用 `ensureClonedSpec()` 切到私有克隆，再修改。
+
+- **`onFire` 或 `onHit` 方法没有执行**：类实现接口并不等于数据实例已绑定，`.proj` 缺少 `onFireEffect` 或 `onHitEffect` 时方法会静默失效。
+
+    - **解决方案**：填入完整类名并重启；若类名错误，日志会出现 `Problem loading class [...]`，据此修正。
+
+- **导弹命中目标却没有伤害**：导弹可能仍在 `armingTime` 内，熄火后 `armedWhileFizzling=false`，或淡出期间 `reduceDamageWhileFading` 把伤害降到接近 0。
+
+    - **解决方案**：核对 spec 字段和命中时刻，用 `MissileAPI.isArmed()` 逐帧确认，在已装填且未淡出时命中。
+
+- **EMP 电弧命中后导弹立即熄火**：默认 `empResistance=0` 时，非 EMP 伤害的 EMP 电弧会直接调用 `flameOut()`，导弹失去制导并坠落。
+
+    - **解决方案**：需要抗性时设置 `setEmpResistance(n)`。
+
+- **光束逻辑继续使用上一帧目标**：把 `beam.getDamageTarget()` 存进字段跨帧后，旧目标即使死亡或离开射线，本帧仍会被处理。
+
+    - **解决方案**：只在 `BeamEffectPlugin.advance` 当前帧读取 `didDamageThisFrame` 和 `getDamageTarget()`。
+
+- **伤害修改不生效或残留到下一次攻击**：直接调用 `damage.setDamage(x)`，或返回的 modifier ID 与实际修改 ID 不一致，会绕过引擎的应用和还原流程。
+
+    - **解决方案**：只使用 `damage.getModifier().modify*(id, ...)` 并返回同一 ID。
+
+- **射弹按预期命中发射舰**：正常射弹不会命中 source，只有 `HITS_SHIPS_AND_ASTEROIDS` 碰撞类、熄火导弹和 `MISSILE_FF` 爆炸弹等豁免路径可能回砸。
+
+    - **解决方案**：先确认碰撞类和 `DamagingProjectileAPI.getSource()`，需要回砸时明确使用相应豁免。
 
 ## 总结
 

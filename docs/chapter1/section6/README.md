@@ -286,13 +286,33 @@
 
 ## 故障分析
 
-- **游戏加载时报 `Weapon spec [<id>] not found!`**：`builtInWeapons` 中的武器 ID 不在 `weapon_data.csv` 注册表，或拼写、大小写不一致。装配构建会立即解析该 ID；统一 CSV 的 `id` 列后重启，启动和装配构建都应越过该错误。
-- **部署时报 `slot id [<槽位>] not found for weapon [<武器>]`**：`builtInWeapons` 的键不是真实槽位 ID，或槽位片段与该键不一致。舰船生成时会检查每个已装配槽位；把两处 ID 改成逐字符一致后重新部署，武器应挂到目标槽位。
-- **部署时抛 `Hullmod <id> not found!`**：`builtInMods` 的船插 ID 不存在于 `hull_mods.csv`。装配构建阶段不会校验，错误会在舰船生成时由 `getAllMods()` 抛出；补齐或改正 `id` 后重启，部署应完成。
-- **内置战机甲板静默为空**：`builtInWings` 中的战机 ID 不存在于 `wing_data.csv`，解析失败时甲板不会生成联队。核对 wing ID 并重新部署航母，日志和甲板列表应出现该联队。
-- **内置插件出现在可拆卸列表或 OP 计算中**：`.ship` 键名拼错 (例如写成 `builtInWeapon` 而不是 `builtInWeapons`) 时，内置内容会被静默忽略。改正键名后重启装配界面，内置武器、船插和战机应恢复不可拆卸且不计 OP。
-- **战机内置武器不转动或不追踪**：战机内置槽位不会提供正常武器的装配行为。取消内置槽位，改为正常槽位并在 `.variant` 中装配；重新生成联队后，武器应按战机目标转动和追踪。
-- **装饰武器仍被 AI 开火或计入面板**：槽位 `type` 不是 `DECORATIVE`，或武器 `.wpn` 的 `"type": "DECORATIVE"` 不一致。两处都改为装饰类型后重新载入，武器应被 AI 和面板统计跳过。
+- **游戏加载时报 `Weapon spec [<id>] not found!`**：`builtInWeapons` 中的武器 ID 不在 `weapon_data.csv` 注册表，或拼写、大小写不一致。装配构建会立即解析该 ID。
+
+    - **解决方案**：统一 CSV 的 `id` 列后重启。
+
+- **部署时报 `slot id [<槽位>] not found for weapon [<武器>]`**：`builtInWeapons` 的键不是真实槽位 ID，或槽位片段与该键不一致。舰船生成时会检查每个已装配槽位。
+
+    - **解决方案**：把两处 ID 改成逐字符一致后重新部署。
+
+- **部署时抛 `Hullmod <id> not found!`**：`builtInMods` 的船插 ID 不存在于 `hull_mods.csv`。装配构建阶段不会校验，错误会在舰船生成时由 `getAllMods()` 抛出。
+
+    - **解决方案**：补齐或改正 `id` 后重启。
+
+- **内置战机甲板静默为空**：`builtInWings` 中的战机 ID 不存在于 `wing_data.csv`，解析失败时甲板不会生成联队。
+
+    - **解决方案**：核对 wing ID 并重新部署航母。
+
+- **内置插件出现在可拆卸列表或 OP 计算中**：`.ship` 键名拼错 (例如写成 `builtInWeapon` 而不是 `builtInWeapons`) 时，内置内容会被静默忽略。
+
+    - **解决方案**：改正键名后重启。
+
+- **战机内置武器不转动或不追踪**：战机内置槽位不会提供正常武器的装配行为。
+
+    - **解决方案**：取消内置槽位，改为正常槽位并在 `.variant` 中装配，再重新生成联队。
+
+- **装饰武器仍被 AI 开火或计入面板**：槽位 `type` 不是 `DECORATIVE`，或武器 `.wpn` 的 `"type": "DECORATIVE"` 不一致。
+
+    - **解决方案**：两处都改为装饰类型后重新载入。
 
 ## 总结
 

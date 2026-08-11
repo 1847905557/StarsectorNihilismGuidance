@@ -386,13 +386,33 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 
 ## 故障分析
 
-- **调用 `getMothballedShips()` 时抛出 NPE**：该字段尚未初始化。读取前调用 `initMothballedShips(factionId)`；`addMothballedShip` 会自动初始化。
-- **货物数量已经回滚，但栈数量仍然偏多**：减空的栈会留下 `NULL_STACK` 占位。数量读取 `getSupplies()` 或 `getFuel()`，需要清理占位时调用 `removeEmptyStacks()`。
-- **直接修改关系后没有声望提示**：`adjustRelationship` 是原始写入，不触发玩家声望监听。玩家声望变化使用 `SectorAPI.adjustPlayerReputation`。
-- **关系数值超出预期**：直接写入会把结果钳位到 `[-1,1]`。记录原值并精确回滚，复验时读取最终关系值。
-- **读档后移除的蓝图重新出现**：`removeKnownShip` 的移除清单不随存档保存。将清单写入 persistent data，每次读档重新移除并调用 `clearShipRoleCache()`。
-- **演示日志出现但游戏内没有效果**：注册点或操作目标错误。将注册放入 `onGameLoad` 的持久标记块，并在写入后读取同一对象验证结果。
-- **演示脚本只执行一段**：某个 `addScript` 块缺失，或 `REGISTER_MARK` 与调用点不一致。恢复注册块并统一键名，读档后核对所有日志段。
+- **调用 `getMothballedShips()` 时抛出 NPE**：该字段尚未初始化。
+
+    - **解决方案**：读取前调用 `initMothballedShips(factionId)`。
+
+- **货物数量已经回滚，但栈数量仍然偏多**：减空的栈会留下 `NULL_STACK` 占位。
+
+    - **解决方案**：数量读取 `getSupplies()` 或 `getFuel()`，需要清理占位时调用 `removeEmptyStacks()`。
+
+- **直接修改关系后没有声望提示**：`adjustRelationship` 是原始写入，不触发玩家声望监听。
+
+    - **解决方案**：玩家声望变化使用 `SectorAPI.adjustPlayerReputation`。
+
+- **关系数值超出预期**：直接写入会把结果钳位到 `[-1,1]`。
+
+    - **解决方案**：记录原值并精确回滚。
+
+- **读档后移除的蓝图重新出现**：`removeKnownShip` 的移除清单不随存档保存。
+
+    - **解决方案**：将清单写入 persistent data，每次读档重新移除并调用 `clearShipRoleCache()`。
+
+- **演示日志出现但游戏内没有效果**：注册点或操作目标错误。
+
+    - **解决方案**：将注册放入 `onGameLoad` 的持久标记块，并在写入后读取同一对象。
+
+- **演示脚本只执行一段**：某个 `addScript` 块缺失，或 `REGISTER_MARK` 与调用点不一致。
+
+    - **解决方案**：恢复注册块并统一键名。
 
 ## 总结
 

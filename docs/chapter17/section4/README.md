@@ -165,12 +165,29 @@ if (ai != null) {
 
 ## 故障分析
 
-- **新档创建早期出现 `NullPointerException`**：Nexerelin 尚未建立该势力的 `StrategicAI`。保留 null 守卫并延迟到进入生涯后调用 `forceMeeting()`，确认探针能够取得 AI。
-- **战略 AI 存在但不扩张**：`canInvade`、全局 `enableInvasions` 或 concern 的 `canInvade` 标签未满足。逐项启用后推进战略周期，确认生成入侵行动。
-- **入侵舰队规模异常大**：调用方在 `getInvasionSizeMult()` 结果上又乘了一次全局倍率。移除重复乘法，再比较基础规模与最终规模。
-- **封锁舰队规模偏小**：只应用了共同倍率，没有先执行 `MIN_BLOCKADE_SIZE` 和 blockade 的固定后处理。按事件类型逐项记录，再比较最终 FP。
-- **复活舰队被当作普通入侵**：没有应用 `RESPAWN_SIZE_MULT` 或复活目标筛选。使用 `EventType.RESPAWN` 分支复验规模和目标。
-- **被消灭势力没有复活**：复活开关、敌对舰队事件、入侵开关、次数上限、势力资格或检查间隔未满足。逐项核对并推进到下一检查周期，确认复活事件生成。
+- **新档创建早期出现 `NullPointerException`**：Nexerelin 尚未建立该势力的 `StrategicAI`。
+
+    - **解决方案**：保留 null 守卫并延迟到进入生涯后调用 `forceMeeting()`。
+
+- **战略 AI 存在但不扩张**：`canInvade`、全局 `enableInvasions` 或 concern 的 `canInvade` 标签未满足。
+
+    - **解决方案**：逐项启用后推进战略周期。
+
+- **入侵舰队规模异常大**：调用方在 `getInvasionSizeMult()` 结果上又乘了一次全局倍率。
+
+    - **解决方案**：移除重复乘法。
+
+- **封锁舰队规模偏小**：只应用了共同倍率，没有先执行 `MIN_BLOCKADE_SIZE` 和 blockade 的固定后处理。
+
+    - **解决方案**：按事件类型逐项记录。
+
+- **复活舰队被当作普通入侵**：没有应用 `RESPAWN_SIZE_MULT` 或复活目标筛选。
+
+    - **解决方案**：使用 `EventType.RESPAWN` 分支。
+
+- **被消灭势力没有复活**：复活开关、敌对舰队事件、入侵开关、次数上限、势力资格或检查间隔未满足。
+
+    - **解决方案**：逐项核对并推进到下一检查周期。
 
 ## 总结
 

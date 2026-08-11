@@ -305,16 +305,45 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
 
 ## 故障分析
 
-- **`onApplicationLoad` 抛出 `NullPointerException`**：资源加载期解引用了尚未建立的 `Global.getSector()` 或 `Global.getCombatEngine()`。生涯和战斗数据分别延后到 `onGameLoad` 与战斗上下文。
-- **战斗外调用引擎方法没有效果**：战斗外取得的是空引擎，`getShips()` 为空且 `addPlugin` 静默无效。先检查 `getCurrentState() == GameState.COMBAT`，只在战斗阶段操作引擎。
-- **第二场战斗开始后引擎操作全部失效**：代码跨战斗缓存了旧 `CombatEngineAPI`。每次需要时重新调用 `Global.getCombatEngine()`，不要把它保存在跨战斗字段中。
-- **退出到主菜单后仍在使用旧生涯对象**：缓存的 `SectorAPI` 仍指向已经关闭的存档。用 `getCurrentState()` 判断阶段，并在需要时重新获取生涯入口。
-- **`playSound` 抛出 `NullPointerException`**：`loc` 或 `vel` 传入了 null。始终传实体位置和非 null 速度向量，再次播放确认异常消失。
-- **循环音效自行停止**：`playLoop` 没有在每帧回调中续期。把调用移入 `advance`，并持续使用稳定的 `playingEntity`。
-- **位置音效无法正确定位**：`playSound` 使用了双声道素材。位置音效改用 mono 素材后，在不同距离重新试听。
-- **UI 音效播放异常**：`playUISound` 使用了单声道素材。替换为双声道素材并重新触发界面操作。
-- **`playUISound` 时报 `Sound set with id [...] not found`**：sound ID 未注册或大小写不一致。核对注册表后再次调用；`playSound`/`playLoop` 未注册时抛的是 `NullPointerException`。
-- **调用 `Global` setter 后全局行为错乱**：MOD 代码使用了 `setCombatEngine`、`setSector` 等内核入口。删除 setter 调用，改从正确 getter 获取对象；跨存档状态放入持久数据。
+- **`onApplicationLoad` 抛出 `NullPointerException`**：资源加载期解引用了尚未建立的 `Global.getSector()` 或 `Global.getCombatEngine()`。
+
+    - **解决方案**：生涯和战斗数据分别延后到 `onGameLoad` 与战斗上下文。
+
+- **战斗外调用引擎方法没有效果**：战斗外取得的是空引擎，`getShips()` 为空且 `addPlugin` 静默无效。
+
+    - **解决方案**：先检查 `getCurrentState() == GameState.COMBAT`，只在战斗阶段操作引擎。
+
+- **第二场战斗开始后引擎操作全部失效**：代码跨战斗缓存了旧 `CombatEngineAPI`。
+
+    - **解决方案**：每次需要时重新调用 `Global.getCombatEngine()`，不要把它保存在跨战斗字段中。
+
+- **退出到主菜单后仍在使用旧生涯对象**：缓存的 `SectorAPI` 仍指向已经关闭的存档。
+
+    - **解决方案**：用 `getCurrentState()` 判断阶段，并在需要时重新获取生涯入口。
+
+- **`playSound` 抛出 `NullPointerException`**：`loc` 或 `vel` 传入了 null。
+
+    - **解决方案**：始终传实体位置和非 null 速度向量，再次播放。
+
+- **循环音效自行停止**：`playLoop` 没有在每帧回调中续期。
+
+    - **解决方案**：把调用移入 `advance`，并持续使用稳定的 `playingEntity`。
+
+- **位置音效无法正确定位**：`playSound` 使用了双声道素材。
+
+    - **解决方案**：位置音效改用 mono 素材。
+
+- **UI 音效播放异常**：`playUISound` 使用了单声道素材。
+
+    - **解决方案**：替换为双声道素材并重新触发界面操作。
+
+- **`playUISound` 时报 `Sound set with id [...] not found`**：sound ID 未注册或大小写不一致。`playSound`/`playLoop` 未注册时抛的是 `NullPointerException`。
+
+    - **解决方案**：核对注册表后再次调用。
+
+- **调用 `Global` setter 后全局行为错乱**：MOD 代码使用了 `setCombatEngine`、`setSector` 等内核入口。
+
+    - **解决方案**：删除 setter 调用，改从正确 getter 获取对象；跨存档状态放入持久数据。
 
 ## 总结
 

@@ -17,7 +17,9 @@ afterEach(() => {
 })
 
 const createEditor = (content: string): Editor => {
-  const editor = new Editor({ content, extensions: createEditorExtensions() })
+  const element = document.createElement('div')
+  document.body.append(element)
+  const editor = new Editor({ element, content, extensions: createEditorExtensions() })
   editors.push(editor)
   return editor
 }
@@ -54,6 +56,18 @@ describe('normalizeEditableContent', () => {
     expect(normalized).toContain('data-vp-container="details"')
     expect(normalized).toContain('data-vp-title="展开"')
   })
+
+  it('captures compact and loose list state from VuePress HTML', () => {
+    const content = document.createElement('div')
+    content.innerHTML = `
+      <ul><li>紧凑一</li><li>紧凑二</li></ul>
+      <ul><li><p>非紧凑一</p></li><li><p>非紧凑二</p></li></ul>`
+
+    const normalized = normalizeEditableContent(content)
+
+    expect(normalized).toContain('<ul data-dev-list-tight="true">')
+    expect(normalized).toContain('<ul data-dev-list-tight="false">')
+  })
 })
 
 describe('Tiptap document contract', () => {
@@ -82,5 +96,38 @@ describe('Tiptap document contract', () => {
 
     expect(insertVpContainer(editor, 'tip')).toBe(true)
     expect(editor.getHTML()).toContain('data-vp-container="tip"')
+  })
+
+  it('round-trips list tightness metadata', () => {
+    const editor = createEditor(
+      '<ul data-dev-list-tight="true"><li>紧凑</li></ul>' +
+        '<ul data-dev-list-tight="false"><li><p>非紧凑</p></li></ul>',
+    )
+
+    const html = editor.getHTML()
+
+    expect(html).toContain('data-dev-list-tight="true"')
+    expect(html).toContain('data-dev-list-tight="false"')
+  })
+
+  it('renders editable code metadata without changing saved HTML structure', () => {
+    const editor = createEditor(
+      '<pre data-language="java" data-highlight-lines="2,4"><code class="language-java">one\ntwo</code></pre>',
+    )
+    const language = document.querySelector<HTMLSelectElement>('.dev-edit-code-language')
+    const highlights = document.querySelector<HTMLInputElement>('.dev-edit-code-highlights')
+
+    expect(document.querySelector('.dev-edit-code-header')?.textContent).toContain('CODE')
+    expect(language?.value).toBe('java')
+    expect(highlights?.value).toBe('2,4')
+
+    language!.value = 'json'
+    language!.dispatchEvent(new Event('change'))
+    highlights!.value = '1,3'
+    highlights!.dispatchEvent(new Event('input'))
+
+    expect(editor.getHTML()).toContain('data-language="json"')
+    expect(editor.getHTML()).toContain('data-highlight-lines="1,3"')
+    expect(editor.getHTML()).not.toContain('dev-edit-code-header')
   })
 })

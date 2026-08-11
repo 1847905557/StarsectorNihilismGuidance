@@ -451,17 +451,49 @@ stats.getMaxSpeed().modifyFlat(id, 5f);
 
 ## 故障分析
 
-- **生涯侧数值自行恢复**：`updateStats` 新建了 stats 对象，直接写在旧对象上的 modifier 随之失效。将长期效果放进船插、技能或 buff 的重放入口；触发一次重建后确认数值仍在。
-- **换舰长后成员数值没有变化**：成员尚未加入舰队，个人技能应用被 `getFleetData() != null` 条件跳过。先入队再调用 `setCaptain`，随后比较 stats。
-- **换装配后界面仍显示旧值**：修改没有设置重算标记，`getStats()` 继续返回旧对象。使用带 stats 更新的 `setVariant`、`updateStats` 或 `setStatUpdateNeeded(true)`，再重开舰队界面。
-- **生涯数值与战斗数值不一致**：部署会创建新的战斗 stats，并继续叠加战斗期效果。生涯侧只用于预览；部署后从 `ShipAPI.getMutableStats()` 读取最终值复验。
-- **战斗中换舰长后加成没有更新**：只修改人物对象不会把技能重新应用到战斗 stats。调用 `ShipAPI.setCaptain(newPerson)`；需要恢复时传入 `getOriginalCaptain()`，再检查对应 modifier。
-- **自定义 modifier 被覆盖**：代码复用了引擎的 modifier ID，同类型的后写值覆盖了前值。改用带 MOD 前缀的专属 ID，重建 stats 后确认引擎值与自定义值同时存在。
-- **船插应用时出现 `StackOverflowError`**：`applyEffectsBeforeShipCreation` 内再次调用了会触发 `updateStats` 的成员 API。该入口只修改 stats 或变体内容，把换舰长、换装配移到脚本层；重新触发重建后确认不再递归。
-- **下一场战斗读到旧 stats**：代码跨战斗保存了 `ShipAPI` 或 `getMutableStats()` 引用。每场战斗重新查询，并在战斗结束时丢弃引用；下一场核对对象与数值均来自当前实体。
-- **舰队技能只影响部分成员**：舰队向效果会跳过战机，具体技能还可能要求非民用舰或军官驾驶。按效果作用域和技能条件逐艘核对，确认符合条件的成员获得 modifier。
-- **更换装配后 CR 下降**：`setVariant` 使用了 `withRefit=true`，引擎按装配差异应用现场改装惩罚。代码批量换装时传 `false`；再次替换并确认 CR 不再扣减。
-- **提高技能等级后成员数值不变**：SHIP 效果要等成员 stats 重建，`setSkillLevel` 本身不会触发该过程。随后调用 `updateStats()` 或触发舰队同步，再读取成员数值。
+- **生涯侧数值自行恢复**：`updateStats` 新建了 stats 对象，直接写在旧对象上的 modifier 随之失效。
+
+    - **解决方案**：将长期效果放进船插、技能或 buff 的重放入口。
+
+- **换舰长后成员数值没有变化**：成员尚未加入舰队，个人技能应用被 `getFleetData() != null` 条件跳过。
+
+    - **解决方案**：先入队再调用 `setCaptain`。
+
+- **换装配后界面仍显示旧值**：修改没有设置重算标记，`getStats()` 继续返回旧对象。
+
+    - **解决方案**：使用带 stats 更新的 `setVariant`、`updateStats` 或 `setStatUpdateNeeded(true)`。
+
+- **生涯数值与战斗数值不一致**：部署会创建新的战斗 stats，并继续叠加战斗期效果。生涯侧只用于预览。
+
+    - **解决方案**：部署后从 `ShipAPI.getMutableStats()` 读取最终值。
+
+- **战斗中换舰长后加成没有更新**：只修改人物对象不会把技能重新应用到战斗 stats。
+
+    - **解决方案**：调用 `ShipAPI.setCaptain(newPerson)`；需要恢复时传入 `getOriginalCaptain()`。
+
+- **自定义 modifier 被覆盖**：代码复用了引擎的 modifier ID，同类型的后写值覆盖了前值。
+
+    - **解决方案**：改用带 MOD 前缀的专属 ID。
+
+- **船插应用时出现 `StackOverflowError`**：`applyEffectsBeforeShipCreation` 内再次调用了会触发 `updateStats` 的成员 API。
+
+    - **解决方案**：该入口只修改 stats 或变体内容，把换舰长、换装配移到脚本层。
+
+- **下一场战斗读到旧 stats**：代码跨战斗保存了 `ShipAPI` 或 `getMutableStats()` 引用。
+
+    - **解决方案**：每场战斗重新查询，并在战斗结束时丢弃引用。
+
+- **舰队技能只影响部分成员**：舰队向效果会跳过战机，具体技能还可能要求非民用舰或军官驾驶。
+
+    - **解决方案**：按效果作用域和技能条件逐艘核对。
+
+- **更换装配后 CR 下降**：`setVariant` 使用了 `withRefit=true`，引擎按装配差异应用现场改装惩罚。
+
+    - **解决方案**：代码批量换装时传 `false`。
+
+- **提高技能等级后成员数值不变**：SHIP 效果要等成员 stats 重建，`setSkillLevel` 本身不会触发该过程。
+
+    - **解决方案**：随后调用 `updateStats()` 或触发舰队同步。
 
 ## 总结
 

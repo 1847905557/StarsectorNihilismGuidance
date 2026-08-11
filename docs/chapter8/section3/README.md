@@ -544,15 +544,41 @@ public class GearInWeaponFrameEffect implements EveryFrameWeaponEffectPlugin { }
 
 ## 故障分析
 
-- **效果回调从不执行**：类只注册成战斗插件，而 `.wpn` 或 `.proj` 没有绑定对应注册列。补上完整类名并重启，开火或命中时应出现回调日志。
-- **创建武器、射线或射弹时报告 `Problem loading class [...]`**：类名错误、类缺失或没有无参构造器。核对完整类名和构造器，再用 `jar tf jars\GearIndustry.jar` 检查 class 路径；修正后实体应能创建。
-- **`beamEffect` 没有任何行为**：注册列写在弹丸武器的 `.wpn` 中时，引擎不会创建光束效果实例。让武器使用 `specClass: beam`，或改绑 `everyFrameEffect`；重新开火后应出现对应日志。
-- **`getAnimation()` 抛出 NPE**：静态贴图武器的 `getAnimation()` 返回 null。调用动画方法前先判空，重新部署静态武器后不应再出现异常。
-- **动画停在第 0 帧**：`numFrames` 保持 1、`alwaysAnimate:false` 且武器闲置，或调用 `pause()` 后没有调用 `play()`，都会让帧号停住。核对 `.wpn` 的播放条件并让 `pause()`、`play()` 成对使用；开火后帧号应按配置循环。
-- **部署时 NPE 或动画空白**：帧 0 (主贴图) 文件缺失 → 构造期 NPE；基贴图路径没有以 `00.png` 结尾或后续帧缺失 → 对应帧纹理为空、渲染空白。按命名规则补齐全部帧，重新部署后应完成动画资源加载。
-- **动画帧画面错位**：各帧贴图的尺寸或主体对齐点不一致。统一画布和主体位置后重新播放，切帧时图像应保持稳定。
-- **光束命中后没有火花**：`didDamageThisFrame()` 为 false、命中点在视口外，或用结算帧外为 0 的 `dpsDuration` 推进节流器时，粒子不会生成。先用 `hit start` 日志确认命中，把节流推进改用 `amount` 或 `IonBeamEffect` 的边沿处理；持续照射时应每 0.15 秒出现火花。
-- **第二场战斗仍在使用失效实体**：回调参数被保存并跨帧或跨战斗复用时，旧实体不属于当前引擎。参数只在当前回调内消费，需要持续状态时每帧从 `weapon.getBeams()` 或 `engine.getProjectiles()` 查询；第二场战斗应取得新实体。
+- **效果回调从不执行**：类只注册成战斗插件，而 `.wpn` 或 `.proj` 没有绑定对应注册列。
+
+    - **解决方案**：补上完整类名并重启。
+
+- **创建武器、射线或射弹时报告 `Problem loading class [...]`**：类名错误、类缺失或没有无参构造器。
+
+    - **解决方案**：核对完整类名和构造器，再用 `jar tf jars\GearIndustry.jar` 检查 class 路径，修正。
+
+- **`beamEffect` 没有任何行为**：注册列写在弹丸武器的 `.wpn` 中时，引擎不会创建光束效果实例。
+
+    - **解决方案**：让武器使用 `specClass: beam`，或改绑 `everyFrameEffect`。
+
+- **`getAnimation()` 抛出 NPE**：静态贴图武器的 `getAnimation()` 返回 null。
+
+    - **解决方案**：调用动画方法前先判空，重新部署静态武器。
+
+- **动画停在第 0 帧**：`numFrames` 保持 1、`alwaysAnimate:false` 且武器闲置，或调用 `pause()` 后没有调用 `play()`，都会让帧号停住。
+
+    - **解决方案**：核对 `.wpn` 的播放条件并让 `pause()`、`play()` 成对使用。
+
+- **部署时 NPE 或动画空白**：帧 0 (主贴图) 文件缺失 → 构造期 NPE；基贴图路径没有以 `00.png` 结尾或后续帧缺失 → 对应帧纹理为空、渲染空白。
+
+    - **解决方案**：按命名规则补齐全部帧，重新部署。
+
+- **动画帧画面错位**：各帧贴图的尺寸或主体对齐点不一致。
+
+    - **解决方案**：统一画布和主体位置后重新播放。
+
+- **光束命中后没有火花**：`didDamageThisFrame()` 为 false、命中点在视口外，或用结算帧外为 0 的 `dpsDuration` 推进节流器时，粒子不会生成。
+
+    - **解决方案**：先用 `hit start` 日志确认命中，把节流推进改用 `amount` 或 `IonBeamEffect` 的边沿处理。
+
+- **第二场战斗仍在使用失效实体**：回调参数被保存并跨帧或跨战斗复用时，旧实体不属于当前引擎。
+
+    - **解决方案**：参数只在当前回调内消费，需要持续状态时每帧从 `weapon.getBeams()` 或 `engine.getProjectiles()` 查询。
 
 ## 总结
 

@@ -193,14 +193,37 @@ CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四�
 
 ## 故障分析
 
-- **装配界面找不到船插**：先确认 CSV 行存在、`id` 使用唯一的 `GearIn_` 前缀，并在调试期设置 `unlocked=TRUE`。随后核对 `script` 列；修正后重启，船插应出现在装配列表中。
-- **加载中断并报告 `JSONException`**：必填列缺失或某个 `cost_*` 留空会破坏数据行。补齐四档数字后重启，加载过程应越过该 CSV。
-- **加载中断并报告 `Duplicate key`**：同一文件内存在重复 `id`。为每行保留唯一 ID，重启后确认重复键异常消失。
-- **加载期报 `Error loading [...]`**：注册类名、包声明和文件路径没有指向同一个类。源码应位于 `data/scripts/gearin/hullmods/` 对应包路径，三处文本必须逐字一致。
-- **速度加成没有生效**：数值修改写进 `applyEffectsAfterShipCreation` 时，生涯侧不会执行它。把 `modifyFlat(...)` 移入 `applyEffectsBeforeShipCreation`，重新部署舰船后核对速度。
-- **两个船插数值互相覆盖**：多个船插共用 `modifyFlat("bonus", ...)` 之类的硬编码 source id。改用回调传入的船插 `id`，同时安装两个船插后确认修饰分别存在。
-- **互斥限制没有生效**：数据行本身不会建立互斥判断。补齐 `isApplicableToShip` 与 `getUnapplicableReason`，装配界面应拒绝不兼容组合并显示原因。
-- **描述出现空位**：`desc` 中的 `%s` 数量超过 `getDescriptionParam` 返回的参数。为每个占位符提供对应 `index` 的非 null 字符串，重启后核对完整描述。
+- **装配界面找不到船插**：注册行缺失、`id` 没有使用唯一的 `GearIn_` 前缀，或 `script` 列有误时，船插不会出现在装配列表中。
+
+    - **解决方案**：确认 CSV 行存在、`id` 使用唯一的 `GearIn_` 前缀，并在调试期设置 `unlocked=TRUE`，再核对 `script` 列并重启。
+
+- **加载中断并报告 `JSONException`**：必填列缺失或某个 `cost_*` 留空会破坏数据行。
+
+    - **解决方案**：补齐四档数字后重启。
+
+- **加载中断并报告 `Duplicate key`**：同一文件内存在重复 `id`。
+
+    - **解决方案**：为每行保留唯一 ID 并重启。
+
+- **加载期报 `Error loading [...]`**：注册类名、包声明和文件路径没有指向同一个类。
+
+    - **解决方案**：把源码放在 `data/scripts/gearin/hullmods/` 对应包路径，让三处文本逐字一致。
+
+- **速度加成没有生效**：数值修改写进 `applyEffectsAfterShipCreation` 时，生涯侧不会执行它。
+
+    - **解决方案**：把 `modifyFlat(...)` 移入 `applyEffectsBeforeShipCreation`，再重新部署舰船。
+
+- **两个船插数值互相覆盖**：多个船插共用 `modifyFlat("bonus", ...)` 之类的硬编码 source id。
+
+    - **解决方案**：改用回调传入的船插 `id`。
+
+- **互斥限制没有生效**：数据行本身不会建立互斥判断。
+
+    - **解决方案**：补齐 `isApplicableToShip` 与 `getUnapplicableReason`。
+
+- **描述出现空位**：`desc` 中的 `%s` 数量超过 `getDescriptionParam` 返回的参数。
+
+    - **解决方案**：为每个占位符提供对应 `index` 的非 null 字符串并重启。
 
 ## 总结
 

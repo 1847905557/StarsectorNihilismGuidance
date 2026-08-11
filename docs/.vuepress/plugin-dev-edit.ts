@@ -17,7 +17,7 @@ const CLIENT_FILE = fileURLToPath(new URL('./client/dev-edit-client.ts', import.
 const RESTORE_SCRIPT = fileURLToPath(
   new URL('../../.zcode/tools/restore_markdown.py', import.meta.url),
 )
-const BACKUP_DIR = resolve(process.cwd(), '.cursor', 'tutorial-work', 'backups', 'edit-writes')
+const BACKUP_DIR = resolve(process.cwd(), '.zcode', 'tutorial-work', 'backups', 'edit-writes')
 const MAX_BODY_BYTES = 8 * 1024 * 1024
 
 interface ReqLike {
@@ -149,13 +149,15 @@ export const runMarkdownRestore = (
         )
       }
     })
-    child.stdin.end(
-      JSON.stringify({
-        html: `<main><div id="content">${html}</div></main>`,
-        path: target,
-        docsRoot: docsDir,
-      }),
-    )
+    const payload = JSON.stringify({
+      htmlBase64: Buffer.from(
+        `<main><div id="content">${html}</div></main>`,
+        'utf-8',
+      ).toString('base64'),
+      path: target,
+      docsRoot: docsDir,
+    })
+    child.stdin.end(Buffer.from(payload, 'utf-8'))
   })
 
 export const validateRestoredAssets = (target: string, assets: RestoreAsset[]): string[] => {

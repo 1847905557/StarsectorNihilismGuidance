@@ -306,15 +306,41 @@ public void onGameLoad(boolean newGame) { Global.getSector().addScript(new GearI
 
 ## 故障分析
 
-- **启动时报 `Error loading [data.scripts.gearin.GearInModPlugin]`**：`modPlugin`、包名、目录或 jar 内容不一致。用 `jar tf` 核对类路径，再与 `modPlugin` 值逐段对照。
-- **启动时报 `ClassCastException`**：入口类没有实现 `ModPlugin`。让类继承 `BaseModPlugin`，重新构建后启动。
-- **游戏正常但没有任何 `GearIn lifecycle:` 日志**：`mod_info.json` 没有有效的 `modPlugin` 字段。补上完整类名并重启，首个应用回调应写入日志。
-- **`onApplicationLoad` 抛出 `NullPointerException`**：该阶段访问了尚未建立的 `Global.getSector()`。把生涯状态操作移入 `onGameLoad` 或 `onNewGame`。
-- **每次读档都重复首次初始化**：一次性逻辑直接写在 `onGameLoad`，却没有 persistent data 标记。用 `CLASS_MARK` 门控，并确认初始化日志只出现一次。
-- **脚本或监听器随读档次数叠加**：注册前没有调用 `hasScript`、`hasListenerOfClass` 或 `hasPlugin` 查重。补上对应判断，连续读档后确认推进频率不再增加。
-- **新档初始化执行两遍**：同一状态同时写在 `onNewGame` 与 `onGameLoad(true)`。把共用初始化收敛到带持久标记的 `onGameLoad`，只把纯新档逻辑留在 `onNewGame`。
-- **切换存档后仍使用上一档对象**：`SectorAPI` 或生涯实体被保存在入口类实例字段中，而入口实例会跨存档复用。把状态放入 `getPersistentData()` 或随存档保存的对象，重新切档验证。
-- **高版本游戏直到运行深处才暴露兼容错误**：`onApplicationLoad` 没有检查 `getGameVersion()`。在入口处验证 `0.98a` 前缀，不匹配时立即中止启动并给出明确错误。
+- **启动时报 `Error loading [data.scripts.gearin.GearInModPlugin]`**：`modPlugin`、包名、目录或 jar 内容不一致。
+
+    - **解决方案**：用 `jar tf` 核对类路径，再与 `modPlugin` 值逐段对照。
+
+- **启动时报 `ClassCastException`**：入口类没有实现 `ModPlugin`。
+
+    - **解决方案**：让类继承 `BaseModPlugin`，重新构建后启动。
+
+- **游戏正常但没有任何 `GearIn lifecycle:` 日志**：`mod_info.json` 没有有效的 `modPlugin` 字段。
+
+    - **解决方案**：补上完整类名并重启。
+
+- **`onApplicationLoad` 抛出 `NullPointerException`**：该阶段访问了尚未建立的 `Global.getSector()`。
+
+    - **解决方案**：把生涯状态操作移入 `onGameLoad` 或 `onNewGame`。
+
+- **每次读档都重复首次初始化**：一次性逻辑直接写在 `onGameLoad`，却没有 persistent data 标记。
+
+    - **解决方案**：用 `CLASS_MARK` 门控。
+
+- **脚本或监听器随读档次数叠加**：注册前没有调用 `hasScript`、`hasListenerOfClass` 或 `hasPlugin` 查重。
+
+    - **解决方案**：补上对应判断。
+
+- **新档初始化执行两遍**：同一状态同时写在 `onNewGame` 与 `onGameLoad(true)`。
+
+    - **解决方案**：把共用初始化收敛到带持久标记的 `onGameLoad`，只把纯新档逻辑留在 `onNewGame`。
+
+- **切换存档后仍使用上一档对象**：`SectorAPI` 或生涯实体被保存在入口类实例字段中，而入口实例会跨存档复用。
+
+    - **解决方案**：把状态放入 `getPersistentData()` 或随存档保存的对象，重新切档。
+
+- **高版本游戏直到运行深处才暴露兼容错误**：`onApplicationLoad` 没有检查 `getGameVersion()`。
+
+    - **解决方案**：在入口处验证 `0.98a` 前缀，不匹配时立即中止启动并给出明确错误。
 
 ## 总结
 

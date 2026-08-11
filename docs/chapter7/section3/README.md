@@ -350,15 +350,41 @@ stats.getMaxSpeed().modifyFlat(MODIFIER_ID, 5f);
 
 ## 故障分析
 
-- **数值与修饰条目持续增长**：每帧用递增值拼接 modifier ID 会不断新增 percent 条目，`entries` 和 `modified` 持续漂移。把 ID 改为常量，让重复写入覆盖原值；运行数秒后条目数应保持稳定，`unmodify` 后数值应回到 base。
-- **解除修饰后数值没有恢复**：`unmodify` 与 `modify` 使用不同 ID 时，撤销操作找不到原条目。两处复用同一个常量，再解除效果，`modified` 应等于 base。
-- **同一 ID 产生多种修饰条目**：flat、percent、mult 使用三张独立表，同一 ID 在三种入口各写一次时，三条都会生效。需要整体撤销时调用 `unmodify(source)`，复验日志应显示 `entries flat=0 percent=0 mult=0`。
-- **两个船插的加成互相覆盖**：两个来源共用 `"speed_bonus"` 时，后写值会覆盖前写值。每个来源使用唯一 ID，船插直接使用回调参数 `id`；同时安装后，两份修饰应并存。
-- **百分比修饰没有改变 base 为 0 的属性**：`modifyPercent` 按 base 计算，`0 + 0*50/100` 仍为 0。改用 `modifyFlat` 或 `setBaseValue`，重新读取后属性应大于 0。
-- **`modifyPercent(id, -100)` 后属性仍不为零**：百分比只抵消 base，已有 flat 修饰仍会保留。用 flat 抵消剩余值或直接设置 base，复验时最终值应为 0。
-- **战斗中加成生效而生涯面板没有变化**：stats 修改写在 `applyEffectsAfterShipCreation` 时，生涯侧不会调用该回调。把修改移到 `applyEffectsBeforeShipCreation`，刷新舰队成员后，舰队面板和战斗内数值都应显示加成。
-- **每次重建 stats 后数值继续膨胀**：`applyEffectsBeforeShipCreation` 使用叠加逻辑或持续生成新 ID 时，`FleetMemberAPI.updateStats()` 每次重放都会增加条目。改成稳定 ID 的覆盖式写入，多次调用 `updateStats()` 后条目数和最终值应保持不变。
-- **战斗外修改舰船 stats 没有反应**：生涯或主菜单中的空战斗引擎没有正在使用的玩家舰 stats。战斗内通过引擎取得 ship，生涯侧从 `FleetMemberAPI` 读取和修改；刷新对应界面后应看到目标数值变化。
+- **数值与修饰条目持续增长**：每帧用递增值拼接 modifier ID 会不断新增 percent 条目，`entries` 和 `modified` 持续漂移。
+
+    - **解决方案**：把 ID 改为常量，让重复写入覆盖原值。
+
+- **解除修饰后数值没有恢复**：`unmodify` 与 `modify` 使用不同 ID 时，撤销操作找不到原条目。
+
+    - **解决方案**：两处复用同一个常量，再解除效果。
+
+- **同一 ID 产生多种修饰条目**：flat、percent、mult 使用三张独立表，同一 ID 在三种入口各写一次时，三条都会生效。
+
+    - **解决方案**：需要整体撤销时调用 `unmodify(source)`。
+
+- **两个船插的加成互相覆盖**：两个来源共用 `"speed_bonus"` 时，后写值会覆盖前写值。
+
+    - **解决方案**：每个来源使用唯一 ID，船插直接使用回调参数 `id`。
+
+- **百分比修饰没有改变 base 为 0 的属性**：`modifyPercent` 按 base 计算，`0 + 0*50/100` 仍为 0。
+
+    - **解决方案**：改用 `modifyFlat` 或 `setBaseValue`。
+
+- **`modifyPercent(id, -100)` 后属性仍不为零**：百分比只抵消 base，已有 flat 修饰仍会保留。
+
+    - **解决方案**：用 flat 抵消剩余值或直接设置 base。
+
+- **战斗中加成生效而生涯面板没有变化**：stats 修改写在 `applyEffectsAfterShipCreation` 时，生涯侧不会调用该回调。
+
+    - **解决方案**：把修改移到 `applyEffectsBeforeShipCreation`，刷新舰队成员。
+
+- **每次重建 stats 后数值继续膨胀**：`applyEffectsBeforeShipCreation` 使用叠加逻辑或持续生成新 ID 时，`FleetMemberAPI.updateStats()` 每次重放都会增加条目。
+
+    - **解决方案**：改成稳定 ID 的覆盖式写入。
+
+- **战斗外修改舰船 stats 没有反应**：生涯或主菜单中的空战斗引擎没有正在使用的玩家舰 stats。
+
+    - **解决方案**：战斗内通过引擎取得 ship，生涯侧从 `FleetMemberAPI` 读取和修改。
 
 ## 总结
 

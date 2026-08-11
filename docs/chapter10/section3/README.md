@@ -624,18 +624,53 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
 ## 故障分析
 
-- **市场查询返回 null**：只创建了市场对象，没有调用 `economy.addMarket`，或市场 ID 写错。补齐注册并以 `econ/*.json` 的首实体 ID 为准。
-- **实体没有市场交互**：市场已加入经济集合，但没有执行 `entity.setMarket(market)`。完成实体绑定后重新打开交互界面。
-- **读取子市场库存时抛 NPE**：`getCargoNullOk()` 可能返回 null。判空，或需要自动创建库存时使用 `getCargo()`。
-- **后台脚本调用 `nextStep()` 后卡顿**：该调用会同步执行整轮经济迭代。后台逻辑改用 `forceStockpileUpdate(market)` 或等待自然经济步。
-- **`EconomyUpdateListener` 从不回调**：监听器注册到了 Sector listener 表。改用 `economy.addUpdateListener(...)`，经济步运行后确认回调日志。
-- **市场价格与交易界面不一致**：`CommoditySpecAPI.getBasePrice()` 只是全局基础价。买卖价格读取市场的 `getDemandPrice` 与 `getSupplyPrice`。
-- **删除一个条件却把同 ID 全删**：`removeCondition(id)` 面向 spec ID，会移除所有同 ID 实例。保存 `addCondition` 返回的 token，改用 `removeSpecificCondition(token)`。
-- **每帧读取市场 memory 导致回调风暴**：`getMemory()` 会触发全部插件的 `updateMarketFacts`。纯读取使用 `getMemoryWithoutUpdate()`。
-- **读取管理员后存档多出人物**：`getAdmin()` 会在缺失时创建默认管理员。读取前确认市场已有 admin，避免触发创建副作用。
-- **经济频率观察与 `economyIntervalnGameDays` 不符**：该设置键不参与实际经济推进。按 `economyIterPerMonth` 和经济迭代日志判断节奏。
-- **关闭自由港后黑市仍存在**：自由港条件与黑市子市场是两条独立链。使用 `removeSubmarket` 处理黑市，不要把 `setFreePort(false)` 当作黑市开关。
-- **交易后立即读取库存看不到变化**：交易影响通过 120 游戏日的 trade mod 缓慢衰减，需等待经济步后再观察。
+- **市场查询返回 null**：只创建了市场对象，没有调用 `economy.addMarket`，或市场 ID 写错。
+
+    - **解决方案**：补齐注册，以 `econ/*.json` 的首实体 ID 为准。
+
+- **实体没有市场交互**：市场已加入经济集合，但没有执行 `entity.setMarket(market)`。
+
+    - **解决方案**：执行 `entity.setMarket(market)` 完成实体绑定。
+
+- **读取子市场库存时抛 NPE**：`getCargoNullOk()` 可能返回 null。
+
+    - **解决方案**：判空，或需要自动创建库存时使用 `getCargo()`。
+
+- **后台脚本调用 `nextStep()` 后卡顿**：该调用会同步执行整轮经济迭代。
+
+    - **解决方案**：后台逻辑改用 `forceStockpileUpdate(market)` 或等待自然经济步。
+
+- **`EconomyUpdateListener` 从不回调**：监听器注册到了 Sector listener 表。
+
+    - **解决方案**：改用 `economy.addUpdateListener(...)`。
+
+- **市场价格与交易界面不一致**：`CommoditySpecAPI.getBasePrice()` 只是全局基础价。
+
+    - **解决方案**：买卖价格读取市场的 `getDemandPrice` 与 `getSupplyPrice`。
+
+- **删除一个条件却把同 ID 全删**：`removeCondition(id)` 面向 spec ID，会移除所有同 ID 实例。
+
+    - **解决方案**：保存 `addCondition` 返回的 token，改用 `removeSpecificCondition(token)`。
+
+- **每帧读取市场 memory 导致回调风暴**：`getMemory()` 会触发全部插件的 `updateMarketFacts`。
+
+    - **解决方案**：纯读取使用 `getMemoryWithoutUpdate()`。
+
+- **读取管理员后存档多出人物**：`getAdmin()` 会在缺失时创建默认管理员。
+
+    - **解决方案**：读取前确认市场已有 admin，避免触发创建副作用。
+
+- **经济频率观察与 `economyIntervalnGameDays` 不符**：该设置键不参与实际经济推进。
+
+    - **解决方案**：按 `economyIterPerMonth` 和经济迭代日志判断节奏。
+
+- **关闭自由港后黑市仍存在**：自由港条件与黑市子市场是两条独立链。
+
+    - **解决方案**：使用 `removeSubmarket` 处理黑市，不要把 `setFreePort(false)` 当作黑市开关。
+
+- **交易后立即读取库存看不到变化**：交易影响通过 120 游戏日的 trade mod 缓慢衰减。
+
+    - **解决方案**：等待一个经济步后再读取。
 
 ## 总结
 

@@ -345,13 +345,33 @@ if (engine.getFleetManager(FleetSide.PLAYER).getDeployedCopy().isEmpty()) { retu
 
 ## 故障分析
 
-- **击毁敌舰后存活数不降**：直接统计 `engine.getShips()` 会把尚未移除的残骸算进去。遍历时用 `isAlive()` 过滤存活舰船；需要识别残骸时再检查 `isHulk()`。击毁一艘敌舰后复查计数，数值应当立即减少。
-- **暂停期间累计仍然增长**：暂停不会中断 `advance()` 回调，缺少 `engine.isPaused()` 守卫时，计时和进度会继续推进。状态更新前加入暂停检查，解除暂停后，累计值应与 `getTotalElapsedTime(false)` 保持一致。
-- **玩家未部署分支从不执行**：`getPlayerShip()` 在玩家舰尚未设置时会返回 `shuttlepod_xfer` 的 `Command Shuttle` 假舰，因此 null 判断无法识别未部署状态。改读 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()`；重新进入部署阶段时，未部署分支应当执行。
-- **第二场战斗中的缓存舰船判定混乱**：旧舰不在新引擎的对象表中，跨战斗保存的舰船或列表会让 `isEntityInPlay()` 持续返回 `false`，而 `isAlive()` 仍可能返回 `true`。每次使用时从当前引擎或舰队管理器重新取得对象；连续进入两场战斗后，第二场的状态读取应恢复正常。
-- **战斗计时包含错误的暂停区间**：`getTotalElapsedTime(true)` 包含暂停时间，`false` 版本只累计战斗推进时间。推进判定使用 `false`，演出等真实经历时间使用 `true`，逐帧累计使用 `amount` 或 `getElapsedInLastFrame()`。暂停 10 秒后解除，所选计时值应只按目标语义变化。
-- **时间倍率改变后计时偏移**：传入 `advance(amount)` 的 `amount` 已受 `getTimeMult()` 与 `combatSpeedMult` 缩放，再乘一次倍率会重复计算。直接累计 `amount` 或读取 `getElapsedInLastFrame()`；触发慢动作后，自己的计时应与 `getTotalElapsedTime(false)` 保持同一变化方向和速率。
-- **结算逻辑在退场动画前执行**：`getWinningSideId()` 在胜者确定时已经返回侧别，而 `isCombatOver()` 要等结束淡出完成才变为 `true`。用 `isCombatOver()` 触发结算，只用 `getWinningSideId()` 判断胜者；复验时，结算应在退场动画结束后执行。
+- **击毁敌舰后存活数不降**：直接统计 `engine.getShips()` 会把尚未移除的残骸算进去。
+
+    - **解决方案**：遍历时用 `isAlive()` 过滤存活舰船；需要识别残骸时再检查 `isHulk()`。
+
+- **暂停期间累计仍然增长**：暂停不会中断 `advance()` 回调，缺少 `engine.isPaused()` 守卫时，计时和进度会继续推进。
+
+    - **解决方案**：状态更新前加入暂停检查。
+
+- **玩家未部署分支从不执行**：`getPlayerShip()` 在玩家舰尚未设置时会返回 `shuttlepod_xfer` 的 `Command Shuttle` 假舰，因此 null 判断无法识别未部署状态。
+
+    - **解决方案**：改读 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()`。
+
+- **第二场战斗中的缓存舰船判定混乱**：旧舰不在新引擎的对象表中，跨战斗保存的舰船或列表会让 `isEntityInPlay()` 持续返回 `false`，而 `isAlive()` 仍可能返回 `true`。
+
+    - **解决方案**：每次使用时从当前引擎或舰队管理器重新取得对象。
+
+- **战斗计时包含错误的暂停区间**：`getTotalElapsedTime(true)` 包含暂停时间，`false` 版本只累计战斗推进时间。
+
+    - **解决方案**：推进判定使用 `false`，演出等真实经历时间使用 `true`，逐帧累计使用 `amount` 或 `getElapsedInLastFrame()`。
+
+- **时间倍率改变后计时偏移**：传入 `advance(amount)` 的 `amount` 已受 `getTimeMult()` 与 `combatSpeedMult` 缩放，再乘一次倍率会重复计算。
+
+    - **解决方案**：直接累计 `amount` 或读取 `getElapsedInLastFrame()`。
+
+- **结算逻辑在退场动画前执行**：`getWinningSideId()` 在胜者确定时已经返回侧别，而 `isCombatOver()` 要等结束淡出完成才变为 `true`。
+
+    - **解决方案**：用 `isCombatOver()` 触发结算，只用 `getWinningSideId()` 判断胜者。
 
 ## 总结
 

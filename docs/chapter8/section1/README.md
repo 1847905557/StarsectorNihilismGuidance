@@ -345,14 +345,37 @@ public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAP
 
 ## 故障分析
 
-- **装甲评级没有变化**：CSV 行、`script` 类名或 stats 回调存在缺口时，船插会缺失或数值保持原样。核对数据行、完整类名与 `applyEffectsBeforeShipCreation`；显示使用 `getArmorBonus`，结算使用 `getEffectiveArmorBonus`。
-- **S-mod 内置后加成不变**：分支写在 `advanceInCombat` 或 `applyEffectsAfterShipCreation` 时，生涯 stats 不会执行它。将 S-mod 判断放入 `applyEffectsBeforeShipCreation`，并使用回调传入的 `stats`。
-- **装配界面没有 S-mod 效果段**：`sModDesc` 为空、以 `#` 开头，或 `%s` 与参数数量不一致。修正描述和 `getSModDescriptionParam` 后重新打开 tooltip。
-- **多艘船的计数与计时互相污染**：per-ship 状态写进了会话级船插实例。把计数和 `IntervalUtil` 放进每艘船独立创建的监听器，船插类只保留常量和无状态方法。
-- **伤害抵消监听器从未触发**：监听器挂错对象，或实例从未交给 `ship.addListener(...)`。将它挂在承受伤害的舰船或引擎层，再次承受舰体伤害。
-- **动态与静态修饰导致数值乱跳**：两个来源使用了相同 modifier ID。为动态来源使用独立稳定的 `DYNAMIC_ID`，重新比较面板和战斗数值。
-- **tick 日志在同一周期出现多行**：同一舰船重复注册了 `AdvanceableListener`。注册前使用 `hasListenerOfClass` 查重，再观察日志频率。
-- **战斗数值正确但生涯面板没有加成**：stats 修改只写在战斗回调中。把共用数值修饰移入 `applyEffectsBeforeShipCreation`，战斗回调只处理战斗行为。
+- **装甲评级没有变化**：CSV 行、`script` 类名或 stats 回调存在缺口时，船插会缺失或数值保持原样。
+
+    - **解决方案**：核对数据行、完整类名与 `applyEffectsBeforeShipCreation`；显示使用 `getArmorBonus`，结算使用 `getEffectiveArmorBonus`。
+
+- **S-mod 内置后加成不变**：分支写在 `advanceInCombat` 或 `applyEffectsAfterShipCreation` 时，生涯 stats 不会执行它。
+
+    - **解决方案**：将 S-mod 判断放入 `applyEffectsBeforeShipCreation`，并使用回调传入的 `stats`。
+
+- **装配界面没有 S-mod 效果段**：`sModDesc` 为空、以 `#` 开头，或 `%s` 与参数数量不一致。
+
+    - **解决方案**：修正描述和 `getSModDescriptionParam`，重新打开 tooltip。
+
+- **多艘船的计数与计时互相污染**：per-ship 状态写进了会话级船插实例。
+
+    - **解决方案**：把计数和 `IntervalUtil` 放进每艘船独立创建的监听器，船插类只保留常量和无状态方法。
+
+- **伤害抵消监听器从未触发**：监听器挂错对象，或实例从未交给 `ship.addListener(...)`。
+
+    - **解决方案**：将它挂在承受伤害的舰船或引擎层，再次承受舰体伤害。
+
+- **动态与静态修饰导致数值乱跳**：两个来源使用了相同 modifier ID。
+
+    - **解决方案**：为动态来源使用独立稳定的 `DYNAMIC_ID`。
+
+- **tick 日志在同一周期出现多行**：同一舰船重复注册了 `AdvanceableListener`。
+
+    - **解决方案**：注册前使用 `hasListenerOfClass` 查重。
+
+- **战斗数值正确但生涯面板没有加成**：stats 修改只写在战斗回调中。
+
+    - **解决方案**：把共用数值修饰移入 `applyEffectsBeforeShipCreation`，战斗回调只处理战斗行为。
 
 ## 总结
 

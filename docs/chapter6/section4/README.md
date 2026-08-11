@@ -158,11 +158,25 @@ float refreshed = settings.getFloat("GearIn_loop_volume");
 
 ## 故障分析
 
-- **严格读取抛出 `RuntimeException`**：键不存在或 JSON 类型不符。核对 `settings.json` 的键名和类型，修正后重新载入配置，读取应返回目标值。
-- **`getInt` 的结果丢失小数**：该方法通过 `getFloat` 读取后执行整数截断。需要小数时改用 `getFloat`，重新打印结果应保留小数部分。
-- **修改 JSON 后读取仍是旧值**：直接修改 `getSettingsJSON()` 返回对象却没有调用 `resetCached()`，缓存仍然有效。清理缓存后再读取，日志应显示新值；`getColor` 例外，其缓存只能重载设置刷新。
-- **设置在重启后消失**：`setFloat` 和 `setBoolean` 只修改内存。跨启动数据写入 common，重启后重新读取 common，值应保持不变。
-- **提交启动器关键键后数值没有变化**：这些键由启动器管理，MOD 中的同名键不属于可覆盖设置。改用启动器提供的入口或换一个自有键，重启后观察对应设置是否生效。
+- **严格读取抛出 `RuntimeException`**：键不存在或 JSON 类型不符。
+
+    - **解决方案**：核对 `settings.json` 的键名和类型，修正后重新载入配置。
+
+- **`getInt` 的结果丢失小数**：该方法通过 `getFloat` 读取后执行整数截断。
+
+    - **解决方案**：需要小数时改用 `getFloat`。
+
+- **修改 JSON 后读取仍是旧值**：直接修改 `getSettingsJSON()` 返回对象却没有调用 `resetCached()`，缓存仍然有效。`getColor` 例外，其缓存只能重载设置刷新。
+
+    - **解决方案**：调用 `resetCached()` 清理缓存后再读取。
+
+- **设置在重启后消失**：`setFloat` 和 `setBoolean` 只修改内存。
+
+    - **解决方案**：跨启动数据写入 common，重启后重新读取 common。
+
+- **提交启动器关键键后数值没有变化**：这些键由启动器管理，MOD 中的同名键不属于可覆盖设置。
+
+    - **解决方案**：改用启动器提供的入口或换一个自有键，重启。
 
 ## 总结
 

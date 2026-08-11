@@ -481,19 +481,57 @@ BarEventManager.getInstance().notifyWasInteractedWith(this);
 
 ## 故障分析
 
-- **注册时出现空指针异常**：`onApplicationLoad` 阶段还没有 sector 和 `BarEventManager`。将 creator 注册移到 `onGameLoad` 或 `onNewGame`，重启后确认注册日志出现。
-- **酒吧始终没有该事件**：creator 未被抽取、返回了 null，或市场被 `shouldShowAtMarket` 过滤。依次核对 `creator picked`、`eligible/skip`、`prompt/shown` 日志，修正最先缺失的阶段后重新进入酒吧。
-- **事件只在首次市场出现**：默认 `shownAt` 会把事件锁定到第一次展示的市场。需要跨市场显示时覆写 `shouldShowAtMarket` 并管理状态，再访问两个市场复验。
-- **点击酒吧选项后进入普通规则对话**：`addOption` 的 optionData 不是事件对象。改为 `addOption(text, this)`，再次点击后确认 `dialog init` 日志出现。
-- **完成后的事件仍反复出现**：完成分支没有通知 manager 移除活动事件。设置完成状态时调用 `notifyWasInteractedWith(this)`，重开酒吧确认事件不再列出。
-- **倒计时结束后事件仍未移除**：到期状态没有让 `shouldRemoveEvent()` 返回 true。同步更新到期字段和移除判断，再推进超过期限确认活动列表已清理。
-- **未交互事件提前消失**：默认 active 时长 30–40 游戏天已经耗尽。需要更长窗口时覆写 `getBarEventActiveDuration()`，推进到原期限后确认事件仍可出现。
-- **读档越多事件越频繁**：每次载入都追加了同类 creator。注册前用 `hasEventCreator(Class)` 判断，连续读档后确认 creator 数量和抽取频率稳定。
-- **普通事件几乎不再出现**：某个事件被设为 priority，优先抽取挤占了普通 picker。只为剧情关键事件保留 priority，再观察普通事件重新进入候选。
-- **临时酒吧选项没有出现**：`AddBarEvents` 的市场条件或一次性 flag 不满足。核对 `$market.id` 与规则内存值，重新进入酒吧确认选项生成。
-- **临时酒吧选项下一帧就消失**：`$core_tempBarEvents` 会在展示前重建，并以 `expire=0` 清理。长期状态改存独立 memory flag，再次打开酒吧确认规则能按该状态重建选项。
-- **事件选项进入错误分支**：`optionSelected` 比较了显示文本，或常量与 `addOption` 的 optionData 不一致。统一比较 optionData 常量，再点击各选项核对对应日志。
-- **保存或读档时事件字段报错**：事件或 creator 保存了非 transient 的对话句柄、引擎对象。持久字段只保留可序列化数据，句柄保持 transient；完成一次保存和读档复验。
+- **注册时出现空指针异常**：`onApplicationLoad` 阶段还没有 sector 和 `BarEventManager`。
+
+    - **解决方案**：将 creator 注册移到 `onGameLoad` 或 `onNewGame`。
+
+- **酒吧始终没有该事件**：creator 未被抽取、返回了 null，或市场被 `shouldShowAtMarket` 过滤。
+
+    - **解决方案**：依次核对 `creator picked`、`eligible/skip`、`prompt/shown` 日志，修正最先缺失的阶段。
+
+- **事件只在首次市场出现**：默认 `shownAt` 会把事件锁定到第一次展示的市场。
+
+    - **解决方案**：需要跨市场显示时覆写 `shouldShowAtMarket` 并管理状态。
+
+- **点击酒吧选项后进入普通规则对话**：`addOption` 的 optionData 不是事件对象。
+
+    - **解决方案**：改为 `addOption(text, this)`。
+
+- **完成后的事件仍反复出现**：完成分支没有通知 manager 移除活动事件。
+
+    - **解决方案**：设置完成状态时调用 `notifyWasInteractedWith(this)`。
+
+- **倒计时结束后事件仍未移除**：到期状态没有让 `shouldRemoveEvent()` 返回 true。
+
+    - **解决方案**：同步更新到期字段和移除判断。
+
+- **未交互事件提前消失**：默认 active 时长 30–40 游戏天已经耗尽。
+
+    - **解决方案**：需要更长窗口时覆写 `getBarEventActiveDuration()`。
+
+- **读档越多事件越频繁**：每次载入都追加了同类 creator。
+
+    - **解决方案**：注册前用 `hasEventCreator(Class)` 判断。
+
+- **普通事件几乎不再出现**：某个事件被设为 priority，优先抽取挤占了普通 picker。
+
+    - **解决方案**：只为剧情关键事件保留 priority。
+
+- **临时酒吧选项没有出现**：`AddBarEvents` 的市场条件或一次性 flag 不满足。
+
+    - **解决方案**：核对 `$market.id` 与规则内存值。
+
+- **临时酒吧选项下一帧就消失**：`$core_tempBarEvents` 会在展示前重建，并以 `expire=0` 清理。
+
+    - **解决方案**：长期状态改存独立 memory flag。
+
+- **事件选项进入错误分支**：`optionSelected` 比较了显示文本，或常量与 `addOption` 的 optionData 不一致。
+
+    - **解决方案**：统一比较 optionData 常量。
+
+- **保存或读档时事件字段报错**：事件或 creator 保存了非 transient 的对话句柄、引擎对象。
+
+    - **解决方案**：持久字段只保留可序列化数据，句柄保持 transient。
 
 ## 总结
 

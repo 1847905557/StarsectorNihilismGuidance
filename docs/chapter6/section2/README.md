@@ -141,6 +141,10 @@ MOD 正常启用，但 `getEnabledModPlugins` 对 `null` 类名直接跳过 —�
 
 本节沿用此前建立的 jar 编译路线，`GearInModPlugin` 编进同一个 `jars/GearIndustry.jar`。
 
+接管新档生成页的入口时：`mod_info.json` 的 `modPlugin` 从 `data.scripts.gearin.campaign.GearInSystemGenPlugin` 改为 `data.scripts.gearin.GearInModPlugin`，生成与关系播种逻辑随入口搬到本节类的 `onNewGame`(见下 "累计工程补全片段")；
+
+旧的入口类 `GearInSystemGenPlugin` 如残留不会报错，只会安静地成为一份不再被调用的旧实现，应删除。
+
 ## 建立存档初始化门
 
 `onGameLoad` 无论新档 (`true`) 还是读档 (`false`) 都会被调用，因此 "每个存档只做一次" 的初始化 (生成补丁、势力注册、脚本注册) **必须**用随存档保存的 persistent data 判断：
@@ -208,26 +212,7 @@ if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
 
 完成信号：首次进入存档时执行一次，重复读档不再重复登记势力。
 
-## 完整最小例
-
-在既有 MOD 布局上增加入口类 (MOD 根目录 `Starsector/mods/GearIndustry`，`build.gradle`、`settings.gradle` 沿用既有配置)：
-
-```text
-Starsector/mods/GearIndustry/
-├── build.gradle
-├── settings.gradle
-├── mod_info.json          # 追加 modPlugin 字段 (见上)
-├── data/
-├── src/
-│   └── data/scripts/gearin/GearInModPlugin   # 本节新增
-└── jars/
-```
-
-接管新档生成页的入口时：`mod_info.json` 的 `modPlugin` 从 `data.scripts.gearin.campaign.GearInSystemGenPlugin` 改为 `data.scripts.gearin.GearInModPlugin`，生成与关系播种逻辑随入口搬到本节类的 `onNewGame`(见下 "累计工程补全片段")；
-
-旧的入口类 `GearInSystemGenPlugin` 如残留不会报错，只会安静地成为一份不再被调用的旧实现，应删除。
-
-### 核对插件源码
+## 核对插件源码
 
 对应关系：
 
@@ -258,6 +243,89 @@ gradle jar
 产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/GearInModPlugin.class`(可用 `jar tf` 核对)。
 
 类已经就位，下面用日志顺序验证整条链路。
+
+## 完整最小例
+
+在既有 MOD 布局上增加入口类 (MOD 根目录 `Starsector/mods/GearIndustry`，`build.gradle`、`settings.gradle` 沿用既有配置)：
+
+```text
+Starsector/mods/GearIndustry/
+├── build.gradle
+├── settings.gradle
+├── mod_info.json          # 追加 modPlugin 字段 (见上)
+├── data/
+├── src/
+│   └── data/scripts/gearin/GearInModPlugin   # 本节新增
+└── jars/
+```
+
+::: details 完整成品：GearInModPlugin
+
+```java
+package data.scripts.gearin;
+
+import com.fs.starfarer.api.BaseModPlugin;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.impl.campaign.shared.SharedData;
+
+/**
+ * 完整最小例：ModPlugin 生命周期、注册与存档入口。
+ * mod_info.json 的 modPlugin 字段指向本类。
+ * 每个回调打印一行日志；"首次进入存档" 的一次性初始化用 sector persistent data 门控 (CLASS_MARK 模式)。
+ */
+public class GearInModPlugin extends BaseModPlugin {
+
+    /** 存档持久化标记：本 MOD 是否已完成首次进入初始化 (随存档保存)。 */
+    public static final String CLASS_MARK = "GearInModPlugin";
+
+    @Override
+    public void onApplicationLoad() throws Exception {
+        String version = Global.getSettings().getGameVersion();
+        if (!version.startsWith("0.98a")) {
+            throw new IllegalArgumentException("齿轮工业要求游戏版本 0.98a，当前为 [" + version + "]");
+        }
+        log("onApplicationLoad");
+    }
+
+    @Override
+    public void onEnabled(boolean wasEnabledBefore) {
+        log("onEnabled wasEnabledBefore=" + wasEnabledBefore);
+    }
+
+    @Override
+    public void onNewGame() {
+        log("onNewGame");
+    }
+
+    @Override
+    public void onGameLoad(boolean newGame) {
+        SectorAPI sector = Global.getSector();
+        if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
+            sector.getPersistentData().put(CLASS_MARK, true);
+            SharedData.getData().getPersonBountyEventData().addParticipatingFaction("gear_industry");
+            log("first-entry initialization (CLASS_MARK gate opened)");
+        }
+        log("onGameLoad newGame=" + newGame);
+    }
+
+    @Override
+    public void beforeGameSave() {
+        log("beforeGameSave");
+    }
+
+    @Override
+    public void afterGameSave() {
+        log("afterGameSave");
+    }
+
+    private static void log(String message) {
+        Global.getLogger(GearInModPlugin.class).info("GearIn lifecycle: " + message);
+    }
+}
+```
+
+:::
 
 ## 排查启动阶段空指针
 
@@ -366,71 +434,3 @@ public void onGameLoad(boolean newGame) { Global.getSector().addScript(new GearI
     - `data/scripts/gearin/`：本节入口类 `GearInModPlugin`(含存档持久化标记 `CLASS_MARK`) 所在源目录。
     - `jars/GearIndustry.jar`：编译产物，含 `data/scripts/gearin/GearInModPlugin.class`。
     - `mod_info.json`：`modPlugin` 注册字段。
-
-::: details 完整成品：GearInModPlugin
-
-```java
-package data.scripts.gearin;
-
-import com.fs.starfarer.api.BaseModPlugin;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.impl.campaign.shared.SharedData;
-
-/**
- * 完整最小例：ModPlugin 生命周期、注册与存档入口。
- * mod_info.json 的 modPlugin 字段指向本类。
- * 每个回调打印一行日志；"首次进入存档" 的一次性初始化用 sector persistent data 门控 (CLASS_MARK 模式)。
- */
-public class GearInModPlugin extends BaseModPlugin {
-
-    /** 存档持久化标记：本 MOD 是否已完成首次进入初始化 (随存档保存)。 */
-    public static final String CLASS_MARK = "GearInModPlugin";
-
-    @Override
-    public void onApplicationLoad() throws Exception {
-        String version = Global.getSettings().getGameVersion();
-        if (!version.startsWith("0.98a")) {
-            throw new IllegalArgumentException("齿轮工业要求游戏版本 0.98a，当前为 [" + version + "]");
-        }
-        log("onApplicationLoad");
-    }
-
-    @Override
-    public void onEnabled(boolean wasEnabledBefore) {
-        log("onEnabled wasEnabledBefore=" + wasEnabledBefore);
-    }
-
-    @Override
-    public void onNewGame() {
-        log("onNewGame");
-    }
-
-    @Override
-    public void onGameLoad(boolean newGame) {
-        SectorAPI sector = Global.getSector();
-        if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
-            sector.getPersistentData().put(CLASS_MARK, true);
-            SharedData.getData().getPersonBountyEventData().addParticipatingFaction("gear_industry");
-            log("first-entry initialization (CLASS_MARK gate opened)");
-        }
-        log("onGameLoad newGame=" + newGame);
-    }
-
-    @Override
-    public void beforeGameSave() {
-        log("beforeGameSave");
-    }
-
-    @Override
-    public void afterGameSave() {
-        log("afterGameSave");
-    }
-
-    private static void log(String message) {
-        Global.getLogger(GearInModPlugin.class).info("GearIn lifecycle: " + message);
-    }
-}
-```
-
-:::

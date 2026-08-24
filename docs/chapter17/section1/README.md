@@ -125,62 +125,6 @@ return true;
 
 完整桥接类同时覆盖两个可选依赖。Nexerelin 专题只在 `isNexerelinEnabled()` 为真时进入各自适配器；LunaLib 设置读取则通过延迟加载的嵌套类隔离第三方类型。
 
-## 验证方案
-
-分别准备 4 种启用组合：两个库都缺席、仅 Nexerelin、仅 LunaLib、两个库都启用。每种组合都使用同一 GearIn JAR。
-
-### 启用组合检测结果速查表
-
-| 安装组合 | Nexerelin 检测 | LunaLib 检测 |
-|---|---|---|
-| 两个库都缺席 | false | false |
-| 仅 Nexerelin | true | false |
-| 仅 LunaLib | false | true |
-| 两个库都启用 | true | true |
-
-1. 启动并读档，记录两个 `is*Enabled()` 的返回值。
-2. 连续调用 `getFullGraphicEffect(true)` 100 次，记录返回值和缺席日志条数。
-3. 连续调用 `reportNexerelinFallback()` 100 次，记录 Nexerelin 缺席日志条数。
-4. LunaLib 启用时分别测试设置值 true、false 和字段缺失，并在另一个 MOD 中建立同名字段。
-5. 修改另一个 MOD 的同名字段，确认 GearIn 的读取结果保持不变。
-6. 两个库都缺席时进入基础战斗与生涯界面，确认非兼容内容可用。
-
-预期结果：
-
-- 4 种组合的两个布尔值分别为 `false/false`、`true/false`、`false/true`、`true/true`；
-- LunaLib 缺席时 100 次读取均返回 fallback，缺席日志为 1 条；
-- Nexerelin 缺席时 100 次报告只产生 1 条战略接入禁用日志；
-- LunaLib 字段存在时返回实际值，字段缺失时返回 fallback；
-- 另一个 MOD 的同名字段变化不会改变 GearIn 的读取结果；
-- 两个库都缺席时基础内容仍可进入，没有 `NoClassDefFoundError`。
-
-## 故障分析
-
-- **未安装 LunaLib 时仍抛 `NoClassDefFoundError`**：第三方类型仍出现在无条件路径，或被外层静态字段提前解析。
-
-    - **解决方案**：把直接引用收进延迟加载的适配器，只在启用分支调用。
-
-- **`isModEnabled` 始终返回 false**：检测 ID 的大小写或拼写与 manifest 不一致。
-
-    - **解决方案**：改用精确 MOD ID。
-
-- **检测通过后仍在加载期崩溃**：适配器类在入口字段或静态初始化中被提前解析。
-
-    - **解决方案**：移除外层类型引用并延迟到分支内部，重启。
-
-- **缺少前置时功能悄悄变化**：降级分支没有输出诊断。
-
-    - **解决方案**：增加只记录一次的降级日志。
-
-## 总结
-
-软依赖的完整做法包括启用判断、库调用隔离、明确降级和可定位日志。判断本身只回答库是否启用，代码组织才决定缺库时类加载是否安全。
-
-## 建议参考项
-
-- `ModManagerAPI.isModEnabled`：判断可选 MOD 是否启用；
-- 适配器类：收敛第三方类型引用；
-- `starsector.log`：确认增强功能启用或降级。
 ::: details 完整成品：GearInCompatBridge
 
 ```java
@@ -239,3 +183,60 @@ public final class GearInCompatBridge {
 ```
 
 :::
+
+## 验证方案
+
+分别准备 4 种启用组合：两个库都缺席、仅 Nexerelin、仅 LunaLib、两个库都启用。每种组合都使用同一 GearIn JAR。
+
+### 启用组合检测结果速查表
+
+| 安装组合 | Nexerelin 检测 | LunaLib 检测 |
+|---|---|---|
+| 两个库都缺席 | false | false |
+| 仅 Nexerelin | true | false |
+| 仅 LunaLib | false | true |
+| 两个库都启用 | true | true |
+
+1. 启动并读档，记录两个 `is*Enabled()` 的返回值。
+2. 连续调用 `getFullGraphicEffect(true)` 100 次，记录返回值和缺席日志条数。
+3. 连续调用 `reportNexerelinFallback()` 100 次，记录 Nexerelin 缺席日志条数。
+4. LunaLib 启用时分别测试设置值 true、false 和字段缺失，并在另一个 MOD 中建立同名字段。
+5. 修改另一个 MOD 的同名字段，确认 GearIn 的读取结果保持不变。
+6. 两个库都缺席时进入基础战斗与生涯界面，确认非兼容内容可用。
+
+预期结果：
+
+- 4 种组合的两个布尔值分别为 `false/false`、`true/false`、`false/true`、`true/true`；
+- LunaLib 缺席时 100 次读取均返回 fallback，缺席日志为 1 条；
+- Nexerelin 缺席时 100 次报告只产生 1 条战略接入禁用日志；
+- LunaLib 字段存在时返回实际值，字段缺失时返回 fallback；
+- 另一个 MOD 的同名字段变化不会改变 GearIn 的读取结果；
+- 两个库都缺席时基础内容仍可进入，没有 `NoClassDefFoundError`。
+
+## 故障分析
+
+- **未安装 LunaLib 时仍抛 `NoClassDefFoundError`**：第三方类型仍出现在无条件路径，或被外层静态字段提前解析。
+
+    - **解决方案**：把直接引用收进延迟加载的适配器，只在启用分支调用。
+
+- **`isModEnabled` 始终返回 false**：检测 ID 的大小写或拼写与 manifest 不一致。
+
+    - **解决方案**：改用精确 MOD ID。
+
+- **检测通过后仍在加载期崩溃**：适配器类在入口字段或静态初始化中被提前解析。
+
+    - **解决方案**：移除外层类型引用并延迟到分支内部，重启。
+
+- **缺少前置时功能悄悄变化**：降级分支没有输出诊断。
+
+    - **解决方案**：增加只记录一次的降级日志。
+
+## 总结
+
+软依赖的完整做法包括启用判断、库调用隔离、明确降级和可定位日志。判断本身只回答库是否启用，代码组织才决定缺库时类加载是否安全。
+
+## 建议参考项
+
+- `ModManagerAPI.isModEnabled`：判断可选 MOD 是否启用；
+- 适配器类：收敛第三方类型引用；
+- `starsector.log`：确认增强功能启用或降级。

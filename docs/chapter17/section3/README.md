@@ -144,6 +144,55 @@ if (spawnEntityId == null) {
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
 
+::: details 完整成品：GearInNexStartPlanner
+
+```java
+package data.scripts.gearin.modcompat;
+
+import java.util.List;
+
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import exerelin.campaign.SectorManager;
+import exerelin.utilities.NexConfig;
+import exerelin.utilities.NexFactionConfig;
+import exerelin.utilities.NexUtilsFaction;
+import exerelin.world.ExerelinCorvusLocations;
+
+public final class GearInNexStartPlanner {
+    public String chooseSpawn(String factionId) {
+        SectorManager manager = SectorManager.getManager();
+        if (manager != null && manager.isCorvusMode()) {
+            ExerelinCorvusLocations.SpawnPointEntry entry =
+                    ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
+            return entry == null ? null : entry.entityId;
+        }
+
+        MarketAPI largest = null;
+        for (MarketAPI market : NexUtilsFaction.getFactionMarkets(factionId)) {
+            if (market.getPrimaryEntity() == null) {
+                continue;
+            }
+            if (largest == null || market.getSize() > largest.getSize()) {
+                largest = market;
+            }
+        }
+        return largest == null ? null : largest.getPrimaryEntity().getId();
+    }
+
+    public List<String> chooseFleet(String factionId, String fleetType) {
+        NexFactionConfig config = NexConfig.getFactionConfig(factionId);
+        try {
+            NexFactionConfig.StartFleetType.getType(fleetType);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Unknown start fleet type: " + fleetType);
+        }
+        return config.getStartFleetForType(fleetType, false, 0);
+    }
+}
+```
+
+:::
+
 ## 验证方案
 
 1. 构建示例 MOD，确认 `MarketAPI`、`NexUtilsFaction` 与开局配置方法签名匹配。
@@ -195,51 +244,3 @@ if (spawnEntityId == null) {
 - `corvus_spawnpoints.csv`：固定模式出生点；
 - `NexFactionConfig.getStartFleetForType`：读取起始舰队。
 - `NexFactionConfig.StartFleetType`：判断固定类型与 `RANDOM` 候选。
-::: details 完整成品：GearInNexStartPlanner
-
-```java
-package data.scripts.gearin.modcompat;
-
-import java.util.List;
-
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import exerelin.campaign.SectorManager;
-import exerelin.utilities.NexConfig;
-import exerelin.utilities.NexFactionConfig;
-import exerelin.utilities.NexUtilsFaction;
-import exerelin.world.ExerelinCorvusLocations;
-
-public final class GearInNexStartPlanner {
-    public String chooseSpawn(String factionId) {
-        SectorManager manager = SectorManager.getManager();
-        if (manager != null && manager.isCorvusMode()) {
-            ExerelinCorvusLocations.SpawnPointEntry entry =
-                    ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
-            return entry == null ? null : entry.entityId;
-        }
-
-        MarketAPI largest = null;
-        for (MarketAPI market : NexUtilsFaction.getFactionMarkets(factionId)) {
-            if (market.getPrimaryEntity() == null) {
-                continue;
-            }
-            if (largest == null || market.getSize() > largest.getSize()) {
-                largest = market;
-            }
-        }
-        return largest == null ? null : largest.getPrimaryEntity().getId();
-    }
-
-    public List<String> chooseFleet(String factionId, String fleetType) {
-        NexFactionConfig config = NexConfig.getFactionConfig(factionId);
-        try {
-            NexFactionConfig.StartFleetType.getType(fleetType);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Unknown start fleet type: " + fleetType);
-        }
-        return config.getStartFleetForType(fleetType, false, 0);
-    }
-}
-```
-
-:::

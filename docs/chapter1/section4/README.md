@@ -2,9 +2,9 @@
 
 本节将引导您制作一艘相位舰船，即右键系统为 `PHASE` 类的舰船。
 
-*本节预期阅读时间：~8 分钟。*
+*本节预期阅读时间：\~8 分钟。*
 
-*本节预期操作时间：~10 分钟。*
+*本节预期操作时间：\~10 分钟。*
 
 ## 学习目标
 
@@ -49,7 +49,7 @@
 
 天下数据一大抄。相信您已经能熟练地复制 `小精灵-级` 相位舰的数据，然后稍作修改：
 
-```csv
+```csv {12}
 name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #Lasher,lasher,Frigate,Low Tech,ammofeed,5,1750,300,2100,1750,140,55,,120,110,90,60,90,200,FRONT,,210,0.4,1,,,25,50,40,25,1,25,10,9000,8,10,240,0.25,4,4,,,,,,,,"lowtech_bp, merc, ind",,,,0.4,2,2,,204
@@ -65,7 +65,6 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 工匠,GearIn_artizan,驱逐舰,未知,ammofeed,10,5000,500,3800,4167,200,95,,80,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,"GearIn_bp",,,,0.5,2,3,,300
 守炉人,GearIn_furnaceman,轻型航母,未知,targetingfeed,11,4500,400,3000,2813,225,75,2,75,50,30,25,25,450,FRONT,,300,0.4,0.8,,,90,150,40,40,2,20,9,52000,5,15,360,0.25,11,13,,,,,,,CARRIER,"GearIn_bp",,,,0.5,2,3,,318
-
 ```
 
 在本例中，`锻件-级` 相位护卫舰全船上下只有一个中型实弹武器槽位，因此它将专注于疯狂的实弹火力。
@@ -98,7 +97,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 光效贴图文件**必须**位于和相位舰船同一位置。
 
-光效贴图文件的文件名**必须**是 `相位舰船的贴图文件名+_glow1` 和 `相位舰船的贴图文件名+_glow2`。
+光效贴图文件的文件名**必须**是 `相位舰船的贴图文件名+_glow1` 和 `相位舰船的贴图文件名+_glow2`。即使您以后自定义战术系统文件，也会发现这个限制**绝无可能破除**，修改读取后缀也没用。
 
 光效贴图文件**应当**是纯白色的，否则将出现影响观感的颜色异常。
 

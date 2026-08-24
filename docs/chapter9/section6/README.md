@@ -101,7 +101,7 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 
 选项分支判断用 `optionData`，不要用 `optionText`
 
-`optionSelected(optionText, optionData)` 的第一个参数是用户看到的显示文本 (可随 UI 文案变化)，第二个才是 `addOption` 时传入的 id。按 `optionText` 做分支会在文案改动后静默失效 (见 "点击对话框选项后没有反应" 故障条目)。
+`optionSelected(optionText, optionData)` 的第一个参数是用户看到的显示文本 (可随 UI 文案变化)，第二个才是 `addOption` 时传入的 id。按 `optionText` 做分支会在文案改动后静默失效。
 
 把 `showInteractionDialog` 的返回值写进日志
 

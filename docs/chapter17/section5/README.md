@@ -114,6 +114,31 @@ String className = GBDataManager.getPluginsById().get(pluginId);
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
 
+::: details 完整成品：GearInGroundBattleProbe
+
+```java
+package data.scripts.gearin.modcompat;
+
+import exerelin.campaign.intel.groundbattle.GBDataManager;
+import exerelin.campaign.intel.groundbattle.GroundUnitDef;
+
+public final class GearInGroundBattleProbe {
+    public boolean hasIndustry(String industryId) {
+        return GBDataManager.getIndustryDef(industryId) != null;
+    }
+
+    public String findPlugin(String pluginId) {
+        return GBDataManager.getPluginsById().get(pluginId);
+    }
+
+    public boolean hasUnit(String unitId) {
+        return GroundUnitDef.getUnitDef(unitId) != null;
+    }
+}
+```
+
+:::
+
 ## 验证方案
 
 1. 执行 `gradle jar` 构建示例 MOD，确认编译完成且没有报错。
@@ -154,27 +179,3 @@ String className = GBDataManager.getPluginsById().get(pluginId);
 - `groundBattleDefs.json`：地面战合并定义；
 - `GBDataManager.getIndustryDef`：查询产业定义；
 - `GBDataManager.getPluginsById`：查询插件类映射。
-::: details 完整成品：GearInGroundBattleProbe
-
-```java
-package data.scripts.gearin.modcompat;
-
-import exerelin.campaign.intel.groundbattle.GBDataManager;
-import exerelin.campaign.intel.groundbattle.GroundUnitDef;
-
-public final class GearInGroundBattleProbe {
-    public boolean hasIndustry(String industryId) {
-        return GBDataManager.getIndustryDef(industryId) != null;
-    }
-
-    public String findPlugin(String pluginId) {
-        return GBDataManager.getPluginsById().get(pluginId);
-    }
-
-    public boolean hasUnit(String unitId) {
-        return GroundUnitDef.getUnitDef(unitId) != null;
-    }
-}
-```
-
-:::

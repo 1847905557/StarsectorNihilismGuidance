@@ -38,7 +38,7 @@
     - 任务是一个 `BaseIntelPlugin`(用户在 Intel 界面跟踪进度)，同时是一个 `EveryFrameScript`(每帧推进阶段)，通过 `MissionHub`(联系人任务板) 或酒吧事件两种入口提供给用户。
 - **任务阶段 (stage)**：API 名保留 `StageData`。任务状态机的一个节点，用任意 `Object` 作 id(惯例是枚举常量)。任务在同一时刻只有一个 `currentStage`；阶段之间用**连接 (`StageConnection`)** 组成有向图。
 - **目标 (objective)**：本节术语。任务给用户的一项 "当前要做的事"= 当前阶段 + 阶段连接上的完成条件 (`ConditionChecker`)。任务的成功/失败由 `successStages` / `failStages` 集合判定，不单独建模。
-- **事件链 (event chain)**：本节术语，两种形态：①单任务内 —— 阶段连接 (`connections`)+ 触发器 (`triggers`) 组成的事件序列；②跨任务 —— 多个任务 Intel 经全局内存阶段 (如成熟实例的 `MissionStage`) 串成的大剧情链。
+- **事件链 (event chain)**：本节术语，两种形态：单任务内 —— 阶段连接 (`connections`)+ 触发器 (`triggers`) 组成的事件序列；跨任务 —— 多个任务 Intel 经全局内存阶段 (如成熟实例的 `MissionStage`) 串成的大剧情链。
 - **触发器 (trigger)**：API 名保留 `MissionTrigger`。绑定到若干阶段、带一个 `ConditionChecker` 与一串 `TriggerAction` 的一次性动作；条件满足且任务处于绑定阶段时执行并从列表移除。
 
 ## 梳理生涯任务关系

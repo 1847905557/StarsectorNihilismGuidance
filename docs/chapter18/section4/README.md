@@ -102,49 +102,6 @@ if (!BoxConfigs.isShaderEnable()) return;
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
 
-## 验证方案
-
-1. 编译 Java fixture 与两个 GLSL 文件，确认常驻插件创建一次程序和 VBO。
-2. 在战斗中切换运行时开关两次，记录关闭区间的 draw call 计数。
-3. 把玩家舰移出并移回视口，观察剔除和恢复。
-4. 结束战斗并重复调用 cleanup，核对资源归零且只输出一次有效统计。
-
-预期结果：
-
-- 画面不被舰船主体错误遮挡；
-- 离开视口后插件停止渲染，回到视口后恢复；
-- 切换关闭后 drawCalls 停止增长；
-- 重复 cleanup 不产生二次删除错误；
-- 关闭区间没有 GL 提交，重新开启后渲染恢复；
-- cleanup 日志的 frames 与 drawCalls 能解释实际渲染次数。
-
-## 故障分析
-
-- **关闭 shader 后能量场仍在绘制**：开关只在类加载时读取，`render` 没有查询当前值。
-
-    - **解决方案**：让 `render` 查询当前开关值。
-
-- **能量场离开屏幕后仍持续渲染**：`renderRadius` 使用了 `Float.MAX_VALUE`，剔除永远不会发生。
-
-    - **解决方案**：按实际效果范围设置半径。
-
-- **战斗结束后显存持续增长**：插件没有在 `isCombatOver` 后失效并执行 cleanup。
-
-    - **解决方案**：让结束条件触发幂等删除。
-
-- **关闭图形效果后玩法数值变化**：shader 开关参与了伤害或数值计算。
-
-    - **解决方案**：把玩法结算移出渲染分支。
-
-## 总结
-
-常驻能量场的完成条件包括画面、开关、剔除和释放。render 只在当前设置允许时提交，插件位置决定剔除，cleanup 负责幂等删除；性能计数才有可信含义。
-
-## 建议参考项
-
-- `BaseCombatLayeredRenderingPlugin`：常驻分层渲染生命周期；
-- `BoxConfigs.isShaderEnable`：当前 shader 设置；
-- `ShaderProgram.delete` 与 `glDeleteBuffers`：释放 GL 资源。
 ::: details 完整成品：GearInShaderPlugin
 
 ```java
@@ -549,3 +506,47 @@ void main() {
 ```
 
 :::
+
+## 验证方案
+
+1. 编译 Java fixture 与两个 GLSL 文件，确认常驻插件创建一次程序和 VBO。
+2. 在战斗中切换运行时开关两次，记录关闭区间的 draw call 计数。
+3. 把玩家舰移出并移回视口，观察剔除和恢复。
+4. 结束战斗并重复调用 cleanup，核对资源归零且只输出一次有效统计。
+
+预期结果：
+
+- 画面不被舰船主体错误遮挡；
+- 离开视口后插件停止渲染，回到视口后恢复；
+- 切换关闭后 drawCalls 停止增长；
+- 重复 cleanup 不产生二次删除错误；
+- 关闭区间没有 GL 提交，重新开启后渲染恢复；
+- cleanup 日志的 frames 与 drawCalls 能解释实际渲染次数。
+
+## 故障分析
+
+- **关闭 shader 后能量场仍在绘制**：开关只在类加载时读取，`render` 没有查询当前值。
+
+    - **解决方案**：让 `render` 查询当前开关值。
+
+- **能量场离开屏幕后仍持续渲染**：`renderRadius` 使用了 `Float.MAX_VALUE`，剔除永远不会发生。
+
+    - **解决方案**：按实际效果范围设置半径。
+
+- **战斗结束后显存持续增长**：插件没有在 `isCombatOver` 后失效并执行 cleanup。
+
+    - **解决方案**：让结束条件触发幂等删除。
+
+- **关闭图形效果后玩法数值变化**：shader 开关参与了伤害或数值计算。
+
+    - **解决方案**：把玩法结算移出渲染分支。
+
+## 总结
+
+常驻能量场的完成条件包括画面、开关、剔除和释放。render 只在当前设置允许时提交，插件位置决定剔除，cleanup 负责幂等删除；性能计数才有可信含义。
+
+## 建议参考项
+
+- `BaseCombatLayeredRenderingPlugin`：常驻分层渲染生命周期；
+- `BoxConfigs.isShaderEnable`：当前 shader 设置；
+- `ShaderProgram.delete` 与 `glDeleteBuffers`：释放 GL 资源。

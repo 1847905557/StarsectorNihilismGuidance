@@ -2,9 +2,9 @@
 
 本节将引导您制作一艘航母，即带有甲板与港口的舰船。既然有航母，自然还需要包括战机。
 
-*本节预期阅读时间：~12 分钟。*
+*本节预期阅读时间：\~12 分钟。*
 
-*本节预期操作时间：~15 分钟。*
+*本节预期操作时间：\~15 分钟。*
 
 ## 学习目标
 
@@ -52,27 +52,29 @@
 
 ### 设置甲板
 
-按 L 设置甲板：
+按 `L` 设置甲板：
 
-::: caution 甲板设置
+::: warning 甲板设置
 
-每个甲板建议设置至少 2 个港口 (Port)。港口数为 0 时战机从舰船中心生成；港口数为 1 时从该港口生成。
+每个甲板建议设置至少 2 个港口 (Port)，设置 4 个为最佳建议。
 
-建议每个甲板至少拥有 4 个港口。
+港口数为 0 时，战机从舰船中心生成。
+
+港口数过少时，战机的生成将异常缓慢。
 
 :::
 
 ![舰船编辑器中的航母甲板港口设置](./carrier_port.png "carrier_port.png")
 
-**每一个图标右下角的数字说明它属于第 x 个甲板**，由于 `守炉人-级` 航母只有 2 个甲板，所以右下角最大数字为 2**。而图标的数量则说明这个甲板有多少个港口**。
+**每一个图标右下角的数字说明它属于第 x 个甲板**，由于 `守炉人-级` 航母只有 2 个甲板，所以右下角最大数字为 2\*\*。而图标的数量则说明这个甲板有多少个港口\*\*。
 
-其它属性设置完毕后，按 V 保存。
+其它属性设置完毕后，按 `V` 保存。
 
 ## 制作航母舰船数据
 
 如前文所述，最为简单的做法是复制黏贴。打开原版的 `ship_data.csv`，将 `赶牛人-级` 航母的数据复制过来，然后稍作修改：
 
-```csv
+```csv {13}
 name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #Lasher,lasher,Frigate,Low Tech,ammofeed,5,1750,300,2100,1750,140,55,,120,110,90,60,90,200,FRONT,,210,0.4,1,,,25,50,40,25,1,25,10,9000,8,10,240,0.25,4,4,,,,,,,,"lowtech_bp, merc, ind",,,,0.4,2,2,,204
@@ -86,7 +88,6 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 工匠,GearIn_artizan,驱逐舰,未知,ammofeed,10,5000,500,3800,4167,200,95,,80,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,"GearIn_bp",,,,0.5,2,3,,300
 守炉人,GearIn_furnaceman,轻型航母,未知,targetingfeed,11,4500,400,3000,2813,225,75,2,75,50,30,25,25,450,FRONT,,300,0.4,0.8,,,90,150,40,40,2,20,9,52000,5,15,360,0.25,11,13,,,,,,,CARRIER,"GearIn_bp",,,,0.5,2,3,,318
-
 ```
 
 在本例中，`守炉人-级` 航母的战术系统被替换为 `苍鹭-级` 的同款，来提供一种类似的 "命令式" 操作感。因为它的槽位大多数都被替换为防御型小型实弹槽位，因此为它提供更高的结构与更低的部署点作为幅度恰当的补偿。
@@ -118,7 +119,7 @@ tag 也作了与 `工匠-级` 相似的处理。
 
 战机的碰撞箱**应该尽可能简单**，甚至可以为此牺牲一些精度。
 
-战机的武器**不应该选用 `内置`**，因为战机的装配是基于装配文件的，而对内置槽位进行装配可能会产生一些问题。
+战机的武器 **不应该选用** `内置`，因为战机的装配是基于装配文件的，而对内置槽位进行装配可能会产生一些问题。
 
 不要选错 `hullSize`—— 游戏以 `hullSize == FIGHTER` 判定战机身份 (`ShipAPI.isFighter()`)，选错时该单位不会被分配战机 AI，也不会被计入联队成员、返航与补充。
 
@@ -132,7 +133,7 @@ tag 也作了与 `工匠-级` 相似的处理。
 
 继续复制黏贴。打开原版的 `ship_data.csv`，将 `阔剑-级` 战机的数据复制过来，然后稍作修改：
 
-```csv
+```csv {12}
 name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #Lasher,lasher,Frigate,Low Tech,ammofeed,5,1750,300,2100,1750,140,55,,120,110,90,60,90,200,FRONT,,210,0.4,1,,,25,50,40,25,1,25,10,9000,8,10,240,0.25,4,4,,,,,,,,"lowtech_bp, merc, ind",,,,0.4,2,2,,204
@@ -194,17 +195,17 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 **不在本表上的数据均为对于战机而言不必修改的数据或无意义数据。**
 
-| 英文         | 实际意义                                                     |
-| ------------ | ------------------------------------------------------------ |
-| displayName  | 战机本装配的装配名，会在战机的数据页面被展示                 |
-| hullId       | 战机本装配的舰船 ID，在本例为 `GearIn_slag`                   |
-| variantId    | 战机本装配的装配 ID，建议与文件名相同，在本例为 `GearIn_slag_normal` |
-| hullMods     | 战机本装配所安装的插件                                       |
+| 英文 | 实际意义 |
+|---|---|
+| displayName | 战机本装配的装配名，会在战机的数据页面被展示 |
+| hullId | 战机本装配的舰船 ID，在本例为 `GearIn_slag` |
+| variantId | 战机本装配的装配 ID，建议与文件名相同，在本例为 `GearIn_slag_normal` |
+| hullMods | 战机本装配所安装的插件 |
 | weaponGroups | 战机本装配的武器列表，在 `weapons` 项目里的则是具体武器。注意，图中诸如 `WS 001` 的是槽位 ID，**必须是战机本身确实拥有的槽位**，否则游戏将报错。而槽位 ID 后的则是武器 ID，可以查询 `weapon_data.csv`。|
 
 经过修改的装配文件如下：
 
-```json
+```json {3-5,15,16}
 {
 	"quality":0.5,
 	"displayName":"重型战机",
@@ -232,7 +233,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 }
 ```
 
-**再次强调：一定要注意那些武器槽 (`WSxxx`) 是否存在于战机的船体文件里。**
+**再次强调：一定要注意那些武器槽 (**`WSxxx`**) 是否存在于战机的船体文件里。**
 
 ## 制作战机的战机数据
 
@@ -240,7 +241,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 打开 `wing_data.csv`，继续复制粘贴。编者认为，既然 `炉渣-级` 是从 `阔剑-级` 修改而来的，那么就直接修改到底，战机数据也从 `阔剑-级` 里复制并修改：
 
-```csv
+```csv {12}
 id,variant,tags,tier,rarity,fleet pts,op cost,formation,range,attackRunRange,attackPositionOffset,num,role,role desc,refit,base value,,,,,,,,,,,,,number
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 #broadsword_wing,broadsword_Fighter,"fighter4, fighter, low, lowtech_bp, merc, ind",0,,6,8,V,4000,500,,3,FIGHTER,Heavy Fighter,10,6000,,,,,,,,,,,,,1
@@ -257,62 +258,62 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 
 该行的 `tags` 已按上文 "提前准备" 的建议处理：蓝图 tag 被替换为 `GearIn_bp`，并清掉了 `merc, ind`。
 
-::: warning 战机的 wing id 绝对不能和 ship id 一致
+::: caution 战机的 wing id 绝对不能和 ship id 一致
 
 如果战机的 wing id 和 ship id 一致，那么某些用于处理战机生成的方法就无法正确生成整个联队。
 
-如果您真的这么干了，虽然您不会在正常测试中感觉到任何问题，但一旦您后期有类似需求，或您的 MOD 和其它有类似功能的 MOD 一同运行，那么您会迅速理解为什么这一则警告是红色的而非黄色的。
+如果您真的这么干了，虽然您不会在正常测试中感觉到任何问题，但一旦您后期有类似需求，或您的 MOD 和其它有类似功能的 MOD 一同运行，那么您会迅速理解为什么这一则警告是**红色**的而非黄色的。
 
 :::
 
-### wing_data.csv 数据速查表
+### wing\_data.csv 数据速查表
 
 **不在本表上的数据均为本教程用不到的数据 (如 fleet pts) 或不重要数据 (如 number)，照抄原版样本即可。**
 
-| 英文                 | 实际意义                                                     |
-| -------------------- | ------------------------------------------------------------ |
-| id                   | 战机的战机 ID，如果没有特别要求，应当以 `_wing` 结尾           |
-| variant              | 战机所对应的装配文件，在本例中是 `GearIn_slag_normal`         |
-| tags                 | 进阶内容，常用写法见本页的 wing_data.csv tags 速查表                 |
-| tier                 | 科技等级，影响市场、突袭等权重，照抄原版样本即可 |
-| rarity               | 稀有度，影响市场、突袭等权重，照抄原版样本即可 |
-| op cost              | 装配点数需求                                                 |
-| formation            | 战机队形，允许的有 `BOX`、`V`、`CLAW` 和 `DIAMOND`，分别是簇团、正 V 编队、反 V 编队和棱形编队 |
-| range                | 最大交战距离                                                 |
-| attackRunRange       | 当战机与敌舰交战时，最大允许的可后撤距离                     |
-| attackPositionOffset | 战机攻击距离补正                                             |
-| num                  | 每联队的战机数                                               |
-| role                 | 战机的 AI 种类，允许的有 `FIGHTER`、`INTERCEPTOR`、`BOMBER`、`SUPPORT`、`ASSAULT`。`INTERCEPTOR` 目标选取独走一条路径 (优先锁定范围内最近的敌方战机)，攻击环绕距离最大 (500)；`ASSAULT` 最小 (75)，贴得最近；`BOMBER` 是轰炸机，`SUPPORT` 是不会主动离开母舰的支援机 |
-| role desc            | 战机类型文字描述                                             |
-| refit                | 战机整备所需秒数                                             |
-| base value           | 每联队的成本价                                               |
+| 英文 | 实际意义 |
+|---|---|
+| id | 战机的战机 ID，如果没有特别要求，应当以 `_wing` 结尾 |
+| variant | 战机所对应的装配文件，在本例中是 `GearIn_slag_normal` |
+| tags | 进阶内容，常用写法见本页的 wing\_data.csv tags 速查表 |
+| tier | 科技等级，影响市场、突袭等权重，照抄原版样本即可 |
+| rarity | 稀有度，影响市场、突袭等权重，照抄原版样本即可 |
+| op cost | 装配点数需求 |
+| formation | 战机队形，允许的有 `BOX`、`V`、`CLAW` 和 `DIAMOND`，分别是簇团、正 V 编队、反 V 编队和棱形编队 |
+| range | 最大交战距离 |
+| attackRunRange | 当战机与敌舰交战时，最大允许的可后撤距离 |
+| attackPositionOffset | 战机攻击距离补正 |
+| num | 每联队的战机数 |
+| role | 战机的 AI 种类，允许的有 `FIGHTER`、`INTERCEPTOR`、`BOMBER`、`SUPPORT`、`ASSAULT`。`INTERCEPTOR` 目标选取独走一条路径 (优先锁定范围内最近的敌方战机)，攻击环绕距离最大 (500)；`ASSAULT` 最小 (75)，贴得最近；`BOMBER` 是轰炸机，`SUPPORT` 是不会主动离开母舰的支援机 |
+| role desc | 战机类型文字描述 |
+| refit | 战机整备所需秒数 |
+| base value | 每联队的成本价 |
 
 原版 `MilitarySubmarketPlugin` 等通过 `addFighters` 生成常规市场战机池时，只纳入 tier 不大于 3 的联队。这个限制属于上述原版调用链；直接生成或显式添加联队不受该筛选限制。
 
-### wing_data.csv tags 速查表
+### wing\_data.csv tags 速查表
 
 **本表未列出的 tags 与战机性能无关，例如 `rare_bp`，照抄原版样本即可。**
 
-| 英文                   | 实际意义                                                     |
-| ---------------------- | ------------------------------------------------------------ |
-| fighter*               | 当进行自动装配时，优先使用 * 所处的位置较高的战机。例如 fighter2 总是会替代 fighter1 |
-| interceptor*           | 当进行自动装配时，优先使用 * 所处的位置较高的战机。例如 interceptor2 总是会替代 interceptor1 |
-| bomber*                | 当进行自动装配时，优先使用 * 所处的位置较高的战机。例如 bomber2 总是会替代 bomber1 |
-| support*               | 当进行自动装配时，优先使用 * 所处的位置较高的战机。例如 support2 总是会替代 support1 |
-|                        | **以上 4 条只应当包含 1 条**                                 |
-| fighter                | 与 `role` 列 FIGHTER 同义的分类 tag。|
-| interceptor            | 与 `role` 列 INTERCEPTOR 同义的分类 tag，同上                     |
-| bomber                 | 与 `role` 列 BOMBER 同义的分类 tag，同上                          |
-|                        | **以上 3 条只应当包含 1 条**                                  |
-| auto_fighter           | 只有包含此 tag 的战机才能被无人战舰使用                      |
-| drone                  | tag 存在于数据中，引擎侧无消费点、不产生行为               |
-| rapid_reform           | 联队将倾向于保持严格的阵型而非四散而开                       |
-| leader_no_swarm        | 联队中的首机一旦接敌就会拉开距离，而非无脑蜂蛹而上           |
-| wingmen_no_swarm       | 联队中的首机以外的战机旦接敌就会拉开距离，而非无脑蜂蛹而上   |
-| match_leader_facing    | 联队中的其它所有战机与首机保持朝向完全一致                   |
-| attack_at_an_angle     | 战机 AI 将倾向于使用最大武器倾角侧舷对敌，而非正面对敌       |
-| independent_of_carrier | 当航母被消灭或无所属航母时，依然正常运作而非四散溃逃。且当场上没有任何同侧舰船时，这些战机不会自动自爆而是需要被手动消灭 |
-| rd_no_extra_craft      | `后备部署` 专供，使本战机不响应它的效果                       |
+| 英文 | 实际意义 |
+|---|---|
+| fighter\* | 当进行自动装配时，优先使用 \* 所处的位置较高的战机。例如 fighter2 总是会替代 fighter1 |
+| interceptor\* | 当进行自动装配时，优先使用 \* 所处的位置较高的战机。例如 interceptor2 总是会替代 interceptor1 |
+| bomber\* | 当进行自动装配时，优先使用 \* 所处的位置较高的战机。例如 bomber2 总是会替代 bomber1 |
+| support\* | 当进行自动装配时，优先使用 \* 所处的位置较高的战机。例如 support2 总是会替代 support1 |
+|  | **以上 4 条只应当包含 1 条** |
+| fighter | 与 `role` 列 FIGHTER 同义的分类 tag。|
+| interceptor | 与 `role` 列 INTERCEPTOR 同义的分类 tag，同上 |
+| bomber | 与 `role` 列 BOMBER 同义的分类 tag，同上 |
+|  | **以上 3 条只应当包含 1 条** |
+| auto\_fighter | 只有包含此 tag 的战机才能被无人战舰使用 |
+| drone | tag 存在于数据中，引擎侧无消费点、不产生行为 |
+| rapid\_reform | 联队将倾向于保持严格的阵型而非四散而开 |
+| leader\_no\_swarm | 联队中的首机一旦接敌就会拉开距离，而非无脑蜂蛹而上 |
+| wingmen\_no\_swarm | 联队中的首机以外的战机旦接敌就会拉开距离，而非无脑蜂蛹而上 |
+| match\_leader\_facing | 联队中的其它所有战机与首机保持朝向完全一致 |
+| attack\_at\_an\_angle | 战机 AI 将倾向于使用最大武器倾角侧舷对敌，而非正面对敌 |
+| independent\_of\_carrier | 当航母被消灭或无所属航母时，依然正常运作而非四散溃逃。且当场上没有任何同侧舰船时，这些战机不会自动自爆而是需要被手动消灭 |
+| rd\_no\_extra\_craft | `后备部署` 专供，使本战机不响应它的效果 |
 
 ### 验证方案
 
@@ -332,7 +333,7 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 
 ## 故障分析
 
-- **`Addship` 找不到航母**：`ship_data.csv` 的 `GearIn_furnaceman` 行未加载，或 `.ship`、CSV 与装配引用的船体 ID 不一致。
+- **`AddShip` 找不到航母**：`ship_data.csv` 的 `GearIn_furnaceman` 行未加载，或 `.ship`、CSV 与装配引用的船体 ID 不一致。
 
     - **解决方案**：统一 ID 并重启游戏。
 

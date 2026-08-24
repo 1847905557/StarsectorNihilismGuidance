@@ -84,7 +84,7 @@
 
 七段链路先不要逐段实现。本节的策略是只建立一条最小任务链，先让一个类被注册、加载、运行，再验证修改能生效：
 
-1. 定位使用方：`settings.json` 的 `plugins` 段 (key → 完整类名)→ 注册进脚本类加载器 → 每场战斗创建实例。jar 内类**必须**被某个注册入口按名引用才会被加载 (见 "类在 jar 里但游戏没有任何行为" 故障条目)。
+1. 定位使用方：`settings.json` 的 `plugins` 段 (key → 完整类名)→ 注册进脚本类加载器 → 每场战斗创建实例。jar 内类**必须**被某个注册入口按名引用才会被加载。
 2. 建立最小对象：`GearInFrameLogger` 编译进 `jars\GearIndustry.jar`，声明 `jars`，登记 `gearInFrameLogger`。
 3. 验证使用方收到对象：进模拟战，日志出现 `GearIn FrameLogger tick` 行。
 4. 修改一个参数 (如 `TICK_INTERVAL`) 重新构建，确认输出变化符合预期，从而证明游戏加载的是新构建的 jar 而不是缓存或即时编译源码。
@@ -127,6 +127,49 @@ if (elapsed >= TICK_INTERVAL) {
 
 完成信号：战斗日志约每 3 秒出现一次 tick。
 
+## 配置 Gradle 文件
+
+要点：`srcDirs = ["src"]` 让 Gradle 从 `src\data\scripts\...` 编译 (与 [C2-S2] 既有的源码位置一致)；
+
+`compileOnly` 声明 API 依赖但不打包；`jar` 任务把产物直接放进 `jars\`，文件名与 `mod_info.json` 声明一致。
+
+## 配置项目文件
+
+`settings.gradle` 只声明工程名，与 MOD ID 保持一致即可：
+
+## 声明 JAR 产物
+
+在 MOD manifest([C1-S1] 建立) 上追加 `jars` 字段：
+
+`jars` 数组的每一项必须是相对 MOD 根目录的路径，用 `/` 分隔。游戏启动时按 `<MOD 根目录>/<声明值>` 拼接；写成绝对路径会被拼成 `<MOD 根目录>/<绝对路径>` 之类的无效路径。
+
+## 配置运行时设置
+
+MOD 的 `settings.json` 会与全局设置按对象键合并，只提交自己的键：
+
+`gearInFrameLogger` 是本节登记 key，值必须是 jar 内存在的完整类名。
+
+## 核对插件源码
+
+最后一个文件是插件类本身，它在每帧回调中按固定间隔写一行日志：
+
+对应关系：
+
+- `extends BaseEveryFrameCombatPlugin`：提供全部 `EveryFrameCombatPlugin` 方法的空实现，只需覆写 `advance`；直接实现接口则要写满 5 个方法 (含弃用的 `init`) [C7-S1]。
+- `Global.getLogger(GearInFrameLogger.class)`：log4j 记录器，输出到 `starsector-core\starsector.log`；全程不需要在编译期直接 import log4j。
+- `engine.isPaused()` 判断：暂停帧不累计 ([C7-S1] 的暂停语义)。
+- `engine.getTotalElapsedTime(false)`：战斗内累计秒数，不含暂停；`amount` 是本帧经过秒数。
+
+构建命令 (在 `Starsector\mods\GearIndustry\` 目录执行)：
+
+```text
+gradle jar
+```
+
+产物为 `jars\GearIndustry.jar`，其内部条目按包路径组织，包含 `data/scripts/gearin/combat/GearInFrameLogger.class`(可用 `jar tf` 核对)。
+
+想确认游戏加载的是新构建的 jar 而不是缓存或旧源码，可先改一个参数 (如把 `TICK_INTERVAL` 从 `3f` 改为 `5f`) 再重新构建 —— 日志中 tick 间隔随之变化即证明产物已更新；用 `jar tf jars\GearIndustry.jar` 可直接核对 jar 内部条目。
+
 ## 完整最小例
 
 任务链的每一环都需要一个具体文件。下面在 `Starsector\mods\GearIndustry\` 中逐个建立 (`data/`、`graphics/`、`sounds/` 沿用 [C1-S1] 建立的目录)：
@@ -145,8 +188,6 @@ Starsector\mods\GearIndustry\
 ```
 
 其中 `data\scripts\gearin\combat\` 目录存放本节的 `GearInFrameLogger` 类，完整源码见下文代码块。
-
-### 配置 Gradle 文件
 
 ```groovy
 plugins {
@@ -184,21 +225,9 @@ tasks.named("jar") {
 }
 ```
 
-要点：`srcDirs = ["src"]` 让 Gradle 从 `src\data\scripts\...` 编译 (与 [C2-S2] 既有的源码位置一致)；
-
-`compileOnly` 声明 API 依赖但不打包；`jar` 任务把产物直接放进 `jars\`，文件名与 `mod_info.json` 声明一致。
-
-### 配置项目文件
-
-`settings.gradle` 只声明工程名，与 MOD ID 保持一致即可：
-
 ```groovy
 rootProject.name = "gear_in"
 ```
-
-### 声明 JAR 产物
-
-在 MOD manifest([C1-S1] 建立) 上追加 `jars` 字段：
 
 ```json
 {
@@ -216,12 +245,6 @@ rootProject.name = "gear_in"
 }
 ```
 
-`jars` 数组的每一项必须是相对 MOD 根目录的路径，用 `/` 分隔。游戏启动时按 `<MOD 根目录>/<声明值>` 拼接；写成绝对路径会被拼成 `<MOD 根目录>/<绝对路径>` 之类的无效路径。
-
-### 配置运行时设置
-
-MOD 的 `settings.json` 会与全局设置按对象键合并，只提交自己的键：
-
 ```json
 {
   "plugins": {
@@ -230,28 +253,41 @@ MOD 的 `settings.json` 会与全局设置按对象键合并，只提交自己�
 }
 ```
 
-`gearInFrameLogger` 是本节登记 key，值必须是 jar 内存在的完整类名。
+::: details 完整成品：GearInFrameLogger
 
-### 核对插件源码
+```java
+package data.scripts.gearin.combat;
 
-最后一个文件是插件类本身，它在每帧回调中按固定间隔写一行日志：
+import java.util.List;
 
-对应关系：
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.input.InputEventAPI;
 
-- `extends BaseEveryFrameCombatPlugin`：提供全部 `EveryFrameCombatPlugin` 方法的空实现，只需覆写 `advance`；直接实现接口则要写满 5 个方法 (含弃用的 `init`) [C7-S1]。
-- `Global.getLogger(GearInFrameLogger.class)`：log4j 记录器，输出到 `starsector-core\starsector.log`；全程不需要在编译期直接 import log4j。
-- `engine.isPaused()` 判断：暂停帧不累计 ([C7-S1] 的暂停语义)。
-- `engine.getTotalElapsedTime(false)`：战斗内累计秒数，不含暂停；`amount` 是本帧经过秒数。
+public class GearInFrameLogger extends BaseEveryFrameCombatPlugin {
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 目录执行)：
+    private static final float TICK_INTERVAL = 3f;
 
-```text
-gradle jar
+    private float elapsed;
+
+    @Override
+    public void advance(float amount, List<InputEventAPI> events) {
+        CombatEngineAPI engine = Global.getCombatEngine();
+        if (engine == null || engine.isPaused()) {
+            return;
+        }
+        elapsed += amount;
+        if (elapsed >= TICK_INTERVAL) {
+            elapsed = 0f;
+            Global.getLogger(GearInFrameLogger.class).info(
+                "GearIn FrameLogger tick at battle time " + engine.getTotalElapsedTime(false));
+        }
+    }
+}
 ```
 
-产物为 `jars\GearIndustry.jar`，其内部条目按包路径组织，包含 `data/scripts/gearin/combat/GearInFrameLogger.class`(可用 `jar tf` 核对)。
-
-想确认游戏加载的是新构建的 jar 而不是缓存或旧源码，可先改一个参数 (如把 `TICK_INTERVAL` 从 `3f` 改为 `5f`) 再重新构建 —— 日志中 tick 间隔随之变化即证明产物已更新；用 `jar tf jars\GearIndustry.jar` 可直接核对 jar 内部条目。
+:::
 
 ## 排查 JAR 未加载故障
 
@@ -338,39 +374,3 @@ gradle jar
 - `Starsector/starsector-core/starsector.log`：运行日志 (jar 加载行、类加载异常、插件日志)。
 - `Starsector/starsector-core/starsector.bat`：游戏启动命令 (`..\jre\bin\java.exe`，classpath 含游戏侧公开 API 编译面)。
 - `Starsector/jre/release`：自带 JRE 版本信息 (Zulu 17.0.10)。
-
-::: details 完整成品：GearInFrameLogger
-
-```java
-package data.scripts.gearin.combat;
-
-import java.util.List;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.input.InputEventAPI;
-
-public class GearInFrameLogger extends BaseEveryFrameCombatPlugin {
-
-    private static final float TICK_INTERVAL = 3f;
-
-    private float elapsed;
-
-    @Override
-    public void advance(float amount, List<InputEventAPI> events) {
-        CombatEngineAPI engine = Global.getCombatEngine();
-        if (engine == null || engine.isPaused()) {
-            return;
-        }
-        elapsed += amount;
-        if (elapsed >= TICK_INTERVAL) {
-            elapsed = 0f;
-            Global.getLogger(GearInFrameLogger.class).info(
-                "GearIn FrameLogger tick at battle time " + engine.getTotalElapsedTime(false));
-        }
-    }
-}
-```
-
-:::

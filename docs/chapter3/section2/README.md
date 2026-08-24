@@ -63,13 +63,75 @@
 4. `RepLevel` 的阈值：`T1=0.09`、`T2=0.24`、`T3=0.49`、`T4=0.74`(`getLevelFor(float)` 按正负方向映射为 9 个等级；`getRepInt` 把 float 乘 100 四舍五入为整数显示)。`isHostileTo(id)` 的判据是关系等级为 `HOSTILE` 或更差 (数值 ≤ -0.49)。
 5. 把关系代码挂进 MOD 的哪个回调 (`ModPlugin` 的生涯生成钩子)，属于 ModPlugin 主题；本节给出原版写法作参照，并说明可观察结果。
 
-## 完整最小例：配置齿轮工业舰队
-
-### 配置势力文件
+## 配置势力文件
 
 从 [C3-S1] 已经能够加载的 `gear_industry.faction` 开始，保留身份字段，再按下面的完整最小例补入舰船池、舰队学说和其它配置。
 
 势力 ID 是 `gear_industry`，以 `齿轮工业` 为显示名，舰船池只使用前面各页已注册的 `GearIn_` 内容，另加两艘原版辅助船。
+
+## 势力文件必守规则速查表
+
+由于 faction 文件很长，无法逐字段列表，上文用注释注解了所有在本节有意义的字段。下面只总结必须遵守的规则 (均来自 spec 加载期解析 faction 文件的实现)：
+
+| 规则 | 违反后的可观察结果 |
+|---|---|
+| `id` / `logo` / `displayName` / `displayNameWithArticle` / `names` / `portraits` 必须存在 | 加载中断：`JSONObject["<键>"] not found` 异常堆栈，进不了主菜单 |
+| `factionDoctrine` 块若存在，`warships` / `carriers` / `phaseShips` / `officerQuality` / `shipQuality` / `numShips` 必须存在 | 加载中断：同样的 JSON 异常 |
+| 势力 ID 全局唯一 (含原版与其它 MOD)| 加载中断：`Spec of class [...] with id [X] already exists` |
+| `illegalCommodities` 的 ID 必须是商品 ID | 加载中断：`Invalid illegal commodity id: [X]` |
+| `logo` / `crest` / 头像贴图路径真实存在 | 资源加载阶段报错 (TEXTURE 无错误备用值)|
+| `factions.csv` 表头为 `faction`、行未被 `#` 注释 | 表头拼错：行解析失败，势力不出现；被注释：势力不出现，无报错 |
+
+## 接入舰队装配
+
+faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`combatSmall`、`combatMedium`、`combatLarge`、`combatCapital`、`carrierSmall` 等) 从角色表里抽装配。
+
+角色表就是共享的 `default_ship_roles.json`：没有它 (或没有本 MOD 的条目)，装配就不会出现在生涯舰队里，势力只能改用原版装配。
+
+在 MOD 中新建 `data/world/factions/default_ship_roles.json`，**只提交自己的角色条目** (这个文件跨来源按角色对象合并；整份复制会覆盖同键条目，版本不同步时留下陈旧配置)：
+
+::: caution 只提交自己的角色条目，禁止整份复制原版文件
+
+`default_ship_roles.json` 跨来源按角色对象合并：整份复制原版文件会用同键条目的副本值覆盖原版值，版本不同步时会留下陈旧配置，但不会删除原版角色。MOD 只提交自己的角色条目。
+
+:::
+
+每个条目是 `装配 ID → 权重`。**查不到装配会当场抛 `Ship hull variant [X] not found!` 并中断加载**。`includeDefault: true` 可把原版同名角色的条目复制进来再叠加自己的条目 (参考原版文件里各角色的写法；本例不需要)。
+
+注意角色表里只放**舰船装配**：航母角色 (`carrierSmall` 等) 的条目是航母船体的装配，战机联队不进角色表 —— 联队经由舰船装配的 `wings` 数组 [C4-S1] 与 `knownFighters` 池进入舰队。
+
+角色条目 (`RoleEntryAPI`) 对 `_wing` 结尾的 ID 有按联队 ID 查找的历史兼容路径，原版数据不使用它，本教程也不建议使用。
+
+想加更多装配 (例如按 [C4-S1] 的导出流程为其它船体做的装配)，按同一格式加行即可。
+
+把装配文件放好之后，势力舰船池就形成了完整流程：`knownShips`(势力知道什么)∩ 角色表 (能抽什么)→ 权重由 `hullFrequency` 与 `priority*` 调节 → `pickShip` 抽取。
+
+## 设置运行时关系
+
+势力文件无法声明关系。参照原版 `SectorGen` 的写法 (原版数据脚本，关系播种的权威示例)：
+
+```java
+// 摘自原版 SectorGen 脚本的写法，用于本教程说明关系 API
+FactionAPI gear = Global.getSector().getFaction("gear_industry");
+FactionAPI pirates = Global.getSector().getFaction("pirates");
+FactionAPI hegemony = Global.getSector().getFaction("hegemony");
+
+gear.setRelationship(pirates.getId(), RepLevel.HOSTILE);        // 直接设到等级区间
+gear.setRelationship(hegemony.getId(), 0.25f);                  // 或直接写数值
+gear.adjustRelationship(pirates.getId(), -0.1f, RepLevel.HOSTILE); // 增减并钳制到等级
+```
+
+把这段代码挂进 MOD 的哪个回调 (`ModPlugin` 的生涯生成钩子)，属于 ModPlugin 主题，本节不展开。不设置任何关系的可观察结果：所有势力对这个新势力都是 0.0 中立 —— 包括那些看起来应该敌对的势力，且没有任何报错。
+
+::: warning 关系是运行时状态，不是文件数据
+
+faction 文件不定义任何势力间关系，所有关系都是运行时数值，只能由代码设置。不设置的可观察结果：所有势力对新势力默认 0.0 中立 (该敌对的也中立)，且没有任何报错。
+
+:::
+
+## 完整最小例
+
+势力文件写入 `data/world/factions/gear_industry.faction`；装配角色表写入 `data/world/factions/default_ship_roles.json`(文件不存在就新建)。
 
 ```json
 {
@@ -242,27 +304,6 @@
 }
 ```
 
-### 势力文件必守规则速查表
-
-由于 faction 文件很长，无法逐字段列表，上文用注释注解了所有在本节有意义的字段。下面只总结必须遵守的规则 (均来自 spec 加载期解析 faction 文件的实现)：
-
-| 规则 | 违反后的可观察结果 |
-|---|---|
-| `id` / `logo` / `displayName` / `displayNameWithArticle` / `names` / `portraits` 必须存在 | 加载中断：`JSONObject["<键>"] not found` 异常堆栈，进不了主菜单 |
-| `factionDoctrine` 块若存在，`warships` / `carriers` / `phaseShips` / `officerQuality` / `shipQuality` / `numShips` 必须存在 | 加载中断：同样的 JSON 异常 |
-| 势力 ID 全局唯一 (含原版与其它 MOD)| 加载中断：`Spec of class [...] with id [X] already exists` |
-| `illegalCommodities` 的 ID 必须是商品 ID | 加载中断：`Invalid illegal commodity id: [X]` |
-| `logo` / `crest` / 头像贴图路径真实存在 | 资源加载阶段报错 (TEXTURE 无错误备用值)|
-| `factions.csv` 表头为 `faction`、行未被 `#` 注释 | 表头拼错：行解析失败，势力不出现；被注释：势力不出现，无报错 |
-
-### 接入舰队装配
-
-faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`combatSmall`、`combatMedium`、`combatLarge`、`combatCapital`、`carrierSmall` 等) 从角色表里抽装配。
-
-角色表就是共享的 `default_ship_roles.json`：没有它 (或没有本 MOD 的条目)，装配就不会出现在生涯舰队里，势力只能改用原版装配。
-
-在 MOD 中新建 `data/world/factions/default_ship_roles.json`，**只提交自己的角色条目** (这个文件跨来源按角色对象合并；整份复制会覆盖同键条目，版本不同步时留下陈旧配置)：
-
 ```json
 {
 	"combatSmall":{
@@ -271,46 +312,7 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 }
 ```
 
-::: caution 只提交自己的角色条目，禁止整份复制原版文件
-
-`default_ship_roles.json` 跨来源按角色对象合并：整份复制原版文件会用同键条目的副本值覆盖原版值，版本不同步时会留下陈旧配置，但不会删除原版角色。MOD 只提交自己的角色条目。
-
-:::
-
-每个条目是 `装配 ID → 权重`。**查不到装配会当场抛 `Ship hull variant [X] not found!` 并中断加载**。`includeDefault: true` 可把原版同名角色的条目复制进来再叠加自己的条目 (参考原版文件里各角色的写法；本例不需要)。
-
-注意角色表里只放**舰船装配**：航母角色 (`carrierSmall` 等) 的条目是航母船体的装配，战机联队不进角色表 —— 联队经由舰船装配的 `wings` 数组 [C4-S1] 与 `knownFighters` 池进入舰队。
-
-角色条目 (`RoleEntryAPI`) 对 `_wing` 结尾的 ID 有按联队 ID 查找的历史兼容路径，原版数据不使用它，本教程也不建议使用。
-
-想加更多装配 (例如按 [C4-S1] 的导出流程为其它船体做的装配)，按同一格式加行即可。
-
-把装配文件放好之后，势力舰船池就形成了完整流程：`knownShips`(势力知道什么)∩ 角色表 (能抽什么)→ 权重由 `hullFrequency` 与 `priority*` 调节 → `pickShip` 抽取。
-
-### 设置运行时关系
-
-势力文件无法声明关系。参照原版 `SectorGen` 的写法 (原版数据脚本，关系播种的权威示例)：
-
-```java
-// 摘自原版 SectorGen 脚本的写法，用于本教程说明关系 API
-FactionAPI gear = Global.getSector().getFaction("gear_industry");
-FactionAPI pirates = Global.getSector().getFaction("pirates");
-FactionAPI hegemony = Global.getSector().getFaction("hegemony");
-
-gear.setRelationship(pirates.getId(), RepLevel.HOSTILE);        // 直接设到等级区间
-gear.setRelationship(hegemony.getId(), 0.25f);                  // 或直接写数值
-gear.adjustRelationship(pirates.getId(), -0.1f, RepLevel.HOSTILE); // 增减并钳制到等级
-```
-
-把这段代码挂进 MOD 的哪个回调 (`ModPlugin` 的生涯生成钩子)，属于 ModPlugin 主题，本节不展开。不设置任何关系的可观察结果：所有势力对这个新势力都是 0.0 中立 —— 包括那些看起来应该敌对的势力，且没有任何报错。
-
-::: warning 关系是运行时状态，不是文件数据
-
-faction 文件不定义任何势力间关系，所有关系都是运行时数值，只能由代码设置。不设置的可观察结果：所有势力对新势力默认 0.0 中立 (该敌对的也中立)，且没有任何报错。
-
-:::
-
-### 验证方案
+## 验证方案
 
 前置数据：[C1-S1] 的 `mod_info.json`、[C1-S2] 的船体 (`GearIn_artizan`)、[C1-S3] 的联队与航母 (`GearIn_slag_wing`、`GearIn_furnaceman`)、[C1-S5] 的武器 (`GearIn_durin`、`GearIn_dwalin`)、[C2-S2] 的船插 (`GearIn_stable_injector`)、[C4-S1] 的装配 (`GearIn_artizan_combat` 等)、本节的 `factions.csv`、`gear_industry.faction`、`default_ship_roles.json`。
 

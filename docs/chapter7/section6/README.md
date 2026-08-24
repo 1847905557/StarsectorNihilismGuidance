@@ -281,26 +281,7 @@ public void cleanup() {
 
 新增行为：主动失效驱动引擎移除承载实体并调用 `cleanup()`。完成信号：目标舰船死亡后只出现一次清理日志；将来增加 VAO、VBO 或程序句柄时，在同一方法释放并复位。
 
-## 完整最小例
-
-规则只说明约束，下面用一个完整最小例把注册、推进、渲染与清理全部落进代码。在前置单元建立的 MOD 布局与战斗插件之上新增一个插件类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Subject>`)：
-
-```text
-Starsector\mods\GearIndustry\
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data\
-├── src\
-│   └── data\scripts\gearin\
-│       ├── GearInModPlugin            # C6-S2 所有；本节不改动
-│       ├── GearInGlobalAccess         # C6-S3 所有；本节只消费
-│       └── combat\
-│           ├── GearInCombatStatePlugin      # C7-S2 所有；本节只消费
-│           ├── GearInCombatLifecyclePlugin  # C7-S5 所有；本节只消费
-│           └── GearInLayeredRenderer        # 本节新增
-└── jars\
-```
+## 讲解产物类与注册
 
 ### GearInLayeredRenderer
 
@@ -330,126 +311,27 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`(可用 `jar tf` 核对)。
 
-## 关键故障实验：渲染效果在错误层级或暂停状态消失
+## 完整最小例
 
-把推进逻辑写入只在渲染阶段调用的方法。
+规则只说明约束，下面用一个完整最小例把注册、推进、渲染与清理全部落进代码。在前置单元建立的 MOD 布局与战斗插件之上新增一个插件类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Subject>`)：
 
-**局部故障片段：**
-
-```java
-// 故障片段
-public void render(CombatEngineLayers layer, ViewportAPI viewport) { advanceState(); draw(); }
+```text
+Starsector\mods\GearIndustry\
+├── build.gradle
+├── settings.gradle
+├── mod_info.json
+├── data\
+├── src\
+│   └── data\scripts\gearin\
+│       ├── GearInModPlugin            # C6-S2 所有；本节不改动
+│       ├── GearInGlobalAccess         # C6-S3 所有；本节只消费
+│       └── combat\
+│           ├── GearInCombatStatePlugin      # C7-S2 所有；本节只消费
+│           ├── GearInCombatLifecyclePlugin  # C7-S5 所有；本节只消费
+│           └── GearInLayeredRenderer        # 本节新增
+└── jars\
 ```
 
-**局部修正片段：**
-
-```java
-// 修正片段
-public void advance(float amount) { advanceState(amount); } public void render(CombatEngineLayers layer, ViewportAPI viewport) { draw(); }
-```
-
-复验：暂停、缩放和退出战斗各观察一次状态与绘制。
-
-## 验证方案
-
-前置数据：[C6-S1] 的 MOD 布局 + [C7-S1] 的战斗插件接入 + [C7-S5] 的战斗生命周期插件 (其部署监听器已加入本节注册片段) + 本节的 `GearInLayeredRenderer` + [C4-S1] 的 `GearIn_test` 测试战役。
-
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
-2. **战役验证**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 中观察分层渲染初始化记录。
-3. **画面**：观察每个已部署成员身上的半透明青色方框：跟随移动、位于舰船与导弹之上、粒子之下。
-4. **暂停**：按空格暂停约 10 秒 —— 方框静止但可见；恢复后继续跟随。
-5. **剔除**：镜头拉远使方框离开可见区外扩 120 单位范围 —— 方框消失；拉回出现。
-6. **失效清理**：击毁一艘被追踪舰船 —— 方框消失且 `Starsector/starsector-core/starsector.log` 出现 `GearIn layered renderer cleanup: elapsed=<秒数>`；其余舰船方框正常。
-7. **跨战斗**：退出战斗再进一场 ——`GearIn layered renderer init:` 重新出现，新方框从零开始跟随。
-
-预期结果：
-
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
-
-- **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`Starsector/starsector-core/starsector.log` 出现一行：
-
-    ```text
-       GearIn layered renderer init: layers=[ABOVE_SHIPS_AND_MISSILES_LAYER]
-    ```
-
-    没有 `ERROR`。
-
-- **画面结果**：每个被注册的已部署成员身上出现一个半透明青色方框 (120 世界单位边长)，跟随舰船移动；方框画在舰船与导弹之上、粒子之下 ——`ABOVE_SHIPS_AND_MISSILES_LAYER` 位于粒子系统之前 (层序表)。
-
-- **暂停行为**：按空格暂停约 10 秒再恢复 —— 暂停期间方框静止不动 (`advance` 不被调用，位置不更新) 但**仍然可见** (渲染不暂停)；恢复后继续跟随。
-
-- **视口剔除**：把镜头拉远到方框边缘超出可见区外扩 120 单位之外 —— 方框消失；拉回后重新出现 (`isNearViewport` 剔除，规则 4 的可观察表现)。战斗中正常推进时不会产生 `GearIn layered renderer` 的推进日志 (render 与推进都不打日志，只有 init/cleanup 打)。
-
-- **失效与清理**：击毁被追踪的舰船 —— 方框立即消失 (下一帧起)，`Starsector/starsector-core/starsector.log` 出现一行：
-
-    ```text
-       GearIn layered renderer cleanup: elapsed=<秒数>
-    ```
-
-    此后该舰的方框不再出现；同一场战斗内其他舰船的方框不受影响。
-
-- **战斗结束**：胜负判定后引擎以全屏变暗完成淡出；退出战斗再进一场 ——`GearIn layered renderer init:` 重新出现，第二场战斗每艘新部署成员都有新方框 (每场战斗全新实例，规则 6)。
-
-## 故障分析
-
-- **绘制内容不出现或落在错误图层**：GL 调用写在 `advance()`，随后被渲染阶段覆盖。
-
-    - **解决方案**：绘制只放入 `render()`，推进回调只更新状态。
-
-- **图形出现在原点**：自定义坐标没有同步到承载实体。
-
-    - **解决方案**：每次 `advance()` 更新 `entity.getLocation()`。
-
-- **图形在视口内突然消失**：`getRenderRadius()` 小于实际绘制范围，剔除判断过早生效。
-
-    - **解决方案**：扩大半径，使其覆盖完整图形。
-
-- **舰船被击毁后图形仍然存在**：`isExpired()` 始终返回 false。
-
-    - **解决方案**：检测 `isEntityInPlay` 与 `isAlive`，失效时将 `valid` 置为 false。
-
-- **多场战斗后渲染异常或卡顿**：`cleanup()` 没有释放 VAO、VBO 或着色器程序。
-
-    - **解决方案**：删除所有 GL 句柄并恢复哨兵值。
-
-- **同一图形叠加变亮或闪烁**：插件声明多个激活层，却在每次 `render` 中绘制全部内容。
-
-    - **解决方案**：按 `layer` 参数分支，每层只提交对应图形。
-
-- **第二场战斗不再显示图形**：分层渲染插件跨战斗缓存了上一场的舰船。
-
-    - **解决方案**：每场战斗重新创建并注册插件。
-
-- **暂停恢复后计时不符合预期**：混用了每帧插件与分层渲染插件的暂停语义。分层插件暂停时不推进，但仍会渲染。
-
-    - **解决方案**：按这一边界重新安排计时。
-
-- **元素缩放或位置偏移**：世界坐标和屏幕坐标转换方向用反。
-
-    - **解决方案**：世界绘制直接提交世界坐标，只有屏幕空间元素才使用 world→screen 转换。
-
-## 总结
-
-- **独立插件通道**：`engine.addLayeredRenderingPlugin(plugin)` → 包装成战斗实体 → `executeAdds` 时 `init(entity)` + 按 `getActiveLayers()` 注册进 `LayeredRenderer`；与 `EveryFrameCombatPlugin` 相比：init 保证先执行、暂停时不推进、移除时由引擎调 `cleanup()`。
-- **层序**：`CombatEngineLayers` 枚举声明顺序即层序；管线依次处理底部尾迹粒子、非顶层图层、碎片、顶部粒子和顶层三图层 (`ABOVE_PARTICLES_LOWER` / `ABOVE_PARTICLES` / `JUST_BELOW_WIDGETS`)；`PHASED_SHIPS_LAYER` 必须低于战机层 (枚举注释)。
-- **渲染与剔除**：`render` 每激活层调用一次、按 `layer` 分支；转发前先判 `isNearViewport(entity.getLocation(), getRenderRadius())`—— 位置同步与半径覆盖是 "图形在视口内消失" 的排查入口。
-- **视口**：`ViewportAPI` 全是世界单位 (`getLLX/getLLY/getVisibleWidth/getVisibleHeight`)；`getViewMult()` 是当前缩放；转换方法 world↔screen 双向；`setExternalControl(true)` 让引擎每帧不再设置视口参数，是 MOD 接管相机的入口。
-- **清理一条线**：`advance()` 主动失效 (`isExpired()` → true)→ 引擎移除 → `cleanup()` 释放 GL 资源；战斗结束 `destroyInstance` **不调** `cleanup()`，与前置单元 "战斗结束没有清理回调" 的结论同构；跨战斗缓存禁令 (前置纪律) 原样适用。
-
-本节的分层渲染语义与视口坐标模型，是视觉类工作的地基：需要屏幕空间元素、按层自绘或相机接管 (`setExternalControl`) 的场合，都以这里的层序与坐标语义为起点；"没有战斗结束回调、收尾由插件自己驱动" 的清理纪律，与战斗插件通道一脉相承。
-
-## 建议参考项
-
-- `com.fs.starfarer.api.combat.CombatLayeredRenderingPlugin`：分层渲染插件接口 (`init` / `cleanup` / `isExpired` / `advance` / `getActiveLayers` / `getRenderRadius` / `render`)。
-- `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：七个回调的空实现基类 (默认层 `BELOW_INDICATORS_LAYER`、默认剔除半径 100)。
-- `com.fs.starfarer.api.combat.CombatEngineLayers`：层级枚举 (23 个值，声明顺序即层序)。
-- `com.fs.starfarer.api.combat.ViewportAPI`：视口坐标 (世界单位)、`getViewMult()`、双向转换、`setExternalControl`。
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：`addLayeredRenderingPlugin` 注册入口、`getViewport`、`isEntityInPlay`。
-- `com.fs.starfarer.api.combat.CombatEntityAPI`：承载实体 (`getLocation`、`isExpired`)。
-- `com.fs.graphics.LayeredRenderer`：引擎内部按层渲染器 (`renderExcluding` / `renderOnly` 分派)。
-- `src/data/scripts/gearin/combat`：MOD 内本节类文件所在目录 (以 MOD 根目录为基准)。
-- `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
-- `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证方案的日志核对位置)。
 ::: details 完整成品：GearInLayeredRenderer
 
 ```java
@@ -585,3 +467,124 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 ```
 
 :::
+
+## 关键故障实验：渲染效果在错误层级或暂停状态消失
+
+把推进逻辑写入只在渲染阶段调用的方法。
+
+**局部故障片段：**
+
+```java
+// 故障片段
+public void render(CombatEngineLayers layer, ViewportAPI viewport) { advanceState(); draw(); }
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+public void advance(float amount) { advanceState(amount); } public void render(CombatEngineLayers layer, ViewportAPI viewport) { draw(); }
+```
+
+复验：暂停、缩放和退出战斗各观察一次状态与绘制。
+
+## 验证方案
+
+前置数据：[C6-S1] 的 MOD 布局 + [C7-S1] 的战斗插件接入 + [C7-S5] 的战斗生命周期插件 (其部署监听器已加入本节注册片段) + 本节的 `GearInLayeredRenderer` + [C4-S1] 的 `GearIn_test` 测试战役。
+
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
+2. **战役验证**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 中观察分层渲染初始化记录。
+3. **画面**：观察每个已部署成员身上的半透明青色方框：跟随移动、位于舰船与导弹之上、粒子之下。
+4. **暂停**：按空格暂停约 10 秒 —— 方框静止但可见；恢复后继续跟随。
+5. **剔除**：镜头拉远使方框离开可见区外扩 120 单位范围 —— 方框消失；拉回出现。
+6. **失效清理**：击毁一艘被追踪舰船 —— 方框消失且 `Starsector/starsector-core/starsector.log` 出现 `GearIn layered renderer cleanup: elapsed=<秒数>`；其余舰船方框正常。
+7. **跨战斗**：退出战斗再进一场 ——`GearIn layered renderer init:` 重新出现，新方框从零开始跟随。
+
+预期结果：
+
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
+
+- **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`Starsector/starsector-core/starsector.log` 出现一行：
+
+    ```text
+       GearIn layered renderer init: layers=[ABOVE_SHIPS_AND_MISSILES_LAYER]
+    ```
+
+    没有 `ERROR`。
+
+- **画面结果**：每个被注册的已部署成员身上出现一个半透明青色方框 (120 世界单位边长)，跟随舰船移动；方框画在舰船与导弹之上、粒子之下 ——`ABOVE_SHIPS_AND_MISSILES_LAYER` 位于粒子系统之前 (层序表)。
+
+- **暂停行为**：按空格暂停约 10 秒再恢复 —— 暂停期间方框静止不动 (`advance` 不被调用，位置不更新) 但**仍然可见** (渲染不暂停)；恢复后继续跟随。
+
+- **视口剔除**：把镜头拉远到方框边缘超出可见区外扩 120 单位之外 —— 方框消失；拉回后重新出现 (`isNearViewport` 剔除，规则 4 的可观察表现)。战斗中正常推进时不会产生 `GearIn layered renderer` 的推进日志 (render 与推进都不打日志，只有 init/cleanup 打)。
+
+- **失效与清理**：击毁被追踪的舰船 —— 方框立即消失 (下一帧起)，`Starsector/starsector-core/starsector.log` 出现一行：
+
+    ```text
+       GearIn layered renderer cleanup: elapsed=<秒数>
+    ```
+
+    此后该舰的方框不再出现；同一场战斗内其他舰船的方框不受影响。
+
+- **战斗结束**：胜负判定后引擎以全屏变暗完成淡出；退出战斗再进一场 ——`GearIn layered renderer init:` 重新出现，第二场战斗每艘新部署成员都有新方框 (每场战斗全新实例，规则 6)。
+
+## 故障分析
+
+- **绘制内容不出现或落在错误图层**：GL 调用写在 `advance()`，随后被渲染阶段覆盖。
+
+    - **解决方案**：绘制只放入 `render()`，推进回调只更新状态。
+
+- **图形出现在原点**：自定义坐标没有同步到承载实体。
+
+    - **解决方案**：每次 `advance()` 更新 `entity.getLocation()`。
+
+- **图形在视口内突然消失**：`getRenderRadius()` 小于实际绘制范围，剔除判断过早生效。
+
+    - **解决方案**：扩大半径，使其覆盖完整图形。
+
+- **舰船被击毁后图形仍然存在**：`isExpired()` 始终返回 false。
+
+    - **解决方案**：检测 `isEntityInPlay` 与 `isAlive`，失效时将 `valid` 置为 false。
+
+- **多场战斗后渲染异常或卡顿**：`cleanup()` 没有释放 VAO、VBO 或着色器程序。
+
+    - **解决方案**：删除所有 GL 句柄并恢复哨兵值。
+
+- **同一图形叠加变亮或闪烁**：插件声明多个激活层，却在每次 `render` 中绘制全部内容。
+
+    - **解决方案**：按 `layer` 参数分支，每层只提交对应图形。
+
+- **第二场战斗不再显示图形**：分层渲染插件跨战斗缓存了上一场的舰船。
+
+    - **解决方案**：每场战斗重新创建并注册插件。
+
+- **暂停恢复后计时不符合预期**：混用了每帧插件与分层渲染插件的暂停语义。分层插件暂停时不推进，但仍会渲染。
+
+    - **解决方案**：按这一边界重新安排计时。
+
+- **元素缩放或位置偏移**：世界坐标和屏幕坐标转换方向用反。
+
+    - **解决方案**：世界绘制直接提交世界坐标，只有屏幕空间元素才使用 world→screen 转换。
+
+## 总结
+
+- **独立插件通道**：`engine.addLayeredRenderingPlugin(plugin)` → 包装成战斗实体 → `executeAdds` 时 `init(entity)` + 按 `getActiveLayers()` 注册进 `LayeredRenderer`；与 `EveryFrameCombatPlugin` 相比：init 保证先执行、暂停时不推进、移除时由引擎调 `cleanup()`。
+- **层序**：`CombatEngineLayers` 枚举声明顺序即层序；管线依次处理底部尾迹粒子、非顶层图层、碎片、顶部粒子和顶层三图层 (`ABOVE_PARTICLES_LOWER` / `ABOVE_PARTICLES` / `JUST_BELOW_WIDGETS`)；`PHASED_SHIPS_LAYER` 必须低于战机层 (枚举注释)。
+- **渲染与剔除**：`render` 每激活层调用一次、按 `layer` 分支；转发前先判 `isNearViewport(entity.getLocation(), getRenderRadius())`—— 位置同步与半径覆盖是 "图形在视口内消失" 的排查入口。
+- **视口**：`ViewportAPI` 全是世界单位 (`getLLX/getLLY/getVisibleWidth/getVisibleHeight`)；`getViewMult()` 是当前缩放；转换方法 world↔screen 双向；`setExternalControl(true)` 让引擎每帧不再设置视口参数，是 MOD 接管相机的入口。
+- **清理一条线**：`advance()` 主动失效 (`isExpired()` → true)→ 引擎移除 → `cleanup()` 释放 GL 资源；战斗结束 `destroyInstance` **不调** `cleanup()`，与前置单元 "战斗结束没有清理回调" 的结论同构；跨战斗缓存禁令 (前置纪律) 原样适用。
+
+本节的分层渲染语义与视口坐标模型，是视觉类工作的地基：需要屏幕空间元素、按层自绘或相机接管 (`setExternalControl`) 的场合，都以这里的层序与坐标语义为起点；"没有战斗结束回调、收尾由插件自己驱动" 的清理纪律，与战斗插件通道一脉相承。
+
+## 建议参考项
+
+- `com.fs.starfarer.api.combat.CombatLayeredRenderingPlugin`：分层渲染插件接口 (`init` / `cleanup` / `isExpired` / `advance` / `getActiveLayers` / `getRenderRadius` / `render`)。
+- `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：七个回调的空实现基类 (默认层 `BELOW_INDICATORS_LAYER`、默认剔除半径 100)。
+- `com.fs.starfarer.api.combat.CombatEngineLayers`：层级枚举 (23 个值，声明顺序即层序)。
+- `com.fs.starfarer.api.combat.ViewportAPI`：视口坐标 (世界单位)、`getViewMult()`、双向转换、`setExternalControl`。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：`addLayeredRenderingPlugin` 注册入口、`getViewport`、`isEntityInPlay`。
+- `com.fs.starfarer.api.combat.CombatEntityAPI`：承载实体 (`getLocation`、`isExpired`)。
+- `com.fs.graphics.LayeredRenderer`：引擎内部按层渲染器 (`renderExcluding` / `renderOnly` 分派)。
+- `src/data/scripts/gearin/combat`：MOD 内本节类文件所在目录 (以 MOD 根目录为基准)。
+- `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
+- `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证方案的日志核对位置)。

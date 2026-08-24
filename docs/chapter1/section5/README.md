@@ -2,13 +2,14 @@
 
 本节将引导您制作远行星号常见的原版武器，包括两门射弹武器 (即，一门火炮武器和一门导弹武器)，和一门光束武器。除此之外，还包括射弹武器的实际弹体。本节将简单解析 `.wpn` 武器定义、`.proj` 弹体定义和 `data/weapons/weapon_data.csv` 文件。
 
-*本节预期阅读时间：~20 分钟。*
+*本节预期阅读时间：\~20 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：\~30 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
+
 - 制作一门射弹武器、一门光束武器与一门导弹武器，覆盖贴图准备、武器文件、数据行与弹体文件。
 - 追踪武器 ID、弹体 ID、资源路径与声音 ID 的完整链路，明确每一环对应的文件。
 - 在装配界面与战斗中定位错误，判断问题出在 CSV、武器文件还是弹体文件。
@@ -120,25 +121,25 @@
 
 看似一大片英文，但实际上要改的条目不多。
 
-| 英文                                                         | 实际意义                                                     |
-| ------------------------------------------------------------ | ------------------------------------------------------------ |
-| id                                                           | 武器的 ID                                                    |
-| type                                                         | 武器的类型，在本例中表示这是 `实弹` 类型武器，不变             |
-| size                                                         | 武器的型号，在本例中表示这是 `小型` 武器，不变                 |
+| 英文 | 实际意义 |
+|---|---|
+| id | 武器的 ID |
+| type | 武器的类型，在本例中表示这是 `实弹` 类型武器 |
+| size | 武器的型号，在本例中表示这是 `小型` 武器 |
 | `turretSprite`、`turretGunSprite`、`hardpointSprite`、`hardpointGunSprite` | 炮塔主体贴图、炮塔炮管贴图、固定槽位主体贴图、固定槽位炮管贴图，在本例中分别替换为前文贴图的路径 |
-| visualRecoil                                                 | 炮管缩退距离，不变                                           |
-| renderHints                                                  | 武器渲染模式，本例中表示这门武器将炮管渲染在主体的下方，不变。|
+| visualRecoil | 炮管缩退距离 |
+| renderHints | 武器渲染模式，本例中表示这门武器将炮管渲染在主体的下方 |
 | `turretOffsets`、`turretAngleOffsets`、`hardpointOffsets`、`hardpointAngleOffsets` | 炮塔开火点、炮塔开火角度、固定槽位开火点、固定槽位开火角度。因为本例的武器是双管自动炮，所以需要进行对应调整 —— 每 2 个开火点数字表示 1 个坐标并对应 1 个开火角度数字。**开火点的坐标原点是武器的旋转枢轴：炮塔贴图的中心，固定槽位贴图底部约 1/4 高度处。第一个数字正/负沿炮口方向 (正数为朝炮口)，第二个数字正/负是贴图的左/右** |
-| barrelMode                                                   | 炮管射击模式，在本例中为交替射击，不变                       |
-| animationType、muzzleFlashSpec                               | 开火烟雾的视觉属性，不变。若您有兴趣可以自行百度翻译。|
-| projectileSpecId                                             | 武器所发射的弹体 ID，暂时不变，之后调整                      |
-| fireSoundTwo                                                 | 武器开火音效，不变                                           |
+| barrelMode | 炮管射击模式，在本例中为交替射击 |
+| animationType、muzzleFlashSpec | 开火烟雾的视觉属性 |
+| projectileSpecId | 武器所发射的弹体 ID |
+| fireSoundTwo | 武器开火音效 |
 
 **上表的内容并不完全**，在介绍完毕本章的三门武器之后，将重新总结一份速查表。
 
-总而言之，只需要修改 `id`、各个 sprite、各个 offsets 和 angleOffsets 即可，工作量极小：
+总而言之，只需要修改 `id`、各个 sprite、各个 offsets 和 angleOffsets 即可。由于目前没有弹体，`projectileSpecId` 会在更晚些时候才修改：
 
-```json {2,7,8,9,10,13,14,15,16}
+```json {2,7-10,13-16}
 {
 	"id":"GearIn_durin",  # this id must match what's in the spreadsheet
 	"specClass":"projectile",
@@ -215,22 +216,22 @@
 
 ### 光束武器文件字段速查表
 
-| 英文                                            | 实际意义                                                     |
-| ----------------------------------------------- | ------------------------------------------------------------ |
-| turretGlowSprite、hardpointGlowSprite           | 炮塔光效贴图、固定槽位光效贴图                               |
-| fringeColor                                     | 光束边缘部分的颜色                                           |
-| coreColor                                       | 光束核心部分的颜色                                           |
-| glowColor                                       | 武器开火时光效贴图的颜色                                     |
-| width                                           | 光束宽度                                                     |
+| 英文 | 实际意义 |
+|---|---|
+| turretGlowSprite、hardpointGlowSprite | 炮塔光效贴图、固定槽位光效贴图 |
+| fringeColor | 光束边缘部分的颜色 |
+| coreColor | 光束核心部分的颜色 |
+| glowColor | 武器开火时光效贴图的颜色 |
+| width | 光束宽度 |
 | textureType、textureScrollSpeed、pixelsPerTexel | 光束的材质相关内容，相对较为进阶。作为初学者，只需要掌握 textureScrollSpeed 和 pixelsPerTexel 分别对应光束材质的滚动速度与拉伸程度即可 |
-| pierceSet                                       | 光束可以穿透的碰撞类型                                       |
-| fireSoundTwo                                    | 光束的持续时播放的循环音效                                   |
+| pierceSet | 光束可以穿透的碰撞类型 |
+| fireSoundTwo | 光束的持续时播放的循环音效 |
 
 上表的内容依然并不完全。
 
 总而言之，只需要修改 `id`、各个 sprite、各个 offsets 和 angleOffsets、以及光束的颜色即可，工作量依然极小：
 
-```json {3,7,8,9,10,11,13,15,16,17}
+```json {3,7-10,15,17}
 {
 	"specClass":"beam",
 	"id":"GearIn_uri",
@@ -301,7 +302,7 @@
 
 这次已经几乎完全没有生面孔了。仅有未出现的 `turretUnderSprite` 和 `hardpointUnderSprite` 是底座贴图，而本武器没有底座，所以在修改时直接删去即可：
 
-```json {2,6,7,8,9,10,11,14,15}
+```json {2,6,8,10,11,14,15}
 {
 	"id":"GearIn_dwalin",
 	"specClass":"projectile",
@@ -338,35 +339,35 @@
 
 ### .wpn 武器文件速查表
 
-| 英文                         | 实际意义                                                     |
-| ---------------------------- | ------------------------------------------------------------ |
-| id                           | 武器的 ID                                                    |
-| specClass                    | 武器发射弹体亦或是光束，弹体为 `projectile`，光束为 `beam`。导弹也是弹体的一种，因此也是 `projectile` |
-| beamEffect                   | 光束本身的每帧特效路径，仅对光束武器有效                     |
-| type                         | 武器的类型。可开火的武器类型只有 `BALLISTIC`、`ENERGY`、`MISSILE`；原版还用 `DECORATIVE` 制作纯装饰物 (不能开火)，其余类型不要用于武器文件 |
-| size                         | 武器的型号，可以是 `SMALL`、`MEDIUM` 或 `LARGE`                 |
-| everyFrameEffect             | 武器的每帧特效代码路径                                       |
-| 各类 sprite                  | 武器在 `炮塔`、`固定槽位` 模式下的各类组件贴图，部分可适当留空 |
-| visualRecoil                 | 炮管缩退距离，大于 0 时才会加载炮管数据                      |
-| fringeColor                  | 光束边缘部分的颜色，仅对光束武器有效                         |
-| coreColor                    | 光束核心部分的颜色，仅对光束武器有效                         |
-| glowColor                    | 武器开火时光效贴图的颜色                                     |
-| width                        | 光束宽度，仅对光束武器有效                                   |
-| renderHints                  | 武器渲染模式，可以是 `RENDER_BARREL_BELOW`、`RENDER_LOADED_MISSILES`、`RENDER_LOADED_MISSILES_UNLESS_HIDDEN`、`RENDER_ADDITIVE`、`SUSPEND_RECOIL`、`NEVER_RENDER_IN_CAMPAIGN` 中有逻辑的排列组合，分别是将炮管渲染在主体底部、渲染导弹、非隐藏槽位时渲染导弹、以叠加模式渲染、炮管默认不移动、生涯界面中不渲染 |
+| 英文 | 实际意义 |
+|---|---|
+| id | 武器的 ID |
+| specClass | 武器发射弹体亦或是光束，弹体为 `projectile`，光束为 `beam`。导弹也是弹体的一种，因此也是 `projectile` |
+| beamEffect | 光束本身的每帧特效路径，仅对光束武器有效 |
+| type | 武器的类型。可开火的武器类型只有 `BALLISTIC`、`ENERGY`、`MISSILE`；原版还用 `DECORATIVE` 制作纯装饰物 (不能开火)，其余类型不要用于武器文件 |
+| size | 武器的型号，可以是 `SMALL`、`MEDIUM` 或 `LARGE` |
+| everyFrameEffect | 武器的每帧特效代码路径 |
+| 各类 sprite | 武器在 `炮塔`、`固定槽位` 模式下的各类组件贴图，部分可适当留空 |
+| visualRecoil | 炮管缩退距离，大于 0 时才会加载炮管数据 |
+| fringeColor | 光束边缘部分的颜色，仅对光束武器有效 |
+| coreColor | 光束核心部分的颜色，仅对光束武器有效 |
+| glowColor | 武器开火时光效贴图的颜色 |
+| width | 光束宽度，仅对光束武器有效 |
+| renderHints | 武器渲染模式，可以是 `RENDER_BARREL_BELOW`、`RENDER_LOADED_MISSILES`、`RENDER_LOADED_MISSILES_UNLESS_HIDDEN`、`RENDER_ADDITIVE`、`SUSPEND_RECOIL`、`NEVER_RENDER_IN_CAMPAIGN` 中有逻辑的排列组合，分别是将炮管渲染在主体底部、渲染导弹、非隐藏槽位时渲染导弹、以叠加模式渲染、炮管默认不移动、生涯界面中不渲染 |
 | 各类 offsets 和 angleOffsets | 炮塔开火点、炮塔开火角度、固定槽位开火点、固定槽位开火角度。因为本例的武器是双管自动炮，所以需要进行对应调整 —— 每 2 个开火点数字表示 1 个坐标并对应 1 个开火角度数字。**开火点的坐标原点是武器的旋转枢轴：炮塔贴图的中心，固定槽位贴图底部约 1/4 高度处。第一个数字正/负沿炮口方向 (正数为朝炮口)，第二个数字正/负是贴图的左/右** |
-| barrelMode                   | 炮管射击模式，可以是 `LINKED`、`ALTERNATING`、`ALTERNATING_BURST` 或 `DUAL`，分别是齐射、轮流发射、每炮管波次发射、每次发射 2 发 |
-| autocharge                   | 设为 true 时，按下左键即可自动完成前摇，否则必须按住左键直到前摇完成为止。仅对非光束武器有效 |
-| beamFireOnlyOnFullCharge     | 设为 true 时，光束在渐入阶段不会产生光束也不会造成伤害。仅对光束武器有效 |
-| darkCore                     | 当光束核心颜色为暗色时，将此项设为 true 将表现地更暗。仅对光束武器有效 |
-| animationType                | 武器开火时产生的额外特效，可以是 `NONE`、`GLOW`、`MUZZLE_FLASH`、`GLOW_AND_FLASH` 或 `SMOKE`，分别是无特效、流动渲染光效贴图、产生炮口集束粒子、流动渲染光效贴图且产生炮口集束粒子、产生烟雾 |
-| muzzleFlashSpec              | 内容过多，自行百度翻译                                       |
-| projectileSpecId             | 武器所发射的弹体 ID，仅对非光束武器有效                      |
-| textureType                  | 光束材质预设或光束材质路径，仅对光束武器有效                 |
-| textureScrollSpeed           | 光束材质的滚动速率，仅对光束武器有效                         |
-| pixelsPerTexel               | 光束材质的拉伸程度，仅对光束武器有效                         |
-| pierceSet                    | 光束可以穿透的碰撞类型，仅对光束武器有效                     |
-| fireSoundOne                 | 武器开火前摇 (chargeup) 时播放一次的音效；对光束武器是光束渐入时的一次性音效 (如 `graviton_beam_intro`)|
-| fireSoundTwo                 | 武器开火音效；对光束武器是持续播放的循环音效 (如 `graviton_beam_loop`)|
+| barrelMode | 炮管射击模式，可以是 `LINKED`、`ALTERNATING`、`ALTERNATING_BURST` 或 `DUAL`，分别是齐射、轮流发射、每炮管波次发射、每次发射 2 发 |
+| autocharge | 设为 true 时，按下左键即可自动完成前摇，否则必须按住左键直到前摇完成为止。仅对非光束武器有效 |
+| beamFireOnlyOnFullCharge | 设为 true 时，光束在渐入阶段不会产生光束也不会造成伤害。仅对光束武器有效 |
+| darkCore | 当光束核心颜色为暗色时，将此项设为 true 将表现地更暗。仅对光束武器有效 |
+| animationType | 武器开火时产生的额外特效，可以是 `NONE`、`GLOW`、`MUZZLE_FLASH`、`GLOW_AND_FLASH` 或 `SMOKE`，分别是无特效、流动渲染光效贴图、产生炮口集束粒子、流动渲染光效贴图且产生炮口集束粒子、产生烟雾 |
+| muzzleFlashSpec | 内容过多，自行百度翻译 |
+| projectileSpecId | 武器所发射的弹体 ID，仅对非光束武器有效 |
+| textureType | 光束材质预设或光束材质路径，仅对光束武器有效 |
+| textureScrollSpeed | 光束材质的滚动速率，仅对光束武器有效 |
+| pixelsPerTexel | 光束材质的拉伸程度，仅对光束武器有效 |
+| pierceSet | 光束可以穿透的碰撞类型，仅对光束武器有效 |
+| fireSoundOne | 武器开火前摇 (chargeup) 时播放一次的音效；对光束武器是光束渐入时的一次性音效 (如 `graviton_beam_intro`) |
+| fireSoundTwo | 武器开火音效；对光束武器是持续播放的循环音效 (如 `graviton_beam_loop`) |
 
 ## 制作武器数据
 
@@ -430,59 +431,59 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 
 :::
 
-### weapon_data.csv 武器数据速查表
+### weapon\_data.csv 武器数据速查表
 
 **不在本表上的数据均为无意义数据 (如 for weapon tooltip>>) 或不重要数据 (如 number)。**
 
-| 英文              | 实际意义                                                     |
-| ----------------- | ------------------------------------------------------------ |
-| name              | 武器名称                                                     |
-| id                | 武器 ID                                                      |
-| tier              | 科技等级，正常范围是 0~3，大于 3 将导致不会市场上正常出现。科技等级越大则越稀有且购买所需关系越高。|
-| rarity            | 稀有度，数字越小越罕见，直接作为抽选权重，仅 ≤0 不入池       |
-| base value        | 武器的成本价                                                 |
-| range             | 对于非导弹武器而言是武器的射程，对于导弹武器而言是 AI 理解中的武器射程 |
-| damage/second     | 每秒伤害，仅对光束武器有效                                   |
-| damage/shot       | 单发伤害，仅对非光束武器有效                                 |
-| emp               | 对于非光束武器而言是单发 EMP，对于光束武器而言是每秒 EMP     |
-| impact            | 对于非光束武器而言几乎无作用，对于光束武器而言是可以偏转、固定目标的偏转力 |
-| turn rate         | 武器转速，单位是度/秒                                     |
-| OPs               | 装配点数需求                                                 |
-| ammo              | 弹药限制，留空则为无限弹药                                   |
-| ammo/sec          | 每秒弹药恢复量，留空则为无法恢复弹药                         |
-| reload size       | 每秒弹药恢复量不为空时，每波次恢复多少枚弹药                 |
-| type              | 伤害类型，可以是 `KINETIC`、`ENERGY`、`HIGH_EXPLOSIVE` 或 `FRAGMENTATION`，分别是动能、能量、高爆和破片。还可以是 `OTHER` 但极度不建议使用 |
-| energy/shot       | 每发产生幅能，仅对非光束武器有效                             |
-| energy/second     | 每秒产生幅能；非光束武器同样读取，并在前摇期间按该速率扣幅能 |
-| chargeup          | 对于非光束武器而言是开火前摇，对于光束武器而言是光束从不存在渐入为存在的时间 |
-| chargedown        | 对于非光束武器而言是开火后摇，对于光束武器而言是光束从存在渐出为不存在的时间 |
-| burst size        | 对于非光束武器而言是每波发射弹数，对于光束武器而言，填写了此数据后武器变为爆发光束，是爆发光束的爆发时长 |
-| burst delay       | 对于非光束武器而言是波内每发射弹的间隔时间，对于光束武器而言，填写了此数据后武器变为爆发光束，是爆发光束的冷却时长 |
-| min spread        | 最小弹道散布，单位是度，仅对非光束武器有效                  |
-| max spread        | 最大弹道散布，单位是度，仅对非光束武器有效                  |
-| spread/shot       | 每发射一次所导致的弹道散布增加量，单位是度，仅对非光束武器有效 |
-| spread decay/sec  | 武器停火时弹道散布的衰减，单位是度/秒，仅对非光束武器有效   |
-| beam speed        | 光束飞行速率，仅对光束武器有效                               |
-| proj speed        | 弹体飞行速率或导弹最大速率，仅对非光束武器有效               |
-| launch speed      | 导弹初速，仅对导弹武器有效                                   |
-| flight time       | 导弹飞行时间，仅对导弹武器有效。导弹武器的真实射程是导弹速度 * 导弹飞行时间，而不是前文的 `range` |
-| proj hitpoints    | 弹体血量，仅对非光束武器有效，且仅对导弹武器有作用           |
-| autofireAccBonus  | 自动开火的精确度补正，非常建议为空                           |
-| extraArcForAI     | 开火判断 AI 的角度补正，非常建议为空                         |
-| hints             | 进阶内容，常用写法见本页的武器 Hints 速查表               |
-| tags              | 进阶内容，常用写法见本页的武器 tags 速查表                |
-| groupTag          | 如果本项不为空，则本项相同的武器将优先编入同一组，且优先在本组不编入其它武器 |
-| tech/manufacturer | 科技类型，原版包括诸如低端科技、中线科技等，可随意填写     |
-| primaryRoleStr    | 武器类型，文字描述                                           |
-| speedStr          | 导弹飞行速度，文字描述，非导弹武器建议留空                   |
-| trackingStr       | 导弹跟踪能力，文字描述，非导弹武器建议留空                   |
-| turnRateStr       | 武器转速速度，文字描述，无特别要求建议留空                   |
-| accuracyStr       | 武器精准度，文字描述，无特别要求建议留空                     |
-| customPrimary     | 首要说明文本，在相对上方的框内                               |
-| customPrimaryHL   | 首要说明文本的高亮部分，多个高亮文本用 `|` 隔开                |
-| customAncillary   | 次要说明文本，在相对下方的框内                               |
-| customAncillaryHL | 次要说明文本的高亮部分，多个高亮文本用 `|` 隔开                |
-| noDPSInTooltip    | 设为 true 时，武器数据界面不会显示 DPS，仅适合不可恢复弹药且弹药量较少的武器 |
+| 英文 | 实际意义 |
+|---|---|
+| name | 武器名称 |
+| id | 武器 ID |
+| tier | 科技等级，正常范围是 0\~3，大于 3 将导致不会市场上正常出现。科技等级越大则越稀有且购买所需关系越高。|
+| rarity | 稀有度，数字越小越罕见，作为抽选权重，≤0 将导致不出现 |
+| base value | 武器的成本价 |
+| range | 对于非导弹武器而言是武器的射程，对于导弹武器而言是 AI 理解中的武器射程 |
+| damage/second | 每秒伤害，仅对光束武器有效 |
+| damage/shot | 单发伤害，仅对非光束武器有效 |
+| emp | 对于非光束武器而言是单发 EMP，对于光束武器而言是每秒 EMP |
+| impact | 对于非光束武器而言几乎无作用，对于光束武器而言是可以偏转、固定目标的偏转力 |
+| turn rate | 武器转速，单位是度/秒 |
+| OPs | 装配点数需求 |
+| ammo | 弹药限制，留空则为无限弹药 |
+| ammo/sec | 每秒弹药恢复量，留空则为无法恢复弹药 |
+| reload size | 每秒弹药恢复量不为空时，每波次恢复多少枚弹药 |
+| type | 伤害类型，可以是 `KINETIC`、`ENERGY`、`HIGH_EXPLOSIVE` 或 `FRAGMENTATION`，分别是动能、能量、高爆和破片。还可以是 `OTHER` 但极度不建议使用 |
+| energy/shot | 每发产生幅能，仅对非光束武器有效 |
+| energy/second | 每秒产生幅能；不建议在非光束武器中使用 |
+| chargeup | 对于非光束武器而言是开火前摇，对于光束武器而言是光束从不存在渐入为存在的时间 |
+| chargedown | 对于非光束武器而言是开火后摇，对于光束武器而言是光束从存在渐出为不存在的时间 |
+| burst size | 对于非光束武器而言是每波发射弹数，对于光束武器而言，填写了此数据后武器变为爆发光束，是爆发光束的爆发时长 |
+| burst delay | 对于非光束武器而言是波内每发射弹的间隔时间，对于光束武器而言，填写了此数据后武器变为爆发光束，是爆发光束的冷却时长 |
+| min spread | 最小弹道散布，单位是度，仅对非光束武器有效 |
+| max spread | 最大弹道散布，单位是度，仅对非光束武器有效 |
+| spread/shot | 每发射一次所导致的弹道散布增加量，单位是度，仅对非光束武器有效 |
+| spread decay/sec | 武器停火时弹道散布的衰减，单位是度/秒，仅对非光束武器有效 |
+| beam speed | 光束飞行速率，仅对光束武器有效 |
+| proj speed | 弹体飞行速率或导弹最大速率，仅对非光束武器有效 |
+| launch speed | 导弹初速，仅对导弹武器有效 |
+| flight time | 导弹飞行时间，仅对导弹武器有效。导弹武器的真实射程是导弹速度 \* 导弹飞行时间，而不是前文的 `range` |
+| proj hitpoints | 弹体血量，仅对非光束武器有效，且仅对导弹武器有实际作用 |
+| autofireAccBonus | 自动开火的精确度补正，非常建议为空 |
+| extraArcForAI | 开火判断 AI 的角度补正，非常建议为空 |
+| hints | 进阶内容，常用写法见本页的武器 Hints 速查表 |
+| tags | 进阶内容，常用写法见本页的武器 tags 速查表 |
+| groupTag | 如果本项不为空，则本项相同的武器将优先编入同一组，且优先在本组不编入其它武器 |
+| tech/manufacturer | 科技类型，原版包括诸如低端科技、中线科技等，可随意填写 |
+| primaryRoleStr | 武器类型，文字描述 |
+| speedStr | 导弹飞行速度，文字描述，非导弹武器建议留空 |
+| trackingStr | 导弹跟踪能力，文字描述，非导弹武器建议留空 |
+| turnRateStr | 武器转速速度，文字描述，无特别要求建议留空 |
+| accuracyStr | 武器精准度，文字描述，无特别要求建议留空 |
+| customPrimary | 首要说明文本，在相对上方的框内 |
+| customPrimaryHL | 首要说明文本的高亮部分，多个高亮文本用 `\|` 分隔 |
+| customAncillary | 次要说明文本，在相对下方的框内 |
+| customAncillaryHL | 次要说明文本的高亮部分，多个高亮文本用 `\|` 分隔 |
+| noDPSInTooltip | 设为 true 时，武器数据界面不会显示 DPS，仅适合不可恢复弹药且弹药量较少的武器 |
 
 ## 验证方案
 
@@ -514,7 +515,7 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 
 编者认为 `都林自动炮` 的弹体颜色应当设定为红色，但其它方面不会和 `轻型突击炮` 的弹体相比有太多差距。
 
-将 `lightag_shot.proj` 复制到 `data/weapons/proj` 这个弹体目录下，然后将文件名改为 `GearIn_durin_shot.proj`，开始修改：
+将 `lightag_shot.proj` 复制到 `data/weapons/proj` 这个弹体目录下，然后将文件名改为 `GearIn_durin_shot.proj`，准备修改：
 
 ```json
 {
@@ -539,31 +540,31 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 
 ### .proj 非导弹弹体速查表
 
-| 英文                    | 实际意义                                                     |
-| ----------------------- | ------------------------------------------------------------ |
-| id                      | 弹体的 ID                                                    |
-| specClass               | 弹体类型，`projectile` 是正常射弹，`missile` 是导弹。导弹、鱼雷、惯性炸弹都算 `missile` |
-| spawnType               | 生成类型；`projectile` 可用 `BALLISTIC`、`BALLISTIC_AS_BEAM`、`PLASMA`、`BEAM`、`MISSILE`、`OTHER`。原版等离子炮即用 `PLASMA` |
-| onHitEffect             | 弹体的命中特效代码路径，不填默认为无特效                     |
-| onFireEffect            | 弹体的开火特效代码路径，不填默认为无特效                     |
-| collisionClass          | 弹体的碰撞类型。`BALLISTIC` 类型的弹体用 `PROJECTILE_FF`(能命中包括友方在内的舰船，有友伤) 或 `PROJECTILE_NO_FF`(只命中敌方，无友伤)。`BALLISTIC_AS_BEAM` 类型的弹体用 `RAY`(能命中包括友方在内的舰船) 或 `RAY_FIGHTER`(只命中敌方舰船与战机)。全部碰撞类型：`NONE`、`RAY`、`RAY_FIGHTER`、`FIGHTER`、`SHIP`、`PROJECTILE_NO_FF`、`PROJECTILE_FF`、`MISSILE_NO_FF`、`MISSILE_FF`、`HITS_SHIPS_AND_ASTEROIDS`、`HITS_SHIPS_ONLY_FF`、`HITS_SHIPS_ONLY_NO_FF`、`PROJECTILE_FIGHTER`、`ASTEROID`、`PLANET`、`GAS_CLOUD`、`STAR`(后几类用于实体，弹体不会用到)|
+| 英文 | 实际意义 |
+|---|---|
+| id | 弹体的 ID |
+| specClass | 弹体类型，`projectile` 是正常射弹，`missile` 是导弹。导弹、鱼雷、惯性炸弹都算 `missile` |
+| spawnType | 生成类型；`projectile` 可用 `BALLISTIC`、`BALLISTIC_AS_BEAM`、`PLASMA`、`BEAM`、`MISSILE`、`OTHER`。原版等离子炮即用 `PLASMA` |
+| onHitEffect | 弹体的命中特效代码路径，不填默认为无特效 |
+| onFireEffect | 弹体的开火特效代码路径，不填默认为无特效 |
+| collisionClass | 弹体的碰撞类型。`BALLISTIC` 类型的弹体用 `PROJECTILE_FF`(能命中包括友方在内的舰船，有友伤) 或 `PROJECTILE_NO_FF`(只命中敌方，无友伤)。`BALLISTIC_AS_BEAM` 类型的弹体用 `RAY`(能命中包括友方在内的舰船) 或 `RAY_FIGHTER`(只命中敌方舰船与战机)。全部碰撞类型：`NONE`、`RAY`、`RAY_FIGHTER`、`FIGHTER`、`SHIP`、`PROJECTILE_NO_FF`、`PROJECTILE_FF`、`MISSILE_NO_FF`、`MISSILE_FF`、`HITS_SHIPS_AND_ASTEROIDS`、`HITS_SHIPS_ONLY_FF`、`HITS_SHIPS_ONLY_NO_FF`、`PROJECTILE_FIGHTER`、`ASTEROID`、`PLANET`、`GAS_CLOUD`、`STAR`(后几类用于实体，弹体不会用到) |
 | collisionClassByFighter | 若这个弹体是由战机发射的，则它使用这个碰撞类型。一般来说根据类型而分别使用 `PROJECTILE_FIGHTER` 或 `RAY_FIGHTER` 来与舰船发射的弹体做区分 |
-| length                  | 弹体长度                                                     |
-| width                   | 弹体宽度                                                     |
-| hitGlowRadius           | 弹体命中时的光效范围                                         |
-| glowRadius              | 弹体飞行时的光效范围，在本例中不填，默认为 0                 |
-| coreColor               | 弹体核心部分的颜色                                           |
-| fringeColor             | 弹体边缘部分的颜色                                           |
-| glowColor               | 弹体光效颜色                                                 |
-| bulletSprite            | 弹体贴图位置                                                 |
-| textureType             | 弹体材质，缺省为 SMOOTH；textureScrollSpeed/pixelsPerTexel 与其无关、总是被读取                       |
-| textureScrollSpeed      | 弹体材质滚动速率                                             |
-| pixelsPerTexel          | 弹体材质拉伸程度                                             |
-| behaviorSpec            | 弹体的行为设置，一般来说用来制作高射炮型溅射                 |
+| length | 弹体长度 |
+| width | 弹体宽度 |
+| hitGlowRadius | 弹体命中时的光效范围 |
+| glowRadius | 弹体飞行时的光效范围，在本例中不填，默认为 0 |
+| coreColor | 弹体核心部分的颜色 |
+| fringeColor | 弹体边缘部分的颜色 |
+| glowColor | 弹体光效颜色 |
+| bulletSprite | 弹体贴图位置 |
+| textureType | 弹体材质，默认为 SMOOTH |
+| textureScrollSpeed | 弹体材质滚动速率 |
+| pixelsPerTexel | 弹体材质拉伸程度 |
+| behaviorSpec | 弹体的行为设置，一般来说用来制作高射炮型溅射 |
 
 据此修改它的弹体 ID 和颜色：
 
-```json {2,13}
+```json {2,13,14}
 {
 	"id":"GearIn_durin_shot",
 	"specClass":"projectile",
@@ -583,6 +584,12 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 	"bulletSprite":"graphics/missiles/shell_large_yellow.png"
 }
 ```
+
+::: tip 颜色和伤害类型
+
+在原版里，弹体的颜色和伤害类型一般来说具有相关性。能量伤害的弹体一般来说是蓝色系的，动能伤害的弹体一般来说是黄色系的，高爆伤害的弹体一般来说是红色系的。例外存在，但较少。
+
+:::
 
 然后在此前的 `GearIn_durin.wpn` 里调用它：
 
@@ -691,32 +698,32 @@ CSV 的导弹行会直接修改它引用的弹体 spec：当原版 `暴风 MLRS`
 
 **不在本表上的数据均为上文提及过且无歧义的数据。**
 
-| 英文                        | 实际意义                                                     |
-| --------------------------- | ------------------------------------------------------------ |
-| missileType                 | 导弹类型，常见的导弹类型有 `MISSILE`、`ROCKET`、`BOMB`、`HEATSEEKER`、`MIRV`、`PHASE_CHARGE`、`PHASE_MINE`、`MISSILE_TWO_STAGE_SECOND_UNGUIDED` 和 `MOTE`。此外存在一些罕见的类型，比如耀斑。需要时自行寻找并复制 |
-| sprite                      | 导弹贴图。注意，非导弹的 `bulletSprite` 在此处不起效           |
-| size                        | 导弹的大小，前一个数字为宽，后一个为高。如果和贴图大小不同则会进行拉伸 |
-| center                      | 导弹的中心位置，影响碰撞判定，数值一般各设置为导弹大小的一半 |
-| collisionRadius             | 导弹的碰撞圈大小，与舰船的 `黄圈` 性质相同                     |
-| collisionClass              | 导弹的碰撞类型，除去某些不合理的设置之外，可以是 `MISSILE_FF` 或 `MISSILE_NO_FF`，前者有友伤，后者没有。|
-| explosionColor              | 导弹爆炸产生的光效颜色                                       |
-| explosionRadius             | 导弹爆炸产生的光效大小，不影响伤害溅射范围                   |
-| explosionSpec               | 导弹爆炸的溅射伤害设置。不填默认为无伤害溅射                 |
-| armingTime                  | 导弹的引信时间，在引信时间到达之前不会爆炸。不填默认为 0     |
-| flameoutTime                | 导弹的飞行时间耗尽 (超出射程) 后，从引擎熄火到完全淡出消失的总时长。熄火后导弹仍凭惯性飞行，且仍能碰撞并造成伤害 |
-| noEngineGlowTime            | 熄火淡出阶段的末尾，引擎光效停止渲染的时间段；只影响视觉，与伤害无关 |
-| fadeTime                    | 熄火淡出阶段的末尾淡出 (贴图渐隐) 时长；若 `noCollisionWhileFading` 为 true，淡出期间不再有碰撞判定 |
-| useHitGlowWhenDestroyed     | 如果设为 true，则导弹自爆或被拦截时不会产生导弹型爆炸特效，而是产生非导弹型命中光效。不填默认为否 |
-| noDebrisWhenDestroyed       | 如果设为 true，则导弹自爆或被拦截时不会产生残骸碎片。不填默认为否 |
-| useHitGlowWhenDealingDamage | 若弹体没有 `explosionSpec`，命中造成伤害时产生命中光效；设为 false 则命中时没有任何爆炸/光效特效。不填默认为是 (true)|
-| noCollisionWhileFading      | 如果设为 true，则引擎熄火后不再有撞击判定。不填默认为否      |
-| renderTargetIndicator       | 如果设为 false，则导弹被敌方发射时下方不会出现红色棱形指示标。不填默认为是 |
-| engineSpec                  | 导弹的机动性设置，在本例顺序分别是 `转向加速度`、`最大转向速度`、`加速度` 和 `减速度` |
-| engineSlots                 | 导弹的引擎设置，一个导弹可以有多个引擎，它们的 `id` 必须不同。引擎的 `styleSpec` 属性与 [C4-S3] 的引擎风格相关。|
+| 英文 | 实际意义 |
+|---|---|
+| missileType | 导弹类型，常见的导弹类型有 `MISSILE`、`ROCKET`、`BOMB`、`HEATSEEKER`、`MIRV`、`PHASE_CHARGE`、`PHASE_MINE`、`MISSILE_TWO_STAGE_SECOND_UNGUIDED` 和 `MOTE`。此外存在一些罕见的类型，比如耀斑。需要时自行寻找并复制 |
+| sprite | 导弹贴图。注意，非导弹的 `bulletSprite` 在此处不起效 |
+| size | 导弹的大小，前一个数字为宽，后一个为高。如果和贴图大小不同则会进行拉伸 |
+| center | 导弹的中心位置，影响碰撞判定，数值一般各设置为导弹大小的一半 |
+| collisionRadius | 导弹的碰撞圈大小，与舰船的 `黄圈` 性质相同 |
+| collisionClass | 导弹的碰撞类型，除去某些不合理的设置之外，可以是 `MISSILE_FF` 或 `MISSILE_NO_FF`，前者有友伤，后者没有。|
+| explosionColor | 导弹爆炸产生的光效颜色 |
+| explosionRadius | 导弹爆炸产生的光效大小，不影响伤害溅射范围 |
+| explosionSpec | 导弹爆炸的溅射伤害设置。不填默认为无伤害溅射 |
+| armingTime | 导弹的引信时间，在引信时间到达之前不会爆炸。不填默认为 0 |
+| flameoutTime | 导弹的飞行时间耗尽 (超出射程) 后，从引擎熄火到完全淡出消失的总时长。熄火后导弹仍凭惯性飞行，且仍能碰撞并造成伤害 |
+| noEngineGlowTime | 熄火淡出阶段的末尾，引擎光效停止渲染的时间段；只影响视觉，与伤害无关 |
+| fadeTime | 熄火淡出阶段的末尾淡出 (贴图渐隐) 时长；若 `noCollisionWhileFading` 为 true，淡出期间不再有碰撞判定 |
+| useHitGlowWhenDestroyed | 如果设为 true，则导弹自爆或被拦截时不会产生导弹型爆炸特效，而是产生非导弹型命中光效。不填默认为否 |
+| noDebrisWhenDestroyed | 如果设为 true，则导弹自爆或被拦截时不会产生残骸碎片。不填默认为否 |
+| useHitGlowWhenDealingDamage | 若弹体没有 `explosionSpec`，命中造成伤害时产生命中光效；设为 false 则命中时没有任何爆炸/光效特效。不填默认为是 (true) |
+| noCollisionWhileFading | 如果设为 true，则引擎熄火后不再有撞击判定。不填默认为否 |
+| renderTargetIndicator | 如果设为 false，则导弹被敌方发射时下方不会出现红色棱形指示标。不填默认为是 |
+| engineSpec | 导弹的机动性设置，在本例顺序分别是 `转向加速度`、`最大转向速度`、`加速度` 和 `减速度` |
+| engineSlots | 导弹的引擎设置，一个导弹可以有多个引擎，它们的 `id` 必须不同。引擎的 `styleSpec` 属性与 [C4-S3] 的引擎风格相关。|
 
 据此修改它的弹体 ID、贴图和爆炸颜色等属性：
 
-```json {2,6,11,25}
+```json {2,6,11}
 {
 	"id":"GearIn_dwalin_rocket",
 	"specClass":"missile",
@@ -811,55 +818,55 @@ CSV 的导弹行会直接修改它引用的弹体 spec：当原版 `暴风 MLRS`
 
 **不在本表上的数据均为与武器本身性能无关的 Hints。**
 
-| 英文                         | 实际意义                                                     |
-| ---------------------------- | ------------------------------------------------------------ |
-| ANTI_FTR                     | 让 AI 认为这种武器主要用于对抗战机                           |
-| AUTOZOOM                     | 使视点自动与目标对齐，**极度不建议使用**                     |
-| BOMB                         | 对任意类型武器生效，让 AI 尽可能频繁且无脑地使用此武器       |
-| CONSERVE_1                   | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 1 轮发射量以供不时之需 |
-| CONSERVE_2                   | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 2 轮发射量以供不时之需 |
-| CONSERVE_3                   | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 3 轮发射量以供不时之需 |
-| CONSERVE_4                   | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 4 轮发射量以供不时之需 |
-| CONSERVE_5                   | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 5 轮发射量以供不时之需 |
-| CONSERVE_FOR_ANTI_ARMOR      | 让 AI 认为这种武器主要用于对抗装甲，效果较为极端             |
-| DIRECT_AIM                   | 仅对未自定义过导弹 AI 的导弹武器有效，让导弹的 AI 在靠近目标时不乱晃 |
-| DO_NOT_AIM                   | 让 AI 认为这种武器是强全向追踪的，无视射角开火               |
-| GUIDED_POOR                  | 让 AI 认为这种武器带有轻微制导能力，比射角略大也可开火       |
-| DO_NOT_CONSERVE              | 仅对弹药有限的武器有效，让 AI 不保留任何弹药完全倾泻         |
-| EXTRA_RANGE_ON_FIGHTER       | 让 AI 认为这种武器被安装在战机上时有 500 额外射程 (仅影响 AI，不代表射程真的增加) |
-| FIRE_WHEN_INEFFICIENT        | 让 AI 认为这种武器可以不分场合地使用，例如 `离子束`           |
-| HEATSEEKER                   | 仅对未自定义过导弹 AI 的导弹武器有效，让导弹的 AI 持续追踪目标舰船 (带随机航线偏移，接近时切换为拦截航向)|
-| MISSILE_SPREAD               | 仅对未自定义过导弹 AI 的导弹武器有效，让导弹的 AI 在即将命中目标时倾向于分散 |
-| NO_TURN_RATE_BOOST_WHEN_IDLE | 武器在不开火时转速大幅提高，带有此 Hint 的武器在不开火时不会提高转速 |
-| PD                           | 武器将自动且优先瞄准导弹，且被游戏机制理解为点防御武器       |
-| PD_ALSO                      | 必须与 `PD` 共同使用，将瞄准舰船的权重提高到瞄准导弹之上       |
-| PD_ONLY                      | 必须与 `PD` 共同使用，除非手动操作否则不瞄准舰船。但当与 `ANTI_FTR` 共同使用时，则依然会自动瞄准战机 |
-| SYSTEM                       | 让这个武器不出现在数据库中，且无法在战后被打捞               |
-| SHOW_IN_CODEX                | 必须与 `SYSTEM` 共同使用，让这个武器出现在数据库中             |
-| STRIKE                       | 让 AI 认为这种武器是一种极长冷却、大伤害的武器，应该被谨慎考虑使用，且不建议对护卫舰使用。面对它的舰船也会认为这种武器有极大威胁 |
-| DANGEROUS                    | 标记会被 AI 视为高威胁的武器；是否与其他 hint 组合应以原版同类武器为依据 |
-| USE_VS_FRIGATES              | 必须与 `STRIKE` 共同使用，取消 `不建议对护卫舰使用`             |
+| 英文 | 实际意义 |
+|---|---|
+| ANTI\_FTR | 让 AI 认为这种武器主要用于对抗战机 |
+| AUTOZOOM | 使视点自动与目标对齐，**极度不建议使用** |
+| BOMB | 对任意类型武器生效，让 AI 尽可能频繁且无脑地使用此武器 |
+| CONSERVE\_1 | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 1 轮发射量以供不时之需 |
+| CONSERVE\_2 | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 2 轮发射量以供不时之需 |
+| CONSERVE\_3 | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 3 轮发射量以供不时之需 |
+| CONSERVE\_4 | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 4 轮发射量以供不时之需 |
+| CONSERVE\_5 | 仅对弹药有限的武器有效，让 AI 倾向于至少保留 5 轮发射量以供不时之需 |
+| CONSERVE\_FOR\_ANTI\_ARMOR | 让 AI 认为这种武器主要用于对抗装甲，效果较为极端 |
+| DIRECT\_AIM | 仅对未自定义过导弹 AI 的导弹武器有效，让导弹的 AI 在靠近目标时不乱晃 |
+| DO\_NOT\_AIM | 让 AI 认为这种武器是强全向追踪的，无视射角开火 |
+| GUIDED\_POOR | 让 AI 认为这种武器带有轻微制导能力，比射角略大也可开火 |
+| DO\_NOT\_CONSERVE | 仅对弹药有限的武器有效，让 AI 不保留任何弹药完全倾泻 |
+| EXTRA\_RANGE\_ON\_FIGHTER | 让 AI 认为这种武器被安装在战机上时有 500 额外射程 (仅影响 AI，不代表射程真的增加) |
+| FIRE\_WHEN\_INEFFICIENT | 让 AI 认为这种武器可以不分场合地使用，例如 `离子束` |
+| HEATSEEKER | 仅对未自定义过导弹 AI 的导弹武器有效，让导弹的 AI 持续追踪目标舰船 (带随机航线偏移，接近时切换为拦截航向) |
+| MISSILE\_SPREAD | 仅对未自定义过导弹 AI 的导弹武器有效，让导弹的 AI 在即将命中目标时倾向于分散 |
+| NO\_TURN\_RATE\_BOOST\_WHEN\_IDLE | 武器在不开火时转速大幅提高，带有此 Hint 的武器在不开火时不会提高转速 |
+| PD | 武器将自动且优先瞄准导弹，且被游戏机制理解为点防御武器 |
+| PD\_ALSO | 必须与 `PD` 共同使用，将瞄准舰船的权重提高到瞄准导弹之上 |
+| PD\_ONLY | 必须与 `PD` 共同使用，除非手动操作否则不瞄准舰船。但当与 `ANTI_FTR` 共同使用时，则依然会自动瞄准战机 |
+| SYSTEM | 让这个武器不出现在数据库中，且无法在战后被打捞 |
+| SHOW\_IN\_CODEX | 必须与 `SYSTEM` 共同使用，让这个武器出现在数据库中 |
+| STRIKE | 让 AI 认为这种武器是一种极长冷却、大伤害的武器，应该被谨慎考虑使用，且不建议对护卫舰使用。面对它的舰船也会认为这种武器有极大威胁 |
+| DANGEROUS | 标记会被 AI 视为高威胁的武器；是否与其他 hint 组合应以原版同类武器为依据 |
+| USE\_VS\_FRIGATES | 必须与 `STRIKE` 共同使用，取消 `不建议对护卫舰使用` |
 
 ## 武器 tags 速查表
 
 **本表未列出的 tags 与武器性能无关，例如 `rare_bp`，照抄原版样本即可。**
 
-| 英文     | 实际意义                                                     |
-| -------- | ------------------------------------------------------------ |
-| kinetic* | 当进行自动装配时，优先使用 * 所处的位置较高的武器。例如 kinetic2 总是会替代 kinetic1 |
-| he*      | 当进行自动装配时，优先使用 * 所处的位置较高的武器。例如 he2 总是会替代 he1 |
-| energy*  | 当进行自动装配时，优先使用 * 所处的位置较高的武器。例如 energy2 总是会替代 energy1 |
-|          | **以上 3 条只应当包含 1 条**                                 |
-| missile* | 与上面三个类似，常规型导弹                                   |
-| strike*  | 与上面四个类似，打击型导弹                                   |
-| rocket*  | 与上面五个类似，无制导火箭                                   |
-| utility* | 与上面六个类似，奇奇怪怪的导弹武器                           |
-|          | **以上 4 条只应当包含 1 条**，且只应当给导弹武器使用         |
-| pd*      | 与上面七个类似，点防御武器                                   |
-| beam*    | 与上面八个类似，光束武器                                     |
-| SR       | 当一艘舰船使用了带有 SR 的武器，那么自动装配会倾向于给它装满带有 SR 的武器 |
-| LR       | 当一艘舰船使用了带有 LR 的武器，那么自动装配会倾向于给它装满带有 LR 的武器 |
-|          | **以上 2 条互斥**                                            |
+| 英文 | 实际意义 |
+|---|---|
+| kinetic\* | 当进行自动装配时，优先使用 \* 所处的位置较高的武器。例如 kinetic2 总是会替代 kinetic1 |
+| he\* | 当进行自动装配时，优先使用 \* 所处的位置较高的武器。例如 he2 总是会替代 he1 |
+| energy\* | 当进行自动装配时，优先使用 \* 所处的位置较高的武器。例如 energy2 总是会替代 energy1 |
+|  | **以上 3 条只应当包含 1 条** |
+| missile\* | 与上面三个类似，常规型导弹 |
+| strike\* | 与上面四个类似，打击型导弹 |
+| rocket\* | 与上面五个类似，无制导火箭 |
+| utility\* | 与上面六个类似，奇奇怪怪的导弹武器 |
+|  | **以上 4 条只应当包含 1 条**，且只应当给导弹武器使用 |
+| pd\* | 与上面七个类似，点防御武器 |
+| beam\* | 与上面八个类似，光束武器 |
+| SR | 当一艘舰船使用了带有 SR 的武器，那么自动装配会倾向于给它装满带有 SR 的武器 |
+| LR | 当一艘舰船使用了带有 LR 的武器，那么自动装配会倾向于给它装满带有 LR 的武器 |
+|  | **以上 2 条互斥** |
 
 ## 文件链与预期结果
 

@@ -257,28 +257,7 @@ LOG.info("GearIn lifecycle finalize: deployments=" + deploymentListener.deployed
 
 新增行为：引擎确认战斗结束后，先注销部署监听器，再移除插件自身。完成信号：收尾日志只出现一次，此后部署事件与周期报告都停止；下一场战斗由新实例重新计数。
 
-## 完整最小例
-
-规则已经齐了，下面用一个完整最小例把它们落到两个类上，再从日志观察每一条行为。
-
-在前置单元的 MOD 布局与战斗插件模型之上新增两个类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Role>`)：
-
-```text
-Starsector\mods\GearIndustry\
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data\
-├── src\
-│   └── data\scripts\gearin\
-│       ├── GearInModPlugin               # 前置单元所有；本节不改动
-│       ├── GearInGlobalAccess            # 前置单元所有；本节只消费
-│       └── combat\
-│           ├── GearInCombatStatePlugin   # 前置单元所有；本节只消费
-│           ├── GearInCombatLifecyclePlugin  # 本节新增：战斗生命周期插件
-│           └── GearInDeploymentListener  # 本节新增：引擎级部署监听器
-└── jars\
-```
+## 讲解产物类与注册
 
 ### GearInCombatLifecyclePlugin (战斗生命周期插件)
 
@@ -290,7 +269,7 @@ Starsector\mods\GearIndustry\
 
 `FleetMemberDeploymentListener` 实现，承担监听器角色：统计并记录敌我成员部署事件，`deployedCount` 是本场战斗的状态。
 
-**注册入口**：由 `GearInCombatLifecyclePlugin.init()` 注册到 `engine.getListenerManager()`(引擎级表面)—— `hasListenerOfClass` 去重判断 + `addListener(...)`，见上方插件代码。
+**注册入口**：由 `GearInCombatLifecyclePlugin.init()` 注册到 `engine.getListenerManager()`(引擎级表面)—— `hasListenerOfClass` 去重判断 + `addListener(...)`，见下方插件代码。
 
 对应关系：
 
@@ -326,6 +305,153 @@ gradle jar
 
 - `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class`
 - `data/scripts/gearin/combat/GearInDeploymentListener.class`
+
+## 完整最小例
+
+规则已经齐了，下面用一个完整最小例把它们落到两个类上，再从日志观察每一条行为。
+
+在前置单元的 MOD 布局与战斗插件模型之上新增两个类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Role>`)：
+
+```text
+Starsector\mods\GearIndustry\
+├── build.gradle
+├── settings.gradle
+├── mod_info.json
+├── data\
+├── src\
+│   └── data\scripts\gearin\
+│       ├── GearInModPlugin               # 前置单元所有；本节不改动
+│       ├── GearInGlobalAccess            # 前置单元所有；本节只消费
+│       └── combat\
+│           ├── GearInCombatStatePlugin   # 前置单元所有；本节只消费
+│           ├── GearInCombatLifecyclePlugin  # 本节新增：战斗生命周期插件
+│           └── GearInDeploymentListener  # 本节新增：引擎级部署监听器
+└── jars\
+```
+
+::: details 完整成品：GearInCombatLifecyclePlugin
+
+```java
+package data.scripts.gearin.combat;
+
+import java.util.List;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.listeners.CombatListenerManagerAPI;
+import com.fs.starfarer.api.input.InputEventAPI;
+import com.fs.starfarer.api.util.IntervalUtil;
+
+/**
+ * 完整最小例：战斗插件与引擎级监听器的生命周期、移除与状态归属。
+ *
+ * 生命周期事实：
+ * - init() 已废弃：不保证在 advance() 前被调用 (CombatEnginePlugin 的 API 注释)，
+ *   advance() 必须先判 engine == null；
+ * - advance() 在暂停时仍会被调用，状态推进前必须先检查 engine.isPaused()(C7-S1)；
+ * - 战斗结束没有回调：插件必须在 advance() 里用 engine.isCombatOver() 自行识别收尾时机，
+ *   此时引擎仍存活，并将进入结算或退出过渡 (C7-S2)；
+ * - 引擎级监听器不随插件移除而注销：插件调用 engine.removePlugin(this) 自移除时，
+ *   必须同时把注册到 engine.getListenerManager() 的监听器 removeListener 掉；
+ * - 引擎、插件、监听器与舰船引用禁止跨战斗缓存 (C6-S3)：本类所有状态
+ *   都只属于当前这场战斗，战斗结束由引擎销毁统一释放。
+ */
+public class GearInCombatLifecyclePlugin extends BaseEveryFrameCombatPlugin {
+
+    private static final Logger LOG = Global.getLogger(GearInCombatLifecyclePlugin.class);
+
+    /** 引擎引用。init() 已废弃，advance() 中必须判 null。 */
+    private CombatEngineAPI engine;
+
+    /** 本插件在 init() 里注册的引擎级监听器；自移除时必须显式移除。 */
+    private final GearInDeploymentListener deploymentListener = new GearInDeploymentListener();
+
+    private boolean finalized = false;
+    private final IntervalUtil reportInterval = new IntervalUtil(2f, 2f);
+
+    @Override
+    public void init(CombatEngineAPI engine) {
+        this.engine = engine;
+        CombatListenerManagerAPI listeners = engine.getListenerManager();
+        if (!listeners.hasListenerOfClass(GearInDeploymentListener.class)) {
+            listeners.addListener(deploymentListener);
+            LOG.info("GearIn lifecycle init: deployment listener registered");
+        }
+    }
+
+    @Override
+    public void advance(float amount, List<InputEventAPI> events) {
+        if (engine == null) {
+            return; // init() 不保证先于 advance() 执行，必须判 null
+        }
+        if (engine.isPaused()) {
+            return; // 暂停守卫 (C7-S1)
+        }
+        if (finalized) {
+            return;
+        }
+        reportInterval.advance(amount);
+        if (reportInterval.intervalElapsed()) {
+            LOG.info("GearIn lifecycle: total=" + engine.getTotalElapsedTime(false)
+                    + " combatOver=" + engine.isCombatOver());
+        }
+        if (engine.isCombatOver()) {
+            finalizeBattle();
+        }
+    }
+
+    /** 收尾：先移除自己注册的引擎级监听器，再移除插件自身。 */
+    private void finalizeBattle() {
+        engine.getListenerManager().removeListener(deploymentListener);
+        engine.removePlugin(this);
+        finalized = true;
+        LOG.info("GearIn lifecycle finalize: deployments=" + deploymentListener.deployedCount
+                + " listener removed, plugin removed");
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInDeploymentListener
+
+```java
+package data.scripts.gearin.combat;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.DeployedFleetMemberAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.combat.listeners.FleetMemberDeploymentListener;
+
+/**
+ * 引擎级部署监听器：FleetMemberDeploymentListener 只能注册到引擎，
+ * 注册到舰船不会生效 (CombatListenerUtil 只查引擎级表)。
+ * 部署计数是本场战斗的状态，随战斗结束与监听器一起释放。
+ * 绑定位置：由 GearInCombatLifecyclePlugin.init() 注册到 engine.getListenerManager()。
+ */
+public class GearInDeploymentListener implements FleetMemberDeploymentListener {
+
+    private static final Logger LOG = Global.getLogger(GearInDeploymentListener.class);
+
+    int deployedCount = 0;
+
+    @Override
+    public void reportFleetMemberDeployed(DeployedFleetMemberAPI member) {
+        deployedCount++;
+        ShipAPI ship = member.getShip();
+        LOG.info("GearIn deployed: ally=" + member.isAlly()
+                + " fighterWing=" + member.isFighterWing()
+                + " ship=" + (ship == null ? "null" : ship.getHullSpec().getHullId()));
+    }
+}
+```
+
+:::
 
 ## 关键故障实验：战斗结束后监听器仍在写日志
 
@@ -454,126 +580,3 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 - `com.fs.starfarer.api.mission.FleetSide`：舰队侧枚举 (`PLAYER` / `ENEMY`)。
 - `com.fs.starfarer.api.util.IntervalUtil`：定期间隔触发工具 (本节示例用于周期日志)。
 - `data/config/settings.json`：原版配置，`plugins` 段按 "唯一 key → 完整类名" 登记每场战斗实例化的插件。
-::: details 完整成品：GearInCombatLifecyclePlugin
-
-```java
-package data.scripts.gearin.combat;
-
-import java.util.List;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.listeners.CombatListenerManagerAPI;
-import com.fs.starfarer.api.input.InputEventAPI;
-import com.fs.starfarer.api.util.IntervalUtil;
-
-/**
- * 完整最小例：战斗插件与引擎级监听器的生命周期、移除与状态归属。
- *
- * 生命周期事实：
- * - init() 已废弃：不保证在 advance() 前被调用 (CombatEnginePlugin 的 API 注释)，
- *   advance() 必须先判 engine == null；
- * - advance() 在暂停时仍会被调用，状态推进前必须先检查 engine.isPaused()(C7-S1)；
- * - 战斗结束没有回调：插件必须在 advance() 里用 engine.isCombatOver() 自行识别收尾时机，
- *   此时引擎仍存活，并将进入结算或退出过渡 (C7-S2)；
- * - 引擎级监听器不随插件移除而注销：插件调用 engine.removePlugin(this) 自移除时，
- *   必须同时把注册到 engine.getListenerManager() 的监听器 removeListener 掉；
- * - 引擎、插件、监听器与舰船引用禁止跨战斗缓存 (C6-S3)：本类所有状态
- *   都只属于当前这场战斗，战斗结束由引擎销毁统一释放。
- */
-public class GearInCombatLifecyclePlugin extends BaseEveryFrameCombatPlugin {
-
-    private static final Logger LOG = Global.getLogger(GearInCombatLifecyclePlugin.class);
-
-    /** 引擎引用。init() 已废弃，advance() 中必须判 null。 */
-    private CombatEngineAPI engine;
-
-    /** 本插件在 init() 里注册的引擎级监听器；自移除时必须显式移除。 */
-    private final GearInDeploymentListener deploymentListener = new GearInDeploymentListener();
-
-    private boolean finalized = false;
-    private final IntervalUtil reportInterval = new IntervalUtil(2f, 2f);
-
-    @Override
-    public void init(CombatEngineAPI engine) {
-        this.engine = engine;
-        CombatListenerManagerAPI listeners = engine.getListenerManager();
-        if (!listeners.hasListenerOfClass(GearInDeploymentListener.class)) {
-            listeners.addListener(deploymentListener);
-            LOG.info("GearIn lifecycle init: deployment listener registered");
-        }
-    }
-
-    @Override
-    public void advance(float amount, List<InputEventAPI> events) {
-        if (engine == null) {
-            return; // init() 不保证先于 advance() 执行，必须判 null
-        }
-        if (engine.isPaused()) {
-            return; // 暂停守卫 (C7-S1)
-        }
-        if (finalized) {
-            return;
-        }
-        reportInterval.advance(amount);
-        if (reportInterval.intervalElapsed()) {
-            LOG.info("GearIn lifecycle: total=" + engine.getTotalElapsedTime(false)
-                    + " combatOver=" + engine.isCombatOver());
-        }
-        if (engine.isCombatOver()) {
-            finalizeBattle();
-        }
-    }
-
-    /** 收尾：先移除自己注册的引擎级监听器，再移除插件自身。 */
-    private void finalizeBattle() {
-        engine.getListenerManager().removeListener(deploymentListener);
-        engine.removePlugin(this);
-        finalized = true;
-        LOG.info("GearIn lifecycle finalize: deployments=" + deploymentListener.deployedCount
-                + " listener removed, plugin removed");
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInDeploymentListener
-
-```java
-package data.scripts.gearin.combat;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.DeployedFleetMemberAPI;
-import com.fs.starfarer.api.combat.ShipAPI;
-import com.fs.starfarer.api.combat.listeners.FleetMemberDeploymentListener;
-
-/**
- * 引擎级部署监听器：FleetMemberDeploymentListener 只能注册到引擎，
- * 注册到舰船不会生效 (CombatListenerUtil 只查引擎级表)。
- * 部署计数是本场战斗的状态，随战斗结束与监听器一起释放。
- * 绑定位置：由 GearInCombatLifecyclePlugin.init() 注册到 engine.getListenerManager()。
- */
-public class GearInDeploymentListener implements FleetMemberDeploymentListener {
-
-    private static final Logger LOG = Global.getLogger(GearInDeploymentListener.class);
-
-    int deployedCount = 0;
-
-    @Override
-    public void reportFleetMemberDeployed(DeployedFleetMemberAPI member) {
-        deployedCount++;
-        ShipAPI ship = member.getShip();
-        LOG.info("GearIn deployed: ally=" + member.isAlly()
-                + " fighterWing=" + member.isFighterWing()
-                + " ship=" + (ship == null ? "null" : ship.getHullSpec().getHullId()));
-    }
-}
-```
-
-:::

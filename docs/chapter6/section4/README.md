@@ -99,7 +99,7 @@ Global.getLogger(GearInModPlugin.class).info(
 
 新增行为：同一次启动内证明 JSON 对象与 getter 缓存是两层状态，并在日志前恢复原值。完成信号：日志显示 `cached=0.8, refreshed=0.25`；随后再次读取 `GearIn_loop_volume` 得到 `0.8`。
 
-## 完整最小例
+### 汇总读取三个设置键
 
 在 `data/config/settings.json` 添加三个带 MOD 前缀的键，在入口类中读取：
 
@@ -114,7 +114,7 @@ Global.getLogger(GearInModPlugin.class)
 
 读取代码只消费设置值。设置文件的文本内容和结构属于资源输入，不在本节运行期写回。
 
-### 排查设置缓存未刷新
+## 排查关键故障
 
 直接改动 `getSettingsJSON()` 后继续读取带缓存的 getter。
 

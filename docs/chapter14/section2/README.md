@@ -148,7 +148,7 @@
     *   中立势力市场由 `marketPostOpenDefaultNeutral` 回退规则接管 (条件只有 `$hasMarket` + `$faction.isNeutralFaction score:100`，无应答器条件)—— 停靠流程继续但无许可文本。
 3. **停靠收尾**：`MarketPostDock`(32 条) 中 `marketDock`(无条件，0 分) 是回退规则：`$menuState = main 0` + `FireAll PopulateOptions`。
     - 其余 31 条是场景附加 (任务交付检查 `DeliveryMission checkCompletion score:100`、债务/雇佣兵检查 `MarketCMD checkDebtEffect score:1000`、`MarketCMD checkMercsLeaving score:500`、特殊势力检查等)。
-    - `FireBest` 只执行一条 —— 覆盖者必须自己复刻 `marketDock` 的结果职责 (见规则强度与 "市场选项只剩 `Leave`" 故障条目)。
+    - `FireBest` 只执行一条 —— 覆盖者必须自己复刻 `marketDock` 的结果职责 (见规则强度)。
 4. **市场菜单**：`PopulateOptions` 中 `$menuState == main` + `$hasMarket` 的规则加选项：
     - 规则 `marketAddOptionCommDir` 添加选项 `marketCommDir`(通讯目录，`!$faction.isNeutralFaction`)。
     - 规则 `marketOptBar` 添加选项 `marketVisitBar`(酒吧，`$tradeMode != NONE` + `!$faction.isNeutralFaction` + `!$market.noBar`)。
@@ -178,7 +178,7 @@ flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，�
 
 覆盖 `OpenInteractionDialog` 的 `marketOpen` 时同理 (`ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`)。
 
-否则市场菜单不会出现 (选项面板空、只剩 failsafe/Leave)，停靠后卡在对话 (见 "市场选项只剩 `Leave`" 故障条目)。
+否则市场菜单不会出现 (选项面板空、只剩 failsafe/Leave)，停靠后卡在对话。
 
 ### 舰队场景 (BeginFleetEncounter / OpenCommLink / PickGreeting)
 

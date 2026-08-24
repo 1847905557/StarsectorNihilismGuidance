@@ -244,27 +244,7 @@ LOG.info("GearIn stats read: hull=" + ship.getHullSpec().getHullId()
 
 新增行为：把公式的 base、三类合计、最终值和条目数同时暴露出来。完成信号：每个阶段都能用同一行日志复算最终速度，并确认稳定 ID 没有生成额外条目。
 
-## 完整最小例
-
-在既有 MOD 布局与战斗插件模型之上新增一个插件类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearInShipStatsProbe`)：
-
-```text
-Starsector\mods\GearIndustry\
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data\
-├── src\
-│   └── data\scripts\gearin\
-│       ├── GearInModPlugin            # C6-S2 所有；本节不改动
-│       ├── GearInGlobalAccess         # C6-S3 所有；本节只消费
-│       └── combat\
-│           ├── GearInCombatStatePlugin   # C7-S2 所有；本节只消费
-│           └── GearInShipStatsProbe      # 本节新增
-└── jars\
-```
-
-### GearInShipStatsProbe
+## GearInShipStatsProbe
 
 对应关系：
 
@@ -283,6 +263,8 @@ Starsector\mods\GearIndustry\
 如果 `Starsector/starsector-core/starsector.log` 里既没有 `GearIn stats probe init` 也没有周期报告行，优先检查三处：注册片段是否真的生效 (是否遗漏或注释)、战斗是否处于暂停 (暂停检查不推进状态)、玩家舰是否仍在部署阶段 ("Command Shuttle" 假舰会被 `isShuttlePod()` 检查排除)。
 
 :::
+
+## 注册与接入片段
 
 注册片段 (工程片段 —— 本节不修改任何既有文件，只演示注册调用的写法)：
 
@@ -303,113 +285,26 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInShipStatsProbe.class` (可用 `jar tf` 核对)。
 
-## 关键故障实验：舰船数值重放后恢复原值
+## 完整最小例
 
-每帧使用新的 modifier ID 或忘记解除旧 ID。
+在既有 MOD 布局与战斗插件模型之上新增一个插件类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearInShipStatsProbe`)：
 
-**局部故障片段：**
-
-```java
-// 故障片段
-stats.getMaxSpeed().modifyFlat("probe_" + frame, 5f);
+```text
+Starsector\mods\GearIndustry\
+├── build.gradle
+├── settings.gradle
+├── mod_info.json
+├── data\
+├── src\
+│   └── data\scripts\gearin\
+│       ├── GearInModPlugin            # C6-S2 所有；本节不改动
+│       ├── GearInGlobalAccess         # C6-S3 所有；本节只消费
+│       └── combat\
+│           ├── GearInCombatStatePlugin   # C7-S2 所有；本节只消费
+│           └── GearInShipStatsProbe      # 本节新增
+└── jars\
 ```
 
-**局部修正片段：**
-
-```java
-// 修正片段
-stats.getMaxSpeed().modifyFlat(MODIFIER_ID, 5f);
-```
-
-复验：部署、换装和重新计算后核对同一修饰仍只出现一次。
-
-## 验证方案
-
-前置数据：既有 MOD 布局与战斗插件接入 (含本节注册片段)、`GearInShipStatsProbe` 源码、`GearIn_test` 测试战役 ([C4-S1]，玩家舰 `GearIn_artizan`)。
-
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
-2. **战役运行**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 观察 `GearIn stats probe` 相关记录。
-3. **三阶段数值**：战斗时间 2–12 秒看 `maxSpeed modified=165.0` (entries 各 1)、12–22 秒看 `modified=111.0` (percent=-20.0)、22 秒后看 `modified=80.0 unmodified=true`。同屏按速度对比：施加阶段玩家舰明显更快。
-4. **暂停语义**：战斗内按空格暂停约 10 秒再恢复，暂停期间无报告；恢复后阶段仍按战斗时间推进 (暂停不计入 `getTotalElapsedTime(false)`)。
-
-预期结果：
-
-- 步骤 1：以 `BUILD SUCCESSFUL` 结束，退出码 0。
-- 步骤 2：以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
-- 步骤 3：`starsector.log` 出现一行 `GearIn stats probe init: engine ready`，随后每 2 秒两条 `GearIn stats read:` / `GearIn stats flux:`，没有 `ERROR`。
-- 步骤 4 施加阶段 (战斗时间 2–12 秒)：`maxSpeed base=80.0 modified=165.0 flat=10.0 percent=25.0 mult=1.5 entries flat=1 percent=1 mult=1 unmodified=false`：
-    - `GearIn_artizan` 的 max speed 列是 80，`(80 + 80*25/100 + 10) * 1.5 = 165`；三个 entries 恒为 1，证明同 ID 幂等 (规则 6)。
-    - `GearIn stats flux:` 为 `capacity base=3800.0 modified=3800.0 dissipation base=200.0 modified=200.0` (未修饰，base 即最终值)。
-    - 玩家舰明显比基础速度快 (165 对 80，约 2 倍)；解除阶段回到基础速度。`isShuttlePod()` 检查保证部署阶段假舰不被修改 (战役开局即设置玩家舰，通常观察不到假舰阶段)。
-- 步骤 4 覆盖阶段 (12–22 秒)：`maxSpeed modified=111.0 percent=-20.0`，`entries` 仍为 1—— 同 ID 不同值覆盖旧条目 (规则 1、3)：`(80 - 80*20/100 + 10) * 1.5 = 111`。
-- 步骤 4 解除阶段 (22 秒后)：`maxSpeed base=80.0 modified=80.0 flat=0.0 percent=0.0 mult=1.0 entries flat=0 percent=0 mult=0 unmodified=true`—— `unmodify(source)` 一次清三类 (规则 4)；速度回到基础值。
-- 步骤 5：暂停期间没有报告输出 (检查生效)；恢复后阶段仍按战斗时间推进 (暂停不计入 `getTotalElapsedTime(false)`)。
-- 包 `data.scripts.gearin.combat`；
-- 类 `GearInShipStatsProbe`；
-- modifier ID 前缀 `GearIn_ship_stats_probe_`。
-
-## 故障分析
-
-- **数值与修饰条目持续增长**：每帧用递增值拼接 modifier ID 会不断新增 percent 条目，`entries` 和 `modified` 持续漂移。
-
-    - **解决方案**：把 ID 改为常量，让重复写入覆盖原值。
-
-- **解除修饰后数值没有恢复**：`unmodify` 与 `modify` 使用不同 ID 时，撤销操作找不到原条目。
-
-    - **解决方案**：两处复用同一个常量，再解除效果。
-
-- **同一 ID 产生多种修饰条目**：flat、percent、mult 使用三张独立表，同一 ID 在三种入口各写一次时，三条都会生效。
-
-    - **解决方案**：需要整体撤销时调用 `unmodify(source)`。
-
-- **两个船插的加成互相覆盖**：两个来源共用 `"speed_bonus"` 时，后写值会覆盖前写值。
-
-    - **解决方案**：每个来源使用唯一 ID，船插直接使用回调参数 `id`。
-
-- **百分比修饰没有改变 base 为 0 的属性**：`modifyPercent` 按 base 计算，`0 + 0*50/100` 仍为 0。
-
-    - **解决方案**：改用 `modifyFlat` 或 `setBaseValue`。
-
-- **`modifyPercent(id, -100)` 后属性仍不为零**：百分比只抵消 base，已有 flat 修饰仍会保留。
-
-    - **解决方案**：用 flat 抵消剩余值或直接设置 base。
-
-- **战斗中加成生效而生涯面板没有变化**：stats 修改写在 `applyEffectsAfterShipCreation` 时，生涯侧不会调用该回调。
-
-    - **解决方案**：把修改移到 `applyEffectsBeforeShipCreation`，刷新舰队成员。
-
-- **每次重建 stats 后数值继续膨胀**：`applyEffectsBeforeShipCreation` 使用叠加逻辑或持续生成新 ID 时，`FleetMemberAPI.updateStats()` 每次重放都会增加条目。
-
-    - **解决方案**：改成稳定 ID 的覆盖式写入。
-
-- **战斗外修改舰船 stats 没有反应**：生涯或主菜单中的空战斗引擎没有正在使用的玩家舰 stats。
-
-    - **解决方案**：战斗内通过引擎取得 ship，生涯侧从 `FleetMemberAPI` 读取和修改。
-
-## 总结
-
-本节把 "改一个舰船属性" 整理成一条可复用的判断链：入口是 `ShipAPI.getMutableStats()`，每个 `MutableStat` 的 base 来自 `ship_data.csv` 列；写修饰时记住公式 `(base + base * percent / 100 + flat) * mult` —— percent 与 flat 都按 base 加算，mult 最后整体乘，读取是延迟重算，永远拿到最新值。
-
-modifier ID 是这套体系的键。稳定唯一、按来源命名空间区分、modify 与 unmodify 复用同一个常量，覆盖、幂等与一次清除三条语义就同时成立；反过来，用帧号或随机数拼 ID、两个来源共用 ID，后果是漂移、残留与互相覆盖，而且全程没有一条报错 —— 这类故障只能靠日志里的条目数与数值发现。
-
-生效时机按生命周期分三段：生涯侧 `FleetMemberAPI.updateStats` 整体重建并重放，战斗侧 `Ship` 构造再次重放，加入引擎时 `applyEffectsAfterShipAddedToCombatEngine` 只调一次。改 stats 一律放 `applyEffectsBeforeShipCreation` 并保持可重入；战斗内运行期修改逐帧生效，不需要刷新调用。排错时按四个问题定位：base 从哪来、写进哪张表、用哪个 ID、在哪个时机被重放 —— 本节示例把这四个问题全部做成了日志里可读的三阶段。
-
-生涯侧 stats 的读取入口 (`FleetMemberAPI`) 与舰队成员身份，逻辑上承接本节的 "stats 入口" 主线，属生涯域页面的完整讲解范围。
-
-本节建立的 `MutableStat` 三表模型与 modifier ID 纪律，在战斗域的时间倍率、伤害结算等数值路径上会被反复使用。
-
-## 建议参考项
-
-- `com.fs.starfarer.api.combat.ShipAPI`：战斗实体入口，`getMutableStats()`、`isShuttlePod()`、`isHulk()` 等读取与检查方法所在。
-- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：舰船 stats 集合，各 getter 返回 `MutableStat` 或 `StatBonus`。
-- `com.fs.starfarer.api.combat.MutableStat`：固定 base 的数值对象，三张修饰表、重算公式与延迟重算语义所在。
-- `com.fs.starfarer.api.combat.StatBonus`：以调用时 base 计算的另一族修饰 (射程 / 弹药 / CR)。
-- `com.fs.starfarer.api.combat.HullModEffect`：`applyEffectsBeforeShipCreation` 等三个 stats 修饰时机。
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：`getTimeMult()` 返回 `MutableStat`；本节还用 `getTotalElapsedTime(boolean)` 做阶段判断。
-- `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：示例插件继承的基类。
-- `data/hulls/ship_data.csv`：`GearIn_artizan` 注册行及 max speed / max flux / flux dissipation 数值列。
-- `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
-- `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证方案的日志核对位置)。
 ::: details 完整成品：GearInShipStatsProbe
 
 ```java
@@ -544,3 +439,111 @@ public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
 ```
 
 :::
+
+## 关键故障实验：舰船数值重放后恢复原值
+
+每帧使用新的 modifier ID 或忘记解除旧 ID。
+
+**局部故障片段：**
+
+```java
+// 故障片段
+stats.getMaxSpeed().modifyFlat("probe_" + frame, 5f);
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+stats.getMaxSpeed().modifyFlat(MODIFIER_ID, 5f);
+```
+
+复验：部署、换装和重新计算后核对同一修饰仍只出现一次。
+
+## 验证方案
+
+前置数据：既有 MOD 布局与战斗插件接入 (含本节注册片段)、`GearInShipStatsProbe` 源码、`GearIn_test` 测试战役 ([C4-S1]，玩家舰 `GearIn_artizan`)。
+
+1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
+2. **战役运行**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 观察 `GearIn stats probe` 相关记录。
+3. **三阶段数值**：战斗时间 2–12 秒看 `maxSpeed modified=165.0` (entries 各 1)、12–22 秒看 `modified=111.0` (percent=-20.0)、22 秒后看 `modified=80.0 unmodified=true`。同屏按速度对比：施加阶段玩家舰明显更快。
+4. **暂停语义**：战斗内按空格暂停约 10 秒再恢复，暂停期间无报告；恢复后阶段仍按战斗时间推进 (暂停不计入 `getTotalElapsedTime(false)`)。
+
+预期结果：
+
+- 步骤 1：以 `BUILD SUCCESSFUL` 结束，退出码 0。
+- 步骤 2：以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
+- 步骤 3：`starsector.log` 出现一行 `GearIn stats probe init: engine ready`，随后每 2 秒两条 `GearIn stats read:` / `GearIn stats flux:`，没有 `ERROR`。
+- 步骤 4 施加阶段 (战斗时间 2–12 秒)：`maxSpeed base=80.0 modified=165.0 flat=10.0 percent=25.0 mult=1.5 entries flat=1 percent=1 mult=1 unmodified=false`：
+    - `GearIn_artizan` 的 max speed 列是 80，`(80 + 80*25/100 + 10) * 1.5 = 165`；三个 entries 恒为 1，证明同 ID 幂等 (规则 6)。
+    - `GearIn stats flux:` 为 `capacity base=3800.0 modified=3800.0 dissipation base=200.0 modified=200.0` (未修饰，base 即最终值)。
+    - 玩家舰明显比基础速度快 (165 对 80，约 2 倍)；解除阶段回到基础速度。`isShuttlePod()` 检查保证部署阶段假舰不被修改 (战役开局即设置玩家舰，通常观察不到假舰阶段)。
+- 步骤 4 覆盖阶段 (12–22 秒)：`maxSpeed modified=111.0 percent=-20.0`，`entries` 仍为 1—— 同 ID 不同值覆盖旧条目 (规则 1、3)：`(80 - 80*20/100 + 10) * 1.5 = 111`。
+- 步骤 4 解除阶段 (22 秒后)：`maxSpeed base=80.0 modified=80.0 flat=0.0 percent=0.0 mult=1.0 entries flat=0 percent=0 mult=0 unmodified=true`—— `unmodify(source)` 一次清三类 (规则 4)；速度回到基础值。
+- 步骤 5：暂停期间没有报告输出 (检查生效)；恢复后阶段仍按战斗时间推进 (暂停不计入 `getTotalElapsedTime(false)`)。
+- 包 `data.scripts.gearin.combat`；
+- 类 `GearInShipStatsProbe`；
+- modifier ID 前缀 `GearIn_ship_stats_probe_`。
+
+## 故障分析
+
+- **数值与修饰条目持续增长**：每帧用递增值拼接 modifier ID 会不断新增 percent 条目，`entries` 和 `modified` 持续漂移。
+
+    - **解决方案**：把 ID 改为常量，让重复写入覆盖原值。
+
+- **解除修饰后数值没有恢复**：`unmodify` 与 `modify` 使用不同 ID 时，撤销操作找不到原条目。
+
+    - **解决方案**：两处复用同一个常量，再解除效果。
+
+- **同一 ID 产生多种修饰条目**：flat、percent、mult 使用三张独立表，同一 ID 在三种入口各写一次时，三条都会生效。
+
+    - **解决方案**：需要整体撤销时调用 `unmodify(source)`。
+
+- **两个船插的加成互相覆盖**：两个来源共用 `"speed_bonus"` 时，后写值会覆盖前写值。
+
+    - **解决方案**：每个来源使用唯一 ID，船插直接使用回调参数 `id`。
+
+- **百分比修饰没有改变 base 为 0 的属性**：`modifyPercent` 按 base 计算，`0 + 0*50/100` 仍为 0。
+
+    - **解决方案**：改用 `modifyFlat` 或 `setBaseValue`。
+
+- **`modifyPercent(id, -100)` 后属性仍不为零**：百分比只抵消 base，已有 flat 修饰仍会保留。
+
+    - **解决方案**：用 flat 抵消剩余值或直接设置 base。
+
+- **战斗中加成生效而生涯面板没有变化**：stats 修改写在 `applyEffectsAfterShipCreation` 时，生涯侧不会调用该回调。
+
+    - **解决方案**：把修改移到 `applyEffectsBeforeShipCreation`，刷新舰队成员。
+
+- **每次重建 stats 后数值继续膨胀**：`applyEffectsBeforeShipCreation` 使用叠加逻辑或持续生成新 ID 时，`FleetMemberAPI.updateStats()` 每次重放都会增加条目。
+
+    - **解决方案**：改成稳定 ID 的覆盖式写入。
+
+- **战斗外修改舰船 stats 没有反应**：生涯或主菜单中的空战斗引擎没有正在使用的玩家舰 stats。
+
+    - **解决方案**：战斗内通过引擎取得 ship，生涯侧从 `FleetMemberAPI` 读取和修改。
+
+## 总结
+
+本节把 "改一个舰船属性" 整理成一条可复用的判断链：入口是 `ShipAPI.getMutableStats()`，每个 `MutableStat` 的 base 来自 `ship_data.csv` 列；写修饰时记住公式 `(base + base * percent / 100 + flat) * mult` —— percent 与 flat 都按 base 加算，mult 最后整体乘，读取是延迟重算，永远拿到最新值。
+
+modifier ID 是这套体系的键。稳定唯一、按来源命名空间区分、modify 与 unmodify 复用同一个常量，覆盖、幂等与一次清除三条语义就同时成立；反过来，用帧号或随机数拼 ID、两个来源共用 ID，后果是漂移、残留与互相覆盖，而且全程没有一条报错 —— 这类故障只能靠日志里的条目数与数值发现。
+
+生效时机按生命周期分三段：生涯侧 `FleetMemberAPI.updateStats` 整体重建并重放，战斗侧 `Ship` 构造再次重放，加入引擎时 `applyEffectsAfterShipAddedToCombatEngine` 只调一次。改 stats 一律放 `applyEffectsBeforeShipCreation` 并保持可重入；战斗内运行期修改逐帧生效，不需要刷新调用。排错时按四个问题定位：base 从哪来、写进哪张表、用哪个 ID、在哪个时机被重放 —— 本节示例把这四个问题全部做成了日志里可读的三阶段。
+
+生涯侧 stats 的读取入口 (`FleetMemberAPI`) 与舰队成员身份，逻辑上承接本节的 "stats 入口" 主线，属生涯域页面的完整讲解范围。
+
+本节建立的 `MutableStat` 三表模型与 modifier ID 纪律，在战斗域的时间倍率、伤害结算等数值路径上会被反复使用。
+
+## 建议参考项
+
+- `com.fs.starfarer.api.combat.ShipAPI`：战斗实体入口，`getMutableStats()`、`isShuttlePod()`、`isHulk()` 等读取与检查方法所在。
+- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：舰船 stats 集合，各 getter 返回 `MutableStat` 或 `StatBonus`。
+- `com.fs.starfarer.api.combat.MutableStat`：固定 base 的数值对象，三张修饰表、重算公式与延迟重算语义所在。
+- `com.fs.starfarer.api.combat.StatBonus`：以调用时 base 计算的另一族修饰 (射程 / 弹药 / CR)。
+- `com.fs.starfarer.api.combat.HullModEffect`：`applyEffectsBeforeShipCreation` 等三个 stats 修饰时机。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：`getTimeMult()` 返回 `MutableStat`；本节还用 `getTotalElapsedTime(boolean)` 做阶段判断。
+- `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：示例插件继承的基类。
+- `data/hulls/ship_data.csv`：`GearIn_artizan` 注册行及 max speed / max flux / flux dissipation 数值列。
+- `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
+- `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证方案的日志核对位置)。

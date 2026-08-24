@@ -144,61 +144,6 @@ if (ai != null) {
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
 
-## 验证方案
-
-1. 构建示例 MOD，确认两个探针的方法签名与当前 `ExerelinCore.jar` 匹配。
-2. 在新档、读档和 AI 缺失三种时机分别记录 persistent-data map 的条目数、`getAI()` 返回值和 `ensureAI()` 结果。
-3. 进入战略 AI 已建立的生涯，刷新一次会议并记录 concern 数量。
-4. 分别修改 `invasionFleetSizeMod` 与全局 `invasionFleetSizeMult`，比较估算值变化。
-5. 对 invasion、blockade 和 respawn 使用同一基础规模，分别记录最小规模、事件倍率和固定 FP。
-6. 打开复活设置，记录 `respawnAllowedByRules()` 在达到次数上限前后的返回值，并核对目标资格。
-
-预期结果：
-
-- 两个配置中的 concern ID 能影响战略优先级；
-- AI 未建立时探针返回安全值，建立后可以刷新会议；
-- AI 缺失时 `ensureAI()` 补建实例，map 条目数增加 1；
-- `getInvasionSizeMult()` 的组合倍率只被应用一次；
-- blockade 的最小规模、1.2 倍事件倍率和 120 FP 固定加成分别可见；
-- respawn 的 1.2 倍事件倍率不会被误写成 invasion 的共同倍率；
-- 复活探针准确反映管理器、事件开关、势力资格和次数上限。
-
-## 故障分析
-
-- **新档创建早期出现 `NullPointerException`**：Nexerelin 尚未建立该势力的 `StrategicAI`。
-
-    - **解决方案**：保留 null 守卫并延迟到进入生涯后调用 `forceMeeting()`。
-
-- **战略 AI 存在但不扩张**：`canInvade`、全局 `enableInvasions` 或 concern 的 `canInvade` 标签未满足。
-
-    - **解决方案**：逐项启用后推进战略周期。
-
-- **入侵舰队规模异常大**：调用方在 `getInvasionSizeMult()` 结果上又乘了一次全局倍率。
-
-    - **解决方案**：移除重复乘法。
-
-- **封锁舰队规模偏小**：只应用了共同倍率，没有先执行 `MIN_BLOCKADE_SIZE` 和 blockade 的固定后处理。
-
-    - **解决方案**：按事件类型逐项记录。
-
-- **复活舰队被当作普通入侵**：没有应用 `RESPAWN_SIZE_MULT` 或复活目标筛选。
-
-    - **解决方案**：使用 `EventType.RESPAWN` 分支。
-
-- **被消灭势力没有复活**：复活开关、敌对舰队事件、入侵开关、次数上限、势力资格或检查间隔未满足。
-
-    - **解决方案**：逐项核对并推进到下一检查周期。
-
-## 总结
-
-战略接入要分别确认 AI 生命周期、concern ID、行动许可和规模计算。入侵倍率是一次组合运算，复活则是管理器、事件开关、势力资格和次数上限的联合条件；仅看到势力配置文件被读取，不能代替这些运行期验证。
-
-## 建议参考项
-
-- `StrategicAI.getAI`：取得势力战略 AI；
-- `InvasionFleetManager.getInvasionSizeMult`：读取入侵规模倍率；
-- `InvasionFleetManager.EventType`：区分 invasion、blockade 和 respawn；
-- `NexConfig`：全局战略、入侵与复活设置。
 ::: details 完整成品：GearInInvasionScaleProbe
 
 ```java
@@ -286,3 +231,59 @@ public final class GearInStrategicAIProbe {
 ```
 
 :::
+
+## 验证方案
+
+1. 构建示例 MOD，确认两个探针的方法签名与当前 `ExerelinCore.jar` 匹配。
+2. 在新档、读档和 AI 缺失三种时机分别记录 persistent-data map 的条目数、`getAI()` 返回值和 `ensureAI()` 结果。
+3. 进入战略 AI 已建立的生涯，刷新一次会议并记录 concern 数量。
+4. 分别修改 `invasionFleetSizeMod` 与全局 `invasionFleetSizeMult`，比较估算值变化。
+5. 对 invasion、blockade 和 respawn 使用同一基础规模，分别记录最小规模、事件倍率和固定 FP。
+6. 打开复活设置，记录 `respawnAllowedByRules()` 在达到次数上限前后的返回值，并核对目标资格。
+
+预期结果：
+
+- 两个配置中的 concern ID 能影响战略优先级；
+- AI 未建立时探针返回安全值，建立后可以刷新会议；
+- AI 缺失时 `ensureAI()` 补建实例，map 条目数增加 1；
+- `getInvasionSizeMult()` 的组合倍率只被应用一次；
+- blockade 的最小规模、1.2 倍事件倍率和 120 FP 固定加成分别可见；
+- respawn 的 1.2 倍事件倍率不会被误写成 invasion 的共同倍率；
+- 复活探针准确反映管理器、事件开关、势力资格和次数上限。
+
+## 故障分析
+
+- **新档创建早期出现 `NullPointerException`**：Nexerelin 尚未建立该势力的 `StrategicAI`。
+
+    - **解决方案**：保留 null 守卫并延迟到进入生涯后调用 `forceMeeting()`。
+
+- **战略 AI 存在但不扩张**：`canInvade`、全局 `enableInvasions` 或 concern 的 `canInvade` 标签未满足。
+
+    - **解决方案**：逐项启用后推进战略周期。
+
+- **入侵舰队规模异常大**：调用方在 `getInvasionSizeMult()` 结果上又乘了一次全局倍率。
+
+    - **解决方案**：移除重复乘法。
+
+- **封锁舰队规模偏小**：只应用了共同倍率，没有先执行 `MIN_BLOCKADE_SIZE` 和 blockade 的固定后处理。
+
+    - **解决方案**：按事件类型逐项记录。
+
+- **复活舰队被当作普通入侵**：没有应用 `RESPAWN_SIZE_MULT` 或复活目标筛选。
+
+    - **解决方案**：使用 `EventType.RESPAWN` 分支。
+
+- **被消灭势力没有复活**：复活开关、敌对舰队事件、入侵开关、次数上限、势力资格或检查间隔未满足。
+
+    - **解决方案**：逐项核对并推进到下一检查周期。
+
+## 总结
+
+战略接入要分别确认 AI 生命周期、concern ID、行动许可和规模计算。入侵倍率是一次组合运算，复活则是管理器、事件开关、势力资格和次数上限的联合条件；仅看到势力配置文件被读取，不能代替这些运行期验证。
+
+## 建议参考项
+
+- `StrategicAI.getAI`：取得势力战略 AI；
+- `InvasionFleetManager.getInvasionSizeMult`：读取入侵规模倍率；
+- `InvasionFleetManager.EventType`：区分 invasion、blockade 和 respawn；
+- `NexConfig`：全局战略、入侵与复活设置。

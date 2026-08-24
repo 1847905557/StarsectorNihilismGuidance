@@ -27,7 +27,6 @@ import com.fs.starfarer.api.util.Misc;
  *
  * 存档语义：继承 BaseMarketConditionPlugin，isTransient() = true——plugin 实例
  * 不进存档，读档后按 spec 重建并重新 init，setParam 的数据不重放
- * (见页面 "读档后条件参数恢复默认" 故障分析)。
  *
  * tooltip：createTooltipAfterDescription 在 spec desc(含 $marketName token) 之后
  * 追加一条本条件的数值说明，演示 tooltip 扩展链路。

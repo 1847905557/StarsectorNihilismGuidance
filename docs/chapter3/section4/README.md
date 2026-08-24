@@ -196,21 +196,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 
 这些 CSV 的 `desc` 列由同一个 CSV 解析器解析，同样适用本节的转义规则。
 
-## 完整最小例
-
-以下内容放在虚构示例 MOD `gear_in` 的 `data/strings/descriptions.csv` 中。转义演示键使用 `GearIn_description_*` 前缀，势力描述使用 [C3-S1] 注册的 `gear_industry`：
-
-```csv
-id,type,text1,text2,text3,text4,text5,notes
-# ---- 本节拥有的全类型演示行 ----
-GearIn_description_esc_comma,SHIP,"This is a test ship, with a comma in its name.",,,,,
-GearIn_description_esc_quote,SHIP,"这艘船被称为""工坊之锤""。",,,,,
-GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
-
-这是第二段介绍，与第一段之间用空行分隔。",,,,,
-GearIn_description_esc_attrib,WEAPON,一段用于演示署名斜体的武器说明。,- 武器测试员,,,,
-gear_industry,FACTION,以重型制造、耐用结构和严格工序闻名的工业联合体。,,,,,
-```
+## 示例行要点
 
 要点：
 
@@ -232,6 +218,8 @@ orbital_dockyard,CUSTOM,"An orbital dockyard, with enormous gantries and other e
 asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space. Mainly significant for being a navigational hazard.",,,,,
 ```
 
+## 描述在界面中的显示位置
+
 下面三张截图依次示意武器、舰船与行星/生涯实体描述在界面中的显示位置 (旧版界面截图，仅作位置示意)：
 
 ![武器描述在界面中的显示位置](./desc_weapon.png "desc_weapon.png")
@@ -240,7 +228,23 @@ asteroid,ASTEROID,"A pitted chunk of metal, ice, or rock hurtling through space.
 
 ![行星与生涯实体描述在界面中的显示位置](./desc_planet.png "desc_planet.png")
 
-### 验证方案
+## 完整最小例
+
+以下内容放在虚构示例 MOD `gear_in` 的 `data/strings/descriptions.csv` 中。转义演示键使用 `GearIn_description_*` 前缀，势力描述使用 [C3-S1] 注册的 `gear_industry`：
+
+```csv
+id,type,text1,text2,text3,text4,text5,notes
+# ---- 本节拥有的全类型演示行 ----
+GearIn_description_esc_comma,SHIP,"This is a test ship, with a comma in its name.",,,,,
+GearIn_description_esc_quote,SHIP,"这艘船被称为""工坊之锤""。",,,,,
+GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
+
+这是第二段介绍，与第一段之间用空行分隔。",,,,,
+GearIn_description_esc_attrib,WEAPON,一段用于演示署名斜体的武器说明。,- 武器测试员,,,,
+gear_industry,FACTION,以重型制造、耐用结构和严格工序闻名的工业联合体。,,,,,
+```
+
+## 验证方案
 
 前置数据：`gear_in` MOD[C1-S1]、[C3-S1] 的势力和 [C3-S3] 的新档星系已就绪。
 

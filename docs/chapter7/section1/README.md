@@ -122,11 +122,7 @@ private void report(CombatEngineAPI engine) {
 
 新增行为：同一份状态既进入 `starsector.log`，也附着在玩家舰船位置显示。完成信号：日志与战场文字给出相同的 `elapsed`、`calls` 和 `pausedCalls`；没有玩家舰船时只写日志。
 
-## 完整最小例
-
-示例做一件事：统计 "非暂停时间" 累计秒数 (`elapsed`) 与回调总次数 (`calls`)，每累计 10 秒向日志输出一次，并在玩家舰船位置显示一行浮动文字。暂停期间 `calls` 继续增长、`elapsed` 冻结 —— 这正是暂停检查的可观察结果。
-
-文件：`src\data\scripts\gearin\combat\GearInPauseAwarePlugin.java`：
+## 实现要点
 
 要点：
 
@@ -134,6 +130,88 @@ private void report(CombatEngineAPI engine) {
 - **5 个字段**：插件自己记的数 (累计秒数、距上次报告多久、调用次数、暂停帧次数)。字段随实例生存：每场战斗一个新实例，数字从零开始 —— **不要**把实例缓存到下一场战斗，否则 `elapsed` 会从上一场接着涨。
 - **`advance` 三件事按顺序**：`calls++` 在暂停检查**之前** (暂停帧也计数，这是 "暂停期间回调照常执行" 的观测点)；引擎引用**用到时才取** (`init()` 已废弃、不保证先于 `advance` 调用)；**暂停检查** `if (engine.isPaused()) { pausedCalls++; return; }` —— 暂停帧只计数、不推进状态。
 - **`report`**：`Global.getLogger(...)` 写日志；`addFloatingText(...)` 在玩家舰船位置显示浮动文字 (3 秒后消失)。
+
+## 完整最小例
+
+示例做一件事：统计 "非暂停时间" 累计秒数 (`elapsed`) 与回调总次数 (`calls`)，每累计 10 秒向日志输出一次，并在玩家舰船位置显示一行浮动文字。暂停期间 `calls` 继续增长、`elapsed` 冻结 —— 这正是暂停检查的可观察结果。
+
+文件：`src\data\scripts\gearin\combat\GearInPauseAwarePlugin.java`：
+
+::: details 完整成品：GearInPauseAwarePlugin
+
+```java
+package data.scripts.gearin.combat;
+
+import java.awt.Color;
+import java.util.List;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.input.InputEventAPI;
+
+/**
+ * 每帧战斗插件：演示暂停守卫与状态归属。
+ *
+ * <p>注册：MOD 的 data/config/settings.json 的 plugins 段写入本类完整类名。
+ * 游戏启动时把核心与所有 MOD 的 settings.json 深合并 (文本读取工具.readJSONMerged)，
+ * 并把 plugins 段全部类名注册为脚本类；每场战斗开始时为其中每个
+ * EveryFrameCombatPlugin 类创建新实例并附加 (脚本类加载器.loadScriptInstance 的
+ * newInstance)，战斗结束实例随引擎销毁，不得缓存到下一场战斗。</p>
+ *
+ * <p>advance() 在战斗暂停期间仍然每帧被调用，amount 也仍然非零；是否推进状态
+ * 由插件自己决定：本例只用非暂停帧累加 elapsed，暂停帧只累计调用次数 calls。
+ * 初始状态在构造器设置，不依赖已废弃的 init()(不保证在第一次 advance() 之前调用)。</p>
+ */
+public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
+
+    /** 非暂停时间每累计多少秒输出一次报告。 */
+    public static final float REPORT_INTERVAL = 10f;
+
+    private CombatEngineAPI engine;
+    private float elapsed;
+    private float timeSinceLastReport;
+    private int calls;
+    private int pausedCalls;
+
+    public GearInPauseAwarePlugin() {
+        // 初始状态在这里设置；init() 已废弃，不保证在第一次 advance() 之前被调用
+    }
+
+    @Override
+    public void advance(float amount, List<InputEventAPI> events) {
+        calls++;
+        if (engine == null) {
+            engine = Global.getCombatEngine();
+            if (engine == null) {
+                return;
+            }
+        }
+        if (engine.isPaused()) {
+            pausedCalls++;
+            return;
+        }
+        elapsed += amount;
+        timeSinceLastReport += amount;
+        if (timeSinceLastReport >= REPORT_INTERVAL) {
+            timeSinceLastReport = 0f;
+            report(engine);
+        }
+    }
+
+    private void report(CombatEngineAPI engine) {
+        String text = "GearIn: elapsed " + Math.round(elapsed) + "s, calls " + calls
+                + " (paused " + pausedCalls + ")";
+        Global.getLogger(GearInPauseAwarePlugin.class).info(text);
+        if (engine.getPlayerShip() != null) {
+            engine.addFloatingText(engine.getPlayerShip().getLocation(), text,
+                    14f, Color.WHITE, engine.getPlayerShip(), 0f, 3f);
+        }
+    }
+}
+```
+
+:::
 
 ## 观察暂停行为
 
@@ -221,77 +299,3 @@ if (engine.isPaused()) { return; } elapsed += amount; report(engine);
 - `com.fs.starfarer.api.Global`：`getLogger(Class)`(输出到 `starsector.log`)、`getCombatEngine()` (战斗外返回非 null 空引擎，仅资源加载期为 `null`)。
 - `data/config/settings.json`：`plugins` 段注册入口 (游戏本体与所有 MOD 同路径文件深合并，key 全局唯一)。
 - `Starsector/starsector-core/starsector.log`：运行日志，插件 `Global.getLogger(...)` 的输出位置。
-
-::: details 完整成品：GearInPauseAwarePlugin
-
-```java
-package data.scripts.gearin.combat;
-
-import java.awt.Color;
-import java.util.List;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.input.InputEventAPI;
-
-/**
- * 每帧战斗插件：演示暂停守卫与状态归属。
- *
- * <p>注册：MOD 的 data/config/settings.json 的 plugins 段写入本类完整类名。
- * 游戏启动时把核心与所有 MOD 的 settings.json 深合并 (文本读取工具.readJSONMerged)，
- * 并把 plugins 段全部类名注册为脚本类；每场战斗开始时为其中每个
- * EveryFrameCombatPlugin 类创建新实例并附加 (脚本类加载器.loadScriptInstance 的
- * newInstance)，战斗结束实例随引擎销毁，不得缓存到下一场战斗。</p>
- *
- * <p>advance() 在战斗暂停期间仍然每帧被调用，amount 也仍然非零；是否推进状态
- * 由插件自己决定：本例只用非暂停帧累加 elapsed，暂停帧只累计调用次数 calls。
- * 初始状态在构造器设置，不依赖已废弃的 init()(不保证在第一次 advance() 之前调用)。</p>
- */
-public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
-
-    /** 非暂停时间每累计多少秒输出一次报告。 */
-    public static final float REPORT_INTERVAL = 10f;
-
-    private CombatEngineAPI engine;
-    private float elapsed;
-    private float timeSinceLastReport;
-    private int calls;
-    private int pausedCalls;
-
-    public GearInPauseAwarePlugin() {
-        // 初始状态在这里设置；init() 已废弃，不保证在第一次 advance() 之前被调用
-    }
-
-    @Override
-    public void advance(float amount, List<InputEventAPI> events) {
-        calls++;
-        if (engine == null) {
-            engine = Global.getCombatEngine();
-            if (engine == null) {
-                return;
-            }
-        }
-        if (engine.isPaused()) {
-            pausedCalls++;
-            return;
-        }
-        elapsed += amount;
-        timeSinceLastReport += amount;
-        if (timeSinceLastReport >= REPORT_INTERVAL) {
-            timeSinceLastReport = 0f;
-            report(engine);
-        }
-    }
-
-    private void report(CombatEngineAPI engine) {
-        String text = "GearIn: elapsed " + Math.round(elapsed) + "s, calls " + calls
-                + " (paused " + pausedCalls + ")";
-        Global.getLogger(GearInPauseAwarePlugin.class).info(text);
-        if (engine.getPlayerShip() != null) {
-            engine.addFloatingText(engine.getPlayerShip().getLocation(), text,
-                    14f, Color.WHITE, engine.getPlayerShip(), 0f, 3f);
-        }
-    }
-}
-```

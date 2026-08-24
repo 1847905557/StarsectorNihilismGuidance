@@ -1,4 +1,4 @@
-import { Node, mergeAttributes, type Editor, type Extension } from '@tiptap/core'
+import { Mark, Node, mergeAttributes, type Editor, type Extension } from '@tiptap/core'
 import CodeBlock from '@tiptap/extension-code-block'
 import Image from '@tiptap/extension-image'
 import { BulletList, ListItem, OrderedList } from '@tiptap/extension-list'
@@ -34,7 +34,11 @@ const normalizeCodeBlocks = (root: HTMLElement): void => {
       code.className = `language-${language}`
       code.dataset.language = language
     }
-    if (highlighted.length) code.dataset.highlightLines = highlighted.join(',')
+    if (highlighted.length) {
+      const highlightLines = highlighted.join(',')
+      code.dataset.highlightLines = highlightLines
+      pre.dataset.highlightLines = highlightLines
+    }
     code.textContent = text
     pre.append(code)
     wrapper.replaceWith(pre)
@@ -205,10 +209,113 @@ const DevCodeBlock = CodeBlock.extend({
       highlights.placeholder = '2,4,6'
       highlights.setAttribute('aria-label', '代码高亮行')
       const pre = document.createElement('pre')
+      const lineGutter = document.createElement('div')
+      lineGutter.className = 'dev-edit-code-line-gutter'
+      lineGutter.contentEditable = 'false'
       const contentDOM = document.createElement('code')
-      pre.append(contentDOM)
+      pre.append(lineGutter, contentDOM)
       header.append(kind, language, highlightLabel, highlights)
       dom.append(header, pre)
+
+      const highlightSet = (value: unknown): number[] =>
+        String(value ?? '')
+          .split(',')
+          .map((item) => Number(item.trim()))
+          .filter((item) => Number.isInteger(item) && item > 0)
+          .filter((item, index, values) => values.indexOf(item) === index)
+          .sort((a, b) => a - b)
+
+      const measureLineHeights = () => {
+        const buttons = Array.from(lineGutter.children) as HTMLButtonElement[]
+        if (!buttons.length) return
+        const computed = window.getComputedStyle(contentDOM)
+        const parsedLineHeight = Number.parseFloat(computed.lineHeight)
+        const lineHeight = Number.isFinite(parsedLineHeight) && parsedLineHeight > 0
+          ? parsedLineHeight
+          : 19.5
+        const textNodes: Text[] = []
+        const walker = document.createTreeWalker(contentDOM, NodeFilter.SHOW_TEXT)
+        let current: globalThis.Node | null
+        while ((current = walker.nextNode())) textNodes.push(current as Text)
+        const text = contentDOM.textContent ?? ''
+        const gutterTop = lineGutter.getBoundingClientRect().top
+        const resolvePosition = (offset: number): [Text, number] | null => {
+          let cursor = 0
+          for (const textNode of textNodes) {
+            const end = cursor + textNode.data.length
+            if (offset <= end) return [textNode, Math.max(0, offset - cursor)]
+            cursor = end
+          }
+          const last = textNodes[textNodes.length - 1]
+          return last ? [last, last.data.length] : null
+        }
+        let start = 0
+        let fallbackTop = 0
+        buttons.forEach((button, index) => {
+          const end = text.indexOf('\n', start)
+          const lineEnd = end < 0 ? text.length : end
+          const startPosition = resolvePosition(start)
+          // End on the last character so the following newline's line box is not included.
+          const measuredEnd = lineEnd > start ? lineEnd - 1 : lineEnd
+          const endPosition = resolvePosition(measuredEnd)
+          let top = fallbackTop
+          let measured = false
+          if (startPosition && endPosition) {
+            const range = document.createRange()
+            range.setStart(startPosition[0], startPosition[1])
+            range.setEnd(endPosition[0], endPosition[1])
+            if (typeof range.getClientRects === 'function') {
+              const rects = Array.from(range.getClientRects())
+              const visibleRects = rects.filter((rect) => rect.height > 0)
+              if (visibleRects.length) {
+                measured = true
+                top = visibleRects[0].top - gutterTop
+                fallbackTop = visibleRects[visibleRects.length - 1].bottom - gutterTop
+              }
+            }
+          }
+          button.style.position = 'absolute'
+          button.style.top = `${Math.max(0, top)}px`
+          button.style.height = `${lineHeight}px`
+          if (!measured) fallbackTop += lineHeight
+          start = end < 0 ? text.length : end + 1
+        })
+      }
+
+      const scheduleLineMeasurement = () => {
+        if (typeof window.requestAnimationFrame === 'function') {
+          window.requestAnimationFrame(measureLineHeights)
+        } else {
+          measureLineHeights()
+        }
+      }
+
+      const renderLineNumbers = () => {
+        const lines = Math.max(1, currentNode.textContent.split('\n').length)
+        const highlighted = new Set(highlightSet(currentNode.attrs.highlightLines))
+        lineGutter.replaceChildren(
+          ...Array.from({ length: lines }, (_, index) => {
+            const number = index + 1
+            const button = document.createElement('button')
+            button.type = 'button'
+            button.className = 'dev-edit-code-line-number'
+            button.textContent = String(number)
+            button.dataset.line = String(number)
+            button.setAttribute('aria-label', `切换第 ${number} 行高亮`)
+            button.classList.toggle('active', highlighted.has(number))
+            button.addEventListener('mousedown', (event) => event.preventDefault())
+            button.addEventListener('click', () => {
+              const next = highlighted.has(number)
+                ? [...highlighted].filter((item) => item !== number)
+                : [...highlighted, number]
+              next.sort((a, b) => a - b)
+              updateAttributes({ highlightLines: next.join(',') })
+            })
+            return button
+          }),
+        )
+        scheduleLineMeasurement()
+      }
 
       const updateAttributes = (attributes: Record<string, unknown>) => {
         const position = getPos()
@@ -225,9 +332,15 @@ const DevCodeBlock = CodeBlock.extend({
         if (language.value !== currentLanguage) setLanguageOptions(currentLanguage)
         const currentHighlights = String(currentNode.attrs.highlightLines ?? '')
         if (highlights.value !== currentHighlights) highlights.value = currentHighlights
+        renderLineNumbers()
       }
       setLanguageOptions(String(node.attrs.language ?? ''))
       highlights.value = String(node.attrs.highlightLines ?? '')
+      renderLineNumbers()
+      const resizeObserver = typeof ResizeObserver === 'function'
+        ? new ResizeObserver(scheduleLineMeasurement)
+        : null
+      resizeObserver?.observe(pre)
       language.addEventListener('change', () => {
         updateAttributes({ language: language.value || null })
       })
@@ -249,11 +362,35 @@ const DevCodeBlock = CodeBlock.extend({
         },
         stopEvent(event) {
           return header.contains(event.target as globalThis.Node)
+            || lineGutter.contains(event.target as globalThis.Node)
         },
         ignoreMutation(mutation) {
-          return header.contains(mutation.target)
+          return header.contains(mutation.target) || lineGutter.contains(mutation.target)
+        },
+        destroy() {
+          resizeObserver?.disconnect()
         },
       }
+    }
+  },
+})
+
+// Inline code must be able to retain an enclosing emphasis mark.
+const DevCode = Mark.create({
+  name: 'code',
+  excludes: '',
+  code: true,
+  exitable: true,
+  parseHTML: () => [{ tag: 'code' }],
+  renderHTML: ({ HTMLAttributes }) => ['code', mergeAttributes(HTMLAttributes), 0],
+  addCommands() {
+    return {
+      setCode: () => ({ commands }: { commands: { setMark: (name: string) => boolean } }) =>
+        commands.setMark(this.name),
+      toggleCode: () => ({ commands }: { commands: { toggleMark: (name: string) => boolean } }) =>
+        commands.toggleMark(this.name),
+      unsetCode: () => ({ commands }: { commands: { unsetMark: (name: string) => boolean } }) =>
+        commands.unsetMark(this.name),
     }
   },
 })
@@ -328,6 +465,26 @@ export const VpContainer = Node.create({
       const dom = document.createElement('div')
       dom.className = `hint-container ${node.attrs.type} dev-edit-container`
       dom.dataset.vpContainer = node.attrs.type
+      const type = document.createElement('select')
+      type.className = 'dev-edit-container-type'
+      type.setAttribute('aria-label', '容器类型')
+      const containerTypes = [
+        ['info', 'INFO'],
+        ['tip', 'TIP'],
+        ['warning', 'WARNING'],
+        ['caution', 'CAUTION'],
+        ['important', 'IMPORTANT'],
+        ['note', 'NOTE'],
+        ['details', 'DETAILS'],
+      ]
+      type.replaceChildren(
+        ...containerTypes.map(([value, label]) => {
+          const option = document.createElement('option')
+          option.value = value
+          option.textContent = label
+          return option
+        }),
+      )
       const title = document.createElement('input')
       title.className = 'dev-edit-container-title'
       title.value = node.attrs.title
@@ -335,16 +492,23 @@ export const VpContainer = Node.create({
       title.setAttribute('aria-label', '容器标题')
       const contentDOM = document.createElement('div')
       contentDOM.className = 'dev-edit-container-content'
-      dom.append(title, contentDOM)
-      title.addEventListener('input', () => {
+      type.value = node.attrs.type
+      dom.append(type, title, contentDOM)
+      const updateAttributes = (attributes: Record<string, unknown>) => {
         const position = getPos()
         if (typeof position !== 'number') return
         editor.view.dispatch(
           editor.state.tr.setNodeMarkup(position, undefined, {
             ...currentNode.attrs,
-            title: title.value,
+            ...attributes,
           }),
         )
+      }
+      type.addEventListener('change', () => {
+        updateAttributes({ type: type.value })
+      })
+      title.addEventListener('input', () => {
+        updateAttributes({ title: title.value })
       })
       return {
         dom,
@@ -353,11 +517,14 @@ export const VpContainer = Node.create({
           if (updatedNode.type.name !== 'vpContainer') return false
           currentNode = updatedNode
           dom.className = `hint-container ${updatedNode.attrs.type} dev-edit-container`
+          dom.dataset.vpContainer = updatedNode.attrs.type
+          if (type.value !== updatedNode.attrs.type) type.value = updatedNode.attrs.type
           if (title.value !== updatedNode.attrs.title) title.value = updatedNode.attrs.title
+          title.placeholder = `${updatedNode.attrs.type} 标题`
           return true
         },
         ignoreMutation(mutation) {
-          return mutation.target === title
+          return mutation.target === title || mutation.target === type
         },
       }
     }
@@ -390,6 +557,7 @@ export const AutoSectionList = Node.create({
 export const createEditorExtensions = (): Extension[] => [
   StarterKit.configure({
     codeBlock: false,
+    code: false,
     link: false,
     listItem: false,
     bulletList: false,
@@ -401,6 +569,7 @@ export const createEditorExtensions = (): Extension[] => [
   DevBulletList,
   DevOrderedList,
   DevLink.configure({ openOnClick: false }),
+  DevCode,
   DevCodeBlock.configure({ enableTabIndentation: true, tabSize: 4 }),
   Image.configure({ inline: true, allowBase64: true }),
   Table.configure({ resizable: false }),

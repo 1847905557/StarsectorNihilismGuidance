@@ -47,9 +47,7 @@
 
 部署时两者都会生成模块，但 `STATION` 另有 "无法手动操控" 的 AI 语义 (hints 各取值的完整含义在舰船制作知识中有讲解)。
 
-## 完整最小例
-
-### 准备主体与模块贴图
+## 准备主体与模块贴图
 
 一艘模块船往往由至少 2 个模块组成。这些模块本身都是舰船，因此需要先准备好它们的贴图。本例的主体 `窑-级` 由 `狮鹫`、模块由 `苍鹭` 的贴图简单修改而来，耗时不超过 20 秒：
 
@@ -61,7 +59,7 @@
 
 模块贴图。模块通常比主体小得多，主体只挂这一个模块即可跑通全流程。
 
-### 制作主体与模块船体
+## 制作主体与模块船体
 
 为它们分别分配 `GearIn_kiln` 和 `GearIn_kiln_module` 的舰船 ID，然后按舰船制作流程在编辑器里做出两个 `.ship` 文件：
 
@@ -85,7 +83,7 @@
 
 :::
 
-### 添加模块槽位
+## 添加模块槽位
 
 主体必须带有 `STATION_MODULE` 类型 (编辑器里显示为 Station Module) 的槽位，这是安装模块所需的槽位：
 
@@ -99,11 +97,77 @@
 
 槽位 ID 是大小写敏感的字符串，装配的 `modules` 字段必须逐字引用它。
 
-### 登记舰船数据
+## 登记舰船数据
 
 打开 `data/hulls/ship_data.csv`，为主体与模块各加一行。
 
 以下示例文件同时保留了原版标本行 (`#` 注释) 与本 MOD 已有舰船行 (`GearIn_slag`、`GearIn_forging`、`GearIn_furnaceman` 来自舰船制作示例，`GearIn_artizan` 来自舰船系统示例)，您需要追加的是最后两行：
+
+::: caution 船体行的 hints 必须写对
+
+- 模块行的 `hints` 必须带 `UNBOARDABLE` 和 `HIDE_IN_CODEX`：前者保证它不可被打捞，后者保证它不出现在数据库中 (原版模块行全部带这两个值)。原版模块还带 `MODULE`，标记模块身份，交易界面等列表会按模块处理它。
+- **主体行的 `hints` 必须带 `SHIP_WITH_MODULES`**，否则模块会在某些场合丢失：战斗部署时根本不生成模块 (详见 "运行态")。
+
+:::
+
+::: tip 模块的数据可以精简
+
+- 模块的舰级名 (`designation`) 可以不填。
+- 模块的后勤数据应当尽可能接近于 "无"：0 船员、0 货舱、0 燃料，`supplies/rec` 与 `supplies/mo` 为 0。
+- 模块行的 `tags` 不应该包含任何诸如 `x_bp` 或 `merc` 之类的蓝图/销售 tag—— 模块不是通过蓝图或市场渠道获得的舰船。原版模块行 (如 `platform1`) 的 tags 为空。模块的行为类 tag(`module_unselectable` 等) 见下文运行态一节。
+
+:::
+
+测试战役模板会自动把本 MOD 所有非战机装配加入用户舰队，因此 `GearIn_kiln` 与 `GearIn_kiln_module` 都会出现。此时部署主体，可以看到它没有模块 —— 这正是下一步要解决的。
+
+## 制作主体与模块装配
+
+**因为模块只能通过装配文件的 `modules` 字段挂载，游戏内没有任何正常方法为它添加模块，必须要有一个 "带模块的主体装配"**，这艘船才会默认带有模块。
+
+使用测试战役分别为主体和模块制作一个装配 (模块的自动空装配也在舰队列表里，直接改装它即可)：
+
+![测试战役中制作主体与模块装配](./variant_make.png "variant_make.png")
+
+在装配界面为 `窑-级` 装上武器与船插，并为模块也做一份装配，游戏会把它们导出到存档目录 (`\Starsector\saves\missions\GearIn_test\`)。
+
+## 整理正式装配
+
+把导出的两个文件放入 MOD 的 `data/variants` 文件夹，修改文件名并同步修改文件内部的 `variantId` 等参数 (装配导出-改名流程)：
+
+![主体与模块装配文件的命名结果](./variant_rename.png "variant_rename.png")
+
+本例得到两个文件：`GearIn_kiln_combat.variant`(主体，`hullId: GearIn_kiln`) 与 `GearIn_kiln_module_combat.variant` (模块，`hullId: GearIn_kiln_module`)。
+
+模块装配与普通装配没有结构区别，只是它的 `hullId` 指向模块船体。
+
+## 挂载模块装配
+
+打开原版的 `data\variants\stations\station_small_Standard.variant`，可以看到类似这样的一段：
+
+```json
+    "modules": {
+        "WS 001": "platform1_Standard",
+        "WS 002": "platform1_Standard",
+        "WS 003": "platform1_Standard",
+        "WS 004": "platform1_Standard"
+    }
+```
+
+这就是模块在装配文件里的设置方案：**槽位 ID → 模块装配 ID** 的对象。把它略加修改后，插入本例的 `GearIn_kiln_combat.variant`：
+
+几点说明：
+
+- `modules` 的对象写法是 `"槽位 ID": "模块装配 ID"`；装配 JSON 解析也接受**数组写法**：`[{"WS 024": "remnant_armour3_Standard"}]`，原版 `remnant_station2_Standard.variant` 就用数组写法，且数组条目之间可以写 `#` 注释 (游戏的装配解析会剥离注释)。
+- 槽位 ID 必须逐字等于主体 `.ship` 里 `STATION_MODULE` 槽位的 id；模块装配 ID 必须逐字等于模块装配文件的 `variantId`。两者都是大小写敏感字符串。
+- 如果一个有模块槽位的 hull 不想挂模块，`modules` 可以写成空数组 `"modules": []`—— 主体部署时不会有模块，但加载完全合法。
+
+`窑-级` 模块巡洋舰现在默认带有模块了：
+
+![窑级模块巡洋舰挂载模块后的战斗效果](./module_done.png "module_done.png")
+
+## 完整最小例
+
+两行注册数据追加到 `data/hulls/ship_data.csv`(最后两行)；主体装配写入 `data/variants/GearIn_kiln_combat.variant`(含 `modules` 字段)，模块装配写入 `data/variants/GearIn_kiln_module_combat.variant`。
 
 ```csv {10,11}
 name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
@@ -118,58 +182,6 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 窑,GearIn_kiln,模块巡洋舰,Midline,maneuveringjets,15,10000,1250,10000,,500,165,,60,40,30,15,20,1500,FRONT,,210,0.4,0.8,,,200,300,150,150,4,38,8,125000,4,12,480,0.25,25,25,,,,,,,SHIP_WITH_MODULES,"GearIn_bp",,,,0.5,2,4,,401.5
 ,GearIn_kiln_module,模块,Midline,,10,5000,500,3000,,250,60,,0,0,0,10,10,300,NONE,,0,0,0,,,0,0,0,0,1,0,,40000,,1,,,0,0,,,,,,,"UNBOARDABLE, HIDE_IN_CODEX, MODULE",,,,,0.5,2,3,,300
 ```
-
-::: caution 船体行的 hints 必须写对
-
-- 模块行的 `hints` 必须带 `UNBOARDABLE` 和 `HIDE_IN_CODEX`：前者保证它不可被打捞，后者保证它不出现在数据库中 (原版模块行全部带这两个值)。原版模块还带 `MODULE`，标记模块身份，交易界面等列表会按模块处理它。
-- **主体行的 `hints` 必须带 `SHIP_WITH_MODULES`**，否则模块会在某些场合丢失：战斗部署时根本不生成模块 (详见 "运行态" 与 "战斗中模块完全不生成" 故障条目)。
-
-:::
-
-::: tip 模块的数据可以精简
-
-- 模块的舰级名 (`designation`) 可以不填。
-- 模块的后勤数据应当尽可能接近于 "无"：0 船员、0 货舱、0 燃料，`supplies/rec` 与 `supplies/mo` 为 0。
-- 模块行的 `tags` 不应该包含任何诸如 `x_bp` 或 `merc` 之类的蓝图/销售 tag—— 模块不是通过蓝图或市场渠道获得的舰船。原版模块行 (如 `platform1`) 的 tags 为空。模块的行为类 tag(`module_unselectable` 等) 见下文运行态一节。
-
-:::
-
-测试战役模板会自动把本 MOD 所有非战机装配加入用户舰队，因此 `GearIn_kiln` 与 `GearIn_kiln_module` 都会出现。此时部署主体，可以看到它没有模块 —— 这正是下一步要解决的。
-
-### 制作主体与模块装配
-
-**因为模块只能通过装配文件的 `modules` 字段挂载，游戏内没有任何正常方法为它添加模块，必须要有一个 "带模块的主体装配"**，这艘船才会默认带有模块。
-
-使用测试战役分别为主体和模块制作一个装配 (模块的自动空装配也在舰队列表里，直接改装它即可)：
-
-![测试战役中制作主体与模块装配](./variant_make.png "variant_make.png")
-
-在装配界面为 `窑-级` 装上武器与船插，并为模块也做一份装配，游戏会把它们导出到存档目录 (`\Starsector\saves\missions\GearIn_test\`)。
-
-### 整理正式装配
-
-把导出的两个文件放入 MOD 的 `data/variants` 文件夹，修改文件名并同步修改文件内部的 `variantId` 等参数 (装配导出-改名流程)：
-
-![主体与模块装配文件的命名结果](./variant_rename.png "variant_rename.png")
-
-本例得到两个文件：`GearIn_kiln_combat.variant`(主体，`hullId: GearIn_kiln`) 与 `GearIn_kiln_module_combat.variant` (模块，`hullId: GearIn_kiln_module`)。
-
-模块装配与普通装配没有结构区别，只是它的 `hullId` 指向模块船体。
-
-### 挂载模块装配
-
-打开原版的 `data\variants\stations\station_small_Standard.variant`，可以看到类似这样的一段：
-
-```json
-    "modules": {
-        "WS 001": "platform1_Standard",
-        "WS 002": "platform1_Standard",
-        "WS 003": "platform1_Standard",
-        "WS 004": "platform1_Standard"
-    }
-```
-
-这就是模块在装配文件里的设置方案：**槽位 ID → 模块装配 ID** 的对象。把它略加修改后，插入本例的 `GearIn_kiln_combat.variant`：
 
 ```json {15-18}
 {
@@ -228,17 +240,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 }
 ```
 
-几点说明：
-
-- `modules` 的对象写法是 `"槽位 ID": "模块装配 ID"`；装配 JSON 解析也接受**数组写法**：`[{"WS 024": "remnant_armour3_Standard"}]`，原版 `remnant_station2_Standard.variant` 就用数组写法，且数组条目之间可以写 `#` 注释 (游戏的装配解析会剥离注释)。
-- 槽位 ID 必须逐字等于主体 `.ship` 里 `STATION_MODULE` 槽位的 id；模块装配 ID 必须逐字等于模块装配文件的 `variantId`。两者都是大小写敏感字符串。
-- 如果一个有模块槽位的 hull 不想挂模块，`modules` 可以写成空数组 `"modules": []`—— 主体部署时不会有模块，但加载完全合法。
-
-`窑-级` 模块巡洋舰现在默认带有模块了：
-
-![窑级模块巡洋舰挂载模块后的战斗效果](./module_done.png "module_done.png")
-
-### 验证方案
+## 验证方案
 
 前置数据：本节制作的全部文件 ——、`GearIn_kiln.ship`(含 `MODULE_0` 的 `STATION_MODULE` 槽位)、`GearIn_kiln_module.ship`、`ship_data.csv` 两行、`data/variants/GearIn_kiln_combat.variant`(含 `modules`) 与 `GearIn_kiln_module_combat.variant`。
 

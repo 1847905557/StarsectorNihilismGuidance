@@ -119,52 +119,6 @@ MagicCampaign.createDerelict(variantId, condition,
 
 完整工具类同时保留只读环境报告与写侧残骸生成。调用方提供已经加入星区的轨道中心和有效 variant ID，并负责在任务需要时保存返回实体的身份。
 
-## 验证方案
-
-前置数据：目标实体已经加入一个星系，variant ID 能由游戏设置服务解析，生成调用发生在新档生成器或读档后的任务脚本中。
-
-1. 调用 `logCampaignInfo()`，核对星区尺寸、星系数和市场数。
-2. 以目标实体和有效 variant ID 调用 `spawnDerelictExample()`，记录返回日志中的两个实体 ID。
-3. 在星图中确认残骸围绕目标运行，并靠近触发发现提示。
-4. 打开残骸交互，确认可以进入舰船回收流程，预览状态与 `AVERAGE` 参数一致。
-5. 把 `recoverable` 临时改为 `false`，用另一实体 ID 生成第二艘残骸并比较交互结果。
-6. 在战役场景调用工具方法，确认场景守卫只记录警告。
-
-预期结果：
-
-- 有效生涯中生成一艘处于 200 su、30 天圆形轨道的残骸；
-- 残骸可被发现，发现经验采用 MagicLib 默认值；
-- `recoverable=true` 的实体具备舰船回收 special，`false` 的对照实体没有该流程；
-- 日志同时记录残骸 ID 与轨道中心 ID，便于任务后续定位；
-- 非生涯上下文只记录警告，不尝试访问星区对象。
-
-## 故障分析
-
-- **残骸出现但只有故事点回收流程**：九参数重载的 `recoverable` 为 false，没有挂载回收 special，但故事点回收选项仍会出现。
-
-    - **解决方案**：改为 true 获得常规回收流程。
-
-- **残骸没有出现**：variant ID 无法解析，或对应 variant 没有随 MOD 发布。
-
-    - **解决方案**：核对注册 ID 和加载日志。
-
-- **残骸出现在错误星系**：`orbitCenter` 来自另一个星系，或实体尚未加入星区。
-
-    - **解决方案**：使用任务目标实体作为轨道中心。
-
-- **任务失败后残骸仍然存在**：清理阶段没有保存并移除创建的 token。
-
-    - **解决方案**：把实体加入任务清理列表。
-
-## 总结
-
-`MagicCampaign.createDerelict()` 把原版残骸创建、发现属性、轨道与回收 special 接在一次调用中。调用方仍要保证生涯场景、轨道中心和 variant ID 有效，并保存返回实体的身份供任务阶段管理。
-
-## 建议参考项
-
-- `MagicCampaign.createDerelict`：创建残骸、设置发现属性、轨道与回收 special；
-- `ShipRecoverySpecial.ShipCondition`：选择残骸的舰船状态；
-- `MagicVariables.getSectorSize`：读取 MagicLib 计算的星区尺寸。
 ::: details 完整成品：GearInCampaignTools
 
 ```java
@@ -228,3 +182,50 @@ public class GearInCampaignTools {
 ```
 
 :::
+
+## 验证方案
+
+前置数据：目标实体已经加入一个星系，variant ID 能由游戏设置服务解析，生成调用发生在新档生成器或读档后的任务脚本中。
+
+1. 调用 `logCampaignInfo()`，核对星区尺寸、星系数和市场数。
+2. 以目标实体和有效 variant ID 调用 `spawnDerelictExample()`，记录返回日志中的两个实体 ID。
+3. 在星图中确认残骸围绕目标运行，并靠近触发发现提示。
+4. 打开残骸交互，确认可以进入舰船回收流程，预览状态与 `AVERAGE` 参数一致。
+5. 把 `recoverable` 临时改为 `false`，用另一实体 ID 生成第二艘残骸并比较交互结果。
+6. 在战役场景调用工具方法，确认场景守卫只记录警告。
+
+预期结果：
+
+- 有效生涯中生成一艘处于 200 su、30 天圆形轨道的残骸；
+- 残骸可被发现，发现经验采用 MagicLib 默认值；
+- `recoverable=true` 的实体具备舰船回收 special，`false` 的对照实体没有该流程；
+- 日志同时记录残骸 ID 与轨道中心 ID，便于任务后续定位；
+- 非生涯上下文只记录警告，不尝试访问星区对象。
+
+## 故障分析
+
+- **残骸出现但只有故事点回收流程**：九参数重载的 `recoverable` 为 false，没有挂载回收 special，但故事点回收选项仍会出现。
+
+    - **解决方案**：改为 true 获得常规回收流程。
+
+- **残骸没有出现**：variant ID 无法解析，或对应 variant 没有随 MOD 发布。
+
+    - **解决方案**：核对注册 ID 和加载日志。
+
+- **残骸出现在错误星系**：`orbitCenter` 来自另一个星系，或实体尚未加入星区。
+
+    - **解决方案**：使用任务目标实体作为轨道中心。
+
+- **任务失败后残骸仍然存在**：清理阶段没有保存并移除创建的 token。
+
+    - **解决方案**：把实体加入任务清理列表。
+
+## 总结
+
+`MagicCampaign.createDerelict()` 把原版残骸创建、发现属性、轨道与回收 special 接在一次调用中。调用方仍要保证生涯场景、轨道中心和 variant ID 有效，并保存返回实体的身份供任务阶段管理。
+
+## 建议参考项
+
+- `MagicCampaign.createDerelict`：创建残骸、设置发现属性、轨道与回收 special；
+- `ShipRecoverySpecial.ShipCondition`：选择残骸的舰船状态；
+- `MagicVariables.getSectorSize`：读取 MagicLib 计算的星区尺寸。

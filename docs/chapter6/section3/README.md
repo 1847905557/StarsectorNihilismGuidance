@@ -177,25 +177,7 @@ public static boolean isInCombat() {
 
 完成信号：对应日志或界面结果出现一次，重复进入相同场景时注册数量保持稳定。
 
-## 完整最小例
-
-在 MOD 工程布局与 modPlugin 生命周期类 `GearInModPlugin` 之上新增两个工具类文件 (不新增任何资源、不新增任何注册项)：
-
-```text
-Starsector\mods\GearIndustry\
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data\
-├── src\
-│   └── data\scripts\gearin\
-│       ├── GearInModPlugin      # 既有 modPlugin 生命周期类 (C6-S2)；本节只在其回调里调用示例方法
-│       ├── GearInGlobalAccess   # 本节新增：访问器观测与阶段判断
-│       └── GearInSoundPlayer    # 本节新增：声音播放入口 (三契约)
-└── jars\
-```
-
-### 核对全局访问源码
+## 核对全局访问源码
 
 职责：Global 静态访问器观测与阶段判断工具 ——`isInCombat()` 用 `getCurrentState()` 判战斗；`logAccessorState()` 巡览四阶段访问器可用性，并对资源加载期的 null 入口告警。
 
@@ -208,7 +190,7 @@ Starsector\mods\GearIndustry\
 - `logAccessorState()`：把生命周期表变成日志；`sector == null` / `engine == null` 只在资源加载期出现 (规则 2、3)。
 - `Global.LOADING_SAVE`：只有读档回调窗口内为 `true`；新建生涯回调期间为 `false`(规则 5)。
 
-### 核对音效访问源码
+## 核对音效访问源码
 
 职责：SoundPlayerAPI 声音播放入口，覆盖 UI(`playUISound`)/ 位置 (`playPositionalSound`)/ 循环 (`playLoopSound`) 三约定，并持有两个声音 ID 常量。
 
@@ -218,6 +200,8 @@ Starsector\mods\GearIndustry\
 
 - `SOUND_ID_SYSTEM_LOOP` / `SOUND_ID_WEAPON_FIRE`：复用既有声音注册的 ID(声音资产与注册主题)，不新增 ID。
 - `playUISound` / `playPositionalSound` / `playLoopSound`：对应 SoundPlayerAPI 三约定 (见上表)；`vel` 用拷贝构造避免引用被引擎后续改写；`playLoopSound` 保留引擎参数以承载 "战斗插件 advance 上下文" 的调用形态。
+
+## 调用点与构建
 
 调用点 (工程片段 —— 方法所在类由既有章节持有，本节只演示调用，不改动那些类)：
 
@@ -252,7 +236,136 @@ gradle jar
 
 产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`(可用 `jar tf` 核对)。
 
-### 排查失效服务对象
+## 完整最小例
+
+在 MOD 工程布局与 modPlugin 生命周期类 `GearInModPlugin` 之上新增两个工具类文件 (不新增任何资源、不新增任何注册项)：
+
+```text
+Starsector\mods\GearIndustry\
+├── build.gradle
+├── settings.gradle
+├── mod_info.json
+├── data\
+├── src\
+│   └── data\scripts\gearin\
+│       ├── GearInModPlugin      # 既有 modPlugin 生命周期类 (C6-S2)；本节只在其回调里调用示例方法
+│       ├── GearInGlobalAccess   # 本节新增：访问器观测与阶段判断
+│       └── GearInSoundPlayer    # 本节新增：声音播放入口 (三契约)
+└── jars\
+```
+
+::: details 完整成品：GearInGlobalAccess
+
+```java
+package data.scripts.gearin;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.GameState;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+
+/**
+ * 角色：Global 静态访问器观测与阶段判断工具。
+ *
+ * 全部方法是静态工具，可从任何已注册的脚本/插件调用：
+ * - 资源加载期 (C6-S2 的 onApplicationLoad)：getSector()/getCombatEngine() 为 null，
+ *   只能读 getSettings()/getSoundPlayer()/getLogger()；
+ * - 生涯回调与生涯脚本：getSector() 可用；
+ * - 战斗插件：getCombatEngine() 是当前战斗引擎，必须每帧现取，不得跨战斗缓存。
+ *
+ * 声音播放入口见 GearInSoundPlayer(声音 ID 由 C5-S1 声明、C5-S2 注册，本单元只消费)。
+ */
+public class GearInGlobalAccess {
+
+    /** 日志器：进程级，任何阶段可用 (org.apache.log4j.Logger，输出到 starsector.log)。 */
+    private static final Logger LOG = Global.getLogger(GearInGlobalAccess.class);
+
+    private GearInGlobalAccess() {
+        // 工具类：不实例化
+    }
+
+    /** 当前是否处于战斗：必须用 getCurrentState() 判断，不能依赖 getCombatEngine() 是否为 null。 */
+    public static boolean isInCombat() {
+        return Global.getCurrentState() == GameState.COMBAT;
+    }
+
+    /** 访问器巡览：记录当前阶段与各入口的可用性 (注意资源加载期 sector/engine 为 null)。 */
+    public static void logAccessorState() {
+        GameState state = Global.getCurrentState();
+        SectorAPI sector = Global.getSector();
+        CombatEngineAPI engine = Global.getCombatEngine();
+        LOG.info("GearIn state=" + state
+                + " settings=" + (Global.getSettings() != null)
+                + " soundPlayer=" + (Global.getSoundPlayer() != null)
+                + " sector=" + (sector != null)
+                + " engine=" + (engine != null)
+                + " loadingSave=" + Global.LOADING_SAVE);
+        if (sector == null) {
+            LOG.warn("GearIn getSector() is null: 资源加载期访问生涯对象会空指针");
+        }
+        if (engine == null) {
+            LOG.warn("GearIn getCombatEngine() is null: 资源加载期访问战斗对象会空指针");
+        }
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInSoundPlayer
+
+```java
+package data.scripts.gearin;
+
+import org.lwjgl.util.vector.Vector2f;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.CombatEntityAPI;
+
+/**
+ * 角色：SoundPlayerAPI 声音播放入口 (UI / 位置 / 循环三契约)。
+ *
+ * 全部方法是静态工具，可从任何已注册的脚本/插件调用；getSoundPlayer() 在
+ * 任何阶段都非 null(Global 生命周期规则 1)，因此无需判空。
+ *
+ * 声音 ID GearIn_system_loop / GearIn_weapon_fire 由 C5-S1 声明、C5-S2 注册，
+ * 本单元只消费 (完整消费者族谱见 C5-S3)。
+ */
+public class GearInSoundPlayer {
+
+    public static final String SOUND_ID_SYSTEM_LOOP = "GearIn_system_loop";
+    public static final String SOUND_ID_WEAPON_FIRE = "GearIn_weapon_fire";
+
+    private GearInSoundPlayer() {
+        // 工具类：不实例化
+    }
+
+    /** UI 音效：素材应为双声道 (API 注释 "UI sound files should be stereo")。 */
+    public static void playUISound(float pitch, float volume) {
+        Global.getSoundPlayer().playUISound(SOUND_ID_WEAPON_FIRE, pitch, volume);
+    }
+
+    /** 位置音效：素材必须为 mono；loc 与 vel 都必须非 null，否则在调用点抛 NPE。 */
+    public static void playPositionalSound(CombatEntityAPI source) {
+        Vector2f loc = source.getLocation();
+        Vector2f vel = new Vector2f(source.getVelocity()); // 复制，避免被引擎后续修改
+        Global.getSoundPlayer().playSound(SOUND_ID_WEAPON_FIRE, 1f, 1f, loc, vel);
+    }
+
+    /** 循环音效：必须每帧调用否则淡出；playingEntity 必填，同实体同循环只播一个。 */
+    public static void playLoopSound(CombatEngineAPI engine, CombatEntityAPI source) {
+        Global.getSoundPlayer().playLoop(
+                SOUND_ID_SYSTEM_LOOP, source, 1f, 1f, source.getLocation(), source.getVelocity());
+    }
+}
+```
+
+:::
+
+## 排查关键故障
 
 把 `Global` 返回的生涯或战斗对象缓存到静态字段。
 
@@ -368,114 +481,3 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
 - `org.apache.log4j.Logger`：`Global.getLogger(Class)` 返回的日志器类型。
 - `data/scripts/gearin/`：本节两个示例类所在目录 (`GearInGlobalAccess` / `GearInSoundPlayer`)。
 - `Starsector\starsector-core\starsector.log`：日志输出位置。
-
-::: details 完整成品：GearInGlobalAccess
-
-```java
-package data.scripts.gearin;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.GameState;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-
-/**
- * 角色：Global 静态访问器观测与阶段判断工具。
- *
- * 全部方法是静态工具，可从任何已注册的脚本/插件调用：
- * - 资源加载期 (C6-S2 的 onApplicationLoad)：getSector()/getCombatEngine() 为 null，
- *   只能读 getSettings()/getSoundPlayer()/getLogger()；
- * - 生涯回调与生涯脚本：getSector() 可用；
- * - 战斗插件：getCombatEngine() 是当前战斗引擎，必须每帧现取，不得跨战斗缓存。
- *
- * 声音播放入口见 GearInSoundPlayer(声音 ID 由 C5-S1 声明、C5-S2 注册，本单元只消费)。
- */
-public class GearInGlobalAccess {
-
-    /** 日志器：进程级，任何阶段可用 (org.apache.log4j.Logger，输出到 starsector.log)。 */
-    private static final Logger LOG = Global.getLogger(GearInGlobalAccess.class);
-
-    private GearInGlobalAccess() {
-        // 工具类：不实例化
-    }
-
-    /** 当前是否处于战斗：必须用 getCurrentState() 判断，不能依赖 getCombatEngine() 是否为 null。 */
-    public static boolean isInCombat() {
-        return Global.getCurrentState() == GameState.COMBAT;
-    }
-
-    /** 访问器巡览：记录当前阶段与各入口的可用性 (注意资源加载期 sector/engine 为 null)。 */
-    public static void logAccessorState() {
-        GameState state = Global.getCurrentState();
-        SectorAPI sector = Global.getSector();
-        CombatEngineAPI engine = Global.getCombatEngine();
-        LOG.info("GearIn state=" + state
-                + " settings=" + (Global.getSettings() != null)
-                + " soundPlayer=" + (Global.getSoundPlayer() != null)
-                + " sector=" + (sector != null)
-                + " engine=" + (engine != null)
-                + " loadingSave=" + Global.LOADING_SAVE);
-        if (sector == null) {
-            LOG.warn("GearIn getSector() is null: 资源加载期访问生涯对象会空指针");
-        }
-        if (engine == null) {
-            LOG.warn("GearIn getCombatEngine() is null: 资源加载期访问战斗对象会空指针");
-        }
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInSoundPlayer
-
-```java
-package data.scripts.gearin;
-
-import org.lwjgl.util.vector.Vector2f;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.CombatEntityAPI;
-
-/**
- * 角色：SoundPlayerAPI 声音播放入口 (UI / 位置 / 循环三契约)。
- *
- * 全部方法是静态工具，可从任何已注册的脚本/插件调用；getSoundPlayer() 在
- * 任何阶段都非 null(Global 生命周期规则 1)，因此无需判空。
- *
- * 声音 ID GearIn_system_loop / GearIn_weapon_fire 由 C5-S1 声明、C5-S2 注册，
- * 本单元只消费 (完整消费者族谱见 C5-S3)。
- */
-public class GearInSoundPlayer {
-
-    public static final String SOUND_ID_SYSTEM_LOOP = "GearIn_system_loop";
-    public static final String SOUND_ID_WEAPON_FIRE = "GearIn_weapon_fire";
-
-    private GearInSoundPlayer() {
-        // 工具类：不实例化
-    }
-
-    /** UI 音效：素材应为双声道 (API 注释 "UI sound files should be stereo")。 */
-    public static void playUISound(float pitch, float volume) {
-        Global.getSoundPlayer().playUISound(SOUND_ID_WEAPON_FIRE, pitch, volume);
-    }
-
-    /** 位置音效：素材必须为 mono；loc 与 vel 都必须非 null，否则在调用点抛 NPE。 */
-    public static void playPositionalSound(CombatEntityAPI source) {
-        Vector2f loc = source.getLocation();
-        Vector2f vel = new Vector2f(source.getVelocity()); // 复制，避免被引擎后续修改
-        Global.getSoundPlayer().playSound(SOUND_ID_WEAPON_FIRE, 1f, 1f, loc, vel);
-    }
-
-    /** 循环音效：必须每帧调用否则淡出；playingEntity 必填，同实体同循环只播一个。 */
-    public static void playLoopSound(CombatEngineAPI engine, CombatEntityAPI source) {
-        Global.getSoundPlayer().playLoop(
-                SOUND_ID_SYSTEM_LOOP, source, 1f, 1f, source.getLocation(), source.getVelocity());
-    }
-}
-```
-
-:::

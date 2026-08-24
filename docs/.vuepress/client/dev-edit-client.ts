@@ -3,15 +3,22 @@ import {
   Bold,
   Braces,
   Code2,
+  Columns3,
   Italic,
   List,
   ListOrdered,
   Minus,
+  PanelBottom,
+  PanelLeft,
+  PanelRight,
+  PanelTop,
   Quote,
   Redo2,
   RefreshCw,
+  Rows3,
   Save,
   Table2,
+  Trash2,
   Undo2,
   X,
 } from 'lucide-vue-next'
@@ -251,6 +258,39 @@ const DevEditButton = defineComponent({
         [h(icon, { size: 17, strokeWidth: 2 })],
       )
 
+    const tableButton = (
+      label: string,
+      icon: Component,
+      command: (current: Editor) => boolean,
+    ) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'dev-edit-icon-btn dev-edit-table-btn',
+          title: label,
+          'aria-label': label,
+          disabled: saving.value,
+          onMousedown: (event: MouseEvent) => event.preventDefault(),
+          onClick: () => run(command),
+        },
+        [h(icon, { size: 16, strokeWidth: 2 })],
+      )
+
+    const tableToolbar = () => {
+      editorVersion.value
+      if (!editor?.isActive('table')) return null
+      return h('div', { class: 'dev-edit-table-tools', role: 'toolbar', 'aria-label': '表格编辑' }, [
+        tableButton('在上方插入行', PanelTop, (current) => current.chain().focus().addRowBefore().run()),
+        tableButton('在下方插入行', PanelBottom, (current) => current.chain().focus().addRowAfter().run()),
+        tableButton('删除当前行', Rows3, (current) => current.chain().focus().deleteRow().run()),
+        tableButton('在左侧插入列', PanelLeft, (current) => current.chain().focus().addColumnBefore().run()),
+        tableButton('在右侧插入列', PanelRight, (current) => current.chain().focus().addColumnAfter().run()),
+        tableButton('删除当前列', Columns3, (current) => current.chain().focus().deleteColumn().run()),
+        tableButton('删除表格', Trash2, (current) => current.chain().focus().deleteTable().run()),
+      ])
+    }
+
     const blockSelect = () => {
       editorVersion.value
       const value = editor?.isActive('heading', { level: 1 })
@@ -316,13 +356,14 @@ const DevEditButton = defineComponent({
         '.dev-edit-btn,.dev-edit-icon-btn,.dev-edit-select{height:34px;border:1px solid var(--vp-c-border);border-radius:6px;background:var(--vp-c-bg);color:var(--vp-c-text);font:14px var(--font-family)}',
         '.dev-edit-btn{padding:0 12px;cursor:pointer}.dev-edit-icon-btn{width:34px;padding:0;display:grid;place-items:center;cursor:pointer}.dev-edit-select{padding:0 7px}',
         '.dev-edit-btn:hover,.dev-edit-icon-btn:hover,.dev-edit-icon-btn.active,.dev-edit-select:hover{background:var(--vp-c-control-hover);border-color:var(--vp-c-accent)}',
+        '.dev-edit-table-tools{display:inline-flex;align-items:center;gap:4px;padding-left:6px;border-left:1px solid var(--vp-c-border)}.dev-edit-table-btn{width:30px;height:30px}',
         '.dev-edit-btn:disabled,.dev-edit-icon-btn:disabled,.dev-edit-select:disabled{opacity:.55;cursor:default}',
         '.dev-edit-btn-primary{background:var(--vp-c-accent-bg);border-color:var(--vp-c-accent-bg);color:var(--vp-c-accent-text)}',
         '.dev-edit-btn-danger{background:var(--vp-c-red-soft);border-color:var(--vp-c-red-soft);color:var(--vp-c-red-text)}',
         '.dev-edit-status{display:block;max-width:520px;max-height:min(50vh,360px);overflow:auto;white-space:pre-wrap;line-height:1.5;color:var(--vp-c-red-text);background:var(--vp-c-bg);border:1px solid var(--vp-c-border);padding:7px 9px;border-radius:6px;box-shadow:0 2px 8px var(--vp-c-shadow);font:13px var(--font-family);overflow-wrap:anywhere}',
         '.dev-edit-content{outline:2px solid var(--vp-c-accent);outline-offset:10px;min-height:40vh}.dev-edit-surface{outline:none;min-height:40vh}',
         '.dev-edit-surface img{cursor:grab}.dev-edit-surface img.ProseMirror-selectednode{outline:3px solid var(--vp-c-accent)}',
-        '.dev-edit-container{border:1px solid var(--vp-c-border);padding:12px 16px}.dev-edit-container-title{display:block;width:100%;box-sizing:border-box;border:0;border-bottom:1px solid var(--vp-c-border);background:transparent;color:var(--vp-c-text);font-weight:600;padding:4px 0 8px;margin-bottom:8px;outline:none}',
+        '.dev-edit-container{border:1px solid var(--vp-c-border);padding:12px 16px}.dev-edit-container-type{display:block;height:26px;box-sizing:border-box;max-width:150px;margin-bottom:8px;border:1px solid var(--vp-c-border);border-radius:4px;background:var(--vp-c-bg);color:var(--vp-c-text);font:12px var(--font-family);padding:0 6px;outline:none}.dev-edit-container-type:focus,.dev-edit-container-type:hover{border-color:var(--vp-c-accent)}.dev-edit-container-title{display:block;width:100%;box-sizing:border-box;border:0;border-bottom:1px solid var(--vp-c-border);background:transparent;color:var(--vp-c-text);font-weight:600;padding:4px 0 8px;margin-bottom:8px;outline:none}',
         '.dev-edit-container-content>:first-child{margin-top:0}.dev-edit-container-content>:last-child{margin-bottom:0}',
         '.dev-edit-auto-list{border:1px dashed var(--vp-c-border);color:var(--vp-c-text-mute);padding:10px 12px;border-radius:4px}',
         '.dev-edit-code{margin:16px 0;border:1px solid var(--vp-c-border);border-left:3px solid var(--vp-c-accent);border-radius:6px;overflow:hidden;background:var(--code-c-bg);transition:border-color .15s,box-shadow .15s}',
@@ -332,7 +373,7 @@ const DevEditButton = defineComponent({
         '.dev-edit-code-language,.dev-edit-code-highlights{height:26px;box-sizing:border-box;border:1px solid var(--vp-c-border);border-radius:4px;background:var(--vp-c-bg);color:var(--vp-c-text);font:12px var(--font-family);outline:none}',
         '.dev-edit-code-language{width:126px;padding:0 6px}.dev-edit-code-highlights{width:78px;padding:0 7px}.dev-edit-code-highlight-label{margin-left:auto}',
         '.dev-edit-code-language:focus,.dev-edit-code-highlights:focus{border-color:var(--vp-c-accent)}.dev-edit-code-highlights:invalid{border-color:var(--vp-c-red)}',
-        '.dev-edit-code pre{position:relative;margin:0!important;border-radius:0!important;min-height:72px;padding:18px!important;background:var(--code-c-bg)!important}.dev-edit-code code{display:block;min-height:36px}',
+        '.dev-edit-code pre{position:relative;display:grid;grid-template-columns:max-content minmax(0,1fr);margin:0!important;border-radius:0!important;min-height:72px;padding:18px 0!important;background:var(--code-c-bg)!important;overflow:hidden}.dev-edit-code-line-gutter{position:relative;padding:0 12px 0 16px;border-right:1px solid var(--vp-c-border);color:var(--vp-c-text-mute);font:13px/1.5 var(--font-family-mono);text-align:right;user-select:none}.dev-edit-code-line-number{display:flex;align-items:flex-start;justify-content:flex-end;box-sizing:border-box;position:absolute;left:0;right:12px;width:auto;min-height:1.5em;padding:0;border:0;background:transparent;color:inherit;font:inherit;line-height:inherit;text-align:inherit;cursor:pointer}.dev-edit-code-line-number:hover,.dev-edit-code-line-number.active{background:var(--vp-c-accent-soft);color:var(--vp-c-accent-text)}.dev-edit-code code{display:block;min-width:0;min-height:36px;padding:0 18px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 var(--font-family-mono)}',
         '@media (max-width:719px){.dev-edit-fab{right:10px;bottom:10px;max-width:calc(100vw - 20px)}.dev-edit-panel{max-height:46vh;overflow:auto}}',
       ])
 
@@ -387,6 +428,7 @@ const DevEditButton = defineComponent({
             iconButton('引用', Quote, (current) => current.chain().focus().toggleBlockquote().run(), Boolean(editor?.isActive('blockquote'))),
             iconButton('代码围栏', Code2, (current) => current.chain().focus().toggleCodeBlock().run(), Boolean(editor?.isActive('codeBlock'))),
             iconButton('表格', Table2, (current) => current.chain().focus().insertTable({ rows: 3, cols: 2, withHeaderRow: true }).run()),
+            tableToolbar(),
             iconButton('水平线', Minus, (current) => current.chain().focus().setHorizontalRule().run()),
             containerSelect(),
             refreshRequired.value

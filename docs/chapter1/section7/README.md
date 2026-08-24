@@ -2,9 +2,9 @@
 
 本节将为本章各前节建立的舰船、战机与武器补上描述文本，并解释 `descriptions.csv` 的组织方式。
 
-*本节预期阅读时间：~15 分钟。*
+*本节预期阅读时间：\~15 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：\~30 分钟。*
 
 ## 学习目标
 
@@ -30,23 +30,19 @@
 数据文件是 MOD 内的 `data/strings/descriptions.csv`。
 
 ::: info
-这个路径本身就是注册入口 —— 加载器按固定路径遍历原版与全部已启用 MOD 的同名文件并合并，MOD 不需要任何额外注册。
+
+这个路径本身是**固定**的注册入口 —— MOD 不需要任何额外处理即可让游戏自动读取。
+
 :::
-
-加载与查询共三步：
-
-1. 加载期以 `id`、`type` 两列为键读取全部行；`type` 必须能解析为 `Description.Type` 枚举；每行以 `id + "_" + type` 为 UID 存入描述注册表。
-2. 运行期查询入口是公开 API：`Global.getSettings().getDescription(id, type)`(`com.fs.starfarer.api.SettingsAPI`，公开 API)，返回 `com.fs.starfarer.api.loading.Description` 对象。
-3. 使用方先按 "对象 → 查找键" 取描述，再按展示位置取 text1–text5 之一。
 
 ### 对象描述查找键速查表
 
-| 对象 | 描述键 (`id` 列)| 依据 |
-|---|---|---|
-| 舰船 | `.ship` 文件的 `descriptionId` 字段；未填写时回退为 `hullId` | `ShipHullSpecAPI.getDescriptionId()` 的回退；加载器读取 `.ship` 可选字段 |
-| 战机 (联队)| 复用其 hull 的舰船描述。装配界面的战机选择器按 hull 的 `descriptionId` 查询；数据库的战机详情直接按 `hullId` 查询 (数据库详情界面)| 为避免两处键不一致，战机 hull 建议不写 `descriptionId` |
-| 武器 | 武器 ID(`weapon_data.csv` 的 `id`，与 `.wpn` 的 `id` 相同)| 全部武器使用方都用 `getWeaponId()`，没有替代键 |
-| 战术系统 | 系统 ID(`ship_systems.csv` 的 `id` / `.system` 的 `id`)| 系统使用方用系统 spec 的 id，没有替代键 |
+| 对象类型 | 描述键 (`id` 列) |
+|---|---|
+| 舰船 | `.ship` 文件的 `descriptionId` 字段；未填写时回退为 `hullId` |
+| 战机 (联队) | 和其 hull 的舰船描述一致。装配界面的战机选择器按 hull 的 `descriptionId` 查询；数据库的战机详情直接按 `hullId` 查询 (数据库详情界面) |
+| 武器 | 武器 ID(`weapon_data.csv` 的 `id`，与 `.wpn` 的 `id` 相同) |
+| 战术系统 | 系统 ID(`ship_systems.csv` 的 `id` / `.system` 的 `id`) |
 
 ## descriptions.csv 结构与最小示例
 
@@ -66,42 +62,37 @@ id,type,text1,text2,text3,text4,text5,notes
 |---|---|---|
 | `SHIP` | 舰船与战机 hull 的描述 | 本节 |
 | `WEAPON` | 武器描述 | 本节 |
-| `SHIP_SYSTEM` | 战术系统描述 | 本节 (观察原版行，不新建)|
+| `SHIP_SYSTEM` | 战术系统描述 | 本节 (观察原版行，不新建) |
 | `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 | [C3-S4] |
 
 - `text1`–`text5` 的默认值与主要使用方：
 
 ### 描述字段默认值速查表
 
-| 字段 | 默认值 | 语义与主要使用方 (加载器与公开 API)|
+| 字段 | 默认值 | 语义与主要使用方 |
 |---|---|---|
-| `text1` | `No description... yet` | 长描述，可多段 (空行分隔)。数据库详情页完整显示；蓝图物品 tooltip、货舱 tooltip 只显示第一段 (`getText1FirstPara`)|
+| `text1` | `No description... yet` | 长描述，可多段 (空行分隔)。数据库详情页完整显示；蓝图物品 tooltip、货舱 tooltip 只显示第一段 |
 | `text2` | `No description... yet` | 一句话短描述。装配界面武器列表副标题 (`weapon_data.csv` 的 `primaryRoleStr` 非空时优先)；舰队界面成员 tooltip 引言 (text3 为空时)；数据库系统列表的类型标签 (无 text2 时显示 `Special`)；战情室部署界面的信息标题 |
 | `text3` | `No description... yet` | 短描述。装配界面的战术系统/相位系统行 (有 text3 用 text3，否则用 text1)；战情室信息正文；舰队 tooltip 中 text3 非空时引言改用 text1 第一段 |
-| `text4` | 空 | 以 `|` 分隔的高亮片段，装配界面系统行渲染时按片段高亮 |
-| `text5` | 空 | 战术系统的效果行，支持 `{{内容}}` 高亮标记；数据库系统详情的 `Effects` 节逐行渲染 |
-| `notes` | 空 | 备忘录列，加载器不读取 |
+| `text4` | 空 | 以 `\|` 分隔的高亮片段，装配界面系统行渲染时按片段高亮 |
+| `text5` | 空 | 战术系统的效果行，支持 `{{内容}}` 高亮标记；`{{内容}}` 的两端建议带空格 |
+| `notes` | 空 | 备注，加载器不读取 |
 
 - `id` 或 `type` 为空的行会被静默跳过；text1–3 为空或被省略时显示占位文本 `No description... yet`。
-- 这是缺描述不报错的原因：查询入口在找不到键时返回一个填充占位文本的新描述对象。
 
-::: warning
+::: warning 缺描述不会报错
+
 对象缺描述行时游戏不报错，界面只显示 `No description... yet` 占位文本。
 
-不要把它当成 bug 去翻启动日志 —— 日志里什么都不会有；排查方向是 "查找键是否与对象键逐字符一致"。
+虽然这严格来说可以算作是一个 bug，但日志里什么相关记录都不会有；排查方向是 "查找键是否与对象键逐字符一致"。
+
 :::
 
-::: caution
-必须避免三类会让加载阶段直接失败的错误 ——`type` 列不是枚举名 (拼写、大小写或多余空格)、同一文件内出现相同 `id + type` 组合、文件带 BOM 导致表头首列键名被污染。
-
-三类错误在本节故障分析中均有对应症状与修正。
-:::
-
-## 完整最小例
+### 本节示例描述行
 
 以下内容全部放在虚构示例 MOD(`gear_in`，第一章首节建立) 中。先建立 `data/strings/descriptions.csv`，表头之后依次是本节拥有的描述行：
 
-```csv {1}
+```csv
 id,type,text1,text2,text3,text4,text5,notes
 GearIn_durin,WEAPON,"都林自动炮是一门口径小、射速极快的近距实弹炮。密集的破片在短距离内对护盾有不错的压制效果，但离开射程就毫无用处。",反装甲,,,,,
 GearIn_uri,WEAPON,"乌里光束在中距离持续照射目标，产生稳定的能量伤害与幅能负担。光束本身没有击退力，需要持续瞄准。",压制,,,,,
@@ -116,30 +107,28 @@ GearIn_combat_desc_forging,SHIP,"锻件-级相位护卫舰围绕一门中型实�
 
 - 武器的描述行 `id` **必须**等于武器 ID(此前建立的 `GearIn_durin` 等)，这是查找键，无法另起别名。
 - 三条舰船描述使用本节专属键 `GearIn_combat_desc_*`，需要靠 `.ship` 的 `descriptionId` 字段挂接 (见下文)。
-- `GearIn_slag` 是战机 hull，按 "战机建议不写 `descriptionId`" 的规则使用默认键 `GearIn_slag`。
+- `GearIn_slag` 是战机 hull，使用 `GearIn_slag`，不使用 `GearIn_slag_wing`。
 - 武器 `text2` 与 `weapon_data.csv` 的 `primaryRoleStr` 保持一致 (反装甲/压制)：装配列表副标题优先显示 `primaryRoleStr`，`text2` 是它在留空时的备用值。
 - `GearIn_combat_desc_furnaceman` 的 text1 内含英文逗号，因此必须用引号包裹 (中文逗号 "，" 不是分隔符，无需包裹)；`text4`/`text5` 在示例中留空，其用法见原版参考行。
 
-然后给三个舰船 `.ship` 文件加入 `descriptionId` 字段 (以 `GearIn_artizan.ship` 为例，字段与 `hullId` 同级)：
+::: info 更多描述方式
 
-```json {2,3}
-    "descriptionId": "GearIn_combat_desc_artizan",
-    "descriptionPrefix": "由编者制作的第一艘示例舰船",
-```
+除此之外。还存在 `descriptionId` 和 `descriptionPrefix` 这两个出现于 `.ship` 船体文件或 `.skin` 皮肤文件的字段。**但不推荐任何舰船或战机使用这两个字段**。
 
-`GearIn_furnaceman.ship` 与 `GearIn_forging.ship` 分别写 `GearIn_combat_desc_furnaceman`、`GearIn_combat_desc_forging`。
+它们只应该出现在相关的皮肤上，而非船本身上。
 
-`descriptionPrefix` 是可选字段，写在任何描述文本之前 (使用方用 `前缀 + "\n\n"` 拼接)；**它不以句号结尾时加载器会自动补一个句号**。
+`descriptionPrefix` 是可选字段，写在任何描述文本之前 (使用方用 `前缀 + "\n\n"` 拼接)；**它不以句号结尾时，加载器会自动补一个句号**。因此不推荐写句号。
+
+:::
 
 ### 文本字段的书写规则
 
 - **引号**：字段含英文逗号、换行或引号时**必须**用 `"` 包裹；字段内部的引号写成两个 `""`；换行会保留为段落分隔 (text1 的多段之间用空行)。
 - **注释**：行首是 `#` 的整行被忽略，可以用它暂时注释掉某条描述。
-- **编码**：加载器按 UTF-8 读取 (文本读取工具 `readText`)。
-- 中文内容必须以 UTF-8 无 BOM 保存，否则显示乱码或加载异常 (见故障分析)。
-- **弯引号**：加载时会把弯引号 (" " ' ') 替换为直引号 (`replaceSmartQuotes`)，所以不要依赖弯引号保留原样 (原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步归一化)。
-- **键唯一**：`id + type` 在同一文件内**必须**唯一，否则加载期抛异常 (见故障分析)。
-- 也不要重定义原版或其他 MOD 已存在的 `id + type` 组合：跨文件合并时先被枚举到的文件的行生效，后到的同键行被**静默跳过** (读 CSV 时的去重分支)，覆盖顺序不是可以依赖的约定。
+- **编码**：加载器按 UTF-8 无 BOM 读取，必须格式相符，否则显示乱码或加载异常。
+- **弯引号**：加载时会把弯引号 (" " ' ') 替换为直引号，但尽可能不要利用这一特性。
+- **键唯一**：`id + type` 在同一文件内**必须**唯一，否则加载期抛异常。
+- 也不要重定义原版或其他 MOD 已存在的 `id + type` 组合：跨文件合并时，无法稳定决定覆盖顺序。
 - 需要整体替换某个数据文件时，支持在 `mod_info.json` 的 `replace` 数组里声明 (文件读取语义见 [C15-S2])。
 
 原版参考行 (`Starsector/starsector-core/data/strings/descriptions.csv`，仅观察不修改)：
@@ -153,7 +142,7 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 `hammerhead` 行则说明：舰船通常只写 text1，text2/text3 留空即可。
 
-### 验证方案
+## 验证方案
 
 前置数据：`gear_in` MOD[C1-S1] 与第一章前五节 ([C1-S2] 至 [C1-S6]) 建立的全部数据，加上本节的 `data/strings/descriptions.csv` 与三个 `.ship` 文件的 `descriptionId` 修改 (即本节前述示例内容)。
 
@@ -216,10 +205,6 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
     - **解决方案**：补充短的 text3，并用 text4 的 `|` 分隔需要高亮的片段。
 
-- **战机详情显示占位文本而装配界面正常**：战机 hull 写了 `descriptionId` 时，装配界面按该键查找，而数据库战机详情直接按 `hullId` 查找。
-
-    - **解决方案**：删除战机 hull 的 `descriptionId` (本例使用 `GearIn_slag`)。
-
 - **文本错位、截断或串到其他列**：字段中的英文逗号或换行没有加引号，会造成列切分错位、键值改变或列数异常。
 
     - **解决方案**：给含这些字符的字段加引号并重新运行结构检查。
@@ -237,6 +222,4 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 ## 建议参考项
 
 - `data/strings/descriptions.csv`(MOD 内相对路径)：描述文本注册入口，路径即注册、无需额外声明。
-- 原版参考文件位于 `Starsector/starsector-core/data/strings/descriptions.csv`(仅观察不修改)；
-- `com.fs.starfarer.api.loading.Description`：`Type` 枚举与 text1–text5 的默认值/占位行为。
-- `com.fs.starfarer.api.impl.codex.CodexDataV2`：数据库系统列表的类型标签与 `Special` 回退。
+- `Starsector/starsector-core/data/strings/descriptions.csv`(原版路径)：仅观察不修改。

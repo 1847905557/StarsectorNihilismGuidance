@@ -87,7 +87,7 @@
 | 关系 | `getRelToPlayer()` | 人物对玩家关系 (见 "关系" 节) |
 | 记忆 | `getMemory()` / `getMemoryWithoutUpdate()` | 见 "记忆" 小节 |
 | 标签 | `hasTag` / `addTag` / `removeTag` / `getTags` / `clearTags` | 运行时标签集合 (`getTags()` 缺省返回空集) |
-| personality | `getPersonalityAPI()`、`setPersonality(String)` | 由 `personalities.csv` 注册 (见 "故障分析" 的 `NullPointerException` 症状条目) |
+| personality | `getPersonalityAPI()`、`setPersonality(String)` | 由 `personalities.csv` 注册 |
 | importance/voice | `getImportance()` / `setImportance(PersonImportance)`、`setImportanceAndVoice(PersonImportance, Random)`、`getVoice()` / `setVoice(String)` | voice 存储在 memory `$voice`；`setImportanceAndVoice` 只在 voice 未被显式覆写时写 voice |
 | AI core | `getAICoreId()` / `setAICoreId(String)`、`isAICore()` | `aiCoreId != null` 即 AI 核心人物 |
 | 归属 | `getFleet()` / `setFleet(CampaignFleetAPI)`、`getMarket()` / `setMarket(MarketAPI)` | officer 所在舰队、当前市场 (见 "归属" 小节) |
@@ -392,7 +392,7 @@ mods/GearIndustry/
 
 全部修改在当帧回滚，不遗留任何持久状态。
 
-**演示纪律**：演示/临时人物修改后必须同帧回滚，回滚用 "快照原值 + `setRelationship`"(见规则强度速查表)；先 `add` 后立刻 `remove` 的配对顺序不要调换 —— 演示帧中途抛异常会留下随存档保存的残留，且 `REGISTER_MARK` 已置位后读档不重放，残留无法自动清理 (最坏形态见 "演示异常后关系修改残留" 故障条目)。
+**演示纪律**：演示/临时人物修改后必须同帧回滚，回滚用 "快照原值 + `setRelationship`"(见规则强度速查表)；先 `add` 后立刻 `remove` 的配对顺序不要调换 —— 演示帧中途抛异常会留下随存档保存的残留，且 `REGISTER_MARK` 已置位后读档不重放，残留无法自动清理。
 
 ### GearInPersonScript(协调器)
 

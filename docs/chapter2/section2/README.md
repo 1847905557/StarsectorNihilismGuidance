@@ -2,9 +2,9 @@
 
 本节将复用 [C2-S1] 介绍的船插目标，制作一个相对完整的船插。
 
-*本节预期阅读时间：~15 分钟。*
+*本节预期阅读时间：\~15 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
@@ -13,7 +13,7 @@
 - 说出船插的组成：`hull_mods.csv` 的一行数据 + 一个 Java 效果类；
 - 用类名三处一致规则核对任何船插：文件名、`class` 后的名字、CSV `script` 列；
 - 读懂效果类中四类内容：按舰船大小给出的数值参数、描述联动 (`%s`)、安装限制 (互斥)、固定句式 (`modifyFlat`/`modifyPercent`)；
-- 独立排查 "装配界面找不到船插" 与 "`Error loading`" 两类故障。
+- 独立排查本节新增的加载中断 (`JSONException`/`Duplicate key`) 与效果类故障。
 
 ## 前置知识
 
@@ -21,49 +21,58 @@
 - [C1-S2] 的 CSV 数据行读取方法；
 - [C2-S1] 的 Java 模板、参数、注册、回调与重启生效流程。
 
-## 类名三处一致
+## 注册船插数据
 
-### 类名三处速查表
+在 MOD 的 `data/hullmods/hull_mods.csv` 写入 (文件不存在就新建，只包含本 MOD 的行；表头行必须保留)。20 列中，`id`、`cost_*`、`script` 三列沿用 [C2-S1] 的规则 (唯一前缀、四档必填、script 指向效果类名)；本节新增三列：
 
-游戏靠**完整类名**找到效果类。一个类名出现在三个位置，必须一字不差：
-
-| 位置 | 本例的值 |
-|---|---|
-| 文件路径：`src/data/scripts/...` 下的目录 + 文件名 | `src/data/scripts/gearin/hullmods/GearInStableInjectorHullMod.java` |
-| 文件内：`public class` 后的名字 | `GearInStableInjectorHullMod` |
-| CSV：`script` 列 | `data.scripts.gearin.hullmods.GearInStableInjectorHullMod` |
-
-规则：前两处拼起来必须等于第三处 (`data.scripts.gearin.hullmods` 来自 `package` 行，对应 `data/scripts/gearin/hullmods/` 目录)。任何一处不一致，游戏都找不到类，加载期报 `Error loading [...]`。本节末尾的故障注入会触发一次。
-
-## 完整最小例：稳定化推进器
-
-### 注册船插数据
-
-在 MOD 的 `data/hullmods/hull_mods.csv` 写入 (文件不存在就新建，只包含本 MOD 的行；表头行必须保留)：
-
-```text
-name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
-稳定化推进器,GearIn_stable_injector,0,,,"engines, merc, standard",引擎,2500,TRUE,,,5,10,15,25,data.scripts.gearin.hullmods.GearInStableInjectorHullMod,"提高舰船最大速度 %s/%s/%s/%s 单位/秒，随舰船大小变化。不兼容 不稳定推进器。","提高舰船最大速度。",,graphics/hullmods/GearIn_stable_injector.png
-```
-
-20 列中，本节只关注 9 列，其余按模板使用：
-
-- **`id`**：船插的唯一标识，`GearIn_` 前缀。装配点、脚本、其他船插引用它都用这个值。
-- **`cost_frigate` / `cost_dest` / `cost_cruiser` / `cost_capital`**：四档舰船的装配点消耗 (本例 5/10/15/25)。四列都必须填数字 —— 即使船插只会被内置也填 `0`，留空会让游戏加载中断。
-- **`script`**：效果类完整类名 (类名三处一致的第一处核对点)。
-- **`unlocked`**：`TRUE` = 玩家默认解锁，无需蓝图即可装配。建议调试期保持 `TRUE`，验证完成后再调整。
-- **`desc`**：装配界面显示的描述。引号里的 **`%s` 是占位符**，由效果类的 `getDescriptionParam` 依次填数字 (本例 4 个 `%s` = 四档舰船的速度加成)，对应关系见效果类一节。
+- **`unlocked`**：`TRUE` = 玩家默认解锁。
+- **`desc`**：装配界面显示的描述。`desc` 列支持 `%s` 占位符，由效果类的 `getDescriptionParam` 按 `index` 顺序填充，组合示例见本节完整最小例。
 - **`sprite`**：图标路径。本节不准备贴图 —— 留空也能用 (游戏退回默认图标 `graphics/hullmods/generic_mod.png`)，想换图标时把 32×32 的 PNG 放到该路径即可。
 
-::: warning 四档 cost 缺一不可
+## 实现船插效果
 
-`cost_*` 四列之一留空 → 游戏读取该行抛 JSONException，加载中断。填 `0` 是合法的 (表示免费)。
+效果类比上一节的 "加速器" 多三样东西 (其余按模板使用)：
+
+**按舰船大小给出不同数值**
+
+`FRIGATE`/`DESTROYER`/`CRUISER`/`CAPITAL_SHIP` 是四档舰船大小：护卫舰/驱逐舰/巡洋舰/主力舰。按大小给不同数值的写法：四个数值分别对应四档舰船，按需修改。数值修改用 [C2-S1] 的固定句式，上一节用的是 `modifyPercent`(百分比)，这里换成 `modifyFlat`(固定值)：`modifyFlat(id, 15f)` = 最大速度直接 +15 单位/秒。
+
+**描述联动 (`getDescriptionParam`)**
+
+`desc` 列中的 `%s` 占位符由 `getDescriptionParam(index, hullSize)` 按 `index` 0→N 顺序填充。`%s` 多于返回值时，多余占位符显示 "null"；少于时多余参数被忽略。
+
+**安装限制 (`isApplicableToShip` \+ `getUnapplicableReason`)**
+
+互斥由这两个方法实现：前者返回能否安装 (`false` = 不能)，后者返回拒绝原因 (装配界面上显示的文字)。用 `ship.getVariant().hasHullMod(id)` 检查目标船插是否已装，即可实现任意两个船插的互斥。
+
+::: info 太长不看版
+
+- `applyEffectsBeforeShipCreation`：修改数值 (生涯面板和战斗都生效)；
+- `getDescriptionParam`：填充描述里的 `%s`；
+- `isApplicableToShip` \+ `getUnapplicableReason`：限制能否安装。
+
+数值修改只写在第一个方法里 —— 写错位置 (比如写进 `applyEffectsAfterShipCreation`) 的效果是生涯面板看不到加成。
 
 :::
 
-### 实现船插效果
+::: tip 建议
 
-将以下类完整写入 `src/data/scripts/gearin/hullmods/GearInStableInjectorHullMod.java`(文件路径即包路径，见类名三处速查表)：
+沿用第一章的惯例：能复制粘贴就绝不硬写。复制原版 `unstable_injector` 行与效果类骨架，再修改参数，比从零输入更不易出错。
+
+:::
+
+三者的完整组合见本节完整最小例。
+
+## 完整最小例
+
+注册行写入 `data/hullmods/hull_mods.csv`；效果类写入 `src/data/scripts/gearin/hullmods/GearInStableInjectorHullMod.java`(文件路径即包路径，见 [C2-S1])。
+
+```text {2}
+name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
+稳定化推进器,GearIn_stable_injector,0,,,"engines, merc, standard",引擎,2500,TRUE,,,5,10,15,25,data.scripts.gearin.hullmods.GearInStableInjectorHullMod,"提高舰船最大速度 %s/%s/%s/%s，随舰船大小变化。不兼容 不稳定推进器。","提高舰船最大速度。",,graphics/hullmods/GearIn_stable_injector.png
+```
+
+::: details 完整成品：GearInStableInjectorHullMod
 
 ```java
 package data.scripts.gearin.hullmods;
@@ -128,42 +137,6 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 }
 ```
 
-比上一节的 "加速器" 多三样东西，逐个看 (其余按模板使用)：
-
-**① 按舰船大小给出不同数值 (`SPEED_BONUS` 段)**
-
-`FRIGATE`/`DESTROYER`/`CRUISER`/`CAPITAL_SHIP` 是四档舰船大小：护卫舰/驱逐舰/巡洋舰/主力舰。这段的写法是模板，**参数是四个数字** —— 想改成 "护卫舰 +30、主力舰 +10"，改数字即可。上一节用的 `modifyPercent`(百分比)，这里换成了 `modifyFlat`(固定值)：`modifyFlat(id, 15f)` = 最大速度直接 +15 单位/秒。
-
-**② 描述联动 (`getDescriptionParam`)**
-
-CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四档加成填进去。修改 `SPEED_BONUS` 的数字后，描述里的高亮数值自动跟着变，不需要改 CSV 里的描述文字。`%s` 多于返回值时，多余占位符显示 "null"；少于时多余参数被忽略。
-
-**③ 安装限制 (`isApplicableToShip` + `getUnapplicableReason`)**
-
-"与不稳定推进器互斥" 由这两个方法实现：前者返回能否安装 (`false` = 不能)，后者返回拒绝原因 (装配界面上显示的文字)。`hasHullMod("unstable_injector")` 检查舰船是否已装原版不稳定推进器 (原版 id，可在原版 `hull_mods.csv` 里查到)。这是 原版互斥船插的标准写法。
-
-::: info 三个方法各管一件事
-
-- `applyEffectsBeforeShipCreation`：修改数值 (生涯面板和战斗都生效)；
-- `getDescriptionParam`：填充描述里的 `%s`；
-- `isApplicableToShip` + `getUnapplicableReason`：限制能否安装。
-
-数值修改只写在第一个方法里 —— 写错位置 (比如写进 `applyEffectsAfterShipCreation`) 的效果是生涯面板看不到加成，见 "速度加成没有生效" 故障条目。
-
-:::
-
-### 验证船插效果
-
-1. 重启游戏，进入生涯，打开装配界面 ——"稳定化推进器" 应出现在船插列表；
-2. 装到护卫舰上：tooltip 显示 "提高舰船最大速度 15/10/5/5 单位/秒..."，四个数字高亮；
-3. 先装 "不稳定推进器" 再尝试装本船插：被拒绝，原因显示 "不兼容 不稳定推进器"；
-4. 进模拟战对比安装前后最大速度 (护卫舰应 +15)；
-5. 退出游戏，检查 `starsector.log`：应有 `Loading hullmod [稳定化推进器]` 一行且无 `ERROR`。
-
-::: tip 建议
-
-沿用第一章的惯例：能复制粘贴就绝不硬写。复制原版 `unstable_injector` 行与效果类骨架，再修改参数，比从零输入更不易出错。
-
 :::
 
 ## 故障注入：触发类名不一致
@@ -172,7 +145,7 @@ CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四�
 2. 打开装配界面查看本船插的 tooltip，或让游戏生成这艘船 —— 加载期报 `Error loading [data.scripts.gearin.hullmods.NoSuchClass]`，无法进入装配界面；
 3. 改回正确类名，重启，确认恢复。
 
-这个报错就是类名三处一致被破坏的可观察结果。类名改错时游戏会明确报 `Error loading [...]`—— 相比静默失败，这已经算客气。之后在任何船插、武器、战术系统上见到这个报错，首先核对类名三处。
+这个报错就是类名三处一致被破坏的可观察结果 (规则见 [C2-S1])。之后在任何船插、武器、战术系统上见到 `Error loading`，首先核对类名三处。
 
 ## 验证方案
 
@@ -186,28 +159,12 @@ CSV 的 `desc` 里有 4 个 `%s`，这个方法按顺序 (`index` 0→3) 把四�
 预期结果：
 
 - 装配界面出现 "稳定化推进器"，`unlocked=TRUE` 时无需蓝图。
-- 护卫舰 tooltip 显示 `提高舰船最大速度 15/10/5/5 单位/秒，随舰船大小变化。不兼容 不稳定推进器。`，四个数字高亮。
+- 护卫舰 tooltip 显示 `提高舰船最大速度 15/10/5/5，随舰船大小变化。不兼容 不稳定推进器。`，四个数字高亮。
 - 舰船最大速度增加 15(护卫舰档)，生涯舰队面板与战斗数值一致。
 - "稳定化推进器" 与 "不稳定推进器" 互斥，安装被拒并显示原因。
 - `starsector.log` 出现 `Loading hullmod [稳定化推进器]`，且没有相关 `ERROR`。
 
 ## 故障分析
-
-- **装配界面找不到船插**：注册行缺失、`id` 没有使用唯一的 `GearIn_` 前缀，或 `script` 列有误时，船插不会出现在装配列表中。
-
-    - **解决方案**：确认 CSV 行存在、`id` 使用唯一的 `GearIn_` 前缀，并在调试期设置 `unlocked=TRUE`，再核对 `script` 列并重启。
-
-- **加载中断并报告 `JSONException`**：必填列缺失或某个 `cost_*` 留空会破坏数据行。
-
-    - **解决方案**：补齐四档数字后重启。
-
-- **加载中断并报告 `Duplicate key`**：同一文件内存在重复 `id`。
-
-    - **解决方案**：为每行保留唯一 ID 并重启。
-
-- **加载期报 `Error loading [...]`**：注册类名、包声明和文件路径没有指向同一个类。
-
-    - **解决方案**：把源码放在 `data/scripts/gearin/hullmods/` 对应包路径，让三处文本逐字一致。
 
 - **速度加成没有生效**：数值修改写进 `applyEffectsAfterShipCreation` 时，生涯侧不会执行它。
 

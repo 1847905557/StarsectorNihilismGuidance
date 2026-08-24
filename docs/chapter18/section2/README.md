@@ -111,46 +111,6 @@ gl_FragColor = vec4(pulse);
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
 
-## 验证方案
-
-1. 执行 `gradle jar` 构建示例 MOD，确认编译完成且没有报错。
-2. 启动游戏并进入本页场景，执行标题描述的动作。
-3. 重复一次边界动作，观察日志、画面、数值或生涯对象是否保持一致。
-
-预期结果：
-
-- BoxUtil 返回的程序对象有效；
-- 日志能列出 `u_offset` 和 `u_time` location；
-- 编译错误后重载保留旧程序，首次创建失败时渲染器不继续绘制；
-- `starsector.log` 先记录两个资源路径；BoxUtil 随后记录 shader 类型和 InfoLog。
-
-## 故障分析
-
-- **护盾不可见且日志包含片元 shader 编译错误**：源码缺少分号，程序无法建立。
-
-    - **解决方案**：先用 InfoLog 定位行号，再修正语法。
-
-- **启动即抛未捕获异常**：路径含反斜杠、盘符或 `..` 时，引擎在读取前就抛 RuntimeException(BoxUtil 只捕获 IOException)，不会出现 "文件不存在" 日志。
-
-    - **解决方案**：改用 MOD 根目录下的正斜杠相对路径。
-
-- **program 有效但画面空白**：`u_offset` 没有提交，或片元输出透明度为零。
-
-    - **解决方案**：记录 uniform location 和最终 alpha，修正后重新提交。
-
-- **每次重载后显存增加**：失败的临时 `ShaderProgram` 未删除，或 cleanup 没有调用 `program.delete()`。
-
-    - **解决方案**：补齐两条释放路径。
-
-## 总结
-
-可维护的 BoxUtil shader 接入必须把失败变成可读日志和安全状态。路径、门禁、程序有效性、location、`active()`/`close()` 和删除各有检查点。
-
-## 建议参考项
-
-- `ShaderUtil.createShaderVFFormPath`：从路径创建 VF 程序；
-- `ShaderProgram.isValid`：确认程序可用；
-- InfoLog：定位 GLSL 编译与链接错误。
 ::: details 完整成品：GearInPulseRenderer
 
 ```java
@@ -463,3 +423,44 @@ void main() {
 ```
 
 :::
+
+## 验证方案
+
+1. 执行 `gradle jar` 构建示例 MOD，确认编译完成且没有报错。
+2. 启动游戏并进入本页场景，执行标题描述的动作。
+3. 重复一次边界动作，观察日志、画面、数值或生涯对象是否保持一致。
+
+预期结果：
+
+- BoxUtil 返回的程序对象有效；
+- 日志能列出 `u_offset` 和 `u_time` location；
+- 编译错误后重载保留旧程序，首次创建失败时渲染器不继续绘制；
+- `starsector.log` 先记录两个资源路径；BoxUtil 随后记录 shader 类型和 InfoLog。
+
+## 故障分析
+
+- **护盾不可见且日志包含片元 shader 编译错误**：源码缺少分号，程序无法建立。
+
+    - **解决方案**：先用 InfoLog 定位行号，再修正语法。
+
+- **启动即抛未捕获异常**：路径含反斜杠、盘符或 `..` 时，引擎在读取前就抛 RuntimeException(BoxUtil 只捕获 IOException)，不会出现 "文件不存在" 日志。
+
+    - **解决方案**：改用 MOD 根目录下的正斜杠相对路径。
+
+- **program 有效但画面空白**：`u_offset` 没有提交，或片元输出透明度为零。
+
+    - **解决方案**：记录 uniform location 和最终 alpha，修正后重新提交。
+
+- **每次重载后显存增加**：失败的临时 `ShaderProgram` 未删除，或 cleanup 没有调用 `program.delete()`。
+
+    - **解决方案**：补齐两条释放路径。
+
+## 总结
+
+可维护的 BoxUtil shader 接入必须把失败变成可读日志和安全状态。路径、门禁、程序有效性、location、`active()`/`close()` 和删除各有检查点。
+
+## 建议参考项
+
+- `ShaderUtil.createShaderVFFormPath`：从路径创建 VF 程序；
+- `ShaderProgram.isValid`：确认程序可用；
+- InfoLog：定位 GLSL 编译与链接错误。

@@ -145,11 +145,11 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 本节展开两个概念，其余按模板使用：
 
-**① 效果强度 `effectLevel`**
+**效果强度 `effectLevel`**
 
 游戏在前摇期间把一个名为 `effectLevel` 的值从 **0 平滑升至 1**，全功率段保持 1，后摇期间从 1 落回 0。效果脚本中的所有数值都乘以它：`SPEED_BONUS * effectLevel` = 200 × 0.5 = 100—— 因此前摇那两秒里速度加成从 0 平滑爬到 200**。参数是 `SPEED_BONUS` 与 `ACCELERATION_BONUS` 两个数字**，修改它们即修改爆发强度。
 
-**② 三个回调各管一件事**
+**三个回调各管一件事**
 
 - `apply`：效果期间每帧被调用，按当前 `effectLevel` 写入速度与加速度加成。`state == OUT`(后摇) 时**撤销**速度加成 —— 让船在后摇期间按基础速度减速，而不是带着加成跑完整个后摇。
 - `unapply`：效果结束时由游戏调用一次，撤销 `apply` 写入的每一项 (`modifyFlat` 与 `unmodify` 必须成对，用同一个 `id`)。
@@ -157,7 +157,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ::: warning apply 与 unapply 必须成对
 
-`apply` 里 `modify` 过什么，`unapply` 里就必须用同一个 `id` `unmodify` 什么。漏一项的后果：系统结束后那一项加成永远残留 (见 "冷却结束后效果仍然残留" 故障条目)。
+`apply` 里 `modify` 过什么，`unapply` 里就必须用同一个 `id` `unmodify` 什么。漏一项的后果：系统结束后那一项加成永远残留。
 
 :::
 

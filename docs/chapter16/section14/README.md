@@ -118,51 +118,6 @@ ModelData model = catalog.require("GearIn_gear");
 
 目录类只负责模型注册表查询，变换类只接受有效 `ModelData` 并返回配置好矩阵与默认光照的 `CommonEntity`。战斗接线仍需检查 `CombatRenderingManager.addEntity()` 返回码。
 
-## 验证方案
-
-前置数据：GearIn 行已并入 BoxUtil 启动期加载的 9 列模型 CSV，OBJ、diffuse、normal 与 emissive 文件均存在，战斗接线能把返回实体入队。
-
-1. 启动后核对 `ModelManager.containsModelID("GearIn_gear")` 和 `ModelData.isValid()`。
-2. 在玩家舰旁创建比例为 `(1, 1)` 的实体，核对位置和朝向。
-3. 把比例改为 `(0.5, 0.5)`，确认世界尺寸减半而模型缓冲仍被复用。
-4. 分别移除 emissive、normal 路径并重启，观察材质通道变化和加载日志。
-5. 把 ID 改为 `GearIn_Gear`，确认目录类在实体创建前抛出带 ID 的参数错误。
-
-预期结果：
-
-- 精确模型 ID 返回有效、可复用的 `ModelData`；
-- `CommonEntity` 的模型矩阵与传入位置、朝向、缩放一致；
-- 默认光照能够区分漫反射、法线和发光通道的加载结果；
-- 错误大小写在创建实体前产生明确异常；
-- 有效实体入队后没有未处理异常。
-
-## 故障分析
-
-- **构造实体时抛空指针异常**：模型 ID 大小写与 CSV 不一致 (`getModelData()` 返回 null，`new CommonEntity(model, true)` 构造期即 NPE)，或 `ModelData.isValid()` 为 false。
-
-    - **解决方案**：先通过 `require()` 验证数据，再构造实体。
-
-- **模型整体显示为黑色**：漫反射贴图或材质数据没有注册。
-
-    - **解决方案**：补齐材质引用，重新载入。
-
-- **光照方向与模型表面相反**：OBJ 的法线或切线方向不一致。
-
-    - **解决方案**：修正并重新导出网格。
-
-- **模型位置正确但比例巨大**：OBJ 单位与世界缩放没有统一。
-
-    - **解决方案**：调整导出单位或模型矩阵缩放。
-
-## 总结
-
-模型加载分成数据注册、存在性确认、模型取得和世界变换。先让 ID 查询失败得足够明确，再处理法线、材质和尺度，排错顺序会短很多。
-
-## 建议参考项
-
-- `ModelManager`：注册并查询模型数据；
-- `CommonEntity`：组合模型与材质；
-- `TransformUtil.createModelMatrixVanilla`：建立世界变换。
 ::: details 完整成品：GearInModelCatalog
 
 ```java
@@ -212,3 +167,49 @@ public final class GearInModelTransform {
 ```
 
 :::
+
+## 验证方案
+
+前置数据：GearIn 行已并入 BoxUtil 启动期加载的 9 列模型 CSV，OBJ、diffuse、normal 与 emissive 文件均存在，战斗接线能把返回实体入队。
+
+1. 启动后核对 `ModelManager.containsModelID("GearIn_gear")` 和 `ModelData.isValid()`。
+2. 在玩家舰旁创建比例为 `(1, 1)` 的实体，核对位置和朝向。
+3. 把比例改为 `(0.5, 0.5)`，确认世界尺寸减半而模型缓冲仍被复用。
+4. 分别移除 emissive、normal 路径并重启，观察材质通道变化和加载日志。
+5. 把 ID 改为 `GearIn_Gear`，确认目录类在实体创建前抛出带 ID 的参数错误。
+
+预期结果：
+
+- 精确模型 ID 返回有效、可复用的 `ModelData`；
+- `CommonEntity` 的模型矩阵与传入位置、朝向、缩放一致；
+- 默认光照能够区分漫反射、法线和发光通道的加载结果；
+- 错误大小写在创建实体前产生明确异常；
+- 有效实体入队后没有未处理异常。
+
+## 故障分析
+
+- **构造实体时抛空指针异常**：模型 ID 大小写与 CSV 不一致 (`getModelData()` 返回 null，`new CommonEntity(model, true)` 构造期即 NPE)，或 `ModelData.isValid()` 为 false。
+
+    - **解决方案**：先通过 `require()` 验证数据，再构造实体。
+
+- **模型整体显示为黑色**：漫反射贴图或材质数据没有注册。
+
+    - **解决方案**：补齐材质引用，重新载入。
+
+- **光照方向与模型表面相反**：OBJ 的法线或切线方向不一致。
+
+    - **解决方案**：修正并重新导出网格。
+
+- **模型位置正确但比例巨大**：OBJ 单位与世界缩放没有统一。
+
+    - **解决方案**：调整导出单位或模型矩阵缩放。
+
+## 总结
+
+模型加载分成数据注册、存在性确认、模型取得和世界变换。先让 ID 查询失败得足够明确，再处理法线、材质和尺度，排错顺序会短很多。
+
+## 建议参考项
+
+- `ModelManager`：注册并查询模型数据；
+- `CommonEntity`：组合模型与材质；
+- `TransformUtil.createModelMatrixVanilla`：建立世界变换。

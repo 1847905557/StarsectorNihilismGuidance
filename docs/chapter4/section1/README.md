@@ -71,20 +71,13 @@ Starsector 有两个主要游玩入口，本节开始会经常把两者并列：
 3. 游戏启动时 (装配加载之后) 从 `saves/missions/<mission_id>/` 和 `saves/missions/variants/` 读回这些装配并注册 (战役目录下来源 `MISSION_SAVE`，`variants` 目录下为 `MISSION_DESIGN`)，所以战役里改过的舰队会在下次进入时保持一致。删除这些文件即可清除对应设计。
 4. 这些导出文件与 `data/variants` 里的装配走同一个装配 spec 构造器、同一套字段，因此可以原样搬到 MOD 里使用 —— 只要改掉 `variantId`。
 
-## 完整最小例：注册并制作测试战役
-
-### 注册测试战役
+## 注册测试战役
 
 在 MOD 中新建 `data/missions/mission_list.csv`，写入表头和战役 ID。**不要**复制整份原版 `mission_list.csv`—— 这个文件按行合并，您只需要自己的行：
 
-```csv
-mission
-GearIn_test
-```
-
 第一行 `mission` 是列名 (必须逐字一致，拼错会导致加载失败)，第二行是战役 ID。多行时可以随时用 `#` 注释掉整行。
 
-### 复制战役模板
+## 复制战役模板
 
 随机挑选一个原版战役，例如 `Starsector\starsector-core\data\missions\afistfulofcredits`，把它文件夹里的所有东西复制到 `Starsector\mods\GearIndustry\data\missions\GearIn_test\`：
 
@@ -92,18 +85,9 @@ GearIn_test
 
 原版战役文件夹包含 `descriptor.json`、`icon.jpg`、`mission_text.txt` 和一个存放 `MissionDefinition` 类的源文件。接下来逐个修改。
 
-### 配置战役描述
+## 配置战役描述
 
 (原版文件自带尾逗号，游戏解析器可以接受；教程示例保持标准 JSON，便于静态工具检查。)
-
-```json
-{
-	"title": "一次好买卖",
-	"difficulty": "简单",
-	"icon": "icon.jpg",
-	"background": "graphics/backgrounds/background4.jpg"
-}
-```
 
 ### descriptor.json 字段速查表
 
@@ -114,13 +98,13 @@ GearIn_test
 | `icon` | 是 | 战役图标贴图文件名，位于战役文件夹内 (本例沿用复制的 `icon.jpg`)|
 | `background` | 否 | 战役背景贴图路径 (相对于 MOD 根目录，可指向原版 `graphics/`)|
 
-`title`、`difficulty`、`icon` 缺失会让加载直接失败 (见 "游戏加载中断，进不了主菜单" 故障条目)。
+`title`、`difficulty`、`icon` 缺失会让加载直接失败。
 
-### 编写战役文本
+## 编写战役文本
 
 里面是战役的详细文本，显示在战役详情页，可以随意填写。保持该文件存在即可，缺失同样会让加载失败。
 
-### 实现战役定义
+## 实现战役定义
 
 打开复制来的 `MissionDefinitionPlugin` 实现类源文件，整个替换为下面的测试战役模板。文件位置：`Starsector\mods\GearIndustry\data\missions\GearIn_test\`。
 
@@ -128,9 +112,41 @@ GearIn_test
 
 **包名必须是 `data.missions.GearIn_test`**—— 这是游戏按战役 ID 写死的类名 (`data.missions.<mission_id>.MissionDefinition`)，不是教程的命名偏好**，不能**改成 `data.scripts.gearin.*` 之类自己的包。
 
-包名不符时，点击战役会抛出 `Problem loading class` (见 "战役出现但点击时报错无法进入" 故障条目)。
+包名不符时，点击战役会抛出 `Problem loading class`。
 
 :::
+
+模板做了三件事：
+
+- `initFleet(FleetSide.PLAYER, "SIM", FleetGoal.ATTACK, false, 5)` 初始化用户舰队 (`"SIM"` 是舰船自动命名前缀，末尾的 `5` 是初始指挥点数)；对 `ENEMY` 侧同样初始化。
+- 遍历 `Global.getSettings().getAllVariantIds()`，把 **hull ID 以 `GearIn_` 开头、不是战机、且 ID 不以 `mission_` 开头**的装配全部加入用户舰队。`mission_` 前缀正是任务导出装配的 ID 格式，跳过它们可以避免把旧导出混进来。
+- 添加一个敌方空间站 (`remnant_station2_Standard`，原版装配)，再布置地图、星云、点位和小行星带。
+
+**两个替换位点**：如果您想创建第二个测试战役，只需把包名 `data.missions.GearIn_test` 换成新 ID，并把 `prefix` 换成您的前缀。模板不引用任何本 MOD 的私有 ID，因此新战役无需修改其他代码。
+
+模板替换完毕后即可直接使用，无需后期修正。部署后的战斗画面如下图所示，用户舰队自动列出本 MOD 的所有舰船：
+
+![测试战役中自动列出的 MOD 舰船](./mission_test.png "mission_test.png")
+
+## 完整最小例
+
+注册行写入 `data/missions/mission_list.csv`；战役描述与文本写入 `data/missions/GearIn_test/` 下的 `descriptor.json`、`mission_text.txt`；`MissionDefinition` 类源文件写入同一目录 (包名 `data.missions.GearIn_test`)。
+
+```csv
+mission
+GearIn_test
+```
+
+```json
+{
+	"title": "一次好买卖",
+	"difficulty": "简单",
+	"icon": "icon.jpg",
+	"background": "graphics/backgrounds/background4.jpg"
+}
+```
+
+::: details 完整成品：MissionDefinition
 
 ```java
 package data.missions.GearIn_test;
@@ -211,19 +227,9 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 }
 ```
 
-模板做了三件事：
+:::
 
-- `initFleet(FleetSide.PLAYER, "SIM", FleetGoal.ATTACK, false, 5)` 初始化用户舰队 (`"SIM"` 是舰船自动命名前缀，末尾的 `5` 是初始指挥点数)；对 `ENEMY` 侧同样初始化。
-- 遍历 `Global.getSettings().getAllVariantIds()`，把 **hull ID 以 `GearIn_` 开头、不是战机、且 ID 不以 `mission_` 开头**的装配全部加入用户舰队。`mission_` 前缀正是任务导出装配的 ID 格式，跳过它们可以避免把旧导出混进来。
-- 添加一个敌方空间站 (`remnant_station2_Standard`，原版装配)，再布置地图、星云、点位和小行星带。
-
-**两个替换位点**：如果您想创建第二个测试战役，只需把包名 `data.missions.GearIn_test` 换成新 ID，并把 `prefix` 换成您的前缀。模板不引用任何本 MOD 的私有 ID，因此新战役无需修改其他代码。
-
-模板替换完毕后即可直接使用，无需后期修正。部署后的战斗画面如下图所示，用户舰队自动列出本 MOD 的所有舰船：
-
-![测试战役中自动列出的 MOD 舰船](./mission_test.png "mission_test.png")
-
-### 验证方案
+## 验证方案
 
 前置数据：`mod_info.json`[C1-S1]、船体 `GearIn_artizan`[C1-S2]、武器 `GearIn_durin`[C1-S5]、本节的 `data/missions/mission_list.csv`、`data/missions/GearIn_test/`(descriptor.json、mission_text.txt、icon、`MissionDefinition` 类源文件) 与 `data/variants/GearIn_artizan_combat.variant`。
 

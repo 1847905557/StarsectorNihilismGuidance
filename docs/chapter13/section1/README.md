@@ -379,7 +379,7 @@ Starsector\mods\GearIndustry\
     // BarEventManager 实例与 creator 列表存放在 sector memory($core_genericBarEventManager)，
     // 随存档保存；hasEventCreator 即持久化门控 (原版 addBarEvents 与成熟实例同款写法)。
     // 原版 CoreLifecyclePluginImpl.onGameLoad 先于 MOD 插件执行 (vanilla 固定最先)，
-    // 因此 getInstance() 不会返回 null(注册时机见 "注册时出现空指针异常" 故障条目)。
+    // 因此 getInstance() 不会返回 null。
     BarEventManager manager = BarEventManager.getInstance();
     if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
         manager.addEventCreator(new GearInBarEventCreator());

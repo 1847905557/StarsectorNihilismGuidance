@@ -133,48 +133,6 @@ gear_industry
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
 
-## 验证方案
-
-1. 构建示例 MOD，确认两个探针类能够针对当前安装的 `ExerelinCore.jar` 编译。
-2. 启动新档，确认 GearIn 出现在势力选择列表，并记录探针输出。
-3. 触发至少一次外交关系变化，核对独立势力与海盗关系没有越过配置边界。
-4. 查看联盟界面，确认实际联盟状态与探针的 `alliedWithHegemony` 输出一致。
-
-预期结果：
-
-- `NexConfig.getFactionConfig` 返回 `factionId=gear_industry`；
-- 新档列表出现 GearIn，外交事件可以选择它；
-- 独立势力与海盗关系始终处于各自边界内；
-- 日志出现 `playable=true`、`diplomacy=true` 和三项 alignment；
-- 当前联盟查询与联盟界面显示一致。
-
-## 故障分析
-
-- **JSON 可解析但新档列表没有 GearIn**：`mod_factions.csv` 中的势力 ID 与 Starsector ID 或 JSON 文件名不一致。
-
-    - **解决方案**：逐字统一三处名称并重启游戏。
-
-- **读取到 `neutral` 默认配置**：CSV 缺少注册行，或大小写与配置文件名不一致。
-
-    - **解决方案**：读取 `config.factionId` 确认实际命中的身份，修正后重新创建新档。
-
-- **外交关系始终不变化**：`disableDiplomacy` 关闭了外交，或 `noRandomizeRelations` 阻止了开局随机化。
-
-    - **解决方案**：按目标行为调整对应字段。
-
-- **联盟始终被拒绝**：关系满足但 alignment 不兼容，或其他准入条件未通过。
-
-    - **解决方案**：先用 `getBaseAlignments()` 确认配置，再逐项检查联盟条件。
-
-## 总结
-
-Nexerelin 势力接入从唯一势力 ID 开始，CSV 行、JSON 文件名和 Java 查询必须一致。初始关系确定开局状态，关系边界约束后续变化，外交特性影响事件选择，alignment 则参与联盟判断。运行期探针应同时证明配置身份和关键字段，避免把静默回退误判为接入成功。
-
-## 建议参考项
-
-- `NexConfig.getFactionConfig`：读取合并后的势力配置；
-- `NexFactionConfig`：势力外交与战略字段；
-- `AllianceManager.areFactionsAllied`：查询当前联盟关系。
 ::: details 完整成品：GearInNexCompat
 
 ```java
@@ -279,3 +237,46 @@ public final class GearInNexDiplomacyProbe {
 ```
 
 :::
+
+## 验证方案
+
+1. 构建示例 MOD，确认两个探针类能够针对当前安装的 `ExerelinCore.jar` 编译。
+2. 启动新档，确认 GearIn 出现在势力选择列表，并记录探针输出。
+3. 触发至少一次外交关系变化，核对独立势力与海盗关系没有越过配置边界。
+4. 查看联盟界面，确认实际联盟状态与探针的 `alliedWithHegemony` 输出一致。
+
+预期结果：
+
+- `NexConfig.getFactionConfig` 返回 `factionId=gear_industry`；
+- 新档列表出现 GearIn，外交事件可以选择它；
+- 独立势力与海盗关系始终处于各自边界内；
+- 日志出现 `playable=true`、`diplomacy=true` 和三项 alignment；
+- 当前联盟查询与联盟界面显示一致。
+
+## 故障分析
+
+- **JSON 可解析但新档列表没有 GearIn**：`mod_factions.csv` 中的势力 ID 与 Starsector ID 或 JSON 文件名不一致。
+
+    - **解决方案**：逐字统一三处名称并重启游戏。
+
+- **读取到 `neutral` 默认配置**：CSV 缺少注册行，或大小写与配置文件名不一致。
+
+    - **解决方案**：读取 `config.factionId` 确认实际命中的身份，修正后重新创建新档。
+
+- **外交关系始终不变化**：`disableDiplomacy` 关闭了外交，或 `noRandomizeRelations` 阻止了开局随机化。
+
+    - **解决方案**：按目标行为调整对应字段。
+
+- **联盟始终被拒绝**：关系满足但 alignment 不兼容，或其他准入条件未通过。
+
+    - **解决方案**：先用 `getBaseAlignments()` 确认配置，再逐项检查联盟条件。
+
+## 总结
+
+Nexerelin 势力接入从唯一势力 ID 开始，CSV 行、JSON 文件名和 Java 查询必须一致。初始关系确定开局状态，关系边界约束后续变化，外交特性影响事件选择，alignment 则参与联盟判断。运行期探针应同时证明配置身份和关键字段，避免把静默回退误判为接入成功。
+
+## 建议参考项
+
+- `NexConfig.getFactionConfig`：读取合并后的势力配置；
+- `NexFactionConfig`：势力外交与战略字段；
+- `AllianceManager.areFactionsAllied`：查询当前联盟关系。

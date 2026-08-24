@@ -2,9 +2,9 @@
 
 本节将简单解释一个代码文件 (严格来说，是 Java 效果类) 的大致形状，并说明如何通过修改一个参数，即可在游戏内观察到装配界面的数值变化。
 
-*本节预期阅读时间：~15 分钟。*
+*本节预期阅读时间：\~15 分钟。*
 
-*本节预期操作时间：~20 分钟 (含首次重启游戏)。*
+*本节预期操作时间：\~20 分钟 (含首次重启游戏)。*
 
 ## 学习目标
 
@@ -50,25 +50,27 @@ public class GearInSpeedBooster extends BaseHullMod {
 }
 ```
 
-这个文件只有五类内容：
+这个文件只有较少的几类内容：
 
-- **`package` 行**：类的存放目录。`data.scripts.gearin.hullmods` 对应 MOD 根下的 `data/scripts/gearin/hullmods/`，文件必须放在该目录下。按模板使用。
+- **`package` 行**：类的存放目录。`data.scripts.gearin.hullmods` 对应 MOD 根下的 `data/scripts/gearin/hullmods/`，文件必须放在该目录下。
 - **`import` 行**：向游戏借用的工具 (日志、船插基类、数值修改器)。按模板使用，不认识的名称不影响本节操作。
-- **`public class GearInSpeedBooster extends BaseHullMod`**：类的名字。两条规则：类名必须与文件名一致 (文件 `GearInSpeedBooster.java` 对应类名 `GearInSpeedBooster`)；`extends BaseHullMod` 表示采用船插的标准模板。按模板使用。
+- **`public class GearInSpeedBooster extends BaseHullMod`**：类的名字。类名必须与文件名一致 (文件 `GearInSpeedBooster.java` 对应类名 `GearInSpeedBooster`)；`extends BaseHullMod` 表示采用船插的标准模板。
 - **`SPEED_PERCENT = 10f`**：本节唯一的参数 —— 速度加成百分比。改为 `50f` 即加成 50%。`f` 是小数标记，`10f` 与 `10.0f` 等价。
-- **方法 `applyEffectsBeforeShipCreation` 及其两行**：按模板使用，方法签名的参数不需要全部理解。方法体内两行各有用途：`modifyPercent(id, SPEED_PERCENT)` 是 "给最大速度加百分之几" 的固定句式；`Global.getLogger(...).info("...")` 向游戏日志写入一行文字 —— 引号内的文字可修改，改成什么，日志里就出现什么。
+- **方法 `applyEffectsBeforeShipCreation` 及其两行**：方法签名的参数不需要全部理解。方法体内两行各有用途：`modifyPercent(id, SPEED_PERCENT)` 是 "给最大速度加百分之几" 的固定句式；`Global.getLogger(...).info("...")` 向游戏日志写入一行文字 —— 引号内的文字可修改，改成什么，日志里就出现什么。**一般来说不会随便写日志，这里仅作演示**。
 
 ::: info 最小形态
 
-一个能生效的船插效果类，最小形态是 "一个类 + 一个方法 + 一个参数"。继承、对象、方法签名的完整含义本节不展开 —— 它们不影响本节操作。
+一个船插效果，在最简陋的情况下只需要 "一个类 + 一个方法 + 一个参数" 就能起效。
+
+继承、对象、方法签名的完整含义本节不展开讲解。
 
 :::
 
 ## 注册船插数据行
 
-游戏不会自动加载未注册的类。船插的登记位置是 `data/hullmods/hull_mods.csv`—— 在 MOD 根目录建立该文件，写入以下两行 (第一行是表头；原版存在同名文件，游戏合并读取)：
+游戏不会自动加载未注册的类。船插的登记位置是 `data/hullmods/hull_mods.csv`—— 在 MOD 根目录建立该文件，写入以下两行 (第一行是表头)：
 
-```text
+```text {2}
 name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
 加速器,GearIn_speed_booster,0,,,engines,引擎,1000,TRUE,,,3,6,9,12,data.scripts.gearin.hullmods.GearInSpeedBooster,"提高舰船最大速度 10%。","提高最大速度。",,
 ```
@@ -80,15 +82,23 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 - **`script` 列**：类的完整名。这就是注册：游戏在数据中读到这个类名，需要时加载它。类名必须与文件中的 `class GearInSpeedBooster` 一字不差。
 - **`desc` 列**：装配界面显示的描述文字。引号内的文字可修改
 
+::: warning 四档 cost 缺一不可
+
+`cost_*` 四列之一留空将直接导致游戏报错。填 `0` 是合法的 (表示免费)。
+
+:::
+
 ## Java 中参数的写法
 
 - **小数带 `f`**：`10f`、`0.5f`、`3.14f`。游戏数值几乎都是浮点数，写数字时带 `f` 结尾是固定习惯。
 - **`modifyPercent` 加的是百分比**：`modifyPercent(id, 10f)` = 最大速度 +10%。
-- **`modifyFlat` 加的是固定值**：`modifyFlat(id, 50f)` = 直接 +50 单位/秒；本页后面的示例使用这种写法。
+- **`modifyFlat` 加的是固定值**：`modifyFlat(id, 50f)` = 直接 +50 单位/秒；本页后面有使用这种写法的示例。
 
 ::: warning 修改后无变化时的排查顺序
 
-① 文件保存在 `gear_in` 的 `data/scripts/...` 下；② 游戏确实重启过；③ 装配界面确实安装了船插。三项确认后仍无变化，见下方故障分析。
+文件保存在 `gear_in` 的 `data/scripts/...` 下、游戏确实重启过、装配界面确实安装了船插 —— 三项确认后仍无变化，见下方故障分析。
+
+虽然，最常见的问题应该是文件没保存。
 
 :::
 
@@ -130,13 +140,17 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
     - **解决方案**：确认文件属于 `gear_in` 的 `GearInSpeedBooster.java` 并重启。
 
-- **船插已装但数值没有变化**：观察对象错误时 (tooltip 恒为 desc 列文本的 10%，参数修改只反映在统计面板与游戏内数值)，差异容易被忽略。
-
-    - **解决方案**：用装配界面的速度数值对比安装前后。
-
 - **日志文字没出现**：日志级别过滤或搜索词不对时，游戏内行为可以正常而搜索不到完整句子。
 
     - **解决方案**：验证前清空 `starsector.log`，再搜索稳定标识 `GearIn_speed_booster`。
+
+- **加载中断并报告 `JSONException`**：必填列缺失或某个 `cost_*` 留空会破坏数据行。
+
+    - **解决方案**：补齐四档数字后重启。
+
+- **加载中断并报告 `Duplicate key`**：同一文件内存在重复 `id`。
+
+    - **解决方案**：为每行保留唯一 ID 并重启。
 
 ## 总结
 

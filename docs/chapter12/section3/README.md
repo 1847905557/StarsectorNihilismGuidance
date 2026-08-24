@@ -49,11 +49,11 @@
 
 | 环节 | 文件或 API | 行为 |
 |---|---|---|
-| 注册 | `SectorAPI.registerPlugin(CampaignPlugin)`(`com.fs.starfarer.api.campaign.SectorAPI`) | 写入插件登记表 (`addPlugin`，去重规则见下行) |
+| 注册 | `SectorAPI.registerPlugin(CampaignPlugin)`(`com.fs.starfarer.api.campaign.SectorAPI`) | 写入插件登记表 (`addPlugin`) |
 | 去重 | 插件登记表 `addPlugin` | 若 `getId()` 非 `null`：先 `removePlugin(getId())` 再追加 —— **后注册的同 id 插件静默顶掉先注册者**；`getId()` 为 `null` 则不去重、直接追加 |
 | 注销 | `SectorAPI.unregisterPlugin(String pluginId)`(`com.fs.starfarer.api.campaign.SectorAPI`) | 按 id 移除**第一个**匹配项；id 不匹配则什么都不做 |
 | 存储 | 插件登记表 | 非 transient 插件随存档序列化、读档恢复；transient 插件写档时被过滤、不进存档 —— **这就是 transient 与非 transient 的存档边界** |
-| 竞争 | 插件登记表的裁决逻辑 | 所有 picker 共用的裁决器 (见 "竞争裁决与优先级") |
+| 竞争 | 插件登记表的裁决逻辑 | 所有 picker 共用的裁决器 |
 | 聚合入口 | `SectorAPI.getPluginPicker()`(`com.fs.starfarer.api.campaign.SectorAPI`，返回 `PluginPickerAPI`) | 公开暴露 6 个聚合 picker：`pickFleetStubConverter` ×2、`pickImmigrationPlugin`、`pickAICoreAdminPlugin`、`pickAICoreOfficerPlugin`、`pickFleetInflater`(`com.fs.starfarer.api.campaign.PluginPickerAPI`)；其余 picker 由引擎内部调用 |
 
 注册的合法时机：**必须**在生涯引擎建立之后 ——`onGameLoad` / `onNewGame` 回调里 (`Global.getSector()` 已可用)。
@@ -70,7 +70,7 @@
 
 transient 插件的注册禁止挂进一次性检查
 
-首次进入检查在开新档时放行并完成注册；首次自动存档后 transient 实例被 `writeReplace` 过滤，下次读档时检查标记已写入、注册不再执行 —— 插件从此永久消失且无任何报错。这是与脚本注册策略最显著的差异：脚本要一次性检查、transient 插件不能依赖它 (见 "规则强度")。
+首次进入检查在开新档时放行并完成注册；首次自动存档后 transient 实例被 `writeReplace` 过滤，下次读档时检查标记已写入、注册不再执行 —— 插件从此永久消失且无任何报错。这是与脚本注册策略最显著的差异：脚本要一次性检查、transient 插件不能依赖它。
 
 为什么默认 transient
 
@@ -107,7 +107,7 @@ transient 插件的注册禁止挂进一次性检查
 
 "what gets picked when multiple plugins have the same priority is undefined"。
 
-实现是稳定排序 (`Collections.sort`)+ 取最后一项，因此并列时**列表靠后者胜出**、列表顺序取决于注册时机 —— 这是实现观察，不是约定，**禁止依赖** (见 "规则强度")。
+实现是稳定排序 (`Collections.sort`)+ 取最后一项，因此并列时**列表靠后者胜出**、列表顺序取决于注册时机 —— 这是实现观察，不是约定，**禁止依赖**。
 
 ### PickPriority 优先级阶梯速查表
 
@@ -200,7 +200,7 @@ Global.getSector().registerPlugin(new GearInCampaignPlugin());
 
 在 `GearInCampaignPlugin` 中覆写身份与存档策略。`getId()` 参与全局去重，必须使用 MOD 前缀。
 
-```java
+```java {3}
 @Override
 public String getId() {
     return "GearIn_CampaignPlugin";
@@ -218,7 +218,7 @@ public boolean isTransient() {
 
 在 `pickInteractionDialogPlugin()` 中分别检查舰队势力与市场势力。其余实体返回 `null`，明确把选择权留给原版。
 
-```java
+```java {12}
 if (interactionTarget instanceof CampaignFleetAPI fleet
         && fleet.getFaction() != null
         && DEMO_FACTION_ID.equals(fleet.getFaction().getId())) {
@@ -239,7 +239,7 @@ return null;
 
 在 `updateGlobalFacts()` 中只使用传入的 `MemoryAPI`。过期时间设为 0，键使用 MOD 专属前缀。
 
-```java
+```java {3}
 @Override
 public void updateGlobalFacts(MemoryAPI memory) {
     memory.set("$gearIn_demoFact", true, 0f);
@@ -268,16 +268,16 @@ public void optionSelected(String optionText, Object optionData) {
 
 ## 组装生涯插件实现
 
-约束记下之后动手：本节示例在累计工程的既有布局与 `GearInModPlugin`(前置单元) 之上新增两个同包类，位于 `src\data\scripts\gearin\campaign\`，不新增任何数据文件、除注册调用点片段外不新增注册项：
+约束记下之后动手：本节示例在累计工程的既有布局与 `GearInModPlugin`(前置单元) 之上新增两个同包类，位于 `src/data/scripts/gearin/campaign\`，不新增任何数据文件、除注册调用点片段外不新增注册项：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\campaign\
+│   └── data/scripts/gearin/campaign\
 │       ├── GearInCampaignPlugin
 │       └── GearInInteractionDialog
 └── jars\
@@ -287,7 +287,7 @@ Starsector\mods\GearIndustry\
 
 **角色**：生涯插件 —— 继承 `BaseCampaignPlugin`，只覆写 `getId` / `isTransient` / `pickInteractionDialogPlugin` / `updateGlobalFacts`。
 
-**绑定**：注册表 (`SectorAPI.registerPlugin`，注册调用点片段见下)。`isTransient()` 返回 `true`，数据不进存档，必须由调用点在每次读档后重新注册；`getId()` 返回稳定非 `null` 值，重复注册被按 id 去重、只会替换旧实例。
+**绑定**：注册表 (`SectorAPI.registerPlugin`)，注册调用点在 `GearInModPlugin.onGameLoad` 内。`isTransient()` 返回 `true`，数据不进存档，必须由调用点在每次读档后重新注册；`getId()` 返回稳定非 `null` 值，重复注册被按 id 去重、只会替换旧实例。
 
 **picker 与 facts**：`pickInteractionDialogPlugin` 对 "齿轮工业" 势力的两类实体命中：
 
@@ -312,7 +312,7 @@ Starsector\mods\GearIndustry\
 
 读 `Global.getSector().getMemory()`—— **这次读取本身就会触发全插件 (含 `GearInCampaignPlugin`) 的 `updateGlobalFacts`**，所以显示的值必然反映 "已注册 + facts 生效" 两个事实。
 
-这里只读不写，不构成递归 (递归规则见 "规则强度")。
+这里只读不写，不构成递归。
 
 对应关系：
 
@@ -340,13 +340,13 @@ Starsector\mods\GearIndustry\
     Global.getLogger(GearInModPlugin.class).info("GearIn campaign plugin registered");
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用前置单元的编译链路)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用前置单元的编译链路)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含两个 class 条目 (可用 `jar tf` 核对)：
+产物 `jars/GearIndustry.jar` 应包含两个 class 条目 (可用 `jar tf` 核对)：
 
 - `data/scripts/gearin/campaign/GearInCampaignPlugin.class`
 - `data/scripts/gearin/campaign/GearInInteractionDialog.class`
@@ -376,9 +376,9 @@ return new PluginPick<>(plugin, PickPriority.MOD_SPECIFIC);
 
 ## 验证方案
 
-前置数据：累计工程 (MOD 骨架、势力 `gear_industry`、星系生成器、`GearInModPlugin`，见前置知识)＋本节两个类与注册调用点片段。
+前置数据：累计工程 (MOD 骨架、势力 `gear_industry`、星系生成器、`GearInModPlugin`)＋本节两个类与注册调用点片段。
 
-1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `GearInCampaignPlugin.class` 与 `GearInInteractionDialog.class`。
+1. 游戏构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `GearInCampaignPlugin.class` 与 `GearInInteractionDialog.class`。
 2. 注册与 picker：新建生涯，确认 `starsector.log` 出现 `GearIn campaign plugin registered`；进入齿轮星系点击齿轮工业行星，确认弹出演示对话框且事实显示 `= true`。
 3. 放弃路径：点击原版势力行星/空间站/舰队/跳跃点，确认打开原版对话。
 4. 读档：保存后读档，确认注册日志重现、演示对话框仍在。
@@ -386,8 +386,8 @@ return new PluginPick<>(plugin, PickPriority.MOD_SPECIFIC);
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInCampaignPlugin.class` 与 `data/scripts/gearin/campaign/GearInInteractionDialog.class`。
-- **注册**：新建生涯 (或读档) 后 `starsector.log` 出现一行 `GearIn campaign plugin registered`(来自调用点片段)；读档后再次出现同一行 (transient 插件每次读档重新注册，见 "生命周期与存档边界")。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInCampaignPlugin.class` 与 `data/scripts/gearin/campaign/GearInInteractionDialog.class`。
+- **注册**：新建生涯 (或读档) 后 `starsector.log` 出现一行 `GearIn campaign plugin registered`(来自调用点片段)；读档后再次出现同一行 (transient 插件每次读档重新注册)。
 - **picker 命中**：进入齿轮星系 (累计工程生成的齿轮工业系统)，点击任一齿轮工业势力的行星 —— 弹出 `GearIn demo dialog`：
     - 第一行显示 `routed by pickInteractionDialogPlugin() with PickPriority.MOD_SPECIFIC` 与目标名；
     - 第二行显示 `Global fact [$gearIn_demoFact] = true`。

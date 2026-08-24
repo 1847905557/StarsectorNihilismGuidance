@@ -59,8 +59,8 @@
 
 - **`id + type` 两列合成查找键**，`type` 是枚举名、区分大小写；`id` 或 `type` 为空的行被静默跳过。
 - **没有 "战机联队 (FIGHTER\_WING)" 类型**：战机复用其 hull 的 `SHIP` 行 (战斗对象描述的基础讲解已详述)。
-- **船插、市场条件、特殊物品不在 descriptions.csv 里**：它们的描述写在各自 CSV 的 `desc` 列 (见 "非 descriptions.csv 描述来源速查表")。
-- `RESOURCE`/`FACTION`/`TERRAIN`/`ASTEROID`/`ACTION_TOOLTIP`/`GALLERY` 与武器、系统一样，键**锁定在对象 ID 上，无法另起别名**；`PLANET`、`SHIP` 与 `CUSTOM` 可以自由命名 ——`PLANET` 经行星类型的 `descriptionId` (缺省等于类型键，多个类型可共享同一键，见下)、`SHIP` 经 `.ship` 的 `descriptionId`、`CUSTOM` 键完全自取。
+- **船插、市场条件、特殊物品不在 descriptions.csv 里**：它们的描述写在各自 CSV 的 `desc` 列。
+- `RESOURCE`/`FACTION`/`TERRAIN`/`ASTEROID`/`ACTION_TOOLTIP`/`GALLERY` 与武器、系统一样，键**锁定在对象 ID 上，无法另起别名**；`PLANET`、`SHIP` 与 `CUSTOM` 可以自由命名 ——`PLANET` 经行星类型的 `descriptionId` (缺省等于类型键，多个类型可共享同一键)、`SHIP` 经 `.ship` 的 `descriptionId`、`CUSTOM` 键完全自取。
 
 ## CSV 转义规则 (必须遵守的规则)
 
@@ -134,7 +134,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 - 键：行星类型键。`data/config/planets.json` 的每个类型对象可写 `descriptionId`，缺省等于类型键本身 (如 `terran`、`gas_giant`)；多个类型可共享同一个 `descriptionId`(原版若干冰冻/荒漠类类型共用 `frozen`、`barren`、`desert` 等键)。运行期 `PlanetAPI.setDescriptionIdOverride()` 可以逐颗行星换键。
 - 使用方：行星悬停 tooltip 与行星详情面板显示 text1。
 - 原版参考行：`gas_giant,PLANET,"Primarily composed of hydrogen and helium gases. ..."`。
-- 行星若设置了 `customDescriptionId`(`CUSTOM` 类型)，tooltip 与详情面板会优先显示 `CUSTOM` 行 (见下)。
+- 行星若设置了 `customDescriptionId`(`CUSTOM` 类型)，tooltip 与详情面板会优先显示 `CUSTOM` 行。
 
 ### ASTEROID：小行星描述
 
@@ -189,22 +189,22 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 
 | 对象 | 描述所在文件 | 使用方 |
 |---|---|---|
-| 船插 (hullmod) | `data/hullmods/hull_mods.csv` 的 `desc` 列 (该文件的列结构已另行讲解) | `HullModSpecAPI.getDescription(HullSize)`(`%s` 代换船体尺寸) |
+| 船插 (hullmod) | `data/hullmods/hull_mods.csv` 的 `desc` 列 (该文件的列结构已另行讲解) | `HullModSpecAPI.getDescription(HullSize)`(`%s` 代换船体等级) |
 | 市场条件 (condition) | `data/campaign/market_conditions.csv` 的 `desc` 列 | 市场界面条件 tooltip |
 | 特殊物品 (special item) | `data/campaign/special_items.csv` 的 `desc` 列 | 货舱 tooltip 由物品插件渲染 (`BaseSpecialItemPlugin.createTooltip` → `spec.getDesc()`) |
-| 商品 (commodity) | 见上文：显示文本以 `RESOURCE` 行为准，commodities.csv 的 `desc` 列不被读取 | 货舱/交易 tooltip |
+| 商品 (commodity) | 显示文本以 `RESOURCE` 行为准，commodities.csv 的 `desc` 列不被读取 | 货舱/交易 tooltip |
 
 这些 CSV 的 `desc` 列由同一个 CSV 解析器解析，同样适用本节的转义规则。
 
 ## 示例行要点
 
-要点：
+写示例行时覆盖三类写法：
 
-- 前三行分别演示规则 1/2/3：含英文逗号、含双引号 (`""` 转义)、多行 (空行分段)，全部用引号包络，**列数与表头一致 (8 列)**。
-- 第四行演示武器署名：text2 以 `-` 开头；武器 tooltip 读取该行时，text1 第一段会斜体渲染并附加署名。
-- 第五行连接 [C3-S1] 的势力 ID。`RESOURCE`、`PLANET` 与 `CUSTOM` 使用 [C3-S3] 已经投放的原版对象进行观察，教程不重复定义原版键。
-- 对象键的关系保持一致：`RESOURCE` 使用商品 ID，`PLANET` 使用类型的 `descriptionId`，`FACTION` 使用势力 ID，`CUSTOM` 使用实体的 `customDescriptionId`。
-- 原版参考行 (仅观察不修改)：
+- 含英文逗号、含双引号 (`""` 转义)、多行 (空行分段) 的文本全部用引号包络，列数与表头一致 (8 列)。
+- 武器署名：text2 以 `-` 开头；武器 tooltip 读取该行时，text1 第一段会斜体渲染并附加署名。
+- 键与对象的关系：`RESOURCE` 使用商品 ID，`PLANET` 使用类型的 `descriptionId`，`FACTION` 使用势力 ID，`CUSTOM` 使用实体的 `customDescriptionId`。示例用 [C3-S1] 注册的 `gear_industry` 连接 `FACTION` 行；`RESOURCE`、`PLANET` 与 `CUSTOM` 使用 [C3-S3] 已经投放的原版对象进行观察，教程不重复定义原版键。
+
+原版参考行 (仅观察不修改)：
 
 ```csv
 supplies,RESOURCE,"Assorted supplies required by ships and crew, ranging from rations and uniforms to munitions, spare parts, microfab feedstock, and prefab components.",,,,,

@@ -14,7 +14,7 @@
 - 区分 `addIntel` 与 `queueIntel` 的登记时机 (是否经过通信中继可见性检查)，并解释情报集合随存档保存的后果；
 - 写一个 `BaseIntelPlugin` 子类与一条 `MessageIntel` 纯消息，走完创建、登记、可见、推进、移除的完整流程；
 - 复述交互对话框的插件生命周期 (`init` → `optionSelected` → `advance` → `backFromEngagement` → `dismiss`) 与常用入口，并验证 `showInteractionDialog` 的返回值可能为 `false`；
-- 从症状定位故障 (见 "故障分析" 节)，排查时沿数据文件 → 注册入口 → 运行使用方 → 可观察结果四个位置复核。
+- 从症状定位故障，排查时沿数据文件 → 注册入口 → 运行使用方 → 可观察结果四个位置复核。
 
 ## 前置知识
 
@@ -226,14 +226,14 @@ if (OPTION_FACTION.equals(optionData)) {
 
 在既有 MOD 工程 (布局与插件入口 `GearInModPlugin`) 之上，沿用 [C9-S5] 定义的抽象基类 `GearInOneShotScript`，本节在其上新增两个服务演示脚本与两个插件类，共五个类。一文件一角色，不新增任何资源文件；两个脚本在 `onGameLoad` 各自注册，首个 `advance()` 各执行一次演示并自停：
 
-```text
-Starsector\mods\GearIndustry\
+```text {9-12}
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\campaign\
+│   └── data/scripts/gearin/campaign\
 │       ├── GearInOneShotScript          # 沿用 C9-S5 的抽象基类 (不参与注册)
 │       ├── GearInIntelServicesScript    # 本节新增 (情报段脚本)
 │       ├── GearInDialogServicesScript   # 本节新增 (对话框段脚本)
@@ -308,13 +308,13 @@ Starsector\mods\GearIndustry\
 
 ### 构建命令
 
-在 `Starsector\mods\GearIndustry\` 执行：
+在 `Starsector/mods/GearIndustry/` 执行：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含五个类的 `.class` 条目 (可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含五个类的 `.class` 条目 (可用 `jar tf` 核对)。
 
 ## 关键故障实验：对话框选项可以点击但没有响应
 
@@ -333,7 +333,7 @@ public void optionSelected(String optionText, Object optionData) {
 
 **局部修正片段：**
 
-```java
+```java {3}
 // 修正片段
 public void optionSelected(String optionText, Object optionData) {
 	if (OPTION_FACTION.equals(optionData)) {
@@ -352,7 +352,7 @@ public void optionSelected(String optionText, Object optionData) {
 
 前置数据：既有 MOD 工程：`mod_info.json`、构建脚本与插件入口 `GearInModPlugin`[C6-S2]，以及脚本注册判断模式 [C9-S1]、本节五个类与调用点片段中的两个 `addScript` 注册块 (各带独立的 `REGISTER_MARK` 键)。
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含五个类的 `.class` 条目。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含五个类的 `.class` 条目。
 2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按顺序出现两个脚本的日志行 (情报段 ×3、对话框段 1 行)，且**没有**旧复合演示的收尾 `done` 行。
 3. **消息区**：演示帧后左下消息区出现两条 `GearIn` 消息 —— 点击第一条跳转 Intel 页签 (`addIntel` 的自动发布消息)、点击第二条无跳转 (`MessageIntel` 纯消息)。
 4. **对话框**：游戏暂停并弹出演示对话框；依次点 "查看势力关系"(文本面板追加关系行、日志 `option selected: faction`)、"查看舰队货物"(追加货物行、日志 `option selected: cargo`)。
@@ -406,7 +406,7 @@ public void optionSelected(String optionText, Object optionData) {
 
 ## 总结
 
-本节把两个生涯服务入口做成两条可复用链，并在完整最小例里组合验证：情报经 `getIntelManager()` 登记并随存档存活，对话框经 `showInteractionDialog()` 打开并受其返回值约束。两条链都挂在 `REGISTER_MARK` 一次性注册判断与 `Global` 阶段语义这套底座上。
+本节把两个生涯服务入口做成两条可复用链，并在示例里组合验证：情报经 `getIntelManager()` 登记并随存档存活，对话框经 `showInteractionDialog()` 打开并受其返回值约束。两条链都挂在 `REGISTER_MARK` 一次性注册判断与 `Global` 阶段语义这套底座上。
 
 记忆要点：
 

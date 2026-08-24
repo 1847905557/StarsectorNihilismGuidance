@@ -17,7 +17,7 @@
 - 说明目标完成检测的帧推进轮询、对话驱动与时限三通道，以及 `ConditionChecker` 家族和 `setStageOn*` / `connectWith*` 的连接声明方式；
 - 区分单任务触发器链与跨任务全局链两种事件链形态，并说明各自的注册与回写方式；
 - 从零编写一个 `HubMissionWithBarEvent` 任务 (本节 `GearInHubMission`)，用一条 `bar_events.csv` 行和六条 `rules.csv` 规则把它接进酒吧，并验证从出现、接取、推进到结算的完整流程；
-- 根据症状定位枢纽任务的典型故障 (见 "故障分析")。
+- 根据症状定位枢纽任务的典型故障。
 
 ## 前置知识
 
@@ -409,13 +409,13 @@ rules 侧的 `$gearInHub_ref` / `$gearInHub_stage` / `gearInHub_blurbBar` / `gea
 
 ### 必须与禁止规则速查表
 
-**必须/禁止 (当前基线仍有效，违反后的可观察结果附上；出处见文末 "建议参考项")**：
+**必须/禁止 (当前基线仍有效，违反后的可观察结果附上)**：
 
 | 规则 | 强度依据 | 违反后的可观察结果 |
 |---|---|---|
 | 接受前**必须**调用 `setStartingStage(id)` | `accept` 对 null 直接抛 `RuntimeException("startingStage can not be null. Use setStartingStage()")` | 用户接受任务瞬间启动中止 (异常沿规则执行链冒泡，日志 ERROR 堆栈指向 `BaseHubMission.accept`) |
 | `create()` 里注册的副作用**必须**能回滚：实体/人物/标志经基类方法 (`spawn*` / `makeImportant` / `setFlag` / `set*MissionRef`) 或显式 `changes.add(...)`，结束时由 `abort()` 统一清理 | `EntityAdded.abort` 只移除带 `REMOVE_ON_MISSION_OVER` tag 的实体 | 创建失败或任务结束时实体/人物/标志残留在星区：重复出现、地图永久标记、内存键不清理 |
-| `setStageOnMemoryFlag` / `connectWithMemoryFlag` 的目标内存**必须**与 rules 写标志的作用域一致 | 内存键与作用域语义 (见本节 "完成检测" 节) | 完成标志写到了别处内存：阶段连接永不满足，任务永远卡在当前阶段 (无报错，只差最后一段) |
+| `setStageOnMemoryFlag` / `connectWithMemoryFlag` 的目标内存**必须**与 rules 写标志的作用域一致 | 内存键与作用域语义 | 完成标志写到了别处内存：阶段连接永不满足，任务永远卡在当前阶段 (无报错，只差最后一段) |
 | `beginXxxTrigger` 与 `endTrigger` **必须**成对 | 两条 RuntimeException 原文："Already began a trigger" / "endTrigger() called without a corresponding beginTrigger()" | 任务创建期抛 RuntimeException；缺 end 的触发器永不入列 (动作静默缺失) |
 | 规则侧推进任务**必须**经 `Call $<missionId>_ref updateStage` / `updateData`，不能只写内存标志 | `callEvent` 的 `updateStage` / `updateData` 分支 | 只写 `$flag = true` 不 `updateStage`：`checkStageChangesAndTriggers` 在下一轮轮询 (每 0.09–0.11 游戏天) 仍会检测到，但对话内不立即推进、Intel 不更新 —— 表现为 "对话里说完成了，界面/日志下一帧才变"；依赖即时性的业务 (如立即结算) 会错乱 |
 | 任务实例字段**必须**可随存档序列化 (任务随 `scripts` 列表 XStream 保存的结论见前置知识)；对话句柄等瞬态引用用 `transient` | `BaseHubMission` 已把 `startingStage` / `cargoOnAccept` / `aborted` / `interactionMemory` / `doNotEndMission` 标 `transient` | 保存/读档异常、读档后任务字段指向失效对象、行为错乱 |
@@ -450,7 +450,7 @@ gearInHub,,10,1,30,40,15,20,60,90,data.scripts.gearin.campaign.GearInHubMission
 
 在 `GearInHubMission.create()` 开头处理酒吧任务人，再把任务实例写进人物内存。引用键已被占用时必须放弃本次创建。
 
-```java
+```java {6,7}
 setGiverRank(Ranks.CITIZEN);
 setGiverPost(Ranks.POST_TRADER);
 setGiverFaction(Factions.INDEPENDENT);
@@ -503,7 +503,7 @@ setTimeLimit(Stage.FAILED, MISSION_DAYS, null);
 
 在阶段声明后建立一次性触发器。每个 `begin` 都必须由 `endTrigger()` 入列。
 
-```java
+```java {3,8}
 beginCustomTrigger(new AlwaysTrueChecker(), Stage.RETURN);
 triggerSetGlobalMemoryValue("$gearInHub_enteredReturn", true);
 endTrigger();
@@ -540,19 +540,19 @@ Call $gearInHub_ref updateStage
 
 机制、约束与注册入口都齐了，现在把它们落成一个可以编译、可以进游戏验收的任务类。
 
-在既有 MOD 布局与 `GearInModPlugin` 之上新增一个任务类与两行数据 (`bar_events.csv` 行 + `rules.csv` 片段；数据行见本节 "注册入口与使用方完整流程" 与下方规则片段)：
+在既有 MOD 布局与 `GearInModPlugin` 之上新增一个任务类与两行数据 (`bar_events.csv` 行 + `rules.csv` 片段)：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 │   └── campaign\
-│       ├── bar_events.csv    # 追加一行 (见 "注册入口与消费者闭环" 节)
-│       └── rules.csv         # 追加规则片段 (见下方)
+│       ├── bar_events.csv    # 追加一行
+│       └── rules.csv         # 追加规则片段
 ├── src\
-│   └── data\scripts\gearin\campaign\
+│   └── data/scripts/gearin/campaign\
 │       └── GearInHubMission   # 本节新增 (归本节所有)
 └── jars\
 ```
@@ -584,7 +584,7 @@ Starsector\mods\GearIndustry\
 
 ### bar\_events.csv 行与 rules.csv 片段
 
-`data/campaign/bar_events.csv` 追加一行 (列序与表头一致，见 "注册入口与使用方完整流程")：
+`data/campaign/bar_events.csv` 追加一行 (列序与表头一致)：
 
 ```text
 gearInHub,,10,1,30,40,15,20,60,90,data.scripts.gearin.campaign.GearInHubMission
@@ -620,13 +620,13 @@ Call $gearInHub_ref updateStage","The trader takes the datapad and runs a quick 
 
 分类拼错时 `FireBest` 找不到规则，酒吧选项静默缺失 (无报错、无日志)。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInHubMission.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInHubMission.class`(可用 `jar tf` 核对)。
 
 ## 关键故障实验：任务被接受后立即异常中止
 
@@ -651,10 +651,10 @@ return true;
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与 `GearInModPlugin`[C6-S1] / [C6-S2]、本节 `GearInHubMission`、`bar_events.csv` 行、`rules.csv` 片段、既有 MOD 布局与 `GearInModPlugin`、本节任务类与两行数据 (同上)、同上，每次改动后重建。
+前置数据：既有 MOD 布局与 `GearInModPlugin`[C6-S1] / [C6-S2]、本节 `GearInHubMission`、`bar_events.csv` 行、`rules.csv` 片段，每次改动后重建。
 
-1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`；
-2. 执行 `jar tf jars\GearIndustry.jar` 核对类文件。
+1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`；
+2. 执行 `jar tf jars/GearIndustry.jar` 核对类文件。
 3. 跳过/完成教程后进入酒吧，核对日志与酒吧提示/选项 (事件不是每次都在，受酒吧调度影响，可多进几个市场或等待)；
 4. 点 "Ask about the missing shipment"，核对文本后选 "Accept"；
 5. 前往目标市场与联系人 `$gearInHub_contactName` 对话并走交付规则；
@@ -668,7 +668,7 @@ return true;
 
 预期结果：
 
-- `gradle jar` 以 `BUILD SUCCESSFUL` 结束，`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInHubMission.class`。
+- `gradle jar` 以 `BUILD SUCCESSFUL` 结束，`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInHubMission.class`。
 
     ### 酒吧任务完整流程
 

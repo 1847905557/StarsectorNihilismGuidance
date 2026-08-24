@@ -97,7 +97,7 @@ JSONObject configFromMod = Global.getSettings().loadJSON(
 
 `loadJSON` 返回 `JSONObject`。读取成功只说明文件可以解析，访问字段时仍需判断字段是否存在及类型是否正确：
 
-```java
+```java {4}
 JSONObject services = Global.getSettings().loadJSON(
         "data/config/gear_in/services.json");
 String serviceId = services.getString("serviceId");

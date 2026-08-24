@@ -48,15 +48,15 @@
 | `set(key, value)` | 写入永不过期键 (javadoc："Never expires.")；**清除该键未决过期** |
 | `set(key, value, expire)` | 写入键并设置剩余寿命 (游戏天) |
 | `expire(key, days)` | 重设键的剩余寿命；`days < 0` = 取消过期 |
-| `unset(key)` | 主动移除键 (含 required 级联，见下) |
+| `unset(key)` | 主动移除键 (含 required 级联) |
 | `contains(key)` | 区分 "键缺失" 与 "值为 null/false" 的唯一可靠入口 |
-| `get(key)` / `getString` / `getFloat` / `getBoolean` / `getLong` / `getInt` | 按类型读取；缺失键默认值见下 |
+| `get(key)` / `getString` / `getFloat` / `getBoolean` / `getLong` / `getInt` | 按类型读取 |
 | `getVector2f` / `getEntity` / `getFleet` | 类型化读取，非该类型返回 null |
 | `is(key, value)` | `contains` 且值相等 (float 精确比较) |
 | `between(key, min, max)` | 闭区间 `[min, max]`；缺失返回 false |
 | `getKeys()` / `getExpire(key)` | 全部键集合 / 剩余游戏天 (无过期 -1) |
-| `advance(amount)` | **引擎驱动** (见 "谁推进记忆")，MOD 代码不要手动调用 |
-| `addRequired` / `removeRequired` / `getRequired` / `removeAllRequired` | required 依赖清理 (见下) |
+| `advance(amount)` | **引擎驱动**，MOD 代码不要手动调用 |
+| `addRequired` / `removeRequired` / `getRequired` / `removeAllRequired` | required 依赖清理 |
 | `clear()` / `isEmpty()` | 清空全部键 (含过期与依赖表)/ 判空 |
 
 缺失键的读取默认值 (`Memory` 类)：
@@ -72,7 +72,7 @@
 
 ### 记忆键：`$` 前缀必须遵守的规则
 
-公开面里第一条必须遵守的约束是键名前缀。`Memory.set` 的两个重载都先检查 `key.startsWith("$")`，不满足直接抛 `RuntimeException("Key " + key + " should start with $")`。违反后果见 "规则强度" 表。
+公开面里第一条必须遵守的约束是键名前缀。`Memory.set` 的两个重载都先检查 `key.startsWith("$")`，不满足直接抛 `RuntimeException("Key " + key + " should start with $")`。
 
 Java 侧写键漏 `$` 是头号新手错误。
 
@@ -134,7 +134,7 @@ devMode 下 `DumpMemory` 显示键列表与 `(e=<剩余天数>)`；`getExpire` �
 3. 槽位名不在 memoryMap 里 → **同样回落 `local`**，用原始串 `$memkey.name` 作键名；
 4. `local` 也不存在 → `RuleException("No memory found for keys: ...")`。
 
-**槽位选择决定键的可见范围**：`$global.xxx` 与 `$xxx`(local) 可能同时存在同名字段，规则读到的是槽位解析的结果 —— 槽位缺失回落 `local` 时**键名保留原始串** `$global.xxx`，不报错，但读的是 local 槽位里的 `$global.xxx` 键；若该键不存在，条件静默不命中 (见 "规则条件静默不命中")。
+**槽位选择决定键的可见范围**：`$global.xxx` 与 `$xxx`(local) 可能同时存在同名字段，规则读到的是槽位解析的结果 —— 槽位缺失回落 `local` 时**键名保留原始串** `$global.xxx`，不报错，但读的是 local 槽位里的 `$global.xxx` 键；若该键不存在，条件静默不命中。
 
 文本 token 替换 (`Misc.replaceTokensFromMemory`) 同样按 memoryMap 槽位展开：`local` 优先、各记忆键按长度降序，替换 `$<memkey>.<key>` 与 `$<key>` 两种形态；
 
@@ -156,7 +156,7 @@ devMode 下 `DumpMemory` 显示键列表与 `(e=<剩余天数>)`；`getExpire` �
 
 写入与高频读取一律用 `getMemoryWithoutUpdate()`。
 
-否则每次调用都触发全部插件 `update*Facts`：性能损耗 + facts 副作用在意外时机发生。这是必须级纪律 (见 "规则强度" 表)。
+否则每次调用都触发全部插件 `update*Facts`：性能损耗 + facts 副作用在意外时机发生。这是必须级纪律。
 
 ### 记忆推进点速查表
 
@@ -213,7 +213,7 @@ javadoc 明确它 "可被不属于存档的类 (`ModPlugin` 或 transient `Campa
 
 `PersistentData` 不得存运行时实体/脚本引用。
 
-读档恢复边界上引用对象状态过期或反序列化异常；只存可序列化值。这是必须级纪律 (见 "规则强度" 表)。
+读档恢复边界上引用对象状态过期或反序列化异常；只存可序列化值。这是必须级纪律。
 
 ## 规则强度速查表
 
@@ -238,19 +238,19 @@ javadoc 明确它 "可被不属于存档的类 (`ModPlugin` 或 transient `Campa
 
 ## 组装 Memory 状态实现
 
-规则面建立后，把它落成可运行的最小例。在既有 MOD 布局 (前置章节 [C6-S1]) 之上新增：六个 Java 类 (本节所有，见 "六类结构与注册位置") 与 `data\campaign\rules.csv` 追加本节前缀 `GearIn_memory_*` 的规则行 (跨单元共享文件，只追加自己的行，同前缀内 id 唯一)。
+规则面建立后，把它落成可运行的最小例。在既有 MOD 布局 (前置章节 [C6-S1]) 之上新增：六个 Java 类 (本节所有) 与 `data/campaign/rules.csv` 追加本节前缀 `GearIn_memory_*` 的规则行 (跨单元共享文件，只追加自己的行，同前缀内 id 唯一)。
 
 不新增其它资源、不修改任何既有文件：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── mod_info.json
 ├── data\
 │   └── campaign\
 │       └── rules.csv                     # 追加本节 GearIn_memory_* 规则行 (本节示例所有权)
 ├── src\
-│   └── data\scripts\gearin\rules\
+│   └── data/scripts/gearin/rules\
 │       ├── GearInMemoryKeys              # 键常量数据类 (8 个记忆键，本节示例所有权)
 │       ├── GearInMemoryWriter            # 记忆写入与读回脚本
 │       ├── GearInPersistentDataCounter   # PersistentData 跨存档计数脚本
@@ -286,7 +286,7 @@ GearIn_memory_leave,DialogOptionSelected,$option == GearIn_memory_leave,DismissD
 
 ### 配置 Memory 注册位置
 
-六个类之间不互相引用、不依赖注册顺序：全部以**键状态**对齐 (见各类的时序条件说明与 "跨类时序")。
+六个类之间不互相引用、不依赖注册顺序：全部以**键状态**对齐。
 
 #### [GearInMemoryKeys(键常量数据类)]
 
@@ -325,7 +325,7 @@ public final class GearInMemoryKeys {
 
 - 职责：本节 8 个记忆键常量的数据所有权 —— 写入、验证、解析、对话各脚本共用；键值与 rules.csv 条件/文本逐字一致 (含 `$` 前缀与大小写)。
 - 注册位置：无注册入口 ——final 工具类 + 私有构造器，同包五个脚本直接引用常量。
-- 联动：`KEY_TAG`(`$GearIn_memory_tag`) 是跨类时序的基准键 (见 "跨类时序")；`KEY_PROBE` 的 "写入后立即读回" 约束见写入脚本。
+- 联动：`KEY_TAG`(`$GearIn_memory_tag`) 是跨类时序的基准键；`KEY_PROBE` 的 "写入后立即读回" 约束见写入脚本。
 
 #### [GearInMemoryWriter(记忆写入与读回脚本)]
 
@@ -415,7 +415,7 @@ public class GearInMemoryWriter implements EveryFrameScript {
 对应关系：
 
 - 职责：读档首个未暂停帧写入全部记忆键并立即读回验证 (contains / is / between / getExpire / getString / getRequired)，覆盖 sector / player / fleet 三个槽位。
-- 注册位置：`GearInModPlugin.onGameLoad` 内 `addScript` 注册 (调用点片段见下)。
+- 注册位置：`GearInModPlugin.onGameLoad` 内 `addScript` 注册。
 - 时序角色：首批写入者，无前置条件；probe 键 (expire 0) 的 "写入后立即读回" 必须留在本方法内 —— 跨脚本同帧执行顺序未定义，独立读回可能错过 probe 的存在状态。
 - 值联动：tag 值 `"GearInReady"` 与 "预期结果" 的日志行、对话文本替换逐字一致。
 
@@ -731,21 +731,21 @@ public class GearInMemoryDialog implements EveryFrameScript {
     Global.getSector().addScript(new GearInMemoryDialog());
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用前置章节)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用前置章节)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/rules/` 下六个类的 `.class` 文件 (可用 `jar tf` 核对)；`data\campaign\rules.csv` 是 MOD 数据文件，随 MOD 目录被加载器读取。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/rules/` 下六个类的 `.class` 文件 (可用 `jar tf` 核对)；`data/campaign/rules.csv` 是 MOD 数据文件，随 MOD 目录被加载器读取。
 
-注意示例路径 `Starsector\mods\GearIndustry` 是教程虚构路径，页面内路径互相自洽即可。
+注意示例路径 `mods/GearIndustry` 是教程虚构路径，页面内路径互相自洽即可。
 
 ### 验证 Memory 状态
 
-前置数据：既有 MOD 布局 [C6-S1]\+ `GearInModPlugin`([C6-S2]，含本节调用点片段)、`data\campaign\rules.csv` 本节 5 行、本节六个类。
+前置数据：既有 MOD 布局 [C6-S1]\+ `GearInModPlugin`([C6-S2]，含本节调用点片段)、`data/campaign/rules.csv` 本节 5 行、本节六个类。
 
-1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/rules/` 下六个类的 `.class`。
+1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/rules/` 下六个类的 `.class`。
 2. 启动游戏，确认 `starsector.log` 出现本节 5 条 `Loading rule: GearIn_memory_*` 行。
 3. 新建生涯，观察写入与计数日志：run 1、contains/is/between、getExpire=1000、rearmed 30 / cleared -1、required 依赖和 sector 键列表。
 4. 观察 memoryMap 槽位和三个解析结果。
@@ -755,7 +755,7 @@ gradle jar
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/` 下 `GearInMemoryKeys`、`GearInMemoryWriter`、`GearInPersistentDataCounter`、`GearInMemoryMapAssembler`、`GearInMemoryExpiryVerifier`、`GearInMemoryDialog` 六个类的 `.class`。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/rules/` 下 `GearInMemoryKeys`、`GearInMemoryWriter`、`GearInPersistentDataCounter`、`GearInMemoryMapAssembler`、`GearInMemoryExpiryVerifier`、`GearInMemoryDialog` 六个类的 `.class`。
 - **规则注册 (加载期)**：启动日志出现本节 5 条 `Loading rule: GearIn_memory_welcome` / `..._verify` / `..._result_expired` / `..._result_alive` / `..._leave`—— 规则行确实被读进内存的静态证明。
 - **新档首次进入生涯 (首个未暂停推进帧)**：`starsector.log` 先出现写入脚本输出 (引擎按注册顺序推进脚本，`GearInMemoryWriter` 注册在 `GearInPersistentDataCounter` 之前)，随后出现 `GearInPersistentDataCounter: PersistentData 运行计数 run 1(新档首次 = 1；读档恢复上次值 = null)`；写入脚本输出：
     - `GearInMemoryWriter: contains(KEY_TAG)=true getString=GearInReady is(key,"GearInReady")=true`；
@@ -826,7 +826,7 @@ gradle jar
 
 ## 总结
 
-本节把 Rules 内存接到完整最小例上，跑通了写入、过期与持久化的完整流程：`MemoryAPI` 提供键值读写与过期控制，`MemKeys` 槽位决定规则侧 `$memkey.name` 的解析结果，`Memory.advance` 在生涯非暂停时统一推进过期，`PersistentData` 承担跨存档的全局数据。六个类之间不互相引用，全部用键状态对齐 —— 这种写法让任意注册顺序下行为都确定。
+本节把 Rules 内存接到最小示例上，跑通了写入、过期与持久化的完整流程：`MemoryAPI` 提供键值读写与过期控制，`MemKeys` 槽位决定规则侧 `$memkey.name` 的解析结果，`Memory.advance` 在生涯非暂停时统一推进过期，`PersistentData` 承担跨存档的全局数据。六个类之间不互相引用，全部用键状态对齐 —— 这种写法让任意注册顺序下行为都确定。
 
 可以带走的判断：
 

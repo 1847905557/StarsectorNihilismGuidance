@@ -65,13 +65,13 @@
 
 ## 配置势力文件
 
-从 [C3-S1] 已经能够加载的 `gear_industry.faction` 开始，保留身份字段，再按下面的完整最小例补入舰船池、舰队学说和其它配置。
+从 [C3-S1] 已经能够加载的 `gear_industry.faction` 开始，保留身份字段，再补入舰船池、舰队学说和其它配置。
 
 势力 ID 是 `gear_industry`，以 `齿轮工业` 为显示名，舰船池只使用前面各页已注册的 `GearIn_` 内容，另加两艘原版辅助船。
 
 ## 势力文件必守规则速查表
 
-由于 faction 文件很长，无法逐字段列表，上文用注释注解了所有在本节有意义的字段。下面只总结必须遵守的规则 (均来自 spec 加载期解析 faction 文件的实现)：
+由于 faction 文件很长，无法逐字段列表，本节只总结必须遵守的规则 (均来自 spec 加载期解析 faction 文件的实现)：
 
 | 规则 | 违反后的可观察结果 |
 |---|---|
@@ -96,7 +96,7 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 
 :::
 
-每个条目是 `装配 ID → 权重`。**查不到装配会当场抛 `Ship hull variant [X] not found!` 并中断加载**。`includeDefault: true` 可把原版同名角色的条目复制进来再叠加自己的条目 (参考原版文件里各角色的写法；本例不需要)。
+每个条目是 `装配 ID → 权重`。**查不到装配会当场抛 `Ship hull variant [X] not found!` 并中断加载**。`includeDefault: true` 可把原版同名角色的条目复制进来再叠加自己的条目 (参考原版文件里各角色的写法；本教程示例不使用)。
 
 注意角色表里只放**舰船装配**：航母角色 (`carrierSmall` 等) 的条目是航母船体的装配，战机联队不进角色表 —— 联队经由舰船装配的 `wings` 数组 [C4-S1] 与 `knownFighters` 池进入舰队。
 
@@ -316,7 +316,7 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 
 前置数据：[C1-S1] 的 `mod_info.json`、[C1-S2] 的船体 (`GearIn_artizan`)、[C1-S3] 的联队与航母 (`GearIn_slag_wing`、`GearIn_furnaceman`)、[C1-S5] 的武器 (`GearIn_durin`、`GearIn_dwalin`)、[C2-S2] 的船插 (`GearIn_stable_injector`)、[C4-S1] 的装配 (`GearIn_artizan_combat` 等)、本节的 `factions.csv`、`gear_industry.faction`、`default_ship_roles.json`。
 
-1. 启动游戏，加载到主菜单，检查 `Starsector\starsector-core\starsector.log`。
+1. 启动游戏，加载到主菜单，检查 `starsector.log`。
 2. 进入生涯 (或读取已有生涯存档)，按 `F` 打开情报。
 3. 在星区里遭遇或靠近齿轮工业的巡逻队/贸易队。
 4. (可选) 与齿轮工业的市场互动 (若有其殖民地，本节未建殖民地时可跳过)。

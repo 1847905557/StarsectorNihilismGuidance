@@ -139,7 +139,7 @@ effect id 必须原样用作 modifier id
 | 技能 id **必须**全局唯一 (跨 MOD) | 必须 | 后加载的同 id 技能被跳过 (日志 `Skipping skill [...], was already loaded`)，本 MOD 的版本静默失效 |
 | effect 的 `type` **必须**与脚本类实现的接口族匹配 (SHIP → `ShipSkillEffect`、FLEET → `FleetStatsSkillEffect`、CHARACTER\_STATS → `CharacterStatsSkillEffect`、市场 → `MarketSkillEffect`、DESCRIPTION → `DescriptionSkillEffect`) | 必须 | 效果实例化时 `getAsXxxEffect()` 强转抛 `ClassCastException`(如舰船 stats 重放 / 起飞 / tooltip 渲染处)，游戏画面报错或加载失败 |
 | 效果脚本类 **必须**无参可实例化 (不写构造器或显式无参构造器；脚本类加载流程 `loadScriptInstance` 用 `newInstance()`) | 必须 | `InstantiationException` 包装为 `RuntimeException "Problem loading class [<类名>]"`，在效果被实例化的时刻 (不是加载期) 抛出 |
-| 效果脚本 **必须**把引擎传入的 `id` 原样用作 modifier id，`unapply` 用同一个 id 解除 | 必须 | 数值残留 / 累计或解除不生效 (稳定 ID 规则在技能域的直接应用，前置知识已引用；引擎给的 id 形如 `GearIn_gunnery_ship_1`) |
+| 效果脚本 **必须**把引擎传入的 `id` 原样用作 modifier id，`unapply` 用同一个 id 解除 | 必须 | 数值残留 / 累计或解除不生效 (稳定 ID 规则在技能域的直接应用；引擎给的 id 形如 `GearIn_gunnery_ship_1`) |
 | 生效范围**必须**按 `SkillEffectType` 判断；`.skill` 的 `scope` / `scopeStr` 只是 UI 文本 | 必须 | 把 `scope:FLEET` 的 SHIP 效果当 "全舰队加成" 排查，实际它只作用于被驾驶舰船，舰队其它船 "没变化" |
 | 战机效果 (SHIP\_FIGHTERS / ALL\_FIGHTERS\_IN\_FLEET) 只在战斗起飞时应用 | 必须 | 在生涯侧读战机 stats 期望已生效，读不到；战机加成 "部署前看不到" 属正常语义 |
 | 非精英技能 (`elite` 缺省 / false) 经 UI 加点最高到 1 级，`requiredSkillLevel:2` 的效果组永不激活 | 必须 | 2 级门槛的效果 "不生效"；精英加成必须配 `"elite":true` |
@@ -174,7 +174,7 @@ effect id 必须原样用作 modifier id
 
 在 `GearInGunnerySkill` 内新增 `Level1`。把引擎传入的 `id` 原样交给三个 modifier；技能刷新时，相同 ID 会覆盖旧值，而不是继续叠加。
 
-```java
+```java {4,5,6}
 public static class Level1 extends BaseSkillEffectDescription implements ShipSkillEffect {
     @Override
     public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
@@ -271,7 +271,7 @@ public FleetTotalItem getFleetTotalItem() {
 
 完成信号：整备界面的舰队构成汇总出现 `Gunnery damage bonus +15%`，重复打开界面不会增加重复行。
 
-## 数据文件：data\characters\skills\GearIn\_gunnery.skill
+## 数据文件：data/characters/skills/GearIn\_gunnery.skill
 
 要点：
 
@@ -281,7 +281,7 @@ public FleetTotalItem getFleetTotalItem() {
     - 效果脚本必须原样使用。
 - `governingSkill` 未写 → 默认本技能 id：所有效果的等级判据都是 `GearIn_gunnery` 自己的等级。
 
-## 数据文件：data\characters\skills\skill\_data.csv(表头 + 本节行)
+## 数据文件：data/characters/skills/skill\_data.csv(表头 + 本节行)
 
 要点：
 
@@ -296,7 +296,7 @@ public FleetTotalItem getFleetTotalItem() {
 - 外层类只是容器：嵌套类名 (`Level0` / `Level1` / `Level1A` / `LevelShipFighters` / `LevelFleet` / `LevelStats`) 与 `.skill` 的 `script` 值 (`GearInGunnerySkill$Level1` 等) 逐字对应 —— 原版 `GunneryImplants` 同款做法。
 - `Level1 implements ShipSkillEffect, FleetTotalSource`：同一个脚本类被两处调用 —— `SHIP` 效果重放时经 `getAsShipEffect()` 强转，`getFleetTotals()` 时经 `getAsFleetTotalSource()` 检查 `instanceof`：
     - 两处都是**每次按类名重新实例化** (脚本类加载流程 `loadScriptInstance` → `newInstance()`)，效果类不能有带参构造器。
-- `apply` 里的 modifier id 全部用传入的 `id`：`modifyPercent(id, ...)` / `modifyFlat(id, ...)`，`unapply` 用同一个 `id` 调 `unmodify(id)` / `unmodifyFlat(id)`—— 稳定 ID 规则的直接应用 (规则见前置知识；引擎每次重放传入的 id 逐字相同)。
+- `apply` 里的 modifier id 全部用传入的 `id`：`modifyPercent(id, ...)` / `modifyFlat(id, ...)`，`unapply` 用同一个 `id` 调 `unmodify(id)` / `unmodifyFlat(id)`—— 稳定 ID 规则的直接应用 (引擎每次重放传入的 id 逐字相同)。
 - `Level1.getFleetTotalItem()` 返回 `label="Gunnery damage bonus"`、`value="+15%"`、`sortOrder=50` 与自定义 tooltip：这是 fleet total 行的最小完整形态；`TOOLTIP_WIDTH` 继承自 `BaseSkillEffectDescription`(450)。
 - `LevelFleet` / `LevelStats` 的 `getScopeDescription()` 返回 `FLEET`：这只是 tooltip 的 "作用范围" 文本；实际生效对象由 `type`(FLEET / CHARACTER\_STATS) 决定。
 - 五个 `apply` 各打一行 `GearIn gunnery ...` 日志：`id` 与 `level` 直接可见，是 "效果作用域 + 等级" 的现场表现。
@@ -323,13 +323,13 @@ public FleetTotalItem getFleetTotalItem() {
 
 SHIP 族效果要等成员 stats 重建 (`FleetMemberAPI.updateStats`，开舰队界面 / 舰队同步触发) 或舰船构造 / 战机起飞。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，编译链路见前置知识)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，编译链路见前置知识)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 及六个内部类 (可用 `jar tf` 核对)：
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 及六个内部类 (可用 `jar tf` 核对)：
 
 - `$Level0` / `$Level1` / `$Level1A` / `$LevelShipFighters` / `$LevelFleet` / `$LevelStats`
 
@@ -343,23 +343,23 @@ gradle jar
 | 技能定义 | `GearIn_gunnery.skill`：`governingAptitude=combat`、`elite=true`、两个 `effectGroups` | id 一致；脚本类名与 Java 类逐字一致 |
 | 效果脚本 | `data.scripts.gearin.campaign.GearInGunnerySkill$Level0/Level1/Level1A/LevelShipFighters/LevelFleet/LevelStats` | 六个类名与 `.skill` 六个 `script` 值一致；`type` 与接口族匹配 |
 | 调用入口 | CSV spec 加载期 `loadSkills` 注册 → 玩家 `setSkillLevel` / UI 加点 → `refreshCharacterStatsEffects` / `FleetMemberAPI.updateStats` / 战斗舰船构造 / `FighterLaunchBayAPI` / `getFleetTotals` | 日志行、技能树行、burn、指挥点数、fleet total 行 |
-| 可观察结果 | 日志 `GearIn gunnery ... apply`、技能树 "Gunnery" 行、整备界面 "Gunnery damage bonus +15%" 行 | 见 "验证方案" |
+| 可观察结果 | 日志 `GearIn gunnery ... apply`、技能树 "Gunnery" 行、整备界面 "Gunnery damage bonus +15%" 行 | 以日志与界面实际结果为准 |
 
 ## 完整最小例
 
 在既有 MOD 布局 (前置知识所列的编译链路) 之上新增一个技能：两个数据文件加一个效果脚本类，全部由本节定义，技能 id 为 `GearIn_gunnery`：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
-│   └── characters\skills\
+│   └── characters/skills\
 │       ├── GearIn_gunnery.skill          # 本节新增
 │       └── skill_data.csv                # 新建 (表头 + 本节行；若已有该文件则把行追加进去)
 ├── src\
-│   └── data\scripts\gearin\
+│   └── data/scripts/gearin\
 │       ├── GearInModPlugin               # C6-S2 所有；本节不改动
 │       └── campaign\
 │           └── GearInGunnerySkill        # 本节新增
@@ -720,7 +720,7 @@ stats.getMaxSpeed().unmodify(id);
 前置数据：既有 MOD 布局与编译链路 (前置知识所列)、`GearIn_gunnery.skill`、`skill_data.csv` 行、`GearInGunnerySkill` 源码 (含读取与调用点片段中的临时钩子)。
 
 1. **资源准备**：冒烟期间把 `skill_data.csv` 的 icon 列指向原版 `graphics/icons/skills/gunnery_implants.png`。
-2. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类。
+2. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类。
 3. **启动与注册**：新建生涯 (或读档)，在 `starsector.log` 中观察 `GearIn_gunnery` 的技能加载记录。
 4. **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (放在 `onGameLoad` 内)，随后打开舰队界面 (F 键) 并进入一场战斗部署。
 5. **界面核对**：打开技能树 (C 键)、整备界面 (R 键) 与舰队面板，查看战斗部署界面的指挥点数与武器伤害。
@@ -730,7 +730,7 @@ stats.getMaxSpeed().unmodify(id);
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类；启动后加载期无 `gear_in` 引起的 ERROR (注意 icon 列在冒烟期间指向原版图标，见 "完整最小例")。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类；启动后加载期无 `gear_in` 引起的 ERROR (注意 icon 列在冒烟期间指向原版图标)。
 - **注册确认**：`starsector.log` 出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]` (loadSkills 的加载日志)，没有 `Skipping skill [...]` 或 `Skipping loading skill [...]` 两行。
 - **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (见读取与调用点片段) 生效后，日志立即出现。
 

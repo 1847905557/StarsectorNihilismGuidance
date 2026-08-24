@@ -17,7 +17,7 @@
     - 全局对表、`-1..1` 钳位、`adjustRelationship` 直接加、`setRelationship` 直写；
     - `isHostileTo` = 关系等级 ≤ `HOSTILE`、`getRelToPlayer()` 包装；
 - 解释 `CargoAPI` 的栈模型 (stack 集合 + credits + 容量统计)、四类写入入口 (资源 / 武器 / 战机芯片 / 特殊物品) 与 `removeItems` 的 NULL 占位栈语义，并遵守 `getMothballedShips()` 必须先 `initMothballedShips(factionId)` 的必须规则；
-- 从症状定位故障 (见 "故障分析" 节)，并沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核 (沿用本节完整最小例的任务链)。
+- 从症状定位故障，并沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核 (沿用本节示例的任务链)。
 
 ## 前置知识
 
@@ -59,8 +59,8 @@
 |---|---|---|
 | 身份 | `getId()`、`getDisplayName()`、`getDisplayNameWithArticle()`、`getDisplayNameIsOrAre()` | 势力 id(全局唯一，与 `.faction` 文件 id 一致) 与显示名变体 |
 | 颜色 | `getColor()`、`getBaseUIColor()`、`getGridUIColor()`、`getDarkUIColor()`、`getSecondaryUIColor()`、`getBrightUIColor()`、`getRelColor(id)` / `getRelColor(RepLevel)` | UI 配色族；`getRelColor` 按关系值混合敌我色 |
-| 关系 | `getRelationship(id)`、`getRelationshipLevel(id)`、`setRelationship(id, float)`、`setRelationship(id, RepLevel)`、`adjustRelationship(id, delta)`、`adjustRelationship(id, delta, limit)`、`ensureAtBest`、`ensureAtWorst`、`isAtWorst` / `isAtBest`、`isHostileTo`、`getRelToPlayer()` | 见 "关系语义" |
-| 资源集合 | `getKnownShips()`、`addKnownShip`、`removeKnownShip`、`knowsShip`、`getKnownWeapons()`、`getKnownFighters()`、`getKnownIndustries()`、priority 族、`clearShipRoleCache()` | 已知蓝图与优先资源；`removeKnown*` 的读档回写规则见 "规则强度" |
+| 关系 | `getRelationship(id)`、`getRelationshipLevel(id)`、`setRelationship(id, float)`、`setRelationship(id, RepLevel)`、`adjustRelationship(id, delta)`、`adjustRelationship(id, delta, limit)`、`ensureAtBest`、`ensureAtWorst`、`isAtWorst` / `isAtBest`、`isHostileTo`、`getRelToPlayer()` | 关系全局对表的读写、钳位、直接加/直写与敌对判定 |
+| 资源集合 | `getKnownShips()`、`addKnownShip`、`removeKnownShip`、`knowsShip`、`getKnownWeapons()`、`getKnownFighters()`、`getKnownIndustries()`、priority 族、`clearShipRoleCache()` | 已知蓝图与优先资源；`removeKnown*` 永久移除需持久化清单并在读档后重新移除 |
 | 经济字段 | `getTariffFraction()`、`getTollFraction()`、`getFineFraction()`、`getInternalCommsChannel()`、`isIllegal(String)`、`getIllegalCommodities()`、`makeCommodityIllegal/Legal` | 势力级税率 (注意：静态值，非 `MutableStat`) 与商品合法性 |
 | 随机与显示 | `createRandomPerson()`、`getLogo()`、`getCrest()`、`isShowInIntelTab()` / `setShowInIntelTab`、`getCustom()`、`getCustomBoolean`、`getCustomString`、`getRank`、`getPost`、`pickRandomShipName` | `.faction` 文件数据与随机生成 |
 | 舰船选择 | `pickShip(role, params, ...)`、`pickShipAndAddToFleet`、`ShipPickParams` / `ShipPickMode`、`getNumAvailableForRole` | 自动装配舰船选择，本节只给入口 |
@@ -101,7 +101,7 @@
 | 武器 | `addWeapons` / `removeWeapons` | `getNumWeapons` / `getWeapons` | `WEAPONS` 栈 (整数、roundSize) |
 | 战机芯片 | `addFighters` / `removeFighters` | `getNumFighters` / `getFighters` | `FIGHTER_CHIP` 栈 |
 | 船插 / 特殊物品 | `addHullmods` / `addSpecial` | `getQuantity` | `SPECIAL` 栈 (`SpecialItemData`；船插 data = `new SpecialItemData("modspec", hullModId)`) |
-| mothballed ships | `addMothballedShip` | `getMothballedShips` | 见 "必须遵守的规则" |
+| mothballed ships | `addMothballedShip` | `getMothballedShips` | 读取前必须先调 `initMothballedShips(factionId)`；`addMothballedShip` 自动初始化 |
 | 通用汇总 | `addItems` / `removeItems`(返回是否完成) | `getQuantity` / `getStacksCopy` | 栈模型 |
 
 **栈语义 (`CargoStackAPI`，`com.fs.starfarer.api.campaign.CargoStackAPI`)**：`getType()`(`CargoItemType`：`RESOURCES` / `WEAPONS` / `FIGHTER_CHIP` / `SPECIAL` / `NULL`)、`getData()`(通常是 String 资源 id)、`getSize()` / `getFree()` / `getMaxSize()` / `isFull()`、`getCargoSpace()`。
@@ -258,14 +258,14 @@ if (!Global.getSector().getPersistentData().containsKey(
 
 两条链的约束已经列全，现在把它们放进同一个可运行的最小例，每个语义都有可观察的落点。您在既有 MOD 工程 (布局与插件入口 `GearInModPlugin`) 之上新增三个类：一个抽象基类与两个服务演示脚本。一文件一角色，不新增任何资源文件；两个脚本在 `onGameLoad` 各自注册，首个 `advance()` 各执行一次演示并自停：
 
-```text
-Starsector\mods\GearIndustry\
+```text {8-10}
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\campaign\
+│   └── data/scripts/gearin/campaign\
 │       ├── GearInOneShotScript          # 本节新增 (抽象基类，不参与注册)
 │       ├── GearInFactionServicesScript  # 本节新增 (势力段脚本)
 │       └── GearInCargoServicesScript    # 本节新增 (货物段脚本)
@@ -330,13 +330,13 @@ Starsector\mods\GearIndustry\
 
 ### 构建命令
 
-在 `Starsector\mods\GearIndustry\` 执行：
+在 `Starsector/mods/GearIndustry/` 执行：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含三个类的 `.class` 条目 (可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含三个类的 `.class` 条目 (可用 `jar tf` 核对)。
 
 ### 关键故障实验：读取封存舰船时抛出空引用异常
 
@@ -352,7 +352,7 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 
 **局部修正片段：**
 
-```java
+```java {3}
 // 修正片段
 CargoAPI cargo = Global.getSector().getPlayerFleet().getCargo();
 cargo.initMothballedShips(Global.getSector().getPlayerFaction().getId());
@@ -367,7 +367,7 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 
 ## 验证方案
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含三个类的 `.class` 条目。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含三个类的 `.class` 条目。
 2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按顺序出现两个脚本的日志行 (势力段 ×4、货物段 ×2 组)，且**没有**旧复合演示的收尾 `done` 行。
     - 观察 `write-rollback` 行的初值、中间值与终值。
 3. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位)。
@@ -416,7 +416,7 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 
 ## 总结
 
-本节把两个服务入口讲成两条链，并在完整最小例里组合使用：势力链从 `SectorAPI.getFaction(id)` / `getPlayerFaction()` 进入 `FactionAPI`，关系读写经过全局对表 (双向共享、`-1..1` 钳位、对条目用到时才建)；货物链从 `SectorEntityToken.getCargo()` 进入 `CargoAPI`，读写按分族进行，栈是存储细节而不是数量真相。
+本节把两个服务入口讲成两条链，并在示例里组合使用：势力链从 `SectorAPI.getFaction(id)` / `getPlayerFaction()` 进入 `FactionAPI`，关系读写经过全局对表 (双向共享、`-1..1` 钳位、对条目用到时才建)；货物链从 `SectorEntityToken.getCargo()` 进入 `CargoAPI`，读写按分族进行，栈是存储细节而不是数量真相。
 
 排错时先记住两条判断：关系写入是**原始写入** (无监听、钳位 `[-1,1]`)，玩家声望 action 走 `adjustPlayerReputation`；`getMothballedShips()` 必须先 `initMothballedShips`，`getStacksCopy()` 含 NULL 占位栈。本节演示的 "写入后立即精确回滚" 写法，让验证可以在不遗留任何持久状态的前提下完成。
 

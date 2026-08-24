@@ -43,7 +43,7 @@
 
 ## 梳理市场创建关系
 
-本节的所有读取与注册都围绕同一个任务：在生涯里建一个市场，再实地观察它的结构、子市场与经济行为。先看市场对象的结构与创建链，再分别展开子市场差异与经济循环节奏；最后的完整最小例把这套入口逐一在生涯里跑一遍。
+本节的所有读取与注册都围绕同一个任务：在生涯里建一个市场，再实地观察它的结构、子市场与经济行为。先看市场对象的结构与创建链，再分别展开子市场差异与经济循环节奏；最后用一个可运行的示例把这套入口逐一在生涯里跑一遍。
 
 ### 市场对象 (MarketAPI)
 
@@ -59,15 +59,15 @@
 | 实体绑定 | `getPrimaryEntity()` / `setPrimaryEntity(token)` / `getConnectedEntities()` / `getPlanetEntity()` | 主实体与关联实体集合；`setPrimaryEntity` 同时把实体加入 `connectedEntities` 并同步超空间坐标 |
 | 位置 | `getStarSystem()` / `getContainingLocation()` / `getLocationInHyperspace()` / `getLocation()` / `isInHyperspace()` / `getOnOrAt()` | 全部由主实体推导；`getLocation()` 是 `getLocationInHyperspace()` 的别名 (不是星系内本地坐标)；`getOnOrAt()`：主实体带 `station` tag 返回 `"at"`，否则 `"on"` |
 | 势力 | `getFactionId()` / `setFactionId(String)` / `getFaction()` | 市场势力；`setFactionId` 清缓存，`getFaction` 用到时才解析 |
-| 条件 | `getConditions()` / `addCondition(id[, param])` / `getCondition(id)` / `getFirstCondition(id)` / `getSpecificCondition(token)` / `removeCondition(id)` / `removeSpecificCondition(token)` / `reapplyConditions()` / `suppressCondition(id)` / `isConditionSuppressed(id)` | 见 "市场条件与产业访问" 节 |
-| 产业 | `getIndustries()` / `addIndustry(id[, params])` / `getIndustry(id)` / `hasIndustry(id)` / `hasFunctionalIndustry(id)` / `removeIndustry(id, mode, forUpgrade)` / `instantiateIndustry(id)` | 见 "市场条件与产业访问" 节 |
-| 商品 | `getAllCommodities()` / `getCommoditiesCopy()` / `getCommodityData(id)` / `getCommoditiesWithTag(tag)` / `getDemand(demandClass)` | 见 "商品与价格" 节 |
+| 条件 | `getConditions()` / `addCondition(id[, param])` / `getCondition(id)` / `getFirstCondition(id)` / `getSpecificCondition(token)` / `removeCondition(id)` / `removeSpecificCondition(token)` / `reapplyConditions()` / `suppressCondition(id)` / `isConditionSuppressed(id)` | 条件实例的增删查、重算与抑制 |
+| 产业 | `getIndustries()` / `addIndustry(id[, params])` / `getIndustry(id)` / `hasIndustry(id)` / `hasFunctionalIndustry(id)` / `removeIndustry(id, mode, forUpgrade)` / `instantiateIndustry(id)` | 产业的增删查与实例化 |
+| 商品 | `getAllCommodities()` / `getCommoditiesCopy()` / `getCommodityData(id)` / `getCommoditiesWithTag(tag)` / `getDemand(demandClass)` | 市场内商品数据与需求的读取入口 |
 | 价格 | `getTariff()` / `getDemandPriceMod()` / `getSupplyPriceMod()` / `getSupplyPrice(id, qty, isPlayerPrice)` / `getDemandPrice(id, qty, isPlayerPrice)` / `updatePrices()` / `updatePriceMult()` | 税率是 `MutableStat`；价格方向以**市场为主体** (`getDemandPrice` = 市场买入价 = 用户卖出价) |
-| 人物 | `addPerson(person)` / `removePerson(person)` / `getPeopleCopy()` / `getAdmin()` / `setAdmin(person)` / `getCommDirectory()` | 见 "人物与开放状态" 节 |
-| 状态 | `isFreePort()` / `setFreePort(boolean)` / `isHidden()` / `setHidden(Boolean)` / `isPlayerOwned()` / `setPlayerOwned(boolean)` / `getSurveyLevel()` / `setSurveyLevel(...)` / `getEconGroup()` / `setEconGroup(String)` / `getTags()` / `addTag(String)` / `removeTag(String)` / `isIllegal(id)` / `isInEconomy()` | 见 "人物与开放状态" 节 |
+| 人物 | `addPerson(person)` / `removePerson(person)` / `getPeopleCopy()` / `getAdmin()` / `setAdmin(person)` / `getCommDirectory()` | 市场人物、管理员与通信目录 |
+| 状态 | `isFreePort()` / `setFreePort(boolean)` / `isHidden()` / `setHidden(Boolean)` / `isPlayerOwned()` / `setPlayerOwned(boolean)` / `getSurveyLevel()` / `setSurveyLevel(...)` / `getEconGroup()` / `setEconGroup(String)` / `getTags()` / `addTag(String)` / `removeTag(String)` / `isIllegal(id)` / `isInEconomy()` | 开放状态开关与商品非法性判定 |
 | 稳定度与危险度 | `getStability()` / `getStabilityValue()` / `getHazard()` / `getHazardValue()` | 稳定度取整到 0–10(`Market.getStabilityValue`)；危险度 `1f` = `100%` |
 | 杂项 | `getMemory()` / `getMemoryWithoutUpdate()` / `getStats()` / `getDaysInExistence()` / `advance(float)` | `getMemory()` 触发所有插件的 `updateMarketFacts` 回调；纯读取用 `getMemoryWithoutUpdate()` |
-| 子市场 | `addSubmarket(specId)` / `hasSubmarket(specId)` / `getSubmarket(specId)` / `getSubmarketsCopy()` / `removeSubmarket(specId)` | 见 "子市场" 节 |
+| 子市场 | `addSubmarket(specId)` / `hasSubmarket(specId)` / `getSubmarket(specId)` / `getSubmarketsCopy()` / `removeSubmarket(specId)` | 子市场的增删与查询 |
 
 #### [创建与注册链路]
 
@@ -150,7 +150,7 @@
 | `getAvailable()` | 当前可得量 (`getAvailableStat()` 的修饰后值，含低可达性扣减) |
 | `getMaxSupply()` / `getMaxDemand()` | 供需上限 (产业重算后) |
 | `getDemandClass()` / `getDemand()` | 需求类与 `MarketDemandAPI`(`getDemandValue()`) |
-| `getTradeMod()` / `getTradeModPlus()` / `getTradeModMinus()` | 用户交易写入的 120 天衰减修饰 (见 "用户交易对经济的影响") |
+| `getTradeMod()` / `getTradeModPlus()` / `getTradeModMinus()` | 用户交易写入的 120 天衰减修饰 |
 | `isIllegal()` / `isNonEcon()` / `isFuel()` / `isPersonnel()` | 商品级判定 |
 
 价格：`getTariff()` 返回 `MutableStat`(税率；`getModifiedValue()` 是生效值)；`getSupplyPrice(id, qty, isPlayerPrice)` 是市场卖出价、`getDemandPrice(...)` 是市场买入价。
@@ -189,7 +189,7 @@
 
 `Market.advance(amount)` 做什么：换算游戏日累加 `daysInExistence`；稳定度变化时 `reapplyConditions()` + `reapplyIndustries()` + `updatePrices()`；推进全部条件 plugin、全部子市场 plugin、memory、人物、建筑队列。
 
-同时推进商品 `available/tradeMod/tradeModPlus/tradeModMinus` 的衰减并 `reapplyEventMod()`；推进产业。**市场自身不在这里做商品流重算** —— 商品流是经济集合的职责 (见 "经济对象" 节)。
+同时推进商品 `available/tradeMod/tradeModPlus/tradeModMinus` 的衰减并 `reapplyEventMod()`；推进产业。**市场自身不在这里做商品流重算** —— 商品流是经济集合的职责。
 
 ### 子市场 (SubmarketAPI)
 
@@ -263,7 +263,7 @@ open / black 都是 `PLAYER_SELL_ONLY`—— **用户卖出**给市场会正向�
 #### [市场集合与商品注册表]
 
 - 集合：`getMarketsCopy()`(快照)/ `getMarket(id)`(精确 id，无则 null)/ `getNumMarkets()` / `getMarkets(loc)` / `getLocationsWithMarkets()` / `getStarSystemsWithMarkets()`。
-    - `getMarketsInGroup(group)` / `getMarketsWithSameGroup(market)`(经济组语义见上文)。
+    - `getMarketsInGroup(group)` / `getMarketsWithSameGroup(market)`(经济组：同组市场互相可见且只互相交易，null 组同属一组)。
 - 商品注册表：`getAllCommodityIds()` 返回全部已注册商品 id(来自 CSV spec 加载期的 `CommoditySpecAPI` 集合)；`getCommoditySpec(id)` 返回**全局规格** `CommoditySpecAPI`(基础价、econ unit、tag、demand class 等)。
     - **不等于**市场库存 —— 读取的是全局 spec，不表示该 commodity 在某个市场有库存、供给或需求。
 - `isSimMode()`：模拟模式 (战役/经济编辑器) 标记。
@@ -395,7 +395,7 @@ LOG.info(String.format(
 
 插入位置：`GearInTariffProbe.log`。修饰 ID 固定，读回三个阶段后立即移除修饰。
 
-```java
+```java {3}
 MutableStat tariff = market.getTariff();
 float before = tariff.getModifiedValue();
 tariff.modifyFlat(TARIFF_MOD_ID, 0.05f);
@@ -410,7 +410,7 @@ float after = tariff.getModifiedValue();
 
 插入位置：巡检末尾与 `GearInEconomyTickLog`。监听器必须交给经济对象；整轮更新后置位，下一次过期检查自动移除。
 
-```java
+```java {1}
 economy.addUpdateListener(new GearInEconomyTickLog());
 
 @Override
@@ -447,7 +447,7 @@ public boolean isEconomyListenerExpired() {
 
 巡检入口 (`EveryFrameScript` 角色)：挂载后第一次 `advance()` 执行一次巡检序列并自停 (`isDone()=true`，引擎下一帧自动移除本脚本)。
 
-**绑定**：注册入口为生涯回调 `onGameLoad`(调用点片段见下)，persistent data 键 `REGISTER_MARK = "GearIn_MarketInspector"` 一次性注册标记 (沿用既有模式：每个注册项用各自的键，不并入插件的 `CLASS_MARK` 标记)。
+**绑定**：注册入口为生涯回调 `onGameLoad`，persistent data 键 `REGISTER_MARK = "GearIn_MarketInspector"` 一次性注册标记 (沿用既有模式：每个注册项用各自的键，不并入插件的 `CLASS_MARK` 标记)。
 
 ### GearInMarketPicker：目标市场选择
 
@@ -483,16 +483,16 @@ public boolean isEconomyListenerExpired() {
 
 之后 `isEconomyListenerExpired()` 返回 true，引擎在下一个经济步自动从监听器列表移除；只持有两个 boolean，随存档序列化无副作用。
 
-**绑定**：由 `GearInMarketInspector` 经 `economy.addUpdateListener(...)` 注册 —— **必须**走 `EconomyAPI.addUpdateListener`，不能加入 `SectorAPI.getListenerManager()`(必须遵守的规则见 "经济对象与商品流" 节)。
+**绑定**：由 `GearInMarketInspector` 经 `economy.addUpdateListener(...)` 注册 —— **必须**走 `EconomyAPI.addUpdateListener`，不能加入 `SectorAPI.getListenerManager()`。
 
 对应关系：
 
 - 巡检模式：`implements EveryFrameScript` 沿用生涯一次性脚本模式 ——`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除。
 - `REGISTER_MARK`：persistent data 标记键 (`"GearIn_MarketInspector"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入 `GearInModPlugin` 的 `CLASS_MARK` 标记 (旧档补注册规则见前置知识)。
 - `GearInMarketPicker.pick`：`economy.getMarket(id)` 精确 id 查找 + `hasSubmarket(Submarkets.SUBMARKET_OPEN)` 回退 —— 对应 "市场 id = economy.json entities 首实体 id" 的读取链路。
-- `GearInSubmarketLog.log`：`submarket.getCargoNullOk()` 判空后 `getCommodityQuantity`—— 演示 "库存用到时才创建、`getCargoNullOk()` 可能为 null" 的必须遵守的规则 (见 "库存 cargo 与合法性" 节)。
+- `GearInSubmarketLog.log`：`submarket.getCargoNullOk()` 判空后 `getCommodityQuantity`—— 演示 "库存用到时才创建、`getCargoNullOk()` 可能为 null" 的必须遵守的规则。
 - `GearInTariffProbe.log`：`modifyFlat("GearIn_inspect_tariff", 0.05f)` → `unmodifyFlat`—— `getTariff()` 是 `MutableStat`(前置知识已介绍)，当帧回滚、无持久残留；这是 "修改高频参数观察结果变化" 的最小任务链第 4 步。
-- `GearInEconomyTickLog`：`economy.addUpdateListener`—— 监听器**必须**走 `EconomyAPI.addUpdateListener`(见 "EconomyUpdateListener" 节)；`isEconomyListenerExpired()` 返回 true 后由引擎自动移除，不残留存档。
+- `GearInEconomyTickLog`：`economy.addUpdateListener`—— 监听器**必须**走 `EconomyAPI.addUpdateListener`；`isEconomyListenerExpired()` 返回 true 后由引擎自动移除，不残留存档。
 
 调用点 (工程片段 —— 方法所在类归属插件生命周期主题，本节只演示调用，不改动既有文件)：
 
@@ -507,19 +507,19 @@ public boolean isEconomyListenerExpired() {
 
 想演示换目标市场 (最小任务链第 4 步的另一种做法)，注册前先设参数：
 
-```java
+```java {2}
     GearInMarketInspector inspector = new GearInMarketInspector();
     inspector.setTargetMarketId("asharu"); // corvus 星系的独立势力市场 (economy.json 首实体 id 即市场 id)
     Global.getSector().addScript(inspector);
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下的七个类 (可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下的七个类 (可用 `jar tf` 核对)。
 
 ## 关键故障实验：经济监听器始终没有回调
 
@@ -549,7 +549,7 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
 前置数据：既有 MOD 布局 [C6-S1] 与 `GearInModPlugin`([C6-S2]，含本节调用点片段)、七个巡检类。
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/` 下的七个类。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/` 下的七个类。
 2. **新建生涯**：在 `starsector.log` 中观察 `GearIn market inspection` 相关记录。
 3. **结构核对**：`structure` 行 `id=jangala`、`inEconomy=true`、`freePort=false`、`onOrAt=on`；三条 `submarket` 行 tariff 依次约 `0.300` / `0.000` / `0.000`，black 的 `faction=pirates`、storage 的 `freeTransfer=true`。
 4. **经济监听器**：注册日志后保持未暂停游玩，几十真实秒内应出现 `GearIn economy listener first commodityUpdated` 与 `GearIn economy listener economyUpdated (expiring)`；继续观察该日志不重复出现；暂停 (空格) 期间不出现；恢复后出现。
@@ -558,7 +558,7 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下的七个类 (`GearInMarketInspector` 等)。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下的七个类 (`GearInMarketInspector` 等)。
 
 - **新建生涯**：`starsector.log` 依次出现：
 

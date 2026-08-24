@@ -44,7 +44,7 @@
 | `getLogger(Class)` | log4j `Logger` | `starsector.log`[C1-S1] |
 | `getCurrentState()` | `GameState` | 阶段判断 (本节) |
 
-Global 的引用由内核在固定的时机登记 (调用点详见 "生命周期与 null 语义")：
+Global 的引用由内核在固定的时机登记：
 
 ```text
 启动器.launch                   → setSettings(启动器设置.getSettingsAPI())
@@ -73,7 +73,7 @@ Global 的引用由内核在固定的时机登记 (调用点详见 "生命周期
 | 阶段 (此时 `getCurrentState()`) | `getSettings` | `getSoundPlayer` | `getSector` | `getFactory` | `getCombatEngine` |
 |---|---|---|---|---|---|
 | 资源加载期 (`null`，含 `onApplicationLoad`) | ● | ● | ★ | ★ | ★ |
-| 主菜单 (`TITLE`) | ● | ● | ●(弃用引用，见规则 2) | ●(弃用引用) | ●(空引擎，见规则 3) |
+| 主菜单 (`TITLE`) | ● | ● | ●(弃用引用) | ●(弃用引用) | ●(空引擎) |
 | 生涯 (`CAMPAIGN`) | ● | ● | ● 当前生涯引擎 | ● 可用 | ●(空引擎) |
 | 战斗 (`COMBAT`) | ● | ● | ● 当前生涯引擎 | ● 可用 | ● 当前战斗引擎 |
 
@@ -114,7 +114,7 @@ private static final Logger LOG = Global.getLogger(GearInGlobalAccess.class);
 Global.getLogger(GearInGlobalAccess.class).info("任意内容");
 ```
 
-- 输出位置：`Starsector\starsector-core\starsector.log`。
+- 输出位置：`starsector.log`。
 - 级别：`debug` / `info` / `warn` / `error`；生命周期与故障排查日志用 `info`，可恢复的异常情况用 `warn`/`error`。
 - 常用形态：入口回调打一行 (同 modPlugin 生命周期示例)、数值检查、故障注入验证。
 
@@ -181,11 +181,11 @@ public static boolean isInCombat() {
 
 职责：Global 静态访问器观测与阶段判断工具 ——`isInCombat()` 用 `getCurrentState()` 判战斗；`logAccessorState()` 巡览四阶段访问器可用性，并对资源加载期的 null 入口告警。
 
-绑定位置：静态工具类、无注册项；调用点为 `GearInModPlugin` 的两个生命周期回调 (见下方调用点片段)。
+绑定位置：静态工具类、无注册项；调用点为 `GearInModPlugin` 的两个生命周期回调。
 
 对应关系：
 
-- `Global.getLogger(GearInGlobalAccess.class)`：类内缓存一份日志器 (见 "Logger" 节)。
+- `Global.getLogger(GearInGlobalAccess.class)`：类内缓存一份日志器。
 - `isInCombat()`：阶段判断唯一可靠做法 ——`getCurrentState() == GameState.COMBAT`，不依赖 `getCombatEngine()` 是否为 null(生命周期规则 3)。
 - `logAccessorState()`：把生命周期表变成日志；`sector == null` / `engine == null` 只在资源加载期出现 (规则 2、3)。
 - `Global.LOADING_SAVE`：只有读档回调窗口内为 `true`；新建生涯回调期间为 `false`(规则 5)。
@@ -194,12 +194,12 @@ public static boolean isInCombat() {
 
 职责：SoundPlayerAPI 声音播放入口，覆盖 UI(`playUISound`)/ 位置 (`playPositionalSound`)/ 循环 (`playLoopSound`) 三约定，并持有两个声音 ID 常量。
 
-绑定位置：静态工具类、无注册项；调用点示例为 `GearInFrameLogger.advance()` 每帧续期循环音 (见下方调用点片段)。
+绑定位置：静态工具类、无注册项；调用点示例为 `GearInFrameLogger.advance()` 每帧续期循环音。
 
 对应关系：
 
 - `SOUND_ID_SYSTEM_LOOP` / `SOUND_ID_WEAPON_FIRE`：复用既有声音注册的 ID(声音资产与注册主题)，不新增 ID。
-- `playUISound` / `playPositionalSound` / `playLoopSound`：对应 SoundPlayerAPI 三约定 (见上表)；`vel` 用拷贝构造避免引用被引擎后续改写；`playLoopSound` 保留引擎参数以承载 "战斗插件 advance 上下文" 的调用形态。
+- `playUISound` / `playPositionalSound` / `playLoopSound`：对应 SoundPlayerAPI 三约定；`vel` 用拷贝构造避免引用被引擎后续改写；`playLoopSound` 保留引擎参数以承载 "战斗插件 advance 上下文" 的调用形态。
 
 ## 调用点与构建
 
@@ -228,26 +228,26 @@ public static boolean isInCombat() {
     }
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用既有编译链路)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用既有编译链路)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`(可用 `jar tf` 核对)。
 
 ## 完整最小例
 
 在 MOD 工程布局与 modPlugin 生命周期类 `GearInModPlugin` 之上新增两个工具类文件 (不新增任何资源、不新增任何注册项)：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\
+│   └── data/scripts/gearin\
 │       ├── GearInModPlugin      # 既有 modPlugin 生命周期类 (C6-S2)；本节只在其回调里调用示例方法
 │       ├── GearInGlobalAccess   # 本节新增：访问器观测与阶段判断
 │       └── GearInSoundPlayer    # 本节新增：声音播放入口 (三契约)
@@ -387,9 +387,9 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
 
 ## 验证方案
 
-前置数据：MOD 工程布局与编译链路 [C6-S1]、`GearInModPlugin` 生命周期类与持久数据门 [C6-S2]，并已接入本节两个调用点片段、`GearInGlobalAccess` / `GearInSoundPlayer` 两个工具类 (本节，代码见上)、声音资产与注册 [C5-S1] / [C5-S2]：`GearIn_system_loop`、`GearIn_weapon_fire`、`GearIn_test` 测试战役 [C4-S1]。
+前置数据：MOD 工程布局与编译链路 [C6-S1]、`GearInModPlugin` 生命周期类与持久数据门 [C6-S2]，并已接入本节两个调用点片段、`GearInGlobalAccess` / `GearInSoundPlayer` 两个工具类、声音资产与注册 [C5-S1] / [C5-S2]：`GearIn_system_loop`、`GearIn_weapon_fire`、`GearIn_test` 测试战役 [C4-S1]。
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，再用 `jar tf jars\GearIndustry.jar` 核对两个工具类。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，再用 `jar tf jars/GearIndustry.jar` 核对两个工具类。
 
 2. **启动 (资源加载期)**：勾选 "齿轮工业" 启动。进入主菜单前 `starsector.log` 出现一行。
 
@@ -413,7 +413,7 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
 
 预期结果：
 
-- 游戏构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`。
+- 游戏构建：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/GearInGlobalAccess.class` 与 `data/scripts/gearin/GearInSoundPlayer.class`。
 - 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
 ## 故障分析
@@ -480,4 +480,4 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
 - `com.fs.starfarer.api.combat.CombatEntityAPI`：`getLocation()` / `getVelocity()`。
 - `org.apache.log4j.Logger`：`Global.getLogger(Class)` 返回的日志器类型。
 - `data/scripts/gearin/`：本节两个示例类所在目录 (`GearInGlobalAccess` / `GearInSoundPlayer`)。
-- `Starsector\starsector-core\starsector.log`：日志输出位置。
+- `starsector.log`：日志输出位置。

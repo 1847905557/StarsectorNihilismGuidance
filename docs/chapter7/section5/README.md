@@ -41,7 +41,7 @@
 | `BaseEveryFrameCombatPlugin` | 五个回调的空实现基类 | 建议继承 (API 新增方法不破坏编译，见战斗插件模型单元) |
 | `CombatEngineAPI.addPlugin / removePlugin / hasPluginOfClass` | 战斗内注册 / 移除 / 查询 | `addPlugin` 的 API 注释：init 在方法内被调用 |
 | `CombatListenerManagerAPI` | 监听器表的增删查 | `engine.getListenerManager()` / `ShipAPI` / `MutableShipStatsAPI` 三块表面 |
-| `com.fs.starfarer.api.combat.listeners.*` | 十类公开监听器接口 | 每类有必须遵守的放置层级规则 (见 "监听器" 节) |
+| `com.fs.starfarer.api.combat.listeners.*` | 十类公开监听器接口 | 每类有必须遵守的放置层级规则 |
 | `CombatListenerUtil` | 引擎内部派发入口 | 公开 API 包内的工具类 (damage/range/OP/部署派发) |
 | `IntervalUtil` | 定期间隔触发 | `com.fs.starfarer.api.util`(本节示例用它做周期日志) |
 
@@ -263,13 +263,13 @@ LOG.info("GearIn lifecycle finalize: deployments=" + deploymentListener.deployed
 
 `BaseEveryFrameCombatPlugin` 子类，承担插件角色：`init` 保存引擎并注册监听器、`advance` 三个前置判断 (判 null / 暂停 / 已收尾)、用 `isCombatOver()` 轮询收尾并自移除。
 
-**注册入口**：由既有战斗插件的 `init()` 内调用 `engine.addPlugin(new GearInCombatLifecyclePlugin())` 挂入当前战斗 (注册片段见下文)。
+**注册入口**：由既有战斗插件的 `init()` 内调用 `engine.addPlugin(new GearInCombatLifecyclePlugin())` 挂入当前战斗。
 
 ### GearInDeploymentListener (引擎级部署监听器)
 
 `FleetMemberDeploymentListener` 实现，承担监听器角色：统计并记录敌我成员部署事件，`deployedCount` 是本场战斗的状态。
 
-**注册入口**：由 `GearInCombatLifecyclePlugin.init()` 注册到 `engine.getListenerManager()`(引擎级表面)—— `hasListenerOfClass` 去重判断 + `addListener(...)`，见下方插件代码。
+**注册入口**：由 `GearInCombatLifecyclePlugin.init()` 注册到 `engine.getListenerManager()`(引擎级表面)—— `hasListenerOfClass` 去重判断 + `addListener(...)`。
 
 对应关系：
 
@@ -295,31 +295,31 @@ LOG.info("GearIn lifecycle finalize: deployments=" + deploymentListener.deployed
 
 `GearInCombatLifecyclePlugin.init()` 里先 `hasListenerOfClass(GearInDeploymentListener.class)` 再 `addListener(...)`，避免同一场战斗重复注册同类监听器；给舰船 / 统计加监听器同样直接用 `addListener(...)`，不要先读 `getListenerManager()` 判空。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用前置单元的编译链路)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用前置单元的编译链路)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 (可用 `jar tf` 核对)：
+产物 `jars/GearIndustry.jar` 应包含 (可用 `jar tf` 核对)：
 
 - `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class`
 - `data/scripts/gearin/combat/GearInDeploymentListener.class`
 
 ## 完整最小例
 
-规则已经齐了，下面用一个完整最小例把它们落到两个类上，再从日志观察每一条行为。
+规则已经齐了，下面把它们落到两个类上，再从日志观察每一条行为。
 
 在前置单元的 MOD 布局与战斗插件模型之上新增两个类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Role>`)：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\
+│   └── data/scripts/gearin\
 │       ├── GearInModPlugin               # 前置单元所有；本节不改动
 │       ├── GearInGlobalAccess            # 前置单元所有；本节只消费
 │       └── combat\
@@ -475,9 +475,9 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 
 ## 验证方案
 
-前置数据：MOD 布局与编译链路 [C6-S1]、战斗插件接入与注册片段 [C7-S1]、`GearIn_test` 测试战役 [C4-S1]、本节两个类，随编译进入 `jars\GearIndustry.jar`。
+前置数据：MOD 布局与编译链路 [C6-S1]、战斗插件接入与注册片段 [C7-S1]、`GearIn_test` 测试战役 [C4-S1]、本节两个类，随编译进入 `jars/GearIndustry.jar`。
 
-1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个类的 `.class`。
+1. 游戏构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含两个类的 `.class`。
 2. 战斗初始化：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察生命周期初始化记录。
 3. 周期报告：战斗 (未暂停) 中每 2 秒出现一行 `GearIn lifecycle: total=<秒数> combatOver=false`，`total` 稳步增长；暂停约 10 秒再恢复，暂停期间没有输出 (暂停判断生效)。
 4. 部署事件：任意成员部署时 (敌方 AI 自动部署、用户从后备手动部署都算) 出现一行 `GearIn deployed: ally=... fighterWing=... ship=<hullId>`；每场战斗的 `deployments=` 计数等于该场部署日志条数 (监听器状态随战斗归属)。
@@ -486,7 +486,7 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class` 与 `data/scripts/gearin/combat/GearInDeploymentListener.class`。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInCombatLifecyclePlugin.class` 与 `data/scripts/gearin/combat/GearInDeploymentListener.class`。
 
 - **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`starsector.log` 出现一行。
 

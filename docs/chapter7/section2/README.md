@@ -47,9 +47,9 @@
 | 分组 | 成员 | 语义 |
 |---|---|---|
 | 战斗上下文 | `isInCampaign()` / `isInCampaignSim()` / `isSimulation()` / `isMission()` / `getMissionId()` | 这场战斗是哪一类：生涯遭遇战 / 生涯内模拟战 / 模拟战 / 战役；`getMissionId()` 非战役时返回 null |
-| 玩家与实体 | `getPlayerShip()` / `isShipAlive(ShipAPI)` / `isEntityInPlay(CombatEntityAPI)` / `isInEngine(ShipAPI)` | 玩家舰与实体存活性 (详见 "玩家舰" 与 "实体存活性") |
-| 战斗结果 | `isCombatOver()` / `getWinningSideId()` / `getCombatNotOverFor()` | 战斗是否结束、胜者 (详见 "战斗结果") |
-| 时间 | `getTotalElapsedTime(boolean)` / `getElapsedInLastFrame()` / `getTimeMult()` / `getElapsedInContactWithEnemy()` / `isFleetsInContact()` / `isPaused()` / `setPaused(boolean)` | 战斗时间四种语义与暂停 (详见 "时间语义") |
+| 玩家与实体 | `getPlayerShip()` / `isShipAlive(ShipAPI)` / `isEntityInPlay(CombatEntityAPI)` / `isInEngine(ShipAPI)` | 玩家舰与实体存活性 |
+| 战斗结果 | `isCombatOver()` / `getWinningSideId()` / `getCombatNotOverFor()` | 战斗是否结束、胜者 |
+| 时间 | `getTotalElapsedTime(boolean)` / `getElapsedInLastFrame()` / `getTimeMult()` / `getElapsedInContactWithEnemy()` / `isFleetsInContact()` / `isPaused()` / `setPaused(boolean)` | 战斗时间四种语义与暂停 |
 
 接口签名只是起点，语义才是本节的重点。最容易踩空的三处是战斗上下文判断、`getPlayerShip()` 的返回语义与战斗结束判定，先从它们开始。
 
@@ -276,26 +276,26 @@ LOG.info("GearIn ships: alive=" + alive + " notAlive=" + notAlive
     }
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用既有 MOD 构建流程)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用既有 MOD 构建流程)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInCombatStatePlugin.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInCombatStatePlugin.class`(可用 `jar tf` 核对)。
 
 ## 完整最小例
 
 在既有的 MOD 布局与战斗插件模型 [C7-S1] 之上，新增一个插件类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Subject>`)：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\
+│   └── data/scripts/gearin\
 │       ├── GearInModPlugin           # 既有插件；本节不改动
 │       ├── GearInGlobalAccess        # 既有类；本节只消费
 │       └── combat\
@@ -447,7 +447,7 @@ if (engine.getFleetManager(FleetSide.PLAYER).getDeployedCopy().isEmpty()) { retu
 
 前置数据：既有 MOD 布局 [C6-S1] 与战斗插件接入 ([C7-S1]，含注册片段)、`GearInCombatStatePlugin` 类、`GearIn_test` 测试战役 [C4-S1]。
 
-1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，并核对 `jar tf jars\GearIndustry.jar` 的内容。
+1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，并核对 `jar tf jars/GearIndustry.jar` 的内容。
 2. 进入 `GearIn_test` 战役一场战斗，让插件运行数秒。
 3. 战斗内按空格暂停约 10 秒再恢复。
 4. 击毁一艘敌方舰船，观察下一条 `GearIn ships:` 日志。

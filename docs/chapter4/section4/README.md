@@ -99,14 +99,12 @@
 
 ## 登记舰船数据
 
-打开 `data/hulls/ship_data.csv`，为主体与模块各加一行。
-
-以下示例文件同时保留了原版标本行 (`#` 注释) 与本 MOD 已有舰船行 (`GearIn_slag`、`GearIn_forging`、`GearIn_furnaceman` 来自舰船制作示例，`GearIn_artizan` 来自舰船系统示例)，您需要追加的是最后两行：
+打开 `data/hulls/ship_data.csv`，在末尾追加 `GearIn_kiln` 与 `GearIn_kiln_module` 两行 (原版标本行与本 MOD 已有舰船行保持不变)：
 
 ::: caution 船体行的 hints 必须写对
 
 - 模块行的 `hints` 必须带 `UNBOARDABLE` 和 `HIDE_IN_CODEX`：前者保证它不可被打捞，后者保证它不出现在数据库中 (原版模块行全部带这两个值)。原版模块还带 `MODULE`，标记模块身份，交易界面等列表会按模块处理它。
-- **主体行的 `hints` 必须带 `SHIP_WITH_MODULES`**，否则模块会在某些场合丢失：战斗部署时根本不生成模块 (详见 "运行态")。
+- **主体行的 `hints` 必须带 `SHIP_WITH_MODULES`**，否则模块会在某些场合丢失：战斗部署时根本不生成模块。
 
 :::
 
@@ -114,7 +112,7 @@
 
 - 模块的舰级名 (`designation`) 可以不填。
 - 模块的后勤数据应当尽可能接近于 "无"：0 船员、0 货舱、0 燃料，`supplies/rec` 与 `supplies/mo` 为 0。
-- 模块行的 `tags` 不应该包含任何诸如 `x_bp` 或 `merc` 之类的蓝图/销售 tag—— 模块不是通过蓝图或市场渠道获得的舰船。原版模块行 (如 `platform1`) 的 tags 为空。模块的行为类 tag(`module_unselectable` 等) 见下文运行态一节。
+- 模块行的 `tags` 不应该包含任何诸如 `x_bp` 或 `merc` 之类的蓝图/销售 tag—— 模块不是通过蓝图或市场渠道获得的舰船。原版模块行 (如 `platform1`) 的 tags 为空。
 
 :::
 
@@ -128,7 +126,7 @@
 
 ![测试战役中制作主体与模块装配](./variant_make.png "variant_make.png")
 
-在装配界面为 `窑-级` 装上武器与船插，并为模块也做一份装配，游戏会把它们导出到存档目录 (`\Starsector\saves\missions\GearIn_test\`)。
+在装配界面为 `窑-级` 装上武器与船插，并为模块也做一份装配，游戏会把它们导出到存档目录 (`saves/missions/GearIn_test/`)。
 
 ## 整理正式装配
 
@@ -142,7 +140,7 @@
 
 ## 挂载模块装配
 
-打开原版的 `data\variants\stations\station_small_Standard.variant`，可以看到类似这样的一段：
+打开原版的 `data/variants/stations/station_small_Standard.variant`，可以看到类似这样的一段：
 
 ```json
     "modules": {
@@ -169,7 +167,7 @@
 
 两行注册数据追加到 `data/hulls/ship_data.csv`(最后两行)；主体装配写入 `data/variants/GearIn_kiln_combat.variant`(含 `modules` 字段)，模块装配写入 `data/variants/GearIn_kiln_module_combat.variant`。
 
-```csv {10,11}
+```csv
 name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
 #Lasher,lasher,Frigate,Low Tech,ammofeed,5,1750,300,2100,1750,140,55,,120,110,90,60,90,200,FRONT,,210,0.4,1,,,25,50,40,25,1,25,10,9000,8,10,240,0.25,4,4,,,,,,,,"lowtech_bp, merc, ind",,,,0.4,2,2,,204
 #Hammerhead,hammerhead,Destroyer,Midline,ammofeed,10,5000,500,4200,4167,250,95,,90,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,"midline_bp, merc, ind",,,,0.5,2,3,,300
@@ -183,7 +181,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 ,GearIn_kiln_module,模块,Midline,,10,5000,500,3000,,250,60,,0,0,0,10,10,300,NONE,,0,0,0,,,0,0,0,0,1,0,,40000,,1,,,0,0,,,,,,,"UNBOARDABLE, HIDE_IN_CODEX, MODULE",,,,,0.5,2,3,,300
 ```
 
-```json {15-18}
+```json
 {
     "displayName": "Combat",
     "fluxCapacitors": 23,
@@ -251,7 +249,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 预期结果：
 
-- 启动后日志出现 `Loading variant [data\variants\GearIn_kiln_combat.variant]` 与 `Loading variant [data\variants\GearIn_kiln_module_combat.variant]`，没有相关 `ERROR`。
+- 启动后日志出现 `Loading variant [data/variants/GearIn_kiln_combat.variant]` 与 `Loading variant [data/variants/GearIn_kiln_module_combat.variant]`，没有相关 `ERROR`。
 - 测试战役的舰队列表里 `窑-级` 的预览包含模块 (整体尺寸由 `getSizeWithModules` 计算)；部署后主体与模块实体同时出现，模块位置在槽位处、朝向沿槽位角，随主体平移旋转而移动。
 - 装配界面里点击模块可以改装它的武器与船插 (本例模块 `ordnance points` 为 60，可选中)；`goalVariant: true` 让主体装配出现在自动装配候选里。
 - 模块被摧毁后主体仍可继续作战；返回舰队后模块按战斗记录的状态呈现。

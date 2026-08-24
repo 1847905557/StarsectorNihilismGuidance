@@ -203,8 +203,6 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 | hullMods | 战机本装配所安装的插件 |
 | weaponGroups | 战机本装配的武器列表，在 `weapons` 项目里的则是具体武器。注意，图中诸如 `WS 001` 的是槽位 ID，**必须是战机本身确实拥有的槽位**，否则游戏将报错。而槽位 ID 后的则是武器 ID，可以查询 `weapon_data.csv`。|
 
-经过修改的装配文件如下：
-
 ```json {3-5,15,16}
 {
 	"quality":0.5,

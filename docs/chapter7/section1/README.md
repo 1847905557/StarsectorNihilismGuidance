@@ -135,7 +135,7 @@ private void report(CombatEngineAPI engine) {
 
 示例做一件事：统计 "非暂停时间" 累计秒数 (`elapsed`) 与回调总次数 (`calls`)，每累计 10 秒向日志输出一次，并在玩家舰船位置显示一行浮动文字。暂停期间 `calls` 继续增长、`elapsed` 冻结 —— 这正是暂停检查的可观察结果。
 
-文件：`src\data\scripts\gearin\combat\GearInPauseAwarePlugin.java`：
+文件：`src/data/scripts/gearin/combat/GearInPauseAwarePlugin.java`：
 
 ::: details 完整成品：GearInPauseAwarePlugin
 
@@ -217,7 +217,7 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 
 1. 重启游戏，进模拟战 (有玩家舰船)，正常跑约 15 秒；
 2. 打开 `starsector.log`：出现 `GearIn: elapsed 10s, calls 600 (paused 0)` 之类的报告 —— `calls` 约等于秒数 × 60，这正是每帧被调用一次的表现；
-3. 按 ESC 暂停约 20 秒再恢复：暂停期间**没有**新报告；恢复后第一次报告的 `elapsed` 与暂停前连续 (暂停的 20 秒没被计入)，而 `calls` 明显多了一大截 —— 暂停期间 `advance` 一直在被调用，只是被暂停检查拦下了；
+3. 按 ESC 暂停约 20 秒再恢复；
 4. 故障注入：删掉 `advance` 里的暂停检查段 (`if (engine.isPaused()) {...return;}`)，重启、进战斗、暂停 20 秒 —— 恢复后 `elapsed` 照常涨了 20 秒。改回后恢复。
 
 ::: warning 状态推进必须先过暂停检查
@@ -248,9 +248,9 @@ if (engine.isPaused()) { return; } elapsed += amount; report(engine);
 
 ## 验证方案
 
-前置数据：`GearInPauseAwarePlugin` 已写入 `data/config/settings.json` 的 `plugins` 段，`jars\GearIndustry.jar` 已按 [C6-S1] 的流程构建并在启动器启用本 MOD。
+前置数据：`GearInPauseAwarePlugin` 已写入 `data/config/settings.json` 的 `plugins` 段，`jars/GearIndustry.jar` 已按 [C6-S1] 的流程构建并在启动器启用本 MOD。
 
-1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
+1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
 2. 启动游戏，进入模拟战 (有玩家舰船)，正常跑约 15 秒。
 3. 打开 `starsector.log`，搜索 `GearIn`，核对报告行与数字。
 4. 按 ESC 暂停约 20 秒再恢复，再次核对报告行。

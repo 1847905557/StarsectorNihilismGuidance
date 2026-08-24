@@ -79,7 +79,7 @@ GearIn_ember_world,PLANET,被炼厂烟尘和赤红云层包围的工业世界，
 
 在 `GearInSystemGenerator.generate()` 的 `addPlanet` 行只替换类型参数：
 
-```java
+```java {3}
 PlanetAPI prime = system.addPlanet(
         "GearIn_planet1", star, "GearIn Prime",
         "GearIn_ember_world", 55, 150, 3200, 120);

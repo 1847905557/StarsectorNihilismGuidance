@@ -354,7 +354,7 @@
 | glowColor | 武器开火时光效贴图的颜色 |
 | width | 光束宽度，仅对光束武器有效 |
 | renderHints | 武器渲染模式，可以是 `RENDER_BARREL_BELOW`、`RENDER_LOADED_MISSILES`、`RENDER_LOADED_MISSILES_UNLESS_HIDDEN`、`RENDER_ADDITIVE`、`SUSPEND_RECOIL`、`NEVER_RENDER_IN_CAMPAIGN` 中有逻辑的排列组合，分别是将炮管渲染在主体底部、渲染导弹、非隐藏槽位时渲染导弹、以叠加模式渲染、炮管默认不移动、生涯界面中不渲染 |
-| 各类 offsets 和 angleOffsets | 炮塔开火点、炮塔开火角度、固定槽位开火点、固定槽位开火角度。因为本例的武器是双管自动炮，所以需要进行对应调整 —— 每 2 个开火点数字表示 1 个坐标并对应 1 个开火角度数字。**开火点的坐标原点是武器的旋转枢轴：炮塔贴图的中心，固定槽位贴图底部约 1/4 高度处。第一个数字正/负沿炮口方向 (正数为朝炮口)，第二个数字正/负是贴图的左/右** |
+| 各类 offsets 和 angleOffsets | 与 `turretOffsets` / `hardpointOffsets` 一行相同：坐标原点、正负方向与调整 |
 | barrelMode | 炮管射击模式，可以是 `LINKED`、`ALTERNATING`、`ALTERNATING_BURST` 或 `DUAL`，分别是齐射、轮流发射、每炮管波次发射、每次发射 2 发 |
 | autocharge | 设为 true 时，按下左键即可自动完成前摇，否则必须按住左键直到前摇完成为止。仅对非光束武器有效 |
 | beamFireOnlyOnFullCharge | 设为 true 时，光束在渐入阶段不会产生光束也不会造成伤害。仅对光束武器有效 |

@@ -40,8 +40,6 @@ GearIn 同时使用四个渲染与工具前置；缺少其中任何一个时，�
 ]
 ```
 
-不过，您更可能看到的是如下的样子：
-
 ```json
 "dependencies": [
   {"id":"lw_lazylib","name":"LazyLib"},

@@ -57,7 +57,7 @@ GearIndustry\
 
 ## 为什么使用 OGG
 
-本教程接入 Starsector 的声音资源**必须使用 Ogg Vorbis**。原版 `Starsector\starsector-core\sounds` 只包含 `.ogg` 音频，`sounds.json` 引用的资源也全部是 `.ogg`。
+本教程接入 Starsector 的声音资源**必须使用 Ogg Vorbis**。原版 `sounds` 只包含 `.ogg` 音频，`sounds.json` 引用的资源也全部是 `.ogg`。
 
 ::: caution 必须真正转码
 
@@ -167,5 +167,5 @@ GearIndustry\
 
 - `com.fs.starfarer.api.Global`：`getSoundPlayer()` 获取声音播放器 (消费层入口)。
 - `com.fs.starfarer.api.SoundPlayerAPI`：按 sound ID 播放的公开接口，含 `playLoop(id, ...)` 等循环播放方法。
-- `Starsector\starsector-core\sounds`：原版声音目录，音频全部为 `.ogg`(`sounds\music\music.bin` 为音乐容器)。
-- `Starsector\starsector-core\data\config\sounds.json`：原版注册表，`file` 值全部指向 `.ogg`，无 loop 字段。
+- `sounds`：原版声音目录，音频全部为 `.ogg`(`sounds/music/music.bin` 为音乐容器)。
+- `data/config/sounds.json`：原版注册表，`file` 值全部指向 `.ogg`，无 loop 字段。

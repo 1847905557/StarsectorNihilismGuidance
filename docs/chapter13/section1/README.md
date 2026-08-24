@@ -15,7 +15,7 @@
 - 解释 `BarEventManager` 的调度语义：按游戏天推进 (`Misc.getDays`)、active/timeout 两个 `TimeoutTracker`、未交互过期事件清理、`maxTotalBarEventsAsFractionOfEventTypes` 上限、priority picker 优先、普通 picker 按 `getBarEventFrequencyWeight()` 权重抽取、`createBarEvent()` 返回 null 跳过；
 - 描述事件生命周期：创建入列 (active 时长内可显示)→ 显示过滤 (`shouldRemoveEvent` / `shouldShowAtMarket`)→ `addPromptAndOption` 写提示与选项 (**optionData 必须是事件自身**)→ `BarEventDialogPlugin` 事件对话 (`init` → `optionSelected` → `isDialogFinished` → 回到酒吧)→ 交互收尾 `notifyWasInteractedWith(this)`(移除 + accepted 超时)；以及未交互时 active 时长过期后的清理与普通超时；
 - 设置酒吧显示链路的可调参数：`settings.json` 的 `minBarEvents` / `maxBarEvents` / `barEventProbOneMore`、市场内存 `$BarCMD_shownEvents`(按事件 ID 复现)、`AddBarEvents` 规则分类与 `AddBarEvent` / `RemoveBarEvent` 临时选项的 "每次展示前清空重建" 语义；
-- 从症状定位故障 (见 "故障分析" 节)：结果必须沿着**数据文件/注册入口 → 调度入列 → 显示过滤 → 对话收尾**四个位置核对。
+- 从症状定位故障：结果必须沿着**数据文件/注册入口 → 调度入列 → 显示过滤 → 对话收尾**四个位置核对。
 
 ## 前置知识
 
@@ -73,7 +73,7 @@
     - `createBarEvent()` 按 `spec.isMission()` 分派 ——plugin 是 `HubMissionWithBarEvent` 时创建 `HubMissionBarEventWrapper`(mission 酒吧包装)，否则 `spec.createEvent()` 直接 `getInstanceOfScript(pluginClass)` 实例化普通 `PortsideBarEvent`；
     - `isPriority()` = `spec.hasTag(Tags.MISSION_PRIORITY)`("priority" tag)。
 
-**非 mission 的普通事件** (如 `LuddicFarmerBarEvent`、`HistorianBarEvent`) 不走 CSV，走代码注册 (见下)。
+**非 mission 的普通事件** (如 `LuddicFarmerBarEvent`、`HistorianBarEvent`) 不走 CSV，走代码注册。
 
 ### 注册入口
 
@@ -88,7 +88,7 @@
 
 **manager 实例、creator 列表、active 事件列表都随存档保存** (sector memory 持久化；`TimeoutTracker` 的 `set` 由 `readResolve` 重建)。
 
-MOD 注册入口 (本节示例，见 "完整最小例")：
+MOD 注册入口 (本节示例)：
 
 ```java
 BarEventManager manager = BarEventManager.getInstance();
@@ -251,7 +251,7 @@ public PortsideBarEvent createBarEvent() {
 
 在 `GearInBarEvent.shouldShowAtMarket()` 中先保留基类的 `shownAt` 锁定，再检查太空港。
 
-```java
+```java {3}
 @Override
 public boolean shouldShowAtMarket(MarketAPI market) {
     if (!super.shouldShowAtMarket(market)) {
@@ -267,7 +267,7 @@ public boolean shouldShowAtMarket(MarketAPI market) {
 
 在 `addPromptAndOption()` 中写提示，并把事件对象自身作为 optionData。`BarCMD` 依靠这个类型判断进入事件对话。
 
-```java
+```java {8}
 @Override
 public void addPromptAndOption(InteractionDialogAPI dialog,
         Map<String, MemoryAPI> memoryMap) {
@@ -325,16 +325,16 @@ private void finish() {
 
 ## 组装酒吧事件实现
 
-规则明确之后，可以动手了。本节示例在既有教程 MOD 布局与 `GearInModPlugin`(前置单元) 之上新增两个同包类，位于 `src\data\scripts\gearin\campaign\`，不新增任何资源、不新增 CSV 行：
+规则明确之后，可以动手了。本节示例在既有教程 MOD 布局与 `GearInModPlugin`(前置单元) 之上新增两个同包类，位于 `src/data/scripts/gearin/campaign\`，不新增任何资源、不新增 CSV 行：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\campaign\
+│   └── data/scripts/gearin/campaign\
 │       ├── GearInBarEvent          # 本节新增 (酒吧事件：显示、对话与生命周期收尾)
 │       └── GearInBarEventCreator   # 本节新增 (creator：注册入口与抽取参数)
 └── jars\
@@ -410,13 +410,13 @@ gearIn_barBackToBar,DialogOptionSelected,$option == gearIn_barBackToBar,BarCMD r
 
 临时选项点选后走 `DialogOptionSelected` 规则；`BarCMD returnFromEvent false` 从规则对话回到酒吧选项。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用前置单元的编译链路)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用前置单元的编译链路)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含两个 class 条目 (可用 `jar tf` 核对)：
+产物 `jars/GearIndustry.jar` 应包含两个 class 条目 (可用 `jar tf` 核对)：
 
 - `data/scripts/gearin/campaign/GearInBarEvent.class`
 - `data/scripts/gearin/campaign/GearInBarEventCreator.class`
@@ -446,7 +446,7 @@ BarEventManager.getInstance().notifyWasInteractedWith(this);
 
 前置数据：既有教程 MOD 布局与 `GearInModPlugin`(含本节调用点片段，见前置知识 [C6-S1] / [C6-S2])、本节两个类、(可选)rules.csv 临时选项片段。
 
-1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个类的 `.class`。
+1. 游戏构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含两个类的 `.class`。
 2. 新建生涯，在教程进行中进入酒吧，观察事件和临时选项。
 3. 跳过或完成教程后进入 Jangala 酒吧，查看 `creator picked`、`eligible at`、`prompt at`、`shown at` 四条日志，以及酒吧面板的提示文本和选项。
 4. 在同一市场等待 20–40 游戏天后再次进入酒吧，观察事件组。
@@ -457,7 +457,7 @@ BarEventManager.getInstance().notifyWasInteractedWith(this);
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到两个类的 `.class`。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到两个类的 `.class`。
 - **跳过/完成教程后**：
 
     - 进入任一有太空港的市场 (如 Corvus 星系的 Jangala)，交互里选 "Take a shuttle down to visit a dockside bar"；`starsector.log` 出现。

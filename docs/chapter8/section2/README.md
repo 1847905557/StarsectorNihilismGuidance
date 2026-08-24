@@ -65,7 +65,7 @@ ship_data.csv 的 system id / defense id 列
 
 | 分组 | 成员 | 语义 |
 |---|---|---|
-| 状态 | `getState()` / `isActive()` / `isOn()` / `isStateActive()` / `isChargeup()` / `isChargedown()` / `isCoolingDown()` | `SystemState` 五态枚举与 6 个布尔视图 (详见 "状态机") |
+| 状态 | `getState()` / `isActive()` / `isOn()` / `isStateActive()` / `isChargeup()` / `isChargedown()` / `isCoolingDown()` | `SystemState` 五态枚举与 6 个布尔视图 |
 | 效果 | `getEffectLevel()` / `getChargeUpDur()` / `getChargeActiveDur()` / `getChargeDownDur()` | 效果强度 0–1 与三段时间 (来自 CSV `charge up` / `active` / `down`) |
 | 冷却 | `getCooldown()` / `getCooldownRemaining()` / `setCooldown()` / `setCooldownRemaining()` | 冷却总时长与剩余；剩余量只在 `COOLDOWN` 态倒计时，`IN`/`ACTIVE`/`OUT` 返回完整时长，`IDLE` 返回 0(充能计时器的冷却进度值)—— 这也是原版内置 AI 用 `getCooldownRemaining() > 0` 作判断时能同时拦下 "激活中/后摇中" 的原因 |
 | 弹药 | `getAmmo()` / `getMaxAmmo()` / `getAmmoPerSecond()` / `getAmmoReloadProgress()` / `isOutOfAmmo()` / `setAmmo()` | `max uses` / `regen` 两列的运行态 (`AmmoTrackerAPI`) |
@@ -334,16 +334,16 @@ AI 舰船每 0.2–0.3 秒决策一次：验证目标 → 写入 `TARGET_FOR_SHI
 在既有 MOD 布局与战术系统数据面之上新增一个类文件，包与类名遵循命名约定 (`data.scripts.gearin.shipsystems`、`GearIn<Subject>`)：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 │   └── shipsystems\
-│       ├── GearIn_targetingsystem.system   # 本节数据接入片段 (见下)
-│       └── ship_systems.csv                # 注册行 (见下)
+│       ├── GearIn_targetingsystem.system   # 本节数据接入片段
+│       └── ship_systems.csv                # 注册行
 ├── src\
-│   └── data\scripts\gearin\
+│   └── data/scripts/gearin\
 │       ├── GearInModPlugin                 # 既有入口类；本节不改动
 │       ├── GearInGlobalAccess              # 既有全局访问类；本节只消费
 │       └── shipsystems\
@@ -357,7 +357,7 @@ Starsector\mods\GearIndustry\
 
 对应关系：
 
-- 静态目标逻辑 (`getRange` / `isValidTarget` / `readAITarget` / `writeAITarget` / `pickTarget`)：两个角色共享的同一语义 ——AI 写入、stats 使用都走同一套合法性检查 (规则 6、6)，"AI 与 Stats 各自复制过滤条件" 是高频陷阱。
+- 静态目标逻辑 (`getRange` / `isValidTarget` / `readAITarget` / `writeAITarget` / `pickTarget`)：两个角色共享的同一语义 ——AI 写入、stats 使用都走同一套合法性检查 (规则 6、7)，"AI 与 Stats 各自复制过滤条件" 是高频陷阱。
 - `readAITarget` 的 `source.getShipAI() == null` 判断：用户舰无 AI，flag 无人写入 (规则 6 的用户侧事实)；`pickTarget` 回退 `getShipTarget()`(通道 2)。
 - `apply`：`(ShipAPI) stats.getEntity()` 取舰船 (战斗期非 null)；`state == OUT || !locked` 时 `unmodify(id)`，否则 `modifyMult(id, 1 + 0.5 * effectLevel)`—— "目标验证不过就不加成"。
     - `lastApplyState` 状态跳变日志把 `IN → ACTIVE → OUT` 变成日志证明 (规则 4 的可见性边界：`COOLDOWN`/`IDLE` 在 stats 侧看不到，由 AI 侧补全)。
@@ -371,7 +371,7 @@ Starsector\mods\GearIndustry\
 ### 数据接入片段 (工程片段 —— 本单元不创建数据文件)
 
 ```json
-// data\shipsystems\GearIn_targetingsystem.system(片段)
+// data/shipsystems/GearIn_targetingsystem.system(片段)
 {
     "id": "GearIn_targetingsystem",
     "type": "STAT_MOD",
@@ -413,13 +413,13 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 `aiHints` 让敌方 AI 把就绪中的本系统计入威胁 (`threatAmount=1`、`threatRange=800`)。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`(可用 `jar tf` 核对)。
 
 ## 关键故障实验：系统能充能却没有有效目标
 
@@ -444,9 +444,9 @@ ShipAPI locked = pickTarget(ship);
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 [C6-S1]、战术系统数据面 [C2-S3]；本节数据接入片段 (`GearIn_targetingsystem.system`、`ship_systems.csv` 注册行、`GearIn_artizan` 的 `system id` 挂载)；`GearInTargetingSystem` 类实现已编入 `jars\GearIndustry.jar`。
+前置数据：既有 MOD 布局 [C6-S1]、战术系统数据面 [C2-S3]；本节数据接入片段 (`GearIn_targetingsystem.system`、`ship_systems.csv` 注册行、`GearIn_artizan` 的 `system id` 挂载)；`GearInTargetingSystem` 类实现已编入 `jars/GearIndustry.jar`。
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
 2. **数据接入**：启动游戏，在日志中观察 `GearIn_targetingsystem` 的系统加载与数据应用记录。
 3. **用户侧无目标**：进入 `GearIn_test` 战役，无目标按 F，观察系统反应 (`isUsable` 返回 false)。
 4. **用户侧有目标**：右键锁定敌舰后按 F，核对四行 stats 状态日志与 `unapply effect (id=GearIn_targetingsystem effect)`，观察 1.5 倍速度与 `target locked` 状态文字。
@@ -457,7 +457,7 @@ ShipAPI locked = pickTarget(ship);
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
 - **数据接入**：按数据接入片段接入后启动游戏，日志出现 `Loading ship system [data/shipsystems/GearIn_targetingsystem.system]` 与 `Applying data from ship_systems.csv to [GearIn_targetingsystem]`：没有与 `GearIn_targetingsystem` 相关的 `ERROR`。
 - **用户侧手动激活 (`GearIn_test` 战役或模拟战，`GearIn_artizan` 已挂载)**：无目标时按 F—— **没有任何反应** (`isUsable` 返回 false，规则 1；日志无状态变化)；连续空按约 2 秒后出现失败音。鼠标右键锁定一艘敌舰 (`getShipTarget()` 非 null) 后按 F—— 系统正常进入 `IN`，日志出现。
 

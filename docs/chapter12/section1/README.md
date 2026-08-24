@@ -46,7 +46,7 @@
     - `removeScript(script)` 按**对象同一性**；
     - `removeScriptsOfClass(Class)` 按**精确类** `getClass() == clazz`；
     - `hasScript(Class)` 用 `isInstance`—— 查重用 `hasScript`，批量删用 `removeScriptsOfClass`，别混用。
-3. **`addScript` 不去重**：同一实例或等价实例重复注册会各自推进 —— 一次性注册必须用 persistent data 标记 (必须遵守的规则，见 "注册与存档" 节)。
+3. **`addScript` 不去重**：同一实例或等价实例重复注册会各自推进 —— 一次性注册必须用 persistent data 标记 (必须遵守的规则)。
 4. 脚本基类把 `runWhilePaused()` 默认设为 `false`；引擎内置脚本也走同一机制。
 5. `EveryFrameScriptWithCleanup`(`com.fs.starfarer.api.EveryFrameScriptWithCleanup`) 只多一个 `cleanup()`："附着实体从生涯引擎移除时调用"(实体级脚本；引擎级脚本不触发)。该接口没有可观测的调用点，行为表述即上述语义。
 
@@ -211,13 +211,13 @@ public boolean isDone() {
 选型之后落到代码。在已有 MOD 布局 [C6-S1] 与 `GearInModPlugin`[C6-S2] 之上新增两个脚本类 (不新增任何资源、不新增任何注册项 —— 指不新增数据/资源注册项；脚本经 `onGameLoad` 注册属于代码注册)：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\campaign\
+│   └── data/scripts/gearin/campaign\
 │       ├── GearInCalendarDayScript     # 模式 A：日历跨日检测 (本节新增)
 │       └── GearInDayAccumulatorScript  # 模式 B：天数累加器 + daysToRun 自停 (本节新增)
 └── jars\
@@ -243,7 +243,7 @@ Starsector\mods\GearIndustry\
 
 对应关系：
 
-- `implements EveryFrameScript`：`isDone()` 返回字段 `done`—— 累计满 `daysToRun` 后引擎在 `advance` 返回后的同一次推进中移除本脚本 (每帧最多查两次 `isDone()`，见上)；`daysToRun < 0` 时恒 `false`，常驻。
+- `implements EveryFrameScript`：`isDone()` 返回字段 `done`—— 累计满 `daysToRun` 后引擎在 `advance` 返回后的同一次推进中移除本脚本 (引擎在 `advance` 前与返回后各查一次 `isDone()`，返回后为 `true` 即移除)；`daysToRun < 0` 时恒 `false`，常驻。
 - `REGISTER_MARK`：persistent data 注册标记的键 (`"GearIn_DayAccumulatorScript"`)，**必须**与调用点片段里的键逐字一致 (与模式 A 各自独立，互不复用)。
 - `convertToDays(amount)`：`amount` 是上一帧真实秒数，`clock.convertToDays(amount)` 才是本帧折合的游戏天数 —— 本类 `advance` 第一行就是换算。
 - `daysAccumulator` / `while`(模式 B)：累计满 `tickEveryDays` 个游戏天触发一次例程 (日志 `GearIn daily: routine #N ...`)，余数跨帧保留；单帧跨多个游戏日时逐日补触发。
@@ -290,13 +290,13 @@ Starsector\mods\GearIndustry\
 
 先 `setTickEveryDays` / `setDaysToRun` 再 `addScript`；该实例不经过 persistent data 标记，仅用于演示，看完记得移除，避免与常驻实例的日志混淆。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用 [C6-S1])：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用 [C6-S1])：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下两个脚本类的 class 条目 (可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下两个脚本类的 class 条目 (可用 `jar tf` 核对)。
 
 ### 关键故障实验：旧档读入后脚本重复注册
 
@@ -325,7 +325,7 @@ if (!sector.getPersistentData().containsKey(REGISTER_MARK)) {
 
 前置数据：已有 MOD 布局 [C6-S1]、`GearInModPlugin` ([C6-S2]，含本节调用点片段) 与两个脚本类。
 
-1. 构建游戏 MOD：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，并核对 `jar tf jars\GearIndustry.jar` 含两个脚本类的 class 条目。
+1. 构建游戏 MOD：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，并核对 `jar tf jars/GearIndustry.jar` 含两个脚本类的 class 条目。
 2. 新建生涯，在 `starsector.log` 中观察两个脚本的周期记录。
 3. 暂停与加速对照：生涯中按空格暂停 20 秒以上，再按住 Shift 约 10 秒。
 4. 保存并读档：确认注册不重复、累计值从存档继续。
@@ -334,7 +334,7 @@ if (!sector.getPersistentData().containsKey(REGISTER_MARK)) {
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInCalendarDayScript` 与 `GearInDayAccumulatorScript` 两个脚本类的 class 条目。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInCalendarDayScript` 与 `GearInDayAccumulatorScript` 两个脚本类的 class 条目。
 - **新建生涯**：`starsector.log` 出现 `GearIn calendar: new day 206.3.3` 与 `GearIn daily: routine #1 at 206.3.3 | since mount=1.0 game days`；随后每 10 真实秒 (未暂停、未加速) 各出现一次：`GearIn calendar: new day ...` (模式 A，日期逐日前进) 与 `GearIn daily: routine #N ...` (模式 B，`since mount` 逐日 +1.0)。挂载点约为 206.3.2 (新档初始 206.1.1，推进窗口 60.2 游戏日)。
 - **暂停 (空格)**：等待 20 秒以上无新日志 (脚本冻结、时钟冻结)；恢复后继续，`since mount` 不因暂停丢失进度。
 - **加速 (按住 Shift)**：日志频率约翻倍 (`campaignSpeedupMult = 2`，每帧推进两次)，约每 5 真实秒各一次。

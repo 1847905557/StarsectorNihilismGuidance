@@ -28,7 +28,7 @@
 
 `createStarSystem → initStar → addPlanet → addCustomEntity → createJumpPoint → autogenerateHyperspaceJumpPoints`
 
-链上各步创建的实体最终要加入星系容器：`addPlanet` / `addCustomEntity` 会自动加入容器，但 `createJumpPoint` 只创建不加入，需要显式 `system.addEntity(...)` (见下文故障分析)。类型由数据文件提供，位置由生成器提供。
+链上各步创建的实体最终要加入星系容器：`addPlanet` / `addCustomEntity` 会自动加入容器，但 `createJumpPoint` 只创建不加入，需要显式 `system.addEntity(...)`。类型由数据文件提供，位置由生成器提供。
 
 ## 逐步接通生成入口
 

@@ -49,10 +49,10 @@
 | 回调 | 时机 | 说明 |
 |---|---|---|
 | `init(CombatEntityAPI)` | `addLayeredRenderingPlugin` 后由引擎在 `executeAdds` 阶段调用 | 与 `EveryFrameCombatPlugin.init()` 不同，**这个 init 保证在渲染与推进前执行**；参数是承载实体，不是引擎 |
-| `advance(float)` | 每帧非暂停分支的实体推进循环 | 暂停时**不调用** (与 `EveryFrameCombatPlugin.advance` 相反，见 "推进与暂停") |
+| `advance(float)` | 每帧非暂停分支的实体推进循环 | 暂停时**不调用** (与 `EveryFrameCombatPlugin.advance` 相反) |
 | `render(CombatEngineLayers, ViewportAPI)` | 每帧渲染阶段，**每个激活层各调用一次** | 只有 `isNearViewport(entity.getLocation(), getRenderRadius())` 通过才调用 |
 | `isExpired()` | 每次推进后由引擎检查 | 返回 true → 实体进移除队列 → 移除时调用 `cleanup()` |
-| `cleanup()` | 实体被引擎移除时 | 见 "清理" 节：战斗结束的 `destroyInstance` 不调用它 |
+| `cleanup()` | 实体被引擎移除时 | 战斗结束的 `destroyInstance` 不调用它 |
 | `getActiveLayers()` | 注册时 (决定进哪些层) 与每次渲染 (分派) | 返回 `EnumSet<CombatEngineLayers>` |
 | `getRenderRadius()` | 每次渲染前 (剔除判定) | 绘制范围必须被它覆盖 |
 
@@ -303,26 +303,26 @@ public void cleanup() {
     }
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用前置单元建立的编译链路)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用前置单元建立的编译链路)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`(可用 `jar tf` 核对)。
 
 ## 完整最小例
 
-规则只说明约束，下面用一个完整最小例把注册、推进、渲染与清理全部落进代码。在前置单元建立的 MOD 布局与战斗插件之上新增一个插件类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Subject>`)：
+规则只说明约束，下面把注册、推进、渲染与清理全部落进代码。在前置单元建立的 MOD 布局与战斗插件之上新增一个插件类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Subject>`)：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\
+│   └── data/scripts/gearin\
 │       ├── GearInModPlugin            # C6-S2 所有；本节不改动
 │       ├── GearInGlobalAccess         # C6-S3 所有；本节只消费
 │       └── combat\
@@ -492,7 +492,7 @@ public void advance(float amount) { advanceState(amount); } public void render(C
 
 前置数据：[C6-S1] 的 MOD 布局 + [C7-S1] 的战斗插件接入 + [C7-S5] 的战斗生命周期插件 (其部署监听器已加入本节注册片段) + 本节的 `GearInLayeredRenderer` + [C4-S1] 的 `GearIn_test` 测试战役。
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
 2. **战役验证**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 中观察分层渲染初始化记录。
 3. **画面**：观察每个已部署成员身上的半透明青色方框：跟随移动、位于舰船与导弹之上、粒子之下。
 4. **暂停**：按空格暂停约 10 秒 —— 方框静止但可见；恢复后继续跟随。
@@ -502,7 +502,7 @@ public void advance(float amount) { advanceState(amount); } public void render(C
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
 
 - **战斗初始化**：进入 `GearIn_test` 测试战役一场战斗，`Starsector/starsector-core/starsector.log` 出现一行：
 

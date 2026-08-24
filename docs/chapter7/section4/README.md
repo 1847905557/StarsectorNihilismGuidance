@@ -382,7 +382,7 @@ LOG.info("GearIn damage source=" + (source == null ? "null" : source.getClass().
 
 可观察信号：`GearIn dealt ...` / `GearIn taken ...`(结算前) 与 `GearIn damage ...`(结算后)，顺序固定为先 `dealt` 后 `damage`。
 
-若要修改伤害，正确做法见 "注册与接入片段" 的伤害修改示范。
+若要修改伤害，必须走 `damage.getModifier()` 修改并返回同一个 id (硬规范 6)。
 
 ## GearInWeaponFlowEffect(武器逐帧效果，.wpn everyFrameEffect 绑定)
 
@@ -429,11 +429,11 @@ LOG.info("GearIn damage source=" + (source == null ? "null" : source.getClass().
     }
 ```
 
-数据接入片段 (工程片段 —— 本单元不创建数据文件；接入后武器逐帧效果与射弹回调才生效。以下 ID 由本节声明，路径在 `Starsector\mods\GearIndustry\` 下自洽)：
+数据接入片段 (工程片段 —— 本单元不创建数据文件；接入后武器逐帧效果与射弹回调才生效。以下 ID 由本节声明，路径在 `mods/GearIndustry/` 下自洽)：
 
 ```text
-data\weapons\GearIn_test_gun.wpn        # 片段：弹丸武器，绑定 everyFrameEffect
-data\weapons\proj\GearIn_test_shot.proj # 片段：弹体 spec，绑定 onFireEffect / onHitEffect
+data/weapons/GearIn_test_gun.wpn        # 片段：弹丸武器，绑定 everyFrameEffect
+data/weapons/proj/GearIn_test_shot.proj # 片段：弹体 spec，绑定 onFireEffect / onHitEffect
 ```
 
 ```json
@@ -475,26 +475,26 @@ data\weapons\proj\GearIn_test_shot.proj # 片段：弹体 spec，绑定 onFireEf
     }
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用前置知识中的编译链路)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用前置知识中的编译链路)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/` 下的六个类 (可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/combat/` 下的六个类 (可用 `jar tf` 核对)。
 
 ## 完整最小例
 
-规则讲得再多，不如让日志替您说话。在前置知识所述的 MOD 布局与战斗插件模型之上，本节新增六个单角色 Java 类 (不新增资源；`.wpn` / `.proj` 接入片段见下文，仅演示挂载点，本单元不创建数据文件)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Role>`)：
+规则讲得再多，不如让日志替您说话。在前置知识所述的 MOD 布局与战斗插件模型之上，本节新增六个单角色 Java 类 (不新增资源；`.wpn` / `.proj` 接入片段仅演示挂载点，本单元不创建数据文件)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Role>`)：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\
+│   └── data/scripts/gearin\
 │       ├── GearInModPlugin            # C6-S2 所有；本节不改动
 │       ├── GearInGlobalAccess         # C6-S3 所有；本节只消费
 │       └── combat\
@@ -894,9 +894,9 @@ for (DamagingProjectileAPI p : engine.getProjectiles()) { report(p); }
 
 ## 验证方案
 
-前置数据：前置知识中的 MOD 布局与战斗插件接入 (含本节注册片段)、六个示例类源码 (见上)、`GearIn_test` 测试战役 [C4-S1]。
+前置数据：前置知识中的 MOD 布局与战斗插件接入 (含本节注册片段)、六个示例类源码、`GearIn_test` 测试战役 [C4-S1]。
 
-1. **构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/` 下的六个类。
+1. **构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/combat/` 下的六个类。
 2. **战役冒烟**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 核对 `GearIn flow init: damage listeners registered on engine`：
     - 部署玩家舰后观察 `GearIn weapon ...` / `GearIn projectiles: ...` / `GearIn beam ...` 周期报告。
 3. **开火流**：用任意弹道武器开火，核对下一帧出现 `GearIn spawn ... spawnType=BALLISTIC fromMissile=false ...`，以及 `GearIn dealt ...` → `GearIn damage ...` 的先后顺序。
@@ -909,7 +909,7 @@ for (DamagingProjectileAPI p : engine.getProjectiles()) { report(p); }
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/` 下的六个类。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/combat/` 下的六个类。
 - **初始化**：进入 `GearIn_test` 战役 [C4-S1] 一场战斗，`starsector.log` 出现 `GearIn flow init: damage listeners registered on engine`：
     - 随后 (部署玩家舰后) 每 3 秒出现 `GearIn weapon ...` / `GearIn projectiles: ...` / `GearIn beam ...` 周期报告；没有 `gear_in` 引起的 `ERROR`。
 - **开火 → 射弹生成**：武器开火后下一帧出现 `GearIn spawn <specId> spawnType=BALLISTIC fromMissile=false weapon=... source=... damage=... emp=...`：

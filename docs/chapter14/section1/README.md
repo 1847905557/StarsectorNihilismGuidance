@@ -41,7 +41,7 @@
 
 ### rules.csv 列语义速查表
 
-词义固定后，从数据入口开始，沿加载、匹配、执行三条链看机制。规则表只有一份来源：**所有** `data/campaign/rules.csv`(原版 + 全部启用 MOD 各自一份，加载时合并)。原版表头为七列 (`Starsector\starsector-core\data\campaign\rules.csv` 首行；加载器按列名读取，列顺序即表头顺序)：
+词义固定后，从数据入口开始，沿加载、匹配、执行三条链看机制。规则表只有一份来源：**所有** `data/campaign/rules.csv`(原版 + 全部启用 MOD 各自一份，加载时合并)。原版表头为七列 (`data/campaign/rules.csv` 首行；加载器按列名读取，列顺序即表头顺序)：
 
 | 列 | 加载方式 | 语义 |
 |---|---|---|
@@ -71,7 +71,7 @@
     - **同文件**内重复 id → `RuntimeException("Duplicate key [...] while loading [...]")`，加载崩溃；
     - **跨文件**重复 id → 按资源处理顺序先到先得，后处理文件中的同 id 行**静默跳过** (无任何报错)；
     - 每份文件读取前过 `replaceSmartQuotes`(`readCSV` 第 4 参为 true，spec 加载期执行 `replaceSmartQuotes`)。
-3. **逐行解析与严格校验** (规则文件加载流程的校验，错误均为加载期 `RuntimeException`，汇总见规则强度节)。
+3. **逐行解析与严格校验** (规则文件加载流程的校验，错误均为加载期 `RuntimeException`)。
 4. **注册入口**：MOD 侧不需要任何注册文件 —— 把行写进自己的 `data/campaign/rules.csv`，加载器自动合并；`starsector.log` 逐条打印 `Loading rule: <id>` 与 `Loading CSV data from [...]`，是确认规则是否真的被读进来的第一手证明。
 
 ### 匹配链
@@ -112,7 +112,7 @@ token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` �
 
 **变量解析** (`Misc.Token.getVarNameAndMemory`)：`$memkey.name` → 从 `memoryMap` 取 `memkey` 记忆，再读记忆中的 `$name` 键；token 无 `.`(如 `$option`、`$tag:x`)→ 记忆键为 null → 回落 `local` 记忆；两者都找不到 → `RuleException("No memory found for keys: ...")`。
 
-对话插件向 `memoryMap` 装入哪些记忆，见下文使用方完整流程的表。`$tag:`、`$mc:`、`$friendlyToPlayer` 等 facts 键由 `CoreCampaignPluginImpl` 的 `updateEntityFacts` / `updateMarketFacts` / `updatePersonFacts` / `updateFactionFacts` 钩子写入 (`com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`)；使用 `$tag:xxx` 条件的前提是目标实体确实带该 tag。
+对话插件向 `memoryMap` 装入 `local`(= 交互目标记忆或活动人物记忆)、`faction`、`global`、`player`、`market`、`sourceMarket` 等槽位 (活动人物对话时另有 `personFaction`/`entity`)。`$tag:`、`$mc:`、`$friendlyToPlayer` 等 facts 键由 `CoreCampaignPluginImpl` 的 `updateEntityFacts` / `updateMarketFacts` / `updatePersonFacts` / `updateFactionFacts` 钩子写入 (`com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`)；使用 `$tag:xxx` 条件的前提是目标实体确实带该 tag。
 
 ### FireBest 与 FireAll 结果执行速查表
 
@@ -182,21 +182,21 @@ rulecmd 参数内需要替换时用 `Misc.Token.getStringWithTokenReplacement`�
 不新增其它资源、不修改任何既有文件：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── mod_info.json
 ├── data\
 │   └── campaign\
 │       └── rules.csv                     # 本节新增：GearIn_rules_intro_* 规则 (本节示例所有权)
 ├── src\
-│   └── data\scripts\gearin\rules\
+│   └── data/scripts/gearin/rules\
 │       └── GearInRulesIntro             # 本节新增：Java 消费入口 (归本节所有)
 └── jars\
 ```
 
 ### 配置 Rules 数据
 
-新建 MOD 侧的 `data\campaign\rules.csv`，只写本节拥有的行。命名沿用语义约定：规则 id 为 `GearIn_rules_intro_*`、自定义触发器为 `GearInRulesIntro*`、Java 类 `GearInRulesIntro` 位于包 `data.scripts.gearin.rules`：
+新建 MOD 侧的 `data/campaign/rules.csv`，只写本节拥有的行。命名沿用语义约定：规则 id 为 `GearIn_rules_intro_*`、自定义触发器为 `GearInRulesIntro*`、Java 类 `GearInRulesIntro` 位于包 `data.scripts.gearin.rules`：
 
 ```csv
 id,trigger,conditions,script,text,options,notes
@@ -233,7 +233,7 @@ GearIn_rules_intro_leave,DialogOptionSelected,$option == GearIn_rules_intro_leav
 - **leave** (trigger `DialogOptionSelected`)：`$option == GearIn_rules_intro_leave` → 内置命令 `DismissDialog` 关闭对话。
 - 内置命令 (`ShowDefaultVisual` / `SetShortcut` / `DismissDialog` / `FireBest` / `FireAll` / `RollProbability`) 都是 `BaseCommandPlugin` 子类 (`com.fs.starfarer.api.impl.campaign.rulecmd`)，本节只使用不实现；自定义规则命令见 [C14-S3]。
 - 记忆键 `$option` / `$GearIn_rules_intro_opens` / `$GearIn_rules_intro_skip` / `$GearIn_rules_intro_last` 的过期、持久化与维护语义见 [C14-S4]；本节只保证演示流程内的取值逻辑。
-- `rules.csv` 是跨单元共享文件：本节只拥有 `GearIn_rules_intro_*` 前缀；其他页面使用各自前缀追加行，同前缀内 id 唯一，跨文件重复 id 先到先得的纪律见规则强度节。
+- `rules.csv` 是跨单元共享文件：本节只拥有 `GearIn_rules_intro_*` 前缀；其他页面使用各自前缀追加行，同前缀内 id 唯一，跨文件重复 id 先到先得。
 
 ### 编写 Rules 命令
 
@@ -318,21 +318,21 @@ public class GearInRulesIntro implements EveryFrameScript {
     }
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/rules/GearInRulesIntro.class`(可用 `jar tf` 核对)；`data\campaign\rules.csv` 是 MOD 数据文件，随 MOD 目录被加载器读取 (无需进 jar，规则行放 jar 外与放 jar 内等效 —— 资源加载器都读)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/rules/GearInRulesIntro.class`(可用 `jar tf` 核对)；`data/campaign/rules.csv` 是 MOD 数据文件，随 MOD 目录被加载器读取 (无需进 jar，规则行放 jar 外与放 jar 内等效 —— 资源加载器都读)。
 
-注意示例路径 `Starsector\mods\GearIndustry` 是教程虚构路径，页面内路径互相自洽即可。
+注意示例路径 `mods/GearIndustry` 是教程虚构路径，页面内路径互相自洽即可。
 
 ## 验证方案
 
-前置数据：既有 MOD 工程布局与插件生命周期注册回调 ([C6-S1]、[C6-S2] 建立)、本节的 `data\campaign\rules.csv` 规则表与 `GearInRulesIntro` 使用入口。验证入口为启动器与新建生涯，观察位置是 `starsector.log`、启动器控制台标准输出与对话界面。
+前置数据：既有 MOD 工程布局与插件生命周期注册回调 ([C6-S1]、[C6-S2] 建立)、本节的 `data/campaign/rules.csv` 规则表与 `GearInRulesIntro` 使用入口。验证入口为启动器与新建生涯，观察位置是 `starsector.log`、启动器控制台标准输出与对话界面。
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
 2. **规则注册**：启动游戏，查看 `starsector.log` 中的 `Loading CSV data from [...]` 与本节 7 条 `Loading rule: GearIn_rules_intro_*` 行。
 3. 查看启动器控制台标准输出中的 `$GearIn_rules_intro_skip`、`$GearIn_rules_intro_last` 两条单次使用变量 WARNING(正常现象，原版同样大量存在)。
 4. **对话完整流程**：新建生涯，日志出现 `GearIn rules intro dialog shown=true`，对话弹出；文本为两条欢迎变体之一且含玩家名；选项为 "查看详情" / "结束"；按 ESC 等效点选 "结束"。
@@ -341,7 +341,7 @@ gradle jar
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
 - **规则注册 (加载期)**：
     - 启动日志 `starsector.log` 出现 `Loading CSV data from [...data/campaign/rules.csv]` 与逐条 `Loading rule: GearIn_rules_intro_welcome` / `..._add_a` / `..._add_b` / `..._open` / `..._detail_low` / `..._detail_high` / `..._leave`—— 注册入口完整流程的静态证明。
     - 标准输出 (启动器控制台) 出现两条变量警告 (`System.out.println`，非日志)：`WARNING: variable [$GearIn_rules_intro_skip] only used once; rule id: [GearIn_rules_intro_detail_high]` 与 `...[$GearIn_rules_intro_last] only used once; rule id: [GearIn_rules_intro_detail_high]`—— 单次使用变量属正常现象 (原版同样大量存在)，不是错误。
@@ -417,7 +417,7 @@ gradle jar
 
 ## 总结
 
-本节把规则系统走通成一条从数据到对话的流程：`data/campaign/rules.csv` 的七列决定一条规则能写什么，加载与合并决定它是否真的进入游戏，匹配与条件决定它何时被选中，`FireBest` / `FireAll` 与 `$option` 回流把它变成对话文本和选项。完整最小例把这条流程全部接通：规则表只负责数据，`GearInRulesIntro` 只负责打开对话，文本与选项全部来自 CSV。
+本节把规则系统走通成一条从数据到对话的流程：`data/campaign/rules.csv` 的七列决定一条规则能写什么，加载与合并决定它是否真的进入游戏，匹配与条件决定它何时被选中，`FireBest` / `FireAll` 与 `$option` 回流把它变成对话文本和选项。最小示例把这条流程全部接通：规则表只负责数据，`GearInRulesIntro` 只负责打开对话，文本与选项全部来自 CSV。
 
 排错判断可以浓缩成几条：注册看 `Loading rule:` 日志而不是找报错；加载期致命错误全部是启动中止级 (条件列 `=`、脚本列 `==`、`$` 开头选项 id、命令找不到、同文件重复 id)；跨文件重复 id 静默跳过是规则不触发且无报错的首要原因；`FireBest` 只取一条而 `FireAll` 执行全部；判真只有 `"true"` 与 `Boolean.TRUE` 为真，比较大小写敏感；文本变体靠独占一行的 `OR`，选项文本里不能有冒号，选项 id 与 `$option ==` 必须逐字一致。
 

@@ -88,7 +88,7 @@ if (!this.isPaused()) {
 
 常见坑：超时单位误用
 
-`addListenerWithTimeout` / `reRegister` 的 `daysToKeep` 是**游戏天** (10 真实秒 = 1 游戏日)，且只在未暂停时扣减。把超时当真实秒、或以为暂停也在计时，都会得到 "永不超时 / 超时过慢" 的假象 (见 "超时监听器迟迟不移除")。
+`addListenerWithTimeout` / `reRegister` 的 `daysToKeep` 是**游戏天** (10 真实秒 = 1 游戏日)，且只在未暂停时扣减。把超时当真实秒、或以为暂停也在计时，都会得到 "永不超时 / 超时过慢" 的假象。
 
 帮助类 (公开 API)：
 
@@ -234,7 +234,7 @@ public void reportPlayerMarketTransaction(PlayerMarketTransaction transaction) {
 
 继续在同一监听器中分别接收战斗过程和玩家结算。统计玩家胜负应使用 `EngagementResultAPI`，过程观察才使用 `BattleAPI`。
 
-```java
+```java {9}
 @Override
 public void reportBattleOccurred(CampaignFleetAPI primaryWinner, BattleAPI battle) {
     if (battle.isPlayerInvolved()) {
@@ -363,7 +363,7 @@ Starsector/mods/GearIndustry/
 
 想演示自停，在注册前先设参数：
 
-```java
+```java {3}
     GearInCampaignListener listener = new GearInCampaignListener();
     GearInListenerLifecycleScript script = new GearInListenerLifecycleScript(listener);
     script.setDaysToLive(30); // 约 30 个游戏日 (约 300 真实秒) 后自停并移除监听器
@@ -434,7 +434,7 @@ if (!sector.getListenerManager().hasListenerOfClass(
     - 启动与游玩全程无 `gear_in` 引起的 `ERROR`。
 - **位置监听器**：前 5 次出现 `current location changed`；第 5 次后出现 `location listener removed itself after 5 reports`，第 6 次起不再出现
 
-- **读档**：无重复注册 —— 无 `trade at` 成双 (`REGISTER_MARK` 注册标记 + `addListener` 去重)；位置监听器因 transient 读档清空、由 `hasListenerOfClass` 判空重新注册 (读档后继续出现位置变化日志且不叠加，计数从 5 次重新开始)；退出到主菜单后生涯引擎停止、日志停止，再进档按第 3、3 项继续
+- **读档**：无重复注册 —— 无 `trade at` 成双 (`REGISTER_MARK` 注册标记 + `addListener` 去重)；位置监听器因 transient 读档清空、由 `hasListenerOfClass` 判空重新注册 (读档后继续出现位置变化日志且不叠加，计数从 5 次重新开始)；退出到主菜单后生涯引擎停止、日志停止，再进档按第 3、4 项继续
 
 - **自停演示**：挂载约 300 真实秒后出现：
 

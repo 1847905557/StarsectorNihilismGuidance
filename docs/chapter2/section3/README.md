@@ -2,9 +2,9 @@
 
 本节将以原版 `burn drive` 为基础，复制改造出一个新的最小战术系统，并解释 `.system`、`ship_systems.csv`、`ship_data.csv` 与效果脚本。
 
-*本节预期阅读时间：~20 分钟。*
+*本节预期阅读时间：\~20 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
@@ -21,9 +21,9 @@
 - [C2-S1] 的 Java 模板、参数、注册与回调；
 - [C2-S2] 的文件名、类名与注册类名一致规则。
 
-## 四段链路总览
+## 战术系统基本链路总览
 
-一个战术系统由四部分组成，按顺序搭建：
+一个战术系统至少由四部分组成，按顺序搭建：
 
 1. `data/shipsystems/<id>.system`：JSON 文件，声明系统类型、效果脚本类名与视觉参数；
 2. `data/shipsystems/ship_systems.csv`：注册行，提供名称、时长、幅能等数值参数；
@@ -34,9 +34,9 @@
 
 ## 复制战术系统模板
 
-把原版 `Starsector\starsector-core\data\shipsystems\burndrive.system` 复制到 MOD 的 `data\shipsystems` 下，改名为 `GearIn_burstdrive.system`，内容整理为如下形式 (`id` 与 `statsScript` 两处已改)：
+把原版 `data/shipsystems/burndrive.system` 复制到 MOD 的 `data/shipsystems` 下，改名为 `GearIn_burstdrive.system`，并把 `id` 与 `statsScript` 两处改为本节的值：
 
-```json
+```json {2,6}
 {
     "id": "GearIn_burstdrive",
     "type": "ENGINE_MOD",
@@ -63,17 +63,17 @@
 
 本节只关注三个字段，其余按模板使用：
 
-- **`id`**：系统 ID，与 CSV 行、`ship_data.csv` 引用的是同一份键 (类名三处一致的战术系统版：`.system` 的 `id`、`ship_systems.csv` 的 `id`、`ship_data.csv` 的 `system id` 三处必须一致)。
-- **`type`**：系统运作方式。`ENGINE_MOD` 是引擎类系统 (引擎焰视觉、撞击熄火由引擎处理)；纯属性类系统用 `STAT_MOD`。本节示例与第二个例子各演示一种。
-- **`statsScript`**：效果脚本完整类名 (三处一致的又一处：`statsScript`、`package` 行、文件路径)。
+- **`id`**：系统 ID，与 `ship_systems.csv` 的 `id` 必须一致。后续 `ship_data.csv` 引用时也必须一致。
+- **`type`**：系统运作方式。`ENGINE_MOD` 是引擎类系统，体现为需要引擎上线才能启动；大多数情况下使用 `STAT_MOD`。
+- **`statsScript`**：效果脚本完整类名。
 
-其余字段是视觉 (引擎焰)、声音与物理细节，按需保留。文件中的 `aiType` 字段属于系统 AI 配置，本教程在 C07 讲解 —— 示例用 `NONE`(无 AI 行为)，玩家按键不受影响。
+其余字段是视觉 (引擎焰)、声音与物理细节，按需保留。文件中的 `aiType` 字段属于系统 AI 配置，本教程在 [C8-S2] 讲解 —— 示例用 `NONE`(无 AI 行为)，玩家按键不受影响。
 
 ## 注册战术系统参数
 
-在 MOD 的 `data\shipsystems\ship_systems.csv` 里，从原版复制 `Burn Drive` 那一行，只改 `name` 与 `id`：
+在 MOD 的 `data/shipsystems/ship_systems.csv` 里，从原版复制 `Burn Drive` 那一行，只改 `name` 与 `id`：
 
-```text
+```text {5}
 name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle,noDissipation,noHardDissipation,hardFlux,noFiring,noTurning,noStrafing,noAccel,noShield,noVent,isPhaseCloak,tags,icon
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,
 Burn Drive,burndrive,1,,,,,,,,,2,5,1,10,TRUE,,,,,TRUE,TRUE,TRUE,TRUE,,,movement,graphics/icons/hullsys/burn_drive.png
@@ -103,7 +103,7 @@ Burn Drive,burndrive,1,,,,,,,,,2,5,1,10,TRUE,,,,,TRUE,TRUE,TRUE,TRUE,,,movement,
 
 ## 实现战术系统效果
 
-在 `src\data\scripts\gearin\shipsystems\GearInBurstDriveSystem.java` 建类，完整内容如下：
+在 `src/data/scripts/gearin/shipsystems/GearInBurstDriveSystem.java` 建类：
 
 ```java
 package data.scripts.gearin.shipsystems;
@@ -147,7 +147,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 **效果强度 `effectLevel`**
 
-游戏在前摇期间把一个名为 `effectLevel` 的值从 **0 平滑升至 1**，全功率段保持 1，后摇期间从 1 落回 0。效果脚本中的所有数值都乘以它：`SPEED_BONUS * effectLevel` = 200 × 0.5 = 100—— 因此前摇那两秒里速度加成从 0 平滑爬到 200**。参数是 `SPEED_BONUS` 与 `ACCELERATION_BONUS` 两个数字**，修改它们即修改爆发强度。
+游戏在前摇期间把一个名为 `effectLevel` 的值从 **0 平滑升至 1**，全功率段保持 1，后摇期间从 1 落回 0。效果脚本中的所有数值都乘以它：`SPEED_BONUS * effectLevel` = 200 × 0.5 = 100—— 因此前摇那两秒里速度加成 **从 0 平滑爬到 200**。参数是 `SPEED_BONUS` 与 `ACCELERATION_BONUS` 两个数字，修改它们即修改爆发强度。
 
 **三个回调各管一件事**
 
@@ -163,16 +163,16 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ## 挂载战术系统
 
-打开 MOD 的 `data\hulls\ship_data.csv`，把 `工匠-级` 行的 `system id` 列 (第 5 列) 改为 `GearIn_burstdrive`：
+打开 MOD 的 `data/hulls/ship_data.csv`，把 `工匠-级` 行的 `system id` 列 (第 5 列) 改为 `GearIn_burstdrive`：
 
-```text
+```text {2}
 name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
 工匠,GearIn_artizan,驱逐舰,未知,GearIn_burstdrive,10,5000,500,3800,4167,200,95,,80,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,GearIn_bp,,,,0.5,2,3,,300
 ```
 
 至此四段链路完成。重启游戏验证：
 
-1. 日志出现 `Loading ship system [data\shipsystems\GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，无 `ERROR`；
+1. 日志出现 `Loading ship system [data/shipsystems/GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，无 `ERROR`；
 2. 控制台 `Addship GearIn_artizan` 进模拟战，按 F：约 2 秒前摇内速度平滑升至 +200，左下角出现 `engine power increased`；本系统是开关式，再按 F 关闭；
 3. 关闭后约 1 秒后摇内按基础速度减速，随后约 10 秒冷却，HUD 显示冷却进度。
 
@@ -184,7 +184,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 2. **调整持续时间**：CSV 的 `active` 从 `5` 改 `2`—— 全功率段明显缩短；改 `10` 则长时间维持；
 3. **调整冷却节奏**：`cooldown` 从 `10` 改 `3`—— 激活间隔明显缩短，可连续使用。
 
-把 `cooldown` 从 10 改到 3，激活间隔明显缩短 —— 参数改变行为，本节到此为止的结论也就这些。爆发类系统通常用短 `charge up` + 高 `SPEED_BONUS` 做出快速弹射；持续类系统通常用长 `active` + 较低数值维持稳定输出，这些数字就是调整行为的主要工具。
+把 `cooldown` 从 10 改到 3，激活间隔明显缩短 —— 参数改变行为，本节到此为止的结论也就这些。爆发类系统通常用短 `charge up` \+ 高 `SPEED_BONUS` 做出快速弹射；持续类系统通常用长 `active` \+ 较低数值维持稳定输出，这些数字就是调整行为的主要工具。
 
 ## 第二个例子：右键系统 (抵抗力场)
 
@@ -224,7 +224,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 `ship_systems.csv` 加上从 `阻尼力场` 复制的一行 (只改 `name` 与 `id`；`tags` 字段含逗号，必须用引号包住整个字段)：
 
-```text
+```text {3}
 name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle,noDissipation,noHardDissipation,hardFlux,noFiring,noTurning,noStrafing,noAccel,noShield,noVent,isPhaseCloak,tags,icon
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,
 抵抗力场,GearIn_resistfield,1,,,,,,,2,0.05,0.25,3,0.25,0,,,,,TRUE,,,,TRUE,TRUE,,"uses_damper_ai, defensive",graphics/icons/hullsys/damper_field.png
@@ -284,7 +284,7 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
 预期结果：
 
-- 日志出现 `Loading ship system [data\shipsystems\GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，且没有相关 `ERROR`。
+- 日志出现 `Loading ship system [data/shipsystems/GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，且没有相关 `ERROR`。
 - 前摇约 2 秒内速度与加速度平滑升至 +200；左下角状态栏出现 `engine power increased`；开关式 (`toggle=TRUE`) 再按 F 关闭。
 - 关闭后约 1 秒后摇内按基础速度减速；随后约 10 秒冷却，冷却结束可再次激活。
 - 参数实验 (`SPEED_BONUS`、`active`、`cooldown`) 各自产生可感知的行为差异。

@@ -39,7 +39,7 @@
 
 ### 变体注册入口速查表
 
-变体有四个注册入口，对应四种来源 (见 "变体来源" 节)：
+变体有四个注册入口，对应四种来源：
 
 | 入口 | 路径 | 来源 | 使用方 |
 |---|---|---|---|
@@ -127,7 +127,7 @@
 
 | 方法 | 语义与陷阱 |
 |---|---|
-| `void addWeapon(String slotId, String weaponId)` | 立即按武器 id 解析 spec(缺失 → 立刻抛 `RuntimeException("Weapon spec [...] not found!")`)；**槽位不校验** —— 坏槽位静默写入，延迟到部署期失败 (见下)。内置武器槽的写入被忽略 (`addWeapon(slot, spec, false)` 只在非内置槽写入) |
+| `void addWeapon(String slotId, String weaponId)` | 立即按武器 id 解析 spec(缺失 → 立刻抛 `RuntimeException("Weapon spec [...] not found!")`)；**槽位不校验** —— 坏槽位静默写入，延迟到部署期失败。内置武器槽的写入被忽略 (`addWeapon(slot, spec, false)` 只在非内置槽写入) |
 | `void clearSlot(String slotId)` | 从武器表移除槽位 |
 | `String getWeaponId(String slotId)` / `WeaponSpecAPI getWeaponSpec(String slotId)` | 未装 → `null` |
 | `List<String> getNonBuiltInWeaponSlots()` | 装有武器的槽减去内置槽 |
@@ -319,13 +319,13 @@ LOG.info("GearIn refit JSON: " + json.toString(2));
 接口语义讲完了，接下来把每个语义点实际跑一遍。在既有 MOD 布局与前置的 `GearInModPlugin` 生命周期例之上新增七个类 (不新增任何资源文件)：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\campaign\
+│   └── data/scripts/gearin/campaign\
 │       ├── GearInVariantLauncher      # 本节新增：注册载体 (归本节所有)
 │       ├── GearInVariantReader        # 注册表读取
 │       ├── GearInVariantRefitter      # 克隆改装
@@ -440,13 +440,13 @@ final class GearInVariantLog {
 
 (上面两段只取一段即满足 "不重复注册"；两段同留时第二段会在第一段之后补注册，不会叠加 —— 但演示时建议只保留判断段，避免混淆。生涯脚本章节对同样的二选一做过说明。)
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下七个类的 class 条目 (可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下七个类的 class 条目 (可用 `jar tf` 核对)。
 
 ## 关键故障实验：改装结果污染了其他舰船
 
@@ -474,14 +474,14 @@ variant.addWeapon("WS 001", "lightmg");
 
 前置数据：既有 MOD 布局 [C6-S1] + `GearInModPlugin` ([C6-S2]，含本节调用点片段)、本节七个类；生涯时钟脚本 `GearInSectorClockScript` (可选)。
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含七个类的 class 条目。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含七个类的 class 条目。
 2. **新建生涯**：查看 `starsector.log` 中本节七个类输出的全部 `GearIn ...` 日志。
 3. **读档**：保存后读档，观察本节脚本是否重复执行。
 4. 进入任意有 `station1` 的市场，观察空间站模块是否正常生成。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下七个类的 class 条目。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下七个类的 class 条目。
 - **新建生涯**：`starsector.log` 按注册顺序出现以下日志 (数值以实际游戏为准)：
 
     ```text
@@ -562,7 +562,7 @@ variant.addWeapon("WS 001", "lightmg");
 - `com.fs.starfarer.api.fleet.FleetMemberAPI`：`getVariant` / `setVariant`(舰队侧读写)。
 - `com.fs.starfarer.api.FactoryAPI`：`createFleetMember`(按变体/联队 id 建成员)。
 - `com.fs.starfarer.api.combat.MutableShipStatsAPI` / `com.fs.starfarer.api.combat.ShipAPI`：`getVariant`(部署前后取变体的入口)。
-- `data.scripts.gearin.campaign.GearInVariantLauncher`：本节注册入口类 (完整最小例入口，含 `REGISTER_MARK` 键)。
+- `data.scripts.gearin.campaign.GearInVariantLauncher`：本节注册入口类 (含 `REGISTER_MARK` 键)。
 - `data/variants/brawler_Assault.variant`：示例 stock 变体 (武器组、`goalVariant: true`、`hullMods`)。
 - `data/variants/stations/station1_Standard.variant`：`modules` 数组写法 (解析时剥除 `#` 注释)。
 - `data/hulls/brawler.ship`：`weaponSlots`(WS 001/002 MEDIUM BALLISTIC，WS 003/004 SMALL UNIVERSAL 硬点)。

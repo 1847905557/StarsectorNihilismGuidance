@@ -29,7 +29,7 @@
 
 ## 术语
 
-本节首次完整讲解两个交接语义词；`MutableStat` 与 `FleetMemberAPI` 的中文写法与首次讲解位置见术语约定表：
+本节首次完整讲解两个交接语义词；`MutableStat` 与 `FleetMemberAPI` 的中文写法与首次讲解位置见术语约定：
 
 - **状态交接 (handoff)**：状态从一个对象流向下一个对象的过程 —— 装配内容流入成员 stats、人物技能流入成员 stats、成员 stats 流入战斗舰船。交接经 `MutableShipStatsAPI` 进行，交接的完成标志是 "stats 对象被 (重新) 构造并重放"。
 - **stats 重建 (stats rebuild)**：`FleetMemberAPI.updateStats()` 整体新建 stats 对象并按固定序列重放全部效果的行为。重建是交接的 "结算时刻"：重建后生效的修改保留，重建前直接写在旧对象上的修改被丢弃。
@@ -99,11 +99,9 @@
 
 要跨重建保留的修改必须挂在重放入口上 (船插 `applyEffectsBeforeShipCreation`、技能效果、buff 系统)。
 
-完整清单见 "规则强度"。
-
 两个直接推论：**重建 = 丢弃** —— 第 1 步新造对象意味着任何直接写在旧 stats 对象上的 modifier 都不复存在 (`GearInStatsRebuild` 的 transient 步骤)。
 
-**重放 = 幂等** —— 第 3–6 步的写入全部用固定来源 ID，同 ID 同值覆盖，因此重放任意次数值不变 (第 4 步在舰队同步里还会被再执行一次，见下)。
+**重放 = 幂等** —— 第 3–6 步的写入全部用固定来源 ID，同 ID 同值覆盖，因此重放任意次数值不变 (第 4 步在舰队同步里还会被再执行一次)。
 
 ### 环节二：人物技能 → 成员 stats
 
@@ -196,7 +194,7 @@
 | `setVariant(variant, withRefit, withStatsUpdate)` | `withRefit` 算 CR 影响并 `applyCREvent`(`computeVariantDiffCRImpact`)；`withStatsUpdate` 立即 `updateStats()` | `FleetMemberAPI` |
 | `setStatUpdateNeeded(true)` | 标记；下次 `getStats()` / `updateStats()` 重建 | `FleetMemberAPI` |
 | 舰队同步 `syncIfNeeded` | 全员 `updateStats()` + 舰队向技能二次重放 | `FleetDataAPI` |
-| 部署 (舰船对象创建) | 新造战斗 stats 并完整重放 (环节三) | `FleetMemberAPI` |
+| 部署 (舰船对象创建) | 新造战斗 stats 并完整重放 | `FleetMemberAPI` |
 | 战斗内 `ShipAPI.setCaptain` | 解挂旧/挂新个人技能 (含子模块)，立即生效 | `ShipAPI` |
 | 入引擎 `addEntity` | 船插第三时机，每实体一次 | `CombatEngineAPI`、`ShipAPI` |
 
@@ -213,8 +211,8 @@
 | 战斗内换舰长**必须**走 `ShipAPI.setCaptain`；换人后旧舰长个人加成 (含子模块) 立即被解挂 | 必须 | 直接改人物对象而不重新 `setCaptain` → 战斗 stats 无变化；缓存 "旧舰长修正仍生效" 的假设在换人瞬间失效 (`ShipAPI.setCaptain`) |
 | **禁止**复用引擎保留 modifier ID：`flux_capacitors` / `flux_vents`、`cr_effect`、`crew skill bonus`、`crew understrength`、`mothballed_mod_id` | 必须 | 写入的 modifier 被引擎重放覆盖，或覆盖引擎写入的值 (同 ID 同类型后写者胜，`MutableStat.modifyFlat`)，数值错乱且难排查 (`FleetMemberAPI`、`CRPluginImpl`) |
 | **禁止**在 `applyEffectsBeforeShipCreation`(或其它被 `updateStats` 重放的入口) 内调用会再次触发 `updateStats` 的成员 API(`setCaptain`、`setVariant(..., true)`、`updateStats()`) | 必须 | `updateStats` 没有防重入检查 (防重入标记仅 tooltip 路径使用)，递归重建直至 `StackOverflowError` |
-| 战斗 stats / `ShipAPI` 引用**禁止**跨战斗缓存 | 必须 | 下一场战斗读到失效对象 (跨战斗缓存问题见前置知识；部署链每场新造战斗 stats)，数值过期或静默异常 |
-| 重放安全的前提：同一来源 ID 用同一类型同值 (幂等覆盖)，重放顺序 "先 unapply 后 apply" | 必须 | 换 id / 换类型导致旧条目残留或叠加 (前置知识中的幂等与作用域规则在交接链的落地；`MutableStat.unmodify(source)` 只清指定来源) |
+| 战斗 stats / `ShipAPI` 引用**禁止**跨战斗缓存 | 必须 | 下一场战斗读到失效对象 (部署链每场新造战斗 stats)，数值过期或静默异常 |
+| 重放安全的前提：同一来源 ID 用同一类型同值 (幂等覆盖)，重放顺序 "先 unapply 后 apply" | 必须 | 换 id / 换类型导致旧条目残留或叠加 (`MutableStat.unmodify(source)` 只清指定来源) |
 | 调试 stats 交接时先打印 stats 对象同一性 (`before != after`) 确认重建发生 | 建议 | 无法区分 "修改没生效" 与 "修改被重建丢弃" |
 | 用 `setFleetCommanderForStats` 临时挂指挥官前记录原值，测完置 `null` 复位 | 建议 | 指挥官残留导致后续读取全部带未知加成 (同帧回滚模式) |
 | 生涯侧只读基线用未入队成员；技能链路验证在入队后进行 | 建议 | 把两条语义 (未入队不应用 / 入队应用) 混在一起，读到的差异无法归因 |
@@ -302,14 +300,14 @@ MutableShipStatsAPI after = wolf.getStats();
 
 现在把规则落到代码上。在既有 MOD 工程 (MOD 布局与 `GearInModPlugin` 的 `onGameLoad` 注册门，见前置知识) 之上，您将新增 4 个自包含演示类 (不新增资源文件)，每个类演示交接链的一个环节，各带独立的注册键，挂载后第一次 `advance()` 执行一次演示并自停：
 
-```text
-Starsector\mods\GearIndustry\
+```text {8-11}
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\campaign\
+│   └── data/scripts/gearin/campaign\
 │       ├── GearInVariantToStats    # 环节一：装配 → stats(本节新增)
 │       ├── GearInCaptainToMember   # 环节二 (个人)：技能 → 成员 stats
 │       ├── GearInCommanderToMember # 环节二 (舰队向)：指挥官 → 成员 stats
@@ -325,19 +323,19 @@ Starsector\mods\GearIndustry\
 
 `stats.getVariant()` 与传入变体同一引用。
 
-触发入口：`onGameLoad` 注册，persistent data 键 `REGISTER_MARK = "GearIn_VariantToStats"` 做一次性判断 (调用点片段见下)。
+触发入口：`onGameLoad` 注册，persistent data 键 `REGISTER_MARK = "GearIn_VariantToStats"` 做一次性判断。
 
 ### GearInCaptainToMember(个人技能 → 成员)
 
 职责：演示个人技能 → 成员 stats 交接 —— 未入队换舰长 (`gunnery_implants` L1 不应用)→ 入队 + 显式 `updateStats`(后坐力倍率 1.0 → 0.75、自动瞄准 0.0 → 1.0、实弹/能量射程 +15%)→ 换回无技能人物后数值恢复。
 
-触发入口：`onGameLoad` 注册，persistent data 键 `REGISTER_MARK = "GearIn_CaptainToMember"` 做一次性判断 (调用点片段见下)。
+触发入口：`onGameLoad` 注册，persistent data 键 `REGISTER_MARK = "GearIn_CaptainToMember"` 做一次性判断。
 
 ### GearInCommanderToMember(舰队指挥官 → 成员)
 
 职责：演示舰队指挥官 → 成员 stats 交接 ——`setFleetCommanderForStats` 挂 `crew_training`(ALL\_SHIPS\_IN\_FLEET)，`getStats()` 延迟重建后 `maxCombatReadiness` 上升，置回 `null` 后恢复。
 
-触发入口：`onGameLoad` 注册，persistent data 键 `REGISTER_MARK = "GearIn_CommanderToMember"` 做一次性判断 (调用点片段见下)。
+触发入口：`onGameLoad` 注册，persistent data 键 `REGISTER_MARK = "GearIn_CommanderToMember"` 做一次性判断。
 
 ### GearInStatsRebuild(stats 重建与延迟重算)
 
@@ -345,7 +343,7 @@ Starsector\mods\GearIndustry\
 
 `setStatUpdateNeeded(true)` 后下一次 `getStats()` 才重建。
 
-触发入口：`onGameLoad` 注册，persistent data 键 `REGISTER_MARK = "GearIn_StatsRebuild"` 做一次性判断 (调用点片段见下)。
+触发入口：`onGameLoad` 注册，persistent data 键 `REGISTER_MARK = "GearIn_StatsRebuild"` 做一次性判断。
 
 调用点 (工程片段 —— 方法所在类归既有插件所有，本节只演示调用，不改动那些文件)：
 
@@ -397,13 +395,13 @@ Starsector\mods\GearIndustry\
     - 置 `null` 后回退 `fleetData.getCommander()`(玩家)→ 恢复原值。
 - 观察点 8(清理)：四个类各自 `removeFleetMember(wolf)` → 玩家舰队成员数与初始一致 (同步延迟到下一次同步，`getNumMembers()` 会立即同步)。演示脚本**不留副作用** (人物对象只存在于局部变量，不被任何持久集合引用)。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含四个类的 class 条目 (可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含四个类的 class 条目 (可用 `jar tf` 核对)。
 
 ### 关键故障实验：成员 stats 重建后自定义加成消失
 
@@ -418,7 +416,7 @@ member.getStats().getMaxSpeed().modifyFlat(MOD_ID, 5f);
 
 **局部修正片段：**
 
-```java
+```java {3}
 // 修正片段
 // 放入船插的 applyEffectsBeforeShipCreation(hullSize, stats, id)
 stats.getMaxSpeed().modifyFlat(id, 5f);
@@ -430,14 +428,14 @@ stats.getMaxSpeed().modifyFlat(id, 5f);
 
 前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段；[C6-S1]、[C6-S2])、本节四个演示类、观察 `speedAfterRebuild` 语义同样成立 (界面触发同步 = 重建 = 丢弃；对应规则强度)。
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含四个类的 class 条目。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含四个类的 class 条目。
 2. **新建生涯**：查看 `starsector.log` 中按注册顺序出现的四组日志：`GearIn variantToStats ...`、`GearIn captainToMember ...`、`GearIn commanderToMember ...`、`GearIn statsRebuild ...`。
 3. **只执行一次**：等待若干游戏日，继续观察四个演示类的日志。
 4. 保存并读档，再次观察四个演示类的日志和玩家舰队构成。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInVariantToStats.class` 等四个类的 class 条目。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInVariantToStats.class` 等四个类的 class 条目。
 - **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 按注册顺序依次出现以下日志 (`<N>` 为初始成员数；数值以实际为准，但标出的关系是确定性的)：
 
     ```text

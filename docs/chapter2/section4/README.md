@@ -40,7 +40,7 @@
 
 ### 实现命中效果类
 
-文件：`src\data\scripts\gearin\combat\GearInHitLogger.java`：
+文件：`src/data/scripts/gearin/combat/GearInHitLogger.java`：
 
 ```java
 package data.scripts.gearin.combat;
@@ -98,7 +98,7 @@ public class GearInHitLogger implements OnHitEffectPlugin {
 
 ### 实现光束效果类
 
-文件：`src\data\scripts\gearin\combat\GearInBeamLogger.java`：
+文件：`src/data/scripts/gearin/combat/GearInBeamLogger.java`：
 
 ```java
 package data.scripts.gearin.combat;

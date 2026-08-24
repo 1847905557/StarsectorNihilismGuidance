@@ -27,7 +27,7 @@
 
 ### 文件与注册链路
 
-1. 文件位置：MOD 的 `data/campaign/sim_opponents.csv`。原版同路径：`\Starsector\starsector-core\data\campaign\sim_opponents.csv`(30 个对手条目)。
+1. 文件位置：MOD 的 `data/campaign/sim_opponents.csv`。原版同路径：`data/campaign/sim_opponents.csv`(30 个对手条目)。
 2. 注册入口：CSV spec 加载期调用 `loadCampaignData()`，它读取 `data/campaign/sim_opponents.csv`，把每行的 `variant id` 追加进 `simOpponentVariantIds`。
    - 这个调用在装配 (`loadVariants`) 之后执行，所以清单里可以引用任何已注册装配。
 3. 合并语义：文件在核心与所有启用 MOD 之间**按行合并**，而且本文件**不按键去重** (`readCSVMerged(null, ...)` 不传键列表，它的键检查分支整体跳过)。由此推出三条必须遵守的规则：
@@ -48,7 +48,7 @@
 
 ### 清单的最小形态
 
-在 MOD 中新建 `\Starsector\mods\GearIndustry\data\campaign\sim_opponents.csv`：
+在 MOD 中新建 `data/campaign/sim_opponents.csv`：
 
 ```csv
 variant id
@@ -75,13 +75,13 @@ GearIn_artizan_combat
 
 所有经 `FleetMemberAPI` 加载装配 ID 的路径 —— 模拟战对手、战役舰队、`MissionDefinitionAPI.addToFleet` [C4-S1] —— 都走这个回退，因此该规则适用于经 `FleetMemberAPI` 加载装配 ID 的场景。
 
-**唯一例外是标题画面演示** (见下节)，它不走 `FleetMemberAPI`，失败表现完全不同。
+**唯一例外是标题画面演示**，它不走 `FleetMemberAPI`，失败表现完全不同。
 
 ## 标题演示装配
 
 ### 文件与注册链路
 
-1. 文件位置：MOD 的 `data/config/title_screen_variants.csv`。原版同路径：`\Starsector\starsector-core\data\config\title_screen_variants.csv`(12 个条目，全是常规舰船装配)。
+1. 文件位置：MOD 的 `data/config/title_screen_variants.csv`。原版同路径：`data/config/title_screen_variants.csv`(12 个条目，全是常规舰船装配)。
    - 表头同样是 `variant id`。
 2. 注册入口：CSV spec 加载期调用 `loadTitleScreenVariants()`，读取后把每行追加进 `titleScreenVariantIds`。合并、注释、表头规则与模拟战清单完全相同。
 3. 使用方：标题画面背景战斗的插件：
@@ -91,7 +91,7 @@ GearIn_artizan_combat
 
 ### 装配清单 (本例)
 
-在 MOD 中新建 `\Starsector\mods\GearIndustry\data\config\title_screen_variants.csv`：
+在 MOD 中新建 `data/config/title_screen_variants.csv`：
 
 ```csv
 variant id
@@ -121,7 +121,7 @@ GearIn_artizan_combat
 前置数据：装配注册单元的 `data/variants/GearIn_artizan_combat.variant`[C4-S1]，以及本节新建的两个 CSV——`data/campaign/sim_opponents.csv` 与 `data/config/title_screen_variants.csv` (保持本例内容，UTF-8 无 BOM)。
 
 1. 启动游戏 (启用测试 MOD)，进入主菜单。
-2. 查看 `\Starsector\starsector-core\starsector.log`。
+2. 查看 `starsector.log`。
 3. 在主菜单停留 10 秒以上，观察背景战斗中的舰船；必要时多等几次或重启几次。
 4. 读取或新建生涯存档，进入任意舰船装配界面，点 "Run simulation"，观察部署界面的敌方舰队。
 

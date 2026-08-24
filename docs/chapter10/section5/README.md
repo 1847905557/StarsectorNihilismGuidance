@@ -45,7 +45,7 @@
 
 ### market\_conditions.csv 注册链
 
-原版注册表是 `Starsector\starsector-core\data\campaign\market_conditions.csv`(169 行)。
+原版注册表是 `data/campaign/market_conditions.csv`(169 行)。
 
 ### market\_conditions.csv 字段速查表
 
@@ -58,8 +58,8 @@
 | `tags` | `getTags()` | 逗号分隔字符串，`optString` 可选 |
 | `planetary` | `spec.isPlanetary()` | `optBoolean` 默认 false；`MarketConditionAPI.isPlanetary()` 转发 plugin(默认读 spec)；"行星条件显示在条件面板右侧，市场条件显示在行星条件左侧的组里" |
 | `decivRemove` | `spec.isDecivRemove()` | `optBoolean` 默认 false；文明衰退移除标记 |
-| `script` | `getScriptClass()` | **plugin 类名**；必填。加载期经脚本类加载器 `registerScriptClass` 注册；实例化时机见下 |
-| `desc` | `getDesc()` | tooltip 正文；`optString` 默认 `"No description... yet"`；支持 `$token` 替换 (见 "tooltip 链路") |
+| `script` | `getScriptClass()` | **plugin 类名**；必填。加载期经脚本类加载器 `registerScriptClass` 注册；实例化时机是条件实例创建时 |
+| `desc` | `getDesc()` | tooltip 正文；`optString` 默认 `"No description... yet"`；支持 `$token` 替换 |
 | `icon` | `getIcon()` | 图标贴图路径；**留空回退原版 `graphics/hullmods/generic_mod.png`**；非空时资源加载期排队 TEXTURE，路径无效 → 加载期失败 |
 | `order` | `getOrder()` | `optDouble` 默认 20.0；条件列表排序 |
 
@@ -71,7 +71,7 @@
 
 **plugin 实例化**：`spec.getNewPluginInstance()` → 脚本类加载器 `loadScriptInstance(scriptClass)`—— 按类名注册表 `newInstance`**，必须无参可实例化** (类实现了接口并不等于实例会被调用，这一点在既有脚本讲解中已经确立)。
 
-实例化时机是条件实例创建时 (创建流程见下)，不是 CSV 加载时。
+实例化时机是条件实例创建时，不是 CSV 加载时。
 
 **交叉校验的完整流程**：procgen 表 `data/campaign/procgen/condition_gen_data.csv` 的每一行 (除 `_no_pick` 后缀) 必须在 `market_conditions.csv` 有对应行。
 
@@ -176,11 +176,11 @@ survey 是**两层**状态，别混用：
 
 - **机制**：`suppressCondition(id)` 把 spec id 加进市场的 `suppressedConditions` 集合 (用到时才创建)；`isConditionSuppressed(id)` 查集合。
     - `unsuppressCondition(id)` 移除，集合清空且未设置 `retainSuppressedConditionsSetWhenEmpty` 时置 null。
-- **生效时机**：`suppressCondition` **本身不立即移除效果** —— 只在下次重算时，`reapplyConditions` 对它 `unapply` 但跳过 `apply`**。可观察结果**：suppress 后效果仍在，下一次经济迭代 (或稳定度变化、手动重算) 后才消失。
+- **生效时机**：`suppressCondition` **本身不立即移除效果** —— 只在下次重算时，`reapplyConditions` 对它 `unapply` 但跳过 `apply`。**可观察结果**：suppress 后效果仍在，下一次经济迭代 (或稳定度变化、手动重算) 后才消失。
 
 suppress 后立即读数值，效果还在
 
-`suppressCondition(id)` 只写 suppressed 集合，不立即移除效果；`unapply` 执行、`apply` 被跳过发生在**下一次重算** (经济迭代 / 稳定度变化 / 手动 `reapplyConditions()`)。需要立即生效时，请显式调用重算后再读数。
+`suppressCondition(id)`：需要立即生效时，请显式调用重算后再读数。
 
 - **实例保留**：suppression 只抑制 "生效"，`getConditions()` 里实例仍在、`getSpecificCondition(token)` 仍可查到。
 - **持久化**：集合随市场存档；空集在写档时置 null。
@@ -295,12 +295,12 @@ market.removeSpecificCondition(token);
 
 ## 组装市场条件实现
 
-规则只有落进代码才算数。下面用一个完整最小例，把注册、生命周期、重算与两类检查串成一条可运行的链路。
+规则只有落进代码才算数。下面把注册、生命周期、重算与两类检查串成一条可运行的链路。
 
 在既有 MOD 布局与 `GearInModPlugin` 注册结构之上新增一个数据文件 (追加一行) 与两个类。本节新增条件 ID `GearIn_ore_deposits`(示例所有权 `GearInOreCondition`)，只由本节定义：
 
-```text
-Starsector\mods\GearIndustry\
+```text {7,11,12}
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
@@ -309,14 +309,14 @@ Starsector\mods\GearIndustry\
 │       └── market_conditions.csv   # 本节新增：在文件末尾追加下面一行
 ├── jars\                           # 构建产物目录 (gradle jar)
 └── src\
-    └── data\scripts\gearin\campaign\
+    └── data/scripts/gearin/campaign\
         ├── GearInOreCondition             # 本节新增 (归本节所有)
         └── GearInConditionLifecycleScript # 本节新增 (归本节所有)
 ```
 
 ### market\_conditions.csv 追加行
 
-追加到 `data\campaign\market_conditions.csv`(表头沿用原版九列；MOD 行按 id 合并进原版表，跨文件无重复冲突)：
+追加到 `data/campaign/market_conditions.csv`(表头沿用原版九列；MOD 行按 id 合并进原版表，跨文件无重复冲突)：
 
 ```csv
 name,id,tags,planetary,decivRemove,script,desc,icon,order
@@ -366,19 +366,19 @@ GearIn Ore Deposits,GearIn_ore_deposits,,TRUE,,data.scripts.gearin.campaign.Gear
 
 想演示换目标市场，注册前先设参数：
 
-```java
+```java {2}
     GearInConditionLifecycleScript script = new GearInConditionLifecycleScript();
     script.setTargetMarketId("asharu"); // corvus 星系独立势力市场 (economy.json 首实体 id 即市场 id)
     Global.getSector().addScript(script);
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，与既有示例相同)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，与既有示例相同)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInOreCondition.class` 与 `data/scripts/gearin/campaign/GearInConditionLifecycleScript.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInOreCondition.class` 与 `data/scripts/gearin/campaign/GearInConditionLifecycleScript.class`(可用 `jar tf` 核对)。
 
 ## 关键故障实验：添加条件时报告规格不存在
 
@@ -393,7 +393,7 @@ market.addCondition("GearIn_ore");
 
 **局部修正片段：**
 
-```java
+```java {2}
 // 修正片段
 String token = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
 MarketConditionAPI condition = market.getSpecificCondition(token);
@@ -409,7 +409,7 @@ MarketConditionAPI condition = market.getSpecificCondition(token);
 
 前置数据：既有 MOD 布局与 `GearInModPlugin` 注册结构 (含本节调用点片段，[C6-S1]、[C6-S2] 已确立)、`market_conditions.csv` 追加行、两个 Java 类。
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含两个 class。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含两个 class。
 2. 启动游戏，查看 `Loading condition: GearIn_ore_deposits` 加载日志。
 3. **新建生涯**：在 `starsector.log` 中观察 `GearIn condition lifecycle` 相关记录。
 4. **数值核对**：`add` 行 `plugin=GearInOreCondition`、`planetary=true`、`surveyed=true`、`genSpec=null`、`icon=graphics/hullmods/generic_mod.png`；`applied` 行 `hazardModSource` 等于 `token`、`accModValue=0.10`；`multi` 行 `distinct=true`、`accMod1=0.10 accMod2=0.20`。
@@ -419,7 +419,7 @@ MarketConditionAPI condition = market.getSpecificCondition(token);
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到两个 class。加载期 `starsector.log` 出现 `Loading market conditions` 与 `Loading condition: GearIn_ore_deposits`(加载器的既有日志格式；原版每行条件同样各打一条)。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到两个 class。加载期 `starsector.log` 出现 `Loading market conditions` 与 `Loading condition: GearIn_ore_deposits`(加载器的既有日志格式；原版每行条件同样各打一条)。
 
 - **新建生涯**：`starsector.log` 依次出现。
 

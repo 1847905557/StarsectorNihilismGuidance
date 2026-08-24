@@ -52,7 +52,7 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 
 在 `data/world/factions/gear_industry.faction` 的 `illegalCommodities` 数组追加同一个 ID。
 
-```json
+```json {4}
 "illegalCommodities":[
     "drugs",
     "organs",

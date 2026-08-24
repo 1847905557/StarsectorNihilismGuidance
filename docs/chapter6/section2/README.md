@@ -110,11 +110,11 @@ MOD 正常启用，但 `getEnabledModPlugins` 对 `null` 类名直接跳过 —�
 声明只有几行，违规后果都发生在启动期，先看两条必须满足的规则：
 
 - `modPlugin` 的值**必须**是脚本类加载器能 `Class.forName` 实例化的完整类名。类不存在、包名/类名拼错 → 启动资源加载期抛 `Error loading [data.scripts.gearin.GearInModPlugin]`(原因是 ClassNotFoundException)**，启动失败**。
-- `modPlugin` 指向的类**必须**继承 `BaseModPlugin`(或实现 `ModPlugin` 全部 19 个方法)。类不是 `ModPlugin` 实现 → `getEnabledModPlugins` 里的强制转换抛 `ClassCastException`**，启动失败**。直接实现接口而非继承基类 → 编译期必须写满 19 个方法，基类用空实现作默认值 (`com.fs.starfarer.api.BaseModPlugin` javadoc 明确建议继承：将来 API 新增方法时基类会补空实现，直接实现接口的 MOD 会被破坏编译)。
+- `modPlugin` 指向的类**必须**继承 `BaseModPlugin`(或实现 `ModPlugin` 全部 19 个方法)。类不是 `ModPlugin` 实现 → `getEnabledModPlugins` 里的强制转换抛 `ClassCastException`，**启动失败**。直接实现接口而非继承基类 → 编译期必须写满 19 个方法，基类用空实现作默认值 (`com.fs.starfarer.api.BaseModPlugin` javadoc 明确建议继承：将来 API 新增方法时基类会补空实现，直接实现接口的 MOD 会被破坏编译)。
 
 ::: caution 回调内不得抛出未处理异常
 
-应用启动阶段 → **启动中止**；新档/读档阶段 → **对应流程中止并报错**；保存阶段 → **存档失败并回调 `onGameSaveFailed()`**。版本检查是唯一有意的例外 (见下)。
+应用启动阶段 → **启动中止**；新档/读档阶段 → **对应流程中止并报错**；保存阶段 → **存档失败并回调 `onGameSaveFailed()`**。版本检查是唯一有意的例外。
 
 :::
 
@@ -141,7 +141,7 @@ MOD 正常启用，但 `getEnabledModPlugins` 对 `null` 类名直接跳过 —�
 
 本节沿用此前建立的 jar 编译路线，`GearInModPlugin` 编进同一个 `jars/GearIndustry.jar`。
 
-接管新档生成页的入口时：`mod_info.json` 的 `modPlugin` 从 `data.scripts.gearin.campaign.GearInSystemGenPlugin` 改为 `data.scripts.gearin.GearInModPlugin`，生成与关系播种逻辑随入口搬到本节类的 `onNewGame`(见下 "累计工程补全片段")；
+接管新档生成页的入口时：`mod_info.json` 的 `modPlugin` 从 `data.scripts.gearin.campaign.GearInSystemGenPlugin` 改为 `data.scripts.gearin.GearInModPlugin`，生成与关系播种逻辑随入口搬到本节类的 `onNewGame`；
 
 旧的入口类 `GearInSystemGenPlugin` 如残留不会报错，只会安静地成为一份不再被调用的旧实现，应删除。
 
@@ -218,7 +218,7 @@ if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
 
 - `extends BaseModPlugin`：提供全部 19 个 `ModPlugin` 方法的空实现，只需覆写用到的回调；直接实现接口则要写满全部方法 (API javadoc 的 NOTE)。
 - `onApplicationLoad() throws Exception`：接口签名自带 `throws Exception`，版本检查在这里抛 `IllegalArgumentException` 会中止启动。
-- `getPersistentData().containsKey(CLASS_MARK)`：存档级判断，见 "存档入口"。
+- `getPersistentData().containsKey(CLASS_MARK)`：随存档保存的持久标记，判断是否首次进入存档。
 - `SharedData.getData().getPersonBountyEventData().addParticipatingFaction("gear_industry")`：把势力注册进赏金机制的参与列表 (沿用旧版示例行为)，只在首次进入时执行一次。
 - `Global.getLogger(GearInModPlugin.class)`：日志写入 `Starsector/starsector-core/starsector.log`。
 
@@ -252,7 +252,7 @@ gradle jar
 Starsector/mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
-├── mod_info.json          # 追加 modPlugin 字段 (见上)
+├── mod_info.json          # 追加 modPlugin 字段
 ├── data/
 ├── src/
 │   └── data/scripts/gearin/GearInModPlugin   # 本节新增

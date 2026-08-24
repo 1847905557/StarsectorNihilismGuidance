@@ -182,7 +182,7 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 1. **武器构造时**：`.wpn` 登记的 `everyFrameEffect` 类名由脚本类加载器实例化 (**每次创建新实例**)→ 每把武器实例独有一个效果对象；若实现 `WeaponEffectPluginWithInit`，紧接着调用 `init(weapon)`。多艘舰、多把同 id 武器的效果对象互不相干。
 2. **每帧**：`advance(amount, engine, weapon)` 在本帧转向、开火等操作**之前**调用 (API javadoc 原文 "Called before this frame's operations for the weapon - turning, firing, etc.")；本帧操作完成后，若实现 `EveryFrameWeaponEffectPluginWithAdvanceAfter` 再调 `advanceAfter`。
 3. **暂停时武器不推进** → 两个回调全部停摆 ([C7-S1] / [C7-S4] 的暂停语义；与战斗插件 `advance` 暂停时仍被调用不同)。
-4. 若该效果类同时实现 `OnFireEffectPlugin`，开火时**同一个实例**还会被调一次 `onFire`——"一类多角色、一武器一实例" 是原版常用做法 (`RiftBeamEffect` 用 everyFrameEffect 在光束武器上轮询 `weapon.getBeams()` 生成裂隙；`RealityDisruptorEffect` 一个类同时是 everyFrameEffect / onFireEffect / onHitEffect，见 "同实例多角色")。
+4. 若该效果类同时实现 `OnFireEffectPlugin`，开火时**同一个实例**还会被调一次 `onFire`——"一类多角色、一武器一实例" 是原版常用做法 (`RiftBeamEffect` 用 everyFrameEffect 在光束武器上轮询 `weapon.getBeams()` 生成裂隙；`RealityDisruptorEffect` 一个类同时是 everyFrameEffect / onFireEffect / onHitEffect)。
 
 ### beamEffect(光束武器专属)
 
@@ -342,7 +342,7 @@ LOG.info("GearIn onHit " + projectile.getProjectileSpecId()
 
 规则需要落到可编译的类上。在编译 JAR 链路的 MOD 布局 [C6-S1] 与武器开火流单元 [C7-S4] 的 `GearInWeaponFlowEffect` 之上新增四个 Java 类，本节不新增任何资源文件。
 
-`.wpn` / `.proj` 接入片段与帧贴图清单见下文，仅演示挂载点，本节不创建数据文件。
+`.wpn` / `.proj` 接入片段与帧贴图清单仅演示挂载点，本节不创建数据文件。
 
 包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearIn<Role>`)。
 
@@ -387,23 +387,23 @@ LOG.info("GearIn onHit " + projectile.getProjectileSpecId()
 
 ### 数据接入片段
 
-(工程片段 —— 本节不创建数据文件；接入后四个效果类才生效。以下 ID 由本节声明，路径在 `Starsector\mods\GearIndustry\` 下自洽)：
+(工程片段 —— 本节不创建数据文件；接入后四个效果类才生效。以下 ID 由本节声明，路径在 `mods/GearIndustry/` 下自洽)：
 
 ```text
-data\weapons\GearIn_test_rotor.wpn         # 弹丸武器：GearInWeaponFrameEffect(everyFrameEffect)+ 动画 / 内置视觉字段
-data\weapons\GearIn_test_beam.wpn          # 光束武器：GearInWeaponFrameEffect(everyFrameEffect)+ GearInBeamHitEffect(beamEffect)
-data\weapons\proj\GearIn_test_shot.proj    # 弹体 spec：GearInOnFireEffect / GearInOnHitEffect(onFireEffect / onHitEffect)
-graphics\weapons\gearin\GearIn_test_rotor_turret_base00.png     # 帧 0(您自备，命名规则见 "帧贴图命名规则")
-graphics\weapons\gearin\GearIn_test_rotor_turret_base01.png     # 帧 1
-graphics\weapons\gearin\GearIn_test_rotor_turret_base02.png     # 帧 2
-graphics\weapons\gearin\GearIn_test_rotor_turret_base03.png     # 帧 3
-graphics\weapons\gearin\GearIn_test_rotor_hardpoint_base00.png  # 帧 0
-graphics\weapons\gearin\GearIn_test_rotor_hardpoint_base01.png  # 帧 1
-graphics\weapons\gearin\GearIn_test_rotor_hardpoint_base02.png  # 帧 2
-graphics\weapons\gearin\GearIn_test_rotor_hardpoint_base03.png  # 帧 3
-graphics\weapons\gearin\GearIn_test_beam_turret_base.png        # 光束武器基贴图
-graphics\weapons\gearin\GearIn_test_beam_hardpoint_base.png     # 光束武器基贴图
-graphics\weapons\gearin\GearIn_test_shot.png                    # 弹体贴图
+data/weapons/GearIn_test_rotor.wpn         # 弹丸武器：GearInWeaponFrameEffect(everyFrameEffect)+ 动画 / 内置视觉字段
+data/weapons/GearIn_test_beam.wpn          # 光束武器：GearInWeaponFrameEffect(everyFrameEffect)+ GearInBeamHitEffect(beamEffect)
+data/weapons/proj/GearIn_test_shot.proj    # 弹体 spec：GearInOnFireEffect / GearInOnHitEffect(onFireEffect / onHitEffect)
+graphics/weapons/gearin/GearIn_test_rotor_turret_base00.png     # 帧 0(您自备；基贴图路径以 00.png 结尾，帧文件顺序编号)
+graphics/weapons/gearin/GearIn_test_rotor_turret_base01.png     # 帧 1
+graphics/weapons/gearin/GearIn_test_rotor_turret_base02.png     # 帧 2
+graphics/weapons/gearin/GearIn_test_rotor_turret_base03.png     # 帧 3
+graphics/weapons/gearin/GearIn_test_rotor_hardpoint_base00.png  # 帧 0
+graphics/weapons/gearin/GearIn_test_rotor_hardpoint_base01.png  # 帧 1
+graphics/weapons/gearin/GearIn_test_rotor_hardpoint_base02.png  # 帧 2
+graphics/weapons/gearin/GearIn_test_rotor_hardpoint_base03.png  # 帧 3
+graphics/weapons/gearin/GearIn_test_beam_turret_base.png        # 光束武器基贴图
+graphics/weapons/gearin/GearIn_test_beam_hardpoint_base.png     # 光束武器基贴图
+graphics/weapons/gearin/GearIn_test_shot.png                    # 弹体贴图
 ```
 
 ```json
@@ -481,7 +481,7 @@ graphics\weapons\gearin\GearIn_test_shot.png                    # 弹体贴图
 
 `everyFrameEffect` / `beamEffect` / `onFireEffect` / `onHitEffect` 的类名必须是脚本类加载器可实例化的完整类名，绑错或类缺失时武器 / 射线 / 射弹创建抛 `Problem loading class [...]`，部署舰船即报错。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用编译 JAR 链路)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用编译 JAR 链路)：
 
 ```text
 gradle jar
@@ -489,9 +489,9 @@ gradle jar
 
 ### 核对产物
 
-`gradle jar` 后用 `jar tf jars\GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下四个效果类都在 —— 类缺失或包路径不符时，先查包名与类名拼写，再查 `everyFrameEffect` / `beamEffect` / `onFireEffect` / `onHitEffect` 四处的全限定名。
+`gradle jar` 后用 `jar tf jars/GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下四个效果类都在 —— 类缺失或包路径不符时，先查包名与类名拼写，再查 `everyFrameEffect` / `beamEffect` / `onFireEffect` / `onHitEffect` 四处的全限定名。
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/` 下的四个类：
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/combat/` 下的四个类：
 
 - `GearInWeaponFrameEffect.class`
 - `GearInBeamHitEffect.class`
@@ -522,7 +522,7 @@ public class GearInWeaponFrameEffect implements EveryFrameWeaponEffectPlugin { }
 
 前置数据：编译 JAR 流程的 MOD 布局 [C6-S1]、本节三个数据文件与帧贴图清单、四个效果类，以及装有 `GearIn_test_rotor` 与 `GearIn_test_beam` 的测试舰。
 
-1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，再用 `jar tf jars\GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下的四个类。
+1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，再用 `jar tf jars/GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下的四个类。
 2. 进入 `GearIn_test` 战役部署测试舰，查看 `starsector.log` 中的两行初始化日志。
 3. 用 `GearIn_test_rotor` 射击并停火，观察动画帧；再把 `.wpn` 的 `animateWhileFiring` 设为 `false`，重启后重复射击。
 4. 持续射击，核对 `started firing (before-frame callback)` 与每秒一次的 `after-frame:` 日志。
@@ -532,7 +532,7 @@ public class GearInWeaponFrameEffect implements EveryFrameWeaponEffectPlugin { }
 
 预期结果：
 
-- `jars\GearIndustry.jar` 包含 `GearInWeaponFrameEffect.class`、`GearInBeamHitEffect.class`、`GearInOnFireEffect.class` 与 `GearInOnHitEffect.class`。
+- `jars/GearIndustry.jar` 包含 `GearInWeaponFrameEffect.class`、`GearInBeamHitEffect.class`、`GearInOnFireEffect.class` 与 `GearInOnHitEffect.class`。
 - 部署时出现 `GearIn weapon fx init GearIn_test_rotor ... animated=true frames=4 rate=12.0` 与 `GearIn weapon fx init GearIn_test_beam ... animated=false`；光束武器没有 `numFrames`，动画对象为 null。
 - 开火时帧号按 0→1→2→3→0 循环；停火且冷却结束后出现一次 `idle -> frame 0 (programmatic)` 并停在第 0 帧；`animateWhileFiring:false` 时开火期间帧号冻结。
 - 每次开火在生成射弹前出现 `started firing (before-frame callback)`；持续射击时每秒出现一条 `after-frame: ammo=... cooldown=...`。
@@ -550,7 +550,7 @@ public class GearInWeaponFrameEffect implements EveryFrameWeaponEffectPlugin { }
 
 - **创建武器、射线或射弹时报告 `Problem loading class [...]`**：类名错误、类缺失或没有无参构造器。
 
-    - **解决方案**：核对完整类名和构造器，再用 `jar tf jars\GearIndustry.jar` 检查 class 路径，修正。
+    - **解决方案**：核对完整类名和构造器，再用 `jar tf jars/GearIndustry.jar` 检查 class 路径，修正。
 
 - **`beamEffect` 没有任何行为**：注册列写在弹丸武器的 `.wpn` 中时，引擎不会创建光束效果实例。
 

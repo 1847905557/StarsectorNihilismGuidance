@@ -29,20 +29,20 @@
 
 ### 确认 Java 17 运行时上限
 
-游戏进程由自带的 JRE 启动：`Starsector\jre`(`release` 文件写明 `JAVA_VERSION="17.0.10"`，Zulu 17.48+15-CA)，`starsector-core\starsector.bat` 用 `..\jre\bin\java.exe` 运行。因此：
+游戏进程由自带的 JRE 启动：`jre`(`release` 文件写明 `JAVA_VERSION="17.0.10"`，Zulu 17.48+15-CA)，`starsector-core/starsector.bat` 用 `../jre/bin/java.exe` 运行。因此：
 
 编译 MOD 时**必须**把字节码目标定在 Java 17 或更低 (`--release 17`)；
 
 用更高版本 JDK 的默认目标 (如 JDK 21 默认 target 21) 编译的 class，游戏加载时会抛 `UnsupportedClassVersionError`(日志出现 "Compiled for the wrong version of Java, change the compile target to Java 7")，表现为启动或战斗开始时报错。
 
-任意已安装的 JDK 17 都可以直接作为编译工具；游戏自带的 `Starsector\jre` 与 JDK 17 是同一发行版。JDK 17 与更高版本 JDK 可以并存，关键是编译目标必须低于等于 17。
+任意已安装的 JDK 17 都可以直接作为编译工具；游戏自带的 `jre` 与 JDK 17 是同一发行版。JDK 17 与更高版本 JDK 可以并存，关键是编译目标必须低于等于 17。
 
 ### 配置 IDE 依赖
 
 任选 IDEA、Eclipse 或 VS Code(装 Java 扩展) 均可，三个要点：
 
 1. Project SDK / 语言级别设为 17；
-2. 把游戏侧公开 API(`com.fs.starfarer.api.*`) 的编译面作为模块依赖加入工程 (编译期即可，见下)；
+2. 把游戏侧公开 API(`com.fs.starfarer.api.*`) 的编译面作为模块依赖加入工程 (编译期即可)；
 3. 把 API 的源码包挂为同一依赖的源码附件，IDE 内跳转才能看到 API 注释 (如 `ModPlugin` 的 javadoc 写明 "应继承 `BaseModPlugin` 而不是直接实现接口")。
 
 ### 限定游戏侧编译依赖
@@ -70,13 +70,13 @@
 
 | 环节 | 文件或 API | 使用方 / 行为 |
 |---|---|---|
-| 源码 | `GearInFrameLogger`(源文件位于 `src\data\scripts\gearin\combat\`) | `javac`(Gradle `compileJava`) |
+| 源码 | `GearInFrameLogger`(源文件位于 `src/data/scripts/gearin/combat\`) | `javac`(Gradle `compileJava`) |
 | 编译依赖 | 游戏侧公开 API(`com.fs.starfarer.api.*`) 编译面 | `compileOnly`；运行时由游戏提供 |
-| 产物 | `jars\GearIndustry.jar` | Gradle `jar` 任务输出 |
+| 产物 | `jars/GearIndustry.jar` | Gradle `jar` 任务输出 |
 | 声明 | `mod_info.json` 的 `jars` 数组 | `ModManagerAPI` 解析 (公开只读面为 `ModSpecAPI.getJars()`) |
 | 挂载 | 游戏启动期 | 把 `<MOD 根目录>/<jars 声明值>` 逐项加入脚本类加载器的 jar 列表，日志 `Getting ready to load jar file [...]` 与 `Loading jar files` |
 | 解析 | 脚本类加载器 (`URLClassLoader`) | 脚本类按完整类名 `Class.forName`；jar 类优先于即时编译源码 (Janino 源码编译器是 jar 类加载器的子加载器，父加载器优先) |
-| 注册与实例化 | `data\config\settings.json` 的 `plugins` 段 | 资源加载期由 `loadStarmap()` 注册，先于 CSV spec；每场战斗创建新实例并附加 |
+| 注册与实例化 | `data/config/settings.json` 的 `plugins` 段 | 资源加载期由 `loadStarmap()` 注册，先于 CSV spec；每场战斗创建新实例并附加 |
 
 运行期取得脚本类加载器的公开 API：`SettingsAPI.getScriptClassLoader()`；按完整类名创建实例：`SettingsAPI.getInstanceOfScript(String)`。本节不调用它们，只作阅读链路的对照。
 
@@ -85,7 +85,7 @@
 七段链路先不要逐段实现。本节的策略是只建立一条最小任务链，先让一个类被注册、加载、运行，再验证修改能生效：
 
 1. 定位使用方：`settings.json` 的 `plugins` 段 (key → 完整类名)→ 注册进脚本类加载器 → 每场战斗创建实例。jar 内类**必须**被某个注册入口按名引用才会被加载。
-2. 建立最小对象：`GearInFrameLogger` 编译进 `jars\GearIndustry.jar`，声明 `jars`，登记 `gearInFrameLogger`。
+2. 建立最小对象：`GearInFrameLogger` 编译进 `jars/GearIndustry.jar`，声明 `jars`，登记 `gearInFrameLogger`。
 3. 验证使用方收到对象：进模拟战，日志出现 `GearIn FrameLogger tick` 行。
 4. 修改一个参数 (如 `TICK_INTERVAL`) 重新构建，确认输出变化符合预期，从而证明游戏加载的是新构建的 jar 而不是缓存或即时编译源码。
 
@@ -129,7 +129,7 @@ if (elapsed >= TICK_INTERVAL) {
 
 ## 配置 Gradle 文件
 
-要点：`srcDirs = ["src"]` 让 Gradle 从 `src\data\scripts\...` 编译 (与 [C2-S2] 既有的源码位置一致)；
+要点：`srcDirs = ["src"]` 让 Gradle 从 `src/data/scripts/...` 编译 (与 [C2-S2] 既有的源码位置一致)；
 
 `compileOnly` 声明 API 依赖但不打包；`jar` 任务把产物直接放进 `jars\`，文件名与 `mod_info.json` 声明一致。
 
@@ -156,26 +156,26 @@ MOD 的 `settings.json` 会与全局设置按对象键合并，只提交自己�
 对应关系：
 
 - `extends BaseEveryFrameCombatPlugin`：提供全部 `EveryFrameCombatPlugin` 方法的空实现，只需覆写 `advance`；直接实现接口则要写满 5 个方法 (含弃用的 `init`) [C7-S1]。
-- `Global.getLogger(GearInFrameLogger.class)`：log4j 记录器，输出到 `starsector-core\starsector.log`；全程不需要在编译期直接 import log4j。
+- `Global.getLogger(GearInFrameLogger.class)`：log4j 记录器，输出到 `starsector-core/starsector.log`；全程不需要在编译期直接 import log4j。
 - `engine.isPaused()` 判断：暂停帧不累计 ([C7-S1] 的暂停语义)。
 - `engine.getTotalElapsedTime(false)`：战斗内累计秒数，不含暂停；`amount` 是本帧经过秒数。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 目录执行)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 目录执行)：
 
 ```text
 gradle jar
 ```
 
-产物为 `jars\GearIndustry.jar`，其内部条目按包路径组织，包含 `data/scripts/gearin/combat/GearInFrameLogger.class`(可用 `jar tf` 核对)。
+产物为 `jars/GearIndustry.jar`，其内部条目按包路径组织，包含 `data/scripts/gearin/combat/GearInFrameLogger.class`(可用 `jar tf` 核对)。
 
-想确认游戏加载的是新构建的 jar 而不是缓存或旧源码，可先改一个参数 (如把 `TICK_INTERVAL` 从 `3f` 改为 `5f`) 再重新构建 —— 日志中 tick 间隔随之变化即证明产物已更新；用 `jar tf jars\GearIndustry.jar` 可直接核对 jar 内部条目。
+想确认游戏加载的是新构建的 jar 而不是缓存或旧源码，可先改插件类里的一个参数 (如日志间隔常量) 再重新构建 —— 日志中 tick 间隔随之变化即证明产物已更新；用 `jar tf jars/GearIndustry.jar` 可直接核对 jar 内部条目。
 
 ## 完整最小例
 
-任务链的每一环都需要一个具体文件。下面在 `Starsector\mods\GearIndustry\` 中逐个建立 (`data/`、`graphics/`、`sounds/` 沿用 [C1-S1] 建立的目录)：
+任务链的每一环都需要一个具体文件。下面在 `mods/GearIndustry/` 中逐个建立 (`data/`、`graphics/`、`sounds/` 沿用 [C1-S1] 建立的目录)：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
@@ -183,11 +183,11 @@ Starsector\mods\GearIndustry\
 │   └── config\
 │       └── settings.json
 ├── src\
-│   └── data\scripts\gearin\combat\
+│   └── data/scripts/gearin/combat\
 └── jars\
 ```
 
-其中 `data\scripts\gearin\combat\` 目录存放本节的 `GearInFrameLogger` 类，完整源码见下文代码块。
+其中 `data/scripts/gearin/combat\` 目录存放本节的 `GearInFrameLogger` 类。
 
 ```groovy
 plugins {
@@ -311,17 +311,17 @@ public class GearInFrameLogger extends BaseEveryFrameCombatPlugin {
 
 ## 验证方案
 
-前置数据：`mod_info.json`([C1-S1]，追加本节 `jars` 字段)、本节 `build.gradle`、`settings.gradle`、`data\config\settings.json` 与 `GearInFrameLogger` 类。
+前置数据：`mod_info.json`([C1-S1]，追加本节 `jars` 字段)、本节 `build.gradle`、`settings.gradle`、`data/config/settings.json` 与 `GearInFrameLogger` 类。
 
-1. 在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jars\GearIndustry.jar` 生成。
-2. 启动启动器，勾选 "齿轮工业"，进入主菜单后退出；打开 `Starsector\starsector-core\starsector.log`，观察 jar 加载记录。
+1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jars/GearIndustry.jar` 生成。
+2. 启动启动器，勾选 "齿轮工业"，进入主菜单后退出；打开 `starsector.log`，观察 jar 加载记录。
 3. 进入游戏 → 模拟战，等待 3 秒以上，确认日志出现 `GearIn FrameLogger tick at battle time ...`。
-4. 打开 `Starsector\starsector-core\starsector.log`，查看 `GearInFrameLogger` 的 tick 记录。
+4. 打开 `starsector.log`，查看 `GearInFrameLogger` 的 tick 记录。
 
 预期结果：
 
-- 步骤 2：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jars\GearIndustry.jar` 存在。
-- 步骤 3：`starsector.log` 先出现前缀为 `Getting ready to load jar file [` 的准备日志，方括号内解析结果包含 `mods\GearIndustry\jars\GearIndustry.jar`，随后出现 `Loading jar files`；安装根目录部分以本机实际路径为准，且没有由 `gear_in` 引起的 `ERROR`。
+- 步骤 2：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jars/GearIndustry.jar` 存在。
+- 步骤 3：`starsector.log` 先出现前缀为 `Getting ready to load jar file [` 的准备日志，方括号内解析结果包含 `mods/GearIndustry/jars/GearIndustry.jar`，随后出现 `Loading jar files`；安装根目录部分以本机实际路径为准，且没有由 `gear_in` 引起的 `ERROR`。
 - 步骤 4：运行 3 秒以上后，日志每隔约 3 秒出现一行 `GearIn FrameLogger tick at battle time ...`。这条日志只可能在类被成功加载并实例化后产生，证明 jar 内容、`jars` 声明、`plugins` 登记三段链路全部打通。
 
 ## 故障分析
@@ -372,5 +372,5 @@ public class GearInFrameLogger extends BaseEveryFrameCombatPlugin {
 - `build.gradle` / `settings.gradle`：Gradle 构建配置 (toolchain 17、`--release 17`、jar 输出到 `jars/`)。
 - `jars/GearIndustry.jar`：构建产物 (可用 `jar tf` 核对条目)。
 - `Starsector/starsector-core/starsector.log`：运行日志 (jar 加载行、类加载异常、插件日志)。
-- `Starsector/starsector-core/starsector.bat`：游戏启动命令 (`..\jre\bin\java.exe`，classpath 含游戏侧公开 API 编译面)。
+- `Starsector/starsector-core/starsector.bat`：游戏启动命令 (`../jre/bin/java.exe`，classpath 含游戏侧公开 API 编译面)。
 - `Starsector/jre/release`：自带 JRE 版本信息 (Zulu 17.0.10)。

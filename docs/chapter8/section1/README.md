@@ -150,7 +150,7 @@ if (sMod) {
     - 船插 / 技能可以用 `stats.getDynamic().getMod("max_permanent_hullmods_mod").modifyFlat(...)` 提升上限 —— S-mod 上限不是写死的数字，是动态 stat。
 - 装配界面的计数：普通 S-mod 计入上限，**增强内置不占上限** (装配界面的计数提示原文 "Hull-standard built-in mods do not count against the limit."；计数代码把增强内置单独以 `*` 显示)。
 - 故事点消耗：每个普通 S-mod / 每次增强内置各消耗 1 点 ("Building mods into a hull uses a story point for each hullmod.")。
-- 奖励经验：增强内置固定 100%(原文 "enhancing it always grants %s bonus experience." 参数 "100%")。普通内置的奖励经验按舰船大小分档：
+- 奖励经验：增强内置固定 100%(原文 "enhancing it always grants %s bonus experience." 参数 "100%")。普通内置的奖励经验按船体等级分档：
     - `settings.json` 的 `bonusXP` 段 `permModFrigate: 0.75` / `permModDestroyer: 0.5` / `permModCruiser: 0.25` / `permModCapital: 0`，由 `Misc.getBuildInBonusXP(mod, size)` 返回。
     - **"成本低于 X OP 才有奖励" 的阈值逻辑已整段注释** (`Misc` 中 `permModNoBonusXPOPThreshold` / `permModMaxBonusXP` 相关逻辑已被注释)—— 奖励与 OP 成本无关；装配界面的 "成本低于 %s OP" 说明文本是遗留文案，与行为不符。
 

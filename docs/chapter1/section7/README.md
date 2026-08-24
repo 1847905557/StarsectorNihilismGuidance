@@ -106,7 +106,7 @@ GearIn_combat_desc_forging,SHIP,"锻件-级相位护卫舰围绕一门中型实�
 要点：
 
 - 武器的描述行 `id` **必须**等于武器 ID(此前建立的 `GearIn_durin` 等)，这是查找键，无法另起别名。
-- 三条舰船描述使用本节专属键 `GearIn_combat_desc_*`，需要靠 `.ship` 的 `descriptionId` 字段挂接 (见下文)。
+- 三条舰船描述使用本节专属键 `GearIn_combat_desc_*`，需要靠 `.ship` 的 `descriptionId` 字段挂接。
 - `GearIn_slag` 是战机 hull，使用 `GearIn_slag`，不使用 `GearIn_slag_wing`。
 - 武器 `text2` 与 `weapon_data.csv` 的 `primaryRoleStr` 保持一致 (反装甲/压制)：装配列表副标题优先显示 `primaryRoleStr`，`text2` 是它在留空时的备用值。
 - `GearIn_combat_desc_furnaceman` 的 text1 内含英文逗号，因此必须用引号包裹 (中文逗号 "，" 不是分隔符，无需包裹)；`text4`/`text5` 在示例中留空，其用法见原版参考行。

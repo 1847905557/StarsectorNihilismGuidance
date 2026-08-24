@@ -51,8 +51,8 @@
 
 | 分组 | 成员 | 语义 |
 |---|---|---|
-| 时钟 | `getClock()` | 生涯时钟 (`CampaignClockAPI`)，见 "时间系统" 节 |
-| 脚本 | `addScript` / `removeScript` / `removeScriptsOfClass(Class)` / `hasScript(Class)` / `getScripts()` | 引擎级每帧脚本的注册、移除、查询 (见 "脚本生命周期" 节) |
+| 时钟 | `getClock()` | 生涯时钟 (`CampaignClockAPI`) |
+| 脚本 | `addScript` / `removeScript` / `removeScriptsOfClass(Class)` / `hasScript(Class)` / `getScripts()` | 引擎级每帧脚本的注册、移除、查询 |
 | 脚本 (临时) | `addTransientScript` / `removeTransientScript` / `removeTransientScriptsOfClass(Class)` / `hasTransientScript(Class)` / `getTransientScripts()` | 不随存档保存的临时脚本 |
 | 地点 | `getHyperspace()` / `getStarSystem(String name)` / `getStarSystems()` / `getCurrentLocation()` / `getAllLocations()` / `getEntityById(String id)` / `getEntitiesWithTag(String tag)` | 地点容器与实体查找，详见 [C9-S2] |
 | 玩家 | `getPlayerFleet()` / `getPlayerPerson()` / `getPlayerFaction()` / `getPlayerStats()` | 玩家舰队、人物、势力、属性 |
@@ -62,8 +62,8 @@
 | 持久数据 | `getPersistentData()` | 返回随存档保存的 `Map<String, Object>`，跨会话 MOD 数据入口 (前置生命周期例已用) |
 | 记忆 | `getMemory()` / `getMemoryWithoutUpdate()` | 星区 "global" memory，详见 [C14-S4] |
 | UI 外壳 | `getCampaignUI()` | `CampaignUIAPI`：生涯消息区、core UI 页签、确认框等入口 |
-| 暂停 | `isPaused()` / `setPaused(boolean)` | 生涯暂停状态 (见 "暂停与加速语义" 节) |
-| 状态标志 | `isInFastAdvance()` / `isInNewGameAdvance()` | 新档时间推进窗口内为 `true`(见 "时间系统" 节) |
+| 暂停 | `isPaused()` / `setPaused(boolean)` | 生涯暂停状态 |
+| 状态标志 | `isInFastAdvance()` / `isInNewGameAdvance()` | 新档时间推进窗口内为 `true` |
 | 工具 | `genUID()` | 返回本星区唯一递增的十六进制 id 字符串，脚本/实体造 id 时用它 |
 
 结构要点：
@@ -166,7 +166,7 @@
     - **结论：默认 (`runWhilePaused() == false`) 脚本在暂停时完全冻结，`amount` 也拿不到。**
 - **加速 (按住 Shift)**：按住 Shift 键加速 (`campaignSpeedUpTimeIsToggle` 默认 `false`，即按住生效不是切换)。
     - 加速时按 `campaignSpeedupMult`(`settings.json`，取值为 2) 连调 `engine.advance`，脚本与时钟同帧推进两次 —— 游戏日流速翻倍。
-- **新档时间推进窗口**：`isInFastAdvance()` 为 `true` 时引擎以 2.5 秒步长连推 (见 "时间系统" 节)，`onNewGame` 阶段注册的脚本也会被这次推进逐帧调用。
+- **新档时间推进窗口**：`isInFastAdvance()` 为 `true` 时引擎以 2.5 秒步长连推，`onNewGame` 阶段注册的脚本也会被这次推进逐帧调用。
 - **战斗期间生涯冻结**：进入战斗后生涯引擎不再推进 —— 脚本、时钟、经济全部冻结，回生涯后恢复。
 
 ### 注册入口与持久数据标记
@@ -184,7 +184,7 @@
 
 无论哪个入口，一次性注册**必须**用随存档保存的 persistent data 标记 (前置生命周期例的 `CLASS_MARK` 模式)。
 
-本节示例给每个注册项**各自的键** (`REGISTER_MARK`)，不要并入插件既有的 `GearInModPlugin.CLASS_MARK` 标记 —— 否则在插件标记已置位的旧档里，本脚本永远不会注册。
+本节示例给每个注册项**各自的键** (`REGISTER_MARK`)。
 
 ## 实现生涯时钟脚本
 
@@ -250,14 +250,14 @@ return done;
 
 入口与一次性注册标记都确认了，该让脚本真正跑起来。在既有 MOD 布局与前置的 `GearInModPlugin` 生命周期例之上，本节只新增一个脚本类 (不新增任何资源、不新增任何注册项)：
 
-```text
-Starsector\mods\GearIndustry\
+```text {8}
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\campaign\
+│   └── data/scripts/gearin/campaign\
 │       └── GearInSectorClockScript   # 本节新增 (归本节所有)
 └── jars\
 ```
@@ -268,7 +268,7 @@ Starsector\mods\GearIndustry\
 
 - `implements EveryFrameScript`：三个方法全来自接口 (`isDone` / `runWhilePaused` / `advance`)；`isDone()` 返回字段 `done`，演示 "引擎自动清理"。
 - `REGISTER_MARK`：persistent data 标记键 (`"GearIn_SectorClockScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
-- `advance(float amount)`：`amount` 是上一帧真实秒数；`clock.convertToDays(amount)` 才是本帧折合的游戏天数 (换算规则见 "时间系统" 节)。
+- `advance(float amount)`：`amount` 是上一帧真实秒数；`clock.convertToDays(amount)` 才是本帧折合的游戏天数。
 - `getCycle() * 10000 + getMonth() * 100 + getDay()`：把日期折叠成整数键做跨日检测 (206.3.2 → 2060302)。
 - `getElapsedDaysSince(startTimestamp)`：挂载以来经过的游戏天数；暂停时不增长。
 - `daysToRun` / `setRunWhilePaused`：两个演示参数，对应 "修改参数看行为变化" 的演示步骤。
@@ -298,13 +298,13 @@ Starsector\mods\GearIndustry\
     Global.getSector().addScript(script);
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInSectorClockScript.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInSectorClockScript.class`(可用 `jar tf` 核对)。
 
 ## 关键故障实验：读档后脚本进度重新开始
 
@@ -330,7 +330,7 @@ sector.addScript(new GearInSectorClockScript());
 
 前置数据：既有 MOD 布局 [C6-S1]、`GearInModPlugin` ([C6-S2]，含本节调用点片段) 与本节类 `GearInSectorClockScript`。累计工程的 `GearInSystemGenerator` 非必需。
 
-1. 构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；用 `jar tf jars\GearIndustry.jar` 核对产物。
+1. 构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；用 `jar tf jars/GearIndustry.jar` 核对产物。
 2. 新建生涯：启动游戏进入新档，持续观察 `starsector.log`，直到确认脚本挂载与跨日日志。
 3. 暂停：生涯中按空格暂停，等待 20 秒以上，再恢复。
 4. 加速：按住 Shift 约 10 秒，再松开。
@@ -340,7 +340,7 @@ sector.addScript(new GearInSectorClockScript());
 
 预期结果：
 
-- 游戏构建以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInSectorClockScript.class`。
+- 游戏构建以 `BUILD SUCCESSFUL` 结束 (退出码 0)；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInSectorClockScript.class`。
 
 - 新建生涯：`starsector.log` 依次出现。
 
@@ -431,7 +431,7 @@ sector.addScript(new GearInSectorClockScript());
 - `com.fs.starfarer.api.EveryFrameScript`：生涯按帧脚本接口 ——`isDone` / `runWhilePaused` / `advance` 三方法约定。
 - `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：带 `cleanup()` 的脚本接口；引擎从不调用 `cleanup()`。
 - `com.fs.starfarer.api.Global`：`getSector()` / `getLogger()` 全局入口。
-- `data.scripts.gearin.campaign.GearInSectorClockScript`：本节示例类 (完整最小例源码)。
+- `data.scripts.gearin.campaign.GearInSectorClockScript`：本节示例类 (完整源码)。
 - `data/config/settings.json`：`campaignSpeedupMult` 等生涯设置 (加速倍数)。
 
 ## 完整最小例

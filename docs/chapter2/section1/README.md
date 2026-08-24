@@ -23,7 +23,7 @@
 
 ## Java 文件的结构
 
-本节只有一个代码文件，完整内容如下：
+本节只有一个代码文件：
 
 ```java
 package data.scripts.gearin.hullmods;
@@ -53,8 +53,8 @@ public class GearInSpeedBooster extends BaseHullMod {
 这个文件只有较少的几类内容：
 
 - **`package` 行**：类的存放目录。`data.scripts.gearin.hullmods` 对应 MOD 根下的 `data/scripts/gearin/hullmods/`，文件必须放在该目录下。
-- **`import` 行**：向游戏借用的工具 (日志、船插基类、数值修改器)。按模板使用，不认识的名称不影响本节操作。
-- **`public class GearInSpeedBooster extends BaseHullMod`**：类的名字。类名必须与文件名一致 (文件 `GearInSpeedBooster.java` 对应类名 `GearInSpeedBooster`)；`extends BaseHullMod` 表示采用船插的标准模板。
+- **`import` 行**：向游戏借用的工具。按模板使用，不认识的名称不影响本节操作。
+- **`public class GearInSpeedBooster extends BaseHullMod`**：类的名字。类名必须与文件名一致；`extends BaseHullMod` 表示采用船插的标准模板。
 - **`SPEED_PERCENT = 10f`**：本节唯一的参数 —— 速度加成百分比。改为 `50f` 即加成 50%。`f` 是小数标记，`10f` 与 `10.0f` 等价。
 - **方法 `applyEffectsBeforeShipCreation` 及其两行**：方法签名的参数不需要全部理解。方法体内两行各有用途：`modifyPercent(id, SPEED_PERCENT)` 是 "给最大速度加百分之几" 的固定句式；`Global.getLogger(...).info("...")` 向游戏日志写入一行文字 —— 引号内的文字可修改，改成什么，日志里就出现什么。**一般来说不会随便写日志，这里仅作演示**。
 
@@ -92,11 +92,11 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 - **小数带 `f`**：`10f`、`0.5f`、`3.14f`。游戏数值几乎都是浮点数，写数字时带 `f` 结尾是固定习惯。
 - **`modifyPercent` 加的是百分比**：`modifyPercent(id, 10f)` = 最大速度 +10%。
-- **`modifyFlat` 加的是固定值**：`modifyFlat(id, 50f)` = 直接 +50 单位/秒；本页后面有使用这种写法的示例。
+- **`modifyFlat` 加的是固定值**：`modifyFlat(id, 50f)` = 直接 +50 单位/秒。
 
 ::: warning 修改后无变化时的排查顺序
 
-文件保存在 `gear_in` 的 `data/scripts/...` 下、游戏确实重启过、装配界面确实安装了船插 —— 三项确认后仍无变化，见下方故障分析。
+文件保存在 `gear_in` 的 `data/scripts/...` 下、游戏确实重启过、装配界面确实安装了船插 —— 三项确认后仍无变化，请按故障分析的对应条目排查。
 
 虽然，最常见的问题应该是文件没保存。
 
@@ -121,6 +121,14 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 - 第二次测试中，模拟战里舰船速度明显高于未安装时。
 
 清理：把 `SPEED_PERCENT` 恢复为 `10f`。
+
+## 故障注入：触发类名不一致
+
+1. 把 CSV `script` 列改为 `data.scripts.gearin.hullmods.NoSuchClass`，保存、重启；
+2. 打开装配界面查看本船插的 tooltip，或让游戏生成这艘船 —— 加载期报 `Error loading [data.scripts.gearin.hullmods.NoSuchClass]`，无法进入装配界面；
+3. 改回正确类名，重启，确认恢复。
+
+这个报错就是类名三处一致被破坏的可观察结果。之后在任何船插、武器、战术系统上见到 `Error loading`，首先核对类名三处。
 
 ## 故障分析
 

@@ -58,12 +58,12 @@
 
 | 分组 | 字段 | 语义 |
 |---|---|---|
-| 来源与质量 | `source`(`MarketAPI`)、`locInHyper`(`Vector2f`)、`quality`、`qualityMod`、`qualityOverride` | 见 "质量与市场" 小节；`source` 的 "Use setSource() to set the source or directly call updateQualityAndProducerFromSourceMarket() to set the quality. Otherwise, the market's quality won't get used." |
+| 来源与质量 | `source`(`MarketAPI`)、`locInHyper`(`Vector2f`)、`quality`、`qualityMod`、`qualityOverride` | `source` 的 "Use setSource() to set the source or directly call updateQualityAndProducerFromSourceMarket() to set the quality. Otherwise, the market's quality won't get used." |
 | 身份 | `factionId`、`fleetType`、`factionOverride` | 势力与舰队类型；`factionOverride` 非 null 时舰队势力直接用该对象 (名称仍按 `fleetType` 取) |
 | 点数 | `combatPts` / `freighterPts` / `tankerPts` / `transportPts` / `linerPts` / `utilityPts` | 六类预算，`getTotalPts()` 求和 |
-| 规模 | `maxShipSize`("0: fighter, 4: capital"，默认 1000)、`minShipSize`("only affects combat ships; smaller ships will still be added with remaining fleet points")、`maxNumShips`、`ignoreMarketFleetSizeMult`、`onlyApplyFleetSizeToCombatShips`、`doNotPrune`、`doNotAddShipsBeforePruning` | 舰船尺寸与总数约束、市场规模乘数开关、裁剪开关 |
-| 军官 | `withOfficers`(默认 `true`)、`officerLevelBonus`、`officerNumberBonus`、`maxOfficersToAdd`、`officerNumberMult`(默认 1)、`officerLevelLimit`、`commanderLevelLimit`、`commander`(`PersonAPI`)、`noCommanderSkills` | 指挥官与军官生成参数 (见 "指挥官与军官" 节) |
-| 旗舰 | `flagshipVariantId`(`String`)、`flagshipVariant`(`ShipVariantAPI`)、`onlyRetainFlagship` | 旗舰装配覆盖与 "只留旗舰"(见 "旗舰" 节) |
+| 规模 | `maxShipSize`("0: fighter, 4: capital"，默认 1000)、`minShipSize`("only affects combat ships; smaller ships will still be added with remaining fleet points")、`maxNumShips`、`ignoreMarketFleetSizeMult`、`onlyApplyFleetSizeToCombatShips`、`doNotPrune`、`doNotAddShipsBeforePruning` | 船体等级与总数约束、市场规模乘数开关、裁剪开关 |
+| 军官 | `withOfficers`(默认 `true`)、`officerLevelBonus`、`officerNumberBonus`、`maxOfficersToAdd`、`officerNumberMult`(默认 1)、`officerLevelLimit`、`commanderLevelLimit`、`commander`(`PersonAPI`)、`noCommanderSkills` | 指挥官与军官生成参数 |
+| 旗舰 | `flagshipVariantId`(`String`)、`flagshipVariant`(`ShipVariantAPI`)、`onlyRetainFlagship` | 旗舰装配覆盖与 "只留旗舰" |
 | 随机与 doctrine | `random`、`timestamp`、`doctrineOverride`、`modeOverride`(`ShipPickMode`)、`forceAllowPhaseShipsEtc`、`treatCombatFreighterSettingAsFraction`、`blockFallback`、`aiCores`、`doNotIntegrateAICores` | 随机源、时间戳 (武器可用性判定)、教条覆盖、抽选模式覆盖等 |
 | 装配杂项 | `allWeapons`、`averageSMods`(`Integer`，null = 不加 S 插)、`addShips`(`List<String>`，"If non-null: these ship variants will be added to the fleet before anything else") | 膨胀参数与显式预置舰船 |
 
@@ -127,12 +127,12 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
     - 按 combat/civilian FP 比例分配保留名额 (民用不足时至少保留 2+ 个名额)，五类列表按 hull size 降序、按 4:2:1:1(capital:cruiser:destroyer:frigate) 加权抽选。
     - 保留后 FP 仍超目标时用较小船替换较大船。
     - 最后 `fleet.getFleetData().sort()`。
-7. **指挥官与军官** (`withOfficers=true` 时)：见 "指挥官与军官" 节。
+7. **指挥官与军官** (`withOfficers=true` 时)：抽选旗舰并生成指挥官与军官。
 8. **旗舰变体**：`fleet.getFlagship()` 非 null 时，`flagshipVariantId` 优先 (`Global.getSettings().getVariant(id)`；未注册 id 抛 `Ship hull variant [...] not found!`)，否则 `flagshipVariant`。
     - `fleet.getFlagship().setVariant(variant, false, true)`(非战机成员换装配会连船体一起换)+ `updateNumStatusesFromMember()`。
     - `onlyRetainFlagship=true` 时移除除旗舰外所有成员。
 9. **收尾**：`fleet.forceSync()`；所有成员 `getRepairTracker().setCR(getMaxCR())`(新舰队 CR 直接拉满)。
-    - `Misc.setSpawnFPMult(fleet, actualPoints / max(1, requestedPoints))`(写内存 `$spawnFPMult`，`FleetFactoryV3.KEY_SPAWN_FP_MULT = "$spawnFPMult"`；读取 `Misc.getSpawnFPMult`，`com.fs.starfarer.api.util.Misc`；使用方见 "内存" 节)。
+    - `Misc.setSpawnFPMult(fleet, actualPoints / max(1, requestedPoints))`(写内存 `$spawnFPMult`，`FleetFactoryV3.KEY_SPAWN_FP_MULT = "$spawnFPMult"`；读取 `Misc.getSpawnFPMult`，`com.fs.starfarer.api.util.Misc`；使用方：`BaseRaidStage` 还原 "请求 FP" 判断)。
 10. **inflater 挂载**：`DefaultFleetInflaterParams p`：
 
 - `quality`(= `params.quality + params.qualityMod`，`qualityOverride` 非 null 时直接取 `qualityOverride`—— **质量优先级：qualityOverride > (quality + qualityMod)**)。
@@ -271,11 +271,11 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 
 注册时机与一次性判断
 
-本节示例注册**必须**发生在生涯引擎建立之后，沿用前置章节讲过的 `onGameLoad(boolean newGame)` + persistent data 键判断模式；每个注册项用各自的键，**禁止**并入插件已有的 `CLASS_MARK` 判断内。注册块见 "完整最小例" 的调用点片段。
+本节示例注册**必须**发生在生涯引擎建立之后，沿用前置章节讲过的 `onGameLoad(boolean newGame)` + persistent data 键判断模式；每个注册项用各自的键，**禁止**并入插件已有的 `CLASS_MARK` 判断内。
 
 ## 必须遵守的规则
 
-前文散落在各节的约束里，以下几条违反后有明确可观察结果；做完整最小例之前先过一遍：
+前文散落在各节的约束里，以下几条违反后有明确可观察结果；做示例前先过一遍：
 
 1. **质量必须来自市场**。`FleetParamsV3.source` 要求经 `setSource(market, true)`、市场构造器或 `updateQualityAndProducerFromSourceMarket()` 设置来源；无 source 且附近无同势力市场时，`createFleet` 会建立 fake market 并重算质量，最终质量受 `+0.5` 基础值、进口惩罚和 doctrine 贡献差影响，通常约为 `0.25–0.5`，平均 D 插约为 `(1-quality)/0.2`。
 2. **质量优先级：`qualityOverride` > `quality + qualityMod`**。不设 `qualityOverride` 时 `qualityMod` 才叠加到市场质量上；同时设置时 `qualityMod` 被无视。附近没有同势力市场时工厂会使用 fake market 重算质量。
@@ -286,7 +286,7 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 7. **`removeAfterInflating()` = `persistent == null || !persistent`**。V3 生成 `persistent=true` → 膨胀后 inflater 保留；自定义 inflater 忘记设 persistent 时，首次 `inflateIfNeeded` 后 `getInflater()` 变 null，二次膨胀不可能。
 8. **读写舰队内存必须用 `getMemoryWithoutUpdate()`**。`getMemory()` 会触发全插件 `updateEntityFacts` 回调，高频读取会造成回调风暴。
 9. **投放必须在生涯引擎建立后调用** `spawnFleet`(或 `addEntity` + `setLocation`)。`createFleet` 后没投放：舰队不在容器、`isAlive()==false`、地图不可见，且无任何报错。
-10. **需要可复现的随机结果时必须显式给 `params.random`**。生成带 D 插/S 插的随机结果由 `params.random` 与 inflater `seed` 决定；同一参数两次生成结果不同；读档后重膨胀 (deflate→inflate) 结果与膨胀前一致 (每成员随机源由 `seed × shipName.hashCode()` 派生，见上)。
+10. **需要可复现的随机结果时必须显式给 `params.random`**。生成带 D 插/S 插的随机结果由 `params.random` 与 inflater `seed` 决定；同一参数两次生成结果不同；读档后重膨胀 (deflate→inflate) 结果与膨胀前一致 (每成员随机源由 `seed × shipName.hashCode()` 派生)。
 
 **建议**：
 
@@ -410,14 +410,14 @@ LOG.info("GearIn fleet factory removed: alive=" + fleet.isAlive());
 
 机制与规则都就位后，把它们串成一条可观察的日志链：在既有 MOD 布局与 `GearInModPlugin` 之上新增一个演示脚本类 (不新增资源文件)。脚本每完成一环就打印一行日志，验证方案以这些日志为对照：
 
-```text
-Starsector\mods\GearIndustry\
+```text {8}
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\campaign\
+│   └── data/scripts/gearin/campaign\
 │       └── GearInFleetFactory   # 本节新增 (归本节所有)
 └── jars\
 ```
@@ -449,13 +449,13 @@ Starsector\mods\GearIndustry\
     }
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，沿用既有构建链路)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用既有构建链路)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInFleetFactory.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInFleetFactory.class`(可用 `jar tf` 核对)。
 
 ## 关键故障实验：舰队创建成功但地图上找不到
 
@@ -471,7 +471,7 @@ LOG.info("created members=" + fleet.getFleetData().getNumMembers());
 
 **局部修正片段：**
 
-```java
+```java {4}
 // 修正片段
 CampaignFleetAPI fleet = FleetFactoryV3.createFleet(params);
 LocationAPI location = market.getContainingLocation();
@@ -488,7 +488,7 @@ location.spawnFleet(market.getPrimaryEntity(), 0f, 0f, fleet);
 
 前置数据：既有 MOD 布局与插件接入 (含本节调用点片段)、`GearInFleetFactory` 源码。
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInFleetFactory.class`。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInFleetFactory.class`。
 2. **新建生涯**：确认 `starsector.log` 按顺序出现全部 `GearIn fleet factory` 日志行 (`start` / `params` / `created` / `flagship` / `commander` / `pre-inflate` / `inflated` / `memory` / `spawned` / `patrol` / `done`)。
     - 关键核对：`flagship hull=tempest variant=tempest_Attack captainIsCommander=true`、`pre-inflate isInflated=false ... inflaterQuality=0.60`、`inflated isInflated=true inflaterAttached=true refitVariants=<N>`、`memory fleetType=patrolMedium sourceMarket=jangala ... spawnFPMult=<mult>`、`spawned inLocation=true ... alive=true`、`done fleetAlive=false patrolAlive=false`。
     - 观察 `GearIn fleet factory` 的完整日志序列。
@@ -497,7 +497,7 @@ location.spawnFleet(market.getPrimaryEntity(), 0f, 0f, fleet);
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInFleetFactory.class`。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInFleetFactory.class`。
 
 - **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
 

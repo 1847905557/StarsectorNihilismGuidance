@@ -61,14 +61,14 @@
 | `getStats()` | `MutableFleetStatsAPI`：舰队级统计 (burn 修正等) |
 | `getLogistics()` | `FleetLogisticsAPI`：补给/燃料消耗与维修调度 |
 | `getFleetPoints()` | 当前舰队 fleet point 总量 |
-| `getMembersWithFightersCopy()` | 含战机展开的成员副本 (见 "四种成员视图") |
+| `getMembersWithFightersCopy()` | 含战机展开的成员副本 |
 | `isEmpty()` | 成员列表是否为空 |
 | `isValidPlayerFleet()` | "舰队非空且不全由战机联队组成" |
-| `forceSync()` | 让容量、船员等与舰队构成、cargo 匹配，并重放舰队 buff / 船插 / 技能效果 (见 "FleetData 的分层结构") |
+| `forceSync()` | 让容量、船员等与舰队构成、cargo 匹配，并重放舰队 buff / 船插 / 技能效果 |
 | `setLocation(x, y)` | 舰队坐标写入入口 |
 | `getLocation()` | 坐标读取；**禁止**用它写坐标 (`setLocation` 才是坐标写入入口) |
 | `setAIMode(boolean)` | 关闭补给/燃料消耗、事故与船员需求，LR 锁 100% |
-| `getInflater()` / `inflateIfNeeded()` / `deflate()` | 保存态 ↔ 完整装配态的膨胀入口 (见 "战斗准备") |
+| `getInflater()` / `inflateIfNeeded()` / `deflate()` | 保存态 ↔ 完整装配态的膨胀入口 |
 
 对象链只给出进入方式；集合内部如何组织成员，决定成员增删之后您读到的列表和统计是否可信，先看它的分层结构。
 
@@ -127,12 +127,12 @@
 
 | 成员 | 语义 |
 |---|---|
-| `addFleetMember(FleetMemberAPI)` | 加入成员 (自动行为见下) |
+| `addFleetMember(FleetMemberAPI)` | 加入成员 |
 | `addFleetMember(String variantId)` | 按装配 id 创建 `SHIP` 成员并加入，返回新成员 |
 | `removeFleetMember(FleetMemberAPI)` | 从列表移除并收缩槽位 |
-| `scuttle(FleetMemberAPI)` | 移除并把拆解收益与已装武器放入 cargo(见 "后勤语义") |
+| `scuttle(FleetMemberAPI)` | 移除并把拆解收益与已装武器放入 cargo |
 | `clear()` | 清空成员列表 |
-| `setFlagship(FleetMemberAPI)` | 指定旗舰 (副作用见 "故障分析") |
+| `setFlagship(FleetMemberAPI)` | 指定旗舰 |
 
 `addFleetMember` 的自动行为：同一对象引用已在列表 → **直接返回不重复添加**；填入第一个 NULL 槽；非战机且船名为空 → 自动起名；写回 `setFleetData(this)`；舰长为空 → 补默认舰长；清旗舰标记；`setSyncNeeded()`。
 
@@ -166,9 +166,9 @@ addFleetMember 禁止传 null
 | 身份 | `getId()`("Unique id, generated using Misc.genUID()")、`getSpecId()`、`getHullId()`、`getType()`、`getHullSpec()` | 成员唯一 id；装配 spec id；船体 id；`SHIP`/`FIGHTER_WING`/`NULL` |
 | 装配 | `getVariant()`、`setVariant(ShipVariantAPI, boolean withRefit, boolean withStatsUpdate)` | 保存态装配读写；`getVariant().getHullVariantId()` 读装配 id |
 | 舰长 | `getCaptain()`、`setCaptain(PersonAPI)`、`getFleetCommander()`、`isFlagship()` / `setFlagship(boolean, boolean)` | 成员舰长；舰队指挥官 (`fleetData.getCommander()`)；旗舰标记 |
-| 状态 | `getStatus()`、`getRepairTracker()`、`needsRepairs()`、`canBeRepaired()`、`isMothballed()` | 船体状态、CR/维修、封存 (见 "战斗准备") |
+| 状态 | `getStatus()`、`getRepairTracker()`、`needsRepairs()`、`canBeRepaired()`、`isMothballed()` | 船体状态、CR/维修、封存 |
 | 数值 | `getFleetPointCost()`、`getDeployCost()`、`getDeploymentPointsCost()`、`getDeploymentCostSupplies()`、`getMemberStrength()`、`getBaseValue()`、`getBaseBuyValue()`、`getBaseSellValue()` | 舰队点数、CR 部署成本、部署点数/补给、成员强度、基础价值 |
-| 后勤 | `getCargoCapacity()`、`getFuelCapacity()`、`getMinCrew()`、`getMaxCrew()`、`getNeededCrew()`、`getCrewFraction()`、`getFuelUse()` | 单成员后勤数值 (见 "后勤语义") |
+| 后勤 | `getCargoCapacity()`、`getFuelCapacity()`、`getMinCrew()`、`getMaxCrew()`、`getNeededCrew()`、`getCrewFraction()`、`getFuelUse()` | 单成员后勤数值 |
 | 分类 | `isFighterWing()`、`isFrigate()`、`isDestroyer()`、`isCruiser()`、`isCapital()`、`isCivilian()`、`isCarrier()`、`getNumFlightDecks()`、`isPhaseShip()`、`isStation()` | 按 hull size / 角色判定 |
 | 其他 | `getFleetData()`、`getStats()`(`MutableShipStatsAPI`)、`getCrewComposition()`、`isAlly()` / `setAlly(boolean)`、`setShipName()` | 回链集合、成员统计、船员构成、战斗瞬态标记、船名 |
 
@@ -186,7 +186,7 @@ setVariant 保存的是传入引用
 
 - **CR(Combat Readiness)**：`getRepairTracker()` 返回 `RepairTrackerAPI`(`com.fs.starfarer.api.fleet.RepairTrackerAPI`)。
     - `getCR()` 返回 0–1，**已按船员占比修正**；`getBaseCR()` 不含船员修正；`getMaxCR()` 上限；`setCR(float)` 直接写入；`applyCREvent(float, String)` 施加 "近期事件"(显示在 CR 悬浮提示里)。
-    - 新成员 CR 初始 `0.5F`。CR 低于阈值会出现在战斗外 "无法部署"(见下)。
+    - 新成员 CR 初始 `0.5F`。CR 低于阈值会出现在战斗外 "无法部署"。
 - **部署判据**：`canBeDeployedForCombat()`(`FleetMemberAPI`)—— 封存 → `false`；战机且 CR ≤ 0 → `false`；否则要求 `CR >= noDeployCRPercent` 且 `crewFraction >= noDeployCrewPercent`(`settings.json`中为 0% 与 5%)。
     - **战斗准备是 "当前状态" 判据**：CR 或船员不足时返回 `false`，补给与时间可恢复。
 - **部署成本**：`getDeployCost()` 是 CR 占比 (`CRPerDeploymentPercent * CRToDeploy / 100`，战机乘联队数量；`FleetMemberAPI` "From 0 to 1, CR fraction. Multiplied by number of fighters if fighter wing.")。
@@ -220,7 +220,7 @@ setVariant 保存的是传入引用
 
 ### 注册入口
 
-本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)` + 各自 persistent data 键的一次性判断模式 (不要把注册键并入插件既有的 `CLASS_MARK` 判断)。注册见 "完整最小例" 的调用点片段。
+本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)` + 各自 persistent data 键的一次性判断模式 (不要把注册键并入插件既有的 `CLASS_MARK` 判断)。
 
 本节用一个自停脚本把整条链走一遍：创建、入队、读写、清理，全程只操作演示成员。
 
@@ -285,7 +285,7 @@ for (FleetMemberAPI member : members) {
 
 插入位置：集合核对之后。先制造 30% 船体损伤并修满，再暂时把 CR 写为 0.3；这两组状态分别由 `FleetMemberStatusAPI` 与 `RepairTrackerAPI` 持有。
 
-```java
+```java {2,8}
 float hullBefore = hammerhead.getStatus().getHullFraction();
 hammerhead.getStatus().applyHullFractionDamage(0.3f);
 LOG.info("GearIn fleet member hull: " + hullBefore + " -> "
@@ -338,7 +338,7 @@ data.removeFleetMember(hammerhead);
 
 在既有 MOD 布局与插件生命周期类之上新增一个演示脚本类 (不新增资源文件)：
 
-```text
+```text {8}
 mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
@@ -501,7 +501,7 @@ fleet.getFleetData().addFleetMember(member);
 
 本节把生涯舰队讲成一条链：入口 (`SectorAPI.getPlayerFleet()` → `CampaignFleetAPI`) → 集合 (`getFleetData()` → `FleetDataAPI`) → 成员 (`FleetMemberAPI`)。整条链上有三条反复用到的判断：创建不等于入队，改集合后要想到同步，保存态与战斗态分离 —— 演示脚本正是围绕这三条展开的。
 
-排错时先按症状定位层：成员数量与遍历顺序的问题查集合视图与同步时机，数值没变或读档丢失的问题查保存态字段与瞬态层，部署与后勤的问题查 CR、船员与封存判据。封存修正立即写入成员 stats、只有舰队级求和延迟到同步，这是最常被忽略的一处 —— 改完封存标志直接读数即可，读取会自动触发同步。
+排错时先按症状定位层：成员数量与遍历顺序的问题查集合视图与同步时机，数值没变或读档丢失的问题查保存态字段与瞬态层，部署与后勤的问题查 CR、船员与封存判据。封存修正立即写入成员 stats、只有舰队级求和延迟到同步，这是最常被忽略的一处。
 
 这条对象链到此已经形成完整流程。舰队坐标写入、任务与 AI 调度位于集合层之上，市场补给来源落在经济系统一侧；本节的成员读写语义是这些操作的共同底座。
 

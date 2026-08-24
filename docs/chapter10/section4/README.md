@@ -121,7 +121,7 @@
 
 `BaseIndustry.doPreSaveCleanup()` 在存档前把 `supply` / `demand` / `income` / `upkeep` 全部置 null，`doPostSaveRestore()` 重建空 map—— 供需只能由 `apply()` 每轮重建。只写在构造器或 `init` 里的供需，读档后全部消失且无报错。
 
-这是本节第一条必须遵守的规则 (见 "规则强度")。
+这是本节第一条必须遵守的规则。
 
 生命周期决定回调何时运行，供需链回答回调里写什么：产业对商品流的全部影响，都来自 `supply(...)` / `demand(...)` 写入 `MutableStat` 的数量修饰。
 
@@ -308,7 +308,7 @@ if (!isFunctional()) {
 
 插入位置：`GearInTrainingIndustry` 的 AI core 钩子。两个方法使用同一个修饰 ID，安装 Alpha core 增加稳定度，卸下或重算时撤销。
 
-```java
+```java {3,9}
 @Override
 protected void applyAlphaCoreModifiers() {
 	market.getStability().modifyFlat(getModId(2), 1,
@@ -327,7 +327,7 @@ protected void applyNoAICoreModifiers() {
 
 插入位置：调试入口调用 `runDisruptionProbe`，其核心动作使用公开 `Industry` 接口。10 天中断写入后立即读取状态，再以 0 天解除。
 
-```java
+```java {2,6}
 Industry industry = market.getIndustry(INDUSTRY_ID);
 industry.setDisrupted(10f, false);
 LOG.info("disrupted=" + industry.isDisrupted()
@@ -359,7 +359,7 @@ if (market != null
 
 示例所有权：`GearInTrainingIndustry`(产业 id `GearIn_training_industry`，本节拥有)。
 
-在既有示例的 MOD 布局与 `GearInModPlugin` 之上新增：一条 `industries.csv` 注册行 (数据文件，位于 `data\campaign\industries.csv`，用 CSV 合并语义提交自己的行)、一个演示类 (本节所有)。
+在既有示例的 MOD 布局与 `GearInModPlugin` 之上新增：一条 `industries.csv` 注册行 (数据文件，位于 `data/campaign/industries.csv`，用 CSV 合并语义提交自己的行)、一个演示类 (本节所有)。
 
 先看数据侧的注册行 (自洽要求：`plugin` 列类名与本节 Java 类逐字一致，`upgrade` 列目标是已注册的原版 id `militarybase`—— 本节使用它演示升级链，不定义新 id)：
 
@@ -372,8 +372,8 @@ GearIn_training_industry,GearIn Training Industry,20,60,,2,,militarybase,"traini
 
 目录结构 (沿用既有示例页的布局，只新增加粗两项)：
 
-```text
-Starsector\mods\GearIndustry\
+```text {7,10}
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
@@ -381,7 +381,7 @@ Starsector\mods\GearIndustry\
 │   └── campaign\
 │       └── industries.csv      # 新增本节注册行 (CSV 合并，勿改核心文件)
 ├── src\
-│   └── data\scripts\gearin\campaign\
+│   └── data/scripts/gearin/campaign\
 │       └── GearInTrainingIndustry    # 本节新增 (归本节所有)
 └── jars\
 ```
@@ -395,7 +395,7 @@ Starsector\mods\GearIndustry\
 - `UPGRADE_TARGET_ID = "militarybase"`：只用于与 CSV 行互相核对，运行时不读取它 —— 升级链真正使用的是 `getSpec().getUpgrade()`(CSV `upgrade` 列)。
     - 升级完成时 `finishBuildingOrUpgrading` 会 `removeIndustry` + `addIndustry("militarybase")` 并迁移 AI core / 改良 / 特殊物品 (`BaseIndustry`)。
 - `apply()` 里 `super.apply(true)` 先跑基类汇总 (供需 bonus、收入/维护、AI core、改良)，再写本产业的供需与缺货削减；`isFunctional()` 为 false(建设中/中断) 时清空供给。
-- `applyAlphaCoreModifiers` / `applyNoAICoreModifiers` 用 `getModId(2)`(= `"ind_GearIn_training_industry_2"`) 成对加减稳定度：安装 alpha core 市场稳定度 +1，卸下/重算即撤销 (成对写法见 "规则强度" 的规则)。
+- `applyAlphaCoreModifiers` / `applyNoAICoreModifiers` 用 `getModId(2)`(= `"ind_GearIn_training_industry_2"`) 成对加减稳定度：安装 alpha core 市场稳定度 +1，卸下/重算即撤销。
 - `runDisruptionProbe` 全程用公开 API(`setDisrupted` / `isDisrupted` / `getDisruptedDays` / `setDisrupted(0f)`)。`setDisrupted(0f)` 走 `memory.unset(key)`：data 键被删，仅残留不可见的过期记录，`getDisruptedDays()` 仍返回中断时长 —— 所以探针的 `after` 行 days 显示 10.0，但市场内存里不再有 `$core_disrupted_GearInTrainingIndustry` 键 (DumpMemory 查不到)，属正常现象 (见验证方案核对)。
 
 观察助手可以复用
@@ -422,15 +422,15 @@ Starsector\mods\GearIndustry\
 
 想走数据驱动的注册 (替代上面的代码安装)：
 
-在 `data\campaign\econ\<星系>.json` 的目标市场条目 `industries` 数组里加一行 `"GearIn_training_industry"`(或 `["GearIn_training_industry", "alpha_core"]`—— 数组第二元素起由 `initWithParams` 识别安装 AI core / 特殊物品)。
+在 `data/campaign/econ\<星系>.json` 的目标市场条目 `industries` 数组里加一行 `"GearIn_training_industry"`(或 `["GearIn_training_industry", "alpha_core"]`—— 数组第二元素起由 `initWithParams` 识别安装 AI core / 特殊物品)。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`(可用 `jar tf` 核对)。
 
 注册行、类与调用点就绪后，按下面的方案验证整条链。
 
@@ -447,7 +447,7 @@ market.addIndustry("GearIn_training");
 
 **局部修正片段：**
 
-```java
+```java {2}
 // 修正片段
 String industryId = GearInTrainingIndustry.INDUSTRY_ID;
 if (Global.getSettings().getIndustrySpec(industryId) == null) {
@@ -464,21 +464,21 @@ market.addIndustry(industryId);
 
 ## 验证方案
 
-前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段)、`data\campaign\industries.csv` 注册行、`GearInTrainingIndustry` 类。
+前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段)、`data/campaign/industries.csv` 注册行、`GearInTrainingIndustry` 类。
 
-1. 游戏构建：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，`BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`。
-    - 确认 `data\campaign\industries.csv` 合并后 `SettingsAPI.getIndustrySpec("GearIn_training_industry")` 返回非 null(可用日志或加载期检查)。
+1. 游戏构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，`BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`。
+    - 确认 `data/campaign/industries.csv` 合并后 `SettingsAPI.getIndustrySpec("GearIn_training_industry")` 返回非 null(可用日志或加载期检查)。
 2. 代码安装：新建生涯，在 `starsector.log` 中观察产业安装与中断探针记录。
 3. 读档：保存后读档，不出现重复安装日志 (`REGISTER_MARK` 已置位)。
 4. 用户殖民地建设：殖民 (size 3 以下注意产业位上限 1)→ 产业列表出现 `GearIn Training Industry` → 建造 (建设期 `functional=false`)→ 60 游戏日后 `functional=true`。
-    - 点击升级 → 完成后产业变为 `Military Base`(见 "预期结果" 第 4条)。
+    - 点击升级 → 完成后产业变为 `Military Base`。
 5. AI core：安装 alpha core → `applied` 日志 `aiCore=alpha_core`、市场稳定度 +1；卸下 → 稳定度修饰消失。
 6. disruption 实战：装 core 后等待 Hegemony AI 审查，或对殖民地执行陆战队 "中断产业" 突袭 → `notifyDisrupted` 日志 + tooltip `Operations disrupted!` + 收入消失。
-    - 时间到 → `disruptionFinished` 日志 + 恢复 (见 "预期结果" 第 6条)。
+    - 时间到 → `disruptionFinished` 日志 + 恢复。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`；`data\campaign\industries.csv` 已含本节注册行 (CSV 合并，勿改动核心文件)。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`；`data/campaign/industries.csv` 已含本节注册行 (CSV 合并，勿改动核心文件)。
 
 - **代码安装 (corvus\_IIIa (Garnir)，size 3 海盗市场)**：新建生涯，`starsector.log` 依次出现。
 

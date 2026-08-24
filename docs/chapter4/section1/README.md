@@ -62,12 +62,12 @@ Starsector 有两个主要游玩入口，本节开始会经常把两者并列：
 1. 游戏扫描 `data/variants/**/*.variant`(`data/variants` 直接子文件 + 它的每个子目录，`data/variants/fighters` 也在其中)。
 2. 每个文件按 JSON 字段解析成装配规格并注册。`variantId` 是全局唯一的装配 ID；重复 ID 时**先注册者生效，后注册者被静默跳过，没有任何报错**。
 3. 使用方入口：`Global.getSettings().getVariant(id)` 按 ID 读取 `ShipVariantAPI`，`getAllVariantIds()` 枚举全部装配 ID；`FactoryAPI.createFleetMember(...)` 按装配 ID 或装配对象创建舰队成员。每个注册船体自动生成一个 `<hullId>_Hull` 空装配 [C1-S2]，所以即使还没写过任何 `.variant` 文件，船体也能被装配 ID 引用。
-4. 每个装配有一个 `VariantSource`：MOD 里 `data/variants` 加载的是 `STOCK`；战役导出的装配是 `MISSION_SAVE` / `MISSION_DESIGN`。来源不同，保存和清理的规则就不同 (见下)。
+4. 每个装配有一个 `VariantSource`：MOD 里 `data/variants` 加载的是 `STOCK`；战役导出的装配是 `MISSION_SAVE` / `MISSION_DESIGN`。来源不同，保存和清理的规则就不同。
 
 ### 装配导出链路
 
 1. 在战役的装配界面修改任何舰船设计后，游戏立即把该船的设计写入 `<存档目录>/missions/<mission_id>/mission_<mission_id>_ship_<序号>.variant`(序号是该船在用户舰队列表中的位置，从 0 开始)。"另存为通用设计" 则写入 `<存档目录>/missions/variants/`，ID 形如 `missions_common_<hullId>_<随机串>`。
-2. 存档目录由 `vmparams` 的 `-Dcom.fs.starfarer.settings.paths.saves` 决定。`Starsector\saves`，因此导出位置是 `Starsector\saves\missions\<mission_id>\`。
+2. 存档目录由 `vmparams` 的 `-Dcom.fs.starfarer.settings.paths.saves` 决定。`saves`，因此导出位置是 `saves/missions/<mission_id>/`。
 3. 游戏启动时 (装配加载之后) 从 `saves/missions/<mission_id>/` 和 `saves/missions/variants/` 读回这些装配并注册 (战役目录下来源 `MISSION_SAVE`，`variants` 目录下为 `MISSION_DESIGN`)，所以战役里改过的舰队会在下次进入时保持一致。删除这些文件即可清除对应设计。
 4. 这些导出文件与 `data/variants` 里的装配走同一个装配 spec 构造器、同一套字段，因此可以原样搬到 MOD 里使用 —— 只要改掉 `variantId`。
 
@@ -79,7 +79,7 @@ Starsector 有两个主要游玩入口，本节开始会经常把两者并列：
 
 ## 复制战役模板
 
-随机挑选一个原版战役，例如 `Starsector\starsector-core\data\missions\afistfulofcredits`，把它文件夹里的所有东西复制到 `Starsector\mods\GearIndustry\data\missions\GearIn_test\`：
+随机挑选一个原版战役，例如 `data/missions/afistfulofcredits`，把它文件夹里的所有东西复制到 `data/missions/GearIn_test/`：
 
 ![测试战役模板文件夹的完整内容](./mission_folder.png "mission_folder.png")
 
@@ -106,25 +106,25 @@ Starsector 有两个主要游玩入口，本节开始会经常把两者并列：
 
 ## 实现战役定义
 
-打开复制来的 `MissionDefinitionPlugin` 实现类源文件，整个替换为下面的测试战役模板。文件位置：`Starsector\mods\GearIndustry\data\missions\GearIn_test\`。
+打开复制来的 `MissionDefinitionPlugin` 实现类源文件，整个替换为测试战役的 `MissionDefinition` 实现。文件位置：`data/missions/GearIn_test/`。
 
 ::: caution 包名是游戏写死的，不能改
 
-**包名必须是 `data.missions.GearIn_test`**—— 这是游戏按战役 ID 写死的类名 (`data.missions.<mission_id>.MissionDefinition`)，不是教程的命名偏好**，不能**改成 `data.scripts.gearin.*` 之类自己的包。
+**包名必须是 `data.missions.GearIn_test`**—— 这是游戏按战役 ID 写死的类名 (`data.missions.<mission_id>.MissionDefinition`)，不是教程的命名偏好，**不能**改成 `data.scripts.gearin.*` 之类自己的包。
 
 包名不符时，点击战役会抛出 `Problem loading class`。
 
 :::
 
-模板做了三件事：
+战役内容在 `defineMission(MissionDefinitionAPI api)` 中定义，共三件事：
 
 - `initFleet(FleetSide.PLAYER, "SIM", FleetGoal.ATTACK, false, 5)` 初始化用户舰队 (`"SIM"` 是舰船自动命名前缀，末尾的 `5` 是初始指挥点数)；对 `ENEMY` 侧同样初始化。
-- 遍历 `Global.getSettings().getAllVariantIds()`，把 **hull ID 以 `GearIn_` 开头、不是战机、且 ID 不以 `mission_` 开头**的装配全部加入用户舰队。`mission_` 前缀正是任务导出装配的 ID 格式，跳过它们可以避免把旧导出混进来。
+- 遍历 `Global.getSettings().getAllVariantIds()` 把一批装配加入用户舰队 —— 过滤条件按装配 ID 判断：hull ID 前缀匹配、非战机、非导出装配。`mission_` 前缀是任务导出装配的 ID 格式，跳过它们可以避免把旧导出混进来。
 - 添加一个敌方空间站 (`remnant_station2_Standard`，原版装配)，再布置地图、星云、点位和小行星带。
 
-**两个替换位点**：如果您想创建第二个测试战役，只需把包名 `data.missions.GearIn_test` 换成新 ID，并把 `prefix` 换成您的前缀。模板不引用任何本 MOD 的私有 ID，因此新战役无需修改其他代码。
+想创建第二个测试战役：把包名 `data.missions.GearIn_test` 换成新战役 ID，并把装配过滤用的前缀换成您的前缀。实现不引用任何本 MOD 的私有 ID，因此新战役无需修改其他代码。
 
-模板替换完毕后即可直接使用，无需后期修正。部署后的战斗画面如下图所示，用户舰队自动列出本 MOD 的所有舰船：
+替换完毕后即可直接使用，无需后期修正。部署后的战斗画面如下图所示，用户舰队自动列出本 MOD 的所有舰船：
 
 ![测试战役中自动列出的 MOD 舰船](./mission_test.png "mission_test.png")
 
@@ -235,19 +235,19 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 1. 启动游戏，打开主菜单 Missions 列表。
 2. 点击测试战役并部署，观察用户舰队、敌方空间站和地图。
-3. 返回主菜单前在装配界面修改一艘船的武器，检查 `Starsector\saves\missions\GearIn_test\mission_GearIn_test_ship_0.variant` 已生成且内容与修改一致。
-4. 把导出文件剪贴为 `data/variants\GearIn_artizan_combat.variant`，修改 `variantId` / `displayName`，加入 `"goalVariant": true`，然后重启游戏并打开任意装配界面。
-5. 检查 `Starsector\starsector-core\starsector.log` 的任务加载记录。
+3. 返回主菜单前在装配界面修改一艘船的武器，检查 `saves/missions/GearIn_test/mission_GearIn_test_ship_0.variant` 已生成且内容与修改一致。
+4. 把导出文件剪贴为 `data/variants/GearIn_artizan_combat.variant`，修改 `variantId` / `displayName`，加入 `"goalVariant": true`，然后重启游戏并打开任意装配界面。
+5. 检查 `starsector.log` 的任务加载记录。
 
 预期结果：
 
 - 启动游戏后，主菜单 Missions 列表出现 "一次好买卖"(`GearIn_test`) 条目；点击后详情页显示图标、背景、`mission_text.txt` 文本与 "Tactical Briefing" 下的 `TEST` 条目；日志出现 `Loading missions`，且没有相关 `ERROR`。
 - 部署后用户舰队列出本 MOD 所有船体 (每个 hull 至少一个条目，尚未制作装配的以空装配形态出现)，敌方为余烬空间站；地图含星云、传感器阵列、通讯中继、导航信标和小行星带。
-- 在装配界面修改任何一艘船并返回后，`Starsector\saves\missions\GearIn_test\` 出现 `mission_GearIn_test_ship_0.variant`，内容即该船当前装配。
-- 把导出文件剪贴到 `data/variants`、改名并改 `variantId` 后重启游戏：日志出现 `Loading variant [data\variants\GearIn_artizan_combat.variant]`；设置 `goalVariant: true` 后，该装配出现在装配界面的自动装配列表。
+- 在装配界面修改任何一艘船并返回后，`saves/missions/GearIn_test/` 出现 `mission_GearIn_test_ship_0.variant`，内容即该船当前装配。
+- 把导出文件剪贴到 `data/variants`、改名并改 `variantId` 后重启游戏：日志出现 `Loading variant [data/variants/GearIn_artizan_combat.variant]`；设置 `goalVariant: true` 后，该装配出现在装配界面的自动装配列表。
 - 常规战役按同样方式注册后出现在 Missions 列表，且使用您自己的装配与文案。
 
-清理：删除 `Starsector\saves\missions\GearIn_test\`(启动时会读回其中的装配)。
+清理：删除 `saves/missions/GearIn_test/`(启动时会读回其中的装配)。
 
 ## 在测试战役中导出装配
 
@@ -257,7 +257,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 ![测试战役导出的舰船装配文件](./variant_export.png "variant_export.png")
 
-位置是 `Starsector\saves\missions\GearIn_test\`，文件名为 `mission_GearIn_test_ship_0.variant`(第一个进列表的船序号为 0)。它的 `variantId` 是 `mission_GearIn_test_ship_0`。
+位置是 `saves/missions/GearIn_test/`，文件名为 `mission_GearIn_test_ship_0.variant`(第一个进列表的船序号为 0)。它的 `variantId` 是 `mission_GearIn_test_ship_0`。
 
 ::: warning 导出文件要剪贴，不要复制
 
@@ -337,7 +337,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 如果您希望这个装配出现在装配界面左下角的 "自动装配" 里，在 `variantId` 附近加上：
 
-```json
+```json {1}
     "goalVariant": true,
 ```
 
@@ -366,9 +366,9 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 ## 故障分析
 
-- **Missions 列表里没有您的战役**：战役行以 `#` 开头时列表不会出现条目；已注册的战役文件夹缺失不会静默缺条目，而是加载中断 (见下一条)。`mission_list.csv` 缺失仅贡献 0 行、列表为空 (不中断加载)；表头不是 `mission` 时 `readCSV` 对每行取 `mission` 键会直接抛异常、中断整个加载。
+- **Missions 列表里没有您的战役**：战役行以 `#` 开头时列表不会出现条目；已注册的战役文件夹缺失不会静默缺条目，而是加载中断。`mission_list.csv` 缺失仅贡献 0 行、列表为空 (不中断加载)；表头不是 `mission` 时 `readCSV` 对每行取 `mission` 键会直接抛异常、中断整个加载。
 
-    - **解决方案**：确认 CSV 第一行是 `mission`、第二行是战役 ID，且目录为 `data/missions\GearIn_test`，重启。
+    - **解决方案**：确认 CSV 第一行是 `mission`、第二行是战役 ID，且目录为 `data/missions/GearIn_test`，重启。
 
 - **游戏加载中断，进不了主菜单**：已注册的战役文件夹、`descriptor.json`、`mission_text.txt` 或图标缺失，JSON 语法错误，或 `title`、`difficulty`、`icon` 任一必填字段缺失时，`Loading missions` 后会出现异常堆栈。
 
@@ -376,7 +376,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 - **战役出现但点击时报错无法进入**：`MissionDefinition` 源文件缺失，或包名、类名不是 `data.missions.<ID>.MissionDefinition` 时，点击会抛出 `Problem loading class [data.missions.<ID>.MissionDefinition]`。
 
-    - **解决方案**：让包名逐字匹配战役 ID，并把类放入 `data/missions\<ID>\`。
+    - **解决方案**：让包名逐字匹配战役 ID，并把类放入 `data/missions/<ID>/`。
 
 - **战役里没有自己的船**：`prefix` 拼写或大小写错误，或过滤条件使用了错误前缀。`getAllVariantIds()` 遍历装配 ID，船体过滤应读取 `variant.getHullSpec().getHullId()`。
 

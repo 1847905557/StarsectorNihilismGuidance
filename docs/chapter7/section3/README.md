@@ -39,7 +39,7 @@
 | `MutableStat` | 固定 base 的数值对象 | `MutableShipStatsAPI` 各 getter 的返回类型；`CombatEngineAPI.getTimeMult()` 也是它 ([C7-S2] 消费) |
 | `MutableStat.StatMod` | 单项修饰 (source / desc / value) | `MutableStat` 内部三张表的条目类型 |
 | `StatBonus` | 以调用时 base 计算的另一族修饰 | `MutableShipStatsAPI` 的射程 / 弹药 / CR 类 getter 返回它；本节只做对照，不展开 |
-| `HullModEffect` | 船插效果回调 | `applyEffectsBeforeShipCreation` / `applyEffectsAfterShipCreation` / `applyEffectsAfterShipAddedToCombatEngine` 三个时机 (见 "applyEffects 时机") |
+| `HullModEffect` | 船插效果回调 | `applyEffectsBeforeShipCreation` / `applyEffectsAfterShipCreation` / `applyEffectsAfterShipAddedToCombatEngine` 三个时机 |
 | `DynamicStatsAPI` | 动态 stat 容器 | `stats.getDynamic()`；常用作 "标记位" 存储，本节不展开 |
 
 数据到 base 的链路 (谁给 `MutableStat` 定 base)：
@@ -102,7 +102,7 @@ modified = (base + base * percentMod / 100 + flatMod) * mult
 
 ### 方法速查表
 
-方法速查 (完整签名见 "建议参考项")：
+方法速查：
 
 | 族 | 方法 | 语义 |
 |---|---|---|
@@ -110,7 +110,7 @@ modified = (base + base * percentMod / 100 + flatMod) * mult
 | 强制写入 | `modifyFlatAlways` / `modifyPercentAlways` / `modifyMultAlways` | 无条件写条目 |
 | 解除 | `unmodify(source)` | **同时**清除三张表里该 ID 的条目 |
 | 定向解除 | `unmodifyFlat(source)` / `unmodifyPercent` / `unmodifyMult` | 只清一张表 |
-| 读取 | `getBaseValue` / `getModifiedValue` / `getModifiedInt` / `getFlatMod` / `getPercentMod` / `getMult` / `isUnmodified` / `getFlatStatMod` (另有 percent / mult 两版) | 见 "延迟重算"；`isUnmodified()` 在**三张表全空**时为 true |
+| 读取 | `getBaseValue` / `getModifiedValue` / `getModifiedInt` / `getFlatMod` / `getPercentMod` / `getMult` / `isUnmodified` / `getFlatStatMod` (另有 percent / mult 两版) | `isUnmodified()` 在**三张表全空**时为 true |
 | 改 base | `setBaseValue(base)` | 修改 base 并触发重算 |
 
 `StatBonus` 对照 (一句话)：`MutableShipStatsAPI` 里的射程 / 弹药 / CR 类 getter 返回 `StatBonus`，它不保存固定 base，`computeEffective(baseValue)` 才以调用参数为 base 计算。
@@ -277,26 +277,26 @@ LOG.info("GearIn stats read: hull=" + ship.getHullSpec().getHullId()
     }
 ```
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars\GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInShipStatsProbe.class` (可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/combat/GearInShipStatsProbe.class` (可用 `jar tf` 核对)。
 
 ## 完整最小例
 
 在既有 MOD 布局与战斗插件模型之上新增一个插件类文件 (不新增任何资源、不新增任何注册项)，包与类名遵循命名约定 (`data.scripts.gearin.combat`、`GearInShipStatsProbe`)：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
 ├── src\
-│   └── data\scripts\gearin\
+│   └── data/scripts/gearin\
 │       ├── GearInModPlugin            # C6-S2 所有；本节不改动
 │       ├── GearInGlobalAccess         # C6-S3 所有；本节只消费
 │       └── combat\
@@ -464,7 +464,7 @@ stats.getMaxSpeed().modifyFlat(MODIFIER_ID, 5f);
 
 前置数据：既有 MOD 布局与战斗插件接入 (含本节注册片段)、`GearInShipStatsProbe` 源码、`GearIn_test` 测试战役 ([C4-S1]，玩家舰 `GearIn_artizan`)。
 
-1. **游戏构建**：在 `Starsector\mods\GearIndustry\` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars\GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
 2. **战役运行**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 观察 `GearIn stats probe` 相关记录。
 3. **三阶段数值**：战斗时间 2–12 秒看 `maxSpeed modified=165.0` (entries 各 1)、12–22 秒看 `modified=111.0` (percent=-20.0)、22 秒后看 `modified=80.0 unmodified=true`。同屏按速度对比：施加阶段玩家舰明显更快。
 4. **暂停语义**：战斗内按空格暂停约 10 秒再恢复，暂停期间无报告；恢复后阶段仍按战斗时间推进 (暂停不计入 `getTotalElapsedTime(false)`)。
@@ -472,7 +472,7 @@ stats.getMaxSpeed().modifyFlat(MODIFIER_ID, 5f);
 预期结果：
 
 - 步骤 1：以 `BUILD SUCCESSFUL` 结束，退出码 0。
-- 步骤 2：以 `BUILD SUCCESSFUL` 结束；`jar tf jars\GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
+- 步骤 2：以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/combat/GearInShipStatsProbe.class`。
 - 步骤 3：`starsector.log` 出现一行 `GearIn stats probe init: engine ready`，随后每 2 秒两条 `GearIn stats read:` / `GearIn stats flux:`，没有 `ERROR`。
 - 步骤 4 施加阶段 (战斗时间 2–12 秒)：`maxSpeed base=80.0 modified=165.0 flat=10.0 percent=25.0 mult=1.5 entries flat=1 percent=1 mult=1 unmodified=false`：
     - `GearIn_artizan` 的 max speed 列是 80，`(80 + 80*25/100 + 10) * 1.5 = 165`；三个 entries 恒为 1，证明同 ID 幂等 (规则 6)。

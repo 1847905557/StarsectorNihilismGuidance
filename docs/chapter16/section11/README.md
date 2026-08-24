@@ -85,7 +85,7 @@ beam.initSmoothLine(start, length, Color.CYAN, Color.WHITE, 9f, 0.35f);
 
 **插入位置：战斗接线取得圆环或光束后。** 先 `setLayer()` 指定渲染层 (实体默认 layer 为 null，`addEntity` 对 null 层恒返回 STATE_FAILED)，再根据返回码决定实体是否已经交给 BoxUtil 管理。
 
-```java
+```java {1}
 beam.setLayer(CombatEngineLayers.ABOVE_SHIPS_LAYER);
 byte state = CombatRenderingManager.addEntity(beam);
 if (state != BoxEnum.STATE_SUCCESS) {

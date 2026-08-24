@@ -18,7 +18,7 @@
     - 任务：`MHOpenText` / `<前缀>_blurb` / `<前缀>_option` / `<前缀>_blurbBar` / `<前缀>_optionBar` / `AddMHCloseOption` / `NewGameOptionSelected` / `AddNewGameChoices`；
 - 解释场景组合写法：`$menuState` / `$tradeMode` 状态记忆限定菜单、`$option` 回流 `DialogOptionSelected` 形成选项完整流程、`FireAll` 填充菜单与 `FireBest` 叙述/转场的分层、`score:` 竞争纪律、以及 "进入/退出配对" 的转场模式；
 - 说明覆盖原版规则时的职责纪律：`FireBest` 只执行一条规则，覆盖者必须复刻被覆盖规则的结果职责 (最典型的：`MarketPostDock` 的 `$menuState = main 0` + `FireAll PopulateOptions`)，否则市场菜单不会出现；
-- 从症状定位场景故障 (见故障分析节)，并沿着**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置核对 (沿用规则基础页的最小任务链)。
+- 从症状定位场景故障，并沿着**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置核对 (沿用规则基础页的最小任务链)。
 
 ## 前置知识
 
@@ -50,7 +50,7 @@
 
 ### 场景 trigger 总览速查表
 
-原版 `rules.csv`(`Starsector\starsector-core\data\campaign\rules.csv`) 中，本节五类场景的核心 trigger 与派发点如下；规则基础页已统计的 `DialogOptionSelected`(6050)、`PopulateOptions`(334)、`OpenInteractionDialog`(121) 不再重复，只补充场景归属与派发点。
+原版 `rules.csv`(`data/campaign/rules.csv`) 中，本节五类场景的核心 trigger 与派发点如下；规则基础页已统计的 `DialogOptionSelected`(6050)、`PopulateOptions`(334)、`OpenInteractionDialog`(121) 不再重复，只补充场景归属与派发点。
 
 | 场景 | trigger | 条数 | 派发点 (使用方) | 触发时机 |
 |---|---|---|---|---|
@@ -63,7 +63,7 @@
 | 市场 | `MarketPostDock` | 32 | `MarketPostOpen` 规则脚本 `FireBest` | 停靠流程收尾 (`$menuState = main` + 菜单) |
 | 市场 | `TradePanelFlavorText` | 23 | 交易面板的 `FireBest` 调用 (假 dialog) | 每次打开交易面板 |
 | 舰队 | `BeginFleetEncounter` | 61 | `FleetInteractionDialogPluginImpl.reinit` 预检 + `reinitPostContinue` / `optionSelected` 的 `fireBest` | 舰队遭遇对话初始与 Continue 之后 |
-| 舰队 | `OpenCommLink` / `PickGreeting` | 183 / 199 | 见 "对话" 行 | 打开通讯 / 人物问候 |
+| 舰队 | `OpenCommLink` / `PickGreeting` | 183 / 199 | `FleetInteractionDialogPluginImpl`(开通讯) / 通讯目录与接触人入口 (问候) | 打开通讯 / 人物问候 |
 | 酒吧 | `AddBarEvents` | 16 | `BarCMD.showOptions`(先清空再 `FireAll`) | 每次展示酒吧选项 |
 | 酒吧 | `BarPrintDesc` | 10 | `bar_optionSel` 规则 (`$option == marketVisitBar`) 脚本 `FireBest` | 进入酒吧 |
 | 酒吧 | `ReturnFromBar` | 5 | `BarCMD.leaveBar` 的 `FireBest` | 离开酒吧 (还原插件后) |
@@ -99,7 +99,7 @@
 - `updatePersonFacts`：`$id`(人物 id)、`$isPerson`、`$isContact`、`$name` / `$personName`、`$rel` / `$relName`、`$rank` / `$post`、`$importance*`、`$level`、`$personality`、`$tag:<tag>` 等；
 - `updateFactionFacts`：`$id`、`$friendlyToPlayer` / `$hostileToPlayer` / `$neutralToPlayer`、`$isHostile`。
 
-`$menuState` / `$tradeMode` / `$hailing` 等**状态**键不由 facts 钩子写，而是由规则脚本与原版 rulecmd 维护 (见各场景小节)。规则基础页的结论仍然成立：`$tag:` 类条件的前提是目标实体/市场/人物确实带该 tag。
+`$menuState` / `$tradeMode` / `$hailing` 等**状态**键不由 facts 钩子写，而是由规则脚本与原版 rulecmd 维护。规则基础页的结论仍然成立：`$tag:` 类条件的前提是目标实体/市场/人物确实带该 tag。
 
 ### 对话场景 (OpenInteractionDialog / PopulateOptions / DialogOptionSelected / PickGreeting / OpenCommLink)
 
@@ -322,12 +322,12 @@ flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，�
 
 ## 组装 Rules 场景实现
 
-在规则基础页的 MOD 布局 (`Starsector\mods\GearIndustry\`，含 `data\campaign\rules.csv` 与 `GearInRulesIntro` 类) 之上，**只追加规则行**。
+在规则基础页的 MOD 布局 (`mods/GearIndustry/`，含 `data/campaign/rules.csv` 与 `GearInRulesIntro` 类) 之上，**只追加规则行**。
 
 本节五个场景的使用方全是原版插件 (`RuleBasedInteractionDialogPluginImpl` / `FleetInteractionDialogPluginImpl` / `BarCMD` / `NewGameDialogPluginImpl` / 交易面板)，MOD 侧不需要新增 Java 类：
 
 ```text
-Starsector\mods\GearIndustry\
+mods/GearIndustry/
 ├── build.gradle
 ├── mod_info.json
 ├── data\
@@ -394,13 +394,13 @@ $global.isDevMode",NGCAddCredits 5000,,,
 - **为什么不新增 Java**：规则基础页的最小例需要 Java 是因为它用了自定义 trigger(`GearInRulesIntro`，没有原版派发点)；本节全部使用原版场景 trigger，派发点 (使用方) 是原版插件，规则行本身就是完整的注册与消费流程。需要自定义 trigger 对话时沿用规则基础页的 `GearInRulesIntro` / `REGISTER_MARK` 模式。
 - **共享文件纪律**：`data/campaign/rules.csv` 是跨单元共享文件：规则基础页拥有 `GearIn_rules_intro_*`、本节拥有 `GearIn_rules_scene_*`；同前缀内 id 唯一，跨文件重复 id 先到先得的纪律见规则基础页规则强度表。
 
-构建命令 (在 `Starsector\mods\GearIndustry\` 执行，与规则基础页一致)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，与规则基础页一致)：
 
 ```text
 gradle jar
 ```
 
-本节只改数据文件：`rules.csv` 随 MOD 目录被加载器读取，无需进 jar。`jar tf jars\GearIndustry.jar` 的输出里不应该也不需要包含本节新内容。
+本节只改数据文件：`rules.csv` 随 MOD 目录被加载器读取，无需进 jar。`jar tf jars/GearIndustry.jar` 的输出里不应该也不需要包含本节新内容。
 
 ### 验证方案
 
@@ -472,7 +472,7 @@ gradle jar
 
 ## 总结
 
-本节把五类生涯场景讲成同一条链：原版派发点在固定时机发起匹配，规则行按条件与分数竞争命中，脚本负责叙述、转场或填充菜单，最终以游戏内文本、菜单与日志给出可观察结果。覆盖市场、酒吧、舰队、新游戏四处的完整最小例把这条链从注册验证到游戏内；场景 trigger 与自定义 trigger 的分界也由此清楚：前者只需写行，后者才需要 Java 入口 (规则基础页已述)。
+本节把五类生涯场景讲成同一条链：原版派发点在固定时机发起匹配，规则行按条件与分数竞争命中，脚本负责叙述、转场或填充菜单，最终以游戏内文本、菜单与日志给出可观察结果。覆盖市场、酒吧、舰队、新游戏四处的最小示例把这条链从注册验证到游戏内；场景 trigger 与自定义 trigger 的分界也由此清楚：前者只需写行，后者才需要 Java 入口 (规则基础页已述)。
 
 排错时沿四个位置核对：`Loading rule:` 日志确认注册、trigger 拼写确认匹配、分数确认竞争、职责复刻与状态复位确认行为。`FireBest` 只执行一条，覆盖原版规则必须复刻其结果职责；`FireAll` 全执行，菜单类 trigger 用它批量添加选项。状态键 `$menuState` / `$tradeMode` 进入与退出成对维护；`$option` 回流只属于各自对话框插件的回流 trigger；临时 bar 选项每轮清空重建；任务 trigger 前缀必须与 `getTriggerPrefix()` 一致；`TradePanelFlavorText` 只匹配假 dialog。
 
@@ -481,7 +481,7 @@ gradle jar
 ## 建议参考项
 
 - `data/campaign/rules.csv`(MOD 侧)：本节示例追加行所在文件，规则 id 前缀 `GearIn_rules_scene_*`。
-- `Starsector\starsector-core\data\campaign\rules.csv`(原版)：五类场景 trigger 的平台规则表：
+- `data/campaign/rules.csv`(原版)：五类场景 trigger 的平台规则表：
     - 本节引用的回退规则 (`marketOpen` / `marketDock` / `marketPostOpenDefault` / `greetingFallthrough` / `initial_AnyFleet` / `marketReturnFromBar` 等) 的参照来源。
 - `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl`：交互对话框插件，对话场景 trigger 的主要派发点与 `$option` 回流实现。
 - `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`：舰队遭遇与通讯对话插件，`BeginFleetEncounter` / `OpenCommLink` 的派发点。

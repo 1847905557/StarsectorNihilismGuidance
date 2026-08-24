@@ -96,7 +96,7 @@ data/config/sounds.json          注册层 (C5-S2)：sound ID → 路径与播�
 | `fadePreviousFireSound` | 连发时上一次开火音的淡出秒数 | 0 |
 | `noImpactSounds`/`noShieldImpactSounds`/`noNonShieldImpactSounds` | 关闭命中音 | false |
 
-原版实例 (`Starsector\starsector-core\data\weapons\`)：
+原版实例 (`data/weapons/`)：
 - `railgun.wpn` 的 `"fireSoundTwo":"railgun_fire"`；
 - `lightmg.wpn` 注释掉的 `fireSoundOne` 与 `"fireSoundTwo":"light_machinegun_fire"`；
 - 光束 `autopulse.wpn` 的 `"fireSoundTwo":"autopulse_laser_fire"`(该 ID 在 `sounds.json` 中注册为 4 个差分条目，同一 OGG 不同 pitch)。
@@ -117,7 +117,7 @@ data/config/sounds.json          注册层 (C5-S2)：sound ID → 路径与播�
 
 把 `GearIn_durin.wpn`(当前 `fireSoundTwo` 指向原版 `light_assault_gun_fire`) 改一行：
 
-```json
+```json {1}
 	"fireSoundTwo":"GearIn_weapon_fire",
 ```
 
@@ -146,13 +146,13 @@ ID 大小写不一致同样触发。
 | `deactivateSound` | 系统关闭瞬间一次性 |
 | `outOfUsesSound` | 系统无充能/次数试图激活时 |
 
-原版实例：`Starsector\starsector-core\data\shipsystems\burndrive.system` (`useSound`:`system_burn_drive_activate`、`loopSound`:`system_burn_drive_loop`、`deactivateSound`:`system_burn_drive_deactivate`、`outOfUsesSound`:`engine_disabled`)，各 ID 均在 `sounds.json` 注册。
+原版实例：`data/shipsystems/burndrive.system` (`useSound`:`system_burn_drive_activate`、`loopSound`:`system_burn_drive_loop`、`deactivateSound`:`system_burn_drive_deactivate`、`outOfUsesSound`:`engine_disabled`)，各 ID 均在 `sounds.json` 注册。
 
 运行期使用方是战斗系统实现：构造时解析四个声音集，有效期内每帧 `playSoundLoop` 播 `loopSound`。
 
 `GearIn_burstdrive.system` 从 `burndrive.system` 复制而来，已经带着这四个字段。把 `loopSound` 指向本单元 ID：
 
-```json
+```json {2}
 	"useSound":"system_burn_drive_activate",
 	"loopSound":"GearIn_system_loop",
 	"deactivateSound":"system_burn_drive_deactivate",
@@ -170,7 +170,7 @@ ID 大小写不一致同样触发。
 3. **距离衰减与上限。**距监听点超过当前场景阈值不播放：战役 2500、战斗中 1800；活动循环数达到上限时替换最远的一个。
 4. **素材建议 mono**(API 注释)，位置循环在空间中有声像。
 
-代码接入形态 (挂到战术系统效果脚本，完整文件见 "完整最小例")：
+代码接入形态 (挂到战术系统效果脚本)：
 
 ```java
 ShipAPI ship = (ShipAPI) stats.getEntity();
@@ -278,7 +278,7 @@ MOD 接入环境音的路径是自定义地形类型 (实现 `CampaignTerrainPlu
 
 ### 接入示例
 
-`GearIn_market_theme` 走 "市场音乐" 语义，最稳的接入是继承原版选曲插件并覆写市场分支 (完整文件见 "完整最小例")：
+`GearIn_market_theme` 走 "市场音乐" 语义，最稳的接入是继承原版选曲插件并覆写市场分支：
 
 ```java
 public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
@@ -323,7 +323,7 @@ public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
 
 `GearIn_burstdrive.system` 的声音段 (其余字段不动)：
 
-```json
+```json {2}
 	"useSound":"system_burn_drive_activate",
 	"loopSound":"GearIn_system_loop",
 	"deactivateSound":"system_burn_drive_deactivate",
@@ -332,7 +332,7 @@ public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
 
 `GearIn_durin.wpn` 完整文件 (沿用此前制作的武器文件，只改一行)：
 
-```json
+```json {27}
 {
 	"id":"GearIn_durin",  # this id must match what's in the spreadsheet
 	"specClass":"projectile",
@@ -380,7 +380,7 @@ public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
 
 `data/config/settings.json`(完整文件，与 `sounds.json` 一样按对象键合并，只提交 `plugins.musicPlugin` 一个键，不要复制整份原版)：
 
-```json
+```json {3}
 {
 	"plugins":{
 		"musicPlugin":"data.scripts.gearin.campaign.GearInMusicPlayerPlugin"
@@ -390,7 +390,7 @@ public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
 
 可选代码路 ——`GearInBurstDriveSystem`(战术系统效果脚本全文，新增 `playLoop` 调用与 `stats.getEntity()` 取船)：
 
-```java
+```java {23,27,28,29}
 package data.scripts.gearin.shipsystems;
 
 import com.fs.starfarer.api.Global;
@@ -447,7 +447,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 前置数据：三个 OGG[C5-S1]、`data/config/sounds.json`[C5-S2]、`data/weapons/GearIn_durin.wpn`[C1-S5]、`data/shipsystems/GearIn_burstdrive.system`[C2-S3]、测试战役 `GearIn_test`[C4-S1]、本节的 `settings.json` 与新类 `GearInMusicPlayerPlugin`。
 
-1. 启用 `gear_in` 启动到主菜单，检查 `Starsector\starsector-core\starsector.log` 中的声音注册记录。
+1. 启用 `gear_in` 启动到主菜单，检查 `starsector.log` 中的声音注册记录。
 2. 进入 `GearIn_test` 测试战役，使用装有 `GearIn_durin` 的舰船开火，听取武器开火音。
 3. 激活 `GearIn_burstdrive`，听取系统有效期间的循环音与结束后的淡出；接入 UI 示例时，同时听取激活瞬间的 UI 音。
 4. 进入任意生涯市场，听取市场音乐；离开市场后继续听取音乐变化。
@@ -472,10 +472,6 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 - **系统激活时没有循环声 (含 `loopSound` 未注册的情况)**：四个 `.system` 声音字段都有空值守卫；未注册 ID 经注册表解析为 null，与留空同等对待 —— 循环声静默，不抛 NPE。
 
     - **解决方案**：核对 `loopSound` 与循环素材；两种声音都缺失时，同时核对 `useSound`。
-
-- **系统激活时没有循环声 (续)**：`.system` 的 `loopSound` 指向未注册 ID 时，四个字段的空值守卫会把未注册与留空同等对待 —— 循环声静默，不会抛 NPE。
-
-    - **解决方案**：补齐声音注册后重新激活系统。
 
 - **`playLoop` 不响或断断续续**：每帧没有续播、`playingEntity` 不稳定、距离超过战斗内 1800 / 生涯大地图 2500 的阈值或 `volume <= 0` 都会中断循环。
 

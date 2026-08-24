@@ -49,7 +49,7 @@
 
 ```json
 {
-	"GEAR_TECH":{ # 舰船风格 ID。不得使用文件头保留 ID(见下)
+	"GEAR_TECH":{ # 舰船风格 ID。不得使用文件头保留 ID
 		"hyperspaceJitterColor":[255,170,60,200], # 建议保留：舰船在超空间航行时的光芒颜色
 		"baseCampaignExplosionColor":[255,150,50,255], # 建议保留：大地图爆炸颜色
 		"baseCombatExplosionColor":[255,150,50,255], # 建议保留：战斗爆炸颜色 (闪光)
@@ -97,7 +97,7 @@
 }
 ```
 
-保存到 `\Starsector\mods\GearIndustry\data\config\hull_styles.json`。同路径文件按对象键合并，因此只放 `GEAR_TECH` 这一个键即可。
+保存到 `data/config/hull_styles.json`。同路径文件按对象键合并，因此只放 `GEAR_TECH` 这一个键即可。
 
 ::: warning 舰船风格的 9 个颜色字段：缺键不报错
 
@@ -149,7 +149,7 @@
 }
 ```
 
-保存到 `\Starsector\mods\GearIndustry\data\config\engine_styles.json`。
+保存到 `data/config/engine_styles.json`。
 
 ::: caution 引擎风格的必填字段
 
@@ -170,9 +170,9 @@
 			"contrailWidthMult":0.67, # 必填 (QUAD_STRIP 模式)：光带宽度
 			"contrailWidthAddedFractionAtEnd":-1, # 可选，字段缺失时默认 0.5：显式 0 表示不附加末端宽度，小于 0 末端窄，大于 0 末端宽
 			"contrailMinSeg":5, # 可选，默认 5：光带每一小节的渲染长度
-			"contrailMaxSpeedMult":1, # 必填：见上文
-			"contrailAngularVelocityMult":0, # 必填：见上文
-			"contrailColor":[50,50,255,75], # 建议保留：见上文
+			"contrailMaxSpeedMult":1, # 必填：航迹飘出速率
+			"contrailAngularVelocityMult":0, # 必填：航迹角速度飘出速率
+			"contrailColor":[50,50,255,75], # 建议保留：引擎航迹颜色
 
 			"glowSprite":"graphics/fx/engineglow32b.png", # 光带材质
 			"glowOutline":"graphics/fx/engineflame32b.png", # 光带外部材质
@@ -220,13 +220,13 @@
 
 在 `GearIn_artizan.ship` 中，把顶层舰船风格替换为自定义 ID：
 
-```json
+```json {1}
   "style": "GEAR_TECH",
 ```
 
 然后把 `engineSlots` 中每个引擎槽的 `style` 也替换为自定义 ID：
 
-```json
+```json {7}
   "engineSlots": [
     {
       "location": [ 12.0, -30.0 ],
@@ -277,7 +277,7 @@ hull style 是 "声音与材质的总线"：
 }
 ```
 
-保存为 `\Starsector\mods\GearIndustry\data\config\sounds.json`，`.ogg` 文件放入 MOD 的 `sounds/` 目录 (路径相对 MOD 根目录)，再把 hull style 的 `engineLoopSet` 改为 `"GearIn_engine_loop"`。
+保存为 `data/config/sounds.json`，`.ogg` 文件放入 MOD 的 `sounds/` 目录 (路径相对 MOD 根目录)，再把 hull style 的 `engineLoopSet` 改为 `"GearIn_engine_loop"`。
 
 `engineAccelerateSet`、`fluxLoopSet`、`ventFluxSet`、`shieldRaiseSet`、`shieldLowerSet` 等按同一模式各注册一套 (本节不给具体音频资产，请用您自己的录音或音效素材，名称保持 `GearIn_<subject>` 前缀)。
 

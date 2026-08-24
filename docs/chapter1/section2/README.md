@@ -302,7 +302,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 | CR loss/sec | 当峰值时间耗尽后，每秒下降的 `CR` 量 |
 | supplies/rec | 部署点，且还是每次部署消耗的补给数量 |
 | supplies/mo | 每月消耗的补给数 |
-| hints | 进阶内容，不可随意编纂，取值见下方 Hints 速查表 |
+| hints | 进阶内容，不可随意编纂 |
 | tags | 进阶内容，可随意编纂。示例中的 `GearIn_bp` 用于蓝图与销售规则 |
 | rarity | 稀有度。该列会被加载器读入，影响生涯中某些环节里蓝图抽选的权重，对战斗与装配数值无影响。照抄样本留空即可 |
 | breakProb | 停机时被炸个粉碎的概率 |

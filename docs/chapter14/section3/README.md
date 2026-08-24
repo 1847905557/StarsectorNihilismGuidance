@@ -14,7 +14,7 @@
 - 解释 rulecmd 的实例化生命周期：每次调用新建实例、`execute(ruleId, dialog, params, memoryMap)` 四参签名、条件列与脚本列对返回值的不同处理、`dialog` 为 null 时异常的红字/重抛处理；
 - 解析 `Misc.Token` 参数，并核对 `getString` / `getFloat` / `getBoolean` / `getInt` 等方法的语义与陷阱；
 - 解释 `FireBest` / `FireAll` 的再入机制与约束：防自再入、终止性责任、`$fireAllTrigger` 与 `FireAllIntercept` 拦截，以及 Java 侧 (非规则上下文) 的再入调用点；
-- 验证完整最小例的注册、对话、再入与读档行为；
+- 验证本节最小示例的注册、对话、再入与读档行为；
 - 从症状定位故障，沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核。
 
 ## 前置知识
@@ -122,7 +122,7 @@ public interface CommandPlugin {
 
 脚本列命令再入同一触发器是常规操作：若引擎不跳过当前规则 id，`FireBest` 的调用本身就会命中正在执行的规则，形成必然的无限循环。只跳过同 id 既保住终止性，又保留同触发器其他规则在再入中的命中能力。
 
-再入约束 (可观察后果见 "规则强度" 表)：
+再入约束：
 
 - **共享上下文**：嵌套的匹配/执行使用同一 `memoryMap` 与同一 `dialog`—— 内层写记忆外层可见；内层非 keepOptions 的 `FireBest` 会清空外层对话的选项面板。
 - **终止性责任在编者**：引擎只跳过当前规则 id。
@@ -209,7 +209,7 @@ Starsector/mods/GearIndustry/
 }
 ```
 
-数组追加语义见 "命令解析链"：合并后的包列表 = 原版 5 个 + 本包；`GearInRuleCommand` 以简单类名出现在 rules.csv 时按 `data.scripts.gearin.rules.GearInRuleCommand` 定位。
+数组追加语义：合并后的包列表 = 原版 5 个 + 本包；`GearInRuleCommand` 以简单类名出现在 rules.csv 时按 `data.scripts.gearin.rules.GearInRuleCommand` 定位。
 
 ### 配置 Rules 数据
 
@@ -374,10 +374,10 @@ public class GearInRuleCmdOpener implements EveryFrameScript {
 - `extends BaseCommandPlugin`：只需覆写 `execute`；`doesCommandAddOptions()` 默认 false，所以本命令是**非选项型**命令，在脚本阶段由 `runScript` 正常执行。
 - `MEM_KEY_LAST = "$GearIn_rulecmd_last"`：命令写入的记忆键，与 rules.csv 条件列 `$GearIn_rulecmd_last >= 2` 逐字一致 (含 `$` 前缀；无过期，深度语义归 "Rules 内存" 单元)。
     - `getEntityMemory(memoryMap)` 在无活动人物时返回 `MemKeys.LOCAL`，即对话交互目标的实体记忆 (`RuleBasedInteractionDialogPluginImpl` 的 `updateMemory`)。
-- 参数解析三连：`getString`(触发器名，字面量直取)、`getFloat`(`2` → 2.0f)、`getBoolean`(`true` → true；若写成 `1`/`0` 则恒为 false，见 "规则强度" 表)。
+- 参数解析三连：`getString`(触发器名，字面量直取)、`getFloat`(`2` → 2.0f)、`getBoolean`(`true` → true；若写成 `1`/`0` 则恒为 false)。
 - 再入：`FireBest.fire(ruleId, dialog, memoryMap, trigger + (keepOptions ? " true" : ""))`——ruleId 原样透传 (引擎跳过同 id 规则)，`" true"` 成为 FireBest 的第二个参数 (keepOptions)。
     - keepOptions 只在目标规则带选项时可见，本节目标规则无选项，仅经日志观察参数解析与传递。
-- `dialog == null` 检查：非对话触发 (如面板再入) 时 `dialog` 为 null，直接再入会在 `performTokenReplacement` 的 `getInteractionTarget` 处 NPE(见 "规则强度" 表)。
+- `dialog == null` 检查：非对话触发 (如面板再入) 时 `dialog` 为 null，直接再入会在 `performTokenReplacement` 的 `getInteractionTarget` 处 NPE。
 - `GearInRuleCmdOpener`：与规则系统页的 `GearInRulesIntro` 同款的一次性 `EveryFrameScript`；`REGISTER_MARK` 键 `"GearIn_RuleCmdOpener"` 与调用点片段逐字一致；`new RuleBasedInteractionDialogPluginImpl("GearInRuleCmdOpener")` 自定义初始 trigger，候选池只有本节规则。
 - welcome 规则文本里的 `$playerName` 由 token 替换链换成本档人物名；`SetShortcut` 把 ESC 绑定到 `GearIn_rules_cmd_leave`。
 - `GearIn_rules_cmd_more` 脚本列再次调用命令 (amount=3) 演示 FireBest 再入；`GearIn_rules_cmd_all` 用内置 `FireAll` 再入同一触发器演示 "全部命中规则" (`FireAllIntercept` 只拦截 `$fireAllTrigger == PopulateOptions` 等，本触发器不受影响)。

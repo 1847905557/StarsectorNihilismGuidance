@@ -47,10 +47,10 @@
 
 | 入口 | 语义 |
 |---|---|
-| `Global.getFactory().createPerson()` | 创建空白人物 (默认值见下文) |
+| `Global.getFactory().createPerson()` | 创建空白人物 |
 | `FactionAPI.createRandomPerson()`(含 Gender / Random 变体) | 按势力生成随机人物：随机性别默认各半、势力肖像、随机姓名 (姓名池)、随机 voice |
 
-另有包装入口 `Global.getFactory().createOfficerData(PersonAPI)`—— 把人物包装成 `OfficerDataAPI`(见 "officer" 节)。
+另有包装入口 `Global.getFactory().createOfficerData(PersonAPI)`—— 把人物包装成 `OfficerDataAPI`。
 
 `SettingsAPI` 也有同签名 `createPerson`(同样返回空白人物)，习惯用 `Global.getFactory()`。
 
@@ -81,16 +81,16 @@
 | 分组 | 成员 | 语义 |
 |---|---|---|
 | 身份 | `getId()` / `setId(String)`、`getName()` / `setName(FullName)`、`getNameString()`、`getGender()` / `setGender(Gender)`、`isMale()` / `isFemale()` | id 唯一；姓名是**可变对象** `FullName`(`(first + " " + last).trim()`)；性别挂在姓名上 |
-| rank/post | `getRankId()` / `setRankId(String)`、`getPostId()` / `setPostId(String)`、`getRank()` / `getPost()`、`getRankArticle()` / `getPostArticle()` | id 是存储值；显示名经势力解析 (见下) |
+| rank/post | `getRankId()` / `setRankId(String)`、`getPostId()` / `setPostId(String)`、`getRank()` / `getPost()`、`getRankArticle()` / `getPostArticle()` | id 是存储值；显示名经势力解析 |
 | 头像 | `getPortraitSprite()` / `setPortraitSprite(String)` | 资源路径字符串 (不校验存在性) |
 | 势力 | `getFaction()`、`setFaction(String factionId)` | `getFaction()` 延迟解析势力对象 (按 id 从全局势力表解析)；`setFaction` 只写 id |
-| 关系 | `getRelToPlayer()` | 人物对玩家关系 (见 "关系" 节) |
-| 记忆 | `getMemory()` / `getMemoryWithoutUpdate()` | 见 "记忆" 小节 |
+| 关系 | `getRelToPlayer()` | 人物对玩家关系 |
+| 记忆 | `getMemory()` / `getMemoryWithoutUpdate()` | 记忆读写；`getMemory()` 触发插件回调 |
 | 标签 | `hasTag` / `addTag` / `removeTag` / `getTags` / `clearTags` | 运行时标签集合 (`getTags()` 缺省返回空集) |
 | personality | `getPersonalityAPI()`、`setPersonality(String)` | 由 `personalities.csv` 注册 |
 | importance/voice | `getImportance()` / `setImportance(PersonImportance)`、`setImportanceAndVoice(PersonImportance, Random)`、`getVoice()` / `setVoice(String)` | voice 存储在 memory `$voice`；`setImportanceAndVoice` 只在 voice 未被显式覆写时写 voice |
 | AI core | `getAICoreId()` / `setAICoreId(String)`、`isAICore()` | `aiCoreId != null` 即 AI 核心人物 |
-| 归属 | `getFleet()` / `setFleet(CampaignFleetAPI)`、`getMarket()` / `setMarket(MarketAPI)` | officer 所在舰队、当前市场 (见 "归属" 小节) |
+| 归属 | `getFleet()` / `setFleet(CampaignFleetAPI)`、`getMarket()` / `setMarket(MarketAPI)` | officer 所在舰队、当前市场 |
 | 角色数值 | `getStats()`、`setStats(MutableCharacterStatsAPI)`、`getFleetCommanderStats()` | 等级/XP/技能/故事点；`getFleetCommanderStats()` = `fleet.getCommanderStats()`，无舰队时 null |
 | 联系 | `wantsToContactPlayer()` / `incrWantsToContactReasons()` / `decrWantsToContactReasons()`、`getContactWeight()` / `setContactWeight(float)` | 联系人与权重 (`wantsToContactReasonsCount`) |
 
@@ -168,7 +168,7 @@ voice 即 memory `$voice`。
 |---|---|
 | `adjustRelationship(String id, float delta)` | 直接加 delta(无 limit，只受 ±1 钳制) |
 | `adjustRelationship(String id, float delta, RepLevel limit)` | 带 limit：delta 为 0 直接返回 false；正 delta 上限 = `limit.getMax()`(limit 为负档时 = `-min-0.01`)，负 delta 下限 = `-limit.getMax()`(limit 为正档时 = `min+0.01`)；调整后值仍在限内 → **返回 true 并写入**，仅 delta 为 0 或被 limit 完全拦截 (值未变化) 时返回 false |
-| `setRelationship(String id, float newValue)` / `setRelationship(String id, RepLevel level)` | 精确写值 / 按档位落点 (见上表) |
+| `setRelationship(String id, float newValue)` / `setRelationship(String id, RepLevel level)` | 精确写值 / 按档位落点 |
 | `ensureAtBest(String id, RepLevel)` / `ensureAtWorst(String id, RepLevel)` | 当前档位不满足时写入边界值并返回 true |
 | `getRelationship(String id)` / `getRelationshipLevel(String)` / `getRepInt(String)` | 值 / 档位 / 百分制整数 (`RepLevel.getRepInt`) |
 | `isAtBest` / `isAtWorst`、`isHostileTo(String)` | 档位比较；`isHostileTo` = `isAtBest(HOSTILE)` |
@@ -246,7 +246,7 @@ limit 只是 "本次调整的方向边界"
 2. **市场人物**：`MarketAPI.addPerson(person)`(同时写 `person.setMarket(market)`)**，通信目录条目必须另行 `getCommDirectory().addPerson(person)` 维护** (`MarketAPI.addPerson` 不会自动建目录条目)；
 3. **重要人物**：`SectorAPI.getImportantPeople()` → `ImportantPeopleAPI.addPerson` / `containsPerson` / `removePerson` / `getData(person)`(`com.fs.starfarer.api.characters.ImportantPeopleAPI`)：
     - `checkOutPerson(person, reasonId)` / `returnPerson(person, reasonId)`；
-4. **officer roster**：`FleetDataAPI.addOfficer`(见上)。
+4. **officer roster**：`FleetDataAPI.addOfficer`。
 
 只存在于局部变量、未被任何持久集合引用的人物不会进入存档；没有其它强引用后，才可能由垃圾回收器回收，具体时机不由帧边界保证。
 
@@ -258,7 +258,7 @@ limit 只是 "本次调整的方向边界"
 
 ### 注册入口
 
-归属决定保存，注册决定何时执行。本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)`，用各自的 persistent data 键做一次注册判断 (不要把注册键挂进插件既有的 `CLASS_MARK` 门内)。具体代码见 "完整最小例" 的调用点片段。
+归属决定保存，注册决定何时执行。本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)`，用各自的 persistent data 键做一次注册判断 (不要把注册键挂进插件既有的 `CLASS_MARK` 门内)。
 
 API 面里最反直觉的几处已经标了容器警告，下面把必须遵守的约束连同违反后果收进规则强度速查表。
 
@@ -392,7 +392,7 @@ mods/GearIndustry/
 
 全部修改在当帧回滚，不遗留任何持久状态。
 
-**演示纪律**：演示/临时人物修改后必须同帧回滚，回滚用 "快照原值 + `setRelationship`"(见规则强度速查表)；先 `add` 后立刻 `remove` 的配对顺序不要调换 —— 演示帧中途抛异常会留下随存档保存的残留，且 `REGISTER_MARK` 已置位后读档不重放，残留无法自动清理。
+**演示纪律**：演示/临时人物修改后必须同帧回滚，回滚用 "快照原值 + `setRelationship`"；先 `add` 后立刻 `remove` 的配对顺序不要调换 —— 演示帧中途抛异常会留下随存档保存的残留，且 `REGISTER_MARK` 已置位后读档不重放，残留无法自动清理。
 
 ### GearInPersonScript(协调器)
 

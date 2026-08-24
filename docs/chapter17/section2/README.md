@@ -157,7 +157,7 @@ import exerelin.world.ExerelinCorvusLocations;
  */
 public class GearInNexCompat {
 
-    /** Nexerelin 的 MOD id，与 Starsector\mods\Nexerelin\mod_info.json 的 id 字段逐字一致。 */
+    /** Nexerelin 的 MOD id，与 Starsector/mods/Nexerelin/mod_info.json 的 id 字段逐字一致。 */
     public static final String NEX_MOD_ID = "nexerelin";
 
     /** 本 MOD 势力 id(教程势力章节注册)。 */

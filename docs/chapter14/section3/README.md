@@ -44,12 +44,12 @@
     - 命令包列表在加载期只读取一次并缓存。
 2. MOD 可以在自己的 `data/config/settings.json` 里声明同名数组追加自己的包：`settings.json` 经文本读取工具的 `readJSONMerged` 合并，**数组追加** (`mergeJSON`；仅 `core_clearArray` 标记或 color/button/`music_*` 键走整体替换)。
     - 合并发生在设置加载阶段 (读取 settings 的 JSON，由游戏启动器在资源加载前调用)，早于 `Rules.loadRules`，所以追加的包在命令解析时已就位。
-3. 命令类解析会逐包尝试 `Class.forName(pkg + "." + name, false, 脚本类加载器父加载器)` 并 `newInstance()`—— **加载期即实例化一次**，验证类存在、可实例化、无参构造可用；全部包都找不到时抛 `RuntimeException("Command [...] not found in packages:...")` → 资源加载崩溃、游戏启动中止。
+3. 命令类解析会逐包尝试 `Class.forName(pkg + "." + name, false, 脚本类加载器父加载器)` 并 `newInstance()` —— **加载期即实例化一次**，验证类存在、可实例化、无参构造可用；全部包都找不到时抛 `RuntimeException("Command [...] not found in packages:...")` → 资源加载崩溃、游戏启动中止。
 4. 脚本列的命令类还会被脚本类加载器记录，供 Janino 即时编译 MOD 根下以源码形式提供的命令类；jar 内类不依赖该机制。
 
 ### 实例化与执行链速查表
 
-执行期命令类由脚本类加载器实例化：类名缓存 (`Class.forName` 仅在缓存未命中时执行)、**每次调用都执行 `newInstance()`**——rulecmd 实例是 "每次调用一个"，任何字段状态都不可跨调用使用。想在字段里攒点状态的话，下次调用拿到的是全新实例。调用点有三处，各自消费不同的方法：
+执行期命令类由脚本类加载器实例化：类名缓存 (`Class.forName` 仅在缓存未命中时执行)、**每次调用都执行 `newInstance()`** —— rulecmd 实例是 "每次调用一个"，任何字段状态都不可跨调用使用。想在字段里攒点状态的话，下次调用拿到的是全新实例。调用点有三处，各自消费不同的方法：
 
 | 调用点 | 位置 | 消费的方法 | 返回值用途 |
 |---|---|---|---|
@@ -75,7 +75,7 @@ public interface CommandPlugin {
 
 自定义命令只需继承它并覆写 `execute`。
 
-命令接口的执行入口只有 `execute`—— 生命周期由 "每次调用 newInstance + 四参 execute" 构成。命令类拿到的是解析后的 `Token` 列表而不是原始字符串，接下来看它怎么切分和取值。
+命令接口的执行入口只有 `execute` —— 生命周期由 "每次调用 newInstance + 四参 execute" 构成。命令类拿到的是解析后的 `Token` 列表而不是原始字符串，接下来看它怎么切分和取值。
 
 ## Token 参数解析
 
@@ -88,7 +88,7 @@ public interface CommandPlugin {
 | 方法 | 语义 | 陷阱 |
 |---|---|---|
 | `getString(memoryMap)` | 变量 token → `getVarNameAndMemory` 取记忆值；字面量 token → 原样字符串 | 变量解析失败抛 `RuleException`(`getVarNameAndMemory`：无 `.` 的 token 回落 `MemKeys.LOCAL`，local 也不存在即抛 "`No memory found for keys`") |
-| `getStringWithTokenReplacement(ruleId, dialog, memoryMap)` | 先 `getString` 再做规则 token 替换 (`$playerName` 等) | 内部调 `dialog.getInteractionTarget()`——`dialog` 为 null 会 NPE，必须先判空 |
+| `getStringWithTokenReplacement(ruleId, dialog, memoryMap)` | 先 `getString` 再做规则 token 替换 (`$playerName` 等) | 内部调 `dialog.getInteractionTarget()` —— `dialog` 为 null 会 NPE，必须先判空 |
 | `getFloat(memoryMap)` | 变量 → `memory.getFloat`；字面量 → `Float.parseFloat` | 非数字字面量抛 `NumberFormatException` → 红字段落/重抛 |
 | `getBoolean(memoryMap)` | 变量 → 记忆字符串；字面量 → `Boolean.parseBoolean` | **只有 `"true"`(忽略大小写) 为 true，`"0"`/`"1"`/`"yes"` 全是 false** |
 | `getInt(memoryMap)` | `Math.round(getFloat)` | 同上 getFloat 的异常 |
@@ -97,7 +97,7 @@ public interface CommandPlugin {
 
 参数检查是 rulecmd 的标准写法：`FireBest` 自己都直接 `params.get(0)`(空参数 → `IndexOutOfBoundsException` → 红字)，所以自定义命令必须先判 `params.isEmpty()` / `params.size() > n`。
 
-原版命令的 trigger 参数还支持变量形式 ——`params.get(0).isVariable()` 时经 `getVarNameAndMemory` 从记忆取值。
+原版命令的 trigger 参数还支持变量形式 —— `params.get(0).isVariable()` 时经 `getVarNameAndMemory` 从记忆取值。
 
 参数检查是自定义命令必须满足的要求
 
@@ -114,9 +114,9 @@ public interface CommandPlugin {
 链路 (匹配与结果执行已在规则系统页讲过，这里补再入视角)：
 
 1. 静态入口 `FireBest.fire(ruleId, dialog, memoryMap, params)` 与 `FireAll.fire(...)` 把参数字符串 `Misc.tokenize` 后交给 `execute`。
-2. `execute` 解析 `params[0]` 为触发器名 (变量则取记忆值) 后调用 `rules.getBestMatching(ruleId, trigger, dialog, memoryMap)`(`FireBest`) 或 `rules.getAllMatching(...)`(`FireAll`)——**`ruleId` 原样传入**。
+2. `execute` 解析 `params[0]` 为触发器名 (变量则取记忆值) 后调用 `rules.getBestMatching(ruleId, trigger, dialog, memoryMap)`(`FireBest`) 或 `rules.getAllMatching(...)`(`FireAll`) —— **`ruleId` 原样传入**。
 3. 匹配时引擎跳过 id 等于 currentRule 的规则 (`Rules` 的 `getRulesFor` / `getBestMatchingRule`)：这就是防**自再入**机制 —— 正在执行的规则不能在同一触发器的再入匹配中命中自己。注意只跳过同 id：同触发器内其他规则可以命中。
-4. 命中规则的 `applyRule`(`FireBest`) 在**同一个** `dialog` 上清空/添加选项 (`keepOptions` 为真时不清空)、追加文本、`runScript`；`FireAll` 还会先写 `$fireAllTrigger` 再 `FireBest` 触发 `FireAllIntercept`(`FireAll`)—— 拦截规则命中则本次 `FireAll` 整体跳过 (原版仅 1 条拦截规则，`data/campaign/rules.csv`，条件是 `$fireAllTrigger == PopulateOptions` 等，不影响自定义触发器)。
+4. 命中规则的 `applyRule`(`FireBest`) 在**同一个** `dialog` 上清空/添加选项 (`keepOptions` 为真时不清空)、追加文本、`runScript`；`FireAll` 还会先写 `$fireAllTrigger` 再 `FireBest` 触发 `FireAllIntercept`(`FireAll`) —— 拦截规则命中则本次 `FireAll` 整体跳过 (原版仅 1 条拦截规则，`data/campaign/rules.csv`，条件是 `$fireAllTrigger == PopulateOptions` 等，不影响自定义触发器)。
 
 为什么需要 "防自再入"
 
@@ -124,7 +124,7 @@ public interface CommandPlugin {
 
 再入约束：
 
-- **共享上下文**：嵌套的匹配/执行使用同一 `memoryMap` 与同一 `dialog`—— 内层写记忆外层可见；内层非 keepOptions 的 `FireBest` 会清空外层对话的选项面板。
+- **共享上下文**：嵌套的匹配/执行使用同一 `memoryMap` 与同一 `dialog` —— 内层写记忆外层可见；内层非 keepOptions 的 `FireBest` 会清空外层对话的选项面板。
 - **终止性责任在编者**：引擎只跳过当前规则 id。
     - 同一触发器内两条规则互相 `FireBest` 对方会无限递归 (A 命中 B，B 再入时跳过 B 命中 A，A 再入时跳过 A 命中 B...)，表现为游戏卡死/栈溢出；`dialog` 为 null 的上下文里异常会直接重抛。
     - 再入时把 `ruleId` 原样透传给 `getAllMatching(ruleId, params.get(0).string, ...)` 是保留 currentRule 的标准写法。
@@ -145,7 +145,7 @@ public interface CommandPlugin {
 | 通讯录面板 | 通讯录面板类 | 选中人物条目后 `FireBest.fire(null, parentDialog, plugin.getMemoryMap(), "OpenCDE")` |
 | 通用面板 | 通用面板类 | `populateMemoryMap` + `fireRule(trigger)` |
 
-共同点：`dialog` 是伪造的或真实的对话上下文；`dialog` 为 null 时规则命令内部任何对 `dialog.get*` 的调用都会 NPE—— `RuleAPI.runScript` 的 javadoc 明确写 "dialog can be null"(`com.fs.starfarer.api.campaign.rules.RuleAPI`)，所以命令里访问 `dialog` 前必须判空。
+共同点：`dialog` 是伪造的或真实的对话上下文；`dialog` 为 null 时规则命令内部任何对 `dialog.get*` 的调用都会 NPE —— `RuleAPI.runScript` 的 javadoc 明确写 "dialog can be null"(`com.fs.starfarer.api.campaign.rules.RuleAPI`)，所以命令里访问 `dialog` 前必须判空。
 
 命令内访问 dialog 前必须判空
 
@@ -375,7 +375,7 @@ public class GearInRuleCmdOpener implements EveryFrameScript {
 - `MEM_KEY_LAST = "$GearIn_rulecmd_last"`：命令写入的记忆键，与 rules.csv 条件列 `$GearIn_rulecmd_last >= 2` 逐字一致 (含 `$` 前缀；无过期，深度语义归 "Rules 内存" 单元)。
     - `getEntityMemory(memoryMap)` 在无活动人物时返回 `MemKeys.LOCAL`，即对话交互目标的实体记忆 (`RuleBasedInteractionDialogPluginImpl` 的 `updateMemory`)。
 - 参数解析三连：`getString`(触发器名，字面量直取)、`getFloat`(`2` → 2.0f)、`getBoolean`(`true` → true；若写成 `1`/`0` 则恒为 false)。
-- 再入：`FireBest.fire(ruleId, dialog, memoryMap, trigger + (keepOptions ? " true" : ""))`——ruleId 原样透传 (引擎跳过同 id 规则)，`" true"` 成为 FireBest 的第二个参数 (keepOptions)。
+- 再入：`FireBest.fire(ruleId, dialog, memoryMap, trigger + (keepOptions ? " true" : ""))` —— ruleId 原样透传 (引擎跳过同 id 规则)，`" true"` 成为 FireBest 的第二个参数 (keepOptions)。
     - keepOptions 只在目标规则带选项时可见，本节目标规则无选项，仅经日志观察参数解析与传递。
 - `dialog == null` 检查：非对话触发 (如面板再入) 时 `dialog` 为 null，直接再入会在 `performTokenReplacement` 的 `getInteractionTarget` 处 NPE。
 - `GearInRuleCmdOpener`：与规则系统页的 `GearInRulesIntro` 同款的一次性 `EveryFrameScript`；`REGISTER_MARK` 键 `"GearIn_RuleCmdOpener"` 与调用点片段逐字一致；`new RuleBasedInteractionDialogPluginImpl("GearInRuleCmdOpener")` 自定义初始 trigger，候选池只有本节规则。

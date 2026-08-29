@@ -45,7 +45,7 @@
     - `isDone` 自动清理；
     - `removeScript(script)` 按**对象同一性**；
     - `removeScriptsOfClass(Class)` 按**精确类** `getClass() == clazz`；
-    - `hasScript(Class)` 用 `isInstance`—— 查重用 `hasScript`，批量删用 `removeScriptsOfClass`，别混用。
+    - `hasScript(Class)` 用 `isInstance` —— 查重用 `hasScript`，批量删用 `removeScriptsOfClass`，别混用。
 3. **`addScript` 不去重**：同一实例或等价实例重复注册会各自推进 —— 一次性注册必须用 persistent data 标记 (必须遵守的规则)。
 4. 脚本基类把 `runWhilePaused()` 默认设为 `false`；引擎内置脚本也走同一机制。
 5. `EveryFrameScriptWithCleanup`(`com.fs.starfarer.api.EveryFrameScriptWithCleanup`) 只多一个 `cleanup()`："附着实体从生涯引擎移除时调用"(实体级脚本；引擎级脚本不触发)。该接口没有可观测的调用点，行为表述即上述语义。
@@ -95,7 +95,7 @@
 
 **保存与读档的机制** (游戏管理器)：
 
-- 保存：`saveGame(...)` 用 XStream 序列化**整个生涯引擎 (星区)**—— 包括 `scripts` 列表里每个脚本的全部非 `transient` 字段。
+- 保存：`saveGame(...)` 用 XStream 序列化**整个生涯引擎 (星区)** —— 包括 `scripts` 列表里每个脚本的全部非 `transient` 字段。
 - 读档：`fromXML` 还原生涯引擎 (星区) 与脚本字段，脚本状态从存档值继续。
 
 **两个脚本列表的序列化边界** (生涯引擎)：
@@ -108,7 +108,7 @@
 
 - **必须**：脚本字段只放可随 XStream 序列化的状态 (基础类型、可序列化对象)。
     - 把引擎单例、`CampaignUIAPI`、声音播放器等句柄存进字段，会把整个可达对象图拖进存档 —— 可观察结果：存档文件异常膨胀、保存/读档异常，或读档后字段指向失效对象导致行为错乱。
-- **必须**：一次性注册用随存档保存的 persistent data 标记 ([C6-S2] 的 `CLASS_MARK` 模式；本节示例用各自键 `REGISTER_MARK`)——`addScript` 不去重，标记缺失的可观察结果是读档次数越多日志越成双、行为叠加。
+- **必须**：一次性注册用随存档保存的 persistent data 标记 ([C6-S2] 的 `CLASS_MARK` 模式；本节示例用各自键 `REGISTER_MARK`) —— `addScript` 不去重，标记缺失的可观察结果是读档次数越多日志越成双、行为叠加。
 - **必须**：transient 脚本的重新注册写在读档回调里，否则可观察结果是读档后脚本消失且无报错。
 - **建议**：跨会话的小数据放 `SectorAPI.getPersistentData()`(persistent data 随档保存；注意 XStream 存档边界)。
 - **建议**：脚本内瞬态句柄 (贴图、粒子、UI 引用) 声明为 `transient` 字段并用 `readResolve()` 重建 —— 成熟实例：实体插件用 `readResolve()` 恢复 `SpriteAPI` 句柄。
@@ -227,7 +227,7 @@ mods/GearIndustry/
 
 对应关系：
 
-- `implements EveryFrameScript`：三个方法全来自接口 (`isDone` / `runWhilePaused` / `advance`)；`isDone()` 恒返回 `false`—— 常驻脚本永不结束，日历事件逐日触发。
+- `implements EveryFrameScript`：三个方法全来自接口 (`isDone` / `runWhilePaused` / `advance`)；`isDone()` 恒返回 `false` —— 常驻脚本永不结束，日历事件逐日触发。
 - `REGISTER_MARK`：persistent data 注册标记的键 (`"GearIn_CalendarDayScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
 - `dateKey` 跨日检测 (模式 A)：`getCycle() * 10000 + getMonth() * 100 + getDay()` 折叠日期为整数键；首帧只初始化不打印，之后每个游戏日打印一次 `GearIn calendar: new day ...`。
 - 时间换算与逐日补触发不在本类：本模式只看日历日期、不直接用 `amount` —— 那是模式 B(`GearInDayAccumulatorScript`) 的职责；两个类可同档共存，各自用独立的 persistent data 标记注册。
@@ -243,7 +243,7 @@ mods/GearIndustry/
 
 对应关系：
 
-- `implements EveryFrameScript`：`isDone()` 返回字段 `done`—— 累计满 `daysToRun` 后引擎在 `advance` 返回后的同一次推进中移除本脚本 (引擎在 `advance` 前与返回后各查一次 `isDone()`，返回后为 `true` 即移除)；`daysToRun < 0` 时恒 `false`，常驻。
+- `implements EveryFrameScript`：`isDone()` 返回字段 `done` —— 累计满 `daysToRun` 后引擎在 `advance` 返回后的同一次推进中移除本脚本 (引擎在 `advance` 前与返回后各查一次 `isDone()`，返回后为 `true` 即移除)；`daysToRun < 0` 时恒 `false`，常驻。
 - `REGISTER_MARK`：persistent data 注册标记的键 (`"GearIn_DayAccumulatorScript"`)，**必须**与调用点片段里的键逐字一致 (与模式 A 各自独立，互不复用)。
 - `convertToDays(amount)`：`amount` 是上一帧真实秒数，`clock.convertToDays(amount)` 才是本帧折合的游戏天数 —— 本类 `advance` 第一行就是换算。
 - `daysAccumulator` / `while`(模式 B)：累计满 `tickEveryDays` 个游戏天触发一次例程 (日志 `GearIn daily: routine #N ...`)，余数跨帧保留；单帧跨多个游戏日时逐日补触发。

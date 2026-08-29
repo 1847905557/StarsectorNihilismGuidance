@@ -31,7 +31,7 @@
 2. 注册入口：CSV spec 加载期调用 `loadCampaignData()`，它读取 `data/campaign/sim_opponents.csv`，把每行的 `variant id` 追加进 `simOpponentVariantIds`。
    - 这个调用在装配 (`loadVariants`) 之后执行，所以清单里可以引用任何已注册装配。
 3. 合并语义：文件在核心与所有启用 MOD 之间**按行合并**，而且本文件**不按键去重** (`readCSVMerged(null, ...)` 不传键列表，它的键检查分支整体跳过)。由此推出三条必须遵守的规则：
-   - **不要**把原版整份 `sim_opponents.csv` 复制进 MOD—— 原版 30 个对手会逐行追加、全部重复出现 (敌方舰队直接翻倍)，且没有任何报错；
+   - **不要**把原版整份 `sim_opponents.csv` 复制进 MOD —— 原版 30 个对手会逐行追加、全部重复出现 (敌方舰队直接翻倍)，且没有任何报错；
    - 以 `#` 开头 (行首第一个字符) 的行整行跳过，可以当注释或分区标题 (成熟实例常用 `#战列舰`、`#巡洋舰` 这类分区标题)；空行同样跳过；`#` 前有空格就不算注释；
    - 表头必须逐字是 `variant id`(含空格)：加载时每行执行 `getString("variant id")`，拼错 (如 `Variant id`) 会抛 JSON 键缺失异常，加载直接中断、进不了主菜单。
 4. 整文件替换：在 `mod_info.json` 的 `replace` 数组里列出 `data/campaign/sim_opponents.csv`，该文件会整份替换合并结果 (`ModManagerAPI` 把 `replace` 条目按整文件替换处理，`readCSV` 只保留替换源)。
@@ -42,7 +42,7 @@
 - 公开 API：`SettingsAPI.getSimOpponents()`(`com.fs.starfarer.api.SettingsAPI`) 返回该列表；`getSimOpponentsDev()` 返回开发列表。
 - 装配界面模拟战：装配界面点 "Run simulation" → 创建模拟战任务时，把列表中的每个 ID 加进敌方舰队。
   - ID 以 `_wing` 结尾的按战机联队 (`FleetMemberType.FIGHTER_WING`) 加入，否则按舰船 (`SHIP`) 加入。
-- 模拟器插件：`settings.json` 的 `"simulatorPlugin":"com.fs.starfarer.api.impl.SimulatorPluginImpl"`—— 模拟战部署界面的 "Default" 对手类别正是这份列表。
+- 模拟器插件：`settings.json` 的 `"simulatorPlugin":"com.fs.starfarer.api.impl.SimulatorPluginImpl"` —— 模拟战部署界面的 "Default" 对手类别正是这份列表。
 - 生涯舰队面板：生涯界面的舰队教条面板在创建模拟战任务定义时使用同一列表。
 - 开发列表 `sim_opponents_dev.csv`：与主文件同格式、同合并规则，独立成 `simOpponentDevVariantIds`，只通过 `getSimOpponentsDev()` 暴露，模拟器插件在 DevMode 类别里展示。常规 MOD 不需要它。
 
@@ -69,7 +69,7 @@ GearIn_artizan_combat
 模拟战构建敌方舰队时，每个 ID 都要构造一个 `FleetMemberAPI`。装配 ID 查不到时会发生两件事：
 
 1. 打印堆栈 `[ID] is not a valid ship variant id`(`printStackTrace`，不中止战斗)；
-2. 回退到 `settings.json` 的 `"errorShipVariant":"nebula_Standard"`—— 一艘星云-级 (Nebula 级) 运输船。
+2. 回退到 `settings.json` 的 `"errorShipVariant":"nebula_Standard"` —— 一艘星云-级 (Nebula 级) 运输船。
 
 因此迁移原文 "填错 ID 会导致它变成一艘星云-级" 依然成立，且机制如上：**日志里能同时搜到该堆栈和这艘星云-级**。
 
@@ -118,7 +118,7 @@ GearIn_artizan_combat
 
 ### 验证方案
 
-前置数据：装配注册单元的 `data/variants/GearIn_artizan_combat.variant`[C4-S1]，以及本节新建的两个 CSV——`data/campaign/sim_opponents.csv` 与 `data/config/title_screen_variants.csv` (保持本例内容，UTF-8 无 BOM)。
+前置数据：装配注册单元的 `data/variants/GearIn_artizan_combat.variant`[C4-S1]，以及本节新建的两个 CSV —— `data/campaign/sim_opponents.csv` 与 `data/config/title_screen_variants.csv` (保持本例内容，UTF-8 无 BOM)。
 
 1. 启动游戏 (启用测试 MOD)，进入主菜单。
 2. 查看 `starsector.log`。

@@ -82,7 +82,7 @@ MOD 侧几乎不直接实现它，而是继承 `BaseIntelPlugin`(`com.fs.starfar
 | 方法 | 语义 |
 |---|---|
 | `addIntel(plugin)` / `addIntel(plugin, forceNoMessage)` / `addIntel(plugin, forceNoMessage, textPanel)` | 立即登记：置 `playerVisibleTimestamp`、调 `reportMadeVisibleToPlayer`、默认 `autoAddCampaignMessage()` 加一条通信消息 (`forceNoMessage` / `textPanel` 两个变体改写消息去向) |
-| `queueIntel(plugin, maxCommQueueDays)` / `queueIntel(plugin)` | 进通信队列；`IntelManagerAPI.advance` 每帧 (未暂停) 检查 `canMakeVisibleToPlayer(relay)` 或 `forceAddNextFrame()`，可见则 `addIntel`—— 前 3 条单独显示；本帧可见条数超过 4 时，第 4 条起合并进 `NewMessagesIntel` |
+| `queueIntel(plugin, maxCommQueueDays)` / `queueIntel(plugin)` | 进通信队列；`IntelManagerAPI.advance` 每帧 (未暂停) 检查 `canMakeVisibleToPlayer(relay)` 或 `forceAddNextFrame()`，可见则 `addIntel` —— 前 3 条单独显示；本帧可见条数超过 4 时，第 4 条起合并进 `NewMessagesIntel` |
 | `removeIntel(plugin)` | 从 intel 表与通信队列同时移除；确实移除了才调 `reportRemovedIntel` |
 | `hasIntel(plugin)` / `getIntel()` / `getIntel(Class)` / `getFirstIntel(Class)` | 查询 |
 
@@ -90,11 +90,11 @@ MOD 侧几乎不直接实现它，而是继承 `BaseIntelPlugin`(`com.fs.starfar
 
 `BaseIntelPlugin` 的生命周期 (MOD 写任务 Intel 时直接继承)：
 
-- `advance(float amount)`：`isEnded()` 直接返回；`isEnding()` 时按游戏天扣 `endingTimeRemaining`，扣完置 `ended = true` 并调 `notifyEnded()`；否则转 `advanceImpl(amount)`—— 子类覆写点。
+- `advance(float amount)`：`isEnded()` 直接返回；`isEnding()` 时按游戏天扣 `endingTimeRemaining`，扣完置 `ended = true` 并调 `notifyEnded()`；否则转 `advanceImpl(amount)` —— 子类覆写点。
 - `endAfterDelay()` / `endAfterDelay(float days)` / `endImmediately()`：置 `ending = true` + 剩余天数：
     - `getBaseDaysAfterEnd()` 默认 **3 游戏日** —— 任务结束后 Intel 条目还留 3 天展示结算结果，之后由引擎按 `shouldRemoveIntel()`(默认 `isEnded`) 清理。
-- `isDone()` = `isEnded()`、`runWhilePaused()` = false—— 作为 `EveryFrameScript`，任务结束后引擎自动从脚本列表移除。
-- 更新推送：`sendUpdate(listInfoParam, textPanel)`(走 `addIntelToTextPanel`)、`sendUpdateIfPlayerHasIntel(...)`(走 `CampaignUIAPI.addMessage`)—— 任务阶段变化时给用户 "进度更新" 消息的两条通道。
+- `isDone()` = `isEnded()`、`runWhilePaused()` = false —— 作为 `EveryFrameScript`，任务结束后引擎自动从脚本列表移除。
+- 更新推送：`sendUpdate(listInfoParam, textPanel)`(走 `addIntelToTextPanel`)、`sendUpdateIfPlayerHasIntel(...)`(走 `CampaignUIAPI.addMessage`) —— 任务阶段变化时给用户 "进度更新" 消息的两条通道。
 
 Intel 条目只是展示层，任务的状态与推进逻辑在 `HubMission` 接口与实现类族里。
 
@@ -246,7 +246,7 @@ protected List<Abortable> changes = ...;
 ```
 
 - `StageData`：`id` + `elapsed`(当前阶段内累计游戏天)+ `important`(本阶段的 `ImportanceData` 列表)。`getData(id)` 延迟创建。
-- `StageConnection`：`from` / `to` / `checker`——`from == null` 表示 "任意阶段"。
+- `StageConnection`：`from` / `to` / `checker` —— `from == null` 表示 "任意阶段"。
 - 阶段声明：`setStartingStage`、`setSuccessStage` / `addSuccessStages`、`setFailureStage` / `addFailureStages`、`setNoPenaltyFailureStage` / `addNoPenaltyFailureStages`、`setAbandonStage` / `setNoAbandon`。
     - **阶段 id 惯例是枚举常量** (`updateInteractionData` 会做 `((Enum)getCurrentStage()).name()`)。
 
@@ -291,7 +291,7 @@ protected List<Abortable> changes = ...;
     - `while (changed)` 直到无变化，最后 `runTriggers()`。
     - **连接是一次性的** —— 同一条连接只触发一次阶段转换。
 2. **对话驱动**：rules 把完成标志写进目标对象内存 (如 `$gearInHub_delivered = true`)。
-    - 再 `Call $<missionId>_ref updateStage` 或 `Call $<missionId>_ref updateData`——`BaseHubMission.callEvent` 里 `"updateStage"` → `checkStageChangesAndTriggers(dialog, memoryMap)`。
+    - 再 `Call $<missionId>_ref updateStage` 或 `Call $<missionId>_ref updateData` —— `BaseHubMission.callEvent` 里 `"updateStage"` → `checkStageChangesAndTriggers(dialog, memoryMap)`。
     - 这就是 "对话里完成目标" 的标准收尾 (原版 `cheapCom` 的 `$cheapCom_completed = true` + `Call $cheapCom_ref updateStage` 同款)。
 3. **时限**：`setTimeLimit(failStage, days, noLimitWhileInSystem, ...noLimitAfterStages)` → `advanceImpl` 里 `timeLimit.days < elapsed` 且用户不在豁免星系 → `setCurrentStage(failStage)`。
     - 进入 `endLimitStages` 后时限取消。
@@ -305,8 +305,8 @@ protected List<Abortable> changes = ...;
 **任务与规则的握手 (interaction memory 与 mission ref)**：
 
 - `updateInteractionData`：`interactionMemory = memoryMap.get(MemKeys.LOCAL)`。
-    - 写 `$<missionId>_stage`(当前阶段枚举名) 与人物代词/称呼 token(`setPersonTokens`)，再调 `updateInteractionDataImpl()`—— 子类在这里用 `set("$key", value)` 写规则变量 (LOCAL 人物内存，随档持久)。
-- **mission ref**：`setGlobalReference(key)` / `setPersonMissionRef(person, key)` / `setFactionMissionRef` / `setMarketMissionRef` / `setEntityMissionRef` 把任务实例自身写进目标内存 (键已被占用时返回 `false`—— 同键任务互斥)。
+    - 写 `$<missionId>_stage`(当前阶段枚举名) 与人物代词/称呼 token(`setPersonTokens`)，再调 `updateInteractionDataImpl()` —— 子类在这里用 `set("$key", value)` 写规则变量 (LOCAL 人物内存，随档持久)。
+- **mission ref**：`setGlobalReference(key)` / `setPersonMissionRef(person, key)` / `setFactionMissionRef` / `setMarketMissionRef` / `setEntityMissionRef` 把任务实例自身写进目标内存 (键已被占用时返回 `false` —— 同键任务互斥)。
     - rules 侧 `Call $<key> showMap` / `Call $<key> updateStage` / `Call $<key> repSuccess` 就是打到任务的 `callEvent`。
     - ref 作为 `VariableSet` 登记进 `changes`，任务结束 `abort()` 时从内存移除。
 
@@ -344,7 +344,7 @@ endTrigger();                                                 // 必须成对
 **形态二：跨任务全局链 (成熟实例的 `MissionStage` 模式)**。大剧情把 "阶段" 提升为全局状态，每个步骤由独立任务 Intel 承载，步骤结束回写全局阶段：
 
 1. 全局阶段枚举 + 唯一读写入口：管理器 `getStage()` 从全局内存读、`setStage(MissionStage)` 写；规则侧转换命令把字符串转枚举 (写错字符串会把阶段退回 `STAGE_NOT_STARTED`)。
-2. 每步一个任务 Intel(成熟实例中每步一个独立任务类)，**各自的结束条件 (时限耗尽/条件失效) 里回写全局阶段** (如 `STAGE_DOOMED`)—— 不回写则后续阶段继续消费旧状态。
+2. 每步一个任务 Intel(成熟实例中每步一个独立任务类)，**各自的结束条件 (时限耗尽/条件失效) 里回写全局阶段** (如 `STAGE_DOOMED`) —— 不回写则后续阶段继续消费旧状态。
 3. 入口用酒吧路线的调度 (各阶段 bar creator，`shouldShowAtMarket` 只匹配特定全局阶段)；中间步骤用 rules `Call` 委托创建/推进 Intel。
 
 对照结论：`HubMission` 的内部阶段图是**单任务事件链** (阶段 + 连接 + 触发器，自带回滚与清理)；`MissionStage` 全局链是**跨任务事件链** (全局内存 + 每步 Intel + 回写纪律)。
@@ -357,7 +357,7 @@ endTrigger();                                                 // 必须成对
 
 枢纽任务有两条注册路线 (本节示例走 bar 路线)：
 
-**路线 A：酒吧事件 (bar\_events.csv)**—— 酒吧调度器的 mission 分派：
+**路线 A：酒吧事件 (bar\_events.csv)**，酒吧调度器的 mission 分派：
 
 1. `data/campaign/bar_events.csv` 一行 (CSV spec 加载期读取；表头 11 列：`bar event id,tags,freq,prob,min dur,max dur,min timeout,max timeout,min accepted timeout,max accepted timeout,plugin`)：
 
@@ -371,7 +371,7 @@ endTrigger();                                                 // 必须成对
 
 4. `SpecBarEventCreator.createBarEvent()`：`spec.isMission()` → `new HubMissionBarEventWrapper(specId)`。
 
-    - `BarEventSpec.isMission()` 用 `getInstanceOfScript(pluginClass) instanceof HubMissionWithBarEvent` 判定 ——**plugin 必须是 `HubMissionWithBarEvent` 子类**。
+    - `BarEventSpec.isMission()` 用 `getInstanceOfScript(pluginClass) instanceof HubMissionWithBarEvent` 判定 —— **plugin 必须是 `HubMissionWithBarEvent` 子类**。
     - `createMission()` 反射实例化并把 `setMissionId(id)` 与 (若存在同名 person mission spec 的) 图标一并设置。
 5. `HubMissionBarEventWrapper.shouldShowAtMarket(market)`：按 `seed + market.getId().hashCode()` 掷 `spec.getProb()`；通过则 `spec.createMission()`(反射实例化任务)→ `setMissionId(specId)`(与 `createMission` 幂等重复)：
 
@@ -379,7 +379,7 @@ endTrigger();                                                 // 必须成对
     - 否则把 LOCAL 内存切到任务人、`updateInteractionData`、`FireBest` 触发 `<prefix>_blurbBar` 与 `<prefix>_optionBar` 规则。
 7. 用户点选后 rules 走 `contact_acceptBar` → **`BarCMD accept $missionId`**(`BarCMD` 的 `accept` 分支)：返回首个满足 `optionId.startsWith(mission.getTriggerPrefix())` 的 wrapper → `BarEventManager.notifyWasInteractedWith(w)`(酒吧事件的交互收尾)。当前示例的事件 ID 与 trigger prefix 相同，因此结果不变：
 
-    - `w.getMission().accept(dialog, memoryMap)`—— 进入生命周期的接受阶段。
+    - `w.getMission().accept(dialog, memoryMap)` —— 进入生命周期的接受阶段。
 
 **路线 B：联系人任务板 (person\_missions.csv + `BaseMissionHub`)**：
 
@@ -390,7 +390,7 @@ endTrigger();                                                 // 必须成对
     - `min-max rep` / `importance` / `reqMission*` / `icon` / `plugin`。
     - `createMission()` 反射实例化 `plugin`。
 3. 用户与联系人开任务板 (`MissionHubCMD hasHub` → `addMHubOption` → `openMhubOptionSel` → `Call $mHub prepare`)。
-    - `BaseMissionHub.prepare` → `updateOfferedMissions`—— 超时/完成过滤 → 按 `getFrequencyWeight` 建 priority/普通 picker → 数量 `MIN_TO_SHOW`–`MAX_TO_SHOW`(settings `contactMinMissions` / `contactMaxMissions`)。
+    - `BaseMissionHub.prepare` → `updateOfferedMissions` —— 超时/完成过滤 → 按 `getFrequencyWeight` 建 priority/普通 picker → 数量 `MIN_TO_SHOW`–`MAX_TO_SHOW`(settings `contactMinMissions` / `contactMaxMissions`)。
     - `creator.createHubMission(this)` → `setHub` / `setCreator` / `setGenRandom` → `createAndAbortIfFailed(person.getMarket(), false)` → 成功者进 `offered` 并 `updateInteractionData`。
 4. `listMissions`：`FireBest.fire(..., getTriggerPrefix() + "_blurb true")` / `"_option true"` 写任务列表选项。
     - 接受：`Call $mHub accept $missionId`(`BaseMissionHub.callEvent` → `accept`：`curr.accept(dialog, memoryMap)` → 从 `offered` 移除 → creator 进 accepted 超时)。
@@ -430,7 +430,7 @@ rules 侧的 `$gearInHub_ref` / `$gearInHub_stage` / `gearInHub_blurbBar` / `gea
 - 奖励与声望用方法族：`setCreditReward` / `setCreditReward(CreditReward)` / `setXPReward` / `setRepPersonChangesXxx` / `setRepFactionChangesXxx` / `setRepChanges(...)` / `setNoRepChanges()`。
     - 直接调 `adjustRep` 会绕过 `adjustedRep` 一次性保护，且与 `repSuccess`/`repFailure` 规则动作重复结算。
 - 目标选择先 `require*` 后 `pick*`(`HubMissionWithSearch` 的要求系统)，不要在 `create` 里手写遍历。手写 → 复用不了市场/星系筛选与 `preferMarketInDirectionOfOtherMissions` 等成品能力，且 `genRandom` 一致性被破坏。
-- 每阶段至多一个 `makeImportant` 主要目标 (`makePrimaryObjective`)，不要给一个阶段塞多个重要标记 ——Intel 地图定位只取第一个，其余标记只增加噪声。
+- 每阶段至多一个 `makeImportant` 主要目标 (`makePrimaryObjective`)，不要给一个阶段塞多个重要标记 —— Intel 地图定位只取第一个，其余标记只增加噪声。
 
 ## 实现生涯任务
 
@@ -569,7 +569,7 @@ mods/GearIndustry/
     - 目标选择要求系统 (`HubMissionWithSearch`)。
     - 与同一联系人同时存在的其他任务会互相避开方向 (`preferMarketInDirectionOfOtherMissions`)。
 - `findOrCreateTrader(faction, market, true)`：目标市场生成/复用联系人 (`cleanUpOnMissionOverIfWasNewPerson=true` 时新人物随任务结束清理)。
-- `setStageOnMemoryFlag(Stage.RETURN, sourceContact, "$gearInHub_dataReceived")`：完成检测连接 ——rules 在联系人对话里写 `$gearInHub_dataReceived = true`(写进联系人内存) 再 `Call $gearInHub_ref updateStage`，连接命中切到 RETURN。
+- `setStageOnMemoryFlag(Stage.RETURN, sourceContact, "$gearInHub_dataReceived")`：完成检测连接 —— rules 在联系人对话里写 `$gearInHub_dataReceived = true`(写进联系人内存) 再 `Call $gearInHub_ref updateStage`，连接命中切到 RETURN。
     - **目标内存与规则作用域必须一致** (规则强度 "必须" 第 3 条)。
 - `setTimeLimit(Stage.FAILED, MISSION_DAYS, null)`：时限；`advanceImpl` 按任务总 `elapsed`(游戏天) 判定，超时切 FAILED。
 - `makeImportant(sourceContact, "$gearInHub_hasData", Stage.CONTACT)`：CONTACT 阶段联系人市场点亮地图标记；`getMapLocation` 用默认实现 (当前阶段第一个重要实体)。
@@ -610,7 +610,7 @@ $gearInHub_delivered = true
 Call $gearInHub_ref updateStage","The trader takes the datapad and runs a quick check: ""That's everything. Here's your payment - $gearInHub_reward credits.""",contact_pickAnotherGreeting:Continue,
 ```
 
-交付收尾两条规则沿用原版同类任务的 `PickGreeting` 模式 (原版 `cheapCom` 取货与 `extr` / `jabr` 回任务人同款)：前往目标市场与联系人 `$gearInHub_contactName` 通讯时命中 `gearInHubDataReceivedGreeting`(条件 `$gearInHub_hasData`——CONTACT 阶段 `makeImportant` 写在联系人内存的阶段标志)，脚本把 `$gearInHub_dataReceived = true` 写进联系人内存 (与 `setStageOnMemoryFlag(Stage.RETURN, sourceContact, ...)` 作用域一致) 并 `Call $gearInHub_ref updateStage`，阶段切到 RETURN；回来源市场与任务人通讯时命中 `gearInHubDeliveryGreeting`(条件 `$gearInHub_returnMark`——RETURN 阶段地图标记标志，进入 RETURN 时由 `makeImportant` 写入；脚本把 `$gearInHub_delivered = true` 写进任务人内存 —— 完成连接监听的标志，与阶段标志分开)，并 `Call $gearInHub_ref updateStage`，连接 RETURN→COMPLETED 命中并结算。两条规则对应验证方案步骤 3/4；`score:1000` 让规则胜过原版通用问候，`contact_pickAnotherGreeting:Continue` 是原版问候回环选项 (选后回到通讯问候流程)。
+交付收尾两条规则沿用原版同类任务的 `PickGreeting` 模式 (原版 `cheapCom` 取货与 `extr` / `jabr` 回任务人同款)：前往目标市场与联系人 `$gearInHub_contactName` 通讯时命中 `gearInHubDataReceivedGreeting`(条件 `$gearInHub_hasData` —— CONTACT 阶段 `makeImportant` 写在联系人内存的阶段标志)，脚本把 `$gearInHub_dataReceived = true` 写进联系人内存 (与 `setStageOnMemoryFlag(Stage.RETURN, sourceContact, ...)` 作用域一致) 并 `Call $gearInHub_ref updateStage`，阶段切到 RETURN；回来源市场与任务人通讯时命中 `gearInHubDeliveryGreeting`(条件 `$gearInHub_returnMark` —— RETURN 阶段地图标记标志，进入 RETURN 时由 `makeImportant` 写入；脚本把 `$gearInHub_delivered = true` 写进任务人内存 —— 完成连接监听的标志，与阶段标志分开)，并 `Call $gearInHub_ref updateStage`，连接 RETURN→COMPLETED 命中并结算。两条规则对应验证方案步骤 3/4；`score:1000` 让规则胜过原版通用问候，`contact_pickAnotherGreeting:Continue` 是原版问候回环选项 (选后回到通讯问候流程)。
 
 规则分类必须与 mission id 一致
 

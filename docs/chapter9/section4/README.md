@@ -110,7 +110,7 @@ fake market 意味着什么
 
 fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市场质量计算，不能把它当作固定 `0.5`，也不能据此断言舰队必定满船 D 插。
 
-3. **空舰队创建** (`createEmptyFleet(factionId, fleetType, market)`)：`Global.getFactory().createEmptyFleet(factionId, faction.getFleetTypeName(fleetType), true)`(`FactoryAPI.createEmptyFleet`，`aiMode=true`—— 关闭补给/燃料消耗、事故与船员需求)。
+3. **空舰队创建** (`createEmptyFleet(factionId, fleetType, market)`)：`Global.getFactory().createEmptyFleet(factionId, faction.getFleetTypeName(fleetType), true)`(`FactoryAPI.createEmptyFleet`，`aiMode=true` —— 关闭补给/燃料消耗、事故与船员需求)。
     - 写内存 `$fleetType`(`MemFlags.MEMORY_KEY_FLEET_TYPE`) 与 `$sourceMarket`(`MEMORY_KEY_SOURCE_MARKET`；fake 市场除外)。
     - 给所有 `AbilitySpecAPI.isAIDefault()` 的能力 `fleet.addAbility(id)`。
     - `Misc.getSalvageSeed(fleet)`(写内存 `$salvageSeed`，`MemFlags.SALVAGE_SEED`)。
@@ -118,7 +118,7 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 4. **doctrine 拆分**：`factionId` 缺省取 `source.getFactionId()`。
     - `ShipPickMode mode = Misc.getShipPickMode(market, factionId)`(质量数据供应商市场为 null 或供应商势力与目标势力不同 → `IMPORTED`，否则 `PRIORITY_THEN_ALL`；`modeOverride` 可覆盖)。
     - `combatPts` 按 `doctrine.getWarships/getCarriers/getPhaseShips` 权重 (各加 `random.nextInt(3)-2` 抖动；`isStrictComposition()` 时不抖、各减 1) 拆成 `warships/carriers/phase` 三份，余数并入 warships。
-    - **`banPhaseShipsEtc`** = 非玩家势力 ∧ `combatPts < FLEET_POINTS_THRESHOLD_FOR_ANNOYING_SHIPS(50)`—— 小舰队禁用 "烦人" 舰 (相位与特定船，`forceAllowPhaseShipsEtc=true` 可放开)。
+    - **`banPhaseShipsEtc`** = 非玩家势力 ∧ `combatPts < FLEET_POINTS_THRESHOLD_FOR_ANNOYING_SHIPS(50)` —— 小舰队禁用 "烦人" 舰 (相位与特定船，`forceAllowPhaseShipsEtc=true` 可放开)。
 5. **点数投放**：`params.addShips` 预置变体优先 (`addToFleet(ShipRolePick)`：`createFleetMember(SHIP, variantId)` + 起名 + `addFleetMember`，返回 fleet point cost 扣预算)。
     - `treatCombatFreighterSettingAsFraction` 时按 `combatFreighters = min(freighterPts, warships)*1.5 × getCombatFreighterProbability()` 加战斗货船；随机命中概率时按 `min(freighterPts, warships)*1.5`。
     - `addCombatFleetPoints`(warship/carrier/phase 三路 picker，按 `BASE_COUNTS_WITH_4`/`MAX_EXTRA_WITH_4` 尺寸计数表逐轮抽选，`maxShipSize`/`minShipSize` 过滤，`PRIORITY_THEN_ALL` 时优先抽 priority capital)。
@@ -135,7 +135,7 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
     - `Misc.setSpawnFPMult(fleet, actualPoints / max(1, requestedPoints))`(写内存 `$spawnFPMult`，`FleetFactoryV3.KEY_SPAWN_FP_MULT = "$spawnFPMult"`；读取 `Misc.getSpawnFPMult`，`com.fs.starfarer.api.util.Misc`；使用方：`BaseRaidStage` 还原 "请求 FP" 判断)。
 10. **inflater 挂载**：`DefaultFleetInflaterParams p`：
 
-- `quality`(= `params.quality + params.qualityMod`，`qualityOverride` 非 null 时直接取 `qualityOverride`—— **质量优先级：qualityOverride > (quality + qualityMod)**)。
+- `quality`(= `params.quality + params.qualityMod`，`qualityOverride` 非 null 时直接取 `qualityOverride` —— **质量优先级：qualityOverride > (quality + qualityMod)**)。
 - `averageSMods`(传参时)、`persistent = true`、`seed = random.nextLong()`、`mode`、`timestamp`、`allWeapons`、`doctrineOverride` 时 `rProb = doctrine.getAutofitRandomizeProbability()`、`factionId`。
 - `Misc.getInflater(fleet, p)`(`com.fs.starfarer.api.util.Misc`：`Global.getSector().getPluginPicker().pickFleetInflater(fleet, params)`)→ `fleet.setInflater(inflater)`。
 
@@ -161,7 +161,7 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 
 - **候选过滤**：跳过战机联队、旗舰、平民 (`putOfficersOnCivShips=false` 时)、已有非默认舰长的成员；记录最大 hull size；按 `getFleetPointCost()` 加权把成员塞进两个 picker(`flagshipPicker` 只收尺寸 ≥ 最大尺寸的成员)；picker 为空时取 `members.get(0)` 作备用值。
 - **旗舰**：`flagshipPicker.pickAndRemove()` 选出旗舰，从军官 picker 移除。
-    - **`fleet.getFleetData().setFlagship(flagship)`**——`FleetDataAPI.setFlagship` 的副作用：清所有成员旗舰位、把旧旗舰/舰长是玩家的人物重置为默认舰长、新旗舰舰长 = 舰队指挥官 (`setCaptain(getCommander())`)。
+    - **`fleet.getFleetData().setFlagship(flagship)`** —— `FleetDataAPI.setFlagship` 的副作用：清所有成员旗舰位、把旧旗舰/舰长是玩家的人物重置为默认舰长、新旗舰舰长 = 舰队指挥官 (`setCaptain(getCommander())`)。
 - **指挥官**：`params.commander` 非 null 直接用 (`isPlayer()` 时军官数量改由玩家 `getOfficerNumber()` 技能决定)。
     - 否则 `OfficerManagerEvent.createOfficer(faction, commanderLevel, pref, false, null, true, true, -1, random)`，等级 = `min(maxOfficerLevel, maxAIFleetCommanderLevel)`(`settings.json` 中 `maxAIFleetCommanderLevel` = 7；`commanderLevelLimit` 非 0 可覆盖)。
     - **`timid` personality 一律升为 `cautious`**；`params.commander` 为空时 `setRankId(Ranks.SPACE_COMMANDER)` + `setPostId(Ranks.POST_FLEET_COMMANDER)`。
@@ -205,14 +205,14 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 `DefaultFleetInflater.inflate`(`com.fs.starfarer.api.impl.campaign.fleets.DefaultFleetInflater`) 行为要点：
 
 - **可用池**：武器 = `faction.getKnownWeapons()` 过滤 `isWeaponKnownAt(id, timestamp)`，战机同理；按 tier/autofit 分类与 "priority"(`faction.isWeaponPriority`) 分组；船插 = `faction.getKnownHullMods()`。
-- **质量驱动**：`getTierProbability(tier, quality)`——tier1 `min(0.9, 0.75+q)`、tier2 `min(0.9, 0.5+0.5q)`、tier3 `min(0.9, 0.25+0.25q)`，`allWeapons=true` 时全 1。
+- **质量驱动**：`getTierProbability(tier, quality)` —— tier1 `min(0.9, 0.75+q)`、tier2 `min(0.9, 0.5+0.5q)`、tier3 `min(0.9, 0.25+0.25q)`，`allWeapons=true` 时全 1。
     - 每成员用 `CoreAutofitPlugin.doFit(currVariant, target, maxSmods, this)` 重新装配。
 - **D 插**：`averageDmods = (1 - quality) / qualityPerDMod`(`settings.json` 中 `qualityPerDMod` = 0.2)。
     - 每成员 `getNumDModsToAdd = round(avg + random*3 - 2)` 钳 \[0,5\] 减已有 → `DModManager.setDHull` + `addDMods`。
     - **站 (station) 不加 D 插**。
 - **S 插**：`averageSMods` 参数非 null 且非平民时，`getMaxSMods` = `averageSMods ± 1`(各 25% 概率) 钳 \[0,3\]，扣已有 S 插。
 - **随机化**：`rProb = doctrine.getAutofitRandomizeProbability()`(`doctrineOverride` 时用其值) 概率开启 `RANDOMIZE`；升级概率 `min(0.1 + 0.5q, 0.5)`。
-    - `p.seed` 非 null 时每成员 `random = new Random(p.seed * shipName.hashCode())`—— **同种子重膨胀结果一致** (注释原文："need this so that when reinflating a fleet that lost members, the members reinflate consistently")。
+    - `p.seed` 非 null 时每成员 `random = new Random(p.seed * shipName.hashCode())` —— **同种子重膨胀结果一致** (注释原文："need this so that when reinflating a fleet that lost members, the members reinflate consistently")。
 - **结果写回**：每成员建空变体 `createEmptyVariant(fleet.getId() + "_" + index, target.getHullSpec())`，`target.isStockVariant()` 时 `setOriginalVariant(target.getHullVariantId())`。
     - `doFit` 后 `setSource(VariantSource.REFIT)` + `member.setVariant(currVariant, false, false)`。
     - `memberIndex` 逐成员递增。
@@ -243,7 +243,7 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 
 舰队内存读取纪律
 
-纯读取**必须**用 `getMemoryWithoutUpdate()`——`getMemory()` 会触发全插件 `updateEntityFacts` 回调，高频读取会造成回调风暴。
+纯读取**必须**用 `getMemoryWithoutUpdate()` —— `getMemory()` 会触发全插件 `updateEntityFacts` 回调，高频读取会造成回调风暴。
 
 ### 投放 (spawn)
 
@@ -255,13 +255,13 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 
 语义：
 
-1. `this.addObject(fleet)`—— **入容器** (`getAllEntities`/`getFleets` 可见，`isAlive()` 变 true)；
+1. `this.addObject(fleet)`：**入容器** (`getAllEntities`/`getFleets` 可见，`isAlive()` 变 true)；
 2. 坐标 = `anchor.getLocation() + (xOffset, yOffset)`(anchor 为 null 时坐标就是偏移本身)→ `fleet.setLocation(...)`；
-3. `fleet.setNoEngaging(3.0F)`—— **投放后 3 秒内不交战** (`CampaignFleetAPI.setNoEngaging`)。
+3. `fleet.setNoEngaging(3.0F)`：**投放后 3 秒内不交战** (`CampaignFleetAPI.setNoEngaging`)。
 
 原版使用方：遭遇战生成 (anchor = 玩家舰队 + 随机 ±100 偏移；重生，anchor null)、开局玩家舰队 (anchor null)。
 
-替代路径：`location.addEntity(fleet)` + `fleet.setLocation(x, y)` + `fleet.forceSync()`——`spawnFleet` 省掉这三步并附赠 3 秒免战。
+替代路径：`location.addEntity(fleet)` + `fleet.setLocation(x, y)` + `fleet.forceSync()` —— `spawnFleet` 省掉这三步并附赠 3 秒免战。
 
 **投放必须发生在生涯引擎建立之后**；创建与投放之间舰队不在任何容器里 (`isAlive()==false`，地点容器语义)。
 
@@ -282,7 +282,7 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 3. **点数是目标不是硬上限**。"舰队点数与请求不符" 是**正常现象**，实际受市场供应、`maxShipsInAIFleet` 裁剪与角色缺货影响；需要还原请求值用 `Misc.getSpawnFPMult(fleet)`。
 4. **`flagshipVariantId` / `flagshipVariant` 只在 `getFlagship()` 非 null 时应用**，且 `setVariant(variant, false, true)` 会连船体一起换。舰队为空时不生效；指定了异 hull 的旗舰变体后，旗舰船体与角色会与抽选时不同。
 5. **`setFlagship(member)` 的副作用必须接受**：其他成员舰长被重置为默认、新旗舰舰长 = 舰队指挥官。旗舰读回 `getCaptain() == getCommander()`；不要用逐成员 `setCaptain` 对抗该语义。
-6. **膨胀前读取成员装配拿到的是未按质量调整的生成态变体**。需要完整装配必须先触发 `inflateIfNeeded()`—— 引擎在 AI/工具提示/战斗前自动触发；在此之前读 `member.getVariant()`：武器仍是角色变体原样、无 D 插/S 插 (`source` 仍是 STOCK/生成时来源，非 REFIT)。
+6. **膨胀前读取成员装配拿到的是未按质量调整的生成态变体**。需要完整装配必须先触发 `inflateIfNeeded()` —— 引擎在 AI/工具提示/战斗前自动触发；在此之前读 `member.getVariant()`：武器仍是角色变体原样、无 D 插/S 插 (`source` 仍是 STOCK/生成时来源，非 REFIT)。
 7. **`removeAfterInflating()` = `persistent == null || !persistent`**。V3 生成 `persistent=true` → 膨胀后 inflater 保留；自定义 inflater 忘记设 persistent 时，首次 `inflateIfNeeded` 后 `getInflater()` 变 null，二次膨胀不可能。
 8. **读写舰队内存必须用 `getMemoryWithoutUpdate()`**。`getMemory()` 会触发全插件 `updateEntityFacts` 回调，高频读取会造成回调风暴。
 9. **投放必须在生涯引擎建立后调用** `spawnFleet`(或 `addEntity` + `setLocation`)。`createFleet` 后没投放：舰队不在容器、`isAlive()==false`、地图不可见，且无任何报错。
@@ -428,9 +428,9 @@ mods/GearIndustry/
 
 - `implements EveryFrameScript`：`isDone()` 返回 `executed`(演示执行后自停)；`runWhilePaused()` 返回 `false`；`advance` 包 `try/catch`(任一步抛错只记 ERROR 不自停失败，前置章节同款写法)。
 - `REGISTER_MARK`：persistent data 判断键 (`"GearIn_FleetFactory"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不含任何工作单元编号变体。
-- `FleetParamsV3` market 构造器：`source=jangala`、`fleetType=patrolMedium`、六类点数、`qualityMod=0`——`params.quality` 即市场质量 (`Misc.getShipQuality`)，日志里与 `qualityOverride` 并排可对照优先级。
+- `FleetParamsV3` market 构造器：`source=jangala`、`fleetType=patrolMedium`、六类点数、`qualityMod=0` —— `params.quality` 即市场质量 (`Misc.getShipQuality`)，日志里与 `qualityOverride` 并排可对照优先级。
 - `params.qualityOverride = 0.6f`：有效质量 0.6 → `averageDmods=(1-0.6)/0.2=2`，多数成员带 1–3 个 D 插；tier2 武器概率 `0.5+0.3=0.8`、tier3 `0.25+0.15=0.4`。
-- `params.flagshipVariantId = "tempest_Attack"`：旗舰装配覆盖 (`createFleet` 旗舰变体段)，换 hull 为 `tempest`—— 日志 `flagship hull=tempest variant=tempest_Attack`。
+- `params.flagshipVariantId = "tempest_Attack"`：旗舰装配覆盖 (`createFleet` 旗舰变体段)，换 hull 为 `tempest` —— 日志 `flagship hull=tempest variant=tempest_Attack`。
 - `fleet.getFlagship().getCaptain() == fleet.getCommander()`：`setFlagship` 的副作用 (`FleetDataAPI.setFlagship` 内部实现)，演示核对 `captainIsCommander=true`。
 - `fleet.inflateIfNeeded()`：手动触发膨胀 (引擎在 AI/工具提示/战斗前也会自动触发)；`isInflated=true` 且 `inflaterAttached=true`(`persistent=true` 保留)；成员变体来源 REFIT、D 插合计按质量分布。
 - 内存五键：`$fleetType`/`$sourceMarket` 来自 `createEmptyFleet`；`$salvageSeed` 来自 `Misc.getSalvageSeed`；`$spawnFPMult` 来自 `Misc.setSpawnFPMult`(实际/请求 FP)；`$overrideNoAutofit` 未写 (默认 false)。
@@ -505,7 +505,7 @@ location.spawnFleet(market.getPrimaryEntity(), 0f, 0f, fleet);
     GearIn fleet factory start: market=jangala size=6 location=corvus quality=<市场质量> GearIn fleet factory params: faction=hegemony fleetType=patrolMedium marketQuality=<Q> qualityOverride=0.60 totalPts=58 GearIn fleet factory created: name=Patrol faction=hegemony fleetType=patrolMedium members=<N> fighters=<战机数> fp=<FP> GearIn fleet factory flagship: hull=tempest variant=tempest_Attack captainIsCommander=true GearIn fleet factory commander: name=<指挥官名> level=<L> personality=<personality> officers=<M> GearIn fleet factory pre-inflate: isInflated=false inflaterAttached=true inflaterQuality=0.60 GearIn fleet factory inflated: isInflated=true inflaterAttached=true refitVariants=<N> dmods=<D> GearIn fleet factory memory: fleetType=patrolMedium sourceMarket=jangala salvageSeed=<S> spawnFPMult=<mult> GearIn fleet factory spawned: inLocation=true at=(<ax>, <ay>) anchor=(<ax>, <ay>) alive=true GearIn fleet factory patrol: name=Fast Picket members=<P> fp=<FPp> flagship=<hull> GearIn fleet factory done: fleetAlive=false patrolAlive=false
     ```
 
-    其中 `<N>` 是生成成员数 (40+18 点数预算下典型 7–12 艘)、`<战机数>` 是战机联队数 (无航母时为 0)、`<FP>` 是实际 fleet points(**可能低于 58**—— 点数是目标不是硬上限)、`<L>` 是指挥官等级 (`officerLevelBonus=1` 生效)、`<M>` 是军官数 (≥1 为正常)、`<D>` 是 D 插总数 (质量 0.6 下典型 ≈ 2×成员数)、`<mult>` 是 `$spawnFPMult`(实际/请求)。`flagship` 与 `patrol` 两行的 `fleetAlive=false` 证明清理生效。
+    其中 `<N>` 是生成成员数 (40+18 点数预算下典型 7–12 艘)、`<战机数>` 是战机联队数 (无航母时为 0)、`<FP>` 是实际 fleet points(**可能低于 58** —— 点数是目标不是硬上限)、`<L>` 是指挥官等级 (`officerLevelBonus=1` 生效)、`<M>` 是军官数 (≥1 为正常)、`<D>` 是 D 插总数 (质量 0.6 下典型 ≈ 2×成员数)、`<mult>` 是 `$spawnFPMult`(实际/请求)。`flagship` 与 `patrol` 两行的 `fleetAlive=false` 证明清理生效。
 
 - **游戏内地图**：演示期间 (日志可见时)`jangala` 行星位置短暂出现两支舰队图标 (同帧即被移除，若看不到可在暂停时核对日志)；演示结束后地图无残留。
 

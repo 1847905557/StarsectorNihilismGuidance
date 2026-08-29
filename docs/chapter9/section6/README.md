@@ -51,7 +51,7 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 **创建与登记两条链**：
 
 1. **`addIntel(plugin)`**(`IntelManagerAPI`) 直接加入已知集合：置玩家可见时间戳、调 `reportMadeVisibleToPlayer()`、`autoAddCampaignMessage()`(默认 true) 时经 `CampaignUIAPI.addMessage` 弹左下消息 (`IntelManagerAPI.addIntel`)。
-    - **`addIntel` 绕过通信中继可见性检查** ——`IntelInfoPlugin.canMakeVisibleToPlayer` "Only checked if adding using IntelManager.queueIntel(). addIntel() bypasses this and all other checks."。
+    - **`addIntel` 绕过通信中继可见性检查** —— `IntelInfoPlugin.canMakeVisibleToPlayer` "Only checked if adding using IntelManager.queueIntel(). addIntel() bypasses this and all other checks."。
     - `addIntel(plugin, forceNoMessage)` / `addIntel(plugin, forceNoMessage, textPanel)` 控制消息行为。
 2. **`queueIntel(plugin[, maxCommQueueDays])`**(`IntelManagerAPI`) 加入通信队列；玩家进入通信中继范围或 `forceAddNextFrame()` 时，转为可见 intel 并出队。
     - 同批最多 4 条单独弹出，第 5 条起合并为一条 "New intel (N)" 汇总。
@@ -75,7 +75,7 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 | `BUTTON_DELETE` / `addDeleteButton` / `buttonPressConfirmed` | 删除按钮 (确认框 + `endImmediately`) |
 | `getCommMessageSound` | 发布/更新音效 (`ui_intel_something_posted` / `ui_intel_update` 等常量) |
 
-**`MessageIntel`**(`com.fs.starfarer.api.impl.campaign.intel.MessageIntel`) 是左下消息区的**纯消息**类，"For campaign messages that show up in the lower-left corner, but are not tied to an actual piece of intel."—— 它不绑定任何情报页面。构造与追加入口：`new MessageIntel(text[, color[, highlights]])`、`addLine(...)` 多行追加、`getCommMessageSound` 默认 `ui_intel_minor_message`；用 `CampaignUIAPI.addMessage(IntelInfoPlugin)` 发送。
+**`MessageIntel`**(`com.fs.starfarer.api.impl.campaign.intel.MessageIntel`) 是左下消息区的**纯消息**类，"For campaign messages that show up in the lower-left corner, but are not tied to an actual piece of intel." —— 它不绑定任何情报页面。构造与追加入口：`new MessageIntel(text[, color[, highlights]])`、`addLine(...)` 多行追加、`getCommMessageSound` 默认 `ui_intel_minor_message`；用 `CampaignUIAPI.addMessage(IntelInfoPlugin)` 发送。
 
 **`IntelInfoPlugin` 约定要点** (`com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`)：`getIntelTags(map)` **必须处理 map 为 null**("Method NEEDS to handle map being null gracefully.")；`NEW_DAYS = 5` 是新情报 "NEW" 标记窗口；`IntelSortTier` 是排序档；`getMapLocation(map)` 与 `getArrowData(map)` 控制地图定位与箭头；`isHidden()` 让已可见情报在 UI 与消息中隐藏 (`BaseIntelPlugin` 默认实现含教程状态判断)。
 
@@ -105,11 +105,11 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 
 把 `showInteractionDialog` 的返回值写进日志
 
-对话框在已有对话框显示时会静默返回 `false`—— 不记录返回值，故障就只剩 "对话框没弹出来" 这个没有报错的现象。本节演示正是把 `shown` 布尔值记入日志，`shown=false` 时其余演示不受影响。
+对话框在已有对话框显示时会静默返回 `false` —— 不记录返回值，故障就只剩 "对话框没弹出来" 这个没有报错的现象。本节演示正是把 `shown` 布尔值记入日志，`shown=false` 时其余演示不受影响。
 
-**面板常用成员**：`OptionPanelAPI`(`com.fs.starfarer.api.campaign.OptionPanelAPI`)——`addOption(text, data[, tooltip])`、`addOption(text, data, color, tooltip)`、`clearOptions`；`setEnabled(data, enabled)`("Only works for options, not selectors.")、`setShortcut`、`addSelector`、`addOptionConfirmation`、`removeOption`、`setStoryOptionParams`。
+**面板常用成员**：`OptionPanelAPI`(`com.fs.starfarer.api.campaign.OptionPanelAPI`) —— `addOption(text, data[, tooltip])`、`addOption(text, data, color, tooltip)`、`clearOptions`；`setEnabled(data, enabled)`("Only works for options, not selectors.")、`setShortcut`、`addSelector`、`addOptionConfirmation`、`removeOption`、`setStoryOptionParams`。
 
-`TextPanelAPI`(`com.fs.starfarer.api.campaign.TextPanelAPI`)——`addPara(text[, color])`、`addPara(format, hl, highlights)`、`addParagraph`、`highlightInLastPara`、`setHighlightColorsInLastPara`、`clear`；另有 `getDialog`、`beginTooltip`/`addTooltip`。
+`TextPanelAPI`(`com.fs.starfarer.api.campaign.TextPanelAPI`) —— `addPara(text[, color])`、`addPara(format, hl, highlights)`、`addParagraph`、`highlightInLastPara`、`setHighlightColorsInLastPara`、`clear`；另有 `getDialog`、`beginTooltip`/`addTooltip`。
 
 本节的 `GearInServicesDialog` 只用到其中两个入口：`addOption` 建立选项、`addPara` 追加文本行；其余成员在需要时再查。
 
@@ -262,13 +262,13 @@ mods/GearIndustry/
 
 ### GearInServicesIntel(情报插件)
 
-**职责**：自定义情报插件 (`BaseIntelPlugin` 子类)—— 实现名称/图标/小描述/Intel 标签；`getIcon()` 返回 null 时不显示图标；`getIntelTags(map)` 先调 `super.getIntelTags(map)`(基类默认实现内部已做 null 判断) 再追加自定义 tag。
+**职责**：自定义情报插件 (`BaseIntelPlugin` 子类) —— 实现名称/图标/小描述/Intel 标签；`getIcon()` 返回 null 时不显示图标；`getIntelTags(map)` 先调 `super.getIntelTags(map)`(基类默认实现内部已做 null 判断) 再追加自定义 tag。
 
 **绑定注册入口**：由 `GearInIntelServicesScript` 经 `IntelManagerAPI.addIntel(plugin)` 登记 (`addIntel` 绕过可见性检查，立即置玩家可见时间戳并弹出左下消息)。
 
 ### GearInServicesDialog(对话框插件)
 
-**职责**：演示对话框插件 (`InteractionDialogPlugin`)——`init` 写入文本面板与三个选项 (查看势力关系 / 查看舰队货物 / 关闭演示) 并绑定 ESC；`optionSelected` 按 `optionData` 分支展示对应信息，关闭选项与 ESC 走 `dismiss()`；未使用的回调保留空实现。
+**职责**：演示对话框插件 (`InteractionDialogPlugin`) —— `init` 写入文本面板与三个选项 (查看势力关系 / 查看舰队货物 / 关闭演示) 并绑定 ESC；`optionSelected` 按 `optionData` 分支展示对应信息，关闭选项与 ESC 走 `dismiss()`；未使用的回调保留空实现。
 
 **绑定注册入口**：由 `GearInDialogServicesScript` 经 `CampaignUIAPI.showInteractionDialog(plugin, null)` 打开 (target 传 null，`getInteractionTarget()` 返回 null)。
 
@@ -420,21 +420,21 @@ public void optionSelected(String optionText, Object optionData) {
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global`—— 全局入口：`getSector()`、`getLogger()`。
-- `com.fs.starfarer.api.campaign.SectorAPI`—— 生涯引擎入口。
+- `com.fs.starfarer.api.Global`，全局入口：`getSector()`、`getLogger()`。
+- `com.fs.starfarer.api.campaign.SectorAPI`：生涯引擎入口。
     - 情报与对话框入口都能从这里进入：`getIntelManager` / `getCampaignUI` / `getPersistentData` / `addScript`。
-- `com.fs.starfarer.api.campaign.comm.IntelManagerAPI`—— 情报登记集合：`addIntel` / `queueIntel` / `removeIntel` / `removeAllThatShouldBeRemoved`。
-- `com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`—— 单条情报约定：`getIntelTags(map)` 必须容忍 null map。
-- `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`——MOD 自定义情报标准父类：结束倒计时、删除按钮、更新消息、默认图标语义。
-- `com.fs.starfarer.api.impl.campaign.intel.MessageIntel`—— 左下消息区纯消息类：`new MessageIntel(...)` + `addLine(...)`。
-- `com.fs.starfarer.api.campaign.InteractionDialogAPI`—— 对话框本体：面板、选项行为 (ESC/确认/回显)、picker 族、`dismiss()`。
-- `com.fs.starfarer.api.campaign.InteractionDialogPlugin`—— 对话框内容插件：七方法生命周期 (`init` → `optionSelected` → `advance` → `backFromEngagement`)。
-- `com.fs.starfarer.api.campaign.OptionPanelAPI`—— 选项面板：`addOption` / `setEnabled` / `addSelector` / `addOptionConfirmation`。
-- `com.fs.starfarer.api.campaign.TextPanelAPI`—— 文本面板：`addPara` / `highlightInLastPara` / `clear`。
-- `com.fs.starfarer.api.campaign.CampaignUIAPI`—— 生涯 UI：`showInteractionDialog` / `addMessage` / `isShowingDialog`。
-- `com.fs.starfarer.api.util.Misc`—— 文本与高亮颜色常量 (`getTextColor` / `getGrayColor` 等)。
-- `com.fs.starfarer.api.impl.campaign.ids.Tags`——intel 标签常量。
-- `data/scripts/gearin/campaign/`—— 本节五个示例类所在目录 (MOD 内相对路径)。
+- `com.fs.starfarer.api.campaign.comm.IntelManagerAPI`，情报登记集合：`addIntel` / `queueIntel` / `removeIntel` / `removeAllThatShouldBeRemoved`。
+- `com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`，单条情报约定：`getIntelTags(map)` 必须容忍 null map。
+- `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`，MOD 自定义情报标准父类：结束倒计时、删除按钮、更新消息、默认图标语义。
+- `com.fs.starfarer.api.impl.campaign.intel.MessageIntel`，左下消息区纯消息类：`new MessageIntel(...)` + `addLine(...)`。
+- `com.fs.starfarer.api.campaign.InteractionDialogAPI`，对话框本体：面板、选项行为 (ESC/确认/回显)、picker 族、`dismiss()`。
+- `com.fs.starfarer.api.campaign.InteractionDialogPlugin`，对话框内容插件：七方法生命周期 (`init` → `optionSelected` → `advance` → `backFromEngagement`)。
+- `com.fs.starfarer.api.campaign.OptionPanelAPI`，选项面板：`addOption` / `setEnabled` / `addSelector` / `addOptionConfirmation`。
+- `com.fs.starfarer.api.campaign.TextPanelAPI`，文本面板：`addPara` / `highlightInLastPara` / `clear`。
+- `com.fs.starfarer.api.campaign.CampaignUIAPI`，生涯 UI：`showInteractionDialog` / `addMessage` / `isShowingDialog`。
+- `com.fs.starfarer.api.util.Misc`：文本与高亮颜色常量 (`getTextColor` / `getGrayColor` 等)。
+- `com.fs.starfarer.api.impl.campaign.ids.Tags`：intel 标签常量。
+- `data/scripts/gearin/campaign/`：本节五个示例类所在目录 (MOD 内相对路径)。
 
 ## 完整最小例
 

@@ -13,7 +13,7 @@
 - 定位 `<存档目录>/common/` 和 MOD 专属文件；
 - 使用原版入口或 LazyLib 读取 common 文本与 JSON；
 - 使用 `writeTextFileToCommon`、`writeJSONToCommon` 或 `CommonDataJSONObject.save()` 写入数据；
-- 组织读 —— 改 —— 写流程，处理缺失字段、版本迁移和未知字段；
+- 组织读 → 改 → 写流程，处理缺失字段、版本迁移和未知字段；
 - 从文件内容、重启结果和日志定位 common 读写故障。
 
 ## 前置知识
@@ -98,7 +98,7 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json"))
 
 `put` 先改变内存对象；`close()` 会调用 `save()` 完成写盘。try-with-resources 块结束时数据即保存，显式 `save()` 用于块内提前持久化；写入后重新加载文件，才能确认磁盘内容已经更新。
 
-### 读 —— 改 —— 写与迁移
+### 读 → 改 → 写与迁移
 
 写入前先读取当前对象，再修改需要修改的键。保留未知字段，缺省值只在字段不存在时补入。版本迁移完成后写回当前版本，避免每次启动重复迁移。
 

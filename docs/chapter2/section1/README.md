@@ -68,7 +68,7 @@ public class GearInSpeedBooster extends BaseHullMod {
 
 ## 注册船插数据行
 
-游戏不会自动加载未注册的类。船插的登记位置是 `data/hullmods/hull_mods.csv`—— 在 MOD 根目录建立该文件，写入以下两行 (第一行是表头)：
+游戏不会自动加载未注册的类。船插的登记位置是 `data/hullmods/hull_mods.csv` —— 在 MOD 根目录建立该文件，写入以下两行 (第一行是表头)：
 
 ```text {2}
 name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
@@ -165,7 +165,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 - 一个 Java 文件 = 按模板使用的部分 (包名、import、类声明、方法签名)+ 可修改的参数 (数字、引号内的文字)；
 - 注册 = 在数据文件的 `script` 列写类名；回调 = 游戏在特定时机调用您的方法；
 
-"修改 —— 重启 —— 观察" 这一流程是代码操作的基础；在本节范围内，重启用于确认修改已经被加载。
+"修改 → 重启 → 观察" 这一流程是代码操作的基础；在本节范围内，重启用于确认修改已经被加载。
 
 ## 建议参考项
 

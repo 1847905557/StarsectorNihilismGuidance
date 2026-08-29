@@ -124,7 +124,7 @@ modified = (base + base * percentMod / 100 + flatMod) * mult
 modifier ID (`StatMod.source`) 是修饰表唯一的键。以下规则全部有效，**必须 / 禁止**为硬措辞：
 
 1. **必须**使用稳定且唯一的 modifier ID。同一来源对同一 stat 的每一次写入，ID 必须逐字相同 (建议用常量)：
-    - 船插场景直接用自己的 hullmod id 参数 ——`applyEffectsBeforeShipCreation(HullSize, MutableShipStatsAPI, String id)` 的 `id` 就是为此提供的，直接 `modifyPercent(id, ...)` 即可。
+    - 船插场景直接用自己的 hullmod id 参数 —— `applyEffectsBeforeShipCreation(HullSize, MutableShipStatsAPI, String id)` 的 `id` 就是为此提供的，直接 `modifyPercent(id, ...)` 即可。
     - 原版引擎自己也这么做：引擎在推进器控制中用常量 `"zero_flux_boost"` 与 `"engine_damage_penalty"` 每帧应用 / 解除；`Ship` 构造器与 `FleetMemberAPI.updateStats` 用 `"flux_capacitors"` / `"flux_vents"` 平铺修饰。
 2. **禁止**用每次调用都会变化的值拼接 modifier ID (帧号、时间戳、随机数、对象身份、自增计数器)。违反的可观察结果：每次 `modifyXxx` 都在表里**新增**一条条目 (percent 累加、flat 累加、mult 连乘)，`modified` 值单向漂移、只增不减；`unmodify(旧 ID)` 清不掉后加的条目，数值残留；条目数持续增长，一场战斗下来修饰表会膨胀到比您的舰队名单还长，而全程没有一条报错提醒您：
     - 修正：ID 必须是常量。
@@ -251,9 +251,9 @@ LOG.info("GearIn stats read: hull=" + ship.getHullSpec().getHullId()
 - `init` 的 `GearIn stats probe init` 行：确认插件挂上 (战斗上下文注册)。
 - `advance` 的三道检查：`isPaused()` (暂停检查)、`isAlive()` / `isHulk()` (残骸过滤)、`isShuttlePod()` (排除部署阶段的 "Command Shuttle" 假舰 —— 假舰是存活实体，不排除就会把修饰写到假舰上)。
 - 阶段划分用 `engine.getTotalElapsedTime(false)` (暂停不计的战斗推进时间)：t∈\[2,12) 施加、t∈\[12,22) 覆盖 percent、t≥22 解除 —— 三个阶段把 "幂等重复应用 / 同 ID 覆盖 / unmodify 一次清三类" 三个语义变成可观察的日志表现。
-- `applyModifiers` 每帧重复调用：同 ID 同值幂等 (条目数恒为 1)—— 规则 6 的现场演示。
-- `overwriteModifiers` 同 ID 改值：条目数不变、percent 合计从 25 变 -20—— 规则 1、3 的现场演示。
-- `unapplyModifiers`：`unmodify(source)` 一次清三类，`isUnmodified()` 回 true—— 规则 4 的现场演示。
+- `applyModifiers` 每帧重复调用：同 ID 同值幂等 (条目数恒为 1) —— 规则 6 的现场演示。
+- `overwriteModifiers` 同 ID 改值：条目数不变、percent 合计从 25 变 -20 —— 规则 1、3 的现场演示。
+- `unapplyModifiers`：`unmodify(source)` 一次清三类，`isUnmodified()` 回 true —— 规则 4 的现场演示。
 - `logStats`：`getBaseValue()` / `getModifiedValue()` / `getFlatMod()` / `getPercentMod()` / `getMult()` / 三表 `size()` / `isUnmodified()` 一次打印；`entries` 数字是 "条目数是否稳定" 的直接证明。
 - `PROBE_VOLATILE_ID_FAULT` 故障开关：对应 "数值与修饰条目持续增长" 故障，默认关。
 - `IntervalUtil(2f, 2f)`：固定 2 秒节奏的周期触发器。
@@ -478,8 +478,8 @@ stats.getMaxSpeed().modifyFlat(MODIFIER_ID, 5f);
     - `GearIn_artizan` 的 max speed 列是 80，`(80 + 80*25/100 + 10) * 1.5 = 165`；三个 entries 恒为 1，证明同 ID 幂等 (规则 6)。
     - `GearIn stats flux:` 为 `capacity base=3800.0 modified=3800.0 dissipation base=200.0 modified=200.0` (未修饰，base 即最终值)。
     - 玩家舰明显比基础速度快 (165 对 80，约 2 倍)；解除阶段回到基础速度。`isShuttlePod()` 检查保证部署阶段假舰不被修改 (战役开局即设置玩家舰，通常观察不到假舰阶段)。
-- 步骤 4 覆盖阶段 (12–22 秒)：`maxSpeed modified=111.0 percent=-20.0`，`entries` 仍为 1—— 同 ID 不同值覆盖旧条目 (规则 1、3)：`(80 - 80*20/100 + 10) * 1.5 = 111`。
-- 步骤 4 解除阶段 (22 秒后)：`maxSpeed base=80.0 modified=80.0 flat=0.0 percent=0.0 mult=1.0 entries flat=0 percent=0 mult=0 unmodified=true`—— `unmodify(source)` 一次清三类 (规则 4)；速度回到基础值。
+- 步骤 4 覆盖阶段 (12–22 秒)：`maxSpeed modified=111.0 percent=-20.0`，`entries` 仍为 1 —— 同 ID 不同值覆盖旧条目 (规则 1、3)：`(80 - 80*20/100 + 10) * 1.5 = 111`。
+- 步骤 4 解除阶段 (22 秒后)：`maxSpeed base=80.0 modified=80.0 flat=0.0 percent=0.0 mult=1.0 entries flat=0 percent=0 mult=0 unmodified=true` —— `unmodify(source)` 一次清三类 (规则 4)；速度回到基础值。
 - 步骤 5：暂停期间没有报告输出 (检查生效)；恢复后阶段仍按战斗时间推进 (暂停不计入 `getTotalElapsedTime(false)`)。
 - 包 `data.scripts.gearin.combat`；
 - 类 `GearInShipStatsProbe`；

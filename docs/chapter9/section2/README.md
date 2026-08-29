@@ -32,7 +32,7 @@
 - **地点容器 (location)**：API 名保留 `LocationAPI`。星区内部的空间容器，超空间与每个恒星系各是一个地点容器；实体、地形、舰队、脚本挂在容器里，容器自带 id、显示名、memory、persistent data、背景与访问状态。
 - **恒星系 (star system)**：API 名保留 `StarSystemAPI`。一类地点容器，特化出恒星、中心、超空间锚点、自动跳跃点、星座等星系级结构。
 - **实体 (entity)**：API 名保留 `SectorEntityToken`。挂在容器里的可定位对象 (行星、舰队、跳跃点、custom entity、terrain 实体等)，身份、位置、轨道、tag、memory 都由它携带。
-- **访问状态**：本节首次成组讲解 ——"玩家在不在这个地点/实体在不在玩家当前地点/玩家有没有进过这个星系/距离上次访问多久"，对应 `isCurrentLocation` / `isInCurrentLocation` / `isEnteredByPlayer` / `getDaysSinceLastPlayerVisit` 等只读状态。
+- **访问状态**：本节首次成组讲解 —— "玩家在不在这个地点/实体在不在玩家当前地点/玩家有没有进过这个星系/距离上次访问多久"，对应 `isCurrentLocation` / `isInCurrentLocation` / `isEnteredByPlayer` / `getDaysSinceLastPlayerVisit` 等只读状态。
 
 ## 梳理恒星系生成关系
 
@@ -76,7 +76,7 @@
     - **这是运行时的活集合** —— 其他代码随时可能添加或移除实体。
 3. **`getEntityById(id)`**：先用缓存索引查精确 id，未命中回退线性扫描且**大小写不敏感**；实体已不在容器内时返回 null。
     - 索引每帧重建，并随实体增删增量维护。
-4. **`isHyperspace()` = "我就是超空间"**：`this == Global.getSector().getHyperspace()`—— 不是 "内容像超空间"，是对象同一性。
+4. **`isHyperspace()` = "我就是超空间"**：`this == Global.getSector().getHyperspace()` —— 不是 "内容像超空间"，是对象同一性。
 5. **`isCurrentLocation()` = "我是玩家当前地点"**：`this == Global.getSector().getCurrentLocation()`。玩家跳跃/跃迁到达时，引擎调用 `setCurrentLocation` 更新当前地点。
 6. **`activeThisFrame()`**：当前地点恒为 `true`；非当前地点只在真正推进的那一帧为 `true`。
     - 引擎对非当前地点**每 60 帧推进一次、步长 ×60**(`activeThisFrame` 只在真正推进的那一帧为 `true`、其余帧为 `false`)。
@@ -158,7 +158,7 @@
 
 token 的两个陷阱 (本节重点)
 
-1. `LocationToken.setFixedLocation(x, y)` 是**空实现** ——token 上调用它坐标不变、无任何报错；写 token 坐标**必须用 `setLocation(x, y)`**(真实生效)。
+1. `LocationToken.setFixedLocation(x, y)` 是**空实现** —— token 上调用它坐标不变、无任何报错；写 token 坐标**必须用 `setLocation(x, y)`**(真实生效)。
 2. token 不 `addEntity` 就不在实体集合里：`getAllEntities()` 不含它、`getEntityById(token.getId())` 找不到它 —— 但 `isAlive()` 仍返回 `true`，三个状态互相矛盾是正常现象，别拿 `isAlive` 当容器判据。
 
 `addPlanet` 的自动市场 (`com.fs.starfarer.api.util.Misc.initConditionMarket` 实现)：非恒星行星建 `"market_" + 行星id`、neutral、`setPlanetConditionMarketOnly(true)` 的市场并 `planet.setMarket(market)`。
@@ -180,7 +180,7 @@ token 的两个陷阱 (本节重点)
 
 "查不到" 未必是实体丢了
 
-自定义 id 用错大小写是常见事故源 ——id 匹配对大小写不敏感 (两级的回退扫描都 `toLowerCase`)，但缓存索引键是精确 id，只有回退扫描才折叠大小写。
+自定义 id 用错大小写是常见事故源 —— id 匹配对大小写不敏感 (两级的回退扫描都 `toLowerCase`)，但缓存索引键是精确 id，只有回退扫描才折叠大小写。
 
 另一个来源是 "移除后不再命中"：`removeEntity` 后地点级与星区级 `getEntityById` 都返回 null(索引由 `objectAdded` / `objectRemoved` 维护)。已持有的引用不受影响 —— 移除只改容器，不销毁对象。
 
@@ -371,7 +371,7 @@ mods/GearIndustry/
 
 ### GearInLocationScript(编排)
 
-职责：生涯每帧脚本 ——`REGISTER_MARK` 一次性注册判断、首帧装配辅助角色、每帧驱动 "地点变化检测 / 首次进入核对 / 周期摘要"。
+职责：生涯每帧脚本 —— `REGISTER_MARK` 一次性注册判断、首帧装配辅助角色、每帧驱动 "地点变化检测 / 首次进入核对 / 周期摘要"。
 
 **绑定位置：`onGameLoad` 中经 persistent data 一次性注册判断后调用 `sector.addScript`**；这是本节唯一的注册入口，其余四个类由它装配或调用。
 
@@ -383,11 +383,11 @@ mods/GearIndustry/
 
 ### GearInTokenCreator(token 语义)
 
-职责：位置 token 的创建与容器语义演示 ——`createToken` 初始不在实体集合里，需要轨道或被按 id 查询时先 `addEntity` 加入容器。**绑定位置：被 `GearInLocationSystemBuilder` 在填充星系时调用 (静态入口 `create`)**。
+职责：位置 token 的创建与容器语义演示 —— `createToken` 初始不在实体集合里，需要轨道或被按 id 查询时先 `addEntity` 加入容器。**绑定位置：被 `GearInLocationSystemBuilder` 在填充星系时调用 (静态入口 `create`)**。
 
 ### GearInAccessStateLogger(访问状态日志)
 
-职责：访问状态六件套的可观察输出，三条日志 ——location 变化、进入演示星系、周期摘要；`formatDays` 把 `Float.MAX_VALUE` 显示为 `never`。
+职责：访问状态六件套的可观察输出，三条日志 —— location 变化、进入演示星系、周期摘要；`formatDays` 把 `Float.MAX_VALUE` 显示为 `never`。
 
 **绑定位置：由 `GearInLocationScript.setup` 构造 (持有星系与信标引用)，`advance` 每帧驱动**。
 
@@ -409,7 +409,7 @@ mods/GearIndustry/
 - `GearInContainerCheck`：`removeEntity` → `isAlive=false` / 两处 `getEntityById` 都 null → `addEntity` 恢复 —— 容器持有语义形成完整流程。
 - `REGISTER_MARK` 注册判断 + `SectorAPI.getStarSystem` 幂等检查：读档不会重复建星系 (脚本字段随存档序列化，`setupDone` 保持 `true` 根本不重跑 `setup`；即使字段丢失，`getStarSystem` 也能捞回已有星系)。
 
-五个类只做包内协作，不跨单元依赖；日志前缀统一 `GearIn loc`—— 全部 10 条日志可观察信号与拆分前逐字一致，时序固定为 token created → token added → created system。
+五个类只做包内协作，不跨单元依赖；日志前缀统一 `GearIn loc` —— 全部 10 条日志可观察信号与拆分前逐字一致，时序固定为 token created → token added → created system。
 
 调用点 (工程片段 —— 方法所在类为既有插件类，本节只演示调用，不改动既有文件)：
 
@@ -518,7 +518,7 @@ return system;
 
     `removeEntity` 后普通实体 `isAlive()` 立即变 `false`、地点级与星区级 `getEntityById` 都返回 null；`addEntity` 后全部恢复。
 - **暂停 (空格)**：周期摘要与地点变化日志全部停止 (引擎级脚本默认暂停冻结)；恢复后继续。
-- **读档**：不出现 `created system`(`setupDone` 随存档序列化，不重跑 `setup`)；无重复注册 (`REGISTER_MARK` 已置位)；周期摘要从存档时刻继续，星系与实体原样恢复。若在旧档首次启用本 MOD(注册判断未置位、脚本字段为空)，首帧走 "复用" 分支打出 `GearIn loc: demo system already exists, reusing id=gearin demo`—— 星系幂等复用，不会重复创建。
+- **读档**：不出现 `created system`(`setupDone` 随存档序列化，不重跑 `setup`)；无重复注册 (`REGISTER_MARK` 已置位)；周期摘要从存档时刻继续，星系与实体原样恢复。若在旧档首次启用本 MOD(注册判断未置位、脚本字段为空)，首帧走 "复用" 分支打出 `GearIn loc: demo system already exists, reusing id=gearin demo` —— 星系幂等复用，不会重复创建。
 - **战斗**：进入战斗期间无任何 `GearIn loc` 日志 (生涯引擎冻结)；回生涯后继续。
 - 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
@@ -540,7 +540,7 @@ return system;
 
     - **解决方案**：访问状态使用 `isInCurrentLocation()` 或 `getContainingLocation()`；普通实体的容器持有才使用 `isAlive()`。
 
-- **`getEntityById` 返回 null，但实体仍然存在**：最常见的原因是代码复用了过期结果 (实体被移除后旧 ID 不再命中)。查询 ID 大小写不一致不会导致 null—— 缓存未命中后还有大小写不敏感的回退扫描。
+- **`getEntityById` 返回 null，但实体仍然存在**：最常见的原因是代码复用了过期结果 (实体被移除后旧 ID 不再命中)。查询 ID 大小写不一致不会导致 null —— 缓存未命中后还有大小写不敏感的回退扫描。
 
     - **解决方案**：ID 使用常量并逐字一致；每次需要时重新查询。
 
@@ -573,7 +573,7 @@ return system;
 - 超空间与恒星系都是 `LocationAPI`；`getAllLocations()` = 星系列表 + 超空间；地点 id = 显示名小写 (恒星系为基名小写)。
 - `SectorAPI.getStarSystem(name)` 匹配 `optionalUniqueId` 或基名小写，大小写不敏感；找不到返回 null。
 - `initStar` 三变体：4/7 参数**不生成超空间锚点**，6 参数 (带超空间坐标) **只生成锚点**；玩家可达性必须靠 `autogenerateHyperspaceJumpPoints`。
-- `createToken` 不加入容器；token 的 `setFixedLocation` 是空实现 (**必须用 `setLocation`**)；token 的 `isAlive()` 恒 `true`—— 与普通实体 (`isAlive` = 容器持有) 不同。
+- `createToken` 不加入容器；token 的 `setFixedLocation` 是空实现 (**必须用 `setLocation`**)；token 的 `isAlive()` 恒 `true` —— 与普通实体 (`isAlive` = 容器持有) 不同。
 - 访问状态分三层：地点层 (`isCurrentLocation` / `activeThisFrame` / 访问时间戳)、实体层 (`isInCurrentLocation` / `isInHyperspace` / `isAlive`)、星系层 (`isEnteredByPlayer` / `getDaysSinceLastPlayerVisit`)；`getDaysSinceLastPlayerVisit` 从未访问 = `Float.MAX_VALUE`。
 - 非当前地点每 60 帧合步推进 (`amount` ×60)：实时节奏挂引擎级脚本，地点内逻辑才挂地点级脚本。
 - 脚本内删星系必须 `removeStarSystemNextFrame`；废弃入口 (`getEntityByName` / `getOrbitalStations`) 必须用 `getEntityById` / `Tags.STATION` 替代。
@@ -583,19 +583,19 @@ return system;
 ## 建议参考项
 
 - Java API(包路径)：
-    - `com.fs.starfarer.api.campaign.LocationAPI`—— 地点容器接口：实体容器、创建入口 (`createToken` 不加入容器)、脚本、访问状态与背景。
-    - `com.fs.starfarer.api.campaign.StarSystemAPI`—— 恒星系接口：`initStar` 变体、超空间锚点、`autogenerateHyperspaceJumpPoints`、`isEnteredByPlayer`。
-    - `com.fs.starfarer.api.campaign.SectorEntityToken`—— 实体约定：身份、归属、位置与轨道、容器持有 (`isAlive` / `isExpired`)、访问状态、tag 与 memory。
-    - `com.fs.starfarer.api.campaign.SectorAPI`—— 星区入口：`createStarSystem` / `getStarSystem` / 全地点实体查询 / `removeStarSystemNextFrame`。
-    - `com.fs.starfarer.api.campaign.CampaignTerrainAPI`——terrain 实体约定 (`getPlugin` / `getType` / `setRadius`)。
-    - `com.fs.starfarer.api.EveryFrameScript`—— 引擎级每帧脚本约定 (`isDone` / `runWhilePaused` / `advance`)。
-    - `com.fs.starfarer.api.impl.campaign.ids.Tags`—— 原版 tag 常量 (空间站查询用 `STATION`)。
-    - `com.fs.starfarer.api.util.Misc`——`initConditionMarket`(`addPlanet` 自动挂 condition-only 市场)、`genUID`。
+    - `com.fs.starfarer.api.campaign.LocationAPI`，地点容器接口：实体容器、创建入口 (`createToken` 不加入容器)、脚本、访问状态与背景。
+    - `com.fs.starfarer.api.campaign.StarSystemAPI`，恒星系接口：`initStar` 变体、超空间锚点、`autogenerateHyperspaceJumpPoints`、`isEnteredByPlayer`。
+    - `com.fs.starfarer.api.campaign.SectorEntityToken`，实体约定：身份、归属、位置与轨道、容器持有 (`isAlive` / `isExpired`)、访问状态、tag 与 memory。
+    - `com.fs.starfarer.api.campaign.SectorAPI`，星区入口：`createStarSystem` / `getStarSystem` / 全地点实体查询 / `removeStarSystemNextFrame`。
+    - `com.fs.starfarer.api.campaign.CampaignTerrainAPI`：terrain 实体约定 (`getPlugin` / `getType` / `setRadius`)。
+    - `com.fs.starfarer.api.EveryFrameScript`：引擎级每帧脚本约定 (`isDone` / `runWhilePaused` / `advance`)。
+    - `com.fs.starfarer.api.impl.campaign.ids.Tags`：原版 tag 常量 (空间站查询用 `STATION`)。
+    - `com.fs.starfarer.api.util.Misc`：`initConditionMarket`(`addPlanet` 自动挂 condition-only 市场)、`genUID`。
 - 原版数据 (以游戏安装根为基准)：
-    - `data/config/custom_entities.json`——custom entity 类型键 (本例复用 `stable_location`)。
-    - `data/campaign/starmap.json`——`starSystemLocations` 星系坐标查询 (`initStar` 坐标变体使用)。
+    - `data/config/custom_entities.json`：custom entity 类型键 (本例复用 `stable_location`)。
+    - `data/campaign/starmap.json`：`starSystemLocations` 星系坐标查询 (`initStar` 坐标变体使用)。
 - 文档与示例 (以仓库根为基准)：
-    - `docs/chapter9/section1/README.md`—— 引擎级脚本一次性注册判断与推进语义 (本节沿用)。
+    - `docs/chapter9/section1/README.md`：引擎级脚本一次性注册判断与推进语义 (本节沿用)。
 
 ## 完整最小例
 

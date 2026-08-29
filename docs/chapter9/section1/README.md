@@ -141,7 +141,7 @@
 
 1. 引擎遍历的是**列表快照** (`new ArrayList<>(this.scripts)`)，因此脚本在 `advance()` 里安全地 `addScript` / `removeScript` 不会抛 `ConcurrentModificationException`。
     - 代价是**在 advance 里新加的脚本要到下一帧才开始推进**。
-2. 对每个脚本：先查 `isDone()`—— 为真直接移除 (不调 `advance`)；否则查 `runWhilePaused() || !isPaused()`—— 为真才调 `advance(amount)`；`advance` 返回后再查一次 `isDone()`，为真则移除。
+2. 对每个脚本：先查 `isDone()` —— 为真直接移除 (不调 `advance`)；否则查 `runWhilePaused() || !isPaused()` —— 为真才调 `advance(amount)`；`advance` 返回后再查一次 `isDone()`，为真则移除。
 3. 移除的三个入口：`isDone()` 自动清理 (引擎在 `advance` 返回后同帧移除)；`removeScript(script)` 按**对象同一性**移除；`removeScriptsOfClass(Class)` 按**精确类** (`getClass() == clazz`，子类不算) 批量移除。
 4. `hasScript(Class)` 用 `isInstance` 判断 (**子类实例也算命中**)，与 `removeScriptsOfClass` 的精确类语义不同 —— 查重用 `hasScript`，批量删用 `removeScriptsOfClass`，别混用。
 5. **`addScript` 不去重**：直接 `scripts.add(...)`。同一实例或等价实例重复注册会各自推进，这是 "日志成双、行为叠加" 的根源。
@@ -162,7 +162,7 @@
 推进循环的步频不是恒定的。正常游玩时，生涯引擎每帧推进一次；时间加速时同帧连调多次：
 
 - **暂停 (空格键)**：按空格键切换 `engine.setPaused(...)`。
-    - 暂停时引擎照常 `advance`(时钟、经济、脚本循环都在跑)—— 但时钟只在非暂停分支推进，脚本只在 `runWhilePaused() || !isPaused()` 时推进。
+    - 暂停时引擎照常 `advance`(时钟、经济、脚本循环都在跑) —— 但时钟只在非暂停分支推进，脚本只在 `runWhilePaused() || !isPaused()` 时推进。
     - **结论：默认 (`runWhilePaused() == false`) 脚本在暂停时完全冻结，`amount` 也拿不到。**
 - **加速 (按住 Shift)**：按住 Shift 键加速 (`campaignSpeedUpTimeIsToggle` 默认 `false`，即按住生效不是切换)。
     - 加速时按 `campaignSpeedupMult`(`settings.json`，取值为 2) 连调 `engine.advance`，脚本与时钟同帧推进两次 —— 游戏日流速翻倍。
@@ -428,7 +428,7 @@ sector.addScript(new GearInSectorClockScript());
 
 - `com.fs.starfarer.api.campaign.SectorAPI`：星区根对象 —— 时钟、脚本、持久数据、记忆、暂停等入口。
 - `com.fs.starfarer.api.campaign.CampaignClockAPI`：生涯时钟 —— 日期/时间戳读取与秒 ⇄ 游戏日换算。
-- `com.fs.starfarer.api.EveryFrameScript`：生涯按帧脚本接口 ——`isDone` / `runWhilePaused` / `advance` 三方法约定。
+- `com.fs.starfarer.api.EveryFrameScript`：生涯按帧脚本接口 —— `isDone` / `runWhilePaused` / `advance` 三方法约定。
 - `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：带 `cleanup()` 的脚本接口；引擎从不调用 `cleanup()`。
 - `com.fs.starfarer.api.Global`：`getSector()` / `getLogger()` 全局入口。
 - `data.scripts.gearin.campaign.GearInSectorClockScript`：本节示例类 (完整源码)。

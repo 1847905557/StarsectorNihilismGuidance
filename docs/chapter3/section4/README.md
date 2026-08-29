@@ -60,7 +60,7 @@
 - **`id + type` 两列合成查找键**，`type` 是枚举名、区分大小写；`id` 或 `type` 为空的行被静默跳过。
 - **没有 "战机联队 (FIGHTER\_WING)" 类型**：战机复用其 hull 的 `SHIP` 行 (战斗对象描述的基础讲解已详述)。
 - **船插、市场条件、特殊物品不在 descriptions.csv 里**：它们的描述写在各自 CSV 的 `desc` 列。
-- `RESOURCE`/`FACTION`/`TERRAIN`/`ASTEROID`/`ACTION_TOOLTIP`/`GALLERY` 与武器、系统一样，键**锁定在对象 ID 上，无法另起别名**；`PLANET`、`SHIP` 与 `CUSTOM` 可以自由命名 ——`PLANET` 经行星类型的 `descriptionId` (缺省等于类型键，多个类型可共享同一键)、`SHIP` 经 `.ship` 的 `descriptionId`、`CUSTOM` 键完全自取。
+- `RESOURCE`/`FACTION`/`TERRAIN`/`ASTEROID`/`ACTION_TOOLTIP`/`GALLERY` 与武器、系统一样，键**锁定在对象 ID 上，无法另起别名**；`PLANET`、`SHIP` 与 `CUSTOM` 可以自由命名 —— `PLANET` 经行星类型的 `descriptionId` (缺省等于类型键，多个类型可共享同一键)、`SHIP` 经 `.ship` 的 `descriptionId`、`CUSTOM` 键完全自取。
 
 ## CSV 转义规则 (必须遵守的规则)
 
@@ -139,7 +139,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 ### ASTEROID：小行星描述
 
 - 键：固定字符串 `asteroid`(tooltip 管理器直接查询 `getDescription("asteroid", Type.ASTEROID)`)。原版只有 1 行，MOD 通常不需要添加。
-- 使用方：小行星 tooltip—— 标题取 text2(缺省显示 `Asteroid`)，正文取 text1。
+- 使用方：小行星 tooltip —— 标题取 text2(缺省显示 `Asteroid`)，正文取 text1。
 
 ### FACTION：势力描述
 

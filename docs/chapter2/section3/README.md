@@ -159,7 +159,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 **效果强度 `effectLevel`**
 
-游戏在前摇期间把一个名为 `effectLevel` 的值从 **0 平滑升至 1**，全功率段保持 1，后摇期间从 1 落回 0。一般来说，效果脚本中的所有数值都**应该**乘以它：`SPEED_BONUS * effectLevel` = 200 × 0.5 = 100—— 因此前摇那两秒里速度加成 **从 0 平滑爬到 200**。
+游戏在前摇期间把一个名为 `effectLevel` 的值从 **0 平滑升至 1**，全功率段保持 1，后摇期间从 1 落回 0。一般来说，效果脚本中的所有数值都**应该**乘以它：`SPEED_BONUS * effectLevel` = 200 × 0.5 = 100 —— 因此前摇那两秒里速度加成 **从 0 平滑爬到 200**。
 
 ::: warning apply 与 unapply 必须成对
 
@@ -290,7 +290,7 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
     - **解决方案**：补回 `GearIn_burstdrive` 数据行并取消注释，重启。
 
-- **系统数值全为零、按键瞬间结束**：CSV 行与 `.system` 两处 ID 一致、但 `charge up`/`active`/`down`/`cooldown` 数值为空时，状态机一帧内跑完整个周期。注意：两处 ID 不一致不会造成 "瞬间结束"—— 加载期即抛 `Fatal: ship_systems.csv is missing systems` 中断 (日志至多先出现一行 `not found in store` 警告)。
+- **系统数值全为零、按键瞬间结束**：CSV 行与 `.system` 两处 ID 一致、但 `charge up`/`active`/`down`/`cooldown` 数值为空时，状态机一帧内跑完整个周期。注意：两处 ID 不一致不会造成 "瞬间结束" —— 加载期即抛 `Fatal: ship_systems.csv is missing systems` 中断 (日志至多先出现一行 `not found in store` 警告)。
 
     - **解决方案**：统一两处 ID 并填上数值，再重新进入战斗。
 

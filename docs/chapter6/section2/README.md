@@ -349,7 +349,7 @@ public void onGameLoad(boolean newGame) { Global.getSector().addScript(new GearI
 
 ## 验证方案
 
-前置数据：编译 JAR 链路建立的 MOD 布局 [C6-S1]——`mod_info.json`(追加本节 `modPlugin` 字段)、`build.gradle`、`settings.gradle`、入口类 `GearInModPlugin`(累计工程另含新档生成页的补全片段，[C3-S3])。
+前置数据：编译 JAR 链路建立的 MOD 布局 [C6-S1] —— `mod_info.json`(追加本节 `modPlugin` 字段)、`build.gradle`、`settings.gradle`、入口类 `GearInModPlugin`(累计工程另含新档生成页的补全片段，[C3-S3])。
 
 1. 在 MOD 根目录 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/GearInModPlugin.class`。
 2. 启动游戏勾选 "齿轮工业"，进入主菜单后退出；在 `starsector.log` 中观察生命周期记录。

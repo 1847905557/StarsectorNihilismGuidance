@@ -50,7 +50,7 @@
 | `Global.getFactory().createPerson()` | 创建空白人物 |
 | `FactionAPI.createRandomPerson()`(含 Gender / Random 变体) | 按势力生成随机人物：随机性别默认各半、势力肖像、随机姓名 (姓名池)、随机 voice |
 
-另有包装入口 `Global.getFactory().createOfficerData(PersonAPI)`—— 把人物包装成 `OfficerDataAPI`。
+另有包装入口 `Global.getFactory().createOfficerData(PersonAPI)` —— 把人物包装成 `OfficerDataAPI`。
 
 `SettingsAPI` 也有同签名 `createPerson`(同样返回空白人物)，习惯用 `Global.getFactory()`。
 
@@ -134,7 +134,7 @@ voice 即 memory `$voice`。
 
 势力关系按 `"<id1>_<id2>"` 键存储，**双向插入同一对象**；读取时延迟创建：默认 `0.0F`，**同势力之间恒 `1.0F`**。
 
-写入时值被钳制在 \[-1, 1\]—— 关系数值不可能越界。
+写入时值被钳制在 \[-1, 1\] —— 关系数值不可能越界。
 
 人物对玩家关系存在人物字段 `relToPlayer`(延迟创建)，`RelationshipAPI.setRel` 同样钳制 \[-1 , 1\]。
 
@@ -176,7 +176,7 @@ voice 即 memory `$voice`。
 
 limit 只是 "本次调整的方向边界"
 
-`adjustRelationship(delta, limit)` 的 limit 不是 "目标档位"—— 从 1.00 减 0.5(limit `VENGEFUL`) 落在 0.50(`FRIENDLY`)，而不是 `HOSTILE`。
+`adjustRelationship(delta, limit)` 的 limit 不是 "目标档位" —— 从 1.00 减 0.5(limit `VENGEFUL`) 落在 0.50(`FRIENDLY`)，而不是 `HOSTILE`。
 
 "设置档位" 用 `setRelationship(id, RepLevel)`，"确保不高于/不低于某档" 用 `ensureAtBest` / `ensureAtWorst`。
 
@@ -198,7 +198,7 @@ limit 只是 "本次调整的方向边界"
 
 #### 生涯侧 captain(FleetMemberAPI)
 
-- 默认舰长：成员自带默认舰长 `steady`(前序页面已记录 "自动补默认舰长")。保存压缩时，**steady + 空姓名 + level ≤ 1 的默认舰长不落盘** ——"读档后默认舰长消失" 是正常语义。
+- 默认舰长：成员自带默认舰长 `steady`(前序页面已记录 "自动补默认舰长")。保存压缩时，**steady + 空姓名 + level ≤ 1 的默认舰长不落盘** —— "读档后默认舰长消失" 是正常语义。
 - `FleetMemberAPI.getCaptain()`：**玩家旗舰特例** —— 成员是玩家舰队旗舰时返回玩家人物。
     - 否则返回缓存的 `captain` 字段 (null 时延迟创建默认舰长并设势力)。
     - `FleetMemberAPI.setCaptain(PersonAPI)` 写回并触发成员 stats 重算。

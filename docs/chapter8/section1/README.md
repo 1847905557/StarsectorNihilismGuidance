@@ -40,7 +40,7 @@
 | `BaseHullMod` | 空实现基类 | 建议继承；`isSMod` / `isBuiltIn` / `hasSModEffect` / `addSModSection` 等默认实现在这里 |
 | `ShipVariantAPI` | S-mod 状态存储 | `getSMods()`、`getSModdedBuiltIns()`、`addPermaMod(modId, isSMod)` |
 | `HullModSpecAPI` | 船插静态配置 | `getSModEffectFormat()`、`getSModDescription(hullSize)` |
-| `MutableShipStatsAPI` | stats 入口 | `getArmorBonus()`、`getEffectiveArmorBonus()`—— 本节示例的修饰目标 |
+| `MutableShipStatsAPI` | stats 入口 | `getArmorBonus()`、`getEffectiveArmorBonus()`：本节示例的修饰目标 |
 | `ArmorGridAPI` | 装甲网格读取 | `getGrid()` / `getMaxArmorInCell()` / `getArmorRating()`；战斗命中结算与监听器示例使用它 |
 | `com.fs.starfarer.api.combat.listeners.*` | 监听器接口 | `HullDamageAboutToBeTakenListener`、`AdvanceableListener` 本节示例实现；必须遵守的放置规则见 [C7-S5] |
 | `Misc` | S-mod 辅助 | `CAN_SMOD_BUILT_IN`、`getMaxPermanentMods`、`getBuildInBonusXP` |
@@ -138,10 +138,10 @@ if (sMod) {
 
 - `hull_mods.csv` 的 `sModDesc` 列 (20 列表头，位于 `short` 与 `sprite` 之间)→ `HullModSpecAPI` 的 `sModEffectFormat`。
 - `BaseHullMod.hasSModEffect()`：`sModEffectFormat` 非空、非全空白、**不以 `#` 开头** → 有 S-mod 效果。
-- `isSModEffectAPenalty()` 返回 true 时 S-mod 段用 "penalty" 样式 (`BaseHullMod.addSModSection`)—— 高成本船插的 S-mod 可能是惩罚。
+- `isSModEffectAPenalty()` 返回 true 时 S-mod 段用 "penalty" 样式 (`BaseHullMod.addSModSection`) —— 高成本船插的 S-mod 可能是惩罚。
 - `hasSModEffectSection`：结合内置 / 增强内置 / 惩罚语义决定是否显示；内置且未增强时显示 "enhanced built-in" 说明文本：
     - ("This effect only applies if this built-in hullmod is enhanced using a %s. Doing this does not count against the maximum number of s-mods a ship can have.")。
-- `sModDesc` 为空 (或 `hasSModEffect()` 为 false) 时 `hasSModEffectSection()` 直接返回 false，装配界面不显示任何 S-mod 效果段 (含标题与说明文本)—— 没有效果不等于不能内置，只是没有效果段。
+- `sModDesc` 为空 (或 `hasSModEffect()` 为 false) 时 `hasSModEffectSection()` 直接返回 false，装配界面不显示任何 S-mod 效果段 (含标题与说明文本) —— 没有效果不等于不能内置，只是没有效果段。
 
 ### 上限、故事点与奖励经验
 
@@ -152,7 +152,7 @@ if (sMod) {
 - 故事点消耗：每个普通 S-mod / 每次增强内置各消耗 1 点 ("Building mods into a hull uses a story point for each hullmod.")。
 - 奖励经验：增强内置固定 100%(原文 "enhancing it always grants %s bonus experience." 参数 "100%")。普通内置的奖励经验按船体等级分档：
     - `settings.json` 的 `bonusXP` 段 `permModFrigate: 0.75` / `permModDestroyer: 0.5` / `permModCruiser: 0.25` / `permModCapital: 0`，由 `Misc.getBuildInBonusXP(mod, size)` 返回。
-    - **"成本低于 X OP 才有奖励" 的阈值逻辑已整段注释** (`Misc` 中 `permModNoBonusXPOPThreshold` / `permModMaxBonusXP` 相关逻辑已被注释)—— 奖励与 OP 成本无关；装配界面的 "成本低于 %s OP" 说明文本是遗留文案，与行为不符。
+    - **"成本低于 X OP 才有奖励" 的阈值逻辑已整段注释** (`Misc` 中 `permModNoBonusXPOPThreshold` / `permModMaxBonusXP` 相关逻辑已被注释) —— 奖励与 OP 成本无关；装配界面的 "成本低于 %s OP" 说明文本是遗留文案，与行为不符。
 
 ## 监听器接入 (船插视角)
 
@@ -270,10 +270,10 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 - `applyEffectsBeforeShipCreation`：`isSMod(stats)` 读取装配上的 S-mod 状态 (普通 S-mod 与增强内置都算)；同 `id` 同类型只保留一条条目，S-mod 时把 10% 覆盖为 25%(同 ID 覆盖语义)：
     - `getArmorBonus()` 决定面板与网格创建时的护甲评级 (`armorValue = getArmorBonus().computeEffective(...)`)；`getEffectiveArmorBonus()` 决定每次命中结算的有效护甲 —— 两个 stat 都写，行为才完整。
 - `applyEffectsAfterShipCreation`：注册每船一个的 `ArmorTrainingListener` 实例并打日志。日志会在装配界面预览舰上先出现一次 (预览舰也走舰船对象创建流程)。
-- `applyEffectsAfterShipAddedToCombatEngine`：战斗开始时打一行一次性日志 ——"每船只回调一次" 的证明。
+- `applyEffectsAfterShipAddedToCombatEngine`：战斗开始时打一行一次性日志 —— "每船只回调一次" 的证明。
 - `advanceInCombat`：S-mod 时每帧把 "当前装甲平均比例" 写成 `DYNAMIC_ID` 修饰 (幂等覆盖)；命中结算逐击读取，因此下一击即生效：
     - `DYNAMIC_ID` 与 hullmod id 分开，**避免与 `applyEffectsBeforeShipCreation` 的条目互相覆盖**。
-- `advanceInCampaign`：只在 `amount <= 0f`(舰队数据重同步) 时打一行 ——"该回调确实被调用" 且 "同步时 amount=0" 的证明，同时避免每帧刷屏。
+- `advanceInCampaign`：只在 `amount <= 0f`(舰队数据重同步) 时打一行 —— "该回调确实被调用" 且 "同步时 amount=0" 的证明，同时避免每帧刷屏。
 - `getDescriptionParam` / `getSModDescriptionParam`：按 index 输出参数字符串；`null` 的 index 不会被 tooltip 使用。
     - `ArmorTrainingListener`：同时实现 `HullDamageAboutToBeTakenListener`(返回 `true` 抵消结构伤害，`notifyAboutToTakeHullDamage` 语义来自 javadoc 原文) 与 `AdvanceableListener`(每帧推进、暂停不派发)。
     - `IntervalUtil(5f, 5f)` 与 `negations` 计数是单船状态，合法放在这里。

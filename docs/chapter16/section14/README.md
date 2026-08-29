@@ -41,7 +41,7 @@ OBJ 文件本身只描述几何；模型 ID、贴图材质与世界变换仍要�
 
 ### 在 CSV 中登记模型 ID
 
-**插入位置：`data/config/modFiles/BUtil_obj_data.csv` 的 GearIn 行。** 按表头关联 OBJ、漫反射、法线、复杂、发光和切线贴图；空通道保留空字段。启动期只加载单文件 (无跨 MOD 行合并、资源优先级首个命中)，默认命名下 BoxUtil 自带 CSV 恒胜出 ——GearIn 行需并入该文件，另建同名文件不会生效。
+**插入位置：`data/config/modFiles/BUtil_obj_data.csv` 的 GearIn 行。** 按表头关联 OBJ、漫反射、法线、复杂、发光和切线贴图；空通道保留空字段。启动期只加载单文件 (无跨 MOD 行合并、资源优先级首个命中)，默认命名下 BoxUtil 自带 CSV 恒胜出 —— GearIn 行需并入该文件，另建同名文件不会生效。
 
 ```csv
 GearIn_gear,data/models/GearIn_gear.obj,data/models/GearIn_gear_diffuse.png,data/models/GearIn_gear_normal.png,,data/models/GearIn_gear_emissive.png,,,F32
@@ -104,7 +104,7 @@ ModelData model = ModelManager.getModelData("GearIn_Gear");
 
 实际症状：构造实体时立即抛空指针异常，实体从未创建、从未入队。
 
-原因：模型 ID 大小写与 CSV 的 `GearIn_gear` 不一致，`getModelData()` 返回 `null`；`new CommonEntity(model, true)` 在构造期就解引用 model 同步贴图，直接抛 NPE—— 不存在 "实体成功创建但空白" 的中间态。
+原因：模型 ID 大小写与 CSV 的 `GearIn_gear` 不一致，`getModelData()` 返回 `null`；`new CommonEntity(model, true)` 在构造期就解引用 model 同步贴图，直接抛 NPE —— 不存在 "实体成功创建但空白" 的中间态。
 
 下面是**局部修正片段**：
 

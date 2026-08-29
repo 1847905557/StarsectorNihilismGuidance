@@ -89,7 +89,7 @@
 
 ::: warning 槽位类型
 
-`type` 写成 `BUILT_IN` 的槽位**不能**在装配界面手动安装武器 ——`isWeaponSlot()` 只认 `BALLISTIC`、`ENERGY`、`MISSILE`、`UNIVERSAL`、`HYBRID`、`SYNERGY`、`COMPOSITE` 七种类型。
+`type` 写成 `BUILT_IN` 的槽位**不能**在装配界面手动安装武器 —— `isWeaponSlot()` 只认 `BALLISTIC`、`ENERGY`、`MISSILE`、`UNIVERSAL`、`HYBRID`、`SYNERGY`、`COMPOSITE` 七种类型。
 
 内置武器只能由 `builtInWeapons` 提供。
 
@@ -116,7 +116,7 @@
 
 ::: warning 槽位 ID 必须逐字符一致
 
-**反复确定槽位 ID 的正确** ——`builtInWeapons` 的键必须与 `.ship` 中 `weaponSlots` 数组里的槽位 `id` 完全一致。这是一个初学者非常常见的错误。
+**反复确定槽位 ID 的正确** —— `builtInWeapons` 的键必须与 `.ship` 中 `weaponSlots` 数组里的槽位 `id` 完全一致。这是一个初学者非常常见的错误。
 
 :::
 
@@ -172,7 +172,7 @@
 - **不会被永久损坏**：装饰槽武器不会因损坏而失效。
 - **仍然显示**：战斗中和生涯舰船界面都会显示装饰武器。
 
-装饰武器适合纯视觉内容。原版例子：`buffalo.ship` 的红色/绿色信号灯 ——`builtInWeapons` 里装 `blinker_red`/`blinker_green` (`data/weapons/blinker_red.wpn`、`blinker_green.wpn`，`.wpn` 的 `"type": "DECORATIVE"`)，信号灯槽位为 `"type": "DECORATIVE"` 的 TURRET 槽。
+装饰武器适合纯视觉内容。原版例子：`buffalo.ship` 的红色/绿色信号灯 —— `builtInWeapons` 里装 `blinker_red`/`blinker_green` (`data/weapons/blinker_red.wpn`、`blinker_green.wpn`，`.wpn` 的 `"type": "DECORATIVE"`)，信号灯槽位为 `"type": "DECORATIVE"` 的 TURRET 槽。
 
 ## 战机的内置武器？
 

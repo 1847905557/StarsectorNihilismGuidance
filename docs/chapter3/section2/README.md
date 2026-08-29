@@ -441,19 +441,19 @@ faction 文件不定义任何势力间关系，所有关系都是运行时数值
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global` —— 全局入口：`getSector().getFaction(id)` 取势力运行时对象。
-- `com.fs.starfarer.api.campaign.FactionAPI` —— 势力运行时接口：关系读写、舰船池查询与角色抽取 (`pickShip` 等)。
-- `com.fs.starfarer.api.campaign.FactionDoctrineAPI` —— 舰队学说运行时接口；
-- `com.fs.starfarer.api.campaign.FactionSpecAPI` —— 势力 spec 只读接口 (`knownShips`、`hullFrequency` 等)；共享默认角色由引擎内部提供，公开接口不包含对应方法。
-- `com.fs.starfarer.api.campaign.RepLevel` —— 关系等级枚举与阈值 (`T1..T4` = 0.09 / 0.24 / 0.49 / 0.74)。
-- `data/world/factions/factions.csv` —— 势力注册表 (按行合并，表头 `faction`)。
-- `data/world/factions/gear_industry.faction` —— 本节示例势力文件 (完整字段形态)；
-- `data/world/factions/default_ship_roles.json` —— 共享装配角色表 (跨来源合并读取)；
-- `data/world/factions/hegemony.faction` —— 原版势力文件结构参考；
-- `SectorGen`(原版生涯生成脚本类)—— 关系播种的权威示例写法。
-- `data/campaign/econ/economy.json` —— `defaultTariff`(取值为 0.3)；
-- `data/campaign/commodities.csv` —— `illegalCommodities` 的 ID 校验对象；
-- `data/campaign/channels.json` —— 内部频道注册表 (`hegemony_internal`)；
-- `data/campaign/procgen/drop_groups.csv` —— 蓝图掉落池 (`rare_bp` / `restricted` 使用方)。
-- `data/config/settings.json` —— `doctrineFleetQualityPerPoint`(取值为 0.125)；
-- `data/hulls/ship_data.csv` / `data/weapons/weapon_data.csv` / `data/hulls/wing_data.csv` / `data/hullmods/hull_mods.csv` —— 各组件注册表 (tags 列与 tag 存在性)。
+- `com.fs.starfarer.api.Global`，全局入口：`getSector().getFaction(id)` 取势力运行时对象。
+- `com.fs.starfarer.api.campaign.FactionAPI`，势力运行时接口：关系读写、舰船池查询与角色抽取 (`pickShip` 等)。
+- `com.fs.starfarer.api.campaign.FactionDoctrineAPI`：舰队学说运行时接口；
+- `com.fs.starfarer.api.campaign.FactionSpecAPI`：势力 spec 只读接口 (`knownShips`、`hullFrequency` 等)；共享默认角色由引擎内部提供，公开接口不包含对应方法。
+- `com.fs.starfarer.api.campaign.RepLevel`：关系等级枚举与阈值 (`T1..T4` = 0.09 / 0.24 / 0.49 / 0.74)。
+- `data/world/factions/factions.csv`：势力注册表 (按行合并，表头 `faction`)。
+- `data/world/factions/gear_industry.faction`：本节示例势力文件 (完整字段形态)；
+- `data/world/factions/default_ship_roles.json`：共享装配角色表 (跨来源合并读取)；
+- `data/world/factions/hegemony.faction`：原版势力文件结构参考；
+- `SectorGen`(原版生涯生成脚本类)：关系播种的权威示例写法。
+- `data/campaign/econ/economy.json`：`defaultTariff`(取值为 0.3)；
+- `data/campaign/commodities.csv`：`illegalCommodities` 的 ID 校验对象；
+- `data/campaign/channels.json`：内部频道注册表 (`hegemony_internal`)；
+- `data/campaign/procgen/drop_groups.csv`：蓝图掉落池 (`rare_bp` / `restricted` 使用方)。
+- `data/config/settings.json`：`doctrineFleetQualityPerPoint`(取值为 0.125)；
+- `data/hulls/ship_data.csv` / `data/weapons/weapon_data.csv` / `data/hulls/wing_data.csv` / `data/hullmods/hull_mods.csv`：各组件注册表 (tags 列与 tag 存在性)。

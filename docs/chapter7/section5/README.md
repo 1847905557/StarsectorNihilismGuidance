@@ -269,13 +269,13 @@ LOG.info("GearIn lifecycle finalize: deployments=" + deploymentListener.deployed
 
 `FleetMemberDeploymentListener` 实现，承担监听器角色：统计并记录敌我成员部署事件，`deployedCount` 是本场战斗的状态。
 
-**注册入口**：由 `GearInCombatLifecyclePlugin.init()` 注册到 `engine.getListenerManager()`(引擎级表面)—— `hasListenerOfClass` 去重判断 + `addListener(...)`。
+**注册入口**：由 `GearInCombatLifecyclePlugin.init()` 注册到 `engine.getListenerManager()`(引擎级表面) —— `hasListenerOfClass` 去重判断 + `addListener(...)`。
 
 对应关系：
 
 - `init` 里的注册：`engine.getListenerManager().hasListenerOfClass(...)` 判断 + `addListener(...)`(成熟实例的注册做法)，日志行 `GearIn lifecycle init:` 是注册成功的现场证明。
 - `advance` 的三个前置判断：`engine == null`(规则 5)、`engine.isPaused()`(规则 6)、`finalized`(防止同帧重复收尾)。
-- `advance` 的收尾识别：`engine.isCombatOver()` 为 `true` 时调用 `finalizeBattle()`—— 战斗结束没有回调，收尾必须在推进循环里自行识别 (规则 3)。
+- `advance` 的收尾识别：`engine.isCombatOver()` 为 `true` 时调用 `finalizeBattle()` —— 战斗结束没有回调，收尾必须在推进循环里自行识别 (规则 3)。
 - `finalizeBattle`：**先** `removeListener`(引擎级监听器不随插件移除，规则 2)**，再** `removePlugin(this)`(此后插件不再收到回调)。
 - `GearInDeploymentListener`：引擎级 `FleetMemberDeploymentListener`(必须遵守的放置规则：只能引擎)；`deployedCount` 是监听器自己持有的战斗级状态，随战斗结束释放。
 - `IntervalUtil(2f, 2f)`：固定 2 秒节奏的周期日志 (与战斗状态读取单元同款)。

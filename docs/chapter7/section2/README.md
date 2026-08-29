@@ -96,7 +96,7 @@
 |---|---|
 | `ship.isAlive()` | 与引擎侧 `engine.isShipAlive(ship)` 同一判定 —— 非残骸、`getHitpoints() > 0`、且 (仍在引擎对象表中或属于停在甲板的战机)。战机停驻时仍为 `true` |
 | `engine.isShipAlive(ship)` | 同上，引擎侧入口 (`null` 安全：传 null 返回 `false`) |
-| `engine.isEntityInPlay(entity)` | 实体当前在战斗场上：已入对象表且未被标记移除 (刚加入战斗、尚未入表的实体也算在场)—— 残骸若仍在对象表中，此方法为 `true`；停驻甲板的战机为 `false` |
+| `engine.isEntityInPlay(entity)` | 实体当前在战斗场上：已入对象表且未被标记移除 (刚加入战斗、尚未入表的实体也算在场) —— 残骸若仍在对象表中，此方法为 `true`；停驻甲板的战机为 `false` |
 
 ::: warning 遍历必须过滤残骸
 
@@ -155,8 +155,8 @@
 
 两个关键事实：
 
-1. **暂停时 `advance()` 仍被调用**：暂停不中断战斗引擎对 `EveryFrameCombatPlugin` 的每帧回调 ——`advance()` 在暂停时照常被调用。**必须**在推进状态前检查 `engine.isPaused()`([C7-S1] 已立此规)。违反的可观察结果：暂停期间自己的计时 / 状态照常累计，解除暂停后数值已偏移。
-2. **插件收到的 `amount` 与 `getElapsedInLastFrame()` 是同一个数**：引擎按 `timeMult` 与 `combatSpeedMult` 缩放后得到本帧 `dt`，同时写入 `getElapsedInLastFrame()` 并作为 `amount` 传给每帧回调，暂停时也照常传入。默认两个倍率都是 1，`amount` 即真实帧长。做 "按推进时间累计" 直接用 `amount` 或 `getElapsedInLastFrame()`，**不要**再乘 `engine.getTimeMult().getModifiedValue()`—— 那会二次缩放，游戏内时间倍率一改 (慢动作等) 自己的计时就比战斗时间快/慢。违反的可观察结果：默认倍率下看不出来，一旦有 `timeMult` 修正 (技能、慢动作效果)，累计计时与 `getTotalElapsedTime(false)` 的差值按倍率扩大。
+1. **暂停时 `advance()` 仍被调用**：暂停不中断战斗引擎对 `EveryFrameCombatPlugin` 的每帧回调 —— `advance()` 在暂停时照常被调用。**必须**在推进状态前检查 `engine.isPaused()`([C7-S1] 已立此规)。违反的可观察结果：暂停期间自己的计时 / 状态照常累计，解除暂停后数值已偏移。
+2. **插件收到的 `amount` 与 `getElapsedInLastFrame()` 是同一个数**：引擎按 `timeMult` 与 `combatSpeedMult` 缩放后得到本帧 `dt`，同时写入 `getElapsedInLastFrame()` 并作为 `amount` 传给每帧回调，暂停时也照常传入。默认两个倍率都是 1，`amount` 即真实帧长。做 "按推进时间累计" 直接用 `amount` 或 `getElapsedInLastFrame()`，**不要**再乘 `engine.getTimeMult().getModifiedValue()` —— 那会二次缩放，游戏内时间倍率一改 (慢动作等) 自己的计时就比战斗时间快/慢。违反的可观察结果：默认倍率下看不出来，一旦有 `timeMult` 修正 (技能、慢动作效果)，累计计时与 `getTotalElapsedTime(false)` 的差值按倍率扩大。
 
 选哪种累计时间的决策：
 
@@ -260,7 +260,7 @@ LOG.info("GearIn ships: alive=" + alive + " notAlive=" + notAlive
 
 - `init` 里的 `battle init` 行：读战斗上下文四标志 + `getMissionId()`，用 `GearIn_test` 战役验证 "这场是 mission"。
 - `advance` 的 `if (engine.isPaused()) return;`：把时间语义的第 1 条落成代码 —— 暂停时不推进状态，报告节奏也随之停摆；恢复后 `total` 与 `totalWithPause` 的差值就是暂停时长的现场证明。
-- `logEngineTime`：把 "时间语义" 表变成日志 ——`total` / `totalWithPause` / `lastFrame` / `timeMult` / `contact` / `fleetsInContact` / `combatOver` / `winner` 一次打印。
+- `logEngineTime`：把 "时间语义" 表变成日志 —— `total` / `totalWithPause` / `lastFrame` / `timeMult` / `contact` / `fleetsInContact` / `combatOver` / `winner` 一次打印。
 - `logFleetManagers`：两侧管理器的五份名单大小 + `getDeployedCopyDFM()` 遍历 (跳过 `isFighterWing()` / `isStationModule()`，只数存活主力舰 —— 已部署成员遍历的成熟做法)。
 - `logShips`：`getShips()` + `isAlive()` 过滤分成 alive / notAlive 两堆 (残骸与刚移除的舰计入 notAlive)；`playerShip` 行核对 `getPlayerShip()` 永不 null 的判据 (部署阶段显示 `shuttlepod` 假舰、`playerInPlay=false`)。
 - `IntervalUtil(2f, 2f)`：固定 2 秒节奏的周期触发器 (`advance` + `intervalElapsed()` 每帧调用)。

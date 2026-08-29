@@ -73,7 +73,7 @@ Starsector 有两个主要游玩入口，本节开始会经常把两者并列：
 
 ## 注册测试战役
 
-在 MOD 中新建 `data/missions/mission_list.csv`，写入表头和战役 ID。**不要**复制整份原版 `mission_list.csv`—— 这个文件按行合并，您只需要自己的行：
+在 MOD 中新建 `data/missions/mission_list.csv`，写入表头和战役 ID。**不要**复制整份原版 `mission_list.csv` —— 这个文件按行合并，您只需要自己的行：
 
 第一行 `mission` 是列名 (必须逐字一致，拼错会导致加载失败)，第二行是战役 ID。多行时可以随时用 `#` 注释掉整行。
 
@@ -110,7 +110,7 @@ Starsector 有两个主要游玩入口，本节开始会经常把两者并列：
 
 ::: caution 包名是游戏写死的，不能改
 
-**包名必须是 `data.missions.GearIn_test`**—— 这是游戏按战役 ID 写死的类名 (`data.missions.<mission_id>.MissionDefinition`)，不是教程的命名偏好，**不能**改成 `data.scripts.gearin.*` 之类自己的包。
+**包名必须是 `data.missions.GearIn_test`** —— 这是游戏按战役 ID 写死的类名 (`data.missions.<mission_id>.MissionDefinition`)，不是教程的命名偏好，**不能**改成 `data.scripts.gearin.*` 之类自己的包。
 
 包名不符时，点击战役会抛出 `Problem loading class`。
 
@@ -345,7 +345,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 :::
 
-如果您还记得前置知识中的战机装配文件 [C1-S3]，它的结构与此相同 ——** 舰船装配文件和战机装配文件没有本质区别**，只是战机装配通常没有 `fluxVents` 之外的复杂内容，且它的 `hullId` 指向战机船体。
+如果您还记得前置知识中的战机装配文件 [C1-S3]，它的结构与此相同 —— ** 舰船装配文件和战机装配文件没有本质区别**，只是战机装配通常没有 `fluxVents` 之外的复杂内容，且它的 `hullId` 指向战机船体。
 
 编者建议为您的所有舰船各制作 2~3 个装配 (不同定位：突击、支援、长程等)，作为后续测试和战役配置的素材。
 
@@ -420,14 +420,14 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global`—— 全局入口，`getSettings()` 提供 `SettingsAPI`。
-- `com.fs.starfarer.api.mission.MissionDefinitionPlugin`、`MissionDefinitionAPI`、`FleetSide`、`FleetGoal`、`FleetMemberType`—— 战役脚本接口与舰队侧、目标、成员类型枚举。
-- `com.fs.starfarer.api.combat.ShipVariantAPI`、`ShipHullSpecAPI`、`ShipAPI`(`HullSize`)—— 装配与船体信息读取。
-- `com.fs.starfarer.api.SettingsAPI`(`getVariant`、`getAllVariantIds`)—— 按 ID 读装配、枚举全部装配 ID。
-- `com.fs.starfarer.api.loading.WeaponGroupType`(`LINKED`、`ALTERNATING`)、`VariantSource`—— 武器组模式与装配来源枚举。
-- `data/missions/mission_list.csv`—— 原版战役注册表 (列名 `mission`)；
-- `data/missions/afistfulofcredits/`—— 原版战役样例 (descriptor.json、mission_text.txt、icon、`MissionDefinition` 类源文件)。
-- `data/variants/fighters/broadsword_Fighter.variant`—— 原版战机装配样例；
-- `data/variants/stations/remnant_station2_Standard.variant`—— 模板敌舰使用的原版空间站装配；
-- `data/missions/GearIn_test/`—— 本节测试战役目录 (descriptor.json、mission_text.txt、icon、`MissionDefinition` 类源文件)。
-- `data/variants/GearIn_artizan_combat.variant`—— 本节从测试战役导出的正式装配。
+- `com.fs.starfarer.api.Global`：全局入口，`getSettings()` 提供 `SettingsAPI`。
+- `com.fs.starfarer.api.mission.MissionDefinitionPlugin`、`MissionDefinitionAPI`、`FleetSide`、`FleetGoal`、`FleetMemberType`：战役脚本接口与舰队侧、目标、成员类型枚举。
+- `com.fs.starfarer.api.combat.ShipVariantAPI`、`ShipHullSpecAPI`、`ShipAPI`(`HullSize`)：装配与船体信息读取。
+- `com.fs.starfarer.api.SettingsAPI`(`getVariant`、`getAllVariantIds`)：按 ID 读装配、枚举全部装配 ID。
+- `com.fs.starfarer.api.loading.WeaponGroupType`(`LINKED`、`ALTERNATING`)、`VariantSource`：武器组模式与装配来源枚举。
+- `data/missions/mission_list.csv`：原版战役注册表 (列名 `mission`)；
+- `data/missions/afistfulofcredits/`：原版战役样例 (descriptor.json、mission_text.txt、icon、`MissionDefinition` 类源文件)。
+- `data/variants/fighters/broadsword_Fighter.variant`：原版战机装配样例；
+- `data/variants/stations/remnant_station2_Standard.variant`：模板敌舰使用的原版空间站装配；
+- `data/missions/GearIn_test/`：本节测试战役目录 (descriptor.json、mission_text.txt、icon、`MissionDefinition` 类源文件)。
+- `data/variants/GearIn_artizan_combat.variant`：本节从测试战役导出的正式装配。

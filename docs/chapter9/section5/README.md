@@ -86,7 +86,7 @@
 `CargoAPI`(`com.fs.starfarer.api.campaign.CargoAPI`) 是纯接口，结构分三块：
 
 - **栈集合**：`stacks` 字段，`getStacksCopy()` 返回副本；
-- **信用**：`credits` 字段，`getCredits()` 返回 `MutableValue`——`com.fs.starfarer.api.util.MutableValue`：`get()` / `set()` / `add()` / `subtract()`；
+- **信用**：`credits` 字段，`getCredits()` 返回 `MutableValue` —— `com.fs.starfarer.api.util.MutableValue`：`get()` / `set()` / `add()` / `subtract()`；
 - **容量统计**：`maxCapacity` / `maxFuel` / `maxPersonnel` / `spaceUsed`。
 
 ### CargoAPI 读写分族速查表
@@ -122,11 +122,11 @@
 
 使用 `getMothballedShips()` 前必须先初始化
 
-违反必须遵守的规则的直接可观察结果：`getMothballedShips()` 返回 null 解引用即 NPE。而 `addMothballedShip` 内部会自动初始化，不需要您自己先 init—— 只有**读取**路径要求先行 `initMothballedShips(factionId)`。
+违反必须遵守的规则的直接可观察结果：`getMothballedShips()` 返回 null 解引用即 NPE。而 `addMothballedShip` 内部会自动初始化，不需要您自己先 init —— 只有**读取**路径要求先行 `initMothballedShips(factionId)`。
 
 **容量统计**：`getMaxCapacity()` / `getMaxFuel()` / `getMaxPersonnel()` / `getSpaceUsed()` / `getSpaceLeft()` / `getFreeCrewSpace()` / `getFreeFuelSpace()`；`updateSpaceUsed()` 重算已用空间。
 
-玩家舰队的容量上限由 `FleetDataAPI` 同步管线按成员求和写入 (前置知识已记录)—— **直接改 cargo 数值不会重算容量**。
+玩家舰队的容量上限由 `FleetDataAPI` 同步管线按成员求和写入 (前置知识已记录) —— **直接改 cargo 数值不会重算容量**。
 
 ## 规则强度
 
@@ -424,20 +424,20 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global`—— 全局入口：`getSector()`、`getLogger()`。
-- `com.fs.starfarer.api.campaign.SectorAPI`—— 生涯引擎入口。
+- `com.fs.starfarer.api.Global`，全局入口：`getSector()`、`getLogger()`。
+- `com.fs.starfarer.api.campaign.SectorAPI`：生涯引擎入口。
     - 关系与货物入口都能从这里进入：`getFaction` / `getAllFactions` / `getPlayerFaction` / `getPlayerFleet` / `adjustPlayerReputation` / `getPersistentData` / `addScript`。
-- `com.fs.starfarer.api.campaign.FactionAPI`—— 势力接口：身份、颜色、关系读写、已知资源集合、经济字段与 doctrine/production/spec。
-- `com.fs.starfarer.api.characters.RelationshipAPI`—— 关系值包装：`getRel()` / `getLevel()`。
-- `com.fs.starfarer.api.campaign.CargoAPI`—— 货物容器：分族读写、容量统计、`getStacksCopy()`、`removeEmptyStacks()`。
-- `com.fs.starfarer.api.campaign.CargoStackAPI`—— 货物单栈：类型、数据、大小与 `isNull()` 占位判定。
-- `com.fs.starfarer.api.util.MutableValue`——credits 的可变值容器：`get` / `set` / `add` / `subtract`。
-- `com.fs.starfarer.api.campaign.RepLevel`—— 关系等级枚举与阈值：`getLevelFor`、`getMin` / `getMax` 边界语义。
-- `com.fs.starfarer.api.campaign.SectorEntityToken`、`CampaignFleetAPI`——`getCargo()` 货物入口；
-- `com.fs.starfarer.api.util.Misc`—— 文本与高亮颜色常量 (`getTextColor` / `getGrayColor` 等)。
-- `com.fs.starfarer.api.impl.campaign.ids.Factions`、`Commodities`——id 常量：势力 / 商品。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`—— 原版声望 action rulecmd：`adjustPlayerReputation` 的原版调用参考。
-- `data/scripts/gearin/campaign/`—— 本节三个示例类所在目录 (MOD 内相对路径)。
+- `com.fs.starfarer.api.campaign.FactionAPI`，势力接口：身份、颜色、关系读写、已知资源集合、经济字段与 doctrine/production/spec。
+- `com.fs.starfarer.api.characters.RelationshipAPI`，关系值包装：`getRel()` / `getLevel()`。
+- `com.fs.starfarer.api.campaign.CargoAPI`，货物容器：分族读写、容量统计、`getStacksCopy()`、`removeEmptyStacks()`。
+- `com.fs.starfarer.api.campaign.CargoStackAPI`，货物单栈：类型、数据、大小与 `isNull()` 占位判定。
+- `com.fs.starfarer.api.util.MutableValue`，credits 的可变值容器：`get` / `set` / `add` / `subtract`。
+- `com.fs.starfarer.api.campaign.RepLevel`，关系等级枚举与阈值：`getLevelFor`、`getMin` / `getMax` 边界语义。
+- `com.fs.starfarer.api.campaign.SectorEntityToken`、`CampaignFleetAPI`：`getCargo()` 货物入口；
+- `com.fs.starfarer.api.util.Misc`：文本与高亮颜色常量 (`getTextColor` / `getGrayColor` 等)。
+- `com.fs.starfarer.api.impl.campaign.ids.Factions`、`Commodities`，id 常量：势力 / 商品。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`，原版声望 action rulecmd：`adjustPlayerReputation` 的原版调用参考。
+- `data/scripts/gearin/campaign/`：本节三个示例类所在目录 (MOD 内相对路径)。
 
 ## 完整最小例
 

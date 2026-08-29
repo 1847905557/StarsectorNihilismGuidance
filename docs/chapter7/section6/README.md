@@ -160,7 +160,7 @@ if (viewport.isNearViewport(this.getLocation(), this.plugin.getRenderRadius())) 
 
 ### 不要赌 "战斗结束时 cleanup() 会被调用"
 
-战斗结束的 `destroyInstance` 只清空对象表、不调用 `cleanup()`—— 把 GL 资源释放寄托在 "战斗结束回调" 上，资源会静默丢失。正确做法：在 `advance()` 里主动失效 (`isExpired()` 转 true)，让引擎走正常移除路径调用 `cleanup()`。
+战斗结束的 `destroyInstance` 只清空对象表、不调用 `cleanup()` —— 把 GL 资源释放寄托在 "战斗结束回调" 上，资源会静默丢失。正确做法：在 `advance()` 里主动失效 (`isExpired()` 转 true)，让引擎走正常移除路径调用 `cleanup()`。
 
 ## 必须遵守的规则速查表
 
@@ -498,7 +498,7 @@ public void advance(float amount) { advanceState(amount); } public void render(C
 4. **暂停**：按空格暂停约 10 秒 —— 方框静止但可见；恢复后继续跟随。
 5. **剔除**：镜头拉远使方框离开可见区外扩 120 单位范围 —— 方框消失；拉回出现。
 6. **失效清理**：击毁一艘被追踪舰船 —— 方框消失且 `Starsector/starsector-core/starsector.log` 出现 `GearIn layered renderer cleanup: elapsed=<秒数>`；其余舰船方框正常。
-7. **跨战斗**：退出战斗再进一场 ——`GearIn layered renderer init:` 重新出现，新方框从零开始跟随。
+7. **跨战斗**：退出战斗再进一场 —— `GearIn layered renderer init:` 重新出现，新方框从零开始跟随。
 
 预期结果：
 
@@ -512,7 +512,7 @@ public void advance(float amount) { advanceState(amount); } public void render(C
 
     没有 `ERROR`。
 
-- **画面结果**：每个被注册的已部署成员身上出现一个半透明青色方框 (120 世界单位边长)，跟随舰船移动；方框画在舰船与导弹之上、粒子之下 ——`ABOVE_SHIPS_AND_MISSILES_LAYER` 位于粒子系统之前 (层序表)。
+- **画面结果**：每个被注册的已部署成员身上出现一个半透明青色方框 (120 世界单位边长)，跟随舰船移动；方框画在舰船与导弹之上、粒子之下 —— `ABOVE_SHIPS_AND_MISSILES_LAYER` 位于粒子系统之前 (层序表)。
 
 - **暂停行为**：按空格暂停约 10 秒再恢复 —— 暂停期间方框静止不动 (`advance` 不被调用，位置不更新) 但**仍然可见** (渲染不暂停)；恢复后继续跟随。
 
@@ -526,7 +526,7 @@ public void advance(float amount) { advanceState(amount); } public void render(C
 
     此后该舰的方框不再出现；同一场战斗内其他舰船的方框不受影响。
 
-- **战斗结束**：胜负判定后引擎以全屏变暗完成淡出；退出战斗再进一场 ——`GearIn layered renderer init:` 重新出现，第二场战斗每艘新部署成员都有新方框 (每场战斗全新实例，规则 6)。
+- **战斗结束**：胜负判定后引擎以全屏变暗完成淡出；退出战斗再进一场 —— `GearIn layered renderer init:` 重新出现，第二场战斗每艘新部署成员都有新方框 (每场战斗全新实例，规则 6)。
 
 ## 故障分析
 
@@ -570,7 +570,7 @@ public void advance(float amount) { advanceState(amount); } public void render(C
 
 - **独立插件通道**：`engine.addLayeredRenderingPlugin(plugin)` → 包装成战斗实体 → `executeAdds` 时 `init(entity)` + 按 `getActiveLayers()` 注册进 `LayeredRenderer`；与 `EveryFrameCombatPlugin` 相比：init 保证先执行、暂停时不推进、移除时由引擎调 `cleanup()`。
 - **层序**：`CombatEngineLayers` 枚举声明顺序即层序；管线依次处理底部尾迹粒子、非顶层图层、碎片、顶部粒子和顶层三图层 (`ABOVE_PARTICLES_LOWER` / `ABOVE_PARTICLES` / `JUST_BELOW_WIDGETS`)；`PHASED_SHIPS_LAYER` 必须低于战机层 (枚举注释)。
-- **渲染与剔除**：`render` 每激活层调用一次、按 `layer` 分支；转发前先判 `isNearViewport(entity.getLocation(), getRenderRadius())`—— 位置同步与半径覆盖是 "图形在视口内消失" 的排查入口。
+- **渲染与剔除**：`render` 每激活层调用一次、按 `layer` 分支；转发前先判 `isNearViewport(entity.getLocation(), getRenderRadius())` —— 位置同步与半径覆盖是 "图形在视口内消失" 的排查入口。
 - **视口**：`ViewportAPI` 全是世界单位 (`getLLX/getLLY/getVisibleWidth/getVisibleHeight`)；`getViewMult()` 是当前缩放；转换方法 world↔screen 双向；`setExternalControl(true)` 让引擎每帧不再设置视口参数，是 MOD 接管相机的入口。
 - **清理一条线**：`advance()` 主动失效 (`isExpired()` → true)→ 引擎移除 → `cleanup()` 释放 GL 资源；战斗结束 `destroyInstance` **不调** `cleanup()`，与前置单元 "战斗结束没有清理回调" 的结论同构；跨战斗缓存禁令 (前置纪律) 原样适用。
 

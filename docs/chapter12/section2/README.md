@@ -65,7 +65,7 @@
 存储与持久性 (生涯引擎侧)：
 
 - `listeners` 非 `transient` → **随存档保存**：常驻监听器跨读档继续有效，其非 `transient` 字段原样恢复。
-- `transientListeners` 是 `transient` → **不随存档保存**，读档时重建为空列表 ——transient 监听器读档后必然消失。
+- `transientListeners` 是 `transient` → **不随存档保存**，读档时重建为空列表 —— transient 监听器读档后必然消失。
 - `listenersWithTimeout` 用 `TimeoutTracker`(公开 API `com.fs.starfarer.api.util.TimeoutTracker`) 承载；`items` 随档保存、`set` 读档时重建。
 - `listenerManager` 是 `ListenerManagerAPI` 实例 (通道二)，读档时若为 null 会重建默认实例。
 
@@ -112,7 +112,7 @@ if (!this.isPaused()) {
 | `boolean hasListenerOfClass(Class<?> c)` | 两仓库任一生效 |
 | `<T> List<T> getListeners(Class<T> c)` | 返回持久 + transient 并集的**新列表副本** |
 
-实现 (`ListenerManagerAPI`)：内部由两个仓库构成 ——`listeners`(持久) 与 `transientListeners`(transient，读档时重建)。语义要点：
+实现 (`ListenerManagerAPI`)：内部由两个仓库构成 —— `listeners`(持久) 与 `transientListeners`(transient，读档时重建)。语义要点：
 
 - `addListener` / `addListener(listener, true)` 直接写入对应仓库；仓库内部先判等、已存在即拒绝写入 (与通道一的 `contains` 去重行为相同，仅检查位置不同 —— 重复注册会被静默丢弃)。
 - `removeListener` 同时清两个仓库；`removeListenerOfClass` 遍历两个仓库的**快照**逐个移除 (安全改列表)；`getListeners` 返回两仓库并集的新列表，派发侧遍历的是这份副本。
@@ -151,8 +151,8 @@ if (!this.isPaused()) {
 | 市场开启/关闭 | 打开市场交互对话框时 `reportPlayerOpenedMarket`，对话框关闭时 `reportPlayerClosedMarket`；打开贸易面板时 `reportPlayerOpenedMarketAndCargoUpdated` |
 | 贸易结算 | 贸易面板与整备界面 (舰船、武器、战机) 结算后 `reportPlayerMarketTransaction`；倾倒货物、未取走战利品也经贸易面板触发 |
 | 战斗发生/结束 | 自动结算轮结算出胜者后 `reportBattleOccurred`、战斗结束 `reportBattleFinished`；AI vs AI 每个自动结算轮一次、玩家遭遇战一次；玩家战斗结算生成 `EngagementResultAPI` 后 `reportPlayerEngagement`(`com.fs.starfarer.api.impl.campaign.FleetEncounterContext`)；战利品生成 `reportEncounterLootGenerated`(`com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`) |
-| 舰队入地 | 舰队加入地点且未上报过 (`isReportedSpawned` 标志) 时 `reportFleetSpawned`—— 每支舰队只上报一次 |
-| 舰队离场 | `CampaignFleetAPI.despawn(FleetDespawnReason, Object)` 内 `reportFleetDespawned`——reason 与 param 由调用方决定 |
+| 舰队入地 | 舰队加入地点且未上报过 (`isReportedSpawned` 标志) 时 `reportFleetSpawned`：每支舰队只上报一次 |
+| 舰队离场 | `CampaignFleetAPI.despawn(FleetDespawnReason, Object)` 内 `reportFleetDespawned`：reason 与 param 由调用方决定 |
 | 舰队跳跃/到达 | 超空间跳跃处理上报 `reportFleetJumped`(devmode 跳跃同样触发)；舰队 AI 到达 assignment 目标时上报 `reportFleetReachedEntity` |
 | 声望变更 | 声望行动处理插件结算后 `reportPlayerReputationChange`(`com.fs.starfarer.api.impl.campaign.CoreReputationPlugin`) |
 | 经济迭代 | 经济推进器每次迭代 `reportEconomyTick(iterIndex)`、月末 `reportEconomyMonthEnd`(同时派发类型化通道 `EconomyTickListener`) |
@@ -323,7 +323,7 @@ Starsector/mods/GearIndustry/
 对应关系：
 
 - `implements EveryFrameScript`：脚本半身提供 `isDone` / `runWhilePaused` / `advance`，按游戏天累计挂载时长，是本节 "生命周期脚本" 角色。
-- 构造器持有受管监听器引用；`setDaysToLive(int)` 是**本节演示参数，归属脚本类** ——`< 0` 常驻、`>= 0` 到期自停并移除监听器。
+- 构造器持有受管监听器引用；`setDaysToLive(int)` 是**本节演示参数，归属脚本类** —— `< 0` 常驻、`>= 0` 到期自停并移除监听器。
 - `advance` 里 `clock.convertToDays(amount)`：`amount` 是上一帧真实秒数，游戏天累加必须经时钟换算 (10 真实秒 = 1 游戏日)。
 - `sector.removeListener(listener)`：脚本半身 `done=true` 的同时显式移除监听器 —— 规则 5 的演示 (脚本结束 ≠ 监听器移除)。
 - 注册入口：调用点的注册块内 `sector.addScript(script)`(脚本列表)；`addScript` 不去重，这正是注册块需要整体判断的缘由之一。
@@ -423,14 +423,14 @@ if (!sector.getListenerManager().hasListenerOfClass(
 
 - **游戏构建**：`BUILD SUCCESSFUL`；`jar tf jars/GearIndustry.jar` 能看到三个类的 `.class` 条目
 
-- **新建生涯与事件边界**：未触发事件时日志不出现周期性的 `GearIn listener` 输出 (监听器是事件驱动，不产生周期日志)—— 这本身是 "注册成功且无副作用" 的判据。触发后的日志按事件核对：
+- **新建生涯与事件边界**：未触发事件时日志不出现周期性的 `GearIn listener` 输出 (监听器是事件驱动，不产生周期日志) —— 这本身是 "注册成功且无副作用" 的判据。触发后的日志按事件核对：
 
 - 打开市场交互：`GearIn listener: market opened: <市场名> (size N)`；关闭：`GearIn listener: market closed: <市场名>`。
 
     - 市场买入/卖出 (或整备界面购买舰船/武器/战机)：每次结算出现 `GearIn listener: trade at <市场名>, credit value <数值>`。
     - 遭遇战：战斗阶段出现 `GearIn listener: battle occurred, player involved=true, winner=...` 与 `GearIn listener: battle finished, ...`(玩家遭遇战各一次)；战斗结算后出现 `GearIn listener: player engagement resolved, didPlayerWin=<true/false>`；出现战利品时 `GearIn listener: encounter loot generated, N stacks`。
     - 改变与势力的声望 (完成任务、送礼、攻击势力目标)：`GearIn listener: reputation change vs faction <id> by +X.XX`。
-    - 任何舰队入地/离场 (包括 AI 舰队)：`fleet spawned` / `fleet despawned, reason=<REASON>`—— 活动星区里这类日志会比较频繁，属正常。
+    - 任何舰队入地/离场 (包括 AI 舰队)：`fleet spawned` / `fleet despawned, reason=<REASON>` —— 活动星区里这类日志会比较频繁，属正常。
     - 启动与游玩全程无 `gear_in` 引起的 `ERROR`。
 - **位置监听器**：前 5 次出现 `current location changed`；第 5 次后出现 `location listener removed itself after 5 reports`，第 6 次起不再出现
 

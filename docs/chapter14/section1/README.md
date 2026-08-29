@@ -65,7 +65,7 @@
 
 行与列的含义定了，下一步是这些行如何进入游戏。
 
-1. **加载时机**：CSV spec 加载期，`loadStarmap` 末尾调用 `Rules.loadRules`—— 一次游戏启动只加载一次，规则表不属于存档数据。
+1. **加载时机**：CSV spec 加载期，`loadStarmap` 末尾调用 `Rules.loadRules` —— 一次游戏启动只加载一次，规则表不属于存档数据。
 2. **合并读取**：文本读取工具的 `readCSV(["id"], "data/campaign/rules.csv", true, true)`：
     - 打开原版与所有启用 MOD 的同路径资源；某个 MOD 把该路径列入 `replace` 时整文件替换；
     - **同文件**内重复 id → `RuntimeException("Duplicate key [...] while loading [...]")`，加载崩溃；
@@ -120,13 +120,13 @@ token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` �
 
 | 步骤 | `FireBest` | `FireAll` |
 |---|---|---|
-| 触发名 | `params[0]`(变量则取记忆值)；`params[1]` = keepOptions | 同左；另在实体记忆写 `$fireAllTrigger`(expire 0)，并先 `FireBest` 触发 `FireAllIntercept`—— 有命中规则即整体拦截 |
+| 触发名 | `params[0]`(变量则取记忆值)；`params[1]` = keepOptions | 同左；另在实体记忆写 `$fireAllTrigger`(expire 0)，并先 `FireBest` 触发 `FireAllIntercept` —— 有命中规则即整体拦截 |
 | 选规则 | `getBestMatching`(分数竞争，null → 返回 `false`) | `getAllMatching`(全部通过者，空 → 返回 `false`) |
 | 选项 | 收集 `rule.getOptions()` + 脚本中 `doesCommandAddOptions()==true` 的表达式 → 按 `order`(选项 `order` 字段 / `getOptionOrder`) 排序 → 非 keepOptions 时清空选项面板 → 逐个添加 (选项文本先做 token 替换) | 全部命中规则的选项合并、排序、清空后添加 |
 | 文本 | `addText`：`rule.pickText()` 随机取一条文本变体 → `performTokenReplacement` → `textPanel.addParagraph` | 每条命中规则各执行一次 `addText` |
 | 脚本 | `rule.runScript(dialog, memoryMap)` | 每条命中规则各执行一次 |
 
-`Rule.runScript` 按声明顺序执行脚本表达式，跳过选项型命令 (`doesCommandAddOptions()==true` 的由 `FireBest` / `FireAll` 提前执行)—— 所以选项型命令即使写在脚本列里，也不会在脚本阶段重复执行。
+`Rule.runScript` 按声明顺序执行脚本表达式，跳过选项型命令 (`doesCommandAddOptions()==true` 的由 `FireBest` / `FireAll` 提前执行) —— 所以选项型命令即使写在脚本列里，也不会在脚本阶段重复执行。
 
 **文本 token 替换** (`SectorAPI.getRules().performTokenReplacement`)：先汇总所有注册的 `RuleTokenReplacementGeneratorPlugin` 生成的替换表 (默认注册 `CoreRuleTokenReplacementGeneratorImpl`，提供 `$playerName` / `$Playername` / `$marketName` / `$entityName` / `$faction` / `$heOrShe` / `$personRank` / `$personName` 等，`com.fs.starfarer.api.impl.campaign.CoreRuleTokenReplacementGeneratorImpl`)，替换键按长度降序 `replaceAll`；再对 `memoryMap` 各记忆的键做 `$memkey.key` / `$key` 替换 (`Misc.replaceTokensFromMemory`，仅 String/Boolean/Float/Integer 值)。
 
@@ -301,7 +301,7 @@ public class GearInRulesIntro implements EveryFrameScript {
 
 对应关系：
 
-- `implements EveryFrameScript`：沿用一次性演示模式 ——`executed` 置位后 `isDone()` 返回 true，引擎在置位同一次推进中自动移除。
+- `implements EveryFrameScript`：沿用一次性演示模式 —— `executed` 置位后 `isDone()` 返回 true，引擎在置位同一次推进中自动移除。
 - `REGISTER_MARK`：persistent data 注册判断键 (`"GearIn_RulesIntro"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
 - `new RuleBasedInteractionDialogPluginImpl("GearInRulesIntro")`：自定义初始 trigger(原版默认 `OpenInteractionDialog` 有 121 条规则，会与演示规则混战；自定义 trigger 保证候选池只有本节规则，`FleetInteractionDialogPluginImpl` / 非对话面板文本触发同样使用自定义 trigger)。
 - `showInteractionDialog(plugin, playerFleet)`：交互目标非 null(`init` 里 `getInteractionTarget().getMemory()` 依赖它)；返回值记入日志 (对话框打开失败时用于定位的防御写法)。
@@ -343,8 +343,8 @@ gradle jar
 
 - **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
 - **规则注册 (加载期)**：
-    - 启动日志 `starsector.log` 出现 `Loading CSV data from [...data/campaign/rules.csv]` 与逐条 `Loading rule: GearIn_rules_intro_welcome` / `..._add_a` / `..._add_b` / `..._open` / `..._detail_low` / `..._detail_high` / `..._leave`—— 注册入口完整流程的静态证明。
-    - 标准输出 (启动器控制台) 出现两条变量警告 (`System.out.println`，非日志)：`WARNING: variable [$GearIn_rules_intro_skip] only used once; rule id: [GearIn_rules_intro_detail_high]` 与 `...[$GearIn_rules_intro_last] only used once; rule id: [GearIn_rules_intro_detail_high]`—— 单次使用变量属正常现象 (原版同样大量存在)，不是错误。
+    - 启动日志 `starsector.log` 出现 `Loading CSV data from [...data/campaign/rules.csv]` 与逐条 `Loading rule: GearIn_rules_intro_welcome` / `..._add_a` / `..._add_b` / `..._open` / `..._detail_low` / `..._detail_high` / `..._leave` —— 注册入口完整流程的静态证明。
+    - 标准输出 (启动器控制台) 出现两条变量警告 (`System.out.println`，非日志)：`WARNING: variable [$GearIn_rules_intro_skip] only used once; rule id: [GearIn_rules_intro_detail_high]` 与 `...[$GearIn_rules_intro_last] only used once; rule id: [GearIn_rules_intro_detail_high]` —— 单次使用变量属正常现象 (原版同样大量存在)，不是错误。
 - **对话弹出 (新档首次进入生涯后第一帧)**：`starsector.log` 出现 `GearIn rules intro dialog shown=true`；游戏暂停并弹出对话：
     - 文本面板显示两条欢迎变体之一 (每次随机)：含玩家名的句子 (`$playerName` 已替换)；
     - 选项面板按 order 显示 "查看详情"(order 0) 与 "结束"(order 5)；

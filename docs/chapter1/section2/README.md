@@ -341,7 +341,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 控制台来自 Console Commands MOD(可在 FOSSIC 论坛下载并安装)；命令名与 ID 均不区分大小写 (AddShip 还会补 `_Hull` 重试)。
 
-`Addship` 接收的是装配 ID—— 游戏加载船体时会自动生成一个空的 `<hullId>_Hull` 装配，因此直接输入 `Addship GearIn_artizan_Hull` 即可。
+`Addship` 接收的是装配 ID —— 游戏加载船体时会自动生成一个空的 `<hullId>_Hull` 装配，因此直接输入 `Addship GearIn_artizan_Hull` 即可。
 
 **但在做下一步之前，强烈推荐您亲自试一下您制作的舰船**。
 

@@ -12,7 +12,7 @@
 
 - 区分任务清单旧名对应的实际类型：枢纽任务约定是 `HubMission`，Intel 约定是 `IntelInfoPlugin` 与 `IntelManagerAPI`，并说明 `MissionDefinitionAPI` 属于战役任务而非生涯任务；
 - 解释 `HubMission` 接口与 `BaseHubMission` 类族的职责分工，以及 `HubMissionWithTriggers` / `HubMissionWithSearch` / `HubMissionWithBarEvent` 各补充了什么能力；
-- 复述任务生命周期的创建、接受、推进与结束四段，说出每段的关键调用与失败表现；
+- 复述任务生命周期的创建、接受、推进与结束，说出每个阶段的关键调用与失败表现；
 - 解释阶段管理的内部结构 (`StageData` 与阶段图) 和 `setCurrentStage` 的完整副作用链；
 - 说明目标完成检测的帧推进轮询、对话驱动与时限三通道，以及 `ConditionChecker` 家族和 `setStageOn*` / `connectWith*` 的连接声明方式；
 - 区分单任务触发器链与跨任务全局链两种事件链形态，并说明各自的注册与回写方式；
@@ -131,9 +131,9 @@ Intel 条目只是展示层，任务的状态与推进逻辑在 `HubMission` 接
 | `HubMissionBarEventWrapper` | 酒吧包装 (`BaseBarEvent` 子类)：把 `HubMissionWithBarEvent` 任务包装成酒吧事件 |
 | `MissionTrigger` | 触发器数据类 (`ConditionChecker` + 阶段集合 + `TriggerAction` 列表) |
 
-类族职责已经清楚，接下来看任务在运行时的四段生命周期：创建、接受、推进与结束。
+类族职责已经清楚，接下来看任务在运行时的生命周期：创建、接受、推进与结束。
 
-### 生命周期四段
+### 任务的生命周期
 
 **创建 (createAndAbortIfFailed)**：
 
@@ -379,7 +379,7 @@ endTrigger();                                                 // 必须成对
     - 否则把 LOCAL 内存切到任务人、`updateInteractionData`、`FireBest` 触发 `<prefix>_blurbBar` 与 `<prefix>_optionBar` 规则。
 7. 用户点选后 rules 走 `contact_acceptBar` → **`BarCMD accept $missionId`**(`BarCMD` 的 `accept` 分支)：返回首个满足 `optionId.startsWith(mission.getTriggerPrefix())` 的 wrapper → `BarEventManager.notifyWasInteractedWith(w)`(酒吧事件的交互收尾)。当前示例的事件 ID 与 trigger prefix 相同，因此结果不变：
 
-    - `w.getMission().accept(dialog, memoryMap)`—— 进入 "生命周期四段" 的接受段。
+    - `w.getMission().accept(dialog, memoryMap)`—— 进入生命周期的接受阶段。
 
 **路线 B：联系人任务板 (person\_missions.csv + `BaseMissionHub`)**：
 

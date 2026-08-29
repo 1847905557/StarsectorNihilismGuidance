@@ -252,9 +252,9 @@ hull style 是 "声音与材质的总线"：
 - 材质：`damageDecal*`(损伤贴花)、`slotCover*`(武器盖板)、`dHullOverlay*`(D 插覆盖)、`fluxVent*`(V 排粒子)、`glowSprite`/`glowOutline`(光带) 等路径在加载阶段全部进入贴图资源队列。
 - 战役：生涯引擎用 `hyperspaceJitterColor` 画超空间光芒，战役爆炸用 `baseCampaignExplosionColor`，战斗爆炸用 `baseCombatExplosionColor`。
 
-因此 "让声音也换掉" 需要三步完整流程：**`sounds.json` 注册声音集 → hull style 的 `*Set` 字段引用该声音集 ID → 声音集内的 `.ogg` 文件真实存在**。
+因此 "让声音也换掉" 是一条完整流程：**`sounds.json` 注册声音集 → hull style 的 `*Set` 字段引用该声音集 ID → 声音集内的 `.ogg` 文件真实存在**。
 
-最小例引用了原版声音集 (`engine_loop` 等)，注册与资源两步都由原版提供，所以零资产也能出声。
+最小例引用了原版声音集 (`engine_loop` 等)，注册与资源引用都由原版提供，所以零资产也能出声。
 
 原版声音集是分档的：`sounds` 数组列文件，再用 `FIGHTER`/`FRIGATE`/`DESTROYER`/`CRUISER`/`CAPITAL_SHIP` 五个键按船体分级选档：
 
@@ -325,7 +325,7 @@ hull style 是 "声音与材质的总线"：
 
 hull style 是声音与材质的总线 ——9 个声音字段指向 `sounds.json` 的声音集，材质字段指向贴图资源，任何一环缺失都会带来可定位的失败 (加载期崩溃或战斗期 NPE)。
 
-最小例零资产可用，自定义声音则必须完成 "注册声音集 → 风格引用 → `.ogg` 存在" 三步完整流程。
+最小例零资产可用，自定义声音则必须走完 "注册声音集 → 风格引用 → `.ogg` 存在" 的完整流程。
 
 这套 "注册 → 引用 → 资产存在" 的机制是自定义视觉与声音数据的共同基础：新增舰船变体、势力配色或自定义音效时，只要沿同一条流程补齐数据文件，本节的加载期与战斗期排查方法即可复用。
 

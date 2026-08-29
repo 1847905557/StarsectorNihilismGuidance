@@ -81,7 +81,7 @@
 
 ### MarketConditionAPI 生命周期
 
-注册链让 spec 在加载期就位，实例则在运行期由插件五步驱动，先看接口本身。
+注册链让 spec 在加载期就位，实例则在运行期由插件按生命周期回调驱动，先看接口本身。
 
 ### 条件接口速查表
 
@@ -94,7 +94,7 @@
 | `MarketConditionAPI` | `isSurveyed()` / `setSurveyed(boolean)` / `requiresSurveying()` | 条件级 survey；`requiresSurveying` 读 procgen 表的 `reqSurvey` |
 | `MarketConditionAPI` | `isPlanetary()` | 转发 plugin(默认 spec 标记)，决定条件面板位置 |
 | `MarketConditionSpecAPI` | `getOrder()` / `getIcon()` / `getDesc()` / `getScriptClass()` / `getTags()` / `isPlanetary()` / `isDecivRemove()` | CSV 九字段的运行时面 |
-| `MarketConditionPlugin` | `init(market, condition)` / `setParam(Object)` / `apply(String id)` / `advance(float amount)` / `unapply(String id)` | 生命周期五步 |
+| `MarketConditionPlugin` | `init(market, condition)` / `setParam(Object)` / `apply(String id)` / `advance(float amount)` / `unapply(String id)` | 生命周期回调 |
 | `MarketConditionPlugin` | `isTransient()` / `showIcon()` / `runWhilePaused()` / `getName()` / `getIconName()` | 存档与展示语义 |
 | `MarketConditionPlugin` | `getTokenReplacements()` / `getHighlights()` / `getHighlightColors()` / `hasCustomTooltip()` / `createTooltip(...)` / `isTooltipExpandable()` / `getTooltipWidth()` | tooltip 链路 |
 | `MarketConditionPlugin` | `getRelatedCommodities()` | 仅事件来源条件使用 |
@@ -556,7 +556,7 @@ MarketConditionAPI condition = market.getSpecificCondition(token);
 
 - `com.fs.starfarer.api.campaign.econ.MarketConditionAPI`：条件实例接口 (spec id、token、survey 状态、`getGenSpec`、`isPlanetary`)。
 - `com.fs.starfarer.api.characters.MarketConditionSpecAPI`：条件静态配置 (CSV 九字段的运行时面)。
-- `com.fs.starfarer.api.campaign.econ.MarketConditionPlugin`：条件行为插件 (生命周期五步 + tooltip 链路 + `isTransient`)。
+- `com.fs.starfarer.api.campaign.econ.MarketConditionPlugin`：条件行为插件 (生命周期回调 + tooltip 链路 + `isTransient`)。
 - `com.fs.starfarer.api.campaign.econ.MarketAPI`：条件访问族、suppression 族、`SurveyLevel`、两个重算入口。
 - `com.fs.starfarer.api.impl.campaign.econ.BaseMarketConditionPlugin`：条件插件基类 (transient 默认、token 替换、tooltip 默认实现)。
 - `com.fs.starfarer.api.impl.campaign.econ.BaseMarketConditionPlugin2`：非 transient 条件插件 (`daysActive` 计时，进存档)。

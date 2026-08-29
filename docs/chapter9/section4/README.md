@@ -11,7 +11,7 @@
 完成后，您将能够：
 
 - 配置 `FleetParamsV3` 的来源市场与质量、六类点数、规模、军官与旗舰参数，并区分 "点数是目标不是硬上限" 的含义；
-- 复述 `FleetFactoryV3.createFleet(params)` 的十步流程，并说出每步的可观察结果；
+- 复述 `FleetFactoryV3.createFleet(params)` 从接收参数到投放舰队的完整流程，并说出各环节的可观察结果；
 - 区分成员、旗舰与指挥官各自的生成规则：角色抽选、旗舰 picker 与 `setFlagship` 副作用、指挥官与军官的等级与数量；
 - 解释 `FleetInflater` 的延迟膨胀语义、persistent 行为与膨胀结果 (武器 tier 概率、D 插/S 插、`REFIT` 来源)；
 - 识别工厂写入舰队内存的键及其使用方，并用 `getMemoryWithoutUpdate()` 安全读写；
@@ -95,11 +95,11 @@ V1 的 pts 是尺寸当量不是 fleet points，V3 修正了这一点。
 
 历史实现不使用，本节只在区分新旧时提及。
 
-参数对象准备好了，接下来看工厂如何使用它 —— `FleetFactoryV3.createFleet` 的十步流程：
+参数对象准备好了，接下来看工厂如何使用它 —— `FleetFactoryV3.createFleet` 的完整流程：
 
 ### 生成流程：FleetFactoryV3.createFleet
 
-`FleetFactoryV3.createFleet(FleetParamsV3 params)`(`com.fs.starfarer.api.impl.campaign.fleets.FleetFactoryV3`) 返回已挂载 inflater 的完整舰队。十步流程：
+`FleetFactoryV3.createFleet(FleetParamsV3 params)`(`com.fs.starfarer.api.impl.campaign.fleets.FleetFactoryV3`) 返回已挂载 inflater 的完整舰队。流程如下：
 
 1. **插件扩展点**：`Global.getSector().getGenericPlugins().pickPlugin(CreateFleetPlugin.class, params)` (`com.fs.starfarer.api.plugins.CreateFleetPlugin`) 非 null 时直接转交插件实现并返回 —— 默认逻辑只在未注册该插件时执行。
 2. **市场选择** (`pickMarket`)：`source` 非 null 直接用；否则用 `locInHyper` 就近找同势力市场 (独立势力/掠夺者/`CUSTOM_SPAWNS_AS_INDEPENDENT` 势力放宽为 "不对独立势力敌对" 即可)。
@@ -296,7 +296,7 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 
 ## 实现舰队投放工厂
 
-下面把市场来源、预算、延迟膨胀和地点投放串成一条可观察链。每段都是 `GearInFleetFactory.runOnce` 中的局部代码；确认当前完成信号后再加入下一段。
+下面把市场来源、预算、延迟膨胀和地点投放串成一条可观察链。每一环都是 `GearInFleetFactory.runOnce` 中的局部代码；确认当前完成信号后再加入下一环。
 
 ### 取得来源市场与投放锚点
 
@@ -565,7 +565,7 @@ location.spawnFleet(market.getPrimaryEntity(), 0f, 0f, fleet);
 
 ## 总结
 
-本节把 "生涯舰队" 从参数到投放串成一条完整链：`FleetParamsV3` 决定来源与预算，`FleetFactoryV3.createFleet` 按十步把它变成带成员的舰队，`FleetInflater` 在需要完整装配时按质量补全，`LocationAPI.spawnFleet` 最后把它放进地点容器。每个环节断掉时症状都不同：质量没取到 → 满船 D 插；没投放 → 地图上查无此舰队且无报错；膨胀前读装配 → 拿到生成态。
+本节把 "生涯舰队" 从参数到投放串成一条完整链：`FleetParamsV3` 决定来源与预算，`FleetFactoryV3.createFleet` 逐步把它变成带成员的舰队，`FleetInflater` 在需要完整装配时按质量补全，`LocationAPI.spawnFleet` 最后把它放进地点容器。每个环节断掉时症状都不同：质量没取到 → 满船 D 插；没投放 → 地图上查无此舰队且无报错；膨胀前读装配 → 拿到生成态。
 
 排错与复用记住四条判断。其一，点数是目标不是硬上限，实际点数受供应与裁剪影响，还原请求值用 `$spawnFPMult`。其二，质量优先级 `qualityOverride` > `quality + qualityMod`；没有来源市场时工厂会建立 fake market 并重算质量，D 插平均为 `(1-quality)/0.2` 个/船。其三，膨胀是延迟的：`createFleet` 只挂 inflater，`persistent=true` 时膨胀后保留，同 `seed` 重膨胀结果一致。其四，`setFlagship` 会把旗舰舰长设为指挥官并重置其他成员舰长，读回 `getCaptain() == getCommander()` 是设计行为而非故障。
 

@@ -64,7 +64,7 @@
 
 ## 文件与 API 链路
 
-工具链基线解决了 "怎么编译"，接下来要回答 "编译出的 jar 怎样进入游戏并生效"。从源码到游戏内生效共七段：
+工具链基线解决了 "怎么编译"，接下来要回答 "编译出的 jar 怎样进入游戏并生效"。从源码到游戏内生效要经过以下环节：
 
 ### JAR 加载链路速查表
 
@@ -82,7 +82,7 @@
 
 ## 核对编译任务链
 
-七段链路先不要逐段实现。本节的策略是只建立一条最小任务链，先让一个类被注册、加载、运行，再验证修改能生效：
+这条链路先不要逐环节实现。本节的策略是只建立一条最小任务链，先让一个类被注册、加载、运行，再验证修改能生效：
 
 1. 定位使用方：`settings.json` 的 `plugins` 段 (key → 完整类名)→ 注册进脚本类加载器 → 每场战斗创建实例。jar 内类**必须**被某个注册入口按名引用才会被加载。
 2. 建立最小对象：`GearInFrameLogger` 编译进 `jars/GearIndustry.jar`，声明 `jars`，登记 `gearInFrameLogger`。
@@ -322,7 +322,7 @@ public class GearInFrameLogger extends BaseEveryFrameCombatPlugin {
 
 - 步骤 2：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jars/GearIndustry.jar` 存在。
 - 步骤 3：`starsector.log` 先出现前缀为 `Getting ready to load jar file [` 的准备日志，方括号内解析结果包含 `mods/GearIndustry/jars/GearIndustry.jar`，随后出现 `Loading jar files`；安装根目录部分以本机实际路径为准，且没有由 `gear_in` 引起的 `ERROR`。
-- 步骤 4：运行 3 秒以上后，日志每隔约 3 秒出现一行 `GearIn FrameLogger tick at battle time ...`。这条日志只可能在类被成功加载并实例化后产生，证明 jar 内容、`jars` 声明、`plugins` 登记三段链路全部打通。
+- 步骤 4：运行 3 秒以上后，日志每隔约 3 秒出现一行 `GearIn FrameLogger tick at battle time ...`。这条日志只可能在类被成功加载并实例化后产生，证明 jar 内容、`jars` 声明、`plugins` 登记这条链路全部打通。
 
 ## 故障分析
 

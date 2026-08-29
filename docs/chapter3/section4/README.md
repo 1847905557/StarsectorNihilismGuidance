@@ -31,7 +31,7 @@
 
 需要整体替换某个文件时，支持在 `mod_info.json` 里声明 `replace`(该机制属于文件加载配置主题，此处不展开)。
 
-加载与查询共三步：
+加载与查询的流程如下：
 
 1. CSV spec 加载期的描述行读取：以 `id`、`type` 两列为键读取全部行；`type` 必须能解析为 `Description.Type` 枚举，解析失败立即抛 `RuntimeException`；每行先经 `replaceSmartQuotes` 归一化弯引号，再以 UID = `id + "_" + type` 存入注册表。text1–text3 缺省为占位文本 `No description... yet`，text4/text5 缺省为空。
 2. 运行期查询入口是公开 API：`Global.getSettings().getDescription(id, type)`(`SettingsAPI`)，返回 `com.fs.starfarer.api.loading.Description`；找不到键时返回一个填充占位文本的新描述对象 (不报错)。

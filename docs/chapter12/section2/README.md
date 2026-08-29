@@ -73,7 +73,7 @@
 
 派发：生涯引擎的 `reportXxx(...)` 方法族逐事件遍历 `getAllListeners()`(三列表并集的新列表快照) 调用回调。
 
-因此**在回调里注册/移除监听器不会抛 `ConcurrentModificationException`**(派发基于快照)，但遍历顺序是 "持久 → transient → 超时" 三段的拼接顺序，不要依赖跨段次序。
+因此**在回调里注册/移除监听器不会抛 `ConcurrentModificationException`**(派发基于快照)，但遍历按 "持久 → transient → 超时" 的顺序拼接，不要依赖该顺序之外的次序。
 
 超时语义 (引擎每帧推进时)：
 

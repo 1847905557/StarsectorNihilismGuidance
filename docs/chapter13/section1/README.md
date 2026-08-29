@@ -223,7 +223,7 @@ if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
 
 ## 实现酒吧事件
 
-酒吧事件要连续通过五个边界：creator 在场、manager 抽中、市场允许显示、选项进入事件对话、对话通知 manager 收尾。以下片段按这条链逐段接通。
+酒吧事件要连续通过以下边界：creator 在场、manager 抽中、市场允许显示、选项进入事件对话、对话通知 manager 收尾。以下片段按这条链逐段接通。
 
 ### 注册事件 creator
 
@@ -535,7 +535,7 @@ BarEventManager.getInstance().notifyWasInteractedWith(this);
 
 ## 总结
 
-本节把酒吧事件接成了一条完整流程：注册入口决定事件从哪来，调度入列决定何时出现，显示过滤决定在哪个市场出现，对话收尾决定何时离开。排错时沿 "注册 → 抽取 → 过滤 → 显示" 四段日志核对，日志停在哪一段，问题就在哪一段。
+本节把酒吧事件接成了一条完整流程：注册入口决定事件从哪来，调度入列决定何时出现，显示过滤决定在哪个市场出现，对话收尾决定何时离开。排错时按 "注册 → 抽取 → 过滤 → 显示" 的顺序核对日志，流程停在哪一环，日志就缺哪一环。
 
 可复用的判断如下：注册只发生在生涯引擎建立之后，并用 `hasEventCreator(Class)` 判断去重 (沿用原版 `CoreLifecyclePluginImpl.addBarEvents` 的写法)；所有时长都是游戏天 (`Misc.getDays` 换算)，manager 与活动列表随存档保存，事件字段必须可序列化；酒吧选项的 optionData 必须是事件自身 (`addOption(text, this)`)，交互收尾按事件语义调用 `notifyWasInteractedWith(this)`。`shouldRemoveEvent` 默认 false、`shouldShowAtMarket` 默认锁定单一市场、教程进行中全部隐藏 —— 这三条默认语义解释了多数 "该出现没出现、该消失没消失" 的现象，怀疑事件逻辑前先对照它们。
 
@@ -569,7 +569,7 @@ BarEventManager.getInstance().notifyWasInteractedWith(this);
 - `data/campaign/rules.csv`：`marketVisitBar` / `bar_optionSel` / `AddBarEvents` 分类规则 / `BarCMD returnFromEvent false`。
 - `data/campaign/econ/corvus.json`：`jangala` 市场实体 (验证临时选项片段用)。
 - `data/scripts/gearin/campaign`：本节两个示例类的包目录。
-- `Starsector/starsector-core/starsector.log`：验证日志四段的主要依据。
+- `Starsector/starsector-core/starsector.log`：按总结中的顺序核对流程日志的主要依据。
 
 ## 完整最小例
 

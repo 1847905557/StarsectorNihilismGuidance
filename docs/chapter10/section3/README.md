@@ -81,7 +81,7 @@
 
 加载器对每个实体执行 `entity.setMarket(market)` 与 `entity.setFaction(...)`，并把实体加入 `connectedEntities`。
 
-**代码路径** (生涯代码里建市场，把经济数据主题的三步收尾展开为完整链)：
+**代码路径** (生涯代码里建市场，把经济数据主题的注册收尾展开为完整链)：
 
 1. `Global.getFactory().createMarket(id, name, size)` 创建市场对象 (只建对象，不注册)。
 2. `setFactionId(factionId)` 设势力；`setPrimaryEntity(entity)` 绑主实体。
@@ -95,7 +95,7 @@
 
 随后 `globalEconomy.addMarket(newMarket, true)` → `primaryEntity.setMarket(newMarket)` → `primaryEntity.setFaction(factionID)`。
 
-代码路径建市场必须完成三步收尾
+代码路径建市场必须完成注册收尾
 
 `economy.addMarket` / `entity.setMarket` / `entity.setFaction` 缺一不可：
 
@@ -674,7 +674,7 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
 
 ## 总结
 
-本节把市场、子市场与经济对象讲成三条链：市场链从 `createMarket` 经三步收尾把市场注册进经济集合并绑到实体；子市场链从 `submarkets.csv` 的 spec 生成插件实例，差异集中在税率、合法性、库存与稳定度的关系和经济参与；经济链由 `EconomyAPI.advance` 每帧喂给经济推进器，每月 10 步、月末步写库存与价格。排错时抓住一个分工即可少走弯路：市场持有结构与交易入口，经济集合负责重算，子市场插件决定单个入口的行为差异 —— 市场是实体绑定的经济节点，不是经济重算的执行者。
+本节把市场、子市场与经济对象讲成三条链：市场链从 `createMarket` 经收尾调用把市场注册进经济集合并绑到实体；子市场链从 `submarkets.csv` 的 spec 生成插件实例，差异集中在税率、合法性、库存与稳定度的关系和经济参与；经济链由 `EconomyAPI.advance` 每帧喂给经济推进器，每月 10 步、月末步写库存与价格。排错时抓住一个分工即可少走弯路：市场持有结构与交易入口，经济集合负责重算，子市场插件决定单个入口的行为差异 —— 市场是实体绑定的经济节点，不是经济重算的执行者。
 
 记忆要点：
 

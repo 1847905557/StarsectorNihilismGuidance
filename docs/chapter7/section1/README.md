@@ -131,9 +131,15 @@ private void report(CombatEngineAPI engine) {
 - **`advance` 三件事按顺序**：`calls++` 在暂停检查**之前** (暂停帧也计数，这是 "暂停期间回调照常执行" 的观测点)；引擎引用**用到时才取** (`init()` 已废弃、不保证先于 `advance` 调用)；**暂停检查** `if (engine.isPaused()) { pausedCalls++; return; }` —— 暂停帧只计数、不推进状态。
 - **`report`**：`Global.getLogger(...)` 写日志；`addFloatingText(...)` 在玩家舰船位置显示浮动文字 (3 秒后消失)。
 
+::: warning 状态推进必须先过暂停检查
+
+任何**推进状态、累计时间、修改数值**的代码，在 `advance` 里都必须先检查 `engine.isPaused()`。游戏不会替您跳过暂停帧 —— 暂停期间您的代码每帧照跑，只是游戏不推进战斗逻辑。
+
+:::
+
 ## 完整最小例
 
-示例做一件事：统计 "非暂停时间" 累计秒数 (`elapsed`) 与回调总次数 (`calls`)，每累计 10 秒向日志输出一次，并在玩家舰船位置显示一行浮动文字。暂停期间 `calls` 继续增长、`elapsed` 冻结 —— 这正是暂停检查的可观察结果。
+示例做一件事：统计 "非暂停时间" 累计秒数 (`elapsed`) 与回调总次数 (`calls`)，每累计 10 秒向日志输出一次，并在玩家舰船位置显示一行浮动文字。暂停期间 `calls` 继续增长、`elapsed` 冻结，暂停检查的可观察结果即在于此。
 
 文件：`src/data/scripts/gearin/combat/GearInPauseAwarePlugin.java`：
 
@@ -210,19 +216,6 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
     }
 }
 ```
-
-:::
-
-## 观察暂停行为
-
-1. 重启游戏，进模拟战 (有玩家舰船)，正常跑约 15 秒；
-2. 打开 `starsector.log`：出现 `GearIn: elapsed 10s, calls 600 (paused 0)` 之类的报告 —— `calls` 约等于秒数 × 60，这正是每帧被调用一次的表现；
-3. 按 ESC 暂停约 20 秒再恢复；
-4. 故障注入：删掉 `advance` 里的暂停检查段 (`if (engine.isPaused()) {...return;}`)，重启、进战斗、暂停 20 秒 —— 恢复后 `elapsed` 照常涨了 20 秒。改回后恢复。
-
-::: warning 状态推进必须先过暂停检查
-
-任何**推进状态、累计时间、修改数值**的代码，在 `advance` 里都必须先检查 `engine.isPaused()`。游戏不会替您跳过暂停帧 —— 暂停期间您的代码每帧照跑，只是游戏不推进战斗逻辑。
 
 :::
 

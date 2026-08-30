@@ -2,9 +2,9 @@
 
 本节将引入一些基本的武器效果，包括弹体命中 (OnHit) 与光束武器每帧 (BeamEffect) 两类，并初步解析它们在数据文件中的注册方式。
 
-*本节预期阅读时间：~15 分钟。*
+*本节预期阅读时间：\~15 分钟。*
 
-*本节预期操作时间：~20 分钟。*
+*本节预期操作时间：\~20 分钟。*
 
 ## 学习目标
 
@@ -23,7 +23,7 @@
 
 ## 武器调用效果类的机制
 
-与船插相同，游戏不会自动加载未注册的类 —— 需要在数据文件里写类名。
+真正的特效由代码驱动。既然是代码，那一般来说都需要配置注册位置。
 
 ### 武器注册列速查表
 
@@ -34,7 +34,7 @@
 | `onHitEffect` | 弹体文件 `.proj` | 该弹体**命中**目标时 |
 | `beamEffect` | 武器文件 `.wpn`(仅光束武器) | 光束武器**激活期间**每帧 |
 
-`beamEffect` 只在 `specClass: "beam"` 的光束武器上被读取 —— 写到火炮、导弹的 `.wpn` 上静默无效。这两列的值都是完整类名 (包名.类名)，游戏在需要时创建实例并调用。建议始终把效果类与对应武器放在同一 MOD 内，避免跨 MOD 依赖。
+`beamEffect` 只在 `specClass: "beam"` 的光束武器上被读取。这两列的值都是完整类名 (包名.类名)，如果您直到现在都不知道什么叫包名和类名，那您接下来抄例子的时候可得注意了。
 
 ## OnHit：射弹命中时
 
@@ -73,9 +73,9 @@ public class GearInHitLogger implements OnHitEffectPlugin {
 
 两类内容，与船插同构：
 
-- **`implements OnHitEffectPlugin` + `onHit(...)` 方法**：按模板使用。`onHit` 的方法签名有六个参数，实际需要修改的只有一行。游戏调用时会把 "射弹、目标、命中点、是否打在护盾上" 等信息传入，本节只使用其中两个：
-  - 日志文字 (引号内)：命中时写入 `starsector.log`，`shieldHit` 显示这次打在护盾还是船体；
-  - `addHitParticle(...)` 一行：在命中点生成一个光点 (大小、颜色为数字参数，可修改)。粒子机制本节不展开，只需知道这一行在命中点生成光点。
+- **`implements OnHitEffectPlugin` \+ `onHit(...)` 方法**：按模板使用。`onHit` 的方法签名有六个参数，实际需要修改的只有一行。游戏调用时会把 "射弹、目标、命中点、是否打在护盾上" 等信息传入，本节只使用其中两个：
+    - 日志文字 (引号内)：命中时写入 `starsector.log`，`shieldHit` 显示这次打在护盾还是船体；
+    - `addHitParticle(...)` 一行：在命中点生成一个光点 (大小、颜色为数字参数，可修改)。粒子机制本节不展开，只需知道这一行在命中点生成光点。
 - **`package` / `import` / 类名**：按模板使用。
 
 ### 注册命中效果
@@ -85,14 +85,6 @@ public class GearInHitLogger implements OnHitEffectPlugin {
 ```json
 "onHitEffect": "data.scripts.gearin.combat.GearInHitLogger",
 ```
-
-### 验证命中效果
-
-1. 重启游戏，进模拟战用这把武器命中敌人；
-2. 退出游戏打开 `starsector.log`：每命中一次出现一行 `GearIn hit! shieldHit=false`(打在船体) 或 `shieldHit=true`(打在护盾)；
-3. 命中瞬间命中点出现一个橙色光点。
-
-建议验证前清空 `starsector.log` 再重启，便于定位本次运行的新行。
 
 ## BeamEffect：光束激活期间
 
@@ -135,7 +127,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 }
 ```
 
-新增的一个概念：**`advance(float amount, ...)` 在光束激活期间每帧被调用**，`amount` 是距上一帧的秒数 (正常约 0.017)。字段 `timeSinceLastReport` 每帧累加 `amount`，达到 `REPORT_INTERVAL`(参数，默认 1 秒) 时输出一行日志、生成一个光点并归零 —— 这种固定间隔写法同样适用于光束持续伤害与每帧修正。其余按模板使用。
+新增的一个概念：**`advance(float amount, ...)` 在光束激活期间每帧被调用**，`amount` 是距上一帧的秒数 (正常约 0.017)。字段 `timeSinceLastReport` 每帧累加 `amount`，达到 `REPORT_INTERVAL`(参数，默认 1 秒) 时输出一行日志、生成一个光点并归零。固定间隔的写法同样适用于光束持续伤害与每帧修正。其余按模板使用。
 
 ### 注册光束效果
 
@@ -144,12 +136,6 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 ```json
 "beamEffect": "data.scripts.gearin.combat.GearInBeamLogger",
 ```
-
-### 验证光束效果
-
-1. 重启游戏，进模拟战用光束武器照射敌人并保持开火；
-2. `starsector.log`：光束激活期间每秒一行 `GearIn beam tick`，停止开火即停；
-3. 光束末端 (命中点) 每秒出现一个青色光点。
 
 ## 类名三处一致 (武器版)
 
@@ -167,7 +153,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ## 验证方案
 
-前置数据：已经绑定 `GearInHitLogger` 的弹体武器和已经绑定 `GearInBeamLogger` 的光束武器。
+前置数据：已经绑定 `GearInHitLogger` 的弹体武器和已经绑定 `GearInBeamLogger` 的光束武器。建议验证前清空 `starsector.log` 再重启，便于定位本次运行的新行。
 
 1. 从模拟战与 `starsector.log`开始验证。
 2. 重启游戏并进入模拟战，用弹体武器命中敌舰。

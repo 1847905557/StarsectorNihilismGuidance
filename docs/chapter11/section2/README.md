@@ -92,7 +92,7 @@ skill_data.csv(按 id 读行，收集全部注册 id)
 
 生效范围只看 type，别信 scope
 
-`ALL_SHIPS_IN_FLEET` 与 `SHIP` 的**接口相同** (都是 `ShipSkillEffect`)，作用对象集合完全由 `type` 决定 —— 这是本节最容易被 `scope` 字段误导的一点：`scope` 只是 UI 文本，写 `"scope":"FLEET"` 不会把 SHIP 效果变成全舰队加成。
+`ALL_SHIPS_IN_FLEET` 与 `SHIP` 的**接口相同** (都是 `ShipSkillEffect`)，作用对象集合完全由 `type` 决定；最容易误导读者的是 `scope` 字段：`scope` 只是 UI 文本，写 `"scope":"FLEET"` 不会把 SHIP 效果变成全舰队加成。
 
 本节示例用到 SHIP、SHIP\_FIGHTERS、FLEET、CHARACTER\_STATS 与 DESCRIPTION 五类，写效果脚本时每个 effect 的 `type` 决定类实现哪个接口，先对照上面的表格再落笔。
 

@@ -78,7 +78,7 @@
 
 为什么按 "持久 / 派生" 分层
 
-只有槽位列表随存档保存；视图与派生状态每次同步时由成员重算 —— 这样读档后集合自动自洽，成员增删也不需要手动维护任何视图或统计值。
+只有槽位列表随存档保存；视图与派生状态每次同步时由成员重算，读档后集合因此自动自洽，成员增删也不需要手动维护任何视图或统计值。
 
 1. **持久槽位列表**：`members`，按槽位存储成员，槽位可被 `NULL_MEMBER` 占位 (`FleetMemberType.NULL`)。这是**唯一随存档保存**的成员层。
     - 添加成员填入第一个空槽 (`findFirstUnusedIndex`)，按索引移除只在原槽放回 NULL(`removeFleetMemberAtIndex`)，整体移除才收缩 (`removeFleetMemberAndCollapseSlot`)。
@@ -178,7 +178,7 @@ addFleetMember 禁止传 null
 
 setVariant 保存的是传入引用
 
-创建成员时的装配已被克隆，但 `setVariant` 传入的引用需要调用方自己管理生命周期 —— 不要长期共享同一装配引用。
+创建成员时的装配已被克隆，但 `setVariant` 传入的引用需要调用方自己管理生命周期，不要长期共享同一装配引用。
 
 保存态里有两组字段决定成员能否上场：CR 与部署成本。战斗准备是 "当前状态" 判据，补给和时间可以恢复。
 
@@ -207,7 +207,7 @@ setVariant 保存的是传入引用
 - **封存 (mothball)**：`getRepairTracker().setMothballed(true)` 后：成员不进 `getCombatReadyMembersListCopy()`、排到 `getMembersInPriorityOrder()` 末尾、`canBeDeployedForCombat()` 恒 `false`。
     - 该调用立即执行成员 `updateStats`，并标记舰队数据等待同步。成员 stats 此时已经重算；舰队容量等派生数据在同步后更新。
     - 封存 stats 把补给月耗乘以 `supplyConsumptionMothballedMult`，并把 cargo / fuel / maxCrew / minCrew 乘数置 0。
-    - 封存船**不贡献容量也不烧船员**，这正是 "封存闲置船" 的语义。
+    - 封存船**不贡献容量也不烧船员**，即语义上的 "封存闲置船"。
 
 封存修正立即生效
 
@@ -358,14 +358,14 @@ mods/GearIndustry/
 - `REGISTER_MARK`：persistent data 判断键，用于判断脚本是否已在该存档执行过 (`"GearIn_FleetMemberScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不含任何工作单元编号变体。
 - `createFleetMember(FleetMemberType.SHIP, "...")`：创建入口。
     - `wolf_Assault` / `hammerhead_Elite` 是原版注册装配 id(`data/variants/wolf/wolf_Assault.variant`、`data/variants/hammerhead/hammerhead_Elite.variant`，variant id = 文件名去扩展名)。
-- `data.addFleetMember(...)`：入队入口；加入后 `getNumMembers()` / `getFleetPoints()` / `getCargo().getMaxCapacity()` 随之变化 —— 容量变化来自同步管线里的 `updateCargoCapacities`。
+- `data.addFleetMember(...)`：入队入口；加入后 `getNumMembers()` / `getFleetPoints()` / `getCargo().getMaxCapacity()` 随之变化，容量变化来自同步管线里的 `updateCargoCapacities`。
 - `getStatus().applyHullFractionDamage(0.3f)` / `repairFully()`：船体状态写入与恢复 (`hammerhead_Elite` 是普通舰船，单一状态槽，hull fraction 从 1.0 到 0.7 再回 1.0)。
 - `getRepairTracker().setCR(0.3f)` / `setMothballed(true)`：CR 与封存写入；`canBeDeployedForCombat()` 与 `getMembersInPriorityOrder()` 是 "当前状态" 读取。
-- `setVariant(wolf.getVariant(), true, true)`：装配写入 —— 非战机成员换装配后 `getHullId()` 从 `hammerhead` 变为 `wolf`(`setVariant` 同步更新 `specId`)，换回原装配恢复。
+- `setVariant(wolf.getVariant(), true, true)`：装配写入，非战机成员换装配后 `getHullId()` 从 `hammerhead` 变为 `wolf`(`setVariant` 同步更新 `specId`)，换回原装配恢复。
     - 演示中 `hammerhead` 与 `wolf` 短暂共享同一装配引用且双方都不再改装配，属可控演示；生产代码避免长期共享装配引用。
-- 清理段 `removeFleetMember`：把两个演示成员移除，玩家舰队恢复初始状态 —— 演示脚本**不留副作用**，可反复读档重放。
+- 清理段 `removeFleetMember`：把两个演示成员移除，玩家舰队恢复初始状态，演示脚本**不留副作用**，可反复读档重放。
 
-调用点 (工程片段 —— 方法所在类归插件生命周期类所有，本节只演示调用，不改动那些文件)：
+调用点 (工程片段，方法所在类归插件生命周期类所有，本节只演示调用，不改动那些文件)：
 
 ```java
     // 在 GearInModPlugin 的 onGameLoad(boolean newGame) 内新增本节注册块。

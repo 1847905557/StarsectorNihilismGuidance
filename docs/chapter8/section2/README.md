@@ -67,7 +67,7 @@ ship_data.csv 的 system id / defense id 列
 |---|---|---|
 | 状态 | `getState()` / `isActive()` / `isOn()` / `isStateActive()` / `isChargeup()` / `isChargedown()` / `isCoolingDown()` | `SystemState` 五态枚举与 6 个布尔视图 |
 | 效果 | `getEffectLevel()` / `getChargeUpDur()` / `getChargeActiveDur()` / `getChargeDownDur()` | 效果强度 0–1 与三段时间 (来自 CSV `charge up` / `active` / `down`) |
-| 冷却 | `getCooldown()` / `getCooldownRemaining()` / `setCooldown()` / `setCooldownRemaining()` | 冷却总时长与剩余；剩余量只在 `COOLDOWN` 态倒计时，`IN`/`ACTIVE`/`OUT` 返回完整时长，`IDLE` 返回 0(充能计时器的冷却进度值) —— 这也是原版内置 AI 用 `getCooldownRemaining() > 0` 作判断时能同时拦下 "激活中/后摇中" 的原因 |
+| 冷却 | `getCooldown()` / `getCooldownRemaining()` / `setCooldown()` / `setCooldownRemaining()` | 冷却总时长与剩余；剩余量只在 `COOLDOWN` 态倒计时，`IN`/`ACTIVE`/`OUT` 返回完整时长，`IDLE` 返回 0(充能计时器的冷却进度值)；原版内置 AI 用 `getCooldownRemaining() > 0` 作判断即能同时拦下 "激活中/后摇中" |
 | 弹药 | `getAmmo()` / `getMaxAmmo()` / `getAmmoPerSecond()` / `getAmmoReloadProgress()` / `isOutOfAmmo()` / `setAmmo()` | `max uses` / `regen` 两列的运行态 (`AmmoTrackerAPI`) |
 | 幅能 | `getFluxPerUse()` / `getFluxPerSecond()` / `setFluxPerUse()` / `setFluxPerSecond()` | 每次激活与每秒幅能成本 (系统创建时按 flux 容量/耗散折算) |
 | 激活控制 | `canBeActivated()` / `deactivate()` / `forceState(state, progress)` | 激活许可、强制进入冷却、直接改写状态机 |
@@ -85,7 +85,7 @@ getSystemRegenBonus().computeEffective(spec.regen)       → getRegen(stats)
 
 ### bonus 的部署时烘焙与即时读取
 
-系统运行时对象在创建时 (构造器调用) **一次性** 把这些值写回充能记录 —— 冷却、次数与恢复的 bonus 在舰船部署时烘焙，运行期改动这几项不会反映到本场战斗 (重新部署才重算)；
+系统运行时对象在创建时 (构造器调用) **一次性** 把这些值写回充能记录，冷却、次数与恢复的 bonus 在舰船部署时烘焙，运行期改动这几项不会反映到本场战斗 (重新部署才重算)；
 
 而直接调用 `spec.getRange(stats)` / `stats.getSystemRangeBonus().computeEffective(...)` 的读取 (如本节示例的 AI 每次决策现取有效射程) 是即时的。
 
@@ -134,16 +134,16 @@ getSystemRegenBonus().computeEffective(spec.regen)       → getRegen(stats)
 2. **`apply` 里写入的每一项 stat 修改，`unapply` 必须用同一把钥匙撤销**。引擎传入的 `id` 是 `系统id + " effect"`(例如 `GearIn_targetingsystem effect`)，modifier ID 稳定性纪律在这里同样成立。违反的可观察结果：系统结束后效果残留 (速度加成不消失)，且**没有任何报错**。
 3. **`forceState(state, progress)` 直接改写运行时状态机，跳过正常转移回调**。
     - `progress` 的语义按目标态不同 (`IN` → 前摇进度、`OUT` → 后摇进度、`COOLDOWN` → 冷却比例、`ACTIVE` → 时长比例)；`deactivate()` → `forceDeactivate()` 直接进入 `COOLDOWN`。
-    - 它适合脚本 / 调试逻辑，**禁止**用它在正常流程里 "代替" 关闭 —— 它会跳过 `systemChargingDown` / `systemDeactivated` 回调的一部分语义。
+    - 它适合脚本 / 调试逻辑，**禁止**用它在正常流程里 "代替" 关闭，它会跳过 `systemChargingDown` / `systemDeactivated` 回调的一部分语义。
 4. **stats 脚本的可见性边界**：`apply` 只在 `effectLevel > 0`(`IN`/`ACTIVE`/`OUT`) 或 `.system` 开启 `runScriptWhileIdle` 时每帧被调用；`effectLevel` 归零时 (进入 `COOLDOWN`/`IDLE`、舰船撤退或解体)`unapply` 被调用一次。
-    - **`COOLDOWN` 与 `IDLE` 两态在 stats 脚本里不可见** —— 需要观察这两态的时机用 AI 角色或战斗插件。
+    - **`COOLDOWN` 与 `IDLE` 两态在 stats 脚本里不可见**，观察这两态的时机要用 AI 角色或战斗插件。
     - `getStatusData` 只对用户舰船每帧按 `index = 0、0、1...` 查询 (上限 7 个)。
     - `runScriptWhilePaused`(默认 `false`) 控制暂停期间是否额外运行脚本 (`advanceEvenIfPaused`)。
 5. **暂停时状态机不推进**：系统随舰船推进 (系统的每帧推进由战斗舰船对象的每帧推进驱动)，暂停分支只推进用户舰与地图 (前置单元已证)，因此 `effectLevel` 冻结在暂停前的值；AI 角色与 stats 脚本也随之停摆，脚本里**不必**再做 `isPaused()` 判断 (做了也无害，成熟实例仍保留)。
 
 ## 目标获取：三条通道
 
-状态机决定 "什么时候走哪一段"，但效果要施加到谁身上？目标获取的三条通道回答这个问题 —— 本节示例的锁定系统正是按这三条通道找目标。
+状态机决定 "什么时候走哪一段"，但效果要施加到谁身上？目标获取的三条通道回答这个问题，本节示例的锁定系统正按这三条通道找目标。
 
 1. **用户激活坐标**：用户按系统键激活时，`USE_SYSTEM` 命令携带当时的鼠标世界坐标并传给 `system.fire(loc)`，随后 `getTargetLoc()` 返回该坐标 (`ShipSystemAPI.getTargetLoc()`)。右键本身不会激活系统：
     - AI 激活时参数为 null(系统 AI 发出的 `USE_SYSTEM` 激活命令不带坐标参数)，`targetLoc` 保持 null。
@@ -157,7 +157,7 @@ getSystemRegenBonus().computeEffective(spec.regen)       → getRegen(stats)
 由通道 3 引出的两个关键事实 (`ShipAPI.getAIFlags()`)：
 
 - **`getAIFlags()` 永不返回 null**：非 AI 舰船 (用户舰) 会用到时才创建一份 flag 容器，以 `"nonAI_SAIF_" + shipId` 为键存在引擎 customData 里：
-    - 但**非 AI 舰船没有任何每帧刷新者** —— `TARGET_FOR_SHIP_SYSTEM` 只会被舰船 AI 写入，用户舰的这份 flag 无人写入、也永不自动过期。
+    - 但**非 AI 舰船没有任何每帧刷新者**：`TARGET_FOR_SHIP_SYSTEM` 只会被舰船 AI 写入，用户舰的这份 flag 无人写入、也永不自动过期。
 
 ### 读取 flag 前必须判 "舰船是否有 AI"
 
@@ -359,16 +359,16 @@ mods/GearIndustry/
 
 - 静态目标逻辑 (`getRange` / `isValidTarget` / `readAITarget` / `writeAITarget` / `pickTarget`)：两个角色共享的同一语义 —— AI 写入、stats 使用都走同一套合法性检查 (规则 6、7)，"AI 与 Stats 各自复制过滤条件" 是高频陷阱。
 - `readAITarget` 的 `source.getShipAI() == null` 判断：用户舰无 AI，flag 无人写入 (规则 6 的用户侧事实)；`pickTarget` 回退 `getShipTarget()`(通道 2)。
-- `apply`：`(ShipAPI) stats.getEntity()` 取舰船 (战斗期非 null)；`state == OUT || !locked` 时 `unmodify(id)`，否则 `modifyMult(id, 1 + 0.5 * effectLevel)` —— "目标验证不过就不加成"。
+- `apply`：`(ShipAPI) stats.getEntity()` 取舰船 (战斗期非 null)；`state == OUT || !locked` 时 `unmodify(id)`，否则 `modifyMult(id, 1 + 0.5 * effectLevel)`，"目标验证不过就不加成"。
     - `lastApplyState` 状态跳变日志把 `IN → ACTIVE → OUT` 变成日志证明 (规则 4 的可见性边界：`COOLDOWN`/`IDLE` 在 stats 侧看不到，由 AI 侧补全)。
 - `unapply`：撤销同一把钥匙并打日志 (引擎传入的 `id` = `GearIn_targetingsystem effect`，规则 2)。
 - `isUsable` / `getInfoText`：`isUsable` 返回 false 时按 F 不激活 (规则 1)；`getInfoText` 返回 null 时 UI 用默认 `READY` /`ACTIVE`(`ShipSystemStatsScriptAdvanced` javadoc 原文)。
 - AI 角色 `init`：缓存引用并 `decisionInterval.randomize()`(规则 11 的节流相位随机化)。
 - AI 角色 `advance`：判断链 (暂停 → 实体存在 → 存活 → CR → 冷却 → 弹药 → 节流 → 目标再验证 → 写 flag → 激活中只刷新 → 过载/高幅能 → `useSystem`)，顺序是成熟实例的标准做法；`system.isActive()` 分支只刷新 flag 不重复激活 (规则 6 的 "持续刷新")。
-- `logStateTransition`：AI 视角的完整五态日志 (`IDLE → IN → ACTIVE → OUT → COOLDOWN → IDLE`) —— 这是 stats 脚本看不见的两态 (`COOLDOWN`/`IDLE`) 的唯一脚本侧观察点。
+- `logStateTransition`：AI 视角的完整五态日志 (`IDLE → IN → ACTIVE → OUT → COOLDOWN → IDLE`)；stats 脚本看不见的两态 (`COOLDOWN`/`IDLE`) 由此获得唯一的脚本侧观察点。
 - `writeAITarget` 写入时长为 `1.0f`(与舰船 AI 的覆写一致)，`clearAITarget` 在目标失效时清 flag。
 
-### 数据接入片段 (工程片段 —— 本单元不创建数据文件)
+### 数据接入片段 (工程片段，本单元不创建数据文件)
 
 ```json
 // data/shipsystems/GearIn_targetingsystem.system(片段)
@@ -459,7 +459,7 @@ ShipAPI locked = pickTarget(ship);
 
 - **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
 - **数据接入**：按数据接入片段接入后启动游戏，日志出现 `Loading ship system [data/shipsystems/GearIn_targetingsystem.system]` 与 `Applying data from ship_systems.csv to [GearIn_targetingsystem]`：没有与 `GearIn_targetingsystem` 相关的 `ERROR`。
-- **用户侧手动激活 (`GearIn_test` 战役或模拟战，`GearIn_artizan` 已挂载)**：无目标时按 F —— **没有任何反应** (`isUsable` 返回 false，规则 1；日志无状态变化)；连续空按约 2 秒后出现失败音。鼠标右键锁定一艘敌舰 (`getShipTarget()` 非 null) 后按 F —— 系统正常进入 `IN`，日志出现。
+- **用户侧手动激活 (`GearIn_test` 战役或模拟战，`GearIn_artizan` 已挂载)**：无目标时按 F，**没有任何反应** (`isUsable` 返回 false，规则 1；日志无状态变化)；连续空按约 2 秒后出现失败音。鼠标右键锁定一艘敌舰 (`getShipTarget()` 非 null) 后按 F，系统正常进入 `IN`，日志出现。
 
     ```text
       GearIn targeting stats: state null -> IN effectLevel=0.0 GearIn targeting stats: state IN -> ACTIVE effectLevel=1.0 GearIn targeting stats: state ACTIVE -> OUT effectLevel=1.0 GearIn targeting stats: unapply effect (id=GearIn_targetingsystem effect)
@@ -523,9 +523,9 @@ ShipAPI locked = pickTarget(ship);
 
 ## 总结
 
-本节在数据面之上补齐了运行态：五态状态机决定系统 "怎么走"，stats 访问器提供 "走到哪" 的读数，目标三通道与系统 AI 决定 "加成给谁、由谁触发"。数据面负责 "系统是什么"，运行态负责 "系统怎么走" —— 排错时这两半要分开核对。
+本节在数据面之上补齐了运行态：五态状态机决定系统 "怎么走"，stats 访问器提供 "走到哪" 的读数，目标三通道与系统 AI 决定 "加成给谁、由谁触发"。数据面负责 "系统是什么"，运行态负责 "系统怎么走"，排错时这两半要分开核对。
 
-排错时可以反复使用两组判断：先问 "这个行为发生在状态机的哪一段" —— `IN`/`ACTIVE`/`OUT` 是效果脚本可见的三段，`COOLDOWN`/`IDLE` 只能靠 AI 角色观察；再问 "这个信息来自哪条通道" —— 用户激活时的鼠标世界坐标、舰船当前目标与 AI flag 各有写入者和寿命，flag 只有 1 秒寿命且用户舰无人写入，任何来自 flag 的目标在使用前都要再验证。stats 脚本与 AI 脚本是同名类的两个独立实例，跨角色共享只能走静态方法或 `customData`，这正是 "写在哪一侧、读在哪一侧" 问题的根源。
+排错时可以反复使用两组判断：先问 "这个行为发生在状态机的哪一段" —— `IN`/`ACTIVE`/`OUT` 是效果脚本可见的三段，`COOLDOWN`/`IDLE` 只能靠 AI 角色观察；再问 "这个信息来自哪条通道" —— 用户激活时的鼠标世界坐标、舰船当前目标与 AI flag 各有写入者和寿命，flag 只有 1 秒寿命且用户舰无人写入，任何来自 flag 的目标在使用前都要再验证。stats 脚本与 AI 脚本是同名类的两个独立实例，跨角色共享只能走静态方法或 `customData`；"写在哪一侧、读在哪一侧" 的问题也由此而生。
 
 逻辑上看，运行态主线自然延伸到战斗视觉与特效层：动画、开火与命中特效使用的正是状态机的时间轴与目标判定结果，五态模型与目标纪律在那条链路上会反复出现；数据面字段速查与 modifier 纪律的完整细节，仍由对应前置单元持有。
 
@@ -571,7 +571,7 @@ import com.fs.starfarer.api.plugins.ShipSystemStatsScript;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 完整最小例：战术系统运行态 ——Stats 脚本、状态机、目标锁定与系统 AI 的完整流程。
+ * 完整最小例：战术系统运行态 —— Stats 脚本、状态机、目标锁定与系统 AI 的完整流程。
  *
  * 一个类身兼两个角色，两个角色由数据绑定各自实例化一次：
  * 1. Stats 脚本角色 (ShipSystemStatsScriptAdvanced)：.system 的 statsScript 字段挂载。

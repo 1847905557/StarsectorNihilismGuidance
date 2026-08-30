@@ -140,7 +140,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   之后渲染，成熟实例同款)；渲染剔除依据是承载实体位置
  *   与 getRenderRadius()(C7-S6 硬规则 4)，位置在 advance 里同步；
  * - 资源释放：GL 资源 (program/VBO) 在 cleanup() 释放并复位句柄 (幂等，重复调用安全)；
- *   战斗结束 destroyInstance 不调 cleanup()—— 常驻插件必须在 advance() 里判
+ *   战斗结束 destroyInstance 不调 cleanup() —— 常驻插件必须在 advance() 里判
  *   engine.isCombatOver()(= 结束标志 && 淡出完成)
  *   主动失效 (isExpired() -> true) 驱动引擎移除，否则 program/VBO 随每场战斗泄漏；
  *   战斗 viewport.getAlphaMult() 保持 1.0，不提供战斗结束淡出值；本示例把它作为
@@ -151,7 +151,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   可用性判据见 C16-S10，必须在 GL 上下文就绪后的 init 里重新判定，禁止缓存进
  *   类加载期 static final 字段 (此时无 GL 上下文，isValid() 不可评估)；render 每帧
  *   复核 (成熟实例每个使用点读取 BoxConfigs.isShaderEnable() 的姿势)；本示例另有运行时开关
- *   setRuntimeEnabled—— 只改变渲染路径与显示成本，不改变玩法状态 (实例规范
+ *   setRuntimeEnabled —— 只改变渲染路径与显示成本，不改变玩法状态 (实例规范
  *   "图形开关只改变渲染路径和显示成本")，关闭时 render 零 GL 提交；
  * - 性能：一次 glDrawArrays = 一个 draw call，本示例每帧恰好 1 个 (frames/drawCalls
  *   计数在 cleanup 日志输出)；uniform location 创建后保存、FloatBuffer 复用
@@ -292,7 +292,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
 
     /**
      * 取采样贴图；文件未加载时 getTextureId() 返回 0，投影渲染为黑/不可见。
-     * 原版单参 getSprite 永不返回 null，缺键时返回纹理为 null 的 Sprite—— 原版用返回 0 代替失败信号。
+     * 原版单参 getSprite 永不返回 null，缺键时返回纹理为 null 的 Sprite —— 原版用返回 0 代替失败信号。
      */
     private boolean loadSprite() {
         sprite = Global.getSettings().getSprite(SPRITE_PATH);
@@ -325,7 +325,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         entity.getLocation().set(engine.getPlayerShip().getLocation());
         // 战斗结束收尾：isCombatOver() = 结束标志 && 淡出完成。
         // 常驻插件必须在 advance 里主动失效驱动引擎移除并调用
-        // cleanup()—— 战斗结束 destroyInstance 不调 cleanup()，等它等于每场泄漏
+        // cleanup() —— 战斗结束 destroyInstance 不调 cleanup()，等它等于每场泄漏
         // (C7-S6 硬规则 3 的常驻版)
         if (engine.isCombatOver()) {
             valid = false;
@@ -359,7 +359,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         if (program == null || sprite == null || vboId == 0) {
             return;
         }
-        // 运行时开关：每次使用点读取 (不缓存)—— 关闭 → 零 GL 提交 (开关只改变渲染路径
+        // 运行时开关：每次使用点读取 (不缓存) —— 关闭 → 零 GL 提交 (开关只改变渲染路径
         // 与显示成本；实例规范与陷阱 "关闭后仍走昂贵路径")
         if (!runtimeEnabled) {
             return;

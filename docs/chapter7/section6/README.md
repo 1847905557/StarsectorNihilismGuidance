@@ -108,7 +108,7 @@ JUST_BELOW_WIDGETS       ─┘
 
 ### 为什么是独立的插件通道
 
-分层渲染插件以战斗实体为承载 (引擎注册时把它包装成战斗实体)，天然获得战斗实体的位置、存活与剔除语义，还能按层参与渲染分派；`EveryFrameCombatPlugin` 只是每帧回调，没有这些实体语义 —— 这正是两条通道推进与清理时机不同的根源。
+分层渲染插件以战斗实体为承载 (引擎注册时把它包装成战斗实体)，天然获得战斗实体的位置、存活与剔除语义，还能按层参与渲染分派；`EveryFrameCombatPlugin` 只是每帧回调，没有这些实体语义；两条通道推进与清理时机不同，根源也在这里。
 
 ### 推进与暂停 (与 EveryFrameCombatPlugin 的关键差异)
 
@@ -145,7 +145,7 @@ if (viewport.isNearViewport(this.getLocation(), this.plugin.getRenderRadius())) 
 
 ### 图形 "凭空消失" 时查两处
 
-图形在视口内 "凭空消失"(或被画到战场原点) 时，先查两处：承载实体位置是否每帧同步到 `entity.getLocation()`、`getRenderRadius()` 是否覆盖绘制范围 —— 这两处正是 `isNearViewport` 剔除判定的输入 (规则 4 的可观察表现)。
+图形在视口内 "凭空消失"(或被画到战场原点) 时，先查两处：承载实体位置是否每帧同步到 `entity.getLocation()`、`getRenderRadius()` 是否覆盖绘制范围；二者恰为 `isNearViewport` 剔除判定的输入 (规则 4 的可观察表现)。
 
 ### 清理
 
@@ -294,7 +294,7 @@ public void cleanup() {
 - `render`：**只在这里**用 GL 原语绘制 (规则 1)；开头设置 `GL_BLEND` 与混合函数 (建议 8 的开启侧)；战斗 viewport 的 `getAlphaMult()` 保持 1.0，战斗结束淡出由引擎全屏变暗处理；顶点直接提交世界坐标。
 - `cleanup()`：本最小例没有分配 GL 资源 (立即模式无句柄)，所以 cleanup 只留日志；有 VAO/VBO/程序资源的插件在这里释放并复位句柄 (规则 2)。
 
-注册片段 (工程片段 —— 本节不改动战斗生命周期插件单元的任何文件，只演示使用方如何调用；在部署监听器 `GearInDeploymentListener.reportFleetMemberDeployed` 内追加。追加时注意：示例监听器的方法体里已经声明过 `ShipAPI ship = member.getShip()`，不要重复声明；片段里的 `engine` 与 `Color` 也需按您的监听器上下文自行提供和导入)：
+注册片段 (工程片段，本节不改动战斗生命周期插件单元的任何文件，只演示使用方如何调用；在部署监听器 `GearInDeploymentListener.reportFleetMemberDeployed` 内追加。追加时注意：示例监听器的方法体里已经声明过 `ShipAPI ship = member.getShip()`，不要重复声明；片段里的 `engine` 与 `Color` 也需按您的监听器上下文自行提供和导入)：
 
 ```java
     // 工程片段：在部署监听器 GearInDeploymentListener.reportFleetMemberDeployed 内追加
@@ -359,12 +359,12 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  * - engine.addLayeredRenderingPlugin(plugin) 用自定义战斗实体包装插件并加入引擎；
  *   executeAdds 时调用 plugin.init(entity) 并按 getActiveLayers() 注册进 LayeredRenderer；
  * - 每帧 (非暂停分支) 推进 entity.advance(amount)，随后 isExpired() 为 true 的实体
- *   进移除队列；移除时引擎调用 entity.cleanup() -> plugin.cleanup()——
+ *   进移除队列；移除时引擎调用 entity.cleanup() -> plugin.cleanup() ——
  *   cleanup() 是释放 GL 资源的正常时机；
- * - 战斗结束 destroyInstance 只清空对象表、不调用 cleanup()——
+ * - 战斗结束 destroyInstance 只清空对象表、不调用 cleanup() ——
  *   插件必须在 advance() 里主动失效 (isExpired() -> true)，不能等 "战斗结束回调"；
  * - 渲染阶段：自定义战斗实体的 render 先判 viewport.isNearViewport(entity.getLocation(),
- *   plugin.getRenderRadius())，通过才调 plugin.render(layer, viewport)——
+ *   plugin.getRenderRadius())，通过才调 plugin.render(layer, viewport) ——
  *   剔除依据是承载实体的位置与 getRenderRadius()，位置必须同步到 entity；
  * - 渲染回调在渲染阶段被调用，绘制必须在这里用 GL 原语完成；advance() 属于推进阶段，
  *   不做任何绘制；
@@ -496,9 +496,9 @@ public void advance(float amount) { advanceState(amount); } public void render(C
 2. **战役验证**：进入 `GearIn_test` 一场战斗，在 `Starsector/starsector-core/starsector.log` 中观察分层渲染初始化记录。
 3. **画面**：观察每个已部署成员身上的半透明青色方框：跟随移动、位于舰船与导弹之上、粒子之下。
 4. **暂停**：按空格暂停约 10 秒 —— 方框静止但可见；恢复后继续跟随。
-5. **剔除**：镜头拉远使方框离开可见区外扩 120 单位范围 —— 方框消失；拉回出现。
-6. **失效清理**：击毁一艘被追踪舰船 —— 方框消失且 `Starsector/starsector-core/starsector.log` 出现 `GearIn layered renderer cleanup: elapsed=<秒数>`；其余舰船方框正常。
-7. **跨战斗**：退出战斗再进一场 —— `GearIn layered renderer init:` 重新出现，新方框从零开始跟随。
+5. **剔除**：镜头拉远使方框离开可见区外扩 120 单位范围，方框消失；拉回出现。
+6. **失效清理**：击毁一艘被追踪舰船，方框消失且 `Starsector/starsector-core/starsector.log` 出现 `GearIn layered renderer cleanup: elapsed=<秒数>`；其余舰船方框正常。
+7. **跨战斗**：退出战斗再进一场，`GearIn layered renderer init:` 重新出现，新方框从零开始跟随。
 
 预期结果：
 
@@ -512,13 +512,13 @@ public void advance(float amount) { advanceState(amount); } public void render(C
 
     没有 `ERROR`。
 
-- **画面结果**：每个被注册的已部署成员身上出现一个半透明青色方框 (120 世界单位边长)，跟随舰船移动；方框画在舰船与导弹之上、粒子之下 —— `ABOVE_SHIPS_AND_MISSILES_LAYER` 位于粒子系统之前 (层序表)。
+- **画面结果**：每个被注册的已部署成员身上出现一个半透明青色方框 (120 世界单位边长)，跟随舰船移动；方框画在舰船与导弹之上、粒子之下 (`ABOVE_SHIPS_AND_MISSILES_LAYER` 位于粒子系统之前，层序表)。
 
-- **暂停行为**：按空格暂停约 10 秒再恢复 —— 暂停期间方框静止不动 (`advance` 不被调用，位置不更新) 但**仍然可见** (渲染不暂停)；恢复后继续跟随。
+- **暂停行为**：按空格暂停约 10 秒再恢复，暂停期间方框静止不动 (`advance` 不被调用，位置不更新) 但**仍然可见** (渲染不暂停)；恢复后继续跟随。
 
 - **视口剔除**：把镜头拉远到方框边缘超出可见区外扩 120 单位之外 —— 方框消失；拉回后重新出现 (`isNearViewport` 剔除，规则 4 的可观察表现)。战斗中正常推进时不会产生 `GearIn layered renderer` 的推进日志 (render 与推进都不打日志，只有 init/cleanup 打)。
 
-- **失效与清理**：击毁被追踪的舰船 —— 方框立即消失 (下一帧起)，`Starsector/starsector-core/starsector.log` 出现一行：
+- **失效与清理**：击毁被追踪的舰船，方框立即消失 (下一帧起)，`Starsector/starsector-core/starsector.log` 出现一行：
 
     ```text
        GearIn layered renderer cleanup: elapsed=<秒数>

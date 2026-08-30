@@ -174,7 +174,7 @@ public class GearInNexCompat {
     /**
      * 组合判据：Nexerelin 已启用、SectorManager 已创建且处于 Corvus 模式。
      * SectorManager.getManager() 在 manager 尚未创建时返回 null(sector
-     * persistent data 中无条目)—— 直接调用 isCorvusMode() 会 NPE；
+     * persistent data 中无条目) —— 直接调用 isCorvusMode() 会 NPE；
      * manager 由 Nexerelin 的入口生成器创建，早于它的调用点必须靠这里守卫。
      */
     public static boolean isNexCorvusMode() {
@@ -200,7 +200,7 @@ public class GearInNexCompat {
 
     /**
      * 读取本 MOD 势力在 corvus_spawnpoints.csv 里的生成点实体 id。
-     * 漏写行时返回 null—— 玩家出生点回退 homeworld / 随机位置，无报错。
+     * 漏写行时返回 null —— 玩家出生点回退 homeworld / 随机位置，无报错。
      */
     public static String getFactionSpawnPointEntityId(String factionId) {
         if (!isNexEnabled()) {

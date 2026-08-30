@@ -51,7 +51,7 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 **创建与登记两条链**：
 
 1. **`addIntel(plugin)`**(`IntelManagerAPI`) 直接加入已知集合：置玩家可见时间戳、调 `reportMadeVisibleToPlayer()`、`autoAddCampaignMessage()`(默认 true) 时经 `CampaignUIAPI.addMessage` 弹左下消息 (`IntelManagerAPI.addIntel`)。
-    - **`addIntel` 绕过通信中继可见性检查** —— `IntelInfoPlugin.canMakeVisibleToPlayer` "Only checked if adding using IntelManager.queueIntel(). addIntel() bypasses this and all other checks."。
+    - **`addIntel` 绕过通信中继可见性检查**：`IntelInfoPlugin.canMakeVisibleToPlayer` "Only checked if adding using IntelManager.queueIntel(). addIntel() bypasses this and all other checks."。
     - `addIntel(plugin, forceNoMessage)` / `addIntel(plugin, forceNoMessage, textPanel)` 控制消息行为。
 2. **`queueIntel(plugin[, maxCommQueueDays])`**(`IntelManagerAPI`) 加入通信队列；玩家进入通信中继范围或 `forceAddNextFrame()` 时，转为可见 intel 并出队。
     - 同批最多 4 条单独弹出，第 5 条起合并为一条 "New intel (N)" 汇总。
@@ -107,9 +107,9 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 
 对话框在已有对话框显示时会静默返回 `false` —— 不记录返回值，故障就只剩 "对话框没弹出来" 这个没有报错的现象。本节演示正是把 `shown` 布尔值记入日志，`shown=false` 时其余演示不受影响。
 
-**面板常用成员**：`OptionPanelAPI`(`com.fs.starfarer.api.campaign.OptionPanelAPI`) —— `addOption(text, data[, tooltip])`、`addOption(text, data, color, tooltip)`、`clearOptions`；`setEnabled(data, enabled)`("Only works for options, not selectors.")、`setShortcut`、`addSelector`、`addOptionConfirmation`、`removeOption`、`setStoryOptionParams`。
+**面板常用成员**：`OptionPanelAPI`(`com.fs.starfarer.api.campaign.OptionPanelAPI`)：`addOption(text, data[, tooltip])`、`addOption(text, data, color, tooltip)`、`clearOptions`；`setEnabled(data, enabled)`("Only works for options, not selectors.")、`setShortcut`、`addSelector`、`addOptionConfirmation`、`removeOption`、`setStoryOptionParams`。
 
-`TextPanelAPI`(`com.fs.starfarer.api.campaign.TextPanelAPI`) —— `addPara(text[, color])`、`addPara(format, hl, highlights)`、`addParagraph`、`highlightInLastPara`、`setHighlightColorsInLastPara`、`clear`；另有 `getDialog`、`beginTooltip`/`addTooltip`。
+`TextPanelAPI`(`com.fs.starfarer.api.campaign.TextPanelAPI`)：`addPara(text[, color])`、`addPara(format, hl, highlights)`、`addParagraph`、`highlightInLastPara`、`setHighlightColorsInLastPara`、`clear`；另有 `getDialog`、`beginTooltip`/`addTooltip`。
 
 本节的 `GearInServicesDialog` 只用到其中两个入口：`addOption` 建立选项、`addPara` 追加文本行；其余成员在需要时再查。
 
@@ -250,25 +250,25 @@ mods/GearIndustry/
 
 ### GearInIntelServicesScript(情报段脚本)
 
-**职责**：`IntelManagerAPI` 常用入口演示 —— 创建自定义情报 `GearInServicesIntel`(`BaseIntelPlugin` 子类)，依次 `addIntel` 登记、`hasIntel` 验证、`removeIntel` 移除 (不留存档残留)；再用 `MessageIntel` 发一条纯消息 (左下消息区)。
+**职责**：`IntelManagerAPI` 常用入口演示，创建自定义情报 `GearInServicesIntel`(`BaseIntelPlugin` 子类)，依次 `addIntel` 登记、`hasIntel` 验证、`removeIntel` 移除 (不留存档残留)；再用 `MessageIntel` 发一条纯消息 (左下消息区)。
 
 **绑定注册入口**：onGameLoad 的一次性注册判断内执行 `addScript` 注册，persistent data 键 `REGISTER_MARK = "GearIn_IntelServices"` 与调用点片段逐字一致。
 
 ### GearInDialogServicesScript(对话框段脚本)
 
-**职责**：`InteractionDialogAPI` 常用入口演示 —— 用 `CampaignUIAPI.showInteractionDialog(plugin, null)` 打开演示对话框 (`GearInServicesDialog`)，记录返回的 `shown` 布尔值 (已有对话框显示时返回 false)。
+**职责**：`InteractionDialogAPI` 常用入口演示，用 `CampaignUIAPI.showInteractionDialog(plugin, null)` 打开演示对话框 (`GearInServicesDialog`)，记录返回的 `shown` 布尔值 (已有对话框显示时返回 false)。
 
 **绑定注册入口**：onGameLoad 的一次性注册判断内执行 `addScript` 注册，persistent data 键 `REGISTER_MARK = "GearIn_DialogServices"` 与调用点片段逐字一致。
 
 ### GearInServicesIntel(情报插件)
 
-**职责**：自定义情报插件 (`BaseIntelPlugin` 子类) —— 实现名称/图标/小描述/Intel 标签；`getIcon()` 返回 null 时不显示图标；`getIntelTags(map)` 先调 `super.getIntelTags(map)`(基类默认实现内部已做 null 判断) 再追加自定义 tag。
+**职责**：自定义情报插件 (`BaseIntelPlugin` 子类)，实现名称/图标/小描述/Intel 标签；`getIcon()` 返回 null 时不显示图标；`getIntelTags(map)` 先调 `super.getIntelTags(map)`(基类默认实现内部已做 null 判断) 再追加自定义 tag。
 
 **绑定注册入口**：由 `GearInIntelServicesScript` 经 `IntelManagerAPI.addIntel(plugin)` 登记 (`addIntel` 绕过可见性检查，立即置玩家可见时间戳并弹出左下消息)。
 
 ### GearInServicesDialog(对话框插件)
 
-**职责**：演示对话框插件 (`InteractionDialogPlugin`) —— `init` 写入文本面板与三个选项 (查看势力关系 / 查看舰队货物 / 关闭演示) 并绑定 ESC；`optionSelected` 按 `optionData` 分支展示对应信息，关闭选项与 ESC 走 `dismiss()`；未使用的回调保留空实现。
+**职责**：演示对话框插件 (`InteractionDialogPlugin`)，`init` 写入文本面板与三个选项 (查看势力关系 / 查看舰队货物 / 关闭演示) 并绑定 ESC；`optionSelected` 按 `optionData` 分支展示对应信息，关闭选项与 ESC 走 `dismiss()`；未使用的回调保留空实现。
 
 **绑定注册入口**：由 `GearInDialogServicesScript` 经 `CampaignUIAPI.showInteractionDialog(plugin, null)` 打开 (target 传 null，`getInteractionTarget()` 返回 null)。
 
@@ -610,7 +610,7 @@ import com.fs.starfarer.api.util.Misc;
  *
  * 契约要点：getIcon() 返回 null 时 Intel 页面不显示图标 (IntelInfoPlugin
  * "40x40, no icon if null.")；getIntelTags(map) 必须处理 map 为 null
- * ("Method NEEDS to handle map being null gracefully.")—— 本类先调
+ * ("Method NEEDS to handle map being null gracefully.") —— 本类先调
  * super.getIntelTags(map)，基类默认实现内部已做 null 判断，再追加自定义 tag。
  */
 public class GearInServicesIntel extends BaseIntelPlugin {

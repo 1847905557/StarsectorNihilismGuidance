@@ -62,16 +62,6 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 
 完成信号：进入 GearIn 市场后，商品行显示违禁状态；拼写错误会在加载期报 `Invalid illegal commodity id`。
 
-### 验证货舱对象
-
-使用 Console Commands 的 `additem` 给玩家舰队添加 10 单位，然后在货舱和交易面板观察同一个 ID。
-
-```text
-additem GearIn_tempered_alloy 10
-```
-
-完成信号：货舱出现 "Tempered Alloy ×10"，图标来自 `graphics/icons/cargo/materials.png`。
-
 ## 排查商品加载故障
 
 下面是**局部故障片段**：

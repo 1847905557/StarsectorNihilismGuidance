@@ -148,7 +148,7 @@
     *   中立势力市场由 `marketPostOpenDefaultNeutral` 回退规则接管 (条件只有 `$hasMarket` + `$faction.isNeutralFaction score:100`，无应答器条件) —— 停靠流程继续但无许可文本。
 3. **停靠收尾**：`MarketPostDock`(32 条) 中 `marketDock`(无条件，0 分) 是回退规则：`$menuState = main 0` + `FireAll PopulateOptions`。
     - 其余 31 条是场景附加 (任务交付检查 `DeliveryMission checkCompletion score:100`、债务/雇佣兵检查 `MarketCMD checkDebtEffect score:1000`、`MarketCMD checkMercsLeaving score:500`、特殊势力检查等)。
-    - `FireBest` 只执行一条 —— 覆盖者必须自己复刻 `marketDock` 的结果职责 (见规则强度)。
+    - `FireBest` 只执行一条，覆盖者必须自己复刻 `marketDock` 的结果职责 (见规则强度)。
 4. **市场菜单**：`PopulateOptions` 中 `$menuState == main` + `$hasMarket` 的规则加选项：
     - 规则 `marketAddOptionCommDir` 添加选项 `marketCommDir`(通讯目录，`!$faction.isNeutralFaction`)。
     - 规则 `marketOptBar` 添加选项 `marketVisitBar`(酒吧，`$tradeMode != NONE` + `!$faction.isNeutralFaction` + `!$market.noBar`)。
@@ -246,7 +246,7 @@ flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，�
 
 - 临时选项不能当长期状态 (每轮清空重建)；
 - `RemoveBarEvent` 只删市场记忆中的临时选项、不碰 `PortsideBarData` 的 active 事件；
-- `HubMissionBarEventWrapper` 的选项 id 以任务前缀开头，`getWrapperFor` 用 `startsWith` 识别、`abortMissions` 会中止**其它** mission 包装 —— 自定义临时选项不要使用与已注册任务相同的前缀。
+- `HubMissionBarEventWrapper` 的选项 id 以任务前缀开头，`getWrapperFor` 用 `startsWith` 识别、`abortMissions` 会中止**其它** mission 包装，自定义临时选项不要使用与已注册任务相同的前缀。
 
 ### 任务场景 (MHOpenText / 任务前缀 trigger / AddMHCloseOption / 新游戏流程场景)
 
@@ -287,12 +287,12 @@ flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，�
 
 - **状态机模式**：`$menuState`(`main` / `fleetConvMain`) 与 `$tradeMode`(`OPEN` / `NONE` / `SNEAK`) 是场景状态记忆：
     - `PopulateOptions` 菜单规则以它们为条件；
-    - 转场必须成对 —— 进入时赋值 (`marketDock`：`$menuState = main 0`；`greetingDefaultFriendly`：`$menuState = fleetConvMain 0`)。
+    - 转场必须成对：进入时赋值 (`marketDock`：`$menuState = main 0`；`greetingDefaultFriendly`：`$menuState = fleetConvMain 0`)。
     - 退出时复位 (`ReturnFromBar` → `$menuState = main`；`AbandonMarketPluginImpl` → `$tradeMode = NONE`)。
 - **分层模式**：`FireAll` 填充 (`PopulateOptions` / `AddNewGameChoices` / `AddBarEvents` —— 候选规则全部执行、全部添加选项)：
     - `FireBest` 叙述与转场 (`MarketPostOpen` / `MarketPostDock` / `BarPrintDesc` / `MHOpenText` / `PickGreeting` —— 只取分数最高一条)。
 - **回流完整流程**：`options` 列 id ↔ `DialogOptionSelected`(或 `NewGameOptionSelected`) 规则 `$option == <id>` 逐字一致 (大小写敏感)。
-- **竞争纪律**：默认条件 1 分；原版剧情规则常用 `score:1000`(`$tag:xxx score:1000` 等)；MOD 覆盖回退规则用 100 级即可 (100–103 分恒胜 1–3 分的回退规则、输给 1000 级剧情规则 —— 见最小例)。
+- **竞争纪律**：默认条件 1 分；原版剧情规则常用 `score:1000`(`$tag:xxx score:1000` 等)；MOD 覆盖回退规则用 100 级即可 (100–103 分恒胜 1–3 分的回退规则、输给 1000 级剧情规则，见最小例)。
 
 一次性演示 flag 的写法
 
@@ -360,7 +360,7 @@ $player.transponderOn
 $menuState = fleetConvMain 0
 FireAll PopulateOptions",GearIn 对话场景 (OpenCommLink)：对独立势力舰队的问候语。脚本把菜单状态置为 fleetConvMain 并 FireAll PopulateOptions 填充对话菜单。,,
 GearIn_rules_scene_conv,PopulateOptions,"$menuState == fleetConvMain
-$faction.id == independent",,GearIn 对话场景 (PopulateOptions)：舰队对话菜单选项 —— 点选后经 DialogOptionSelected 回流执行 EndConversation 回到舰队菜单。,"GearIn_rules_scene_conv_end:结束通讯",,
+$faction.id == independent",,GearIn 对话场景 (PopulateOptions)：舰队对话菜单选项，点选后经 DialogOptionSelected 回流执行 EndConversation 回到舰队菜单。,"GearIn_rules_scene_conv_end:结束通讯",,
 GearIn_rules_scene_conv_end,DialogOptionSelected,$option == GearIn_rules_scene_conv_end,EndConversation,,,
 GearIn_rules_scene_ngc_add,AddNewGameChoices,$global.isDevMode,,,6:GearIn_rules_scene_ngc:GearIn 演示起点：额外 5000 星币 (dev),,
 GearIn_rules_scene_ngc_pick,NewGameOptionSelected,"$option == GearIn_rules_scene_ngc
@@ -371,7 +371,7 @@ $global.isDevMode",NGCAddCredits 5000,,,
 
 - **`GearIn_rules_scene_market` (市场场景，trigger `MarketPostDock`)**：条件 `$market.id == jangala score:100` + `!$player.gearInSceneMarketSeen`，总分 101，恒胜原版回退规则 `marketDock` (0 分)：
     - 原版高优先规则 (`MarketCMD checkDebtEffect score:1000`、`checkMercsLeaving score:500`、`DeliveryMission checkCompletion score:100`) 在激活时仍然获胜 —— 演示 "竞争分层"。
-    - 脚本**复刻** `marketDock` 职责 (`$menuState = main 0` + `FireAll PopulateOptions`) 并置一次性 flag —— 第二次停靠 jangala 自动回退原版行为。
+    - 脚本**复刻** `marketDock` 职责 (`$menuState = main 0` + `FireAll PopulateOptions`) 并置一次性 flag，第二次停靠 jangala 自动回退原版行为。
     - `FireBest` 先 `addText` 显示本规则文本、后 `runScript` 填充菜单。
 - **`GearIn_rules_scene_bar_add` / `_pick` / `_back`(酒吧场景)**：`AddBarEvents` 规则条件 `$market.id == jangala`，脚本 `AddBarEvent <id> <文本> <描述>`。
     - 进 jangala 酒吧 (市场菜单 "Take a shuttle down to visit a dockside bar")→ `bar_optionSel` 打印描述并 `BarCMD showOptions` → 清空重建临时选项。
@@ -389,7 +389,7 @@ $global.isDevMode",NGCAddCredits 5000,,,
     - 原版 `convOptionLeave`(`$isPerson`) 仍提供 `cutCommLink` 选项。
 - **`GearIn_rules_scene_ngc_add` / `_pick`(任务/流程场景，trigger `AddNewGameChoices` + `NewGameOptionSelected`)。**
     - devMode(`$global.isDevMode`，`NewGameDialogPluginImpl.init` 写入) 下新游戏对话框出现演示起点选项 (顺序 6，排在原版 ngc 选项之后)。
-    - 点选 → `NewGameOptionSelected` 回流 → `NGCAddCredits 5000`(脚本列) —— 之后继续选择原版起始即可，两者叠加。
+    - 点选 → `NewGameOptionSelected` 回流 → `NGCAddCredits 5000`(脚本列)，之后继续选择原版起始即可，两者叠加。
     - **`NGCAddCredits` 放在回流处理器而非 `AddNewGameChoices` 规则里**：`FireAll` 会执行命中规则的全部脚本，写在 `_add` 里会在列表阶段就加钱。
 - **为什么不新增 Java**：规则基础页的最小例需要 Java 是因为它用了自定义 trigger(`GearInRulesIntro`，没有原版派发点)；本节全部使用原版场景 trigger，派发点 (使用方) 是原版插件，规则行本身就是完整的注册与消费流程。需要自定义 trigger 对话时沿用规则基础页的 `GearInRulesIntro` / `REGISTER_MARK` 模式。
 - **共享文件纪律**：`data/campaign/rules.csv` 是跨单元共享文件：规则基础页拥有 `GearIn_rules_intro_*`、本节拥有 `GearIn_rules_scene_*`；同前缀内 id 唯一，跨文件重复 id 先到先得的纪律见规则基础页规则强度表。

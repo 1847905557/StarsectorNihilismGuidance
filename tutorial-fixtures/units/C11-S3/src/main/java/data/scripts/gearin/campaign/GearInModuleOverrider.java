@@ -8,7 +8,7 @@ import com.fs.starfarer.api.combat.ShipVariantAPI;
 import com.fs.starfarer.api.loading.VariantSource;
 
 /**
- * 角色：模块变体覆盖。演示 stationModules / getModuleVariant / setModuleVariant——
+ * 角色：模块变体覆盖。演示 stationModules / getModuleVariant / setModuleVariant ——
  * setModuleVariant 只接受非 STOCK 来源的覆盖 (STOCK/null 都会被当作 "移除覆盖" 处理)。
  *
  * 注册入口：GearInVariantLauncher.register()(跑一次即停)。

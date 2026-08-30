@@ -65,11 +65,11 @@
 存储与持久性 (生涯引擎侧)：
 
 - `listeners` 非 `transient` → **随存档保存**：常驻监听器跨读档继续有效，其非 `transient` 字段原样恢复。
-- `transientListeners` 是 `transient` → **不随存档保存**，读档时重建为空列表 —— transient 监听器读档后必然消失。
+- `transientListeners` 是 `transient` → **不随存档保存**，读档时重建为空列表，transient 监听器读档后必然消失。
 - `listenersWithTimeout` 用 `TimeoutTracker`(公开 API `com.fs.starfarer.api.util.TimeoutTracker`) 承载；`items` 随档保存、`set` 读档时重建。
 - `listenerManager` 是 `ListenerManagerAPI` 实例 (通道二)，读档时若为 null 会重建默认实例。
 
-去重：`addListener` / `addTransientListener` 在写入前用 `contains` 去重 —— 列表按 `equals` 判等，监听器普遍不覆写 `equals`，此时即按对象同一性；`addListenerWithTimeout` 同样以 `contains` 判重。
+去重：`addListener` / `addTransientListener` 在写入前用 `contains` 去重，列表按 `equals` 判等，监听器普遍不覆写 `equals`，此时即按对象同一性；`addListenerWithTimeout` 同样以 `contains` 判重。
 
 派发：生涯引擎的 `reportXxx(...)` 方法族逐事件遍历 `getAllListeners()`(三列表并集的新列表快照) 调用回调。
 
@@ -84,7 +84,7 @@ if (!this.isPaused()) {
 }
 ```
 
-**`daysToKeep` 的单位是游戏天** (不是真实秒)；每帧按本帧折合的游戏天数扣减，且**只在未暂停时扣减** —— 暂停期间超时冻结。扣减到 0 后由 `TimeoutTracker.advance` 自动移除。
+**`daysToKeep` 的单位是游戏天** (不是真实秒)；每帧按本帧折合的游戏天数扣减，且**只在未暂停时扣减**，暂停期间超时冻结。扣减到 0 后由 `TimeoutTracker.advance` 自动移除。
 
 常见坑：超时单位误用
 
@@ -114,7 +114,7 @@ if (!this.isPaused()) {
 
 实现 (`ListenerManagerAPI`)：内部由两个仓库构成 —— `listeners`(持久) 与 `transientListeners`(transient，读档时重建)。语义要点：
 
-- `addListener` / `addListener(listener, true)` 直接写入对应仓库；仓库内部先判等、已存在即拒绝写入 (与通道一的 `contains` 去重行为相同，仅检查位置不同 —— 重复注册会被静默丢弃)。
+- `addListener` / `addListener(listener, true)` 直接写入对应仓库；仓库内部先判等、已存在即拒绝写入 (与通道一的 `contains` 去重行为相同，仅检查位置不同，重复注册会被静默丢弃)。
 - `removeListener` 同时清两个仓库；`removeListenerOfClass` 遍历两个仓库的**快照**逐个移除 (安全改列表)；`getListeners` 返回两仓库并集的新列表，派发侧遍历的是这份副本。
 - 持久性：`ListenerManagerAPI` 实例随存档保存；transient 仓库读档后必然清空。
 
@@ -171,7 +171,7 @@ if (!this.isPaused()) {
     - `Global.getSector()` 在资源加载期为 null，在 `onApplicationLoad` 里注册的解引用即 NPE、启动中止。
     - 注册入口：`onNewGame` / `onGameLoad`。
 2. **必须**：一次性注册用随存档保存的 persistent data 注册标记 (`CLASS_MARK` 模式，本节示例用各自键)。
-    - 通道一 `addListener` 虽然自带 `contains` 去重，但配对的生命周期脚本半身 `addScript` 不去重 —— 注册标记缺失的可观察结果是读档次数越多日志越成双、行为叠加。
+    - 通道一 `addListener` 虽然自带 `contains` 去重，但配对的生命周期脚本半身 `addScript` 不去重，注册标记缺失的可观察结果是读档次数越多日志越成双、行为叠加。
 3. **必须**：监听器在不再需要时必须在合适时机移除 (`removeListener` / `removeListenerOfClass`)。
     - 监听器一旦注册就持续被派发：常驻注册表的对象还随存档用 XStream 序列化。
     - 违反的可观察结果：事件日志持续出现、行为持续叠加；监听器字段里的瞬态句柄或不可序列化状态拖进存档导致存档异常膨胀、保存/读档异常或读档后行为错乱。
@@ -181,7 +181,7 @@ if (!this.isPaused()) {
     - 违反的可观察结果：读档后事件静默不触发、无任何报错。
     - 成熟实例：用 `addListener(epGen, true)` 注册 transient 遭遇点生成器。
 5. **必须**：配对类 "脚本结束 ≠ 监听器移除"。
-    - `isDone() == true` 只让引擎从脚本列表清理脚本半身，**监听器注册表不会自动移除** —— 必须显式 `removeListener(this)`。
+    - `isDone() == true` 只让引擎从脚本列表清理脚本半身，**监听器注册表不会自动移除**，必须显式 `removeListener(this)`。
     - 违反的可观察结果：脚本自停日志出现后事件回调仍持续 ("僵尸监听器")。
 
 建议 (建议强度)：
@@ -323,10 +323,10 @@ Starsector/mods/GearIndustry/
 对应关系：
 
 - `implements EveryFrameScript`：脚本半身提供 `isDone` / `runWhilePaused` / `advance`，按游戏天累计挂载时长，是本节 "生命周期脚本" 角色。
-- 构造器持有受管监听器引用；`setDaysToLive(int)` 是**本节演示参数，归属脚本类** —— `< 0` 常驻、`>= 0` 到期自停并移除监听器。
+- 构造器持有受管监听器引用；`setDaysToLive(int)` 是**本节演示参数，归属脚本类**：`< 0` 常驻、`>= 0` 到期自停并移除监听器。
 - `advance` 里 `clock.convertToDays(amount)`：`amount` 是上一帧真实秒数，游戏天累加必须经时钟换算 (10 真实秒 = 1 游戏日)。
-- `sector.removeListener(listener)`：脚本半身 `done=true` 的同时显式移除监听器 —— 规则 5 的演示 (脚本结束 ≠ 监听器移除)。
-- 注册入口：调用点的注册块内 `sector.addScript(script)`(脚本列表)；`addScript` 不去重，这正是注册块需要整体判断的缘由之一。
+- `sector.removeListener(listener)`：脚本半身 `done=true` 的同时显式移除监听器，规则 5 的演示 (脚本结束 ≠ 监听器移除)。
+- 注册入口：调用点的注册块内 `sector.addScript(script)`(脚本列表)；`addScript` 不去重，注册块因此需要整体判断。
 
 ### GearInLocationChangeListener(通道二：类型化监听器)
 
@@ -337,7 +337,7 @@ Starsector/mods/GearIndustry/
 - transient 注册 + `hasListenerOfClass` 判空补注册：规则 4(读档后重新注册) 的演示。
 - 注册入口：调用点片段里 `getListenerManager().addListener(new GearInLocationChangeListener(), true)`(通道二 transient 仓库)。
 
-调用点 (工程片段 —— 方法所在类属既有 MOD 插件工程，本节只演示调用，不改动原文件)：
+调用点 (工程片段，方法所在类属既有 MOD 插件工程，本节只演示调用，不改动原文件)：
 
 ```java
     // GearInModPlugin.onGameLoad(boolean newGame) 内新增本节注册块。
@@ -423,7 +423,7 @@ if (!sector.getListenerManager().hasListenerOfClass(
 
 - **游戏构建**：`BUILD SUCCESSFUL`；`jar tf jars/GearIndustry.jar` 能看到三个类的 `.class` 条目
 
-- **新建生涯与事件边界**：未触发事件时日志不出现周期性的 `GearIn listener` 输出 (监听器是事件驱动，不产生周期日志) —— 这本身是 "注册成功且无副作用" 的判据。触发后的日志按事件核对：
+- **新建生涯与事件边界**：未触发事件时日志不出现周期性的 `GearIn listener` 输出 (监听器是事件驱动，不产生周期日志)，本身即 "注册成功且无副作用" 的判据。触发后的日志按事件核对：
 
 - 打开市场交互：`GearIn listener: market opened: <市场名> (size N)`；关闭：`GearIn listener: market closed: <市场名>`。
 
@@ -651,7 +651,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * 与 GearInCampaignListener(监听器角色) 配对：原组合类拆分出的脚本半身。
  * 注册入口：onGameLoad 门控块内与监听器一同注册 (sector.addScript(this))。
  * 职责：按游戏天累计挂载时长，daysToLive >= 0 且到期时显式
- * sector.removeListener(listener) 并自停 ——isDone() 只清理脚本列表，
+ * sector.removeListener(listener) 并自停 —— isDone() 只清理脚本列表，
  * 监听器注册表必须单独移除，否则事件继续派发且实例随存档序列化 (硬规则)。
  */
 public class GearInListenerLifecycleScript implements EveryFrameScript {

@@ -67,7 +67,7 @@ getTooltipWidth() → 标题 / 制造商
 
 生命周期调用点：
 applyEffectsBeforeShipCreation：FleetMemberAPI.updateStats(生涯重建重放)+
- 战斗舰船对象构造 (战斗部署)—— 前置单元已详述
+ 战斗舰船对象构造 (战斗部署)：前置单元已详述
 applyEffectsAfterShipCreation：舰船对象创建 (createStats=true)；
   装配界面预览舰同路径 (舰船显示面板)
 applyEffectsAfterShipAddedToCombatEngine：ShipAPI.applyEffectsAfterShipAddedToCombatEngine
@@ -141,18 +141,18 @@ if (sMod) {
 - `isSModEffectAPenalty()` 返回 true 时 S-mod 段用 "penalty" 样式 (`BaseHullMod.addSModSection`) —— 高成本船插的 S-mod 可能是惩罚。
 - `hasSModEffectSection`：结合内置 / 增强内置 / 惩罚语义决定是否显示；内置且未增强时显示 "enhanced built-in" 说明文本：
     - ("This effect only applies if this built-in hullmod is enhanced using a %s. Doing this does not count against the maximum number of s-mods a ship can have.")。
-- `sModDesc` 为空 (或 `hasSModEffect()` 为 false) 时 `hasSModEffectSection()` 直接返回 false，装配界面不显示任何 S-mod 效果段 (含标题与说明文本) —— 没有效果不等于不能内置，只是没有效果段。
+- `sModDesc` 为空 (或 `hasSModEffect()` 为 false) 时 `hasSModEffectSection()` 直接返回 false，装配界面不显示任何 S-mod 效果段 (含标题与说明文本)，没有效果不等于不能内置，只是没有效果段。
 
 ### 上限、故事点与奖励经验
 
 - **默认上限 2 个**：`settings.json` 的 `maxPermanentHullmods: 2` → `Misc.MAX_PERMA_MODS`：
     - `Misc.getMaxPermanentMods(ship)` = `round(stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD).computeEffective(2))`；
-    - 船插 / 技能可以用 `stats.getDynamic().getMod("max_permanent_hullmods_mod").modifyFlat(...)` 提升上限 —— S-mod 上限不是写死的数字，是动态 stat。
+    - 船插 / 技能可以用 `stats.getDynamic().getMod("max_permanent_hullmods_mod").modifyFlat(...)` 提升上限，S-mod 上限不是写死的数字，是动态 stat。
 - 装配界面的计数：普通 S-mod 计入上限，**增强内置不占上限** (装配界面的计数提示原文 "Hull-standard built-in mods do not count against the limit."；计数代码把增强内置单独以 `*` 显示)。
 - 故事点消耗：每个普通 S-mod / 每次增强内置各消耗 1 点 ("Building mods into a hull uses a story point for each hullmod.")。
 - 奖励经验：增强内置固定 100%(原文 "enhancing it always grants %s bonus experience." 参数 "100%")。普通内置的奖励经验按船体等级分档：
     - `settings.json` 的 `bonusXP` 段 `permModFrigate: 0.75` / `permModDestroyer: 0.5` / `permModCruiser: 0.25` / `permModCapital: 0`，由 `Misc.getBuildInBonusXP(mod, size)` 返回。
-    - **"成本低于 X OP 才有奖励" 的阈值逻辑已整段注释** (`Misc` 中 `permModNoBonusXPOPThreshold` / `permModMaxBonusXP` 相关逻辑已被注释) —— 奖励与 OP 成本无关；装配界面的 "成本低于 %s OP" 说明文本是遗留文案，与行为不符。
+    - **"成本低于 X OP 才有奖励" 的阈值逻辑已整段注释** (`Misc` 中 `permModNoBonusXPOPThreshold` / `permModMaxBonusXP` 相关逻辑已被注释)，奖励与 OP 成本无关；装配界面的 "成本低于 %s OP" 说明文本是遗留文案，与行为不符。
 
 ## 监听器接入 (船插视角)
 
@@ -161,7 +161,7 @@ tooltip 与 S-mod 属于装配界面，战斗中的持续行为要靠监听器�
 1. **注册时机必须用 `applyEffectsAfterShipCreation`**：此时 `ship` 实体完整可用，且每个实体恰好回调一次 (含装配界面预览舰)：
     - 效果类是单例，不能在里面直接注册 "给自己用" 的舰船级监听器 —— 监听器必须挂在传入的 `ship` 上。
     - 原版做法：`HighScatterAmp` 在 `applyEffectsAfterShipCreation` 里 `ship.addListener(new HighScatterAmpDamageDealtMod(ship));`。
-2. **每船一个监听器实例是唯一的合法跨船状态容器**：监听器在 `applyEffectsAfterShipCreation` 里 `new` 出来，持有自己的计时器 / 计数器，随舰船实体一起销毁 —— 这是 "效果类单例" 约束的正面对策 (本节示例的 `ArmorTrainingListener` 就是这么做的)。
+2. **每船一个监听器实例是唯一的合法跨船状态容器**：监听器在 `applyEffectsAfterShipCreation` 里 `new` 出来，持有自己的计时器 / 计数器，随舰船实体一起销毁，以此正面满足 "效果类单例" 约束 (本节示例的 `ArmorTrainingListener` 即是如此)。
 3. 必须遵守的放置规则摘要 (完整表见前置讲解)：
     - `HullDamageAboutToBeTakenListener` 挂承受伤害的舰船 (或引擎)；`DamageTakenModifier` 挂承受舰；`DamageDealtModifier` 挂造成舰。
     - `AdvanceableListener` **只能挂舰船** (javadoc 原文 "Only supported when added to a ShipAPI, not to CombatEngineAPI.")；OP 成本类修饰只能挂 `MutableShipStatsAPI`。
@@ -273,14 +273,14 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 - `applyEffectsAfterShipAddedToCombatEngine`：战斗开始时打一行一次性日志 —— "每船只回调一次" 的证明。
 - `advanceInCombat`：S-mod 时每帧把 "当前装甲平均比例" 写成 `DYNAMIC_ID` 修饰 (幂等覆盖)；命中结算逐击读取，因此下一击即生效：
     - `DYNAMIC_ID` 与 hullmod id 分开，**避免与 `applyEffectsBeforeShipCreation` 的条目互相覆盖**。
-- `advanceInCampaign`：只在 `amount <= 0f`(舰队数据重同步) 时打一行 —— "该回调确实被调用" 且 "同步时 amount=0" 的证明，同时避免每帧刷屏。
+- `advanceInCampaign`：只在 `amount <= 0f`(舰队数据重同步) 时打一行，证明 "该回调确实被调用" 且同步时 `amount=0`，同时避免每帧刷屏。
 - `getDescriptionParam` / `getSModDescriptionParam`：按 index 输出参数字符串；`null` 的 index 不会被 tooltip 使用。
     - `ArmorTrainingListener`：同时实现 `HullDamageAboutToBeTakenListener`(返回 `true` 抵消结构伤害，`notifyAboutToTakeHullDamage` 语义来自 javadoc 原文) 与 `AdvanceableListener`(每帧推进、暂停不派发)。
     - `IntervalUtil(5f, 5f)` 与 `negations` 计数是单船状态，合法放在这里。
 
 ### 注册与构建
 
-注册入口就是数据行的 `script` 列 —— 船插不需要任何额外代码注册 (对比前置单元插件的战斗内 `addPlugin` 注册方式)。
+注册入口就是数据行的 `script` 列，船插不需要任何额外代码注册 (对比前置单元插件的战斗内 `addPlugin` 注册方式)。
 
 使用方的完整流程：
 

@@ -116,7 +116,7 @@
 
 :::
 
-测试战役模板会自动把本 MOD 所有非战机装配加入用户舰队，因此 `GearIn_kiln` 与 `GearIn_kiln_module` 都会出现。此时部署主体，可以看到它没有模块 —— 这正是下一步要解决的。
+测试战役模板会自动把本 MOD 所有非战机装配加入用户舰队，因此 `GearIn_kiln` 与 `GearIn_kiln_module` 都会出现。此时部署主体，可以看到它没有模块。
 
 ## 制作主体与模块装配
 
@@ -151,7 +151,7 @@
     }
 ```
 
-这就是模块在装配文件里的设置方案：**槽位 ID → 模块装配 ID** 的对象。把它略加修改后，插入本例的 `GearIn_kiln_combat.variant`：
+模块在装配文件里的设置方案是 **槽位 ID → 模块装配 ID** 的对象。把它略加修改后，插入本例的 `GearIn_kiln_combat.variant`：
 
 几点说明：
 
@@ -278,7 +278,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ### 战斗外的模块
 
-- 舰队列表与船体预览会显示模块：舰队列表界面直接读取装配的模块槽位渲染模块贴图，`getSizeWithModules()` 会把模块计入舰船整体预览尺寸。所以**即使主体缺 `SHIP_WITH_MODULES`，舰队列表里也看得到模块** —— 这正是 "某些场合模块丢失" 的反差来源。
+- 舰队列表与船体预览会显示模块：舰队列表界面直接读取装配的模块槽位渲染模块贴图，`getSizeWithModules()` 会把模块计入舰船整体预览尺寸。所以**即使主体缺 `SHIP_WITH_MODULES`，舰队列表里也看得到模块**；某些场合 "模块丢了却还在列表里" 的反差即源于此。
 - 模块的损伤状态按槽位记录在主体的 `FleetMemberStatusAPI` 里，部署时按槽位恢复；模块在战斗中被摧毁或脱离后，下次部署时按记录的状态呈现，而不只是 "满血复活"。
 
 ### 装配界面里的模块

@@ -15,7 +15,7 @@
 - 用 `removePlugin(...)` / `hasPluginOfClass(...)` 管理插件的战斗内移除，并说出自移除时必须同时移除自己注册的引擎级监听器；
 - 说出公开监听器系统的三块注册表面 (引擎 / 舰船 / 统计) 与十类监听器各自的必须遵守的放置规则，以及放错层级后的可观察结果 (静默不生效、无报错)；
 - 说出引擎内部的事件监听器接口不是公开 API、MOD 代码不能实现它，并指出 MOD 侧对应的事件入口；
-- 解释为什么战斗结束没有清理回调，以及正确的收尾方式 —— 在 `advance()` 里用 `engine.isCombatOver()` 识别、随战斗结束由引擎销毁统一释放；
+- 解释为什么战斗结束没有清理回调，以及正确的收尾方式：在 `advance()` 里用 `engine.isCombatOver()` 识别、随战斗结束由引擎销毁统一释放；
 - 从症状定位七类典型故障：`init()` 依赖、监听器放错层级、插件移除后监听器残留、跨战斗缓存引用、暂停期间状态推进、内部接口误用、收尾时机不可靠。
 
 ## 前置知识
@@ -51,7 +51,7 @@
 
 ### 监听器家族与放置层级速查表
 
-以下 "只能/必须" 规则全部来自接口 javadoc 原文，**违反的共性是：静默不生效、无任何报错** —— 监听器被接受注册，但派发代码从不查询放错层级的那张表：
+以下 "只能/必须" 规则全部来自接口 javadoc 原文，**违反的共性是：静默不生效、无任何报错**：监听器被接受注册，但派发代码从不查询放错层级的那张表：
 
 | 接口 | 必须放置的表面 | javadoc 原文 (节选) | 派发证明 |
 |---|---|---|---|
@@ -74,7 +74,7 @@ OP 修正器 "Should be used with care, and ideally only through built-in hullmo
 
 ### 监听器不生效时先核对放置表面
 
-放错层级的监听器**静默不生效、无任何报错**：注册被接受，但派发代码从不查询放错层级的那张表。排查顺序：先对照上表确认注册表面，再检查日志 —— 不要先怀疑注册代码本身。
+放错层级的监听器**静默不生效、无任何报错**：注册被接受，但派发代码从不查询放错层级的那张表。排查顺序：先对照上表确认注册表面，再检查日志，不要先怀疑注册代码本身。
 
 ## 插件生命周期
 
@@ -82,7 +82,7 @@ OP 修正器 "Should be used with care, and ideally only through built-in hullmo
 
 ### 注册：三条路径
 
-1. **settings `plugins` 段**：`settings.json` 的 `plugins` 段按 "唯一 key → 完整类名" 登记。该类必须继承 `EveryFrameCombatPlugin`。每场战斗开始时，引擎把 `plugins` 段登记的所有插件类各自实例化 (`Class.forName(...).newInstance()`)，每个实例包成插件适配器附加为战斗地形 —— **每场战斗都是全新实例**，跨战斗不共享插件字段。
+1. **settings `plugins` 段**：`settings.json` 的 `plugins` 段按 "唯一 key → 完整类名" 登记。该类必须继承 `EveryFrameCombatPlugin`。每场战斗开始时，引擎把 `plugins` 段登记的所有插件类各自实例化 (`Class.forName(...).newInstance()`)，每个实例包成插件适配器附加为战斗地形，**每场战斗都是全新实例**，跨战斗不共享插件字段。
 2. **战斗内 `addPlugin(...)`**：`engine.addPlugin(plugin)` 先把插件包成插件适配器附加为地形，再在方法内调用 `plugin.init(this)`(与 API 注释 "Plugin has its init method called inside this method." 一致)。
 3. **战役 `MissionDefinitionAPI.addPlugin(...)`(战役定义侧的注册入口)**：战役定义的 `MissionDefinitionAPI` 接口也有 `addPlugin(EveryFrameCombatPlugin)`，内部把插件包成同一个插件适配器加入触发列表。三种路径最终都落到 "插件适配器持有插件实例、挂在战斗地图上"。
 
@@ -153,9 +153,9 @@ OP 修正器 "Should be used with care, and ideally only through built-in hullmo
 
 ### 派发行为
 
-- 部署事件：战斗舰队管理器自动部署与战情室手动部署都会触发部署事件 —— 内部监听器派发一轮，`CombatListenerUtil.reportFleetMemberDeployed` 派发引擎级 `FleetMemberDeploymentListener`(舰船级分支在 util 里被注释掉，这就是 "只能引擎" 的实现依据)。
+- 部署事件：战斗舰队管理器自动部署与战情室手动部署都会触发部署事件 —— 内部监听器派发一轮，`CombatListenerUtil.reportFleetMemberDeployed` 派发引擎级 `FleetMemberDeploymentListener`(舰船级分支在 util 里被注释掉，"只能引擎" 的实现依据即在于此)。
 - 伤害族：舰船/导弹命中结算先派发引擎级 `DamageDealtModifier` / `DamageTakenModifier`，再派发攻击者 / 目标舰船级；结算后 `reportDamageApplied` 派发引擎级 + 目标舰船级 `DamageListener`；船体伤害前 `notifyAboutToTakeHullDamage` 聚合引擎级 + 舰船级返回值，任一 `true` 抵消。
-- 范围与 OP：`CombatListenerUtil` 的范围修正只查舰船级表，OP 修正只查 stats 级表 —— 与 javadoc 放置规则一一对应。
+- 范围与 OP：`CombatListenerUtil` 的范围修正只查舰船级表，OP 修正只查 stats 级表，与 javadoc 放置规则一一对应。
 - `getListeners(Class)` 返回监听器仓库内部的可变 `ArrayList`。
 - 部署监听器派发会直接迭代这张后备列表，回调中增删同一列表存在并发修改风险。
 - 需要稳定遍历时先复制快照；重复注册前用 `hasListenerOfClass` 判断。
@@ -168,7 +168,7 @@ OP 修正器 "Should be used with care, and ideally only through built-in hullmo
 
 实现者是引擎内部组件：战斗舰队管理器、部署管理器、战斗群管理器、部队移交管理器。
 
-战斗 UI 面板与教程脚本 —— 它们由引擎内部注册进内部监听器表并派发。
+战斗 UI 面板与教程脚本，它们由引擎内部注册进内部监听器表并派发。
 
 战役 "击毁指定舰船" 类任务触发器由另一套内部事件接口支撑：引擎在战斗结束判定时查询任务事件的挂起状态。
 
@@ -269,7 +269,7 @@ LOG.info("GearIn lifecycle finalize: deployments=" + deploymentListener.deployed
 
 `FleetMemberDeploymentListener` 实现，承担监听器角色：统计并记录敌我成员部署事件，`deployedCount` 是本场战斗的状态。
 
-**注册入口**：由 `GearInCombatLifecyclePlugin.init()` 注册到 `engine.getListenerManager()`(引擎级表面) —— `hasListenerOfClass` 去重判断 + `addListener(...)`。
+**注册入口**：由 `GearInCombatLifecyclePlugin.init()` 注册到 `engine.getListenerManager()`(引擎级表面)，`hasListenerOfClass` 去重判断 + `addListener(...)`。
 
 对应关系：
 
@@ -280,7 +280,7 @@ LOG.info("GearIn lifecycle finalize: deployments=" + deploymentListener.deployed
 - `GearInDeploymentListener`：引擎级 `FleetMemberDeploymentListener`(必须遵守的放置规则：只能引擎)；`deployedCount` 是监听器自己持有的战斗级状态，随战斗结束释放。
 - `IntervalUtil(2f, 2f)`：固定 2 秒节奏的周期日志 (与战斗状态读取单元同款)。
 
-注册片段 (工程片段 —— 本节不改动前置单元所有文件，只演示调用)：
+注册片段 (工程片段，本节不改动前置单元所有文件，只演示调用)：
 
 ```java
     // 已有战斗插件 (战斗插件模型单元的拥有者类) 的 init() 内新增一行
@@ -481,8 +481,8 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
 2. 战斗初始化：进入 `GearIn_test` 一场战斗，在 `starsector.log` 中观察生命周期初始化记录。
 3. 周期报告：战斗 (未暂停) 中每 2 秒出现一行 `GearIn lifecycle: total=<秒数> combatOver=false`，`total` 稳步增长；暂停约 10 秒再恢复，暂停期间没有输出 (暂停判断生效)。
 4. 部署事件：任意成员部署时 (敌方 AI 自动部署、用户从后备手动部署都算) 出现一行 `GearIn deployed: ally=... fighterWing=... ship=<hullId>`；每场战斗的 `deployments=` 计数等于该场部署日志条数 (监听器状态随战斗归属)。
-5. 收尾与移除：清空一侧舰队，胜负判定后 (结束动画期间) 出现 `GearIn lifecycle finalize: deployments=<n> listener removed, plugin removed`，此后战斗淡出期间**不再有**周期报告与部署日志 —— 插件已 `removePlugin`、监听器已 `removeListener`(收尾不依赖任何 "战斗结束回调"，规则 3)。
-6. 跨战斗实例：退出战斗再进一场，`init` 日志重现、`deployments=` 从头计数 —— 每场战斗新实例，旧引用全部作废 (规则 1)。
+5. 收尾与移除：清空一侧舰队，胜负判定后 (结束动画期间) 出现 `GearIn lifecycle finalize: deployments=<n> listener removed, plugin removed`，此后战斗淡出期间**不再有**周期报告与部署日志，插件已 `removePlugin`、监听器已 `removeListener`(收尾不依赖任何 "战斗结束回调"，规则 3)。
+6. 跨战斗实例：退出战斗再进一场，`init` 日志重现、`deployments=` 从头计数，每场战斗新实例，旧引用全部作废 (规则 1)。
 
 预期结果：
 
@@ -518,9 +518,9 @@ if (engine.isCombatOver()) { engine.getListenerManager().removeListener(listener
     GearIn lifecycle finalize: deployments=<n> listener removed, plugin removed
     ```
 
-    此后**不再有**周期报告与部署日志 —— 插件已 `removePlugin`、监听器已 `removeListener`；战斗淡出与结算照常进行 (收尾不依赖任何 "战斗结束回调"，规则 3)。
+    此后**不再有**周期报告与部署日志，插件已 `removePlugin`、监听器已 `removeListener`；战斗淡出与结算照常进行 (收尾不依赖任何 "战斗结束回调"，规则 3)。
 
-- **跨战斗实例**：退出战斗再进一场，日志再次出现 `GearIn lifecycle init:`，且 `deployments=` 从头计数 —— 每场战斗新实例，旧引用全部作废 (规则 1)。
+- **跨战斗实例**：退出战斗再进一场，日志再次出现 `GearIn lifecycle init:`，且 `deployments=` 从头计数，每场战斗新实例，旧引用全部作废 (规则 1)。
 
     没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.combat`、类 `GearInCombatLifecyclePlugin` / `GearInDeploymentListener`)。
 

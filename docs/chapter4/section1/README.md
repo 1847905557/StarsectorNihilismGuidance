@@ -73,7 +73,7 @@ Starsector 有两个主要游玩入口，本节开始会经常把两者并列：
 
 ## 注册测试战役
 
-在 MOD 中新建 `data/missions/mission_list.csv`，写入表头和战役 ID。**不要**复制整份原版 `mission_list.csv` —— 这个文件按行合并，您只需要自己的行：
+在 MOD 中新建 `data/missions/mission_list.csv`，写入表头和战役 ID。**不要**复制整份原版 `mission_list.csv`。该文件按行合并，您只需要自己的行：
 
 第一行 `mission` 是列名 (必须逐字一致，拼错会导致加载失败)，第二行是战役 ID。多行时可以随时用 `#` 注释掉整行。
 
@@ -110,7 +110,7 @@ Starsector 有两个主要游玩入口，本节开始会经常把两者并列：
 
 ::: caution 包名是游戏写死的，不能改
 
-**包名必须是 `data.missions.GearIn_test`** —— 这是游戏按战役 ID 写死的类名 (`data.missions.<mission_id>.MissionDefinition`)，不是教程的命名偏好，**不能**改成 `data.scripts.gearin.*` 之类自己的包。
+**包名必须是 `data.missions.GearIn_test`**：游戏按战役 ID 把类名写死为 `data.missions.<mission_id>.MissionDefinition`，不是教程的命名偏好，**不能**改成 `data.scripts.gearin.*` 之类自己的包。
 
 包名不符时，点击战役会抛出 `Problem loading class`。
 
@@ -251,7 +251,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 ## 在测试战役中导出装配
 
-启动游戏进入该测试战役。用户舰队会列出当前 MOD 的所有船体 —— 注意每个船体即使还没有任何正式装配，也会以自动生成的 `<hullId>_Hull` 空装配形式出现，这正是测试战役的用途：在装配界面为它装上武器、船插，然后让游戏自动导出装配。
+启动游戏进入该测试战役。用户舰队会列出当前 MOD 的所有船体；注意每个船体即使还没有任何正式装配，也会以自动生成的 `<hullId>_Hull` 空装配形式出现。为空装配装上武器、船插，再让游戏自动导出，即是本节取得正式装配的方法。
 
 被装配过的舰船，会在存档目录的 `missions\<mission_id>` 下自动生成装配文件：
 

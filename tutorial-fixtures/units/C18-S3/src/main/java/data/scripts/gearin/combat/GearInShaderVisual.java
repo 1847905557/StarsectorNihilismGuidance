@@ -170,7 +170,7 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
 
     /**
      * 取采样贴图；文件未加载时 getTextureId() 返回 0，投影渲染为黑/不可见。
-     * 原版单参 getSprite 永不返回 null，缺键时返回纹理为 null 的 Sprite—— 原版用返回 0 代替失败信号。
+     * 原版单参 getSprite 永不返回 null，缺键时返回纹理为 null 的 Sprite —— 原版用返回 0 代替失败信号。
      */
     private boolean loadSprite() {
         sprite = Global.getSettings().getSprite(SPRITE_PATH);

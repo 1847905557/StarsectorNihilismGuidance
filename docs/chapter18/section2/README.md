@@ -146,7 +146,7 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  *   data/shaders/ 同款布局)，路径必须用 / 分隔 (SettingsAPI.loadText javadoc
  *   硬规则)；反斜杠、盘符冒号、.. 与首字符 / 会在读取前被直接拒绝并抛 RuntimeException；
  * - 读取端行为 (文本读取工具的 readText)：按 UTF-8 解码并把全部 \r 剥除，不剥离
- *   BOM—— 源文件必须 UTF-8 无 BOM(BOM 字符会进入 GLSL 源码导致编译失败)，CRLF 安全；
+ *   BOM —— 源文件必须 UTF-8 无 BOM(BOM 字符会进入 GLSL 源码导致编译失败)，CRLF 安全；
  *   loadText 本身不打日志，编译/链接日志由 MOD 侧写入 starsector.log；
  * - 编译/链接链 (延续 C18-S1)：glCreateShader -> glShaderSource -> glCompileShader ->
  *   glGetShaderi(GL_COMPILE_STATUS)；glCreateProgram -> glAttachShader ->

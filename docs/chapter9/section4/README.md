@@ -110,7 +110,7 @@ fake market 意味着什么
 
 fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市场质量计算，不能把它当作固定 `0.5`，也不能据此断言舰队必定满船 D 插。
 
-3. **空舰队创建** (`createEmptyFleet(factionId, fleetType, market)`)：`Global.getFactory().createEmptyFleet(factionId, faction.getFleetTypeName(fleetType), true)`(`FactoryAPI.createEmptyFleet`，`aiMode=true` —— 关闭补给/燃料消耗、事故与船员需求)。
+3. **空舰队创建** (`createEmptyFleet(factionId, fleetType, market)`)：`Global.getFactory().createEmptyFleet(factionId, faction.getFleetTypeName(fleetType), true)`(`FactoryAPI.createEmptyFleet`，`aiMode=true`，关闭补给/燃料消耗、事故与船员需求)。
     - 写内存 `$fleetType`(`MemFlags.MEMORY_KEY_FLEET_TYPE`) 与 `$sourceMarket`(`MEMORY_KEY_SOURCE_MARKET`；fake 市场除外)。
     - 给所有 `AbilitySpecAPI.isAIDefault()` 的能力 `fleet.addAbility(id)`。
     - `Misc.getSalvageSeed(fleet)`(写内存 `$salvageSeed`，`MemFlags.SALVAGE_SEED`)。
@@ -205,7 +205,7 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 `DefaultFleetInflater.inflate`(`com.fs.starfarer.api.impl.campaign.fleets.DefaultFleetInflater`) 行为要点：
 
 - **可用池**：武器 = `faction.getKnownWeapons()` 过滤 `isWeaponKnownAt(id, timestamp)`，战机同理；按 tier/autofit 分类与 "priority"(`faction.isWeaponPriority`) 分组；船插 = `faction.getKnownHullMods()`。
-- **质量驱动**：`getTierProbability(tier, quality)` —— tier1 `min(0.9, 0.75+q)`、tier2 `min(0.9, 0.5+0.5q)`、tier3 `min(0.9, 0.25+0.25q)`，`allWeapons=true` 时全 1。
+- **质量驱动**：`getTierProbability(tier, quality)`：tier1 `min(0.9, 0.75+q)`、tier2 `min(0.9, 0.5+0.5q)`、tier3 `min(0.9, 0.25+0.25q)`，`allWeapons=true` 时全 1。
     - 每成员用 `CoreAutofitPlugin.doFit(currVariant, target, maxSmods, this)` 重新装配。
 - **D 插**：`averageDmods = (1 - quality) / qualityPerDMod`(`settings.json` 中 `qualityPerDMod` = 0.2)。
     - 每成员 `getNumDModsToAdd = round(avg + random*3 - 2)` 钳 \[0,5\] 减已有 → `DModManager.setDHull` + `addDMods`。
@@ -261,7 +261,7 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 
 原版使用方：遭遇战生成 (anchor = 玩家舰队 + 随机 ±100 偏移；重生，anchor null)、开局玩家舰队 (anchor null)。
 
-替代路径：`location.addEntity(fleet)` + `fleet.setLocation(x, y)` + `fleet.forceSync()` —— `spawnFleet` 省掉这三步并附赠 3 秒免战。
+替代路径：`location.addEntity(fleet)` + `fleet.setLocation(x, y)` + `fleet.forceSync()`，`spawnFleet` 省掉这三步并附赠 3 秒免战。
 
 **投放必须发生在生涯引擎建立之后**；创建与投放之间舰队不在任何容器里 (`isAlive()==false`，地点容器语义)。
 
@@ -428,17 +428,17 @@ mods/GearIndustry/
 
 - `implements EveryFrameScript`：`isDone()` 返回 `executed`(演示执行后自停)；`runWhilePaused()` 返回 `false`；`advance` 包 `try/catch`(任一步抛错只记 ERROR 不自停失败，前置章节同款写法)。
 - `REGISTER_MARK`：persistent data 判断键 (`"GearIn_FleetFactory"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不含任何工作单元编号变体。
-- `FleetParamsV3` market 构造器：`source=jangala`、`fleetType=patrolMedium`、六类点数、`qualityMod=0` —— `params.quality` 即市场质量 (`Misc.getShipQuality`)，日志里与 `qualityOverride` 并排可对照优先级。
+- `FleetParamsV3` market 构造器：`source=jangala`、`fleetType=patrolMedium`、六类点数、`qualityMod=0`，`params.quality` 即市场质量 (`Misc.getShipQuality`)，日志里与 `qualityOverride` 并排可对照优先级。
 - `params.qualityOverride = 0.6f`：有效质量 0.6 → `averageDmods=(1-0.6)/0.2=2`，多数成员带 1–3 个 D 插；tier2 武器概率 `0.5+0.3=0.8`、tier3 `0.25+0.15=0.4`。
-- `params.flagshipVariantId = "tempest_Attack"`：旗舰装配覆盖 (`createFleet` 旗舰变体段)，换 hull 为 `tempest` —— 日志 `flagship hull=tempest variant=tempest_Attack`。
+- `params.flagshipVariantId = "tempest_Attack"`：旗舰装配覆盖 (`createFleet` 旗舰变体段)，换 hull 为 `tempest`，日志 `flagship hull=tempest variant=tempest_Attack`。
 - `fleet.getFlagship().getCaptain() == fleet.getCommander()`：`setFlagship` 的副作用 (`FleetDataAPI.setFlagship` 内部实现)，演示核对 `captainIsCommander=true`。
 - `fleet.inflateIfNeeded()`：手动触发膨胀 (引擎在 AI/工具提示/战斗前也会自动触发)；`isInflated=true` 且 `inflaterAttached=true`(`persistent=true` 保留)；成员变体来源 REFIT、D 插合计按质量分布。
 - 内存五键：`$fleetType`/`$sourceMarket` 来自 `createEmptyFleet`；`$salvageSeed` 来自 `Misc.getSalvageSeed`；`$spawnFPMult` 来自 `Misc.setSpawnFPMult`(实际/请求 FP)；`$overrideNoAutofit` 未写 (默认 false)。
 - `location.spawnFleet(anchor, 0f, 0f, fleet)`：投放三合一；`spawned` 行核对 `inLocation=true`、坐标 == 锚点坐标、`alive=true`。
 - `FleetFactory.createPatrol(market, PatrolType.FAST)`：V1 固定模板对照 (`patrolSmall` 类型、手写角色组合)；第二个 `spawnFleet` 带 +200,+200 偏移展示偏移参数。
-- 清理段：`removeEntity` 移除两支舰队 —— 演示脚本**不留副作用**，可反复读档重放。两支舰队连 3 秒的免战窗口都没撑到就被同帧移除，这份免战期在本例中纯属理论福利；`spawnFleet` 仍是正确的投放写法，它把入容器、定位与免战三件事合成一行。
+- 清理段：`removeEntity` 移除两支舰队，演示脚本**不留副作用**，可反复读档重放。两支舰队连 3 秒的免战窗口都没撑到就被同帧移除，这份免战期在本例中纯属理论福利；`spawnFleet` 仍是正确的投放写法，它把入容器、定位与免战三件事合成一行。
 
-调用点 (工程片段 —— 方法所在类归前置章节所有，本节只演示调用，不改动那些文件)：
+调用点 (工程片段，方法所在类归前置章节所有，本节只演示调用，不改动那些文件)：
 
 ```java
     // 在 GearInModPlugin 的 onGameLoad(boolean newGame) 内新增本节注册块。
@@ -505,7 +505,7 @@ location.spawnFleet(market.getPrimaryEntity(), 0f, 0f, fleet);
     GearIn fleet factory start: market=jangala size=6 location=corvus quality=<市场质量> GearIn fleet factory params: faction=hegemony fleetType=patrolMedium marketQuality=<Q> qualityOverride=0.60 totalPts=58 GearIn fleet factory created: name=Patrol faction=hegemony fleetType=patrolMedium members=<N> fighters=<战机数> fp=<FP> GearIn fleet factory flagship: hull=tempest variant=tempest_Attack captainIsCommander=true GearIn fleet factory commander: name=<指挥官名> level=<L> personality=<personality> officers=<M> GearIn fleet factory pre-inflate: isInflated=false inflaterAttached=true inflaterQuality=0.60 GearIn fleet factory inflated: isInflated=true inflaterAttached=true refitVariants=<N> dmods=<D> GearIn fleet factory memory: fleetType=patrolMedium sourceMarket=jangala salvageSeed=<S> spawnFPMult=<mult> GearIn fleet factory spawned: inLocation=true at=(<ax>, <ay>) anchor=(<ax>, <ay>) alive=true GearIn fleet factory patrol: name=Fast Picket members=<P> fp=<FPp> flagship=<hull> GearIn fleet factory done: fleetAlive=false patrolAlive=false
     ```
 
-    其中 `<N>` 是生成成员数 (40+18 点数预算下典型 7–12 艘)、`<战机数>` 是战机联队数 (无航母时为 0)、`<FP>` 是实际 fleet points(**可能低于 58** —— 点数是目标不是硬上限)、`<L>` 是指挥官等级 (`officerLevelBonus=1` 生效)、`<M>` 是军官数 (≥1 为正常)、`<D>` 是 D 插总数 (质量 0.6 下典型 ≈ 2×成员数)、`<mult>` 是 `$spawnFPMult`(实际/请求)。`flagship` 与 `patrol` 两行的 `fleetAlive=false` 证明清理生效。
+    其中 `<N>` 是生成成员数 (40+18 点数预算下典型 7–12 艘)、`<战机数>` 是战机联队数 (无航母时为 0)、`<FP>` 是实际 fleet points(**可能低于 58**，点数是目标不是硬上限)、`<L>` 是指挥官等级 (`officerLevelBonus=1` 生效)、`<M>` 是军官数 (≥1 为正常)、`<D>` 是 D 插总数 (质量 0.6 下典型 ≈ 2×成员数)、`<mult>` 是 `$spawnFPMult`(实际/请求)。`flagship` 与 `patrol` 两行的 `fleetAlive=false` 证明清理生效。
 
 - **游戏内地图**：演示期间 (日志可见时)`jangala` 行星位置短暂出现两支舰队图标 (同帧即被移除，若看不到可在暂停时核对日志)；演示结束后地图无残留。
 

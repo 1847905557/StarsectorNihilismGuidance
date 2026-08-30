@@ -35,7 +35,7 @@ import com.fs.starfarer.api.combat.ShipAPI.HullSize;
 
 /**
  * 教程第一个最小船插：给舰船一个固定百分比的最大速度加成。
- * 整份文件只有两处是参数 ——SPEED_PERCENT 的数字与日志文字；其余全部按模板使用。
+ * 整份文件只有两处是参数 —— SPEED_PERCENT 的数字与日志文字；其余全部按模板使用。
  */
 public class GearInSpeedBooster extends BaseHullMod {
 
@@ -55,8 +55,8 @@ public class GearInSpeedBooster extends BaseHullMod {
 - **`package` 行**：类的存放目录。`data.scripts.gearin.hullmods` 对应 MOD 根下的 `data/scripts/gearin/hullmods/`，文件必须放在该目录下。
 - **`import` 行**：向游戏借用的工具。按模板使用，不认识的名称不影响本节操作。
 - **`public class GearInSpeedBooster extends BaseHullMod`**：类的名字。类名必须与文件名一致；`extends BaseHullMod` 表示采用船插的标准模板。
-- **`SPEED_PERCENT = 10f`**：本节唯一的参数 —— 速度加成百分比。改为 `50f` 即加成 50%。`f` 是小数标记，`10f` 与 `10.0f` 等价。
-- **方法 `applyEffectsBeforeShipCreation` 及其两行**：方法签名的参数不需要全部理解。方法体内两行各有用途：`modifyPercent(id, SPEED_PERCENT)` 是 "给最大速度加百分之几" 的固定句式；`Global.getLogger(...).info("...")` 向游戏日志写入一行文字 —— 引号内的文字可修改，改成什么，日志里就出现什么。**一般来说不会随便写日志，这里仅作演示**。
+- **`SPEED_PERCENT = 10f`**：本节唯一的参数，即速度加成百分比。改为 `50f` 即加成 50%。`f` 是小数标记，`10f` 与 `10.0f` 等价。
+- **方法 `applyEffectsBeforeShipCreation` 及其两行**：方法签名的参数不需要全部理解。方法体内两行各有用途：`modifyPercent(id, SPEED_PERCENT)` 是 "给最大速度加百分之几" 的固定句式；`Global.getLogger(...).info("...")` 向游戏日志写入一行文字，引号内的文字可修改，改成什么，日志里就出现什么。**一般来说不会随便写日志，这里仅作演示**。
 
 ::: info 最小形态
 
@@ -68,7 +68,7 @@ public class GearInSpeedBooster extends BaseHullMod {
 
 ## 注册船插数据行
 
-游戏不会自动加载未注册的类。船插的登记位置是 `data/hullmods/hull_mods.csv` —— 在 MOD 根目录建立该文件，写入以下两行 (第一行是表头)：
+游戏不会自动加载未注册的类。船插的登记位置是 `data/hullmods/hull_mods.csv`：在 MOD 根目录建立该文件，写入以下两行 (第一行是表头)：
 
 ```text {2}
 name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
@@ -79,7 +79,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 - **`id` 列** (第 2 列)：船插的全局唯一标识，`GearIn_` 前缀是 ID 纪律 [C1-S1]。本行是 `GearIn_speed_booster`。
 - **`cost_*` 四列**：装配点消耗 —— 护卫舰 3、驱逐 6、巡洋 9、主力 12。修改这四个数字可调整成本。
-- **`script` 列**：类的完整名。这就是注册：游戏在数据中读到这个类名，需要时加载它。类名必须与文件中的 `class GearInSpeedBooster` 一字不差。
+- **`script` 列**：类的完整名。游戏在数据中读到这个类名，需要时按它加载，注册便由此完成。类名必须与文件中的 `class GearInSpeedBooster` 一字不差。
 - **`desc` 列**：装配界面显示的描述文字。引号内的文字可修改
 
 ::: warning 四档 cost 缺一不可

@@ -97,7 +97,7 @@
 4. 帧循环环绕：`currFrame += 时间 × frameRate`，超过 `numFrames` 回绕 (`Animation.advance`)。
 5. 动画只在视口附近且武器未隐藏时推进。
 
-`frameRate` 是 "帧 / 秒" 的播放速率，帧间切换由引擎驱动 —— 效果类无需自己数帧。
+`frameRate` 是 "帧 / 秒" 的播放速率，帧间切换由引擎驱动，效果类无需自己数帧。
 
 ### 帧贴图命名规则
 
@@ -110,7 +110,7 @@ graphics/weapons/rotary/rotary_cannon_turret_base02.png   # 帧 2
 graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 ```
 
-帧贴图在**武器实例构造时**逐帧加载；基路径不以 `00.png` 结尾时帧 0 路径推导错位 (替换不命中，帧文件拼出错误文件名)。帧 0 (即主贴图) 文件缺失时构造期抛 NPE —— 部署舰船时即报错；后续帧缺失不报错，仅对应帧渲染空白。命名规则是必须遵守的 (规则 3)。
+帧贴图在**武器实例构造时**逐帧加载；基路径不以 `00.png` 结尾时帧 0 路径推导错位 (替换不命中，帧文件拼出错误文件名)。帧 0 (即主贴图) 文件缺失时构造期抛 NPE，部署舰船时即报错；后续帧缺失不报错，仅对应帧渲染空白。命名规则是必须遵守的 (规则 3)。
 
 ### AnimationAPI 程序化控制
 
@@ -187,7 +187,7 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 ### beamEffect(光束武器专属)
 
 - 注册列 `beamEffect` 只在 `specClass: beam` 的 `.wpn` 上被读取；写到弹丸武器 `.wpn` 上**静默不生效**。
-- 实例：每条光束射线实体构造时调 `getSpec().getBeamEffect()` → **每条射线独立实例**；实现 `BeamEffectPluginWithReset` 的实例在射线创建与销毁时收到 `reset()` —— 跨射线状态在这里复位。
+- 实例：每条光束射线实体构造时调 `getSpec().getBeamEffect()` → **每条射线独立实例**；实现 `BeamEffectPluginWithReset` 的实例在射线创建与销毁时收到 `reset()`，跨射线状态在这里复位。
 - 每帧调用：射线在开火 / 充能期间存在，光束武器每帧对每条射线调一次 `advance(amount, engine, beam)`。调用点由上一帧射线长度决定：**长度 ≤0.1(新射线首帧) 在更新 `to` 端点之后调用，其余帧 (含命中截短) 都在更新之前调用**，与命中与否无关。
 - 光束伤害是 DPS 语义按 0.1 秒结算 [C7-S4]；`beam.getDamage().getDpsDuration()` 在结算帧返回累计时长、其余帧为 0 —— 原版 `IonBeamEffect` 用 `dpsDuration` 推进 `IntervalUtil`(并处理快速时间下的 `wasZero` 边沿)，使特效节奏跟随真实伤害结算。
 - `didDamageThisFrame()` / `getDamageTarget()` 只对本帧结算语义有效 ([C7-S4] 规则 5 同规)：光束逐帧可能切换命中目标，禁止把上一帧目标缓存跨帧使用。
@@ -212,19 +212,19 @@ graphics/weapons/rotary/rotary_cannon_turret_base03.png   # 帧 3
 要点：
 
 - `.wpn` 的 `everyFrameEffect` 与 `.proj` 的 `onFireEffect` / `onHitEffect` 可以指向**同一个类名**，但每个注册列各创建自己的实例；
-- 同一把武器上，"每武器实例" 同时收到 `advance`(每帧) 与 `onFire`(每次开火) —— 两个回调共享该实例的字段，是跨回调传状态的合法窗口；
-- 反之，`.proj` 绑定产生的 `onHit` 实例与武器效果实例是不同对象 —— 跨角色传状态必须另找通道 (如 `weapon.setCustom(...)` / `getCustom()`)。
+- 同一把武器上，"每武器实例" 同时收到 `advance`(每帧) 与 `onFire`(每次开火)，两个回调共享该实例的字段，是跨回调传状态的合法窗口；
+- 反之，`.proj` 绑定产生的 `onHit` 实例与武器效果实例是不同对象，跨角色传状态必须另找通道 (如 `weapon.setCustom(...)` / `getCustom()`)。
 
 ## 必须遵守的规则
 
 从实例模型与回调时机中提炼出的约束集中在这里，本节示例逐条对应。
 
-1. **效果类必须可无参实例化**。所有效果注册列都由脚本类加载器按类名创建实例 (要求无参构造器)。违反的可观察结果：绑定的类缺失、类名写错或无无参构造器时，武器 / 射线 / 射弹创建点抛 `Problem loading class [...]`(`RuntimeException`) —— 部署舰船即报错，或武器 / 射弹创建失败。
+1. **效果类必须可无参实例化**。所有效果注册列都由脚本类加载器按类名创建实例 (要求无参构造器)。违反的可观察结果：绑定的类缺失、类名写错或无无参构造器时，武器 / 射线 / 射弹创建点抛 `Problem loading class [...]`(`RuntimeException`)，部署舰船即报错，或武器 / 射弹创建失败。
 2. **回调参数只在本回调内消费，禁止跨发 / 跨帧 / 跨实例缓存**。`onFire` 的 `projectile`、`onHit` 的 `target` / `damageResult`、光束的 `didDamageThisFrame` / `getDamageTarget` 都只在对应回调与对应帧有效 (与 [C7-S4] 规则 2、4 同一条纪律)。违反的可观察结果：把上一帧目标当本帧目标继续操作 —— 对已死实体施加逻辑；或跨发射复用射弹引用 —— 旧引用失效或被下一次覆盖。
-3. **动画武器帧贴图必须按命名规则放置**：基贴图路径以 `00.png` 结尾，帧文件按 `00, 01, ..., N-1` 顺序编号。违反的可观察结果：基路径不以 `00.png` 结尾时帧 0 路径推导错位 (拼出错误文件名)，帧文件缺失在武器构造时加载失败 —— 部署舰船即报错。
+3. **动画武器帧贴图必须按命名规则放置**：基贴图路径以 `00.png` 结尾，帧文件按 `00, 01, ..., N-1` 顺序编号。违反的可观察结果：基路径不以 `00.png` 结尾时帧 0 路径推导错位 (拼出错误文件名)，帧文件缺失在武器构造时加载失败，部署舰船即报错。
 4. **`weapon.getAnimation()` 必须判空**。只有 `numFrames > 1` 的武器有动画对象 (`com.fs.starfarer.api.combat.WeaponAPI` javadoc 原文 "null for non-animated weapons")。违反的可观察结果：对静态贴图武器调用 `getAnimation()` 直接 NPE。
 5. **不得在 `getSprite()` 返回的贴图上设置 alpha 与角度**。渲染前引擎会调用 `setAlphaMult()` / `setAngle()` 覆盖 (`WeaponAPI.getSprite()` javadoc 原文)。改透明度用 `SpriteAPI.setColor()` 的 alpha 通道、改朝向用 `WeaponAPI.setCurrAngle()`。违反的可观察结果：设置值被覆盖，视觉无变化 (静默失效)。
-6. **`beamEffect` 只对光束武器生效**。注册列只在 `specClass: beam` 时被读取。违反的可观察结果：写在弹丸 `.wpn` 上完全无效，无任何报错 (静默) —— 回调不执行。
+6. **`beamEffect` 只对光束武器生效**。注册列只在 `specClass: beam` 时被读取。违反的可观察结果：写在弹丸 `.wpn` 上完全无效，无任何报错 (静默)，回调不执行。
 7. **修改武器数值前必须 `ensureClonedSpec()`**([C7-S4] 规则 1 同规)；效果类如需改伤害只能走 `damage.getModifier()`([C7-S4] 规则 6)。本节示例只观察并生成纯视觉粒子，不改数值；违反的可观察结果见开火流单元 [C7-S4]。
 
 ## 实现武器动画与回调
@@ -377,17 +377,17 @@ LOG.info("GearIn onHit " + projectile.getProjectileSpecId()
 
 ### GearInOnFireEffect(`.proj` onFireEffect)
 
-开火回调，绑定 `onFireEffect` 后每武器一个实例：武器开火生成射弹后回调一次，参数是刚生成的那一颗射弹 (速度 / 朝向已就绪)，打印弹体 id、发射武器、`spawnType` 与弹速 —— 只观察不改数值，参数禁止缓存跨发射使用。
+开火回调，绑定 `onFireEffect` 后每武器一个实例：武器开火生成射弹后回调一次，参数是刚生成的那一颗射弹 (速度 / 朝向已就绪)，打印弹体 id、发射武器、`spawnType` 与弹速，只观察不改数值，参数禁止缓存跨发射使用。
 
 ### GearInOnHitEffect(`.proj` onHitEffect)
 
-命中回调，绑定 `onHitEffect` 后每射弹一个实例：射弹命中结算时回调一次，打印命中结算结果 (`ApplyDamageResultAPI` 的 hull / armor / shields / emp) —— 参数是本次结算上下文，禁止缓存跨命中使用。
+命中回调，绑定 `onHitEffect` 后每射弹一个实例：射弹命中结算时回调一次，打印命中结算结果 (`ApplyDamageResultAPI` 的 hull / armor / shields / emp)，参数是本次结算上下文，禁止缓存跨命中使用。
 
 四个类的全部字段都是实例字段：每武器 / 每射线 / 每射弹实例各有一份，跨实例互不干扰；跨战斗实例全部重建，禁止跨战斗缓存 ([C6-S3] 纪律)。
 
 ### 数据接入片段
 
-(工程片段 —— 本节不创建数据文件；接入后四个效果类才生效。以下 ID 由本节声明，路径在 `mods/GearIndustry/` 下自洽)：
+(工程片段，本节不创建数据文件；接入后四个效果类才生效。以下 ID 由本节声明，路径在 `mods/GearIndustry/` 下自洽)：
 
 ```text
 data/weapons/GearIn_test_rotor.wpn         # 弹丸武器：GearInWeaponFrameEffect(everyFrameEffect)+ 动画 / 内置视觉字段
@@ -489,7 +489,7 @@ gradle jar
 
 ### 核对产物
 
-`gradle jar` 后用 `jar tf jars/GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下四个效果类都在 —— 类缺失或包路径不符时，先查包名与类名拼写，再查 `everyFrameEffect` / `beamEffect` / `onFireEffect` / `onHitEffect` 四处的全限定名。
+`gradle jar` 后用 `jar tf jars/GearIndustry.jar` 核对 `data/scripts/gearin/combat/` 下四个效果类都在，类缺失或包路径不符时，先查包名与类名拼写，再查 `everyFrameEffect` / `beamEffect` / `onFireEffect` / `onHitEffect` 四处的全限定名。
 
 产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/combat/` 下的四个类：
 

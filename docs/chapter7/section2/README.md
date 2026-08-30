@@ -58,7 +58,7 @@
 ### 读取战斗引擎
 
 - `isInCampaign()`：返回目标是生涯状态且当前战斗不是模拟战才为 `true`；战役 (mission) 与模拟战 (包括生涯内模拟战) 返回 `false`。
-- `isInCampaignSim()` / `isSimulation()` / `isMission()`：三层细分 —— 生涯内模拟战的 `isInCampaignSim()` 与 `isSimulation()` 均为 `true`、`isInCampaign()` 为 `false`；主菜单模拟战只有 `isSimulation()` 为 `true`；战役 `isMission()` 为 `true` 且 `getMissionId()` 返回战役 ID(如 `GearIn_test` 测试战役)。
+- `isInCampaignSim()` / `isSimulation()` / `isMission()`：三层细分：生涯内模拟战的 `isInCampaignSim()` 与 `isSimulation()` 均为 `true`、`isInCampaign()` 为 `false`；主菜单模拟战只有 `isSimulation()` 为 `true`；战役 `isMission()` 为 `true` 且 `getMissionId()` 返回战役 ID(如 `GearIn_test` 测试战役)。
 - 用途：同一段逻辑在不同战斗类型下行为不同时 (例如只在生涯遭遇战里开启某机制)，先读这几个标志，不要在 `init` 里猜。
 
 ### 读取玩家舰船
@@ -70,15 +70,15 @@
 由此得到两条必须遵守的规则：
 
 1. **禁止**用 `engine.getPlayerShip() == null` 判断 "玩家未部署 / 不在战斗"。该表达式在战斗内永远为 `false`，依赖它的分支**永远不执行** (静默失效，无报错)。判断部署状态应读 `engine.getFleetManager(FleetSide.PLAYER).getDeployedCopy()` 是否非空；判断是否在战斗用 `Global.getCurrentState() == GameState.COMBAT`。
-2. 拿到 `getPlayerShip()` 后**必须**核对 `isHulk()` / `isAlive()`(或 `playerShip` 的舰型)，再把它当作 "玩家控制的真舰" 使用 —— 部署阶段拿到的是假舰，对它调用写操作没有实际玩家意义。
+2. 拿到 `getPlayerShip()` 后**必须**核对 `isHulk()` / `isAlive()`(或 `playerShip` 的舰型)，再把它当作 "玩家控制的真舰" 使用；部署阶段拿到的是假舰，对它调用写操作没有实际玩家意义。
 
 ### 判断战斗结果
 
 - `isCombatOver()`：战斗结束标志置位**且**结束淡出动画播放完才返回 `true`。可观察结果：胜负判定到淡出完成之间有一个窗口，`isCombatOver()` 仍为 `false`。
 - `getWinningSideId()`：API javadoc 原文 "0 = player, 1 = enemy, 2 = player allies, no player ships left."；胜负未定时返回 -1(初始默认值)。因此**禁止**把 `getWinningSideId() != -1` 当作 "战斗已结束" 判据 —— 它代表的是 "胜者侧"，结束判定必须用 `isCombatOver()`。
-- `setCombatNotOverFor(float)` / `getCombatNotOverFor()`：把战斗强制延续一段时间 (防止按败北条件提前收场)；结束判定对 "败北" 还要求战斗时间累计超过 30 秒 —— 已部署舰船全灭时战斗立即结束，不受此门槛限制。
+- `setCombatNotOverFor(float)` / `getCombatNotOverFor()`：把战斗强制延续一段时间 (防止按败北条件提前收场)；结束判定对 "败北" 还要求战斗时间累计超过 30 秒，已部署舰船全灭时战斗立即结束，不受此门槛限制。
 
-战斗类型与结束条件清楚了，接下来读取场上到底有哪些舰船 —— 引擎对象表和舰队管理器提供两条互补的路径。
+战斗类型与结束条件清楚了，接下来读取场上到底有哪些舰船：引擎对象表和舰队管理器提供两条互补的路径。
 
 ## 遍历舰队与舰船
 
@@ -94,9 +94,9 @@
 
 | 方法 | 语义 |
 |---|---|
-| `ship.isAlive()` | 与引擎侧 `engine.isShipAlive(ship)` 同一判定 —— 非残骸、`getHitpoints() > 0`、且 (仍在引擎对象表中或属于停在甲板的战机)。战机停驻时仍为 `true` |
+| `ship.isAlive()` | 与引擎侧 `engine.isShipAlive(ship)` 同一判定：非残骸、`getHitpoints() > 0`、且 (仍在引擎对象表中或属于停在甲板的战机)。战机停驻时仍为 `true` |
 | `engine.isShipAlive(ship)` | 同上，引擎侧入口 (`null` 安全：传 null 返回 `false`) |
-| `engine.isEntityInPlay(entity)` | 实体当前在战斗场上：已入对象表且未被标记移除 (刚加入战斗、尚未入表的实体也算在场) —— 残骸若仍在对象表中，此方法为 `true`；停驻甲板的战机为 `false` |
+| `engine.isEntityInPlay(entity)` | 实体当前在战斗场上：已入对象表且未被标记移除 (刚加入战斗、尚未入表的实体也算在场)，残骸若仍在对象表中，此方法为 `true`；停驻甲板的战机为 `false` |
 
 ::: warning 遍历必须过滤残骸
 
@@ -155,7 +155,7 @@
 
 两个关键事实：
 
-1. **暂停时 `advance()` 仍被调用**：暂停不中断战斗引擎对 `EveryFrameCombatPlugin` 的每帧回调 —— `advance()` 在暂停时照常被调用。**必须**在推进状态前检查 `engine.isPaused()`([C7-S1] 已立此规)。违反的可观察结果：暂停期间自己的计时 / 状态照常累计，解除暂停后数值已偏移。
+1. **暂停时 `advance()` 仍被调用**：暂停不中断战斗引擎对 `EveryFrameCombatPlugin` 的每帧回调，`advance()` 在暂停时照常被调用。**必须**在推进状态前检查 `engine.isPaused()`([C7-S1] 已立此规)。违反的可观察结果：暂停期间自己的计时 / 状态照常累计，解除暂停后数值已偏移。
 2. **插件收到的 `amount` 与 `getElapsedInLastFrame()` 是同一个数**：引擎按 `timeMult` 与 `combatSpeedMult` 缩放后得到本帧 `dt`，同时写入 `getElapsedInLastFrame()` 并作为 `amount` 传给每帧回调，暂停时也照常传入。默认两个倍率都是 1，`amount` 即真实帧长。做 "按推进时间累计" 直接用 `amount` 或 `getElapsedInLastFrame()`，**不要**再乘 `engine.getTimeMult().getModifiedValue()` —— 那会二次缩放，游戏内时间倍率一改 (慢动作等) 自己的计时就比战斗时间快/慢。违反的可观察结果：默认倍率下看不出来，一旦有 `timeMult` 修正 (技能、慢动作效果)，累计计时与 `getTotalElapsedTime(false)` 的差值按倍率扩大。
 
 选哪种累计时间的决策：
@@ -259,13 +259,13 @@ LOG.info("GearIn ships: alive=" + alive + " notAlive=" + notAlive
 对应关系：
 
 - `init` 里的 `battle init` 行：读战斗上下文四标志 + `getMissionId()`，用 `GearIn_test` 战役验证 "这场是 mission"。
-- `advance` 的 `if (engine.isPaused()) return;`：把时间语义的第 1 条落成代码 —— 暂停时不推进状态，报告节奏也随之停摆；恢复后 `total` 与 `totalWithPause` 的差值就是暂停时长的现场证明。
-- `logEngineTime`：把 "时间语义" 表变成日志 —— `total` / `totalWithPause` / `lastFrame` / `timeMult` / `contact` / `fleetsInContact` / `combatOver` / `winner` 一次打印。
-- `logFleetManagers`：两侧管理器的五份名单大小 + `getDeployedCopyDFM()` 遍历 (跳过 `isFighterWing()` / `isStationModule()`，只数存活主力舰 —— 已部署成员遍历的成熟做法)。
+- `advance` 的 `if (engine.isPaused()) return;`：把时间语义的第 1 条落成代码：暂停时不推进状态，报告节奏也随之停摆；恢复后 `total` 与 `totalWithPause` 的差值就是暂停时长的现场证明。
+- `logEngineTime`：把 "时间语义" 表变成日志：`total` / `totalWithPause` / `lastFrame` / `timeMult` / `contact` / `fleetsInContact` / `combatOver` / `winner` 一次打印。
+- `logFleetManagers`：两侧管理器的五份名单大小 + `getDeployedCopyDFM()` 遍历 (跳过 `isFighterWing()` / `isStationModule()`，只数存活主力舰，已部署成员遍历的成熟做法)。
 - `logShips`：`getShips()` + `isAlive()` 过滤分成 alive / notAlive 两堆 (残骸与刚移除的舰计入 notAlive)；`playerShip` 行核对 `getPlayerShip()` 永不 null 的判据 (部署阶段显示 `shuttlepod` 假舰、`playerInPlay=false`)。
 - `IntervalUtil(2f, 2f)`：固定 2 秒节奏的周期触发器 (`advance` + `intervalElapsed()` 每帧调用)。
 
-注册片段 (工程片段 —— 本节不改动既有文件，只演示调用)：
+注册片段 (工程片段，本节不改动既有文件，只演示调用)：
 
 ```java
     // 既有战斗插件的 init() 内新增一行
@@ -497,7 +497,7 @@ if (engine.getFleetManager(FleetSide.PLAYER).getDeployedCopy().isEmpty()) { retu
 
 本节把战斗域的读取侧讲成一个完整流程：`CombatEngineAPI` 状态访问器分四组 (战斗上下文、玩家与实体、战斗结果、时间)，`getShips()` 遍历必须用 `isAlive()` 过滤，舰队管理器五份名单与 `getDeployedCopyDFM()` 读部署状态，战斗时间的四种语义与暂停时 `advance()` 的行为都落到可观察的日志表现上。
 
-两个 "永不 null" 入口 (`getPlayerShip()` 用到时才创建的假舰、`getFleetManager(int)` 新建的空管理器) 与实体、列表的跨战斗缓存禁令，是写侧代码同样要遵守的边界 —— 写操作同样需要先核对状态与时间语义，本节的读取做法是它们的共同前提。
+两个 "永不 null" 入口 (`getPlayerShip()` 用到时才创建的假舰、`getFleetManager(int)` 新建的空管理器) 与实体、列表的跨战斗缓存禁令，是写侧代码同样要遵守的边界，写操作同样需要先核对状态与时间语义，本节的读取做法是它们的共同前提。
 
 `getTimeMult()` 返回的 `MutableStat` 属于时间倍率主题，本节只读取其修正值；`getMember()` 指向的 `FleetMemberAPI` 携带生涯侧身份，其成员属性由生涯主题完整讲解。
 

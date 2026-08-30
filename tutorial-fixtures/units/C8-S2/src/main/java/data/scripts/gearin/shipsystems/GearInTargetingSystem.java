@@ -17,7 +17,7 @@ import com.fs.starfarer.api.plugins.ShipSystemStatsScript;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 完整最小例：战术系统运行态 ——Stats 脚本、状态机、目标锁定与系统 AI 的完整流程。
+ * 完整最小例：战术系统运行态 —— Stats 脚本、状态机、目标锁定与系统 AI 的完整流程。
  *
  * 一个类身兼两个角色，两个角色由数据绑定各自实例化一次：
  * 1. Stats 脚本角色 (ShipSystemStatsScriptAdvanced)：.system 的 statsScript 字段挂载。

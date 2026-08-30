@@ -86,7 +86,7 @@
 `CargoAPI`(`com.fs.starfarer.api.campaign.CargoAPI`) 是纯接口，结构分三块：
 
 - **栈集合**：`stacks` 字段，`getStacksCopy()` 返回副本；
-- **信用**：`credits` 字段，`getCredits()` 返回 `MutableValue` —— `com.fs.starfarer.api.util.MutableValue`：`get()` / `set()` / `add()` / `subtract()`；
+- **信用**：`credits` 字段，`getCredits()` 返回 `MutableValue`(`com.fs.starfarer.api.util.MutableValue`)：`get()` / `set()` / `add()` / `subtract()`；
 - **容量统计**：`maxCapacity` / `maxFuel` / `maxPersonnel` / `spaceUsed`。
 
 ### CargoAPI 读写分族速查表
@@ -122,7 +122,7 @@
 
 使用 `getMothballedShips()` 前必须先初始化
 
-违反必须遵守的规则的直接可观察结果：`getMothballedShips()` 返回 null 解引用即 NPE。而 `addMothballedShip` 内部会自动初始化，不需要您自己先 init —— 只有**读取**路径要求先行 `initMothballedShips(factionId)`。
+违反必须遵守的规则的直接可观察结果：`getMothballedShips()` 返回 null 解引用即 NPE。而 `addMothballedShip` 内部会自动初始化，不需要您自己先 init，只有**读取**路径要求先行 `initMothballedShips(factionId)`。
 
 **容量统计**：`getMaxCapacity()` / `getMaxFuel()` / `getMaxPersonnel()` / `getSpaceUsed()` / `getSpaceLeft()` / `getFreeCrewSpace()` / `getFreeFuelSpace()`；`updateSpaceUsed()` 重算已用空间。
 
@@ -304,7 +304,7 @@ mods/GearIndustry/
 
 ### 行为要点
 
-- `extends GearInOneShotScript`：沿用脚本节的一次性演示模式 —— 首帧 `advance()` 执行一次 `runDemo()`，`isDone()` 置位后引擎同帧紧随其后自动移除。
+- `extends GearInOneShotScript`：沿用脚本节的一次性演示模式，首帧 `advance()` 执行一次 `runDemo()`，`isDone()` 置位后引擎同帧紧随其后自动移除。
 - `REGISTER_MARK`：persistent data 标记键 —— 两个脚本各自独立 (`GearIn_FactionServices` / `GearIn_CargoServices`)。
     - **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入既有插件的 `CLASS_MARK` 标记。
 - 势力段：`getFaction(id)` / `getPlayerFaction()` 入口；关系写入演示 `adjustRelationship(+0.05)` → `setRelationship(原值)` 同帧精确回滚。

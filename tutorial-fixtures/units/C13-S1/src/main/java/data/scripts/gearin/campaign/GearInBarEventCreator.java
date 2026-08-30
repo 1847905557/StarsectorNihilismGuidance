@@ -7,7 +7,7 @@ import com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent;
 import com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventCreator;
 
 /**
- * 完整最小例：酒吧事件 creator(GenericBarEventCreator)—— 注册入口与抽取参数。
+ * 完整最小例：酒吧事件 creator(GenericBarEventCreator) —— 注册入口与抽取参数。
  *
  * 注册入口：BarEventManager.getInstance().addEventCreator(this)，调用点片段见页面正文
  * (GearInModPlugin.onGameLoad 内的注册块)。manager 实例与 creator 列表存放在

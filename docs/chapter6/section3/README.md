@@ -79,12 +79,12 @@ Global 的引用由内核在固定的时机登记：
 
 以下每条都是当前基线的现状：
 
-1. **`getSettings()` 与 `getSoundPlayer()` 在游戏循环开始前就已就位**：内核在游戏循环启动前完成 `Global.setSettings(...)`，游戏启动入口再在注册各阶段状态之前完成 `Global.setSoundPlayer(...)`。因此任何 MOD 入口 —— 包括资源加载期的 `onApplicationLoad` —— 拿到两者都**非 null**。
+1. **`getSettings()` 与 `getSoundPlayer()` 在游戏循环开始前就已就位**：内核在游戏循环启动前完成 `Global.setSettings(...)`，游戏启动入口再在注册各阶段状态之前完成 `Global.setSoundPlayer(...)`。因此任何 MOD 入口 (包括资源加载期的 `onApplicationLoad`) 拿到两者都**非 null**。
 2. **`getSector()` / `getFactory()` 只在第一个生涯引擎创建之前为 null**，即资源加载期 (`onApplicationLoad` 阶段，即 modPlugin 生命周期禁令所辖的窗口)；一旦创建，`Global` 的引用**只会被替换、不会被置回 null**。
     - 退出生涯回主菜单并不清空 `Global`：`Global` 对生涯引擎的引用在退出后仍然保留 (不会置回 null)，`getSector()` 仍返回旧对象。
     - 可观察结果：退出到主菜单后 `getSector()` 仍返回**旧生涯引擎对象 (非 null)**，其数据已随存档关闭而失效。
     - 因此 "是否在生涯中" **必须** 用 `Global.getCurrentState() == GameState.CAMPAIGN` 判断，不能依赖 `getSector() == null`。
-3. **`getCombatEngine()` 的战斗外取值不是 null，而是空引擎**：战斗引擎的首次创建发生在主菜单初始化阶段 —— 首次初始化生涯引擎时会一并创建；每场战斗结束后，内核先销毁旧引擎 (用 `Global.setCombatEngine(null)` 清空引用)，**再立即重建**一个新引擎。
+3. **`getCombatEngine()` 的战斗外取值不是 null，而是空引擎**：战斗引擎的首次创建发生在主菜单初始化阶段，首次初始化生涯引擎时会一并创建；每场战斗结束后，内核先销毁旧引擎 (用 `Global.setCombatEngine(null)` 清空引用)，**再立即重建**一个新引擎。
     - 可观察结果：战斗外 `getCombatEngine()` 非 null 而是刚重建的空引擎；战斗结束后缓存的旧引用是已清空的死对象 (`getShips()` 为空；`getPlayerShip()` 也不是 null —— 它**永不返回 null**，`playerShip` 未设置时延迟创建 "Command Shuttle" 假舰)。
     - 因此：**禁止**跨战斗缓存引擎引用，每次需要时现取；"是否在战斗中" 用 `getCurrentState() == GameState.COMBAT` 判断；"用户是否已部署" **禁止** 用 `getPlayerShip() == null` 判断 (战斗内该表达式恒为 `false`，依赖它的分支永远不执行、静默失效)，应读 `getFleetManager(FleetSide.PLAYER).getDeployedCopy()` 是否非空 (判据细则见战斗域部署判断主题)。
 4. **`getCurrentState()` 由当前所处阶段实时计算**：处于战斗状态 → `COMBAT`，处于生涯状态 → `CAMPAIGN`，处于主菜单 → `TITLE`，其余状态 (资源加载等)→ `null`。它是阶段判断的唯一可靠入口。
@@ -94,13 +94,13 @@ Global 的引用由内核在固定的时机登记：
 `GameState` 枚举只有三个可枚举值 (`TITLE` / `CAMPAIGN` / `COMBAT`)，资源加载期、MOD 加载期都落在 null 区间 —— 返回 null 不是 "出错"，而是 "阶段不在可枚举状态内"。判断逻辑把 null 与三个枚举值并列处理，才能覆盖全部阶段。
 
 5. **`LOADING_SAVE` 的置位窗口**：只有读档路径在开始时置 `true`、结束时置 `false`(错误路径与 finally 都会复位)；读档路径的 `onEnabled` / `onGameLoad(false)` 回调位于该窗口内。新建生涯的 `onGameLoad(true)` 执行时该标志保持 `false`。常用于跳过读档期间不合适的 UI/动画逻辑。
-6. **setter 禁令**：五个 setter 的唯一调用点都在内核生命周期内部 (游戏启动、生涯引擎初始化、战斗引擎创建与销毁)，MOD 代码没有任何正当调用场景，**禁止**调用。可观察结果：手动改写 Global 引用后，所有依赖 `Global` 的代码 (包括原版) 读到与引擎实际状态不符的对象 —— 例如战斗外 `setCombatEngine(...)` 后 `getCombatEngine()` 指向一个不被推进的空壳，行为未定义。
+6. **setter 禁令**：五个 setter 的唯一调用点都在内核生命周期内部 (游戏启动、生涯引擎初始化、战斗引擎创建与销毁)，MOD 代码没有任何正当调用场景，**禁止**调用。可观察结果：手动改写 Global 引用后，所有依赖 `Global` 的代码 (包括原版) 读到与引擎实际状态不符的对象，例如战斗外 `setCombatEngine(...)` 后 `getCombatEngine()` 指向一个不被推进的空壳，行为未定义。
 
 本节三条必须遵守的规则
 
 1. 阶段判断**必须**用 `Global.getCurrentState()`**，禁止**依赖 `getSector()` / `getCombatEngine()` 是否为 null。
 2. **禁止**跨战斗、跨存档缓存 `Global` 返回的引用，每次需要时现取。
-3. **禁止**调用 `Global` 的五个 setter —— 内核生命周期专用，调用后全局引用与引擎实际状态脱钩。
+3. **禁止**调用 `Global` 的五个 setter，内核生命周期专用，调用后全局引用与引擎实际状态脱钩。
 
 ## 写入运行日志
 
@@ -128,7 +128,7 @@ Global.getLogger(GearInGlobalAccess.class).info("任意内容");
 |---|---|---|
 | `playUISound(String id, float pitch, float volume)` | 一次性 UI 音效，无播放点 | 素材**应为双声道** (API 注释原文 "UI sound files should be stereo")；双声道素材用 `playSound` 播放时在引擎内无法正确播放 (API 注释原文 "Sound file must be *mono* for it to be properly played within the engine") |
 | `playSound(String id, float pitch, float volume, Vector2f loc, Vector2f vel)` | 位置音效，在 `loc` 处播放并按方位与距离计算 | 素材**必须为 mono**(同上前提)**；`loc` 与 `vel` 都必须非 null** —— 播放声音时引擎直接解引用 `loc.x` / `vel.x`，传 null 在调用点抛 `NullPointerException` |
-| `playLoop(String id, Object playingEntity, float pitch, float volume, Vector2f loc, Vector2f vel)` | 循环音效 | **必须每帧调用，否则循环淡出** (API 注释原文 "Must be called every frame or the loop will fade out")；`playingEntity` **必填** —— 用于区分同一实体的循环 (同实体同循环只播一个)；素材建议 mono；调用方负责在每帧回调里续期 (完整讲解见声音消费主题) |
+| `playLoop(String id, Object playingEntity, float pitch, float volume, Vector2f loc, Vector2f vel)` | 循环音效 | **必须每帧调用，否则循环淡出** (API 注释原文 "Must be called every frame or the loop will fade out")；`playingEntity` **必填**，用于区分同一实体的循环 (同实体同循环只播一个)；素材建议 mono；调用方负责在每帧回调里续期 (完整讲解见声音消费主题) |
 
 其他常用成员 (约定均出自 `SoundPlayerAPI` javadoc)：
 
@@ -142,7 +142,7 @@ Global.getLogger(GearInGlobalAccess.class).info("任意内容");
 
 声音入口的两个经典坑
 
-`playSound` 的 `loc` / `vel` 传 null 会在调用点直接抛 `NullPointerException`；声道选错不会报错 —— 双声道素材用 `playSound` 播放时定位与衰减错误、单声道素材用 `playUISound` 表现异常，且都难以从日志定位。
+`playSound` 的 `loc` / `vel` 传 null 会在调用点直接抛 `NullPointerException`；声道选错不会报错，双声道素材用 `playSound` 播放时定位与衰减错误、单声道素材用 `playUISound` 表现异常，且都难以从日志定位。
 
 ## 实现全局服务访问
 
@@ -186,7 +186,7 @@ public static boolean isInCombat() {
 对应关系：
 
 - `Global.getLogger(GearInGlobalAccess.class)`：类内缓存一份日志器。
-- `isInCombat()`：阶段判断唯一可靠做法 —— `getCurrentState() == GameState.COMBAT`，不依赖 `getCombatEngine()` 是否为 null(生命周期规则 3)。
+- `isInCombat()`：阶段判断唯一可靠做法：`getCurrentState() == GameState.COMBAT`，不依赖 `getCombatEngine()` 是否为 null(生命周期规则 3)。
 - `logAccessorState()`：把生命周期表变成日志；`sector == null` / `engine == null` 只在资源加载期出现 (规则 2、3)。
 - `Global.LOADING_SAVE`：只有读档回调窗口内为 `true`；新建生涯回调期间为 `false`(规则 5)。
 
@@ -203,7 +203,7 @@ public static boolean isInCombat() {
 
 ## 调用点与构建
 
-调用点 (工程片段 —— 方法所在类由既有章节持有，本节只演示调用，不改动那些类)：
+调用点 (工程片段，方法所在类由既有章节持有，本节只演示调用，不改动那些类)：
 
 ```java
     // GearInModPlugin(modPlugin 生命周期类) 内新增两行调用
@@ -409,7 +409,7 @@ if (Global.getCurrentState() == GameState.COMBAT) { CombatEngineAPI engine = Glo
 
 4. **战斗**：进入 `GearIn_test` 测试战役的一场战斗，日志出现 `GearIn state=COMBAT ...`；若已接入 `playLoopSound` 调用点，战斗内持续听到 `GearIn_system_loop` 循环音，战斗结束 (回到生涯) 后循环淡出停止，日志回到 `state=CAMPAIGN`。
 
-5. **退出到主菜单**：生涯中退出到主菜单，日志出现 `GearIn state=TITLE ...`，且 `sector=true` 仍成立 —— `getSector()` 返回的是已弃用的旧生涯引擎 (非 null)，与 `getCurrentState() == TITLE` 一起确认阶段，这正是 "不能靠 null 判断阶段" 的现场证明。
+5. **退出到主菜单**：生涯中退出到主菜单，日志出现 `GearIn state=TITLE ...`，且 `sector=true` 仍成立；`getSector()` 返回的是已弃用的旧生涯引擎 (非 null)，与 `getCurrentState() == TITLE` 一起确认阶段，"不能靠 null 判断阶段" 在此得到现场证明。
 
 预期结果：
 

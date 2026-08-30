@@ -15,7 +15,7 @@ import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
  *
  * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个初始
  * trigger 为 GearInRulesIntro 的对话；对话的文本、脚本与选项全部来自 data/campaign/rules.csv
- * 中本节拥有的 GearIn_rules_intro_* 规则 ——Java 侧不写任何文本与选项。
+ * 中本节拥有的 GearIn_rules_intro_* 规则 —— Java 侧不写任何文本与选项。
  * 验证闭环：注册入口 (本类 + onGameLoad 门控)→ 数据文件 (rules.csv)→ 运行消费者
  * (RuleBasedInteractionDialogPluginImpl → Rules 引擎)→ 可观察结果 (对话文本与日志)。
  */

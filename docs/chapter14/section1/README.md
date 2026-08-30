@@ -65,14 +65,14 @@
 
 行与列的含义定了，下一步是这些行如何进入游戏。
 
-1. **加载时机**：CSV spec 加载期，`loadStarmap` 末尾调用 `Rules.loadRules` —— 一次游戏启动只加载一次，规则表不属于存档数据。
+1. **加载时机**：CSV spec 加载期，`loadStarmap` 末尾调用 `Rules.loadRules`，一次游戏启动只加载一次，规则表不属于存档数据。
 2. **合并读取**：文本读取工具的 `readCSV(["id"], "data/campaign/rules.csv", true, true)`：
     - 打开原版与所有启用 MOD 的同路径资源；某个 MOD 把该路径列入 `replace` 时整文件替换；
     - **同文件**内重复 id → `RuntimeException("Duplicate key [...] while loading [...]")`，加载崩溃；
     - **跨文件**重复 id → 按资源处理顺序先到先得，后处理文件中的同 id 行**静默跳过** (无任何报错)；
     - 每份文件读取前过 `replaceSmartQuotes`(`readCSV` 第 4 参为 true，spec 加载期执行 `replaceSmartQuotes`)。
 3. **逐行解析与严格校验** (规则文件加载流程的校验，错误均为加载期 `RuntimeException`)。
-4. **注册入口**：MOD 侧不需要任何注册文件 —— 把行写进自己的 `data/campaign/rules.csv`，加载器自动合并；`starsector.log` 逐条打印 `Loading rule: <id>` 与 `Loading CSV data from [...]`，是确认规则是否真的被读进来的第一手证明。
+4. **注册入口**：MOD 侧不需要任何注册文件：把行写进自己的 `data/campaign/rules.csv`，加载器自动合并；`starsector.log` 逐条打印 `Loading rule: <id>` 与 `Loading CSV data from [...]`，是确认规则是否真的被读进来的第一手证明。
 
 ### 匹配链
 
@@ -82,9 +82,9 @@
 
 1. `getRulesForTrigger(trigger)` 按触发器名取候选池 (未知触发器用到时才建空列表)。
 2. 逐条规则：跳过 id 等于当前规则 id(currentRule) 的规则，防止自再入；逐条求值条件 (表达式判真)，首个失败即短路。
-3. `getRulesFor`：返回全部条件通过者 —— 这是 `FireAll` 的候选集。
+3. `getRulesFor`：返回全部条件通过者，供 `FireAll` 作为候选集。
 4. `getBestMatchingRule`：通过条件分数求和 (每条条件默认 1 分，`score:` 可改) + 规则 `scoreBonus` (CSV 无此列，恒 0) → 只保留最高分候选 → 同分用 `WeightedRandomPicker` 随机取一条 → 返回单条或 `null` (无匹配)。
-5. `RulesAPI.setRandomForNextRulePick(random)` 只影响下一次 pick，用后即清 —— 跨多次匹配复用随机源会改变文本选择语义。
+5. `RulesAPI.setRandomForNextRulePick(random)` 只影响下一次 pick，用后即清，跨多次匹配复用随机源会改变文本选择语义。
 
 ### 条件表达式语法
 
@@ -120,13 +120,13 @@ token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` �
 
 | 步骤 | `FireBest` | `FireAll` |
 |---|---|---|
-| 触发名 | `params[0]`(变量则取记忆值)；`params[1]` = keepOptions | 同左；另在实体记忆写 `$fireAllTrigger`(expire 0)，并先 `FireBest` 触发 `FireAllIntercept` —— 有命中规则即整体拦截 |
+| 触发名 | `params[0]`(变量则取记忆值)；`params[1]` = keepOptions | 同左；另在实体记忆写 `$fireAllTrigger`(expire 0)，并先 `FireBest` 触发 `FireAllIntercept`，有命中规则即整体拦截 |
 | 选规则 | `getBestMatching`(分数竞争，null → 返回 `false`) | `getAllMatching`(全部通过者，空 → 返回 `false`) |
 | 选项 | 收集 `rule.getOptions()` + 脚本中 `doesCommandAddOptions()==true` 的表达式 → 按 `order`(选项 `order` 字段 / `getOptionOrder`) 排序 → 非 keepOptions 时清空选项面板 → 逐个添加 (选项文本先做 token 替换) | 全部命中规则的选项合并、排序、清空后添加 |
 | 文本 | `addText`：`rule.pickText()` 随机取一条文本变体 → `performTokenReplacement` → `textPanel.addParagraph` | 每条命中规则各执行一次 `addText` |
 | 脚本 | `rule.runScript(dialog, memoryMap)` | 每条命中规则各执行一次 |
 
-`Rule.runScript` 按声明顺序执行脚本表达式，跳过选项型命令 (`doesCommandAddOptions()==true` 的由 `FireBest` / `FireAll` 提前执行) —— 所以选项型命令即使写在脚本列里，也不会在脚本阶段重复执行。
+`Rule.runScript` 按声明顺序执行脚本表达式，跳过选项型命令 (`doesCommandAddOptions()==true` 的由 `FireBest` / `FireAll` 提前执行)，所以选项型命令即使写在脚本列里，也不会在脚本阶段重复执行。
 
 **文本 token 替换** (`SectorAPI.getRules().performTokenReplacement`)：先汇总所有注册的 `RuleTokenReplacementGeneratorPlugin` 生成的替换表 (默认注册 `CoreRuleTokenReplacementGeneratorImpl`，提供 `$playerName` / `$Playername` / `$marketName` / `$entityName` / `$faction` / `$heOrShe` / `$personRank` / `$personName` 等，`com.fs.starfarer.api.impl.campaign.CoreRuleTokenReplacementGeneratorImpl`)，替换键按长度降序 `replaceAll`；再对 `memoryMap` 各记忆的键做 `$memkey.key` / `$key` 替换 (`Misc.replaceTokensFromMemory`，仅 String/Boolean/Float/Integer 值)。
 
@@ -255,7 +255,7 @@ import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
  *
  * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个初始
  * trigger 为 GearInRulesIntro 的对话；对话的文本、脚本与选项全部来自 data/campaign/rules.csv
- * 中本节拥有的 GearIn_rules_intro_* 规则 ——Java 侧不写任何文本与选项。
+ * 中本节拥有的 GearIn_rules_intro_* 规则 —— Java 侧不写任何文本与选项。
  * 验证闭环：注册入口 (本类 + onGameLoad 门控)→ 数据文件 (rules.csv)→ 运行消费者
  * (RuleBasedInteractionDialogPluginImpl → Rules 引擎)→ 可观察结果 (对话文本与日志)。
  */
@@ -301,13 +301,13 @@ public class GearInRulesIntro implements EveryFrameScript {
 
 对应关系：
 
-- `implements EveryFrameScript`：沿用一次性演示模式 —— `executed` 置位后 `isDone()` 返回 true，引擎在置位同一次推进中自动移除。
+- `implements EveryFrameScript`：沿用一次性演示模式，`executed` 置位后 `isDone()` 返回 true，引擎在置位同一次推进中自动移除。
 - `REGISTER_MARK`：persistent data 注册判断键 (`"GearIn_RulesIntro"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
 - `new RuleBasedInteractionDialogPluginImpl("GearInRulesIntro")`：自定义初始 trigger(原版默认 `OpenInteractionDialog` 有 121 条规则，会与演示规则混战；自定义 trigger 保证候选池只有本节规则，`FleetInteractionDialogPluginImpl` / 非对话面板文本触发同样使用自定义 trigger)。
 - `showInteractionDialog(plugin, playerFleet)`：交互目标非 null(`init` 里 `getInteractionTarget().getMemory()` 依赖它)；返回值记入日志 (对话框打开失败时用于定位的防御写法)。
 - 无匹配规则时插件会加 failsafe `Leave` (`RuleBasedInteractionDialogPluginImpl`) —— 整套规则都没加载时，对话框依然恭候您离开，除此之外什么也不显示。它是规则没加载或 trigger 拼错时最直接的可观察信号。
 
-调用点 (工程片段 —— 该方法属于插件生命周期主题所持有的类，本节只演示调用，不改动那些文件)：
+调用点 (工程片段，该方法属于插件生命周期主题所持有的类，本节只演示调用，不改动那些文件)：
 
 ```java
     // GearInModPlugin(C6-S2 所有)onGameLoad(boolean newGame) 内新增本节注册块。
@@ -324,7 +324,7 @@ public class GearInRulesIntro implements EveryFrameScript {
 gradle jar
 ```
 
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/rules/GearInRulesIntro.class`(可用 `jar tf` 核对)；`data/campaign/rules.csv` 是 MOD 数据文件，随 MOD 目录被加载器读取 (无需进 jar，规则行放 jar 外与放 jar 内等效 —— 资源加载器都读)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/rules/GearInRulesIntro.class`(可用 `jar tf` 核对)；`data/campaign/rules.csv` 是 MOD 数据文件，随 MOD 目录被加载器读取 (无需进 jar，规则行放 jar 外与放 jar 内等效，资源加载器都读)。
 
 注意示例路径 `mods/GearIndustry` 是教程虚构路径，页面内路径互相自洽即可。
 

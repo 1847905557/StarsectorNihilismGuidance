@@ -77,7 +77,7 @@ GearIndustry\
 
 原版素材几乎统一为 44100 Hz(武器音效为 mono，音乐为 stereo)；教程不强制采样率，但同一 sound ID 的多个差分文件 (可互换的变体素材) 应使用相同采样率、声道数和相近响度，避免随机切换时音色突变。
 
-**原版素材缺陷**：`faction_dweller_encounter.ogg` 是唯一的 48000 Hz 音频，且被实际注册使用。`reality_disruptor_loop_01.ogg` 则被做成立体声武器音效 —— 这是原版素材的失误：OpenAL 无法正常处理双通道武器音效，播放可能异常。武器音效必须保持 mono。
+**原版素材缺陷**：`faction_dweller_encounter.ogg` 是唯一的 48000 Hz 音频，且被实际注册使用。`reality_disruptor_loop_01.ogg` 则被做成立体声武器音效；原版在此失了手：OpenAL 无法正常处理双通道武器音效，播放可能异常。武器音效必须保持 mono。
 
 ## 资产形态与生成规格速查表
 

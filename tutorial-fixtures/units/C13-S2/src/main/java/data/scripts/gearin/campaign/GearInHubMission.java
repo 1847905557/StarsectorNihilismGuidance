@@ -18,7 +18,7 @@ import com.fs.starfarer.api.ui.TooltipMakerAPI;
 import com.fs.starfarer.api.util.Misc;
 
 /**
- * 完整最小例：枢纽任务 (HubMission)——Intel、阶段、目标与事件链。
+ * 完整最小例：枢纽任务 (HubMission) —— Intel、阶段、目标与事件链。
  *
  * 任务 ID：gearInHub(bar_events.csv 的 mission id 列 = 本类在 CSV 的 spec id；
  * 该 ID 的消费者：HubMissionBarEventWrapper.setMissionId、规则分类前缀
@@ -34,7 +34,7 @@ import com.fs.starfarer.api.util.Misc;
  * wrapper.getMission().accept() -> addIntel + addScript + setCurrentStage。
  *
  * 演示点：
- * 1. Intel：本类经 BaseHubMission 继承 BaseIntelPlugin——accept 时 addIntel
+ * 1. Intel：本类经 BaseHubMission 继承 BaseIntelPlugin —— accept 时 addIntel
  *    (Intel 界面可见)+ addScript(每帧推进)，结束时 endAfterDelay(3 游戏日)
  *    -> notifyEnded -> removeScript；
  * 2. 阶段：Stage 枚举四态 (CONTACT -> RETURN -> COMPLETED / FAILED)，
@@ -92,7 +92,7 @@ public class GearInHubMission extends HubMissionWithBarEvent {
         if (sourceMarket == null) return false;
 
         // mission ref：rules 侧 Call $gearInHub_ref <action> 打到本任务的 callEvent。
-        // 键已被其他任务占用时返回 false——create 失败、本次不提供该任务。
+        // 键已被其他任务占用时返回 false —— create 失败、本次不提供该任务。
         if (!setPersonMissionRef(giver, "$gearInHub_ref")) {
             return false;
         }

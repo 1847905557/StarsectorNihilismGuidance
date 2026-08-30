@@ -69,7 +69,7 @@
 
 **`MarketConditionSpecAPI` 构造**：`id` / `name` / `icon` / `script` 四列 `getString` **必填** (缺列 → 加载期 `JSONException`)；`desc` / `order` / `planetary` / `decivRemove` / `tags` 可选。
 
-**plugin 实例化**：`spec.getNewPluginInstance()` → 脚本类加载器 `loadScriptInstance(scriptClass)` —— 按类名注册表 `newInstance`**，必须无参可实例化** (类实现了接口并不等于实例会被调用，这一点在既有脚本讲解中已经确立)。
+**plugin 实例化**：`spec.getNewPluginInstance()` → 脚本类加载器 `loadScriptInstance(scriptClass)`，按类名注册表 `newInstance`**，必须无参可实例化** (类实现了接口并不等于实例会被调用，这一点在既有脚本讲解中已经确立)。
 
 实例化时机是条件实例创建时，不是 CSV 加载时。
 
@@ -104,13 +104,13 @@
 1. 创建 `MarketConditionAPI` 实例：从 CSV spec 加载期的注册表取 spec，**spec 缺失抛 `RuntimeException("Market condition [" + id + "] not found")`**；plugin 用到时才创建并 `init(market, condition)`。
 2. 加入 `conditions` 列表、`resetCache()`。
 3. `param` 非 null 时 `setParam(param)`(在 apply 之前)。
-4. **未 suppressed 时立即 `plugin.apply(token)`** —— 注意这里只查 suppression，不查 surveyed。
-5. `getGenSpec()` 非 null 时 `setSurveyed(!genSpec.isRequiresSurvey())` —— **survey 状态在 apply 之后才写入**。
+4. **未 suppressed 时立即 `plugin.apply(token)`**，注意这里只查 suppression，不查 surveyed。
+5. `getGenSpec()` 非 null 时 `setSurveyed(!genSpec.isRequiresSurvey())`，**survey 状态在 apply 之后才写入**。
 6. 返回 token(`getIdForPluginModifications()`)。
 
 **推进**：`MarketAPI.advance(amount)` 每帧遍历全部条件 plugin 调 `advance(amount)`；`runWhilePaused()` 返回 false(基类默认) 时暂停分支不推进。
 
-**移除/重算**：`unapply(id)` 在三条路径被调用 —— `removeCondition` / `removeSpecificCondition`(移除时)、`reapplyConditions` / `reapplyCondition`(重算时)。
+**移除/重算**：`unapply(id)` 在三条路径被调用：`removeCondition` / `removeSpecificCondition`(移除时)、`reapplyConditions` / `reapplyCondition`(重算时)。
 
 **存档语义**：`isTransient()` 决定 plugin 是否进存档。`BaseMarketConditionPlugin.isTransient()` = true —— 写存档时 plugin 实例被丢弃，读档时按 spec 重建 plugin 并重新 `init`。
 
@@ -167,7 +167,7 @@ survey 是**两层**状态，别混用：
 **重算检查** (本节核心)：
 
 - `reapplyConditions()`：逐个 `unapply`；**仅 `isSurveyed() && !isConditionSuppressed(id)` 的条件才 `apply`**。
-- `reapplyCondition(token)`：单实例 `unapply` +(未 suppressed)`apply`；**不检查 surveyed** —— 两个重算入口的检查条件不同。
+- `reapplyCondition(token)`：单实例 `unapply` +(未 suppressed)`apply`；**不检查 surveyed**，两个重算入口的检查条件不同。
 - 未勘测条件的可观察行为：`addCondition` 当帧效果已生效 (apply 不查 surveyed)，**下一次重算后效果消失** (unapply 执行、apply 被跳过)；勘测完成后恢复。
 - UI 侧：勘测扫描面板与勘测结果面板只展示 `isSurveyed()` 为 true 的条件。
 - 运行期条件市场是常规 `Market` 实例，重算同时检查 surveyed 与 suppression。
@@ -195,13 +195,13 @@ suppress 后立即读数值，效果还在
 
 `suppressCondition(id)` 必须配对 `unsuppressCondition(id)`
 
-suppressed 集合只增不减：漏掉配对会让该条件的效果永久休眠 —— 重算时 `unapply` 执行、`apply` 永不回来。
+suppressed 集合只增不减：漏掉配对会让该条件的效果永久休眠，重算时 `unapply` 执行、`apply` 永不回来。
 
 ### 重算触发
 
 `reapplyConditions()` 被谁调用 (三个触发点)：
 
-1. **经济迭代**：经济批量处理任务对每个市场调用 `reapplyConditions()` + `reapplyIndustries()` —— 每月 10 次迭代。
+1. **经济迭代**：经济批量处理任务对每个市场调用 `reapplyConditions()` + `reapplyIndustries()`，每月 10 次迭代。
 2. **稳定度变化**：`MarketAPI.advance` 检测稳定度数值发生变化时 → `reapplyConditions()` + `reapplyIndustries()` + `updatePrices()`。
 3. **手动调用**：`reapplyConditions()` / `reapplyCondition(token)`；勘测完成后的殖民界面也走这条路径。
 
@@ -350,10 +350,10 @@ GearIn Ore Deposits,GearIn_ore_deposits,,TRUE,,data.scripts.gearin.campaign.Gear
 - 第 2 步 `addCondition(id, 0.20f)`：`setParam` 在 apply 之前被调用，`accMod2` = 0.20 证明参数生效；`getFirstCondition(id)` 返回首个实例 (token1)。
 - 第 3 / 6 步：`removeCondition(id)` 与 `removeSpecificCondition(token)` 的不对称性双向演示 (规则强度第 3 条)。
 - 第 5 步：suppress 后**先**读 hazard(效果仍在)，**再** `reapplyConditions()`(效果消失) —— 演示 "suppress 只写集合、效果在重算后才消失"(规则强度第 4 条)。
-- 第 7 步：`setSurveyed(false)` 后重算 → unapply 执行、apply 跳过 (hazard 回落基线)；`setSurveyed(true)` 后重算 → 恢复 —— survey 检查。
-- 第 8 步：`isPlanetConditionMarketOnly()` 过滤条件市场 (行星市场 `market_<planetId>`)，`requiresSurveying()` 读 procgen 表 `reqSurvey` —— 只读对照，不做任何修改。
+- 第 7 步：`setSurveyed(false)` 后重算 → unapply 执行、apply 跳过 (hazard 回落基线)；`setSurveyed(true)` 后重算 → 恢复，对应 survey 检查。
+- 第 8 步：`isPlanetConditionMarketOnly()` 过滤条件市场 (行星市场 `market_<planetId>`)，`requiresSurveying()` 读 procgen 表 `reqSurvey`，只读对照，不做任何修改。
 
-调用点 (工程片段 —— 方法所在类归既有注册类所有，本节只演示调用，不改动那些文件)：
+调用点 (工程片段，方法所在类归既有注册类所有，本节只演示调用，不改动那些文件)：
 
 ```java
     // GearInModPlugin(既有注册类)onGameLoad(boolean newGame) 内新增本节注册块。
@@ -459,7 +459,7 @@ MarketConditionAPI condition = market.getSpecificCondition(token);
     GearIn condition lifecycle reapplyOne: hazardBefore=1.40 hazardAfter=1.40 unchanged=true
     ```
 
-    先 unapply(回落) 再 apply(恢复)，终值不变 —— 单实例重算是 "刷一遍"，不是叠加。
+    先 unapply(回落) 再 apply(恢复)，终值不变，单实例重算是 "刷一遍"，不是叠加。
 
 - **suppression(先不生效、重算后休眠)**：
 
@@ -481,7 +481,7 @@ MarketConditionAPI condition = market.getSpecificCondition(token);
     GearIn condition lifecycle surveyGate: afterAdd=1.40 afterUnsurveyedReapply=1.25 afterSurveyedReapply=1.40
     ```
 
-    核对：新添加实例当帧生效 (apply 不查 surveyed)；`setSurveyed(false)` 后重算效果消失；`setSurveyed(true)` 后重算恢复 —— 重算只对 surveyed 的条件 apply。
+    核对：新添加实例当帧生效 (apply 不查 surveyed)；`setSurveyed(false)` 后重算效果消失；`setSurveyed(true)` 后重算恢复，重算只对 surveyed 的条件 apply。
 
 - **原版对照 (只读)**：
 
@@ -606,7 +606,7 @@ import com.fs.starfarer.api.util.Misc;
  * 每个实例的 token 形如 "GearIn_ore_deposits_xxxxx"，由
  * MarketConditionAPI.getIdForPluginModifications() 提供)。
  *
- * 存档语义：继承 BaseMarketConditionPlugin，isTransient() = true——plugin 实例
+ * 存档语义：继承 BaseMarketConditionPlugin，isTransient() = true —— plugin 实例
  * 不进存档，读档后按 spec 重建并重新 init，setParam 的数据不重放
  *
  * tooltip：createTooltipAfterDescription 在 spec desc(含 $marketName token) 之后

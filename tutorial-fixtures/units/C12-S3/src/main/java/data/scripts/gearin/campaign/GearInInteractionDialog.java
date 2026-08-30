@@ -16,7 +16,7 @@ import com.fs.starfarer.api.combat.EngagementResultAPI;
  * PickPriority.MOD_SPECIFIC 返回，证明 "本插件的选择胜出" 与 "facts 已写入"，
  * 提供 "刷新事实" 与 "离开" 两个选项。
  *
- * refreshFact() 读 Global.getSector().getMemory()—— 这次读取本身会触发全插件
+ * refreshFact() 读 Global.getSector().getMemory() —— 这次读取本身会触发全插件
  * (含 GearInCampaignPlugin) 的 updateGlobalFacts，因此显示值必然反映
  * "已注册 + facts 生效" 两个事实；这里只读不写，不构成递归。
  */

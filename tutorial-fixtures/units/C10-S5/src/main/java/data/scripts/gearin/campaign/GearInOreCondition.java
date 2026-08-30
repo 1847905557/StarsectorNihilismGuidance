@@ -25,7 +25,7 @@ import com.fs.starfarer.api.util.Misc;
  * 每个实例的 token 形如 "GearIn_ore_deposits_xxxxx"，由
  * MarketConditionAPI.getIdForPluginModifications() 提供)。
  *
- * 存档语义：继承 BaseMarketConditionPlugin，isTransient() = true——plugin 实例
+ * 存档语义：继承 BaseMarketConditionPlugin，isTransient() = true —— plugin 实例
  * 不进存档，读档后按 spec 重建并重新 init，setParam 的数据不重放
  *
  * tooltip：createTooltipAfterDescription 在 spec desc(含 $marketName token) 之后

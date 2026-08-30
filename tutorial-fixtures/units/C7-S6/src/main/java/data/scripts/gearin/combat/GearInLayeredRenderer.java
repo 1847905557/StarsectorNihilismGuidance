@@ -22,12 +22,12 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  * - engine.addLayeredRenderingPlugin(plugin) 用自定义战斗实体包装插件并加入引擎；
  *   executeAdds 时调用 plugin.init(entity) 并按 getActiveLayers() 注册进 LayeredRenderer；
  * - 每帧 (非暂停分支) 推进 entity.advance(amount)，随后 isExpired() 为 true 的实体
- *   进移除队列；移除时引擎调用 entity.cleanup() -> plugin.cleanup()——
+ *   进移除队列；移除时引擎调用 entity.cleanup() -> plugin.cleanup() ——
  *   cleanup() 是释放 GL 资源的正常时机；
- * - 战斗结束 destroyInstance 只清空对象表、不调用 cleanup()——
+ * - 战斗结束 destroyInstance 只清空对象表、不调用 cleanup() ——
  *   插件必须在 advance() 里主动失效 (isExpired() -> true)，不能等 "战斗结束回调"；
  * - 渲染阶段：自定义战斗实体的 render 先判 viewport.isNearViewport(entity.getLocation(),
- *   plugin.getRenderRadius())，通过才调 plugin.render(layer, viewport)——
+ *   plugin.getRenderRadius())，通过才调 plugin.render(layer, viewport) ——
  *   剔除依据是承载实体的位置与 getRenderRadius()，位置必须同步到 entity；
  * - 渲染回调在渲染阶段被调用，绘制必须在这里用 GL 原语完成；advance() 属于推进阶段，
  *   不做任何绘制；

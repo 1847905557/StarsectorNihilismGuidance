@@ -107,9 +107,9 @@ data/config/sounds.json          注册层 (C5-S2)：sound ID → 路径与播�
 
 - 武器构造时按 `fireSoundOne`/`fireSoundTwo` 取已注册的对应声音集；
 - 实弹/导弹：前摇阶段 `playSoundAtLocation` 播 `fireSoundOne`，开火瞬间播 `fireSoundTwo`；`stopPreviousFireSound`/`fadePreviousFireSound` 控制连发重叠；
-- 光束：开火时播一次 `fireSoundOne`(`playFullFireSoundOne` 控制中断行为)，持续期间每帧 `playSoundLoop` 播 `fireSoundTwo` —— 所以光束循环音素材必须满足资源层规定的 "首尾无缝" 规格；
+- 光束：开火时播一次 `fireSoundOne`(`playFullFireSoundOne` 控制中断行为)，持续期间每帧 `playSoundLoop` 播 `fireSoundTwo`，所以光束循环音素材必须满足资源层规定的 "首尾无缝" 规格；
 - 无弹药开火时周期性播 `gun_out_of_ammo` 声音集 (导弹与实弹武器都会触发，属原版通用声音集)；
-- 命中音由冲击音播放器按伤害类型播 `hit_*`/`collision_*`/`explosion_*` 固定声音集 —— 武器侧只有 `noImpactSounds` 等开关，命中音集本身不能在 `.wpn` 里换。
+- 命中音由冲击音播放器按伤害类型播 `hit_*`/`collision_*`/`explosion_*` 固定声音集，武器侧只有 `noImpactSounds` 等开关，命中音集本身不能在 `.wpn` 里换。
 
 代码位置音效 (非数据引用)：武器特效脚本、导弹 AI 等用 `Global.getSoundPlayer().playSound(id, pitch, volume, loc, vel)`，把声音放在实体位置并随距离衰减。
 
@@ -159,7 +159,7 @@ ID 大小写不一致同样触发。
 	"outOfUsesSound":"engine_disabled",
 ```
 
-`GearIn_system_loop` 是资源层规格的 "必须首尾无缝" 循环素材 —— 这正是 `loopSound` 需要的形态：系统开启期间被每帧重播，素材有接缝就会每轮咔哒一次。
+`GearIn_system_loop` 满足资源层规格的 "必须首尾无缝" 要求，恰好符合 `loopSound` 需要的形态：系统开启期间被每帧重播，素材有接缝就会每轮咔哒一次。
 
 ### 代码使用方：playLoop 与循环语义
 
@@ -209,7 +209,7 @@ hull style 里写入自定义声音集 ID 后，该 ID 必须存在于 `sounds.j
 
 规则命令 `PlaySound`(`com.fs.starfarer.api.impl.campaign.rulecmd.PlaySound`) 可播放任意已注册 ID。
 
-接入示例 —— 在 `GearInBurstDriveSystem.apply` 的系统激活瞬间加一次 UI 音效。这演示 "同一已注册 ID 可被多个使用方引用"：`GearIn_weapon_fire` 已接入 `.wpn`，这里作为 UI 用途再消费一次 (差分池与播放互不影响)：
+接入示例：在 `GearInBurstDriveSystem.apply` 的系统激活瞬间加一次 UI 音效。这演示 "同一已注册 ID 可被多个使用方引用"：`GearIn_weapon_fire` 已接入 `.wpn`，这里作为 UI 用途再消费一次 (差分池与播放互不影响)：
 
 ```java
 if (state == ShipSystemStatsScript.State.IN && effectLevel < 0.05f) {
@@ -319,7 +319,7 @@ public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
 | `GearIn_system_loop` | `data/shipsystems/GearIn_burstdrive.system` | `loopSound` 改为 `GearIn_system_loop` |
 | `GearIn_market_theme` | `data/config/settings.json` + 新类 `GearInMusicPlayerPlugin` | `plugins.musicPlugin` 指向新类 |
 
-(可选代码路：`GearInBurstDriveSystem` 中每帧 `playLoop` 播 `GearIn_system_loop` —— 数据路与代码路二选一即可，不要同时开。)
+(可选代码路：`GearInBurstDriveSystem` 中每帧 `playLoop` 播 `GearIn_system_loop`，数据路与代码路二选一即可，不要同时开。)
 
 `GearIn_burstdrive.system` 的声音段 (其余字段不动)：
 
@@ -499,7 +499,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ## 总结
 
-本节把声音链的最后一层 —— 消费层 —— 补齐：`GearIn_weapon_fire` 接入武器开火 (`.wpn` 数据引用)、`GearIn_system_loop` 接入战术系统 (`.system` 的 `loopSound` 或代码 `playLoop`)、`GearIn_market_theme` 接入市场音乐 (选曲插件)，并交代了引擎声音集、UI 与地形循环其余三类使用方；
+本节补齐声音链的最后一层 (消费层)：`GearIn_weapon_fire` 接入武器开火 (`.wpn` 数据引用)、`GearIn_system_loop` 接入战术系统 (`.system` 的 `loopSound` 或代码 `playLoop`)、`GearIn_market_theme` 接入市场音乐 (选曲插件)，并交代了引擎声音集、UI 与地形循环其余三类使用方；
 
 三个 ID 与资源与注册层声明逐字一致，完整流程走通。
 

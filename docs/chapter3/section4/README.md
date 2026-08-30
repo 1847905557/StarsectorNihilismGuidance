@@ -104,7 +104,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 
 5. **键必须唯一**：同一文件内 `id + type` 组合重复时，加载期抛 `RuntimeException("Duplicate key [...] while loading [data/strings/descriptions.csv from [<路径>]]")`；跨文件 (原版与其他 MOD 之间) 重复时不报错，先被枚举到的文件的行生效，后到的同键行被静默跳过。
 
-    - **不要重定义原版或其他 MOD 已有的 `id + type` 组合** —— 覆盖顺序不是可以依赖的约定。
+    - **不要重定义原版或其他 MOD 已有的 `id + type` 组合**，覆盖顺序不是可以依赖的约定。
 6. **文件必须 UTF-8 无 BOM**：加载器按 UTF-8 读取；BOM 字符会粘在表头第一列的列名上 (`id` 变成 `\ufeffid`)，加载期抛 `JSONObject["id"] not found` 一类异常。含中文的文件尤其要确认保存为 UTF-8 无 BOM。弯引号 (" " ' ') 会在加载时被 `replaceSmartQuotes` 归一为直引号 (原版文件本身也含少量 Windows-1252 弯引号字节，靠这一步清洗)，所以**不要依赖弯引号原样保留**。
 
 7. **表头固定 8 列**：`id,type,text1,text2,text3,text4,text5,notes`。数据行缺列时对应键缺失；**比表头多的列被静默丢弃** —— 多写一列不会报错，只会让文本 "消失"，是排查文本丢失时容易漏掉的点。
@@ -139,7 +139,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 ### ASTEROID：小行星描述
 
 - 键：固定字符串 `asteroid`(tooltip 管理器直接查询 `getDescription("asteroid", Type.ASTEROID)`)。原版只有 1 行，MOD 通常不需要添加。
-- 使用方：小行星 tooltip —— 标题取 text2(缺省显示 `Asteroid`)，正文取 text1。
+- 使用方：小行星 tooltip，标题取 text2(缺省显示 `Asteroid`)，正文取 text1。
 
 ### FACTION：势力描述
 
@@ -177,7 +177,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 - 键：任意字符串，由代码关联：`SectorEntityToken.setCustomDescriptionId(id)`(公开 API)。行星、跳跃点、空间站、自定义实体等 `SectorEntityToken` 都可以使用。**这是 11 个类型中唯一无默认绑定、"键完全自取" 的类型** (SHIP/PLANET 经 `descriptionId` 另起别名时，缺省仍各自回落 hull 类型与行星类型键)。
 - 使用方与列语义：
     - text1：实体 tooltip 正文、自定义实体详情、`PrintDescription` 规则命令的第 1 段；
-    - text2：实体的默认标题/名称 —— 实体 tooltip 的标题优先取它 (空间站与带自定义描述的小行星：`hasText2() ? getText2() : 实体名`)；
+    - text2：实体的默认标题/名称，实体 tooltip 的标题优先取它 (空间站与带自定义描述的小行星：`hasText2() ? getText2() : 实体名`)；
     - text3：行星接触后显示的文本 (`PlanetInteractionDialogPluginImpl` 进入对话时若 `hasText3()` 先显示 text3)；
     - text4/text5：`SHIP_SYSTEM` 行的 text4/text5 会显示在装配面板和图鉴系统详情中；`CUSTOM` 行的 text4/text5 没有显示位置，写入后不生效。
 - 优先级：行星/实体的 tooltip 与详情面板中，`customDescriptionId` 非空时 `CUSTOM` 行**覆盖** `PLANET` 行。

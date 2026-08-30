@@ -50,7 +50,7 @@
 | `Global.getFactory().createPerson()` | 创建空白人物 |
 | `FactionAPI.createRandomPerson()`(含 Gender / Random 变体) | 按势力生成随机人物：随机性别默认各半、势力肖像、随机姓名 (姓名池)、随机 voice |
 
-另有包装入口 `Global.getFactory().createOfficerData(PersonAPI)` —— 把人物包装成 `OfficerDataAPI`。
+另有包装入口 `Global.getFactory().createOfficerData(PersonAPI)`，把人物包装成 `OfficerDataAPI`。
 
 `SettingsAPI` 也有同签名 `createPerson`(同样返回空白人物)，习惯用 `Global.getFactory()`。
 
@@ -114,7 +114,7 @@ voice 即 memory `$voice`。
 
 为什么记忆读取要分两条路径
 
-`getMemory()` 先跑一遍全部插件的 `updatePersonFacts` 回调，让各插件在读取前按最新事实刷新记忆 —— 这是 "读前更新" 的设计；但高频读取 (如每帧) 也走这条路径就会变成回调风暴，其他插件还可能改写内存值。
+`getMemory()` 先跑一遍全部插件的 `updatePersonFacts` 回调，让各插件在读取前按最新事实刷新记忆，即 "读前更新" 的设计；但高频读取 (如每帧) 也走这条路径就会变成回调风暴，其他插件还可能改写内存值。
 
 纯读取用 `getMemoryWithoutUpdate()`：同样延迟创建记忆对象，但没有回调。
 
@@ -252,7 +252,7 @@ limit 只是 "本次调整的方向边界"
 
 市场人物不等于通信目录联系人
 
-`MarketAPI.addPerson` 只把人物放进市场 roster，不会自动建通信目录条目 —— 人物在市场人物列表与存档里，但通信目录/联系人 UI 不出现。
+`MarketAPI.addPerson` 只把人物放进市场 roster，不会自动建通信目录条目，人物在市场人物列表与存档里，但通信目录/联系人 UI 不出现。
 
 要人物作为联系人可见，必须另行 `getCommDirectory().addPerson(person)` 维护；移除可见联系人时先移 comm entry 再移 roster。
 
@@ -412,7 +412,7 @@ mods/GearIndustry/
 
 随后写入姓名/性别/势力/rank/post/personality/importance+voice 并读回 (`rank=Commander`、`post=Fleet Commander` 经势力解析)；
 
-标签与内存写入读取 —— 纯读只用 `getMemoryWithoutUpdate()`(对应规则强度速查表的 "纯读取人物记忆" 条目)。
+标签与内存写入读取：纯读只用 `getMemoryWithoutUpdate()`(对应规则强度速查表的 "纯读取人物记忆" 条目)。
 
 ### GearInPersonRelationship
 
@@ -461,7 +461,7 @@ mods/GearIndustry/
 
 日志前缀统一为 `GearIn person lesson`；人物 A 的标签与 memory key 为 `GearIn_personLesson` / `$GearIn_personLesson`。
 
-调用点 (工程片段 —— 方法所在类归插件生命周期页所有，本节只演示调用，不改动那些文件)：
+调用点 (工程片段，方法所在类归插件生命周期页所有，本节只演示调用，不改动那些文件)：
 
 ```java
     // GearInModPlugin(插件生命周期页所有)onGameLoad(boolean newGame) 内新增本节注册块。

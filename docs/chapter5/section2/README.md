@@ -53,7 +53,7 @@
 
 ## 让使用方引用 ID
 
-登记后，`.wpn`、`.system` 和 Java 代码只引用 `GearIn_weapon_fire`、`GearIn_system_loop` 等 ID。具体字段和调用位置见 [C5-S3]；Java 播放方法见 [C6-S5]。
+登记后，`.wpn`、`.system` 和 Java 代码只引用 `GearIn_weapon_fire`、`GearIn_system_loop` 等 ID。具体字段和调用位置见 [C5-S3]；Java 播放方法见 [C7-S4]。
 
 ## 验证方案
 

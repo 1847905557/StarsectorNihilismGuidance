@@ -1,8 +1,8 @@
-# 常用依赖库
+# 文件读取与写入
 
-本章技术基线：Starsector `0.98a-RC8`；前置依赖：LazyLib `3.0.0`、GraphicsLib `1.12.1`、MagicLib `1.5.6`、BoxUtil `1.5.5`。
+本章技术基线：Starsector `0.98a-RC8`；前置知识：Java 工具链、`Global` 门面、MOD 目录结构和 JSON/CSV 基础。
 
-本章以十六个可运行成果覆盖硬依赖检查、LazyLib 战斗与生涯工具、GraphicsLib 动态灯光与纹理资源、MagicLib 光束、残骸与尾迹，以及 BoxUtil 的七项实体渲染专题。
+本章围绕两类文件工作，一是从 MOD 资源空间读取文本、JSON 与 CSV，二是从存档 `common` 读取并保存跨存档数据。最后用 `strings.json` 和一个取值封装完成本地化机制，把静态文本、动态替换和可观察验证接在同一条流程上。
 
 ## 本章各节
 

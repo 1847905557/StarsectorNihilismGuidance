@@ -1,774 +1,827 @@
-# 监听生涯事件
+# 制作舰队技能
 
-本节为 MOD 注册生涯事件监听器，使市场、贸易、战斗、舰队和声望变化能够触发代码。示例会分别使用两种注册入口，并在加载存档时恢复监听器。
+本节为 GearIndustry 制作第一个舰队技能 `GearIn_gunnery`。示例会完成技能注册、等级判断与数值应用，并在整备界面汇总舰队效果。
 
 *本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~50 分钟。*
+*本节预期操作时间：~45 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 列出两条监听器通道，并解释各自的存储、去重与派发语义：
-    - Sector 级 `CampaignEventListener` 通道：`addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners`；
-    - `ListenerManagerAPI` 类型化通道：`addListener` / `addListener(listener, isTransient)` / `removeListener` / `removeListenerOfClass` / `hasListener` / `hasListenerOfClass` / `getListeners(Class)`。
-- 按分组列出 `CampaignEventListener` 全接口 21 个方法，并解释每一组事件在哪个边界点被触发 (战斗结束、贸易结算、舰队入地/离场/跳跃/到达、市场开关、声望变更、经济迭代)；
-- 解释监听器生命周期规则：注册时机、persistent data 注册标记、**监听器必须在合适时机移除**、transient 监听器读档后必须重新注册、配对类 "脚本结束 ≠ 监听器移除"、`addListenerWithTimeout` 的游戏天单位与暂停冻结语义；
-- 创建 Sector 级监听器、按帧生命周期脚本 (与监听器配对) 和 `ListenerManagerAPI` 类型化监听器，并在 `onGameLoad` 正确注册；
-- 从症状定位十类典型故障：没注册、`onApplicationLoad` 注册 NPE、重复注册成双、transient 读档丢失、僵尸监听器、超时单位误用、事件日志过频、战斗回调重复计数、双通道混淆、旧档不注册。
+- 创建技能数据三件套 (注册行、`.skill` 定义、效果脚本) 并解释它们如何汇成 `SkillSpecAPI`；
+- 区分 `SkillEffectType` 各取值对应的效果接口、作用对象与应用入口；
+- 设置技能等级 0 / 1 / 2 与 `requiredSkillLevel` 门槛，并解释 `apply()` 的 `level` 参数来源；
+- 验证 effect id 的组成规则，并把它原样用作 modifier id；
+- 实现 `FleetTotalSource`，并在整备界面核对 fleet total 汇总行；
+- 从日志与界面症状定位注册、类型、等级与数值残留类故障。
 
 ## 前置知识
 
-- [C6-S2] 的 MOD 插件生命周期与持久数据标记；
-- [C6-S3] 的 `Global.getSector()` 阶段语义；
-- [C7-S2] 的战斗域 `reportPlayerEngagement` 与 `EngagementResultAPI`；
-- [C9-S1] 的 `SectorAPI` 监听器和脚本列表、`EveryFrameScript`、暂停语义与注册标记；
-- [C10-S3] 的市场交易回调 `reportPlayerMarketTransaction`；
-- [C9-S5] 的势力关系与 `SectorAPI.adjustPlayerReputation`；
-- [C12-S1] 的脚本序列化边界与 `advance(amount)` 的真实秒语义。
+- [C1-S1] 的 MOD 命名约定、数据键前缀、包路径与类名；
+- [C6-S1] 的 JAR 构建、脚本类加载与 `.skill` 文件注册；
+- [C7-S2] 的 `Global` 生命周期与生涯阶段判断；
+- [C8-S3] 的 `MutableStat` modifier ID、修饰公式与原样解除；
+- [C10-S3] 的 `FleetMemberAPI` 与成员 stats 落点；
+- [C12-S1] 的人物、captain、officer、`MutableCharacterStatsAPI`、`setSkillLevel` 与 `refreshCharacterStatsEffects`。
 
-## 术语
+## 技能数据的三件套
 
-进入两条通道之前，先弄清本节承担首次讲解的两个概念：
+写任何效果脚本之前，先弄清技能在磁盘上由什么组成、游戏从哪里读入。技能 (skill) 的运行时对象是 `SkillSpecAPI`，挂在人物 `MutableCharacterStatsAPI` 上的可学习能力，由 `skill_data.csv` 注册行、`<id>.skill` JSON 定义与效果脚本类三件套合成。
 
-- **监听器 (listener)**：API 名保留 `CampaignEventListener` / `ListenerManagerAPI` 等源码大小写。
-    - 在生涯域中，监听器是 "对生涯事件感兴趣、事件发生时被引擎回调" 的对象。
-    - 它与生涯脚本 (每帧被推进) 互补：脚本是轮询式 (每帧 `advance`)，监听器是事件驱动式 (事件发生才回调)。
-    - 两者可以绑定在同一对象上 (API 侧的 `BaseCampaignEventListenerAndScript` 即此形态)，也可以拆成两个对象配对协作 (本节示例即拆分形态)，但两条机制的生命周期互不通用。
-- **事件边界 (event boundary)**：一个生涯事件从 "游戏逻辑发生" 到 "全部已注册监听器被回调" 的完整链路 —— 触发点 (谁在什么条件下发起)、派发者 (Sector 级通道由引擎侧 `reportXxx` 方法族遍历、类型化通道由 `ListenerUtil.reportXxx` 遍历)、回调签名。排查 "回调没触发" 时必须沿着这条链逐段核对。
+注册信息 (名称、order、tier、reqPoints、icon 等) 集中在 `skill_data.csv`，定义信息 (aptitude、等级组、效果清单) 按技能各自放在独立的 `<id>.skill` 文件里，两者在 CSV spec 加载期经 `loadSkills` 按 id 合并成一个 `SkillSpecAPI`。
 
-## 梳理生涯事件关系
+### 三件套角色速查表
 
-两条通道的存储、去重与派发语义都不同，命名也容易混。先解决命名问题，再分别看两条通道。
+三件套各自的角色与关键字段：
 
-### 命名说明：CampaignListener 与 CampaignEventListener
+| 文件 | 角色 | 关键字段 |
+|---|---|---|
+| `skill_data.csv` | 注册表：技能必须在此有行 | `id,name,order,tier,reqPoints,reqPointsPerExtraSkill,description,author,combat officer,admiral,admin,tags,icon` |
+| `<id>.skill`(JSON) | 技能定义：aptitude、等级组、效果清单 | `id`、`governingAptitude`、`compressHullmods`(默认 true)、`elite`(默认 false)、`permanent`(默认 false)、`scope` / `scopeStr`、`scope2` / `scopeStr2`、`effectGroups[]` |
+| `aptitude_data.csv` | 能力树分组 | `id,name,color,description,order,effect_skill_id,sound1..5,sound_story,elite_overlay*` |
+| `<id>.skill` 的 effect | 效果清单 | 每项 `type`(`SkillEffectType` 枚举，必填)、`script`(类名，可选)、`hullmods`(对象：船插 id → 解锁等级)、`abilities`(数组) |
 
-**公开**生涯事件监听器接口名是 `CampaignEventListener`(`com.fs.starfarer.api.campaign.CampaignEventListener`)。
+`effectGroups[]` 每组的字段：`governingSkill`(可选，**默认为本技能 id**)、`name`(可选，如 "Elite")、`effectBasedOnLevel`(可选，**默认为 true**)、`requiredSkillLevel`(可选，**默认为 1**)、`effects[]`。
 
-旧资料里出现的 "CampaignListener" 写法只残留在引擎内部实现侧，不是公开 API，MOD 无法也不应注册到该接口。
-
-正文一律使用公开接口名 `CampaignEventListener`；教程主题里的 "CampaignListener" 指的就是这个概念。
-
-### 通道一注册入口速查表
-
-通道一是 MOD 直接实现 `CampaignEventListener` 的常规路径。注册入口 (`SectorAPI`，`com.fs.starfarer.api.campaign.SectorAPI`)：
-
-| 方法 | 语义 |
-|---|---|
-| `void addListener(CampaignEventListener listener)` | 注册到**持久**监听器列表 (随存档保存) |
-| `void addTransientListener(CampaignEventListener listener)` | 注册到 **transient** 监听器列表 (不随存档保存，读档后清空) |
-| `void addListenerWithTimeout(CampaignEventListener listener, float daysToKeep)` | 注册到超时跟踪器，**daysToKeep 个游戏天**后自动移除 |
-| `void removeListener(CampaignEventListener listener)` | 从三个列表同时移除 |
-| `List<CampaignEventListener> getAllListeners()` | 三个列表的并集快照 |
-
-存储与持久性 (生涯引擎侧)：
-
-- `listeners` 非 `transient` → **随存档保存**：常驻监听器跨读档继续有效，其非 `transient` 字段原样恢复。
-- `transientListeners` 是 `transient` → **不随存档保存**，读档时重建为空列表，transient 监听器读档后必然消失。
-- `listenersWithTimeout` 用 `TimeoutTracker`(公开 API `com.fs.starfarer.api.util.TimeoutTracker`) 承载；`items` 随档保存、`set` 读档时重建。
-- `listenerManager` 是 `ListenerManagerAPI` 实例 (通道二)，读档时若为 null 会重建默认实例。
-
-去重：`addListener` / `addTransientListener` 在写入前用 `contains` 去重，列表按 `equals` 判等，监听器普遍不覆写 `equals`，此时即按对象同一性；`addListenerWithTimeout` 同样以 `contains` 判重。
-
-派发：生涯引擎的 `reportXxx(...)` 方法族逐事件遍历 `getAllListeners()`(三列表并集的新列表快照) 调用回调。
-
-因此**在回调里注册/移除监听器不会抛 `ConcurrentModificationException`**(派发基于快照)，但遍历按 "持久 → transient → 超时" 的顺序拼接，不要依赖该顺序之外的次序。
-
-超时语义 (引擎每帧推进时)：
-
-```java
-float days = this.getClock().convertToDays(amount);
-if (!this.isPaused()) {
-    this.listenersWithTimeout.advance(days);
-}
-```
-
-**`daysToKeep` 的单位是游戏天** (不是真实秒)；每帧按本帧折合的游戏天数扣减，且**只在未暂停时扣减**，暂停期间超时冻结。扣减到 0 后由 `TimeoutTracker.advance` 自动移除。
-
-常见坑：超时单位误用
-
-`addListenerWithTimeout` / `reRegister` 的 `daysToKeep` 是**游戏天** (10 真实秒 = 1 游戏日)，且只在未暂停时扣减。把超时当真实秒、或以为暂停也在计时，都会得到 "永不超时 / 超时过慢" 的假象。
-
-帮助类 (公开 API)：
-
-- `BaseCampaignEventListener(boolean permaRegister)`(`com.fs.starfarer.api.campaign.BaseCampaignEventListener`)：
-    - `CampaignEventListener` 的**全方法空实现**，`permaRegister=true` 时构造器直接 `Global.getSector().addListener(this)`；
-    - `reRegister(float daysToKeep)` 等价 `addListenerWithTimeout(this, daysToKeep)`；
-    - 覆写关心的方法即可，不必实现 21 个方法的全接口。
-- `BaseCampaignEventListenerAndScript(float days)`(`com.fs.starfarer.api.campaign.BaseCampaignEventListenerAndScript`)：监听器与 `EveryFrameScript` 绑定在同一对象上的基类，构造器按 days 以超时方式注册监听器。
-
-### 通道二注册入口速查表
-
-通道一按对象存监听器，回调却按接口签名区分；`SectorAPI.getListenerManager()` 返回按接口类型组织的第二通道 `ListenerManagerAPI`(`com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI`，7 个方法)：
-
-| 方法 | 语义 |
-|---|---|
-| `void addListener(Object listener)` | 注册到持久仓库 |
-| `void addListener(Object listener, boolean isTransient)` | `isTransient=true` 注册到 transient 仓库 |
-| `void removeListener(Object listener)` | 从两个仓库同时移除 |
-| `void removeListenerOfClass(Class<?> c)` | 按类从两个仓库批量移除 |
-| `boolean hasListener(Object listener)` | 两个仓库都查 |
-| `boolean hasListenerOfClass(Class<?> c)` | 两仓库任一生效 |
-| `<T> List<T> getListeners(Class<T> c)` | 返回持久 + transient 并集的**新列表副本** |
-
-实现 (`ListenerManagerAPI`)：内部由两个仓库构成 —— `listeners`(持久) 与 `transientListeners`(transient，读档时重建)。语义要点：
-
-- `addListener` / `addListener(listener, true)` 直接写入对应仓库；仓库内部先判等、已存在即拒绝写入 (与通道一的 `contains` 去重行为相同，仅检查位置不同，重复注册会被静默丢弃)。
-- `removeListener` 同时清两个仓库；`removeListenerOfClass` 遍历两个仓库的**快照**逐个移除 (安全改列表)；`getListeners` 返回两仓库并集的新列表，派发侧遍历的是这份副本。
-- 持久性：`ListenerManagerAPI` 实例随存档保存；transient 仓库读档后必然清空。
-
-派发：所有类型化事件由公开 API 的 `ListenerUtil`(`com.fs.starfarer.api.campaign.listeners.ListenerUtil`) 静态方法族派发。
-
-模式统一为 `for (X x : Global.getSector().getListenerManager().getListeners(X.class)) { x.report...(...); }`(约 50 个事件方法)。
-
-类型化接口 40 余个，都在 `com.fs.starfarer.api.campaign.listeners` 包下：
-
-- `ColonyInteractionListener`、`FleetEventListener`、`EconomyTickListener`；
-- `CurrentLocationChangedListener`、`CargoGainedListener`、`DiscoverEntityListener`；
-- `GateTransitListener` 等。
-
-常见坑：双通道并存，同一对象只走一条
-
-部分事件两个通道都会派发。
-
-例：`reportPlayerOpenedMarket` 派发时先遍历 `getAllListeners()` 调用 `CampaignEventListener.reportPlayerOpenedMarket`。
-
-随后再调 `ListenerUtil.reportPlayerOpenedMarket` 派发 `ColonyInteractionListener`。
-
-同一对象不要同时注册两条通道，否则同一事件回调双份。
-
-### 只实现任务真正需要的事件
-
-`BaseCampaignEventListener` 已提供空实现，示例只覆写市场交易、战斗结束和舰队变化等当前任务需要的回调。选择方法时从玩家实际完成的动作反推事件边界，再到接口中查对应签名；整份方法清单不会帮助判断监听器应在何时注册和移除。
-
-### 事件边界触发点速查表
-
-方法签名只说明回调能拿到什么，触发时机要落到引擎的实现位置。以下触发点是 "事件边界" 判定的依据：
-
-| 事件 | 触发点 (具体表现) |
-|---|---|
-| 市场开启/关闭 | 打开市场交互对话框时 `reportPlayerOpenedMarket`，对话框关闭时 `reportPlayerClosedMarket`；打开贸易面板时 `reportPlayerOpenedMarketAndCargoUpdated` |
-| 贸易结算 | 贸易面板与整备界面 (舰船、武器、战机) 结算后 `reportPlayerMarketTransaction`；倾倒货物、未取走战利品也经贸易面板触发 |
-| 战斗发生/结束 | 自动结算轮结算出胜者后 `reportBattleOccurred`、战斗结束 `reportBattleFinished`；AI vs AI 每个自动结算轮一次、玩家遭遇战一次；玩家战斗结算生成 `EngagementResultAPI` 后 `reportPlayerEngagement`(`com.fs.starfarer.api.impl.campaign.FleetEncounterContext`)；战利品生成 `reportEncounterLootGenerated`(`com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`) |
-| 舰队入地 | 舰队加入地点且未上报过 (`isReportedSpawned` 标志) 时 `reportFleetSpawned`：每支舰队只上报一次 |
-| 舰队离场 | `CampaignFleetAPI.despawn(FleetDespawnReason, Object)` 内 `reportFleetDespawned`：reason 与 param 由调用方决定 |
-| 舰队跳跃/到达 | 超空间跳跃处理上报 `reportFleetJumped`(devmode 跳跃同样触发)；舰队 AI 到达 assignment 目标时上报 `reportFleetReachedEntity` |
-| 声望变更 | 声望行动处理插件结算后 `reportPlayerReputationChange`(`com.fs.starfarer.api.impl.campaign.CoreReputationPlugin`) |
-| 经济迭代 | 经济推进器每次迭代 `reportEconomyTick(iterIndex)`、月末 `reportEconomyMonthEnd`(同时派发类型化通道 `EconomyTickListener`) |
-| 当前位置变化 | 引擎检测到当前地点变化时经 `ListenerUtil.reportCurrentLocationChanged` 派发 (类型化通道 `CurrentLocationChangedListener`) |
-| 对话框 | 打开交互对话框后上报 `reportShowInteractionDialog`(`SectorAPI`)，随后回调 `CampaignEventListener.reportShownInteractionDialog` |
-| 遭遇开始 | 玩家舰队与实体接触形成遭遇时，引擎内部开始遭遇处理 (非公开 API，MOD 观察不到)；玩家侧后续以交互对话框/战斗事件体现 |
-| 能力开关 | 公开 API 有派发方法，具体触发点在引擎内部 —— 语义：玩家激活/停用能力时回调 |
-
-## 生命周期规则
-
-接口与边界回答 "有哪些事件、何时触发"，生命周期回答 "注册之后怎么办"。规则按强度分级：必须遵守的规则在前，建议在后。
-
-监听器生命周期必须遵守的规则
-
-1. **必须**：监听器注册只发生在生涯引擎建立之后。
-    - `Global.getSector()` 在资源加载期为 null，在 `onApplicationLoad` 里注册的解引用即 NPE、启动中止。
-    - 注册入口：`onNewGame` / `onGameLoad`。
-2. **必须**：一次性注册用随存档保存的 persistent data 注册标记 (`CLASS_MARK` 模式，本节示例用各自键)。
-    - 通道一 `addListener` 虽然自带 `contains` 去重，但配对的生命周期脚本半身 `addScript` 不去重，注册标记缺失的可观察结果是读档次数越多日志越成双、行为叠加。
-3. **必须**：监听器在不再需要时必须在合适时机移除 (`removeListener` / `removeListenerOfClass`)。
-    - 监听器一旦注册就持续被派发：常驻注册表的对象还随存档用 XStream 序列化。
-    - 违反的可观察结果：事件日志持续出现、行为持续叠加；监听器字段里的瞬态句柄或不可序列化状态拖进存档导致存档异常膨胀、保存/读档异常或读档后行为错乱。
-    - 成熟实例：事件 factor 类在构造器注册、`notifyFactorRemoved` 里 `removeListener(this)`。
-4. **必须**：transient 监听器 (`addTransientListener` / `addListener(listener, true)`) 读档后必须重新注册。
-    - 读档时两条通道的 transient 仓库都会被清空。
-    - 违反的可观察结果：读档后事件静默不触发、无任何报错。
-    - 成熟实例：用 `addListener(epGen, true)` 注册 transient 遭遇点生成器。
-5. **必须**：配对类 "脚本结束 ≠ 监听器移除"。
-    - `isDone() == true` 只让引擎从脚本列表清理脚本半身，**监听器注册表不会自动移除**，必须显式 `removeListener(this)`。
-    - 违反的可观察结果：脚本自停日志出现后事件回调仍持续 ("僵尸监听器")。
-
-建议 (建议强度)：
-
-- 常驻监听器 (与具体任务无关、全程有效) 在 `onGameLoad` 注册一次；临时监听器 (剧情、任务、事件 factor、遭遇点生成器) 用通道二注册并在结束时移除。
-- 注册前用 `hasListenerOfClass` / `hasListener` 查重 (成熟实例：先 `hasListenerOfClass` 再 `addListener`，随后 `getListeners(...).get(0)` 取回实例)。
-- 事件与玩家无关的过滤放在回调内 (如 `fleet.isPlayerFleet()`)，不要在回调外做全局开关。
-
-## 实现生涯事件监听
-
-先把监听器与清理责任一起注册，再增加具体事件。这样每个回调从出现的第一天起就有明确的移除路径，不会留下仍随存档派发的半成品对象。
-
-### 配对注册持久监听器
-
-把以下代码放进 `GearInModPlugin.onGameLoad()`。监听器进入 Sector 持久列表，生命周期脚本进入脚本列表，两者共用一个存档标记。
-
-```java
-SectorAPI sector = Global.getSector();
-if (!sector.getPersistentData().containsKey(GearInCampaignListener.REGISTER_MARK)) {
-    sector.getPersistentData().put(GearInCampaignListener.REGISTER_MARK, true);
-    GearInCampaignListener listener = new GearInCampaignListener();
-    sector.addListener(listener);
-    sector.addScript(new GearInListenerLifecycleScript(listener));
-}
-```
-
-完成信号：首次进档后 `getAllListeners()` 中只有一个该监听器；连续读档不会增加配对脚本或事件日志数量。
-
-### 监听市场结算
-
-在 `GearInCampaignListener` 中覆写需要的市场事件。`BaseCampaignEventListener` 已提供其余方法的空实现。
-
-```java
-@Override
-public void reportPlayerOpenedMarket(MarketAPI market) {
-    LOG.info(String.format("GearIn listener: market opened: %s (size %d)",
-            market.getName(), market.getSize()));
-}
-
-@Override
-public void reportPlayerMarketTransaction(PlayerMarketTransaction transaction) {
-    LOG.info(String.format("GearIn listener: trade at %s, credit value %.0f",
-            transaction.getMarket().getName(), transaction.getCreditValue()));
-}
-```
-
-完成信号：打开市场只产生 opened 日志，完成一次买卖后另产生一条 trade 日志；停留在市场界面不会按帧刷屏。
-
-### 区分战斗过程与结算
-
-继续在同一监听器中分别接收战斗过程和玩家结算。统计玩家胜负应使用 `EngagementResultAPI`，过程观察才使用 `BattleAPI`。
-
-```java {9}
-@Override
-public void reportBattleOccurred(CampaignFleetAPI primaryWinner, BattleAPI battle) {
-    if (battle.isPlayerInvolved()) {
-        LOG.info("GearIn listener: player battle occurred");
-    }
-}
-
-@Override
-public void reportPlayerEngagement(EngagementResultAPI result) {
-    LOG.info("GearIn listener: didPlayerWin=" + result.didPlayerWin());
-}
-```
-
-完成信号：玩家遭遇战出现一条过程日志和一条结算日志；与玩家无关的 AI 舰队战斗不会污染过程统计。
-
-### 同时结束脚本与监听器
-
-在 `GearInListenerLifecycleScript.advance()` 中累计游戏天，到期时同时清理监听器并置完成标记。
-
-```java
-daysActive += Global.getSector().getClock().convertToDays(amount);
-if (daysToLive >= 0 && daysActive >= daysToLive) {
-    Global.getSector().removeListener(listener);
-    done = true;
-}
-```
-
-完成信号：到期后 `isDone()` 为 `true`，脚本从列表移除；继续打开市场也不再收到该监听器的日志。
-
-### 恢复 transient 位置监听器
-
-把类型化监听器的判空注册放在每次 `onGameLoad()` 中。transient 仓库读档后为空，所以这里不能使用只执行一次的 persistent data 门。
-
-```java
-ListenerManagerAPI manager = sector.getListenerManager();
-if (!manager.hasListenerOfClass(GearInLocationChangeListener.class)) {
-    manager.addListener(new GearInLocationChangeListener(), true);
-}
-```
-
-在 `reportCurrentLocationChanged()` 中达到次数上限后移除当前对象：
-
-```java
-reportsLeft--;
-if (reportsLeft <= 0) {
-    Global.getSector().getListenerManager().removeListener(this);
-}
-```
-
-完成信号：前 5 次地点切换有日志，第 6 次没有；保存并读档后 transient 实例重新建立，计数从 5 次重新开始。
-
-## 组装事件监听实现
-
-规则落到代码。在既有 MOD 布局与 `GearInModPlugin` 之上新增三个类 (不新增任何资源)，对应两条注册通道：
-
-通道一采用监听器 + 生命周期脚本配对 (`sector.addListener` / `sector.addScript`)；
-
-通道二采用类型化监听器 (`getListenerManager().addListener(..., true)`)：
+注册链 (CSV spec 加载期 `loadSkills`)：
 
 ```text
-Starsector/mods/GearIndustry/
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data/
-├── src/
-│   └── data/scripts/gearin/campaign/
-│       ├── GearInCampaignListener        # 本节新增 (通道一：Sector 级监听器)
-│       ├── GearInListenerLifecycleScript # 本节新增 (通道一：生命周期脚本，与监听器配对)
-│       └── GearInLocationChangeListener  # 本节新增 (通道二：ListenerManagerAPI 类型化监听器)
-└── jars/
+skill_data.csv(按 id 读行，收集全部注册 id)
+  + aptitude_data.csv 的 effect_skill_id(能力树自身的 "技能")
+  → 遍历 data/characters/skills/*.skill：
+       SkillSpecAPI(readJSON) → id 已注册？"Skipping skill [...], was already loaded" 跳过
+                          → id 不在 skill_data.csv？"Skipping loading skill [...], it's not listed in skill_data.csv." 跳过
+                          → 否则 putSpec 注册，并把每个 effect 的 script 类 registerScriptClass
+  → 回头按 skill_data.csv 行补写 order / tier / reqPoints / 角色类型 flags / tags / icon / name / description / author
 ```
 
-### GearInCampaignListener(通道一：Sector 级监听器)
+技能被静默跳过时不报错
 
-对应关系：
+两个 "跳过" 分支都只写日志、不报错 —— 技能在技能树里不出现且没有任何 ERROR 时，先到日志里查这两行，再动手改代码。技能树里少了一个技能，日志却风平浪静。
 
-- `extends BaseCampaignEventListener`：全接口 21 个方法的空实现，本类只覆写关心的 11 个事件方法 (市场/贸易/战斗/舰队/声望五个事件边界)。
-- `super(false)`：不在构造器自注册 (区别于 `permaRegister=true` 的自动注册写法)，注册统一收敛到调用点的注册块，符合本教程的注册纪律。
-- `REGISTER_MARK`：persistent data 注册标记键，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；它标记 "监听器 + 生命周期脚本" 成对注册，由调用点统一检查。
-- 注册入口：调用点的注册块内 `sector.addListener(listener)`(通道一持久列表)。
-- 回调全部只读公开 API 入参并打日志：`market.getName()` / `getSize()`、`transaction.getMarket().getName()` / `getCreditValue()`、`battle.isPlayerInvolved()`、`result.didPlayerWin()`、`loot.getStacksCopy().size()`、`fleet.getFaction().getId()`、`person.getName().getFullName()`。
+注册完成后，读取入口在 `com.fs.starfarer.api.SettingsAPI`：
 
-### GearInListenerLifecycleScript(通道一：生命周期脚本)
+- `Global.getSettings().getSkillSpec(String skillId)` (`com.fs.starfarer.api.SettingsAPI`)：读 `SkillSpecAPI`；未注册的 id 由 CSV spec 加载期静默返回 null。
+- `Global.getSettings().getSortedSkillIds()`：按 order 排序的技能 id 列表 (技能树 UI 用)。
+- `MutableCharacterStatsAPI` (`com.fs.starfarer.api.characters.MutableCharacterStatsAPI`) 的角色侧方法：`getSkillLevel(id)` / `setSkillLevel(id, level)` / `increaseSkill` / `hasSkill` / `refreshCharacterStatsEffects()`，技能状态与刷新入口都在这里。
 
-对应关系：
+注册只决定技能存在，每个效果作用到哪一组对象由本页下一小节的 `type` 决定。
 
-- `implements EveryFrameScript`：脚本半身提供 `isDone` / `runWhilePaused` / `advance`，按游戏天累计挂载时长，是本节 "生命周期脚本" 角色。
-- 构造器持有受管监听器引用；`setDaysToLive(int)` 是**本节演示参数，归属脚本类**：`< 0` 常驻、`>= 0` 到期自停并移除监听器。
-- `advance` 里 `clock.convertToDays(amount)`：`amount` 是上一帧真实秒数，游戏天累加必须经时钟换算 (10 真实秒 = 1 游戏日)。
-- `sector.removeListener(listener)`：脚本半身 `done=true` 的同时显式移除监听器，规则 5 的演示 (脚本结束 ≠ 监听器移除)。
-- 注册入口：调用点的注册块内 `sector.addScript(script)`(脚本列表)；`addScript` 不去重，注册块因此需要整体判断。
+## 效果作用域：type 决定作用对象
 
-### GearInLocationChangeListener(通道二：类型化监听器)
+注册只决定技能存在，每个效果作用到哪一组对象由 `SkillEffectType` 决定，并与脚本类实现的接口一一对应。数值与范围效果接口继承 `LevelBasedEffect` (`getEffectDescription(float)` / `getEffectPerLevelDescription()` / `getScopeDescription()`)；`DescriptionSkillEffect` 独立提供描述文本方法。
 
-对应关系：
+### SkillEffectType 速查表
 
-- `implements CurrentLocationChangedListener`：类型化接口只有一个方法 `reportCurrentLocationChanged(LocationAPI prev, LocationAPI curr)`，派发在引擎检测到当前地点变化时经 `ListenerUtil` 完成。
-- `reportsLeft` 自减到 0 后 `getListenerManager().removeListener(this)`：规则 3(在合适时机移除) 的演示。
-- transient 注册 + `hasListenerOfClass` 判空补注册：规则 4(读档后重新注册) 的演示。
-- 注册入口：调用点片段里 `getListenerManager().addListener(new GearInLocationChangeListener(), true)`(通道二 transient 仓库)。
+`SkillEffectType` 与接口、作用对象、应用入口的对应：
 
-调用点 (工程片段，方法所在类属既有 MOD 插件工程，本节只演示调用，不改动原文件)：
+| `SkillEffectType` | 效果接口 | 作用对象 | 应用入口 |
+|---|---|---|---|
+| `SHIP` | `ShipSkillEffect` `apply(stats, hullSize, id, level)` | 被驾驶舰船 (舰长 / 指挥官个人技能作用到其旗舰) | 生涯 `FleetMemberAPI.updateStats` 的 `captain.getStats().applyPersonalToStats`；战斗侧舰船构造时 `setCaptain` → `applyPersonalToShip` |
+| `ALL_SHIPS_IN_FLEET` | `ShipSkillEffect` | 舰队全部非战机舰船 | `FleetMemberAPI.updateStats`、舰船对象创建的 `applyFleetwideToStats`、`FleetDataAPI.syncIfNeeded`(指挥官回退链)、tooltip 渲染 |
+| `SHIP_FIGHTERS` | `ShipSkillEffect` | 被驾驶舰船起飞的本舰战机 | 战斗起飞 `FighterLaunchBayAPI`(母舰舰长 stats) |
+| `ALL_FIGHTERS_IN_FLEET` | `ShipSkillEffect` | 舰队全部战机 | 战斗起飞 `FighterLaunchBayAPI`(舰队指挥官 → 舰队数据指挥官 → 默认指挥官回退链) |
+| `CHARACTER_STATS` | `CharacterStatsSkillEffect` `apply(stats, id, level)` | 角色自身 `MutableCharacterStatsAPI` | `MutableCharacterStatsAPI.refreshCharacterStatsEffects` |
+| `FLEET` | `FleetStatsSkillEffect` `apply(stats, id, level)` | 该角色指挥舰队的 `MutableFleetStatsAPI` | `MutableCharacterStatsAPI.refreshCharacterStatsEffects` |
+| `GOVERNED_OUTPOST` | `MarketSkillEffect` `apply(market, id, level)` | 治理的殖民地市场 | `refreshGovernedOutpostEffects` |
+| `ALL_OUTPOSTS` | `MarketSkillEffect` | 玩家全部殖民地市场 | `refreshAllOutpostsEffectsForPlayerOutposts` / `refreshAllOutpostsEffects` |
+| `DESCRIPTION` | `DescriptionSkillEffect` | 技能面板 / tooltip 文本行 | 纯 UI，无数值写入 |
+| `HULLMOD_UNLOCK` / `ABILITY_UNLOCK` | 无脚本接口 (数据声明) | 解锁集合 | effect 内 `hullmods` / `abilities` 键；使用方 `getUnlockedHullMods(level)`、`MutableCharacterStatsAPI.getGrantedAbilityIds`；`isHullModAvailable` 由 `CampaignUIAPI` 提供 |
+
+生效范围只看 type，别信 scope
+
+`ALL_SHIPS_IN_FLEET` 与 `SHIP` 的**接口相同** (都是 `ShipSkillEffect`)，作用对象集合完全由 `type` 决定；最容易误导读者的是 `scope` 字段：`scope` 只是 UI 文本，写 `"scope":"FLEET"` 不会把 SHIP 效果变成全舰队加成。
+
+本节示例用到 SHIP、SHIP\_FIGHTERS、FLEET、CHARACTER\_STATS 与 DESCRIPTION 五类，写效果脚本时每个 effect 的 `type` 决定类实现哪个接口，先对照上面的表格再落笔。
+
+## 技能等级
+
+作用对象定了，接下来是何时生效、按什么等级生效：
+
+- 技能等级只有 0 (未学) / 1 (已学) / 2 (精英)。UI 加点走 `increaseSkill` / `decreaseSkill`，钳制到 1 (非精英) 或 2 (`elite:true`)；`setSkillLevel(id, level)` 不钳制，直接写任意 float 并触发 `refreshCharacterStatsEffects`。
+- 每个 effectGroup 的 `requiredSkillLevel` (默认 1) 是门槛：`getSkillLevel(governingSkill) >= requiredSkillLevel` 的效果才进入应用列表 (如 `getShipEffects` 的过滤)。
+- `apply()` 收到的 `level` 参数取 `getSkillLevel(governingSkill)`，不是等级增量，也不会逐帧变化。
+- `effectBasedOnLevel` (默认 true) 只供 UI 的 tooltip 渲染读取：true 时标准 tooltip 追加渲染 `getEffectPerLevelDescription()`。
+- 引擎组合 effect id 并传入 `apply` / `unapply`：`<技能id>_<类型后缀>_<效果序号>`：
+    - 后缀：`SHIP→_ship_`、`ALL_SHIPS_IN_FLEET→_ships_`、`SHIP_FIGHTERS→_ship_fighters_`、`ALL_FIGHTERS_IN_FLEET→_all_fighters_`；
+    - `CHARACTER_STATS` 与 `FLEET` 都是 `_stats_`、`GOVERNED_OUTPOST→_GO_`、`ALL_OUTPOSTS→_AO_`；
+    - 序号是效果在本技能平铺效果列表 (跨 effectGroups 累计) 中的下标；本节示例 `GearIn_gunnery` 的 Level1 (SHIP) 拿到的 id 是 `GearIn_gunnery_ship_1`。
+
+等级门槛是最容易落空的一处：把 `requiredSkillLevel` 写成 2 却不配 `elite:true`，这个门槛会一直等一个到不了的等级。
+
+effect id 必须原样用作 modifier id
+
+引擎传入的 effect id(本节示例 `GearIn_gunnery_ship_1`) **必须**原样用作 modifier id，`unapply` **必须**用同一个 id 解除；**禁止**自造 id 或拼接字符串。违反的后果：数值残留、解除静默失效、重放多次后数值膨胀，且全程没有任何报错。
+
+## fleet total 管道
+
+效果按等级生效后，数值写进角色、舰船与舰队 stats；需要整备界面汇总展示的一类走 fleet total 管道：
+
+- 接口：`FleetTotalSource.getFleetTotalItem()` → `FleetTotalItem` (字段 `label` / `value` / `valueColor` / `labelColor` / `sortOrder` / `tooltipCreator`)。
+- 汇总：`getFleetTotals()` 遍历已学技能的全部效果，凡 `level >= requiredSkillLevel` 且脚本实例 `instanceof FleetTotalSource`，就取 `getFleetTotalItem()`：
+    - 按 `label + "_" + value` 去重 (两个技能 / 效果返回相同 label+value 只保留一行)，按 `sortOrder` 升序排成舰队构成表的行数据 (附 `skillLevels`，供 tooltip 列出贡献技能)。
+- 使用方：整备界面 (refit) 的舰队构成表 —— 界面把 `getPlayerStats().getFleetTotals()` 渲染成构成表行，`tooltipCreator` 挂可展开 tooltip；全库调用 `getFleetTotals()` 的地方只有这一处 (技能面板 tooltip 不读取它)。
+- 原版聚合做法：`BaseSkillEffectDescription.getOPTotal()` / `getCombatOPTotal()` / `getAutomatedPointsTotal()` (`com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription`)：
+    - 对舰队成员逐艘收集贡献 (`FleetMemberPointContrib`) 再汇总；
+    - 本节示例只演示最小管道 (静态值 + 自定义 tooltip)。
+
+机制到这里已经齐全，接下来把三件套、等级与 fleet total 全部落成 GearIndustry 的一个真实技能。
+
+## 规则强度速查表
+
+下表集中列出本节涉及的注册与生效规则；每条都给出违反后的可观察结果，原因在正文各节展开，故障分析按症状复用这些条目。
+
+| 规则 | 强度 | 违反后的可观察结果 |
+|---|---|---|
+| `.skill` 的 `id` **必须**在 `skill_data.csv` 有对应行 | 必须 | 加载期日志 `Skipping loading skill [...], it's not listed in skill_data.csv.`，技能不注册、技能树不出现、`getSkillSpec(id)` 返回 null，**无任何 ERROR** |
+| 技能 id **必须**全局唯一 (跨 MOD) | 必须 | 后加载的同 id 技能被跳过 (日志 `Skipping skill [...], was already loaded`)，本 MOD 的版本静默失效 |
+| effect 的 `type` **必须**与脚本类实现的接口族匹配 (SHIP → `ShipSkillEffect`、FLEET → `FleetStatsSkillEffect`、CHARACTER\_STATS → `CharacterStatsSkillEffect`、市场 → `MarketSkillEffect`、DESCRIPTION → `DescriptionSkillEffect`) | 必须 | 效果实例化时 `getAsXxxEffect()` 强转抛 `ClassCastException`(如舰船 stats 重放 / 起飞 / tooltip 渲染处)，游戏画面报错或加载失败 |
+| 效果脚本类 **必须**无参可实例化 (不写构造器或显式无参构造器；脚本类加载流程 `loadScriptInstance` 用 `newInstance()`) | 必须 | `InstantiationException` 包装为 `RuntimeException "Problem loading class [<类名>]"`，在效果被实例化的时刻 (不是加载期) 抛出 |
+| 效果脚本 **必须**把引擎传入的 `id` 原样用作 modifier id，`unapply` 用同一个 id 解除 | 必须 | 数值残留 / 累计或解除不生效 (稳定 ID 规则在技能域的直接应用；引擎给的 id 形如 `GearIn_gunnery_ship_1`) |
+| 生效范围**必须**按 `SkillEffectType` 判断；`.skill` 的 `scope` / `scopeStr` 只是 UI 文本 | 必须 | 把 `scope:FLEET` 的 SHIP 效果当 "全舰队加成" 排查，实际它只作用于被驾驶舰船，舰队其它船 "没变化" |
+| 战机效果 (SHIP\_FIGHTERS / ALL\_FIGHTERS\_IN\_FLEET) 只在战斗起飞时应用 | 必须 | 在生涯侧读战机 stats 期望已生效，读不到；战机加成 "部署前看不到" 属正常语义 |
+| 非精英技能 (`elite` 缺省 / false) 经 UI 加点最高到 1 级，`requiredSkillLevel:2` 的效果组永不激活 | 必须 | 2 级门槛的效果 "不生效"；精英加成必须配 `"elite":true` |
+| fleet total 的 `label` + `value` 必须能区分不同的汇总行 | 必须 | 两个技能返回相同 label+value 时 `getFleetTotals()` 去重合并成一行，其中一行的汇总 "消失" |
+| 技能 `icon` 列 **必须**指向可加载的纹理 | 必须 | `loadSkills` 末尾 `queueResource(TEXTURE, ...)` 排队纹理，缺失时资源加载阶段报错 (TEXTURE 无 try/catch) |
+| 技能 id 使用 MOD 专属前缀 (`GearIn_`)，数据 id、`.skill` 文件名、脚本类名三处一致 | 建议 | 撞原版 / 其它 MOD id 时被先加载者覆盖，行为随 MOD 启用顺序漂移 |
+| 效果脚本在 `.skill` 里按 "外层类 `$` 嵌套类" 书写类名 (如 `...GearInGunnerySkill$Level1`) | 建议 | 类名拼写错误 → 效果实例化时 `Problem loading class` |
+
+## 实现舰队技能
+
+这项技能同时改变舰船、战机、舰队与角色数值。实现顺序应当从数据侧分派开始，再逐个接通作用域；这样每增加一个效果，都有独立的界面数值或日志可以核对。
+
+### 注册技能与效果分派
+
+先在 `skill_data.csv` 注册技能，再把以下内容放入 `data/characters/skills/GearIn_gunnery.skill` 的 `effectGroups`。`type` 决定引擎传入哪一种 stats 对象，`script` 决定实例化哪个嵌套类。
+
+```json
+{
+    "name":"Level 1",
+    "requiredSkillLevel":1,
+    "effectBasedOnLevel":false,
+    "effects":[
+        {"type":"SHIP", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$Level1"},
+        {"type":"SHIP_FIGHTERS", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$LevelShipFighters"}
+    ]
+}
+```
+
+完成信号：启动日志出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]`，并且没有跳过该技能的记录。
+
+### 修改被驾驶舰船
+
+在 `GearInGunnerySkill` 内新增 `Level1`。把引擎传入的 `id` 原样交给三个 modifier；技能刷新时，相同 ID 会覆盖旧值，而不是继续叠加。
+
+```java {4,5,6}
+public static class Level1 extends BaseSkillEffectDescription implements ShipSkillEffect {
+    @Override
+    public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
+        stats.getBallisticWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS);
+        stats.getEnergyWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS);
+        stats.getAutofireAimAccuracy().modifyFlat(id, AIM_BONUS * 0.01f);
+    }
+
+    @Override
+    public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
+        stats.getBallisticWeaponDamageMult().unmodify(id);
+        stats.getEnergyWeaponDamageMult().unmodify(id);
+        stats.getAutofireAimAccuracy().unmodify(id);
+    }
+}
+```
+
+完成信号：技能达到 1 级后，角色驾驶舰船的实弹与能量武器伤害均增加 15%，自动开火精度增加 100%；降回 0 级后全部恢复。
+
+### 扩展到本舰战机
+
+在同一外层类中新增 `LevelShipFighters`，并让 `.skill` 中的 `SHIP_FIGHTERS` 指向它。这里收到的是战机自己的 `MutableShipStatsAPI`，因此速度修改不会落到母舰上。
 
 ```java
-    // GearInModPlugin.onGameLoad(boolean newGame) 内新增本节注册块。
-    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    SectorAPI sector = Global.getSector();
-
-    // 通道一：监听器 + 生命周期脚本配对注册。addListener 按同一性去重，但 addScript 不去重，
-    // 因此整个注册块必须用 REGISTER_MARK 门控 (硬规则 2)。
-    if (!sector.getPersistentData().containsKey(GearInCampaignListener.REGISTER_MARK)) {
-        sector.getPersistentData().put(GearInCampaignListener.REGISTER_MARK, true);
-        GearInCampaignListener listener = new GearInCampaignListener();
-        GearInListenerLifecycleScript script = new GearInListenerLifecycleScript(listener);
-        sector.addListener(listener);   // 监听器：通道一持久列表
-        sector.addScript(script);       // 生命周期脚本：脚本列表
+public static class LevelShipFighters extends BaseSkillEffectDescription implements ShipSkillEffect {
+    @Override
+    public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
+        stats.getMaxSpeed().modifyPercent(id, FIGHTER_SPEED_BONUS);
     }
 
-    // 通道二：类型化监听器，transient 注册。读档后 transient 仓库被清空，
-    // hasListenerOfClass 判空补注册 (硬规则 4)；transient 仓库读档必清空，别去掉这个判空。
-    if (!sector.getListenerManager().hasListenerOfClass(GearInLocationChangeListener.class)) {
-        sector.getListenerManager().addListener(new GearInLocationChangeListener(), true);
+    @Override
+    public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
+        stats.getMaxSpeed().unmodify(id);
     }
+}
 ```
 
-想演示自停，在注册前先设参数：
+完成信号：由角色驾驶舰船放出的战机最高速度增加 10%，其它舰船放出的同型战机不受影响。
 
-```java {3}
-    GearInCampaignListener listener = new GearInCampaignListener();
-    GearInListenerLifecycleScript script = new GearInListenerLifecycleScript(listener);
-    script.setDaysToLive(30); // 约 30 个游戏日 (约 300 真实秒) 后自停并移除监听器
-    sector.addListener(listener);
-    sector.addScript(script);
+### 修改整支舰队
+
+在 `GearInGunnerySkill` 内新增 `LevelFleet`。`FLEET` 效果由角色数值刷新流程重放，修改对象是 `MutableFleetStatsAPI`。
+
+```java
+public static class LevelFleet extends BaseSkillEffectDescription implements FleetStatsSkillEffect {
+    @Override
+    public void apply(MutableFleetStatsAPI stats, String id, float level) {
+        stats.getFleetwideMaxBurnMod().modifyFlat(id, FLEET_BURN_BONUS);
+    }
+
+    @Override
+    public void unapply(MutableFleetStatsAPI stats, String id) {
+        stats.getFleetwideMaxBurnMod().unmodifyFlat(id);
+    }
+}
 ```
 
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用既有工程)：
+完成信号：技能达到 1 级后舰队最大燃烧等级增加 2，解除技能后立即恢复。
+
+### 修改角色数值
+
+再新增 `LevelStats`，并由 `.skill` 中的 `CHARACTER_STATS` 分派。该效果直接进入角色 stats，不需要等待战斗舰船构造。
+
+```java
+public static class LevelStats extends BaseSkillEffectDescription implements CharacterStatsSkillEffect {
+    @Override
+    public void apply(MutableCharacterStatsAPI stats, String id, float level) {
+        stats.getCommandPoints().modifyFlat(id, COMMAND_POINTS_BONUS);
+    }
+
+    @Override
+    public void unapply(MutableCharacterStatsAPI stats, String id) {
+        stats.getCommandPoints().unmodify(id);
+    }
+}
+```
+
+完成信号：技能达到 1 级后，部署界面的指挥点数增加 1；解除技能并刷新角色数值后恢复。
+
+### 显示舰队汇总项
+
+让 `Level1` 同时实现 `FleetTotalSource`，并加入以下方法。整备界面会按需重新实例化效果类，再读取这个对象生成汇总行。
+
+```java
+@Override
+public FleetTotalItem getFleetTotalItem() {
+    FleetTotalItem item = new FleetTotalItem();
+    item.label = "Gunnery damage bonus";
+    item.value = "+" + (int) DAMAGE_BONUS + "%";
+    item.sortOrder = 50;
+    return item;
+}
+```
+
+完成信号：整备界面的舰队构成汇总出现 `Gunnery damage bonus +15%`，重复打开界面不会增加重复行。
+
+## 数据文件：data/characters/skills/GearIn\_gunnery.skill
+
+要点：
+
+- `elite:true` 允许技能到 2 级；第 2 个 effectGroup (`requiredSkillLevel:2`，`name:"Elite"`) 在 2 级才激活 —— 与 `gunnery_implants.skill` 同款结构。
+- 六个 effect 平铺后的序号：Level0=0、Level1=1、LevelShipFighters=2、LevelFleet=3、LevelStats=4、Level1A=5。由此引擎组合的 effect id：
+    - `GearIn_gunnery_ship_1`、`GearIn_gunnery_ship_fighters_2`、`GearIn_gunnery_stats_3` (FLEET)、`GearIn_gunnery_stats_4` (CHARACTER\_STATS)、`GearIn_gunnery_ship_5` (精英)。
+    - 效果脚本必须原样使用。
+- `governingSkill` 未写 → 默认本技能 id：所有效果的等级判据都是 `GearIn_gunnery` 自己的等级。
+
+## 数据文件：data/characters/skills/skill\_data.csv(表头 + 本节行)
+
+要点：
+
+- `id` 与 `.skill` 的 `id` 逐字一致；`tier:2` (战斗系 2 阶)、`reqPoints:1` (消耗 1 技能点)。
+- `combat officer` 列 `TRUE`：军官也可以学。
+- `icon` 指向本 MOD 图标资源。**本单元无 PNG 资产**：冒烟时请临时把 icon 列指向原版 `graphics/icons/skills/gunnery_implants.png` (资源加载期会排队校验纹理，缺失会导致加载失败)；生产 MOD 必须自备图标 (资产不在本单元范围)。
+
+## GearInGunnerySkill
+
+对应关系：
+
+- 外层类只是容器：嵌套类名 (`Level0` / `Level1` / `Level1A` / `LevelShipFighters` / `LevelFleet` / `LevelStats`) 与 `.skill` 的 `script` 值 (`GearInGunnerySkill$Level1` 等) 逐字对应 —— 原版 `GunneryImplants` 同款做法。
+- `Level1 implements ShipSkillEffect, FleetTotalSource`：同一个脚本类被两处调用 —— `SHIP` 效果重放时经 `getAsShipEffect()` 强转，`getFleetTotals()` 时经 `getAsFleetTotalSource()` 检查 `instanceof`：
+    - 两处都是**每次按类名重新实例化** (脚本类加载流程 `loadScriptInstance` → `newInstance()`)，效果类不能有带参构造器。
+- `apply` 里的 modifier id 全部用传入的 `id`：`modifyPercent(id, ...)` / `modifyFlat(id, ...)`，`unapply` 用同一个 `id` 调 `unmodify(id)` / `unmodifyFlat(id)` —— 稳定 ID 规则的直接应用 (引擎每次重放传入的 id 逐字相同)。
+- `Level1.getFleetTotalItem()` 返回 `label="Gunnery damage bonus"`、`value="+15%"`、`sortOrder=50` 与自定义 tooltip：这是 fleet total 行的最小完整形态；`TOOLTIP_WIDTH` 继承自 `BaseSkillEffectDescription`(450)。
+- `LevelFleet` / `LevelStats` 的 `getScopeDescription()` 返回 `FLEET`：这只是 tooltip 的 "作用范围" 文本；实际生效对象由 `type`(FLEET / CHARACTER\_STATS) 决定。
+- 五个 `apply` 各打一行 `GearIn gunnery ...` 日志：`id` 与 `level` 直接可见，是 "效果作用域 + 等级" 的现场表现。
+- `getEffectPerLevelDescription()` 返回 null：`.skill` 里 `effectBasedOnLevel:false`，tooltip 不渲染每级描述行 (本节不演示 per-level 描述)。
+
+## 读取与调用点
+
+以下工程片段所在类归 [C7-S1] 所有，本节只演示调用，不改动那些文件。
+
+```java
+    // 读取 (消费者，任何生涯代码)：
+    SkillSpecAPI spec = Global.getSettings().getSkillSpec("GearIn_gunnery");
+    if (spec == null) {
+        LOG.info("GearIn skill spec missing - check skill_data.csv registration");
+    }
+
+    // 学习 (脚本侧临时钩子；正式路径是玩家在技能树里花技能点，走 increaseSkill)：
+    Global.getSector().getPlayerStats().setSkillLevel("GearIn_gunnery", 1f);
+    // 精英：
+    Global.getSector().getPlayerStats().setSkillLevel("GearIn_gunnery", 2f);
+```
+
+学习入口小结 (`MutableCharacterStatsAPI`)：`setSkillLevel` 与 `increaseSkill` 都会触发 `refreshCharacterStatsEffects`；FLEET 与 CHARACTER\_STATS 效果在刷新时**立即**重放。
+
+SHIP 族效果要等成员 stats 重建 (`FleetMemberAPI.updateStats`，开舰队界面 / 舰队同步触发) 或舰船构造 / 战机起飞。
+
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，编译链路见前置知识)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars/GearIndustry.jar` 应包含以下 class 条目 (可用 `jar tf` 核对)：
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 及六个内部类 (可用 `jar tf` 核对)：
 
-- `data/scripts/gearin/campaign/GearInCampaignListener.class`
-- `GearInListenerLifecycleScript.class`
-- `GearInLocationChangeListener.class`
+- `$Level0` / `$Level1` / `$Level1A` / `$LevelShipFighters` / `$LevelFleet` / `$LevelStats`
 
-### 关键故障实验：transient 监听器读档后不再回调
+## GearIn\_gunnery 完整流程速查表
 
-只在新档分支注册 transient 监听器。保存时该对象不进入存档，读档又跳过注册分支，因此事件静默消失。
+把三件套、调用点与观察结果串成一张静态交叉核对表，逐行确认后再进入游戏验证：
+
+| 环节 | 内容 | 一致性要求 |
+|---|---|---|
+| 注册行 | `skill_data.csv` 的 `id=GearIn_gunnery` (order 1025、tier 2、reqPoints 1、combat officer TRUE) | 与 `.skill` 的 `id` 逐字一致 |
+| 技能定义 | `GearIn_gunnery.skill`：`governingAptitude=combat`、`elite=true`、两个 `effectGroups` | id 一致；脚本类名与 Java 类逐字一致 |
+| 效果脚本 | `data.scripts.gearin.campaign.GearInGunnerySkill$Level0/Level1/Level1A/LevelShipFighters/LevelFleet/LevelStats` | 六个类名与 `.skill` 六个 `script` 值一致；`type` 与接口族匹配 |
+| 调用入口 | CSV spec 加载期 `loadSkills` 注册 → 玩家 `setSkillLevel` / UI 加点 → `refreshCharacterStatsEffects` / `FleetMemberAPI.updateStats` / 战斗舰船构造 / `FighterLaunchBayAPI` / `getFleetTotals` | 日志行、技能树行、burn、指挥点数、fleet total 行 |
+| 可观察结果 | 日志 `GearIn gunnery ... apply`、技能树 "Gunnery" 行、整备界面 "Gunnery damage bonus +15%" 行 | 以日志与界面实际结果为准 |
+
+## 完整最小例
+
+在既有 MOD 布局 (前置知识所列的编译链路) 之上新增一个技能：两个数据文件加一个效果脚本类，全部由本节定义，技能 id 为 `GearIn_gunnery`：
+
+```text
+mods/GearIndustry/
+├── build.gradle
+├── settings.gradle
+├── mod_info.json
+├── data\
+│   └── characters/skills\
+│       ├── GearIn_gunnery.skill          # 本节新增
+│       └── skill_data.csv                # 新建 (表头 + 本节行；若已有该文件则把行追加进去)
+├── src\
+│   └── data/scripts/gearin\
+│       ├── GearInModPlugin               # C7-S1 所有；本节不改动
+│       └── campaign\
+│           └── GearInGunnerySkill        # 本节新增
+└── jars\
+```
+
+```json
+{
+	"id":"GearIn_gunnery",
+	"governingAptitude":"combat",
+	"compressHullmods":false,
+	"elite":true,
+	"scope":"PILOTED_SHIP",
+	"effectGroups":[
+		{
+			"name":"Level 1",
+			"requiredSkillLevel":1,
+			"effectBasedOnLevel":false,
+			"effects":[
+				{"type":"DESCRIPTION", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$Level0"},
+				{"type":"SHIP", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$Level1"},
+				{"type":"SHIP_FIGHTERS", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$LevelShipFighters"},
+				{"type":"FLEET", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$LevelFleet"},
+				{"type":"CHARACTER_STATS", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$LevelStats"},
+			]
+		},
+		{
+			"name":"Elite",
+			"requiredSkillLevel":2,
+			"effectBasedOnLevel":false,
+			"effects":[
+				{"type":"SHIP", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$Level1A"},
+			]
+		},
+	],
+}
+```
+
+```csv
+id,name,order,tier,reqPoints,reqPointsPerExtraSkill,description,author,combat officer,admiral,admin,tags,icon,
+GearIn_gunnery,Gunnery,1025,2,1,0,"Precision gunnery drills: ballistic and energy weapon damage up, autofire accuracy up, fighter top speed up, fleet burn up, command points up.","GearIndustry Weapons Division",TRUE,,,,graphics/icons/skills/GearIn_gunnery.png,
+```
+
+::: details 完整成品：GearInGunnerySkill
+
+```java
+package data.scripts.gearin.campaign;
+
+import java.awt.Color;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.characters.CharacterStatsSkillEffect;
+import com.fs.starfarer.api.characters.DescriptionSkillEffect;
+import com.fs.starfarer.api.characters.FleetStatsSkillEffect;
+import com.fs.starfarer.api.characters.FleetTotalItem;
+import com.fs.starfarer.api.characters.FleetTotalSource;
+import com.fs.starfarer.api.characters.LevelBasedEffect.ScopeDescription;
+import com.fs.starfarer.api.characters.MutableCharacterStatsAPI;
+import com.fs.starfarer.api.characters.ShipSkillEffect;
+import com.fs.starfarer.api.combat.MutableShipStatsAPI;
+import com.fs.starfarer.api.combat.ShipAPI.HullSize;
+import com.fs.starfarer.api.fleet.MutableFleetStatsAPI;
+import com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription;
+import com.fs.starfarer.api.ui.TooltipMakerAPI;
+import com.fs.starfarer.api.ui.TooltipMakerAPI.TooltipCreator;
+import com.fs.starfarer.api.util.Misc;
+
+/**
+ * 完整最小例：SkillSpecAPI、效果作用域、技能等级与 fleet total。
+ *
+ * 本类只是效果脚本的容器 (原版 GunneryImplants 同款做法)：
+ * 数据侧的 .skill 文件与 skill_data.csv 行把每个 effect 的 type 分派到下面的嵌套类。
+ *
+ * 作用域 (effect type 决定作用对象集合，与脚本类实现哪个接口一一对应)：
+ * - DESCRIPTION   -> Level0           技能面板与 tooltip 的文本行；
+ * - SHIP          -> Level1 / Level1A 被驾驶 (该角色指挥) 的舰船 stats；
+ * - SHIP_FIGHTERS -> LevelShipFighters 由被驾驶舰船起飞的本舰战机 stats(起飞时应用)；
+ * - FLEET         -> LevelFleet       该角色指挥舰队的 MutableFleetStatsAPI；
+ * - CHARACTER_STATS -> LevelStats     角色自身 MutableCharacterStatsAPI。
+ *
+ * 等级语义：
+ * - 技能等级只有 0(未学)/ 1(已学)/ 2(精英，仅 elite:true 的技能)；
+ *   UI 加点路径 increaseSkill 会钳制到 1 或 2，setSkillLevel 不钳制；
+ * - 每个 effectGroup 的 requiredSkillLevel 是生效门槛：getSkillLevel(governingSkill) >= requiredSkillLevel
+ *   才进入 apply 列表；默认 governingSkill = 本技能 id；
+ * - apply() 收到的 level 参数 = getSkillLevel(governingSkill)，不是等级增量；
+ * - 引擎按 <技能id>_<类型后缀>_<效果序号> 组合 effect id 并传入 apply，
+ *   效果类必须原样用它做 MutableStat / StatBonus 的 modifier id(稳定 ID 规则，见前置页)。
+ *
+ * fleet total：
+ * - 本技能 Level1 同时实现 FleetTotalSource：整备界面 (refit) 的舰队构成表会调用
+ *   getFleetTotalItem() 展示一行汇总；同一脚本实例按需被重新实例化，效果类必须无参可实例化。
+ */
+public class GearInGunnerySkill {
+
+    private static final Logger LOG = Global.getLogger(GearInGunnerySkill.class);
+
+    /** 数据侧技能 id(skill_data.csv 行 + GearIn_gunnery.skill 的 id 字段，三者必须逐字一致)。 */
+    public static final String SKILL_ID = "GearIn_gunnery";
+
+    /** 数值常量：与 .skill 的 effectGroups、skill_data.csv 行、页面描述文本保持一致。 */
+    public static final float DAMAGE_BONUS = 15f;
+    public static final float DAMAGE_BONUS_ELITE = 5f;
+    public static final float AIM_BONUS = 100f;
+    public static final float FIGHTER_SPEED_BONUS = 10f;
+    public static final float FLEET_BURN_BONUS = 2f;
+    public static final float COMMAND_POINTS_BONUS = 1f;
+
+    /** DESCRIPTION：纯文本行；数值写入由其它 effect type 承担。 */
+    public static class Level0 implements DescriptionSkillEffect {
+        @Override
+        public Color getTextColor() {
+            return null;
+        }
+
+        @Override
+        public String getString() {
+            return "Precision gunnery drills: ballistic and energy weapon damage up by 15%, "
+                    + "autofire accuracy up by 100%, fighters' top speed up by 10%, "
+                    + "fleet burn up by 2, and command points up by 1.";
+        }
+
+        @Override
+        public String[] getHighlights() {
+            return new String[] {"15%", "100%", "10%", "2", "1"};
+        }
+
+        @Override
+        public Color[] getHighlightColors() {
+            Color h = Misc.getHighlightColor();
+            return new Color[] {h, h, h, h, h};
+        }
+    }
+
+    /** SHIP：被驾驶舰船 (角色为舰长 / 指挥官时作用于其旗舰)，同时提供 fleet total 行。 */
+    public static class Level1 extends BaseSkillEffectDescription implements ShipSkillEffect, FleetTotalSource {
+
+        @Override
+        public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
+            stats.getBallisticWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS);
+            stats.getEnergyWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS);
+            stats.getAutofireAimAccuracy().modifyFlat(id, AIM_BONUS * 0.01f);
+            LOG.info(String.format("GearIn gunnery ship apply: id=%s level=%.1f hull=%s damage=+%.0f%% aim=+%.0f%%",
+                    id, level, hullSize, DAMAGE_BONUS, AIM_BONUS));
+        }
+
+        @Override
+        public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
+            stats.getBallisticWeaponDamageMult().unmodify(id);
+            stats.getEnergyWeaponDamageMult().unmodify(id);
+            stats.getAutofireAimAccuracy().unmodify(id);
+        }
+
+        @Override
+        public String getEffectDescription(float level) {
+            return "+" + (int) DAMAGE_BONUS + "% ballistic and energy weapon damage, "
+                    + "+" + (int) AIM_BONUS + "% autofire accuracy";
+        }
+
+        @Override
+        public String getEffectPerLevelDescription() {
+            return null;
+        }
+
+        @Override
+        public ScopeDescription getScopeDescription() {
+            return ScopeDescription.PILOTED_SHIP;
+        }
+
+        /** fleet total：整备界面 (refit) 的舰队构成表按 label+value 去重后展示这一行。 */
+        @Override
+        public FleetTotalItem getFleetTotalItem() {
+            FleetTotalItem item = new FleetTotalItem();
+            item.label = "Gunnery damage bonus";
+            item.value = "+" + (int) DAMAGE_BONUS + "%";
+            item.sortOrder = 50;
+            item.tooltipCreator = new TooltipCreator() {
+                @Override
+                public boolean isTooltipExpandable(Object tooltipParam) {
+                    return false;
+                }
+
+                @Override
+                public float getTooltipWidth(Object tooltipParam) {
+                    return TOOLTIP_WIDTH;
+                }
+
+                @Override
+                public void createTooltip(TooltipMakerAPI tooltip, boolean expanded, Object tooltipParam) {
+                    tooltip.addPara("Ballistic and energy weapon damage bonus granted to the piloted ship "
+                            + "while this skill is learned.", 0f);
+                }
+            };
+            return item;
+        }
+    }
+
+    /** SHIP(精英组)：技能到 2 级 (精英) 后追加的加成。 */
+    public static class Level1A extends BaseSkillEffectDescription implements ShipSkillEffect {
+
+        @Override
+        public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
+            stats.getBallisticWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS_ELITE);
+            stats.getEnergyWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS_ELITE);
+            LOG.info(String.format("GearIn gunnery elite apply: id=%s level=%.1f hull=%s damage=+%.0f%%",
+                    id, level, hullSize, DAMAGE_BONUS_ELITE));
+        }
+
+        @Override
+        public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
+            stats.getBallisticWeaponDamageMult().unmodify(id);
+            stats.getEnergyWeaponDamageMult().unmodify(id);
+        }
+
+        @Override
+        public String getEffectDescription(float level) {
+            return "+" + (int) DAMAGE_BONUS_ELITE + "% ballistic and energy weapon damage";
+        }
+
+        @Override
+        public String getEffectPerLevelDescription() {
+            return null;
+        }
+
+        @Override
+        public ScopeDescription getScopeDescription() {
+            return ScopeDescription.PILOTED_SHIP;
+        }
+    }
+
+    /** SHIP_FIGHTERS：本舰 (被驾驶舰船) 起飞的战机，起飞时由 FighterLaunchBayAPI 应用。 */
+    public static class LevelShipFighters extends BaseSkillEffectDescription implements ShipSkillEffect {
+
+        @Override
+        public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
+            stats.getMaxSpeed().modifyPercent(id, FIGHTER_SPEED_BONUS);
+            LOG.info(String.format("GearIn gunnery fighters apply: id=%s level=%.1f hull=%s speed=+%.0f%%",
+                    id, level, hullSize, FIGHTER_SPEED_BONUS));
+        }
+
+        @Override
+        public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
+            stats.getMaxSpeed().unmodify(id);
+        }
+
+        @Override
+        public String getEffectDescription(float level) {
+            return "+" + (int) FIGHTER_SPEED_BONUS + "% top speed for fighters launched by the piloted ship";
+        }
+
+        @Override
+        public String getEffectPerLevelDescription() {
+            return null;
+        }
+
+        @Override
+        public ScopeDescription getScopeDescription() {
+            return ScopeDescription.SHIP_FIGHTERS;
+        }
+    }
+
+    /** FLEET：角色指挥舰队的 MutableFleetStatsAPI，由 refreshCharacterStatsEffects 统一重放。 */
+    public static class LevelFleet extends BaseSkillEffectDescription implements FleetStatsSkillEffect {
+
+        @Override
+        public void apply(MutableFleetStatsAPI stats, String id, float level) {
+            stats.getFleetwideMaxBurnMod().modifyFlat(id, FLEET_BURN_BONUS);
+            LOG.info(String.format("GearIn gunnery fleet apply: id=%s level=%.1f burn=+%.0f",
+                    id, level, FLEET_BURN_BONUS));
+        }
+
+        @Override
+        public void unapply(MutableFleetStatsAPI stats, String id) {
+            stats.getFleetwideMaxBurnMod().unmodifyFlat(id);
+        }
+
+        @Override
+        public String getEffectDescription(float level) {
+            return "+" + (int) FLEET_BURN_BONUS + " fleet burn level";
+        }
+
+        @Override
+        public String getEffectPerLevelDescription() {
+            return null;
+        }
+
+        @Override
+        public ScopeDescription getScopeDescription() {
+            return ScopeDescription.FLEET;
+        }
+    }
+
+    /** CHARACTER_STATS：角色自身数值，由 refreshCharacterStatsEffects 统一重放。 */
+    public static class LevelStats extends BaseSkillEffectDescription implements CharacterStatsSkillEffect {
+
+        @Override
+        public void apply(MutableCharacterStatsAPI stats, String id, float level) {
+            stats.getCommandPoints().modifyFlat(id, COMMAND_POINTS_BONUS);
+            LOG.info(String.format("GearIn gunnery stats apply: id=%s level=%.1f commandPoints=+%.0f",
+                    id, level, COMMAND_POINTS_BONUS));
+        }
+
+        @Override
+        public void unapply(MutableCharacterStatsAPI stats, String id) {
+            stats.getCommandPoints().unmodify(id);
+        }
+
+        @Override
+        public String getEffectDescription(float level) {
+            return "+" + (int) COMMAND_POINTS_BONUS + " command point";
+        }
+
+        @Override
+        public String getEffectPerLevelDescription() {
+            return null;
+        }
+
+        @Override
+        public ScopeDescription getScopeDescription() {
+            return ScopeDescription.FLEET;
+        }
+    }
+}
+```
+
+:::
+
+## 关键故障实验：技能效果叠加后无法解除
+
+把 `LevelShipFighters.apply()` 中的 modifier ID 临时改成自造字符串，同时保留原来的 `unapply()`。学习技能后再解除，战机速度加成仍会残留。
 
 **局部故障片段：**
 
 ```java
 // 故障片段
-if (newGame) { sector.getListenerManager().addListener(listener, true); }
+stats.getMaxSpeed().modifyFlat("gunnery", 10f);
 ```
 
 **局部修正片段：**
 
 ```java
 // 修正片段
-if (!sector.getListenerManager().hasListenerOfClass(
-        GearInLocationChangeListener.class)) {
-    sector.getListenerManager().addListener(
-            new GearInLocationChangeListener(), true);
-}
+stats.getMaxSpeed().modifyPercent(id, FIGHTER_SPEED_BONUS);
 ```
 
-复验：新档中切换一次星系，保存并读档，再切换一次；两次都应产生一条位置日志。连续读档后，每次地点变化仍只出现一条日志。
+`unapply()` 使用同一个引擎 ID 撤销：
+
+```java
+stats.getMaxSpeed().unmodify(id);
+```
+
+原因是 `MutableStat` 以 modifier ID 保存来源；`"gunnery"` 与引擎传入的效果 ID 是两个键，`unmodify(id)` 无法删除前者。复验时依次把技能设为 1、0、1 级，并让舰载机重新起飞；每轮 1 级都应只有 10% 加成，0 级应恢复基础速度。
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 [C6-S1]、`GearInModPlugin`([C6-S2]，含本节调用点片段) 与本节三个类。
+前置数据：既有 MOD 布局与编译链路 (前置知识所列)、`GearIn_gunnery.skill`、`skill_data.csv` 行、`GearInGunnerySkill` 源码 (含读取与调用点片段中的临时钩子)。
 
-1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`。
-2. 新建生涯，正常游玩，再按事件边界逐个触发：打开/关闭市场、买卖货物、与敌对舰队交战、改变声望。
-3. 连续跳跃 5 次，进出超空间或星系。
-4. 保存后读档，再次跳跃并打开市场；随后退出到主菜单，再进档一次。
-5. 把 `daysToLive` 设为 30 重新构建，进档等待约 300 真实秒。
-6. 暂停游戏中打开市场。
-7. 打开游戏日志 (`Starsector/starsector-core/starsector.log`)，查看 `GearIn listener` 条目。
+1. **资源准备**：冒烟期间把 `skill_data.csv` 的 icon 列指向原版 `graphics/icons/skills/gunnery_implants.png`。
+2. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类。
+3. **启动与注册**：新建生涯 (或读档)，在 `starsector.log` 中观察 `GearIn_gunnery` 的技能加载记录。
+4. **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (放在 `onGameLoad` 内)，随后打开舰队界面 (F 键) 并进入一场战斗部署。
+5. **界面核对**：打开技能树 (C 键)、整备界面 (R 键) 与舰队面板，查看战斗部署界面的指挥点数与武器伤害。
+6. **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)`。
+7. **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill`。
+8. 打开 `starsector.log`，查看 `GearIn gunnery` 前缀的 apply 日志；在技能树、整备界面、舰队面板和战斗部署界面观察对应数值。
 
 预期结果：
 
-- **游戏构建**：`BUILD SUCCESSFUL`；`jar tf jars/GearIndustry.jar` 能看到三个类的 `.class` 条目
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类；启动后加载期无 `gear_in` 引起的 ERROR (注意 icon 列在冒烟期间指向原版图标)。
+- **注册确认**：`starsector.log` 出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]` (loadSkills 的加载日志)，没有 `Skipping skill [...]` 或 `Skipping loading skill [...]` 两行。
+- **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (见读取与调用点片段) 生效后，日志立即出现。
 
-- **新建生涯与事件边界**：未触发事件时日志不出现周期性的 `GearIn listener` 输出 (监听器是事件驱动，不产生周期日志)，本身即 "注册成功且无副作用" 的判据。触发后的日志按事件核对：
+    ```text
+    GearIn gunnery stats apply: id=GearIn_gunnery_stats_4 level=1.0 commandPoints=+1 GearIn gunnery fleet apply: id=GearIn_gunnery_stats_3 level=1.0 burn=+2
+    ```
 
-- 打开市场交互：`GearIn listener: market opened: <市场名> (size N)`；关闭：`GearIn listener: market closed: <市场名>`。
+    (FLEET 与 CHARACTER\_STATS 在 `refreshCharacterStatsEffects` 内即时重放；`_stats_3` / `_stats_4` 与 "技能等级" 一节的 effect id 组合规则一致。)
+- **stats 重建后 SHIP 效果**：打开舰队界面 (F 键，触发成员 stats 重建) 或进入一场战斗部署，日志出现。
 
-    - 市场买入/卖出 (或整备界面购买舰船/武器/战机)：每次结算出现 `GearIn listener: trade at <市场名>, credit value <数值>`。
-    - 遭遇战：战斗阶段出现 `GearIn listener: battle occurred, player involved=true, winner=...` 与 `GearIn listener: battle finished, ...`(玩家遭遇战各一次)；战斗结算后出现 `GearIn listener: player engagement resolved, didPlayerWin=<true/false>`；出现战利品时 `GearIn listener: encounter loot generated, N stacks`。
-    - 改变与势力的声望 (完成任务、送礼、攻击势力目标)：`GearIn listener: reputation change vs faction <id> by +X.XX`。
-    - 任何舰队入地/离场 (包括 AI 舰队)：`fleet spawned` / `fleet despawned, reason=<REASON>` —— 活动星区里这类日志会比较频繁，属正常。
-    - 启动与游玩全程无 `gear_in` 引起的 `ERROR`。
-- **位置监听器**：前 5 次出现 `current location changed`；第 5 次后出现 `location listener removed itself after 5 reports`，第 6 次起不再出现
+    ```text
+    GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damage=+15% aim=+100%
+    ```
 
-- **读档**：无重复注册 —— 无 `trade at` 成双 (`REGISTER_MARK` 注册标记 + `addListener` 去重)；位置监听器因 transient 读档清空、由 `hasListenerOfClass` 判空重新注册 (读档后继续出现位置变化日志且不叠加，计数从 5 次重新开始)；退出到主菜单后生涯引擎停止、日志停止，再进档按第 3、4 项继续
+    (hull 以实际玩家旗舰为准。) 战斗内载机起飞时出现 `GearIn gunnery fighters apply: id=GearIn_gunnery_ship_fighters_2 ... speed=+10%`。
+- **界面**：C 键技能树战斗系出现 "Gunnery" 行与 DESCRIPTION 文本；R 键整备界面舰队构成表出现 `Gunnery damage bonus +15%` 行，悬停显示自定义 tooltip；舰队面板 burn 提升 2(无条件叠加，上限 20)；战斗部署界面指挥点数 +1；玩家旗舰武器伤害倍率提升 (`GearIn_artizan` 等装配里实弹 / 能量武器 +15%，精英 +5%)，瞄准误差降低。
+- **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)` 后，日志追加 `GearIn gunnery elite apply: id=GearIn_gunnery_ship_5 level=2.0 hull=... damage=+5%`。
+- **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill` 后日志不再出现新 apply 行，burn / 指挥点数 / fleet total 行恢复基线；`unapply` 用同一 id 解除，数值无残留。
 
-- **自停演示**：挂载约 300 真实秒后出现：
-
-- **暂停语义**：监听器不受暂停影响 (事件驱动，暂停中打开市场仍会触发 `market opened`)；若用 `addListenerWithTimeout` / `reRegister` 演示超时，暂停期间超时不计时 (游戏天不前进)，恢复后继续
-
-- 操作 7b：把通道二的 `addListener(..., true)` 改为不加 `hasListenerOfClass` 判空并去掉 transient 参数，读档两次。
-
-清理：把 `daysToLive` 恢复为 `-1`，并恢复通道二的 `hasListenerOfClass` 判断与 transient 参数。
+清理：删除 `onGameLoad` 中临时添加的 `setSkillLevel("GearIn_gunnery", ...)` 钩子，或把技能等级设为 `0f` 后移除该调用。
 
 ## 故障分析
 
-- **监听器没有产生任何日志**：对象没有加入 sector 或 `ListenerManagerAPI` 的注册表。
+- **技能没有出现在技能树中**：`.skill` 缺少 `skill_data.csv` 注册行，或各处 ID 不一致。
 
-    - **解决方案**：把注册放在 `onGameLoad` 或 `onNewGame`。
+    - **解决方案**：补齐注册并统一 ID，重启。
 
-- **`onApplicationLoad` 抛出空指针异常**：该阶段尚未创建 sector，注册代码解引用了 `Global.getSector()`。
+- **技能定义被静默跳过**：技能 ID 与原版或其他 MOD 重复，后加载的定义不会覆盖已有项。
 
-    - **解决方案**：将生涯监听器注册移到游戏载入回调，重启。
+    - **解决方案**：改用带 MOD 前缀的唯一 ID，重启。
 
-- **同一事件回调两次**：对象同时进入两条监听通道，或读档时重复注册。
+- **效果实例化时出现 `ClassCastException`**：`.skill` 的 `type` 与脚本实现的效果接口不匹配。
 
-    - **解决方案**：只保留一条通道并使用独立 `REGISTER_MARK`。
+    - **解决方案**：让 `type` 对应正确接口族，再触发 stats 重建。
 
-- **读档后事件不再触发**：transient 监听器在读档时被清空。
+- **首次应用效果时报 `Problem loading class`**：脚本类名错误，或效果类缺少无参构造器。
 
-    - **解决方案**：载入回调中用 `hasListenerOfClass` 判空补注册。
+    - **解决方案**：核对完整类名并保留可访问的无参构造器，重新进入触发该效果的界面或战斗。
 
-- **脚本结束后事件仍在触发**：`isDone()` 只移除脚本，没有清理监听器注册。
+- **移除技能后数值仍然残留**：`apply` 和 `unapply` 使用了自造 modifier ID，无法成对解除。
 
-    - **解决方案**：到期时显式调用 `removeListener`。
+    - **解决方案**：两处都使用引擎传入的 `id`，重放 stats。
 
-- **超时监听器迟迟不移除**：`daysToKeep` 使用游戏天，并在暂停期间停止扣减。
+- **加成只作用于旗舰**：`.skill` 的 `type` 是 `SHIP`，而 `scope` 只改变说明文字。
 
-    - **解决方案**：按游戏天设置期限。
+    - **解决方案**：根据目标对象改用正确的效果类型。
 
-- **生命周期脚本第一帧就消失**：`isDone()` 初始返回 true，清理监听器的 `advance` 路径没有执行。
+- **战前找不到战机加成**：`SHIP_FIGHTERS` 在战机起飞并生成战斗 stats 后应用。
 
-    - **解决方案**：让完成标记初始为 false，到期后成对移除监听器。
+    - **解决方案**：进入战斗放出战机。
 
-- **舰队事件日志持续刷屏**：回调接收了所有 AI 舰队事件。
+- **精英效果始终不生效**：二级效果设置了 `requiredSkillLevel: 2`，技能却没有启用 `elite`。
 
-    - **解决方案**：按 `fleet.isPlayerFleet()`、势力 ID 或业务条件过滤。
+    - **解决方案**：加入 `"elite": true`，重新加点。
 
-- **玩家战斗次数偏高**：统计使用了反映战斗过程的 `reportBattleOccurred`。
+- **舰队汇总行少了一项**：两个效果返回了相同的 `label` 与 `value`，汇总键发生重复。
 
-    - **解决方案**：玩家结算改用 `reportPlayerEngagement` 与 `didPlayerWin()`。
+    - **解决方案**：让 label 或 value 可区分。
 
-- **市场业务执行两次**：同一逻辑分别注册为 `CampaignEventListener` 和 `ColonyInteractionListener`。
+- **SHIP 效果日志延迟出现**：这类效果要等成员 stats 重建或舰船部署后才应用。
 
-    - **解决方案**：为该业务选择一个通道，或明确拆分职责。
+    - **解决方案**：打开舰队界面触发同步，或部署舰船后检查对应日志。
 
-- **旧存档始终没有监听器**：注册复用了已置位的其他功能标记。
+- **启动时纹理加载失败**：`skill_data.csv` 的 icon 指向不存在的文件。
 
-    - **解决方案**：为监听器使用独立 `REGISTER_MARK`。
+    - **解决方案**：修正为实际纹理路径，重启。
 
 ## 总结
 
-本节建立了一条从注册到回调的完整判断链：两条通道决定监听器存哪里、怎么去重、由谁派发，21 个方法决定哪些事件值得监听，生命周期规则决定注册与移除的时机。动手前先回答走哪条通道、什么时候注册、什么时候移除这三个问题 —— 三个答案都落在 `onGameLoad` 的注册块和配对脚本里，而不是散落在构造器或 `onApplicationLoad`。
+本节完成了技能域从数据到生效的完整流程：三件套在 `loadSkills` 汇成 `SkillSpecAPI`，type 决定作用对象，等级决定是否生效，fleet total 把需要汇总的数值送到整备界面。
 
-排错时沿用 "触发点 → 派发者 → 回调签名" 的边界分析法。回调没触发，先确认事件真的发生 (边界点)，再确认派发者遍历了注册表，最后核对签名与注册时机。这套方法可以迁移到同一家族的其他事件驱动机制：能力与对话框事件、战斗结算后的流程钩子、经济与声望的联动处理，都能沿这条链逐段核对 "回调为什么没触发"。
+留作复用的判断有三条。第一，技能没出现且无报错时，先查两条跳过日志，再核对 `.skill` 的 `type` 与脚本类实现的接口是否对应。第二，生效范围只看 `type`，`scope` 只是 UI 文本；2 级门槛必须配 `elite:true`。第三，effect id 就是 modifier id，引擎传入什么就用什么，`unapply` 用同一个 id 解除 —— 数值残留与解除失效几乎都源于这里。
 
-最容易反复踩中的判断有三个。持久监听器随存档序列化，字段必须可序列化；transient 监听器读档后必然清空，必须重新注册；脚本 `isDone()` 只清理脚本，监听器必须显式移除。把这三条连同 "游戏天、暂停冻结" 的超时语义写进注释，可以少背许多与您无关的报错黑锅。
+这套 "type → 作用域 → 应用入口" 模型也适用于生涯数值链下游：从人物经 `FleetMemberAPI` 到舰船 stats 的交接中，SHIP / ALL\_SHIPS\_IN\_FLEET 效果正是 "人物技能到达成员 stats" 的关键一跳。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.CampaignEventListener`：公开生涯监听器接口，全接口 21 个方法，含 `FleetDespawnReason` 枚举 (6 值)。
-- `com.fs.starfarer.api.campaign.SectorAPI`：通道一注册入口 (`addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners`) 与 `getListenerManager()`。
-- `com.fs.starfarer.api.campaign.BaseCampaignEventListener`：全方法空实现基类；`permaRegister` 构造器与 `reRegister(daysToKeep)`。
-- `com.fs.starfarer.api.campaign.BaseCampaignEventListenerAndScript`：监听器与 `EveryFrameScript` 绑定在同一对象的基类 (原版 `CoreScript` 同形态)。
-- `com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI`：通道二类型化仓库，7 个方法。
-- `com.fs.starfarer.api.campaign.listeners.ListenerUtil`：类型化事件派发静态方法族 (按 `getListeners(X.class)` 遍历)。
-- `com.fs.starfarer.api.campaign.listeners.CurrentLocationChangedListener`：本节类型化监听器接口 (单方法)。
-- `com.fs.starfarer.api.util.TimeoutTracker`：`addListenerWithTimeout` 的底层超时跟踪器。
-- `com.fs.starfarer.api.campaign.PlayerMarketTransaction`：贸易事件的取值入口 (`getMarket` / `getSubmarket` / `getCreditValue` / `getLineItems`)。
-- `com.fs.starfarer.api.campaign.BattleAPI`：`isPlayerInvolved()`；`com.fs.starfarer.api.combat.EngagementResultAPI`：`didPlayerWin()`。
-- `com.fs.starfarer.api.impl.campaign.CoreScript`：原版 "监听器 + 脚本" 实例，组合形态参考。
-
-## 完整最小例
-
-::: details 完整成品：GearInCampaignListener
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.BaseCampaignEventListener;
-import com.fs.starfarer.api.campaign.BattleAPI;
-import com.fs.starfarer.api.campaign.CampaignEventListener.FleetDespawnReason;
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.CargoAPI;
-import com.fs.starfarer.api.campaign.FleetEncounterContextPlugin;
-import com.fs.starfarer.api.campaign.PlayerMarketTransaction;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.combat.EngagementResultAPI;
-
-/**
- * 完整最小例：Sector 级生涯事件监听器 (CampaignEventListener 角色)。
- * 注册入口：onGameLoad 门控块 (页面调用点片段，REGISTER_MARK 一次性门控)。
- * 注册与自停由配对脚本 GearInListenerLifecycleScript 管理 —— 脚本到期后显式
- * removeListener：脚本结束不等于监听器移除 (硬规则)。BaseCampaignEventListener
- * 提供全接口 21 方法的空实现，本类只覆写关心的事件边界 (市场/贸易/战斗/舰队/声望)。
- */
-public class GearInCampaignListener extends BaseCampaignEventListener {
-
-    /** 存档持久化标记：本监听器及其生命周期脚本是否已在该存档注册过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_CampaignListener";
-
-    private static final Logger LOG = Global.getLogger(GearInCampaignListener.class);
-
-    /** 不在构造器自注册；注册由调用点在 onGameLoad 门控块内显式执行。 */
-    public GearInCampaignListener() {
-        super(false);
-    }
-
-    // ---- 事件边界：市场 ----
-
-    @Override
-    public void reportPlayerOpenedMarket(MarketAPI market) {
-        LOG.info(String.format("GearIn listener: market opened: %s (size %d)",
-                market.getName(), market.getSize()));
-    }
-
-    @Override
-    public void reportPlayerClosedMarket(MarketAPI market) {
-        LOG.info("GearIn listener: market closed: " + market.getName());
-    }
-
-    // ---- 事件边界：贸易 ----
-
-    @Override
-    public void reportPlayerMarketTransaction(PlayerMarketTransaction transaction) {
-        LOG.info(String.format("GearIn listener: trade at %s, credit value %.0f",
-                transaction.getMarket().getName(), transaction.getCreditValue()));
-    }
-
-    @Override
-    public void reportEncounterLootGenerated(FleetEncounterContextPlugin plugin, CargoAPI loot) {
-        LOG.info("GearIn listener: encounter loot generated, " + loot.getStacksCopy().size() + " stacks");
-    }
-
-    // ---- 事件边界：战斗 ----
-
-    @Override
-    public void reportBattleOccurred(CampaignFleetAPI primaryWinner, BattleAPI battle) {
-        LOG.info(String.format("GearIn listener: battle occurred, player involved=%s, winner=%s",
-                battle.isPlayerInvolved(), winnerName(primaryWinner)));
-    }
-
-    @Override
-    public void reportBattleFinished(CampaignFleetAPI primaryWinner, BattleAPI battle) {
-        LOG.info(String.format("GearIn listener: battle finished, player involved=%s, winner=%s",
-                battle.isPlayerInvolved(), winnerName(primaryWinner)));
-    }
-
-    @Override
-    public void reportPlayerEngagement(EngagementResultAPI result) {
-        LOG.info("GearIn listener: player engagement resolved, didPlayerWin=" + result.didPlayerWin());
-    }
-
-    // ---- 事件边界：舰队 ----
-
-    @Override
-    public void reportFleetSpawned(CampaignFleetAPI fleet) {
-        LOG.info("GearIn listener: fleet spawned: " + fleet.getName() + " (" + fleet.getFaction().getId() + ")");
-    }
-
-    @Override
-    public void reportFleetDespawned(CampaignFleetAPI fleet, FleetDespawnReason reason, Object param) {
-        LOG.info("GearIn listener: fleet despawned: " + fleet.getName() + ", reason=" + reason);
-    }
-
-    // ---- 事件边界：声望 ----
-
-    @Override
-    public void reportPlayerReputationChange(String faction, float delta) {
-        LOG.info(String.format("GearIn listener: reputation change vs faction %s by %+.2f", faction, delta));
-    }
-
-    @Override
-    public void reportPlayerReputationChange(PersonAPI person, float delta) {
-        LOG.info(String.format("GearIn listener: reputation change vs %s by %+.2f",
-                person.getName().getFullName(), delta));
-    }
-
-    private static String winnerName(CampaignFleetAPI fleet) {
-        if (fleet == null) {
-            return "none";
-        }
-        return fleet.getName() + " (" + fleet.getFaction().getId() + ")";
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInListenerLifecycleScript
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignClockAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
-
-/**
- * 完整最小例：监听器生命周期脚本 (EveryFrameScript 角色)。
- *
- * 与 GearInCampaignListener(监听器角色) 配对：原组合类拆分出的脚本半身。
- * 注册入口：onGameLoad 门控块内与监听器一同注册 (sector.addScript(this))。
- * 职责：按游戏天累计挂载时长，daysToLive >= 0 且到期时显式
- * sector.removeListener(listener) 并自停 —— isDone() 只清理脚本列表，
- * 监听器注册表必须单独移除，否则事件继续派发且实例随存档序列化 (硬规则)。
- */
-public class GearInListenerLifecycleScript implements EveryFrameScript {
-
-    private static final Logger LOG = Global.getLogger(GearInListenerLifecycleScript.class);
-
-    /** 受管监听器：到期时由本脚本显式移除。 */
-    private GearInCampaignListener listener;
-
-    /** 挂载以来的游戏天数 (精确累加，保留小数)；随存档序列化，读档后继续累计。 */
-    private float daysActive = 0f;
-
-    /** 演示参数：挂载满多少游戏天后自停并移除监听器；< 0 表示常驻不停止。 */
-    private int daysToLive = -1;
-
-    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
-    private boolean done = false;
-
-    public GearInListenerLifecycleScript(GearInCampaignListener listener) {
-        this.listener = listener;
-    }
-
-    /** 修改自停天数；改回 -1 恢复常驻。 */
-    public void setDaysToLive(int daysToLive) {
-        this.daysToLive = daysToLive;
-    }
-
-    @Override
-    public boolean isDone() {
-        return done;
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        SectorAPI sector = Global.getSector();
-        CampaignClockAPI clock = sector.getClock();
-
-        // amount 是上一帧真实秒数；经时钟换算才是本帧的游戏天数 (10 真实秒 = 1 游戏日)。
-        daysActive += clock.convertToDays(amount);
-
-        if (daysToLive >= 0 && daysActive >= daysToLive) {
-            done = true;
-            // 硬规则：脚本结束不等于监听器移除。isDone() 只清理脚本列表，
-            // 监听器注册表必须显式 removeListener，否则事件继续派发。
-            sector.removeListener(listener);
-            LOG.info(String.format(
-                    "GearIn listener: removed itself after %.1f game days (isDone()=true)", daysActive));
-        }
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInLocationChangeListener
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.LocationAPI;
-import com.fs.starfarer.api.campaign.listeners.CurrentLocationChangedListener;
-
-/**
- * 完整最小例：经 ListenerManagerAPI 注册的类型化监听器 (typed listener)。
- *
- * 与 GearInCampaignListener(Sector 级 CampaignEventListener 通道) 不同，本类走的是
- * 第二条通道：SectorAPI.getListenerManager().addListener(listener, isTransient) 注册、
- * removeListener(this) 移除，事件由 ListenerUtil 按接口类型派发
- * (本类对应 CurrentLocationChangedListener，派发点在生涯引擎的 advance
- * 检测到当前地点变化时)。
- *
- * 注册入口：onGameLoad(调用点片段见页面正文)，用 transient=true 注册 ——
- * transient 监听器不随存档保存 (ListenerManagerAPI 的 transientListeners 仓库读档时
- * 重建为空)，因此读档后必须重新注册；调用点用 hasListenerOfClass 判空
- * 再补注册即可覆盖旧档。
- *
- * 演示点：
- * 1. reportCurrentLocationChanged(prev, curr)：玩家当前地点变化 (进出超空间、进入星系) 时触发；
- * 2. 自移除：触发满 reportsLeft 次后 removeListener(this) 并打日志 —— 监听器在不再需要时
- *    必须在合适时机移除，否则事件持续派发 (硬规则)；
- * 3. 全部字段可随存档序列化；本类字段不涉及瞬态句柄。
- */
-public class GearInLocationChangeListener implements CurrentLocationChangedListener {
-
-    private static final Logger LOG = Global.getLogger(GearInLocationChangeListener.class);
-
-    /** 演示参数：最多触发多少次后自移除。 */
-    private int reportsLeft = 5;
-
-    public GearInLocationChangeListener() {
-        // 空构造：注册由调用方执行 (onGameLoad，见页面调用点片段)
-    }
-
-    @Override
-    public void reportCurrentLocationChanged(LocationAPI prev, LocationAPI curr) {
-        LOG.info(String.format("GearIn listener: current location changed: %s -> %s",
-                locationName(prev), locationName(curr)));
-
-        reportsLeft--;
-        if (reportsLeft <= 0) {
-            Global.getSector().getListenerManager().removeListener(this);
-            LOG.info("GearIn listener: location listener removed itself after 5 reports");
-        }
-    }
-
-    private static String locationName(LocationAPI location) {
-        return location == null ? "null" : location.getName();
-    }
-}
-```
-
-:::
+- `com.fs.starfarer.api.characters.SkillSpecAPI`：技能规格对象 (`getSkillSpec(id)` 的返回类型)；其内部类型 `SkillEffectSpecAPI` 承载 `getType` / `getAsXxxEffect` / `getRequiredSkillLevel` / `getUnlockedHullMods` 等效果字段访问。
+- `com.fs.starfarer.api.characters.SkillEffectType`：11 个效果类型枚举：
+    - `SHIP` / `ALL_SHIPS_IN_FLEET` / `SHIP_FIGHTERS` / `ALL_FIGHTERS_IN_FLEET` / `CHARACTER_STATS` / `FLEET`
+    - `HULLMOD_UNLOCK` / `ABILITY_UNLOCK` / `GOVERNED_OUTPOST` / `ALL_OUTPOSTS` / `DESCRIPTION`。
+- `com.fs.starfarer.api.characters.ShipSkillEffect` / `FleetStatsSkillEffect` / `CharacterStatsSkillEffect` / `MarketSkillEffect`：继承 `LevelBasedEffect` 的效果接口族；`DescriptionSkillEffect` 是独立接口，提供描述文本方法。
+- `com.fs.starfarer.api.characters.LevelBasedEffect`：数值与范围效果接口的共同父接口，`getEffectDescription` / `getEffectPerLevelDescription` / `getScopeDescription` 与 `ScopeDescription` 枚举。
+- `com.fs.starfarer.api.characters.FleetTotalSource` / `FleetTotalItem`：fleet total 行的提供接口与数据对象 (`label` / `value` / `sortOrder` / `tooltipCreator`)。
+- `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：`getSkillLevel` / `setSkillLevel` / `increaseSkill` / `hasSkill` / `refreshCharacterStatsEffects` / `getCommandPoints` 所在。
+- `com.fs.starfarer.api.fleet.MutableFleetStatsAPI`：`getFleetwideMaxBurnMod` 等舰队 stats 访问器。
+- `com.fs.starfarer.api.SettingsAPI`：`getSkillSpec` / `getSortedSkillIds` 读取入口。
+- `com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription`：示例各效果类继承的基类 (`TOOLTIP_WIDTH` 与 fleet total 聚合做法)。
+- `data/characters/skills/skill_data.csv`：技能注册表 (id / order / tier / reqPoints / 角色 flags / tags / icon)。
+- `data/characters/skills/GearIn_gunnery.skill`：本节技能定义 (aptitude / 等级组 / 效果清单)。
+- `data/characters/skills/aptitude_data.csv`：能力树分组表 (`effect_skill_id` 列)。
+- `data/characters/skills/gunnery_implants.skill`：原版 SHIP + 精英组样例 (本节示例的蓝本)。
+- `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
+- `Starsector/starsector-core/starsector.log`：游戏运行日志 (注册与 apply 日志的核对位置)。

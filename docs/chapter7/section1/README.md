@@ -1,294 +1,435 @@
-# 制作每帧战斗插件
+# 制作 MOD 入口类
 
-本节制作第一个每帧战斗插件，并在 `data/config/settings.json` 中完成注册。示例会把回调写入日志，用来确认插件生命周期和暂停时的推进方式。
+本节制作并登记 MOD 入口类，让已经加载的 JAR 真正收到游戏生命周期回调。示例会记录各回调的顺序，并用持久数据判断新存档初始化是否已经执行。
 
-*本节预期阅读时间：~15 分钟。*
+*本节预期阅读时间：\~15 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 在 `data/config/settings.json` 的 `plugins` 段注册每帧插件，并遵守 key 唯一、值为完整类名两条规则；
-- 解释插件生命周期：每场战斗开始时为每个注册类创建新实例，之后每帧调用实例的 `advance`，战斗结束实例销毁；
-- 用 `engine.isPaused()` 写对暂停期间的状态推进，并解释暂停期间 `advance` 仍然每帧被调用的原因；
-- 从症状定位插件五类典型故障：无行为、`Problem loading class`、暂停期间状态照常推进、第一帧空指针、第二场战斗数值接着涨。
+- 解释 `mod_info.json` 的 `modPlugin` 字段如何被解析 (可选字段)、实例何时创建 (启动资源加载期、进入主菜单前)、实例如何缓存，以及 "未写 modPlugin" 为什么会导致 MOD 一切正常但没有任何回调；
+- 按顺序列出全部生命周期回调的调用时机：应用启动 (`onApplicationLoad`)、新建生涯 (`onNewGame` → `onNewGameAfterProcGen` → `onNewGameAfterEconomyLoad` → `onEnabled` → `onNewGameAfterTimePass` → `onGameLoad(true)`)、读档 (仅中途启用时 `onEnabled` → `onGameLoad(false)`)、保存 (`beforeGameSave` → `afterGameSave` / `onGameSaveFailed`)、战斗期 AI picker 与 `onDevModeF8Reload`；
+- 解释 `onEnabled(boolean wasEnabledBefore)` 的触发条件 (MOD 不在存档的启用列表里时) 与参数含义，以及它为什么运行在一个独立新实例上；
+- 用 `SectorAPI.getPersistentData()` 写 "首次进入存档" 的一次性初始化标记 (`CLASS_MARK` 模式)，并解释没有这个标记时为什么每次读档都会重复执行；
+- 从 `starsector.log` 读出回调顺序，按 "启动失败 / 回调不执行 / 回调重复执行" 三类症状定位到具体原因。
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-- [C4-S1] 的测试战役入口与战斗验证方法；
-- [C6-S1] 的 Java 构建、JAR 输出与入口类；
-- [C6-S3] 的 `Global` 生命周期、战斗引擎实例边界与跨战斗引用规则。
+- [C1-S1] 的 MOD 目录、`mod_info.json` 可选字段、启动器与 `starsector.log`；
+- [C2-S1] 的注册、回调与完整类名一致规则；
+- [C3-S3] 的 `GearInModPlugin`、`onNewGame()` 与势力关系设置；
+- [C3-S4] 的 `GearInSystemGenerator` 与星系生成调用；
+- [C6-S1] 的 `src` 到 JAR 编译链、`mod_info.json` 的 `jars` 声明和 JAR 类优先规则。
 
-## 判断战斗帧语义
+## 文件与 API 链路
 
-游戏战斗以**帧**为单位运行，正常速度下每秒约 60 帧。每一帧，游戏推进舰船、结算武器，然后**依次调用每个插件的 `advance` 方法**：
+本节的读者任务是一条链，从声明入口类、让加载器实例化它、按顺序收到回调，到首次进入存档时完成一次性初始化。从声明到回调要经过以下环节：
 
-```text
-advance(float amount, List<InputEventAPI> events)
-```
+### 生命周期链路速查表
 
-`amount` 是距上一帧经过的秒数 (正常约 `0.017`)，`events` 是本帧的输入事件列表。插件收到的 `amount` 与 `getElapsedInLastFrame()` 是同一个数 (时间语义见 [C7-S3])。
+| 环节 | 文件或 API | 使用方 / 行为 |
+|---|---|---|
+| 声明 | `mod_info.json` 的 `modPlugin` | 可选字段：启动时读取，缺失时为 `null` |
+| 登记 | 资源加载期 | 每个已启用 MOD 的 `modPlugin` 类名注册进脚本类加载器；`null` 类名会被跳过 |
+| 实例化 | `ModManagerAPI.getEnabledModPlugins()` | 首次调用时按 `coreLifecyclePlugin`(原版 `CoreLifecyclePluginImpl`，恒为列表第一个)→ 各 MOD 顺序，经脚本类加载器按类名创建实例 (`Class.forName` \+ `newInstance`)，创建结果**缓存复用**；类名错误在加载期抛 `Error loading [...]`；`modPlugin` 为 `null` 的 MOD 直接跳过 |
+| 回调派发 | 游戏管理器 / MOD 启用记录 / 战斗状态 | 新档、读档、保存、F8 重载各节点对缓存列表循环调用 |
+| 首次进入门 | `SectorAPI.getPersistentData()` | 返回随存档保存的 `Map<String, Object>`；`CLASS_MARK` 模式用它做一次性初始化门 |
+| 实例化 (特例) | 启用状态通知 | `onEnabled` 触发时**每次都新建一个实例**再调用，与上面缓存的实例不是同一个对象 |
 
-## 注册战斗插件
+::: info modPlugin 缺失不是错误
 
-每帧插件在 `data/config/settings.json` 的 `plugins` 段登记 (MOD 中不存在该文件就新建，只写自己的条目)：
+MOD 正常启用，但 `getEnabledModPlugins` 对 `null` 类名直接跳过 —— **没有任何生命周期回调，且没有任何报错**。它是整个教程里最安静的失败方式：一切正常，只是永远不被叫醒；这也是 "回调不执行" 的首选排查方向。
+
+:::
+
+读链路时的另一个关键结论：除 `onEnabled` 外，全部回调 (含 picker) 都在**同一个缓存实例**上调用，且该实例跨存档复用。跨存档的状态**必须**放 persistent data，不能放实例字段。
+
+链路已经清楚，接下来按游戏进程的节点逐一确认回调时机与顺序，这是读日志时逐行对照的标尺。
+
+## 确认生命周期顺序
+
+回调名以 `com.fs.starfarer.api.ModPlugin` 为准 (共 19 个方法)。`BaseModPlugin` 为全部方法提供空实现，只覆写需要的方法。
+
+### 处理应用启动
+
+1. 资源加载期：创建脚本类加载器并登记各 MOD 的 `modPlugin` 类名。
+2. 全部资源与脚本加载完成后：对缓存列表逐个调用 **`onApplicationLoad()`**。这是整个游戏进程的第一个回调。
+    - 适合：版本检查、读取 `settings`、加载静态数据、初始化外部库 (shader 初始化就发生在这里)。
+    - 抛出的异常沿资源加载链向上传播，**游戏启动中止** (错误弹窗 + `starsector.log` 记 `ERROR`)。成熟实例正是利用这一点做版本门：`onApplicationLoad` 里检查 `Global.getSettings().getGameVersion()` 不是 `0.98a` 前缀就抛 `IllegalArgumentException`。
+
+::: caution 禁止在 onApplicationLoad 访问 Global.getSector()
+
+此刻 sector 尚未建立，`Global.getSector()` 返回 `null`，任何解引用都是 NPE。
+
+:::
+
+### 处理新建生涯
+
+按调用顺序：
+
+1. **`onNewGame()`**：在原版 SectorGen 与 `generators.csv` 插件之后、程序化生成 (`SectorProcGen`) 之前调用。新档生成星系/实体放这里 (新档生成页的生成入口)。此时经济尚未加载。
+2. **`onNewGameAfterProcGen()`**：程序化生成完成后。
+3. **`onNewGameAfterEconomyLoad()`**：`economy.json` 加载并初步推进之后。此时 `getMarket()` 已返回正确的市场 (API javadoc 原文)，适合访问市场、经济实体与人物。
+4. **`onEnabled(false)`**(经启用状态通知)：用户舰队创建、初始脚本运行之后。新档的存档启用列表为空，因此必然触发，`wasEnabledBefore=false`。
+5. **`onNewGameAfterTimePass()`**：初始约 2 个月时间推进之后。
+6. **`onGameLoad(true)`**：全部 `onNewGame*` 链结束后调用，与读档共用同一个入口。
+7. 新档流程末尾自动保存：**`beforeGameSave()` → `afterGameSave()`**(调用 `saveGame`)。
+
+### 处理读档
+
+1. 反序列化生涯引擎，其中含存档的 MOD 启用记录 (当前启用列表与历史上启用过的列表)。
+2. 读档时逐 MOD 核对启用状态：**只有该 MOD 不在存档的已启用列表里** (即 "中途把 MOD 加进已有存档") 时才调用 **`onEnabled(wasEnabledBefore)`**；`wasEnabledBefore=true` 表示这个存档历史上启用过该 MOD(卸了又装的存档)，否则为 `false`。已在列表里的 MOD 不触发。
+3. **`onGameLoad(false)`**：唯一参数表示这是读档 (`false`) 还是新档 (`true`)。
+4. 经济恢复与星区推进 (读档后恢复经济并继续推进时间)。
+
+### 处理存档保存
+
+1. **`beforeGameSave()`**：在写任何存档文件之前。适合清理 "不应当随存档保存" 的临时状态。
+2. 序列化 `campaign.xml`/`campaign.zip` 与 `descriptor.xml`。
+3. 成功：**`afterGameSave()`**；抛出任何异常：**`onGameSaveFailed()`**，并返回存档失败错误 (`starsector.log` 记 `Error saving game`)。
+
+### 处理战斗回调
+
+- AI picker 在战斗对象创建时调用 (调用点如弹丸生成、武器组与舰船创建)：**`pickShipAI`**(`member` 可为 `null`，`ship` 不可为 `null`)、**`pickWeaponAutofireAI`**、**`pickDroneAI`**、**`pickMissileAI`**。
+- 返回 `null` 即放弃本次选择权，游戏使用原版 AI(武器组用点防御自动开火 AI，舰船用基础舰船 AI 与战斗机 AI，导弹按类型使用各自的原版 AI，由创建处的回退分支完成)。
+- 返回 `new PluginPick<>(实例, PickPriority.MOD_SET)` 表示本 MOD 明确指定该 AI；多 MOD 竞争时按 `PickPriority` 的枚举序取最高优先级 (`getPriorityPlugin`)。MOD 的 picker 一律用 `MOD_SET` 及以上 (`MOD_SPECIFIC`/`HIGHEST` 用于更具体的场景)，原版内部用 `CORE_GENERAL`/`CORE_SET`/`CORE_SPECIFIC`。
+- **`onDevModeF8Reload()`**：devMode 下在战斗内按 F8 重载数据后调用，适合重建静态缓存 (成熟实例用它重建静态数据)。
+
+### 处理 Codex 生成
+
+`onAboutToStartGeneratingCodex()`、`onAboutToLinkCodexEntries()`、`onCodexDataGenerated()` 在 Codex 数据生成阶段按 "开始生成 → 链接条目 → 生成完成" 调用。这个顺序来自 `CodexDataV2` 的实际调用链，不是 `ModPlugin` 的 javadoc 承诺。
+
+成熟实例在 `onCodexDataGenerated()` 里为 Codex 条目写关联。本节示例不使用它们。
+
+回调时机已经明确，但要真正收到这些回调，`mod_info.json` 的声明必须正确。
+
+## 注册 MOD 入口
+
+声明只有几行，违规后果都发生在启动期，先看两条必须满足的规则：
+
+- `modPlugin` 的值**必须**是脚本类加载器能 `Class.forName` 实例化的完整类名。类不存在、包名/类名拼错 → 启动资源加载期抛 `Error loading [data.scripts.gearin.GearInModPlugin]`(原因是 ClassNotFoundException)**，启动失败**。
+- `modPlugin` 指向的类**必须**继承 `BaseModPlugin`(或实现 `ModPlugin` 全部 19 个方法)。类不是 `ModPlugin` 实现 → `getEnabledModPlugins` 里的强制转换抛 `ClassCastException`，**启动失败**。直接实现接口而非继承基类 → 编译期必须写满 19 个方法，基类用空实现作默认值 (`com.fs.starfarer.api.BaseModPlugin` javadoc 明确建议继承：将来 API 新增方法时基类会补空实现，直接实现接口的 MOD 会被破坏编译)。
+
+::: caution 回调内不得抛出未处理异常
+
+应用启动阶段 → **启动中止**；新档/读档阶段 → **对应流程中止并报错**；保存阶段 → **存档失败并回调 `onGameSaveFailed()`**。版本检查是唯一有意的例外。
+
+:::
+
+建议：
+
+- 在 `onApplicationLoad()` 里检查 `Global.getSettings().getGameVersion()` 是否以 `0.98a` 开头，不符就抛异常拒绝启动 (成熟实例都这么做)。不做检查的可观察结果：用户可能手动修改 `mod_info.json`，而在更高版本游戏上行为未定义，问题会在很晚的阶段才暴露。
+
+`mod_info.json` 追加一行 (其余字段沿用既有配置)：
 
 ```json
 {
-    "plugins": {
-        "gearInPauseAwarePlugin": "data.scripts.gearin.combat.GearInPauseAwarePlugin"
-    }
+  "id": "gear_in",
+  "name": "齿轮工业",
+  "author": "YourName",
+  "version": { "major": 0, "minor": 1, "patch": 0 },
+  "description": "Starsector MOD 教程的练习项目。",
+  "gameVersion": "0.98a-RC8",
+  "jars": ["jars/GearIndustry.jar"],
+  "modPlugin": "data.scripts.gearin.GearInModPlugin"
 }
 ```
 
-两条规则 (与船插的 CSV 注册同一逻辑)：
+`modPlugin` 与 `jars` 相互独立：`modPlugin` 只声明入口类名，类的字节码放在哪个 jar(或直接用 `.java` 即时编译) 由 `jars`/源码目录决定。
 
-- **key 唯一**：`gearInPauseAwarePlugin` 全局唯一，带 `GearIn_` 前缀的可读命名同理。key 与其他来源重复时后读覆盖先读 —— 您的插件可能被别人的覆盖，通常还没报错。
-- **值是完整类名**：包名.类名，必须与文件里的 `package` + `class` 完全一致。
+本节使用既有的 jar 编译路线，`GearInModPlugin` 编进同一个 `jars/GearIndustry.jar`。
 
-游戏启动时读取这个类名并注册；**每场战斗开始时为它创建一个新实例**，之后每帧调用实例的 `advance`；战斗结束实例销毁。`engine.addPlugin(...)` 是战斗内的另一种注册方式 (本节示例之外的插件用它)，完整注册与移除见 [C7-S5]。
+本节继续扩展 [C3-S3] 已登记的 `data.scripts.gearin.GearInModPlugin`。`mod_info.json` 的 `modPlugin` 保持不变，`onNewGame()` 继续保留 [C3-S4] 的星系生成调用和 [C3-S3] 的关系设置。
 
-## 实现每帧战斗插件
+## 建立存档初始化门
+
+`onGameLoad` 无论新档 (`true`) 还是读档 (`false`) 都会被调用，因此 "每个存档只做一次" 的初始化 (生成补丁、势力注册、脚本注册) **必须**用随存档保存的 persistent data 判断：
+
+```java
+if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
+    sector.getPersistentData().put(CLASS_MARK, true);
+    // 一次性初始化：仅在该存档第一次进入时执行
+}
+```
+
+::: caution "每个存档只做一次" 的初始化必须用 persistent data 判断
+
+违反的可观察结果：**每次读档都重复执行初始化** —— 实体/星系重复生成、`addScript`/`registerPlugin` 重复挂载、`SharedData` 赏金参与势力重复注册。日志里表现为每次读档都出现 "首次进入" 日志。
+
+:::
+
+- 标记键的取值：常见做法是用类名字符串，与存档共存亡；旧存档缺键即视为首次进入，正好覆盖 "中途启用 MOD" 的场景。
+- `onEnabled(wasEnabledBefore)` 与 persistent data 标记的分工：`onEnabled` 只回答 "这个 MOD 本次不在存档启用列表里"(新档或中途启用)，`wasEnabledBefore` 回答 "该存档历史上是否启用过"；它适合做存档兼容修补。但它在**独立新建的实例**上调用，任何写入实例字段的状态都会丢失，所以 "是否完成初始化" 必须落在 persistent data 上，不能落在实例字段上。
+
+::: warning 别把生涯状态存进实例字段
+
+缓存实例跨存档复用：把 `SectorAPI`、实体等生涯对象存入实例字段，字段会残留上一档的对象 (旧档对象泄漏)，行为错乱且难排查；`onEnabled` 的独立新实例则会让字段状态直接丢失。状态一律进 `getPersistentData()` 或随存档序列化的对象。
+
+:::
+
+- 脚本/插件注册前**建议**先查重：`Global.getSector().hasScript(类.class)`、`getListenerManager().hasListenerOfClass(...)`、`getGenericPlugins().hasPlugin(...)`，与 persistent data 标记互为冗余。
+- `configureXStream(XStream)` 在每次 (重新) 构建存档 XStream 时对全部已启用 MOD 调用 (保存与读取前都会构建)，用于登记自定义类型到存档序列化；小数据优先放 `getPersistentData()`，无需动 XStream。
+
+规则已经齐了，把它们落成一个完整类，编进既有的 jar。
+
+## 实现 MOD 生命周期插件
 
 本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段；把它放入指定类或方法后再继续，日志或界面出现对应信号时才进入下一段。
 
-### 建立战斗内计时状态
+### 声明生命周期插件类型
 
 ```java
-// 插入位置：GearInPauseAwarePlugin 的类声明与字段区
-public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
-    public static final float REPORT_INTERVAL = 10f;
+// 插入位置：文件顶部的类声明
+public class GearInModPlugin extends BaseModPlugin {
+```
 
-    private CombatEngineAPI engine;
-    private float elapsed;
-    private float timeSinceLastReport;
-    private int calls;
-    private int pausedCalls;
+完成信号：类名与数据文件或入口配置中的完整类名一致。
+
+### 配置存档标识
+
+```java
+// 插入位置：GearInModPlugin 的字段区
+public static final String CLASS_MARK = "GearInModPlugin";
+```
+
+完成信号：标识键可在存档 persistent data 中稳定读取。
+
+### 接入生命周期回调
+
+```java
+// 插入位置：GearInModPlugin 的 onGameLoad 方法
+SectorAPI sector = Global.getSector();
+if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
+    sector.getPersistentData().put(CLASS_MARK, true);
+    SharedData.getData().getPersonBountyEventData()
+        .addParticipatingFaction("gear_industry");
 }
 ```
 
-新增行为：每场战斗用独立实例保存计时和调用次数。完成信号：类名与 `settings.json` 注册值一致，构建通过；重新进入战斗时这些字段从零开始。
+完成信号：首次进入存档时执行一次，重复读档不再重复登记势力。
 
-### 拦截暂停帧
+## 核对插件源码
+
+对应关系：
+
+- `extends BaseModPlugin`：提供全部 19 个 `ModPlugin` 方法的空实现，只需覆写用到的回调；直接实现接口则要写满全部方法 (API javadoc 的 NOTE)。
+- `onApplicationLoad() throws Exception`：接口签名自带 `throws Exception`，版本检查在这里抛 `IllegalArgumentException` 会中止启动。
+- `getPersistentData().containsKey(CLASS_MARK)`：随存档保存的持久标记，判断是否首次进入存档。
+- `SharedData.getData().getPersonBountyEventData().addParticipatingFaction("gear_industry")`：把势力注册进赏金机制的参与列表 (沿用旧版示例行为)，只在首次进入时执行一次。
+- `Global.getLogger(GearInModPlugin.class)`：日志写入 `Starsector/starsector-core/starsector.log`。
+
+累计工程补全片段 (本节示例类不含新档生成页的生成器类，累计工程把生成入口接回 `onNewGame`)：
 
 ```java
-// 插入位置：GearInPauseAwarePlugin.advance() 开头
-calls++;
-if (engine == null) {
-    engine = Global.getCombatEngine();
-    if (engine == null) {
-        return;
+    @Override
+    public void onNewGame() {
+        // C3-S4：生成齿轮工业星系；C3-S3：设置初始关系
+        new data.scripts.gearin.campaign.GearInSystemGenerator().generate(Global.getSector());
+        seedRelations(Global.getSector());
+        log("onNewGame");
     }
-}
-if (engine.isPaused()) {
-    pausedCalls++;
-    return;
-}
 ```
 
-新增行为：回调总数包含暂停帧，战斗状态只在非暂停帧继续推进。完成信号：按 ESC 后 `calls` 仍增长，`elapsed` 保持不变。
+构建命令 (在 MOD 根目录 `Starsector/mods/GearIndustry/` 执行)：
 
-### 累计非暂停时间
-
-```java
-// 插入位置：advance() 的暂停检查之后
-elapsed += amount;
-timeSinceLastReport += amount;
-if (timeSinceLastReport >= REPORT_INTERVAL) {
-    timeSinceLastReport = 0f;
-    report(engine);
-}
+```text
+gradle jar
 ```
 
-新增行为：插件每累计 10 秒非暂停时间报告一次。完成信号：正常运行约 10 秒后触发首次报告；暂停时间不会缩短下一次报告的等待时间。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/GearInModPlugin.class`(可用 `jar tf` 核对)。
 
-### 同时提交日志与战场文字
-
-```java
-// 插入位置：GearInPauseAwarePlugin 的方法区
-private void report(CombatEngineAPI engine) {
-    String text = "GearIn: elapsed " + Math.round(elapsed) + "s, calls " + calls
-            + " (paused " + pausedCalls + ")";
-    Global.getLogger(GearInPauseAwarePlugin.class).info(text);
-    if (engine.getPlayerShip() != null) {
-        engine.addFloatingText(engine.getPlayerShip().getLocation(), text,
-                14f, Color.WHITE, engine.getPlayerShip(), 0f, 3f);
-    }
-}
-```
-
-新增行为：同一份状态既进入 `starsector.log`，也附着在玩家舰船位置显示。完成信号：日志与战场文字给出相同的 `elapsed`、`calls` 和 `pausedCalls`；没有玩家舰船时只写日志。
-
-## 实现要点
-
-要点：
-
-- **`extends BaseEveryFrameCombatPlugin`**：基类提供其余回调 (输入处理、渲染等) 的空实现，只需覆写 `advance`。
-- **5 个字段**：插件自己记的数 (累计秒数、距上次报告多久、调用次数、暂停帧次数)。字段随实例生存：每场战斗一个新实例，数字从零开始 —— **不要**把实例缓存到下一场战斗，否则 `elapsed` 会从上一场接着涨。
-- **`advance` 三件事按顺序**：`calls++` 在暂停检查**之前** (暂停帧也计数，这是 "暂停期间回调照常执行" 的观测点)；引擎引用**用到时才取** (`init()` 已废弃、不保证先于 `advance` 调用)；**暂停检查** `if (engine.isPaused()) { pausedCalls++; return; }` —— 暂停帧只计数、不推进状态。
-- **`report`**：`Global.getLogger(...)` 写日志；`addFloatingText(...)` 在玩家舰船位置显示浮动文字 (3 秒后消失)。
-
-::: warning 状态推进必须先过暂停检查
-
-任何**推进状态、累计时间、修改数值**的代码，在 `advance` 里都必须先检查 `engine.isPaused()`。游戏不会替您跳过暂停帧 —— 暂停期间您的代码每帧照跑，只是游戏不推进战斗逻辑。
-
-:::
+类已经就位，下面用日志顺序验证整条链路。
 
 ## 完整最小例
 
-示例做一件事：统计 "非暂停时间" 累计秒数 (`elapsed`) 与回调总次数 (`calls`)，每累计 10 秒向日志输出一次，并在玩家舰船位置显示一行浮动文字。暂停期间 `calls` 继续增长、`elapsed` 冻结，暂停检查的可观察结果即在于此。
+在既有 MOD 布局上增加入口类 (MOD 根目录 `Starsector/mods/GearIndustry`，`build.gradle`、`settings.gradle` 沿用既有配置)：
 
-文件：`src/data/scripts/gearin/combat/GearInPauseAwarePlugin.java`：
+```text
+Starsector/mods/GearIndustry/
+├── build.gradle
+├── settings.gradle
+├── mod_info.json          # 追加 modPlugin 字段
+├── data/
+├── src/
+│   └── data/scripts/gearin/GearInModPlugin   # MOD 入口类
+└── jars/
+```
 
-::: details 完整成品：GearInPauseAwarePlugin
+::: details 完整成品：GearInModPlugin
 
 ```java
-package data.scripts.gearin.combat;
+package data.scripts.gearin;
 
-import java.awt.Color;
-import java.util.List;
-
+import com.fs.starfarer.api.BaseModPlugin;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.input.InputEventAPI;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.impl.campaign.shared.SharedData;
 
 /**
- * 每帧战斗插件：演示暂停守卫与状态归属。
- *
- * <p>注册：MOD 的 data/config/settings.json 的 plugins 段写入本类完整类名。
- * 游戏启动时把核心与所有 MOD 的 settings.json 深合并 (文本读取工具.readJSONMerged)，
- * 并把 plugins 段全部类名注册为脚本类；每场战斗开始时为其中每个
- * EveryFrameCombatPlugin 类创建新实例并附加 (脚本类加载器.loadScriptInstance 的
- * newInstance)，战斗结束实例随引擎销毁，不得缓存到下一场战斗。</p>
- *
- * <p>advance() 在战斗暂停期间仍然每帧被调用，amount 也仍然非零；是否推进状态
- * 由插件自己决定：本例只用非暂停帧累加 elapsed，暂停帧只累计调用次数 calls。
- * 初始状态在构造器设置，不依赖已废弃的 init()(不保证在第一次 advance() 之前调用)。</p>
+ * 完整最小例：ModPlugin 生命周期、注册与存档入口。
+ * mod_info.json 的 modPlugin 字段指向本类。
+ * 每个回调打印一行日志；"首次进入存档" 的一次性初始化用 sector persistent data 门控 (CLASS_MARK 模式)。
  */
-public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
+public class GearInModPlugin extends BaseModPlugin {
 
-    /** 非暂停时间每累计多少秒输出一次报告。 */
-    public static final float REPORT_INTERVAL = 10f;
+    /** 存档持久化标记：本 MOD 是否已完成首次进入初始化 (随存档保存)。 */
+    public static final String CLASS_MARK = "GearInModPlugin";
 
-    private CombatEngineAPI engine;
-    private float elapsed;
-    private float timeSinceLastReport;
-    private int calls;
-    private int pausedCalls;
-
-    public GearInPauseAwarePlugin() {
-        // 初始状态在这里设置；init() 已废弃，不保证在第一次 advance() 之前被调用
+    @Override
+    public void onApplicationLoad() throws Exception {
+        String version = Global.getSettings().getGameVersion();
+        if (!version.startsWith("0.98a")) {
+            throw new IllegalArgumentException("齿轮工业要求游戏版本 0.98a，当前为 [" + version + "]");
+        }
+        log("onApplicationLoad");
     }
 
     @Override
-    public void advance(float amount, List<InputEventAPI> events) {
-        calls++;
-        if (engine == null) {
-            engine = Global.getCombatEngine();
-            if (engine == null) {
-                return;
-            }
-        }
-        if (engine.isPaused()) {
-            pausedCalls++;
-            return;
-        }
-        elapsed += amount;
-        timeSinceLastReport += amount;
-        if (timeSinceLastReport >= REPORT_INTERVAL) {
-            timeSinceLastReport = 0f;
-            report(engine);
-        }
+    public void onEnabled(boolean wasEnabledBefore) {
+        log("onEnabled wasEnabledBefore=" + wasEnabledBefore);
     }
 
-    private void report(CombatEngineAPI engine) {
-        String text = "GearIn: elapsed " + Math.round(elapsed) + "s, calls " + calls
-                + " (paused " + pausedCalls + ")";
-        Global.getLogger(GearInPauseAwarePlugin.class).info(text);
-        if (engine.getPlayerShip() != null) {
-            engine.addFloatingText(engine.getPlayerShip().getLocation(), text,
-                    14f, Color.WHITE, engine.getPlayerShip(), 0f, 3f);
+    @Override
+    public void onNewGame() {
+        log("onNewGame");
+    }
+
+    @Override
+    public void onGameLoad(boolean newGame) {
+        SectorAPI sector = Global.getSector();
+        if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
+            sector.getPersistentData().put(CLASS_MARK, true);
+            SharedData.getData().getPersonBountyEventData().addParticipatingFaction("gear_industry");
+            log("first-entry initialization (CLASS_MARK gate opened)");
         }
+        log("onGameLoad newGame=" + newGame);
+    }
+
+    @Override
+    public void beforeGameSave() {
+        log("beforeGameSave");
+    }
+
+    @Override
+    public void afterGameSave() {
+        log("afterGameSave");
+    }
+
+    private static void log(String message) {
+        Global.getLogger(GearInModPlugin.class).info("GearIn lifecycle: " + message);
     }
 }
 ```
 
 :::
 
-## 排查暂停状态错误
+## 排查启动阶段空指针
 
-每帧回调没有检查 `engine.isPaused()`。
+在 `onApplicationLoad` 访问尚未建立的 `Global.getSector()`。
 
 **局部故障片段：**
 
 ```java
 // 故障片段
-elapsed += amount; report(engine);
+public void onApplicationLoad() { Global.getSector().addScript(new GearInFrameLogger()); }
 ```
 
 **局部修正片段：**
 
 ```java
 // 修正片段
-if (engine.isPaused()) { return; } elapsed += amount; report(engine);
+public void onGameLoad(boolean newGame) { Global.getSector().addScript(new GearInFrameLogger()); }
 ```
 
-复验：暂停战斗后确认计时日志停止，继续战斗后恢复。
+复验：新建生涯并读档各一次，确认两条路径都只注册一个脚本。
 
 ## 验证方案
 
-前置数据：`GearInPauseAwarePlugin` 已写入 `data/config/settings.json` 的 `plugins` 段，`jars/GearIndustry.jar` 已按 [C6-S1] 的流程构建并在启动器启用本 MOD。
+前置数据：编译 JAR 链路建立的 MOD 布局 [C6-S1] —— `mod_info.json`、`build.gradle`、`settings.gradle`，以及 [C3-S3] 已登记的入口类 `GearInModPlugin`。累计工程的 `onNewGame()` 继续包含 [C3-S4] 的星系生成调用和 [C3-S3] 的关系设置。
 
-1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
-2. 启动游戏，进入模拟战 (有玩家舰船)，正常跑约 15 秒。
-3. 打开 `starsector.log`，搜索 `GearIn`，核对报告行与数字。
-4. 按 ESC 暂停约 20 秒再恢复，再次核对报告行。
+1. 在 MOD 根目录 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/GearInModPlugin.class`。
+2. 启动游戏勾选 "齿轮工业"，进入主菜单后退出；在 `starsector.log` 中观察生命周期记录。
+3. 新建生涯，确认日志顺序为 `onNewGame` → `onEnabled wasEnabledBefore=false` → `first-entry initialization (CLASS_MARK gate opened)` → `onGameLoad newGame=true` → `beforeGameSave` → `afterGameSave`(新档末尾自动存档)。
+4. 读档并手动保存，确认日志为 `onGameLoad newGame=false`(无 `onEnabled` 行、无 `first-entry` 行)，随后 `beforeGameSave` → `afterGameSave`。
 
 预期结果：
 
-- 约 15 秒后 `starsector.log` 出现 `GearIn: elapsed ...s, calls ... (paused 0)` 形态的报告，玩家舰船位置出现过一行白色浮动文字 (约 3 秒后消失)；
-- 暂停约 20 秒期间没有新报告；恢复后第一次报告的 `elapsed` 与暂停前连续 (暂停的 20 秒未被计入)，`calls` 明显大于按帧率推算的调用数 —— 暂停期间回调照常执行，状态被暂停检查拦下；
-- `starsector.log` 没有与 `GearInPauseAwarePlugin` 相关的 `ERROR`。
+- **构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/GearInModPlugin.class`。
+
+- **启动**：`starsector.log` 出现 `GearIn lifecycle: onApplicationLoad`，且没有由 `gear_in` 引起的 `ERROR`。
+
+- **新建生涯**：日志按顺序出现 (新档流程，`onEnabled` 在新档必触发，之后自动存档)：
+
+  ```text
+  GearIn lifecycle: onNewGame GearIn lifecycle: onEnabled wasEnabledBefore=false GearIn lifecycle: first-entry initialization (CLASS_MARK gate opened) GearIn lifecycle: onGameLoad newGame=true GearIn lifecycle: beforeGameSave GearIn lifecycle: afterGameSave
+  ```
+
+- **读档**：日志只出现 `GearIn lifecycle: onGameLoad newGame=false`(MOD 本就在存档启用列表，不触发 `onEnabled`；`first-entry` 行不再出现，门已开)。若这个存档是 "中途启用" 本 MOD 建出来的，则首次读它时 `onEnabled wasEnabledBefore=false` 会先于 `onGameLoad` 出现。
+
+- **保存** (读档后手动保存)：日志依次出现 `beforeGameSave` → `afterGameSave`。
 
 ## 故障分析
 
-- **插件没有任何行为**：`settings.json` 缺少条目、文件路径错误，或 key 被其他来源覆盖时，游戏不会创建实例，日志和画面都没有 `GearIn:` 信号。
+- **启动时报 `Error loading [data.scripts.gearin.GearInModPlugin]`**：`modPlugin`、包名、目录或 jar 内容不一致。
 
-    - **解决方案**：确认文件位于 `data/config/settings.json`，key 全局唯一，值与 `package`、`class` 组成的完整类名一致，重新开战。
+    - **解决方案**：用 `jar tf` 核对类路径，再与 `modPlugin` 值逐段对照。
 
-- **日志出现 `Problem loading class [...]`**：注册类名与 `package`、`class` 不一致，或源码没有进入 JAR 时，类加载器无法解析插件。
+- **启动时报 `ClassCastException`**：入口类没有实现 `ModPlugin`。
 
-    - **解决方案**：让注册值、包声明和类名逐字一致，把源码放入 `data/scripts/gearin/combat/` 并重新构建 JAR。
+    - **解决方案**：让类继承 `BaseModPlugin`，重新构建后启动。
 
-- **暂停期间状态照常推进**：`advance` 在暂停检查前累计状态时，恢复后 `elapsed` 会包含暂停时间。
+- **游戏正常但没有任何 `GearIn lifecycle:` 日志**：`mod_info.json` 没有有效的 `modPlugin` 字段。
 
-    - **解决方案**：把状态推进放在 `engine.isPaused()` 守卫之后，仅将 `calls++` 这类观测回调次数的计数放在守卫前。
+    - **解决方案**：补上完整类名并重启。
 
-- **第一次 `advance` 抛出空指针**：在已废弃的 `init(engine)` 中保存引擎并假设它先执行，会让首次 `advance()` 看到 null。
+- **`onApplicationLoad` 抛出 `NullPointerException`**：该阶段访问了尚未建立的 `Global.getSector()`。
 
-    - **解决方案**：初始状态放入构造器，引擎在使用时通过 `Global.getCombatEngine()` 获取，重新开战。
+    - **解决方案**：把生涯状态操作移入 `onGameLoad` 或 `onNewGame`。
 
-- **第二场战斗的数值接着上涨**：插件实例被保存到 `static` 字段或战斗外对象时，旧实例会跨战斗存活。
+- **每次读档都重复首次初始化**：一次性逻辑直接写在 `onGameLoad`，却没有 persistent data 标记。
 
-    - **解决方案**：只通过 `settings.json` 登记，让游戏每场创建新实例。
+    - **解决方案**：用 `CLASS_MARK` 门控。
+
+- **脚本或监听器随读档次数叠加**：注册前没有调用 `hasScript`、`hasListenerOfClass` 或 `hasPlugin` 查重。
+
+    - **解决方案**：补上对应判断。
+
+- **新档初始化执行两遍**：同一状态同时写在 `onNewGame` 与 `onGameLoad(true)`。
+
+    - **解决方案**：把共用初始化收敛到带持久标记的 `onGameLoad`，只把纯新档逻辑留在 `onNewGame`。
+
+- **切换存档后仍使用上一档对象**：`SectorAPI` 或生涯实体被保存在入口类实例字段中，而入口实例会跨存档复用。
+
+    - **解决方案**：把状态放入 `getPersistentData()` 或随存档保存的对象，重新切档。
+
+- **高版本游戏直到运行深处才暴露兼容错误**：`onApplicationLoad` 没有检查 `getGameVersion()`。
+
+    - **解决方案**：在入口处验证 `0.98a` 前缀，不匹配时立即中止启动并给出明确错误。
 
 ## 总结
 
-本节完成了第一个战斗插件从注册到验证的完整流程：`settings.json` 的 `plugins` 段登记类名，游戏每场战斗创建新实例并逐帧调用 `advance`，实例字段随战斗而生灭。其中任何一环断开，症状各不相同：没注册是完全没有行为，类名不一致是 `Problem loading class [...]`，实例被缓存则是第二场战斗数值接着涨。
+本节把新档生成阶段的最小入口补全为完整生命周期：`mod_info.json` 的 `modPlugin` 声明入口类 (可选字段，缺失时无回调且无报错)，启动资源加载期实例化并缓存，新档/读档/保存各节点按固定顺序回调全部已启用 MOD(原版 `CoreLifecyclePluginImpl` 恒在最前)。读时序时依次问：`modPlugin` 声明了吗、类继承 `BaseModPlugin` 吗、回调属于哪个阶段 (启动/新档链/读档/保存/战斗)、一次性初始化有没有 persistent data 标记。跨存档状态放 `getPersistentData()`，不要放实例字段；`onEnabled` 只在 MOD 进入已有存档时触发且运行在独立新实例上。AI picker 返回 `null` 保留原版，返回 `PluginPick` 时按 `PickPriority` 竞争；`onGameSaveFailed` 只在保存失败时回调，`afterGameSave` 只在成功时回调。
 
-排错时沿注册条目、构建产物、状态推进的顺序核对，比对着画面猜测更快。暂停语义是本节的核心判断：游戏不会替您跳过暂停帧，凡是推进状态、累计时间的代码，都要先过 `engine.isPaused()` 这一道检查。
-
-插件注册的完整生命周期 (三条注册路径、`addPlugin` / `removePlugin`、战斗结束无清理回调) 与监听器系统见 [C7-S5]。
+从逻辑上看，生命周期回调回答的是 "游戏进程何时调用 MOD"，本节已把这条固定约定完整走通；它的自然延伸，是回调中登记的内容如何随存档持久化、读档时如何恢复 —— persistent data 与 XStream 序列化正是这条线上的下一环。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：每帧回调接口 (`advance`、`processInputPreCoreControls`、两个 `render...`，暂停期间照常被调用)。
-- `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：全部空实现的基类，示例继承它只覆写 `advance`。
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：`isPaused()`、`getElapsedInLastFrame()`(暂停时返回当前帧值)、`addPlugin` / `removePlugin`、`getPlayerShip()`、`addFloatingText(...)`。
-- `com.fs.starfarer.api.Global`：`getLogger(Class)`(输出到 `starsector.log`)、`getCombatEngine()` (战斗外返回非 null 空引擎，仅资源加载期为 `null`)。
-- `data/config/settings.json`：`plugins` 段注册入口 (游戏本体与所有 MOD 同路径文件深合并，key 全局唯一)。
-- `Starsector/starsector-core/starsector.log`：运行日志，插件 `Global.getLogger(...)` 的输出位置。
+- Java API (包路径)：
+    - `com.fs.starfarer.api.ModPlugin`：全部 19 个生命周期回调的签名与 javadoc，含 `onEnabled` 触发条件与 `wasEnabledBefore` 语义、`onGameLoad` 双重含义、建议继承 `BaseModPlugin` 的 NOTE。
+    - `com.fs.starfarer.api.BaseModPlugin`：全部回调的空实现，继承它只需覆写用到的回调。
+    - `com.fs.starfarer.api.PluginPick` 与 `com.fs.starfarer.api.campaign.CampaignPlugin`：AI picker 的返回值与多 MOD 竞争时的优先级 (`PickPriority` 枚举)。
+    - `com.fs.starfarer.api.campaign.SectorAPI`：`getPersistentData()`(随存档保存的 `Map<String, Object>`)、`addScript`、`registerPlugin`。
+    - `com.fs.starfarer.api.SettingsAPI`：`getGameVersion()`(版本门检查)、`getModManager()`。
+    - `com.fs.starfarer.api.ModManagerAPI`：`isModEnabled`。
+    - `com.fs.starfarer.api.impl.campaign.CoreLifecyclePluginImpl`：原版生命周期插件，作为回调列表第一个参与全部回调。
+    - `com.fs.starfarer.api.impl.campaign.shared.SharedData`：`getPersonBountyEventData().addParticipatingFaction(...)`，赏金参与势力注册。
+- 原版数据 (以游戏安装根为基准)：
+    - `data/config/settings.json`：`coreLifecyclePlugin` 字段，原版生命周期插件类名所在。
+    - `starsector-core/starsector.log`：回调日志与故障定位。
+- 示例 MOD 内 (以 MOD 根目录为基准)：
+    - `data/scripts/gearin/`：本节入口类 `GearInModPlugin`(含存档持久化标记 `CLASS_MARK`) 所在源目录。
+    - `jars/GearIndustry.jar`：编译产物，含 `data/scripts/gearin/GearInModPlugin.class`。
+    - `mod_info.json`：`modPlugin` 注册字段。

@@ -1,730 +1,468 @@
-# 制作市场条件
+# 修改势力关系与货舱
 
-本节制作并注册一个市场条件，让条件插件在市场上应用、推进和移除效果。实例标识、勘测与抑制状态会决定条件能否出现和生效。
+本节读取并修改势力关系与货舱内容。示例会组合使用两类对象，让关系变化与货物增减在同一段生涯逻辑中生效。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：~12 分钟。*
 
-*本节预期操作时间：~40 分钟。*
+*本节预期操作时间：~18 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 解释 `market_conditions.csv` 九个字段各自被谁使用，以及 MOD 新增条件行的注册完整流程 (**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置)；
-- 解释 `MarketConditionPlugin` 生命周期：`init(market, condition)` → `setParam(param)`(可选)→ `apply(id)` → 每帧 `advance(amount)`(`runWhilePaused()` 决定暂停时是否推进)→ 移除/重算时 `unapply(id)`，以及 `isTransient()` 的存档语义；
-- 解释 token 语义：`addCondition(id)` 返回的唯一实例 token 与 spec id 的区别、四个查询入口的差别、`removeCondition(id)` 与 `removeSpecificCondition(token)` 的不对称性；
-- 解释 survey 语义：条件级 `isSurveyed` / `requiresSurveying` 与市场级 `SurveyLevel` 的分层，`condition_gen_data.csv` 的 `reqSurvey` 如何决定初始状态，重算如何用 surveyed 判断是否执行 `apply`；
-- 解释 suppression 语义：`suppressCondition(id)` 只写 suppressed 集合、**效果在下次重算时才消失**、必须配对 `unsuppressCondition(id)` 恢复；
-- 解释重算的触发点：经济迭代、稳定度变化、手动调用；`reapplyConditions()` 与 `reapplyCondition(token)` 的检查差异；
-- 从症状定位八类典型故障：条件 "不出现"、`addCondition` 抛 `Market condition [...] not found`、`removeCondition` 删多、读档后条件参数恢复默认、suppress 后效果还在、未 survey 条件效果休眠、多实例修饰互相覆盖、icon 路径写错加载失败。
+- 解释两个服务入口的进入方式：
+    - `SectorAPI.getFaction(id)` / `getAllFactions()` / `getPlayerFaction()`；
+    - `SectorEntityToken.getCargo()`(玩家舰队 `CampaignFleetAPI.getCargo()`、子市场 `SubmarketAPI.getCargo()`)；
+- 区分 `FactionAPI` 的分组 (身份、显示与颜色、关系、资源集合、经济字段、随机人物、doctrine/production/spec) 与关系语义：
+    - 全局对表、`-1..1` 钳位、`adjustRelationship` 直接加、`setRelationship` 直写；
+    - `isHostileTo` 表示关系等级 ≤ `HOSTILE`，经 `getRelToPlayer()` 包装；
+- 解释 `CargoAPI` 的栈模型 (stack 集合 + credits + 容量统计)、四类写入入口 (资源 / 武器 / 战机芯片 / 特殊物品) 与 `removeItems` 的 NULL 占位栈语义，并遵守 `getMothballedShips()` 必须先 `initMothballedShips(factionId)` 的必须规则；
+- 从症状定位故障，并沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核 (沿用本节示例的任务链)。
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-- [C2-S2] 的 CSV 合并、重复键与空 id 行处理；
-- [C6-S2] 的 `GearInModPlugin`、`onGameLoad` 与持久数据标记；
-- [C7-S3] 的 `MutableStat`、`StatBonus` 与 modifier 写入；
-- [C9-S1] 的一次性 `EveryFrameScript` 与 `isDone()` 自停语义；
-- [C9-S2] 的 `addPlanet` 条件市场与实体侧 survey 关系；
-- [C10-S3] 的 `MarketAPI` 条件访问、实例 token 与条件移除；
-- [C15-S2] 的 `loadJSON`，以及 [C15-S3] 的 `getMergedSpreadsheetData` 资源读取入口。
+- [C7-S1] 的 `modPlugin` 生命周期与持久数据标记；
+- [C7-S2] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
+- [C8-S3] 的普通字段与 `MutableStat` 的区别；
+- [C10-S1] 的 `SectorAPI` 星区入口、`onGameLoad` 注册与 `REGISTER_MARK` 判断；
+- [C10-S3] 的玩家舰队、成员、`FleetDataAPI.getMothballedShips()` 与 `CampaignFleetAPI.getCargo()`；
+- [C11-S3] 的子市场 cargo 创建时机、`getCargoNullOk()` 判空与 `Commodities` 商品 ID；
+- 理解 `FactionAPI.getTariffFraction()` 读取势力规格中的普通数值。
 
 ## 术语
 
-按术语约定，本节首次完整讲解以下词：
+按术语约定，本节首次完整讲解两个词；API 类名保留源码大小写：
 
-- **市场条件 (condition)**：API 名保留 `MarketConditionAPI`(实例接口)、`MarketConditionSpecAPI`(静态配置)、`MarketConditionPlugin`(行为插件)。一个条件由一条 CSV 注册行 (spec) 和市场上的若干实例 (每个实例带唯一 token 与一个 plugin 实例) 组成。
-- **token**：`addCondition(id)` 返回的唯一实例 id(`getIdForPluginModifications()`，形如 `ore_sparse_b44c3`)；spec id ≠ 实例 token。后续对 "具体实例" 的操作都以 token 定位。
-- **survey(勘测)**：两层语义 —— 条件级 `isSurveyed` / `requiresSurveying`(该条件是否已被勘测、是否需要勘测) 与市场级 `SurveyLevel`(`NONE / SEEN / PRELIMINARY / FULL`)。
-- **suppression(抑制)**：`suppressCondition(id)` / `unsuppressCondition(id)` 维护的 suppressed id 集合；被抑制的条件在重算时不再生效，但实例保留。
-- **重算 (reapply)**：`MarketAPI.reapplyConditions()`(全部) 与 `reapplyCondition(token)`(单个) 对条件 plugin 执行 unapply → apply 的刷新流程。
+- **势力 (faction)**：API 名保留 `FactionAPI`。一个身份完整的派系对象：id、显示名、颜色、关系表、已知资源集合、随机人物与 `.faction` 规格。玩家自身也是一个势力 (`Factions.PLAYER`)。
+- **货物 (cargo)**：API 名保留 `CargoAPI`。实体 (舰队、战利品、子市场、市场) 持有的货物容器：栈集合 + 信用 (credits)+ 容量统计。单个货物条目是 `CargoStackAPI`(栈)。
 
-## 梳理市场条件关系
+## 梳理势力货舱关系
 
-三个对象分别落在 CSV 注册表、运行实例与行为插件上，先从注册链看起。
+### 服务入口速查表
 
-### market\_conditions.csv 注册链
+两个入口的进入方式与核心接口先列成总表：
 
-原版注册表是 `data/campaign/market_conditions.csv`(169 行)。
-
-### market\_conditions.csv 字段速查表
-
-表头九个字段，每列被谁使用：
-
-| 字段 | 写入对象 | 语义 / 使用方 |
+| 服务 | 进入方式 | 核心接口 |
 |---|---|---|
-| `name` | `MarketConditionSpecAPI.getName()` | 显示名；必填 (`getString`，缺列即加载失败)。`MarketConditionAPI.getName()` 先问 plugin，plugin 回退 spec 名 |
-| `id` | spec 注册 key | 条件 spec id，CSV spec 加载期注册表的键；`addCondition(id)` 的入参；`ConditionGenDataSpec` 交叉校验键 |
-| `tags` | `getTags()` | 逗号分隔字符串，`optString` 可选 |
-| `planetary` | `spec.isPlanetary()` | `optBoolean` 默认 false；`MarketConditionAPI.isPlanetary()` 转发 plugin(默认读 spec)；"行星条件显示在条件面板右侧，市场条件显示在行星条件左侧的组里" |
-| `decivRemove` | `spec.isDecivRemove()` | `optBoolean` 默认 false；文明衰退移除标记 |
-| `script` | `getScriptClass()` | **plugin 类名**；必填。加载期经脚本类加载器 `registerScriptClass` 注册；实例化时机是条件实例创建时 |
-| `desc` | `getDesc()` | tooltip 正文；`optString` 默认 `"No description... yet"`；支持 `$token` 替换 |
-| `icon` | `getIcon()` | 图标贴图路径；**留空回退原版 `graphics/hullmods/generic_mod.png`**；非空时资源加载期排队 TEXTURE，路径无效 → 加载期失败 |
-| `order` | `getOrder()` | `optDouble` 默认 20.0；条件列表排序 |
+| 势力 | `Global.getSector().getFaction(id)` / `getAllFactions()` / `getPlayerFaction()` | `FactionAPI` |
+| 货物 | `SectorEntityToken.getCargo()`(玩家舰队 `CampaignFleetAPI.getCargo()` 经 `SectorEntityToken` 实现；子市场 `SubmarketAPI.getCargo()` 见前置知识 [C11-S3]) | `CargoAPI` / `CargoStackAPI` |
 
-**加载入口**：CSV spec 加载期用 `readCSV("id", "data/campaign/market_conditions.csv", true)` 读取，逐行构造 `MarketConditionSpecAPI`。合并语义与 `hull_mods.csv` 相同 (同一读取器实现)：
+### 势力 (FactionAPI)
 
-**同文件重复 id 抛 `Duplicate key [...] while loading [...]`；跨文件重复 id 先到先得、后读入行静默跳过；空 id 行跳过**。MOD 只提交自己的行即可追加进原版表。
+`FactionAPI`(`com.fs.starfarer.api.campaign.FactionAPI`) 是纯接口，势力集合由引擎统一管理。
 
-**`MarketConditionSpecAPI` 构造**：`id` / `name` / `icon` / `script` 四列 `getString` **必填** (缺列 → 加载期 `JSONException`)；`desc` / `order` / `planetary` / `decivRemove` / `tags` 可选。
+### FactionAPI 成员分组速查表
 
-**plugin 实例化**：`spec.getNewPluginInstance()` → 脚本类加载器 `loadScriptInstance(scriptClass)`，按类名注册表 `newInstance`**，必须无参可实例化** (类实现了接口并不等于实例会被调用，这一点在既有脚本讲解中已经确立)。
+成员按功能分组：
 
-实例化时机是条件实例创建时，不是 CSV 加载时。
-
-**交叉校验的完整流程**：procgen 表 `data/campaign/procgen/condition_gen_data.csv` 的每一行 (除 `_no_pick` 后缀) 必须在 `market_conditions.csv` 有对应行。
-
-否则**加载期**抛 `RuntimeException("[...] is not a valid market condition, was loading: condition_gen_data.csv")`。
-
-即：写 procgen 条件行前必须先有 market\_conditions.csv 行。
-
-### MarketConditionAPI 生命周期
-
-注册链让 spec 在加载期就位，实例则在运行期由插件按生命周期回调驱动，先看接口本身。
-
-### 条件接口速查表
-
-**接口速查** (`com.fs.starfarer.api.campaign.econ.MarketConditionAPI`、`com.fs.starfarer.api.characters.MarketConditionSpecAPI`、`com.fs.starfarer.api.campaign.econ.MarketConditionPlugin`)：
-
-| 接口 | 高频成员 | 语义 |
+| 分组 | 成员 | 语义 |
 |---|---|---|
-| `MarketConditionAPI` | `getId()` / `getName()` / `getSpec()` / `getPlugin()` | spec id；显示名；静态配置；plugin |
-| `MarketConditionAPI` | `getIdForPluginModifications()` | **唯一 token**(`id + "_" + genUID`) |
-| `MarketConditionAPI` | `isSurveyed()` / `setSurveyed(boolean)` / `requiresSurveying()` | 条件级 survey；`requiresSurveying` 读 procgen 表的 `reqSurvey` |
-| `MarketConditionAPI` | `isPlanetary()` | 转发 plugin(默认 spec 标记)，决定条件面板位置 |
-| `MarketConditionSpecAPI` | `getOrder()` / `getIcon()` / `getDesc()` / `getScriptClass()` / `getTags()` / `isPlanetary()` / `isDecivRemove()` | CSV 九字段的运行时面 |
-| `MarketConditionPlugin` | `init(market, condition)` / `setParam(Object)` / `apply(String id)` / `advance(float amount)` / `unapply(String id)` | 生命周期回调 |
-| `MarketConditionPlugin` | `isTransient()` / `showIcon()` / `runWhilePaused()` / `getName()` / `getIconName()` | 存档与展示语义 |
-| `MarketConditionPlugin` | `getTokenReplacements()` / `getHighlights()` / `getHighlightColors()` / `hasCustomTooltip()` / `createTooltip(...)` / `isTooltipExpandable()` / `getTooltipWidth()` | tooltip 链路 |
-| `MarketConditionPlugin` | `getRelatedCommodities()` | 仅事件来源条件使用 |
+| 身份 | `getId()`、`getDisplayName()`、`getDisplayNameWithArticle()`、`getDisplayNameIsOrAre()` | 势力 id(全局唯一，与 `.faction` 文件 id 一致) 与显示名变体 |
+| 颜色 | `getColor()`、`getBaseUIColor()`、`getGridUIColor()`、`getDarkUIColor()`、`getSecondaryUIColor()`、`getBrightUIColor()`、`getRelColor(id)` / `getRelColor(RepLevel)` | UI 配色族；`getRelColor` 按关系值混合敌我色 |
+| 关系 | `getRelationship(id)`、`getRelationshipLevel(id)`、`setRelationship(id, float)`、`setRelationship(id, RepLevel)`、`adjustRelationship(id, delta)`、`adjustRelationship(id, delta, limit)`、`ensureAtBest`、`ensureAtWorst`、`isAtWorst` / `isAtBest`、`isHostileTo`、`getRelToPlayer()` | 关系全局对表的读写、钳位、直接加/直写与敌对判定 |
+| 资源集合 | `getKnownShips()`、`addKnownShip`、`removeKnownShip`、`knowsShip`、`getKnownWeapons()`、`getKnownFighters()`、`getKnownIndustries()`、priority 族、`clearShipRoleCache()` | 已知蓝图与优先资源；`removeKnown*` 永久移除需持久化清单并在读档后重新移除 |
+| 经济字段 | `getTariffFraction()`、`getTollFraction()`、`getFineFraction()`、`getInternalCommsChannel()`、`isIllegal(String)`、`getIllegalCommodities()`、`makeCommodityIllegal/Legal` | 势力级税率 (注意：静态值，非 `MutableStat`) 与商品合法性 |
+| 随机与显示 | `createRandomPerson()`、`getLogo()`、`getCrest()`、`isShowInIntelTab()` / `setShowInIntelTab`、`getCustom()`、`getCustomBoolean`、`getCustomString`、`getRank`、`getPost`、`pickRandomShipName` | `.faction` 文件数据与随机生成 |
+| 舰船选择 | `pickShip(role, params, ...)`、`pickShipAndAddToFleet`、`ShipPickParams` / `ShipPickMode`、`getNumAvailableForRole` | 自动装配舰船选择，本节只给入口 |
+| 配置 | `getDoctrine()`、`getProduction()`、`getFactionSpec()`、`getMemory()`、`getMemoryWithoutUpdate()`、`isNeutralFaction()`、`isPlayerFaction()` | doctrine / production / 规格与势力 memory |
 
-**实例创建**：`MarketAPI.addCondition(id[, param])` 的完整顺序：
+**关系语义 (全局对表)**：
 
-1. 创建 `MarketConditionAPI` 实例：从 CSV spec 加载期的注册表取 spec，**spec 缺失抛 `RuntimeException("Market condition [" + id + "] not found")`**；plugin 用到时才创建并 `init(market, condition)`。
-2. 加入 `conditions` 列表、`resetCache()`。
-3. `param` 非 null 时 `setParam(param)`(在 apply 之前)。
-4. **未 suppressed 时立即 `plugin.apply(token)`**，注意这里只查 suppression，不查 surveyed。
-5. `getGenSpec()` 非 null 时 `setSurveyed(!genSpec.isRequiresSurvey())`，**survey 状态在 apply 之后才写入**。
-6. 返回 token(`getIdForPluginModifications()`)。
+1. 关系存储在一张**全局对表**里：键 `idA_idB` 与 `idB_idA` 共享同一个对条目，新对默认 `0.0`(同势力对默认 `1.0`)；写入时把值钳位到 `[-1, 1]`。
+    - 因此 `getRelationship(id)` 读到的是 "该势力视角下与目标势力" 的值，读取未建立的对会**用到时才创建**默认 0 的对条目。
+2. `getRelationship(id)` 直接返回对表值；`getRelationshipLevel(id)` = `RepLevel.getLevelFor(值)`。
+    - `RepLevel` 阈值：`T1=0.09`、`T2=0.24`、`T3=0.49`、`T4=0.74`；`getMin()` 不包含边界、`getMax()` 包含边界。
+3. `adjustRelationship(id, delta)` **直接相加**并经 `setValue` 钳位，不触发任何监听；`adjustRelationship(id, delta, limit)` 按 `limit` 等级封顶/封底 (正方向默认 `COOPERATIVE`、负方向默认 `VENGEFUL`)。
+    - `setRelationship(id, float)` 直写；`setRelationship(id, RepLevel)` 写到等级边界：`NEUTRAL` 写 0、正级写 `getMin()+0.01`、负级写 `-getMin()-0.01`。
+4. `isHostileTo(id)` = `isAtBest(id, HOSTILE)`：关系等级 ≤ `HOSTILE` 即敌对。
+5. 玩家视角包装：`getRelToPlayer()` 返回 `RelationshipAPI`(`com.fs.starfarer.api.characters.RelationshipAPI`：`getRel()`、`getLevel()`)；玩家势力对玩家自己按同势力默认取 `1.0`。至少在这张对表里，每个势力与自己永远是满分关系。
+6. **玩家声望 action 的正规路径**是 `SectorAPI.adjustPlayerReputation(action, factionId/person)`("This method will pick the highest-priority ReputationActionResponsePlugin and call its handlePlayerReputationAction() method"；原版 `AdjustRep` rulecmd 同款调用，`com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`)。
+    - `FactionAPI` 的关系写入是**原始写入**，不经过 response plugin 的 delta 计算，也不产生声望监听通知。
 
-**推进**：`MarketAPI.advance(amount)` 每帧遍历全部条件 plugin 调 `advance(amount)`；`runWhilePaused()` 返回 false(基类默认) 时暂停分支不推进。
+### 货物 (CargoAPI)
 
-**移除/重算**：`unapply(id)` 在三条路径被调用：`removeCondition` / `removeSpecificCondition`(移除时)、`reapplyConditions` / `reapplyCondition`(重算时)。
+势力入口管身份与关系，货物的存取则归 `CargoAPI`。与势力不同，货物容器不挂在星区根对象上，而是挂在实体上 —— 玩家舰队、战利品、子市场和市场各自持有自己的容器。
 
-**存档语义**：`isTransient()` 决定 plugin 是否进存档。`BaseMarketConditionPlugin.isTransient()` = true —— 写存档时 plugin 实例被丢弃，读档时按 spec 重建 plugin 并重新 `init`。
+`CargoAPI`(`com.fs.starfarer.api.campaign.CargoAPI`) 是纯接口，结构分三块：
 
-**不重放 `setParam`**(读档重建时只执行 `init`)。
+- **栈集合**：`stacks` 字段，`getStacksCopy()` 返回副本；
+- **信用**：`credits` 字段，`getCredits()` 返回 `MutableValue`(`com.fs.starfarer.api.util.MutableValue`)：`get()` / `set()` / `add()` / `subtract()`；
+- **容量统计**：`maxCapacity` / `maxFuel` / `maxPersonnel` / `spaceUsed`。
 
-`BaseMarketConditionPlugin2` 非 transient(`isTransient()` = false)，进存档、附带 `daysActive` 计时，"Use sparingly since it'll add to savefile bloat"。
+### CargoAPI 读写分族速查表
 
-### token 与实例访问
+读写分族 (方法均位于 `CargoAPI`)：
 
-- **token 生成**：`id + "_" + Misc.genUID()`，全存档唯一；两个同 spec id 实例 token 必然不同。
-- **四个查询入口** (`MarketAPI`)：
-    - `getConditions()`：活列表，遍历前先拷贝；
-    - `getCondition(id)` / `getFirstCondition(id)`：**同 spec id 的首个实例**，走 `conditionsCache`(按 spec id 首见即存、增删时 `resetCache`)；
-    - `getSpecificCondition(token)`：按 token 线性扫描，精确实例。
-- **移除不对称性** (市场侧访问入口讲解中已点名的必须遵守的规则，本节给出实现)：
-    - `removeCondition(id)`：遍历移除**同 spec id 的全部实例**，逐个 `unapply`；
-    - `removeSpecificCondition(token)`：只移除 token 对应实例并 `unapply`，随即返回。
+| 分族 | 写入 | 读取 | 底层 |
+|---|---|---|---|
+| 补给 / 燃料 | `addSupplies` / `removeSupplies`、`addFuel` / `removeFuel` | `getSupplies` / `getFuel` | 资源栈 `"supplies"` / `"fuel"`；`getSupplies` 另含 `extraSuppliesUsed` |
+| 人员 | `addCrew` / `removeCrew`、`addMarines` / `removeMarines` | `getCrew` / `getMarines` / `getTotalCrew` / `getTotalPersonnel` | 资源栈 `"crew"` / `"marines"`(整数语义；`crew` 写入触发携带舰队 `setSyncNeeded`) |
+| 通用商品 | `addCommodity` / `removeCommodity` | `getCommodityQuantity` | `addItems(RESOURCES, id, qty)` |
+| 武器 | `addWeapons` / `removeWeapons` | `getNumWeapons` / `getWeapons` | `WEAPONS` 栈 (整数、roundSize) |
+| 战机芯片 | `addFighters` / `removeFighters` | `getNumFighters` / `getFighters` | `FIGHTER_CHIP` 栈 |
+| 船插 / 特殊物品 | `addHullmods` / `addSpecial` | `getQuantity` | `SPECIAL` 栈 (`SpecialItemData`；船插 data = `new SpecialItemData("modspec", hullModId)`) |
+| mothballed ships | `addMothballedShip` | `getMothballedShips` | 读取前必须先调 `initMothballedShips(factionId)`；`addMothballedShip` 自动初始化 |
+| 通用汇总 | `addItems` / `removeItems`(返回是否完成) | `getQuantity` / `getStacksCopy` | 栈模型 |
 
-删除具体实例必须用 `removeSpecificCondition(token)`
+**栈语义 (`CargoStackAPI`，`com.fs.starfarer.api.campaign.CargoStackAPI`)**：`getType()`(`CargoItemType`：`RESOURCES` / `WEAPONS` / `FIGHTER_CHIP` / `SPECIAL` / `NULL`)、`getData()`(通常是 String 资源 id)、`getSize()` / `getFree()` / `getMaxSize()` / `isFull()`、`getCargoSpace()`。
 
-`removeCondition(id)` 移除同 spec id 的**全部**实例 —— 只想删一个实例时用 id 会连带删除其他实例并逐个 `unapply`，修饰全部回滚。请保留 `addCondition` 返回的 token 再删。
+`isNull()`(**空占位栈**，"If true, it's an empty cargo stack. These get created for spacing, a result of the player moving cargo around.")。资源的小数部分会累计 (`addItems` 内部路径)；
 
-- **修饰隔离**：条件 plugin 往市场写修饰 (hazard、accessibility、stats 等) 时，原版 `BaseHazardCondition.apply(id)` 直接 `market.getHazard().modifyFlat(id, ...)`。
-    - `apply` 传入的 id 就是 token，`BaseMarketConditionPlugin.getModId()` 是等价便捷入口。
+**`removeItems` 把减到 1.0 以下的栈原地替换为 `NULL_STACK` 占位**。
 
-禁止用 spec id 当 modifier source
+回滚后栈数量对不上，不是 bug
 
-修饰 source 必须用实例 token(`apply` 传入的 id 或 `getModId()`)：同 spec id 多实例会互相覆盖 —— 后 `apply` 覆盖先 `apply`，`unapply` 其中一个实例时全部修饰一起丢失。
+"数值回滚了，`getStacksCopy().size()` 却没变回原样" 是 `removeItems` 的占位语义而不是错误：减空的栈被原地替换为 `NULL_STACK` 占位 (`isNull()` 为 true)。空栈不会自己消失，要清掉多出来的占位，必须调 `removeEmptyStacks()`。
 
-### survey 语义
+**必须遵守的规则 (mothballed ships)**：`getMothballedShips()` 返回的是**可能为 null 的字段**，使用前**必须**先调 `initMothballedShips(factionId)`。
 
-survey 是**两层**状态，别混用：
+`CargoAPI` "Call initMothballedShips(String factionId) before using this method."；
 
-- **市场级 `SurveyLevel`**(`NONE / SEEN / PRELIMINARY / FULL`)：用户对行星的勘测进度。`CampaignPlugin.updateMarketFacts` 把 `$isSurveyed` / `$surveyLevel` 写进市场 memory。
-- **条件级 `isSurveyed` / `requiresSurveying`**：单条条件的勘测状态。`requiresSurveying()` 查 `condition_gen_data.csv` 对应行的 `reqSurvey` 列 (表内 `ore_sparse` / `ore_abundant` / `ruins_*` 等资源类条件为 `TRUE`)。
+`addMothballedShip` 内部会自动以 `"independent"` 初始化 (成员创建后置 `setMothballed(true)`)。
 
-### 条件 survey 初始值速查表
+使用 `getMothballedShips()` 前必须先初始化
 
-初始值来自四个入口：
+违反必须遵守的规则的直接可观察结果：`getMothballedShips()` 返回 null 解引用即 NPE。而 `addMothballedShip` 内部会自动初始化，不需要您自己先 init，只有**读取**路径要求先行 `initMothballedShips(factionId)`。
 
-| 入口 | 设置 | 出处 |
-|---|---|---|
-| procgen 行星生成 | `mc.setSurveyed(!genSpec.isRequiresSurvey())` | `PlanetConditionGenerator` |
-| `addCondition(id)` | genSpec 非 null 时同上 | `MarketAPI.addCondition` |
-| `economy.json` 的 `startingConditions` | **强制 `setSurveyed(true)`** | `economy.json` 加载期 |
-| `Misc.setFullySurveyed`(勘测完成) | 全部条件 `setSurveyed(true)` + `setSurveyLevel(FULL)` | `com.fs.starfarer.api.util.Misc` |
+**容量统计**：`getMaxCapacity()` / `getMaxFuel()` / `getMaxPersonnel()` / `getSpaceUsed()` / `getSpaceLeft()` / `getFreeCrewSpace()` / `getFreeFuelSpace()`；`updateSpaceUsed()` 重算已用空间。
 
-用户侧完整链路：`addPlanet` 为行星挂条件市场 `market_<planetId>`(`Misc.initConditionMarket`，行星加入所在位置时调用；市场 id = `"market_" + planet.getId()`)。
-
-打开行星调查面板时未勘测市场置 `PRELIMINARY`。
-
-勘测完成 `applySurveyResults` → `Misc.setFullySurveyed` → 殖民界面 `showColonizeScreen` 开头 `market.reapplyConditions()` → 条件效果从此生效。
-
-**重算检查** (本节核心)：
-
-- `reapplyConditions()`：逐个 `unapply`；**仅 `isSurveyed() && !isConditionSuppressed(id)` 的条件才 `apply`**。
-- `reapplyCondition(token)`：单实例 `unapply` +(未 suppressed)`apply`；**不检查 surveyed**，两个重算入口的检查条件不同。
-- 未勘测条件的可观察行为：`addCondition` 当帧效果已生效 (apply 不查 surveyed)，**下一次重算后效果消失** (unapply 执行、apply 被跳过)；勘测完成后恢复。
-- UI 侧：勘测扫描面板与勘测结果面板只展示 `isSurveyed()` 为 true 的条件。
-- 运行期条件市场是常规 `Market` 实例，重算同时检查 surveyed 与 suppression。
-
-### suppression 语义
-
-- **机制**：`suppressCondition(id)` 把 spec id 加进市场的 `suppressedConditions` 集合 (用到时才创建)；`isConditionSuppressed(id)` 查集合。
-    - `unsuppressCondition(id)` 移除，集合清空且未设置 `retainSuppressedConditionsSetWhenEmpty` 时置 null。
-- **生效时机**：`suppressCondition` **本身不立即移除效果** —— 只在下次重算时，`reapplyConditions` 对它 `unapply` 但跳过 `apply`。**可观察结果**：suppress 后效果仍在，下一次经济迭代 (或稳定度变化、手动重算) 后才消失。
-
-suppress 后立即读数值，效果还在
-
-`suppressCondition(id)`：需要立即生效时，请显式调用重算后再读数。
-
-- **实例保留**：suppression 只抑制 "生效"，`getConditions()` 里实例仍在、`getSpecificCondition(token)` 仍可查到。
-- **持久化**：集合随市场存档；空集在写档时置 null。
-
-原版为什么需要 suppression
-
-产业或物品在生效期间 "占位" 覆盖一组条件：`PlanetaryShield` 在 `apply` 时 `market.suppressCondition(Conditions.METEOR_IMPACTS)`、`unapply` 时配对 `unsuppressCondition`；
-
-`SolarArray` 抑制 `HOT` / `POOR_LIGHT`；Fusion Lamp 物品效果抑制一组条件。
-
-原版所有用例都在 `apply` / `unapply` 中成对出现。
-
-`suppressCondition(id)` 必须配对 `unsuppressCondition(id)`
-
-suppressed 集合只增不减：漏掉配对会让该条件的效果永久休眠，重算时 `unapply` 执行、`apply` 永不回来。
-
-### 重算触发
-
-`reapplyConditions()` 被谁调用 (三个触发点)：
-
-1. **经济迭代**：经济批量处理任务对每个市场调用 `reapplyConditions()` + `reapplyIndustries()`，每月 10 次迭代。
-2. **稳定度变化**：`MarketAPI.advance` 检测稳定度数值发生变化时 → `reapplyConditions()` + `reapplyIndustries()` + `updatePrices()`。
-3. **手动调用**：`reapplyConditions()` / `reapplyCondition(token)`；勘测完成后的殖民界面也走这条路径。
-
-游戏内自然观察：给市场建好行星护盾 (`PlanetaryShield`) 后，`meteor_impacts` 条件的效果在**下一个经济迭代**消失，条件图标仍在 —— suppression + 重算的完整流程。
+玩家舰队的容量上限由 `FleetDataAPI` 同步管线按成员求和写入 (前置知识已记录) —— **直接改 cargo 数值不会重算容量**。
 
 ## 规则强度
 
-机制讲完，把必须遵守与值得遵循的做法集中成清单，每条都附违反后的可观察结果：
+两条链上需要强记的约束集中成下面的清单，每条都附上违反后的可观察结果，验证与排错时直接对照。
 
 ### 规则强度速查表
 
 | 规则 | 强度 | 违反后的可观察结果 |
 |---|---|---|
-| `addCondition(id)` 的 id 必须存在于 `market_conditions.csv`(含跨 MOD 合并表)；spec 缺失时实例构造抛 `RuntimeException("Market condition [id] not found")` | 必须 | 运行期抛异常，条件未添加 |
-| 条件 plugin 写市场修饰时，modifier source 必须用实例 token(`apply` 传入的 id 或 `getModId()`)，禁止用 spec id | 必须 | 同 spec id 多实例的修饰互相覆盖：后 apply 覆盖先 apply，`unapply` 一个实例全部修饰丢失 |
-| 移除具体条件实例必须用 `removeSpecificCondition(token)`；`removeCondition(id)` 移除同 id 全部实例 | 必须 | 同 id 其他实例被连带移除并 unapply |
-| `suppressCondition(id)` 必须配对 `unsuppressCondition(id)`；且效果变化在下次重算后才可观察 | 必须 | 漏配对 → 条件效果永久休眠；suppress 后立刻查数值 → 效果还在 (重算前不变) |
-| transient 条件插件 (`BaseMarketConditionPlugin` 默认) 不得依赖 `setParam` 数据跨存档；需要持久参数必须改用非 transient 插件 (`BaseMarketConditionPlugin2`) 或把参数另存 (如市场 memory) | 必须 | 读档后条件参数恢复默认值：plugin 不进存档、读档重建不重放 `setParam` |
-| 新增条件 id 若同时写入 `condition_gen_data.csv`，两表必须都有该行 | 必须 | 加载期 `RuntimeException("[...] is not a valid market condition, was loading: condition_gen_data.csv")` |
-| 条件 icon 列留空会回退原版 `graphics/hullmods/generic_mod.png`；写一个不存在的路径则资源加载期失败 | 建议 | 留空：使用回退图标；写错路径：加载期报错 (TEXTURE 无 try/catch) |
-| 遍历 `getConditions()` 前先拷贝 (活列表) | 建议 | 遍历中增删条件导致迭代器失效类问题 |
-| 需要暂停时继续推进的条件必须覆写 `runWhilePaused()` 返回 true(基类默认 false) | 建议 | 暂停期间条件 plugin 不推进 (依赖时间流逝的效果停摆) |
+| `getMothballedShips()` 使用前必须先调 `initMothballedShips(factionId)` | 必须 | `getMothballedShips()` 返回 null 解引用 NPE |
+| `removeKnownShip` / `removeKnownWeapon` / `removeKnownFighter` 想永久生效，必须把 "要移除的清单" 持久化并在每次读档重新移除 (`FactionAPI` "...needs to be stored and they need to be re-removed on every game load.") | 必须 | 读档后 `.faction` 定义的蓝图重新回到已知集合 |
+| 直接改动 known / priority 集合后调 `clearShipRoleCache()`(`FactionAPI` "Should be called after direct manipulation...") | 建议 | 再次的 role 选择继续使用旧缓存 |
+| 玩家声望调整 (任务/事件等 action 语义) 走 `SectorAPI.adjustPlayerReputation` | 建议 | 直接写 `FactionAPI` 关系绕过 `ReputationActionResponsePlugin` 的 delta 计算与监听通知 |
+| `CargoAPI.setFreeTransfer` / `isFreeTransfer` 已废弃 (`CargoAPI` `@Deprecated`，"Use SectorEntityToken.setFreeTransfer() instead.") | 事实 | 实体转移费用语义由实体 free transfer 入口表达 |
 
-## 实现市场条件流程
+## 实现势力与货舱服务
 
-先注册条件 spec，再用实例 token 驱动修饰、重算与移除。以下片段按运行顺序递进。
+两个服务都由一次性脚本驱动，先读取基线，再做一项可逆修改，最后核对回滚结果。以下局部片段分别来自三个协作类，每段都对应一组明确日志。
 
-### 注册条件规格
+### 封装一次性执行骨架
 
-```csv
-name,id,tags,planetary,decivRemove,script,desc,icon,order
-GearIn Ore Deposits,GearIn_ore_deposits,,TRUE,,data.scripts.gearin.campaign.GearInOreCondition,"Rich ore veins run beneath $marketName.",,50
-```
-
-插入位置：`data/campaign/market_conditions.csv`。完成信号：加载日志出现 `GearIn_ore_deposits`，spec 的 plugin 类与 `GearInOreCondition` 一致。
-
-### 用实例 token 写入修饰
+插入位置：`GearInOneShotScript.advance`。基类只负责执行边界，具体势力或货舱动作由子类的 `runDemo` 实现。
 
 ```java
 @Override
-public void apply(String id) {
-	market.getHazard().modifyFlat(id, HAZARD_MOD, getName());
-	market.getAccessibilityMod().modifyFlat(id, accessibilityBonus, getName());
-}
-
-@Override
-public void unapply(String id) {
-	market.getHazard().unmodifyFlat(id);
-	market.getAccessibilityMod().unmodifyFlat(id);
+public void advance(float amount) {
+	if (executed) {
+		return;
+	}
+	executed = true;
+	runDemo();
 }
 ```
 
-插入位置：`GearInOreCondition`。完成信号：添加条件后 hazard 增加 0.15、accessibility 增加 0.10，移除具体 token 后两项同时恢复。
+完成信号：每个子类只执行一次 `runDemo`，随后 `isDone()` 返回 `true`，引擎同帧紧随其后移除脚本。
 
-### 创建两个独立实例
+### 读取三组势力关系
 
-```java
-String token1 = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
-String token2 = market.addCondition(GearInOreCondition.ORE_DEPOSITS, 0.20f);
-MarketConditionAPI first = market.getFirstCondition(GearInOreCondition.ORE_DEPOSITS);
-```
-
-插入位置：`GearInConditionLifecycleScript.runLifecycle`。完成信号：两个 token 不同，首实例为 token1，两个 accessibility 修饰分别为 0.10 与 0.20。
-
-### 抑制效果并重新启用
+插入位置：`GearInFactionServicesScript.runDemo` 开头。从 `SectorAPI` 取得玩家势力和三个固定目标，再同时读取数值、等级与敌对判据。
 
 ```java
-market.suppressCondition(GearInOreCondition.ORE_DEPOSITS);
-float beforeReapply = market.getHazard().getModifiedValue();
-market.reapplyConditions();
-float afterReapply = market.getHazard().getModifiedValue();
-market.unsuppressCondition(GearInOreCondition.ORE_DEPOSITS);
-market.reapplyConditions();
+SectorAPI sector = Global.getSector();
+FactionAPI playerFaction = sector.getPlayerFaction();
+FactionAPI hegemony = sector.getFaction(Factions.HEGEMONY);
+FactionAPI pirates = sector.getFaction(Factions.PIRATES);
+FactionAPI independent = sector.getFaction(Factions.INDEPENDENT);
+
+LOG.info("GearIn faction: hegemony="
+		+ playerFaction.getRelationship(Factions.HEGEMONY)
+		+ " level=" + playerFaction.getRelationshipLevel(Factions.HEGEMONY)
+		+ " hostile=" + playerFaction.isHostileTo(Factions.HEGEMONY));
 ```
 
-插入位置：保留一个实例后。完成信号：suppress 当帧数值不变，重算后效果消失；unsuppress 并重算后恢复。
+完成信号：日志同时显示三个势力的关系值、关系等级与敌对状态；同一关系对从任一侧读取结果一致。
 
-### 核对勘测门控并清理实例
+### 修改关系后精确回滚
+
+插入位置：势力关系读取之后。保存原值，以原始关系入口增加 0.05，再用 `setRelationship` 写回原值。
 
 ```java
-String token = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
-MarketConditionAPI condition = market.getSpecificCondition(token);
-condition.setSurveyed(false);
-market.reapplyConditions();
-condition.setSurveyed(true);
-market.reapplyConditions();
-market.removeSpecificCondition(token);
+float relBefore = hegemony.getRelationship(Factions.PLAYER);
+hegemony.adjustRelationship(Factions.PLAYER, 0.05f);
+float relDuring = hegemony.getRelationship(Factions.PLAYER);
+hegemony.setRelationship(Factions.PLAYER, relBefore);
+float relAfter = hegemony.getRelationship(Factions.PLAYER);
 ```
 
-插入位置：生命周期演示末段。完成信号：未勘测重算后效果休眠，重新勘测后恢复，按 token 移除只删除该实例并回到基线。
+完成信号：通常得到 `原值 → 原值 + 0.05 → 原值`；接近上限时中间值受 `1.0` 钳制，终值仍与原值相等。
 
-## 组装市场条件实现
+### 记录货舱基线并加入货物
 
-规则只有落进代码才算数。下面把注册、生命周期、重算与两类检查串成一条可运行的链路。
+插入位置：`GearInCargoServicesScript.runDemo` 开头。先记录三类数量、信用、空间与栈数，再加入不同类型的货物。
 
-在既有 MOD 布局与 `GearInModPlugin` 注册结构之上新增一个数据文件 (追加一行) 与两个类。本节新增条件 ID `GearIn_ore_deposits`(示例所有权 `GearInOreCondition`)，只由本节定义：
+```java
+CargoAPI cargo = Global.getSector().getPlayerFleet().getCargo();
+float suppliesBefore = cargo.getSupplies();
+float fuelBefore = cargo.getFuel();
+int marinesBefore = cargo.getMarines();
+int stacksBefore = cargo.getStacksCopy().size();
 
-```text {7,11,12}
+cargo.addSupplies(100f);
+cargo.addFuel(50f);
+cargo.addMarines(10);
+```
+
+完成信号：补给、燃料和陆战队员分别精确增加 100、50 和 10；原本没有对应栈时，栈列表增加相应条目。
+
+### 回滚货物并辨认空占位栈
+
+插入位置：货物加入之后。移除同量货物，再遍历栈副本统计 `isNull()`，把数量回滚与存储占位分开验证。
+
+```java
+cargo.removeSupplies(100f);
+cargo.removeFuel(50f);
+cargo.removeMarines(10);
+
+int nullStacksAfter = 0;
+for (CargoStackAPI stack : cargo.getStacksCopy()) {
+	if (stack.isNull()) {
+		nullStacksAfter++;
+	}
+}
+```
+
+完成信号：三类货物数量精确回到基线；如果本次新增的栈被减空，`nullStacksAfter` 增加，而栈列表长度可能保持不变。
+
+### 分别注册两个服务脚本
+
+插入位置：既有 `GearInModPlugin.onGameLoad`。每个服务使用自己的 persistent data 键，某一项已执行时不会阻止另一项首次注册。
+
+```java
+if (!Global.getSector().getPersistentData().containsKey(
+		GearInFactionServicesScript.REGISTER_MARK)) {
+	Global.getSector().getPersistentData().put(
+			GearInFactionServicesScript.REGISTER_MARK, true);
+	Global.getSector().addScript(new GearInFactionServicesScript());
+}
+if (!Global.getSector().getPersistentData().containsKey(
+		GearInCargoServicesScript.REGISTER_MARK)) {
+	Global.getSector().getPersistentData().put(
+			GearInCargoServicesScript.REGISTER_MARK, true);
+	Global.getSector().addScript(new GearInCargoServicesScript());
+}
+```
+
+完成信号：首次进入存档出现势力与货舱两组日志；保存并读档后两组日志都不再重复。
+
+## 组装势力货舱实现
+
+两条链的约束已经列全，现在把它们放进同一个可运行的最小例，每个语义都有可观察的落点。您在既有 MOD 工程 (布局与插件入口 `GearInModPlugin`) 之上新增三个类：一个抽象基类与两个服务演示脚本。一文件一角色，不新增任何资源文件；两个脚本在 `onGameLoad` 各自注册，首个 `advance()` 各执行一次演示并自停：
+
+```text {8-10}
 mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
-│   └── campaign\
-│       └── market_conditions.csv   # 本节新增：在文件末尾追加下面一行
-├── jars\                           # 构建产物目录 (gradle jar)
-└── src\
-    └── data/scripts/gearin/campaign\
-        ├── GearInOreCondition             # 本节新增 (归本节所有)
-        └── GearInConditionLifecycleScript # 本节新增 (归本节所有)
+├── src\
+│   └── data/scripts/gearin/campaign\
+│       ├── GearInOneShotScript          # 本节新增 (抽象基类，不参与注册)
+│       ├── GearInFactionServicesScript  # 本节新增 (势力段脚本)
+│       └── GearInCargoServicesScript    # 本节新增 (货物段脚本)
+└── jars\
 ```
 
-### market\_conditions.csv 追加行
+### GearInOneShotScript(抽象基类)
 
-追加到 `data/campaign/market_conditions.csv`(表头沿用原版九列；MOD 行按 id 合并进原版表，跨文件无重复冲突)：
+**职责**：一次性演示脚本骨架 —— 封装 `EveryFrameScript` 三方法 (`isDone` / `runWhilePaused` / `advance`)，首次 `advance()` 执行一次子类实现的 `runDemo()` 后自停。
 
-```csv
-name,id,tags,planetary,decivRemove,script,desc,icon,order
-GearIn Ore Deposits,GearIn_ore_deposits,,TRUE,,data.scripts.gearin.campaign.GearInOreCondition,"Rich, dense ore veins run deep beneath the surface of $marketName, hinting at profitable mining opportunities.",,50
-```
+**绑定注册入口**：不参与任何注册；两个服务演示脚本继承它，各自负责自己的注册。
 
-逐字段对照 (静态交叉核对)：
+### GearInFactionServicesScript(势力段脚本)
 
-- `id` = `GearIn_ore_deposits`：与 `GearInOreCondition.ORE_DEPOSITS` 常量逐字一致，是 `addCondition` 的唯一合法入参；
-- `script` = `data.scripts.gearin.campaign.GearInOreCondition`：与类全名逐字一致，加载期 `registerScriptClass`、实例化时按名 `newInstance`；
-- `planetary` = `TRUE`：条件显示在行星条件区 (面板右侧)；
-- `icon` **留空**：回退原版 `graphics/hullmods/generic_mod.png`(本单元无 PNG 资产，留空是有意为之)；
-- `desc` 里的 `$marketName` 由 `BaseMarketConditionPlugin` 的 token 替换链填充 (`getTokenReplacements()` 提供 `$marketName` / `$marketFaction` / `$marketSystem` 等，tooltip 创建时逐个 `replaceAll`)；
-- `order` = 50：与原版 ore 族 (order 50/60) 同一区间。
+**职责**：`FactionAPI` 常用入口演示 —— 读取玩家势力身份/颜色与对霸主、海盗、独立势力的关系 (数值、等级、敌对判定、`getRelToPlayer` 包装)；对霸主执行一次 `adjustRelationship(+0.05)` 并立即 `setRelationship` 精确回滚；
 
-### GearInOreCondition
+读取 tariff/toll/fine、非法商品、已知资源集合规模、`isShowInIntelTab`。
 
-对应关系：
+**绑定注册入口**：在 onGameLoad 的 persistent data 判断块内调用 `addScript` 注册，标记键 `REGISTER_MARK = "GearIn_FactionServices"`(与调用点片段逐字一致)。
 
-- `extends BaseMarketConditionPlugin`：免费获得 `init`、`getTokenReplacements`、tooltip 默认实现、`isTransient() = true` 等全套默认；`getModId()` 返回实例 token。
-- `apply(id)` 的 `id` 参数就是实例 token：修饰 source 用 token，多实例互相隔离 (规则强度第 2 条)；`getName()` 来自 spec 的 `name` 列。
-- `setParam(Object)`：`addCondition(id, param)` 的第二参在 apply 之前到达 (`MarketAPI.addCondition` 的调用顺序)，示例用 `Number` 覆盖 accessibility 默认值。
-- `createTooltipAfterDescription`：spec desc(含 `$marketName` token) 之后追加数值行 (tooltip 创建时先替换 token 再调本钩子)。
+### GearInCargoServicesScript(货物段脚本)
 
-### GearInConditionLifecycleScript
+**职责**：`CargoAPI` 常用入口演示 —— 读取玩家舰队补给/燃料/陆战队员/信用/空间/栈数基线；`addSupplies(100)` / `addFuel(50)` / `addMarines(10)` 后读取中间值，再同量 remove 回滚并读取终值 (验证数值精确复原)；
 
-对应关系：
+读取重型机械商品量与栈列表前三条 (`CargoStackAPI` 的 type/data/size/isNull)。
 
-- `REGISTER_MARK = "GearIn_ConditionLifecycleScript"`：persistent data 检查键，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；与既有市场演示脚本 (`"GearIn_MarketInspector"`) 是各自独立的键。
-- 第 1 步 `getSpecificCondition(token)`：`addCondition` 返回 token 后按 token 精确取实例；`getGenSpec() == null` 核对本条件无 procgen 行 (因此 `requiresSurveying()` = false、初始 `surveyed` = true)。
-- 第 2 步 `addCondition(id, 0.20f)`：`setParam` 在 apply 之前被调用，`accMod2` = 0.20 证明参数生效；`getFirstCondition(id)` 返回首个实例 (token1)。
-- 第 3 / 6 步：`removeCondition(id)` 与 `removeSpecificCondition(token)` 的不对称性双向演示 (规则强度第 3 条)。
-- 第 5 步：suppress 后**先**读 hazard(效果仍在)，**再** `reapplyConditions()`(效果消失) —— 演示 "suppress 只写集合、效果在重算后才消失"(规则强度第 4 条)。
-- 第 7 步：`setSurveyed(false)` 后重算 → unapply 执行、apply 跳过 (hazard 回落基线)；`setSurveyed(true)` 后重算 → 恢复，对应 survey 检查。
-- 第 8 步：`isPlanetConditionMarketOnly()` 过滤条件市场 (行星市场 `market_<planetId>`)，`requiresSurveying()` 读 procgen 表 `reqSurvey`，只读对照，不做任何修改。
+**绑定注册入口**：在 onGameLoad 的 persistent data 判断块内调用 `addScript` 注册，标记键 `REGISTER_MARK = "GearIn_CargoServices"`(与调用点片段逐字一致)。
 
-调用点 (工程片段，方法所在类归既有注册类所有，本节只演示调用，不改动那些文件)：
+### 绑定位置一览速查表
+
+| 类 | 角色 | 绑定注册入口 |
+|---|---|---|
+| `GearInOneShotScript` | 抽象基类：一次性演示脚本骨架 | 不参与注册 |
+| `GearInFactionServicesScript` | 势力段演示脚本 | onGameLoad `addScript`，标记键 `GearIn_FactionServices` |
+| `GearInCargoServicesScript` | 货物段演示脚本 | onGameLoad `addScript`，标记键 `GearIn_CargoServices` |
+
+### 行为要点
+
+- `extends GearInOneShotScript`：沿用脚本节的一次性演示模式，首帧 `advance()` 执行一次 `runDemo()`，`isDone()` 置位后引擎同帧紧随其后自动移除。
+- `REGISTER_MARK`：persistent data 标记键 —— 两个脚本各自独立 (`GearIn_FactionServices` / `GearIn_CargoServices`)。
+    - **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入既有插件的 `CLASS_MARK` 标记。
+- 势力段：`getFaction(id)` / `getPlayerFaction()` 入口；关系写入演示 `adjustRelationship(+0.05)` → `setRelationship(原值)` 同帧精确回滚。
+    - 关系写入有 `[-1,1]` 钳位，原值必在 `[-1,1]` 内，回滚必然精确；`getRelToPlayer()` 对玩家势力自己返回 `1.0`(同势力对默认值)。
+- 货物段：`addSupplies(100)` / `addFuel(50)` / `addMarines(10)` 后同量 remove 回滚，`supplies/fuel/marines` 终值恒等于初值。
+    - `stacks after` = `stacks during`(`removeItems` 留下 NULL 占位栈)，`nullAfter` = 本演示新腾空的栈数 (0–3，取决于演示前是否已有对应栈)。
+
+### 调用点片段
+
+在既有 MOD 插件的 `onGameLoad(boolean newGame)` 内新增本节注册块 (该插件类归前置单元所有，本节只演示调用，不改动那个文件)：
 
 ```java
-    // GearInModPlugin(既有注册类)onGameLoad(boolean newGame) 内新增本节注册块。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInConditionLifecycleScript.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInConditionLifecycleScript.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInConditionLifecycleScript());
+    if (!Global.getSector().getPersistentData().containsKey(GearInFactionServicesScript.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInFactionServicesScript.REGISTER_MARK, true);
+        Global.getSector().addScript(new GearInFactionServicesScript());
+    }
+    if (!Global.getSector().getPersistentData().containsKey(GearInCargoServicesScript.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInCargoServicesScript.REGISTER_MARK, true);
+        Global.getSector().addScript(new GearInCargoServicesScript());
     }
 ```
 
-想演示换目标市场，注册前先设参数：
+### 构建命令
 
-```java {2}
-    GearInConditionLifecycleScript script = new GearInConditionLifecycleScript();
-    script.setTargetMarketId("asharu"); // corvus 星系独立势力市场 (economy.json 首实体 id 即市场 id)
-    Global.getSector().addScript(script);
-```
-
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行，与既有示例相同)：
+在 `Starsector/mods/GearIndustry/` 执行：
 
 ```text
 gradle jar
 ```
 
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInOreCondition.class` 与 `data/scripts/gearin/campaign/GearInConditionLifecycleScript.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含三个类的 `.class` 条目 (可用 `jar tf` 核对)。
 
-## 关键故障实验：添加条件时报告规格不存在
+### 关键故障实验：读取封存舰船时抛出空引用异常
 
-代码使用的 ID 与 CSV 注册键不一致。
+货舱已经存在，但它的封存舰船集合尚未初始化。
 
 **局部故障片段：**
 
 ```java
 // 故障片段
-market.addCondition("GearIn_ore");
+CargoAPI cargo = Global.getSector().getPlayerFleet().getCargo();
+int storedShips = cargo.getMothballedShips().getNumMembers();
 ```
 
 **局部修正片段：**
 
-```java {2}
+```java {3}
 // 修正片段
-String token = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
-MarketConditionAPI condition = market.getSpecificCondition(token);
+CargoAPI cargo = Global.getSector().getPlayerFleet().getCargo();
+cargo.initMothballedShips(Global.getSector().getPlayerFaction().getId());
+int storedShips = cargo.getMothballedShips().getNumMembers();
 ```
 
-实际症状：`addCondition` 抛出 `Market condition [GearIn_ore] not found`，没有实例 token，重算也没有对象可处理。
+实际症状：部分货舱在第一行读取时返回 null，随后的 `getNumMembers()` 抛出 `NullPointerException`；普通商品、信用和容量读取仍然正常。
 
-原因：注册键是 `GearIn_ore_deposits`；`reapplyConditions()` 只能重放现有实例，不能补注册缺失 spec。
+原因：mothballed ships 是货舱中的延迟初始化字段，`getMothballedShips()` 的接口契约要求调用方先提供势力 ID 完成初始化。
 
-复验：修正后 `condition` 非 null，`condition.getId()` 为完整 spec ID，hazard 与 accessibility 修饰的 source 等于返回 token。
+复验：在新档与旧档各执行一次修正片段，`storedShips` 应返回非负整数；重复调用 `initMothballedShips` 不应清空既有封存舰船。
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与 `GearInModPlugin` 注册结构 (含本节调用点片段，[C6-S1]、[C6-S2] 已确立)、`market_conditions.csv` 追加行、两个 Java 类。
-
-1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含两个 class。
-2. 启动游戏，查看 `Loading condition: GearIn_ore_deposits` 加载日志。
-3. **新建生涯**：在 `starsector.log` 中观察 `GearIn condition lifecycle` 相关记录。
-4. **数值核对**：`add` 行 `plugin=GearInOreCondition`、`planetary=true`、`surveyed=true`、`genSpec=null`、`icon=graphics/hullmods/generic_mod.png`；`applied` 行 `hazardModSource` 等于 `token`、`accModValue=0.10`；`multi` 行 `distinct=true`、`accMod1=0.10 accMod2=0.20`。
-5. **不对称性**：`removeAll` 后 `conditions` 回到基线，`removeOne` 后同样回到基线。
-6. **suppression 时序**：`suppress` 行 `hazardBeforeReapply` 带修饰、`hazardAfterReapply` 回到基线、`conditions` 多一个；`unsuppress` 行恢复。
-7. **survey 检查与原版对照**：`surveyGate` 行 `afterAdd` 与 `afterSurveyedReapply` 相等、`afterUnsurveyedReapply` 回到基线；`vanillaSurvey` 行存在 (具体行星与条件以存档生成结果为准，`none found` 分支也属预期)。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含三个类的 `.class` 条目。
+2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按顺序出现两个脚本的日志行 (势力段 ×4、货物段 ×2 组)，且**没有**旧复合演示的收尾 `done` 行。
+    - 观察 `write-rollback` 行的初值、中间值与终值。
+3. **读档**：保存后读档，确认无任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位)。
+4. **参数演示 (可选)**：把势力段 `adjustRelationship(Factions.PLAYER, 0.05f)` 的 delta 改成 `0.2f` 重新构建：`write-rollback` 行中间值比初值高 `0.20`，终值仍与初值相等 (回滚精确性验证)。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到两个 class。加载期 `starsector.log` 出现 `Loading market conditions` 与 `Loading condition: GearIn_ore_deposits`(加载器的既有日志格式；原版每行条件同样各打一条)。
+- **关系/货物核对**：`write-rollback` 行的第二段恒比第一段高 `0.05`(起始关系接近 `1.0` 时被钳位则例外，新档霸主关系不会)，第三段与第一段相等。
+- **固定值**：`drugsIllegal=true`、`illegalCount=4`(原版 `player.faction` 声明 4 种非法商品)、`relToPlayer=1.00(Cooperative)`(玩家势力对玩家自己按同势力默认取 `1.0`)。
+- **执行次数**：日志段的顺序与调用点片段的注册顺序一致 (势力 → 货物)，两个脚本各自只执行一次。
+- **读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位、脚本不再注册)。
+- **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
+- **其余数值**：以实际存档为准。
 
-- **新建生涯**：`starsector.log` 依次出现。
-
-    ```text
-    GearIn condition lifecycle start: market=jangala conditions=6 hazard=1.25 accessibilityFlat=1.00
-    ```
-
-    (`conditions` 数、`hazard`、`accessibilityFlat` 以实际存档为准；Jangala 原版 6 条件、hazard 1.25)。
-
-- **add 与 applied**(token 随机后缀以日志为准)：
-
-    ```text
-    GearIn condition lifecycle add: id=GearIn_ore_deposits token=GearIn_ore_deposits_xxxxx plugin=GearInOreCondition planetary=true surveyed=true reqSurvey=false genSpec=null specOrder=50 icon=graphics/hullmods/generic_mod.png GearIn condition lifecycle add: desc=Rich, dense ore veins run deep beneath the surface of $marketName, hinting at profitable mining opportunities. GearIn condition lifecycle applied: hazard=1.40 hazardModSource=GearIn_ore_deposits_xxxxx hazardModValue=0.15 accessibilityFlat=1.10 accModValue=0.10 GearIn condition lifecycle tokens: $marketName=Jangala $marketFaction=Hegemony
-    ```
-
-    核对：`plugin=GearInOreCondition`(script 列生效)；`planetary=true`(CSV 列生效)；`surveyed=true`、`reqSurvey=false`、`genSpec=null`(无 procgen 行 → 默认已勘测)；`icon` 是回退的 `graphics/hullmods/generic_mod.png`(icon 列留空)；`hazardModSource` 与 `token` 相同 (modifier source 即实例 token)；`desc` 打印的是 `spec.getDesc()` 的**原始文本** (含字面 `$marketName`) —— token 替换只发生在 tooltip 创建时，演示脚本从不创建 tooltip，日志不会看到替换值。
-
-- **多实例 + param**：
-
-    ```text
-    GearIn condition lifecycle multi: token1=GearIn_ore_deposits_xxxxx token2=GearIn_ore_deposits_yyyyy distinct=true firstConditionIsToken1=true hasCondition=true hasSpecific=true GearIn condition lifecycle multi: hazard=1.40 accessibilityFlat=1.30 accMod1=0.10 accMod2=0.20
-    ```
-
-    核对：两个 token 不同；`getFirstCondition(id)` 是首个实例 (token1)；accessibility 平值叠加 `0.10 + 0.20`，且 `accMod1` / `accMod2` 各自按 token 独立可取 (修饰隔离)。
-
-- **removeCondition(id) 删同 id 全部 (不对称性 A)**：
-
-    ```text
-    GearIn condition lifecycle removeAll: conditions=6 hazard=1.25 accessibilityFlat=1.00
-    ```
-
-    `conditions` 回到基线 (两个实例一起消失)、hazard / accessibility 全部回滚。
-
-- **reapplyCondition(token) 单实例重算**：
-
-    ```text
-    GearIn condition lifecycle reapplyOne: hazardBefore=1.40 hazardAfter=1.40 unchanged=true
-    ```
-
-    先 unapply(回落) 再 apply(恢复)，终值不变，单实例重算是 "刷一遍"，不是叠加。
-
-- **suppression(先不生效、重算后休眠)**：
-
-    ```text
-    GearIn condition lifecycle suppress: suppressed=true conditions=7 hazardBeforeReapply=1.40 hazardAfterReapply=1.25 (effect dormant) GearIn condition lifecycle unsuppress: suppressed=false hazard=1.40 (effect restored)
-    ```
-
-    核对：suppress 后实例仍在 (`conditions=7`)、效果未变 (`hazardBeforeReapply` 仍带修饰)；`reapplyConditions()` 后效果消失 (unapply 执行、apply 被跳过)；配对 `unsuppressCondition` 后重算恢复。
-
-- **removeSpecificCondition(token) 只删一个 (不对称性 B)**：
-
-    ```text
-    GearIn condition lifecycle removeOne: conditions=6 hazard=1.25 accessibilityFlat=1.00
-    ```
-
-- **survey 检查**：
-
-    ```text
-    GearIn condition lifecycle surveyGate: afterAdd=1.40 afterUnsurveyedReapply=1.25 afterSurveyedReapply=1.40
-    ```
-
-    核对：新添加实例当帧生效 (apply 不查 surveyed)；`setSurveyed(false)` 后重算效果消失；`setSurveyed(true)` 后重算恢复，重算只对 surveyed 的条件 apply。
-
-- **原版对照 (只读)**：
-
-    ```text
-    GearIn condition lifecycle vanillaSurvey: market=market_corvus_IIIa surveyLevel=NONE condition=ore_sparse surveyed=false
-    ```
-
-    (具体行星与条件以存档生成结果为准；只要存在任意 `requiresSurveying()==true` 且 `surveyed=false` 的条件即通过；若新档所有条件市场都已勘测，则出现 `none found` 一行，也属预期分支。)
-
-- **收尾与读档**：
-
-    ```text
-    GearIn condition lifecycle final: conditions=6 hazard=1.25 accessibilityFlat=1.00 (baseline restored) GearIn condition lifecycle done
-    ```
-
-    无任何 `gear_in` 引起的 `ERROR`。读档不重复执行 (`REGISTER_MARK` 已置位)，也不出现 `GearIn condition lifecycle start` 日志。
+清理：把 `adjustRelationship(Factions.PLAYER, 0.2f)` 恢复为 `adjustRelationship(Factions.PLAYER, 0.05f)`。
 
 ## 故障分析
 
-- **条件完全不出现**：ID 重复、文件路径错误或 CSV 行没有进入合并表时，日志不会出现 `Loading condition: <id>`。
+- **调用 `getMothballedShips()` 时抛出 NPE**：该字段尚未初始化。
 
-    - **解决方案**：先确认注册日志，再换用唯一 ID。
+    - **解决方案**：读取前调用 `initMothballedShips(factionId)`。
 
-- **`addCondition` 抛 `Market condition [...] not found`**：调用 ID 没有对应 spec。
+- **货物数量已经回滚，但栈数量仍然偏多**：减空的栈会留下 `NULL_STACK` 占位。
 
-    - **解决方案**：逐字核对 CSV 的 `id` 与 `ORE_DEPOSITS` 常量。
+    - **解决方案**：数量读取 `getSupplies()` 或 `getFuel()`，需要清理占位时调用 `removeEmptyStacks()`。
 
-- **删除一个条件却把同 ID 全删**：`removeCondition(id)` 面向 spec ID。
+- **直接修改关系后没有声望提示**：`adjustRelationship` 是原始写入，不触发玩家声望监听。
 
-    - **解决方案**：保存 `addCondition` 返回的 token，改用 `removeSpecificCondition(token)`。
+    - **解决方案**：玩家声望变化使用 `SectorAPI.adjustPlayerReputation`。
 
-- **读档后条件参数恢复默认**：transient 插件不会保存 `setParam` 状态。
+- **关系数值超出预期**：直接写入会把结果钳位到 `[-1,1]`。
 
-    - **解决方案**：改用 `BaseMarketConditionPlugin2`，或把参数保存到市场 memory / persistent data。
+    - **解决方案**：记录原值并精确回滚。
 
-- **抑制条件后效果仍在**：`suppressCondition` 只修改集合，效果要到下一次重算才撤销。
+- **读档后移除的蓝图重新出现**：`removeKnownShip` 的移除清单不随存档保存。
 
-    - **解决方案**：需要立即更新时调用 `reapplyConditions()`，解除时配对 `unsuppressCondition(id)`。
+    - **解决方案**：将清单写入 persistent data，每次读档重新移除并调用 `clearShipRoleCache()`。
 
-- **未 survey 条件在重算后消失**：`reqSurvey=TRUE` 的条件只有在 `isSurveyed()` 后才会重新 apply。
+- **演示日志出现但游戏内没有效果**：注册点或操作目标错误。
 
-    - **解决方案**：完成勘测，或让自定义条件不进入 procgen 检查。
+    - **解决方案**：将注册放入 `onGameLoad` 的持久标记块，并在写入后读取同一对象。
 
-- **同 spec ID 的多个实例互相覆盖**：modifier source 使用了 spec ID。
+- **演示脚本只执行一段**：某个 `addScript` 块缺失，或 `REGISTER_MARK` 与调用点不一致。
 
-    - **解决方案**：改用 `id` 参数或 `getModId()`，让每个 token 拥有独立修饰。
-
-- **条件图标路径错误导致加载失败**：`icon` 指向不存在的贴图。
-
-    - **解决方案**：留空以使用 `graphics/hullmods/generic_mod.png`，或补齐真实文件。
+    - **解决方案**：恢复注册块并统一键名。
 
 ## 总结
 
-本节把市场条件讲成三条链：
+本节把两个服务入口讲成两条链，并在示例里组合使用。势力链从 `SectorAPI.getFaction(id)` / `getPlayerFaction()` 进入 `FactionAPI`，关系读写经过全局对表 (双向共享、`-1..1` 钳位、对条目用到时才建)；货物链从 `SectorEntityToken.getCargo()` 进入 `CargoAPI`，读写按分族进行，栈是存储细节而不是数量真相。
 
-- **注册链**：`market_conditions.csv`(九字段：`name,id,tags,planetary,decivRemove,script,desc,icon,order`)→ CSV spec 加载期 (`readCSV("id", ...)` 合并、`registerScriptClass`、icon 回退、`putSpec`)→ `addCondition(id)` 实例化 (spec 缺失抛异常)→ plugin 生命周期。MOD 追加一行即注册；加载日志 `Loading condition: <id>` 是注册成功的第一个可观察信号。
-- **生命周期链**：`init(market, condition)` → `setParam(param)` → `apply(token)` → 每帧 `advance(amount)`(`runWhilePaused()` 决定暂停时是否推进)→ `unapply(token)`(移除/重算时)。`isTransient()` 决定 plugin 是否进存档；transient 插件读档重建不重放 `setParam`。
-- **重算链**：三个触发点 (经济迭代、稳定度变化 `MarketAPI.advance`、手动调用)→ `reapplyConditions()`(全部)/ `reapplyCondition(token)`(单个)→ 每实例 `unapply` + 按检查条件 `apply`。两个入口的检查条件不同：`reapplyConditions()` 跳过未勘测或已抑制的实例 (**surveyed && !suppressed**)，`reapplyCondition(token)` 只跳过已抑制的实例 (不查 surveyed)。
+排错时先记住两条判断。关系写入是**原始写入** (无监听、钳位 `[-1,1]`)，玩家声望 action 走 `adjustPlayerReputation`；`getMothballedShips()` 必须先 `initMothballedShips`，`getStacksCopy()` 含 NULL 占位栈。本节演示的 "写入后立即精确回滚" 写法，让验证可以在不遗留任何持久状态的前提下完成。
 
-记忆要点：
-
-- token = `spec id + "_" + genUID`；查询用 `getCondition(id)`(首个)/ `getSpecificCondition(token)`(精确)；删除**必须**用 token(`removeCondition(id)` 删同 id 全部)。
-- modifier source 必须用 token；`suppressCondition` 只写集合、效果在下次重算才消失、必须配对 `unsuppressCondition`。
-- survey 两层：市场级 `SurveyLevel`(用户勘测进度)vs 条件级 `isSurveyed`(procgen `reqSurvey` 决定初始值)；未 survey 条件在重算时休眠。
-- 条件 `icon` 留空回退原版图标；`condition_gen_data.csv` 与 `market_conditions.csv` 互相校验。
-
-市场侧访问入口的既有讲解给出了 `addCondition` 返回 token、`getSpecificCondition` / `getFirstCondition` 的用法，本节补全了实现、检查与生命周期；行星市场 (`market_<planetId>`) 承载 survey 语义。
-
-注册链决定条件 "存在"，生命周期链决定条件 "如何作用"，重算链决定检查 "何时生效"，三条链在逻辑上是同一件事的三面。token 是实例级操作的锚点，survey 与 suppression 是两类效果检查，而重算 (经济迭代、稳定度变化、手动调用) 是检查生效的唯一时机。把握这一整体，就能在任意触发点预测条件的可观察行为。
+脚本注册标记与 `Global` 阶段语义是本节底座；`REGISTER_MARK` 注册模式沿用既有脚本节 "每个注册项用各自的键" 的惯例。本节只覆盖两个入口的常用高频面；制作情报与交互对话框的方法见 [C10-S6]。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.econ.MarketConditionAPI`：条件实例接口 (spec id、token、survey 状态、`getGenSpec`、`isPlanetary`)。
-- `com.fs.starfarer.api.characters.MarketConditionSpecAPI`：条件静态配置 (CSV 九字段的运行时面)。
-- `com.fs.starfarer.api.campaign.econ.MarketConditionPlugin`：条件行为插件 (生命周期回调 + tooltip 链路 + `isTransient`)。
-- `com.fs.starfarer.api.campaign.econ.MarketAPI`：条件访问族、suppression 族、`SurveyLevel`、两个重算入口。
-- `com.fs.starfarer.api.impl.campaign.econ.BaseMarketConditionPlugin`：条件插件基类 (transient 默认、token 替换、tooltip 默认实现)。
-- `com.fs.starfarer.api.impl.campaign.econ.BaseMarketConditionPlugin2`：非 transient 条件插件 (`daysActive` 计时，进存档)。
-- `com.fs.starfarer.api.impl.campaign.econ.BaseHazardCondition`：原版 hazard 条件基类 (modifier source 取实例 token 的范本)。
-- `com.fs.starfarer.api.impl.campaign.econ.ResourceDepositsCondition`：`ore_sparse` 等资源条件的 supply 修饰。
-- `com.fs.starfarer.api.impl.campaign.econ.PlanetaryShield`：原版 suppress/unsuppress 配对用法。
-- `com.fs.starfarer.api.impl.campaign.econ.SolarArray`：原版条件抑制用法 (HOT / POOR\_LIGHT)。
-- `com.fs.starfarer.api.impl.campaign.econ.impl.ItemEffectsRepo`：Fusion Lamp 物品效果抑制一组条件。
-- `com.fs.starfarer.api.impl.campaign.procgen.PlanetConditionGenerator`：procgen 行星生成时设置条件 survey 状态。
-- `com.fs.starfarer.api.impl.campaign.procgen.ConditionGenDataSpec`：`reqSurvey` 列读取。
-- `com.fs.starfarer.api.util.Misc`：`setFullySurveyed`、`initConditionMarket` 等工具入口。
-- `com.fs.starfarer.api.combat.MutableStat`：`modifyFlat` / `unmodifyFlat` / `getFlatStatMod`。
-- `com.fs.starfarer.api.combat.StatBonus`：`getFlatBonus()` 总量与按 source 查询。
-- `com.fs.starfarer.api.impl.campaign.ids.Conditions`：`ORE_SPARSE`、`METEOR_IMPACTS` 等条件常量。
-- `data/campaign/market_conditions.csv`：条件注册表 (九字段，MOD 追加行即注册)。
-- `data/campaign/procgen/condition_gen_data.csv`：procgen 条件表 (`reqSurvey` 列决定初始 survey 状态)。
+- `com.fs.starfarer.api.Global`，全局入口：`getSector()`、`getLogger()`。
+- `com.fs.starfarer.api.campaign.SectorAPI`：生涯引擎入口。
+    - 关系与货物入口都能从这里进入：`getFaction` / `getAllFactions` / `getPlayerFaction` / `getPlayerFleet` / `adjustPlayerReputation` / `getPersistentData` / `addScript`。
+- `com.fs.starfarer.api.campaign.FactionAPI`，势力接口：身份、颜色、关系读写、已知资源集合、经济字段与 doctrine/production/spec。
+- `com.fs.starfarer.api.characters.RelationshipAPI`，关系值包装：`getRel()` / `getLevel()`。
+- `com.fs.starfarer.api.campaign.CargoAPI`，货物容器：分族读写、容量统计、`getStacksCopy()`、`removeEmptyStacks()`。
+- `com.fs.starfarer.api.campaign.CargoStackAPI`，货物单栈：类型、数据、大小与 `isNull()` 占位判定。
+- `com.fs.starfarer.api.util.MutableValue`，credits 的可变值容器：`get` / `set` / `add` / `subtract`。
+- `com.fs.starfarer.api.campaign.RepLevel`，关系等级枚举与阈值：`getLevelFor`、`getMin` / `getMax` 边界语义。
+- `com.fs.starfarer.api.campaign.SectorEntityToken`、`CampaignFleetAPI`：`getCargo()` 货物入口；
+- `com.fs.starfarer.api.util.Misc`：文本与高亮颜色常量 (`getTextColor` / `getGrayColor` 等)。
+- `com.fs.starfarer.api.impl.campaign.ids.Factions`、`Commodities`，id 常量：势力 / 商品。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`，原版声望 action rulecmd：`adjustPlayerReputation` 的原版调用参考。
+- `data/scripts/gearin/campaign/`：本节三个示例类所在目录 (MOD 内相对路径)。
 
 ## 完整最小例
 
-::: details 完整成品：GearInOreCondition
+::: details 完整成品：GearInOneShotScript
 
 ```java
 package data.scripts.gearin.campaign;
-
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.impl.campaign.econ.BaseMarketConditionPlugin;
-import com.fs.starfarer.api.ui.TooltipMakerAPI;
-import com.fs.starfarer.api.util.Misc;
-
-/**
- * 完整最小例：市场条件 (MarketConditionAPI) 插件。
- *
- * 注册入口：data/campaign/market_conditions.csv 的 script 列 (类名逐字一致)，
- * 由 CSV spec 加载期的 loadMarketConditions 完成 registerScriptClass；条件实例创建时
- * 脚本类加载器的 loadScriptInstance 按类名 newInstance(必须无参可实例化)，随后
- * init(market, condition) 绑定，再进入 apply/advance/unapply 生命周期。
- *
- * 数据所有权：本节新增条件 id {@code GearIn_ore_deposits}，只由本节定义；页面正文
- * 的 CSV 行与本类逐字配套。
- *
- * 行为：apply(id) 以传入的实例 token 为 modifier source 写入两条市场修饰 ——
- *   1. hazard +0.15(MutableStat，getHazard())；
- *   2. accessibility +0.10(StatBonus，getAccessibilityMod()，默认值可由
- *      addCondition(id, param) 的 param 覆盖，setParam 在 apply 之前被调用)。
- * unapply(id) 按同一 source 撤销。修饰 source 用实例 token 而非 spec id，
- * 同 spec id 多实例才不会互相覆盖 ("GearIn_ore_deposits" 是 spec id，
- * 每个实例的 token 形如 "GearIn_ore_deposits_xxxxx"，由
- * MarketConditionAPI.getIdForPluginModifications() 提供)。
- *
- * 存档语义：继承 BaseMarketConditionPlugin，isTransient() = true —— plugin 实例
- * 不进存档，读档后按 spec 重建并重新 init，setParam 的数据不重放
- *
- * tooltip：createTooltipAfterDescription 在 spec desc(含 $marketName token) 之后
- * 追加一条本条件的数值说明，演示 tooltip 扩展链路。
- */
-public class GearInOreCondition extends BaseMarketConditionPlugin {
-
-    /** 条件 spec id(与 market_conditions.csv 的 id 列逐字一致)。 */
-    public static final String ORE_DEPOSITS = "GearIn_ore_deposits";
-
-    /** hazard 平值修饰 (1f = 100%)。 */
-    public static final float HAZARD_MOD = 0.15f;
-
-    /** accessibility 平值修饰默认值；addCondition(id, param) 的 param 可覆盖。 */
-    public static final float DEFAULT_ACCESSIBILITY_BONUS = 0.10f;
-
-    private float accessibilityBonus = DEFAULT_ACCESSIBILITY_BONUS;
-
-    public GearInOreCondition() {
-        // 空构造：脚本类加载器按类名 newInstance，必须无参可实例化
-    }
-
-    @Override
-    public void setParam(Object param) {
-        if (param instanceof Number) {
-            accessibilityBonus = ((Number) param).floatValue();
-        }
-    }
-
-    @Override
-    public void apply(String id) {
-        MarketAPI m = market;
-        m.getHazard().modifyFlat(id, HAZARD_MOD, getName());
-        m.getAccessibilityMod().modifyFlat(id, accessibilityBonus, getName());
-    }
-
-    @Override
-    public void unapply(String id) {
-        market.getHazard().unmodifyFlat(id);
-        market.getAccessibilityMod().unmodifyFlat(id);
-    }
-
-    @Override
-    protected void createTooltipAfterDescription(TooltipMakerAPI tooltip, boolean expanded) {
-        super.createTooltipAfterDescription(tooltip, expanded);
-        String hazardPct = "+" + (int) (HAZARD_MOD * 100f) + "%";
-        String accPct = "+" + (int) (accessibilityBonus * 100f) + "%";
-        tooltip.addPara("%s hazard, %s accessibility (GearIn ore veins)", 10f,
-                Misc.getHighlightColor(), hazardPct, accPct);
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInConditionLifecycleScript
-
-```java
-package data.scripts.gearin.campaign;
-
-import java.util.Map;
-
-import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.campaign.econ.MarketConditionAPI;
-import com.fs.starfarer.api.campaign.econ.MarketConditionPlugin;
-import com.fs.starfarer.api.characters.MarketConditionSpecAPI;
-import com.fs.starfarer.api.combat.MutableStat;
 
 /**
- * 完整最小例：市场条件生命周期演示脚本 (token、survey、suppression、重算)。
+ * 一次性演示脚本基类：挂载后第一次 advance() 执行一次子类实现的 runDemo() 并自停
+ * (isDone() 返回 true，引擎同帧紧随其后自动从脚本列表移除本脚本)。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
- * REGISTER_MARK 一次性门控 (沿用既有模式：每个注册项用各自的键，不挂进插件的
- * CLASS_MARK 门内)。演示脚本在挂载后的第一帧执行一次完整序列并自停
- * (isDone()=true，引擎下一帧自动移除本脚本)：
- *   1. addCondition(GearIn_ore_deposits)：spec id -> 实例 token，plugin 立即 apply，
- *      hazard/accessibility 上升；读取实例 token、plugin 类、planetary、survey 状态、
- *      spec 字段与 tooltip token 替换值；
- *   2. 多实例 + param：addCondition(id, 0.20f) 产生第二个实例，两个 token 相互独立，
- *      修饰按 token 隔离 (同 spec id 不互相覆盖)；getFirstCondition 取首个实例；
- *   3. removeCondition(id) 移除同 id 全部实例 (不对称性 A)，修饰全部撤销；
- *   4. reapplyCondition(token) 单实例重算：unapply + apply，效果先降后升、终值不变；
- *   5. suppressCondition(id) 后 reapplyConditions()：unapply 执行、apply 被跳过，
- *      效果休眠但实例保留；unsuppressCondition(id) 后重算恢复；
- *   6. removeSpecificCondition(token) 只移除一个实例 (不对称性 B)；
- *   7. survey 门控：setSurveyed(false) 后重算 -> 效果休眠；setSurveyed(true) 后重算
- *      -> 效果恢复 (reapplyConditions 只对 surveyed 且未 suppressed 的条件 apply)；
- *   8. 原版对照 (只读)：找一颗条件市场 (isPlanetConditionMarketOnly) 上
- *      requiresSurveying() 为 true 的条件，观察其 isSurveyed 初始状态。
- *
- * 演示全程不遗留持久状态：全部实例在当帧移除 (removeSpecificCondition -> unapply)，
- * suppressed 集合复位，hazard/accessibility 回到基线。
+ * 两个服务演示脚本 (势力 / 货物) 都继承本类，各自只实现 runDemo()，
+ * 避免每个演示类重复 EveryFrameScript 的骨架方法。本类是抽象基类，不参与任何注册；
+ * 各子类的注册在 onGameLoad 的 persistent data 门内各自执行 (见页面调用点片段)。
  */
-public class GearInConditionLifecycleScript implements EveryFrameScript {
+public abstract class GearInOneShotScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_ConditionLifecycleScript";
-
-    private static final Logger LOG = Global.getLogger(GearInConditionLifecycleScript.class);
-
-    /** 演示目标市场 id；默认 "jangala"(原版核心世界，必存在)。 */
-    private String targetMarketId = "jangala";
-
-    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
+    /** 演示是否已执行；置位后 isDone() 返回 true，引擎同帧紧随其后自动移除本脚本。 */
     private boolean executed = false;
 
-    public GearInConditionLifecycleScript() {
+    public GearInOneShotScript() {
         // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
-    }
-
-    /** 修改演示目标市场；默认 "jangala"。 */
-    public void setTargetMarketId(String targetMarketId) {
-        this.targetMarketId = targetMarketId;
     }
 
     @Override
@@ -743,156 +481,182 @@ public class GearInConditionLifecycleScript implements EveryFrameScript {
             return;
         }
         executed = true;
-        runLifecycle();
+        runDemo();
     }
 
-    private void runLifecycle() {
+    /** 子类实现一次演示：只在第一次 advance() 时被调用，全部行为在一个调用内完成。 */
+    protected abstract void runDemo();
+}
+```
+
+:::
+
+::: details 完整成品：GearInFactionServicesScript
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.FactionAPI;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Commodities;
+import com.fs.starfarer.api.impl.campaign.ids.Factions;
+
+/**
+ * 完整最小例 (势力段)：FactionAPI 常用入口演示脚本。
+ *
+ * 注册入口：onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控。
+ *
+ * 行为：读取玩家势力身份/颜色与对霸主/海盗/独立势力的关系 (数值、等级、敌对判定、getRelToPlayer
+ * 包装)；对霸主 adjustRelationship(+0.05) 后立即 setRelationship 精确回滚 ("写入后必须回滚"
+ * 基线写法)；读取 tariff/toll/fine、非法商品、已知资源集合规模、isShowInIntelTab。不遗留持久状态。
+ */
+public class GearInFactionServicesScript extends GearInOneShotScript {
+
+    /** 存档持久化标记：本脚本是否已在该存档执行过 (随存档保存)。 */
+    public static final String REGISTER_MARK = "GearIn_FactionServices";
+
+    private static final Logger LOG = Global.getLogger(GearInFactionServicesScript.class);
+
+    /** 关系数值统一格式：保留两位小数。 */
+    private static String fmt(float value) {
+        return String.format("%.2f", value);
+    }
+
+    @Override
+    protected void runDemo() {
         SectorAPI sector = Global.getSector();
-        MarketAPI market = sector.getEconomy().getMarket(targetMarketId);
-        if (market == null) {
-            LOG.info("GearIn condition lifecycle abort: market " + targetMarketId + " not found");
-            return;
-        }
+        FactionAPI playerFaction = sector.getPlayerFaction();
+        FactionAPI hegemony = sector.getFaction(Factions.HEGEMONY);
+        FactionAPI pirates = sector.getFaction(Factions.PIRATES);
+        FactionAPI independent = sector.getFaction(Factions.INDEPENDENT);
 
         LOG.info(String.format(
-                "GearIn condition lifecycle start: market=%s conditions=%d hazard=%.2f accessibilityFlat=%.2f",
-                market.getId(), market.getConditions().size(),
-                market.getHazard().getModifiedValue(),
-                market.getAccessibilityMod().getFlatBonus()));
+                "GearIn campaign services faction: player=%s(%s) baseColor=%s darkColor=%s | hegemony=%s pirates=%s",
+                playerFaction.getId(), playerFaction.getDisplayNameWithArticle(),
+                playerFaction.getBaseUIColor(), playerFaction.getDarkUIColor(),
+                hegemony.getDisplayName(), pirates.getDisplayName()));
 
-        // --- 1. addCondition：spec id -> 实例 token，plugin 立即 apply ---
-        String token = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
-        MarketConditionAPI mc = market.getSpecificCondition(token);
-        MarketConditionSpecAPI spec = mc.getSpec();
-        MarketConditionPlugin plugin = mc.getPlugin();
         LOG.info(String.format(
-                "GearIn condition lifecycle add: id=%s token=%s plugin=%s planetary=%s surveyed=%s reqSurvey=%s genSpec=%s specOrder=%.0f icon=%s",
-                mc.getId(), mc.getIdForPluginModifications(),
-                plugin.getClass().getSimpleName(), mc.isPlanetary(), mc.isSurveyed(),
-                mc.requiresSurveying(), mc.getGenSpec() == null ? "null" : "present",
-                spec.getOrder(), spec.getIcon()));
-        LOG.info(String.format(
-                "GearIn condition lifecycle add: desc=%s", spec.getDesc()));
+                "GearIn campaign services faction relations: hegemony=%s(%s) hostile=%s | pirates=%s(%s) hostile=%s | independent=%s(%s) hostile=%s",
+                fmt(playerFaction.getRelationship(Factions.HEGEMONY)),
+                playerFaction.getRelationshipLevel(Factions.HEGEMONY).getDisplayName(),
+                playerFaction.isHostileTo(Factions.HEGEMONY),
+                fmt(playerFaction.getRelationship(Factions.PIRATES)),
+                playerFaction.getRelationshipLevel(Factions.PIRATES).getDisplayName(),
+                playerFaction.isHostileTo(Factions.PIRATES),
+                fmt(playerFaction.getRelationship(Factions.INDEPENDENT)),
+                playerFaction.getRelationshipLevel(Factions.INDEPENDENT).getDisplayName(),
+                playerFaction.isHostileTo(Factions.INDEPENDENT)));
 
-        float hazardAfterAdd = market.getHazard().getModifiedValue();
-        float accFlatAfterAdd = market.getAccessibilityMod().getFlatBonus();
-        MutableStat.StatMod hazardMod = market.getHazard().getFlatStatMod(token);
-        MutableStat.StatMod accMod = market.getAccessibilityMod().getFlatBonus(token);
+        // 关系写入并精确回滚：adjustRelationship 直接加、setRelationship 直写原值 (势力管理器钳位 [-1,1])
+        float relBefore = hegemony.getRelationship(Factions.PLAYER);
+        hegemony.adjustRelationship(Factions.PLAYER, 0.05f);
+        float relDuring = hegemony.getRelationship(Factions.PLAYER);
+        hegemony.setRelationship(Factions.PLAYER, relBefore);
+        float relAfter = hegemony.getRelationship(Factions.PLAYER);
         LOG.info(String.format(
-                "GearIn condition lifecycle applied: hazard=%.2f hazardModSource=%s hazardModValue=%s accessibilityFlat=%.2f accModValue=%s",
-                hazardAfterAdd,
-                hazardMod == null ? "null" : hazardMod.getSource(),
-                hazardMod == null ? "null" : String.format("%.2f", hazardMod.getValue()),
-                accFlatAfterAdd,
-                accMod == null ? "null" : String.format("%.2f", accMod.getValue())));
+                "GearIn campaign services faction rel write-rollback: %s -> %s -> %s (rolled back)",
+                fmt(relBefore), fmt(relDuring), fmt(relAfter)));
+        LOG.info(String.format(
+                "GearIn campaign services faction misc: relToPlayer=%s(%s) tariff=%.3f toll=%.3f fine=%.3f drugsIllegal=%s illegalCount=%d knownShips=%d knownWeapons=%d knownFighters=%d showInIntelTab=%s",
+                fmt(playerFaction.getRelToPlayer().getRel()),
+                playerFaction.getRelToPlayer().getLevel().getDisplayName(),
+                playerFaction.getTariffFraction(), playerFaction.getTollFraction(), playerFaction.getFineFraction(),
+                playerFaction.isIllegal(Commodities.DRUGS), playerFaction.getIllegalCommodities().size(),
+                playerFaction.getKnownShips().size(),
+                playerFaction.getKnownWeapons().size(),
+                playerFaction.getKnownFighters().size(),
+                playerFaction.isShowInIntelTab()));
+    }
+}
+```
 
-        Map<String, String> tokens = plugin.getTokenReplacements();
-        LOG.info(String.format(
-                "GearIn condition lifecycle tokens: $marketName=%s $marketFaction=%s",
-                tokens.get("$marketName"), tokens.get("$marketFaction")));
+:::
 
-        // --- 2. 多实例 + param：token 独立、修饰按 token 隔离 ---
-        String token2 = market.addCondition(GearInOreCondition.ORE_DEPOSITS, 0.20f);
-        MarketConditionAPI first = market.getFirstCondition(GearInOreCondition.ORE_DEPOSITS);
-        LOG.info(String.format(
-                "GearIn condition lifecycle multi: token1=%s token2=%s distinct=%s firstConditionIsToken1=%s hasCondition=%s hasSpecific=%s",
-                token, token2, !token.equals(token2),
-                first != null && token.equals(first.getIdForPluginModifications()),
-                market.hasCondition(GearInOreCondition.ORE_DEPOSITS),
-                market.hasSpecificCondition(token)));
-        MutableStat.StatMod accMod1 = market.getAccessibilityMod().getFlatBonus(token);
-        MutableStat.StatMod accMod2 = market.getAccessibilityMod().getFlatBonus(token2);
-        LOG.info(String.format(
-                "GearIn condition lifecycle multi: hazard=%.2f accessibilityFlat=%.2f accMod1=%s accMod2=%s",
-                market.getHazard().getModifiedValue(),
-                market.getAccessibilityMod().getFlatBonus(),
-                accMod1 == null ? "null" : String.format("%.2f", accMod1.getValue()),
-                accMod2 == null ? "null" : String.format("%.2f", accMod2.getValue())));
+::: details 完整成品：GearInCargoServicesScript
 
-        // --- 3. removeCondition(id)：同 id 全部实例一起移除 (不对称性 A) ---
-        market.removeCondition(GearInOreCondition.ORE_DEPOSITS);
-        LOG.info(String.format(
-                "GearIn condition lifecycle removeAll: conditions=%d hazard=%.2f accessibilityFlat=%.2f",
-                market.getConditions().size(), market.getHazard().getModifiedValue(),
-                market.getAccessibilityMod().getFlatBonus()));
+```java
+package data.scripts.gearin.campaign;
 
-        // --- 4. reapplyCondition(token)：单实例重算 = unapply + apply ---
-        String token3 = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
-        float hazardBeforeReapply = market.getHazard().getModifiedValue();
-        market.reapplyCondition(token3);
-        float hazardAfterReapply = market.getHazard().getModifiedValue();
-        LOG.info(String.format(
-                "GearIn condition lifecycle reapplyOne: hazardBefore=%.2f hazardAfter=%.2f unchanged=%s",
-                hazardBeforeReapply, hazardAfterReapply, hazardBeforeReapply == hazardAfterReapply));
+import java.util.List;
 
-        // --- 5. suppression：suppress 本身不改效果，下次重算才生效 ---
-        market.suppressCondition(GearInOreCondition.ORE_DEPOSITS);
-        float hazardSuppressedBeforeReapply = market.getHazard().getModifiedValue();
-        market.reapplyConditions();
-        float hazardSuppressedAfterReapply = market.getHazard().getModifiedValue();
-        LOG.info(String.format(
-                "GearIn condition lifecycle suppress: suppressed=%s conditions=%d hazardBeforeReapply=%.2f hazardAfterReapply=%.2f (effect dormant)",
-                market.isConditionSuppressed(GearInOreCondition.ORE_DEPOSITS),
-                market.getConditions().size(),
-                hazardSuppressedBeforeReapply, hazardSuppressedAfterReapply));
-        market.unsuppressCondition(GearInOreCondition.ORE_DEPOSITS);
-        market.reapplyConditions();
-        LOG.info(String.format(
-                "GearIn condition lifecycle unsuppress: suppressed=%s hazard=%.2f (effect restored)",
-                market.isConditionSuppressed(GearInOreCondition.ORE_DEPOSITS),
-                market.getHazard().getModifiedValue()));
+import org.apache.log4j.Logger;
 
-        // --- 6. removeSpecificCondition(token)：只移除一个实例 (不对称性 B) ---
-        market.removeSpecificCondition(token3);
-        LOG.info(String.format(
-                "GearIn condition lifecycle removeOne: conditions=%d hazard=%.2f accessibilityFlat=%.2f",
-                market.getConditions().size(), market.getHazard().getModifiedValue(),
-                market.getAccessibilityMod().getFlatBonus()));
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.CargoAPI;
+import com.fs.starfarer.api.campaign.CargoStackAPI;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Commodities;
 
-        // --- 7. survey 门控：重算只对 surveyed 的条件 apply ---
-        String token4 = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
-        MarketConditionAPI mc4 = market.getSpecificCondition(token4);
-        float hazardAfterAdd4 = market.getHazard().getModifiedValue();
-        mc4.setSurveyed(false);
-        market.reapplyConditions();
-        float hazardUnsurveyed = market.getHazard().getModifiedValue();
-        mc4.setSurveyed(true);
-        market.reapplyConditions();
-        float hazardSurveyed = market.getHazard().getModifiedValue();
-        market.removeSpecificCondition(token4);
-        LOG.info(String.format(
-                "GearIn condition lifecycle surveyGate: afterAdd=%.2f afterUnsurveyedReapply=%.2f afterSurveyedReapply=%.2f",
-                hazardAfterAdd4, hazardUnsurveyed, hazardSurveyed));
+/**
+ * 完整最小例 (货物段)：CargoAPI 常用入口演示脚本。
+ *
+ * 注册入口：onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控。
+ *
+ * 行为：读取玩家舰队补给/燃料/陆战队员/信用/空间/栈数基线；addSupplies(100)/addFuel(50)/addMarines(10)
+ * 后读取中间值，再 remove 同量回滚并读取终值 (验证数值精确复原)；读取重型机械商品量与栈列表
+ * 前几条 (CargoStackAPI 的 type/data/size/isNull)。不遗留持久状态。
+ */
+public class GearInCargoServicesScript extends GearInOneShotScript {
 
-        // --- 8. 原版对照 (只读)：找一颗条件市场上 reqSurvey 条件的初始状态 ---
-        boolean found = false;
-        for (MarketAPI candidate : sector.getEconomy().getMarketsCopy()) {
-            if (!candidate.isPlanetConditionMarketOnly()) {
-                continue;
-            }
-            for (MarketConditionAPI c : candidate.getConditions()) {
-                if (c.requiresSurveying()) {
-                    LOG.info(String.format(
-                            "GearIn condition lifecycle vanillaSurvey: market=%s surveyLevel=%s condition=%s surveyed=%s",
-                            candidate.getId(), String.valueOf(candidate.getSurveyLevel()),
-                            c.getId(), c.isSurveyed()));
-                    found = true;
-                    break;
-                }
-            }
-            if (found) {
-                break;
+    /** 存档持久化标记：本脚本是否已在该存档执行过 (随存档保存)。 */
+    public static final String REGISTER_MARK = "GearIn_CargoServices";
+
+    private static final Logger LOG = Global.getLogger(GearInCargoServicesScript.class);
+
+    @Override
+    protected void runDemo() {
+        SectorAPI sector = Global.getSector();
+        CargoAPI cargo = sector.getPlayerFleet().getCargo();
+        float suppliesBefore = cargo.getSupplies();
+        float fuelBefore = cargo.getFuel();
+        int marinesBefore = cargo.getMarines();
+        float creditsBefore = cargo.getCredits().get();
+        float spaceBefore = cargo.getSpaceUsed();
+        float capacityBefore = cargo.getMaxCapacity();
+        int stacksBefore = cargo.getStacksCopy().size();
+        float machineryBefore = cargo.getCommodityQuantity(Commodities.HEAVY_MACHINERY);
+
+        cargo.addSupplies(100f);
+        cargo.addFuel(50f);
+        cargo.addMarines(10);
+        int stacksDuring = cargo.getStacksCopy().size();
+        float suppliesDuring = cargo.getSupplies();
+        float fuelDuring = cargo.getFuel();
+        int marinesDuring = cargo.getMarines();
+
+        cargo.removeSupplies(100f);
+        cargo.removeFuel(50f);
+        cargo.removeMarines(10);
+        int stacksAfter = cargo.getStacksCopy().size();
+        int nullStacksAfter = 0;
+        for (CargoStackAPI stack : cargo.getStacksCopy()) {
+            if (stack.isNull()) {
+                nullStacksAfter++;
             }
         }
-        if (!found) {
-            LOG.info("GearIn condition lifecycle vanillaSurvey: none found (all condition-only markets surveyed)");
-        }
+        float suppliesAfter = cargo.getSupplies();
+        float fuelAfter = cargo.getFuel();
+        int marinesAfter = cargo.getMarines();
 
         LOG.info(String.format(
-                "GearIn condition lifecycle final: conditions=%d hazard=%.2f accessibilityFlat=%.2f (baseline restored)",
-                market.getConditions().size(), market.getHazard().getModifiedValue(),
-                market.getAccessibilityMod().getFlatBonus()));
-        LOG.info("GearIn condition lifecycle done");
+                "GearIn campaign services cargo write-rollback: supplies %.0f -> %.0f -> %.0f | fuel %.0f -> %.0f -> %.0f | marines %d -> %d -> %d | machinery %.0f | credits %.0f | space %.0f/%.0f",
+                suppliesBefore, suppliesDuring, suppliesAfter, fuelBefore, fuelDuring, fuelAfter,
+                marinesBefore, marinesDuring, marinesAfter, machineryBefore, creditsBefore, spaceBefore, capacityBefore));
+        LOG.info(String.format("GearIn campaign services cargo stacks: before=%d during=%d after=%d nullAfter=%d",
+                stacksBefore, stacksDuring, stacksAfter, nullStacksAfter));
+
+        // 栈列表前三条 (CargoStackAPI：type / data / size / isNull)
+        List<CargoStackAPI> stacks = cargo.getStacksCopy();
+        int stacksShown = Math.min(3, stacks.size());
+        for (int i = 0; i < stacksShown; i++) {
+            CargoStackAPI stack = stacks.get(i);
+            LOG.info(String.format("GearIn campaign services cargo stack[%d]: type=%s data=%s size=%.0f null=%s",
+                    i, stack.getType(), stack.getData(), stack.getSize(), stack.isNull()));
+        }
     }
 }
 ```

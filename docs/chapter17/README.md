@@ -1,8 +1,8 @@
-# 软依赖与 Nexerelin
+# 常用依赖库
 
-本章技术基线：Starsector `0.98a-RC8`；可选依赖：Nexerelin `0.12.1e`、LunaLib `2.0.5`。
+本章技术基线：Starsector `0.98a-RC8`；前置依赖：LazyLib `3.0.0`、GraphicsLib `1.12.1`、MagicLib `1.5.6`、BoxUtil `1.5.5`。
 
-本章建立缺库可启动的适配边界，再让 GearIn 完整参与 Nexerelin 的外交、两种星区、战略 AI、地面战与特遣队事件，最后用 LunaLib 提供即时设置。
+本章以十六个可运行成果覆盖硬依赖检查、LazyLib 战斗与生涯工具、GraphicsLib 动态灯光与纹理资源、MagicLib 光束、残骸与尾迹，以及 BoxUtil 的七项实体渲染专题。
 
 ## 本章各节
 

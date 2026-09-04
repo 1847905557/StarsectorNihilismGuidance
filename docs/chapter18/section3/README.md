@@ -1,6 +1,6 @@
-# 用 BoxUtil 制作跟随舰船旋转的纹理投影
+# 让 Nexerelin 在两种星区模式生成 GearIn 开局
 
-纹理投影需要同时提交模型矩阵、世界视口矩阵和纹理单元。本节用 BoxUtil 的 BUtilGlobalData UBO 取得视口变换，再把舰船位置与 facing 写入 modelMatrix。
+固定 Corvus 与随机星区使用不同生成入口；只测其中一种，另一种往往会把玩家送到空坐标或没有 GearIn 市场的星区。本节为两种模式分别选择出生点，并从同一势力配置读取初始舰队。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,460 +10,184 @@
 
 完成后，您将能够：
 
-- 绑定 BoxUtil 的全局矩阵 UBO，并检查 block 名称与 binding；
-- 用可复用的模型矩阵让投影跟随舰船位置和 facing；
-- 把纹理绑定到明确的纹理单元，并在错误时定位 sampler 状态。
+- 在 `SectorManager` 可用后区分 Corvus 与随机星区；
+- 为 Corvus 模式登记固定出生实体，为随机星区选择已生成市场；
+- 从同一份 Nexerelin 势力配置读取起始舰队变体。
+- 区分固定 `fleetType`、`RANDOM` 候选和无法解析的舰队类型。
 
 ## 前置知识
 
-- [C6-S2] 理解 Java 类、方法、字段与入口插件；
-- [C7-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C7-S1] 理解 Java 类、方法、字段与入口插件；
+- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
-## 建立跟随舰船的纹理投影
+## 分开处理两种星区
 
-青色纹理投影固定在玩家舰下方，舰船转向时投影同步旋转；相机缩放和移动不会让投影滑离世界坐标。
+Corvus 模式把玩家放在 GearIn 固定母星旁；随机星区先生成 GearIn 市场，再选择其中一个作为出生点。两种模式都获得相同类型的起始舰队。
+
+### 星区模式出生点速查表
+
+| 星区模式 | 出生点来源 | 有效条件 |
+|---|---|---|
+| Corvus | `corvus_spawnpoints.csv` 登记的固定实体 | 实体已由 Corvus 星区生成器创建 |
+| 随机星区 | 规模最大的已生成 GearIn 市场主实体 | 市场已生成且包含主实体 |
 
 ## 文件与 API 链路
 
-### 纹理投影提交链职责速查表
+`SectorManager.isCorvusMode` 选择分支；`ExerelinCorvusLocations` 读取固定出生实体；`NexUtilsFaction.getFactionMarkets` 返回随机星区已经生成的本势力市场；`NexFactionConfig.getStartFleetForType` 读取起始舰队变体 ID。
 
-| 对象或 API | 职责 |
-| --- | --- |
-| `ShaderProgram.getUBOIndex` | 绑定全局矩阵块 |
-| `modelMatrix` | 把局部坐标变换到世界坐标 |
-| `sampler2D` | 读取纹理单元 |
-| `FloatBuffer` | 复用，避免 render 内分配 |
+### 先判断当前星区模式
 
-### 声明 BoxUtil 全局矩阵块
-
-**插入位置：\[GearIn\_shader\_visual.vert 顶部\]。** 让顶点阶段取得游戏视口矩阵。
-
-```glsl
-layout (std140) uniform BUtilGlobalData {
-    mat4 gameViewport;
-    vec4 gameScreenBorder;
-};
-```
-
-完成信号：相机移动与缩放后投影仍锚定世界。
-
-### 缓存 UBO 与 uniform location
-
-**插入位置：\[GearInShaderVisual.createProgram()\]。** 创建程序后一次查询所有位置。
+**插入位置：`GearInNexStartPlanner.chooseSpawn()`。** 只在 manager 已建立后读取 Corvus 状态。
 
 ```java
-program.uboLocation = new int[] {
-    program.getUBOIndex("BUtilGlobalData", ShaderCore.getMatrixUBOBinding())
-};
+if (GearInNexCompat.isNexCorvusMode()) {
+    return GearInNexCompat.getFactionSpawnPointEntityId(factionId);
+}
 ```
 
-完成信号：日志中的 location 均非 -1。
+完成信号：两种模式进入不同日志分支。
 
-### 按舰船坐标建立模型矩阵
+### 为 Corvus 提供固定实体
 
-**插入位置：\[render() 提交前\]。** 把 location 与 facing 写进复用缓冲。
+**插入位置：`data/config/exerelin/corvus_spawnpoints.csv` 的 GearIn 行。** 三列依次为势力 ID、星系名称和已存在实体 ID。
+
+```csv
+faction,system,entityID
+gear_industry,GearIn Prime,GearIn_prime
+```
+
+`system` 是便于定位的星系名称，真正交给开局逻辑的是 `entityID`。该实体必须已经由 Corvus 星区生成器创建。
+
+完成信号：固定模式解析到 `GearIn_prime`，玩家出生在该实体附近。
+
+### 为随机星区选择本势力市场
+
+**插入位置：`chooseSpawn()` 的随机分支。** 在随机星区经济已经建立后，读取 GearIn 当前拥有的市场。
 
 ```java
-matrixBuffer = buildAnchoredMatrix(ship.getLocation(), ship.getFacing(), matrixBuffer);
+for (MarketAPI market : NexUtilsFaction.getFactionMarkets(factionId)) {
+    if (largest == null || market.getSize() > largest.getSize()) {
+        largest = market;
+    }
+}
 ```
 
-完成信号：舰船转向时纹理同角度旋转。
+完整实现还会排除没有主实体的市场。选择规模最大的市场能让开局位置保持稳定，也避免引用只存在于 Corvus 模式的实体 ID。
 
-### 绑定纹理单元并提交采样器
+完成信号：随机模式返回一个实际市场主实体 ID；GearIn 没有市场时明确返回 `null`。
 
-**插入位置：\[render() 的 program.active() 内\]。** 让 sampler 值与实际纹理单元一致。
+### 从配置取得初始舰队
+
+**插入位置：`GearInNexStartPlanner.chooseFleet()`。** 按 `fleetType` 读取变体列表。
 
 ```java
-GL13.glActiveTexture(GL13.GL_TEXTURE0);
-GL11.glBindTexture(GL11.GL_TEXTURE_2D, sprite.getTextureId());
-GL20.glUniform1i(program.location[3], 0);
+return NexConfig.getFactionConfig(factionId)
+        .getStartFleetForType(fleetType, false, 0);
 ```
 
-完成信号：投影显示纹理内容而非纯色或黑块。
+第二个参数为 `false`，因此配置缺少该舰队类型时不会偷偷补一艘后备舰；索引 `0` 固定选择该类型的首组配置，便于两种模式做一致性复验。
+
+完成信号：两个模式对同一个 `fleetType` 返回相同的变体 ID 列表。
+
+### 让配置选择随机开局舰队
+
+**插入位置：`GearInNexStartPlanner.chooseFleet()` 的调用方。** 传入 `RANDOM` 时由 Nexerelin 从允许随机选择的舰队类型中挑选；固定类型仍直接读取对应配置。
+
+```java
+List<String> fleet = planner.chooseFleet(factionId, "RANDOM");
+```
+
+完成信号：多次新档得到的舰队类型可能不同，但每次结果都来自允许的起始舰队集合。
+
+### 先拒绝无法解析的舰队类型
+
+**插入位置：请求进入 `getStartFleetForType()` 之前。** 用 try/catch 接住 `StartFleetType.getType()` 对未知键抛出的 `IllegalArgumentException`，避免把拼写错误当成随机类型。
+
+```java
+boolean valid = true;
+try {
+    NexFactionConfig.StartFleetType.getType(fleetType);
+} catch (IllegalArgumentException e) {
+    valid = false;
+}
+```
+
+完成信号：固定类型和 `RANDOM` 进入配置读取，未知类型在玩家放置前返回明确错误。
 
 ## 排查关键故障
 
 下面是**局部故障片段**：
 
 ```java
-GL13.glActiveTexture(GL13.GL_TEXTURE1);
-GL20.glUniform1i(texLocation, 0);
+ExerelinCorvusLocations.SpawnPointEntry entry =
+        ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
+return entry.entityId;
 ```
 
-实际症状：程序有效、几何可见，但采样结果为黑色或来自其他效果的纹理。
+实际症状：随机星区新档在创建阶段抛出空指针，或后续定位不到 `GearIn_prime`。
 
-原因：纹理绑定在单元 1，sampler 却读取单元 0。
+原因：随机星区没有 Corvus 固定实体，代码没有先判断模式。
 
 下面是**局部修正片段**：
 
 ```java
-GL13.glActiveTexture(GL13.GL_TEXTURE0);
-GL20.glUniform1i(texLocation, 0);
+String spawnEntityId = planner.chooseSpawn(factionId);
+if (spawnEntityId == null) {
+    throw new IllegalStateException("No GearIn start market was generated");
+}
 ```
 
-复验：统一单元号后旋转舰船，确认纹理内容与投影一起转动。
+复验：分别创建一个 Corvus 新档和一个随机星区新档，记录返回实体 ID；前者应为 CSV 中的固定 ID，后者应属于当前随机星区的 GearIn 市场。
 
 ## 完整最小例
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
 
-::: details 完整成品：GearInShaderVisual
+::: details 完整成品：GearInNexStartPlanner
 
 ```java
-package data.scripts.gearin.combat;
+package data.scripts.gearin.modcompat;
 
-import java.nio.FloatBuffer;
-import java.util.EnumSet;
+import java.util.List;
 
-import org.apache.log4j.Logger;
-import org.boxutil.config.BoxConfigs;
-import org.boxutil.manager.ShaderCore;
-import org.boxutil.units.standard.ShaderProgram;
-import org.boxutil.util.ShaderUtil;
-import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL13;
-import org.lwjgl.opengl.GL15;
-import org.lwjgl.opengl.GL20;
-import org.lwjgl.util.vector.Vector2f;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import exerelin.campaign.SectorManager;
+import exerelin.utilities.NexConfig;
+import exerelin.utilities.NexFactionConfig;
+import exerelin.utilities.NexUtilsFaction;
+import exerelin.world.ExerelinCorvusLocations;
 
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.CombatEngineLayers;
-import com.fs.starfarer.api.combat.CombatEntityAPI;
-import com.fs.starfarer.api.combat.ViewportAPI;
-import com.fs.starfarer.api.graphics.SpriteAPI;
-
-/**
- * 完整最小例：ShaderProgram、UBO、uniform、纹理与矩阵提交。
- *
- *
- * - 程序对象：ShaderUtil.createShaderVFFormPath(名称, vert 路径, frag 路径) 按路径创建
- *   程序 (成熟实例消费实证)，包装进 org.boxutil.units.standard.ShaderProgram；创建后立即用
- *   getUniformIndex / getUBOIndex 查询并保存 location(实例规范
- *   "创建后必须保存后续渲染所需的 uniform、attribute 或 UBO location")；
- * - UBO：GLSL 侧声明 layout(std140) uniform BUtilGlobalData { mat4 gameViewport;
- *   vec4 gameScreenBorder; }(成熟实例同款声明)，Java 侧
- *   getUBOIndex("BUtilGlobalData", ShaderCore.getMatrixUBOBinding()) 绑定；gameViewport
- *   是 BoxUtil 全局矩阵 UBO 供给的世界→屏幕矩阵，取代 C18-S1 的手动 glOrtho；
- *   块名必须与 GLSL 逐字一致 (大小写敏感)；
- * - uniform：标量/向量 (glUniform1f/2f/4f)、采样器 (glUniform1i 值=纹理单元号)、
- *   矩阵 (glUniformMatrix4(loc, false, 列主序 FloatBuffer)，transpose 必须 false)；
- *   名称与类型必须与 GLSL 声明一致 (C18-S1 硬规则 6)：拼错 → getUniformIndex 返回
- *   -1 → 提交被静默忽略且无日志；
- * - 纹理：SettingsAPI.getSprite 取引擎必载贴图 graphics/fx/particlealpha32sq.png
- *   (引擎启动期进入加载队列；贴图取得方式见 C16-S10)，
- *   SpriteAPI.getTextureId() 取 GL 纹理 id，glActiveTexture(GL_TEXTURE0) +
- *   glBindTexture(GL_TEXTURE_2D, id) + glUniform1i(texLoc, 0) 完成单元绑定与采样器
- *   提交 (成熟实例实证)；
- * - 矩阵：modelMatrix 是 2D 刚性变换 (旋转+平移)，列主序 16 float，布局同成熟实例
- *   maintainAnchoredFloatBuffer；每帧复用
- *   FloatBuffer(clear/put/flip)；
- * - 门禁：BoxConfigs.isShaderEnable() && ShaderCore.isValid() 共同决定 shader 路径
- *   可用性 (C16-S10)；isBaseGL43Supported() 只是 GL 能力探测，不能替代
- *   ShaderCore.isValid()(实例陷阱)；门禁失败 → 记录日志并自废，
- *   不创建程序；
- * - 生命周期：每场战斗 init 创建程序与 VBO(GL 上下文就绪)，render 内 active()/
- *   close() 配对提交 (实例规范 "active() 后必须按 close() 关闭")，
- *   cleanup() 内 program.delete() + glDeleteBuffers，禁止跨战斗缓存 (C6-S3/C7-S6
- *   延续；实例规范 "资源清理归创建者")；isValid() 使用前检查
- *   (实例陷阱：失效程序继续绑定 → 输出错位或状态污染)。
- */
-public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
-
-    private static final Logger LOG = Global.getLogger(GearInShaderVisual.class);
-
-    /** shader 资源路径 (MOD 根目录相对路径，必须用 /；C18-S2 硬规则 1 延续)。 */
-    private static final String VERT_PATH = "data/shaders/GearIn_shader_visual.vert";
-    private static final String FRAG_PATH = "data/shaders/GearIn_shader_visual.frag";
-
-    /** UBO 块名：必须与 GLSL 声明逐字一致 (大小写敏感)。 */
-    private static final String UBO_BLOCK_NAME = "BUtilGlobalData";
-
-    /** 采样贴图：引擎启动期必载的原版粒子贴图。 */
-    private static final String SPRITE_PATH = "graphics/fx/particlealpha32sq.png";
-
-    /** 四边形世界尺寸 (局部坐标 [-1,1] × size/2)。 */
-    private static final float QUAD_WIDTH = 160f;
-    private static final float QUAD_HEIGHT = 80f;
-
-    /** 演示寿命 (秒)：到时主动失效，驱动引擎移除并调用 cleanup()。 */
-    private static final float LIFETIME = 30f;
-
-    /** 交错顶点布局：位置 (2 float) + UV(2 float)，每顶点 4 个 float。 */
-    private static final int FLOATS_PER_VERTEX = 4;
-
-    private CombatEngineAPI engine;
-    private boolean valid = true;
-    private float elapsed = 0f;
-
-    private ShaderProgram program;
-    private SpriteAPI sprite;
-    private int vboId = 0;
-    private FloatBuffer matrixBuffer = null;
-
-    @Override
-    public void init(CombatEntityAPI entity) {
-        super.init(entity);
-        engine = Global.getCombatEngine();
-        // BoxUtil shader 路径可用性判据见 C16-S10；失败即自废，不创建程序
-        if (!BoxConfigs.isShaderEnable() || !ShaderCore.isValid()) {
-            LOG.info("GearIn shader visual: BoxUtil shader path unavailable (shaderEnable="
-                    + BoxConfigs.isShaderEnable() + ", shaderCoreValid="
-                    + ShaderCore.isValid() + "), visual disabled");
-            valid = false;
-            return;
+public final class GearInNexStartPlanner {
+    public String chooseSpawn(String factionId) {
+        SectorManager manager = SectorManager.getManager();
+        if (manager != null && manager.isCorvusMode()) {
+            ExerelinCorvusLocations.SpawnPointEntry entry =
+                    ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
+            return entry == null ? null : entry.entityId;
         }
-        if (!createProgram() || !buildQuad() || !loadSprite()) {
-            valid = false; // 初始化失败：不渲染，等引擎正常移除
-            return;
+
+        MarketAPI largest = null;
+        for (MarketAPI market : NexUtilsFaction.getFactionMarkets(factionId)) {
+            if (market.getPrimaryEntity() == null) {
+                continue;
+            }
+            if (largest == null || market.getSize() > largest.getSize()) {
+                largest = market;
+            }
         }
-        advance(0f); // 立即同步一次位置，避免首帧被剔除 (剔除依据是承载实体的位置)
-        LOG.info("GearIn shader visual init: u_model=" + program.location[0]
-                + ", u_size=" + program.location[1]
-                + ", u_time=" + program.location[2]
-                + ", u_tex=" + program.location[3]
-                + ", u_core=" + program.location[4]
-                + ", u_fringe=" + program.location[5]
-                + ", ubo=" + program.uboLocation[0]
-                + ", vert=" + VERT_PATH + ", frag=" + FRAG_PATH);
+        return largest == null ? null : largest.getPrimaryEntity().getId();
     }
 
-    /** 创建程序并保存 uniform/UBO location；失败时删除程序并返回 false。 */
-    private boolean createProgram() {
-        int programId = ShaderUtil.createShaderVFFormPath(getClass().getName(),
-                VERT_PATH, FRAG_PATH);
-        program = new ShaderProgram(programId);
-        // 创建后立即保存 uniform/UBO location(实例规范)
-        program.location = new int[] {
-                program.getUniformIndex("modelMatrix"),
-                program.getUniformIndex("size"),
-                program.getUniformIndex("time"),
-                program.getUniformIndex("tex"),
-                program.getUniformIndex("coreColor"),
-                program.getUniformIndex("fringeColor")
-        };
-        program.uboLocation = new int[] {
-                program.getUBOIndex(UBO_BLOCK_NAME, ShaderCore.getMatrixUBOBinding())
-        };
-        if (!program.isValid()) {
-            LOG.error("GearIn shader visual: program invalid after load");
-            program.delete();
-            program = null;
-            return false;
+    public List<String> chooseFleet(String factionId, String fleetType) {
+        NexFactionConfig config = NexConfig.getFactionConfig(factionId);
+        try {
+            NexFactionConfig.StartFleetType.getType(fleetType);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Unknown start fleet type: " + fleetType);
         }
-        return true;
+        return config.getStartFleetForType(fleetType, false, 0);
     }
-
-    /** 两个三角形组成的四边形：6 个顶点，局部坐标 [-1,1]，位置与 UV 交错写入一个 VBO。 */
-    private boolean buildQuad() {
-        FloatBuffer quadBuffer = BufferUtils.createFloatBuffer(6 * FLOATS_PER_VERTEX);
-        quadBuffer.put(new float[]{
-                -1f, -1f, 0f, 0f,
-                1f, -1f, 1f, 0f,
-                1f, 1f, 1f, 1f,
-                -1f, -1f, 0f, 0f,
-                1f, 1f, 1f, 1f,
-                -1f, 1f, 0f, 1f
-        });
-        quadBuffer.flip();
-
-        vboId = GL15.glGenBuffers();
-        if (vboId == 0) {
-            LOG.error("GearIn shader visual: glGenBuffers returned 0");
-            return false;
-        }
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, quadBuffer, GL15.GL_STATIC_DRAW);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        return true;
-    }
-
-    /**
-     * 取采样贴图；文件未加载时 getTextureId() 返回 0，投影渲染为黑/不可见。
-     * 原版单参 getSprite 永不返回 null，缺键时返回纹理为 null 的 Sprite —— 原版用返回 0 代替失败信号。
-     */
-    private boolean loadSprite() {
-        sprite = Global.getSettings().getSprite(SPRITE_PATH);
-        return true;
-    }
-
-    @Override
-    public EnumSet<CombatEngineLayers> getActiveLayers() {
-        return EnumSet.of(CombatEngineLayers.ABOVE_SHIPS_AND_MISSILES_LAYER);
-    }
-
-    @Override
-    public float getRenderRadius() {
-        return Math.max(QUAD_WIDTH, QUAD_HEIGHT);
-    }
-
-    @Override
-    public void advance(float amount) {
-        if (engine == null) {
-            return;
-        }
-        if (engine.isPaused()) {
-            return;
-        }
-        elapsed += amount;
-        if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()(C7-S6 硬规则 3)
-            return;
-        }
-        // 剔除依据是承载实体的位置 (C7-S6 硬规则 4)：跟随玩家舰船
-        entity.getLocation().set(engine.getPlayerShip().getLocation());
-    }
-
-    @Override
-    public boolean isExpired() {
-        return !valid;
-    }
-
-    @Override
-    public void cleanup() {
-        if (vboId != 0) {
-            GL15.glDeleteBuffers(vboId);
-            vboId = 0;
-        }
-        if (program != null) {
-            program.delete();
-            program = null;
-        }
-        LOG.info("GearIn shader visual cleanup");
-    }
-
-    @Override
-    public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (program == null || sprite == null || vboId == 0) {
-            return;
-        }
-        if (!program.isValid()) {
-            return; // 程序失效不得继续绑定 (实例陷阱)
-        }
-
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
-
-        // 矩阵 uniform：刚性变换 (旋转 + 平移)，列主序 16 float，transpose 必须 false；
-        // 布局同成熟实例 maintainAnchoredFloatBuffer
-        Vector2f center = engine.getPlayerShip().getLocation();
-        float facing = engine.getPlayerShip().getFacing();
-        matrixBuffer = buildAnchoredMatrix(center, facing, matrixBuffer);
-
-        // attribute：VBO 绑定 + long 偏移 (C18-S2 同款姿势；游戏自带 LWJGL 的
-        // glVertexAttribPointer 另有 FloatBuffer client 指针重载；本单元使用 VBO 偏移)
-        int stride = FLOATS_PER_VERTEX * Float.BYTES;
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL20.glVertexAttribPointer(0, 2, GL11.GL_FLOAT, false, stride, 0L);
-        GL20.glEnableVertexAttribArray(0);
-        GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, stride, 2L * Float.BYTES);
-        GL20.glEnableVertexAttribArray(1);
-
-        program.active(); // 提交段开始；必须与 close() 配对 (实例规范)
-
-        // 矩阵提交：modelMatrix(uniform matrix4，列主序)
-        GL20.glUniformMatrix4(program.location[0], false, matrixBuffer);
-        // 标量/向量 uniform：size(世界尺寸)、time(暂停冻结的战斗总时间)
-        GL20.glUniform2f(program.location[1], QUAD_WIDTH, QUAD_HEIGHT);
-        GL20.glUniform1f(program.location[2], engine.getTotalElapsedTime(false));
-
-        // 纹理提交：单元 0 绑定 + 采样器指向单元 0(值必须等于单元号)
-        GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, sprite.getTextureId());
-        GL20.glUniform1i(program.location[3], 0);
-
-        // 颜色 uniform：外蓝内橙 (贴图红通道在两者之间插值)
-        float alpha = viewport.getAlphaMult();
-        GL20.glUniform4f(program.location[4], 1.0f, 0.55f, 0.2f, alpha);
-        GL20.glUniform4f(program.location[5], 0.15f, 0.45f, 1.0f, alpha);
-
-        GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
-
-        program.close(); // 提交段结束
-
-        GL20.glDisableVertexAttribArray(0);
-        GL20.glDisableVertexAttribArray(1);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0); // 解绑，避免影响后续绘制者的纹理状态
-    }
-
-    /** 2D 刚性变换矩阵 (旋转 + 平移)，列主序 16 float；每帧复用缓冲 (clear/put/flip)。 */
-    private static FloatBuffer buildAnchoredMatrix(Vector2f location, float angle,
-            FloatBuffer buffer) {
-        if (buffer == null || buffer.capacity() < 16) {
-            buffer = BufferUtils.createFloatBuffer(16);
-        }
-        float radians = (float) Math.toRadians(angle);
-        float sin = (float) Math.sin(radians);
-        float cos = (float) Math.cos(radians);
-
-        buffer.clear();
-        buffer.put(cos).put(sin).put(0f).put(0f);   // 列 0
-        buffer.put(-sin).put(cos).put(0f).put(0f);  // 列 1
-        buffer.put(0f).put(0f).put(1f).put(0f);     // 列 2
-        buffer.put(location.x).put(location.y).put(0f).put(1f); // 列 3(平移)
-        buffer.flip();
-        return buffer;
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearIn_shader_visual
-
-```glsl
-#version 430
-
-in vec2 fragUV;
-
-uniform sampler2D tex;
-uniform float time;
-uniform vec4 coreColor;
-uniform vec4 fringeColor;
-
-out vec4 fragColor;
-
-const float DISCARD_ALPHA = 0.001;
-
-void main() {
-    vec2 uv = vec2(fragUV.x, fract(fragUV.y + time * 0.25));
-    vec4 texSample = texture(tex, uv);
-    vec3 color = mix(fringeColor.rgb, coreColor.rgb, texSample.r);
-    float alpha = texSample.a;
-    if (alpha <= DISCARD_ALPHA) discard;
-    fragColor = vec4(color, alpha);
-}
-```
-
-:::
-
-::: details 完整成品：GearIn_shader_visual
-
-```glsl
-#version 430
-
-layout (location = 0) in vec2 a_position;
-layout (location = 1) in vec2 a_uv;
-
-layout (std140) uniform BUtilGlobalData
-{
-    mat4 gameViewport;
-    vec4 gameScreenBorder;
-};
-
-uniform mat4 modelMatrix;
-uniform vec2 size;
-
-out vec2 fragUV;
-
-void main() {
-    fragUV = a_uv;
-    vec4 local = vec4(a_position * size * 0.5, 0.0, 1.0);
-    gl_Position = gameViewport * vec4((modelMatrix * local).xy, 0.0, 1.0);
 }
 ```
 
@@ -471,43 +195,52 @@ void main() {
 
 ## 验证方案
 
-1. 编译 Java fixture 与两个 GLSL 文件，确认 UBO 和 sampler 名称一致。
-2. 在战斗中移动并旋转玩家舰，观察投影中心和方向。
-3. 缩放相机并横移视口，确认投影仍固定在世界坐标。
-4. 故意把纹理切换到错误单元，记录黑块症状后恢复单元 0。
+1. 构建示例 MOD，确认 `MarketAPI`、`NexUtilsFaction` 与开局配置方法签名匹配。
+2. 创建 Corvus 新档，记录出生实体 ID 和起始舰队变体列表。
+3. 创建随机星区新档，再次记录实体 ID 和同类型舰队列表。
+4. 以固定类型创建 1 次开局，再以 `RANDOM` 创建多次开局，记录舰队规模与类型来源。
+5. 传入未知 `fleetType`，确认规划器在玩家放置前返回错误。
+6. 临时把 GearIn 的随机星区生成权重设为 `0`，确认规划器返回 `null`，而不是一个伪造实体 ID。
 
 预期结果：
 
-- 相机移动与缩放后投影仍锚定世界；
-- 日志中的 location 均非 -1；
-- 舰船转向时纹理同角度旋转；
-- 投影显示纹理内容而非纯色或黑块；
-- UBO、uniform 和 sampler 提交没有 `-1` location 或 GL 错误日志。
+- 两种模式进入不同日志分支；
+- 固定模式返回 `corvus_spawnpoints.csv` 登记的实体；
+- 随机模式返回已生成 GearIn 市场的主实体；
+- 两个模式为同一舰队类型返回相同变体列表；
+- `RANDOM` 只从允许随机的起始舰队类型中选择；
+- 未知舰队类型不会静默退回 `RANDOM`；
+- 没有有效市场时返回 `null`，调用方能够在放置玩家前中止开局并报告原因。
 
 ## 故障分析
 
-- **几何可见但采样结果为黑色**：纹理绑定单元与 sampler 读取单元不一致。
+- **随机星区查询不到 Corvus 实体**：模式判断发生在固定实体查询之后。
 
-    - **解决方案**：统一单元号。
+    - **解决方案**：先确认 `SectorManager` 已创建并判断模式，随机分支改从当前 GearIn 市场取得主实体。
 
-- **投影随屏幕移动而漂移**：shader 没有使用 `BUtilGlobalData` 的 `gameViewport`。
+- **Corvus 模式出生在星区中心**：CSV 路径、表头或 `entityID` 与已创建 token 不一致。
 
-    - **解决方案**：绑定正确 UBO。
+    - **解决方案**：改用真实实体 ID，创建固定模式新档。
 
-- **投影旋转方向相反**：模型矩阵的正弦项符号或列主序提交错误。
+- **随机模式没有 GearIn 市场**：生成权重、势力启用状态或市场生成条件不满足。
 
-    - **解决方案**：修正矩阵布局。
+    - **解决方案**：检查 `getFactionMarkets(factionId)` 的数量，修正配置。
 
-- **投影首帧出现在原点**：注册后没有立即同步宿主实体位置。
+- **初始舰队为空**：请求的 `fleetType` 与 `startShips` 键不一致，且 fallback 已关闭。
 
-    - **解决方案**：创建时先提交一次位置和矩阵。
+    - **解决方案**：记录请求类型和返回列表，修正配置键。
+
+- **随机开局出现不允许的舰队类型**：调用方把任意字符串直接交给随机分支。
+
+    - **解决方案**：先用 `StartFleetType.getType()` 和候选标志过滤。
 
 ## 总结
 
-局部四边形经 modelMatrix 到世界坐标，再经 gameViewport 到裁剪空间，三个坐标阶段必须一致；纹理单元只负责给片元提供内容。
+两种模式共享势力与舰队配置，只在空间对象来源上分支。固定模式使用 CSV 登记的现有 token，随机模式使用本次生成后实际存在的市场主实体；模式判断必须早于固定实体查询，市场存在性必须早于玩家放置。
 
 ## 建议参考项
 
-- `BUtilGlobalData`：BoxUtil 全局视口 UBO；
-- `ShaderProgram.getUBOIndex`：绑定 uniform block；
-- `glUniformMatrix4`：提交列主序模型矩阵。
+- `SectorManager.isCorvusMode`：判断星区生成模式；
+- `corvus_spawnpoints.csv`：固定模式出生点；
+- `NexFactionConfig.getStartFleetForType`：读取起始舰队。
+- `NexFactionConfig.StartFleetType`：判断固定类型与 `RANDOM` 候选。

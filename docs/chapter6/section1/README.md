@@ -21,7 +21,7 @@
 
 - [C1-S1] 的 MOD 目录、`mod_info.json`、启动器与日志；
 - [C2-S2] 的完整类名引用、注册入口和 `Problem loading class [...]` 异常含义；
-- [C7-S1] 的每帧回调、`BaseEveryFrameCombatPlugin` 和暂停语义；
+- [C8-S1] 的每帧回调、`BaseEveryFrameCombatPlugin` 和暂停语义；
 - 理解 Java 17 字节码上限、Gradle toolchain 与 `--release` 的关系；
 - 理解编译期依赖、运行时由游戏提供的公开 API 与 JAR 输出边界。
 
@@ -149,9 +149,9 @@ MOD 的 `settings.json` 会与全局设置按对象键合并，只提交自己�
 
 对应关系：
 
-- `extends BaseEveryFrameCombatPlugin`：提供全部 `EveryFrameCombatPlugin` 方法的空实现，只需覆写 `advance`；直接实现接口则要写满 5 个方法 (含弃用的 `init`) [C7-S1]。
+- `extends BaseEveryFrameCombatPlugin`：提供全部 `EveryFrameCombatPlugin` 方法的空实现，只需覆写 `advance`；直接实现接口则要写满 5 个方法 (含弃用的 `init`) [C8-S1]。
 - `Global.getLogger(GearInFrameLogger.class)`：log4j 记录器，输出到 `starsector-core/starsector.log`；全程不需要在编译期直接 import log4j。
-- `engine.isPaused()` 判断：暂停帧不累计 ([C7-S1] 的暂停语义)。
+- `engine.isPaused()` 判断：暂停帧不累计 ([C8-S1] 的暂停语义)。
 - `engine.getTotalElapsedTime(false)`：战斗内累计秒数，不含暂停；`amount` 是本帧经过秒数。
 
 构建命令 (在 `Starsector/mods/GearIndustry/` 目录执行)：
@@ -351,7 +351,7 @@ public class GearInFrameLogger extends BaseEveryFrameCombatPlugin {
 
 - **类在 jar 里但游戏没有任何行为**：该类没有被注册入口按名引用。
 
-    - **解决方案**：通过 `settings.json` 的 `plugins`、`mod_info.json` 的 `modPlugin`[C6-S2] 或数据文件的 `script` 列 [C2-S2] 接入。
+    - **解决方案**：通过 `settings.json` 的 `plugins`、`mod_info.json` 的 `modPlugin`[C7-S1] 或数据文件的 `script` 列 [C2-S2] 接入。
 
 - **修改源码并重启后行为仍是旧版本**：MOD 根目录残留同名源码，或 jar 没有重新构建。
 
@@ -363,7 +363,7 @@ public class GearInFrameLogger extends BaseEveryFrameCombatPlugin {
 
 排查时依次问 jar 有没有被声明 (看日志加载行)、类名有没有被注册入口引用、字节码版本是否低于等于 17、jar 里是否真的有这个类。任何一环缺失，最终都表现为 `Problem loading class` 或 "没有任何行为"，区别只在日志哪一段先断。
 
-"编译为类、按名引用" 的机制同样适用于 MOD 入口类：从 jar 实例化入口类、在游戏应用生命周期回调 (如 `onApplicationLoad`) 中做初始化，是本节链路的直接延续 [C6-S2]。
+"编译为类、按名引用" 的机制同样适用于 MOD 入口类：从 jar 实例化入口类、在游戏应用生命周期回调 (如 `onApplicationLoad`) 中做初始化，是本节链路的直接延续 [C7-S1]。
 
 ## 建议参考项
 

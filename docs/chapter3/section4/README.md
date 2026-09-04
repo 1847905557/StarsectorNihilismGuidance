@@ -21,7 +21,7 @@
 - [C3-S1] 的 GearIn 势力 ID；
 - [C3-S3] 的 `GearInModPlugin` 与 `onNewGame()` 入口；
 - 理解原版对象 ID 可以直接用于星系生成；
-- [C6-S2] 的完整 ModPlugin 生命周期属于后续章节，本页只使用新档回调。
+- [C7-S1] 的完整 ModPlugin 生命周期属于后续章节，本页只使用新档回调。
 
 ## 先把对象放入正确的顺序
 
@@ -81,7 +81,7 @@ prime.setMarket(market);
 prime.setFaction("gear_industry");
 ```
 
-完成信号：GearIn Prime 可以打开公开市场和仓储，交易界面显示原版商品。完整市场配置与自定义商品由 [C10-S1] 和 [C10-S2] 继续讲解。
+完成信号：GearIn Prime 可以打开公开市场和仓储，交易界面显示原版商品。完整市场配置与自定义商品由 [C11-S1] 和 [C11-S2] 继续讲解。
 
 ### 补齐超空间入口
 

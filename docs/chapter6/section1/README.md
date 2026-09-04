@@ -91,7 +91,7 @@
 
 ## 实现战斗日志插件
 
-本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段；把它放入指定类或方法后再继续，日志或界面出现对应信号时才进入下一段。
+本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段，先依次放入指定类或方法；此刻类还不会被游戏加载，运行信号要等本节的 Gradle、JAR 声明与注册全部就绪后统一核对 (见本节末尾的验证方案)。
 
 ### 声明战斗插件类型
 
@@ -99,8 +99,6 @@
 // 插入位置：GearInFrameLogger 的 advance 方法
 CombatEngineAPI engine = Global.getCombatEngine();
 ```
-
-完成信号：战斗开始后拿到非空战斗引擎。
 
 ### 配置日志状态
 
@@ -110,8 +108,6 @@ if (engine == null || engine.isPaused()) {
     return;
 }
 ```
-
-完成信号：暂停战斗时日志不再增长。
 
 ### 处理战斗时间回调
 
@@ -124,8 +120,6 @@ if (elapsed >= TICK_INTERVAL) {
         "GearIn FrameLogger tick at battle time " + engine.getTotalElapsedTime(false));
 }
 ```
-
-完成信号：战斗日志约每 3 秒出现一次 tick。
 
 ## 配置 Gradle 文件
 
@@ -169,6 +163,19 @@ gradle jar
 产物为 `jars/GearIndustry.jar`，其内部条目按包路径组织，包含 `data/scripts/gearin/combat/GearInFrameLogger.class`(可用 `jar tf` 核对)。
 
 想确认游戏加载的是新构建的 jar 而不是缓存或旧源码，可先改插件类里的一个参数 (如日志间隔常量) 再重新构建 —— 日志中 tick 间隔随之变化即证明产物已更新；用 `jar tf jars/GearIndustry.jar` 可直接核对 jar 内部条目。
+
+### 验证方案
+
+前置数据：`src/data/scripts/gearin/combat/GearInFrameLogger`、`build.gradle` 与 `settings.gradle`、`mod_info.json` 的 `jars` 声明、`data/config/settings.json` 的 `gearInFrameLogger` 注册。
+
+1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认构建成功。
+2. 启动游戏进入 `GearIn_test` 模拟战并部署。
+3. 等待约 3 秒，随后按 ESC 暂停战斗。
+
+预期结果：
+
+- 部署后日志出现 `GearIn FrameLogger tick at battle time ...`，约每 3 秒一条 (插件被注册入口加载，`engine` 引用非空)。
+- 按 ESC 暂停后 tick 立即停止，恢复战斗后继续 (暂停帧不再累计)。
 
 ## 完整最小例
 

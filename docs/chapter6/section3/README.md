@@ -83,9 +83,17 @@ public class GearInGlobalAccess {
 
 ## 故障分析
 
-- **生涯加载期出现空指针**：过早调用 `getSector()`。把读取放到生涯回调。
-- **第二场战斗仍使用旧引擎**：跨战斗保存 `CombatEngineAPI`。在当前回调中重新获取。
-- **日志没有输出**：没有使用 `Global.getLogger(...)` 或未查看 `starsector.log`。修正日志器和日志路径。
+- **生涯加载期出现空指针**：过早调用 `getSector()`。
+
+    - **解决方案**：把读取放到生涯回调。
+
+- **第二场战斗仍使用旧引擎**：跨战斗保存 `CombatEngineAPI`。
+
+    - **解决方案**：在当前回调中重新获取。
+
+- **日志没有输出**：没有使用 `Global.getLogger(...)` 或未查看 `starsector.log`。
+
+    - **解决方案**：修正日志器和日志路径。
 
 ## 总结
 

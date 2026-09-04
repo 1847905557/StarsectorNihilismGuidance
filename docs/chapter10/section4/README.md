@@ -287,8 +287,6 @@ demand(Commodities.CREW, Math.max(1, size / 2), "Instructors");
 supply(Commodities.CREW, Math.max(1, size - 2), "Trained crew");
 ```
 
-完成信号：size 3 市场显示 supplies 需求 3、crew 需求 1、crew 供给 1；保存读档后这些条目由 `apply()` 重建。
-
 ### 让耗材短缺削减产出
 
 插入位置：供需声明之后。先从 supplies 需求计算最大缺口，再把缺口施加到已声明的 crew 供给；非功能状态清空生产。
@@ -301,8 +299,6 @@ if (!isFunctional()) {
 	supply.clear();
 }
 ```
-
-完成信号：supplies 可得量不足时 crew 产出下降；建设或中断期间 tooltip 不再显示有效产出。
 
 ### 成对应用 AI core 修饰
 
@@ -321,8 +317,6 @@ protected void applyNoAICoreModifiers() {
 }
 ```
 
-完成信号：安装 Alpha core 后稳定度增加 1，卸下后 `ind_GearIn_training_industry_2` 修饰消失，反复 reapply 不叠加。
-
 ### 施加并解除产业中断
 
 插入位置：调试入口调用 `runDisruptionProbe`，其核心动作使用公开 `Industry` 接口。10 天中断写入后立即读取状态，再以 0 天解除。
@@ -335,8 +329,6 @@ LOG.info("disrupted=" + industry.isDisrupted()
 		+ " functional=" + industry.isFunctional());
 industry.setDisrupted(0f);
 ```
-
-完成信号：期间显示 `disrupted=true`、约 10 天、`functional=false`；解除后功能恢复，但 `getDisruptedDays()` 仍返回残留的中断时长 10.0。
 
 ### 在生涯市场安装产业
 
@@ -354,6 +346,22 @@ if (market != null
 ```
 
 完成信号：产业只安装一次，日志能读到 `upgrade=militarybase`，读档时不会重复添加。
+
+### 验证方案
+
+前置数据：`data/campaign/industries.csv` 注册行、编译进 JAR 的 `GearInTrainingIndustry`，以及 `GearInModPlugin.onGameLoad` 中的安装判断块 (目标市场 `corvus_IIIa`)。
+
+1. `gradle jar` 后启动游戏进入主菜单，确认加载无 `ERROR`。
+2. 新建生涯或读档，让安装判断块执行一次。
+3. 打开 `corvus_IIIa` 的行星详情与产业 tooltip。
+
+预期结果：
+
+- 日志出现一次安装记录并读到 `upgrade=militarybase`，读档后不重复添加。
+- 产业 tooltip 显示 supplies 需求 3、crew 需求 1、crew 供给 1 (供需声明生效)。
+- 中断探针日志显示 `disrupted=true`、约 10 天、`functional=false`；探针的 10 天中断窗口内 tooltip 不再显示有效 crew 产出 (缺口削减生效)。
+- 探针解除后功能恢复，`getDisruptedDays()` 仍返回残留的 10.0。
+- 手动安装 Alpha core 后稳定度 +1 并出现 `ind_GearIn_training_industry_2` 修饰，卸下后修饰消失。
 
 ## 组装产业升级实现
 

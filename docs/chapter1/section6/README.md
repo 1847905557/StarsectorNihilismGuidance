@@ -10,8 +10,9 @@
 
 完成后，您将能够：
 
-- 在 `.ship` 文件中声明 `builtInWeapons`、`builtInMods`、`builtInWings` 三组键，并说出读取并应用它们的使用方；
-- 说出内置内容与普通装配内容的区别 (不占装配点、不可拆卸、内置战机占据前几个甲板)；
+- 在 `.ship` 文件中分别声明 `builtInWeapons`、`builtInMods` 与 `builtInWings`；
+- 用 `ShipHullSpecAPI` 判断槽位、船插和战机是否属于船体内置内容；
+- 区分内置内容与普通装配内容 (不占装配点、不可拆卸、内置战机占据前几个甲板)；
 - 解释为什么战机不应该设置内置武器，并给出可观察结果；
 - 从日志报错和战斗表现反推三组键的常见错误。
 
@@ -22,43 +23,17 @@
 - [C1-S4] 的相位舰船体与防御数据；
 - [C1-S5] 的 `weapon_data.csv`、武器 ID 与 `.wpn` 文件结构。
 
-## 文件与 API 链路
-
-三种内置内容都写在 `.ship` 文件**顶层**，与 `weaponSlots`、`engineSlots`、`center` 同级。
-
-### 内置组件键速查表
-
-原版 `onslaught.ship` 中，`builtInMods` 与 `builtInWeapons` 位于文件前部；`weaponSlots` 是文件最后的数组：
-
-| 键 | JSON 类型 | 含义 | 原版参考 |
-|---|---|---|---|
-| `builtInWeapons` | 对象 (槽位 ID → 武器 ID) | 随船安装的武器，不占装配点、不可拆卸 | `onslaught.ship`：`"WS 016": "tpc"` |
-| `builtInMods` | 数组 (船插 ID) | 随船安装的船插，不占装配点、不可移除 | `shade.ship`：`["phasefield", "delicate"]` |
-| `builtInWings` | 数组 (战机 ID) | 占据前几个甲板的战机联队，不可更换、不占装配点 | `tempest.ship`：`["terminator_wing"]` |
-
-使用这三组键的完整链路为：
-
-1. `data/hulls/<hullId>.ship`：声明三组键 (数据入口)。
-2. 加载期把 `.ship` 的声明读入 `ShipHullSpecAPI` 的 `builtInWeapons`/`builtInMods`/`builtInWings` 三个字段。
-3. 装配构建时把三组内置内容应用到**每一个**装配 —— 包括游戏按船体自动生成的 `<hullId>_Hull` 空装配。
-4. 使用方：装配点计算 (`computeWeaponOPCost`/`computeHullModOPCost`)、战斗部署 (舰船生成时)、装配界面 (refit 的武器槽/船插列表/甲板列表)。
-
-公开 API 面 (`com.fs.starfarer.api.*`) 中，只读访问入口在 `com.fs.starfarer.api.combat.ShipHullSpecAPI`：
-
-- `getBuiltInWeapons()`、`getBuiltInMods()`、`getBuiltInWings()`；
-- `isBuiltIn(String slotId)`、`isBuiltInMod(String modId)`、`isBuiltInWing(int index)`；
-- 槽位类型枚举 `com.fs.starfarer.api.combat.WeaponAPI.WeaponType` 含 `BUILT_IN` 与 `DECORATIVE`。
-- 槽位访问入口为 `com.fs.starfarer.api.loading.WeaponSlotAPI.getWeaponType()`。
-
-::: info 为什么要在设计舰船时就把内置槽位规划好
-
-**内置槽位应该在设计舰船的时候就提前设计、设置好**。舰船编辑器 (前置章节的按键流程) 可以设置槽位类型，但 `builtInWeapons` 等三组键位于编辑器流程之外，后期手动修改会略显麻烦。
-
-:::
-
 ## 内置武器 (builtInWeapons)
 
-为舰船加入内置武器需要先有对应的内置槽位。内置槽位在 `.ship` 文件中看上去大概是这样的 (本例为 `GearIn_artizan.ship` 的两门内置武器槽位，来自前置章节制作的工匠-级)：
+`builtInWeapons` 是 `.ship` 顶层的对象，键是槽位 ID，值是武器 ID。加载船体时，这个对象进入 `ShipHullSpecAPI.getBuiltInWeapons()`；游戏构建该船体的每一个装配时都会安装这些武器，包括自动生成的 `<hullId>_Hull` 空装配。`isBuiltIn(slotId)` 可以判断指定槽位是否属于内置武器。
+
+为舰船加入内置武器需要先有对应的内置槽位。`WeaponSlotAPI.getWeaponType()` 返回的槽位类型必须为 `WeaponAPI.WeaponType.BUILT_IN`。内置槽位在 `.ship` 文件中看上去大概是这样的 (本例为 `GearIn_artizan.ship` 的两门内置武器槽位，来自前置章节制作的工匠-级)：
+
+::: info 在设计舰船时规划内置槽位
+
+内置槽位必须在设计舰船时设置好。舰船编辑器可以设置槽位类型，`builtInWeapons` 则需要在编辑器流程之外写入 `.ship` 顶层；先确定槽位位置和 ID，再填写武器映射。
+
+:::
 
 ```json {3-6,12-14}
     {
@@ -81,7 +56,7 @@
     },
 ```
 
-槽位与普通槽位一样有三个关键维度：`mount`(形态：TURRET/HARDPOINT/HIDDEN)、`type`(类型：`BUILT_IN` 表示内置槽位)、`size`(大小，与所装武器一致)。
+槽位与普通槽位一样有 `mount`、`type`、`size` 三个关键维度，分别决定形态 (TURRET/HARDPOINT/HIDDEN)、类型 (`BUILT_IN` 表示内置槽位) 与大小 (与所装武器一致)。
 
 `mount` 与 `type` 相互独立：原版攻势的两门内置 TPC 槽位是 `"mount": "HARDPOINT"`、`"arc": 5`(武器固定朝向)，监视者的内置槽位则是 `"mount": "TURRET"`。
 
@@ -191,7 +166,9 @@
 
 ## 内置船插 (builtInMods)
 
-增加内置船插也建议手动打开 `.ship` 文件进行修改，但**能复制粘贴修改就不手写**。本例将对 `GearIn_forging.ship`(前置章节的锻件-级相位护卫舰) 加入相位对应内置船插。
+`builtInMods` 是 `.ship` 顶层的船插 ID 数组。它会应用到该船体的每一个装配，装配点计算和装配界面都把这些船插视为船体自带内容。`ShipHullSpecAPI.getBuiltInMods()` 返回完整列表，`isBuiltInMod(modId)` 可以判断指定船插。
+
+增加内置船插建议手动打开 `.ship` 文件进行修改，但**能复制粘贴修改就不手写**。本例将对 `GearIn_forging.ship`(前置章节的锻件-级相位护卫舰) 加入相位对应内置船插。
 
 从原版阴影的 `shade.ship` 文件中抄出如下内容：
 
@@ -240,7 +217,9 @@
 
 ## 内置战机 (builtInWings)
 
-增加内置战机也建议手动打开 `.ship` 文件进行修改，但**能复制粘贴修改就不手写**。本例将对 `GearIn_furnaceman.ship`(前置章节的守炉人-级航母，2 个甲板) 加入一甲板对应内置战机。
+`builtInWings` 是 `.ship` 顶层的战机联队 ID 数组，数组顺序对应航母最前面的甲板。它会应用到该船体的每一个装配；`ShipHullSpecAPI.getBuiltInWings()` 返回联队列表，`isBuiltInWing(index)` 可以判断对应甲板是否内置。
+
+增加内置战机建议手动打开 `.ship` 文件进行修改，但**能复制粘贴修改就不手写**。本例将对 `GearIn_furnaceman.ship`(前置章节的守炉人-级航母，2 个甲板) 加入一甲板对应内置战机。
 
 从原版暴雨的 `tempest.ship` 文件中抄出如下内容：
 
@@ -315,7 +294,7 @@
 
 ## 总结
 
-本节在普通舰船链的基础上强化了船体对装配的强制约束：`builtInWeapons` 按槽位挂武器、`builtInMods` 按 ID 挂船插、`builtInWings` 按顺序填甲板。
+内置内容直接写在 `.ship` 顶层，并应用到该船体的每一个装配。`builtInWeapons` 按槽位挂武器，`builtInMods` 按 ID 挂船插，`builtInWings` 按顺序填入最前面的甲板；`ShipHullSpecAPI` 提供对应的只读查询方法。
 
 不过，虽然和技术本身无关，但编者必须指出的是，滥用内置插件 (是的，单独点名内置插件，因为这种例子已经太多了) 可能并不会显得您的舰船如何牛逼，而更只可能令人觉得 "不过是又一个插件列表堆成墙的东西"。
 

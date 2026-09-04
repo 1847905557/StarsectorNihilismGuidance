@@ -24,7 +24,7 @@
 
 ## 明确当前需求
 
-同一份 GearIn 在三种组合下启动：两个库都缺席、只装 LunaLib、两个都安装。基础内容始终可用，扩展功能只在对应库启用时接入。
+同一份 GearIn 在两个库都缺席、只装 LunaLib、两个都安装这三种组合下启动。基础内容始终可用，扩展功能只在对应库启用时接入。
 
 ## 文件与 API 链路
 
@@ -186,7 +186,7 @@ public final class GearInCompatBridge {
 
 ## 验证方案
 
-分别准备 4 种启用组合：两个库都缺席、仅 Nexerelin、仅 LunaLib、两个库都启用。每种组合都使用同一 GearIn JAR。
+分别准备两个库都缺席、仅 Nexerelin、仅 LunaLib、两个库都启用这 4 种启用组合。每种组合都使用同一 GearIn JAR。
 
 ### 启用组合检测结果速查表
 

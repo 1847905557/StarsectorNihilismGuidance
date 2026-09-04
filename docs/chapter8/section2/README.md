@@ -10,10 +10,10 @@
 
 完成后，您将能够：
 
-- 列出 `ShipSystemAPI` 的状态访问器分组 (状态 / 效果 / 冷却 / 弹药 / 幅能 / 激活控制 / 目标)，并说出每个代表方法的返回类型与语义；
+- 列出 `ShipSystemAPI` 的状态访问器分组 (状态 / 效果 / 冷却 / 弹药 / 幅能 / 激活控制 / 目标)，并解释每个代表方法的返回类型与语义；
 - 解释五态状态机的推进规则：`IDLE`→`IN`→`ACTIVE`→`OUT`→`COOLDOWN` 每一步的转移条件、开关式 (toggle) 系统的两种结束路径、幅能不足提前结束与 `forceState` / `deactivate` 的语义；
 - 区分 stats 脚本的可见性边界：`apply` 只在 `effectLevel > 0` 或 `runScriptWhileIdle` 时被调用，`COOLDOWN` / `IDLE` 两态脚本不可见；
-- 说出目标获取的三条通道 (`getTargetLoc()` 用户激活系统时的鼠标世界坐标、`getShipTarget()` 舰船当前目标、`TARGET_FOR_SHIP_SYSTEM` AI flag)，并解释 flag 的寿命语义 (`FLAG_DURATION = 0.5f`，舰船 AI 覆写 1.0 秒) 与用户舰侧的差异 (无 AI 舰船无人写入 flag)；
+- 列出目标获取的三条通道 (`getTargetLoc()` 用户激活系统时的鼠标世界坐标、`getShipTarget()` 舰船当前目标、`TARGET_FOR_SHIP_SYSTEM` AI flag)，并解释 flag 的寿命语义 (`FLAG_DURATION = 0.5f`，舰船 AI 覆写 1.0 秒) 与用户舰侧的差异 (无 AI 舰船无人写入 flag)；
 - 解释系统 AI 的接入链：`.system` 的 `aiType: "CUSTOM"` + `aiScript` 类名 → `ShipSystemSpecAPI.getAIScript()` 实例化 → `init(ship, system, flags, engine)`，包装成系统 AI 适配器后由舰船 AI 每帧调 `advance(amount, missileDangerDir, collisionDangerDir, target)`；
 - 区分 "statsScript 与 aiScript 是同名类的两个独立实例" 这一事实，并解释它对共享逻辑的约束 (只能走静态方法或 `ship.setCustomData`)；
 - 从 `starsector.log` 症状定位典型故障：部署期 `Error creating AI of type [...]`、AI 从不使用系统、用户按 F 无反应、激活无加成、加成中途消失、目标过期、跨战斗缓存残留。
@@ -95,7 +95,7 @@ getSystemRegenBonus().computeEffective(spec.regen)       → getRegen(stats)
 
 ### 状态与 effectLevel 速查表
 
-五个状态与 `effectLevel`(= 充能进度值)：
+五个状态与 `effectLevel`(即充能进度值)：
 
 | 状态 | `getEffectLevel()` | 语义 |
 |---|---|---|

@@ -10,13 +10,13 @@
 
 完成后，您将能够：
 
-- 说出市场 (market) 的结构：`MarketAPI` 名下挂哪些子集合 (身份与实体绑定、条件、产业、子市场、商品、人物、状态、memory、stats)，以及每个子集合从哪个 getter 进入；
+- 列出市场 (market) 的结构：`MarketAPI` 名下挂哪些子集合 (身份与实体绑定、条件、产业、子市场、商品、人物、状态、memory、stats)，以及每个子集合从哪个 getter 进入；
 - 用代码路径在生涯里创建一个市场：`FactoryAPI.createMarket` → `setFactionId` / `setPrimaryEntity` → `addCondition` / `addIndustry` / `addSubmarket` → `EconomyAPI.addMarket` → `SectorEntityToken.setMarket`。
     - 并复述 "缺任何一步的失败形态"；
-- 说出三种原版子市场 (`Submarkets.SUBMARKET_OPEN` / `SUBMARKET_BLACK` / `SUBMARKET_STORAGE`) 的插件行为差异：税率、合法性、库存上限与稳定度的关系、是否参与经济、用户交易的 `PlayerEconomyImpactMode`；
-- 说出经济循环 (`EconomyAPI.advance` → 经济推进器 → 每月 `economyIterPerMonth` 次迭代 → 月末步 `updateStockpileAndPrice`) 的节奏。
+- 区分三种原版子市场 (`Submarkets.SUBMARKET_OPEN` / `SUBMARKET_BLACK` / `SUBMARKET_STORAGE`) 的插件行为差异：税率、合法性、库存上限与稳定度的关系、是否参与经济、用户交易的 `PlayerEconomyImpactMode`；
+- 解释经济循环 (`EconomyAPI.advance` → 经济推进器 → 每月 `economyIterPerMonth` 次迭代 → 月末步 `updateStockpileAndPrice`) 的节奏。
     - 以及 `nextStep()` / `doubleStep()` / `tripleStep()` 只允许在 UI 交互路径调用、`EconomyUpdateListener` 必须经 `EconomyAPI.addUpdateListener` 注册这两条必须遵守的规则；
-- 说出开放状态族 (`setFreePort` / `setHidden` / `setPlayerOwned` / `setSurveyLevel` / `setEconGroup` / tag) 各自改变什么可观察行为；
+- 解释开放状态族 (`setFreePort` / `setHidden` / `setPlayerOwned` / `setSurveyLevel` / `setEconGroup` / tag) 各自改变什么可观察行为；
 - 从症状定位典型故障：市场不出现、实体没有市场归属、`getCargoNullOk()` 判空失败、后台调 `nextStep` 卡顿、监听器永不回调、把全局基础价当市场价、误删同 id 全部条件、用 `getMemory()` 做纯读取等。
 
 ## 前置知识
@@ -62,7 +62,7 @@
 | 条件 | `getConditions()` / `addCondition(id[, param])` / `getCondition(id)` / `getFirstCondition(id)` / `getSpecificCondition(token)` / `removeCondition(id)` / `removeSpecificCondition(token)` / `reapplyConditions()` / `suppressCondition(id)` / `isConditionSuppressed(id)` | 条件实例的增删查、重算与抑制 |
 | 产业 | `getIndustries()` / `addIndustry(id[, params])` / `getIndustry(id)` / `hasIndustry(id)` / `hasFunctionalIndustry(id)` / `removeIndustry(id, mode, forUpgrade)` / `instantiateIndustry(id)` | 产业的增删查与实例化 |
 | 商品 | `getAllCommodities()` / `getCommoditiesCopy()` / `getCommodityData(id)` / `getCommoditiesWithTag(tag)` / `getDemand(demandClass)` | 市场内商品数据与需求的读取入口 |
-| 价格 | `getTariff()` / `getDemandPriceMod()` / `getSupplyPriceMod()` / `getSupplyPrice(id, qty, isPlayerPrice)` / `getDemandPrice(id, qty, isPlayerPrice)` / `updatePrices()` / `updatePriceMult()` | 税率是 `MutableStat`；价格方向以**市场为主体** (`getDemandPrice` = 市场买入价 = 用户卖出价) |
+| 价格 | `getTariff()` / `getDemandPriceMod()` / `getSupplyPriceMod()` / `getSupplyPrice(id, qty, isPlayerPrice)` / `getDemandPrice(id, qty, isPlayerPrice)` / `updatePrices()` / `updatePriceMult()` | 税率是 `MutableStat`；价格方向以**市场为主体** (`getDemandPrice` 即市场买入价，也就是用户卖出价) |
 | 人物 | `addPerson(person)` / `removePerson(person)` / `getPeopleCopy()` / `getAdmin()` / `setAdmin(person)` / `getCommDirectory()` | 市场人物、管理员与通信目录 |
 | 状态 | `isFreePort()` / `setFreePort(boolean)` / `isHidden()` / `setHidden(Boolean)` / `isPlayerOwned()` / `setPlayerOwned(boolean)` / `getSurveyLevel()` / `setSurveyLevel(...)` / `getEconGroup()` / `setEconGroup(String)` / `getTags()` / `addTag(String)` / `removeTag(String)` / `isIllegal(id)` / `isInEconomy()` | 开放状态开关与商品非法性判定 |
 | 稳定度与危险度 | `getStability()` / `getStabilityValue()` / `getHazard()` / `getHazardValue()` | 稳定度取整到 0–10(`Market.getStabilityValue`)；危险度 `1f` = `100%` |
@@ -73,7 +73,7 @@
 
 **数据路径** (加载时序在经济数据加载主题中已讲，本节补结构)：`data/campaign/econ/economy.json` 列出 `starSystems`，每个星区一个 json(如 `econ/corvus.json`) 含 `markets` 数组。
 
-每个市场条目：`entities`(数组，**首实体的 id 就是市场 id**)、`faction`、`size` 为必填；`tariff` 键仅模拟模式生效 (真实税率 = 势力 `tariffFraction`，`FactionSpecAPI` 默认 `0.3F`)；
+每个市场条目：`entities`(数组，**首实体的 id 就是市场 id**)、`faction`、`size` 为必填；`tariff` 键仅模拟模式生效 (真实税率取势力 `tariffFraction`，`FactionSpecAPI` 默认 `0.3F`)；
 
 可选键 `startingConditions`、`industries`(元素可为数组 `[id, param...]`)、`freePort`、`submarkets`。
 
@@ -193,7 +193,7 @@
 
 ### 子市场 (SubmarketAPI)
 
-市场结构里，子市场是用户最常打交道的入口。三种原版子市场看起来都是同一个交易界面，行为差异全部集中在各自插件上，可以先用一句话记住差异方向：税率 (市场税率 / 恒 0 / 恒 0)、合法性 (仅合法 / 全合法 / 用户市场全合法)、库存与稳定度的关系 (正相关 / 负相关 / 无)、经济参与 (参与 / 参与 / 不参与)。先看插件从哪来，再对照差异表。
+市场结构里，子市场是用户最常打交道的入口。三种原版子市场看起来都是同一个交易界面，行为差异全部集中在各自插件上，可以先用一句话记住差异方向，税率 (市场税率 / 恒 0 / 恒 0)、合法性 (仅合法 / 全合法 / 用户市场全合法)、库存与稳定度的关系 (正相关 / 负相关 / 无)、经济参与 (参与 / 参与 / 不参与)。先看插件从哪来，再对照差异表。
 
 #### [静态表与运行时对象]
 
@@ -228,7 +228,7 @@ id 常量在 `com.fs.starfarer.api.impl.campaign.ids.Submarkets`(`SUBMARKET_OPEN
 | 行为 | open\_market(`OpenMarketPlugin`) | black\_market(`BlackMarketPlugin`) | storage(`StoragePlugin`) |
 |---|---|---|---|
 | 税率 `getTariff()` | 市场税率 `market.getTariff().getModifiedValue()`(基类默认) | **恒 0** | **恒 0** |
-| 合法性 | `shouldHaveCommodity = !market.isIllegal(com)`：只备货合法商品；交易时 `isIllegalOnSubmarket` 基类默认 = `market.isIllegal` | `isIllegalOnSubmarket` **恒 false**：什么都能交易 | 用户市场全部合法；中立势力仅舰船重载豁免，商品仍走基类 |
+| 合法性 | `shouldHaveCommodity = !market.isIllegal(com)`：只备货合法商品；交易时 `isIllegalOnSubmarket` 基类默认取 `market.isIllegal` | `isIllegalOnSubmarket` **恒 false**：什么都能交易 | 用户市场全部合法；中立势力仅舰船重载豁免，商品仍走基类 |
 | 库存上限与稳定度 | `limit *= 0.25 + 0.75 * (stability/10)`：**稳定度越高货越多** (spec desc 原文) | `limit *= 0.25 + 0.75 * (1 - stability/10)`：**稳定度越低货越多** | 不参与经济，无商品流库存 |
 | 经济参与 | 基类 `isParticipatesInEconomy() = true` | true | **false**：用户存取不影响经济 |
 | 用户交易影响 | `getPlayerEconomyImpactMode() = PLAYER_SELL_ONLY` | `PLAYER_SELL_ONLY` | 无 (不参与经济，`reportPlayerMarketTransaction` 直接返回) |
@@ -238,7 +238,7 @@ id 常量在 `com.fs.starfarer.api.impl.campaign.ids.Submarkets`(`SUBMARKET_OPEN
 
 `getCargo()` **用到时才创建** unlimited cargo 并按 `submarket.getFaction()` 初始化 mothballed ships；`getCargoNullOk()` 直接返回字段，**可能为 null**；
 
-`isBlackMarket()` 基类默认 = 市场势力对子市场势力敌对 (黑市插件覆写为恒 true)。
+`isBlackMarket()` 基类默认为市场势力对子市场势力敌对 (黑市插件覆写为恒 true)。
 
 #### [库存 cargo 与合法性]
 
@@ -341,7 +341,7 @@ return market;
 
 ### 编排一次市场巡检
 
-插入位置：`GearInMarketInspector.runInspection`。取到市场后按结构、子市场、商品和税率的顺序调用四个角色类。
+插入位置：`GearInMarketInspector.runInspection`。取到市场后按结构、子市场、商品和税率的顺序调用各角色类。
 
 ```java
 EconomyAPI economy = Global.getSector().getEconomy();
@@ -588,7 +588,7 @@ Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
        GearIn submarket open_market: present=true name=Open Market tariff=0.300 faction=hegemony plugin=OpenMarketPlugin cargoNullOk=null supplies=0.0 open=true black=false freeTransfer=false GearIn submarket black_market: present=true name=Black Market tariff=0.000 faction=pirates plugin=BlackMarketPlugin cargoNullOk=null supplies=0.0 open=false black=true freeTransfer=false GearIn submarket storage: present=true name=Storage tariff=0.000 faction=player plugin=StoragePlugin cargoNullOk=null supplies=0.0 open=false black=false freeTransfer=true
     ```
 
-    核对：open 税率 = 市场税率 (原版默认 `0.3`，`FactionSpecAPI.tariffFraction` 默认值)；black 与 storage 恒 `0.000`；black 的势力是 `pirates`(`submarkets.csv`)、storage 是 `player`；`cargoNullOk=null` 表示该子市场 cargo 尚未被创建 (用到时才创建语义)。若某个市场曾被交互过则为 `created` 并带 supplies 数量；`freeTransfer=true` 只出现在 storage。
+    核对：open 税率与市场税率一致 (原版默认 `0.3`，取 `FactionSpecAPI.tariffFraction` 默认值)；black 与 storage 恒 `0.000`；black 的势力是 `pirates`(`submarkets.csv`)、storage 是 `player`；`cargoNullOk=null` 表示该子市场 cargo 尚未被创建 (用到时才创建语义)。若某个市场曾被交互过则为 `created` 并带 supplies 数量；`freeTransfer=true` 只出现在 storage。
 
 - **商品** (数值随存档经济状态浮动，方向核对不变)：
 

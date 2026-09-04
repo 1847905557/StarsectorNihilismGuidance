@@ -15,7 +15,7 @@
 - 解释匹配流程：按 `trigger` 分组 → 逐条求值条件 (首个失败短路)→ `FireBest` 分数竞争 (同分随机、`score:` 控制权重、跳过当前规则 id)→`FireAll` 执行全部命中规则 (可被 `FireAllIntercept` 整体拦截)；
 - 解释条件表达式的语法与判真规则：`$memkey.name` 变量解析 (无记忆键回落 `local`)、比较操作符、`=` 赋值 (只能出现在脚本列)、`!` 取反、行尾 `score:`、命令调用 (按 `ruleCommandPackages` 找类)，以及 `null` 为假、仅 `"true"` (忽略大小写) 与 `Boolean.TRUE` 为真的规则；
 - 解释结果三件套的执行方式：`script` 按顺序执行 (选项型命令由 `FireBest` / `FireAll` 提前执行)、`text` 按 `\nOR\n` 拆成变体随机取一条、`options` 的 `id:text` 与 `order:id:text` 两种格式，以及 `performTokenReplacement` 的文本替换链；
-- 创建含 `GearIn_rules_intro_*` 规则的 `data/campaign/rules.csv` 与规则驱动对话入口 `GearInRulesIntro`，并验证对话完整流程；
+- 创建含自定义规则的 `data/campaign/rules.csv` 与规则驱动对话入口类，并验证对话完整流程；
 - 从症状定位故障，沿数据文件 → 注册入口 → 运行使用方 → 可观察结果四个位置复核。
 
 ## 前置知识
@@ -76,7 +76,7 @@
 
 ### 匹配链
 
-行被加载后，下一步是匹配：对话插件发起一次触发时，哪些规则会被选中。匹配入口有两个公开面：`RulesAPI.getAllMatching(currentRule, trigger, dialog, memoryMap)` 与 `RulesAPI.getBestMatching(...)`，都在 `com.fs.starfarer.api.campaign.rules.RulesAPI` 上；`SectorAPI.getRules()` 可以拿到 `RulesAPI`，生涯引擎内是包装实现。
+行被加载后，下一步是匹配，要回答对话插件发起一次触发时哪些规则会被选中。匹配入口是 `RulesAPI.getAllMatching(currentRule, trigger, dialog, memoryMap)` 与 `RulesAPI.getBestMatching(...)` 两个公开面，都在 `com.fs.starfarer.api.campaign.rules.RulesAPI` 上；`SectorAPI.getRules()` 可以拿到 `RulesAPI`，生涯引擎内是包装实现。
 
 规则引擎的匹配流程如下：
 
@@ -90,7 +90,7 @@
 
 匹配靠逐条求值条件，条件与结果都写成表达式。每条条件/脚本行是一个表达式。
 
-token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` 开头 = 变量；引号包裹 = 字面量 (含空格/特殊字符)；`\` 转义；操作符独立成 token。
+token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` 开头表示变量；引号包裹表示字面量 (含空格/特殊字符)；`\` 转义；操作符独立成 token。
 
 操作符全集：`=`(赋值)、`==`、`!=`、`>`、`>=`、`<`、`<=`、`!`(取反)、`++`、`--`。
 
@@ -101,7 +101,7 @@ token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` �
 | 纯变量 (判真) | `$tag:warning_beacon` | `IS` 语义：记忆值 null → false；字符串 `"true"`(去空白、忽略大小写) 或 `Boolean.TRUE` → true；其余 (含 `"1"`、`"false"`)→ false |
 | 比较 | `$option == GearIn_rules_intro_leave`、`$entity.relativeStrength >= 0`、`$faction.id == independent` | `==`/`!=`/`<`/`<=`/`>`/`>=`；字符串比较大小写敏感；数值经 `Memory.parseFloat`；`==` 双侧都 null → true、null 与字面量 `"null"` 互等、`0` 与 `"false"`/`"null"` 互等 |
 | 取反 | `!$var`、`!Command args` | 变量判反 / 命令结果取反；`!` 的运算对象必须是变量或命令 |
-| 赋值 | `$menuState = fleetConvMain 0` | `=` 只能出现在**脚本列** (条件列出现 → 加载崩溃)；第三 token 为过期天数 (可选，`0` = 立即过期语义；过期天数的完整语义属 [C14-S4]) |
+| 赋值 | `$menuState = fleetConvMain 0` | `=` 只能出现在**脚本列** (条件列出现 → 加载崩溃)；第三 token 为过期天数 (可选，`0` 表示立即过期语义；过期天数的完整语义属 [C14-S4]) |
 | 增减 | `$GearIn_rules_intro_visits++`、`$x--` | 浮点自增/自减；第三 token 为过期天数 (原版脚本列含 595 处 `++`、16 处 `--`) |
 | 命令 | `RollProbability 0.5`、`FireAll PopulateOptions`、`SetShortcut beaconLeave "ESCAPE"` | 首 token 非变量即命令：按 `ruleCommandPackages`(`data/config/settings.json`，5 个包，默认回退 `com.fs.starfarer.api.impl.campaign.rulecmd`) 逐个 `Class.forName` 定位；找不到 → 加载崩溃 `Command [...] not found in packages`；命令执行异常在对话内显示红字段落 (`<异常类>: <消息>`)，dialog 为 null 时重抛 |
 | 分数 | `$temporarilyIgnoreYou score:10` | 行尾字面量 `score:N` 改写该条件分数 (默认 1)，参与 `FireBest` 竞争 |
@@ -112,7 +112,7 @@ token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` �
 
 **变量解析** (`Misc.Token.getVarNameAndMemory`)：`$memkey.name` → 从 `memoryMap` 取 `memkey` 记忆，再读记忆中的 `$name` 键；token 无 `.`(如 `$option`、`$tag:x`)→ 记忆键为 null → 回落 `local` 记忆；两者都找不到 → `RuleException("No memory found for keys: ...")`。
 
-对话插件向 `memoryMap` 装入 `local`(= 交互目标记忆或活动人物记忆)、`faction`、`global`、`player`、`market`、`sourceMarket` 等槽位 (活动人物对话时另有 `personFaction`/`entity`)。`$tag:`、`$mc:`、`$friendlyToPlayer` 等 facts 键由 `CoreCampaignPluginImpl` 的 `updateEntityFacts` / `updateMarketFacts` / `updatePersonFacts` / `updateFactionFacts` 钩子写入 (`com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`)；使用 `$tag:xxx` 条件的前提是目标实体确实带该 tag。
+对话插件向 `memoryMap` 装入 `local`(即交互目标记忆或活动人物记忆)、`faction`、`global`、`player`、`market`、`sourceMarket` 等槽位 (活动人物对话时另有 `personFaction`/`entity`)。`$tag:`、`$mc:`、`$friendlyToPlayer` 等 facts 键由 `CoreCampaignPluginImpl` 的 `updateEntityFacts` / `updateMarketFacts` / `updatePersonFacts` / `updateFactionFacts` 钩子写入 (`com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`)；使用 `$tag:xxx` 条件的前提是目标实体确实带该 tag。
 
 ### FireBest 与 FireAll 结果执行速查表
 
@@ -138,7 +138,7 @@ rulecmd 参数内需要替换时用 `Misc.Token.getStringWithTokenReplacement`�
 
 | 使用方 | 位置 | 触发方式 |
 |---|---|---|
-| 规则驱动对话插件 `RuleBasedInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl` | 构造器指定初始 trigger(默认 `OpenInteractionDialog`)；`init` 组装 `memoryMap`(`local` = 交互目标记忆或活动人物记忆、`faction`、`global`、`player`、`market`、`sourceMarket`、活动人物时的 `personFaction`/`entity`)→ `fireBest(initialTrigger)` → 无任何选项时加 failsafe `Leave`；玩家点选项 → 本地记忆写 `$option`(expire 0)→ `fireBest("DialogOptionSelected")` → 无匹配规则时文本报 `ERROR: no rule found for option [...]` 并加 failsafe `Exit dialog` |
+| 规则驱动对话插件 `RuleBasedInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl` | 构造器指定初始 trigger(默认 `OpenInteractionDialog`)；`init` 组装 `memoryMap`(`local` 即交互目标记忆或活动人物记忆、`faction`、`global`、`player`、`market`、`sourceMarket`、活动人物时的 `personFaction`/`entity`)→ `fireBest(initialTrigger)` → 无任何选项时加 failsafe `Leave`；玩家点选项 → 本地记忆写 `$option`(expire 0)→ `fireBest("DialogOptionSelected")` → 无匹配规则时文本报 `ERROR: no rule found for option [...]` 并加 failsafe `Exit dialog` |
 | 舰队遭遇对话 `FleetInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl` | `reinit` 用 `getBestMatching(null, "BeginFleetEncounter", ...)` 决定是否给 "Continue" 选项；开通讯 (`OPEN_COMM`) 时内嵌 `RuleBasedInteractionDialogPluginImpl` 并 `fireBest("OpenCommLink")`，无匹配则报 "only get static" |
 | 非对话面板 (规则记忆组装) | 非对话文本面板 (内部实现) | 组装简化 memoryMap 后 `FireBest.fire(...)` 面板文本 trigger(使用例：已选阵营信息面板的 `RelationshipLevelDesc`) |
 

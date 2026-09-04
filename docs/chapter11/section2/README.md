@@ -28,7 +28,7 @@
 
 ## 技能数据的三件套
 
-写任何效果脚本之前，先弄清技能在磁盘上由什么组成、游戏从哪里读入。技能 (skill) 的运行时对象是 `SkillSpecAPI`，挂在人物 `MutableCharacterStatsAPI` 上的可学习能力，由三件套合成：`skill_data.csv` 注册行、`<id>.skill` JSON 定义、效果脚本类。
+写任何效果脚本之前，先弄清技能在磁盘上由什么组成、游戏从哪里读入。技能 (skill) 的运行时对象是 `SkillSpecAPI`，挂在人物 `MutableCharacterStatsAPI` 上的可学习能力，由 `skill_data.csv` 注册行、`<id>.skill` JSON 定义与效果脚本类三件套合成。
 
 注册信息 (名称、order、tier、reqPoints、icon 等) 集中在 `skill_data.csv`，定义信息 (aptitude、等级组、效果清单) 按技能各自放在独立的 `<id>.skill` 文件里，两者在 CSV spec 加载期经 `loadSkills` 按 id 合并成一个 `SkillSpecAPI`。
 
@@ -43,7 +43,7 @@
 | `aptitude_data.csv` | 能力树分组 | `id,name,color,description,order,effect_skill_id,sound1..5,sound_story,elite_overlay*` |
 | `<id>.skill` 的 effect | 效果清单 | 每项 `type`(`SkillEffectType` 枚举，必填)、`script`(类名，可选)、`hullmods`(对象：船插 id → 解锁等级)、`abilities`(数组) |
 
-`effectGroups[]` 每组的字段：`governingSkill`(可选，**默认 = 本技能 id**)、`name`(可选，如 "Elite")、`effectBasedOnLevel`(可选，**默认 true**)、`requiredSkillLevel`(可选，**默认 1**)、`effects[]`。
+`effectGroups[]` 每组的字段：`governingSkill`(可选，**默认为本技能 id**)、`name`(可选，如 "Elite")、`effectBasedOnLevel`(可选，**默认为 true**)、`requiredSkillLevel`(可选，**默认为 1**)、`effects[]`。
 
 注册链 (CSV spec 加载期 `loadSkills`)：
 
@@ -102,7 +102,7 @@ skill_data.csv(按 id 读行，收集全部注册 id)
 
 - 技能等级只有 0 (未学) / 1 (已学) / 2 (精英)。UI 加点走 `increaseSkill` / `decreaseSkill`，钳制到 1 (非精英) 或 2 (`elite:true`)；`setSkillLevel(id, level)` 不钳制，直接写任意 float 并触发 `refreshCharacterStatsEffects`。
 - 每个 effectGroup 的 `requiredSkillLevel` (默认 1) 是门槛：`getSkillLevel(governingSkill) >= requiredSkillLevel` 的效果才进入应用列表 (如 `getShipEffects` 的过滤)。
-- `apply()` 收到的 `level` 参数 = `getSkillLevel(governingSkill)`，不是等级增量，也不会逐帧变化。
+- `apply()` 收到的 `level` 参数取 `getSkillLevel(governingSkill)`，不是等级增量，也不会逐帧变化。
 - `effectBasedOnLevel` (默认 true) 只供 UI 的 tooltip 渲染读取：true 时标准 tooltip 追加渲染 `getEffectPerLevelDescription()`。
 - 引擎组合 effect id 并传入 `apply` / `unapply`：`<技能id>_<类型后缀>_<效果序号>`：
     - 后缀：`SHIP→_ship_`、`ALL_SHIPS_IN_FLEET→_ships_`、`SHIP_FIGHTERS→_ship_fighters_`、`ALL_FIGHTERS_IN_FLEET→_all_fighters_`；

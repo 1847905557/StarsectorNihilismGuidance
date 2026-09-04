@@ -10,11 +10,11 @@
 
 完成后，您将能够：
 
-- 解释 `advance(float amount)` 的 `amount` 语义，并说出正常帧、暂停、加速、新档推进、战斗五种时序下引擎如何调用脚本与时钟；
+- 解释 `advance(float amount)` 的 `amount` 语义，并区分正常帧、暂停、加速、新档推进、战斗五种时序下引擎如何调用脚本与时钟；
 - 解释 `isDone()` 与 `runWhilePaused()` 的引擎执行约定 (每帧最多两查、清理入口、脚本基类默认值、`EveryFrameScriptWithCleanup` 的边界)，并用 `isDone()` 控制常驻脚本自停；
 - 解释 `CampaignClockAPI` 的内部换算 (10 真实秒 = 1 游戏日、整游戏秒截断、时间戳与 `getElapsedDaysSince`)，并区分以日历为准与以累加器为准两类时间判断的适用场景；
 - 解释存档序列化边界：`scripts` 随存档保存、`transientScripts` 读档后必然清空、脚本字段的 XStream 可序列化要求与 `readResolve()` 恢复模式；
-- 编写并注册每日/周期脚本 (本节以 `GearInCalendarDayScript` 演示模式 A、`GearInDayAccumulatorScript` 演示模式 B)，并在四种周期模式 (日历跨日、天数累加、间隔器、自注册倒计时) 之间做选择；
+- 编写并注册每日/周期脚本，并在四种周期模式 (日历跨日、天数累加、间隔器、自注册倒计时) 之间做选择；
 - 从症状定位十二类典型故障。
 
 ## 前置知识
@@ -26,7 +26,7 @@
 
 ## 梳理生涯脚本关系
 
-脚本要能稳定运行，先得看清引擎的四个约定：每帧怎么调脚本、`amount` 是什么、时间怎么换算、进度存在哪里。本节依次讲完这四个机制，再据此给出四种实现模式。
+脚本要能稳定运行，先得看清引擎怎么调脚本、`amount` 是什么、时间怎么换算、进度存在哪里这四个约定。本节依次讲完这四个机制，再据此给出四种实现模式。
 
 ### EveryFrameScript 三方法约定速查表
 
@@ -56,7 +56,7 @@
 
 | 时序 | 引擎行为 | 脚本与时钟后果 |
 |---|---|---|
-| 正常帧 | 每渲染帧调一次 `engine.advance(amount)`，`amount` 是该帧真实秒数 | 脚本 `advance(amount)` 每帧一次，`amount` = 帧真实秒；时钟按 10 秒/游戏日前进 |
+| 正常帧 | 每渲染帧调一次 `engine.advance(amount)`，`amount` 是该帧真实秒数 | 脚本 `advance(amount)` 每帧一次，`amount` 即帧真实秒；时钟按 10 秒/游戏日前进 |
 | 暂停 (空格) | 引擎照常每帧调 `advance`，但暂停时只有 `runWhilePaused()` 为 `true` 的脚本被推进 | 时钟冻结；`runWhilePaused()` 为 `false` 的脚本一并停住，为 `true` 的脚本继续收到 `amount` |
 | 加速 (按住 Shift) | `fastForward` 时按 `round(campaignSpeedupMult)`(`settings.json` 的 `campaignSpeedupMult`，取值为 2) 的次数，同一渲染帧连调 `engine.advance(amount)`，每次 `amount` 都是完整帧秒 | 脚本与时钟同帧推进两次，游戏日流速翻倍；`Global.getSector().isFastForwardIteration()` 可探测 "本次调用来自加速帧的第 2 次及以后的迭代"(`SectorAPI.isFastForwardIteration()`；第 1 次连调时标志尚未置位)。devMode 下还有 10x/100x 调试键 |
 | 新档推进 | 新建生涯时有一段快速推进窗口 (`isInFastAdvance()`)，窗口内时钟与脚本连续推进，之后才调 `onNewGameAfterTimePass` 与 `onGameLoad(true)`(游戏管理器) | `onNewGame` 注册的脚本经历这次推进；`onGameLoad` 里注册的脚本**不**经历 (窗口已关闭) |
@@ -398,7 +398,7 @@ if (!sector.getPersistentData().containsKey(REGISTER_MARK)) {
 
 ## 总结
 
-本节把 `EveryFrameScript` 从会用推进到讲透，全部机制围绕一条主线：脚本在每帧被唤醒、按时钟与累加器决策、随存档往返。排错时只需核对三个问题：脚本注册了吗 (persistent data 标记是否置位)、换算对了吗 (`amount` 是否经 `convertToDays`)、字段能随档吗 (是否全部可序列化)。三个答案定位完毕，剩下的通常只是时序或数值问题。
+本节把 `EveryFrameScript` 从会用推进到讲透，全部机制围绕一条主线：脚本在每帧被唤醒、按时钟与累加器决策、随存档往返。排错时只需核对脚本注册了吗 (persistent data 标记是否置位)、换算对了吗 (`amount` 是否经 `convertToDays`)、字段能随档吗 (是否全部可序列化) 这三个问题。三个答案定位完毕，剩下的通常只是时序或数值问题。
 
 值得记住的判断：暂停就是停表，时钟、日历与 `convertToDays` 累加全部冻结，真实时间倒计时只能靠 `amount` 累计；日历按整游戏秒前进、累加器保留小数，短会话一致、长会话漂移，日历事件用跨日检测、精确统计用累加器；`scripts` 随存档保存、`transientScripts` 读档后必然清空，一次性注册必须用 persistent data 标记；`isFastForwardIteration()` 可探测加速帧的第 2 次及以后的迭代 (`campaignSpeedupMult = 2`)。
 

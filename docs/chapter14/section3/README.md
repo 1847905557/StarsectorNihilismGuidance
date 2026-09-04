@@ -10,7 +10,7 @@
 
 完成后，您将能够：
 
-- 创建自定义规则命令类 `GearInRuleCommand`，并完成 `ruleCommandPackages` 追加与 rules.csv 脚本列注册；
+- 创建自定义规则命令类，并完成 `ruleCommandPackages` 追加与 rules.csv 脚本列注册；
 - 解释 rulecmd 的实例化生命周期：每次调用新建实例、`execute(ruleId, dialog, params, memoryMap)` 四参签名、条件列与脚本列对返回值的不同处理、`dialog` 为 null 时异常的红字/重抛处理；
 - 解析 `Misc.Token` 参数，并核对 `getString` / `getFloat` / `getBoolean` / `getInt` 等方法的语义与陷阱；
 - 解释 `FireBest` / `FireAll` 的再入机制与约束：防自再入、终止性责任、`$fireAllTrigger` 与 `FireAllIntercept` 拦截，以及 Java 侧 (非规则上下文) 的再入调用点；
@@ -34,7 +34,7 @@
 
 ## 注册与实例化
 
-命令类被找到需要两条信息：包名来自 `settings.json` 的 `ruleCommandPackages`，类名来自 rules.csv 条件/脚本列的第一个 token。加载期解析到命令调用时会立即实例化一次来校验注册；运行期每次执行都会重新实例化，因此命令实例上不能保存任何跨调用的状态。这两条结论决定了命令类的最小形态：继承 `BaseCommandPlugin`、提供可用的无参构造、只覆写 `execute`。
+命令类被找到需要包名与类名两条信息，包名来自 `settings.json` 的 `ruleCommandPackages`，类名来自 rules.csv 条件/脚本列的第一个 token。加载期解析到命令调用时会立即实例化一次来校验注册；运行期每次执行都会重新实例化，因此命令实例上不能保存任何跨调用的状态。这两条结论决定了命令类的最小形态，即继承 `BaseCommandPlugin`、提供可用的无参构造、只覆写 `execute`。
 
 ### 命令解析链 (加载期)
 
@@ -79,7 +79,7 @@ public interface CommandPlugin {
 
 ## Token 参数解析
 
-命令行的参数由 `Misc.tokenize` 切成 `Token` 列表 (`com.fs.starfarer.api.util.Misc`)：空白切分；`"` 引号成组 (引号内含空格/特殊字符，token 类型按内容判定)；`\` 转义下一个字符；`=`、`==`、`!` 等操作符独立成 OPERATOR token。`Token` 有三类：VARIABLE(`$` 开头)、LITERAL、OPERATOR。
+命令行的参数由 `Misc.tokenize` 切成 `Token` 列表 (`com.fs.starfarer.api.util.Misc`)：空白切分；`"` 引号成组 (引号内含空格/特殊字符，token 类型按内容判定)；`\` 转义下一个字符；`=`、`==`、`!` 等操作符独立成 OPERATOR token。`Token` 有 VARIABLE(`$` 开头)、LITERAL、OPERATOR 三类。
 
 ### Token 常用方法速查表
 
@@ -109,7 +109,7 @@ public interface CommandPlugin {
 
 ## FireBest / FireAll 与再入
 
-脚本列要触发另一批规则时，用内置命令 `FireBest` / `FireAll`。`FireBest` / `FireAll` 本身是 `BaseCommandPlugin` 子类 (`com.fs.starfarer.api.impl.campaign.rulecmd` 包)，它们的 `execute` 从脚本列被调用时会**再入**规则引擎：以同一 `dialog` 与 `memoryMap` 对目标触发器重新匹配并执行命中规则。再入有两条边界需要记住：引擎只跳过正在执行的规则 id 本身，同触发器的其他规则照常命中；嵌套执行与当前调用共享同一个 `dialog` 与 `memoryMap`。
+脚本列要触发另一批规则时，用内置命令 `FireBest` / `FireAll`。`FireBest` / `FireAll` 本身是 `BaseCommandPlugin` 子类 (`com.fs.starfarer.api.impl.campaign.rulecmd` 包)，它们的 `execute` 从脚本列被调用时会**再入**规则引擎：以同一 `dialog` 与 `memoryMap` 对目标触发器重新匹配并执行命中规则。再入有两条边界需要记住，引擎只跳过正在执行的规则 id 本身，同触发器的其他规则照常命中；嵌套执行与当前调用共享同一个 `dialog` 与 `memoryMap`。
 
 链路 (匹配与结果执行已在规则系统页讲过，这里补再入视角)：
 
@@ -141,7 +141,7 @@ public interface CommandPlugin {
 | 调用点 | 位置 | 方式 |
 |---|---|---|
 | 规则驱动对话 | `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl` | `fireBest(trigger)` / `fireAll(trigger)` 包装；`optionSelected` 里写 `$option` 后 `fireBest("DialogOptionSelected")` |
-| 贸易面板提示文本 | 贸易面板类 | `updateFlavorText` 组装 memoryMap(`local`\=实体记忆等) 后 `FireBest.fire(null, createFakeDialog(...), memories, "TradePanelFlavorText")`；`createFakeDialog` 把文本路由进面板的 `TextPanelAPI` |
+| 贸易面板提示文本 | 贸易面板类 | `updateFlavorText` 组装 memoryMap(其中的 `local` 即实体记忆等) 后 `FireBest.fire(null, createFakeDialog(...), memories, "TradePanelFlavorText")`；`createFakeDialog` 把文本路由进面板的 `TextPanelAPI` |
 | 通讯录面板 | 通讯录面板类 | 选中人物条目后 `FireBest.fire(null, parentDialog, plugin.getMemoryMap(), "OpenCDE")` |
 | 通用面板 | 通用面板类 | `populateMemoryMap` + `fireRule(trigger)` |
 
@@ -173,7 +173,7 @@ public interface CommandPlugin {
 
 ## 组装 Rules 命令实现
 
-机制与边界都明确了，现在把它们组合成一套可运行的最小例。最小例覆盖四个位置：数据文件 (rules.csv 行与记忆键)、注册入口 (settings.json 的包与脚本列简单类名)、运行使用方 (规则执行的 `execute` 调用与 `FireBest` 再入)、可观察结果 (命令日志行、写入的记忆键、再入命中的文本)。
+机制与边界都明确了，现在把它们组合成一套可运行的最小例。最小例覆盖数据文件 (rules.csv 行与记忆键)、注册入口 (settings.json 的包与脚本列简单类名)、运行使用方 (规则执行的 `execute` 调用与 `FireBest` 再入)、可观察结果 (命令日志行、写入的记忆键、再入命中的文本) 四个位置。
 
 在先修单元建立起的 MOD 布局与 `data/campaign/rules.csv` 之上新增：
 

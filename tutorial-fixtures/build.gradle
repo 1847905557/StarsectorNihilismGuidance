@@ -16,11 +16,14 @@ def gameRoot = file(starsectorRootProp.get())
 def modsRoot = file("${gameRoot}/mods")
 def javaUnitIds = [
 	"C2-S1", "C2-S2", "C2-S3", "C2-S4",
-	"C4-S1", "C3-S3", "C10-S2",
+	"C3-S3", "C3-S4",
+	"C4-S1",
 	"C5-S3",
-	"C6-S1", "C6-S2", "C6-S3",
-	"C7-S1", "C7-S2", "C7-S3", "C7-S4", "C7-S5", "C7-S6", "C8-S1", "C8-S2", "C8-S3",
-	"C9-S1", "C9-S2", "C9-S3", "C9-S4", "C10-S3", "C10-S4", "C10-S5", "C9-S5", "C9-S6",
+	"C6-S1", "C6-S2", "C6-S3", "C6-S5",
+	"C7-S1", "C7-S2", "C7-S3", "C7-S4", "C7-S5", "C7-S6",
+	"C8-S1", "C8-S2", "C8-S3",
+	"C9-S1", "C9-S2", "C9-S3", "C9-S4", "C9-S5", "C9-S6",
+	"C10-S2", "C10-S3", "C10-S4", "C10-S5",
 	"C11-S1", "C11-S2", "C11-S3", "C11-S4",
 	"C12-S1", "C12-S2", "C12-S3", "C13-S1", "C13-S2",
 	"C14-S1", "C14-S3", "C14-S4",

@@ -10,31 +10,21 @@
 
 完成后，您将能够：
 
-- 说出战术系统从 `.system` 文件到效果脚本的完整流程：`.system` 文件 (类型与脚本)→ `ship_systems.csv`(名称与数值)→ `ship_data.csv`(挂载到舰船)→ 效果脚本类；
-- 说出时间类参数各管什么：`charge up`(前摇)、`active`(全功率)、`down`(后摇)、`cooldown`(冷却)；
+- 用 `.system` 文件声明战术系统类型和效果脚本；
+- 在 `ship_systems.csv` 中注册名称、持续时间和幅能参数，并通过 `ship_data.csv` 挂载到舰船；
+- 解释时间类参数各管什么：`charge up`(前摇)、`active`(全功率)、`down`(后摇)、`cooldown`(冷却)；
 - 用 "效果强度" 理解效果脚本：前摇期间加成从 0 平滑升至满值，后摇期间回落；
 - 通过修改三个参数 (时长、加成数值、冷却) 在模拟战中观察到行为差异。
 
 ## 前置知识
 
 - [C1-S2] 的舰船数据与 `ship_data.csv` 登记规则；
-- [C2-S1] 的 Java 模板、参数、注册与回调；
+- [C2-S1] 的最小示例 Java 文件、参数修改、注册与回调；
 - [C2-S2] 的文件名、类名与注册类名一致规则。
 
-## 战术系统基本链路总览
+## 复制原版战术系统
 
-一个战术系统至少由四部分组成，按顺序搭建：
-
-1. `data/shipsystems/<id>.system`：JSON 文件，声明系统类型、效果脚本类名与视觉参数；
-2. `data/shipsystems/ship_systems.csv`：注册行，提供名称、时长、幅能等数值参数；
-3. `data/hulls/ship_data.csv`：舰船行的 `system id` 列，把系统挂载到具体舰船上；
-4. 效果脚本类：`.system` 的 `statsScript` 写它的完整类名，战斗期间由游戏按状态回调。
-
-按下按键后的过程依次经过**前摇 (效果爬升)→ 全功率 (效果满值)→ 后摇 (效果回落)→ 冷却**。`ship_systems.csv` 里的 `charge up`/`active`/`down`/`cooldown` 四个数字就是各状态持续的秒数。
-
-## 复制战术系统模板
-
-把原版 `data/shipsystems/burndrive.system` 复制到 MOD 的 `data/shipsystems` 下，改名为 `GearIn_burstdrive.system`，并把 `id` 与 `statsScript` 两处改为本节的值：
+把原版 `data/shipsystems/burndrive.system` 复制到 MOD 的 `data/shipsystems` 下，改名为 `GearIn_burstdrive.system`。这个文件声明系统 ID、运作类型、效果脚本及视听表现；先把 `id` 与 `statsScript` 改为本节的值：
 
 ```json {2,6}
 {
@@ -61,7 +51,7 @@
 }
 ```
 
-本节只关注三个字段，其余按模板使用：
+本节只关注三个字段，其余保持原样：
 
 - **`id`**：系统 ID，与 `ship_systems.csv` 的 `id` 必须一致。后续 `ship_data.csv` 引用时也必须一致。
 - **`type`**：系统运作方式。`ENGINE_MOD` 是引擎类系统，体现为需要引擎上线才能启动；大多数情况下使用 `STAT_MOD`。
@@ -71,7 +61,7 @@
 
 ## 注册战术系统参数
 
-在 MOD 的 `data/shipsystems/ship_systems.csv` 里，从原版复制 `Burn Drive` 那一行，只改 `name` 与 `id`：
+`.system` 文件确定系统类型和脚本，`data/shipsystems/ship_systems.csv` 则用同一个 ID 提供名称、持续时间、幅能和使用限制。在这个 CSV 中从原版复制 `Burn Drive` 行，只改 `name` 与 `id`：
 
 ```text {5}
 name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle,noDissipation,noHardDissipation,hardFlux,noFiring,noTurning,noStrafing,noAccel,noShield,noVent,isPhaseCloak,tags,icon
@@ -93,17 +83,19 @@ Burn Drive,burndrive,1,,,,,,,,,2,5,1,10,TRUE,,,,,TRUE,TRUE,TRUE,TRUE,,,movement,
 | `cooldown` | 冷却：结束后到能再次激活的秒数 | 10 |
 | `flux/second` | 激活期间每秒产生的幅能 | 1 |
 
+系统激活后依次进入前摇、全功率、后摇和冷却。`charge up`、`active`、`down`、`cooldown` 四列分别控制这四个阶段的秒数，效果脚本会在前三个阶段收到当前状态与效果强度。
+
 其余参数：
 
-- **`toggle`**：`TRUE` = 开关式，再按一次才关闭 (本系统如此)；留空 = 非开关式，按一次后完整运行 `charge up → active → down → cooldown` 周期。
-- **`max uses`**：充能次数，留空 = 无限。
-- **`noAccel`/`noFiring`/`noTurning` 等 `no*` 列**：激活期间禁止的行为，`TRUE` = 禁止。本行禁止了转向、平移、加速与护盾；而开火不受禁止。
+- **`toggle`**：填 `TRUE` 为开关式，再按一次才关闭 (本系统如此)；留空为非开关式，按一次后完整运行 `charge up → active → down → cooldown` 周期。
+- **`max uses`**：充能次数，留空表示无限。
+- **`noAccel`/`noFiring`/`noTurning` 等 `no*` 列**：激活期间禁止的行为，填 `TRUE` 表示禁止。本行禁止了转向、平移、加速与护盾；而开火不受禁止。
 
 `f/s`、`f/u` 系列与 `cr/u` 等列暂时不讲。
 
 ## 实现战术系统效果
 
-在 `src/data/scripts/gearin/shipsystems/GearInBurstDriveSystem.java` 建类：
+`GearIn_burstdrive.system` 的 `statsScript` 已经指向完整类名 `data.scripts.gearin.shipsystems.GearInBurstDriveSystem`。按照这个包名，在 `data/scripts/gearin/shipsystems/GearInBurstDriveSystem.java` 建类：
 
 ```java
 package data.scripts.gearin.shipsystems;
@@ -155,7 +147,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 **文本说明 `getStatusData`**
 
-- 左下角状态栏文字 (`false` = 增益显示，`true` = 红色减益)。
+- 左下角状态栏文字 (`false` 显示增益，`true` 显示红色减益)。
 
 **效果强度 `effectLevel`**
 
@@ -169,7 +161,7 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ## 挂载战术系统
 
-打开 MOD 的 `data/hulls/ship_data.csv`，把 `工匠-级` 行的 `system id` 列 (第 5 列) 改为 `GearIn_burstdrive`：
+系统数据与效果脚本就绪后，舰船仍需通过 `data/hulls/ship_data.csv` 引用它。打开该文件，把 `工匠-级` 行的 `system id` 列 (第 5 列) 改为 `GearIn_burstdrive`：
 
 ```text {2}
 name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
@@ -296,7 +288,7 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
 - **舰船部署时报 `System with id [...] not found`**：船体的 `system id` 拼错，或对应系统尚未注册。
 
-    - **解决方案**：核对 `.ship`、`.system` 与 CSV 三处 ID，修正后重新部署。
+    - **解决方案**：核对 `.ship`、`.system` 与 CSV 的 ID，修正后重新部署。
 
 - **冷却结束后效果仍然残留**：`unapply` 没有撤销 `apply` 写入的修饰。
 
@@ -308,17 +300,17 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
 ## 总结
 
-战术系统的生效流程：`.system`(类型与脚本)→ `ship_systems.csv`(名称与数值)→ `ship_data.csv`(挂载)→ 效果脚本 (响应状态回调)。
+`.system` 文件声明系统类型和效果脚本，`ship_systems.csv` 用同一 ID 提供名称与数值，`ship_data.csv` 再把这个 ID 挂到舰船。系统激活后，效果脚本按照当前状态和 `effectLevel` 修改舰船属性。
 
 脚本侧只需要掌握 "效果强度" 一个概念：`effectLevel` 从 0 升至 1 再落回 0，所有数值乘以它；`apply`/`unapply` 成对撤销是唯一的纪律。
 
-这条流程是各类系统的共同骨架 —— 武器类、护盾类、相位类系统都只是更换数据与脚本内容。系统 AI(`aiType`) 与自定义使用时机见 [C8-S2]。
+这种文件关系适用于武器类、护盾类和相位类系统，各类系统只需更换数据与脚本内容。系统 AI(`aiType`) 与自定义使用时机见 [C8-S2]。
 
 ## 建议参考项
 
 - `data/shipsystems/<id>.system`、`data/shipsystems/ship_systems.csv`、`data/hulls/ship_data.csv`：注册战术系统需要的文件。
 - `data/shipsystems/burndrive.system`、`damper.system`(原版)：本节两个示例的复制来源。
-- `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：效果脚本模板基类。
+- `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：效果脚本基类。
 - `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：效果脚本接口 (`State` 枚举、`apply`/`unapply`/`getStatusData`)。
 - `com.fs.starfarer.api.combat.MutableShipStatsAPI`：数值入口 (`getMaxSpeed()`、`getHighExplosiveDamageTakenMult()` 等)。
 - `data/scripts/gearin/shipsystems`：本节两个效果脚本类的存放目录。

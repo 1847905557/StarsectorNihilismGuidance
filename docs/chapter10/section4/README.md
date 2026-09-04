@@ -11,7 +11,7 @@
 完成后，您将能够：
 
 - 在 `industries.csv` 中登记产业行，并解释从 CSV 行到运行时 `Industry` 实例的注册链；
-- 区分 `Industry` / `BaseIndustry` 生命周期五个回调的时机与职责，并说出市场侧的两个驱动点；
+- 区分 `Industry` / `BaseIndustry` 生命周期五个回调的时机与职责，并解释市场侧的两个驱动点；
 - 用 `supply(...)` / `demand(...)` 在 `apply()` 里声明供需，用 `getMaxDeficit` / `applyDeficitToProduction` 实现缺货削减；
 - 设置建设、升级与降级链，解释 `startUpgrading` → `finishBuildingOrUpgrading` 的完成行为与状态迁移；
 - 安装与卸载 AI core，解释四个修饰钩子的成对撤销语义；
@@ -37,13 +37,13 @@
 - **供需修饰 (supply/demand modifier)**：`MutableCommodityQuantity.getQuantity()` 上的 `MutableStat` flat 修饰。
     - 产业的 `supply(...)` / `demand(...)` 以 `"ind_<id>[_<n>]"` 为修饰 id 写入数量；
     - `supplyBonus` / `demandReduction` 是产业级 "产量加一 / 需求减一" 统计项，写入时合并为 `"ind_sb"` / `"ind_dr"`。
-- **建设与升级 (building / upgrading)**：`isBuilding()` = 建设中 (含首次建设与升级)；`isUpgrading()` = 建设中且 `upgradeId != null`。`isFunctional()` = 非 disruption 且非 "建设中且未升级"。
+- **建设与升级 (building / upgrading)**：`isBuilding()` 表示建设中 (含首次建设与升级)；`isUpgrading()` 表示建设中且 `upgradeId != null`；`isFunctional()` 表示非 disruption 且非 "建设中且未升级"。
 - **AI core**：安装到产业上的三种商品化智能核心 (`alpha_core` / `beta_core` / `gamma_core`)，提供供需、维护费与 (自定义) 统计修饰，并提高 Luddic Path 的关注度 (`getPatherInterest`)。
 - **disruption(中断)**：产业被外部行动 (突袭、审查) 打停的一段带倒计时的状态，存于市场 memory(key 含产业类名)。中断期间产业不产出、不推进建设。
 
 ## 梳理产业升级关系
 
-本节的全部机制沿四个位置核对：**数据文件 → 注册入口 → 运行使用方 → 可观察结果**。先看产业如何从 CSV 行变成运行时对象，再依次进入生命周期、供需、建设升级、AI core 与 disruption 各链。
+本节的全部机制沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置核对。先看产业如何从 CSV 行变成运行时对象，再依次进入生命周期、供需、建设升级、AI core 与 disruption 各链。
 
 ### 产业注册链 (industries.csv)
 
@@ -130,7 +130,7 @@
 `BaseIndustry` 持有 `supply` / `demand` 两个 `Map<String, MutableCommodityQuantity>`；`getSupply(id)` / `getDemand(id)` 用到时才创建条目。
 
 - **写入**：`supply(modId, commodityId, quantity, desc)` / `demand(...)` 在 `getQuantity()`(`MutableStat`) 上 `modifyFlat`；`quantity == 0` 时 `unmodifyFlat`("清掉这条供需" 的正式写法)。
-    - 默认 modId 族 = `"ind_<id>_<n>"`(索引 0 即 `"ind_<id>_0"`)；无后缀 `"ind_<id>"` 是另一字段、不参与供需；`quantity > 0` 时把 `supplyBonus` / `demandReduction` 的生效值合并写入 `"ind_sb"` / `"ind_dr"`；**alpha core 的 "产量 +1" 走的就是这条路径**。
+    - 默认 modId 族为 `"ind_<id>_<n>"`(索引 0 即 `"ind_<id>_0"`)；无后缀 `"ind_<id>"` 是另一字段、不参与供需；`quantity > 0` 时把 `supplyBonus` / `demandReduction` 的生效值合并写入 `"ind_sb"` / `"ind_dr"`；**alpha core 的 "产量 +1" 走的就是这条路径**。
 - **收入与维护**：`updateIncomeAndUpkeep()` → `applyIncomeAndUpkeep(size)`：`sizeMult = max(1, market.getSize() - 2)`。
     - `income = (int)(spec.getIncome() × sizeMult)` 写 `"ind_base"` flat + `"ind_stability"` mult(市场收入倍率)；`upkeep = (int)(spec.getUpkeep() × sizeMult)` 写 `"ind_base"` + `"ind_hazard"` mult(市场维护倍率)。
     - 随后 `applyAICoreToIncomeAndUpkeep()`(alpha/beta → `"ind_core"` × `UPKEEP_MULT = 0.75`，gamma 无)；**`!isFunctional()` 时收入修饰被移除**，建设中与中断中的产业不产生收入。
@@ -138,7 +138,7 @@
     - `getAllDeficit(...)` 返回全部正缺口列表；`applyDeficitToProduction(index, deficit, commodities...)` 对列出的商品写负供给 (desc 为 "X shortage")。
     - **且只对已声明过供给的商品生效** (`if (getSupply(commodity).getQuantity().isUnmodified()) continue;`)。
 - **读取 (经济步)**：经济步每次迭代重建商品可达图 (`CommodityMarketDataAPI` 构造器)：对每个市场、每个商品调 `updateMaxSupplyAndDemand()`(`CommodityOnMarketAPI.updateMaxSupplyAndDemand`)。
-    - **maxSupply / maxDemand = 该市场所有产业中同商品供需的最大值** (不是总和)，同时记下该产业对 max 值的合法性判定 (`isSupplyLegal` / `isDemandLegal`)。
+    - **maxSupply / maxDemand 取该市场所有产业中同商品供需的最大值** (不是总和)，同时记下该产业对 max 值的合法性判定 (`isSupplyLegal` / `isDemandLegal`)。
     - 主商品 (`CommoditySpecAPI.isPrimary()`) 的 maxDemand 还会沿 demand class 传播给同类的其他商品。
     - 价格与库存写入沿用市场与商品流主题已介绍的 `updateStockpileAndPriceV2`。
     - 需求侧定价按商品的 `demand class`(`commodities.csv` 的 `demand class` 列：`supplies` / `fuel` / `crew` / `organics` / `heavy_machinery` / `domestic_goods` / `drugs` 等) 聚合到 `MarketDemandAPI`。
@@ -560,7 +560,7 @@ market.addIndustry(industryId);
 
 ## 总结
 
-本节把产业讲成四条链：注册链让 CSV 行变成可实例化的 `Industry`，生命周期链决定状态何时重算，供需与建设升级链决定产业如何参与经济循环，AI core 与 disruption 链决定它的修饰与被打断的方式。条件与产业都会在添加时校验 spec id，升级与降级都走同一条完成链，disruption 状态存在市场 memory 而非产业对象里；上述三条是本节最容易绕错的地方。
+本节把产业讲成四条链。注册链让 CSV 行变成可实例化的 `Industry`，生命周期链决定状态何时重算，供需与建设升级链决定产业如何参与经济循环，AI core 与 disruption 链决定它的修饰与被打断的方式。条件与产业都会在添加时校验 spec id，升级与降级都走同一条完成链，disruption 状态存在市场 memory 而非产业对象里；上述三条是本节最容易绕错的地方。
 
 记忆要点：
 
@@ -568,7 +568,7 @@ market.addIndustry(industryId);
 - `supply` / `demand` / 收入 / 维护只写在 `apply()`；缺货削减前先 `supply(...)`。
 - `getModId(n)` = `"ind_<id>_<n>"`；AI core 修饰成对 (`applyXxxCoreModifiers` ↔ `applyNoAICoreModifiers`)。
 - `setDisrupted(days, useMax)`：`useMax=true` 保留较大剩余；`setDisrupted(0)` 解除；同市场同 Java 类的多产业共享 disruption key。
-- 产业位 = `maxIndustries[size-1]`(size 1–3 都是 1)；`isFunctional()` = 非中断 ∧ 非 "建设中且未升级"。
+- 产业位取 `maxIndustries[size-1]`(size 1–3 都是 1)；`isFunctional()` 表示非中断 ∧ 非 "建设中且未升级"。
 
 从逻辑上看，产业不是孤立对象：市场与商品流的经济循环 (经济步) 是产业供需的使用端，时钟与游戏日换算 (`getClock().convertToDays`) 是建设进度的换算来源，`MutableStat` 承载全部数量修饰；本节示例的 `REGISTER_MARK` 一次性标记沿用既有生涯注册示例的写法。产业写完并注册后，它在市场里的可见性 (tooltip 数字、商品流、价格、突袭中断) 全部由这些既有机制承接 —— 本节只负责把产业自身的四条链写对。
 

@@ -10,9 +10,9 @@
 
 完成后，您将能够：
 
-- 说出 `descriptions.csv` 的列结构、`id + type` 键规则与 `Description.Type` 的全部枚举值，并解释缺行与键错误的可观察结果差异 (占位文本 vs 启动失败)；
-- 按对象类型说出描述查找键 (舰船 = hullId 或 `.ship` 的 `descriptionId`、武器 = 武器 ID、战术系统 = 系统 ID)，并说出 text1–text5 各自的主要使用方；
-- 为既有 GearIn 对象编写描述行，并用 `.ship` 的 `descriptionId` 字段把舰船描述挂到本节专属键上；
+- 列出 `descriptions.csv` 的列结构、`id + type` 键规则与 `Description.Type` 的全部枚举值，并解释缺行与键错误的可观察结果差异 (占位文本 vs 启动失败)；
+- 按对象类型列出描述查找键 (舰船用 hullId 或 `.ship` 的 `descriptionId`、武器用武器 ID、战术系统用系统 ID)，并解释 text1–text5 各自的主要使用方；
+- 为既有对象编写描述行，并用 `.ship` 的 `descriptionId` 字段把舰船描述挂到自定义键上；
 - 从 "占位文本、启动报错、数据库 (codex) 显示降级" 三类症状反推描述数据错误。
 
 ## 前置知识
@@ -25,24 +25,9 @@
 - [C1-S6] 的内置武器、内置船插与内置战机；
 - 理解战术系统与生涯数据库界面的基本用途。
 
-## 文件与 API 链路
+## 创建描述文件
 
-数据文件是 MOD 内的 `data/strings/descriptions.csv`。
-
-::: info
-
-这个路径本身是**固定**的注册入口 —— MOD 不需要任何额外处理即可让游戏自动读取。
-
-:::
-
-### 对象描述查找键速查表
-
-| 对象类型 | 描述键 (`id` 列) |
-|---|---|
-| 舰船 | `.ship` 文件的 `descriptionId` 字段；未填写时回退为 `hullId` |
-| 战机 (联队) | 和其 hull 的舰船描述一致。装配界面的战机选择器按 hull 的 `descriptionId` 查询；数据库的战机详情直接按 `hullId` 查询 (数据库详情界面) |
-| 武器 | 武器 ID(`weapon_data.csv` 的 `id`，与 `.wpn` 的 `id` 相同) |
-| 战术系统 | 系统 ID(`ship_systems.csv` 的 `id` / `.system` 的 `id`) |
+在 MOD 中新建 `data/strings/descriptions.csv`。游戏会自动读取这个固定路径，并按 `id` 与 `type` 找到对应对象的描述。
 
 ## descriptions.csv 结构与最小示例
 
@@ -63,20 +48,18 @@ id,type,text1,text2,text3,text4,text5,notes
 | `SHIP` | 舰船与战机 hull 的描述 | 本节 |
 | `WEAPON` | 武器描述 | 本节 |
 | `SHIP_SYSTEM` | 战术系统描述 | 本节 (观察原版行，不新建) |
-| `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 | [C3-S4] |
-
-- `text1`–`text5` 的默认值与主要使用方：
+| `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 | [C3-S5] |
 
 ### 描述字段默认值速查表
 
-| 字段 | 默认值 | 语义与主要使用方 |
+| 字段 | 默认值 | 语义 |
 |---|---|---|
-| `text1` | `No description... yet` | 长描述，可多段 (空行分隔)。数据库详情页完整显示；蓝图物品 tooltip、货舱 tooltip 只显示第一段 |
-| `text2` | `No description... yet` | 一句话短描述。装配界面武器列表副标题 (`weapon_data.csv` 的 `primaryRoleStr` 非空时优先)；舰队界面成员 tooltip 引言 (text3 为空时)；数据库系统列表的类型标签 (无 text2 时显示 `Special`)；战情室部署界面的信息标题 |
-| `text3` | `No description... yet` | 短描述。装配界面的战术系统/相位系统行 (有 text3 用 text3，否则用 text1)；战情室信息正文；舰队 tooltip 中 text3 非空时引言改用 text1 第一段 |
-| `text4` | 空 | 以 `\|` 分隔的高亮片段，装配界面系统行渲染时按片段高亮 |
-| `text5` | 空 | 战术系统的效果行，支持 `{{内容}}` 高亮标记；`{{内容}}` 的两端建议带空格 |
-| `notes` | 空 | 备注，加载器不读取 |
+| `text1` | `No description... yet` | 长描述，可用空行分段 |
+| `text2` | `No description... yet` | 一句话短描述 |
+| `text3` | `No description... yet` | 补充短描述 |
+| `text4` | 空 | 用 `\|` 分隔的高亮片段 |
+| `text5` | 空 | 战术系统效果行，可用 `{{内容}}` 高亮 |
+| `notes` | 空 | 备注列 |
 
 - `id` 或 `type` 为空的行会被静默跳过；text1–3 为空或被省略时显示占位文本 `No description... yet`。
 
@@ -138,7 +121,7 @@ hammerhead,SHIP,"A midline destroyer from the golden age of the Domain, the Hamm
 maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship's maneuverability. Also provides a slight boost to the ship's top speed.,Movement,Provides a brief boost to maneuverability and top speed.,,The ship's top speed is increased by {{50}}.,
 ```
 
-`maneuveringjets` 行展示了系统描述的标准结构：text1 长描述、text2 一句话类型名 (数据库系统列表用它当类型标签)、text3 短描述 (装配界面系统行)、text5 效果行 (含 `{{50}}` 高亮标记)。
+`maneuveringjets` 行展示了系统描述的标准结构。text1 是长描述，text2 是一句话类型名 (数据库系统列表用它当类型标签)，text3 是短描述 (装配界面系统行)，text5 是效果行 (含 `{{50}}` 高亮标记)。
 
 `hammerhead` 行则说明：舰船通常只写 text1，text2/text3 留空即可。
 
@@ -215,7 +198,7 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 ## 总结
 
-本节完成了 `descriptions.csv` 的解析：从 8 列结构、`id + type` 键和 `.ship` 的 `descriptionId`，到 text1–text5 在舰船、战机、武器和系统界面中的使用位置。
+本节完成了 `descriptions.csv` 的解析，从 8 列结构、`id + type` 键和 `.ship` 的 `descriptionId`，讲到 text1–text5 在舰船、战机、武器和系统界面中的使用位置。
 
 描述行的键必须与使用方逐字符匹配；缺少描述时显示占位文本，键、类型、引号或编码错误则可能在加载阶段失败。遇到异常时，先按对象类型确认查找键，再按字段内容和文件编码排查。
 

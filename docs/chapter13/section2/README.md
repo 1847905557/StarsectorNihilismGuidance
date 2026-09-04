@@ -12,11 +12,11 @@
 
 - 区分任务清单旧名对应的实际类型：枢纽任务约定是 `HubMission`，Intel 约定是 `IntelInfoPlugin` 与 `IntelManagerAPI`，并说明 `MissionDefinitionAPI` 属于战役任务而非生涯任务；
 - 解释 `HubMission` 接口与 `BaseHubMission` 类族的职责分工，以及 `HubMissionWithTriggers` / `HubMissionWithSearch` / `HubMissionWithBarEvent` 各补充了什么能力；
-- 复述任务生命周期的创建、接受、推进与结束，说出每个阶段的关键调用与失败表现；
+- 解释任务生命周期在创建、接受、推进与结束各阶段的关键调用与失败表现；
 - 解释阶段管理的内部结构 (`StageData` 与阶段图) 和 `setCurrentStage` 的完整副作用链；
 - 说明目标完成检测的帧推进轮询、对话驱动与时限三通道，以及 `ConditionChecker` 家族和 `setStageOn*` / `connectWith*` 的连接声明方式；
 - 区分单任务触发器链与跨任务全局链两种事件链形态，并说明各自的注册与回写方式；
-- 从零编写一个 `HubMissionWithBarEvent` 任务 (本节 `GearInHubMission`)，用一条 `bar_events.csv` 行和六条 `rules.csv` 规则把它接进酒吧，并验证从出现、接取、推进到结算的完整流程；
+- 从零编写一个 `HubMissionWithBarEvent` 任务，用一条 `bar_events.csv` 行和六条 `rules.csv` 规则把它接进酒吧，并验证从出现、接取、推进到结算的完整流程；
 - 根据症状定位枢纽任务的典型故障。
 
 ## 前置知识
@@ -34,16 +34,16 @@
 
 按术语约定，API 名保留源码大小写。本节首次完整讲解以下页面级术语 (不进入共享术语表)：
 
-- **枢纽任务 (hub mission)**：API 名保留 `HubMission`(接口) 与 `BaseHubMission`(基类)。一种 "任务 = 阶段图 + 触发器 + Intel" 的生涯任务模型：
+- **枢纽任务 (hub mission)**：API 名保留 `HubMission`(接口) 与 `BaseHubMission`(基类)。一种把任务组织为阶段图、触发器与 Intel 的生涯任务模型：
     - 任务是一个 `BaseIntelPlugin`(用户在 Intel 界面跟踪进度)，同时是一个 `EveryFrameScript`(每帧推进阶段)，通过 `MissionHub`(联系人任务板) 或酒吧事件两种入口提供给用户。
 - **任务阶段 (stage)**：API 名保留 `StageData`。任务状态机的一个节点，用任意 `Object` 作 id(惯例是枚举常量)。任务在同一时刻只有一个 `currentStage`；阶段之间用**连接 (`StageConnection`)** 组成有向图。
-- **目标 (objective)**：本节术语。任务给用户的一项 "当前要做的事"= 当前阶段 + 阶段连接上的完成条件 (`ConditionChecker`)。任务的成功/失败由 `successStages` / `failStages` 集合判定，不单独建模。
+- **目标 (objective)**：本节术语。任务给用户的一项 "当前要做的事"，由当前阶段和阶段连接上的完成条件 (`ConditionChecker`) 构成。任务的成功/失败由 `successStages` / `failStages` 集合判定，不单独建模。
 - **事件链 (event chain)**：本节术语，两种形态：单任务内是阶段连接 (`connections`)+ 触发器 (`triggers`) 组成的事件序列；跨任务是多个任务 Intel 经全局内存阶段 (如成熟实例的 `MissionStage`) 串成的大剧情链。
 - **触发器 (trigger)**：API 名保留 `MissionTrigger`。绑定到若干阶段、带一个 `ConditionChecker` 与一串 `TriggerAction` 的一次性动作；条件满足且任务处于绑定阶段时执行并从列表移除。
 
 ## 梳理生涯任务关系
 
-以下按任务的组装顺序展开：先澄清类型名，再建立 Intel 与 HubMission 两条链，随后依次是生命周期、阶段管理、目标检测与事件链，最后落到注册入口。前几节以静态知识为主，从生命周期一节开始进入可以观察的运行行为。
+以下按任务的组装顺序展开，先澄清类型名，再建立 Intel 与 HubMission 两条链，随后依次是生命周期、阶段管理、目标检测与事件链，最后落到注册入口。前几节以静态知识为主，从生命周期一节开始进入可以观察的运行行为。
 
 ### 任务清单名称与类型归属速查表
 
@@ -104,7 +104,7 @@ Intel 条目只是展示层，任务的状态与推进逻辑在 `HubMission` 接
 
 | 方法 | 语义 |
 |---|---|
-| `String getTriggerPrefix()` | 规则分类前缀 = `getMissionId()` |
+| `String getTriggerPrefix()` | 规则分类前缀取 `getMissionId()` |
 | `String getMissionId()` / `void setMissionId(String)` | 任务 ID(规则键根、`getReason()` 返回值) |
 | `void setGenRandom(Random)` | 注入任务随机源 (hub 从 creator 传入) |
 | `void accept(InteractionDialogAPI, Map<String, MemoryAPI>)` | 用户接受任务 |
@@ -131,7 +131,7 @@ Intel 条目只是展示层，任务的状态与推进逻辑在 `HubMission` 接
 | `HubMissionBarEventWrapper` | 酒吧包装 (`BaseBarEvent` 子类)：把 `HubMissionWithBarEvent` 任务包装成酒吧事件 |
 | `MissionTrigger` | 触发器数据类 (`ConditionChecker` + 阶段集合 + `TriggerAction` 列表) |
 
-类族职责已经清楚，接下来看任务在运行时的生命周期：创建、接受、推进与结束。
+类族职责已经清楚，接下来看任务在运行时的生命周期，即创建、接受、推进与结束。
 
 ### 任务的生命周期
 
@@ -263,7 +263,7 @@ protected List<Abortable> changes = ...;
 
 ### 目标定义与完成检测
 
-**目标定义**：目标 = 当前阶段 + 阶段连接的 `ConditionChecker`。
+**目标定义**：目标由当前阶段与阶段连接的 `ConditionChecker` 构成。
 
 ### 阶段连接声明速查表
 
@@ -298,7 +298,7 @@ protected List<Abortable> changes = ...;
 
 完成标志写哪里：目标内存必须与规则作用域一致
 
-`setStageOnMemoryFlag(to, X, flag)` 检测的是**对象 X 的内存** (或显式 `MemoryAPI`)，rules 里 `$flag = true` 写的是**当前对话作用域** (人物对话 = 该人物内存、市场对话 = 市场实体内存；作用域细节由规则引擎与内存作用域主题展开)。
+`setStageOnMemoryFlag(to, X, flag)` 检测的是**对象 X 的内存** (或显式 `MemoryAPI`)，rules 里 `$flag = true` 写的是**当前对话作用域** (人物对话用该人物内存、市场对话用市场实体内存；作用域细节由规则引擎与内存作用域主题展开)。
 
 两者必须指向同一对象 —— 写错内存时连接永不满足，任务永远卡在阶段 (无报错，只差最后一段)。
 
@@ -744,7 +744,7 @@ return true;
 
 本节把枢纽任务系统串成一条从注册到结算的完整链：`bar_events.csv` 一行把任务交到酒吧调度器手里，`accept` 一次完成起点阶段、Intel 登记与脚本登记，随后 `advanceImpl` 按游戏天推进，`setCurrentStage` 命中终态集合时结算奖励，最后由 `endAfterDelay` 走到 `notifyEnded` 收尾。Intel 条目与脚本半身都来自 `BaseIntelPlugin` 这一侧，阶段图、完成检测与触发器属于任务自己。
 
-排错时先问三个问题：任务有没有出现，任务有没有被接受，任务卡在哪个阶段。没有出现查注册行与规则分类；一接受就报错查 `setStartingStage`；卡阶段查连接目标与规则作用域是否指向同一对象、`updateStage` 是否被 `Call`。完成标志写进哪块内存，决定三条检测通道里哪一条会命中 —— 先写内存，再 `Call $<missionId>_ref updateStage`，这是本节最值得记住的握手。
+排错时先问任务有没有出现、有没有被接受、卡在哪个阶段。没有出现查注册行与规则分类；一接受就报错查 `setStartingStage`；卡阶段查连接目标与规则作用域是否指向同一对象、`updateStage` 是否被 `Call`。完成标志写进哪块内存，决定三条检测通道里哪一条会命中 —— 先写内存，再 `Call $<missionId>_ref updateStage`，这是本节最值得记住的握手。
 
 从逻辑上看，rules 的语法与内存作用域规则是这条链的自然下游；事件链的两种形态 (单任务触发器链 / 跨任务全局链) 则为任务接入更宏观的剧情推进提供了位置。
 

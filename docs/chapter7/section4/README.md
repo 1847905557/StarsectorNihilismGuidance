@@ -11,7 +11,7 @@
 完成后，您将能够：
 
 - 区分 `getProjectiles()`、`getMissiles()`、`getBeams()` 三个对象集合的语义：`getProjectiles()` **包含**导弹 (API javadoc 原文 "Includes missiles.") 与光束脉冲射线，`getMissiles()` 是导弹子集，`getBeams()` 只含光束武器实体，并解释为什么叠加前两个会重复统计；
-- 说出武器开火流的回调顺序：`EveryFrameWeaponEffectPlugin.advance`(本帧转向/开火**之前**)→ 本帧核心操作 → `EveryFrameWeaponEffectPluginWithAdvanceAfter.advanceAfter`(**之后**)，以及 `fireShot` 内部 "先扣弹药、失败则不生成射弹、生成后再回调 `onFire`" 的次序；
+- 解释武器开火流的回调顺序：`EveryFrameWeaponEffectPlugin.advance`(本帧转向/开火**之前**)→ 本帧核心操作 → `EveryFrameWeaponEffectPluginWithAdvanceAfter.advanceAfter`(**之后**)，以及 `fireShot` 内部 "先扣弹药、失败则不生成射弹、生成后再回调 `onFire`" 的次序；
 - 列出射弹生命周期的关键状态 (`getElapsed` / `isFading` / `didDamage` / `getDamageTarget` / `getWeapon` 可为 null / 射弹不能命中 source) 与对应的可观察结果；
 - 解释导弹七项特殊行为：
     - 装填判定 (未装填碰撞不结算伤害)；
@@ -188,7 +188,7 @@
 - **伤害是 DPS 语义**：光束伤害按 DPS 结算 (`damage.isDps() == true`)；伤害按 0.1 秒间隔结算，伤害乘数 = 累计亮度 / 累计时长：
     - 持续照射伤害爬升，起手与收尾 (充能上升/下降) 期间乘数低。
     - 可观察结果：光束武器的伤害不是每帧全额结算，而是约每秒 10 次、随照射时间增强。
-- **命中状态**：`didDamageThisFrame()` = 本帧被截短 (命中) 且伤害乘数 > 0；`getDamageTarget()` 返回本帧截短目标；`getFrom()` / `getTo()` 是当前帧绝对引擎坐标端点，`getRayEndPrevFrame()` / `getLengthPrevFrame()` 是上一帧端点。
+- **命中状态**：`didDamageThisFrame()` 为真表示本帧被截短 (命中) 且伤害乘数 > 0；`getDamageTarget()` 返回本帧截短目标；`getFrom()` / `getTo()` 是当前帧绝对引擎坐标端点，`getRayEndPrevFrame()` / `getLengthPrevFrame()` 是上一帧端点。
 
 必须遵守的规则：
 
@@ -962,7 +962,7 @@ for (DamagingProjectileAPI p : engine.getProjectiles()) { report(p); }
 
 ## 总结
 
-本节把 "武器触发 → 射弹 / 光束" 的对象流走了一遍：`fireShot` 按固定次序生成射弹，射弹经历生成、飞行、命中与淡出，导弹在生命周期之上叠加装填、熄火、EMP 抗性与制导，光束则按 DPS 语义以 0.1 秒间隔结算。贯穿全页的判断方法是先问两个问题：这段逻辑读的是哪个集合，结果在什么时机生效。集合上，`getProjectiles()` 已包含导弹与光束脉冲，`getMissiles()` 只是子集，`getBeams()` 只含光束武器实体；时机上，`didDamageThisFrame()` 与 `getDamageTarget()` 只对本帧有效，回调参数只属于本次事件。
+本节把 "武器触发 → 射弹 / 光束" 的对象流走了一遍：`fireShot` 按固定次序生成射弹，射弹经历生成、飞行、命中与淡出，导弹在生命周期之上叠加装填、熄火、EMP 抗性与制导，光束则按 DPS 语义以 0.1 秒间隔结算。贯穿全页的判断方法是先问这段逻辑读的是哪个集合、结果在什么时机生效。集合上，`getProjectiles()` 已包含导弹与光束脉冲，`getMissiles()` 只是子集，`getBeams()` 只含光束武器实体；时机上，`didDamageThisFrame()` 与 `getDamageTarget()` 只对本帧有效，回调参数只属于本次事件。
 
 排查时从注册与绑定点开始核对，比对着现象猜测更快：数据绑定类名没写进 `.proj` / `.wpn` 是第一嫌疑 (静默失效、无报错)，缓存了本帧命中状态是第二嫌疑，叠加统计两个集合排第三。六条必须遵守的规则是本节的行为底线：改武器数值前 `ensureClonedSpec()`、回调上下文禁止缓存、射弹不命中 source、导弹派生射弹必须 `setFromMissile(true)`、光束命中状态只对本帧有效、伤害修改只能走 `getModifier()` 并返回 id。
 

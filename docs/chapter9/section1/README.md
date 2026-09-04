@@ -10,15 +10,15 @@
 
 完成后，您将能够：
 
-- 说出星区 (sector) 的结构：`SectorAPI` 是生涯引擎根对象，名下挂哪些子容器 (地点、时钟、玩家舰队、经济、势力、脚本、监听器、persistent data、memory、UI 外壳)，以及每个子容器从哪个 getter 进入；
+- 列出星区 (sector) 的结构：`SectorAPI` 是生涯引擎根对象，名下挂哪些子容器 (地点、时钟、玩家舰队、经济、势力、脚本、监听器、persistent data、memory、UI 外壳)，以及每个子容器从哪个 getter 进入；
 - 用 `SectorAPI.getClock()` 读生涯时钟：
     - `getCycle()` / `getMonth()` / `getDay()` / `getHour()` 的取值规则与纪元起点；
     - `getDateString()` / `getShortDate()` / `getTimestamp()` / `getElapsedDaysSince()` 的语义；
     - 记住换算基线 "10 真实秒 = 1 游戏日"；
 - 从零写一个 `EveryFrameScript` 实现并通过 `SectorAPI.addScript` 注册：
     - 复述一次性注册标记 (persistent data `CLASS_MARK` 模式) 与每帧推进循环 (`isDone` → 移除；`runWhilePaused()` 或未暂停 → `advance`)；
-    - 说出 "脚本随存档保存、transient 脚本不保存" 的序列化边界；
-- 说出暂停与加速时哪些推进、哪些冻结：引擎暂停时脚本默认不推进、时钟不前进；按住 Shift 加速时每帧推进两次 (`campaignSpeedupMult`)；战斗期间生涯引擎完全不推进；
+    - 解释 "脚本随存档保存、transient 脚本不保存" 的序列化边界；
+- 解释暂停与加速时哪些推进、哪些冻结：引擎暂停时脚本默认不推进、时钟不前进；按住 Shift 加速时每帧推进两次 (`campaignSpeedupMult`)；战斗期间生涯引擎完全不推进；
 - 从症状定位九类典型故障：脚本没注册、重复注册、`isDone()` 恒 true、`runWhilePaused` 语义误用、把秒当游戏天、暂停时依赖时钟、战斗期 "脚本消失"、旧档不注册、脚本字段放了不可序列化对象。
 
 ## 前置知识
@@ -68,7 +68,7 @@
 
 结构要点：
 
-1. 一个存档 = 一个生涯引擎实例；`Global.getSector()` 返回它，星区引用**禁止**跨存档缓存 (见前置知识中的 `Global` 阶段语义条目)。
+1. 一个存档对应一个生涯引擎实例；`Global.getSector()` 返回它，星区引用**禁止**跨存档缓存 (见前置知识中的 `Global` 阶段语义条目)。
 2. 星区自身直接持有：时钟 (`CampaignClockAPI`)、`scripts` 与 `transientScripts` 两个脚本列表、`paused` 标志、经济、势力管理器、监听器、persistent data、memory、UI 外壳。
     - 也就是说，"脚本随不随存档保存" 由字段的 `transient` 修饰决定：**`scripts` 随存档保存，`transientScripts` 不随存档保存**。
     - 这是 `addScript` 与 `addTransientScript` 的唯一行为差别，注册入口的选择直接决定跨存档行为。
@@ -86,7 +86,7 @@
     - `getMonth()` 返回 1–12(1 = January)；
     - `getDay()` 返回 1–31；`getHour()` 返回 0–23。
 - **换算基线：10 真实秒 = 1 游戏日**：`SECONDS_PER_GAME_DAY = 10.0F`。`convertToDays(真实秒)` = 秒 ÷ 10；`convertToSeconds(游戏天)` = 天 × 10；`convertToMonths(真实秒)` = 秒 ÷ 10 ÷ 30。
-- **日期字符串**：`getDateString()` = `"Mar 2, c206"` 形态；`getShortDate()` = `"206.3.2"` 形态；`getShortMonthString()` = 三字母月份。
+- **日期字符串**：`getDateString()` 返回 `"Mar 2, c206"` 形态；`getShortDate()` 返回 `"206.3.2"` 形态；`getShortMonthString()` 返回三字母月份。
 - **时间戳与间隔**：`getTimestamp()` 返回内部日历毫秒值；`getElapsedDaysSince(ts)` 返回从 `ts` 到现在的游戏天数 (`(now - ts) / 86400000`)。
     - **参数为 `0` 时返回 `Float.MAX_VALUE`**，计算 "未初始化" 的间隔时不要传 0。
 - **`createClock(long timestamp)`**：按时间戳新建一个时钟实例 (对齐 "从某时刻起算" 的局部计时)。

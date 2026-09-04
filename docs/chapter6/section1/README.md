@@ -10,7 +10,7 @@
 
 完成后，您将能够：
 
-- 说出当前基线的运行时基线：游戏自带的 Java 17 运行时 (Zulu 17.0.10) 与它要求的字节码版本上限；
+- 列出当前基线的运行时组成：游戏自带的 Java 17 运行时 (Zulu 17.0.10) 与它要求的字节码版本上限；
 - 在 IDE 中建立语言级别 17 的工程，把游戏侧公开 API(`com.fs.starfarer.api.*`) 作为唯一游戏侧编译依赖，并挂上 API 的源码附件；
 - 用 Gradle(本教程固定 9.6.0) 以 `toolchain 17` + `--release 17` 编译，把产物输出到 MOD 的 `jars/`；
 - 在 `mod_info.json` 写入 `jars` 数组，让游戏把 JAR 挂进脚本类路径；
@@ -19,7 +19,7 @@
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录、`mod_info.json`、启动器与日志，以及游戏不从 `src/` 查找源码的路径规则；
+- [C1-S1] 的 MOD 目录、`mod_info.json`、启动器与日志；
 - [C2-S2] 的完整类名引用、注册入口和 `Problem loading class [...]` 异常含义；
 - [C7-S1] 的每帧回调、`BaseEveryFrameCombatPlugin` 和暂停语义；
 - 理解 Java 17 字节码上限、Gradle toolchain 与 `--release` 的关系；
@@ -58,7 +58,7 @@
 
 教程验证环境固定 Gradle 9.6.0。本教程的构建命令统一写作 `gradle ...`，要求 PATH 中可用的 `gradle`(教程开发环境为 Gradle 9.6.0)，具体的安装路径以您的环境为准。
 
-两条编译约束缺一不可：`java.toolchain.languageVersion = JavaLanguageVersion.of(17)` 让 Gradle 自动选择本机 JDK 17；`options.release = 17` 强制字节码目标。
+`java.toolchain.languageVersion = JavaLanguageVersion.of(17)` 让 Gradle 自动选择本机 JDK 17，`options.release = 17` 强制字节码目标，两条编译约束缺一不可。
 
 `options.release` 用于防止 Gradle 自身跑在更高版本 JDK 上时悄悄把 target 抬高 —— 漏掉它时编译仍会成功，字节码目标随 Gradle 运行 JDK 漂移，直到游戏加载类时才以 `UnsupportedClassVersionError` 暴露。
 
@@ -352,9 +352,9 @@ public class GearInFrameLogger extends BaseEveryFrameCombatPlugin {
 
 ## 总结
 
-本节把 "源码即时编译" 换成 "先编译成 jar 再按名加载"，并让这条链的每一段都有了可观察信号：`gradle jar` 的构建结果、日志里的 jar 加载行、模拟战中的 tick 行，以及改动参数后的行为变化。链在哪一段断，日志就会在哪一段缺信号，因此验证顺序就是排查顺序。
+本节把 "源码即时编译" 换成 "先编译成 jar 再按名加载"，并让这条链的每一段都有了可观察信号，`gradle jar` 的构建结果、日志里的 jar 加载行、模拟战中的 tick 行，以及改动参数后的行为变化。链在哪一段断，日志就会在哪一段缺信号，因此验证顺序就是排查顺序。
 
-排查时依次问：jar 有没有被声明 (看日志加载行)、类名有没有被注册入口引用、字节码版本是否低于等于 17、jar 里是否真的有这个类。任何一环缺失，最终都表现为 `Problem loading class` 或 "没有任何行为"，区别只在日志哪一段先断。
+排查时依次问 jar 有没有被声明 (看日志加载行)、类名有没有被注册入口引用、字节码版本是否低于等于 17、jar 里是否真的有这个类。任何一环缺失，最终都表现为 `Problem loading class` 或 "没有任何行为"，区别只在日志哪一段先断。
 
 "编译为类、按名引用" 的机制同样适用于 MOD 入口类：从 jar 实例化入口类、在游戏应用生命周期回调 (如 `onApplicationLoad`) 中做初始化，是本节链路的直接延续 [C6-S2]。
 

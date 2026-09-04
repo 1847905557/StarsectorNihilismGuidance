@@ -10,12 +10,12 @@
 
 完成后，您将能够：
 
-- 说出两条监听器通道，并说清各自的存储、去重与派发语义：
+- 列出两条监听器通道，并解释各自的存储、去重与派发语义：
     - Sector 级 `CampaignEventListener` 通道：`addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners`；
     - `ListenerManagerAPI` 类型化通道：`addListener` / `addListener(listener, isTransient)` / `removeListener` / `removeListenerOfClass` / `hasListener` / `hasListenerOfClass` / `getListeners(Class)`。
-- 按分组说出 `CampaignEventListener` 全接口 21 个方法，并解释每一组事件在哪个边界点被触发 (战斗结束、贸易结算、舰队入地/离场/跳跃/到达、市场开关、声望变更、经济迭代)；
-- 说出监听器生命周期规则：注册时机、persistent data 注册标记、**监听器必须在合适时机移除**、transient 监听器读档后必须重新注册、配对类 "脚本结束 ≠ 监听器移除"、`addListenerWithTimeout` 的游戏天单位与暂停冻结语义；
-- 创建 `GearInCampaignListener`(Sector 级监听器)、`GearInListenerLifecycleScript`(按帧生命周期脚本，与监听器配对) 与 `GearInLocationChangeListener`(`ListenerManagerAPI` 类型化监听器)，并在 `onGameLoad` 正确注册；
+- 按分组列出 `CampaignEventListener` 全接口 21 个方法，并解释每一组事件在哪个边界点被触发 (战斗结束、贸易结算、舰队入地/离场/跳跃/到达、市场开关、声望变更、经济迭代)；
+- 解释监听器生命周期规则：注册时机、persistent data 注册标记、**监听器必须在合适时机移除**、transient 监听器读档后必须重新注册、配对类 "脚本结束 ≠ 监听器移除"、`addListenerWithTimeout` 的游戏天单位与暂停冻结语义；
+- 创建 Sector 级监听器、按帧生命周期脚本 (与监听器配对) 和 `ListenerManagerAPI` 类型化监听器，并在 `onGameLoad` 正确注册；
 - 从症状定位十类典型故障：没注册、`onApplicationLoad` 注册 NPE、重复注册成双、transient 读档丢失、僵尸监听器、超时单位误用、事件日志过频、战斗回调重复计数、双通道混淆、旧档不注册。
 
 ## 前置知识
@@ -290,9 +290,9 @@ if (reportsLeft <= 0) {
 
 规则落到代码。在既有 MOD 布局与 `GearInModPlugin` 之上新增三个类 (不新增任何资源)，对应两条注册通道：
 
-通道一 = 监听器 + 生命周期脚本配对 (`sector.addListener` / `sector.addScript`)；
+通道一采用监听器 + 生命周期脚本配对 (`sector.addListener` / `sector.addScript`)；
 
-通道二 = 类型化监听器 (`getListenerManager().addListener(..., true)`)：
+通道二采用类型化监听器 (`getListenerManager().addListener(..., true)`)：
 
 ```text
 Starsector/mods/GearIndustry/
@@ -492,11 +492,11 @@ if (!sector.getListenerManager().hasListenerOfClass(
 
 ## 总结
 
-本节建立了一条从注册到回调的完整判断链：两条通道决定监听器存哪里、怎么去重、由谁派发，21 个方法决定哪些事件值得监听，生命周期规则决定注册与移除的时机。动手前先回答三个问题：走哪条通道、什么时候注册、什么时候移除 —— 三个答案都落在 `onGameLoad` 的注册块和配对脚本里，而不是散落在构造器或 `onApplicationLoad`。
+本节建立了一条从注册到回调的完整判断链：两条通道决定监听器存哪里、怎么去重、由谁派发，21 个方法决定哪些事件值得监听，生命周期规则决定注册与移除的时机。动手前先回答走哪条通道、什么时候注册、什么时候移除这三个问题 —— 三个答案都落在 `onGameLoad` 的注册块和配对脚本里，而不是散落在构造器或 `onApplicationLoad`。
 
-排错时沿用 "触发点 → 派发者 → 回调签名" 的边界分析法：回调没触发，先确认事件真的发生 (边界点)，再确认派发者遍历了注册表，最后核对签名与注册时机。这套方法可以迁移到同一家族的其他事件驱动机制：能力与对话框事件、战斗结算后的流程钩子、经济与声望的联动处理，都能沿这条链逐段核对 "回调为什么没触发"。
+排错时沿用 "触发点 → 派发者 → 回调签名" 的边界分析法。回调没触发，先确认事件真的发生 (边界点)，再确认派发者遍历了注册表，最后核对签名与注册时机。这套方法可以迁移到同一家族的其他事件驱动机制：能力与对话框事件、战斗结算后的流程钩子、经济与声望的联动处理，都能沿这条链逐段核对 "回调为什么没触发"。
 
-最容易反复踩中的三个判断：持久监听器随存档序列化，字段必须可序列化；transient 监听器读档后必然清空，必须重新注册；脚本 `isDone()` 只清理脚本，监听器必须显式移除。把这三条连同 "游戏天、暂停冻结" 的超时语义写进注释，可以少背许多与您无关的报错黑锅。
+最容易反复踩中的判断有三个。持久监听器随存档序列化，字段必须可序列化；transient 监听器读档后必然清空，必须重新注册；脚本 `isDone()` 只清理脚本，监听器必须显式移除。把这三条连同 "游戏天、暂停冻结" 的超时语义写进注释，可以少背许多与您无关的报错黑锅。
 
 ## 建议参考项
 

@@ -15,7 +15,7 @@
 - 用 API 修改装配 (武器、武器组、船插、幅能、模块覆盖)，并判断每类操作的失败时机；
 - 区分 `VariantSource` 五个来源，验证 `isStockVariant()` 与 `isEmptyHullVariant()` 的判定公式；
 - 核对变体序列化与保存的边界：`toJSONObject` 键、克隆落盘、成员变体落档条件；
-- 创建并注册一套七个类的变体演示套件，在生涯首帧核对全部 `GearIn ...` 日志；
+- 创建并注册一套变体演示类组，在生涯首帧核对各自的日志输出；
 - 从症状定位典型故障：装配不出现、启动加载失败、部署期槽位报错、共享污染、来源语义走错、内置内容改不动、战机武器无目标。
 
 ## 前置知识
@@ -86,7 +86,7 @@
 |---|---|---|
 | `weapons` | `Map<String, String>` | 槽位 id → 武器 id(含内置武器；内置武器由 `setHullSpec` 时写入) |
 | `weaponGroups` | `List<WeaponGroupSpec>` | 武器组，组内槽位列表 |
-| `wings` | `List<String>` | 联队 id 列表，索引 = 甲板序 (内置联队占前 N 位) |
+| `wings` | `List<String>` | 联队 id 列表，索引即甲板序 (内置联队占前 N 位) |
 | `hullMods` / `permaMods` / `sMods` / `suppressedMods` | `LinkedHashSet<String>` | 船插、永久船插、内置增强 (s-mod)、压制船插 |
 | `numFluxVents` / `numFluxCapacitors` | `int` | 幅能分配 |
 | `variantDisplayName` | `String` | 默认 `"Strike"` |
@@ -117,7 +117,7 @@
 两个高频判定：
 
 - `isStockVariant()` = `getSource() == VariantSource.STOCK`。注意 `<hullId>_Hull` 空装配**不是** stock 变体 (来源是 `HULL`)。
-- `isEmptyHullVariant()` = 无内置以外的船插 ∧ 无内置以外的联队 ∧ 无内置以外的武器 ∧ `source == VariantSource.HULL`。所以 "看起来空" 的代码构造变体 (`createEmptyVariant`) 不满足这个判定；战役制作章节也用这个判定识别自动 `<hullId>_Hull` 空装配。
+- `isEmptyHullVariant()` 的判定条件是无内置以外的船插 ∧ 无内置以外的联队 ∧ 无内置以外的武器 ∧ `source == VariantSource.HULL`。所以 "看起来空" 的代码构造变体 (`createEmptyVariant`) 不满足这个判定；战役制作章节也用这个判定识别自动 `<hullId>_Hull` 空装配。
 
 ## 修改装配：武器、武器组、船插与幅能
 
@@ -174,7 +174,7 @@
 
 | 方法 | 语义 |
 |---|---|
-| `computeOPCost(MutableCharacterStatsAPI stats)` | \= 武器 OP + 船插 OP + vents + capacitors |
+| `computeOPCost(MutableCharacterStatsAPI stats)` | = 武器 OP + 船插 OP + vents + capacitors |
 | `computeWeaponOPCost(stats)` | 引用缺失的武器/联队 spec 时抛 `RuntimeException`(消息形如 `Weapon spec with id [...] not found`、`Fighter wing spec with id [...] not found`；**实现原文的格式化串缺右括号，不要依赖消息文本做解析**) |
 | `computeHullModOPCost()` / `computeHullModOPCost(stats)` | 只算非内置、非 perma 船插 |
 | `getUnusedOP(stats)` | 船体 OP(`hullSpec.getOrdnancePoints(stats)`)− `computeOPCost` |

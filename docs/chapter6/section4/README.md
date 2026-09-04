@@ -1,6 +1,6 @@
 # 读取设置
 
-本节处理 `data/config/settings.json` 的读取：从 `Global.getSettings()` 取得 `SettingsAPI`，按键读取字符串、数值、布尔值和颜色，并观察缺失键、类型不符与缓存造成的结果。
+本节处理 `data/config/settings.json` 的读取，从 `Global.getSettings()` 取得 `SettingsAPI`，按键读取字符串、数值、布尔值和颜色，并观察缺失键、类型不符与缓存造成的结果。
 
 *本节预期阅读时间：~15 分钟。*
 
@@ -12,7 +12,7 @@
 
 - 使用 `Global.getSettings().getSettingsJSON()` 观察合并后的 settings 对象；
 - 使用 `getString`、`getFloat`、`getInt`、`getBoolean`、`getColor` 和 `optBoolean` 读取设置；
-- 说出 settings.json 的对象键合并和启动器关键键边界；
+- 解释 settings.json 的对象键合并和启动器关键键边界；
 - 解释 `getInt` 的截断、缺失键异常和可选键缺省值；
 - 识别 settings 缓存、内存修改与存档持久化之间的区别。
 

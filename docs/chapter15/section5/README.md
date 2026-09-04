@@ -10,9 +10,9 @@
 
 完成后，您将能够：
 
-- 为 MOD 组织 `GearIn_ui` 和 `GearIn_dialog` 分类；
-- 使用 `GearIn_text_*` 前缀命名自有键；
-- 实现 `GearInI18n` 的分类取值、`%s` 格式化和 `$token` 替换；
+- 为 MOD 组织界面文本与对话文本两类分类；
+- 使用带 MOD 前缀的统一前缀命名自有键；
+- 实现取值封装类的分类取值、`%s` 格式化和 `$token` 替换；
 - 区分代码驱动文本与 `descriptions.csv` 的对象描述文本；
 - 通过界面或日志观察本地化文本和缺失键结果。
 
@@ -20,13 +20,13 @@
 
 - [C15-S2] 的 `strings.json` 固定入口、双参 `getString`、缺失键和占位符规则；
 - [C1-S1] 的 MOD 目录结构与 `gear_in` 示例 MOD；
-- [C1-S7]、[C3-S4] 的 `descriptions.csv` 键规则与使用方。
+- [C1-S7]、[C3-S5] 的 `descriptions.csv` 键规则与使用方。
 
 ## 本地化组织
 
 两级键由 `(category, id)` 组成。分类按功能域命名，键使用 MOD 前缀，代码和文件只要保持这两个值一致，多个界面就可以共享同一份文本。
 
-本节为 `gear_in` 使用两个分类：`GearIn_ui` 保存界面文本，`GearIn_dialog` 保存对话文本；两类键统一使用 `GearIn_text_*` 前缀。新增文本只写入这两个分类，避免与原版或其他 MOD 的键冲突。
+本节为 `gear_in` 使用 `GearIn_ui` 与 `GearIn_dialog` 两个分类，前者保存界面文本，后者保存对话文本；两类键统一使用 `GearIn_text_*` 前缀。新增文本只写入这两个分类，避免与原版或其他 MOD 的键冲突。
 
 `descriptions.csv` 负责舰船、武器、行星和势力等对象的风味文本；`strings.json` 负责代码主动取用的界面标签、按钮、弹窗和对话行。同一段文本如果同时按对象和代码取用，两份文件分别保存对应版本。
 

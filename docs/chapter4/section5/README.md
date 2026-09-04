@@ -17,8 +17,8 @@
 
 ## 前置知识
 
-- [C3-S3] 的星系生成入口和 `addPlanet` 参数顺序；
-- [C3-S4] 的 `PLANET` 描述键；
+- [C3-S4] 的星系生成入口和 `addPlanet` 参数顺序；
+- [C3-S5] 的 `PLANET` 描述键；
 - 能够启动新档并进入 GearIn 星系。
 
 ## 定义星体外观
@@ -49,7 +49,7 @@ GearIn Prime 是炼厂世界：棕红色大气、厚云层、低速自转。贴�
 GearIn_ember_world,PLANET,被炼厂烟尘和赤红云层包围的工业世界，地表昼夜都映着熔炉的光。,,,,,
 ```
 
-`id` 与 `descriptionId` 保持一致。CSV 键和转义规则见 [C3-S4]，本页负责定义 `GearIn_ember_world` 这一行。
+`id` 与 `descriptionId` 保持一致。CSV 键和转义规则见 [C3-S5]，本页负责定义 `GearIn_ember_world` 这一行。
 
 ### 配置大气颜色
 
@@ -182,5 +182,5 @@ PlanetAPI prime = system.addPlanet(
 
 - `data/config/planets.json`：行星与恒星类型注册表；
 - `PlanetSpecAPI`：运行期类型字段与描述键；
-- [C3-S3]：`initStar`、`addPlanet` 和星系生成顺序；
-- [C3-S4]：PLANET 描述挂接。
+- [C3-S4]：`initStar`、`addPlanet` 和星系生成顺序；
+- [C3-S5]：PLANET 描述挂接。

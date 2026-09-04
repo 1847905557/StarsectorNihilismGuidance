@@ -12,8 +12,8 @@ import com.fs.starfarer.api.campaign.econ.MarketAPI;
 
 /**
  * 本节示例：使用原版类型制作一个带市场、恒星、行星、生涯实体与跳跃点的星系。
- * 实现 SectorGeneratorPlugin 只是采用生成器的 "契约" 写法 (原版 data.scripts.world.SectorGen
- * 就是 SectorGeneratorPlugin)；实际调用入口是 ModPlugin.onNewGame，见 GearInSystemGenPlugin。
+ * 实现 SectorGeneratorPlugin 是采用生成器接口的写法 (原版 data.scripts.world.SectorGen
+ * 就是 SectorGeneratorPlugin)；实际调用入口是 GearInModPlugin.onNewGame。
  */
 public class GearInSystemGenerator implements SectorGeneratorPlugin {
 

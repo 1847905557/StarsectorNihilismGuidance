@@ -15,7 +15,7 @@
     - `SectorEntityToken.getCargo()`(玩家舰队 `CampaignFleetAPI.getCargo()`、子市场 `SubmarketAPI.getCargo()`)；
 - 区分 `FactionAPI` 的分组 (身份、显示与颜色、关系、资源集合、经济字段、随机人物、doctrine/production/spec) 与关系语义：
     - 全局对表、`-1..1` 钳位、`adjustRelationship` 直接加、`setRelationship` 直写；
-    - `isHostileTo` = 关系等级 ≤ `HOSTILE`、`getRelToPlayer()` 包装；
+    - `isHostileTo` 表示关系等级 ≤ `HOSTILE`，经 `getRelToPlayer()` 包装；
 - 解释 `CargoAPI` 的栈模型 (stack 集合 + credits + 容量统计)、四类写入入口 (资源 / 武器 / 战机芯片 / 特殊物品) 与 `removeItems` 的 NULL 占位栈语义，并遵守 `getMothballedShips()` 必须先 `initMothballedShips(factionId)` 的必须规则；
 - 从症状定位故障，并沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核 (沿用本节示例的任务链)。
 
@@ -73,9 +73,9 @@
 2. `getRelationship(id)` 直接返回对表值；`getRelationshipLevel(id)` = `RepLevel.getLevelFor(值)`。
     - `RepLevel` 阈值：`T1=0.09`、`T2=0.24`、`T3=0.49`、`T4=0.74`；`getMin()` 不包含边界、`getMax()` 包含边界。
 3. `adjustRelationship(id, delta)` **直接相加**并经 `setValue` 钳位，不触发任何监听；`adjustRelationship(id, delta, limit)` 按 `limit` 等级封顶/封底 (正方向默认 `COOPERATIVE`、负方向默认 `VENGEFUL`)。
-    - `setRelationship(id, float)` 直写；`setRelationship(id, RepLevel)` 写到等级边界：`NEUTRAL` = 0、正级 = `getMin()+0.01`、负级 = `-getMin()-0.01`。
+    - `setRelationship(id, float)` 直写；`setRelationship(id, RepLevel)` 写到等级边界：`NEUTRAL` 写 0、正级写 `getMin()+0.01`、负级写 `-getMin()-0.01`。
 4. `isHostileTo(id)` = `isAtBest(id, HOSTILE)`：关系等级 ≤ `HOSTILE` 即敌对。
-5. 玩家视角包装：`getRelToPlayer()` 返回 `RelationshipAPI`(`com.fs.starfarer.api.characters.RelationshipAPI`：`getRel()`、`getLevel()`)；玩家势力对玩家自己 = 同势力对默认 `1.0`。至少在这张对表里，每个势力与自己永远是满分关系。
+5. 玩家视角包装：`getRelToPlayer()` 返回 `RelationshipAPI`(`com.fs.starfarer.api.characters.RelationshipAPI`：`getRel()`、`getLevel()`)；玩家势力对玩家自己按同势力默认取 `1.0`。至少在这张对表里，每个势力与自己永远是满分关系。
 6. **玩家声望 action 的正规路径**是 `SectorAPI.adjustPlayerReputation(action, factionId/person)`("This method will pick the highest-priority ReputationActionResponsePlugin and call its handlePlayerReputationAction() method"；原版 `AdjustRep` rulecmd 同款调用，`com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`)。
     - `FactionAPI` 的关系写入是**原始写入**，不经过 response plugin 的 delta 计算，也不产生声望监听通知。
 
@@ -144,7 +144,7 @@
 
 ## 实现势力与货舱服务
 
-两个服务都由一次性脚本驱动：先读取基线，再做一项可逆修改，最后核对回滚结果。以下局部片段分别来自三个协作类，每段都对应一组明确日志。
+两个服务都由一次性脚本驱动，先读取基线，再做一项可逆修改，最后核对回滚结果。以下局部片段分别来自三个协作类，每段都对应一组明确日志。
 
 ### 封装一次性执行骨架
 
@@ -376,7 +376,7 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 预期结果：
 
 - **关系/货物核对**：`write-rollback` 行的第二段恒比第一段高 `0.05`(起始关系接近 `1.0` 时被钳位则例外，新档霸主关系不会)，第三段与第一段相等。
-- **固定值**：`drugsIllegal=true`、`illegalCount=4`(原版 `player.faction` 声明 4 种非法商品)、`relToPlayer=1.00(Cooperative)`(玩家势力对玩家自己 = 同势力对默认 `1.0`)。
+- **固定值**：`drugsIllegal=true`、`illegalCount=4`(原版 `player.faction` 声明 4 种非法商品)、`relToPlayer=1.00(Cooperative)`(玩家势力对玩家自己按同势力默认取 `1.0`)。
 - **执行次数**：日志段的顺序与调用点片段的注册顺序一致 (势力 → 货物)，两个脚本各自只执行一次。
 - **读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位、脚本不再注册)。
 - **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
@@ -416,9 +416,9 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 
 ## 总结
 
-本节把两个服务入口讲成两条链，并在示例里组合使用：势力链从 `SectorAPI.getFaction(id)` / `getPlayerFaction()` 进入 `FactionAPI`，关系读写经过全局对表 (双向共享、`-1..1` 钳位、对条目用到时才建)；货物链从 `SectorEntityToken.getCargo()` 进入 `CargoAPI`，读写按分族进行，栈是存储细节而不是数量真相。
+本节把两个服务入口讲成两条链，并在示例里组合使用。势力链从 `SectorAPI.getFaction(id)` / `getPlayerFaction()` 进入 `FactionAPI`，关系读写经过全局对表 (双向共享、`-1..1` 钳位、对条目用到时才建)；货物链从 `SectorEntityToken.getCargo()` 进入 `CargoAPI`，读写按分族进行，栈是存储细节而不是数量真相。
 
-排错时先记住两条判断：关系写入是**原始写入** (无监听、钳位 `[-1,1]`)，玩家声望 action 走 `adjustPlayerReputation`；`getMothballedShips()` 必须先 `initMothballedShips`，`getStacksCopy()` 含 NULL 占位栈。本节演示的 "写入后立即精确回滚" 写法，让验证可以在不遗留任何持久状态的前提下完成。
+排错时先记住两条判断。关系写入是**原始写入** (无监听、钳位 `[-1,1]`)，玩家声望 action 走 `adjustPlayerReputation`；`getMothballedShips()` 必须先 `initMothballedShips`，`getStacksCopy()` 含 NULL 占位栈。本节演示的 "写入后立即精确回滚" 写法，让验证可以在不遗留任何持久状态的前提下完成。
 
 脚本注册标记与 `Global` 阶段语义是本节底座；`REGISTER_MARK` 注册模式沿用既有脚本节 "每个注册项用各自的键" 的惯例。本节只覆盖两个入口的常用高频面；制作情报与交互对话框的方法见 [C9-S6]。
 

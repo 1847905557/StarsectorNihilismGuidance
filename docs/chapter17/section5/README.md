@@ -10,7 +10,7 @@ GearIn 的市场进入地面战后，原版定义不会自动理解专属产业�
 
 完成后，您将能够：
 
-- 在 `groundBattleDefs.json` 中登记 GearIn 产业和地面单位；
+- 在 `groundBattleDefs.json` 中登记自定义产业和地面单位；
 - 为产业直接绑定插件类，并区分通用 `plugins` 表；
 - 用 `GBDataManager` 和 `GroundUnitDef` 在进入地面战前核对合并结果。
 

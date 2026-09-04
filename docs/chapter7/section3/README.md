@@ -10,10 +10,10 @@
 
 完成后，您将能够：
 
-- 说出 `ShipAPI.getMutableStats()` 返回什么、stats 与战斗实体 / 舰队成员 / 装配的绑定关系，以及每个 `MutableStat` 的 base 值从哪些数据列来；
+- 解释 `ShipAPI.getMutableStats()` 返回什么、stats 与战斗实体 / 舰队成员 / 装配的绑定关系，以及每个 `MutableStat` 的 base 值从哪些数据列来；
 - 复述 `MutableStat` 的计算公式 `(base + base * percent / 100 + flat) * mult`，解释 percent 与 flat 的加算关系、mult 的乘算优先级，以及延迟重算 (`needsRecompute`) 语义；
 - 解释 modifier ID 的稳定性语义：同 ID 同类型覆盖、`unmodify(source)` 一次清三类、零值 / 恒等值不创建条目，为什么**必须**使用稳定 ID，以及违反后的可观察结果；
-- 说出 `applyEffects` 的三个时机 (`FleetMemberAPI.updateStats` 生涯重建 / `Ship` 构造 / 加入战斗引擎)，并解释为什么 `applyEffectsBeforeShipCreation` 必须可重入；
+- 列出 `applyEffects` 的三个时机 (`FleetMemberAPI.updateStats` 生涯重建 / `Ship` 构造 / 加入战斗引擎)，并解释为什么 `applyEffectsBeforeShipCreation` 必须可重入；
 - 从症状定位典型故障：数值持续累积、解除不生效、两个来源互相覆盖、生涯与战斗数值不一致、percent 陷阱 (base 为 0 / `-100`)。
 
 ## 前置知识
@@ -64,7 +64,7 @@ modifyFlat / modifyPercent / modifyMult(稳定 ID, 值)
     FleetMemberAPI(生涯侧 burn / 货舱 / 补给)、战斗引擎.getTimeMult() 等
 ```
 
-stats 同时绑定三个既有对象：`getEntity()` 返回战斗实体 (仅战斗期非 null)、`getFleetMember()` 返回舰队成员、`getVariant()` 返回装配。base 的数值来源就是上一张图的数据链。
+stats 同时绑定 `getEntity()`、`getFleetMember()`、`getVariant()` 三个既有对象的读取入口，分别返回战斗实体 (仅战斗期非 null)、舰队成员与装配。base 的数值来源就是上一张图的数据链。
 
 两张图给出的是全景：base 从哪来、修饰最终被谁读。接下来的问题是修饰本身怎么组织，这项工作由 `MutableStat` 的三张表承担。
 
@@ -117,7 +117,7 @@ modified = (base + base * percentMod / 100 + flatMod) * mult
 
 本节示例只碰 `MutableStat`。
 
-三张表都以 modifier ID 为键，ID 因此从参数升格为规则的核心：写错 ID，覆盖、清除与累积三条语义会同时失效。
+三张表都以 modifier ID 为键，ID 因此从参数升格为规则的核心：写错 ID，覆盖、清除与累积会同时失效。
 
 ## modifier ID 稳定性 (必须遵守的规则)
 
@@ -166,7 +166,7 @@ modifier 写进表里只是第一步，还要知道这些表在什么时机被�
     - `ShipEngineControllerAPI` 每帧读 `getMaxSpeed().getModifiedValue()`；
     - 因此战斗插件在 `advance` 里改 stats，下一帧即被消费，不需要任何 "刷新" 调用。
 
-规则讲完，还需要一个当场可观察的现场。本节把它们落成一个最小插件类：用施加、覆盖、解除三个阶段，把幂等、同 ID 覆盖、一次清除三条语义变成日志里可以直接读到的数字变化。
+规则讲完，还需要一个当场可观察的现场。本节把它们落成一个最小插件类，用施加、覆盖、解除三个阶段，把幂等、同 ID 覆盖、一次清除三条语义变成日志里可以直接读到的数字变化。
 
 ## 实现舰船数值修改
 
@@ -260,7 +260,7 @@ LOG.info("GearIn stats read: hull=" + ship.getHullSpec().getHullId()
 
 ::: info 日志 "没反应" 的三个排查点
 
-如果 `Starsector/starsector-core/starsector.log` 里既没有 `GearIn stats probe init` 也没有周期报告行，优先检查三处：注册片段是否真的生效 (是否遗漏或注释)、战斗是否处于暂停 (暂停检查不推进状态)、玩家舰是否仍在部署阶段 ("Command Shuttle" 假舰会被 `isShuttlePod()` 检查排除)。
+如果 `Starsector/starsector-core/starsector.log` 里既没有 `GearIn stats probe init` 也没有周期报告行，优先检查注册片段是否真的生效 (是否遗漏或注释)、战斗是否处于暂停 (暂停检查不推进状态)、玩家舰是否仍在部署阶段 ("Command Shuttle" 假舰会被 `isShuttlePod()` 检查排除) 这三处。
 
 :::
 
@@ -527,9 +527,9 @@ stats.getMaxSpeed().modifyFlat(MODIFIER_ID, 5f);
 
 本节把 "改一个舰船属性" 整理成一条可复用的判断链：入口是 `ShipAPI.getMutableStats()`，每个 `MutableStat` 的 base 来自 `ship_data.csv` 列；写修饰时记住公式 `(base + base * percent / 100 + flat) * mult` —— percent 与 flat 都按 base 加算，mult 最后整体乘，读取是延迟重算，永远拿到最新值。
 
-modifier ID 是这套体系的键。稳定唯一、按来源命名空间区分、modify 与 unmodify 复用同一个常量，覆盖、幂等与一次清除三条语义就同时成立；反过来，用帧号或随机数拼 ID、两个来源共用 ID，后果是漂移、残留与互相覆盖，而且全程没有一条报错；此类故障只能靠日志里的条目数与数值发现。
+modifier ID 是这套体系的键。稳定唯一、按来源命名空间区分、modify 与 unmodify 复用同一个常量，覆盖、幂等与一次清除就同时成立；反过来，用帧号或随机数拼 ID、两个来源共用 ID，后果是漂移、残留与互相覆盖，而且全程没有一条报错；此类故障只能靠日志里的条目数与数值发现。
 
-生效时机按生命周期分三段：生涯侧 `FleetMemberAPI.updateStats` 整体重建并重放，战斗侧 `Ship` 构造再次重放，加入引擎时 `applyEffectsAfterShipAddedToCombatEngine` 只调一次。改 stats 一律放 `applyEffectsBeforeShipCreation` 并保持可重入；战斗内运行期修改逐帧生效，不需要刷新调用。排错时按四个问题定位：base 从哪来、写进哪张表、用哪个 ID、在哪个时机被重放，本节示例把这四个问题全部做成了日志里可读的三阶段。
+生效时机按生命周期分三段，生涯侧 `FleetMemberAPI.updateStats` 整体重建并重放，战斗侧 `Ship` 构造再次重放，加入引擎时 `applyEffectsAfterShipAddedToCombatEngine` 只调一次。改 stats 一律放 `applyEffectsBeforeShipCreation` 并保持可重入；战斗内运行期修改逐帧生效，不需要刷新调用。排错时按 base 从哪来、写进哪张表、用哪个 ID、在哪个时机被重放这四个问题定位，本节示例把这四个问题全部做成了日志里可读的三阶段。
 
 生涯侧 stats 的读取入口 (`FleetMemberAPI`) 与舰队成员身份，逻辑上承接本节的 "stats 入口" 主线，属生涯域页面的完整讲解范围。
 

@@ -13,7 +13,7 @@
 - 区分 `TextureData.getTextureData()` 与带自动生成参数的查询；
 - 选择 `mapSpriteToMNSWithAutoGen()` 或 `autoGenNormalMap()` 的调用位置；
 - 判断 `preloadAllMaps` 对首次使用和战斗驻留的影响；
-- 用 [C16-S5] 的 `GearInLightReporter` 核对 `TextureEntry` 是否真正可用。
+- 用 [C16-S5] 的报告类核对 `TextureEntry` 是否真正可用。
 
 ## 前置知识
 

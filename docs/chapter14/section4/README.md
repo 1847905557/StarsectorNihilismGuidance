@@ -11,7 +11,7 @@
 完成后，您将能够：
 
 - 解释 `MemoryAPI` 的公开面：`set`(两参/三参)/ `get` 族 / `contains` / `unset` / `expire` / `is` / `between` / `getExpire` / `getKeys` / required 族 / `clear`，并说明记忆键必须以 `$` 开头及其违反后果；
-- 区分过期语义：`expire` 以游戏天为单位 (10 真实秒 = 1 游戏天)、只在生涯非暂停时推进、0 天 = 下一未暂停推进帧移除、负值取消过期、两参 `set` 清除未决过期、`getExpire` 无过期返回 -1；
+- 区分过期语义：`expire` 以游戏天为单位 (10 真实秒 = 1 游戏天)、只在生涯非暂停时推进、0 天表示下一未暂停推进帧移除、负值取消过期、两参 `set` 清除未决过期、`getExpire` 无过期返回 -1；
 - 解析 `memoryMap` 结构：`MemKeys` 槽位 (`global` / `player` / `local` / `market` / `sourceMarket` / `faction` / `entity` / `personFaction` / `mission`) 与 `$memkey.name` 变量解析规则 (无点号或槽位缺失回落 `local`)；
 - 区分 `getMemory()` 与 `getMemoryWithoutUpdate()`：前者触发全部插件 `update*Facts`，后者只读写，并选择写键与高频读取的正确入口；
 - 解释保存与恢复：记忆随所属对象序列化进存档，实体/市场引用转 `enRef_<id>` / `mRef_<id>`，解析不到时键被删除；`PersistentData` 是随存档保存的全局 `Map<String, Object>`，键无需 `$`；
@@ -47,7 +47,7 @@
 |---|---|
 | `set(key, value)` | 写入永不过期键 (javadoc："Never expires.")；**清除该键未决过期** |
 | `set(key, value, expire)` | 写入键并设置剩余寿命 (游戏天) |
-| `expire(key, days)` | 重设键的剩余寿命；`days < 0` = 取消过期 |
+| `expire(key, days)` | 重设键的剩余寿命；`days < 0` 表示取消过期 |
 | `unset(key)` | 主动移除键 (含 required 级联) |
 | `contains(key)` | 区分 "键缺失" 与 "值为 null/false" 的唯一可靠入口 |
 | `get(key)` / `getString` / `getFloat` / `getBoolean` / `getLong` / `getInt` | 按类型读取 |
@@ -86,7 +86,7 @@ Java 侧写键漏 `$` 是头号新手错误。
 - **只在生涯非暂停时推进**：`Memory.advance` 内部先检查 `!isPaused()`，生涯暂停时引擎不把推进量传入记忆。战斗期间生涯不推进，记忆不消耗寿命。
 - `expire(key, days)`：键已有过期条目 → 覆盖 `timeLeft`；`days < 0` → 移除过期条目 (键转为永不过期)；否则新增条目。
 - **两参 `set` 清除未决过期**：先写值、再删该键的过期条目。可观察：`getExpire(key)` 从正数变 -1。想 "改成永久" 就调两参 `set`；想 "改回有过期" 必须再调三参 `set` 或 `expire`。
-- **`0` 天过期 = 会话内 flag**：`timeLeft = 0`，下一个未暂停推进帧 `timeLeft -= days` 小于 0 → `unset`。
+- **`0` 天过期即会话内 flag**：`timeLeft = 0`，下一个未暂停推进帧 `timeLeft -= days` 小于 0 → `unset`。
     - 对话打开期间生涯暂停、不推进，所以 `expire 0` 的键在整个对话内可读；对话关闭后的第一个推进帧被移除。
     - 原版范式：`$option` (`RuleBasedInteractionDialogPluginImpl.optionSelected` 中 `memory.set("$option", optionId); memory.expire("$option", 0)`) 与一次性 flag `$player.<flag> = true 0`。
 - `getExpire(key)` 返回剩余**游戏天**；无过期条目返回 -1。devMode 的 `DumpMemory` 规则命令按此显示 `(e=<剩余天数>)`(`com.fs.starfarer.api.impl.campaign.rulecmd.DumpMemory`)，`(e=0)` 表示 "下一个推进帧移除"。
@@ -113,7 +113,7 @@ devMode 下 `DumpMemory` 显示键列表与 `(e=<剩余天数>)`；`getExpire` �
 |---|---|---|
 | `MemKeys.GLOBAL` | `"global"` | Sector 全局记忆 (`Global.getSector().getMemory()`) |
 | `MemKeys.PLAYER` | `"player"` | 玩家记忆 (`getCharacterData().getMemory()`) |
-| `MemKeys.LOCAL` | `"local"` | 当前交互局部记忆 (默认 = 交互目标记忆；活动人物对话 = 人物记忆) |
+| `MemKeys.LOCAL` | `"local"` | 当前交互局部记忆 (默认取交互目标记忆；活动人物对话时为人物记忆) |
 | `MemKeys.MARKET` | `"market"` | 当前市场记忆 |
 | `MemKeys.SOURCE_MARKET` | `"sourceMarket"` | 来源市场记忆 (local 里 `MemFlags.MEMORY_KEY_SOURCE_MARKET` 指定的市场) |
 | `MemKeys.FACTION` | `"faction"` | 当前规则上下文势力记忆 |
@@ -123,9 +123,9 @@ devMode 下 `DumpMemory` 显示键列表与 `(e=<剩余天数>)`；`getExpire` �
 
 组装点 (memoryMap 从哪来)：
 
-- **对话框**：`RuleBasedInteractionDialogPluginImpl.updateMemory`：`LOCAL` = 交互目标记忆、`FACTION`(null 时用 `createMemory()` 空记忆)、`GLOBAL`、`PLAYER`、`MARKET`、`SOURCE_MARKET`(按 local 的 `$sourceMarket` 查市场)；活动人物时 `updatePersonMemory` 把 `LOCAL` 换成人物记忆、`ENTITY` = 目标记忆、`PERSON_FACTION` = 人物势力记忆；任务上下文时 `setActiveMission` 补 `MISSION` 槽位。
+- **对话框**：`RuleBasedInteractionDialogPluginImpl.updateMemory`：`LOCAL` 即交互目标记忆、`FACTION`(null 时用 `createMemory()` 空记忆)、`GLOBAL`、`PLAYER`、`MARKET`、`SOURCE_MARKET`(按 local 的 `$sourceMarket` 查市场)；活动人物时 `updatePersonMemory` 把 `LOCAL` 换成人物记忆、`ENTITY` 即目标记忆、`PERSON_FACTION` 即人物势力记忆；任务上下文时 `setActiveMission` 补 `MISSION` 槽位。
 - **非对话面板**：面板的 memoryMap 组装与规则执行 (`local` / `faction` / `global` / `player` / `market` / `sourceMarket` 槽位)，用于贸易面板 `TradePanelFlavorText` 等非对话场景。
-- **主菜单新游戏对话框**：`NewGameDialogPluginImpl`：`LOCAL` = 角色数据实体记忆、`GLOBAL`，devMode 时写入 `$global.isDevMode`。
+- **主菜单新游戏对话框**：`NewGameDialogPluginImpl`：`LOCAL` 即角色数据实体记忆、`GLOBAL`，devMode 时写入 `$global.isDevMode`。
 
 变量解析 (`Misc.Token.getVarNameAndMemory`，`com.fs.starfarer.api.util.Misc`)：
 
@@ -186,7 +186,7 @@ devMode 下 `DumpMemory` 显示键列表与 `(e=<剩余天数>)`；`getExpire` �
 
 记忆随所属对象序列化进存档。
 
-`Memory.writeReplace` 把两类引用换成字符串占位：存活的 `SectorEntityToken` → `"enRef_" + id`、`Market` → `"mRef_" + id`；
+`Memory.writeReplace` 把两类引用换成字符串占位，存活的 `SectorEntityToken` → `"enRef_" + id`，`Market` → `"mRef_" + id`；
 
 `readResolve` 延迟重建，首次访问 (`get` / `contains` / `advance`，`restored` 标志) 时 `replaceIdsWithEntities` 把占位解析回对象 —— **解析不到 (实体已销毁/移除)→ 该键被删除**。
 
@@ -276,7 +276,7 @@ GearIn_memory_leave,DialogOptionSelected,$option == GearIn_memory_leave,DismissD
 
 对应关系：
 
-- **welcome**(trigger `GearInMemoryDialog`)：文本演示三种读法：`$global.GearIn_memory_tag`(显式槽位，Java 两参 set 写入、无过期)、`$global.GearIn_memory_counter`(三参 set、1000 游戏天过期)、`$GearIn_memory_fleetKey`(无点号 → 回落 `local` = 交互目标记忆 = 玩家舰队记忆)。
+- **welcome**(trigger `GearInMemoryDialog`)：文本演示三种读法：`$global.GearIn_memory_tag`(显式槽位，Java 两参 set 写入、无过期)、`$global.GearIn_memory_counter`(三参 set、1000 游戏天过期)、`$GearIn_memory_fleetKey`(无点号 → 回落 `local`，即交互目标记忆，也就是玩家舰队记忆)。
     - 选项 "验证内存键"/"结束"。
 - **verify**(trigger `DialogOptionSelected`)：`$option ==` 回流。脚本演示 rules 侧过期语法：`$player.GearIn_memory_lastAction = verify 0`(写玩家内存 + 0 天过期)，再 `FireBest GearInMemoryResult` 进入结果分派。
 - **result\_expired / result\_alive**(trigger `GearInMemoryResult`)：FireBest 分数竞争的对照：expired 的条件 `$global.GearIn_memory_probe` 判真 (probe 已被 Java 侧 expire 0 移除) 恒 false，永不命中；alive 的条件 `$global.GearIn_memory_counter >= 1` + `!$global.GearIn_memory_probe` 两条都过 (2 分) 恒胜。
@@ -566,7 +566,7 @@ public class GearInMemoryMapAssembler implements EveryFrameScript {
 
 对应关系：
 
-- 职责：落键后按 `MemKeys` 槽位组装与对话框插件同构的 memoryMap(global / player / local = 玩家舰队记忆)，解析 `$global.` / `$player.` / 无点号三种变量形态。
+- 职责：落键后按 `MemKeys` 槽位组装与对话框插件同构的 memoryMap(global / player / local，其中 local 为玩家舰队记忆)，解析 `$global.` / `$player.` / 无点号三种变量形态。
 - 注册位置：`GearInModPlugin.onGameLoad` 内 `addScript` 注册。
 - 时序条件：`KEY_TAG` 存在才执行，等写入脚本落键 (同帧顺序未定义，用键状态对齐)。
 - `resolveVariable`：以最小代码复现 `Misc.Token.getVarNameAndMemory`(`com.fs.starfarer.api.util.Misc`) 的解析规则，演示 memoryMap 槽位语义，不等价于引擎实现，只用于教学对照。

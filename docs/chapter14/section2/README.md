@@ -103,7 +103,7 @@
 
 ### 对话场景 (OpenInteractionDialog / PopulateOptions / DialogOptionSelected / PickGreeting / OpenCommLink)
 
-对话场景是其余场景的底座：进入、填菜单、回收选项都在这里发生，市场、舰队与酒吧复用同一套机制。
+对话场景是其余场景的底座，进入、填菜单、回收选项都在这里发生，市场、舰队与酒吧复用同一套机制。
 
 - **`OpenInteractionDialog`(121 条)**：交互对话框的默认初始 trigger(`RuleBasedInteractionDialogPluginImpl` 构造器默认值，规则基础页已证)。
     - 原版规则分成两组：无条件/实体类回退规则 (`defaultOpenDialog`：`ShowDefaultVisual` + `PrintDescription 3` + `SetShortcut defaultLeave "ESCAPE"` + `defaultLeave:Leave`)。
@@ -205,7 +205,7 @@ flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，�
     *   `cutCommLink` 选项由 `DialogOptionSelected` 规则 `convEnd` 等处理：`ShowDefaultVisual` + `EndConversation` → 回舰队主菜单。
 - **`PickGreeting`**：人物通讯 (见对话场景)。舰队侧经通讯目录/接触人入口进入。
 - **可用变量**：
-    - `$entity.relativeStrength`(正=对方更强)；
+    - `$entity.relativeStrength`(正值表示对方更强)；
     - `$entity.isHostile`
     - `$faction.id` / `$faction.friendlyToPlayer`
     - `$player.transponderOn`
@@ -273,7 +273,7 @@ flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，�
     - 用户点选后由 `BarCMD.optionSelected` 进入任务对话 (`abortMissions` 中止未选中的包装)。
 6. **对照：任务板**：通讯面板的 missions 页签是 **Java** 任务板 (`MissionBoardAPI` / `MissionAvailability.playerAccept`)，不走规则 —— 本节只把它作为 "非规则场景" 的边界。
 7. **流程场景：新游戏对话框**：主菜单新游戏 → `NewGameDialogPluginImpl`(`com.fs.starfarer.api.impl.campaign.NewGameDialogPluginImpl`)：
-    - `init` 组装 memoryMap(`LOCAL` = 角色数据实体记忆、`GLOBAL`，devMode 时 `$global.isDevMode`)。
+    - `init` 组装 memoryMap(`LOCAL` 即角色数据实体记忆、`GLOBAL`，devMode 时 `$global.isDevMode`)。
     - 选项回流：`memory.set("$option", ...)` + `expire 0` + `fireBest("NewGameOptionSelected")`。
     - `CONTINUE_CHOICES` → `fireBest("BeginNewGameCreation")`；
     - 规则链：`BeginNewGameCreation` → `onNewGameCreationStart`(`NGCAddCredits 2000` + `FireAll InitNewGameChoices`)→ `InitNewGameChoices` → `initNewGameChoices`(`FireAll AddNewGameChoices`)。
@@ -410,14 +410,14 @@ gradle jar
 2. 市场场景：新建生涯，停靠 jangala：停靠许可文本后出现 `GearIn 市场场景：首次停靠 jangala...`，市场菜单完整 (通讯目录/酒吧/交易/Leave)；再次停靠 jangala：本节文本不再出现、菜单照常。
 3. 酒吧场景：在 jangala 市场菜单点 "Take a shuttle down to visit a dockside bar"：出现酒吧描述文本与 "和 GearIn 演示员聊聊"；点选后出现本节酒吧文本与 "回吧台"；点 "回吧台" 选项重现；"Leave the bar"(ESC) 回到市场菜单。
 4. 舰队场景：在超空间或星系内找一支非敌对独立舰队 (拾荒/商队) 并遭遇：出现呼叫文本；通讯选项高亮 "Accept the comm request"；接受后出现本节问候语与 "结束通讯"/"Cut the comm link"；点 "结束通讯" 回到舰队主菜单。
-5. 任务/流程场景：主菜单新建游戏：角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)`(顺序 6)；点选后选 `ngcWolf` 等原版起始；开局确认星币 = 原版初始 + 5000。非 devMode 启动时该选项不出现。
+5. 任务/流程场景：主菜单新建游戏：角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)`(顺序 6)；点选后选 `ngcWolf` 等原版起始；开局确认星币为原版初始加 5000。非 devMode 启动时该选项不出现。
 
 预期结果：
 
 - 规则注册 (加载期)：`starsector.log` 出现本节 10 条 `Loading rule:` 行：`GearIn_rules_scene_market` / `..._bar_add` / `..._bar_pick` / `..._bar_back` / `..._fleet_hail` / `..._comm` / `..._conv` / `..._conv_end` / `..._ngc_add` / `..._ngc_pick`(日志路径与加载行为在规则基础页已证)。标准输出可能出现单次使用变量 WARNING(`System.out.println`，正常现象，非错误)。
 - 酒吧场景 (jangala 市场菜单 → 酒吧)：进入酒吧显示 `BarPrintDesc` 描述文本 + 选项 "和 GearIn 演示员聊聊"(描述文本进文本面板)：点选后出现 `GearIn 酒吧场景：临时 bar 选项...` 文本 + "回吧台" 选项；点 "回吧台" 酒吧选项重新出现；"Leave the bar"(ESC) 出现 "You leave the bar..." 文本 + 市场菜单复位。
 - 舰队场景：找到一支非敌对的独立势力舰队 (如拾荒舰队) 并接近，遭遇对话出现 `GearIn 舰队场景：一支独立势力舰队呼叫了您...` 文本：舰队主菜单通讯选项高亮为 "Accept the comm request"；接受后出现 `GearIn 对话场景 (OpenCommLink)：对独立势力舰队的问候语。` + 菜单选项 "结束通讯" (另有原版 "Cut the comm link")；点 "结束通讯" 回到舰队主菜单。
-- 任务/流程场景 (devMode)：启动器勾选 Dev Mode 后新建游戏，角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)` 选项；点选后继续选任一原版起始，开局星币 = 原版初始 + 5000。非 devMode 时该选项不出现 (`$global.isDevMode` 条件限定)。
+- 任务/流程场景 (devMode)：启动器勾选 Dev Mode 后新建游戏，角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)` 选项；点选后继续选任一原版起始，开局星币为原版初始加 5000。非 devMode 时该选项不出现 (`$global.isDevMode` 条件限定)。
 - 全程无 ERROR：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志；加载期无 `Duplicate key` / `Command [...] not found` / 赋值/比较操作符错位等规则加载异常 (规则基础页规则强度表的加载期五连)。
 
 ## 故障分析
@@ -472,11 +472,11 @@ gradle jar
 
 ## 总结
 
-本节把五类生涯场景讲成同一条链：原版派发点在固定时机发起匹配，规则行按条件与分数竞争命中，脚本负责叙述、转场或填充菜单，最终以游戏内文本、菜单与日志给出可观察结果。覆盖市场、酒吧、舰队、新游戏四处的最小示例把这条链从注册验证到游戏内；场景 trigger 与自定义 trigger 的分界也由此清楚：前者只需写行，后者才需要 Java 入口 (规则基础页已述)。
+本节把五类生涯场景讲成同一条链：原版派发点在固定时机发起匹配，规则行按条件与分数竞争命中，脚本负责叙述、转场或填充菜单，最终以游戏内文本、菜单与日志给出可观察结果。覆盖市场、酒吧、舰队、新游戏四处的最小示例把这条链从注册验证到游戏内；场景 trigger 与自定义 trigger 的分界也由此清楚，前者只需写行，后者才需要 Java 入口 (规则基础页已述)。
 
-排错时沿四个位置核对：`Loading rule:` 日志确认注册、trigger 拼写确认匹配、分数确认竞争、职责复刻与状态复位确认行为。`FireBest` 只执行一条，覆盖原版规则必须复刻其结果职责；`FireAll` 全执行，菜单类 trigger 用它批量添加选项。状态键 `$menuState` / `$tradeMode` 进入与退出成对维护；`$option` 回流只属于各自对话框插件的回流 trigger；临时 bar 选项每轮清空重建；任务 trigger 前缀必须与 `getTriggerPrefix()` 一致；`TradePanelFlavorText` 只匹配假 dialog。
+排错时沿四个位置核对，`Loading rule:` 日志确认注册，trigger 拼写确认匹配，分数确认竞争，职责复刻与状态复位确认行为。`FireBest` 只执行一条，覆盖原版规则必须复刻其结果职责；`FireAll` 全执行，菜单类 trigger 用它批量添加选项。状态键 `$menuState` / `$tradeMode` 进入与退出成对维护；`$option` 回流只属于各自对话框插件的回流 trigger；临时 bar 选项每轮清空重建；任务 trigger 前缀必须与 `getTriggerPrefix()` 一致；`TradePanelFlavorText` 只匹配假 dialog。
 
-从逻辑上看，这套使用方式的下游是三个主题：规则命令体系 (自定义 rulecmd 可替代 `BarCMD` / `EndConversation` 等现成使用方式)、记忆语义 (本节的一次性 flag 与 `$menuState` 的过期与持久化由此完整展开)、对话插件生命周期 (市场/舰队/酒吧场景的 Java 侧底座)。
+从逻辑上看，这套使用方式的下游是规则命令体系 (自定义 rulecmd 可替代 `BarCMD` / `EndConversation` 等现成使用方式)、记忆语义 (本节的一次性 flag 与 `$menuState` 的过期与持久化由此完整展开)、对话插件生命周期 (市场/舰队/酒吧场景的 Java 侧底座) 三个主题。
 
 ## 建议参考项
 

@@ -13,7 +13,7 @@ import org.lwjgl.util.vector.Vector2f;
 
 /**
  * 射弹命中效果：命中时打一行日志，并在命中点放一个橙色光点。
- * 注册在弹体文件的 onHitEffect 键；方法签名是模板，只有日志文字是参数。
+ * 注册在弹体文件的 onHitEffect 键；方法签名照抄示例，只有日志文字是参数。
  */
 public class GearInHitLogger implements OnHitEffectPlugin {
 

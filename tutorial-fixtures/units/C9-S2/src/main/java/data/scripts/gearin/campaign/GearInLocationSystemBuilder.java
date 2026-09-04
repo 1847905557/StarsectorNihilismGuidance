@@ -15,7 +15,7 @@ import com.fs.starfarer.api.campaign.StarSystemAPI;
 public class GearInLocationSystemBuilder {
 	/** 演示星系查询键：SectorAPI.getStarSystem 用 optionalUniqueId 或基名小写匹配。 */
 	public static final String SYSTEM_UNIQUE_ID = "GearIn_demo";
-	/** 本单元专属实体 ID(与 C3-S3 的 GearIn 星系既有 ID 互不冲突)。 */
+	/** 本单元专属实体 ID(与 C3-S4 的 GearIn 星系既有 ID 互不冲突)。 */
 	public static final String STAR_ID = "GearIn_demo_star";
 	public static final String PLANET_ID = "GearIn_demo_planet1";
 	public static final String BEACON_ID = "GearIn_demo_beacon";

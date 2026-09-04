@@ -104,9 +104,9 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 
     - **解决方案**：修正后重启游戏并重新添加商品。
 
-- **商品描述缺失**：货舱描述来自 [C3-S4] 的 `RESOURCE` 行，`commodities.csv` 的 `desc` 列不承担货舱描述。
+- **商品描述缺失**：货舱描述来自 [C3-S5] 的 `RESOURCE` 行，`commodities.csv` 的 `desc` 列不承担货舱描述。
 
-    - **解决方案**：核对 [C3-S4] 的 `RESOURCE` 行是否使用相同商品 ID，修正后重新打开货舱详情。
+    - **解决方案**：核对 [C3-S5] 的 `RESOURCE` 行是否使用相同商品 ID，修正后重新打开货舱详情。
 
 - **势力文件加载失败**：`illegalCommodities` 中的 ID 与商品注册 ID 不一致，或商品行没有成功注册。
 

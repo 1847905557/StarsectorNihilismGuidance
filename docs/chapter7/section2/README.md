@@ -10,7 +10,7 @@
 
 完成后，您将能够：
 
-- 列出 `CombatEngineAPI` 状态访问器的四个分组，并说出代表方法的返回类型与语义；
+- 列出 `CombatEngineAPI` 状态访问器的四个分组，并解释代表方法的返回类型与语义；
 - 用 `getShips()` 配合 `isAlive()` 正确遍历在场舰船，并解释残骸与停驻战机需要专门处理的原因；
 - 用 `CombatFleetManagerAPI` 的五份名单与 `getDeployedCopyDFM()` 读取两侧舰队的部署状态；
 - 区分战斗时间的四种语义，并解释暂停时 `advance()` 仍被调用而 `getElapsedInLastFrame()` 不为 0 的原因；
@@ -28,7 +28,7 @@
 
 ## 文件与 API 链路
 
-示例插件要回答三个问题：这场战斗属于哪一类、两侧舰队各处于什么状态、时间推进了多少。答案分别来自三个接口家族，本节先认识它们。涉及的接口都在 `com.fs.starfarer.api.combat`(`FleetSide` 在 `com.fs.starfarer.api.mission`)：
+示例插件要回答这场战斗属于哪一类、两侧舰队各处于什么状态、时间推进了多少这三个问题。答案分别来自三个接口家族，本节先认识它们。涉及的接口都在 `com.fs.starfarer.api.combat`(`FleetSide` 在 `com.fs.starfarer.api.mission`)：
 
 ### 本节接口速查表
 
@@ -106,7 +106,7 @@
 
 ### 区分舰队名单
 
-`engine.getFleetManager(FleetSide.PLAYER / ENEMY)` 与 `engine.getFleetManager(int owner)`(0 = 玩家侧、1 = 敌方侧) 返回两侧的 `CombatFleetManagerAPI`。
+`engine.getFleetManager(FleetSide.PLAYER / ENEMY)` 与 `engine.getFleetManager(int owner)`(0 为玩家侧、1 为敌方侧) 返回两侧的 `CombatFleetManagerAPI`。
 
 注意：`getFleetManager(int)` 在战斗外的空引擎 / 已销毁的旧引擎上**不会**返回 null，而是新建一个空管理器返回 —— 所以 "拿不到管理器" 同样不能靠判 null，而要依靠引擎生命周期主题给出的阶段判据。
 
@@ -164,7 +164,7 @@
 - 需要 "玩家实际经历了多久"(含暂停发呆) 用 `getTotalElapsedTime(true)`；
 - 逐帧推进用 `amount` / `getElapsedInLastFrame()`。
 
-语义齐全之后，把它们写进一个可运行的插件，让日志替您说出这些状态。
+语义齐全之后，把它们写进一个可运行的插件，让日志替您呈现这些状态。
 
 ## 实现战斗状态读取
 

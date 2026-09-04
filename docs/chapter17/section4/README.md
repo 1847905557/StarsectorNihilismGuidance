@@ -10,7 +10,7 @@
 
 完成后，您将能够：
 
-- 用正确的 concern ID 调整 GearIn 的战略优先级；
+- 用正确的 concern ID 调整自定义势力的战略优先级；
 - 在 StrategicAI 尚未创建时安全地等待，在创建后主动刷新一次会议；
 - 区分入侵规模倍率和复活全局条件，解释最终判断。
 
@@ -235,7 +235,7 @@ public final class GearInStrategicAIProbe {
 ## 验证方案
 
 1. 构建示例 MOD，确认两个探针的方法签名与当前 `ExerelinCore.jar` 匹配。
-2. 在新档、读档和 AI 缺失三种时机分别记录 persistent-data map 的条目数、`getAI()` 返回值和 `ensureAI()` 结果。
+2. 在新档、读档和 AI 缺失时机分别记录 persistent-data map 的条目数、`getAI()` 返回值和 `ensureAI()` 结果。
 3. 进入战略 AI 已建立的生涯，刷新一次会议并记录 concern 数量。
 4. 分别修改 `invasionFleetSizeMod` 与全局 `invasionFleetSizeMult`，比较估算值变化。
 5. 对 invasion、blockade 和 respawn 使用同一基础规模，分别记录最小规模、事件倍率和固定 FP。

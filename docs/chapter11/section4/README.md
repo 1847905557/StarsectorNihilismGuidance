@@ -99,9 +99,9 @@
 
 要跨重建保留的修改必须挂在重放入口上 (船插 `applyEffectsBeforeShipCreation`、技能效果、buff 系统)。
 
-两个直接推论：**重建 = 丢弃** —— 第 1 步新造对象意味着任何直接写在旧 stats 对象上的 modifier 都不复存在 (`GearInStatsRebuild` 的 transient 步骤)。
+两个直接推论：**重建即丢弃**，第 1 步新造对象意味着任何直接写在旧 stats 对象上的 modifier 都不复存在 (`GearInStatsRebuild` 的 transient 步骤)。
 
-**重放 = 幂等** —— 第 3–6 步的写入全部用固定来源 ID，同 ID 同值覆盖，因此重放任意次数值不变 (第 4 步在舰队同步里还会被再执行一次)。
+**重放即幂等**，第 3–6 步的写入全部用固定来源 ID，同 ID 同值覆盖，因此重放任意次数值不变 (第 4 步在舰队同步里还会被再执行一次)。
 
 ### 环节二：人物技能 → 成员 stats
 
@@ -161,13 +161,13 @@
 
 模块船走同一条链：模块船生成流程 (舰船对象创建) 为每个模块变体新建 `FleetMemberAPI` 再创建舰船对象。
 
-战斗内换舰长：`ShipAPI.setCaptain(person)` 先 `unapplyPersonalToShip` 旧舰长 (**含子模块**)，再 `applyPersonalToShip` 新舰长 (含子模块)，统计立即变化；`getPersonality()` = 舰长 personality id。
+战斗内换舰长：`ShipAPI.setCaptain(person)` 先 `unapplyPersonalToShip` 旧舰长 (**含子模块**)，再 `applyPersonalToShip` 新舰长 (含子模块)，统计立即变化；`getPersonality()` 取舰长 personality id。
 
 `getOriginalCaptain()` 返回部署初始舰长。
 
 ### 环节四：MutableStat 延迟重算与保留 ID
 
-前三环节的每一次重放都依赖同一套底层语义：为什么同一序列重放任意次数值不变、引擎为什么敢在多个时机重复写入？答案在 `MutableStat` 本身。它是公开 API 类 (`com.fs.starfarer.api.combat.MutableStat`，公开具体类)：
+前三环节的每一次重放都依赖同一套底层语义。为什么同一序列重放任意次数值不变、引擎为什么敢在多个时机重复写入？答案在 `MutableStat` 本身。它是公开 API 类 (`com.fs.starfarer.api.combat.MutableStat`，公开具体类)：
 
 - **延迟重算**：`modifyFlat`/`modifyPercent`/`modifyMult`/`setBaseValue` 只做标记，`getModifiedValue()`/ `getFlatMod()`/`getPercentMod()`/`getMult()` 读取时才真正重算：
     - `modified = base + base*percent/100 + flat`，再 `* mult`。
@@ -426,7 +426,7 @@ stats.getMaxSpeed().modifyFlat(id, 5f);
 
 ## 验证方案
 
-前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段；[C6-S1]、[C6-S2])、本节四个演示类、观察 `speedAfterRebuild` 语义同样成立 (界面触发同步 = 重建 = 丢弃；对应规则强度)。
+前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段；[C6-S1]、[C6-S2])、本节四个演示类、观察 `speedAfterRebuild` 语义同样成立 (界面触发的同步同样经历重建与丢弃；对应规则强度)。
 
 1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含四个类的 class 条目。
 2. **新建生涯**：查看 `starsector.log` 中按注册顺序出现的四组日志：`GearIn variantToStats ...`、`GearIn captainToMember ...`、`GearIn commanderToMember ...`、`GearIn statsRebuild ...`。
@@ -502,7 +502,7 @@ stats.getMaxSpeed().modifyFlat(id, 5f);
 - 交接的结算时刻是 `updateStats`：新建 stats、按序重放、同 ID 幂等；要跨结算保留的修改必须挂在重放入口。
 - 舰长技能要 "入队才生效"(`getFleetData() != null`)；舰队向技能跳过战机。
 - `setVariant` 传引用不克隆，stats 与成员共享变体；部署链每场新造战斗 stats，禁止跨战斗缓存。
-- 战斗内换舰长 = 解挂旧 + 挂新 (含子模块)，立即生效；`getPersonality` 来自舰长。
+- 战斗内换舰长就是解挂旧舰长、挂上新舰长 (含子模块)，立即生效；`getPersonality` 来自舰长。
 - 调试先看对象同一性 (`before != after`)，再谈数值。
 
 这条链闭合后的意义在于：生涯侧与战斗侧各自维护自己的 stats，跨场景只通过 "重建 + 重放" 传递语义、不共享对象 —— 因此任何 "跨战斗缓存" 的尝试都必然读到过期对象，而任何 "挂在重放入口" 的修改都天然获得幂等性。生涯侧的脚本时序、事件与存档主题都可沿用本节的注册判断模式 (每注册项独立 persistent data 键) 与 "先问重放入口、再问来源 ID" 的排查顺序；变体本身的语义 (克隆、来源、武器组改写) 也始终以本节的 `setVariant` 引用共享规则为落点。

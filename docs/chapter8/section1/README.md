@@ -10,11 +10,11 @@
 
 完成后，您将能够：
 
-- 说出 `HullModEffect` 全部生命周期回调的调用时机与调用点 (生涯 stats 重建、战斗舰船构造、加入战斗引擎、每帧、装配预览舰)；
+- 列出 `HullModEffect` 全部生命周期回调的调用时机与调用点 (生涯 stats 重建、战斗舰船构造、加入战斗引擎、每帧、装配预览舰)；
 - 解释效果类为什么必须是会话级单例，以及跨船状态为什么必须放进每船一个的监听器实例；
-- 说出 tooltip 的组装顺序，以及 `desc` / `sModDesc` 的 `%s` 如何由参数方法填充；
+- 解释 tooltip 的组装顺序，以及 `desc` / `sModDesc` 的 `%s` 如何由参数方法填充；
 - 解释 S-mod 的状态存储、默认上限、增强内置与奖励经验语义；
-- 在 `applyEffectsAfterShipCreation` 里注册每船一个的监听器，并说出放置规则为何决定监听器生效或静默失效；
+- 在 `applyEffectsAfterShipCreation` 里注册每船一个的监听器，并解释放置规则为何决定监听器生效或静默失效；
 - 从症状定位典型故障：效果完全不生效、S-mod 分支永不触发、装配界面没有 S-mod 效果段、串船、监听器静默失效、`%s` 错位、生涯与战斗数值不一致。
 
 ## 前置知识
@@ -255,7 +255,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 要点 (字段的使用方速查表见前置讲解)：
 
-- `script` 列 = 注册入口：`data.scripts.gearin.hullmods.GearInArmorTrainingHullMod` 与下文类的包名 + 类名必须逐字一致。
+- `script` 列是注册入口：`data.scripts.gearin.hullmods.GearInArmorTrainingHullMod` 与下文类的包名 + 类名必须逐字一致。
 - `desc` 有 2 个 `%s`(对应 `getDescriptionParam(0)` = `10%`、`getDescriptionParam(1)` = `50%`)；`sModDesc` 有 2 个 `%s`(对应 `getSModDescriptionParam(0)` = `25%`、`getSModDescriptionParam(1)` = `15%`)。
 - `sprite` 留空 → 使用默认 `graphics/hullmods/generic_mod.png`(本单元无 PNG 资产)。
 - 四个 `cost_*` 列都填数字 (`4,8,12,20`)，`unlocked=TRUE` 保证装配界面可直接安装。
@@ -381,7 +381,7 @@ public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAP
 
 本节把船插讲成一个完整的生命周期对象：七条回调各有明确的调用时机与调用点，stats 修改只在 `applyEffectsBeforeShipCreation`，跨船状态只放进每船一个的监听器实例；tooltip 由方法族按固定顺序组装，`desc` / `sModDesc` 的 `%s` 必须与参数方法一一对应。S-mod 是写在装配上的状态，`sModDesc` 非空且不以 `#` 开头才有效果段，上限默认 2 且可经动态 stat 提升。
 
-排错时先问两件事：这个行为属于哪个时机，状态归谁所有。回调放错时机 (如把 stats 修改写进战斗回调) 会得到两个环境两套数值；状态放错容器 (如写进单例效果类字段) 会串船；S-mod 分支、动态修饰 ID 与监听器放置规则都是这两问的具体答案。
+排错时先问这个行为属于哪个时机、状态归谁所有。回调放错时机 (如把 stats 修改写进战斗回调) 会得到两个环境两套数值；状态放错容器 (如写进单例效果类字段) 会串船；S-mod 分支、动态修饰 ID 与监听器放置规则都是这两问的具体答案。
 
 这套 "回调时机 + 状态归属" 的框架并不限于船插：武器、战术系统与战斗插件的每帧行为服从同一套实例归属与回调纪律，监听器事件模型在伤害、命中与击毁的结算链上还会继续扩展 —— 读懂本节的生命周期调用点与放置规则，就拿到了阅读整个战斗侧行为链的钥匙。
 

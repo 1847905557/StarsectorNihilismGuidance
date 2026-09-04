@@ -10,7 +10,7 @@
 
 完成后，您将能够：
 
-- 说出生涯插件的注册与注销入口，以及 `getId()` 未覆写、id 撞车、未注册三种情况各自的可观察结果；
+- 列出生涯插件的注册与注销入口，以及 `getId()` 未覆写、id 撞车、未注册三种情况各自的可观察结果；
 - 区分 transient 与非 transient 插件的存档边界与注册时机；
 - 背出 `PickPriority` 的 7 级阶梯并解释竞争裁决规则 (取 `ordinal` 最高者、返回 `null` 即放弃、同优先级并列未定义)；
 - 从零编写一个 transient 生涯插件与最小交互对话框，并完成注册；
@@ -22,7 +22,7 @@
 - [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
 - [C2-S1] 的注册入口与回调模型；
 - [C3-S1] 的 `gear_industry` 势力定义；
-- [C3-S3]、[C10-S2] 的新档生成入口、行星与市场实体；
+- [C3-S3] 的新档生成入口，以及 [C3-S4]、[C10-S2] 的行星与市场实体；
 - [C6-S1] 的 Java 构建与 JAR 输出；
 - [C6-S2] 的 `modPlugin` 生命周期与 `onGameLoad` 回调；
 - [C6-S3] 的 `Global.getSector()` 阶段语义；
@@ -99,7 +99,7 @@ transient 插件的注册禁止挂进一次性检查
 
 关键结论：
 
-- **返回 `null` = 放弃**：不参与竞争，把机会留给别的插件。这是每个 picker 的默认姿态 (`BaseCampaignPlugin` 的全部 picker 默认返回 `null`)。
+- **返回 `null` 即放弃**：不参与竞争，把机会留给别的插件。这是每个 picker 的默认姿态 (`BaseCampaignPlugin` 的全部 picker 默认返回 `null`)。
 - **`PluginPick` 的 `plugin` 不能是 `null`**：裁决器只检查 `PluginPick` 非 `null` 就让它参选，获胜后调用点拿到的是 `.plugin`。
     - 一个 `plugin == null` 的高优先级选择会**顶掉**其他插件的合法选择，而调用点多数把它当作 "无人处理" —— 点击实体后什么都不发生，连原版对话都不开。这场竞争唯一的成果，是让原版和您的插件都无话可说。
 
@@ -139,7 +139,7 @@ MOD 用 `MOD_GENERAL` 及以上就能稳定覆盖原版，用 `CORE_GENERAL` 则
 
 后者的完整类型名是 `com.fs.starfarer.api.campaign.GenericPluginManagerAPI`；它按 "类 + 参数" 注册通用插件 (`addPlugin(plugin, isTransient)`)。
 
-插件实现 `GenericPlugin.getHandlingPriority(Object params)` 返回 **int** 优先级 (负数 = 不处理)，使用方用 `pickPlugin(Class, params)` 取最高分者。
+插件实现 `GenericPlugin.getHandlingPriority(Object params)` 返回 **int** 优先级 (负数表示不处理)，使用方用 `pickPlugin(Class, params)` 取最高分者。
 
 它与 `CampaignPlugin` 是**两套独立机制**：优先级是 int 常量 (`CORE_GENERAL=0` ... `MOD_SUBSET=300` ... `HIGHEST=Integer.MAX_VALUE`，注意这里叫 `SUBSET` 不是 `SET`)。
 
@@ -435,9 +435,9 @@ return new PluginPick<>(plugin, PickPriority.MOD_SPECIFIC);
 
 ## 总结
 
-本节把生涯插件这条扩展通道接通了：注册表决定谁在场，优先级决定谁上场，生命周期决定谁活多久。写插件前先定三件事 —— 命中条件收窄到什么范围、优先级选哪一级、transient 还是非 transient；最后一项直接决定注册代码的位置，transient 必须挂在 `onGameLoad` 且每次读档都执行，不能依赖一次性检查。
+本节把生涯插件这条扩展通道接通了，注册表决定谁在场，优先级决定谁上场，生命周期决定谁活多久。写插件前先定命中条件收窄到什么范围、优先级选哪一级、transient 还是非 transient 这三件事；最后一项直接决定注册代码的位置，transient 必须挂在 `onGameLoad` 且每次读档都执行，不能依赖一次性检查。
 
-picker 是 "咨询制"：返回非 `null` 就接管这次处理，因此条件必须收窄，否则会让其他势力也打开自定义对话；无法处理时返回 `null` 永远是对的。八条必须项里最常踩的是三处：无法处理时忘了返回 `null`、transient 没在每次读档重注册、返回了空插件 `PluginPick`。排查时从可观察结果反推：插件消失查注册时机与存档边界，重复咨询查 `getId()`，对话被抢或抢不到查条件宽度与优先级层级，点击无反应查是否返回了空插件或抛了异常。
+picker 是 "咨询制"：返回非 `null` 就接管这次处理，因此条件必须收窄，否则会让其他势力也打开自定义对话；无法处理时返回 `null` 永远是对的。八条必须项里最常踩的是无法处理时忘了返回 `null`、transient 没在每次读档重注册、返回了空插件 `PluginPick` 这三处。排查时从可观察结果反推：插件消失查注册时机与存档边界，重复咨询查 `getId()`，对话被抢或抢不到查条件宽度与优先级层级，点击无反应查是否返回了空插件或抛了异常。
 
 与生涯事件监听器的对照：`CampaignEventListener` 在事件发生后被动接收回调，生涯插件在事件发生前被咨询；`GenericPluginManagerAPI` 是另一套 int 优先级注册表，排查 "注册了却从未被调用" 时先分清用的是哪一套。本节写入的 `$` 前缀事实供 [C14-S1] 的 Rules 对话读取，选中的对话框供 [C9-S6] 的交互对话流程使用，生涯插件这条扩展通道至此形成完整流程。
 

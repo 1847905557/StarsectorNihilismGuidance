@@ -1,6 +1,6 @@
 # 用 BoxUtil 制作可随时关闭的常驻能量场
 
-常驻效果比一次性爆闪更考验资源管理：它要选择正确图层、参与离屏剔除、响应运行时开关，并在战斗结束释放 program 与 VBO。本节把这些职责集中到一个分层渲染插件。
+常驻效果比一次性爆闪更考验资源管理，它要选择正确图层、参与离屏剔除、响应运行时开关，并在战斗结束释放 program 与 VBO。本节把这些职责集中到一个分层渲染插件。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -156,7 +156,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  * - 性能：一次 glDrawArrays = 一个 draw call，本示例每帧恰好 1 个 (frames/drawCalls
  *   计数在 cleanup 日志输出)；uniform location 创建后保存、FloatBuffer 复用
  *   (clear/put/flip)、render 内零分配零日志；getRenderRadius 覆盖绘制范围即可，
- *   常驻插件也不需要 Float.MAX_VALUE(那是全层宿主模板的例外姿势，代价是永不离屏剔除)；
+ *   常驻插件也不需要 Float.MAX_VALUE，代价是永不触发视口剔除；
  *   批处理方法见 glMultiDrawArrays 批量绘制与 C16-S16 的实例提交。
  */
 public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
@@ -308,8 +308,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        // 覆盖绘制范围即可；常驻插件也不需要 Float.MAX_VALUE(那是全层宿主模板的例外，
-        // 全层宿主模板，代价是永不离屏剔除)
+        // 覆盖绘制范围即可；常驻插件也不需要 Float.MAX_VALUE，代价是永不触发视口剔除
         return Math.max(QUAD_WIDTH, QUAD_HEIGHT);
     }
 

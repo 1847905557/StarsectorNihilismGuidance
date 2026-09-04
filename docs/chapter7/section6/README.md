@@ -10,11 +10,11 @@
 
 完成后，您将能够：
 
-- 说出 `CombatLayeredRenderingPlugin` 的七个接口方法各自的调用时机，以及它与 `EveryFrameCombatPlugin` 的三处关键差异 (注册通道、暂停时是否推进、清理时机)；
-- 说出 `CombatEngineLayers` 的层序与两个特例 (顶层三图层在粒子系统之后单独渲染、`PHASED_SHIPS_LAYER` 的位置约束)，解释 `getActiveLayers()` 与 `render(layer, ...)` 的一对多关系；
-- 说出渲染剔除机制 (`isNearViewport(entity.getLocation(), getRenderRadius())`) 并正确维护承载实体位置与渲染半径；
-- 说出 `ViewportAPI` 的坐标语义 (世界单位、`getViewMult()`、双向转换、`setExternalControl` 接管视口的条件)；
-- 说出 `cleanup()` 的两个事实：实体移除时由引擎调用、战斗结束 `destroyInstance` **不调用**，以及 "主动失效 → 引擎移除 → `cleanup()`" 的正确清理链；
+- 列出 `CombatLayeredRenderingPlugin` 的七个接口方法各自的调用时机，并区分它与 `EveryFrameCombatPlugin` 的三处关键差异 (注册通道、暂停时是否推进、清理时机)；
+- 列出 `CombatEngineLayers` 的层序与两个特例 (顶层三图层在粒子系统之后单独渲染、`PHASED_SHIPS_LAYER` 的位置约束)，解释 `getActiveLayers()` 与 `render(layer, ...)` 的一对多关系；
+- 解释渲染剔除机制 (`isNearViewport(entity.getLocation(), getRenderRadius())`) 并正确维护承载实体位置与渲染半径；
+- 解释 `ViewportAPI` 的坐标语义 (世界单位、`getViewMult()`、双向转换、`setExternalControl` 接管视口的条件)；
+- 列出 `cleanup()` 的两个事实：实体移除时由引擎调用、战斗结束 `destroyInstance` **不调用**，以及 "主动失效 → 引擎移除 → `cleanup()`" 的正确清理链；
 - 从症状定位典型故障：在 `advance()` 里绘制、位置不同步导致视口内消失、`isExpired()` 恒为 false 导致残留、`cleanup()` 漏释放 GL 资源、多图层不按 `layer` 分支。
 
 ## 前置知识

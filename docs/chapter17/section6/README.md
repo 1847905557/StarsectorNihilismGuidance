@@ -10,7 +10,7 @@
 
 完成后，您将能够：
 
-- 让 Nexerelin 通过配置加载 GearIn 特遣队命名器；
+- 让 Nexerelin 通过配置加载自定义特遣队命名器；
 - 处理来源市场缺失和名称重复请求；
 - 注册一次瞬态监听器，分别记录入侵回合、结束和市场转移；读档后由生涯初始化入口重新注册。
 
@@ -26,7 +26,7 @@ GearIn 特遣队显示 "编号 + 来源市场 + Forgeguard"；入侵 GearIn 市�
 
 ## 文件与 API 链路
 
-`specialForcesNamerClass` 指向 `SpecialForcesNamer` 实现；Nexerelin 可能为去重重复请求名称；`InvasionListener` 提供战利品、回合、结束和市场转移四类回调。监听器要通过 `ListenerManager` 注册，并在持久化场景中只注册一次。
+`specialForcesNamerClass` 指向 `SpecialForcesNamer` 实现；Nexerelin 可能为去重重复请求名称；`InvasionListener` 提供战利品、回合、结束和市场转移回调。监听器要通过 `ListenerManager` 注册，并在持久化场景中只注册一次。
 
 ### 在势力配置登记命名器
 

@@ -10,8 +10,8 @@
 
 完成后，您将能够：
 
-- 说出船插的组成：`hull_mods.csv` 的一行数据 + 一个 Java 效果类；
-- 用类名三处一致规则核对任何船插：文件名、`class` 后的名字、CSV `script` 列；
+- 列出船插的组成：`hull_mods.csv` 的一行数据 + 一个 Java 效果类；
+- 核对船插的文件名、`class` 后的名字与 CSV `script` 列，确认注册值指向实际效果类；
 - 读懂效果类中四类内容：按船体等级给出的数值参数、描述联动 (`%s`)、安装限制 (互斥)、固定句式 (`modifyFlat`/`modifyPercent`)；
 - 独立排查本节新增的加载中断 (`JSONException`/`Duplicate key`) 与效果类故障。
 
@@ -19,19 +19,19 @@
 
 - [C1-S1] 的 MOD 目录与 `GearIn_` 前缀规则；
 - [C1-S2] 的 CSV 数据行读取方法；
-- [C2-S1] 的 Java 模板、参数、注册、回调与重启生效流程。
+- [C2-S1] 的最小示例 Java 文件、参数修改、注册、回调与重启生效流程。
 
 ## 补充更多船插数据
 
 其余列沿用 [C2-S1] 的规则，本节再介绍几列即将用到的：
 
-- **`unlocked`**：`TRUE` = 玩家默认解锁。
+- **`unlocked`**：填 `TRUE` 表示玩家默认解锁。
 - **`desc`**：装配界面显示的描述。`desc` 列支持 `%s` 占位符，由效果类的 `getDescriptionParam` 按 `index` 顺序填充。
 - **`sprite`**：图标路径。本节假设您已经准备好了一张 32×32 的 PNG 贴图，就像前几节那样。
 
 ## 实现船插效果
 
-本节将进一步复现原版插件使用过的三种通用机制：按船体等级分档数值、描述占位符联动、插件不兼容限制。它们在 Mod 设计中也很有用。
+本节将进一步复现原版插件使用过的按船体等级分档数值、描述占位符联动、插件不兼容限制三种通用机制，它们在 Mod 设计中也很有用。
 
 ### 按船体等级分档数值
 
@@ -67,7 +67,7 @@
 
 ## 完整最小例
 
-注册行写入 `data/hullmods/hull_mods.csv`；效果类写入 `src/data/scripts/gearin/hullmods/GearInStableInjectorHullMod.java`。
+注册行写入 `data/hullmods/hull_mods.csv`；效果类写入 `data/scripts/gearin/hullmods/GearInStableInjectorHullMod.java`。
 
 ```text
 name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
@@ -188,14 +188,14 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 
 ## 总结
 
-船插 = `hull_mods.csv` 一行数据 (`id` 唯一、`script` 指向效果类、四档 `cost` 必填)+ 一个效果类 (数值、描述、限制三类职责分属不同方法)。
+一个船插由 `hull_mods.csv` 里的一行数据 (`id` 唯一、`script` 指向效果类、四档 `cost` 必填) 和一个效果类 (数值、描述、限制三类职责分属不同方法) 两部分组成。
 
-"数据行 + 效果类" 是本教程所有可注册游戏对象的通用结构：战术系统、武器、舰船都会沿用 "注册数据行 + 类回调" 的流程，只是数据表与接口不同。类名三处一致和 `Problem loading class` 的排查经验，在后面每一章都会用到。
+"数据行 + 效果类" 是本教程所有可注册游戏对象的通用结构，战术系统、武器、舰船都会沿用 "注册数据行 + 类回调" 的关系，只是数据表与接口不同。遇到 `Problem loading class` 时，继续核对文件名、类声明和注册列中的完整类名。
 
 ## 建议参考项
 
 - `data/hullmods/hull_mods.csv`：船插注册表 (原版 `unstable_injector` 行可对照)。
-- `com.fs.starfarer.api.combat.BaseHullMod`：船插效果类模板基类 (含 `isBuiltIn` 等现成逻辑)。
+- `com.fs.starfarer.api.combat.BaseHullMod`：船插效果类基类 (含 `isBuiltIn` 等现成逻辑)。
 - `com.fs.starfarer.api.combat.MutableShipStatsAPI`：数值入口 (`getMaxSpeed()` 等)，配合 `modifyFlat`/`modifyPercent` 使用。
 - `com.fs.starfarer.api.combat.ShipAPI.HullSize`：舰船的船体等级。
 - `com.fs.starfarer.api.impl.hullmods.ShieldShunt`：原版互斥船插写法参考。

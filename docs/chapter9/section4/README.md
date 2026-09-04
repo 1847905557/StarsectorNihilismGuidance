@@ -11,7 +11,7 @@
 完成后，您将能够：
 
 - 配置 `FleetParamsV3` 的来源市场与质量、六类点数、规模、军官与旗舰参数，并区分 "点数是目标不是硬上限" 的含义；
-- 复述 `FleetFactoryV3.createFleet(params)` 从接收参数到投放舰队的完整流程，并说出各环节的可观察结果；
+- 复述 `FleetFactoryV3.createFleet(params)` 从接收参数到投放舰队的完整流程，并解释各环节的可观察结果；
 - 区分成员、旗舰与指挥官各自的生成规则：角色抽选、旗舰 picker 与 `setFlagship` 副作用、指挥官与军官的等级与数量；
 - 解释 `FleetInflater` 的延迟膨胀语义、persistent 行为与膨胀结果 (武器 tier 概率、D 插/S 插、`REFIT` 来源)；
 - 识别工厂写入舰队内存的键及其使用方，并用 `getMemoryWithoutUpdate()` 安全读写；
@@ -42,7 +42,7 @@
 
 ## 梳理舰队投放关系
 
-正文沿生成链组织：先配置参数对象，再走工厂流程，随后展开角色、军官、膨胀、内存与投放。每节先给结论，再讲机制与可观察结果。
+正文沿生成链组织，先配置参数对象，再走工厂流程，随后展开角色、军官、膨胀、内存与投放。每节先给结论，再讲机制与可观察结果。
 
 ### 参数对象：FleetParamsV3
 
@@ -65,7 +65,7 @@
 | 军官 | `withOfficers`(默认 `true`)、`officerLevelBonus`、`officerNumberBonus`、`maxOfficersToAdd`、`officerNumberMult`(默认 1)、`officerLevelLimit`、`commanderLevelLimit`、`commander`(`PersonAPI`)、`noCommanderSkills` | 指挥官与军官生成参数 |
 | 旗舰 | `flagshipVariantId`(`String`)、`flagshipVariant`(`ShipVariantAPI`)、`onlyRetainFlagship` | 旗舰装配覆盖与 "只留旗舰" |
 | 随机与 doctrine | `random`、`timestamp`、`doctrineOverride`、`modeOverride`(`ShipPickMode`)、`forceAllowPhaseShipsEtc`、`treatCombatFreighterSettingAsFraction`、`blockFallback`、`aiCores`、`doNotIntegrateAICores` | 随机源、时间戳 (武器可用性判定)、教条覆盖、抽选模式覆盖等 |
-| 装配杂项 | `allWeapons`、`averageSMods`(`Integer`，null = 不加 S 插)、`addShips`(`List<String>`，"If non-null: these ship variants will be added to the fleet before anything else") | 膨胀参数与显式预置舰船 |
+| 装配杂项 | `allWeapons`、`averageSMods`(`Integer`，null 表示不加 S 插)、`addShips`(`List<String>`，"If non-null: these ship variants will be added to the fleet before anything else") | 膨胀参数与显式预置舰船 |
 
 ### FleetParamsV3 构造器速查表
 
@@ -73,7 +73,7 @@
 
 | 构造器 | 行为 |
 |---|---|
-| `(MarketAPI source, String fleetType, 六点数..., float qualityMod)` | `init(source, ...)`：`locInHyper = source.getLocationInHyperspace()`、`factionId = source.getFactionId()`、`timestamp = Global.getSector().getClock().getTimestamp()`、`updateQualityAndProducerFromSourceMarket()`(质量 = `Misc.getShipQuality(source, factionId)`) |
+| `(MarketAPI source, String fleetType, 六点数..., float qualityMod)` | `init(source, ...)`：`locInHyper = source.getLocationInHyperspace()`、`factionId = source.getFactionId()`、`timestamp = Global.getSector().getClock().getTimestamp()`、`updateQualityAndProducerFromSourceMarket()`(质量取 `Misc.getShipQuality(source, factionId)`) |
 | `(MarketAPI source, Vector2f locInHyper, String factionId, Float qualityOverride, String fleetType, 六点数..., float qualityMod)` | 同上，另显式设 `locInHyper` / `factionId` / `qualityOverride` |
 | `(Vector2f locInHyper, String factionId, Float qualityOverride, String fleetType, 六点数..., float qualityMod)` | 无市场版本：只写字段；`createFleet` 在无 source 且附近无同势力市场时建立 fake market 并重算质量 |
 
@@ -123,7 +123,7 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
     - `treatCombatFreighterSettingAsFraction` 时按 `combatFreighters = min(freighterPts, warships)*1.5 × getCombatFreighterProbability()` 加战斗货船；随机命中概率时按 `min(freighterPts, warships)*1.5`。
     - `addCombatFleetPoints`(warship/carrier/phase 三路 picker，按 `BASE_COUNTS_WITH_4`/`MAX_EXTRA_WITH_4` 尺寸计数表逐轮抽选，`maxShipSize`/`minShipSize` 过滤，`PRIORITY_THEN_ALL` 时优先抽 priority capital)。
     - 随后 `addFreighterFleetPoints` / `addTankerFleetPoints` / `addTransportFleetPoints` / `addLinerFleetPoints` / `addUtilityFleetPoints`(都是 `addPriorityOnlyThenAll`，有 priority 舰只用 priority)。
-6. **超员裁剪**：成员数 > `maxShipsInAIFleet`(`settings.json` 中 = 30) 且未 `doNotPrune` → `pruneFleet`。
+6. **超员裁剪**：成员数 > `maxShipsInAIFleet`(`settings.json` 中取值 30) 且未 `doNotPrune` → `pruneFleet`。
     - 按 combat/civilian FP 比例分配保留名额 (民用不足时至少保留 2+ 个名额)，五类列表按 hull size 降序、按 4:2:1:1(capital:cruiser:destroyer:frigate) 加权抽选。
     - 保留后 FP 仍超目标时用较小船替换较大船。
     - 最后 `fleet.getFleetData().sort()`。
@@ -161,14 +161,14 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 
 - **候选过滤**：跳过战机联队、旗舰、平民 (`putOfficersOnCivShips=false` 时)、已有非默认舰长的成员；记录最大 hull size；按 `getFleetPointCost()` 加权把成员塞进两个 picker(`flagshipPicker` 只收尺寸 ≥ 最大尺寸的成员)；picker 为空时取 `members.get(0)` 作备用值。
 - **旗舰**：`flagshipPicker.pickAndRemove()` 选出旗舰，从军官 picker 移除。
-    - **`fleet.getFleetData().setFlagship(flagship)`** —— `FleetDataAPI.setFlagship` 的副作用：清所有成员旗舰位、把旧旗舰/舰长是玩家的人物重置为默认舰长、新旗舰舰长 = 舰队指挥官 (`setCaptain(getCommander())`)。
+    - **`fleet.getFleetData().setFlagship(flagship)`** —— `FleetDataAPI.setFlagship` 的副作用：清所有成员旗舰位、把旧旗舰/舰长是玩家的人物重置为默认舰长、新旗舰舰长改为舰队指挥官 (`setCaptain(getCommander())`)。
 - **指挥官**：`params.commander` 非 null 直接用 (`isPlayer()` 时军官数量改由玩家 `getOfficerNumber()` 技能决定)。
-    - 否则 `OfficerManagerEvent.createOfficer(faction, commanderLevel, pref, false, null, true, true, -1, random)`，等级 = `min(maxOfficerLevel, maxAIFleetCommanderLevel)`(`settings.json` 中 `maxAIFleetCommanderLevel` = 7；`commanderLevelLimit` 非 0 可覆盖)。
+    - 否则 `OfficerManagerEvent.createOfficer(faction, commanderLevel, pref, false, null, true, true, -1, random)`，等级取 `min(maxOfficerLevel, maxAIFleetCommanderLevel)`(`settings.json` 中 `maxAIFleetCommanderLevel` 为 7；`commanderLevelLimit` 非 0 可覆盖)。
     - **`timid` personality 一律升为 `cautious`**；`params.commander` 为空时 `setRankId(Ranks.SPACE_COMMANDER)` + `setPostId(Ranks.POST_FLEET_COMMANDER)`。
-    - `addCommanderSkills`：`noCommanderSkills=true` 直接返回；技能数按等级阈值 `commanderLevelForOneSkill`(`settings.json` 中 = 4)/ `commanderLevelForTwoSkills`(`settings.json` 中 = 6) 取 1/2；技能池 = `doctrine.getCommanderSkills()` 剔除 `Skills.TAG_PLAYER_ONLY`，`commanderSkillsShuffleProbability` 概率洗牌后逐个 `setSkillLevel(id, 1)`。
+    - `addCommanderSkills`：`noCommanderSkills=true` 直接返回；技能数按等级阈值 `commanderLevelForOneSkill`(`settings.json` 中为 4)/ `commanderLevelForTwoSkills`(`settings.json` 中为 6) 取 1/2；技能池 = `doctrine.getCommanderSkills()` 剔除 `Skills.TAG_PLAYER_ONLY`，`commanderSkillsShuffleProbability` 概率洗牌后逐个 `setSkillLevel(id, 1)`。
 - **军官数量**：`numOfficers = min(maxOfficers, combatShips / combatShipsPerOfficer)`。
-    - `maxOfficers = officerAIMax`(`settings.json` 中 = 10)+ `(int)(doctrine.getOfficerQuality() * officerAIMaxMercsMult) + officerNumberBonus`；
-    - `combatShipsPerOfficer = baseCombatShipsPerOfficer`(`settings.json` 中 = 3)\* `(1 - officerQualityMult*0.5)`；再加 `officerNumberBonus`、乘 `officerNumberMult`、受 `maxOfficersToAdd` 钳制。
+    - `maxOfficers = officerAIMax`(`settings.json` 中取值 10)+ `(int)(doctrine.getOfficerQuality() * officerAIMaxMercsMult) + officerNumberBonus`；
+    - `combatShipsPerOfficer = baseCombatShipsPerOfficer`(`settings.json` 中取值 3)\* `(1 - officerQualityMult*0.5)`；再加 `officerNumberBonus`、乘 `officerNumberMult`、受 `maxOfficersToAdd` 钳制。
     - **军官等级上限** `maxOfficerLevel = round(doctrine.getOfficerQuality()/2 + fleetSizeOfficerQualityMult * officerMaxLevel(5)) + officerLevelBonus`，`officerLevelLimit` 非 0 时覆盖；每个军官 `maxOfficerLevel - random.nextInt(3)`(≥1)。
 - **技能偏好** (`getSkillPrefForShip`)：按武器槽尺寸加权 (LARGE×4/MEDIUM×2/SMALL×1) 统计能量/实弹/导弹占比与护盾/相位判定，合成 `SkillPickPreference` 枚举名 (`YES_ENERGY_NO_BALLISTIC_...`) 喂给 `createOfficer`。
 - **上舰**：逐成员 `member.setCaptain(person)`(生涯侧舰长写入并重算成员 stats)；`params.commander.isPlayer()` 时额外 `fleet.getFleetData().addOfficer(person)` 入 roster。
@@ -204,7 +204,7 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 
 `DefaultFleetInflater.inflate`(`com.fs.starfarer.api.impl.campaign.fleets.DefaultFleetInflater`) 行为要点：
 
-- **可用池**：武器 = `faction.getKnownWeapons()` 过滤 `isWeaponKnownAt(id, timestamp)`，战机同理；按 tier/autofit 分类与 "priority"(`faction.isWeaponPriority`) 分组；船插 = `faction.getKnownHullMods()`。
+- **可用池**：武器取自 `faction.getKnownWeapons()` 并过滤 `isWeaponKnownAt(id, timestamp)`，战机同理；按 tier/autofit 分类与 "priority"(`faction.isWeaponPriority`) 分组；船插取自 `faction.getKnownHullMods()`。
 - **质量驱动**：`getTierProbability(tier, quality)`：tier1 `min(0.9, 0.75+q)`、tier2 `min(0.9, 0.5+0.5q)`、tier3 `min(0.9, 0.25+0.25q)`，`allWeapons=true` 时全 1。
     - 每成员用 `CoreAutofitPlugin.doFit(currVariant, target, maxSmods, this)` 重新装配。
 - **D 插**：`averageDmods = (1 - quality) / qualityPerDMod`(`settings.json` 中 `qualityPerDMod` = 0.2)。
@@ -281,7 +281,7 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 2. **质量优先级：`qualityOverride` > `quality + qualityMod`**。不设 `qualityOverride` 时 `qualityMod` 才叠加到市场质量上；同时设置时 `qualityMod` 被无视。附近没有同势力市场时工厂会使用 fake market 重算质量。
 3. **点数是目标不是硬上限**。"舰队点数与请求不符" 是**正常现象**，实际受市场供应、`maxShipsInAIFleet` 裁剪与角色缺货影响；需要还原请求值用 `Misc.getSpawnFPMult(fleet)`。
 4. **`flagshipVariantId` / `flagshipVariant` 只在 `getFlagship()` 非 null 时应用**，且 `setVariant(variant, false, true)` 会连船体一起换。舰队为空时不生效；指定了异 hull 的旗舰变体后，旗舰船体与角色会与抽选时不同。
-5. **`setFlagship(member)` 的副作用必须接受**：其他成员舰长被重置为默认、新旗舰舰长 = 舰队指挥官。旗舰读回 `getCaptain() == getCommander()`；不要用逐成员 `setCaptain` 对抗该语义。
+5. **`setFlagship(member)` 的副作用必须接受**：其他成员舰长被重置为默认、新旗舰舰长改为舰队指挥官。旗舰读回 `getCaptain() == getCommander()`；不要用逐成员 `setCaptain` 对抗该语义。
 6. **膨胀前读取成员装配拿到的是未按质量调整的生成态变体**。需要完整装配必须先触发 `inflateIfNeeded()` —— 引擎在 AI/工具提示/战斗前自动触发；在此之前读 `member.getVariant()`：武器仍是角色变体原样、无 D 插/S 插 (`source` 仍是 STOCK/生成时来源，非 REFIT)。
 7. **`removeAfterInflating()` = `persistent == null || !persistent`**。V3 生成 `persistent=true` → 膨胀后 inflater 保留；自定义 inflater 忘记设 persistent 时，首次 `inflateIfNeeded` 后 `getInflater()` 变 null，二次膨胀不可能。
 8. **读写舰队内存必须用 `getMemoryWithoutUpdate()`**。`getMemory()` 会触发全插件 `updateEntityFacts` 回调，高频读取会造成回调风暴。

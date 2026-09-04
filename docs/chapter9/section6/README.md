@@ -28,7 +28,7 @@
 按术语约定，本节首次完整讲解两个词；API 类名保留源码大小写：
 
 - **情报 (intel)**：API 名保留 `IntelInfoPlugin`(单条情报约定) 与 `IntelManagerAPI`(登记集合)。
-    - 一条情报 = 一个实现了 `IntelInfoPlugin` 的插件实例，同时承载 Intel 页 UI 描述、消息更新与每帧推进 (`BaseIntelPlugin` 兼为 `EveryFrameScript`)。
+    - 一条情报就是一个实现了 `IntelInfoPlugin` 的插件实例，同时承载 Intel 页 UI 描述、消息更新与每帧推进 (`BaseIntelPlugin` 兼为 `EveryFrameScript`)。
 - **交互对话框 (interaction dialog)**：API 名保留 `InteractionDialogAPI`(对话框本体) 与 `InteractionDialogPlugin`(对话框内容插件)。生涯 UI 承载的模态对话：文本面板 + 选项面板 + 视觉面板。
 
 ## 梳理情报对话关系
@@ -46,7 +46,7 @@
 
 为什么情报集合随存档保存
 
-intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗口、结束倒计时都要跨存档存活，所以情报集合随存档一起保存。这也是 "演示情报必须当帧移除" 的原因 —— `addIntel` 进去不删，就会永远留在存档里。
+intel 是生涯状态的组成部分，玩家可见时间戳、`NEW` 标记窗口、结束倒计时都要跨存档存活，所以情报集合随存档一起保存。这也是 "演示情报必须当帧移除" 的原因 —— `addIntel` 进去不删，就会永远留在存档里。
 
 **创建与登记两条链**：
 
@@ -67,9 +67,9 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 | `advance(amount)` | 把秒数换算成游戏日推进 ending 倒计时；`isDone()` = `isEnded()` |
 | `runWhilePaused()` | 默认 `false`(暂停不推进) |
 | `endImmediately()` / `endAfterDelay()` / `endAfterDelay(days)` | 结束流程；`getBaseDaysAfterEnd()` 默认 **3 游戏日** |
-| `createIntelInfo` / `getName()` | 列表条目 = 名称 + 子弹行；`getName()` 返回 null 则不显示 |
+| `createIntelInfo` / `getName()` | 列表条目由名称与子弹行组成；`getName()` 返回 null 则不显示 |
 | `createSmallDescription` | 小描述 (默认 "请覆写")；`hasSmallDescription()` 默认 true |
-| `getIcon()` | null = 无图标 (`IntelInfoPlugin` "40x40, no icon if null.") |
+| `getIcon()` | 返回 null 表示无图标 (`IntelInfoPlugin` "40x40, no icon if null.") |
 | `getIntelTags(map)` | 默认含 `INTEL_IMPORTANT` / `INTEL_NEW` / 中继范围内的 `INTEL_LOCAL`；**map 为 null 时安全返回** (基类内部已做 null 判断) |
 | `sendUpdate` / `sendUpdateIfPlayerHasIntel` | 更新消息；后者要求已有玩家可见时间戳 |
 | `BUTTON_DELETE` / `addDeleteButton` / `buttonPressConfirmed` | 删除按钮 (确认框 + `endImmediately`) |
@@ -111,7 +111,7 @@ intel 是生涯状态的组成部分：玩家可见时间戳、`NEW` 标记窗�
 
 `TextPanelAPI`(`com.fs.starfarer.api.campaign.TextPanelAPI`)：`addPara(text[, color])`、`addPara(format, hl, highlights)`、`addParagraph`、`highlightInLastPara`、`setHighlightColorsInLastPara`、`clear`；另有 `getDialog`、`beginTooltip`/`addTooltip`。
 
-本节的 `GearInServicesDialog` 只用到其中两个入口：`addOption` 建立选项、`addPara` 追加文本行；其余成员在需要时再查。
+本节的 `GearInServicesDialog` 只用到 `addOption` 建立选项与 `addPara` 追加文本行两个入口；其余成员在需要时再查。
 
 ## 实现情报与交互服务
 
@@ -416,7 +416,7 @@ public void optionSelected(String optionText, Object optionData) {
 
 排查时沿数据文件 → 注册入口 → 运行使用方 → 可观察结果四个位置复核，比对着症状猜接口更快。
 
-本节只覆盖两个入口的 "常用高频面"：Rules 侧对话框、`BarEventPlugin` 对话框入口与任务类情报 (`BaseMissionIntel`) 在逻辑上属于更深的主题，本节不展开。
+本节只覆盖两个入口的 "常用高频面"，Rules 侧对话框、`BarEventPlugin` 对话框入口与任务类情报 (`BaseMissionIntel`) 在逻辑上属于更深的主题，本节不展开。
 
 ## 建议参考项
 

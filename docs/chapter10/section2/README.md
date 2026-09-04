@@ -1,6 +1,6 @@
 # 制作一个生涯市场
 
-本节从 [C3-S3] 的星系对象中挑出 GearIn Prime，给它接上市场、势力、条件、产业和子市场。市场逻辑沿用现有 `GearInMarketFactory`，正文把注意力放在五个注册 ID 与三个绑定动作上。
+本节从 [C3-S4] 的星系对象中挑出 GearIn Prime，给它接上市场、势力、条件、产业和子市场。市场逻辑沿用现有 `GearInMarketFactory`，正文把注意力放在五个注册 ID 与三个绑定动作上。
 
 *本节预期阅读时间：~12 分钟。*
 
@@ -10,7 +10,7 @@
 
 完成后，您将能够：
 
-- 说出市场从实体到经济集合的绑定顺序；
+- 解释市场从实体到经济集合的绑定顺序；
 - 选择已注册的条件、产业和子市场 ID；
 - 区分商品注册与市场经济流；
 - 在星球详情、交易面板和日志中验证市场存在。
@@ -18,7 +18,7 @@
 ## 前置知识
 
 - [C3-S1] 的 GearIn 势力 ID；
-- [C3-S3] 的 GearIn Prime 实体；
+- [C3-S4] 的 GearIn Prime 实体；
 - `market_conditions.csv`、`industries.csv` 和 `submarkets.csv` 中的原版 ID。
 
 ## 先锁定市场的五条关系
@@ -67,11 +67,11 @@ entity.setMarket(market);
 entity.setFaction("gear_industry");
 ```
 
-完成信号：经济集合、行星实体和势力三处都能读到同一个市场。
+完成信号：经济集合、行星实体和势力都能读到同一个市场。
 
 ### 调用市场工厂
 
-插入位置：[C3-S3] 的 `GearInSystemGenerator.generate()` 末尾，跳跃点生成完成之后。先删除生成器内已内联创建的同 ID 市场块；同时在文件顶部导入 `java.util.List`。
+插入位置：[C3-S4] 的 `GearInSystemGenerator.generate()` 末尾，跳跃点生成完成之后。先删除生成器内已内联创建的同 ID 市场块；同时在文件顶部导入 `java.util.List`。
 
 ```java
 GearInMarketFactory marketFactory = new GearInMarketFactory();
@@ -81,7 +81,7 @@ marketFactory.createMarket(prime, "gear_industry", 0.35f,
 		List.of("open_market", "generic_military", "black_market", "storage"));
 ```
 
-完成信号：创建新档后，GearIn Prime 同时拥有 [C3-S3] 的行星实体和本节创建的市场。这个调用只组合两个已经完成的角色类，不增加新的 Java 类型。
+完成信号：创建新档后，GearIn Prime 同时拥有 [C3-S4] 的行星实体和本节创建的市场。这个调用只组合两个已经完成的角色类，不增加新的 Java 类型。
 
 ## 排查市场接入故障
 
@@ -169,8 +169,8 @@ public class GearInMarketFactory {
 
 ## 验证方案
 
-1. 按 "调用市场工厂" 的实现把市场创建接入 [C3-S3] 的生成器，并导入 `java.util.List`。
-2. 创建包含 [C3-S3] 星系的全新生涯。
+1. 按 "调用市场工厂" 的实现把市场创建接入 [C3-S4] 的生成器，并导入 `java.util.List`。
+2. 创建包含 [C3-S4] 星系的全新生涯。
 3. 进入 GearIn Prime，打开行星详情和交易面板。
 4. 分别打开公开市场、仓储，观察势力颜色、税率、条件和产业。
 
@@ -197,7 +197,7 @@ public class GearInMarketFactory {
 
 ## 总结
 
-市场接入的关键是绑定顺序：先创建市场，再填入已注册的对象，最后同时写入经济集合、实体和势力。商品、市场和产业是三条相互连接但生命周期不同的数据链。
+市场接入的关键是绑定顺序，先创建市场，再填入已注册的对象，最后同时写入经济集合、实体和势力。商品、市场和产业是三条相互连接但生命周期不同的数据链。
 
 ## 建议参考项
 

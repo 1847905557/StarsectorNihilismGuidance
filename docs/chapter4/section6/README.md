@@ -1,6 +1,6 @@
 # 制作一个自定义实体
 
-本节定义一个无需新 Java 插件的生涯实体：它使用已有中继资源的图标和精灵，拥有 GearIn 自己的名称、发现范围和 CUSTOM 描述，并由既有星系生成模板投放。
+本节定义一个无需新 Java 插件的生涯实体：它使用已有中继资源的图标和精灵，拥有 GearIn 自己的名称、发现范围和 CUSTOM 描述，并由 [C3-S4] 的星系生成器投放。
 
 *本节预期阅读时间：~14 分钟。*
 
@@ -18,8 +18,8 @@
 ## 前置知识
 
 - [C4-S5] 的数据文件合并和资源路径；
-- [C3-S3] 的 `addCustomEntity` 与轨道设置；
-- [C3-S4] 的 CUSTOM 描述键。
+- [C3-S4] 的 `addCustomEntity` 与轨道设置；
+- [C3-S5] 的 CUSTOM 描述键。
 
 ## 确定实体用途
 
@@ -61,7 +61,7 @@
 GearIn_navigation_anchor,CUSTOM,一座用于校准本地航路的齿轮工业导航锚。,GearIn 导航锚,,,,
 ```
 
-CSV 键和转义规则见 [C3-S4]，本页负责定义 `GearIn_navigation_anchor` 这一行。
+CSV 键和转义规则见 [C3-S5]，本页负责定义 `GearIn_navigation_anchor` 这一行。
 
 ### 配置发现规则
 
@@ -182,4 +182,4 @@ anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 - `data/config/custom_entities.json`：自定义生涯实体类型；
 - `CustomEntitySpecAPI`：运行期实体 spec 字段；
 - `LocationAPI.addCustomEntity`：投放入口；
-- [C3-S4]：CUSTOM 描述挂接。
+- [C3-S5]：CUSTOM 描述挂接。

@@ -1,6 +1,6 @@
 # 制作酒吧事件
 
-本节制作一个生涯酒吧事件：一位落魄船员出售补给藏匿点的情报，玩家可以购买、婉拒或离开。示例会让事件进入酒吧、完成对话并正确收尾。
+本节制作一个生涯酒吧事件，一位落魄船员出售补给藏匿点的情报，玩家可以购买、婉拒或离开。示例会让事件进入酒吧、完成对话并正确收尾。
 
 *本节预期阅读时间：~30 分钟。*
 
@@ -44,7 +44,7 @@
 
 ## 梳理酒吧事件关系
 
-术语就位后，下一步把两条入口链路接起来：数据文件链路把 CSV 行变成可用事件，代码注册链路登记手写 creator，最终都汇入 `BarEventManager` 的 creator 集合。先看清三个角色的公开 API 归属：
+术语就位后，下一步把两条入口链路接起来，数据文件链路把 CSV 行变成可用事件，代码注册链路登记手写 creator，最终都汇入 `BarEventManager` 的 creator 集合。先看清三个角色的公开 API 归属：
 
 ### 角色命名与归属速查表
 
@@ -108,11 +108,11 @@ if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
 1. `days = Misc.getDays(amount)`：**所有时长都是游戏天** (10 真实秒 = 1 游戏日)。
 2. `active.advance(days)` / `timeout.advance(days)`：active 跟踪器里的事件按天扣减，扣到 0 自动移除；timeout 跟踪器里的 creator 同理。
 3. `tracker`(`IntervalUtil(0.4f, 0.6f)`，游戏天) 到点才执行抽取；`tracker2`(20–40 天) 到点更新种子。
-4. 未交互过期清理：在 `barEventCreators` 映射里但不在 active 跟踪器中的事件 = 未交互且 active 时长已过期，从映射与活动列表移除，并把对应 creator 置入超时：`dur = max(creator.getBarEventTimeoutDuration(), timeout 剩余)`。
+4. 未交互过期清理：在 `barEventCreators` 映射里但不在 active 跟踪器中的事件即未交互且 active 时长已过期，从映射与活动列表移除，并把对应 creator 置入超时：`dur = max(creator.getBarEventTimeoutDuration(), timeout 剩余)`。
 5. 数量上限：`max = round(creators.size() * settings.getFloat("maxTotalBarEventsAsFractionOfEventTypes"))`(默认 0.5，见 settings.json)，最小 1；`active` 数量达到 `max` 或每个 creator 都有活跃事件时本次不再抽取。
-6. 抽取：先建 priority picker(`isPriority()` 的 creator，权重 = `getBarEventFrequencyWeight()`) 与普通 picker。
+6. 抽取：先建 priority picker(`isPriority()` 的 creator，权重取 `getBarEventFrequencyWeight()`) 与普通 picker。
     - **priority 优先**，未命中再抽普通；同一 `getBarEventId()` 已有活跃事件或 creator 在 timeout 中的跳过；抽中后 `createBarEvent()`**，返回 null 则本次放弃**。
-    - 事件加入 `active` 跟踪器 (时长 = `getBarEventActiveDuration()`)、记录 `barEventCreators.put(event, creator)`、`PortsideBarData.getInstance().addEvent(event)` 入活动列表。
+    - 事件加入 `active` 跟踪器 (时长取 `getBarEventActiveDuration()`)、记录 `barEventCreators.put(event, creator)`、`PortsideBarData.getInstance().addEvent(event)` 入活动列表。
 
 所有时长都用游戏天
 
@@ -223,7 +223,7 @@ if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
 
 ## 实现酒吧事件
 
-酒吧事件要连续通过以下边界：creator 在场、manager 抽中、市场允许显示、选项进入事件对话、对话通知 manager 收尾。以下片段按这条链逐段接通。
+酒吧事件要连续通过 creator 在场、manager 抽中、市场允许显示、选项进入事件对话、对话通知 manager 收尾这几个边界。以下片段按这条链逐段接通。
 
 ### 注册事件 creator
 
@@ -321,7 +321,7 @@ private void finish() {
 }
 ```
 
-完成信号：购买、拒绝和离开三条路径结束后，事件立即离开活动列表，并在默认 60–90 游戏天 accepted 冷却内不再被抽取。
+完成信号：购买、拒绝和离开结束后，事件立即离开活动列表，并在默认 60–90 游戏天 accepted 冷却内不再被抽取。
 
 ## 组装酒吧事件实现
 
@@ -440,7 +440,7 @@ done = true;
 BarEventManager.getInstance().notifyWasInteractedWith(this);
 ```
 
-原因：`isDialogFinished()` 只结束对话外壳，活动列表与 creator 冷却由 manager 单独维护。复验：购买、婉拒和离开三条选项各执行一次；每次结束后活动列表中都找不到该事件，并且 accepted 冷却开始计时。
+原因：`isDialogFinished()` 只结束对话外壳，活动列表与 creator 冷却由 manager 单独维护。复验：购买、婉拒和离开各执行一次；每次结束后活动列表中都找不到该事件，并且 accepted 冷却开始计时。
 
 ## 验证方案
 

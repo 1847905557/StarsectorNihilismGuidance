@@ -33,7 +33,7 @@
 
 按术语约定，本节首次完整讲解以下词：
 
-- **市场条件 (condition)**：API 名保留 `MarketConditionAPI`(实例接口)、`MarketConditionSpecAPI`(静态配置)、`MarketConditionPlugin`(行为插件)。一个条件 = 一条 CSV 注册行 (spec)+ 市场上的若干实例 (每个实例带唯一 token 与一个 plugin 实例)。
+- **市场条件 (condition)**：API 名保留 `MarketConditionAPI`(实例接口)、`MarketConditionSpecAPI`(静态配置)、`MarketConditionPlugin`(行为插件)。一个条件由一条 CSV 注册行 (spec) 和市场上的若干实例 (每个实例带唯一 token 与一个 plugin 实例) 组成。
 - **token**：`addCondition(id)` 返回的唯一实例 id(`getIdForPluginModifications()`，形如 `ore_sparse_b44c3`)；spec id ≠ 实例 token。后续对 "具体实例" 的操作都以 token 定位。
 - **survey(勘测)**：两层语义 —— 条件级 `isSurveyed` / `requiresSurveying`(该条件是否已被勘测、是否需要勘测) 与市场级 `SurveyLevel`(`NONE / SEEN / PRELIMINARY / FULL`)。
 - **suppression(抑制)**：`suppressCondition(id)` / `unsuppressCondition(id)` 维护的 suppressed id 集合；被抑制的条件在重算时不再生效，但实例保留。
@@ -336,7 +336,7 @@ GearIn Ore Deposits,GearIn_ore_deposits,,TRUE,,data.scripts.gearin.campaign.Gear
 
 对应关系：
 
-- `extends BaseMarketConditionPlugin`：免费获得 `init`、`getTokenReplacements`、tooltip 默认实现、`isTransient() = true` 等全套默认；`getModId()` = 实例 token。
+- `extends BaseMarketConditionPlugin`：免费获得 `init`、`getTokenReplacements`、tooltip 默认实现、`isTransient() = true` 等全套默认；`getModId()` 返回实例 token。
 - `apply(id)` 的 `id` 参数就是实例 token：修饰 source 用 token，多实例互相隔离 (规则强度第 2 条)；`getName()` 来自 spec 的 `name` 列。
 - `setParam(Object)`：`addCondition(id, param)` 的第二参在 apply 之前到达 (`MarketAPI.addCondition` 的调用顺序)，示例用 `Number` 覆盖 accessibility 默认值。
 - `createTooltipAfterDescription`：spec desc(含 `$marketName` token) 之后追加数值行 (tooltip 创建时先替换 token 再调本钩子)。
@@ -435,7 +435,7 @@ MarketConditionAPI condition = market.getSpecificCondition(token);
     GearIn condition lifecycle add: id=GearIn_ore_deposits token=GearIn_ore_deposits_xxxxx plugin=GearInOreCondition planetary=true surveyed=true reqSurvey=false genSpec=null specOrder=50 icon=graphics/hullmods/generic_mod.png GearIn condition lifecycle add: desc=Rich, dense ore veins run deep beneath the surface of $marketName, hinting at profitable mining opportunities. GearIn condition lifecycle applied: hazard=1.40 hazardModSource=GearIn_ore_deposits_xxxxx hazardModValue=0.15 accessibilityFlat=1.10 accModValue=0.10 GearIn condition lifecycle tokens: $marketName=Jangala $marketFaction=Hegemony
     ```
 
-    核对：`plugin=GearInOreCondition`(script 列生效)；`planetary=true`(CSV 列生效)；`surveyed=true`、`reqSurvey=false`、`genSpec=null`(无 procgen 行 → 默认已勘测)；`icon` 是回退的 `graphics/hullmods/generic_mod.png`(icon 列留空)；`hazardModSource` 与 `token` 相同 (modifier source = 实例 token)；`desc` 打印的是 `spec.getDesc()` 的**原始文本** (含字面 `$marketName`) —— token 替换只发生在 tooltip 创建时，演示脚本从不创建 tooltip，日志不会看到替换值。
+    核对：`plugin=GearInOreCondition`(script 列生效)；`planetary=true`(CSV 列生效)；`surveyed=true`、`reqSurvey=false`、`genSpec=null`(无 procgen 行 → 默认已勘测)；`icon` 是回退的 `graphics/hullmods/generic_mod.png`(icon 列留空)；`hazardModSource` 与 `token` 相同 (modifier source 即实例 token)；`desc` 打印的是 `spec.getDesc()` 的**原始文本** (含字面 `$marketName`) —— token 替换只发生在 tooltip 创建时，演示脚本从不创建 tooltip，日志不会看到替换值。
 
 - **多实例 + param**：
 
@@ -550,7 +550,7 @@ MarketConditionAPI condition = market.getSpecificCondition(token);
 
 市场侧访问入口的既有讲解给出了 `addCondition` 返回 token、`getSpecificCondition` / `getFirstCondition` 的用法，本节补全了实现、检查与生命周期；行星市场 (`market_<planetId>`) 承载 survey 语义。
 
-三条链在逻辑上是同一件事的三面：注册链决定条件 "存在"，生命周期链决定条件 "如何作用"，重算链决定检查 "何时生效"。token 是实例级操作的锚点，survey 与 suppression 是两类效果检查，而重算 (经济迭代、稳定度变化、手动调用) 是检查生效的唯一时机。把握这一整体，就能在任意触发点预测条件的可观察行为。
+注册链决定条件 "存在"，生命周期链决定条件 "如何作用"，重算链决定检查 "何时生效"，三条链在逻辑上是同一件事的三面。token 是实例级操作的锚点，survey 与 suppression 是两类效果检查，而重算 (经济迭代、稳定度变化、手动调用) 是检查生效的唯一时机。把握这一整体，就能在任意触发点预测条件的可观察行为。
 
 ## 建议参考项
 
@@ -560,7 +560,7 @@ MarketConditionAPI condition = market.getSpecificCondition(token);
 - `com.fs.starfarer.api.campaign.econ.MarketAPI`：条件访问族、suppression 族、`SurveyLevel`、两个重算入口。
 - `com.fs.starfarer.api.impl.campaign.econ.BaseMarketConditionPlugin`：条件插件基类 (transient 默认、token 替换、tooltip 默认实现)。
 - `com.fs.starfarer.api.impl.campaign.econ.BaseMarketConditionPlugin2`：非 transient 条件插件 (`daysActive` 计时，进存档)。
-- `com.fs.starfarer.api.impl.campaign.econ.BaseHazardCondition`：原版 hazard 条件基类 (modifier source = 实例 token 的范本)。
+- `com.fs.starfarer.api.impl.campaign.econ.BaseHazardCondition`：原版 hazard 条件基类 (modifier source 取实例 token 的范本)。
 - `com.fs.starfarer.api.impl.campaign.econ.ResourceDepositsCondition`：`ore_sparse` 等资源条件的 supply 修饰。
 - `com.fs.starfarer.api.impl.campaign.econ.PlanetaryShield`：原版 suppress/unsuppress 配对用法。
 - `com.fs.starfarer.api.impl.campaign.econ.SolarArray`：原版条件抑制用法 (HOT / POOR\_LIGHT)。

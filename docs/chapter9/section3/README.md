@@ -10,8 +10,8 @@
 
 完成后，您将能够：
 
-- 说出生涯舰队的三层对象链 (`SectorAPI.getPlayerFleet()` → `CampaignFleetAPI` → `FleetDataAPI` → `FleetMemberAPI`)，并解释成员集合的持久槽位、同步视图与派生状态；
-- 用 `FactoryAPI.createFleetMember` 创建成员，用 `addFleetMember` / `removeFleetMember` / `scuttle` 修改成员集合，并说出添加时的自动行为；
+- 列出生涯舰队的三层对象链 (`SectorAPI.getPlayerFleet()` → `CampaignFleetAPI` → `FleetDataAPI` → `FleetMemberAPI`)，并解释成员集合的持久槽位、同步视图与派生状态；
+- 用 `FactoryAPI.createFleetMember` 创建成员，用 `addFleetMember` / `removeFleetMember` / `scuttle` 修改成员集合，并解释添加时的自动行为；
 - 区分四种成员视图的读取结果，按需求选择正确的遍历入口；
 - 读写成员保存态的身份、装配、舰长、船体状态与 CR / 维修；
 - 解释战斗准备判据、部署成本，以及后勤容量求和与封存豁免的语义；
@@ -180,7 +180,7 @@ setVariant 保存的是传入引用
 
 创建成员时的装配已被克隆，但 `setVariant` 传入的引用需要调用方自己管理生命周期，不要长期共享同一装配引用。
 
-保存态里有两组字段决定成员能否上场：CR 与部署成本。战斗准备是 "当前状态" 判据，补给和时间可以恢复。
+保存态的 CR 与部署成本决定成员能否上场。战斗准备是 "当前状态" 判据，补给和时间可以恢复。
 
 ### 战斗准备语义
 
@@ -222,7 +222,7 @@ setVariant 保存的是传入引用
 
 本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)` + 各自 persistent data 键的一次性判断模式 (不要把注册键并入插件既有的 `CLASS_MARK` 判断)。
 
-本节用一个自停脚本把整条链走一遍：创建、入队、读写、清理，全程只操作演示成员。
+本节用一个自停脚本把创建、入队、读写、清理整条链走一遍，全程只操作演示成员。
 
 ## 实现舰队状态读取
 
@@ -357,7 +357,7 @@ mods/GearIndustry/
 - `implements EveryFrameScript`：`isDone()` 返回 `executed`(脚本执行后自停，引擎下一帧自动移除)；`runWhilePaused()` 返回 `false`(暂停时不执行)。
 - `REGISTER_MARK`：persistent data 判断键，用于判断脚本是否已在该存档执行过 (`"GearIn_FleetMemberScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不含任何工作单元编号变体。
 - `createFleetMember(FleetMemberType.SHIP, "...")`：创建入口。
-    - `wolf_Assault` / `hammerhead_Elite` 是原版注册装配 id(`data/variants/wolf/wolf_Assault.variant`、`data/variants/hammerhead/hammerhead_Elite.variant`，variant id = 文件名去扩展名)。
+    - `wolf_Assault` / `hammerhead_Elite` 是原版注册装配 id(`data/variants/wolf/wolf_Assault.variant`、`data/variants/hammerhead/hammerhead_Elite.variant`，variant id 即文件名去扩展名)。
 - `data.addFleetMember(...)`：入队入口；加入后 `getNumMembers()` / `getFleetPoints()` / `getCargo().getMaxCapacity()` 随之变化，容量变化来自同步管线里的 `updateCargoCapacities`。
 - `getStatus().applyHullFractionDamage(0.3f)` / `repairFully()`：船体状态写入与恢复 (`hammerhead_Elite` 是普通舰船，单一状态槽，hull fraction 从 1.0 到 0.7 再回 1.0)。
 - `getRepairTracker().setCR(0.3f)` / `setMothballed(true)`：CR 与封存写入；`canBeDeployedForCombat()` 与 `getMembersInPriorityOrder()` 是 "当前状态" 读取。
@@ -499,7 +499,7 @@ fleet.getFleetData().addFleetMember(member);
 
 ## 总结
 
-本节把生涯舰队讲成一条链：入口 (`SectorAPI.getPlayerFleet()` → `CampaignFleetAPI`) → 集合 (`getFleetData()` → `FleetDataAPI`) → 成员 (`FleetMemberAPI`)。整条链上有三条反复用到的判断：创建不等于入队，改集合后要想到同步，保存态与战斗态分离 —— 演示脚本正是围绕这三条展开的。
+本节把生涯舰队讲成一条链：入口 (`SectorAPI.getPlayerFleet()` → `CampaignFleetAPI`) → 集合 (`getFleetData()` → `FleetDataAPI`) → 成员 (`FleetMemberAPI`)。创建不等于入队、改集合后要想到同步、保存态与战斗态分离，是整条链上反复用到的三条判断 —— 演示脚本正是围绕这三条展开的。
 
 排错时先按症状定位层：成员数量与遍历顺序的问题查集合视图与同步时机，数值没变或读档丢失的问题查保存态字段与瞬态层，部署与后勤的问题查 CR、船员与封存判据。封存修正立即写入成员 stats、只有舰队级求和延迟到同步，这是最常被忽略的一处。
 
@@ -518,7 +518,7 @@ fleet.getFleetData().addFleetMember(member);
 - `com.fs.starfarer.api.combat.ShipVariantAPI`：装配对象 (`setVariant` 的入参类型；`getHullVariantId` 读装配 id)。
 - `com.fs.starfarer.api.EveryFrameScript`：示例脚本接口 (`isDone` / `runWhilePaused` / `advance`)。
 - `data/config/settings.json`：部署判据基线 (`noDeployCRPercent` = 0、`noDeployCrewPercent` = 5)。
-- `data/variants/wolf/wolf_Assault.variant`、`data/variants/hammerhead/hammerhead_Elite.variant`：示例使用的原版装配 (variant id = 文件名去扩展名)。
+- `data/variants/wolf/wolf_Assault.variant`、`data/variants/hammerhead/hammerhead_Elite.variant`：示例使用的原版装配 (variant id 即文件名去扩展名)。
 
 ## 完整最小例
 

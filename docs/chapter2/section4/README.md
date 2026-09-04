@@ -10,15 +10,15 @@
 
 完成后，您将能够：
 
-- 说出武器调用代码的两个注册列：弹体文件 `.proj` 的 `onHitEffect`、光束武器文件 `.wpn` 的 `beamEffect`；
-- 按模板写一个 OnHit 效果类：射弹命中时写日志、在命中点生成光点；
-- 按模板写一个 BeamEffect 效果类：光束激活期间每秒写一行日志；
-- 用类名三处一致 (武器版) 核对注册，独立解决 "效果未触发" 与 "`Problem loading class`"。
+- 列出武器调用代码的两个注册列：弹体文件 `.proj` 的 `onHitEffect`、光束武器文件 `.wpn` 的 `beamEffect`；
+- 仿照示例写一个 OnHit 效果类：射弹命中时写日志、在命中点生成光点；
+- 仿照示例写一个 BeamEffect 效果类：光束激活期间每秒写一行日志；
+- 核对文件路径、`package`、类名和注册值，独立解决 "效果未触发" 与 "`Problem loading class`"。
 
 ## 前置知识
 
 - [C1-S5] 的 `weapon_data.csv`、`.wpn` 与 `.proj` 数据关系；
-- [C2-S1] 的 Java 模板、参数、注册与回调；
+- [C2-S1] 的最小示例 Java 文件、参数修改、注册与回调；
 - [C2-S2] 的文件名、类名与注册类名一致规则。
 
 ## 武器调用效果类的机制
@@ -40,7 +40,7 @@
 
 ### 实现命中效果类
 
-文件：`src/data/scripts/gearin/combat/GearInHitLogger.java`：
+文件：`data/scripts/gearin/combat/GearInHitLogger.java`：
 
 ```java
 package data.scripts.gearin.combat;
@@ -58,7 +58,7 @@ import org.lwjgl.util.vector.Vector2f;
 
 /**
  * 射弹命中效果：命中时打一行日志，并在命中点放一个橙色光点。
- * 注册在弹体文件的 onHitEffect 键；方法签名是模板，只有日志文字是参数。
+ * 注册在弹体文件的 onHitEffect 键；方法签名照抄示例，只有日志文字是参数。
  */
 public class GearInHitLogger implements OnHitEffectPlugin {
 
@@ -71,12 +71,12 @@ public class GearInHitLogger implements OnHitEffectPlugin {
 }
 ```
 
-两类内容，与船插同构：
+两类内容，基本上还是某种疑似固定部分加某种疑似可变部分：
 
-- **`implements OnHitEffectPlugin` \+ `onHit(...)` 方法**：按模板使用。`onHit` 的方法签名有六个参数，实际需要修改的只有一行。游戏调用时会把 "射弹、目标、命中点、是否打在护盾上" 等信息传入，本节只使用其中两个：
+- **`implements OnHitEffectPlugin` \+ `onHit(...)` 方法**：照抄示例即可。`onHit` 的方法签名有六个参数，实际需要修改的只有一行。游戏调用时会把 "射弹、目标、命中点、是否打在护盾上" 等信息传入，本节只使用其中两个：
     - 日志文字 (引号内)：命中时写入 `starsector.log`，`shieldHit` 显示这次打在护盾还是船体；
     - `addHitParticle(...)` 一行：在命中点生成一个光点 (大小、颜色为数字参数，可修改)。粒子机制本节不展开，只需知道这一行在命中点生成光点。
-- **`package` / `import` / 类名**：按模板使用。
+- **`package` / `import` / 类名**：照抄示例即可。
 
 ### 注册命中效果
 
@@ -90,7 +90,7 @@ public class GearInHitLogger implements OnHitEffectPlugin {
 
 ### 实现光束效果类
 
-文件：`src/data/scripts/gearin/combat/GearInBeamLogger.java`：
+文件：`data/scripts/gearin/combat/GearInBeamLogger.java`：
 
 ```java
 package data.scripts.gearin.combat;
@@ -127,7 +127,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 }
 ```
 
-新增的一个概念：**`advance(float amount, ...)` 在光束激活期间每帧被调用**，`amount` 是距上一帧的秒数 (正常约 0.017)。字段 `timeSinceLastReport` 每帧累加 `amount`，达到 `REPORT_INTERVAL`(参数，默认 1 秒) 时输出一行日志、生成一个光点并归零。固定间隔的写法同样适用于光束持续伤害与每帧修正。其余按模板使用。
+新增的一个概念：**`advance(float amount, ...)` 在光束激活期间每帧被调用**，`amount` 是距上一帧的秒数 (正常约 0.017)。字段 `timeSinceLastReport` 每帧累加 `amount`，达到 `REPORT_INTERVAL`(参数，默认 1 秒) 时输出一行日志、生成一个光点并归零。固定间隔的写法同样适用于光束持续伤害与每帧修正。其余部分照抄示例即可。
 
 ### 注册光束效果
 
@@ -137,15 +137,15 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 "beamEffect": "data.scripts.gearin.combat.GearInBeamLogger",
 ```
 
-## 类名三处一致 (武器版)
+## 对齐效果类的注册信息
 
 ### 类名三处速查表
 
-注册列的值 = 完整类名，同样三处必须一致：
+注册列的值必须是完整类名，同样三处必须一致：
 
 | 位置 | 本例 (OnHit) |
 |---|---|
-| 文件路径 | `src/data/scripts/gearin/combat/GearInHitLogger.java` |
+| 文件路径 | `data/scripts/gearin/combat/GearInHitLogger.java` |
 | 文件内 `public class` 后 | `GearInHitLogger` |
 | 注册列值 | `data.scripts.gearin.combat.GearInHitLogger` |
 
@@ -165,7 +165,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 - `starsector.log` 每发一行 `GearIn hit! shieldHit=...`，命中点出现橙色光点。
 - 激活期间每秒出现一行 `GearIn beam tick`，光束末端出现青色光点，停火后停止输出。
 
-清理：把临时修改的日志文字恢复为 `GearIn hit! shieldHit=` 或 `GearIn beam tick`。
+清理：每帧输出日志会急剧提高性能开销，建议平时不要这么干。删除日志行。
 
 ## 故障分析
 
@@ -187,7 +187,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ## 总结
 
-给武器添加效果类 = 在数据文件里写类名：弹体 `.proj` 的 `onHitEffect`(命中时)、光束 `.wpn` 的 `beamEffect`(激活期间每帧)。效果类 = 按模板使用的接口方法 + 可修改的参数 (日志文字、间隔、粒子数值)。
+给武器添加效果类，就是在数据文件里写类名。弹体 `.proj` 写 `onHitEffect`(命中时)，光束 `.wpn` 写 `beamEffect`(激活期间每帧)。效果类由仿照示例的接口方法和可修改的参数 (日志文字、间隔、粒子数值) 组成。
 
 这两个接口的完整机制 —— 每种注册列的实例模型、`onFireEffect`/`everyFrameEffect` 等其余注册列、光束结算细节 —— 在观察武器开火与伤害过程、为武器加入动画与效果回调时展开。
 

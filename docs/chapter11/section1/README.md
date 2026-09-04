@@ -70,7 +70,7 @@
 | contactWeight | `1.0F` | — |
 | relToPlayer | null(延迟创建) | 首次 `getRelToPlayer()` 才创建 |
 
-`isDefault()` = 头像等于默认头像；`isPlayer()` = 人物对象即 `Global.getSector().getPlayerPerson()`；`isAICore()` = `aiCoreId != null`。
+`isDefault()` 表示头像等于默认头像；`isPlayer()` 表示人物对象即 `Global.getSector().getPlayerPerson()`；`isAICore()` 表示 `aiCoreId != null`。
 
 玩家人物同样以 `steady` 起步，新档创建时人物势力为 `"player"`。
 
@@ -156,7 +156,7 @@ voice 即 memory `$voice`。
 
 档位判定 `getLevelFor(float)`：取整到百分制再与阈值比，**边界含于高位档** (如 0.49 → `WELCOMING`，0.50 → `FRIENDLY`)。
 
-`isPositive()` = 从 `FAVORABLE` 起 (`isAtWorst(FAVORABLE)`)；`isNegative()` = `SUSPICIOUS` 及以下。
+`isPositive()` 表示从 `FAVORABLE` 起 (`isAtWorst(FAVORABLE)`)；`isNegative()` 表示 `SUSPICIOUS` 及以下。
 
 落点公式：正档写入 `min + 0.01`，负档写入 `-(min + 0.01)`，`NEUTRAL` 写入 `0.0`。
 
@@ -234,7 +234,7 @@ limit 只是 "本次调整的方向边界"
     - XP 达到下一级阈值 (`TOTAL_XP_PER_LEVEL × officerXPRequiredMult(4)`，`com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`) 且等级 ≤ `officerMaxLevel(5)`(settings) 时可升级。
     - `canLevelUp()` 满足时 `addXP` 自动 `makeSkillPicks()`；`makeSkillPicks()` **每次调用都重掷选项**。
     - `levelUp(skillId)` 等级 +1、技能 +1 级并清空重掷。
-- 军官上舰 = 把 officer 的人物 `setCaptain` 到成员 (原版军官面板的 "命令舰船" 即此语义)。
+- 军官上舰指把 officer 人物 `setCaptain` 到成员上 (原版军官面板的 "命令舰船" 即此语义)。
 
 #### 归属四入口 (持久化边界)
 
@@ -592,9 +592,9 @@ sector.getImportantPeople().addPerson(person);
 
 ## 总结
 
-本节把人物走通为四条链：创建链 (空白或势力随机 → 默认值 → 身份写入)、关系链 (数值连续、档位分段、limit 只是单次调整边界、数值恒钳制在 \[-1, 1\])、captain 链 (生涯侧与战斗侧，玩家旗舰恒返回玩家人物)、officer 链 (包装 → roster → XP/升级 → 上舰)。人物默认值表是调试基准，人物持久化依赖四个归属入口。
+本节把人物走通为四条链。创建链 (空白或势力随机 → 默认值 → 身份写入)、关系链 (数值连续、档位分段、limit 只是单次调整边界、数值恒钳制在 \[-1, 1\])、captain 链 (生涯侧与战斗侧，玩家旗舰恒返回玩家人物)、officer 链 (包装 → roster → XP/升级 → 上舰)。人物默认值表是调试基准，人物持久化依赖四个归属入口。
 
-排错时先问 "人物是否挂在持久集合"：局部变量人物不保存也不报错，这是多数 "消失" 类问题的共同起点；关系类问题先分清人物侧与势力侧，再对照关系四件事判断。三个 "每次都会发生" 的陷阱值得记牢：`getMemory()` 触发全插件回调、`makeSkillPicks()` 重掷选项、默认舰长保存时压缩。
+排错时先问 "人物是否挂在持久集合"：局部变量人物不保存也不报错，这是多数 "消失" 类问题的共同起点；关系类问题先分清人物侧与势力侧，再对照关系四件事判断。`getMemory()` 触发全插件回调、`makeSkillPicks()` 重掷选项、默认舰长保存时压缩，这三个 "每次都会发生" 的陷阱值得记牢。
 
 人物对象链到这里已经走通完整流程。人物是任务、贸易与通信系统的共同实体 —— 任务与事件的选人规则建立在 important people 的 checkout 机制上，市场侧的联系人体系建立在人物归属之上。遇到 "造一个人、调整它与玩家或势力的关系、把它挂进某个持久集合" 的需求，都可以回到本节的四条链上定位。
 

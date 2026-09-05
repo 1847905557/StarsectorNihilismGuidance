@@ -38,8 +38,8 @@ public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWi
 
     @Override
     public void advance(float amount, CombatEngineAPI engine, BeamAPI beam) {
-        // 每帧只消费本帧光束状态 (规则 2：didDamageThisFrame / getDamageTarget
-        // 只对本帧结算语义有效，禁止缓存跨帧使用)。
+        // 每帧只消费本帧光束状态：didDamageThisFrame / getDamageTarget
+        // 只对本帧结算语义有效，禁止缓存跨帧使用。
         boolean didDamage = beam.didDamageThisFrame();
         CombatEntityAPI target = beam.getDamageTarget();
         if (didDamage && !lastDidDamage) {
@@ -49,8 +49,8 @@ public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWi
         }
         if (didDamage) {
             // 纯视觉命中火花：以本帧射线端点 (上一帧端点) 为基准撒粒子，不造成伤害。
-            // 光束伤害按 0.1 秒间隔结算 (C8-S4)；IonBeamEffect 的替代写法是用
-            // beam.getDamage().getDpsDuration() 推进节流器，让粒子节奏跟随真实结算。
+            // 光束伤害按 0.1 秒间隔结算；节流器也可改为跟随 beam.getDamage()
+            // 的 DPS 结算推进，让粒子节奏与真实结算一致。
             sparkInterval.advance(amount);
             if (sparkInterval.intervalElapsed()) {
                 Vector2f point = beam.getRayEndPrevFrame();

@@ -10,11 +10,10 @@
 
 完成后，您将能够：
 
-- 定位 `<存档目录>/common/` 和 MOD 专属文件；
-- 使用原版入口或 LazyLib 读取 common 文本与 JSON；
-- 使用 `writeTextFileToCommon`、`writeJSONToCommon` 或 `CommonDataJSONObject.save()` 写入数据；
-- 组织读 → 改 → 写流程，处理缺失字段、版本迁移和未知字段；
-- 从文件内容、重启结果和日志定位 common 读写故障。
+- 定位并读取 common 目录中的 MOD 文本与 JSON；
+- 使用原版入口或 LazyLib 写回 common 数据；
+- 在读写过程中处理缺失字段、版本迁移与未知字段；
+- 根据文件、重启结果和日志定位 common 数据故障。
 
 ## 前置知识
 

@@ -11,8 +11,8 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
  * expire 0 的 probe 键已被 Memory.advance 移除后，记录移除结果，再 unset 一个
  * required 子键验证父键被递归移除。
  *
- * 时序对齐：probe 每次读档都被写入脚本重新写入并移除，故「tag 存在 && probe
- * 不存在」是稳定的验证时机 (同帧执行顺序未定义，用键状态对齐)。
+ * 时序对齐：probe 每次读档都被写入脚本重新写入并移除，故 "tag 存在 && probe
+ * 不存在" 是稳定的验证时机 (同帧执行顺序未定义，用键状态对齐)。
  */
 public class GearInMemoryExpiryVerifier implements EveryFrameScript {
 

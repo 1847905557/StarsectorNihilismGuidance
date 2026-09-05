@@ -10,8 +10,8 @@ import com.fs.starfarer.api.campaign.SectorAPI;
 /**
  * 完整最小例：SectorAPI 注册的生涯每帧脚本 (EveryFrameScript)。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，注册前用 hasScript() 查重，
- * 并用 sector persistent data 键 REGISTER_MARK 做一次性门控 (C7-S1 的 CLASS_MARK 模式)。
+ * 注册入口：生涯回调 onGameLoad，注册前用 hasScript() 查重，
+ * 并用 sector persistent data 键 REGISTER_MARK 做一次性门控。
  *
  * 行为：每个游戏日跨日时打印一行日志 (当前日期、本帧折合的游戏天数、挂载以来经过的游戏天数)；
  * 默认 runWhilePaused() 返回 false：引擎暂停时脚本不推进、生涯时钟也不前进；
@@ -40,7 +40,7 @@ public class GearInSectorClockScript implements EveryFrameScript {
     private boolean done = false;
 
     public GearInSectorClockScript() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     /** 修改运行天数上限；改回 -1 恢复常驻。 */

@@ -10,16 +10,11 @@
 
 完成后，您将能够：
 
-- 列出星区 (sector) 的结构：`SectorAPI` 是生涯引擎根对象，名下挂哪些子容器 (地点、时钟、玩家舰队、经济、势力、脚本、监听器、persistent data、memory、UI 外壳)，以及每个子容器从哪个 getter 进入；
-- 用 `SectorAPI.getClock()` 读生涯时钟：
-    - `getCycle()` / `getMonth()` / `getDay()` / `getHour()` 的取值规则与纪元起点；
-    - `getDateString()` / `getShortDate()` / `getTimestamp()` / `getElapsedDaysSince()` 的语义；
-    - 记住换算基线 "10 真实秒 = 1 游戏日"；
-- 从零写一个 `EveryFrameScript` 实现并通过 `SectorAPI.addScript` 注册：
-    - 复述一次性注册标记 (persistent data `CLASS_MARK` 模式) 与每帧推进循环 (`isDone` → 移除；`runWhilePaused()` 或未暂停 → `advance`)；
-    - 解释 "脚本随存档保存、transient 脚本不保存" 的序列化边界；
-- 解释暂停与加速时哪些推进、哪些冻结：引擎暂停时脚本默认不推进、时钟不前进；按住 Shift 加速时每帧推进两次 (`campaignSpeedupMult`)；战斗期间生涯引擎完全不推进；
-- 从症状定位九类典型故障：脚本没注册、重复注册、`isDone()` 恒 true、`runWhilePaused` 语义误用、把秒当游戏天、暂停时依赖时钟、战斗期 "脚本消失"、旧档不注册、脚本字段放了不可序列化对象。
+- 从 `SectorAPI` 进入生涯服务，并使用 `CampaignClockAPI` 读取日期与时间；
+- 实现 `EveryFrameScript`，使用 persistent data 完成一次性注册；
+- 区分暂停、加速和战斗期间的脚本与生涯时钟推进；
+- 判断普通脚本、transient 脚本和脚本字段的存档边界；
+- 根据日志与读档结果定位注册、时间和序列化故障。
 
 ## 前置知识
 
@@ -59,7 +54,7 @@
 | 经济与势力 | `getEconomy()` / `getFaction(String id)` / `getAllFactions()` | 经济入口与势力表 |
 | 监听器 | `addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners()` / `getListenerManager()` | 生涯事件监听器，详见 [C13-S2] |
 | 通用插件 | `getGenericPlugins()` | 通用插件注册表 |
-| 持久数据 | `getPersistentData()` | 返回随存档保存的 `Map<String, Object>`，跨会话 MOD 数据入口 (前置生命周期例已用) |
+| 持久数据 | `getPersistentData()` | 返回随存档保存的 `Map<String, Object>`，跨会话 MOD 数据入口 |
 | 记忆 | `getMemory()` / `getMemoryWithoutUpdate()` | 星区 "global" memory，详见 [C15-S4] |
 | UI 外壳 | `getCampaignUI()` | `CampaignUIAPI`：生涯消息区、core UI 页签、确认框等入口 |
 | 暂停 | `isPaused()` / `setPaused(boolean)` | 生涯暂停状态 |
@@ -455,8 +450,8 @@ import com.fs.starfarer.api.campaign.SectorAPI;
 /**
  * 完整最小例：SectorAPI 注册的生涯每帧脚本 (EveryFrameScript)。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，注册前用 hasScript() 查重，
- * 并用 sector persistent data 键 REGISTER_MARK 做一次性门控 (C7-S1 的 CLASS_MARK 模式)。
+ * 注册入口：生涯回调 onGameLoad，注册前用 hasScript() 查重，
+ * 并用 sector persistent data 键 REGISTER_MARK 做一次性门控。
  *
  * 行为：每个游戏日跨日时打印一行日志 (当前日期、本帧折合的游戏天数、挂载以来经过的游戏天数)；
  * 默认 runWhilePaused() 返回 false：引擎暂停时脚本不推进、生涯时钟也不前进；
@@ -485,7 +480,7 @@ public class GearInSectorClockScript implements EveryFrameScript {
     private boolean done = false;
 
     public GearInSectorClockScript() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     /** 修改运行天数上限；改回 -1 恢复常驻。 */

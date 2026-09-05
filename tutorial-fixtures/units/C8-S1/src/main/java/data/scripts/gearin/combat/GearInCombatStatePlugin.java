@@ -13,7 +13,7 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 完整最小例：战斗引擎状态读取 —— 上下文、时间、暂停与战斗结果。
  *
- * 本插件由战斗上下文注册 (C8-S3 的插件模型)，只在本场战斗内有效：
+ * 本插件由战斗上下文注册，只在本场战斗内有效：
  * - 状态读取只使用当前战斗的引擎引用；
  * - advance() 在暂停时仍可能被调用，状态推进前必须检查 engine.isPaused()；
  * - getWinningSideId() 只表示胜者侧，战斗结束判定使用 isCombatOver()。

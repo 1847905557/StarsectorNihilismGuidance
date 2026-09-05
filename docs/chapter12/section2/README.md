@@ -10,12 +10,11 @@
 
 完成后，您将能够：
 
-- 创建技能数据三件套 (注册行、`.skill` 定义、效果脚本) 并解释它们如何汇成 `SkillSpecAPI`；
-- 区分 `SkillEffectType` 各取值对应的效果接口、作用对象与应用入口；
-- 设置技能等级 0 / 1 / 2 与 `requiredSkillLevel` 门槛，并解释 `apply()` 的 `level` 参数来源；
-- 验证 effect id 的组成规则，并把它原样用作 modifier id；
-- 实现 `FleetTotalSource`，并在整备界面核对 fleet total 汇总行；
-- 从日志与界面症状定位注册、类型、等级与数值残留类故障。
+- 使用注册行、`.skill` 文件和效果脚本创建舰队技能；
+- 根据 `SkillEffectType` 选择效果接口与作用对象；
+- 使用技能等级和稳定 effect ID 应用数值修饰；
+- 实现 `FleetTotalSource` 并在整备界面汇总效果；
+- 根据界面和日志定位技能注册、等级与残留故障。
 
 ## 前置知识
 
@@ -337,17 +336,15 @@ gradle jar
 
 - `$Level0` / `$Level1` / `$Level1A` / `$LevelShipFighters` / `$LevelFleet` / `$LevelStats`
 
-## GearIn\_gunnery 完整流程速查表
+## 启动游戏前的静态核对
 
-把三件套、调用点与观察结果串成一张静态交叉核对表，逐行确认后再进入游戏验证：
+注册行、技能定义与效果脚本在启动游戏前先逐项核对，任何一处不一致都会在对应环节中断：
 
-| 环节 | 内容 | 一致性要求 |
-|---|---|---|
-| 注册行 | `skill_data.csv` 的 `id=GearIn_gunnery` (order 1025、tier 2、reqPoints 1、combat officer TRUE) | 与 `.skill` 的 `id` 逐字一致 |
-| 技能定义 | `GearIn_gunnery.skill`：`governingAptitude=combat`、`elite=true`、两个 `effectGroups` | id 一致；脚本类名与 Java 类逐字一致 |
-| 效果脚本 | `data.scripts.gearin.campaign.GearInGunnerySkill$Level0/Level1/Level1A/LevelShipFighters/LevelFleet/LevelStats` | 六个类名与 `.skill` 六个 `script` 值一致；`type` 与接口族匹配 |
-| 调用入口 | CSV spec 加载期 `loadSkills` 注册 → 玩家 `setSkillLevel` / UI 加点 → `refreshCharacterStatsEffects` / `FleetMemberAPI.updateStats` / 战斗舰船构造 / `FighterLaunchBayAPI` / `getFleetTotals` | 日志行、技能树行、burn、指挥点数、fleet total 行 |
-| 可观察结果 | 日志 `GearIn gunnery ... apply`、技能树 "Gunnery" 行、整备界面 "Gunnery damage bonus +15%" 行 | 以日志与界面实际结果为准 |
+1. `skill_data.csv` 注册行的 `id=GearIn_gunnery` (order 1025、tier 2、reqPoints 1、combat officer TRUE) 与 `.skill` 的 `id` 逐字一致；
+2. `GearIn_gunnery.skill` 的 `governingAptitude=combat`、`elite=true` 与两个 `effectGroups` 就位，每个 effect 的 `type` 与脚本类实现的接口族匹配；
+3. `data.scripts.gearin.campaign.GearInGunnerySkill` 的六个嵌套类 `$Level0` / `$Level1` / `$Level1A` / `$LevelShipFighters` / `$LevelFleet` / `$LevelStats` 与 `.skill` 的六个 `script` 值逐字一致。
+
+静态核对通过后，生效沿调用链展开：CSV spec 加载期 `loadSkills` 完成注册，玩家 `setSkillLevel` 或 UI 加点后经 `refreshCharacterStatsEffects` 与 `FleetMemberAPI.updateStats` 重放，战斗侧在舰船对象构造与战机起飞 (`FighterLaunchBayAPI`) 时应用，整备界面经 `getFleetTotals` 读出汇总行。结果以日志与界面为准：`GearIn gunnery ... apply` 日志行、技能树的 "Gunnery" 行、整备界面的 "Gunnery damage bonus +15%" 行。
 
 ## 完整最小例
 
@@ -435,29 +432,12 @@ import com.fs.starfarer.api.util.Misc;
 
 /**
  * 完整最小例：SkillSpecAPI、效果作用域、技能等级与 fleet total。
- *
- * 本类只是效果脚本的容器 (原版 GunneryImplants 同款做法)：
- * 数据侧的 .skill 文件与 skill_data.csv 行把每个 effect 的 type 分派到下面的嵌套类。
- *
- * 作用域 (effect type 决定作用对象集合，与脚本类实现哪个接口一一对应)：
- * - DESCRIPTION   -> Level0           技能面板与 tooltip 的文本行；
- * - SHIP          -> Level1 / Level1A 被驾驶 (该角色指挥) 的舰船 stats；
- * - SHIP_FIGHTERS -> LevelShipFighters 由被驾驶舰船起飞的本舰战机 stats(起飞时应用)；
- * - FLEET         -> LevelFleet       该角色指挥舰队的 MutableFleetStatsAPI；
- * - CHARACTER_STATS -> LevelStats     角色自身 MutableCharacterStatsAPI。
- *
- * 等级语义：
- * - 技能等级只有 0(未学)/ 1(已学)/ 2(精英，仅 elite:true 的技能)；
- *   UI 加点路径 increaseSkill 会钳制到 1 或 2，setSkillLevel 不钳制；
- * - 每个 effectGroup 的 requiredSkillLevel 是生效门槛：getSkillLevel(governingSkill) >= requiredSkillLevel
- *   才进入 apply 列表；默认 governingSkill = 本技能 id；
- * - apply() 收到的 level 参数 = getSkillLevel(governingSkill)，不是等级增量；
- * - 引擎按 <技能id>_<类型后缀>_<效果序号> 组合 effect id 并传入 apply，
- *   效果类必须原样用它做 MutableStat / StatBonus 的 modifier id(稳定 ID 规则，见前置页)。
- *
- * fleet total：
- * - 本技能 Level1 同时实现 FleetTotalSource：整备界面 (refit) 的舰队构成表会调用
- *   getFleetTotalItem() 展示一行汇总；同一脚本实例按需被重新实例化，效果类必须无参可实例化。
+ * 本类只是效果脚本的容器 (效果类必须无参可实例化)：.skill 文件与 skill_data.csv
+ * 把每个 effect 的 type 分派到下面的嵌套类，type 决定作用对象集合 (与接口一一对应)。
+ * 等级只有 0/1/2 (UI 加点钳制到 1/2，setSkillLevel 不钳制)，effectGroup 的
+ * requiredSkillLevel 是生效门槛 (默认 governingSkill = 本技能 id)；apply() 收到的
+ * level 是当前等级而非增量，引擎组合出的 effect id 必须原样用作 modifier id；
+ * Level1 同时实现 FleetTotalSource，整备界面展示一行 fleet total 汇总。
  */
 public class GearInGunnerySkill {
 

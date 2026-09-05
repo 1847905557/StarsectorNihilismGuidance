@@ -11,7 +11,7 @@ import com.fs.starfarer.api.Global;
  * PersistentData 跨存档计数脚本 (EveryFrameScript)：每档一次累加运行计数并记录
  * 上次值 —— 直接可观察 PersistentData 随存档保存与恢复 (新档 run 1、读档 run N
  * 递增)。故意不加一次性 REGISTER_MARK 门控：每次读档都重跑才能看到递增；
- * 注册项使用各自的 persistent data 键 (C7-S1 纪律)。
+ * 注册项使用各自的 persistent data 键。
  */
 public class GearInPersistentDataCounter implements EveryFrameScript {
 

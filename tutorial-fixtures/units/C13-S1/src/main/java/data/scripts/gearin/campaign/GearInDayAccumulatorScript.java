@@ -13,30 +13,38 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * 余数跨帧保留；单帧跨多个游戏日 (加速、新档推进) 时 while 逐日补触发；
  * daysToRun >= 0 时累计满该游戏天数后 isDone() 返回 true，引擎在置位同一次推进中
  * 自动移除；全部字段可随存档序列化 (XStream 存档边界)，读档后继续。
- * 注册入口：onGameLoad 的 persistent data 门内 (REGISTER_MARK 一次性门控，C7-S1 的 CLASS_MARK 模式)。
+ * 注册入口：onGameLoad 的 persistent data 门内 (REGISTER_MARK 一次性门控)。
  */
 public class GearInDayAccumulatorScript implements EveryFrameScript {
 
     /** 存档持久化标记：本脚本是否已在该存档注册过 (随存档保存)。 */
     public static final String REGISTER_MARK = "GearIn_DayAccumulatorScript";
+
     private static final Logger LOG = Global.getLogger(GearInDayAccumulatorScript.class);
 
     /** 挂载以来的游戏天数 (精确累加，保留小数)；随存档序列化，读档后继续累计。 */
     private float daysSinceMount = 0f;
+
     /** 例程周期余数：累计满 tickEveryDays 个游戏天触发一次每日例程。 */
     private float daysAccumulator = 0f;
+
     /** 已执行的每日例程次数 (跨存档累计)。 */
     private int routineCount = 0;
+
     /** 演示参数：每多少个游戏天执行一次例程；默认 1(每日一次)。 */
     private int tickEveryDays = 1;
+
     /** 演示参数：最多运行多少游戏天后自停；< 0 表示常驻不停止。 */
     private int daysToRun = -1;
+
     /** 完成标记：isDone() 返回 true 后引擎在置位同一次推进中自动移除本脚本。 */
     private boolean done = false;
+
     /** 修改例程周期；周期至少为 1 个游戏天。 */
     public void setTickEveryDays(int tickEveryDays) {
         this.tickEveryDays = Math.max(1, tickEveryDays);
     }
+
     /** 修改运行天数上限；改回 -1 恢复常驻。 */
     public void setDaysToRun(int daysToRun) {
         this.daysToRun = daysToRun;

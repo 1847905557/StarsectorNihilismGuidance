@@ -173,7 +173,7 @@ import lunalib.lunaSettings.LunaSettingsListener;
  * hasSettingsListenerOfClass 幂等查询 (重复注册会让同一次保存触发多次回调)。
  *
  * 监听器实例在门控通过之后才创建 —— 类加载路径不触碰 lunalib.**，LunaLib 未启用
- * 时调用本类不会抛 NoClassDefFoundError；缺库处理方式见 C18-S1。
+ * 时调用本类不会抛 NoClassDefFoundError。
  */
 public class GearInLunaSettingsListener {
 
@@ -185,8 +185,8 @@ public class GearInLunaSettingsListener {
     }
 
     /**
-     * 注册 (幂等)：LunaLib 未启用时跳过并写 warn。注册入口见页面正文的接入片段
-     * (GearInModPlugin.onGameLoad 一行)；监听器实例在门控之后才创建。
+     * 注册 (幂等)：LunaLib 未启用时跳过并写 warn。注册入口：
+     * GearInModPlugin.onGameLoad 一行；监听器实例在门控之后才创建。
      */
     public static void registerListener() {
         if (!GearInLunaSettingsReader.isLunaLibEnabled()) {
@@ -252,7 +252,7 @@ import lunalib.lunaSettings.LunaSettings;
 
 /**
  * 运行时读取角色：门控读取 LunaLib 设置 (LunaSettings 静态读取 API)。
- * 每个 getter 都是三段式：先按 C18-S1 检查 isModEnabled("lunalib")，
+ * 每个 getter 都是三段式：先用 isModEnabled 检查 LunaLib 是否启用，
  * 再调用 LunaSettings.getX，返回 null 时回退代码内默认值 (Defs)。
  * 类自身不引用 lunalib.** 于类加载路径，未启用时可直接安全调用。
  */
@@ -262,7 +262,7 @@ public class GearInLunaSettingsReader {
         // 工具类：不实例化
     }
 
-    /** LunaLib 是否已启用：调用任何 lunalib.** 之前先执行 C18-S1 的启用检查。 */
+    /** LunaLib 是否已启用：调用任何 lunalib.** 之前先执行启用检查。 */
     public static boolean isLunaLibEnabled() {
         return Global.getSettings().getModManager().isModEnabled(GearInLunaSettingsDefs.LUNA_LIB_MOD_ID);
     }

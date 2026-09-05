@@ -10,8 +10,7 @@ import com.fs.starfarer.api.campaign.econ.MarketAPI;
 /**
  * 市场巡检脚本 (EveryFrameScript 角色)：挂载后第一次 advance() 执行一次市场/子市场/
  * 经济对象巡检序列并自停 (isDone()=true，引擎下一帧自动移除本脚本)。注册入口：生涯回调
- * onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控
- * (沿用既有模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
+ * onGameLoad，persistent data 键 REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  */
 public class GearInMarketInspector implements EveryFrameScript {
 
@@ -27,7 +26,7 @@ public class GearInMarketInspector implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInMarketInspector() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     /** 修改巡检目标市场；改回 null 时回退到 "第一个有开放市场的市场"。 */

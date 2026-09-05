@@ -10,12 +10,10 @@
 
 完成后，您将能够：
 
-- 用 `TrailEntity` 把命中前后的两个世界坐标连接成渐隐路径；
-- 用 `DistortionEntity` 配置位置、三阶段尺寸、强度和环硬度；
-- 用 `RenderingUtil.SpecialFX.addDefaultDistortion()` 取得共享默认畸变实例；
-- 用 `FlareEntity` 配置位置、朝向、颜色、混合和寿命；
-- 为尾迹与光斑选择图层，并为三个实体设置全局计时。扭曲固定绘制在最高层；
-- 独立处理每次入队返回码，并删除失败实体。
+- 使用 `TrailEntity`、`DistortionEntity` 和 `FlareEntity` 组合命中视觉；
+- 配置三个实体的位置、外观、寿命和计时阶段；
+- 使用共享默认畸变，并为尾迹与光斑选择图层；
+- 根据各自的入队结果保留或删除渲染实体。
 
 ## 前置知识
 
@@ -184,9 +182,9 @@ package data.scripts.gearin.lib;
 
 import java.awt.Color;
 
+import org.boxutil.units.standard.attribute.Instance2Data;
 import org.boxutil.units.standard.entity.DistortionEntity;
 import org.boxutil.units.standard.entity.FlareEntity;
-import org.boxutil.units.standard.attribute.Instance2Data;
 import org.boxutil.util.RenderingUtil;
 import org.lwjgl.util.vector.Vector2f;
 

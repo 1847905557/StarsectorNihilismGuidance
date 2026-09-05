@@ -25,38 +25,18 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
 
 /**
  * 完整最小例：常驻渲染插件的渲染层接入、资源释放、开关与性能。
- *
- *
- * - 渲染层接入：常驻插件每场战斗注册一次 (成熟实例同款姿势：生命周期插件 init 内
- *   addLayeredRenderingPlugin(常驻渲染插件))，不按承载实体或
- *   寿命失效，跟随玩家舰船；层声明用顶层三图层之一的 ABOVE_PARTICLES_LOWER(粒子系统
- *   之后渲染，成熟实例同款)；渲染剔除依据是承载实体位置
- *   与 getRenderRadius()(C8-S7 硬规则 4)，位置在 advance 里同步；
- * - 资源释放：GL 资源 (program/VBO) 在 cleanup() 释放并复位句柄 (幂等，重复调用安全)；
- *   战斗结束 destroyInstance 不调 cleanup() —— 常驻插件必须在 advance() 里判
- *   engine.isCombatOver()(= 结束标志 && 淡出完成)
- *   主动失效 (isExpired() -> true) 驱动引擎移除，否则 program/VBO 随每场战斗泄漏；
- *   战斗 viewport.getAlphaMult() 保持 1.0，不提供战斗结束淡出值；本示例把它作为
- *   常量透明度输入，战斗淡出由引擎的全屏变暗处理；共享贴图 (引擎启动期加载的
- *   particlealpha32sq.png) 不卸载 ——
- *   SettingsAPI.unloadTexture 按文件名从全局纹理管理器移除，卸载共享贴图会伤及所有消费方；
- * - 开关：BoxConfigs.isShaderEnable() && ShaderCore.isValid() 是 BoxUtil shader 路径
- *   可用性判据见 C17-S10，必须在 GL 上下文就绪后的 init 里重新判定，禁止缓存进
- *   类加载期 static final 字段 (此时无 GL 上下文，isValid() 不可评估)；render 每帧
- *   复核 (成熟实例每个使用点读取 BoxConfigs.isShaderEnable() 的姿势)；本示例另有运行时开关
- *   setRuntimeEnabled —— 只改变渲染路径与显示成本，不改变玩法状态 (实例规范
- *   "图形开关只改变渲染路径和显示成本")，关闭时 render 零 GL 提交；
- * - 性能：一次 glDrawArrays = 一个 draw call，本示例每帧恰好 1 个 (frames/drawCalls
- *   计数在 cleanup 日志输出)；uniform location 创建后保存、FloatBuffer 复用
- *   (clear/put/flip)、render 内零分配零日志；getRenderRadius 覆盖绘制范围即可，
- *   常驻插件也不需要 Float.MAX_VALUE，代价是永不触发视口剔除；
- *   批处理方法见 glMultiDrawArrays 批量绘制与 C17-S16 的实例提交。
+ * 常驻插件每场战斗注册一次，不按承载实体或寿命失效，跟随玩家舰船；
+ * GL 资源在 cleanup() 释放并复位句柄 (幂等)；战斗结束 destroyInstance 不调
+ * cleanup，必须在 advance() 里判 engine.isCombatOver() 主动失效驱动移除。
+ * 开关 BoxConfigs.isShaderEnable() && ShaderCore.isValid() 必须在 GL 上下文就绪的
+ * init 里判定且 render 每帧复核，禁止缓存进类加载期字段；运行时开关只改变渲染
+ * 路径与显示成本。一次 glDrawArrays 就是一个 draw call，render 内零分配零日志。
  */
 public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInShaderPlugin.class);
 
-    /** shader 资源路径 (MOD 根目录相对路径，必须用 /；C19-S2 硬规则 1 延续)。 */
+    /** shader 资源路径 (MOD 根目录相对路径，必须用 /)。 */
     private static final String VERT_PATH = "data/shaders/GearIn_field_shader.vert";
     private static final String FRAG_PATH = "data/shaders/GearIn_field_shader.frag";
 
@@ -74,7 +54,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
     private static final int FLOATS_PER_VERTEX = 4;
 
     /**
-     * 运行时开关：只改变渲染路径与显示成本，不改变玩法状态 (实例规范)。
+     * 运行时开关：只改变渲染路径与显示成本，不改变玩法状态。
      * 读取时机是每次使用点 (render 开头)，不缓存进 init 快照。
      */
     private static volatile boolean runtimeEnabled = true;
@@ -105,9 +85,9 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        // BoxUtil shader 路径可用性判据见 C17-S10。必须在 GL 上下文就绪后的
-        // init 里重新判定，禁止缓存进类加载期 static final 字段 —— 类加载期无 GL 上下文，
-        // ShaderCore.isValid() 不可评估 (C19-S3 硬规则 1 延续)
+        // shader 路径可用性必须在 GL 上下文就绪后的 init 里重新判定，
+        // 禁止缓存进类加载期 static final 字段 —— 类加载期无 GL 上下文，
+        // ShaderCore.isValid() 不可评估
         if (!BoxConfigs.isShaderEnable() || !ShaderCore.isValid()) {
             LOG.info("GearIn shader plugin: BoxUtil shader path unavailable (shaderEnable="
                     + BoxConfigs.isShaderEnable() + ", shaderCoreValid="
@@ -119,7 +99,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
             cleanup();     // 已创建的部分资源立即释放；cleanup 幂等，引擎移除时再调一次也安全
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点 (C8-S7 同款姿势)
+        advance(0f); // 立即同步一次位置，避免首帧画在战场原点
         LOG.info("GearIn shader plugin init: layers=" + getActiveLayers()
                 + ", u_model=" + program.location[0]
                 + ", u_size=" + program.location[1]
@@ -137,7 +117,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         int programId = ShaderUtil.createShaderVFFormPath(getClass().getName(),
                 VERT_PATH, FRAG_PATH);
         program = new ShaderProgram(programId);
-        // 创建后立即保存 uniform/UBO location(实例规范)
+        // 创建后立即保存 uniform/UBO location
         program.location = new int[] {
                 program.getUniformIndex("modelMatrix"),
                 program.getUniformIndex("size"),
@@ -194,8 +174,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public EnumSet<CombatEngineLayers> getActiveLayers() {
-        // 顶层三图层之一：粒子系统之后渲染 (C8-S7 层序)；
-        // 成熟实例同款层选择
+        // 顶层三图层之一：粒子系统之后渲染
         return EnumSet.of(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
     }
 
@@ -213,12 +192,11 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         if (engine.isPaused()) {
             return;
         }
-        // 剔除依据是承载实体的位置 (C8-S7 硬规则 4)：常驻插件跟随玩家舰船
+        // 剔除依据是承载实体的位置：常驻插件跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
         // 战斗结束收尾：isCombatOver() = 结束标志 && 淡出完成。
         // 常驻插件必须在 advance 里主动失效驱动引擎移除并调用
         // cleanup() —— 战斗结束 destroyInstance 不调 cleanup()，等它等于每场泄漏
-        // (C8-S7 硬规则 3 的常驻版)
         if (engine.isCombatOver()) {
             valid = false;
         }
@@ -251,18 +229,16 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         if (program == null || sprite == null || vboId == 0) {
             return;
         }
-        // 运行时开关：每次使用点读取 (不缓存) —— 关闭 → 零 GL 提交 (开关只改变渲染路径
-        // 与显示成本；实例规范与陷阱 "关闭后仍走昂贵路径")
+        // 运行时开关：每次使用点读取 (不缓存) —— 关闭即零 GL 提交
         if (!runtimeEnabled) {
             return;
         }
-        // 每帧复核 shader 路径可用性：成熟实例每个使用点读取 BoxConfigs.isShaderEnable()
-        // 的姿势 (成熟实例各 helper)，失败路径零提交
+        // 每帧复核 shader 路径可用性，失败路径零提交
         if (!BoxConfigs.isShaderEnable() || !ShaderCore.isValid()) {
             return;
         }
         if (!program.isValid()) {
-            return; // 程序失效不得继续绑定 (实例陷阱)
+            return; // 程序失效不得继续绑定
         }
         // 战斗 viewport 的 alpha 保持 1.0；战斗结束淡出由引擎全屏变暗处理
         float alpha = viewport.getAlphaMult();
@@ -270,14 +246,12 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
 
-        // 矩阵 uniform：刚性变换 (旋转 + 平移)，列主序 16 float，transpose 必须 false；
-        // 布局同成熟实例 maintainAnchoredFloatBuffer
+        // 矩阵 uniform：刚性变换 (旋转 + 平移)，列主序 16 float，transpose 必须 false
         Vector2f center = entity.getLocation();
         float facing = engine.getPlayerShip().getFacing();
         matrixBuffer = buildAnchoredMatrix(center, facing, matrixBuffer);
 
-        // attribute：VBO 绑定 + long 偏移 (C19-S2 同款姿势；另有 FloatBuffer
-        // client 指针重载，本单元绑定 VBO 后使用 long 偏移)
+        // attribute：VBO 绑定 + long 偏移 (另有 FloatBuffer client 指针重载)
         int stride = FLOATS_PER_VERTEX * Float.BYTES;
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
         GL20.glVertexAttribPointer(0, 2, GL11.GL_FLOAT, false, stride, 0L);
@@ -285,7 +259,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, stride, 2L * Float.BYTES);
         GL20.glEnableVertexAttribArray(1);
 
-        program.active(); // 提交段开始；必须与 close() 配对 (实例规范)
+        program.active(); // 提交段开始；必须与 close() 配对
 
         // 矩阵提交：modelMatrix(uniform matrix4，列主序)
         GL20.glUniformMatrix4(program.location[0], false, matrixBuffer);
@@ -313,7 +287,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0); // 解绑，避免影响后续绘制者的纹理状态
 
         framesRendered++;
-        drawCalls++; // 一次 glDrawArrays = 一个 draw call(性能度量，见页面 "性能" 节)
+        drawCalls++; // 一次 glDrawArrays = 一个 draw call
     }
 
     /** 2D 刚性变换矩阵 (旋转 + 平移)，列主序 16 float；每帧复用缓冲 (clear/put/flip)。 */

@@ -10,13 +10,11 @@
 
 完成后，您将能够：
 
-- 解释 `rules.csv` 七列各自的归属与内部格式，并区分哪些列被加载器读取 (`notes` 不读)；
-- 解释规则的注册与合并方式：路径固定为 `data/campaign/rules.csv`，同文件重复 id 在加载期崩溃、跨文件重复 id 先到先得静默跳过、`#` 开头的行是注释行；
-- 解释匹配流程：按 `trigger` 分组 → 逐条求值条件 (首个失败短路)→ `FireBest` 分数竞争 (同分随机、`score:` 控制权重、跳过当前规则 id)→`FireAll` 执行全部命中规则 (可被 `FireAllIntercept` 整体拦截)；
-- 解释条件表达式的语法与判真规则：`$memkey.name` 变量解析 (无记忆键回落 `local`)、比较操作符、`=` 赋值 (只能出现在脚本列)、`!` 取反、行尾 `score:`、命令调用 (按 `ruleCommandPackages` 找类)，以及 `null` 为假、仅 `"true"` (忽略大小写) 与 `Boolean.TRUE` 为真的规则；
-- 解释结果三件套的执行方式：`script` 按顺序执行 (选项型命令由 `FireBest` / `FireAll` 提前执行)、`text` 按 `\nOR\n` 拆成变体随机取一条、`options` 的 `id:text` 与 `order:id:text` 两种格式，以及 `performTokenReplacement` 的文本替换链；
-- 创建含自定义规则的 `data/campaign/rules.csv` 与规则驱动对话入口类，并验证对话完整流程；
-- 从症状定位故障，沿数据文件 → 注册入口 → 运行使用方 → 可观察结果四个位置复核。
+- 在 `rules.csv` 中编写并合并自定义对话规则；
+- 使用 trigger、条件表达式与 `FireBest` 或 `FireAll` 选择规则；
+- 通过 script、text 和 options 生成对话内容与选项；
+- 创建规则驱动的交互入口并验证完整对话；
+- 根据匹配、文本和选项结果定位 Rules 故障。
 
 ## 前置知识
 
@@ -250,8 +248,8 @@ import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
 /**
  * 完整最小例：rules.csv 数据驱动对话的 Java 消费入口。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK
- * 一次性门控 (沿用 C10-S1 / C10-S5 的既有模式，每个注册项用各自的键)。
+ * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK
+ * 一次性门控 (每个注册项用各自的键)。
  *
  * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个初始
  * trigger 为 GearInRulesIntro 的对话；对话的文本、脚本与选项全部来自 data/campaign/rules.csv
@@ -270,7 +268,7 @@ public class GearInRulesIntro implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInRulesIntro() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override

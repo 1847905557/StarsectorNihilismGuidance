@@ -139,15 +139,7 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ## 对齐效果类的注册信息
 
-### 类名三处速查表
-
-注册列的值必须是完整类名，同样三处必须一致：
-
-| 位置 | 本例 (OnHit) |
-|---|---|
-| 文件路径 | `data/scripts/gearin/combat/GearInHitLogger.java` |
-| 文件内 `public class` 后 | `GearInHitLogger` |
-| 注册列值 | `data.scripts.gearin.combat.GearInHitLogger` |
+注册列的值必须是完整类名，同样三处必须一致：文件路径 `data/scripts/gearin/combat/GearInHitLogger.java`、文件内 `public class` 后的 `GearInHitLogger`、注册列值 `data.scripts.gearin.combat.GearInHitLogger`。
 
 `package` 行与目录对应、前两处拼起来等于第三处 —— 与船插同一套规则，只是注册列从 `hull_mods.csv` 的 `script` 换成了 `.proj` 的 `onHitEffect` / `.wpn` 的 `beamEffect`。
 

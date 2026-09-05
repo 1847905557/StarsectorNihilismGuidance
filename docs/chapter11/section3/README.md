@@ -10,14 +10,11 @@
 
 完成后，您将能够：
 
-- 列出市场 (market) 的结构：`MarketAPI` 名下挂哪些子集合 (身份与实体绑定、条件、产业、子市场、商品、人物、状态、memory、stats)，以及每个子集合从哪个 getter 进入；
-- 用代码路径在生涯里创建一个市场：`FactoryAPI.createMarket` → `setFactionId` / `setPrimaryEntity` → `addCondition` / `addIndustry` / `addSubmarket` → `EconomyAPI.addMarket` → `SectorEntityToken.setMarket`。
-    - 并复述 "缺任何一步的失败形态"；
-- 区分三种原版子市场 (`Submarkets.SUBMARKET_OPEN` / `SUBMARKET_BLACK` / `SUBMARKET_STORAGE`) 的插件行为差异：税率、合法性、库存上限与稳定度的关系、是否参与经济、用户交易的 `PlayerEconomyImpactMode`；
-- 解释经济循环 (`EconomyAPI.advance` → 经济推进器 → 每月 `economyIterPerMonth` 次迭代 → 月末步 `updateStockpileAndPrice`) 的节奏。
-    - 以及 `nextStep()` / `doubleStep()` / `tripleStep()` 只允许在 UI 交互路径调用、`EconomyUpdateListener` 必须经 `EconomyAPI.addUpdateListener` 注册这两条必须遵守的规则；
-- 解释开放状态族 (`setFreePort` / `setHidden` / `setPlayerOwned` / `setSurveyLevel` / `setEconGroup` / tag) 各自改变什么可观察行为；
-- 从症状定位典型故障：市场不出现、实体没有市场归属、`getCargoNullOk()` 判空失败、后台调 `nextStep` 卡顿、监听器永不回调、把全局基础价当市场价、误删同 id 全部条件、用 `getMemory()` 做纯读取等。
+- 使用 `FactoryAPI` 创建市场，并完成势力、实体与经济集合绑定；
+- 配置市场条件、产业、子市场和开放状态；
+- 区分开放、黑市与仓储子市场的交易行为；
+- 读取市场商品，并观察经济迭代与更新监听器；
+- 根据实体、交易界面和日志定位市场故障。
 
 ## 前置知识
 
@@ -726,8 +723,7 @@ import com.fs.starfarer.api.campaign.econ.MarketAPI;
 /**
  * 市场巡检脚本 (EveryFrameScript 角色)：挂载后第一次 advance() 执行一次市场/子市场/
  * 经济对象巡检序列并自停 (isDone()=true，引擎下一帧自动移除本脚本)。注册入口：生涯回调
- * onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控
- * (沿用既有模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
+ * onGameLoad，persistent data 键 REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  */
 public class GearInMarketInspector implements EveryFrameScript {
 
@@ -743,7 +739,7 @@ public class GearInMarketInspector implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInMarketInspector() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     /** 修改巡检目标市场；改回 null 时回退到 "第一个有开放市场的市场"。 */

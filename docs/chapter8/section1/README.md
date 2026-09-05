@@ -155,7 +155,7 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 完整最小例：战斗引擎状态读取 —— 上下文、时间、暂停与战斗结果。
  *
- * 本插件由战斗上下文注册 (C8-S3 的插件模型)，只在本场战斗内有效：
+ * 本插件由战斗上下文注册，只在本场战斗内有效：
  * - 状态读取只使用当前战斗的引擎引用；
  * - advance() 在暂停时仍可能被调用，状态推进前必须检查 engine.isPaused()；
  * - getWinningSideId() 只表示胜者侧，战斗结束判定使用 isCombatOver()。
@@ -239,15 +239,19 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 ## 故障分析
 
 - **战斗类型判断错误**：把 `isSimulation()`、`isInCampaignSim()` 和 `isMission()` 当作同一个状态。
+
     - **解决方案**：同时记录三个方法和 `getMissionId()`，按照实际战斗入口选择判断条件。
 
 - **暂停期间计时继续推进**：在 `isPaused()` 判断前累计 `amount`。
+
     - **解决方案**：把状态推进和报告间隔放到暂停守卫之后。
 
 - **胜者尚未确定却提前收尾**：用 `getWinningSideId() != -1` 代替战斗结束判定。
+
     - **解决方案**：用 `isCombatOver()` 判定收尾，再读取 `getWinningSideId()` 记录结果。
 
 - **界面提示出现在错误阶段**：没有检查对话框、HUD 或自动驾驶状态。
+
     - **解决方案**：在显示提示前读取对应的界面状态方法。
 
 ## 总结

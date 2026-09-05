@@ -8,7 +8,7 @@ import com.fs.starfarer.api.EveryFrameScript;
  *
  * 两个服务演示脚本 (势力 / 货物) 都继承本类，各自只实现 runDemo()，
  * 避免每个演示类重复 EveryFrameScript 的骨架方法。本类是抽象基类，不参与任何注册；
- * 各子类的注册在 onGameLoad 的 persistent data 门内各自执行 (见页面调用点片段)。
+ * 各子类的注册在 onGameLoad 的 persistent data 门内各自执行。
  */
 public abstract class GearInOneShotScript implements EveryFrameScript {
 
@@ -16,7 +16,7 @@ public abstract class GearInOneShotScript implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInOneShotScript() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override

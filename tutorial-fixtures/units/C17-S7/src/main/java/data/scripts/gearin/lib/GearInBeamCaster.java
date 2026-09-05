@@ -41,8 +41,13 @@ public class GearInBeamCaster {
         }
     }
 
-    public float getBeamCharge() { return beamCharge; }
-    public int getBeamCount() { return beamCount; }
+    public float getBeamCharge() {
+        return beamCharge;
+    }
+
+    public int getBeamCount() {
+        return beamCount;
+    }
 
     /** 向最近可见敌舰发射一条伪光束：视觉立即生成，伤害在调用内瞬时结算。 */
     private void fireBeam() {
@@ -50,7 +55,7 @@ public class GearInBeamCaster {
         if (player == null || !player.isAlive()) {
             return;
         }
-        ShipAPI enemy = AIUtils.getNearestEnemy(player); // @Nullable：判空方式见 C17-S3
+        ShipAPI enemy = AIUtils.getNearestEnemy(player); // @Nullable：判空后使用
         if (enemy == null) {
             LOG.info("GearIn magic beam: no enemy in sight");
             return;

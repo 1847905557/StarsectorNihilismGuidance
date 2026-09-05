@@ -15,8 +15,8 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * (本单元 GearInDayAccumulatorScript)。runWhilePaused() 返回 false；字段只有
  * int，可随存档序列化 (XStream 存档边界)，脚本随存档保存、读档后继续。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，注册前用 persistent data
- * 键 REGISTER_MARK 做一次性门控 (C7-S1 的 CLASS_MARK 模式)，键与调用点片段逐字一致。
+ * 注册入口：生涯回调 onGameLoad，注册前用 persistent data
+ * 键 REGISTER_MARK 做一次性门控。
  */
 public class GearInCalendarDayScript implements EveryFrameScript {
 

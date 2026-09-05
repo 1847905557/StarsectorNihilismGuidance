@@ -2,9 +2,9 @@ package data.scripts.gearin.lib;
 
 import java.awt.Color;
 
+import org.boxutil.units.standard.attribute.Instance2Data;
 import org.boxutil.units.standard.entity.DistortionEntity;
 import org.boxutil.units.standard.entity.FlareEntity;
-import org.boxutil.units.standard.attribute.Instance2Data;
 import org.boxutil.util.RenderingUtil;
 import org.lwjgl.util.vector.Vector2f;
 

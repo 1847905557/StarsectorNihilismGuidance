@@ -10,12 +10,11 @@
 
 完成后，您将能够：
 
-- 用 `SectorAPI.createStarSystem` 与 `StarSystemAPI.initStar` 建立恒星系，区分 4/6/7 参数变体，并验证 `autogenerateHyperspaceJumpPoints` 生成的超空间入口；
-- 用 `addPlanet` / `addCustomEntity` / `addAsteroidBelt` / `createToken` 创建并放置实体，选择正确的放置方式，解释 `createToken` 的 "初始不在容器" 语义与 token 上 `setFixedLocation` 空实现的陷阱；
-- 用地点级与星区级查询读取实体，并解释 `getEntityById` / `getEntitiesWithTag` 的覆盖范围、id 匹配规则与 "移除后不再命中"；
-- 区分访问状态的更新来源与可观察结果：地点级 `isCurrentLocation` / `activeThisFrame`、实体级 `isInCurrentLocation` / `isInHyperspace` / `isAlive`、星系级 `isEnteredByPlayer` / `getDaysSinceLastPlayerVisit`；
-- 编写五个协作类接入既有插件，验证新建生涯、跳入星系、暂停、读档与战斗各阶段的日志输出；
-- 从症状定位故障：星系无超空间入口、实体查不到或堆在原点、token 位置不动、`isAlive` 误判、推进中移除星系抛异常。
+- 使用 `createStarSystem`、`initStar` 和跳跃点生成器建立可进入的恒星系；
+- 创建并放置行星、自定义实体、小行星带与位置 token；
+- 区分地点级与星区级查询，并按 ID 或标签读取实体；
+- 读取地点、实体和星系的当前访问状态；
+- 根据地图与日志定位入口、位置和实体查询故障。
 
 ## 前置知识
 
@@ -65,7 +64,7 @@
 | 脚本 | `addScript` / `removeScript` / `removeScriptsOfClass` / `getScripts` | 地点级每帧脚本，推进节奏跟随地点 |
 | 状态 | `isCurrentLocation` / `activeThisFrame` / `isHyperspace` / `isNebula` / `isDeepSpace` / `getLastPlayerVisitTimestamp` / `getDaysSinceLastPlayerVisit` | 访问状态 |
 | 数据 | `getPersistentData` / `getMemoryWithoutUpdate` | 地点级持久 Map 与 memory |
-| 背景 | `getBackgroundTextureFilename` / `setBackgroundTextureFilename` / `setBackgroundOffset` / `getBackgroundColorShifter` | 背景贴图与偏移 (星系创建主题已用，[C3-S4]) |
+| 背景 | `getBackgroundTextureFilename` / `setBackgroundTextureFilename` / `setBackgroundOffset` / `getBackgroundColorShifter` | 背景贴图与偏移 |
 | 星系特化 | `isInConstellation` / `getConstellation` | 恒星系实现为星座成员判断，超空间恒为 false / null |
 
 容器关键行为：
@@ -106,8 +105,8 @@
 | 签名 | 超空间坐标 | 超空间锚点 | 其他 |
 |---|---|---|---|
 | `initStar(id, type, radius, coronaSize)` | 设置 (查 starmap.json 的 `starSystemLocations`，与 7 参一致)| 不生成 | 默认日冕参数 `windBurnLevel=10` / `flareProbability=0.25` / `crLossMult=3` |
-| `initStar(id, type, radius, coronaSize, windBurn, flare, crLoss)` | 用恒星 id 查 starmap.json 的 `starSystemLocations`(查不到保持 (0,0)，[C3-S4] 知识) | **不生成** | 完整日冕参数；[C3-S4] 的 `GearIn` 星系用此变体 |
-| `initStar(id, type, radius, hyperX, hyperY, coronaSize)` | 显式设置 | **自动生成超空间锚点** | 本节示例用此变体；跳跃点仍由 `autogenerateHyperspaceJumpPoints` 生成 |
+| `initStar(id, type, radius, coronaSize, windBurn, flare, crLoss)` | 用恒星 id 查 starmap.json 的 `starSystemLocations`(查不到保持 (0,0)，[C3-S4] 知识) | **不生成** | 完整日冕参数 |
+| `initStar(id, type, radius, hyperX, hyperY, coronaSize)` | 显式设置 | **自动生成超空间锚点** | 跳跃点仍由 `autogenerateHyperspaceJumpPoints` 生成 |
 
 `initStar` 内部：移除旧星、创建新恒星实体并加入容器、按变体查 starmap 或写坐标、`addCorona`。
 
@@ -240,12 +239,12 @@ token 的两个陷阱 (本节重点)
 
 ```java
 public static StarSystemAPI getOrCreate(SectorAPI sector) {
-	StarSystemAPI system = sector.getStarSystem(SYSTEM_UNIQUE_ID);
-	if (system != null) {
-		LOG.info("GearIn loc: demo system already exists, reusing id=" + system.getId());
-		return system;
-	}
-	return create(sector);
+    StarSystemAPI system = sector.getStarSystem(SYSTEM_UNIQUE_ID);
+    if (system != null) {
+        LOG.info("GearIn loc: demo system already exists, reusing id=" + system.getId());
+        return system;
+    }
+    return create(sector);
 }
 ```
 
@@ -258,10 +257,10 @@ public static StarSystemAPI getOrCreate(SectorAPI sector) {
 ```java
 PlanetAPI star = system.initStar(STAR_ID, "star_white", 600f, 7500f, 8500f, 400f);
 PlanetAPI planet = system.addPlanet(
-		PLANET_ID, star, "GearIn Demo Prime", "terran", 55, 150, 3200, 120);
+        PLANET_ID, star, "GearIn Demo Prime", "terran", 55, 150, 3200, 120);
 
 SectorEntityToken beacon = system.addCustomEntity(
-		BEACON_ID, "GearIn 演示信标", "stable_location", "neutral");
+        BEACON_ID, "GearIn 演示信标", "stable_location", "neutral");
 beacon.setLocation(1400f, 900f);
 beacon.addTag(BEACON_TAG);
 system.addAsteroidBelt(planet, 40, 600, 100, 120, 160);
@@ -276,11 +275,11 @@ system.addAsteroidBelt(planet, 40, 600, 100, 120, 160);
 ```java
 SectorEntityToken token = system.createToken(0f, 0f);
 LOG.info("GearIn loc: token before add | inList="
-		+ system.getAllEntities().contains(token));
+        + system.getAllEntities().contains(token));
 token.setLocation(-2000f, -1500f);
 system.addEntity(token);
 LOG.info("GearIn loc: token after add | byId="
-		+ (system.getEntityById(token.getId()) != null));
+        + (system.getEntityById(token.getId()) != null));
 ```
 
 生效后，两条日志依次给出 `inList=false` 与 `byId=true`；这也证明 token 的创建和容器持有是两个独立动作。
@@ -293,9 +292,9 @@ LOG.info("GearIn loc: token after add | byId="
 demoSystem = GearInLocationSystemBuilder.getOrCreate(Global.getSector());
 beacon = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
 if (beacon == null) {
-	LOG.error("GearIn loc: beacon not found in demo system, demos disabled");
-	broken = true;
-	return;
+    LOG.error("GearIn loc: beacon not found in demo system, demos disabled");
+    broken = true;
+    return;
 }
 accessStateLogger = new GearInAccessStateLogger(demoSystem, beacon);
 containerCheck = new GearInContainerCheck(demoSystem, beacon);
@@ -311,13 +310,13 @@ setupDone = true;
 ```java
 LocationAPI current = Global.getSector().getCurrentLocation();
 if (accessStateLogger.logLocationChangeIfChanged(current) && current == demoSystem) {
-	accessStateLogger.logEnteredDemoSystem();
+    accessStateLogger.logEnteredDemoSystem();
 }
 
 sinceLastLog += amount;
 if (sinceLastLog >= LOG_INTERVAL) {
-	sinceLastLog = 0f;
-	accessStateLogger.logStateSummary();
+    sinceLastLog = 0f;
+    accessStateLogger.logStateSummary();
 }
 ```
 
@@ -330,17 +329,17 @@ if (sinceLastLog >= LOG_INTERVAL) {
 ```java
 boolean aliveBefore = beacon.isAlive();
 SectorEntityToken byIdBefore = demoSystem.getEntityById(
-		GearInLocationSystemBuilder.BEACON_ID);
+        GearInLocationSystemBuilder.BEACON_ID);
 
 demoSystem.removeEntity(beacon);
 boolean aliveAfterRemove = beacon.isAlive();
 SectorEntityToken byIdAfterRemove = demoSystem.getEntityById(
-		GearInLocationSystemBuilder.BEACON_ID);
+        GearInLocationSystemBuilder.BEACON_ID);
 
 demoSystem.addEntity(beacon);
 boolean aliveAfterReadd = beacon.isAlive();
 SectorEntityToken byIdAfterReadd = demoSystem.getEntityById(
-		GearInLocationSystemBuilder.BEACON_ID);
+        GearInLocationSystemBuilder.BEACON_ID);
 ```
 
 生效后，普通实体的 `isAlive` 与按 ID 查询均呈现 `true → false → true`，信标重新出现在星系实体集合中。
@@ -614,80 +613,80 @@ import com.fs.starfarer.api.campaign.StarSystemAPI;
 
 /**
  * 完整最小例：LocationAPI / StarSystemAPI 实体容器与访问状态 (日志前缀 "GearIn loc")。
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，REGISTER_MARK 一次性门控
- * (C7-S1 的 CLASS_MARK 模式)。编排：星系创建/复用、访问状态记录、容器核验与
- * 周期摘要，分别委托给 GearInLocationSystemBuilder / GearInAccessStateLogger / GearInContainerCheck。
+ * 注册入口：生涯回调 onGameLoad，REGISTER_MARK 一次性门控。编排：星系创建/复用、
+ * 访问状态记录、容器核验与周期摘要，分别委托给
+ * GearInLocationSystemBuilder / GearInAccessStateLogger / GearInContainerCheck。
  */
 public class GearInLocationScript implements EveryFrameScript {
-	/** 存档持久化标记：本脚本是否已在该存档注册过 (随存档保存)。 */
-	public static final String REGISTER_MARK = "GearIn_LocationScript";
-	private static final Logger LOG = Global.getLogger(GearInLocationScript.class);
+    /** 存档持久化标记：本脚本是否已在该存档注册过 (随存档保存)。 */
+    public static final String REGISTER_MARK = "GearIn_LocationScript";
+    private static final Logger LOG = Global.getLogger(GearInLocationScript.class);
 
-	/** 状态摘要日志的最小间隔 (真实秒)。 */
-	private static final float LOG_INTERVAL = 10f;
+    /** 状态摘要日志的最小间隔 (真实秒)。 */
+    private static final float LOG_INTERVAL = 10f;
 
-	private boolean setupDone = false;
-	private boolean broken = false;
-	private boolean enterDone = false;
-	private float sinceLastLog = 0f;
-	/** 随存档序列化的引用：演示星系与实体 (存档图内持久对象，可安全放脚本字段)。 */
-	private StarSystemAPI demoSystem;
-	private SectorEntityToken beacon;
-	private GearInAccessStateLogger accessStateLogger;
-	private GearInContainerCheck containerCheck;
+    private boolean setupDone = false;
+    private boolean broken = false;
+    private boolean enterDone = false;
+    private float sinceLastLog = 0f;
+    /** 随存档序列化的引用：演示星系与实体 (存档图内持久对象，可安全放脚本字段)。 */
+    private StarSystemAPI demoSystem;
+    private SectorEntityToken beacon;
+    private GearInAccessStateLogger accessStateLogger;
+    private GearInContainerCheck containerCheck;
 
-	public GearInLocationScript() {
-		// 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
-	}
+    public GearInLocationScript() {
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
+    }
 
-	@Override
-	public boolean isDone() {
-		return false;
-	}
+    @Override
+    public boolean isDone() {
+        return false;
+    }
 
-	@Override
-	public boolean runWhilePaused() {
-		return false;
-	}
+    @Override
+    public boolean runWhilePaused() {
+        return false;
+    }
 
-	@Override
-	public void advance(float amount) {
-		if (!setupDone) {
-			setup();
-			if (broken) {
-				return;
-			}
-		}
+    @Override
+    public void advance(float amount) {
+        if (!setupDone) {
+            setup();
+            if (broken) {
+                return;
+            }
+        }
 
-		LocationAPI current = Global.getSector().getCurrentLocation();
-		if (accessStateLogger.logLocationChangeIfChanged(current) && current == demoSystem) {
-			accessStateLogger.logEnteredDemoSystem();
-		}
-		if (!enterDone && demoSystem.isCurrentLocation()) {
-			enterDone = true;
-			containerCheck.runRemoveAddCheck();
-		}
+        LocationAPI current = Global.getSector().getCurrentLocation();
+        if (accessStateLogger.logLocationChangeIfChanged(current) && current == demoSystem) {
+            accessStateLogger.logEnteredDemoSystem();
+        }
+        if (!enterDone && demoSystem.isCurrentLocation()) {
+            enterDone = true;
+            containerCheck.runRemoveAddCheck();
+        }
 
-		sinceLastLog += amount;
-		if (sinceLastLog >= LOG_INTERVAL) {
-			sinceLastLog = 0f;
-			accessStateLogger.logStateSummary();
-		}
-	}
+        sinceLastLog += amount;
+        if (sinceLastLog >= LOG_INTERVAL) {
+            sinceLastLog = 0f;
+            accessStateLogger.logStateSummary();
+        }
+    }
 
-	/** 首帧准备：演示星系复用或创建，取回信标引用，装配辅助角色。 */
-	private void setup() {
-		demoSystem = GearInLocationSystemBuilder.getOrCreate(Global.getSector());
-		beacon = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
-		if (beacon == null) {
-			LOG.error("GearIn loc: beacon not found in demo system, demos disabled");
-			broken = true;
-			return;
-		}
-		accessStateLogger = new GearInAccessStateLogger(demoSystem, beacon);
-		containerCheck = new GearInContainerCheck(demoSystem, beacon);
-		setupDone = true;
-	}
+    /** 首帧准备：演示星系复用或创建，取回信标引用，装配辅助角色。 */
+    private void setup() {
+        demoSystem = GearInLocationSystemBuilder.getOrCreate(Global.getSector());
+        beacon = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
+        if (beacon == null) {
+            LOG.error("GearIn loc: beacon not found in demo system, demos disabled");
+            broken = true;
+            return;
+        }
+        accessStateLogger = new GearInAccessStateLogger(demoSystem, beacon);
+        containerCheck = new GearInContainerCheck(demoSystem, beacon);
+        setupDone = true;
+    }
 }
 ```
 
@@ -711,70 +710,70 @@ import com.fs.starfarer.api.campaign.StarSystemAPI;
  * GearInLocationScript.setup 调用：星系已存在则复用，否则创建并记录日志。
  */
 public class GearInLocationSystemBuilder {
-	/** 演示星系查询键：SectorAPI.getStarSystem 用 optionalUniqueId 或基名小写匹配。 */
-	public static final String SYSTEM_UNIQUE_ID = "GearIn_demo";
-	/** 本单元专属实体 ID(与 C3-S4 的 GearIn 星系既有 ID 互不冲突)。 */
-	public static final String STAR_ID = "GearIn_demo_star";
-	public static final String PLANET_ID = "GearIn_demo_planet1";
-	public static final String BEACON_ID = "GearIn_demo_beacon";
-	public static final String BEACON_TAG = "GearIn_demo_tag";
-	private static final Logger LOG = Global.getLogger(GearInLocationSystemBuilder.class);
+    /** 演示星系查询键：SectorAPI.getStarSystem 用 optionalUniqueId 或基名小写匹配。 */
+    public static final String SYSTEM_UNIQUE_ID = "GearIn_demo";
+    /** 本单元专属实体 ID。 */
+    public static final String STAR_ID = "GearIn_demo_star";
+    public static final String PLANET_ID = "GearIn_demo_planet1";
+    public static final String BEACON_ID = "GearIn_demo_beacon";
+    public static final String BEACON_TAG = "GearIn_demo_tag";
+    private static final Logger LOG = Global.getLogger(GearInLocationSystemBuilder.class);
 
-	private GearInLocationSystemBuilder() {
-		// 工具类：实例化由调用方承担 (静态入口 getOrCreate)
-	}
+    private GearInLocationSystemBuilder() {
+        // 工具类：实例化由调用方承担 (静态入口 getOrCreate)
+    }
 
-	/** 演示星系存在则复用，否则创建；返回可用的星系。 */
-	public static StarSystemAPI getOrCreate(SectorAPI sector) {
-		StarSystemAPI system = sector.getStarSystem(SYSTEM_UNIQUE_ID);
-		if (system != null) {
-			LOG.info("GearIn loc: demo system already exists, reusing id=" + system.getId());
-			return system;
-		}
-		return create(sector);
-	}
+    /** 演示星系存在则复用，否则创建；返回可用的星系。 */
+    public static StarSystemAPI getOrCreate(SectorAPI sector) {
+        StarSystemAPI system = sector.getStarSystem(SYSTEM_UNIQUE_ID);
+        if (system != null) {
+            LOG.info("GearIn loc: demo system already exists, reusing id=" + system.getId());
+            return system;
+        }
+        return create(sector);
+    }
 
-	/** 创建演示星系并填充实体，返回创建结果。 */
-	private static StarSystemAPI create(SectorAPI sector) {
-		StarSystemAPI system = sector.createStarSystem("GearIn Demo");
-		system.setOptionalUniqueId(SYSTEM_UNIQUE_ID);
+    /** 创建演示星系并填充实体，返回创建结果。 */
+    private static StarSystemAPI create(SectorAPI sector) {
+        StarSystemAPI system = sector.createStarSystem("GearIn Demo");
+        system.setOptionalUniqueId(SYSTEM_UNIQUE_ID);
 
-		// 6 参数 initStar：同时把星系定位到超空间坐标 (7500, 8500)，并自动生成超空间锚点；
-		// 7 参数 initStar 不生成锚点；坐标查 starmap.json 的 starSystemLocations 写入。
-		PlanetAPI star = system.initStar(STAR_ID, "star_white", 600f, 7500f, 8500f, 400f);
+        // 6 参数 initStar：同时把星系定位到超空间坐标 (7500, 8500)，并自动生成超空间锚点；
+        // 7 参数 initStar 不生成锚点；坐标查 starmap.json 的 starSystemLocations 写入。
+        PlanetAPI star = system.initStar(STAR_ID, "star_white", 600f, 7500f, 8500f, 400f);
 
-		// addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)；
-		// 非恒星行星会被自动挂一个 condition-only 市场 (Misc.initConditionMarket)，
-		// 因此 addPlanet 之后 getMarket() 立即非 null(正式市场流程归 C11-S2)。
-		PlanetAPI planet = system.addPlanet(PLANET_ID, star, "GearIn Demo Prime", "terran", 55, 150, 3200, 120);
+        // addPlanet(id, 轨道焦点, 显示名, 类型id, 轨道角, 半径, 轨道半径, 轨道周期天数)；
+        // 非恒星行星会被自动挂一个 condition-only 市场 (Misc.initConditionMarket)，
+        // 因此 addPlanet 之后 getMarket() 立即非 null。
+        PlanetAPI planet = system.addPlanet(PLANET_ID, star, "GearIn Demo Prime", "terran", 55, 150, 3200, 120);
 
-		// 自定义实体：type 是 data/config/custom_entities.json 里的键 ("stable_location" 为原版键)，
-		// factionId 缺省为 neutral；创建后实体位于 (0,0)，必须显式放置。
-		SectorEntityToken beacon = system.addCustomEntity(BEACON_ID, "GearIn 演示信标", "stable_location", "neutral");
-		beacon.setLocation(1400f, 900f);
-		beacon.addTag(BEACON_TAG);
+        // 自定义实体：type 是 data/config/custom_entities.json 里的键 ("stable_location" 为原版键)，
+        // factionId 缺省为 neutral；创建后实体位于 (0,0)，必须显式放置。
+        SectorEntityToken beacon = system.addCustomEntity(BEACON_ID, "GearIn 演示信标", "stable_location", "neutral");
+        beacon.setLocation(1400f, 900f);
+        beacon.addTag(BEACON_TAG);
 
-		// 小行星带 = terrain 实体 (默认 terrain id "asteroid_belt")，围绕行星
-		system.addAsteroidBelt(planet, 40, 600, 100, 120, 160);
+        // 小行星带 = terrain 实体 (默认 terrain id "asteroid_belt")，围绕行星
+        system.addAsteroidBelt(planet, 40, 600, 100, 120, 160);
 
-		// 位置 token 的创建与容器语义见 GearInTokenCreator
-		GearInTokenCreator.create(system);
+        // 位置 token 的创建与容器语义见 GearInTokenCreator
+        GearInTokenCreator.create(system);
 
-		// 必须调用；initStar 的带坐标变体只生成超空间锚点，不生成跳跃点
-		system.autogenerateHyperspaceJumpPoints(true, false);
+        // 必须调用；initStar 的带坐标变体只生成超空间锚点，不生成跳跃点
+        system.autogenerateHyperspaceJumpPoints(true, false);
 
-		LOG.info(String.format(
-				"GearIn loc: created system id=%s name=%s | star=%s planet=%s | anchor=%s | hyperJumpPoints=%d | hyperLoc=(%.0f, %.0f)",
-				system.getId(),
-				system.getName(),
-				star.getName(),
-				planet.getName(),
-				system.getHyperspaceAnchor() != null,
-				system.getAutogeneratedJumpPointsInHyper().size(),
-				system.getLocation().x,
-				system.getLocation().y));
-		return system;
-	}
+        LOG.info(String.format(
+                "GearIn loc: created system id=%s name=%s | star=%s planet=%s | anchor=%s | hyperJumpPoints=%d | hyperLoc=(%.0f, %.0f)",
+                system.getId(),
+                system.getName(),
+                star.getName(),
+                planet.getName(),
+                system.getHyperspaceAnchor() != null,
+                system.getAutogeneratedJumpPointsInHyper().size(),
+                system.getLocation().x,
+                system.getLocation().y));
+        return system;
+    }
 }
 ```
 
@@ -793,32 +792,32 @@ import com.fs.starfarer.api.campaign.StarSystemAPI;
 
 /**
  * 角色：位置 token 创建 (LocationAPI.createToken 语义演示)。
- * 被 GearInLocationSystemBuilder 在填充星系时调用：createToken 初始不在实体集合里
- * (javadoc 原文)，需要轨道或被按 id 查询时，必须先 addEntity 加入容器。
+ * 被 GearInLocationSystemBuilder 在填充星系时调用：createToken 初始不在实体集合里，
+ * 需要轨道或被按 id 查询时，必须先 addEntity 加入容器。
  */
 public class GearInTokenCreator {
 
-	private static final Logger LOG = Global.getLogger(GearInTokenCreator.class);
+    private static final Logger LOG = Global.getLogger(GearInTokenCreator.class);
 
-	private GearInTokenCreator() {
-		// 工具类：实例化由调用方承担 (静态入口 create)
-	}
+    private GearInTokenCreator() {
+        // 工具类：实例化由调用方承担 (静态入口 create)
+    }
 
-	/** 创建并加入位置 token，记录 createToken 语义 (初始不在实体集合中)。 */
-	public static void create(StarSystemAPI system) {
-		SectorEntityToken token = system.createToken(0f, 0f);
-		LOG.info(String.format(
-				"GearIn loc: token created | id=%s | inList before add=%s | isAlive before add=%s",
-				token.getId(),
-				system.getAllEntities().contains(token),
-				token.isAlive()));
-		token.setLocation(-2000f, -1500f);
-		system.addEntity(token);
-		LOG.info(String.format(
-				"GearIn loc: token added | inList after add=%s | byId found=%s",
-				system.getAllEntities().contains(token),
-				system.getEntityById(token.getId()) != null));
-	}
+    /** 创建并加入位置 token，记录 createToken 语义 (初始不在实体集合中)。 */
+    public static void create(StarSystemAPI system) {
+        SectorEntityToken token = system.createToken(0f, 0f);
+        LOG.info(String.format(
+                "GearIn loc: token created | id=%s | inList before add=%s | isAlive before add=%s",
+                token.getId(),
+                system.getAllEntities().contains(token),
+                token.isAlive()));
+        token.setLocation(-2000f, -1500f);
+        system.addEntity(token);
+        LOG.info(String.format(
+                "GearIn loc: token added | inList after add=%s | byId found=%s",
+                system.getAllEntities().contains(token),
+                system.getEntityById(token.getId()) != null));
+    }
 }
 ```
 
@@ -844,79 +843,79 @@ import com.fs.starfarer.api.campaign.StarSystemAPI;
  * (location 变化、进入演示星系、周期摘要) 由 GearInLocationScript 调用。
  */
 public class GearInAccessStateLogger {
-	private static final Logger LOG = Global.getLogger(GearInAccessStateLogger.class);
-	private final StarSystemAPI demoSystem;
-	private final SectorEntityToken beacon;
-	private String lastPlayerLocationId = null;
+    private static final Logger LOG = Global.getLogger(GearInAccessStateLogger.class);
+    private final StarSystemAPI demoSystem;
+    private final SectorEntityToken beacon;
+    private String lastPlayerLocationId = null;
 
-	public GearInAccessStateLogger(StarSystemAPI demoSystem, SectorEntityToken beacon) {
-		this.demoSystem = demoSystem;
-		this.beacon = beacon;
-	}
+    public GearInAccessStateLogger(StarSystemAPI demoSystem, SectorEntityToken beacon) {
+        this.demoSystem = demoSystem;
+        this.beacon = beacon;
+    }
 
-	/** 玩家所在 location 变化时记录访问状态；返回是否发生了变化。 */
-	public boolean logLocationChangeIfChanged(LocationAPI current) {
-		String currentId = current == null ? null : current.getId();
-		if (lastPlayerLocationId != null && lastPlayerLocationId.equals(currentId)) {
-			return false;
-		}
-		String oldId = lastPlayerLocationId;
-		lastPlayerLocationId = currentId;
-		StringBuilder sb = new StringBuilder("GearIn loc: player location change");
-		if (oldId == null) {
-			sb.append(" | first observed: ");
-		} else {
-			sb.append(" | ").append(oldId).append(" -> ");
-		}
-		sb.append(currentId);
-		if (current != null) {
-			sb.append(" [name=").append(current.getName())
-					.append(", isHyperspace=").append(current.isHyperspace())
-					.append(", isCurrentLocation=").append(current.isCurrentLocation())
-					.append(", activeThisFrame=").append(current.activeThisFrame())
-					.append("]");
-		}
-		LOG.info(sb.toString());
-		return true;
-	}
+    /** 玩家所在 location 变化时记录访问状态；返回是否发生了变化。 */
+    public boolean logLocationChangeIfChanged(LocationAPI current) {
+        String currentId = current == null ? null : current.getId();
+        if (lastPlayerLocationId != null && lastPlayerLocationId.equals(currentId)) {
+            return false;
+        }
+        String oldId = lastPlayerLocationId;
+        lastPlayerLocationId = currentId;
+        StringBuilder sb = new StringBuilder("GearIn loc: player location change");
+        if (oldId == null) {
+            sb.append(" | first observed: ");
+        } else {
+            sb.append(" | ").append(oldId).append(" -> ");
+        }
+        sb.append(currentId);
+        if (current != null) {
+            sb.append(" [name=").append(current.getName())
+                    .append(", isHyperspace=").append(current.isHyperspace())
+                    .append(", isCurrentLocation=").append(current.isCurrentLocation())
+                    .append(", activeThisFrame=").append(current.activeThisFrame())
+                    .append("]");
+        }
+        LOG.info(sb.toString());
+        return true;
+    }
 
-	/** 玩家刚进入演示星系：记录访问状态与实体状态。 */
-	public void logEnteredDemoSystem() {
-		LOG.info(String.format(
-				"GearIn loc: demo system entered | isEnteredByPlayer=%s | daysSinceLastVisit=%s | beacon.isInCurrentLocation=%s | beacon.isAlive=%s",
-				demoSystem.isEnteredByPlayer(),
-				formatDays(demoSystem.getDaysSinceLastPlayerVisit()),
-				beacon.isInCurrentLocation(),
-				beacon.isAlive()));
-	}
+    /** 玩家刚进入演示星系：记录访问状态与实体状态。 */
+    public void logEnteredDemoSystem() {
+        LOG.info(String.format(
+                "GearIn loc: demo system entered | isEnteredByPlayer=%s | daysSinceLastVisit=%s | beacon.isInCurrentLocation=%s | beacon.isAlive=%s",
+                demoSystem.isEnteredByPlayer(),
+                formatDays(demoSystem.getDaysSinceLastPlayerVisit()),
+                beacon.isInCurrentLocation(),
+                beacon.isAlive()));
+    }
 
-	/** 周期状态摘要：演示星系的实体集合与访问状态。 */
-	public void logStateSummary() {
-		LocationAPI current = Global.getSector().getCurrentLocation();
-		List<SectorEntityToken> entities = demoSystem.getAllEntities();
-		LOG.info(String.format(
-				"GearIn loc: state | current=%s (id=%s) | demoSystem.isCurrentLocation=%s activeThisFrame=%s enteredByPlayer=%s daysSinceVisit=%s | entities=%d planets=%d terrains=%d custom=%d | beacon isAlive=%s inList=%s",
-				current == null ? "null" : current.getName(),
-				current == null ? "null" : current.getId(),
-				demoSystem.isCurrentLocation(),
-				demoSystem.activeThisFrame(),
-				demoSystem.isEnteredByPlayer(),
-				formatDays(demoSystem.getDaysSinceLastPlayerVisit()),
-				entities.size(),
-				demoSystem.getPlanets().size(),
-				demoSystem.getTerrainCopy().size(),
-				demoSystem.getCustomEntities().size(),
-				beacon.isAlive(),
-				entities.contains(beacon)));
-	}
+    /** 周期状态摘要：演示星系的实体集合与访问状态。 */
+    public void logStateSummary() {
+        LocationAPI current = Global.getSector().getCurrentLocation();
+        List<SectorEntityToken> entities = demoSystem.getAllEntities();
+        LOG.info(String.format(
+                "GearIn loc: state | current=%s (id=%s) | demoSystem.isCurrentLocation=%s activeThisFrame=%s enteredByPlayer=%s daysSinceVisit=%s | entities=%d planets=%d terrains=%d custom=%d | beacon isAlive=%s inList=%s",
+                current == null ? "null" : current.getName(),
+                current == null ? "null" : current.getId(),
+                demoSystem.isCurrentLocation(),
+                demoSystem.activeThisFrame(),
+                demoSystem.isEnteredByPlayer(),
+                formatDays(demoSystem.getDaysSinceLastPlayerVisit()),
+                entities.size(),
+                demoSystem.getPlanets().size(),
+                demoSystem.getTerrainCopy().size(),
+                demoSystem.getCustomEntities().size(),
+                beacon.isAlive(),
+                entities.contains(beacon)));
+    }
 
-	/** Float.MAX_VALUE 表示从未访问过 (getDaysSinceLastPlayerVisit 语义)。 */
-	private static String formatDays(float days) {
-		if (days >= Float.MAX_VALUE) {
-			return "never";
-		}
-		return String.format("%.1f", days);
-	}
+    /** Float.MAX_VALUE 表示从未访问过 (getDaysSinceLastPlayerVisit 语义)。 */
+    private static String formatDays(float days) {
+        if (days >= Float.MAX_VALUE) {
+            return "never";
+        }
+        return String.format("%.1f", days);
+    }
 }
 ```
 
@@ -940,43 +939,43 @@ import com.fs.starfarer.api.campaign.StarSystemAPI;
  */
 public class GearInContainerCheck {
 
-	private static final Logger LOG = Global.getLogger(GearInContainerCheck.class);
+    private static final Logger LOG = Global.getLogger(GearInContainerCheck.class);
 
-	private final StarSystemAPI demoSystem;
-	private final SectorEntityToken beacon;
+    private final StarSystemAPI demoSystem;
+    private final SectorEntityToken beacon;
 
-	public GearInContainerCheck(StarSystemAPI demoSystem, SectorEntityToken beacon) {
-		this.demoSystem = demoSystem;
-		this.beacon = beacon;
-	}
+    public GearInContainerCheck(StarSystemAPI demoSystem, SectorEntityToken beacon) {
+        this.demoSystem = demoSystem;
+        this.beacon = beacon;
+    }
 
-	/** 移除/重新加入核验：只执行一次，展示 isAlive 与 getEntityById 的容器持有语义。 */
-	public void runRemoveAddCheck() {
-		LOG.info("GearIn loc: enter demo system first time - remove/add demo");
-		boolean aliveBefore = beacon.isAlive();
-		SectorEntityToken byIdBefore = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
+    /** 移除/重新加入核验：只执行一次，展示 isAlive 与 getEntityById 的容器持有语义。 */
+    public void runRemoveAddCheck() {
+        LOG.info("GearIn loc: enter demo system first time - remove/add demo");
+        boolean aliveBefore = beacon.isAlive();
+        SectorEntityToken byIdBefore = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
 
-		demoSystem.removeEntity(beacon);
-		boolean aliveAfterRemove = beacon.isAlive();
-		SectorEntityToken byIdAfterRemove = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
-		SectorEntityToken byIdSectorAfterRemove = Global.getSector().getEntityById(GearInLocationSystemBuilder.BEACON_ID);
-		boolean listContainsAfterRemove = demoSystem.getAllEntities().contains(beacon);
+        demoSystem.removeEntity(beacon);
+        boolean aliveAfterRemove = beacon.isAlive();
+        SectorEntityToken byIdAfterRemove = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
+        SectorEntityToken byIdSectorAfterRemove = Global.getSector().getEntityById(GearInLocationSystemBuilder.BEACON_ID);
+        boolean listContainsAfterRemove = demoSystem.getAllEntities().contains(beacon);
 
-		demoSystem.addEntity(beacon);
-		boolean aliveAfterReadd = beacon.isAlive();
-		SectorEntityToken byIdAfterReadd = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
+        demoSystem.addEntity(beacon);
+        boolean aliveAfterReadd = beacon.isAlive();
+        SectorEntityToken byIdAfterReadd = demoSystem.getEntityById(GearInLocationSystemBuilder.BEACON_ID);
 
-		LOG.info(String.format(
-				"GearIn loc: beacon | alive before=%s | byId before=%s | alive after remove=%s | byId after remove=%s | sector byId after remove=%s | inList after remove=%s | alive after re-add=%s | byId after re-add=%s",
-				aliveBefore,
-				byIdBefore != null,
-				aliveAfterRemove,
-				byIdAfterRemove != null,
-				byIdSectorAfterRemove != null,
-				listContainsAfterRemove,
-				aliveAfterReadd,
-				byIdAfterReadd != null));
-	}
+        LOG.info(String.format(
+                "GearIn loc: beacon | alive before=%s | byId before=%s | alive after remove=%s | byId after remove=%s | sector byId after remove=%s | inList after remove=%s | alive after re-add=%s | byId after re-add=%s",
+                aliveBefore,
+                byIdBefore != null,
+                aliveAfterRemove,
+                byIdAfterRemove != null,
+                byIdSectorAfterRemove != null,
+                listContainsAfterRemove,
+                aliveAfterReadd,
+                byIdAfterReadd != null));
+    }
 }
 ```
 

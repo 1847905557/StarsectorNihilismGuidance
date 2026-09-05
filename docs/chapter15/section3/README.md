@@ -10,12 +10,11 @@
 
 完成后，您将能够：
 
-- 创建自定义规则命令类，并完成 `ruleCommandPackages` 追加与 rules.csv 脚本列注册；
-- 解释 rulecmd 的实例化生命周期：每次调用新建实例、`execute(ruleId, dialog, params, memoryMap)` 四参签名、条件列与脚本列对返回值的不同处理、`dialog` 为 null 时异常的红字/重抛处理；
-- 解析 `Misc.Token` 参数，并核对 `getString` / `getFloat` / `getBoolean` / `getInt` 等方法的语义与陷阱；
-- 解释 `FireBest` / `FireAll` 的再入机制与约束：防自再入、终止性责任、`$fireAllTrigger` 与 `FireAllIntercept` 拦截，以及 Java 侧 (非规则上下文) 的再入调用点；
-- 验证本节最小示例的注册、对话、再入与读档行为；
-- 从症状定位故障，沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置复核。
+- 创建规则命令类，并通过 `ruleCommandPackages` 完成注册；
+- 根据条件列或脚本列正确处理 `execute(...)` 的参数与返回值；
+- 使用 `Misc.Token` 和 `memoryMap` 读取规则参数与状态；
+- 安全调用 `FireBest` 或 `FireAll`，避免无终点的再入；
+- 根据对话、日志和读档结果定位命令故障。
 
 ## 前置知识
 
@@ -245,33 +244,17 @@ import com.fs.starfarer.api.util.Misc.Token;
 
 /**
  * 完整最小例：自定义规则命令 (rulecmd)。
- *
  * 注册入口：data/campaign/rules.csv 脚本列按简单类名调用 (如
  * "GearInRuleCommand GearInRuleCmdResult 2 true")，类经 ruleCommandPackages
- * (data/config/settings.json 追加的 data.scripts.gearin.rules) 定位。
- *
- * 生命周期：规则加载期 getCommandClass 用 Class.forName + newInstance
- * 校验一次；每次执行经脚本类加载器的 loadScriptInstance 重新 newInstance 后调用
- * execute(ruleId, dialog, params, memoryMap) —— 实例字段不可跨调用使用。
- *
- * 行为 (参数 <trigger> [<amount>] [<keepOptions>])：
- * - params.get(0).getString：触发器名 (字面量或变量皆可)；
- * - params.get(1).getFloat：浮点参数，写入实体记忆 $GearIn_rulecmd_last(无过期，
- *   过期/持久化语义归 C15-S4)，供条件列 $GearIn_rulecmd_last >= 2 读取；
- * - params.get(2).getBoolean：布尔参数 (Token.getBoolean = Boolean.parseBoolean，
- *   只有 "true" 为真)，透传给 FireBest 的 keepOptions；
- * - 再入：FireBest.fire(ruleId, dialog, memoryMap, trigger) 用同一 dialog 与
- *   memoryMap 对目标触发器重新匹配；ruleId 原样透传，引擎跳过同 id 规则防自再入；
- * - 返回值：脚本列消费时被丢弃 (Rule.runScript 只执行不收集)；条件列消费时
- *   作为布尔判真 (isTrueFor)。
- *
- * 验证闭环：注册入口 (rules.csv 脚本列 + ruleCommandPackages)→ 数据文件 (记忆键
- * $GearIn_rulecmd_last)→ 运行消费者 (规则表达式的 execute / FireBest 再入)→
- * 可观察结果 (日志行、再入命中文本)。
+ * (data/config/settings.json 追加的 data.scripts.gearin.rules) 定位。每次执行经
+ * 脚本类加载器重新 newInstance 后调用 execute —— 实例字段不可跨调用使用。
+ * 行为：守卫后解析 <trigger> [<amount>] [<keepOptions>]，把 amount 写入实体记忆
+ * $GearIn_rulecmd_last，再 FireBest 再入同一 dialog 与 memoryMap；返回值在脚本列
+ * 被丢弃、在条件列作为布尔判真。
  */
 public class GearInRuleCommand extends BaseCommandPlugin {
 
-    /** 命令写入的记忆键 (无过期；深度语义归 C15-S4)。 */
+    /** 命令写入的记忆键 (无过期)。 */
     public static final String MEM_KEY_LAST = "$GearIn_rulecmd_last";
 
     private static final Logger LOG = Global.getLogger(GearInRuleCommand.class);
@@ -323,8 +306,8 @@ import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
 /**
  * 完整最小例：对话入口 (支撑类，示例所有权主类为 GearInRuleCommand)。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
- * REGISTER_MARK 一次性门控 (沿用 C10-S1 / C15-S1 的模式，每个注册项用各自的键)。
+ * 注册入口：生涯回调 onGameLoad，persistent data 键
+ * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  *
  * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个
  * 初始 trigger 为 GearInRuleCmdOpener 的对话；对话的文本、脚本与选项全部来自
@@ -342,7 +325,7 @@ public class GearInRuleCmdOpener implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInRuleCmdOpener() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override

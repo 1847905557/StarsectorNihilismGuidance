@@ -33,7 +33,7 @@ public class GearInCampaignTools {
                 + " markets=" + sector.getEconomy().getMarketsCopy().size());
     }
 
-    /** 生涯写侧参考姿势：在生涯脚本 (如 C3-S4 的 GearInSystemGenerator 末尾) 调用，
+    /** 生涯写侧参考姿势：在生涯脚本调用，
      * 把一艘残骸舰放到轨道上。只有生涯上下文有效 (orbitCenter 必须已加入星区)；
      * 场景错误时写 warn 而不是抛错。 */
     public static void spawnDerelictExample(SectorEntityToken orbitCenter, String variantId) {

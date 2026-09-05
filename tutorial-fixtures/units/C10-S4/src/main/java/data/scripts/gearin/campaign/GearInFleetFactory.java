@@ -23,23 +23,11 @@ import com.fs.starfarer.api.util.Misc;
 
 /**
  * 完整最小例：生涯舰队工厂 (FleetParamsV3 -> FleetFactoryV3.createFleet -> inflate -> spawn)。
- *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控
- * (沿用既有模式：每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
- *
+ * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  * 行为：挂载后第一次 advance() 执行一次演示序列并自停 (isDone()=true，引擎下一帧自动移除本脚本)：
- *   1. 基线：选定演示市场 (优先 jangala)，记录地点/锚点与市场质量；
- *   2. FleetParamsV3(market 构造器：source/quality/timestamp 一次就位)，qualityOverride=0.6
- *      压质量 (平均 D 插约 2 个/船，可观察)，flagshipVariantId 指定旗舰变体；
- *   3. FleetFactoryV3.createFleet：记录舰队名/势力/类型/成员数/战机数/FP；
- *   4. 旗舰与指挥官：flagship hull 与变体、舰长是否就是舰队指挥官、指挥官等级/personality、军官数；
- *   5. 膨胀前状态：isInflated=false、inflater 已挂载、inflater.getQuality()==0.6；
- *   6. inflateIfNeeded 后：isInflated=true、inflater 保留 (persistent=true)、
- *      成员变体来源 REFIT、D 插总数 (质量 0.6 -> 平均 2 个/船)；
- *   7. 内存键：$fleetType / $sourceMarket / $salvageSeed / $spawnFPMult；
- *   8. 投放：location.spawnFleet(anchor, 0, 0, fleet) -> 入容器、坐标=锚点坐标、isAlive=true；
- *   9. 对照：FleetFactory.createPatrol(V1 固定模板) 生成快速巡逻队并投放；
- *  10. 清理：同帧 removeEntity 移除两支舰队，不留任何持久副作用。
+ * 选定演示市场并以 qualityOverride=0.6 生成舰队，依次记录基线、生成链结果、旗舰与指挥官、
+ * 膨胀前后与 D 插、工厂内存键，随后 spawnFleet 投放、用 V1 模板 createPatrol 生成对照巡逻队，
+ * 最后同帧 removeEntity 移除两支舰队，不留任何持久副作用。
  */
 public class GearInFleetFactory implements EveryFrameScript {
 
@@ -52,7 +40,7 @@ public class GearInFleetFactory implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInFleetFactory() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override

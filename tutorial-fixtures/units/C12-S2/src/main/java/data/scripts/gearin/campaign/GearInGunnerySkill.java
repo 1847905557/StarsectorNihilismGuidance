@@ -23,29 +23,12 @@ import com.fs.starfarer.api.util.Misc;
 
 /**
  * 完整最小例：SkillSpecAPI、效果作用域、技能等级与 fleet total。
- *
- * 本类只是效果脚本的容器 (原版 GunneryImplants 同款做法)：
- * 数据侧的 .skill 文件与 skill_data.csv 行把每个 effect 的 type 分派到下面的嵌套类。
- *
- * 作用域 (effect type 决定作用对象集合，与脚本类实现哪个接口一一对应)：
- * - DESCRIPTION   -> Level0           技能面板与 tooltip 的文本行；
- * - SHIP          -> Level1 / Level1A 被驾驶 (该角色指挥) 的舰船 stats；
- * - SHIP_FIGHTERS -> LevelShipFighters 由被驾驶舰船起飞的本舰战机 stats(起飞时应用)；
- * - FLEET         -> LevelFleet       该角色指挥舰队的 MutableFleetStatsAPI；
- * - CHARACTER_STATS -> LevelStats     角色自身 MutableCharacterStatsAPI。
- *
- * 等级语义：
- * - 技能等级只有 0(未学)/ 1(已学)/ 2(精英，仅 elite:true 的技能)；
- *   UI 加点路径 increaseSkill 会钳制到 1 或 2，setSkillLevel 不钳制；
- * - 每个 effectGroup 的 requiredSkillLevel 是生效门槛：getSkillLevel(governingSkill) >= requiredSkillLevel
- *   才进入 apply 列表；默认 governingSkill = 本技能 id；
- * - apply() 收到的 level 参数 = getSkillLevel(governingSkill)，不是等级增量；
- * - 引擎按 <技能id>_<类型后缀>_<效果序号> 组合 effect id 并传入 apply，
- *   效果类必须原样用它做 MutableStat / StatBonus 的 modifier id(稳定 ID 规则，见前置页)。
- *
- * fleet total：
- * - 本技能 Level1 同时实现 FleetTotalSource：整备界面 (refit) 的舰队构成表会调用
- *   getFleetTotalItem() 展示一行汇总；同一脚本实例按需被重新实例化，效果类必须无参可实例化。
+ * 本类只是效果脚本的容器 (效果类必须无参可实例化)：.skill 文件与 skill_data.csv
+ * 把每个 effect 的 type 分派到下面的嵌套类，type 决定作用对象集合 (与接口一一对应)。
+ * 等级只有 0/1/2 (UI 加点钳制到 1/2，setSkillLevel 不钳制)，effectGroup 的
+ * requiredSkillLevel 是生效门槛 (默认 governingSkill = 本技能 id)；apply() 收到的
+ * level 是当前等级而非增量，引擎组合出的 effect id 必须原样用作 modifier id；
+ * Level1 同时实现 FleetTotalSource，整备界面展示一行 fleet total 汇总。
  */
 public class GearInGunnerySkill {
 

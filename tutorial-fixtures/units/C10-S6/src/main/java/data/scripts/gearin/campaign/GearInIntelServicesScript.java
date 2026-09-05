@@ -12,8 +12,8 @@ import com.fs.starfarer.api.util.Misc;
 /**
  * 完整最小例 (情报段)：IntelManagerAPI 常用入口演示脚本。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK
- * 一次性门控 (每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
+ * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK
+ * 一次性门控 (每个注册项用各自的键)。
  *
  * 行为：创建自定义情报 GearInServicesIntel(extends BaseIntelPlugin)addIntel 登记、
  * hasIntel 验证、removeIntel 移除 (不留存档残留)；再用 MessageIntel 发一条纯消息

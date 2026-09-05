@@ -10,12 +10,11 @@
 
 完成后，您将能够：
 
-- 区分酒吧事件链路的三个角色，并列出各自公开 API 归属：事件约定 `PortsideBarEvent`、creator 约定 `BarEventManager.GenericBarEventCreator`(内部接口)、调度器 `BarEventManager`，以及配套的 `PortsideBarData`(活动事件列表)、`BaseBarEvent` / `BaseBarEventCreator` / `BaseBarEventWithPerson`(默认实现)、`SpecBarEventCreator`(CSV 路由)、`BarEventSpec`(CSV spec)、`BarEventDialogPlugin`(事件对话包装)、`BarCMD`(酒吧 UI 规则命令)、`AddBarEvent` / `RemoveBarEvent`(临时 bar 选项规则命令)；
-- 解释两条注册/数据链路的构成：数据文件链路 `data/campaign/bar_events.csv`(11 列)→ `BarEventSpec` → CSV spec 加载期 (内部实现)→ `SettingsAPI.getAllBarEventSpecs()` → `BarEventManager.updateBarEventCreatorsFromSpecs()` 自动生成 `SpecBarEventCreator`；代码注册链路 `BarEventManager.getInstance().addEventCreator(creator)`(配合 `hasEventCreator(Class)` 判断，`onGameLoad` 执行)；
-- 解释 `BarEventManager` 的调度语义：按游戏天推进 (`Misc.getDays`)、active/timeout 两个 `TimeoutTracker`、未交互过期事件清理、`maxTotalBarEventsAsFractionOfEventTypes` 上限、priority picker 优先、普通 picker 按 `getBarEventFrequencyWeight()` 权重抽取、`createBarEvent()` 返回 null 跳过；
-- 描述事件生命周期：创建入列 (active 时长内可显示)→ 显示过滤 (`shouldRemoveEvent` / `shouldShowAtMarket`)→ `addPromptAndOption` 写提示与选项 (**optionData 必须是事件自身**)→ `BarEventDialogPlugin` 事件对话 (`init` → `optionSelected` → `isDialogFinished` → 回到酒吧)→ 交互收尾 `notifyWasInteractedWith(this)`(移除 + accepted 超时)；以及未交互时 active 时长过期后的清理与普通超时；
-- 设置酒吧显示链路的可调参数：`settings.json` 的 `minBarEvents` / `maxBarEvents` / `barEventProbOneMore`、市场内存 `$BarCMD_shownEvents`(按事件 ID 复现)、`AddBarEvents` 规则分类与 `AddBarEvent` / `RemoveBarEvent` 临时选项的 "每次展示前清空重建" 语义；
-- 从症状定位故障：结果必须沿着**数据文件/注册入口 → 调度入列 → 显示过滤 → 对话收尾**四个位置核对。
+- 区分酒吧事件、事件创建器与调度器的职责；
+- 通过 `bar_events.csv` 或 Java 创建器注册酒吧事件；
+- 控制事件的抽选权重、显示条件、有效期和超时；
+- 实现提示、选项、事件对话与交互收尾；
+- 根据入列、显示和对话结果定位酒吧事件故障。
 
 ## 前置知识
 
@@ -594,31 +593,12 @@ import com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager;
 
 /**
  * 完整最小例：酒吧事件 (PortsideBarEvent) —— 酒吧选项、事件对话与生命周期收尾。
- *
- * 事件 ID：BaseBarEvent.getBarEventId() 默认返回类简单名，本示例不覆写，
- * 事件 ID 为 "GearInBarEvent"。该 ID 的消费者：BarEventManager 抽取时按
- * creator 的 getBarEventId() 去重 (同一 ID 同时只有一个活跃事件)；BarCMD 展示后
- * 把 event.getBarEventId() 写入市场内存 $BarCMD_shownEvents(带过期时间)，
- * 下次进入同一市场时按 ID 匹配复现同一组事件。
- *
- * 生命周期：
- * 1. 抽取与入列：creator.createBarEvent() 创建实例；BarEventManager 把它加入
- *    active 跟踪器 (时长 = getBarEventActiveDuration()) 并写入 PortsideBarData 活动列表；
- * 2. 显示：玩家进入酒吧时 BarCMD.showOptions() 遍历活动列表，经
- *    shouldShowAtMarket() 过滤、addPromptAndOption() 写入提示与选项 ——
- *    选项的 optionData 必须是事件自身 (this)，BarCMD.optionSelected() 只对
- *    optionData instanceof PortsideBarEvent 进入 BarEventDialogPlugin 事件对话；
- * 3. 对话：BarEventDialogPlugin.init() 调 event.init() 接管对话面板；每次点选
- *    经 event.optionSelected()；isDialogFinished() 返回 true 时回到酒吧
- *    (endWithContinue() 决定是否先显示 "Continue")；
- * 4. 收尾：玩家与事件交互后必须调 BarEventManager.getInstance()
- *    .notifyWasInteractedWith(this) —— 把事件从活动列表与 active 跟踪器移除，
- *    并把 creator 置入 accepted 超时 (默认 60-90 游戏天)，否则事件会在
- *    active 时长内继续出现在同一市场、creator 也只能拿到普通超时。
- *
- * 演示内容：酒吧里一位落魄船员兜售一份补给藏匿点的情报。玩家可以花 500 信用点
- * 买下坐标 (真实写入玩家舰队 cargo credits)，或婉拒、或直接离开；
- * 三个分支都以 notifyWasInteractedWith 收尾，验证 accepted 超时路径。
+ * 事件 ID 默认为类简单名 "GearInBarEvent"：creator 抽取按 ID 去重，BarCMD 展示后
+ * 把 ID 写入市场内存，下次进入同一市场按 ID 复现同一组事件。生命周期：creator
+ * 创建实例并入 active 跟踪器；玩家进酒吧时经 shouldShowAtMarket 过滤并写入选项
+ * (optionData 必须是事件自身)；点选进入事件对话；交互后必须 notifyWasInteractedWith
+ * 收尾，把事件移出并把 creator 置入 accepted 超时。演示：花 500 信用点买补给
+ * 藏匿点情报、婉拒或离开，三个分支都验证 accepted 超时路径。
  */
 public class GearInBarEvent extends BaseBarEvent {
 
@@ -754,11 +734,10 @@ import com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventCreator;
 /**
  * 完整最小例：酒吧事件 creator(GenericBarEventCreator) —— 注册入口与抽取参数。
  *
- * 注册入口：BarEventManager.getInstance().addEventCreator(this)，调用点片段见页面正文
+ * 注册入口：BarEventManager.getInstance().addEventCreator(this)
  * (GearInModPlugin.onGameLoad 内的注册块)。manager 实例与 creator 列表存放在
  * sector memory(键 $core_genericBarEventManager)，随存档保存，因此用
- * hasEventCreator(Class) 作为持久化门控 (原版 CoreLifecyclePluginImpl.addBarEvents
- * 与两个成熟实例同款写法)，不需要额外的 persistent data 键。
+ * hasEventCreator(Class) 作为持久化门控，不需要额外的 persistent data 键。
  *
  * 抽取参数 (全部在 BaseBarEventCreator 有默认值，本示例只覆写 createBarEvent)：
  * - getBarEventFrequencyWeight()：普通 picker 的抽取权重，默认 10f；

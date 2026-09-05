@@ -159,10 +159,10 @@ import com.fs.starfarer.api.combat.MutableShipStatsAPI;
 import com.fs.starfarer.api.combat.MutableStat;
 import com.fs.starfarer.api.combat.StatBonus;
 import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Stats;
 import com.fs.starfarer.api.input.InputEventAPI;
 import com.fs.starfarer.api.util.DynamicStatsAPI;
 import com.fs.starfarer.api.util.IntervalUtil;
-import com.fs.starfarer.api.impl.campaign.ids.Stats;
 
 /**
  * 完整最小例：战斗插件中的 MutableShipStatsAPI 与 DynamicStatsAPI。

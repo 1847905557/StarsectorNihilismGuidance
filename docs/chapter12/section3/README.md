@@ -10,13 +10,11 @@
 
 完成后，您将能够：
 
-- 从注册表读取变体，并区分 `getVariant` 与 `FleetMemberAPI` 两条路径的失败分界；
-- 解释 `clone()` 的深拷贝语义与来源保留，并验证修改克隆不污染注册表变体；
-- 用 API 修改装配 (武器、武器组、船插、幅能、模块覆盖)，并判断每类操作的失败时机；
-- 区分 `VariantSource` 五个来源，验证 `isStockVariant()` 与 `isEmptyHullVariant()` 的判定公式；
-- 核对变体序列化与保存的边界：`toJSONObject` 键、克隆落盘、成员变体落档条件；
-- 创建并注册一套变体演示类组，在生涯首帧核对各自的日志输出；
-- 从症状定位典型故障：装配不出现、启动加载失败、部署期槽位报错、共享污染、来源语义走错、内置内容改不动、战机武器无目标。
+- 从注册表或舰队成员读取变体，并判断各自的失败边界；
+- 克隆变体并验证修改不会污染注册表对象；
+- 使用 API 修改武器、武器组、船插、幅能和模块装配；
+- 区分 `VariantSource` 与变体序列化、存档边界；
+- 根据装配、部署和日志定位变体故障。
 
 ## 前置知识
 
@@ -581,9 +579,8 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * 角色：注册载体 (薄接线类)。onGameLoad 的一次性门控通过后调用 register()，
  * 把本节五个角色脚本 (读取 / 克隆改装 / 武器组 / 模块覆盖 / 序列化) 逐一挂进生涯。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，注册前用 sector persistent
- * data 键 REGISTER_MARK 做一次性门控 (C7-S1 的 CLASS_MARK 模式，模式同 C10-S1
- * 的 GearInSectorClockScript)。每个角色脚本首次 advance() 后 isDone() 置 true，
+ * 注册入口：生涯回调 onGameLoad，注册前用 sector persistent
+ * data 键 REGISTER_MARK 做一次性门控 (每个脚本一个键)。每个角色脚本首次 advance() 后 isDone() 置 true，
  * 引擎下一帧自动移除 —— 整套演示在首个生涯帧内顺序完成，读档后不再重复。
  */
 public final class GearInVariantLauncher {

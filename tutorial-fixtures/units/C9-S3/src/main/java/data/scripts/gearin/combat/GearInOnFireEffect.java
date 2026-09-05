@@ -19,8 +19,7 @@ public class GearInOnFireEffect implements OnFireEffectPlugin {
 
     @Override
     public void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon, CombatEngineAPI engine) {
-        // 参数是 "本发射弹" 上下文：射弹刚生成，速度 / 朝向已就绪
-        // (原版 CanisterFlakPlugin 在此改写弹速与旋转，本节只观察)。
+        // 参数是 "本发射弹" 上下文：射弹刚生成，速度 / 朝向已就绪。
         LOG.info("GearIn onFire " + projectile.getProjectileSpecId()
                 + " weapon=" + (weapon == null ? "null" : weapon.getId())
                 + " spawnType=" + projectile.getSpawnType()

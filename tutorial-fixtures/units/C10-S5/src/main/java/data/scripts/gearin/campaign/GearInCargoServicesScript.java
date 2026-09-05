@@ -13,7 +13,7 @@ import com.fs.starfarer.api.impl.campaign.ids.Commodities;
 /**
  * 完整最小例 (货物段)：CargoAPI 常用入口演示脚本。
  *
- * 注册入口：onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控。
+ * 注册入口：onGameLoad，persistent data 键 REGISTER_MARK 一次性门控。
  *
  * 行为：读取玩家舰队补给/燃料/陆战队员/信用/空间/栈数基线；addSupplies(100)/addFuel(50)/addMarines(10)
  * 后读取中间值，再 remove 同量回滚并读取终值 (验证数值精确复原)；读取重型机械商品量与栈列表

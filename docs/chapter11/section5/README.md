@@ -10,13 +10,11 @@
 
 完成后，您将能够：
 
-- 解释 `market_conditions.csv` 九个字段各自被谁使用，以及 MOD 新增条件行的注册完整流程 (**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置)；
-- 解释 `MarketConditionPlugin` 生命周期：`init(market, condition)` → `setParam(param)`(可选)→ `apply(id)` → 每帧 `advance(amount)`(`runWhilePaused()` 决定暂停时是否推进)→ 移除/重算时 `unapply(id)`，以及 `isTransient()` 的存档语义；
-- 解释 token 语义：`addCondition(id)` 返回的唯一实例 token 与 spec id 的区别、四个查询入口的差别、`removeCondition(id)` 与 `removeSpecificCondition(token)` 的不对称性；
-- 解释 survey 语义：条件级 `isSurveyed` / `requiresSurveying` 与市场级 `SurveyLevel` 的分层，`condition_gen_data.csv` 的 `reqSurvey` 如何决定初始状态，重算如何用 surveyed 判断是否执行 `apply`；
-- 解释 suppression 语义：`suppressCondition(id)` 只写 suppressed 集合、**效果在下次重算时才消失**、必须配对 `unsuppressCondition(id)` 恢复；
-- 解释重算的触发点：经济迭代、稳定度变化、手动调用；`reapplyConditions()` 与 `reapplyCondition(token)` 的检查差异；
-- 从症状定位八类典型故障：条件 "不出现"、`addCondition` 抛 `Market condition [...] not found`、`removeCondition` 删多、读档后条件参数恢复默认、suppress 后效果还在、未 survey 条件效果休眠、多实例修饰互相覆盖、icon 路径写错加载失败。
+- 在 `market_conditions.csv` 中注册条件，并实现插件生命周期；
+- 区分条件 spec ID 与实例 token，准确查询和移除条件；
+- 判断条件级勘测状态与市场勘测等级的作用范围；
+- 管理条件抑制、解除抑制和重新应用时机；
+- 根据市场效果与日志定位条件实例和状态故障。
 
 ## 前置知识
 
@@ -596,29 +594,12 @@ import com.fs.starfarer.api.util.Misc;
 
 /**
  * 完整最小例：市场条件 (MarketConditionAPI) 插件。
- *
- * 注册入口：data/campaign/market_conditions.csv 的 script 列 (类名逐字一致)，
- * 由 CSV spec 加载期的 loadMarketConditions 完成 registerScriptClass；条件实例创建时
- * 脚本类加载器的 loadScriptInstance 按类名 newInstance(必须无参可实例化)，随后
- * init(market, condition) 绑定，再进入 apply/advance/unapply 生命周期。
- *
- * 数据所有权：本节新增条件 id {@code GearIn_ore_deposits}，只由本节定义；页面正文
- * 的 CSV 行与本类逐字配套。
- *
- * 行为：apply(id) 以传入的实例 token 为 modifier source 写入两条市场修饰 ——
- *   1. hazard +0.15(MutableStat，getHazard())；
- *   2. accessibility +0.10(StatBonus，getAccessibilityMod()，默认值可由
- *      addCondition(id, param) 的 param 覆盖，setParam 在 apply 之前被调用)。
- * unapply(id) 按同一 source 撤销。修饰 source 用实例 token 而非 spec id，
- * 同 spec id 多实例才不会互相覆盖 ("GearIn_ore_deposits" 是 spec id，
- * 每个实例的 token 形如 "GearIn_ore_deposits_xxxxx"，由
- * MarketConditionAPI.getIdForPluginModifications() 提供)。
- *
- * 存档语义：继承 BaseMarketConditionPlugin，isTransient() = true —— plugin 实例
- * 不进存档，读档后按 spec 重建并重新 init，setParam 的数据不重放
- *
- * tooltip：createTooltipAfterDescription 在 spec desc(含 $marketName token) 之后
- * 追加一条本条件的数值说明，演示 tooltip 扩展链路。
+ * 注册入口：data/campaign/market_conditions.csv 的 script 列 (类名逐字一致)，条件实例
+ * 由脚本类加载器按类名 newInstance 并 init 绑定。apply(id) 以传入的实例 token 为
+ * modifier source 写入 hazard +0.15 与 accessibility +0.10 (param 可覆盖)，unapply(id)
+ * 按同一 source 撤销；token 而非 spec id 做 source，同 spec 多实例才不互相覆盖。
+ * plugin 实例不进存档 (transient)，读档后按 spec 重建重新 init；tooltip 在 spec desc
+ * 之后追加本条件的数值说明。
  */
 public class GearInOreCondition extends BaseMarketConditionPlugin {
 
@@ -690,28 +671,12 @@ import com.fs.starfarer.api.combat.MutableStat;
 
 /**
  * 完整最小例：市场条件生命周期演示脚本 (token、survey、suppression、重算)。
- *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
- * REGISTER_MARK 一次性门控 (沿用既有模式：每个注册项用各自的键，不挂进插件的
- * CLASS_MARK 门内)。演示脚本在挂载后的第一帧执行一次完整序列并自停
- * (isDone()=true，引擎下一帧自动移除本脚本)：
- *   1. addCondition(GearIn_ore_deposits)：spec id -> 实例 token，plugin 立即 apply，
- *      hazard/accessibility 上升；读取实例 token、plugin 类、planetary、survey 状态、
- *      spec 字段与 tooltip token 替换值；
- *   2. 多实例 + param：addCondition(id, 0.20f) 产生第二个实例，两个 token 相互独立，
- *      修饰按 token 隔离 (同 spec id 不互相覆盖)；getFirstCondition 取首个实例；
- *   3. removeCondition(id) 移除同 id 全部实例 (不对称性 A)，修饰全部撤销；
- *   4. reapplyCondition(token) 单实例重算：unapply + apply，效果先降后升、终值不变；
- *   5. suppressCondition(id) 后 reapplyConditions()：unapply 执行、apply 被跳过，
- *      效果休眠但实例保留；unsuppressCondition(id) 后重算恢复；
- *   6. removeSpecificCondition(token) 只移除一个实例 (不对称性 B)；
- *   7. survey 门控：setSurveyed(false) 后重算 -> 效果休眠；setSurveyed(true) 后重算
- *      -> 效果恢复 (reapplyConditions 只对 surveyed 且未 suppressed 的条件 apply)；
- *   8. 原版对照 (只读)：找一颗条件市场 (isPlanetConditionMarketOnly) 上
- *      requiresSurveying() 为 true 的条件，观察其 isSurveyed 初始状态。
- *
- * 演示全程不遗留持久状态：全部实例在当帧移除 (removeSpecificCondition -> unapply)，
- * suppressed 集合复位，hazard/accessibility 回到基线。
+ * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK 一次性门控
+ * (每个注册项用各自的键)；挂载后第一帧执行一次完整序列并自停 (isDone()=true)。
+ * 序列依次演示 addCondition 的 spec→token 与立即 apply、多实例按 token 隔离、
+ * removeCondition 与 removeSpecificCondition 的不对称、reapplyCondition 单实例重算、
+ * suppress/survey 门控的重算休眠与恢复，以及原版条件市场 survey 状态只读对照；
+ * 全部实例当帧移除，不遗留持久状态。
  */
 public class GearInConditionLifecycleScript implements EveryFrameScript {
 
@@ -727,7 +692,7 @@ public class GearInConditionLifecycleScript implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInConditionLifecycleScript() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     /** 修改演示目标市场；默认 "jangala"。 */

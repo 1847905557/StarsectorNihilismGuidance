@@ -10,12 +10,11 @@
 
 完成后，您将能够：
 
-- 列出生涯插件的注册与注销入口，以及 `getId()` 未覆写、id 撞车、未注册三种情况各自的可观察结果；
-- 区分 transient 与非 transient 插件的存档边界与注册时机；
-- 背出 `PickPriority` 的 7 级阶梯并解释竞争裁决规则 (取 `ordinal` 最高者、返回 `null` 即放弃、同优先级并列未定义)；
-- 从零编写一个 transient 生涯插件与最小交互对话框，并完成注册；
-- 用游戏内对话与 `starsector.log` 验证 picker 命中、优先级生效与 facts 写入；
-- 从症状定位八类典型故障：插件消失、重复咨询、抢走原版对话、点击实体无对话、picker 抛异常、facts 递归、同优先级竞争、序列化问题。
+- 注册带稳定 ID 的生涯插件，并选择 persistent 或 transient 生命周期；
+- 使用 picker 返回值与 `PickPriority` 参与交互竞争；
+- 创建由生涯插件提供的交互对话框；
+- 写入并验证规则系统需要的 facts；
+- 根据对话、优先级和日志定位插件故障。
 
 ## 前置知识
 
@@ -472,23 +471,15 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 
 /**
  * 完整最小例：生涯插件 (CampaignPlugin) 的注册、picker、优先级与生命周期。
- *
- * 本类是 transient 生涯插件：数据不进存档，必须由调用点 (GearInModPlugin.onGameLoad，
- * 见页面正文) 在每次读档后重新注册；registerPlugin 按 getId() 去重，重复注册只会
- * 替换旧实例，不会叠加。
- *
- * pickInteractionDialogPlugin：对 "齿轮工业"(C11-S1 注册的势力 id) 的舰队与市场实体
- * 返回 GearInInteractionDialog(PickPriority.MOD_SPECIFIC)；对其他实体返回 null，即放弃本次
- * 选择权，由原版 CORE_GENERAL 对话继续生效。
- *
- * updateGlobalFacts：每次 sector.getMemory() 都会重新执行；写入的演示事实使用 MOD
- * 专属前缀且过期时间为 0，符合 API 对 facts 写法的要求。
- *
- * 被 picker 选中的对话框由同包类 GearInInteractionDialog 承担 (一文件一角色，见该文件)。
+ * 本类是 transient 生涯插件：数据不进存档，必须由调用点 (GearInModPlugin.onGameLoad)
+ * 在每次读档后重新注册；registerPlugin 按 getId() 去重，重复注册只会替换旧实例。
+ * pickInteractionDialogPlugin 对 "齿轮工业" 势力的舰队与市场实体返回
+ * GearInInteractionDialog (PickPriority.MOD_SPECIFIC)，其他实体返回 null 把选择权
+ * 留给其他插件；updateGlobalFacts 每次 sector.getMemory() 重新执行，写入键带过期 0。
  */
 public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
-    /** 演示触发势力：齿轮工业势力 id(C11-S1 定义，本节只消费不定义)。 */
+    /** 演示触发势力：齿轮工业势力 id。 */
     public static final String DEMO_FACTION_ID = "gear_industry";
 
     /** updateGlobalFacts 写入的演示事实键：MOD 专属前缀 + 过期时间 0。 */
@@ -502,7 +493,7 @@ public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
     @Override
     public boolean isTransient() {
-        // transient：不随存档保存，每次读档后必须重新注册 (见页面调用点片段)。
+        // transient：不随存档保存，每次读档后必须重新注册。
         return true;
     }
 

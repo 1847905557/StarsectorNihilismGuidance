@@ -10,12 +10,11 @@
 
 完成后，您将能够：
 
-- 解释 `MemoryAPI` 的公开面：`set`(两参/三参)/ `get` 族 / `contains` / `unset` / `expire` / `is` / `between` / `getExpire` / `getKeys` / required 族 / `clear`，并说明记忆键必须以 `$` 开头及其违反后果；
-- 区分过期语义：`expire` 以游戏天为单位 (10 真实秒 = 1 游戏天)、只在生涯非暂停时推进、0 天表示下一未暂停推进帧移除、负值取消过期、两参 `set` 清除未决过期、`getExpire` 无过期返回 -1；
-- 解析 `memoryMap` 结构：`MemKeys` 槽位 (`global` / `player` / `local` / `market` / `sourceMarket` / `faction` / `entity` / `personFaction` / `mission`) 与 `$memkey.name` 变量解析规则 (无点号或槽位缺失回落 `local`)；
-- 区分 `getMemory()` 与 `getMemoryWithoutUpdate()`：前者触发全部插件 `update*Facts`，后者只读写，并选择写键与高频读取的正确入口；
-- 解释保存与恢复：记忆随所属对象序列化进存档，实体/市场引用转 `enRef_<id>` / `mRef_<id>`，解析不到时键被删除；`PersistentData` 是随存档保存的全局 `Map<String, Object>`，键无需 `$`；
-- 验证：把六个示例类与 5 条规则行接入既有 MOD，通过日志、对话与读档结果核对记忆写入、过期与持久化流程。
+- 使用 `MemoryAPI` 写入、读取、移除和检查记忆键；
+- 设置并判断以游戏天推进的过期状态；
+- 根据 `memoryMap` 槽位选择变量的所属对象；
+- 区分会更新 facts 的记忆入口与直接读写入口；
+- 验证 Memory 与 persistent data 的存档恢复结果。
 
 ## 前置知识
 
@@ -343,7 +342,7 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 
 /**
  * 记忆写入与读回脚本 (EveryFrameScript)：读档首个未暂停帧写入全部记忆键并立即
- * 读回验证 (键常量见 GearInMemoryKeys)。probe 键 (expire 0) 的「写入后立即读回」
+ * 读回验证 (键常量见 GearInMemoryKeys)。probe 键 (expire 0) 的 "写入后立即读回"
  * 必须在同一方法内完成 —— 跨脚本同帧执行顺序未定义，独立读回可能错过其存在状态。
  */
 public class GearInMemoryWriter implements EveryFrameScript {
@@ -435,7 +434,7 @@ import com.fs.starfarer.api.Global;
  * PersistentData 跨存档计数脚本 (EveryFrameScript)：每档一次累加运行计数并记录
  * 上次值 —— 直接可观察 PersistentData 随存档保存与恢复 (新档 run 1、读档 run N
  * 递增)。故意不加一次性 REGISTER_MARK 门控：每次读档都重跑才能看到递增；
- * 注册项使用各自的 persistent data 键 (C7-S1 纪律)。
+ * 注册项使用各自的 persistent data 键。
  */
 public class GearInPersistentDataCounter implements EveryFrameScript {
 
@@ -587,8 +586,8 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
  * expire 0 的 probe 键已被 Memory.advance 移除后，记录移除结果，再 unset 一个
  * required 子键验证父键被递归移除。
  *
- * 时序对齐：probe 每次读档都被写入脚本重新写入并移除，故「tag 存在 && probe
- * 不存在」是稳定的验证时机 (同帧执行顺序未定义，用键状态对齐)。
+ * 时序对齐：probe 每次读档都被写入脚本重新写入并移除，故 "tag 存在 && probe
+ * 不存在" 是稳定的验证时机 (同帧执行顺序未定义，用键状态对齐)。
  */
 public class GearInMemoryExpiryVerifier implements EveryFrameScript {
 

@@ -10,12 +10,10 @@ BoxUtil 的 `SpriteEntity` 可以用一次实体提交绘制多份实例数据�
 
 完成后，您将能够：
 
-- 判断 BoxUtil 的配置开关与 shader 核心是否同时可用；
-- 读取设备同步兼容开关，并在异常设备上保留可观察的降级路径；
-- 为一个 `SpriteEntity` 构造 32 份带位置、速度、颜色和寿命的 `Instance2Data`；
-- 区分 CPU 列表、刷新范围、GPU 提交与实际绘制数量；
-- 根据 `CombatRenderingManager.addEntity()` 返回码处理入队失败；
-- 在 BoxUtil 渲染不可用时保留原版粒子反馈。
+- 判断 BoxUtil 渲染能力与设备兼容开关；
+- 为一个 `SpriteEntity` 构造并更新多份 `Instance2Data`；
+- 区分 CPU 实例、刷新范围、提交范围与实际绘制数量；
+- 根据入队结果选择 BoxUtil 渲染或原版粒子反馈。
 
 ## 前置知识
 
@@ -159,7 +157,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
 /**
  * 完整最小例的接线载体：BoxUtil 初始化 (initLater 守卫)、可用性判据与生成
  * 计时在这里，实体生成委托给 GearInBoxSpawner；
- * 由既有战斗插件在 init() 中 addPlugin 注册 (C8-S1 模型)，只在本场战斗内有效。
+ * 由既有战斗插件在 init() 中 addPlugin 注册，只在本场战斗内有效。
  */
 public class GearInBoxEntity extends BaseEveryFrameCombatPlugin {
 
@@ -195,7 +193,7 @@ public class GearInBoxEntity extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine == null) {
-            return; // 防御性判空 (C2-S1 同款姿势)
+            return; // 防御性判空
         }
         if (engine.isPaused()) {
             return; // 暂停守卫：实体生成只在非暂停推进
@@ -206,7 +204,6 @@ public class GearInBoxEntity extends BaseEveryFrameCombatPlugin {
             spawner.spawnBox();
         }
     }
-
 }
 ```
 

@@ -10,13 +10,11 @@
 
 完成后，您将能够：
 
-- 区分 `.wpn` 的 `everyFrameEffect` / `beamEffect` 与 `.proj` 的 `onFireEffect` / `onHitEffect` 四个注册列的使用方与实例模型：每武器、每光束射线、每射弹独立实例，效果类必须可无参实例化；
-- 解释弹丸与光束武器上 `EveryFrameWeaponEffectPlugin.advance` 的调用时机 (本帧转向 / 开火之前)、`advanceAfter`(本帧操作之后)、`WeaponEffectPluginWithInit.init`(武器构造时)，并验证暂停时这些回调全部停摆；
-- 判断武器贴图动画的播放条件 (开火 / 充能 / `alwaysAnimate` 才推进、`animateWhileFiring:false` 时开火中冻结、`frameRate` 为帧 / 秒、帧环绕播放)，并列出帧贴图命名规则 (基路径以 `00.png` 结尾、帧文件顺序编号)；
-- 使用 `weapon.getAnimation()` 的 `AnimationAPI`(`play` / `pause` / `setFrame` / `setFrameRate`) 程序化控制动画，并说明两条渲染约束：`getAnimation()` 对非动画武器返回 null、`getSprite()` 上设置的 alpha 与角度会被渲染前覆盖；
-- 区分 `animationType` 的取值 (`NONE` / `GLOW` / `MUZZLE_FLASH` / `GLOW_AND_FLASH` / `SMOKE`) 与 `muzzleFlashSpec` / `smokeSpec` / `visualRecoil` 的角色、触发条件与可观察结果；
-- 解释 `BeamEffectPlugin` 的每帧回调与 `BeamEffectPluginWithReset.reset()` 的调用窗口 (射线创建与销毁)，并只消费本帧光束状态 (`didDamageThisFrame` / `getDamageTarget`)；
-- 用 `starsector.log` 与视口粒子从症状定位本节列出的九类典型故障。
+- 在 `.wpn` 与 `.proj` 中绑定逐帧、光束、开火和命中效果类；
+- 区分武器操作前后、射弹生成、命中与光束激活的回调时机；
+- 配置帧贴图与内置视觉，并使用 `AnimationAPI` 控制动画；
+- 按武器、射弹和光束实例管理当前事件状态；
+- 根据画面和日志定位注册、动画与回调故障。
 
 ## 前置知识
 
@@ -639,16 +637,17 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
 
     @Override
     public void init(WeaponAPI weapon) {
-        AnimationAPI animation = weapon.getAnimation(); // 非动画武器返回 null(硬规范 4)
+        AnimationAPI animation = weapon.getAnimation(); // 非动画武器返回 null
         LOG.info("GearIn weapon fx init " + weapon.getId()
                 + " beam=" + weapon.isBeam()
                 + " animated=" + (animation != null)
                 + (animation != null ? " frames=" + animation.getNumFrames() + " rate=" + animation.getFrameRate() : ""));
     }
+
     @Override
     public void advance(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
-        // 本帧转向 / 开火等操作之前；闲置且冷却完成时冻结回 0 帧 (BlinkerEffect
-        // 同款姿势)，否则恢复播放 (play() 覆盖 alwaysAnimate:false 的数据默认)。
+        // 本帧转向 / 开火等操作之前；闲置且冷却完成时冻结回 0 帧，
+        // 否则恢复播放 (play() 覆盖 alwaysAnimate:false 的数据默认)。
         AnimationAPI animation = weapon.getAnimation();
         if (animation != null) {
             boolean idle = weapon.getChargeLevel() <= 0f
@@ -679,6 +678,7 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
         }
         wasFiring = weapon.isFiring();
     }
+
     @Override
     public void advanceAfter(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
         // 本帧操作完成后 (WithAdvanceAfter)：弹药扣减已生效，可观察操作后状态。
@@ -739,8 +739,8 @@ public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWi
 
     @Override
     public void advance(float amount, CombatEngineAPI engine, BeamAPI beam) {
-        // 每帧只消费本帧光束状态 (规则 2：didDamageThisFrame / getDamageTarget
-        // 只对本帧结算语义有效，禁止缓存跨帧使用)。
+        // 每帧只消费本帧光束状态：didDamageThisFrame / getDamageTarget
+        // 只对本帧结算语义有效，禁止缓存跨帧使用。
         boolean didDamage = beam.didDamageThisFrame();
         CombatEntityAPI target = beam.getDamageTarget();
         if (didDamage && !lastDidDamage) {
@@ -750,8 +750,8 @@ public class GearInBeamHitEffect implements BeamEffectPlugin, BeamEffectPluginWi
         }
         if (didDamage) {
             // 纯视觉命中火花：以本帧射线端点 (上一帧端点) 为基准撒粒子，不造成伤害。
-            // 光束伤害按 0.1 秒间隔结算 (C8-S4)；IonBeamEffect 的替代写法是用
-            // beam.getDamage().getDpsDuration() 推进节流器，让粒子节奏跟随真实结算。
+            // 光束伤害按 0.1 秒间隔结算；节流器也可改为跟随 beam.getDamage()
+            // 的 DPS 结算推进，让粒子节奏与真实结算一致。
             sparkInterval.advance(amount);
             if (sparkInterval.intervalElapsed()) {
                 Vector2f point = beam.getRayEndPrevFrame();
@@ -790,8 +790,7 @@ public class GearInOnFireEffect implements OnFireEffectPlugin {
 
     @Override
     public void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon, CombatEngineAPI engine) {
-        // 参数是 "本发射弹" 上下文：射弹刚生成，速度 / 朝向已就绪
-        // (原版 CanisterFlakPlugin 在此改写弹速与旋转，本节只观察)。
+        // 参数是 "本发射弹" 上下文：射弹刚生成，速度 / 朝向已就绪。
         LOG.info("GearIn onFire " + projectile.getProjectileSpecId()
                 + " weapon=" + (weapon == null ? "null" : weapon.getId())
                 + " spawnType=" + projectile.getSpawnType()

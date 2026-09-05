@@ -25,44 +25,18 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
 
 /**
  * 完整最小例：ShaderProgram、UBO、uniform、纹理与矩阵提交。
- *
- *
- * - 程序对象：ShaderUtil.createShaderVFFormPath(名称, vert 路径, frag 路径) 按路径创建
- *   程序 (成熟实例消费实证)，包装进 org.boxutil.units.standard.ShaderProgram；创建后立即用
- *   getUniformIndex / getUBOIndex 查询并保存 location(实例规范
- *   "创建后必须保存后续渲染所需的 uniform、attribute 或 UBO location")；
- * - UBO：GLSL 侧声明 layout(std140) uniform BUtilGlobalData { mat4 gameViewport;
- *   vec4 gameScreenBorder; }(成熟实例同款声明)，Java 侧
- *   getUBOIndex("BUtilGlobalData", ShaderCore.getMatrixUBOBinding()) 绑定；gameViewport
- *   是 BoxUtil 全局矩阵 UBO 供给的世界→屏幕矩阵，取代 C19-S1 的手动 glOrtho；
- *   块名必须与 GLSL 逐字一致 (大小写敏感)；
- * - uniform：标量/向量 (glUniform1f/2f/4f)、采样器 (glUniform1i 值=纹理单元号)、
- *   矩阵 (glUniformMatrix4(loc, false, 列主序 FloatBuffer)，transpose 必须 false)；
- *   名称与类型必须与 GLSL 声明一致 (C19-S1 硬规则 6)：拼错 → getUniformIndex 返回
- *   -1 → 提交被静默忽略且无日志；
- * - 纹理：SettingsAPI.getSprite 取引擎必载贴图 graphics/fx/particlealpha32sq.png
- *   (引擎启动期进入加载队列；贴图取得方式见 C17-S10)，
- *   SpriteAPI.getTextureId() 取 GL 纹理 id，glActiveTexture(GL_TEXTURE0) +
- *   glBindTexture(GL_TEXTURE_2D, id) + glUniform1i(texLoc, 0) 完成单元绑定与采样器
- *   提交 (成熟实例实证)；
- * - 矩阵：modelMatrix 是 2D 刚性变换 (旋转+平移)，列主序 16 float，布局同成熟实例
- *   maintainAnchoredFloatBuffer；每帧复用
- *   FloatBuffer(clear/put/flip)；
- * - 门禁：BoxConfigs.isShaderEnable() && ShaderCore.isValid() 共同决定 shader 路径
- *   可用性 (C17-S10)；isBaseGL43Supported() 只是 GL 能力探测，不能替代
- *   ShaderCore.isValid()(实例陷阱)；门禁失败 → 记录日志并自废，
- *   不创建程序；
- * - 生命周期：每场战斗 init 创建程序与 VBO(GL 上下文就绪)，render 内 active()/
- *   close() 配对提交 (实例规范 "active() 后必须按 close() 关闭")，
- *   cleanup() 内 program.delete() + glDeleteBuffers，禁止跨战斗缓存 (C7-S2/C8-S7
- *   延续；实例规范 "资源清理归创建者")；isValid() 使用前检查
- *   (实例陷阱：失效程序继续绑定 → 输出错位或状态污染)。
+ * 程序经 ShaderUtil.createShaderVFFormPath 创建后立即保存 uniform/UBO location；
+ * UBO 块名与 GLSL 声明逐字一致 (大小写敏感)；uniform 名称与类型与 GLSL 一致，
+ * 拼错时 getUniformIndex 返回 -1 且提交被静默忽略；纹理用 glActiveTexture +
+ * glBindTexture + glUniform1i(采样器=单元号) 提交；矩阵为列主序，transpose 必须 false。
+ * 门禁 BoxConfigs.isShaderEnable() && ShaderCore.isValid() 失败即自废；render 内
+ * active()/close() 配对提交，cleanup() 释放 GL 资源，失效程序不得继续绑定。
  */
 public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInShaderVisual.class);
 
-    /** shader 资源路径 (MOD 根目录相对路径，必须用 /；C19-S2 硬规则 1 延续)。 */
+    /** shader 资源路径 (MOD 根目录相对路径，必须用 /)。 */
     private static final String VERT_PATH = "data/shaders/GearIn_shader_visual.vert";
     private static final String FRAG_PATH = "data/shaders/GearIn_shader_visual.frag";
 
@@ -95,7 +69,7 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        // BoxUtil shader 路径可用性判据见 C17-S10；失败即自废，不创建程序
+        // shader 路径可用性判据失败即自废，不创建程序
         if (!BoxConfigs.isShaderEnable() || !ShaderCore.isValid()) {
             LOG.info("GearIn shader visual: BoxUtil shader path unavailable (shaderEnable="
                     + BoxConfigs.isShaderEnable() + ", shaderCoreValid="
@@ -123,7 +97,7 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
         int programId = ShaderUtil.createShaderVFFormPath(getClass().getName(),
                 VERT_PATH, FRAG_PATH);
         program = new ShaderProgram(programId);
-        // 创建后立即保存 uniform/UBO location(实例规范)
+        // 创建后立即保存 uniform/UBO location
         program.location = new int[] {
                 program.getUniformIndex("modelMatrix"),
                 program.getUniformIndex("size"),
@@ -197,10 +171,10 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
         }
         elapsed += amount;
         if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()(C8-S7 硬规则 3)
+            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()
             return;
         }
-        // 剔除依据是承载实体的位置 (C8-S7 硬规则 4)：跟随玩家舰船
+        // 剔除依据是承载实体的位置：跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
     }
 
@@ -228,20 +202,18 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
             return;
         }
         if (!program.isValid()) {
-            return; // 程序失效不得继续绑定 (实例陷阱)
+            return; // 程序失效不得继续绑定
         }
 
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
 
-        // 矩阵 uniform：刚性变换 (旋转 + 平移)，列主序 16 float，transpose 必须 false；
-        // 布局同成熟实例 maintainAnchoredFloatBuffer
+        // 矩阵 uniform：刚性变换 (旋转 + 平移)，列主序 16 float，transpose 必须 false
         Vector2f center = engine.getPlayerShip().getLocation();
         float facing = engine.getPlayerShip().getFacing();
         matrixBuffer = buildAnchoredMatrix(center, facing, matrixBuffer);
 
-        // attribute：VBO 绑定 + long 偏移 (C19-S2 同款姿势；游戏自带 LWJGL 的
-        // glVertexAttribPointer 另有 FloatBuffer client 指针重载；本单元使用 VBO 偏移)
+        // attribute：VBO 绑定 + long 偏移 (另有 FloatBuffer client 指针重载)
         int stride = FLOATS_PER_VERTEX * Float.BYTES;
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
         GL20.glVertexAttribPointer(0, 2, GL11.GL_FLOAT, false, stride, 0L);
@@ -249,7 +221,7 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
         GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, stride, 2L * Float.BYTES);
         GL20.glEnableVertexAttribArray(1);
 
-        program.active(); // 提交段开始；必须与 close() 配对 (实例规范)
+        program.active(); // 提交段开始；必须与 close() 配对
 
         // 矩阵提交：modelMatrix(uniform matrix4，列主序)
         GL20.glUniformMatrix4(program.location[0], false, matrixBuffer);

@@ -13,7 +13,7 @@ import com.fs.starfarer.api.fleet.FleetMemberType;
 /**
  * 环节四：MutableStat 重建与惰性重算 (updateStats 整体新建舰船 stats)。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
+ * 注册入口：生涯回调 onGameLoad，persistent data 键
  * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  *
  * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
@@ -34,7 +34,7 @@ public class GearInStatsRebuild implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInStatsRebuild() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override

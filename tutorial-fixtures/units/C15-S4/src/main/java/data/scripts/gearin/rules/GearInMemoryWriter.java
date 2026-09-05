@@ -11,7 +11,7 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 
 /**
  * 记忆写入与读回脚本 (EveryFrameScript)：读档首个未暂停帧写入全部记忆键并立即
- * 读回验证 (键常量见 GearInMemoryKeys)。probe 键 (expire 0) 的「写入后立即读回」
+ * 读回验证 (键常量见 GearInMemoryKeys)。probe 键 (expire 0) 的 "写入后立即读回"
  * 必须在同一方法内完成 —— 跨脚本同帧执行顺序未定义，独立读回可能错过其存在状态。
  */
 public class GearInMemoryWriter implements EveryFrameScript {

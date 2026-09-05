@@ -25,7 +25,7 @@
 在 Java 类中调用 `Global.getLogger(当前类.class)` 取得该类的日志器。日志器将内容写入 `Starsector/starsector-core/starsector.log`，类名会成为日志来源的一部分。
 
 ```java
-private static final Logger LOG = Global.getLogger(GearInLogDemo.class);
+private static final Logger LOG = Global.getLogger(GearInLogWriter.class);
 ```
 
 日志器应作为类级常量复用。每个类使用自己的 `Class` 参数，便于从日志直接定位代码来源。
@@ -59,7 +59,7 @@ LOG.info(prefix + detail);
 try {
     loadVariant("GearIn_artizan_combat");
 } catch (RuntimeException exception) {
-    GearInLogDemo.error("variant-load", "GearIn_artizan_combat",
+    GearInLogWriter.error("variant-load", "GearIn_artizan_combat",
             "variant could not be loaded", exception);
 }
 ```
@@ -83,7 +83,7 @@ java.lang.RuntimeException: ...
 
 下面的工具类集中封装三个级别的日志写法。调用方把阶段、对象 ID 和具体内容传入，日志格式保持一致。
 
-::: details 完整成品：GearInLogDemo
+::: details 完整成品：GearInLogWriter
 
 ```java
 package data.scripts.gearin;
@@ -92,11 +92,11 @@ import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
 
-public class GearInLogDemo {
+public class GearInLogWriter {
 
-    private static final Logger LOG = Global.getLogger(GearInLogDemo.class);
+    private static final Logger LOG = Global.getLogger(GearInLogWriter.class);
 
-    private GearInLogDemo() {
+    private GearInLogWriter() {
     }
 
     public static void info(String stage, String objectId, String detail) {
@@ -123,7 +123,7 @@ public class GearInLogDemo {
 
 前置数据：已按 [C6-S1] 至 [C6-S4] 建立 Java 工程，并准备可写入 `starsector.log` 的测试环境。
 
-1. 编译包含 `GearInLogDemo` 的 JAR，并确认 class 条目位于 `data/scripts/gearin/GearInLogDemo.class`。
+1. 编译包含 `GearInLogWriter` 的 JAR，并确认 class 条目位于 `data/scripts/gearin/GearInLogWriter.class`。
 2. 在已有入口或脚本中分别调用 `info`、`warn` 和 `error`，传入同一个对象 ID 与三个阶段名称。
 3. 启动游戏并打开 `Starsector/starsector-core/starsector.log`，搜索 `GearIn` 和测试对象 ID。
 4. 对照日志级别、阶段、对象 ID、消息内容和异常堆栈。
@@ -157,6 +157,6 @@ public class GearInLogDemo {
 - `com.fs.starfarer.api.Global.getLogger(Class)`：取得 MOD 日志器；
 - `org.apache.log4j.Logger`：`info`、`warn` 和 `error` 方法；
 - `Starsector/starsector-core/starsector.log`：读取日志和异常堆栈；
-- `src/data/scripts/gearin/GearInLogDemo.java`：统一日志格式的示例类；
+- `src/data/scripts/gearin/GearInLogWriter.java`：统一日志格式的示例类；
 - [C7-S1]：入口生命周期中的日志验证；
 - [C7-S2]：按阶段访问 `Global` 服务。

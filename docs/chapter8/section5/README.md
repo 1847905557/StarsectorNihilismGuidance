@@ -70,8 +70,7 @@ import com.fs.starfarer.api.util.IntervalUtil;
 /**
  * 武器逐帧效果：只有把本类类名写进 .wpn 的 everyFrameEffect 字段时，
  * 游戏才会为每把武器创建独立实例并回调 init(weapon) / advance / advanceAfter。
- * advance 在本帧转向 / 开火等操作之前 (API javadoc 原文 "Called before this frame's
- * operations for the weapon - turning, firing, etc.")，记录开火切换；
+ * advance 在本帧转向 / 开火等操作之前被调用，记录开火切换；
  * advanceAfter 在操作完成后按 2 秒节奏打印弹药 / 冷却 / 充能状态。
  */
 public class GearInWeaponFlowEffect implements EveryFrameWeaponEffectPluginWithAdvanceAfter,
@@ -152,7 +151,7 @@ import com.fs.starfarer.api.combat.WeaponAPI;
 /**
  * 射弹开火回调：只有把本类类名写进 .proj 的 onFireEffect 字段时才会被调用。
  * onFire 收到的就是刚生成的那一个射弹对象 (fireShot 生成后回调)；
- * 参数都是 "本次事件上下文"，禁止跨发缓存 (硬规范 2)。
+ * 参数都是 "本次事件上下文"，禁止跨发缓存。
  */
 public class GearInShotOnFireEffect implements OnFireEffectPlugin {
 
@@ -213,7 +212,7 @@ import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
 /**
  * 射弹命中回调：只有把本类类名写进 .proj 的 onHitEffect 字段时才会被调用
  * (射弹 / 导弹 / 光束脉冲命中结算时触发)。参数都是 "本次命中上下文"，
- * 禁止跨命中缓存 (硬规范 2)。
+ * 禁止跨命中缓存。
  */
 public class GearInShotOnHitEffect implements OnHitEffectPlugin {
 

@@ -10,13 +10,11 @@
 
 完成后，您将能够：
 
-- 列出 `ShipSystemAPI` 的状态访问器分组 (状态 / 效果 / 冷却 / 弹药 / 幅能 / 激活控制 / 目标)，并解释每个代表方法的返回类型与语义；
-- 解释五态状态机的推进规则：`IDLE`→`IN`→`ACTIVE`→`OUT`→`COOLDOWN` 每一步的转移条件、开关式 (toggle) 系统的两种结束路径、幅能不足提前结束与 `forceState` / `deactivate` 的语义；
-- 区分 stats 脚本的可见性边界：`apply` 只在 `effectLevel > 0` 或 `runScriptWhileIdle` 时被调用，`COOLDOWN` / `IDLE` 两态脚本不可见；
-- 列出目标获取的三条通道 (`getTargetLoc()` 用户激活系统时的鼠标世界坐标、`getShipTarget()` 舰船当前目标、`TARGET_FOR_SHIP_SYSTEM` AI flag)，并解释 flag 的寿命语义 (`FLAG_DURATION = 0.5f`，舰船 AI 覆写 1.0 秒) 与用户舰侧的差异 (无 AI 舰船无人写入 flag)；
-- 解释系统 AI 的接入链：`.system` 的 `aiType: "CUSTOM"` + `aiScript` 类名 → `ShipSystemSpecAPI.getAIScript()` 实例化 → `init(ship, system, flags, engine)`，包装成系统 AI 适配器后由舰船 AI 每帧调 `advance(amount, missileDangerDir, collisionDangerDir, target)`；
-- 区分 "statsScript 与 aiScript 是同名类的两个独立实例" 这一事实，并解释它对共享逻辑的约束 (只能走静态方法或 `ship.setCustomData`)；
-- 从 `starsector.log` 症状定位典型故障：部署期 `Error creating AI of type [...]`、AI 从不使用系统、用户按 F 无反应、激活无加成、加成中途消失、目标过期、跨战斗缓存残留。
+- 读取 `ShipSystemAPI` 的状态、效果、冷却、弹药与激活条件；
+- 区分系统状态机与 stats 脚本能够观察的运行阶段；
+- 为玩家舰和 AI 舰选择、验证并传递系统目标；
+- 配置 `statsScript` 与自定义系统 AI，并隔离两个脚本实例的状态；
+- 根据状态、目标和日志定位系统运行故障。
 
 ## 前置知识
 
@@ -577,292 +575,277 @@ import com.fs.starfarer.api.plugins.ShipSystemStatsScript;
 import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 完整最小例：战术系统运行态 —— Stats 脚本、状态机、目标锁定与系统 AI 的完整流程。
- *
- * 一个类身兼两个角色，两个角色由数据绑定各自实例化一次：
- * 1. Stats 脚本角色 (ShipSystemStatsScriptAdvanced)：.system 的 statsScript 字段挂载。
- *    实例在舰船部署时由系统运行时对象构造器创建一次 (spec.getStatsScript())，
- *    apply 只在 effectLevel &gt; 0(或 runScriptWhileIdle) 期间每帧调用，
- *    unapply 在 effectLevel 归零边界调用一次；COOLDOWN/IDLE 两态脚本不可见。
- *    引擎传入的 id 是 "系统id effect"(系统运行时对象.getStatModId)，modify 与 unmodify 必须用同一把钥匙。
- * 2. AI 角色 (ShipSystemAIScript)：.system 的 aiScript 字段挂载，aiType 必须为 CUSTOM。
- *    实例在舰船 AI 创建时由 createSystemAI 实例化一次 (spec.getAIScript())，
- *    init 缓存 ship/system/flags/engine，advance 每帧被舰船 AI 调用，
- *    参数 target 是舰船 AI 的当前目标 (不可见时为 null)。
- *
- * 关键纪律：
- * - statsScript 与 aiScript 是同名类的两个独立实例 (脚本类加载器.loadScriptInstance
- *   每次 newInstance)，实例字段互不共享；共享逻辑必须走静态方法 (本类全部目标逻辑都是静态的)；
- * - TARGET_FOR_SHIP_SYSTEM 由舰船 AI 每帧在调用系统 AI 前写入 (时长 1 秒)，
- *   本类 AI 角色也会把验证过的目标写进去；flag 有持续时间，消费前必须再验证一次；
- * - 玩家舰没有舰船 AI，AI 角色不会运行，flag 也无人写入 —— 玩家侧目标回退
- *   到 ship.getShipTarget()(瞄准镜锁定的目标)；
- * - 目标 ShipAPI 属于本场战斗实体，禁止跨战斗缓存 (与战斗实体同一纪律)。
+ * 完整最小例：战术系统运行态 —— Stats 脚本、状态机、目标锁定与系统 AI。
+ * 一个类身兼两个角色，由数据绑定各自实例化一次：Stats 脚本在舰船部署时创建，
+ * apply 只在 effectLevel > 0 期间每帧调用，unapply 在 effectLevel 归零边界调用一次；
+ * AI 角色随舰船 AI 创建，每帧决策并把验证过的目标写入 flag (有持续时间，消费前再验证)。
+ * 两个实例字段互不共享，共享目标逻辑全部走静态方法；玩家舰没有舰船 AI，
+ * 目标回退到 ship.getShipTarget()。
  */
 public class GearInTargetingSystem extends BaseShipSystemScript implements ShipSystemAIScript {
 
-	private static final Logger LOG = Global.getLogger(GearInTargetingSystem.class);
+    private static final Logger LOG = Global.getLogger(GearInTargetingSystem.class);
 
-	/** 系统标称射程 (经 systemRangeBonus 修正前的基础值)。 */
-	public static final float RANGE = 800f;
-	/** 锁定有效时满 effectLevel 下的最大速度倍率 (1.5 倍)。 */
-	public static final float SPEED_MULT = 1.5f;
-	/** AI 写入 TARGET_FOR_SHIP_SYSTEM 的 flag 持续时间 (秒)，与原版舰船 AI 的 1.0 秒一致。 */
-	public static final float AI_TARGET_FLAG_DURATION = 1.0f;
-	/** AI 决策节流区间 (0.2–0.3 秒一次决策，成熟实例同款)。 */
-	private static final float AI_DECISION_MIN = 0.2f;
-	private static final float AI_DECISION_MAX = 0.3f;
+    /** 系统标称射程 (经 systemRangeBonus 修正前的基础值)。 */
+    public static final float RANGE = 800f;
+    /** 锁定有效时满 effectLevel 下的最大速度倍率 (1.5 倍)。 */
+    public static final float SPEED_MULT = 1.5f;
+    /** AI 写入 TARGET_FOR_SHIP_SYSTEM 的 flag 持续时间 (秒)。 */
+    public static final float AI_TARGET_FLAG_DURATION = 1.0f;
+    /** AI 决策节流区间 (0.2–0.3 秒一次决策)。 */
+    private static final float AI_DECISION_MIN = 0.2f;
+    private static final float AI_DECISION_MAX = 0.3f;
 
-	// ---------- AI 角色字段 (ShipSystemAIScript 实例独有) ----------
-	private CombatEngineAPI engine;
-	private ShipAPI aiShip;
-	private ShipSystemAPI system;
-	private ShipwideAIFlags aiFlags;
-	private final IntervalUtil decisionInterval = new IntervalUtil(AI_DECISION_MIN, AI_DECISION_MAX);
-	private SystemState lastAISystemState = null;
+    // --- AI 角色字段 (ShipSystemAIScript 实例独有) ---
+    private CombatEngineAPI engine;
+    private ShipAPI aiShip;
+    private ShipSystemAPI system;
+    private ShipwideAIFlags aiFlags;
+    private final IntervalUtil decisionInterval = new IntervalUtil(AI_DECISION_MIN, AI_DECISION_MAX);
+    private SystemState lastAISystemState = null;
 
-	// ---------- Stats 角色字段 (ShipSystemStatsScript 实例独有) ----------
-	private State lastApplyState = null;
+    // --- Stats 角色字段 (ShipSystemStatsScript 实例独有) ---
+    private State lastApplyState = null;
 
-	// ================= 共享目标逻辑 (静态，两个角色共用同一语义) =================
+    // --- 共享目标逻辑 (静态，两个角色共用同一语义) ---
 
-	/** 有效射程：基础 RANGE 经 systemRangeBonus 修正 (ShipSystemSpecAPI.getRange 同式)。 */
-	public static float getRange(ShipAPI source) {
-		if (source == null) {
-			return RANGE;
-		}
-		return source.getMutableStats().getSystemRangeBonus().computeEffective(RANGE);
-	}
+    /** 有效射程：基础 RANGE 经 systemRangeBonus 修正。 */
+    public static float getRange(ShipAPI source) {
+        if (source == null) {
+            return RANGE;
+        }
+        return source.getMutableStats().getSystemRangeBonus().computeEffective(RANGE);
+    }
 
-	/** 目标合法性：敌方、存活、非残骸/相位/转移穿梭机、且在有效射程内。 */
-	public static boolean isValidTarget(ShipAPI source, ShipAPI target) {
-		if (source == null || target == null) {
-			return false;
-		}
-		if (target == source) {
-			return false;
-		}
-		if (!target.isAlive()) {
-			return false;
-		}
-		if (target.isHulk()) {
-			return false;
-		}
-		if (target.isPhased()) {
-			return false;
-		}
-		if (target.isShuttlePod()) {
-			return false;
-		}
-		if (target.getOwner() == source.getOwner()) {
-			return false;
-		}
-		Vector2f delta = Vector2f.sub(target.getLocation(), source.getLocation(), new Vector2f());
-		return delta.length() <= getRange(source);
-	}
+    /** 目标合法性：敌方、存活、非残骸/相位/转移穿梭机、且在有效射程内。 */
+    public static boolean isValidTarget(ShipAPI source, ShipAPI target) {
+        if (source == null || target == null) {
+            return false;
+        }
+        if (target == source) {
+            return false;
+        }
+        if (!target.isAlive()) {
+            return false;
+        }
+        if (target.isHulk()) {
+            return false;
+        }
+        if (target.isPhased()) {
+            return false;
+        }
+        if (target.isShuttlePod()) {
+            return false;
+        }
+        if (target.getOwner() == source.getOwner()) {
+            return false;
+        }
+        Vector2f delta = Vector2f.sub(target.getLocation(), source.getLocation(), new Vector2f());
+        return delta.length() <= getRange(source);
+    }
 
-	/**
-	 * 读取 AI 写入的目标：TARGET_FOR_SHIP_SYSTEM 的 custom 数据。
-	 * 玩家舰没有舰船 AI，本类 AI 角色也不会运行，flag 无人写入 —— 返回 null。
-	 */
-	public static ShipAPI readAITarget(ShipAPI source) {
-		if (source == null || source.getShipAI() == null) {
-			return null;
-		}
-		ShipwideAIFlags flags = source.getAIFlags();
-		if (flags == null || !flags.hasFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM)) {
-			return null;
-		}
-		Object data = flags.getCustom(AIFlags.TARGET_FOR_SHIP_SYSTEM);
-		return data instanceof ShipAPI ? (ShipAPI) data : null;
-	}
+    /**
+     * 读取 AI 写入的目标：TARGET_FOR_SHIP_SYSTEM 的 custom 数据。
+     * 玩家舰没有舰船 AI，本类 AI 角色也不会运行，flag 无人写入 —— 返回 null。
+     */
+    public static ShipAPI readAITarget(ShipAPI source) {
+        if (source == null || source.getShipAI() == null) {
+            return null;
+        }
+        ShipwideAIFlags flags = source.getAIFlags();
+        if (flags == null || !flags.hasFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM)) {
+            return null;
+        }
+        Object data = flags.getCustom(AIFlags.TARGET_FOR_SHIP_SYSTEM);
+        return data instanceof ShipAPI ? (ShipAPI) data : null;
+    }
 
-	/** 把验证通过的目标写入 TARGET_FOR_SHIP_SYSTEM(AI 角色调用 ship.useSystem() 前使用)。 */
-	public static boolean writeAITarget(ShipAPI source, ShipAPI target) {
-		if (source == null || source.getShipAI() == null) {
-			return false;
-		}
-		ShipwideAIFlags flags = source.getAIFlags();
-		if (flags == null || !isValidTarget(source, target)) {
-			return false;
-		}
-		flags.setFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM, AI_TARGET_FLAG_DURATION, target);
-		return true;
-	}
+    /** 把验证通过的目标写入 TARGET_FOR_SHIP_SYSTEM(AI 角色调用 ship.useSystem() 前使用)。 */
+    public static boolean writeAITarget(ShipAPI source, ShipAPI target) {
+        if (source == null || source.getShipAI() == null) {
+            return false;
+        }
+        ShipwideAIFlags flags = source.getAIFlags();
+        if (flags == null || !isValidTarget(source, target)) {
+            return false;
+        }
+        flags.setFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM, AI_TARGET_FLAG_DURATION, target);
+        return true;
+    }
 
-	/** 目标解析：AI flag 优先，回退舰船当前目标 (getShipTarget())，全部经过再验证。 */
-	public static ShipAPI pickTarget(ShipAPI source) {
-		if (source == null) {
-			return null;
-		}
-		ShipAPI target = readAITarget(source);
-		if (isValidTarget(source, target)) {
-			return target;
-		}
-		target = source.getShipTarget();
-		if (isValidTarget(source, target)) {
-			return target;
-		}
-		return null;
-	}
+    /** 目标解析：AI flag 优先，回退舰船当前目标 (getShipTarget())，全部经过再验证。 */
+    public static ShipAPI pickTarget(ShipAPI source) {
+        if (source == null) {
+            return null;
+        }
+        ShipAPI target = readAITarget(source);
+        if (isValidTarget(source, target)) {
+            return target;
+        }
+        target = source.getShipTarget();
+        if (isValidTarget(source, target)) {
+            return target;
+        }
+        return null;
+    }
 
-	// ================= Stats 脚本角色 (ShipSystemStatsScriptAdvanced) =================
+    // --- Stats 脚本角色 (ShipSystemStatsScriptAdvanced) ---
 
-	/**
-	 * IN/ACTIVE 期间每帧调用：锁定有效时按 effectLevel 施加最大速度倍率，
-	 * 锁定失效或进入 OUT 立即撤销 —— 目标是 "启动侧再验证，验证不过不加成"。
-	 */
-	@Override
-	public void apply(MutableShipStatsAPI stats, String id, State state, float effectLevel) {
-		ShipAPI ship = (ShipAPI) stats.getEntity();
-		if (ship == null) {
-			return;
-		}
-		if (lastApplyState != state) {
-			LOG.info("GearIn targeting stats: state " + lastApplyState + " -> " + state
-					+ " effectLevel=" + effectLevel);
-			lastApplyState = state;
-		}
-		boolean locked = isValidTarget(ship, pickTarget(ship));
-		if (state == ShipSystemStatsScript.State.OUT || !locked) {
-			stats.getMaxSpeed().unmodify(id);
-		} else {
-			stats.getMaxSpeed().modifyMult(id, 1f + (SPEED_MULT - 1f) * effectLevel);
-		}
-	}
+    /**
+     * IN/ACTIVE 期间每帧调用：锁定有效时按 effectLevel 施加最大速度倍率，
+     * 锁定失效或进入 OUT 立即撤销 —— 目标是 "启动侧再验证，验证不过不加成"。
+     */
+    @Override
+    public void apply(MutableShipStatsAPI stats, String id, State state, float effectLevel) {
+        ShipAPI ship = (ShipAPI) stats.getEntity();
+        if (ship == null) {
+            return;
+        }
+        if (lastApplyState != state) {
+            LOG.info("GearIn targeting stats: state " + lastApplyState + " -> " + state
+                    + " effectLevel=" + effectLevel);
+            lastApplyState = state;
+        }
+        boolean locked = isValidTarget(ship, pickTarget(ship));
+        if (state == ShipSystemStatsScript.State.OUT || !locked) {
+            stats.getMaxSpeed().unmodify(id);
+        } else {
+            stats.getMaxSpeed().modifyMult(id, 1f + (SPEED_MULT - 1f) * effectLevel);
+        }
+    }
 
-	/** effectLevel 归零边界 (进入 COOLDOWN/IDLE、舰船撤退或解体) 由引擎调用一次。 */
-	@Override
-	public void unapply(MutableShipStatsAPI stats, String id) {
-		stats.getMaxSpeed().unmodify(id);
-		LOG.info("GearIn targeting stats: unapply effect (id=" + id + ")");
-	}
+    /** effectLevel 归零边界 (进入 COOLDOWN/IDLE、舰船撤退或解体) 由引擎调用一次。 */
+    @Override
+    public void unapply(MutableShipStatsAPI stats, String id) {
+        stats.getMaxSpeed().unmodify(id);
+        LOG.info("GearIn targeting stats: unapply effect (id=" + id + ")");
+    }
 
-	/** 仅玩家舰：IN/ACTIVE 期间显示目标锁定状态 (无目标时按减益样式显示)。 */
-	@Override
-	public StatusData getStatusData(int index, State state, float effectLevel) {
-		if (index != 0) {
-			return null;
-		}
-		if (state != State.IN && state != State.ACTIVE) {
-			return null;
-		}
-		CombatEngineAPI engine = Global.getCombatEngine();
-		ShipAPI player = engine == null ? null : engine.getPlayerShip();
-		boolean locked = player != null && isValidTarget(player, pickTarget(player));
-		return new StatusData(locked ? "target locked" : "no target", !locked);
-	}
+    /** 仅玩家舰：IN/ACTIVE 期间显示目标锁定状态 (无目标时按减益样式显示)。 */
+    @Override
+    public StatusData getStatusData(int index, State state, float effectLevel) {
+        if (index != 0) {
+            return null;
+        }
+        if (state != State.IN && state != State.ACTIVE) {
+            return null;
+        }
+        CombatEngineAPI engine = Global.getCombatEngine();
+        ShipAPI player = engine == null ? null : engine.getPlayerShip();
+        boolean locked = player != null && isValidTarget(player, pickTarget(player));
+        return new StatusData(locked ? "target locked" : "no target", !locked);
+    }
 
-	/** 可用性许可：激活中始终可用；待机时必须有有效锁定目标，否则按下 U 不激活。 */
-	@Override
-	public boolean isUsable(ShipSystemAPI system, ShipAPI ship) {
-		if (system.isActive()) {
-			return true;
-		}
-		return isValidTarget(ship, pickTarget(ship));
-	}
+    /** 可用性许可：激活中始终可用；待机时必须有有效锁定目标，否则按下 U 不激活。 */
+    @Override
+    public boolean isUsable(ShipSystemAPI system, ShipAPI ship) {
+        if (system.isActive()) {
+            return true;
+        }
+        return isValidTarget(ship, pickTarget(ship));
+    }
 
-	/** 信息栏文字：返回 null 时 UI 使用默认 "READY" / "ACTIVE"。 */
-	@Override
-	public String getInfoText(ShipSystemAPI system, ShipAPI ship) {
-		if (system.isOutOfAmmo()) {
-			return null;
-		}
-		if (system.getState() != SystemState.IDLE) {
-			return null;
-		}
-		return isValidTarget(ship, pickTarget(ship)) ? "READY" : "NO TARGET";
-	}
+    /** 信息栏文字：返回 null 时 UI 使用默认 "READY" / "ACTIVE"。 */
+    @Override
+    public String getInfoText(ShipSystemAPI system, ShipAPI ship) {
+        if (system.isOutOfAmmo()) {
+            return null;
+        }
+        if (system.getState() != SystemState.IDLE) {
+            return null;
+        }
+        return isValidTarget(ship, pickTarget(ship)) ? "READY" : "NO TARGET";
+    }
 
-	// ================= AI 脚本角色 (ShipSystemAIScript) =================
+    // --- AI 脚本角色 (ShipSystemAIScript) ---
 
-	/** AI 实例创建时调用一次：缓存引用并随机化决策节流相位。 */
-	@Override
-	public void init(ShipAPI ship, ShipSystemAPI system, ShipwideAIFlags flags, CombatEngineAPI engine) {
-		this.aiShip = ship;
-		this.system = system;
-		this.aiFlags = flags;
-		this.engine = engine;
-		this.decisionInterval.randomize();
-		LOG.info("GearIn targeting AI init: ship=" + ship.getHullSpec().getHullId()
-				+ " system=" + system.getId());
-	}
+    /** AI 实例创建时调用一次：缓存引用并随机化决策节流相位。 */
+    @Override
+    public void init(ShipAPI ship, ShipSystemAPI system, ShipwideAIFlags flags, CombatEngineAPI engine) {
+        this.aiShip = ship;
+        this.system = system;
+        this.aiFlags = flags;
+        this.engine = engine;
+        this.decisionInterval.randomize();
+        LOG.info("GearIn targeting AI init: ship=" + ship.getHullSpec().getHullId()
+                + " system=" + system.getId());
+    }
 
-	/**
-	 * 每帧被舰船 AI 调用：守卫链 (暂停/实体/存活/CR/冷却/弹药)→ 决策节流 →
-	 * 目标补全与再验证 → 写 flag(激活期间每 0.2–0.3 秒刷新，flag 只有 1 秒寿命)→
-	 * 过载/高幅能守卫 → ship.useSystem()。
-	 */
-	@Override
-	public void advance(float amount, Vector2f missileDangerDir, Vector2f collisionDangerDir, ShipAPI target) {
-		if (engine.isPaused()) {
-			return; // 暂停守卫：暂停时 AI 决策不推进
-		}
-		logStateTransition();
+    /**
+     * 每帧被舰船 AI 调用：守卫链 (暂停/实体/存活/CR/冷却/弹药)→ 决策节流 →
+     * 目标补全与再验证 → 写 flag(激活期间每 0.2–0.3 秒刷新，flag 只有 1 秒寿命)→
+     * 过载/高幅能守卫 → ship.useSystem()。
+     */
+    @Override
+    public void advance(float amount, Vector2f missileDangerDir, Vector2f collisionDangerDir, ShipAPI target) {
+        if (engine.isPaused()) {
+            return; // 暂停守卫：暂停时 AI 决策不推进
+        }
+        logStateTransition();
 
-		if (!engine.isEntityInPlay(aiShip) || !aiShip.isAlive()) {
-			return;
-		}
-		if (aiShip.getCurrentCR() <= 0f) {
-			return;
-		}
-		if (system.getCooldownRemaining() > 0f) {
-			return; // 冷却中 (COOLDOWN 状态)
-		}
-		if (system.isOutOfAmmo()) {
-			return;
-		}
+        if (!engine.isEntityInPlay(aiShip) || !aiShip.isAlive()) {
+            return;
+        }
+        if (aiShip.getCurrentCR() <= 0f) {
+            return;
+        }
+        if (system.getCooldownRemaining() > 0f) {
+            return; // 冷却中 (COOLDOWN 状态)
+        }
+        if (system.isOutOfAmmo()) {
+            return;
+        }
 
-		decisionInterval.advance(amount);
-		if (!decisionInterval.intervalElapsed()) {
-			return; // 决策节流
-		}
+        decisionInterval.advance(amount);
+        if (!decisionInterval.intervalElapsed()) {
+            return; // 决策节流
+        }
 
-		// 目标补全与再验证：参数 target 优先 (舰船 AI 传入，不可见时为 null)，回退舰船当前目标
-		ShipAPI lock = target;
-		if (lock == null) {
-			lock = aiShip.getShipTarget();
-		}
-		if (!isValidTarget(aiShip, lock)) {
-			clearAITarget();
-			return;
-		}
-		writeAITarget(aiShip, lock);
+        // 目标补全与再验证：参数 target 优先 (舰船 AI 传入，不可见时为 null)，回退舰船当前目标
+        ShipAPI lock = target;
+        if (lock == null) {
+            lock = aiShip.getShipTarget();
+        }
+        if (!isValidTarget(aiShip, lock)) {
+            clearAITarget();
+            return;
+        }
+        writeAITarget(aiShip, lock);
 
-		if (system.isActive()) {
-			return; // 激活中：只刷新锁定 (flag 1 秒过期，不刷新 ACTIVE 后半段会丢锁)，不重复激活
-		}
-		if (aiShip.getFluxTracker().isOverloadedOrVenting()) {
-			return;
-		}
-		if (aiShip.getFluxLevel() > 0.9f) {
-			return; // 高幅能不启动
-		}
-		LOG.info("GearIn targeting AI: lock " + lock.getHullSpec().getHullId()
-				+ " range=" + getRange(aiShip));
-		aiShip.useSystem(); // ShipAPI.useSystem() -> giveCommand(USE_SYSTEM)(玩家按 F 与 AI 同一入口)
-	}
+        if (system.isActive()) {
+            return; // 激活中：只刷新锁定 (flag 1 秒过期，不刷新 ACTIVE 后半段会丢锁)，不重复激活
+        }
+        if (aiShip.getFluxTracker().isOverloadedOrVenting()) {
+            return;
+        }
+        if (aiShip.getFluxLevel() > 0.9f) {
+            return; // 高幅能不启动
+        }
+        LOG.info("GearIn targeting AI: lock " + lock.getHullSpec().getHullId()
+                + " range=" + getRange(aiShip));
+        aiShip.useSystem(); // ShipAPI.useSystem() -> giveCommand(USE_SYSTEM)(玩家按 F 与 AI 同一入口)
+    }
 
-	/** 清除过期的目标 flag(目标失效后下一轮决策不再复用旧锁)。 */
-	private void clearAITarget() {
-		if (aiFlags != null) {
-			aiFlags.removeFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM);
-		}
-	}
+    /** 清除过期的目标 flag(目标失效后下一轮决策不再复用旧锁)。 */
+    private void clearAITarget() {
+        if (aiFlags != null) {
+            aiFlags.removeFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM);
+        }
+    }
 
-	/** AI 视角的运行时状态机跳变日志：完整五态 (含 COOLDOWN/IDLE，Stats 角色看不到这两态)。 */
-	private void logStateTransition() {
-		if (system == null) {
-			return;
-		}
-		SystemState current = system.getState();
-		if (current != lastAISystemState) {
-			LOG.info("GearIn targeting AI: state " + lastAISystemState + " -> " + current
-					+ " effectLevel=" + system.getEffectLevel()
-					+ " cooldownRemaining=" + system.getCooldownRemaining());
-			lastAISystemState = current;
-		}
-	}
+    /** AI 视角的运行时状态机跳变日志：完整五态 (含 COOLDOWN/IDLE，Stats 角色看不到这两态)。 */
+    private void logStateTransition() {
+        if (system == null) {
+            return;
+        }
+        SystemState current = system.getState();
+        if (current != lastAISystemState) {
+            LOG.info("GearIn targeting AI: state " + lastAISystemState + " -> " + current
+                    + " effectLevel=" + system.getEffectLevel()
+                    + " cooldownRemaining=" + system.getCooldownRemaining());
+            lastAISystemState = current;
+        }
+    }
 }
 ```
 

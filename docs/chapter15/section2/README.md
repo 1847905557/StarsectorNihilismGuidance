@@ -10,15 +10,11 @@
 
 完成后，您将能够：
 
-- 区分五类场景各自的核心 trigger，并说清每类的触发时机、派发点与主要可用变量：
-    - 对话：`OpenInteractionDialog` / `PopulateOptions` / `DialogOptionSelected` / `PickGreeting` / `OpenCommLink`；
-    - 市场：`MarketPostOpen` / `MarketPostDock` / `TradePanelFlavorText`；
-    - 舰队：`BeginFleetEncounter` / `OpenCommLink` / `PickGreeting`；
-    - 酒吧：`AddBarEvents` / `BarPrintDesc` / `ReturnFromBar` / `BarHighRepCrewGain`；
-    - 任务：`MHOpenText` / `<前缀>_blurb` / `<前缀>_option` / `<前缀>_blurbBar` / `<前缀>_optionBar` / `AddMHCloseOption` / `NewGameOptionSelected` / `AddNewGameChoices`；
-- 解释场景组合写法：`$menuState` / `$tradeMode` 状态记忆限定菜单、`$option` 回流 `DialogOptionSelected` 形成选项完整流程、`FireAll` 填充菜单与 `FireBest` 叙述/转场的分层、`score:` 竞争纪律、以及 "进入/退出配对" 的转场模式；
-- 说明覆盖原版规则时的职责纪律：`FireBest` 只执行一条规则，覆盖者必须复刻被覆盖规则的结果职责 (最典型的：`MarketPostDock` 的 `$menuState = main 0` + `FireAll PopulateOptions`)，否则市场菜单不会出现；
-- 从症状定位场景故障，并沿着**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置核对 (沿用规则基础页的最小任务链)。
+- 为对话、市场、舰队、酒吧和任务选择对应的 trigger；
+- 使用场景记忆与 `$option` 组织菜单和选项回流；
+- 配合 `FireAll`、`FireBest` 与分数控制场景规则；
+- 覆盖原版规则时保留原有结果职责；
+- 根据场景状态和界面结果定位规则故障。
 
 ## 前置知识
 

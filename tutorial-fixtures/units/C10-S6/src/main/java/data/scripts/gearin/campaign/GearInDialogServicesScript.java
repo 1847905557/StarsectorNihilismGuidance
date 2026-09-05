@@ -8,8 +8,8 @@ import com.fs.starfarer.api.campaign.CampaignUIAPI;
 /**
  * 完整最小例 (对话框段)：InteractionDialogAPI 常用入口演示脚本。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK
- * 一次性门控 (每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
+ * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK
+ * 一次性门控 (每个注册项用各自的键)。
  *
  * 行为：用 CampaignUIAPI.showInteractionDialog(plugin, null) 打开演示对话框
  * (GearInServicesDialog implements InteractionDialogPlugin)，记录返回的 shown 布尔值

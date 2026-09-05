@@ -43,12 +43,14 @@ id,type,text1,text2,text3,text4,text5,notes
 
 ### Description.Type 枚举速查表
 
-| 枚举值 | 用途 | 本教程范围 |
-|---|---|---|
-| `SHIP` | 舰船与战机 hull 的描述 | 本节 |
-| `WEAPON` | 武器描述 | 本节 |
-| `SHIP_SYSTEM` | 战术系统描述 | 本节 (观察原版行，不新建) |
-| `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 | [C3-S5] |
+| 枚举值 | 用途 |
+|---|---|
+| `SHIP` | 舰船与战机 hull 的描述 |
+| `WEAPON` | 武器描述 |
+| `SHIP_SYSTEM` | 战术系统描述 |
+| `RESOURCE`、`PLANET`、`ASTEROID`、`FACTION`、`TERRAIN`、`ACTION_TOOLTIP`、`GALLERY`、`CUSTOM` | 生涯/杂项文本 |
+
+本节用到的是前三类：SHIP 与 WEAPON 由本节新建描述行，SHIP_SYSTEM 只观察原版行、不新建；其余类型在 [C3-S5] 展开。
 
 ### 描述字段默认值速查表
 

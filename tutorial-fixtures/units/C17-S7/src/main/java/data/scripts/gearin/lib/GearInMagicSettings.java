@@ -9,7 +9,7 @@ import org.magiclib.util.MagicSettings;
 import com.fs.starfarer.api.Global;
 
 /** 设置接入 (MagicSettings)：从 data/config/modSettings.json 的 "gear_in" 段读取
- * 光束与 HUD 配置，构造时缓存一次、不在每帧解析 (MagicSettings javadoc 建议)。
+ * 光束与 HUD 配置，构造时缓存一次、不在每帧解析。
  * 键缺失返回类型缺省值 (false / 0 / Color.RED / 空集合) 并写 warn 日志，不抛
  * 异常 —— 缺省值会参与后续运行语义，业务开关不要依赖缺省值。 */
 public class GearInMagicSettings {

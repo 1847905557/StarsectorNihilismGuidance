@@ -10,12 +10,11 @@
 
 完成后，您将能够：
 
-- 解释状态交接链的四个环节 (装配 → 成员 stats、人物技能 → 成员 stats、成员 stats → 战斗实体、`MutableStat` 重算语义) 与各自的触发入口；
-- 验证 stats 重建 "整体新建 + 按固定序列重放" 的行为，并区分跨重建保留与丢弃的修改；
-- 区分个人通道与舰队通道的归属条件：舰长个人技能 (SHIP 族) 需成员入队 (`getFleetData() != null`)，舰队指挥官舰队向技能 (ALL\_SHIPS\_IN\_FLEET) 经 `applyFleetwideToStats` 应用且跳过战机；
-- 按部署链顺序解释战斗 stats 的建立过程 (新造 → `ShipAPI` 对象创建时绑定实体并重放 → 入引擎 → 战斗内换舰长)，并核对每步的生效时机；
-- 解释 `MutableStat` 的延迟重算 (读 `getModifiedValue()` 才重算) 与同 ID 同类型幂等覆盖，识别引擎保留 ID 清单；
-- 从可观察症状定位典型故障：生涯侧数值 "自己变回去"、换舰长后 stats 无变化、界面数值不刷新、生涯与部署数值对不上、战斗内换舰长旧加成残留、自定义 modifier 被引擎覆盖、重放入口内递归栈溢出、跨战斗缓存失效。
+- 追踪装配、人物技能和成员状态进入最终舰船数值的过程；
+- 验证 stats 重建，并判断哪些修改会被重放或覆盖；
+- 区分舰长个人技能与舰队指挥官技能的应用范围；
+- 判断战斗部署、修饰 ID 和延迟重算的生效时机；
+- 根据生涯与战斗数值定位状态传递故障。
 
 ## 前置知识
 
@@ -542,7 +541,7 @@ import com.fs.starfarer.api.fleet.FleetMemberType;
 /**
  * 环节一：装配 -> stats 交接 (舰船 stats 基值与 setVariant 重算)。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
+ * 注册入口：生涯回调 onGameLoad，persistent data 键
  * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  *
  * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
@@ -565,7 +564,7 @@ public class GearInVariantToStats implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInVariantToStats() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override
@@ -648,7 +647,7 @@ import com.fs.starfarer.api.fleet.FleetMemberType;
 /**
  * 环节二 (个人)：舰长技能 -> 成员 stats 交接 (applyPersonalToStats)。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
+ * 注册入口：生涯回调 onGameLoad，persistent data 键
  * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  *
  * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
@@ -671,7 +670,7 @@ public class GearInCaptainToMember implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInCaptainToMember() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override
@@ -756,7 +755,7 @@ import com.fs.starfarer.api.fleet.FleetMemberType;
 /**
  * 环节二 (舰队向)：舰队指挥官 -> 成员 stats 交接 (applyFleetwideToStats)。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
+ * 注册入口：生涯回调 onGameLoad，persistent data 键
  * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  *
  * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
@@ -778,7 +777,7 @@ public class GearInCommanderToMember implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInCommanderToMember() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override
@@ -852,7 +851,7 @@ import com.fs.starfarer.api.fleet.FleetMemberType;
 /**
  * 环节四：MutableStat 重建与惰性重算 (updateStats 整体新建舰船 stats)。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
+ * 注册入口：生涯回调 onGameLoad，persistent data 键
  * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
  *
  * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
@@ -873,7 +872,7 @@ public class GearInStatsRebuild implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInStatsRebuild() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override

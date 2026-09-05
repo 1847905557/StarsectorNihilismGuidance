@@ -8,7 +8,7 @@ import lunalib.lunaSettings.LunaSettings;
 
 /**
  * 运行时读取角色：门控读取 LunaLib 设置 (LunaSettings 静态读取 API)。
- * 每个 getter 都是三段式：先按 C18-S1 检查 isModEnabled("lunalib")，
+ * 每个 getter 都是三段式：先用 isModEnabled 检查 LunaLib 是否启用，
  * 再调用 LunaSettings.getX，返回 null 时回退代码内默认值 (Defs)。
  * 类自身不引用 lunalib.** 于类加载路径，未启用时可直接安全调用。
  */
@@ -18,7 +18,7 @@ public class GearInLunaSettingsReader {
         // 工具类：不实例化
     }
 
-    /** LunaLib 是否已启用：调用任何 lunalib.** 之前先执行 C18-S1 的启用检查。 */
+    /** LunaLib 是否已启用：调用任何 lunalib.** 之前先执行启用检查。 */
     public static boolean isLunaLibEnabled() {
         return Global.getSettings().getModManager().isModEnabled(GearInLunaSettingsDefs.LUNA_LIB_MOD_ID);
     }

@@ -10,11 +10,11 @@
 
 完成后，您将能够：
 
-- 区分情报与交互对话框两个服务入口，并复述各自的进入方式 (`SectorAPI.getIntelManager()`、`CampaignUIAPI.showInteractionDialog(plugin, target)`)；
-- 区分 `addIntel` 与 `queueIntel` 的登记时机 (是否经过通信中继可见性检查)，并解释情报集合随存档保存的后果；
-- 写一个 `BaseIntelPlugin` 子类与一条 `MessageIntel` 纯消息，走完创建、登记、可见、推进、移除的完整流程；
-- 复述交互对话框的插件生命周期 (`init` → `optionSelected` → `advance` → `backFromEngagement` → `dismiss`) 与常用入口，并验证 `showInteractionDialog` 的返回值可能为 `false`；
-- 从症状定位故障，排查时沿数据文件 → 注册入口 → 运行使用方 → 可观察结果四个位置复核。
+- 区分情报管理器与交互对话框的服务入口；
+- 使用 `addIntel` 或 `queueIntel` 登记适合当前场景的情报；
+- 创建 `BaseIntelPlugin` 情报和 `MessageIntel` 消息；
+- 实现交互对话框并处理选项、推进和关闭结果；
+- 根据界面与日志定位情报登记和对话调用故障。
 
 ## 前置知识
 
@@ -451,7 +451,7 @@ import com.fs.starfarer.api.EveryFrameScript;
  *
  * 两个服务演示脚本 (情报 / 对话框) 都继承本类，各自只实现 runDemo()，
  * 避免每个演示类重复 EveryFrameScript 的骨架方法。本类是抽象基类，不参与任何注册；
- * 各子类的注册在 onGameLoad 的 persistent data 门内各自执行 (见页面调用点片段)。
+ * 各子类的注册在 onGameLoad 的 persistent data 门内各自执行。
  */
 public abstract class GearInOneShotScript implements EveryFrameScript {
 
@@ -459,7 +459,7 @@ public abstract class GearInOneShotScript implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInOneShotScript() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override
@@ -505,8 +505,8 @@ import com.fs.starfarer.api.util.Misc;
 /**
  * 完整最小例 (情报段)：IntelManagerAPI 常用入口演示脚本。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK
- * 一次性门控 (每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
+ * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK
+ * 一次性门控 (每个注册项用各自的键)。
  *
  * 行为：创建自定义情报 GearInServicesIntel(extends BaseIntelPlugin)addIntel 登记、
  * hasIntel 验证、removeIntel 移除 (不留存档残留)；再用 MessageIntel 发一条纯消息
@@ -562,8 +562,8 @@ import com.fs.starfarer.api.campaign.CampaignUIAPI;
 /**
  * 完整最小例 (对话框段)：InteractionDialogAPI 常用入口演示脚本。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK
- * 一次性门控 (每个注册项用各自的键，不挂进插件的 CLASS_MARK 门内)。
+ * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK
+ * 一次性门控 (每个注册项用各自的键)。
  *
  * 行为：用 CampaignUIAPI.showInteractionDialog(plugin, null) 打开演示对话框
  * (GearInServicesDialog implements InteractionDialogPlugin)，记录返回的 shown 布尔值
@@ -721,11 +721,27 @@ public class GearInServicesDialog implements InteractionDialogPlugin {
     }
 
     // 未使用的回调保留空实现 (InteractionDialogPlugin 要求全部实现)。
-    @Override public void optionMousedOver(String optionText, Object optionData) {}
-    @Override public void advance(float amount) {}
-    @Override public void backFromEngagement(EngagementResultAPI battleResult) {}
-    @Override public Object getContext() { return null; }
-    @Override public Map<String, MemoryAPI> getMemoryMap() { return null; }
+    @Override
+    public void optionMousedOver(String optionText, Object optionData) {
+    }
+
+    @Override
+    public void advance(float amount) {
+    }
+
+    @Override
+    public void backFromEngagement(EngagementResultAPI battleResult) {
+    }
+
+    @Override
+    public Object getContext() {
+        return null;
+    }
+
+    @Override
+    public Map<String, MemoryAPI> getMemoryMap() {
+        return null;
+    }
 
     /** 关系数值统一格式：保留两位小数。 */
     private static String fmt(float value) {

@@ -154,7 +154,6 @@ import org.lazywizard.lazylib.combat.AIUtils;
 import org.lazywizard.lazylib.combat.WeaponUtils;
 
 import com.fs.starfarer.api.Global;
-
 import com.fs.starfarer.api.combat.MissileAPI;
 import com.fs.starfarer.api.combat.WeaponAPI;
 

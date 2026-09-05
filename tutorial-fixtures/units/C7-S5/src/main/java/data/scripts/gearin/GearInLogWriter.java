@@ -4,11 +4,11 @@ import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
 
-public class GearInLogDemo {
+public class GearInLogWriter {
 
-    private static final Logger LOG = Global.getLogger(GearInLogDemo.class);
+    private static final Logger LOG = Global.getLogger(GearInLogWriter.class);
 
-    private GearInLogDemo() {
+    private GearInLogWriter() {
     }
 
     public static void info(String stage, String objectId, String detail) {

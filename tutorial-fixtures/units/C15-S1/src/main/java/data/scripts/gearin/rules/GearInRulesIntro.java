@@ -10,8 +10,8 @@ import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
 /**
  * 完整最小例：rules.csv 数据驱动对话的 Java 消费入口。
  *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK
- * 一次性门控 (沿用 C10-S1 / C10-S5 的既有模式，每个注册项用各自的键)。
+ * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK
+ * 一次性门控 (每个注册项用各自的键)。
  *
  * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个初始
  * trigger 为 GearInRulesIntro 的对话；对话的文本、脚本与选项全部来自 data/campaign/rules.csv
@@ -30,7 +30,7 @@ public class GearInRulesIntro implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInRulesIntro() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override

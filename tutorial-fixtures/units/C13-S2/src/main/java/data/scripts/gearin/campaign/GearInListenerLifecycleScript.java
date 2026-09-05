@@ -14,7 +14,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * 注册入口：onGameLoad 门控块内与监听器一同注册 (sector.addScript(this))。
  * 职责：按游戏天累计挂载时长，daysToLive >= 0 且到期时显式
  * sector.removeListener(listener) 并自停 —— isDone() 只清理脚本列表，
- * 监听器注册表必须单独移除，否则事件继续派发且实例随存档序列化 (硬规则)。
+ * 监听器注册表必须单独移除，否则事件继续派发且实例随存档序列化。
  */
 public class GearInListenerLifecycleScript implements EveryFrameScript {
 
@@ -61,7 +61,7 @@ public class GearInListenerLifecycleScript implements EveryFrameScript {
 
         if (daysToLive >= 0 && daysActive >= daysToLive) {
             done = true;
-            // 硬规则：脚本结束不等于监听器移除。isDone() 只清理脚本列表，
+            // 脚本结束不等于监听器移除。isDone() 只清理脚本列表，
             // 监听器注册表必须显式 removeListener，否则事件继续派发。
             sector.removeListener(listener);
             LOG.info(String.format(

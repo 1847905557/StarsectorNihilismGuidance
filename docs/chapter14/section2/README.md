@@ -10,14 +10,11 @@
 
 完成后，您将能够：
 
-- 区分任务清单旧名对应的实际类型：枢纽任务约定是 `HubMission`，Intel 约定是 `IntelInfoPlugin` 与 `IntelManagerAPI`，并说明 `MissionDefinitionAPI` 属于战役任务而非生涯任务；
-- 解释 `HubMission` 接口与 `BaseHubMission` 类族的职责分工，以及 `HubMissionWithTriggers` / `HubMissionWithSearch` / `HubMissionWithBarEvent` 各补充了什么能力；
-- 解释任务生命周期在创建、接受、推进与结束各阶段的关键调用与失败表现；
-- 解释阶段管理的内部结构 (`StageData` 与阶段图) 和 `setCurrentStage` 的完整副作用链；
-- 说明目标完成检测的帧推进轮询、对话驱动与时限三通道，以及 `ConditionChecker` 家族和 `setStageOn*` / `connectWith*` 的连接声明方式；
-- 区分单任务触发器链与跨任务全局链两种事件链形态，并说明各自的注册与回写方式；
-- 从零编写一个 `HubMissionWithBarEvent` 任务，用一条 `bar_events.csv` 行和六条 `rules.csv` 规则把它接进酒吧，并验证从出现、接取、推进到结算的完整流程；
-- 根据症状定位枢纽任务的典型故障。
+- 根据任务需要选择合适的 `BaseHubMission` 扩展类；
+- 管理任务创建、接受、阶段推进与结束状态；
+- 使用条件、时限和触发器连接任务目标；
+- 通过酒吧事件与 Rules 接入并完成一项生涯任务；
+- 根据情报、阶段和规则结果定位任务故障。
 
 ## 前置知识
 
@@ -799,33 +796,13 @@ import com.fs.starfarer.api.util.Misc;
 
 /**
  * 完整最小例：枢纽任务 (HubMission) —— Intel、阶段、目标与事件链。
- *
- * 任务 ID：gearInHub(bar_events.csv 的 mission id 列 = 本类在 CSV 的 spec id；
- * 该 ID 的消费者：HubMissionBarEventWrapper.setMissionId、规则分类前缀
- * gearInHub_blurbBar / gearInHub_optionBar、交互内存键 $gearInHub_stage、
- * mission ref 键 $gearInHub_ref)。本节所有权，不含工作单元编号变体。
- *
- * 注册入口：data/campaign/bar_events.csv 一行 (plugin 列 = 本类全名)+ rules.csv
- * 六条规则 (blurbBar / optionBar / startBar / 任务文本 / 数据收讫 / 交付结算)，见页面正文。
- * 展示链路：BarEventManager -> SpecBarEventCreator(isMission 判定)->
- * HubMissionBarEventWrapper -> shouldShowAtMarket / createAndAbortIfFailed(true)
- * -> updateInteractionData -> FireBest gearInHub_blurbBar / gearInHub_optionBar。
- * 接受链路：rules 的 contact_acceptBar -> BarCMD accept gearInHub ->
- * wrapper.getMission().accept() -> addIntel + addScript + setCurrentStage。
- *
- * 演示点：
- * 1. Intel：本类经 BaseHubMission 继承 BaseIntelPlugin —— accept 时 addIntel
- *    (Intel 界面可见)+ addScript(每帧推进)，结束时 endAfterDelay(3 游戏日)
- *    -> notifyEnded -> removeScript；
- * 2. 阶段：Stage 枚举四态 (CONTACT -> RETURN -> COMPLETED / FAILED)，
- *    setCurrentStage 切阶段时登记/解除 makeImportant 地图标记并发送下一步更新；
- * 3. 目标完成检测三通道：对话驱动 (rules 写 $gearInHub_dataReceived /
- *    $gearInHub_delivered + Call $gearInHub_ref updateStage，走 MemoryBooleanChecker
- *    连接)、帧推进轮询 (tracker 每 0.09-0.11 游戏天查连接)、时限
- *    (setTimeLimit(Stage.FAILED, 60, null) 到期切失败)；
- * 4. 事件链：两个一次性触发器 —— 进入 RETURN 阶段时写全局内存标记
- *    (AlwaysTrueChecker)，任务进行满 30 游戏天时写半程标记 (DaysElapsedChecker)；
- * 5. 奖励：信用点 (按距离与质量折算) 与双声望 (人物 MEDIUM / 势力 LOW)。
+ * 任务 ID gearInHub (bar_events.csv 的 mission id 列)：消费者含规则分类前缀
+ * gearInHub_blurbBar / gearInHub_optionBar、内存键 $gearInHub_stage / $gearInHub_ref。
+ * 注册入口：data/campaign/bar_events.csv 一行 (plugin 列 = 本类全名) + rules.csv
+ * 六条规则 (blurbBar / optionBar / startBar / 任务文本 / 数据收讫 / 交付结算)。
+ * accept 时 addIntel + addScript，结束 endAfterDelay；Stage 四态切换时登记/解除
+ * makeImportant 标记；完成检测三通道 (rules 写标志、帧轮询、60 天时限)；两个一次性
+ * 触发器写全局标记；奖励为信用点 (按距离与质量折算) 与双声望。
  */
 public class GearInHubMission extends HubMissionWithBarEvent {
 
@@ -867,9 +844,13 @@ public class GearInHubMission extends HubMissionWithBarEvent {
         }
 
         giver = getPerson();
-        if (giver == null) return false;
+        if (giver == null) {
+            return false;
+        }
         sourceMarket = giver.getMarket();
-        if (sourceMarket == null) return false;
+        if (sourceMarket == null) {
+            return false;
+        }
 
         // mission ref：rules 侧 Call $gearInHub_ref <action> 打到本任务的 callEvent。
         // 键已被其他任务占用时返回 false —— create 失败、本次不提供该任务。
@@ -883,7 +864,9 @@ public class GearInHubMission extends HubMissionWithBarEvent {
         requireMarketFactionNotHostileTo(Factions.PLAYER);
         preferMarketInDirectionOfOtherMissions();
         targetMarket = pickMarket();
-        if (targetMarket == null) return false;
+        if (targetMarket == null) {
+            return false;
+        }
 
         sourceContact = findOrCreateTrader(targetMarket.getFactionId(), targetMarket, true);
         if (sourceContact == null || !setPersonMissionRef(sourceContact, "$gearInHub_ref")) {

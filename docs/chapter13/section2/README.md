@@ -10,13 +10,11 @@
 
 完成后，您将能够：
 
-- 列出两条监听器通道，并解释各自的存储、去重与派发语义：
-    - Sector 级 `CampaignEventListener` 通道：`addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners`；
-    - `ListenerManagerAPI` 类型化通道：`addListener` / `addListener(listener, isTransient)` / `removeListener` / `removeListenerOfClass` / `hasListener` / `hasListenerOfClass` / `getListeners(Class)`。
-- 按分组列出 `CampaignEventListener` 的全部接口方法，并解释每一组事件在哪个边界点被触发 (战斗结束、贸易结算、舰队入地/离场/跳跃/到达、市场开关、声望变更、经济迭代)；
-- 解释监听器生命周期规则：注册时机、persistent data 注册标记、**监听器必须在合适时机移除**、transient 监听器读档后必须重新注册、配对类 "脚本结束 ≠ 监听器移除"、`addListenerWithTimeout` 的游戏天单位与暂停冻结语义；
-- 创建 Sector 级监听器、按帧生命周期脚本 (与监听器配对) 和 `ListenerManagerAPI` 类型化监听器，并在 `onGameLoad` 正确注册；
-- 从症状定位十类典型故障：没注册、`onApplicationLoad` 注册 NPE、重复注册成双、transient 读档丢失、僵尸监听器、超时单位误用、事件日志过频、战斗回调重复计数、双通道混淆、旧档不注册。
+- 根据事件类型选择 Sector 级或 `ListenerManagerAPI` 监听器；
+- 读取战斗、贸易、舰队、市场、声望和经济事件参数；
+- 在读档阶段完成注册、去重、超时和 transient 恢复；
+- 让配对脚本在结束时移除自己注册的监听器；
+- 根据触发次数、日志和读档结果定位监听器故障。
 
 ## 前置知识
 
@@ -535,9 +533,9 @@ import com.fs.starfarer.api.combat.EngagementResultAPI;
 
 /**
  * 完整最小例：Sector 级生涯事件监听器 (CampaignEventListener 角色)。
- * 注册入口：onGameLoad 门控块 (页面调用点片段，REGISTER_MARK 一次性门控)。
+ * 注册入口：onGameLoad 门控块 (REGISTER_MARK 一次性门控)。
  * 注册与自停由配对脚本 GearInListenerLifecycleScript 管理 —— 脚本到期后显式
- * removeListener：脚本结束不等于监听器移除 (硬规则)。BaseCampaignEventListener
+ * removeListener：脚本结束不等于监听器移除。BaseCampaignEventListener
  * 提供全接口 21 方法的空实现，本类只覆写关心的事件边界 (市场/贸易/战斗/舰队/声望)。
  */
 public class GearInCampaignListener extends BaseCampaignEventListener {
@@ -652,7 +650,7 @@ import com.fs.starfarer.api.campaign.SectorAPI;
  * 注册入口：onGameLoad 门控块内与监听器一同注册 (sector.addScript(this))。
  * 职责：按游戏天累计挂载时长，daysToLive >= 0 且到期时显式
  * sector.removeListener(listener) 并自停 —— isDone() 只清理脚本列表，
- * 监听器注册表必须单独移除，否则事件继续派发且实例随存档序列化 (硬规则)。
+ * 监听器注册表必须单独移除，否则事件继续派发且实例随存档序列化。
  */
 public class GearInListenerLifecycleScript implements EveryFrameScript {
 
@@ -699,7 +697,7 @@ public class GearInListenerLifecycleScript implements EveryFrameScript {
 
         if (daysToLive >= 0 && daysActive >= daysToLive) {
             done = true;
-            // 硬规则：脚本结束不等于监听器移除。isDone() 只清理脚本列表，
+            // 脚本结束不等于监听器移除。isDone() 只清理脚本列表，
             // 监听器注册表必须显式 removeListener，否则事件继续派发。
             sector.removeListener(listener);
             LOG.info(String.format(
@@ -724,23 +722,11 @@ import com.fs.starfarer.api.campaign.listeners.CurrentLocationChangedListener;
 
 /**
  * 完整最小例：经 ListenerManagerAPI 注册的类型化监听器 (typed listener)。
- *
- * 与 GearInCampaignListener(Sector 级 CampaignEventListener 通道) 不同，本类走的是
- * 第二条通道：SectorAPI.getListenerManager().addListener(listener, isTransient) 注册、
- * removeListener(this) 移除，事件由 ListenerUtil 按接口类型派发
- * (本类对应 CurrentLocationChangedListener，派发点在生涯引擎的 advance
- * 检测到当前地点变化时)。
- *
- * 注册入口：onGameLoad(调用点片段见页面正文)，用 transient=true 注册 ——
- * transient 监听器不随存档保存 (ListenerManagerAPI 的 transientListeners 仓库读档时
- * 重建为空)，因此读档后必须重新注册；调用点用 hasListenerOfClass 判空
- * 再补注册即可覆盖旧档。
- *
- * 演示点：
- * 1. reportCurrentLocationChanged(prev, curr)：玩家当前地点变化 (进出超空间、进入星系) 时触发；
- * 2. 自移除：触发满 reportsLeft 次后 removeListener(this) 并打日志 —— 监听器在不再需要时
- *    必须在合适时机移除，否则事件持续派发 (硬规则)；
- * 3. 全部字段可随存档序列化；本类字段不涉及瞬态句柄。
+ * SectorAPI.getListenerManager().addListener(listener, isTransient) 注册、removeListener
+ * 移除，事件按接口类型派发 (本类为 CurrentLocationChangedListener，玩家当前地点
+ * 变化时触发)。注册入口：onGameLoad，用 transient=true 注册 —— transient 监听器
+ * 不随存档保存，读档后必须用 hasListenerOfClass 判空后补注册；触发满 reportsLeft
+ * 次后自移除，监听器不再需要时必须在合适时机移除，否则事件持续派发。
  */
 public class GearInLocationChangeListener implements CurrentLocationChangedListener {
 
@@ -750,7 +736,7 @@ public class GearInLocationChangeListener implements CurrentLocationChangedListe
     private int reportsLeft = 5;
 
     public GearInLocationChangeListener() {
-        // 空构造：注册由调用方执行 (onGameLoad，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad)
     }
 
     @Override

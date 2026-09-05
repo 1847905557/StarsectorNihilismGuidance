@@ -15,28 +15,12 @@ import com.fs.starfarer.api.combat.MutableStat;
 
 /**
  * 完整最小例：市场条件生命周期演示脚本 (token、survey、suppression、重算)。
- *
- * 注册入口：生涯回调 onGameLoad(调用点片段见页面正文)，persistent data 键
- * REGISTER_MARK 一次性门控 (沿用既有模式：每个注册项用各自的键，不挂进插件的
- * CLASS_MARK 门内)。演示脚本在挂载后的第一帧执行一次完整序列并自停
- * (isDone()=true，引擎下一帧自动移除本脚本)：
- *   1. addCondition(GearIn_ore_deposits)：spec id -> 实例 token，plugin 立即 apply，
- *      hazard/accessibility 上升；读取实例 token、plugin 类、planetary、survey 状态、
- *      spec 字段与 tooltip token 替换值；
- *   2. 多实例 + param：addCondition(id, 0.20f) 产生第二个实例，两个 token 相互独立，
- *      修饰按 token 隔离 (同 spec id 不互相覆盖)；getFirstCondition 取首个实例；
- *   3. removeCondition(id) 移除同 id 全部实例 (不对称性 A)，修饰全部撤销；
- *   4. reapplyCondition(token) 单实例重算：unapply + apply，效果先降后升、终值不变；
- *   5. suppressCondition(id) 后 reapplyConditions()：unapply 执行、apply 被跳过，
- *      效果休眠但实例保留；unsuppressCondition(id) 后重算恢复；
- *   6. removeSpecificCondition(token) 只移除一个实例 (不对称性 B)；
- *   7. survey 门控：setSurveyed(false) 后重算 -> 效果休眠；setSurveyed(true) 后重算
- *      -> 效果恢复 (reapplyConditions 只对 surveyed 且未 suppressed 的条件 apply)；
- *   8. 原版对照 (只读)：找一颗条件市场 (isPlanetConditionMarketOnly) 上
- *      requiresSurveying() 为 true 的条件，观察其 isSurveyed 初始状态。
- *
- * 演示全程不遗留持久状态：全部实例在当帧移除 (removeSpecificCondition -> unapply)，
- * suppressed 集合复位，hazard/accessibility 回到基线。
+ * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK 一次性门控
+ * (每个注册项用各自的键)；挂载后第一帧执行一次完整序列并自停 (isDone()=true)。
+ * 序列依次演示 addCondition 的 spec→token 与立即 apply、多实例按 token 隔离、
+ * removeCondition 与 removeSpecificCondition 的不对称、reapplyCondition 单实例重算、
+ * suppress/survey 门控的重算休眠与恢复，以及原版条件市场 survey 状态只读对照；
+ * 全部实例当帧移除，不遗留持久状态。
  */
 public class GearInConditionLifecycleScript implements EveryFrameScript {
 
@@ -52,7 +36,7 @@ public class GearInConditionLifecycleScript implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInConditionLifecycleScript() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内，见页面调用点片段)
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     /** 修改演示目标市场；默认 "jangala"。 */

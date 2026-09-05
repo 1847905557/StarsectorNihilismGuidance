@@ -10,13 +10,11 @@
 
 完成后，您将能够：
 
-- 创建人物 (空白与势力随机两个入口)，并核对人物对象的默认值表；
-- 读写人物的身份与档案字段，区分 `getMemory()` 与 `getMemoryWithoutUpdate()` 两条记忆读取路径；
-- 解释关系三族的存储方式、`RepLevel` 九档阈值与档位判定；
-- 用 `setRelationship` / `adjustRelationship` / `ensureAtBest` / `ensureAtWorst` 修改关系，并核对返回值与数值落点；
-- 分配 captain 与 officer，说明舰长对战斗 AI 与成员统计的作用；
-- 把人物挂入四个持久归属入口，并解释局部变量人物不被保存的后果；
-- 从日志与界面症状定位人物相关的典型故障。
+- 创建空白或势力随机人物，并设置身份、档案与记忆字段；
+- 使用关系数值与 `RepLevel` 读取和限制人物关系；
+- 把人物分配为舰长或军官，并观察成员数值变化；
+- 将人物挂入能够随存档保存的归属对象；
+- 根据界面和日志定位关系、分配与持久化故障。
 
 ## 前置知识
 
@@ -671,6 +669,7 @@ public class GearInPersonScript implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInPersonScript() {
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override

@@ -15,7 +15,7 @@ import lunalib.lunaSettings.LunaSettingsListener;
  * hasSettingsListenerOfClass 幂等查询 (重复注册会让同一次保存触发多次回调)。
  *
  * 监听器实例在门控通过之后才创建 —— 类加载路径不触碰 lunalib.**，LunaLib 未启用
- * 时调用本类不会抛 NoClassDefFoundError；缺库处理方式见 C18-S1。
+ * 时调用本类不会抛 NoClassDefFoundError。
  */
 public class GearInLunaSettingsListener {
 
@@ -27,8 +27,8 @@ public class GearInLunaSettingsListener {
     }
 
     /**
-     * 注册 (幂等)：LunaLib 未启用时跳过并写 warn。注册入口见页面正文的接入片段
-     * (GearInModPlugin.onGameLoad 一行)；监听器实例在门控之后才创建。
+     * 注册 (幂等)：LunaLib 未启用时跳过并写 warn。注册入口：
+     * GearInModPlugin.onGameLoad 一行；监听器实例在门控之后才创建。
      */
     public static void registerListener() {
         if (!GearInLunaSettingsReader.isLunaLibEnabled()) {

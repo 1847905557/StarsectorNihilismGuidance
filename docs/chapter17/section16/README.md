@@ -10,12 +10,10 @@
 
 完成后，您将能够：
 
-- 用一个 `SpriteEntity` 持有 1000 份二维实例状态；
-- 用对象池复用 `Instance2Data`，并在归还时清除旧状态；
-- 把完整初始化提交与后续局部刷新分开；
-- 从渲染管理器移除实体后再归还实例池；
-- 让 `renderingCount` 与本批有效实例数保持一致；
-- 用实体数、实例数、提交次数和池容量核对批处理成本。
+- 用一个 `SpriteEntity` 管理 1000 份二维实例状态；
+- 使用对象池复用并清理 `Instance2Data`；
+- 区分完整初始化、局部刷新与 `renderingCount`；
+- 按移除顺序归还实例，并核对批处理成本。
 
 ## 前置知识
 
@@ -36,8 +34,6 @@
 | `SpriteEntity` | 一次批量绘制 |
 | `InstanceDataAPI` | 实例集合接口 |
 | `Instance2Data` | 保存二维状态 |
-| `GearInBatchPool` | 管理可复用对象 |
-| `GearInThousandInstanceBatch` | 首次全量提交、后续局部刷新和移除后的归还 |
 
 ### 预分配一千容量的实例列表
 
@@ -186,10 +182,10 @@ package data.scripts.gearin.lib;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.boxutil.manager.CombatRenderingManager;
 import org.boxutil.base.api.InstanceDataAPI;
 import org.boxutil.units.standard.attribute.Instance2Data;
 import org.boxutil.units.standard.entity.SpriteEntity;
-import org.boxutil.manager.CombatRenderingManager;
 
 public final class GearInThousandInstanceBatch {
     public void submit(SpriteEntity entity, GearInBatchPool pool, int count) {

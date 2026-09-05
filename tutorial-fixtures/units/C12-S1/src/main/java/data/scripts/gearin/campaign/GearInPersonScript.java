@@ -25,6 +25,7 @@ public class GearInPersonScript implements EveryFrameScript {
     private boolean executed = false;
 
     public GearInPersonScript() {
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override

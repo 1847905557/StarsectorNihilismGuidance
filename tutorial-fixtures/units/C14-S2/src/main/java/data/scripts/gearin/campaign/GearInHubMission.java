@@ -19,33 +19,13 @@ import com.fs.starfarer.api.util.Misc;
 
 /**
  * 完整最小例：枢纽任务 (HubMission) —— Intel、阶段、目标与事件链。
- *
- * 任务 ID：gearInHub(bar_events.csv 的 mission id 列 = 本类在 CSV 的 spec id；
- * 该 ID 的消费者：HubMissionBarEventWrapper.setMissionId、规则分类前缀
- * gearInHub_blurbBar / gearInHub_optionBar、交互内存键 $gearInHub_stage、
- * mission ref 键 $gearInHub_ref)。本节所有权，不含工作单元编号变体。
- *
- * 注册入口：data/campaign/bar_events.csv 一行 (plugin 列 = 本类全名)+ rules.csv
- * 六条规则 (blurbBar / optionBar / startBar / 任务文本 / 数据收讫 / 交付结算)，见页面正文。
- * 展示链路：BarEventManager -> SpecBarEventCreator(isMission 判定)->
- * HubMissionBarEventWrapper -> shouldShowAtMarket / createAndAbortIfFailed(true)
- * -> updateInteractionData -> FireBest gearInHub_blurbBar / gearInHub_optionBar。
- * 接受链路：rules 的 contact_acceptBar -> BarCMD accept gearInHub ->
- * wrapper.getMission().accept() -> addIntel + addScript + setCurrentStage。
- *
- * 演示点：
- * 1. Intel：本类经 BaseHubMission 继承 BaseIntelPlugin —— accept 时 addIntel
- *    (Intel 界面可见)+ addScript(每帧推进)，结束时 endAfterDelay(3 游戏日)
- *    -> notifyEnded -> removeScript；
- * 2. 阶段：Stage 枚举四态 (CONTACT -> RETURN -> COMPLETED / FAILED)，
- *    setCurrentStage 切阶段时登记/解除 makeImportant 地图标记并发送下一步更新；
- * 3. 目标完成检测三通道：对话驱动 (rules 写 $gearInHub_dataReceived /
- *    $gearInHub_delivered + Call $gearInHub_ref updateStage，走 MemoryBooleanChecker
- *    连接)、帧推进轮询 (tracker 每 0.09-0.11 游戏天查连接)、时限
- *    (setTimeLimit(Stage.FAILED, 60, null) 到期切失败)；
- * 4. 事件链：两个一次性触发器 —— 进入 RETURN 阶段时写全局内存标记
- *    (AlwaysTrueChecker)，任务进行满 30 游戏天时写半程标记 (DaysElapsedChecker)；
- * 5. 奖励：信用点 (按距离与质量折算) 与双声望 (人物 MEDIUM / 势力 LOW)。
+ * 任务 ID gearInHub (bar_events.csv 的 mission id 列)：消费者含规则分类前缀
+ * gearInHub_blurbBar / gearInHub_optionBar、内存键 $gearInHub_stage / $gearInHub_ref。
+ * 注册入口：data/campaign/bar_events.csv 一行 (plugin 列 = 本类全名) + rules.csv
+ * 六条规则 (blurbBar / optionBar / startBar / 任务文本 / 数据收讫 / 交付结算)。
+ * accept 时 addIntel + addScript，结束 endAfterDelay；Stage 四态切换时登记/解除
+ * makeImportant 标记；完成检测三通道 (rules 写标志、帧轮询、60 天时限)；两个一次性
+ * 触发器写全局标记；奖励为信用点 (按距离与质量折算) 与双声望。
  */
 public class GearInHubMission extends HubMissionWithBarEvent {
 
@@ -87,9 +67,13 @@ public class GearInHubMission extends HubMissionWithBarEvent {
         }
 
         giver = getPerson();
-        if (giver == null) return false;
+        if (giver == null) {
+            return false;
+        }
         sourceMarket = giver.getMarket();
-        if (sourceMarket == null) return false;
+        if (sourceMarket == null) {
+            return false;
+        }
 
         // mission ref：rules 侧 Call $gearInHub_ref <action> 打到本任务的 callEvent。
         // 键已被其他任务占用时返回 false —— create 失败、本次不提供该任务。
@@ -103,7 +87,9 @@ public class GearInHubMission extends HubMissionWithBarEvent {
         requireMarketFactionNotHostileTo(Factions.PLAYER);
         preferMarketInDirectionOfOtherMissions();
         targetMarket = pickMarket();
-        if (targetMarket == null) return false;
+        if (targetMarket == null) {
+            return false;
+        }
 
         sourceContact = findOrCreateTrader(targetMarket.getFactionId(), targetMarket, true);
         if (sourceContact == null || !setPersonMissionRef(sourceContact, "$gearInHub_ref")) {

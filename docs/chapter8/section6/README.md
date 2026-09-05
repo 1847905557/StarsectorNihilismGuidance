@@ -57,6 +57,10 @@ if (!listeners.hasListenerOfClass(GearInDamageListener.class)) {
 }
 ```
 
+::: warning 在注册前按类去重
+一般来说用 `hasListenerOfClass` 进行去重处理。不去重导致的效果问题往往不容易快速被发现。
+:::
+
 引擎级和舰船级的 `DamageListener` 都由 `CombatListenerUtil.reportDamageApplied(...)` 派发。把它挂在舰船上时，日志范围只覆盖该舰船相关的伤害。
 
 ### 修改造成的伤害

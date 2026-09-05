@@ -11,7 +11,7 @@ import com.fs.starfarer.api.impl.campaign.ids.Factions;
 /**
  * 完整最小例 (势力段)：FactionAPI 常用入口演示脚本。
  *
- * 注册入口：onGameLoad(调用点片段见页面正文)，persistent data 键 REGISTER_MARK 一次性门控。
+ * 注册入口：onGameLoad，persistent data 键 REGISTER_MARK 一次性门控。
  *
  * 行为：读取玩家势力身份/颜色与对霸主/海盗/独立势力的关系 (数值、等级、敌对判定、getRelToPlayer
  * 包装)；对霸主 adjustRelationship(+0.05) 后立即 setRelationship 精确回滚 ("写入后必须回滚"

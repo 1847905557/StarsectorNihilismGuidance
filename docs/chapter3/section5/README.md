@@ -164,7 +164,7 @@ GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
 | 对象 | 描述所在文件 | 使用方 |
 |---|---|---|
 | 战机联队 | 对应战机 hull 的 `SHIP` 描述行 | 舰队、装配和数据库界面复用战机船体描述 |
-| 船插 (hullmod) | `data/hullmods/hull_mods.csv` 的 `desc` 列 (该文件的列结构已另行讲解) | `HullModSpecAPI.getDescription(HullSize)`(`%s` 代换船体等级) |
+| 船插 (hullmod) | `data/hullmods/hull_mods.csv` 的 `desc` 列 | `HullModSpecAPI.getDescription(HullSize)`(`%s` 代换船体等级) |
 | 市场条件 (condition) | `data/campaign/market_conditions.csv` 的 `desc` 列 | 市场界面条件 tooltip |
 | 特殊物品 (special item) | `data/campaign/special_items.csv` 的 `desc` 列 | 货舱 tooltip 由物品插件渲染 (`BaseSpecialItemPlugin.createTooltip` → `spec.getDesc()`) |
 | 商品 (commodity) | 显示文本以 `RESOURCE` 行为准，commodities.csv 的 `desc` 列不被读取 | 货舱/交易 tooltip |

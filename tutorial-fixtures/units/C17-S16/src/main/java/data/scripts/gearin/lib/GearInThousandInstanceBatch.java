@@ -3,10 +3,10 @@ package data.scripts.gearin.lib;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.boxutil.manager.CombatRenderingManager;
 import org.boxutil.base.api.InstanceDataAPI;
 import org.boxutil.units.standard.attribute.Instance2Data;
 import org.boxutil.units.standard.entity.SpriteEntity;
-import org.boxutil.manager.CombatRenderingManager;
 
 public final class GearInThousandInstanceBatch {
     public void submit(SpriteEntity entity, GearInBatchPool pool, int count) {

@@ -169,10 +169,10 @@ public class GearInLightCombatPlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine == null) {
-            return; // 防御性判空 (C8-S1 同款姿势)
+            return; // 防御性判空
         }
         if (engine.isPaused()) {
-            return; // 暂停守卫 (C8-S1)：暂停时 advance 仍会被调用，光源静止但保持可见
+            return; // 暂停守卫：暂停时 advance 仍会被调用，光源静止但保持可见
         }
         ShipAPI player = engine.getPlayerShip();
         shipLight.update(amount, player);

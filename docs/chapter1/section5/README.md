@@ -470,8 +470,8 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 | proj hitpoints | 弹体血量，仅对非光束武器有效，且仅对导弹武器有实际作用 |
 | autofireAccBonus | 自动开火的精确度补正，非常建议为空 |
 | extraArcForAI | 开火判断 AI 的角度补正，非常建议为空 |
-| hints | 进阶内容，常用写法见本页的武器 Hints 速查表 |
-| tags | 进阶内容，常用写法见本页的武器 tags 速查表 |
+| hints | 进阶内容，不可随意编纂 |
+| tags | 进阶内容，可随意编纂 |
 | groupTag | 如果本项不为空，则本项相同的武器将优先编入同一组，且优先在本组不编入其它武器 |
 | tech/manufacturer | 科技类型，原版包括诸如低端科技、中线科技等，可随意填写 |
 | primaryRoleStr | 武器类型，文字描述 |

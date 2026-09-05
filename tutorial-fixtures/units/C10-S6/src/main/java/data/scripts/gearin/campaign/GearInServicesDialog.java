@@ -72,11 +72,27 @@ public class GearInServicesDialog implements InteractionDialogPlugin {
     }
 
     // 未使用的回调保留空实现 (InteractionDialogPlugin 要求全部实现)。
-    @Override public void optionMousedOver(String optionText, Object optionData) {}
-    @Override public void advance(float amount) {}
-    @Override public void backFromEngagement(EngagementResultAPI battleResult) {}
-    @Override public Object getContext() { return null; }
-    @Override public Map<String, MemoryAPI> getMemoryMap() { return null; }
+    @Override
+    public void optionMousedOver(String optionText, Object optionData) {
+    }
+
+    @Override
+    public void advance(float amount) {
+    }
+
+    @Override
+    public void backFromEngagement(EngagementResultAPI battleResult) {
+    }
+
+    @Override
+    public Object getContext() {
+        return null;
+    }
+
+    @Override
+    public Map<String, MemoryAPI> getMemoryMap() {
+        return null;
+    }
 
     /** 关系数值统一格式：保留两位小数。 */
     private static String fmt(float value) {

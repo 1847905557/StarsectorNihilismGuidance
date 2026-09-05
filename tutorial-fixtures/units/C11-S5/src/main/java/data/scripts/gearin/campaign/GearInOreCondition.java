@@ -7,29 +7,12 @@ import com.fs.starfarer.api.util.Misc;
 
 /**
  * 完整最小例：市场条件 (MarketConditionAPI) 插件。
- *
- * 注册入口：data/campaign/market_conditions.csv 的 script 列 (类名逐字一致)，
- * 由 CSV spec 加载期的 loadMarketConditions 完成 registerScriptClass；条件实例创建时
- * 脚本类加载器的 loadScriptInstance 按类名 newInstance(必须无参可实例化)，随后
- * init(market, condition) 绑定，再进入 apply/advance/unapply 生命周期。
- *
- * 数据所有权：本节新增条件 id {@code GearIn_ore_deposits}，只由本节定义；页面正文
- * 的 CSV 行与本类逐字配套。
- *
- * 行为：apply(id) 以传入的实例 token 为 modifier source 写入两条市场修饰 ——
- *   1. hazard +0.15(MutableStat，getHazard())；
- *   2. accessibility +0.10(StatBonus，getAccessibilityMod()，默认值可由
- *      addCondition(id, param) 的 param 覆盖，setParam 在 apply 之前被调用)。
- * unapply(id) 按同一 source 撤销。修饰 source 用实例 token 而非 spec id，
- * 同 spec id 多实例才不会互相覆盖 ("GearIn_ore_deposits" 是 spec id，
- * 每个实例的 token 形如 "GearIn_ore_deposits_xxxxx"，由
- * MarketConditionAPI.getIdForPluginModifications() 提供)。
- *
- * 存档语义：继承 BaseMarketConditionPlugin，isTransient() = true —— plugin 实例
- * 不进存档，读档后按 spec 重建并重新 init，setParam 的数据不重放
- *
- * tooltip：createTooltipAfterDescription 在 spec desc(含 $marketName token) 之后
- * 追加一条本条件的数值说明，演示 tooltip 扩展链路。
+ * 注册入口：data/campaign/market_conditions.csv 的 script 列 (类名逐字一致)，条件实例
+ * 由脚本类加载器按类名 newInstance 并 init 绑定。apply(id) 以传入的实例 token 为
+ * modifier source 写入 hazard +0.15 与 accessibility +0.10 (param 可覆盖)，unapply(id)
+ * 按同一 source 撤销；token 而非 spec id 做 source，同 spec 多实例才不互相覆盖。
+ * plugin 实例不进存档 (transient)，读档后按 spec 重建重新 init；tooltip 在 spec desc
+ * 之后追加本条件的数值说明。
  */
 public class GearInOreCondition extends BaseMarketConditionPlugin {
 

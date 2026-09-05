@@ -17,7 +17,7 @@ shader 编译失败若只留下黑屏，排错成本会很高。本节用 BoxUti
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 把编译失败变成可观察状态
@@ -38,28 +38,28 @@ shader 编译失败若只留下黑屏，排错成本会很高。本节用 BoxUti
 
 ### 从两个 MOD 相对路径创建程序
 
-**插入位置：\[GearInPulseRenderer.loadProgram()\]。** 一次完成读取、编译与链接。
+在 `GearInPulseRenderer.loadProgram()` 里一次完成读取、编译与链接：
 
 ```java
 LOG.info("GearIn pulse shader paths: vert=" + VERT_PATH + ", frag=" + FRAG_PATH);
 int id = ShaderUtil.createShaderVFFormPath(getClass().getName(), VERT_PATH, FRAG_PATH);
 ```
 
-完成信号：成功返回非零 programId。
+成功时返回非零 programId。
 
 ### 用 ShaderProgram 保存句柄
 
-**插入位置：\[loadProgram() 的下一行\]。** 统一 program 有效性与删除入口。
+在 `loadProgram()` 的下一行创建 `ShaderProgram` 句柄，统一 program 有效性与删除入口：
 
 ```java
 program = new ShaderProgram(id);
 ```
 
-完成信号：program.isValid 返回 true。
+创建后 `program.isValid` 返回 true。
 
 ### 创建后缓存 uniform location
 
-**插入位置：\[loadProgram() 初始化段\]。** 避免 render 中每帧查名称。
+在 `loadProgram()` 初始化段缓存两个 location，避免 render 中每帧查名称：
 
 ```java
 program.location = new int[] {
@@ -68,11 +68,11 @@ program.location = new int[] {
 };
 ```
 
-完成信号：日志能列出 `u_offset` 和 `u_time` location，且两者不是 `-1`。
+随后日志能列出 `u_offset` 和 `u_time` location，且两者不是 `-1`。
 
 ### 失败时删除并进入原版反馈
 
-**插入位置：\[loadProgram() 的失败分支\]。** 禁止绑定无效程序。
+在 `loadProgram()` 的失败分支里删除程序并返回失败，禁止绑定无效程序：
 
 ```java
 if (!program.isValid()) {
@@ -83,7 +83,7 @@ if (!program.isValid()) {
 }
 ```
 
-完成信号：编译错误后 `loadProgram` 返回 false，renderer 自废 —— 渲染器整体失效、战斗继续 (没有备用颜色反馈)。
+编译错误后 `loadProgram` 返回 false，renderer 自废，渲染器整体失效、战斗继续 (没有备用颜色反馈)。
 
 ## 排查关键故障
 
@@ -156,7 +156,7 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  * - 生命周期四环节：加载 (每场战斗 init 内执行，不跨战斗缓存)-> 使用 (render 回调内
  *   glUseProgram + glUniform* + glDrawArrays)-> 清理 (cleanup() 内 glDeleteProgram，
  *   战斗结束 destroyInstance 不调 cleanup()，由 advance() 主动失效驱动引擎移除，
- *   C8-S6 硬规则延续)-> 重载 (按同一路径删除后重建；本节采用 "重建成功才替换"：
+ *   C8-S7 硬规则延续)-> 重载 (按同一路径删除后重建；本节采用 "重建成功才替换"：
  *   新程序构建失败时保留旧程序、画面不中断，ERROR 日志给出 InfoLog 作为第一证据)。
  */
 public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
@@ -198,7 +198,7 @@ public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
             valid = false; // 初始化失败：不渲染，等引擎正常移除
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点 (C8-S6 同款姿势)
+        advance(0f); // 立即同步一次位置，避免首帧画在战场原点 (C8-S7 同款姿势)
         LOG.info("GearIn pulse shader init: program=" + program + ", vbo=" + vboId
                 + ", u_offset=" + uOffsetLocation + ", u_time=" + uTimeLocation
                 + ", vert=" + VERT_PATH + ", frag=" + FRAG_PATH);
@@ -297,7 +297,7 @@ public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
         }
         elapsed += amount;
         if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()(C8-S6 硬规则 3)
+            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()(C8-S7 硬规则 3)
             return;
         }
         // 重载循环：按同一路径删除并重建 program(资源生命周期闭环)
@@ -306,7 +306,7 @@ public class GearInPulseRenderer extends BaseCombatLayeredRenderingPlugin {
             reloadTimer = 0f;
             reloadProgram();
         }
-        // 剔除依据是承载实体的位置 (C8-S6 硬规则 4)：跟随玩家舰船
+        // 剔除依据是承载实体的位置 (C8-S7 硬规则 4)：跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
     }
 

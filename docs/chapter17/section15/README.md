@@ -19,7 +19,7 @@ BoxUtil 提供点、线、聚光、区域与无限光五种形态，它们的选
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -42,18 +42,18 @@ BoxUtil 提供点、线、聚光、区域与无限光五种形态，它们的选
 
 ### 为弹体选择 PointLight
 
-**插入位置：`GearInLightFactory.createFiveKinds()`。** 创建各向发散的短程光源，并写入通用局部光参数。
+`GearInLightFactory.createFiveKinds()` 创建各向发散的短程光源，并写入通用局部光参数：
 
 ```java
 PointLight projectileLight = new PointLight();
 configure(projectileLight, location, new Color(90, 220, 255), 1.2f, 180f);
 ```
 
-完成信号：弹体附近船体得到局部照明。
+弹体附近船体得到局部照明。
 
 ### 为光束选择 LinearLight
 
-**插入位置：`createFiveKinds()`。** 按光束长度和柱半径设置线形光源，再复用通用配置。
+`createFiveKinds()` 按光束长度和柱半径设置线形光源，再复用通用配置：
 
 ```java
 LinearLight beamLight = new LinearLight();
@@ -61,11 +61,11 @@ beamLight.setLength(240f);
 beamLight.setCylinderRadius(18f);
 ```
 
-完成信号：整段光束附近都有照明，而非只有起点。
+整段光束附近都有照明，而非只有起点。
 
 ### 为舰首选择 SpotLight
 
-**插入位置：`createFiveKinds()`。** 设置锥角并同步舰首朝向。
+`createFiveKinds()` 接着设置锥角并同步舰首朝向：
 
 ```java
 SpotLight spot = new SpotLight();
@@ -73,11 +73,11 @@ spot.setCone(18f);
 spot.setFacingScale(facing, 1f, 1f);
 ```
 
-完成信号：舰首前方出现有边界的锥形照明。
+舰首前方出现有边界的锥形照明。
 
 ### 按对象选择 Area 与 Infinite
 
-**插入位置：`createFiveKinds()` 返回前。** 区域光覆盖面板；无限光使用低强度并关闭距离衰减，避免把局部参数误套到全局光。
+`createFiveKinds()` 在返回前配置区域光覆盖面板；无限光使用低强度并关闭距离衰减，避免把局部参数误套到全局光：
 
 ```java
 AreaLight area = new AreaLight();
@@ -87,11 +87,11 @@ ambient.setStrength(0.12f);
 ambient.setNoneAttenuation();
 ```
 
-完成信号：大面积对象不会被单点热点破坏。
+大面积对象不会被单点热点破坏。
 
 ### 在创建光源前确认照明数据
 
-**插入位置：`GearInShadingProbe`。** 先按舰船与导弹 ID 查询材质集合，再按弹体或光束 ID 查询发光注册。
+`GearInShadingProbe` 先按舰船与导弹 ID 查询材质集合，再按弹体或光束 ID 查询发光注册：
 
 ```java
 boolean shipReady = EntityShadingDataManager.haveEntityTextureSet(hullId);
@@ -100,7 +100,7 @@ boolean projectileReady = EntityShadingDataManager.haveProjectileIlluminantData(
 boolean beamReady = EntityShadingDataManager.haveBeamIlluminantData(weaponId);
 ```
 
-完成信号：缺少数据时跳过光源并给出具体 ID。
+缺少数据时，跳过光源并给出具体 ID。
 
 ## 排查关键故障
 

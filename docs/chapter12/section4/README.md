@@ -21,7 +21,7 @@
 
 - [C4-S4] 的模块船、模块船生成流程与独立 `ShipAPI` 实体；
 - [C7-S1] 的 `GearInModPlugin` 所有权与 `onGameLoad` 注册检查；
-- [C8-S3] 的 `MutableStat`、修饰公式、modifier ID 稳定性与 `unmodify`；
+- [C8-S4] 的 `MutableStat、修饰公式、modifier ID 稳定性与 `unmodify`；
 - [C10-S3] 的 `FleetMemberAPI` 变体、stats、成员加入与 `setCaptain`；
 - [C12-S1] 的人物、`PersonAPI.getStats()`、舰长与默认舰长保存；
 - [C12-S2] 的技能效果作用域、`refreshCharacterStatsEffects` 与 effect ID；
@@ -235,7 +235,7 @@ LOG.info(String.format("baseline variantShared=%s memberLinked=%s speed=%.1f",
         stats.getMaxSpeed().getModifiedValue()));
 ```
 
-完成信号：日志中的 `variantShared` 与 `memberLinked` 均为 `true`，并得到一组稳定的舰船基线数值。
+运行后，日志中的 `variantShared` 与 `memberLinked` 均为 `true`，并得到一组稳定的舰船基线数值。
 
 ### 用新变体触发重建
 
@@ -249,7 +249,7 @@ wolf.setVariant(refit, false, true);
 MutableShipStatsAPI rebuilt = wolf.getStats();
 ```
 
-完成信号：`rebuilt` 是新 stats 对象，幅能容量增加 1000，幅能散耗增加 50，且 `rebuilt.getVariant() == refit`。
+重建后，`rebuilt` 是新的 stats 对象，幅能容量增加 1000、散耗增加 50，且 `rebuilt.getVariant() == refit`。
 
 ### 让入队舰长技能生效
 
@@ -263,7 +263,7 @@ fleetData.addFleetMember(wolf);
 wolf.updateStats();
 ```
 
-完成信号：后坐力倍率变为 0.750，自动瞄准变为 1.250，实弹与能量武器射程各增加 15%。同一人物在未入队成员上只会得到基线值。
+入队并 `updateStats()` 后，后坐力倍率变为 0.750，自动瞄准变为 1.250，实弹与能量武器射程各增加 15%；同一人物在未入队成员上只会得到基线值。
 
 ### 让舰队指挥官影响成员
 
@@ -280,7 +280,7 @@ float restored = wolf.getStats()
         .getMaxCombatReadiness().getModifiedValue();
 ```
 
-完成信号：读取 `withCommander` 后最大 CR 上升；置回 `null` 再读取，数值恢复到设置前。
+设置后读取 `withCommander`，最大 CR 上升；置回 `null` 再读取，数值恢复到设置前。
 
 ### 观察直接修改如何丢失
 
@@ -294,7 +294,7 @@ wolf.updateStats();
 MutableShipStatsAPI after = wolf.getStats();
 ```
 
-完成信号：`before != after`，速度从临时加成值回到基线；`setStatUpdateNeeded(true)` 后下一次 `getStats()` 才会再次创建对象。
+重建后 `before != after`，速度从临时加成值回到基线；`setStatUpdateNeeded(true)` 后，下一次 `getStats()` 才会再次创建新对象。
 
 ## 组装状态传递实现
 

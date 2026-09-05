@@ -19,7 +19,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -32,18 +32,18 @@
 
 ### 用准确 MOD id 判断启用状态
 
-**插入位置：`GearInCompatBridge` 的两个查询方法。** 分别读取 Nexerelin 与 LunaLib 的启用状态。
+在 `GearInCompatBridge` 的两个查询方法中分别读取 Nexerelin 与 LunaLib 的启用状态：
 
 ```java
 boolean nex = Global.getSettings().getModManager().isModEnabled("nexerelin");
 boolean luna = Global.getSettings().getModManager().isModEnabled("lunalib");
 ```
 
-完成信号：三种安装组合得到对应布尔值。
+三种安装组合各自得到对应的布尔值。
 
 ### 把库引用留在适配器类
 
-**插入位置：`getFullGraphicEffect()` 的启用分支。** 外层方法只在检测通过后触发持有 LunaLib 字节码引用的嵌套类。
+`getFullGraphicEffect()` 的启用分支只在检测通过后触发持有 LunaLib 字节码引用的嵌套类：
 
 ```java
 if (isLunaLibEnabled()) {
@@ -51,11 +51,11 @@ if (isLunaLibEnabled()) {
 }
 ```
 
-完成信号：LunaLib 缺席时，`LunaAdapter` 不初始化，外层桥接类仍可完成 Nexerelin 检测和默认值返回。
+LunaLib 缺席时，`LunaAdapter` 不初始化，外层桥接类仍可完成 Nexerelin 检测和默认值返回。
 
 ### 为缺席功能定义明确行为
 
-**插入位置：每个 disabled 分支。** 保持基础玩法并关闭增强 UI 或战略接入。
+每个 disabled 分支保持基础玩法，并关闭增强 UI 或战略接入：
 
 ```java
 if (!luna) {
@@ -63,11 +63,11 @@ if (!luna) {
 }
 ```
 
-完成信号：玩家仍能进入存档，日志说明关闭了哪项增强。
+玩家仍能进入存档，日志说明关闭了哪项增强。
 
 ### 让降级日志只出现一次
 
-**插入位置：外层桥接类的缺席分支。** 避免多个调用点重复报告同一缺席状态。
+外层桥接类的缺席分支避免多个调用点重复报告同一缺席状态：
 
 ```java
 if (!lunaMissingReported) {
@@ -76,20 +76,20 @@ if (!lunaMissingReported) {
 }
 ```
 
-完成信号：starsector.log 每次读档只有一条对应消息。
+starsector.log 每次读档只出现一条对应消息。
 
 ### 对包装类型返回值处理 null
 
-**插入位置：`LunaAdapter.getFullGraphicEffect(boolean fallback)`。** 在拆箱前回退到调用方默认值。
+`LunaAdapter.getFullGraphicEffect(boolean fallback)` 在拆箱前回退到调用方默认值：
 
 ```java
 Boolean value = LunaSettings.getBoolean(SETTINGS_OWNER_MOD_ID, "GearIn_fullGraphicEffect");
 return value == null ? fallback : value;
 ```
 
-完成信号：字段存在时返回实际值，缺键时返回调用方传入的 `fallback`。
+字段存在时返回实际值，缺键时返回调用方传入的 `fallback`。
 
-**插入位置：`data/config/LunaSettings.csv`。** 注册同一个字段 ID。
+在 `data/config/LunaSettings.csv` 中注册同一个字段 ID：
 
 ```csv
 fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab

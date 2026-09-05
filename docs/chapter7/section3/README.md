@@ -59,8 +59,9 @@
 
 ### 读取必填设置
 
+把下面的读取放进 `GearInModPlugin.onApplicationLoad()` 的版本检查之后，启动时同时验证字符串与浮点键：
+
 ```java
-// 插入位置：GearInModPlugin.onApplicationLoad() 的版本检查之后
 com.fs.starfarer.api.SettingsAPI settings = Global.getSettings();
 float volume = settings.getFloat("GearIn_loop_volume");
 String serviceName = settings.getString("GearIn_service_name");
@@ -68,23 +69,25 @@ Global.getLogger(GearInModPlugin.class)
         .info("GearIn settings required: name=" + serviceName + ", volume=" + volume);
 ```
 
-新增行为：启动时同时验证字符串与浮点键。完成信号：日志出现 `name=齿轮工业服务, volume=0.8`；任一键缺失或类型错误时，启动在对应 getter 处中止并留下堆栈。
+启动后日志出现 `name=齿轮工业服务, volume=0.8`；任一键缺失或类型错误时，启动在对应 getter 处中止并留下堆栈。
 
 ### 接受可选开关缺席
 
+在紧接必填设置日志之后加入 `optBoolean` 读取，配置未声明功能开关时使用关闭状态：
+
 ```java
-// 插入位置：紧接必填设置日志之后
 boolean enabled = settings.optBoolean("GearIn_feature_enabled", false);
 Global.getLogger(GearInModPlugin.class)
         .info("GearIn settings optional: enabled=" + enabled);
 ```
 
-新增行为：配置未声明功能开关时使用关闭状态。完成信号：保留该键时日志为 `enabled=true`；临时删除该键并重启后日志为 `enabled=false`，启动继续完成。
+保留该键时日志为 `enabled=true`；临时删除该键并重启后日志为 `enabled=false`，启动继续完成。
 
 ### 观察并恢复缓存
 
+把这段实验代码放在 `onApplicationLoad()` 末尾，仅用于本节缓存实验，复验后删除。它在同一次启动内证明 JSON 对象与 getter 缓存是两层状态，并在日志前恢复原值：
+
 ```java
-// 插入位置：onApplicationLoad() 末尾；仅用于本节缓存实验，复验后删除
 org.json.JSONObject json = settings.getSettingsJSON();
 float original = settings.getFloat("GearIn_loop_volume");
 json.put("GearIn_loop_volume", 0.25f);
@@ -97,7 +100,7 @@ Global.getLogger(GearInModPlugin.class).info(
         "GearIn settings cache: cached=" + cached + ", refreshed=" + refreshed);
 ```
 
-新增行为：同一次启动内证明 JSON 对象与 getter 缓存是两层状态，并在日志前恢复原值。完成信号：日志显示 `cached=0.8, refreshed=0.25`；随后再次读取 `GearIn_loop_volume` 得到 `0.8`。
+生效后，日志显示 `cached=0.8, refreshed=0.25`；随后再次读取 `GearIn_loop_volume` 得到 `0.8`。
 
 ### 汇总读取三个设置键
 

@@ -1,38 +1,80 @@
 # 使用 Global 访问游戏服务
 
-本节说明如何从 Java 代码访问 `Global` 提供的设置、生涯、战斗和日志服务，并根据当前阶段选择可用入口。
+本节按游戏运行阶段取得 `Global` 提供的服务，并把设置、生涯和战斗对象交给合适的 Java 代码。完成后可以从日志判断服务何时可用，并避免跨战斗保存失效的对象引用。
 
-*本节预期阅读时间：约 10 分钟。*
+*本节预期阅读时间：约 15 分钟。*
 
-*本节预期操作时间：约 10 分钟。*
+*本节预期操作时间：约 15 分钟。*
 
 ## 学习目标
 
-- 选择与当前阶段对应的 `Global` 访问器；
-- 判断 `getSector()` 和 `getCombatEngine()` 的可用时机；
-- 记录阶段和服务状态，定位空对象访问。
+- 使用 `Global.getCurrentState()` 判断当前运行阶段；
+- 在资源加载、生涯和战斗回调中取得对应的服务对象；
+- 通过日志确认服务可用性，并避免复用上一场战斗的引擎引用。
 
 ## 前置知识
 
 - [C6-S1] 的 Java 工具链和 JAR 构建；
 - [C7-S1] 的 `GearInModPlugin` 生命周期；
-- [C5-S2] 的资源注册方法。
+- [C5-S2] 的资源注册方法；
+- [C7-S5] 的日志器、级别和稳定前缀。
 
-## 选择服务入口
+## 判断当前运行阶段
 
-从 `Global.getSettings()` 读取静态设置，从 `Global.getSector()` 读取生涯对象，从 `Global.getCombatEngine()` 读取当前战斗引擎，从 `Global.getFactory()` 创建游戏对象，从 `Global.getLogger(...)` 写入日志。当前状态使用 `Global.getCurrentState()` 判断。
+`Global.getCurrentState()` 返回当前 `GameState`。先根据它判断代码处于资源加载、生涯还是战斗，再取得对应服务；用某个对象是否为 `null` 作为阶段判断会把 `服务尚未建立` 和 `当前场景确实没有对象` 混为一谈。
 
-资源加载期只允许读取设置、日志等已建立的服务；生涯回调可以读取 `getSector()`；战斗插件必须在当前战斗中取得 `getCombatEngine()`，不得跨战斗保存引用。
+```java
+public static boolean isInCombat() {
+    return Global.getCurrentState() == GameState.COMBAT;
+}
+```
 
-## 判断服务生命周期
+这个判断适合放在需要区分战斗与其他场景的通用工具中。它只报告阶段，具体服务仍需在实际回调中重新取得。
 
-`getSettings()`、`getLogger(...)` 在游戏循环开始前可用。`getSector()` 在生涯建立后可用，`getCombatEngine()` 只在战斗期间代表当前引擎。不能用引擎是否为 `null` 代替 `getCurrentState()` 的阶段判断。
+## 在资源加载阶段读取设置
 
-## 写入运行日志
+资源加载和 `onApplicationLoad()` 阶段可以使用 `Global.getSettings()` 读取合并后的设置，也可以使用 `Global.getLogger(...)` 写入日志。设置对象适合读取版本、音量和开关等静态配置；具体键的读取方式见 [C7-S3]。
 
-使用 `Global.getLogger(GearInGlobalAccess.class)` 建立日志器，并记录状态、服务可用性和存档加载标记。日志会写入 `starsector.log`，空的生涯或战斗对象必须对应明确的警告。
+```java
+com.fs.starfarer.api.SettingsAPI settings = Global.getSettings();
+String version = settings.getGameVersion();
+Global.getLogger(GearInGlobalAccess.class).info("GearIn settings version=" + version);
+```
 
-## 实现全局访问工具
+日志服务也在早期可用，记录阶段和服务状态后可以直接在 `starsector.log` 中搜索。日志器的级别选择和上下文格式统一由 [C7-S5] 说明。
+
+## 在生涯阶段取得 SectorAPI
+
+`Global.getSector()` 返回当前生涯的 `SectorAPI`。生涯对象必须等生涯建立后再读取，因此新档和读档相关代码放在 `onNewGame()`、`onGameLoad()` 或其他生涯回调中。资源加载阶段直接读取它会得到空对象并在后续调用中触发空指针。
+
+```java
+SectorAPI sector = Global.getSector();
+Object marker = sector.getPersistentData().get("GearInGlobalAccess");
+```
+
+`SectorAPI` 还提供存档持久数据；标记、关系或生成结果需要随存档保存时，应把值写入 `getPersistentData()`，而不是保存在静态字段中。
+
+## 在战斗回调中取得 CombatEngineAPI
+
+`Global.getCombatEngine()` 只代表当前战斗的 `CombatEngineAPI`。战斗插件或战斗脚本在当前回调中取得它，用完后随着战斗结束释放引用；第二场战斗必须重新调用访问器。
+
+```java
+CombatEngineAPI engine = Global.getCombatEngine();
+boolean active = engine != null && !engine.isPaused();
+Global.getLogger(GearInGlobalAccess.class).info("GearIn combat active=" + active);
+```
+
+引擎对象包含战斗实体、时间和暂停状态。把它保存到跨战斗的静态字段会让下一场战斗继续指向旧引擎，表现为实体查询失败或调用没有效果。
+
+## 了解其他全局入口
+
+`Global.getFactory()` 用于创建游戏对象；**目前暂不深化 `Global.getFactory()` 的对象创建 API 和具体用法**。本节只使用设置、生涯、战斗和日志服务完成阶段判断与验证。
+
+## 完整最小例
+
+下面的工具类把阶段判断和服务状态记录集中起来。`isInCombat()` 提供布尔判断，`logAccessorState()` 在一个调用点读取当前阶段、设置、生涯和战斗服务，便于比较不同运行阶段的结果。
+
+::: details 完整成品：GearInGlobalAccess
 
 ```java
 package data.scripts.gearin;
@@ -72,35 +114,48 @@ public class GearInGlobalAccess {
 }
 ```
 
+:::
+
 ## 验证方案
 
-1. 在入口插件或脚本中调用 `GearInGlobalAccess.logAccessorState()`；
-2. 分别在资源加载、生涯和战斗阶段查看 `starsector.log`；
-3. 确认每个阶段只读取已建立的服务；
-4. 进入第二场战斗，确认没有复用上一场战斗的引擎对象。
+1. 在 `GearInModPlugin.onApplicationLoad()` 或其他入口脚本中调用 `GearInGlobalAccess.logAccessorState()`，重新构建 JAR。
+2. 启动游戏并查看 `Starsector/starsector-core/starsector.log`，记录资源加载阶段的 `state`、`settings`、`sector` 和 `engine` 值。
+3. 新建生涯后再次调用工具类，核对 `state` 已进入生涯且 `sector=true`。
+4. 进入第一场战斗，在战斗回调中取得 `Global.getCombatEngine()` 并记录当前引擎状态。
+5. 结束第一场战斗、进入第二场战斗并重新调用访问器，核对第二场使用的是当前引擎对象。
+6. 对照日志中的 `GearIn getSector() is null` 和 `GearIn getCombatEngine() is null`，确认警告只出现在对应服务尚未建立的阶段。
 
-预期结果：日志显示正确阶段和服务可用性，错误阶段访问得到明确警告，战斗对象随当前战斗更新。
+预期结果：
+
+- 资源加载阶段可以读取设置和日志服务；
+- 生涯建立后 `SectorAPI` 可用，持久数据读取指向当前存档；
+- 战斗阶段取得的引擎只对应当前战斗，第二场战斗重新取得对象；
+- 阶段、服务状态和加载标记均写入 `starsector.log`，过早访问能够定位到具体服务。
 
 ## 故障分析
 
-- **生涯加载期出现空指针**：过早调用 `getSector()`。
+- **生涯加载期出现空指针**：代码在生涯建立前调用 `getSector()` 或继续使用返回对象。
 
-    - **解决方案**：把读取放到生涯回调。
+    - **解决方案**：把生涯访问移到 `onNewGame()`、`onGameLoad()` 或其他生涯回调，并在调用前记录当前 `GameState`。
 
-- **第二场战斗仍使用旧引擎**：跨战斗保存 `CombatEngineAPI`。
+- **第二场战斗仍使用旧引擎**：`CombatEngineAPI` 被保存到跨战斗字段或静态状态中。
 
-    - **解决方案**：在当前回调中重新获取。
+    - **解决方案**：在每个战斗回调中重新调用 `Global.getCombatEngine()`，不要把上一场战斗的引用带入下一场。
 
-- **日志没有输出**：没有使用 `Global.getLogger(...)` 或未查看 `starsector.log`。
+- **日志无法判断服务阶段**：日志行缺少 `state`、服务布尔值或 `loadingSave` 信息。
 
-    - **解决方案**：修正日志器和日志路径。
+    - **解决方案**：调用 `logAccessorState()`，使用 `Global.getLogger(GearInGlobalAccess.class)` 写出完整状态，并在 `starsector.log` 中搜索 `GearIn` 前缀。
 
 ## 总结
 
-`Global` 提供按阶段使用的游戏服务。设置和日志可以在早期读取，生涯和战斗对象必须等待对应阶段；状态判断使用 `getCurrentState()`，战斗引擎只在当前战斗中取得。
+`Global` 访问器必须与运行阶段配合使用：设置和日志服务用于早期检查，生涯对象等待生涯建立，战斗引擎在当前战斗回调中取得。`getCurrentState()` 负责阶段判断，`SectorAPI.getPersistentData()` 负责存档范围的状态，战斗引擎则在每场战斗重新获取。`Global.getFactory()` 目前暂不深化。
 
 ## 建议参考项
 
-- [C7-S1]：入口插件的生命周期；
+- [C7-S1]：入口插件的生命周期回调位置；
 - [C7-S3]：通过 `Global.getSettings()` 读取设置；
-- [C7-S4]：通过 `Global.getSoundPlayer()` 播放声音。
+- [C7-S4]：通过 `Global.getSoundPlayer()` 播放声音；
+- [C7-S5]：日志器、级别和稳定上下文；
+- `com.fs.starfarer.api.Global`：全局服务访问器；
+- `com.fs.starfarer.api.campaign.SectorAPI`：生涯对象和持久数据；
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：当前战斗引擎。

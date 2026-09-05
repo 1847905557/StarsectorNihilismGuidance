@@ -1,6 +1,6 @@
 # 制作 MOD 入口类的最基础适配
 
-本节为 GearIn 建立一个最小 MOD 入口类，并在新建生涯时设置势力关系。这里只需要理解入口声明、`BaseModPlugin` 和 `onNewGame()`；完整生命周期由 [C7-S1] 详细讲解。
+本节为 GearIn 建立一个最小 MOD 入口类，并在新建生涯时设置势力关系。这里只需要理解入口声明、`BaseModPlugin` 和 `onNewGame()`；核心入口生命周期与存档初始化由 [C7-S1] 继续讲解。
 
 *本节预期阅读时间：\~8 分钟。*
 
@@ -129,7 +129,7 @@ public class GearInModPlugin extends BaseModPlugin {
 
 ## 总结
 
-`mod_info.json` 用完整类名声明 `GearInModPlugin`，`BaseModPlugin` 允许入口类只覆写需要的回调，`onNewGame()` 则把关系设置放进新档生成过程。这个入口会在下一节继续调用星系生成器；启动、读档、保存和其他回调的完整规则由 [C7-S1] 负责。
+`mod_info.json` 用完整类名声明 `GearInModPlugin`，`BaseModPlugin` 允许入口类只覆写需要的回调，`onNewGame()` 则把关系设置放进新档生成过程。这个入口会在下一节继续调用星系生成器；启动、读档、保存和存档初始化的核心规则由 [C7-S1] 负责。
 
 ## 建议参考项
 

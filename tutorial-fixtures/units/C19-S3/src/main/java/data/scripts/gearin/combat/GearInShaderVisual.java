@@ -54,7 +54,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   不创建程序；
  * - 生命周期：每场战斗 init 创建程序与 VBO(GL 上下文就绪)，render 内 active()/
  *   close() 配对提交 (实例规范 "active() 后必须按 close() 关闭")，
- *   cleanup() 内 program.delete() + glDeleteBuffers，禁止跨战斗缓存 (C7-S2/C8-S6
+ *   cleanup() 内 program.delete() + glDeleteBuffers，禁止跨战斗缓存 (C7-S2/C8-S7
  *   延续；实例规范 "资源清理归创建者")；isValid() 使用前检查
  *   (实例陷阱：失效程序继续绑定 → 输出错位或状态污染)。
  */
@@ -197,10 +197,10 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
         }
         elapsed += amount;
         if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()(C8-S6 硬规则 3)
+            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()(C8-S7 硬规则 3)
             return;
         }
-        // 剔除依据是承载实体的位置 (C8-S6 硬规则 4)：跟随玩家舰船
+        // 剔除依据是承载实体的位置 (C8-S7 硬规则 4)：跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
     }
 

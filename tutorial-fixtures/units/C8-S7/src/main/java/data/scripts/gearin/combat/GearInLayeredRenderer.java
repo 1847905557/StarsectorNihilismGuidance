@@ -33,7 +33,7 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  *   不做任何绘制；
  * - 暂停时引擎不推进实体 (advanceInner 的暂停分支只 advance 地形与玩家舰船)，
  *   但渲染循环照常执行 (渲染不暂停)；isPaused() 守卫为防御性写法 (成熟实例一致做法)；
- * - 插件、引擎与舰船引用禁止跨战斗缓存 (C7-S2 / C8-S4 同规)。
+ * - 插件、引擎与舰船引用禁止跨战斗缓存 (C7-S2 / C8-S2 同规)。
  */
 public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 

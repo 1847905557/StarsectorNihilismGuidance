@@ -250,7 +250,7 @@ LOG.info("GearIn hull source=" + hullVariant.getSource()
         + " empty=" + hullVariant.isEmptyHullVariant());
 ```
 
-完成信号：日志显示 `brawler_Assault` 的 `source=STOCK`，并显示 `brawler_Hull` 的 `source=HULL` 与 `empty=true`。
+执行后，日志显示 `brawler_Assault` 的 `source=STOCK`，并显示 `brawler_Hull` 的 `source=HULL` 与 `empty=true`。
 
 ### 隔离克隆并改装
 
@@ -269,7 +269,7 @@ refit.setSource(VariantSource.REFIT);
 refit.setVariantDisplayName("GearIn Refit");
 ```
 
-完成信号：日志中的克隆变体显示 `source=REFIT`、`WS 003=railgun`、幅能 14/10；随后再次读取 stock，原槽位仍是 `annihilator`。
+日志中的克隆变体显示 `source=REFIT`、`WS 003=railgun`、幅能 14/10；随后再次读取 stock，原槽位仍是 `annihilator`。
 
 ### 让武器进入可控分组
 
@@ -285,7 +285,7 @@ LOG.info("before groups=" + fromEmpty.getWeaponGroups().size()
 fromEmpty.autoGenerateWeaponGroups();
 ```
 
-完成信号：调用前 `unassigned=true`，调用后生成一个包含两个槽位的武器组。战机变体要在数据文件中提前写好分组，因为部署期补组不覆盖战机。
+调用前日志显示 `unassigned=true`，调用后生成一个包含两个槽位的武器组。战机变体要在数据文件中提前写好分组，因为部署期补组不覆盖战机。
 
 ### 覆盖模块变体
 
@@ -299,7 +299,7 @@ ShipVariantAPI stationCopy = station.clone();
 stationCopy.setModuleVariant("WS 009", moduleCopy);
 ```
 
-完成信号：`stationCopy.getModuleVariant("WS 009").getSource()` 为 `REFIT`。若传入 STOCK 来源，调用会按移除覆盖处理，站体仍返回原模块。
+挂载后 `stationCopy.getModuleVariant("WS 009").getSource()` 为 `REFIT`。若传入 STOCK 来源，调用会按移除覆盖处理，站体仍返回原模块。
 
 ### 序列化改装结果
 
@@ -312,7 +312,7 @@ JSONObject json = refit.toJSONObject();
 LOG.info("GearIn refit JSON: " + json.toString(2));
 ```
 
-完成信号：日志 JSON 至少包含 `displayName`、`hullId`、`variantId`、幅能字段和 `weaponGroups`；改装是否随存档保留仍由来源与成员保存路径决定。
+日志 JSON 至少包含 `displayName`、`hullId`、`variantId`、幅能字段和 `weaponGroups`；改装是否随存档保留仍由来源与成员保存路径决定。
 
 ## 组装舰船变体实现
 

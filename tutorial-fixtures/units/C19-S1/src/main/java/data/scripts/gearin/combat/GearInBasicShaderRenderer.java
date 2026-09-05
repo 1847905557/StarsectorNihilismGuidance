@@ -39,10 +39,10 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  * - 编译/链接失败检查：GL_COMPILE_STATUS / GL_LINK_STATUS 为 FALSE 时读取
  *   glGetShaderInfoLog / glGetProgramInfoLog 并删除对象 (GraphicsLib createShader() /
  *   loadShader() 同款姿势)；
- * - 资源生命周期沿用 C8-S6 硬规则 2/3：GL 资源在 cleanup() 释放；战斗结束
+ * - 资源生命周期沿用 C8-S7 硬规则 2/3：GL 资源在 cleanup() 释放；战斗结束
  *   destroyInstance 不调用 cleanup()，插件在 advance() 里主动失效 (isExpired() ->
  *   true) 驱动引擎移除；本示例设 LIFETIME 秒寿命后自清；
- * - 插件、引擎引用禁止跨战斗缓存 (C7-S2 / C8-S5 / C8-S6 同规)。
+ * - 插件、引擎引用禁止跨战斗缓存 (C7-S2 / C8-S3 / C8-S7 同规)。
  */
 public class GearInBasicShaderRenderer extends BaseCombatLayeredRenderingPlugin {
 
@@ -79,7 +79,7 @@ public class GearInBasicShaderRenderer extends BaseCombatLayeredRenderingPlugin 
             valid = false; // 初始化失败：不渲染，等引擎正常移除
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点 (C8-S6 同款姿势)
+        advance(0f); // 立即同步一次位置，避免首帧画在战场原点 (C8-S7 同款姿势)
         LOG.info("GearIn basic shader init: program=" + program + ", vbo=" + vboId
                 + ", u_offset=" + uOffsetLocation + ", u_time=" + uTimeLocation);
     }
@@ -207,10 +207,10 @@ public class GearInBasicShaderRenderer extends BaseCombatLayeredRenderingPlugin 
         }
         elapsed += amount;
         if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()(C8-S6 硬规则 3)
+            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()(C8-S7 硬规则 3)
             return;
         }
-        // 剔除依据是承载实体的位置 (C8-S6 硬规则 4)：跟随玩家舰船
+        // 剔除依据是承载实体的位置 (C8-S7 硬规则 4)：跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
     }
 

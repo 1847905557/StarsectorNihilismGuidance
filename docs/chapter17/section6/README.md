@@ -36,18 +36,18 @@
 
 ## 查询已经登记的条目
 
-**插入位置：`GearInLightReporter.describeTexture()`。** 先使用普通查询确认登记表中是否已有条目。
+`GearInLightReporter.describeTexture()` 先使用普通查询确认登记表中是否已有条目：
 
 ```java
 TextureEntry normal = TextureData.getTextureData(
         hullId, TextureDataType.NORMAL_MAP, ObjectType.SHIP, 0);
 ```
 
-完成信号：日志能区分 `normal=none` 和拥有有效纹理 ID 的条目。
+日志能区分 `normal=none` 和拥有有效纹理 ID 的条目。
 
 ## 允许查询路径自动补全
 
-**插入位置：需要兼容缺少 normal map 的消费入口。** 把宿主对象和 `unloadedOk` 一并交给带自动生成参数的查询。
+在需要兼容缺少 normal map 的消费入口，把宿主对象和 `unloadedOk` 一并交给带自动生成参数的查询：
 
 ```java
 TextureEntry normal = TextureData.getTextureDataWithAutoGen(
@@ -55,33 +55,33 @@ TextureEntry normal = TextureData.getTextureDataWithAutoGen(
         ship, true);
 ```
 
-完成信号：原始舰船没有独立 normal map 时，查询仍能得到可供 shader 使用的条目；`unloadedOk` 为 true 时缺失资源返回空条目 (`sprite == null`) 而非 `null`。
+原始舰船没有独立 normal map 时，查询仍能得到可供 shader 使用的条目；`unloadedOk` 为 true 时缺失资源返回空条目 (`sprite == null`) 而非 `null`。
 
 ## 从精灵登记材质关系
 
-**插入位置：MOD 的应用加载期资源准备入口。** 当同一舰船需要从原始精灵建立三图关系时，使用统一映射入口。
+当同一舰船需要从原始精灵建立三图关系时，在 MOD 的应用加载期资源准备入口使用统一映射入口：
 
 ```java
 TextureData.mapSpriteToMNSWithAutoGen(
         hullId, spriteName, ObjectType.SHIP, 0, true, false);
 ```
 
-完成信号：后续 material、normal 和 surface 查询使用同一个 hull ID，并各自返回对应条目。
+后续 material、normal 和 surface 查询使用同一个 hull ID，并各自返回对应条目。
 
 ## 单独生成缺失的法线贴图
 
-**插入位置：确认只缺 normal map 的资源分支。** 不重新登记已有 material 和 surface，只生成缺失的法线对象。
+在确认只缺 normal map 的资源分支，不重新登记已有 material 和 surface，只生成缺失的法线对象：
 
 ```java
 SpriteAPI normalSprite = TextureData.autoGenNormalMap(
         spriteName, hullId, ObjectType.SHIP, 0);
 ```
 
-完成信号：生成结果可以直接用于 shader 并改变舰船受光方向 (`autoGenNormalMap` 不登记条目，无法经 `TextureEntry` 查询)。
+生成结果可以直接用于 shader 并改变舰船受光方向 (`autoGenNormalMap` 不登记条目，无法经 `TextureEntry` 查询)。
 
 ## 选择战斗前预载还是首次使用加载
 
-**插入位置：GraphicsLib 的 `GRAPHICS_OPTIONS.ini`。** `preloadAllMaps` 决定已登记贴图是否在战斗前集中加载。
+在 GraphicsLib 的 `GRAPHICS_OPTIONS.ini` 中，`preloadAllMaps` 决定已登记贴图是否在战斗前集中加载：
 
 ```json
 {
@@ -93,7 +93,7 @@ SpriteAPI normalSprite = TextureData.autoGenNormalMap(
 
 保持关闭时，首个使用点可能承担加载成本；打开时，GraphicsLib 会在预载路径集中处理已启用的贴图，代价是更早占用显存。
 
-完成信号：切换设置后，首个使用点的日志和首帧耗时发生可观察变化，纹理条目仍能被 [C17-S5] 报告器查询。
+切换设置后，首个使用点的日志和首帧耗时发生可观察变化，纹理条目仍能被 [C17-S5] 报告器查询。
 
 ## 排查关键故障
 

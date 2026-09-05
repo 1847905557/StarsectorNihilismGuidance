@@ -148,7 +148,7 @@
 
 ### 封装一次性执行骨架
 
-插入位置：`GearInOneShotScript.advance`。基类只负责执行边界，具体势力或货舱动作由子类的 `runDemo` 实现。
+这段代码写在 `GearInOneShotScript.advance` 中。基类只负责执行边界，具体势力或货舱动作由子类的 `runDemo` 实现。
 
 ```java
 @Override
@@ -161,11 +161,11 @@ public void advance(float amount) {
 }
 ```
 
-完成信号：每个子类只执行一次 `runDemo`，随后 `isDone()` 返回 `true`，引擎同帧紧随其后移除脚本。
+生效后，每个子类只执行一次 `runDemo`，随后 `isDone()` 返回 `true`，引擎同帧紧随其后移除脚本。
 
 ### 读取三组势力关系
 
-插入位置：`GearInFactionServicesScript.runDemo` 开头。从 `SectorAPI` 取得玩家势力和三个固定目标，再同时读取数值、等级与敌对判据。
+这段代码写在 `GearInFactionServicesScript.runDemo` 开头。从 `SectorAPI` 取得玩家势力和三个固定目标，再同时读取数值、等级与敌对判据。
 
 ```java
 SectorAPI sector = Global.getSector();
@@ -180,11 +180,11 @@ LOG.info("GearIn faction: hegemony="
 		+ " hostile=" + playerFaction.isHostileTo(Factions.HEGEMONY));
 ```
 
-完成信号：日志同时显示三个势力的关系值、关系等级与敌对状态；同一关系对从任一侧读取结果一致。
+生效后，日志同时显示三个势力的关系值、关系等级与敌对状态；同一关系对从任一侧读取结果一致。
 
 ### 修改关系后精确回滚
 
-插入位置：势力关系读取之后。保存原值，以原始关系入口增加 0.05，再用 `setRelationship` 写回原值。
+这段代码写在势力关系读取之后。保存原值，以原始关系入口增加 0.05，再用 `setRelationship` 写回原值。
 
 ```java
 float relBefore = hegemony.getRelationship(Factions.PLAYER);
@@ -194,11 +194,11 @@ hegemony.setRelationship(Factions.PLAYER, relBefore);
 float relAfter = hegemony.getRelationship(Factions.PLAYER);
 ```
 
-完成信号：通常得到 `原值 → 原值 + 0.05 → 原值`；接近上限时中间值受 `1.0` 钳制，终值仍与原值相等。
+生效后，通常得到 `原值 → 原值 + 0.05 → 原值`；接近上限时中间值受 `1.0` 钳制，终值仍与原值相等。
 
 ### 记录货舱基线并加入货物
 
-插入位置：`GearInCargoServicesScript.runDemo` 开头。先记录三类数量、信用、空间与栈数，再加入不同类型的货物。
+这段代码写在 `GearInCargoServicesScript.runDemo` 开头。先记录三类数量、信用、空间与栈数，再加入不同类型的货物。
 
 ```java
 CargoAPI cargo = Global.getSector().getPlayerFleet().getCargo();
@@ -212,11 +212,11 @@ cargo.addFuel(50f);
 cargo.addMarines(10);
 ```
 
-完成信号：补给、燃料和陆战队员分别精确增加 100、50 和 10；原本没有对应栈时，栈列表增加相应条目。
+生效后，补给、燃料和陆战队员分别精确增加 100、50 和 10；原本没有对应栈时，栈列表增加相应条目。
 
 ### 回滚货物并辨认空占位栈
 
-插入位置：货物加入之后。移除同量货物，再遍历栈副本统计 `isNull()`，把数量回滚与存储占位分开验证。
+这段代码写在货物加入之后。移除同量货物，再遍历栈副本统计 `isNull()`，把数量回滚与存储占位分开验证。
 
 ```java
 cargo.removeSupplies(100f);
@@ -231,11 +231,11 @@ for (CargoStackAPI stack : cargo.getStacksCopy()) {
 }
 ```
 
-完成信号：三类货物数量精确回到基线；如果本次新增的栈被减空，`nullStacksAfter` 增加，而栈列表长度可能保持不变。
+生效后，三类货物数量精确回到基线；如果本次新增的栈被减空，`nullStacksAfter` 增加，而栈列表长度可能保持不变。
 
 ### 分别注册两个服务脚本
 
-插入位置：既有 `GearInModPlugin.onGameLoad`。每个服务使用自己的 persistent data 键，某一项已执行时不会阻止另一项首次注册。
+这段代码写在既有 `GearInModPlugin.onGameLoad` 中。每个服务使用自己的 persistent data 键，某一项已执行时不会阻止另一项首次注册。
 
 ```java
 if (!Global.getSector().getPersistentData().containsKey(
@@ -252,7 +252,7 @@ if (!Global.getSector().getPersistentData().containsKey(
 }
 ```
 
-完成信号：首次进入存档出现势力与货舱两组日志；保存并读档后两组日志都不再重复。
+生效后，首次进入存档出现势力与货舱两组日志；保存并读档后两组日志都不再重复。
 
 ## 组装势力货舱实现
 

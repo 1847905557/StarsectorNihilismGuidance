@@ -22,7 +22,7 @@
 - [C1-S1] 的 MOD 命名约定、数据键前缀、包路径与类名；
 - [C6-S1] 的 JAR 构建、脚本类加载与 `.skill` 文件注册；
 - [C7-S2] 的 `Global` 生命周期与生涯阶段判断；
-- [C8-S3] 的 `MutableStat` modifier ID、修饰公式与原样解除；
+- [C8-S4] 的 `MutableStat modifier ID、修饰公式与原样解除；
 - [C10-S3] 的 `FleetMemberAPI` 与成员 stats 落点；
 - [C12-S1] 的人物、captain、officer、`MutableCharacterStatsAPI`、`setSkillLevel` 与 `refreshCharacterStatsEffects`。
 
@@ -111,9 +111,13 @@ skill_data.csv(按 id 读行，收集全部注册 id)
 
 等级门槛是最容易落空的一处：把 `requiredSkillLevel` 写成 2 却不配 `elite:true`，这个门槛会一直等一个到不了的等级。
 
-effect id 必须原样用作 modifier id
+::: caution modifier id 必须原样使用引擎传入的 effect id
 
-引擎传入的 effect id(本节示例 `GearIn_gunnery_ship_1`) **必须**原样用作 modifier id，`unapply` **必须**用同一个 id 解除；**禁止**自造 id 或拼接字符串。违反的后果：数值残留、解除静默失效、重放多次后数值膨胀，且全程没有任何报错。
+`apply(id)` 与 `unapply(id)` 里的 modifier id 就是引擎传入的 effect id (本节示例为 `GearIn_gunnery_ship_1`)，原样收下、原样解除即可；不要自造 id，也不要用字符串拼接。
+
+自造或拼接的 id 会让效果残留、解除静默失效，重复触发后数值越叠越高，全程没有任何报错。
+
+:::
 
 ## fleet total 管道
 
@@ -168,7 +172,7 @@ effect id 必须原样用作 modifier id
 }
 ```
 
-完成信号：启动日志出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]`，并且没有跳过该技能的记录。
+启动后，日志出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]`，并且没有跳过该技能的记录。
 
 ### 修改被驾驶舰船
 
@@ -192,7 +196,7 @@ public static class Level1 extends BaseSkillEffectDescription implements ShipSki
 }
 ```
 
-完成信号：技能达到 1 级后，角色驾驶舰船的实弹与能量武器伤害均增加 15%，自动开火精度增加 100%；降回 0 级后全部恢复。
+技能达到 1 级后，角色驾驶舰船的实弹与能量武器伤害均增加 15%，自动开火精度增加 100%；降回 0 级后全部恢复。
 
 ### 扩展到本舰战机
 
@@ -212,7 +216,7 @@ public static class LevelShipFighters extends BaseSkillEffectDescription impleme
 }
 ```
 
-完成信号：由角色驾驶舰船放出的战机最高速度增加 10%，其它舰船放出的同型战机不受影响。
+由角色驾驶舰船放出的战机最高速度增加 10%，其它舰船放出的同型战机不受影响。
 
 ### 修改整支舰队
 
@@ -232,7 +236,7 @@ public static class LevelFleet extends BaseSkillEffectDescription implements Fle
 }
 ```
 
-完成信号：技能达到 1 级后舰队最大燃烧等级增加 2，解除技能后立即恢复。
+技能达到 1 级后舰队最大燃烧等级增加 2，解除技能后立即恢复。
 
 ### 修改角色数值
 
@@ -252,7 +256,7 @@ public static class LevelStats extends BaseSkillEffectDescription implements Cha
 }
 ```
 
-完成信号：技能达到 1 级后，部署界面的指挥点数增加 1；解除技能并刷新角色数值后恢复。
+技能达到 1 级后，部署界面的指挥点数增加 1；解除技能并刷新角色数值后恢复。
 
 ### 显示舰队汇总项
 
@@ -269,7 +273,7 @@ public FleetTotalItem getFleetTotalItem() {
 }
 ```
 
-完成信号：整备界面的舰队构成汇总出现 `Gunnery damage bonus +15%`，重复打开界面不会增加重复行。
+整备界面的舰队构成汇总会出现 `Gunnery damage bonus +15%`，重复打开界面不会增加重复行。
 
 ## 数据文件：data/characters/skills/GearIn\_gunnery.skill
 

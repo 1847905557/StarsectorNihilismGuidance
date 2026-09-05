@@ -19,7 +19,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -32,7 +32,7 @@
 
 ### 拒绝错误的调用场景
 
-**插入位置：`GearInCampaignTools.spawnDerelictExample()` 开头。** 生涯服务不存在时记录原因并停止，避免把战斗测试当成生涯生成入口。
+`GearInCampaignTools.spawnDerelictExample()` 开头在生涯服务不存在时记录原因并停止，避免把战斗测试当成生涯生成入口：
 
 ```java
 if (Global.getSector() == null) {
@@ -41,11 +41,11 @@ if (Global.getSector() == null) {
 }
 ```
 
-完成信号：战役或主菜单场景调用时只出现一条警告，不创建实体。
+战役或主菜单场景调用时只出现一条警告，不创建实体。
 
 ### 记录当前星区环境
 
-**插入位置：`GearInCampaignTools.logCampaignInfo()` 的有效生涯分支。** 在写侧操作前报告星区尺寸、星系数和市场数。
+`GearInCampaignTools.logCampaignInfo()` 的有效生涯分支会在写侧操作前报告星区尺寸、星系数和市场数：
 
 ```java
 LOG.info("GearIn magic campaign: sectorSize=" + MagicVariables.getSectorSize()
@@ -53,11 +53,11 @@ LOG.info("GearIn magic campaign: sectorSize=" + MagicVariables.getSectorSize()
         + " markets=" + sector.getEconomy().getMarketsCopy().size());
 ```
 
-完成信号：读档后日志给出三个非负统计值，调用位置确实处于生涯。
+读档后日志给出三个非负统计值，调用位置确实处于生涯。
 
 ### 选择残骸状态与发现规则
 
-**插入位置：`spawnDerelictExample()` 的 `createDerelict()` 参数。** 使用 `AVERAGE` 状态，允许发现奖励，并让 `null` 采用默认发现经验。
+`spawnDerelictExample()` 为 `createDerelict()` 参数使用 `AVERAGE` 状态，允许发现奖励，并让 `null` 采用默认发现经验：
 
 ```java
 ShipRecoverySpecial.ShipCondition condition =
@@ -67,11 +67,11 @@ Integer discoveryXp = null;
 boolean recoverable = true;
 ```
 
-完成信号：残骸在靠近前保持可发现状态，发现后进入正常交互，并具备回收 special。
+残骸在靠近前保持可发现状态，发现后进入正常交互，并具备回收 special。
 
 ### 把残骸放上轨道
 
-**插入位置：`spawnDerelictExample()` 的生涯分支。** 传入 variant ID、状态、发现参数和围绕目标实体的轨道。
+`spawnDerelictExample()` 的生涯分支传入 variant ID、状态、发现参数和围绕目标实体的轨道：
 
 ```java
 SectorEntityToken wreck = MagicCampaign.createDerelict(
@@ -80,18 +80,18 @@ SectorEntityToken wreck = MagicCampaign.createDerelict(
         0f, 200f, 30f);
 ```
 
-完成信号：残骸围绕 `orbitCenter` 运行，半径为 200 su，周期为 30 天。
+残骸围绕 `orbitCenter` 运行，半径为 200 su，周期为 30 天。
 
 ### 保存生成结果的身份
 
-**插入位置：`createDerelict()` 返回后。** 先记录返回实体 ID；任务入口需要清理时，再把同一 token 写入自己的任务状态。
+`createDerelict()` 返回后先记录返回实体 ID；任务入口需要清理时，再把同一 token 写入自己的任务状态：
 
 ```java
 LOG.info("GearIn magic campaign: derelict " + wreck.getId()
         + " orbiting " + orbitCenter.getId());
 ```
 
-完成信号：日志中的残骸 ID 能在星区实体与任务状态中对应到同一个对象。
+日志中的残骸 ID 能在星区实体与任务状态中对应到同一个对象。
 
 ## 排查关键故障
 

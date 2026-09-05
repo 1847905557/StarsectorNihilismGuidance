@@ -39,7 +39,7 @@ GearIn Prime 是炼厂世界：棕红色大气、厚云层、低速自转。贴�
 },
 ```
 
-完成信号：日志进入 `Loading planet data` 后没有 `GearIn_ember_world` 相关异常。
+日志进入 `Loading planet data` 后没有 `GearIn_ember_world` 相关异常。
 
 ### 挂接行星描述
 
@@ -61,7 +61,7 @@ GearIn_ember_world,PLANET,被炼厂烟尘和赤红云层包围的工业世界，
 "iconColor":[255,150,90,255],
 ```
 
-完成信号：星球详情的边缘光呈橙红色，星图图标也使用同一色调。
+星球详情的边缘光呈橙红色，星图图标也使用同一色调。
 
 ### 配置云层与旋转
 
@@ -73,7 +73,7 @@ GearIn_ember_world,PLANET,被炼厂烟尘和赤红云层包围的工业世界，
 "rotation":-3
 ```
 
-完成信号：进入星系后可以看到云层独立于地表缓慢转动。
+进入星系后可以看到云层独立于地表缓慢转动。
 
 ### 接入星系生成器
 
@@ -85,7 +85,7 @@ PlanetAPI prime = system.addPlanet(
         "GearIn_ember_world", 55, 150, 3200, 120);
 ```
 
-完成信号：新档中 GearIn Prime 使用余烬世界的外观，而第二颗行星仍保持原版 `barren`。
+新档中 GearIn Prime 使用余烬世界的外观，而第二颗行星仍保持原版 `barren`。
 
 ## 排查星体类型加载故障
 

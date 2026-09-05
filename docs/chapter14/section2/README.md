@@ -444,7 +444,7 @@ rules 侧的 `$gearInHub_ref` / `$gearInHub_stage` / `gearInHub_blurbBar` / `gea
 gearInHub,,10,1,30,40,15,20,60,90,data.scripts.gearin.campaign.GearInHubMission
 ```
 
-完成信号：设置表能读取 `gearInHub` spec，酒吧 manager 为它建立 mission wrapper creator。
+登记后设置表能读取 `gearInHub` spec，酒吧 manager 为它建立 mission wrapper creator。
 
 ### 建立任务人与唯一引用
 
@@ -461,7 +461,7 @@ if (giver == null || !setPersonMissionRef(giver, "$gearInHub_ref")) {
 }
 ```
 
-完成信号：酒吧文本能取得任务人，LOCAL memory 中的 `$gearInHub_ref` 指向当前任务实例；同一人物无法同时创建第二个同键任务。
+创建完成后，酒吧文本能取得任务人，LOCAL memory 中的 `$gearInHub_ref` 指向当前任务实例；同一人物无法同时创建第二个同键任务。
 
 ### 选择目标与联系人
 
@@ -480,7 +480,7 @@ sourceContact = findOrCreateTrader(
         targetMarket.getFactionId(), targetMarket, true);
 ```
 
-完成信号：日志中的目标市场不同于来源市场，联系人出现在目标市场通讯录，并能被 Intel 地图定位。
+选择完成后，日志中的目标市场不同于来源市场，联系人出现在目标市场通讯录，并能被 Intel 地图定位。
 
 ### 连接任务阶段
 
@@ -497,7 +497,7 @@ setStageOnMemoryFlag(Stage.COMPLETED,
 setTimeLimit(Stage.FAILED, MISSION_DAYS, null);
 ```
 
-完成信号：接受任务后当前阶段为 CONTACT；联系人标志置位后进入 RETURN；任务人标志置位后进入 COMPLETED；60 游戏日未完成则进入 FAILED。
+接受任务后当前阶段为 CONTACT；联系人标志置位后进入 RETURN；任务人标志置位后进入 COMPLETED；60 游戏日未完成则进入 FAILED。
 
 ### 添加阶段触发器
 
@@ -514,7 +514,7 @@ triggerSetGlobalMemoryValue("$gearInHub_halfTime", true);
 endTrigger();
 ```
 
-完成信号：首次进入 RETURN 时写入 `$gearInHub_enteredReturn`；任务累计 30 游戏日时写入 `$gearInHub_halfTime`，两项动作都只执行一次。
+首次进入 RETURN 时写入 `$gearInHub_enteredReturn`；任务累计 30 游戏日时写入 `$gearInHub_halfTime`，两项动作都只执行一次。
 
 ### 向规则提供任务数据
 
@@ -534,7 +534,7 @@ $gearInHub_dataReceived = true
 Call $gearInHub_ref updateStage
 ```
 
-完成信号：酒吧报价显示奖励与目标名称，取货对话结束的同一刻 Intel 从 CONTACT 更新为 RETURN。
+规则侧完成后，酒吧报价显示奖励与目标名称，取货对话结束的同一刻 Intel 从 CONTACT 更新为 RETURN。
 
 ## 组装生涯任务实现
 

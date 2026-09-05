@@ -20,7 +20,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -41,7 +41,7 @@
 
 ### 用两个节点建立可见尾迹
 
-**插入位置：`GearInBoxTrailEffect.make()`。** 设置首尾宽度、颜色并追加路径点。
+`GearInBoxTrailEffect.make()` 设置首尾宽度、颜色并追加路径点：
 
 ```java
 trail.addNode(first);
@@ -49,11 +49,11 @@ trail.addNode(second);
 trail.submitNodes();
 ```
 
-完成信号：返回对象至少有两个节点。
+返回对象至少有两个节点。
 
 ### 让尾迹从亮宽过渡到透明细线
 
-**插入位置：`make()` 的颜色与宽度设置处。** 把方向感写进首尾状态，并给尾迹 1 秒总寿命。
+`make()` 在设置颜色与宽度时把方向感写进首尾状态，并给尾迹 1 秒总寿命：
 
 ```java
 trail.setStartWidth(28f);
@@ -62,11 +62,11 @@ trail.setEndColor(new Color(20, 80, 255, 0));
 trail.setGlobalTimer(0.05f, 0.15f, 0.8f);
 ```
 
-完成信号：弹体后方逐渐变细并淡出。
+弹体后方逐渐变细并淡出。
 
 ### 配置三阶段扭曲尺寸
 
-**插入位置：`GearInImpactSpecialFX.makeDistortion()`。** 先写命中位置，再让冲击从 20 su 扩张到 180 su，强度从 0 升到 0.8 后回到 0。
+`GearInImpactSpecialFX.makeDistortion()` 先写命中位置，再让冲击从 20 su 扩张到 180 su，强度从 0 升到 0.8 后回到 0：
 
 ```java
 distortion.setLocation(location);
@@ -79,22 +79,22 @@ distortion.setPowerOut(0f);
 distortion.setGlobalTimer(0.05f, 0.1f, 0.55f);
 ```
 
-完成信号：命中点出现扩张环而非固定圆斑。
+命中点出现扩张环而非固定圆斑。
 
 ### 比较默认畸变与手动实体
 
-**插入位置：需要统一默认冲击参数的命中入口。** 默认控制器返回 `Instance2Data`，适合直接复用共享默认时序；仍需按入队返回码处理实例所有权。
+需要统一默认冲击参数的命中入口可以改用默认控制器；它返回 `Instance2Data`，适合直接复用共享默认时序，但仍需按入队返回码处理实例所有权：
 
 ```java
 Instance2Data defaultDistortion = RenderingUtil.SpecialFX
         .addDefaultDistortion(false, 0.7f);
 ```
 
-完成信号：默认路径返回可入队的实例或明确返回 `null`；手动 `DistortionEntity` 仍保留自定义尺寸、强度和环硬度。
+默认路径返回可入队的实例或明确返回 `null`；手动 `DistortionEntity` 仍保留自定义尺寸、强度和环硬度。
 
 ### 配置横向镜头光斑
 
-**插入位置：`GearInImpactSpecialFX.makeFlare()`。** 设置命中位置、弹体朝向、长宽、颜色、混合和 0.4 秒总寿命。
+`GearInImpactSpecialFX.makeFlare()` 设置命中位置、弹体朝向、长宽、颜色、混合和 0.4 秒总寿命：
 
 ```java
 flare.setLocation(location);
@@ -106,11 +106,11 @@ flare.setAdditiveBlend();
 flare.setGlobalTimer(0.05f, 0.05f, 0.3f);
 ```
 
-完成信号：命中瞬间出现白芯青边的短光斑。
+命中瞬间出现白芯青边的短光斑。
 
 ### 分别处理三个入队结果
 
-**插入位置：命中效果入口。** 每个实体独立检查返回码并释放失败项。
+命中效果入口为每个实体独立检查返回码并释放失败项：
 
 ```java
 for (RenderDataAPI effect : effects) {
@@ -119,7 +119,7 @@ for (RenderDataAPI effect : effects) {
 }
 ```
 
-完成信号：关闭扭曲时尾迹与光斑仍可出现。
+关闭扭曲时，尾迹与光斑仍可出现。
 
 ## 排查关键故障
 

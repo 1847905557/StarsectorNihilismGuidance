@@ -19,7 +19,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -40,7 +40,7 @@
 
 ### 扫描航路点附近敌对舰队
 
-**插入位置：`GearInRouteRiskAssessor.assess()` 开头。** 按航路点和半径取得当前敌对舰队。
+`GearInRouteRiskAssessor.assess()` 开头按航路点和半径取得当前敌对舰队：
 
 ```java
 for (CampaignFleetAPI fleet : CampaignUtils.getNearbyHostileFleets(waypoint, radius)) {
@@ -48,50 +48,50 @@ for (CampaignFleetAPI fleet : CampaignUtils.getNearbyHostileFleets(waypoint, rad
 }
 ```
 
-完成信号：中立与友方舰队不会进入风险计算。
+中立与友方舰队不会进入风险计算。
 
 ### 让大型近敌贡献更高风险
 
-**插入位置：`assess()` 的循环体。** 使用舰队点数乘以距离衰减。这是 GearIn 自己的评分公式，数值只在同一套半径与阈值下比较。
+`assess()` 的循环体使用舰队点数乘以距离衰减；这是 GearIn 自己的评分公式，数值只在同一套半径与阈值下比较：
 
 ```java
 float distance = Math.max(500f, MathUtils.getDistance(waypoint, fleet));
 risk += fleet.getFleetPoints() * radius / distance;
 ```
 
-完成信号：同距离下大型舰队风险更高，同规模下近敌更高。
+同距离下大型舰队风险更高，同规模下近敌更高。
 
 ### 加入补给数量修正
 
-**插入位置：航路规划入口取得基础风险后。** 货舱补给少于 30 单位时放大同一段航路的风险；这里没有计算每日消耗或可航行天数。
+航路规划入口取得基础风险后，货舱补给少于 30 单位时放大同一段航路的风险；这里没有计算每日消耗或可航行天数：
 
 ```java
 float supplies = Global.getSector().getPlayerFleet().getCargo().getSupplies();
 if (supplies < 30f) risk *= 1.5f;
 ```
 
-完成信号：相同敌舰布置下，补给数量跨过 30 单位门槛时风险乘数发生变化。
+相同敌舰布置下，补给数量跨过 30 单位门槛时风险乘数发生变化。
 
 ### 保存最近一次评估
 
-**插入位置：`GearInRouteRiskRecord.save()`。** 把 `float` 写入星区持久数据。
+`GearInRouteRiskRecord.save()` 把 `float` 写入星区持久数据：
 
 ```java
 Global.getSector().getPersistentData().put("$GearIn_routeRisk", risk);
 ```
 
-完成信号：保存并读档后仍能读到相同数值。
+保存并读档后仍能读到相同数值。
 
 ### 把结论交给消息层
 
-**插入位置：航路 UI 或 Intel 更新处。** 输出等级和数值，保留判断依据。
+在航路 UI 或 Intel 更新处输出等级和数值，并保留判断依据：
 
 ```java
 String level = risk >= 120f ? "HIGH" : risk >= 50f ? "MEDIUM" : "LOW";
 Global.getSector().getCampaignUI().addMessage("Route risk: " + level + " (" + (int) risk + ")");
 ```
 
-完成信号：玩家能同时看到 LOW/MEDIUM/HIGH 与具体风险值。
+玩家能同时看到 LOW/MEDIUM/HIGH 与具体风险值。
 
 ## 排查关键故障
 

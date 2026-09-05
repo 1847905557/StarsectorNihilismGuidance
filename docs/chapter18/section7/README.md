@@ -17,7 +17,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 定义 GearIn 设置字段
@@ -40,7 +40,7 @@
 
 ### 在 CSV 定义开关和滑杆
 
-**插入位置：`data/config/LunaSettings.csv`。** 每个字段使用唯一 `fieldID`；MOD ID 由 Java 调用的第一个参数传入，不写进 CSV 行。
+在 `data/config/LunaSettings.csv` 中，每个字段使用唯一 `fieldID`；MOD ID 由 Java 调用的第一个参数传入，不写进 CSV 行：
 
 ```csv
 fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab
@@ -53,11 +53,11 @@ GearIn_label_text,Label text,String,GearIn,,,,,GearIn
 
 空白列仍要保留。缺少必需列时可能抛异常；只缺尾部可选 JSON 键时使用默认值；漏掉中间占位会使后续值错列。`fieldID` 要与 Java 中的 key 逐字一致。
 
-完成信号：LunaLib 面板显示五个 GearIn 字段，整数范围为 1–64，脉冲间隔范围为 0.1–10。
+LunaLib 面板会显示五个 GearIn 字段，整数范围为 1–64，脉冲间隔范围为 0.1–10。
 
 ### 读取包装类型并提供默认值
 
-**插入位置：`GearInLunaSettingsReader` 的各个 getter。** 先检查 `lunalib` 是否启用，再读取可为空的包装类型。
+`GearInLunaSettingsReader` 的各个 getter 先检查 `lunalib` 是否启用，再读取可为空的包装类型：
 
 ```java
 Boolean enabled = LunaSettings.getBoolean("gear_in", "GearIn_trails_enabled");
@@ -69,11 +69,11 @@ String label = LunaSettings.getString("gear_in", "GearIn_label_text");
 
 每次读取都保留 `null` 分支：缺库、字段删除或用户设置损坏时分别回退 `Defs` 中的默认值。
 
-完成信号：缺键时轨迹仍开启、条目上限为 12、脉冲间隔为 1.5 秒、颜色为 `#f22e6e`、标签为 `GearIn`。
+缺键时轨迹仍开启、条目上限为 12、脉冲间隔为 1.5 秒、颜色为 `#f22e6e`、标签为 `GearIn`。
 
 ### 注册设置监听器
 
-**插入位置：`GearInLunaSettingsListener.registerListener()`，并在 `onGameLoad()` 的 LunaLib 启用分支调用。** 每次加载只加入一个监听器。
+注册入口是 `GearInLunaSettingsListener.registerListener()`，并在 `onGameLoad()` 的 LunaLib 启用分支调用，每次加载只加入一个监听器：
 
 ```java
 GearInLunaSettingsListener.registerListener();
@@ -81,11 +81,11 @@ GearInLunaSettingsListener.registerListener();
 
 `hasSettingsListenerOfClass` 用于幂等判断，`removeSettingsListener` 用于测试清理或卸载场景。
 
-完成信号：保存面板时日志出现一次 `reloaded`，重复进档不会倍增回调。
+保存面板时日志出现一次 `reloaded`，重复进档不会倍增回调。
 
 ### 在回调中刷新缓存
 
-**插入位置：监听器的 `settingsChanged(String modId)`。** 只响应 `gear_in` 的保存事件。
+监听器的 `settingsChanged(String modId)` 只响应 `gear_in` 的保存事件：
 
 ```java
 public void settingsChanged(String modId) {
@@ -95,7 +95,7 @@ public void settingsChanged(String modId) {
 }
 ```
 
-完成信号：当前战斗下一次读取使用新值，其他 MOD 保存设置不会触发 GearIn 日志。
+当前战斗的下一次读取会使用新值，其他 MOD 保存设置不会触发 GearIn 日志。
 
 ## 排查关键故障
 

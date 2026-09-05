@@ -19,7 +19,7 @@ OBJ 文件本身只描述几何；模型 ID、贴图材质与世界变换仍要�
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -41,17 +41,17 @@ OBJ 文件本身只描述几何；模型 ID、贴图材质与世界变换仍要�
 
 ### 在 CSV 中登记模型 ID
 
-**插入位置：`data/config/modFiles/BUtil_obj_data.csv` 的 GearIn 行。** 按表头关联 OBJ、漫反射、法线、复杂、发光和切线贴图；空通道保留空字段。启动期只加载单文件 (无跨 MOD 行合并、资源优先级首个命中)，默认命名下 BoxUtil 自带 CSV 恒胜出 —— GearIn 行需并入该文件，另建同名文件不会生效。
+在 `data/config/modFiles/BUtil_obj_data.csv` 的 GearIn 行中，按表头关联 OBJ、漫反射、法线、复杂、发光和切线贴图，空通道保留空字段。启动期只加载单文件 (无跨 MOD 行合并、资源优先级首个命中)，默认命名下 BoxUtil 自带 CSV 恒胜出，因此 GearIn 行需并入该文件，另建同名文件不会生效：
 
 ```csv
 GearIn_gear,data/models/GearIn_gear.obj,data/models/GearIn_gear_diffuse.png,data/models/GearIn_gear_normal.png,,data/models/GearIn_gear_emissive.png,,,F32
 ```
 
-完成信号：GearIn 行并入生效后，ModelManager.containsModelID 返回 true。
+GearIn 行并入生效后，ModelManager.containsModelID 返回 true。
 
 ### 在创建实体前确认模型存在
 
-**插入位置：`GearInModelCatalog.require()`。** 把未知 ID 改成明确参数错误。
+`GearInModelCatalog.require()` 把未知 ID 改成明确参数错误：
 
 ```java
 if (!ModelManager.containsModelID(modelId)) {
@@ -59,21 +59,21 @@ if (!ModelManager.containsModelID(modelId)) {
 }
 ```
 
-完成信号：错误日志包含未知 modelId。
+错误日志包含未知 modelId。
 
 ### 取得已解析的 ModelData
 
-**插入位置：`require()` 返回处。** 从 `ModelManager` 取得已加载的模型数据，并让实体构造器再次检查 `model.isValid()`。
+`require()` 在返回处从 `ModelManager` 取得已加载的模型数据，并让实体构造器再次检查 `model.isValid()`：
 
 ```java
 ModelData model = ModelManager.getModelData(modelId);
 ```
 
-完成信号：返回对象包含模型缓冲与材质引用。
+返回对象包含模型缓冲与材质引用。
 
 ### 组合模型与世界变换
 
-**插入位置：`GearInModelTransform.create()`。** 先用有效 `ModelData` 创建 `CommonEntity`，再把坐标、舰首角和缩放写入同一 `Matrix4f`。
+`GearInModelTransform.create()` 先用有效 `ModelData` 创建 `CommonEntity`，再把坐标、舰首角和缩放写入同一 `Matrix4f`：
 
 ```java
 CommonEntity entity = new CommonEntity(model, true);
@@ -81,18 +81,18 @@ entity.setModelMatrix(TransformUtil.createModelMatrixVanilla(
         location, facing, scale, matrix));
 ```
 
-完成信号：实体持有同一份共享模型缓冲，模型矩阵包含本次位置、角度和缩放。
+实体持有同一份共享模型缓冲，模型矩阵包含本次位置、角度和缩放。
 
 ### 建立可观察的基础光照
 
-**插入位置：`create()` 返回前。** 先使用 `CommonEntity` 的默认光照证明法线与材质通道可读；动态光源留到 [C17-S15]。
+`create()` 在返回前先使用 `CommonEntity` 的默认光照，证明法线与材质通道可读；动态光源留到 [C17-S15]：
 
 ```java
 entity.setDefaultLight();
 return entity;
 ```
 
-完成信号：GearIn 齿轮以漫反射、法线和发光通道渲染，朝向与传入 `facing` 一致。
+GearIn 齿轮以漫反射、法线和发光通道渲染，朝向与传入 `facing` 一致。
 
 ## 排查关键故障
 

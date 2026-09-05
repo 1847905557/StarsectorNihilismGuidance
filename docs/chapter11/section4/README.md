@@ -24,7 +24,7 @@
 - [C11-S2] 的经济 JSON、市场加载时机与 `industries` 数据结构；
 - [C7-S1] 的插件生命周期与持久数据标记；
 - [C7-S3] 的 settings 读取；
-- [C8-S3] 的 `MutableStat` 与修饰值；
+- [C8-S4] 的 `MutableStat 与修饰值；
 - [C10-S1] 的 `SectorAPI.getEconomy()`、生涯时钟与游戏日换算；
 - [C10-S3] 的生涯对象一次性注册判断；
 - [C11-S3] 的市场与产业访问入口、产业 ID 校验、经济循环节奏与监听器注册。
@@ -268,17 +268,17 @@ AI core 提高 Luddic Path 的关注度，disruption 正是外部行动打断产
 
 ### 注册产业规格
 
-插入位置：MOD 自己的 `data/campaign/industries.csv`。ID、升级目标与 plugin 类名在这一行建立静态关系。
+注册行写入 MOD 自己的 `data/campaign/industries.csv`：ID、升级目标与 plugin 类名在这一行建立静态关系。
 
 ```text
 GearIn_training_industry,GearIn Training Industry,20,60,,2,,militarybase,"training, industry, industrial",,graphics/icons/industry/light_industry.png,data.scripts.gearin.campaign.GearInTrainingIndustry,"A facility that trains serviceable crew.",250,LOW
 ```
 
-完成信号：`SettingsAPI.getIndustrySpec("GearIn_training_industry")` 返回非 null，`getUpgrade()` 为 `militarybase`，plugin 类能无参实例化。
+注册生效后，`SettingsAPI.getIndustrySpec("GearIn_training_industry")` 返回非 null，`getUpgrade()` 为 `militarybase`，plugin 类能无参实例化。
 
 ### 声明供需
 
-插入位置：`GearInTrainingIndustry.apply`，紧接 `super.apply(true)`。市场规模同时决定训练耗材、教官和结业船员的数量。
+供需声明写在 `GearInTrainingIndustry.apply` 里，紧接 `super.apply(true)` 之后：市场规模同时决定训练耗材、教官和结业船员的数量。
 
 ```java
 int size = market.getSize();
@@ -289,7 +289,7 @@ supply(Commodities.CREW, Math.max(1, size - 2), "Trained crew");
 
 ### 让耗材短缺削减产出
 
-插入位置：供需声明之后。先从 supplies 需求计算最大缺口，再把缺口施加到已声明的 crew 供给；非功能状态清空生产。
+缺货削减逻辑放在供需声明之后：先从 supplies 需求计算最大缺口，再把缺口施加到已声明的 crew 供给；非功能状态清空生产。
 
 ```java
 Pair<String, Integer> deficit = getMaxDeficit(Commodities.SUPPLIES);
@@ -302,7 +302,7 @@ if (!isFunctional()) {
 
 ### 成对应用 AI core 修饰
 
-插入位置：`GearInTrainingIndustry` 的 AI core 钩子。两个方法使用同一个修饰 ID，安装 Alpha core 增加稳定度，卸下或重算时撤销。
+AI core 的成对钩子写在 `GearInTrainingIndustry` 中：两个方法使用同一个修饰 ID，安装 Alpha core 增加稳定度，卸下或重算时撤销。
 
 ```java {3,9}
 @Override
@@ -319,7 +319,7 @@ protected void applyNoAICoreModifiers() {
 
 ### 施加并解除产业中断
 
-插入位置：调试入口调用 `runDisruptionProbe`，其核心动作使用公开 `Industry` 接口。10 天中断写入后立即读取状态，再以 0 天解除。
+调试入口调用 `runDisruptionProbe`，其核心动作使用公开 `Industry` 接口：10 天中断写入后立即读取状态，再以 0 天解除。
 
 ```java {2,6}
 Industry industry = market.getIndustry(INDUSTRY_ID);
@@ -332,7 +332,7 @@ industry.setDisrupted(0f);
 
 ### 在生涯市场安装产业
 
-插入位置：既有 `GearInModPlugin.onGameLoad` 的独立 persistent data 判断块。先确认目标市场和 spec，再加入产业并运行观察助手。
+安装代码放在既有 `GearInModPlugin.onGameLoad` 的独立 persistent data 判断块里：先确认目标市场和 spec，再加入产业并运行观察助手。
 
 ```java
 MarketAPI market = Global.getSector().getEconomy().getMarket("corvus_IIIa");
@@ -345,7 +345,7 @@ if (market != null
 }
 ```
 
-完成信号：产业只安装一次，日志能读到 `upgrade=militarybase`，读档时不会重复添加。
+产业只安装一次，日志能读到 `upgrade=militarybase`，读档时不会重复添加。
 
 ### 验证方案
 
@@ -519,8 +519,6 @@ market.addIndustry(industryId);
 清理：调用 `market.removeIndustry(GearInTrainingIndustry.INDUSTRY_ID, null, false)`；产业移除后，"applied" 日志消失、稳定度修饰撤销，已安装的 alpha core 随产业移除直接丢失 (mode 为 null 时不返还)。
 
 ## 故障分析
-
-验证方案中的故障注入直接复现对应症状；每项从实际日志或界面现象开始。
 
 - **`addIndustry` 抛 `Industry [...] not found`**：CSV 缺少对应 ID、行被重复覆盖或调用 ID 拼错。
 

@@ -18,8 +18,8 @@
 
 ## 前置知识
 
-- [C8-S1] 的战斗插件、暂停守卫与每帧时间；
-- [C8-S4] 的战斗实体有效性与收尾；
+- [C8-S3] 的战斗插件、暂停守卫与每帧时间；
+- [C8-S2] 的战斗实体有效性与收尾；
 - 能够在 `.proj` 中为弹体武器注册 `OnFireEffectPlugin`。
 
 ## 明确尾迹生命周期
@@ -32,7 +32,7 @@
 
 ### 为每枚发射物建立跟踪器
 
-**插入位置：`GearInMagicTrail.onFire()`。** 不把 ID 放在武器效果实例上，而是让每枚发射物拥有自己的跟踪插件。
+`GearInMagicTrail` 的 `onFire()` 不把 ID 放在武器效果实例上，而是让每枚发射物拥有自己的跟踪插件：
 
 ```java
 public void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon,
@@ -41,11 +41,11 @@ public void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon,
 }
 ```
 
-完成信号：连续发射两枚导弹时，各自形成独立尾迹，节点不会串到另一枚弹体上。
+连续发射两枚导弹时，两枚弹体各自形成独立尾迹，节点不会串到另一枚弹体上。
 
 ### 初始化贴图与两条尾迹 ID
 
-**插入位置：`TrailTracker.init()`。** 贴图使用 MagicLib 在 `fx` 分类注册的资源，每条尾迹只在初始化或切断后取得一次 ID。
+`TrailTracker.init()` 取用 MagicLib 在 `fx` 分类注册的贴图，并让每条尾迹只在初始化或切断后取得一次 ID：
 
 ```java
 bodySprite = Global.getSettings().getSprite("fx", "base_trail_smooth");
@@ -56,11 +56,11 @@ lastLocation = new Vector2f(projectile.getLocation());
 addSegments();
 ```
 
-完成信号：发射当帧已经登记首组节点，后续帧继续复用相同的两条 ID。
+发射当帧即登记首组节点，后续帧继续复用相同的两条 ID。
 
 ### 按固定间隔追加两层节点
 
-**插入位置：`TrailTracker.advance()` 的有效弹体分支。** 累积非暂停时间，每 0.05 秒登记一组节点。
+`TrailTracker.advance()` 的有效弹体分支累积非暂停时间，每 0.05 秒登记一组节点：
 
 ```java
 segmentTimer += amount;
@@ -70,11 +70,11 @@ if (segmentTimer >= SEGMENT_INTERVAL) {
 }
 ```
 
-完成信号：帧率变化时节点密度由时间间隔控制；实体层与辉光层沿同一路径连续延伸。
+无论帧率如何变化，节点密度都由时间间隔控制；实体层与辉光层沿同一路径连续延伸。
 
 ### 在位置跳变后换用新 ID
 
-**插入位置：追加节点之前。** 比较上一帧和当前帧坐标；超过 250 su 时先切断全部实体关联尾迹，再为两层分别取得新 ID。
+跟踪器在追加节点之前先比较上一帧和当前帧坐标，超过 250 su 时先切断全部实体关联尾迹，再为两层分别取得新 ID：
 
 ```java
 if (MathUtils.getDistance(lastLocation, projectile.getLocation())
@@ -85,11 +85,11 @@ if (MathUtils.getDistance(lastLocation, projectile.getLocation())
 }
 ```
 
-完成信号：传送前的节点按自身寿命淡出，传送后的首个节点不会连接到旧坐标。
+传送前的节点按自身寿命淡出，传送后的首个节点不会连接到旧坐标。
 
 ### 在弹体终止时停止跟踪
 
-**插入位置：`advance()` 的暂停守卫之后。** 命中、淡出或离场都意味着不再追加节点；切断后同时移除本枚弹体的跟踪插件。
+`advance()` 的暂停守卫之后紧跟终止检查；命中、淡出或离场都意味着不再追加节点，切断后同时移除本枚弹体的跟踪插件：
 
 ```java
 if (!engine.isEntityInPlay(projectile)
@@ -99,7 +99,7 @@ if (!engine.isEntityInPlay(projectile)
 }
 ```
 
-完成信号：弹体消失后旧节点只按各自的 `in/main/out` 时长淡出，插件不再留在每帧列表中空转。
+弹体消失后，旧节点只按各自的 `in/main/out` 时长淡出，插件不再留在每帧列表中空转。
 
 ## 让尾迹无法连成线
 

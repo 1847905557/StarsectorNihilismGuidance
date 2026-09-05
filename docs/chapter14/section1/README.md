@@ -245,7 +245,7 @@ public PortsideBarEvent createBarEvent() {
 }
 ```
 
-完成信号：首次抽中时日志出现 creator picked；连续读档不会增加同类 creator 的数量或抽取权重。
+首次抽中时日志出现 creator picked；连续读档不会增加同类 creator 的数量或抽取权重。
 
 ### 过滤可用市场
 
@@ -261,7 +261,7 @@ public boolean shouldShowAtMarket(MarketAPI market) {
 }
 ```
 
-完成信号：事件首次显示后只在同一市场继续可见；没有太空港的市场不会得到该选项。
+事件首次显示后只在同一市场继续可见；没有太空港的市场不会得到该选项。
 
 ### 把酒吧选项指向事件
 
@@ -279,7 +279,7 @@ public void addPromptAndOption(InteractionDialogAPI dialog,
 }
 ```
 
-完成信号：酒吧面板出现提示与选项，点击后日志进入 `GearInBarEvent.init()`，而不是写入 `$option` 的普通规则分支。
+酒吧面板出现提示与选项，点击后日志进入 `GearInBarEvent.init()`，而不是写入 `$option` 的普通规则分支。
 
 ### 建立购买与拒绝分支
 
@@ -308,7 +308,7 @@ if (OPTION_ACCEPT.equals(optionData)) {
 }
 ```
 
-完成信号：购买分支扣除 500 信用点并显示 Continue；拒绝分支不扣款，直接返回酒吧。
+购买分支扣除 500 信用点并显示 Continue；拒绝分支不扣款，直接返回酒吧。
 
 ### 统一结束事件
 
@@ -321,7 +321,7 @@ private void finish() {
 }
 ```
 
-完成信号：购买、拒绝和离开结束后，事件立即离开活动列表，并在默认 60–90 游戏天 accepted 冷却内不再被抽取。
+购买、拒绝和离开结束后，事件立即离开活动列表，并在默认 60–90 游戏天 accepted 冷却内不再被抽取。
 
 ## 组装酒吧事件实现
 
@@ -547,7 +547,7 @@ BarEventManager.getInstance().notifyWasInteractedWith(this);
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent`：bar event 约定：11 个回调方法。
+- `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent`：bar event 的回调方法约定。
 - `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarData`：活动事件列表 (全局单例，随 sector memory 存档)。
 - `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`：全局调度器与 `GenericBarEventCreator` 内部接口。
 - `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent`：bar event 默认实现：transient 对话句柄、shownAt 锁定、`getBarEventId` 默认类简单名。

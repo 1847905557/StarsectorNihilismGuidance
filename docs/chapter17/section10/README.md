@@ -20,7 +20,7 @@ BoxUtil 的 `SpriteEntity` 可以用一次实体提交绘制多份实例数据�
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -40,28 +40,28 @@ BoxUtil 的 `SpriteEntity` 可以用一次实体提交绘制多份实例数据�
 
 ### 确认 BoxUtil 渲染路径可用
 
-**插入位置：`GearInBoxEntity.init()`。** 在 GL 上下文建立后检查配置和 `ShaderCore`。
+`GearInBoxEntity.init()` 在 GL 上下文建立后检查配置和 `ShaderCore`：
 
 ```java
 boxAvailable = BoxConfigs.isShaderEnable() && ShaderCore.isValid();
 ```
 
-完成信号：关闭 shader 时插件进入原版粒子分支。
+关闭 shader 时，插件进入原版粒子分支。
 
 ### 记录设备同步兼容状态
 
-**插入位置：`GearInBoxEntity.init()` 的能力日志。** `isCompatibleSync()` 是 BoxUtil 对特定设备同步路径的兼容开关；它不代替 shader 能力判断，也不应被写成必然开启的门禁。
+`GearInBoxEntity.init()` 的能力日志读取 `isCompatibleSync()`；它是 BoxUtil 对特定设备同步路径的兼容开关，不代替 shader 能力判断，也不应被写成必然开启的门禁：
 
 ```java
 boolean compatibleSync = BoxConfigs.isCompatibleSync();
 LOG.info("GearIn box sync: compatible=" + compatibleSync);
 ```
 
-完成信号：启动战斗时日志记录当前兼容值；切换 BoxUtil 配置后，下一次初始化读取到对应值。
+启动战斗时，日志记录当前兼容值；切换 BoxUtil 配置后，下一次初始化读取到对应值。
 
 ### 创建一份精灵实体
 
-**插入位置：`GearInBoxSpawner.spawnBox()`。** 选择贴图、颜色、图层与混合方式。
+`GearInBoxSpawner.spawnBox()` 选择贴图、颜色、图层与混合方式：
 
 ```java
 SpriteEntity box = new SpriteEntity(sprite);
@@ -69,11 +69,11 @@ box.getMaterialData().setColor(Color.CYAN);
 box.setLayer(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
 ```
 
-完成信号：实体材质为青色加法混合。
+实体材质为青色加法混合。
 
 ### 建立三十二份环形实例
 
-**插入位置：`spawnBox()` 的 `instances` 构造处。** 均分角度并交错四档半径，再写入世界坐标、舰船速度、颜色、缩放与三段计时。
+`spawnBox()` 在构造 `instances` 时均分角度并交错四档半径，再写入世界坐标、舰船速度、颜色、缩放与三段计时：
 
 ```java
 for (int i = 0; i < PARTICLE_COUNT; i++) {
@@ -88,11 +88,11 @@ for (int i = 0; i < PARTICLE_COUNT; i++) {
 }
 ```
 
-完成信号：CPU 列表包含 32 份实例，所有位置都围绕本次生成时的玩家舰坐标。
+循环结束后，CPU 列表包含 32 份实例，所有位置都围绕本次生成时的玩家舰坐标。
 
 ### 完成 refresh、submit 与 count
 
-**插入位置：`setInstanceData()` 之后。** 把修改范围提交到 GPU，并声明实际绘制数。
+在 `setInstanceData()` 之后，把修改范围提交到 GPU，并声明实际绘制数：
 
 ```java
 box.setInstanceDataRefreshAllFromCurrentIndex();
@@ -100,18 +100,18 @@ box.submitInstanceData();
 box.setRenderingCount(instances.size());
 ```
 
-完成信号：粒子真正进入画面。
+提交完成后，粒子真正进入画面。
 
 ### 处理入队失败
 
-**插入位置：`CombatRenderingManager.addEntity()` 返回后。** 失败时立即释放实体资源。
+`CombatRenderingManager.addEntity()` 返回后检查返回码，失败时立即释放实体资源：
 
 ```java
 byte result = CombatRenderingManager.addEntity(box);
 if (result != BoxEnum.STATE_SUCCESS) box.delete();
 ```
 
-完成信号：日志出现返回码，战斗继续运行。
+日志出现返回码，战斗继续运行。
 
 ## 排查关键故障
 

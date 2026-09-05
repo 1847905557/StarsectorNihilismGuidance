@@ -226,11 +226,11 @@ setVariant 保存的是传入引用
 
 ## 实现舰队状态读取
 
-本页用一个执行后自停的脚本走完创建、入队、状态修改与清理。以下均为局部片段；每次只增加一组行为，日志与舰队界面给出完成信号。
+本页用一个执行后自停的脚本走完创建、入队、状态修改与清理。以下均为局部片段，每次只增加一组行为，效果以日志与舰队界面核对。
 
 ### 让脚本只执行一次
 
-插入位置：`GearInFleetMemberScript.advance`。先置位再执行序列，即使序列中途抛错，也不会在下一帧继续创建重复成员；`isDone()` 随后让引擎移除脚本。
+这段代码写在 `GearInFleetMemberScript.advance` 中。先置位再执行序列，即使序列中途抛错，也不会在下一帧继续创建重复成员；`isDone()` 随后让引擎移除脚本。
 
 ```java
 @Override
@@ -243,11 +243,11 @@ public void advance(float amount) {
 }
 ```
 
-完成信号：一次注册只产生一组 `GearIn fleet member` 日志，下一帧脚本从引擎脚本集合中移除。
+生效后，一次注册只产生一组 `GearIn fleet member` 日志，下一帧脚本从引擎脚本集合中移除。
 
 ### 创建成员并加入舰队
 
-插入位置：`runSequence` 取得 `CampaignFleetAPI` 与 `FleetDataAPI` 之后。创建结果仍是独立保存态对象；两次 `addFleetMember` 才真正改变玩家舰队集合。
+这段代码写在 `runSequence` 取得 `CampaignFleetAPI` 与 `FleetDataAPI` 之后。创建结果仍是独立保存态对象；两次 `addFleetMember` 才真正改变玩家舰队集合。
 
 ```java
 FleetMemberAPI wolf = Global.getFactory().createFleetMember(
@@ -259,11 +259,11 @@ data.addFleetMember(wolf);
 data.addFleetMember(hammerhead);
 ```
 
-完成信号：`getNumMembers()` 比初始值增加 2，舰队界面同时出现 Wolf 与 Hammerhead，cargo 容量和 fleet points 随同步管线更新。
+生效后，`getNumMembers()` 比初始值增加 2，舰队界面同时出现 Wolf 与 Hammerhead，cargo 容量和 fleet points 随同步管线更新。
 
 ### 用成员 ID 核对集合
 
-插入位置：成员入队之后。读取副本再按唯一 ID 比较，避免把可能重复的船名、船体 ID 或装配 ID 当成成员身份。
+这段代码写在成员入队之后。读取副本再按唯一 ID 比较，避免把可能重复的船名、船体 ID 或装配 ID 当成成员身份。
 
 ```java
 List<FleetMemberAPI> members = data.getMembersListCopy();
@@ -279,11 +279,11 @@ for (FleetMemberAPI member : members) {
 }
 ```
 
-完成信号：遍历日志中的 `wolfFound` 与 `hammerheadFound` 同时为 `true`，列表长度与 `getNumMembers()` 一致。
+生效后，遍历日志中的 `wolfFound` 与 `hammerheadFound` 同时为 `true`，列表长度与 `getNumMembers()` 一致。
 
 ### 修改船体状态与 CR
 
-插入位置：集合核对之后。先制造 30% 船体损伤并修满，再暂时把 CR 写为 0.3；这两组状态分别由 `FleetMemberStatusAPI` 与 `RepairTrackerAPI` 持有。
+这段代码写在集合核对之后。先制造 30% 船体损伤并修满，再暂时把 CR 写为 0.3；这两组状态分别由 `FleetMemberStatusAPI` 与 `RepairTrackerAPI` 持有。
 
 ```java {2,8}
 float hullBefore = hammerhead.getStatus().getHullFraction();
@@ -299,11 +299,11 @@ LOG.info("GearIn fleet member deployable: "
 hammerhead.getRepairTracker().setCR(crBefore);
 ```
 
-完成信号：船体比例呈现 `1.0 → 0.7 → 1.0`，CR 呈现原值 `→ 0.3 →` 原值；演示成员最终没有遗留损伤。
+生效后，船体比例呈现 `1.0 → 0.7 → 1.0`，CR 呈现原值 `→ 0.3 →` 原值；演示成员最终没有遗留损伤。
 
 ### 观察封存对部署顺序的影响
 
-插入位置：CR 恢复之后。封存立即改变部署判据，并让成员排到优先顺序末尾；解除封存后再继续后续装配实验。
+这段代码写在 CR 恢复之后。封存立即改变部署判据，并让成员排到优先顺序末尾；解除封存后再继续后续装配实验。
 
 ```java
 boolean deployBefore = hammerhead.canBeDeployedForCombat();
@@ -316,11 +316,11 @@ LOG.info("GearIn fleet member mothball: " + deployBefore + " -> "
 hammerhead.getRepairTracker().setMothballed(false);
 ```
 
-完成信号：Hammerhead 的 `canBeDeployedForCombat()` 从 `true` 变为 `false`，优先列表首项来自非封存成员。
+生效后，Hammerhead 的 `canBeDeployedForCombat()` 从 `true` 变为 `false`，优先列表首项来自非封存成员。
 
 ### 换装配后清理演示成员
 
-插入位置：`runSequence` 末尾。保存原装配引用，短暂换成 Wolf 装配并立即恢复，最后从集合移除两个演示成员。
+这段代码写在 `runSequence` 末尾。保存原装配引用，短暂换成 Wolf 装配并立即恢复，最后从集合移除两个演示成员。
 
 ```java
 ShipVariantAPI originalVariant = hammerhead.getVariant();
@@ -332,7 +332,7 @@ data.removeFleetMember(wolf);
 data.removeFleetMember(hammerhead);
 ```
 
-完成信号：换装期间 `getHullId()` 为 `wolf`，恢复后为 `hammerhead`；最终成员数与 fleet points 回到脚本开始时的值。
+生效后，换装期间 `getHullId()` 为 `wolf`，恢复后为 `hammerhead`；最终成员数与 fleet points 回到脚本开始时的值。
 
 ## 组装舰队状态实现
 

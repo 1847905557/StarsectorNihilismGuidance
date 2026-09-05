@@ -130,9 +130,11 @@ public interface CommandPlugin {
     - 再入时把 `ruleId` 原样透传给 `getAllMatching(ruleId, params.get(0).string, ...)` 是保留 currentRule 的标准写法。
 - **随机源单次**：`RulesAPI.setRandomForNextRulePick` 只影响下一次 pick，用后即清 —— 多层再入里多个 pick 依次消费该随机源，不能当全局随机源。
 
-常见坑：同触发器互相 FireBest 会无限递归
+::: caution 再入链不允许出现环
 
-再入链必须设计为有向无环：目标触发器不要反向指向来源触发器。一旦两条规则互相 `FireBest`，游戏表现为无响应、进程占满 CPU、日志尾部反复执行规则 —— 没有红字，栈溢出前难以察觉。
+再入链必须设计为有向无环，目标触发器不要反向指回来源触发器。两条规则一旦互相 `FireBest`，游戏就会无响应、进程占满 CPU、日志尾部反复滚同一条规则；没有红字，栈溢出之前很难察觉。
+
+:::
 
 ### 代码侧再入调用点速查表
 

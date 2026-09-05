@@ -17,7 +17,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 让战略 AI 获得可验证的行动入口
@@ -30,7 +30,7 @@
 
 ### 允许 GearIn 参加战略系统
 
-**插入位置：`gear_industry.json` 战略字段。** 开启入侵，并按 concern ID 调整两个实际会被战略系统读取的关注项。
+在 `gear_industry.json` 的战略字段中开启入侵，并按 concern ID 调整两个实际会被战略系统读取的关注项：
 
 ```json
 "canInvade": true,
@@ -42,11 +42,11 @@
 
 `military` 和 `economy` 是 concern 标签，不是可供 `strategyPriorityMults` 查找的键；写入它们不会改变上述两个 concern 的优先级。
 
-完成信号：战略会议中的 Vulnerable Enemy Target 权重上升，Competition 权重下降。
+战略会议中的 Vulnerable Enemy Target 权重会上升，Competition 权重会下降。
 
 ### 确认 StrategicAI 已创建
 
-**插入位置：`GearInStrategicAIProbe.concernCount()`、`forceMeetingIfReady()` 与 `ensureAI()`。** 先从 sector persistent-data map 读取，再用 `null` 守卫确认 AI 生命周期；需要补建时调用 `addAIIfNeeded()`。
+`GearInStrategicAIProbe` 的 `concernCount()`、`forceMeetingIfReady()` 与 `ensureAI()` 先从 sector persistent-data map 读取，再用 `null` 守卫确认 AI 生命周期；需要补建时调用 `addAIIfNeeded()`：
 
 ```java
 StrategicAI ai = StrategicAI.getAI(factionId);
@@ -63,11 +63,11 @@ public boolean ensureAI(String factionId) {
 }
 ```
 
-完成信号：早期探针返回 `0`，进入生涯后可主动刷新并读取 concern 数量。
+早期探针返回 `0`，进入生涯后可主动刷新并读取 concern 数量。
 
 ### 组合势力与全局入侵倍率
 
-**插入位置：`GearInInvasionScaleProbe.estimate()`。** 让日志能解释最终规模来源，并避免重复乘全局值。
+`GearInInvasionScaleProbe.estimate()` 让日志能解释最终规模来源，并避免重复乘全局值：
 
 ```java
 float combined = InvasionFleetManager.getInvasionSizeMult(factionId);
@@ -76,11 +76,11 @@ return baseSize * combined;
 
 `getInvasionSizeMult()` 已经计算 `1 + invasionFleetSizeMod` 并乘上 `NexConfig.invasionFleetSizeMult`，调用方只再乘一次基础规模。
 
-完成信号：修改势力或全局倍率中的任意一项，估算值只按该项变化一次。
+修改势力或全局倍率中的任意一项时，估算值只按该项变化一次。
 
 ### 拆开三种事件的后处理
 
-**插入位置：`GearInInvasionScaleProbe.applyEventPostProcessing()`。** 先取得基础规模，再应用共同倍率和事件自己的后处理；invasion 不附加事件倍率，respawn 使用 `RESPAWN_SIZE_MULT`，blockade 先保证最小规模，再乘 `BLOCKADE_SIZE_MULT` 并加入固定 FP。
+`GearInInvasionScaleProbe.applyEventPostProcessing()` 先取得基础规模，再应用共同倍率和事件自己的后处理；invasion 不附加事件倍率，respawn 使用 `RESPAWN_SIZE_MULT`，blockade 先保证最小规模，再乘 `BLOCKADE_SIZE_MULT` 并加入固定 FP：
 
 ```java
 float fp = baseSize;
@@ -99,11 +99,11 @@ return fp;
 
 目标筛选仍由事件类型自己的入口负责：blockade 检查 `canBlockade` 或伤害型 concern，respawn 额外受复活资格和目标权重影响。不能把这些资格条件折叠进 `getInvasionSizeMult()`。
 
-完成信号：相同基础规模下，三种事件的最终 FP 能分别解释共同倍率、最小规模、固定加成和事件倍率。
+相同基础规模下，三种事件的最终 FP 能分别解释共同倍率、最小规模、固定加成和事件倍率。
 
 ### 把复活作为独立策略验证
 
-**插入位置：`GearInStrategicAIProbe.respawnAllowedByRules()`。** 把复活开关、事件开关、势力资格和次数上限分开判断。
+`GearInStrategicAIProbe.respawnAllowedByRules()` 把复活开关、事件开关、势力资格和次数上限分开判断：
 
 ```java
 SectorManager manager = SectorManager.getManager();
@@ -115,7 +115,7 @@ boolean respawnPossible = manager != null
 
 `factionRespawnInterval` 只决定检查间隔，`maxFactionRespawns` 为负数表示不设上限；`noHomeworld` 是程序化星区的母星配置，不是复活开关。
 
-完成信号：探针只有在管理器已建立、复活和入侵事件均开启、势力可玩且未达到次数上限时返回 `true`。
+探针只有在管理器已建立、复活和入侵事件均开启、势力可玩且未达到次数上限时返回 `true`。
 
 ## 排查关键故障
 

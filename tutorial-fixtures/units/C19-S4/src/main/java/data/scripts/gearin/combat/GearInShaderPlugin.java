@@ -31,7 +31,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   addLayeredRenderingPlugin(常驻渲染插件))，不按承载实体或
  *   寿命失效，跟随玩家舰船；层声明用顶层三图层之一的 ABOVE_PARTICLES_LOWER(粒子系统
  *   之后渲染，成熟实例同款)；渲染剔除依据是承载实体位置
- *   与 getRenderRadius()(C8-S6 硬规则 4)，位置在 advance 里同步；
+ *   与 getRenderRadius()(C8-S7 硬规则 4)，位置在 advance 里同步；
  * - 资源释放：GL 资源 (program/VBO) 在 cleanup() 释放并复位句柄 (幂等，重复调用安全)；
  *   战斗结束 destroyInstance 不调 cleanup() —— 常驻插件必须在 advance() 里判
  *   engine.isCombatOver()(= 结束标志 && 淡出完成)
@@ -119,7 +119,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
             cleanup();     // 已创建的部分资源立即释放；cleanup 幂等，引擎移除时再调一次也安全
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点 (C8-S6 同款姿势)
+        advance(0f); // 立即同步一次位置，避免首帧画在战场原点 (C8-S7 同款姿势)
         LOG.info("GearIn shader plugin init: layers=" + getActiveLayers()
                 + ", u_model=" + program.location[0]
                 + ", u_size=" + program.location[1]
@@ -194,7 +194,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public EnumSet<CombatEngineLayers> getActiveLayers() {
-        // 顶层三图层之一：粒子系统之后渲染 (C8-S6 层序)；
+        // 顶层三图层之一：粒子系统之后渲染 (C8-S7 层序)；
         // 成熟实例同款层选择
         return EnumSet.of(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
     }
@@ -213,12 +213,12 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         if (engine.isPaused()) {
             return;
         }
-        // 剔除依据是承载实体的位置 (C8-S6 硬规则 4)：常驻插件跟随玩家舰船
+        // 剔除依据是承载实体的位置 (C8-S7 硬规则 4)：常驻插件跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
         // 战斗结束收尾：isCombatOver() = 结束标志 && 淡出完成。
         // 常驻插件必须在 advance 里主动失效驱动引擎移除并调用
         // cleanup() —— 战斗结束 destroyInstance 不调 cleanup()，等它等于每场泄漏
-        // (C8-S6 硬规则 3 的常驻版)
+        // (C8-S7 硬规则 3 的常驻版)
         if (engine.isCombatOver()) {
             valid = false;
         }

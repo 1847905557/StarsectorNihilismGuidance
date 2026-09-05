@@ -26,7 +26,7 @@
 - [C7-S1] 的 `modPlugin` 生命周期与持久数据标记；
 - [C7-S2] 的 `Global.getSector()` 阶段语义；
 - [C7-S3] 的 settings 读取；
-- [C8-S3] 的 `MutableStat` 与修饰值读取；
+- [C8-S4] 的 `MutableStat 与修饰值读取；
 - [C10-S1] 的 `SectorAPI.getEconomy()`、生涯时钟与 `EveryFrameScript` 注册；
 - [C10-S2] 的 `SectorEntityToken` 与地点容器挂载；
 - [C10-S3] 的生涯对象一次性脚本与 `REGISTER_MARK` 标记。
@@ -322,7 +322,7 @@ settings.json 中 `economyIntervalnGameDays` 键 (值 30) 的原文注释是 `# 
 
 ### 选择可巡检的市场
 
-插入位置：`GearInMarketPicker.pick`。首选 ID 不存在时，回退到第一个拥有开放子市场的市场。
+这段选择逻辑位于 `GearInMarketPicker.pick`：首选 ID 不存在时，回退到第一个拥有开放子市场的市场。
 
 ```java
 MarketAPI market = economy.getMarket(preferredId);
@@ -337,11 +337,11 @@ if (market == null) {
 return market;
 ```
 
-完成信号：`jangala` 存在时稳定命中；改成不存在的 ID 后仍能返回一个带 `open_market` 的市场。
+选择器运行后，`jangala` 存在时稳定命中；改成不存在的 ID 后仍能返回一个带 `open_market` 的市场。
 
 ### 编排一次市场巡检
 
-插入位置：`GearInMarketInspector.runInspection`。取到市场后按结构、子市场、商品和税率的顺序调用各角色类。
+巡检主流程位于 `GearInMarketInspector.runInspection`：取到市场后按结构、子市场、商品和税率的顺序调用各角色类。
 
 ```java
 EconomyAPI economy = Global.getSector().getEconomy();
@@ -356,11 +356,11 @@ GearInCommodityLog.log(market);
 GearInTariffProbe.log(market);
 ```
 
-完成信号：日志依次出现 structure、conditions、industries、submarket、commodity 与 tariff probe，不存在目标市场时有明确回退或中止记录。
+巡检执行后，日志依次出现 structure、conditions、industries、submarket、commodity 与 tariff probe，不存在目标市场时有明确回退或中止记录。
 
 ### 安全读取子市场库存
 
-插入位置：`GearInSubmarketLog.log` 的循环体。先检查 spec，再对 `getCargoNullOk()` 判空；巡检不会为了读取而创建库存。
+这段判断写在 `GearInSubmarketLog.log` 的循环体里：先检查 spec，再对 `getCargoNullOk()` 判空；巡检不会为了读取而创建库存。
 
 ```java
 if (!market.hasSubmarket(specId)) {
@@ -373,11 +373,11 @@ float supplies = cargoNullOk == null ? 0f
 		: cargoNullOk.getCommodityQuantity(Commodities.SUPPLIES);
 ```
 
-完成信号：未初始化库存显示 `cargoNullOk=null`，已交互的子市场显示 `created`；两种情况都不会抛 NPE。
+读取时，未初始化库存显示 `cargoNullOk=null`，已交互的子市场显示 `created`；两种情况都不会抛 NPE。
 
 ### 对照库存、供需与价格
 
-插入位置：`GearInCommodityLog.log`。同一商品同时读取经济单位库存、可得量、供需上限与玩家交易价格。
+这段读取位于 `GearInCommodityLog.log`：同一商品同时读取经济单位库存、可得量、供需上限与玩家交易价格。
 
 ```java
 CommodityOnMarketAPI commodity = market.getCommodityData(commodityId);
@@ -389,11 +389,11 @@ LOG.info(String.format(
 		market.getSupplyPrice(commodityId, 100, true)));
 ```
 
-完成信号：`supplies` 与 `drugs` 各产生一行，价格随市场供需变化，不再等同于全局基础价。
+输出中 `supplies` 与 `drugs` 各产生一行，价格随市场供需变化，不再等同于全局基础价。
 
 ### 修改税率并当帧回滚
 
-插入位置：`GearInTariffProbe.log`。修饰 ID 固定，读回三个阶段后立即移除修饰。
+探针逻辑位于 `GearInTariffProbe.log`：修饰 ID 固定，读回三个阶段后立即移除修饰。
 
 ```java {3}
 MutableStat tariff = market.getTariff();
@@ -404,11 +404,11 @@ tariff.unmodifyFlat(TARIFF_MOD_ID);
 float after = tariff.getModifiedValue();
 ```
 
-完成信号：日志严格呈现 `before → before + 0.05 → before`，存档中的市场税率没有残留修改。
+探针执行后，日志严格呈现 `before → before + 0.05 → before`，存档中的市场税率没有残留修改。
 
 ### 注册自过期经济监听器
 
-插入位置：巡检末尾与 `GearInEconomyTickLog`。监听器必须交给经济对象；整轮更新后置位，下一次过期检查自动移除。
+注册代码放在巡检末尾，实现位于 `GearInEconomyTickLog`：监听器必须交给经济对象；整轮更新后置位，下一次过期检查自动移除。
 
 ```java {1}
 economy.addUpdateListener(new GearInEconomyTickLog());
@@ -425,7 +425,7 @@ public boolean isEconomyListenerExpired() {
 }
 ```
 
-完成信号：下一经济步只出现一次首次商品更新与一次整轮更新日志，之后不再回调。
+下一经济步只出现一次首次商品更新与一次整轮更新日志，之后不再回调。
 
 ## 组装市场创建实现
 

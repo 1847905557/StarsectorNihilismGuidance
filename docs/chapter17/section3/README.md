@@ -19,7 +19,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -39,7 +39,7 @@
 
 ### 取得当前帧威胁列表
 
-**插入位置：`GearInPointDefenseDirector.choose()` 开头。** 只查询本舰 1400 su 内的敌方导弹。
+`GearInPointDefenseDirector.choose()` 开头只查询本舰 1400 su 内的敌方导弹：
 
 ```java
 for (MissileAPI missile : AIUtils.getNearbyEnemyMissiles(weapon.getShip(), 1400f)) {
@@ -47,11 +47,11 @@ for (MissileAPI missile : AIUtils.getNearbyEnemyMissiles(weapon.getShip(), 1400f
 }
 ```
 
-完成信号：远离防区的导弹不会参与排序。
+远离防区的导弹不会参与排序。
 
 ### 先排除炮塔够不到的目标
 
-**插入位置：`choose()` 的循环首个分支。** 用武器弧而非舰首朝向判断可射击性。
+`choose()` 在循环首个分支用武器弧而非舰首朝向判断可射击性：
 
 ```java
 if (!WeaponUtils.isWithinArc(missile, weapon)) {
@@ -59,22 +59,22 @@ if (!WeaponUtils.isWithinArc(missile, weapon)) {
 }
 ```
 
-完成信号：侧后方导弹不会抢走锁定。
+侧后方导弹不会抢走锁定。
 
 ### 把载荷和距离合成威胁分
 
-**插入位置：`GearInMissileThreat.score()`。** 高伤害、高 EMP、近距离都会提高优先级。
+`GearInMissileThreat.score()` 中高伤害、高 EMP、近距离都会提高优先级：
 
 ```java
 float payload = missile.getDamageAmount() + missile.getEmpAmount() * 0.5f;
 return payload * 1000f / Math.max(100f, distance);
 ```
 
-完成信号：鱼雷的分数高于擦过侧面的轻型导弹。
+鱼雷的分数高于擦过侧面的轻型导弹。
 
 ### 保留最高威胁导弹
 
-**插入位置：`choose()` 的 `best` 更新处。** 一次扫描完成目标选择。
+`choose()` 在 `best` 更新处用一次扫描完成目标选择：
 
 ```java
 if (score > bestScore) {
@@ -83,11 +83,11 @@ if (score > bestScore) {
 }
 ```
 
-完成信号：每帧最多产生一个锁定目标。
+每帧最多产生一个锁定目标。
 
 ### 让炮塔开始转向
 
-**插入位置：`choose()` 返回前。** 只在目标存在时调用瞄准助手。
+返回前，`choose()` 只在目标存在时调用瞄准助手：
 
 ```java
 if (best != null) {
@@ -95,7 +95,7 @@ if (best != null) {
 }
 ```
 
-完成信号：炮塔朝目标转动，目标消失后自然重新选择。
+炮塔朝目标转动，目标消失后自然重新选择。
 
 ## 排查关键故障
 

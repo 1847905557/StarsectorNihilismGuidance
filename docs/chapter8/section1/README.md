@@ -1,294 +1,262 @@
-# 制作每帧战斗插件
+# 读取战斗引擎状态
 
-本节制作第一个每帧战斗插件，并在 `data/config/settings.json` 中完成注册。示例会把回调写入日志，用来确认插件生命周期和暂停时的推进方式。
+战斗代码先要判断当前引擎处于什么阶段，再决定是否读取时间、界面或战斗结果。本节围绕 `CombatEngineAPI` 解释这些状态，并用一份周期日志确认判断结果。
 
-*本节预期阅读时间：~15 分钟。*
+*本节预期阅读时间：~16 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：~20 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 在 `data/config/settings.json` 的 `plugins` 段注册每帧插件，并遵守 key 唯一、值为完整类名两条规则；
-- 解释插件生命周期：每场战斗开始时为每个注册类创建新实例，之后每帧调用实例的 `advance`，战斗结束实例销毁；
-- 用 `engine.isPaused()` 写对暂停期间的状态推进，并解释暂停期间 `advance` 仍然每帧被调用的原因；
-- 从症状定位插件五类典型故障：无行为、`Problem loading class`、暂停期间状态照常推进、第一帧空指针、第二场战斗数值接着涨。
+- 区分战斗上下文；
+- 读取时间、暂停和结果状态；
+- 根据引擎状态选择运行逻辑；
+- 用日志确认状态变化。
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-- [C4-S1] 的测试战役入口与战斗验证方法；
-- [C6-S1] 的 Java 构建、JAR 输出与入口类；
-- [C7-S2] 的 `Global` 生命周期、战斗引擎实例边界与跨战斗引用规则。
+- [C1-S1] 的 MOD 目录和 `starsector.log` 位置；
+- [C4-S1] 的测试战役和战斗验证方法；
+- [C6-S1] 的 Java 构建与 JAR 输出；
+- [C7-S2] 的 `Global` 服务阶段与跨战斗引用边界；
+- [C8-S3] 的每帧战斗插件注册与暂停守卫。
 
-## 判断战斗帧语义
+## 取得当前战斗引擎
 
-游戏战斗以**帧**为单位运行，正常速度下每秒约 60 帧。每一帧，游戏推进舰船、结算武器，然后**依次调用每个插件的 `advance` 方法**：
-
-```text
-advance(float amount, List<InputEventAPI> events)
-```
-
-`amount` 是距上一帧经过的秒数 (正常约 `0.017`)，`events` 是本帧的输入事件列表。插件收到的 `amount` 与 `getElapsedInLastFrame()` 是同一个数 (时间语义见 [C8-S3])。
-
-## 注册战斗插件
-
-每帧插件在 `data/config/settings.json` 的 `plugins` 段登记 (MOD 中不存在该文件就新建，只写自己的条目)：
-
-```json
-{
-    "plugins": {
-        "gearInPauseAwarePlugin": "data.scripts.gearin.combat.GearInPauseAwarePlugin"
-    }
-}
-```
-
-两条规则 (与船插的 CSV 注册同一逻辑)：
-
-- **key 唯一**：`gearInPauseAwarePlugin` 全局唯一，带 `GearIn_` 前缀的可读命名同理。key 与其他来源重复时后读覆盖先读 —— 您的插件可能被别人的覆盖，通常还没报错。
-- **值是完整类名**：包名.类名，必须与文件里的 `package` + `class` 完全一致。
-
-游戏启动时读取这个类名并注册；**每场战斗开始时为它创建一个新实例**，之后每帧调用实例的 `advance`；战斗结束实例销毁。`engine.addPlugin(...)` 是战斗内的另一种注册方式 (本节示例之外的插件用它)，完整注册与移除见 [C8-S5]。
-
-## 实现每帧战斗插件
-
-本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段；把它放入指定类或方法后再继续，日志或界面出现对应信号时才进入下一段。
-
-### 建立战斗内计时状态
+在战斗插件的回调中使用当前 `CombatEngineAPI`。每场战斗都重新取得引擎对象，状态判断和时间读取都以这份引用为准。
 
 ```java
-// 插入位置：GearInPauseAwarePlugin 的类声明与字段区
-public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
-    public static final float REPORT_INTERVAL = 10f;
-
-    private CombatEngineAPI engine;
-    private float elapsed;
-    private float timeSinceLastReport;
-    private int calls;
-    private int pausedCalls;
-}
+CombatEngineAPI engine = Global.getCombatEngine();
 ```
 
-新增行为：每场战斗用独立实例保存计时和调用次数。完成信号：类名与 `settings.json` 注册值一致，构建通过；重新进入战斗时这些字段从零开始。
+## 判断战斗上下文
 
-### 拦截暂停帧
+同一段逻辑可能运行在生涯遭遇战、模拟战或战役中。先读取上下文，再决定是否执行只适用于某种战斗的代码。
 
-```java
-// 插入位置：GearInPauseAwarePlugin.advance() 开头
-calls++;
-if (engine == null) {
-    engine = Global.getCombatEngine();
-    if (engine == null) {
-        return;
-    }
-}
-if (engine.isPaused()) {
-    pausedCalls++;
-    return;
-}
-```
+### 战斗上下文速查表
 
-新增行为：回调总数包含暂停帧，战斗状态只在非暂停帧继续推进。完成信号：按 ESC 后 `calls` 仍增长，`elapsed` 保持不变。
+| 方法 | 返回语义 | 适用判断 |
+| --- | --- | --- |
+| `isInCampaign()` | 当前是生涯战斗且不是生涯内模拟战 | 只在真实生涯遭遇战运行 |
+| `isInCampaignSim()` | 当前是生涯内模拟战 | 区分生涯模拟战 |
+| `isSimulation()` | 当前是任意模拟战 | 识别模拟战入口 |
+| `isMission()` | 当前是战役 | 识别 `data/missions` 战斗 |
+| `getMissionId()` | 当前战役 ID | 区分 `GearIn_test` 等战役 |
 
-### 累计非暂停时间
+`getMissionId()` 只有在战役上下文中才有明确的战役用途。日志同时记录 `isMission()` 与 ID，便于确认进入的是预期战斗。
 
-```java
-// 插入位置：advance() 的暂停检查之后
-elapsed += amount;
-timeSinceLastReport += amount;
-if (timeSinceLastReport >= REPORT_INTERVAL) {
-    timeSinceLastReport = 0f;
-    report(engine);
-}
-```
+## 读取战斗时间与暂停
 
-新增行为：插件每累计 10 秒非暂停时间报告一次。完成信号：正常运行约 10 秒后触发首次报告；暂停时间不会缩短下一次报告的等待时间。
+战斗时间有不同的统计口径。需要推进逻辑时使用不含暂停的累计时间；需要记录玩家实际经历的时间时使用包含暂停的累计时间；逐帧逻辑直接使用上下文传入的 `amount`，如果没有则使用 `getElapsedInLastFrame()`。
 
-### 同时提交日志与战场文字
+::: tip 帧与时间步长
 
-```java
-// 插入位置：GearInPauseAwarePlugin 的方法区
-private void report(CombatEngineAPI engine) {
-    String text = "GearIn: elapsed " + Math.round(elapsed) + "s, calls " + calls
-            + " (paused " + pausedCalls + ")";
-    Global.getLogger(GearInPauseAwarePlugin.class).info(text);
-    if (engine.getPlayerShip() != null) {
-        engine.addFloatingText(engine.getPlayerShip().getLocation(), text,
-                14f, Color.WHITE, engine.getPlayerShip(), 0f, 3f);
-    }
-}
-```
-
-新增行为：同一份状态既进入 `starsector.log`，也附着在玩家舰船位置显示。完成信号：日志与战场文字给出相同的 `elapsed`、`calls` 和 `pausedCalls`；没有玩家舰船时只写日志。
-
-## 实现要点
-
-要点：
-
-- **`extends BaseEveryFrameCombatPlugin`**：基类提供其余回调 (输入处理、渲染等) 的空实现，只需覆写 `advance`。
-- **5 个字段**：插件自己记的数 (累计秒数、距上次报告多久、调用次数、暂停帧次数)。字段随实例生存：每场战斗一个新实例，数字从零开始 —— **不要**把实例缓存到下一场战斗，否则 `elapsed` 会从上一场接着涨。
-- **`advance` 三件事按顺序**：`calls++` 在暂停检查**之前** (暂停帧也计数，这是 "暂停期间回调照常执行" 的观测点)；引擎引用**用到时才取** (`init()` 已废弃、不保证先于 `advance` 调用)；**暂停检查** `if (engine.isPaused()) { pausedCalls++; return; }` —— 暂停帧只计数、不推进状态。
-- **`report`**：`Global.getLogger(...)` 写日志；`addFloatingText(...)` 在玩家舰船位置显示浮动文字 (3 秒后消失)。
-
-::: warning 状态推进必须先过暂停检查
-
-任何**推进状态、累计时间、修改数值**的代码，在 `advance` 里都必须先检查 `engine.isPaused()`。游戏不会替您跳过暂停帧 —— 暂停期间您的代码每帧照跑，只是游戏不推进战斗逻辑。
+正常速度下每秒约 60 帧。`amount` 是当前帧经过的秒数，时间倍率会改变这个值。
 
 :::
 
+### 战斗时间速查表
+
+| 方法 | 语义 | 暂停时行为 |
+| --- | --- | --- |
+| `getTotalElapsedTime(false)` | 战斗推进时间 | 不累计 |
+| `getTotalElapsedTime(true)` | 实际经历时间 | 继续累计 |
+| `getElapsedInLastFrame()` | 当前帧时间步长 | 返回当前帧值 |
+| `getTimeMult()` | 引擎时间倍率 stat | 读取修正后的倍率 |
+| `getElapsedInContactWithEnemy()` | 双方接敌累计时间 | 不累计 |
+| `isFleetsInContact()` | 双方当前是否接敌 | 读取当前状态 |
+| `isPaused()` | 当前是否暂停 | 返回暂停标志 |
+| `setPaused(boolean)` | 修改暂停状态 | 立即改变暂停标志 |
+
+暂停不会跳过插件的 `advance()`。凡是累计状态或修改数值的代码，都在 `isPaused()` 判断之后执行。
+
+## 读取战斗结果
+
+`isCombatOver()` 是战斗收尾判据；`getWinningSideId()` 只提供胜者侧。胜者 ID 尚未确定时可以是 `-1`，所以不能用胜者 ID 代替结束判定。
+
+`setCombatNotOverFor(float)` 与 `getCombatNotOverFor()` 用于读取或延长战斗继续时间。需要让战斗继续时，先确认这项延长是否与当前胜负逻辑相符。
+
+## 读取界面与战斗环境
+
+引擎还提供几组直接影响战斗逻辑的状态：
+
+### 界面状态
+
+- `isUIShowingDialog()`：当前是否显示战斗对话框；
+- `isUIShowingHUD()`：当前是否显示战斗 HUD；
+- `isUIAutopilotOn()`：玩家舰是否处于自动驾驶。
+
+需要避免在对话框遮挡时显示提示，或只在 HUD 可见时更新界面文字时，使用这些状态作为条件。
+
+### 战场范围与速度
+
+- `getMapWidth()`、`getMapHeight()`：当前战斗地图范围；
+- `isInFastTimeAdvance()`：当前是否处于快速时间推进。
+
+地图范围适合限制坐标计算，快速推进状态适合调整低频提示或测试日志的输出节奏。
+
+### 舰队与撤退状态
+
+- `playerHasNonAllyReserves()`：玩家侧是否还有非盟友后备舰船；
+- `playerHasAllyReserves()`：玩家盟友侧是否还有后备舰船；
+- `isEnemyInFullRetreat()`：敌方是否进入全面撤退。
+
+这些方法读取的是引擎级战斗状态。舰船、弹体和光束对象的遍历放在 [C8-S2]。
+
+## 用周期日志观察状态
+
+`GearInCombatStatePlugin` 每 2 秒记录上下文、时间和战斗结果。它只负责读取引擎状态，舰船、弹体、导弹和光束的遍历由 [C8-S2] 处理。
+
+初始化时记录战斗上下文：
+
+```java
+this.engine = engine;
+LOG.info("GearIn battle init: campaign=" + engine.isInCampaign()
+        + " campaignSim=" + engine.isInCampaignSim()
+        + " simulation=" + engine.isSimulation()
+        + " mission=" + engine.isMission()
+        + " missionId=" + engine.getMissionId());
+```
+
+周期报告在非暂停帧累计间隔，并把两种累计时间、时间倍率、接敌状态和胜负结果写到同一行：
+
+```java
+if (engine.isPaused()) {
+    return;
+}
+reportInterval.advance(amount);
+if (reportInterval.intervalElapsed()) {
+    logEngineTime();
+    logContext();
+}
+```
+
 ## 完整最小例
 
-示例做一件事：统计 "非暂停时间" 累计秒数 (`elapsed`) 与回调总次数 (`calls`)，每累计 10 秒向日志输出一次，并在玩家舰船位置显示一行浮动文字。暂停期间 `calls` 继续增长、`elapsed` 冻结，暂停检查的可观察结果即在于此。
+下面的类只读取当前战斗引擎状态，并把上下文、时间、暂停和结果写入日志。
 
-文件：`src/data/scripts/gearin/combat/GearInPauseAwarePlugin.java`：
-
-::: details 完整成品：GearInPauseAwarePlugin
+::: details 完整成品：GearInCombatStatePlugin
 
 ```java
 package data.scripts.gearin.combat;
 
-import java.awt.Color;
 import java.util.List;
+
+import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.input.InputEventAPI;
+import com.fs.starfarer.api.util.IntervalUtil;
 
 /**
- * 每帧战斗插件：演示暂停守卫与状态归属。
+ * 完整最小例：战斗引擎状态读取 —— 上下文、时间、暂停与战斗结果。
  *
- * <p>注册：MOD 的 data/config/settings.json 的 plugins 段写入本类完整类名。
- * 游戏启动时把核心与所有 MOD 的 settings.json 深合并 (文本读取工具.readJSONMerged)，
- * 并把 plugins 段全部类名注册为脚本类；每场战斗开始时为其中每个
- * EveryFrameCombatPlugin 类创建新实例并附加 (脚本类加载器.loadScriptInstance 的
- * newInstance)，战斗结束实例随引擎销毁，不得缓存到下一场战斗。</p>
- *
- * <p>advance() 在战斗暂停期间仍然每帧被调用，amount 也仍然非零；是否推进状态
- * 由插件自己决定：本例只用非暂停帧累加 elapsed，暂停帧只累计调用次数 calls。
- * 初始状态在构造器设置，不依赖已废弃的 init()(不保证在第一次 advance() 之前调用)。</p>
+ * 本插件由战斗上下文注册 (C8-S3 的插件模型)，只在本场战斗内有效：
+ * - 状态读取只使用当前战斗的引擎引用；
+ * - advance() 在暂停时仍可能被调用，状态推进前必须检查 engine.isPaused()；
+ * - getWinningSideId() 只表示胜者侧，战斗结束判定使用 isCombatOver()。
  */
-public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
+public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 
-    /** 非暂停时间每累计多少秒输出一次报告。 */
-    public static final float REPORT_INTERVAL = 10f;
+    private static final Logger LOG = Global.getLogger(GearInCombatStatePlugin.class);
 
     private CombatEngineAPI engine;
-    private float elapsed;
-    private float timeSinceLastReport;
-    private int calls;
-    private int pausedCalls;
+    private final IntervalUtil reportInterval = new IntervalUtil(2f, 2f);
 
-    public GearInPauseAwarePlugin() {
-        // 初始状态在这里设置；init() 已废弃，不保证在第一次 advance() 之前被调用
+    @Override
+    public void init(CombatEngineAPI engine) {
+        this.engine = engine;
+        LOG.info("GearIn battle init: campaign=" + engine.isInCampaign()
+                + " campaignSim=" + engine.isInCampaignSim()
+                + " simulation=" + engine.isSimulation()
+                + " mission=" + engine.isMission()
+                + " missionId=" + engine.getMissionId());
     }
 
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
-        calls++;
-        if (engine == null) {
-            engine = Global.getCombatEngine();
-            if (engine == null) {
-                return;
-            }
-        }
         if (engine.isPaused()) {
-            pausedCalls++;
             return;
         }
-        elapsed += amount;
-        timeSinceLastReport += amount;
-        if (timeSinceLastReport >= REPORT_INTERVAL) {
-            timeSinceLastReport = 0f;
-            report(engine);
+        reportInterval.advance(amount);
+        if (reportInterval.intervalElapsed()) {
+            logEngineTime();
+            logContext();
         }
     }
 
-    private void report(CombatEngineAPI engine) {
-        String text = "GearIn: elapsed " + Math.round(elapsed) + "s, calls " + calls
-                + " (paused " + pausedCalls + ")";
-        Global.getLogger(GearInPauseAwarePlugin.class).info(text);
-        if (engine.getPlayerShip() != null) {
-            engine.addFloatingText(engine.getPlayerShip().getLocation(), text,
-                    14f, Color.WHITE, engine.getPlayerShip(), 0f, 3f);
-        }
+    /** 引擎时间语义：暂停不计/计、当前帧 dt、时间倍率、接触时间与战斗结果。 */
+    private void logEngineTime() {
+        LOG.info("GearIn time: total=" + engine.getTotalElapsedTime(false)
+                + " totalWithPause=" + engine.getTotalElapsedTime(true)
+                + " lastFrame=" + engine.getElapsedInLastFrame()
+                + " timeMult=" + engine.getTimeMult().getModifiedValue()
+                + " contact=" + engine.getElapsedInContactWithEnemy()
+                + " fleetsInContact=" + engine.isFleetsInContact()
+                + " combatOver=" + engine.isCombatOver()
+                + " winner=" + engine.getWinningSideId());
+    }
+
+    /** 记录适合决定逻辑分支的引擎状态。 */
+    private void logContext() {
+        LOG.info("GearIn context: campaign=" + engine.isInCampaign()
+                + " simulation=" + engine.isSimulation()
+                + " mission=" + engine.isMission()
+                + " missionId=" + engine.getMissionId()
+                + " paused=" + engine.isPaused()
+                + " dialog=" + engine.isUIShowingDialog()
+                + " hud=" + engine.isUIShowingHUD()
+                + " fastTime=" + engine.isInFastTimeAdvance()
+                + " combatOver=" + engine.isCombatOver()
+                + " winner=" + engine.getWinningSideId());
     }
 }
 ```
 
 :::
 
-## 排查暂停状态错误
-
-每帧回调没有检查 `engine.isPaused()`。
-
-**局部故障片段：**
-
-```java
-// 故障片段
-elapsed += amount; report(engine);
-```
-
-**局部修正片段：**
-
-```java
-// 修正片段
-if (engine.isPaused()) { return; } elapsed += amount; report(engine);
-```
-
-复验：暂停战斗后确认计时日志停止，继续战斗后恢复。
-
 ## 验证方案
 
-前置数据：`GearInPauseAwarePlugin` 已写入 `data/config/settings.json` 的 `plugins` 段，`jars/GearIndustry.jar` 已按 [C6-S1] 的流程构建并在启动器启用本 MOD。
-
-1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`。
-2. 启动游戏，进入模拟战 (有玩家舰船)，正常跑约 15 秒。
-3. 打开 `starsector.log`，搜索 `GearIn`，核对报告行与数字。
-4. 按 ESC 暂停约 20 秒再恢复，再次核对报告行。
+1. 按 [C8-S3] 的方式注册并构建 `GearInCombatStatePlugin`。
+2. 进入 `GearIn_test`，观察初始化日志中的战斗类型和 `missionId`。
+3. 正常运行数秒，核对 `GearIn time:` 与 `GearIn context:` 的时间、接敌和胜负字段。
+4. 暂停战斗约 10 秒再恢复，比较 `total`、`totalWithPause` 和 `lastFrame`。
+5. 打开战斗对话框或自动驾驶，观察对应界面状态字段变化。
+6. 结束战斗，核对 `isCombatOver()` 与胜者字段的先后关系。
 
 预期结果：
 
-- 约 15 秒后 `starsector.log` 出现 `GearIn: elapsed ...s, calls ... (paused 0)` 形态的报告，玩家舰船位置出现过一行白色浮动文字 (约 3 秒后消失)；
-- 暂停约 20 秒期间没有新报告；恢复后第一次报告的 `elapsed` 与暂停前连续 (暂停的 20 秒未被计入)，`calls` 明显大于按帧率推算的调用数 —— 暂停期间回调照常执行，状态被暂停检查拦下；
-- `starsector.log` 没有与 `GearInPauseAwarePlugin` 相关的 `ERROR`。
+- 战役战斗显示 `mission=true` 和对应 `missionId`；
+- 暂停期间不推进不含暂停的战斗时间；
+- 包含暂停的累计时间可以继续增长；
+- 胜者字段用于显示胜者侧，结束判定使用 `isCombatOver()`；
+- 日志没有与 `GearInCombatStatePlugin` 相关的错误。
 
 ## 故障分析
 
-- **插件没有任何行为**：`settings.json` 缺少条目、文件路径错误，或 key 被其他来源覆盖时，游戏不会创建实例，日志和画面都没有 `GearIn:` 信号。
+- **战斗类型判断错误**：把 `isSimulation()`、`isInCampaignSim()` 和 `isMission()` 当作同一个状态。
+    - **解决方案**：同时记录三个方法和 `getMissionId()`，按照实际战斗入口选择判断条件。
 
-    - **解决方案**：确认文件位于 `data/config/settings.json`，key 全局唯一，值与 `package`、`class` 组成的完整类名一致，重新开战。
+- **暂停期间计时继续推进**：在 `isPaused()` 判断前累计 `amount`。
+    - **解决方案**：把状态推进和报告间隔放到暂停守卫之后。
 
-- **日志出现 `Problem loading class [...]`**：注册类名与 `package`、`class` 不一致，或源码没有进入 JAR 时，类加载器无法解析插件。
+- **胜者尚未确定却提前收尾**：用 `getWinningSideId() != -1` 代替战斗结束判定。
+    - **解决方案**：用 `isCombatOver()` 判定收尾，再读取 `getWinningSideId()` 记录结果。
 
-    - **解决方案**：让注册值、包声明和类名逐字一致，把源码放入 `data/scripts/gearin/combat/` 并重新构建 JAR。
-
-- **暂停期间状态照常推进**：`advance` 在暂停检查前累计状态时，恢复后 `elapsed` 会包含暂停时间。
-
-    - **解决方案**：把状态推进放在 `engine.isPaused()` 守卫之后，仅将 `calls++` 这类观测回调次数的计数放在守卫前。
-
-- **第一次 `advance` 抛出空指针**：在已废弃的 `init(engine)` 中保存引擎并假设它先执行，会让首次 `advance()` 看到 null。
-
-    - **解决方案**：初始状态放入构造器，引擎在使用时通过 `Global.getCombatEngine()` 获取，重新开战。
-
-- **第二场战斗的数值接着上涨**：插件实例被保存到 `static` 字段或战斗外对象时，旧实例会跨战斗存活。
-
-    - **解决方案**：只通过 `settings.json` 登记，让游戏每场创建新实例。
+- **界面提示出现在错误阶段**：没有检查对话框、HUD 或自动驾驶状态。
+    - **解决方案**：在显示提示前读取对应的界面状态方法。
 
 ## 总结
 
-本节完成了第一个战斗插件从注册到验证的完整流程：`settings.json` 的 `plugins` 段登记类名，游戏每场战斗创建新实例并逐帧调用 `advance`，实例字段随战斗而生灭。其中任何一环断开，症状各不相同：没注册是完全没有行为，类名不一致是 `Problem loading class [...]`，实例被缓存则是第二场战斗数值接着涨。
-
-排错时沿注册条目、构建产物、状态推进的顺序核对，比对着画面猜测更快。暂停语义是本节的核心判断：游戏不会替您跳过暂停帧，凡是推进状态、累计时间的代码，都要先过 `engine.isPaused()` 这一道检查。
-
-插件注册的完整生命周期 (三条注册路径、`addPlugin` / `removePlugin`、战斗结束无清理回调) 与监听器系统见 [C8-S5]。
+本节把 `CombatEngineAPI` 的读取分成四类判断：上下文确认当前战斗类型，时间方法决定推进口径，结果方法决定收尾状态，界面与战场方法决定提示是否适合当前阶段。读取结果应绑定当前战斗引擎，具体舰船、弹体、导弹和光束对象交给 [C8-S2]。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：每帧回调接口 (`advance`、`processInputPreCoreControls`、两个 `render...`，暂停期间照常被调用)。
-- `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：全部空实现的基类，示例继承它只覆写 `advance`。
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：`isPaused()`、`getElapsedInLastFrame()`(暂停时返回当前帧值)、`addPlugin` / `removePlugin`、`getPlayerShip()`、`addFloatingText(...)`。
-- `com.fs.starfarer.api.Global`：`getLogger(Class)`(输出到 `starsector.log`)、`getCombatEngine()` (战斗外返回非 null 空引擎，仅资源加载期为 `null`)。
-- `data/config/settings.json`：`plugins` 段注册入口 (游戏本体与所有 MOD 同路径文件深合并，key 全局唯一)。
-- `Starsector/starsector-core/starsector.log`：运行日志，插件 `Global.getLogger(...)` 的输出位置。
+- `CombatEngineAPI`：战斗上下文、时间、暂停、界面和结果访问器；
+- `EveryFrameCombatPlugin`：战斗插件的 `advance` 回调；
+- [C8-S2]：战斗对象集合与 `addFloatingText(...)` 观察；
+- [C8-S3]：每帧战斗插件的注册与暂停守卫。

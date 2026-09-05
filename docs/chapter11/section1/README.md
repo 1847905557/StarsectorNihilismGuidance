@@ -36,7 +36,7 @@ name,id,demand class,base price,export value,price variability,utility,origin,ta
 Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,108000,1,,
 ```
 
-完成信号：日志加载 `GearIn_tempered_alloy`，且没有重复 ID 错误。
+生效后，日志加载 `GearIn_tempered_alloy`，且没有重复 ID 错误。
 
 ### 配置价格来源
 
@@ -46,7 +46,7 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,108000,1,,
 ```
 
-完成信号：货舱单位体积为 1，堆叠上限为 1000，价格面板能读出商品的基础值。
+生效后，货舱单位体积为 1，堆叠上限为 1000，价格面板能读出商品的基础值。
 
 ### 接入势力规则
 
@@ -60,7 +60,7 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 ],
 ```
 
-完成信号：进入 GearIn 市场后，商品行显示违禁状态；拼写错误会在加载期报 `Invalid illegal commodity id`。
+规则生效后，进入 GearIn 市场能看到商品行显示违禁状态；ID 拼写错误会在加载期报 `Invalid illegal commodity id`。
 
 ## 排查商品加载故障
 

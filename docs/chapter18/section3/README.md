@@ -18,7 +18,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 分开处理两种星区
@@ -38,7 +38,7 @@ Corvus 模式把玩家放在 GearIn 固定母星旁；随机星区先生成 Gear
 
 ### 先判断当前星区模式
 
-**插入位置：`GearInNexStartPlanner.chooseSpawn()`。** 只在 manager 已建立后读取 Corvus 状态。
+`GearInNexStartPlanner.chooseSpawn()` 只在 manager 已建立后读取 Corvus 状态：
 
 ```java
 if (GearInNexCompat.isNexCorvusMode()) {
@@ -46,11 +46,11 @@ if (GearInNexCompat.isNexCorvusMode()) {
 }
 ```
 
-完成信号：两种模式进入不同日志分支。
+两种模式随后进入不同日志分支。
 
 ### 为 Corvus 提供固定实体
 
-**插入位置：`data/config/exerelin/corvus_spawnpoints.csv` 的 GearIn 行。** 三列依次为势力 ID、星系名称和已存在实体 ID。
+在 `data/config/exerelin/corvus_spawnpoints.csv` 的 GearIn 行写入三列，依次为势力 ID、星系名称和已存在实体 ID：
 
 ```csv
 faction,system,entityID
@@ -59,11 +59,11 @@ gear_industry,GearIn Prime,GearIn_prime
 
 `system` 是便于定位的星系名称，真正交给开局逻辑的是 `entityID`。该实体必须已经由 Corvus 星区生成器创建。
 
-完成信号：固定模式解析到 `GearIn_prime`，玩家出生在该实体附近。
+固定模式会解析到 `GearIn_prime`，玩家出生在该实体附近。
 
 ### 为随机星区选择本势力市场
 
-**插入位置：`chooseSpawn()` 的随机分支。** 在随机星区经济已经建立后，读取 GearIn 当前拥有的市场。
+`chooseSpawn()` 的随机分支在随机星区经济已经建立后，读取 GearIn 当前拥有的市场：
 
 ```java
 for (MarketAPI market : NexUtilsFaction.getFactionMarkets(factionId)) {
@@ -75,11 +75,11 @@ for (MarketAPI market : NexUtilsFaction.getFactionMarkets(factionId)) {
 
 完整实现还会排除没有主实体的市场。选择规模最大的市场能让开局位置保持稳定，也避免引用只存在于 Corvus 模式的实体 ID。
 
-完成信号：随机模式返回一个实际市场主实体 ID；GearIn 没有市场时明确返回 `null`。
+随机模式返回一个实际市场主实体 ID；GearIn 没有市场时明确返回 `null`。
 
 ### 从配置取得初始舰队
 
-**插入位置：`GearInNexStartPlanner.chooseFleet()`。** 按 `fleetType` 读取变体列表。
+`GearInNexStartPlanner.chooseFleet()` 按 `fleetType` 读取变体列表：
 
 ```java
 return NexConfig.getFactionConfig(factionId)
@@ -88,21 +88,21 @@ return NexConfig.getFactionConfig(factionId)
 
 第二个参数为 `false`，因此配置缺少该舰队类型时不会偷偷补一艘后备舰；索引 `0` 固定选择该类型的首组配置，便于两种模式做一致性复验。
 
-完成信号：两个模式对同一个 `fleetType` 返回相同的变体 ID 列表。
+两个模式对同一个 `fleetType` 会返回相同的变体 ID 列表。
 
 ### 让配置选择随机开局舰队
 
-**插入位置：`GearInNexStartPlanner.chooseFleet()` 的调用方。** 传入 `RANDOM` 时由 Nexerelin 从允许随机选择的舰队类型中挑选；固定类型仍直接读取对应配置。
+`GearInNexStartPlanner.chooseFleet()` 的调用方传入 `RANDOM` 时，由 Nexerelin 从允许随机选择的舰队类型中挑选；固定类型仍直接读取对应配置：
 
 ```java
 List<String> fleet = planner.chooseFleet(factionId, "RANDOM");
 ```
 
-完成信号：多次新档得到的舰队类型可能不同，但每次结果都来自允许的起始舰队集合。
+多次新档得到的舰队类型可能不同，但每次结果都来自允许的起始舰队集合。
 
 ### 先拒绝无法解析的舰队类型
 
-**插入位置：请求进入 `getStartFleetForType()` 之前。** 用 try/catch 接住 `StartFleetType.getType()` 对未知键抛出的 `IllegalArgumentException`，避免把拼写错误当成随机类型。
+在请求进入 `getStartFleetForType()` 之前，用 try/catch 接住 `StartFleetType.getType()` 对未知键抛出的 `IllegalArgumentException`，避免把拼写错误当成随机类型：
 
 ```java
 boolean valid = true;
@@ -113,7 +113,7 @@ try {
 }
 ```
 
-完成信号：固定类型和 `RANDOM` 进入配置读取，未知类型在玩家放置前返回明确错误。
+固定类型和 `RANDOM` 照常进入配置读取，未知类型在玩家放置前返回明确错误。
 
 ## 排查关键故障
 

@@ -17,7 +17,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 让特遣队与入侵事件留下可追踪标识
@@ -30,44 +30,44 @@ GearIn 特遣队显示 "编号 + 来源市场 + Forgeguard"；入侵 GearIn 市�
 
 ### 在势力配置登记命名器
 
-**插入位置：`gear_industry.json` 的 `specialForcesNamerClass`。** 让 Nexerelin 经脚本类加载器创建实现。
+在 `gear_industry.json` 的 `specialForcesNamerClass` 中登记实现类，让 Nexerelin 经脚本类加载器创建它：
 
 ```json
 "specialForcesNamerClass":"data.scripts.gearin.modcompat.GearInSpecialForcesNamer"
 ```
 
-完成信号：生成特遣队时进入 `GearInSpecialForcesNamer`，而不是使用默认命名器。
+生成特遣队时会进入 `GearInSpecialForcesNamer`，而不是使用默认命名器。
 
 ### 从来源市场生成名字主体
 
-**插入位置：`GearInSpecialForcesNamer.getFleetName()`。** 优先使用 `origin`，缺失时寻找势力市场。
+`GearInSpecialForcesNamer.getFleetName()` 优先使用 `origin`，缺失时寻找势力市场：
 
 ```java
 String marketName = market == null ? "GearIn" : market.getName();
 ```
 
-完成信号：正常来源显示市场名；来源为 `null` 时仍返回非空名称。
+正常来源显示市场名；来源为 `null` 时仍返回非空名称。
 
 ### 加入可重复请求的编号
 
-**插入位置：`getFleetName()` 返回处。** 使用带序数后缀的 1 至 33 编号，接受 Nexerelin 的重复检查。
+`getFleetName()` 的返回处使用带序数后缀的 1 至 33 编号，接受 Nexerelin 的重复检查：
 
 ```java
 int num = RANDOM.nextInt(33) + 1;
 return num + ordinalSuffix(num) + " " + marketName + " Forgeguard";
 ```
 
-完成信号：连续请求产生可读的候选名；重复仍由 Nexerelin 的重试逻辑处理。
+连续请求会产生可读的候选名；重复仍由 Nexerelin 的重试逻辑处理。
 
 ### 记录入侵结果和市场转移
 
-**插入位置：`GearInInvasionReporter` 的四个回调和 `register()`。** 保存市场 ID、回合强度、胜负和新所有者，并用瞬态监听器接入场景。
+`GearInInvasionReporter` 的四个回调保存市场 ID、回合强度、胜负和新所有者：
 
 ```java
 LOG.info("GearIn invasion finished: " + market.getId() + " success=" + success);
 ```
 
-注册片段：
+`register()` 再用瞬态监听器把回调接入场景：
 
 ```java
 ListenerManagerAPI listeners = Global.getSector().getListenerManager();
@@ -76,7 +76,7 @@ if (!listeners.hasListenerOfClass(GearInInvasionReporter.class)) {
 }
 ```
 
-完成信号：重复调用注册入口仍只有一个监听器实例；每次入侵结束只出现一条 `finished` 与 `transfer` 日志。
+重复调用注册入口仍只有一个监听器实例；每次入侵结束只出现一条 `finished` 与 `transfer` 日志。
 
 ### 入侵回调职责速查表
 

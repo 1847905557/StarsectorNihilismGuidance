@@ -5,6 +5,7 @@ import org.lwjgl.util.vector.Vector2f;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.CombatEntityAPI;
+
 public class GearInSoundPlayer {
 
     public static final String SOUND_ID_SYSTEM_LOOP = "GearIn_system_loop";

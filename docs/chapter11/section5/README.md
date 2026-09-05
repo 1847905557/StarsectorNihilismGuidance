@@ -23,7 +23,7 @@
 - [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
 - [C2-S2] 的 CSV 合并、重复键与空 id 行处理；
 - [C7-S1] 的 `GearInModPlugin`、`onGameLoad` 与持久数据标记；
-- [C8-S3] 的 `MutableStat`、`StatBonus` 与 modifier 写入；
+- [C8-S4] 的 `MutableStat、`StatBonus` 与 modifier 写入；
 - [C10-S1] 的一次性 `EveryFrameScript` 与 `isDone()` 自停语义；
 - [C10-S2] 的 `addPlanet` 条件市场与实体侧 survey 关系；
 - [C11-S3] 的 `MarketAPI` 条件访问、实例 token 与条件移除；
@@ -236,9 +236,11 @@ name,id,tags,planetary,decivRemove,script,desc,icon,order
 GearIn Ore Deposits,GearIn_ore_deposits,,TRUE,,data.scripts.gearin.campaign.GearInOreCondition,"Rich ore veins run beneath $marketName.",,50
 ```
 
-插入位置：`data/campaign/market_conditions.csv`。完成信号：加载日志出现 `GearIn_ore_deposits`，spec 的 plugin 类与 `GearInOreCondition` 一致。
+把这一行登记进 `data/campaign/market_conditions.csv` 后，加载日志会出现 `GearIn_ore_deposits`，spec 的 plugin 类与 `GearInOreCondition` 一致。
 
 ### 用实例 token 写入修饰
+
+修饰的写入与撤销都发生在 `GearInOreCondition` 内。
 
 ```java
 @Override
@@ -254,9 +256,11 @@ public void unapply(String id) {
 }
 ```
 
-插入位置：`GearInOreCondition`。完成信号：添加条件后 hazard 增加 0.15、accessibility 增加 0.10，移除具体 token 后两项同时恢复。
+添加条件后 hazard 增加 0.15、accessibility 增加 0.10，移除具体 token 后两项同时恢复。
 
 ### 创建两个独立实例
+
+这段实例创建代码位于 `GearInConditionLifecycleScript.runLifecycle`。
 
 ```java
 String token1 = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
@@ -264,9 +268,11 @@ String token2 = market.addCondition(GearInOreCondition.ORE_DEPOSITS, 0.20f);
 MarketConditionAPI first = market.getFirstCondition(GearInOreCondition.ORE_DEPOSITS);
 ```
 
-插入位置：`GearInConditionLifecycleScript.runLifecycle`。完成信号：两个 token 不同，首实例为 token1，两个 accessibility 修饰分别为 0.10 与 0.20。
+运行后，两个 token 不同，首实例为 token1，两个 accessibility 修饰分别为 0.10 与 0.20。
 
 ### 抑制效果并重新启用
+
+在保留一个实例之后执行这段抑制与恢复。
 
 ```java
 market.suppressCondition(GearInOreCondition.ORE_DEPOSITS);
@@ -277,9 +283,11 @@ market.unsuppressCondition(GearInOreCondition.ORE_DEPOSITS);
 market.reapplyConditions();
 ```
 
-插入位置：保留一个实例后。完成信号：suppress 当帧数值不变，重算后效果消失；unsuppress 并重算后恢复。
+suppress 当帧数值不变，重算后效果消失；unsuppress 并重算后恢复。
 
 ### 核对勘测门控并清理实例
+
+生命周期演示末段执行这段勘测门控与清理。
 
 ```java
 String token = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
@@ -291,7 +299,7 @@ market.reapplyConditions();
 market.removeSpecificCondition(token);
 ```
 
-插入位置：生命周期演示末段。完成信号：未勘测重算后效果休眠，重新勘测后恢复，按 token 移除只删除该实例并回到基线。
+未勘测重算后效果休眠，重新勘测后恢复，按 token 移除只删除该实例并回到基线。
 
 ## 组装市场条件实现
 

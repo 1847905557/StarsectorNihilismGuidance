@@ -17,7 +17,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 管理常驻能量场生命周期
@@ -37,27 +37,27 @@
 
 ### 选择粒子之上的渲染层
 
-**插入位置：\[GearInShaderPlugin.getActiveLayers()\]。** 让能量场与舰船和粒子的层序稳定。
+让 `GearInShaderPlugin.getActiveLayers()` 返回粒子之上的渲染层，使能量场与舰船和粒子的层序稳定：
 
 ```java
 return EnumSet.of(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
 ```
 
-完成信号：画面不被舰船主体错误遮挡。
+画面不会被舰船主体错误遮挡。
 
 ### 让剔除半径覆盖能量场
 
-**插入位置：\[getRenderRadius()\]。** 使用实际世界尺寸而非无限半径。
+让 `getRenderRadius()` 使用实际世界尺寸而非无限半径：
 
 ```java
 return Math.max(QUAD_WIDTH, QUAD_HEIGHT);
 ```
 
-完成信号：离开视口后插件停止渲染，回到视口后恢复。
+离开视口后插件停止渲染，回到视口后恢复。
 
 ### 在使用点读取运行时开关
 
-**插入位置：\[render() 的 GL 调用之前\]。** 关闭时直接返回，产生零 GL 提交。
+在 `render()` 的 GL 调用之前读取运行时开关，关闭时直接返回，产生零 GL 提交：
 
 ```java
 if (!runtimeEnabled || !BoxConfigs.isShaderEnable()) {
@@ -65,18 +65,18 @@ if (!runtimeEnabled || !BoxConfigs.isShaderEnable()) {
 }
 ```
 
-完成信号：切换关闭后 drawCalls 停止增长。
+切换关闭后 drawCalls 停止增长。
 
 ### 幂等释放 program 与 VBO
 
-**插入位置：\[cleanup()\]。** 删除后把句柄和引用复位。
+在 `cleanup()` 里删除 program 与 VBO，并把句柄和引用复位：
 
 ```java
 if (vboId != 0) { GL15.glDeleteBuffers(vboId); vboId = 0; }
 if (program != null) { program.delete(); program = null; }
 ```
 
-完成信号：重复 cleanup 不产生二次删除错误。
+重复 cleanup 不产生二次删除错误。
 
 ## 排查关键故障
 
@@ -138,7 +138,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   addLayeredRenderingPlugin(常驻渲染插件))，不按承载实体或
  *   寿命失效，跟随玩家舰船；层声明用顶层三图层之一的 ABOVE_PARTICLES_LOWER(粒子系统
  *   之后渲染，成熟实例同款)；渲染剔除依据是承载实体位置
- *   与 getRenderRadius()(C8-S6 硬规则 4)，位置在 advance 里同步；
+ *   与 getRenderRadius()(C8-S7 硬规则 4)，位置在 advance 里同步；
  * - 资源释放：GL 资源 (program/VBO) 在 cleanup() 释放并复位句柄 (幂等，重复调用安全)；
  *   战斗结束 destroyInstance 不调 cleanup() —— 常驻插件必须在 advance() 里判
  *   engine.isCombatOver()(= 结束标志 && 淡出完成)
@@ -226,7 +226,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
             cleanup();     // 已创建的部分资源立即释放；cleanup 幂等，引擎移除时再调一次也安全
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点 (C8-S6 同款姿势)
+        advance(0f); // 立即同步一次位置，避免首帧画在战场原点 (C8-S7 同款姿势)
         LOG.info("GearIn shader plugin init: layers=" + getActiveLayers()
                 + ", u_model=" + program.location[0]
                 + ", u_size=" + program.location[1]
@@ -301,7 +301,7 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public EnumSet<CombatEngineLayers> getActiveLayers() {
-        // 顶层三图层之一：粒子系统之后渲染 (C8-S6 层序)；
+        // 顶层三图层之一：粒子系统之后渲染 (C8-S7 层序)；
         // 成熟实例同款层选择
         return EnumSet.of(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
     }
@@ -320,12 +320,12 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
         if (engine.isPaused()) {
             return;
         }
-        // 剔除依据是承载实体的位置 (C8-S6 硬规则 4)：常驻插件跟随玩家舰船
+        // 剔除依据是承载实体的位置 (C8-S7 硬规则 4)：常驻插件跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
         // 战斗结束收尾：isCombatOver() = 结束标志 && 淡出完成。
         // 常驻插件必须在 advance 里主动失效驱动引擎移除并调用
         // cleanup() —— 战斗结束 destroyInstance 不调 cleanup()，等它等于每场泄漏
-        // (C8-S6 硬规则 3 的常驻版)
+        // (C8-S7 硬规则 3 的常驻版)
         if (engine.isCombatOver()) {
             valid = false;
         }

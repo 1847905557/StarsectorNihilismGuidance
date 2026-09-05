@@ -24,8 +24,8 @@
 - [C4-S1] 的 `GearIn_test` 测试战役与舰船装配；
 - [C6-S1] 的 Java 构建与 JAR 输出；
 - [C7-S2] 的 `Global` 生命周期与跨战斗引用边界；
-- [C8-S2] 的战斗状态读取与时间语义；
-- [C8-S3] 的 `MutableStat` 修饰、modifier ID 与 `applyEffects` 时机；
+- [C8-S1] 的战斗状态读取与时间语义；
+- [C8-S4] 的 `MutableStat 修饰、modifier ID 与 `applyEffects` 时机；
 - [C8-S5] 的公开监听器表面、放置规则、派发与去重。
 
 ## 梳理船插回调关系
@@ -173,45 +173,49 @@ tooltip 与 S-mod 属于装配界面，战斗中的持续行为要靠监听器�
 
 ## 实现船插扩展
 
-本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段；把它放入指定类或方法后再继续，日志或界面出现对应信号时才进入下一段。
+本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段，各自落在具体的类与方法中，全部片段就位后统一构建核对。
 
 ### 写入基础与 S-mod 数值
 
+这段代码写在 `GearInArmorTrainingHullMod.applyEffectsBeforeShipCreation()` 里，普通安装与 S-mod 共用稳定 ID，分别写入面板护甲和命中结算护甲：
+
 ```java
-// 插入位置：GearInArmorTrainingHullMod.applyEffectsBeforeShipCreation()
 float bonus = ARMOR_BONUS_PERCENT + (isSMod(stats) ? SMOD_ADDITIONAL_PERCENT : 0f);
 stats.getArmorBonus().modifyPercent(id, bonus);
 stats.getEffectiveArmorBonus().modifyPercent(id, bonus);
 ```
 
-新增行为：普通安装与 S-mod 共用稳定 ID，分别写入面板护甲和命中结算护甲。完成信号：基础船体护甲 `500` 时普通安装显示 `550`，S-mod 显示 `625`。
+生效后，基础船体护甲 `500` 时普通安装显示 `550`，S-mod 显示 `625`。
 
 ### 为每艘船注册独立监听器
 
+这段代码写在 `GearInArmorTrainingHullMod.applyEffectsAfterShipCreation()` 里，计时器和抵消次数归属到单舰监听器，不进入会话级船插效果实例：
+
 ```java
-// 插入位置：GearInArmorTrainingHullMod.applyEffectsAfterShipCreation()
 ship.addListener(new ArmorTrainingListener(ship));
 LOG.info("GearIn armor training: listener attached to " + ship.getName());
 ```
 
-新增行为：计时器和抵消次数归属到单舰监听器，不进入会话级船插效果实例。完成信号：两艘装有船插的舰船分别输出自己的舰名和计数，互不串值。
+生效后，两艘装有船插的舰船分别输出自己的舰名和计数，互不串值。
 
 ### 按当前装甲更新动态加成
 
+这段代码写在 `GearInArmorTrainingHullMod.advanceInCombat()` 里，S-mod 的额外有效护甲随装甲平均比例下降，并使用独立 ID 避免覆盖静态值：
+
 ```java
-// 插入位置：GearInArmorTrainingHullMod.advanceInCombat()
 if (!isSMod(ship) || !ship.isAlive() || ship.isHulk()) return;
 float frac = armorFraction(ship.getArmorGrid());
 ship.getMutableStats().getEffectiveArmorBonus()
         .modifyPercent(DYNAMIC_ID, SMOD_ADDITIONAL_PERCENT * frac);
 ```
 
-新增行为：S-mod 的额外有效护甲随装甲平均比例下降，并使用独立 ID 避免覆盖静态值。完成信号：满装甲时动态加成为 `15%`，装甲比例降至一半时变为约 `7.5%`。
+生效后，满装甲时动态加成为 `15%`，装甲比例降至一半时变为约 `7.5%`。
 
 ### 填充两段提示参数
 
+这段代码写在 `getDescriptionParam()` 与 `getSModDescriptionParam()` 里，`desc` 和 `sModDesc` 的两个占位符分别从同一组效果常量生成：
+
 ```java
-// 插入位置：getDescriptionParam() 与 getSModDescriptionParam()
 if (index == 0) return "" + (int) ARMOR_BONUS_PERCENT + "%";
 if (index == 1) return "" + Math.round(NEGATION_ARMOR_FRACTION * 100f) + "%";
 
@@ -219,12 +223,13 @@ if (index == 0) return "" + (int) (ARMOR_BONUS_PERCENT + SMOD_ADDITIONAL_PERCENT
 if (index == 1) return "" + (int) SMOD_ADDITIONAL_PERCENT + "%";
 ```
 
-新增行为：`desc` 和 `sModDesc` 的两个占位符分别从同一组效果常量生成。完成信号：提示依次显示 `10%`、`50%`，S-mod 段依次显示 `25%`、`15%`。
+生效后，提示依次显示 `10%`、`50%`，S-mod 段依次显示 `25%`、`15%`。
 
 ### 在高装甲状态抵消结构伤害
 
+这段代码写在 `ArmorTrainingListener.notifyAboutToTakeHullDamage()` 里，监听器只在平均装甲高于 `50%` 时抵消本次结构伤害：
+
 ```java
-// 插入位置：ArmorTrainingListener.notifyAboutToTakeHullDamage()
 float frac = armorFraction(ship.getArmorGrid());
 if (frac <= NEGATION_ARMOR_FRACTION) return false;
 negations++;
@@ -234,7 +239,7 @@ LOG.info("GearIn armor training: hull damage negated amount=" + damageAmount
 return true;
 ```
 
-新增行为：监听器只在平均装甲高于 `50%` 时抵消本次结构伤害。完成信号：高于阈值时日志计数增加且结构值不降；低于阈值后回调返回 `false`，结构正常受损。
+生效后，高于阈值时日志计数增加且结构值不降；低于阈值后回调返回 `false`，结构正常受损。
 
 ## 组装船插实现
 

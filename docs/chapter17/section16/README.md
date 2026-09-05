@@ -20,7 +20,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -41,38 +41,38 @@
 
 ### 预分配一千容量的实例列表
 
-**插入位置：`GearInThousandInstanceBatch.submit()` 开头。** 避免 `ArrayList` 在构造批次时多次扩容。
+`GearInThousandInstanceBatch.submit()` 开头按目标数量预分配列表，避免 `ArrayList` 在构造批次时多次扩容：
 
 ```java
 List<InstanceDataAPI> instances = new ArrayList<>(count);
 ```
 
-完成信号：列表 capacity 与目标 count 一致。
+列表 capacity 与目标 count 一致。
 
 ### 从池中取得可复用实例
 
-**插入位置：`submit()` 的循环内。** 只在池为空时创建 `Instance2Data`。
+`submit()` 的循环内从池取得实例，只在池为空时创建 `Instance2Data`：
 
 ```java
 Instance2Data data = pool.acquire();
 ```
 
-完成信号：第二次生成批次时大部分对象来自池。
+第二次生成批次时，大部分对象来自池。
 
 ### 为每份实例写入稳定网格位置
 
-**插入位置：`submit()` 循环体。** 建立可数的 40 × 25 测试阵列。
+`submit()` 的循环体为每份实例写入位置，建立可数的 40 × 25 测试阵列：
 
 ```java
 data.setLocation(i % 40 * 18f, i / 40 * 18f);
 data.setScale(0.5f, 0.5f);
 ```
 
-完成信号：画面完整出现 1000 个点且间距一致。
+画面完整出现 1000 个点且间距一致。
 
 ### 一次提交全部实例
 
-**插入位置：循环结束后。** 设置集合、刷新全部范围、上传并声明数量。
+循环结束后，设置集合、刷新全部范围、上传并声明数量：
 
 ```java
 entity.setInstanceData(instances);
@@ -81,11 +81,11 @@ entity.submitInstanceData();
 entity.setRenderingCount(instances.size());
 ```
 
-完成信号：渲染统计显示一个 SpriteEntity 绘制 1000 份实例。
+渲染统计显示一个 SpriteEntity 绘制 1000 份实例。
 
 ### 只上传本帧变化的区间
 
-**插入位置：`GearInThousandInstanceBatch.updateRange()`。** 调用方修改连续实例区间后，只标记该起点和长度。
+`GearInThousandInstanceBatch.updateRange()` 在调用方修改连续实例区间后，只标记该起点和长度：
 
 ```java
 entity.setInstanceDataRefreshIndex(start);
@@ -93,11 +93,11 @@ entity.setInstanceDataRefreshSize(size);
 entity.submitInstanceData();
 ```
 
-完成信号：修改索引 400–499 时，刷新起点为 400、长度为 100，`renderingCount` 仍为 1000。
+修改索引 400–499 时，刷新起点为 400、长度为 100，`renderingCount` 仍为 1000。
 
 ### 结束时复位并归还对象池
 
-**插入位置：实体已经从渲染管理器移除后的批次清理。** 逐项 `reset()` 并归还池，最后清空实体的客户端实例数据。
+实体从渲染管理器移除后进行批次清理，逐项 `reset()` 并归还池，最后清空实体的客户端实例数据：
 
 ```java
 for (InstanceDataAPI item : entity.getInstanceData()) {
@@ -106,18 +106,18 @@ for (InstanceDataAPI item : entity.getInstanceData()) {
 entity.resetInstanceData();
 ```
 
-完成信号：连续生成十轮后池大小稳定为 1000。
+连续生成十轮后，池大小稳定为 1000。
 
 ### 先移除实体再归还实例
 
-**插入位置：`GearInThousandInstanceBatch.removeAndRelease()`。** 管理器移除决定渲染所有权是否已经结束，池回收只能发生在移除成功之后。
+`GearInThousandInstanceBatch.removeAndRelease()` 中，管理器移除决定渲染所有权是否已经结束，池回收只能发生在移除成功之后：
 
 ```java
 // removeEntity 已清理实例数据；再次 release 会遍历已置 null 的 instanceData 抛 NPE
 return CombatRenderingManager.removeEntity(entity);
 ```
 
-完成信号：实体不再出现在管理器中；重复 `removeEntity()` 仍返回 `true`，但不会重复归还。
+实体不再出现在管理器中；重复 `removeEntity()` 仍返回 `true`，但不会重复归还。
 
 ## 排查关键故障
 

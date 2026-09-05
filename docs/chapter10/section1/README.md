@@ -188,12 +188,13 @@
 
 ## 实现生涯时钟脚本
 
-本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段；把它放入指定类或方法后再继续，日志或界面出现对应信号时才进入下一段。
+本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段，全部片段就位后统一构建核对。
 
 ### 按存档注册一次
 
+这段注册代码写在 `GearInModPlugin.onGameLoad()` 里：先取当前星区，每个存档首次加载时注册一个常驻脚本，标记随存档保存。
+
 ```java
-// 插入位置：GearInModPlugin.onGameLoad()
 SectorAPI sector = Global.getSector();
 if (!sector.getPersistentData().containsKey(GearInSectorClockScript.REGISTER_MARK)) {
     sector.getPersistentData().put(GearInSectorClockScript.REGISTER_MARK, true);
@@ -201,24 +202,26 @@ if (!sector.getPersistentData().containsKey(GearInSectorClockScript.REGISTER_MAR
 }
 ```
 
-新增行为：每个存档首次加载时注册一个常驻脚本，标记随存档保存。完成信号：首次进入旧档或新档出现挂载日志；同一存档再次读档不会增加第二个实例。
+生效后，首次进入旧档或新档出现挂载日志；同一存档再次读档不会增加第二个实例。
 
 ### 保存首次推进时刻
 
+这段代码写在 `GearInSectorClockScript.advance()` 中取得 `clock` 之后：脚本第一次真正推进时记录生涯时间戳，该字段随存档恢复。
+
 ```java
-// 插入位置：GearInSectorClockScript.advance() 取得 clock 之后
 if (startTimestamp == 0L) {
     startTimestamp = clock.getTimestamp();
     LOG.info("GearIn clock script mounted at " + clock.getDateString());
 }
 ```
 
-新增行为：脚本第一次真正推进时记录生涯时间戳，该字段随存档恢复。完成信号：首次挂载只出现一次日志；保存并读档后累计时间从保存点继续。
+生效后，首次挂载只出现一次日志；保存并读档后累计时间从保存点继续。
 
 ### 检测跨日并换算帧长
 
+这段代码写在 `advance()` 中完成首次时刻初始化之后：真实帧长先换算为游戏天，再在日期键变化时报告。
+
 ```java
-// 插入位置：advance() 完成首次时刻初始化之后
 int dateKey = clock.getCycle() * 10000 + clock.getMonth() * 100 + clock.getDay();
 if (dateKey != lastDateKey) {
     lastDateKey = dateKey;
@@ -230,12 +233,13 @@ if (dateKey != lastDateKey) {
 }
 ```
 
-新增行为：真实帧长先换算为游戏天，再在日期键变化时报告。完成信号：正常速度约每 10 真实秒出现一条跨日日志，暂停时停止，加速时频率约翻倍。
+生效后，正常速度约每 10 真实秒出现一条跨日日志，暂停时停止，加速时频率约翻倍。
 
 ### 到期后交给引擎移除
 
+这段代码写在 `advance()` 末尾和 `isDone()` 中：可选运行上限满足后只设置完成标志，由脚本循环在下一次检查时移除实例。
+
 ```java
-// 插入位置：advance() 末尾，以及 isDone()
 if (daysToRun >= 0 && clock.getElapsedDaysSince(startTimestamp) >= daysToRun) {
     LOG.info("GearIn clock script done: " + daysToRun + " game days elapsed");
     done = true;
@@ -244,7 +248,7 @@ if (daysToRun >= 0 && clock.getElapsedDaysSince(startTimestamp) >= daysToRun) {
 return done;
 ```
 
-新增行为：可选运行上限满足后只设置完成标志，由脚本循环在下一次检查时移除实例。完成信号：`daysToRun=30` 时约 30 个游戏日后出现完成日志，随后 `sector.hasScript(GearInSectorClockScript.class)` 返回 `false`。
+生效后，`daysToRun=30` 时约 30 个游戏日后出现完成日志，随后 `sector.hasScript(GearInSectorClockScript.class)` 返回 `false`。
 
 ## 组装生涯脚本实现
 

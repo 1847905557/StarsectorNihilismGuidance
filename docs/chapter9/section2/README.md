@@ -24,7 +24,7 @@
 - [C2-S3] 的 `.system`、`ship_systems.csv`、`ship_data.csv` 与效果脚本关系；
 - [C7-S2] 的 `Global` 生命周期与跨战斗引用边界；
 - [C8-S2] 的 `getPlayerShip()`、`isAlive()`、`isEntityInPlay()` 与暂停语义；
-- [C8-S3] 的 `MutableStat` modifier ID、`modifyMult` 与 `unmodify`；
+- [C8-S4] 的 `MutableStat modifier ID、`modifyMult` 与 `unmodify`；
 - 理解原版舰船 AI 的目标选择、开火和规避职责；
 - 理解 `.system` 的 `aiType` 与 `aiScript` 如何决定系统 AI。
 
@@ -222,12 +222,13 @@ getSystemRegenBonus().computeEffective(spec.regen)       → getRegen(stats)
 
 ## 实现目标选择系统
 
-本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段；把它放入指定类或方法后再继续，日志或界面出现对应信号时才进入下一段。
+本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段，各自落在具体的类与方法中，全部片段就位后统一构建核对。
 
 ### 校验锁定目标
 
+这段代码写在 `GearInTargetingSystem.isValidTarget()` 里，用户与 AI 共用敌我、存活、相位、残骸和有效射程判据：
+
 ```java
-// 插入位置：GearInTargetingSystem.isValidTarget()
 if (source == null || target == null || target == source) return false;
 if (!target.isAlive() || target.isHulk() || target.isPhased() || target.isShuttlePod()) return false;
 if (target.getOwner() == source.getOwner()) return false;
@@ -235,12 +236,13 @@ Vector2f delta = Vector2f.sub(target.getLocation(), source.getLocation(), new Ve
 return delta.length() <= getRange(source);
 ```
 
-新增行为：用户与 AI 共用敌我、存活、相位、残骸和有效射程判据。完成信号：合法敌舰返回 `true`；同侧、相位、残骸和超距目标均返回 `false`。
+生效后，合法敌舰返回 `true`；同侧、相位、残骸和超距目标均返回 `false`。
 
 ### 读取 AI flag 并回退当前目标
 
+这段代码写在 `GearInTargetingSystem.pickTarget()` 里，AI 舰优先消费短期系统目标，用户舰与 flag 失效场景回退到当前锁定目标：
+
 ```java
-// 插入位置：GearInTargetingSystem.pickTarget()
 ShipAPI target = readAITarget(source);
 if (isValidTarget(source, target)) {
     return target;
@@ -252,12 +254,13 @@ if (isValidTarget(source, target)) {
 return null;
 ```
 
-新增行为：AI 舰优先消费短期系统目标，用户舰与 flag 失效场景回退到当前锁定目标。完成信号：用户右键锁定后能取得目标；AI flag 过期但 `getShipTarget()` 仍有效时锁定不中断。
+生效后，用户右键锁定后能取得目标；AI flag 过期但 `getShipTarget()` 仍有效时锁定不中断。
 
 ### 按效果强度施加速度倍率
 
+这段代码写在 `GearInTargetingSystem.apply()` 与 `unapply()` 里，`IN` 和 `ACTIVE` 随 `effectLevel` 提升速度，`OUT`、目标失效与 `unapply` 使用同一 ID 撤销：
+
 ```java
-// 插入位置：GearInTargetingSystem.apply() 与 unapply()
 ShipAPI ship = (ShipAPI) stats.getEntity();
 boolean locked = ship != null && isValidTarget(ship, pickTarget(ship));
 if (state == ShipSystemStatsScript.State.OUT || !locked) {
@@ -269,12 +272,13 @@ if (state == ShipSystemStatsScript.State.OUT || !locked) {
 stats.getMaxSpeed().unmodify(id);
 ```
 
-新增行为：`IN` 和 `ACTIVE` 随 `effectLevel` 提升速度，`OUT`、目标失效与 `unapply` 使用同一 ID 撤销。完成信号：满效果时基础速度 `80` 变为 `120`，系统结束或目标死亡后立即回到 `80`。
+生效后，满效果时基础速度 `80` 变为 `120`，系统结束或目标死亡后立即回到 `80`。
 
 ### 阻止无目标激活
 
+这段代码写在 `GearInTargetingSystem.isUsable()` 与 `getInfoText()` 里，用户在待机状态必须先取得合法目标，信息栏同步说明当前许可：
+
 ```java
-// 插入位置：GearInTargetingSystem.isUsable() 与 getInfoText()
 if (system.isActive()) {
     return true;
 }
@@ -286,12 +290,13 @@ if (system.isOutOfAmmo() || system.getState() != SystemState.IDLE) {
 return isValidTarget(ship, pickTarget(ship)) ? "READY" : "NO TARGET";
 ```
 
-新增行为：用户在待机状态必须先取得合法目标，信息栏同步说明当前许可。完成信号：无目标时显示 `NO TARGET` 且按 F 不进入 `IN`；取得目标后显示 `READY`。
+生效后，无目标时显示 `NO TARGET` 且按 F 不进入 `IN`；取得目标后显示 `READY`。
 
 ### 初始化 AI 决策上下文
 
+这段代码写在 `ShipSystemAIScript.init()` 里，每艘 AI 舰拥有独立的系统引用、flag 容器和随机化节流相位：
+
 ```java
-// 插入位置：ShipSystemAIScript.init()
 this.aiShip = ship;
 this.system = system;
 this.aiFlags = flags;
@@ -301,12 +306,13 @@ LOG.info("GearIn targeting AI init: ship=" + ship.getHullSpec().getHullId()
         + " system=" + system.getId());
 ```
 
-新增行为：每艘 AI 舰拥有独立的系统引用、flag 容器和随机化节流相位。完成信号：部署 AI 舰时出现一次初始化日志，多舰决策不会全部落在同一帧。
+生效后，部署 AI 舰时出现一次初始化日志，多舰决策不会全部落在同一帧。
 
 ### 刷新目标并触发系统
 
+这段代码写在 `ShipSystemAIScript.advance()` 里，位于暂停、实体、冷却和弹药守卫之后；AI 每 0.2–0.3 秒重新验证并刷新 1 秒目标 flag，满足幅能条件时走与玩家相同的激活入口：
+
 ```java
-// 插入位置：ShipSystemAIScript.advance() 通过暂停、实体、冷却和弹药守卫之后
 decisionInterval.advance(amount);
 if (!decisionInterval.intervalElapsed()) return;
 
@@ -321,7 +327,7 @@ if (aiShip.getFluxTracker().isOverloadedOrVenting() || aiShip.getFluxLevel() > 0
 aiShip.useSystem();
 ```
 
-新增行为：AI 每 0.2–0.3 秒重新验证并刷新 1 秒目标 flag，满足幅能条件时走与玩家相同的激活入口。完成信号：激活全程目标不闪断，冷却结束且目标仍有效时再次使用系统。
+生效后，激活全程目标不闪断，冷却结束且目标仍有效时再次使用系统。
 
 ## 组装战术系统实现
 

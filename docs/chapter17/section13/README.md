@@ -19,7 +19,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -41,7 +41,7 @@
 
 ### 加载并验证字体数据
 
-**插入位置：`GearInTextField.initFont()`。** 用 MOD 资源路径解析 `.fnt`，并保留失败日志。
+`GearInTextField.initFont()` 用 MOD 资源路径解析 `.fnt`，并保留失败日志：
 
 ```java
 font = FontDataManager.tryFont("graphics/fonts/insignia15LTaa.fnt");
@@ -50,11 +50,11 @@ if (font == null || !font.isValid()) {
 }
 ```
 
-完成信号：`getFontInfo()` 返回字体路径与原始字号；失败时文本角色保持禁用。
+`getFontInfo()` 返回字体路径与原始字号；失败时文本角色保持禁用。
 
 ### 建立窗口空间文本实体
 
-**插入位置：`GearInTextField.initTextEntity()`。** 确认文本 shader 可用，再创建字段、设置画布尺寸与窗口正交矩阵。
+`GearInTextField.initTextEntity()` 先确认文本 shader 可用，再创建字段、设置画布尺寸与窗口正交矩阵：
 
 ```java
 textEntity = new TextFieldEntity(font, true);
@@ -64,11 +64,11 @@ textEntity.setCustomPrimeMatrix();
 textEntity.setPrimeMatrix(TransformUtil.createWindowOrthoMatrix(null));
 ```
 
-完成信号：文本实体有效，屏幕坐标不会被战斗相机缩放。
+文本实体有效，屏幕坐标不会被战斗相机缩放。
 
 ### 只在字符串变化时刷新
 
-**插入位置：`GearInTextField.setText()`。** 比较旧值，修改 `TextData.text` 后标记刷新范围并提交。
+`GearInTextField.setText()` 比较旧值，修改 `TextData.text` 后标记刷新范围并提交：
 
 ```java
 TextFieldEntity.TextData message = textEntity.getTextDataList().get(0);
@@ -78,11 +78,11 @@ textEntity.setTextDataRefreshAllFromCurrentIndex();
 textEntity.submitText();
 ```
 
-完成信号：静止数值期间没有重复提交。
+静止数值期间没有重复提交。
 
 ### 配置数字与固定边框
 
-**插入位置：`GearInStatusPanel` 构造方法。** 边框固定为 240 × 104 像素，数字保留 4 位整数和 0 位小数。
+`GearInStatusPanel` 构造方法把边框固定为 240 × 104 像素，并让数字保留 4 位整数和 0 位小数：
 
 ```java
 border.setSize(240f, 104f);
@@ -91,11 +91,11 @@ number.setIntegerLength(4);
 number.setDecimalLength(0);
 ```
 
-完成信号：边框 `isSizeValid()` 为真，三项整数使用相同的宽高和颜色参数。
+边框 `isSizeValid()` 为真，三项整数使用相同的宽高和颜色参数。
 
 ### 在 UI 回调发出直接绘制
 
-**插入位置：战斗插件 `renderInUICoords()`。** 调用状态面板的 `render()`，由它按当前分辨率计算右上角锚点并依次绘制边框、标签和三项数字。
+战斗插件在 `renderInUICoords()` 中调用状态面板的 `render()`，由它按当前分辨率计算右上角锚点并依次绘制边框、标签和三项数字：
 
 ```java
 float x = screenWidth - PANEL_WIDTH - SCREEN_MARGIN;
@@ -106,7 +106,7 @@ number.render(batches, new Vector2f(x + 160f, y + 68f),
         0f, 12f, 18f, false);
 ```
 
-完成信号：`advance()` 只调用 `update()` 保存三个整数，UI 回调负责全部 GL 绘制。
+`advance()` 只调用 `update()` 保存三个整数，UI 回调负责全部 GL 绘制。
 
 ## 排查关键故障
 

@@ -19,7 +19,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -39,7 +39,7 @@
 
 ### 缓存光束与界面配置
 
-**插入位置：`GearInMagicSettings` 构造方法。** 缓存宽度、射程、伤害、EMP 与颜色，避免每帧解析设置。
+`GearInMagicSettings` 构造方法缓存宽度、射程、伤害、EMP 与颜色，避免每帧解析设置：
 
 ```java
 beamWidth = MagicSettings.getFloat(CONFIG_SECTION, "beam_width");
@@ -48,11 +48,11 @@ beamDamage = MagicSettings.getFloat(CONFIG_SECTION, "beam_damage");
 beamCoreColor = MagicSettings.getColorRGB(CONFIG_SECTION, "beam_color_core");
 ```
 
-完成信号：构造日志一次打印 `width`、`range`、`damage`、`emp`、持续时间、颜色和标签。
+构造日志会一次打印 `width`、`range`、`damage`、`emp`、持续时间、颜色和标签。
 
 ### 推进自动充能
 
-**插入位置：`GearInBeamCaster.advance()`。** 用帧时间推进充能，达到 1 时清零并触发一次发射。
+`GearInBeamCaster.advance()` 用帧时间推进充能，达到 1 时清零并触发一次发射：
 
 ```java
 beamCharge += amount / BEAM_INTERVAL;
@@ -62,11 +62,11 @@ if (beamCharge >= 1f) {
 }
 ```
 
-完成信号：非暂停状态下约 2 秒触发一次；一次 `advance()` 至多调用一次 `fireBeam()`。
+非暂停状态下约 2 秒触发一次；一次 `advance()` 至多调用一次 `fireBeam()`。
 
 ### 选择目标并计算角度
 
-**插入位置：`GearInBeamCaster.fireBeam()` 的目标检查后。** 选择最近可见敌舰，并从玩家舰位置计算世界角度。
+`GearInBeamCaster.fireBeam()` 在目标检查后选择最近可见敌舰，并从玩家舰位置计算世界角度：
 
 ```java
 ShipAPI enemy = AIUtils.getNearestEnemy(player);
@@ -77,11 +77,11 @@ Vector2f from = player.getLocation();
 float angle = VectorUtils.getAngle(from, enemy.getLocation());
 ```
 
-完成信号：没有敌舰时记录诊断并跳过发射；目标移动到另一侧后，光束角度随目标改变。
+没有敌舰时记录诊断并跳过发射；目标移动到另一侧后，光束角度随目标改变。
 
 ### 结算一次伪光束
 
-**插入位置：`fireBeam()` 的目标分支。** 一次调用同时生成视觉与瞬时伤害。
+在 `fireBeam()` 的目标分支里，一次调用同时生成视觉与瞬时伤害：
 
 ```java
 MagicFakeBeam.spawnFakeBeam(engine, from, settings.beamRange, angle,
@@ -91,11 +91,11 @@ MagicFakeBeam.spawnFakeBeam(engine, from, settings.beamRange, angle,
         DamageType.ENERGY, settings.beamEmp, player);
 ```
 
-完成信号：`beamCount` 每次成功调用后增加 1，目标在该帧受到一次伤害，视觉按配置继续保留。
+`beamCount` 每次成功调用后增加 1，目标在该帧受到一次伤害，视觉按配置继续保留。
 
 ### 用唯一 key 刷新状态条
 
-**插入位置：`GearInHudBar.refresh()`。** 使用固定 key、当前充能和累计次数刷新同一条 HUD 项。
+`GearInHudBar.refresh()` 使用固定 key、当前充能和累计次数刷新同一条 HUD 项：
 
 ```java
 MagicUI.drawInterfaceStatusBar(player, HUD_BAR_KEY, beam.getBeamCharge(),
@@ -103,11 +103,11 @@ MagicUI.drawInterfaceStatusBar(player, HUD_BAR_KEY, beam.getBeamCharge(),
         "Beam charge", beam.getBeamCount());
 ```
 
-完成信号：HUD 只有一条 `Beam charge`，填充从 0 走向 1，右侧数字在成功发射后增加。
+HUD 只有一条 `Beam charge`，填充从 0 走向 1，右侧数字在成功发射后增加。
 
 ### 安排刷新与暂停顺序
 
-**插入位置：战斗插件 `advance()`。** HUD 先刷新，再由暂停守卫决定是否推进充能。
+战斗插件的 `advance()` 先刷新 HUD，再由暂停守卫决定是否推进充能：
 
 ```java
 if (settings.hudEnabled) {
@@ -119,7 +119,7 @@ if (engine.isPaused()) {
 beam.advance(amount);
 ```
 
-完成信号：暂停期间状态条不会因停止刷新而超时消失，充能数值保持不变。
+暂停期间状态条不会因停止刷新而超时消失，充能数值保持不变。
 
 ## 排查关键故障
 

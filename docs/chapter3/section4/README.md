@@ -41,7 +41,7 @@ system.setBackgroundTextureFilename("graphics/backgrounds/background2.jpg");
 system.setLightColor(new Color(200, 200, 210));
 ```
 
-完成信号：新档星图出现 `GearIn`，星系内部有背景和基础光照。
+新档星图出现 `GearIn`，星系内部有背景和基础光照。
 
 ### 配置星体类型
 
@@ -52,7 +52,7 @@ PlanetAPI prime = system.addPlanet(
         "terran", 55, 150, 3200, 120);
 ```
 
-完成信号：GearIn Prime 使用原版 `terran` 外观，恒星使用原版 `star_yellow`，恒星 ID `gearin` 与超空间位置键一致。
+GearIn Prime 使用原版 `terran` 外观，恒星使用原版 `star_yellow`，恒星 ID `gearin` 与超空间位置键一致。
 
 ### 投放原版实体
 
@@ -63,7 +63,7 @@ SectorEntityToken anchor = system.addCustomEntity(
 anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 ```
 
-完成信号：地图上出现使用原版 `comm_relay` 类型的 GearIn 通讯中继，实体归属 GearIn 势力。
+地图上出现使用原版 `comm_relay` 类型的 GearIn 通讯中继，实体归属 GearIn 势力。
 
 ### 接入基础市场
 
@@ -81,7 +81,7 @@ prime.setMarket(market);
 prime.setFaction("gear_industry");
 ```
 
-完成信号：GearIn Prime 可以打开公开市场和仓储，交易界面显示原版商品。完整市场配置与自定义商品由 [C11-S1] 和 [C11-S2] 继续讲解。
+GearIn Prime 可以打开公开市场和仓储，交易界面显示原版商品。完整市场配置与自定义商品由 [C11-S1] 和 [C11-S2] 继续讲解。
 
 ### 补齐超空间入口
 
@@ -93,7 +93,7 @@ system.addEntity(jump);
 system.autogenerateHyperspaceJumpPoints(true, true);
 ```
 
-完成信号：从超空间进入 GearIn 星系，跳跃点与 GearIn Prime 的关联可见。
+从超空间进入 GearIn 星系，跳跃点与 GearIn Prime 的关联可见。
 
 ## 排查星系生成故障
 

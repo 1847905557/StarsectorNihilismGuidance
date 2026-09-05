@@ -21,7 +21,7 @@
 
 - [C7-S1] 的 `modPlugin` 生命周期与持久数据标记；
 - [C7-S2] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
-- [C8-S1] 的战斗域每帧回调、暂停语义与生涯域的差异；
+- [C8-S3] 的战斗域每帧回调、暂停语义与生涯域的差异；
 - [C10-S1] 的星区结构、生涯时钟、`EveryFrameScript` 注册、推进循环、暂停与加速语义。
 
 ## 梳理生涯脚本关系
@@ -142,7 +142,7 @@ if (!sector.getPersistentData().containsKey(GearInCalendarDayScript.REGISTER_MAR
 }
 ```
 
-完成信号：首次进入存档时 `hasScript(GearInCalendarDayScript.class)` 为 `true`；保存并读档后，脚本实例数量仍为 1。
+首次进入存档后，`hasScript(GearInCalendarDayScript.class)` 为 `true`；保存并读档，脚本实例数量仍为 1。
 
 ### 检测日历跨日
 
@@ -159,7 +159,7 @@ if (dateKey != lastDateKey) {
 }
 ```
 
-完成信号：正常速度下约每 10 真实秒出现一次新日期；暂停期间日期与日志同时冻结。
+正常速度下约每 10 真实秒出现一次新日期；暂停期间日期与日志同时冻结。
 
 ### 把帧时间换成游戏天
 
@@ -172,7 +172,7 @@ daysSinceMount += daysThisFrame;
 daysAccumulator += daysThisFrame;
 ```
 
-完成信号：正常速度运行约 10 真实秒后，`daysSinceMount` 增加约 1.0；按住 Shift 时增长速度约翻倍。
+正常速度运行约 10 真实秒后，`daysSinceMount` 增加约 1.0；按住 Shift 时增长速度约翻倍。
 
 ### 补齐跨帧周期
 
@@ -187,7 +187,7 @@ while (daysAccumulator >= tickEveryDays) {
 }
 ```
 
-完成信号：把 `tickEveryDays` 设为 1 后，每累计一个完整游戏日增加一次 `routineCount`，单帧跨过 3 天时连续增加 3 次。
+把 `tickEveryDays` 设为 1 后，每累计一个完整游戏日增加一次 `routineCount`；单帧跨过 3 天时连续增加 3 次。
 
 ### 让脚本按条件自停
 
@@ -204,7 +204,7 @@ public boolean isDone() {
 }
 ```
 
-完成信号：`daysToRun=30` 时累计满约 30 个游戏日后，`hasScript(GearInDayAccumulatorScript.class)` 变为 `false`，日志不再增长。
+`daysToRun=30` 时累计满约 30 个游戏日，`hasScript(GearInDayAccumulatorScript.class)` 变为 `false`，日志不再增长。
 
 ## 组装生涯脚本实现
 

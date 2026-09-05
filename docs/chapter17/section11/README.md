@@ -19,7 +19,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -39,7 +39,7 @@
 
 ### 初始化战术范围圆环
 
-**插入位置：`GearInSegmentPainter.makeRangeRing()`。** 一次生成圆环节点与颜色。
+`GearInSegmentPainter.makeRangeRing()` 一次生成圆环节点与颜色：
 
 ```java
 SegmentEntity ring = new SegmentEntity();
@@ -47,43 +47,43 @@ ring.initCircle(center, radius, Color.CYAN, Color.WHITE, 5f);
 ring.setInterpolation((short) 64);
 ```
 
-完成信号：返回的 SegmentEntity 拥有有效节点。
+返回的 SegmentEntity 拥有有效节点。
 
 ### 让纹理沿圆环缓慢流动
 
-**插入位置：`makeRangeRing()` 的纹理设置处。** 设置纹理速度并选择暂停策略。
+`makeRangeRing()` 接着设置纹理速度并选择暂停策略：
 
 ```java
 ring.setTextureSpeed(0.15f);
 ring.setFlowWhenPaused(false);
 ```
 
-完成信号：非暂停时纹理偏移持续变化。
+非暂停时纹理偏移持续变化。
 
 ### 提交圆环节点
 
-**插入位置：`makeRangeRing()` 返回前。** 把节点数组上传到渲染端。
+`makeRangeRing()` 在返回前把节点数组上传到渲染端：
 
 ```java
 byte state = ring.submitNodes();
 ```
 
-完成信号：submitNodes 返回成功状态且圆环出现。
+submitNodes 返回成功状态且圆环出现。
 
 ### 初始化平滑曲线光束
 
-**插入位置：`GearInCurveBeam.make()`。** 用起点、长度、颜色、宽度和混合系数建立曲线。
+`GearInCurveBeam.make()` 用起点、长度、颜色、宽度和混合系数建立曲线：
 
 ```java
 CurveEntity beam = new CurveEntity();
 beam.initSmoothLine(start, length, Color.CYAN, Color.WHITE, 9f, 0.35f);
 ```
 
-完成信号：光束从舰首延伸且边缘平滑。
+光束从舰首延伸且边缘平滑。
 
 ### 把构造结果加入当前战斗
 
-**插入位置：战斗接线取得圆环或光束后。** 先 `setLayer()` 指定渲染层 (实体默认 layer 为 null，`addEntity` 对 null 层恒返回 STATE_FAILED)，再根据返回码决定实体是否已经交给 BoxUtil 管理。
+战斗接线在取得圆环或光束后，先 `setLayer()` 指定渲染层 (实体默认 layer 为 null，`addEntity` 对 null 层恒返回 STATE_FAILED)，再根据返回码决定实体是否已经交给 BoxUtil 管理：
 
 ```java {1}
 beam.setLayer(CombatEngineLayers.ABOVE_SHIPS_LAYER);
@@ -93,7 +93,7 @@ if (state != BoxEnum.STATE_SUCCESS) {
 }
 ```
 
-完成信号：成功时实体进入当前战斗；失败时资源立即删除，调用侧不再更新该对象。
+成功时实体进入当前战斗；失败时资源立即删除，调用侧不再更新该对象。
 
 ## 排查关键故障
 

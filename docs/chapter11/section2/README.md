@@ -36,7 +36,7 @@ MarketAPI market = Global.getFactory().createMarket(
         entity.getId(), entity.getName(), 4);
 ```
 
-完成信号：市场拥有与行星实体一致的 ID 和规模 4。
+执行后，市场拥有与行星实体一致的 ID 和规模 4。
 
 ### 绑定势力与主实体
 
@@ -46,7 +46,7 @@ market.setPrimaryEntity(entity);
 market.setSurveyLevel(MarketAPI.SurveyLevel.FULL);
 ```
 
-完成信号：行星详情显示 GearIn 势力颜色，市场面板能打开。
+执行后，行星详情显示 GearIn 势力颜色，市场面板能打开。
 
 ### 配置注册对象
 
@@ -57,7 +57,7 @@ market.addSubmarket("open_market");
 market.addSubmarket("storage");
 ```
 
-完成信号：行星详情出现人口与空间港，交易面板出现公开市场和仓储入口。
+执行后，行星详情出现人口与空间港，交易面板出现公开市场和仓储入口。
 
 ### 配置经济关系
 
@@ -67,11 +67,11 @@ entity.setMarket(market);
 entity.setFaction("gear_industry");
 ```
 
-完成信号：经济集合、行星实体和势力都能读到同一个市场。
+执行后，经济集合、行星实体和势力都能读到同一个市场。
 
 ### 调用市场工厂
 
-插入位置：[C3-S4] 的 `GearInSystemGenerator.generate()` 末尾，跳跃点生成完成之后。先删除生成器内已内联创建的同 ID 市场块；同时在文件顶部导入 `java.util.List`。
+在 [C3-S4] 的 `GearInSystemGenerator.generate()` 末尾、跳跃点生成完成之后接入工厂调用：先删除生成器内已内联创建的同 ID 市场块，并在文件顶部导入 `java.util.List`。
 
 ```java
 GearInMarketFactory marketFactory = new GearInMarketFactory();
@@ -81,7 +81,7 @@ marketFactory.createMarket(prime, "gear_industry", 0.35f,
 		List.of("open_market", "generic_military", "black_market", "storage"));
 ```
 
-完成信号：创建新档后，GearIn Prime 同时拥有 [C3-S4] 的行星实体和本节创建的市场。这个调用只组合两个已经完成的角色类，不增加新的 Java 类型。
+创建新档后，GearIn Prime 同时拥有 [C3-S4] 的行星实体和本节创建的市场。这个调用只组合两个已经完成的角色类，不增加新的 Java 类型。
 
 ## 排查市场接入故障
 

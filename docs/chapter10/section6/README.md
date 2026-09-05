@@ -119,7 +119,7 @@ intel 是生涯状态的组成部分，玩家可见时间戳、`NEW` 标记窗�
 
 ### 登记并移除自定义情报
 
-插入位置：`GearInIntelServicesScript.runDemo` 开头。先直接登记自定义情报，核对管理器持有它，再于同一演示中移除，避免测试对象进入存档。
+这段代码写在 `GearInIntelServicesScript.runDemo` 开头。先直接登记自定义情报，核对管理器持有它，再于同一演示中移除，避免测试对象进入存档。
 
 ```java
 SectorAPI sector = Global.getSector();
@@ -134,11 +134,11 @@ intelManager.removeIntel(intel);
 boolean absent = !intelManager.hasIntel(intel);
 ```
 
-完成信号：第一条日志显示 `present=true` 且计数增加，第二条显示 `absent=true` 且计数恢复；左下消息区仍保留登记时发布的消息。
+生效后，第一条日志显示 `present=true` 且计数增加，第二条显示 `absent=true` 且计数恢复；左下消息区仍保留登记时发布的消息。
 
 ### 发布不绑定页面的纯消息
 
-插入位置：自定义情报移除之后。`MessageIntel` 只进入左下消息区，可以追加多行，但不会在 Intel 页留下条目。
+这段代码写在自定义情报移除之后。`MessageIntel` 只进入左下消息区，可以追加多行，但不会在 Intel 页留下条目。
 
 ```java
 MessageIntel message = new MessageIntel(
@@ -147,11 +147,11 @@ message.addLine("这条追加内容不绑定情报页面。", Misc.getGrayColor(
 sector.getCampaignUI().addMessage(message);
 ```
 
-完成信号：消息区出现两行文本，点击后不跳转到 Intel 页；`getIntel(GearInServicesIntel.class)` 的计数不变。
+生效后，消息区出现两行文本，点击后不跳转到 Intel 页；`getIntel(GearInServicesIntel.class)` 的计数不变。
 
 ### 为自定义情报提供列表与标签
 
-插入位置：`GearInServicesIntel`。名称决定列表文本，小描述负责详情内容；标签实现先调用父类以继承 null map 处理，再追加探索分类。
+这三个覆写在 `GearInServicesIntel` 中实现。名称决定列表文本，小描述负责详情内容；标签实现先调用父类以继承 null map 处理，再追加探索分类。
 
 ```java
 @Override
@@ -173,11 +173,11 @@ public Set<String> getIntelTags(SectorMapAPI map) {
 }
 ```
 
-完成信号：情报登记期间能按名称显示，并归入探索标签；以 null 调用 `getIntelTags(null)` 不抛异常。
+生效后，情报登记期间能按名称显示，并归入探索标签；以 null 调用 `getIntelTags(null)` 不抛异常。
 
 ### 打开对话框并记录结果
 
-插入位置：`GearInDialogServicesScript.runDemo`。普通对话不需要交互目标，因此传 null；返回值必须进入日志，才能区分 "已打开" 和 "当前 UI 拒绝打开"。
+这段代码写在 `GearInDialogServicesScript.runDemo` 中。普通对话不需要交互目标，因此传 null；返回值必须进入日志，才能区分 "已打开" 和 "当前 UI 拒绝打开"。
 
 ```java
 CampaignUIAPI ui = Global.getSector().getCampaignUI();
@@ -185,11 +185,11 @@ boolean shown = ui.showInteractionDialog(new GearInServicesDialog(), null);
 LOG.info("GearIn campaign services dialog: shown=" + shown);
 ```
 
-完成信号：UI 空闲时日志为 `shown=true` 并弹出对话框；已有模态对话时日志为 `shown=false`，且没有异常。
+生效后，UI 空闲时日志为 `shown=true` 并弹出对话框；已有模态对话时日志为 `shown=false`，且没有异常。
 
 ### 初始化文本与选项
 
-插入位置：`GearInServicesDialog.init`。保存对话框引用，写入说明文本，再用稳定的 option ID 建立两个查询动作和一个关闭动作。
+这段代码写在 `GearInServicesDialog.init` 中。保存对话框引用，写入说明文本，再用稳定的 option ID 建立两个查询动作和一个关闭动作。
 
 ```java
 this.dialog = dialog;
@@ -201,11 +201,11 @@ options.addOption("关闭演示", OPTION_CLOSE);
 dialog.setOptionOnEscape("关闭演示", OPTION_CLOSE);
 ```
 
-完成信号：对话框固定显示 3 个选项，ESC 与 "关闭演示" 进入同一个 `OPTION_CLOSE` 分支。
+生效后，对话框固定显示 3 个选项，ESC 与 "关闭演示" 进入同一个 `OPTION_CLOSE` 分支。
 
 ### 按 optionData 处理选择
 
-插入位置：`GearInServicesDialog.optionSelected`。显示文本只用于回显，分支始终比较 `optionData`；关闭分支显式调用 `dismiss()`。
+这段代码写在 `GearInServicesDialog.optionSelected` 中。显示文本只用于回显，分支始终比较 `optionData`；关闭分支显式调用 `dismiss()`。
 
 ```java
 if (OPTION_FACTION.equals(optionData)) {
@@ -220,7 +220,7 @@ if (OPTION_FACTION.equals(optionData)) {
 }
 ```
 
-完成信号：两个查询选项各追加一行对应数据；关闭选项和 ESC 都关闭对话框并恢复生涯界面。
+生效后，两个查询选项各追加一行对应数据；关闭选项和 ESC 都关闭对话框并恢复生涯界面。
 
 ## 组装情报对话实现
 

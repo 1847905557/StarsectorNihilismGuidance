@@ -17,7 +17,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 建立跟随舰船的纹理投影
@@ -37,7 +37,7 @@
 
 ### 声明 BoxUtil 全局矩阵块
 
-**插入位置：\[GearIn\_shader\_visual.vert 顶部\]。** 让顶点阶段取得游戏视口矩阵。
+在 `GearIn_shader_visual.vert` 顶部声明 BoxUtil 全局矩阵块，让顶点阶段取得游戏视口矩阵：
 
 ```glsl
 layout (std140) uniform BUtilGlobalData {
@@ -46,11 +46,11 @@ layout (std140) uniform BUtilGlobalData {
 };
 ```
 
-完成信号：相机移动与缩放后投影仍锚定世界。
+相机移动与缩放后投影仍锚定世界。
 
 ### 缓存 UBO 与 uniform location
 
-**插入位置：\[GearInShaderVisual.createProgram()\]。** 创建程序后一次查询所有位置。
+在 `GearInShaderVisual.createProgram()` 里创建程序后一次查询所有位置：
 
 ```java
 program.uboLocation = new int[] {
@@ -58,21 +58,21 @@ program.uboLocation = new int[] {
 };
 ```
 
-完成信号：日志中的 location 均非 -1。
+日志中的 location 均非 -1。
 
 ### 按舰船坐标建立模型矩阵
 
-**插入位置：\[render() 提交前\]。** 把 location 与 facing 写进复用缓冲。
+在 `render()` 提交前把 location 与 facing 写进复用缓冲：
 
 ```java
 matrixBuffer = buildAnchoredMatrix(ship.getLocation(), ship.getFacing(), matrixBuffer);
 ```
 
-完成信号：舰船转向时纹理同角度旋转。
+舰船转向时纹理同角度旋转。
 
 ### 绑定纹理单元并提交采样器
 
-**插入位置：\[render() 的 program.active() 内\]。** 让 sampler 值与实际纹理单元一致。
+在 `render()` 的 `program.active()` 内绑定纹理单元并提交采样器，让 sampler 值与实际纹理单元一致：
 
 ```java
 GL13.glActiveTexture(GL13.GL_TEXTURE0);
@@ -80,7 +80,7 @@ GL11.glBindTexture(GL11.GL_TEXTURE_2D, sprite.getTextureId());
 GL20.glUniform1i(program.location[3], 0);
 ```
 
-完成信号：投影显示纹理内容而非纯色或黑块。
+投影将显示纹理内容而非纯色或黑块。
 
 ## 排查关键故障
 
@@ -167,7 +167,7 @@ import com.fs.starfarer.api.graphics.SpriteAPI;
  *   不创建程序；
  * - 生命周期：每场战斗 init 创建程序与 VBO(GL 上下文就绪)，render 内 active()/
  *   close() 配对提交 (实例规范 "active() 后必须按 close() 关闭")，
- *   cleanup() 内 program.delete() + glDeleteBuffers，禁止跨战斗缓存 (C7-S2/C8-S6
+ *   cleanup() 内 program.delete() + glDeleteBuffers，禁止跨战斗缓存 (C7-S2/C8-S7
  *   延续；实例规范 "资源清理归创建者")；isValid() 使用前检查
  *   (实例陷阱：失效程序继续绑定 → 输出错位或状态污染)。
  */
@@ -310,10 +310,10 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
         }
         elapsed += amount;
         if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()(C8-S6 硬规则 3)
+            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()(C8-S7 硬规则 3)
             return;
         }
-        // 剔除依据是承载实体的位置 (C8-S6 硬规则 4)：跟随玩家舰船
+        // 剔除依据是承载实体的位置 (C8-S7 硬规则 4)：跟随玩家舰船
         entity.getLocation().set(engine.getPlayerShip().getLocation());
     }
 

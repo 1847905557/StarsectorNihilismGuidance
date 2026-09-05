@@ -232,11 +232,11 @@ token 的两个陷阱 (本节重点)
 
 ## 实现恒星系生成器
 
-先让生成器具备幂等入口，再逐层加入星体、信标、位置 token 和访问状态。以下都是局部片段；每段均标明插入位置，完成信号出现后再继续。
+先让生成器具备幂等入口，再逐层加入星体、信标、位置 token 和访问状态。以下都是局部片段，全部片段就位后统一构建核对。
 
 ### 复用已经存在的星系
 
-插入位置：`GearInLocationSystemBuilder.getOrCreate`。先按本节拥有的 `optionalUniqueId` 查询，命中时直接返回，避免读档或旧档补装脚本时重复生成同名星系。
+这段代码实现 `GearInLocationSystemBuilder.getOrCreate`：先按本节拥有的 `optionalUniqueId` 查询，命中时直接返回，避免读档或旧档补装脚本时重复生成同名星系。
 
 ```java
 public static StarSystemAPI getOrCreate(SectorAPI sector) {
@@ -249,11 +249,11 @@ public static StarSystemAPI getOrCreate(SectorAPI sector) {
 }
 ```
 
-完成信号：首次运行进入 `create`；读档或再次调用时只出现 `demo system already exists` 日志，星区中仍只有一个演示星系。
+生效后，首次运行进入 `create`；读档或再次调用时只出现 `demo system already exists` 日志，星区中仍只有一个演示星系。
 
 ### 填入星体与信标
 
-插入位置：`GearInLocationSystemBuilder.create`，紧接 `createStarSystem` 与 `setOptionalUniqueId`。带超空间坐标的 `initStar` 同时定位星系并创建锚点；行星和 custom entity 则分别进入星体集合与自定义实体集合。
+这段代码写在 `GearInLocationSystemBuilder.create` 中，紧接 `createStarSystem` 与 `setOptionalUniqueId`：带超空间坐标的 `initStar` 同时定位星系并创建锚点；行星和 custom entity 则分别进入星体集合与自定义实体集合。
 
 ```java
 PlanetAPI star = system.initStar(STAR_ID, "star_white", 600f, 7500f, 8500f, 400f);
@@ -267,11 +267,11 @@ beacon.addTag(BEACON_TAG);
 system.addAsteroidBelt(planet, 40, 600, 100, 120, 160);
 ```
 
-完成信号：星系位置为 `(7500, 8500)`，信标能按 `BEACON_ID` 查回且位于 `(1400, 900)`，周期摘要中的 `planets=2`、`terrains=2`、`custom=1`。
+生效后，星系位置为 `(7500, 8500)`，信标能按 `BEACON_ID` 查回且位于 `(1400, 900)`，周期摘要中的 `planets=2`、`terrains=2`、`custom=1`。
 
 ### 把位置 token 加入容器
 
-插入位置：`GearInTokenCreator.create`。`createToken` 只创建对象；需要让地点查询持有它时，还要设置坐标并显式调用 `addEntity`。
+这段代码写在 `GearInTokenCreator.create` 中：`createToken` 只创建对象；需要让地点查询持有它时，还要设置坐标并显式调用 `addEntity`。
 
 ```java
 SectorEntityToken token = system.createToken(0f, 0f);
@@ -283,11 +283,11 @@ LOG.info("GearIn loc: token after add | byId="
 		+ (system.getEntityById(token.getId()) != null));
 ```
 
-完成信号：两条日志依次给出 `inList=false` 与 `byId=true`；这也证明 token 的创建和容器持有是两个独立动作。
+生效后，两条日志依次给出 `inList=false` 与 `byId=true`；这也证明 token 的创建和容器持有是两个独立动作。
 
 ### 在脚本首帧装配协作对象
 
-插入位置：`GearInLocationScript.setup`。星系创建或复用后立即取回本节信标；缺失时终止本脚本后续逻辑，避免每帧重复抛出空引用异常。
+这段代码写在 `GearInLocationScript.setup` 中：星系创建或复用后立即取回本节信标；缺失时终止本脚本后续逻辑，避免每帧重复抛出空引用异常。
 
 ```java
 demoSystem = GearInLocationSystemBuilder.getOrCreate(Global.getSector());
@@ -302,11 +302,11 @@ containerCheck = new GearInContainerCheck(demoSystem, beacon);
 setupDone = true;
 ```
 
-完成信号：正常存档只装配一次；信标缺失的存档只记录一条明确错误，后续帧直接退出。
+生效后，正常存档只装配一次；信标缺失的存档只记录一条明确错误，后续帧直接退出。
 
 ### 记录地点变化与周期状态
 
-插入位置：`GearInLocationScript.advance` 的 `setup` 判断之后。地点变化日志负责捕捉进入事件，计时器则把高频状态压缩为每 10 秒一条摘要。
+这段代码写在 `GearInLocationScript.advance` 的 `setup` 判断之后：地点变化日志负责捕捉进入事件，计时器则把高频状态压缩为每 10 秒一条摘要。
 
 ```java
 LocationAPI current = Global.getSector().getCurrentLocation();
@@ -321,11 +321,11 @@ if (sinceLastLog >= LOG_INTERVAL) {
 }
 ```
 
-完成信号：跨地点时只出现一次变化日志；未暂停的生涯中约每 10 个真实秒出现一条 `GearIn loc: state`。
+生效后，跨地点时只出现一次变化日志；未暂停的生涯中约每 10 个真实秒出现一条 `GearIn loc: state`。
 
 ### 核验移除与重新加入
 
-插入位置：`GearInContainerCheck.runRemoveAddCheck`。保存移除前状态，执行一次移除和重新加入，再分别查询容器与星区索引。
+这段代码写在 `GearInContainerCheck.runRemoveAddCheck` 中：保存移除前状态，执行一次移除和重新加入，再分别查询容器与星区索引。
 
 ```java
 boolean aliveBefore = beacon.isAlive();
@@ -343,7 +343,7 @@ SectorEntityToken byIdAfterReadd = demoSystem.getEntityById(
 		GearInLocationSystemBuilder.BEACON_ID);
 ```
 
-完成信号：普通实体的 `isAlive` 与按 ID 查询均呈现 `true → false → true`，信标重新出现在星系实体集合中。
+生效后，普通实体的 `isAlive` 与按 ID 查询均呈现 `true → false → true`，信标重新出现在星系实体集合中。
 
 ## 组装星系生成实现
 

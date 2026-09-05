@@ -19,7 +19,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -32,18 +32,18 @@ GearIn 相位驱动器要向舰首前方跃迁约 700 su，但战场中央有大
 
 ### 生成十二个椭圆候选点
 
-**插入位置：`GearInSafeJumpPlanner.find()` 的循环开头。** 在舰首前方 180 度范围均匀取点。
+`GearInSafeJumpPlanner.find()` 在循环开头于舰首前方 180 度范围均匀取点：
 
 ```java
 float angle = -90f + i * 180f / 11f;
 Vector2f point = EllipseUtils.getPointOnEllipse(origin, 700f, 420f, facing, angle);
 ```
 
-完成信号：调试绘制能看到 12 个候选，而非一个鼠标点。
+调试绘制能看到 12 个候选，而非一个鼠标点。
 
 ### 排除穿过舰体的路径
 
-**插入位置：`find()` 的候选过滤处。** 对每个阻挡实体执行线段碰撞检查。调用方传入的 `blockers` 只包含需要避让的其他实体，不包含正在跃迁的舰船。
+`find()` 在候选过滤处对每个阻挡实体执行线段碰撞检查；调用方传入的 `blockers` 只包含需要避让的其他实体，不包含正在跃迁的舰船：
 
 ```java
 if (CollisionUtils.getCollisionPoint(origin, point, blocker) != null) {
@@ -51,22 +51,22 @@ if (CollisionUtils.getCollisionPoint(origin, point, blocker) != null) {
 }
 ```
 
-完成信号：被大型舰遮挡的一侧不再进入评分。
+被大型舰遮挡的一侧不再进入评分。
 
 ### 用朝向代价压低急转弯
 
-**插入位置：`find()` 的评分处。** 同时考虑跃迁距离与舰首角差。
+`find()` 在评分处同时考虑跃迁距离与舰首角差：
 
 ```java
 float turn = Math.abs(MathUtils.getShortestRotation(facing, angle));
 float score = MathUtils.getDistance(origin, point) - turn * 2f;
 ```
 
-完成信号：正前方畅通时优先选择正前方，受阻时才偏转。
+正前方畅通时优先选择正前方，受阻时才偏转。
 
 ### 只保留当前最高分
 
-**插入位置：`find()` 的 `best` 更新处。** 把候选坐标和评分封装为独立结果。
+`find()` 在 `best` 更新处把候选坐标和评分封装为独立结果：
 
 ```java
 if (best == null || score > best.getScore()) {
@@ -74,11 +74,11 @@ if (best == null || score > best.getScore()) {
 }
 ```
 
-完成信号：循环结束后至多返回一个 GearInJumpCandidate。
+循环结束后至多返回一个 GearInJumpCandidate。
 
 ### 把安全点交给系统状态机
 
-**插入位置：战术系统 `apply()` 的 `IN` 阶段入口。** 在真正移动前处理 `null`，再把结果坐标写入舰船位置。
+战术系统 `apply()` 在 `IN` 阶段入口先处理 `null`，再把结果坐标写入舰船位置：
 
 ```java
 GearInJumpCandidate jump = planner.find(ship.getLocation(), ship.getFacing(), blockers);
@@ -86,7 +86,7 @@ if (jump == null) return;
 ship.getLocation().set(jump.getPoint());
 ```
 
-完成信号：没有安全点时系统取消；有安全点时舰船只移动一次。
+没有安全点时系统取消；有安全点时舰船只移动一次。
 
 ## 排查关键故障
 

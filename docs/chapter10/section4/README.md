@@ -296,11 +296,11 @@ fake market 只提供 `0.5` 的基础质量修正；最终质量仍会经过市�
 
 ## 实现舰队投放工厂
 
-下面把市场来源、预算、延迟膨胀和地点投放串成一条可观察链。每一环都是 `GearInFleetFactory.runOnce` 中的局部代码；确认当前完成信号后再加入下一环。
+下面把市场来源、预算、延迟膨胀和地点投放串成一条可观察链。每一环都是 `GearInFleetFactory.runOnce` 中的局部代码，全部片段就位后统一构建核对。
 
 ### 取得来源市场与投放锚点
 
-插入位置：`runOnce` 开头。参数质量和最终坐标都依赖市场，先把市场、地点容器和主实体一起验证，避免生成完成后才发现无处投放。
+这段代码写在 `runOnce` 开头。参数质量和最终坐标都依赖市场，先把市场、地点容器和主实体一起验证，避免生成完成后才发现无处投放。
 
 ```java
 MarketAPI market = pickMarket();
@@ -316,11 +316,11 @@ if (location == null || anchor == null) {
 }
 ```
 
-完成信号：日志能同时给出市场 ID、地点 ID 和市场质量；异常市场在创建舰队之前明确中止。
+生效后，日志能同时给出市场 ID、地点 ID 和市场质量；异常市场在创建舰队之前明确中止。
 
 ### 配置预算、质量与旗舰
 
-插入位置：市场检查之后。市场构造器把来源、势力、超空间位置、时间戳与市场质量一起写入参数；随后只覆盖本次演示需要改变的字段。
+这段代码写在市场检查之后。市场构造器把来源、势力、超空间位置、时间戳与市场质量一起写入参数；随后只覆盖本次演示需要改变的字段。
 
 ```java
 FleetParamsV3 params = new FleetParamsV3(
@@ -331,11 +331,11 @@ params.flagshipVariantId = "tempest_Attack";
 params.officerLevelBonus = 1;
 ```
 
-完成信号：`params.getTotalPts()` 为 58，`source` 指向选中的市场，日志同时显示市场质量与 `qualityOverride=0.60`。
+生效后，`params.getTotalPts()` 为 58，`source` 指向选中的市场，日志同时显示市场质量与 `qualityOverride=0.60`。
 
 ### 生成成员并核对旗舰
 
-插入位置：参数配置之后。工厂会完成成员抽选、裁剪、指挥官与军官生成、旗舰覆盖、CR 同步和 inflater 挂载；空成员集合必须在继续前中止。
+这段代码写在参数配置之后。工厂会完成成员抽选、裁剪、指挥官与军官生成、旗舰覆盖、CR 同步和 inflater 挂载；空成员集合必须在继续前中止。
 
 ```java
 CampaignFleetAPI fleet = FleetFactoryV3.createFleet(params);
@@ -351,11 +351,11 @@ LOG.info("GearIn fleet factory flagship: hull=" + flagship.getHullId()
 		+ " captainIsCommander=" + (flagship.getCaptain() == fleet.getCommander()));
 ```
 
-完成信号：成员数大于 0，旗舰为 `tempest_Attack`，且 `captainIsCommander=true`；实际 FP 可偏离 58，因为预算是目标值。
+生效后，成员数大于 0，旗舰为 `tempest_Attack`，且 `captainIsCommander=true`；实际 FP 可偏离 58，因为预算是目标值。
 
 ### 触发延迟膨胀
 
-插入位置：旗舰核对之后。先记录 inflater 的有效质量，再触发一次膨胀并统计 `REFIT` 来源装配与 D 插数量。
+这段代码写在旗舰核对之后。先记录 inflater 的有效质量，再触发一次膨胀并统计 `REFIT` 来源装配与 D 插数量。
 
 ```java
 LOG.info("GearIn fleet factory pre-inflate: inflated=" + fleet.isInflated()
@@ -372,11 +372,11 @@ for (FleetMemberAPI member : fleet.getFleetData().getMembersListCopy()) {
 }
 ```
 
-完成信号：`isInflated` 从 `false` 变为 `true`，`refitVariants` 与参与膨胀的成员数对应，质量 0.6 下日志能观察到 D 插分布。
+生效后，`isInflated` 从 `false` 变为 `true`，`refitVariants` 与参与膨胀的成员数对应，质量 0.6 下日志能观察到 D 插分布。
 
 ### 读取工厂写入的内存
 
-插入位置：膨胀统计之后。纯读取使用 `getMemoryWithoutUpdate()`，避免触发舰队事实刷新回调；请求 FP 的比例通过 `Misc` 读取。
+这段代码写在膨胀统计之后。纯读取使用 `getMemoryWithoutUpdate()`，避免触发舰队事实刷新回调；请求 FP 的比例通过 `Misc` 读取。
 
 ```java
 String fleetType = fleet.getMemoryWithoutUpdate().getString(
@@ -387,11 +387,11 @@ long salvageSeed = fleet.getMemoryWithoutUpdate().getLong(MemFlags.SALVAGE_SEED)
 float spawnFPMult = Misc.getSpawnFPMult(fleet);
 ```
 
-完成信号：`fleetType=patrolMedium`、`sourceMarket=jangala` (或实际备用市场 ID)，并能读到稳定的 salvage seed 与非零 FP 比例。
+生效后，`fleetType=patrolMedium`、`sourceMarket=jangala` (或实际备用市场 ID)，并能读到稳定的 salvage seed 与非零 FP 比例。
 
 ### 投放并核对地点容器
 
-插入位置：`runOnce` 末段。`spawnFleet` 同时完成入容器、锚点偏移定位和 3 秒免战；演示核对后再移除，避免向存档遗留舰队。
+这段代码写在 `runOnce` 末段。`spawnFleet` 同时完成入容器、锚点偏移定位和 3 秒免战；演示核对后再移除，避免向存档遗留舰队。
 
 ```java
 location.spawnFleet(anchor, 0f, 0f, fleet);
@@ -404,7 +404,7 @@ location.removeEntity(fleet);
 LOG.info("GearIn fleet factory removed: alive=" + fleet.isAlive());
 ```
 
-完成信号：投放日志先显示 `inLocation=true`、`alive=true` 且坐标等于锚点，移除后 `alive=false`。
+生效后，投放日志先显示 `inLocation=true`、`alive=true` 且坐标等于锚点，移除后 `alive=false`。
 
 ## 组装舰队投放实现
 

@@ -17,7 +17,7 @@ Nexerelin 只有读到 GearIn 的势力配置，才会把它纳入开局、外�
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 接入 Nexerelin 势力配置
@@ -30,7 +30,7 @@ GearIn 已经是 Starsector 势力，但 Nexerelin 还不知道它能否成为�
 
 ### 登记 GearIn 势力配置
 
-**插入位置：`data/config/exerelinFactionConfig/mod_factions.csv`。** 保留 Nexerelin 的单列表头，再登记 GearIn 势力 ID。
+在 `data/config/exerelinFactionConfig/mod_factions.csv` 中保留 Nexerelin 的单列表头，再登记 GearIn 势力 ID：
 
 ```csv
 faction
@@ -39,11 +39,11 @@ gear_industry
 
 这个 CSV 文件不接受配置路径列。加载器会根据这一行自动寻找 `data/config/exerelinFactionConfig/gear_industry.json`。
 
-完成信号：`NexConfig.getFactionConfig("gear_industry")` 返回的配置对象，其 `factionId` 为 `gear_industry`。
+登记后，`NexConfig.getFactionConfig("gear_industry")` 返回的配置对象其 `factionId` 为 `gear_industry`。
 
 ### 声明可玩性与外交开关
 
-**插入位置：`gear_industry.json` 根对象。** 允许该势力出现在 Nexerelin 开局列表，并参加随机外交。
+在 `gear_industry.json` 根对象中允许该势力出现在 Nexerelin 开局列表，并参加随机外交：
 
 ```json
 "playableFaction": true,
@@ -53,11 +53,11 @@ gear_industry
 
 `playableFaction` 控制玩家能否选择该势力；`startingFaction` 控制它是否参与开局生成；`disableDiplomacy` 决定外交管理器能否改变其关系。
 
-完成信号：新档势力列表出现 GearIn，进入生涯后该势力会收到外交事件。
+新档势力列表会出现 GearIn，进入生涯后该势力会收到外交事件。
 
 ### 写清偏好与关系边界
 
-**插入位置：`gear_industry.json` 外交字段。** 先给两个关键势力设置初始关系，再限制随机外交能够触及的边界。
+在 `gear_industry.json` 的外交字段中，先给两个关键势力设置初始关系，再限制随机外交能够触及的边界：
 
 ```json
 "startRelationships": {
@@ -74,11 +74,11 @@ gear_industry
 
 `startRelationships` 决定 Nexerelin 初始化后的关系值；`minRelationships` 和 `maxRelationships` 是后续随机外交的硬边界。旧配置中的 `factionsLiked` 与 `factionsDisliked` 仍能被解析，但已被 Nexerelin 标记为弃用，新配置应直接写明关系值。
 
-完成信号：独立势力关系不会降到敌对，海盗关系不会改善到高于 `-0.25`。
+这些边界生效后，独立势力关系不会降到敌对，海盗关系不会改善到高于 `-0.25`。
 
 ### 配置外交特性与联盟倾向
 
-**插入位置：`gear_industry.json` 外交字段之后。** 外交特性影响事件选择，alignment 则参与联盟兼容性计算。
+在 `gear_industry.json` 外交字段之后写外交特性和 alignment；外交特性影响事件选择，alignment 参与联盟兼容性计算：
 
 ```json
 "diplomacyTraits": [
@@ -92,11 +92,11 @@ gear_industry
 }
 ```
 
-完成信号：探针能够读出三项 alignment；联盟系统据此计算 GearIn 与其他势力的长期兼容性。
+探针能够读出三项 alignment，联盟系统据此计算 GearIn 与其他势力的长期兼容性。
 
 ### 从运行期确认配置和联盟
 
-**插入位置：`GearInNexDiplomacyProbe.describe()`。** 同时输出配置身份、可玩性、外交开关、联盟倾向和当前联盟状态。
+`GearInNexDiplomacyProbe.describe()` 同时输出配置身份、可玩性、外交开关、联盟倾向和当前联盟状态：
 
 ```java
 NexFactionConfig config = NexConfig.getFactionConfig(factionId);
@@ -105,7 +105,7 @@ boolean allied = AllianceManager.areFactionsAllied(factionId, "hegemony");
 
 完整探针把 `config.factionId` 和 `config.getBaseAlignments()` 一并写入结果。若 CSV 漏行，`NexConfig` 会静默回退默认配置；这两个值比单看 "没有异常" 更能证明配置确实命中。
 
-完成信号：日志同时出现 `factionId=gear_industry`、`playable=true`、`diplomacy=true` 和三项 alignment。
+日志会同时出现 `factionId=gear_industry`、`playable=true`、`diplomacy=true` 和三项 alignment。
 
 ## 排查关键故障
 

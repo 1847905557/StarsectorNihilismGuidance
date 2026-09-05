@@ -39,7 +39,7 @@
 },
 ```
 
-完成信号：加载器能在 `baseId` 解析后得到一个完整实体 spec，空 `pluginClass` 让它保持静态实体。
+加载器能在 `baseId` 解析后得到一个完整实体 spec，空 `pluginClass` 让它保持静态实体。
 
 ### 配置图标与外观
 
@@ -53,7 +53,7 @@
 "customDescriptionId":"GearIn_navigation_anchor",
 ```
 
-完成信号：地图图标、实体精灵和描述键都指向 GearIn 类型。
+地图图标、实体精灵和描述键都指向 GearIn 类型。
 
 在 `data/strings/descriptions.csv` 中定义这个键：
 
@@ -74,7 +74,7 @@ CSV 键和转义规则见 [C3-S5]，本页负责定义 `GearIn_navigation_anchor
 "layers":[STATIONS]
 ```
 
-完成信号：玩家舰队靠近时，实体从未知状态变为可见，并在日志/经验反馈中出现发现结果。
+玩家舰队靠近时，实体从未知状态变为可见，并在日志/经验反馈中出现发现结果。
 
 ### 投放生涯实体
 
@@ -85,7 +85,7 @@ SectorEntityToken anchor = system.addCustomEntity(
 anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 ```
 
-完成信号：新档中导航锚位于恒星轨道上，势力颜色和地图名称可观察。
+新档中导航锚位于恒星轨道上，势力颜色和地图名称可观察。
 
 ## 排查实体继承故障
 

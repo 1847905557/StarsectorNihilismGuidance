@@ -291,6 +291,8 @@ API 面里最反直觉的几处已经标了容器警告，下面把必须遵守�
 
 ### 创建并填写人物身份
 
+这段身份写入位于 `GearInPersonIdentity.run`。
+
 ```java
 PersonAPI person = Global.getFactory().createPerson();
 person.setFaction("hegemony");
@@ -302,9 +304,11 @@ person.addTag("GearIn_personLesson");
 person.getMemoryWithoutUpdate().set("$GearIn_personLesson", 42);
 ```
 
-插入位置：`GearInPersonIdentity.run`。完成信号：姓名、势力、rank、post、personality、标签与 memory 均能从同一对象读回。
+执行后，姓名、势力、rank、post、personality、标签与 memory 均能从同一对象读回。
 
 ### 调整人物对玩家关系
+
+这段关系调整位于 `GearInPersonRelationship.run`。
 
 ```java
 RelationshipAPI relationship = person.getRelToPlayer();
@@ -314,9 +318,11 @@ relationship.setLevel(RepLevel.HOSTILE);
 relationship.setRel(0f);
 ```
 
-插入位置：`GearInPersonRelationship.run`。完成信号：关系依次经过 0.30、0.75、-0.50，最后精确回到 0。
+关系依次经过 0.30、0.75、-0.50，最后精确回到 0。
 
 ### 挂入市场与重要人物集合
+
+需要跨存档保留并显示联系人时，把这三行写进注册逻辑。
 
 ```java
 market.addPerson(person);
@@ -324,9 +330,11 @@ market.getCommDirectory().addPerson(person);
 sector.getImportantPeople().addPerson(person);
 ```
 
-插入位置：需要跨存档保留并显示联系人的注册逻辑。完成信号：市场 roster、通信目录与 important people 都能找到同一人物。
+市场 roster、通信目录与 important people 都能找到同一人物。
 
 ### 把人物设为非旗舰舰长
+
+这段舰长写入位于 `GearInCaptain.run`。
 
 ```java
 wolf.setCaptain(person);
@@ -334,9 +342,11 @@ boolean sameCaptain = wolf.getCaptain() == person;
 boolean found = fleetData.getMemberWithCaptain(person) == wolf;
 ```
 
-插入位置：`GearInCaptain.run`。完成信号：两个判据都为 true；该成员不是玩家旗舰，因此不会触发旗舰舰长特例。
+两个判据都为 true；该成员不是玩家旗舰，因此不会触发旗舰舰长特例。
 
 ### 包装军官并分配舰船
+
+这条军官链位于 `GearInOfficer.run`。
 
 ```java
 PersonAPI officerPerson = sector.getFaction("hegemony").createRandomPerson();
@@ -350,9 +360,11 @@ if (!officer.getSkillPicks().isEmpty()) {
 hammerhead.setCaptain(officerPerson);
 ```
 
-插入位置：`GearInOfficer.run`。完成信号：人物进入军官 roster、舰队引用成立、等级与技能变化，并能从 Hammerhead 反查该舰长。
+人物进入军官 roster、舰队引用成立、等级与技能变化，并能从 Hammerhead 反查该舰长。
 
 ### 修改势力关系后恢复快照
+
+这段势力关系序列位于 `GearInFactionRelation.run`。
 
 ```java
 float original = hegemony.getRelationship("tritachyon");
@@ -363,7 +375,7 @@ hegemony.ensureAtWorst("tritachyon", RepLevel.WELCOMING);
 hegemony.setRelationship("tritachyon", original);
 ```
 
-插入位置：`GearInFactionRelation.run`。完成信号：日志展示数值与档位变化，末行与演示前关系值完全一致。
+日志展示数值与档位变化，末行与演示前关系值完全一致。
 
 ## 组装人物关系实现
 

@@ -13,7 +13,7 @@
 - 列出两条监听器通道，并解释各自的存储、去重与派发语义：
     - Sector 级 `CampaignEventListener` 通道：`addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners`；
     - `ListenerManagerAPI` 类型化通道：`addListener` / `addListener(listener, isTransient)` / `removeListener` / `removeListenerOfClass` / `hasListener` / `hasListenerOfClass` / `getListeners(Class)`。
-- 按分组列出 `CampaignEventListener` 全接口 21 个方法，并解释每一组事件在哪个边界点被触发 (战斗结束、贸易结算、舰队入地/离场/跳跃/到达、市场开关、声望变更、经济迭代)；
+- 按分组列出 `CampaignEventListener` 的全部接口方法，并解释每一组事件在哪个边界点被触发 (战斗结束、贸易结算、舰队入地/离场/跳跃/到达、市场开关、声望变更、经济迭代)；
 - 解释监听器生命周期规则：注册时机、persistent data 注册标记、**监听器必须在合适时机移除**、transient 监听器读档后必须重新注册、配对类 "脚本结束 ≠ 监听器移除"、`addListenerWithTimeout` 的游戏天单位与暂停冻结语义；
 - 创建 Sector 级监听器、按帧生命周期脚本 (与监听器配对) 和 `ListenerManagerAPI` 类型化监听器，并在 `onGameLoad` 正确注册；
 - 从症状定位十类典型故障：没注册、`onApplicationLoad` 注册 NPE、重复注册成双、transient 读档丢失、僵尸监听器、超时单位误用、事件日志过频、战斗回调重复计数、双通道混淆、旧档不注册。
@@ -95,12 +95,12 @@ if (!this.isPaused()) {
 - `BaseCampaignEventListener(boolean permaRegister)`(`com.fs.starfarer.api.campaign.BaseCampaignEventListener`)：
     - `CampaignEventListener` 的**全方法空实现**，`permaRegister=true` 时构造器直接 `Global.getSector().addListener(this)`；
     - `reRegister(float daysToKeep)` 等价 `addListenerWithTimeout(this, daysToKeep)`；
-    - 覆写关心的方法即可，不必实现 21 个方法的全接口。
+    - 覆写关心的方法即可，不必实现全接口。
 - `BaseCampaignEventListenerAndScript(float days)`(`com.fs.starfarer.api.campaign.BaseCampaignEventListenerAndScript`)：监听器与 `EveryFrameScript` 绑定在同一对象上的基类，构造器按 days 以超时方式注册监听器。
 
 ### 通道二注册入口速查表
 
-通道一按对象存监听器，回调却按接口签名区分；`SectorAPI.getListenerManager()` 返回按接口类型组织的第二通道 `ListenerManagerAPI`(`com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI`，7 个方法)：
+通道一按对象存监听器，回调却按接口签名区分；`SectorAPI.getListenerManager()` 返回按接口类型组织的第二通道 `ListenerManagerAPI`(`com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI`)：
 
 | 方法 | 语义 |
 |---|---|
@@ -120,7 +120,7 @@ if (!this.isPaused()) {
 
 派发：所有类型化事件由公开 API 的 `ListenerUtil`(`com.fs.starfarer.api.campaign.listeners.ListenerUtil`) 静态方法族派发。
 
-模式统一为 `for (X x : Global.getSector().getListenerManager().getListeners(X.class)) { x.report...(...); }`(约 50 个事件方法)。
+模式统一为 `for (X x : Global.getSector().getListenerManager().getListeners(X.class)) { x.report...(...); }`，接口的全部事件方法都走这一模式。
 
 类型化接口 40 余个，都在 `com.fs.starfarer.api.campaign.listeners` 包下：
 
@@ -208,7 +208,7 @@ if (!sector.getPersistentData().containsKey(GearInCampaignListener.REGISTER_MARK
 }
 ```
 
-完成信号：首次进档后 `getAllListeners()` 中只有一个该监听器；连续读档不会增加配对脚本或事件日志数量。
+首次进档后 `getAllListeners()` 中只有一个该监听器；连续读档不会增加配对脚本或事件日志数量。
 
 ### 监听市场结算
 
@@ -228,7 +228,7 @@ public void reportPlayerMarketTransaction(PlayerMarketTransaction transaction) {
 }
 ```
 
-完成信号：打开市场只产生 opened 日志，完成一次买卖后另产生一条 trade 日志；停留在市场界面不会按帧刷屏。
+打开市场只产生 opened 日志，完成一次买卖后另产生一条 trade 日志；停留在市场界面不会按帧刷屏。
 
 ### 区分战斗过程与结算
 
@@ -248,7 +248,7 @@ public void reportPlayerEngagement(EngagementResultAPI result) {
 }
 ```
 
-完成信号：玩家遭遇战出现一条过程日志和一条结算日志；与玩家无关的 AI 舰队战斗不会污染过程统计。
+玩家遭遇战出现一条过程日志和一条结算日志；与玩家无关的 AI 舰队战斗不会污染过程统计。
 
 ### 同时结束脚本与监听器
 
@@ -262,7 +262,7 @@ if (daysToLive >= 0 && daysActive >= daysToLive) {
 }
 ```
 
-完成信号：到期后 `isDone()` 为 `true`，脚本从列表移除；继续打开市场也不再收到该监听器的日志。
+到期后 `isDone()` 为 `true`，脚本从列表移除；继续打开市场也不再收到该监听器的日志。
 
 ### 恢复 transient 位置监听器
 
@@ -284,7 +284,7 @@ if (reportsLeft <= 0) {
 }
 ```
 
-完成信号：前 5 次地点切换有日志，第 6 次没有；保存并读档后 transient 实例重新建立，计数从 5 次重新开始。
+前 5 次地点切换有日志，第 6 次没有；保存并读档后 transient 实例重新建立，计数从 5 次重新开始。
 
 ## 组装事件监听实现
 
@@ -312,7 +312,7 @@ Starsector/mods/GearIndustry/
 
 对应关系：
 
-- `extends BaseCampaignEventListener`：全接口 21 个方法的空实现，本类只覆写关心的 11 个事件方法 (市场/贸易/战斗/舰队/声望五个事件边界)。
+- `extends BaseCampaignEventListener`：接口方法在基类全部空实现，本类只覆写关心的 11 个事件方法 (市场/贸易/战斗/舰队/声望五个事件边界)。
 - `super(false)`：不在构造器自注册 (区别于 `permaRegister=true` 的自动注册写法)，注册统一收敛到调用点的注册块，符合本教程的注册纪律。
 - `REGISTER_MARK`：persistent data 注册标记键，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；它标记 "监听器 + 生命周期脚本" 成对注册，由调用点统一检查。
 - 注册入口：调用点的注册块内 `sector.addListener(listener)`(通道一持久列表)。
@@ -492,7 +492,7 @@ if (!sector.getListenerManager().hasListenerOfClass(
 
 ## 总结
 
-本节建立了一条从注册到回调的完整判断链：两条通道决定监听器存哪里、怎么去重、由谁派发，21 个方法决定哪些事件值得监听，生命周期规则决定注册与移除的时机。动手前先回答走哪条通道、什么时候注册、什么时候移除这三个问题 —— 三个答案都落在 `onGameLoad` 的注册块和配对脚本里，而不是散落在构造器或 `onApplicationLoad`。
+本节建立了一条从注册到回调的完整判断链：两条通道决定监听器存哪里、怎么去重、由谁派发，分组后的回调清单决定哪些事件值得监听，生命周期规则决定注册与移除的时机。动手前先回答走哪条通道、什么时候注册、什么时候移除这三个问题 —— 三个答案都落在 `onGameLoad` 的注册块和配对脚本里，而不是散落在构造器或 `onApplicationLoad`。
 
 排错时沿用 "触发点 → 派发者 → 回调签名" 的边界分析法。回调没触发，先确认事件真的发生 (边界点)，再确认派发者遍历了注册表，最后核对签名与注册时机。这套方法可以迁移到同一家族的其他事件驱动机制：能力与对话框事件、战斗结算后的流程钩子、经济与声望的联动处理，都能沿这条链逐段核对 "回调为什么没触发"。
 
@@ -500,11 +500,11 @@ if (!sector.getListenerManager().hasListenerOfClass(
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.CampaignEventListener`：公开生涯监听器接口，全接口 21 个方法，含 `FleetDespawnReason` 枚举 (6 值)。
+- `com.fs.starfarer.api.campaign.CampaignEventListener`：公开生涯监听器接口，含 `FleetDespawnReason` 枚举 (6 值)。
 - `com.fs.starfarer.api.campaign.SectorAPI`：通道一注册入口 (`addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners`) 与 `getListenerManager()`。
 - `com.fs.starfarer.api.campaign.BaseCampaignEventListener`：全方法空实现基类；`permaRegister` 构造器与 `reRegister(daysToKeep)`。
 - `com.fs.starfarer.api.campaign.BaseCampaignEventListenerAndScript`：监听器与 `EveryFrameScript` 绑定在同一对象的基类 (原版 `CoreScript` 同形态)。
-- `com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI`：通道二类型化仓库，7 个方法。
+- `com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI`：通道二类型化仓库。
 - `com.fs.starfarer.api.campaign.listeners.ListenerUtil`：类型化事件派发静态方法族 (按 `getListeners(X.class)` 遍历)。
 - `com.fs.starfarer.api.campaign.listeners.CurrentLocationChangedListener`：本节类型化监听器接口 (单方法)。
 - `com.fs.starfarer.api.util.TimeoutTracker`：`addListenerWithTimeout` 的底层超时跟踪器。

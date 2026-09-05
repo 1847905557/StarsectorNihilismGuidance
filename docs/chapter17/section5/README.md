@@ -19,7 +19,7 @@
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 明确当前需求
@@ -39,28 +39,28 @@
 
 ### 在应用加载期初始化 GraphicsLib
 
-**插入位置：`GearInModPlugin.onApplicationLoad()`。** 让纹理和 shader 能力在战斗前准备完成。
+在 `GearInModPlugin.onApplicationLoad()` 中调用，让纹理和 shader 能力在战斗前准备完成：
 
 ```java
 ShaderLib.init();
 ```
 
-完成信号：日志显示 GraphicsLib 初始化完成。
+日志随后会显示 GraphicsLib 初始化完成。
 
 ### 读取当前光源 shader 能力
 
-**插入位置：`GearInLightReporter.reportCapabilities()`。** 在 GraphicsLib 初始化后取得 `LightShader` 的 `ShaderAPI`。
+`GearInLightReporter.reportCapabilities()` 在 GraphicsLib 初始化后取得 `LightShader` 的 `ShaderAPI`：
 
 ```java
 ShaderAPI lightShader = ShaderLib.getShaderAPI(LightShader.class);
 boolean lightReady = lightShader != null && lightShader.isEnabled();
 ```
 
-完成信号：关闭光源 shader 时 lightReady 为 false，报告过程保持无异常。
+关闭光源 shader 时 lightReady 为 false，报告过程保持无异常。
 
 ### 把点光源挂到舰船宿主
 
-**插入位置：`GearInShipLight.add()`。** 用宿主舰船和局部偏移构造 `StandardLight`。该方法由战斗首帧调用，此时 GraphicsLib 已建立当前战斗的本地数据。
+`GearInShipLight.add()` 用宿主舰船和局部偏移构造 `StandardLight`；该方法由战斗首帧调用，此时 GraphicsLib 已建立当前战斗的本地数据：
 
 ```java
 light = new StandardLight(player.getLocation(), new Vector2f(), OFFSET, player,
@@ -68,22 +68,22 @@ light = new StandardLight(player.getLocation(), new Vector2f(), OFFSET, player,
 LightShader.addLight(light);
 ```
 
-完成信号：舰船平移和转向时，光源按 60 su 偏移持续跟随。
+舰船平移和转向时，光源按 60 su 偏移持续跟随。
 
 ### 检测本帧是否有武器开火
 
-**插入位置：`GearInShipLight.update()` 的强度计算前。** 扫描全部武器，得到单一 `firing` 状态。
+`GearInShipLight.update()` 在强度计算前扫描全部武器，得到单一 `firing` 状态：
 
 ```java
 boolean firing = false;
 for (WeaponAPI weapon : player.getAllWeapons()) firing |= weapon.isFiring();
 ```
 
-完成信号：任一主武器开火时强度目标切到高值。
+任一主武器开火时强度目标切到高值。
 
 ### 平滑追赶目标强度
 
-**插入位置：`GearInShipLight.update()` 末尾。** 用 `amount` 限制每帧变化，避免亮度突跳。
+`GearInShipLight.update()` 末尾用 `amount` 限制每帧变化，避免亮度突跳：
 
 ```java
 float target = firing ? 1.5f : 0.45f;
@@ -91,7 +91,7 @@ intensity += Math.signum(target - intensity) * Math.min(Math.abs(target - intens
 light.setIntensity(intensity);
 ```
 
-完成信号：停火后灯光在约 0.5 秒内回到基础值。
+停火后灯光在约 0.5 秒内回到基础值。
 
 ## 排查关键故障
 

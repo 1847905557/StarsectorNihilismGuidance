@@ -17,7 +17,7 @@ GearIn 的市场进入地面战后，原版定义不会自动理解专属产业�
 ## 前置知识
 
 - [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S1] 理解每帧回调、暂停判断与运行时对象；
+- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
 ## 接入地面战定义
@@ -30,7 +30,7 @@ GearIn 的市场进入地面战后，原版定义不会自动理解专属产业�
 
 ### 登记 GearIn 产业定义
 
-**插入位置：`data/config/exerelin/groundBattleDefs.json` 的 `industries` 对象。** 为市场产业 ID 增加防御强度、部队贡献和插件类。
+在 `data/config/exerelin/groundBattleDefs.json` 的 `industries` 对象中，为市场产业 ID 增加防御强度、部队贡献和插件类：
 
 ```json
 "GearIn_training_industry": {
@@ -43,11 +43,11 @@ GearIn 的市场进入地面战后，原版定义不会自动理解专属产业�
 }
 ```
 
-完成信号：`GBDataManager.getIndustryDef("GearIn_training_industry")` 返回非默认定义，并能读到 `strengthMult`。
+登记后，`GBDataManager.getIndustryDef("GearIn_training_industry")` 返回非默认定义，并能读到 `strengthMult`。
 
 ### 登记地面战插件类
 
-**插入位置：`groundBattleDefs.json` 的 `unitTypes` 对象。** 登记一类可在地面战界面出现的 GearIn 单位；完整插件类写在单位自身的 `pluginClass` 字段。`plugin` 是产业条目的字段。
+在 `groundBattleDefs.json` 的 `unitTypes` 对象中登记一类可在地面战界面出现的 GearIn 单位；完整插件类写在单位自身的 `pluginClass` 字段，`plugin` 是产业条目的字段：
 
 ```json
 "GearIn_line_infantry": {
@@ -65,11 +65,11 @@ GearIn 的市场进入地面战后，原版定义不会自动理解专属产业�
 }
 ```
 
-完成信号：`GroundUnitDef.getUnitDef("GearIn_line_infantry")` 返回定义，且地面战部队选择器能按 `playerCanCreate` 显示它。
+`GroundUnitDef.getUnitDef("GearIn_line_infantry")` 会返回定义，且地面战部队选择器能按 `playerCanCreate` 显示它。
 
 ### 在加载后检查产业定义
 
-**插入位置：`GearInGroundBattleProbe.hasIndustry()` 与 `hasUnit()`。** 把缺失产业或单位 ID 变成可诊断布尔值。
+`GearInGroundBattleProbe.hasIndustry()` 与 `hasUnit()` 把缺失产业或单位 ID 变成可诊断布尔值：
 
 ```java
 boolean ready = GBDataManager.getIndustryDef(industryId) != null;
@@ -78,17 +78,17 @@ boolean unitReady = GroundUnitDef.getUnitDef(unitId) != null;
 
 `getIndustryDef()` 对未知 ID 会回退到默认产业，因此还要检查返回对象的实际 ID 或关键数值，不能只判断非空。
 
-完成信号：日志同时显示产业 ID、`strengthMult` 和 `unit=true`。
+日志会同时显示产业 ID、`strengthMult` 和 `unit=true`。
 
 ### 确认插件映射而非只看列表
 
-**插入位置：`GearInGroundBattleProbe.findPlugin()`。** 只有检查通用插件时才从 `getPluginsById()` 按短 ID 取类名。
+`GearInGroundBattleProbe.findPlugin()` 只在检查通用插件时才从 `getPluginsById()` 按短 ID 取类名：
 
 ```java
 String className = GBDataManager.getPluginsById().get(pluginId);
 ```
 
-完成信号：通用插件返回值与 JSON 中类名逐字一致；产业插件则直接从产业定义核对完整类名。
+通用插件的返回值与 JSON 中类名逐字一致；产业插件则直接从产业定义核对完整类名。
 
 ## 排查关键故障
 

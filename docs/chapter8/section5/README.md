@@ -372,6 +372,9 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ## 建议参考项
 
-- `EveryFrameWeaponEffectPlugin`、`OnFireEffectPlugin`、`OnHitEffectPlugin` 与 `BeamEffectPlugin` API；
+- `com.fs.starfarer.api.combat.EveryFrameWeaponEffectPlugin`：武器级持续回调 (`everyFrameEffect`)；
+- `com.fs.starfarer.api.combat.BeamEffectPlugin`：光束激活期间的逐帧回调 (`beamEffect`)；
+- `com.fs.starfarer.api.combat.OnFireEffectPlugin`：射弹生成回调 (`onFireEffect`)；
+- `com.fs.starfarer.api.combat.OnHitEffectPlugin`：当前命中上下文回调 (`onHitEffect`)；
 - `data/weapons/`：原版武器与弹体定义，`everyFrameEffect`、`beamEffect`、`onFireEffect`、`onHitEffect` 注册字段的原版实例；
 - `Starsector/starsector-core/starsector.log`：核对回调日志的读取位置。

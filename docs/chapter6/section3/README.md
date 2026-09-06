@@ -8,6 +8,8 @@
 
 ## 学习目标
 
+完成后，您将能够：
+
 - 配置工程名、源码目录和 Java toolchain；
 - 声明 `compileOnly` 核心依赖；
 - 设置 UTF-8、`--release 17` 和 JAR 输出目录。

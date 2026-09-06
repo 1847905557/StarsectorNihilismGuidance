@@ -183,6 +183,9 @@ for (BeamAPI beam : engine.getBeams()) {
 
 ## 建议参考项
 
-- `CombatEngineAPI`：四类对象集合与 `addFloatingText(...)`；
-- `ShipAPI`、`DamagingProjectileAPI`、`MissileAPI`、`BeamAPI`：对象位置和状态访问器；
-- `CombatFleetManagerAPI.getDeployedCopyDFM()`：部署成员到场上舰船的映射。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：四类对象集合与 `addFloatingText(...)`；
+- `com.fs.starfarer.api.combat.ShipAPI`：舰船位置与状态访问器；
+- `com.fs.starfarer.api.combat.DamagingProjectileAPI`：弹体位置与状态访问器；
+- `com.fs.starfarer.api.combat.MissileAPI`：导弹位置与状态访问器；
+- `com.fs.starfarer.api.combat.BeamAPI`：光束位置与状态访问器；
+- `com.fs.starfarer.api.combat.CombatFleetManagerAPI`：`getDeployedCopyDFM()` 部署成员到场上舰船的映射。

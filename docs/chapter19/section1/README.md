@@ -1,6 +1,6 @@
-# 用 GLSL 制作脉冲扫描环
+# 让可选依赖缺席时安全降级
 
-扫描环是一个适合建立 shader 数据流的独立效果：顶点阶段传递 UV，片元阶段只凭 UV 和时间生成移动圆环。本节从局部四边形到透明度输出逐步完成画面。
+软依赖允许 GearIn 在缺少 Nexerelin 或 LunaLib 时继续启动，但前提是库类引用被收敛在不会误加载的适配器中。本节建立启用检测、调用隔离和一次性降级日志。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,9 +10,11 @@
 
 完成后，您将能够：
 
-- 建立 Java、顶点 shader 与片元 shader 之间的完整数据流；
-- 用累计战斗时间生成周期半径，并在暂停时冻结；
-- 用中心距离和柔边宽度生成透明扫描环。
+- 用精确 MOD ID 分别检测 Nexerelin 与 LunaLib；
+- 让基础入口只加载不含第三方类型的外层桥接类；
+- 在检测通过后才触发持有 LunaLib 类型的嵌套适配器；
+- 为缺库和缺键定义明确的默认返回值；
+- 让每项缺库日志在一次应用运行中最多出现 1 次。
 
 ## 前置知识
 
@@ -20,397 +22,163 @@
 - [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
-## 建立扫描环的数据流
+## 明确当前需求
 
-玩家舰周围出现从内向外扩张并周期重置的青色扫描环；相机移动时效果跟随世界坐标，暂停时动画冻结。
+同一份 GearIn 在两个库都缺席、只装 LunaLib、两个都安装这三种组合下启动。基础内容始终可用，扩展功能只在对应库启用时接入。
 
 ## 文件与 API 链路
 
-扫描环的绘制分工：Java 侧提交四边形、时间和颜色；顶点 shader 把局部坐标转换到裁剪空间并传递 UV；片元 shader 计算中心距离、环宽和透明度。
+`ModManagerAPI.isModEnabled` 判断启用状态；入口类只引用 `GearInCompatBridge`；外层桥接类只包含原版类型；私有 `LunaAdapter` 直接引用 LunaLib，并且只在启用分支首次调用时加载。`lunalib` 是库启用 ID，`gear_in` 是设置拥有者 ID。
 
-### 从顶点阶段传递 UV
+### 用准确 MOD id 判断启用状态
 
-在 `GearIn_basic_shader.vert` 的 `main()` 里把 attribute UV 写入 varying，让每个片元取得四边形内位置：
+在 `GearInCompatBridge` 的两个查询方法中分别读取 Nexerelin 与 LunaLib 的启用状态：
 
-```glsl
-v_uv = a_uv;
-gl_Position = vec4(a_position, 0.0, 1.0);
+```java
+boolean nex = Global.getSettings().getModManager().isModEnabled("nexerelin");
+boolean luna = Global.getSettings().getModManager().isModEnabled("lunalib");
 ```
 
-完整顶点 shader 还会用 `u_offset` 把局部四边形移动到玩家舰世界坐标，并交给当前正交投影矩阵。
+三种安装组合各自得到对应的布尔值。
 
-编译后片元阶段能读取 0–1 范围的 `v_uv`。
+### 把库引用留在适配器类
 
-### 计算片元到中心的距离
+`getFullGraphicEffect()` 的启用分支只在检测通过后触发持有 LunaLib 字节码引用的嵌套类：
 
-在 `GearIn_basic_shader.frag` 的 `main()` 开头把二维 UV 压成一个径向坐标：
-
-```glsl
-float distanceToCenter = distance(v_uv, vec2(0.5, 0.5));
+```java
+if (isLunaLibEnabled()) {
+    return LunaAdapter.getFullGraphicEffect(fallback);
+}
 ```
 
-算出的距离在中心为 0，四边形边缘接近 0.5。
+LunaLib 缺席时，`LunaAdapter` 不初始化，外层桥接类仍可完成 Nexerelin 检测和默认值返回。
 
-### 让目标半径随时间循环
+### 为缺席功能定义明确行为
 
-在片元 shader 的 pulse 计算处用 `fract` 生成 0–0.5 的周期半径：
+每个 disabled 分支保持基础玩法，并关闭增强 UI 或战略接入：
 
-```glsl
-float radius = fract(u_time * 0.35) * 0.5;
+```java
+if (!luna) {
+    LOG.info("GearIn optional feature disabled: LunaLib settings");
+}
 ```
 
-进入战斗后，扫描环持续向外扩张并回到中心。
+玩家仍能进入存档，日志说明关闭了哪项增强。
 
-### 用 smoothstep 形成窄环
+### 让降级日志只出现一次
 
-在片元 shader 输出前根据距离与半径差生成柔和边缘：
+外层桥接类的缺席分支避免多个调用点重复报告同一缺席状态：
 
-```glsl
-float ring = 1.0 - smoothstep(0.0, 0.025,
-        abs(distanceToCenter - radius));
-gl_FragColor = vec4(u_color.rgb, ring * u_color.a);
+```java
+if (!lunaMissingReported) {
+    lunaMissingReported = true;
+    LOG.info(message);
+}
 ```
 
-画面出现的是窄环而非实心圆。
+starsector.log 每次读档只出现一条对应消息。
+
+### 对包装类型返回值处理 null
+
+`LunaAdapter.getFullGraphicEffect(boolean fallback)` 在拆箱前回退到调用方默认值：
+
+```java
+Boolean value = LunaSettings.getBoolean(SETTINGS_OWNER_MOD_ID, "GearIn_fullGraphicEffect");
+return value == null ? fallback : value;
+```
+
+字段存在时返回实际值，缺键时返回调用方传入的 `fallback`。
+
+在 `data/config/LunaSettings.csv` 中注册同一个字段 ID：
+
+```csv
+fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab
+GearIn_fullGraphicEffect,Full graphic effect,Boolean,true,,,,,GearIn
+```
 
 ## 排查关键故障
 
 下面是**局部故障片段**：
 
-```glsl
-float radius = u_time * 0.35;
+```java
+if (Global.getSettings().getModManager().isModEnabled("lunalib")) {
+}
+LunaSettings.getBoolean("gear_in", "GearIn_fullGraphicEffect");
 ```
 
-实际症状：扫描环只出现一次，约两秒后永久离开四边形。
+实际症状：未安装 LunaLib 时仍抛 NoClassDefFoundError。
 
-原因：半径持续增长，没有回到 0–0.5 的有效 UV 范围。
+原因：检测只包住空分支，第三方类调用仍位于无条件执行路径。
 
 下面是**局部修正片段**：
 
-```glsl
-float radius = fract(u_time * 0.35) * 0.5;
+```java
+if (isLunaEnabled()) {
+    return GearInLunaSettingsReader.isFxEnabled();
+}
+return true;
 ```
 
-复验：观察十秒，确认扫描环至少完成三次循环。
+复验：移除 LunaLib 后连续调用设置入口 100 次，确认返回值始终等于 fallback，日志只出现 1 条 LunaLib 缺席消息，并且没有类加载错误。
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+完整桥接类同时覆盖两个可选依赖。Nexerelin 专题只在 `isNexerelinEnabled()` 为真时进入各自适配器；LunaLib 设置读取则通过延迟加载的嵌套类隔离第三方类型。
 
-::: details 完整成品：GearInBasicShaderRenderer
+::: details 完整成品：GearInCompatBridge
 
 ```java
-package data.scripts.gearin.combat;
-
-import java.io.IOException;
-import java.nio.FloatBuffer;
-import java.util.EnumSet;
-
-import org.apache.log4j.Logger;
-import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL15;
-import org.lwjgl.opengl.GL20;
-import org.lwjgl.util.vector.Vector2f;
+package data.scripts.gearin.modcompat;
 
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.CombatEngineLayers;
-import com.fs.starfarer.api.combat.CombatEntityAPI;
-import com.fs.starfarer.api.combat.ViewportAPI;
 
-/**
- * 完整最小例：GLSL 顶点到片元数据流 (attribute / uniform / varying / gl_Position / gl_FragColor)。
- * attribute 经 VBO + glVertexAttribPointer 喂入，位置在 glLinkProgram 前用
- * glBindAttribLocation 固定；uniform 用 glGetUniformLocation + glUniform* 提交；
- * 顶点着色器输出 gl_Position 与 varying，片元着色器读插值后的 varying 写 gl_FragColor。
- * 投影用 glOrtho(viewport) 建世界→屏幕正交矩阵，顶点着色器经 gl_ModelViewProjectionMatrix
- * 应用；GL 资源在 cleanup() 释放，插件到寿命后主动失效驱动引擎移除。
- */
-public class GearInBasicShaderRenderer extends BaseCombatLayeredRenderingPlugin {
+public final class GearInCompatBridge {
+    public static final String NEX_MOD_ID = "nexerelin";
+    public static final String LUNA_MOD_ID = "lunalib";
+    public static final String SETTINGS_OWNER_MOD_ID = "gear_in";
+    public static final String FULL_GRAPHIC_FIELD = "GearIn_fullGraphicEffect";
 
-    private static final Logger LOG = Global.getLogger(GearInBasicShaderRenderer.class);
+    private static boolean nexMissingReported;
+    private static boolean lunaMissingReported;
 
-    /** shader 资源路径 (MOD 根目录相对路径，必须用 /)。 */
-    private static final String VERT_PATH = "data/shaders/GearIn_basic_shader.vert";
-    private static final String FRAG_PATH = "data/shaders/GearIn_basic_shader.frag";
-
-    /** 演示四边形半边长 (世界单位)。 */
-    private static final float QUAD_HALF_SIZE = 60f;
-
-    /** 演示寿命 (秒)：到时主动失效，驱动引擎移除并调用 cleanup()。 */
-    private static final float LIFETIME = 20f;
-
-    /** 交错顶点布局：位置 (2 float) + UV(2 float)，每顶点 4 个 float。 */
-    private static final int FLOATS_PER_VERTEX = 4;
-
-    private CombatEngineAPI engine;
-    private boolean valid = true;
-    private float elapsed = 0f;
-
-    private int program = 0;
-    private int vboId = 0;
-    private int uOffsetLocation = -1;
-    private int uTimeLocation = -1;
-    private int uColorLocation = -1;
-
-    @Override
-    public void init(CombatEntityAPI entity) {
-        super.init(entity);
-        engine = Global.getCombatEngine();
-        if (!createProgram() || !buildQuad()) {
-            valid = false; // 初始化失败：不渲染，等引擎正常移除
-            return;
-        }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点
-        LOG.info("GearIn basic shader init: program=" + program + ", vbo=" + vboId
-                + ", u_offset=" + uOffsetLocation + ", u_time=" + uTimeLocation);
+    private GearInCompatBridge() {
     }
 
-    /** 加载、编译、链接 GearIn_basic_shader 的 vert/frag，成功返回 true。 */
-    private boolean createProgram() {
-        String vertSource;
-        String fragSource;
-        try {
-            vertSource = Global.getSettings().loadText(VERT_PATH);
-            fragSource = Global.getSettings().loadText(FRAG_PATH);
-        } catch (IOException e) {
-            LOG.error("GearIn basic shader: loadText failed: " + e.getMessage(), e);
-            return false;
-        }
-
-        int vert = compileShader(GL20.GL_VERTEX_SHADER, vertSource);
-        if (vert == 0) {
-            return false;
-        }
-        int frag = compileShader(GL20.GL_FRAGMENT_SHADER, fragSource);
-        if (frag == 0) {
-            GL20.glDeleteShader(vert);
-            return false;
-        }
-
-        program = GL20.glCreateProgram();
-        if (program == 0) {
-            GL20.glDeleteShader(vert);
-            GL20.glDeleteShader(frag);
-            return false;
-        }
-
-        GL20.glAttachShader(program, vert);
-        GL20.glAttachShader(program, frag);
-        // attribute 位置必须在链接前固定，之后 glVertexAttribPointer 用同一位置
-        GL20.glBindAttribLocation(program, 0, "a_position");
-        GL20.glBindAttribLocation(program, 1, "a_uv");
-        GL20.glLinkProgram(program);
-
-        // 链接完成后着色器对象即可删除：程序已持有编译结果
-        GL20.glDeleteShader(vert);
-        GL20.glDeleteShader(frag);
-
-        if (GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-            LOG.error("GearIn basic shader: link failed: " + getProgramLog(program));
-            GL20.glDeleteProgram(program);
-            program = 0;
-            return false;
-        }
-
-        uOffsetLocation = GL20.glGetUniformLocation(program, "u_offset");
-        uTimeLocation = GL20.glGetUniformLocation(program, "u_time");
-        uColorLocation = GL20.glGetUniformLocation(program, "u_color");
-        return true;
+    public static boolean isNexerelinEnabled() {
+        return Global.getSettings().getModManager().isModEnabled(NEX_MOD_ID);
     }
 
-    /** 编译单个 shader 并检查 GL_COMPILE_STATUS；失败时删除对象并返回 0。 */
-    private int compileShader(int type, String source) {
-        int shader = GL20.glCreateShader(type);
-        if (shader == 0) {
-            LOG.error("GearIn basic shader: glCreateShader returned 0 (type=" + type + ")");
-            return 0;
-        }
-        GL20.glShaderSource(shader, source);
-        GL20.glCompileShader(shader);
-        if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-            LOG.error("GearIn basic shader: compile failed: " + getShaderLog(shader));
-            GL20.glDeleteShader(shader);
-            return 0;
-        }
-        return shader;
+    public static boolean isLunaLibEnabled() {
+        return Global.getSettings().getModManager().isModEnabled(LUNA_MOD_ID);
     }
 
-    private static String getShaderLog(int shader) {
-        return GL20.glGetShaderInfoLog(shader, GL20.glGetShaderi(shader, GL20.GL_INFO_LOG_LENGTH));
+    public static boolean getFullGraphicEffect(boolean fallback) {
+        if (!isLunaLibEnabled()) {
+            if (!lunaMissingReported) {
+                lunaMissingReported = true;
+                Global.getLogger(GearInCompatBridge.class).info(
+                        "GearIn compat: LunaLib unavailable, fallback=" + fallback);
+            }
+            return fallback;
+        }
+        return LunaAdapter.getFullGraphicEffect(fallback);
     }
 
-    private static String getProgramLog(int program) {
-        return GL20.glGetProgramInfoLog(program, GL20.glGetProgrami(program, GL20.GL_INFO_LOG_LENGTH));
+    public static void reportNexerelinFallback() {
+        if (!isNexerelinEnabled() && !nexMissingReported) {
+            nexMissingReported = true;
+            Global.getLogger(GearInCompatBridge.class).info(
+                    "GearIn compat: Nexerelin unavailable, strategic integration disabled");
+        }
     }
 
-    /** 两个三角形组成的四边形：6 个顶点，位置与 UV 交错写入一个 VBO。 */
-    private boolean buildQuad() {
-        float half = QUAD_HALF_SIZE;
-        FloatBuffer quadBuffer = BufferUtils.createFloatBuffer(6 * FLOATS_PER_VERTEX);
-        quadBuffer.put(new float[]{
-                -half, -half, 0f, 0f,
-                half, -half, 1f, 0f,
-                half, half, 1f, 1f,
-                -half, -half, 0f, 0f,
-                half, half, 1f, 1f,
-                -half, half, 0f, 1f
-        });
-        quadBuffer.flip();
-
-        vboId = GL15.glGenBuffers();
-        if (vboId == 0) {
-            LOG.error("GearIn basic shader: glGenBuffers returned 0");
-            return false;
+    private static final class LunaAdapter {
+        private static boolean getFullGraphicEffect(boolean fallback) {
+            Boolean value = lunalib.lunaSettings.LunaSettings.getBoolean(
+                    SETTINGS_OWNER_MOD_ID, FULL_GRAPHIC_FIELD);
+            return value == null ? fallback : value;
         }
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, quadBuffer, GL15.GL_STATIC_DRAW);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        return true;
     }
-
-    @Override
-    public EnumSet<CombatEngineLayers> getActiveLayers() {
-        return EnumSet.of(CombatEngineLayers.ABOVE_SHIPS_AND_MISSILES_LAYER);
-    }
-
-    @Override
-    public float getRenderRadius() {
-        return QUAD_HALF_SIZE * 2f;
-    }
-
-    @Override
-    public void advance(float amount) {
-        if (engine == null) {
-            return;
-        }
-        if (engine.isPaused()) {
-            return;
-        }
-        elapsed += amount;
-        if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()
-            return;
-        }
-        // 剔除依据是承载实体的位置：跟随玩家舰船
-        entity.getLocation().set(engine.getPlayerShip().getLocation());
-    }
-
-    @Override
-    public boolean isExpired() {
-        return !valid;
-    }
-
-    @Override
-    public void cleanup() {
-        if (vboId != 0) {
-            GL15.glDeleteBuffers(vboId);
-            vboId = 0;
-        }
-        if (program != 0) {
-            GL20.glDeleteProgram(program);
-            program = 0;
-        }
-        LOG.info("GearIn basic shader cleanup");
-    }
-
-    @Override
-    public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (program == 0 || vboId == 0) {
-            return;
-        }
-        // 世界→屏幕正交投影：glOrtho(viewport) 以世界单位建投影，
-        // 顶点着色器用 gl_ModelViewProjectionMatrix 应用它；矩阵成对 push/pop 复原
-        GL11.glMatrixMode(GL11.GL_PROJECTION);
-        GL11.glPushMatrix();
-        GL11.glLoadIdentity();
-        GL11.glOrtho(viewport.getLLX(), viewport.getLLX() + viewport.getVisibleWidth(),
-                viewport.getLLY(), viewport.getLLY() + viewport.getVisibleHeight(), -1f, 1f);
-        GL11.glMatrixMode(GL11.GL_MODELVIEW);
-        GL11.glPushMatrix();
-        GL11.glLoadIdentity();
-
-        GL20.glUseProgram(program);
-
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-
-        // uniform：本次绘制内所有顶点/片元共享，提交为玩家舰船当前位置 (每帧更新)
-        if (uOffsetLocation >= 0) {
-            Vector2f center = engine.getPlayerShip().getLocation();
-            GL20.glUniform2f(uOffsetLocation, center.x, center.y);
-        }
-        if (uTimeLocation >= 0) {
-            GL20.glUniform1f(uTimeLocation, elapsed);
-        }
-        if (uColorLocation >= 0) {
-            GL20.glUniform4f(uColorLocation, 0.1f, 0.9f, 1f, 0.9f);
-        }
-
-        // attribute：VBO 绑定 + long 偏移 (另有 FloatBuffer client 指针重载)
-        int stride = FLOATS_PER_VERTEX * Float.BYTES;
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL20.glVertexAttribPointer(0, 2, GL11.GL_FLOAT, false, stride, 0L);
-        GL20.glEnableVertexAttribArray(0);
-        GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, stride, 2L * Float.BYTES);
-        GL20.glEnableVertexAttribArray(1);
-
-        GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
-
-        GL20.glDisableVertexAttribArray(0);
-        GL20.glDisableVertexAttribArray(1);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL20.glUseProgram(0);
-        GL11.glDisable(GL11.GL_BLEND);
-
-        GL11.glMatrixMode(GL11.GL_MODELVIEW);
-        GL11.glPopMatrix();
-        GL11.glMatrixMode(GL11.GL_PROJECTION);
-        GL11.glPopMatrix();
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearIn_basic_shader
-
-```glsl
-#version 110
-
-varying vec2 v_uv;
-
-uniform float u_time;
-uniform vec4 u_color;
-
-void main() {
-    float distanceToCenter = distance(v_uv, vec2(0.5, 0.5));
-    float radius = fract(u_time * 0.35) * 0.5;
-    float ring = 1.0 - smoothstep(0.0, 0.025, abs(distanceToCenter - radius));
-    gl_FragColor = vec4(u_color.rgb, ring * u_color.a);
-}
-```
-
-:::
-
-::: details 完整成品：GearIn_basic_shader
-
-```glsl
-#version 110
-
-attribute vec2 a_position;
-
-attribute vec2 a_uv;
-
-uniform vec2 u_offset;
-
-varying vec2 v_uv;
-
-void main() {
-    v_uv = a_uv;
-    gl_Position = gl_ModelViewProjectionMatrix * vec4(a_position + u_offset, 0.0, 1.0);
 }
 ```
 
@@ -418,43 +186,56 @@ void main() {
 
 ## 验证方案
 
-1. 编译 Java fixture 并验证两个 shader 文件。
-2. 进入战斗，让渲染器跟随玩家舰运行 10 秒，记录至少 3 次扫描循环。
-3. 暂停 3 秒，确认环半径冻结；恢复后从原相位继续。
-4. 移动玩家舰和相机，确认四边形仍以舰船世界坐标为中心。
+分别准备两个库都缺席、仅 Nexerelin、仅 LunaLib、两个库都启用这 4 种启用组合。每种组合都使用同一 GearIn JAR。
+
+### 启用组合检测结果速查表
+
+| 安装组合 | Nexerelin 检测 | LunaLib 检测 |
+|---|---|---|
+| 两个库都缺席 | false | false |
+| 仅 Nexerelin | true | false |
+| 仅 LunaLib | false | true |
+| 两个库都启用 | true | true |
+
+1. 启动并读档，记录两个 `is*Enabled()` 的返回值。
+2. 连续调用 `getFullGraphicEffect(true)` 100 次，记录返回值和缺席日志条数。
+3. 连续调用 `reportNexerelinFallback()` 100 次，记录 Nexerelin 缺席日志条数。
+4. LunaLib 启用时分别测试设置值 true、false 和字段缺失，并在另一个 MOD 中建立同名字段。
+5. 修改另一个 MOD 的同名字段，确认 GearIn 的读取结果保持不变。
+6. 两个库都缺席时进入基础战斗与生涯界面，确认非兼容内容可用。
 
 预期结果：
 
-- 片元阶段能读取 0–1 范围 fragUV；
-- 中心为 0，边中点距离为 0.5，四角距离约为 0.7071；当前最大半径约 0.525，只覆盖圆形径向区域；
-- 扫描环持续向外扩张并回到中心；
-- 画面出现窄环而非实心圆；
-- shader 编译、程序链接和 uniform 查询均没有错误日志。
+- 4 种组合的两个布尔值分别为 `false/false`、`true/false`、`false/true`、`true/true`；
+- LunaLib 缺席时 100 次读取均返回 fallback，缺席日志为 1 条；
+- Nexerelin 缺席时 100 次报告只产生 1 条战略接入禁用日志；
+- LunaLib 字段存在时返回实际值，字段缺失时返回 fallback；
+- 另一个 MOD 的同名字段变化不会改变 GearIn 的读取结果；
+- 两个库都缺席时基础内容仍可进入，没有 `NoClassDefFoundError`。
 
 ## 故障分析
 
-- **扫描环只出现一次**：半径持续增长，没有回到有效 UV 范围。
+- **未安装 LunaLib 时仍抛 `NoClassDefFoundError`**：第三方类型仍出现在无条件路径，或被外层静态字段提前解析。
 
-    - **解决方案**：恢复 `fract`。
+    - **解决方案**：把直接引用收进延迟加载的适配器，只在启用分支调用。
 
-- **画面显示为实心圆**：片元条件使用 `distanceToCenter < radius`，生成了圆盘。
+- **`isModEnabled` 始终返回 false**：检测 ID 的大小写或拼写与 manifest 不一致。
 
-    - **解决方案**：改为比较 `abs(distanceToCenter - radius)`。
+    - **解决方案**：改用精确 MOD ID。
 
-- **扫描环变成椭圆**：四边形宽高不同，UV 距离没有按比例修正。
+- **检测通过后仍在加载期崩溃**：适配器类在入口字段或静态初始化中被提前解析。
 
-    - **解决方案**：使用正方形 VBO 或校正 UV 比例。
+    - **解决方案**：移除外层类型引用并延迟到分支内部，重启。
 
-- **暂停时扫描仍在动画**：Java 继续提交真实时间或累加 `elapsed`。
+- **缺少前置时功能悄悄变化**：降级分支没有输出诊断。
 
-    - **解决方案**：只在战斗未暂停时推进 `u_time`。
+    - **解决方案**：增加只记录一次的降级日志。
 
 ## 总结
 
-这个效果的数据流只有三项：顶点提供 UV，Java 提供时间与颜色，片元阶段把中心距离变成环形透明度。每个值都有明确坐标范围，故障也能沿数据流定位。
+软依赖的完整做法包括启用判断、库调用隔离、明确降级和可定位日志。判断本身只回答库是否启用，代码组织才决定缺库时类加载是否安全。
 
 ## 建议参考项
 
-- GLSL `varying`／`in`：顶点到片元插值；
-- `fract`：生成周期相位；
-- `smoothstep`：建立柔和环边。
+- `com.fs.starfarer.api.ModManagerAPI`：`isModEnabled` 判断可选 MOD 是否启用；
+- `starsector.log`：确认增强功能启用或降级。

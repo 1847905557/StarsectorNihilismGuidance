@@ -1,281 +1,157 @@
-# 为 Nexerelin 特遣队添加命名与事件响应
+# 让 GraphicsLib 管理纹理资源
 
-特遣队名称提供势力风味，入侵监听器则让 GearIn 对市场易手作出反应。本节用配置加载命名器，以来源市场生成唯一候选名，并记录每轮入侵与最终转移。
+舰船灯光已经接通，但材质、法线和表面贴图的取得时机仍会改变首帧表现。本节把纹理登记、实际加载、法线生成和预载开关分开，沿用 [C17-S5] 的报告器观察每种选择的结果。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：~14 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~20 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 让 Nexerelin 通过配置加载自定义特遣队命名器；
-- 处理来源市场缺失和名称重复请求；
-- 注册一次瞬态监听器，分别记录入侵回合、结束和市场转移；读档后由生涯初始化入口重新注册。
+- 区分 `TextureData.getTextureData()` 与带自动生成参数的查询；
+- 选择 `mapSpriteToMNSWithAutoGen()` 或 `autoGenNormalMap()` 的调用位置；
+- 判断 `preloadAllMaps` 对首次使用和战斗驻留的影响；
+- 用 [C17-S5] 的报告类核对 `TextureEntry` 是否真正可用。
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C17-S5] 已完成 GraphicsLib 初始化和舰船灯光接线；
+- 了解舰船的 material、normal 和 surface 贴图用途；
+- 能够读取 `starsector.log` 中的纹理查询结果。
 
-## 让特遣队与入侵事件留下可追踪标识
+## 先把三种贴图需求分开
 
-GearIn 特遣队显示 "编号 + 来源市场 + Forgeguard"；入侵 GearIn 市场时日志记录双方强度、结果和新所有者。来源市场缺失时仍能生成可读名称。
+灯光 shader 读取的不是同一个纹理对象。material 决定受光颜色，normal 决定法线方向，surface 提供额外表面信息；先确认缺的是哪一类，才能选择查询或生成路径。
 
-## 文件与 API 链路
+### 纹理资源选择速查表
 
-`specialForcesNamerClass` 指向 `SpecialForcesNamer` 实现；Nexerelin 可能为去重重复请求名称；`InvasionListener` 提供战利品、回合、结束和市场转移回调。监听器要通过 `ListenerManager` 注册，并在持久化场景中只注册一次。
+| 需求 | 入口 | 结果 |
+|---|---|---|
+| 只查询已登记条目 | `getTextureData()` | 不主动生成缺失的法线贴图 |
+| 查询并允许自动补全 | `getTextureDataWithAutoGen()` | 按参数尝试取得或生成目标条目 |
+| 从原始精灵建立三图关系 | `mapSpriteToMNSWithAutoGen()` | 登记 material、normal 和 surface 的映射 |
+| 只生成法线贴图 | `autoGenNormalMap()` | 返回生成后的法线精灵 |
 
-### 在势力配置登记命名器
+## 查询已经登记的条目
 
-在 `gear_industry.json` 的 `specialForcesNamerClass` 中登记实现类，让 Nexerelin 经脚本类加载器创建它：
+`GearInLightReporter.describeTexture()` 先使用普通查询确认登记表中是否已有条目：
+
+```java
+TextureEntry normal = TextureData.getTextureData(
+        hullId, TextureDataType.NORMAL_MAP, ObjectType.SHIP, 0);
+```
+
+日志能区分 `normal=none` 和拥有有效纹理 ID 的条目。
+
+## 允许查询路径自动补全
+
+在需要兼容缺少 normal map 的消费入口，把宿主对象和 `unloadedOk` 一并交给带自动生成参数的查询：
+
+```java
+TextureEntry normal = TextureData.getTextureDataWithAutoGen(
+        hullId, TextureDataType.NORMAL_MAP, ObjectType.SHIP, 0,
+        ship, true);
+```
+
+原始舰船没有独立 normal map 时，查询仍能得到可供 shader 使用的条目；`unloadedOk` 为 true 时缺失资源返回空条目 (`sprite == null`) 而非 `null`。
+
+## 从精灵登记材质关系
+
+当同一舰船需要从原始精灵建立三图关系时，在 MOD 的应用加载期资源准备入口使用统一映射入口：
+
+```java
+TextureData.mapSpriteToMNSWithAutoGen(
+        hullId, spriteName, ObjectType.SHIP, 0, true, false);
+```
+
+后续 material、normal 和 surface 查询使用同一个 hull ID，并各自返回对应条目。
+
+## 单独生成缺失的法线贴图
+
+在确认只缺 normal map 的资源分支，不重新登记已有 material 和 surface，只生成缺失的法线对象：
+
+```java
+SpriteAPI normalSprite = TextureData.autoGenNormalMap(
+        spriteName, hullId, ObjectType.SHIP, 0);
+```
+
+生成结果可以直接用于 shader 并改变舰船受光方向 (`autoGenNormalMap` 不登记条目，无法经 `TextureEntry` 查询)。
+
+## 选择战斗前预载还是首次使用加载
+
+在 GraphicsLib 的 `GRAPHICS_OPTIONS.ini` 中，`preloadAllMaps` 决定已登记贴图是否在战斗前集中加载：
 
 ```json
-"specialForcesNamerClass":"data.scripts.gearin.modcompat.GearInSpecialForcesNamer"
-```
-
-生成特遣队时会进入 `GearInSpecialForcesNamer`，而不是使用默认命名器。
-
-### 从来源市场生成名字主体
-
-`GearInSpecialForcesNamer.getFleetName()` 优先使用 `origin`，缺失时寻找势力市场：
-
-```java
-String marketName = market == null ? "GearIn" : market.getName();
-```
-
-正常来源显示市场名；来源为 `null` 时仍返回非空名称。
-
-### 加入可重复请求的编号
-
-`getFleetName()` 的返回处使用带序数后缀的 1 至 33 编号，接受 Nexerelin 的重复检查：
-
-```java
-int num = RANDOM.nextInt(33) + 1;
-return num + ordinalSuffix(num) + " " + marketName + " Forgeguard";
-```
-
-连续请求会产生可读的候选名；重复仍由 Nexerelin 的重试逻辑处理。
-
-### 记录入侵结果和市场转移
-
-`GearInInvasionReporter` 的四个回调保存市场 ID、回合强度、胜负和新所有者：
-
-```java
-LOG.info("GearIn invasion finished: " + market.getId() + " success=" + success);
-```
-
-`register()` 再用瞬态监听器把回调接入场景：
-
-```java
-ListenerManagerAPI listeners = Global.getSector().getListenerManager();
-if (!listeners.hasListenerOfClass(GearInInvasionReporter.class)) {
-    listeners.addListener(new GearInInvasionReporter(), true);
+{
+  "preloadAllMaps": false
 }
 ```
 
-重复调用注册入口仍只有一个监听器实例；每次入侵结束只出现一条 `finished` 与 `transfer` 日志。
+实际文件是带 `#` 注释的 JSON 格式 (如 `"preloadAllMaps": false, # 默认: false`)，不是 `key=value` 的 INI。
 
-### 入侵回调职责速查表
+保持关闭时，首个使用点可能承担加载成本；打开时，GraphicsLib 会在预载路径集中处理已启用的贴图，代价是更早占用显存。
 
-| 回调方法 | 触发时机 | 记录内容 |
-|---|---|---|
-| `reportInvadeLoot` | 入侵战利品结算 | 市场 ID |
-| `reportInvasionRound` | 每个入侵回合结束 | 市场 ID、攻守强度 |
-| `reportInvasionFinished` | 入侵整体结束 | 市场 ID、胜负结果 |
-| `reportMarketTransfered` | 市场所有权转移 | 市场 ID、新所有者 |
+切换设置后，首个使用点的日志和首帧耗时发生可观察变化，纹理条目仍能被 [C17-S5] 报告器查询。
 
 ## 排查关键故障
 
 下面是**局部故障片段**：
 
 ```java
-public class GearInSpecialForcesNamer {
-    public GearInSpecialForcesNamer(String prefix) {}
-}
+TextureEntry normal = TextureData.getTextureData(
+        hullId, TextureDataType.NORMAL_MAP, ObjectType.SHIP, 0);
 ```
 
-实际症状：特遣队照常生成，但名称变为 "error"，日志出现类实例化失败。
+实际症状：舰船有 material 贴图，灯光却没有法线方向变化。
 
-原因：配置加载要求公开无参构造，并且类必须实现 `SpecialForcesNamer`；带参数构造器无法由脚本类加载器直接创建。
+原因：普通查询只读取已登记条目，不会替缺失的 normal map 自动生成资源。
 
 下面是**局部修正片段**：
 
 ```java
-public class GearInSpecialForcesNamer implements SpecialForcesNamer {
-    public GearInSpecialForcesNamer() {}
-}
+TextureEntry normal = TextureData.getTextureDataWithAutoGen(
+        hullId, TextureDataType.NORMAL_MAP, ObjectType.SHIP, 0,
+        ship, true);
 ```
 
-复验：重启游戏后生成一支 GearIn 特遣队，确认名称包含 `Forgeguard`，并在日志中看到监听器只注册一次。
-
-## 完整最小例
-
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
-
-::: details 完整成品：GearInInvasionReporter
-
-```java
-package data.scripts.gearin.modcompat;
-
-import java.util.List;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.CargoAPI;
-import com.fs.starfarer.api.campaign.FactionAPI;
-import com.fs.starfarer.api.campaign.InteractionDialogAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI;
-import com.fs.starfarer.api.impl.campaign.rulecmd.salvage.Nex_MarketCMD.TempDataInvasion;
-
-import exerelin.campaign.InvasionRound.InvasionRoundResult;
-import exerelin.utilities.InvasionListener;
-
-public final class GearInInvasionReporter implements InvasionListener {
-    private static final Logger LOG = Global.getLogger(GearInInvasionReporter.class);
-
-    public static void register() {
-        ListenerManagerAPI listeners = Global.getSector().getListenerManager();
-        if (!listeners.hasListenerOfClass(GearInInvasionReporter.class)) {
-            listeners.addListener(new GearInInvasionReporter(), true);
-        }
-    }
-
-    @Override
-    public void reportInvadeLoot(InteractionDialogAPI dialog, MarketAPI market,
-            TempDataInvasion data, CargoAPI loot) {
-        LOG.info("GearIn invasion loot: " + market.getId());
-    }
-
-    @Override
-    public void reportInvasionRound(InvasionRoundResult result, CampaignFleetAPI fleet,
-            MarketAPI market, float attackerStr, float defenderStr) {
-        LOG.info("GearIn invasion round: " + market.getId() + " attacker=" + attackerStr
-                + " defender=" + defenderStr);
-    }
-
-    @Override
-    public void reportInvasionFinished(CampaignFleetAPI fleet, FactionAPI attacker,
-            MarketAPI market, float numRounds, boolean success) {
-        LOG.info("GearIn invasion finished: " + market.getId() + " success=" + success);
-    }
-
-    @Override
-    public void reportMarketTransfered(MarketAPI market, FactionAPI newOwner,
-            FactionAPI oldOwner, boolean playerInvolved, boolean isCapture,
-            List<String> factionsToNotify, float repChangeStrength) {
-        LOG.info("GearIn market transferred: " + market.getId() + " owner=" + newOwner.getId());
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInSpecialForcesNamer
-
-```java
-package data.scripts.gearin.modcompat;
-
-import java.util.List;
-import java.util.Random;
-
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.util.Misc;
-import exerelin.campaign.intel.specialforces.namer.SpecialForcesNamer;
-
-/**
- * 特遣队命名器：实现 Nexerelin 的 SpecialForcesNamer 接口。
- * 注册方式：gear_industry.json 的 specialForcesNamerClass 指向本类；
- * 由 Nexerelin 在生成特遣队时经脚本类加载器 loadClass + newInstance
- * (无参构造) 后调用 getFleetName，至多重试 25 次直到名字不重复。
- *
- * 命名形如 "1st GearIn Prime Forgeguard"：以起源市场命名，编号随机，
- * 降低与既有特遣队撞名概率；origin 缺失时回退势力首个市场，再回退 "GearIn"。
- * 本类只被 Nexerelin 侧加载，齿轮工业自己的代码从不引用它。
- */
-public class GearInSpecialForcesNamer implements SpecialForcesNamer {
-
-    private static final Random RANDOM = new Random();
-
-    @Override
-    public String getFleetName(CampaignFleetAPI fleet, MarketAPI origin, PersonAPI commander) {
-        MarketAPI market = origin;
-        if (market == null) {
-            List<MarketAPI> markets = Misc.getFactionMarkets(fleet.getFaction());
-            market = markets.isEmpty() ? null : markets.get(0);
-        }
-        String marketName = market == null ? "GearIn" : market.getName();
-
-        int num = RANDOM.nextInt(33) + 1;
-        return num + ordinalSuffix(num) + " " + marketName + " Forgeguard";
-    }
-
-    private String ordinalSuffix(int num) {
-        if (num >= 11 && num <= 13) {
-            return "th";
-        }
-        switch (num % 10) {
-            case 1:
-                return "st";
-            case 2:
-                return "nd";
-            case 3:
-                return "rd";
-            default:
-                return "th";
-        }
-    }
-}
-```
-
-:::
+复验：重新进入战斗，核对 `normal` 条目和舰船受光方向；如果条目为空 (`sprite == null`)，检查原始 sprite 路径和自动生成开关。
 
 ## 验证方案
 
-1. 构建示例 MOD，确认命名器和监听器都能编译。
-2. 在生涯初始化阶段调用 `GearInInvasionReporter.register()`，并在读档后的初始化入口再次调用。
-3. 生成 GearIn 特遣队，记录来源市场存在和缺失两种名称。
-4. 完成一轮入侵，按回合、结束和市场转移顺序核对日志。
+1. 保持 [C17-S5] 的 `GearInLightReporter`，记录同一 hull ID 的 material、normal 和 surface 查询结果。
+2. 对完整三图舰船使用普通查询，确认三类条目都可取得。
+3. 对缺少 normal map 的舰船先使用普通查询，再改用自动生成查询，比较返回值和首帧日志。
+4. 切换 `preloadAllMaps`，分别在战斗前和首次使用时记录纹理加载日志与首帧耗时。
+5. 战斗结束后再次读取条目，确认预载策略没有让查询关系丢失。
 
 预期结果：
 
-- 生成特遣队时进入 `GearInSpecialForcesNamer`；
-- 正常与缺失 origin 都返回非空名称；
-- 连续请求能得到不同编号候选；
-- 每次入侵结束只出现一条 `finished` 与 `transfer` 日志；
-- 重启或重复初始化不会增加瞬态监听器副本；读档后再次注册仍只保留一个实例。
+- 普通查询只报告已登记的条目；
+- 自动生成查询能够处理允许补全的缺失 normal map；
+- 三图映射使用同一 hull ID；
+- 预载开关改变加载时机，不改变条目之间的映射关系。
 
 ## 故障分析
 
-- **特遣队名称变为 "error"**：配置类无法实例化，通常缺少公开无参构造或没有实现 `SpecialForcesNamer`。
+- **`normal` 始终为 `null`**：查询使用了普通入口，且资源没有登记 normal map。
 
-    - **解决方案**：修正配置类，重启并生成 GearIn 特遣队。
+    - **解决方案**：改用自动生成查询或先建立三图映射。
 
-- **特遣队名称频繁重复**：编号范围只提供候选，管理器仍可能重复请求。
+- **首帧出现明显卡顿**：贴图在战斗首次使用时才加载。
 
-    - **解决方案**：把来源市场和序数同时纳入名称，并保留去重重试。
+    - **解决方案**：启用预载。
 
-- **`origin` 为 null 时命名器崩溃**：代码没有市场和固定文本两级备用值。
+- **自动生成后灯光仍无方向变化**：生成的法线条目没有使用与舰船相同的 hull ID。
 
-    - **解决方案**：先检查 origin，再查询势力市场，最后回退到 `GearIn`。
-
-- **一次入侵产生重复日志**：`register()` 从多个入口加入了同类监听器。
-
-    - **解决方案**：保留唯一生涯初始化入口或注册前检查现有实例。
+    - **解决方案**：核对映射键和 `ObjectType.SHIP`。
 
 ## 总结
 
-命名器必须能被配置加载、能处理 `origin` 缺失，也要接受重复请求。事件监听器按事件阶段记录不同事实；每次生涯初始化只幂等注册一个瞬态监听器，读档后重新注册，日志才会与一次入侵对应。
+纹理问题先判断条目是否登记，再选择普通查询、自动补全、三图映射或单独生成。`preloadAllMaps` 只改变加载时机和显存占用，不能替代资源登记；[C17-S5] 的报告日志负责确认最终消费侧拿到的条目。
 
 ## 建议参考项
 
-- `SpecialForcesNamer`：特遣队命名接口；
-- `InvasionListener`：入侵与市场转移回调；
-- `specialForcesNamerClass`：势力配置中的命名器入口。
+- `org.dark.shaders.util.TextureData`：`getTextureData` 查询已登记条目，`getTextureDataWithAutoGen` 允许自动补全的查询，`mapSpriteToMNSWithAutoGen` 建立三图映射；
+- `org.dark.shaders.util.GraphicsLibSettings`：`preloadAllMaps()` 读取预载开关。

@@ -1,207 +1,110 @@
-# 制作一个生涯市场
+# 操纵生涯舰队
 
-本节从 [C3-S4] 的星系对象中挑出 GearIn Prime，给它接上市场、势力、条件、产业和子市场。市场逻辑沿用现有 `GearInMarketFactory`，正文把注意力放在五个注册 ID 与三个绑定动作上。
+本节围绕已经生成的 `CampaignFleetAPI`，安排舰队任务、读取运动状态，并通过 `FleetDataAPI` 修改成员集合。
 
-*本节预期阅读时间：~12 分钟。*
+::: tip 任务队列不代替位置读取
+`addAssignment(...)` 只安排待执行行为。实时位置、朝向和距离仍要从舰队实体读取，不能用当前任务推断地图状态。
+:::
 
-*本节预期操作时间：~12 分钟。*
+*本节预期阅读时间：\~14 分钟。*
+
+*本节预期操作时间：\~20 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 解释市场从实体到经济集合的绑定顺序；
-- 选择已注册的条件、产业和子市场 ID；
-- 区分商品注册与市场经济流；
-- 在星球详情、交易面板和日志中验证市场存在。
+- 使用 `addAssignment()` 建立舰队任务队列；
+- 读取舰队位置、朝向、速度与当前任务；
+- 通过 `FleetDataAPI` 添加、移除并遍历成员；
+- 判断行为队列与成员数据的职责边界。
 
 ## 前置知识
 
-- [C3-S1] 的 GearIn 势力 ID；
-- [C3-S4] 的 GearIn Prime 实体；
-- `market_conditions.csv`、`industries.csv` 和 `submarkets.csv` 中的原版 ID。
+- [C11-S1] 的舰队生成、投放与 `FleetParamsV3`；
+- [C10-S4] 的实体位置与地点容器。
 
-## 先锁定市场的五条关系
+## 安排舰队行为
 
-`market.json → market entity → faction → submarkets → conditions/industries`
-
-市场是行星实体上的经济节点。商品 `GearIn_tempered_alloy` 已经注册，但它只有在市场库存或产业供需链提供数量时才会进入自然经济流。
-
-## 逐步接通市场
-
-### 创建市场实体
+`CampaignFleetAPI` 同时是地图实体和舰队行为入口。以下局部片段先清空旧任务，再让舰队前往目标并保持警戒：
 
 ```java
-MarketAPI market = Global.getFactory().createMarket(
-        entity.getId(), entity.getName(), 4);
+fleet.clearAssignments();
+fleet.addAssignment(FleetAssignment.GO_TO_LOCATION, target, 30f, "前往训练中继站");
+fleet.addAssignment(FleetAssignment.ORBIT_PASSIVE, target, 10f, "在中继站附近警戒");
 ```
 
-执行后，市场拥有与行星实体一致的 ID 和规模 4。
+任务按加入顺序执行。持续时间使用生涯天数；当前任务完成或超时后，舰队进入下一项。
 
-### 绑定势力与主实体
+## 读取运动与任务状态
+
+位置来自 `SectorEntityToken`，任务状态来自舰队行为队列：
 
 ```java
-market.setFactionId("gear_industry");
-market.setPrimaryEntity(entity);
-market.setSurveyLevel(MarketAPI.SurveyLevel.FULL);
+Vector2f location = fleet.getLocation();
+float facing = fleet.getFacing();
+CampaignFleetAPI playerFleet = Global.getSector().getPlayerFleet();
+float distance = Misc.getDistance(fleet, playerFleet);
+FleetAssignmentDataAPI assignment = fleet.getCurrentAssignment();
 ```
 
-执行后，行星详情显示 GearIn 势力颜色，市场面板能打开。
+朝向表达实体面对的角度，位置和距离表达当前地图状态。任务队列只说明舰队准备执行的行为，无法代替实时位置判断。
 
-### 配置注册对象
+## 修改舰队成员
+
+`FleetDataAPI` 持有成员集合与旗舰关系。以下局部片段创建成员、加入舰队并重新同步视图：
 
 ```java
-market.addCondition("population_4");
-market.addIndustry("spaceport");
-market.addSubmarket("open_market");
-market.addSubmarket("storage");
+FleetMemberAPI member = Global.getFactory().createFleetMember(
+        FleetMemberType.SHIP,
+        "lasher_Standard"
+);
+FleetDataAPI data = fleet.getFleetData();
+data.addFleetMember(member);
+data.setFlagship(member);
+data.syncIfNeeded();
 ```
 
-执行后，行星详情出现人口与空间港，交易面板出现公开市场和仓储入口。
-
-### 配置经济关系
+移除成员时应先确认它仍属于目标舰队：
 
 ```java
-Global.getSector().getEconomy().addMarket(market, true);
-entity.setMarket(market);
-entity.setFaction("gear_industry");
-```
-
-执行后，经济集合、行星实体和势力都能读到同一个市场。
-
-### 调用市场工厂
-
-在 [C3-S4] 的 `GearInSystemGenerator.generate()` 末尾、跳跃点生成完成之后接入工厂调用：先删除生成器内已内联创建的同 ID 市场块，并在文件顶部导入 `java.util.List`。
-
-```java
-GearInMarketFactory marketFactory = new GearInMarketFactory();
-marketFactory.createMarket(prime, "gear_industry", 0.35f,
-		List.of("population_4", "thin_atmosphere", "hot", "ore_rich", "rare_ore_abundant"),
-		List.of("population", "spaceport", "mining", "refining", "heavybatteries", "orbitalworks"),
-		List.of("open_market", "generic_military", "black_market", "storage"));
-```
-
-创建新档后，GearIn Prime 同时拥有 [C3-S4] 的行星实体和本节创建的市场。这个调用只组合两个已经完成的角色类，不增加新的 Java 类型。
-
-## 排查市场接入故障
-
-下面是**局部故障片段**：
-
-```java
-MarketAPI market = Global.getFactory().createMarket(entity.getId(), entity.getName(), 4);
-market.setFactionId("gear_industry");
-market.addIndustry("missing_industry");
-entity.setMarket(market);
-```
-
-实际症状：市场创建流程在产业 ID 处中断，行星可能已经有部分临时状态，但经济集合没有完整市场。
-
-原因：`addIndustry` 通过注册表查找产业 spec，未知 ID 无法实例化；市场收尾也尚未完成。
-
-下面是**局部修正片段**：
-
-```java
-market.addIndustry("spaceport");
-Global.getSector().getEconomy().addMarket(market, true);
-entity.setMarket(market);
-entity.setFaction("gear_industry");
-```
-
-复验：新档进入 GearIn Prime，确认市场面板、公开市场和行星势力全部存在。
-
-::: details 完整成品：GearInMarketFactory
-
-```java
-package data.scripts.gearin.campaign;
-
-import java.util.List;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.SectorEntityToken;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.campaign.econ.MarketConditionAPI;
-
-/**
- * 本节示例：代码路径建市场的载体类 (角色：市场工厂)。
- * 由 GearInSystemGenerator.generate 调用：每个实体一行 createMarket(...)，
- * 即可完成条件/产业/子市场填充与注册收尾 (economy.addMarket / setMarket / setFaction)。
- */
-public class GearInMarketFactory {
-
-    public MarketAPI createMarket(SectorEntityToken entity, String factionId, float tariff,
-            List<String> conditions, List<String> industries, List<String> submarkets) {
-        // 市场规模来自 population_ 条件的数字，与 market.json 数据路径的 size 字段同理
-        int size = 0;
-        for (String condition : conditions) {
-            if (condition.startsWith("population_")) {
-                size = Integer.parseInt(condition.replace("population_", ""));
-            }
-        }
-
-        MarketAPI market = Global.getFactory().createMarket(entity.getId(), entity.getName(), size);
-        market.setFactionId(factionId);
-        market.setPrimaryEntity(entity);
-        market.setSurveyLevel(MarketAPI.SurveyLevel.FULL);
-        market.getTariff().modifyFlat("generator", tariff);
-        for (String condition : conditions) {
-            market.addCondition(condition);
-        }
-        for (MarketConditionAPI condition : market.getConditions()) {
-            condition.setSurveyed(true);
-        }
-        for (String industry : industries) {
-            market.addIndustry(industry);
-        }
-        for (String submarket : submarkets) {
-            market.addSubmarket(submarket);
-        }
-
-        // 以下调用缺一不可：注册进经济集合 -> 绑定到实体 -> 实体的势力归属
-        Global.getSector().getEconomy().addMarket(market, true);
-        entity.setMarket(market);
-        entity.setFaction(factionId);
-        return market;
-    }
+if (data.getMembersListCopy().contains(member)) {
+    data.removeFleetMember(member);
+    data.syncIfNeeded();
 }
 ```
 
-:::
+成员的船体、装配、舰长和维修状态由 `FleetMemberAPI` 管理；任务队列由 `CampaignFleetAPI` 管理。修改成员集合不会自动建立新的舰队行为。
 
 ## 验证方案
 
-1. 按 "调用市场工厂" 的实现把市场创建接入 [C3-S4] 的生成器，并导入 `java.util.List`。
-2. 创建包含 [C3-S4] 星系的全新生涯。
-3. 进入 GearIn Prime，打开行星详情和交易面板。
-4. 分别打开公开市场、仓储，观察势力颜色、税率、条件和产业。
+1. 生成并投放测试舰队，依次加入移动与警戒任务。
+2. 在生涯地图观察舰队抵达目标后切换任务文本。
+3. 添加一名成员并记录舰队规模，再移除该成员并重新记录。
 
 预期结果：
 
-- GearIn Prime 的市场规模为 4；
-- 公开市场和仓储入口可用，市场势力为 `gear_industry`；
-- `population_4`、`spaceport` 等注册对象显示在详情中；
-- 日志没有 `Industry [...] not found`、`Market condition [...] not found` 或空实体绑定。
+- 当前任务按队列从移动切换为警戒；
+- 添加成员后舰队成员数精确增加 1；
+- 移除成员后舰队成员数恢复基线。
 
 ## 故障分析
 
-- **行星有市场图标但交易面板打不开**：三处调用缺一不可：`Global.getSector().getEconomy().addMarket`、`entity.setMarket` 和 `entity.setFaction` 分别负责经济集合、实体关系和势力归属。
+- **舰队停在原地且没有任务文本**：舰队没有进入有效地点容器，或任务目标已经失效。
 
-    - **解决方案**：检查三处调用是否全部执行，补齐后创建新档。
+    - **解决方案**：确认舰队已经加入地点容器，并检查任务目标仍属于可访问地点。
 
-- **市场条件或产业没有出现**：`population_4`、`spaceport` 和 `open_market` 是不同文件里的 spec，注册表 ID 拼写错误会在添加阶段暴露。
+- **成员列表已经改变，但地图图标规模没有立即更新**：成员数据视图仍等待同步。
 
-    - **解决方案**：逐字核对注册表 ID，修正后创建新档。
-
-- **商品注册成功但市场没有库存**：商品注册只建立商品 spec；市场库存需要经济迭代、产业供需或控制台添加。
-
-    - **解决方案**：先用 `additem` 确认商品可进入货舱，再核对产业供需来源。
+    - **解决方案**：完成批量修改后调用 `syncIfNeeded()`，并避免在遍历原集合时直接删除成员。
 
 ## 总结
 
-市场接入的关键是绑定顺序，先创建市场，再填入已注册的对象，最后同时写入经济集合、实体和势力。商品、市场和产业是三条相互连接但生命周期不同的数据链。
+`CampaignFleetAPI` 管理生涯行为与地图状态，`FleetDataAPI` 管理舰队内部成员。任务队列、实时位置和成员集合需要分别读取与修改。
 
 ## 建议参考项
 
-- `MarketAPI`：市场运行时对象；
-- `data/campaign/market_conditions.csv`：条件注册表；
-- `data/campaign/industries.csv`：产业注册表；
-- `data/campaign/submarkets.csv`：子市场注册表。
+- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：生涯舰队行为与地图状态管理；
+- `com.fs.starfarer.api.campaign.FleetAssignment`：舰队任务枚举；
+- `com.fs.starfarer.api.campaign.ai.FleetAssignmentDataAPI`：成员任务条目，携带当前任务与目标；
+- `com.fs.starfarer.api.campaign.FleetDataAPI`：舰队内部成员集合管理。

@@ -1,6 +1,6 @@
-# 为 Nexerelin 地面战加入 GearIn 单位与产业
+# 用 GraphicsLib 让舰船灯光响应武器开火
 
-GearIn 的市场进入地面战后，原版定义不会自动理解专属产业和部队。本节在 groundBattleDefs 中登记产业效果与插件，再用 GBDataManager 确认合并结果。
+常亮光源只能证明库已接入，无法体现战斗状态。本节把一盏 `StandardLight` 固定在玩家舰上，并让强度与武器开火共同变化；武器停火后，灯光平滑收回。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,9 +10,11 @@ GearIn 的市场进入地面战后，原版定义不会自动理解专属产业�
 
 完成后，您将能够：
 
-- 在 `groundBattleDefs.json` 中登记自定义产业和地面单位；
-- 为产业直接绑定插件类，并区分通用 `plugins` 表；
-- 用 `GBDataManager` 和 `GroundUnitDef` 在进入地面战前核对合并结果。
+- 在应用加载期初始化 GraphicsLib，并在初始化后读取 shader 能力；
+- 在战斗首帧创建一盏跟随舰船的 `StandardLight`；
+- 用武器开火状态驱动目标强度，并按帧时间平滑追赶；
+- 在玩家舰销毁时让常驻光源淡出并退出光源列表；
+- 从初始化时机、战斗本地数据和材质贴图定位灯光故障。
 
 ## 前置知识
 
@@ -20,119 +22,328 @@ GearIn 的市场进入地面战后，原版定义不会自动理解专属产业�
 - [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
-## 接入地面战定义
+## 明确当前需求
 
-入侵 GearIn 军工市场时，地面战界面显示专属产业防御加成和 GearIn 单位；配置 ID 错误时，探针指出缺失定义而非等到战斗界面空白。
+玩家舰主炮开火时船体周围出现暖色增强光，停火后约半秒暗回基础亮度。GraphicsLib 保持硬依赖；用户关闭 shader 或缓冲能力时，报告器给出当前能力状态，战斗逻辑继续运行。
 
 ## 文件与 API 链路
 
-`groundBattleDefs.json` 合并 `industries`、`unitTypes`、条件、能力和通用插件；`GBDataManager` 提供产业与通用插件表；`GroundUnitDef` 保存单位定义。产业的 `plugin` 字段直接写完整 Java 类名，不能引用通用 `plugins` 表的别名。
+### 灯光 API 职责速查表
 
-### 登记 GearIn 产业定义
+| 对象 | 职责 |
+|---|---|
+| `ShaderLib` | 应用加载期初始化 |
+| `LightShader` | 管理当前战斗光源 |
+| `StandardLight` | 保存位置、颜色、大小与强度 |
+| `ShaderAPI` | 与配置开关共同决定能力是否可用 |
 
-在 `data/config/exerelin/groundBattleDefs.json` 的 `industries` 对象中，为市场产业 ID 增加防御强度、部队贡献和插件类：
+### 在应用加载期初始化 GraphicsLib
 
-```json
-"GearIn_training_industry": {
-  "strengthMult": 1.35,
-  "troopCounts": {
-    "marine": 0.5,
-    "heavy": 0.25
-  },
-  "plugin": "data.scripts.gearin.modcompat.GearInGroundBattlePlugin"
-}
-```
-
-登记后，`GBDataManager.getIndustryDef("GearIn_training_industry")` 返回非默认定义，并能读到 `strengthMult`。
-
-### 登记地面战插件类
-
-在 `groundBattleDefs.json` 的 `unitTypes` 对象中登记一类可在地面战界面出现的 GearIn 单位；完整插件类写在单位自身的 `pluginClass` 字段，`plugin` 是产业条目的字段：
-
-```json
-"GearIn_line_infantry": {
-  "name": "GearIn line infantry",
-  "type": "MARINE",
-  "playerCanCreate": true,
-  "strength": 1.2,
-  "personnel": {
-    "commodityId": "marines",
-    "crewReplacerJobId": "nex_groundBattle_marines",
-    "mult": 1
-  },
-  "tags": ["marine"],
-  "sortOrder": 1.5
-}
-```
-
-`GroundUnitDef.getUnitDef("GearIn_line_infantry")` 会返回定义，且地面战部队选择器能按 `playerCanCreate` 显示它。
-
-### 在加载后检查产业定义
-
-`GearInGroundBattleProbe.hasIndustry()` 与 `hasUnit()` 把缺失产业或单位 ID 变成可诊断布尔值：
+在 `GearInModPlugin.onApplicationLoad()` 中调用，让纹理和 shader 能力在战斗前准备完成：
 
 ```java
-boolean ready = GBDataManager.getIndustryDef(industryId) != null;
-boolean unitReady = GroundUnitDef.getUnitDef(unitId) != null;
+ShaderLib.init();
 ```
 
-`getIndustryDef()` 对未知 ID 会回退到默认产业，因此还要检查返回对象的实际 ID 或关键数值，不能只判断非空。
+日志随后会显示 GraphicsLib 初始化完成。
 
-日志会同时显示产业 ID、`strengthMult` 和 `unit=true`。
+### 读取当前光源 shader 能力
 
-### 确认插件映射而非只看列表
-
-`GearInGroundBattleProbe.findPlugin()` 只在检查通用插件时才从 `getPluginsById()` 按短 ID 取类名：
+`GearInLightReporter.reportCapabilities()` 在 GraphicsLib 初始化后取得 `LightShader` 的 `ShaderAPI`：
 
 ```java
-String className = GBDataManager.getPluginsById().get(pluginId);
+ShaderAPI lightShader = ShaderLib.getShaderAPI(LightShader.class);
+boolean lightReady = lightShader != null && lightShader.isEnabled();
 ```
 
-通用插件的返回值与 JSON 中类名逐字一致；产业插件则直接从产业定义核对完整类名。
+关闭光源 shader 时 lightReady 为 false，报告过程保持无异常。
+
+### 把点光源挂到舰船宿主
+
+`GearInShipLight.add()` 用宿主舰船和局部偏移构造 `StandardLight`；该方法由战斗首帧调用，此时 GraphicsLib 已建立当前战斗的本地数据：
+
+```java
+light = new StandardLight(player.getLocation(), new Vector2f(), OFFSET, player,
+        BASE_INTENSITY, SIZE);
+LightShader.addLight(light);
+```
+
+舰船平移和转向时，光源按 60 su 偏移持续跟随。
+
+### 检测本帧是否有武器开火
+
+`GearInShipLight.update()` 在强度计算前扫描全部武器，得到单一 `firing` 状态：
+
+```java
+boolean firing = false;
+for (WeaponAPI weapon : player.getAllWeapons()) firing |= weapon.isFiring();
+```
+
+任一主武器开火时强度目标切到高值。
+
+### 平滑追赶目标强度
+
+`GearInShipLight.update()` 末尾用 `amount` 限制每帧变化，避免亮度突跳：
+
+```java
+float target = firing ? 1.5f : 0.45f;
+intensity += Math.signum(target - intensity) * Math.min(Math.abs(target - intensity), amount * 2f);
+light.setIntensity(intensity);
+```
+
+停火后灯光在约 0.5 秒内回到基础值。
 
 ## 排查关键故障
 
 下面是**局部故障片段**：
 
 ```java
-"plugin":"GearIn_ground_plugin"
+private static final ShaderAPI LIGHT_SHADER = ShaderLib.getShaderAPI(LightShader.class);
 ```
 
-实际症状：产业定义存在，但地面战插件没有运行。
+实际症状：GraphicsLib 已完成初始化，报告却始终认为 LightShader 不可用。
 
-原因：产业 `plugin` 字段要求完整 Java 类名；`plugins` 表只供与产业、条件等定义无关的通用插件按短 ID 查找。
+原因：类加载期过早缓存了 null，后续初始化不会替换这个 static final 引用。
 
 下面是**局部修正片段**：
 
 ```java
-"plugin":"data.scripts.gearin.modcompat.GearInGroundBattlePlugin"
+ShaderAPI lightShader = ShaderLib.getShaderAPI(LightShader.class);
+boolean lightReady = lightShader != null && lightShader.isEnabled();
 ```
 
-复验：重新加载定义，让探针读取产业定义和单位定义，再进入一次该产业的地面战。
+复验：重启后在 `reportCapabilities()` 中读取一次，确认日志的 `lightShaderEnabled` 与 GraphicsLib 设置一致；查询发生在 `ShaderLib.init()` 之后。
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+三个类分别承担战斗接线、能力与纹理报告、光源生命周期。完整光源使用暖色、60 su 局部偏移、150 su 尺寸，并在舰船死亡时执行 1 秒淡出。
 
-::: details 完整成品：GearInGroundBattleProbe
+::: details 完整成品：GearInLightCombatPlugin
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.visuals;
 
-import exerelin.campaign.intel.groundbattle.GBDataManager;
-import exerelin.campaign.intel.groundbattle.GroundUnitDef;
+import java.util.List;
 
-public final class GearInGroundBattleProbe {
-    public boolean hasIndustry(String industryId) {
-        return GBDataManager.getIndustryDef(industryId) != null;
+import org.dark.shaders.light.LightData.LightDataType;
+
+import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.input.InputEventAPI;
+
+/**
+ * 完整最小例：GraphicsLib 光源与纹理的最小消费面 (战斗内) 的接线插件。
+ *
+ * 适用边界：
+ * - GraphicsLib 的初始化与 LightData/TextureData CSV 注册发生在 onApplicationLoad
+ *   (本 MOD 的接入片段见页面正文，本节示例类不含该片段)；
+ * - ShaderHook(settings plugins 注册的 EveryFrameCombatPlugin) 在每场战斗开始时
+ *   创建 LightShader 的战斗 LocalData(engine customData 键 "shaderlib_LightShader")，
+ *   并注册一个覆盖全部层的分层渲染钩子；LightShader 声明在
+ *   ABOVE_SHIPS_AND_MISSILES_LAYER 层渲染 (ShaderAPI.isCombat() == true)；
+ * - LightShader.addLight 只在光源 shader 已启用且战斗 LocalData 已存在时把光源写进
+ *   当前战斗的光源列表，其余情况静默跳过 —— 动态光源必须在战斗内添加；
+ * - 光源列表随战斗销毁；未永久化的光源在 superLifetime(60 秒) 耗尽后被 failsafe
+ *   移除；advance 返回 true(size 或 intensity 归零) 的光源由 LightShader.advance
+ *   逐帧移除，fadeOut 是标准自灭姿势；
+ * - 暂停时 LightShader.advance 不推进光源 (光源静止但保持可见)。
+ *
+ * 本类只做接入：GearInShipLight 根据玩家舰武器开火状态调整挂载光，
+ * GearInLightReporter 报告 GraphicsLib 能力和数据注册状态。
+ */
+public class GearInLightCombatPlugin extends BaseEveryFrameCombatPlugin {
+
+    private CombatEngineAPI engine;
+    private final GearInShipLight shipLight = new GearInShipLight();
+
+    @Override
+    public void init(CombatEngineAPI engine) {
+        this.engine = engine;
+        GearInLightReporter.reportCapabilities();
+        GearInLightReporter.reportLightData("lightac_shot", LightDataType.PROJECTILE);
+        GearInLightReporter.reportLightData("pdlaser", LightDataType.BEAM);
+        GearInLightReporter.reportShipTextures(engine);
     }
 
-    public String findPlugin(String pluginId) {
-        return GBDataManager.getPluginsById().get(pluginId);
+    @Override
+    public void advance(float amount, List<InputEventAPI> events) {
+        if (engine == null) {
+            return; // 防御性判空
+        }
+        if (engine.isPaused()) {
+            return; // 暂停守卫：暂停时 advance 仍会被调用，光源静止但保持可见
+        }
+        ShipAPI player = engine.getPlayerShip();
+        shipLight.update(amount, player);
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInLightReporter
+
+```java
+package data.scripts.gearin.visuals;
+
+import org.apache.log4j.Logger;
+import org.dark.shaders.light.LightData;
+import org.dark.shaders.light.LightData.LightDataType;
+import org.dark.shaders.light.LightEntry;
+import org.dark.shaders.light.LightShader;
+import org.dark.shaders.util.ShaderAPI;
+import org.dark.shaders.util.ShaderLib;
+import org.dark.shaders.util.TextureData;
+import org.dark.shaders.util.TextureData.ObjectType;
+import org.dark.shaders.util.TextureData.TextureDataType;
+import org.dark.shaders.util.TextureEntry;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+
+/**
+ * GraphicsLib 初始化状态与数据注册状态的日志报告 (查询面，注册/初始化报告类)。
+ *
+ * 报告内容：能力门禁与光源 shader 可用性 (必须在 ShaderLib.init 之后读取)、
+ * LightData 注册表查询 (projectile/beam 自动光源数据)、TextureData 注册表查询
+ * (玩家舰船船体的 material/normal/surface 贴图条目)。只做查询与日志，不创建光源。
+ */
+public class GearInLightReporter {
+
+    private static final Logger LOG = Global.getLogger(GearInLightReporter.class);
+
+    /** 能力门禁与光源 shader 可用性报告 (必须在 ShaderLib.init 之后读取)。 */
+    public static void reportCapabilities() {
+        boolean shaders = ShaderLib.areShadersAllowed();
+        boolean buffers = ShaderLib.areBuffersAllowed();
+        ShaderAPI lightShader = ShaderLib.getShaderAPI(LightShader.class);
+        boolean lightReady = lightShader != null && lightShader.isEnabled();
+        LOG.info("GearIn light capabilities: shaders=" + shaders + " buffers=" + buffers
+                + " lightShaderEnabled=" + lightReady);
     }
 
-    public boolean hasUnit(String unitId) {
-        return GroundUnitDef.getUnitDef(unitId) != null;
+    /** 查询 LightData 注册表 (projectile/beam 自动光源数据)，报告消费侧查询面。 */
+    public static void reportLightData(String id, LightDataType type) {
+        LightEntry entry = LightData.getLightData(id, type);
+        if (entry == null) {
+            LOG.info("GearIn light data: " + id + " (" + type.name().toLowerCase() + ") not registered");
+            return;
+        }
+        LOG.info("GearIn light data: " + id + " (" + type.name().toLowerCase() + ")"
+                + " standard=" + entry.hasStandard
+                + " size=" + entry.standardSize
+                + " intensity=" + entry.standardIntensity
+                + " chance=" + entry.chance
+                + " fighterDim=" + entry.fighterDim);
+    }
+
+    /** 查询 TextureData 注册表：玩家舰船船体的 material/normal/surface 贴图条目。 */
+    public static void reportShipTextures(CombatEngineAPI engine) {
+        ShipAPI player = engine.getPlayerShip();
+        if (player == null) {
+            return;
+        }
+        String hullId = player.getHullSpec().getHullId();
+        LOG.info("GearIn light texture: hull=" + hullId
+                + " material=" + describeTexture(hullId, TextureDataType.MATERIAL_MAP)
+                + " normal=" + describeTexture(hullId, TextureDataType.NORMAL_MAP)
+                + " surface=" + describeTexture(hullId, TextureDataType.SURFACE_MAP)
+                + " shipTex=" + describeEntry(
+                        ShaderLib.getShipTexture(player, TextureDataType.MATERIAL_MAP)));
+    }
+
+    private static String describeTexture(String id, TextureDataType map) {
+        return describeEntry(TextureData.getTextureData(id, map, ObjectType.SHIP, 0));
+    }
+
+    private static String describeEntry(TextureEntry entry) {
+        if (entry == null) {
+            return "none";
+        }
+        return "mag=" + entry.magnitude + " tex=" + entry.sprite.getTextureId();
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInShipLight
+
+```java
+package data.scripts.gearin.visuals;
+
+import java.awt.Color;
+
+import org.apache.log4j.Logger;
+import org.dark.shaders.light.LightShader;
+import org.dark.shaders.light.StandardLight;
+import org.lwjgl.util.vector.Vector2f;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.combat.WeaponAPI;
+
+/**
+ * 挂接到玩家舰船的常驻点光源实体 (光源实体类)。
+ *
+ * 生命周期：战斗首帧由 GearInLightCombatPlugin 驱动 update 时创建 (此时战斗
+ * LocalData 已存在，addLight 不再静默跳过)，makePermanent 关闭 60 秒 failsafe；
+ * 玩家舰船死亡后 fadeOut(1f) 自灭，由 LightShader.advance 在 intensity 归零后移除。
+ */
+public class GearInShipLight {
+
+    private static final Logger LOG = Global.getLogger(GearInShipLight.class);
+
+    /** 挂接到玩家舰船的暖色点光源参数。 */
+    private static final Vector2f OFFSET = new Vector2f(-60f, 0f);
+    private static final float BASE_INTENSITY = 0.45f;
+    private static final float FIRING_INTENSITY = 1.5f;
+    private static final float INTENSITY_CHANGE_PER_SECOND = 2f;
+    private static final float SIZE = 150f;
+
+    private StandardLight light;
+    private boolean added;
+    private float intensity = BASE_INTENSITY;
+
+    /** 每帧推进：首帧创建挂接光，舰船死亡后主动 fadeOut 让引擎移除。 */
+    public void update(float amount, ShipAPI player) {
+        if (player == null) {
+            return;
+        }
+        if (light == null) {
+            if (!added && player.isAlive()) {
+                add(player); // 延迟到战斗首帧：保证战斗 LocalData 已存在
+            }
+            return;
+        }
+        if (!player.isAlive() && !light.isFadingOut()) {
+            light.fadeOut(1f);
+            LOG.info("GearIn light ship: player destroyed, fading out attached light");
+            return;
+        }
+        boolean firing = false;
+        for (WeaponAPI weapon : player.getAllWeapons()) {
+            firing |= weapon.isFiring();
+        }
+        float target = firing ? FIRING_INTENSITY : BASE_INTENSITY;
+        float change = Math.min(Math.abs(target - intensity),
+                amount * INTENSITY_CHANGE_PER_SECOND);
+        intensity += Math.signum(target - intensity) * change;
+        light.setIntensity(intensity);
+    }
+
+    /** 创建并挂接常驻点光源：跟随舰船移动，关闭 60 秒 failsafe。 */
+    private void add(ShipAPI player) {
+        added = true;
+        light = new StandardLight(player.getLocation(), new Vector2f(), OFFSET, player,
+                BASE_INTENSITY, SIZE);
+        light.setColor(new Color(255, 210, 130));
+        light.makePermanent(); // lifetime 与 superLifetime 均置 -1，不再受 failsafe 限制
+        LightShader.addLight(light);
+        LOG.info("GearIn light ship: attached light added offset=" + OFFSET
+                + " size=" + SIZE + " intensity=" + BASE_INTENSITY);
     }
 }
 ```
@@ -141,41 +352,48 @@ public final class GearInGroundBattleProbe {
 
 ## 验证方案
 
-1. 执行 `gradle jar` 构建示例 MOD，确认编译完成且没有报错。
-2. 启动游戏并进入本页场景，执行标题描述的动作。
-3. 重复一次边界动作，观察日志、画面、数值或生涯对象是否保持一致。
+前置数据：GraphicsLib 已启用，`ShaderLib.init()` 已在应用加载期执行，战斗插件已经注册。
+
+1. 启动战斗，搜索 `GearIn light capabilities`、`GearIn light data` 与 `GearIn light texture` 日志。
+2. 保持武器停火，确认玩家舰后方 60 su 处存在基础强度为 0.45 的暖色光。
+3. 持续开火至少 1 秒，观察强度追到 1.5；停火并计时，观察其约 0.525 秒后回到 0.45。
+4. 暂停战斗，确认本页插件不推进强度；恢复后继续追赶目标值。
+5. 摧毁玩家舰，搜索淡出日志并观察光源在 1 秒淡出后消失。
+6. 关闭 GraphicsLib 的光源 shader，重启并核对能力日志与战斗稳定性。
 
 预期结果：
 
-- `GBDataManager.getIndustryDef` 返回 GearIn 产业定义而非默认定义；
-- `GroundUnitDef.getUnitDef` 返回 GearIn 单位；
-- 产业插件类名和通用插件映射分别核对成功；
-- 地面战界面显示该产业贡献的部队数值。
+- 能力日志反映 shader、缓冲和 `LightShader` 的当前开关状态；
+- 光源以宿主局部偏移跟随舰船平移与转向，颜色与完整成品一致；
+- 任一武器开火时目标强度为 1.5，全部停火时目标强度为 0.45；
+- 60 FPS 与 30 FPS 下回落时长保持约 0.525 秒，不随帧率翻倍；
+- 玩家舰死亡后光源进入淡出，不永久残留在战场；
+- 光源 shader 关闭时报告过程和战斗逻辑没有未处理异常。
 
 ## 故障分析
 
-- **产业定义存在但插件没有运行**：产业 `plugin` 使用了通用插件短 ID，或完整类名无法实例化。
+- **能力检查始终认为 `LightShader` 不可用**：类加载期缓存了初始化前的 null。
 
-    - **解决方案**：把可加载类名写在产业对象中，重载定义。
+    - **解决方案**：改为在 `ShaderLib.init()` 后按需查询。
 
-- **运行期查询不到产业**：`industries` 对象键与市场产业 ID 的大小写不一致。
+- **光源停在出生点**：`StandardLight` 没有绑定宿主舰船和局部偏移。
 
-    - **解决方案**：统一 ID，并检查 `getIndustryDef()` 是否仍返回默认定义。
+    - **解决方案**：传入宿主与偏移。
 
-- **插件映射存在但加载失败**：产业引用了错误类名，或误把 `plugins` 别名当作产业类。
+- **舰船离场后灯光永久残留**：死亡或移除路径没有调用 `fadeOut`。
 
-    - **解决方案**：改用可实例化的完整类名。
+    - **解决方案**：在离场回调中淡出并移除光源。
 
-- **单位数值没有变化**：修改落在错误层级，`strengthMult`、`troopCounts` 和单位 `strength` 各自承担不同计算。
+- **灯光存在但船体材质没有响应**：光源 shader 已启用，但法线或材质纹理没有注册。
 
-    - **解决方案**：调整实际参与计算的字段。
+    - **解决方案**：补齐纹理与材质资源。
 
 ## 总结
 
-地面战接入按定义类型分层：产业和单位使用各自的对象键，产业直接绑定插件类，通用插件才进入 `plugins` 映射。`GBDataManager` 与 `GroundUnitDef` 的运行期查询能在进入战斗前区分真实定义、默认回退和缺失单位。
+动态灯光的重点是生命周期和状态来源。初始化后读取当前能力，用宿主和偏移建立挂接，以武器开火驱动目标强度，并在舰船离场时淡出，画面才会稳定。
 
 ## 建议参考项
 
-- `groundBattleDefs.json`：地面战合并定义；
-- `GBDataManager.getIndustryDef`：查询产业定义；
-- `GBDataManager.getPluginsById`：查询插件类映射。
+- `org.dark.shaders.light.LightShader`：`addLight` 把动态光源加入当前战斗；
+- `org.dark.shaders.light.StandardLight`：通过宿主与偏移配置跟随点光源；
+- `org.dark.shaders.util.ShaderLib`：`getShaderAPI` 读取当前 LightShader 能力。

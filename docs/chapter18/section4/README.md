@@ -1,6 +1,6 @@
-# 让 Nexerelin 的战略 AI 使用 GearIn 扩张
+# 用 LazyLib 评估下一段航路的风险
 
-势力能出现在星区，不代表战略 AI 会替它作出行动。本节确认 GearIn 拥有 StrategicAI，检查当前 concern，并把势力入侵倍率与全局规模共同算成可解释的舰队规模。
+生涯自动导航若只看直线距离，会把补给不足的舰队送进敌方巡逻群。本节在每个航路点周围统计敌对舰队，以舰队点数和距离生成风险，并把最近一次评估写进存档。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,9 +10,11 @@
 
 完成后，您将能够：
 
-- 用正确的 concern ID 调整自定义势力的战略优先级；
-- 在 StrategicAI 尚未创建时安全地等待，在创建后主动刷新一次会议；
-- 区分入侵规模倍率和复活全局条件，解释最终判断。
+- 用 `CampaignUtils` 按当前位置和关系查询附近敌对舰队；
+- 用舰队点数与距离构造一项可调的航路风险指标；
+- 在基础风险之后叠加玩家货舱的补给数量修正；
+- 只持久化最终数值，不持久化当前场景中的舰队引用；
+- 从位置、关系和持久键定位风险值异常。
 
 ## 前置知识
 
@@ -20,212 +22,146 @@
 - [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
-## 让战略 AI 获得可验证的行动入口
+## 明确当前需求
 
-随机星区运行数月后，GearIn 战略会议能产生经济或军事 concern；允许入侵时，其进攻舰队规模体现势力配置倍率，势力被消灭后仍遵守复活设置。
+玩家在星系内选择下一个补给站。目标附近有两支敌对舰队时，界面应显示较高风险；它们离开扫描半径后，风险下降并在读档后保持最近一次值。
 
 ## 文件与 API 链路
 
-`StrategicAI.getAI` 从 sector persistent-data map 读取已经创建的 AI；`StrategicAI.addAIIfNeeded` 在缺少实例时负责补建；`strategyPriorityMults` 使用 `strategicAIConfig.json` 中的 concern ID；`InvasionFleetManager.getInvasionSizeMult` 返回已组合的势力与全局入侵倍率；`SectorManager` 和 `NexConfig` 共同决定复活是否有机会执行。
+### 航路风险 API 职责速查表
 
-### 允许 GearIn 参加战略系统
+| 对象 | 职责 |
+|---|---|
+| `CampaignUtils` | 敌对舰队查询与关系判断 |
+| `MathUtils` | 计算距离 |
+| `CargoAPI` | 读取玩家货舱补给 |
+| 界面入口 | 输出风险等级与数值消息 |
+| `SectorAPI.getPersistentData()` | 持久记录最近一次评估 |
 
-在 `gear_industry.json` 的战略字段中开启入侵，并按 concern ID 调整两个实际会被战略系统读取的关注项：
+### 扫描航路点附近敌对舰队
 
-```json
-"canInvade": true,
-"strategyPriorityMults": {
-  "vulnerableEnemyTarget": 1.15,
-  "commodityCompetition": 0.9
+`GearInRouteRiskAssessor.assess()` 开头按航路点和半径取得当前敌对舰队：
+
+```java
+for (CampaignFleetAPI fleet : CampaignUtils.getNearbyHostileFleets(waypoint, radius)) {
+    // 只处理敌对舰队
 }
 ```
 
-`military` 和 `economy` 是 concern 标签，不是可供 `strategyPriorityMults` 查找的键；写入它们不会改变上述两个 concern 的优先级。
+中立与友方舰队不会进入风险计算。
 
-战略会议中的 Vulnerable Enemy Target 权重会上升，Competition 权重会下降。
+### 让大型近敌贡献更高风险
 
-### 确认 StrategicAI 已创建
-
-`GearInStrategicAIProbe` 的 `concernCount()`、`forceMeetingIfReady()` 与 `ensureAI()` 先从 sector persistent-data map 读取，再用 `null` 守卫确认 AI 生命周期；需要补建时调用 `addAIIfNeeded()`：
+`assess()` 的循环体使用舰队点数乘以距离衰减；这是 GearIn 自己的评分公式，数值只在同一套半径与阈值下比较：
 
 ```java
-StrategicAI ai = StrategicAI.getAI(factionId);
-return ai == null ? 0 : ai.getExistingConcerns().size();
+float distance = Math.max(500f, MathUtils.getDistance(waypoint, fleet));
+risk += fleet.getFleetPoints() * radius / distance;
 ```
 
-`getAI()` 实际读取 `StrategicAI.getAIsMap()`；新档创建早期 map 尚未写入该势力时会返回 `null`。调用 `forceMeeting()` 只应发生在返回非空之后。
+同距离下大型舰队风险更高，同规模下近敌更高。
+
+### 加入补给数量修正
+
+航路规划入口取得基础风险后，货舱补给少于 30 单位时放大同一段航路的风险；这里没有计算每日消耗或可航行天数：
 
 ```java
-public boolean ensureAI(String factionId) {
-    StrategicAI before = StrategicAI.getAI(factionId);
-    StrategicAI created = StrategicAI.addAIIfNeeded(factionId);
-    return before == null && (created != null || StrategicAI.getAI(factionId) != null);
-}
+float supplies = Global.getSector().getPlayerFleet().getCargo().getSupplies();
+if (supplies < 30f) risk *= 1.5f;
 ```
 
-早期探针返回 `0`，进入生涯后可主动刷新并读取 concern 数量。
+相同敌舰布置下，补给数量跨过 30 单位门槛时风险乘数发生变化。
 
-### 组合势力与全局入侵倍率
+### 保存最近一次评估
 
-`GearInInvasionScaleProbe.estimate()` 让日志能解释最终规模来源，并避免重复乘全局值：
+`GearInRouteRiskRecord.save()` 把 `float` 写入星区持久数据：
 
 ```java
-float combined = InvasionFleetManager.getInvasionSizeMult(factionId);
-return baseSize * combined;
+Global.getSector().getPersistentData().put("$GearIn_routeRisk", risk);
 ```
 
-`getInvasionSizeMult()` 已经计算 `1 + invasionFleetSizeMod` 并乘上 `NexConfig.invasionFleetSizeMult`，调用方只再乘一次基础规模。
+保存并读档后仍能读到相同数值。
 
-修改势力或全局倍率中的任意一项时，估算值只按该项变化一次。
+### 把结论交给消息层
 
-### 拆开三种事件的后处理
-
-`GearInInvasionScaleProbe.applyEventPostProcessing()` 先取得基础规模，再应用共同倍率和事件自己的后处理；invasion 不附加事件倍率，respawn 使用 `RESPAWN_SIZE_MULT`，blockade 先保证最小规模，再乘 `BLOCKADE_SIZE_MULT` 并加入固定 FP：
+在航路 UI 或 Intel 更新处输出等级和数值，并保留判断依据：
 
 ```java
-float fp = baseSize;
-if (type == InvasionFleetManager.EventType.BLOCKADE) {
-    fp = Math.max(fp, InvasionFleetManager.MIN_BLOCKADE_SIZE);
-}
-fp *= InvasionFleetManager.getInvasionSizeMult(factionId);
-if (type == InvasionFleetManager.EventType.RESPAWN) {
-    fp *= InvasionFleetManager.RESPAWN_SIZE_MULT;
-} else if (type == InvasionFleetManager.EventType.BLOCKADE) {
-    fp = fp * InvasionFleetManager.BLOCKADE_SIZE_MULT
-            + InvasionFleetManager.BLOCKADE_FLAT_FP_BONUS;
-}
-return fp;
+String level = risk >= 120f ? "HIGH" : risk >= 50f ? "MEDIUM" : "LOW";
+Global.getSector().getCampaignUI().addMessage("Route risk: " + level + " (" + (int) risk + ")");
 ```
 
-目标筛选仍由事件类型自己的入口负责：blockade 检查 `canBlockade` 或伤害型 concern，respawn 额外受复活资格和目标权重影响。不能把这些资格条件折叠进 `getInvasionSizeMult()`。
-
-相同基础规模下，三种事件的最终 FP 能分别解释共同倍率、最小规模、固定加成和事件倍率。
-
-### 把复活作为独立策略验证
-
-`GearInStrategicAIProbe.respawnAllowedByRules()` 把复活开关、事件开关、势力资格和次数上限分开判断：
-
-```java
-SectorManager manager = SectorManager.getManager();
-boolean respawnPossible = manager != null
-        && manager.isRespawnFactions()
-        && NexConfig.enableHostileFleetEvents
-        && NexConfig.enableInvasions;
-```
-
-`factionRespawnInterval` 只决定检查间隔，`maxFactionRespawns` 为负数表示不设上限；`noHomeworld` 是程序化星区的母星配置，不是复活开关。
-
-探针只有在管理器已建立、复活和入侵事件均开启、势力可玩且未达到次数上限时返回 `true`。
+玩家能同时看到 LOW/MEDIUM/HIGH 与具体风险值。
 
 ## 排查关键故障
 
 下面是**局部故障片段**：
 
 ```java
-StrategicAI ai = StrategicAI.getAI("gear_industry");
-ai.forceMeeting();
+private final List<CampaignFleetAPI> threats = CampaignUtils.getNearbyHostileFleets(point, 5000f);
 ```
 
-实际症状：新档创建早期偶发 NullPointerException。
+实际症状：敌舰已经离开星系，风险仍保持高值，读档后还可能引用失效舰队。
 
-原因：新档创建早期 `StrategicAI.getAI()` 可能返回 `null`，AI 由 Nexerelin 在势力进入活动列表后建立。
+原因：查询结果属于当前生涯状态，跨帧缓存实体列表会过期。
 
 下面是**局部修正片段**：
 
 ```java
-if (ai != null) {
-    ai.forceMeeting();
-}
+List<CampaignFleetAPI> threats = CampaignUtils.getNearbyHostileFleets(point, 5000f);
 ```
 
-复验：在新档创建阶段调用 `forceMeetingIfReady()` 应返回 `false`；进入生涯后再次调用，返回 `true` 且 concern 数量可以重新读取。
+复验：先记录敌舰在半径内的风险，再让它驶出范围并重新调用 `assess()`；第二次结果应下降，持久数据只在再次调用 `save()` 后更新。
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+评估器读取当前场景并返回数值，记录器只保存和恢复该数值。货舱乘数与消息文本属于调用层，因此不会把玩家舰队依赖塞进评估器。
 
-::: details 完整成品：GearInInvasionScaleProbe
+::: details 完整成品：GearInRouteRiskAssessor
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.lib;
 
-import exerelin.campaign.fleets.InvasionFleetManager;
+import org.lazywizard.lazylib.MathUtils;
+import org.lazywizard.lazylib.campaign.CampaignUtils;
 
-public final class GearInInvasionScaleProbe {
-    public float estimate(String factionId, float baseSize) {
-        float combined = InvasionFleetManager.getInvasionSizeMult(factionId);
-        return baseSize * combined;
-    }
+import com.fs.starfarer.api.campaign.CampaignFleetAPI;
+import com.fs.starfarer.api.campaign.SectorEntityToken;
 
-    public float applyEventPostProcessing(String factionId, float baseSize,
-            InvasionFleetManager.EventType type) {
-        float fp = baseSize;
-        if (type == InvasionFleetManager.EventType.BLOCKADE) {
-            fp = Math.max(fp, InvasionFleetManager.MIN_BLOCKADE_SIZE);
+public final class GearInRouteRiskAssessor {
+    public float assess(SectorEntityToken waypoint, float radius) {
+        float risk = 0f;
+        for (CampaignFleetAPI fleet : CampaignUtils.getNearbyHostileFleets(waypoint, radius)) {
+            float distance = Math.max(500f, MathUtils.getDistance(waypoint, fleet));
+            risk += fleet.getFleetPoints() * radius / distance;
         }
-        fp *= InvasionFleetManager.getInvasionSizeMult(factionId);
-        if (type == InvasionFleetManager.EventType.RESPAWN) {
-            fp *= InvasionFleetManager.RESPAWN_SIZE_MULT;
-        } else if (type == InvasionFleetManager.EventType.BLOCKADE) {
-            fp = fp * InvasionFleetManager.BLOCKADE_SIZE_MULT
-                    + InvasionFleetManager.BLOCKADE_FLAT_FP_BONUS;
-        }
-        return fp;
+        return risk;
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInStrategicAIProbe
+::: details 完整成品：GearInRouteRiskRecord
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.lib;
 
 import java.util.Map;
 
-import exerelin.campaign.SectorManager;
-import exerelin.campaign.ai.StrategicAI;
-import exerelin.utilities.NexConfig;
+import com.fs.starfarer.api.Global;
 
-public final class GearInStrategicAIProbe {
-    public int aiMapSize() {
-        Map<String, StrategicAI> ais = StrategicAI.getAIsMap();
-        return ais.size();
+public final class GearInRouteRiskRecord {
+    private static final String KEY = "$GearIn_routeRisk";
+
+    public void save(float risk) {
+        Global.getSector().getPersistentData().put(KEY, risk);
     }
 
-    public int concernCount(String factionId) {
-        StrategicAI ai = StrategicAI.getAI(factionId);
-        return ai == null ? 0 : ai.getExistingConcerns().size();
-    }
-
-    public boolean ensureAI(String factionId) {
-        StrategicAI before = StrategicAI.getAI(factionId);
-        StrategicAI created = StrategicAI.addAIIfNeeded(factionId);
-        return before == null && (created != null || StrategicAI.getAI(factionId) != null);
-    }
-
-    public boolean forceMeetingIfReady(String factionId) {
-        StrategicAI ai = StrategicAI.getAI(factionId);
-        if (ai == null) {
-            return false;
-        }
-        ai.forceMeeting();
-        return true;
-    }
-
-    public boolean respawnAllowedByRules(String factionId) {
-        SectorManager manager = SectorManager.getManager();
-        if (manager == null || !manager.isRespawnFactions()) {
-            return false;
-        }
-        int maxRespawns = NexConfig.maxFactionRespawns;
-        boolean hasAttempt = maxRespawns < 0
-                || manager.getNumRespawns(factionId) < maxRespawns;
-        return NexConfig.enableHostileFleetEvents
-                && NexConfig.enableInvasions
-                && NexConfig.getFactionConfig(factionId).playableFaction
-                && hasAttempt;
+    public float load() {
+        Map<String, Object> data = Global.getSector().getPersistentData();
+        Object value = data.get(KEY);
+        return value instanceof Number ? ((Number) value).floatValue() : 0f;
     }
 }
 ```
@@ -234,56 +170,46 @@ public final class GearInStrategicAIProbe {
 
 ## 验证方案
 
-1. 构建示例 MOD，确认两个探针的方法签名与当前 `ExerelinCore.jar` 匹配。
-2. 在新档、读档和 AI 缺失时机分别记录 persistent-data map 的条目数、`getAI()` 返回值和 `ensureAI()` 结果。
-3. 进入战略 AI 已建立的生涯，刷新一次会议并记录 concern 数量。
-4. 分别修改 `invasionFleetSizeMod` 与全局 `invasionFleetSizeMult`，比较估算值变化。
-5. 对 invasion、blockade 和 respawn 使用同一基础规模，分别记录最小规模、事件倍率和固定 FP。
-6. 打开复活设置，记录 `respawnAllowedByRules()` 在达到次数上限前后的返回值，并核对目标资格。
+前置场景：在同一星系内建立一个航路点，并准备一支可调整舰队点数、距离和势力关系的测试舰队。
+
+1. 在扫描半径外、半径边缘和 500 su 内分别放置同一支敌对舰队，记录三次基础风险。
+2. 保持距离不变，改变测试舰队的舰队点数，确认风险按比例变化。
+3. 把测试舰队关系改为中立并重新评估，确认它不再贡献风险。
+4. 分别把玩家补给设为 29 与 30 单位，比较调用层应用乘数后的结果。
+5. 保存风险，存档并读档，调用 `load()` 核对数值；随后让敌舰离开范围并重新评估、保存。
 
 预期结果：
 
-- 两个配置中的 concern ID 能影响战略优先级；
-- AI 未建立时探针返回安全值，建立后可以刷新会议；
-- AI 缺失时 `ensureAI()` 补建实例，map 条目数增加 1；
-- `getInvasionSizeMult()` 的组合倍率只被应用一次；
-- blockade 的最小规模、1.2 倍事件倍率和 120 FP 固定加成分别可见；
-- respawn 的 1.2 倍事件倍率不会被误写成 invasion 的共同倍率；
-- 复活探针准确反映管理器、事件开关、势力资格和次数上限。
+- 中立与友方舰队不贡献风险，同关系下舰队点数越高、距离越近，基础风险越高；
+- 29 单位补给触发 1.5 倍修正，30 单位不触发；
+- 消息同时显示等级与取整后的风险值，等级在 50 与 120 两个阈值处切换；
+- 读档后 `load()` 返回最近一次保存的数值；重新评估不会自动改写持久数据；
+- 敌舰离开半径并重新评估、保存后，读到的风险随之下降。
 
 ## 故障分析
 
-- **新档创建早期出现 `NullPointerException`**：Nexerelin 尚未建立该势力的 `StrategicAI`。
+- **敌舰离开后风险仍保持高值**：代码跨帧缓存了已经过期的舰队列表。
 
-    - **解决方案**：保留 null 守卫并延迟到进入生涯后调用 `forceMeeting()`。
+    - **解决方案**：每次更新时重新查询，只持久化最终数值。
 
-- **战略 AI 存在但不扩张**：`canInvade`、全局 `enableInvasions` 或 concern 的 `canInvade` 标签未满足。
+- **风险始终为零**：航路点与目标舰队不在同一个 `LocationAPI`。
 
-    - **解决方案**：逐项启用后推进战略周期。
+    - **解决方案**：传入当前 location 内的 waypoint。
 
-- **入侵舰队规模异常大**：调用方在 `getInvasionSizeMult()` 结果上又乘了一次全局倍率。
+- **友军被计入风险**：代码使用固定阵营名单，没有读取当前势力关系。
 
-    - **解决方案**：移除重复乘法。
+    - **解决方案**：改由 `CampaignUtils` 按实时敌对关系筛选。
 
-- **封锁舰队规模偏小**：只应用了共同倍率，没有先执行 `MIN_BLOCKADE_SIZE` 和 blockade 的固定后处理。
+- **读档后风险恢复为零**：结果写入了 local memory，没有进入 sector persistent data。
 
-    - **解决方案**：按事件类型逐项记录。
-
-- **复活舰队被当作普通入侵**：没有应用 `RESPAWN_SIZE_MULT` 或复活目标筛选。
-
-    - **解决方案**：使用 `EventType.RESPAWN` 分支。
-
-- **被消灭势力没有复活**：复活开关、敌对舰队事件、入侵开关、次数上限、势力资格或检查间隔未满足。
-
-    - **解决方案**：逐项核对并推进到下一检查周期。
+    - **解决方案**：改用独立持久键。
 
 ## 总结
 
-战略接入要分别确认 AI 生命周期、concern ID、行动许可和规模计算。入侵倍率是一次组合运算，复活则是管理器、事件开关、势力资格和次数上限的联合条件；仅看到势力配置文件被读取，不能代替这些运行期验证。
+航路风险是一次当前状态计算，只有最终数值需要持久化。敌对舰队列表每次重新查询，货舱修正放在基础风险之后，消息层只负责展示结论。
 
 ## 建议参考项
 
-- `StrategicAI.getAI`：取得势力战略 AI；
-- `InvasionFleetManager.getInvasionSizeMult`：读取入侵规模倍率；
-- `InvasionFleetManager.EventType`：区分 invasion、blockade 和 respawn；
-- `NexConfig`：全局战略、入侵与复活设置。
+- `org.lazywizard.lazylib.campaign.CampaignUtils`：`getNearbyHostileFleets` 按关系筛选附近舰队；
+- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：`getFleetPoints` 提供舰队规模指标；
+- `com.fs.starfarer.api.campaign.SectorAPI`：`getPersistentData` 保存跨读档的最近风险。

@@ -286,8 +286,11 @@ public void unapply(MutableShipStatsAPI stats, String id) {
 
 ## 建议参考项
 
-- `data/shipsystems/<id>.system`、`ship_systems.csv` 和 `ship_data.csv`：战术系统数据文件、脚本入口和运行参数；
-- `MutableShipStatsAPI` 与 `MutableStat`：舰船数值修饰入口；
+- `data/shipsystems/<id>.system`：战术系统数据文件，确定 stats 脚本、AI 脚本和待机调用范围；
+- `data/shipsystems/ship_systems.csv`：战术系统注册表；
+- `data/hulls/ship_data.csv`：舰船数据表，挂载系统的运行参数来源；
+- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：舰船数值修饰入口；
+- `com.fs.starfarer.api.combat.MutableStat`：单条数值的修饰对象；
 - `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：效果脚本基类；
 - `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：状态、效果和状态栏接口；
 - `com.fs.starfarer.api.plugins.ShipSystemStatsScriptAdvanced`：`isUsable` 与 `getInfoText`；

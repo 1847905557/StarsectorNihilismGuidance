@@ -308,8 +308,11 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
 ## 建议参考项
 
-- `data/shipsystems/<id>.system`、`data/shipsystems/ship_systems.csv`、`data/hulls/ship_data.csv`：注册战术系统需要的文件。
-- `data/shipsystems/burndrive.system`、`damper.system`：本节两个示例的复制来源。
+- `data/shipsystems/<id>.system`：战术系统本体文件，承载效果参数与脚本入口；
+- `data/shipsystems/ship_systems.csv`：战术系统注册表，登记系统 ID；
+- `data/hulls/ship_data.csv`：舰船数据表，为舰船挂载战术系统；
+- `data/shipsystems/burndrive.system`：本节第一个示例的复制来源；
+- `data/shipsystems/damper.system`：本节第二个示例的复制来源。
 - `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：效果脚本基类。
 - `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：效果脚本接口 (`State` 枚举、`apply`/`unapply`/`getStatusData`)。
 - `com.fs.starfarer.api.combat.MutableShipStatsAPI`：数值入口 (`getMaxSpeed()`、`getHighExplosiveDamageTakenMult()` 等)。

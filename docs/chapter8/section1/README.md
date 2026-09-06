@@ -260,6 +260,6 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 
 ## 建议参考项
 
-- `CombatEngineAPI`：战斗上下文、时间、暂停、界面和结果访问器；
-- `EveryFrameCombatPlugin`：战斗插件的 `advance` 回调；
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：战斗上下文、时间、暂停、界面和结果访问器；
+- `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：战斗插件的 `advance` 回调；
 - `Starsector/starsector-core/starsector.log`：核对状态日志的读取位置。

@@ -1,778 +1,681 @@
-# 制作可升级产业
+# 配置舰队成员
 
-本节制作一个可建设、升级并被外部中断的产业。示例会把产业接入市场经济循环，并在界面和日志中观察供需、升级与中断效果。
+本节读取并修改生涯舰队、舰队数据与舰队成员，包括成员加入、保存状态、装配和战斗准备；本节集中处理成员数据，舰队坐标、任务与 AI 由对应生涯对象页面负责。
+
+::: tip 成员集合修改后再读取视图
+加入或移除成员后先完成舰队数据同步，再读取旗舰、成员列表或部署状态。这样可以避免短暂的旧集合视图影响判断。
+:::
+
+::: tip 先同步成员集合
+批量加入或移除成员后调用同步方法，再读取成员视图或进入战斗。未同步的集合可能暂时显示旧的旗舰和部署状态。
+:::
 
 *本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~60 分钟。*
+*本节预期操作时间：~30 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 在 `industries.csv` 中注册产业，并实现 `BaseIndustry` 生命周期；
-- 使用供需声明与缺货计算调整产业产出；
-- 建立建设、升级和降级关系，并观察状态迁移；
-- 成对处理 AI core 修饰与产业中断效果；
-- 根据市场界面和日志定位产业注册与运行故障。
+- 从 `CampaignFleetAPI` 进入舰队数据，并选择匹配需求的成员视图；
+- 使用工厂创建成员，并完成加入、移除或拆解操作；
+- 读写成员身份、装配、舰长、船体状态、CR 与维修状态；
+- 判断成员的部署条件、部署成本与后勤容量贡献；
+- 根据舰队状态和日志定位成员读写故障。
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录、命名约定与 `starsector.log` 日志位置；
-- [C11-S2] 的经济 JSON、市场加载时机与 `industries` 数据结构；
-- [C7-S1] 的插件生命周期与持久数据标记；
-- [C7-S3] 的 settings 读取；
-- [C8-S4] 的 `MutableStat 与修饰值；
-- [C10-S1] 的 `SectorAPI.getEconomy()`、生涯时钟与游戏日换算；
-- [C10-S3] 的生涯对象一次性注册判断；
-- [C11-S3] 的市场与产业访问入口、产业 ID 校验、经济循环节奏与监听器注册。
+- [C4-S1] 的生涯与战役域、装配与舰船共享注册表；
+- [C4-S2] 的无效装配 ID、路径日志与 `errorShipVariant` 回退；
+- [C7-S1] 的插件生命周期回调与持久数据标记；
+- [C7-S2] 的 `Global.getFactory()` 创建入口与阶段语义；
+- [C10-S1] 的生涯时钟、`EveryFrameScript` 注册时机与一次性判断。
 
-## 术语
+按术语约定，本节首次完整讲解一个词：
 
-按术语约定，本节首次完整讲解以下词：
+- **舰队成员 (fleet member)**：API 名保留 `FleetMemberAPI`。一艘舰船或一个战机联队在生涯侧的保存态对象。
+    - 成员不是战斗实体 (`ShipAPI`) —— 战斗实体由成员在部署时实例化；成员承载船体 id、装配 (variant)、舰长、船体状态、CR、维修状态与后勤数值。
+    - `FleetMemberType` 区分 `SHIP` / `FIGHTER_WING` / `NULL` 三种成员类型。
 
-- **产业 (industry)**：API 名保留 `Industry`。挂在一个市场下的 "生产/服务单元"，由静态 spec(`industries.csv` 行)+ 运行时实例 (plugin 列类名) 组成，承载供需、收入、维护费、AI core、特殊物品、改良与 disruption 等状态。与市场条件 (`MarketConditionAPI`) 并列但生命周期更重。
-- **供需修饰 (supply/demand modifier)**：`MutableCommodityQuantity.getQuantity()` 上的 `MutableStat` flat 修饰。
-    - 产业的 `supply(...)` / `demand(...)` 以 `"ind_<id>[_<n>]"` 为修饰 id 写入数量；
-    - `supplyBonus` / `demandReduction` 是产业级 "产量加一 / 需求减一" 统计项，写入时合并为 `"ind_sb"` / `"ind_dr"`。
-- **建设与升级 (building / upgrading)**：`isBuilding()` 表示建设中 (含首次建设与升级)；`isUpgrading()` 表示建设中且 `upgradeId != null`；`isFunctional()` 表示非 disruption 且非 "建设中且未升级"。
-- **AI core**：安装到产业上的三种商品化智能核心 (`alpha_core` / `beta_core` / `gamma_core`)，提供供需、维护费与 (自定义) 统计修饰，并提高 Luddic Path 的关注度 (`getPatherInterest`)。
-- **disruption(中断)**：产业被外部行动 (突袭、审查) 打停的一段带倒计时的状态，存于市场 memory(key 含产业类名)。中断期间产业不产出、不推进建设。
+## 读取成员结构
 
-## 梳理产业升级关系
+先建立整条对象链的骨架，再逐层进入集合内部、创建入口与读写语义。
 
-本节的全部机制沿**数据文件 → 注册入口 → 运行使用方 → 可观察结果**四个位置核对。先看产业如何从 CSV 行变成运行时对象，再依次进入生命周期、供需、建设升级、AI core 与 disruption 各链。
+### 成员对象链
 
-### 产业注册链 (industries.csv)
+本节所有成员读写都发生在这条三层链上。
 
-产业静态表是 `data/campaign/industries.csv`(含表头；原版 33 个活动产业，另有 1 个 `#` 注释行)。
+### 成员结构速查表
 
-### industries.csv 列速查表
+各层进入方式与职责如下：
 
-15 个列按表头顺序为：
-
-| 列 | `IndustrySpecAPI` 字段 | 语义 |
+| 层 | 进入方式 | 职责 |
 |---|---|---|
-| `id` | `getId()` | 产业 spec key，全游戏唯一；`MarketAPI.addIndustry(id)` / `instantiateIndustry(id)` 按它查 spec |
-| `name` | `getName()` | 显示名 (`getCurrentName()`) |
-| `cost mult` | `getCost()` | 建设费用基础值 (`getBuildCost()`，可被 `setBuildCostOverride` 覆盖；升级/关停退款按它 × `industryRefundFraction`) |
-| `build time` | `getBuildTime()` | 建设天数 (游戏日)；`startBuilding` / `startUpgrading` 时写入 |
-| `income` | `getIncome()` | 收入基础值 (× 市场规模倍率后写入 `getIncome()` stat) |
-| `upkeep` | `getUpkeep()` | 维护费基础值 (× 规模倍率 × 维护倍率后写入 `getUpkeep()` stat) |
-| `downgrade` | `getDowngrade()` | 降级目标产业 id(`downgrade()` 使用) |
-| `upgrade` | `getUpgrade()` | 升级目标产业 id(`startUpgrading()` 使用；UI 的 "升级" 按钮只在非空时出现) |
-| `tags` | `getTags()` | 产业 tag；`industry` / `structure` 决定 `isIndustry()` / `isStructure()`(`Industries.TAG_INDUSTRY` / `TAG_STRUCTURE`)，`important` / `population` 等被 UI 与队列使用 |
-| `data` | `getData()` | 附加数据字符串 |
-| `image` | `getImageName()` | 产业贴图 (`getCurrentImage()`)；资源从全局资源集解析，MOD 可引用核心自带路径或自己的路径 |
-| `plugin` | `getPluginClass()` | 产业 Java 类名；`getNewPluginInstance(market)` 用无参构造实例化 |
-| `desc` | `getDesc()` | 描述文本 (tooltip 展示，支持 `$token` 替换) |
-| `order` | `getOrder()` | 列表排序权重 |
-| `disruptDanger` | `getDisruptDanger()` | `RaidDangerLevel` 枚举名 (NONE/MINIMAL/LOW/MEDIUM/HIGH/EXTREME)，突袭 "中断产业" 目标时长来源 |
+| 舰队实体 | `SectorAPI.getPlayerFleet()` / `LocationAPI.getFleets()` 等 | `CampaignFleetAPI`(`com.fs.starfarer.api.campaign.CampaignFleetAPI`)：舰队身份、坐标、速度、势力、成员集合入口、统计、战斗绑定、inflater |
+| 成员集合 | `CampaignFleetAPI.getFleetData()` | `FleetDataAPI`(`com.fs.starfarer.api.campaign.FleetDataAPI`)：成员增删遍历、旗舰、军官、同步、快照、容量与 burn 计算 |
+| 单个成员 | `FleetDataAPI` 各列表 / `CampaignFleetAPI.getFlagship()` | `FleetMemberAPI`(`com.fs.starfarer.api.fleet.FleetMemberAPI`)：成员保存态全部字段与数值 |
 
-注册链 (使用方视角的 "数据 → 注册" 半程)：
+### 舰队成员速查表
 
-1. 加载器把每一行读成 `IndustrySpecAPI`，`id` 列成为 spec key(缺失/重复语义与 `hull_mods.csv` 的 `readCSVMerged` 一致：同文件重复 id 抛异常、跨文件重复后读行跳过 —— "产业不出现且无报错" 首选排查方向)；
-2. `MarketAPI.addIndustry(id)` 或 `instantiateIndustry(id)` 从 CSV spec 加载期的注册表按 id 取 `IndustrySpecAPI`，查不到**抛 `RuntimeException("Industry [" + id + "] not found")`**(`Market.addIndustry`)。
-    - 条件与产业都会校验 spec id；不存在时，添加入口立即抛出运行时异常；
-3. `spec.getNewPluginInstance(market)` 无参实例化产业类 (`plugin` 列类名必须存在且可无参实例化，否则类加载失败)；
-4. `addIndustry(id, params)` 带参数时先 `initWithParams(params)`(经济 JSON 的 `[id, param...]` 数组元素：识别 AI core id 与 params 匹配本产业 id 的特殊物品)；
-5. 产业加入 `market.getIndustries()` 后**立即 `apply()`**：`addIndustry` 本身不校验 `isAvailableToBuild()`，代码路径可以给任何市场直接挂产业。
-
-`SettingsAPI.getIndustrySpec(id)`(`com.fs.starfarer.api.SettingsAPI`) 是只读查询同一注册表的入口。
-
-注册链只保证产业能被实例化；创建之后，每个产业还要按固定节奏重算供需、收入与建设状态，这由生命周期回调承担。
-
-### 产业生命周期 (Industry / BaseIndustry)
-
-`Industry`(`com.fs.starfarer.api.campaign.econ.Industry`) 是纯接口；`BaseIndustry`(`com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry`) 是产业公共基类。
-
-`BaseIndustry` 归属默认状态 (`supply` / `demand` map、`income` / `upkeep` stat、`building` / `buildProgress` / `upgradeId` / `aiCoreId` / `improved` / `special` 字段) 与各链路默认行为。
-
-### 产业生命周期回调速查表
-
-五个核心回调：
-
-| 回调 | 时机 | 职责 |
-|---|---|---|
-| `init(String id, MarketAPI market)` | `getNewPluginInstance` 后、`apply` 前 | 绑定 id 与 market；`BaseIndustry.init` 同时 `readResolve()`(重取 spec、生成 `"ind_<id>"` / `"ind_<id>_<n>"` 修饰 id 族) |
-| `apply()` | `addIndustry` 时、`reapplyIndustries` 每轮、tooltip 预览 (克隆市场) 时 | 写供需、收入/维护、统计修饰、AI core / 改良 / 特殊物品效果。子类先 `super.apply(true)` 再写自己的供需 |
-| `unapply()` | `reapply` 前半、`removeIndustry`、`startBuilding` | 撤销 AI core 修饰 (`applyNoAICoreModifiers`)、改良、移民修饰、特殊物品效果 |
-| `reapply()` | 外部直接调用或 tooltip 预览 | 语义固定为 `unapply()` + `apply()`("Calls unapply() and then reapply()") |
-| `advance(float amount)` | 市场每帧 (`Market.advance` 对产业列表逐个调用) | `BaseIndustry.advance`：disruption 结束检测 (`wasDisrupted` 翻转 → `disruptionFinished()`)；建设中且未中断时用 `getClock().convertToDays(amount)` 累积 `buildProgress`，达到 `buildTime` 调 `finishBuildingOrUpgrading()` |
-
-`BaseIndustry.apply(boolean withIncomeUpdate)` 的内部顺序：
-
-1. `updateSupplyAndDemandModifiers()`：重置并汇总 `supplyBonus` / `demandReduction`(AI core、改良、管理员 `Stats.SUPPLY_BONUS_MOD` / `Stats.DEMAND_REDUCTION_MOD`、外部修饰)；
-2. `withIncomeUpdate` 时 `updateIncomeAndUpkeep()`(收入/维护 stat 写入)；
-3. `applyAICoreModifiers()`：按 `aiCoreId` 派发 `applyAlphaCoreModifiers` / `applyBetaCoreModifiers` / `applyGammaCoreModifiers`(无 core 时 `applyNoAICoreModifiers`)；
-4. `applyImproveModifiers()`(改良状态)；
-5. 移民修饰注册、特殊物品效果 (requirements 满足才 `effect.apply(this)`，否则 `effect.unapply(this)`)。
-
-市场侧的两个驱动点 (`Market`)：
-
-- `Market.advance(amount)`：**稳定度取整值变化时**触发 `reapplyConditions()` + `reapplyIndustries()` + `updatePrices()`。
-    - 随后对 `new ArrayList<>(industries)` 逐个 `advance(amount)`，产业每帧推进挂在市场推进上；
-- `Market.reapplyIndustries()`：`getAdmin().getStats().refreshGovernedOutpostEffects(this)` → 对每个产业 `unapply()` + `apply()`。
-    - 随后 `PopulationAndInfrastructure.modifyUpkeepByHazardRating(market, "upkeep_hazard_mod")`(维护费 × 危险度修饰统一在产业重算尾部补上)。
-
-必须遵守的规则：供需与统计修饰只能写在 `apply()` 里
-
-`BaseIndustry.doPreSaveCleanup()` 在存档前把 `supply` / `demand` / `income` / `upkeep` 全部置 null，`doPostSaveRestore()` 重建空 map —— 供需只能由 `apply()` 每轮重建。只写在构造器或 `init` 里的供需，读档后全部消失且无报错。
-
-这是本节第一条必须遵守的规则。
-
-生命周期决定回调何时运行，供需链回答回调里写什么：产业对商品流的全部影响，都来自 `supply(...)` / `demand(...)` 写入 `MutableStat` 的数量修饰。
-
-### 供需链
-
-`BaseIndustry` 持有 `supply` / `demand` 两个 `Map<String, MutableCommodityQuantity>`；`getSupply(id)` / `getDemand(id)` 用到时才创建条目。
-
-- **写入**：`supply(modId, commodityId, quantity, desc)` / `demand(...)` 在 `getQuantity()`(`MutableStat`) 上 `modifyFlat`；`quantity == 0` 时 `unmodifyFlat`("清掉这条供需" 的正式写法)。
-    - 默认 modId 族为 `"ind_<id>_<n>"`(索引 0 即 `"ind_<id>_0"`)；无后缀 `"ind_<id>"` 是另一字段、不参与供需；`quantity > 0` 时把 `supplyBonus` / `demandReduction` 的生效值合并写入 `"ind_sb"` / `"ind_dr"`；**alpha core 的 "产量 +1" 走的就是这条路径**。
-- **收入与维护**：`updateIncomeAndUpkeep()` → `applyIncomeAndUpkeep(size)`：`sizeMult = max(1, market.getSize() - 2)`。
-    - `income = (int)(spec.getIncome() × sizeMult)` 写 `"ind_base"` flat + `"ind_stability"` mult(市场收入倍率)；`upkeep = (int)(spec.getUpkeep() × sizeMult)` 写 `"ind_base"` + `"ind_hazard"` mult(市场维护倍率)。
-    - 随后 `applyAICoreToIncomeAndUpkeep()`(alpha/beta → `"ind_core"` × `UPKEEP_MULT = 0.75`，gamma 无)；**`!isFunctional()` 时收入修饰被移除**，建设中与中断中的产业不产生收入。
-- **缺货**：`getMaxDeficit(commodityIds...)` 返回 `(商品, 缺口)`，缺口 = `getDemand(id).getQuantity().getModifiedInt() − market.getCommodityData(id).getAvailable()`。
-    - `getAllDeficit(...)` 返回全部正缺口列表；`applyDeficitToProduction(index, deficit, commodities...)` 对列出的商品写负供给 (desc 为 "X shortage")。
-    - **且只对已声明过供给的商品生效** (`if (getSupply(commodity).getQuantity().isUnmodified()) continue;`)。
-- **读取 (经济步)**：经济步每次迭代重建商品可达图 (`CommodityMarketDataAPI` 构造器)：对每个市场、每个商品调 `updateMaxSupplyAndDemand()`(`CommodityOnMarketAPI.updateMaxSupplyAndDemand`)。
-    - **maxSupply / maxDemand 取该市场所有产业中同商品供需的最大值** (不是总和)，同时记下该产业对 max 值的合法性判定 (`isSupplyLegal` / `isDemandLegal`)。
-    - 主商品 (`CommoditySpecAPI.isPrimary()`) 的 maxDemand 还会沿 demand class 传播给同类的其他商品。
-    - 价格与库存写入沿用市场与商品流主题已介绍的 `updateStockpileAndPriceV2`。
-    - 需求侧定价按商品的 `demand class`(`commodities.csv` 的 `demand class` 列：`supplies` / `fuel` / `crew` / `organics` / `heavy_machinery` / `domestic_goods` / `drugs` 等) 聚合到 `MarketDemandAPI`。
-
-背景：为什么商品流按 "最大值" 而非 "总和" 统计
-
-多个产业可能供给同一商品 (例如本节示例与其它产业都产 `crew`)。
-
-经济步的 `CommodityOnMarketAPI.updateMaxSupplyAndDemand` 对 "该市场所有产业中同商品" 取最大值作为 `maxSupply` / `maxDemand`，而不是把各产业数量相加 —— 市场总量以 "单一最强供给/需求" 为口径。
-
-读商品流数字与定价时按这个口径理解，不要按总和预期。
-
-可观察结果形成完整流程：产业 tooltip 的 Production / Demand & effects 区块 (`BaseIndustry.createTooltip`) 按供需 map 的修饰值渲染图标；经济 UI 的短缺/过剩按 `CommodityMarketDataAPI` 的结果显示。
-
-供需让一个建成的产业参与经济；建设与升级链则决定产业如何从无到有、从低级到高级。
-
-### 建设与升级链
-
-状态字段：`building` / `buildProgress` / `buildTime` / `upgradeId`。
-
-### 建设与升级入口速查表
-
-| 入口 | 行为 (`BaseIndustry`) |
+| 成员 | 语义 |
 |---|---|
-| `startBuilding()` | `building = true`、进度归零、`upgradeId = null`、`buildTime = spec.getBuildTime()`，然后 **`unapply()`**，建设中的产业立刻停摆 (`isFunctional()` = `!(building && !isUpgrading())`) |
-| `advance(amount)` | `building && !disrupted` 时 `buildProgress += convertToDays(amount)`；达到 `buildTime` 调 `finishBuildingOrUpgrading()`。**中断期间建设暂停** |
-| `finishBuildingOrUpgrading()` | 升级分支 (`upgradeId != null`)：`market.removeIndustry(getId(), null, true)` → `market.addIndustry(upgradeId)` → 把 `aiCoreId` / `improved` 迁移到新产业 → `upgradeFinished(previous)`(迁移特殊物品)→ 新产业 `reapply()`。首次建设分支：`buildingFinished()`(通知 + 队列下一项)→ `reapply()` |
-| `startUpgrading()` | `building = true`、进度归零、`upgradeId = spec.getUpgrade()`、`buildTime = 升级 spec 的 buildTime`；**升级目标 spec 必须已注册**，否则 `getIndustrySpec(upgradeId)` 返回 null → 取 `getBuildTime()` 时 NPE |
-| `downgrade()` | `building = true`、`upgradeId = spec.getDowngrade()`，立即 `finishBuildingOrUpgrading()`，降级走同一条完成链 (同样要求降级目标已注册) |
-| `cancelUpgrade()` | 复位 `building` / 进度 / `upgradeId` |
+| `getFleetData()` | 成员集合入口 |
+| `getFlagship()` | 旗舰成员；无旗舰时返回第一个非战机成员 (`CampaignFleetAPI.getFlagship`) |
+| `isPlayerFleet()` | 是否为玩家舰队 |
+| `getStats()` | `MutableFleetStatsAPI`：舰队级统计 (burn 修正等) |
+| `getLogistics()` | `FleetLogisticsAPI`：补给/燃料消耗与维修调度 |
+| `getFleetPoints()` | 当前舰队 fleet point 总量 |
+| `getMembersWithFightersCopy()` | 含战机展开的成员副本 |
+| `isEmpty()` | 成员列表是否为空 |
+| `isValidPlayerFleet()` | "舰队非空且不全由战机联队组成" |
+| `forceSync()` | 让容量、船员等与舰队构成、cargo 匹配，并重放舰队 buff / 船插 / 技能效果 |
+| `setLocation(x, y)` | 舰队坐标写入入口 |
+| `getLocation()` | 坐标读取；**禁止**用它写坐标 (`setLocation` 才是坐标写入入口) |
+| `setAIMode(boolean)` | 关闭补给/燃料消耗、事故与船员需求，LR 锁 100% |
+| `getInflater()` / `inflateIfNeeded()` / `deflate()` | 保存态 ↔ 完整装配态的膨胀入口 |
 
-UI 使用方 (产业交互对话框)：升级确认扣款后调 `startUpgrading()`；降级确认后调 `downgrade()` 并返还退款；关停调 `market.removeIndustry(id, interactionMode, false)`。
+对象链只给出进入方式；集合内部如何组织成员，决定成员增删之后您读到的列表和统计是否可信，先看它的分层结构。
 
-tooltip 的升级入口只在 `getSpec().getUpgrade() != null && !isBuilding()` 时出现 (`BaseIndustry.createTooltip`)。
+### 读取舰队数据
 
-建设队列 (`ConstructionQueue`，`com.fs.starfarer.api.impl.campaign.econ.impl.ConstructionQueue`)：`MarketAPI.getConstructionQueue()` 是队列容器，`addToEnd(id, cost)` 入队；
+`FleetDataAPI` 是成员集合的接口，按持久与派生分四层：
 
-`Market.advance` 在 "队列非空且当前无在建产业" 时调 `BaseIndustry.buildNextInQueue(market)`：逐个弹出，`isAvailableToBuild()` 且未超产业上限才开工 (`addIndustry` + `startBuilding` + 成本 override)。
+为什么按 "持久 / 派生" 分层
 
-否则给用户退款并记 "Construction aborted" intel。
+只有槽位列表随存档保存；视图与派生状态每次同步时由成员重算，读档后集合因此自动自洽，成员增删也不需要手动维护任何视图或统计值。
 
-产业位上限：`Misc.getMaxIndustries(market)` = `market.getStats().getDynamic().getMod(Stats.MAX_INDUSTRIES).computeEffective(0)`(`Misc`)；
+1. **持久槽位列表**：`members`，按槽位存储成员，槽位可被 `NULL_MEMBER` 占位 (`FleetMemberType.NULL`)。这是**唯一随存档保存**的成员层。
+    - 添加成员填入第一个空槽 (`findFirstUnusedIndex`)，按索引移除只在原槽放回 NULL(`removeFleetMemberAtIndex`)，整体移除才收缩 (`removeFleetMemberAndCollapseSlot`)。
+2. **同步视图**：`membersWithoutNull`(不可变)、`sortedMembersWithoutNull`(按 hull size ordinal 降序 + fleet point cost 降序)、`sortedMembersWithoutNullWithFighters`。
+    - 战机展开经 `Utils.expandFighterWingsCampaign` 为每个 fitted wing 槽生成一条 `FIGHTER_WING` 成员；联队内战机数量仍保存在联队数据中。展开只取非封存且 CR > 0 的成员，封存成员排到末尾。
+    - `syncMemberLists()` 重建这三个视图。
+3. **派生状态**：`fleetPointsUsed` / `effectiveStrength`、`cargo`(容量上限由成员重算)、`minCrew`、`travelSpeed`、`fuelPerLightYear`、burn level 三件套。全部在同步时重算。
+4. **瞬态层**：`snapshot`(`transient` 字段) —— `takeSnapshot()` / `getSnapshot()` 的成员快照，**不随存档保存** (接口 "The snapshot is transient and will not be in the save file.")。
 
-该 mod 由 `population` 产业 (`PopulationAndInfrastructure.apply`) 写入 `getMaxIndustries(size)`，读 settings `maxIndustries` 数组 (`[1,1,1,2,3,4,4,4,4,4]`，size 1–10 减一索引) —— **size 1–3 的殖民地最多 1 个产业位**。
+同步管线 (`syncIfNeeded`)：`setSyncNeeded()` 置位 → 下一次读成员/容量前触发 —— 成员 stats 全量重算、`cacheClearedOnSync` 清空、舰队指挥官 fleetwide 效果重放、船员重分配 (`recrewFleetMembersV2`)、fleet sync 船插的 `onFleetSync`。
 
-超出时 `PopulationAndInfrastructure` 施加稳定度惩罚 (`Misc.OVER_MAX_INDUSTRIES_PENALTY` = settings `overMaxIndustriesPenalty` = 5)。
+同一管线还执行 `updateFleetPointsUsed`、`updateCargoCapacities`、`updateTravelSpeed`、logistics 刷新、buff 应用、舰队计数与 burn bonus。
 
-`Misc.getNumIndustries(market)` 只统计 `isIndustry()` 的产业 (升级中的按升级目标算)。
+`CampaignFleetAPI.forceSync()` 等价于 `setSyncNeeded` + `syncIfNeeded` 执行两次。
 
-`isAvailableToBuild()`：市场无 `MARKET_NO_INDUSTRIES_ALLOWED` tag、已有 `population` 产业且自身不是 `population`。
+集合的持久层是槽位列表；往槽位里放成员之前，先得能把成员造出来。创建与入队是两件事，分开讲。
 
-建设链会迁移产业的状态，AI core 正是其中最常被迁移的一种：它同时改供需、维护与 Luddic Path 关注度，而且修饰必须成对撤销。
+### 创建成员
 
-### AI core 链
+### 成员创建速查表
 
-- 安装：`setAICoreId(String)` 写入 `aiCoreId`；所有原版产业的 `canInstallAICores()` 默认返回 true，包含 population。
-    - UI 安装/卸下走 AI core 选择对话框 (产业交互对话框)。
-- 应用：`apply()` → `applyAICoreModifiers()` 按 core 派发四个**空实现钩子**：`applyAlphaCoreModifiers` / `applyBetaCoreModifiers` / `applyGammaCoreModifiers` / `applyNoAICoreModifiers`。
-    - 自定义核心效果写这里。
-- 供需侧 (`updateAICoreToSupplyAndDemandModifiers`)：alpha → `supplyBonus +1` 且 `demandReduction +1`；beta / gamma → 仅 `demandReduction +1`。
-    - "产量 +1 / 需求 −1 单位" 就是 `SUPPLY_BONUS = 1` / `DEMAND_REDUCTION = 1`。
-- 维护侧 (`applyAICoreToIncomeAndUpkeep`)：alpha / beta → 维护费 × `0.75`(`"ind_core"` mult)；gamma → 无。
-- 关注度：`getPatherInterest()`：alpha +4 / beta +2 / gamma +1，另加特殊物品的 pather tag 权重。
-- 卸载/移除：`unapply()` 第一步调 `applyNoAICoreModifiers()`，**自定义核心修饰必须在这里成对撤销**。
-    - `notifyBeingRemoved(mode, forUpgrade)` 在非升级移除时把 `aiCoreId` 与特殊物品返还给 cargo(`REMOTE` 交互进存储、其余进用户舰队)。
-- 管理员人物：`AICoreAdminPlugin`(`com.fs.starfarer.api.campaign.AICoreAdminPlugin`) 唯一方法是 `PersonAPI createPerson(String aiCoreId, String factionId, long seed)`。
-    - 由实现类 (原版 `AICoreAdminPluginImpl`) 使用，用于把 AI core 变成殖民地管理员/官员。
+创建成员的正式途径 (`FactoryAPI`)：
 
-### Disruption 链
+| 成员 | 语义 |
+|---|---|
+| `Global.getFactory().createFleetMember(FleetMemberType type, String variantOrWingId)` | 按装配 id(SHIP) 或联队 id(FIGHTER\_WING) 创建 |
+| `Global.getFactory().createFleetMember(FleetMemberType type, ShipVariantAPI variant)` | 按装配对象创建 |
 
-状态不存产业对象，**存市场 memory**：
+(`SettingsAPI` 有同签名双入口；两处创建结果一致，习惯用 `Global.getFactory()`。)
 
-1. key：`getDisruptedKey()` = `"$core_disrupted_" + getClass().getSimpleName()` —— **按 Java 类名生成**，同一市场内共用同一 Java 类的多个产业 (不同 spec id) 共享同一个 key；
+创建后成员即处于 "保存态"：自带默认舰长 (人格 `steady`)、唯一 id(`Misc.genUID()`)、从 CSV spec 加载期取装配并 **clone**(成员各自持有副本)、以及 `FleetMemberStatusAPI`(船体状态) 与 `RepairTrackerAPI`(CR/维修) 两个状态对象。
 
-共用同一 Java 类的多个产业共享同一个 disruption key
+**创建不等于入队** —— 成员必须交给 `FleetDataAPI.addFleetMember(...)` 才会成为舰队一员。
 
-同一市场内两个不同 spec id 但共用同一 plugin 类的产业 (原版 farming / aquaculture 都 `extends Farming`) 共享同一个 key：对其中一个施放 disruption，另一个也会被中断。这类产业必须覆写 `getDisruptedKey()` 区分 (如加 spec id 后缀)。
+无效装配 id 的两条分流：`SHIP` 类型装配缺失 → 打印堆栈 + 回退 `errorShipVariant`(默认 `nebula_Standard`)，**不抛异常**；
 
-2. 施加：`setDisrupted(float days)` = `setDisrupted(days, false)`；`setDisrupted(days, useMax)` 先过 `canBeDisrupted()`(默认 true；`population` 覆写为 false)。
-    - `useMax = true` 时取 `max(现有剩余, days)`(`MemoryAPI.getExpire(key)`)，`useMax = false` 直接覆盖。
-    - `dur <= 0` 时 `memory.unset(key)`，否则 `memory.set(key, true, dur)`(带天数的过期标记)。
-    - 从未中断变中断时调 `notifyDisrupted()`。
-3. 读取：`isDisrupted()` = `memory.is(key, true)`；`getDisruptedDays()` = `memory.getExpire(key)`(负数归零)；
-4. 结束：`advance(amount)` 检测 `isDisrupted()` 从 true 翻回 false → `disruptionFinished()`(两个钩子默认空实现)。
+`FIGHTER_WING` 类型联队缺失 → 抛 `RuntimeException("... is not a valid fighter wing id")`。
 
-中断期间的可观察行为：`isFunctional()` 恒 false → 供需 map 里 "生产中" 的判定失效、`applyIncomeAndUpkeep` 移除收入；`getBuildOrUpgradeProgress()` 返回 0；`advance` 的进度累积被 `!disrupted` 条件跳过 (建设暂停)。
+创建出来的成员要交给修改入口才会进入集合；改完集合之后，读取侧的四种视图决定您能看到什么。
 
-tooltip 显示红字 `Operations disrupted! X days until return to normal function.`；`getBuildOrUpgradeProgressText()` 显示 `Disrupted: N days left`，`getBuildOrUpgradeDaysText()` 中断时只返回 `N days`。
+### 修改成员集合
 
-`getDisruptedDays()` 是剩余中断天数，不是剩余建设时间
+### 集合修改速查表
 
-建设剩余时间 = `buildTime − buildProgress`；中断期间建设暂停、进度冻结，要显示 "还剩多少天恢复" 应读 `getDisruptedDays()`。两套读数口径不同，直接混用会让 UI 数字与 tooltip 对不上。
+`FleetDataAPI` 的成员修改入口 (`FleetDataAPI`)：
 
-三个原版触发方 (都在公开 API 面 `com.fs.starfarer.api.impl.campaign.*`)：
+| 成员 | 语义 |
+|---|---|
+| `addFleetMember(FleetMemberAPI)` | 加入成员 |
+| `addFleetMember(String variantId)` | 按装配 id 创建 `SHIP` 成员并加入，返回新成员 |
+| `removeFleetMember(FleetMemberAPI)` | 从列表移除并收缩槽位 |
+| `scuttle(FleetMemberAPI)` | 移除并把拆解收益与已装武器放入 cargo |
+| `clear()` | 清空成员列表 |
+| `setFlagship(FleetMemberAPI)` | 指定旗舰 |
 
-- **陆战队突袭**：`MarketCMD`(`com.fs.starfarer.api.impl.campaign.rulecmd.salvage.MarketCMD`) 的 "中断产业" 目标用 `DisruptIndustryRaidObjectivePluginImpl`。
-    - 新增中断量 = `marineTokens × spec.getDisruptDanger().disruptionDays`，随后按既有中断天数施加阻尼，并把结果加到已中断时长；`disruptDanger` 列取值见 `RaidDangerLevel` 枚举 (NONE 60 / MINIMAL 50 / LOW 40 / MEDIUM 30 / HIGH 20 / EXTREME 10 天)；
-- **Hegemony AI 审查**：`com.fs.starfarer.api.impl.campaign.intel.inspection.HIActionStage` 以 `curr.setDisrupted((intel.getRandom().nextFloat() * 45f) + 15f)` 施放，持续 15–60 天；
-- **Luddic Path 细胞**：`com.fs.starfarer.api.impl.campaign.intel.bases.LuddicPathCellsIntel` 以 `target.setDisrupted(disruptionDur, true)` 施放。
-    - `useMax = true` 保留较长剩余时间。
+`addFleetMember` 的自动行为：同一对象引用已在列表 → **直接返回不重复添加**；填入第一个 NULL 槽；非战机且船名为空 → 自动起名；写回 `setFleetData(this)`；舰长为空 → 补默认舰长；清旗舰标记；`setSyncNeeded()`。
 
-AI core 提高 Luddic Path 的关注度，disruption 正是外部行动打断产业的方式 —— 它的状态存放位置与其他字段都不同。
+addFleetMember 禁止传 null
 
-## 规则强度
+传 null 会抛 `RuntimeException("Attempting to add null fleet member to [...]")`。入队前先对创建结果判空 —— `createFleetMember` 的 `SHIP` 分支对无效装配 id 会回退 `errorShipVariant` 而**不会**返回 null。
 
-本节必须遵守的规则清单 ("必须/禁止"，均附违反后的可观察结果)：
+### 成员视图速查表
 
-### 规则强度速查表
+四种成员视图 (读取全部返回副本，可安全遍历)：
 
-| 规则 | 强度 | 违反后的可观察结果 |
+| 视图 | 内容 |
+|---|---|
+| `getMembersListCopy()` | 成员副本 (含战机联队，每个联队 1 条；无 NULL 占位)，最常用 |
+| `getCombatReadyMembersListCopy()` | 非封存且 `canBeDeployedForCombat()` 的成员 |
+| `getMembersInPriorityOrder()` | 非封存成员在前、封存成员在后，类内保持原顺序 |
+| `getMembersListWithFightersCopy()` | 每个 fitted wing 槽对应一条 `FIGHTER_WING` 成员；仅展开非封存且 CR > 0 的联队 |
+
+另有 `getMemberWithCaptain(PersonAPI)` 按舰长查成员、`getNumMembers()`、`getFleetPointsUsed()`。成员级实体脚本与视图偏移 (`FleetMemberViewAPI`) 不在本节范围。
+
+成员进入集合后，读写的落点就是它的保存态。`FleetMemberAPI` 按功能分八组：
+
+### 读取成员状态
+
+### 成员状态速查表
+
+`FleetMemberAPI`(`com.fs.starfarer.api.fleet.FleetMemberAPI`) 按功能分组：
+
+| 分组 | 成员 | 语义 |
 |---|---|---|
-| 产业 id 必须已在 `industries.csv` 注册后才可 `addIndustry` / `instantiateIndustry` / 用作 `upgrade` / `downgrade` 列目标 (`Market.addIndustry` 抛 `RuntimeException("Industry [...] not found")`；`startUpgrading` 对未注册目标 `getIndustrySpec` 返回 null 后取 `getBuildTime()` NPE) | 必须 | `addIndustry` 抛 `RuntimeException`、产业不出现且流程中断；升级启动瞬间 NPE；升级完成时 `addIndustry(upgradeId)` 抛异常 |
-| 供需、收入/维护与统计修饰必须写在 `apply()` 里，禁止只在构造器 / `init` 写入 (`doPreSaveCleanup` 置空四个 map，`doPostSaveRestore` 重建空 map) | 必须 | 存档后读档，产业 tooltip 与商品流中的供需条目全部消失、无报错 |
-| 想在缺货时被 `applyDeficitToProduction` 削减的商品，必须先 `supply(...)` 声明 (`if (getSupply(commodity).getQuantity().isUnmodified()) continue;`) | 必须 | 缺货时该商品产量不减、tooltip 无 shortage 削减显示 |
-| 升级 / 降级必须由 `startUpgrading` / `downgrade` → `finishBuildingOrUpgrading` 驱动，其中 `removeIndustry(id, null, true)` 的 `forUpgrade` 必须为 true | 必须 | 自定义替换链传 `false` 时 mode 为 null、cargo 为 null，AI core / 特殊物品直接丢失；传错完成时机则队列与 intel 通知缺失 |
-| AI core 自定义修饰必须成对：`applyAlpha/Beta/GammaCoreModifiers` 里加的修饰必须在 `applyNoAICoreModifiers` 撤销 (`unapply()` 第一步就是 `applyNoAICoreModifiers`) | 必须 | 卸下 core 或产业重算后修饰残留且反复叠加 (如稳定度 +1 永不消失) |
-| 同一市场内共用同一 Java 类的多个产业 (如不同 spec id 同一 plugin 类)，必须覆写 `getDisruptedKey()` 区分 | 必须 | 对其中一个施放 disruption，同市场同类产业全部进入中断 (key 由类名生成)；原版 farming / aquaculture 共用 `Farming` 类即存在此语义 |
-| 修改供需后不要期待当前帧的 `getAvailable()` / 价格立即变化 | 建议 | 数值在下一个经济步 (每月 10 次迭代) 才被抓取重算；要立即反映用 `EconomyAPI.forceStockpileUpdate(market)` |
-| `getDisruptedDays()` 是 "剩余中断天数"，不是剩余建设时间 (建设剩余 = `buildTime − buildProgress`) | 必须 | 把中断天数当剩余建设时间显示，UI 数字与 tooltip 对不上 |
-| 中断期间的产业收入被移除、建设暂停 (`applyIncomeAndUpkeep`；`advance`) | 必须 | 在 `advance` 里无视 disruption 继续累积 `buildProgress` 会与基类语义冲突 (进度在恢复后 "跳变") |
+| 身份 | `getId()`("Unique id, generated using Misc.genUID()")、`getSpecId()`、`getHullId()`、`getType()`、`getHullSpec()` | 成员唯一 id；装配 spec id；船体 id；`SHIP`/`FIGHTER_WING`/`NULL` |
+| 装配 | `getVariant()`、`setVariant(ShipVariantAPI, boolean withRefit, boolean withStatsUpdate)` | 保存态装配读写；`getVariant().getHullVariantId()` 读装配 id |
+| 舰长 | `getCaptain()`、`setCaptain(PersonAPI)`、`getFleetCommander()`、`isFlagship()` / `setFlagship(boolean, boolean)` | 成员舰长；舰队指挥官 (`fleetData.getCommander()`)；旗舰标记 |
+| 状态 | `getStatus()`、`getRepairTracker()`、`needsRepairs()`、`canBeRepaired()`、`isMothballed()` | 船体状态、CR/维修、封存 |
+| 数值 | `getFleetPointCost()`、`getDeployCost()`、`getDeploymentPointsCost()`、`getDeploymentCostSupplies()`、`getMemberStrength()`、`getBaseValue()`、`getBaseBuyValue()`、`getBaseSellValue()` | 舰队点数、CR 部署成本、部署点数/补给、成员强度、基础价值 |
+| 后勤 | `getCargoCapacity()`、`getFuelCapacity()`、`getMinCrew()`、`getMaxCrew()`、`getNeededCrew()`、`getCrewFraction()`、`getFuelUse()` | 单成员后勤数值 |
+| 分类 | `isFighterWing()`、`isFrigate()`、`isDestroyer()`、`isCruiser()`、`isCapital()`、`isCivilian()`、`isCarrier()`、`getNumFlightDecks()`、`isPhaseShip()`、`isStation()` | 按 hull size / 角色判定 |
+| 其他 | `getFleetData()`、`getStats()`(`MutableShipStatsAPI`)、`getCrewComposition()`、`isAlly()` / `setAlly(boolean)`、`setShipName()` | 回链集合、成员统计、船员构成、战斗瞬态标记、船名 |
 
-规则表之外，本节用一个可运行的产业把四条链串起来，下面制作 `GearIn_training_industry`。
+**装配写入语义** (`FleetMemberAPI.setVariant`)：`withRefit = true` 时按新旧装配差异对 CR 施加事件 (`applyCREvent(..., "field refit")`)；
 
-## 实现产业升级流程
+非战机成员会同步更新 `specId = variant.getHullVariantId()`(**换装配会连船体一起换**)；`withStatsUpdate = true` 时立即重算成员 stats。
 
-产业必须先由 CSV 注册，再由 `BaseIndustry` 子类提供运行时行为。下面按注册、供需、缺货、AI core、中断和安装的顺序逐段接通。
+setVariant 保存的是传入引用
 
-### 注册产业规格
+创建成员时的装配已被克隆，但 `setVariant` 传入的引用需要调用方自己管理生命周期，不要长期共享同一装配引用。
 
-注册行写入 MOD 自己的 `data/campaign/industries.csv`：ID、升级目标与 plugin 类名在这一行建立静态关系。
+保存态的 CR 与部署成本决定成员能否上场。战斗准备是 "当前状态" 判据，补给和时间可以恢复。
 
-```text
-GearIn_training_industry,GearIn Training Industry,20,60,,2,,militarybase,"training, industry, industrial",,graphics/icons/industry/light_industry.png,data.scripts.gearin.campaign.GearInTrainingIndustry,"A facility that trains serviceable crew.",250,LOW
-```
+### 准备战斗部署
 
-注册生效后，`SettingsAPI.getIndustrySpec("GearIn_training_industry")` 返回非 null，`getUpgrade()` 为 `militarybase`，plugin 类能无参实例化。
+- **CR(Combat Readiness)**：`getRepairTracker()` 返回 `RepairTrackerAPI`(`com.fs.starfarer.api.fleet.RepairTrackerAPI`)。
+    - `getCR()` 返回 0–1，**已按船员占比修正**；`getBaseCR()` 不含船员修正；`getMaxCR()` 上限；`setCR(float)` 直接写入；`applyCREvent(float, String)` 施加 "近期事件"(显示在 CR 悬浮提示里)。
+    - 新成员 CR 初始 `0.5F`。CR 低于阈值会出现在战斗外 "无法部署"。
+- **部署判据**：`canBeDeployedForCombat()`(`FleetMemberAPI`) —— 封存 → `false`；战机且 CR ≤ 0 → `false`；否则要求 `CR >= noDeployCRPercent` 且 `crewFraction >= noDeployCrewPercent`(`settings.json`中为 0% 与 5%)。
+    - **战斗准备是 "当前状态" 判据**：CR 或船员不足时返回 `false`，补给与时间可恢复。
+- **部署成本**：`getDeployCost()` 是 CR 占比 (`CRPerDeploymentPercent * CRToDeploy / 100`，战机乘联队数量；`FleetMemberAPI` "From 0 to 1, CR fraction. Multiplied by number of fighters if fighter wing.")。
+    - `getDeploymentPointsCost()` 是部署点数 (战机乘数量)；`getDeploymentCostSupplies()` 先舍入部署补给，再应用最小 1 的下限保护。
+- **保存态与膨胀态**：`CampaignFleetAPI.getInflater()` 持有 `FleetInflater`(由 `FleetFactoryV3` 生成的舰队挂载)。
+    - `inflateIfNeeded()` 在战役侧把保存态成员补全为完整装配态 (`CampaignFleetAPI.inflateIfNeeded`：inflater 存在、未膨胀、非中立势力时执行；`removeAfterInflating()` 为真则随后移除 inflater)；`deflate()` 回到保存态表达。
+    - 玩家舰队的成员默认即保存态，战斗部署时由战斗侧实例化。
 
-### 声明供需
+能部署是一回事，舰队养不养得起是另一回事：容量、船员与补给消耗按成员求和，封存则把成员从这些负担中豁免出来。
 
-供需声明写在 `GearInTrainingIndustry.apply` 里，紧接 `super.apply(true)` 之后：市场规模同时决定训练耗材、教官和结业船员的数量。
+### 读取后勤状态
+
+- **容量按成员求和**：`updateCargoCapacities` 遍历成员，把 `getFuelCapacity` / `getCargoCapacity` / `getMinCrew` / `getMaxCrew` / `getFuelUse` 累加 (战机按联队数量加权)。
+    - 写入 cargo 的 `maxFuel` / `maxCapacity` / `maxPersonnel`，并算出 `minCrew` 与 `fuelPerLightYear`；读取侧 `CampaignFleetAPI.getCargo()`(经 `SectorEntityToken.getCargo()`) 拿到 `CargoAPI`。
+- **burn level**：`getMaxBurnLevel()` 是**非封存**成员中最快者；`getMinBurnLevel()` 是全体最慢者；`getBurnLevel()` 是有效 burn(含深超空间与舰队 mod 修正，上限 20)。
+    - **原版 javadoc 缺陷**：`getMaxBurnLevel` 的 javadoc 声称含 `getFleetwideMaxBurnMod`，实现并不含。舰队级 mod 只作用于 `getBurnLevel()`。
+    - `CampaignFleetAPI.getCurrBurnLevel()` 是当前实际流速。
+- **封存 (mothball)**：`getRepairTracker().setMothballed(true)` 后：成员不进 `getCombatReadyMembersListCopy()`、排到 `getMembersInPriorityOrder()` 末尾、`canBeDeployedForCombat()` 恒 `false`。
+    - 该调用立即执行成员 `updateStats`，并标记舰队数据等待同步。成员 stats 此时已经重算；舰队容量等派生数据在同步后更新。
+    - 封存 stats 把补给月耗乘以 `supplyConsumptionMothballedMult`，并把 cargo / fuel / maxCrew / minCrew 乘数置 0。
+    - 封存船**不贡献容量也不烧船员**，即语义上的 "封存闲置船"。
+
+封存修正立即生效
+
+`setMothballed(true)` 在状态变化时立即执行成员 `updateStats` 并标记舰队同步；且 `getCargo()` / `getMembers()` / `getNumMembers()` 等读取路径本身先触发 `syncIfNeeded` —— 改完封存标志直接读数即可，无需手动 `forceSync`。
+
+- **scuttle(拆解)**：`scuttle(member)` 移除成员并把拆解收益 (补给、燃料、重型机械，`getSuppliesFromScuttling` 等)、已装非 built-in 武器与战机 LPC、AI 核心放入 cargo。
+    - 拆解是**不可逆**的成员移除方式，与 `removeFleetMember` 的差别在于收益入舱。
+
+机制讲完，示例脚本需要在正确时机注册，才能观察到这些行为。
+
+### 接通注册入口
+
+本节示例注册**必须**发生在生涯引擎建立之后：沿用生涯回调 `onGameLoad(boolean newGame)` + 各自 persistent data 键的一次性判断模式 (不要把注册键并入插件既有的 `CLASS_MARK` 判断)。
+
+本节用一个自停脚本把创建、入队、读写、清理整条链走一遍，全程只操作演示成员。
+
+## 配置成员状态
+
+本页用一个执行后自停的脚本走完创建、入队、状态修改与清理。以下均为局部片段，每次只增加一组行为，效果以日志与舰队界面核对。
+
+### 执行一次配置
+
+这段代码写在 `GearInFleetMemberScript.advance` 中。先置位再执行序列，即使序列中途抛错，也不会在下一帧继续创建重复成员；`isDone()` 随后让引擎移除脚本。
 
 ```java
-int size = market.getSize();
-demand(Commodities.SUPPLIES, size, "Training operations");
-demand(Commodities.CREW, Math.max(1, size / 2), "Instructors");
-supply(Commodities.CREW, Math.max(1, size - 2), "Trained crew");
-```
-
-### 让耗材短缺削减产出
-
-缺货削减逻辑放在供需声明之后：先从 supplies 需求计算最大缺口，再把缺口施加到已声明的 crew 供给；非功能状态清空生产。
-
-```java
-Pair<String, Integer> deficit = getMaxDeficit(Commodities.SUPPLIES);
-applyDeficitToProduction(1, deficit, Commodities.CREW);
-
-if (!isFunctional()) {
-	supply.clear();
-}
-```
-
-### 成对应用 AI core 修饰
-
-AI core 的成对钩子写在 `GearInTrainingIndustry` 中：两个方法使用同一个修饰 ID，安装 Alpha core 增加稳定度，卸下或重算时撤销。
-
-```java {3,9}
 @Override
-protected void applyAlphaCoreModifiers() {
-	market.getStability().modifyFlat(getModId(2), 1,
-			"Alpha core (" + getNameForModifier() + ")");
-}
-
-@Override
-protected void applyNoAICoreModifiers() {
-	market.getStability().unmodifyFlat(getModId(2));
+public void advance(float amount) {
+	if (executed) {
+		return;
+	}
+	executed = true;
+	runSequence();
 }
 ```
 
-### 施加并解除产业中断
+生效后，一次注册只产生一组 `GearIn fleet member` 日志，下一帧脚本从引擎脚本集合中移除。
 
-调试入口调用 `runDisruptionProbe`，其核心动作使用公开 `Industry` 接口：10 天中断写入后立即读取状态，再以 0 天解除。
+### 创建并加入成员
 
-```java {2,6}
-Industry industry = market.getIndustry(INDUSTRY_ID);
-industry.setDisrupted(10f, false);
-LOG.info("disrupted=" + industry.isDisrupted()
-		+ " days=" + industry.getDisruptedDays()
-		+ " functional=" + industry.isFunctional());
-industry.setDisrupted(0f);
-```
-
-### 在生涯市场安装产业
-
-安装代码放在既有 `GearInModPlugin.onGameLoad` 的独立 persistent data 判断块里：先确认目标市场和 spec，再加入产业并运行观察助手。
+这段代码写在 `runSequence` 取得 `CampaignFleetAPI` 与 `FleetDataAPI` 之后。创建结果仍是独立保存态对象；两次 `addFleetMember` 才真正改变玩家舰队集合。
 
 ```java
-MarketAPI market = Global.getSector().getEconomy().getMarket("corvus_IIIa");
-if (market != null
-		&& Global.getSettings().getIndustrySpec(GearInTrainingIndustry.INDUSTRY_ID) != null
-		&& !market.hasIndustry(GearInTrainingIndustry.INDUSTRY_ID)) {
-	market.addIndustry(GearInTrainingIndustry.INDUSTRY_ID);
-	GearInTrainingIndustry.logState(market);
-	GearInTrainingIndustry.runDisruptionProbe(market);
+FleetMemberAPI wolf = Global.getFactory().createFleetMember(
+		FleetMemberType.SHIP, "wolf_Assault");
+FleetMemberAPI hammerhead = Global.getFactory().createFleetMember(
+		FleetMemberType.SHIP, "hammerhead_Elite");
+
+data.addFleetMember(wolf);
+data.addFleetMember(hammerhead);
+```
+
+生效后，`getNumMembers()` 比初始值增加 2，舰队界面同时出现 Wolf 与 Hammerhead，cargo 容量和 fleet points 随同步管线更新。
+
+### 核对成员集合
+
+这段代码写在成员入队之后。读取副本再按唯一 ID 比较，避免把可能重复的船名、船体 ID 或装配 ID 当成成员身份。
+
+```java
+List<FleetMemberAPI> members = data.getMembersListCopy();
+boolean wolfFound = false;
+boolean hammerheadFound = false;
+for (FleetMemberAPI member : members) {
+	if (member.getId().equals(wolf.getId())) {
+		wolfFound = true;
+	}
+	if (member.getId().equals(hammerhead.getId())) {
+		hammerheadFound = true;
+	}
 }
 ```
 
-产业只安装一次，日志能读到 `upgrade=militarybase`，读档时不会重复添加。
+生效后，遍历日志中的 `wolfFound` 与 `hammerheadFound` 同时为 `true`，列表长度与 `getNumMembers()` 一致。
 
-### 验证方案
+### 修改船体与维修
 
-前置数据：`data/campaign/industries.csv` 注册行、编译进 JAR 的 `GearInTrainingIndustry`，以及 `GearInModPlugin.onGameLoad` 中的安装判断块 (目标市场 `corvus_IIIa`)。
+这段代码写在集合核对之后。先制造 30% 船体损伤并修满，再暂时把 CR 写为 0.3；这两组状态分别由 `FleetMemberStatusAPI` 与 `RepairTrackerAPI` 持有。
 
-1. `gradle jar` 后启动游戏进入主菜单，确认加载无 `ERROR`。
-2. 新建生涯或读档，让安装判断块执行一次。
-3. 打开 `corvus_IIIa` 的行星详情与产业 tooltip。
+```java {2,8}
+float hullBefore = hammerhead.getStatus().getHullFraction();
+hammerhead.getStatus().applyHullFractionDamage(0.3f);
+LOG.info("GearIn fleet member hull: " + hullBefore + " -> "
+		+ hammerhead.getStatus().getHullFraction());
+hammerhead.getStatus().repairFully();
 
-预期结果：
-
-- 日志出现一次安装记录并读到 `upgrade=militarybase`，读档后不重复添加。
-- 产业 tooltip 显示 supplies 需求 3、crew 需求 1、crew 供给 1 (供需声明生效)。
-- 中断探针日志显示 `disrupted=true`、约 10 天、`functional=false`；探针的 10 天中断窗口内 tooltip 不再显示有效 crew 产出 (缺口削减生效)。
-- 探针解除后功能恢复，`getDisruptedDays()` 仍返回残留的 10.0。
-- 手动安装 Alpha core 后稳定度 +1 并出现 `ind_GearIn_training_industry_2` 修饰，卸下后修饰消失。
-
-## 组装产业升级实现
-
-示例所有权：`GearInTrainingIndustry`(产业 id `GearIn_training_industry`，本节拥有)。
-
-在既有示例的 MOD 布局与 `GearInModPlugin` 之上新增：一条 `industries.csv` 注册行 (数据文件，位于 `data/campaign/industries.csv`，用 CSV 合并语义提交自己的行)、一个演示类 (本节所有)。
-
-先看数据侧的注册行 (自洽要求：`plugin` 列类名与本节 Java 类逐字一致，`upgrade` 列目标是已注册的原版 id `militarybase`，本节仅用它演示升级链、不定义新 id)：
-
-```text
-GearIn_training_industry,GearIn Training Industry,20,60,,2,,militarybase,"training, industry, industrial",,graphics/icons/industry/light_industry.png,data.scripts.gearin.campaign.GearInTrainingIndustry,"A facility that puts recruits through a rigorous training regimen, turning idle hands into serviceable crew.",250,LOW
+float crBefore = hammerhead.getRepairTracker().getCR();
+hammerhead.getRepairTracker().setCR(0.3f);
+LOG.info("GearIn fleet member deployable: "
+		+ hammerhead.canBeDeployedForCombat());
+hammerhead.getRepairTracker().setCR(crBefore);
 ```
 
-- `build time = 60`(游戏日)、`upkeep = 2`、`upgrade = militarybase`、`tags` 含 `industry`(`isIndustry()` 为 true，占产业位)、`disruptDanger = LOW`(40 天/令牌，见 `RaidDangerLevel`)；
-- `image` 列用原版路径 `graphics/icons/industry/light_industry.png` 占位 (全局资源集解析，核心自带该贴图；本节无资产，MOD 发布时替换为自己的贴图)。
+生效后，船体比例呈现 `1.0 → 0.7 → 1.0`，CR 呈现原值 `→ 0.3 →` 原值；演示成员最终没有遗留损伤。
 
-目录结构 (沿用既有示例页的布局，只新增加粗两项)：
+### 观察封存状态
 
-```text {7,10}
+这段代码写在 CR 恢复之后。封存立即改变部署判据，并让成员排到优先顺序末尾；解除封存后再继续后续装配实验。
+
+```java
+boolean deployBefore = hammerhead.canBeDeployedForCombat();
+hammerhead.getRepairTracker().setMothballed(true);
+List<FleetMemberAPI> priorityOrder = data.getMembersInPriorityOrder();
+String firstPriority = priorityOrder.isEmpty()
+		? "none" : priorityOrder.get(0).getShipName();
+LOG.info("GearIn fleet member mothball: " + deployBefore + " -> "
+		+ hammerhead.canBeDeployedForCombat() + " | first=" + firstPriority);
+hammerhead.getRepairTracker().setMothballed(false);
+```
+
+生效后，Hammerhead 的 `canBeDeployedForCombat()` 从 `true` 变为 `false`，优先列表首项来自非封存成员。
+
+### 清理演示成员
+
+这段代码写在 `runSequence` 末尾。保存原装配引用，短暂换成 Wolf 装配并立即恢复，最后从集合移除两个演示成员。
+
+```java
+ShipVariantAPI originalVariant = hammerhead.getVariant();
+hammerhead.setVariant(wolf.getVariant(), true, true);
+LOG.info("GearIn fleet member swapped hull=" + hammerhead.getHullId());
+hammerhead.setVariant(originalVariant, true, true);
+
+data.removeFleetMember(wolf);
+data.removeFleetMember(hammerhead);
+```
+
+生效后，换装期间 `getHullId()` 为 `wolf`，恢复后为 `hammerhead`；最终成员数与 fleet points 回到脚本开始时的值。
+
+## 观察成员结果
+
+在既有 MOD 布局与插件生命周期类之上新增一个演示脚本类 (不新增资源文件)：
+
+```text {8}
 mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
-├── data\
-│   └── campaign\
-│       └── industries.csv      # 新增本节注册行 (CSV 合并，勿改核心文件)
-├── src\
-│   └── data/scripts/gearin/campaign\
-│       └── GearInTrainingIndustry    # 本节新增 (归本节所有)
-└── jars\
+├── data/
+├── src/
+│   └── data/scripts/gearin/campaign/
+│       └── GearInFleetMemberScript   # 本节新增 (归本节所有)
+└── jars/
 ```
 
-### GearInTrainingIndustry
+### 查看成员日志
 
 对应关系：
 
-- `implements` 侧：`extends BaseIndustry` 继承全部默认行为 (供需 map、收入/维护 stat、建设状态、AI core 派发、disruption memory 键)；类只写四类扩展点：`apply()` / `unapply()`、AI core 成对钩子、disruption 钩子、两个静态观察助手。
-- `INDUSTRY_ID` 与 `industries.csv` 的 `id` 列、`plugin` 列与本类全名**三者逐字一致** (`Market.addIndustry` 按 id 查 spec、按 plugin 类名实例化)。
-- `UPGRADE_TARGET_ID = "militarybase"`：只用于与 CSV 行互相核对，运行时不读取它；升级链真正使用的是 `getSpec().getUpgrade()`(CSV `upgrade` 列)。
-    - 升级完成时 `finishBuildingOrUpgrading` 会 `removeIndustry` + `addIndustry("militarybase")` 并迁移 AI core / 改良 / 特殊物品 (`BaseIndustry`)。
-- `apply()` 里 `super.apply(true)` 先跑基类汇总 (供需 bonus、收入/维护、AI core、改良)，再写本产业的供需与缺货削减；`isFunctional()` 为 false(建设中/中断) 时清空供给。
-- `applyAlphaCoreModifiers` / `applyNoAICoreModifiers` 用 `getModId(2)`(= `"ind_GearIn_training_industry_2"`) 成对加减稳定度：安装 alpha core 市场稳定度 +1，卸下/重算即撤销。
-- `runDisruptionProbe` 全程用公开 API(`setDisrupted` / `isDisrupted` / `getDisruptedDays` / `setDisrupted(0f)`)。`setDisrupted(0f)` 走 `memory.unset(key)`：data 键被删，仅残留不可见的过期记录，`getDisruptedDays()` 仍返回中断时长 —— 所以探针的 `after` 行 days 显示 10.0，但市场内存里不再有 `$core_disrupted_GearInTrainingIndustry` 键 (DumpMemory 查不到)，属正常现象 (见验证方案核对)。
+- `implements EveryFrameScript`：`isDone()` 返回 `executed`(脚本执行后自停，引擎下一帧自动移除)；`runWhilePaused()` 返回 `false`(暂停时不执行)。
+- `REGISTER_MARK`：persistent data 判断键，用于判断脚本是否已在该存档执行过 (`"GearIn_FleetMemberScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不含任何工作单元编号变体。
+- `createFleetMember(FleetMemberType.SHIP, "...")`：创建入口。
+    - `wolf_Assault` / `hammerhead_Elite` 是原版注册装配 id(`data/variants/wolf/wolf_Assault.variant`、`data/variants/hammerhead/hammerhead_Elite.variant`，variant id 即文件名去扩展名)。
+- `data.addFleetMember(...)`：入队入口；加入后 `getNumMembers()` / `getFleetPoints()` / `getCargo().getMaxCapacity()` 随之变化，容量变化来自同步管线里的 `updateCargoCapacities`。
+- `getStatus().applyHullFractionDamage(0.3f)` / `repairFully()`：船体状态写入与恢复 (`hammerhead_Elite` 是普通舰船，单一状态槽，hull fraction 从 1.0 到 0.7 再回 1.0)。
+- `getRepairTracker().setCR(0.3f)` / `setMothballed(true)`：CR 与封存写入；`canBeDeployedForCombat()` 与 `getMembersInPriorityOrder()` 是 "当前状态" 读取。
+- `setVariant(wolf.getVariant(), true, true)`：装配写入，非战机成员换装配后 `getHullId()` 从 `hammerhead` 变为 `wolf`(`setVariant` 同步更新 `specId`)，换回原装配恢复。
+    - 演示中 `hammerhead` 与 `wolf` 短暂共享同一装配引用且双方都不再改装配，属可控演示；生产代码避免长期共享装配引用。
+- 清理段 `removeFleetMember`：把两个演示成员移除，玩家舰队恢复初始状态，演示脚本**不留副作用**，可反复读档重放。
 
-观察助手可以复用
-
-`logState` 与 `runDisruptionProbe` 都是静态方法，不依赖本节调用点，任何代码 (控制台、其它回调、调试入口) 都可以直接调用：`logState(market)` 打印本产业的供需/收入/建设/中断全状态；
-
-`runDisruptionProbe(market)` 施放并立即清除 10 天 disruption，用于核对 `setDisrupted` / `isDisrupted` / `getDisruptedDays` 链路。
-
-调用点 (工程片段，方法所在类不属于本节所有权，本节只演示调用，不改动那些文件)：
+调用点 (工程片段，方法所在类归插件生命周期类所有，本节只演示调用，不改动那些文件)：
 
 ```java
-    // GearInModPlugin 的 onGameLoad(boolean newGame) 内新增本节注册块。
+    // 在 GearInModPlugin 的 onGameLoad(boolean newGame) 内新增本节注册块。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInTrainingIndustry.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInTrainingIndustry.REGISTER_MARK, true);
-        MarketAPI market = Global.getSector().getEconomy().getMarket("corvus_IIIa");
-        if (market != null) {
-            market.addIndustry(GearInTrainingIndustry.INDUSTRY_ID);
-            GearInTrainingIndustry.logState(market);
-            GearInTrainingIndustry.runDisruptionProbe(market);
-        }
+    if (!Global.getSector().getPersistentData().containsKey(GearInFleetMemberScript.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInFleetMemberScript.REGISTER_MARK, true);
+        Global.getSector().addScript(new GearInFleetMemberScript());
     }
 ```
 
-想走数据驱动的注册 (替代上面的代码安装)：
-
-在 `data/campaign/econ\<星系>.json` 的目标市场条目 `industries` 数组里加一行 `"GearIn_training_industry"`(或 `["GearIn_training_industry", "alpha_core"]`，数组第二元素起由 `initWithParams` 识别安装 AI core / 特殊物品)。
-
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
+构建命令 (在 `mods/GearIndustry/` 执行，沿用既有 MOD 构建流程)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`(可用 `jar tf` 核对)。
 
-注册行、类与调用点就绪后，按下面的方案验证整条链。
+脚本与注册点就绪后，按下面的方案验证整条链。
 
-## 关键故障实验：添加产业时报告规格不存在
+## 处理成员不可部署
 
-代码使用的 ID 与 `industries.csv` 注册行不一致。
+成员已创建并能正常读写，但从未加入玩家舰队的 `FleetDataAPI`。
 
 **局部故障片段：**
 
 ```java
-// 故障片段
-market.addIndustry("GearIn_training");
+// GearInFleetMemberScript.runSequence 中只创建和修改
+FleetMemberAPI member = Global.getFactory().createFleetMember(
+		FleetMemberType.SHIP, "wolf_Assault");
+member.setShipName("GearIn Test Ship");
 ```
 
 **局部修正片段：**
 
-```java {2}
-// 修正片段
-String industryId = GearInTrainingIndustry.INDUSTRY_ID;
-if (Global.getSettings().getIndustrySpec(industryId) == null) {
-	throw new IllegalStateException("Missing industry spec: " + industryId);
-}
-market.addIndustry(industryId);
+```java
+// 创建完成后显式加入目标舰队
+CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
+fleet.getFleetData().addFleetMember(member);
 ```
 
-实际症状：`Market.addIndustry` 抛出 `RuntimeException: Industry [GearIn_training] not found`，产业没有加入市场，后续 reapply、升级和中断代码均无法执行。
+实际症状：局部变量上的船名和装配都能读回，日志也没有异常，但 `getNumMembers()` 不变、舰队界面没有新船、战斗准备列表中也找不到该成员。
 
-原因：运行时注册键是 CSV 的完整 ID `GearIn_training_industry`；`reapplyIndustries()` 只重放已经加入的实例，不会创建缺失 spec。
+原因：`createFleetMember` 只构造保存态成员；舰队集合、同步视图与派生统计只观察 `FleetDataAPI` 持有的对象。
 
-复验：修正后 `market.hasIndustry(INDUSTRY_ID)` 为 true，`getSpec().getUpgrade()` 返回 `militarybase`；完成 60 游戏日建设后可启动升级，中断探针能读取同一实例。
+复验：记录加入前后的 `getNumMembers()`，应精确增加 1；重新打开舰队界面，按 `member.getId()` 遍历 `getMembersListCopy()`，应命中同一个成员。
 
 ## 验证方案
 
-前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段)、`data/campaign/industries.csv` 注册行、`GearInTrainingIndustry` 类。
+前置数据：`gear_in` MOD 布局与插件生命周期类 ([C6-S1] / [C7-S1]，含本节调用点片段)、本节脚本类、生涯时钟脚本 (非必需)。
 
-1. 游戏构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，`BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`。
-    - 确认 `data/campaign/industries.csv` 合并后 `SettingsAPI.getIndustrySpec("GearIn_training_industry")` 返回非 null(可用日志或加载期检查)。
-2. 代码安装：新建生涯，在 `starsector.log` 中观察产业安装与中断探针记录。
-3. 读档：保存后读档，不出现重复安装日志 (`REGISTER_MARK` 已置位)。
-4. 用户殖民地建设：殖民 (size 3 以下注意产业位上限 1)→ 产业列表出现 `GearIn Training Industry` → 建造 (建设期 `functional=false`)→ 60 游戏日后 `functional=true`。
-    - 点击升级 → 完成后产业变为 `Military Base`。
-5. AI core：安装 alpha core → `applied` 日志 `aiCore=alpha_core`、市场稳定度 +1；卸下 → 稳定度修饰消失。
-6. disruption 实战：装 core 后等待 Hegemony AI 审查，或对殖民地执行陆战队 "中断产业" 突袭 → `notifyDisrupted` 日志 + tooltip `Operations disrupted!` + 收入消失。
-    - 时间到 → `disruptionFinished` 日志 + 恢复。
+1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
+2. 新建生涯：确认 `starsector.log` 按顺序出现 `GearIn fleet member` 各日志行 (`start` / `created` / `added` / `iterate` / `damage` / `repair` / `CR` / `mothball` / `variant swap` / `variant restore` / `done`)。
+    - 观察 `start`、`added` 与 `done` 行的成员数。
+3. 界面核对：演示日志出现时打开舰队界面 (F 键)，确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
+4. 只执行一次：等待若干游戏日后日志无新增 `GearIn fleet member` 行；保存并读档后仍无新增 (`REGISTER_MARK` 已写入 persistent data，脚本不再注册)。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInTrainingIndustry.class`；`data/campaign/industries.csv` 已含本节注册行 (CSV 合并，勿改动核心文件)。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInFleetMemberScript.class`。
 
-- **代码安装 (corvus\_IIIa (Garnir)，size 3 海盗市场)**：新建生涯，`starsector.log` 依次出现。
-
-    ```text
-    GearIn training industry applied: market=Garnir size=3 supplyCrew=1 demandSupplies=3 demandCrew=1 income=0 upkeep=NN aiCore=none disrupted=false functional=true GearIn training industry state: market=Garnir id=GearIn_training_industry supply=[crew=1] demand=[supplies=3, crew=1] income=0 upkeep=NN buildProgress=0.0/60.0 building=false upgrading=false functional=true disrupted=false aiCore=none upgrade=militarybase
-    ```
-
-    数值核对：size 3 → `supplyCrew = max(1, 3-2) = 1`、`demandSupplies = 3`、`demandCrew = max(1, 3/2) = 1`；`income = 0`(spec 收入列空)；`upkeep = 2 × max(1, size-2) × 市场维护倍率`(以日志为准)；缺货削减只在 corvus\_IIIa (Garnir) 的 supplies 可得量不足 3 时把 `supplyCrew` 压到 0/负数区间 (tooltip 图标同步变红)。
-
-- **disruption 探针** (同一批日志)：
+- **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现：
 
     ```text
-    GearIn training industry disruption probe: before disrupted=false days=0.0 GearIn training industry disruption probe: during disrupted=true days=10.0 functional=false progress=Disrupted: 10 days left GearIn training industry disruption probe: after disrupted=false days=10.0
+       GearIn fleet member start: members=<N> fleetPoints=<F> cargoCapacity=<C>
+       GearIn fleet member created: wolf id=<id> hull=wolf variant=wolf_Assault fp=<fp> | hammerhead id=<id> hull=hammerhead variant=hammerhead_Elite fp=<fp>
+       GearIn fleet member added: members=<N+2> (was <N>) fleetPoints=<F'> (was <F>) cargoCapacity=<C'> (was <C>)
+       GearIn fleet member iterate: count=<N+2> wolfFound=true hammerheadFound=true
+       GearIn fleet member damage: hullFraction 1.00 -> 0.70 needsRepairs=true
+       GearIn fleet member repair: hullFraction=1.00 needsRepairs=false
+       GearIn fleet member CR: 0.50 -> 0.30 canBeDeployedForCombat=true
+       GearIn fleet member mothball: canBeDeployedForCombat=true->false firstPriority=<船名> mothballed=true
+       GearIn fleet member variant swap: hull=wolf variant=wolf_Assault
+       GearIn fleet member variant restore: hull=hammerhead variant=hammerhead_Elite
+       GearIn fleet member done: members=<N> (initial <N>) fleetPoints=<F> (initial <F>)
     ```
 
-    核对：`during` 行 `functional=false`(`isFunctional()` 在中断时恒 false)、`progress` 显示 `Disrupted: 10 days left`(`getBuildOrUpgradeProgressText` 的中断分支)；`setDisrupted(0f)` 后 memory data 键被 unset，仅残留不可见的 expire 记录，`after` 行 days 仍为 10.0。市场内存里**没有**残留的 `$core_disrupted_GearInTrainingIndustry` 键 —— 用 `DumpMemory` 核对应查不到该键。
+    其中 `<N>` 是初始成员数、`<F>` 是初始 fleet points、`<C>` 是初始 cargo 容量，均以实际日志为准；`firstPriority` 是玩家舰队第一个非封存成员的船名 (演示期间 `hammerhead` 被封存所以不在队首；玩家舰队为空时输出 `none`)。演示只执行一次，之后无任何 `GearIn fleet member` 日志。
 
-- **建设与升级 (用户殖民地路径)**：用户殖民后产业列表出现 `GearIn Training Industry`(`isAvailableToBuild` 要求市场有 `population` 且无 `MARKET_NO_INDUSTRIES_ALLOWED` tag；size 1–3 的殖民地产业位上限 1，注意是否占满)；建造后 `applied` 日志的 `functional=false`(`isBuilding` 中，tooltip 显示 "Currently under construction and not producing anything")；`advance` 按 `convertToDays(amount)` 累积 60 个游戏日后完成，`applied` 日志恢复 `functional=true`。点击升级：确认扣款后 `startUpgrading()`，完成后产业被替换为 `Military Base`(`militarybase` 行)，AI core / 改良 / 特殊物品迁移 (`finishBuildingOrUpgrading`)。
+- **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
 
-- **AI core**：往产业装 alpha core(AI core 选择对话框)：`applied` 日志 `aiCore=alpha_core`；市场稳定度 +1(`applyAlphaCoreModifiers` 的 `ind_GearIn_training_industry_2` 修饰)；tooltip 的 alpha 描述显示维护费 −25%(`UPKEEP_MULT = 0.75`)、需求 −1、产量 +1(`DEMAND_REDUCTION` / `SUPPLY_BONUS = 1`)；卸下 core 后稳定度修饰消失 (`applyNoAICoreModifiers`)。`getPatherInterest` = 4(alpha) 会提高 Luddic Path 对该市场的兴趣。
-
-- **中断的实战触发**：给装 core 的殖民地等待 Hegemony AI 审查 intel(15–60 天)，或对该市场执行陆战队 "中断产业" 突袭 (新增中断量以令牌数 × `disruptDanger.disruptionDays` 为基准，并按既有中断时长阻尼)，`notifyDisrupted` 日志出现，tooltip 显示 `Operations disrupted!`，收入消失、建设暂停；时间到后 `disruptionFinished` 日志出现，恢复。
-
-- **读档**：不重复安装 (`REGISTER_MARK` 已置位)，不出现 `applied` / `state` / `probe` 日志；`doPreSaveCleanup` / `doPostSaveRestore` 之后供需由 `apply()` 重建，读档后 `state` 日志 (手动触发) 的 supply/demand 与读档前一致。
+- **读档**：不出现任何 `GearIn fleet member` 日志 (`REGISTER_MARK` 已写入 persistent data、脚本不再注册)；玩家舰队与演示前一致。
 
 - 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
-**预期结果**：以上操作与核对结果全部符合。
-
-清理：调用 `market.removeIndustry(GearInTrainingIndustry.INDUSTRY_ID, null, false)`；产业移除后，"applied" 日志消失、稳定度修饰撤销，已安装的 alpha core 随产业移除直接丢失 (mode 为 null 时不返还)。
-
 ## 故障分析
 
-- **`addIndustry` 抛 `Industry [...] not found`**：CSV 缺少对应 ID、行被重复覆盖或调用 ID 拼错。
+- **成员数不变且日志没有 added 行**：代码只调用了 `createFleetMember`，没有把保存态成员加入集合。
 
-    - **解决方案**：用 `SettingsAPI.getIndustrySpec(id)` 确认注册，再逐字核对 CSV 与调用点。
+    - **解决方案**：使用玩家舰队的 `FleetDataAPI.addFleetMember(...)`。
 
-- **读档后产业供需消失**：供需写在构造器或 `init`，而不是每次重算都会调用的 `apply()`。
+- **`addFleetMember` 抛出 `Attempting to add null fleet member`**：调用方把 null 传给了集合。
 
-    - **解决方案**：把供需与统计修饰移入 `apply()`。
+    - **解决方案**：检查自定义创建入口的返回值，确认非 null 后再入队。
 
-- **缺货时产量没有减少**：缺货削减前没有先声明对应商品的 supply。
+- **同一成员被加入两轮**：注册脚本缺少一次性判断，每次读档都会重新执行添加逻辑。
 
-    - **解决方案**：先完成 `demand`/`supply`，再调用 `applyDeficitToProduction`。
+    - **解决方案**：使用 `REGISTER_MARK` 门控。
 
-- **升级启动或完成时报错**：`upgrade` 指向未注册产业 ID。
+- **重复调用 `addFleetMember` 没有任何变化**：同一对象引用已经在舰队集合中。
 
-    - **解决方案**：补齐注册或修改升级目标，确认目标 MOD 已启用。
+    - **解决方案**：通过 `getMembersListCopy()` 按 `getId()` 判断是否已入队。
 
-- **卸下 AI core 后效果仍然存在**：`applyAlphaCoreModifiers` 与 `applyNoAICoreModifiers` 没有成对撤销。
+- **战机联队只被计为一个成员**：`getMembersListCopy()` 与 `getNumMembers()` 按联队对象计数。`getMembersListWithFightersCopy()` 按 fitted wing 槽生成成员，不按单架战机展开；封存或零 CR 联队不会展开。
 
-    - **解决方案**：为每个 AI core 修饰提供对应的移除逻辑。
+    - **解决方案**：按计数目的选择接口：联队对象数使用 `getNumMembers()`，展开成员使用 `getMembersListWithFightersCopy()`。
 
-- **升级时 AI core 或特殊物品被复制**：自定义代码调用了 `removeIndustry(..., false)`。
+- **`getSnapshot()` 读档后为空**：snapshot 是瞬态字段，不进入存档。
 
-    - **解决方案**：让升级流程使用 `forUpgrade=true` 的原版链路。
+    - **解决方案**：持久成员状态读取 `getMembersListCopy()`；快照只用于战斗前或销毁前的临时比较。
 
-- **同市场两个产业同时中断**：不同产业共用 Java 类却共用默认 disruption key。
+- **修改装配后战斗中仍是旧船**：`FleetMemberAPI.setVariant` 只修改保存态，已部署实体不会跟随变化。
 
-    - **解决方案**：覆写 `getDisruptedKey()`，把 spec ID 纳入 key。
+    - **解决方案**：生涯侧使用 `setVariant(variant, true, true)`，战斗实体在部署侧处理。
 
-- **把 `getMaxDeficit` 当成总需求**：它返回的是 `max(0, demand - available)`。
+- **战斗准备列表里没有低 CR 舰船**：CR 低于部署门槛，或船员比例低于默认 5%，都会让 `canBeDeployedForCombat()` 返回 false。
 
-    - **解决方案**：总需求读取 `getDemand(id).getQuantity().getModifiedValue()`。
+    - **解决方案**：核对 `getCR()` 与 `getCrewFraction()`，补充船员并等待 CR 恢复。
 
-- **界面把中断天数显示成建设剩余时间**：`getDisruptedDays()` 与建设进度是两套读数。
+- **封存后仍显示补给消耗和货舱容量**：封存修饰立即写入成员 stats(`setMothballed` 同步执行成员 `updateStats`)，只有舰队级求和 (补给消耗、货舱容量) 延迟到舰队同步时更新。
 
-    - **解决方案**：分别使用中断天数和 `buildTime - buildProgress`。
+    - **解决方案**：读取 `getMembers()` 等路径自动触发同步，无需手动 `forceSync()`。
 
-- **修改供需后当前帧数值没有变化**：经济数据在经济步中抓取。
+- **`setFlagship` 后其他成员舰长被重置**：该方法会为其他舰船设置全零属性新人，并让新旗舰使用舰队指挥官。
 
-    - **解决方案**：等待一个经济步，或对目标市场调用 `EconomyAPI.forceStockpileUpdate(market)`。
+    - **解决方案**：按这一语义安排调用，不要再逐成员调用 `setCaptain` 对抗。
 
-- **`supply(com, 0)` 没有清掉全部供给**：0 只撤销当前 modId 的修饰。
+- **演示日志出现但舰队没有变化**：脚本注册在错误生命周期阶段，或操作的不是当前玩家舰队。
 
-    - **解决方案**：使用对应的 `unmodifyFlat`，并检查其他修饰来源。
+    - **解决方案**：将注册放入 `onGameLoad` 的一次性判断块，并从 `Global.getSector().getPlayerFleet()` 重新取得目标。
 
 ## 总结
 
-本节把产业讲成四条链。注册链让 CSV 行变成可实例化的 `Industry`，生命周期链决定状态何时重算，供需与建设升级链决定产业如何参与经济循环，AI core 与 disruption 链决定它的修饰与被打断的方式。条件与产业都会在添加时校验 spec id，升级与降级都走同一条完成链，disruption 状态存在市场 memory 而非产业对象里；上述三条是本节最容易绕错的地方。
+本节把生涯舰队讲成一条链：入口 (`SectorAPI.getPlayerFleet()` → `CampaignFleetAPI`) → 集合 (`getFleetData()` → `FleetDataAPI`) → 成员 (`FleetMemberAPI`)。创建不等于入队、改集合后要想到同步、保存态与战斗态分离，是整条链上反复用到的三条判断 —— 演示脚本正是围绕这三条展开的。
 
-记忆要点：
+排错时先按症状定位层：成员数量与遍历顺序的问题查集合视图与同步时机，数值没变或读档丢失的问题查保存态字段与瞬态层，部署与后勤的问题查 CR、船员与封存判据。封存修正立即写入成员 stats、只有舰队级求和延迟到同步，这是最常被忽略的一处。
 
-- CSV `id` 必须与 `addIndustry` 参数逐字一致；`upgrade` / `downgrade` 列目标必须已注册。
-- `supply` / `demand` / 收入 / 维护只写在 `apply()`；缺货削减前先 `supply(...)`。
-- `getModId(n)` = `"ind_<id>_<n>"`；AI core 修饰成对 (`applyXxxCoreModifiers` ↔ `applyNoAICoreModifiers`)。
-- `setDisrupted(days, useMax)`：`useMax=true` 保留较大剩余；`setDisrupted(0)` 解除；同市场同 Java 类的多产业共享 disruption key。
-- 产业位取 `maxIndustries[size-1]`(size 1–3 都是 1)；`isFunctional()` 表示非中断 ∧ 非 "建设中且未升级"。
-
-从逻辑上看，产业不是孤立对象：市场与商品流的经济循环 (经济步) 是产业供需的使用端，时钟与游戏日换算 (`getClock().convertToDays`) 是建设进度的换算来源，`MutableStat` 承载全部数量修饰；本节示例的 `REGISTER_MARK` 一次性标记沿用既有生涯注册示例的写法。产业写完并注册后，它在市场里的可见性 (tooltip 数字、商品流、价格、突袭中断) 全部由这些既有机制承接 —— 本节只负责把产业自身的四条链写对。
+这条对象链到此已经形成完整流程。舰队坐标写入、任务与 AI 调度位于集合层之上，市场补给来源落在经济系统一侧；本节的成员读写语义是这些操作的共同底座。
 
 ## 建议参考项
 
-- Java API(包路径)：
-    - `com.fs.starfarer.api.campaign.econ.Industry`，产业接口全貌：生命周期五回调、供需、建设/升级、AI core、disruption、特殊物品/改良。
-    - `com.fs.starfarer.api.loading.IndustrySpecAPI`：`industries.csv` 全部列字段的 getter/setter 与 `getNewPluginInstance` 无参实例化。
-    - `com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry`，产业公共基类：`apply(boolean)` 顺序、供需写入与 `ind_sb` / `ind_dr` 合并、`applyDeficitToProduction`、`applyIncomeAndUpkeep`、`advance`、建设/升级/降级链、AI core 派发与四钩子、`getPatherInterest`、disruption 系列 (`getDisruptedKey` / `setDisrupted` / `getDisruptedDays` / `canBeDisrupted` / `isDisrupted`)、`doPreSaveCleanup` / `doPostSaveRestore`、`initWithParams`、`isAvailableToBuild`、tooltip 渲染。
-    - `com.fs.starfarer.api.impl.campaign.econ.impl.LightIndustry`：`apply()` 标准写法范例 (先声明供需、再挂缺货削减)。
-    - `com.fs.starfarer.api.impl.campaign.econ.impl.PopulationAndInfrastructure`：`MAX_INDUSTRIES` 写入、超限稳定度惩罚、`getMaxIndustries(size)`、`canBeDisrupted() = false`。
-    - `com.fs.starfarer.api.impl.campaign.econ.impl.ConstructionQueue`：建设队列容器与 `addToEnd`；
-    - `com.fs.starfarer.api.campaign.econ.MutableCommodityQuantity`：商品 id + `MutableStat` 数量；
-    - `com.fs.starfarer.api.campaign.AICoreAdminPlugin`：`createPerson(aiCoreId, factionId, seed)`，把 AI core 变成殖民地管理员/官员。
-    - `com.fs.starfarer.api.impl.campaign.ids.Industries`：tag 常量 `TAG_INDUSTRY` / `TAG_STRUCTURE` / `TAG_POPULATION`。
-    - `com.fs.starfarer.api.impl.campaign.ids.Commodities`：`SUPPLIES` / `CREW` / `ALPHA_CORE` / `BETA_CORE` / `GAMMA_CORE`。
-    - `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.MarketCMD`：`RaidDangerLevel.disruptionDays` 与突袭 "中断产业" 时长计算。
-    - `com.fs.starfarer.api.impl.campaign.graid.DisruptIndustryRaidObjectivePluginImpl`：突袭中断目标的 `disruptDanger` 使用与 `setDisrupted` 施放。
-    - `com.fs.starfarer.api.impl.campaign.intel.inspection.HIActionStage`：Hegemony AI 审查对产业施放 15–60 天 disruption。
-    - `com.fs.starfarer.api.impl.campaign.intel.bases.LuddicPathCellsIntel`：Luddic Path 细胞以 `setDisrupted(dur, true)` 施放并保留较长剩余。
-    - `com.fs.starfarer.api.util.Misc`：`getMaxIndustries` / `getNumIndustries` / `getCurrentlyBeingConstructed` / `OVER_MAX_INDUSTRIES_PENALTY`。
-    - `com.fs.starfarer.api.SettingsAPI`：`getIndustrySpec(id)` 只读查询产业注册表；
-    - `com.fs.starfarer.api.campaign.econ.MarketAPI`：产业访问族 (`addIndustry` / `getIndustry` / `hasIndustry` / `hasFunctionalIndustry` / `removeIndustry` / `instantiateIndustry`) 与 `getConstructionQueue`。
-    - `Market`：`addIndustry` / `instantiateIndustry` / `removeIndustry` / `reapplyIndustries`、`advance` 稳定度重算与产业推进。
-    - `CommodityOnMarketAPI`：`updateMaxSupplyAndDemand` 同商品取最大值与合法性、`getAvailable` / `getMaxSupply` / `getMaxDemand`。
-    - `CommodityMarketDataAPI`：经济步使用产业供需 (`updateMaxSupplyAndDemand`、demand class 传播)。
-    - 产业交互对话框：升级/降级/关停 UI 使用方、退款计算。
-- 原版数据 (相对路径)：
-    - `data/campaign/industries.csv`，产业静态表：15 列表头与 `population` / `spaceport` / `militarybase` / `heavybatteries` 等原版行。
-    - `data/campaign/commodities.csv`：`demand class` 列 (supplies / fuel / crew / organics / heavy\_machinery / domestic\_goods / drugs 等)。
-    - `data/campaign/econ/corvus.json`：市场 `industries` 数组写法 (纯 id 字符串与 `[id, param...]`)。
-    - `data/config/settings.json`：`maxIndustries` 数组、`overMaxIndustriesPenalty`、`industryRefundFraction`、`industryImproveBase`。
+- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：舰队实体；成员集合入口、统计、战斗绑定、inflater。
+- `com.fs.starfarer.api.campaign.FleetDataAPI`：成员集合；增删遍历、四种成员视图、同步与快照。
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员保存态；身份、装配、舰长、状态、数值。
+- `com.fs.starfarer.api.fleet.FleetMemberStatusAPI`：船体状态与维修 (`getHullFraction` / `repairFully` / `applyHullFractionDamage`)。
+- `com.fs.starfarer.api.fleet.RepairTrackerAPI`：CR 与封存 (`getCR` / `setCR` / `setMothballed`)。
+- `com.fs.starfarer.api.fleet.FleetMemberType`：成员类型枚举 (`SHIP` / `FIGHTER_WING` / `NULL`)。
+- `com.fs.starfarer.api.FactoryAPI`：成员创建入口 (`createFleetMember`)。
+- `com.fs.starfarer.api.campaign.SectorEntityToken`：舰队 cargo 读取入口 (`getCargo()`)。
+- `com.fs.starfarer.api.combat.ShipVariantAPI`：装配对象 (`setVariant` 的入参类型；`getHullVariantId` 读装配 id)。
+- `com.fs.starfarer.api.EveryFrameScript`：示例脚本接口 (`isDone` / `runWhilePaused` / `advance`)。
+- `data/config/settings.json`：部署判据基线 (`noDeployCRPercent` = 0、`noDeployCrewPercent` = 5)。
+- `data/variants/wolf/wolf_Assault.variant`：示例使用的原版装配 (variant id 即文件名去扩展名)；
+- `data/variants/hammerhead/hammerhead_Elite.variant`：示例使用的另一原版装配。
 
 ## 完整最小例
 
-::: details 完整成品：GearInTrainingIndustry
+::: details 完整成品：GearInFleetMemberScript
 
 ```java
 package data.scripts.gearin.campaign;
 
+import java.util.List;
+
 import org.apache.log4j.Logger;
 
+import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.econ.Industry;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.campaign.econ.MutableCommodityQuantity;
-import com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry;
-import com.fs.starfarer.api.impl.campaign.ids.Commodities;
-import com.fs.starfarer.api.util.Pair;
+import com.fs.starfarer.api.campaign.CampaignFleetAPI;
+import com.fs.starfarer.api.campaign.FleetDataAPI;
+import com.fs.starfarer.api.combat.ShipVariantAPI;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 完整最小例：产业 (Industry) 注册、供需、升级、AI core 与 disruption 演示。
- * 注册入口：industries.csv 一行 (plugin 列 = 本类全名，id = INDUSTRY_ID)，由
- * MarketAPI.addIndustry / instantiateIndustry 消费；安装经 GearInModPlugin 的
- * onGameLoad，persistent data 键 REGISTER_MARK 一次性门控。apply() 声明供需并按
- * 缺口削减产出；收入/维护与 AI core 供需/维护侧走 BaseIndustry 默认，alpha core
- * 额外 +1 稳定度 (成对修饰)；disruption 钩子打日志，removeIndustry 可撤销全部修饰。
+ * 完整最小例：生涯舰队成员 (FleetMemberAPI) 与舰队数据 (FleetDataAPI)。
+ * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
+ * 行为：挂载后第一次 advance() 执行一次演示序列并自停 (isDone()=true，引擎下一帧自动移除本脚本)：
+ * 创建两个演示成员加入玩家舰队，依次演示基线读取、遍历验证、船体损伤与修复、CR 压低与恢复、
+ * 封存与遍历顺序、换装配与还原，最后移除演示成员恢复初始状态；全程只操作演示成员。
  */
-public class GearInTrainingIndustry extends BaseIndustry {
+public class GearInFleetMemberScript implements EveryFrameScript {
 
-    /** 产业 id：与 industries.csv 的 id 列逐字一致。 */
-    public static final String INDUSTRY_ID = "GearIn_training_industry";
+    /** 存档持久化标记：本脚本是否已在该存档执行过 (随存档保存)。 */
+    public static final String REGISTER_MARK = "GearIn_FleetMemberScript";
 
-    /** 存档持久化标记：演示安装是否已在该存档执行过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_TrainingIndustry";
+    private static final Logger LOG = Global.getLogger(GearInFleetMemberScript.class);
 
-    /** industries.csv upgrade 列目标 (原版产业 id，本节只消费不定义)。 */
-    public static final String UPGRADE_TARGET_ID = "militarybase";
+    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
+    private boolean executed = false;
 
-    private static final Logger LOG = Global.getLogger(GearInTrainingIndustry.class);
-
-    @Override
-    public void apply() {
-        // 顺序：updateSupplyAndDemandModifiers -> updateIncomeAndUpkeep ->
-        // applyAICoreModifiers -> applyImproveModifiers(BaseIndustry.apply(boolean))
-        super.apply(true);
-
-        int size = market.getSize();
-
-        demand(Commodities.SUPPLIES, size, "Training operations");
-        demand(Commodities.CREW, Math.max(1, size / 2), "Instructors");
-        supply(Commodities.CREW, Math.max(1, size - 2), "Trained crew");
-
-        // supplies 缺口会削减船员产出 (只对已声明供给的商品生效)
-        Pair<String, Integer> deficit = getMaxDeficit(Commodities.SUPPLIES);
-        applyDeficitToProduction(1, deficit, Commodities.CREW);
-
-        if (!isFunctional()) {
-            supply.clear();
-        }
-
-        LOG.info(String.format(
-                "GearIn training industry applied: market=%s size=%d supplyCrew=%d demandSupplies=%d demandCrew=%d income=%d upkeep=%d aiCore=%s disrupted=%s functional=%s",
-                market.getName(), size,
-                (int) getSupply(Commodities.CREW).getQuantity().getModifiedValue(),
-                (int) getDemand(Commodities.SUPPLIES).getQuantity().getModifiedValue(),
-                (int) getDemand(Commodities.CREW).getQuantity().getModifiedValue(),
-                (int) getIncome().getModifiedValue(),
-                (int) getUpkeep().getModifiedValue(),
-                aiCoreId == null ? "none" : aiCoreId,
-                isDisrupted(), isFunctional()));
+    public GearInFleetMemberScript() {
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override
-    public void unapply() {
-        super.unapply(); // 先 applyNoAICoreModifiers，再撤销改良/移民/特殊物品
-    }
-
-    // --- AI core：自定义修饰必须成对 (apply / unapply 对称) ---
-
-    @Override
-    protected void applyAlphaCoreModifiers() {
-        market.getStability().modifyFlat(getModId(2), 1,
-                "Alpha core (" + getNameForModifier() + ")");
+    public boolean isDone() {
+        return executed;
     }
 
     @Override
-    protected void applyNoAICoreModifiers() {
-        market.getStability().unmodifyFlat(getModId(2));
-    }
-
-    // --- disruption 钩子 (默认空实现，这里只打日志观察) ---
-
-    @Override
-    protected void notifyDisrupted() {
-        LOG.info(String.format(
-                "GearIn training industry disrupted: market=%s days=%d key=%s",
-                market.getName(), (int) getDisruptedDays(), getDisruptedKey()));
+    public boolean runWhilePaused() {
+        return false;
     }
 
     @Override
-    protected void disruptionFinished() {
-        LOG.info("GearIn training industry disruption finished: market=" + market.getName());
-    }
-
-    /**
-     * 观察助手：把目标市场里本产业的状态打一条日志 (含供需明细)。
-     * 供调用点、控制台与排障复用；市场无该产业时打印 not present。
-     */
-    public static void logState(MarketAPI market) {
-        Industry industry = market.getIndustry(INDUSTRY_ID);
-        if (industry == null) {
-            LOG.info("GearIn training industry state: not present at " + market.getName());
+    public void advance(float amount) {
+        if (executed) {
             return;
         }
-
-        StringBuilder supplyDesc = new StringBuilder();
-        for (MutableCommodityQuantity curr : industry.getAllSupply()) {
-            if (supplyDesc.length() > 0) {
-                supplyDesc.append(", ");
-            }
-            supplyDesc.append(curr.getCommodityId())
-                    .append("=")
-                    .append((int) curr.getQuantity().getModifiedValue());
-        }
-        StringBuilder demandDesc = new StringBuilder();
-        for (MutableCommodityQuantity curr : industry.getAllDemand()) {
-            if (demandDesc.length() > 0) {
-                demandDesc.append(", ");
-            }
-            demandDesc.append(curr.getCommodityId())
-                    .append("=")
-                    .append((int) curr.getQuantity().getModifiedValue());
-        }
-
-        LOG.info(String.format(
-                "GearIn training industry state: market=%s id=%s supply=[%s] demand=[%s] income=%d upkeep=%d buildProgress=%.1f/%s building=%s upgrading=%s functional=%s disrupted=%s aiCore=%s upgrade=%s",
-                market.getName(), industry.getId(), supplyDesc, demandDesc,
-                (int) industry.getIncome().getModifiedValue(),
-                (int) industry.getUpkeep().getModifiedValue(),
-                industry.getBuildOrUpgradeProgress() * industry.getBuildTime(),
-                industry.getBuildTime(),
-                industry.isBuilding(), industry.isUpgrading(), industry.isFunctional(),
-                industry.isDisrupted(),
-                industry.getAICoreId() == null ? "none" : industry.getAICoreId(),
-                industry.getSpec().getUpgrade()));
+        executed = true;
+        runSequence();
     }
 
-    /**
-     * 探针助手：对目标市场里本产业施放 10 天 disruption 并立即清除 (useMax=false 覆盖语义)，
-     * 打印 前后/期间 三态。只用于验证 setDisrupted / isDisrupted / getDisruptedDays 链路。
-     */
-    public static void runDisruptionProbe(MarketAPI market) {
-        Industry industry = market.getIndustry(INDUSTRY_ID);
-        if (industry == null) {
-            LOG.info("GearIn training industry disruption probe: not present at " + market.getName());
-            return;
+    private void runSequence() {
+        CampaignFleetAPI playerFleet = Global.getSector().getPlayerFleet();
+        FleetDataAPI data = playerFleet.getFleetData();
+
+        int initialCount = data.getNumMembers();
+        float initialFleetPoints = playerFleet.getFleetPoints();
+        float initialCargo = playerFleet.getCargo().getMaxCapacity();
+        LOG.info(String.format(
+                "GearIn fleet member start: members=%d fleetPoints=%.0f cargoCapacity=%.0f",
+                initialCount, initialFleetPoints, initialCargo));
+
+        // --- 创建成员 (先不入队)---
+        FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
+        FleetMemberAPI hammerhead = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "hammerhead_Elite");
+        LOG.info(String.format(
+                "GearIn fleet member created: wolf id=%s hull=%s variant=%s fp=%d | hammerhead id=%s hull=%s variant=%s fp=%d",
+                wolf.getId(), wolf.getHullId(), wolf.getVariant().getHullVariantId(), wolf.getFleetPointCost(),
+                hammerhead.getId(), hammerhead.getHullId(),
+                hammerhead.getVariant().getHullVariantId(), hammerhead.getFleetPointCost()));
+
+        // --- 加入舰队 ---
+        data.addFleetMember(wolf);
+        data.addFleetMember(hammerhead);
+        LOG.info(String.format(
+                "GearIn fleet member added: members=%d (was %d) fleetPoints=%.0f (was %.0f) cargoCapacity=%.0f (was %.0f)",
+                data.getNumMembers(), initialCount,
+                playerFleet.getFleetPoints(), initialFleetPoints,
+                playerFleet.getCargo().getMaxCapacity(), initialCargo));
+
+        // --- 遍历验证 ---
+        List<FleetMemberAPI> members = data.getMembersListCopy();
+        boolean wolfFound = false;
+        boolean hammerheadFound = false;
+        for (FleetMemberAPI member : members) {
+            if (member.getId().equals(wolf.getId())) {
+                wolfFound = true;
+            }
+            if (member.getId().equals(hammerhead.getId())) {
+                hammerheadFound = true;
+            }
         }
         LOG.info(String.format(
-                "GearIn training industry disruption probe: before disrupted=%s days=%.1f",
-                industry.isDisrupted(), industry.getDisruptedDays()));
-        industry.setDisrupted(10f, false);
+                "GearIn fleet member iterate: count=%d wolfFound=%s hammerheadFound=%s",
+                members.size(), wolfFound, hammerheadFound));
+
+        // --- 船体状态：损伤与修复 ---
+        float hullBefore = hammerhead.getStatus().getHullFraction();
+        hammerhead.getStatus().applyHullFractionDamage(0.3f);
         LOG.info(String.format(
-                "GearIn training industry disruption probe: during disrupted=%s days=%.1f functional=%s progress=%s",
-                industry.isDisrupted(), industry.getDisruptedDays(),
-                industry.isFunctional(), industry.getBuildOrUpgradeProgressText()));
-        industry.setDisrupted(0f);
+                "GearIn fleet member damage: hullFraction %.2f -> %.2f needsRepairs=%s",
+                hullBefore, hammerhead.getStatus().getHullFraction(), hammerhead.needsRepairs()));
+        hammerhead.getStatus().repairFully();
         LOG.info(String.format(
-                "GearIn training industry disruption probe: after disrupted=%s days=%.1f",
-                industry.isDisrupted(), industry.getDisruptedDays()));
+                "GearIn fleet member repair: hullFraction=%.2f needsRepairs=%s",
+                hammerhead.getStatus().getHullFraction(), hammerhead.needsRepairs()));
+
+        // --- CR 与战斗准备 ---
+        float crBefore = hammerhead.getRepairTracker().getCR();
+        hammerhead.getRepairTracker().setCR(0.3f);
+        LOG.info(String.format(
+                "GearIn fleet member CR: %.2f -> %.2f canBeDeployedForCombat=%s",
+                crBefore, hammerhead.getRepairTracker().getCR(), hammerhead.canBeDeployedForCombat()));
+        hammerhead.getRepairTracker().setCR(crBefore);
+
+        // --- 封存与遍历顺序 ---
+        boolean deployBefore = hammerhead.canBeDeployedForCombat();
+        hammerhead.getRepairTracker().setMothballed(true);
+        List<FleetMemberAPI> priorityOrder = data.getMembersInPriorityOrder();
+        String firstPriority = priorityOrder.isEmpty() ? "none" : priorityOrder.get(0).getShipName();
+        LOG.info(String.format(
+                "GearIn fleet member mothball: canBeDeployedForCombat=%s->%s firstPriority=%s mothballed=%s",
+                deployBefore, hammerhead.canBeDeployedForCombat(), firstPriority, hammerhead.isMothballed()));
+        hammerhead.getRepairTracker().setMothballed(false);
+
+        // --- 装配写入：换装配 -> hull 变化 -> 换回 ---
+        ShipVariantAPI originalVariant = hammerhead.getVariant();
+        hammerhead.setVariant(wolf.getVariant(), true, true);
+        LOG.info(String.format(
+                "GearIn fleet member variant swap: hull=%s variant=%s",
+                hammerhead.getHullId(), hammerhead.getVariant().getHullVariantId()));
+        hammerhead.setVariant(originalVariant, true, true);
+        LOG.info(String.format(
+                "GearIn fleet member variant restore: hull=%s variant=%s",
+                hammerhead.getHullId(), hammerhead.getVariant().getHullVariantId()));
+
+        // --- 清理：恢复初始舰队 ---
+        data.removeFleetMember(wolf);
+        data.removeFleetMember(hammerhead);
+        LOG.info(String.format(
+                "GearIn fleet member done: members=%d (initial %d) fleetPoints=%.0f (initial %.0f)",
+                data.getNumMembers(), initialCount, playerFleet.getFleetPoints(), initialFleetPoints));
     }
 }
 ```

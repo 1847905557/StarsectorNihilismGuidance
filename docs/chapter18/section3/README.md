@@ -1,6 +1,6 @@
-# 让 Nexerelin 在两种星区模式生成 GearIn 开局
+# 用 LazyLib 制作自动点防御决策器
 
-固定 Corvus 与随机星区使用不同生成入口；只测其中一种，另一种往往会把玩家送到空坐标或没有 GearIn 市场的星区。本节为两种模式分别选择出生点，并从同一势力配置读取初始舰队。
+点防御武器若只打最近导弹，会把火力浪费在擦肩而过的小弹头上。本节先按射界过滤，再以载荷和距离计算威胁，让炮塔优先转向真正会造成损失的目标。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,10 +10,11 @@
 
 完成后，您将能够：
 
-- 在 `SectorManager` 可用后区分 Corvus 与随机星区；
-- 为 Corvus 模式登记固定出生实体，为随机星区选择已生成市场；
-- 从同一份 Nexerelin 势力配置读取起始舰队变体。
-- 区分固定 `fleetType`、`RANDOM` 候选和无法解析的舰队类型。
+- 用 `AIUtils` 限定点防御需要考虑的敌方导弹范围；
+- 在评分前用 `WeaponUtils` 排除射界外目标；
+- 把伤害、EMP 与距离组合成可观察的威胁分；
+- 每帧只选择一个最高威胁目标并驱动炮塔转向；
+- 从射界、评分分母和控制权定位点防御失效。
 
 ## 前置知识
 
@@ -21,165 +22,161 @@
 - [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
-## 分开处理两种星区
+## 明确当前需求
 
-Corvus 模式把玩家放在 `corvus_spawnpoints.csv` 登记的固定实体旁，前提是该实体已由 Corvus 星区生成器创建；随机星区先生成 GearIn 市场，再选择规模最大的已生成市场主实体作为出生点，前提是市场已经生成且包含主实体。两种模式都获得相同类型的起始舰队。
+一枚高爆鱼雷从 1100 su 外正面接近，同时一枚低伤害导弹从 300 su 外掠过侧面。点防御应锁定射界内的鱼雷，并持续给出瞄准点。
 
 ## 文件与 API 链路
 
-`SectorManager.isCorvusMode` 选择分支；`ExerelinCorvusLocations` 读取固定出生实体；`NexUtilsFaction.getFactionMarkets` 返回随机星区已经生成的本势力市场；`NexFactionConfig.getStartFleetForType` 读取起始舰队变体 ID。
+### 点防御 API 职责速查表
 
-### 先判断当前星区模式
+| 对象 | 职责 |
+|---|---|
+| `AIUtils` | 提供当前帧附近敌方导弹 |
+| `WeaponUtils` | 判断射界并驱动炮塔朝向 |
+| `CombatUtils` | 按区域补充查询 |
+| `DefenseUtils` | 把本舰装甲状态纳入扩展评分 |
 
-`GearInNexStartPlanner.chooseSpawn()` 只在 manager 已建立后读取 Corvus 状态：
+### 取得当前帧威胁列表
+
+`GearInPointDefenseDirector.choose()` 开头只查询本舰 1400 su 内的敌方导弹：
 
 ```java
-if (GearInNexCompat.isNexCorvusMode()) {
-    return GearInNexCompat.getFactionSpawnPointEntityId(factionId);
+for (MissileAPI missile : AIUtils.getNearbyEnemyMissiles(weapon.getShip(), 1400f)) {
+    // 当前帧候选
 }
 ```
 
-两种模式随后进入不同日志分支。
+远离防区的导弹不会参与排序。
 
-### 为 Corvus 提供固定实体
+### 先排除炮塔够不到的目标
 
-在 `data/config/exerelin/corvus_spawnpoints.csv` 的 GearIn 行写入三列，依次为势力 ID、星系名称和已存在实体 ID：
-
-```csv
-faction,system,entityID
-gear_industry,GearIn Prime,GearIn_prime
-```
-
-`system` 是便于定位的星系名称，真正交给开局逻辑的是 `entityID`。该实体必须已经由 Corvus 星区生成器创建。
-
-固定模式会解析到 `GearIn_prime`，玩家出生在该实体附近。
-
-### 为随机星区选择本势力市场
-
-`chooseSpawn()` 的随机分支在随机星区经济已经建立后，读取 GearIn 当前拥有的市场：
+`choose()` 在循环首个分支用武器弧而非舰首朝向判断可射击性：
 
 ```java
-for (MarketAPI market : NexUtilsFaction.getFactionMarkets(factionId)) {
-    if (largest == null || market.getSize() > largest.getSize()) {
-        largest = market;
-    }
+if (!WeaponUtils.isWithinArc(missile, weapon)) {
+    continue;
 }
 ```
 
-完整实现还会排除没有主实体的市场。选择规模最大的市场能让开局位置保持稳定，也避免引用只存在于 Corvus 模式的实体 ID。
+侧后方导弹不会抢走锁定。
 
-随机模式返回一个实际市场主实体 ID；GearIn 没有市场时明确返回 `null`。
+### 把载荷和距离合成威胁分
 
-### 从配置取得初始舰队
-
-`GearInNexStartPlanner.chooseFleet()` 按 `fleetType` 读取变体列表：
+`GearInMissileThreat.score()` 中高伤害、高 EMP、近距离都会提高优先级：
 
 ```java
-return NexConfig.getFactionConfig(factionId)
-        .getStartFleetForType(fleetType, false, 0);
+float payload = missile.getDamageAmount() + missile.getEmpAmount() * 0.5f;
+return payload * 1000f / Math.max(100f, distance);
 ```
 
-第二个参数为 `false`，因此配置缺少该舰队类型时不会偷偷补一艘后备舰；索引 `0` 固定选择该类型的首组配置，便于两种模式做一致性复验。
+鱼雷的分数高于擦过侧面的轻型导弹。
 
-两个模式对同一个 `fleetType` 会返回相同的变体 ID 列表。
+### 保留最高威胁导弹
 
-### 让配置选择随机开局舰队
-
-`GearInNexStartPlanner.chooseFleet()` 的调用方传入 `RANDOM` 时，由 Nexerelin 从允许随机选择的舰队类型中挑选；固定类型仍直接读取对应配置：
+`choose()` 在 `best` 更新处用一次扫描完成目标选择：
 
 ```java
-List<String> fleet = planner.chooseFleet(factionId, "RANDOM");
-```
-
-多次新档得到的舰队类型可能不同，但每次结果都来自允许的起始舰队集合。
-
-### 先拒绝无法解析的舰队类型
-
-在请求进入 `getStartFleetForType()` 之前，用 try/catch 接住 `StartFleetType.getType()` 对未知键抛出的 `IllegalArgumentException`，避免把拼写错误当成随机类型：
-
-```java
-boolean valid = true;
-try {
-    NexFactionConfig.StartFleetType.getType(fleetType);
-} catch (IllegalArgumentException e) {
-    valid = false;
+if (score > bestScore) {
+    best = missile;
+    bestScore = score;
 }
 ```
 
-固定类型和 `RANDOM` 照常进入配置读取，未知类型在玩家放置前返回明确错误。
+每帧最多产生一个锁定目标。
+
+### 让炮塔开始转向
+
+返回前，`choose()` 只在目标存在时调用瞄准助手：
+
+```java
+if (best != null) {
+    WeaponUtils.aimTowardsPoint(weapon, best.getLocation(), Global.getCombatEngine().getElapsedInLastFrame());
+}
+```
+
+炮塔朝目标转动，目标消失后自然重新选择。
 
 ## 排查关键故障
 
 下面是**局部故障片段**：
 
 ```java
-ExerelinCorvusLocations.SpawnPointEntry entry =
-        ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
-return entry.entityId;
+MissileAPI target = AIUtils.getNearestEnemyMissile(ship);
+return target;
 ```
 
-实际症状：随机星区新档在创建阶段抛出空指针，或后续定位不到 `GearIn_prime`。
+实际症状：炮塔频繁追逐射界外的小导弹，真正接近的鱼雷无人处理。
 
-原因：随机星区没有 Corvus 固定实体，代码没有先判断模式。
+原因：最近距离没有表达射界与载荷，目标也没有经过武器可达性过滤。
 
 下面是**局部修正片段**：
 
 ```java
-String spawnEntityId = planner.chooseSpawn(factionId);
-if (spawnEntityId == null) {
-    throw new IllegalStateException("No GearIn start market was generated");
+if (WeaponUtils.isWithinArc(missile, weapon)) {
+    float score = threat.score(ship, missile);
 }
 ```
 
-复验：分别创建一个 Corvus 新档和一个随机星区新档，记录返回实体 ID；前者应为 CSV 中的固定 ID，后者应属于当前随机星区的 GearIn 市场。
+复验：同时生成 300 su 外的低载荷侧弹和 1100 su 外的高载荷正面鱼雷，记录两者是否进入射界、各自分数与最终目标。
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+`GearInMissileThreat` 只计算分数，`GearInPointDefenseDirector` 负责查询、过滤与执行。这样可以独立观察分数，而不必先让炮塔取得控制权。
 
-::: details 完整成品：GearInNexStartPlanner
+::: details 完整成品：GearInMissileThreat
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.lib;
 
-import java.util.List;
+import org.lazywizard.lazylib.MathUtils;
 
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import exerelin.campaign.SectorManager;
-import exerelin.utilities.NexConfig;
-import exerelin.utilities.NexFactionConfig;
-import exerelin.utilities.NexUtilsFaction;
-import exerelin.world.ExerelinCorvusLocations;
+import com.fs.starfarer.api.combat.MissileAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
 
-public final class GearInNexStartPlanner {
-    public String chooseSpawn(String factionId) {
-        SectorManager manager = SectorManager.getManager();
-        if (manager != null && manager.isCorvusMode()) {
-            ExerelinCorvusLocations.SpawnPointEntry entry =
-                    ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
-            return entry == null ? null : entry.entityId;
-        }
+public final class GearInMissileThreat {
+    public float score(ShipAPI ship, MissileAPI missile) {
+        float distance = Math.max(100f, MathUtils.getDistance(ship, missile));
+        float payload = missile.getDamageAmount() + missile.getEmpAmount() * 0.5f;
+        return payload * 1000f / distance;
+    }
+}
+```
 
-        MarketAPI largest = null;
-        for (MarketAPI market : NexUtilsFaction.getFactionMarkets(factionId)) {
-            if (market.getPrimaryEntity() == null) {
+:::
+
+::: details 完整成品：GearInPointDefenseDirector
+
+```java
+package data.scripts.gearin.lib;
+
+import org.lazywizard.lazylib.combat.AIUtils;
+import org.lazywizard.lazylib.combat.WeaponUtils;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.MissileAPI;
+import com.fs.starfarer.api.combat.WeaponAPI;
+
+public final class GearInPointDefenseDirector {
+    private final GearInMissileThreat threat = new GearInMissileThreat();
+
+    public MissileAPI choose(WeaponAPI weapon) {
+        MissileAPI best = null;
+        float bestScore = 0f;
+        for (MissileAPI missile : AIUtils.getNearbyEnemyMissiles(weapon.getShip(), 1400f)) {
+            if (!WeaponUtils.isWithinArc(missile, weapon)) {
                 continue;
             }
-            if (largest == null || market.getSize() > largest.getSize()) {
-                largest = market;
+            float score = threat.score(weapon.getShip(), missile);
+            if (score > bestScore) {
+                best = missile;
+                bestScore = score;
             }
         }
-        return largest == null ? null : largest.getPrimaryEntity().getId();
-    }
-
-    public List<String> chooseFleet(String factionId, String fleetType) {
-        NexFactionConfig config = NexConfig.getFactionConfig(factionId);
-        try {
-            NexFactionConfig.StartFleetType.getType(fleetType);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Unknown start fleet type: " + fleetType);
+        if (best != null) {
+            WeaponUtils.aimTowardsPoint(weapon, best.getLocation(), Global.getCombatEngine().getElapsedInLastFrame());
         }
-        return config.getStartFleetForType(fleetType, false, 0);
+        return best;
     }
 }
 ```
@@ -188,52 +185,45 @@ public final class GearInNexStartPlanner {
 
 ## 验证方案
 
-1. 构建示例 MOD，确认 `MarketAPI`、`NexUtilsFaction` 与开局配置方法签名匹配。
-2. 创建 Corvus 新档，记录出生实体 ID 和起始舰队变体列表。
-3. 创建随机星区新档，再次记录实体 ID 和同类型舰队列表。
-4. 以固定类型创建 1 次开局，再以 `RANDOM` 创建多次开局，记录舰队规模与类型来源。
-5. 传入未知 `fleetType`，确认规划器在玩家放置前返回错误。
-6. 临时把 GearIn 的随机星区生成权重设为 `0`，确认规划器返回 `null`，而不是一个伪造实体 ID。
+前置场景：给测试舰安装一门可转向点防御武器，并准备可分别从正面与侧后方生成导弹的测试入口。
+
+1. 在 1100 su 正面生成一枚高伤害鱼雷，记录其射界判断、威胁分和炮塔转向。
+2. 在 300 su 侧后方同时生成一枚低伤害导弹，确认它在评分前被射界过滤。
+3. 把低伤害导弹移入射界，记录两枚导弹的分数与最终返回目标。
+4. 让鱼雷离开 1400 su 查询范围，确认候选列表与锁定随下一帧更新。
+5. 临时改用最近导弹故障片段，再恢复分层选择，比较两次锁定结果。
 
 预期结果：
 
-- 两种模式进入不同日志分支；
-- 固定模式返回 `corvus_spawnpoints.csv` 登记的实体；
-- 随机模式返回已生成 GearIn 市场的主实体；
-- 两个模式为同一舰队类型返回相同变体列表；
-- `RANDOM` 只从允许随机的起始舰队类型中选择；
-- 未知舰队类型不会静默退回 `RANDOM`；
-- 没有有效市场时返回 `null`，调用方能够在放置玩家前中止开局并报告原因。
+- 1400 su 外目标不进入候选列表，射界外目标不进入评分；
+- 两个目标均在射界内时，返回值对应威胁分较高者；
+- 每帧最多返回一个 `MissileAPI`，该目标存在时炮塔才接受转向指令；
+- 目标离开范围或消失后，下一帧重新选择剩余目标；
+- `starsector.log` 没有未处理异常。
 
 ## 故障分析
 
-- **随机星区查询不到 Corvus 实体**：模式判断发生在固定实体查询之后。
+- **炮塔追逐射界外的小导弹**：评分前只比较了距离，没有过滤射界。
 
-    - **解决方案**：先确认 `SectorManager` 已创建并判断模式，随机分支改从当前 GearIn 市场取得主实体。
+    - **解决方案**：先调用 `isWithinArc`，再比较威胁分。
 
-- **Corvus 模式出生在星区中心**：CSV 路径、表头或 `entityID` 与已创建 token 不一致。
+- **炮塔在两个目标之间抖动**：两个目标分数接近，每帧都会交换排名。
 
-    - **解决方案**：改用真实实体 ID，创建固定模式新档。
+    - **解决方案**：保留当前目标，并要求新目标超过切换阈值。
 
-- **随机模式没有 GearIn 市场**：生成权重、势力启用状态或市场生成条件不满足。
+- **炮塔完全不转向**：控制代码没有运行在武器效果或自定义 AI 中，原版 AI 仍持有武器。
 
-    - **解决方案**：检查 `getFactionMarkets(factionId)` 的数量，修正配置。
+    - **解决方案**：把调用接入实际控制回调。
 
-- **初始舰队为空**：请求的 `fleetType` 与 `startShips` 键不一致，且 fallback 已关闭。
+- **威胁分变为无穷大**：导弹距离为零或过小时直接进入分母。
 
-    - **解决方案**：记录请求类型和返回列表，修正配置键。
-
-- **随机开局出现不允许的舰队类型**：调用方把任意字符串直接交给随机分支。
-
-    - **解决方案**：先用 `StartFleetType.getType()` 和候选标志过滤。
+    - **解决方案**：为距离设置正数下限。
 
 ## 总结
 
-两种模式共享势力与舰队配置，只在空间对象来源上分支。固定模式使用 CSV 登记的现有 token，随机模式使用本次生成后实际存在的市场主实体；模式判断必须早于固定实体查询，市场存在性必须早于玩家放置。
+点防御决策依次经过查询、可达性过滤、威胁评分和执行。把评分独立成角色类后，您可以加入装甲缺口、弹头类型或命中时间，而不必改动炮塔控制流程。
 
 ## 建议参考项
 
-- `SectorManager.isCorvusMode`：判断星区生成模式；
-- `corvus_spawnpoints.csv`：固定模式出生点；
-- `NexFactionConfig.getStartFleetForType`：读取起始舰队。
-- `NexFactionConfig.StartFleetType`：判断固定类型与 `RANDOM` 候选。
+- `org.lazywizard.lazylib.combat.AIUtils`：`getNearbyEnemyMissiles` 取得当前帧导弹候选；
+- `org.lazywizard.lazylib.combat.WeaponUtils`：`isWithinArc` 确认武器射界，`aimTowardsPoint` 驱动炮塔朝指定坐标转向。

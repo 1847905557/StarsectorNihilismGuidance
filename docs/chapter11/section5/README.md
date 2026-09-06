@@ -1,708 +1,645 @@
-# 制作市场条件
+# 修改舰船装配
 
-本节制作并注册一个市场条件，让条件插件在市场上应用、推进和移除效果。实例标识、勘测与抑制状态会决定条件能否出现和生效。
+本节使用 `ShipVariantAPI` 读取、克隆并修改舰船变体。变体连接装配数据与存档，修改前需要明确对象来源以及哪些变化会被序列化保存。
 
-*本节预期阅读时间：~18 分钟。*
+::: tip 注册表变体先克隆
+注册表中的变体可能被多个舰船共享。修改前先克隆，再把克隆结果绑定到目标成员，避免一次改装影响其他舰船。
+:::
 
-*本节预期操作时间：~40 分钟。*
+::: tip 修改注册表对象前先克隆
+注册表返回的变体可能被多个舰船共享。先克隆再修改，才能把本次装配限制在目标成员，避免污染其他舰船。
+:::
+
+*本节预期阅读时间：~20 分钟。*
+
+*本节预期操作时间：~30 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 在 `market_conditions.csv` 中注册条件，并实现插件生命周期；
-- 区分条件 spec ID 与实例 token，准确查询和移除条件；
-- 判断条件级勘测状态与市场勘测等级的作用范围；
-- 管理条件抑制、解除抑制和重新应用时机；
-- 根据市场效果与日志定位条件实例和状态故障。
+- 从注册表或舰队成员读取变体，并判断各自的失败边界；
+- 克隆变体并验证修改不会污染注册表对象；
+- 使用 API 修改武器、武器组、船插、幅能和模块装配；
+- 区分 `VariantSource` 与变体序列化、存档边界；
+- 根据装配、部署和日志定位变体故障。
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-- [C2-S2] 的 CSV 合并、重复键与空 id 行处理；
-- [C7-S1] 的 `GearInModPlugin`、`onGameLoad` 与持久数据标记；
-- [C8-S4] 的 `MutableStat、`StatBonus` 与 modifier 写入；
-- [C10-S1] 的一次性 `EveryFrameScript` 与 `isDone()` 自停语义；
-- [C10-S2] 的 `addPlanet` 条件市场与实体侧 survey 关系；
-- [C11-S3] 的 `MarketAPI` 条件访问、实例 token 与条件移除；
-- [C16-S2] 的 `loadJSON`，以及 [C16-S3] 的 `getMergedSpreadsheetData` 资源读取入口。
+- [C1-S6] 的舰船船体、`.ship` 文件、内置三件套与装配构建期和部署期错误边界；
+- [C2-S2] 的船插、`hull_mods.csv` 与效果类实例；
+- [C4-S1] 的战役装配结构、字段要求与任务导出流程；
+- [C4-S4] 的模块船、`modules` 字段加载与部署期实体；
+- [C7-S1] 的 `GearInModPlugin` 所有权与 `onGameLoad` 回调；
+- [C10-S1] 的 `GearInSectorStateSampler` 生涯状态采样脚本注册；
+- [C10-S3] 的 `FleetMemberAPI.getVariant()`、`setVariant(...)` 与装配引用边界。
 
-## 术语
+按术语约定，本节首次完整讲解两个词：
 
-按术语约定，本节首次完整讲解以下词：
+- **变体 (variant)**：API 名保留 `ShipVariantAPI`。一次装配的完整定义：船体 (hull)＋武器＋武器组＋船插＋幅能分配 (vents/capacitors)＋联队＋模块引用，外加一个注册表 id(`hullVariantId`) 与一个来源 (`VariantSource`)。
+- **装配 (fit)**：变体的实际内容 —— 武器装在哪、船插装哪些、幅能怎么分、武器怎么分组。本节 "修改装配" 即修改这些字段。
 
-- **市场条件 (condition)**：API 名保留 `MarketConditionAPI`(实例接口)、`MarketConditionSpecAPI`(静态配置)、`MarketConditionPlugin`(行为插件)。一个条件由一条 CSV 注册行 (spec) 和市场上的若干实例 (每个实例带唯一 token 与一个 plugin 实例) 组成。
-- **token**：`addCondition(id)` 返回的唯一实例 id(`getIdForPluginModifications()`，形如 `ore_sparse_b44c3`)；spec id ≠ 实例 token。后续对 "具体实例" 的操作都以 token 定位。
-- **survey(勘测)**：两层语义 —— 条件级 `isSurveyed` / `requiresSurveying`(该条件是否已被勘测、是否需要勘测) 与市场级 `SurveyLevel`(`NONE / SEEN / PRELIMINARY / FULL`)。
-- **suppression(抑制)**：`suppressCondition(id)` / `unsuppressCondition(id)` 维护的 suppressed id 集合；被抑制的条件在重算时不再生效，但实例保留。
-- **重算 (reapply)**：`MarketAPI.reapplyConditions()`(全部) 与 `reapplyCondition(token)`(单个) 对条件 plugin 执行 unapply → apply 的刷新流程。
+## 取得装配来源
 
-## 梳理市场条件关系
+### 变体来源速查表
 
-三个对象分别落在 CSV 注册表、运行实例与行为插件上，先从注册链看起。
+变体有四个注册入口，对应四种来源：
 
-### market\_conditions.csv 注册链
+| 入口 | 路径 | 来源 | 使用方 |
+|---|---|---|---|
+| 空装配自动生成 | `ship_data.csv` 每个注册行 | `HULL` | 按 hull 自动生成 `<hullId>_Hull` 空装配并注册 (无武器槽 displayName "Standard"、有武器槽 "Custom") |
+| 数据变体 | `data/variants/**/*.variant`(core 与各 MOD 合并) | `STOCK` | 变体文件加载流程 (先读 `variantId`，已存在则**静默跳过**，跨文件先到先得；加载后置 `STOCK` 来源并注册) |
+| 任务设计/任务存档 | `<saves>/missions/variants`、`<saves>/missions/<id>` | `MISSION_DESIGN` / `MISSION_SAVE` | 任务变体加载流程 |
+| 存档内变体 | 随生涯存档保存的变体 (refit 界面保存的 `svd_<hullId>_<uid>` 变体) | `REFIT` | 读档时按 id 从存档恢复变体 |
 
-原版注册表是 `data/campaign/market_conditions.csv`(169 行)。
+为什么 `.variant` 文件引用 hull 时 hull 必然已注册
 
-### market\_conditions.csv 字段速查表
+启动加载流程先读 `ship_data.csv` 的 hull 注册 (生成全部 `<hullId>_Hull`)，再加载 `data/variants` 变体，因此 `.variant` 文件引用 hull 时，hull 必然已注册。
 
-表头九个字段，每列被谁使用：
+### 变体读取速查表
 
-| 字段 | 写入对象 | 语义 / 使用方 |
+公开读取 API(`com.fs.starfarer.api.SettingsAPI`)：
+
+| 方法 | 语义 |
+|---|---|
+| `ShipVariantAPI getVariant(String variantId)` | 注册表未命中时回退读取存档内变体；两处都未命中 → `SettingsAPI.getVariant` 返回 null(不抛异常) |
+| `List<String> getAllVariantIds()` | 全部已注册 id 的副本 |
+| `ShipVariantAPI createEmptyVariant(String hullVariantId, ShipHullSpecAPI hullSpec)` | 代码构造空变体 (注意这不注册进注册表，也不设 `HULL` 来源) |
+| `int computeNumFighterBays(ShipVariantAPI variant)` | 按变体算战机甲板数 |
+
+注意 `SettingsAPI.getVariant` 未命中返回 null；"Ship hull variant not found!" 只在引擎内部路径抛。`FleetMemberAPI` 按 id 建成员时未命中走的是 `errorShipVariant` 回退 (默认 `nebula_Standard`)＋日志堆栈 (该回退在模拟战与标题演示章节已讲)。
+
+两条路径不要混为一谈。
+
+变体的下游使用方：
+
+- `FactoryAPI.createFleetMember(FleetMemberType, String variantOrWingId)` / `(FleetMemberType, ShipVariantAPI)`(`com.fs.starfarer.api.FactoryAPI`)。
+- `FleetMemberAPI.getVariant()` / `setVariant(variant, withRefit, withStatsUpdate)`(`com.fs.starfarer.api.fleet.FleetMemberAPI`；舰队成员章节)。
+- `MutableShipStatsAPI.getVariant()`(`com.fs.starfarer.api.combat.MutableShipStatsAPI`)：`applyEffectsBeforeShipCreation` 里取变体做装配级改动的标准入口。
+- `ShipAPI.getVariant()`(`com.fs.starfarer.api.combat.ShipAPI`)：部署后的战斗实体。
+
+一个关键事实 (`FleetMemberAPI`)：**成员按 id 创建时拿到的变体是注册表变体的 `clone()`**，不是共享引用；变体武器组数 > 1 时还会 `setMayAutoAssignWeapons(false)`。因此 "改成员变体" 与 "改注册表变体" 是两个隔离的层。
+
+## 读取装配字段
+
+### 装配字段速查表
+
+注册表只按 id 对表；变体内部存了什么，决定后续每个修改操作的落点。`ShipVariantAPI`(`com.fs.starfarer.api.combat.ShipVariantAPI`) 是变体的公开接口，支持克隆；其字段即装配的存储形态：
+
+| 字段 | 类型 | 语义 |
 |---|---|---|
-| `name` | `MarketConditionSpecAPI.getName()` | 显示名；必填 (`getString`，缺列即加载失败)。`MarketConditionAPI.getName()` 先问 plugin，plugin 回退 spec 名 |
-| `id` | spec 注册 key | 条件 spec id，CSV spec 加载期注册表的键；`addCondition(id)` 的入参；`ConditionGenDataSpec` 交叉校验键 |
-| `tags` | `getTags()` | 逗号分隔字符串，`optString` 可选 |
-| `planetary` | `spec.isPlanetary()` | `optBoolean` 默认 false；`MarketConditionAPI.isPlanetary()` 转发 plugin(默认读 spec)；"行星条件显示在条件面板右侧，市场条件显示在行星条件左侧的组里" |
-| `decivRemove` | `spec.isDecivRemove()` | `optBoolean` 默认 false；文明衰退移除标记 |
-| `script` | `getScriptClass()` | **plugin 类名**；必填。加载期经脚本类加载器 `registerScriptClass` 注册；实例化时机是条件实例创建时 |
-| `desc` | `getDesc()` | tooltip 正文；`optString` 默认 `"No description... yet"`；支持 `$token` 替换 |
-| `icon` | `getIcon()` | 图标贴图路径；**留空回退原版 `graphics/hullmods/generic_mod.png`**；非空时资源加载期排队 TEXTURE，路径无效 → 加载期失败 |
-| `order` | `getOrder()` | `optDouble` 默认 20.0；条件列表排序 |
+| `weapons` | `Map<String, String>` | 槽位 id → 武器 id(含内置武器；内置武器由 `setHullSpec` 时写入) |
+| `weaponGroups` | `List<WeaponGroupSpec>` | 武器组，组内槽位列表 |
+| `wings` | `List<String>` | 联队 id 列表，索引即甲板序 (内置联队占前 N 位) |
+| `hullMods` / `permaMods` / `sMods` / `suppressedMods` | `LinkedHashSet<String>` | 船插、永久船插、内置增强 (s-mod)、压制船插 |
+| `numFluxVents` / `numFluxCapacitors` | `int` | 幅能分配 |
+| `variantDisplayName` | `String` | 默认 `"Strike"` |
+| `hullVariantId` | `String` | 注册表 id |
+| `source` / `sourceDetail` | `VariantSource` / `String` | 来源与来源详情 (如任务 id) |
+| `stationModules` | `LinkedHashMap<String, String>` | 模块槽 id → 模块变体 id |
+| `moduleVariants` / `savedModuleVariants` | `Map<String, ShipVariantAPI>` | 模块变体覆盖 (运行期，不随存档保存)；保存用的序列化副本 |
+| `tags` / `goalVariant` / `originalVariant` / `mayAutoAssignWeapons` | 杂项 | 标签；autofit 目标标记；autofit 原始变体；是否允许部署期自动组武器 (**JSON 加载后恒为 `false`**；代码 `new` 出来的恒为 `true`) |
 
-**加载入口**：CSV spec 加载期用 `readCSV("id", "data/campaign/market_conditions.csv", true)` 读取，逐行构造 `MarketConditionSpecAPI`。合并语义与 `hull_mods.csv` 相同 (同一读取器实现)：
+变体引用不要跨存档缓存
 
-**同文件重复 id 抛 `Duplicate key [...] while loading [...]`；跨文件重复 id 先到先得、后读入行静默跳过；空 id 行跳过**。MOD 只提交自己的行即可追加进原版表。
+`hullSpec` 是 `transient` 字段：反序列化时按 `hullId` 重新从注册表取 (`readResolve`)。任何变体引用都不要跨存档缓存 —— 读档后旧引用里的 `hullSpec` 可能是陈旧或空对象。
 
-**`MarketConditionSpecAPI` 构造**：`id` / `name` / `icon` / `script` 四列 `getString` **必填** (缺列 → 加载期 `JSONException`)；`desc` / `order` / `planetary` / `decivRemove` / `tags` 可选。
+## 判断来源状态
 
-**plugin 实例化**：`spec.getNewPluginInstance()` → 脚本类加载器 `loadScriptInstance(scriptClass)`，按类名注册表 `newInstance`**，必须无参可实例化** (类实现了接口并不等于实例会被调用，这一点在既有脚本讲解中已经确立)。
+### 来源状态速查表
 
-实例化时机是条件实例创建时，不是 CSV 加载时。
+字段表里的 `source` 决定保存、覆盖与克隆时的行为，值得单独讲。`VariantSource`(`com.fs.starfarer.api.loading.VariantSource`) 恰五个值：
 
-**交叉校验的完整流程**：procgen 表 `data/campaign/procgen/condition_gen_data.csv` 的每一行 (除 `_no_pick` 后缀) 必须在 `market_conditions.csv` 有对应行。
-
-否则**加载期**抛 `RuntimeException("[...] is not a valid market condition, was loading: condition_gen_data.csv")`。
-
-即：写 procgen 条件行前必须先有 market\_conditions.csv 行。
-
-### MarketConditionAPI 生命周期
-
-注册链让 spec 在加载期就位，实例则在运行期由插件按生命周期回调驱动，先看接口本身。
-
-### 条件接口速查表
-
-**接口速查** (`com.fs.starfarer.api.campaign.econ.MarketConditionAPI`、`com.fs.starfarer.api.characters.MarketConditionSpecAPI`、`com.fs.starfarer.api.campaign.econ.MarketConditionPlugin`)：
-
-| 接口 | 高频成员 | 语义 |
+| 值 | 设置点 | 语义 |
 |---|---|---|
-| `MarketConditionAPI` | `getId()` / `getName()` / `getSpec()` / `getPlugin()` | spec id；显示名；静态配置；plugin |
-| `MarketConditionAPI` | `getIdForPluginModifications()` | **唯一 token**(`id + "_" + genUID`) |
-| `MarketConditionAPI` | `isSurveyed()` / `setSurveyed(boolean)` / `requiresSurveying()` | 条件级 survey；`requiresSurveying` 读 procgen 表的 `reqSurvey` |
-| `MarketConditionAPI` | `isPlanetary()` | 转发 plugin(默认 spec 标记)，决定条件面板位置 |
-| `MarketConditionSpecAPI` | `getOrder()` / `getIcon()` / `getDesc()` / `getScriptClass()` / `getTags()` / `isPlanetary()` / `isDecivRemove()` | CSV 九字段的运行时面 |
-| `MarketConditionPlugin` | `init(market, condition)` / `setParam(Object)` / `apply(String id)` / `advance(float amount)` / `unapply(String id)` | 生命周期回调 |
-| `MarketConditionPlugin` | `isTransient()` / `showIcon()` / `runWhilePaused()` / `getName()` / `getIconName()` | 存档与展示语义 |
-| `MarketConditionPlugin` | `getTokenReplacements()` / `getHighlights()` / `getHighlightColors()` / `hasCustomTooltip()` / `createTooltip(...)` / `isTooltipExpandable()` / `getTooltipWidth()` | tooltip 链路 |
-| `MarketConditionPlugin` | `getRelatedCommodities()` | 仅事件来源条件使用 |
+| `STOCK` | 加载 `data/variants` 变体时 | 数据文件变体；`isStockVariant()` 的判定就是 `source == STOCK` |
+| `HULL` | 按 `ship_data.csv` 注册行生成 `<hullId>_Hull` 时 | 自动空装配 |
+| `REFIT` | refit 界面保存变体 (`svd_` 前缀) 与代码 `setSource` | 玩家/代码改装配后的变体 |
+| `MISSION_DESIGN` | `loadMissionVariants` 的 `<saves>/missions/variants` | 任务设计变体 (`isCommonMissionVariant()` 即此) |
+| `MISSION_SAVE` | `loadMissionVariants` 的 `<saves>/missions/<id>` 与 `createMissionVariant` 导出 | 任务内保存的玩家改装配 |
 
-**实例创建**：`MarketAPI.addCondition(id[, param])` 的完整顺序：
+两个高频判定：
 
-1. 创建 `MarketConditionAPI` 实例：从 CSV spec 加载期的注册表取 spec，**spec 缺失抛 `RuntimeException("Market condition [" + id + "] not found")`**；plugin 用到时才创建并 `init(market, condition)`。
-2. 加入 `conditions` 列表、`resetCache()`。
-3. `param` 非 null 时 `setParam(param)`(在 apply 之前)。
-4. **未 suppressed 时立即 `plugin.apply(token)`**，注意这里只查 suppression，不查 surveyed。
-5. `getGenSpec()` 非 null 时 `setSurveyed(!genSpec.isRequiresSurvey())`，**survey 状态在 apply 之后才写入**。
-6. 返回 token(`getIdForPluginModifications()`)。
+- `isStockVariant()` = `getSource() == VariantSource.STOCK`。注意 `<hullId>_Hull` 空装配**不是** stock 变体 (来源是 `HULL`)。
+- `isEmptyHullVariant()` 的判定条件是无内置以外的船插 ∧ 无内置以外的联队 ∧ 无内置以外的武器 ∧ `source == VariantSource.HULL`。所以 "看起来空" 的代码构造变体 (`createEmptyVariant`) 不满足这个判定；战役制作章节也用这个判定识别自动 `<hullId>_Hull` 空装配。
 
-**推进**：`MarketAPI.advance(amount)` 每帧遍历全部条件 plugin 调 `advance(amount)`；`runWhilePaused()` 返回 false(基类默认) 时暂停分支不推进。
+## 修改武器与船插
 
-**移除/重算**：`unapply(id)` 在三条路径被调用：`removeCondition` / `removeSpecificCondition`(移除时)、`reapplyConditions` / `reapplyCondition`(重算时)。
+来源与结构都讲清了，接下来用 API 修改装配。先记住主线：改之前 `clone()`，改完检查来源；每张表的 "陷阱" 列就是失败时机。公开 API 方法 (`com.fs.starfarer.api.combat.ShipVariantAPI`) 与语义：
 
-**存档语义**：`isTransient()` 决定 plugin 是否进存档。`BaseMarketConditionPlugin.isTransient()` = true —— 写存档时 plugin 实例被丢弃，读档时按 spec 重建 plugin 并重新 `init`。
+### 武器槽位速查表
 
-**不重放 `setParam`**(读档重建时只执行 `init`)。
+| 方法 | 语义与陷阱 |
+|---|---|
+| `void addWeapon(String slotId, String weaponId)` | 立即按武器 id 解析 spec(缺失 → 立刻抛 `RuntimeException("Weapon spec [...] not found!")`)；**槽位不校验**，坏槽位静默写入，延迟到部署期失败。内置武器槽的写入被忽略 (`addWeapon(slot, spec, false)` 只在非内置槽写入) |
+| `void clearSlot(String slotId)` | 从武器表移除槽位 |
+| `String getWeaponId(String slotId)` / `WeaponSpecAPI getWeaponSpec(String slotId)` | 未装 → `null` |
+| `List<String> getNonBuiltInWeaponSlots()` | 装有武器的槽减去内置槽 |
+| `Collection<String> getFittedWeaponSlots()` | 装有武器且非装饰槽 |
+| `WeaponSlotAPI getSlot(String slotId)` | 委托 `hullSpec.getWeaponSlot` |
 
-`BaseMarketConditionPlugin2` 非 transient(`isTransient()` = false)，进存档、附带 `daysActive` 计时，"Use sparingly since it'll add to savefile bloat"。
+### 幅能与船插速查表
 
-### token 与实例访问
+| 方法 | 语义 |
+|---|---|
+| `setNumFluxVents(int)` / `setNumFluxCapacitors(int)` | 直接写数值 |
+| `addMod(String)` | 进 `hullMods`(被压制时忽略) |
+| `removeMod(String)` | 内置船插与 perma 船插**返回不删**，想移除必须 `removePermaMod`，内置船插不可移除 |
+| `clearHullMods()` | 清空后重放内置 + perma 船插 (与 `getHullMods().clear()` 不同，javadoc 明确这点) |
+| `addPermaMod(String)` / `addPermaMod(String, boolean isSMod)` | 进 `permaMods`(isSMod 时同时进 `sMods`) 并 `addMod` |
+| `getHullMods()` | 含内置与 perma 的完整集合 (`getAllMods()` 是实现类方法，接口外) |
+| `getSuppressedMods()` / `addSuppressedMod(String)` | 压制船插：`addSuppressedMod` 会顺带 `removeMod` |
 
-- **token 生成**：`id + "_" + Misc.genUID()`，全存档唯一；两个同 spec id 实例 token 必然不同。
-- **四个查询入口** (`MarketAPI`)：
-    - `getConditions()`：活列表，遍历前先拷贝；
-    - `getCondition(id)` / `getFirstCondition(id)`：**同 spec id 的首个实例**，走 `conditionsCache`(按 spec id 首见即存、增删时 `resetCache`)；
-    - `getSpecificCondition(token)`：按 token 线性扫描，精确实例。
-- **移除不对称性** (市场侧访问入口讲解中已点名的必须遵守的规则，本节给出实现)：
-    - `removeCondition(id)`：遍历移除**同 spec id 的全部实例**，逐个 `unapply`；
-    - `removeSpecificCondition(token)`：只移除 token 对应实例并 `unapply`，随即返回。
+### 武器组速查表
 
-删除具体实例必须用 `removeSpecificCondition(token)`
+| 方法 | 语义与陷阱 |
+|---|---|
+| `getWeaponGroups()` / `addWeaponGroup(WeaponGroupSpec)` | 读/追加；**空组被 `addWeaponGroup` 静默丢弃** |
+| `WeaponGroupSpec getGroup(int index)` | 越界时**自动新建一个空 `LINKED` 组并追加**，遍历式调用会悄悄改变装配 |
+| `autoGenerateWeaponGroups()` | 按 AI hints、弧线、武器尺寸把武器聚类成**最多 7 组**：PD / `NO_MANUAL_FIRE` 组排最后、导弹/火箭组排前、每组按内容决定 `LINKED`/`ALTERNATING` 与 autofire 默认值 (`autoGenerateWeaponGroupsV2`) |
+| `boolean hasUnassignedWeapons()` | 存在非装饰、未入任何组的武器 → `true` |
+| `void assignUnassignedWeapons()` | 无组 → 直接 `autoGenerateWeaponGroups()`；有组 → 未分配武器并入 (已有 7 组时并入第 7 组)，并清空空组 |
 
-`removeCondition(id)` 移除同 spec id 的**全部**实例 —— 只想删一个实例时用 id 会连带删除其他实例并逐个 `unapply`，修饰全部回滚。请保留 `addCondition` 返回的 token 再删。
+`WeaponGroupSpec`(`com.fs.starfarer.api.loading.WeaponGroupSpec`) 是普通类：
 
-- **修饰隔离**：条件 plugin 往市场写修饰 (hazard、accessibility、stats 等) 时，原版 `BaseHazardCondition.apply(id)` 直接 `market.getHazard().modifyFlat(id, ...)`。
-    - `apply` 传入的 id 就是 token，`BaseMarketConditionPlugin.getModId()` 是等价便捷入口。
+- `WeaponGroupType getType()`(只有 `LINKED`/ `ALTERNATING`，`com.fs.starfarer.api.loading.WeaponGroupType`)。
+- `List<String> getSlots()`、`addSlot`/`removeSlot`；
+- `isAutofireOnByDefault()`/`setAutofireOnByDefault(boolean)`
 
-禁止用 spec id 当 modifier source
+`clone()` 深拷贝槽位列表。`getGroup(i)` 越界时自动新建空组并追加 —— 想读第 N 组，读完它就真的存在了。读取一律用 `getWeaponGroups()`。
 
-修饰 source 必须用实例 token(`apply` 传入的 id 或 `getModId()`)：同 spec id 多实例会互相覆盖 —— 后 `apply` 覆盖先 `apply`，`unapply` 其中一个实例时全部修饰一起丢失。
+**部署期使用方**：对**非战机**，若 "`isMayAutoAssignWeapons()` 且 (组为空或有未分配武器或只有 1 组)"→ `autoGenerateWeaponGroups()`；否则 → `assignUnassignedWeapons()`。
 
-### survey 语义
+两个调用**直接写回传入的变体对象**：舰队部署路径传的是成员的克隆变体 (成员进入战斗时生成的克隆)，所以注册表变体不被污染，但成员变体本身会被改写；如果直接把共享/复用变体传进会部署的路径，它会被改。
 
-survey 是**两层**状态，别混用：
+**战机 (`isFighter()`) 两条都不触发**，战机未入组武器拿不到瞄准目标 (见舰船制作章节)。
 
-- **市场级 `SurveyLevel`**(`NONE / SEEN / PRELIMINARY / FULL`)：用户对行星的勘测进度。`CampaignPlugin.updateMarketFacts` 把 `$isSurveyed` / `$surveyLevel` 写进市场 memory。
-- **条件级 `isSurveyed` / `requiresSurveying`**：单条条件的勘测状态。`requiresSurveying()` 查 `condition_gen_data.csv` 对应行的 `reqSurvey` 列 (表内 `ore_sparse` / `ore_abundant` / `ruins_*` 等资源类条件为 `TRUE`)。
+### OP 成本速查表
 
-### 条件 survey 初始值速查表
+| 方法 | 语义 |
+|---|---|
+| `computeOPCost(MutableCharacterStatsAPI stats)` | = 武器 OP + 船插 OP + vents + capacitors |
+| `computeWeaponOPCost(stats)` | 引用缺失的武器/联队 spec 时抛 `RuntimeException`(消息形如 `Weapon spec with id [...] not found`、`Fighter wing spec with id [...] not found`；**实现原文的格式化串缺右括号，不要依赖消息文本做解析**) |
+| `computeHullModOPCost()` / `computeHullModOPCost(stats)` | 只算非内置、非 perma 船插 |
+| `getUnusedOP(stats)` | 船体 OP(`hullSpec.getOrdnancePoints(stats)`)− `computeOPCost` |
 
-初始值来自四个入口：
+## 修改模块与克隆
 
-| 入口 | 设置 | 出处 |
-|---|---|---|
-| procgen 行星生成 | `mc.setSurveyed(!genSpec.isRequiresSurvey())` | `PlanetConditionGenerator` |
-| `addCondition(id)` | genSpec 非 null 时同上 | `MarketAPI.addCondition` |
-| `economy.json` 的 `startingConditions` | **强制 `setSurveyed(true)`** | `economy.json` 加载期 |
-| `Misc.setFullySurveyed`(勘测完成) | 全部条件 `setSurveyed(true)` + `setSurveyLevel(FULL)` | `com.fs.starfarer.api.util.Misc` |
+武器、武器组、船插与幅能都落在变体自身字段上；模块变体则是变体与变体之间的引用关系。
 
-用户侧完整链路：`addPlanet` 为行星挂条件市场 `market_<planetId>`(`Misc.initConditionMarket`，行星加入所在位置时调用；市场 id = `"market_" + planet.getId()`)。
+- `Map<String, String> getStationModules()`：模块槽 id → 模块变体 id(`.variant` 文件的 `modules` 字段；对象与数组两种写法都被接受、加载期不校验，见模块船制作章节)。
+- `List<String> getModuleSlots()`：`stationModules` 中槽位类型为 `STATION_MODULE` 的槽。
+- `ShipVariantAPI getModuleVariant(String slotId)`：先查运行期覆盖 `moduleVariants`，未命中且槽位是模块槽时按 `stationModules` 的变体 id 查注册表。
+- `void setModuleVariant(String slotId, ShipVariantAPI variant)`：**只接受非 STOCK 来源的变体作为覆盖** —— `null` 与 STOCK 来源变体都按 "移除覆盖" 处理。挂覆盖时 `stationModules` 条目同步指向覆盖变体的 `hullVariantId`。
 
-打开行星调查面板时未勘测市场置 `PRELIMINARY`。
+模块覆盖必须是非 STOCK 来源
 
-勘测完成 `applySurveyResults` → `Misc.setFullySurveyed` → 殖民界面 `showColonizeScreen` 开头 `market.reapplyConditions()` → 条件效果从此生效。
+`setModuleVariant(slotId, variant)` 只接受非 STOCK 来源的变体作为覆盖，`null` 与 STOCK 来源变体都按 "移除覆盖" 处理。忘记 `setSource(REFIT)` 是模块覆盖 "没生效" 的首因 (对应规则强度第 6 条)。
 
-**重算检查** (本节核心)：
+## 保存装配结果
 
-- `reapplyConditions()`：逐个 `unapply`；**仅 `isSurveyed() && !isConditionSuppressed(id)` 的条件才 `apply`**。
-- `reapplyCondition(token)`：单实例 `unapply` +(未 suppressed)`apply`；**不检查 surveyed**，两个重算入口的检查条件不同。
-- 未勘测条件的可观察行为：`addCondition` 当帧效果已生效 (apply 不查 surveyed)，**下一次重算后效果消失** (unapply 执行、apply 被跳过)；勘测完成后恢复。
-- UI 侧：勘测扫描面板与勘测结果面板只展示 `isSurveyed()` 为 true 的条件。
-- 运行期条件市场是常规 `Market` 实例，重算同时检查 surveyed 与 suppression。
+装配改完之后，变体要能复制、能写盘、能随存档保存，改动能在哪里生效也由此划定。
 
-### suppression 语义
+- `clone()`：深拷贝 `weapons`、`weaponGroups`(逐组 `clone`)、`hullMods`/`permaMods`/`sMods`/`sModdedBuiltIns`/ `suppressedMods`/`wings`/`tags`/`stationModules`，`moduleVariants` 递归克隆：
+    - **`hullSpec` 是共享引用**；来源等标量随 `super.clone` 复制，**克隆保留原来源**，需要时显式 `setSource`。
+- `toJSONObject()`：键与 `.variant` 数据文件一致：`displayName`/`hullId`/`variantId`/`fluxVents`/`fluxCapacitors`；`goalVariant` 仅 `true` 时输出：
+    - `weaponGroups`(`mode` 用枚举名、`autofire`、`weapons` 为槽→武器 id 映射)；`modules`(数组形式)。
+    - `wings`/ `hullMods` 只序列化非内置内容；`permaMods`/`sMods`/`tags`(tags 非空才输出)。
+    - 副作用：序列化时若没有任何已装联队会清空 `wings` 列表。
+- 引擎的变体保存入口 (`saveVariant(spec, path)`)：克隆一份、把克隆与原件的来源都置 `STOCK`、注册 (覆盖) 并写 JSON 文件，引擎内部保存变体统一走 "克隆后落盘"。
+- 任务导出完整流程 (战役制作章节)：`createMissionVariant` 写 `<saves>/missions/<id>/mission_<id>_ship_<n>.variant`。
+- 成员变体持久化边界 (成员随档保存时)：**只有非 STOCK 且非 HULL 来源的变体随成员存档** (写入 `savedVariant`)：
+    - STOCK/HULL 来源的成员变体不落档，读档后重新从注册表按 id 克隆，部署期对成员变体的武器组写入 (来源仍为 STOCK 时) 因此不会跨存档残留。
 
-- **机制**：`suppressCondition(id)` 把 spec id 加进市场的 `suppressedConditions` 集合 (用到时才创建)；`isConditionSuppressed(id)` 查集合。
-    - `unsuppressCondition(id)` 移除，集合清空且未设置 `retainSuppressedConditionsSetWhenEmpty` 时置 null。
-- **生效时机**：`suppressCondition` **本身不立即移除效果** —— 只在下次重算时，`reapplyConditions` 对它 `unapply` 但跳过 `apply`。**可观察结果**：suppress 后效果仍在，下一次经济迭代 (或稳定度变化、手动重算) 后才消失。
+成员变体落档边界
 
-suppress 后立即读数值，效果还在
+成员随档保存时只把**非 STOCK 且非 HULL 来源**的变体写入存档；STOCK/HULL 来源的成员变体不落档，读档后重新从注册表按 id 克隆 —— "改了装配但读档后变回原样" 排查时先看来源，克隆后记得显式 `setSource`。
 
-`suppressCondition(id)`：需要立即生效时，请显式调用重算后再读数。
+## 保护装配来源
 
-- **实例保留**：suppression 只抑制 "生效"，`getConditions()` 里实例仍在、`getSpecificCondition(token)` 仍可查到。
-- **持久化**：集合随市场存档；空集在写档时置 null。
+前面各节把失败时机散落在表里，这里收拢成一份对照清单。排错时从症状反查规则编号，比逐表翻找更快。
 
-原版为什么需要 suppression
+**必须/禁止 (当前基线仍有效，违反有明确可观察结果)**：
 
-产业或物品在生效期间 "占位" 覆盖一组条件：`PlanetaryShield` 在 `apply` 时 `market.suppressCondition(Conditions.METEOR_IMPACTS)`、`unapply` 时配对 `unsuppressCondition`；
+1. `.variant` 数据文件**必须**包含 `displayName`、`hullId`、`variantId`、`fluxVents`、`fluxCapacitors`、`weaponGroups` 六个键：
+    - 缺键 → `JSONException` 从变体文件加载流程冒泡，**启动加载失败** (战役制作章节已定：`weaponGroups` 必填)。
+2. 变体文件的 `hullId` **必须**指向已注册 hull(否则 `Ship hull spec [...] not found!`)；`weapons` 里的武器 id **必须**有效 (否则 `Weapon spec [...] not found!`)，两者都是加载期失败，非静默。
+3. 代码里 `addWeapon` 的武器 id **必须**有效，调用点立刻抛 `Weapon spec [...] not found!`，而不是延迟报错。
+4. 槽位 id **必须**是 hull 真实存在的槽。`addWeapon` 不校验 (静默写入)，部署期才抛 `Ship hull [<hullId>] variant [<variantId>]: slot id [<slot>] not found for weapon [<weapon>]`，舰船不生成。
+5. **禁止**试图用 `addWeapon` 改内置武器槽、用 `removeMod` 移除内置/perma 船插，两者都静默不生效，装配不变且无任何报错。
+6. `setModuleVariant` 的变体参数**必须**是非 STOCK 来源；传 STOCK 或 `null` 都按 "移除覆盖" 静默处理。
+7. **禁止**跨文件重复 `variantId`，后者静默跳过，"装配不出现" 的首选排查方向 (战役制作章节)。
+8. 未注册 id 走 `SettingsAPI.getVariant` → 返回 null；走 `FleetMemberAPI` 路径 → `errorShipVariant` 回退 (模拟战与标题演示章节)。两条路径行为不同，排查时先分清。
 
-`SolarArray` 抑制 `HOT` / `POOR_LIGHT`；Fusion Lamp 物品效果抑制一组条件。
+**建议**：
 
-原版所有用例都在 `apply` / `unapply` 中成对出现。
+- 修改装配前先 `clone()`(`getVariant().clone()` → `setSource(REFIT)` → 修改 → `setVariant(newVariant, false, false)`)；改完来源记得 `setSource`，克隆不会自动改。
+- 代码组装完武器后调用 `autoGenerateWeaponGroups()` 或 `assignUnassignedWeapons()` 补组，避免部署期隐式补组改写变体。
+- 运行时按 id 取变体用 `SettingsAPI.getVariant`；要遍历全部注册变体用 `getAllVariantIds()`(按注册表 id 全量扫描模式)。
 
-`suppressCondition(id)` 必须配对 `unsuppressCondition(id)`
+## 执行装配修改
 
-suppressed 集合只增不减：漏掉配对会让该条件的效果永久休眠，重算时 `unapply` 执行、`apply` 永不回来。
+本页把一个注册表变体依次送过读取来源、克隆改装、补齐武器组、覆盖模块；每一环都放在对应角色的 `runOnce()` 内，日志出现后再进入下一环，最后才处理序列化。
 
-### 重算触发
+### 读取注册表变体
 
-`reapplyConditions()` 被谁调用 (三个触发点)：
-
-1. **经济迭代**：经济批量处理任务对每个市场调用 `reapplyConditions()` + `reapplyIndustries()`，每月 10 次迭代。
-2. **稳定度变化**：`MarketAPI.advance` 检测稳定度数值发生变化时 → `reapplyConditions()` + `reapplyIndustries()` + `updatePrices()`。
-3. **手动调用**：`reapplyConditions()` / `reapplyCondition(token)`；勘测完成后的殖民界面也走这条路径。
-
-游戏内自然观察：给市场建好行星护盾 (`PlanetaryShield`) 后，`meteor_impacts` 条件的效果在**下一个经济迭代**消失，条件图标仍在 —— suppression + 重算的完整流程。
-
-## 规则强度
-
-机制讲完，把必须遵守与值得遵循的做法集中成清单，每条都附违反后的可观察结果：
-
-### 规则强度速查表
-
-| 规则 | 强度 | 违反后的可观察结果 |
-|---|---|---|
-| `addCondition(id)` 的 id 必须存在于 `market_conditions.csv`(含跨 MOD 合并表)；spec 缺失时实例构造抛 `RuntimeException("Market condition [id] not found")` | 必须 | 运行期抛异常，条件未添加 |
-| 条件 plugin 写市场修饰时，modifier source 必须用实例 token(`apply` 传入的 id 或 `getModId()`)，禁止用 spec id | 必须 | 同 spec id 多实例的修饰互相覆盖：后 apply 覆盖先 apply，`unapply` 一个实例全部修饰丢失 |
-| 移除具体条件实例必须用 `removeSpecificCondition(token)`；`removeCondition(id)` 移除同 id 全部实例 | 必须 | 同 id 其他实例被连带移除并 unapply |
-| `suppressCondition(id)` 必须配对 `unsuppressCondition(id)`；且效果变化在下次重算后才可观察 | 必须 | 漏配对 → 条件效果永久休眠；suppress 后立刻查数值 → 效果还在 (重算前不变) |
-| transient 条件插件 (`BaseMarketConditionPlugin` 默认) 不得依赖 `setParam` 数据跨存档；需要持久参数必须改用非 transient 插件 (`BaseMarketConditionPlugin2`) 或把参数另存 (如市场 memory) | 必须 | 读档后条件参数恢复默认值：plugin 不进存档、读档重建不重放 `setParam` |
-| 新增条件 id 若同时写入 `condition_gen_data.csv`，两表必须都有该行 | 必须 | 加载期 `RuntimeException("[...] is not a valid market condition, was loading: condition_gen_data.csv")` |
-| 条件 icon 列留空会回退原版 `graphics/hullmods/generic_mod.png`；写一个不存在的路径则资源加载期失败 | 建议 | 留空：使用回退图标；写错路径：加载期报错 (TEXTURE 无 try/catch) |
-| 遍历 `getConditions()` 前先拷贝 (活列表) | 建议 | 遍历中增删条件导致迭代器失效类问题 |
-| 需要暂停时继续推进的条件必须覆写 `runWhilePaused()` 返回 true(基类默认 false) | 建议 | 暂停期间条件 plugin 不推进 (依赖时间流逝的效果停摆) |
-
-## 实现市场条件流程
-
-先注册条件 spec，再用实例 token 驱动修饰、重算与移除。以下片段按运行顺序递进。
-
-### 注册条件规格
-
-```csv
-name,id,tags,planetary,decivRemove,script,desc,icon,order
-GearIn Ore Deposits,GearIn_ore_deposits,,TRUE,,data.scripts.gearin.campaign.GearInOreCondition,"Rich ore veins run beneath $marketName.",,50
-```
-
-把这一行登记进 `data/campaign/market_conditions.csv` 后，加载日志会出现 `GearIn_ore_deposits`，spec 的 plugin 类与 `GearInOreCondition` 一致。
-
-### 用实例 token 写入修饰
-
-修饰的写入与撤销都发生在 `GearInOreCondition` 内。
+在 `GearInVariantReader.runOnce()` 中读取已注册的 `brawler_Assault`，同时读取引擎按 hull 自动生成的 `brawler_Hull`。
 
 ```java
-@Override
-public void apply(String id) {
-	market.getHazard().modifyFlat(id, HAZARD_MOD, getName());
-	market.getAccessibilityMod().modifyFlat(id, accessibilityBonus, getName());
-}
-
-@Override
-public void unapply(String id) {
-	market.getHazard().unmodifyFlat(id);
-	market.getAccessibilityMod().unmodifyFlat(id);
-}
+MutableCharacterStatsAPI stats = Global.getSector().getPlayerPerson().getStats();
+ShipVariantAPI stock = Global.getSettings().getVariant("brawler_Assault");
+ShipVariantAPI hullVariant = Global.getSettings().getVariant("brawler_Hull");
+GearInVariantLog.logVariant("stock", stock, stats);
+LOG.info("GearIn hull source=" + hullVariant.getSource()
+        + " empty=" + hullVariant.isEmptyHullVariant());
 ```
 
-添加条件后 hazard 增加 0.15、accessibility 增加 0.10，移除具体 token 后两项同时恢复。
+执行后，日志显示 `brawler_Assault` 的 `source=STOCK`，并显示 `brawler_Hull` 的 `source=HULL` 与 `empty=true`。
 
-### 创建两个独立实例
+### 隔离克隆并改装
 
-这段实例创建代码位于 `GearInConditionLifecycleScript.runLifecycle`。
+在 `GearInVariantRefitter.runOnce()` 中先克隆，再改槽位、幅能和船插，最后把来源改成 `REFIT`。`clone()` 复制装配集合，但不会替你改来源。
 
 ```java
-String token1 = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
-String token2 = market.addCondition(GearInOreCondition.ORE_DEPOSITS, 0.20f);
-MarketConditionAPI first = market.getFirstCondition(GearInOreCondition.ORE_DEPOSITS);
+ShipVariantAPI stock = Global.getSettings().getVariant("brawler_Assault");
+ShipVariantAPI refit = stock.clone();
+refit.clearSlot("WS 003");
+refit.addWeapon("WS 003", "railgun");
+refit.setNumFluxVents(14);
+refit.setNumFluxCapacitors(10);
+refit.addMod("hardened_subsystems");
+refit.removeMod("reinforcedhull");
+refit.setSource(VariantSource.REFIT);
+refit.setVariantDisplayName("GearIn Refit");
 ```
 
-运行后，两个 token 不同，首实例为 token1，两个 accessibility 修饰分别为 0.10 与 0.20。
+日志中的克隆变体显示 `source=REFIT`、`WS 003=railgun`、幅能 14/10；随后再次读取 stock，原槽位仍是 `annihilator`。
 
-### 抑制效果并重新启用
+### 配置武器分组
 
-在保留一个实例之后执行这段抑制与恢复。
+在 `GearInWeaponGroupBuilder.runOnce()` 中从空装配开始装两门同型武器，先观察未分组状态，再调用自动分组。
 
 ```java
-market.suppressCondition(GearInOreCondition.ORE_DEPOSITS);
-float beforeReapply = market.getHazard().getModifiedValue();
-market.reapplyConditions();
-float afterReapply = market.getHazard().getModifiedValue();
-market.unsuppressCondition(GearInOreCondition.ORE_DEPOSITS);
-market.reapplyConditions();
+ShipVariantAPI fromEmpty = Global.getSettings().getVariant("brawler_Hull").clone();
+fromEmpty.setSource(VariantSource.REFIT);
+fromEmpty.addWeapon("WS 003", "railgun");
+fromEmpty.addWeapon("WS 004", "railgun");
+LOG.info("before groups=" + fromEmpty.getWeaponGroups().size()
+        + " unassigned=" + fromEmpty.hasUnassignedWeapons());
+fromEmpty.autoGenerateWeaponGroups();
 ```
 
-suppress 当帧数值不变，重算后效果消失；unsuppress 并重算后恢复。
+调用前日志显示 `unassigned=true`，调用后生成一个包含两个槽位的武器组。战机变体要在数据文件中提前写好分组，因为部署期补组不覆盖战机。
 
-### 核对勘测门控并清理实例
+### 覆盖模块变体
 
-生命周期演示末段执行这段勘测门控与清理。
+在 `GearInModuleOverrider.runOnce()` 中读取空间站模块槽，克隆模块并设为 `REFIT`，再挂回站体克隆。
 
 ```java
-String token = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
-MarketConditionAPI condition = market.getSpecificCondition(token);
-condition.setSurveyed(false);
-market.reapplyConditions();
-condition.setSurveyed(true);
-market.reapplyConditions();
-market.removeSpecificCondition(token);
+ShipVariantAPI station = Global.getSettings().getVariant("station1_Standard");
+ShipVariantAPI moduleCopy = station.getModuleVariant("WS 009").clone();
+moduleCopy.setSource(VariantSource.REFIT);
+ShipVariantAPI stationCopy = station.clone();
+stationCopy.setModuleVariant("WS 009", moduleCopy);
 ```
 
-未勘测重算后效果休眠，重新勘测后恢复，按 token 移除只删除该实例并回到基线。
+挂载后 `stationCopy.getModuleVariant("WS 009").getSource()` 为 `REFIT`。若传入 STOCK 来源，调用会按移除覆盖处理，站体仍返回原模块。
 
-## 组装市场条件实现
+### 序列化改装结果
 
-规则只有落进代码才算数。下面把注册、生命周期、重算与两类检查串成一条可运行的链路。
+在 `GearInVariantSerializer.runOnce()` 中对 REFIT 克隆调用 `toJSONObject()`，只核对输出键，不把这个运行时对象误当成注册表文件。
 
-在既有 MOD 布局与 `GearInModPlugin` 注册结构之上新增一个数据文件 (追加一行) 与两个类。本节新增条件 ID `GearIn_ore_deposits`(示例所有权 `GearInOreCondition`)，只由本节定义：
+```java
+ShipVariantAPI refit = Global.getSettings().getVariant("brawler_Assault").clone();
+refit.setSource(VariantSource.REFIT);
+JSONObject json = refit.toJSONObject();
+LOG.info("GearIn refit JSON: " + json.toString(2));
+```
 
-```text {7,11,12}
+日志 JSON 至少包含 `displayName`、`hullId`、`variantId`、幅能字段和 `weaponGroups`；改装是否随存档保留仍由来源与成员保存路径决定。
+
+## 观察装配结果
+
+接口语义讲完了，接下来把每个语义点实际跑一遍。在既有 MOD 布局与前置的 `GearInModPlugin` 生命周期例之上新增七个类 (不新增任何资源文件)：
+
+```text
 mods/GearIndustry/
 ├── build.gradle
 ├── settings.gradle
 ├── mod_info.json
 ├── data\
-│   └── campaign\
-│       └── market_conditions.csv   # 本节新增：在文件末尾追加下面一行
-├── jars\                           # 构建产物目录 (gradle jar)
-└── src\
-    └── data/scripts/gearin/campaign\
-        ├── GearInOreCondition             # 本节新增 (归本节所有)
-        └── GearInConditionLifecycleScript # 本节新增 (归本节所有)
+├── src\
+│   └── data/scripts/gearin/campaign\
+│       ├── GearInVariantLauncher      # 本节新增：注册载体 (归本节所有)
+│       ├── GearInVariantReader        # 注册表读取
+│       ├── GearInVariantRefitter      # 克隆改装
+│       ├── GearInWeaponGroupBuilder   # 武器组生成
+│       ├── GearInModuleOverrider      # 模块变体覆盖
+│       ├── GearInVariantSerializer    # 变体序列化
+│       └── GearInVariantLog           # 包内日志助手
+└── jars\
 ```
 
-### market\_conditions.csv 追加行
+### 连接注册入口
 
-追加到 `data/campaign/market_conditions.csv`(表头沿用原版九列；MOD 行按 id 合并进原版表，跨文件无重复冲突)：
+职责：薄接入类，本节唯一的注册入口。`REGISTER_MARK` 是存档持久化判断键；判断通过后调用静态 `register(SectorAPI)`，把五个角色脚本按顺序挂进生涯。每个角色脚本首次 `advance()` 后 `isDone()` 置 true，引擎下一帧自动移除，整套演示在首个生涯帧内顺序完成，读档后不再重复。
 
-```csv
-name,id,tags,planetary,decivRemove,script,desc,icon,order
-GearIn Ore Deposits,GearIn_ore_deposits,,TRUE,,data.scripts.gearin.campaign.GearInOreCondition,"Rich, dense ore veins run deep beneath the surface of $marketName, hinting at profitable mining opportunities.",,50
-```
+### 读取变体
 
-逐字段对照 (静态交叉核对)：
+职责：演示 `SettingsAPI.getVariant` 的注册表读取与来源判定，打印股票变体 `brawler_Assault`(STOCK) 的身份/装配/OP 摘要、自动空装配 `brawler_Hull` (HULL 来源，`source == HULL`、`isEmptyHullVariant() == true`) 与注册表变体总数。
 
-- `id` = `GearIn_ore_deposits`：与 `GearInOreCondition.ORE_DEPOSITS` 常量逐字一致，是 `addCondition` 的唯一合法入参；
-- `script` = `data.scripts.gearin.campaign.GearInOreCondition`：与类全名逐字一致，加载期 `registerScriptClass`、实例化时按名 `newInstance`；
-- `planetary` = `TRUE`：条件显示在行星条件区 (面板右侧)；
-- `icon` **留空**：回退原版 `graphics/hullmods/generic_mod.png`(本单元无 PNG 资产，留空是有意为之)；
-- `desc` 里的 `$marketName` 由 `BaseMarketConditionPlugin` 的 token 替换链填充 (`getTokenReplacements()` 提供 `$marketName` / `$marketFaction` / `$marketSystem` 等，tooltip 创建时逐个 `replaceAll`)；
-- `order` = 50：与原版 ore 族 (order 50/60) 同一区间。
+调用关系：由 `GearInVariantLauncher.register()` 第一个挂载；摘要打印复用 `GearInVariantLog.logVariant()`。
 
-### GearInOreCondition
+### 执行克隆改装
 
-对应关系：
+职责：演示 `clone()` 的深拷贝语义，修改克隆 (换武器、改幅能、改船插、改来源、重新生成武器组) 不影响注册表原变体；并给出 stock 与 refit 的 OP 对照 (`computeOPCost` = 武器 OP + 船插 OP + vents + caps；`getUnusedOP` = 船体 OP − 已用 OP)。
 
-- `extends BaseMarketConditionPlugin`：免费获得 `init`、`getTokenReplacements`、tooltip 默认实现、`isTransient() = true` 等全套默认；`getModId()` 返回实例 token。
-- `apply(id)` 的 `id` 参数就是实例 token：修饰 source 用 token，多实例互相隔离 (规则强度第 2 条)；`getName()` 来自 spec 的 `name` 列。
-- `setParam(Object)`：`addCondition(id, param)` 的第二参在 apply 之前到达 (`MarketAPI.addCondition` 的调用顺序)，示例用 `Number` 覆盖 accessibility 默认值。
-- `createTooltipAfterDescription`：spec desc(含 `$marketName` token) 之后追加数值行 (tooltip 创建时先替换 token 再调本钩子)。
+调用关系：由 `GearInVariantLauncher.register()` 第二个挂载；摘要打印复用 `GearInVariantLog.logVariant()`。
 
-### GearInConditionLifecycleScript
+### 构建武器分组
 
-对应关系：
+职责：演示空装配装武器但无武器组时的 `hasUnassignedWeapons() == true`，以及 `autoGenerateWeaponGroups()` 按 AI hints / 弧线 / 尺寸重新聚类补组 (同型武器必合并为一组，最多 7 组)。
 
-- `REGISTER_MARK = "GearIn_ConditionLifecycleScript"`：persistent data 检查键，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；与既有市场演示脚本 (`"GearIn_MarketInspector"`) 是各自独立的键。
-- 第 1 步 `getSpecificCondition(token)`：`addCondition` 返回 token 后按 token 精确取实例；`getGenSpec() == null` 核对本条件无 procgen 行 (因此 `requiresSurveying()` = false、初始 `surveyed` = true)。
-- 第 2 步 `addCondition(id, 0.20f)`：`setParam` 在 apply 之前被调用，`accMod2` = 0.20 证明参数生效；`getFirstCondition(id)` 返回首个实例 (token1)。
-- 第 3 / 6 步：`removeCondition(id)` 与 `removeSpecificCondition(token)` 的不对称性双向演示 (规则强度第 3 条)。
-- 第 5 步：suppress 后**先**读 hazard(效果仍在)，**再** `reapplyConditions()`(效果消失) —— 演示 "suppress 只写集合、效果在重算后才消失"(规则强度第 4 条)。
-- 第 7 步：`setSurveyed(false)` 后重算 → unapply 执行、apply 跳过 (hazard 回落基线)；`setSurveyed(true)` 后重算 → 恢复，对应 survey 检查。
-- 第 8 步：`isPlanetConditionMarketOnly()` 过滤条件市场 (行星市场 `market_<planetId>`)，`requiresSurveying()` 读 procgen 表 `reqSurvey`，只读对照，不做任何修改。
+调用关系：由 `GearInVariantLauncher.register()` 第三个挂载。
 
-调用点 (工程片段，方法所在类归既有注册类所有，本节只演示调用，不改动那些文件)：
+### 覆盖模块变体
+
+职责：演示 `stationModules` / `getModuleVariant` / `setModuleVariant`，其中 `setModuleVariant` 只接受非 STOCK 来源的覆盖 (STOCK/null 都会被当作 "移除覆盖" 处理)。
+
+调用关系：由 `GearInVariantLauncher.register()` 第四个挂载。
+
+### 保存序列化结果
+
+职责：演示 `toJSONObject()` 的输出键与 `.variant` 数据文件一致 (`displayName`/`hullId`/`variantId`/`fluxVents`/`fluxCapacitors`/ `weaponGroups`/`modules`/`wings`/`hullMods`/`permaMods`/`sMods`/`tags`)。
+
+调用关系：由 `GearInVariantLauncher.register()` 第五个挂载。
+
+### 查看装配日志
+
+职责：包内私有助手，不实现接口、不直接注册。`GearInVariantReader` 与 `GearInVariantRefitter` 共用的变体身份/来源/装配/OP 摘要打印格式，避免格式串在两处重复。
 
 ```java
-    // GearInModPlugin(既有注册类)onGameLoad(boolean newGame) 内新增本节注册块。
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.characters.MutableCharacterStatsAPI;
+import com.fs.starfarer.api.combat.ShipVariantAPI;
+
+/**
+ * 包内协作：把变体身份 / 来源 / 装配 / OP 摘要打印到日志。
+ * GearInVariantReader 与 GearInVariantRefitter 共用的打印格式，避免两处重复。
+ */
+final class GearInVariantLog {
+
+    private static final Logger LOG = Global.getLogger(GearInVariantLog.class);
+
+    private GearInVariantLog() {
+    }
+
+    static void logVariant(String label, ShipVariantAPI variant, MutableCharacterStatsAPI stats) {
+        LOG.info(String.format(
+                "GearIn %s: id=%s displayName=%s hull=%s source=%s isStockVariant=%s isEmptyHullVariant=%s "
+                        + "weapons=%s mods=%s wings=%s vents=%d caps=%d op=%d unused=%d",
+                label, variant.getHullVariantId(), variant.getDisplayName(), variant.getHullSpec().getHullId(),
+                variant.getSource(), variant.isStockVariant(), variant.isEmptyHullVariant(),
+                variant.getNonBuiltInWeaponSlots(), variant.getHullMods(), variant.getWings(),
+                variant.getNumFluxVents(), variant.getNumFluxCapacitors(),
+                variant.computeOPCost(stats), variant.getUnusedOP(stats)));
+    }
+}
+```
+
+对应关系：
+
+- 五个脚本类 (`GearInVariantReader` / `GearInVariantRefitter` / `GearInWeaponGroupBuilder` / `GearInModuleOverrider` / `GearInVariantSerializer`)`implements EveryFrameScript`：
+    - 三方法约定与 "`isDone` 先查再推进" 的循环语义见生涯脚本章节；`done` 在首次 `advance` 后置位，引擎下一帧自动移除。
+- `GearInVariantLauncher.REGISTER_MARK`：persistent data 判断键 (`"GearIn_VariantLauncher"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
+- `GearInVariantReader`：`getVariant` 读取注册表；`brawler_Assault` 是 `data/variants/brawler_Assault.variant`(STOCK，`goalVariant: true`)；`brawler_Hull` 是自动空装配 (HULL 来源，brawler 有武器槽所以 displayName 是 "Custom")。
+    - `GearInVariantRefitter`：克隆后修改，`clearSlot`/`addWeapon`/`setNumFluxVents`/`setNumFluxCapacitors`/`addMod`/ `removeMod`/`setSource`/`setVariantDisplayName`/`autoGenerateWeaponGroups` 一次集齐。
+    - brawler 的 `WS 003` 是 SMALL UNIVERSAL 硬点 (`data/hulls/brawler.ship`)，`railgun` 是小型实弹，可装。
+    - 克隆隔离验证：原 `stock` 的 `WS 003` 仍是 `annihilator`(`brawler_Assault.variant` 的组 2)，幅能不变。
+- `GearInWeaponGroupBuilder`：空装配克隆后只装两门武器、无武器组 → `hasUnassignedWeapons() == true`；`autoGenerateWeaponGroups()` 后生成 1 个组。
+    - `GearInModuleOverrider`：`station1_Standard`(`data/variants/stations/station1_Standard.variant`，`modules` 用数组写法) 的 `WS 009` 是 `STATION_MODULE` 槽 (`data/hulls/station1.ship`)。
+    - 模块变体是 `module_large1_lowtech_Standard`。
+    - 克隆模块变体并 `setSource(REFIT)` 后挂到 `stationCopy`，覆盖生效 (来源显示 REFIT，id 不变)。
+- `GearInVariantSerializer`：`toJSONObject()` 序列化克隆后的 refit 变体，键与 `.variant` 文件一致。
+- `GearInVariantLog`：包内日志摘要助手，两个脚本共用同一份打印格式，避免重复。
+
+调用点 (工程片段，方法所在类由前置生命周期例持有，本节只演示调用，不改动那些文件)：
+
+```java
+    // GearInModPlugin(前置生命周期例持有) 的 onGameLoad(boolean newGame) 内新增本节注册块。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInConditionLifecycleScript.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInConditionLifecycleScript.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInConditionLifecycleScript());
+    if (!Global.getSector().getPersistentData().containsKey(GearInVariantLauncher.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInVariantLauncher.REGISTER_MARK, true);
+        GearInVariantLauncher.register(Global.getSector());
+    }
+    // 可选冗余查重 (建议：hasScript 与 persistent data 门互为冗余)：
+    if (!Global.getSector().hasScript(GearInVariantReader.class)) {
+        GearInVariantLauncher.register(Global.getSector());
     }
 ```
 
-想演示换目标市场，注册前先设参数：
+(上面两段只取一段即满足 "不重复注册"；两段同留时第二段会在第一段之后补注册，不会叠加 —— 但演示时建议只保留判断段，避免混淆。生涯脚本章节对同样的二选一做过说明。)
 
-```java {2}
-    GearInConditionLifecycleScript script = new GearInConditionLifecycleScript();
-    script.setTargetMarketId("asharu"); // corvus 星系独立势力市场 (economy.json 首实体 id 即市场 id)
-    Global.getSector().addScript(script);
-```
-
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行，与既有示例相同)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInOreCondition.class` 与 `data/scripts/gearin/campaign/GearInConditionLifecycleScript.class`(可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下七个类的 class 条目 (可用 `jar tf` 核对)。
 
-## 关键故障实验：添加条件时报告规格不存在
+## 处理装配污染
 
-代码使用的 ID 与 CSV 注册键不一致。
+在 `GearInVariantRefitter.runOnce()` 中暂时直接修改注册表返回的 stock 变体，再创建第二个同 id 成员。两个成员都会拿到被改过的槽位，说明共享对象已经被污染。
 
 **局部故障片段：**
 
 ```java
 // 故障片段
-market.addCondition("GearIn_ore");
+ShipVariantAPI variant = Global.getSettings().getVariant("wolf_Assault"); variant.addWeapon("WS 001", "lightmg");
 ```
 
 **局部修正片段：**
 
-```java {2}
+```java
 // 修正片段
-String token = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
-MarketConditionAPI condition = market.getSpecificCondition(token);
+ShipVariantAPI variant = Global.getSettings().getVariant("wolf_Assault").clone();
+variant.setSource(VariantSource.REFIT);
+variant.addWeapon("WS 001", "lightmg");
 ```
 
-实际症状：`addCondition` 抛出 `Market condition [GearIn_ore] not found`，没有实例 token，重算也没有对象可处理。
-
-原因：注册键是 `GearIn_ore_deposits`；`reapplyConditions()` 只能重放现有实例，不能补注册缺失 spec。
-
-复验：修正后 `condition` 非 null，`condition.getId()` 为完整 spec ID，hazard 与 accessibility 修饰的 source 等于返回 token。
+原因：注册表对象由多个创建路径共享；`FleetMemberAPI` 创建成员时会克隆，但直接修改 `SettingsAPI.getVariant()` 的结果会先改变注册表。复验：重启或重新载入原始数据，改为 clone + `setSource(REFIT)`，连续创建两个成员，确认只有显式使用该克隆的成员拥有 `lightmg`。
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与 `GearInModPlugin` 注册结构 (含本节调用点片段，[C6-S1]、[C7-S1] 已确立)、`market_conditions.csv` 追加行、两个 Java 类。
+前置数据：既有 MOD 布局 [C6-S1] + `GearInModPlugin` ([C7-S1]，含本节调用点片段)、本节七个类；生涯状态采样脚本 `GearInSectorStateSampler` (可选)。
 
-1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含两个 class。
-2. 启动游戏，查看 `Loading condition: GearIn_ore_deposits` 加载日志。
-3. **新建生涯**：在 `starsector.log` 中观察 `GearIn condition lifecycle` 相关记录。
-4. **数值核对**：`add` 行 `plugin=GearInOreCondition`、`planetary=true`、`surveyed=true`、`genSpec=null`、`icon=graphics/hullmods/generic_mod.png`；`applied` 行 `hazardModSource` 等于 `token`、`accModValue=0.10`；`multi` 行 `distinct=true`、`accMod1=0.10 accMod2=0.20`。
-5. **不对称性**：`removeAll` 后 `conditions` 回到基线，`removeOne` 后同样回到基线。
-6. **suppression 时序**：`suppress` 行 `hazardBeforeReapply` 带修饰、`hazardAfterReapply` 回到基线、`conditions` 多一个；`unsuppress` 行恢复。
-7. **survey 检查与原版对照**：`surveyGate` 行 `afterAdd` 与 `afterSurveyedReapply` 相等、`afterUnsurveyedReapply` 回到基线；`vanillaSurvey` 行存在 (具体行星与条件以存档生成结果为准，`none found` 分支也属预期)。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含七个类的 class 条目。
+2. **新建生涯**：查看 `starsector.log` 中本节七个类输出的全部 `GearIn ...` 日志。
+3. **读档**：保存后读档，观察本节脚本是否重复执行。
+4. 进入任意有 `station1` 的市场，观察空间站模块是否正常生成。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到两个 class。加载期 `starsector.log` 出现 `Loading market conditions` 与 `Loading condition: GearIn_ore_deposits`(加载器的既有日志格式；原版每行条件同样各打一条)。
-
-- **新建生涯**：`starsector.log` 依次出现。
-
-    ```text
-    GearIn condition lifecycle start: market=jangala conditions=6 hazard=1.25 accessibilityFlat=1.00
-    ```
-
-    (`conditions` 数、`hazard`、`accessibilityFlat` 以实际存档为准；Jangala 原版 6 条件、hazard 1.25)。
-
-- **add 与 applied**(token 随机后缀以日志为准)：
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下七个类的 class 条目。
+- **新建生涯**：`starsector.log` 按注册顺序出现以下日志 (数值以实际游戏为准)：
 
     ```text
-    GearIn condition lifecycle add: id=GearIn_ore_deposits token=GearIn_ore_deposits_xxxxx plugin=GearInOreCondition planetary=true surveyed=true reqSurvey=false genSpec=null specOrder=50 icon=graphics/hullmods/generic_mod.png GearIn condition lifecycle add: desc=Rich, dense ore veins run deep beneath the surface of $marketName, hinting at profitable mining opportunities. GearIn condition lifecycle applied: hazard=1.40 hazardModSource=GearIn_ore_deposits_xxxxx hazardModValue=0.15 accessibilityFlat=1.10 accModValue=0.10 GearIn condition lifecycle tokens: $marketName=Jangala $marketFaction=Hegemony
+    GearIn stock: id=brawler_Assault displayName=Assault hull=brawler source=STOCK isStockVariant=true isEmptyHullVariant=false weapons=[WS 001, WS 002, WS 003, WS 004] mods=[fluxbreakers, reinforcedhull] wings=[] vents=10 caps=8 op=... unused=... GearIn hull empty variant: id=brawler_Hull source=HULL isStockVariant=false isEmptyHullVariant=true displayName=Custom GearIn refit clone: id=brawler_Assault displayName=GearIn Refit hull=brawler source=REFIT isStockVariant=false isEmptyHullVariant=false weapons=[...] mods=[fluxbreakers, hardened_subsystems] wings=[] vents=14 caps=10 op=... unused=... GearIn clone isolation: stock WS 003=annihilator vents=10 caps=8 hasReinforcedHull=true GearIn from empty: groups=0 hasUnassignedWeapons=true GearIn from empty groups after autoGenerateWeaponGroups: LINKED[[WS 003, WS 004]] GearIn OP: stock=... refit=... hullOP=... unusedRefit=... GearIn modules: stationModules={WS 006=module_armour3_Standard, ...} module WS 009=module_large1_lowtech_Standard override=module_large1_lowtech_Standard overrideSource=REFIT GearIn refit JSON: { "displayName": "GearIn Refit", "hullId": "brawler", "variantId": "brawler_Assault", ... } GearIn registered variant count: 647
     ```
 
-    核对：`plugin=GearInOreCondition`(script 列生效)；`planetary=true`(CSV 列生效)；`surveyed=true`、`reqSurvey=false`、`genSpec=null`(无 procgen 行 → 默认已勘测)；`icon` 是回退的 `graphics/hullmods/generic_mod.png`(icon 列留空)；`hazardModSource` 与 `token` 相同 (modifier source 即实例 token)；`desc` 打印的是 `spec.getDesc()` 的**原始文本** (含字面 `$marketName`) —— token 替换只发生在 tooltip 创建时，演示脚本从不创建 tooltip，日志不会看到替换值。
-
-- **多实例 + param**：
-
-    ```text
-    GearIn condition lifecycle multi: token1=GearIn_ore_deposits_xxxxx token2=GearIn_ore_deposits_yyyyy distinct=true firstConditionIsToken1=true hasCondition=true hasSpecific=true GearIn condition lifecycle multi: hazard=1.40 accessibilityFlat=1.30 accMod1=0.10 accMod2=0.20
-    ```
-
-    核对：两个 token 不同；`getFirstCondition(id)` 是首个实例 (token1)；accessibility 平值叠加 `0.10 + 0.20`，且 `accMod1` / `accMod2` 各自按 token 独立可取 (修饰隔离)。
-
-- **removeCondition(id) 删同 id 全部 (不对称性 A)**：
-
-    ```text
-    GearIn condition lifecycle removeAll: conditions=6 hazard=1.25 accessibilityFlat=1.00
-    ```
-
-    `conditions` 回到基线 (两个实例一起消失)、hazard / accessibility 全部回滚。
-
-- **reapplyCondition(token) 单实例重算**：
-
-    ```text
-    GearIn condition lifecycle reapplyOne: hazardBefore=1.40 hazardAfter=1.40 unchanged=true
-    ```
-
-    先 unapply(回落) 再 apply(恢复)，终值不变，单实例重算是 "刷一遍"，不是叠加。
-
-- **suppression(先不生效、重算后休眠)**：
-
-    ```text
-    GearIn condition lifecycle suppress: suppressed=true conditions=7 hazardBeforeReapply=1.40 hazardAfterReapply=1.25 (effect dormant) GearIn condition lifecycle unsuppress: suppressed=false hazard=1.40 (effect restored)
-    ```
-
-    核对：suppress 后实例仍在 (`conditions=7`)、效果未变 (`hazardBeforeReapply` 仍带修饰)；`reapplyConditions()` 后效果消失 (unapply 执行、apply 被跳过)；配对 `unsuppressCondition` 后重算恢复。
-
-- **removeSpecificCondition(token) 只删一个 (不对称性 B)**：
-
-    ```text
-    GearIn condition lifecycle removeOne: conditions=6 hazard=1.25 accessibilityFlat=1.00
-    ```
-
-- **survey 检查**：
-
-    ```text
-    GearIn condition lifecycle surveyGate: afterAdd=1.40 afterUnsurveyedReapply=1.25 afterSurveyedReapply=1.40
-    ```
-
-    核对：新添加实例当帧生效 (apply 不查 surveyed)；`setSurveyed(false)` 后重算效果消失；`setSurveyed(true)` 后重算恢复，重算只对 surveyed 的条件 apply。
-
-- **原版对照 (只读)**：
-
-    ```text
-    GearIn condition lifecycle vanillaSurvey: market=market_corvus_IIIa surveyLevel=NONE condition=ore_sparse surveyed=false
-    ```
-
-    (具体行星与条件以存档生成结果为准；只要存在任意 `requiresSurveying()==true` 且 `surveyed=false` 的条件即通过；若新档所有条件市场都已勘测，则出现 `none found` 一行，也属预期分支。)
-
-- **收尾与读档**：
-
-    ```text
-    GearIn condition lifecycle final: conditions=6 hazard=1.25 accessibilityFlat=1.00 (baseline restored) GearIn condition lifecycle done
-    ```
-
-    无任何 `gear_in` 引起的 `ERROR`。读档不重复执行 (`REGISTER_MARK` 已置位)，也不出现 `GearIn condition lifecycle start` 日志。
+    要点核对：`brawler_Hull` 的 `isStockVariant=false` 且 `isEmptyHullVariant=true`(来源是 HULL 不是 STOCK)；`refit clone` 的来源是 REFIT、`reinforcedhull` 已被移除、`hardened_subsystems` 已加入、vents/caps 变成 14/10；`clone isolation` 一行证明原注册表变体未被污染 (WS 003 仍是 `annihilator`、幅能 10/8)；`overrideSource=REFIT` 证明非 STOCK 覆盖已挂上。
+- **各脚本错误行**：若日志出现任一脚本角色的 ERROR 行 (含堆栈)：
+    - `GearIn variant reader failed` / `GearIn variant refitter failed` / `GearIn weapon group builder failed`
+    - `GearIn module overrider failed` 或 `GearIn variant serializer failed`；
+    - 说明对应角色脚本某一步抛错；
+    - 按堆栈对照 "规则强度" 节定位 (最常见的是引用了不存在的 id)。
+- **读档**：不重复执行演示 (`REGISTER_MARK` 门已关、`hasScript` 命中)；`onGameLoad` 里新档与读档各执行一次演示是设计行为 (每个角色脚本只跑一次即自停)。
+- **退出到主菜单**：脚本停止 (生涯场景不再推进)；回主菜单后再进档按第 5 条继续。
 
 ## 故障分析
 
-- **条件完全不出现**：ID 重复、文件路径错误或 CSV 行没有进入合并表时，日志不会出现 `Loading condition: <id>`。
+- **装配没有出现在注册表中**：变体 ID 重复，或文件没有放在 `data/variants` 下并使用 `.variant` 后缀。
 
-    - **解决方案**：先确认注册日志，再换用唯一 ID。
+    - **解决方案**：调整文件位置并换用唯一 ID。
 
-- **`addCondition` 抛 `Market condition [...] not found`**：调用 ID 没有对应 spec。
+- **加载变体时启动中止**：文件缺少必填键，或引用了不存在的 hull、武器 ID。
 
-    - **解决方案**：逐字核对 CSV 的 `id` 与 `ORE_DEPOSITS` 常量。
+    - **解决方案**：根据日志中的 `JSONException` 或 `spec [...] not found` 核对数据，重启。
 
-- **删除一个条件却把同 ID 全删**：`removeCondition(id)` 面向 spec ID。
+- **`getVariant` 返回 null**：注册表和存档都没有与传入 ID 完全匹配的变体。
 
-    - **解决方案**：保存 `addCondition` 返回的 token，改用 `removeSpecificCondition(token)`。
+    - **解决方案**：用 `getAllVariantIds()` 核对大小写与拼写，再重新调用读取入口。
 
-- **读档后条件参数恢复默认**：transient 插件不会保存 `setParam` 状态。
+- **部署时报告槽位不存在**：`addWeapon` 接受了 hull 中没有的槽位 ID，错误到构建舰船时才暴露。
 
-    - **解决方案**：改用 `BaseMarketConditionPlugin2`，或把参数保存到市场 memory / persistent data。
+    - **解决方案**：写入前通过 `getSlot` 或 `getAllWeaponSlots` 核对槽位，再部署同一装配。
 
-- **抑制条件后效果仍在**：`suppressCondition` 只修改集合，效果要到下一次重算才撤销。
+- **修改一艘船后同装配舰船全部变化**：代码直接修改了 `SettingsAPI.getVariant` 返回的共享对象。
 
-    - **解决方案**：需要立即更新时调用 `reapplyConditions()`，解除时配对 `unsuppressCondition(id)`。
+    - **解决方案**：先 `clone()`，修改后通过 `setVariant` 写回目标成员。
 
-- **未 survey 条件在重算后消失**：`reqSurvey=TRUE` 的条件只有在 `isSurveyed()` 后才会重新 apply。
+- **读档后装配恢复原状**：克隆保留了 STOCK 或 HULL 来源，成员没有按改装结果落档。
 
-    - **解决方案**：完成勘测，或让自定义条件不进入 procgen 检查。
+    - **解决方案**：修改前调用 `setSource(VariantSource.REFIT)`，保存并读档。
 
-- **同 spec ID 的多个实例互相覆盖**：modifier source 使用了 spec ID。
+- **内置装备没有被修改**：普通写入和移除接口会忽略内置武器、内置船插或 perma 船插。
 
-    - **解决方案**：改用 `id` 参数或 `getModId()`，让每个 token 拥有独立修饰。
+    - **解决方案**：只修改允许改装的槽位，perma 项使用对应接口。
 
-- **条件图标路径错误导致加载失败**：`icon` 指向不存在的贴图。
+- **战机武器没有目标**：战机变体存在未分组武器，而部署流程不会为战机自动补组。
 
-    - **解决方案**：留空以使用 `graphics/hullmods/generic_mod.png`，或补齐真实文件。
+    - **解决方案**：在数据文件中写全 `weaponGroups`。
+
+- **读取武器组后多出空组**：越界调用 `getGroup(i)` 会创建并追加新组。
+
+    - **解决方案**：遍历改用 `getWeaponGroups()`。
+
+- **OP 计算报告武器 spec 不存在**：变体仍引用已删除或未加载的武器、联队 ID。
+
+    - **解决方案**：清理失效引用并确认依赖已启用，再重新计算 OP。
 
 ## 总结
 
-本节把市场条件讲成三条链：
+本节建立了一条完整的变体数据链：`ship_data.csv` 与 `data/variants` 负责注册，`SettingsAPI.getVariant` 负责读取，`clone()` 隔离修改，来源决定覆盖与落档，`toJSONObject` 与 `saveVariant` 完成序列化。排错时先分清两条读取路径，再沿 id、来源、克隆三层定位；上述次序是本节最可复用的判断。
 
-- **注册链**：`market_conditions.csv`(九字段：`name,id,tags,planetary,decivRemove,script,desc,icon,order`)→ CSV spec 加载期 (`readCSV("id", ...)` 合并、`registerScriptClass`、icon 回退、`putSpec`)→ `addCondition(id)` 实例化 (spec 缺失抛异常)→ plugin 生命周期。MOD 追加一行即注册；加载日志 `Loading condition: <id>` 是注册成功的第一个可观察信号。
-- **生命周期链**：`init(market, condition)` → `setParam(param)` → `apply(token)` → 每帧 `advance(amount)`(`runWhilePaused()` 决定暂停时是否推进)→ `unapply(token)`(移除/重算时)。`isTransient()` 决定 plugin 是否进存档；transient 插件读档重建不重放 `setParam`。
-- **重算链**：三个触发点 (经济迭代、稳定度变化 `MarketAPI.advance`、手动调用)→ `reapplyConditions()`(全部)/ `reapplyCondition(token)`(单个)→ 每实例 `unapply` + 按检查条件 `apply`。两个入口的检查条件不同：`reapplyConditions()` 跳过未勘测或已抑制的实例 (**surveyed && !suppressed**)，`reapplyCondition(token)` 只跳过已抑制的实例 (不查 surveyed)。
+- 公开面只有 `ShipVariantAPI` 接口；`hullSpec` 不随存档保存，读档按 `hullId` 重建，**变体引用禁止跨存档缓存**。
+- `addWeapon` 校验武器 id 但不校验槽位：武器 id 错 → 调用点抛；槽位 id 错 → 部署期抛。
+- 内置武器槽与内置/perma 船插不可改 (静默不生效)；`clearHullMods` 保留内置与 perma。
+- `getGroup(i)` 越界新建空组；`addWeaponGroup` 丢弃空组；`autoGenerateWeaponGroups` 最多 7 组且写回传入变体，改装配先 `clone()`。
+- 克隆保留来源；需要 REFIT 语义要显式 `setSource`。
+- `setModuleVariant` 只接受非 STOCK 覆盖；模块槽 id 由 `getModuleSlots()` 给出 (STATION\_MODULE 槽)。
+- 战机不触发部署期补组；未入组武器拿不到目标。
 
-记忆要点：
-
-- token = `spec id + "_" + genUID`；查询用 `getCondition(id)`(首个)/ `getSpecificCondition(token)`(精确)；删除**必须**用 token(`removeCondition(id)` 删同 id 全部)。
-- modifier source 必须用 token；`suppressCondition` 只写集合、效果在下次重算才消失、必须配对 `unsuppressCondition`。
-- survey 两层：市场级 `SurveyLevel`(用户勘测进度)vs 条件级 `isSurveyed`(procgen `reqSurvey` 决定初始值)；未 survey 条件在重算时休眠。
-- 条件 `icon` 留空回退原版图标；`condition_gen_data.csv` 与 `market_conditions.csv` 互相校验。
-
-市场侧访问入口的既有讲解给出了 `addCondition` 返回 token、`getSpecificCondition` / `getFirstCondition` 的用法，本节补全了实现、检查与生命周期；行星市场 (`market_<planetId>`) 承载 survey 语义。
-
-注册链决定条件 "存在"，生命周期链决定条件 "如何作用"，重算链决定检查 "何时生效"，三条链在逻辑上是同一件事的三面。token 是实例级操作的锚点，survey 与 suppression 是两类效果检查，而重算 (经济迭代、稳定度变化、手动调用) 是检查生效的唯一时机。把握这一整体，就能在任意触发点预测条件的可观察行为。
+变体只是数据，它的生命周期终点是部署与存档：本节把数据层的全部语义讲清后，它经 `setVariant` 挂到舰队成员、随人物 (Person) 与 `MutableStat` 进入状态交接链 —— 那些交接点 "谁克隆、谁改来源、谁落档" 的差异，正是由本节的规则决定的。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.econ.MarketConditionAPI`：条件实例接口 (spec id、token、survey 状态、`getGenSpec`、`isPlanetary`)。
-- `com.fs.starfarer.api.characters.MarketConditionSpecAPI`：条件静态配置 (CSV 九字段的运行时面)。
-- `com.fs.starfarer.api.campaign.econ.MarketConditionPlugin`：条件行为插件 (生命周期回调 + tooltip 链路 + `isTransient`)。
-- `com.fs.starfarer.api.campaign.econ.MarketAPI`：条件访问族、suppression 族、`SurveyLevel`、两个重算入口。
-- `com.fs.starfarer.api.impl.campaign.econ.BaseMarketConditionPlugin`：条件插件基类 (transient 默认、token 替换、tooltip 默认实现)。
-- `com.fs.starfarer.api.impl.campaign.econ.BaseMarketConditionPlugin2`：非 transient 条件插件 (`daysActive` 计时，进存档)。
-- `com.fs.starfarer.api.impl.campaign.econ.BaseHazardCondition`：原版 hazard 条件基类 (modifier source 取实例 token 的范本)。
-- `com.fs.starfarer.api.impl.campaign.econ.ResourceDepositsCondition`：`ore_sparse` 等资源条件的 supply 修饰。
-- `com.fs.starfarer.api.impl.campaign.econ.PlanetaryShield`：原版 suppress/unsuppress 配对用法。
-- `com.fs.starfarer.api.impl.campaign.econ.SolarArray`：原版条件抑制用法 (HOT / POOR\_LIGHT)。
-- `com.fs.starfarer.api.impl.campaign.econ.impl.ItemEffectsRepo`：Fusion Lamp 物品效果抑制一组条件。
-- `com.fs.starfarer.api.impl.campaign.procgen.PlanetConditionGenerator`：procgen 行星生成时设置条件 survey 状态。
-- `com.fs.starfarer.api.impl.campaign.procgen.ConditionGenDataSpec`：`reqSurvey` 列读取。
-- `com.fs.starfarer.api.util.Misc`：`setFullySurveyed`、`initConditionMarket` 等工具入口。
-- `com.fs.starfarer.api.combat.MutableStat`：`modifyFlat` / `unmodifyFlat` / `getFlatStatMod`。
-- `com.fs.starfarer.api.combat.StatBonus`：`getFlatBonus()` 总量与按 source 查询。
-- `com.fs.starfarer.api.impl.campaign.ids.Conditions`：`ORE_SPARSE`、`METEOR_IMPACTS` 等条件常量。
-- `data/campaign/market_conditions.csv`：条件注册表 (九字段，MOD 追加行即注册)。
-- `data/campaign/procgen/condition_gen_data.csv`：procgen 条件表 (`reqSurvey` 列决定初始 survey 状态)。
+- `com.fs.starfarer.api.combat.ShipVariantAPI`：变体公开接口：读取、克隆、装配修改、武器组、模块与序列化。
+- `com.fs.starfarer.api.SettingsAPI`：`getVariant` / `getAllVariantIds` / `createEmptyVariant` / `computeNumFighterBays`。
+- `com.fs.starfarer.api.loading.VariantSource`：变体来源五值枚举 (STOCK / HULL / REFIT / MISSION\_DESIGN / MISSION\_SAVE)。
+- `com.fs.starfarer.api.loading.WeaponGroupSpec`：武器组结构；
+- `com.fs.starfarer.api.loading.WeaponGroupType`：武器组类型枚举 (LINKED / ALTERNATING)。
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：`getVariant` / `setVariant`(舰队侧读写)。
+- `com.fs.starfarer.api.FactoryAPI`：`createFleetMember`(按变体/联队 id 建成员)。
+- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：stats 侧 `getVariant` 取变体；
+- `com.fs.starfarer.api.combat.ShipAPI`：实体侧 `getVariant` 取变体。
+- `data/variants/brawler_Assault.variant`：示例 stock 变体 (武器组、`goalVariant: true`、`hullMods`)。
+- `data/variants/stations/station1_Standard.variant`：`modules` 数组写法 (解析时剥除 `#` 注释)。
+- `data/hulls/brawler.ship`：`weaponSlots`(WS 001/002 MEDIUM BALLISTIC，WS 003/004 SMALL UNIVERSAL 硬点)。
+- `data/hulls/station1.ship`：`STATION_MODULE` 槽 (含 `WS 009`)。
 
 ## 完整最小例
 
-::: details 完整成品：GearInOreCondition
+::: details 完整成品：GearInVariantLauncher
 
 ```java
 package data.scripts.gearin.campaign;
 
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.impl.campaign.econ.BaseMarketConditionPlugin;
-import com.fs.starfarer.api.ui.TooltipMakerAPI;
-import com.fs.starfarer.api.util.Misc;
+import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
- * 完整最小例：市场条件 (MarketConditionAPI) 插件。
- * 注册入口：data/campaign/market_conditions.csv 的 script 列 (类名逐字一致)，条件实例
- * 由脚本类加载器按类名 newInstance 并 init 绑定。apply(id) 以传入的实例 token 为
- * modifier source 写入 hazard +0.15 与 accessibility +0.10 (param 可覆盖)，unapply(id)
- * 按同一 source 撤销；token 而非 spec id 做 source，同 spec 多实例才不互相覆盖。
- * plugin 实例不进存档 (transient)，读档后按 spec 重建重新 init；tooltip 在 spec desc
- * 之后追加本条件的数值说明。
+ * 角色：注册载体 (薄接线类)。onGameLoad 的一次性门控通过后调用 register()，
+ * 把本节五个角色脚本 (读取 / 克隆改装 / 武器组 / 模块覆盖 / 序列化) 逐一挂进生涯。
+ *
+ * 注册入口：生涯回调 onGameLoad，注册前用 sector persistent
+ * data 键 REGISTER_MARK 做一次性门控 (每个脚本一个键)。每个角色脚本首次 advance() 后 isDone() 置 true，
+ * 引擎下一帧自动移除 —— 整套演示在首个生涯帧内顺序完成，读档后不再重复。
  */
-public class GearInOreCondition extends BaseMarketConditionPlugin {
+public final class GearInVariantLauncher {
 
-    /** 条件 spec id(与 market_conditions.csv 的 id 列逐字一致)。 */
-    public static final String ORE_DEPOSITS = "GearIn_ore_deposits";
+    /** 存档持久化标记：本组演示脚本是否已在该存档注册过 (随存档保存)。 */
+    public static final String REGISTER_MARK = "GearIn_VariantLauncher";
 
-    /** hazard 平值修饰 (1f = 100%)。 */
-    public static final float HAZARD_MOD = 0.15f;
-
-    /** accessibility 平值修饰默认值；addCondition(id, param) 的 param 可覆盖。 */
-    public static final float DEFAULT_ACCESSIBILITY_BONUS = 0.10f;
-
-    private float accessibilityBonus = DEFAULT_ACCESSIBILITY_BONUS;
-
-    public GearInOreCondition() {
-        // 空构造：脚本类加载器按类名 newInstance，必须无参可实例化
+    private GearInVariantLauncher() {
     }
 
-    @Override
-    public void setParam(Object param) {
-        if (param instanceof Number) {
-            accessibilityBonus = ((Number) param).floatValue();
-        }
-    }
-
-    @Override
-    public void apply(String id) {
-        MarketAPI m = market;
-        m.getHazard().modifyFlat(id, HAZARD_MOD, getName());
-        m.getAccessibilityMod().modifyFlat(id, accessibilityBonus, getName());
-    }
-
-    @Override
-    public void unapply(String id) {
-        market.getHazard().unmodifyFlat(id);
-        market.getAccessibilityMod().unmodifyFlat(id);
-    }
-
-    @Override
-    protected void createTooltipAfterDescription(TooltipMakerAPI tooltip, boolean expanded) {
-        super.createTooltipAfterDescription(tooltip, expanded);
-        String hazardPct = "+" + (int) (HAZARD_MOD * 100f) + "%";
-        String accPct = "+" + (int) (accessibilityBonus * 100f) + "%";
-        tooltip.addPara("%s hazard, %s accessibility (GearIn ore veins)", 10f,
-                Misc.getHighlightColor(), hazardPct, accPct);
+    /** 注册本节全部变体演示脚本；每个脚本跑一次即自停。 */
+    public static void register(SectorAPI sector) {
+        sector.addScript(new GearInVariantReader());
+        sector.addScript(new GearInVariantRefitter());
+        sector.addScript(new GearInWeaponGroupBuilder());
+        sector.addScript(new GearInModuleOverrider());
+        sector.addScript(new GearInVariantSerializer());
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInConditionLifecycleScript
+::: details 完整成品：GearInVariantReader
 
 ```java
 package data.scripts.gearin.campaign;
-
-import java.util.Map;
 
 import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.campaign.econ.MarketConditionAPI;
-import com.fs.starfarer.api.campaign.econ.MarketConditionPlugin;
-import com.fs.starfarer.api.characters.MarketConditionSpecAPI;
-import com.fs.starfarer.api.combat.MutableStat;
+import com.fs.starfarer.api.characters.MutableCharacterStatsAPI;
+import com.fs.starfarer.api.combat.ShipVariantAPI;
 
 /**
- * 完整最小例：市场条件生命周期演示脚本 (token、survey、suppression、重算)。
- * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK 一次性门控
- * (每个注册项用各自的键)；挂载后第一帧执行一次完整序列并自停 (isDone()=true)。
- * 序列依次演示 addCondition 的 spec→token 与立即 apply、多实例按 token 隔离、
- * removeCondition 与 removeSpecificCondition 的不对称、reapplyCondition 单实例重算、
- * suppress/survey 门控的重算休眠与恢复，以及原版条件市场 survey 状态只读对照；
- * 全部实例当帧移除，不遗留持久状态。
+ * 角色：注册表读取。演示 SettingsAPI.getVariant 的注册表读取与来源判定 ——
+ * 股票变体 brawler_Assault(STOCK) 的身份 / 装配 / OP 摘要、自动空装配 brawler_Hull
+ * (HULL 来源，source == HULL、isEmptyHullVariant() == true) 与注册表变体总数。
+ *
+ * 注册入口：GearInVariantLauncher.register()(跑一次即停：首次 advance() 后 isDone() 置 true)。
  */
-public class GearInConditionLifecycleScript implements EveryFrameScript {
+public class GearInVariantReader implements EveryFrameScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_ConditionLifecycleScript";
+    private static final Logger LOG = Global.getLogger(GearInVariantReader.class);
 
-    private static final Logger LOG = Global.getLogger(GearInConditionLifecycleScript.class);
-
-    /** 演示目标市场 id；默认 "jangala"(原版核心世界，必存在)。 */
-    private String targetMarketId = "jangala";
-
-    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
-    private boolean executed = false;
-
-    public GearInConditionLifecycleScript() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
-    }
-
-    /** 修改演示目标市场；默认 "jangala"。 */
-    public void setTargetMarketId(String targetMarketId) {
-        this.targetMarketId = targetMarketId;
-    }
+    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
+    private boolean done = false;
 
     @Override
     public boolean isDone() {
-        return executed;
+        return done;
     }
 
     @Override
@@ -712,160 +649,331 @@ public class GearInConditionLifecycleScript implements EveryFrameScript {
 
     @Override
     public void advance(float amount) {
-        if (executed) {
+        if (done) {
             return;
         }
-        executed = true;
-        runLifecycle();
+        try {
+            runOnce();
+        } catch (Throwable t) {
+            LOG.error("GearIn variant reader failed", t);
+        } finally {
+            done = true;
+        }
     }
 
-    private void runLifecycle() {
-        SectorAPI sector = Global.getSector();
-        MarketAPI market = sector.getEconomy().getMarket(targetMarketId);
-        if (market == null) {
-            LOG.info("GearIn condition lifecycle abort: market " + targetMarketId + " not found");
+    private void runOnce() {
+        MutableCharacterStatsAPI stats = Global.getSector().getPlayerPerson().getStats();
+
+        // 1) 注册表读取：缺失 id 返回 null
+        //    (变体注册表的 getVariant，注册表未命中时还会回退查询存档变体数据)
+        ShipVariantAPI stock = Global.getSettings().getVariant("brawler_Assault");
+        GearInVariantLog.logVariant("stock", stock, stats);
+
+        // 2) 每个注册 hull 自动生成 <hullId>_Hull 空装配，source == HULL
+        ShipVariantAPI hullVariant = Global.getSettings().getVariant("brawler_Hull");
+        LOG.info(String.format(
+                "GearIn hull empty variant: id=%s source=%s isStockVariant=%s isEmptyHullVariant=%s displayName=%s",
+                hullVariant.getHullVariantId(), hullVariant.getSource(),
+                hullVariant.isStockVariant(), hullVariant.isEmptyHullVariant(),
+                hullVariant.getDisplayName()));
+
+        // 3) 注册表统计：全部已注册变体 id(数据变体、<hullId>_Hull 空装配与任务变体)
+        LOG.info("GearIn registered variant count: " + Global.getSettings().getAllVariantIds().size());
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInVariantRefitter
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.EveryFrameScript;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.characters.MutableCharacterStatsAPI;
+import com.fs.starfarer.api.combat.ShipVariantAPI;
+import com.fs.starfarer.api.loading.VariantSource;
+
+/**
+ * 角色：克隆改装。演示 clone() 的深拷贝语义 —— 修改克隆 (换武器、改幅能、改船插、
+ * 改来源、重新生成武器组) 不影响注册表原变体；并给出 stock 与 refit 的 OP 对照
+ * (computeOPCost = 武器 OP + 船插 OP + vents + caps；getUnusedOP = 船体 OP - 已用 OP)。
+ *
+ * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
+ */
+public class GearInVariantRefitter implements EveryFrameScript {
+
+    private static final Logger LOG = Global.getLogger(GearInVariantRefitter.class);
+
+    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
+    private boolean done = false;
+
+    @Override
+    public boolean isDone() {
+        return done;
+    }
+
+    @Override
+    public boolean runWhilePaused() {
+        return false;
+    }
+
+    @Override
+    public void advance(float amount) {
+        if (done) {
             return;
         }
-
-        LOG.info(String.format(
-                "GearIn condition lifecycle start: market=%s conditions=%d hazard=%.2f accessibilityFlat=%.2f",
-                market.getId(), market.getConditions().size(),
-                market.getHazard().getModifiedValue(),
-                market.getAccessibilityMod().getFlatBonus()));
-
-        // --- 1. addCondition：spec id -> 实例 token，plugin 立即 apply ---
-        String token = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
-        MarketConditionAPI mc = market.getSpecificCondition(token);
-        MarketConditionSpecAPI spec = mc.getSpec();
-        MarketConditionPlugin plugin = mc.getPlugin();
-        LOG.info(String.format(
-                "GearIn condition lifecycle add: id=%s token=%s plugin=%s planetary=%s surveyed=%s reqSurvey=%s genSpec=%s specOrder=%.0f icon=%s",
-                mc.getId(), mc.getIdForPluginModifications(),
-                plugin.getClass().getSimpleName(), mc.isPlanetary(), mc.isSurveyed(),
-                mc.requiresSurveying(), mc.getGenSpec() == null ? "null" : "present",
-                spec.getOrder(), spec.getIcon()));
-        LOG.info(String.format(
-                "GearIn condition lifecycle add: desc=%s", spec.getDesc()));
-
-        float hazardAfterAdd = market.getHazard().getModifiedValue();
-        float accFlatAfterAdd = market.getAccessibilityMod().getFlatBonus();
-        MutableStat.StatMod hazardMod = market.getHazard().getFlatStatMod(token);
-        MutableStat.StatMod accMod = market.getAccessibilityMod().getFlatBonus(token);
-        LOG.info(String.format(
-                "GearIn condition lifecycle applied: hazard=%.2f hazardModSource=%s hazardModValue=%s accessibilityFlat=%.2f accModValue=%s",
-                hazardAfterAdd,
-                hazardMod == null ? "null" : hazardMod.getSource(),
-                hazardMod == null ? "null" : String.format("%.2f", hazardMod.getValue()),
-                accFlatAfterAdd,
-                accMod == null ? "null" : String.format("%.2f", accMod.getValue())));
-
-        Map<String, String> tokens = plugin.getTokenReplacements();
-        LOG.info(String.format(
-                "GearIn condition lifecycle tokens: $marketName=%s $marketFaction=%s",
-                tokens.get("$marketName"), tokens.get("$marketFaction")));
-
-        // --- 2. 多实例 + param：token 独立、修饰按 token 隔离 ---
-        String token2 = market.addCondition(GearInOreCondition.ORE_DEPOSITS, 0.20f);
-        MarketConditionAPI first = market.getFirstCondition(GearInOreCondition.ORE_DEPOSITS);
-        LOG.info(String.format(
-                "GearIn condition lifecycle multi: token1=%s token2=%s distinct=%s firstConditionIsToken1=%s hasCondition=%s hasSpecific=%s",
-                token, token2, !token.equals(token2),
-                first != null && token.equals(first.getIdForPluginModifications()),
-                market.hasCondition(GearInOreCondition.ORE_DEPOSITS),
-                market.hasSpecificCondition(token)));
-        MutableStat.StatMod accMod1 = market.getAccessibilityMod().getFlatBonus(token);
-        MutableStat.StatMod accMod2 = market.getAccessibilityMod().getFlatBonus(token2);
-        LOG.info(String.format(
-                "GearIn condition lifecycle multi: hazard=%.2f accessibilityFlat=%.2f accMod1=%s accMod2=%s",
-                market.getHazard().getModifiedValue(),
-                market.getAccessibilityMod().getFlatBonus(),
-                accMod1 == null ? "null" : String.format("%.2f", accMod1.getValue()),
-                accMod2 == null ? "null" : String.format("%.2f", accMod2.getValue())));
-
-        // --- 3. removeCondition(id)：同 id 全部实例一起移除 (不对称性 A) ---
-        market.removeCondition(GearInOreCondition.ORE_DEPOSITS);
-        LOG.info(String.format(
-                "GearIn condition lifecycle removeAll: conditions=%d hazard=%.2f accessibilityFlat=%.2f",
-                market.getConditions().size(), market.getHazard().getModifiedValue(),
-                market.getAccessibilityMod().getFlatBonus()));
-
-        // --- 4. reapplyCondition(token)：单实例重算 = unapply + apply ---
-        String token3 = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
-        float hazardBeforeReapply = market.getHazard().getModifiedValue();
-        market.reapplyCondition(token3);
-        float hazardAfterReapply = market.getHazard().getModifiedValue();
-        LOG.info(String.format(
-                "GearIn condition lifecycle reapplyOne: hazardBefore=%.2f hazardAfter=%.2f unchanged=%s",
-                hazardBeforeReapply, hazardAfterReapply, hazardBeforeReapply == hazardAfterReapply));
-
-        // --- 5. suppression：suppress 本身不改效果，下次重算才生效 ---
-        market.suppressCondition(GearInOreCondition.ORE_DEPOSITS);
-        float hazardSuppressedBeforeReapply = market.getHazard().getModifiedValue();
-        market.reapplyConditions();
-        float hazardSuppressedAfterReapply = market.getHazard().getModifiedValue();
-        LOG.info(String.format(
-                "GearIn condition lifecycle suppress: suppressed=%s conditions=%d hazardBeforeReapply=%.2f hazardAfterReapply=%.2f (effect dormant)",
-                market.isConditionSuppressed(GearInOreCondition.ORE_DEPOSITS),
-                market.getConditions().size(),
-                hazardSuppressedBeforeReapply, hazardSuppressedAfterReapply));
-        market.unsuppressCondition(GearInOreCondition.ORE_DEPOSITS);
-        market.reapplyConditions();
-        LOG.info(String.format(
-                "GearIn condition lifecycle unsuppress: suppressed=%s hazard=%.2f (effect restored)",
-                market.isConditionSuppressed(GearInOreCondition.ORE_DEPOSITS),
-                market.getHazard().getModifiedValue()));
-
-        // --- 6. removeSpecificCondition(token)：只移除一个实例 (不对称性 B) ---
-        market.removeSpecificCondition(token3);
-        LOG.info(String.format(
-                "GearIn condition lifecycle removeOne: conditions=%d hazard=%.2f accessibilityFlat=%.2f",
-                market.getConditions().size(), market.getHazard().getModifiedValue(),
-                market.getAccessibilityMod().getFlatBonus()));
-
-        // --- 7. survey 门控：重算只对 surveyed 的条件 apply ---
-        String token4 = market.addCondition(GearInOreCondition.ORE_DEPOSITS);
-        MarketConditionAPI mc4 = market.getSpecificCondition(token4);
-        float hazardAfterAdd4 = market.getHazard().getModifiedValue();
-        mc4.setSurveyed(false);
-        market.reapplyConditions();
-        float hazardUnsurveyed = market.getHazard().getModifiedValue();
-        mc4.setSurveyed(true);
-        market.reapplyConditions();
-        float hazardSurveyed = market.getHazard().getModifiedValue();
-        market.removeSpecificCondition(token4);
-        LOG.info(String.format(
-                "GearIn condition lifecycle surveyGate: afterAdd=%.2f afterUnsurveyedReapply=%.2f afterSurveyedReapply=%.2f",
-                hazardAfterAdd4, hazardUnsurveyed, hazardSurveyed));
-
-        // --- 8. 原版对照 (只读)：找一颗条件市场上 reqSurvey 条件的初始状态 ---
-        boolean found = false;
-        for (MarketAPI candidate : sector.getEconomy().getMarketsCopy()) {
-            if (!candidate.isPlanetConditionMarketOnly()) {
-                continue;
-            }
-            for (MarketConditionAPI c : candidate.getConditions()) {
-                if (c.requiresSurveying()) {
-                    LOG.info(String.format(
-                            "GearIn condition lifecycle vanillaSurvey: market=%s surveyLevel=%s condition=%s surveyed=%s",
-                            candidate.getId(), String.valueOf(candidate.getSurveyLevel()),
-                            c.getId(), c.isSurveyed()));
-                    found = true;
-                    break;
-                }
-            }
-            if (found) {
-                break;
-            }
+        try {
+            runOnce();
+        } catch (Throwable t) {
+            LOG.error("GearIn variant refitter failed", t);
+        } finally {
+            done = true;
         }
-        if (!found) {
-            LOG.info("GearIn condition lifecycle vanillaSurvey: none found (all condition-only markets surveyed)");
-        }
+    }
 
+    private void runOnce() {
+        MutableCharacterStatsAPI stats = Global.getSector().getPlayerPerson().getStats();
+        ShipVariantAPI stock = Global.getSettings().getVariant("brawler_Assault");
+
+        // 1) 克隆后修改装配：clone() 深拷贝全部集合 (武器表、武器组逐组、船插、联队、模块变体；船体 spec 共享引用)，修改克隆不影响原变体
+        ShipVariantAPI refit = stock.clone();
+        refit.clearSlot("WS 003");                    // 卸下旧武器
+        refit.addWeapon("WS 003", "railgun");         // 装上小实弹 (brawler 的 WS 003 是 SMALL UNIVERSAL 硬点)
+        refit.setNumFluxVents(14);
+        refit.setNumFluxCapacitors(10);
+        refit.addMod("hardened_subsystems");
+        refit.removeMod("reinforcedhull");
+        refit.setSource(VariantSource.REFIT);
+        refit.setVariantDisplayName("GearIn Refit");
+        refit.autoGenerateWeaponGroups();             // 按 AI hints/弧线/尺寸重新聚类，最多 7 组
+        GearInVariantLog.logVariant("refit clone", refit, stats);
+
+        // 2) 克隆隔离：改克隆后注册表原变体不变
         LOG.info(String.format(
-                "GearIn condition lifecycle final: conditions=%d hazard=%.2f accessibilityFlat=%.2f (baseline restored)",
-                market.getConditions().size(), market.getHazard().getModifiedValue(),
-                market.getAccessibilityMod().getFlatBonus()));
-        LOG.info("GearIn condition lifecycle done");
+                "GearIn clone isolation: stock WS 003=%s vents=%d caps=%d hasReinforcedHull=%s",
+                stock.getWeaponId("WS 003"), stock.getNumFluxVents(), stock.getNumFluxCapacitors(),
+                stock.hasHullMod("reinforcedhull")));
+
+        // 3) OP 对照：computeOPCost = 武器 OP + 船插 OP + vents + caps；getUnusedOP = 船体 OP - 已用 OP
+        int opStock = stock.computeOPCost(stats);
+        int opRefit = refit.computeOPCost(stats);
+        int hullOp = stock.getHullSpec().getOrdnancePoints(stats);
+        LOG.info(String.format(
+                "GearIn OP: stock=%d refit=%d hullOP=%d unusedRefit=%d",
+                opStock, opRefit, hullOp, refit.getUnusedOP(stats)));
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInWeaponGroupBuilder
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.EveryFrameScript;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.ShipVariantAPI;
+import com.fs.starfarer.api.loading.VariantSource;
+import com.fs.starfarer.api.loading.WeaponGroupSpec;
+
+/**
+ * 角色：武器组生成。演示空装配装武器但无武器组时的
+ * hasUnassignedWeapons() == true，以及 autoGenerateWeaponGroups() 按 AI hints / 弧线 /
+ * 尺寸重新聚类补组 (同型武器必合并为一组，最多 7 组)。
+ *
+ * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
+ */
+public class GearInWeaponGroupBuilder implements EveryFrameScript {
+
+    private static final Logger LOG = Global.getLogger(GearInWeaponGroupBuilder.class);
+
+    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
+    private boolean done = false;
+
+    @Override
+    public boolean isDone() {
+        return done;
+    }
+
+    @Override
+    public boolean runWhilePaused() {
+        return false;
+    }
+
+    @Override
+    public void advance(float amount) {
+        if (done) {
+            return;
+        }
+        try {
+            runOnce();
+        } catch (Throwable t) {
+            LOG.error("GearIn weapon group builder failed", t);
+        } finally {
+            done = true;
+        }
+    }
+
+    private void runOnce() {
+        // 1) 空装配 + 武器但无武器组：hasUnassignedWeapons() == true，autoGenerateWeaponGroups() 补组
+        ShipVariantAPI fromEmpty = Global.getSettings().getVariant("brawler_Hull").clone();
+        fromEmpty.setSource(VariantSource.REFIT);
+        fromEmpty.addWeapon("WS 003", "railgun");
+        fromEmpty.addWeapon("WS 004", "railgun");
+        LOG.info(String.format(
+                "GearIn from empty: groups=%d hasUnassignedWeapons=%s",
+                fromEmpty.getWeaponGroups().size(), fromEmpty.hasUnassignedWeapons()));
+        fromEmpty.autoGenerateWeaponGroups();
+        StringBuilder groupSummary = new StringBuilder();
+        for (WeaponGroupSpec group : fromEmpty.getWeaponGroups()) {
+            groupSummary.append(group.getType()).append('[').append(group.getSlots()).append("] ");
+        }
+        LOG.info("GearIn from empty groups after autoGenerateWeaponGroups: " + groupSummary);
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInModuleOverrider
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.EveryFrameScript;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.ShipVariantAPI;
+import com.fs.starfarer.api.loading.VariantSource;
+
+/**
+ * 角色：模块变体覆盖。演示 stationModules / getModuleVariant / setModuleVariant ——
+ * setModuleVariant 只接受非 STOCK 来源的覆盖 (STOCK/null 都会被当作 "移除覆盖" 处理)。
+ *
+ * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
+ */
+public class GearInModuleOverrider implements EveryFrameScript {
+
+    private static final Logger LOG = Global.getLogger(GearInModuleOverrider.class);
+
+    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
+    private boolean done = false;
+
+    @Override
+    public boolean isDone() {
+        return done;
+    }
+
+    @Override
+    public boolean runWhilePaused() {
+        return false;
+    }
+
+    @Override
+    public void advance(float amount) {
+        if (done) {
+            return;
+        }
+        try {
+            runOnce();
+        } catch (Throwable t) {
+            LOG.error("GearIn module overrider failed", t);
+        } finally {
+            done = true;
+        }
+    }
+
+    private void runOnce() {
+        // stationModules 是 slotId -> variantId 映射；getModuleVariant 按槽取模块变体，
+        // setModuleVariant 只接受非 STOCK 来源的覆盖 (STOCK/null 都会被当作 "移除覆盖" 处理)
+        ShipVariantAPI station = Global.getSettings().getVariant("station1_Standard");
+        ShipVariantAPI moduleStock = station.getModuleVariant("WS 009");
+        ShipVariantAPI stationCopy = station.clone();
+        ShipVariantAPI moduleCopy = moduleStock.clone();
+        moduleCopy.setSource(VariantSource.REFIT);
+        stationCopy.setModuleVariant("WS 009", moduleCopy);
+        LOG.info(String.format(
+                "GearIn modules: stationModules=%s module WS 009=%s override=%s overrideSource=%s",
+                station.getStationModules(),
+                moduleStock.getHullVariantId(),
+                stationCopy.getModuleVariant("WS 009").getHullVariantId(),
+                stationCopy.getModuleVariant("WS 009").getSource()));
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInVariantSerializer
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+import org.json.JSONObject;
+
+import com.fs.starfarer.api.EveryFrameScript;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.ShipVariantAPI;
+import com.fs.starfarer.api.loading.VariantSource;
+
+/**
+ * 角色：变体序列化。演示 toJSONObject() 的输出键与 .variant 数据文件一致
+ * (displayName/hullId/variantId/fluxVents/fluxCapacitors/weaponGroups/modules/wings/hullMods/permaMods/sMods/tags)。
+ *
+ * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
+ */
+public class GearInVariantSerializer implements EveryFrameScript {
+
+    private static final Logger LOG = Global.getLogger(GearInVariantSerializer.class);
+
+    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
+    private boolean done = false;
+
+    @Override
+    public boolean isDone() {
+        return done;
+    }
+
+    @Override
+    public boolean runWhilePaused() {
+        return false;
+    }
+
+    @Override
+    public void advance(float amount) {
+        if (done) {
+            return;
+        }
+        try {
+            runOnce();
+        } catch (Throwable t) {
+            LOG.error("GearIn variant serializer failed", t);
+        } finally {
+            done = true;
+        }
+    }
+
+    private void runOnce() {
+        // 克隆一份 STOCK 变体并显式改 REFIT 来源后序列化，对照 .variant 文件键
+        ShipVariantAPI refit = Global.getSettings().getVariant("brawler_Assault").clone();
+        refit.setSource(VariantSource.REFIT);
+        try {
+            JSONObject json = refit.toJSONObject();
+            LOG.info("GearIn refit JSON: " + json.toString(2));
+        } catch (Exception e) {
+            LOG.error("GearIn variant JSON serialization failed", e);
+        }
     }
 }
 ```

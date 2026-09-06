@@ -8,6 +8,8 @@
 
 ## 学习目标
 
+完成后，您将能够：
+
 - 取得 `SoundPlayerAPI` 并选择适合场景的播放方法；
 - 为 UI、位置和循环声音提供正确的 ID、参数、坐标和速度；
 - 在持续回调中维护循环声源，并按 `music` 分类播放自定义音乐；
@@ -28,7 +30,7 @@
 
 界面反馈使用 `playUISound(String id, float pitch, float volume)`。它不接收空间坐标，声音会按 UI 音效播放；`pitch` 控制音高，`volume` 控制音量。`GearIn_weapon_fire` 已在 [C5-S2] 登记，可以直接用于按钮或状态切换反馈：
 
-::: warning
+::: warning 严禁在战斗循环中调用 UI 音效
 UI 音效只允许用于界面反馈。它不参与战斗中的位置合成，严禁在战斗循环中随意调用，否则会把本应具有空间位置的声音变成无位置的全局提示，并造成重复播放。
 :::
 
@@ -164,6 +166,6 @@ public class GearInSoundPlayer {
 
 ## 建议参考项
 
-- `SoundPlayerAPI`：UI、位置、循环和自定义音乐的播放器方法；
+- `com.fs.starfarer.api.SoundPlayerAPI`：UI、位置、循环和自定义音乐的播放器方法；
 - `data/config/sounds.json`：`music` 分类与 `source`、`file` 的原版对照；
 - `Starsector/starsector-core/starsector.log`：核对资源加载与调用错误的运行日志。

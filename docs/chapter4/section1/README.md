@@ -379,10 +379,16 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 ## 建议参考项
 
 - `com.fs.starfarer.api.Global`：全局入口，`getSettings()` 提供 `SettingsAPI`。
-- `com.fs.starfarer.api.mission.MissionDefinitionPlugin`、`MissionDefinitionAPI`、`FleetSide`、`FleetGoal`、`FleetMemberType`：战役脚本接口与舰队侧、目标、成员类型枚举。
-- `com.fs.starfarer.api.combat.ShipVariantAPI`、`ShipHullSpecAPI`、`ShipAPI`(`HullSize`)：装配与船体信息读取。
-- `com.fs.starfarer.api.SettingsAPI`(`getVariant`、`getAllVariantIds`)：按 ID 读装配、枚举全部装配 ID。
-- `com.fs.starfarer.api.loading.WeaponGroupType`(`LINKED`、`ALTERNATING`)：武器组模式枚举。
+- `com.fs.starfarer.api.mission.MissionDefinitionPlugin`：战役脚本入口；
+- `com.fs.starfarer.api.mission.MissionDefinitionAPI`：战役定义接口；
+- `com.fs.starfarer.api.mission.FleetSide`：舰队侧枚举；
+- `com.fs.starfarer.api.fleet.FleetGoal`：舰队目标枚举；
+- `com.fs.starfarer.api.fleet.FleetMemberType`：成员类型枚举。
+- `com.fs.starfarer.api.combat.ShipVariantAPI`：装配信息读取；
+- `com.fs.starfarer.api.combat.ShipHullSpecAPI`：船体规格读取；
+- `com.fs.starfarer.api.combat.ShipAPI`：战斗实体读取 (`HullSize` 舰体等级)。
+- `com.fs.starfarer.api.SettingsAPI`：按 ID 读装配、枚举全部装配 ID (`getVariant`、`getAllVariantIds`)。
+- `com.fs.starfarer.api.loading.WeaponGroupType`：武器组模式枚举 (`LINKED`、`ALTERNATING`)。
 - `data/missions/mission_list.csv`：原版战役注册表 (列名 `mission`)；
 - `data/missions/afistfulofcredits/`：原版战役样例 (descriptor.json、mission\_text.txt、icon、`MissionDefinition` 类源文件)。
 - `data/variants/fighters/broadsword_Fighter.variant`：原版战机装配样例；

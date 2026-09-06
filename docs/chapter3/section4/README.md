@@ -81,7 +81,7 @@ prime.setMarket(market);
 prime.setFaction("gear_industry");
 ```
 
-GearIn Prime 可以打开公开市场和仓储，交易界面显示原版商品。完整市场配置与自定义商品由 [C11-S1] 和 [C11-S2] 继续讲解。
+GearIn Prime 可以打开公开市场和仓储，交易界面显示原版商品。完整市场配置与自定义商品由 [C12-S1] 和 [C12-S2] 继续讲解。
 
 ### 补齐超空间入口
 
@@ -260,8 +260,8 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 
 ## 建议参考项
 
-- `SectorGeneratorPlugin`：星系生成器接口；
-- `StarSystemAPI`：恒星系对象与实体容器；
+- `com.fs.starfarer.api.campaign.SectorGeneratorPlugin`：星系生成器接口；
+- `com.fs.starfarer.api.campaign.StarSystemAPI`：恒星系对象与实体容器；
 - `data/config/planets.json`：原版恒星与行星类型；
 - `data/config/custom_entities.json`：原版生涯实体类型；
 - `starmap.json`：超空间位置注册。

@@ -1,215 +1,191 @@
-# 用 LazyLib 评估下一段航路的风险
+# 读写 common 数据
 
-生涯自动导航若只看直线距离，会把补给不足的舰队送进敌方巡逻群。本节在每个航路点周围统计敌对舰队，以舰队点数和距离生成风险，并把最近一次评估写进存档。
+本节在存档 `common` 中读取并保存持久状态。完整流程是先处理文件不存在、字段缺失和版本变化，再修改目标字段并明确写盘；重启后重新读取的结果决定这次保存是否成立。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：~28 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~50 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 用 `CampaignUtils` 按当前位置和关系查询附近敌对舰队；
-- 用舰队点数与距离构造一项可调的航路风险指标；
-- 在基础风险之后叠加玩家货舱的补给数量修正；
-- 只持久化最终数值，不持久化当前场景中的舰队引用；
-- 从位置、关系和持久键定位风险值异常。
+- 定位并读取 common 目录中的 MOD 文本与 JSON；
+- 使用原版入口或 LazyLib 写回 common 数据；
+- 在读写过程中处理缺失字段、版本迁移与未知字段；
+- 根据文件、重启结果和日志定位 common 数据故障。
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C7-S1] 的生涯生命周期回调；
+- [C7-S2] 的 `Global.getSettings()`；
+- [C16-S2] 的 JSON 结构、字段读取和编码规则。
 
-## 明确当前需求
+## common 的位置与语义
 
-玩家在星系内选择下一个补给站。目标附近有两支敌对舰队时，界面应显示较高风险；它们离开扫描半径后，风险下降并在读档后保持最近一次值。
+游戏存档目录由启动器决定，MOD 不应把绝对路径写入代码。相对 common 文件名由 MOD 自己命名，例如 `gear_in/state.json`；实际文件位于 `<存档目录>/common/gear_in/state.json.data`。
 
-## 文件与 API 链路
+MOD 资源目录提供随 MOD 发布的只读输入，common 则保存运行期间产生的持久状态。common 文件属于当前用户数据；代码只读写自己的相对文件，不覆盖其他 MOD 的内容。
 
-### 航路风险 API 职责速查表
+## 读取 common
 
-| 对象 | 职责 |
-|---|---|
-| `CampaignUtils` | 敌对舰队查询与关系判断 |
-| `MathUtils` | 计算距离 |
-| `CargoAPI` | 读取玩家货舱补给 |
-| 界面入口 | 输出风险等级与数值消息 |
-| `SectorAPI.getPersistentData()` | 持久记录最近一次评估 |
-
-### 扫描航路点附近敌对舰队
-
-`GearInRouteRiskAssessor.assess()` 开头按航路点和半径取得当前敌对舰队：
+原版 `SettingsAPI` 提供 common 文本和 JSON 读取入口。LazyLib `JSONUtils.loadCommonJSON` 返回 `CommonDataJSONObject`，可以使用 `get`、`has` 和 `opt` 方法读取字段。
 
 ```java
-for (CampaignFleetAPI fleet : CampaignUtils.getNearbyHostileFleets(waypoint, radius)) {
-    // 只处理敌对舰队
+JSONObject state = new JSONObject();
+if (Global.getSettings().fileExistsInCommon("gear_in/state.json")) {
+    state = Global.getSettings().readJSONFromCommon("gear_in/state.json", false);
+}
+int battles = state.optInt("battles", 0);
+String schema = state.optString("schema", "1");
+```
+
+```java
+try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json")) {
+    int battles = data.optInt("battles", 0);
+    String schema = data.optString("schema", "1");
 }
 ```
 
-中立与友方舰队不会进入风险计算。
+文件不存在时，文本入口返回空字符串，LazyLib `loadCommonJSON` 捕获解析异常并返回空对象。原版 `readJSONFromCommon` 会抛 `JSONException`，因此直接读取前先检查文件是否存在。
 
-### 让大型近敌贡献更高风险
+### 版本字段
 
-`assess()` 的循环体使用舰队点数乘以距离衰减；这是 GearIn 自己的评分公式，数值只在同一套半径与阈值下比较：
+每个持久化对象写入 `schema` 或 `version` 字段。读取时先判断版本，再执行迁移；未知字段保留在对象中，避免新版本读取旧文件后丢失用户数据。
 
-```java
-float distance = Math.max(500f, MathUtils.getDistance(waypoint, fleet));
-risk += fleet.getFleetPoints() * radius / distance;
-```
+### 读取实例
 
-同距离下大型舰队风险更高，同规模下近敌更高。
+`gear_in/state.json` 保存 `schema`、`battles` 和 `lastReport`。在 `onGameLoad` 中读取文件：不存在时使用 `schema=1`、`battles=0`；存在时保留已有值，并把缺少的字段补齐到内存对象。
 
-### 加入补给数量修正
+### 验证方案
 
-航路规划入口取得基础风险后，货舱补给少于 30 单位时放大同一段航路的风险；这里没有计算每日消耗或可航行天数：
+前置数据：可加载 MOD、`onGameLoad` 读取片段和一个 `gear_in/state.json` 测试文件。
 
-```java
-float supplies = Global.getSector().getPlayerFleet().getCargo().getSupplies();
-if (supplies < 30f) risk *= 1.5f;
-```
-
-相同敌舰布置下，补给数量跨过 30 单位门槛时风险乘数发生变化。
-
-### 保存最近一次评估
-
-`GearInRouteRiskRecord.save()` 把 `float` 写入星区持久数据：
-
-```java
-Global.getSector().getPersistentData().put("$GearIn_routeRisk", risk);
-```
-
-保存并读档后仍能读到相同数值。
-
-### 把结论交给消息层
-
-在航路 UI 或 Intel 更新处输出等级和数值，并保留判断依据：
-
-```java
-String level = risk >= 120f ? "HIGH" : risk >= 50f ? "MEDIUM" : "LOW";
-Global.getSector().getCampaignUI().addMessage("Route risk: " + level + " (" + (int) risk + ")");
-```
-
-玩家能同时看到 LOW/MEDIUM/HIGH 与具体风险值。
-
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-private final List<CampaignFleetAPI> threats = CampaignUtils.getNearbyHostileFleets(point, 5000f);
-```
-
-实际症状：敌舰已经离开星系，风险仍保持高值，读档后还可能引用失效舰队。
-
-原因：查询结果属于当前生涯状态，跨帧缓存实体列表会过期。
-
-下面是**局部修正片段**：
-
-```java
-List<CampaignFleetAPI> threats = CampaignUtils.getNearbyHostileFleets(point, 5000f);
-```
-
-复验：先记录敌舰在半径内的风险，再让它驶出范围并重新调用 `assess()`；第二次结果应下降，持久数据只在再次调用 `save()` 后更新。
-
-## 完整最小例
-
-评估器读取当前场景并返回数值，记录器只保存和恢复该数值。货舱乘数与消息文本属于调用层，因此不会把玩家舰队依赖塞进评估器。
-
-::: details 完整成品：GearInRouteRiskAssessor
-
-```java
-package data.scripts.gearin.lib;
-
-import org.lazywizard.lazylib.MathUtils;
-import org.lazywizard.lazylib.campaign.CampaignUtils;
-
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.SectorEntityToken;
-
-public final class GearInRouteRiskAssessor {
-    public float assess(SectorEntityToken waypoint, float radius) {
-        float risk = 0f;
-        for (CampaignFleetAPI fleet : CampaignUtils.getNearbyHostileFleets(waypoint, radius)) {
-            float distance = Math.max(500f, MathUtils.getDistance(waypoint, fleet));
-            risk += fleet.getFleetPoints() * radius / distance;
-        }
-        return risk;
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInRouteRiskRecord
-
-```java
-package data.scripts.gearin.lib;
-
-import java.util.Map;
-
-import com.fs.starfarer.api.Global;
-
-public final class GearInRouteRiskRecord {
-    private static final String KEY = "$GearIn_routeRisk";
-
-    public void save(float risk) {
-        Global.getSector().getPersistentData().put(KEY, risk);
-    }
-
-    public float load() {
-        Map<String, Object> data = Global.getSector().getPersistentData();
-        Object value = data.get(KEY);
-        return value instanceof Number ? ((Number) value).floatValue() : 0f;
-    }
-}
-```
-
-:::
-
-## 验证方案
-
-前置场景：在同一星系内建立一个航路点，并准备一支可调整舰队点数、距离和势力关系的测试舰队。
-
-1. 在扫描半径外、半径边缘和 500 su 内分别放置同一支敌对舰队，记录三次基础风险。
-2. 保持距离不变，改变测试舰队的舰队点数，确认风险按比例变化。
-3. 把测试舰队关系改为中立并重新评估，确认它不再贡献风险。
-4. 分别把玩家补给设为 29 与 30 单位，比较调用层应用乘数后的结果。
-5. 保存风险，存档并读档，调用 `load()` 核对数值；随后让敌舰离开范围并重新评估、保存。
+1. 启动游戏并加载一个已有存档，观察读取日志中的 common 文件名。
+2. 读取 `state.json` 的 `schema` 和 `battles`，观察代码使用的值。
+3. 删除 `battles` 键后重新加载存档，观察内存中补入的缺省值。
+4. 写入较旧的 `schema` 后重新加载，观察迁移分支和最终使用的版本。
 
 预期结果：
 
-- 中立与友方舰队不贡献风险，同关系下舰队点数越高、距离越近，基础风险越高；
-- 29 单位补给触发 1.5 倍修正，30 单位不触发；
-- 消息同时显示等级与取整后的风险值，等级在 50 与 120 两个阈值处切换；
-- 读档后 `load()` 返回最近一次保存的数值；重新评估不会自动改写持久数据；
-- 敌舰离开半径并重新评估、保存后，读到的风险随之下降。
+- 读取路径指向当前存档的 `common` 目录；
+- 已有字段按文件值读取；
+- 缺失文件或字段不会让读取流程失去可运行状态；
+- 版本迁移后对象包含当前代码要求的字段；
+- 未知字段仍保留在读取对象中。
+
+## 写入 common
+
+原版写入入口分别处理文本与 JSON：
+
+```java
+Global.getSettings().writeTextFileToCommon("gear_in/state.txt", text);
+Global.getSettings().writeJSONToCommon("gear_in/state.json", state, true);
+```
+
+`writeJSONToCommon` 的 `onlyIfChanged` 可以避免内容没有变化时重复写入。文本写入有单次大小边界，写入过程先写临时文件，再替换目标文件；调用侧仍需记录异常和文件名。
+
+LazyLib 的 `CommonDataJSONObject` 直接封装 JSON：
+
+```java
+try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json")) {
+    data.put("schema", 1);
+    data.put("battles", data.optInt("battles", 0) + 1);
+    data.save();
+}
+```
+
+`put` 先改变内存对象；`close()` 会调用 `save()` 完成写盘。try-with-resources 块结束时数据即保存，显式 `save()` 用于块内提前持久化；写入后重新加载文件，才能确认磁盘内容已经更新。
+
+### 读 → 改 → 写与迁移
+
+写入前先读取当前对象，再修改需要修改的键。保留未知字段，缺省值只在字段不存在时补入。版本迁移完成后写回当前版本，避免每次启动重复迁移。
+
+```java
+try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json")) {
+    int schema = data.optInt("schema", 1);
+    if (schema < 2) {
+        data.put("reports", data.optInt("reports", 0));
+        data.put("schema", 2);
+    }
+    data.put("battles", data.optInt("battles", 0) + 1);
+    data.save();
+}
+```
+
+### 写入边界
+
+写入失败时保留原文件，日志记录目标和异常。用户设置由专门的设置库管理时，MOD 不直接绕过其保存流程。
+
+### 验证方案
+
+前置数据：本节的读取对象、`gear_in/state.json` 和一个在 `onGameLoad` 或测试战斗中执行的写入片段。
+
+1. 读取当前 `state.json`，记录 `battles` 的初始值。
+2. 将 `battles` 加 1，并调用 `save()` 或 `writeJSONToCommon`。
+3. 退出当前场景并重新加载存档，观察读取到的 `battles`。
+4. 写入一个旧版本对象，重新加载并观察迁移后的 `schema` 与新增字段。
+5. 重复写入相同内容，观察 `onlyIfChanged` 对文件更新时间的影响。
+
+预期结果：
+
+- common 文件位于当前存档的 `common` 目录；
+- 写入后重新加载能读到递增后的 `battles`；
+- 未知字段保持不变；
+- 旧版本文件迁移到当前 `schema`；
+- 内容未变化时不会产生不必要的 JSON 写入；
+- 写入失败时原文件仍可读取，并有明确错误日志。
+
+清理：删除测试存档中的 `gear_in/state.json` 或恢复测试前的文件内容。
 
 ## 故障分析
 
-- **敌舰离开后风险仍保持高值**：代码跨帧缓存了已经过期的舰队列表。
+- **读取 common 文件得到空值**：文件不存在、名称不一致或当前打开了另一存档。
 
-    - **解决方案**：每次更新时重新查询，只持久化最终数值。
+    - **解决方案**：记录存档标识和相对文件名，修正后重新读取。
 
-- **风险始终为零**：航路点与目标舰队不在同一个 `LocationAPI`。
+- **读取可选字段时抛出异常**：代码直接对缺失键使用 `get`。
 
-    - **解决方案**：传入当前 location 内的 waypoint。
+    - **解决方案**：初始化字段改用 `opt` 或先调用 `has`。
 
-- **友军被计入风险**：代码使用固定阵营名单，没有读取当前势力关系。
+- **旧存档载入后行为异常**：数据缺少版本字段，或迁移分支没有覆盖该版本。
 
-    - **解决方案**：改由 `CampaignUtils` 按实时敌对关系筛选。
+    - **解决方案**：先读取版本并执行对应迁移。
 
-- **读档后风险恢复为零**：结果写入了 local memory，没有进入 sector persistent data。
+- **升级后未知字段消失**：迁移时重建了只含已知字段的新对象。
 
-    - **解决方案**：改用独立持久键。
+    - **解决方案**：改为在原对象上补充和转换字段。
+
+- **重启后数值恢复为零**：普通 `JSONObject` 只在内存中修改，没有传给 common 写入入口；或 `CommonDataJSONObject` 既未显式保存也未关闭。
+
+    - **解决方案**：调用对应写入入口，或让 try-with-resources 正常关闭对象。
+
+- **文件内容被缺省值覆盖**：载入时把完整缺省对象写回了已有文件。
+
+    - **解决方案**：只为缺失键填充默认值。
+
+- **用户设置被自动改回**：代码直接写入了设置库管理的 common 文件。
+
+    - **解决方案**：改由设置库读取和保存。
+
+- **写入后 common 文件无法解析**：写入过程覆盖了原文件且失败时没有保留副本。
+
+    - **解决方案**：使用原子写入入口并保留旧文件。
+
+- **大文件写入失败**：单次文本超过写入入口可处理的边界。
+
+    - **解决方案**：拆分数据或缩减结构，重新写入。
+
+- **读取结果来自 MOD 目录**：资源路径与 common 相对文件名混用了不同入口。
+
+    - **解决方案**：改用 common 读取方法并记录实际存档路径。
 
 ## 总结
 
-航路风险是一次当前状态计算，只有最终数值需要持久化。敌对舰队列表每次重新查询，货舱修正放在基础风险之后，消息层只负责展示结论。
+common 是存档持久数据空间。读取时处理缺失字段和版本迁移，写入时保留未知字段并调用真正的写盘入口；重启后再次读取的结果决定持久化是否成立。
 
 ## 建议参考项
 
-- `CampaignUtils.getNearbyHostileFleets`：按关系筛选附近舰队；
-- `CampaignFleetAPI.getFleetPoints`：提供舰队规模指标；
-- `SectorAPI.getPersistentData`：保存跨读档的最近风险。
+- `com.fs.starfarer.api.SettingsAPI`：`readJSONFromCommon` 原版 common JSON 读取、`writeTextFileToCommon` common 文本写入、`writeJSONToCommon` common JSON 写入；
+- `org.lazywizard.lazylib.JSONUtils`：`loadCommonJSON` LazyLib common JSON 读取入口，写盘经其嵌套对象 `CommonDataJSONObject` 的 `save()` 完成；
+- `<存档目录>/common/`：存档持久化文件位置。

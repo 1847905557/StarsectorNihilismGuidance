@@ -1,494 +1,973 @@
-# 在生涯场景中使用 Rules
+# 制作完整生涯任务
 
-本节把已有 Rules 规则接入对话、市场、舰队、酒吧与任务等生涯场景。每类场景会在固定时机触发匹配，并提供不同的变量供规则使用。
+本节制作一个完整生涯任务，让它从酒吧出现，经过接取与阶段推进，最终完成结算。`GearInHubMission` 会连接情报、触发器与目标检测，并把任务状态显示给玩家。
 
-*本节预期阅读时间：~20 分钟。*
+*本节预期阅读时间：~30 分钟。*
 
-*本节预期操作时间：~40 分钟。*
+*本节预期操作时间：~60 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 为对话、市场、舰队、酒吧和任务选择对应的 trigger；
-- 使用场景记忆与 `$option` 组织菜单和选项回流；
-- 配合 `FireAll`、`FireBest` 与分数控制场景规则；
-- 覆盖原版规则时保留原有结果职责；
-- 根据场景状态和界面结果定位规则故障。
+- 根据任务需要选择合适的 `BaseHubMission` 扩展类；
+- 管理任务创建、接受、阶段推进与结束状态；
+- 使用条件、时限和触发器连接任务目标；
+- 通过酒吧事件与 Rules 接入并完成一项生涯任务；
+- 根据情报、阶段和规则结果定位任务故障。
 
 ## 前置知识
 
-- [C7-S1] 的 MOD 生命周期与规则文件加载边界；
-- [C10-S1] 的 `addScript` 与持久数据判断；
-- [C10-S6] 的 `showInteractionDialog` 与 `InteractionDialogPlugin` 生命周期；
-- [C15-S1] 的 `rules.csv` 七列、匹配流程、条件脚本语法、文本 token 替换与直接写行即注册的效果；
-- [C15-S3] 的 `BaseCommandPlugin` 与内置规则命令；
-- [C15-S4] 的 `MemoryAPI` 过期、持久化、`$option` 回流与场景事实键。
+- [C4-S1] 的战役与 `MissionDefinitionAPI` 对照关系；
+- [C7-S1] 的 `modPlugin` 生命周期与加载期数据读取；
+- [C7-S2] 的 `Global.getSector()` 阶段语义；
+- [C14-S3] 的交互对话框、Intel 登记与 `SectorAPI.adjustPlayerReputation`；
+- [C12-S1] 的人物、市场联系人、`OfficerManagerEvent` 与 `ContactIntel`；
+- [C14-S1] 的 `EveryFrameScript`、`convertToDays` 与脚本存档边界；
+- [C14-S2] 的事件边界、生命周期与 XStream 序列化；
+- [C15-S1] 的 `PortsideBarEvent`、`BarEventManager`、`PortsideBarData`、`HubMissionBarEventWrapper` 与 `notifyWasInteractedWith`。
 
 ## 术语
 
-按术语约定，本节首次完整讲解以下词；API 类名保留源码大小写：
+按术语约定，API 名保留源码大小写。本节首次完整讲解以下页面级术语 (不进入共享术语表)：
 
-- **场景 trigger(scene trigger)**：`rules.csv` 中按 "生涯场景" 分组的标准触发器名。
-    - 场景 trigger 的候选池由原版派发点 (Java 插件) 以固定字符串发起匹配；MOD 向其中添加规则即挂载到该场景。
-    - 与规则基础页的自定义 trigger 相对：自定义 trigger 只能由 `RuleBasedInteractionDialogPluginImpl` 构造器或 `FireBest`/`FireAll` 主动调用，场景 trigger 由原版使用方在固定时机调用。
-- **场景事实键 (scene fact key)**：`CoreCampaignPluginImpl` 的 `update*Facts` 钩子与规则脚本共同维护的记忆键 (如 `$hasMarket`、`$menuState`、`$tradeMode`、`$hailing`、`$mh_count`、`$mHub`)。
-    - 它们是场景规则的 "上下文开关"，条件列必须引用它们才能把规则限定在正确的场景与状态下。
-- **临时 bar 选项 (temp bar option)**：由 `AddBarEvents` 规则经 `AddBarEvent` rulecmd 写入市场记忆 `$core_tempBarEvents` 的酒吧选项。`BarCMD.showOptions` 每次进酒吧先清空再重建 —— 临时选项不跨进入保留。
-- **任务 trigger 前缀 (mission trigger prefix)**：任务 (`HubMission`) 的 `getTriggerPrefix()`(如原版 `hijack`、`smug`、`sitm`)。任务对话规则以 `前缀_blurb` / `前缀_option`(对话列表) 与 `前缀_blurbBar` / `前缀_optionBar`(酒吧包装) 为 trigger 名。
-- **流程场景 (flow scene)**：非实体交互对象驱动的规则场景，本节唯一例子是主菜单新游戏对话框 (`NewGameDialogPluginImpl`)。它的 `$option` 回流 trigger 是 `NewGameOptionSelected`，不是 `DialogOptionSelected`。
+- **枢纽任务 (hub mission)**：API 名保留 `HubMission`(接口) 与 `BaseHubMission`(基类)。一种把任务组织为阶段图、触发器与 Intel 的生涯任务模型：
+    - 任务是一个 `BaseIntelPlugin`(用户在 Intel 界面跟踪进度)，同时是一个 `EveryFrameScript`(每帧推进阶段)，通过 `MissionHub`(联系人任务板) 或酒吧事件两种入口提供给用户。
+- **任务阶段 (stage)**：API 名保留 `StageData`。任务状态机的一个节点，用任意 `Object` 作 id(惯例是枚举常量)。任务在同一时刻只有一个 `currentStage`；阶段之间用**连接 (`StageConnection`)** 组成有向图。
+- **目标 (objective)**：本节术语。任务给用户的一项 "当前要做的事"，由当前阶段和阶段连接上的完成条件 (`ConditionChecker`) 构成。任务的成功/失败由 `successStages` / `failStages` 集合判定，不单独建模。
+- **事件链 (event chain)**：本节术语，两种形态：单任务内是阶段连接 (`connections`)+ 触发器 (`triggers`) 组成的事件序列；跨任务是多个任务 Intel 经全局内存阶段 (如成熟实例的 `MissionStage`) 串成的大剧情链。
+- **触发器 (trigger)**：API 名保留 `MissionTrigger`。绑定到若干阶段、带一个 `ConditionChecker` 与一串 `TriggerAction` 的一次性动作；条件满足且任务处于绑定阶段时执行并从列表移除。
 
-接下来看五类场景的 trigger 由谁在何时发起匹配。
+## 梳理生涯任务关系
 
-## 梳理 Rules 场景关系
+以下按任务的组装顺序展开，先澄清类型名，再建立 Intel 与 HubMission 两条链，随后依次是生命周期、阶段管理、目标检测与事件链，最后落到注册入口。前几节以静态知识为主，从生命周期一节开始进入可以观察的运行行为。
 
-先看总览表确认各 trigger 的派发点与时机，再按对话、市场、舰队、酒吧、任务的顺序逐个展开，最后归纳跨场景的组合写法。
+### 任务清单名称与类型归属速查表
 
-### 场景 trigger 总览速查表
+任务清单里的三个名字的实际归属如下 (全部在 `com.fs.starfarer.api.*` 包路径内)：
 
-原版 `rules.csv`(`data/campaign/rules.csv`) 中，本节五类场景的核心 trigger 与派发点如下；规则基础页已统计的 `DialogOptionSelected`(6050)、`PopulateOptions`(334)、`OpenInteractionDialog`(121) 不再重复，只补充场景归属与派发点。
-
-| 场景 | trigger | 条数 | 派发点 (使用方) | 触发时机 |
-|---|---|---|---|---|
-| 对话 | `OpenInteractionDialog` | 121 | `RuleBasedInteractionDialogPluginImpl.init` 的 `fireBest(initialTrigger)`(默认 trigger，规则基础页已证)；`AbandonMarketPluginImpl` 的 `FireAll` | 交互对话框初始化；弃档后回到停靠对话 |
-| 对话 | `PopulateOptions` | 334 | 规则脚本 `FireAll`(如 `marketDock`、`greetingDefaultFriendly`)；`EndConversation`；`BaseMissionHub.listMissions` | 填充选项菜单 |
-| 对话 | `DialogOptionSelected` | 6050 | `RuleBasedInteractionDialogPluginImpl.optionSelected`；`BarCMD.optionSelected` | 用户点选任意选项 (`$option` 回流) |
-| 对话 | `PickGreeting` | 199 | 规则脚本 `FireBest`(`OpenCDE` → `convDefault`；`DialogOptionSelected` → `npcCommsAccept`)；`RuleBasedInteractionDialogPluginImpl` 构造器可指定 `PickGreeting` 为初始 trigger | 人物通讯连接被接受时的问候 |
-| 对话 | `OpenCommLink` | 183 | `FleetInteractionDialogPluginImpl` 的 `fireBest`；规则脚本 `FireBest`(如 `greetingCGRweirdHM` 等势力特殊问候) | 打开舰队通讯链接 |
-| 市场 | `MarketPostOpen` | 22 | `marketOpen` 规则 (`OpenInteractionDialog`) 脚本 `FireBest`；`EndConversation` | 停靠后进入市场对话；对话结束仍在市场时 |
-| 市场 | `MarketPostDock` | 32 | `MarketPostOpen` 规则脚本 `FireBest` | 停靠流程收尾 (`$menuState = main` + 菜单) |
-| 市场 | `TradePanelFlavorText` | 23 | 交易面板的 `FireBest` 调用 (假 dialog) | 每次打开交易面板 |
-| 舰队 | `BeginFleetEncounter` | 61 | `FleetInteractionDialogPluginImpl.reinit` 预检 + `reinitPostContinue` / `optionSelected` 的 `fireBest` | 舰队遭遇对话初始与 Continue 之后 |
-| 舰队 | `OpenCommLink` / `PickGreeting` | 183 / 199 | `FleetInteractionDialogPluginImpl`(开通讯) / 通讯目录与接触人入口 (问候) | 打开通讯 / 人物问候 |
-| 酒吧 | `AddBarEvents` | 16 | `BarCMD.showOptions`(先清空再 `FireAll`) | 每次展示酒吧选项 |
-| 酒吧 | `BarPrintDesc` | 10 | `bar_optionSel` 规则 (`$option == marketVisitBar`) 脚本 `FireBest` | 进入酒吧 |
-| 酒吧 | `ReturnFromBar` | 5 | `BarCMD.leaveBar` 的 `FireBest` | 离开酒吧 (还原插件后) |
-| 酒吧 | `BarHighRepCrewGain` | 6 | `BarHRESpeechB` 规则脚本 `FireAll` | 高声望酒吧事件演讲结束 |
-| 任务 | `MHOpenText` | 2 | `openMhubOptionSel` 规则脚本 `FireBest` | 任务列表文本之前 |
-| 任务 | `<前缀>_blurb` / `<前缀>_option` | 每条任务各 1 | `BaseMissionHub.listMissions`(`FireBest`，带 keepOptions) | 任务列表展开 |
-| 任务 | `AddMHCloseOption` | 5 | `BaseMissionHub.listMissions`(`FireBest`) | 任务列表收尾 |
-| 任务 | `MHPostMissionListText` | 2 | `BaseMissionHub.listMissions`(`FireBest`) | 任务列表文本之后 |
-| 任务 | `<前缀>_blurbBar` / `<前缀>_optionBar` | 每条任务各 1 | `HubMissionBarEventWrapper.addPromptAndOption`(`FireBest`) | 任务以酒吧事件展示 |
-| 任务 | `NewGameOptionSelected` / `AddNewGameChoices` | 15 / 8 | `NewGameDialogPluginImpl` 的 `fireBest`；`InitNewGameChoices` → `AddNewGameChoices` 链 | 主菜单新游戏对话框 |
-
-计数口径：原版 `rules.csv` 非注释行统计，与规则基础页相同；上表之外的少量 trigger 如下：
-
-- `BeginFleetEncounter2` 另有 1 条；
-- `BarShuttleDownPrintDesc` 1 条；
-- `ContactPreMissionListText` 4 条；
-- `AsebPreMissionListText` 3 条；
-- `ContactPostAccept` 8 条；
-- `ContactPrintAcceptText` 10 条；
-- `ContactPrintDeclineText` 1 条；
-- `InitNewGameChoices` / `BeginNewGameCreation` 各 1 条。
-
-条数口径说明
-
-上表条数为原版 `rules.csv` 非注释行的统计，仅用于帮助您估量各 trigger 在原版中的使用密度与竞争烈度，不构成任何 API 承诺，随游戏版本可能变化。
-
-### 场景事实键的写入方
-
-规则条件里最常见的场景事实键由 `CoreCampaignPluginImpl`(`com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`) 的 `update*Facts` 钩子在规则匹配前写入实体/市场/人物/势力记忆：
-
-- `updateEntityFacts`：`$tag:<tag>`、`$isHostile`(按声望档位)、`$hasMarket`(非纯条件市场)、`$hasStation`、`$marketSize`、`$stability`、`$planetType`；
-- `updateMarketFacts`：`$tag:<tag>`、`$mc:<条件id>`、`$ind:<产业id>`、`$id`(市场 id) 等；
-- `updatePersonFacts`：`$id`(人物 id)、`$isPerson`、`$isContact`、`$name` / `$personName`、`$rel` / `$relName`、`$rank` / `$post`、`$importance*`、`$level`、`$personality`、`$tag:<tag>` 等；
-- `updateFactionFacts`：`$id`、`$friendlyToPlayer` / `$hostileToPlayer` / `$neutralToPlayer`、`$isHostile`。
-
-`$menuState` / `$tradeMode` / `$hailing` 等**状态**键不由 facts 钩子写，而是由规则脚本与原版 rulecmd 维护。规则基础页的结论仍然成立：`$tag:` 类条件的前提是目标实体/市场/人物确实带该 tag。
-
-### 对话场景 (OpenInteractionDialog / PopulateOptions / DialogOptionSelected / PickGreeting / OpenCommLink)
-
-对话场景是其余场景的底座，进入、填菜单、回收选项都在这里发生，市场、舰队与酒吧复用同一套机制。
-
-- **`OpenInteractionDialog`(121 条)**：交互对话框的默认初始 trigger(`RuleBasedInteractionDialogPluginImpl` 构造器默认值，规则基础页已证)。
-    - 原版规则分成两组：无条件/实体类回退规则 (`defaultOpenDialog`：`ShowDefaultVisual` + `PrintDescription 3` + `SetShortcut defaultLeave "ESCAPE"` + `defaultLeave:Leave`)。
-    - 实体条件类 (`beaconOpenDialog`：`$tag:warning_beacon`；`marketOpen`：`$hasMarket` → `ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`，即市场场景的入口)。
-- **`PopulateOptions`(334 条)**：菜单填充器，由规则脚本 `FireAll` 调用 (不是插件直接触发)。
-    - 所有选项规则必须用状态条件限定，否则该选项会一直出现或一直不出现。
-    - 市场菜单用 `$menuState == main` + `$hasMarket` + `$tradeMode != NONE` (如 `marketOptBar`、`marketOptTradeMulti`)。例外：`marketCommDir`、`marketAddOptionLeave` 不含 `$tradeMode != NONE`。
-    - 舰队对话菜单用 `$menuState == fleetConvMain`；
-    - 人物对话用 `$isPerson`(`convOptionLeave`：`cutCommLink:Cut the comm link`)。
-- **`DialogOptionSelected`(6050 条)**：选项回流默认使用方 (`RuleBasedInteractionDialogPluginImpl.optionSelected`：本地记忆写 `$option`、`expire 0`、`fireBest("DialogOptionSelected")`)。
-    - 其中 6048 条用 `$option ==` 绑定具体选项，另 2 条用状态旗标接管下一次选择。
-    - 本节补充两个非默认回流方：`BarCMD.optionSelected` 对酒吧字符串选项同样写 `$option` 并 `FireBest "DialogOptionSelected"`；`NewGameDialogPluginImpl.optionSelected` 写 `$option` 后触发的是 **`NewGameOptionSelected`**(见任务场景)。
-- **`PickGreeting`(199 条)**：人物通讯问候。
-    - 派发链：通讯目录点选人物 → 通讯面板触发 `FireBest "OpenCDE"` → `OpenCDE` 规则 `convDefault` 脚本 `FireBest PickGreeting`：
-        - 问候规则按人物 id、`$voice`、`$postId`、剧情 flag 等条件选一条，展示 `ShowPersonVisual` + 问候文本 + 选项 (`FireAll PopulateOptions` 或直接列选项)。
-    *   `NPCCommsRequest` 触发器 (`npcCommsAccept` 规则脚本 `FireBest`) 处理 NPC 主动通讯请求。
-    *   以问候 trigger 为初始 trigger、或自定义问候子 trigger(`FireBest` 分派 + `score:` 加分) 都是常见扩展写法。
-- **`OpenCommLink`(183 条)**：舰队通讯对话。
-    - 派发：`FleetInteractionDialogPluginImpl` 开通讯 (`OPEN_COMM`) 时创建 embedded `RuleBasedInteractionDialogPluginImpl` (`setEmbeddedMode(true)`、`setActivePerson(对方指挥官)`) 并 `fireBest("OpenCommLink")`：
-        - 无匹配时文本面板显示 "You try to establish a comm link, but get only static."。
-    *   原版问候规则族按关系与状态分派：
-        - `$faction.friendlyToPlayer`(友好→`$menuState = fleetConvMain 0` + `FireAll PopulateOptions`)；
-        - `$faction.neutralToPlayer`
-        - `$entity.isHostile` + `$entity.relativeStrength`(敌舰强弱)；
-        - `!$player.transponderOn` (应答器关闭→"Turn your transponder on" 选项)。
-        - `$entity.ignorePlayerCommRequests score:10000`(拒绝通讯)；
-        - 无条件 `greetingFallthrough` 回退规则 (0 分)。
-
-### 市场场景 (MarketPostOpen / MarketPostDock / TradePanelFlavorText)
-
-市场对话是规则场景中 "进入 → 状态 → 菜单 → 退出" 的最完整流程：
-
-1. **进入**：停靠市场实体 → 默认对话初始化 `fireBest("OpenInteractionDialog")` → `marketOpen` 规则 (条件 `$hasMarket`，1 分) 命中：`ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`。
-2. **停靠许可**：`MarketPostOpen`(22 条) 按条件选一条 (`$hasMarket` + `$player.transponderOn` + 关系分派；
-    - `marketPostOpenDefault` 打印停靠许可文本、`$tradeMode = OPEN 0`、`FireBest MarketPostDock`)。
-    - **应答器关闭时**，`marketPostOpenDefault` 等要求 `$player.transponderOn` 的规则不匹配，但原版有专门的应答器关闭规则族接管：
-        - `marketPostOpenToOffIsFine`(`$hasMarket` + `!$player.transponderOn`，2 分，`$tradeMode = OPEN 0`)。
-        - `marketPostOpenToOffSneak`(另需 `!$faction.c:allowsTransponderOffTrade` + `!$market.mc:free_market`，4 分，`$tradeMode = SNEAK 0`)。
-        - `marketPostOpenToOffPatrols`(另需 `IsSeenByPatrols $faction.id true`，5 分，`$tradeMode = NONE 0`)。
-        - `marketPostOpenNoTradeHostile`(`$market.playerHostileTimeout score:100`)；
-        - 停靠流程继续 (`FireBest MarketPostDock` 照常)，只是贸易模式不同，不会 "无停靠文本、不进市场菜单"。
-    *   中立势力市场由 `marketPostOpenDefaultNeutral` 回退规则接管 (条件只有 `$hasMarket` + `$faction.isNeutralFaction score:100`，无应答器条件) —— 停靠流程继续但无许可文本。
-3. **停靠收尾**：`MarketPostDock`(32 条) 中 `marketDock`(无条件，0 分) 是回退规则：`$menuState = main 0` + `FireAll PopulateOptions`。
-    - 其余 31 条是场景附加 (任务交付检查 `DeliveryMission checkCompletion score:100`、债务/雇佣兵检查 `MarketCMD checkDebtEffect score:1000`、`MarketCMD checkMercsLeaving score:500`、特殊势力检查等)。
-    - `FireBest` 只执行一条，覆盖者必须自己复刻 `marketDock` 的结果职责 (见规则强度)。
-4. **市场菜单**：`PopulateOptions` 中 `$menuState == main` + `$hasMarket` 的规则加选项：
-    - 规则 `marketAddOptionCommDir` 添加选项 `marketCommDir`(通讯目录，`!$faction.isNeutralFaction`)。
-    - 规则 `marketOptBar` 添加选项 `marketVisitBar`(酒吧，`$tradeMode != NONE` + `!$faction.isNeutralFaction` + `!$market.noBar`)。
-    - 规则 `marketOptTradeMulti` 添加选项 `marketOpenCoreUI`(交易/整备)。
-    - 规则 `marketAddOptionRepair1/2/3` 添加选项 `marketRepair`(维修)。
-    - 规则 `marketOptHostile` 添加选项 `marketConsiderHostile`(军事选项)。
-    - 规则 `marketAddOptionLeave` 添加离开选项。
-5. **退出/再进入**：`EndConversation` rulecmd：对话插件不是 `FleetInteractionDialogPluginImpl` 时，若 `$hasMarket` 且本地记忆无 `$menuState` → `FireBest MarketPostOpen`(重新走停靠许可)；否则 `FireAll PopulateOptions`。
-    - `AbandonMarketPluginImpl`(弃档) 复位 `$menuState = main`、`$tradeMode = NONE`、`unset $hasMarket` 后 `FireAll "OpenInteractionDialog"`。
-6. **交易面板**：
-    - 交易面板每次打开面板时以 `FireBest` 发起 `"TradePanelFlavorText"` 匹配 (传入假 dialog 与记忆槽位)。
-    - memoryMap 由交易面板在更新 flavor 文本时自建 (槽位与规则匹配用的槽位结构一致：`local` / `faction` / `global` / `player` / `market` / `sourceMarket`)。
-    - `$tradePanelMode`(MARKET/CARGO/SALVAGE) 由面板按自身模式写入 sector 记忆 (与 `$tradeMode` 无关；这些槽位的一个实际使用例是势力关系描述文本的生成，规则基础页已述)。
-    - 原版 23 条按 `$global.tradePanelMode`、`$marketSize`、`$stability` 分派文本。
-
-交易面板的 dialog 是假 dialog
-
-交易面板制造假 dialog 来匹配 `TradePanelFlavorText`：
-
-flavor 规则只能用 `AddText` 等不依赖真实对话上下文的命令，视觉面板、`DismissDialog` 等依赖真实对话上下文的命令会异常或静默无效 (与规则基础页所讲的假 dialog 限制同类)。
-
-覆盖 FireBest 目标必须复刻结果职责
-
-`FireBest` 只执行一条规则：命中本 MOD 的规则，被覆盖的原版回退规则就不再执行。
-
-因此覆盖 `MarketPostDock` 的 `marketDock` 时，必须把它的结果职责复刻进自己的脚本 (`$menuState = main 0` + `FireAll PopulateOptions`)；
-
-覆盖 `OpenInteractionDialog` 的 `marketOpen` 时同理 (`ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`)。
-
-否则市场菜单不会出现 (选项面板空、只剩 failsafe/Leave)，停靠后卡在对话。
-
-### 舰队场景 (BeginFleetEncounter / OpenCommLink / PickGreeting)
-
-舰队遭遇与通讯共用同一套对话底座：`BeginFleetEncounter` 负责遭遇开局，`OpenCommLink` 与 `PickGreeting` 负责通讯与问候。
-
-- **`BeginFleetEncounter`(61 条)**：舰队遭遇对话。两次匹配时机 (`FleetInteractionDialogPluginImpl`)：
-    - `reinit(withContinueOnRuleFound)`：`getBestMatching(null, "BeginFleetEncounter", ...)` **预检** —— 命中则只显示 "Continue"(`REINIT_CONTINUE`)。
-    - 用户点击后 `reinitPostContinue` `fireBest("BeginFleetEncounter")` (本地记忆 `$fidpi_addContinue` 为真时改走 `BeginFleetEncounter2`)。
-    - 初次遭遇 (`init`)：创建 embedded 对话后调用 `fireBest("BeginFleetEncounter")`；规则脚本置 `$fidpi_addContinue` 则清空选项只留 "Continue"。
-    - 规则模式：
-        - 脚本 `AddText "You're being hailed by the $faction $otherShipOrFleet." $faction.baseColor` + `$hailing = true 0`(如 `LPTitheCheck`、`mpm_pirateEncounter`)：
-            - `customsInspectionScan` 只 `AddText` 不写 `$hailing`；
-            - `tOffPatrolBegin` 以 `OpenComms` 直接进入通讯。
-        *   或 `FleetDesc` + `$shownFleetDescAlready = true 0` (`initial_AnyFleet` 回退规则，1 分)。
-        *   文本经 `FireBest` 的 `addText` 显示。
-        *   **BeginFleetEncounter 规则不依赖 `options` 列** —— 选项面板随后由舰队主菜单接管 (`INIT` 路径清空选项)。
-    *   `$hailing` 的可观察效果：舰队主菜单里 "Open a comm link" 选项高亮并改名 "Accept the comm request"(随后 `unset $hailing`)。
-        *   `OpenComms` rulecmd 置 `FleetInteractionDialogPluginImpl.directToComms = true` 直接进入通讯。
-        *   `HailPlayer` rulecmd 是写 `$hailing` 的正式途径。
-- **`OpenCommLink`**：见对话场景。
-    - 通讯内规则把 `$menuState = fleetConvMain 0` + `FireAll PopulateOptions` 切换成舰队对话菜单：
-        - `shrineFleetConvOption`、`academyFleetConvOption` 等按 `$entity.<flag>` 条件加选项；
-        - `convOptionLeave` 按 `$isPerson` 加 `cutCommLink`。
-    *   `cutCommLink` 选项由 `DialogOptionSelected` 规则 `convEnd` 等处理：`ShowDefaultVisual` + `EndConversation` → 回舰队主菜单。
-- **`PickGreeting`**：人物通讯 (见对话场景)。舰队侧经通讯目录/接触人入口进入。
-- **可用变量**：
-    - `$entity.relativeStrength`(正值表示对方更强)；
-    - `$entity.isHostile`
-    - `$faction.id` / `$faction.friendlyToPlayer`
-    - `$player.transponderOn`
-    - `$entity.<自定义 flag>`(记忆键)；
-    - `$isPatrol` / `$sourceMarket.mc:<条件>`(应答器检查规则族)。
-
-### 酒吧场景 (AddBarEvents / BarPrintDesc / ReturnFromBar / BarHighRepCrewGain)
-
-酒吧场景是 "市场菜单 → 临时选项 → 事件对话 → 返回" 的完整流程 (`BarCMD` 既是 rulecmd 也是对话插件，`com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`)：
-
-1. **进入**：市场菜单 `marketVisitBar`(`marketOptBar` 规则，选项 order 5)→ `bar_optionSel` 规则 (`$option == marketVisitBar`)：
-    - `FireBest BarShuttleDownPrintDesc` + `FireBest BarPrintDesc`(10 条，`ShowImageVisual` + 描述文本；其中 6 条用势力专属图)。
-    - `BarCMD showOptions`。
-2. **展示选项**：`BarCMD.showOptions`：
-    - `dialog.getOptionPanel().clearOptions()`
-    - `AddBarEvent.clearTempEvents(market)` + `FireAll.fire(null, dialog, memoryMap, "AddBarEvents")`
-    - 把 `$core_tempBarEvents` 中的临时选项 (`blurb` 进文本面板、`option` 进选项面板、可带颜色)。
-    - 再追加 `PortsideBarData` 的 active 事件 (Java `BaseBarEvent` / `HubMissionBarEventWrapper`)。
-    - 末尾加 `"Leave the bar"`(id `barLeave`，ESC 快捷键)。
-    - `dialog.setPlugin(this)`(BarCMD 接管对话)。
-3. **临时选项**：`AddBarEvents`(16 条) 规则用 `AddBarEvent <optionId> <选项文本> <描述文本> [颜色]` rulecmd 写临时选项：
-    - 存储：`com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent` 用 `KEY = "$core_tempBarEvents"` 存市场记忆，`getTempEvents` / `clearTempEvents` 维护。
-    - 选项文本与描述做 token 替换。
-    - 原版 16 条按 `$market.id == <市场>` + 剧情 flag 条件添加 (如 `gaMeetHegLieutenantOnCoatl`、`goToTheGABarEventOption` 带 `RollProbability 0.2`)。
-    - **临时选项每轮重建**：每次进酒吧 `BarCMD` 先 `clearTempEvents` 再 `FireAll AddBarEvents`，跨进入不保留。
-4. **点选**：`BarCMD.optionSelected`：
-    - `PortsideBarEvent` 选项 → `BarEventDialogPlugin`(事件对话，Java)。
-    - `"barLeave"` → `leaveBar()`；
-    - `"barContinue"` → `showOptions(true)`：
-    - 字符串选项 (含临时选项与 mission 包装选项)→ `dialog.setPlugin(originalPlugin)` 还原规则对话：
-        - `mem.set("$option", optionData, 0)` + `FireBest "DialogOptionSelected"` —— 与 `RuleBasedInteractionDialogPluginImpl` 的回流完全一致。
-        - 本节最小例的酒吧规则正是消费这里。
-5. **返回/退出**：`BarCMD.returnFromEvent [true|false]`(从事件对话返回酒吧；true 时给 "Continue") 与 `leaveBar`(停掉酒吧环境音、`dialog.setPlugin(originalPlugin)`、`ShowDefaultVisual`、`FireBest "ReturnFromBar"`)。
-    - `ReturnFromBar`(5 条) 中 `marketReturnFromBar`：`$menuState = main 0` + `FireAll PopulateOptions` + 文本 "You leave the bar and take a shuttle back to your $shipOrFleet." —— **退出转场把市场菜单状态复位**。
-6. **奖励**：`BarHighRepCrewGain`(6 条) 由高声望酒吧事件演讲规则 `BarHRESpeechB` 脚本 `FireAll` 触发 (`AddCommodity crew N`，按 `$player.fleetPoints` / `RollProbability` / `score:2` 分档)。
-
-临时 bar 选项的三个边界
-
-- 临时选项不能当长期状态 (每轮清空重建)；
-- `RemoveBarEvent` 只删市场记忆中的临时选项、不碰 `PortsideBarData` 的 active 事件；
-- `HubMissionBarEventWrapper` 的选项 id 以任务前缀开头，`getWrapperFor` 用 `startsWith` 识别、`abortMissions` 会中止**其它** mission 包装，自定义临时选项不要使用与已注册任务相同的前缀。
-
-### 任务场景 (MHOpenText / 任务前缀 trigger / AddMHCloseOption / 新游戏流程场景)
-
-生涯任务对话 (联系人任务) 是规则 + Java 任务插件 (`BaseMissionHub` / `HubMission`，属生涯对象体系) 的协作：
-
-1. **入口**：人物对话菜单 `PopulateOptions` 规则 `addMHubOption`(条件 `$isPerson` + `MissionHubCMD hasHub` + `Call $mHub setMHOptionText`) 加 `5:mh_open:$mh_openOptionText` ("Do you have any work for me?")。
-    - `$mHub` = `BaseMissionHub.KEY`，`setMHOptionText` 写 `$mh_openOptionText`。
-2. **列表**：点 `mh_open` → `openMhubOptionSel` 规则：`Call $mHub prepare` → `FireBest MHOpenText` →`Call $mHub listMissions` → `SetEnabled mh_open false`。
-    - `MHOpenText`(2 条：`contactMHOpenText` / `asebMHOpenText`)→ 分别 `FireBest ContactPreMissionListText`(4 条，按 `$mh_count` / `$mh_firstInlineBlurb` / `$mHub_contactSuspended` 打印列表前文本) 与 `FireBest AsebPreMissionListText`(3 条，Sebestyen 专用)。
-3. **展开**：`BaseMissionHub.listMissions` 对每份 offered mission：
-    - `FireBest <前缀>_blurb true` / `FireBest <前缀>_option true`(每条任务各 1 条规则，如 `hijack_blurb` / `hijack_option`)。
-    - 随后 `FireBest AddMHCloseOption true`(5 条：`mh_close` 选项 + `SetShortcut mh_close "ESCAPE"`)。
-    - `withBlurbs` 时 `FireBest MHPostMissionListText`(2 条："So, how about it?" 等)。
-    - **`FireBest` 的第二个参数 `true` 是 keepOptions**(`FireBest.fire` 把参数字符串 tokenize)。
-4. **接受/拒绝**：任务选项 (如 `hijack_start`) 经 `DialogOptionSelected` 回流到任务规则：
-    - 接受类规则 `contactMissionAcceptGeneric`(`$option == contact_accept`)：`FireBest ContactPrintAcceptText` + `Call $mHub accept $missionId` + `FireBest ContactPostAccept` + `Call $mHub returnToList`。
-    - `BaseMissionHub.callEvent` 分派 `prepare` / `listMissions` / `returnToList` / `accept` / `doCleanup` 动作；`accept` 调 `mission.accept(dialog, memoryMap)`。
-    - 任务规则可读 `$missionId` 与 `$mission` 记忆 (`MemKeys.MISSION`)。
-    - 写入方：`SetActiveMission` / `ClearActiveMission` rulecmd，或插件 `setActiveMission`(`RuleBasedInteractionDialogPluginImpl` / `FleetInteractionDialogPluginImpl`)。
-5. **酒吧任务包装**：任务也可以出现在酒吧：
-    - `HubMissionBarEventWrapper.addPromptAndOption` 把 `LOCAL` 临时换成任务人物记忆 (`ENTITY` / `PERSON_FACTION` 一并换)。
-    - 调 `mission.updateInteractionData(dialog, memoryMap)`，然后 `FireBest <前缀>_blurbBar true` + `FireBest <前缀>_optionBar true`，再恢复记忆。
-    - 原版对应 `hijack_blurbBar` / `hijack_optionBar` 等。
-    - 用户点选后由 `BarCMD.optionSelected` 进入任务对话 (`abortMissions` 中止未选中的包装)。
-6. **对照：任务板**：通讯面板的 missions 页签是 **Java** 任务板 (`MissionBoardAPI` / `MissionAvailability.playerAccept`)，不走规则 —— 本节只把它作为 "非规则场景" 的边界。
-7. **流程场景：新游戏对话框**：主菜单新游戏 → `NewGameDialogPluginImpl`(`com.fs.starfarer.api.impl.campaign.NewGameDialogPluginImpl`)：
-    - `init` 组装 memoryMap(`LOCAL` 即角色数据实体记忆、`GLOBAL`，devMode 时 `$global.isDevMode`)。
-    - 选项回流：`memory.set("$option", ...)` + `expire 0` + `fireBest("NewGameOptionSelected")`。
-    - `CONTINUE_CHOICES` → `fireBest("BeginNewGameCreation")`；
-    - 规则链：`BeginNewGameCreation` → `onNewGameCreationStart`(`NGCAddCredits 2000` + `FireAll InitNewGameChoices`)→ `InitNewGameChoices` → `initNewGameChoices`(`FireAll AddNewGameChoices`)。
-    - `AddNewGameChoices`(8 条) 加起始选项 (`ngcWolf` / `ngcWayfarer` / dev 选项以 `$global.isDevMode` 为条件)。
-    - `NewGameOptionSelected`(15 条) 处理器 (`$option == ngcX` → `NGC*` 命令族：`NGCAddShip` / `NGCAddCredits` / `NGCSetDifficulty` / `NGCDone` 等)。
-    - **注意 `NewGameOptionSelected` 是主菜单对话框的专属回流 trigger**，在生涯对话里写它永不触发。
-
-### 场景组合写法
-
-把五类场景放在一起看，会得到三组反复出现的写法。
-
-- **状态机模式**：`$menuState`(`main` / `fleetConvMain`) 与 `$tradeMode`(`OPEN` / `NONE` / `SNEAK`) 是场景状态记忆：
-    - `PopulateOptions` 菜单规则以它们为条件；
-    - 转场必须成对：进入时赋值 (`marketDock`：`$menuState = main 0`；`greetingDefaultFriendly`：`$menuState = fleetConvMain 0`)。
-    - 退出时复位 (`ReturnFromBar` → `$menuState = main`；`AbandonMarketPluginImpl` → `$tradeMode = NONE`)。
-- **分层模式**：`FireAll` 填充 (`PopulateOptions` / `AddNewGameChoices` / `AddBarEvents` —— 候选规则全部执行、全部添加选项)：
-    - `FireBest` 叙述与转场 (`MarketPostOpen` / `MarketPostDock` / `BarPrintDesc` / `MHOpenText` / `PickGreeting` —— 只取分数最高一条)。
-- **回流完整流程**：`options` 列 id ↔ `DialogOptionSelected`(或 `NewGameOptionSelected`) 规则 `$option == <id>` 逐字一致 (大小写敏感)。
-- **竞争纪律**：默认条件 1 分；原版剧情规则常用 `score:1000`(`$tag:xxx score:1000` 等)；MOD 覆盖回退规则用 100 级即可 (100–103 分恒胜 1–3 分的回退规则、输给 1000 级剧情规则，见最小例)。
-
-一次性演示 flag 的写法
-
-条件列写 `!$player.<flag>`、脚本列写 `$player.<flag> = true 0`(`expire 0`)：第一次命中后 flag 置位，第二次进入自动回退原版行为。
-
-需要重新演示时，用 `unset $player.<flag>` 删除单个键；`unsetAll` 用于按前缀批量删除。devMode 下可用 `DumpMemory` 查看记忆键。
-
-## 规则强度速查表
-
-本节必须遵守的规则清单 (违反后的可观察结果均附上；规则基础页已列的加载期致命错误与跨文件重复 id 语义在本节所有场景继续有效，不重复)：
-
-| 规则 | 强度 | 违反后的可观察结果 |
+| 任务清单名称 | 实际类型 | 位置 |
 |---|---|---|
-| 覆盖 `FireBest` 目标规则时必须复刻被覆盖规则的结果职责 (市场场景：`MarketPostDock` 的 `$menuState = main 0` + `FireAll PopulateOptions`；`OpenInteractionDialog` 的 `ShowDefaultVisual` + `PrintDescription 3` + `FireBest MarketPostOpen`) | 必须 | `FireBest` 只执行一条规则：市场菜单不出现 (选项面板空、只剩 failsafe/Leave)，停靠后卡在对话 |
-| `options` 列选项 id 与 `DialogOptionSelected` / `NewGameOptionSelected` 规则的 `$option == <id>` 逐字一致 (大小写敏感) | 必须 | 点选后无规则匹配：对话文本面板出现 `ERROR: no rule found for option <id>` + failsafe |
-| 任务规则 trigger 名必须等于 `mission.getTriggerPrefix() + "_blurb" / "_option" / "_blurbBar" / "_optionBar"` | 必须 | `BaseMissionHub.listMissions` 文本面板打印 `No blurb found for <prefix>`、`FireBest` 返回 false、任务选项缺失 |
-| 临时 bar 选项必须经 `AddBarEvents` 规则 + `AddBarEvent` rulecmd 添加；它每轮被清空重建，不是持久状态 | 事实 | 跨进酒吧不保留；`BarCMD.showOptions` 先 `clearTempEvents` 再 `FireAll AddBarEvents` |
-| 自定义临时 bar 选项 id 不得使用与任何已注册任务相同的前缀 | 事实 | `BarCMD.getWrapperFor` / `abortMissions` 按 `optionId.startsWith(mission.getTriggerPrefix())` 识别，同前缀选项被当作 mission 包装处理、其余包装被中止 |
-| `BeginFleetEncounter` 规则不依赖 `options` 列 (交互经 `$hailing` / `OpenComms` / 主菜单转场) | 事实 | `reinitPostContinue` / `INIT` 路径在规则执行后接管选项面板，`options` 列内容被清空 |
-| `TradePanelFlavorText` 规则的 dialog 是假 dialog | 事实 | 依赖真实对话上下文的命令 (视觉面板、`DismissDialog` 等) 异常或无效 (交易面板的假 dialog 机制) |
-| `NewGameOptionSelected` 只在主菜单新游戏对话框回流 `$option`；`DialogOptionSelected` 只在生涯对话回流 | 必须 | 写错场景的回流 trigger 规则永不触发且无报错 |
-| `$menuState` / `$tradeMode` 由场景脚本维护，进入与退出必须配对 | 必须 | 未复位时市场/对话菜单选项残留或消失 (如不设 `$menuState` 的市场菜单永不显示) |
-| `PopulateOptions` / `AddBarEvents` / `AddNewGameChoices` 菜单规则必须加状态或场景条件判断 (`$menuState == ...`、`$market.id == ...`、`$global.isDevMode` 等) | 必须 | 没有条件限定的规则在每个匹配场景都添加选项 (如进任何市场都出现本 MOD 的酒吧选项) |
-| 条件列命令副作用与跨文件重复 id 静默跳过 (规则基础页已列) | 必须/事实 | 见规则基础页规则强度表 |
+| HubMissionAPI | `HubMission`(接口) | `com.fs.starfarer.api.impl.campaign.missions.hub.HubMission` |
+| 任务基类族 | `BaseHubMission` / `HubMissionWithTriggers` / `HubMissionWithSearch` / `HubMissionWithBarEvent` | 同目录 |
+| 任务板 | `MissionHub` / `BaseMissionHub` | 同目录 |
+| 任务创建器 | `HubMissionCreator` / `BaseHubMissionCreator` | 同目录 |
+| 酒吧包装 | `HubMissionBarEventWrapper` | 同目录 |
+| IntelAPI | `IntelInfoPlugin`(接口)+ `IntelManagerAPI`(登记表)+ `BaseIntelPlugin`(默认实现) | `com.fs.starfarer.api.campaign.comm` 与 `com.fs.starfarer.api.impl.campaign.intel` |
+| MissionDefinitionAPI | `MissionDefinitionAPI`(存在，但属于战役任务) | `com.fs.starfarer.api.mission.MissionDefinitionAPI` |
 
-上表的每一条纪律都会直接落进下面的最小例：覆盖规则复刻职责，场景规则用分数赢得竞争，一次性 flag 控制演示次数。
+`MissionDefinitionAPI` 由战役任务脚本用来创建任务场景内容，服务 `data/missions/<id>/` 的战役任务场景，与生涯枢纽任务是两套互不相通的系统。
 
-## 组装 Rules 场景实现
+为什么本节能给出实现类细节
 
-在规则基础页的 MOD 布局 (`mods/GearIndustry/`，含 `data/campaign/rules.csv` 与 `GearInRulesIntro` 类) 之上，**只追加规则行**。
+`BaseHubMission` 等 "实现" 类位于公开 API 源码内 (`com.fs.starfarer.api.impl.campaign.missions.hub.*` 包路径，随 `starfarer.api.jar` 发行)，可以直接读取 —— 本节的行为结论与代码片段都来自这条公开面。
 
-本节五个场景的使用方全是原版插件 (`RuleBasedInteractionDialogPluginImpl` / `FleetInteractionDialogPluginImpl` / `BarCMD` / `NewGameDialogPluginImpl` / 交易面板)，MOD 侧不需要新增 Java 类：
+先看 Intel 半身：它决定任务以什么形式出现在 Intel 界面，`BaseHubMission` 的展示与收尾行为全部来自这一侧。
+
+### Intel 侧：登记链与生命周期
+
+`IntelInfoPlugin`(`com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`) 是 Intel 条目的完整约定 (含 `TableRowClickData` / `ListInfoMode` / `IntelSortTier` 等嵌套类型)。
+
+MOD 侧几乎不直接实现它，而是继承 `BaseIntelPlugin`(`com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`)。
+
+它同时实现 `IntelInfoPlugin`、`CallableEvent`、`EveryFrameScript`、`CommSnifferReadableIntel` 四个接口，是 "Intel 条目 + 每帧脚本" 的组合基类。
+
+### IntelManagerAPI 登记方法速查表
+
+登记表 (`IntelManagerAPI`) 的语义 (Intel 登记链的结论此处不展开，只补 `IntelManagerAPI` 内部实现细节)：
+
+| 方法 | 语义 |
+|---|---|
+| `addIntel(plugin)` / `addIntel(plugin, forceNoMessage)` / `addIntel(plugin, forceNoMessage, textPanel)` | 立即登记：置 `playerVisibleTimestamp`、调 `reportMadeVisibleToPlayer`、默认 `autoAddCampaignMessage()` 加一条通信消息 (`forceNoMessage` / `textPanel` 两个变体改写消息去向) |
+| `queueIntel(plugin, maxCommQueueDays)` / `queueIntel(plugin)` | 进通信队列；`IntelManagerAPI.advance` 每帧 (未暂停) 检查 `canMakeVisibleToPlayer(relay)` 或 `forceAddNextFrame()`，可见则 `addIntel`，前 3 条单独显示；本帧可见条数超过 4 时，第 4 条起合并进 `NewMessagesIntel` |
+| `removeIntel(plugin)` | 从 intel 表与通信队列同时移除；确实移除了才调 `reportRemovedIntel` |
+| `hasIntel(plugin)` / `getIntel()` / `getIntel(Class)` / `getFirstIntel(Class)` | 查询 |
+
+### BaseIntelPlugin 生命周期
+
+`BaseIntelPlugin` 的生命周期 (MOD 写任务 Intel 时直接继承)：
+
+- `advance(float amount)`：`isEnded()` 直接返回；`isEnding()` 时按游戏天扣 `endingTimeRemaining`，扣完置 `ended = true` 并调 `notifyEnded()`；否则转 `advanceImpl(amount)`，即子类覆写点。
+- `endAfterDelay()` / `endAfterDelay(float days)` / `endImmediately()`：置 `ending = true` + 剩余天数：
+    - `getBaseDaysAfterEnd()` 默认 **3 游戏日** —— 任务结束后 Intel 条目还留 3 天展示结算结果，之后由引擎按 `shouldRemoveIntel()`(默认 `isEnded`) 清理。
+- `isDone()` = `isEnded()`、`runWhilePaused()` = false；作为 `EveryFrameScript`，任务结束后引擎自动从脚本列表移除。
+- 更新推送：`sendUpdate(listInfoParam, textPanel)`(走 `addIntelToTextPanel`)、`sendUpdateIfPlayerHasIntel(...)`(走 `CampaignUIAPI.addMessage`)，任务阶段变化时给用户 "进度更新" 消息的两条通道。
+
+Intel 条目只是展示层，任务的状态与推进逻辑在 `HubMission` 接口与实现类族里。
+
+### HubMission 接口方法速查表
+
+`HubMission` 的任务约定如下：
+
+| 方法 | 语义 |
+|---|---|
+| `String getTriggerPrefix()` | 规则分类前缀取 `getMissionId()` |
+| `String getMissionId()` / `void setMissionId(String)` | 任务 ID(规则键根、`getReason()` 返回值) |
+| `void setGenRandom(Random)` | 注入任务随机源 (hub 从 creator 传入) |
+| `void accept(InteractionDialogAPI, Map<String, MemoryAPI>)` | 用户接受任务 |
+| `void updateInteractionData(dialog, memoryMap)` | 把任务状态写进对话 LOCAL 内存 (`$<missionId>_stage` 等) |
+| `void createAndAbortIfFailed(MarketAPI market, boolean barEvent)` | 创建入口；失败即 `abort()` |
+| `void abort()` | 清理任务副作用 (回滚 `changes`) |
+| `boolean isMissionCreationAborted()` | 创建是否已放弃 |
+| `MissionHub getHub()` / `void setHub(MissionHub)` | 任务板归属 |
+| `HubMissionCreator getCreator()` / `void setCreator(HubMissionCreator)` | 创建器归属 |
+| `PersonAPI getPerson()` / `PersonAPI getPersonOverride()` / `void setPersonOverride(PersonAPI)` | 给任务者 (giver) 人物 |
+
+### 类族职责速查表
+
+类族职责 (全部在 `missions.hub` 包内)：
+
+| 类 | 职责 |
+|---|---|
+| `BaseHubMission` | 抽象基类：Intel 半身 + 脚本半身 + 阶段图 + 触发器 + 奖励/声望 + 生成辅助。子类必须实现 `create(MarketAPI createdAt, boolean barEvent)` |
+| `HubMissionWithTriggers` | 触发器 API 的完整实现：`beginXxxTrigger` / `trigger*` 动作族 / `endTrigger`；`FleetSize` / `FleetQuality` / `OfficerNum` / `OfficerQuality` 枚举与几十个 `TriggerAction` 嵌套类 |
+| `HubMissionWithSearch` | 目标选择系统：`require*` / `prefer*` 要求族 + `pickSystem` / `pickPlanet` / `pickEntity` / `pickMarket` / `pickCommodity` 抽取器 |
+| `HubMissionWithBarEvent` | 酒吧入口补充：`shouldShowAtMarket(MarketAPI)`(默认 true，在 `create()` **之前**被调用) |
+| `MissionHub` / `BaseMissionHub` | 联系人任务板：持有 creator 列表与 `offered` 列表，`updateOfferedMissions` 抽取、`accept` 派发、`listMissions` 写规则选项 |
+| `HubMissionCreator` / `BaseHubMissionCreator` | 任务创建器：`createHubMission(MissionHub)` 实例化、频率/超时/声望过滤、完成计数 |
+| `HubMissionBarEventWrapper` | 酒吧包装 (`BaseBarEvent` 子类)：把 `HubMissionWithBarEvent` 任务包装成酒吧事件 |
+| `MissionTrigger` | 触发器数据类 (`ConditionChecker` + 阶段集合 + `TriggerAction` 列表) |
+
+类族职责已经清楚，接下来看任务在运行时的生命周期，即创建、接受、推进与结束。
+
+### 任务的生命周期
+
+**创建 (createAndAbortIfFailed)**：
+
+```java
+protected boolean isBarEvent = false;
+public void createAndAbortIfFailed(MarketAPI market, boolean barEvent) {
+    isBarEvent = barEvent;
+    if (getPerson() != null) {
+        genMissionRewardMultAndQuality();
+    }
+    if (!create(market, barEvent)) {
+        abort();
+    }
+}
+protected abstract boolean create(MarketAPI createdAt, boolean barEvent);
+```
+
+要点：`create()` 返回 `false` 表示 "本次不成立该任务"(目标选不出来、ref 键被占用、市场条件不满足)。
+
+基类立即 `abort()` 回滚已登记的 `changes`(`VariableSet` / `MadeImportant` / `EntityAdded` / `PersonAdded` 等 `Abortable`)。
+
+随后把 `aborted` 置位，调用方用 `isMissionCreationAborted()` 跳过该任务。
+
+`create()` 的副作用必须可回滚
+
+**`create()` 里做的一切副作用都必须登记进 `changes` 或走基类方法**，否则失败回滚不干净。可观察结果：创建失败或任务结束时实体/人物/标志残留在星区 —— 重复出现、地图永久标记、内存键不清理 (规则强度 "必须" 第 2 条)。
+
+**接受 (accept)**：
+
+```java
+public void accept(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
+    setImportant(true);
+    if (startingStage == null) {
+        throw new RuntimeException("startingStage can not be null. Use setStartingStage()");
+    }
+    setCurrentStage(startingStage, null, null);
+    acceptImpl(dialog, memoryMap);
+    // cargoOnAccept 直接进用户货舱
+    Global.getSector().getIntelManager().addIntel(this, false, text);
+    Global.getSector().addScript(this);
+    startingStage = null;
+    runTriggers();
+}
+```
+
+顺序固定：
+
+- 置重要标记；
+- **必须已 `setStartingStage`**(null 抛 RuntimeException)。
+- `setCurrentStage(startingStage)`(进入起点阶段，此时若起点就是 success/fail 阶段会立即结算)。
+- `acceptImpl`(子类放置任务实体/舰队)；
+- `addIntel`(Intel 条目即刻可见)；
+- `addScript`(脚本半身开始每帧推进)；
+- `startingStage` 置空 (任务已在进行中，abort 语义随之切换)。
+- `runTriggers()`
+
+**推进 (advanceImpl)**：
+
+```java
+@Override
+protected void advanceImpl(float amount) {
+    float days = Global.getSector().getClock().convertToDays(amount);
+    StageData stage = getData(currentStage);
+    if (stage != null) {
+        stage.elapsed += days;
+    }
+    elapsed += days;
+    if (timeLimit != null && timeLimit.days < elapsed && (timeLimit.noLimitWhileInSystem == null ||
+            timeLimit.noLimitWhileInSystem != Global.getSector().getCurrentLocation())) {
+        setCurrentStage(timeLimit.failStage, null, null);
+        timeLimit = null;
+        runTriggers();
+    }
+    tracker.advance(days);
+    if (tracker.intervalElapsed()) {
+        checkStageChangesAndTriggers(null, null);
+    }
+}
+```
+
+每帧：当前阶段 `elapsed` 与任务总 `elapsed` 按游戏天累计 (`convertToDays` 换算，见前置知识)→ 时限判定 (超时且用户不在豁免星系则直接切失败阶段)→ `tracker`(`IntervalUtil(0.09f, 0.11f)` 游戏天) 到点执行阶段连接检查。
+
+**结束 (setCurrentStage 的终态分支)**：`setCurrentStage` 切到 `successStages` 成员 → `endSuccess`：
+
+- 置 `result`、加 XP(`getXPReward`)、加信用点 (`getCreditsReward`)、`adjustRep(RepActions.MISSION_SUCCESS)`、`endSuccessImpl`、`cargoOnSuccess` 入舱、`endAfterDelay()`、发 `END_MISSION_UPDATE` 更新。
+- `creator.incrCompleted()`、潜在联系人入列、`abort()`、置 `completedKey`。
+
+`endFailure` 与 `endAbandon` 同理 (无奖励、`incrFailed`、无惩罚失败阶段走 `noPenaltyFailStages`)。
+
+最终 `endAfterDelay` 的倒计时走完 → `BaseIntelPlugin` 置 `ended` → **`notifyEnded()`(`super.notifyEnded()` + `Global.getSector().removeScript(this)`)**。
+
+脚本半身由引擎在下一帧按 `isDone()` 清理，Intel 条目按 `shouldRemoveIntel()` 由 `IntelManagerAPI` 清理。
+
+生命周期围绕阶段切换展开。先看阶段的数据结构：`StageData`、阶段图与 `setCurrentStage` 的完整副作用。
+
+### 阶段管理 (StageData 与阶段图)
+
+内部结构：
+
+```java
+protected Object currentStage = null;
+protected LinkedHashMap<Object, StageData> stages = ...;
+protected List<Object> successStages = new ArrayList<>();
+protected List<Object> failStages = new ArrayList<>();
+protected List<Object> noPenaltyFailStages = new ArrayList<>();
+protected Object abandonStage = Abandon.ABANDON;
+protected List<StageConnection> connections = ...;
+protected List<MissionTrigger> triggers = ...;
+protected List<Abortable> changes = ...;
+```
+
+- `StageData`：`id` + `elapsed`(当前阶段内累计游戏天)+ `important`(本阶段的 `ImportanceData` 列表)。`getData(id)` 延迟创建。
+- `StageConnection`：`from` / `to` / `checker`：`from == null` 表示 "任意阶段"。
+- 阶段声明：`setStartingStage`、`setSuccessStage` / `addSuccessStages`、`setFailureStage` / `addFailureStages`、`setNoPenaltyFailureStage` / `addNoPenaltyFailureStages`、`setAbandonStage` / `setNoAbandon`。
+    - **阶段 id 惯例是枚举常量** (`updateInteractionData` 会做 `((Enum)getCurrentStage()).name()`)。
+
+`setCurrentStage` 的完整副作用链 —— 写任务代码必须理解：
+
+1. 同阶段直接返回 (幂等)；
+2. 离开旧阶段：解除该阶段登记的 `makeImportant`(`Misc.makeUnimportant` + `removeImportanceChanges`)、`unset` 阶段标志 (`removeMemoryFlagChanges`)；
+3. 写入 `currentStage`；若新阶段在 `timeLimit.endLimitStages` 里则取消时限；
+4. 进入新阶段：登记新阶段 `makeImportant`(`Misc.makeImportant(memory, getReason())` + `changes.add(MadeImportant)`)、写 `FlagData` 标志 (`setFlag` 族登记的按阶段生效标志)；
+5. 结束判定：`!doNotEndMission` 时依次检查 `successStages` / `failStages` / `abandonStage`，命中即结算；否则 `sendUpdateForNextStep(NEXT_STEP_UPDATE, textPanel)` 发 "下一步" 更新；
+6. `runTriggers()`。
+
+阶段图决定任务往哪里走，完成检测决定它什么时候走。本节看目标定义与三条检测通道。
+
+### 目标定义与完成检测
+
+**目标定义**：目标由当前阶段与阶段连接的 `ConditionChecker` 构成。
+
+### 阶段连接声明速查表
+
+连接声明两条 API 族：
+
+| 声明方式 | 语义 | 检测器 |
+|---|---|---|
+| `setStageOnGlobalFlag(to, flag)` | 全局内存布尔标志为 true → 进 `to` | `GlobalBooleanChecker` |
+| `setStageOnMemoryFlag(to, HasMemory, flag)` / `setStageOnMemoryFlag(to, MemoryAPI, flag)` | 指定对象内存布尔标志 → 进 `to` | `MemoryBooleanChecker` |
+| `setStageOnDaysElapsed(to, days)` | 内部以 `getData(null)` 构造检查器，条件求值必 NPE，不可用 | `DaysElapsedChecker` |
+| `setStageOnEntityNotAlive(to, entity)` | 实体死亡/失效 → 进 `to` | `EntityNotAliveChecker` |
+| `setStageOnEnteredLocation(to, location)` | 用户进入地点 → 进 `to` | `EnteredLocationChecker` |
+| `setStageInRangeOfEntity(to, entity, range)` | 用户进入实体范围 → 进 `to` | `InRangeOfEntityChecker` |
+| `setStageOnWithinHyperspaceRange(to, entity, rangeLY, ...)` | 用户进入超空间范围 → 进 `to` | `InHyperRangeOfEntityChecker` |
+| `setStageOnInRangeOfCommRelay(to)` | 用户进入通信中继范围 → 进 `to` | `InCommRelayRangeChecker` |
+| `setStageOnCustomCondition(to, checker)` | 自定义条件 → 进 `to` | `ConditionChecker` 任意实现 |
+| `connectWithXxx(from, to, ...)` | 带起点的连接 (`from` 明确时只在 `from` 阶段生效) | 同族检测器 |
+| `connectWithMarketDecivilized` / `connectWithHostilitiesEnded` / `connectWithHostilitiesStarted` | 市场去文明 / 敌对结束 / 敌对开始 | `MarketDecivChecker` / `HostilitiesEndedChecker` / `HostilitiesStartedChecker` |
+
+### 完成检测三通道
+
+1. **帧推进轮询**：`advanceImpl` → `tracker.intervalElapsed()` → `checkStageChangesAndTriggers(null, null)`。
+    - 检测循环：对 `connections` 逐条检查 "`conn.from == currentStage || conn.from == null` 且 `conn.to != currentStage` 且 `checker.conditionsMet()`"。
+    - 命中即 `setCurrentStage(conn.to)` 并**移除该连接** (除非 `setStageTransitionsRepeatable()`)。
+    - `while (changed)` 直到无变化，最后 `runTriggers()`。
+    - **连接是一次性的** —— 同一条连接只触发一次阶段转换。
+2. **对话驱动**：rules 把完成标志写进目标对象内存 (如 `$gearInHub_delivered = true`)。
+    - 再 `Call $<missionId>_ref updateStage` 或 `Call $<missionId>_ref updateData`；`BaseHubMission.callEvent` 里 `"updateStage"` → `checkStageChangesAndTriggers(dialog, memoryMap)`。
+    - 对话里完成目标时的标准收尾与之同款：原版 `cheapCom` 写 `$cheapCom_completed = true` + `Call $cheapCom_ref updateStage`。
+3. **时限**：`setTimeLimit(failStage, days, noLimitWhileInSystem, ...noLimitAfterStages)` → `advanceImpl` 里 `timeLimit.days < elapsed` 且用户不在豁免星系 → `setCurrentStage(failStage)`。
+    - 进入 `endLimitStages` 后时限取消。
+
+完成标志写哪里：目标内存必须与规则作用域一致
+
+`setStageOnMemoryFlag(to, X, flag)` 检测的是**对象 X 的内存** (或显式 `MemoryAPI`)，rules 里 `$flag = true` 写的是**当前对话作用域** (人物对话用该人物内存、市场对话用市场实体内存；作用域细节由规则引擎与内存作用域主题展开)。
+
+两者必须指向同一对象 —— 写错内存时连接永不满足，任务永远卡在阶段 (无报错，只差最后一段)。
+
+**任务与规则的握手 (interaction memory 与 mission ref)**：
+
+- `updateInteractionData`：`interactionMemory = memoryMap.get(MemKeys.LOCAL)`。
+    - 写 `$<missionId>_stage`(当前阶段枚举名) 与人物代词/称呼 token(`setPersonTokens`)，再调 `updateInteractionDataImpl()`，子类在这里用 `set("$key", value)` 写规则变量 (LOCAL 人物内存，随档持久)。
+- **mission ref**：`setGlobalReference(key)` / `setPersonMissionRef(person, key)` / `setFactionMissionRef` / `setMarketMissionRef` / `setEntityMissionRef` 把任务实例自身写进目标内存 (键已被占用时返回 `false`，同键任务互斥)。
+    - rules 侧 `Call $<key> showMap` / `Call $<key> updateStage` / `Call $<key> repSuccess` 就是打到任务的 `callEvent`。
+    - ref 作为 `VariableSet` 登记进 `changes`，任务结束 `abort()` 时从内存移除。
+
+**地图标记与 Intel 展示**：`makeImportant(person/entity/market, flag, Enum... stages)` 按阶段登记地图重要标记 (`ImportanceData`)。
+
+`getMapLocation(map)` 默认返回当前阶段第一个重要实体的位置；可发现实体回退星系中心，不可发现实体保留实体自身位置，任务 Intel 的地图定位**不需要覆写**，只要登记了 `makeImportant`。
+
+`addDescriptionForNonEndStage` 与 `addNextStepText` 按当前阶段写 Intel 描述与下一步；`addDescriptionForCurrentStage` 对终态自动输出成功/失败/放弃文案。
+
+单个任务里，阶段连接与触发器组成一条事件链；跨多个任务的大剧情需要第二种形态。本节把两种形态放在一起对照。
+
+### 事件链：触发器链与跨任务全局链
+
+**形态一：单任务触发器链 (`MissionTrigger`)**。创建纪律 (`HubMissionWithTriggers`)：
+
+```java
+beginCustomTrigger(new AlwaysTrueChecker(), Stage.RETURN);   // 或 beginGlobalFlagTrigger / beginDaysElapsedTrigger / ...
+triggerSetGlobalMemoryValue("$gearInHub_enteredReturn", true); // 任意 trigger* 动作
+endTrigger();                                                 // 必须成对
+```
+
+- `beginCustomTrigger(checker, Object... stages)` 开一个 `currTrigger`。
+    - **`endTrigger()` 把触发器入列**，没有 begin 就 end 抛 `RuntimeException("endTrigger() called without a corresponding beginTrigger()")`。
+    - 没 end 就开下一个抛 `"Already began a trigger, call endTrigger() to finish it"`。
+- 触发器执行 (`runTriggers`)：`trigger.getStages().contains(currentStage)` 且 `condition.conditionsMet()` → 依次执行 `TriggerAction.doAction(context)` → **从列表移除** (一次性)。
+    - 调用时机：`accept` 末尾、`setCurrentStage` 末尾、`checkStageChangesAndTriggers` 末尾、时限切换后。
+- 动作族 (`trigger*`，全部汇聚到 `triggerCustomAction`)：
+    - 生成类：`triggerSpawnEntity` / `triggerSpawnDerelictHull` / `triggerSpawnDebrisField` / `triggerSpawnShipGraveyard` / `triggerSpawnFleetAtPickedLocation`。
+    - 舰队类：`triggerCreateFleet` / `triggerSetFleetFaction` / `triggerOrderFleetPatrol` / `triggerOrderFleetInterceptPlayer` / `triggerFleetMakeImportant`。
+    - 标志类：`triggerSetGlobalMemoryValue` / `triggerSetMemoryValue` / `triggerSetFleetFlag` / `triggerSetEntityFlag` / `triggerUnset*`。
+    - 人物类：`triggerMovePersonToMarket` / `triggerUnhideCommListing` / `triggerSetPersonMissionRef`。
+    - 奖励类：`triggerAddCommodityDrop` / `triggerAddWeaponDrop` / `triggerAddHullmodDrop` / `triggerAddSpecialItemDrop` / `triggerAddCustomDrop`。
+    - 其他：`triggerMakeDiscoverable` / `triggerAddAbilities` / `triggerSetRemnantConfig` / `triggerFleetNoAutoDespawn`。
+
+**形态二：跨任务全局链 (成熟实例的 `MissionStage` 模式)**。大剧情把 "阶段" 提升为全局状态，每个步骤由独立任务 Intel 承载，步骤结束回写全局阶段：
+
+1. 全局阶段枚举 + 唯一读写入口：管理器 `getStage()` 从全局内存读、`setStage(MissionStage)` 写；规则侧转换命令把字符串转枚举 (写错字符串会把阶段退回 `STAGE_NOT_STARTED`)。
+2. 每步一个任务 Intel(成熟实例中每步一个独立任务类)，**各自的结束条件 (时限耗尽/条件失效) 里回写全局阶段** (如 `STAGE_DOOMED`)，不回写则后续阶段继续消费旧状态。
+3. 入口用酒吧路线的调度 (各阶段 bar creator，`shouldShowAtMarket` 只匹配特定全局阶段)；中间步骤用 rules `Call` 委托创建/推进 Intel。
+
+对照结论：`HubMission` 的内部阶段图是**单任务事件链** (阶段 + 连接 + 触发器，自带回滚与清理)；`MissionStage` 全局链是**跨任务事件链** (全局内存 + 每步 Intel + 回写纪律)。
+
+两者可以嵌套 —— 全局链的一个步骤本身可以是一个 `HubMission`(如成熟实例中挂进 `person_missions.csv` 的 `HubMissionWithBarEvent`)。
+
+机制已经完整，还差最后一步：把任务接进游戏。两条注册路线 —— 酒吧事件与联系人任务板 —— 都在这里。
+
+### 注册入口与使用方完整流程
+
+枢纽任务有两条注册路线 (本节示例走 bar 路线)：
+
+**路线 A：酒吧事件 (bar\_events.csv)**，酒吧调度器的 mission 分派：
+
+1. `data/campaign/bar_events.csv` 一行 (CSV spec 加载期读取；表头 11 列：`bar event id,tags,freq,prob,min dur,max dur,min timeout,max timeout,min accepted timeout,max accepted timeout,plugin`)：
+
+    ```text
+    gearInHub,,10,1,30,40,15,20,60,90,data.scripts.gearin.campaign.GearInHubMission
+    ```
+
+2. `BarEventSpec`(`com.fs.starfarer.api.loading.BarEventSpec`)：`plugin` 必填；`isMission()` 判定 plugin 是 `HubMissionWithBarEvent` 子类。
+
+3. `BarEventManager.readResolve()` → `updateBarEventCreatorsFromSpecs()`(调度器为每个尚无 auto-added creator 的 spec 建立 `SpecBarEventCreator`；手工 creator 可以与自动项并存)。
+
+4. `SpecBarEventCreator.createBarEvent()`：`spec.isMission()` → `new HubMissionBarEventWrapper(specId)`。
+
+    - `BarEventSpec.isMission()` 用 `getInstanceOfScript(pluginClass) instanceof HubMissionWithBarEvent` 判定，**plugin 必须是 `HubMissionWithBarEvent` 子类**。
+    - `createMission()` 反射实例化并把 `setMissionId(id)` 与 (若存在同名 person mission spec 的) 图标一并设置。
+5. `HubMissionBarEventWrapper.shouldShowAtMarket(market)`：按 `seed + market.getId().hashCode()` 掷 `spec.getProb()`；通过则 `spec.createMission()`(反射实例化任务)→ `setMissionId(specId)`(与 `createMission` 幂等重复)：
+
+    - `setGenRandom(genRandom)` → `mission.shouldShowAtMarket(market)`。6. `addPromptAndOption`：`mission.createAndAbortIfFailed(market, true)`；创建失败 (`isMissionCreationAborted()`) 则本次不展示。
+    - 否则把 LOCAL 内存切到任务人、`updateInteractionData`、`FireBest` 触发 `<prefix>_blurbBar` 与 `<prefix>_optionBar` 规则。
+7. 用户点选后 rules 走 `contact_acceptBar` → **`BarCMD accept $missionId`**(`BarCMD` 的 `accept` 分支)：返回首个满足 `optionId.startsWith(mission.getTriggerPrefix())` 的 wrapper → `BarEventManager.notifyWasInteractedWith(w)`(酒吧事件的交互收尾)。当前示例的事件 ID 与 trigger prefix 相同，因此结果不变：
+
+    - `w.getMission().accept(dialog, memoryMap)`，进入生命周期的接受阶段。
+
+**路线 B：联系人任务板 (person\_missions.csv + `BaseMissionHub`)**：
+
+1. `data/campaign/person_missions.csv` 一行 (CSV spec 加载期读取；17 列)：
+    - `gaData,sebestyen,,,,,10,30,60,INHOSPITABLE,,,,,,graphics/icons/missions/data_retrieval.png,com.fs.starfarer.api.impl.campaign.missions.academy.GADataFromRuins` (原版行，`data/campaign/person_missions.csv`)。
+2. `PersonMissionSpec`(`com.fs.starfarer.api.loading.PersonMissionSpec`)：
+    - `person id` / `tagsAll` / `tagsAny` / `tagsNotAny` / `freq` / `min-max timeout`
+    - `min-max rep` / `importance` / `reqMission*` / `icon` / `plugin`。
+    - `createMission()` 反射实例化 `plugin`。
+3. 用户与联系人开任务板 (`MissionHubCMD hasHub` → `addMHubOption` → `openMhubOptionSel` → `Call $mHub prepare`)。
+    - `BaseMissionHub.prepare` → `updateOfferedMissions`(超时/完成过滤) → 按 `getFrequencyWeight` 建 priority/普通 picker → 数量 `MIN_TO_SHOW`–`MAX_TO_SHOW`(settings `contactMinMissions` / `contactMaxMissions`)。
+    - `creator.createHubMission(this)` → `setHub` / `setCreator` / `setGenRandom` → `createAndAbortIfFailed(person.getMarket(), false)` → 成功者进 `offered` 并 `updateInteractionData`。
+4. `listMissions`：`FireBest.fire(..., getTriggerPrefix() + "_blurb true")` / `"_option true"` 写任务列表选项。
+    - 接受：`Call $mHub accept $missionId`(`BaseMissionHub.callEvent` → `accept`：`curr.accept(dialog, memoryMap)` → 从 `offered` 移除 → creator 进 accepted 超时)。
+
+**使用方完整流程**：
+
+- 任务 ID `gearInHub` → `bar_events.csv` 行 (注册入口)→ `SpecBarEventCreator` → `HubMissionBarEventWrapper`(抽取与展示)→ `BarCMD accept`(接受入口)→ `BaseHubMission.accept`。
+- `IntelManagerAPI.addIntel`(Intel 使用方)+ `SectorAPI.addScript`(脚本使用方)→ `advanceImpl` / `checkStageChangesAndTriggers`(阶段推进使用方)→ rules `Call $gearInHub_ref updateStage`(完成检测使用方)。
+- `endSuccess`(奖励使用方)→ `notifyEnded` → `removeScript`(清理使用方)。
+
+rules 侧的 `$gearInHub_ref` / `$gearInHub_stage` / `gearInHub_blurbBar` / `gearInHub_optionBar` 是同一 ID 的规则使用方。
+
+## 规则强度
+
+以上机制里有几处一旦写错，任务会静默失效或直接报错。以下按强度集中列出本节的关键约束，正文与故障分析按编号引用；编者建议写任务类时把这份清单放在手边，每完成一段就对照一次。
+
+### 必须与禁止规则速查表
+
+**必须/禁止 (当前基线仍有效，违反后的可观察结果附上)**：
+
+| 规则 | 强度依据 | 违反后的可观察结果 |
+|---|---|---|
+| 接受前**必须**调用 `setStartingStage(id)` | `accept` 对 null 直接抛 `RuntimeException("startingStage can not be null. Use setStartingStage()")` | 用户接受任务瞬间启动中止 (异常沿规则执行链冒泡，日志 ERROR 堆栈指向 `BaseHubMission.accept`) |
+| `create()` 里注册的副作用**必须**能回滚：实体/人物/标志经基类方法 (`spawn*` / `makeImportant` / `setFlag` / `set*MissionRef`) 或显式 `changes.add(...)`，结束时由 `abort()` 统一清理 | `EntityAdded.abort` 只移除带 `REMOVE_ON_MISSION_OVER` tag 的实体 | 创建失败或任务结束时实体/人物/标志残留在星区：重复出现、地图永久标记、内存键不清理 |
+| `setStageOnMemoryFlag` / `connectWithMemoryFlag` 的目标内存**必须**与 rules 写标志的作用域一致 | 内存键与作用域语义 | 完成标志写到了别处内存：阶段连接永不满足，任务永远卡在当前阶段 (无报错，只差最后一段) |
+| `beginXxxTrigger` 与 `endTrigger` **必须**成对 | 两条 RuntimeException 原文："Already began a trigger" / "endTrigger() called without a corresponding beginTrigger()" | 任务创建期抛 RuntimeException；缺 end 的触发器永不入列 (动作静默缺失) |
+| 规则侧推进任务**必须**经 `Call $<missionId>_ref updateStage` / `updateData`，不能只写内存标志 | `callEvent` 的 `updateStage` / `updateData` 分支 | 只写 `$flag = true` 不 `updateStage`：`checkStageChangesAndTriggers` 在下一轮轮询 (每 0.09–0.11 游戏天) 仍会检测到，但对话内不立即推进、Intel 不更新 —— 表现为 "对话里说完成了，界面/日志下一帧才变"；依赖即时性的业务 (如立即结算) 会错乱 |
+| 任务实例字段**必须**可随存档序列化 (任务随 `scripts` 列表 XStream 保存的结论见前置知识)；对话句柄等瞬态引用用 `transient` | `BaseHubMission` 已把 `startingStage` / `cargoOnAccept` / `aborted` / `interactionMemory` / `doNotEndMission` 标 `transient` | 保存/读档异常、读档后任务字段指向失效对象、行为错乱 |
+| mission ref 键**必须** MOD 专属且唯一 | `set*MissionRef` 对已占用键返回 false | 与其他 MOD 撞键：任务创建被拒 (`create` 返回 false → 任务不出现)；同 MOD 两个任务共用一键则后建者失败 |
+| bar 路线任务类**必须**继承 `HubMissionWithBarEvent` | `BarEventSpec.isMission()` 按此分派 | plugin 类型错位：wrapper 不创建、任务被当普通 `PortsideBarEvent` 反射实例化，构造/类型错误，酒吧选项不出现或报错 (酒吧事件陷阱 "plugin 类型错位" 同源) |
+| 完成/失败/放弃路径**必须**落在 `successStages` / `failStages` / `abandonStage` 集合内 | `setCurrentStage` 只对这些集合结算 | 阶段切到集合外对象：任务不结束、只发 NEXT\_STEP\_UPDATE，永久 "进行中" |
+| 时限失效**必须**有对应失败阶段 (`setTimeLimit(failStage, ...)` 的第一参) | 时限分支的切换目标语义 | `advanceImpl` 时限分支只执行一次；切到非失败/集合外阶段后任务永久 "进行中"、无奖励无结算 |
+
+**建议 (违反的可观察结果附上)**：
+
+- 任务 ID 全局唯一、带 MOD 前缀 (`gearInHub`)；内存键族与规则分类随之唯一 (`$gearInHub_*` / `gearInHub_blurbBar`...)。撞名 → 与别的 MOD 规则分类/内存键互相覆盖 (症状同键冲突主题的既有结论)。
+- 奖励与声望用方法族：`setCreditReward` / `setCreditReward(CreditReward)` / `setXPReward` / `setRepPersonChangesXxx` / `setRepFactionChangesXxx` / `setRepChanges(...)` / `setNoRepChanges()`。
+    - 直接调 `adjustRep` 会绕过 `adjustedRep` 一次性保护，且与 `repSuccess`/`repFailure` 规则动作重复结算。
+- 目标选择先 `require*` 后 `pick*`(`HubMissionWithSearch` 的要求系统)，不要在 `create` 里手写遍历。手写 → 复用不了市场/星系筛选与 `preferMarketInDirectionOfOtherMissions` 等成品能力，且 `genRandom` 一致性被破坏。
+- 每阶段至多一个 `makeImportant` 主要目标 (`makePrimaryObjective`)，不要给一个阶段塞多个重要标记，Intel 地图定位只取第一个，其余标记只增加噪声。
+
+## 实现生涯任务
+
+枢纽任务先在数据侧成为酒吧候选，接受后才进入 Intel 与脚本列表。实现时按注册、创建、目标、阶段、触发器、规则数据的顺序推进，每一步都有独立的失败边界。
+
+### 注册酒吧任务
+
+在 `data/campaign/bar_events.csv` 追加任务行。plugin 必须是 `HubMissionWithBarEvent` 子类，任务 ID 同时决定规则分类前缀。
+
+```csv
+gearInHub,,10,1,30,40,15,20,60,90,data.scripts.gearin.campaign.GearInHubMission
+```
+
+登记后设置表能读取 `gearInHub` spec，酒吧 manager 为它建立 mission wrapper creator。
+
+### 建立任务人与唯一引用
+
+在 `GearInHubMission.create()` 开头处理酒吧任务人，再把任务实例写进人物内存。引用键已被占用时必须放弃本次创建。
+
+```java {6,7}
+setGiverRank(Ranks.CITIZEN);
+setGiverPost(Ranks.POST_TRADER);
+setGiverFaction(Factions.INDEPENDENT);
+findOrCreateGiver(createdAt, true, false);
+giver = getPerson();
+if (giver == null || !setPersonMissionRef(giver, "$gearInHub_ref")) {
+    return false;
+}
+```
+
+创建完成后，酒吧文本能取得任务人，LOCAL memory 中的 `$gearInHub_ref` 指向当前任务实例；同一人物无法同时创建第二个同键任务。
+
+### 选择目标与联系人
+
+继续在 `create()` 中使用要求系统选择另一个友好市场，再创建或复用交付联系人。
+
+```java
+sourceMarket = giver.getMarket();
+requireMarketIsNot(sourceMarket);
+requireMarketFaction(sourceMarket.getFactionId());
+requireMarketFactionNotHostileTo(Factions.PLAYER);
+targetMarket = pickMarket();
+if (targetMarket == null) {
+    return false;
+}
+sourceContact = findOrCreateTrader(
+        targetMarket.getFactionId(), targetMarket, true);
+```
+
+选择完成后，日志中的目标市场不同于来源市场，联系人出现在目标市场通讯录，并能被 Intel 地图定位。
+
+### 连接任务阶段
+
+仍在 `create()` 中声明起点、终态、两条内存连接和时限。连接监听的对象必须与 rules 写标志的对象一致。
+
+```java
+setStartingStage(Stage.CONTACT);
+setSuccessStage(Stage.COMPLETED);
+setFailureStage(Stage.FAILED);
+setStageOnMemoryFlag(Stage.RETURN,
+        sourceContact, "$gearInHub_dataReceived");
+setStageOnMemoryFlag(Stage.COMPLETED,
+        giver, "$gearInHub_delivered");
+setTimeLimit(Stage.FAILED, MISSION_DAYS, null);
+```
+
+接受任务后当前阶段为 CONTACT；联系人标志置位后进入 RETURN；任务人标志置位后进入 COMPLETED；60 游戏日未完成则进入 FAILED。
+
+### 添加阶段触发器
+
+在阶段声明后建立一次性触发器。每个 `begin` 都必须由 `endTrigger()` 入列。
+
+```java {3,8}
+beginCustomTrigger(new AlwaysTrueChecker(), Stage.RETURN);
+triggerSetGlobalMemoryValue("$gearInHub_enteredReturn", true);
+endTrigger();
+
+beginCustomTrigger(new DaysElapsedChecker(
+        MISSION_DAYS / 2f, this), Stage.CONTACT, Stage.RETURN);
+triggerSetGlobalMemoryValue("$gearInHub_halfTime", true);
+endTrigger();
+```
+
+首次进入 RETURN 时写入 `$gearInHub_enteredReturn`；任务累计 30 游戏日时写入 `$gearInHub_halfTime`，两项动作都只执行一次。
+
+### 向规则提供任务数据
+
+在 `updateInteractionDataImpl()` 中写显示变量。规则完成目标后先写对应人物内存，再立即调用 mission ref 的 `updateStage`。
+
+```java
+@Override
+protected void updateInteractionDataImpl() {
+    set("$gearInHub_reward", Misc.getWithDGS(reward));
+    set("$gearInHub_targetMarketName", targetMarket.getName());
+    set("$gearInHub_contactName", sourceContact.getNameString());
+}
+```
+
+```text
+$gearInHub_dataReceived = true
+Call $gearInHub_ref updateStage
+```
+
+规则侧完成后，酒吧报价显示奖励与目标名称，取货对话结束的同一刻 Intel 从 CONTACT 更新为 RETURN。
+
+## 组装生涯任务实现
+
+机制、约束与注册入口都齐了，现在把它们落成一个可以编译、可以进游戏验收的任务类。
+
+在既有 MOD 布局与 `GearInModPlugin` 之上新增一个任务类与两行数据 (`bar_events.csv` 行 + `rules.csv` 片段)：
 
 ```text
 mods/GearIndustry/
 ├── build.gradle
+├── settings.gradle
 ├── mod_info.json
 ├── data\
 │   └── campaign\
-│       └── rules.csv                     # 追加本节拥有的 GearIn_rules_scene_* 行 (与规则基础页的 GearIn_rules_intro_* 同文件共存)
+│       ├── bar_events.csv    # 追加一行
+│       └── rules.csv         # 追加规则片段
+├── src\
+│   └── data/scripts/gearin/campaign\
+│       └── GearInHubMission   # 本节新增 (归本节所有)
 └── jars\
 ```
 
-### 配置场景规则数据
-
-```csv
-GearIn_rules_scene_market,MarketPostDock,"$market.id == jangala score:100
-!$player.gearInSceneMarketSeen","$player.gearInSceneMarketSeen = true 0
-$menuState = main 0
-FireAll PopulateOptions",GearIn 市场场景：首次停靠 jangala 时本规则以 101 分胜过原版 marketDock (0 分)。FireBest 只执行一条规则，所以脚本必须复刻原版职责 ($menuState + FireAll PopulateOptions)，否则市场菜单不会出现。,,
-GearIn_rules_scene_bar_add,AddBarEvents,$market.id == jangala,,AddBarEvent GearIn_rules_scene_bar "和 GearIn 演示员聊聊" "一个穿着测试连体服的 GearIn 演示员朝您招手，示意您过去坐坐。",,
-GearIn_rules_scene_bar_pick,DialogOptionSelected,$option == GearIn_rules_scene_bar,,GearIn 酒吧场景：临时 bar 选项被点选后，BarCMD 写入 $option 并触发 DialogOptionSelected。选项与描述来自 AddBarEvent，存储在市场记忆 $core_tempBarEvents；每次进入酒吧 BarCMD 先清空再 FireAll AddBarEvents 重建。,GearIn_rules_scene_bar_back:回吧台,
-GearIn_rules_scene_bar_back,DialogOptionSelected,$option == GearIn_rules_scene_bar_back,"BarCMD showOptions",,,
-GearIn_rules_scene_fleet_hail,BeginFleetEncounter,"$faction.id == independent score:100
-!$entity.isHostile
-!$player.gearInSceneHailed","$player.gearInSceneHailed = true 0
-FleetDesc
-$shownFleetDescAlready = true 0
-AddText ""GearIn 舰队场景：一支独立势力舰队呼叫了您；请在菜单中选择接受通讯请求。""
-$hailing = true 0",,,
-GearIn_rules_scene_comm,OpenCommLink,"$faction.id == independent score:100
-$player.transponderOn
-!$entity.isHostile
-!$player.gearInSceneCommed","$player.gearInSceneCommed = true 0
-$menuState = fleetConvMain 0
-FireAll PopulateOptions",GearIn 对话场景 (OpenCommLink)：对独立势力舰队的问候语。脚本把菜单状态置为 fleetConvMain 并 FireAll PopulateOptions 填充对话菜单。,,
-GearIn_rules_scene_conv,PopulateOptions,"$menuState == fleetConvMain
-$faction.id == independent",,GearIn 对话场景 (PopulateOptions)：舰队对话菜单选项，点选后经 DialogOptionSelected 回流执行 EndConversation 回到舰队菜单。,"GearIn_rules_scene_conv_end:结束通讯",,
-GearIn_rules_scene_conv_end,DialogOptionSelected,$option == GearIn_rules_scene_conv_end,EndConversation,,,
-GearIn_rules_scene_ngc_add,AddNewGameChoices,$global.isDevMode,,,6:GearIn_rules_scene_ngc:GearIn 演示起点：额外 5000 星币 (dev),,
-GearIn_rules_scene_ngc_pick,NewGameOptionSelected,"$option == GearIn_rules_scene_ngc
-$global.isDevMode",NGCAddCredits 5000,,,
-```
+### GearInHubMission
 
 对应关系：
 
-- **`GearIn_rules_scene_market` (市场场景，trigger `MarketPostDock`)**：条件 `$market.id == jangala score:100` + `!$player.gearInSceneMarketSeen`，总分 101，恒胜原版回退规则 `marketDock` (0 分)：
-    - 原版高优先规则 (`MarketCMD checkDebtEffect score:1000`、`checkMercsLeaving score:500`、`DeliveryMission checkCompletion score:100`) 在激活时仍然获胜 —— 演示 "竞争分层"。
-    - 脚本**复刻** `marketDock` 职责 (`$menuState = main 0` + `FireAll PopulateOptions`) 并置一次性 flag，第二次停靠 jangala 自动回退原版行为。
-    - `FireBest` 先 `addText` 显示本规则文本、后 `runScript` 填充菜单。
-- **`GearIn_rules_scene_bar_add` / `_pick` / `_back`(酒吧场景)**：`AddBarEvents` 规则条件 `$market.id == jangala`，脚本 `AddBarEvent <id> <文本> <描述>`。
-    - 进 jangala 酒吧 (市场菜单 "Take a shuttle down to visit a dockside bar")→ `bar_optionSel` 打印描述并 `BarCMD showOptions` → 清空重建临时选项。
-    - 用户点选 `GearIn_rules_scene_bar` → `BarCMD.optionSelected` 写 `$option` 并 `FireBest "DialogOptionSelected"` → `_pick` 显示文本 + `_back` 选项。
-    - 点 `_back` → `BarCMD showOptions` 重新显示酒吧选项；
-    - "Leave the bar"(`barLeave`，原版 BarCMD 提供)→ `ReturnFromBar` → `$menuState = main` + 市场菜单复位。
-- **`GearIn_rules_scene_fleet_hail`(舰队场景，trigger `BeginFleetEncounter`)**：条件 `$faction.id == independent score:100` + `!$entity.isHostile` + `!$player.gearInSceneHailed`，总分 102：
-    - 恒胜原版回退规则 `initial_AnyFleet`(1 分)、输给 1000 级剧情规则 (优雅降级)。
-    - 脚本按原版模式：置一次性 flag、`FleetDesc` + `$shownFleetDescAlready = true 0`(**复刻 `initial_AnyFleet` 职责**)、`AddText` 呼叫文本、`$hailing = true 0`。
-    - 可观察：遭遇独立舰队时主菜单出现高亮 "Accept the comm request"。
-- **`GearIn_rules_scene_comm` / `_conv` / `_conv_end`(对话场景，trigger `OpenCommLink` + `PopulateOptions` + `DialogOptionSelected`)。**
-    - 接受通讯请求 → `fireBest("OpenCommLink")` → 本规则 (103 分) 胜过原版问候回退规则 (1–3 分；`$entity.ignorePlayerCommRequests score:10000` 时仍由原版拒绝)。
-    - 问候文本 + `$menuState = fleetConvMain` + `FireAll PopulateOptions` → `_conv` 加菜单选项 → 点选 → `_conv_end` 执行 `EndConversation`。
-    - `FleetInteractionDialogPluginImpl.reinit` 预检 (`BeginFleetEncounter` 无匹配)→ 回舰队主菜单。
-    - 原版 `convOptionLeave`(`$isPerson`) 仍提供 `cutCommLink` 选项。
-- **`GearIn_rules_scene_ngc_add` / `_pick`(任务/流程场景，trigger `AddNewGameChoices` + `NewGameOptionSelected`)。**
-    - devMode(`$global.isDevMode`，`NewGameDialogPluginImpl.init` 写入) 下新游戏对话框出现演示起点选项 (顺序 6，排在原版 ngc 选项之后)。
-    - 点选 → `NewGameOptionSelected` 回流 → `NGCAddCredits 5000`(脚本列)，之后继续选择原版起始即可，两者叠加。
-    - **`NGCAddCredits` 放在回流处理器而非 `AddNewGameChoices` 规则里**：`FireAll` 会执行命中规则的全部脚本，写在 `_add` 里会在列表阶段就加钱。
-- **为什么不新增 Java**：规则基础页的最小例需要 Java 是因为它用了自定义 trigger(`GearInRulesIntro`，没有原版派发点)；本节全部使用原版场景 trigger，派发点 (使用方) 是原版插件，规则行本身就是完整的注册与消费流程。需要自定义 trigger 对话时沿用规则基础页的 `GearInRulesIntro` / `REGISTER_MARK` 模式。
-- **共享文件纪律**：`data/campaign/rules.csv` 是跨单元共享文件：规则基础页拥有 `GearIn_rules_intro_*`、本节拥有 `GearIn_rules_scene_*`；同前缀内 id 唯一，跨文件重复 id 先到先得的纪律见规则基础页规则强度表。
+- `extends HubMissionWithBarEvent`：任务约定的完整默认实现链 (`BaseHubMission` → `HubMissionWithTriggers` → `HubMissionWithSearch` → `HubMissionWithBarEvent`)。
+    - `shouldShowAtMarket` 在 `create()` **之前**被 wrapper 调用 (`HubMissionBarEventWrapper.shouldShowAtMarket`)，返回 false 本次不展示。
+- `create(createdAt, true)`：bar 路线用 `setGiverRank/Post/Importance/Faction/Tags` + `findOrCreateGiver(createdAt, true, false)` 生成任务人 (`addToCommDirectory=true`：任务人留在通讯录，交付对话可达；原版 extr 任务同款)。
+    - `getPerson()` / `getMarket()` 判空、`setPersonMissionRef` 判占用，任何一步失败返回 false 即 `abort()`。
+    - `requireMarketIsNot(sourceMarket)` / `requireMarketFaction(...)` / `requireMarketFactionNotHostileTo(Factions.PLAYER)` / `preferMarketInDirectionOfOtherMissions()` / `pickMarket()`
+    - 目标选择要求系统 (`HubMissionWithSearch`)。
+    - 与同一联系人同时存在的其他任务会互相避开方向 (`preferMarketInDirectionOfOtherMissions`)。
+- `findOrCreateTrader(faction, market, true)`：目标市场生成/复用联系人 (`cleanUpOnMissionOverIfWasNewPerson=true` 时新人物随任务结束清理)。
+- `setStageOnMemoryFlag(Stage.RETURN, sourceContact, "$gearInHub_dataReceived")`：完成检测连接：rules 在联系人对话里写 `$gearInHub_dataReceived = true`(写进联系人内存) 再 `Call $gearInHub_ref updateStage`，连接命中切到 RETURN。
+    - **目标内存与规则作用域必须一致** (规则强度 "必须" 第 3 条)。
+- `setTimeLimit(Stage.FAILED, MISSION_DAYS, null)`：时限；`advanceImpl` 按任务总 `elapsed`(游戏天) 判定，超时切 FAILED。
+- `makeImportant(sourceContact, "$gearInHub_hasData", Stage.CONTACT)`：CONTACT 阶段联系人市场点亮地图标记；`getMapLocation` 用默认实现 (当前阶段第一个重要实体)。
+- `makeImportant(giver, "$gearInHub_returnMark", Stage.RETURN)`：RETURN 阶段任务人市场点亮地图标记；标志与完成连接监听的 `$gearInHub_delivered` 分开 (进入 RETURN 时引擎写阶段标志，若同名会立即命中完成连接，交付对话不会发生)。
+- `beginCustomTrigger(new AlwaysTrueChecker(), Stage.RETURN)` + `triggerSetGlobalMemoryValue(...)` + `endTrigger()`：一次性触发器 (进 RETURN 即写全局内存 `$gearInHub_enteredReturn`)。
+    - 半程触发器用 `beginCustomTrigger(new DaysElapsedChecker(MISSION_DAYS / 2f, this), ...)`；
+    - `DaysElapsedChecker(days, mission)` 判 `mission.elapsed >= days`(与 `beginDaysElapsedTrigger(days, this)` 同语义)，避开该 helper 双重载在三个实参下的编译歧义。
+    - **必须成对 endTrigger**。
+- `creditReward = reward`：直接写受保护字段 (`getCreditsReward` 返回它)，绕过 `setCreditReward` 的 `rewardMult` 与千位取整，日志与发放一致；声望走 `setRepPersonChangesMedium` / `setRepFactionChangesLow`。
+- `updateInteractionDataImpl`：`set(...)` 写 `$gearInHub_*` 规则变量 (LOCAL 人物内存，随档持久)；`$gearInHub_stage` 由基类 `updateInteractionData` 自动写。
+- `addDescriptionForNonEndStage` / `addNextStepText`：Intel 界面的阶段描述与下一步 (终态文案由 `addDescriptionForCurrentStage` 自动处理)。
 
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行，与规则基础页一致)：
+### bar\_events.csv 行与 rules.csv 片段
+
+`data/campaign/bar_events.csv` 追加一行 (列序与表头一致)：
+
+```text
+gearInHub,,10,1,30,40,15,20,60,90,data.scripts.gearin.campaign.GearInHubMission
+```
+
+`data/campaign/rules.csv` 追加 (规则引擎完整语法与内存作用域不在此展开；这里按酒吧事件路由的最简流程写法给出)：
+
+```text
+gearInHubBlurbBar,gearInHub_blurbBar,,,"An independent trader at the bar is complaining loudly about a shipment of factory data that went missing in transit.",,
+gearInHubOfferOptionBar,gearInHub_optionBar,,,,gearInHub_startBar:Ask about the missing shipment,
+gearInHubOfferTextBar,DialogOptionSelected,"$option == gearInHub_startBar","$missionId = gearInHub
+FireBest GearInHubOfferText",,"contact_acceptBar:Accept
+contact_declineBarNoContinue:Decline",
+gearInHubTextBar,GearInHubOfferText,,"SetTextHighlights $gearInHub_reward $gearInHub_targetMarketName
+Call $gearInHub_ref showMap ""Destination: $gearInHub_targetMarketName""","The trader leans in: ""The data was lost when the convoy jumped through $gearInHub_targetMarketName. My contact there - $gearInHub_contactName - can get it back. I'll pay $gearInHub_reward credits if you deliver it to me.""",,
+gearInHubDataReceivedGreeting,PickGreeting,"$gearInHub_hasData score:1000
+Call $gearInHub_ref updateData","ShowPersonVisual
+$gearInHub_dataReceived = true
+Call $gearInHub_ref updateStage","So you're the trader's courier. Here - the factory data cache, intact. It's all there.",contact_pickAnotherGreeting:Continue,
+gearInHubDeliveryGreeting,PickGreeting,"$gearInHub_returnMark score:1000
+Call $gearInHub_ref updateData","ShowPersonVisual
+$gearInHub_delivered = true
+Call $gearInHub_ref updateStage","The trader takes the datapad and runs a quick check: ""That's everything. Here's your payment - $gearInHub_reward credits.""",contact_pickAnotherGreeting:Continue,
+```
+
+交付收尾两条规则沿用原版同类任务的 `PickGreeting` 模式 (原版 `cheapCom` 取货与 `extr` / `jabr` 回任务人同款)：前往目标市场与联系人 `$gearInHub_contactName` 通讯时命中 `gearInHubDataReceivedGreeting`(条件 `$gearInHub_hasData`，CONTACT 阶段 `makeImportant` 写在联系人内存的阶段标志)，脚本把 `$gearInHub_dataReceived = true` 写进联系人内存 (与 `setStageOnMemoryFlag(Stage.RETURN, sourceContact, ...)` 作用域一致) 并 `Call $gearInHub_ref updateStage`，阶段切到 RETURN；回来源市场与任务人通讯时命中 `gearInHubDeliveryGreeting`(条件 `$gearInHub_returnMark`，RETURN 阶段地图标记标志，进入 RETURN 时由 `makeImportant` 写入；脚本把 `$gearInHub_delivered = true` 写进任务人内存，即完成连接监听的标志，与阶段标志分开)，并 `Call $gearInHub_ref updateStage`，连接 RETURN→COMPLETED 命中并结算。两条规则对应验证方案步骤 3/4；`score:1000` 让规则胜过原版通用问候，`contact_pickAnotherGreeting:Continue` 是原版问候回环选项 (选后回到通讯问候流程)。
+
+规则分类必须与 mission id 一致
+
+规则 ID 用驼峰 (`gearInHubBlurbBar`)，规则**分类**是 `gearInHub_blurbBar` / `gearInHub_optionBar`。
+
+分类由 `getTriggerPrefix()` = mission id 决定，必须与 CSV 的 mission id 列一致。
+
+分类拼错时 `FireBest` 找不到规则，酒吧选项静默缺失 (无报错、无日志)。
+
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
 
 ```text
 gradle jar
 ```
 
-本节只改数据文件：`rules.csv` 随 MOD 目录被加载器读取，无需进 jar。`jar tf jars/GearIndustry.jar` 的输出里不应该也不需要包含本节新内容。
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInHubMission.class`(可用 `jar tf` 核对)。
 
-### 验证方案
+## 关键故障实验：任务被接受后立即异常中止
 
-前置数据：规则基础页的 MOD 布局 (前置：[C15-S1]；`GearInRulesIntro` 类可保留，本节不依赖它)，追加本节 10 条 `GearIn_rules_scene_*` 规则行；启动器勾选 Dev Mode (验证新游戏场景与 dev 选项)。
+让 `create()` 成功返回，却不声明起点阶段。酒吧包装仍会展示任务，但点击接受时 `BaseHubMission.accept()` 直接抛出 startingStage 异常。
 
-1. 规则注册：启动游戏，在 `starsector.log` 中找到本节 10 条 `Loading rule: GearIn_rules_scene_*` 行 (市场 1 + 酒吧 3 + 舰队 1 + 通讯 3 + 新游戏 2；注意 `_conv_end` 与 `_ngc_pick` 也在其中)。
-2. 市场场景：新建生涯，停靠 jangala：停靠许可文本后出现 `GearIn 市场场景：首次停靠 jangala...`，市场菜单完整 (通讯目录/酒吧/交易/Leave)；再次停靠 jangala：本节文本不再出现、菜单照常。
-3. 酒吧场景：在 jangala 市场菜单点 "Take a shuttle down to visit a dockside bar"：出现酒吧描述文本与 "和 GearIn 演示员聊聊"；点选后出现本节酒吧文本与 "回吧台"；点 "回吧台" 选项重现；"Leave the bar"(ESC) 回到市场菜单。
-4. 舰队场景：在超空间或星系内找一支非敌对独立舰队 (拾荒/商队) 并遭遇：出现呼叫文本；通讯选项高亮 "Accept the comm request"；接受后出现本节问候语与 "结束通讯"/"Cut the comm link"；点 "结束通讯" 回到舰队主菜单。
-5. 任务/流程场景：主菜单新建游戏：角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)`(顺序 6)；点选后选 `ngcWolf` 等原版起始；开局确认星币为原版初始加 5000。非 devMode 启动时该选项不出现。
+**局部故障片段：**
+
+```java
+// 故障片段
+return true;
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+setStartingStage(Stage.CONTACT);
+return true;
+```
+
+复验：从酒吧接受任务，确认当前阶段为 CONTACT、Intel 条目已登记、任务脚本已进入 Sector 脚本列表，目标联系人同时在地图上被标记。
+
+## 验证方案
+
+前置数据：既有 MOD 布局与 `GearInModPlugin`[C6-S1] / [C7-S1]、本节 `GearInHubMission`、`bar_events.csv` 行、`rules.csv` 片段，每次改动后重建。
+
+1. 在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`；
+2. 执行 `jar tf jars/GearIndustry.jar` 核对类文件。
+3. 跳过/完成教程后进入酒吧，核对日志与酒吧提示/选项 (事件不是每次都在，受酒吧调度影响，可多进几个市场或等待)；
+4. 点 "Ask about the missing shipment"，核对文本后选 "Accept"；
+5. 前往目标市场与联系人 `$gearInHub_contactName` 对话并走交付规则；
+6. 回任务人市场与其对话并走收尾规则；
+7. 接受后挂机 600 真实秒，观察失败路径；
+8. 接受后保存并读档，任务完成后再次读档核对清理。
+9. 把 `setStageOnMemoryFlag(Stage.COMPLETED, giver, "$gearInHub_delivered")` 的目标改成 `sourceContact`，交付后核对阶段；
+10. 删掉 `endTrigger()` 后重建，核对创建期异常；
+11. 把 `MISSION_DAYS` 改成 10 重建，接受后挂机核对失败路径。
+12. 查看 `starsector.log`、对话流程和 Intel 状态。
 
 预期结果：
 
-- 规则注册 (加载期)：`starsector.log` 出现本节 10 条 `Loading rule:` 行：`GearIn_rules_scene_market` / `..._bar_add` / `..._bar_pick` / `..._bar_back` / `..._fleet_hail` / `..._comm` / `..._conv` / `..._conv_end` / `..._ngc_add` / `..._ngc_pick`(日志路径与加载行为在规则基础页已证)。标准输出可能出现单次使用变量 WARNING(`System.out.println`，正常现象，非错误)。
-- 酒吧场景 (jangala 市场菜单 → 酒吧)：进入酒吧显示 `BarPrintDesc` 描述文本 + 选项 "和 GearIn 演示员聊聊"(描述文本进文本面板)：点选后出现 `GearIn 酒吧场景：临时 bar 选项...` 文本 + "回吧台" 选项；点 "回吧台" 酒吧选项重新出现；"Leave the bar"(ESC) 出现 "You leave the bar..." 文本 + 市场菜单复位。
-- 舰队场景：找到一支非敌对的独立势力舰队 (如拾荒舰队) 并接近，遭遇对话出现 `GearIn 舰队场景：一支独立势力舰队呼叫了您...` 文本：舰队主菜单通讯选项高亮为 "Accept the comm request"；接受后出现 `GearIn 对话场景 (OpenCommLink)：对独立势力舰队的问候语。` + 菜单选项 "结束通讯" (另有原版 "Cut the comm link")；点 "结束通讯" 回到舰队主菜单。
-- 任务/流程场景 (devMode)：启动器勾选 Dev Mode 后新建游戏，角色创建对话框出现 `GearIn 演示起点：额外 5000 星币 (dev)` 选项；点选后继续选任一原版起始，开局星币为原版初始加 5000。非 devMode 时该选项不出现 (`$global.isDevMode` 条件限定)。
-- 全程无 ERROR：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志；加载期无 `Duplicate key` / `Command [...] not found` / 赋值/比较操作符错位等规则加载异常 (规则基础页规则强度表的加载期五连)。
+- `gradle jar` 以 `BUILD SUCCESSFUL` 结束，`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInHubMission.class`。
+
+    ### 酒吧任务完整流程
+
+- 三组方案的预期结果全部出现。
+
+- 全程无 `gear_in` 引起的 `ERROR`。
+
+清理：把完成阶段连接的目标恢复为 `giver`，补回 `endTrigger()`，并把 `MISSION_DAYS` 恢复为 `60f`。
 
 ## 故障分析
 
-- **市场选项只剩 `Leave`**：覆盖 `MarketPostDock` 后没有复刻设置 `$menuState` 和填充选项的职责。
+- **酒吧没有任务选项**：`bar_events.csv` 缺少注册行、plugin 类名错误，或 rules 分类与 `getTriggerPrefix()` 不一致。
 
-    - **解决方案**：执行 `$menuState = main 0` 与 `FireAll PopulateOptions`。
+    - **解决方案**：核对注册表和规则前缀。
 
-- **再次停靠时自定义文本消失**：一次性 memory flag 已经置位，条件不再成立。
+- **接受任务时抛出起点阶段异常**：`create()` 成功返回前没有调用 `setStartingStage`。
 
-    - **解决方案**：用 `DumpMemory` 确认该键；需要重复展示时改用可重置条件。
+    - **解决方案**：设置起点阶段。
 
-- **酒吧没有临时选项**：`AddBarEvents` 的市场条件不匹配，或没有进入 `BarCMD.showOptions`。
+- **交付后任务阶段没有推进**：内存标志写入的对象与 `setStageOnMemoryFlag` 监听对象不同，或规则没有调用 `updateStage`。
 
-    - **解决方案**：核对 `$market.id`。
+    - **解决方案**：统一作用域并执行 `Call $gearInHub_ref updateStage`。
 
-- **点击酒吧选项后面板空白**：回流规则只写了文本，没有添加后续选项。
+- **任务结束后目标实体仍然存在**：对象由普通 API 创建，没有登记进任务的 `changes`。
 
-    - **解决方案**：补充 options 列或调用菜单填充 trigger。
+    - **解决方案**：改用 `spawn*`、`makeImportant`、`setFlag` 和 mission ref 辅助方法。
 
-- **舰队遭遇没有自定义呼叫文本**：`BeginFleetEncounter` 候选分数低于剧情规则，或条件未命中。
+- **创建任务时报 `Already began a trigger`**：新的 `begin*Trigger` 在前一个触发器结束前执行。
 
-    - **解决方案**：核对势力、敌对状态和 score。
+    - **解决方案**：保证每段 `begin*Trigger`、动作和 `endTrigger` 成对。
 
-- **通讯问候仍为原版**：拒绝通讯规则得分更高，或应答器条件不满足。
+- **触发器动作没有执行**：动作写在 begin/end 区间外，没有进入触发器列表。
 
-    - **解决方案**：按目标行为调整条件与 score。
+    - **解决方案**：把动作移入配对区间。
 
-- **任务列表显示 `No blurb found`**：规则 trigger 与 `getTriggerPrefix()` 生成的名称不一致。
+- **终态阶段没有结算任务**：成功、失败或放弃阶段未登记到对应集合，或阶段 ID 类型不一致。
 
-    - **解决方案**：统一 `_blurb`、`_option`、`_blurbBar` 和 `_optionBar` 前缀。
+    - **解决方案**：统一使用同一枚举并调用终态登记方法。
 
-- **新游戏对话没有演示选项**：规则没有挂在 `AddNewGameChoices`，或回流 trigger 写成了生涯对话版本。
+- **时限耗尽后任务仍在进行**：时限目标为 null，或没有登记为失败阶段。
 
-    - **解决方案**：使用 `NewGameOptionSelected` 并满足 devMode 条件。
+    - **解决方案**：将时限指向已登记的失败阶段。
 
-- **交易面板规则报错**：`TradePanelFlavorText` 使用了依赖真实对话框的命令。
+- **信用点奖励与 Intel 文案不一致**：随机奖励经过倍率和千位取整，展示仍使用了边界值。
 
-    - **解决方案**：只保留 `AddText` 和交易模式变量判断。
+    - **解决方案**：用最终 `creditReward` 生成文案。
 
-- **对话只有文本没有选项**：`$menuState` 或事实键未让 `PopulateOptions` 命中。
+- **一次任务增加了两次声望**：rules 反馈和 `endSuccess` 都执行了结算。
 
-    - **解决方案**：核对当前 memory 值并修正菜单状态。
+    - **解决方案**：只保留一个实际 `adjustRep` 入口。
 
-- **规则未触发且日志无异常**：规则 ID 跨文件重复，或派发点的 trigger 拼写不一致。
+- **同一任务同时存在两个实例**：创建时没有检查已占用的 mission ref。
 
-    - **解决方案**：改用唯一前缀并逐字核对 trigger。
+    - **解决方案**：`setPersonMissionRef` 返回 false 时让 `create` 失败。
 
-- **`$option` 条件始终为 false**：该条件写在非选项回流 trigger 中，没有任何插件写入 `$option`。
+- **保存或读档时任务字段报错**：任务保存了对话句柄或其他不可序列化引用。
 
-    - **解决方案**：把判断移到 `DialogOptionSelected`、`NewGameOptionSelected` 或酒吧回流路径。
+    - **解决方案**：持久字段只保留可序列化状态，瞬态句柄标记为 `transient` 并按需重建。
+
+- **联系人任务板没有该任务**：联系人 ID、tag、声望、importance 或前置任务条件未通过 `PersonMissionSpec` 过滤。
+
+    - **解决方案**：逐项对照目标联系人和 CSV 字段。
+
+- **Intel 地图定位到星系中心**：当前阶段的主要实体可被发现，默认地图位置因此隐藏精确坐标并回退到星系中心。
+
+    - **解决方案**：需要公开精确位置时覆写地图位置方法。
+
+- **Intel 地图标记消失**：被登记的重要实体已经死亡，地图定位会跳过它。
+
+    - **解决方案**：改用仍存活的阶段目标并更新 primary objective。
 
 ## 总结
 
-本节把五类生涯场景讲成同一条链：原版派发点在固定时机发起匹配，规则行按条件与分数竞争命中，脚本负责叙述、转场或填充菜单，最终以游戏内文本、菜单与日志给出可观察结果。覆盖市场、酒吧、舰队、新游戏四处的最小示例把这条链从注册验证到游戏内；场景 trigger 与自定义 trigger 的分界也由此清楚，前者只需写行，后者才需要 Java 入口 (规则基础页已述)。
+本节把枢纽任务系统串成一条从注册到结算的完整链：`bar_events.csv` 一行把任务交到酒吧调度器手里，`accept` 一次完成起点阶段、Intel 登记与脚本登记，随后 `advanceImpl` 按游戏天推进，`setCurrentStage` 命中终态集合时结算奖励，最后由 `endAfterDelay` 走到 `notifyEnded` 收尾。Intel 条目与脚本半身都来自 `BaseIntelPlugin` 这一侧，阶段图、完成检测与触发器属于任务自己。
 
-排错时沿四个位置核对，`Loading rule:` 日志确认注册，trigger 拼写确认匹配，分数确认竞争，职责复刻与状态复位确认行为。`FireBest` 只执行一条，覆盖原版规则必须复刻其结果职责；`FireAll` 全执行，菜单类 trigger 用它批量添加选项。状态键 `$menuState` / `$tradeMode` 进入与退出成对维护；`$option` 回流只属于各自对话框插件的回流 trigger；临时 bar 选项每轮清空重建；任务 trigger 前缀必须与 `getTriggerPrefix()` 一致；`TradePanelFlavorText` 只匹配假 dialog。
+排错时先问任务有没有出现、有没有被接受、卡在哪个阶段。没有出现查注册行与规则分类；一接受就报错查 `setStartingStage`；卡阶段查连接目标与规则作用域是否指向同一对象、`updateStage` 是否被 `Call`。完成标志写进哪块内存，决定三条检测通道里哪一条会命中 —— 先写内存，再 `Call $<missionId>_ref updateStage`，这是本节最值得记住的握手。
 
-从逻辑上看，这套使用方式的下游是规则命令体系 (自定义 rulecmd 可替代 `BarCMD` / `EndConversation` 等现成使用方式)、记忆语义 (本节的一次性 flag 与 `$menuState` 的过期与持久化由此完整展开)、对话插件生命周期 (市场/舰队/酒吧场景的 Java 侧底座) 三个主题。
+从逻辑上看，rules 的语法与内存作用域规则是这条链的自然下游；事件链的两种形态 (单任务触发器链 / 跨任务全局链) 则为任务接入更宏观的剧情推进提供了位置。
 
 ## 建议参考项
 
-- `data/campaign/rules.csv`：本节示例追加行所在文件，规则 id 前缀 `GearIn_rules_scene_*`。
-- `data/campaign/rules.csv`：五类场景 trigger 的平台规则表：
-    - 本节引用的回退规则 (`marketOpen` / `marketDock` / `marketPostOpenDefault` / `greetingFallthrough` / `initial_AnyFleet` / `marketReturnFromBar` 等) 的参照来源。
-- `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl`：交互对话框插件，对话场景 trigger 的主要派发点与 `$option` 回流实现。
-- `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`：舰队遭遇与通讯对话插件，`BeginFleetEncounter` / `OpenCommLink` 的派发点。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`：酒吧场景的 rulecmd 与对话插件，`AddBarEvents` / `ReturnFromBar` 派发与字符串选项回流。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent`：写临时 bar 选项的 rulecmd(`$core_tempBarEvents` 记忆键)。
-- `com.fs.starfarer.api.impl.campaign.missions.hub.BaseMissionHub`：任务列表与任务对话 trigger(`<前缀>_blurb` / `<前缀>_option` / `AddMHCloseOption`) 的使用方。
-- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionBarEventWrapper`：任务以酒吧事件展示时的 `<前缀>_blurbBar` / `<前缀>_optionBar` trigger 使用方。
-- `com.fs.starfarer.api.impl.campaign.NewGameDialogPluginImpl`：主菜单新游戏对话框 (流程场景)，回流 trigger 为 `NewGameOptionSelected`。
-- `com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`：场景事实键 (`$hasMarket` / `$isHostile` / `$isContact` 等) 的写入方。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.EndConversation`：对话退出转场 rulecmd。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.OpenComms` / `com.fs.starfarer.api.impl.campaign.rulecmd.HailPlayer`：舰队通讯转场与 `$hailing` 写入 rulecmd。
-- `com.fs.starfarer.api.impl.campaign.AbandonMarketPluginImpl`：弃档时的市场状态复位 (`$menuState` / `$tradeMode` / `$hasMarket`)。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.FireBest`：单选派发与 keepOptions(第二参) 语义。
-- `com.fs.starfarer.api.campaign.rules.MemKeys`：规则记忆键常量 (`MISSION` 等)。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMission`：任务约定接口；`getBlurbText()` 已弃用。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.BaseHubMission`：任务基类 (生命周期 / 阶段 / 完成检测 / 奖励与生成辅助)。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithTriggers`：触发器 API(`begin*Trigger` / `trigger*` 动作族 / `endTrigger`)。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithSearch`：目标选择要求系统 (`require*` / `prefer*` / `pick*`)。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithBarEvent`：酒吧入口补充 (`shouldShowAtMarket`)。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.MissionHub`：联系人任务板入口 (路线 B)；
+- `com.fs.starfarer.api.impl.campaign.missions.hub.BaseMissionHub`：联系人任务板实现基类；
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionCreator`：任务创建器接口 (频率 / 声望过滤 / 计数)；
+- `com.fs.starfarer.api.impl.campaign.missions.hub.BaseHubMissionCreator`：任务创建器实现基类；
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionBarEventWrapper`：酒吧包装 (路线 A 的抽取与展示)。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.MissionTrigger`：触发器数据类。
+- `com.fs.starfarer.api.impl.campaign.missions.CheapCommodityMission`：原版酒吧任务实例 (对照对象)。
+- `com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`：Intel 条目约定；
+- `com.fs.starfarer.api.campaign.comm.IntelManagerAPI`：Intel 登记表。
+- `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`：Intel 条目 + 每帧脚本组合基类。
+- `com.fs.starfarer.api.loading.BarEventSpec`：酒吧注册路线的规格类；
+- `com.fs.starfarer.api.loading.PersonMissionSpec`：联系人任务注册路线的规格类。
+- `com.fs.starfarer.api.impl.campaign.intel.bar.events.SpecBarEventCreator`：酒吧事件创建器 (mission 分派)。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`：酒吧路线接受任务的规则命令；
+- `com.fs.starfarer.api.impl.campaign.rulecmd.missions.MissionHubCMD`：枢纽路线接受任务的规则命令。
+- `com.fs.starfarer.api.mission.MissionDefinitionAPI`：战役任务 API(对照项，与枢纽任务无关)。
+- `com.fs.starfarer.api.impl.campaign.ids.Factions`：示例用到的势力 id 常量；
+- `com.fs.starfarer.api.impl.campaign.ids.Ranks`：示例用到的军衔 id 常量；
+- `com.fs.starfarer.api.impl.campaign.ids.Tags`：示例用到的标签 id 常量。
+- `com.fs.starfarer.api.util.Misc`：`makeImportant` / `getWithDGS` / `getDGSCredits` 等工具。
+- `data/campaign/bar_events.csv`：酒吧事件注册 (本节任务一行)。
+- `data/campaign/person_missions.csv`：联系人任务板注册 (路线 B)。
+- `data/campaign/rules.csv`：本节六条任务规则。
+- `data/config/settings.json`：任务板数量配置 (`contactMinMissions` / `contactMaxMissions` 等)。
+
+## 完整最小例
+
+::: details 完整成品：GearInHubMission
+
+```java
+package data.scripts.gearin.campaign;
+
+import java.awt.Color;
+import java.util.Map;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.InteractionDialogAPI;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.campaign.rules.MemoryAPI;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Factions;
+import com.fs.starfarer.api.impl.campaign.ids.Ranks;
+import com.fs.starfarer.api.impl.campaign.ids.Tags;
+import com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithBarEvent;
+import com.fs.starfarer.api.ui.TooltipMakerAPI;
+import com.fs.starfarer.api.util.Misc;
+
+/**
+ * 完整最小例：枢纽任务 (HubMission) —— Intel、阶段、目标与事件链。
+ * 任务 ID gearInHub (bar_events.csv 的 mission id 列)：消费者含规则分类前缀
+ * gearInHub_blurbBar / gearInHub_optionBar、内存键 $gearInHub_stage / $gearInHub_ref。
+ * 注册入口：data/campaign/bar_events.csv 一行 (plugin 列 = 本类全名) + rules.csv
+ * 六条规则 (blurbBar / optionBar / startBar / 任务文本 / 数据收讫 / 交付结算)。
+ * accept 时 addIntel + addScript，结束 endAfterDelay；Stage 四态切换时登记/解除
+ * makeImportant 标记；完成检测三通道 (rules 写标志、帧轮询、60 天时限)；两个一次性
+ * 触发器写全局标记；奖励为信用点 (按距离与质量折算) 与双声望。
+ */
+public class GearInHubMission extends HubMissionWithBarEvent {
+
+    public static final float MISSION_DAYS = 60f;
+
+    /** 阶段图：CONTACT(去目标市场找联系人)-> RETURN(回任务人处交货)-> 终态。 */
+    public enum Stage {
+        CONTACT,
+        RETURN,
+        COMPLETED,
+        FAILED,
+    }
+
+    private static final Logger LOG = Global.getLogger(GearInHubMission.class);
+
+    private PersonAPI giver;
+    private MarketAPI sourceMarket;
+    private MarketAPI targetMarket;
+    private PersonAPI sourceContact;
+    private int reward = 0;
+
+    @Override
+    public boolean shouldShowAtMarket(MarketAPI market) {
+        // 酒吧路线：create() 之前被调用 (HubMissionBarEventWrapper.shouldShowAtMarket)。
+        // 本示例任何有太空港的市场都可出现。
+        return market.hasSpaceport();
+    }
+
+    @Override
+    protected boolean create(MarketAPI createdAt, boolean barEvent) {
+        if (barEvent) {
+            // 酒吧路线需要自己生成给任务者 (联系人路线由 hub 的 getPerson() 提供)。
+            setGiverRank(Ranks.CITIZEN);
+            setGiverPost(Ranks.POST_TRADER);
+            setGiverImportance(pickImportance());
+            setGiverFaction(Factions.INDEPENDENT);
+            setGiverTags(Tags.CONTACT_TRADE);
+            findOrCreateGiver(createdAt, true, false);
+        }
+
+        giver = getPerson();
+        if (giver == null) {
+            return false;
+        }
+        sourceMarket = giver.getMarket();
+        if (sourceMarket == null) {
+            return false;
+        }
+
+        // mission ref：rules 侧 Call $gearInHub_ref <action> 打到本任务的 callEvent。
+        // 键已被其他任务占用时返回 false —— create 失败、本次不提供该任务。
+        if (!setPersonMissionRef(giver, "$gearInHub_ref")) {
+            return false;
+        }
+
+        // ---- 目标选择：HubMissionWithSearch 的要求系统 ----
+        requireMarketIsNot(sourceMarket);
+        requireMarketFaction(sourceMarket.getFactionId());
+        requireMarketFactionNotHostileTo(Factions.PLAYER);
+        preferMarketInDirectionOfOtherMissions();
+        targetMarket = pickMarket();
+        if (targetMarket == null) {
+            return false;
+        }
+
+        sourceContact = findOrCreateTrader(targetMarket.getFactionId(), targetMarket, true);
+        if (sourceContact == null || !setPersonMissionRef(sourceContact, "$gearInHub_ref")) {
+            return false;
+        }
+
+        // ---- 阶段图 ----
+        setStartingStage(Stage.CONTACT);
+        setSuccessStage(Stage.COMPLETED);
+        setFailureStage(Stage.FAILED);
+
+        // ---- 目标完成检测：内存标志连接 (对话驱动，rules 置位 + Call updateStage)----
+        setStageOnMemoryFlag(Stage.RETURN, sourceContact, "$gearInHub_dataReceived");
+        setStageOnMemoryFlag(Stage.COMPLETED, giver, "$gearInHub_delivered");
+
+        // ---- 目标时限：60 游戏天超时进 FAILED ----
+        setTimeLimit(Stage.FAILED, MISSION_DAYS, null);
+
+        // ---- 地图目标标记：进入对应阶段时点亮 ----
+        makeImportant(sourceContact, "$gearInHub_hasData", Stage.CONTACT);
+        makeImportant(giver, "$gearInHub_returnMark", Stage.RETURN);
+
+        // ---- 事件链：一次性触发器 ----
+        // 进入 RETURN 阶段即写全局标记 (AlwaysTrueChecker 恒真，进阶段即触发)。
+        beginCustomTrigger(new AlwaysTrueChecker(), Stage.RETURN);
+        triggerSetGlobalMemoryValue("$gearInHub_enteredReturn", true);
+        endTrigger();
+        // 任务进行满 30 游戏天 (无论停在哪个阶段) 写半程标记。
+        // 注意：beginDaysElapsedTrigger(float, Object...) 与 (float, Object, Object...)
+        // 两个重载在三个实参时会歧义，这里直接用它内部构造的 DaysElapsedChecker。
+        beginCustomTrigger(new DaysElapsedChecker(MISSION_DAYS / 2f, this), Stage.CONTACT, Stage.RETURN);
+        triggerSetGlobalMemoryValue("$gearInHub_halfTime", true);
+        endTrigger();
+
+        // ---- 奖励与声望 ----
+        reward = getRoundNumber(30000f + getDistanceLY(targetMarket) * 3000f + getQuality() * 20000f);
+        creditReward = reward;
+        setRepPersonChangesMedium();
+        setRepFactionChangesLow();
+
+        LOG.info(String.format("GearIn hub mission: created at %s, target %s, reward %d",
+                createdAt.getName(), targetMarket.getName(), reward));
+        return true;
+    }
+
+    @Override
+    protected void updateInteractionDataImpl() {
+        // 写规则变量 (LOCAL 人物内存，随档持久；$gearInHub_stage 由基类自动写)。
+        set("$gearInHub_reward", Misc.getWithDGS(reward));
+        set("$gearInHub_targetMarketName", targetMarket.getName());
+        set("$gearInHub_dist", getDistanceLY(targetMarket));
+        set("$gearInHub_contactName", sourceContact.getNameString());
+    }
+
+    @Override
+    public void acceptImpl(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
+        LOG.info("GearIn hub mission: accepted, currentStage=" + getCurrentStage());
+    }
+
+    @Override
+    public String getBaseName() {
+        return "Lost Shipment Data";
+    }
+
+    @Override
+    public void addDescriptionForNonEndStage(TooltipMakerAPI info, float width, float height) {
+        float opad = 10f;
+        Color h = Misc.getHighlightColor();
+        if (currentStage == Stage.CONTACT) {
+            info.addPara("A shipment of factory data went missing while a convoy passed through %s. "
+                    + "Talk to %s there to retrieve the data cache.",
+                    opad, h, targetMarket.getName(), sourceContact.getNameString());
+        } else if (currentStage == Stage.RETURN) {
+            info.addPara("Return to %s and hand the recovered data over to %s.",
+                    opad, h, sourceMarket.getName(), giver.getNameString());
+        }
+    }
+
+    @Override
+    public boolean addNextStepText(TooltipMakerAPI info, Color tc, float pad) {
+        Color h = Misc.getHighlightColor();
+        if (currentStage == Stage.CONTACT) {
+            info.addPara("Go to %s and talk to %s",
+                    pad, tc, h, targetMarket.getName(), sourceContact.getNameString());
+            return true;
+        }
+        if (currentStage == Stage.RETURN) {
+            info.addPara("Return to %s and talk to %s",
+                    pad, tc, h, sourceMarket.getName(), giver.getNameString());
+            return true;
+        }
+        return false;
+    }
+}
+```
+
+:::

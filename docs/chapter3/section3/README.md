@@ -134,7 +134,7 @@ public class GearInModPlugin extends BaseModPlugin {
 ## 建议参考项
 
 - `mod_info.json`：`modPlugin` 入口声明；
-- `BaseModPlugin`：提供默认回调实现的基础类；
-- `ModPlugin.onNewGame()`：新档生成回调；
-- `FactionAPI.setRelationship`：写入势力关系；
-- `RepLevel`：关系等级枚举。
+- `com.fs.starfarer.api.BaseModPlugin`：提供默认回调实现的基础类；
+- `com.fs.starfarer.api.ModPlugin`：`onNewGame` 新档生成回调；
+- `com.fs.starfarer.api.campaign.FactionAPI`：`setRelationship` 写入势力关系；
+- `com.fs.starfarer.api.campaign.RepLevel`：关系等级枚举。

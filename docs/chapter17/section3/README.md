@@ -1,230 +1,111 @@
-# 用 LazyLib 制作自动点防御决策器
+# 读取 MOD 内 CSV
 
-点防御武器若只打最近导弹，会把火力浪费在擦肩而过的小弹头上。本节先按射界过滤，再以载荷和距离计算威胁，让炮塔优先转向真正会造成损失的目标。
+本节处理表格和跨 MOD 数据：先读取单个 CSV，再根据数据所有权选择合并入口。关键区别是文件是否需要参与全局合并，以及重复键最终由哪一方负责。
 
 *本节预期阅读时间：~18 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~35 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 用 `AIUtils` 限定点防御需要考虑的敌方导弹范围；
-- 在评分前用 `WeaponUtils` 排除射界外目标；
-- 把伤害、EMP 与距离组合成可观察的威胁分；
-- 每帧只选择一个最高威胁目标并驱动炮塔转向；
-- 从射界、评分分母和控制权定位点防御失效。
+- 使用 `loadCSV` 读取列名映射的对象数组；
+- 使用 `getMergedSpreadsheetData` 读取跨 MOD 合并表；
+- 使用 `getMergedSpreadsheetDataForMod` 读取指定 master 文件并允许外部 MOD 覆盖行；
+- 区分单文件读取、合并读取和 JSON 合并；
+- 根据重复键、路径和 master 归属定位表格读取故障。
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C1-S2] 的 CSV 表头、引号和 ID 规则；
+- [C3-S5] 的描述表键与合并语义；
+- [C16-S1] 的 MOD 相对路径和 `modId` 限定读取；
+- [C16-S2] 的 JSON 单文件读取。
 
-## 明确当前需求
-
-一枚高爆鱼雷从 1100 su 外正面接近，同时一枚低伤害导弹从 300 su 外掠过侧面。点防御应锁定射界内的鱼雷，并持续给出瞄准点。
-
-## 文件与 API 链路
-
-### 点防御 API 职责速查表
-
-| 对象 | 职责 |
-|---|---|
-| `AIUtils` | 提供当前帧附近敌方导弹 |
-| `WeaponUtils` | 判断射界并驱动炮塔朝向 |
-| `CombatUtils` | 按区域补充查询 |
-| `DefenseUtils` | 把本舰装甲状态纳入扩展评分 |
-
-### 取得当前帧威胁列表
-
-`GearInPointDefenseDirector.choose()` 开头只查询本舰 1400 su 内的敌方导弹：
+## 单文件与合并入口
 
 ```java
-for (MissileAPI missile : AIUtils.getNearbyEnemyMissiles(weapon.getShip(), 1400f)) {
-    // 当前帧候选
-}
+JSONArray rows = Global.getSettings().loadCSV("data/config/gear_in/services.csv");
+JSONArray merged = Global.getSettings().getMergedSpreadsheetData("id", "data/config/gear_in/services.csv");
+JSONArray master = Global.getSettings().getMergedSpreadsheetDataForMod(
+        "id", "data/config/gear_in/services.csv", "gear_in");
 ```
 
-远离防区的导弹不会参与排序。
+`loadCSV` 适合读取本 MOD 自己拥有的文件。`getMergedSpreadsheetData` 适合多个来源按同一路径合并的表；同一文件内部重复键会抛出异常，跨文件冲突按合并顺序处理。`getMergedSpreadsheetDataForMod` 把 `gear_in` 作为 master，其他 MOD 可以用同一键替换 master 行，适合提供可覆盖的基础数据。
 
-### 先排除炮塔够不到的目标
+### JSON 合并
 
-`choose()` 在循环首个分支用武器弧而非舰首朝向判断可射击性：
+`getMergedJSON` 递归合并对象键，标量由后加载来源覆盖，数组按引擎规则追加或整体替换。需要自己的文件只提供自己的分类或键；需要读取单一 MOD 的 JSON 时使用 `loadJSON(path, modId)`，基础见 [C16-S2]。
 
-```java
-if (!WeaponUtils.isWithinArc(missile, weapon)) {
-    continue;
-}
+### 选择入口速查表
+
+| 任务 | 入口 | 结果 |
+| --- | --- | --- |
+| 读取自己的表 | `loadCSV` | 一个对象数组 |
+| 读取所有来源的同路径表 | `getMergedSpreadsheetData` | 按键合并后的对象数组 |
+| 读取指定 master 并允许覆盖 | `getMergedSpreadsheetDataForMod` | master 行可被其他 MOD 替换 |
+| 读取合并 JSON | `getMergedJSON` | 递归合并对象 |
+
+### 最小实例
+
+在 `data/config/gear_in/services.csv` 写入：
+
+```csv
+id,label,interval
+GearIn_service,工坊服务,10
 ```
 
-侧后方导弹不会抢走锁定。
+代码读取 `id`、`label` 和 `interval`，并把结果写入日志。第二份测试 MOD 使用同一路径和 `GearIn_service` 键，观察普通合并和 master 合并的差异。
 
-### 把载荷和距离合成威胁分
+## 数据所有权
 
-`GearInMissileThreat.score()` 中高伤害、高 EMP、近距离都会提高优先级：
+文件路径相同不代表数据所有权相同。自己的数据路径使用 MOD 前缀；公共表格必须明确键列、覆盖者和预期合并入口。不要复制整份原版文件，只提交需要新增或覆盖的行。
 
-```java
-float payload = missile.getDamageAmount() + missile.getEmpAmount() * 0.5f;
-return payload * 1000f / Math.max(100f, distance);
-```
+### 验证方案
 
-鱼雷的分数高于擦过侧面的轻型导弹。
+前置数据：`services.csv`、一个提供同键覆盖行的测试 MOD，以及三种读取调用已就绪。
 
-### 保留最高威胁导弹
-
-`choose()` 在 `best` 更新处用一次扫描完成目标选择：
-
-```java
-if (score > bestScore) {
-    best = missile;
-    bestScore = score;
-}
-```
-
-每帧最多产生一个锁定目标。
-
-### 让炮塔开始转向
-
-返回前，`choose()` 只在目标存在时调用瞄准助手：
-
-```java
-if (best != null) {
-    WeaponUtils.aimTowardsPoint(weapon, best.getLocation(), Global.getCombatEngine().getElapsedInLastFrame());
-}
-```
-
-炮塔朝目标转动，目标消失后自然重新选择。
-
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-MissileAPI target = AIUtils.getNearestEnemyMissile(ship);
-return target;
-```
-
-实际症状：炮塔频繁追逐射界外的小导弹，真正接近的鱼雷无人处理。
-
-原因：最近距离没有表达射界与载荷，目标也没有经过武器可达性过滤。
-
-下面是**局部修正片段**：
-
-```java
-if (WeaponUtils.isWithinArc(missile, weapon)) {
-    float score = threat.score(ship, missile);
-}
-```
-
-复验：同时生成 300 su 外的低载荷侧弹和 1100 su 外的高载荷正面鱼雷，记录两者是否进入射界、各自分数与最终目标。
-
-## 完整最小例
-
-`GearInMissileThreat` 只计算分数，`GearInPointDefenseDirector` 负责查询、过滤与执行。这样可以独立观察分数，而不必先让炮塔取得控制权。
-
-::: details 完整成品：GearInMissileThreat
-
-```java
-package data.scripts.gearin.lib;
-
-import org.lazywizard.lazylib.MathUtils;
-
-import com.fs.starfarer.api.combat.MissileAPI;
-import com.fs.starfarer.api.combat.ShipAPI;
-
-public final class GearInMissileThreat {
-    public float score(ShipAPI ship, MissileAPI missile) {
-        float distance = Math.max(100f, MathUtils.getDistance(ship, missile));
-        float payload = missile.getDamageAmount() + missile.getEmpAmount() * 0.5f;
-        return payload * 1000f / distance;
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInPointDefenseDirector
-
-```java
-package data.scripts.gearin.lib;
-
-import org.lazywizard.lazylib.combat.AIUtils;
-import org.lazywizard.lazylib.combat.WeaponUtils;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.MissileAPI;
-import com.fs.starfarer.api.combat.WeaponAPI;
-
-public final class GearInPointDefenseDirector {
-    private final GearInMissileThreat threat = new GearInMissileThreat();
-
-    public MissileAPI choose(WeaponAPI weapon) {
-        MissileAPI best = null;
-        float bestScore = 0f;
-        for (MissileAPI missile : AIUtils.getNearbyEnemyMissiles(weapon.getShip(), 1400f)) {
-            if (!WeaponUtils.isWithinArc(missile, weapon)) {
-                continue;
-            }
-            float score = threat.score(weapon.getShip(), missile);
-            if (score > bestScore) {
-                best = missile;
-                bestScore = score;
-            }
-        }
-        if (best != null) {
-            WeaponUtils.aimTowardsPoint(weapon, best.getLocation(), Global.getCombatEngine().getElapsedInLastFrame());
-        }
-        return best;
-    }
-}
-```
-
-:::
-
-## 验证方案
-
-前置场景：给测试舰安装一门可转向点防御武器，并准备可分别从正面与侧后方生成导弹的测试入口。
-
-1. 在 1100 su 正面生成一枚高伤害鱼雷，记录其射界判断、威胁分和炮塔转向。
-2. 在 300 su 侧后方同时生成一枚低伤害导弹，确认它在评分前被射界过滤。
-3. 把低伤害导弹移入射界，记录两枚导弹的分数与最终返回目标。
-4. 让鱼雷离开 1400 su 查询范围，确认候选列表与锁定随下一帧更新。
-5. 临时改用最近导弹故障片段，再恢复分层选择，比较两次锁定结果。
+1. 使用 `loadCSV` 读取 `services.csv`，观察日志中的 `GearIn_service` 行。
+2. 使用 `getMergedSpreadsheetData` 读取同一路径，观察合并后的 `label` 和 `interval`。
+3. 使用 `getMergedSpreadsheetDataForMod` 指定 `gear_in`，观察 master 行被覆盖后的字段值。
+4. 在测试 MOD 中加入一个不重复的键，重新启动并观察该行出现在合并结果中。
 
 预期结果：
 
-- 1400 su 外目标不进入候选列表，射界外目标不进入评分；
-- 两个目标均在射界内时，返回值对应威胁分较高者；
-- 每帧最多返回一个 `MissileAPI`，该目标存在时炮塔才接受转向指令；
-- 目标离开范围或消失后，下一帧重新选择剩余目标；
-- `starsector.log` 没有未处理异常。
+- 单文件读取返回 `GearIn_service` 的原始字段；
+- 普通合并包含所有来源的非冲突行；
+- master 合并按同键替换 master 行；
+- 键不重复、路径正确时，读取日志没有表格解析异常。
+
+清理：删除测试 MOD 的覆盖行和临时日志探针。
 
 ## 故障分析
 
-- **炮塔追逐射界外的小导弹**：评分前只比较了距离，没有过滤射界。
+- **合并加载报告 `Duplicate key`**：同一文件内的键列出现重复值。
 
-    - **解决方案**：先调用 `isWithinArc`，再比较威胁分。
+    - **解决方案**：让每行键唯一，再加载。
 
-- **炮塔在两个目标之间抖动**：两个目标分数接近，每帧都会交换排名。
+- **合并结果缺少目标行**：路径、键列或来源 MOD 与调用参数不一致。
 
-    - **解决方案**：保留当前目标，并要求新目标超过切换阈值。
+    - **解决方案**：逐项核对并重新合并。
 
-- **炮塔完全不转向**：控制代码没有运行在武器效果或自定义 AI 中，原版 AI 仍持有武器。
+- **自有值被其他 MOD 覆盖**：普通合并按 "先加载者胜" 静默丢弃后到同键行。唯一键才能防覆盖；带 MOD master 的入口反而**启用**覆盖 (master 行恰是被替换的一方)，不是修复手段。
 
-    - **解决方案**：把调用接入实际控制回调。
+    - **解决方案**：改用唯一键。
 
-- **威胁分变为无穷大**：导弹距离为零或过小时直接进入分母。
+- **结果只包含当前 MOD 的行**：代码使用了 `loadCSV(path, modId)` 单来源入口。
 
-    - **解决方案**：为距离设置正数下限。
+    - **解决方案**：需要跨来源时改用合并入口。
+
+- **CSV 字段整体错位**：含英文逗号的字段没有按 CSV 规则加引号。
+
+    - **解决方案**：修正转义并重新读取。
 
 ## 总结
 
-点防御决策依次经过查询、可达性过滤、威胁评分和执行。把评分独立成角色类后，您可以加入装甲缺口、弹头类型或命中时间，而不必改动炮塔控制流程。
+CSV 和 JSON 的读取入口由数据所有权决定。单文件入口读取自己的资源，合并入口处理跨 MOD 数据；带 master 的表格还需要明确谁提供基础行、谁可以覆盖。
 
 ## 建议参考项
 
-- `AIUtils.getNearbyEnemyMissiles`：取得当前帧导弹候选；
-- `WeaponUtils.isWithinArc`：确认武器射界；
-- `WeaponUtils.aimTowardsPoint`：驱动炮塔朝指定坐标转向。
+- `com.fs.starfarer.api.SettingsAPI`：`loadCSV` 单文件读取，`getMergedSpreadsheetData` 普通合并表，`getMergedSpreadsheetDataForMod` 带 master 的合并表，`getMergedJSON` 对象键递归合并。

@@ -388,7 +388,7 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 
 ## 建议参考项
 
-- `BaseCombatLayeredRenderingPlugin`：分层插件的默认实现；
-- `SpriteAPI`：贴图颜色、透明度、尺寸和绘制方法；
-- `SettingsAPI.getSprite(String, String)`：按注册的分类和键取得 Sprite；
-- `CombatEngineLayers`：战斗渲染图层枚举。
+- `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：分层插件的默认实现；
+- `com.fs.starfarer.api.graphics.SpriteAPI`：贴图颜色、透明度、尺寸和绘制方法；
+- `com.fs.starfarer.api.SettingsAPI`：`getSprite(String, String)` 按注册的分类和键取得 Sprite；
+- `com.fs.starfarer.api.combat.CombatEngineLayers`：战斗渲染图层枚举。

@@ -1,8 +1,8 @@
-# 文件读取与写入
+# Rules 系统、命令与内存
 
-本章技术基线：Starsector `0.98a-RC8`；前置知识：Java 工具链、`Global` 门面、MOD 目录结构和 JSON/CSV 基础。
+本章技术基线：Starsector `0.98a-RC8`。
 
-本章围绕两类文件工作，一是从 MOD 资源空间读取文本、JSON 与 CSV，二是从存档 `common` 读取并保存跨存档数据。最后用 `strings.json` 和一个取值封装完成本地化机制，把静态文本、动态替换和可观察验证接在同一条流程上。
+规则表决定何时命中，Rules 命令决定命中后执行什么，内存决定结果如何保存，Rules 系统按这三步工作。本章沿这条主线依次讲解 `rules.csv` 七列语义与匹配、常用 trigger 场景、rulecmd 命令与 Token，以及 MemoryAPI 与持久化。
 
 ## 本章各节
 

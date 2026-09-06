@@ -312,6 +312,15 @@ public class GearInDamageDealtModifier implements DamageDealtModifier {
 
 ## 建议参考项
 
-- `CombatListenerManagerAPI`：监听器增删查；
-- `CombatListenerUtil`：伤害与结构伤害事件派发；
-- `FleetMemberDeploymentListener`、`DamageListener`、`DamageDealtModifier`、`DamageTakenModifier`、`HullDamageAboutToBeTakenListener`、`AdvanceableListener`、`WeaponRangeModifier`、`WeaponBaseRangeModifier`、`WeaponOPCostModifier`、`FighterOPCostModifier`。
+- `com.fs.starfarer.api.combat.listeners.CombatListenerManagerAPI`：监听器增删查；
+- `com.fs.starfarer.api.combat.listeners.CombatListenerUtil`：伤害与结构伤害事件派发；
+- `com.fs.starfarer.api.combat.listeners.FleetMemberDeploymentListener`：部署成员回调；
+- `com.fs.starfarer.api.combat.listeners.DamageListener`：伤害事件监听；
+- `com.fs.starfarer.api.combat.listeners.DamageDealtModifier`：造成伤害修正；
+- `com.fs.starfarer.api.combat.listeners.DamageTakenModifier`：承受伤害修正；
+- `com.fs.starfarer.api.combat.listeners.HullDamageAboutToBeTakenListener`：舰体濒损预警；
+- `com.fs.starfarer.api.combat.listeners.AdvanceableListener`：逐帧推进回调；
+- `com.fs.starfarer.api.combat.listeners.WeaponRangeModifier`：武器射程修正；
+- `com.fs.starfarer.api.combat.listeners.WeaponBaseRangeModifier`：武器基础射程修正；
+- `com.fs.starfarer.api.combat.listeners.WeaponOPCostModifier`：武器 OP 消耗修正；
+- `com.fs.starfarer.api.combat.listeners.FighterOPCostModifier`：战机 OP 消耗修正。

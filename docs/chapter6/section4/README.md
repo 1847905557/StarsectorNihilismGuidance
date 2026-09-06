@@ -8,6 +8,8 @@
 
 ## 学习目标
 
+完成后，您将能够：
+
 - 生成 `GearIndustry.jar`；
 - 在 `mod_info.json` 声明相对路径；
 - 用 `jar tf` 检查 JAR 内容并定位构建错误。

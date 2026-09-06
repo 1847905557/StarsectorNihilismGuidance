@@ -374,4 +374,5 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 - `data/weapons/weapon_data.csv`：武器 ID 查询 (`lightdualac` 等)。
 - `Starsector/starsector-core/starsector.log`：游戏日志，排查加载错误与最终 ID 报错。
 - `Starsector/mods/Console Commands/data/console/commands.csv`：`Addship`/`Addwing` 控制台命令条目。
-- `com.fs.starfarer.api.loading.FormationType`、`com.fs.starfarer.api.loading.WingRole`：联队队形与战机角色枚举全集。
+- `com.fs.starfarer.api.loading.FormationType`：联队队形枚举全集；
+- `com.fs.starfarer.api.loading.WingRole`：联队内战机角色枚举全集。

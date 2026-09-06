@@ -480,5 +480,5 @@ data/world/factions/gear_industry.faction
 
 - `data/world/factions/factions.csv`：势力文件注册表；
 - `data/world/factions/hegemony.faction`：本节复制的源文件；
-- `FactionSpecAPI`：加载后的势力规格；
-- `SectorAPI.getFaction(id)`：运行时势力查询入口。
+- `com.fs.starfarer.api.campaign.FactionSpecAPI`：加载后的势力规格；
+- `com.fs.starfarer.api.campaign.SectorAPI`：`getFaction(id)` 运行时势力查询入口。

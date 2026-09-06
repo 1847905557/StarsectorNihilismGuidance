@@ -1,330 +1,213 @@
-# 制作酒吧事件
+# 编写生涯逐帧脚本
 
-本节制作一个生涯酒吧事件，一位落魄船员出售补给藏匿点的情报，玩家可以购买、婉拒或离开。示例会让事件进入酒吧、完成对话并正确收尾。
+本节制作能够保存进度的每日与周期生涯脚本。脚本会按游戏时间推进并随存档序列化，日志用于确认注册、时间换算和读档后的进度。
 
 *本节预期阅读时间：~30 分钟。*
 
-*本节预期操作时间：~50 分钟。*
+*本节预期操作时间：~60 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 区分酒吧事件、事件创建器与调度器的职责；
-- 通过 `bar_events.csv` 或 Java 创建器注册酒吧事件；
-- 控制事件的抽选权重、显示条件、有效期和超时；
-- 实现提示、选项、事件对话与交互收尾；
-- 根据入列、显示和对话结果定位酒吧事件故障。
+- 区分帧时间、生涯时钟与暂停、加速和战斗期间的推进结果；
+- 使用 `isDone()`、`runWhilePaused()` 和清理回调控制脚本生命周期；
+- 为每日、周期或倒计时任务选择合适的时间判断方式；
+- 管理普通脚本、transient 脚本和字段的存档恢复边界；
+- 根据时间、日志和读档结果定位生涯脚本故障。
 
 ## 前置知识
 
-- [C7-S1] 的 `modPlugin` 生命周期与注册判断；
-- [C7-S2] 的 `Global.getSector()` 阶段语义；
-- [C11-S3] 的 `MarketAPI` 与市场条件过滤；
-- [C10-S6] 的交互对话框面板、`showInteractionDialog` 与插件生命周期；
-- [C12-S1] 的人物、关系与市场稳定随机人物；
-- [C13-S1] 的 `advance(amount)` 真实秒语义与 `Misc.getDays` 换算；
-- [C13-S2] 的事件边界、监听器生命周期与 XStream 序列化边界；
-- [C15-S3] 的 Rules 命令与 [C15-S4] 的 Rules 内存。
+- [C7-S1] 的 `modPlugin` 生命周期与持久数据标记；
+- [C7-S2] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
+- [C8-S3] 的战斗域每帧回调、暂停语义与生涯域的差异；
+- [C10-S1] 的星区结构、生涯时钟、`EveryFrameScript` 注册、推进循环、暂停与加速语义。
 
-## 术语
+## 梳理生涯脚本关系
 
-酒吧事件牵扯一组角色与一条展示管线，先统一叫法，便于后文在 API 名与中文说法之间保持一致。按术语约定，API 类名保留源码大小写。本节首次完整讲解以下术语：
+脚本要能稳定运行，先得看清引擎怎么调脚本、`amount` 是什么、时间怎么换算、进度存在哪里这四个约定。本节依次讲完这四个机制，再据此给出四种实现模式。
 
-- **酒吧事件 (bar event)**：API 名保留 `PortsideBarEvent`。
-    - 一次可在星球/空间站酒吧出现、由玩家主动选择进入的短对话事件：酒吧提示 + 选项 (`addPromptAndOption`)→ 事件对话 (`init` / `optionSelected`)→ 结束返回酒吧。
-    - 它独立于普通交互对话框：酒吧事件不自己调用 `showInteractionDialog`，而是由 `BarCMD` 在酒吧 UI 里把选项的 optionData 指到事件自身，再经 `BarEventDialogPlugin` 包装接管对话。
-- **creator**：API 名保留 `GenericBarEventCreator`(`BarEventManager` 的内部接口) 与默认实现 `BaseBarEventCreator`。
-    - 负责两件事：`createBarEvent()` 创建事件实例 (返回 null 表示本次放弃抽取)；提供抽取参数 (频率权重、active 时长、普通超时、accepted 超时、是否 priority)。
-- **manager**：API 名保留 `BarEventManager`。全局酒吧事件调度器 (`EveryFrameScript`)：持有 creator 集合与 active/timeout 两个跟踪器，按游戏天推进并周期性抽取事件入列。
-- **活动列表 (PortsideBarData)**：当前全部已抽取、等待被酒吧显示的事件实例列表。manager 决定 "创建哪些事件"，活动列表决定 "哪些事件可被显示"。
-- **临时 bar 选项 (temp bar option)**：规则系统经 `AddBarEvent` 规则命令写入市场内存、由 `BarCMD` 当次展示的临时酒吧选项。它**不是** `PortsideBarEvent` 事件，点选后走普通规则对话 (`$option == <optionId>`)，每次展示前被清空重建。
-- **事件对话 (event dialog)**：`BarEventDialogPlugin` 包装下的事件交互对话。玩家点选酒吧选项后，`BarCMD` 把对话框插件切换为 `BarEventDialogPlugin`，事件自身通过 `init` / `optionSelected` 驱动对话，结束时切换回 `BarCMD` 并回到酒吧。
+### EveryFrameScript 三方法约定速查表
 
-## 梳理酒吧事件关系
+`EveryFrameScript`(`com.fs.starfarer.api.EveryFrameScript`) 只有三个方法，是生涯按帧脚本的完整约定。此前已讲过三方法是什么，本节讲引擎到底怎么用它们：
 
-术语就位后，下一步把两条入口链路接起来，数据文件链路把 CSV 行变成可用事件，代码注册链路登记手写 creator，最终都汇入 `BarEventManager` 的 creator 集合。先看清三个角色的公开 API 归属：
+| 方法 | 引擎执行约定 |
+|---|---|
+| `boolean isDone()` | 每帧**最多查两次**：`advance` 前查一次，为 `true` 直接移除 (不调 `advance`)；`advance` 返回后再查一次，为 `true` 移除。常驻脚本返回 `false` |
+| `boolean runWhilePaused()` | 暂停时 `advance` 只对返回 `true` 的脚本调用；脚本基类默认 `false` |
+| `void advance(float amount)` | `amount` 是**上一帧经过的真实秒数** ("seconds elapsed during the last frame"；"Use SectorAPI.getClock() to convert to campaign days")。**必须**经时钟换算才是游戏天 |
 
-### 角色命名与归属速查表
+执行细节：
 
-任务清单里的 "BarEventAPI / BarEventCreatorAPI / BarManagerAPI" 对应本主题的三个角色；公开 API 中的具体类型名如下 (全部在 `com.fs.starfarer.api.*` 包路径内)：
+1. 引擎遍历的是**列表快照** (`new ArrayList<>(this.scripts)`)，脚本在 `advance` 里 `addScript` / `removeScript` 安全；代价是 advance 里新加的脚本下一帧才推进。
+2. 移除是 "遍历快照、改原列表"：
+    - `isDone` 自动清理；
+    - `removeScript(script)` 按**对象同一性**；
+    - `removeScriptsOfClass(Class)` 按**精确类** `getClass() == clazz`；
+    - `hasScript(Class)` 用 `isInstance`；查重用 `hasScript`，批量删用 `removeScriptsOfClass`，别混用。
+3. **`addScript` 不去重**：同一实例或等价实例重复注册会各自推进，一次性注册必须用 persistent data 标记 (必须遵守的规则)。
+4. 脚本基类把 `runWhilePaused()` 默认设为 `false`；引擎内置脚本也走同一机制。
+5. `EveryFrameScriptWithCleanup`(`com.fs.starfarer.api.EveryFrameScriptWithCleanup`) 只多一个 `cleanup()`："附着实体从生涯引擎移除时调用"(实体级脚本；引擎级脚本不触发)。该接口没有可观测的调用点，行为表述即上述语义。
 
-| 角色 | 类型 | 位置 |
+### amount 五种时序取值速查表
+
+方法约定说明脚本自身怎么写，时序约定决定引擎每次怎么调、传多少 `amount`。引擎在五种时序下推进脚本与时钟的方式各不相同：
+
+| 时序 | 引擎行为 | 脚本与时钟后果 |
 |---|---|---|
-| bar event(事件约定) | `PortsideBarEvent`(接口) | `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent` |
-| bar event(默认实现) | `BaseBarEvent`(抽象) | `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent` |
-| bar event(带人物默认实现) | `BaseBarEventWithPerson`(抽象) | `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventWithPerson` |
-| creator(约定 + 默认实现) | `GenericBarEventCreator`(`BarEventManager` 内部接口)+ `BaseBarEventCreator` | `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`、`BaseBarEventCreator` |
-| manager(调度器) | `BarEventManager` | `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager` |
-| 活动列表 | `PortsideBarData` | `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarData` |
-| CSV spec 与路由 | `BarEventSpec` / `SpecBarEventCreator` | `com.fs.starfarer.api.loading.BarEventSpec`、`com.fs.starfarer.api.impl.campaign.intel.bar.events.SpecBarEventCreator` |
-| 事件对话包装 | `BarEventDialogPlugin` | `com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin` |
-| 酒吧 UI 规则命令 | `BarCMD` | `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD` |
-| 临时 bar 选项规则命令 | `AddBarEvent` / `RemoveBarEvent` | `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent`、`RemoveBarEvent` |
+| 正常帧 | 每渲染帧调一次 `engine.advance(amount)`，`amount` 是该帧真实秒数 | 脚本 `advance(amount)` 每帧一次，`amount` 即帧真实秒；时钟按 10 秒/游戏日前进 |
+| 暂停 (空格) | 引擎照常每帧调 `advance`，但暂停时只有 `runWhilePaused()` 为 `true` 的脚本被推进 | 时钟冻结；`runWhilePaused()` 为 `false` 的脚本一并停住，为 `true` 的脚本继续收到 `amount` |
+| 加速 (按住 Shift) | `fastForward` 时按 `round(campaignSpeedupMult)`(`settings.json` 的 `campaignSpeedupMult`，取值为 2) 的次数，同一渲染帧连调 `engine.advance(amount)`，每次 `amount` 都是完整帧秒 | 脚本与时钟同帧推进两次，游戏日流速翻倍；`Global.getSector().isFastForwardIteration()` 可探测 "本次调用来自加速帧的第 2 次及以后的迭代"(`SectorAPI.isFastForwardIteration()`；第 1 次连调时标志尚未置位)。devMode 下还有 10x/100x 调试键 |
+| 新档推进 | 新建生涯时有一段快速推进窗口 (`isInFastAdvance()`)，窗口内时钟与脚本连续推进，之后才调 `onNewGameAfterTimePass` 与 `onGameLoad(true)`(游戏管理器) | `onNewGame` 注册的脚本经历这次推进；`onGameLoad` 里注册的脚本**不**经历 (窗口已关闭) |
+| 战斗 | 进入战斗后运行的是战斗状态，生涯状态不再推进 | 生涯脚本、时钟、经济全部冻结，回生涯后恢复 |
 
-### 数据文件链路 (bar\_events.csv)
+### 时间换算速查表
 
-1. 游戏在 CSV spec 加载期读取 `data/campaign/bar_events.csv`：`loadSpecsFromJson("bar event id", "data/campaign/bar_events.csv", BarEventSpec.class, ...)`(内部加载实现)，`bar event id` 列是 spec key。
-2. 每行构造一个 `BarEventSpec`：`bar event id`(必填)、`plugin`(必填，`row.getString("plugin")`)、`freq`(默认 10)、`prob`(默认 1)、`min/max dur`(默认 30/40)、`min/max timeout`(默认 30/40)、`min/max accepted timeout`(默认 60/90)、`tags`(逗号分隔，可空)。
-3. `SettingsAPI.getAllBarEventSpecs()` / `getBarEventSpec(id)` 暴露全部 spec。
-4. `BarEventManager.readResolve()` → `updateBarEventCreatorsFromSpecs()`：对每个尚无 auto-added creator 的 spec 创建 `SpecBarEventCreator(specId)`。手工注册的同 ID creator 不阻止自动项建立，两者可以并存。
-5. `SpecBarEventCreator`(继承 `BaseBarEventCreator`) 把 spec 的字段接到抽取参数上：
-    - `createBarEvent()` 按 `spec.isMission()` 分派：plugin 是 `HubMissionWithBarEvent` 时创建 `HubMissionBarEventWrapper`(mission 酒吧包装)，否则 `spec.createEvent()` 直接 `getInstanceOfScript(pluginClass)` 实例化普通 `PortsideBarEvent`；
-    - `isPriority()` = `spec.hasTag(Tags.MISSION_PRIORITY)`("priority" tag)。
+`CampaignClockAPI`(`com.fs.starfarer.api.campaign.CampaignClockAPI`) 由引擎内部实现。此前已给出换算基线，本节把高频换算方法收成速查表；换算的**内部机制**与两个推论列在表格之后：
 
-**非 mission 的普通事件** (如 `LuddicFarmerBarEvent`、`HistorianBarEvent`) 不走 CSV，走代码注册。
+| 方法 | 返回 | 语义 |
+|---|---|---|
+| `convertToDays(amount)` | `float` | 真实秒 → 游戏天 (`advance` 里**必须**用它换算) |
+| `convertToSeconds(days)` | `float` | 游戏天 → 真实秒 |
+| `convertToMonths(amount)` | `float` | 真实秒 → 游戏月 (÷10÷30) |
+| `getTimestamp()` | `long` | 日历毫秒；暂停时冻结；跨存档安全的间隔基准 |
+| `getElapsedDaysSince(ts)` | `float` | 从 `ts` 到现在的游戏天数；`ts == 0` 返回 `Float.MAX_VALUE` |
+| `createClock(ts)` | `CampaignClockAPI` | 按时间戳建独立时钟 (局部计时) |
+| `isFastForwardIteration()` | `boolean` | 本次推进来自加速帧的第 2 次及以后的迭代 (第 1 次连调时为 false；`SectorAPI.isFastForwardIteration()`) |
 
-### 注册入口
+- **基线：10 真实秒 = 1 游戏日** (`SECONDS_PER_GAME_DAY = 10.0F`)。`convertToDays(秒)` = 秒 ÷ 10；`convertToSeconds(天)` = 天 × 10；`convertToMonths(秒)` = 秒 ÷ 10 ÷ 30。
+- **日历按整游戏秒推进**：`advance(float)` 的实作是 `(int)(秒 / secondsPerDay * 86400)`，把整游戏秒加进日历；每帧独立截断，余数不结转。
+    - 推论一：`getDay()` / `getDateString()` / `getTimestamp()` 全部来自这个日历，因此是整秒粒度；而 `convertToDays(amount)` 的累加保留小数。
+    - 推论二：长期漂移等于各帧被截去的小数游戏秒之和，取决于实际帧时分布；帧率本身不能确定漂移量或趋势。
+    - 结论：**以日历为准 (跨日检测) 与以累加器为准 (`convertToDays` 累加) 是两种不同的时间基准**：短会话一致、长会话错位；统计型进度用累加器，日历事件用跨日检测。
+- **`getElapsedDaysSince(ts)`**：`(now - ts) / 86400000`，返回游戏天数；`ts == 0` 时返回 `Float.MAX_VALUE`，计算未初始化间隔时不要传 0。
+- **`getTimestamp()`** 是日历毫秒值，暂停时冻结；`createClock(ts)` 按时间戳建独立时钟做局部计时。
+- **读档重建**：`readResolve()` 按保存的时间戳重建内部日历，读档后时钟从存档时刻继续 —— 您在读档前度过的真实时间，游戏日历一概不认。
 
-原版注册入口 (`CoreLifecyclePluginImpl`，`com.fs.starfarer.api.impl.campaign.CoreLifecyclePluginImpl`)：
+两种基准的分工
 
-- `onGameLoad(boolean)` → `addScriptsIfNeeded()` → `addBarEvents()`：
-    - `sector.hasScript(PortsideBarData.class)` 缺则 `addScript(new PortsideBarData())`；
-    - `sector.hasScript(BarEventManager.class)` 缺则 `addScript(new BarEventManager())`；
-    - `BarEventManager.getInstance()` 后对每个原版手写 creator 做 `!hasEventCreator(XxxCreator.class) → addEventCreator(new XxxCreator())`。
+日历以整游戏秒前进，适合 "某一天做什么" 这类事件判定；`convertToDays` 累加保留小数、每帧追加，适合跨帧累计的统计。长会话里两者错位不是 bug，而是按需选基准的设计：日历事件用跨日检测、精确统计用累加器。
 
-`PortsideBarData` 与 `BarEventManager` 构造器都把实例写入 sector memory 的固定键 (`$core_PortsideBarData` / `$core_genericBarEventManager`)。
+### 注册与存档：序列化边界
 
-**manager 实例、creator 列表、active 事件列表都随存档保存** (sector memory 持久化；`TimeoutTracker` 的 `set` 由 `readResolve` 重建)。
+时间换算解决怎么算时间，序列化解决算出来的进度怎么保留。
 
-MOD 注册入口 (本节示例)：
+**保存与读档的机制** (游戏管理器)：
+
+- 保存：`saveGame(...)` 用 XStream 序列化**整个生涯引擎 (星区)** —— 包括 `scripts` 列表里每个脚本的全部非 `transient` 字段。
+- 读档：`fromXML` 还原生涯引擎 (星区) 与脚本字段，脚本状态从存档值继续。
+
+**两个脚本列表的序列化边界** (生涯引擎)：
+
+- `scripts` **非** `transient` → **随存档保存**：常驻脚本 (管理器、周期脚本) 跨读档继续运行，其非 `transient` 字段原样恢复；`readResolve` 只补 null 备用值。
+- `transientScripts` 是 `transient` → **不随存档保存**，且 `readResolve` 直接重建空列表 → **transient 脚本读档后必然消失，需要重新注册**。
+- 实体级脚本：实体的脚本列表也非 `transient` → 随实体保存。
+
+由此得到三条必须遵守的规则与两条建议：
+
+- **必须**：脚本字段只放可随 XStream 序列化的状态 (基础类型、可序列化对象)。
+    - 把引擎单例、`CampaignUIAPI`、声音播放器等句柄存进字段，会把整个可达对象图拖进存档 —— 可观察结果：存档文件异常膨胀、保存/读档异常，或读档后字段指向失效对象导致行为错乱。
+- **必须**：一次性注册用随存档保存的 persistent data 标记 ([C7-S1] 的 `CLASS_MARK` 模式；本节示例用各自键 `REGISTER_MARK`)：`addScript` 不去重，标记缺失的可观察结果是读档次数越多日志越成双、行为叠加。
+- **必须**：transient 脚本的重新注册写在读档回调里，否则可观察结果是读档后脚本消失且无报错。
+- **建议**：跨会话的小数据放 `SectorAPI.getPersistentData()`(persistent data 随档保存；注意 XStream 存档边界)。
+- **建议**：脚本内瞬态句柄 (贴图、粒子、UI 引用) 声明为 `transient` 字段并用 `readResolve()` 重建，成熟实例：实体插件用 `readResolve()` 恢复 `SpriteAPI` 句柄。
+
+### 每日/周期脚本模式速查表
+
+机制已经齐备，剩下的是把它们组合成完整写法。本节把按时间反复执行的生涯脚本分成两类：以游戏日为最小时间颗粒、每个游戏日执行一次 (或每 N 个游戏日一次) 的每日脚本 (daily script)，以及按固定或随机间隔反复执行某段逻辑的周期脚本 (periodic script)。判断新的一天有两种基准：日历日期变化，或游戏天累加器跨过整数；间隔单位可以是真实秒 (间隔器直接推进) 或游戏天 (先 `convertToDays` 再推进)。四种经过验证的模式 (判据：原版内部实现与成熟实例模组) 如下：
+
+| 模式 | 实现要点 | 适用场景 | 成熟实例 |
+|---|---|---|---|
+| A. 日历跨日检测 | `dateKey = cycle*10000 + month*100 + day`(示例自用辅助键，非原版机制)，与上次比较，变化即 "新的一天" | 日历事件 (征兵、账单、节日)；每游戏日恰好一次 | — |
+| B. 天数累加器 | `acc += clock.convertToDays(amount)`，`while (acc >= period) { acc -= period; ... }` | 精确天数统计；单帧跨多天也要逐日补触发 | — |
+| C. 间隔器 | `IntervalUtil`(公开 API `com.fs.starfarer.api.util.IntervalUtil`) 每帧 `advance`、`intervalElapsed()` 判定；原版游戏内置的同类间隔计时用法一致 | 固定/随机间隔的周期任务；喂秒就是真实时间周期，喂 `convertToDays(amount)` 就是游戏天周期 | 原版游戏的事故判定 (按游戏天在 0.5–1.5 天区间内判定) |
+| D. 自注册倒计时 | 构造器 `Global.getSector().addScript(this)` 自注册，`isDone()` 完成即被引擎清理；倒计时按天扣减 (`isDay` 模式先把 `amount` 换成天) | 一次性延迟任务 (剧情事件、临时效果)；少一处调用点 | — |
+
+选型建议：日历事件用模式 A；需要精确累计 (含小数) 或单帧可能跨多天时用模式 B (用 `while` 而不是 `if`)；固定/随机真实时间节奏用模式 C；一次性倒计时任务用模式 D。模式 A 与 B 混用时，注意时间换算一节的漂移结论。
+
+## 实现可保存生涯脚本
+
+先让脚本只执行并保存，再加入时间判断。这样可以分别验证注册、换算与停止条件，避免把 "没有注册" 和 "周期尚未到" 混成同一种无日志症状。
+
+### 注册常驻脚本
+
+把以下判断放入 `GearInModPlugin.onGameLoad()`。标记与脚本列表都随存档保存，因此新档和读档共用同一个一次性门。
 
 ```java
-BarEventManager manager = BarEventManager.getInstance();
-if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
-    manager.addEventCreator(new GearInBarEventCreator());
+SectorAPI sector = Global.getSector();
+if (!sector.getPersistentData().containsKey(GearInCalendarDayScript.REGISTER_MARK)) {
+    sector.getPersistentData().put(GearInCalendarDayScript.REGISTER_MARK, true);
+    sector.addScript(new GearInCalendarDayScript());
 }
 ```
 
-要点：`hasEventCreator(Class)` 用 `isInstance` 判断，而 `addEventCreator` 本身**不去重** (直接 `creators.add`)，**判断缺失的可观察结果是同 class 的 creator 反复入列、抽取权重翻倍**。
+首次进入存档后，`hasScript(GearInCalendarDayScript.class)` 为 `true`；保存并读档，脚本实例数量仍为 1。
 
-注册时机必须在生涯引擎建立之后 (`onGameLoad` / `onNewGame`)；原版核心插件的 `onGameLoad` 先于 MOD 插件执行 (vanilla 固定最先，成熟实例直接依赖此顺序)，因此 `getInstance()` 不判空。
+### 检测日历跨日
 
-### 调度与抽取 (BarEventManager.advance)
-
-两条入口都汇入 manager 之后，看调度器如何决定事件何时被创建、何时过期。`BarEventManager.advance(float amount)` 每帧被推进 (`runWhilePaused()` 返回 false，暂停不推进)：
-
-1. `days = Misc.getDays(amount)`：**所有时长都是游戏天** (10 真实秒 = 1 游戏日)。
-2. `active.advance(days)` / `timeout.advance(days)`：active 跟踪器里的事件按天扣减，扣到 0 自动移除；timeout 跟踪器里的 creator 同理。
-3. `tracker`(`IntervalUtil(0.4f, 0.6f)`，游戏天) 到点才执行抽取；`tracker2`(20–40 天) 到点更新种子。
-4. 未交互过期清理：在 `barEventCreators` 映射里但不在 active 跟踪器中的事件即未交互且 active 时长已过期，从映射与活动列表移除，并把对应 creator 置入超时：`dur = max(creator.getBarEventTimeoutDuration(), timeout 剩余)`。
-5. 数量上限：`max = round(creators.size() * settings.getFloat("maxTotalBarEventsAsFractionOfEventTypes"))`(默认 0.5，见 settings.json)，最小 1；`active` 数量达到 `max` 或每个 creator 都有活跃事件时本次不再抽取。
-6. 抽取：先建 priority picker(`isPriority()` 的 creator，权重取 `getBarEventFrequencyWeight()`) 与普通 picker。
-    - **priority 优先**，未命中再抽普通；同一 `getBarEventId()` 已有活跃事件或 creator 在 timeout 中的跳过；抽中后 `createBarEvent()`**，返回 null 则本次放弃**。
-    - 事件加入 `active` 跟踪器 (时长取 `getBarEventActiveDuration()`)、记录 `barEventCreators.put(event, creator)`、`PortsideBarData.getInstance().addEvent(event)` 入活动列表。
-
-所有时长都用游戏天
-
-酒吧事件的抽取与展示节奏都建立在 `Misc.getDays` 的换算上 (10 真实秒 = 1 游戏日)，且推进只在未暂停时发生 —— 用游戏天计价让 "一次事件从抽取到过期" 的语义与玩家实际游戏节奏挂钩，而不是与真实时间挂钩；暂停挂机时事件不会批量过期。
-
-### 活动列表与事件生命周期 (PortsideBarData)
-
-事件入列之后，谁决定它能被显示、何时被移除？活动列表与事件生命周期回答这两个问题。`PortsideBarData`(`EveryFrameScript`，`runWhilePaused()` false) 持有 `active` 列表：
-
-- `addEvent(event)` 入列；`getEvents()` 返回列表 (活的引用，不是副本)。
-- `advance(amount)` 每帧遍历：**在调 `curr.advance(amount)` 前后各查一次 `shouldRemoveEvent()`**，返回 true 就移除；需要 "限时消失" 的事件在 `advance` 里推进倒计时、到期由 `shouldRemoveEvent` 返回 true 自清。
-- `removeEvent(event)` 同时从 manager 的 active 跟踪器移除。
-
-事件生命周期完整流程：
-
-### 事件生命周期速查表
-
-| 阶段 | 触发 | 关键调用 |
-|---|---|---|
-| 抽取入列 | manager 周期性抽取 | `creator.createBarEvent()` → `active.add(event, activeDuration)` → `PortsideBarData.addEvent` |
-| 显示过滤 | 玩家进酒吧，`BarCMD.showOptions` | `shouldRemoveEvent()` → `shouldShowAtMarket(market)` → `addPromptAndOption` → `wasShownAtMarket` |
-| 事件对话 | 玩家点选酒吧选项 | `BarEventDialogPlugin.init` → `event.init` → `event.optionSelected` |
-| 交互收尾 | 对话完成 | `done = true` + `BarEventManager.getInstance().notifyWasInteractedWith(this)` |
-| 未交互过期 | active 时长扣完 | 未交互过期清理：活动列表移除 + creator 普通超时 |
-
-**交互收尾 (必须)**：对话结束必须调 `BarEventManager.getInstance().notifyWasInteractedWith(this)`：它把事件从活动列表与 active 跟踪器移除，并把 creator 置入 `getBarEventAcceptedTimeoutDuration()`(与剩余普通超时取较大值)。
-
-**只有接受分支算 "已交互"**：原版 `BaseGetCommodityBarEvent` 的 confirm 分支调用 `notifyWasInteractedWith`，cancel 分支只结束事件。
-
-不调用的话，事件在 active 时长内继续留在活动列表、同一市场可能再次出现，creator 也只能拿到普通超时 (30–40 天而非 60–90 天)。
-
-**存档边界 (必须)**：活动列表随 sector memory 存档 (XStream)，事件实例的非 transient 字段必须可序列化。
-
-`BaseBarEvent` 已把对话句柄声明为 `transient`(`dialog` / `text` / `options` / `memoryMap`)，`done` / `noContinue` 同样声明为 `transient`，`shownAt` 是普通字段 (`MarketAPI`，可序列化)。
-
-事件自定义字段只放可序列化数据。
-
-### 酒吧显示 (BarCMD.showOptions)
-
-事件在活动列表里就绪后，还差最后一步：玩家进入酒吧时，事件如何被挑出来显示。玩家在星球/空间站交互里选 "Take a shuttle down to visit a dockside bar"(`marketVisitBar` 选项，`data/campaign/rules.csv`) 触发 `bar_optionSel` 规则。
-
-随后依次执行 `FireBest BarShuttleDownPrintDesc` / `FireBest BarPrintDesc` / `BarCMD showOptions`。
-
-`BarCMD.showOptions()` 的展示管线：
-
-1. 数量：`minBarEvents`(默认 1)/ `maxBarEvents`(默认 3)/ `barEventProbOneMore`(默认 0.5) 加权抽 `num`(见 settings.json)。
-2. 已展示集合：市场内存 `$BarCMD_shownEvents` —— **存在则按事件 ID 匹配复现同一组事件** (`event.getBarEventId()`)，不存在则全量洗牌并 `needToSaveShown = true`。
-    - 展示后 `mem.set(key, shown, time)`(20–40，即 `BAR_EVENT_MIN/MAX_TIME_BEFORE_CHANGING`)。内存过期按**游戏天**扣减 (`Memory` 内部实现：`convertToDays(amount)`、仅未暂停) —— 同一市场约 20–40 游戏天内复现同一组事件。
-3. 临时选项：`AddBarEvent.clearTempEvents(market)` 清空 `$core_tempBarEvents`，然后 `FireAll.fire(..., "AddBarEvents")` 触发全部匹配的 `AddBarEvents` 分类规则，再逐个显示 (上限 `max`)。
-4. 事件循环：**教程进行中 (`TutorialMissionIntel.isTutorialInProgress()`) 全部跳过**；数量占满即 break。
-    - 依次检查 `shouldRemoveEvent()` 与 `shouldShowAtMarket(market)`；通过后 `event.addPromptAndOption(dialog, memoryMap)`(事件自己写提示与选项)→ `wasShownAtMarket(market)` → `shown.add(event.getBarEventId())`。
-    - `isAlwaysShow()` 的事件不占普通名额，且排在最前 (按 `isAlwaysShow` 排序)。
-5. 底部固定 "Leave the bar" 选项 + ESC 快捷键；`dialog.setPlugin(this)` + `init(dialog)`，对话框插件切换为 `BarCMD` 自身。
-
-`BarCMD.optionSelected` 分派：
-
-- `optionData instanceof PortsideBarEvent` → 创建 `BarEventDialogPlugin(this, this, event, memoryMap)`，`dialog.setPlugin(plugin)` + `plugin.init(dialog)`，**事件对话的唯一入口**；
-- `"barLeave"` → `leaveBar()`(回市场对话)；`"barContinue"` → `showOptions(true)`；
-- 其他字符串 (临时选项 / mission wrapper 选项)→ 写 `$BarCMD` 到实体内存、`dialog.setPlugin(originalPlugin)`、`$option = optionData`、`FireBest "DialogOptionSelected"`，落到规则对话。
-
-### 事件对话 (BarEventDialogPlugin)
-
-玩家点选酒吧选项后，对话权从 `BarCMD` 交给事件外壳。`BarEventDialogPlugin`(`com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin`，`InteractionDialogPlugin`) 是事件的对话外壳：
-
-- `init(dialog)`：`event.init(dialog, memoryMap)`；`event.isDialogFinished()` 已为 true 则直接 `endEvent()`。
-- `optionSelected(optionText, optionData)`：`dialog.addOptionSelectedText(optionData)` 回显 (复用交互对话框面板的文本回显语义)；`event.optionSelected(optionText, optionData)`；事件完成则 `endEvent()`。
-- `endEvent()`：`dialog.setPlugin(originalPlugin)`(切回 `BarCMD`)+ `cmd.returningFromEvent(event)` → `returningFromEvent(event.endWithContinue())`。
-    - `endWithContinue()` 为 true 先显示 "Continue"(再点回酒吧)，false 直接 `showOptions(true)`("Nothing of note is going on at the bar." 提示)。
-
-### 临时规则命令 (AddBarEvent / RemoveBarEvent)
-
-以上都是事件本体；规则系统还能绕开事件链，直接给酒吧加临时选项。规则驱动的临时 bar 选项 (不属于 `PortsideBarEvent`，常用来给特定市场/特定条件加一次性酒吧入口)：
-
-- `AddBarEvent <option id> <option text> <blurb> [color]`：从 `dialog.getInteractionTarget().getMarket()` 取市场。
-    - option text 与 blurb 支持规则 token 替换 (`getStringWithTokenReplacement`)；写入市场内存 `$core_tempBarEvents` 容器 (`events.put(optionId, data)`，`LinkedHashMap` 保序)。
-    - `getTempEvents` 不存在时创建并 `mem.set(KEY, events, 0f)`，即 **expire=0**，下一帧内存推进即清除，只活在当次展示里。
-- `RemoveBarEvent <option id>`：`AddBarEvent.removeTempEvent(market, optionId)` 删除单个临时选项。
-
-临时 bar 选项不能当长期状态读取
-
-`BarCMD.showOptions` 每次展示前 `clearTempEvents` 再重触发 `AddBarEvents` 规则，临时选项只活在当次展示里。
-
-`RemoveBarEvent` 只删临时选项，**不会**移除 `PortsideBarData` 活动列表里的事件。
-
-期待 "加一次永久生效" 或 "删临时选项后事件也消失" 都会落空。
-
-### 围绕一次交互实现回调
-
-酒吧事件只为当前交互实现创建人物、写提示、添加选项、处理选择和收尾所需的回调。其余默认行为交给 `BaseBarEvent` 与 `BaseBarEventCreator`。判断遗漏时沿着调度入列、市场显示、选项点击和交互收尾四个阶段检查，比逐项对照接口表更快。
-
-## 规则强度
-
-### 本节规则速查表
-
-链路与接口全表就位后，把本节反复出现的必须/建议规则集中列出，正文与验证方案直接引用。本节必须遵守的规则清单 (违反后的可观察结果均附上)：
-
-| 规则 | 强度 | 违反后的可观察结果 |
-|---|---|---|
-| 玩家与事件交互并结束对话时必须按事件语义调用 `BarEventManager.getInstance().notifyWasInteractedWith(this)`(原版 `BaseGetCommodityBarEvent` 仅 confirm 分支调用) | 必须 | 未调用时事件留在活动列表直到 active 时长过期；creator 只拿到普通超时而非 accepted 超时，重复出现频率更高 |
-| `addPromptAndOption` 里酒吧选项的 optionData 必须是事件自身 (`addOption(text, this)`；原版 `BaseGetCommodityBarEvent` 同款) | 必须 | 点击选项不进入事件对话：`BarCMD.optionSelected` 只对 `optionData instanceof PortsideBarEvent` 创建 `BarEventDialogPlugin`；其他类型落入规则对话分支 (`$option` / `DialogOptionSelected`)，事件对话永不启动 |
-| 事件与 creator 的非 transient 字段必须可序列化 (活动列表与 manager 存于 sector memory、随存档 XStream 保存) | 必须 | 保存/读档异常、读档后事件行为错乱；对话句柄 (`dialog` / `text` / `options` / `memoryMap`) 必须保持 `BaseBarEvent` 的 transient 声明 |
-| creator 注册只发生在生涯引擎建立之后 (`onGameLoad` / `onNewGame`)，注册块必须用 `hasEventCreator(Class)` 判断 (`addEventCreator` 不去重) | 必须 | 注册过早 (如 `onApplicationLoad`)：`getInstance()` 返回 null 解引用 NPE、启动中止；判断缺失：每次读档重复入列同 class creator，抽取权重翻倍、事件过频 |
-| `shouldShowAtMarket` 覆写时理解 shownAt 锁定语义 (`BaseBarEvent` 默认首次展示后锁定单一市场)，确需跨市场复用再自行处理 | 必须 (语义规则) | 事件在 A 市场展示后 B 市场不再出现，若覆写时忘了先调 `super` 或自行实现，过滤结果与预期不符 |
-| `getBarEventId()` 与 creator 的 `getBarEventId()` 保持一致且稳定 (默认都是类简单名；覆写时两处同步) | 建议 | 不一致时 `$BarCMD_shownEvents` 按 ID 复现失效：市场内存里的 ID 匹配不到事件，该市场事件组显示为空；manager 的 active 去重键错位 |
-| `isPriority()` / `isAlwaysShow()` 只用于剧情关键事件 | 建议 | 太多 priority 事件挤占普通事件 (`BarEventManager` "Having too many priority events could crowd out all other events entirely")；`isAlwaysShow` 事件永远占用展示名额 |
-| 临时 bar 选项 (`$core_tempBarEvents`) 只活在当次展示里，不能当长期状态读取；`RemoveBarEvent` 只删临时选项、不删活动列表事件 | 事实 | 期待 "加一次永久生效" 或 "删临时选项后事件也消失" 都会落空 (临时选项当长期状态读、`RemoveBarEvent` 不删活动列表事件) |
-| 教程进行中 (`TutorialMissionIntel.isTutorialInProgress()`) 酒吧事件全部跳过 | 事实 | 新档开头酒吧看不到任何事件属正常 |
-
-## 实现酒吧事件
-
-酒吧事件要连续通过 creator 在场、manager 抽中、市场允许显示、选项进入事件对话、对话通知 manager 收尾这几个边界。以下片段按这条链逐段接通。
-
-### 注册事件 creator
-
-把 creator 判断放入 `GearInModPlugin.onGameLoad()`。manager 的 creator 列表随存档保存，`hasEventCreator` 就是这里的去重门。
+在 `GearInCalendarDayScript.advance()` 中把年月日折叠为键。首帧只建立基线，后续日期变化才执行事件。
 
 ```java
-BarEventManager manager = BarEventManager.getInstance();
-if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
-    manager.addEventCreator(new GearInBarEventCreator());
-}
-```
-
-在 `GearInBarEventCreator.createBarEvent()` 中创建事件：
-
-```java
-@Override
-public PortsideBarEvent createBarEvent() {
-    return new GearInBarEvent();
-}
-```
-
-首次抽中时日志出现 creator picked；连续读档不会增加同类 creator 的数量或抽取权重。
-
-### 过滤可用市场
-
-在 `GearInBarEvent.shouldShowAtMarket()` 中先保留基类的 `shownAt` 锁定，再检查太空港。
-
-```java {3}
-@Override
-public boolean shouldShowAtMarket(MarketAPI market) {
-    if (!super.shouldShowAtMarket(market)) {
-        return false;
+CampaignClockAPI clock = Global.getSector().getClock();
+int dateKey = clock.getCycle() * 10000 + clock.getMonth() * 100 + clock.getDay();
+if (dateKey != lastDateKey) {
+    if (lastDateKey != -1) {
+        LOG.info("GearIn calendar: new day " + clock.getShortDate());
     }
-    return market.hasSpaceport();
+    lastDateKey = dateKey;
 }
 ```
 
-事件首次显示后只在同一市场继续可见；没有太空港的市场不会得到该选项。
+正常速度下约每 10 真实秒出现一次新日期；暂停期间日期与日志同时冻结。
 
-### 把酒吧选项指向事件
+### 把帧时间换成游戏天
 
-在 `addPromptAndOption()` 中写提示，并把事件对象自身作为 optionData。`BarCMD` 依靠这个类型判断进入事件对话。
-
-```java {8}
-@Override
-public void addPromptAndOption(InteractionDialogAPI dialog,
-        Map<String, MemoryAPI> memoryMap) {
-    super.addPromptAndOption(dialog, memoryMap);
-    dialog.getTextPanel().addPara(
-            "A disheveled spacer is talking about a drifting supply cache.");
-    dialog.getOptionPanel().addOption(
-            "Listen to the spacer's story", this);
-}
-```
-
-酒吧面板出现提示与选项，点击后日志进入 `GearInBarEvent.init()`，而不是写入 `$option` 的普通规则分支。
-
-### 建立购买与拒绝分支
-
-在 `init()` 中重置完成状态并建立选项；在 `optionSelected()` 中只比较 optionData 常量。
+在 `GearInDayAccumulatorScript.advance()` 开头换算 `amount`。这条路径保留小数余量，适合统计累计进度。
 
 ```java
-@Override
-public void init(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
-    super.init(dialog, memoryMap);
-    done = false;
-    dialog.getOptionPanel().addOption(
-            "Buy the coordinates (500 credits)", OPTION_ACCEPT);
-    dialog.getOptionPanel().addOption(
-            "Hear them out but decline", OPTION_DECLINE);
+CampaignClockAPI clock = Global.getSector().getClock();
+float daysThisFrame = clock.convertToDays(amount);
+daysSinceMount += daysThisFrame;
+daysAccumulator += daysThisFrame;
+```
+
+正常速度运行约 10 真实秒后，`daysSinceMount` 增加约 1.0；按住 Shift 时增长速度约翻倍。
+
+### 补齐跨帧周期
+
+继续在同一 `advance()` 中使用 `while` 消耗累加值。若调试推进一次跨过多天，循环会补齐每一个完整周期。
+
+```java
+while (daysAccumulator >= tickEveryDays) {
+    daysAccumulator -= tickEveryDays;
+    routineCount++;
+    LOG.info(String.format("GearIn daily: routine #%d at %s",
+            routineCount, clock.getShortDate()));
 }
 ```
 
-```java
-if (OPTION_ACCEPT.equals(optionData)) {
-    Global.getSector().getPlayerFleet().getCargo()
-            .getCredits().subtract(INFO_PRICE);
-    finish();
-} else if (OPTION_DECLINE.equals(optionData)) {
-    noContinue = true;
-    finish();
-}
-```
+把 `tickEveryDays` 设为 1 后，每累计一个完整游戏日增加一次 `routineCount`；单帧跨过 3 天时连续增加 3 次。
 
-购买分支扣除 500 信用点并显示 Continue；拒绝分支不扣款，直接返回酒吧。
+### 让脚本按条件自停
 
-### 统一结束事件
-
-把所有结束分支收敛到 `finish()`。`done` 让对话外壳结束，manager 通知负责移除活动事件并启动 accepted 冷却。
+在 `advance()` 末尾设置完成标记，并让 `isDone()` 返回该字段。引擎会在回调返回后再次检查并移除脚本。
 
 ```java
-private void finish() {
+if (daysToRun >= 0 && daysSinceMount >= daysToRun) {
     done = true;
-    BarEventManager.getInstance().notifyWasInteractedWith(this);
+}
+
+@Override
+public boolean isDone() {
+    return done;
 }
 ```
 
-购买、拒绝和离开结束后，事件立即离开活动列表，并在默认 60–90 游戏天 accepted 冷却内不再被抽取。
+`daysToRun=30` 时累计满约 30 个游戏日，`hasScript(GearInDayAccumulatorScript.class)` 变为 `false`，日志不再增长。
 
-## 组装酒吧事件实现
+## 组装生涯脚本实现
 
-规则明确之后，可以动手了。本节示例在既有教程 MOD 布局与 `GearInModPlugin`(前置单元) 之上新增两个同包类，位于 `src/data/scripts/gearin/campaign\`，不新增任何资源、不新增 CSV 行：
+选型之后落到代码。在已有 MOD 布局 [C6-S1] 与 `GearInModPlugin`[C7-S1] 之上新增两个脚本类 (不新增任何资源、不新增任何注册项，此处指不新增数据/资源注册项；脚本经 `onGameLoad` 注册属于代码注册)：
 
 ```text
 mods/GearIndustry/
@@ -334,425 +217,354 @@ mods/GearIndustry/
 ├── data\
 ├── src\
 │   └── data/scripts/gearin/campaign\
-│       ├── GearInBarEvent          # 本节新增 (酒吧事件：显示、对话与生命周期收尾)
-│       └── GearInBarEventCreator   # 本节新增 (creator：注册入口与抽取参数)
+│       ├── GearInCalendarDayScript     # 模式 A：日历跨日检测 (本节新增)
+│       └── GearInDayAccumulatorScript  # 模式 B：天数累加器 + daysToRun 自停 (本节新增)
 └── jars\
 ```
 
-### GearInBarEvent(bar event 约定)
-
-**角色**：酒吧事件 —— 继承 `BaseBarEvent`(`PortsideBarEvent` 约定的默认实现)，承担显示过滤 (`shouldShowAtMarket`)、写提示与选项 (`addPromptAndOption`)。
-
-事件对话 (`init` / `optionSelected`) 与生命周期收尾 (`finish` = `done = true` + `notifyWasInteractedWith(this)`)。
-
-事件 ID 不覆写，即类简单名 `"GearInBarEvent"`。
-
-完整代码：
-
-事件本体写好了，还需要一个 creator 把事件交到调度器手里并给出抽取参数。
-
-### GearInBarEventCreator(creator 约定与注册入口)
-
-**角色**：creator —— 继承 `BaseBarEventCreator`(`BarEventManager.GenericBarEventCreator` 约定的默认实现)，提供注册入口与抽取参数。
-
-本示例只覆写 `createBarEvent()` 创建 `GearInBarEvent`，其余抽取参数 (频率权重、active 时长、普通超时、accepted 超时、priority) 全部保持默认。
-
-完整代码：
+### GearInCalendarDayScript：模式 A(日历跨日检测，常驻)
 
 对应关系：
 
-- `extends BaseBarEvent`：事件约定的默认实现，`getBarEventId()` 默认返回类简单名 `"GearInBarEvent"`(本示例不覆写，事件 ID 即此值)。
-    - `shouldRemoveEvent()` 默认 false(事件靠 active 时长或交互收尾移除)；`endWithContinue()` 默认 true(买下情报后先显示 "Continue" 再回酒吧)。
-- `shouldShowAtMarket`：先调 `super`(shownAt 锁定语义)，再演示市场条件 (`hasSpaceport()`)；日志记录过滤结果，供验证方案核对。
-- `addPromptAndOption`：写提示文本 + `addOption("Listen to the spacer's story", this)` —— **optionData 是事件自身**，这是进入事件对话的机制 (`BarCMD` 只对 `optionData instanceof PortsideBarEvent` 创建 `BarEventDialogPlugin`)。
-- `init`：`super.init` 之后**自行重置 `done = false`**(`BaseBarEvent.init` 不清完成标记，原版 `BaseGetCommodityBarEvent.init` 同样自行重置)，读档后同一事件再次进入对话不会卡在已完成状态。
-- `optionSelected`：三个分支都用**常量比较 optionData**(不用 optionText，沿用交互对话框部分的 optionData 常量比较纪律)。
-    - 买下情报真实扣减玩家舰队 cargo credits(`getCargo().getCredits().subtract`)；拒绝/离开分支设 `noContinue = true`(结束后不显示 "Continue" 直接回酒吧)。
-- `finish()`：`done = true` + `notifyWasInteractedWith(this)`，交互收尾必须遵守的规则；日志打出 `isDialogFinished()` 供核对。
-- `extends BaseBarEventCreator`：抽取参数全部保持默认 (权重 10、active 30–40 天、普通超时 30–40 天、accepted 超时 60–90 天、非 priority)，只覆写 `createBarEvent()` 创建 `GearInBarEvent`。
+- `implements EveryFrameScript`：三个方法全来自接口 (`isDone` / `runWhilePaused` / `advance`)；`isDone()` 恒返回 `false` —— 常驻脚本永不结束，日历事件逐日触发。
+- `REGISTER_MARK`：persistent data 注册标记的键 (`"GearIn_CalendarDayScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
+- `dateKey` 跨日检测 (模式 A)：`getCycle() * 10000 + getMonth() * 100 + getDay()` 折叠日期为整数键；首帧只初始化不打印，之后每个游戏日打印一次 `GearIn calendar: new day ...`。
+- 时间换算与逐日补触发不在本类：本模式只看日历日期、不直接用 `amount`，那是模式 B(`GearInDayAccumulatorScript`) 的职责；两个类可同档共存，各自用独立的 persistent data 标记注册。
+- 字段只有 `int`(`lastDateKey`)，可随存档序列化；`runWhilePaused()` 恒 `false`(暂停时本脚本与时钟一并冻结)。
 
-调用点 (工程片段，方法所在类 `GearInModPlugin` 归前置单元所有，本节只演示调用，不改动那些文件)：
+模式 A 在单帧跨多个游戏日 (加速、新档推进) 时一帧只报一次 "新的一天"
+
+这是正常行为而非漏触发；需要逐日补触发的逻辑应改用模式 B 的 `while` 累加器。
+
+模式 A 只回答是不是新的一天，回答不了累计了多少天；模式 B 用累加器补上这一半，并演示运行天数上限自停。
+
+### GearInDayAccumulatorScript：模式 B(天数累加器 + 自停)
+
+对应关系：
+
+- `implements EveryFrameScript`：`isDone()` 返回字段 `done` —— 累计满 `daysToRun` 后引擎在 `advance` 返回后的同一次推进中移除本脚本 (引擎在 `advance` 前与返回后各查一次 `isDone()`，返回后为 `true` 即移除)；`daysToRun < 0` 时恒 `false`，常驻。
+- `REGISTER_MARK`：persistent data 注册标记的键 (`"GearIn_DayAccumulatorScript"`)，**必须**与调用点片段里的键逐字一致 (与模式 A 各自独立，互不复用)。
+- `convertToDays(amount)`：`amount` 是上一帧真实秒数，`clock.convertToDays(amount)` 才是本帧折合的游戏天数，本类 `advance` 第一行就是换算。
+- `daysAccumulator` / `while`(模式 B)：累计满 `tickEveryDays` 个游戏天触发一次例程 (日志 `GearIn daily: routine #N ...`)，余数跨帧保留；单帧跨多个游戏日时逐日补触发。
+- `daysSinceMount`：挂载以来的精确游戏天数，兼作 `daysToRun` 自停判据与日志统计；全部字段 (`int` / `float` / `boolean`) 都是可随存档序列化的基础类型，读档后从存档值继续。
+
+调用点 (工程片段，方法所在类归 [C7-S1] 所有，本节只演示调用，不改动那些文件)：
 
 ```java
-    // GearInModPlugin(前置单元所有)onGameLoad(boolean newGame) 内新增本节注册块。
-    // BarEventManager 实例与 creator 列表存放在 sector memory($core_genericBarEventManager)，
-    // 随存档保存；hasEventCreator 即持久化门控 (原版 addBarEvents 与成熟实例同款写法)。
-    // 原版 CoreLifecyclePluginImpl.onGameLoad 先于 MOD 插件执行 (vanilla 固定最先)，
-    // 因此 getInstance() 不会返回 null。
-    BarEventManager manager = BarEventManager.getInstance();
-    if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
-        manager.addEventCreator(new GearInBarEventCreator());
-        LOG.info("GearIn bar event: creator registered");
+    // onGameLoad(boolean newGame) 内新增本节注册块 (GearInModPlugin 归 C7-S1 所有)。
+    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
+    if (!Global.getSector().getPersistentData().containsKey(GearInCalendarDayScript.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInCalendarDayScript.REGISTER_MARK, true);
+        Global.getSector().addScript(new GearInCalendarDayScript());
+    }
+    if (!Global.getSector().getPersistentData().containsKey(GearInDayAccumulatorScript.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInDayAccumulatorScript.REGISTER_MARK, true);
+        Global.getSector().addScript(new GearInDayAccumulatorScript());
+    }
+    // 可选冗余查重 (C7-S1 建议：hasScript 与 persistent data 门互为冗余)：
+    if (!Global.getSector().hasScript(GearInCalendarDayScript.class)) {
+        Global.getSector().addScript(new GearInCalendarDayScript());
+    }
+    if (!Global.getSector().hasScript(GearInDayAccumulatorScript.class)) {
+        Global.getSector().addScript(new GearInDayAccumulatorScript());
     }
 ```
 
-想演示 "高频字段修改验证"，把 `createBarEvent()` 之外的高频参数覆写掉再观察抽取频率变化，例如：
+(标记段与查重段只取一段即满足 "不重复注册"；两段同留时查重段会在标记段之后补注册，不会叠加，但演示时建议只保留标记段，避免混淆。)
+
+每个注册项必须用各自的 persistent data 键做标记
+
+本节两个类各持一个 `REGISTER_MARK`，且不要并入插件已有的 `CLASS_MARK` 标记 (该键在新档首次进入时就已置位，标记内的注册对旧档永远不会再执行)。
+
+想演示周期与自停，在注册前先设参数 (模式 B 专用；模式 A 无参数)：
 
 ```java
-    // GearInBarEventCreator 内覆写 (演示用)：
-    @Override
-    public float getBarEventFrequencyWeight() {
-        return 100f; // 默认 10f；权重 ×10，事件出现频率明显上升
-    }
+    GearInDayAccumulatorScript script = new GearInDayAccumulatorScript();
+    script.setTickEveryDays(1);  // 每 1 个游戏日一次例程 (默认)
+    script.setDaysToRun(30);     // 约 30 个游戏日 (约 300 真实秒) 后自停
+    Global.getSector().addScript(script);
 ```
 
-临时 bar 选项 (规则驱动，不经过 creator) 的 rules.csv 片段 —— 放在 `data/campaign/rules.csv` 末尾，`AddBarEvents` 分类规则在每次展示酒吧时由 `BarCMD` 触发：
+演示周期与自停
 
-```text
-gearIn_barRumor,AddBarEvents,"$market.id == jangala
-!$global.gearIn_barRumorDone","AddBarEvent gearIn_barRumorOption ""Ask about the missing supplies"" ""A port official is complaining loudly about missing supplies. Sounds like a problem someone could get paid to solve.""",,,
-gearIn_barRumorSel,DialogOptionSelected,$option == gearIn_barRumorOption,"$global.gearIn_barRumorDone = true","The official lowers their voice. ""The manifest says the supplies were never loaded, but I saw the crates leave the dock. Someone has been skimming.""","gearIn_barBackToBar:Back to the bar",
-gearIn_barBackToBar,DialogOptionSelected,$option == gearIn_barBackToBar,BarCMD returnFromEvent false,,,
-```
+先 `setTickEveryDays` / `setDaysToRun` 再 `addScript`；该实例不经过 persistent data 标记，仅用于演示，看完记得移除，避免与常驻实例的日志混淆。
 
-(`jangala` 是原版 Corvus 星系的市场。带教程的新档从 Galatia 开始；跳过教程或 spacer 路线从 Corvus 开始，开发路线还可以从 hyperspace 开始。规则变量、分类和 `FireBest` 细节见 [C15-S3] / [C15-S4]。)
-
-临时选项点选后走 `DialogOptionSelected` 规则；`BarCMD returnFromEvent false` 从规则对话回到酒吧选项。
-
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用前置单元的编译链路)：
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用 [C6-S1])：
 
 ```text
 gradle jar
 ```
 
-产物 `jars/GearIndustry.jar` 应包含两个 class 条目 (可用 `jar tf` 核对)：
+产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下两个脚本类的 class 条目 (可用 `jar tf` 核对)。
 
-- `data/scripts/gearin/campaign/GearInBarEvent.class`
-- `data/scripts/gearin/campaign/GearInBarEventCreator.class`
+### 关键故障实验：旧档读入后脚本重复注册
 
-## 关键故障实验：酒吧选项结束后事件仍在活动列表
-
-让结束分支只把对话框关闭。玩家看似已经离开，但事件仍在 `PortsideBarData` 与 manager 的 active 跟踪器中，同一市场可能再次显示。
+把注册状态放在 `ModPlugin` 实例字段中。**ModPlugin 实例由 `ModManager` 缓存，会话内保持同一实例**，读档回调仍见 `registered=true`，不会重复注册。**重复只发生在应用重启后**：新实例看到 `registered=false`，向已随档恢复的脚本列表追加第二个。
 
 **局部故障片段：**
 
 ```java
 // 故障片段
-done = true;
+if (!registered) { sector.addScript(new GearInCalendarDayScript()); registered = true; }
 ```
 
 **局部修正片段：**
 
 ```java
 // 修正片段
-done = true;
-BarEventManager.getInstance().notifyWasInteractedWith(this);
+if (!sector.getPersistentData().containsKey(REGISTER_MARK)) {
+    sector.getPersistentData().put(REGISTER_MARK, true);
+    sector.addScript(new GearInCalendarDayScript());
+}
 ```
 
-原因：`isDialogFinished()` 只结束对话外壳，活动列表与 creator 冷却由 manager 单独维护。复验：购买、婉拒和离开各执行一次；每次结束后活动列表中都找不到该事件，并且 accepted 冷却开始计时。
+原因是实例字段的生命周期与存档内 `scripts` 列表不同，而 persistent data 与脚本列表一起随档恢复。复验：记录新档中的脚本数量，保存并连续读档两次；每次都应保持 1 个实例，同一游戏日只出现一条日历日志。
 
 ## 验证方案
 
-前置数据：既有教程 MOD 布局与 `GearInModPlugin`(含本节调用点片段，见前置知识 [C6-S1] / [C7-S1])、本节两个类、(可选)rules.csv 临时选项片段。
+前置数据：已有 MOD 布局 [C6-S1]、`GearInModPlugin` ([C7-S1]，含本节调用点片段) 与两个脚本类。
 
-1. 游戏构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含两个类的 `.class`。
-2. 新建生涯，在教程进行中进入酒吧，观察事件和临时选项。
-3. 跳过或完成教程后进入 Jangala 酒吧，查看 `creator picked`、`eligible at`、`prompt at`、`shown at` 四条日志，以及酒吧面板的提示文本和选项。
-4. 在同一市场等待 20–40 游戏天后再次进入酒吧，观察事件组。
-5. 分别使用三个存档 (或完成后读档冷却)，依次选择 "Buy the coordinates"、"Hear them out but decline"、"Leave the spacer to their drink"，观察信用点、Continue 选项、返回酒吧过程和结束日志。
-6. 完成事件后保存并读档，跨 60–90 游戏天观察事件是否再次出现。
-7. 不完成事件时保存并读档，观察活动列表和继续对话入口。
-8. 给 `GearInBarEventCreator` 覆写 `getBarEventFrequencyWeight()` 返回 `100f`，重新构建并观察事件出现频率。
+1. 构建游戏 MOD：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，并核对 `jar tf jars/GearIndustry.jar` 含两个脚本类的 class 条目。
+2. 新建生涯，在 `starsector.log` 中观察两个脚本的周期记录。
+3. 暂停与加速对照：生涯中按空格暂停 20 秒以上，再按住 Shift 约 10 秒。
+4. 保存并读档：确认注册不重复、累计值从存档继续。
+5. 进入任意遭遇战再返回：确认战斗期间日志停止、回生涯后继续。
+6. 自停演示：把 `daysToRun` 设为 30 重新构建，挂载约 300 真实秒。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到两个类的 `.class`。
-- **跳过/完成教程后**：
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInCalendarDayScript` 与 `GearInDayAccumulatorScript` 两个脚本类的 class 条目。
+- **新建生涯**：`starsector.log` 出现 `GearIn calendar: new day 206.3.3` 与 `GearIn daily: routine #1 at 206.3.3 | since mount=1.0 game days`；随后每 10 真实秒 (未暂停、未加速) 各出现一次：`GearIn calendar: new day ...` (模式 A，日期逐日前进) 与 `GearIn daily: routine #N ...` (模式 B，`since mount` 逐日 +1.0)。挂载点约为 206.3.2 (新档初始 206.1.1，推进窗口 60.2 游戏日)。
+- **暂停 (空格)**：等待 20 秒以上无新日志 (脚本冻结、时钟冻结)；恢复后继续，`since mount` 不因暂停丢失进度。
+- **加速 (按住 Shift)**：日志频率约翻倍 (`campaignSpeedupMult = 2`，每帧推进两次)，约每 5 真实秒各一次。
+- **读档**：不重复注册 (两个 `REGISTER_MARK` 标记已置位、`hasScript` 命中)；`since mount` / `routine #` 从存档时的累计值继续 (字段随档)，不出现新的 `routine #1`。
+- **战斗**：进入战斗期间无任何日志 (生涯引擎冻结)；回生涯后继续。
+- **自停 (`daysToRun = 30`)**：挂载约 300 真实秒后出现 `GearIn daily: done, isDone()=true after 30.0 game days`；之后不再有日志，引擎在置位后的同一帧从 `scripts` 列表移除了该脚本 (可验证 `Global.getSector().hasScript(GearInDayAccumulatorScript.class)` 为 `false`)。
+- **退出到主菜单**：脚本停止推进 (生涯状态不再运行)；回到主菜单后再进档 (读档)，行为与读档一行相同。
+- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
 
-    - 进入任一有太空港的市场 (如 Corvus 星系的 Jangala)，交互里选 "Take a shuttle down to visit a dockside bar"；`starsector.log` 出现。
-
-    ```text
-    GearIn bar event: creator picked, creating event (id=GearInBarEvent)
-    GearIn bar event: eligible at Jangala
-    GearIn bar event: prompt at Jangala (event id=GearInBarEvent)
-    GearIn bar event: shown at Jangala
-    ```
-
-    *   酒吧面板出现提示 "A disheveled spacer at the bar..." 与选项 "Listen to the spacer's story"(事件 ID `GearInBarEvent` 会出现在同一市场的 `$BarCMD_shownEvents` 里，约 20–40 游戏天内再次进入同一市场复现同一组事件)。
-    *   事件不是每次进酒吧都出现：抽取受 `minBarEvents` / `maxBarEvents` / 权重与随机影响；同一时间每个事件 ID 至多一个活跃实例。
-- **事件对话**：点 "Listen to the spacer's story" → 日志 `dialog init (event id=GearInBarEvent)`，对话出现三个选项：
-    - 点 "Buy the coordinates (500 credits)"：日志 `bought coordinates, credits -500`，玩家舰队信用点减少 500(`cargo.getCredits()` 可负，演示不检查余额)；日志 `finished, notified manager (done=true)`；对话显示 "Continue"，点后回到酒吧选项 (`endWithContinue()` 默认 true 的路径)。
-    - 点 "Hear them out but decline" / "Leave the spacer to their drink"：日志 `declined` / `left` + `finished, notified manager (done=true)`；**不显示** "Continue"，直接回到酒吧选项 (`noContinue = true` 路径)。
-    - 三条路径都触发 `notifyWasInteractedWith`：事件立即从活动列表移除，creator 进入 accepted 超时 (60–90 游戏天) —— 事件在冷却期内不再出现。
-- **读档**：完成后保存并读档 —— `hasEventCreator` 判断使 creator 不重复注册 (日志无二次 "creator registered" 之外的重复注册行)；未完成时保存读档，事件实例仍在活动列表 (随 sector memory 存档) 且可继续对话 (`init` 里 `done = false` 重置)。全程无 `gear_in` 引起的 `ERROR`。
-
-清理：删除参数演示添加的 `getBarEventFrequencyWeight()` 覆写，使其恢复继承值 `10f`。
+清理：把 `daysToRun` 恢复为 `-1`，使脚本保持常驻。
 
 ## 故障分析
 
-- **注册时出现空指针异常**：`onApplicationLoad` 阶段还没有 sector 和 `BarEventManager`。
+- **脚本没有产生任何日志**：脚本没有通过 `addScript` 注册。
 
-    - **解决方案**：将 creator 注册移到 `onGameLoad` 或 `onNewGame`。
+    - **解决方案**：把注册放在 `onGameLoad` 或 `onNewGame` 的独立持久标记块中。
 
-- **酒吧始终没有该事件**：creator 未被抽取、返回了 null，或市场被 `shouldShowAtMarket` 过滤。
+- **`onApplicationLoad` 抛出空指针异常**：该阶段尚无生涯 sector，注册代码解引用了 `Global.getSector()`。
 
-    - **解决方案**：依次核对 `creator picked`、`eligible/skip`、`prompt/shown` 日志，修正最先缺失的阶段。
+    - **解决方案**：将生涯注册移到游戏载入回调，重启。
 
-- **事件只在首次市场出现**：默认 `shownAt` 会把事件锁定到第一次展示的市场。
+- **按天计算的逻辑快了约 10 倍**：代码直接把 `advance` 的 `amount` 当作游戏天数。
 
-    - **解决方案**：需要跨市场显示时覆写 `shouldShowAtMarket` 并管理状态。
+    - **解决方案**：先调用 `clock.convertToDays(amount)`。
 
-- **点击酒吧选项后进入普通规则对话**：`addOption` 的 optionData 不是事件对象。
+- **`advance` 从未执行**：`isDone()` 初始就返回 true，引擎在推进前移除了脚本。
 
-    - **解决方案**：改为 `addOption(text, this)`。
+    - **解决方案**：初始返回 false，只在完成条件成立时置位。
 
-- **完成后的事件仍反复出现**：完成分支没有通知 manager 移除活动事件。
+- **调用 `removeScript` 后日志仍在继续**：传入对象不是注册时的同一实例。
 
-    - **解决方案**：设置完成状态时调用 `notifyWasInteractedWith(this)`。
+    - **解决方案**：保存并移除原实例，或按精确类调用 `removeScriptsOfClass`。
 
-- **倒计时结束后事件仍未移除**：到期状态没有让 `shouldRemoveEvent()` 返回 true。
+- **暂停后两种计时结果分离**：`runWhilePaused()` 允许 `advance` 继续收到真实秒数，但生涯时钟保持冻结。
 
-    - **解决方案**：同步更新到期字段和移除判断。
+    - **解决方案**：暂停敏感逻辑使用时钟换算，暂停期间必须推进的界面逻辑才累计原始 `amount`。
 
-- **未交互事件提前消失**：默认 active 时长 30–40 游戏天已经耗尽。
+- **单帧跨越多天却只触发一次**：日期键每帧只比较一次，不会补齐中间日期。
 
-    - **解决方案**：需要更长窗口时覆写 `getBarEventActiveDuration()`。
+    - **解决方案**：需要逐日执行时改用带 `while` 的天数累加器。
 
-- **读档越多事件越频繁**：每次载入都追加了同类 creator。
+- **保存或读档时脚本字段报错**：脚本保存了 UI、播放器等引擎句柄。
 
-    - **解决方案**：注册前用 `hasEventCreator(Class)` 判断。
+    - **解决方案**：字段只保留可序列化状态，瞬态句柄标记为 `transient` 并在读档后重建。
 
-- **普通事件几乎不再出现**：某个事件被设为 priority，优先抽取挤占了普通 picker。
+- **读档后 transient 脚本消失**：`addTransientScript` 注册项不会随存档恢复。
 
-    - **解决方案**：只为剧情关键事件保留 priority。
+    - **解决方案**：常驻逻辑改用 `addScript`，临时逻辑则在读档回调重新注册。
 
-- **临时酒吧选项没有出现**：`AddBarEvents` 的市场条件或一次性 flag 不满足。
+- **旧存档始终没有新脚本**：注册复用了已经置位的其他功能标记。
 
-    - **解决方案**：核对 `$market.id` 与规则内存值。
+    - **解决方案**：为该脚本使用独立的 `REGISTER_MARK`。
 
-- **临时酒吧选项下一帧就消失**：`$core_tempBarEvents` 会在展示前重建，并以 `expire=0` 清理。
+- **暂停期间倒计时停住**：倒计时读取生涯时钟，暂停时该时钟不会前进。
 
-    - **解决方案**：长期状态改存独立 memory flag。
+    - **解决方案**：需要真实时间倒计时就累计 `amount`。
 
-- **事件选项进入错误分支**：`optionSelected` 比较了显示文本，或常量与 `addOption` 的 optionData 不一致。
+- **进入战斗后生涯脚本停止输出**：生涯推进循环在战斗期间暂停。
 
-    - **解决方案**：统一比较 optionData 常量。
-
-- **保存或读档时事件字段报错**：事件或 creator 保存了非 transient 的对话句柄、引擎对象。
-
-    - **解决方案**：持久字段只保留可序列化数据，句柄保持 transient。
+    - **解决方案**：战斗期逻辑交给战斗插件承担。
 
 ## 总结
 
-本节把酒吧事件接成了一条完整流程：注册入口决定事件从哪来，调度入列决定何时出现，显示过滤决定在哪个市场出现，对话收尾决定何时离开。排错时按 "注册 → 抽取 → 过滤 → 显示" 的顺序核对日志，流程停在哪一环，日志就缺哪一环。
+本节把 `EveryFrameScript` 从会用推进到讲透，全部机制围绕一条主线：脚本在每帧被唤醒、按时钟与累加器决策、随存档往返。排错时只需核对脚本注册了吗 (persistent data 标记是否置位)、换算对了吗 (`amount` 是否经 `convertToDays`)、字段能随档吗 (是否全部可序列化) 这三个问题。三个答案定位完毕，剩下的通常只是时序或数值问题。
 
-可复用的判断如下：注册只发生在生涯引擎建立之后，并用 `hasEventCreator(Class)` 判断去重 (沿用原版 `CoreLifecyclePluginImpl.addBarEvents` 的写法)；所有时长都是游戏天 (`Misc.getDays` 换算)，manager 与活动列表随存档保存，事件字段必须可序列化；酒吧选项的 optionData 必须是事件自身 (`addOption(text, this)`)，交互收尾按事件语义调用 `notifyWasInteractedWith(this)`。`shouldRemoveEvent` 默认 false、`shouldShowAtMarket` 默认锁定单一市场、教程进行中全部隐藏；多数 "该出现没出现、该消失没消失" 的现象都可由上述三条默认语义解释，怀疑事件逻辑前先对照它们。
+值得记住的判断：暂停就是停表，时钟、日历与 `convertToDays` 累加全部冻结，真实时间倒计时只能靠 `amount` 累计；日历按整游戏秒前进、累加器保留小数，短会话一致、长会话漂移，日历事件用跨日检测、精确统计用累加器；`scripts` 随存档保存、`transientScripts` 读档后必然清空，一次性注册必须用 persistent data 标记；`isFastForwardIteration()` 可探测加速帧的第 2 次及以后的迭代 (`campaignSpeedupMult = 2`)。
 
-临时 bar 选项走规则系统，每次展示前清空重建，不是事件本体，也不能当长期状态读；`RemoveBarEvent` 只删临时选项，不碰活动列表。
-
-本节只覆盖 "事件本体" 链路：mission 类酒吧事件的 `HubMissionBarEventWrapper` 包装与 `bar_events.csv` 的 mission plugin 编写。
-
-`BaseBarEventWithPerson` 的 market 稳定人物生成属于人物对象主题，规则对话的深度语法属于 Rules 主题；本节只保留酒吧事件的接入边界。
+同一套生涯对象还有另一条驱动轴 —— 事件在状态变化时被同步唤醒 (监听器与事件派发)。两条轴的推进时机、存档边界与生命周期清理需要与本节的 persistent data 标记和阶段语义对齐。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent`：bar event 的回调方法约定。
-- `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarData`：活动事件列表 (全局单例，随 sector memory 存档)。
-- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`：全局调度器与 `GenericBarEventCreator` 内部接口。
-- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent`：bar event 默认实现：transient 对话句柄、shownAt 锁定、`getBarEventId` 默认类简单名。
-- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventCreator`：creator 默认实现与全部抽取参数默认值。
-- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventWithPerson`：带 market 稳定人物的默认实现。
-- `com.fs.starfarer.api.impl.campaign.intel.bar.events.SpecBarEventCreator`：CSV spec 自动生成的 creator(mission / 普通分派)。
-- `com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin`：事件对话包装 (init / optionSelected / endEvent)。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`：酒吧 UI 展示管线与选项分派。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent` / `RemoveBarEvent`：临时 bar 选项规则命令。
-- `com.fs.starfarer.api.loading.BarEventSpec`：bar\_events.csv 行的解析。
-- `com.fs.starfarer.api.SettingsAPI`：`getAllBarEventSpecs()` / `getBarEventSpec(id)`。
-- `com.fs.starfarer.api.impl.campaign.CoreLifecyclePluginImpl`：原版注册入口 (`addBarEvents`)。
-- `com.fs.starfarer.api.impl.campaign.ids.Tags`：`MISSION_PRIORITY`("priority" tag)。
-- `com.fs.starfarer.api.util.TimeoutTracker`：active / timeout 跟踪器 (`advance` 扣到 0 移除)。
-- `com.fs.starfarer.api.util.Misc`：`getDays` 时间换算。
-- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：`set(key, value[, expire])` 记忆读写。
-- `data/campaign/bar_events.csv`：酒吧事件 spec 数据 (11 列)。
-- `data/config/settings.json`：`minBarEvents` / `maxBarEvents` / `barEventProbOneMore` / `maxTotalBarEventsAsFractionOfEventTypes`。
-- `data/campaign/rules.csv`：`marketVisitBar` / `bar_optionSel` / `AddBarEvents` 分类规则 / `BarCMD returnFromEvent false`。
-- `data/campaign/econ/corvus.json`：`jangala` 市场实体 (验证临时选项片段用)。
-- `Starsector/starsector-core/starsector.log`：按总结中的顺序核对流程日志的主要依据。
+- `com.fs.starfarer.api.EveryFrameScript`：生涯按帧脚本的三方法约定 (`isDone` / `runWhilePaused` / `advance`)。
+- `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：实体级脚本的清理钩子 (附着实体从生涯引擎移除时调用)。
+- `com.fs.starfarer.api.campaign.SectorAPI`：脚本注册、查重与 persistent data 入口 (`addScript` / `addTransientScript` / `hasScript` / `getScripts` / `getPersistentData` / `isFastForwardIteration`)。
+- `com.fs.starfarer.api.campaign.CampaignClockAPI`：时间换算与日历接口 (`convertToDays` / `convertToMonths` / `convertToSeconds` / `getTimestamp` / `getElapsedDaysSince` / `createClock`)。
+- `com.fs.starfarer.api.util.IntervalUtil`：公开间隔器 (`advance` 每帧调用、`intervalElapsed` 仅真一次)。
+- `data/config/settings.json`：`campaignSpeedupMult`(加速倍率，取值为 2)。
 
 ## 完整最小例
 
-::: details 完整成品：GearInBarEvent
+::: details 完整成品：GearInCalendarDayScript
 
 ```java
 package data.scripts.gearin.campaign;
 
-import java.util.Map;
-
 import org.apache.log4j.Logger;
 
+import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CargoAPI;
-import com.fs.starfarer.api.campaign.InteractionDialogAPI;
-import com.fs.starfarer.api.campaign.OptionPanelAPI;
-import com.fs.starfarer.api.campaign.TextPanelAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.campaign.rules.MemoryAPI;
-import com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent;
-import com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager;
+import com.fs.starfarer.api.campaign.CampaignClockAPI;
+import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
- * 完整最小例：酒吧事件 (PortsideBarEvent) —— 酒吧选项、事件对话与生命周期收尾。
- * 事件 ID 默认为类简单名 "GearInBarEvent"：creator 抽取按 ID 去重，BarCMD 展示后
- * 把 ID 写入市场内存，下次进入同一市场按 ID 复现同一组事件。生命周期：creator
- * 创建实例并入 active 跟踪器；玩家进酒吧时经 shouldShowAtMarket 过滤并写入选项
- * (optionData 必须是事件自身)；点选进入事件对话；交互后必须 notifyWasInteractedWith
- * 收尾，把事件移出并把 creator 置入 accepted 超时。演示：花 500 信用点买补给
- * 藏匿点情报、婉拒或离开，三个分支都验证 accepted 超时路径。
+ * 每日/周期脚本模式 A：日历跨日检测。dateKey = cycle * 10000 + month * 100 + day，
+ * 把日历日期折叠为整数键，与上次比较，变化即 "新的一天"；每个游戏日恰好触发一次
+ * (首帧只初始化不打印)。单帧跨多个游戏日 (加速、新档推进) 时一帧只报一次 ——
+ * 日历事件一帧至多一次是正常行为，需要逐日补触发的逻辑请改用天数累加器
+ * (本单元 GearInDayAccumulatorScript)。runWhilePaused() 返回 false；字段只有
+ * int，可随存档序列化 (XStream 存档边界)，脚本随存档保存、读档后继续。
+ *
+ * 注册入口：生涯回调 onGameLoad，注册前用 persistent data
+ * 键 REGISTER_MARK 做一次性门控。
  */
-public class GearInBarEvent extends BaseBarEvent {
+public class GearInCalendarDayScript implements EveryFrameScript {
 
-    private static final Logger LOG = Global.getLogger(GearInBarEvent.class);
+    /** 存档持久化标记：本脚本是否已在该存档注册过 (随存档保存)。 */
+    public static final String REGISTER_MARK = "GearIn_CalendarDayScript";
 
-    /** 对话选项 id(仅事件对话内部使用；optionData 用常量比较，不用文本)。 */
-    public static final String OPTION_ACCEPT = "gearIn_barAccept";
-    public static final String OPTION_DECLINE = "gearIn_barDecline";
-    public static final String OPTION_LEAVE = "gearIn_barLeave";
+    private static final Logger LOG = Global.getLogger(GearInCalendarDayScript.class);
 
-    /** 买下情报的信用点价格 (真实从玩家舰队 cargo 扣减)。 */
-    public static final int INFO_PRICE = 500;
+    /** 跨日判定键 (cycle * 10000 + month * 100 + day)；-1 表示尚未初始化。 */
+    private int lastDateKey = -1;
 
     @Override
-    public boolean shouldShowAtMarket(MarketAPI market) {
-        // BaseBarEvent 默认：shownAt == null 或 == 当前市场才显示 (首次展示后锁定单一市场)。
-        boolean ok = super.shouldShowAtMarket(market);
-        if (!ok) {
-            LOG.info("GearIn bar event: skip " + market.getName()
-                    + " (shownAt locked to " + getShownAt() + ")");
-            return false;
-        }
-        // 演示市场条件：只出现在有太空港的市场 (新档可访问的核心市场基本满足)。
-        if (!market.hasSpaceport()) {
-            LOG.info("GearIn bar event: skip " + market.getName() + " (no spaceport)");
-            return false;
-        }
-        LOG.info("GearIn bar event: eligible at " + market.getName());
-        return true;
+    public boolean isDone() {
+        return false; // 常驻脚本：日历事件逐日触发，永不结束
     }
 
     @Override
-    public void addPromptAndOption(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
-        super.addPromptAndOption(dialog, memoryMap);
-        MarketAPI market = dialog.getInteractionTarget().getMarket();
-        LOG.info(String.format("GearIn bar event: prompt at %s (event id=%s)",
-                market.getName(), getBarEventId()));
-
-        TextPanelAPI text = dialog.getTextPanel();
-        text.addPara("A disheveled spacer at the bar is telling anyone who will listen about a cache "
-                + "of supplies drifting somewhere in this system.");
-
-        // 关键机制：选项的 optionData 必须是事件自身 (this)。BarCMD.optionSelected()
-        // 只对 optionData instanceof PortsideBarEvent 才创建 BarEventDialogPlugin，
-        // 进入事件对话；换成字符串或其他对象则落入规则对话框分支。
-        dialog.getOptionPanel().addOption("Listen to the spacer's story", this);
-    }
-
-    @Override
-    public void init(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
-        super.init(dialog, memoryMap);
-        LOG.info("GearIn bar event: dialog init (event id=" + getBarEventId() + ")");
-        // 对话每次进入都重置完成标记 (BaseBarEvent.init 不清 done，需要自行重置)。
-        done = false;
-        showRumor();
-    }
-
-    private void showRumor() {
-        TextPanelAPI text = dialog.getTextPanel();
-        OptionPanelAPI options = dialog.getOptionPanel();
-        text.addPara("You sit down across from the spacer and buy them a drink. Once the drink is "
-                + "half-gone, they lower their voice and tell you about a cargo pod that drifted off "
-                + "a burning freighter - still full of supplies, just waiting to be found. "
-                + "\"I'd sell you the coordinates for a song,\"they say.");
-        options.clearOptions();
-        options.addOption("Buy the coordinates (" + INFO_PRICE + " credits)", OPTION_ACCEPT);
-        options.addOption("Hear them out but decline", OPTION_DECLINE);
-        options.addOption("Leave the spacer to their drink", OPTION_LEAVE);
-    }
-
-    @Override
-    public void optionSelected(String optionText, Object optionData) {
-        TextPanelAPI text = dialog.getTextPanel();
-        if (OPTION_ACCEPT.equals(optionData)) {
-            text.addPara("The spacer scribbles coordinates on a napkin and slides it over. You pay "
-                    + "them " + INFO_PRICE + " credits and pocket the napkin.");
-            CargoAPI cargo = Global.getSector().getPlayerFleet().getCargo();
-            cargo.getCredits().subtract(INFO_PRICE);
-            LOG.info("GearIn bar event: bought coordinates, credits -" + INFO_PRICE);
-            finish();
-        } else if (OPTION_DECLINE.equals(optionData)) {
-            text.addPara("The spacer shrugs. \"Suit yourself. The void isn't going anywhere.\"");
-            // noContinue = true：结束时不显示 "Continue"，直接回到酒吧选项。
-            noContinue = true;
-            LOG.info("GearIn bar event: declined");
-            finish();
-        } else if (OPTION_LEAVE.equals(optionData)) {
-            text.addPara("You finish your drink and get up. The spacer returns to telling the story "
-                    + "to nobody in particular.");
-            noContinue = true;
-            LOG.info("GearIn bar event: left");
-            finish();
-        } else {
-            LOG.info("GearIn bar event: unknown option data " + optionData);
-        }
-    }
-
-    /** 对话收尾：置完成标记并通知 manager 移除本事件 (creator 进入 accepted 超时)。 */
-    private void finish() {
-        done = true;
-        BarEventManager.getInstance().notifyWasInteractedWith(this);
-        LOG.info("GearIn bar event: finished, notified manager (done=" + isDialogFinished() + ")");
-    }
-
-    @Override
-    public void wasShownAtMarket(MarketAPI market) {
-        super.wasShownAtMarket(market);
-        LOG.info("GearIn bar event: shown at " + market.getName());
+    public boolean runWhilePaused() {
+        return false;
     }
 
     @Override
     public void advance(float amount) {
-        // 事件在活动列表中每帧被 PortsideBarData.advance 推进 (未暂停时)；
-        // 本示例没有时间逻辑，保留空实现。需要限时消失的事件在这里推进
-        // 倒计时并在到期时由 shouldRemoveEvent() 返回 true。
+        SectorAPI sector = Global.getSector();
+        CampaignClockAPI clock = sector.getClock();
+
+        // 本模式只看日历日期，不直接用 amount(时间换算与逐日补触发见 GearInDayAccumulatorScript)。
+        int dateKey = clock.getCycle() * 10000 + clock.getMonth() * 100 + clock.getDay();
+        if (dateKey != lastDateKey) {
+            if (lastDateKey != -1) {
+                LOG.info(String.format("GearIn calendar: new day %s", clock.getShortDate()));
+            }
+            lastDateKey = dateKey;
+        }
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInBarEventCreator
+::: details 完整成品：GearInDayAccumulatorScript
 
 ```java
 package data.scripts.gearin.campaign;
 
 import org.apache.log4j.Logger;
 
+import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent;
-import com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventCreator;
+import com.fs.starfarer.api.campaign.CampaignClockAPI;
+import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
- * 完整最小例：酒吧事件 creator(GenericBarEventCreator) —— 注册入口与抽取参数。
- *
- * 注册入口：BarEventManager.getInstance().addEventCreator(this)
- * (GearInModPlugin.onGameLoad 内的注册块)。manager 实例与 creator 列表存放在
- * sector memory(键 $core_genericBarEventManager)，随存档保存，因此用
- * hasEventCreator(Class) 作为持久化门控，不需要额外的 persistent data 键。
- *
- * 抽取参数 (全部在 BaseBarEventCreator 有默认值，本示例只覆写 createBarEvent)：
- * - getBarEventFrequencyWeight()：普通 picker 的抽取权重，默认 10f；
- * - getBarEventActiveDuration()：事件在 active 跟踪器中的时长 (游戏天)，默认 30+rand*10；
- * - getBarEventTimeoutDuration()：事件未交互、active 过期移除后 creator 的冷却 (游戏天)，默认 30+rand*10；
- * - getBarEventAcceptedTimeoutDuration()：玩家交互 (接受或拒绝都算) 后的冷却 (游戏天)，默认 60+rand*30；
- * - isPriority()：true 时进入 priority picker(先于普通 picker 抽取)，默认 false。
+ * 每日/周期脚本模式 B：天数累加器。amount 是上一帧真实秒数，必须经
+ * clock.convertToDays(amount) 换算成游戏天 (10 真实秒 = 1 游戏日)；
+ * 余数跨帧保留；单帧跨多个游戏日 (加速、新档推进) 时 while 逐日补触发；
+ * daysToRun >= 0 时累计满该游戏天数后 isDone() 返回 true，引擎在置位同一次推进中
+ * 自动移除；全部字段可随存档序列化 (XStream 存档边界)，读档后继续。
+ * 注册入口：onGameLoad 的 persistent data 门内 (REGISTER_MARK 一次性门控)。
  */
-public class GearInBarEventCreator extends BaseBarEventCreator {
+public class GearInDayAccumulatorScript implements EveryFrameScript {
 
-    private static final Logger LOG = Global.getLogger(GearInBarEventCreator.class);
+    /** 存档持久化标记：本脚本是否已在该存档注册过 (随存档保存)。 */
+    public static final String REGISTER_MARK = "GearIn_DayAccumulatorScript";
+
+    private static final Logger LOG = Global.getLogger(GearInDayAccumulatorScript.class);
+
+    /** 挂载以来的游戏天数 (精确累加，保留小数)；随存档序列化，读档后继续累计。 */
+    private float daysSinceMount = 0f;
+
+    /** 例程周期余数：累计满 tickEveryDays 个游戏天触发一次每日例程。 */
+    private float daysAccumulator = 0f;
+
+    /** 已执行的每日例程次数 (跨存档累计)。 */
+    private int routineCount = 0;
+
+    /** 演示参数：每多少个游戏天执行一次例程；默认 1(每日一次)。 */
+    private int tickEveryDays = 1;
+
+    /** 演示参数：最多运行多少游戏天后自停；< 0 表示常驻不停止。 */
+    private int daysToRun = -1;
+
+    /** 完成标记：isDone() 返回 true 后引擎在置位同一次推进中自动移除本脚本。 */
+    private boolean done = false;
+
+    /** 修改例程周期；周期至少为 1 个游戏天。 */
+    public void setTickEveryDays(int tickEveryDays) {
+        this.tickEveryDays = Math.max(1, tickEveryDays);
+    }
+
+    /** 修改运行天数上限；改回 -1 恢复常驻。 */
+    public void setDaysToRun(int daysToRun) {
+        this.daysToRun = daysToRun;
+    }
 
     @Override
-    public PortsideBarEvent createBarEvent() {
-        LOG.info("GearIn bar event: creator picked, creating event (id=" + getBarEventId() + ")");
-        return new GearInBarEvent();
+    public boolean isDone() {
+        return done;
+    }
+
+    @Override
+    public boolean runWhilePaused() {
+        return false;
+    }
+
+    @Override
+    public void advance(float amount) {
+        SectorAPI sector = Global.getSector();
+        CampaignClockAPI clock = sector.getClock();
+
+        // amount 是上一帧真实秒数；经时钟换算才是本帧的游戏天数 (10 真实秒 = 1 游戏日)。
+        float daysThisFrame = clock.convertToDays(amount);
+        daysSinceMount += daysThisFrame;
+        daysAccumulator += daysThisFrame;
+
+        // while 而非 if：单帧跨多个游戏日时逐日补触发；余数保留在 daysAccumulator 里继续累计。
+        while (daysAccumulator >= tickEveryDays) {
+            daysAccumulator -= tickEveryDays;
+            routineCount++;
+            LOG.info(String.format(
+                    "GearIn daily: routine #%d at %s | since mount=%.1f game days",
+                    routineCount, clock.getShortDate(), daysSinceMount));
+        }
+
+        if (daysToRun >= 0 && daysSinceMount >= daysToRun) {
+            LOG.info(String.format(
+                    "GearIn daily: done, isDone()=true after %.1f game days", daysSinceMount));
+            done = true;
+        }
     }
 }
 ```

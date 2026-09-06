@@ -305,8 +305,8 @@
 - `data/hulls/shade.ship`：原版 `builtInMods` 示例 (`phasefield`/`delicate`)。
 - `data/hulls/tempest.ship`：原版 `builtInWings` 示例 (`terminator_wing`)。
 - `data/hulls/buffalo.ship`：装饰槽位与信号灯 `builtInWeapons` 示例。
-- `data/weapons/blinker_red.wpn`、`data/weapons/blinker_green.wpn`：装饰武器 `.wpn` 示例 (`"type": "DECORATIVE"`)。
+- `data/weapons/blinker_red.wpn`：红色信号灯装饰武器示例 (`"type": "DECORATIVE"`)；
+- `data/weapons/blinker_green.wpn`：绿色信号灯装饰武器示例 (`"type": "DECORATIVE"`)。
 - `data/hullmods/hull_mods.csv`：船插 ID 注册表 (`phasefield`/`delicate`)。
 - `data/weapons/weapon_data.csv`：武器 ID 注册表 (`tpc` 行、`tags`/`hints` 列)。
 - `data/hulls/wing_data.csv`：战机 ID 注册表 (`terminator_wing`)。
-- 以上均为 MOD 内相对路径。

@@ -321,9 +321,12 @@ gear_industry,FACTION,以重型制造、耐用结构和严格工序闻名的工�
 - `com.fs.starfarer.api.impl.codex.CodexDataV2`：图库填充逻辑 (GALLERY 键对应插图贴图键、text1 标题、text2 正文、text3 的 `HIDE_IN_CODEX`/`unlocked` 控制)。
 - `com.fs.starfarer.api.impl.campaign.rulecmd.PrintDescription`：`CUSTOM` 行读取与 `PLANET` 备用关系。
 - `com.fs.starfarer.api.impl.campaign.PlanetInteractionDialogPluginImpl`：行星接触对话，消费 `CUSTOM` 行 text3。
-- `com.fs.starfarer.api.impl.campaign.terrain` 包：`*TerrainPlugin` 一族的 `getTerrainId()` 查询与超空间 `_abyssal`/`_normal`/`_deep`/`_storm` 变体键。
+- `com.fs.starfarer.api.impl.campaign.terrain`：地形插件包，`*TerrainPlugin` 一族的 `getTerrainId()` 查询与超空间 `_abyssal`/`_normal`/`_deep`/`_storm` 变体键。
 - `com.fs.starfarer.api.campaign.impl.items.BaseSpecialItemPlugin`：特殊物品 tooltip 渲染 (`spec.getDesc()`)。
 - `data/strings/descriptions.csv`：本节核心数据文件，MOD 内同名文件自动合并。
 - `data/config/planets.json`：行星类型 `descriptionId` 与缺省值。
-- `data/campaign/commodities.csv`、`data/campaign/special_items.csv`、`data/campaign/market_conditions.csv`、`data/hullmods/hull_mods.csv`：各对象 `desc` 列边界。
+- `data/campaign/commodities.csv`：商品的 `desc` 列边界；
+- `data/campaign/special_items.csv`：特殊物品的 `desc` 列边界；
+- `data/campaign/market_conditions.csv`：市场条件的 `desc` 列边界；
+- `data/hullmods/hull_mods.csv`：船插的 `desc` 列边界。
 - `graphics/illustrations/`：图库贴图键，`GALLERY` 行键必须与之逐字符一致。

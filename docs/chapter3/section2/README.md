@@ -718,7 +718,7 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global`，全局入口：`getSector().getFaction(id)` 取势力运行时对象。
+- `com.fs.starfarer.api.Global`：全局入口，`getSector().getFaction(id)` 取势力运行时对象。
 - `com.fs.starfarer.api.campaign.FactionAPI`：势力运行时接口，负责舰船池查询与角色抽取 (`pickShip` 等)；
 - `com.fs.starfarer.api.campaign.FactionDoctrineAPI`：舰队学说运行时接口；
 - `com.fs.starfarer.api.campaign.FactionSpecAPI`：势力 spec 只读接口 (`knownShips`、`hullFrequency` 等)；共享默认角色由引擎内部提供，公开接口不包含对应方法。
@@ -730,4 +730,7 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 - `data/campaign/channels.json`：内部频道注册表 (`hegemony_internal`)；
 - `data/campaign/procgen/drop_groups.csv`：蓝图掉落池 (`rare_bp` / `restricted` 使用方)。
 - `data/config/settings.json`：`doctrineFleetQualityPerPoint`(取值为 0.125)；
-- `data/hulls/ship_data.csv` / `data/weapons/weapon_data.csv` / `data/hulls/wing_data.csv` / `data/hullmods/hull_mods.csv`：各组件注册表 (tags 列与 tag 存在性)。
+- `data/hulls/ship_data.csv`：舰船注册表，按 `tags` 列核对 tag 存在性；
+- `data/weapons/weapon_data.csv`：武器注册表，按 `tags` 列核对 tag 存在性；
+- `data/hulls/wing_data.csv`：战机联队注册表，按 `tags` 列核对 tag 存在性；
+- `data/hullmods/hull_mods.csv`：船插注册表，按 `tags` 列核对 tag 存在性。

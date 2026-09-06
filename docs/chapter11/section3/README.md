@@ -1,514 +1,406 @@
-# 用代码创建市场
+# 修改舰队状态
 
-本节用代码创建市场，把实体、子市场和经济循环连接起来。示例会设置市场的开放状态并检查商品流，为产业、交易界面与殖民地管理提供基础。
+本节观察人物、舰队成员与战斗舰船之间的状态传递，确认装配和技能如何进入最终舰船数值。示例会触发数值重建，用日志区分能够保留和会被覆盖的修改。
 
-*本节预期阅读时间：~45 分钟。*
+::: tip 重建会覆盖直接写入
+成员 stats 重新计算时，装配、技能和舰长效果会再次写入。需要长期保留的修改应绑定稳定来源 ID，并在对应阶段重新应用。
+:::
 
-*本节预期操作时间：~60 分钟。*
+::: tip 修改 ID 必须稳定
+舰队修饰器和记忆键依靠稳定 ID 区分来源。重建前后使用同一个 ID，才能正确读取、覆盖和清理同一项修改。
+:::
+
+*本节预期阅读时间：~18 分钟。*
+
+*本节预期操作时间：~25 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 使用 `FactoryAPI` 创建市场，并完成势力、实体与经济集合绑定；
-- 配置市场条件、产业、子市场和开放状态；
-- 区分开放、黑市与仓储子市场的交易行为；
-- 读取市场商品，并观察经济迭代与更新监听器；
-- 根据实体、交易界面和日志定位市场故障。
+- 追踪装配、人物技能和成员状态进入最终舰船数值的过程；
+- 验证 stats 重建，并判断哪些修改会被重放或覆盖；
+- 区分舰长个人技能与舰队指挥官技能的应用范围；
+- 判断战斗部署、修饰 ID 和延迟重算的生效时机；
+- 根据生涯与战斗数值定位状态传递故障。
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录结构与 `starsector.log` 日志位置；
-- [C11-S2] 的经济数据加载链与代码路径建市场收尾；
-- [C7-S1] 的 `modPlugin` 生命周期与持久数据标记；
-- [C7-S2] 的 `Global.getSector()` 阶段语义；
-- [C7-S3] 的 settings 读取；
-- [C8-S4] 的 `MutableStat 与修饰值读取；
-- [C10-S1] 的 `SectorAPI.getEconomy()`、生涯时钟与 `EveryFrameScript` 注册；
-- [C10-S2] 的 `SectorEntityToken` 与地点容器挂载；
-- [C10-S3] 的生涯对象一次性脚本与 `REGISTER_MARK` 标记。
+- [C4-S4] 的模块船、模块船生成流程与独立 `ShipAPI` 实体；
+- [C7-S1] 的 `GearInModPlugin` 所有权与 `onGameLoad` 注册检查；
+- [C8-S4] 的 `MutableStat、修饰公式、modifier ID 稳定性与 `unmodify`；
+- [C10-S3] 的 `FleetMemberAPI` 变体、stats、成员加入与 `setCaptain`；
+- [C13-S1] 的人物、`PersonAPI.getStats()`、舰长与默认舰长保存；
+- [C13-S2] 的技能效果作用域、`refreshCharacterStatsEffects` 与 effect ID；
+- [C11-S5] 的 `ShipVariantAPI.clone()`、`setSource`、`toJSONObject` 与部署期变体修改。
 
-## 术语
+本节首次完整讲解两个交接语义词；`MutableStat` 与 `FleetMemberAPI` 的中文写法与首次讲解位置见术语约定：
 
-按术语约定，本节首次完整讲解以下词：
+- **状态交接 (handoff)**：状态从一个对象流向下一个对象的过程 —— 装配内容流入成员 stats、人物技能流入成员 stats、成员 stats 流入战斗舰船。交接经 `MutableShipStatsAPI` 进行，交接的完成标志是 "stats 对象被 (重新) 构造并重放"。
+- **stats 重建 (stats rebuild)**：`FleetMemberAPI.updateStats()` 整体新建 stats 对象并按固定序列重放全部效果的行为。重建是交接的 "结算时刻"：重建后生效的修改保留，重建前直接写在旧对象上的修改被丢弃。
 
-- **市场 (market)**：API 名保留 `MarketAPI`。一个 "可交易的经济节点"，绑定在一个主实体 (行星、空间站、残骸等) 上，持有势力、规模、条件、产业、子市场、商品库存、人物与开放状态。涉及殖民地 (colony) 语义时页面会明确说 "殖民地"；本节 `market` 一律写 "市场"。
-- **子市场 (submarket)**：API 名保留 `SubmarketAPI`。市场下属的独立交易入口 (开放市场、黑市、仓库等)，每个子市场由静态 spec + 运行时 plugin + 自己的 cargo 组成。
-- **商品 (commodity)**：API 名保留 `CommodityOnMarketAPI`(市场内单商品对象) 与 `CommoditySpecAPI`(全局商品规格)。"商品流" 指商品在市场网络里以经济单位流动、最终反映为库存与价格的循环。
-- **库存 (stockpile)**：市场内单商品的存量，以 "经济单位刻度" 计量 (与用户 cargo 的原始单位不同，`CommoditySpecAPI.getEconUnit()` 是换算系数)。
-- **开放状态 (open state)**：一组改变市场可交易语义的开关，包括自由港 (free port)、隐藏 (hidden)、用户所有 (player-owned)、survey 等级、经济组 (econ group) 与 tag。
+## 读取状态来源
 
-## 梳理市场创建关系
+### 状态传递速查表
 
-本节的所有读取与注册都围绕同一个任务：在生涯里建一个市场，再实地观察它的结构、子市场与经济行为。先看市场对象的结构与创建链，再分别展开子市场差异与经济循环节奏；最后用一个可运行的示例把这套入口逐一在生涯里跑一遍。
+```text
+装配 (ShipVariantAPI)
+  │  舰船统计对象.create(variant)：引擎/反应堆数值成为各 MutableStat 的 base
+  │  FleetMemberAPI.updateStats：船插 applyEffectsBeforeShipCreation + flux_capacitors/flux_vents + CR/船员
+  ▼
+成员 stats(FleetMemberAPI.getStats() → MutableShipStatsAPI)
+  ▲
+  │  setCaptain / setFleetCommanderForStats / setVariant(withStatsUpdate) / 舰队同步 / 读档
+  │  └ 触发 updateStats 重建
+  │
+人物技能 (PersonAPI.getStats() → MutableCharacterStatsAPI)
+  │  applyPersonalToStats(SHIP 族，舰长，需成员入队)
+  │  applyFleetwideToStats(ALL_SHIPS_IN_FLEET，舰队指挥官)
+  ▼
+战斗 stats(舰船对象创建新造 → ShipAPI 对象绑定实体并重放)
+  │  CombatEngineAPI.addEntity(CombatEntityAPI) → applyEffectsAfterShipAddedToCombatEngine(一次)
+  ▼
+战斗实体 (ShipAPI)
+```
 
-### 市场对象 (MarketAPI)
+为什么交接链要存在
 
-先给结论：市场是绑定在主实体上的经济节点，它自己持有全部子集合，但商品流重算不属于它 —— 那是经济集合的职责。`MarketAPI`(`com.fs.starfarer.api.campaign.econ.MarketAPI`) 是纯接口，运行时实现为 `Market`。
+生涯侧与战斗侧不共享 stats 对象：成员 stats 属于舰队数据结构，战斗 stats 属于战斗场景，两边的数值必须通过 "重建 + 重放" 在各自场景内重新算出来。
 
-### 市场结构速查表
+交接链因此成为跨场景状态的唯一合法通道 —— 挂在重放入口上的效果 (技能、船插、buff) 天然获得幂等性与确定性；代价是重建时丢弃一切直接写在 stats 对象上的运行时修改。
 
-市场结构 (字段与 getter)：
+这一取舍贯穿本节全部规则。
 
-| 分组 | 成员 | 语义 |
+### 读取装配状态
+
+成员与战斗侧的 stats 都实现 `MutableShipStatsAPI`。
+
+按变体新建 stats 时，各 `MutableStat` 的**基值**来自船体 spec：`EngineSpecAPI` 的 `maxSpeed`/`acceleration`/`deceleration`/`maxTurnRate`/`turnAcceleration` → 机动性五统计项。
+
+反应堆数值 → `fluxCapacity`/`fluxDissipation`(`ShipHullSpecAPI.getFluxCapacity()`/`getFluxDissipation()`，数据源是 `ship_data.csv` 的 `max flux` / `flux dissipation` 列，由船体 CSV 加载读入)。
+
+另有 `breakProb`、维修率、传感器 (`initSensorStats`)。
+
+**基值只来自船体**：变体的武器/船插不改变基值，只以 modifier 形式叠加。
+
+`FleetMemberAPI.updateStats()` 是生涯侧唯一的全量重建入口，顺序固定：
+
+1. 整体新建 stats 对象 (按当前变体)，旧对象作废；
+2. `stats.setFleetMember(this)`；
+3. 舰长个人技能：`captain.getStats().applyPersonalToStats(stats, hullSize)`，**仅当 `getFleetData() != null`** (成员已入队)；
+4. 舰队指挥官舰队向技能：`getFleetCommanderForStats()` 优先，否则回退 `fleetData.getCommander()`，`applyFleetwideToStats(stats, hullSize)`；
+5. 变体全部船插 `applyEffectsBeforeShipCreation(hullSize, stats, id)`；
+6. `flux_capacitors` = `numFluxCapacitors * FLUX_PER_CAPACITOR`、`flux_vents` = `numFluxVents * DISSIPATION_PER_VENT`(flat 写入，引擎保留 ID)；
+7. `updateOnlyStatsThatCanRelyOnCROrCrew`：船员不足倍率 + `CombatReadinessPlugin.applyCRToStats(CR)`；
+8. 封存 (mothballed) 时写 `mothballed_mod_id` 的 supplies/cargo/fuel/crew 倍率，否则 unmodify；
+9. `stats.getDynamic().removeUmodified()`、`repairTracker.updateRates()`；
+10. 无甲板 (`getNumFlightDecks() <= 0`) 时清空变体 `getWings()`；`fleetData.setSyncNeeded()`。
+
+禁止直接写 `getStats()` 返回值
+
+**禁止**对 `FleetMemberAPI.getStats()` 的返回值直接 `modifyFlat` / `modifyPercent` 并期待跨重建保留。
+
+第 1 步整体新建 stats 对象，旧对象连同直接写在它上面的 modifier 一起作废，数值 "自己变回去" 且无任何报错。
+
+要跨重建保留的修改必须挂在重放入口上 (船插 `applyEffectsBeforeShipCreation`、技能效果、buff 系统)。
+
+两个直接推论：**重建即丢弃**，第 1 步新造对象意味着任何直接写在旧 stats 对象上的 modifier 都不复存在 (`GearInStatsRebuild` 的 transient 步骤)。
+
+**重放即幂等**，第 3–6 步的写入全部用固定来源 ID，同 ID 同值覆盖，因此重放任意次数值不变 (第 4 步在舰队同步里还会被再执行一次)。
+
+### 读取技能状态
+
+基值之后是加成：人物技能要在 stats 重建时被重放进去，才谈得上生效。技能重放有两条通道：
+
+- **个人通道** `applyPersonalToStats(stats, hullSize)`：遍历 `getShipEffects()`(`type == SHIP` 且 `getSkillLevel(governingSkill) >= requiredSkillLevel`)，逐效果 `apply(stats, hullSize, effectId, level)`：
+    - effect id 是 `<技能id>_ship_<序号>`，"effect id 即 modifier id" 的规则在这里落地。
+- **舰队通道** `applyFleetwideToStats(stats, hullSize)`：遍历 `getAllShipsInFleetEffects()`(`type == ALL_SHIPS_IN_FLEET`)，**跳过 `hullSize == FIGHTER`**。
+
+舰长侧触发点 (都会走到 `updateStats`)：
+
+- `FleetMemberAPI.setCaptain(person)`(`FleetMemberAPI`)：人物变化且 `withStatsUpdate`(默认 true)→ `updateStats()`。
+- `FleetMemberAPI.setFleetCommanderForStats(person, fleetData)`：**只存 `fleetCommanderForStats` 并 `setStatUpdateNeeded(true)`**，不立即重建，下一次 `getStats()` 才重建：
+    - 注意实现里第二个参数 `fleetData` **被忽略**，舰队数据始终来自成员自己的 `fleetData`。
+- `getStats()` 延迟重建：`statUpdateNeeded == true` 时先 `updateStats()` 再返回；`setStatUpdateNeeded(true)` 还会使缓存的强度值失效。
+
+成员侧前提：第 3 步的 `applyPersonalToStats` 有 `getFleetData() != null` 条件，**未入队的成员换舰长 stats 没有任何变化** (`GearInCaptainToMember` 的 preJoin 步骤即此)。
+
+舰队同步 (`FleetDataAPI.syncIfNeeded`)：`needsSync` 时对每个成员 `updateStats()`，随后按 `getFleetCommanderForStats()` → `getFleetCommander()` → `commander` 回退链**再执行一次** `applyFleetwideToStats`，同 ID 幂等不会翻倍。
+
+任何写 `setSyncNeeded` 的舰队操作 (`addFleetMember`、`removeFleetMember`、`setVariant` 等) 最终都会经这个入口重建全员 stats；读 `getNumMembers()` 等视图 API 会触发同步。
+
+读视图 API 会触发一次全员重建
+
+`getNumMembers()` 等视图 API 会触发 `syncIfNeeded`：在日志里读到 `count` 的那一刻，全员 stats 已经重建了一遍 (含舰队向技能的二次重放)。这不是 bug：同 ID 幂等保证数值不变。调试时别把 "我读了一次成员数" 误当成重建来源。
+
+### 读取部署状态
+
+生涯侧成员 stats 到这里已经完整；部署时战斗侧并不复用这个对象，而是按自己的顺序重走一遍重建与重放。部署链：
+
+1. 解析舰队指挥官：`getFleetCommander()` → `getFleetCommanderForStats()` → 战斗管理器默认指挥官；
+2. 舰船对象创建 (构造器内绑定实体、重放)；
+3. `updateStatsBasedOnCrew(战斗 stats)`：船员不足倍率写到**战斗** stats；
+4. 封存或 `!canBeDeployedForCombat()` → `controlsLocked(true)`；
+5. `CombatReadinessPlugin.applyCRToStats(CR, 战斗 stats, hullSize)`、`status.applyToShip`。
+
+舰船对象创建的顺序：
+
+1. 新建战斗 stats 对象，**部署时新造** (不是成员 stats 的引用)；
+2. `stats.setFleetMember(member)`；
+3. 指挥官 `applyFleetwideToStats(战斗 stats, hullSize)`(ALL\_SHIPS\_IN\_FLEET)；
+4. 成员 buff 逐个应用；
+5. `ShipAPI` 对象构造 (构造器内绑定实体、重放)；
+6. `setOriginalCaptain(captain)`、`setFleetCommander(commander)`；
+7. 全部船插 `applyEffectsAfterShipCreation(ship, id)`；
+8. 舰长 `applyPersonalAfterShipCreationToShip`；
+9. 若有指挥官：`setCaptain(null)` 再 `setCaptain(captain)` 的重挂舞蹈 (整理个人/舰队向技能的应用次序)。
+
+`ShipAPI` 对象构造：
+
+- `stats.setEntity(this)` / `stats.setFleetMember(member)`：战斗 stats 与实体互相绑定，`MutableShipStatsAPI.getEntity()` 由此非 null；
+- 全部船插 `applyEffectsBeforeShipCreation`(重放时)；
+- `setCaptain(captain)` → `applyPersonalToShip`(舰长技能)：个人 SHIP 技能 + `applyPersonalAfterShipCreationToShip`(含系统/相位数值烘焙 `updateValuesFromStats`)+ 指挥官 `applyFleetwideToShip`；
+- `flux_capacitors`/`flux_vents` 再写一次，与生涯序列同 ID 幂等。
+
+入引擎：`CombatEngineAPI.addEntity(CombatEntityAPI)`→ 触发全部船插的第三时机，**每个战斗实体只触发一次**。
+
+模块船走同一条链：模块船生成流程 (舰船对象创建) 为每个模块变体新建 `FleetMemberAPI` 再创建舰船对象。
+
+战斗内换舰长：`ShipAPI.setCaptain(person)` 先 `unapplyPersonalToShip` 旧舰长 (**含子模块**)，再 `applyPersonalToShip` 新舰长 (含子模块)，统计立即变化；`getPersonality()` 取舰长 personality id。
+
+`getOriginalCaptain()` 返回部署初始舰长。
+
+### 处理延迟重算
+
+前三环节的每一次重放都依赖同一套底层语义。为什么同一序列重放任意次数值不变、引擎为什么敢在多个时机重复写入？答案在 `MutableStat` 本身。它是公开 API 类 (`com.fs.starfarer.api.combat.MutableStat`，公开具体类)：
+
+- **延迟重算**：`modifyFlat`/`modifyPercent`/`modifyMult`/`setBaseValue` 只做标记，`getModifiedValue()`/ `getFlatMod()`/`getPercentMod()`/`getMult()` 读取时才真正重算：
+    - `modified = base + base*percent/100 + flat`，再 `* mult`。
+- **同 ID 幂等**：`modifyFlat(source, value)` 在 "同 source 已存在且值相同" 时只更新描述；`unmodify(source)` 同时清理三类。交接链的 "重放任意次不翻倍" 完全依赖这套语义。
+- **引擎保留 ID**(本节列全，均不可占用)：
+    - `flux_capacitors`/`flux_vents`(`FleetMemberAPI.updateStats`、`ShipAPI` 对象构造)；
+    - `cr_effect`(`CRPluginImpl.applyCRToStats`，`com.fs.starfarer.api.impl.combat.CRPluginImpl`，按 CR 写故障率/机动性/伤害修正)。
+    - `crew skill bonus`/`crew understrength`(`CRPluginImpl.applyMaxCRCrewModifiers`，`maxCombatReadiness`)。
+    - `mothballed_mod_id`(`FleetMemberAPI`)。
+
+同一来源 ID 写不同值，后写者静默覆盖
+
+两个位置共用同一个来源 ID、却在不同时机写不同值时，没有报错 —— 只有最后一次写入生效 (`modifyFlat` 只在 "同 source 已存在且值相同" 时保持幂等)。排查 "数值不对但没有任何错误" 时，先检查是否有两处代码共用了同一个来源 ID。
+
+### 触发点汇总速查表
+
+四个环节里提到的触发点收拢成一张表，重建时机、生效时机一目了然：
+
+| 触发 | 行为 | 出处 |
 |---|---|---|
-| 身份 | `getId()` / `getName()` / `setName(String)` / `getSize()` / `setSize(int)` | 市场 id(全星区唯一)；名称；规模 (殖民地人口规模，`setSize` 变化触发 `reportColonySizeChanged` 监听器) |
-| 实体绑定 | `getPrimaryEntity()` / `setPrimaryEntity(token)` / `getConnectedEntities()` / `getPlanetEntity()` | 主实体与关联实体集合；`setPrimaryEntity` 同时把实体加入 `connectedEntities` 并同步超空间坐标 |
-| 位置 | `getStarSystem()` / `getContainingLocation()` / `getLocationInHyperspace()` / `getLocation()` / `isInHyperspace()` / `getOnOrAt()` | 全部由主实体推导；`getLocation()` 是 `getLocationInHyperspace()` 的别名 (不是星系内本地坐标)；`getOnOrAt()`：主实体带 `station` tag 返回 `"at"`，否则 `"on"` |
-| 势力 | `getFactionId()` / `setFactionId(String)` / `getFaction()` | 市场势力；`setFactionId` 清缓存，`getFaction` 用到时才解析 |
-| 条件 | `getConditions()` / `addCondition(id[, param])` / `getCondition(id)` / `getFirstCondition(id)` / `getSpecificCondition(token)` / `removeCondition(id)` / `removeSpecificCondition(token)` / `reapplyConditions()` / `suppressCondition(id)` / `isConditionSuppressed(id)` | 条件实例的增删查、重算与抑制 |
-| 产业 | `getIndustries()` / `addIndustry(id[, params])` / `getIndustry(id)` / `hasIndustry(id)` / `hasFunctionalIndustry(id)` / `removeIndustry(id, mode, forUpgrade)` / `instantiateIndustry(id)` | 产业的增删查与实例化 |
-| 商品 | `getAllCommodities()` / `getCommoditiesCopy()` / `getCommodityData(id)` / `getCommoditiesWithTag(tag)` / `getDemand(demandClass)` | 市场内商品数据与需求的读取入口 |
-| 价格 | `getTariff()` / `getDemandPriceMod()` / `getSupplyPriceMod()` / `getSupplyPrice(id, qty, isPlayerPrice)` / `getDemandPrice(id, qty, isPlayerPrice)` / `updatePrices()` / `updatePriceMult()` | 税率是 `MutableStat`；价格方向以**市场为主体** (`getDemandPrice` 即市场买入价，也就是用户卖出价) |
-| 人物 | `addPerson(person)` / `removePerson(person)` / `getPeopleCopy()` / `getAdmin()` / `setAdmin(person)` / `getCommDirectory()` | 市场人物、管理员与通信目录 |
-| 状态 | `isFreePort()` / `setFreePort(boolean)` / `isHidden()` / `setHidden(Boolean)` / `isPlayerOwned()` / `setPlayerOwned(boolean)` / `getSurveyLevel()` / `setSurveyLevel(...)` / `getEconGroup()` / `setEconGroup(String)` / `getTags()` / `addTag(String)` / `removeTag(String)` / `isIllegal(id)` / `isInEconomy()` | 开放状态开关与商品非法性判定 |
-| 稳定度与危险度 | `getStability()` / `getStabilityValue()` / `getHazard()` / `getHazardValue()` | 稳定度取整到 0–10(`Market.getStabilityValue`)；危险度 `1f` = `100%` |
-| 杂项 | `getMemory()` / `getMemoryWithoutUpdate()` / `getStats()` / `getDaysInExistence()` / `advance(float)` | `getMemory()` 触发所有插件的 `updateMarketFacts` 回调；纯读取用 `getMemoryWithoutUpdate()` |
-| 子市场 | `addSubmarket(specId)` / `hasSubmarket(specId)` / `getSubmarket(specId)` / `getSubmarketsCopy()` / `removeSubmarket(specId)` | 子市场的增删与查询 |
-
-#### [创建与注册链路]
-
-**数据路径** (加载时序在经济数据加载主题中已讲，本节补结构)：`data/campaign/econ/economy.json` 列出 `starSystems`，每个星区一个 json(如 `econ/corvus.json`) 含 `markets` 数组。
-
-每个市场条目：`entities`(数组，**首实体的 id 就是市场 id**)、`faction`、`size` 为必填；`tariff` 键仅模拟模式生效 (真实税率取势力 `tariffFraction`，`FactionSpecAPI` 默认 `0.3F`)；
-
-可选键 `startingConditions`、`industries`(元素可为数组 `[id, param...]`)、`freePort`、`submarkets`。
-
-**`submarkets` 键缺失时加载器补默认：`open_market` + `black_market` + `storage`，且市场有 `militarybase` 或 `highcommand` 产业时再加 `generic_military`**(经济数据加载器)。
-
-加载器对每个实体执行 `entity.setMarket(market)` 与 `entity.setFaction(...)`，并把实体加入 `connectedEntities`。
-
-**代码路径** (生涯代码里建市场，把经济数据主题的注册收尾展开为完整链)：
-
-1. `Global.getFactory().createMarket(id, name, size)` 创建市场对象 (只建对象，不注册)。
-2. `setFactionId(factionId)` 设势力；`setPrimaryEntity(entity)` 绑主实体。
-3. 按需 `addCondition(...)` / `addIndustry(...)` / `addSubmarket(specId)`。
-4. `economy.addMarket(market, withJunkAndChatter)` 注册进经济集合 (`withJunkAndChatter = true` 会加 junk 与无线电喧闹)。
-5. `entity.setMarket(market)`(以及 `entity.setFaction(...)`) 把实体绑到市场。
-
-建议使用 `Misc.initEconomyMarket` 或手动执行这条链：`createMarket(primaryEntity.getId(), ...)` → `setFactionId` → `setPrimaryEntity` → `getTariff().modifyFlat("generator", tarrif)` → `addSubmarket` ×N。
-
-随后 `addCondition` ×N(`free_market` 条件同时 `setFreePort(true)`)→ `addIndustry` ×N。
-
-随后 `globalEconomy.addMarket(newMarket, true)` → `primaryEntity.setMarket(newMarket)` → `primaryEntity.setFaction(factionID)`。
-
-代码路径建市场必须完成注册收尾
-
-`economy.addMarket` / `entity.setMarket` / `entity.setFaction` 缺一不可：
-
-- 只 `createMarket` 不 `addMarket`：市场不在经济集合里，`isInEconomy()` 返回 `false`(`Market.isInEconomy` 就是查 `economy.getMarket(id) != null`)，不出现在任何经济/UI 入口，商品流永不更新它。**可观察结果**：市场 "不存在"，代码侧无报错。
-- 不 `entity.setMarket`：实体与市场脱钩，交互入口 (进市场界面) 失效，`getPrimaryEntity()` 侧的市场归属为空。**可观察结果**：点击实体没有任何市场交互，日志无报错。
-- 不 `entity.setFaction`：实体仍显示原势力 (市场与实体势力不一致)。
-
-`EconomyAPI.removeMarket(market)` 从集合移除。
-
-#### [市场条件与产业访问]
-
-**条件 (condition)**：`getConditions()` 返回市场当前 `MarketConditionAPI` 列表 (活集合，只读遍历时先拷贝)。
-
-`addCondition(id)` 返回该实例的**唯一 token**(`getIdForPluginModifications()`，形如 `ore_sparse_b44c3`，spec id ≠ 实例 token)；
-
-带参数用 `addCondition(id, param)`(`Market.addCondition`：非 suppressed 时立即 `plugin.apply(token)`)。读取：
-
-- `getCondition(id)` / `getFirstCondition(id)`：同 spec id 的**首个**实例；
-- `getSpecificCondition(token)`：按唯一 token 取**具体**实例。
-
-移除：`removeCondition(id)` **移除同 spec id 的全部实例**；`removeSpecificCondition(token)` 只移除 token 对应实例。
-
-**必须记住这个不对称性**：多实例条件 (同 id 出现多次) 想删一个，用 token；用 id 会把所有副本一起删掉。**可观察结果**：同名条件全部消失。
-
-`reapplyConditions()` 逐个 `unapply`/`apply`(suppressed 的跳过)；`suppressCondition(id)` 只抑制重算时的生效，保留实例与显示，配对 `unsuppressCondition(id)` 恢复。
-
-条件 plugin 生命周期 (`MarketConditionPlugin`)：`init(market, condition)` → `setParam`(可选)→ `apply(id)` → 每帧 `advance`(`runWhilePaused()` 决定暂停时是否推进)→ 移除/重算时 `unapply(id)`。
-
-**产业 (industry)**：`getIndustries()` 返回 `Industry` 列表；`addIndustry(id)` 幂等 (已存在则跳过)，spec 不存在时**抛 `RuntimeException("Industry [...] not found")`**。`addCondition(id)` 对不存在的条件 spec 同样抛出运行时异常。
-
-`getIndustry(id)` / `hasIndustry(id)` 按 id 查；`hasFunctionalIndustry(id)` 额外要求 `isFunctional()`(被封禁/损坏的产业不算)；
-
-`removeIndustry(id, mode, forUpgrade)` 三个参数按 API 语义调用 (代码里 mode 传 null)；`instantiateIndustry(id)` 只建实例不挂载。
-
-产业系统的供需、建设和 disruption 细节由产业语义维护；本节只讲市场对产业的访问入口，产业制作见 [C11-S4]。
-
-#### [商品与价格]
-
-`getAllCommodities()` 返回**全部已注册商品**在市场上的数据对象 (对无关商品也是占位对象，`Market.getAllCommodities` 遍历已注册商品规格逐个 `getCommodityData`)；
-
-`getCommodityData(id)` 按需创建单个 `CommodityOnMarketAPI`。
-
-因此 "某商品在市场里有没有数据" 不是判断依据，要看数值。
-
-### CommodityOnMarketAPI 成员速查表
-
-`CommodityOnMarketAPI` 高频成员：
-
-| 成员 | 语义 |
-|---|---|
-| `getStockpile()` / `setStockpile(float)` | 当前库存 (经济单位刻度) |
-| `getAvailable()` | 当前可得量 (`getAvailableStat()` 的修饰后值，含低可达性扣减) |
-| `getMaxSupply()` / `getMaxDemand()` | 供需上限 (产业重算后) |
-| `getDemandClass()` / `getDemand()` | 需求类与 `MarketDemandAPI`(`getDemandValue()`) |
-| `getTradeMod()` / `getTradeModPlus()` / `getTradeModMinus()` | 用户交易写入的 120 天衰减修饰 |
-| `isIllegal()` / `isNonEcon()` / `isFuel()` / `isPersonnel()` | 商品级判定 |
-
-价格：`getTariff()` 返回 `MutableStat`(税率；`getModifiedValue()` 是生效值)；`getSupplyPrice(id, qty, isPlayerPrice)` 是市场卖出价、`getDemandPrice(...)` 是市场买入价。
-
-**方向以市场为主体** (`isPlayerPrice = true` 时套用用户价格修饰)。
-
-`CommoditySpecAPI.getBasePrice()` 是全局基础价，**禁止**当市场买卖价用 (市场价必须走价格接口)。
-
-`updatePrices()` 重算全部商品的 `updateCalc()`；`updatePriceMult()` 在 0.98a 是空实现。
-
-**原版 javadoc 缺陷**：`updatePriceMult` 的 javadoc 声称 "按稳定度更新本地价格倍率"，实现却是空方法。调用它不会有任何效果。
-
-#### [人物与开放状态]
-
-**人物**：`addPerson(person)` 加入市场人物列表并同时写入 `person.setMarket(this)`；`removePerson(person)` 反向解除；`getPeopleCopy()` 返回快照。
-
-**注意两个集合边界**：`addPerson` 不会自动创建通信目录 (comm directory) 条目，可见联系人需要另行 `getCommDirectory().addPerson(person)` 维护；`getCommDirectory()` 用到时才创建。
-
-`setAdmin(admin)` 会移除旧管理员的市场与通信目录归属。
-
-纯读取场景不要调用 `getAdmin()`
-
-`getAdmin()` **用到时才创建**默认管理员 (`Market.getAdmin`：市场无 admin 时 new 一个默认人物并 `setAdmin`；用户拥有的市场回退到用户扮演的角色) —— 调用它会留下创建管理员的持久副作用：存档被写入一个从未有意创建的管理员。
-
-**开放状态** (本节主题之一)：
-
-- **自由港**：`setFreePort(true)` 自动添加 `free_market` 条件 (`Market.setFreePort`，条件 id 为 `free_market`，plugin 为 `FreeMarket`)。
-    - `isFreePort()` 为 true 时 `isIllegal(id)` **恒返回 false**，自由港市场一切商品合法。
-- **隐藏市场**：`setHidden(true)` 后市场不提供会暴露其存在的任务、事件或 intel。商品计算跳过该市场的进口需求；可达图、库存和价格路径仍可能使用它。
-- **用户所有**：`setPlayerOwned(true)` 改变殖民地管理语义 (存档界面、收入、存储免费等)，并刷新用户的 outpost 效果。
-- **survey 等级**：`SurveyLevel.NONE / SEEN / PRELIMINARY / FULL`，`getSurveyLevel()` 读出；核心世界与代码路径建市场时显式设 `FULL`。
-- **经济组**：`getEconGroup()` / `setEconGroup(String)`：同一经济组的市场互相可见且只互相交易；所有 null 组市场属于同一组。
-- **tag**：`addTag` / `removeTag` / `hasTag` / `getTags`：市场级标记 (与商品 tag、实体 tag 不同集合)。
-
-#### [每帧推进 (advance)]
-
-`Market.advance(amount)` 做什么：换算游戏日累加 `daysInExistence`；稳定度变化时 `reapplyConditions()` + `reapplyIndustries()` + `updatePrices()`；推进全部条件 plugin、全部子市场 plugin、memory、人物、建筑队列。
-
-同时推进商品 `available/tradeMod/tradeModPlus/tradeModMinus` 的衰减并 `reapplyEventMod()`；推进产业。**市场自身不在这里做商品流重算** —— 商品流是经济集合的职责。
-
-### 子市场 (SubmarketAPI)
-
-市场结构里，子市场是用户最常打交道的入口。三种原版子市场看起来都是同一个交易界面，行为差异全部集中在各自插件上，可以先用一句话记住差异方向，税率 (市场税率 / 恒 0 / 恒 0)、合法性 (仅合法 / 全合法 / 用户市场全合法)、库存与稳定度的关系 (正相关 / 负相关 / 无)、经济参与 (参与 / 参与 / 不参与)。先看插件从哪来，再对照差异表。
-
-#### [静态表与运行时对象]
-
-子市场静态表是 `data/campaign/submarkets.csv`(列：`id,name,faction,desc,script,icon,order`)。
-
-### 原版子市场 spec 速查表
-
-原版五个 spec：
-
-| id | faction | plugin(script 列) | order |
-|---|---|---|---|
-| `open_market` | (空，用市场势力) | `OpenMarketPlugin` | 0 |
-| `generic_military` | (空) | `MilitarySubmarketPlugin` | 100 |
-| `local_resources` | (空) | `LocalResourcesSubmarketPlugin` | 200 |
-| `black_market` | `pirates` | `BlackMarketPlugin` | 999 |
-| `storage` | `player` | `StoragePlugin` | 1000 |
-
-id 常量在 `com.fs.starfarer.api.impl.campaign.ids.Submarkets`(`SUBMARKET_OPEN = "open_market"`、`SUBMARKET_BLACK = "black_market"`、`SUBMARKET_STORAGE = "storage"`、`GENERIC_MILITARY`、`LOCAL_RESOURCES`)。
-
-运行时对象 (`SubmarketAPI`)：`addSubmarket(specId)` 创建实例时按 spec 的 `script` 列 `getNewPluginInstance()` 并 `plugin.init(this)`；faction 解析：spec 的 faction 非空用它 (找不到该 faction **抛 RuntimeException**)，为空回退市场势力。
-
-`getSpecId()` / `getSpec()` / `getPlugin()` / `getCargo()` / `getCargoNullOk()` / `getTariff()`(转发 plugin)/ `isIllegalOnSubmarket(stack, action)` 是运行时入口；`getNameOneLine()` 把多行名压成单行。
-
-`addSubmarket` 对已存在的 spec id **静默跳过** (`Market`)，列表按 spec `order` 排序。
-
-#### [open / black / storage 三种子市场]
-
-### 三种子市场行为速查表
-
-三种子市场的插件差异 (`com.fs.starfarer.api.impl.campaign.submarkets` 包的公开 API 面)：
-
-| 行为 | open\_market(`OpenMarketPlugin`) | black\_market(`BlackMarketPlugin`) | storage(`StoragePlugin`) |
-|---|---|---|---|
-| 税率 `getTariff()` | 市场税率 `market.getTariff().getModifiedValue()`(基类默认) | **恒 0** | **恒 0** |
-| 合法性 | `shouldHaveCommodity = !market.isIllegal(com)`：只备货合法商品；交易时 `isIllegalOnSubmarket` 基类默认取 `market.isIllegal` | `isIllegalOnSubmarket` **恒 false**：什么都能交易 | 用户市场全部合法；中立势力仅舰船重载豁免，商品仍走基类 |
-| 库存上限与稳定度 | `limit *= 0.25 + 0.75 * (stability/10)`：**稳定度越高货越多** (spec desc 原文) | `limit *= 0.25 + 0.75 * (1 - stability/10)`：**稳定度越低货越多** | 不参与经济，无商品流库存 |
-| 经济参与 | 基类 `isParticipatesInEconomy() = true` | true | **false**：用户存取不影响经济 |
-| 用户交易影响 | `getPlayerEconomyImpactMode() = PLAYER_SELL_ONLY` | `PLAYER_SELL_ONLY` | 无 (不参与经济，`reportPlayerMarketTransaction` 直接返回) |
-| 专属行为 | `isOpenMarket() = true`；tooltip 在 SNEAK 模式提示 "需要开启应答器" | `isBlackMarket() = true`；走私嫌疑 tooltip(suspicion level 档位)；卖出蓝图触发延迟学习脚本 (`DelayedBlueprintLearnScript`) | `isFreeTransfer() = true`(免费转移，动词 Take/Leave)；一次性 5000 信用解锁 + 每月 `storageFreeFraction`(settings 键，= 0.01，即存值 1%/月，`Misc.getStorageFeeFraction` 读取)；**用户拥有的市场免费** |
-
-基类 `BaseSubmarketPlugin` 的通用事实：`TRADE_IMPACT_DAYS = 120f`(用户交易修饰的持续天数)；
-
-`getCargo()` **用到时才创建** unlimited cargo 并按 `submarket.getFaction()` 初始化 mothballed ships；`getCargoNullOk()` 直接返回字段，**可能为 null**；
-
-`isBlackMarket()` 基类默认为市场势力对子市场势力敌对 (黑市插件覆写为恒 true)。
-
-#### [库存 cargo 与合法性]
-
-子市场库存是 `CargoAPI`：`getCargo()` 保证非 null(用到时才创建)，`getCargoNullOk()` 可能 null。**读取子市场库存前必须先判空或直接走 `getCargo()`** —— 直接用 `getCargoNullOk()` 返回值会 NPE。
-
-合法性判定 `isIllegalOnSubmarket(CargoStackAPI stack, TransferAction action)`：非 commodity stack 基类默认合法 (舰船走 `FleetMemberAPI` 重载)；`TransferAction` 只有 `PLAYER_BUY` / `PLAYER_SELL` 两向。
-
-#### [用户交易对经济的影响]
-
-交易发生后 UI 调用 `plugin.reportPlayerMarketTransaction(transaction)`(基类实现)：`isParticipatesInEconomy()` 为 false 直接返回 (storage 因此不影响经济)；
-
-否则按 `getPlayerEconomyImpactMode()` 对**每个 commodity stack** 写 `CommodityOnMarketAPI.addTradeMod(Plus/Minus)`，持续 `TRADE_IMPACT_DAYS = 120` 游戏日。
-
-open / black 都是 `PLAYER_SELL_ONLY` —— **用户卖出**给市场会正向影响该商品的经济单位 ("selling enough of a commodity will temporarily resolve a shortage"，spec desc 原文)，**用户买入**不产生使市场缺货的负向修饰 (`BlackMarketPlugin` 注释：防止刷买/卖循环)。
-
-交易量的全局倍率 `economyPlayerTradeImpactMult`(settings 键，= 1)。
-
-### 经济对象与商品流 (EconomyAPI)
-
-子市场决定单个市场的交易入口，商品流何时重算则属于经济集合的职责。先给结论：经济推进器每月按 `economyIterPerMonth` 次迭代分布重算，只有当月最后一次迭代才写库存与价格；`nextStep` 系列与 `forceStockpileUpdate` 是两条手动重算入口。`EconomyAPI`(`com.fs.starfarer.api.campaign.econ.EconomyAPI`) 是经济集合接口，运行时按商品维护可达网络 (`CommodityMarketDataAPI`)。
-
-#### [市场集合与商品注册表]
-
-- 集合：`getMarketsCopy()`(快照)/ `getMarket(id)`(精确 id，无则 null)/ `getNumMarkets()` / `getMarkets(loc)` / `getLocationsWithMarkets()` / `getStarSystemsWithMarkets()`。
-    - `getMarketsInGroup(group)` / `getMarketsWithSameGroup(market)`(经济组：同组市场互相可见且只互相交易，null 组同属一组)。
-- 商品注册表：`getAllCommodityIds()` 返回全部已注册商品 id(来自 CSV spec 加载期的 `CommoditySpecAPI` 集合)；`getCommoditySpec(id)` 返回**全局规格** `CommoditySpecAPI`(基础价、econ unit、tag、demand class 等)。
-    - **不等于**市场库存，读取的是全局 spec，不表示该 commodity 在某个市场有库存、供给或需求。
-- `isSimMode()`：模拟模式 (战役/经济编辑器) 标记。
-
-#### [经济推进循环 (商品流)]
-
-`SectorAPI.getEconomy()` 的 `EconomyAPI.advance(amount)` 每帧被生涯引擎调用：`economyEnabled`(settings 键，= true) 时把 `amount` 换算成游戏日送入经济推进器；随后逐个 `market.advance(amount)`。
-
-经济自身的商品流节奏 (经济推进器)：
-
-1. **每月 `economyIterPerMonth` 次迭代** (settings 键 = 10)。跨月时重置剩余迭代数为 10，迭代间隔 = `(当月剩余天数) / 10` 游戏日。
-2. 每次迭代的任务链 (主重算任务)：重算全部市场条件/产业 → 按商品逐个构建 `CommodityMarketDataAPI` 可达图 → **当月最后一次迭代**才 `updateStockpileAndPrice` 写库存与价格。
-    - 随后依次执行市场重算、移民与整轮收尾。
-3. 每次迭代结束触发 `reportEconomyTick`(`EconomyTickListener`)，跨月触发 `reportEconomyMonthEnd`。
-4. 商品可达图 (`CommodityMarketDataAPI`)：每个商品一套，按 "本地生产 + 进口 + 短缺 + 低可达性" 拆解 `getAvailable()` 的修饰，隐藏市场跳过进口需求。
-5. `updateStockpileAndPriceV2`(主重算任务)：重算 demand/greed 修饰、写 `setStockpile`(经济单位刻度)、按短缺/过剩设置价格倍率上下限 (`economyDeficitPriceIncrPerUnit` / `economyExcessPriceDecrPerUnit` 等)。
-    - **供需均为 0 的商品用户买入价 × `economyNoDemandPriceMult`(0.5)**。
-
-`economyIntervalnGameDays` 不能用来推断经济频率
-
-settings.json 中 `economyIntervalnGameDays` 键 (值 30) 的原文注释是 `# not actually used by the economy, but used for a few other things`；真正节奏是上面的 `economyIterPerMonth` 迭代分布。
-
-#### [手动重算入口]
-
-- `nextStep()` / `doubleStep()` / `tripleStep()`：立即执行一/二/三步迭代 (含 `withStockpileUpdate=true`)。
-
-`nextStep` 系列只允许在 UI 交互路径调用
-
-"Should only be called from UI interactions, not from scripts that run in the background. Calling this method is likely to take longer than the time to render a single frame."
-
-这些方法同步执行整轮迭代，**禁止**在后台脚本 (`EveryFrameScript`、每帧回调) 里调用。
-
-违反后的可观察结果：单帧阻塞明显超过一帧渲染时间，大存档下肉眼可见的卡顿/掉帧 (加载器稳定化也是这套入口)。
-
-- `forceStockpileUpdate(market)`：对市场全部非 `nonecon` 商品立即 `updateStockpileAndPrice`，适合 "改完供需想让库存立即反映" 的场景。
-
-#### [EconomyUpdateListener]
-
-`EconomyAPI.EconomyUpdateListener`(在 `EconomyAPI` 中声明) 三个方法：
-
-- `commodityUpdated(String commodityId)`(每个商品一次，逐商品通知)；
-- `economyUpdated()`(整轮结束一次，整轮收尾通知)；
-- `isEconomyListenerExpired()`(返回 true 的监听器**由引擎自动移除**)。
-
-监听器注册必须走 `EconomyAPI.addUpdateListener()`
-
-**禁止加入 `SectorAPI.getListenerManager()`**，原文："Needs to be added via EconomyAPI.addUpdateListener(); should not be added to SectorAPI.getListenerManager()."
-
-违反后的可观察结果：监听器永不回调且**无任何报错** (监听器只在经济迭代里被遍历)。
-
-注意 `commodityUpdated` 的每次回调都是**同一经济步内**对单个商品的增量通知，`economyUpdated` 才是 "整轮完成"。
-
-## 实现市场创建流程
-
-本例从经济集合中选择一个既有市场，依次检查结构、子市场、商品与税率，最后挂载一个自过期经济监听器。以下局部片段均来自完整成品，按调用顺序逐步加入。
-
-### 选择可巡检的市场
-
-这段选择逻辑位于 `GearInMarketPicker.pick`：首选 ID 不存在时，回退到第一个拥有开放子市场的市场。
+| `FleetMemberAPI` 构造 / 读档 | 首次 `updateStats()` | `FleetMemberAPI` |
+| `setCaptain(person)`(人物变化) | 立即 `updateStats()` | `FleetMemberAPI` |
+| `setFleetCommanderForStats(person, data)`(人物变化) | 只标记 `statUpdateNeeded`，下次 `getStats()` 重建 | `FleetMemberAPI` |
+| `setVariant(variant, withRefit, withStatsUpdate)` | `withRefit` 算 CR 影响并 `applyCREvent`(`computeVariantDiffCRImpact`)；`withStatsUpdate` 立即 `updateStats()` | `FleetMemberAPI` |
+| `setStatUpdateNeeded(true)` | 标记；下次 `getStats()` / `updateStats()` 重建 | `FleetMemberAPI` |
+| 舰队同步 `syncIfNeeded` | 全员 `updateStats()` + 舰队向技能二次重放 | `FleetDataAPI` |
+| 部署 (舰船对象创建) | 新造战斗 stats 并完整重放 | `FleetMemberAPI` |
+| 战斗内 `ShipAPI.setCaptain` | 解挂旧/挂新个人技能 (含子模块)，立即生效 | `ShipAPI` |
+| 入引擎 `addEntity` | 船插第三时机，每实体一次 | `CombatEngineAPI`、`ShipAPI` |
+
+## 保护状态边界
+
+### 状态边界速查表
+
+机制讲完了，现在把必须遵守的边界收拢成清单。以下规则 ("必须/禁止") 均附违反后的可观察结果：
+
+| 规则 | 强度 | 违反后的可观察结果 |
+|---|---|---|
+| 需要跨 stats 重建保留的修改**必须**挂在重放入口上 (船插 `applyEffectsBeforeShipCreation`、技能效果、buff 系统)**；禁止**直接对 `FleetMemberAPI.getStats()` 返回值 `modifyFlat`/`modifyPercent` 并期待跨重建保留 | 必须 | 下次 `updateStats()`(换舰长 / 换装配 / 舰队同步 / 读档) 整体新建 stats 对象 (`FleetMemberAPI.updateStats`)，这些修改被丢弃，数值 "自己变回去" 且无任何报错 (`GearInStatsRebuild` 的 transient 步骤) |
+| 舰长个人技能 (SHIP 族) **必须**在成员入队 (`getFleetData() != null`) 后才会应用；用 "未入队成员" 验证技能链路读不到效果 | 必须 | 未入队成员换舰长后 stats 无任何变化 (`FleetMemberAPI.updateStats` 的舰队条件) |
+| 换舰长 / 换装配后**必须**经会触发重算的入口 (`setCaptain`、`setVariant(..., withStatsUpdate=true)`、显式 `updateStats()`、或 `setStatUpdateNeeded(true)` 后读 `getStats()`) | 必须 | 读取端 `getStats()` 返回旧 stats 对象 (`getStats()` 只在 `statUpdateNeeded` 时重建)，界面 / 日志数值停在旧值 |
+| `setVariant` 传入引用不克隆，stats 与成员**共享同一变体** —— 修改成员变体后 `stats.getVariant()` 立即同见；保留旧引用 "防污染" 是无效假设 | 必须 | 部署期创建舰船时对成员变体的武器组改写 (前置知识中变体条目) 与生涯侧修改互相可见，数值/装配表现与预期不符 |
+| 战斗内换舰长**必须**走 `ShipAPI.setCaptain`；换人后旧舰长个人加成 (含子模块) 立即被解挂 | 必须 | 直接改人物对象而不重新 `setCaptain` → 战斗 stats 无变化；缓存 "旧舰长修正仍生效" 的假设在换人瞬间失效 (`ShipAPI.setCaptain`) |
+| **禁止**复用引擎保留 modifier ID：`flux_capacitors` / `flux_vents`、`cr_effect`、`crew skill bonus`、`crew understrength`、`mothballed_mod_id` | 必须 | 写入的 modifier 被引擎重放覆盖，或覆盖引擎写入的值 (同 ID 同类型后写者胜，`MutableStat.modifyFlat`)，数值错乱且难排查 (`FleetMemberAPI`、`CRPluginImpl`) |
+| **禁止**在 `applyEffectsBeforeShipCreation`(或其它被 `updateStats` 重放的入口) 内调用会再次触发 `updateStats` 的成员 API(`setCaptain`、`setVariant(..., true)`、`updateStats()`) | 必须 | `updateStats` 没有防重入检查 (防重入标记仅 tooltip 路径使用)，递归重建直至 `StackOverflowError` |
+| 战斗 stats / `ShipAPI` 引用**禁止**跨战斗缓存 | 必须 | 下一场战斗读到失效对象 (部署链每场新造战斗 stats)，数值过期或静默异常 |
+| 重放安全的前提：同一来源 ID 用同一类型同值 (幂等覆盖)，重放顺序 "先 unapply 后 apply" | 必须 | 换 id / 换类型导致旧条目残留或叠加 (`MutableStat.unmodify(source)` 只清指定来源) |
+| 调试 stats 交接时先打印 stats 对象同一性 (`before != after`) 确认重建发生 | 建议 | 无法区分 "修改没生效" 与 "修改被重建丢弃" |
+| 用 `setFleetCommanderForStats` 临时挂指挥官前记录原值，测完置 `null` 复位 | 建议 | 指挥官残留导致后续读取全部带未知加成 (同帧回滚模式) |
+| 生涯侧只读基线用未入队成员；技能链路验证在入队后进行 | 建议 | 把两条语义 (未入队不应用 / 入队应用) 混在一起，读到的差异无法归因 |
+
+## 修改舰队状态
+
+状态交接必须按引擎实际顺序观察。先创建并入队成员，再改变舰长或指挥官，最后主动制造一次重建；只看最终数值会把不同通道混在一起。
+
+### 创建成员并读取基线
+
+在 `GearInVariantToStats.runDemo()` 中创建成员并读取 stats。成员尚未入队时也会有一份按变体生成的 stats，但舰长个人技能尚未进入这条链。
 
 ```java
-MarketAPI market = economy.getMarket(preferredId);
-if (market == null) {
-	for (MarketAPI candidate : economy.getMarketsCopy()) {
-		if (candidate.hasSubmarket(Submarkets.SUBMARKET_OPEN)) {
-			market = candidate;
-			break;
-		}
-	}
-}
-return market;
+FleetMemberAPI wolf = Global.getFactory().createFleetMember(
+        FleetMemberType.SHIP, "wolf_Assault");
+MutableShipStatsAPI stats = wolf.getStats();
+LOG.info(String.format("baseline variantShared=%s memberLinked=%s speed=%.1f",
+        stats.getVariant() == wolf.getVariant(),
+        stats.getFleetMember() == wolf,
+        stats.getMaxSpeed().getModifiedValue()));
 ```
 
-选择器运行后，`jangala` 存在时稳定命中；改成不存在的 ID 后仍能返回一个带 `open_market` 的市场。
+运行后，日志中的 `variantShared` 与 `memberLinked` 均为 `true`，并得到一组稳定的舰船基线数值。
 
-### 编排一次市场巡检
+### 触发状态重建
 
-巡检主流程位于 `GearInMarketInspector.runInspection`：取到市场后按结构、子市场、商品和税率的顺序调用各角色类。
+在同一 `runDemo()` 中克隆变体并调用 `setVariant`。`withStatsUpdate=true` 立即重建；`withRefit=false` 不计算玩家改装造成的 CR 影响。
 
 ```java
-EconomyAPI economy = Global.getSector().getEconomy();
-MarketAPI market = new GearInMarketPicker(targetMarketId).pick(economy);
-if (market == null) {
-	LOG.info("GearIn market inspection abort: no open-market market found");
-	return;
-}
-GearInMarketStructureLog.log(market, economy);
-GearInSubmarketLog.log(market);
-GearInCommodityLog.log(market);
-GearInTariffProbe.log(market);
+ShipVariantAPI refit = wolf.getVariant().clone();
+refit.setNumFluxCapacitors(refit.getNumFluxCapacitors() + 5);
+refit.setNumFluxVents(refit.getNumFluxVents() + 5);
+wolf.setVariant(refit, false, true);
+MutableShipStatsAPI rebuilt = wolf.getStats();
 ```
 
-巡检执行后，日志依次出现 structure、conditions、industries、submarket、commodity 与 tariff probe，不存在目标市场时有明确回退或中止记录。
+重建后，`rebuilt` 是新的 stats 对象，幅能容量增加 1000、散耗增加 50，且 `rebuilt.getVariant() == refit`。
 
-### 安全读取子市场库存
+### 应用舰长效果
 
-这段判断写在 `GearInSubmarketLog.log` 的循环体里：先检查 spec，再对 `getCargoNullOk()` 判空；巡检不会为了读取而创建库存。
+在 `GearInCaptainToMember.runDemo()` 中先给人物学习 `gunnery_implants`，再把成员加入玩家舰队。入队后显式 `updateStats()`，个人 SHIP 效果才会进入成员 stats。
 
 ```java
-if (!market.hasSubmarket(specId)) {
-	LOG.info("GearIn submarket " + specId + ": present=false");
-	continue;
-}
-SubmarketAPI submarket = market.getSubmarket(specId);
-CargoAPI cargoNullOk = submarket.getCargoNullOk();
-float supplies = cargoNullOk == null ? 0f
-		: cargoNullOk.getCommodityQuantity(Commodities.SUPPLIES);
+PersonAPI gunner = Global.getFactory().createPerson();
+gunner.getStats().setSkillLevel("gunnery_implants", 1f);
+wolf.setCaptain(gunner);
+fleetData.addFleetMember(wolf);
+wolf.updateStats();
 ```
 
-读取时，未初始化库存显示 `cargoNullOk=null`，已交互的子市场显示 `created`；两种情况都不会抛 NPE。
+入队并 `updateStats()` 后，后坐力倍率变为 0.750，自动瞄准变为 1.250，实弹与能量武器射程各增加 15%；同一人物在未入队成员上只会得到基线值。
 
-### 对照库存、供需与价格
+### 应用指挥官效果
 
-这段读取位于 `GearInCommodityLog.log`：同一商品同时读取经济单位库存、可得量、供需上限与玩家交易价格。
+在 `GearInCommanderToMember.runDemo()` 中设置 `setFleetCommanderForStats`，随后读取 `getStats()` 触发延迟重建。第二个 `fleetData` 参数不改变成员实际使用的舰队数据。
 
 ```java
-CommodityOnMarketAPI commodity = market.getCommodityData(commodityId);
-LOG.info(String.format(
-		"GearIn commodity %s: stockpile=%.1f available=%d supply=%d demand=%d buy=%.0f sell=%.0f",
-		commodityId, commodity.getStockpile(), commodity.getAvailable(),
-		commodity.getMaxSupply(), commodity.getMaxDemand(),
-		market.getDemandPrice(commodityId, 100, true),
-		market.getSupplyPrice(commodityId, 100, true)));
+PersonAPI commander = Global.getFactory().createPerson();
+commander.getStats().setSkillLevel("crew_training", 1f);
+wolf.setFleetCommanderForStats(commander, fleetData);
+float withCommander = wolf.getStats()
+        .getMaxCombatReadiness().getModifiedValue();
+wolf.setFleetCommanderForStats(null, null);
+float restored = wolf.getStats()
+        .getMaxCombatReadiness().getModifiedValue();
 ```
 
-输出中 `supplies` 与 `drugs` 各产生一行，价格随市场供需变化，不再等同于全局基础价。
+设置后读取 `withCommander`，最大 CR 上升；置回 `null` 再读取，数值恢复到设置前。
 
-### 修改税率并当帧回滚
+### 观察修改结果
 
-探针逻辑位于 `GearInTariffProbe.log`：修饰 ID 固定，读回三个阶段后立即移除修饰。
-
-```java {3}
-MutableStat tariff = market.getTariff();
-float before = tariff.getModifiedValue();
-tariff.modifyFlat(TARIFF_MOD_ID, 0.05f);
-float during = tariff.getModifiedValue();
-tariff.unmodifyFlat(TARIFF_MOD_ID);
-float after = tariff.getModifiedValue();
-```
-
-探针执行后，日志严格呈现 `before → before + 0.05 → before`，存档中的市场税率没有残留修改。
-
-### 注册自过期经济监听器
-
-注册代码放在巡检末尾，实现位于 `GearInEconomyTickLog`：监听器必须交给经济对象；整轮更新后置位，下一次过期检查自动移除。
-
-```java {1}
-economy.addUpdateListener(new GearInEconomyTickLog());
-
-@Override
-public void economyUpdated() {
-	economyFired = true;
-	LOG.info("GearIn economy listener economyUpdated (expiring)");
-}
-
-@Override
-public boolean isEconomyListenerExpired() {
-	return economyFired;
-}
-```
-
-下一经济步只出现一次首次商品更新与一次整轮更新日志，之后不再回调。
-
-## 组装市场创建实现
-
-结构、差异与节奏都清楚了，接下来把它们跑起来：在既有 MOD 布局与 `GearInModPlugin` 之上新增七个单角色类 (不新增任何资源、不新增任何注册项)，同处 `data.scripts.gearin.campaign` 包内协作。上文出现的每条必须遵守的规则都在首次展开处说明，本节的类按这些规则逐一落地。
-
-巡检脚本在挂载后的第一帧执行**只读 + 即刻回滚**的序列：经济基线 → 目标市场选择 → 市场结构 → 三种子市场差异 → 商品库存与价格 → 税率瞬时修改并回滚 → 注册一个自过期的 `EconomyUpdateListener`(演示商品流通知)。
-
-全部巡检不遗留任何持久状态 (税率回滚、监听器整轮通知后自过期、脚本自停)：
-
-- `GearInMarketInspector`：巡检调度脚本 (`EveryFrameScript`)：注册判断 + 目标市场选择 + 经济基线 + 编排各日志器 + 注册自过期监听器；
-- `GearInMarketPicker`：目标市场选择器：优先指定 id，查无时回退到第一个有开放子市场的市场；
-- `GearInMarketStructureLog`：市场结构日志器：身份/势力/实体绑定/survey/开放状态/条件与产业 id 列表及人物数与同经济组市场数；
-- `GearInSubmarketLog`：子市场差异日志器：open/black/storage 的税率、势力、plugin 类、cargo 用到时才创建的语义与三个标志；
-- `GearInCommodityLog`：商品日志器：演示商品的库存、可得量、供需上限、买卖价与合法性；
-- `GearInTariffProbe`：税率探针：瞬时 `modifyFlat` 并当帧 `unmodifyFlat` 回滚，记录 before/during/after；
-- `GearInEconomyTickLog`：经济监听 (`EconomyUpdateListener`)：记录下一经济步的首次 `commodityUpdated` 与整轮 `economyUpdated`，之后自过期。
-
-### GearInMarketInspector：巡检调度脚本
-
-巡检入口 (`EveryFrameScript` 角色)：挂载后第一次 `advance()` 执行一次巡检序列并自停 (`isDone()=true`，引擎下一帧自动移除本脚本)。
-
-**绑定**：注册入口为生涯回调 `onGameLoad`，persistent data 键 `REGISTER_MARK = "GearIn_MarketInspector"` 一次性注册标记 (沿用既有模式：每个注册项用各自的键，不并入插件的 `CLASS_MARK` 标记)。
-
-### GearInMarketPicker：目标市场选择
-
-目标市场选择器：优先按指定 id 取市场 (默认 `"jangala"`，原版核心世界，必存在)；id 为空或查无此市场时回退扫描，取第一个有 `open_market` 子市场的市场，仍找不到返回 null。
-
-**绑定**：由 `GearInMarketInspector.runInspection()` 包内协作调用，无独立注册项。
-
-### GearInMarketStructureLog：市场结构日志
-
-市场结构日志器 (静态工具类)：输出目标市场的身份 / 势力 / 实体绑定 / survey / 开放状态、条件与产业 id 列表，以及市场人物数量与同经济组市场数。**绑定**：由 `GearInMarketInspector` 包内协作调用，无独立注册项。
-
-### GearInSubmarketLog：子市场差异日志
-
-子市场差异日志器 (静态工具类)：遍历 `open_market` / `black_market` / `storage` 三种原版子市场，输出税率、势力、plugin 类、cargo 用到时才创建语义与开放 / 黑市 / 免费转移标志；对缺失的子市场只输出 `present=false`。
-
-**绑定**：由 `GearInMarketInspector` 包内协作调用，无独立注册项。
-
-### GearInCommodityLog：商品日志
-
-商品日志器 (静态工具类)：对 `supplies` / `drugs` 输出库存、可得量、供需上限、市场买入/卖出价与合法性 (价格方向以市场为主体)。**绑定**：由 `GearInMarketInspector` 包内协作调用，无独立注册项。
-
-### GearInTariffProbe：税率探针
-
-税率探针 (静态工具类)：对 `MarketAPI.getTariff()`(`MutableStat`) 做瞬时 `modifyFlat("GearIn_inspect_tariff", 0.05f)` 并当帧 `unmodifyFlat` 回滚，记录生效值 before / during / after。
-
-演示 "修改高频参数观察结果变化" 的最小任务链，无持久残留。
-
-**绑定**：由 `GearInMarketInspector` 包内协作调用，无独立注册项。
-
-### GearInEconomyTickLog：经济监听
-
-经济更新监听器 (`EconomyUpdateListener` 角色)：记录下一个经济步的第一次 `commodityUpdated` 与整轮 `economyUpdated`。
-
-之后 `isEconomyListenerExpired()` 返回 true，引擎在下一个经济步自动从监听器列表移除；只持有两个 boolean，随存档序列化无副作用。
-
-**绑定**：由 `GearInMarketInspector` 经 `economy.addUpdateListener(...)` 注册 —— **必须**走 `EconomyAPI.addUpdateListener`，不能加入 `SectorAPI.getListenerManager()`。
-
-对应关系：
-
-- 巡检模式：`implements EveryFrameScript` 沿用生涯一次性脚本模式：`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除。
-- `REGISTER_MARK`：persistent data 标记键 (`"GearIn_MarketInspector"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入 `GearInModPlugin` 的 `CLASS_MARK` 标记 (旧档补注册规则见前置知识)。
-- `GearInMarketPicker.pick`：`economy.getMarket(id)` 精确 id 查找 + `hasSubmarket(Submarkets.SUBMARKET_OPEN)` 回退，对应 "市场 id = economy.json entities 首实体 id" 的读取链路。
-- `GearInSubmarketLog.log`：`submarket.getCargoNullOk()` 判空后 `getCommodityQuantity` —— 演示 "库存用到时才创建、`getCargoNullOk()` 可能为 null" 的必须遵守的规则。
-- `GearInTariffProbe.log`：`modifyFlat("GearIn_inspect_tariff", 0.05f)` → `unmodifyFlat`；`getTariff()` 是 `MutableStat`(前置知识已介绍)，当帧回滚、无持久残留；这是 "修改高频参数观察结果变化" 的最小任务链第 4 步。
-- `GearInEconomyTickLog.log`：`economy.addUpdateListener`；监听器**必须**走 `EconomyAPI.addUpdateListener`；`isEconomyListenerExpired()` 返回 true 后由引擎自动移除，不残留存档。
-
-调用点 (工程片段，方法所在类归属插件生命周期主题，本节只演示调用，不改动既有文件)：
+在 `GearInStatsRebuild.runDemo()` 中保存旧 stats 引用，临时写入速度 modifier，再调用 `updateStats()`。
 
 ```java
-    // GearInModPlugin 的 onGameLoad(boolean newGame) 内新增本节注册块。
+MutableShipStatsAPI before = wolf.getStats();
+before.getMaxSpeed().modifyFlat("GearIn_transient_speed", 25f);
+float transientSpeed = before.getMaxSpeed().getModifiedValue();
+wolf.updateStats();
+MutableShipStatsAPI after = wolf.getStats();
+```
+
+重建后 `before != after`，速度从临时加成值回到基线；`setStatUpdateNeeded(true)` 后，下一次 `getStats()` 才会再次创建新对象。
+
+## 处理状态失效
+
+现在把规则落到代码上。在既有 MOD 工程 (MOD 布局与 `GearInModPlugin` 的 `onGameLoad` 注册门，见前置知识) 之上，您将新增 4 个自包含演示类 (不新增资源文件)，每个类演示交接链的一个环节，各带独立的注册键，挂载后第一次 `advance()` 执行一次演示并自停：
+
+```text {8-11}
+mods/GearIndustry/
+├── build.gradle
+├── settings.gradle
+├── mod_info.json
+├── data\
+├── src\
+│   └── data/scripts/gearin/campaign\
+│       ├── GearInVariantToStats    # 环节一：装配 → stats(本节新增)
+│       ├── GearInCaptainToMember   # 环节二 (个人)：技能 → 成员 stats
+│       ├── GearInCommanderToMember # 环节二 (舰队向)：指挥官 → 成员 stats
+│       └── GearInStatsRebuild      # 环节四：stats 重建与惰性重算
+└── jars\
+```
+
+### 连接装配状态
+
+职责：演示装配 → stats 交接，未入队 wolf\_Assault 成员的 stats 基值与对象关系基线 (`variantShared` / `memberLinked`)。
+
+克隆装配加 5 电容 + 5 散热后 `setVariant(withRefit=false, withStatsUpdate=true)` 触发重算 (幅能容量 +5_200、幅能散耗 +5_10，引擎保留 ID 的 flat 写入)。
+
+`stats.getVariant()` 与传入变体同一引用。
+
+触发入口：`onGameLoad` 注册，persistent data 键 `REGISTER_MARK = "GearIn_VariantToStats"` 做一次性判断。
+
+### 连接舰长状态
+
+职责：演示个人技能 → 成员 stats 交接，未入队换舰长 (`gunnery_implants` L1 不应用)→ 入队 + 显式 `updateStats`(后坐力倍率 1.0 → 0.75、自动瞄准 0.0 → 1.0、实弹/能量射程 +15%)→ 换回无技能人物后数值恢复。
+
+触发入口：`onGameLoad` 注册，persistent data 键 `REGISTER_MARK = "GearIn_CaptainToMember"` 做一次性判断。
+
+### 连接指挥官状态
+
+职责：演示舰队指挥官 → 成员 stats 交接，`setFleetCommanderForStats` 挂 `crew_training`(ALL\_SHIPS\_IN\_FLEET)，`getStats()` 延迟重建后 `maxCombatReadiness` 上升，置回 `null` 后恢复。
+
+触发入口：`onGameLoad` 注册，persistent data 键 `REGISTER_MARK = "GearIn_CommanderToMember"` 做一次性判断。
+
+### 记录重建结果
+
+职责：演示 `MutableStat` 重建与延迟重算，运行时 transient modifier(`GearIn_transient_speed` +25) 不跨 `updateStats` 重建 (stats 对象同一性为 false、修改被丢弃)。
+
+`setStatUpdateNeeded(true)` 后下一次 `getStats()` 才重建。
+
+触发入口：`onGameLoad` 注册，persistent data 键 `REGISTER_MARK = "GearIn_StatsRebuild"` 做一次性判断。
+
+调用点 (工程片段，方法所在类归既有插件所有，本节只演示调用，不改动那些文件)：
+
+```java
+    // 在 GearInModPlugin 的 onGameLoad(boolean newGame) 内新增本节注册块。
     // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInMarketInspector.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInMarketInspector.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInMarketInspector());
+    if (!Global.getSector().getPersistentData().containsKey(GearInVariantToStats.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInVariantToStats.REGISTER_MARK, true);
+        Global.getSector().addScript(new GearInVariantToStats());
+    }
+    if (!Global.getSector().getPersistentData().containsKey(GearInCaptainToMember.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInCaptainToMember.REGISTER_MARK, true);
+        Global.getSector().addScript(new GearInCaptainToMember());
+    }
+    if (!Global.getSector().getPersistentData().containsKey(GearInCommanderToMember.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInCommanderToMember.REGISTER_MARK, true);
+        Global.getSector().addScript(new GearInCommanderToMember());
+    }
+    if (!Global.getSector().getPersistentData().containsKey(GearInStatsRebuild.REGISTER_MARK)) {
+        Global.getSector().getPersistentData().put(GearInStatsRebuild.REGISTER_MARK, true);
+        Global.getSector().addScript(new GearInStatsRebuild());
     }
 ```
 
-想演示换目标市场 (最小任务链第 4 步的另一种做法)，注册前先设参数：
+对应关系与观察点 (原演示的 8 步观察点，按类归属)：
 
-```java {2}
-    GearInMarketInspector inspector = new GearInMarketInspector();
-    inspector.setTargetMarketId("asharu"); // corvus 星系的独立势力市场 (economy.json 首实体 id 即市场 id)
-    Global.getSector().addScript(inspector);
-```
+- 四个类统一沿用既有的一次性演示模式：`executed` 置位后 `isDone()` 返回 true，引擎下一帧自动移除；`REGISTER_MARK` **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致，且每个类独立成键、不挂进既有插件的 `CLASS_MARK` 门。
+- 观察点 1(`GearInVariantToStats` 步骤 1：基线绑定)：`createFleetMember(SHIP, "wolf_Assault")` 构造即 `updateStats`(`FleetMemberAPI`)，此时成员未入队：
+    - `variantShared=true`(`stats.getVariant() == wolf.getVariant()`，同一引用，stats 对象持有变体引用) 与 `memberLinked=true`(`stats.getFleetMember() == wolf`) 是 "交接已绑定" 的现场证明。
+- 观察点 2(`GearInCaptainToMember` 步骤 1：未入队换舰长)：`gunner.getStats().setSkillLevel("gunnery_implants", 1f)` 只重放 CHARACTER\_STATS / FLEET 效果 (`gunnery_implants` 没有这两类)：
+    - `setCaptain(gunner)` 触发重建，但 `getFleetData()` 为 null → `applyPersonalToStats` 被跳过 → `recoil=1.000 aim=-0.500`。
+- 观察点 3(`GearInCaptainToMember` 步骤 2：入队生效)：`addFleetMember`(写 `fleetData` 并 `setSyncNeeded`) 后显式 `updateStats()`，个人技能开始应用：
+    - `gunnery_implants` L1 的三个 Level 效果：
+        - Level2：`getAutofireAimAccuracy().modifyFlat(id, 1.0)`(`com.fs.starfarer.api.impl.campaign.skills.GunneryImplants`)。
+        - Level3：`getBallisticWeaponRangeBonus()` / `getEnergyWeaponRangeBonus().modifyPercent(id, 15)`。
+        - Level1：`getMaxRecoilMult().modifyMult(id, 1 - 0.01*25)`。
+    *   结果 `recoil=0.750 aim=1.250 ballisticRange=15.0 energyRange=15.0`；
+    *   日志里的 `count` 读 `getNumMembers()`，会触发一次全量舰队同步 (`FleetDataAPI.syncIfNeeded`)，全员 `updateStats` 再跑一遍，同 ID 幂等、数值不变。
+- 观察点 4(`GearInStatsRebuild` 步骤 2：重建即丢弃)：`modifyFlat("GearIn_transient_speed", 25f)` 直接写 `getStats()` 返回值 → `speed` 增 25：
+    - `updateStats()` 整体新建对象 (`rebuiltNewObject=true`)→ 修改被丢弃 (`speedAfterRebuild` 回到 `speedBefore`)。
+    - **这是 "重建即丢弃" 的现场证明**。
+- 观察点 4b(`GearInStatsRebuild` 步骤 3：延迟重建)：`setStatUpdateNeeded(true)` 只置标记；`getStats()` 延迟重建 → `sameObjectAsBefore=false`。
+- 观察点 5(`GearInVariantToStats` 步骤 2：装配 → stats)：克隆装配加 5 电容 + 5 散热，`setVariant(refit, false, true)`：`withRefit=false` 跳过 CR 影响计算 (`computeVariantDiffCRImpact`)，`withStatsUpdate=true` 立即重建：
+    - `flux_capacitors` = `numCaps * 200`(settings.json 的 `fluxPerCapacitor:200`)、`flux_vents` = `numVents * 10` (`dissipationPerVent:10`)→ 幅能容量 `+1000`、散耗 `+50`，与船插/CR 贡献无关，**确定性**。
+    - `sharedVariant=true`(`setVariant` 传入引用不克隆，重建后 stats 仍指向同一变体)、`specId=wolf_Assault`。
+- 观察点 6(`GearInCaptainToMember` 步骤 3：换舰长恢复)：`setCaptain(plain)`(无技能默认人物)→ 立即重建 → `recoil 0.750 -> 1.000`。
+- 观察点 7(`GearInCommanderToMember`：指挥官 → 成员)：`setFleetCommanderForStats(commander, fleetData)` 只标记 (第二参数被忽略)；`getStats()` 延迟重建 → `applyFleetwideToStats`：
+    - `crew_training` Level1 (`getMaxCombatReadiness().modifyFlat(id, crBonus*0.01)`，`com.fs.starfarer.api.impl.campaign.skills.CrewTraining`，非民用船生效)→ `maxCR` 上升。
+    - 置 `null` 后回退 `fleetData.getCommander()`(玩家)→ 恢复原值。
+- 观察点 8(清理)：四个类各自 `removeFleetMember(wolf)` → 玩家舰队成员数与初始一致 (同步延迟到下一次同步，`getNumMembers()` 会立即同步)。演示脚本**不留副作用** (人物对象只存在于局部变量，不被任何持久集合引用)。
 
 构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
 
@@ -516,199 +408,131 @@ public boolean isEconomyListenerExpired() {
 gradle jar
 ```
 
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下的七个类 (可用 `jar tf` 核对)。
+产物 `jars/GearIndustry.jar` 应包含四个类的 class 条目 (可用 `jar tf` 核对)。
 
-## 关键故障实验：经济监听器始终没有回调
+### 修正重建覆盖
 
-监听器实现正确，但被注册到通用监听器管理器。
+先在成员 stats 上直接写入自定义 modifier，再通过换装或舰队同步触发 `updateStats()`；日志会显示修改对象已经被替换。
 
 **局部故障片段：**
 
 ```java
-// 故障片段：注册位置错误
-Global.getSector().getListenerManager().addListener(new GearInEconomyTickLog());
+// 故障片段
+member.getStats().getMaxSpeed().modifyFlat(MOD_ID, 5f);
 ```
 
 **局部修正片段：**
 
-```java
-// 修正片段：交给经济对象
-Global.getSector().getEconomy().addUpdateListener(new GearInEconomyTickLog());
+```java {3}
+// 修正片段
+// 放入船插的 applyEffectsBeforeShipCreation(hullSize, stats, id)
+stats.getMaxSpeed().modifyFlat(id, 5f);
 ```
 
-实际症状：市场、商品流和其他经济事件正常推进，但 `commodityUpdated` 与 `economyUpdated` 永远没有日志，也没有注册异常。
-
-原因：`EconomyUpdateListener` 只由 `EconomyAPI` 自己维护和遍历，通用监听器管理器不会派发这两个回调。
-
-复验：修正注册后保持生涯未暂停，跨过下一次经济迭代；应先收到至少一次 `commodityUpdated`，再收到一次 `economyUpdated`，后续迭代不再回调。
+原因：成员 stats 是重建产物，直接修改只存在于当前对象。把修改放在会被 `updateStats()` 重放的入口，并使用该入口传入的稳定 `id`，每次重建都会重新写入。复验：触发换舰长、换装配和舰队同步，三次读取的速度都应保留 5 点加成；移除该船插后再重建，数值恢复。
 
 ## 验证方案
 
-前置数据：既有 MOD 布局 [C6-S1] 与 `GearInModPlugin`([C7-S1]，含本节调用点片段)、七个巡检类。
+前置数据：MOD 布局与 `GearInModPlugin`(含本节调用点片段；[C6-S1]、[C7-S1])、本节四个演示类、观察 `speedAfterRebuild` 语义同样成立 (界面触发的同步同样经历重建与丢弃；对应规则强度)。
 
-1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/` 下的七个类。
-2. **新建生涯**：在 `starsector.log` 中观察 `GearIn market inspection` 相关记录。
-3. **结构核对**：`structure` 行 `id=jangala`、`inEconomy=true`、`freePort=false`、`onOrAt=on`；三条 `submarket` 行 tariff 依次约 `0.300` / `0.000` / `0.000`，black 的 `faction=pirates`、storage 的 `freeTransfer=true`。
-4. **经济监听器**：注册日志后保持未暂停游玩，几十真实秒内应出现 `GearIn economy listener first commodityUpdated` 与 `GearIn economy listener economyUpdated (expiring)`；继续观察该日志不重复出现；暂停 (空格) 期间不出现；恢复后出现。
-5. **读档**：保存后读档，确认无 `inspection start` 日志 (`REGISTER_MARK` 标记已置位)；若监听器在保存前未触发，读档后继续等待下一个经济步。
-6. **参数演示**：注册前 `inspector.setTargetMarketId("asharu")` 重新构建：`structure` 行 `id=asharu ... faction=independent`；`GearIn commodity drugs` 行 `illegal` 值随市场势力变化 (pirate/自由港市场为 false)。
+1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含四个类的 class 条目。
+2. **新建生涯**：查看 `starsector.log` 中按注册顺序出现的四组日志：`GearIn variantToStats ...`、`GearIn captainToMember ...`、`GearIn commanderToMember ...`、`GearIn statsRebuild ...`。
+3. **只执行一次**：等待若干游戏日，继续观察四个演示类的日志。
+4. 保存并读档，再次观察四个演示类的日志和玩家舰队构成。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下的七个类 (`GearInMarketInspector` 等)。
-
-- **新建生涯**：`starsector.log` 依次出现：
-
-    ```text
-       GearIn market inspection start: markets=NN commodities=33
-    ```
-
-    (`NN` 是存档市场数，以日志为准；`commodities=33` 是 原版商品规格数，`getAllCommodityIds()` 来自 CSV spec 加载期的 `CommoditySpecAPI` 集合)。随后出现：
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInVariantToStats.class` 等四个类的 class 条目。
+- **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 按注册顺序依次出现以下日志 (`<N>` 为初始成员数；数值以实际为准，但标出的关系是确定性的)：
 
     ```text
-       GearIn market structure: id=jangala name=Jangala size=6 faction=hegemony inEconomy=true survey=FULL playerOwned=false freePort=false hidden=false onOrAt=on primaryEntity=Jangala
+    GearIn variantToStats baseline: hull=wolf specId=wolf_Assault caps=9 vents=10 fluxCap base=2250 mod=<2250+1800> fluxDiss base=150 mod=<150+100+fluxdistributor贡献> speed=<135.0> maxCR=<0.200~0.700 视船员> variantShared=true memberLinked=true GearIn variantToStats refit: caps 9->14 vents 10->15 fluxCap <a>-><a+1000> (+1000) fluxDiss <b>-><b+50> (+50) sharedVariant=true specId=wolf_Assault GearIn captainToMember start: members=<N> GearIn captainToMember preJoin: recoil=1.000 aim=-0.500 (skills not applied, member not in fleet) GearIn captainToMember joined: count=<N+1> recoil=0.750 aim=1.250 ballisticRange=15.0 energyRange=15.0 GearIn captainToMember swap: recoil 0.750 -> 1.000 (restored) GearIn captainToMember done: members=<N> (initial <N>) GearIn commanderToMember start: members=<N> GearIn commanderToMember: maxCR <c> -> <c+crewTraining加成> (crewTraining) -> <c> (reset) GearIn commanderToMember done: members=<N> (initial <N>) GearIn statsRebuild start: members=<N> GearIn statsRebuild transient: speed <135.0> -> <160.0> (with transient), rebuiltNewObject=true speedAfterRebuild=<135.0> GearIn statsRebuild lazy: sameObjectAsBefore=false GearIn statsRebuild done: members=<N> (initial <N>)
     ```
 
-    `Jangala` 是 corvus 星系核心市场 (`econ/corvus.json`：faction `hegemony`、size 6)，`onOrAt=on`(主实体是行星，无 `station` tag)；`survey` 以实际存档为准。
-
-- **条件与产业**：
-
-    ```text
-       GearIn market conditions: count=6 ids=[habitable, population_6, inimical_biosphere, organics_plentiful, farmland_adequate, extreme_weather] GearIn market industries: count=7 ids=[population, farming, spaceport, mining, heavybatteries, militarybase, starfortress_mid]
-    ```
-
-    (与 `econ/corvus.json` 的 `startingConditions` / `industries` 数组一致，以日志为准；其他市场看各自条目。)
-
-- **三种子市场**：
-
-    ```text
-       GearIn submarket open_market: present=true name=Open Market tariff=0.300 faction=hegemony plugin=OpenMarketPlugin cargoNullOk=null supplies=0.0 open=true black=false freeTransfer=false GearIn submarket black_market: present=true name=Black Market tariff=0.000 faction=pirates plugin=BlackMarketPlugin cargoNullOk=null supplies=0.0 open=false black=true freeTransfer=false GearIn submarket storage: present=true name=Storage tariff=0.000 faction=player plugin=StoragePlugin cargoNullOk=null supplies=0.0 open=false black=false freeTransfer=true
-    ```
-
-    核对：open 税率与市场税率一致 (原版默认 `0.3`，取 `FactionSpecAPI.tariffFraction` 默认值)；black 与 storage 恒 `0.000`；black 的势力是 `pirates`(`submarkets.csv`)、storage 是 `player`；`cargoNullOk=null` 表示该子市场 cargo 尚未被创建 (用到时才创建语义)。若某个市场曾被交互过则为 `created` 并带 supplies 数量；`freeTransfer=true` 只出现在 storage。
-
-- **商品** (数值随存档经济状态浮动，方向核对不变)：
-
-    ```text
-       GearIn commodity supplies: stockpile=NNNN.N available=NNN maxSupply=NNN maxDemand=NNN illegal=false demandPrice(100)=NNN supplyPrice(100)=NNN GearIn commodity drugs: stockpile=NN.N available=N maxSupply=N maxDemand=N illegal=true demandPrice(100)=NNN supplyPrice(100)=NNN
-    ```
-
-    `supplies` 的市场买入/卖出价在库存充足时接近基础价区间；`drugs` 对 hegemony 市场 `illegal=true`(非自由港)，开放市场不备货、黑市可交易 (`BlackMarketPlugin.isIllegalOnSubmarket` 恒 false)。
-
-- **人物与经济组**：`GearIn market people: count=N`(Jangala 的 NPC 人物数，以日志为准)；`GearIn market econGroup: group=null sameGroupMarkets=M`，其中 `M` 是当前经济中 null 组市场总数。
-
-- **税率回滚**：
-
-    ```text
-       GearIn tariff probe: before=0.300 during=0.350 after=0.300
-    ```
-
-    `during` 恒比 `before` 高 `0.05`，`after` 与 `before` 相等，修改已被当帧回滚。
-
-- **经济监听器** (商品流通知的观察窗口)：注册日志后，在**下一个经济步** (每月 10 次迭代，间隔最多约当月剩余天数/10 个游戏日，未暂停时几十真实秒内) 出现：
-
-    ```text
-       GearIn economy listener first commodityUpdated: <某个商品 id> GearIn economy listener economyUpdated (expiring)
-    ```
-
-    之后不再出现 —— 监听器在整轮通知后由引擎自动移除 (`isEconomyListenerExpired()` 为 true)。暂停期间经济不推进，监听器日志会推迟到恢复后。
-
-- **读档**：不重复执行 (`REGISTER_MARK` 标记已置位)，也不出现 `inspection start` 日志；经济监听器若在读档前未触发，读档后继续等待下一个经济步 (监听器只持 boolean，随存档恢复无副作用)。
-
-- **参数演示**：注册前 `setTargetMarketId("asheru")`(不存在于原版的 id)→ 回退扫描生效，`structure` 行打印第一个有开放市场的市场而不是 `asheru`；改成 `"asharu"` → `structure` 行打印 `id=asharu ... faction=independent`。
-
-- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
+    要点核对：`variantToStats baseline` 的 `variantShared=true`/`memberLinked=true`(stats 与变体、成员双向绑定)；`captainToMember preJoin` 的 `1.000/-0.500`(未入队不应用技能)；`captainToMember joined` 的 `0.750/1.250/15.0/15.0`(入队后技能生效，`gunnery_implants` L1 的 recoil/aim/range)；`statsRebuild transient` 的 `rebuiltNewObject=true` 与 `speedAfterRebuild` 回落 (重建即丢弃)；`variantToStats refit` 的 `+1000/+50` 与 `sharedVariant=true`(装配 → stats 交接与引用共享)；`captainToMember swap` 的 `0.750 -> 1.000`(换人立即重算并恢复)；`commanderToMember` 的 "中间值 > 前后值且恢复值 == 初始值"(舰队指挥官 → 成员 stats 交接)；三个 `done` 行成员数均与各自 `start` 行一致 (无残留)。类间顺序以注册顺序为准，类内顺序确定。
+- **报错定位**：若日志出现某个演示类的 ERROR 堆栈 (前缀 `GearIn variantToStats / captainToMember / commanderToMember / statsRebuild`)，说明该步抛错，按堆栈对照 "规则强度" 节定位 (最常见的是引用了不存在的技能 id 或装配 id)。
+- **读档**：不重复执行演示 (四个 `REGISTER_MARK` 键已关)；玩家舰队构成与演示前一致。
+- **退出到主菜单**：脚本停止 (生涯状态不再运行)；回主菜单后再进档按第 5 条继续。
 
 ## 故障分析
 
-- **市场查询返回 null**：只创建了市场对象，没有调用 `economy.addMarket`，或市场 ID 写错。
+- **生涯侧数值自行恢复**：`updateStats` 新建了 stats 对象，直接写在旧对象上的 modifier 随之失效。
 
-    - **解决方案**：补齐注册，以 `econ/*.json` 的首实体 ID 为准。
+    - **解决方案**：将长期效果放进船插、技能或 buff 的重放入口。
 
-- **实体没有市场交互**：市场已加入经济集合，但没有执行 `entity.setMarket(market)`。
+- **换舰长后成员数值没有变化**：成员尚未加入舰队，个人技能应用被 `getFleetData() != null` 条件跳过。
 
-    - **解决方案**：执行 `entity.setMarket(market)` 完成实体绑定。
+    - **解决方案**：先入队再调用 `setCaptain`。
 
-- **读取子市场库存时抛 NPE**：`getCargoNullOk()` 可能返回 null。
+- **换装配后界面仍显示旧值**：修改没有设置重算标记，`getStats()` 继续返回旧对象。
 
-    - **解决方案**：判空，或需要自动创建库存时使用 `getCargo()`。
+    - **解决方案**：使用带 stats 更新的 `setVariant`、`updateStats` 或 `setStatUpdateNeeded(true)`。
 
-- **后台脚本调用 `nextStep()` 后卡顿**：该调用会同步执行整轮经济迭代。
+- **生涯数值与战斗数值不一致**：部署会创建新的战斗 stats，并继续叠加战斗期效果。生涯侧只用于预览。
 
-    - **解决方案**：后台逻辑改用 `forceStockpileUpdate(market)` 或等待自然经济步。
+    - **解决方案**：部署后从 `ShipAPI.getMutableStats()` 读取最终值。
 
-- **`EconomyUpdateListener` 从不回调**：监听器注册到了 Sector listener 表。
+- **战斗中换舰长后加成没有更新**：只修改人物对象不会把技能重新应用到战斗 stats。
 
-    - **解决方案**：改用 `economy.addUpdateListener(...)`。
+    - **解决方案**：调用 `ShipAPI.setCaptain(newPerson)`；需要恢复时传入 `getOriginalCaptain()`。
 
-- **市场价格与交易界面不一致**：`CommoditySpecAPI.getBasePrice()` 只是全局基础价。
+- **自定义 modifier 被覆盖**：代码复用了引擎的 modifier ID，同类型的后写值覆盖了前值。
 
-    - **解决方案**：买卖价格读取市场的 `getDemandPrice` 与 `getSupplyPrice`。
+    - **解决方案**：改用带 MOD 前缀的专属 ID。
 
-- **删除一个条件却把同 ID 全删**：`removeCondition(id)` 面向 spec ID，会移除所有同 ID 实例。
+- **船插应用时出现 `StackOverflowError`**：`applyEffectsBeforeShipCreation` 内再次调用了会触发 `updateStats` 的成员 API。
 
-    - **解决方案**：保存 `addCondition` 返回的 token，改用 `removeSpecificCondition(token)`。
+    - **解决方案**：该入口只修改 stats 或变体内容，把换舰长、换装配移到脚本层。
 
-- **每帧读取市场 memory 导致回调风暴**：`getMemory()` 会触发全部插件的 `updateMarketFacts`。
+- **下一场战斗读到旧 stats**：代码跨战斗保存了 `ShipAPI` 或 `getMutableStats()` 引用。
 
-    - **解决方案**：纯读取使用 `getMemoryWithoutUpdate()`。
+    - **解决方案**：每场战斗重新查询，并在战斗结束时丢弃引用。
 
-- **读取管理员后存档多出人物**：`getAdmin()` 会在缺失时创建默认管理员。
+- **舰队技能只影响部分成员**：舰队向效果会跳过战机，具体技能还可能要求非民用舰或军官驾驶。
 
-    - **解决方案**：读取前确认市场已有 admin，避免触发创建副作用。
+    - **解决方案**：按效果作用域和技能条件逐艘核对。
 
-- **经济频率观察与 `economyIntervalnGameDays` 不符**：该设置键不参与实际经济推进。
+- **更换装配后 CR 下降**：`setVariant` 使用了 `withRefit=true`，引擎按装配差异应用现场改装惩罚。
 
-    - **解决方案**：按 `economyIterPerMonth` 和经济迭代日志判断节奏。
+    - **解决方案**：代码批量换装时传 `false`。
 
-- **关闭自由港后黑市仍存在**：自由港条件与黑市子市场是两条独立链。
+- **提高技能等级后成员数值不变**：SHIP 效果要等成员 stats 重建，`setSkillLevel` 本身不会触发该过程。
 
-    - **解决方案**：使用 `removeSubmarket` 处理黑市，不要把 `setFreePort(false)` 当作黑市开关。
-
-- **交易后立即读取库存看不到变化**：交易影响通过 120 游戏日的 trade mod 缓慢衰减。
-
-    - **解决方案**：等待一个经济步后再读取。
+    - **解决方案**：随后调用 `updateStats()` 或触发舰队同步。
 
 ## 总结
 
-本节把市场、子市场与经济对象讲成三条链：市场链从 `createMarket` 经收尾调用把市场注册进经济集合并绑到实体；子市场链从 `submarkets.csv` 的 spec 生成插件实例，差异集中在税率、合法性、库存与稳定度的关系和经济参与；经济链由 `EconomyAPI.advance` 每帧喂给经济推进器，每月 10 步、月末步写库存与价格。排错时抓住一个分工即可少走弯路：市场持有结构与交易入口，经济集合负责重算，子市场插件决定单个入口的行为差异 —— 市场是实体绑定的经济节点，不是经济重算的执行者。
+本节把状态交接讲成一条四环节链：装配内容决定 stats 基值，人物技能经个人/舰队两条通道在重建时重放，部署链为战斗新造 stats 并按自己的顺序重放一遍，`MutableStat` 的延迟重算与同 ID 幂等则保证这一切可以安全重复。链的结算时刻始终是 `updateStats`：整体新建 stats 对象、按固定序列重放；要跨结算保留的修改，只能挂在重放入口上。
 
 记忆要点：
 
-- 市场 id = `econ/*.json` `entities` 首实体 id；`getMarket(id)` 精确匹配、查无返回 null。
-- `addCondition` 返回 token：删具体实例用 `removeSpecificCondition(token)`，`removeCondition(id)` 删同 id 全部；条件与产业的 spec id 不存在时，添加入口都会抛出运行时异常。
-- `getCargoNullOk()` 可能 null；`getMemory()` 触发全插件回调；`getAdmin()` 用到时才创建管理员：三个 "用到时才创建/副作用" 入口。
-- `economyIterPerMonth = 10`、`economyIntervalnGameDays` 不参与经济；`nextStep` 系列禁止后台调用；监听器必须走 `addUpdateListener`。
-- 自由港 → `isIllegal` 全 false；隐藏市场跳过进口需求；同经济组市场只互相可见与交易。
+- 交接的结算时刻是 `updateStats`：新建 stats、按序重放、同 ID 幂等；要跨结算保留的修改必须挂在重放入口。
+- 舰长技能要 "入队才生效"(`getFleetData() != null`)；舰队向技能跳过战机。
+- `setVariant` 传引用不克隆，stats 与成员共享变体；部署链每场新造战斗 stats，禁止跨战斗缓存。
+- 战斗内换舰长就是解挂旧舰长、挂上新舰长 (含子模块)，立即生效；`getPersonality` 来自舰长。
+- 调试先看对象同一性 (`before != after`)，再谈数值。
 
-地点容器与实体挂载承载着市场主实体，舰队成员是生涯对象族的另一支；本节的 `REGISTER_MARK` 注册模式沿用生涯对象族的既有做法。市场的行为由三条链共同决定 —— 子市场的插件差异、经济循环的迭代节奏、开放状态的语义开关；产业供需、交易界面与殖民地管理都沿这些入口展开。
+这条链闭合后的意义在于：生涯侧与战斗侧各自维护自己的 stats，跨场景只通过 "重建 + 重放" 传递语义、不共享对象 —— 因此任何 "跨战斗缓存" 的尝试都必然读到过期对象，而任何 "挂在重放入口" 的修改都天然获得幂等性。生涯侧的脚本时序、事件与存档主题都可沿用本节的注册判断模式 (每注册项独立 persistent data 键) 与 "先问重放入口、再问来源 ID" 的排查顺序；变体本身的语义 (克隆、来源、武器组改写) 也始终以本节的 `setVariant` 引用共享规则为落点。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.econ.MarketAPI`：市场接口全貌：身份、实体绑定、条件、产业、商品、价格、人物、开放状态与每帧推进。
-- `com.fs.starfarer.api.campaign.econ.SubmarketAPI`：子市场运行时入口 (spec、plugin、cargo、税率、合法性)。
-- `com.fs.starfarer.api.campaign.SubmarketPlugin`：子市场插件角色：税率、合法性、经济参与、用户交易影响 (`PlayerEconomyImpactMode` / `TransferAction`)。
-- `com.fs.starfarer.api.campaign.econ.EconomyAPI`：经济集合、商品注册表、手动重算入口与 `EconomyUpdateListener`(注册必须经 `addUpdateListener`)。
-- `com.fs.starfarer.api.campaign.econ.CommodityOnMarketAPI`：单商品数据：库存、可得量、供需上限、交易修饰。
-- `com.fs.starfarer.api.campaign.econ.CommoditySpecAPI`：全局商品规格：基础价、econ unit、demand class。
-- `com.fs.starfarer.api.campaign.econ.MarketConditionAPI`：条件实例：spec id 与唯一 token。
-- `com.fs.starfarer.api.impl.campaign.ids.Submarkets`：五个原版子市场 spec id 常量。
-- `com.fs.starfarer.api.impl.campaign.ids.Commodities`：原版商品 id 常量 (`SUPPLIES` / `DRUGS`)。
-- `com.fs.starfarer.api.impl.campaign.submarkets.BaseSubmarketPlugin`：子市场基类：交易影响天数、cargo 用到时才创建、默认税率与合法性。
-- `com.fs.starfarer.api.impl.campaign.submarkets.OpenMarketPlugin` / `BlackMarketPlugin` / `StoragePlugin`：三种原版子市场的插件差异。
-- `com.fs.starfarer.api.combat.MutableStat`：税率等修饰统计：`modifyFlat` / `unmodifyFlat` / `getModifiedValue`。
-- `com.fs.starfarer.api.FactoryAPI`：`createMarket` 创建市场对象 (只建对象，不注册)。
-- `com.fs.starfarer.api.campaign.SectorEntityToken`：`getMarket` / `setMarket` 实体侧绑定。
-- `com.fs.starfarer.api.util.Misc`：`getStorageFeeFraction` 读取 `storageFreeFraction` 存值费率。
-- `data/campaign/econ/economy.json`：经济入口配置：`starSystems` 列表与 `defaultTariff`。
-- `data/campaign/econ/corvus.json`：示例市场条目 (`jangala` / `asharu`)。
-- `data/campaign/submarkets.csv`：五个原版子市场 spec(`script` 列即 plugin)。
-- `data/campaign/market_conditions.csv`：条件 spec(含 `free_market`)。
-- `data/config/settings.json`：经济参数键 (`economyIterPerMonth`、`economyPlayerTradeImpactMult`、`storageFreeFraction` 等)。
+- `com.fs.starfarer.api.combat.MutableStat`：公开类即实现，含延迟重算、同 ID 幂等覆盖、`unmodify(source)` 清三类 (环节四)。
+- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：成员/战斗 stats 的统一接口，数值访问器如 `getFluxCapacity`、`getMaxSpeed`、`getMaxCombatReadiness`、`getAutofireAimAccuracy`、`getMaxRecoilMult`，射程与对象访问器如 `getBallisticWeaponRangeBonus`、`getEnergyWeaponRangeBonus`、`getVariant`、`getFleetMember`、`getEntity`。
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：生涯侧成员入口，提供 `getStats`、`setCaptain`、`setVariant`、`setStatUpdateNeeded`、`setFleetCommanderForStats`、`updateStats`。
+- `com.fs.starfarer.api.characters.PersonAPI`：人物入口 (`setSkillLevel`)；
+- `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：人物技能等级入口 (`refreshCharacterStatsEffects`)。
+- `com.fs.starfarer.api.combat.ShipAPI`：战斗实体，提供 `getMutableStats`、`getCaptain`、`getOriginalCaptain`、`setCaptain`、`getFleetCommander`。
+- `com.fs.starfarer.api.combat.ShipHullSpecAPI`：船体 spec，`getFluxCapacity`/`getFluxDissipation` 是幅能基值来源，嵌套 `EngineSpecAPI`。
+- `com.fs.starfarer.api.impl.combat.CRPluginImpl`：`cr_effect` / `crew skill bonus` / `crew understrength` 保留 ID 的引擎写入方。
+- `com.fs.starfarer.api.impl.campaign.skills.GunneryImplants`：本节演示的原版技能效果类；
+- `com.fs.starfarer.api.impl.campaign.skills.CrewTraining`：本节演示的原版技能效果类。
+- `data/config/settings.json`：`fluxPerCapacitor:200`、`dissipationPerVent:10` 的出处。
+- `data/hulls/ship_data.csv`：演示基线数据 (wolf 的 `max flux`/ `flux dissipation`/`max speed`；`fluxCapacitors:9`/`fluxVents:10`)；
+- `data/variants/wolf/wolf_Assault.variant`：演示使用的原版装配基线。
 
 ## 完整最小例
 
-::: details 完整成品：GearInMarketInspector
+::: details 完整成品：GearInVariantToStats
 
 ```java
 package data.scripts.gearin.campaign;
@@ -717,34 +541,38 @@ import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.econ.EconomyAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.combat.MutableShipStatsAPI;
+import com.fs.starfarer.api.combat.ShipVariantAPI;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 市场巡检脚本 (EveryFrameScript 角色)：挂载后第一次 advance() 执行一次市场/子市场/
- * 经济对象巡检序列并自停 (isDone()=true，引擎下一帧自动移除本脚本)。注册入口：生涯回调
- * onGameLoad，persistent data 键 REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
+ * 环节一：装配 -> stats 交接 (舰船 stats 基值与 setVariant 重算)。
+ *
+ * 注册入口：生涯回调 onGameLoad，persistent data 键
+ * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
+ *
+ * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
+ *   1. 基线：创建 wolf_Assault 成员 (未入队)，读取舰船 stats 基值 (幅能/速度/CR) 与
+ *      stats.getVariant() / getFleetMember() 的对象关系；
+ *   2. 装配 -> stats：克隆装配加 5 电容 + 5 散热后 setVariant(withRefit=false,
+ *      withStatsUpdate=true)，幅能容量 +5*200、幅能散耗 +5*10(引擎保留 ID 的 flat 写入)，
+ *      stats.getVariant() 与传入变体同一引用。
+ *
+ * 演示全程同帧回滚 (只留下 REGISTER_MARK 键)，不遗留任何持久状态。
  */
-public class GearInMarketInspector implements EveryFrameScript {
+public class GearInVariantToStats implements EveryFrameScript {
 
-    /** 存档持久化标记：本巡检是否已在该存档执行过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_MarketInspector";
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
+    public static final String REGISTER_MARK = "GearIn_VariantToStats";
 
-    private static final Logger LOG = Global.getLogger(GearInMarketInspector.class);
+    private static final Logger LOG = Global.getLogger(GearInVariantToStats.class);
 
-    /** 巡检目标市场 id；默认 "jangala"(原版核心世界，必存在)。 */
-    private String targetMarketId = "jangala";
-
-    /** 巡检是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
+    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
     private boolean executed = false;
 
-    public GearInMarketInspector() {
+    public GearInVariantToStats() {
         // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
-    }
-
-    /** 修改巡检目标市场；改回 null 时回退到 "第一个有开放市场的市场"。 */
-    public void setTargetMarketId(String targetMarketId) {
-        this.targetMarketId = targetMarketId;
     }
 
     @Override
@@ -763,342 +591,349 @@ public class GearInMarketInspector implements EveryFrameScript {
             return;
         }
         executed = true;
-        runInspection();
+        runDemo();
     }
 
-    private void runInspection() {
-        EconomyAPI economy = Global.getSector().getEconomy();
-
-        // --- 经济基线 ---
+    private void runDemo() {
+        // --- 1. 基线：成员未入队，stats 已在构造器内按变体首次建立 ---
+        FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
+        ShipVariantAPI variant = wolf.getVariant();
+        MutableShipStatsAPI stats = wolf.getStats();
         LOG.info(String.format(
-                "GearIn market inspection start: markets=%d commodities=%d",
-                economy.getNumMarkets(), economy.getAllCommodityIds().size()));
+                "GearIn variantToStats baseline: hull=%s specId=%s caps=%d vents=%d "
+                        + "fluxCap base=%.0f mod=%.0f fluxDiss base=%.0f mod=%.0f speed=%.1f maxCR=%.3f "
+                        + "variantShared=%s memberLinked=%s",
+                wolf.getHullId(), wolf.getSpecId(), variant.getNumFluxCapacitors(), variant.getNumFluxVents(),
+                stats.getFluxCapacity().getBaseValue(), stats.getFluxCapacity().getModifiedValue(),
+                stats.getFluxDissipation().getBaseValue(), stats.getFluxDissipation().getModifiedValue(),
+                stats.getMaxSpeed().getModifiedValue(),
+                stats.getMaxCombatReadiness().getModifiedValue(),
+                stats.getVariant() == variant,
+                stats.getFleetMember() == wolf));
 
-        MarketAPI market = new GearInMarketPicker(targetMarketId).pick(economy);
-        if (market == null) {
-            LOG.info("GearIn market inspection abort: no open-market market found");
+        // --- 2. 装配 -> stats：setVariant 触发重算；vents/caps 是引擎保留 ID 的 flat 写入 ---
+        ShipVariantAPI refit = wolf.getVariant().clone();
+        int capsOld = refit.getNumFluxCapacitors();
+        int ventsOld = refit.getNumFluxVents();
+        float fluxCapBefore = stats.getFluxCapacity().getModifiedValue();
+        float fluxDissBefore = stats.getFluxDissipation().getModifiedValue();
+        refit.setNumFluxCapacitors(capsOld + 5);
+        refit.setNumFluxVents(ventsOld + 5);
+        wolf.setVariant(refit, false, true); // withRefit=false 跳过 CR 影响计算；withStatsUpdate=true 立即重算
+        MutableShipStatsAPI statsAfterRefit = wolf.getStats();
+        LOG.info(String.format(
+                "GearIn variantToStats refit: caps %d->%d vents %d->%d fluxCap %.0f->%.0f (+%.0f) "
+                        + "fluxDiss %.0f->%.0f (+%.0f) sharedVariant=%s specId=%s",
+                capsOld, refit.getNumFluxCapacitors(), ventsOld, refit.getNumFluxVents(),
+                fluxCapBefore, statsAfterRefit.getFluxCapacity().getModifiedValue(),
+                statsAfterRefit.getFluxCapacity().getModifiedValue() - fluxCapBefore,
+                fluxDissBefore, statsAfterRefit.getFluxDissipation().getModifiedValue(),
+                statsAfterRefit.getFluxDissipation().getModifiedValue() - fluxDissBefore,
+                statsAfterRefit.getVariant() == refit,
+                wolf.getSpecId()));
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInCaptainToMember
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.EveryFrameScript;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.FleetDataAPI;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.api.fleet.FleetMemberType;
+
+/**
+ * 环节二 (个人)：舰长技能 -> 成员 stats 交接 (applyPersonalToStats)。
+ *
+ * 注册入口：生涯回调 onGameLoad，persistent data 键
+ * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
+ *
+ * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
+ *   1. 未入队换舰长：setCaptain 触发 updateStats，但舰长个人技能不应用
+ *      (updateStats 的舰队条件：getFleetData() 为 null 时跳过 applyPersonalToStats)；
+ *   2. 入队 + 显式 updateStats：个人技能 (gunnery_implants L1) 开始应用，
+ *      后坐力倍率 1.0 -> 0.75、自动瞄准 0.0 -> 1.0、实弹/能量射程 +15%；
+ *   3. 入队换舰长：setCaptain 立即重算，换回无技能人物后数值恢复。
+ *
+ * 演示全程同帧回滚 (只留下 REGISTER_MARK 键与演示成员的增删)，不遗留任何持久状态。
+ */
+public class GearInCaptainToMember implements EveryFrameScript {
+
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
+    public static final String REGISTER_MARK = "GearIn_CaptainToMember";
+
+    private static final Logger LOG = Global.getLogger(GearInCaptainToMember.class);
+
+    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
+    private boolean executed = false;
+
+    public GearInCaptainToMember() {
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
+    }
+
+    @Override
+    public boolean isDone() {
+        return executed;
+    }
+
+    @Override
+    public boolean runWhilePaused() {
+        return false;
+    }
+
+    @Override
+    public void advance(float amount) {
+        if (executed) {
             return;
         }
+        executed = true;
+        runDemo();
+    }
 
-        GearInMarketStructureLog.log(market, economy);
-        GearInSubmarketLog.log(market);
-        GearInCommodityLog.log(market);
-        GearInTariffProbe.log(market);
+    private void runDemo() {
+        SectorAPI sector = Global.getSector();
+        FleetDataAPI fleetData = sector.getPlayerFleet().getFleetData();
+        int initialCount = fleetData.getNumMembers();
+        LOG.info(String.format("GearIn captainToMember start: members=%d", initialCount));
 
-        economy.addUpdateListener(new GearInEconomyTickLog());
-        LOG.info("GearIn market inspection registered economy update listener (self-expires)");
-        LOG.info("GearIn market inspection done");
+        // --- 1. 未入队换舰长：setCaptain 触发 updateStats，但个人技能不应用 ---
+        FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
+        PersonAPI gunner = Global.getFactory().createPerson();
+        gunner.getStats().setSkillLevel("gunnery_implants", 1f);
+        wolf.setCaptain(gunner);
+        LOG.info(String.format(
+                "GearIn captainToMember preJoin: recoil=%.3f aim=%.3f (skills not applied, member not in fleet)",
+                wolf.getStats().getMaxRecoilMult().getModifiedValue(),
+                wolf.getStats().getAutofireAimAccuracy().getModifiedValue()));
+
+        // --- 2. 入队 + 显式 updateStats：个人技能开始应用 (getFleetData() 已非 null) ---
+        fleetData.addFleetMember(wolf);
+        wolf.updateStats();
+        LOG.info(String.format(
+                "GearIn captainToMember joined: count=%d recoil=%.3f aim=%.3f ballisticRange=%.1f energyRange=%.1f",
+                fleetData.getNumMembers(),
+                wolf.getStats().getMaxRecoilMult().getModifiedValue(),
+                wolf.getStats().getAutofireAimAccuracy().getModifiedValue(),
+                wolf.getStats().getBallisticWeaponRangeBonus().getPercentMod(),
+                wolf.getStats().getEnergyWeaponRangeBonus().getPercentMod()));
+
+        // --- 3. 入队换舰长：立即重算；换回无技能人物后恢复 ---
+        float recoilWithGunner = wolf.getStats().getMaxRecoilMult().getModifiedValue();
+        PersonAPI plain = Global.getFactory().createPerson();
+        wolf.setCaptain(plain);
+        float recoilRestored = wolf.getStats().getMaxRecoilMult().getModifiedValue();
+        LOG.info(String.format("GearIn captainToMember swap: recoil %.3f -> %.3f (restored)",
+                recoilWithGunner, recoilRestored));
+
+        // --- 4. 清理：移除演示成员 ---
+        fleetData.removeFleetMember(wolf);
+        LOG.info(String.format("GearIn captainToMember done: members=%d (initial %d)",
+                fleetData.getNumMembers(), initialCount));
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInMarketPicker
-
-```java
-package data.scripts.gearin.campaign;
-
-import com.fs.starfarer.api.campaign.econ.EconomyAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
-
-/**
- * 目标市场选择器：优先按指定 id 取市场；id 为空或查无此市场时回退扫描，
- * 取第一个有开放市场 (open_market 子市场) 的市场，仍找不到返回 null。
- * 供巡检脚本 GearInMarketInspector 编排时调用。
- */
-public class GearInMarketPicker {
-
-    /** 首选市场 id；null 或查无此市场时走回退扫描。 */
-    private final String preferredId;
-
-    public GearInMarketPicker(String preferredId) {
-        this.preferredId = preferredId;
-    }
-
-    /** 返回首选市场；不可用时回退扫描，仍找不到返回 null。 */
-    public MarketAPI pick(EconomyAPI economy) {
-        MarketAPI market = economy.getMarket(preferredId);
-        if (market == null) {
-            for (MarketAPI candidate : economy.getMarketsCopy()) {
-                if (candidate.hasSubmarket(Submarkets.SUBMARKET_OPEN)) {
-                    market = candidate;
-                    break;
-                }
-            }
-        }
-        return market;
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInMarketStructureLog
-
-```java
-package data.scripts.gearin.campaign;
-
-import java.util.List;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.econ.EconomyAPI;
-import com.fs.starfarer.api.campaign.econ.Industry;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.campaign.econ.MarketConditionAPI;
-
-/**
- * 市场结构日志器：输出目标市场的身份/势力/实体绑定/survey/开放状态/条件与产业 id 列表，
- * 以及市场人物数量与同经济组市场数。由巡检脚本 GearInMarketInspector 选定目标市场后调用。
- */
-public class GearInMarketStructureLog {
-
-    private static final Logger LOG = Global.getLogger(GearInMarketStructureLog.class);
-
-    private GearInMarketStructureLog() {
-        // 工具类：不实例化
-    }
-
-    public static void log(MarketAPI market, EconomyAPI economy) {
-        LOG.info(String.format(
-                "GearIn market structure: id=%s name=%s size=%d faction=%s inEconomy=%s survey=%s playerOwned=%s freePort=%s hidden=%s onOrAt=%s primaryEntity=%s",
-                market.getId(), market.getName(), market.getSize(), market.getFactionId(),
-                market.isInEconomy(), market.getSurveyLevel(), market.isPlayerOwned(),
-                market.isFreePort(), market.isHidden(), market.getOnOrAt(),
-                market.getPrimaryEntity() == null ? "null" : market.getPrimaryEntity().getName()));
-
-        List<MarketConditionAPI> conditions = market.getConditions();
-        StringBuilder conditionIds = new StringBuilder();
-        for (MarketConditionAPI condition : conditions) {
-            if (conditionIds.length() > 0) {
-                conditionIds.append(", ");
-            }
-            conditionIds.append(condition.getId());
-        }
-        LOG.info(String.format(
-                "GearIn market conditions: count=%d ids=[%s]",
-                conditions.size(), conditionIds));
-
-        List<Industry> industries = market.getIndustries();
-        StringBuilder industryIds = new StringBuilder();
-        for (Industry industry : industries) {
-            if (industryIds.length() > 0) {
-                industryIds.append(", ");
-            }
-            industryIds.append(industry.getId());
-        }
-        LOG.info(String.format(
-                "GearIn market industries: count=%d ids=[%s]",
-                industries.size(), industryIds));
-
-        LOG.info(String.format(
-                "GearIn market people: count=%d",
-                market.getPeopleCopy().size()));
-        LOG.info(String.format(
-                "GearIn market econGroup: group=%s sameGroupMarkets=%d",
-                market.getEconGroup(), economy.getMarketsWithSameGroup(market).size()));
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInSubmarketLog
+::: details 完整成品：GearInCommanderToMember
 
 ```java
 package data.scripts.gearin.campaign;
 
 import org.apache.log4j.Logger;
 
+import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CargoAPI;
-import com.fs.starfarer.api.campaign.SubmarketPlugin;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.campaign.econ.SubmarketAPI;
-import com.fs.starfarer.api.impl.campaign.ids.Commodities;
-import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
+import com.fs.starfarer.api.campaign.FleetDataAPI;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 子市场差异日志器：遍历 open_market/black_market/storage 三种原版子市场，
- * 输出税率、势力、plugin 类、cargo 惰性创建语义与开放/黑市/免费转移标志。
- * 由巡检脚本 GearInMarketInspector 选定目标市场后调用。
- */
-public class GearInSubmarketLog {
-
-    private static final Logger LOG = Global.getLogger(GearInSubmarketLog.class);
-
-    private static final String[] SPEC_IDS = {
-            Submarkets.SUBMARKET_OPEN,
-            Submarkets.SUBMARKET_BLACK,
-            Submarkets.SUBMARKET_STORAGE,
-    };
-
-    private GearInSubmarketLog() {
-        // 工具类：不实例化
-    }
-
-    public static void log(MarketAPI market) {
-        for (String specId : SPEC_IDS) {
-            if (!market.hasSubmarket(specId)) {
-                LOG.info("GearIn submarket " + specId + ": present=false");
-                continue;
-            }
-            SubmarketAPI submarket = market.getSubmarket(specId);
-            SubmarketPlugin plugin = submarket.getPlugin();
-            CargoAPI cargoNullOk = submarket.getCargoNullOk();
-            float supplies = 0f;
-            if (cargoNullOk != null) {
-                supplies = cargoNullOk.getCommodityQuantity(Commodities.SUPPLIES);
-            }
-            LOG.info(String.format(
-                    "GearIn submarket %s: present=true name=%s tariff=%.3f faction=%s plugin=%s cargoNullOk=%s supplies=%.1f open=%s black=%s freeTransfer=%s",
-                    specId, submarket.getNameOneLine(), submarket.getTariff(),
-                    submarket.getFaction().getId(), plugin.getClass().getSimpleName(),
-                    cargoNullOk == null ? "null" : "created", supplies,
-                    plugin.isOpenMarket(), plugin.isBlackMarket(), plugin.isFreeTransfer()));
-        }
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInCommodityLog
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.econ.CommodityOnMarketAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.impl.campaign.ids.Commodities;
-
-/**
- * 商品日志器：对演示商品输出库存、可得量、供需上限、市场买入/卖出价与合法性
- * (价格方向以市场为主体：demandPrice = 市场买入 = 玩家卖出)。
- * 由巡检脚本 GearInMarketInspector 选定目标市场后调用。
- */
-public class GearInCommodityLog {
-
-    private static final Logger LOG = Global.getLogger(GearInCommodityLog.class);
-
-    private static final String[] COMMODITY_IDS = {
-            Commodities.SUPPLIES,
-            Commodities.DRUGS,
-    };
-
-    private GearInCommodityLog() {
-        // 工具类：不实例化
-    }
-
-    public static void log(MarketAPI market) {
-        for (String commodityId : COMMODITY_IDS) {
-            CommodityOnMarketAPI commodity = market.getCommodityData(commodityId);
-            LOG.info(String.format(
-                    "GearIn commodity %s: stockpile=%.1f available=%d maxSupply=%d maxDemand=%d illegal=%s demandPrice(100)=%.0f supplyPrice(100)=%.0f",
-                    commodityId, commodity.getStockpile(), commodity.getAvailable(),
-                    commodity.getMaxSupply(), commodity.getMaxDemand(),
-                    market.isIllegal(commodityId),
-                    market.getDemandPrice(commodityId, 100, true),
-                    market.getSupplyPrice(commodityId, 100, true)));
-        }
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInTariffProbe
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.combat.MutableStat;
-
-/**
- * 税率探针：对市场税率 (MutableStat) 做瞬时 modifyFlat 并当帧 unmodifyFlat 回滚，
- * 记录生效值 before/during/after，演示 "修改高频参数观察结果变化" 的最小任务链。
- * 由巡检脚本 GearInMarketInspector 选定目标市场后调用，无持久残留。
- */
-public class GearInTariffProbe {
-
-    private static final Logger LOG = Global.getLogger(GearInTariffProbe.class);
-
-    private static final String TARIFF_MOD_ID = "GearIn_inspect_tariff";
-
-    private GearInTariffProbe() {
-        // 工具类：不实例化
-    }
-
-    public static void log(MarketAPI market) {
-        MutableStat tariff = market.getTariff();
-        float before = tariff.getModifiedValue();
-        tariff.modifyFlat(TARIFF_MOD_ID, 0.05f);
-        float during = tariff.getModifiedValue();
-        tariff.unmodifyFlat(TARIFF_MOD_ID);
-        float after = tariff.getModifiedValue();
-        LOG.info(String.format(
-                "GearIn tariff probe: before=%.3f during=%.3f after=%.3f",
-                before, during, after));
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInEconomyTickLog
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.econ.EconomyAPI.EconomyUpdateListener;
-
-/**
- * 经济更新监听器 (EconomyUpdateListener 角色)：记录下一个经济步的第一次
- * commodityUpdated 与整轮 economyUpdated，之后 isEconomyListenerExpired() 返回 true，
- * 引擎在下一个经济步自动从监听器列表移除。
+ * 环节二 (舰队向)：舰队指挥官 -> 成员 stats 交接 (applyFleetwideToStats)。
  *
- * 只持有两个 boolean，无外部引用，随存档序列化无副作用。注册入口：必须经
- * EconomyAPI.addUpdateListener() 注册，不能加入 SectorAPI.getListenerManager()。
+ * 注册入口：生涯回调 onGameLoad，persistent data 键
+ * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
+ *
+ * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
+ *   1. 建成员并入队：stats 只含装配基值 (无任何技能加成)；
+ *   2. setFleetCommanderForStats 挂 crew_training(ALL_SHIPS_IN_FLEET)，getStats()
+ *      惰性重建后 maxCombatReadiness 上升；
+ *   3. 置回 null：舰队向加成撤销，数值恢复。
+ *
+ * 演示全程同帧回滚 (只留下 REGISTER_MARK 键与演示成员的增删)，不遗留任何持久状态。
  */
-public class GearInEconomyTickLog implements EconomyUpdateListener {
+public class GearInCommanderToMember implements EveryFrameScript {
 
-    private static final Logger LOG = Global.getLogger(GearInEconomyTickLog.class);
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
+    public static final String REGISTER_MARK = "GearIn_CommanderToMember";
 
-    private boolean commodityFired = false;
-    private boolean economyFired = false;
+    private static final Logger LOG = Global.getLogger(GearInCommanderToMember.class);
 
-    @Override
-    public void commodityUpdated(String commodityId) {
-        if (!commodityFired) {
-            commodityFired = true;
-            LOG.info("GearIn economy listener first commodityUpdated: " + commodityId);
-        }
+    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
+    private boolean executed = false;
+
+    public GearInCommanderToMember() {
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
     }
 
     @Override
-    public void economyUpdated() {
-        if (!economyFired) {
-            economyFired = true;
-            LOG.info("GearIn economy listener economyUpdated (expiring)");
-        }
+    public boolean isDone() {
+        return executed;
     }
 
     @Override
-    public boolean isEconomyListenerExpired() {
-        return economyFired;
+    public boolean runWhilePaused() {
+        return false;
+    }
+
+    @Override
+    public void advance(float amount) {
+        if (executed) {
+            return;
+        }
+        executed = true;
+        runDemo();
+    }
+
+    private void runDemo() {
+        SectorAPI sector = Global.getSector();
+        FleetDataAPI fleetData = sector.getPlayerFleet().getFleetData();
+        int initialCount = fleetData.getNumMembers();
+        LOG.info(String.format("GearIn commanderToMember start: members=%d", initialCount));
+
+        // --- 1. 建成员并入队：stats 只含装配基值 (无任何技能加成) ---
+        FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
+        fleetData.addFleetMember(wolf);
+        float maxCRBefore = wolf.getStats().getMaxCombatReadiness().getModifiedValue();
+
+        // --- 2. 舰队指挥官 -> 成员 stats(ALL_SHIPS_IN_FLEET 经 applyFleetwideToStats 重放) ---
+        PersonAPI commander = Global.getFactory().createPerson();
+        commander.getStats().setSkillLevel("crew_training", 1f);
+        wolf.setFleetCommanderForStats(commander, fleetData); // 人物变更 -> 标记 statUpdateNeeded
+        float maxCRWithCommander = wolf.getStats().getMaxCombatReadiness().getModifiedValue();
+
+        // --- 3. 置回 null：舰队向加成撤销，数值恢复 ---
+        wolf.setFleetCommanderForStats(null, null);
+        float maxCRRestored = wolf.getStats().getMaxCombatReadiness().getModifiedValue();
+        LOG.info(String.format(
+                "GearIn commanderToMember: maxCR %.3f -> %.3f (crewTraining) -> %.3f (reset)",
+                maxCRBefore, maxCRWithCommander, maxCRRestored));
+
+        // --- 4. 清理：移除演示成员 ---
+        fleetData.removeFleetMember(wolf);
+        LOG.info(String.format("GearIn commanderToMember done: members=%d (initial %d)",
+                fleetData.getNumMembers(), initialCount));
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInStatsRebuild
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.EveryFrameScript;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.FleetDataAPI;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.combat.MutableShipStatsAPI;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.api.fleet.FleetMemberType;
+
+/**
+ * 环节四：MutableStat 重建与惰性重算 (updateStats 整体新建舰船 stats)。
+ *
+ * 注册入口：生涯回调 onGameLoad，persistent data 键
+ * REGISTER_MARK 一次性门控 (每个注册项用各自的键)。
+ *
+ * 行为：挂载后第一次 advance() 执行一次演示并自停 (isDone()=true，引擎下一帧自动移除)：
+ *   1. 运行时 transient modifier 不跨重建：直接 modifyFlat 到 getStats() 返回值，
+ *      updateStats 后 stats 对象整体重建 (对象同一性为 false)、修改被丢弃；
+ *   2. 惰性重建：setStatUpdateNeeded(true) 后下一次 getStats() 才重建。
+ *
+ * 演示全程同帧回滚 (只留下 REGISTER_MARK 键与演示成员的增删)，不遗留任何持久状态。
+ */
+public class GearInStatsRebuild implements EveryFrameScript {
+
+    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
+    public static final String REGISTER_MARK = "GearIn_StatsRebuild";
+
+    private static final Logger LOG = Global.getLogger(GearInStatsRebuild.class);
+
+    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
+    private boolean executed = false;
+
+    public GearInStatsRebuild() {
+        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
+    }
+
+    @Override
+    public boolean isDone() {
+        return executed;
+    }
+
+    @Override
+    public boolean runWhilePaused() {
+        return false;
+    }
+
+    @Override
+    public void advance(float amount) {
+        if (executed) {
+            return;
+        }
+        executed = true;
+        runDemo();
+    }
+
+    private void runDemo() {
+        SectorAPI sector = Global.getSector();
+        FleetDataAPI fleetData = sector.getPlayerFleet().getFleetData();
+        int initialCount = fleetData.getNumMembers();
+        LOG.info(String.format("GearIn statsRebuild start: members=%d", initialCount));
+
+        // --- 1. 建成员并入队 (无舰长：updateStats 重放时无技能加成干扰) ---
+        FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
+        fleetData.addFleetMember(wolf);
+        wolf.updateStats();
+
+        // --- 2. 运行时 transient modifier 不跨重建：updateStats 整体新建舰船 stats ---
+        MutableShipStatsAPI before = wolf.getStats();
+        float speedBefore = before.getMaxSpeed().getModifiedValue();
+        before.getMaxSpeed().modifyFlat("GearIn_transient_speed", 25f);
+        float speedWithTransient = wolf.getStats().getMaxSpeed().getModifiedValue();
+        wolf.updateStats();
+        MutableShipStatsAPI after = wolf.getStats();
+        LOG.info(String.format(
+                "GearIn statsRebuild transient: speed %.1f -> %.1f (with transient), "
+                        + "rebuiltNewObject=%s speedAfterRebuild=%.1f",
+                speedBefore, speedWithTransient, before != after, after.getMaxSpeed().getModifiedValue()));
+
+        // --- 3. 惰性重建：setStatUpdateNeeded(true) 后下一次 getStats() 才重建 ---
+        wolf.setStatUpdateNeeded(true);
+        MutableShipStatsAPI lazy = wolf.getStats();
+        LOG.info(String.format("GearIn statsRebuild lazy: sameObjectAsBefore=%s", after == lazy));
+
+        // --- 4. 清理：移除演示成员 ---
+        fleetData.removeFleetMember(wolf);
+        LOG.info(String.format("GearIn statsRebuild done: members=%d (initial %d)",
+                fleetData.getNumMembers(), initialCount));
     }
 }
 ```

@@ -1,439 +1,761 @@
-# 使用 Rules 制作对话
+# 制作酒吧事件
 
-本节使用 `data/campaign/rules.csv` 制作一个由规则表驱动的对话框。规则会完成触发匹配、条件判断与结果执行，并为 [C15-S3] 的自定义命令和 [C15-S4] 的内存状态提供基础。
+本节制作一个生涯酒吧事件，一位落魄船员出售补给藏匿点的情报，玩家可以购买、婉拒或离开。示例会让事件进入酒吧、完成对话并正确收尾。
 
-*本节预期阅读时间：~25 分钟。*
+*本节预期阅读时间：~30 分钟。*
 
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：~50 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 在 `rules.csv` 中编写并合并自定义对话规则；
-- 使用 trigger、条件表达式与 `FireBest` 或 `FireAll` 选择规则；
-- 通过 script、text 和 options 生成对话内容与选项；
-- 创建规则驱动的交互入口并验证完整对话；
-- 根据匹配、文本和选项结果定位 Rules 故障。
+- 区分酒吧事件、事件创建器与调度器的职责；
+- 通过 `bar_events.csv` 或 Java 创建器注册酒吧事件；
+- 控制事件的抽选权重、显示条件、有效期和超时；
+- 实现提示、选项、事件对话与交互收尾；
+- 根据入列、显示和对话结果定位酒吧事件故障。
 
 ## 前置知识
 
-- [C7-S1] 的 `onGameLoad` 生命周期与注册时机；
-- [C10-S1] 的 `addScript` 与持久数据一次性判断；
-- [C10-S6] 的交互对话框生命周期与 `showInteractionDialog`；
-- [C15-S3] 的 `BaseCommandPlugin` 职责与原版命令；
-- [C15-S4] 的 `MemoryAPI` 过期、持久化与记忆键分组解析。
+- [C7-S1] 的 `modPlugin` 生命周期与注册判断；
+- [C7-S2] 的 `Global.getSector()` 阶段语义；
+- [C11-S3] 的 `MarketAPI` 与市场条件过滤；
+- [C14-S3] 的交互对话框面板、`showInteractionDialog` 与插件生命周期；
+- [C12-S1] 的人物、关系与市场稳定随机人物；
+- [C14-S1] 的 `advance(amount)` 真实秒语义与 `Misc.getDays` 换算；
+- [C14-S2] 的事件边界、监听器生命周期与 XStream 序列化边界；
+- [C16-S3] 的 Rules 命令与 [C16-S4] 的 Rules 内存。
 
 ## 术语
 
-本节先固定规则系统的六个核心词；API 类名保留源码大小写。其中规则命令的实现见 [C15-S3]，Rules 内存的完整语义见 [C15-S4]：
+酒吧事件牵扯一组角色与一条展示管线，先统一叫法，便于后文在 API 名与中文说法之间保持一致。按术语约定，API 类名保留源码大小写。本节首次完整讲解以下术语：
 
-- **规则 (rule)**：API 名保留 `RuleAPI`。`rules.csv` 中的一行就是一条规则：id、trigger、条件列表、脚本列表、文本变体列表、选项列表。
-- **触发器 (trigger)**：规则的字符串分组 key (`trigger` 列)。同一触发器的规则构成一个候选池；对话插件以触发器名为入口发起匹配。
-- **条件 (condition)**：API 名保留 `ExpressionAPI`。规则命中前必须全部为真的表达式行 (`conditions` 列)；条件也在匹配阶段被求值。
-- **结果 (result)**：规则命中后发生的事，由三列共同描述 —— `script` (脚本表达式)、`text` (对话文本)、`options` (对话选项)。
-- **规则命令 (rule command)**：类名保留 `BaseCommandPlugin`；本节把它们当作内置命令使用，自定义命令的编写与注册见 [C15-S3]。
-- **Rules 内存 (memory)**：API 名保留 `MemoryAPI`；本节只使用记忆键语法，内存生命周期见 [C15-S4]。
+- **酒吧事件 (bar event)**：API 名保留 `PortsideBarEvent`。
+    - 一次可在星球/空间站酒吧出现、由玩家主动选择进入的短对话事件：酒吧提示 + 选项 (`addPromptAndOption`)→ 事件对话 (`init` / `optionSelected`)→ 结束返回酒吧。
+    - 它独立于普通交互对话框：酒吧事件不自己调用 `showInteractionDialog`，而是由 `BarCMD` 在酒吧 UI 里把选项的 optionData 指到事件自身，再经 `BarEventDialogPlugin` 包装接管对话。
+- **creator**：API 名保留 `GenericBarEventCreator`(`BarEventManager` 的内部接口) 与默认实现 `BaseBarEventCreator`。
+    - 负责两件事：`createBarEvent()` 创建事件实例 (返回 null 表示本次放弃抽取)；提供抽取参数 (频率权重、active 时长、普通超时、accepted 超时、是否 priority)。
+- **manager**：API 名保留 `BarEventManager`。全局酒吧事件调度器 (`EveryFrameScript`)：持有 creator 集合与 active/timeout 两个跟踪器，按游戏天推进并周期性抽取事件入列。
+- **活动列表 (PortsideBarData)**：当前全部已抽取、等待被酒吧显示的事件实例列表。manager 决定 "创建哪些事件"，活动列表决定 "哪些事件可被显示"。
+- **临时 bar 选项 (temp bar option)**：规则系统经 `AddBarEvent` 规则命令写入市场内存、由 `BarCMD` 当次展示的临时酒吧选项。它**不是** `PortsideBarEvent` 事件，点选后走普通规则对话 (`$option == <optionId>`)，每次展示前被清空重建。
+- **事件对话 (event dialog)**：`BarEventDialogPlugin` 包装下的事件交互对话。玩家点选酒吧选项后，`BarCMD` 把对话框插件切换为 `BarEventDialogPlugin`，事件自身通过 `init` / `optionSelected` 驱动对话，结束时切换回 `BarCMD` 并回到酒吧。
 
-## 梳理 Rules 数据关系
+## 梳理酒吧事件关系
 
-### rules.csv 列语义速查表
+术语就位后，下一步把两条入口链路接起来，数据文件链路把 CSV 行变成可用事件，代码注册链路登记手写 creator，最终都汇入 `BarEventManager` 的 creator 集合。先看清三个角色的公开 API 归属：
 
-词义固定后，从数据入口开始，沿加载、匹配、执行三条链看机制。规则表只有一份来源：**所有** `data/campaign/rules.csv`(原版 + 全部启用 MOD 各自一份，加载时合并)。原版表头为七列 (`data/campaign/rules.csv` 首行；加载器按列名读取，列顺序即表头顺序)：
+### 角色命名与归属速查表
 
-| 列 | 加载方式 | 语义 |
+任务清单里的 "BarEventAPI / BarEventCreatorAPI / BarManagerAPI" 对应本主题的三个角色；公开 API 中的具体类型名如下 (全部在 `com.fs.starfarer.api.*` 包路径内)：
+
+| 角色 | 类型 | 位置 |
 |---|---|---|
-| `id` | `getString("id")` | 规则唯一标识；id 以 `#` 开头 → 整行跳过；空 id → 行跳过 |
-| `trigger` | `getString("trigger")` | 规则所属触发器名 (分组 key) |
-| `conditions` | `getString("conditions")`：去 `\r`、trim、按 `\n` 拆行，每行一条条件表达式 | 匹配阶段必须全部为真 |
-| `script` | `getString("script")`：去 `\r`、trim、按 `\n` 拆行，每行一条脚本表达式 | 命中后按顺序执行的结果 |
-| `text` | `optString("text", null)`：去尾部空白、按 `\nOR\n` 拆段 | 文本变体列表；`pickText()` 随机取一条展示 |
-| `options` | `getString("options")`：去 `\r`、按 `\n` 拆行 | 选项列表：每行 `id:text` 或 `order:id:text` |
-| `notes` | **不读取** (加载流程没有该列的取值入口) | 备注，供人阅读 |
+| bar event(事件约定) | `PortsideBarEvent`(接口) | `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent` |
+| bar event(默认实现) | `BaseBarEvent`(抽象) | `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent` |
+| bar event(带人物默认实现) | `BaseBarEventWithPerson`(抽象) | `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventWithPerson` |
+| creator(约定 + 默认实现) | `GenericBarEventCreator`(`BarEventManager` 内部接口)+ `BaseBarEventCreator` | `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`、`BaseBarEventCreator` |
+| manager(调度器) | `BarEventManager` | `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager` |
+| 活动列表 | `PortsideBarData` | `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarData` |
+| CSV spec 与路由 | `BarEventSpec` / `SpecBarEventCreator` | `com.fs.starfarer.api.loading.BarEventSpec`、`com.fs.starfarer.api.impl.campaign.intel.bar.events.SpecBarEventCreator` |
+| 事件对话包装 | `BarEventDialogPlugin` | `com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin` |
+| 酒吧 UI 规则命令 | `BarCMD` | `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD` |
+| 临时 bar 选项规则命令 | `AddBarEvent` / `RemoveBarEvent` | `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent`、`RemoveBarEvent` |
 
-`conditions` / `script` / `options` 中 `#` 开头的行是注释行；空行跳过。
+### 数据文件链路 (bar\_events.csv)
 
-加载期还会对只出现一次的变量向**标准输出**打印 `WARNING: variable [...] only used once; rule id: [...]`(`System.out.println`，不进 `starsector.log`，且 `tag:` / `$market.mc:` 变量排除)。
+1. 游戏在 CSV spec 加载期读取 `data/campaign/bar_events.csv`：`loadSpecsFromJson("bar event id", "data/campaign/bar_events.csv", BarEventSpec.class, ...)`(内部加载实现)，`bar event id` 列是 spec key。
+2. 每行构造一个 `BarEventSpec`：`bar event id`(必填)、`plugin`(必填，`row.getString("plugin")`)、`freq`(默认 10)、`prob`(默认 1)、`min/max dur`(默认 30/40)、`min/max timeout`(默认 30/40)、`min/max accepted timeout`(默认 60/90)、`tags`(逗号分隔，可空)。
+3. `SettingsAPI.getAllBarEventSpecs()` / `getBarEventSpec(id)` 暴露全部 spec。
+4. `BarEventManager.readResolve()` → `updateBarEventCreatorsFromSpecs()`：对每个尚无 auto-added creator 的 spec 创建 `SpecBarEventCreator(specId)`。手工注册的同 ID creator 不阻止自动项建立，两者可以并存。
+5. `SpecBarEventCreator`(继承 `BaseBarEventCreator`) 把 spec 的字段接到抽取参数上：
+    - `createBarEvent()` 按 `spec.isMission()` 分派：plugin 是 `HubMissionWithBarEvent` 时创建 `HubMissionBarEventWrapper`(mission 酒吧包装)，否则 `spec.createEvent()` 直接 `getInstanceOfScript(pluginClass)` 实例化普通 `PortsideBarEvent`；
+    - `isPriority()` = `spec.hasTag(Tags.MISSION_PRIORITY)`("priority" tag)。
 
-> 规则系统是纯数据驱动的：MOD 侧不需要任何注册文件，把行写进自己的 `data/campaign/rules.csv` 就会被加载器自动合并 —— 原版大量对话、选项与事件文本都是同一套机制的产物。
+**非 mission 的普通事件** (如 `LuddicFarmerBarEvent`、`HistorianBarEvent`) 不走 CSV，走代码注册。
 
-> 这也是为什么确认规则是否真的被读进来，要看加载日志而不是找报错。
+### 注册入口
 
-### 加载链与合并语义
+原版注册入口 (`CoreLifecyclePluginImpl`，`com.fs.starfarer.api.impl.campaign.CoreLifecyclePluginImpl`)：
 
-行与列的含义定了，下一步是这些行如何进入游戏。
+- `onGameLoad(boolean)` → `addScriptsIfNeeded()` → `addBarEvents()`：
+    - `sector.hasScript(PortsideBarData.class)` 缺则 `addScript(new PortsideBarData())`；
+    - `sector.hasScript(BarEventManager.class)` 缺则 `addScript(new BarEventManager())`；
+    - `BarEventManager.getInstance()` 后对每个原版手写 creator 做 `!hasEventCreator(XxxCreator.class) → addEventCreator(new XxxCreator())`。
 
-1. **加载时机**：CSV spec 加载期，`loadStarmap` 末尾调用 `Rules.loadRules`，一次游戏启动只加载一次，规则表不属于存档数据。
-2. **合并读取**：文本读取工具的 `readCSV(["id"], "data/campaign/rules.csv", true, true)`：
-    - 打开原版与所有启用 MOD 的同路径资源；某个 MOD 把该路径列入 `replace` 时整文件替换；
-    - **同文件**内重复 id → `RuntimeException("Duplicate key [...] while loading [...]")`，加载崩溃；
-    - **跨文件**重复 id → 按资源处理顺序先到先得，后处理文件中的同 id 行**静默跳过** (无任何报错)；
-    - 每份文件读取前过 `replaceSmartQuotes`(`readCSV` 第 4 参为 true，spec 加载期执行 `replaceSmartQuotes`)。
-3. **逐行解析与严格校验** (规则文件加载流程的校验，错误均为加载期 `RuntimeException`)。
-4. **注册入口**：MOD 侧不需要任何注册文件：把行写进自己的 `data/campaign/rules.csv`，加载器自动合并；`starsector.log` 逐条打印 `Loading rule: <id>` 与 `Loading CSV data from [...]`，是确认规则是否真的被读进来的第一手证明。
+`PortsideBarData` 与 `BarEventManager` 构造器都把实例写入 sector memory 的固定键 (`$core_PortsideBarData` / `$core_genericBarEventManager`)。
 
-### 匹配链
+**manager 实例、creator 列表、active 事件列表都随存档保存** (sector memory 持久化；`TimeoutTracker` 的 `set` 由 `readResolve` 重建)。
 
-行被加载后，下一步是匹配，要回答对话插件发起一次触发时哪些规则会被选中。匹配入口是 `RulesAPI.getAllMatching(currentRule, trigger, dialog, memoryMap)` 与 `RulesAPI.getBestMatching(...)` 两个公开面，都在 `com.fs.starfarer.api.campaign.rules.RulesAPI` 上；`SectorAPI.getRules()` 可以拿到 `RulesAPI`，生涯引擎内是包装实现。
+MOD 注册入口 (本节示例)：
 
-规则引擎的匹配流程如下：
+```java
+BarEventManager manager = BarEventManager.getInstance();
+if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
+    manager.addEventCreator(new GearInBarEventCreator());
+}
+```
 
-1. `getRulesForTrigger(trigger)` 按触发器名取候选池 (未知触发器用到时才建空列表)。
-2. 逐条规则：跳过 id 等于当前规则 id(currentRule) 的规则，防止自再入；逐条求值条件 (表达式判真)，首个失败即短路。
-3. `getRulesFor`：返回全部条件通过者，供 `FireAll` 作为候选集。
-4. `getBestMatchingRule`：通过条件分数求和 (每条条件默认 1 分，`score:` 可改) + 规则 `scoreBonus` (CSV 无此列，恒 0) → 只保留最高分候选 → 同分用 `WeightedRandomPicker` 随机取一条 → 返回单条或 `null` (无匹配)。
-5. `RulesAPI.setRandomForNextRulePick(random)` 只影响下一次 pick，用后即清，跨多次匹配复用随机源会改变文本选择语义。
+要点：`hasEventCreator(Class)` 用 `isInstance` 判断，而 `addEventCreator` 本身**不去重** (直接 `creators.add`)，**判断缺失的可观察结果是同 class 的 creator 反复入列、抽取权重翻倍**。
 
-### 条件表达式语法
+注册时机必须在生涯引擎建立之后 (`onGameLoad` / `onNewGame`)；原版核心插件的 `onGameLoad` 先于 MOD 插件执行 (vanilla 固定最先，成熟实例直接依赖此顺序)，因此 `getInstance()` 不判空。
 
-匹配靠逐条求值条件，条件与结果都写成表达式。每条条件/脚本行是一个表达式。
+### 调度与抽取 (BarEventManager.advance)
 
-token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` 开头表示变量；引号包裹表示字面量 (含空格/特殊字符)；`\` 转义；操作符独立成 token。
+两条入口都汇入 manager 之后，看调度器如何决定事件何时被创建、何时过期。`BarEventManager.advance(float amount)` 每帧被推进 (`runWhilePaused()` 返回 false，暂停不推进)：
 
-操作符全集：`=`(赋值)、`==`、`!=`、`>`、`>=`、`<`、`<=`、`!`(取反)、`++`、`--`。
+1. `days = Misc.getDays(amount)`：**所有时长都是游戏天** (10 真实秒 = 1 游戏日)。
+2. `active.advance(days)` / `timeout.advance(days)`：active 跟踪器里的事件按天扣减，扣到 0 自动移除；timeout 跟踪器里的 creator 同理。
+3. `tracker`(`IntervalUtil(0.4f, 0.6f)`，游戏天) 到点才执行抽取；`tracker2`(20–40 天) 到点更新种子。
+4. 未交互过期清理：在 `barEventCreators` 映射里但不在 active 跟踪器中的事件即未交互且 active 时长已过期，从映射与活动列表移除，并把对应 creator 置入超时：`dur = max(creator.getBarEventTimeoutDuration(), timeout 剩余)`。
+5. 数量上限：`max = round(creators.size() * settings.getFloat("maxTotalBarEventsAsFractionOfEventTypes"))`(默认 0.5，见 settings.json)，最小 1；`active` 数量达到 `max` 或每个 creator 都有活跃事件时本次不再抽取。
+6. 抽取：先建 priority picker(`isPriority()` 的 creator，权重取 `getBarEventFrequencyWeight()`) 与普通 picker。
+    - **priority 优先**，未命中再抽普通；同一 `getBarEventId()` 已有活跃事件或 creator 在 timeout 中的跳过；抽中后 `createBarEvent()`**，返回 null 则本次放弃**。
+    - 事件加入 `active` 跟踪器 (时长取 `getBarEventActiveDuration()`)、记录 `barEventCreators.put(event, creator)`、`PortsideBarData.getInstance().addEvent(event)` 入活动列表。
 
-### 表达式形式速查表
+所有时长都用游戏天
 
-| 形式 | 示例 | 语义与归属 |
+酒吧事件的抽取与展示节奏都建立在 `Misc.getDays` 的换算上 (10 真实秒 = 1 游戏日)，且推进只在未暂停时发生 —— 用游戏天计价让 "一次事件从抽取到过期" 的语义与玩家实际游戏节奏挂钩，而不是与真实时间挂钩；暂停挂机时事件不会批量过期。
+
+### 活动列表与事件生命周期 (PortsideBarData)
+
+事件入列之后，谁决定它能被显示、何时被移除？活动列表与事件生命周期回答这两个问题。`PortsideBarData`(`EveryFrameScript`，`runWhilePaused()` false) 持有 `active` 列表：
+
+- `addEvent(event)` 入列；`getEvents()` 返回列表 (活的引用，不是副本)。
+- `advance(amount)` 每帧遍历：**在调 `curr.advance(amount)` 前后各查一次 `shouldRemoveEvent()`**，返回 true 就移除；需要 "限时消失" 的事件在 `advance` 里推进倒计时、到期由 `shouldRemoveEvent` 返回 true 自清。
+- `removeEvent(event)` 同时从 manager 的 active 跟踪器移除。
+
+事件生命周期完整流程：
+
+### 事件生命周期速查表
+
+| 阶段 | 触发 | 关键调用 |
 |---|---|---|
-| 纯变量 (判真) | `$tag:warning_beacon` | `IS` 语义：记忆值 null → false；字符串 `"true"`(去空白、忽略大小写) 或 `Boolean.TRUE` → true；其余 (含 `"1"`、`"false"`)→ false |
-| 比较 | `$option == GearIn_rules_intro_leave`、`$entity.relativeStrength >= 0`、`$faction.id == independent` | `==`/`!=`/`<`/`<=`/`>`/`>=`；字符串比较大小写敏感；数值经 `Memory.parseFloat`；`==` 双侧都 null → true、null 与字面量 `"null"` 互等、`0` 与 `"false"`/`"null"` 互等 |
-| 取反 | `!$var`、`!Command args` | 变量判反 / 命令结果取反；`!` 的运算对象必须是变量或命令 |
-| 赋值 | `$menuState = fleetConvMain 0` | `=` 只能出现在**脚本列** (条件列出现 → 加载崩溃)；第三 token 为过期天数 (可选，`0` 表示立即过期语义；过期天数的完整语义属 [C15-S4]) |
-| 增减 | `$GearIn_rules_intro_visits++`、`$x--` | 浮点自增/自减；第三 token 为过期天数 (原版脚本列含 595 处 `++`、16 处 `--`) |
-| 命令 | `RollProbability 0.5`、`FireAll PopulateOptions`、`SetShortcut beaconLeave "ESCAPE"` | 首 token 非变量即命令：按 `ruleCommandPackages`(`data/config/settings.json`，5 个包，默认回退 `com.fs.starfarer.api.impl.campaign.rulecmd`) 逐个 `Class.forName` 定位；找不到 → 加载崩溃 `Command [...] not found in packages`；命令执行异常在对话内显示红字段落 (`<异常类>: <消息>`)，dialog 为 null 时重抛 |
-| 分数 | `$temporarilyIgnoreYou score:10` | 行尾字面量 `score:N` 改写该条件分数 (默认 1)，参与 `FireBest` 竞争 |
+| 抽取入列 | manager 周期性抽取 | `creator.createBarEvent()` → `active.add(event, activeDuration)` → `PortsideBarData.addEvent` |
+| 显示过滤 | 玩家进酒吧，`BarCMD.showOptions` | `shouldRemoveEvent()` → `shouldShowAtMarket(market)` → `addPromptAndOption` → `wasShownAtMarket` |
+| 事件对话 | 玩家点选酒吧选项 | `BarEventDialogPlugin.init` → `event.init` → `event.optionSelected` |
+| 交互收尾 | 对话完成 | `done = true` + `BarEventManager.getInstance().notifyWasInteractedWith(this)` |
+| 未交互过期 | active 时长扣完 | 未交互过期清理：活动列表移除 + creator 普通超时 |
 
-> 判真很严格：只有字符串 `"true"`(忽略大小写) 与 `Boolean.TRUE` 为真，null、`"1"`、`"false"` 一律为假；比较操作符对字符串大小写敏感。
+**交互收尾 (必须)**：对话结束必须调 `BarEventManager.getInstance().notifyWasInteractedWith(this)`：它把事件从活动列表与 active 跟踪器移除，并把 creator 置入 `getBarEventAcceptedTimeoutDuration()`(与剩余普通超时取较大值)。
 
-> 把 `"1"` / `"yes"` 当真值、把记忆键拼错 (如少了 `$tag:` 前缀)，是条件恒假最常见的两个原因。
+**只有接受分支算 "已交互"**：原版 `BaseGetCommodityBarEvent` 的 confirm 分支调用 `notifyWasInteractedWith`，cancel 分支只结束事件。
 
-**变量解析** (`Misc.Token.getVarNameAndMemory`)：`$memkey.name` → 从 `memoryMap` 取 `memkey` 记忆，再读记忆中的 `$name` 键；token 无 `.`(如 `$option`、`$tag:x`)→ 记忆键为 null → 回落 `local` 记忆；两者都找不到 → `RuleException("No memory found for keys: ...")`。
+不调用的话，事件在 active 时长内继续留在活动列表、同一市场可能再次出现，creator 也只能拿到普通超时 (30–40 天而非 60–90 天)。
 
-对话插件向 `memoryMap` 装入 `local`(即交互目标记忆或活动人物记忆)、`faction`、`global`、`player`、`market`、`sourceMarket` 等槽位 (活动人物对话时另有 `personFaction`/`entity`)。`$tag:`、`$mc:`、`$friendlyToPlayer` 等 facts 键由 `CoreCampaignPluginImpl` 的 `updateEntityFacts` / `updateMarketFacts` / `updatePersonFacts` / `updateFactionFacts` 钩子写入 (`com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`)；使用 `$tag:xxx` 条件的前提是目标实体确实带该 tag。
+**存档边界 (必须)**：活动列表随 sector memory 存档 (XStream)，事件实例的非 transient 字段必须可序列化。
 
-### FireBest 与 FireAll 结果执行速查表
+`BaseBarEvent` 已把对话句柄声明为 `transient`(`dialog` / `text` / `options` / `memoryMap`)，`done` / `noContinue` 同样声明为 `transient`，`shownAt` 是普通字段 (`MarketAPI`，可序列化)。
 
-规则命中后，结果由内置命令 `FireBest` / `FireAll` (`com.fs.starfarer.api.impl.campaign.rulecmd` 包) 执行，两条路径的对比如下：
+事件自定义字段只放可序列化数据。
 
-| 步骤 | `FireBest` | `FireAll` |
-|---|---|---|
-| 触发名 | `params[0]`(变量则取记忆值)；`params[1]` = keepOptions | 同左；另在实体记忆写 `$fireAllTrigger`(expire 0)，并先 `FireBest` 触发 `FireAllIntercept`，有命中规则即整体拦截 |
-| 选规则 | `getBestMatching`(分数竞争，null → 返回 `false`) | `getAllMatching`(全部通过者，空 → 返回 `false`) |
-| 选项 | 收集 `rule.getOptions()` + 脚本中 `doesCommandAddOptions()==true` 的表达式 → 按 `order`(选项 `order` 字段 / `getOptionOrder`) 排序 → 非 keepOptions 时清空选项面板 → 逐个添加 (选项文本先做 token 替换) | 全部命中规则的选项合并、排序、清空后添加 |
-| 文本 | `addText`：`rule.pickText()` 随机取一条文本变体 → `performTokenReplacement` → `textPanel.addParagraph` | 每条命中规则各执行一次 `addText` |
-| 脚本 | `rule.runScript(dialog, memoryMap)` | 每条命中规则各执行一次 |
+### 酒吧显示 (BarCMD.showOptions)
 
-`Rule.runScript` 按声明顺序执行脚本表达式，跳过选项型命令 (`doesCommandAddOptions()==true` 的由 `FireBest` / `FireAll` 提前执行)，所以选项型命令即使写在脚本列里，也不会在脚本阶段重复执行。
+事件在活动列表里就绪后，还差最后一步：玩家进入酒吧时，事件如何被挑出来显示。玩家在星球/空间站交互里选 "Take a shuttle down to visit a dockside bar"(`marketVisitBar` 选项，`data/campaign/rules.csv`) 触发 `bar_optionSel` 规则。
 
-**文本 token 替换** (`SectorAPI.getRules().performTokenReplacement`)：先汇总所有注册的 `RuleTokenReplacementGeneratorPlugin` 生成的替换表 (默认注册 `CoreRuleTokenReplacementGeneratorImpl`，提供 `$playerName` / `$Playername` / `$marketName` / `$entityName` / `$faction` / `$heOrShe` / `$personRank` / `$personName` 等，`com.fs.starfarer.api.impl.campaign.CoreRuleTokenReplacementGeneratorImpl`)，替换键按长度降序 `replaceAll`；再对 `memoryMap` 各记忆的键做 `$memkey.key` / `$key` 替换 (`Misc.replaceTokensFromMemory`，仅 String/Boolean/Float/Integer 值)。
+随后依次执行 `FireBest BarShuttleDownPrintDesc` / `FireBest BarPrintDesc` / `BarCMD showOptions`。
 
-rulecmd 参数内需要替换时用 `Misc.Token.getStringWithTokenReplacement`。
+`BarCMD.showOptions()` 的展示管线：
 
-### 使用方完整流程速查表
+1. 数量：`minBarEvents`(默认 1)/ `maxBarEvents`(默认 3)/ `barEventProbOneMore`(默认 0.5) 加权抽 `num`(见 settings.json)。
+2. 已展示集合：市场内存 `$BarCMD_shownEvents` —— **存在则按事件 ID 匹配复现同一组事件** (`event.getBarEventId()`)，不存在则全量洗牌并 `needToSaveShown = true`。
+    - 展示后 `mem.set(key, shown, time)`(20–40，即 `BAR_EVENT_MIN/MAX_TIME_BEFORE_CHANGING`)。内存过期按**游戏天**扣减 (`Memory` 内部实现：`convertToDays(amount)`、仅未暂停) —— 同一市场约 20–40 游戏天内复现同一组事件。
+3. 临时选项：`AddBarEvent.clearTempEvents(market)` 清空 `$core_tempBarEvents`，然后 `FireAll.fire(..., "AddBarEvents")` 触发全部匹配的 `AddBarEvents` 分类规则，再逐个显示 (上限 `max`)。
+4. 事件循环：**教程进行中 (`TutorialMissionIntel.isTutorialInProgress()`) 全部跳过**；数量占满即 break。
+    - 依次检查 `shouldRemoveEvent()` 与 `shouldShowAtMarket(market)`；通过后 `event.addPromptAndOption(dialog, memoryMap)`(事件自己写提示与选项)→ `wasShownAtMarket(market)` → `shown.add(event.getBarEventId())`。
+    - `isAlwaysShow()` 的事件不占普通名额，且排在最前 (按 `isAlwaysShow` 排序)。
+5. 底部固定 "Leave the bar" 选项 + ESC 快捷键；`dialog.setPlugin(this)` + `init(dialog)`，对话框插件切换为 `BarCMD` 自身。
 
-机制到这里已经齐全，最后看实际的使用方 —— 对话插件如何把规则变成对话。
+`BarCMD.optionSelected` 分派：
 
-| 使用方 | 位置 | 触发方式 |
-|---|---|---|
-| 规则驱动对话插件 `RuleBasedInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl` | 构造器指定初始 trigger(默认 `OpenInteractionDialog`)；`init` 组装 `memoryMap`(`local` 即交互目标记忆或活动人物记忆、`faction`、`global`、`player`、`market`、`sourceMarket`、活动人物时的 `personFaction`/`entity`)→ `fireBest(initialTrigger)` → 无任何选项时加 failsafe `Leave`；玩家点选项 → 本地记忆写 `$option`(expire 0)→ `fireBest("DialogOptionSelected")` → 无匹配规则时文本报 `ERROR: no rule found for option [...]` 并加 failsafe `Exit dialog` |
-| 舰队遭遇对话 `FleetInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl` | `reinit` 用 `getBestMatching(null, "BeginFleetEncounter", ...)` 决定是否给 "Continue" 选项；开通讯 (`OPEN_COMM`) 时内嵌 `RuleBasedInteractionDialogPluginImpl` 并 `fireBest("OpenCommLink")`，无匹配则报 "only get static" |
-| 非对话面板 (规则记忆组装) | 非对话文本面板 (内部实现) | 组装简化 memoryMap 后 `FireBest.fire(...)` 面板文本 trigger(使用例：已选阵营信息面板的 `RelationshipLevelDesc`) |
+- `optionData instanceof PortsideBarEvent` → 创建 `BarEventDialogPlugin(this, this, event, memoryMap)`，`dialog.setPlugin(plugin)` + `plugin.init(dialog)`，**事件对话的唯一入口**；
+- `"barLeave"` → `leaveBar()`(回市场对话)；`"barContinue"` → `showOptions(true)`；
+- 其他字符串 (临时选项 / mission wrapper 选项)→ 写 `$BarCMD` 到实体内存、`dialog.setPlugin(originalPlugin)`、`$option = optionData`、`FireBest "DialogOptionSelected"`，落到规则对话。
 
-原版 `rules.csv` 有 10270 条非注释记录，其中 521 条 ID 为空并被跳过；最终加载 9749 条规则，分属 800 个 trigger。大族为：
+### 事件对话 (BarEventDialogPlugin)
 
-- `DialogOptionSelected`(6050)；
-- `PopulateOptions` (334)；
-- `PickGreeting`(199)；
-- `OpenCommLink`(183)；
-- `OpenInteractionDialog`(121)；
-- `BeginFleetEncounter`(61)；
-- `MarketPostDock`(32)；
-- `TradePanelFlavorText`(23)。
+玩家点选酒吧选项后，对话权从 `BarCMD` 交给事件外壳。`BarEventDialogPlugin`(`com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin`，`InteractionDialogPlugin`) 是事件的对话外壳：
 
-6050 条 `DialogOptionSelected` 规则都有非空条件：6048 条包含 `$option ==`，另 2 条用状态旗标接管下一次选项选择。
+- `init(dialog)`：`event.init(dialog, memoryMap)`；`event.isDialogFinished()` 已为 true 则直接 `endEvent()`。
+- `optionSelected(optionText, optionData)`：`dialog.addOptionSelectedText(optionData)` 回显 (复用交互对话框面板的文本回显语义)；`event.optionSelected(optionText, optionData)`；事件完成则 `endEvent()`。
+- `endEvent()`：`dialog.setPlugin(originalPlugin)`(切回 `BarCMD`)+ `cmd.returningFromEvent(event)` → `returningFromEvent(event.endWithContinue())`。
+    - `endWithContinue()` 为 true 先显示 "Continue"(再点回酒吧)，false 直接 `showOptions(true)`("Nothing of note is going on at the bar." 提示)。
 
-## 规则强度速查表
+### 临时规则命令 (AddBarEvent / RemoveBarEvent)
 
-把引擎的行为边界汇总成一张核对表：必须项违反后加载中止，事实项描述运行时的真实行为；每行都附上违反后的可观察结果。
+以上都是事件本体；规则系统还能绕开事件链，直接给酒吧加临时选项。规则驱动的临时 bar 选项 (不属于 `PortsideBarEvent`，常用来给特定市场/特定条件加一次性酒吧入口)：
+
+- `AddBarEvent <option id> <option text> <blurb> [color]`：从 `dialog.getInteractionTarget().getMarket()` 取市场。
+    - option text 与 blurb 支持规则 token 替换 (`getStringWithTokenReplacement`)；写入市场内存 `$core_tempBarEvents` 容器 (`events.put(optionId, data)`，`LinkedHashMap` 保序)。
+    - `getTempEvents` 不存在时创建并 `mem.set(KEY, events, 0f)`，即 **expire=0**，下一帧内存推进即清除，只活在当次展示里。
+- `RemoveBarEvent <option id>`：`AddBarEvent.removeTempEvent(market, optionId)` 删除单个临时选项。
+
+临时 bar 选项不能当长期状态读取
+
+`BarCMD.showOptions` 每次展示前 `clearTempEvents` 再重触发 `AddBarEvents` 规则，临时选项只活在当次展示里。
+
+`RemoveBarEvent` 只删临时选项，**不会**移除 `PortsideBarData` 活动列表里的事件。
+
+期待 "加一次永久生效" 或 "删临时选项后事件也消失" 都会落空。
+
+### 围绕一次交互实现回调
+
+酒吧事件只为当前交互实现创建人物、写提示、添加选项、处理选择和收尾所需的回调。其余默认行为交给 `BaseBarEvent` 与 `BaseBarEventCreator`。判断遗漏时沿着调度入列、市场显示、选项点击和交互收尾四个阶段检查，比逐项对照接口表更快。
+
+## 规则强度
+
+### 本节规则速查表
+
+链路与接口全表就位后，把本节反复出现的必须/建议规则集中列出，正文与验证方案直接引用。本节必须遵守的规则清单 (违反后的可观察结果均附上)：
 
 | 规则 | 强度 | 违反后的可观察结果 |
 |---|---|---|
-| `conditions` 列禁止出现 `=`(赋值) 操作符 (报错文案："rule \[...\] has = ('assignment') operator in its conditions, this is most likely an error") | 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
-| `script` 列禁止出现 `==` 操作符 (加载期校验) | 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
-| 选项 id 禁止以 `$` 开头 (报错文案："Option id starts with $ for rule \[...\]") | 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
-| 条件/脚本引用的命令类必须能在 `ruleCommandPackages`(`data/config/settings.json`) 中找到 | 必须 | 资源加载期 `RuntimeException`(`Command [...] not found in packages:`)，游戏启动中止 |
-| 同一份 `rules.csv` 内规则 id 不得重复 (文本读取工具同文件去重逻辑："Duplicate key \[...\]") | 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
-| 跨文件重复规则 id：后处理文件的同 id 行静默跳过 (先到先得) | 事实 | 规则不触发且无任何报错；`starsector.log` 中看不到该 id 的 `Loading rule:` 行 |
-| 文本变体分隔符必须独占一行，且严格为 `\nOR\n`(变体按该分隔符切分) | 必须 | 分隔符不匹配时多段文本被当作单条变体整段展示 |
-| `options` 每行必须是 `id:text`(2 段) 或 `order:id:text`(3 段)，按**所有**冒号切分；文本内不得再有冒号 | 必须 | 3 段且首段非数字 → `NumberFormatException` 加载崩溃；3 段以上 → 文本静默截断 (只保留第 3 段) |
-| 选项 id 必须与 `DialogOptionSelected` 规则里的 `$option == <id>` 逐字一致 (含大小写；表达式比较大小写敏感) | 必须 | 点选后无规则匹配：文本面板出现 `ERROR: no rule found for option <id>` + failsafe 选项 (`RuleBasedInteractionDialogPluginImpl`) |
-| `FireAll` 之前会先匹配 `FireAllIntercept` 触发器 (`FireAll`) | 事实 | 拦截规则命中时本次 `FireAll` 被整体跳过 (原版仅 1 条拦截规则，条件是 `$fireAllTrigger == PopulateOptions` 等，不影响自定义 trigger) |
-| 条件列会执行命令：带副作用的 rulecmd 在**匹配阶段**就写状态 (条件求值路径会直接执行命令) | 事实 | 每次匹配 (包括候选失败前已通过的条件) 都执行副作用；写状态应放脚本列 |
-| 同分规则随机挑选 | 事实 | 期望确定性结果时必须用 `score:` 拉开分数差 |
-| `setRandomForNextRulePick` 只影响下一次 pick | 事实 | 跨多次匹配复用随机源会改变文本选择语义 |
+| 玩家与事件交互并结束对话时必须按事件语义调用 `BarEventManager.getInstance().notifyWasInteractedWith(this)`(原版 `BaseGetCommodityBarEvent` 仅 confirm 分支调用) | 必须 | 未调用时事件留在活动列表直到 active 时长过期；creator 只拿到普通超时而非 accepted 超时，重复出现频率更高 |
+| `addPromptAndOption` 里酒吧选项的 optionData 必须是事件自身 (`addOption(text, this)`；原版 `BaseGetCommodityBarEvent` 同款) | 必须 | 点击选项不进入事件对话：`BarCMD.optionSelected` 只对 `optionData instanceof PortsideBarEvent` 创建 `BarEventDialogPlugin`；其他类型落入规则对话分支 (`$option` / `DialogOptionSelected`)，事件对话永不启动 |
+| 事件与 creator 的非 transient 字段必须可序列化 (活动列表与 manager 存于 sector memory、随存档 XStream 保存) | 必须 | 保存/读档异常、读档后事件行为错乱；对话句柄 (`dialog` / `text` / `options` / `memoryMap`) 必须保持 `BaseBarEvent` 的 transient 声明 |
+| creator 注册只发生在生涯引擎建立之后 (`onGameLoad` / `onNewGame`)，注册块必须用 `hasEventCreator(Class)` 判断 (`addEventCreator` 不去重) | 必须 | 注册过早 (如 `onApplicationLoad`)：`getInstance()` 返回 null 解引用 NPE、启动中止；判断缺失：每次读档重复入列同 class creator，抽取权重翻倍、事件过频 |
+| `shouldShowAtMarket` 覆写时理解 shownAt 锁定语义 (`BaseBarEvent` 默认首次展示后锁定单一市场)，确需跨市场复用再自行处理 | 必须 (语义规则) | 事件在 A 市场展示后 B 市场不再出现，若覆写时忘了先调 `super` 或自行实现，过滤结果与预期不符 |
+| `getBarEventId()` 与 creator 的 `getBarEventId()` 保持一致且稳定 (默认都是类简单名；覆写时两处同步) | 建议 | 不一致时 `$BarCMD_shownEvents` 按 ID 复现失效：市场内存里的 ID 匹配不到事件，该市场事件组显示为空；manager 的 active 去重键错位 |
+| `isPriority()` / `isAlwaysShow()` 只用于剧情关键事件 | 建议 | 太多 priority 事件挤占普通事件 (`BarEventManager` "Having too many priority events could crowd out all other events entirely")；`isAlwaysShow` 事件永远占用展示名额 |
+| 临时 bar 选项 (`$core_tempBarEvents`) 只活在当次展示里，不能当长期状态读取；`RemoveBarEvent` 只删临时选项、不删活动列表事件 | 事实 | 期待 "加一次永久生效" 或 "删临时选项后事件也消失" 都会落空 (临时选项当长期状态读、`RemoveBarEvent` 不删活动列表事件) |
+| 教程进行中 (`TutorialMissionIntel.isTutorialInProgress()`) 酒吧事件全部跳过 | 事实 | 新档开头酒吧看不到任何事件属正常 |
 
-## 组装 Rules 对话实现
+## 实现酒吧事件
 
-机制与边界都清楚了，现在把它们组合成最小可运行的一套：一份规则表加一个使用入口，覆盖从加载到对话的完整流程。在既有 MOD 工程布局之上新增：一份 `data/campaign/rules.csv`(含本节拥有的 `GearIn_rules_intro_*` 规则，与其它 MOD 的同路径文件自动合并) 与一个 Java 使用入口类。
+酒吧事件要连续通过 creator 在场、manager 抽中、市场允许显示、选项进入事件对话、对话通知 manager 收尾这几个边界。以下片段按这条链逐段接通。
 
-不新增其它资源、不修改任何既有文件：
+### 注册事件 creator
+
+把 creator 判断放入 `GearInModPlugin.onGameLoad()`。manager 的 creator 列表随存档保存，`hasEventCreator` 就是这里的去重门。
+
+```java
+BarEventManager manager = BarEventManager.getInstance();
+if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
+    manager.addEventCreator(new GearInBarEventCreator());
+}
+```
+
+在 `GearInBarEventCreator.createBarEvent()` 中创建事件：
+
+```java
+@Override
+public PortsideBarEvent createBarEvent() {
+    return new GearInBarEvent();
+}
+```
+
+首次抽中时日志出现 creator picked；连续读档不会增加同类 creator 的数量或抽取权重。
+
+### 过滤可用市场
+
+在 `GearInBarEvent.shouldShowAtMarket()` 中先保留基类的 `shownAt` 锁定，再检查太空港。
+
+```java {3}
+@Override
+public boolean shouldShowAtMarket(MarketAPI market) {
+    if (!super.shouldShowAtMarket(market)) {
+        return false;
+    }
+    return market.hasSpaceport();
+}
+```
+
+事件首次显示后只在同一市场继续可见；没有太空港的市场不会得到该选项。
+
+### 把酒吧选项指向事件
+
+在 `addPromptAndOption()` 中写提示，并把事件对象自身作为 optionData。`BarCMD` 依靠这个类型判断进入事件对话。
+
+```java {8}
+@Override
+public void addPromptAndOption(InteractionDialogAPI dialog,
+        Map<String, MemoryAPI> memoryMap) {
+    super.addPromptAndOption(dialog, memoryMap);
+    dialog.getTextPanel().addPara(
+            "A disheveled spacer is talking about a drifting supply cache.");
+    dialog.getOptionPanel().addOption(
+            "Listen to the spacer's story", this);
+}
+```
+
+酒吧面板出现提示与选项，点击后日志进入 `GearInBarEvent.init()`，而不是写入 `$option` 的普通规则分支。
+
+### 建立购买与拒绝分支
+
+在 `init()` 中重置完成状态并建立选项；在 `optionSelected()` 中只比较 optionData 常量。
+
+```java
+@Override
+public void init(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
+    super.init(dialog, memoryMap);
+    done = false;
+    dialog.getOptionPanel().addOption(
+            "Buy the coordinates (500 credits)", OPTION_ACCEPT);
+    dialog.getOptionPanel().addOption(
+            "Hear them out but decline", OPTION_DECLINE);
+}
+```
+
+```java
+if (OPTION_ACCEPT.equals(optionData)) {
+    Global.getSector().getPlayerFleet().getCargo()
+            .getCredits().subtract(INFO_PRICE);
+    finish();
+} else if (OPTION_DECLINE.equals(optionData)) {
+    noContinue = true;
+    finish();
+}
+```
+
+购买分支扣除 500 信用点并显示 Continue；拒绝分支不扣款，直接返回酒吧。
+
+### 统一结束事件
+
+把所有结束分支收敛到 `finish()`。`done` 让对话外壳结束，manager 通知负责移除活动事件并启动 accepted 冷却。
+
+```java
+private void finish() {
+    done = true;
+    BarEventManager.getInstance().notifyWasInteractedWith(this);
+}
+```
+
+购买、拒绝和离开结束后，事件立即离开活动列表，并在默认 60–90 游戏天 accepted 冷却内不再被抽取。
+
+## 组装酒吧事件实现
+
+规则明确之后，可以动手了。本节示例在既有教程 MOD 布局与 `GearInModPlugin`(前置单元) 之上新增两个同包类，位于 `src/data/scripts/gearin/campaign\`，不新增任何资源、不新增 CSV 行：
 
 ```text
 mods/GearIndustry/
 ├── build.gradle
+├── settings.gradle
 ├── mod_info.json
 ├── data\
-│   └── campaign\
-│       └── rules.csv                     # 本节新增：GearIn_rules_intro_* 规则 (本节示例所有权)
 ├── src\
-│   └── data/scripts/gearin/rules\
-│       └── GearInRulesIntro             # 本节新增：Java 消费入口 (归本节所有)
+│   └── data/scripts/gearin/campaign\
+│       ├── GearInBarEvent          # 本节新增 (酒吧事件：显示、对话与生命周期收尾)
+│       └── GearInBarEventCreator   # 本节新增 (creator：注册入口与抽取参数)
 └── jars\
 ```
 
-### 配置 Rules 数据
+### GearInBarEvent(bar event 约定)
 
-新建 MOD 侧的 `data/campaign/rules.csv`，只写本节拥有的行。命名沿用语义约定：规则 id 为 `GearIn_rules_intro_*`、自定义触发器为 `GearInRulesIntro*`、Java 类 `GearInRulesIntro` 位于包 `data.scripts.gearin.rules`：
+**角色**：酒吧事件 —— 继承 `BaseBarEvent`(`PortsideBarEvent` 约定的默认实现)，承担显示过滤 (`shouldShowAtMarket`)、写提示与选项 (`addPromptAndOption`)。
 
-```csv
-id,trigger,conditions,script,text,options,notes
-GearIn_rules_intro_welcome,GearInRulesIntro,,"ShowDefaultVisual
-SetShortcut GearIn_rules_intro_leave ""ESCAPE"""," 欢迎，$playerName。这个对话框完全由 data/campaign/rules.csv 驱动：列、匹配、条件、结果与文本。
-OR
-再次见到您，$playerName。规则系统按独占一行的 OR 把 text 列拆成多条变体，每次随机取一条。","GearIn_rules_intro_open:查看详情
-5:GearIn_rules_intro_leave:结束 ","本节示例所有权 GearIn_rules_intro_*"
-GearIn_rules_intro_add_a,GearInRulesIntroAdd,,,FireAll 附加文本：条件为空，必然追加。,,
-GearIn_rules_intro_add_b,GearInRulesIntroAdd,RollProbability 0.0,,FireAll 附加文本：命令条件恒假 (RollProbability 0.0)，永不追加。,,
-GearIn_rules_intro_open,DialogOptionSelected,$option == GearIn_rules_intro_open,"$GearIn_rules_intro_opens = 1 0
-FireAll GearInRulesIntroAdd
-FireBest GearInRulesIntroDetail",,,
-GearIn_rules_intro_detail_low,GearInRulesIntroDetail,$GearIn_rules_intro_opens >= 1,,低分规则：条件总分 1，FireBest 竞争失败。,,
-GearIn_rules_intro_detail_high,GearInRulesIntroDetail,"$GearIn_rules_intro_opens >= 1
-RollProbability 1.0
-!$GearIn_rules_intro_skip score:100","$GearIn_rules_intro_last = detail 0",高分规则：条件总分 102(1 + 1 + 100)，FireBest 必然选中。,GearIn_rules_intro_leave:结束,
-GearIn_rules_intro_leave,DialogOptionSelected,$option == GearIn_rules_intro_leave,DismissDialog,,,
-```
+事件对话 (`init` / `optionSelected`) 与生命周期收尾 (`finish` = `done = true` + `notifyWasInteractedWith(this)`)。
 
-> 这是跨单元共享文件：本节只拥有 `GearIn_rules_intro_*` 前缀。禁止改写原版或其它 MOD 的既有规则行，禁止与既有 id 重复 —— 跨文件重复 id 先到先得，本 MOD 的行会被静默跳过且无任何报错。
+事件 ID 不覆写，即类简单名 `"GearInBarEvent"`。
+
+完整代码：
+
+事件本体写好了，还需要一个 creator 把事件交到调度器手里并给出抽取参数。
+
+### GearInBarEventCreator(creator 约定与注册入口)
+
+**角色**：creator —— 继承 `BaseBarEventCreator`(`BarEventManager.GenericBarEventCreator` 约定的默认实现)，提供注册入口与抽取参数。
+
+本示例只覆写 `createBarEvent()` 创建 `GearInBarEvent`，其余抽取参数 (频率权重、active 时长、普通超时、accepted 超时、priority) 全部保持默认。
+
+完整代码：
 
 对应关系：
 
-- **welcome** (trigger `GearInRulesIntro`)：初始对话。
-    - `text` 两段变体用独占一行的 `OR` 分隔，`pickText()` 每次随机取一条；文本里的 `$playerName` 由 token 替换链换成本档人物名。
-    - `script` 先 `ShowDefaultVisual`(显示交互目标默认视觉)，再 `SetShortcut` 把 ESC 绑定到 `GearIn_rules_intro_leave` 选项。
-    - `options` 演示两种格式：`id:text`(order 0) 与 `5:id:text`(order 5)，`FireBest` 按 order 升序排。
-- **add\_a / add\_b** (trigger `GearInRulesIntroAdd`)：演示 `FireAll` 与命令条件。`RollProbability 0.0` 恒假 (`f < 0.0` 不可能为真)，`RollProbability 1.0` 恒真 —— 不引入随机性。
-- **open** (trigger `DialogOptionSelected`)：演示 `$option` 回流。脚本做三件事：`$GearIn_rules_intro_opens = 1 0`(赋值 + 0 天过期)、`FireAll GearInRulesIntroAdd`(追加 add\_a 文本)、`FireBest GearInRulesIntroDetail`(进入分数竞争)。
-- **detail\_low / detail\_high** (trigger `GearInRulesIntroDetail`)：演示 `FireBest` 分数竞争。
-    - 两规则条件都成立，但 high 总分 102(两条 1 分 + `!$GearIn_rules_intro_skip score:100`) 恒大于 low 的 1 分，结果确定性选中 high。
-    - high 的 `script` 演示赋值并携带选项。
-- **leave** (trigger `DialogOptionSelected`)：`$option == GearIn_rules_intro_leave` → 内置命令 `DismissDialog` 关闭对话。
-- 内置命令 (`ShowDefaultVisual` / `SetShortcut` / `DismissDialog` / `FireBest` / `FireAll` / `RollProbability`) 都是 `BaseCommandPlugin` 子类 (`com.fs.starfarer.api.impl.campaign.rulecmd`)，本节只使用不实现；自定义规则命令见 [C15-S3]。
-- 记忆键 `$option` / `$GearIn_rules_intro_opens` / `$GearIn_rules_intro_skip` / `$GearIn_rules_intro_last` 的过期、持久化与维护语义见 [C15-S4]；本节只保证演示流程内的取值逻辑。
-- `rules.csv` 是跨单元共享文件：本节只拥有 `GearIn_rules_intro_*` 前缀；其他页面使用各自前缀追加行，同前缀内 id 唯一，跨文件重复 id 先到先得。
+- `extends BaseBarEvent`：事件约定的默认实现，`getBarEventId()` 默认返回类简单名 `"GearInBarEvent"`(本示例不覆写，事件 ID 即此值)。
+    - `shouldRemoveEvent()` 默认 false(事件靠 active 时长或交互收尾移除)；`endWithContinue()` 默认 true(买下情报后先显示 "Continue" 再回酒吧)。
+- `shouldShowAtMarket`：先调 `super`(shownAt 锁定语义)，再演示市场条件 (`hasSpaceport()`)；日志记录过滤结果，供验证方案核对。
+- `addPromptAndOption`：写提示文本 + `addOption("Listen to the spacer's story", this)` —— **optionData 是事件自身**，这是进入事件对话的机制 (`BarCMD` 只对 `optionData instanceof PortsideBarEvent` 创建 `BarEventDialogPlugin`)。
+- `init`：`super.init` 之后**自行重置 `done = false`**(`BaseBarEvent.init` 不清完成标记，原版 `BaseGetCommodityBarEvent.init` 同样自行重置)，读档后同一事件再次进入对话不会卡在已完成状态。
+- `optionSelected`：三个分支都用**常量比较 optionData**(不用 optionText，沿用交互对话框部分的 optionData 常量比较纪律)。
+    - 买下情报真实扣减玩家舰队 cargo credits(`getCargo().getCredits().subtract`)；拒绝/离开分支设 `noContinue = true`(结束后不显示 "Continue" 直接回酒吧)。
+- `finish()`：`done = true` + `notifyWasInteractedWith(this)`，交互收尾必须遵守的规则；日志打出 `isDialogFinished()` 供核对。
+- `extends BaseBarEventCreator`：抽取参数全部保持默认 (权重 10、active 30–40 天、普通超时 30–40 天、accepted 超时 60–90 天、非 priority)，只覆写 `createBarEvent()` 创建 `GearInBarEvent`。
 
-### 编写 Rules 命令
+调用点 (工程片段，方法所在类 `GearInModPlugin` 归前置单元所有，本节只演示调用，不改动那些文件)：
 
 ```java
-package data.scripts.gearin.rules;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignUIAPI;
-import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
-
-/**
- * 完整最小例：rules.csv 数据驱动对话的 Java 消费入口。
- *
- * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK
- * 一次性门控 (每个注册项用各自的键)。
- *
- * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个初始
- * trigger 为 GearInRulesIntro 的对话；对话的文本、脚本与选项全部来自 data/campaign/rules.csv
- * 中本节拥有的 GearIn_rules_intro_* 规则 —— Java 侧不写任何文本与选项。
- * 验证闭环：注册入口 (本类 + onGameLoad 门控)→ 数据文件 (rules.csv)→ 运行消费者
- * (RuleBasedInteractionDialogPluginImpl → Rules 引擎)→ 可观察结果 (对话文本与日志)。
- */
-public class GearInRulesIntro implements EveryFrameScript {
-
-    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_RulesIntro";
-
-    private static final Logger LOG = Global.getLogger(GearInRulesIntro.class);
-
-    /** 演示是否已执行；置位后 isDone() 返回 true，引擎在置位同一次推进中自动移除本脚本。 */
-    private boolean executed = false;
-
-    public GearInRulesIntro() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
-    }
-
-    @Override
-    public boolean isDone() {
-        return executed;
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        if (executed) {
-            return;
-        }
-        executed = true;
-        CampaignUIAPI ui = Global.getSector().getCampaignUI();
-        boolean shown = ui.showInteractionDialog(
-                new RuleBasedInteractionDialogPluginImpl("GearInRulesIntro"),
-                Global.getSector().getPlayerFleet());
-        LOG.info("GearIn rules intro dialog shown=" + shown
-                + " (initial trigger GearInRulesIntro; 对话内容全部来自 rules.csv)");
-    }
-}
-```
-
-对应关系：
-
-- `implements EveryFrameScript`：沿用一次性演示模式，`executed` 置位后 `isDone()` 返回 true，引擎在置位同一次推进中自动移除。
-- `REGISTER_MARK`：persistent data 注册判断键 (`"GearIn_RulesIntro"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
-- `new RuleBasedInteractionDialogPluginImpl("GearInRulesIntro")`：自定义初始 trigger(原版默认 `OpenInteractionDialog` 有 121 条规则，会与演示规则混战；自定义 trigger 保证候选池只有本节规则，`FleetInteractionDialogPluginImpl` / 非对话面板文本触发同样使用自定义 trigger)。
-- `showInteractionDialog(plugin, playerFleet)`：交互目标非 null(`init` 里 `getInteractionTarget().getMemory()` 依赖它)；返回值记入日志 (对话框打开失败时用于定位的防御写法)。
-- 无匹配规则时插件会加 failsafe `Leave` (`RuleBasedInteractionDialogPluginImpl`) —— 整套规则都没加载时，对话框依然恭候您离开，除此之外什么也不显示。它是规则没加载或 trigger 拼错时最直接的可观察信号。
-
-调用点 (工程片段，该方法属于插件生命周期主题所持有的类，本节只演示调用，不改动那些文件)：
-
-```java
-    // GearInModPlugin(C7-S1 所有)onGameLoad(boolean newGame) 内新增本节注册块。
-    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInRulesIntro.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInRulesIntro.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInRulesIntro());
+    // GearInModPlugin(前置单元所有)onGameLoad(boolean newGame) 内新增本节注册块。
+    // BarEventManager 实例与 creator 列表存放在 sector memory($core_genericBarEventManager)，
+    // 随存档保存；hasEventCreator 即持久化门控 (原版 addBarEvents 与成熟实例同款写法)。
+    // 原版 CoreLifecyclePluginImpl.onGameLoad 先于 MOD 插件执行 (vanilla 固定最先)，
+    // 因此 getInstance() 不会返回 null。
+    BarEventManager manager = BarEventManager.getInstance();
+    if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
+        manager.addEventCreator(new GearInBarEventCreator());
+        LOG.info("GearIn bar event: creator registered");
     }
 ```
 
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
+想演示 "高频字段修改验证"，把 `createBarEvent()` 之外的高频参数覆写掉再观察抽取频率变化，例如：
+
+```java
+    // GearInBarEventCreator 内覆写 (演示用)：
+    @Override
+    public float getBarEventFrequencyWeight() {
+        return 100f; // 默认 10f；权重 ×10，事件出现频率明显上升
+    }
+```
+
+临时 bar 选项 (规则驱动，不经过 creator) 的 rules.csv 片段 —— 放在 `data/campaign/rules.csv` 末尾，`AddBarEvents` 分类规则在每次展示酒吧时由 `BarCMD` 触发：
+
+```text
+gearIn_barRumor,AddBarEvents,"$market.id == jangala
+!$global.gearIn_barRumorDone","AddBarEvent gearIn_barRumorOption ""Ask about the missing supplies"" ""A port official is complaining loudly about missing supplies. Sounds like a problem someone could get paid to solve.""",,,
+gearIn_barRumorSel,DialogOptionSelected,$option == gearIn_barRumorOption,"$global.gearIn_barRumorDone = true","The official lowers their voice. ""The manifest says the supplies were never loaded, but I saw the crates leave the dock. Someone has been skimming.""","gearIn_barBackToBar:Back to the bar",
+gearIn_barBackToBar,DialogOptionSelected,$option == gearIn_barBackToBar,BarCMD returnFromEvent false,,,
+```
+
+(`jangala` 是原版 Corvus 星系的市场。带教程的新档从 Galatia 开始；跳过教程或 spacer 路线从 Corvus 开始，开发路线还可以从 hyperspace 开始。规则变量、分类和 `FireBest` 细节见 [C16-S3] / [C16-S4]。)
+
+临时选项点选后走 `DialogOptionSelected` 规则；`BarCMD returnFromEvent false` 从规则对话回到酒吧选项。
+
+构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用前置单元的编译链路)：
 
 ```text
 gradle jar
 ```
 
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/rules/GearInRulesIntro.class`(可用 `jar tf` 核对)；`data/campaign/rules.csv` 是 MOD 数据文件，随 MOD 目录被加载器读取 (无需进 jar，规则行放 jar 外与放 jar 内等效，资源加载器都读)。
+产物 `jars/GearIndustry.jar` 应包含两个 class 条目 (可用 `jar tf` 核对)：
 
-注意示例路径 `mods/GearIndustry` 是教程虚构路径，页面内路径互相自洽即可。
+- `data/scripts/gearin/campaign/GearInBarEvent.class`
+- `data/scripts/gearin/campaign/GearInBarEventCreator.class`
+
+## 关键故障实验：酒吧选项结束后事件仍在活动列表
+
+让结束分支只把对话框关闭。玩家看似已经离开，但事件仍在 `PortsideBarData` 与 manager 的 active 跟踪器中，同一市场可能再次显示。
+
+**局部故障片段：**
+
+```java
+// 故障片段
+done = true;
+```
+
+**局部修正片段：**
+
+```java
+// 修正片段
+done = true;
+BarEventManager.getInstance().notifyWasInteractedWith(this);
+```
+
+原因：`isDialogFinished()` 只结束对话外壳，活动列表与 creator 冷却由 manager 单独维护。复验：购买、婉拒和离开各执行一次；每次结束后活动列表中都找不到该事件，并且 accepted 冷却开始计时。
 
 ## 验证方案
 
-前置数据：既有 MOD 工程布局与插件生命周期注册回调 ([C6-S1]、[C7-S1] 建立)、本节的 `data/campaign/rules.csv` 规则表与 `GearInRulesIntro` 使用入口。验证入口为启动器与新建生涯，观察位置是 `starsector.log`、启动器控制台标准输出与对话界面。
+前置数据：既有教程 MOD 布局与 `GearInModPlugin`(含本节调用点片段，见前置知识 [C6-S1] / [C7-S1])、本节两个类、(可选)rules.csv 临时选项片段。
 
-1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
-2. **规则注册**：启动游戏，查看 `starsector.log` 中的 `Loading CSV data from [...]` 与本节 7 条 `Loading rule: GearIn_rules_intro_*` 行。
-3. 查看启动器控制台标准输出中的 `$GearIn_rules_intro_skip`、`$GearIn_rules_intro_last` 两条单次使用变量 WARNING(正常现象，原版同样大量存在)。
-4. **对话完整流程**：新建生涯，日志出现 `GearIn rules intro dialog shown=true`，对话弹出；文本为两条欢迎变体之一且含玩家名；选项为 "查看详情" / "结束"；按 ESC 等效点选 "结束"。
-5. **结果链**：点 "查看详情"→ 追加 `FireAll 附加文本` 与 `高分规则` 两段文本，选项只剩 "结束"；点 "结束" 关闭对话。
-6. **读档**：保存后读档，不再出现 `shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关)。
+1. 游戏构建：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含两个类的 `.class`。
+2. 新建生涯，在教程进行中进入酒吧，观察事件和临时选项。
+3. 跳过或完成教程后进入 Jangala 酒吧，查看 `creator picked`、`eligible at`、`prompt at`、`shown at` 四条日志，以及酒吧面板的提示文本和选项。
+4. 在同一市场等待 20–40 游戏天后再次进入酒吧，观察事件组。
+5. 分别使用三个存档 (或完成后读档冷却)，依次选择 "Buy the coordinates"、"Hear them out but decline"、"Leave the spacer to their drink"，观察信用点、Continue 选项、返回酒吧过程和结束日志。
+6. 完成事件后保存并读档，跨 60–90 游戏天观察事件是否再次出现。
+7. 不完成事件时保存并读档，观察活动列表和继续对话入口。
+8. 给 `GearInBarEventCreator` 覆写 `getBarEventFrequencyWeight()` 返回 `100f`，重新构建并观察事件出现频率。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
-- **规则注册 (加载期)**：
-    - 启动日志 `starsector.log` 出现 `Loading CSV data from [...data/campaign/rules.csv]` 与逐条 `Loading rule: GearIn_rules_intro_welcome` / `..._add_a` / `..._add_b` / `..._open` / `..._detail_low` / `..._detail_high` / `..._leave` —— 注册入口完整流程的静态证明。
-    - 标准输出 (启动器控制台) 出现两条变量警告 (`System.out.println`，非日志)：`WARNING: variable [$GearIn_rules_intro_skip] only used once; rule id: [GearIn_rules_intro_detail_high]` 与 `...[$GearIn_rules_intro_last] only used once; rule id: [GearIn_rules_intro_detail_high]` —— 单次使用变量属正常现象 (原版同样大量存在)，不是错误。
-- **对话弹出 (新档首次进入生涯后第一帧)**：`starsector.log` 出现 `GearIn rules intro dialog shown=true`；游戏暂停并弹出对话：
-    - 文本面板显示两条欢迎变体之一 (每次随机)：含玩家名的句子 (`$playerName` 已替换)；
-    - 选项面板按 order 显示 "查看详情"(order 0) 与 "结束"(order 5)；
-    - 按 ESC 等于点选 "结束"(`SetShortcut` 生效)。
-- **点 "查看详情"**：文本面板按顺序追加三段：
-    - `FireAll 附加文本：条件为空，必然追加。`(`add_a` 命中；`add_b` 的 `RollProbability 0.0` 恒假不触发)；
-    - `高分规则：条件总分 102(1 + 1 + 100)，FireBest 必然选中。`(`detail_high` 总分 102 恒胜 `detail_low` 的 1 分，确定性)；
-    - 选项面板被替换为单个 "结束"(`detail_high` 的选项；`FireBest` 非 keepOptions 时先清空再添加)。
-- **点 "结束"(或按 ESC)**：`DismissDialog` 关闭对话，游戏恢复。
-- **读档**：不出现 `GearIn rules intro dialog shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关)；对话本身不随存档保存。
-- **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志；加载期无 `Duplicate key` / `Duplicate rule id` / `Command [...] not found` / `has = ('assignment')` / `has == ('equals')` / `Option id starts with $` 等规则加载异常。
+- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到两个类的 `.class`。
+- **跳过/完成教程后**：
+
+    - 进入任一有太空港的市场 (如 Corvus 星系的 Jangala)，交互里选 "Take a shuttle down to visit a dockside bar"；`starsector.log` 出现。
+
+    ```text
+    GearIn bar event: creator picked, creating event (id=GearInBarEvent)
+    GearIn bar event: eligible at Jangala
+    GearIn bar event: prompt at Jangala (event id=GearInBarEvent)
+    GearIn bar event: shown at Jangala
+    ```
+
+    *   酒吧面板出现提示 "A disheveled spacer at the bar..." 与选项 "Listen to the spacer's story"(事件 ID `GearInBarEvent` 会出现在同一市场的 `$BarCMD_shownEvents` 里，约 20–40 游戏天内再次进入同一市场复现同一组事件)。
+    *   事件不是每次进酒吧都出现：抽取受 `minBarEvents` / `maxBarEvents` / 权重与随机影响；同一时间每个事件 ID 至多一个活跃实例。
+- **事件对话**：点 "Listen to the spacer's story" → 日志 `dialog init (event id=GearInBarEvent)`，对话出现三个选项：
+    - 点 "Buy the coordinates (500 credits)"：日志 `bought coordinates, credits -500`，玩家舰队信用点减少 500(`cargo.getCredits()` 可负，演示不检查余额)；日志 `finished, notified manager (done=true)`；对话显示 "Continue"，点后回到酒吧选项 (`endWithContinue()` 默认 true 的路径)。
+    - 点 "Hear them out but decline" / "Leave the spacer to their drink"：日志 `declined` / `left` + `finished, notified manager (done=true)`；**不显示** "Continue"，直接回到酒吧选项 (`noContinue = true` 路径)。
+    - 三条路径都触发 `notifyWasInteractedWith`：事件立即从活动列表移除，creator 进入 accepted 超时 (60–90 游戏天) —— 事件在冷却期内不再出现。
+- **读档**：完成后保存并读档 —— `hasEventCreator` 判断使 creator 不重复注册 (日志无二次 "creator registered" 之外的重复注册行)；未完成时保存读档，事件实例仍在活动列表 (随 sector memory 存档) 且可继续对话 (`init` 里 `done = false` 重置)。全程无 `gear_in` 引起的 `ERROR`。
+
+清理：删除参数演示添加的 `getBarEventFrequencyWeight()` 覆写，使其恢复继承值 `10f`。
 
 ## 故障分析
 
-- **对话只显示 failsafe `Leave`**：初始 trigger 与规则表不一致，或 welcome 规则没有载入。
+- **注册时出现空指针异常**：`onApplicationLoad` 阶段还没有 sector 和 `BarEventManager`。
 
-    - **解决方案**：核对 `Loading rule:` 日志和构造器中的 trigger，修正后重新打开对话。
+    - **解决方案**：将 creator 注册移到 `onGameLoad` 或 `onNewGame`。
 
-- **规则加载时启动中止**：conditions 中出现赋值、script 中出现比较、选项 ID 以 `$` 开头、命令类缺失或同文件 ID 重复。
+- **酒吧始终没有该事件**：creator 未被抽取、返回了 null，或市场被 `shouldShowAtMarket` 过滤。
 
-    - **解决方案**：按堆栈定位 CSV 行并把表达式放回正确列，重启。
+    - **解决方案**：依次核对 `creator picked`、`eligible/skip`、`prompt/shown` 日志，修正最先缺失的阶段。
 
-- **规则没有触发且日志无异常**：本规则 ID 与其他文件重复，后加载项被静默跳过。
+- **事件只在首次市场出现**：默认 `shownAt` 会把事件锁定到第一次展示的市场。
 
-    - **解决方案**：改用带 MOD 前缀的唯一 ID。
+    - **解决方案**：需要跨市场显示时覆写 `shouldShowAtMarket` 并管理状态。
 
-- **点击选项后显示 `no rule found`**：`$option` 比较值与 options 列的 ID 不完全一致。
+- **点击酒吧选项后进入普通规则对话**：`addOption` 的 optionData 不是事件对象。
 
-    - **解决方案**：统一大小写和空格，重新点击。
+    - **解决方案**：改为 `addOption(text, this)`。
 
-- **条件始终为 false**：memory 键、作用域前缀或 tag 写错，也可能把 `"1"`、`"yes"` 当作真值。
+- **完成后的事件仍反复出现**：完成分支没有通知 manager 移除活动事件。
 
-    - **解决方案**：用 `DumpMemory` 核对实际键和值，改为 `Boolean.TRUE` 或字符串 `"true"`。
+    - **解决方案**：设置完成状态时调用 `notifyWasInteractedWith(this)`。
 
-- **文本变体没有随机切换**：分隔符 `OR` 没有独占一行。
+- **倒计时结束后事件仍未移除**：到期状态没有让 `shouldRemoveEvent()` 返回 true。
 
-    - **解决方案**：修正 CSV 单元格内换行并保持 UTF-8 无 BOM。
+    - **解决方案**：同步更新到期字段和移除判断。
 
-- **选项文本在冒号后被截断**：加载器把冒号解释为选项字段分隔。
+- **未交互事件提前消失**：默认 active 时长 30–40 游戏天已经耗尽。
 
-    - **解决方案**：改写文本或使用全角冒号，重启。
+    - **解决方案**：需要更长窗口时覆写 `getBarEventActiveDuration()`。
 
-- **选项加载时报 `NumberFormatException`**：三段选项的首段不是可解析的排序数值。
+- **读档越多事件越频繁**：每次载入都追加了同类 creator。
 
-    - **解决方案**：删除多余冒号或提供合法 order，重启。
+    - **解决方案**：注册前用 `hasEventCreator(Class)` 判断。
 
-- **`FireBest` 每次选中不同规则**：多个候选得分相同，picker 会随机选择。
+- **普通事件几乎不再出现**：某个事件被设为 priority，优先抽取挤占了普通 picker。
 
-    - **解决方案**：为需要确定结果的规则设置不同 `score`。
+    - **解决方案**：只为剧情关键事件保留 priority。
 
-- **`FireAll` 没有追加任何内容**：目标 trigger 无匹配项，或 `FireAllIntercept` 拦截了调用。
+- **临时酒吧选项没有出现**：`AddBarEvents` 的市场条件或一次性 flag 不满足。
 
-    - **解决方案**：核对目标 trigger 和拦截条件，再执行一次。
+    - **解决方案**：核对 `$market.id` 与规则内存值。
 
-- **求值条件时状态被重复修改**：有副作用的命令被放进 conditions。
+- **临时酒吧选项下一帧就消失**：`$core_tempBarEvents` 会在展示前重建，并以 `expire=0` 清理。
 
-    - **解决方案**：将写状态操作移到 script。
+    - **解决方案**：长期状态改存独立 memory flag。
 
-- **对话出现红色异常文字**：规则命令执行时抛出异常。
+- **事件选项进入错误分支**：`optionSelected` 比较了显示文本，或常量与 `addOption` 的 optionData 不一致。
 
-    - **解决方案**：按红字中的类名和消息修正参数；非对话调用还要处理 null dialog，再触发。
+    - **解决方案**：统一比较 optionData 常量。
 
-- **日志显示 `shown=false`**：现有对话或新手引导占用了交互界面。
+- **保存或读档时事件字段报错**：事件或 creator 保存了非 transient 的对话句柄、引擎对象。
 
-    - **解决方案**：只在 CAMPAIGN 状态且界面空闲时调用。
-
-- **对话结束后 memory 值仍然保留**：该键设置了持久或正数天数的过期时间。
-
-    - **解决方案**：根据用途显式设置期限。
+    - **解决方案**：持久字段只保留可序列化数据，句柄保持 transient。
 
 ## 总结
 
-本节把规则系统走通成一条从数据到对话的流程：`data/campaign/rules.csv` 的七列决定一条规则能写什么，加载与合并决定它是否真的进入游戏，匹配与条件决定它何时被选中，`FireBest` / `FireAll` 与 `$option` 回流把它变成对话文本和选项。最小示例把这条流程全部接通：规则表只负责数据，`GearInRulesIntro` 只负责打开对话，文本与选项全部来自 CSV。
+本节把酒吧事件接成了一条完整流程：注册入口决定事件从哪来，调度入列决定何时出现，显示过滤决定在哪个市场出现，对话收尾决定何时离开。排错时按 "注册 → 抽取 → 过滤 → 显示" 的顺序核对日志，流程停在哪一环，日志就缺哪一环。
 
-排错判断可以浓缩成几条：注册看 `Loading rule:` 日志而不是找报错；加载期致命错误全部是启动中止级 (条件列 `=`、脚本列 `==`、`$` 开头选项 id、命令找不到、同文件重复 id)；跨文件重复 id 静默跳过是规则不触发且无报错的首要原因；`FireBest` 只取一条而 `FireAll` 执行全部；判真只有 `"true"` 与 `Boolean.TRUE` 为真，比较大小写敏感；文本变体靠独占一行的 `OR`，选项文本里不能有冒号，选项 id 与 `$option ==` 必须逐字一致。
+可复用的判断如下：注册只发生在生涯引擎建立之后，并用 `hasEventCreator(Class)` 判断去重 (沿用原版 `CoreLifecyclePluginImpl.addBarEvents` 的写法)；所有时长都是游戏天 (`Misc.getDays` 换算)，manager 与活动列表随存档保存，事件字段必须可序列化；酒吧选项的 optionData 必须是事件自身 (`addOption(text, this)`)，交互收尾按事件语义调用 `notifyWasInteractedWith(this)`。`shouldRemoveEvent` 默认 false、`shouldShowAtMarket` 默认锁定单一市场、教程进行中全部隐藏；多数 "该出现没出现、该消失没消失" 的现象都可由上述三条默认语义解释，怀疑事件逻辑前先对照它们。
 
-对话框生命周期与脚本注册判断是本节的两个底座。[C15-S3] 和 [C15-S4] 会继续使用这份 `GearIn_rules_intro_*` 规则表与 `$option` 回流约定。
+临时 bar 选项走规则系统，每次展示前清空重建，不是事件本体，也不能当长期状态读；`RemoveBarEvent` 只删临时选项，不碰活动列表。
+
+本节只覆盖 "事件本体" 链路：mission 类酒吧事件的 `HubMissionBarEventWrapper` 包装与 `bar_events.csv` 的 mission plugin 编写。
+
+`BaseBarEventWithPerson` 的 market 稳定人物生成属于人物对象主题，规则对话的深度语法属于 Rules 主题；本节只保留酒吧事件的接入边界。
 
 ## 建议参考项
 
-- `data/campaign/rules.csv`：本节示例规则表 (`GearIn_rules_intro_*` 前缀) 与原版规则表的存放路径。
-- `data/config/settings.json`：`ruleCommandPackages` 命令包配置。
-- `com.fs.starfarer.api.campaign.rules.RulesAPI`：规则匹配入口 (`getAllMatching` / `getBestMatching` / `performTokenReplacement` / `setRandomForNextRulePick`)。
-- `com.fs.starfarer.api.campaign.rules.RuleAPI`：单条规则的文本、选项与脚本访问。
-- `com.fs.starfarer.api.campaign.rules.MemoryAPI` / `MemKeys`：规则记忆键读写与内存分组键。
-- `com.fs.starfarer.api.campaign.rules.Option`：对话选项的 `id` / `text` / `order`。
-- `com.fs.starfarer.api.campaign.rules.CommandPlugin` / `ExpressionAPI`：规则命令与条件表达式的约定接口。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin`：内置规则命令基类 (`FireBest` / `FireAll` / `DismissDialog` / `RollProbability` / `SetShortcut` / `ShowDefaultVisual` 等均为其子类)。
-- `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl`：规则驱动对话插件，本节使用方完整流程的核心。
-- `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`：舰队遭遇对话对规则引擎的调用。
-- `com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`：`$tag:` / `$mc:` / `$friendlyToPlayer` 等 facts 记忆键的来源。
-- `com.fs.starfarer.api.impl.campaign.CoreRuleTokenReplacementGeneratorImpl`：文本 token 替换表的默认实现。
-- `com.fs.starfarer.api.util.Misc`：规则表达式 token 化、变量解析与 token 替换工具。
-- `com.fs.starfarer.api.campaign.SectorAPI`：`getRules()` 获取 `RulesAPI`。
+- `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent`：bar event 的回调方法约定。
+- `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarData`：活动事件列表 (全局单例，随 sector memory 存档)。
+- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`：全局调度器与 `GenericBarEventCreator` 内部接口。
+- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent`：bar event 默认实现：transient 对话句柄、shownAt 锁定、`getBarEventId` 默认类简单名。
+- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventCreator`：creator 默认实现与全部抽取参数默认值。
+- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventWithPerson`：带 market 稳定人物的默认实现。
+- `com.fs.starfarer.api.impl.campaign.intel.bar.events.SpecBarEventCreator`：CSV spec 自动生成的 creator(mission / 普通分派)。
+- `com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin`：事件对话包装 (init / optionSelected / endEvent)。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`：酒吧 UI 展示管线与选项分派。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.AddBarEvent`：写入临时 bar 选项的规则命令；
+- `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.RemoveBarEvent`：移除临时 bar 选项的规则命令。
+- `com.fs.starfarer.api.loading.BarEventSpec`：bar\_events.csv 行的解析。
+- `com.fs.starfarer.api.SettingsAPI`：`getAllBarEventSpecs()` / `getBarEventSpec(id)`。
+- `com.fs.starfarer.api.impl.campaign.CoreLifecyclePluginImpl`：原版注册入口 (`addBarEvents`)。
+- `com.fs.starfarer.api.impl.campaign.ids.Tags`：`MISSION_PRIORITY`("priority" tag)。
+- `com.fs.starfarer.api.util.TimeoutTracker`：active / timeout 跟踪器 (`advance` 扣到 0 移除)。
+- `com.fs.starfarer.api.util.Misc`：`getDays` 时间换算。
+- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：`set(key, value[, expire])` 记忆读写。
+- `data/campaign/bar_events.csv`：酒吧事件 spec 数据 (11 列)。
+- `data/config/settings.json`：`minBarEvents` / `maxBarEvents` / `barEventProbOneMore` / `maxTotalBarEventsAsFractionOfEventTypes`。
+- `data/campaign/rules.csv`：`marketVisitBar` / `bar_optionSel` / `AddBarEvents` 分类规则 / `BarCMD returnFromEvent false`。
+- `data/campaign/econ/corvus.json`：`jangala` 市场实体 (验证临时选项片段用)。
+- `Starsector/starsector-core/starsector.log`：按总结中的顺序核对流程日志的主要依据。
+
+## 完整最小例
+
+::: details 完整成品：GearInBarEvent
+
+```java
+package data.scripts.gearin.campaign;
+
+import java.util.Map;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.CargoAPI;
+import com.fs.starfarer.api.campaign.InteractionDialogAPI;
+import com.fs.starfarer.api.campaign.OptionPanelAPI;
+import com.fs.starfarer.api.campaign.TextPanelAPI;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.campaign.rules.MemoryAPI;
+import com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent;
+import com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager;
+
+/**
+ * 完整最小例：酒吧事件 (PortsideBarEvent) —— 酒吧选项、事件对话与生命周期收尾。
+ * 事件 ID 默认为类简单名 "GearInBarEvent"：creator 抽取按 ID 去重，BarCMD 展示后
+ * 把 ID 写入市场内存，下次进入同一市场按 ID 复现同一组事件。生命周期：creator
+ * 创建实例并入 active 跟踪器；玩家进酒吧时经 shouldShowAtMarket 过滤并写入选项
+ * (optionData 必须是事件自身)；点选进入事件对话；交互后必须 notifyWasInteractedWith
+ * 收尾，把事件移出并把 creator 置入 accepted 超时。演示：花 500 信用点买补给
+ * 藏匿点情报、婉拒或离开，三个分支都验证 accepted 超时路径。
+ */
+public class GearInBarEvent extends BaseBarEvent {
+
+    private static final Logger LOG = Global.getLogger(GearInBarEvent.class);
+
+    /** 对话选项 id(仅事件对话内部使用；optionData 用常量比较，不用文本)。 */
+    public static final String OPTION_ACCEPT = "gearIn_barAccept";
+    public static final String OPTION_DECLINE = "gearIn_barDecline";
+    public static final String OPTION_LEAVE = "gearIn_barLeave";
+
+    /** 买下情报的信用点价格 (真实从玩家舰队 cargo 扣减)。 */
+    public static final int INFO_PRICE = 500;
+
+    @Override
+    public boolean shouldShowAtMarket(MarketAPI market) {
+        // BaseBarEvent 默认：shownAt == null 或 == 当前市场才显示 (首次展示后锁定单一市场)。
+        boolean ok = super.shouldShowAtMarket(market);
+        if (!ok) {
+            LOG.info("GearIn bar event: skip " + market.getName()
+                    + " (shownAt locked to " + getShownAt() + ")");
+            return false;
+        }
+        // 演示市场条件：只出现在有太空港的市场 (新档可访问的核心市场基本满足)。
+        if (!market.hasSpaceport()) {
+            LOG.info("GearIn bar event: skip " + market.getName() + " (no spaceport)");
+            return false;
+        }
+        LOG.info("GearIn bar event: eligible at " + market.getName());
+        return true;
+    }
+
+    @Override
+    public void addPromptAndOption(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
+        super.addPromptAndOption(dialog, memoryMap);
+        MarketAPI market = dialog.getInteractionTarget().getMarket();
+        LOG.info(String.format("GearIn bar event: prompt at %s (event id=%s)",
+                market.getName(), getBarEventId()));
+
+        TextPanelAPI text = dialog.getTextPanel();
+        text.addPara("A disheveled spacer at the bar is telling anyone who will listen about a cache "
+                + "of supplies drifting somewhere in this system.");
+
+        // 关键机制：选项的 optionData 必须是事件自身 (this)。BarCMD.optionSelected()
+        // 只对 optionData instanceof PortsideBarEvent 才创建 BarEventDialogPlugin，
+        // 进入事件对话；换成字符串或其他对象则落入规则对话框分支。
+        dialog.getOptionPanel().addOption("Listen to the spacer's story", this);
+    }
+
+    @Override
+    public void init(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
+        super.init(dialog, memoryMap);
+        LOG.info("GearIn bar event: dialog init (event id=" + getBarEventId() + ")");
+        // 对话每次进入都重置完成标记 (BaseBarEvent.init 不清 done，需要自行重置)。
+        done = false;
+        showRumor();
+    }
+
+    private void showRumor() {
+        TextPanelAPI text = dialog.getTextPanel();
+        OptionPanelAPI options = dialog.getOptionPanel();
+        text.addPara("You sit down across from the spacer and buy them a drink. Once the drink is "
+                + "half-gone, they lower their voice and tell you about a cargo pod that drifted off "
+                + "a burning freighter - still full of supplies, just waiting to be found. "
+                + "\"I'd sell you the coordinates for a song,\"they say.");
+        options.clearOptions();
+        options.addOption("Buy the coordinates (" + INFO_PRICE + " credits)", OPTION_ACCEPT);
+        options.addOption("Hear them out but decline", OPTION_DECLINE);
+        options.addOption("Leave the spacer to their drink", OPTION_LEAVE);
+    }
+
+    @Override
+    public void optionSelected(String optionText, Object optionData) {
+        TextPanelAPI text = dialog.getTextPanel();
+        if (OPTION_ACCEPT.equals(optionData)) {
+            text.addPara("The spacer scribbles coordinates on a napkin and slides it over. You pay "
+                    + "them " + INFO_PRICE + " credits and pocket the napkin.");
+            CargoAPI cargo = Global.getSector().getPlayerFleet().getCargo();
+            cargo.getCredits().subtract(INFO_PRICE);
+            LOG.info("GearIn bar event: bought coordinates, credits -" + INFO_PRICE);
+            finish();
+        } else if (OPTION_DECLINE.equals(optionData)) {
+            text.addPara("The spacer shrugs. \"Suit yourself. The void isn't going anywhere.\"");
+            // noContinue = true：结束时不显示 "Continue"，直接回到酒吧选项。
+            noContinue = true;
+            LOG.info("GearIn bar event: declined");
+            finish();
+        } else if (OPTION_LEAVE.equals(optionData)) {
+            text.addPara("You finish your drink and get up. The spacer returns to telling the story "
+                    + "to nobody in particular.");
+            noContinue = true;
+            LOG.info("GearIn bar event: left");
+            finish();
+        } else {
+            LOG.info("GearIn bar event: unknown option data " + optionData);
+        }
+    }
+
+    /** 对话收尾：置完成标记并通知 manager 移除本事件 (creator 进入 accepted 超时)。 */
+    private void finish() {
+        done = true;
+        BarEventManager.getInstance().notifyWasInteractedWith(this);
+        LOG.info("GearIn bar event: finished, notified manager (done=" + isDialogFinished() + ")");
+    }
+
+    @Override
+    public void wasShownAtMarket(MarketAPI market) {
+        super.wasShownAtMarket(market);
+        LOG.info("GearIn bar event: shown at " + market.getName());
+    }
+
+    @Override
+    public void advance(float amount) {
+        // 事件在活动列表中每帧被 PortsideBarData.advance 推进 (未暂停时)；
+        // 本示例没有时间逻辑，保留空实现。需要限时消失的事件在这里推进
+        // 倒计时并在到期时由 shouldRemoveEvent() 返回 true。
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInBarEventCreator
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent;
+import com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventCreator;
+
+/**
+ * 完整最小例：酒吧事件 creator(GenericBarEventCreator) —— 注册入口与抽取参数。
+ *
+ * 注册入口：BarEventManager.getInstance().addEventCreator(this)
+ * (GearInModPlugin.onGameLoad 内的注册块)。manager 实例与 creator 列表存放在
+ * sector memory(键 $core_genericBarEventManager)，随存档保存，因此用
+ * hasEventCreator(Class) 作为持久化门控，不需要额外的 persistent data 键。
+ *
+ * 抽取参数 (全部在 BaseBarEventCreator 有默认值，本示例只覆写 createBarEvent)：
+ * - getBarEventFrequencyWeight()：普通 picker 的抽取权重，默认 10f；
+ * - getBarEventActiveDuration()：事件在 active 跟踪器中的时长 (游戏天)，默认 30+rand*10；
+ * - getBarEventTimeoutDuration()：事件未交互、active 过期移除后 creator 的冷却 (游戏天)，默认 30+rand*10；
+ * - getBarEventAcceptedTimeoutDuration()：玩家交互 (接受或拒绝都算) 后的冷却 (游戏天)，默认 60+rand*30；
+ * - isPriority()：true 时进入 priority picker(先于普通 picker 抽取)，默认 false。
+ */
+public class GearInBarEventCreator extends BaseBarEventCreator {
+
+    private static final Logger LOG = Global.getLogger(GearInBarEventCreator.class);
+
+    @Override
+    public PortsideBarEvent createBarEvent() {
+        LOG.info("GearIn bar event: creator picked, creating event (id=" + getBarEventId() + ")");
+        return new GearInBarEvent();
+    }
+}
+```
+
+:::

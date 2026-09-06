@@ -337,5 +337,6 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 - `com.fs.starfarer.api.loading.WeaponSlotAPI`：`isStationModule()`、`computePosition()`、`computeMidArcAngle()`：模块槽位的判定与挂载几何。
 - `com.fs.starfarer.api.combat.ShipHullSpecAPI`：`getModuleAnchor()` 与 `ShipTypeHints` 枚举 (`STATION`、`SHIP_WITH_MODULES`、`MODULE`、`UNDER_PARENT`、`INDEPENDENT_ROTATION`)。
 - `data/hulls/ship_data.csv`：主体行 (`SHIP_WITH_MODULES`) 与模块行 (`UNBOARDABLE, HIDE_IN_CODEX, MODULE`) 的 hints/tags。
-- `data/variants/stations/station_small_Standard.variant` 与 `data/variants/stations/remnant_station2_Standard.variant`：原版 `modules` 对象/数组两种写法参照。
+- `data/variants/stations/station_small_Standard.variant`：原版 `modules` 对象写法参照；
+- `data/variants/stations/remnant_station2_Standard.variant`：原版 `modules` 数组写法参照。
 - `Starsector/starsector-core/starsector.log`：加载期与部署期异常的定位入口。

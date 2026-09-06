@@ -179,8 +179,9 @@ anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 
 ## 建议参考项
 
-- `CustomEntitySpecAPI`：运行期实体 spec 字段；
-- `LocationAPI.addCustomEntity`：投放入口；
+- `com.fs.starfarer.api.campaign.CustomEntitySpecAPI`：运行期实体 spec 字段；
+- `com.fs.starfarer.api.campaign.LocationAPI`：`addCustomEntity` 投放入口；
 - `data/config/custom_entities.json`：生涯实体类型；
 - `data/strings/descriptions.csv`：CUSTOM 行格式的对照依据；
-- `graphics/icons/relay.png`、`graphics/ships/com_relay.png`：本节复用的原版图标与精灵。
+- `graphics/icons/relay.png`：本节复用的原版图标；
+- `graphics/ships/com_relay.png`：本节复用的原版精灵。

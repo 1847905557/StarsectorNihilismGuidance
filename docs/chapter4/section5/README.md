@@ -180,7 +180,8 @@ PlanetAPI prime = system.addPlanet(
 
 ## 建议参考项
 
-- `PlanetSpecAPI`：运行期类型字段与描述键；
+- `com.fs.starfarer.api.campaign.PlanetSpecAPI`：运行期类型字段与描述键；
 - `data/config/planets.json`：行星与恒星类型注册表；
 - `data/strings/descriptions.csv`：`PLANET` 行格式的对照依据；
-- `graphics/planets/terran.jpg`、`graphics/planets/clouds_banded01.png`：本节复用的原版贴图。
+- `graphics/planets/terran.jpg`：本节复用的原版行星贴图；
+- `graphics/planets/clouds_banded01.png`：本节复用的原版云层贴图。

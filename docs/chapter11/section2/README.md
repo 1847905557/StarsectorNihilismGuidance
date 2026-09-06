@@ -202,7 +202,6 @@ public class GearInMarketFactory {
 ## 建议参考项
 
 - `MarketAPI`：市场运行时对象；
-- `GearInMarketFactory`：本页完整模板；
 - `data/campaign/market_conditions.csv`：条件注册表；
 - `data/campaign/industries.csv`：产业注册表；
 - `data/campaign/submarkets.csv`：子市场注册表。

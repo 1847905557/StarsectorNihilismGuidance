@@ -185,6 +185,4 @@ for (BeamAPI beam : engine.getBeams()) {
 
 - `CombatEngineAPI`：四类对象集合与 `addFloatingText(...)`；
 - `ShipAPI`、`DamagingProjectileAPI`、`MissileAPI`、`BeamAPI`：对象位置和状态访问器；
-- `CombatFleetManagerAPI.getDeployedCopyDFM()`：部署成员到场上舰船的映射；
-- [C8-S1]：战斗引擎状态与暂停判断；
-- [C8-S3]：每帧插件接入方式。
+- `CombatFleetManagerAPI.getDeployedCopyDFM()`：部署成员到场上舰船的映射。

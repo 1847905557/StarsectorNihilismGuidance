@@ -146,7 +146,6 @@ GearIn_artizan_combat
 
 ## 建议参考项
 
-- `data/campaign/sim_opponents.csv`：MOD 模拟战对手清单 (相对 MOD 根目录，只写自己的行)。
-- `data/config/title_screen_variants.csv`：MOD 标题画面演示清单 (相对 MOD 根目录)。
+- `data/campaign/sim_opponents.csv`：MOD 模拟战对手清单，只写自己的行。
+- `data/config/title_screen_variants.csv`：MOD 标题画面演示清单。
 - `data/config/settings.json`：`errorShipVariant` 无效装配回退目标。
-- `data/variants/GearIn_artizan_combat.variant`：本节两张清单使用的装配 (由装配注册单元持有)。

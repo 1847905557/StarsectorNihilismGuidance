@@ -479,7 +479,6 @@ data/world/factions/gear_industry.faction
 ## 建议参考项
 
 - `data/world/factions/factions.csv`：势力文件注册表；
-- `data/world/factions/gear_industry.faction`：GearIn 势力身份文件；
 - `data/world/factions/hegemony.faction`：本节复制的源文件；
 - `FactionSpecAPI`：加载后的势力规格；
 - `SectorAPI.getFaction(id)`：运行时势力查询入口。

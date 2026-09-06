@@ -336,8 +336,6 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 - `com.fs.starfarer.api.combat.ShipAPI`：`isShipWithModules()`、`getParentStation()` / `getStationSlot()`、`getChildModulesCopy()`、`getModuleOffset()`、`isStation()` / `isStationModule()`：主体与模块实体的运行态关系。
 - `com.fs.starfarer.api.loading.WeaponSlotAPI`：`isStationModule()`、`computePosition()`、`computeMidArcAngle()`：模块槽位的判定与挂载几何。
 - `com.fs.starfarer.api.combat.ShipHullSpecAPI`：`getModuleAnchor()` 与 `ShipTypeHints` 枚举 (`STATION`、`SHIP_WITH_MODULES`、`MODULE`、`UNDER_PARENT`、`INDEPENDENT_ROTATION`)。
-- `data/hulls/GearIn_kiln.ship` 与 `data/hulls/GearIn_kiln_module.ship`：主体的 `STATION_MODULE` 槽位与模块船体 (含可选 `moduleAnchor`)。
 - `data/hulls/ship_data.csv`：主体行 (`SHIP_WITH_MODULES`) 与模块行 (`UNBOARDABLE, HIDE_IN_CODEX, MODULE`) 的 hints/tags。
-- `data/variants/GearIn_kiln_combat.variant` 与 `data/variants/GearIn_kiln_module_combat.variant`：`modules` 字段与模块装配示例。
 - `data/variants/stations/station_small_Standard.variant` 与 `data/variants/stations/remnant_station2_Standard.variant`：原版 `modules` 对象/数组两种写法参照。
 - `Starsector/starsector-core/starsector.log`：加载期与部署期异常的定位入口。

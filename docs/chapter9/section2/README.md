@@ -1,559 +1,384 @@
-# 制作带目标选择的战术系统
+# 详解战术系统
 
-本节制作一个带目标选择的战术系统，让效果脚本与系统 AI 在战斗中使用同一目标。系统状态、目标来源和 AI 决策必须在正确阶段衔接，脚本才会实际生效。
+本节把 [C2-S3] 的战术系统数据继续展开，重点放在 `BaseShipSystemScript` 的回调时机、返回值和运行结果，并用独立的 `ShipSystemAIScript` 让 AI 舰船自动激活系统。
 
-*本节预期阅读时间：~25 分钟。*
+*本节预期阅读时间：~24 分钟。*
 
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：~30 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 读取 `ShipSystemAPI` 的状态、效果、冷却、弹药与激活条件；
-- 区分系统状态机与 stats 脚本能够观察的运行阶段；
-- 为玩家舰和 AI 舰选择、验证并传递系统目标；
-- 配置 `statsScript` 与自定义系统 AI，并隔离两个脚本实例的状态；
-- 根据状态、目标和日志定位系统运行故障。
+- 配置战术系统数据和效果脚本；
+- 根据调用时机实现效果脚本方法；
+- 接入独立的自定义系统 AI；
+- 根据日志和战斗结果定位回调问题。
 
 ## 前置知识
 
-- [C1-S2] 的 `ship_data.csv` 船体登记与 `system id` 挂载；
-- [C2-S3] 的 `.system`、`ship_systems.csv`、`ship_data.csv` 与效果脚本关系；
-- [C7-S2] 的 `Global` 生命周期与跨战斗引用边界；
-- [C8-S2] 的 `getPlayerShip()`、`isAlive()`、`isEntityInPlay()` 与暂停语义；
-- [C8-S4] 的 `MutableStat modifier ID、`modifyMult` 与 `unmodify`；
-- 理解原版舰船 AI 的目标选择、开火和规避职责；
-- 理解 `.system` 的 `aiType` 与 `aiScript` 如何决定系统 AI。
+- [C2-S3] 的 `.system`、`ship_systems.csv`、`ship_data.csv` 与 `apply` / `unapply`；
+- [C8-S4] 的 `MutableShipStatsAPI`、modifier ID 与 `modifyPercent`；
+- [C8-S1] 的战斗引擎状态和暂停语义；
+- [C7-S2] 的全局服务访问阶段。
 
-## 梳理战术系统关系
+## 登记战术系统
 
-### 接口与角色速查表
+本节先登记一个普通战术系统和一个用于观察待机回调的系统。两者沿用 [C2-S3] 的数据文件位置；本节只增加脚本入口和待机运行开关。
 
-本节涉及的接口都在 `com.fs.starfarer.api.combat`(脚本接口在 `com.fs.starfarer.api.plugins`，基类在 `com.fs.starfarer.api.impl.combat`)：
-
-| 接口 / 类型 | 本节角色 | 链路 |
-|---|---|---|
-| `ShipSystemAPI` | 舰船上运行时系统实例 | 战斗创建舰船时由 spec 生成 (`createSystem`)；`ShipAPI.getSystem()` / `getPhaseCloak()` 取得 |
-| `ShipSystemSpecAPI` | 系统数据 spec | `.system` + `ship_systems.csv` 合并产物；`getStatsScript()` / `getAIScript()` 按类名实例化脚本 |
-| `ShipSystemStatsScript` / `Advanced` | 效果脚本接口 | `.system` 的 `statsScript` 挂载；`State` / `StatusData` / `apply` / `unapply` / `getStatusData` / `isUsable` / `getInfoText` |
-| `BaseShipSystemScript` | 官方基类 | `com.fs.starfarer.api.impl.combat`；空实现全部方法，覆写方法返回 `-1` / `null` |
-| `ShipSystemAIScript` | 系统 AI 接口 | `.system` 的 `aiScript` 挂载 (仅 `aiType: CUSTOM` 时使用)；`init` / `advance` |
-| `ShipwideAIFlags` | AI 短期 flag 容器 | `ShipAPI.getAIFlags()`；`TARGET_FOR_SHIP_SYSTEM` / `SYSTEM_TARGET_COORDS` 等 |
-| `ShipAPI` | 舰船实体入口 | `getSystem()` / `getPhaseCloak()` / `getShipTarget()` / `getAIFlags()` / `useSystem()` |
-| `MutableShipStatsAPI` | stats 集合 | 系统四个 bonus 族：`getSystemRangeBonus` / `getSystemCooldownBonus` / `getSystemUsesBonus` / `getSystemRegenBonus`(`StatBonus`) |
-| `IntervalUtil` | 决策节流 | `com.fs.starfarer.api.util`；AI 决策与日志节奏 |
-
-数据到运行态的链路 (前置单元的数据面 + 本节运行态)：
-
-```text
-ship_data.csv 的 system id / defense id 列
-  → ShipHullSpecAPI.systemId(船体 CSV 加载器)
-  → 战斗创建 Ship 时按 id 查 ShipSystemSpecAPI(.system + ship_systems.csv 合并产物)
-  → ShipSystemSpecAPI.createSystem(type) → 系统运行时对象 (每舰一个)
-  → 系统运行时对象构造器调用 spec.getStatsScript() 创建 stats 脚本实例 (每系统一个)
-  → 舰船 AI 创建时调用 spec.createSystemAI(aiType)
-      → aiType == CUSTOM 时 spec.getAIScript() 创建 AI 脚本实例，init 后包装为系统 AI
-  → 舰船 AI 每帧调 systemAI.advance(...)；系统运行时对象.advance 每帧推进状态机并回调 stats 脚本
-```
-
-### ShipSystemAPI 状态访问器速查表
-
-访问器按八个分组组织，全部签名见建议参考项。
-
-| 分组 | 成员 | 语义 |
-|---|---|---|
-| 状态 | `getState()` / `isActive()` / `isOn()` / `isStateActive()` / `isChargeup()` / `isChargedown()` / `isCoolingDown()` | `SystemState` 五态枚举与 6 个布尔视图 |
-| 效果 | `getEffectLevel()` / `getChargeUpDur()` / `getChargeActiveDur()` / `getChargeDownDur()` | 效果强度 0–1 与三段时间 (来自 CSV `charge up` / `active` / `down`) |
-| 冷却 | `getCooldown()` / `getCooldownRemaining()` / `setCooldown()` / `setCooldownRemaining()` | 冷却总时长与剩余；剩余量只在 `COOLDOWN` 态倒计时，`IN`/`ACTIVE`/`OUT` 返回完整时长，`IDLE` 返回 0(充能计时器的冷却进度值)；原版内置 AI 用 `getCooldownRemaining() > 0` 作判断即能同时拦下 "激活中/后摇中" |
-| 弹药 | `getAmmo()` / `getMaxAmmo()` / `getAmmoPerSecond()` / `getAmmoReloadProgress()` / `isOutOfAmmo()` / `setAmmo()` | `max uses` / `regen` 两列的运行态 (`AmmoTrackerAPI`) |
-| 幅能 | `getFluxPerUse()` / `getFluxPerSecond()` / `setFluxPerUse()` / `setFluxPerSecond()` | 每次激活与每秒幅能成本 (系统创建时按 flux 容量/耗散折算) |
-| 激活控制 | `canBeActivated()` / `deactivate()` / `forceState(state, progress)` | 激活许可、强制进入冷却、直接改写状态机 |
-| 目标 | `getTargetLoc()` | 用户按系统键激活时传入的鼠标世界坐标 (`Vector2f`，AI 激活时为 null) |
-| 脚本 | `getScript()` / `getSpecAPI()` / `getId()` / `getDisplayName()` | stats 脚本实例、spec、id 与显示名 |
-
-四个 bonus 族的使用方 (`ShipSystemSpecAPI` 的取值方式)：
-
-```text
-getSystemRangeBonus().computeEffective(spec.range)      → getRange(stats)
-getSystemCooldownBonus().computeEffective(spec.cooldown) → getCooldown(stats)
-getSystemUsesBonus().computeEffective(spec.maxUses)      → getMaxUses(stats)
-getSystemRegenBonus().computeEffective(spec.regen)       → getRegen(stats)
-```
-
-### bonus 的部署时烘焙与即时读取
-
-系统运行时对象在创建时 (构造器调用) **一次性** 把这些值写回充能记录，冷却、次数与恢复的 bonus 在舰船部署时烘焙，运行期改动这几项不会反映到本场战斗 (重新部署才重算)；
-
-而直接调用 `spec.getRange(stats)` / `stats.getSystemRangeBonus().computeEffective(...)` 的读取 (如本节示例的 AI 每次决策现取有效射程) 是即时的。
-
-## 状态机：五态与推进规则
-
-访问器和链路已经就位，接下来看系统每帧怎么推进：五态状态机的转移条件决定全部访问器语义的取值，也决定效果脚本回调在哪些状态被调用。`ShipSystemAPI.SystemState` 与 `ShipSystemStatsScript.State` 是同一组状态的两种视图，枚举声明顺序不同，转换时按名称映射；回调里拿到的是 `State`，`ShipSystemAPI.getState()` 返回 `SystemState`。
-
-### 状态与 effectLevel 速查表
-
-五个状态与 `effectLevel`(即充能进度值)：
-
-| 状态 | `getEffectLevel()` | 语义 |
-|---|---|---|
-| `IDLE` | 0 | 待机；激活许可通过后响应激活请求 |
-| `IN` | `timer / chargeUp`(`charge up` 为 0 时恒 1) | 前摇，线性增强 |
-| `ACTIVE` | 1 | 全功率段 |
-| `OUT` | `1 - timer / down`(`down` 为 0 时恒 1) | 后摇，线性减弱 |
-| `COOLDOWN` | 0 | 冷却，期间无法再次激活 |
-
-### 推进规则 (每帧充能推进)
-
-每帧系统运行时对象把 "本帧是否有激活请求" 传给充能推进 `advance(activated, dt)`，状态机按当前态分派：
-
-1. **IDLE + 激活请求**：按顺序检查：
-    - `canBeActivated()`(`requiresZeroFluxBoost` 时要求零幅能加速引擎开启)；
-    - 弹药 (用弹药系统且弹尽 → `failedToActivateDueToAmmo`)；
-    - `raiseFlux(activationFlux, hardFlux)` 扣激活幅能 (扣不动 → `failedToActivateDueToFlux`)；
-    - `deductOneAmmo()` 扣一发 (失败 → `restoreFlux` 退回幅能 + `failedToActivateDueToAmmo`)。
-    - 全部通过 → `state = IN`、`timer = 0`、回调 `systemChargingUp()`。
-2. **IN**：`timer += dt`；`timer >= charge up` → `state = ACTIVE`、`timer = 0`、回调 `systemActivated()`。`charge up` 为 0 时当帧即转入 `ACTIVE`(`IN` 只存在一帧，该帧 `effectLevel` 为 1)。
-3. **IN / ACTIVE 每帧扣幅能**：`raiseFlux(fluxPerSecond * dt, hardFlux)`；扣不动且当前系统可关闭 (`canBeDeactivated()`)→ **提前结束**：`state = OUT`、回调 `systemChargingDown()`。可观察结果：幅能成本超过耗散能力时，`ACTIVE` 段缺失或极短，系统 "刚开就关"。
-4. **ACTIVE 结束路径**：
-    - 非开关式 (`toggle` 空/`FALSE`)：`timer >= active` → `OUT`(自动结束)；
-    - 开关式 (`toggle=TRUE`) 且 `active > 0`：同样按 `timer >= active` 自动结束 (例如原版 Burn Drive `active=5`，开满 5 秒自动关)；
-    - 开关式且 `active` 为 0(如原版 Fortress Shield)：时长分支整体跳过，系统**无限保持 `ACTIVE`**，直到再次激活请求到来且 `canBeDeactivated()` → `OUT`(开关式分支的手动关闭)。
-5. **OUT**：`timer += dt`；`timer >= down` → `state = COOLDOWN`、`timer = timer - chargeDownTime`(结转溢出量)、回调 `systemDeactivated()`。
-6. **COOLDOWN**：`timer += dt`；`timer >= cooldown` → `state = IDLE`、回调 `systemCooldownFinished()`。`cooldown` 为 0 时冷却段只存在一帧。
-
-激活请求的来源：用户按默认系统键 F 或重新绑定后的系统键，AI 调 `ShipAPI.useSystem()`(→ `giveCommand(USE_SYSTEM)`；命令处理把参数坐标传给 `system.fire(param)`)。右键是护盾命令，只可能改变当前目标或鼠标世界坐标，不会发出系统使用命令。系统对象的 `fire(loc)` 只记录 `targetLoc` 并置激活请求标志。
-
-### 必须遵守的规则
-
-1. **`isUsable()` 返回 `false` 时，激活请求被丢弃**。系统每帧推进时，在激活请求帧先检查脚本是否 `ShipSystemStatsScriptAdvanced` 且 `isUsable(system, ship)` 为真；为假则清掉请求并调 `failedToActivateDueToAmmo()`(连续失败 2 秒后才播放失败音)。
-    - 违反/误解的可观察结果：用户按 F **没有任何状态变化、没有报错**；连续空按约 2 秒后听到 "弹药耗尽" 音效。
-    - 因此**禁止**把 `isUsable` 写成恒 `true` 之外的 "随口返回" —— 它决定 "能不能按下"，而状态机决定 "按下后走哪段"。
-2. **`apply` 里写入的每一项 stat 修改，`unapply` 必须用同一把钥匙撤销**。引擎传入的 `id` 是 `系统id + " effect"`(例如 `GearIn_targetingsystem effect`)，modifier ID 稳定性纪律在这里同样成立。违反的可观察结果：系统结束后效果残留 (速度加成不消失)，且**没有任何报错**。
-3. **`forceState(state, progress)` 直接改写运行时状态机，跳过正常转移回调**。
-    - `progress` 的语义按目标态不同 (`IN` → 前摇进度、`OUT` → 后摇进度、`COOLDOWN` → 冷却比例、`ACTIVE` → 时长比例)；`deactivate()` → `forceDeactivate()` 直接进入 `COOLDOWN`。
-    - 它适合脚本 / 调试逻辑，**禁止**用它在正常流程里 "代替" 关闭，它会跳过 `systemChargingDown` / `systemDeactivated` 回调的一部分语义。
-4. **stats 脚本的可见性边界**：`apply` 只在 `effectLevel > 0`(`IN`/`ACTIVE`/`OUT`) 或 `.system` 开启 `runScriptWhileIdle` 时每帧被调用；`effectLevel` 归零时 (进入 `COOLDOWN`/`IDLE`、舰船撤退或解体)`unapply` 被调用一次。
-    - **`COOLDOWN` 与 `IDLE` 两态在 stats 脚本里不可见**，观察这两态的时机要用 AI 角色或战斗插件。
-    - `getStatusData` 只对用户舰船每帧按 `index = 0、0、1...` 查询 (上限 7 个)。
-    - `runScriptWhilePaused`(默认 `false`) 控制暂停期间是否额外运行脚本 (`advanceEvenIfPaused`)。
-5. **暂停时状态机不推进**：系统随舰船推进 (系统的每帧推进由战斗舰船对象的每帧推进驱动)，暂停分支只推进用户舰与地图 (前置单元已证)，因此 `effectLevel` 冻结在暂停前的值；AI 角色与 stats 脚本也随之停摆，脚本里**不必**再做 `isPaused()` 判断 (做了也无害，成熟实例仍保留)。
-
-## 目标获取：三条通道
-
-状态机决定 "什么时候走哪一段"，但效果要施加到谁身上？目标获取的三条通道回答这个问题，本节示例的锁定系统正按这三条通道找目标。
-
-1. **用户激活坐标**：用户按系统键激活时，`USE_SYSTEM` 命令携带当时的鼠标世界坐标并传给 `system.fire(loc)`，随后 `getTargetLoc()` 返回该坐标 (`ShipSystemAPI.getTargetLoc()`)。右键本身不会激活系统：
-    - AI 激活时参数为 null(系统 AI 发出的 `USE_SYSTEM` 激活命令不带坐标参数)，`targetLoc` 保持 null。
-    - 可观察结果：用户按系统键激活的传送/位移类系统以光标为落点，AI 激活的同类系统没有落点参数。
-2. **舰船当前目标**：`ShipAPI.getShipTarget()` —— 用户瞄准锁定的目标或 AI 的当前攻击目标。它不依赖任何 flag，用户舰与 AI 舰都可用，是目标系统的首选回退。
-3. **AI flag**：`ShipwideAIFlags.AIFlags.TARGET_FOR_SHIP_SYSTEM`。
-    - **引擎侧维护者**：舰船 AI 每帧在调用系统 AI **之前**执行 `ship.getAIFlags().setFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM, 1.0F, target)`，目标不可见 (战争迷雾) 时写入 null：
-        - 也就是说这个 flag 的 "custom 数据" 就是当前目标，读它不需要自定义 AI 就有值。
-    *   flag 寿命：`ShipwideAIFlags.FLAG_DURATION = 0.5f`，舰船 AI 覆写为 1.0 秒，过期由持有方每帧调 `aiFlags.advance(amount)` 清除。
-
-由通道 3 引出的两个关键事实 (`ShipAPI.getAIFlags()`)：
-
-- **`getAIFlags()` 永不返回 null**：非 AI 舰船 (用户舰) 会用到时才创建一份 flag 容器，以 `"nonAI_SAIF_" + shipId` 为键存在引擎 customData 里：
-    - 但**非 AI 舰船没有任何每帧刷新者**：`TARGET_FOR_SHIP_SYSTEM` 只会被舰船 AI 写入，用户舰的这份 flag 无人写入、也永不自动过期。
-
-### 读取 flag 前必须判 "舰船是否有 AI"
-
-`ship.getShipAI() == null`(用户舰) 时 flag 语义不可用，回退 `getShipTarget()`。成熟实例正是这个判空做法。
-
-### 必须遵守的规则
-
-6. **AI 写入的目标 flag 有寿命，使用前必须再验证一次**。flag 默认 0.5 秒过期、舰船 AI 覆写 1.0 秒 —— AI 上一轮决策写入的目标，下一帧可能已经死亡、脱离射程或换了目标。
-    - `stats` 启动侧拿到 `getCustom(AIFlags.TARGET_FOR_SHIP_SYSTEM)` 后**必须**重新执行合法性检查 (存活、非残骸、非相位、敌我、射程)，验证不过就不施加效果。
-    - 违反的可观察结果：目标被击毁后效果仍持续一段 (flag 未过期窗口)，或反过来效果 "闪断"(flag 已过期)。
-    - AI 侧同理：激活期间要持续刷新 flag(本节示例每 0.2–0.3 秒重写一次)，否则 `IN`/`ACTIVE` 后段锁会丢。
-7. **目标合法性检查必须包含相位与残骸**。`isValidTarget` 的标准五件套：`isAlive()`、`!isHulk()`、`!isPhased()`、`owner` 与发射侧不同、距离不超过有效射程 (`getSystemRangeBonus` 修正后的值)。
-    - 漏掉相位判定的可观察结果：系统对相位中的敌舰 "锁了个寂寞"(效果无效但状态文字显示锁定)。
-    - 漏掉残骸判定的结果：对残骸施加效果、浪费幅能，且无报错。
-
-## 系统 AI：接入、实例化与优先级
-
-目标通道已经明确，但对 AI 舰船来说，"该不该激活" 由谁决定？系统 AI 把目标通道接到舰船 AI 的每帧决策里，最终调用与玩家按 F 走同一个入口。`ShipSystemAIScript`(`com.fs.starfarer.api.combat`) 只有两个方法：
-
-- `init(ShipAPI, ShipSystemAPI, ShipwideAIFlags, CombatEngineAPI)`
-- `advance(float amount, Vector2f missileDangerDir, Vector2f collisionDangerDir, ShipAPI target)`
-
-接入链：
-
-```text
-.system 里 "aiType": "CUSTOM" + "aiScript": "data.scripts.gearin.shipsystems.GearInTargetingSystem"
-  → ShipSystemSpecAPI.aiType / aiScript 字段
-  → 舰船 AI 创建时，其构造器调 spec.createSystemAI(...)
-  → createSystemAI 的 switch 命中 CUSTOM 分支：
-      spec.getAIScript() → 脚本类加载器.loadScriptInstance(aiScript)(类缓存 + 每次 newInstance)
-      → aiScript.init(ship, ship.getSystem(), aiFlags, engine)
-      → 包装成系统 AI 适配器 (advance 转发给 ShipSystemAIScript.advance)
-  → 舰船 AI 每帧调 systemAI.advance(amount, 导弹危险方向, 碰撞危险方向, target)
-      (target 是 AI 当前目标，迷雾中不可见时为 null)
-```
-
-### 必须遵守的规则
-
-8. **`aiScript` 只在 `aiType: "CUSTOM"` 时被使用**。`createSystemAI` 按 `aiType` 枚举分派到内置 AI 类 (EMP → 原版 EMP 系统 AI、相位 → 原版相位隐形系统 AI 等)，唯一走 `getAIScript()` 的分支是 CUSTOM。
-    - `aiType: "NONE"` 不创建任何系统 AI(返回 null)。
-    - `aiType` 缺失或拼错时，`.system` 加载期即抛 `Key [aiType] is required` 或 `Key [aiType] has invalid value [...]`；与 `type` 不配对才在部署期抛包装后的 `Error creating AI of type [...]`，该舰船无法进入战斗。
-    - `aiType: CUSTOM` 而 `aiScript` 缺失/类名错时同样在部署期失败 (`getAIScript()` 返回 null → `init` 空指针被包装；类名错则 `Problem loading class [...]`)。
-9. **statsScript 与 aiScript 是同名类的两个独立实例**。`getStatsScript()` 与 `getAIScript()` 各自经脚本类加载器按类名创建实例 —— 类缓存共享，但**每次 `newInstance()`**。
-    - 一个类同时挂两个角色时，stats 实例与 AI 实例的**实例字段互不共享**；共享逻辑必须走静态方法 (本节示例的全部目标逻辑都是静态的) 或 `ship.setCustomData`。
-    - 违反的可观察结果：在 stats 实例字段里存 AI 决策状态 (或反过来)，另一侧永远读不到 —— 静默失效，无报错。
-10. **系统 AI 只在 AI 舰船上运行**。`systemAI` 由舰船 AI 在创建时生成，用户舰没有舰船 AI，`ShipSystemAIScript.advance` 对用户舰**永不调用**。需要用户侧 "自动" 行为时走 stats 脚本 (`apply` 对用户舰照常回调) 或战斗插件，不能依赖 AI 脚本。
-11. **AI 决策必须节流**。`ShipSystemAIScript.advance` 每帧被调用，直接做全战场扫描每帧都会执行；成熟实例与原版内置 AI 都在 0.2–0.5 秒粒度决策 (如 `IntervalUtil` 配 `0.2f–0.3f` 或 `0.25f–0.5f` 区间)。违反的可观察结果：行为抖动与不必要的性能开销 (无报错)。
-
-### 优先级：aiHints 威胁评估
-
-`.system` 的 `aiHints` 段 (`threatRange` / `threatAmount` / `threatArc` / `threatAngle`) 是 "系统威胁" 影响**敌方** AI 的通道；`ShipSystemSpecAPI` 解析这些字段。
-
-原版 `emp.system` 用 `threatRange: 600, threatAmount: 4, threatArc: 360`。
-
-威胁评估器评估敌舰时，满足以下条件就把 `threatAmount` 计入威胁分并扩展评估射程：
-
-- 该系统 `getCooldownRemaining() < 3.0F`(接近就绪) 且 `threatAmount > 0`；
-- 距离在 `threatRange`(经 `getSystemRangeBonus` 修正) 内；
-- 方向落在 `threatAngle ± threatArc` 里。
-
-可观察结果：给系统写大 `threatAmount` 后，敌方 AI 会把这艘舰当作高威胁目标 (更早规避、更谨慎接近)；`threatAmount: 0`(默认) 则系统不参与威胁评估。
-
-## 实现目标选择系统
-
-本页先处理一个能被观察的结果，再把它放进正确的生命周期。以下代码均为局部片段，各自落在具体的类与方法中，全部片段就位后统一构建核对。
-
-### 校验锁定目标
-
-这段代码写在 `GearInTargetingSystem.isValidTarget()` 里，用户与 AI 共用敌我、存活、相位、残骸和有效射程判据：
-
-```java
-if (source == null || target == null || target == source) return false;
-if (!target.isAlive() || target.isHulk() || target.isPhased() || target.isShuttlePod()) return false;
-if (target.getOwner() == source.getOwner()) return false;
-Vector2f delta = Vector2f.sub(target.getLocation(), source.getLocation(), new Vector2f());
-return delta.length() <= getRange(source);
-```
-
-生效后，合法敌舰返回 `true`；同侧、相位、残骸和超距目标均返回 `false`。
-
-### 读取 AI flag 并回退当前目标
-
-这段代码写在 `GearInTargetingSystem.pickTarget()` 里，AI 舰优先消费短期系统目标，用户舰与 flag 失效场景回退到当前锁定目标：
-
-```java
-ShipAPI target = readAITarget(source);
-if (isValidTarget(source, target)) {
-    return target;
-}
-target = source.getShipTarget();
-if (isValidTarget(source, target)) {
-    return target;
-}
-return null;
-```
-
-生效后，用户右键锁定后能取得目标；AI flag 过期但 `getShipTarget()` 仍有效时锁定不中断。
-
-### 按效果强度施加速度倍率
-
-这段代码写在 `GearInTargetingSystem.apply()` 与 `unapply()` 里，`IN` 和 `ACTIVE` 随 `effectLevel` 提升速度，`OUT`、目标失效与 `unapply` 使用同一 ID 撤销：
-
-```java
-ShipAPI ship = (ShipAPI) stats.getEntity();
-boolean locked = ship != null && isValidTarget(ship, pickTarget(ship));
-if (state == ShipSystemStatsScript.State.OUT || !locked) {
-    stats.getMaxSpeed().unmodify(id);
-} else {
-    stats.getMaxSpeed().modifyMult(id, 1f + (SPEED_MULT - 1f) * effectLevel);
-}
-
-stats.getMaxSpeed().unmodify(id);
-```
-
-生效后，满效果时基础速度 `80` 变为 `120`，系统结束或目标死亡后立即回到 `80`。
-
-### 阻止无目标激活
-
-这段代码写在 `GearInTargetingSystem.isUsable()` 与 `getInfoText()` 里，用户在待机状态必须先取得合法目标，信息栏同步说明当前许可：
-
-```java
-if (system.isActive()) {
-    return true;
-}
-return isValidTarget(ship, pickTarget(ship));
-
-if (system.isOutOfAmmo() || system.getState() != SystemState.IDLE) {
-    return null;
-}
-return isValidTarget(ship, pickTarget(ship)) ? "READY" : "NO TARGET";
-```
-
-生效后，无目标时显示 `NO TARGET` 且按 F 不进入 `IN`；取得目标后显示 `READY`。
-
-### 初始化 AI 决策上下文
-
-这段代码写在 `ShipSystemAIScript.init()` 里，每艘 AI 舰拥有独立的系统引用、flag 容器和随机化节流相位：
-
-```java
-this.aiShip = ship;
-this.system = system;
-this.aiFlags = flags;
-this.engine = engine;
-this.decisionInterval.randomize();
-LOG.info("GearIn targeting AI init: ship=" + ship.getHullSpec().getHullId()
-        + " system=" + system.getId());
-```
-
-生效后，部署 AI 舰时出现一次初始化日志，多舰决策不会全部落在同一帧。
-
-### 刷新目标并触发系统
-
-这段代码写在 `ShipSystemAIScript.advance()` 里，位于暂停、实体、冷却和弹药守卫之后；AI 每 0.2–0.3 秒重新验证并刷新 1 秒目标 flag，满足幅能条件时走与玩家相同的激活入口：
-
-```java
-decisionInterval.advance(amount);
-if (!decisionInterval.intervalElapsed()) return;
-
-ShipAPI lock = target == null ? aiShip.getShipTarget() : target;
-if (!isValidTarget(aiShip, lock)) {
-    clearAITarget();
-    return;
-}
-writeAITarget(aiShip, lock);
-if (system.isActive()) return;
-if (aiShip.getFluxTracker().isOverloadedOrVenting() || aiShip.getFluxLevel() > 0.9f) return;
-aiShip.useSystem();
-```
-
-生效后，激活全程目标不闪断，冷却结束且目标仍有效时再次使用系统。
-
-## 组装战术系统实现
-
-前三节给出规则，本节把它们收进一个完整示例。示例系统 `GearIn_targetingsystem` 同时挂 stats 脚本与 AI 脚本，是 "同名双实例" 事实最直观的样本：`STAT_MOD` 类型、`aiType: CUSTOM`，stats 脚本与 AI 脚本是**同一个类** `data.scripts.gearin.shipsystems.GearInTargetingSystem` 的两个实例。
-
-行为基线：锁定有效期内 (敌方、存活、非相位、在有效射程内)`IN`/`ACTIVE` 段按 `effectLevel` 施加最大速度倍率 `1.5`；锁定失效立即撤销。
-
-AI 舰船每 0.2–0.3 秒决策一次：验证目标 → 写入 `TARGET_FOR_SHIP_SYSTEM` flag(激活期间持续刷新)→ `ship.useSystem()`。
-
-在既有 MOD 布局与战术系统数据面之上新增一个类文件，包与类名遵循命名约定 (`data.scripts.gearin.shipsystems`、`GearIn<Subject>`)：
-
-```text
-mods/GearIndustry/
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data\
-│   └── shipsystems\
-│       ├── GearIn_targetingsystem.system   # 本节数据接入片段
-│       └── ship_systems.csv                # 注册行
-├── src\
-│   └── data/scripts/gearin\
-│       ├── GearInModPlugin                 # 既有入口类；本节不改动
-│       ├── GearInGlobalAccess              # 既有全局访问类；本节只消费
-│       └── shipsystems\
-│           ├── GearInBurstDriveSystem      # 既有系统类；本节只消费
-│           ├── GearInResistFieldSystem     # 既有系统类；本节只消费
-│           └── GearInTargetingSystem       # 本节新增 (stats 脚本 + AI 脚本同名类)
-└── jars\
-```
-
-### GearInTargetingSystem
-
-对应关系：
-
-- 静态目标逻辑 (`getRange` / `isValidTarget` / `readAITarget` / `writeAITarget` / `pickTarget`)：两个角色共享的同一语义 —— AI 写入、stats 使用都走同一套合法性检查 (规则 6、7)，"AI 与 Stats 各自复制过滤条件" 是高频陷阱。
-- `readAITarget` 的 `source.getShipAI() == null` 判断：用户舰无 AI，flag 无人写入 (规则 6 的用户侧事实)；`pickTarget` 回退 `getShipTarget()`(通道 2)。
-- `apply`：`(ShipAPI) stats.getEntity()` 取舰船 (战斗期非 null)；`state == OUT || !locked` 时 `unmodify(id)`，否则 `modifyMult(id, 1 + 0.5 * effectLevel)`，"目标验证不过就不加成"。
-    - `lastApplyState` 状态跳变日志把 `IN → ACTIVE → OUT` 变成日志证明 (规则 4 的可见性边界：`COOLDOWN`/`IDLE` 在 stats 侧看不到，由 AI 侧补全)。
-- `unapply`：撤销同一把钥匙并打日志 (引擎传入的 `id` = `GearIn_targetingsystem effect`，规则 2)。
-- `isUsable` / `getInfoText`：`isUsable` 返回 false 时按 F 不激活 (规则 1)；`getInfoText` 返回 null 时 UI 用默认 `READY` /`ACTIVE`(`ShipSystemStatsScriptAdvanced` javadoc 原文)。
-- AI 角色 `init`：缓存引用并 `decisionInterval.randomize()`(规则 11 的节流相位随机化)。
-- AI 角色 `advance`：判断链 (暂停 → 实体存在 → 存活 → CR → 冷却 → 弹药 → 节流 → 目标再验证 → 写 flag → 激活中只刷新 → 过载/高幅能 → `useSystem`)，顺序是成熟实例的标准做法；`system.isActive()` 分支只刷新 flag 不重复激活 (规则 6 的 "持续刷新")。
-- `logStateTransition`：AI 视角的完整五态日志 (`IDLE → IN → ACTIVE → OUT → COOLDOWN → IDLE`)；stats 脚本看不见的两态 (`COOLDOWN`/`IDLE`) 由此获得唯一的脚本侧观察点。
-- `writeAITarget` 写入时长为 `1.0f`(与舰船 AI 的覆写一致)，`clearAITarget` 在目标失效时清 flag。
-
-### 数据接入片段 (工程片段，本单元不创建数据文件)
+主系统的 `data/shipsystems/GearIn_range_system.system` 使用独立的 stats 脚本和 AI 脚本：
 
 ```json
-// data/shipsystems/GearIn_targetingsystem.system(片段)
 {
-    "id": "GearIn_targetingsystem",
+    "id": "GearIn_range_system",
     "type": "STAT_MOD",
     "aiType": "CUSTOM",
-    "statsScript": "data.scripts.gearin.shipsystems.GearInTargetingSystem",
-    "aiScript": "data.scripts.gearin.shipsystems.GearInTargetingSystem",
-    "range": 800,
-    "useSound": "system_targeting_feed",
-    "deactivateSound": "gun_out_of_ammo",
-    "outOfUsesSound": "gun_out_of_ammo",
-    "aiHints": {
-        "threatRange": 800,
-        "threatAmount": 1,
-        "threatArc": 360,
-        "threatAngle": 0
+    "statsScript": "data.scripts.gearin.shipsystems.GearInRangeSystem",
+    "aiScript": "data.scripts.gearin.shipsystems.GearInRangeSystemAI"
+}
+```
+
+`statsScript` 决定激活期间修改舰船数值的类，`aiType: "CUSTOM"` 让舰船 AI 进入自定义分支，`aiScript` 决定由哪个 `ShipSystemAIScript` 做激活判断。持续时间和开关方式属于 `ship_systems.csv`，不能写入 `.system`：
+
+```text
+name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle
+范围增幅,GearIn_range_system,1,,,,,,,1,0.1,1,5,1,10,FALSE,,,,,,,,,,,,
+```
+
+`ship_data.csv` 的 `system id` 填写 `GearIn_range_system` 后，舰船才会挂载这个系统。
+
+待机演示系统 `data/shipsystems/GearIn_idle_probe.system` 只使用 stats 脚本，并把 `runScriptWhileIdle` 打开：
+
+```json
+{
+    "id": "GearIn_idle_probe",
+    "type": "STAT_MOD",
+    "aiType": "NONE",
+    "statsScript": "data.scripts.gearin.shipsystems.GearInIdleProbeSystem",
+    "runScriptWhileIdle": true
+}
+```
+
+这个系统只用于观察 stats 回调，持续时间仍由 `ship_systems.csv` 中的 `GearIn_idle_probe` 行提供。默认情况下，stats 脚本主要在 `IN`、`ACTIVE` 和 `OUT` 阶段收到 `apply(...)`。`runScriptWhileIdle: true` 会让 `apply(...)` 在 `IDLE` 和 `COOLDOWN` 阶段也继续被调用；原版行为是开启该选项后 `unapply(...)` 不会被调用，因此需要清理效果的脚本不能仅依赖这个回调。每帧调用范围扩大后，脚本本身必须保持轻量。
+
+待机系统的数据行只负责提供名称和时间：
+
+```text
+待机观察,GearIn_idle_probe,1,,,,,,,1,0,1,2,1,4,FALSE,,,,,,,,,,,,
+```
+
+## 初始化效果脚本
+
+`BaseShipSystemScript` 为 `ShipSystemStatsScriptAdvanced` 提供默认实现。继承它后，类只覆写当前效果需要的方法；未覆写的方法继续使用默认返回值。
+
+系统创建舰船时取得 stats 脚本实例。该实例负责读取 `MutableShipStatsAPI`、写入系统修饰，并在系统结束后清理自己的 modifier。自定义 AI 由另一套实例负责，两个类的字段不会互相共享。
+
+## 在效果阶段修改舰船属性
+
+`apply(MutableShipStatsAPI stats, String id, State state, float effectLevel)` 在效果阶段逐帧调用。`state` 表示前摇、全功率或后摇，`effectLevel` 在这些阶段从 0 变化到 1 再回落。本例使用固定的 `id` 修改武器射程倍率：
+
+```java
+@Override
+public void apply(MutableShipStatsAPI stats, String id,
+        State state, float effectLevel) {
+    stats.getEnergyWeaponRangeBonus().modifyMult(id,
+            1f + RANGE_MULT_BONUS * effectLevel);
+}
+```
+
+前摇阶段的倍率会随 `effectLevel` 平滑增加，全功率阶段达到最大值，后摇阶段再逐渐恢复。`unapply(MutableShipStatsAPI stats, String id)` 在普通系统的效果归零时调用一次，必须使用同一个 `id` 撤销这次写入：
+
+```java
+@Override
+public void unapply(MutableShipStatsAPI stats, String id) {
+    stats.getEnergyWeaponRangeBonus().unmodify(id);
+}
+```
+
+## 提供状态栏和激活许可
+
+玩家舰船的系统状态栏通过 `getStatusData(int index, State state, float effectLevel)` 取得文字。返回 `StatusData` 时，第二个参数决定文字是否按减益样式显示；返回 `null` 表示当前索引没有内容。
+
+```java
+@Override
+public StatusData getStatusData(int index, State state, float effectLevel) {
+    if (index == 0 && state == State.ACTIVE) {
+        return new StatusData("range amplified", false);
+    }
+    return null;
+}
+```
+
+`isUsable(ShipSystemAPI system, ShipAPI ship)` 在激活请求被接受前查询。返回 `false` 时，按键请求会被丢弃；本例只在系统不处于激活状态且舰船仍在战斗中时允许激活。
+
+```java
+@Override
+public boolean isUsable(ShipSystemAPI system, ShipAPI ship) {
+    return ship != null && ship.isAlive()
+            && !system.isActive() && !system.isCoolingDown();
+}
+```
+
+`getInfoText(ShipSystemAPI system, ShipAPI ship)` 决定系统图标下方的信息文字。返回 `null` 时，界面使用默认的 `READY` 或 `ACTIVE`：
+
+```java
+@Override
+public String getInfoText(ShipSystemAPI system, ShipAPI ship) {
+    if (system.isCoolingDown()) {
+        return "RECHARGING";
+    }
+    return null;
+}
+```
+
+## 覆盖系统参数
+
+系统数据中的持续时间、恢复速度和使用次数可以由脚本覆盖。覆盖方法在系统建立运行参数时查询；返回负值表示继续使用数据文件中的值。
+
+```java
+@Override
+public float getActiveOverride(ShipAPI ship) {
+    return 6f;
+}
+
+@Override
+public float getInOverride(ShipAPI ship) {
+    return -1f;
+}
+
+@Override
+public float getOutOverride(ShipAPI ship) {
+    return -1f;
+}
+
+@Override
+public float getRegenOverride(ShipAPI ship) {
+    return -1f;
+}
+
+@Override
+public int getUsesOverride(ShipAPI ship) {
+    return -1;
+}
+```
+
+`getDisplayNameOverride(State state, float effectLevel)` 可以根据当前阶段替换系统名称。它返回 `null` 时沿用数据文件名称：
+
+```java
+@Override
+public String getDisplayNameOverride(State state, float effectLevel) {
+    return state == State.ACTIVE ? "Range Amplified" : null;
+}
+```
+
+## 接入自定义系统 AI
+
+`ShipSystemAIScript` 与 stats 脚本分工不同：AI 只决定何时激活，数值效果仍由 `BaseShipSystemScript` 的 `apply` 处理。`.system` 中只有 `aiType: "CUSTOM"` 时，`aiScript` 才会被加载。
+
+`init(...)` 在 AI 实例创建时调用一次，适合保存当前舰船、系统和战斗引擎。`advance(...)` 每帧调用，示例用 `IntervalUtil` 节流实际决策：
+
+```java
+@Override
+public void init(ShipAPI ship, ShipSystemAPI system,
+        ShipwideAIFlags flags, CombatEngineAPI engine) {
+    this.ship = ship;
+    this.system = system;
+    this.engine = engine;
+    this.interval.randomize();
+}
+
+@Override
+public void advance(float amount, Vector2f missileDangerDir,
+        Vector2f collisionDangerDir, ShipAPI target) {
+    if (engine == null || engine.isPaused()) {
+        return;
+    }
+    interval.advance(amount);
+    if (!interval.intervalElapsed() || target == null
+            || !target.isAlive() || system.isActive()
+            || system.isCoolingDown()) {
+        return;
+    }
+    if (ship.getFluxTracker().isOverloadedOrVenting()) {
+        return;
+    }
+    ship.useSystem();
+}
+```
+
+`target` 是当前 AI 传入的目标；目标有效、系统可激活且舰船没有过载时，`ship.useSystem()` 触发与玩家按键相同的系统激活入口。用户舰没有舰船 AI，因此不会调用这个 AI 类。
+
+## 观察待机回调
+
+`GearInIdleProbeSystem` 不修改舰船属性，只记录 `apply(...)` 收到的状态。由于其 `.system` 打开了 `runScriptWhileIdle`，日志会覆盖待机、激活和冷却阶段：
+
+这个示例仍然实现 `unapply(...)`，但它用于验证一个重要特性：`runScriptWhileIdle=true` 时，游戏持续调用 `apply(...)`，不会再调用 `unapply(...)`。验证时应看到各状态的 `apply` 日志，却看不到 `GearIn idle probe: unapply`。
+
+```java
+@Override
+public void apply(MutableShipStatsAPI stats, String id,
+        State state, float effectLevel) {
+    LOG.info("GearIn idle probe: state=" + state
+            + " effectLevel=" + effectLevel);
+}
+
+@Override
+public void unapply(MutableShipStatsAPI stats, String id) {
+    LOG.info("GearIn idle probe: unapply");
+}
+```
+
+需要撤销数值或释放状态的脚本，应在 `apply(...)` 的状态分支中自行维护。
+
+## 验证方案
+
+前置数据：已把两个系统分别挂载到测试舰船，并完成 Java 17 构建。
+
+1. 执行 `gradle jar`，确认 JAR 包含三个示例类。
+2. 进入模拟战，激活 `GearIn_range_system`，观察前摇、全功率、后摇和冷却阶段。
+3. 核对主系统的武器射程倍率、`range amplified` 状态文字和 `RECHARGING` 信息文字。
+4. 将主系统舰船放入 AI 一方，观察 `GearInRangeSystemAI` 的初始化日志和间隔激活日志。
+5. 进入挂载 `GearIn_idle_probe` 的战斗，搜索 `GearIn idle probe`，确认 `IDLE` 与 `COOLDOWN` 也有记录。
+6. 暂停战斗并恢复，比较普通系统和待机演示系统的回调日志。
+7. 结束战斗后开始第二场战斗，确认 stats 与 AI 的实例状态重新建立。
+
+预期结果：
+
+- 主系统激活时射程倍率随 `effectLevel` 变化，结束后由 `unapply` 恢复；
+- 玩家界面出现 `range amplified` 和 `RECHARGING`；
+- AI 舰船按节流间隔调用 `ship.useSystem()`，而不是每帧重复尝试；
+- 待机演示系统在 `IDLE`、`IN`、`ACTIVE`、`OUT` 和 `COOLDOWN` 阶段输出日志；
+- 第二场战斗使用新的脚本实例和新的战斗对象。
+
+## 故障分析
+
+- **系统加载时报 `Problem loading class`**：`.system` 中的 `statsScript`、`aiScript` 或包名与 JAR 中的类不一致。
+
+    - **解决方案**：逐字核对完整类名、`package` 声明和 JAR 条目后重启。
+
+- **AI 舰船从不激活系统**：`aiType` 不是 `CUSTOM`，或 `advance(...)` 的目标、冷却和存活检查始终返回。
+
+    - **解决方案**：将 `aiType` 改为 `CUSTOM`，确认目标有效并用日志检查节流后的决策时机。
+
+- **系统结束后射程倍率仍然存在**：`unapply(...)` 没有用与 `apply(...)` 相同的 modifier ID 撤销。
+
+    - **解决方案**：统一使用引擎传入的 `id`，重新激活并等待系统结束。
+
+- **只看到激活阶段日志**：`runScriptWhileIdle` 未写在 `.system` 顶层，或值不是 `true`。
+
+    - **解决方案**：在待机演示系统的 `.system` 顶层设置 `runScriptWhileIdle: true`，重新加载后搜索 `IDLE` 与 `COOLDOWN`。
+
+- **系统每帧反复尝试激活**：自定义 AI 没有使用 `IntervalUtil`，或没有检查 `isActive()` 和 `isCoolingDown()`。
+
+    - **解决方案**：保留决策间隔，并在调用 `ship.useSystem()` 前检查系统状态。
+
+- **待机脚本造成战斗卡顿**：开启 `runScriptWhileIdle` 后仍在每帧执行全战场扫描或大量日志输出。
+
+    - **解决方案**：缩短待机脚本逻辑，只读取必要状态，并将高成本工作改为间隔执行。
+
+- **自定义 AI 保存的字段在 stats 脚本中为空**：stats 类与 AI 类是独立实例，实例字段不会互相共享。
+
+    - **解决方案**：通过参数、静态工具方法或舰船 custom data 传递确需共享的信息。
+
+## 总结
+
+战术系统的 `.system` 文件先确定 stats 脚本、AI 脚本和待机调用范围。`BaseShipSystemScript` 的 `apply` 与 `unapply` 负责数值效果，状态文字和覆盖方法负责界面与运行参数；`ShipSystemAIScript` 只负责在合适时机调用系统。`runScriptWhileIdle` 让 stats 脚本能够观察完整状态周期，但也扩大了每帧工作范围。
+
+## 建议参考项
+
+- `data/shipsystems/<id>.system`、`ship_systems.csv` 和 `ship_data.csv`：战术系统数据文件、脚本入口和运行参数；
+- `MutableShipStatsAPI` 与 `MutableStat`：舰船数值修饰入口；
+- `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：效果脚本基类；
+- `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：状态、效果和状态栏接口；
+- `com.fs.starfarer.api.plugins.ShipSystemStatsScriptAdvanced`：`isUsable` 与 `getInfoText`；
+- `com.fs.starfarer.api.combat.ShipSystemAIScript`：`init` 与 `advance`；
+- `com.fs.starfarer.api.combat.ShipSystemAPI`：状态、冷却和激活访问器；
+
+## 完整最小例
+
+::: details 完整成品：GearInRangeSystem
+
+```java
+package data.scripts.gearin.shipsystems;
+
+import com.fs.starfarer.api.combat.MutableShipStatsAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.combat.ShipSystemAPI;
+import com.fs.starfarer.api.impl.combat.BaseShipSystemScript;
+
+public class GearInRangeSystem extends BaseShipSystemScript {
+
+    public static final float RANGE_MULT_BONUS = 0.5f;
+
+    @Override
+    public void apply(MutableShipStatsAPI stats, String id,
+            State state, float effectLevel) {
+        stats.getEnergyWeaponRangeBonus().modifyMult(id,
+                1f + RANGE_MULT_BONUS * effectLevel);
+    }
+
+    @Override
+    public void unapply(MutableShipStatsAPI stats, String id) {
+        stats.getEnergyWeaponRangeBonus().unmodify(id);
+    }
+
+    @Override
+    public StatusData getStatusData(int index, State state, float effectLevel) {
+        if (index == 0 && state == State.ACTIVE) {
+            return new StatusData("range amplified", false);
+        }
+        return null;
+    }
+
+    @Override
+    public boolean isUsable(ShipSystemAPI system, ShipAPI ship) {
+        return ship != null && ship.isAlive()
+                && !system.isActive() && !system.isCoolingDown();
+    }
+
+    @Override
+    public String getInfoText(ShipSystemAPI system, ShipAPI ship) {
+        if (system.isCoolingDown()) {
+            return "RECHARGING";
+        }
+        return null;
+    }
+
+    @Override
+    public float getActiveOverride(ShipAPI ship) {
+        return 6f;
+    }
+
+    @Override
+    public float getInOverride(ShipAPI ship) {
+        return -1f;
+    }
+
+    @Override
+    public float getOutOverride(ShipAPI ship) {
+        return -1f;
+    }
+
+    @Override
+    public float getRegenOverride(ShipAPI ship) {
+        return -1f;
+    }
+
+    @Override
+    public int getUsesOverride(ShipAPI ship) {
+        return -1;
+    }
+
+    @Override
+    public String getDisplayNameOverride(State state, float effectLevel) {
+        return state == State.ACTIVE ? "Range Amplified" : null;
     }
 }
 ```
 
-```csv
-name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle,noDissipation,noHardDissipation,hardFlux,noFiring,noTurning,noStrafing,noAccel,noShield,noVent,isPhaseCloak,tags,icon
-目标锁定,GearIn_targetingsystem,1,,,,,,,,,0.5,4,0.5,3,,,,,,,,,,,,offensive,graphics/icons/hullsys/targeting_feed.png
-```
+:::
 
-### 测试舰挂载要还原
-
-挂载到测试舰 ([C2-S3] 示例行的 `system id` 是 `GearIn_burstdrive`；接入本节系统后要恢复原状，改回即可)。
-
-```csv
-name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
-工匠,GearIn_artizan,驱逐舰,未知,GearIn_targetingsystem,10,5000,500,3800,4167,200,95,,80,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,GearIn_bp,,,,0.5,2,3,,300
-```
-
-数据字段 (CSV 28 列，数据面单元速查表已有全部列)：`flux/second=1`(`IN`/`ACTIVE` 段每秒幅能)。
-
-`charge up=0.5`、`active=4`、`down=0.5`、`cooldown=3`、`tags=offensive`；
-
-`.system` 的 `range` 被 `getSystemRangeBonus` 修正后是本例 "有效射程" 的 base(`ShipSystemSpecAPI` 的 `getRange`)。
-
-`aiHints` 让敌方 AI 把就绪中的本系统计入威胁 (`threatAmount=1`、`threatRange=800`)。
-
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
-
-```text
-gradle jar
-```
-
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`(可用 `jar tf` 核对)。
-
-## 关键故障实验：系统能充能却没有有效目标
-
-AI 和效果脚本各自选择目标。
-
-**局部故障片段：**
-
-```java
-// 故障片段
-target = findTarget(); aiTarget = findTarget();
-```
-
-**局部修正片段：**
-
-```java
-// 修正片段
-writeAITarget(aiShip, target);
-ShipAPI locked = pickTarget(ship);
-```
-
-复验：让 AI 选定一艘敌舰，确认效果与 UI 指向同一目标。
-
-## 验证方案
-
-前置数据：既有 MOD 布局 [C6-S1]、战术系统数据面 [C2-S3]；本节数据接入片段 (`GearIn_targetingsystem.system`、`ship_systems.csv` 注册行、`GearIn_artizan` 的 `system id` 挂载)；`GearInTargetingSystem` 类实现已编入 `jars/GearIndustry.jar`。
-
-1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
-2. **数据接入**：启动游戏，在日志中观察 `GearIn_targetingsystem` 的系统加载与数据应用记录。
-3. **用户侧无目标**：进入 `GearIn_test` 战役，无目标按 F，观察系统反应 (`isUsable` 返回 false)。
-4. **用户侧有目标**：右键锁定敌舰后按 F，核对四行 stats 状态日志与 `unapply effect (id=GearIn_targetingsystem effect)`，观察 1.5 倍速度与 `target locked` 状态文字。
-5. 击毁锁定目标，观察加成撤销。
-6. **AI 侧**：把挂载该系统的舰船放入敌方，进入战斗后核对 `GearIn targeting AI init`、`lock` 日志与五态状态机日志，并观察敌方舰船使用系统。
-7. 击毁 AI 的目标，观察后续 `lock` 日志。
-8. **暂停**：战斗内按空格暂停约 10 秒，确认 AI 决策与状态机日志停更，恢复后继续。
-
-预期结果：
-
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/shipsystems/GearInTargetingSystem.class`。
-- **数据接入**：按数据接入片段接入后启动游戏，日志出现 `Loading ship system [data/shipsystems/GearIn_targetingsystem.system]` 与 `Applying data from ship_systems.csv to [GearIn_targetingsystem]`：没有与 `GearIn_targetingsystem` 相关的 `ERROR`。
-- **用户侧手动激活 (`GearIn_test` 战役或模拟战，`GearIn_artizan` 已挂载)**：无目标时按 F，**没有任何反应** (`isUsable` 返回 false，规则 1；日志无状态变化)；连续空按约 2 秒后出现失败音。鼠标右键锁定一艘敌舰 (`getShipTarget()` 非 null) 后按 F，系统正常进入 `IN`，日志出现。
-
-    ```text
-      GearIn targeting stats: state null -> IN effectLevel=0.0 GearIn targeting stats: state IN -> ACTIVE effectLevel=1.0 GearIn targeting stats: state ACTIVE -> OUT effectLevel=1.0 GearIn targeting stats: unapply effect (id=GearIn_targetingsystem effect)
-    ```
-
-    期间用户舰最大速度约为基础 1.5 倍 (`GearIn_artizan` 基础 80 → 120)，左下角状态栏显示 `target locked`(绿色)。目标被击毁或脱离射程后，加成**立即**撤销 (`unmodify`)，状态文字变 `no target`(红色样式)。
-- **AI 侧自动激活**：把挂载了该系统的舰船放进敌方 (生涯遭遇战或模拟战对手)，其 AI 进入用户视野 (`target` 非 null) 且目标有效时，日志出现。
-
-    ```text
-      GearIn targeting AI init: ship=<敌方hullId> system=GearIn_targetingsystem GearIn targeting AI: lock <目标hullId> range=800.0
-    ```
-
-    随后敌方舰船实际使用系统 (速度提升)；`logStateTransition` 输出完整五态：
-
-    ```text
-      GearIn targeting AI: state null -> IDLE ... GearIn targeting AI: state IDLE -> IN ... GearIn targeting AI: state IN -> ACTIVE ... GearIn targeting AI: state ACTIVE -> OUT ... GearIn targeting AI: state OUT -> COOLDOWN cooldownRemaining=... GearIn targeting AI: state COOLDOWN -> IDLE ...
-    ```
-
-    冷却结束后若目标仍有效，重复该循环。激活期间每 0.2–0.3 秒 `writeAITarget` 刷新 flag(ACTIVE 全程锁定不断)。
-- **目标过期**：AI 的目标被击毁后，不再出现 `lock` 日志 (`clearAITarget` 生效)；目标复活/换目标后恢复。
-- **暂停语义**：按空格暂停，暂停期间 AI 决策日志与状态机日志停更；恢复后继续 (与前置单元的时间语义同规)。
-- **状态栏与信息文字**：用户舰在 `IDLE` 态把鼠标悬停系统图标，`getInfoText` 显示 `NO TARGET`(有锁定目标时 `READY`)；`IN`/`ACTIVE` 段状态栏显示锁定状态。没有把工作单元编号写进任何包名、类名、资源名或字符串 key(包 `data.scripts.gearin.shipsystems`、类 `GearInTargetingSystem`、系统 ID `GearIn_targetingsystem`)。
-
-## 故障分析
-
-- **加载期报 `Key [aiType] is required` / `Key [aiType] has invalid value [...]`**：`aiType` 缺失或拼错时，`.system` 数据加载期即抛出，不会进入部署。
-
-    - **解决方案**：修正 `aiType` 后重启。
-
-- **AI 从不使用系统**：`GearIn targeting AI init` 已出现而 `lock` 缺失、状态停在 `IDLE`，说明实体、存活、CR、冷却、弹药、节流或目标判据提前返回。
-
-    - **解决方案**：按该判断链逐项核对，确保目标可见、同侧关系正确且在射程内。
-
-- **AI 激活后加成约一秒便消失**：AI 只在激活前写一次 flag 时，`IN` 与 `ACTIVE` 总时长会超过 flag 的 1 秒寿命，stats 随后读到 null。
-
-    - **解决方案**：AI 在 `system.isActive()` 期间持续刷新 flag。
-
-- **用户手动激活后没有锁定加成**：用户舰没有 AI 写入 flag，stats 只读 flag 时会始终得到 null。
-
-    - **解决方案**：`pickTarget` 先读 flag，再回退到 `getShipTarget()`。
-
-- **用户按 F 后没有状态变化**：`isUsable` 为 false，或幅能、弹药、冷却条件不满足时，激活请求会被丢弃，连续尝试约 2 秒后才播放失败音。
-
-    - **解决方案**：核对目标与资源条件，并用 `getInfoText` 显示 `NO TARGET` 等原因。
-
-- **系统进入 `ACTIVE` 后立即转入 `OUT`**：`flux/second` 超过舰船净耗散能力时，状态机无法继续扣除幅能，会在一帧或数帧后提前结束。
-
-    - **解决方案**：降低每秒幅能或增加耗散，重新激活。
-
-- **系统结束后速度倍率仍然残留**：`apply` 的 `modifyMult` 与 `unapply` 的 `unmodify` 使用不同 modifier ID，或某个分支只写入而未撤销。
-
-    - **解决方案**：统一使用引擎传入的 `id`，并在 `OUT` 与 `unapply` 中撤销同一 ID。
-
-- **第二场战斗的目标锁定全部失败**：把 `ShipAPI` 保存到静态字段或跨战斗 custom data 后，当前引擎会判定旧实体不在场，`isAlive()` 与 `isEntityInPlay()` 持续为 false。
-
-    - **解决方案**：目标只在本帧决策和回调内使用，让 AI 与 stats 实例随每场战斗重建。
-
-- **AI 高频尝试并刷屏**：`ShipSystemAIScript.advance` 每帧调用，缺少节流会让全量扫描、开关尝试和日志每帧发生。
-
-    - **解决方案**：使用 `IntervalUtil` 将决策间隔设为 0.2–0.3 秒。
-
-## 总结
-
-本节在数据面之上补齐了运行态：五态状态机决定系统 "怎么走"，stats 访问器提供 "走到哪" 的读数，目标三通道与系统 AI 决定 "加成给谁、由谁触发"。数据面负责 "系统是什么"，运行态负责 "系统怎么走"，排错时这两半要分开核对。
-
-排错时可以反复使用两组判断：先问 "这个行为发生在状态机的哪一段" —— `IN`/`ACTIVE`/`OUT` 是效果脚本可见的三段，`COOLDOWN`/`IDLE` 只能靠 AI 角色观察；再问 "这个信息来自哪条通道" —— 用户激活时的鼠标世界坐标、舰船当前目标与 AI flag 各有写入者和寿命，flag 只有 1 秒寿命且用户舰无人写入，任何来自 flag 的目标在使用前都要再验证。stats 脚本与 AI 脚本是同名类的两个独立实例，跨角色共享只能走静态方法或 `customData`；"写在哪一侧、读在哪一侧" 的问题也由此而生。
-
-逻辑上看，运行态主线自然延伸到战斗视觉与特效层：动画、开火与命中特效使用的正是状态机的时间轴与目标判定结果，五态模型与目标纪律在那条链路上会反复出现；数据面字段速查与 modifier 纪律的完整细节，仍由对应前置单元持有。
-
-## 建议参考项
-
-- `com.fs.starfarer.api.combat.ShipSystemAPI`：运行时系统实例的访问器全集 (`SystemState` 五态、效果 / 冷却 / 弹药 / 幅能、激活控制与目标坐标)。
-- `com.fs.starfarer.api.combat.ShipSystemSpecAPI`：系统数据 spec，`getStatsScript()` / `getAIScript()` 按类名实例化脚本，`getRange(stats)` 等取值方法。
-- `com.fs.starfarer.api.combat.ShipSystemAIScript`：系统 AI 接口，`init` / `advance` 双方法。
-- `com.fs.starfarer.api.combat.ShipwideAIFlags`：AI 短期 flag 容器，`TARGET_FOR_SHIP_SYSTEM` 与 `FLAG_DURATION` 寿命语义。
-- `com.fs.starfarer.api.combat.ShipAPI`：舰船实体入口 (`getSystem` / `getShipTarget` / `getAIFlags` / `useSystem` / `getShipAI`)。
-- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：四个系统 bonus 族 (`getSystemRangeBonus` / `getSystemCooldownBonus` / `getSystemUsesBonus` / `getSystemRegenBonus`) 与 `getMaxSpeed`。
-- `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：效果脚本接口，`State` 五态、`apply` / `unapply` / `getStatusData`。
-- `com.fs.starfarer.api.plugins.ShipSystemStatsScriptAdvanced`：高级扩展，`isUsable` / `getInfoText`。
-- `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：官方基类，覆写方法默认返回 `-1` / `null`。
-- `com.fs.starfarer.api.util.IntervalUtil`：AI 决策节流计时器 (`randomize` / `advance` / `intervalElapsed`)。
-- `data/shipsystems/ship_systems.csv`：系统注册 28 列表头与 Fortress Shield(开关式 `active` 留空)、EMP Emitter、Damper Field、Targeting Feed 等原版行。
-- `data/shipsystems/targetingfeed.system` / `data/shipsystems/emp.system`：原版 `.system` 实例 (`aiType` 枚举与 `aiHints` 的 `threat*` 字段参考)。
-- `data/shipsystems/GearIn_targetingsystem.system`(示例 MOD 内)：本节数据接入片段 (`aiType: CUSTOM` + 双脚本类名)。
-- `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (`gradle jar` 构建命令执行位置)。
-- `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证方案的日志核对位置)。
-
-## 完整最小例
-
-::: details 完整成品：GearInTargetingSystem
+::: details 完整成品：GearInRangeSystemAI
 
 ```java
 package data.scripts.gearin.shipsystems;
@@ -563,289 +388,80 @@ import org.lwjgl.util.vector.Vector2f;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.MutableShipStatsAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ShipSystemAPI;
-import com.fs.starfarer.api.combat.ShipSystemAPI.SystemState;
 import com.fs.starfarer.api.combat.ShipSystemAIScript;
 import com.fs.starfarer.api.combat.ShipwideAIFlags;
-import com.fs.starfarer.api.combat.ShipwideAIFlags.AIFlags;
-import com.fs.starfarer.api.impl.combat.BaseShipSystemScript;
-import com.fs.starfarer.api.plugins.ShipSystemStatsScript;
 import com.fs.starfarer.api.util.IntervalUtil;
 
-/**
- * 完整最小例：战术系统运行态 —— Stats 脚本、状态机、目标锁定与系统 AI。
- * 一个类身兼两个角色，由数据绑定各自实例化一次：Stats 脚本在舰船部署时创建，
- * apply 只在 effectLevel > 0 期间每帧调用，unapply 在 effectLevel 归零边界调用一次；
- * AI 角色随舰船 AI 创建，每帧决策并把验证过的目标写入 flag (有持续时间，消费前再验证)。
- * 两个实例字段互不共享，共享目标逻辑全部走静态方法；玩家舰没有舰船 AI，
- * 目标回退到 ship.getShipTarget()。
- */
-public class GearInTargetingSystem extends BaseShipSystemScript implements ShipSystemAIScript {
+public class GearInRangeSystemAI implements ShipSystemAIScript {
 
-    private static final Logger LOG = Global.getLogger(GearInTargetingSystem.class);
-
-    /** 系统标称射程 (经 systemRangeBonus 修正前的基础值)。 */
-    public static final float RANGE = 800f;
-    /** 锁定有效时满 effectLevel 下的最大速度倍率 (1.5 倍)。 */
-    public static final float SPEED_MULT = 1.5f;
-    /** AI 写入 TARGET_FOR_SHIP_SYSTEM 的 flag 持续时间 (秒)。 */
-    public static final float AI_TARGET_FLAG_DURATION = 1.0f;
-    /** AI 决策节流区间 (0.2–0.3 秒一次决策)。 */
-    private static final float AI_DECISION_MIN = 0.2f;
-    private static final float AI_DECISION_MAX = 0.3f;
-
-    // --- AI 角色字段 (ShipSystemAIScript 实例独有) ---
-    private CombatEngineAPI engine;
-    private ShipAPI aiShip;
+    private static final Logger LOG = Global.getLogger(GearInRangeSystemAI.class);
+    private ShipAPI ship;
     private ShipSystemAPI system;
-    private ShipwideAIFlags aiFlags;
-    private final IntervalUtil decisionInterval = new IntervalUtil(AI_DECISION_MIN, AI_DECISION_MAX);
-    private SystemState lastAISystemState = null;
+    private CombatEngineAPI engine;
+    private final IntervalUtil interval = new IntervalUtil(0.2f, 0.3f);
 
-    // --- Stats 角色字段 (ShipSystemStatsScript 实例独有) ---
-    private State lastApplyState = null;
-
-    // --- 共享目标逻辑 (静态，两个角色共用同一语义) ---
-
-    /** 有效射程：基础 RANGE 经 systemRangeBonus 修正。 */
-    public static float getRange(ShipAPI source) {
-        if (source == null) {
-            return RANGE;
-        }
-        return source.getMutableStats().getSystemRangeBonus().computeEffective(RANGE);
-    }
-
-    /** 目标合法性：敌方、存活、非残骸/相位/转移穿梭机、且在有效射程内。 */
-    public static boolean isValidTarget(ShipAPI source, ShipAPI target) {
-        if (source == null || target == null) {
-            return false;
-        }
-        if (target == source) {
-            return false;
-        }
-        if (!target.isAlive()) {
-            return false;
-        }
-        if (target.isHulk()) {
-            return false;
-        }
-        if (target.isPhased()) {
-            return false;
-        }
-        if (target.isShuttlePod()) {
-            return false;
-        }
-        if (target.getOwner() == source.getOwner()) {
-            return false;
-        }
-        Vector2f delta = Vector2f.sub(target.getLocation(), source.getLocation(), new Vector2f());
-        return delta.length() <= getRange(source);
-    }
-
-    /**
-     * 读取 AI 写入的目标：TARGET_FOR_SHIP_SYSTEM 的 custom 数据。
-     * 玩家舰没有舰船 AI，本类 AI 角色也不会运行，flag 无人写入 —— 返回 null。
-     */
-    public static ShipAPI readAITarget(ShipAPI source) {
-        if (source == null || source.getShipAI() == null) {
-            return null;
-        }
-        ShipwideAIFlags flags = source.getAIFlags();
-        if (flags == null || !flags.hasFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM)) {
-            return null;
-        }
-        Object data = flags.getCustom(AIFlags.TARGET_FOR_SHIP_SYSTEM);
-        return data instanceof ShipAPI ? (ShipAPI) data : null;
-    }
-
-    /** 把验证通过的目标写入 TARGET_FOR_SHIP_SYSTEM(AI 角色调用 ship.useSystem() 前使用)。 */
-    public static boolean writeAITarget(ShipAPI source, ShipAPI target) {
-        if (source == null || source.getShipAI() == null) {
-            return false;
-        }
-        ShipwideAIFlags flags = source.getAIFlags();
-        if (flags == null || !isValidTarget(source, target)) {
-            return false;
-        }
-        flags.setFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM, AI_TARGET_FLAG_DURATION, target);
-        return true;
-    }
-
-    /** 目标解析：AI flag 优先，回退舰船当前目标 (getShipTarget())，全部经过再验证。 */
-    public static ShipAPI pickTarget(ShipAPI source) {
-        if (source == null) {
-            return null;
-        }
-        ShipAPI target = readAITarget(source);
-        if (isValidTarget(source, target)) {
-            return target;
-        }
-        target = source.getShipTarget();
-        if (isValidTarget(source, target)) {
-            return target;
-        }
-        return null;
-    }
-
-    // --- Stats 脚本角色 (ShipSystemStatsScriptAdvanced) ---
-
-    /**
-     * IN/ACTIVE 期间每帧调用：锁定有效时按 effectLevel 施加最大速度倍率，
-     * 锁定失效或进入 OUT 立即撤销 —— 目标是 "启动侧再验证，验证不过不加成"。
-     */
     @Override
-    public void apply(MutableShipStatsAPI stats, String id, State state, float effectLevel) {
-        ShipAPI ship = (ShipAPI) stats.getEntity();
-        if (ship == null) {
+    public void init(ShipAPI ship, ShipSystemAPI system,
+            ShipwideAIFlags flags, CombatEngineAPI engine) {
+        this.ship = ship;
+        this.system = system;
+        this.engine = engine;
+        interval.randomize();
+        LOG.info("GearIn range AI init: " + ship.getHullSpec().getHullId());
+    }
+
+    @Override
+    public void advance(float amount, Vector2f missileDangerDir,
+            Vector2f collisionDangerDir, ShipAPI target) {
+        if (engine == null || engine.isPaused()) {
             return;
         }
-        if (lastApplyState != state) {
-            LOG.info("GearIn targeting stats: state " + lastApplyState + " -> " + state
-                    + " effectLevel=" + effectLevel);
-            lastApplyState = state;
+        interval.advance(amount);
+        if (!interval.intervalElapsed() || target == null
+                || !target.isAlive() || system.isActive()
+                || system.isCoolingDown()) {
+            return;
         }
-        boolean locked = isValidTarget(ship, pickTarget(ship));
-        if (state == ShipSystemStatsScript.State.OUT || !locked) {
-            stats.getMaxSpeed().unmodify(id);
-        } else {
-            stats.getMaxSpeed().modifyMult(id, 1f + (SPEED_MULT - 1f) * effectLevel);
+        if (ship.getFluxTracker().isOverloadedOrVenting()) {
+            return;
         }
+        ship.useSystem();
+        LOG.info("GearIn range AI activated");
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInIdleProbeSystem
+
+```java
+package data.scripts.gearin.shipsystems;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.MutableShipStatsAPI;
+import com.fs.starfarer.api.impl.combat.BaseShipSystemScript;
+
+public class GearInIdleProbeSystem extends BaseShipSystemScript {
+
+    private static final Logger LOG = Global.getLogger(GearInIdleProbeSystem.class);
+
+    @Override
+    public void apply(MutableShipStatsAPI stats, String id,
+            State state, float effectLevel) {
+        LOG.info("GearIn idle probe: state=" + state
+                + " effectLevel=" + effectLevel);
     }
 
-    /** effectLevel 归零边界 (进入 COOLDOWN/IDLE、舰船撤退或解体) 由引擎调用一次。 */
     @Override
     public void unapply(MutableShipStatsAPI stats, String id) {
-        stats.getMaxSpeed().unmodify(id);
-        LOG.info("GearIn targeting stats: unapply effect (id=" + id + ")");
+        LOG.info("GearIn idle probe: unapply");
     }
 
-    /** 仅玩家舰：IN/ACTIVE 期间显示目标锁定状态 (无目标时按减益样式显示)。 */
-    @Override
-    public StatusData getStatusData(int index, State state, float effectLevel) {
-        if (index != 0) {
-            return null;
-        }
-        if (state != State.IN && state != State.ACTIVE) {
-            return null;
-        }
-        CombatEngineAPI engine = Global.getCombatEngine();
-        ShipAPI player = engine == null ? null : engine.getPlayerShip();
-        boolean locked = player != null && isValidTarget(player, pickTarget(player));
-        return new StatusData(locked ? "target locked" : "no target", !locked);
-    }
-
-    /** 可用性许可：激活中始终可用；待机时必须有有效锁定目标，否则按下 U 不激活。 */
-    @Override
-    public boolean isUsable(ShipSystemAPI system, ShipAPI ship) {
-        if (system.isActive()) {
-            return true;
-        }
-        return isValidTarget(ship, pickTarget(ship));
-    }
-
-    /** 信息栏文字：返回 null 时 UI 使用默认 "READY" / "ACTIVE"。 */
-    @Override
-    public String getInfoText(ShipSystemAPI system, ShipAPI ship) {
-        if (system.isOutOfAmmo()) {
-            return null;
-        }
-        if (system.getState() != SystemState.IDLE) {
-            return null;
-        }
-        return isValidTarget(ship, pickTarget(ship)) ? "READY" : "NO TARGET";
-    }
-
-    // --- AI 脚本角色 (ShipSystemAIScript) ---
-
-    /** AI 实例创建时调用一次：缓存引用并随机化决策节流相位。 */
-    @Override
-    public void init(ShipAPI ship, ShipSystemAPI system, ShipwideAIFlags flags, CombatEngineAPI engine) {
-        this.aiShip = ship;
-        this.system = system;
-        this.aiFlags = flags;
-        this.engine = engine;
-        this.decisionInterval.randomize();
-        LOG.info("GearIn targeting AI init: ship=" + ship.getHullSpec().getHullId()
-                + " system=" + system.getId());
-    }
-
-    /**
-     * 每帧被舰船 AI 调用：守卫链 (暂停/实体/存活/CR/冷却/弹药)→ 决策节流 →
-     * 目标补全与再验证 → 写 flag(激活期间每 0.2–0.3 秒刷新，flag 只有 1 秒寿命)→
-     * 过载/高幅能守卫 → ship.useSystem()。
-     */
-    @Override
-    public void advance(float amount, Vector2f missileDangerDir, Vector2f collisionDangerDir, ShipAPI target) {
-        if (engine.isPaused()) {
-            return; // 暂停守卫：暂停时 AI 决策不推进
-        }
-        logStateTransition();
-
-        if (!engine.isEntityInPlay(aiShip) || !aiShip.isAlive()) {
-            return;
-        }
-        if (aiShip.getCurrentCR() <= 0f) {
-            return;
-        }
-        if (system.getCooldownRemaining() > 0f) {
-            return; // 冷却中 (COOLDOWN 状态)
-        }
-        if (system.isOutOfAmmo()) {
-            return;
-        }
-
-        decisionInterval.advance(amount);
-        if (!decisionInterval.intervalElapsed()) {
-            return; // 决策节流
-        }
-
-        // 目标补全与再验证：参数 target 优先 (舰船 AI 传入，不可见时为 null)，回退舰船当前目标
-        ShipAPI lock = target;
-        if (lock == null) {
-            lock = aiShip.getShipTarget();
-        }
-        if (!isValidTarget(aiShip, lock)) {
-            clearAITarget();
-            return;
-        }
-        writeAITarget(aiShip, lock);
-
-        if (system.isActive()) {
-            return; // 激活中：只刷新锁定 (flag 1 秒过期，不刷新 ACTIVE 后半段会丢锁)，不重复激活
-        }
-        if (aiShip.getFluxTracker().isOverloadedOrVenting()) {
-            return;
-        }
-        if (aiShip.getFluxLevel() > 0.9f) {
-            return; // 高幅能不启动
-        }
-        LOG.info("GearIn targeting AI: lock " + lock.getHullSpec().getHullId()
-                + " range=" + getRange(aiShip));
-        aiShip.useSystem(); // ShipAPI.useSystem() -> giveCommand(USE_SYSTEM)(玩家按 F 与 AI 同一入口)
-    }
-
-    /** 清除过期的目标 flag(目标失效后下一轮决策不再复用旧锁)。 */
-    private void clearAITarget() {
-        if (aiFlags != null) {
-            aiFlags.removeFlag(AIFlags.TARGET_FOR_SHIP_SYSTEM);
-        }
-    }
-
-    /** AI 视角的运行时状态机跳变日志：完整五态 (含 COOLDOWN/IDLE，Stats 角色看不到这两态)。 */
-    private void logStateTransition() {
-        if (system == null) {
-            return;
-        }
-        SystemState current = system.getState();
-        if (current != lastAISystemState) {
-            LOG.info("GearIn targeting AI: state " + lastAISystemState + " -> " + current
-                    + " effectLevel=" + system.getEffectLevel()
-                    + " cooldownRemaining=" + system.getCooldownRemaining());
-            lastAISystemState = current;
-        }
-    }
 }
 ```
 

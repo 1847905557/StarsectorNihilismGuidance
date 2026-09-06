@@ -367,11 +367,11 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 
 ## 建议参考项
 
-- `data/hulls/ship_data.csv`(原版蓝本，本 MOD 同路径)：舰船数据表，航母行需填写 `fighter bays` 与 `CARRIER` hint。
-- `data/hulls/wing_data.csv`(原版蓝本，本 MOD 同路径)：联队数据表，`GearIn_slag_wing` 行落点。
-- `data/variants/fighters/`(本 MOD)：战机装配文件 (`GearIn_slag_normal.variant`) 的落点。
-- `data/variants/fighters/broadsword_Fighter.variant`(原版)：战机装配基线，本例装配由它修改而来。
-- `data/weapons/weapon_data.csv`(原版)：武器 ID 查询 (`lightdualac` 等)。
+- `data/hulls/ship_data.csv`：舰船数据表，航母行需填写 `fighter bays` 与 `CARRIER` hint。
+- `data/hulls/wing_data.csv`：联队数据表，`GearIn_slag_wing` 行落点。
+- `data/variants/fighters/`：战机装配文件 (`GearIn_slag_normal.variant`) 的落点。
+- `data/variants/fighters/broadsword_Fighter.variant`：战机装配基线，本例装配由它修改而来。
+- `data/weapons/weapon_data.csv`：武器 ID 查询 (`lightdualac` 等)。
 - `Starsector/starsector-core/starsector.log`：游戏日志，排查加载错误与最终 ID 报错。
 - `Starsector/mods/Console Commands/data/console/commands.csv`：`Addship`/`Addwing` 控制台命令条目。
 - `com.fs.starfarer.api.loading.FormationType`、`com.fs.starfarer.api.loading.WingRole`：联队队形与战机角色枚举全集。

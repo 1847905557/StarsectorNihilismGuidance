@@ -560,7 +560,6 @@ variant.addWeapon("WS 001", "lightmg");
 - `com.fs.starfarer.api.fleet.FleetMemberAPI`：`getVariant` / `setVariant`(舰队侧读写)。
 - `com.fs.starfarer.api.FactoryAPI`：`createFleetMember`(按变体/联队 id 建成员)。
 - `com.fs.starfarer.api.combat.MutableShipStatsAPI` / `com.fs.starfarer.api.combat.ShipAPI`：`getVariant`(部署前后取变体的入口)。
-- `data.scripts.gearin.campaign.GearInVariantLauncher`：本节注册入口类 (含 `REGISTER_MARK` 键)。
 - `data/variants/brawler_Assault.variant`：示例 stock 变体 (武器组、`goalVariant: true`、`hullMods`)。
 - `data/variants/stations/station1_Standard.variant`：`modules` 数组写法 (解析时剥除 `#` 注释)。
 - `data/hulls/brawler.ship`：`weaponSlots`(WS 001/002 MEDIUM BALLISTIC，WS 003/004 SMALL UNIVERSAL 硬点)。

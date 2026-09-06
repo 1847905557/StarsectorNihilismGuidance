@@ -434,7 +434,6 @@ public void optionSelected(String optionText, Object optionData) {
 - `com.fs.starfarer.api.campaign.CampaignUIAPI`，生涯 UI：`showInteractionDialog` / `addMessage` / `isShowingDialog`。
 - `com.fs.starfarer.api.util.Misc`：文本与高亮颜色常量 (`getTextColor` / `getGrayColor` 等)。
 - `com.fs.starfarer.api.impl.campaign.ids.Tags`：intel 标签常量。
-- `data/scripts/gearin/campaign/`：本节五个示例类所在目录 (MOD 内相对路径)。
 
 ## 完整最小例
 

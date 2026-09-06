@@ -223,6 +223,4 @@ public class GearInModPlugin extends BaseModPlugin {
 - `com.fs.starfarer.api.BaseModPlugin`：入口类的默认回调实现；
 - `com.fs.starfarer.api.ModPlugin`：核心生命周期回调签名；
 - `com.fs.starfarer.api.campaign.SectorAPI`：`getPersistentData()` 存档持久数据；
-- `starsector-core/starsector.log`：入口加载和回调日志；
-- `src/data/scripts/gearin/GearInModPlugin.java`：入口类源码；
-- `jars/GearIndustry.jar`：包含入口 class 的构建产物。
+- `starsector-core/starsector.log`：入口加载和回调日志。

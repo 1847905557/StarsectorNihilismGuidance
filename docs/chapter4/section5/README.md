@@ -180,7 +180,7 @@ PlanetAPI prime = system.addPlanet(
 
 ## 建议参考项
 
-- `data/config/planets.json`：行星与恒星类型注册表；
 - `PlanetSpecAPI`：运行期类型字段与描述键；
-- [C3-S4]：`initStar`、`addPlanet` 和星系生成顺序；
-- [C3-S5]：PLANET 描述挂接。
+- `data/config/planets.json`：行星与恒星类型注册表；
+- `data/strings/descriptions.csv`：`PLANET` 行格式的对照依据；
+- `graphics/planets/terran.jpg`、`graphics/planets/clouds_banded01.png`：本节复用的原版贴图。

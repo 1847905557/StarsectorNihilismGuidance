@@ -434,7 +434,6 @@ int storedShips = cargo.getMothballedShips().getNumMembers();
 - `com.fs.starfarer.api.util.Misc`：文本与高亮颜色常量 (`getTextColor` / `getGrayColor` 等)。
 - `com.fs.starfarer.api.impl.campaign.ids.Factions`、`Commodities`，id 常量：势力 / 商品。
 - `com.fs.starfarer.api.impl.campaign.rulecmd.AdjustRep`，原版声望 action rulecmd：`adjustPlayerReputation` 的原版调用参考。
-- `data/scripts/gearin/campaign/`：本节三个示例类所在目录 (MOD 内相对路径)。
 
 ## 完整最小例
 

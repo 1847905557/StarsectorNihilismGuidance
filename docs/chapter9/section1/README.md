@@ -255,7 +255,6 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 - `com.fs.starfarer.api.combat.MutableShipStatsAPI`：生涯与战斗数值入口；
 - `com.fs.starfarer.api.fleet.FleetMemberAPI`：单舰成员回调参数；
 - `com.fs.starfarer.api.campaign.CampaignFleetAPI`：整支舰队回调参数；
-- [C8-S6]：监听器的独立注册与清理规则；
 - `data/hullmods/hull_mods.csv`：船插注册行与描述字段。
 
 ## 完整最小例

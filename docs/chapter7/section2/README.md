@@ -152,10 +152,7 @@ public class GearInGlobalAccess {
 
 ## 建议参考项
 
-- [C7-S1]：入口插件的生命周期回调位置；
-- [C7-S3]：通过 `Global.getSettings()` 读取设置；
-- [C7-S4]：通过 `Global.getSoundPlayer()` 播放声音；
-- [C7-S5]：日志器、级别和稳定上下文；
 - `com.fs.starfarer.api.Global`：全局服务访问器；
 - `com.fs.starfarer.api.campaign.SectorAPI`：生涯对象和持久数据；
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：当前战斗引擎。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：当前战斗引擎；
+- `Starsector/starsector-core/starsector.log`：核对各阶段服务状态的运行日志。

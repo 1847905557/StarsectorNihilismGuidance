@@ -39,7 +39,7 @@
 
 规则行在资源加载期被解析成规则表达式 (`Rules.loadRules` 拆条件/脚本行并构造表达式)。解析到命令调用时，会定位命令类：
 
-1. 命令包列表来自 `settings.json` 的 `ruleCommandPackages`(`Starsector/starsector-core/data/config/settings.json`，原版 5 个包：`com.fs.starfarer.api.impl.campaign.rulecmd` 及其 `salvage` / `newgame` / `missions` / `academy` 子包)。
+1. 命令包列表来自 `settings.json` 的 `ruleCommandPackages`(`data/config/settings.json`，原版 5 个包：`com.fs.starfarer.api.impl.campaign.rulecmd` 及其 `salvage` / `newgame` / `missions` / `academy` 子包)。
     - 命令包列表在加载期只读取一次并缓存。
 2. MOD 可以在自己的 `data/config/settings.json` 里声明同名数组追加自己的包：`settings.json` 经文本读取工具的 `readJSONMerged` 合并，**数组追加** (`mergeJSON`；仅 `core_clearArray` 标记或 color/button/`music_*` 键走整体替换)。
     - 合并发生在设置加载阶段 (读取 settings 的 JSON，由游戏启动器在资源加载前调用)，早于 `Rules.loadRules`，所以追加的包在命令解析时已就位。
@@ -480,7 +480,7 @@ gradle jar
 - `com.fs.starfarer.api.campaign.rules.RuleAPI`：`runScript`(javadoc 声明 `dialog` 可为 null)。
 - `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl`：规则驱动对话插件 (`fireBest` / `fireAll` / `optionSelected`)。
 - `com.fs.starfarer.api.campaign.InteractionDialogAPI`：对话面板接口 (`getOptionPanel` / `getTextPanel` / `dismiss`)。
-- `data/config/settings.json`(MOD 侧)：追加 `ruleCommandPackages` 数组 (本节示例新增键)。
-- `data/campaign/rules.csv`(MOD 侧)：本节 `GearIn_rules_cmd_*` 行 (示例所有权)。
-- `Starsector/starsector-core/data/config/settings.json`：`ruleCommandPackages` 原版 5 包。
-- `Starsector/starsector-core/data/campaign/rules.csv`：原版规则表 (`FireAllIntercept` 唯一拦截规则所在)。
+- `data/config/settings.json`：追加 `ruleCommandPackages` 数组 (本节示例新增键)。
+- `data/campaign/rules.csv`：本节 `GearIn_rules_cmd_*` 行 (示例所有权)。
+- `data/config/settings.json`：`ruleCommandPackages` 原版 5 包。
+- `data/campaign/rules.csv`：原版规则表 (`FireAllIntercept` 唯一拦截规则所在)。

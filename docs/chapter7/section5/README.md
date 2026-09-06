@@ -156,7 +156,4 @@ public class GearInLogWriter {
 
 - `com.fs.starfarer.api.Global.getLogger(Class)`：取得 MOD 日志器；
 - `org.apache.log4j.Logger`：`info`、`warn` 和 `error` 方法；
-- `Starsector/starsector-core/starsector.log`：读取日志和异常堆栈；
-- `src/data/scripts/gearin/GearInLogWriter.java`：统一日志格式的示例类；
-- [C7-S1]：入口生命周期中的日志验证；
-- [C7-S2]：按阶段访问 `Global` 服务。
+- `Starsector/starsector-core/starsector.log`：读取日志和异常堆栈。

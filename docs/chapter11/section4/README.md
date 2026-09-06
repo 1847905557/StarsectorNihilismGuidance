@@ -605,8 +605,6 @@ market.addIndustry(industryId);
     - `data/campaign/commodities.csv`：`demand class` 列 (supplies / fuel / crew / organics / heavy\_machinery / domestic\_goods / drugs 等)。
     - `data/campaign/econ/corvus.json`：市场 `industries` 数组写法 (纯 id 字符串与 `[id, param...]`)。
     - `data/config/settings.json`：`maxIndustries` 数组、`overMaxIndustriesPenalty`、`industryRefundFraction`、`industryImproveBase`。
-- 本节示例：
-    - `data/scripts/gearin/campaign/GearInTrainingIndustry`：训练产业类。
 
 ## 完整最小例
 

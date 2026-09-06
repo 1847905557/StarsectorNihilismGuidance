@@ -388,10 +388,6 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 
 ## 建议参考项
 
-- [C8-S1]：战斗引擎状态；
-- [C8-S2]：战斗对象与舰船位置；
-- [C8-S3]：每帧战斗插件、暂停和实例边界；
-- [C4-S1]：`GearIn_test` 测试战役；
 - `BaseCombatLayeredRenderingPlugin`：分层插件的默认实现；
 - `SpriteAPI`：贴图颜色、透明度、尺寸和绘制方法；
 - `SettingsAPI.getSprite(String, String)`：按注册的分类和键取得 Sprite；

@@ -82,8 +82,4 @@ jar tf jars/GearIndustry.jar
 
 ## 建议参考项
 
-- [C6-S2]：源码位置；
-- [C6-S3]：Gradle 输出配置；
-- [C7-S1]：MOD 入口类和生命周期；
-- `mod_info.json`：`jars` 数组；
-- `jars/GearIndustry.jar`：构建产物。
+- `mod_info.json`：`jars` 数组。

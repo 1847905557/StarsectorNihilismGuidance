@@ -107,6 +107,4 @@ Gradle 通过 `srcDirs` 找到迁移后的源码，通过 Java 17 toolchain 和 
 
 ## 建议参考项
 
-- [C6-S1]：Java 17 与依赖边界；
-- [C6-S2]：源码迁移；
-- [C6-S4]：构建 JAR 和声明 manifest。
+- `Starsector/starsector-core/*.jar`：`compileOnly` 声明的原版核心编译依赖。

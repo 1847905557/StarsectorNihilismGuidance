@@ -264,6 +264,4 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 - `StarSystemAPI`：恒星系对象与实体容器；
 - `data/config/planets.json`：原版恒星与行星类型；
 - `data/config/custom_entities.json`：原版生涯实体类型；
-- [C4-S5]：自定义行星与恒星类型；
-- [C4-S6]：自定义生涯实体类型；
 - `starmap.json`：超空间位置注册。

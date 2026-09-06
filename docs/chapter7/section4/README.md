@@ -16,7 +16,7 @@
 ## 前置知识
 
 - [C5-S1] 的 OGG 格式、声道和循环资源；
-- [C5-S2] 的 `sounds.json` 声音 ID 与 `music` 分类；
+- [C5-S2] 的 `sounds.json` 声音 ID、`music` 分类、`source` 和 `file`；
 - [C7-S2] 的 `Global` 服务访问阶段；
 - 能够在战斗内触发一次脚本调用并查看 `starsector.log`。
 
@@ -164,7 +164,6 @@ public class GearInSoundPlayer {
 
 ## 建议参考项
 
-- [C5-S2]：声音 ID、`music` 分类、`source` 和 `file`；
-- [C5-S3]：武器、系统、舰船风格、UI 和音乐中的声音使用位置；
-- [C7-S2]：`Global` 服务访问阶段；
-- `SoundPlayerAPI`：UI、位置、循环和自定义音乐的播放器方法。
+- `SoundPlayerAPI`：UI、位置、循环和自定义音乐的播放器方法；
+- `data/config/sounds.json`：`music` 分类与 `source`、`file` 的原版对照；
+- `Starsector/starsector-core/starsector.log`：核对资源加载与调用错误的运行日志。

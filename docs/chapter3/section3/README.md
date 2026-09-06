@@ -134,7 +134,6 @@ public class GearInModPlugin extends BaseModPlugin {
 ## 建议参考项
 
 - `mod_info.json`：`modPlugin` 入口声明；
-- `data/scripts/gearin/GearInModPlugin.java`：GearIn 的长期 MOD 入口类；
 - `BaseModPlugin`：提供默认回调实现的基础类；
 - `ModPlugin.onNewGame()`：新档生成回调；
 - `FactionAPI.setRelationship`：写入势力关系；

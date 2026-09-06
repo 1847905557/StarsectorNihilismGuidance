@@ -851,4 +851,3 @@ gradle jar
 - `com.fs.starfarer.api.impl.campaign.ids.MemFlags`：原版记忆键常量惯例 (`MEMORY_KEY_SOURCE_MARKET` 等)。
 - `com.fs.starfarer.api.util.Misc`：`Token.getVarNameAndMemory` 变量解析与 `replaceTokensFromMemory` 文本替换。
 - `data/campaign/rules.csv`：本节 5 条 `GearIn_memory_*` 规则行所在 (MOD 数据文件，追加行)。
-- `data/scripts/gearin/rules/`：本节六个示例类所在目录 (MOD 内路径)。

@@ -173,6 +173,8 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 ## 建议参考项
 
-- [C5-S1]：OGG 格式和声道；
-- [C5-S2]：声音 ID 注册；
-- [C4-S3]：舰船风格和引擎声音集。
+- `data/config/sounds.json`：`music` 分类条目的原版形态；
+- `data/weapons/`：原版武器定义，`fireSoundOne`、`fireSoundTwo` 字段实例；
+- `data/shipsystems/`：原版战术系统定义，`activateSound`、`loopSound`、`deactivateSound` 字段实例；
+- `data/config/hull_styles.json`：原版舰船风格，`engineLoopSet`、`engineAccelerateSet` 等引擎声音集字段实例；
+- `com.fs.starfarer.api.impl.MusicPlayerPluginImpl`：本节选曲示例继承的原版音乐插件。

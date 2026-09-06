@@ -804,8 +804,6 @@ stats.getMaxSpeed().unmodify(id);
 - `com.fs.starfarer.api.SettingsAPI`：`getSkillSpec` / `getSortedSkillIds` 读取入口。
 - `com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription`：示例各效果类继承的基类 (`TOOLTIP_WIDTH` 与 fleet total 聚合做法)。
 - `data/characters/skills/skill_data.csv`：技能注册表 (id / order / tier / reqPoints / 角色 flags / tags / icon)。
-- `data/characters/skills/GearIn_gunnery.skill`：本节技能定义 (aptitude / 等级组 / 效果清单)。
 - `data/characters/skills/aptitude_data.csv`：能力树分组表 (`effect_skill_id` 列)。
 - `data/characters/skills/gunnery_implants.skill`：原版 SHIP + 精英组样例 (本节示例的蓝本)。
-- `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
 - `Starsector/starsector-core/starsector.log`：游戏运行日志 (注册与 apply 日志的核对位置)。

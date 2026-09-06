@@ -411,7 +411,6 @@ if (!sector.getPersistentData().containsKey(REGISTER_MARK)) {
 - `com.fs.starfarer.api.campaign.CampaignClockAPI`：时间换算与日历接口 (`convertToDays` / `convertToMonths` / `convertToSeconds` / `getTimestamp` / `getElapsedDaysSince` / `createClock`)。
 - `com.fs.starfarer.api.util.IntervalUtil`：公开间隔器 (`advance` 每帧调用、`intervalElapsed` 仅真一次)。
 - `data/config/settings.json`：`campaignSpeedupMult`(加速倍率，取值为 2)。
-- `data/scripts/gearin/campaign/`：示例 MOD 内两个脚本类的源码目录。
 
 ## 完整最小例
 

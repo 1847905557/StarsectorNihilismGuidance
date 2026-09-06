@@ -320,5 +320,4 @@ hull style 是声音与材质的总线 —— 9 个声音字段指向 `sounds.js
 - `data/config/hull_styles.json`：舰船风格定义，字段全集与保留 ID 清单见文件头注释。
 - `data/config/engine_styles.json`：引擎风格定义，含 `OMEGA` 光带参数与保留 ID `CUSTOM`。
 - `data/config/sounds.json`：声音集注册与按船体分级的分档结构。
-- `data/hulls/GearIn_artizan.ship`：顶层 `style` 与 `engineSlots[].style` 的接入位置。
 - `Starsector/starsector-core/starsector.log`：风格加载与战斗期错误的排查入口。

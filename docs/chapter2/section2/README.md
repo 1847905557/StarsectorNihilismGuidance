@@ -194,7 +194,7 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 
 ## 建议参考项
 
-- `data/hullmods/hull_mods.csv`：船插注册表 (原版 `unstable_injector` 行可对照)。
+- `data/hullmods/hull_mods.csv`：船插注册表，其中的 `unstable_injector` 行可对照。
 - `com.fs.starfarer.api.combat.BaseHullMod`：船插效果类基类 (含 `isBuiltIn` 等现成逻辑)。
 - `com.fs.starfarer.api.combat.MutableShipStatsAPI`：数值入口 (`getMaxSpeed()` 等)，配合 `modifyFlat`/`modifyPercent` 使用。
 - `com.fs.starfarer.api.combat.ShipAPI.HullSize`：舰船的船体等级。

@@ -452,7 +452,6 @@ picker 是 "咨询制"：返回非 `null` 就接管这次处理，因此条件�
 - `com.fs.starfarer.api.campaign.InteractionDialogAPI`：`getTextPanel` / `getOptionPanel` / `setPromptText` / `dismiss` / `getInteractionTarget`。
 - `com.fs.starfarer.api.campaign.rules.MemoryAPI`：`set(key, value, expire)`、`getBoolean` 等记忆读写。
 - `com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`：原版核心生涯插件：`CORE_GENERAL` 默认、重生教程分支 `MOD_SPECIFIC`、facts 写 `$` 前缀变量。
-- `data/scripts/gearin/campaign`：本节两个示例类的包目录。
 - `Starsector/starsector-core/starsector.log`：注册与 picker 排查的主要依据。
 
 ## 完整最小例

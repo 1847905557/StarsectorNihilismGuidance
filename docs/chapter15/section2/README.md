@@ -476,8 +476,8 @@ gradle jar
 
 ## 建议参考项
 
-- `data/campaign/rules.csv`(MOD 侧)：本节示例追加行所在文件，规则 id 前缀 `GearIn_rules_scene_*`。
-- `data/campaign/rules.csv`(原版)：五类场景 trigger 的平台规则表：
+- `data/campaign/rules.csv`：本节示例追加行所在文件，规则 id 前缀 `GearIn_rules_scene_*`。
+- `data/campaign/rules.csv`：五类场景 trigger 的平台规则表：
     - 本节引用的回退规则 (`marketOpen` / `marketDock` / `marketPostOpenDefault` / `greetingFallthrough` / `initial_AnyFleet` / `marketReturnFromBar` 等) 的参照来源。
 - `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl`：交互对话框插件，对话场景 trigger 的主要派发点与 `$option` 回流实现。
 - `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`：舰队遭遇与通讯对话插件，`BeginFleetEncounter` / `OpenCommLink` 的派发点。

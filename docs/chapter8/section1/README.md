@@ -262,5 +262,4 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 
 - `CombatEngineAPI`：战斗上下文、时间、暂停、界面和结果访问器；
 - `EveryFrameCombatPlugin`：战斗插件的 `advance` 回调；
-- [C8-S2]：战斗对象集合与 `addFloatingText(...)` 观察；
-- [C8-S3]：每帧战斗插件的注册与暂停守卫。
+- `Starsector/starsector-core/starsector.log`：核对状态日志的读取位置。

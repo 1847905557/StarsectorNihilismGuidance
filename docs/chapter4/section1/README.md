@@ -387,5 +387,3 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 - `data/missions/afistfulofcredits/`：原版战役样例 (descriptor.json、mission\_text.txt、icon、`MissionDefinition` 类源文件)。
 - `data/variants/fighters/broadsword_Fighter.variant`：原版战机装配样例；
 - `data/variants/stations/remnant_station2_Standard.variant`：模板敌舰使用的原版空间站装配；
-- `data/missions/GearIn_test/`：本节测试战役目录 (descriptor.json、mission\_text.txt、icon、`MissionDefinition` 类源文件)。
-- `data/variants/GearIn_artizan_combat.variant`：本节从测试战役导出的正式装配。

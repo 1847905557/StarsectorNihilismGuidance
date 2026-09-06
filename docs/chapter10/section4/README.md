@@ -593,7 +593,6 @@ location.spawnFleet(market.getPrimaryEntity(), 0f, 0f, fleet);
 - `data/config/settings.json`：`qualityPerDMod`(0.2)、`officerAIMax`(10)、`maxAIFleetCommanderLevel`(7)、`commanderLevelForOneSkill`(4)/ `commanderLevelForTwoSkills`(6)、`baseCombatShipsPerOfficer`(3)、`maxShipsInAIFleet`(30)。
 - `data/world/factions/default_ship_roles.json`：角色键 (`combatSmall`、`fastAttack`、`freighterSmall` 等)。
 - `data/world/factions/default_fleet_type_names.json`：舰队类型显示名 (`patrolSmall`→"Fast Picket"、`patrolMedium`→"Patrol"、`taskForce`→"Task Force")。
-- `Starsector/mods/GearIndustry/`：示例 MOD 根目录 (构建命令执行位置)。
 - `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证方案的日志核对位置)。
 
 ## 完整最小例

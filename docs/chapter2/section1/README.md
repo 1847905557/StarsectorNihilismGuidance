@@ -170,7 +170,5 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 ## 建议参考项
 
 - `data/hullmods/hull_mods.csv`：船插登记文件 (`script` 列填类名，`id` 列填唯一标识)。
-- `data/scripts/gearin/hullmods/GearInSpeedBooster.java`：本节最小船插效果类。
-- `data.scripts.gearin.hullmods.GearInSpeedBooster`：类的完整名 (注册用)。
 - `Starsector/starsector-core/starsector.log`：游戏运行日志 (验证回调被调用的位置)。
 - `com.fs.starfarer.api.combat.MutableShipStatsAPI`：数值修改入口 (`getMaxSpeed()` 等；本节的 `modifyPercent` 作用于其返回对象)。

@@ -400,8 +400,6 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 ## 建议参考项
 
 - `data/hulls/ship_data.csv`：舰船数据注册表，`id`、性能列与 `tags` 的落点。
-- `data/hulls/GearIn_artizan.ship`：船体几何定义，含贴图引用、碰撞、护盾、槽位与引擎。
-- `graphics/ships/GearIn_artizan.png`：舰船贴图，由 `.ship` 的 `spriteName` 字段指向。
 - `data/config/engine_styles.json`：原版引擎风格的颜色定义。
 - `data/config/hull_styles.json`：原版舰船与护盾样式的颜色定义。
 - `data/shipsystems/ship_systems.csv`：战术系统 ID 注册，`system id` 列的取值来源。

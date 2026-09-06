@@ -14,6 +14,7 @@
 
 ## 前置知识
 
+- [C1-S1] 的 MOD 目录结构；
 - [C4-S1] 的战役目录和 `MissionDefinition`；
 - [C6-S1] 的 Java 17 与编译依赖；
 - Java 包名与目录结构的对应规则。
@@ -77,5 +78,4 @@ C6 之后 Java 源码统一放在 `src/`，运行数据继续放在 `data/`。�
 
 ## 建议参考项
 
-- [C4-S1]：战役数据文件和 `MissionDefinition`；
-- [C1-S1]：MOD 目录结构。
+- `Starsector/starsector-core/starfarer.api.zip`：原版 API 归档，迁移类的包名与完整类名的对照来源。

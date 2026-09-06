@@ -723,7 +723,6 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 - `com.fs.starfarer.api.campaign.FactionDoctrineAPI`：舰队学说运行时接口；
 - `com.fs.starfarer.api.campaign.FactionSpecAPI`：势力 spec 只读接口 (`knownShips`、`hullFrequency` 等)；共享默认角色由引擎内部提供，公开接口不包含对应方法。
 - `data/world/factions/factions.csv`：势力注册表 (按行合并，表头 `faction`)。
-- `data/world/factions/gear_industry.faction`：本节示例势力文件 (完整字段形态)；
 - `data/world/factions/default_ship_roles.json`：共享装配角色表 (跨来源合并读取)；
 - `data/world/factions/hegemony.faction`：原版势力文件结构参考；
 - `data/campaign/econ/economy.json`：`defaultTariff`(取值为 0.3)；

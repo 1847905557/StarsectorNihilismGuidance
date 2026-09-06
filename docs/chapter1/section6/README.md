@@ -309,5 +309,4 @@
 - `data/hullmods/hull_mods.csv`：船插 ID 注册表 (`phasefield`/`delicate`)。
 - `data/weapons/weapon_data.csv`：武器 ID 注册表 (`tpc` 行、`tags`/`hints` 列)。
 - `data/hulls/wing_data.csv`：战机 ID 注册表 (`terminator_wing`)。
-- `data/hulls/GearIn_artizan.ship`、`data/hulls/GearIn_forging.ship`、`data/hulls/GearIn_furnaceman.ship`：本节三个例子修改的文件。
 - 以上均为 MOD 内相对路径。

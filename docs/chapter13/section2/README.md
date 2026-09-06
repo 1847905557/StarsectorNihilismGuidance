@@ -501,7 +501,7 @@ if (!sector.getListenerManager().hasListenerOfClass(
 - `com.fs.starfarer.api.campaign.CampaignEventListener`：公开生涯监听器接口，含 `FleetDespawnReason` 枚举 (6 值)。
 - `com.fs.starfarer.api.campaign.SectorAPI`：通道一注册入口 (`addListener` / `addTransientListener` / `addListenerWithTimeout` / `removeListener` / `getAllListeners`) 与 `getListenerManager()`。
 - `com.fs.starfarer.api.campaign.BaseCampaignEventListener`：全方法空实现基类；`permaRegister` 构造器与 `reRegister(daysToKeep)`。
-- `com.fs.starfarer.api.campaign.BaseCampaignEventListenerAndScript`：监听器与 `EveryFrameScript` 绑定在同一对象的基类 (原版 `CoreScript` 同形态)。
+- `com.fs.starfarer.api.campaign.BaseCampaignEventListenerAndScript`：监听器与 `EveryFrameScript` 绑定在同一对象的基类，与 `CoreScript` 同形态。
 - `com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI`：通道二类型化仓库。
 - `com.fs.starfarer.api.campaign.listeners.ListenerUtil`：类型化事件派发静态方法族 (按 `getListeners(X.class)` 遍历)。
 - `com.fs.starfarer.api.campaign.listeners.CurrentLocationChangedListener`：本节类型化监听器接口 (单方法)。

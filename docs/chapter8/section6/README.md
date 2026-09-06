@@ -312,11 +312,6 @@ public class GearInDamageDealtModifier implements DamageDealtModifier {
 
 ## 建议参考项
 
-- [C8-S1]：战斗引擎状态；
-- [C8-S2]：战斗对象读取；
-- [C8-S3]：每帧战斗插件注册与清理；
-- [C8-S4]：`MutableStat`、Dynamic 与 modifier ID；
-- [C7-S5]：日志记录；
 - `CombatListenerManagerAPI`：监听器增删查；
 - `CombatListenerUtil`：伤害与结构伤害事件派发；
 - `FleetMemberDeploymentListener`、`DamageListener`、`DamageDealtModifier`、`DamageTakenModifier`、`HullDamageAboutToBeTakenListener`、`AdvanceableListener`、`WeaponRangeModifier`、`WeaponBaseRangeModifier`、`WeaponOPCostModifier`、`FighterOPCostModifier`。

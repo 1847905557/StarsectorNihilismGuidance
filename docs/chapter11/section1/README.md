@@ -119,7 +119,6 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 ## 建议参考项
 
 - `data/campaign/commodities.csv`：商品注册表；
-- `data/world/factions/gear_industry.faction`：势力违禁商品入口；
 - `data/strings/descriptions.csv` 的 `RESOURCE`：商品货舱描述；
 - Console Commands 的 `additem`：快速创建货舱验证状态。
 

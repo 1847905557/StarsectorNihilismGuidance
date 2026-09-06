@@ -567,7 +567,6 @@ BarEventManager.getInstance().notifyWasInteractedWith(this);
 - `data/config/settings.json`：`minBarEvents` / `maxBarEvents` / `barEventProbOneMore` / `maxTotalBarEventsAsFractionOfEventTypes`。
 - `data/campaign/rules.csv`：`marketVisitBar` / `bar_optionSel` / `AddBarEvents` 分类规则 / `BarCMD returnFromEvent false`。
 - `data/campaign/econ/corvus.json`：`jangala` 市场实体 (验证临时选项片段用)。
-- `data/scripts/gearin/campaign`：本节两个示例类的包目录。
 - `Starsector/starsector-core/starsector.log`：按总结中的顺序核对流程日志的主要依据。
 
 ## 完整最小例

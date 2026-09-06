@@ -156,5 +156,4 @@ public final class GearInI18n {
 
 - `data/strings/strings.json`：本节示例的分类和键；
 - `com.fs.starfarer.api.SettingsAPI.getString(String category, String id)`：双参取值入口；
-- `data.scripts.gearin.campaign.GearInI18n`：本节示例封装类；
 - `descriptions.csv`：对象风味文本的独立数据入口。

@@ -134,7 +134,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ## 建议参考项
 
-- `data/hulls/ship_data.csv`(原版蓝本，本 MOD 同路径)：舰船数据表，相位舰行需填写 `PHASE`/`phasecloak` 与相位幅能字段。
-- `data/shipsystems/phasecloak.system`(原版)：相位系统定义，`phaseHighlight`/`phaseDiffuse` 提供光效后缀 (`_glow1`/`_glow2`)。
+- `data/hulls/ship_data.csv`：舰船数据表，相位舰行需填写 `PHASE`/`phasecloak` 与相位幅能字段。
+- `data/shipsystems/phasecloak.system`：相位系统定义，`phaseHighlight`/`phaseDiffuse` 提供光效后缀 (`_glow1`/`_glow2`)。
 - `Starsector/starsector-core/starsector.log`：游戏日志，排查加载错误与最终 ID 报错。
 - `Starsector/mods/Console Commands/data/console/commands.csv`：`Addship` 控制台命令条目。

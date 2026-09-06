@@ -518,7 +518,6 @@ stats.getMaxSpeed().modifyFlat(id, 5f);
 - `com.fs.starfarer.api.combat.ShipHullSpecAPI`：船体 spec，`getFluxCapacity`/`getFluxDissipation` 是幅能基值来源，嵌套 `EngineSpecAPI`。
 - `com.fs.starfarer.api.impl.combat.CRPluginImpl`：`cr_effect` / `crew skill bonus` / `crew understrength` 保留 ID 的引擎写入方。
 - `com.fs.starfarer.api.impl.campaign.skills.GunneryImplants` 与 `com.fs.starfarer.api.impl.campaign.skills.CrewTraining`：本节演示使用的原版技能效果类。
-- `data/scripts/gearin/campaign`：本节四个演示类 (`GearInVariantToStats`、`GearInCaptainToMember`、`GearInCommanderToMember`、`GearInStatsRebuild`) 所在的 MOD 源码包。
 - `data/config/settings.json`：`fluxPerCapacitor:200`、`dissipationPerVent:10` 的出处。
 - `data/hulls/ship_data.csv` 与 `data/variants/wolf/wolf_Assault.variant`：演示基线数据 (wolf 的 `max flux`/ `flux dissipation`/`max speed`；`fluxCapacitors:9`/`fluxVents:10`)。
 

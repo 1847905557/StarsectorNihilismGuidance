@@ -372,8 +372,6 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ## 建议参考项
 
-- [C2-S4] 的命中效果和光束效果基础；
-- [C8-S3] 的战斗插件注册与暂停语义；
-- [C8-S2] 的战斗实体、弹体、导弹和光束遍历；
-- [C8-S7] 的分层渲染效果；
-- `EveryFrameWeaponEffectPlugin`、`OnFireEffectPlugin`、`OnHitEffectPlugin` 与 `BeamEffectPlugin` API。
+- `EveryFrameWeaponEffectPlugin`、`OnFireEffectPlugin`、`OnHitEffectPlugin` 与 `BeamEffectPlugin` API；
+- `data/weapons/`：原版武器与弹体定义，`everyFrameEffect`、`beamEffect`、`onFireEffect`、`onHitEffect` 注册字段的原版实例；
+- `Starsector/starsector-core/starsector.log`：核对回调日志的读取位置。

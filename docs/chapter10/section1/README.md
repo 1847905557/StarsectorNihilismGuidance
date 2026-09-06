@@ -430,7 +430,6 @@ sector.addScript(new GearInSectorClockScript());
 - `com.fs.starfarer.api.EveryFrameScript`：生涯按帧脚本接口：`isDone` / `runWhilePaused` / `advance` 三方法约定。
 - `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：带 `cleanup()` 的脚本接口；引擎从不调用 `cleanup()`。
 - `com.fs.starfarer.api.Global`：`getSector()` / `getLogger()` 全局入口。
-- `data.scripts.gearin.campaign.GearInSectorClockScript`：本节示例类 (完整源码)。
 - `data/config/settings.json`：`campaignSpeedupMult` 等生涯设置 (加速倍数)。
 
 ## 完整最小例

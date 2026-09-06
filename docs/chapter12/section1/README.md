@@ -631,7 +631,7 @@ sector.getImportantPeople().addPerson(person);
 - `com.fs.starfarer.api.impl.campaign.OfficerLevelupPluginImpl`：`officerLevelUp` 插件实现 (XP 阈值、每级候选)。
 - `com.fs.starfarer.api.plugins.OfficerLevelupPlugin`：军官升级插件接口。
 - `com.fs.starfarer.api.util.Misc`：`isMercenary`(读 memory `$isMercenary`)。
-- `data/characters/personalities.csv`：personality 注册表 (原版 id 与任务权重列)。
+- `data/characters/personalities.csv`：personality 注册表，含 id 与任务权重列。
 - `data/characters/person_names.csv`：姓名池 (usage `f`/`l`、category)。
 - `data/world/factions/default_ranks.json`：rank/post 显示名的默认来源 (`spaceCommander` / `fleetCommander`)。
 - `data/world/factions/hegemony.faction`：`ranks` 段覆写与 `voices` 声音池 (`LOW` / `MEDIUM` / `HIGH`)。

@@ -179,7 +179,8 @@ anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 
 ## 建议参考项
 
-- `data/config/custom_entities.json`：自定义生涯实体类型；
 - `CustomEntitySpecAPI`：运行期实体 spec 字段；
 - `LocationAPI.addCustomEntity`：投放入口；
-- [C3-S5]：CUSTOM 描述挂接。
+- `data/config/custom_entities.json`：生涯实体类型；
+- `data/strings/descriptions.csv`：CUSTOM 行格式的对照依据；
+- `graphics/icons/relay.png`、`graphics/ships/com_relay.png`：本节复用的原版图标与精灵。

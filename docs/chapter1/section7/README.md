@@ -206,5 +206,4 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 ## 建议参考项
 
-- `data/strings/descriptions.csv`(MOD 内相对路径)：描述文本注册入口，路径即注册、无需额外声明。
-- `Starsector/starsector-core/data/strings/descriptions.csv`(原版路径)：仅观察不修改。
+- `data/strings/descriptions.csv`：原版仅观察不修改。描述文本注册入口，路径即注册、无需额外声明。

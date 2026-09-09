@@ -73,26 +73,6 @@ gl_FragColor = vec4(u_color.rgb, ring * u_color.a);
 
 画面出现的是窄环而非实心圆。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```glsl
-float radius = u_time * 0.35;
-```
-
-实际症状：扫描环只出现一次，约两秒后永久离开四边形。
-
-原因：半径持续增长，没有回到 0–0.5 的有效 UV 范围。
-
-下面是**局部修正片段**：
-
-```glsl
-float radius = fract(u_time * 0.35) * 0.5;
-```
-
-复验：观察十秒，确认扫描环至少完成三次循环。
-
 ## 完整最小例
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
@@ -417,6 +397,8 @@ void main() {
 :::
 
 ## 验证方案
+
+前置数据：启用中的 GearIn MOD 已包含本节 `GearIn_basic_shader` 两个 shader 文件和 `GearInBasicShaderRenderer`，战斗接线能创建该渲染器。
 
 1. 编译 Java fixture 并验证两个 shader 文件。
 2. 进入战斗，让渲染器跟随玩家舰运行 10 秒，记录至少 3 次扫描循环。

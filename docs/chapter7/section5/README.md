@@ -130,7 +130,11 @@ public class GearInLogWriter {
 3. 启动游戏并打开 `Starsector/starsector-core/starsector.log`，搜索 `GearIn` 和测试对象 ID。
 4. 对照日志级别、阶段、对象 ID、消息内容和异常堆栈。
 
-预期结果：三种级别均写入稳定前缀、阶段和对象 ID；`error` 行后保留异常类型与堆栈；日志搜索可以定位到调用阶段和对象。
+预期结果：
+
+- 三种级别均写入稳定前缀、阶段和对象 ID；
+- `error` 行后保留异常类型与堆栈；
+- 日志搜索可以定位到调用阶段和对象。
 
 ## 故障分析
 

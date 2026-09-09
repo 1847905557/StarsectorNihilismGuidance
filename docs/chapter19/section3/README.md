@@ -108,31 +108,6 @@ try {
 
 固定类型和 `RANDOM` 照常进入配置读取，未知类型在玩家放置前返回明确错误。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-ExerelinCorvusLocations.SpawnPointEntry entry =
-        ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
-return entry.entityId;
-```
-
-实际症状：随机星区新档在创建阶段抛出空指针，或后续定位不到 `GearIn_prime`。
-
-原因：随机星区没有 Corvus 固定实体，代码没有先判断模式。
-
-下面是**局部修正片段**：
-
-```java
-String spawnEntityId = planner.chooseSpawn(factionId);
-if (spawnEntityId == null) {
-    throw new IllegalStateException("No GearIn start market was generated");
-}
-```
-
-复验：分别创建一个 Corvus 新档和一个随机星区新档，记录返回实体 ID；前者应为 CSV 中的固定 ID，后者应属于当前随机星区的 GearIn 市场。
-
 ## 完整最小例
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
@@ -187,6 +162,8 @@ public final class GearInNexStartPlanner {
 :::
 
 ## 验证方案
+
+前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含 [C19-S2] 的势力接入结果、本节 `corvus_spawnpoints.csv` 登记行和 `GearInNexStartPlanner`。
 
 1. 构建示例 MOD，确认 `MarketAPI`、`NexUtilsFaction` 与开局配置方法签名匹配。
 2. 创建 Corvus 新档，记录出生实体 ID 和起始舰队变体列表。

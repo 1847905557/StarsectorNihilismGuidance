@@ -87,30 +87,6 @@ if (!listeners.hasListenerOfClass(GearInInvasionReporter.class)) {
 | `reportInvasionFinished` | 入侵整体结束 | 市场 ID、胜负结果 |
 | `reportMarketTransfered` | 市场所有权转移 | 市场 ID、新所有者 |
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-public class GearInSpecialForcesNamer {
-    public GearInSpecialForcesNamer(String prefix) {}
-}
-```
-
-实际症状：特遣队照常生成，但名称变为 "error"，日志出现类实例化失败。
-
-原因：配置加载要求公开无参构造，并且类必须实现 `SpecialForcesNamer`；带参数构造器无法由脚本类加载器直接创建。
-
-下面是**局部修正片段**：
-
-```java
-public class GearInSpecialForcesNamer implements SpecialForcesNamer {
-    public GearInSpecialForcesNamer() {}
-}
-```
-
-复验：重启游戏后生成一支 GearIn 特遣队，确认名称包含 `Forgeguard`，并在日志中看到监听器只注册一次。
-
 ## 完整最小例
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
@@ -238,6 +214,8 @@ public class GearInSpecialForcesNamer implements SpecialForcesNamer {
 :::
 
 ## 验证方案
+
+前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含本节 `gear_industry.json` 的 `specialForcesNamerClass` 登记、`GearInSpecialForcesNamer` 和 `GearInInvasionReporter`，并存在可重载的 GearIn 生涯存档。
 
 1. 构建示例 MOD，确认命名器和监听器都能编译。
 2. 在生涯初始化阶段调用 `GearInInvasionReporter.register()`，并在读档后的初始化入口再次调用。

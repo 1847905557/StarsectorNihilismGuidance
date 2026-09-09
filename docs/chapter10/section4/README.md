@@ -18,7 +18,7 @@
 
 ## 前置知识
 
-- [C10-S2] 的地点容器和 `StarSystemAPI` 查询；
+- [C10-S2] 的地点和 `StarSystemAPI` 查询；
 - [C10-S1] 的 `SectorAPI.getEntityById()` 全局查询；
 - [C7-S1] 的生涯入口与日志读取；
 - 理解实体 ID 必须在存档内稳定且唯一。
@@ -216,11 +216,20 @@ public class GearInEntityPlacement implements EveryFrameScript {
 
 ## 验证方案
 
+前置数据：[C10-S2] 的地点生成示例已就绪，包含本节实体配置示例的 GearIn MOD 已构建并启用。
+
 1. 使用地点生成示例建立 `GearIn_entity_system`，再启用实体配置示例。
 2. 在地图中确认 `GearIn_entity_beacon` 的名称、势力颜色和轨道位置。
 3. 搜索 `GearIn entity`，核对地点 ID、全局查询同一性、tag、memory、plugin 和传感器值。
 4. 在实体附近和远离实体的位置分别读取 `visible` 与 `VisibilityLevel`。
 5. 暂时把实体改为固定坐标，再改回轨道，确认 `setFixedLocation` 清除 orbit，轨道调用重新建立 orbit。
+
+预期结果：
+
+- 地图中 `GearIn_entity_beacon` 的名称、势力颜色和轨道位置与配置一致；
+- 日志出现 `GearIn entity`，地点 ID、全局查询同一性、tag、memory、plugin 和传感器值与配置一致；
+- 实体附近与远离实体处的 `visible` 与 `VisibilityLevel` 读数不同；
+- `setFixedLocation` 清除 orbit，轨道调用重新建立 orbit。
 
 ## 故障分析
 

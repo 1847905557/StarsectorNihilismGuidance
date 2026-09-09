@@ -102,27 +102,6 @@ boolean beamReady = EntityShadingDataManager.haveBeamIlluminantData(weaponId);
 
 缺少数据时，跳过光源并给出具体 ID。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-LinearLight light = new LinearLight();
-light.setLength(0f);
-```
-
-实际症状：光束视觉存在，但船体完全没有沿线照明。
-
-原因：线光长度为 0，照明体退化为无有效范围。
-
-下面是**局部修正片段**：
-
-```java
-light.setLength(beam.getLength());
-```
-
-复验：让光束横跨一艘大型舰，分别记录长度为 0 和 240 su 时的照明范围，确认沿线亮度只在修正后出现。
-
 ## 完整最小例
 
 工厂返回 5 个已经配置位置、颜色、强度和 1 秒寿命的 `BaseIlluminantData`；调用方逐项入队。探针只回答注册状态，不创建 GPU 对象。
@@ -216,7 +195,6 @@ public final class GearInShadingProbe {
 3. 让弹体点光经过船体，观察 180 su 衰减范围；让 240 su 线光横跨大型舰。
 4. 改变传入 `facing`，确认聚光和无限光方向同步变化。
 5. 移除舰船 normal 材质注册并重启，比较光源存在时的船体响应。
-6. 把线光长度改为 0 复现故障，再恢复 240 su。
 
 预期结果：
 

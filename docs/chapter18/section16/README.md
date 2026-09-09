@@ -115,30 +115,6 @@ return CombatRenderingManager.removeEntity(entity);
 
 实体不再出现在管理器中；重复 `removeEntity()` 仍返回 `true`，但不会重复归还。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-for (InstanceDataAPI data : instances) {
-    entity.submitInstanceData();
-}
-```
-
-实际症状：1000 个实例可以显示，但帧时间明显抖动，提交次数随实例数线性增长。
-
-原因：完整实例缓冲在循环内重复上传了 1000 次。
-
-下面是**局部修正片段**：
-
-```java
-entity.setInstanceData(instances);
-entity.setInstanceDataRefreshAllFromCurrentIndex();
-entity.submitInstanceData();
-```
-
-复验：统计 `submitInstanceData()` 调用，确认首次批次只执行 1 次，而非 1000 次；后续 100 项局部修改再执行 1 次区间提交。
-
 ## 完整最小例
 
 池只管理 Java 实例对象，批次类管理它们与 `SpriteEntity` 的所有权转换。`release()` 只能在实体不再被渲染线程读取后调用。
@@ -234,7 +210,6 @@ public final class GearInThousandInstanceBatch {
 4. 通过 `removeAndRelease()` 移除实体，再次调用移除入口，确认第二次仍返回 `true`。
 5. 再次提交 1000 项，统计新建 `Instance2Data` 数量应为 0。
 6. 连续执行 10 轮提交、移除和归还，记录每轮池容量与上传次数。
-7. 把 `submitInstanceData()` 放入实例循环复现故障，再恢复单次提交。
 
 预期结果：
 
@@ -243,7 +218,6 @@ public final class GearInThousandInstanceBatch {
 - 实体移除后 1000 项全部重置并进入池，客户端实例列表清空；
 - 管理器重复移除不会重复归还实例，`delete()` 重复调用不会产生二次清理错误；
 - 第二轮不创建新的 `Instance2Data`，10 轮后池容量仍稳定为 1000；
-- 循环内提交的故障会产生 1000 次上传，修正后恢复为每批 1 次；
 - 战斗没有未处理异常。
 
 ## 故障分析

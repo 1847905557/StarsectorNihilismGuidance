@@ -111,28 +111,6 @@ if (result != BoxEnum.STATE_SUCCESS) box.delete();
 
 日志出现返回码，战斗继续运行。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-box.setInstanceData(instances);
-CombatRenderingManager.addEntity(box);
-```
-
-实际症状：实体成功入队，日志也没有异常，画面却完全空白。
-
-原因：实例只留在 CPU 集合，缺少 submit 与 renderingCount。(新建实体时 `submitInstanceData()` 内部会自动全量 refresh，显式 refresh 不是必需步骤。)
-
-下面是**局部修正片段**：
-
-```java
-box.submitInstanceData();
-box.setRenderingCount(instances.size());
-```
-
-复验：先记录日志中的 `instances=32`，再恢复两步提交进入战斗，确认 32 份实例同时出现。
-
 ## 完整最小例
 
 接线插件每 2 秒调用一次生成器。生成器只创建一项 `SpriteEntity`，32 份粒子都通过同一实例列表提交；原版降级分支不创建 BoxUtil 资源。
@@ -321,17 +299,13 @@ public class GearInBoxSpawner {
 1. 进入战斗并等待 2 秒，搜索 `GearIn box` 日志，核对 `instances=32`。
 2. 暂停战斗，确认生成计时停止；恢复后等待下一组出现。
 3. 观察 32 份粒子分布在 50、68、86、104 su 四档半径，并继承生成瞬间的玩家舰速度。
-4. 临时移除 `submitInstanceData()`，确认实体入队但画面缺少实例；恢复完整提交链复验。
-5. 关闭 BoxUtil shader，重启战斗并确认日志进入原版平滑粒子分支。
-6. 分别保持默认同步设置和兼容设置，核对 `GearIn box sync` 日志与 `ShaderCore.isValid()` 结果。
-7. 制造入队失败条件时，核对返回码警告和 `delete()` 清理路径。
+4. 关闭 BoxUtil shader，重启战斗并确认日志进入原版平滑粒子分支。
+5. 分别保持默认同步设置和兼容设置，核对 `GearIn box sync` 日志与 `ShaderCore.isValid()` 结果。
 
 预期结果：
 
 - BoxUtil 可用时，每次生成只入队 1 个实体，但 `renderingCount` 为 32；
 - 32 份实例的位置、速度、颜色、缩放和三段寿命均已写入并提交；
-- 缺少提交或绘制数量中的任一步时，验证能稳定复现空白或数量错误。新建实体时省略显式刷新不会空白；
-- 入队失败时实体立即删除，不继续由调用侧推进；
 - shader 不可用时只生成原版粒子，战斗没有未处理异常。
 - 同步兼容设置只改变 BoxUtil 同步路径；能力不可用时仍进入原版粒子降级。
 

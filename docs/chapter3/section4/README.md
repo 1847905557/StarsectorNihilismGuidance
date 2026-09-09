@@ -81,7 +81,7 @@ prime.setMarket(market);
 prime.setFaction("gear_industry");
 ```
 
-GearIn Prime 可以打开公开市场和仓储，交易界面显示原版商品。完整市场配置与自定义商品由 [C12-S1] 和 [C12-S2] 继续讲解。
+GearIn Prime 可以打开公开市场和仓储，交易界面显示原版商品。完整市场配置与自定义商品由 [C12-S1] 和 [C12-S3] 继续讲解。
 
 ### 补齐超空间入口
 
@@ -94,30 +94,6 @@ system.autogenerateHyperspaceJumpPoints(true, true);
 ```
 
 从超空间进入 GearIn 星系，跳跃点与 GearIn Prime 的关联可见。
-
-## 排查星系生成故障
-
-下面是**局部故障片段**：
-
-```java
-JumpPointAPI jump = Global.getFactory().createJumpPoint("GearIn_jump", "GearIn 跳跃点");
-jump.setCircularOrbit(star, 300, 1800, 100);
-// 遗漏 system.addEntity(jump)
-system.autogenerateHyperspaceJumpPoints(true, true);
-```
-
-实际症状：生成器没有异常，但星系内找不到手动跳跃点，玩家无法通过预期入口观察关联行星。
-
-原因：工厂创建的跳跃点尚未进入星系实体集合，自动生成阶段不会处理它。
-
-下面是**局部修正片段**：
-
-```java
-system.addEntity(jump);
-system.autogenerateHyperspaceJumpPoints(true, true);
-```
-
-复验：删除旧存档创建新档，从超空间进入 GearIn，确认跳跃点和通讯中继都存在。
 
 ::: details 完整成品：GearInModPlugin
 
@@ -226,6 +202,8 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 :::
 
 ## 验证方案
+
+前置数据：已启用包含 [C3-S3] 入口类和本节 `GearInSystemGenerator` 的 GearIn MOD。
 
 1. 确认 `mod_info.json` 的 `modPlugin` 仍指向 `data.scripts.gearin.GearInModPlugin`，创建新档。
 2. 在星图中定位 GearIn，进入星系并观察恒星、GearIn Prime、通讯中继和跳跃点。

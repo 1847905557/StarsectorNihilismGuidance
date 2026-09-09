@@ -95,30 +95,9 @@ SpriteAPI normalSprite = TextureData.autoGenNormalMap(
 
 切换设置后，首个使用点的日志和首帧耗时发生可观察变化，纹理条目仍能被 [C17-S5] 报告器查询。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-TextureEntry normal = TextureData.getTextureData(
-        hullId, TextureDataType.NORMAL_MAP, ObjectType.SHIP, 0);
-```
-
-实际症状：舰船有 material 贴图，灯光却没有法线方向变化。
-
-原因：普通查询只读取已登记条目，不会替缺失的 normal map 自动生成资源。
-
-下面是**局部修正片段**：
-
-```java
-TextureEntry normal = TextureData.getTextureDataWithAutoGen(
-        hullId, TextureDataType.NORMAL_MAP, ObjectType.SHIP, 0,
-        ship, true);
-```
-
-复验：重新进入战斗，核对 `normal` 条目和舰船受光方向；如果条目为空 (`sprite == null`)，检查原始 sprite 路径和自动生成开关。
-
 ## 验证方案
+
+前置数据：[C17-S5] 的 GraphicsLib 初始化、灯光接线与 `GearInLightReporter` 报告类已就绪，本节的纹理登记代码已随启用的 GearIn MOD 加载，并已准备完整三图舰船与缺少 normal map 的舰船各一艘。
 
 1. 保持 [C17-S5] 的 `GearInLightReporter`，记录同一 hull ID 的 material、normal 和 surface 查询结果。
 2. 对完整三图舰船使用普通查询，确认三类条目都可取得。

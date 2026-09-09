@@ -23,7 +23,7 @@
 - [C7-S2] 的 `Global.getFactory()` 创建入口与阶段语义；
 - [C10-S1] 的生涯脚本注册与一次性判断；
 - [C10-S3] 的舰队成员、舰长、旗舰与 `FleetDataAPI`；
-- [C12-S3] 的市场人物、通信目录与 `MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`。
+- [C12-S1] 的市场人物、通信目录与 `MarketAPI.addPerson` / `removePerson` / `getPeopleCopy`。
 
 ## 术语
 
@@ -490,58 +490,30 @@ gradle jar
 
 产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类 (可用 `jar tf` 核对)。
 
+完整日志样例如下 (占位字段以实际日志为准)：
+
+```text
+GearIn person lesson start: members=<N> playerFaction=player playerPerson=<玩家名> GearIn person lesson flagship: name=<旗舰船名> captainIsPlayerPerson=true GearIn person lesson members: added wolf=<船名> hammerhead=<船名> count=<N+2> GearIn person lesson personA defaults: id=p_<uid> personality=steady name='' rankId=spaceCommander postId=fleetCommander faction=neutral portraitIsDefault=true importance=MEDIUM GearIn person lesson personA identity: name=Aster Vance female=true rank=Commander post=Fleet Commander personality=reckless faction=hegemony voice=<soldier|official|aristo 之一> GearIn person lesson tagsMemory: hasTag=true tags=1 memory=42 GearIn person lesson relToPlayer default: rel=0.00 level=NEUTRAL hostile=false GearIn person lesson relToPlayer adjust: rel=0.30 level=WELCOMING GearIn person lesson relToPlayer cooperative: rel=0.75 level=COOPERATIVE GearIn person lesson relToPlayer hostile: rel=-0.50 level=HOSTILE hostile=true GearIn person lesson relToPlayer reset: rel=0.00 level=NEUTRAL GearIn person lesson market: id=jangala inAfterAdd=true personMarketLinked=true inAfterRemove=false GearIn person lesson importantPeople: containsAfterAdd=true dataLinked=true containsAfterRemove=false GearIn person lesson captain default: personality=steady name='' level=1 GearIn person lesson captain set: sameCaptain=true memberWithCaptainFound=true GearIn person lesson personB random: name=<随机名> female=<true|false> faction=hegemony personality=steady portraitIsDefault=false GearIn person lesson officer add: count=<M+1> fleetLinked=true GearIn person lesson officer xp: xp=<X> -> <X+100000> canLevelUp=true picks=4 GearIn person lesson officer levelUp: level=2 skill=<技能id> skillLevel=1.0 GearIn person lesson officer captain: sameCaptain=true memberWithCaptainFound=true officerInRoster=true GearIn person lesson officer remove: count=<M> fleetLinked=true GearIn person lesson factionRel start: original=<O> normalized=0.00 level=NEUTRAL GearIn person lesson factionRel adjust: value=0.15 level=FAVORABLE GearIn person lesson factionRel cap: value=1.00 level=COOPERATIVE changed=true GearIn person lesson factionRel hostile: value=-0.50 level=HOSTILE hostileTo=true GearIn person lesson factionRel vengefulCap: value=-0.70 level=HOSTILE GearIn person lesson factionRel ensure: value=0.25 level=WELCOMING ensured=true GearIn person lesson factionRel restore: value=<O> level=<原档位> GearIn person lesson done: members=<N> (initial <N>)
+```
+
+其中 `<N>` 是初始成员数、`<M>` 是初始军官数、`<O>` 是存档里 hegemony 对 tritachyon 的关系原值、`<X>` 是人物 B 初始 XP(新档为 0)，均以实际日志为准；`voice` 是 hegemony `HIGH` 声音池三选一；`picks=4` 是新档典型值 (以实际日志为准，≥1)；`skill` 是重掷后的第一个军官技能候选。关系序列各行的数值/档位是**确定性**的：`0.15→FAVORABLE`、`1.00→COOPERATIVE changed=true`、`-0.50→HOSTILE hostileTo=true`、`-0.70 档位仍 HOSTILE`、`0.25→WELCOMING ensured=true`、`restore` 与原值一致。演示只执行一次，之后无任何 `GearIn person lesson` 日志。
+
 演示链已经落地，下面按步骤编译、进档并核对日志与界面。
-
-## 关键故障实验：人物创建成功但任务和通信找不到他
-
-人物只保存在局部变量，没有加入重要人物或市场目录。
-
-**局部故障片段：**
-
-```java
-// 故障片段
-PersonAPI person = Global.getFactory().createPerson();
-```
-
-**局部修正片段：**
-
-```java
-// 修正片段
-market.addPerson(person);
-market.getCommDirectory().addPerson(person);
-sector.getImportantPeople().addPerson(person);
-```
-
-实际症状：同一会话内局部变量可用，读档后人物消失；只加入市场 roster 时，通信目录仍看不到联系人。
-
-原因：人物只随持久集合保存，通信目录又是独立于市场 roster 的可见联系人集合。
-
-复验：保存并读档后，市场 `getPeopleCopy()`、通信目录和 important people 均应命中同一人物 ID；清理时按相反顺序移除三个归属。
 
 ## 验证方案
 
 前置数据：`gear_in` MOD 布局与插件生命周期类 ([C6-S1] / [C7-S1]，含本节调用点片段)、本节 8 个类、生涯时钟脚本 (非必需)。
 
 1. 游戏构建：在 `mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
-2. 新建生涯：确认 `starsector.log` 按顺序出现全部 `GearIn person lesson` 日志行：
-    - 含 `start` / `flagship` / `members` / `personA defaults` / `personA identity` / `tagsMemory` / 五条 `relToPlayer` / `market` / `importantPeople`。
-    - 含 `captain default` / `captain set` / `personB random` / `officer add` / `officer xp` / `officer levelUp` / `officer captain` / `officer remove` / 七条 `factionRel` / `done`。
-    - 关键核对：`captainIsPlayerPerson=true`、`personA defaults` 六项默认值、`rank=Commander`、`post=Fleet Commander`、`relToPlayer` 五步 0.00→0.30→0.75→-0.50→0.00。
-    - `factionRel` 序列 0.00→0.15→1.00→-0.50→-0.70→0.25→原值、`done` 行成员数与 `start` 一致。
-    - 观察完整日志序列与数值变化。
+2. 新建生涯：确认 `starsector.log` 按顺序出现全部 `GearIn person lesson` 日志行，含 `start` / `flagship` / `members` / `personA defaults` / `personA identity` / `tagsMemory` / 五条 `relToPlayer` / `market` / `importantPeople` / `captain default` / `captain set` / `personB random` / `officer add` / `officer xp` / `officer levelUp` / `officer captain` / `officer remove` / 七条 `factionRel` / `done`。
 3. 界面核对：演示日志出现时打开舰队界面 (F 键)，确认多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
 4. 只执行一次：等待若干游戏日后日志无新增 `GearIn person lesson` 行；保存并读档后仍无新增 (`REGISTER_MARK` 门已关)；读档后势力关系面板中 hegemony 与 tritachyon 的数值与演示前一致 (同帧回滚)。
 
 预期结果：
 
 - **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInPersonScript.class` 等 8 个类。
-- **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现。
-
-    ```text
-    GearIn person lesson start: members=<N> playerFaction=player playerPerson=<玩家名> GearIn person lesson flagship: name=<旗舰船名> captainIsPlayerPerson=true GearIn person lesson members: added wolf=<船名> hammerhead=<船名> count=<N+2> GearIn person lesson personA defaults: id=p_<uid> personality=steady name='' rankId=spaceCommander postId=fleetCommander faction=neutral portraitIsDefault=true importance=MEDIUM GearIn person lesson personA identity: name=Aster Vance female=true rank=Commander post=Fleet Commander personality=reckless faction=hegemony voice=<soldier|official|aristo 之一> GearIn person lesson tagsMemory: hasTag=true tags=1 memory=42 GearIn person lesson relToPlayer default: rel=0.00 level=NEUTRAL hostile=false GearIn person lesson relToPlayer adjust: rel=0.30 level=WELCOMING GearIn person lesson relToPlayer cooperative: rel=0.75 level=COOPERATIVE GearIn person lesson relToPlayer hostile: rel=-0.50 level=HOSTILE hostile=true GearIn person lesson relToPlayer reset: rel=0.00 level=NEUTRAL GearIn person lesson market: id=jangala inAfterAdd=true personMarketLinked=true inAfterRemove=false GearIn person lesson importantPeople: containsAfterAdd=true dataLinked=true containsAfterRemove=false GearIn person lesson captain default: personality=steady name='' level=1 GearIn person lesson captain set: sameCaptain=true memberWithCaptainFound=true GearIn person lesson personB random: name=<随机名> female=<true|false> faction=hegemony personality=steady portraitIsDefault=false GearIn person lesson officer add: count=<M+1> fleetLinked=true GearIn person lesson officer xp: xp=<X> -> <X+100000> canLevelUp=true picks=4 GearIn person lesson officer levelUp: level=2 skill=<技能id> skillLevel=1.0 GearIn person lesson officer captain: sameCaptain=true memberWithCaptainFound=true officerInRoster=true GearIn person lesson officer remove: count=<M> fleetLinked=true GearIn person lesson factionRel start: original=<O> normalized=0.00 level=NEUTRAL GearIn person lesson factionRel adjust: value=0.15 level=FAVORABLE GearIn person lesson factionRel cap: value=1.00 level=COOPERATIVE changed=true GearIn person lesson factionRel hostile: value=-0.50 level=HOSTILE hostileTo=true GearIn person lesson factionRel vengefulCap: value=-0.70 level=HOSTILE GearIn person lesson factionRel ensure: value=0.25 level=WELCOMING ensured=true GearIn person lesson factionRel restore: value=<O> level=<原档位> GearIn person lesson done: members=<N> (initial <N>)
-    ```
-
-    其中 `<N>` 是初始成员数、`<M>` 是初始军官数、`<O>` 是存档里 hegemony 对 tritachyon 的关系原值、`<X>` 是人物 B 初始 XP(新档为 0)，均以实际日志为准；`voice` 是 hegemony `HIGH` 声音池三选一；`picks=4` 是新档典型值 (以日志为准，≥1)；`skill` 是重掷后的第一个军官技能候选。关系序列各行的数值/档位是**确定性**的：`0.15→FAVORABLE`、`1.00→COOPERATIVE changed=true`、`-0.50→HOSTILE hostileTo=true`、`-0.70 档位仍 HOSTILE`、`0.25→WELCOMING ensured=true`、`restore` 与原值一致。演示只执行一次，之后无任何 `GearIn person lesson` 日志。
+- **新建生涯 (首次进入存档后第一帧)**：`starsector.log` 依次出现全部 `GearIn person lesson` 行，关键值为 `captainIsPlayerPerson=true`、`personA defaults` 六项默认值、`rank=Commander`、`post=Fleet Commander`、`relToPlayer` 五步 0.00→0.30→0.75→-0.50→0.00、`factionRel` 序列 0.00→0.15→1.00→-0.50→-0.70→0.25→原值，`done` 行成员数与 `start` 一致。
+- **关系序列确定性**：`0.15→FAVORABLE`、`1.00→COOPERATIVE changed=true`、`-0.50→HOSTILE hostileTo=true`、`-0.70 档位仍 HOSTILE`、`0.25→WELCOMING ensured=true`、`restore` 与原值一致；`<N>`、`<M>`、`<O>`、`<X>`、`voice`、`picks`、`skill` 以实际日志为准。
 - **游戏内舰队界面 (F 键)**：演示期间 (日志可见时) 舰队界面多出 `wolf_Assault` 与 `hammerhead_Elite` 两艘船；演示结束后界面恢复初始构成。
 - **读档**：不出现任何 `GearIn person lesson` 日志 (`REGISTER_MARK` 门已关、脚本不再注册)；玩家舰队与演示前一致；`hegemony` 与 `tritachyon` 的关系面板数值与演示前一致 (同帧回滚生效)。
 - **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。

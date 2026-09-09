@@ -96,6 +96,10 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 tag 也作了与 `工匠-级` 相似的处理。
 
+战斗中的战机投放与返航表现如下。
+
+![守炉人级航母在战斗中投放战机](./carrier_play.png "carrier_play.png")
+
 ### 验证方案
 
 前置数据：已经完成 `GearIn_furnaceman` 的船体文件和 `ship_data.csv` 登记，并准备一套可搭载战机联队的测试装配。
@@ -108,8 +112,6 @@ tag 也作了与 `工匠-级` 相似的处理。
 - 船体成功加载；
 - 战机从甲板港口生成，联队补充与返航正常；
 - 日志中没有 `GearIn_furnaceman` 相关的错误。
-
-![守炉人级航母在战斗中投放战机](./carrier_play.png "carrier_play.png")
 
 ## 制作战机舰船文件
 
@@ -313,6 +315,10 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 | independent\_of\_carrier | 当航母被消灭或无所属航母时，依然正常运作而非四散溃逃。且当场上没有任何同侧舰船时，这些战机不会自动自爆而是需要被手动消灭 |
 | rd\_no\_extra\_craft | `后备部署` 专供，使本战机不响应它的效果 |
 
+战斗中联队的生成、开火与返航表现如下。
+
+![炉渣级战机联队在战斗中的表现](./fighter_play.png "fighter_play.png")
+
 ### 验证方案
 
 前置数据：已经完成 `GearIn_slag` 船体、`GearIn_slag_normal` 装配和 `GearIn_slag_wing` 联队登记，并准备一艘可搭载该联队的航母。
@@ -326,8 +332,6 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 - 船体成功加载；
 - 战机的数据符合预期，`role desc` 显示为 `重型战机`，在战斗机一栏出现；
 - 日志中没有 `GearIn_slag_wing` 相关的错误。
-
-![炉渣级战机联队在战斗中的表现](./fighter_play.png "fighter_play.png")
 
 ## 故障分析
 

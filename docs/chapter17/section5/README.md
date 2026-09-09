@@ -113,18 +113,14 @@ public final class GearInI18n {
 1. 进入对应界面或触发日志入口，调用 `GearInI18n.ui("GearIn_text_hello")`。
 2. 调用 `GearInI18n.format("GearIn_ui", "GearIn_text_ship_name", "工坊之锤", "Chicomoztoc")`，观察格式化文本。
 3. 调用 `GearInI18n.dialog("GearIn_text_approach")`，再用 `replaceToken` 填入 `Jangala`。
-4. 调用不存在的 `GearIn_text_does_not_exist`，观察界面或日志。
-5. 观察 `descriptions.csv` 提供的对象描述，确认它与代码取用的 strings 文本各自显示在对应位置。
+4. 观察 `descriptions.csv` 提供的对象描述，确认它与代码取用的 strings 文本各自显示在对应位置。
 
 预期结果：
 
 - 界面或日志出现 `你好，工坊。`；
 - `%s` 被依次替换为 `工坊之锤` 和 `Chicomoztoc`；
 - `$planetName` 在调用 `replaceToken` 后显示为 `Jangala`；
-- 缺失键返回 `Missing string: [GearIn_text_does_not_exist]`，日志记录 ERROR；
 - 对象描述继续来自 `descriptions.csv`，代码驱动文本来自 `strings.json`。
-
-清理：删除临时日志或界面探针，恢复测试用的 `strings.json`。
 
 ## 故障分析
 

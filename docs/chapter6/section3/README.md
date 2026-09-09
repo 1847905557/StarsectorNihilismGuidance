@@ -82,12 +82,18 @@ tasks.named("jar") {
 
 ## 验证方案
 
+前置数据：[C6-S2] 的源码迁移已完成，本节的 `build.gradle` 片段已写入工程。
+
 1. 检查 `settings.gradle` 的工程名；
 2. 检查 `srcDirs`、toolchain、`compileOnly` 和 `options.release`；
 3. 检查 JAR 输出目录和文件名；
 4. 进入 [C6-S4] 执行构建和 manifest 声明。
 
-预期结果：Gradle 从 `src/` 读取源码，使用 Java 17 编译，JAR 输出位置为 `jars/GearIndustry.jar`。
+预期结果：
+
+- Gradle 从 `src/` 读取源码；
+- 工程使用 Java 17 编译；
+- JAR 输出位置为 `jars/GearIndustry.jar`。
 
 ## 故障分析
 

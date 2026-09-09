@@ -22,7 +22,7 @@ shader 编译失败若只留下黑屏，排错成本会很高。本节用 BoxUti
 
 ## 把编译失败变成可观察状态
 
-正确 shader 在玩家舰前方显示脉冲护盾；故意删掉分号后，`starsector.log` 包含资源路径和编译信息，重载保留旧程序，首次创建失败则渲染器安全失效。
+正确 shader 在玩家舰前方显示脉冲护盾；shader 编译失败时，`starsector.log` 包含资源路径和编译信息，重载保留旧程序，首次创建失败则渲染器安全失效。
 
 ## 文件与 API 链路
 
@@ -84,28 +84,6 @@ if (!program.isValid()) {
 ```
 
 编译错误后 `loadProgram` 返回 false，renderer 自废，渲染器整体失效、战斗继续 (没有备用颜色反馈)。
-
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-float pulse = u_time
-gl_FragColor = vec4(pulse);
-```
-
-实际症状：护盾不可见，日志包含片元 shader 编译错误。
-
-原因：第一行缺少分号，片元 shader 编译失败，BoxUtil 返回的程序对象无效。
-
-下面是**局部修正片段**：
-
-```java
-float pulse = u_time;
-gl_FragColor = vec4(pulse);
-```
-
-复验：先保留错误确认 InfoLog，再恢复分号并确认 `program.isValid()` 为 `true`。
 
 ## 完整最小例
 
@@ -411,6 +389,8 @@ void main() {
 :::
 
 ## 验证方案
+
+前置数据：BoxUtil 已安装并启用，shader 功能处于开启状态，启用中的 GearIn MOD 已包含本节 `GearIn_pulse_shader` 两个 shader 文件和 `GearInPulseRenderer`，战斗接线能创建该渲染器。
 
 1. 执行 `gradle jar` 构建示例 MOD，确认编译完成且没有报错。
 2. 启动游戏并进入本页场景，执行标题描述的动作。

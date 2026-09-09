@@ -204,11 +204,20 @@ public class GearInSectorStateSampler implements EveryFrameScript {
 
 ## 验证方案
 
+前置数据：包含本节采样脚本类的 GearIn MOD 已构建并启用，并准备一个新档。
+
 1. 构建并启用示例 MOD，使用新档进入生涯。
 2. 推进至少 5 个生涯天数，搜索 `GearIn sector sample`。
 3. 暂停游戏并保持一段时间，确认没有新的普通采样日志。
 4. 恢复运行并切换地点，确认 `date`、`timestamp` 和 `location` 发生变化。
 5. 保存、退出并重新读档，确认 persistent 标记可以读取，地点和玩家舰队通过当前星区重新取得。
+
+预期结果：
+
+- 生涯天数达到采样阈值后，日志出现 `GearIn sector sample`；
+- 暂停游戏期间没有新的普通采样日志；
+- 恢复运行并切换地点后，`date`、`timestamp` 和 `location` 发生变化；
+- 保存、退出并重新读档后，persistent 标记可以读取，地点和玩家舰队通过当前星区重新取得。
 
 ## 故障分析
 

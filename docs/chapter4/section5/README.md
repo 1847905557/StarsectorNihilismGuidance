@@ -87,40 +87,6 @@ PlanetAPI prime = system.addPlanet(
 
 新档中 GearIn Prime 使用余烬世界的外观，而第二颗行星仍保持原版 `barren`。
 
-## 排查星体类型加载故障
-
-下面是**局部故障片段**：
-
-```json
-"GearIn_ember_world":{
-    "name":"Ember World",
-    "isStar":true,
-    "texture":"graphics/planets/terran.jpg",
-    "icon":"graphics/warroom/icon_planet.png",
-    "planetColor":[255,120,80]
-},
-```
-
-实际症状：加载阶段报 JSON/颜色错误；即使修正颜色后，`addPlanet` 仍把类型当作恒星与行星用途混用。
-
-原因：颜色必须包含 RGBA 四个分量，`isStar` 与 `addPlanet` 的对象身份也必须一致。
-
-下面是**局部修正片段**：
-
-```json
-"GearIn_ember_world":{
-    "name":"Ember World",
-    "descriptionId":"GearIn_ember_world",
-    "isStar":false,
-    "texture":"graphics/planets/terran.jpg",
-    "icon":"graphics/warroom/icon_planet.png",
-    "planetColor":[255,255,255,255],
-    "atmosphereColor":[190,95,55,180]
-},
-```
-
-复验：重新启动并创建新档，确认 GearIn Prime 可进入详情页且 `PLANET` 描述键生效。
-
 ::: details 完整成品：GearIn_ember_world
 
 ```json
@@ -148,6 +114,8 @@ PlanetAPI prime = system.addPlanet(
 :::
 
 ## 验证方案
+
+前置数据：已启用包含本节 `GearIn_ember_world` 类型注册、`PLANET` 描述行和 `addPlanet` 类型替换的 GearIn MOD。
 
 1. 启动游戏，观察 `Loading planet data` 日志。
 2. 创建新档并进入 GearIn 星系，定位 GearIn Prime。

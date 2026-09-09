@@ -143,14 +143,6 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 
 :::
 
-## 故障注入：描述占位符与返回值数量不一致
-
-1. 把 CSV `desc` 列改为 `提高舰船最大速度 %s/%s/%s/%s/%s，随船体等级变化。不兼容 不稳定推进器。`(5 个 `%s`)，保存、重启；
-2. 在装配界面安装本船插，查看 tooltip，第 5 个占位符没有对应返回值，显示 `null`；
-3. 改回 4 个 `%s`，重启，确认 tooltip 恢复正常。
-
-占位符多于返回值时，多余占位符显示 `null`；返回值多于占位符时，多余参数被忽略。数量不一致不会报错，只在描述里留下 `null` 或被丢弃的填充值，核对时以装配界面 tooltip 为准。
-
 ## 验证方案
 
 前置数据：本节的 `hull_mods.csv` 注册行与 `GearInStableInjectorHullMod` 效果类。

@@ -82,28 +82,6 @@ GL20.glUniform1i(program.location[3], 0);
 
 投影将显示纹理内容而非纯色或黑块。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-GL13.glActiveTexture(GL13.GL_TEXTURE1);
-GL20.glUniform1i(texLocation, 0);
-```
-
-实际症状：程序有效、几何可见，但采样结果为黑色或来自其他效果的纹理。
-
-原因：纹理绑定在单元 1，sampler 却读取单元 0。
-
-下面是**局部修正片段**：
-
-```java
-GL13.glActiveTexture(GL13.GL_TEXTURE0);
-GL20.glUniform1i(texLocation, 0);
-```
-
-复验：统一单元号后旋转舰船，确认纹理内容与投影一起转动。
-
 ## 完整最小例
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
@@ -443,10 +421,11 @@ void main() {
 
 ## 验证方案
 
+前置数据：BoxUtil 已完成全局初始化，原版粒子贴图可读取，启用中的 GearIn MOD 已包含本节 `GearIn_shader_visual` 两个 shader 文件和 `GearInShaderVisual`，战斗接线能创建该投影。
+
 1. 编译 Java fixture 与两个 GLSL 文件，确认 UBO 和 sampler 名称一致。
 2. 在战斗中移动并旋转玩家舰，观察投影中心和方向。
 3. 缩放相机并横移视口，确认投影仍固定在世界坐标。
-4. 故意把纹理切换到错误单元，记录黑块症状后恢复单元 0。
 
 预期结果：
 

@@ -103,7 +103,13 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 :::
 
+相位出入与光效在战斗中的表现如下。
+
+![锻件级相位护卫舰在战斗中进入相位](./phase_play.png "phase_play.png")
+
 ### 验证方案
+
+前置数据：已经完成 `GearIn_forging` 的船体、装配和 `ship_data.csv` 登记，并启用 Console Commands MOD。
 
 1. 使用控制台命令 `Addship GearIn_forging` 获取该相位护卫舰。
 2. 进入战斗部署它，右键进入/退出相位，确认外观为相位而非护盾，右键激活的是相位系统。
@@ -113,8 +119,6 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 - 船体成功加载；
 - 右键可进入/退出相位，出现亮紫粉色光效，与 `_glow1`/`_glow2` 贴图一致；
 - 日志中没有 `GearIn_forging` 相关的错误。
-
-![锻件级相位护卫舰在战斗中进入相位](./phase_play.png "phase_play.png")
 
 ## 故障分析
 

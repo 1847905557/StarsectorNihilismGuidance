@@ -117,31 +117,6 @@ Global.getLogger(GearInModPlugin.class)
 
 读取代码只消费设置值。设置文件的文本内容和结构属于资源输入，不在本节运行期写回。
 
-## 排查关键故障
-
-直接改动 `getSettingsJSON()` 后继续读取带缓存的 getter。
-
-**局部故障片段：**
-
-```java
-// 故障片段
-float before = settings.getFloat("GearIn_loop_volume");
-settings.getSettingsJSON().put("GearIn_loop_volume", 0.25f);
-float stale = settings.getFloat("GearIn_loop_volume");
-```
-
-**局部修正片段：**
-
-```java
-// 修正片段
-float before = settings.getFloat("GearIn_loop_volume");
-settings.getSettingsJSON().put("GearIn_loop_volume", 0.25f);
-settings.resetCached();
-float refreshed = settings.getFloat("GearIn_loop_volume");
-```
-
-复验：重启游戏并同时观察 JSON 键和日志中的读取值。
-
 ## 验证方案
 
 前置数据：`gear_in` MOD、`settings.json` 中的三个设置键和入口类读取片段已就绪。
@@ -150,13 +125,11 @@ float refreshed = settings.getFloat("GearIn_loop_volume");
 2. 读取 `GearIn_loop_volume`，观察日志中的浮点值。
 3. 读取 `GearIn_service_name`，观察日志中的字符串。
 4. 删除 `GearIn_feature_enabled` 后重新启动，观察 `optBoolean` 返回的缺省值。
-5. 把 `GearIn_loop_volume` 改为字符串后重新启动，观察取值调用点的异常。
 
 预期结果：
 
 - 日志显示 `volume=0.8`、`serviceName=齿轮工业服务` 和 `enabled=true`；
 - 设置键缺失时，`optBoolean` 返回调用方提供的缺省值；
-- 类型不符时，严格读取方法在调用点抛出异常；
 - settings 读取不会产生 common 文件或修改 MOD 资源文件。
 
 ## 故障分析

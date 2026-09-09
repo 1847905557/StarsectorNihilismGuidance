@@ -264,8 +264,6 @@ gear_industry,FACTION,以重型制造、耐用结构和严格工序闻名的工�
 - **武器署名规则回归**：悬停任意 text2 以 `-` 开头的原版武器 (如欧米伽武器)，tooltip 的 text1 第一段为斜体且带署名行；GearIn 三门武器 (text2 无 `-` 前缀)tooltip 正常显示。
 - **基础对象验证**：货舱显示 `supplies` 的 RESOURCE 文本，GearIn Prime 显示 `terran` 的 PLANET 文本，势力详情显示 GearIn 的 FACTION 文本，通讯中继显示 `comm_relay` 的 CUSTOM 标题与正文；GearIn 舰船、武器和系统描述照旧显示。
 
-清理：恢复临时改动的描述行 (`""` 改回)，确认文件仍为 UTF-8 无 BOM。
-
 ## 故障分析
 
 - **启动失败，日志含 `Mismatched quotes in the string; last quote: [...]`**：某个字段的引号不成对 (例如把示例行的 `""` 只写了一个)。CSV 解析器解析结束时检测到引号未闭合，直接抛 `JSONException`。

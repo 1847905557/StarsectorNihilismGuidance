@@ -78,26 +78,6 @@ if (program != null) { program.delete(); program = null; }
 
 重复 cleanup 不产生二次删除错误。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-private static final boolean ENABLED = BoxConfigs.isShaderEnable();
-```
-
-实际症状：玩家在运行期关闭 shader 后，能量场仍继续提交和绘制。
-
-原因：开关在类加载时被永久缓存，render 没有读取当前值。
-
-下面是**局部修正片段**：
-
-```java
-if (!BoxConfigs.isShaderEnable()) return;
-```
-
-复验：战斗中连续关闭、开启两次，确认 drawCalls 在关闭区间保持不变。
-
 ## 完整最小例
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
@@ -481,6 +461,8 @@ void main() {
 :::
 
 ## 验证方案
+
+前置数据：BoxUtil 已完成全局初始化，原版粒子贴图可读取，启用中的 GearIn MOD 已包含本节 `GearIn_field_shader` 两个 shader 文件和 `GearInShaderPlugin`，战斗接线能注册该插件，测试入口能调用 `setRuntimeEnabled`。
 
 1. 编译 Java fixture 与两个 GLSL 文件，确认常驻插件创建一次程序和 VBO。
 2. 在战斗中切换运行时开关两次，记录关闭区间的 draw call 计数。

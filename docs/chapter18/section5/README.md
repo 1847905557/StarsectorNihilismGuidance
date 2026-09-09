@@ -93,27 +93,6 @@ light.setIntensity(intensity);
 
 停火后灯光在约 0.5 秒内回到基础值。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-private static final ShaderAPI LIGHT_SHADER = ShaderLib.getShaderAPI(LightShader.class);
-```
-
-实际症状：GraphicsLib 已完成初始化，报告却始终认为 LightShader 不可用。
-
-原因：类加载期过早缓存了 null，后续初始化不会替换这个 static final 引用。
-
-下面是**局部修正片段**：
-
-```java
-ShaderAPI lightShader = ShaderLib.getShaderAPI(LightShader.class);
-boolean lightReady = lightShader != null && lightShader.isEnabled();
-```
-
-复验：重启后在 `reportCapabilities()` 中读取一次，确认日志的 `lightShaderEnabled` 与 GraphicsLib 设置一致；查询发生在 `ShaderLib.init()` 之后。
-
 ## 完整最小例
 
 三个类分别承担战斗接线、能力与纹理报告、光源生命周期。完整光源使用暖色、60 su 局部偏移、150 su 尺寸，并在舰船死亡时执行 1 秒淡出。

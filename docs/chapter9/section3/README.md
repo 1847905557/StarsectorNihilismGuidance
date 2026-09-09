@@ -212,13 +212,23 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
 
 ## 验证方案
 
+前置数据：按 [C6-S1] 至 [C6-S4] 构建的 JAR 已包含本节 `GearInWeaponFrameEffect`，`GearIn_test_rotor` 已绑定效果类和 `00` 至 `03` 连续帧贴图。
+
 1. 执行 `gradle jar`，确认 JAR 包含 `GearInWeaponFrameEffect.class`。
 2. 检查炮塔和硬点贴图均存在 `00` 至 `03` 帧。
 3. 进入测试战斗，确认日志记录 `frames=4` 和 `rate=12`。
 4. 武器闲置时确认停在第 0 帧，充能或开火时确认帧号循环变化。
 5. 临时调用 `setFrameRate(...)`，确认播放速度改变。
 6. 设置 `visualRecoil` 和炮管贴图，确认开火时炮管发生视觉位移。
-7. 删除一张后续帧确认对应画面为空白；删除 `00` 基帧确认武器构造失败。
+
+预期结果：
+
+- `jar tf jars/GearIndustry.jar` 能看到 `GearInWeaponFrameEffect.class`；
+- 炮塔和硬点贴图均存在 `00` 至 `03` 帧；
+- 进入测试战斗后，日志记录 `frames=4` 和 `rate=12`；
+- 武器闲置时停在第 0 帧，充能或开火时帧号循环变化；
+- 临时调用 `setFrameRate(...)` 后播放速度改变；
+- 设置 `visualRecoil` 与炮管贴图后，开火时炮管发生视觉位移。
 
 ## 故障分析
 

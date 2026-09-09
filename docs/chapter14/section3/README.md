@@ -316,38 +316,6 @@ gradle jar
 
 产物 `jars/GearIndustry.jar` 应包含五个类的 `.class` 条目 (可用 `jar tf` 核对)。
 
-## 关键故障实验：对话框选项可以点击但没有响应
-
-选项正常显示，回调也被调用，但分支拿显示文本和内部 ID 比较。
-
-**局部故障片段：**
-
-```java
-// 故障片段
-public void optionSelected(String optionText, Object optionData) {
-	if (OPTION_FACTION.equals(optionText)) {
-		dialog.getTextPanel().addPara("显示势力关系");
-	}
-}
-```
-
-**局部修正片段：**
-
-```java {3}
-// 修正片段
-public void optionSelected(String optionText, Object optionData) {
-	if (OPTION_FACTION.equals(optionData)) {
-		dialog.getTextPanel().addPara("显示势力关系");
-	}
-}
-```
-
-实际症状：点击 "查看势力关系" 后选项会产生正常的点击反馈，但文本面板没有新增内容，日志中的分支记录也缺失。
-
-原因：`optionText` 的值是 "查看势力关系"，`OPTION_FACTION` 的值是内部 ID `faction`；文案与 ID 从设计上就是两套数据。
-
-复验：依次点击势力、货舱和关闭选项，三次回调应分别命中 `faction`、`cargo`、`close`；修改任一显示文案后，分支行为仍保持不变。
-
 ## 验证方案
 
 前置数据：既有 MOD 工程：`mod_info.json`、构建脚本与插件入口 `GearInModPlugin`[C7-S1]，以及脚本注册判断模式 [C10-S1]、本节五个类与调用点片段中的两个 `addScript` 注册块 (各带独立的 `REGISTER_MARK` 键)。
@@ -355,20 +323,15 @@ public void optionSelected(String optionText, Object optionData) {
 1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含五个类的 `.class` 条目。
 2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按顺序出现两个脚本的日志行 (情报段 ×3、对话框段 1 行)，且**没有**旧复合演示的收尾 `done` 行。
 3. **消息区**：演示帧后左下消息区出现两条 `GearIn` 消息 —— 点击第一条跳转 Intel 页签 (`addIntel` 的自动发布消息)、点击第二条无跳转 (`MessageIntel` 纯消息)。
-4. **对话框**：游戏暂停并弹出演示对话框；依次点 "查看势力关系"(文本面板追加关系行、日志 `option selected: faction`)、"查看舰队货物"(追加货物行、日志 `option selected: cargo`)。
-    - "关闭演示" 或按 ESC(日志 `option selected: close`、对话框关闭、游戏恢复)。
+4. **对话框**：游戏暂停并弹出演示对话框；依次点 "查看势力关系"(文本面板追加关系行、日志 `option selected: faction`)、"查看舰队货物"(追加货物行、日志 `option selected: cargo`)、"关闭演示" 或按 ESC(日志 `option selected: close`、对话框关闭、游戏恢复)。
 
 预期结果：
 
-- 点 "查看势力关系"：文本面板追加一行 `势力关系：霸主 ... 海盗 ... 独立 ...`，日志出现 `dialog option selected: faction`；
-
-- 点 "查看舰队货物"：文本面板追加 `舰队货物：补给 ...` 行，日志出现 `dialog option selected: cargo`；
-
+- 点 "查看势力关系"：文本面板追加一行 `势力关系：霸主 ... 海盗 ... 独立 ...`，日志出现 `dialog option selected: faction`。
+- 点 "查看舰队货物"：文本面板追加 `舰队货物：补给 ...` 行，日志出现 `dialog option selected: cargo`。
 - 点 "关闭演示"(或按 ESC)：对话框关闭，日志出现 `dialog option selected: close`。
-
-    **读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位、脚本不再注册)；演示遗留的对话框与消息不会随存档保存。
-
-    **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
+- **读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位、脚本不再注册)；演示遗留的对话框与消息不会随存档保存。
+- **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
 
 ## 故障分析
 

@@ -94,26 +94,6 @@ return entity;
 
 GearIn 齿轮以漫反射、法线和发光通道渲染，朝向与传入 `facing` 一致。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-ModelData model = ModelManager.getModelData("GearIn_Gear");
-```
-
-实际症状：构造实体时立即抛空指针异常，实体从未创建、从未入队。
-
-原因：模型 ID 大小写与 CSV 的 `GearIn_gear` 不一致，`getModelData()` 返回 `null`；`new CommonEntity(model, true)` 在构造期就解引用 model 同步贴图，直接抛 NPE —— 不存在 "实体成功创建但空白" 的中间态。
-
-下面是**局部修正片段**：
-
-```java
-ModelData model = catalog.require("GearIn_gear");
-```
-
-复验：用精确 ID 创建实体并记录 `model.isValid()`；再故意改大小写，确认在创建 GPU 实体之前得到明确错误。
-
 ## 完整最小例
 
 目录类只负责模型注册表查询，变换类只接受有效 `ModelData` 并返回配置好矩阵与默认光照的 `CommonEntity`。战斗接线仍需检查 `CombatRenderingManager.addEntity()` 返回码。
@@ -176,14 +156,12 @@ public final class GearInModelTransform {
 2. 在玩家舰旁创建比例为 `(1, 1)` 的实体，核对位置和朝向。
 3. 把比例改为 `(0.5, 0.5)`，确认世界尺寸减半而模型缓冲仍被复用。
 4. 分别移除 emissive、normal 路径并重启，观察材质通道变化和加载日志。
-5. 把 ID 改为 `GearIn_Gear`，确认目录类在实体创建前抛出带 ID 的参数错误。
 
 预期结果：
 
 - 精确模型 ID 返回有效、可复用的 `ModelData`；
 - `CommonEntity` 的模型矩阵与传入位置、朝向、缩放一致；
 - 默认光照能够区分漫反射、法线和发光通道的加载结果；
-- 错误大小写在创建实体前产生明确异常；
 - 有效实体入队后没有未处理异常。
 
 ## 故障分析

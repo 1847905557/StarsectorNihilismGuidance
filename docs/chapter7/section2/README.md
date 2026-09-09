@@ -120,6 +120,8 @@ public class GearInGlobalAccess {
 
 ## 验证方案
 
+前置数据：已按 [C6-S1] 至 [C6-S4] 配置 Java 17、`src/`、Gradle 和 JAR；[C7-S1] 的 `GearInModPlugin` 和本节的 `GearInGlobalAccess` 已就绪。
+
 1. 在 `GearInModPlugin.onApplicationLoad()` 或其他入口脚本中调用 `GearInGlobalAccess.logAccessorState()`，重新构建 JAR。
 2. 启动游戏并查看 `Starsector/starsector-core/starsector.log`，记录资源加载阶段的 `state`、`settings`、`sector` 和 `engine` 值。
 3. 新建生涯后再次调用工具类，核对 `state` 已进入生涯且 `sector=true`。

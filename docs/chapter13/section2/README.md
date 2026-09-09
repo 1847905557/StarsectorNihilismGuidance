@@ -316,7 +316,7 @@ public FleetTotalItem getFleetTotalItem() {
         LOG.info("GearIn skill spec missing - check skill_data.csv registration");
     }
 
-    // 学习 (脚本侧临时钩子；正式路径是玩家在技能树里花技能点，走 increaseSkill)：
+    // 学习 (脚本侧演示钩子；正式路径是玩家在技能树里花技能点，走 increaseSkill)：
     Global.getSector().getPlayerStats().setSkillLevel("GearIn_gunnery", 1f);
     // 精英：
     Global.getSector().getPlayerStats().setSkillLevel("GearIn_gunnery", 2f);
@@ -344,7 +344,7 @@ gradle jar
 2. `GearIn_gunnery.skill` 的 `governingAptitude=combat`、`elite=true` 与两个 `effectGroups` 就位，每个 effect 的 `type` 与脚本类实现的接口族匹配；
 3. `data.scripts.gearin.campaign.GearInGunnerySkill` 的六个嵌套类 `$Level0` / `$Level1` / `$Level1A` / `$LevelShipFighters` / `$LevelFleet` / `$LevelStats` 与 `.skill` 的六个 `script` 值逐字一致。
 
-静态核对通过后，生效沿调用链展开：CSV spec 加载期 `loadSkills` 完成注册，玩家 `setSkillLevel` 或 UI 加点后经 `refreshCharacterStatsEffects` 与 `FleetMemberAPI.updateStats` 重放，战斗侧在舰船对象构造与战机起飞 (`FighterLaunchBayAPI`) 时应用，整备界面经 `getFleetTotals` 读出汇总行。结果以日志与界面为准：`GearIn gunnery ... apply` 日志行、技能树的 "Gunnery" 行、整备界面的 "Gunnery damage bonus +15%" 行。
+静态核对通过后，生效沿调用链展开：CSV spec 加载期 `loadSkills` 完成注册，玩家 `setSkillLevel` 或 UI 加点后经 `refreshCharacterStatsEffects` 与 `FleetMemberAPI.updateStats` 重放，战斗侧在舰船对象构造与战机起飞 (`FighterLaunchBayAPI`) 时应用，整备界面经 `getFleetTotals` 读出汇总行。结果可从日志与界面核对：`GearIn gunnery ... apply` 日志行、技能树的 "Gunnery" 行、整备界面的 "Gunnery damage bonus +15%" 行。
 
 ## 完整最小例
 
@@ -673,40 +673,28 @@ public class GearInGunnerySkill {
 
 :::
 
-## 关键故障实验：技能效果叠加后无法解除
+apply 日志样例如下 (effect id 组合与数值以实际日志为准)：
 
-把 `LevelShipFighters.apply()` 中的 modifier ID 临时改成自造字符串，同时保留原来的 `unapply()`。学习技能后再解除，战机速度加成仍会残留。
-
-**局部故障片段：**
-
-```java
-// 故障片段
-stats.getMaxSpeed().modifyFlat("gunnery", 10f);
+```text
+GearIn gunnery stats apply: id=GearIn_gunnery_stats_4 level=1.0 commandPoints=+1 GearIn gunnery fleet apply: id=GearIn_gunnery_stats_3 level=1.0 burn=+2
 ```
 
-**局部修正片段：**
+(FLEET 与 CHARACTER\_STATS 在 `refreshCharacterStatsEffects` 内即时重放；`_stats_3` / `_stats_4` 与 "技能等级" 一节的 effect id 组合规则一致。)
 
-```java
-// 修正片段
-stats.getMaxSpeed().modifyPercent(id, FIGHTER_SPEED_BONUS);
+```text
+GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damage=+15% aim=+100%
 ```
 
-`unapply()` 使用同一个引擎 ID 撤销：
-
-```java
-stats.getMaxSpeed().unmodify(id);
-```
-
-原因是 `MutableStat` 以 modifier ID 保存来源；`"gunnery"` 与引擎传入的效果 ID 是两个键，`unmodify(id)` 无法删除前者。复验时依次把技能设为 1、0、1 级，并让舰载机重新起飞；每轮 1 级都应只有 10% 加成，0 级应恢复基础速度。
+(hull 以实际日志为准。)
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与编译链路 (前置知识所列)、`GearIn_gunnery.skill`、`skill_data.csv` 行、`GearInGunnerySkill` 源码 (含读取与调用点片段中的临时钩子)。
+前置数据：既有 MOD 布局与编译链路 (前置知识所列)、`GearIn_gunnery.skill`、`skill_data.csv` 行、`GearInGunnerySkill` 源码 (含读取与调用点片段中的演示钩子)。
 
 1. **资源准备**：冒烟期间把 `skill_data.csv` 的 icon 列指向原版 `graphics/icons/skills/gunnery_implants.png`。
 2. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类。
 3. **启动与注册**：新建生涯 (或读档)，在 `starsector.log` 中观察 `GearIn_gunnery` 的技能加载记录。
-4. **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (放在 `onGameLoad` 内)，随后打开舰队界面 (F 键) 并进入一场战斗部署。
+4. **等级 1**：演示钩子 `setSkillLevel("GearIn_gunnery", 1f)` (放在 `onGameLoad` 内)，随后打开舰队界面 (F 键) 并进入一场战斗部署。
 5. **界面核对**：打开技能树 (C 键)、整备界面 (R 键) 与舰队面板，查看战斗部署界面的指挥点数与武器伤害。
 6. **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)`。
 7. **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill`。
@@ -716,25 +704,11 @@ stats.getMaxSpeed().unmodify(id);
 
 - **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类；启动后加载期无 `gear_in` 引起的 ERROR (注意 icon 列在冒烟期间指向原版图标)。
 - **注册确认**：`starsector.log` 出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]` (loadSkills 的加载日志)，没有 `Skipping skill [...]` 或 `Skipping loading skill [...]` 两行。
-- **等级 1**：临时钩子 `setSkillLevel("GearIn_gunnery", 1f)` (见读取与调用点片段) 生效后，日志立即出现。
-
-    ```text
-    GearIn gunnery stats apply: id=GearIn_gunnery_stats_4 level=1.0 commandPoints=+1 GearIn gunnery fleet apply: id=GearIn_gunnery_stats_3 level=1.0 burn=+2
-    ```
-
-    (FLEET 与 CHARACTER\_STATS 在 `refreshCharacterStatsEffects` 内即时重放；`_stats_3` / `_stats_4` 与 "技能等级" 一节的 effect id 组合规则一致。)
-- **stats 重建后 SHIP 效果**：打开舰队界面 (F 键，触发成员 stats 重建) 或进入一场战斗部署，日志出现。
-
-    ```text
-    GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damage=+15% aim=+100%
-    ```
-
-    (hull 以实际玩家旗舰为准。) 战斗内载机起飞时出现 `GearIn gunnery fighters apply: id=GearIn_gunnery_ship_fighters_2 ... speed=+10%`。
+- **等级 1**：演示钩子 `setSkillLevel("GearIn_gunnery", 1f)` 生效后，日志立即出现 `GearIn gunnery stats apply: id=GearIn_gunnery_stats_4 level=1.0 commandPoints=+1` 与 `GearIn gunnery fleet apply: id=GearIn_gunnery_stats_3 level=1.0 burn=+2`。
+- **stats 重建后 SHIP 效果**：打开舰队界面 (F 键，触发成员 stats 重建) 或进入一场战斗部署，日志出现 `GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damage=+15% aim=+100%`(hull 以实际日志为准)；战斗内载机起飞时出现 `GearIn gunnery fighters apply: id=GearIn_gunnery_ship_fighters_2 ... speed=+10%`。
 - **界面**：C 键技能树战斗系出现 "Gunnery" 行与 DESCRIPTION 文本；R 键整备界面舰队构成表出现 `Gunnery damage bonus +15%` 行，悬停显示自定义 tooltip；舰队面板 burn 提升 2(无条件叠加，上限 20)；战斗部署界面指挥点数 +1；玩家旗舰武器伤害倍率提升 (`GearIn_artizan` 等装配里实弹 / 能量武器 +15%，精英 +5%)，瞄准误差降低。
 - **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)` 后，日志追加 `GearIn gunnery elite apply: id=GearIn_gunnery_ship_5 level=2.0 hull=... damage=+5%`。
 - **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill` 后日志不再出现新 apply 行，burn / 指挥点数 / fleet total 行恢复基线；`unapply` 用同一 id 解除，数值无残留。
-
-清理：删除 `onGameLoad` 中临时添加的 `setSkillLevel("GearIn_gunnery", ...)` 钩子，或把技能等级设为 `0f` 后移除该调用。
 
 ## 故障分析
 

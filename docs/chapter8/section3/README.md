@@ -222,30 +222,6 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 
 :::
 
-## 排查暂停状态错误
-
-每帧回调没有检查 `engine.isPaused()`。
-
-**局部故障片段：**
-
-```java
-// 故障片段
-elapsed += amount; report(engine);
-```
-
-**局部修正片段：**
-
-```java
-// 修正片段
-if (engine.isPaused()) {
-    return;
-}
-elapsed += amount;
-report(engine);
-```
-
-复验：暂停战斗后确认计时日志停止，继续战斗后恢复。
-
 ## 验证方案
 
 前置数据：`GearInPauseAwarePlugin` 已写入 `data/config/settings.json` 的 `plugins` 段，`jars/GearIndustry.jar` 已按 [C6-S1] 的流程构建并在启动器启用本 MOD。

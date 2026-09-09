@@ -256,6 +256,8 @@ public class GearInDamageDealtModifier implements DamageDealtModifier {
 
 ## 验证方案
 
+前置数据：已按 [C8-S3] 接入每帧战斗插件；[C4-S1] 的 `GearIn_test` 战役可用，本节的 `GearInDamageListener` 和 `GearInDamageDealtModifier` 已就绪。
+
 1. 启动 `GearIn_test` 战斗，确认 `GearInDamageListener` 和 `GearInDamageDealtModifier` 各完成一次注册。
 2. 让舰船承受护盾、装甲和结构伤害，搜索 `GearIn damage`，核对结算字段与造成方修饰结果。
 3. 观察舰船级 `AdvanceableListener` 的周期日志，暂停并恢复战斗后比较推进次数。

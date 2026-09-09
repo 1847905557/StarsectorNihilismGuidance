@@ -69,6 +69,12 @@ boolean recoverable = true;
 
 残骸在靠近前保持可发现状态，发现后进入正常交互，并具备回收 special。
 
+::: warning 回收 special 只在生成时挂接
+
+回收 special 只在 `createDerelict()` 生成实体时挂接一次；修改 `recoverable` 参数后重新调用只会影响新生成的实体，已经存在的旧残骸仍保持只有故事点回收的交互。
+
+:::
+
 ### 把残骸放上轨道
 
 `spawnDerelictExample()` 的生涯分支传入 variant ID、状态、发现参数和围绕目标实体的轨道：
@@ -92,28 +98,6 @@ LOG.info("GearIn magic campaign: derelict " + wreck.getId()
 ```
 
 日志中的残骸 ID 能在星区实体与任务状态中对应到同一个对象。
-
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-MagicCampaign.createDerelict(variantId, condition,
-        true, null, false, orbitCenter, 0f, 200f, 30f);
-```
-
-实际症状：残骸正常出现，但打捞界面只提供故事点回收选项，没有常规回收流程。
-
-原因：九参数重载的第五个布尔值是 `recoverable`。传入 `false` 时，MagicLib 仍创建并配置残骸，但不会通过 `Misc.setSalvageSpecial()` 挂接舰船回收 special。
-
-下面是**局部修正片段**：
-
-```java
-MagicCampaign.createDerelict(variantId, condition,
-        true, null, true, orbitCenter, 0f, 200f, 30f);
-```
-
-复验：使用新存档或新的实体 ID 重新生成残骸，打开交互并确认舰船回收流程出现。已经创建的旧实体不会因修改参数自动补上 special。
 
 ## 完整最小例
 

@@ -420,27 +420,6 @@ gradle jar
 - `data/scripts/gearin/campaign/GearInBarEvent.class`
 - `data/scripts/gearin/campaign/GearInBarEventCreator.class`
 
-## 关键故障实验：酒吧选项结束后事件仍在活动列表
-
-让结束分支只把对话框关闭。玩家看似已经离开，但事件仍在 `PortsideBarData` 与 manager 的 active 跟踪器中，同一市场可能再次显示。
-
-**局部故障片段：**
-
-```java
-// 故障片段
-done = true;
-```
-
-**局部修正片段：**
-
-```java
-// 修正片段
-done = true;
-BarEventManager.getInstance().notifyWasInteractedWith(this);
-```
-
-原因：`isDialogFinished()` 只结束对话外壳，活动列表与 creator 冷却由 manager 单独维护。复验：购买、婉拒和离开各执行一次；每次结束后活动列表中都找不到该事件，并且 accepted 冷却开始计时。
-
 ## 验证方案
 
 前置数据：既有教程 MOD 布局与 `GearInModPlugin`(含本节调用点片段，见前置知识 [C6-S1] / [C7-S1])、本节两个类、(可选)rules.csv 临时选项片段。
@@ -452,31 +431,18 @@ BarEventManager.getInstance().notifyWasInteractedWith(this);
 5. 分别使用三个存档 (或完成后读档冷却)，依次选择 "Buy the coordinates"、"Hear them out but decline"、"Leave the spacer to their drink"，观察信用点、Continue 选项、返回酒吧过程和结束日志。
 6. 完成事件后保存并读档，跨 60–90 游戏天观察事件是否再次出现。
 7. 不完成事件时保存并读档，观察活动列表和继续对话入口。
-8. 给 `GearInBarEventCreator` 覆写 `getBarEventFrequencyWeight()` 返回 `100f`，重新构建并观察事件出现频率。
 
 预期结果：
 
 - **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到两个类的 `.class`。
-- **跳过/完成教程后**：
-
-    - 进入任一有太空港的市场 (如 Corvus 星系的 Jangala)，交互里选 "Take a shuttle down to visit a dockside bar"；`starsector.log` 出现。
-
-    ```text
-    GearIn bar event: creator picked, creating event (id=GearInBarEvent)
-    GearIn bar event: eligible at Jangala
-    GearIn bar event: prompt at Jangala (event id=GearInBarEvent)
-    GearIn bar event: shown at Jangala
-    ```
-
-    *   酒吧面板出现提示 "A disheveled spacer at the bar..." 与选项 "Listen to the spacer's story"(事件 ID `GearInBarEvent` 会出现在同一市场的 `$BarCMD_shownEvents` 里，约 20–40 游戏天内再次进入同一市场复现同一组事件)。
-    *   事件不是每次进酒吧都出现：抽取受 `minBarEvents` / `maxBarEvents` / 权重与随机影响；同一时间每个事件 ID 至多一个活跃实例。
-- **事件对话**：点 "Listen to the spacer's story" → 日志 `dialog init (event id=GearInBarEvent)`，对话出现三个选项：
-    - 点 "Buy the coordinates (500 credits)"：日志 `bought coordinates, credits -500`，玩家舰队信用点减少 500(`cargo.getCredits()` 可负，演示不检查余额)；日志 `finished, notified manager (done=true)`；对话显示 "Continue"，点后回到酒吧选项 (`endWithContinue()` 默认 true 的路径)。
-    - 点 "Hear them out but decline" / "Leave the spacer to their drink"：日志 `declined` / `left` + `finished, notified manager (done=true)`；**不显示** "Continue"，直接回到酒吧选项 (`noContinue = true` 路径)。
-    - 三条路径都触发 `notifyWasInteractedWith`：事件立即从活动列表移除，creator 进入 accepted 超时 (60–90 游戏天) —— 事件在冷却期内不再出现。
+- **跳过/完成教程后**：进入任一有太空港的市场 (如 Corvus 星系的 Jangala)，交互里选 "Take a shuttle down to visit a dockside bar"；`starsector.log` 依次出现 `GearIn bar event: creator picked, creating event (id=GearInBarEvent)`、`GearIn bar event: eligible at Jangala`、`GearIn bar event: prompt at Jangala (event id=GearInBarEvent)`、`GearIn bar event: shown at Jangala`。
+- 酒吧面板出现提示 "A disheveled spacer at the bar..." 与选项 "Listen to the spacer's story"(事件 ID `GearInBarEvent` 会出现在同一市场的 `$BarCMD_shownEvents` 里，约 20–40 游戏天内再次进入同一市场复现同一组事件)。
+- 事件不是每次进酒吧都出现：抽取受 `minBarEvents` / `maxBarEvents` / 权重与随机影响；同一时间每个事件 ID 至多一个活跃实例。
+- **事件对话**：点 "Listen to the spacer's story" 后日志出现 `dialog init (event id=GearInBarEvent)`，对话出现三个选项。
+- 点 "Buy the coordinates (500 credits)"：日志 `bought coordinates, credits -500`，玩家舰队信用点减少 500(`cargo.getCredits()` 可负，演示不检查余额)；日志 `finished, notified manager (done=true)`；对话显示 "Continue"，点后回到酒吧选项 (`endWithContinue()` 默认 true 的路径)。
+- 点 "Hear them out but decline" / "Leave the spacer to their drink"：日志 `declined` / `left` + `finished, notified manager (done=true)`；**不显示** "Continue"，直接回到酒吧选项 (`noContinue = true` 路径)。
+- 三条路径都触发 `notifyWasInteractedWith`：事件立即从活动列表移除，creator 进入 accepted 超时 (60–90 游戏天) —— 事件在冷却期内不再出现。
 - **读档**：完成后保存并读档 —— `hasEventCreator` 判断使 creator 不重复注册 (日志无二次 "creator registered" 之外的重复注册行)；未完成时保存读档，事件实例仍在活动列表 (随 sector memory 存档) 且可继续对话 (`init` 里 `done = false` 重置)。全程无 `gear_in` 引起的 `ERROR`。
-
-清理：删除参数演示添加的 `getBarEventFrequencyWeight()` 覆写，使其恢复继承值 `10f`。
 
 ## 故障分析
 

@@ -625,27 +625,6 @@ gradle jar
 
 产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInHubMission.class`(可用 `jar tf` 核对)。
 
-## 关键故障实验：任务被接受后立即异常中止
-
-让 `create()` 成功返回，却不声明起点阶段。酒吧包装仍会展示任务，但点击接受时 `BaseHubMission.accept()` 直接抛出 startingStage 异常。
-
-**局部故障片段：**
-
-```java
-// 故障片段
-return true;
-```
-
-**局部修正片段：**
-
-```java
-// 修正片段
-setStartingStage(Stage.CONTACT);
-return true;
-```
-
-复验：从酒吧接受任务，确认当前阶段为 CONTACT、Intel 条目已登记、任务脚本已进入 Sector 脚本列表，目标联系人同时在地图上被标记。
-
 ## 验证方案
 
 前置数据：既有 MOD 布局与 `GearInModPlugin`[C6-S1] / [C7-S1]、本节 `GearInHubMission`、`bar_events.csv` 行、`rules.csv` 片段，每次改动后重建。
@@ -658,22 +637,13 @@ return true;
 6. 回任务人市场与其对话并走收尾规则；
 7. 接受后挂机 600 真实秒，观察失败路径；
 8. 接受后保存并读档，任务完成后再次读档核对清理。
-9. 把 `setStageOnMemoryFlag(Stage.COMPLETED, giver, "$gearInHub_delivered")` 的目标改成 `sourceContact`，交付后核对阶段；
-10. 删掉 `endTrigger()` 后重建，核对创建期异常；
-11. 把 `MISSION_DAYS` 改成 10 重建，接受后挂机核对失败路径。
-12. 查看 `starsector.log`、对话流程和 Intel 状态。
+9. 查看 `starsector.log`、对话流程和 Intel 状态。
 
 预期结果：
 
 - `gradle jar` 以 `BUILD SUCCESSFUL` 结束，`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInHubMission.class`。
-
-    ### 酒吧任务完整流程
-
-- 三组方案的预期结果全部出现。
-
+- 酒吧任务完整流程走通：步骤 3-8 的对话、日志和 Intel 状态核对点全部出现。
 - 全程无 `gear_in` 引起的 `ERROR`。
-
-清理：把完成阶段连接的目标恢复为 `giver`，补回 `endTrigger()`，并把 `MISSION_DAYS` 恢复为 `60f`。
 
 ## 故障分析
 

@@ -108,30 +108,6 @@ number.render(batches, new Vector2f(x + 160f, y + 68f),
 
 `advance()` 只调用 `update()` 保存三个整数，UI 回调负责全部 GL 绘制。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-public void advance(float amount) {
-    textField.drawAt(20f, 20f);
-}
-```
-
-实际症状：部分机器文字不显示，或后续 UI 的 GL 状态异常。
-
-原因：directDraw 在逻辑推进回调发出，没有处于正确渲染上下文。
-
-下面是**局部修正片段**：
-
-```java
-public void renderInUICoords(ViewportAPI viewport) {
-    textField.drawAt(20f, 20f);
-}
-```
-
-复验：把绘制移入 UI 回调，连续切换暂停、战斗界面和两种分辨率，确认文本、数字与边框保持同一锚点。
-
 ## 完整最小例
 
 `GearInTextField` 管理字体、字符数据与文本直接绘制；`GearInStatusPanel` 管理固定布局、数字和边框。战斗插件在逻辑回调更新数值，在 UI 回调调用一次 `render()`。
@@ -320,7 +296,6 @@ public class GearInTextField {
 2. 调用 `update(12, 34, 0)`，在 UI 回调中渲染面板，核对三行标签与三个整数。
 3. 连续 60 帧传入相同值，确认 `TextFieldEntity` 不重复提交标签字符数据。
 4. 把窗口切换到另一分辨率，确认面板右边和上边仍各保留 20 像素边距。
-5. 把 `render()` 临时移到 `advance()` 复现 GL 时机故障，再恢复到 UI 回调。
 
 预期结果：
 

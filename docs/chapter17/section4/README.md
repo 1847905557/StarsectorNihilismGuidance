@@ -136,8 +136,6 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json"))
 - 内容未变化时不会产生不必要的 JSON 写入；
 - 写入失败时原文件仍可读取，并有明确错误日志。
 
-清理：删除测试存档中的 `gear_in/state.json` 或恢复测试前的文件内容。
-
 ## 故障分析
 
 - **读取 common 文件得到空值**：文件不存在、名称不一致或当前打开了另一存档。

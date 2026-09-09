@@ -1,689 +1,244 @@
-# 修改舰船装配
+# 读取并修改舰船装配
 
-本节使用 `ShipVariantAPI` 读取、克隆并修改舰船变体。变体连接装配数据与存档，修改前需要明确对象来源以及哪些变化会被序列化保存。
+本节处理一艘生涯成员当前使用的舰船装配。示例先从成员取得 `ShipVariantAPI`，记录来源和原始配置，再复制出独立对象，修改武器、武器组、船插和幅能分配，最后将副本应用到一艘演示成员。模块关系和 JSON 只作为读取结果观察，不把序列化文本直接当成保存文件。
 
-::: tip 注册表变体先克隆
-注册表中的变体可能被多个舰船共享。修改前先克隆，再把克隆结果绑定到目标成员，避免一次改装影响其他舰船。
-:::
+*本节预期阅读时间：~30 分钟。*
 
-::: tip 修改注册表对象前先克隆
-注册表返回的变体可能被多个舰船共享。先克隆再修改，才能把本次装配限制在目标成员，避免污染其他舰船。
-:::
-
-*本节预期阅读时间：~20 分钟。*
-
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~40 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 从注册表或舰队成员读取变体，并判断各自的失败边界；
-- 克隆变体并验证修改不会污染注册表对象；
-- 使用 API 修改武器、武器组、船插、幅能和模块装配；
-- 区分 `VariantSource` 与变体序列化、存档边界；
-- 根据装配、部署和日志定位变体故障。
+- 从 `FleetMemberAPI` 取得当前装配并读取 `VariantSource`、船体和文件来源；
+- 使用 `clone()` 建立隔离副本，修改武器槽、武器组、船插和幅能配置；
+- 通过 `setVariant(...)` 将副本应用到成员，并观察 stats 与装配结果；
+- 按模块槽读取父子装配关系，判断模块覆盖是否存在；
+- 使用 `toJSONObject()` 检查序列化边界，并定位共享引用、槽位和 OP 相关故障。
 
 ## 前置知识
 
-- [C1-S6] 的舰船船体、`.ship` 文件、内置三件套与装配构建期和部署期错误边界；
-- [C2-S2] 的船插、`hull_mods.csv` 与效果类实例；
-- [C4-S1] 的战役装配结构、字段要求与任务导出流程；
-- [C4-S4] 的模块船、`modules` 字段加载与部署期实体；
-- [C7-S1] 的 `GearInModPlugin` 所有权与 `onGameLoad` 回调；
-- [C10-S1] 的 `GearInSectorStateSampler` 生涯状态采样脚本注册；
-- [C10-S3] 的 `FleetMemberAPI.getVariant()`、`setVariant(...)` 与装配引用边界。
+- [C11-S3] 的成员 stats 更新和派生值读取；
+- [C11-S4] 的 `FleetMemberAPI` 成员归属与可部署状态；
+- Java 对象引用、集合遍历、异常处理和日志输出；
+- 能够打开舰队界面观察装配，并在 `starsector.log` 搜索固定前缀。
 
-按术语约定，本节首次完整讲解两个词：
+## 取得成员当前装配
 
-- **变体 (variant)**：API 名保留 `ShipVariantAPI`。一次装配的完整定义：船体 (hull)＋武器＋武器组＋船插＋幅能分配 (vents/capacitors)＋联队＋模块引用，外加一个注册表 id(`hullVariantId`) 与一个来源 (`VariantSource`)。
-- **装配 (fit)**：变体的实际内容 —— 武器装在哪、船插装哪些、幅能怎么分、武器怎么分组。本节 "修改装配" 即修改这些字段。
-
-## 取得装配来源
-
-### 变体来源速查表
-
-变体有四个注册入口，对应四种来源：
-
-| 入口 | 路径 | 来源 | 使用方 |
-|---|---|---|---|
-| 空装配自动生成 | `ship_data.csv` 每个注册行 | `HULL` | 按 hull 自动生成 `<hullId>_Hull` 空装配并注册 (无武器槽 displayName "Standard"、有武器槽 "Custom") |
-| 数据变体 | `data/variants/**/*.variant`(core 与各 MOD 合并) | `STOCK` | 变体文件加载流程 (先读 `variantId`，已存在则**静默跳过**，跨文件先到先得；加载后置 `STOCK` 来源并注册) |
-| 任务设计/任务存档 | `<saves>/missions/variants`、`<saves>/missions/<id>` | `MISSION_DESIGN` / `MISSION_SAVE` | 任务变体加载流程 |
-| 存档内变体 | 随生涯存档保存的变体 (refit 界面保存的 `svd_<hullId>_<uid>` 变体) | `REFIT` | 读档时按 id 从存档恢复变体 |
-
-为什么 `.variant` 文件引用 hull 时 hull 必然已注册
-
-启动加载流程先读 `ship_data.csv` 的 hull 注册 (生成全部 `<hullId>_Hull`)，再加载 `data/variants` 变体，因此 `.variant` 文件引用 hull 时，hull 必然已注册。
-
-### 变体读取速查表
-
-公开读取 API(`com.fs.starfarer.api.SettingsAPI`)：
-
-| 方法 | 语义 |
-|---|---|
-| `ShipVariantAPI getVariant(String variantId)` | 注册表未命中时回退读取存档内变体；两处都未命中 → `SettingsAPI.getVariant` 返回 null(不抛异常) |
-| `List<String> getAllVariantIds()` | 全部已注册 id 的副本 |
-| `ShipVariantAPI createEmptyVariant(String hullVariantId, ShipHullSpecAPI hullSpec)` | 代码构造空变体 (注意这不注册进注册表，也不设 `HULL` 来源) |
-| `int computeNumFighterBays(ShipVariantAPI variant)` | 按变体算战机甲板数 |
-
-注意 `SettingsAPI.getVariant` 未命中返回 null；"Ship hull variant not found!" 只在引擎内部路径抛。`FleetMemberAPI` 按 id 建成员时未命中走的是 `errorShipVariant` 回退 (默认 `nebula_Standard`)＋日志堆栈 (该回退在模拟战与标题演示章节已讲)。
-
-两条路径不要混为一谈。
-
-变体的下游使用方：
-
-- `FactoryAPI.createFleetMember(FleetMemberType, String variantOrWingId)` / `(FleetMemberType, ShipVariantAPI)`(`com.fs.starfarer.api.FactoryAPI`)。
-- `FleetMemberAPI.getVariant()` / `setVariant(variant, withRefit, withStatsUpdate)`(`com.fs.starfarer.api.fleet.FleetMemberAPI`；舰队成员章节)。
-- `MutableShipStatsAPI.getVariant()`(`com.fs.starfarer.api.combat.MutableShipStatsAPI`)：`applyEffectsBeforeShipCreation` 里取变体做装配级改动的标准入口。
-- `ShipAPI.getVariant()`(`com.fs.starfarer.api.combat.ShipAPI`)：部署后的战斗实体。
-
-一个关键事实 (`FleetMemberAPI`)：**成员按 id 创建时拿到的变体是注册表变体的 `clone()`**，不是共享引用；变体武器组数 > 1 时还会 `setMayAutoAssignWeapons(false)`。因此 "改成员变体" 与 "改注册表变体" 是两个隔离的层。
-
-## 读取装配字段
-
-### 装配字段速查表
-
-注册表只按 id 对表；变体内部存了什么，决定后续每个修改操作的落点。`ShipVariantAPI`(`com.fs.starfarer.api.combat.ShipVariantAPI`) 是变体的公开接口，支持克隆；其字段即装配的存储形态：
-
-| 字段 | 类型 | 语义 |
-|---|---|---|
-| `weapons` | `Map<String, String>` | 槽位 id → 武器 id(含内置武器；内置武器由 `setHullSpec` 时写入) |
-| `weaponGroups` | `List<WeaponGroupSpec>` | 武器组，组内槽位列表 |
-| `wings` | `List<String>` | 联队 id 列表，索引即甲板序 (内置联队占前 N 位) |
-| `hullMods` / `permaMods` / `sMods` / `suppressedMods` | `LinkedHashSet<String>` | 船插、永久船插、内置增强 (s-mod)、压制船插 |
-| `numFluxVents` / `numFluxCapacitors` | `int` | 幅能分配 |
-| `variantDisplayName` | `String` | 默认 `"Strike"` |
-| `hullVariantId` | `String` | 注册表 id |
-| `source` / `sourceDetail` | `VariantSource` / `String` | 来源与来源详情 (如任务 id) |
-| `stationModules` | `LinkedHashMap<String, String>` | 模块槽 id → 模块变体 id |
-| `moduleVariants` / `savedModuleVariants` | `Map<String, ShipVariantAPI>` | 模块变体覆盖 (运行期，不随存档保存)；保存用的序列化副本 |
-| `tags` / `goalVariant` / `originalVariant` / `mayAutoAssignWeapons` | 杂项 | 标签；autofit 目标标记；autofit 原始变体；是否允许部署期自动组武器 (**JSON 加载后恒为 `false`**；代码 `new` 出来的恒为 `true`) |
-
-变体引用不要跨存档缓存
-
-`hullSpec` 是 `transient` 字段：反序列化时按 `hullId` 重新从注册表取 (`readResolve`)。任何变体引用都不要跨存档缓存 —— 读档后旧引用里的 `hullSpec` 可能是陈旧或空对象。
-
-## 判断来源状态
-
-### 来源状态速查表
-
-字段表里的 `source` 决定保存、覆盖与克隆时的行为，值得单独讲。`VariantSource`(`com.fs.starfarer.api.loading.VariantSource`) 恰五个值：
-
-| 值 | 设置点 | 语义 |
-|---|---|---|
-| `STOCK` | 加载 `data/variants` 变体时 | 数据文件变体；`isStockVariant()` 的判定就是 `source == STOCK` |
-| `HULL` | 按 `ship_data.csv` 注册行生成 `<hullId>_Hull` 时 | 自动空装配 |
-| `REFIT` | refit 界面保存变体 (`svd_` 前缀) 与代码 `setSource` | 玩家/代码改装配后的变体 |
-| `MISSION_DESIGN` | `loadMissionVariants` 的 `<saves>/missions/variants` | 任务设计变体 (`isCommonMissionVariant()` 即此) |
-| `MISSION_SAVE` | `loadMissionVariants` 的 `<saves>/missions/<id>` 与 `createMissionVariant` 导出 | 任务内保存的玩家改装配 |
-
-两个高频判定：
-
-- `isStockVariant()` = `getSource() == VariantSource.STOCK`。注意 `<hullId>_Hull` 空装配**不是** stock 变体 (来源是 `HULL`)。
-- `isEmptyHullVariant()` 的判定条件是无内置以外的船插 ∧ 无内置以外的联队 ∧ 无内置以外的武器 ∧ `source == VariantSource.HULL`。所以 "看起来空" 的代码构造变体 (`createEmptyVariant`) 不满足这个判定；战役制作章节也用这个判定识别自动 `<hullId>_Hull` 空装配。
-
-## 修改武器与船插
-
-来源与结构都讲清了，接下来用 API 修改装配。先记住主线：改之前 `clone()`，改完检查来源；每张表的 "陷阱" 列就是失败时机。公开 API 方法 (`com.fs.starfarer.api.combat.ShipVariantAPI`) 与语义：
-
-### 武器槽位速查表
-
-| 方法 | 语义与陷阱 |
-|---|---|
-| `void addWeapon(String slotId, String weaponId)` | 立即按武器 id 解析 spec(缺失 → 立刻抛 `RuntimeException("Weapon spec [...] not found!")`)；**槽位不校验**，坏槽位静默写入，延迟到部署期失败。内置武器槽的写入被忽略 (`addWeapon(slot, spec, false)` 只在非内置槽写入) |
-| `void clearSlot(String slotId)` | 从武器表移除槽位 |
-| `String getWeaponId(String slotId)` / `WeaponSpecAPI getWeaponSpec(String slotId)` | 未装 → `null` |
-| `List<String> getNonBuiltInWeaponSlots()` | 装有武器的槽减去内置槽 |
-| `Collection<String> getFittedWeaponSlots()` | 装有武器且非装饰槽 |
-| `WeaponSlotAPI getSlot(String slotId)` | 委托 `hullSpec.getWeaponSlot` |
-
-### 幅能与船插速查表
-
-| 方法 | 语义 |
-|---|---|
-| `setNumFluxVents(int)` / `setNumFluxCapacitors(int)` | 直接写数值 |
-| `addMod(String)` | 进 `hullMods`(被压制时忽略) |
-| `removeMod(String)` | 内置船插与 perma 船插**返回不删**，想移除必须 `removePermaMod`，内置船插不可移除 |
-| `clearHullMods()` | 清空后重放内置 + perma 船插 (与 `getHullMods().clear()` 不同，javadoc 明确这点) |
-| `addPermaMod(String)` / `addPermaMod(String, boolean isSMod)` | 进 `permaMods`(isSMod 时同时进 `sMods`) 并 `addMod` |
-| `getHullMods()` | 含内置与 perma 的完整集合 (`getAllMods()` 是实现类方法，接口外) |
-| `getSuppressedMods()` / `addSuppressedMod(String)` | 压制船插：`addSuppressedMod` 会顺带 `removeMod` |
-
-### 武器组速查表
-
-| 方法 | 语义与陷阱 |
-|---|---|
-| `getWeaponGroups()` / `addWeaponGroup(WeaponGroupSpec)` | 读/追加；**空组被 `addWeaponGroup` 静默丢弃** |
-| `WeaponGroupSpec getGroup(int index)` | 越界时**自动新建一个空 `LINKED` 组并追加**，遍历式调用会悄悄改变装配 |
-| `autoGenerateWeaponGroups()` | 按 AI hints、弧线、武器尺寸把武器聚类成**最多 7 组**：PD / `NO_MANUAL_FIRE` 组排最后、导弹/火箭组排前、每组按内容决定 `LINKED`/`ALTERNATING` 与 autofire 默认值 (`autoGenerateWeaponGroupsV2`) |
-| `boolean hasUnassignedWeapons()` | 存在非装饰、未入任何组的武器 → `true` |
-| `void assignUnassignedWeapons()` | 无组 → 直接 `autoGenerateWeaponGroups()`；有组 → 未分配武器并入 (已有 7 组时并入第 7 组)，并清空空组 |
-
-`WeaponGroupSpec`(`com.fs.starfarer.api.loading.WeaponGroupSpec`) 是普通类：
-
-- `WeaponGroupType getType()`(只有 `LINKED`/ `ALTERNATING`，`com.fs.starfarer.api.loading.WeaponGroupType`)。
-- `List<String> getSlots()`、`addSlot`/`removeSlot`；
-- `isAutofireOnByDefault()`/`setAutofireOnByDefault(boolean)`
-
-`clone()` 深拷贝槽位列表。`getGroup(i)` 越界时自动新建空组并追加 —— 想读第 N 组，读完它就真的存在了。读取一律用 `getWeaponGroups()`。
-
-**部署期使用方**：对**非战机**，若 "`isMayAutoAssignWeapons()` 且 (组为空或有未分配武器或只有 1 组)"→ `autoGenerateWeaponGroups()`；否则 → `assignUnassignedWeapons()`。
-
-两个调用**直接写回传入的变体对象**：舰队部署路径传的是成员的克隆变体 (成员进入战斗时生成的克隆)，所以注册表变体不被污染，但成员变体本身会被改写；如果直接把共享/复用变体传进会部署的路径，它会被改。
-
-**战机 (`isFighter()`) 两条都不触发**，战机未入组武器拿不到瞄准目标 (见舰船制作章节)。
-
-### OP 成本速查表
-
-| 方法 | 语义 |
-|---|---|
-| `computeOPCost(MutableCharacterStatsAPI stats)` | = 武器 OP + 船插 OP + vents + capacitors |
-| `computeWeaponOPCost(stats)` | 引用缺失的武器/联队 spec 时抛 `RuntimeException`(消息形如 `Weapon spec with id [...] not found`、`Fighter wing spec with id [...] not found`；**实现原文的格式化串缺右括号，不要依赖消息文本做解析**) |
-| `computeHullModOPCost()` / `computeHullModOPCost(stats)` | 只算非内置、非 perma 船插 |
-| `getUnusedOP(stats)` | 船体 OP(`hullSpec.getOrdnancePoints(stats)`)− `computeOPCost` |
-
-## 修改模块与克隆
-
-武器、武器组、船插与幅能都落在变体自身字段上；模块变体则是变体与变体之间的引用关系。
-
-- `Map<String, String> getStationModules()`：模块槽 id → 模块变体 id(`.variant` 文件的 `modules` 字段；对象与数组两种写法都被接受、加载期不校验，见模块船制作章节)。
-- `List<String> getModuleSlots()`：`stationModules` 中槽位类型为 `STATION_MODULE` 的槽。
-- `ShipVariantAPI getModuleVariant(String slotId)`：先查运行期覆盖 `moduleVariants`，未命中且槽位是模块槽时按 `stationModules` 的变体 id 查注册表。
-- `void setModuleVariant(String slotId, ShipVariantAPI variant)`：**只接受非 STOCK 来源的变体作为覆盖** —— `null` 与 STOCK 来源变体都按 "移除覆盖" 处理。挂覆盖时 `stationModules` 条目同步指向覆盖变体的 `hullVariantId`。
-
-模块覆盖必须是非 STOCK 来源
-
-`setModuleVariant(slotId, variant)` 只接受非 STOCK 来源的变体作为覆盖，`null` 与 STOCK 来源变体都按 "移除覆盖" 处理。忘记 `setSource(REFIT)` 是模块覆盖 "没生效" 的首因 (对应规则强度第 6 条)。
-
-## 保存装配结果
-
-装配改完之后，变体要能复制、能写盘、能随存档保存，改动能在哪里生效也由此划定。
-
-- `clone()`：深拷贝 `weapons`、`weaponGroups`(逐组 `clone`)、`hullMods`/`permaMods`/`sMods`/`sModdedBuiltIns`/ `suppressedMods`/`wings`/`tags`/`stationModules`，`moduleVariants` 递归克隆：
-    - **`hullSpec` 是共享引用**；来源等标量随 `super.clone` 复制，**克隆保留原来源**，需要时显式 `setSource`。
-- `toJSONObject()`：键与 `.variant` 数据文件一致：`displayName`/`hullId`/`variantId`/`fluxVents`/`fluxCapacitors`；`goalVariant` 仅 `true` 时输出：
-    - `weaponGroups`(`mode` 用枚举名、`autofire`、`weapons` 为槽→武器 id 映射)；`modules`(数组形式)。
-    - `wings`/ `hullMods` 只序列化非内置内容；`permaMods`/`sMods`/`tags`(tags 非空才输出)。
-    - 副作用：序列化时若没有任何已装联队会清空 `wings` 列表。
-- 引擎的变体保存入口 (`saveVariant(spec, path)`)：克隆一份、把克隆与原件的来源都置 `STOCK`、注册 (覆盖) 并写 JSON 文件，引擎内部保存变体统一走 "克隆后落盘"。
-- 任务导出完整流程 (战役制作章节)：`createMissionVariant` 写 `<saves>/missions/<id>/mission_<id>_ship_<n>.variant`。
-- 成员变体持久化边界 (成员随档保存时)：**只有非 STOCK 且非 HULL 来源的变体随成员存档** (写入 `savedVariant`)：
-    - STOCK/HULL 来源的成员变体不落档，读档后重新从注册表按 id 克隆，部署期对成员变体的武器组写入 (来源仍为 STOCK 时) 因此不会跨存档残留。
-
-成员变体落档边界
-
-成员随档保存时只把**非 STOCK 且非 HULL 来源**的变体写入存档；STOCK/HULL 来源的成员变体不落档，读档后重新从注册表按 id 克隆 —— "改了装配但读档后变回原样" 排查时先看来源，克隆后记得显式 `setSource`。
-
-## 保护装配来源
-
-前面各节把失败时机散落在表里，这里收拢成一份对照清单。排错时从症状反查规则编号，比逐表翻找更快。
-
-**必须/禁止 (当前基线仍有效，违反有明确可观察结果)**：
-
-1. `.variant` 数据文件**必须**包含 `displayName`、`hullId`、`variantId`、`fluxVents`、`fluxCapacitors`、`weaponGroups` 六个键：
-    - 缺键 → `JSONException` 从变体文件加载流程冒泡，**启动加载失败** (战役制作章节已定：`weaponGroups` 必填)。
-2. 变体文件的 `hullId` **必须**指向已注册 hull(否则 `Ship hull spec [...] not found!`)；`weapons` 里的武器 id **必须**有效 (否则 `Weapon spec [...] not found!`)，两者都是加载期失败，非静默。
-3. 代码里 `addWeapon` 的武器 id **必须**有效，调用点立刻抛 `Weapon spec [...] not found!`，而不是延迟报错。
-4. 槽位 id **必须**是 hull 真实存在的槽。`addWeapon` 不校验 (静默写入)，部署期才抛 `Ship hull [<hullId>] variant [<variantId>]: slot id [<slot>] not found for weapon [<weapon>]`，舰船不生成。
-5. **禁止**试图用 `addWeapon` 改内置武器槽、用 `removeMod` 移除内置/perma 船插，两者都静默不生效，装配不变且无任何报错。
-6. `setModuleVariant` 的变体参数**必须**是非 STOCK 来源；传 STOCK 或 `null` 都按 "移除覆盖" 静默处理。
-7. **禁止**跨文件重复 `variantId`，后者静默跳过，"装配不出现" 的首选排查方向 (战役制作章节)。
-8. 未注册 id 走 `SettingsAPI.getVariant` → 返回 null；走 `FleetMemberAPI` 路径 → `errorShipVariant` 回退 (模拟战与标题演示章节)。两条路径行为不同，排查时先分清。
-
-**建议**：
-
-- 修改装配前先 `clone()`(`getVariant().clone()` → `setSource(REFIT)` → 修改 → `setVariant(newVariant, false, false)`)；改完来源记得 `setSource`，克隆不会自动改。
-- 代码组装完武器后调用 `autoGenerateWeaponGroups()` 或 `assignUnassignedWeapons()` 补组，避免部署期隐式补组改写变体。
-- 运行时按 id 取变体用 `SettingsAPI.getVariant`；要遍历全部注册变体用 `getAllVariantIds()`(按注册表 id 全量扫描模式)。
-
-## 执行装配修改
-
-本页把一个注册表变体依次送过读取来源、克隆改装、补齐武器组、覆盖模块；每一环都放在对应角色的 `runOnce()` 内，日志出现后再进入下一环，最后才处理序列化。
-
-### 读取注册表变体
-
-在 `GearInVariantReader.runOnce()` 中读取已注册的 `brawler_Assault`，同时读取引擎按 hull 自动生成的 `brawler_Hull`。
+`FleetMemberAPI.getVariant()` 返回成员当前正在使用的装配。这个对象同时保存船体规格、武器槽映射、船插集合、武器组、幅能电容与散热数量、模块映射和来源枚举。创建成员后立即读取时，装配可能来自规格库；成员加入舰队并完成 stats 更新后，读取结果才适合用于实际改装。
 
 ```java
-MutableCharacterStatsAPI stats = Global.getSector().getPlayerPerson().getStats();
-ShipVariantAPI stock = Global.getSettings().getVariant("brawler_Assault");
-ShipVariantAPI hullVariant = Global.getSettings().getVariant("brawler_Hull");
-GearInVariantLog.logVariant("stock", stock, stats);
-LOG.info("GearIn hull source=" + hullVariant.getSource()
-        + " empty=" + hullVariant.isEmptyHullVariant());
+FleetMemberAPI member = Global.getFactory().createFleetMember(
+        FleetMemberType.SHIP,
+        "wolf_Assault");
+ShipVariantAPI variant = member.getVariant();
+
+String hullVariantId = variant.getHullVariantId();
+String hullId = variant.getHullSpec().getHullId();
+VariantSource source = variant.getSource();
+String filePath = variant.getVariantFilePath();
+
+LOG.info("variant read: hull=" + hullId
+        + " variant=" + hullVariantId
+        + " source=" + source
+        + " file=" + filePath
+        + " vents=" + variant.getNumFluxVents()
+        + " capacitors=" + variant.getNumFluxCapacitors());
 ```
 
-执行后，日志显示 `brawler_Assault` 的 `source=STOCK`，并显示 `brawler_Hull` 的 `source=HULL` 与 `empty=true`。
+`VariantSource` 描述装配来源，而不是一个可以替代装配 ID 的稳定标识。原版枚举包括 `STOCK`、`MISSION_DESIGN`、`MISSION_SAVE`、`REFIT` 和 `HULL`；应用运行时修改时，应根据数据流选择合适的来源，不要把来源枚举当作文件写入开关。
 
-### 隔离克隆并改装
+::: tip 先确认对象来源，再决定写回方式
+成员返回的装配可能属于规格库、任务数据或改装结果。修改前记录 `getSource()` 和 `getVariantFilePath()`，写回后重新读取这两个值，才能判断修改发生在目标成员上。
+:::
 
-在 `GearInVariantRefitter.runOnce()` 中先克隆，再改槽位、幅能和船插，最后把来源改成 `REFIT`。`clone()` 复制装配集合，但不会替你改来源。
+## 建立隔离副本
+
+`ShipVariantAPI.clone()` 会复制武器映射、武器组、船插集合、永久船插、受抑制船插、战机列表、模块映射和标签集合。副本仍然引用同一艘船体规格，但对装配字段的修改不会回写原始装配。
 
 ```java
-ShipVariantAPI stock = Global.getSettings().getVariant("brawler_Assault");
-ShipVariantAPI refit = stock.clone();
-refit.clearSlot("WS 003");
-refit.addWeapon("WS 003", "railgun");
-refit.setNumFluxVents(14);
-refit.setNumFluxCapacitors(10);
-refit.addMod("hardened_subsystems");
-refit.removeMod("reinforcedhull");
-refit.setSource(VariantSource.REFIT);
-refit.setVariantDisplayName("GearIn Refit");
+ShipVariantAPI original = member.getVariant();
+ShipVariantAPI copy = original.clone();
+
+boolean isolated = copy != original;
+String originalSource = original.getSource().name();
+String copiedSource = copy.getSource().name();
+
+LOG.info("variant clone: isolated=" + isolated
+        + " originalSource=" + originalSource
+        + " copiedSource=" + copiedSource
+        + " originalGroups=" + original.getWeaponGroups().size()
+        + " copiedGroups=" + copy.getWeaponGroups().size());
 ```
 
-日志中的克隆变体显示 `source=REFIT`、`WS 003=railgun`、幅能 14/10；随后再次读取 stock，原槽位仍是 `annihilator`。
+副本应用到成员后，成员会持有这份副本的引用。此后继续修改 `copy` 会直接影响成员，因此完成改装后应把副本视为成员的当前装配，不能再把它当作可复用的模板对象。
 
-### 配置武器分组
+## 修改武器槽位
 
-在 `GearInWeaponGroupBuilder.runOnce()` 中从空装配开始装两门同型武器，先观察未分组状态，再调用自动分组。
+`addWeapon(slotId, weaponId)` 把指定武器写入指定槽位，`getWeaponId(slotId)` 读取槽位当前的武器 ID，`clearSlot(slotId)` 清空槽位。槽位 ID 来自船体规格，武器 ID 来自武器规格；两者不匹配时，装配可能无法应用或在界面中显示空槽。
 
 ```java
-ShipVariantAPI fromEmpty = Global.getSettings().getVariant("brawler_Hull").clone();
-fromEmpty.setSource(VariantSource.REFIT);
-fromEmpty.addWeapon("WS 003", "railgun");
-fromEmpty.addWeapon("WS 004", "railgun");
-LOG.info("before groups=" + fromEmpty.getWeaponGroups().size()
-        + " unassigned=" + fromEmpty.hasUnassignedWeapons());
-fromEmpty.autoGenerateWeaponGroups();
+String slotId = "WS 001";
+String weaponBefore = copy.getWeaponId(slotId);
+
+copy.addWeapon(
+        slotId,
+        "pdlaser");
+
+String weaponAfter = copy.getWeaponId(slotId);
+WeaponSpecAPI weaponSpec = copy.getWeaponSpec(slotId);
+
+LOG.info("weapon slot: slot=" + slotId
+        + " before=" + weaponBefore
+        + " after=" + weaponAfter
+        + " spec=" + (weaponSpec == null ? "null" : weaponSpec.getWeaponId()));
 ```
 
-调用前日志显示 `unassigned=true`，调用后生成一个包含两个槽位的武器组。战机变体要在数据文件中提前写好分组，因为部署期补组不覆盖战机。
+`getNonBuiltInWeaponSlots()` 只返回实际装有武器的非内置槽位，`getFittedWeaponSlots()` 返回当前装配的已安装槽集合。读取这两个集合可以区分空槽、内置武器和改装脚本写入的槽位。
 
-### 覆盖模块变体
+::: warning 写入武器前核对槽位规格
+武器 ID、武器尺寸和武器类型都必须适配目标槽位。先通过 `getSlot(slotId)` 取得槽位，再用 `getWeaponSpec(slotId)` 观察写入结果；日志显示 ID 不代表该武器已经有效安装。
+:::
 
-在 `GearInModuleOverrider.runOnce()` 中读取空间站模块槽，克隆模块并设为 `REFIT`，再挂回站体克隆。
+## 重新生成和读取武器组
+
+武器安装与武器组是两层数据。`autoGenerateWeaponGroups()` 根据当前武器集合生成分组；`getWeaponGroups()` 返回分组对象，`WeaponGroupSpec.getSlots()` 返回该组引用的槽位。组模式由 `WeaponGroupType` 表示，自动开火默认值由 `isAutofireOnByDefault()` 表示。
 
 ```java
-ShipVariantAPI station = Global.getSettings().getVariant("station1_Standard");
-ShipVariantAPI moduleCopy = station.getModuleVariant("WS 009").clone();
-moduleCopy.setSource(VariantSource.REFIT);
-ShipVariantAPI stationCopy = station.clone();
-stationCopy.setModuleVariant("WS 009", moduleCopy);
-```
+copy.autoGenerateWeaponGroups();
+List<WeaponGroupSpec> groups = copy.getWeaponGroups();
 
-挂载后 `stationCopy.getModuleVariant("WS 009").getSource()` 为 `REFIT`。若传入 STOCK 来源，调用会按移除覆盖处理，站体仍返回原模块。
-
-### 序列化改装结果
-
-在 `GearInVariantSerializer.runOnce()` 中对 REFIT 克隆调用 `toJSONObject()`，只核对输出键，不把这个运行时对象误当成注册表文件。
-
-```java
-ShipVariantAPI refit = Global.getSettings().getVariant("brawler_Assault").clone();
-refit.setSource(VariantSource.REFIT);
-JSONObject json = refit.toJSONObject();
-LOG.info("GearIn refit JSON: " + json.toString(2));
-```
-
-日志 JSON 至少包含 `displayName`、`hullId`、`variantId`、幅能字段和 `weaponGroups`；改装是否随存档保留仍由来源与成员保存路径决定。
-
-## 观察装配结果
-
-接口语义讲完了，接下来把每个语义点实际跑一遍。在既有 MOD 布局与前置的 `GearInModPlugin` 生命周期例之上新增七个类 (不新增任何资源文件)：
-
-```text
-mods/GearIndustry/
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data\
-├── src\
-│   └── data/scripts/gearin/campaign\
-│       ├── GearInVariantLauncher      # 本节新增：注册载体 (归本节所有)
-│       ├── GearInVariantReader        # 注册表读取
-│       ├── GearInVariantRefitter      # 克隆改装
-│       ├── GearInWeaponGroupBuilder   # 武器组生成
-│       ├── GearInModuleOverrider      # 模块变体覆盖
-│       ├── GearInVariantSerializer    # 变体序列化
-│       └── GearInVariantLog           # 包内日志助手
-└── jars\
-```
-
-### 连接注册入口
-
-职责：薄接入类，本节唯一的注册入口。`REGISTER_MARK` 是存档持久化判断键；判断通过后调用静态 `register(SectorAPI)`，把五个角色脚本按顺序挂进生涯。每个角色脚本首次 `advance()` 后 `isDone()` 置 true，引擎下一帧自动移除，整套演示在首个生涯帧内顺序完成，读档后不再重复。
-
-### 读取变体
-
-职责：演示 `SettingsAPI.getVariant` 的注册表读取与来源判定，打印股票变体 `brawler_Assault`(STOCK) 的身份/装配/OP 摘要、自动空装配 `brawler_Hull` (HULL 来源，`source == HULL`、`isEmptyHullVariant() == true`) 与注册表变体总数。
-
-调用关系：由 `GearInVariantLauncher.register()` 第一个挂载；摘要打印复用 `GearInVariantLog.logVariant()`。
-
-### 执行克隆改装
-
-职责：演示 `clone()` 的深拷贝语义，修改克隆 (换武器、改幅能、改船插、改来源、重新生成武器组) 不影响注册表原变体；并给出 stock 与 refit 的 OP 对照 (`computeOPCost` = 武器 OP + 船插 OP + vents + caps；`getUnusedOP` = 船体 OP − 已用 OP)。
-
-调用关系：由 `GearInVariantLauncher.register()` 第二个挂载；摘要打印复用 `GearInVariantLog.logVariant()`。
-
-### 构建武器分组
-
-职责：演示空装配装武器但无武器组时的 `hasUnassignedWeapons() == true`，以及 `autoGenerateWeaponGroups()` 按 AI hints / 弧线 / 尺寸重新聚类补组 (同型武器必合并为一组，最多 7 组)。
-
-调用关系：由 `GearInVariantLauncher.register()` 第三个挂载。
-
-### 覆盖模块变体
-
-职责：演示 `stationModules` / `getModuleVariant` / `setModuleVariant`，其中 `setModuleVariant` 只接受非 STOCK 来源的覆盖 (STOCK/null 都会被当作 "移除覆盖" 处理)。
-
-调用关系：由 `GearInVariantLauncher.register()` 第四个挂载。
-
-### 保存序列化结果
-
-职责：演示 `toJSONObject()` 的输出键与 `.variant` 数据文件一致 (`displayName`/`hullId`/`variantId`/`fluxVents`/`fluxCapacitors`/ `weaponGroups`/`modules`/`wings`/`hullMods`/`permaMods`/`sMods`/`tags`)。
-
-调用关系：由 `GearInVariantLauncher.register()` 第五个挂载。
-
-### 查看装配日志
-
-职责：包内私有助手，不实现接口、不直接注册。`GearInVariantReader` 与 `GearInVariantRefitter` 共用的变体身份/来源/装配/OP 摘要打印格式，避免格式串在两处重复。
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.characters.MutableCharacterStatsAPI;
-import com.fs.starfarer.api.combat.ShipVariantAPI;
-
-/**
- * 包内协作：把变体身份 / 来源 / 装配 / OP 摘要打印到日志。
- * GearInVariantReader 与 GearInVariantRefitter 共用的打印格式，避免两处重复。
- */
-final class GearInVariantLog {
-
-    private static final Logger LOG = Global.getLogger(GearInVariantLog.class);
-
-    private GearInVariantLog() {
-    }
-
-    static void logVariant(String label, ShipVariantAPI variant, MutableCharacterStatsAPI stats) {
-        LOG.info(String.format(
-                "GearIn %s: id=%s displayName=%s hull=%s source=%s isStockVariant=%s isEmptyHullVariant=%s "
-                        + "weapons=%s mods=%s wings=%s vents=%d caps=%d op=%d unused=%d",
-                label, variant.getHullVariantId(), variant.getDisplayName(), variant.getHullSpec().getHullId(),
-                variant.getSource(), variant.isStockVariant(), variant.isEmptyHullVariant(),
-                variant.getNonBuiltInWeaponSlots(), variant.getHullMods(), variant.getWings(),
-                variant.getNumFluxVents(), variant.getNumFluxCapacitors(),
-                variant.computeOPCost(stats), variant.getUnusedOP(stats)));
-    }
+for (int i = 0; i < groups.size(); i++) {
+    WeaponGroupSpec group = groups.get(i);
+    LOG.info("weapon group: index=" + i
+            + " type=" + group.getType()
+            + " autofire=" + group.isAutofireOnByDefault()
+            + " slots=" + group.getSlots());
 }
 ```
 
-对应关系：
+自动生成会根据武器规格和槽位相似度重新组织分组，并可能替换原有的分组顺序。需要保留玩家手动分组时，不要在读取后无条件调用它；需要重建时，应在武器写入完成后调用，再逐组检查结果。
 
-- 五个脚本类 (`GearInVariantReader` / `GearInVariantRefitter` / `GearInWeaponGroupBuilder` / `GearInModuleOverrider` / `GearInVariantSerializer`)`implements EveryFrameScript`：
-    - 三方法约定与 "`isDone` 先查再推进" 的循环语义见生涯脚本章节；`done` 在首次 `advance` 后置位，引擎下一帧自动移除。
-- `GearInVariantLauncher.REGISTER_MARK`：persistent data 判断键 (`"GearIn_VariantLauncher"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
-- `GearInVariantReader`：`getVariant` 读取注册表；`brawler_Assault` 是 `data/variants/brawler_Assault.variant`(STOCK，`goalVariant: true`)；`brawler_Hull` 是自动空装配 (HULL 来源，brawler 有武器槽所以 displayName 是 "Custom")。
-    - `GearInVariantRefitter`：克隆后修改，`clearSlot`/`addWeapon`/`setNumFluxVents`/`setNumFluxCapacitors`/`addMod`/ `removeMod`/`setSource`/`setVariantDisplayName`/`autoGenerateWeaponGroups` 一次集齐。
-    - brawler 的 `WS 003` 是 SMALL UNIVERSAL 硬点 (`data/hulls/brawler.ship`)，`railgun` 是小型实弹，可装。
-    - 克隆隔离验证：原 `stock` 的 `WS 003` 仍是 `annihilator`(`brawler_Assault.variant` 的组 2)，幅能不变。
-- `GearInWeaponGroupBuilder`：空装配克隆后只装两门武器、无武器组 → `hasUnassignedWeapons() == true`；`autoGenerateWeaponGroups()` 后生成 1 个组。
-    - `GearInModuleOverrider`：`station1_Standard`(`data/variants/stations/station1_Standard.variant`，`modules` 用数组写法) 的 `WS 009` 是 `STATION_MODULE` 槽 (`data/hulls/station1.ship`)。
-    - 模块变体是 `module_large1_lowtech_Standard`。
-    - 克隆模块变体并 `setSource(REFIT)` 后挂到 `stationCopy`，覆盖生效 (来源显示 REFIT，id 不变)。
-- `GearInVariantSerializer`：`toJSONObject()` 序列化克隆后的 refit 变体，键与 `.variant` 文件一致。
-- `GearInVariantLog`：包内日志摘要助手，两个脚本共用同一份打印格式，避免重复。
+### 武器组字段速查表
 
-调用点 (工程片段，方法所在类由前置生命周期例持有，本节只演示调用，不改动那些文件)：
+| 要观察的对象 | 读取入口 | 观察含义 |
+| --- | --- | --- |
+| 槽位中的武器 | `getWeaponId(slotId)` | 当前槽位的武器 ID |
+| 已安装槽位 | `getFittedWeaponSlots()` | 包含实际武器的槽位集合 |
+| 武器组 | `getWeaponGroups()` | 当前分组对象集合 |
+| 分组槽位 | `WeaponGroupSpec.getSlots()` | 该组引用的槽位 ID |
+| 分组模式 | `WeaponGroupSpec.getType()` | 联动或交替等组行为 |
+| 默认自动开火 | `isAutofireOnByDefault()` | 进入战斗时的组开火默认值 |
 
-```java
-    // GearInModPlugin(前置生命周期例持有) 的 onGameLoad(boolean newGame) 内新增本节注册块。
-    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInVariantLauncher.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInVariantLauncher.REGISTER_MARK, true);
-        GearInVariantLauncher.register(Global.getSector());
-    }
-    // 可选冗余查重 (建议：hasScript 与 persistent data 门互为冗余)：
-    if (!Global.getSector().hasScript(GearInVariantReader.class)) {
-        GearInVariantLauncher.register(Global.getSector());
-    }
-```
+## 修改船插和幅能分配
 
-(上面两段只取一段即满足 "不重复注册"；两段同留时第二段会在第一段之后补注册，不会叠加 —— 但演示时建议只保留判断段，避免混淆。生涯脚本章节对同样的二选一做过说明。)
+`addMod(modId)`、`removeMod(modId)` 修改普通船插集合；`getHullMods()` 读取包含普通船插的集合，`getNonBuiltInHullmods()` 可用于观察非内置部分。永久船插和受抑制船插有独立入口，不要用普通集合的清空操作代替它们。
 
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
-
-```text
-gradle jar
-```
-
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下七个类的 class 条目 (可用 `jar tf` 核对)。
-
-## 处理装配污染
-
-在 `GearInVariantRefitter.runOnce()` 中暂时直接修改注册表返回的 stock 变体，再创建第二个同 id 成员。两个成员都会拿到被改过的槽位，说明共享对象已经被污染。
-
-**局部故障片段：**
+`setNumFluxVents(...)` 与 `setNumFluxCapacitors(...)` 直接设置幅能散热和电容数量。数值是否允许由船体和军械点数共同决定；装配对象可以暂时保存超出 OP 的值，但应用到成员或进入改装界面时会出现校验或回退。
 
 ```java
-// 故障片段
-ShipVariantAPI variant = Global.getSettings().getVariant("wolf_Assault"); variant.addWeapon("WS 001", "lightmg");
+boolean hadFluxDistributor = copy.hasHullMod("fluxdistributor");
+int ventsBefore = copy.getNumFluxVents();
+int capacitorsBefore = copy.getNumFluxCapacitors();
+
+copy.removeMod("fluxdistributor");
+copy.addMod("fluxdistributor");
+copy.setNumFluxVents(ventsBefore + 1);
+copy.setNumFluxCapacitors(capacitorsBefore + 1);
+
+LOG.info("variant resources: hadFluxDistributor=" + hadFluxDistributor
+        + " hullMods=" + copy.getNonBuiltInHullmods()
+        + " vents=" + ventsBefore + "->" + copy.getNumFluxVents()
+        + " capacitors=" + capacitorsBefore + "->"
+        + copy.getNumFluxCapacitors());
 ```
 
-**局部修正片段：**
+如果演示目的是观察写回流程，可以先记录原值，再在应用后恢复；如果演示目的是观察超出 OP 的错误边界，应把 `computeOPCost(...)`、`computeHullModOPCost(...)` 和 `getUnusedOP(...)` 的结果一起写入日志。
 
 ```java
-// 修正片段
-ShipVariantAPI variant = Global.getSettings().getVariant("wolf_Assault").clone();
-variant.setSource(VariantSource.REFIT);
-variant.addWeapon("WS 001", "lightmg");
+int opCost = copy.computeOPCost(null);
+int unusedOp = copy.getUnusedOP(null);
+LOG.info("variant OP: cost=" + opCost + " unused=" + unusedOp);
 ```
 
-原因：注册表对象由多个创建路径共享；`FleetMemberAPI` 创建成员时会克隆，但直接修改 `SettingsAPI.getVariant()` 的结果会先改变注册表。复验：重启或重新载入原始数据，改为 clone + `setSource(REFIT)`，连续创建两个成员，确认只有显式使用该克隆的成员拥有 `lightmg`。
+## 把副本应用到成员
 
-## 验证方案
+`FleetMemberAPI.setVariant(variant, withRefit, withStatsUpdate)` 把调用方提供的装配引用写入成员。`withRefit` 控制是否按改装差异处理 CR 影响，`withStatsUpdate` 控制是否立即调用成员 stats 更新。改装结果需要进入舰队界面和部署判断时，应在写回后重新读取成员的 `getVariant()`、`getStats()` 和 `canBeDeployedForCombat()`。
 
-前置数据：既有 MOD 布局 [C6-S1] + `GearInModPlugin` ([C7-S1]，含本节调用点片段)、本节七个类；生涯状态采样脚本 `GearInSectorStateSampler` (可选)。
+```java
+member.setVariant(
+        copy,
+        false,
+        true);
+member.updateStats();
 
-1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含七个类的 class 条目。
-2. **新建生涯**：查看 `starsector.log` 中本节七个类输出的全部 `GearIn ...` 日志。
-3. **读档**：保存后读档，观察本节脚本是否重复执行。
-4. 进入任意有 `station1` 的市场，观察空间站模块是否正常生成。
+ShipVariantAPI applied = member.getVariant();
+LOG.info("variant applied: sameReference=" + (applied == copy)
+        + " source=" + applied.getSource()
+        + " vents=" + applied.getNumFluxVents()
+        + " capacitors=" + applied.getNumFluxCapacitors()
+        + " memberStrength=" + member.getMemberStrength()
+        + " deployable=" + member.canBeDeployedForCombat());
+```
 
-预期结果：
+`setVariant(..., false, true)` 适合本节的可逆观察，因为它不会把改装差异作为一次 field refit CR 事件处理，但会重建成员 stats。若使用 `withRefit=true`，应同时记录 CR 前后值，并按 [C11-S3] 的 stats 重算规则观察派生结果。
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/` 下七个类的 class 条目。
-- **新建生涯**：`starsector.log` 按注册顺序出现以下日志 (数值以实际游戏为准)：
+::: tip 应用后的副本就是成员当前装配
+写回后不要继续修改 `original`，也不要把 `copy` 当作多个成员共用的模板。每艘演示成员都从自己的当前装配重新 `clone()`，才能避免连带修改。
+:::
 
-    ```text
-    GearIn stock: id=brawler_Assault displayName=Assault hull=brawler source=STOCK isStockVariant=true isEmptyHullVariant=false weapons=[WS 001, WS 002, WS 003, WS 004] mods=[fluxbreakers, reinforcedhull] wings=[] vents=10 caps=8 op=... unused=... GearIn hull empty variant: id=brawler_Hull source=HULL isStockVariant=false isEmptyHullVariant=true displayName=Custom GearIn refit clone: id=brawler_Assault displayName=GearIn Refit hull=brawler source=REFIT isStockVariant=false isEmptyHullVariant=false weapons=[...] mods=[fluxbreakers, hardened_subsystems] wings=[] vents=14 caps=10 op=... unused=... GearIn clone isolation: stock WS 003=annihilator vents=10 caps=8 hasReinforcedHull=true GearIn from empty: groups=0 hasUnassignedWeapons=true GearIn from empty groups after autoGenerateWeaponGroups: LINKED[[WS 003, WS 004]] GearIn OP: stock=... refit=... hullOP=... unusedRefit=... GearIn modules: stationModules={WS 006=module_armour3_Standard, ...} module WS 009=module_large1_lowtech_Standard override=module_large1_lowtech_Standard overrideSource=REFIT GearIn refit JSON: { "displayName": "GearIn Refit", "hullId": "brawler", "variantId": "brawler_Assault", ... } GearIn registered variant count: 647
-    ```
+## 读取模块和父子关系
 
-    要点核对：`brawler_Hull` 的 `isStockVariant=false` 且 `isEmptyHullVariant=true`(来源是 HULL 不是 STOCK)；`refit clone` 的来源是 REFIT、`reinforcedhull` 已被移除、`hardened_subsystems` 已加入、vents/caps 变成 14/10；`clone isolation` 一行证明原注册表变体未被污染 (WS 003 仍是 `annihilator`、幅能 10/8)；`overrideSource=REFIT` 证明非 STOCK 覆盖已挂上。
-- **各脚本错误行**：若日志出现任一脚本角色的 ERROR 行 (含堆栈)：
-    - `GearIn variant reader failed` / `GearIn variant refitter failed` / `GearIn weapon group builder failed`
-    - `GearIn module overrider failed` 或 `GearIn variant serializer failed`；
-    - 说明对应角色脚本某一步抛错；
-    - 按堆栈对照 "规则强度" 节定位 (最常见的是引用了不存在的 id)。
-- **读档**：不重复执行演示 (`REGISTER_MARK` 门已关、`hasScript` 命中)；`onGameLoad` 里新档与读档各执行一次演示是设计行为 (每个角色脚本只跑一次即自停)。
-- **退出到主菜单**：脚本停止 (生涯场景不再推进)；回主菜单后再进档按第 5 条继续。
+带模块槽的父装配通过 `getModuleSlots()` 返回槽位 ID；`getModuleVariant(slotId)` 返回该槽位当前的模块装配，可能为 `null`。`getStationModules()` 返回槽位到模块装配 ID 的映射。`setModuleVariant(slotId, moduleVariant)` 只应在槽位属于当前父装配时调用。
 
-## 故障分析
+```java
+List<String> moduleSlots = variant.getModuleSlots();
+Map<String, String> moduleIds = variant.getStationModules();
 
-- **装配没有出现在注册表中**：变体 ID 重复，或文件没有放在 `data/variants` 下并使用 `.variant` 后缀。
+for (String slotId : moduleSlots) {
+    ShipVariantAPI module = variant.getModuleVariant(slotId);
+    String moduleId = module == null
+            ? "<none>"
+            : module.getHullVariantId();
+    LOG.info("module relation: slot=" + slotId
+            + " mapId=" + moduleIds.get(slotId)
+            + " variant=" + moduleId
+            + " source=" + (module == null ? "<none>" : module.getSource()));
+}
+```
 
-    - **解决方案**：调整文件位置并换用唯一 ID。
+父装配的 `clone()` 会递归复制已存在的模块装配。修改父装配副本不会自动改变已经单独应用到其他成员的模块；反过来，修改一个模块副本也不会替换父装配映射，除非显式调用 `setModuleVariant(...)`。
 
-- **加载变体时启动中止**：文件缺少必填键，或引用了不存在的 hull、武器 ID。
+### 模块关系速查表
 
-    - **解决方案**：根据日志中的 `JSONException` 或 `spec [...] not found` 核对数据，重启。
+| 模块关系 | 入口 | 返回结果 |
+| --- | --- | --- |
+| 可用模块槽 | `getModuleSlots()` | 父装配定义的槽位 ID |
+| 当前模块 | `getModuleVariant(slotId)` | 模块装配或 `null` |
+| 保存的模块 ID | `getStationModules()` | 槽位到装配 ID 的映射 |
+| 写入模块 | `setModuleVariant(slotId, variant)` | 更新父装配的模块关系 |
+| 模块来源 | `module.getSource()` | 该模块装配自身的来源 |
 
-- **`getVariant` 返回 null**：注册表和存档都没有与传入 ID 完全匹配的变体。
+## 观察来源和 JSON 序列化
 
-    - **解决方案**：用 `getAllVariantIds()` 核对大小写与拼写，再重新调用读取入口。
+`toJSONObject()` 把装配的显示名、船体 ID、装配 ID、幅能数量、武器组、模块映射和战机等字段写入一个 `JSONObject`。它用于调试、日志和保存前检查，调用本身不会创建 `.variant` 文件，也不会把结果登记到规格库。
 
-- **部署时报告槽位不存在**：`addWeapon` 接受了 hull 中没有的槽位 ID，错误到构建舰船时才暴露。
+```java
+try {
+    JSONObject json = member.getVariant().toJSONObject();
+    LOG.info("variant json: length=" + json.toString().length()
+            + " source=" + member.getVariant().getSource()
+            + " variant=" + member.getVariant().getHullVariantId());
+} catch (JSONException ex) {
+    LOG.error("GearIn variant JSON failed", ex);
+}
+```
 
-    - **解决方案**：写入前通过 `getSlot` 或 `getAllWeaponSlots` 核对槽位，再部署同一装配。
-
-- **修改一艘船后同装配舰船全部变化**：代码直接修改了 `SettingsAPI.getVariant` 返回的共享对象。
-
-    - **解决方案**：先 `clone()`，修改后通过 `setVariant` 写回目标成员。
-
-- **读档后装配恢复原状**：克隆保留了 STOCK 或 HULL 来源，成员没有按改装结果落档。
-
-    - **解决方案**：修改前调用 `setSource(VariantSource.REFIT)`，保存并读档。
-
-- **内置装备没有被修改**：普通写入和移除接口会忽略内置武器、内置船插或 perma 船插。
-
-    - **解决方案**：只修改允许改装的槽位，perma 项使用对应接口。
-
-- **战机武器没有目标**：战机变体存在未分组武器，而部署流程不会为战机自动补组。
-
-    - **解决方案**：在数据文件中写全 `weaponGroups`。
-
-- **读取武器组后多出空组**：越界调用 `getGroup(i)` 会创建并追加新组。
-
-    - **解决方案**：遍历改用 `getWeaponGroups()`。
-
-- **OP 计算报告武器 spec 不存在**：变体仍引用已删除或未加载的武器、联队 ID。
-
-    - **解决方案**：清理失效引用并确认依赖已启用，再重新计算 OP。
-
-## 总结
-
-本节建立了一条完整的变体数据链：`ship_data.csv` 与 `data/variants` 负责注册，`SettingsAPI.getVariant` 负责读取，`clone()` 隔离修改，来源决定覆盖与落档，`toJSONObject` 与 `saveVariant` 完成序列化。排错时先分清两条读取路径，再沿 id、来源、克隆三层定位；上述次序是本节最可复用的判断。
-
-- 公开面只有 `ShipVariantAPI` 接口；`hullSpec` 不随存档保存，读档按 `hullId` 重建，**变体引用禁止跨存档缓存**。
-- `addWeapon` 校验武器 id 但不校验槽位：武器 id 错 → 调用点抛；槽位 id 错 → 部署期抛。
-- 内置武器槽与内置/perma 船插不可改 (静默不生效)；`clearHullMods` 保留内置与 perma。
-- `getGroup(i)` 越界新建空组；`addWeaponGroup` 丢弃空组；`autoGenerateWeaponGroups` 最多 7 组且写回传入变体，改装配先 `clone()`。
-- 克隆保留来源；需要 REFIT 语义要显式 `setSource`。
-- `setModuleVariant` 只接受非 STOCK 覆盖；模块槽 id 由 `getModuleSlots()` 给出 (STATION\_MODULE 槽)。
-- 战机不触发部署期补组；未入组武器拿不到目标。
-
-变体只是数据，它的生命周期终点是部署与存档：本节把数据层的全部语义讲清后，它经 `setVariant` 挂到舰队成员、随人物 (Person) 与 `MutableStat` 进入状态交接链 —— 那些交接点 "谁克隆、谁改来源、谁落档" 的差异，正是由本节的规则决定的。
-
-## 建议参考项
-
-- `com.fs.starfarer.api.combat.ShipVariantAPI`：变体公开接口：读取、克隆、装配修改、武器组、模块与序列化。
-- `com.fs.starfarer.api.SettingsAPI`：`getVariant` / `getAllVariantIds` / `createEmptyVariant` / `computeNumFighterBays`。
-- `com.fs.starfarer.api.loading.VariantSource`：变体来源五值枚举 (STOCK / HULL / REFIT / MISSION\_DESIGN / MISSION\_SAVE)。
-- `com.fs.starfarer.api.loading.WeaponGroupSpec`：武器组结构；
-- `com.fs.starfarer.api.loading.WeaponGroupType`：武器组类型枚举 (LINKED / ALTERNATING)。
-- `com.fs.starfarer.api.fleet.FleetMemberAPI`：`getVariant` / `setVariant`(舰队侧读写)。
-- `com.fs.starfarer.api.FactoryAPI`：`createFleetMember`(按变体/联队 id 建成员)。
-- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：stats 侧 `getVariant` 取变体；
-- `com.fs.starfarer.api.combat.ShipAPI`：实体侧 `getVariant` 取变体。
-- `data/variants/brawler_Assault.variant`：示例 stock 变体 (武器组、`goalVariant: true`、`hullMods`)。
-- `data/variants/stations/station1_Standard.variant`：`modules` 数组写法 (解析时剥除 `#` 注释)。
-- `data/hulls/brawler.ship`：`weaponSlots`(WS 001/002 MEDIUM BALLISTIC，WS 003/004 SMALL UNIVERSAL 硬点)。
-- `data/hulls/station1.ship`：`STATION_MODULE` 槽 (含 `WS 009`)。
+序列化结果中的 `weaponGroups` 是当前分组快照，`modules` 是父装配当前的模块 ID 映射。需要正式保存时，应使用游戏装配数据流程生成目标文件，并重新加载验证；不要把日志中的 JSON 文本直接当作已保存装配。
 
 ## 完整最小例
 
-::: details 完整成品：GearInVariantLauncher
-
-```java
-package data.scripts.gearin.campaign;
-
-import com.fs.starfarer.api.campaign.SectorAPI;
-
-/**
- * 角色：注册载体 (薄接线类)。onGameLoad 的一次性门控通过后调用 register()，
- * 把本节五个角色脚本 (读取 / 克隆改装 / 武器组 / 模块覆盖 / 序列化) 逐一挂进生涯。
- *
- * 注册入口：生涯回调 onGameLoad，注册前用 sector persistent
- * data 键 REGISTER_MARK 做一次性门控 (每个脚本一个键)。每个角色脚本首次 advance() 后 isDone() 置 true，
- * 引擎下一帧自动移除 —— 整套演示在首个生涯帧内顺序完成，读档后不再重复。
- */
-public final class GearInVariantLauncher {
-
-    /** 存档持久化标记：本组演示脚本是否已在该存档注册过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_VariantLauncher";
-
-    private GearInVariantLauncher() {
-    }
-
-    /** 注册本节全部变体演示脚本；每个脚本跑一次即自停。 */
-    public static void register(SectorAPI sector) {
-        sector.addScript(new GearInVariantReader());
-        sector.addScript(new GearInVariantRefitter());
-        sector.addScript(new GearInWeaponGroupBuilder());
-        sector.addScript(new GearInModuleOverrider());
-        sector.addScript(new GearInVariantSerializer());
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInVariantReader
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.characters.MutableCharacterStatsAPI;
-import com.fs.starfarer.api.combat.ShipVariantAPI;
-
-/**
- * 角色：注册表读取。演示 SettingsAPI.getVariant 的注册表读取与来源判定 ——
- * 股票变体 brawler_Assault(STOCK) 的身份 / 装配 / OP 摘要、自动空装配 brawler_Hull
- * (HULL 来源，source == HULL、isEmptyHullVariant() == true) 与注册表变体总数。
- *
- * 注册入口：GearInVariantLauncher.register()(跑一次即停：首次 advance() 后 isDone() 置 true)。
- */
-public class GearInVariantReader implements EveryFrameScript {
-
-    private static final Logger LOG = Global.getLogger(GearInVariantReader.class);
-
-    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
-    private boolean done = false;
-
-    @Override
-    public boolean isDone() {
-        return done;
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        if (done) {
-            return;
-        }
-        try {
-            runOnce();
-        } catch (Throwable t) {
-            LOG.error("GearIn variant reader failed", t);
-        } finally {
-            done = true;
-        }
-    }
-
-    private void runOnce() {
-        MutableCharacterStatsAPI stats = Global.getSector().getPlayerPerson().getStats();
-
-        // 1) 注册表读取：缺失 id 返回 null
-        //    (变体注册表的 getVariant，注册表未命中时还会回退查询存档变体数据)
-        ShipVariantAPI stock = Global.getSettings().getVariant("brawler_Assault");
-        GearInVariantLog.logVariant("stock", stock, stats);
-
-        // 2) 每个注册 hull 自动生成 <hullId>_Hull 空装配，source == HULL
-        ShipVariantAPI hullVariant = Global.getSettings().getVariant("brawler_Hull");
-        LOG.info(String.format(
-                "GearIn hull empty variant: id=%s source=%s isStockVariant=%s isEmptyHullVariant=%s displayName=%s",
-                hullVariant.getHullVariantId(), hullVariant.getSource(),
-                hullVariant.isStockVariant(), hullVariant.isEmptyHullVariant(),
-                hullVariant.getDisplayName()));
-
-        // 3) 注册表统计：全部已注册变体 id(数据变体、<hullId>_Hull 空装配与任务变体)
-        LOG.info("GearIn registered variant count: " + Global.getSettings().getAllVariantIds().size());
-    }
-}
-```
-
-:::
+`GearInVariantRefitter` 只负责读取、克隆和应用一份改装副本，并把关键前后值写入日志。`GearInModuleInspector` 只负责读取模块槽、父子装配、来源和 JSON 长度；它不修改父装配，也不写入文件。
 
 ::: details 完整成品：GearInVariantRefitter
 
@@ -694,110 +249,24 @@ import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.characters.MutableCharacterStatsAPI;
 import com.fs.starfarer.api.combat.ShipVariantAPI;
-import com.fs.starfarer.api.loading.VariantSource;
-
-/**
- * 角色：克隆改装。演示 clone() 的深拷贝语义 —— 修改克隆 (换武器、改幅能、改船插、
- * 改来源、重新生成武器组) 不影响注册表原变体；并给出 stock 与 refit 的 OP 对照
- * (computeOPCost = 武器 OP + 船插 OP + vents + caps；getUnusedOP = 船体 OP - 已用 OP)。
- *
- * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
- */
-public class GearInVariantRefitter implements EveryFrameScript {
-
-    private static final Logger LOG = Global.getLogger(GearInVariantRefitter.class);
-
-    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
-    private boolean done = false;
-
-    @Override
-    public boolean isDone() {
-        return done;
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        if (done) {
-            return;
-        }
-        try {
-            runOnce();
-        } catch (Throwable t) {
-            LOG.error("GearIn variant refitter failed", t);
-        } finally {
-            done = true;
-        }
-    }
-
-    private void runOnce() {
-        MutableCharacterStatsAPI stats = Global.getSector().getPlayerPerson().getStats();
-        ShipVariantAPI stock = Global.getSettings().getVariant("brawler_Assault");
-
-        // 1) 克隆后修改装配：clone() 深拷贝全部集合 (武器表、武器组逐组、船插、联队、模块变体；船体 spec 共享引用)，修改克隆不影响原变体
-        ShipVariantAPI refit = stock.clone();
-        refit.clearSlot("WS 003");                    // 卸下旧武器
-        refit.addWeapon("WS 003", "railgun");         // 装上小实弹 (brawler 的 WS 003 是 SMALL UNIVERSAL 硬点)
-        refit.setNumFluxVents(14);
-        refit.setNumFluxCapacitors(10);
-        refit.addMod("hardened_subsystems");
-        refit.removeMod("reinforcedhull");
-        refit.setSource(VariantSource.REFIT);
-        refit.setVariantDisplayName("GearIn Refit");
-        refit.autoGenerateWeaponGroups();             // 按 AI hints/弧线/尺寸重新聚类，最多 7 组
-        GearInVariantLog.logVariant("refit clone", refit, stats);
-
-        // 2) 克隆隔离：改克隆后注册表原变体不变
-        LOG.info(String.format(
-                "GearIn clone isolation: stock WS 003=%s vents=%d caps=%d hasReinforcedHull=%s",
-                stock.getWeaponId("WS 003"), stock.getNumFluxVents(), stock.getNumFluxCapacitors(),
-                stock.hasHullMod("reinforcedhull")));
-
-        // 3) OP 对照：computeOPCost = 武器 OP + 船插 OP + vents + caps；getUnusedOP = 船体 OP - 已用 OP
-        int opStock = stock.computeOPCost(stats);
-        int opRefit = refit.computeOPCost(stats);
-        int hullOp = stock.getHullSpec().getOrdnancePoints(stats);
-        LOG.info(String.format(
-                "GearIn OP: stock=%d refit=%d hullOP=%d unusedRefit=%d",
-                opStock, opRefit, hullOp, refit.getUnusedOP(stats)));
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInWeaponGroupBuilder
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.ShipVariantAPI;
-import com.fs.starfarer.api.loading.VariantSource;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.api.fleet.FleetMemberType;
 import com.fs.starfarer.api.loading.WeaponGroupSpec;
 
 /**
- * 角色：武器组生成。演示空装配装武器但无武器组时的
- * hasUnassignedWeapons() == true，以及 autoGenerateWeaponGroups() 按 AI hints / 弧线 /
- * 尺寸重新聚类补组 (同型武器必合并为一组，最多 7 组)。
- *
- * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
+ * 克隆一份装配，修改武器、武器组、船插和幅能后应用到演示成员。
  */
-public class GearInWeaponGroupBuilder implements EveryFrameScript {
+public class GearInVariantRefitter implements EveryFrameScript {
 
-    private static final Logger LOG = Global.getLogger(GearInWeaponGroupBuilder.class);
+    public static final String REGISTER_MARK = "GearIn_VariantRefitter";
 
-    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
-    private boolean done = false;
+    private static final Logger LOG = Global.getLogger(GearInVariantRefitter.class);
+
+    private static final String SLOT_ID = "WS 001";
+    private static final String VARIANT_ID = "wolf_Assault";
+
+    private boolean done;
 
     @Override
     public boolean isDone() {
@@ -814,131 +283,83 @@ public class GearInWeaponGroupBuilder implements EveryFrameScript {
         if (done) {
             return;
         }
-        try {
-            runOnce();
-        } catch (Throwable t) {
-            LOG.error("GearIn weapon group builder failed", t);
-        } finally {
-            done = true;
-        }
-    }
+        done = true;
 
-    private void runOnce() {
-        // 1) 空装配 + 武器但无武器组：hasUnassignedWeapons() == true，autoGenerateWeaponGroups() 补组
-        ShipVariantAPI fromEmpty = Global.getSettings().getVariant("brawler_Hull").clone();
-        fromEmpty.setSource(VariantSource.REFIT);
-        fromEmpty.addWeapon("WS 003", "railgun");
-        fromEmpty.addWeapon("WS 004", "railgun");
-        LOG.info(String.format(
-                "GearIn from empty: groups=%d hasUnassignedWeapons=%s",
-                fromEmpty.getWeaponGroups().size(), fromEmpty.hasUnassignedWeapons()));
-        fromEmpty.autoGenerateWeaponGroups();
-        StringBuilder groupSummary = new StringBuilder();
-        for (WeaponGroupSpec group : fromEmpty.getWeaponGroups()) {
-            groupSummary.append(group.getType()).append('[').append(group.getSlots()).append("] ");
+        FleetMemberAPI member = Global.getFactory().createFleetMember(
+                FleetMemberType.SHIP,
+                VARIANT_ID);
+        ShipVariantAPI original = member.getVariant();
+        ShipVariantAPI refit = original.clone();
+
+        String weaponBefore = refit.getWeaponId(SLOT_ID);
+        int ventsBefore = refit.getNumFluxVents();
+        int capacitorsBefore = refit.getNumFluxCapacitors();
+
+        refit.addWeapon(
+                SLOT_ID,
+                "pdlaser");
+        refit.autoGenerateWeaponGroups();
+
+        if (!refit.getWeaponGroups().isEmpty()) {
+            WeaponGroupSpec firstGroup = refit.getWeaponGroups().get(0);
+            firstGroup.setAutofireOnByDefault(
+                    !firstGroup.isAutofireOnByDefault());
         }
-        LOG.info("GearIn from empty groups after autoGenerateWeaponGroups: " + groupSummary);
+
+        refit.removeMod("fluxdistributor");
+        refit.addMod("fluxdistributor");
+        refit.setNumFluxVents(ventsBefore + 1);
+        refit.setNumFluxCapacitors(capacitorsBefore + 1);
+
+        member.setVariant(
+                refit,
+                false,
+                true);
+        member.updateStats();
+
+        LOG.info("GearIn variant refitter: id=" + member.getId()
+                + " hull=" + member.getHullId()
+                + " source=" + refit.getSource()
+                + " weapon=" + weaponBefore + "->" + refit.getWeaponId(SLOT_ID)
+                + " vents=" + ventsBefore + "->" + refit.getNumFluxVents()
+                + " capacitors=" + capacitorsBefore + "->"
+                + refit.getNumFluxCapacitors()
+                + " groups=" + refit.getWeaponGroups().size()
+                + " op=" + refit.computeOPCost(null)
+                + " deployable=" + member.canBeDeployedForCombat());
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInModuleOverrider
+::: details 完整成品：GearInModuleInspector
 
 ```java
 package data.scripts.gearin.campaign;
 
 import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.ShipVariantAPI;
-import com.fs.starfarer.api.loading.VariantSource;
-
-/**
- * 角色：模块变体覆盖。演示 stationModules / getModuleVariant / setModuleVariant ——
- * setModuleVariant 只接受非 STOCK 来源的覆盖 (STOCK/null 都会被当作 "移除覆盖" 处理)。
- *
- * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
- */
-public class GearInModuleOverrider implements EveryFrameScript {
-
-    private static final Logger LOG = Global.getLogger(GearInModuleOverrider.class);
-
-    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
-    private boolean done = false;
-
-    @Override
-    public boolean isDone() {
-        return done;
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        if (done) {
-            return;
-        }
-        try {
-            runOnce();
-        } catch (Throwable t) {
-            LOG.error("GearIn module overrider failed", t);
-        } finally {
-            done = true;
-        }
-    }
-
-    private void runOnce() {
-        // stationModules 是 slotId -> variantId 映射；getModuleVariant 按槽取模块变体，
-        // setModuleVariant 只接受非 STOCK 来源的覆盖 (STOCK/null 都会被当作 "移除覆盖" 处理)
-        ShipVariantAPI station = Global.getSettings().getVariant("station1_Standard");
-        ShipVariantAPI moduleStock = station.getModuleVariant("WS 009");
-        ShipVariantAPI stationCopy = station.clone();
-        ShipVariantAPI moduleCopy = moduleStock.clone();
-        moduleCopy.setSource(VariantSource.REFIT);
-        stationCopy.setModuleVariant("WS 009", moduleCopy);
-        LOG.info(String.format(
-                "GearIn modules: stationModules=%s module WS 009=%s override=%s overrideSource=%s",
-                station.getStationModules(),
-                moduleStock.getHullVariantId(),
-                stationCopy.getModuleVariant("WS 009").getHullVariantId(),
-                stationCopy.getModuleVariant("WS 009").getSource()));
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInVariantSerializer
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.ShipVariantAPI;
-import com.fs.starfarer.api.loading.VariantSource;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 角色：变体序列化。演示 toJSONObject() 的输出键与 .variant 数据文件一致
- * (displayName/hullId/variantId/fluxVents/fluxCapacitors/weaponGroups/modules/wings/hullMods/permaMods/sMods/tags)。
- *
- * 注册入口：GearInVariantLauncher.register()(跑一次即停)。
+ * 读取父装配的模块关系、来源和 JSON 序列化结果。
  */
-public class GearInVariantSerializer implements EveryFrameScript {
+public class GearInModuleInspector implements EveryFrameScript {
 
-    private static final Logger LOG = Global.getLogger(GearInVariantSerializer.class);
+    public static final String REGISTER_MARK = "GearIn_ModuleInspector";
 
-    /** 完成标记：isDone() 返回 true 后引擎下一帧自动移除本脚本。 */
-    private boolean done = false;
+    private static final Logger LOG = Global.getLogger(GearInModuleInspector.class);
+
+    private static final String VARIANT_ID = "wolf_Assault";
+
+    private boolean done;
 
     @Override
     public boolean isDone() {
@@ -955,27 +376,120 @@ public class GearInVariantSerializer implements EveryFrameScript {
         if (done) {
             return;
         }
-        try {
-            runOnce();
-        } catch (Throwable t) {
-            LOG.error("GearIn variant serializer failed", t);
-        } finally {
-            done = true;
-        }
-    }
+        done = true;
 
-    private void runOnce() {
-        // 克隆一份 STOCK 变体并显式改 REFIT 来源后序列化，对照 .variant 文件键
-        ShipVariantAPI refit = Global.getSettings().getVariant("brawler_Assault").clone();
-        refit.setSource(VariantSource.REFIT);
+        FleetMemberAPI member = Global.getFactory().createFleetMember(
+                FleetMemberType.SHIP,
+                VARIANT_ID);
+        ShipVariantAPI variant = member.getVariant();
+
+        LOG.info("GearIn module inspector: variant="
+                + variant.getHullVariantId()
+                + " source=" + variant.getSource()
+                + " moduleSlots=" + variant.getModuleSlots().size()
+                + " stationModules=" + variant.getStationModules().size());
+
+        for (String slotId : variant.getModuleSlots()) {
+            ShipVariantAPI module = variant.getModuleVariant(slotId);
+            LOG.info("GearIn module: slot=" + slotId
+                    + " variant=" + (module == null ? "null" : module.getHullVariantId())
+                    + " source=" + (module == null ? "null" : module.getSource()));
+        }
+
         try {
-            JSONObject json = refit.toJSONObject();
-            LOG.info("GearIn refit JSON: " + json.toString(2));
-        } catch (Exception e) {
-            LOG.error("GearIn variant JSON serialization failed", e);
+            JSONObject json = variant.toJSONObject();
+            LOG.info("GearIn module JSON: length=" + json.toString().length()
+                    + " hasWeaponGroups=" + json.has("weaponGroups")
+                    + " hasModules=" + json.has("modules"));
+        } catch (JSONException ex) {
+            LOG.error("GearIn module JSON failed", ex);
         }
     }
 }
 ```
 
 :::
+
+完整类只使用 `Global.getFactory()` 创建独立演示成员，没有把规格库对象直接交给多个成员。`GearInVariantRefitter` 的改装结果通过成员 stats 和部署判断观察，`GearInModuleInspector` 的结果通过模块日志和 JSON 字段观察。
+
+## 验证方案
+
+前置数据：测试存档中存在玩家舰队，并且两个一次性脚本能够在生涯推进时注册和执行。
+
+1. 构建 MOD，确认 JAR 中存在 `GearInVariantRefitter.class` 和 `GearInModuleInspector.class`。
+2. 运行 `GearInVariantRefitter`，在 `starsector.log` 搜索 `GearIn variant refitter`，记录成员 ID、槽位武器、幅能数量、分组数量、OP 和来源。
+3. 打开舰队界面，按成员 ID 定位演示成员，核对武器、武器组、船插、散热和电容；重新取得装配确认应用结果。
+4. 运行 `GearInModuleInspector`，搜索 `GearIn module inspector`、`GearIn module` 和 `GearIn module JSON`，记录模块槽、模块来源和 JSON 长度。
+5. 对同一船体创建第二艘未改装成员，确认第一艘的克隆修改没有改变第二艘或规格库装配。
+6. 在不写入文件的情况下重新载入存档，确认 JSON 日志只用于观察，正式装配文件没有被脚本意外生成。
+
+预期结果：
+
+- 改装类日志显示原槽位武器与新武器 ID、幅能变化和重新生成后的武器组；
+- 应用后的成员使用独立装配，舰队界面显示当前改装结果，stats 和可部署状态来自更新后的成员；
+- 模块检查类逐个报告父装配模块槽和模块来源，JSON 至少包含 `weaponGroups`；
+- 未改装成员和规格库对象保持原值；
+- 没有产生跨脚本共享装配引用或未经请求的 `.variant` 文件。
+
+## 故障分析
+
+- **另一艘舰船也出现同样改装**：直接修改了规格库或其他成员共用的装配对象。
+
+    - **解决方案**：始终从目标成员的 `getVariant()` 创建 `clone()`，只把副本交给该成员，并在日志中确认引用关系。
+
+- **武器槽读取为空**：槽位 ID 不属于当前船体，或武器 ID 与槽位类型不匹配。
+
+    - **解决方案**：先读取 `getSlot(slotId)`、`getWeaponSpec(slotId)` 和 `getWeaponId(slotId)`，确认槽位存在、武器规格可解析且尺寸与类型匹配。
+
+- **武器已经安装但武器组没有变化**：只调用了 `addWeapon(...)`，保留的旧分组没有引用新槽位，或自动生成时机错误。
+
+    - **解决方案**：武器写入完成后选择 `autoGenerateWeaponGroups()`，再读取每个 `WeaponGroupSpec.getSlots()`，必要时重新建立分组。
+
+- **武器组顺序或自动开火状态异常**：无条件重建分组覆盖了原有手动分组，或只修改了一个分组而没有观察其他分组。
+
+    - **解决方案**：先记录组数量、类型、槽位和自动开火标志；只在明确需要重建时调用自动生成，并逐组验证。
+
+- **船插看似写入但 OP 超限**：装配集合发生变化，但 `computeOPCost(...)` 已超过船体可用军械点数。
+
+    - **解决方案**：在应用前记录 `computeOPCost(...)` 和 `getUnusedOP(...)`，将幅能数量和船插调整到合法范围，再调用 `setVariant(..., true)` 触发成员 stats 更新。
+
+- **成员装配改变但舰队界面仍显示旧数值**：`setVariant(...)` 的 `withStatsUpdate` 为 `false`，或读取了更新前缓存的 stats。
+
+    - **解决方案**：写回时传入 `withStatsUpdate=true`，随后调用 `member.updateStats()`，重新取得 `getStats()`、`getMemberStrength()` 和 `canBeDeployedForCombat()`。
+
+- **模块检查没有返回模块**：父装配没有模块槽、槽位 ID 不属于该父装配，或模块映射只保存了默认来源。
+
+    - **解决方案**：先遍历 `getModuleSlots()`，再对每个槽位调用 `getModuleVariant(...)`，同时记录 `getStationModules()` 中的映射值；父装配为空时保留 `null` 结果。
+
+- **模块修改没有进入父装配**：只修改了模块副本，没有调用父装配的 `setModuleVariant(...)`。
+
+    - **解决方案**：确认槽位属于父装配，并显式写回 `setModuleVariant(slotId, moduleCopy)`；随后重新读取父装配映射。
+
+- **来源值被错误覆盖**：为了让装配可保存而随意调用 `setSource(...)`，导致来源语义与数据流不一致。
+
+    - **解决方案**：只在明确的装配生命周期边界设置 `VariantSource`，记录修改前后来源；来源枚举不代替正式文件保存流程。
+
+- **JSON 日志存在但没有保存文件**：把 `toJSONObject()` 的返回值当成文件写入结果。
+
+    - **解决方案**：把 JSON 仅用于日志和字段核对；正式保存时使用游戏装配数据流程，并重新加载文件验证。
+
+- **脚本重复产生成员**：一次性脚本没有持久标记，或每次启动都把同一示例注册为新实例。
+
+    - **解决方案**：使用实例级 `done` 防止重复执行，并在正式 MOD 中用专用 memory 记录演示成员 ID，执行前先检查已有成员。
+
+## 总结
+
+装配工作流从成员取得当前 `ShipVariantAPI`，记录来源后通过 `clone()` 建立隔离副本。武器槽、武器组、船插和幅能字段写入副本后，使用 `setVariant(...)` 应用到单独成员，并通过 stats、舰队界面和部署判断确认结果。
+
+模块关系由父装配的模块槽和映射入口共同描述，模块副本需要显式写回父装配才会改变关系。`toJSONObject()` 提供可检查的 JSON 快照，正式保存仍由游戏装配数据流程负责。稳定的对象引用、合法的槽位与 OP、明确的来源和及时的 stats 更新决定改装结果是否可重复。
+
+## 建议参考项
+
+- `com.fs.starfarer.api.combat.ShipVariantAPI`：装配读取、克隆、武器、船插、幅能、模块和 JSON；
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：装配应用、stats 更新和部署判断；
+- `com.fs.starfarer.api.loading.VariantSource`：装配来源枚举；
+- `com.fs.starfarer.api.loading.WeaponGroupSpec`：武器组类型、槽位和自动开火默认值；
+- `com.fs.starfarer.api.loading.WeaponSlotAPI`：槽位类型、尺寸和适配检查；
+- `D:/Starsector/starsector-core/data/variants/`：原版装配文件和字段示例；
+- `D:/Starsector/starsector-core/data/weapons/`：原版武器规格和武器 ID；
+- `D:/Starsector/starsector-core/starsector.log`：核对装配读取、应用和 JSON 日志。

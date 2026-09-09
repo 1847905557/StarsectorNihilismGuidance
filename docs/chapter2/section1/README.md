@@ -120,16 +120,6 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 - 第一次测试中，模拟战里舰船速度略高于未安装时。
 - 第二次测试中，模拟战里舰船速度明显高于未安装时。
 
-清理：把 `SPEED_PERCENT` 恢复为 `10f`。
-
-## 故障注入：触发类名不一致
-
-1. 把 CSV `script` 列改为 `data.scripts.gearin.hullmods.NoSuchClass`，保存、重启；
-2. 打开装配界面查看本船插的 tooltip，或让游戏生成这艘船 —— 加载期报 `Error loading [data.scripts.gearin.hullmods.NoSuchClass]`，无法进入装配界面；
-3. 改回正确类名，重启，确认恢复。
-
-这个报错说明 CSV 注册值没有指向实际效果类。之后在任何船插、武器或战术系统上见到 `Error loading`，首先核对文件名、`class` 后的名字与注册列中的完整类名。
-
 ## 故障分析
 
 - **类能编译但没有效果**：`hull_mods.csv` 缺少对应行时，类未被注册，游戏和日志都没有本船插的反应；`script` 列写错 (类名对应不到任何源码) 时该名字已进入启动编译队列，加载会在 `Error loading [...]` 处中断，不会静默。

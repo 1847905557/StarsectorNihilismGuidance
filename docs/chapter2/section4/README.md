@@ -157,8 +157,6 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 - `starsector.log` 每发一行 `GearIn hit! shieldHit=...`，命中点出现橙色光点。
 - 激活期间每秒出现一行 `GearIn beam tick`，光束末端出现青色光点，停火后停止输出。
 
-清理：每帧输出日志会急剧提高性能开销，建议平时不要这么干。删除日志行。
-
 ## 故障分析
 
 - **效果类没有触发**：注册列写进了错误文件、键名拼错，或 `beamEffect` 挂在非光束武器上时，日志和画面都会保持安静。

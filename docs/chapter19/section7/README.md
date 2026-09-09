@@ -97,28 +97,6 @@ public void settingsChanged(String modId) {
 
 当前战斗的下一次读取会使用新值，其他 MOD 保存设置不会触发 GearIn 日志。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-Float value = LunaSettings.getFloat("gear_in", "GearIn_pulse_delay");
-float scale = value;
-```
-
-实际症状：CSV 键缺失时保存设置触发 NullPointerException。
-
-原因：LunaLib 返回可为空的包装类型；本页的浮点字段由 `getFloat` 读取，直接拆箱 `null` 会失败。
-
-下面是**局部修正片段**：
-
-```java
-Float value = LunaSettings.getFloat("gear_in", "GearIn_pulse_delay");
-float scale = value == null ? 1.5f : value;
-```
-
-复验：临时改错 `fieldID`，保存设置后确认使用 1.5 秒默认值且游戏继续运行。
-
 ## 完整最小例
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
@@ -317,6 +295,8 @@ public class GearInLunaSettingsReader {
 :::
 
 ## 验证方案
+
+前置数据：LunaLib 已安装并启用，启用中的 GearIn MOD 已包含本节 `LunaSettings.csv` 登记行和三个设置类，监听器注册调用已位于 `onGameLoad()` 的 LunaLib 启用分支。
 
 1. 构建示例 MOD，确认 LunaLib 存在时三个设置类能够编译。
 2. 打开 LunaLib 面板，修改轨迹开关、条目上限、脉冲间隔、颜色和标签。

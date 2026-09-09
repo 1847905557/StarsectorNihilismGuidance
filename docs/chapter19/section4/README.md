@@ -117,29 +117,6 @@ boolean respawnPossible = manager != null
 
 探针只有在管理器已建立、复活和入侵事件均开启、势力可玩且未达到次数上限时返回 `true`。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-StrategicAI ai = StrategicAI.getAI("gear_industry");
-ai.forceMeeting();
-```
-
-实际症状：新档创建早期偶发 NullPointerException。
-
-原因：新档创建早期 `StrategicAI.getAI()` 可能返回 `null`，AI 由 Nexerelin 在势力进入活动列表后建立。
-
-下面是**局部修正片段**：
-
-```java
-if (ai != null) {
-    ai.forceMeeting();
-}
-```
-
-复验：在新档创建阶段调用 `forceMeetingIfReady()` 应返回 `false`；进入生涯后再次调用，返回 `true` 且 concern 数量可以重新读取。
-
 ## 完整最小例
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
@@ -233,6 +210,8 @@ public final class GearInStrategicAIProbe {
 :::
 
 ## 验证方案
+
+前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含 [C19-S2] 的势力配置、[C19-S3] 的开局生成结果、本节 `gear_industry.json` 战略字段和两个探针类。
 
 1. 构建示例 MOD，确认两个探针的方法签名与当前 `ExerelinCore.jar` 匹配。
 2. 在新档、读档和 AI 缺失时机分别记录 persistent-data map 的条目数、`getAI()` 返回值和 `ensureAI()` 结果。

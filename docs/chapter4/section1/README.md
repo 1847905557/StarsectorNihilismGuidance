@@ -320,8 +320,6 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 - 把导出文件剪贴到 `data/variants`、改名并改 `variantId` 后重启游戏：日志出现 `Loading variant [data/variants/GearIn_artizan_combat.variant]`；设置 `goalVariant: true` 后，该装配出现在装配界面的自动装配列表。
 - 常规战役出现在 Missions 列表，并使用自己的装配、文案和地图设置。
 
-清理：删除 `saves/missions/GearIn_test/` 目录。
-
 ## 故障分析
 
 - **Missions 列表里没有您的战役**：战役行以 `#` 开头时列表不会出现条目；已注册的战役文件夹缺失不会静默缺条目，而是加载中断。`mission_list.csv` 缺失仅贡献 0 行、列表为空 (不中断加载)；表头不是 `mission` 时 `readCSV` 对每行取 `mission` 键会直接抛异常、中断整个加载。

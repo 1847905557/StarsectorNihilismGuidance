@@ -191,7 +191,12 @@ public class GearInModPlugin extends BaseModPlugin {
 3. 新建生涯，确认日志依次出现 `onNewGame`、`onEnabled wasEnabledBefore=false`、首次初始化、`onGameLoad newGame=true`，随后是保存回调。
 4. 读档并手动保存，确认只出现 `onGameLoad newGame=false` 和保存回调，首次初始化日志不再出现。
 
-预期结果：入口类成功加载；新档初始化执行一次；读档不会重复初始化；保存成功时出现 `beforeGameSave` 和 `afterGameSave`。
+预期结果：
+
+- 入口类成功加载；
+- 新档初始化执行一次；
+- 读档不会重复初始化；
+- 保存成功时出现 `beforeGameSave` 和 `afterGameSave`。
 
 ## 故障分析
 

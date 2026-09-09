@@ -56,13 +56,20 @@ jar tf jars/GearIndustry.jar
 
 ## 验证方案
 
+前置数据：[C6-S1] 至 [C6-S3] 的工程配置与源码迁移已完成。
+
 1. 执行 `gradle jar`；
 2. 确认 `jars/GearIndustry.jar` 存在；
 3. 检查 `mod_info.json` 的相对路径；
 4. 执行 `jar tf` 并确认 class 条目；
 5. 启动游戏并在日志中确认 JAR 加载记录。
 
-预期结果：构建成功，JAR 位于 `jars/`，manifest 路径有效，class 条目与包名一致。
+预期结果：
+
+- 构建成功；
+- JAR 位于 `jars/`；
+- manifest 路径有效；
+- class 条目与包名一致。
 
 ## 故障分析
 

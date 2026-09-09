@@ -107,28 +107,6 @@ boolean allied = AllianceManager.areFactionsAllied(factionId, "hegemony");
 
 日志会同时出现 `factionId=gear_industry`、`playable=true`、`diplomacy=true` 和三项 alignment。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```csv
-faction
-Gear_Industry
-```
-
-实际症状：`gear_industry.json` 文件存在且内容可解析，但新档列表没有 GearIn；探针也没有读到预期 alignment。
-
-原因：CSV 行就是配置身份。加载器会按 `Gear_Industry` 构造配置 ID，并寻找同名 JSON；它不会猜测该行实际指向小写的 `gear_industry.json`。
-
-下面是**局部修正片段**：
-
-```csv
-faction
-gear_industry
-```
-
-复验：重新启动游戏以刷新合并配置，新建游戏并在势力列表选择 GearIn，再确认探针输出 `factionId=gear_industry` 和配置中的 alignment。
-
 ## 完整最小例
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
@@ -239,6 +217,8 @@ public final class GearInNexDiplomacyProbe {
 :::
 
 ## 验证方案
+
+前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含本节 `mod_factions.csv` 登记行、`gear_industry.json` 和两个探针类。
 
 1. 构建示例 MOD，确认两个探针类能够针对当前安装的 `ExerelinCore.jar` 编译。
 2. 启动新档，确认 GearIn 出现在势力选择列表，并记录探针输出。

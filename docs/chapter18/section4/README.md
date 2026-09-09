@@ -93,26 +93,6 @@ Global.getSector().getCampaignUI().addMessage("Route risk: " + level + " (" + (i
 
 玩家能同时看到 LOW/MEDIUM/HIGH 与具体风险值。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-private final List<CampaignFleetAPI> threats = CampaignUtils.getNearbyHostileFleets(point, 5000f);
-```
-
-实际症状：敌舰已经离开星系，风险仍保持高值，读档后还可能引用失效舰队。
-
-原因：查询结果属于当前生涯状态，跨帧缓存实体列表会过期。
-
-下面是**局部修正片段**：
-
-```java
-List<CampaignFleetAPI> threats = CampaignUtils.getNearbyHostileFleets(point, 5000f);
-```
-
-复验：先记录敌舰在半径内的风险，再让它驶出范围并重新调用 `assess()`；第二次结果应下降，持久数据只在再次调用 `save()` 后更新。
-
 ## 完整最小例
 
 评估器读取当前场景并返回数值，记录器只保存和恢复该数值。货舱乘数与消息文本属于调用层，因此不会把玩家舰队依赖塞进评估器。
@@ -170,7 +150,7 @@ public final class GearInRouteRiskRecord {
 
 ## 验证方案
 
-前置场景：在同一星系内建立一个航路点，并准备一支可调整舰队点数、距离和势力关系的测试舰队。
+前置数据：在同一星系内建立一个航路点，并准备一支可调整舰队点数、距离和势力关系的测试舰队。
 
 1. 在扫描半径外、半径边缘和 500 su 内分别放置同一支敌对舰队，记录三次基础风险。
 2. 保持距离不变，改变测试舰队的舰队点数，确认风险按比例变化。

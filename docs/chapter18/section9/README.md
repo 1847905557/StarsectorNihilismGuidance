@@ -101,29 +101,6 @@ if (!engine.isEntityInPlay(projectile)
 
 弹体消失后，旧节点只按各自的 `in/main/out` 时长淡出，插件不再留在每帧列表中空转。
 
-## 让尾迹无法连成线
-
-下面是**局部故障片段**：
-
-```java
-float trailId = MagicTrailPlugin.getUniqueID();
-MagicTrailPlugin.addTrailMemberSimple(projectile, trailId, sprite, location,
-        0f, facing, 14f, 3f, color, 0.8f, 0.05f, 0.2f, 0.8f, true);
-```
-
-实际症状：每次追加都属于一条新尾迹，画面只剩彼此独立的短节点，无法形成连续条带。
-
-原因：MagicTrail 用 ID 把跨帧节点归入同一条轨迹。ID 的生命周期必须覆盖整段连续飞行。
-
-下面是**局部修正片段**：
-
-```java
-bodyTrailId = MagicTrailPlugin.getUniqueID();
-// 后续 addTrailMemberSimple() 持续复用 bodyTrailId。
-```
-
-复验：让导弹直飞 2 秒，记录 ID 只在初始化时产生；再瞬移一次，确认 ID 只在切断点更新。
-
 ## 完整最小例
 
 完整类既是武器发射效果，也是每枚弹体跟踪器的创建入口。两层尾迹都与弹体关联，因此一次 `cutTrailsOnEntity()` 可以同时结束它们。

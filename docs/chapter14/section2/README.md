@@ -22,7 +22,7 @@
 - [C7-S2] 的 `Global.getSector()` 阶段语义；
 - [C8-S2] 的战斗域 `reportPlayerEngagement` 与 `EngagementResultAPI`；
 - [C10-S1] 的 `SectorAPI` 监听器和脚本列表、`EveryFrameScript`、暂停语义与注册标记；
-- [C12-S3] 的市场交易回调 `reportPlayerMarketTransaction`；
+- [C12-S1] 的市场交易回调 `reportPlayerMarketTransaction`；
 - [C10-S3] 的势力关系与 `SectorAPI.adjustPlayerReputation`；
 - [C14-S1] 的脚本序列化边界与 `advance(amount)` 的真实秒语义。
 
@@ -381,30 +381,6 @@ gradle jar
 - `GearInListenerLifecycleScript.class`
 - `GearInLocationChangeListener.class`
 
-### 关键故障实验：transient 监听器读档后不再回调
-
-只在新档分支注册 transient 监听器。保存时该对象不进入存档，读档又跳过注册分支，因此事件静默消失。
-
-**局部故障片段：**
-
-```java
-// 故障片段
-if (newGame) { sector.getListenerManager().addListener(listener, true); }
-```
-
-**局部修正片段：**
-
-```java
-// 修正片段
-if (!sector.getListenerManager().hasListenerOfClass(
-        GearInLocationChangeListener.class)) {
-    sector.getListenerManager().addListener(
-            new GearInLocationChangeListener(), true);
-}
-```
-
-复验：新档中切换一次星系，保存并读档，再切换一次；两次都应产生一条位置日志。连续读档后，每次地点变化仍只出现一条日志。
-
 ## 验证方案
 
 前置数据：既有 MOD 布局 [C6-S1]、`GearInModPlugin`([C7-S1]，含本节调用点片段) 与本节三个类。
@@ -419,28 +395,18 @@ if (!sector.getListenerManager().hasListenerOfClass(
 
 预期结果：
 
-- **游戏构建**：`BUILD SUCCESSFUL`；`jar tf jars/GearIndustry.jar` 能看到三个类的 `.class` 条目
-
-- **新建生涯与事件边界**：未触发事件时日志不出现周期性的 `GearIn listener` 输出 (监听器是事件驱动，不产生周期日志)，本身即 "注册成功且无副作用" 的判据。触发后的日志按事件核对：
-
-- 打开市场交互：`GearIn listener: market opened: <市场名> (size N)`；关闭：`GearIn listener: market closed: <市场名>`。
-
-    - 市场买入/卖出 (或整备界面购买舰船/武器/战机)：每次结算出现 `GearIn listener: trade at <市场名>, credit value <数值>`。
-    - 遭遇战：战斗阶段出现 `GearIn listener: battle occurred, player involved=true, winner=...` 与 `GearIn listener: battle finished, ...`(玩家遭遇战各一次)；战斗结算后出现 `GearIn listener: player engagement resolved, didPlayerWin=<true/false>`；出现战利品时 `GearIn listener: encounter loot generated, N stacks`。
-    - 改变与势力的声望 (完成任务、送礼、攻击势力目标)：`GearIn listener: reputation change vs faction <id> by +X.XX`。
-    - 任何舰队入地/离场 (包括 AI 舰队)：`fleet spawned` / `fleet despawned, reason=<REASON>` —— 活动星区里这类日志会比较频繁，属正常。
-    - 启动与游玩全程无 `gear_in` 引起的 `ERROR`。
-- **位置监听器**：前 5 次出现 `current location changed`；第 5 次后出现 `location listener removed itself after 5 reports`，第 6 次起不再出现
-
-- **读档**：无重复注册 —— 无 `trade at` 成双 (`REGISTER_MARK` 注册标记 + `addListener` 去重)；位置监听器因 transient 读档清空、由 `hasListenerOfClass` 判空重新注册 (读档后继续出现位置变化日志且不叠加，计数从 5 次重新开始)；退出到主菜单后生涯引擎停止、日志停止，再进档按第 3、4 项继续
-
-- **自停演示**：挂载约 300 真实秒后出现：
-
-- **暂停语义**：监听器不受暂停影响 (事件驱动，暂停中打开市场仍会触发 `market opened`)；若用 `addListenerWithTimeout` / `reRegister` 演示超时，暂停期间超时不计时 (游戏天不前进)，恢复后继续
-
-- 操作 7b：把通道二的 `addListener(..., true)` 改为不加 `hasListenerOfClass` 判空并去掉 transient 参数，读档两次。
-
-清理：把 `daysToLive` 恢复为 `-1`，并恢复通道二的 `hasListenerOfClass` 判断与 transient 参数。
+- **游戏构建**：`BUILD SUCCESSFUL`；`jar tf jars/GearIndustry.jar` 能看到三个类的 `.class` 条目。
+- **新建生涯与事件边界**：未触发事件时日志不出现周期性的 `GearIn listener` 输出 (监听器是事件驱动，不产生周期日志)，本身即 "注册成功且无副作用" 的判据，触发后的日志按事件核对。
+- 打开市场交互出现 `GearIn listener: market opened: <市场名> (size N)`，关闭出现 `GearIn listener: market closed: <市场名>`。
+- 市场买入/卖出 (或整备界面购买舰船/武器/战机) 每次结算出现 `GearIn listener: trade at <市场名>, credit value <数值>`。
+- 遭遇战出现 `GearIn listener: battle occurred, player involved=true, winner=...` 与 `GearIn listener: battle finished, ...`(玩家遭遇战各一次)，战斗结算后出现 `GearIn listener: player engagement resolved, didPlayerWin=<true/false>`，出现战利品时还有 `GearIn listener: encounter loot generated, N stacks`。
+- 改变与势力的声望 (完成任务、送礼、攻击势力目标) 出现 `GearIn listener: reputation change vs faction <id> by +X.XX`。
+- 任何舰队入地/离场 (包括 AI 舰队) 出现 `fleet spawned` / `fleet despawned, reason=<REASON>` —— 活动星区里这类日志会比较频繁，属正常。
+- 启动与游玩全程无 `gear_in` 引起的 `ERROR`。
+- **位置监听器**：前 5 次出现 `current location changed`，第 5 次后出现 `location listener removed itself after 5 reports`，第 6 次起不再出现。
+- **读档**：无重复注册 —— 无 `trade at` 成双 (`REGISTER_MARK` 注册标记 + `addListener` 去重)；位置监听器因 transient 读档清空、由 `hasListenerOfClass` 判空重新注册 (读档后继续出现位置变化日志且不叠加，计数从 5 次重新开始)；退出到主菜单后生涯引擎停止、日志停止，再进档按第 3、4 项继续。
+- **自停演示**：把 `daysToLive` 设为 30 后挂载约 300 真实秒 (30 游戏天)，出现 `GearIn listener: removed itself after 30.0 game days (isDone()=true)`，之后继续打开市场不再出现该监听器的日志。
+- **暂停语义**：监听器不受暂停影响 (事件驱动，暂停中打开市场仍会触发 `market opened`)；若用 `addListenerWithTimeout` / `reRegister` 演示超时，暂停期间超时不计时 (游戏天不前进)，恢复后继续。
 
 ## 故障分析
 

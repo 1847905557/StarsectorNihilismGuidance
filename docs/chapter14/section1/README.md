@@ -297,29 +297,6 @@ gradle jar
 
 产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下两个脚本类的 class 条目 (可用 `jar tf` 核对)。
 
-### 关键故障实验：旧档读入后脚本重复注册
-
-把注册状态放在 `ModPlugin` 实例字段中。**ModPlugin 实例由 `ModManager` 缓存，会话内保持同一实例**，读档回调仍见 `registered=true`，不会重复注册。**重复只发生在应用重启后**：新实例看到 `registered=false`，向已随档恢复的脚本列表追加第二个。
-
-**局部故障片段：**
-
-```java
-// 故障片段
-if (!registered) { sector.addScript(new GearInCalendarDayScript()); registered = true; }
-```
-
-**局部修正片段：**
-
-```java
-// 修正片段
-if (!sector.getPersistentData().containsKey(REGISTER_MARK)) {
-    sector.getPersistentData().put(REGISTER_MARK, true);
-    sector.addScript(new GearInCalendarDayScript());
-}
-```
-
-原因是实例字段的生命周期与存档内 `scripts` 列表不同，而 persistent data 与脚本列表一起随档恢复。复验：记录新档中的脚本数量，保存并连续读档两次；每次都应保持 1 个实例，同一游戏日只出现一条日历日志。
-
 ## 验证方案
 
 前置数据：已有 MOD 布局 [C6-S1]、`GearInModPlugin` ([C7-S1]，含本节调用点片段) 与两个脚本类。
@@ -342,8 +319,6 @@ if (!sector.getPersistentData().containsKey(REGISTER_MARK)) {
 - **自停 (`daysToRun = 30`)**：挂载约 300 真实秒后出现 `GearIn daily: done, isDone()=true after 30.0 game days`；之后不再有日志，引擎在置位后的同一帧从 `scripts` 列表移除了该脚本 (可验证 `Global.getSector().hasScript(GearInDayAccumulatorScript.class)` 为 `false`)。
 - **退出到主菜单**：脚本停止推进 (生涯状态不再运行)；回到主菜单后再进档 (读档)，行为与读档一行相同。
 - 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
-
-清理：把 `daysToRun` 恢复为 `-1`，使脚本保持常驻。
 
 ## 故障分析
 

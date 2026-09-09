@@ -120,6 +120,8 @@ public class GearInSoundPlayer {
 
 ## 验证方案
 
+前置数据：[C5-S2] 的 `GearIn_weapon_fire`、`GearIn_system_loop` 和 `music` 分类条目已登记；本节 `GearInSoundPlayer` 已按 [C6-S1] 至 [C6-S4] 构建进 JAR。
+
 1. 启动游戏并进入能够触发脚本的界面，调用 `playUISound("GearIn_weapon_fire", 1f, 1f)`，观察 UI 音效是否播放。
 2. 在战斗实体当前位置调用 `playPositionalSound`，移动实体并改变距离，观察声音是否随位置衰减。
 3. 在系统持续激活的每帧回调中调用 `playLoopSound`，观察 `GearIn_system_loop` 是否连续播放。

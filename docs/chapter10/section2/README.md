@@ -1,6 +1,6 @@
 # 构建生涯地点
 
-本节以地点容器查询为中心，先取得 `LocationAPI` 和 `StarSystemAPI`，再建立一组可查询的恒星系对象。生成器只负责准备对象，查询器负责验证 ID、标签、类型、集合和访问状态。
+本节以地点查询为中心，先取得 `LocationAPI` 和 `StarSystemAPI`，再建立一组可查询的恒星系对象。生成器只负责准备对象，查询器负责验证 ID、标签、类型、集合和访问状态。
 
 *本节预期阅读时间：~24 分钟。*
 
@@ -23,7 +23,7 @@
 - [C7-S1] 的生涯入口注册和日志读取；
 - 能够区分地点级对象与星区级对象。
 
-## 取得地点容器
+## 取得地点
 
 `SectorAPI.getAllLocations()` 返回星区管理的地点集合，`getHyperspace()` 返回超空间，`getStarSystem(id)` 返回指定恒星系。`StarSystemAPI` 继承 `LocationAPI`，因此地点查询方法可以直接用于恒星系。
 
@@ -38,7 +38,7 @@ if (system != null) {
 }
 ```
 
-地点容器保存实体集合、访问状态、地点 memory 和地点级脚本。实体必须通过地点创建方法或 `addEntity` 加入容器；单独创建 token 并保存引用不会让地点查询找到它。
+地点保存实体集合、访问状态、地点 memory 和地点级脚本。实体必须通过地点创建方法或 `addEntity` 加入地点；单独创建 token 并保存引用不会让地点查询找到它。
 
 ::: tip 容器归属
 所有查询先确认地点对象，再确认实体的 `getContainingLocation()`。地点 ID 正确而实体归属为空时，问题发生在注册阶段，不在查询条件。
@@ -295,11 +295,20 @@ public class GearInLocationQuery implements EveryFrameScript {
 
 ## 验证方案
 
+前置数据：包含本节生成器与查询器两个脚本类的 GearIn MOD 已构建并启用，并准备一个新档。
+
 1. 启用示例 MOD，在新档进入 `GearIn_observation_system`。
 2. 确认恒星、行星、中继站和位置 token 已出现在地图或地点集合中。
 3. 搜索 `GearIn location built` 和 `GearIn location query`，核对四种查询数量。
 4. 在系统内确认 `current=true`；离开后确认 `current=false`、`entered=true`。
 5. 对从未进入的测试系统读取 `daysSinceVisit`，确认结果为 `Float.MAX_VALUE`。
+
+预期结果：
+
+- 恒星、行星、中继站和位置 token 出现在地图或地点集合中；
+- 日志出现 `GearIn location built` 与 `GearIn location query`，四种查询数量与创建结果一致；
+- 系统内 `current=true`，离开后 `current=false`、`entered=true`；
+- 从未进入的测试系统 `daysSinceVisit` 返回 `Float.MAX_VALUE`。
 
 ## 故障分析
 
@@ -325,6 +334,6 @@ public class GearInLocationQuery implements EveryFrameScript {
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.LocationAPI`：地点容器、实体集合和访问状态入口，注册、ID 索引与标签查询由其承载；
+- `com.fs.starfarer.api.campaign.LocationAPI`：地点、实体集合和访问状态入口，注册、ID 索引与标签查询由其承载；
 - `com.fs.starfarer.api.campaign.StarSystemAPI`：恒星系初始化、生成与超空间跳跃点入口；
 - `data/scripts/world/systems/`：原版恒星系生成示例。

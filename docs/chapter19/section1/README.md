@@ -96,31 +96,6 @@ fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValu
 GearIn_fullGraphicEffect,Full graphic effect,Boolean,true,,,,,GearIn
 ```
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-if (Global.getSettings().getModManager().isModEnabled("lunalib")) {
-}
-LunaSettings.getBoolean("gear_in", "GearIn_fullGraphicEffect");
-```
-
-实际症状：未安装 LunaLib 时仍抛 NoClassDefFoundError。
-
-原因：检测只包住空分支，第三方类调用仍位于无条件执行路径。
-
-下面是**局部修正片段**：
-
-```java
-if (isLunaEnabled()) {
-    return GearInLunaSettingsReader.isFxEnabled();
-}
-return true;
-```
-
-复验：移除 LunaLib 后连续调用设置入口 100 次，确认返回值始终等于 fallback，日志只出现 1 条 LunaLib 缺席消息，并且没有类加载错误。
-
 ## 完整最小例
 
 完整桥接类同时覆盖两个可选依赖。Nexerelin 专题只在 `isNexerelinEnabled()` 为真时进入各自适配器；LunaLib 设置读取则通过延迟加载的嵌套类隔离第三方类型。
@@ -184,10 +159,6 @@ public final class GearInCompatBridge {
 
 :::
 
-## 验证方案
-
-分别准备两个库都缺席、仅 Nexerelin、仅 LunaLib、两个库都启用这 4 种启用组合。每种组合都使用同一 GearIn JAR。
-
 ### 启用组合检测结果速查表
 
 | 安装组合 | Nexerelin 检测 | LunaLib 检测 |
@@ -196,6 +167,10 @@ public final class GearInCompatBridge {
 | 仅 Nexerelin | true | false |
 | 仅 LunaLib | false | true |
 | 两个库都启用 | true | true |
+
+## 验证方案
+
+前置数据：分别准备两个库都缺席、仅 Nexerelin、仅 LunaLib、两个库都启用这 4 种启用组合，每种组合使用同一 GearIn JAR。
 
 1. 启动并读档，记录两个 `is*Enabled()` 的返回值。
 2. 连续调用 `getFullGraphicEffect(true)` 100 次，记录返回值和缺席日志条数。

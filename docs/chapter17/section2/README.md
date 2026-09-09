@@ -133,27 +133,21 @@ JSON 路径继续遵守 [C16-S1] 的资源路径规则。引擎在读取前拒�
 - 双参调用只读取 `gear_in` 的资源；
 - 路径、编码、语法和字段类型正确时，启动日志没有 JSON 读取异常。
 
-清理：删除入口类中的临时日志探针。
-
 ## strings.json 验证
 
-前置数据：原版和 `gear_in` 的 `data/strings/strings.json` 已存在，文件包含一个同名键和一个只由 `gear_in` 提供的新键。
-
 ### 验证方案
+
+前置数据：原版和 `gear_in` 的 `data/strings/strings.json` 已存在，文件包含一个同名键和一个只由 `gear_in` 提供的新键。
 
 1. 启动游戏，观察 `Loading strings` 和包含 `data/strings/strings.json` 的加载日志。
 2. 在界面或日志中读取一个原版分类的已知键，再读取 `gear_in` 自有分类的新键。
 3. 让 `gear_in` 提供与原版相同的 `(category, id)`，重新启动并观察最终文本。
-4. 将分类名或键名改成大小写不同的写法，再读取该文本。
 
 预期结果：
 
 - 原版与 `gear_in` 的 strings 文件都在启动阶段被加载；
 - `gear_in` 自有键可以通过双参 `getString` 读取；
-- 相同键由后加载来源覆盖；
-- 分类或键大小写不一致时返回 `Missing string: [<id>]`，日志记录 ERROR。
-
-清理：删除测试 MOD 中与原版冲突的键和日志探针，恢复测试前的 `strings.json`。
+- 相同键由后加载来源覆盖。
 
 ## 故障分析
 

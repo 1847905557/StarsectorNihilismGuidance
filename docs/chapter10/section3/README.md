@@ -267,11 +267,20 @@ public class GearInFactionKnownShipProbe implements EveryFrameScript {
 
 ## 验证方案
 
+前置数据：包含本节两个示例脚本类的 GearIn MOD 已构建并启用，并准备一个可进入的生涯存档。
+
 1. 启用示例 MOD，进入生涯并记录目标势力原始关系。
 2. 搜索 `GearIn faction relation`，核对 forward、reverse、level 和 hostile。
 3. 检查 direct 调整的 before/during/after，确认 after 恢复原值。
 4. 检查 `GearIn faction known` 与 `restored`，确认 known、priority 和 timestamp 回到实验前状态。
 5. 在游戏中重复运行一次，确认示例不会继续污染关系或蓝图集合。
+
+预期结果：
+
+- 日志出现 `GearIn faction relation`，forward、reverse、level 和 hostile 与目标势力关系一致；
+- direct 调整的 before/during/after 中，after 恢复原值；
+- `GearIn faction known` 与 `restored` 显示 known、priority 和 timestamp 回到实验前状态；
+- 重复运行示例不再改变关系或蓝图集合。
 
 ## 故障分析
 

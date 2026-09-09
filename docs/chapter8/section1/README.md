@@ -221,6 +221,8 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 
 ## 验证方案
 
+前置数据：已按 [C6-S1] 至 [C6-S4] 配置 Java 17、`src/`、Gradle 和 JAR；[C4-S1] 的 `GearIn_test` 战役可用，本节的 `GearInCombatStatePlugin` 已就绪。
+
 1. 按 [C8-S3] 的方式注册并构建 `GearInCombatStatePlugin`。
 2. 进入 `GearIn_test`，观察初始化日志中的战斗类型和 `missionId`。
 3. 正常运行数秒，核对 `GearIn time:` 与 `GearIn context:` 的时间、接敌和胜负字段。

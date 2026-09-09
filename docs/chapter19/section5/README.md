@@ -90,26 +90,6 @@ String className = GBDataManager.getPluginsById().get(pluginId);
 
 通用插件的返回值与 JSON 中类名逐字一致；产业插件则直接从产业定义核对完整类名。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-"plugin":"GearIn_ground_plugin"
-```
-
-实际症状：产业定义存在，但地面战插件没有运行。
-
-原因：产业 `plugin` 字段要求完整 Java 类名；`plugins` 表只供与产业、条件等定义无关的通用插件按短 ID 查找。
-
-下面是**局部修正片段**：
-
-```java
-"plugin":"data.scripts.gearin.modcompat.GearInGroundBattlePlugin"
-```
-
-复验：重新加载定义，让探针读取产业定义和单位定义，再进入一次该产业的地面战。
-
 ## 完整最小例
 
 局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
@@ -140,6 +120,8 @@ public final class GearInGroundBattleProbe {
 :::
 
 ## 验证方案
+
+前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含本节 `groundBattleDefs.json` 登记行、`GearInGroundBattlePlugin` 和 `GearInGroundBattleProbe`，测试存档中存在拥有 `GearIn_training_industry` 产业的市场。
 
 1. 执行 `gradle jar` 构建示例 MOD，确认编译完成且没有报错。
 2. 启动游戏并进入本页场景，执行标题描述的动作。

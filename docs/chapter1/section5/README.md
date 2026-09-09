@@ -485,6 +485,14 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 | customAncillaryHL | 次要说明文本的高亮部分，多个高亮文本用 `\|` 分隔 |
 | noDPSInTooltip | 设为 true 时，武器数据界面不会显示 DPS，仅适合不可恢复弹药且弹药量较少的武器 |
 
+三门武器在装配界面中的核对结果如下。
+
+![都林自动炮在装配界面中的测试结果](./weapon_test_1.png "weapon_test_1.png")
+
+![乌里光束炮在装配界面中的测试结果](./weapon_test_2.png "weapon_test_2.png")
+
+![德瓦林发射架在装配界面中的测试结果](./weapon_test_3.png "weapon_test_3.png")
+
 ## 验证方案
 
 前置数据：`gear_in` MOD[C1-S1] 与测试舰船 ([C1-S2] 或任意原版舰船)。
@@ -498,12 +506,6 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 - 装配面板数值与 `weapon_data.csv` 一致。
 - 开火表现与 `.wpn`/`.proj` 一致。
 - `starsector.log` 中三个 GearIn ID 均无加载或运行时错误。
-
-![都林自动炮在装配界面中的测试结果](./weapon_test_1.png "weapon_test_1.png")
-
-![乌里光束炮在装配界面中的测试结果](./weapon_test_2.png "weapon_test_2.png")
-
-![德瓦林发射架在装配界面中的测试结果](./weapon_test_3.png "weapon_test_3.png")
 
 ## 新弹体与新导弹
 

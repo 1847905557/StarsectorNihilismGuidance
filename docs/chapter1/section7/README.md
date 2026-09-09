@@ -154,8 +154,6 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 - **蓝图与货舱**：悬停舰船/武器蓝图或货舱里的物品，tooltip 显示 text1 第一段 (舰船带 `descriptionPrefix` 前缀)。
 - **最小任务链的验证流程**：修改某一行的 text1 后重启游戏，对应位置文本随之变化，证明该行确实被使用方读取，而不是碰巧显示别的文本。
 
-清理：恢复 `data/strings/descriptions.csv` 中临时改动的描述行。
-
 ## 故障分析
 
 - **启动即失败并出现 `Key [type] has invalid value [...]`**：某行 `type` 列不是枚举名，常见原因是拼写、大小写或多余空格。原版中 `Invalid type of description` 消息分支不可达，属原版死代码。

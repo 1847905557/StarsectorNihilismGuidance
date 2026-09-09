@@ -121,31 +121,6 @@ beam.advance(amount);
 
 暂停期间状态条不会因停止刷新而超时消失，充能数值保持不变。
 
-## 排查关键故障
-
-下面是**局部故障片段**：
-
-```java
-MagicFakeBeam.spawnFakeBeam(...);
-MagicFakeBeam.spawnFakeBeam(...);
-```
-
-实际症状：画面看似一束更亮的光，目标却在同一帧受到两次伤害。
-
-原因：伪光束每次调用都会即时结算伤害，视觉持续时间不代表持续伤害。
-
-下面是**局部修正片段**：
-
-```java
-beamCharge += amount / BEAM_INTERVAL;
-if (beamCharge >= 1f) {
-    beamCharge = 0f;
-    fireBeam();
-}
-```
-
-复验：记录相邻两次 `beamCount` 变化、调用前后的目标装甲或船体值，确认每个 2 秒周期只增加一次计数并结算一次伤害。
-
 ## 完整最小例
 
 设置、攻击与 HUD 各由不同角色承担。战斗插件负责按 "刷新 HUD、暂停判断、推进充能" 的顺序接线，完整类不假定任何按键或舰船系统状态。

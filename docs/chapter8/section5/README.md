@@ -319,6 +319,8 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ## 验证方案
 
+前置数据：[C1-S5] 的弹体武器与光束武器数据文件可用，已按 [C6-S1] 至 [C6-S4] 配置 Java 17、`src/`、Gradle 和 JAR；本节四个脚本类已就绪。
+
 1. 为测试武器的 `.wpn` 写入 `everyFrameEffect`，为光束武器写入 `beamEffect`。
 2. 为测试弹体的 `.proj` 写入 `onFireEffect` 和 `onHitEffect`。
 3. 构建 JAR，并用 `jar tf` 核对四个 `.class` 条目。

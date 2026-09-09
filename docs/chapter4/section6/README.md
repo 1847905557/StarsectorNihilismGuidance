@@ -41,6 +41,12 @@
 
 加载器能在 `baseId` 解析后得到一个完整实体 spec，空 `pluginClass` 让它保持静态实体。
 
+::: caution `baseId` 必须指向已加载的实体类型
+
+`baseId` 指向不存在的类型时，继承解析无法完成，主菜单加载阶段就生成不出完整实体 spec，后续 `addCustomEntity` 也找不到该类型。
+
+:::
+
 ### 配置图标与外观
 
 ```json
@@ -87,38 +93,6 @@ anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 
 新档中导航锚位于恒星轨道上，势力颜色和地图名称可观察。
 
-## 排查实体继承故障
-
-下面是**局部故障片段**：
-
-```json
-"GearIn_navigation_anchor":{
-    "baseId":"missing_relay",
-    "detectionRange":1800,
-    "discoverable":true
-},
-```
-
-实际症状：主菜单加载阶段无法生成完整的自定义实体 spec，后续 `addCustomEntity` 找不到类型。
-
-原因：`baseId` 必须指向已经加载的实体类型；继承解析完成后，子对象才会进入 spec 表。
-
-下面是**局部修正片段**：
-
-```json
-"GearIn_navigation_anchor":{
-    "baseId":"comm_relay",
-    "pluginClass":"",
-    "defaultName":"GearIn Navigation Anchor",
-    "customDescriptionId":"GearIn_navigation_anchor",
-    "detectionRange":1800,
-    "discoverable":true,
-    "discoveryXP":150
-},
-```
-
-复验：重启后观察 `Loading custom campaign entity data`，再创建新档确认实体能被投放和发现。
-
 ::: details 完整成品：GearIn_navigation_anchor
 
 ```json
@@ -147,6 +121,8 @@ anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 :::
 
 ## 验证方案
+
+前置数据：已启用包含本节 `GearIn_navigation_anchor` 类型注册、CUSTOM 描述行和 `addCustomEntity` 投放替换的 GearIn MOD。
 
 1. 启动游戏并观察自定义实体 spec 加载日志。
 2. 创建新档进入 GearIn 星系，沿导航锚轨道寻找实体。

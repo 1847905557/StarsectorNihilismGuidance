@@ -2,79 +2,75 @@ package data.scripts.gearin.campaign;
 
 import org.apache.log4j.Logger;
 
-import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.FleetDataAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.campaign.CommDirectoryAPI;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.characters.FullName;
+import com.fs.starfarer.api.characters.ImportantPeopleAPI;
 import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.fleet.FleetMemberAPI;
-import com.fs.starfarer.api.fleet.FleetMemberType;
+import com.fs.starfarer.api.impl.campaign.ids.Ranks;
 
 /**
- * 人物专题一次性演示脚本 (协调器)：编排各角色小类并负责演示成员与清理，自停脚本。
- * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK 一次性守卫；全程同帧回滚。
+ * 创建或读取 Aster Vance，并把人物加入 GearIn Foundry 的通信目录。
+ * 固定人物 ID 与目录查询使重复调用保持同一个人物和目录条目。
  */
-public class GearInPersonScript implements EveryFrameScript {
+public class GearInPersonScript {
 
-    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_PersonLesson";
+    public static final String PERSON_ID = "GearIn_aster_vance";
 
     private static final Logger LOG = Global.getLogger(GearInPersonScript.class);
+    private static final String MARKET_ID = "GearIn_market_foundry";
+    private static final String PERSON_TAG = "GearIn_aster_vance";
+    private static final String PERSON_READY = "$GearIn_aster_vance_ready";
 
-    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
-    private boolean executed = false;
+    public void run() {
+        ImportantPeopleAPI importantPeople = Global.getSector().getImportantPeople();
+        boolean existed = importantPeople.getPerson(PERSON_ID) != null;
+        PersonAPI person = getOrCreatePerson();
 
-    public GearInPersonScript() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
-    }
-
-    @Override
-    public boolean isDone() {
-        return executed;
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        if (executed) {
-            return;
+        MarketAPI market = Global.getSector().getEconomy().getMarket(MARKET_ID);
+        if (!market.getPeopleCopy().contains(person)) {
+            market.addPerson(person);
         }
-        executed = true;
-        run();
+        person.setMarket(market);
+
+        CommDirectoryAPI directory = market.getCommDirectory();
+        int entriesBefore = directory.getEntriesCopy().size();
+        if (directory.getEntryForPerson(person) == null) {
+            directory.addPerson(person);
+        }
+        int entriesAfter = directory.getEntriesCopy().size();
+
+        ImportantPeopleAPI.PersonDataAPI data = importantPeople.getData(person);
+        LOG.info(String.format(
+                "GearIn person: id=%s created=%s name=%s gender=%s faction=%s rank=%s post=%s "
+                        + "tag=%s ready=%s important=%s dataLinked=%s market=%s directory=%s entries=%d->%d",
+                person.getId(), !existed, person.getNameString(), person.getGender(),
+                person.getFaction().getId(), person.getRankId(), person.getPostId(),
+                person.hasTag(PERSON_TAG), person.getMemoryWithoutUpdate().getBoolean(PERSON_READY),
+                importantPeople.containsPerson(person), data != null && data.getPerson() == person,
+                market.getPeopleCopy().contains(person), person.getMarket() == market,
+                directory.getEntryForPerson(person) != null,
+                entriesBefore, entriesAfter));
     }
 
-    private void run() {
-        SectorAPI sector = Global.getSector();
-        FleetDataAPI fleetData = sector.getPlayerFleet().getFleetData();
-        int initialCount = new GearInBaseline().run(sector, fleetData);
-        // 演示成员 wolf / hammerhead(供 captain / officer 小节使用)
-        FleetMemberAPI wolf = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "wolf_Assault");
-        FleetMemberAPI hammerhead = Global.getFactory().createFleetMember(FleetMemberType.SHIP, "hammerhead_Elite");
-        fleetData.addFleetMember(wolf);
-        fleetData.addFleetMember(hammerhead);
-        LOG.info(String.format(
-                "GearIn person lesson members: added wolf=%s hammerhead=%s count=%d",
-                wolf.getShipName(), hammerhead.getShipName(), fleetData.getNumMembers()));
+    private PersonAPI getOrCreatePerson() {
+        ImportantPeopleAPI importantPeople = Global.getSector().getImportantPeople();
+        PersonAPI person = importantPeople.getPerson(PERSON_ID);
+        if (person != null) {
+            return person;
+        }
 
-        // 人物 A：创建/身份/标签内存 -> 对玩家关系 -> 市场与重要人物注册
-        PersonAPI personA = new GearInPersonIdentity().run();
-        new GearInPersonRelationship().run(personA);
-        new GearInPersonRegistration().run(sector, personA);
-
-        // 舰长；人物 B 与军官；势力关系 (同帧回滚)
-        new GearInCaptain().run(wolf, personA, fleetData);
-        new GearInOfficer().run(sector, hammerhead, fleetData, sector.getPlayerFleet());
-        new GearInFactionRelation().run(sector);
-
-        // 清理：恢复初始舰队
-        fleetData.removeFleetMember(wolf);
-        fleetData.removeFleetMember(hammerhead);
-        LOG.info(String.format(
-                "GearIn person lesson done: members=%d (initial %d)",
-                fleetData.getNumMembers(), initialCount));
+        person = Global.getFactory().createPerson();
+        person.setId(PERSON_ID);
+        person.setName(new FullName("Aster", "Vance", FullName.Gender.FEMALE));
+        person.setFaction("gear_industry");
+        person.setRankId(Ranks.CITIZEN);
+        person.setPostId(Ranks.POST_TRADER);
+        person.setPortraitSprite("graphics/portraits/portrait_hegemony01.png");
+        person.addTag(PERSON_TAG);
+        person.getMemoryWithoutUpdate().set(PERSON_READY, true);
+        importantPeople.addPerson(person);
+        return person;
     }
 }

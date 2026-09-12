@@ -1,0 +1,16 @@
+{
+    "id":"GearIn_colony_governance",
+    "governingAptitude":"industry",
+    "scope":"GOVERNED_OUTPOST",
+    "effectGroups":[
+        {
+            "name":"Level 1",
+            "requiredSkillLevel":1,
+            "effectBasedOnLevel":false,
+            "effects":[
+                {"type":"DESCRIPTION", "script":"data.scripts.gearin.campaign.GearInColonyGovernanceDescription"},
+                {"type":"GOVERNED_OUTPOST", "script":"data.scripts.gearin.campaign.GearInColonyGovernanceEffect"}
+            ]
+        }
+    ]
+}

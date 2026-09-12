@@ -1,687 +1,386 @@
-# 制作生涯情报
+# 选择生涯插件
 
-本节制作自定义情报与交互对话框，让 MOD 能够登记消息并向玩家提供可选择的交互。两个示例会分别展示情报管理和对话框的入口，并沿用上一节的势力与货舱操作。
+本节制作一个 transient `BaseCampaignPlugin`。它根据对象 Memory 为特定实体选择交互对话框，为特定敌舰队选择战场创建插件，并在市场 Memory 刷新时写入动态事实。三个入口共同展示 Campaign 插件的注册、候选选择与事实更新职责。
 
-*本节预期阅读时间：~12 分钟。*
+*本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~20 分钟。*
+*本节预期操作时间：~50 分钟。*
 
 ## 学习目标
 
-完成后，您将能够：
-
-- 区分情报管理器与交互对话框的服务入口；
-- 使用 `addIntel` 或 `queueIntel` 登记适合当前场景的情报；
-- 创建 `BaseIntelPlugin` 情报和 `MessageIntel` 消息；
-- 实现交互对话框并处理选项、推进和关闭结果；
-- 根据界面与日志定位情报登记和对话调用故障。
+- 使用稳定插件 ID 管理注册替换、读档重登和显式注销；
+- 根据目标对象返回 `PluginPick`，并用 `null` 把不匹配对象交给其他插件；
+- 使用 `PickPriority` 控制多个非空候选之间的最终选择；
+- 在 `updateMarketFacts()` 中使用传入 Memory 写入零过期时间的动态事实。
 
 ## 前置知识
 
-- [C7-S1] 的 `modPlugin` 生命周期与持久数据标记；
-- [C7-S2] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
-- [C10-S1] 的 `SectorAPI` 星区入口、`onGameLoad` 注册与 `REGISTER_MARK` 判断；
-- [C10-S3] 的 `FactionAPI` 关系读取与 `CargoAPI` 货舱读取。
+- [C7-S1] 的 `BaseModPlugin.onGameLoad()` 与新档、读档入口；
+- [C10-S4] 的实体与市场 Memory 读写；
+- [C11-S1] 的测试舰队创建和投放；
+- [C14-S2] 的回调注册、对象过滤和读档恢复边界。
 
-## 术语
+## 注册 transient Campaign 插件
 
-按术语约定，本节首次完整讲解两个词；API 类名保留源码大小写：
+`BaseCampaignPlugin` 为 `CampaignPlugin` 的全部 picker 和 facts 更新方法提供默认实现。默认 `getId()` 返回 `null`，默认 `isTransient()` 返回 `true`，picker 返回 `null`，facts 方法不写入状态。子类只覆写当前任务需要的方法，后续游戏版本向接口增加方法时也能继承基类提供的默认实现。
 
-- **情报 (intel)**：API 名保留 `IntelInfoPlugin`(单条情报约定) 与 `IntelManagerAPI`(登记集合)。
-    - 一条情报就是一个实现了 `IntelInfoPlugin` 的插件实例，同时承载 Intel 页 UI 描述、消息更新与每帧推进 (`BaseIntelPlugin` 兼为 `EveryFrameScript`)。
-- **交互对话框 (interaction dialog)**：API 名保留 `InteractionDialogAPI`(对话框本体) 与 `InteractionDialogPlugin`(对话框内容插件)。生涯 UI 承载的模态对话：文本面板 + 选项面板 + 视觉面板。
+注册链从 `SectorAPI.registerPlugin()` 进入 `CampaignEngine.registerPlugin()`，最后由 `ModAndPluginData.addPlugin()` 修改插件集合。插件的 `getId()` 非空时，集合会先移除相同 ID 的旧插件，再加入新对象。因此稳定 ID 同时承担注销键和替换键。
 
-## 梳理情报对话关系
-
-### 服务入口速查表
-
-| 服务 | 进入方式 | 核心接口 |
-|---|---|---|
-| 情报 | `Global.getSector().getIntelManager()` | `IntelManagerAPI` / `IntelInfoPlugin` |
-| 交互对话框 | `Global.getSector().getCampaignUI().showInteractionDialog(plugin, target)` | `InteractionDialogAPI` / `InteractionDialogPlugin` |
-
-### 情报 (IntelManagerAPI / IntelInfoPlugin / BaseIntelPlugin / MessageIntel)
-
-**入口**：`SectorAPI.getIntelManager()` → `IntelManagerAPI`(`com.fs.starfarer.api.campaign.comm.IntelManagerAPI`)。intel 集合随存档保存，读档后仍然可用。
-
-为什么情报集合随存档保存
-
-intel 是生涯状态的组成部分，玩家可见时间戳、`NEW` 标记窗口、结束倒计时都要跨存档存活，所以情报集合随存档一起保存。这也是 "演示情报必须当帧移除" 的原因 —— `addIntel` 进去不删，就会永远留在存档里。
-
-**创建与登记两条链**：
-
-1. **`addIntel(plugin)`**(`IntelManagerAPI`) 直接加入已知集合：置玩家可见时间戳、调 `reportMadeVisibleToPlayer()`、`autoAddCampaignMessage()`(默认 true) 时经 `CampaignUIAPI.addMessage` 弹左下消息 (`IntelManagerAPI.addIntel`)。
-    - **`addIntel` 绕过通信中继可见性检查**：`IntelInfoPlugin.canMakeVisibleToPlayer` "Only checked if adding using IntelManager.queueIntel(). addIntel() bypasses this and all other checks."。
-    - `addIntel(plugin, forceNoMessage)` / `addIntel(plugin, forceNoMessage, textPanel)` 控制消息行为。
-2. **`queueIntel(plugin[, maxCommQueueDays])`**(`IntelManagerAPI`) 加入通信队列；玩家进入通信中继范围或 `forceAddNextFrame()` 时，转为可见 intel 并出队。
-    - 同批最多 4 条单独弹出，第 5 条起合并为一条 "New intel (N)" 汇总。
-
-**每帧推进与清理**：未暂停且有玩家舰队时，情报管理器每帧推进，通信队列的可见性检查与 `removeAllThatShouldBeRemoved()` 都在这条路径上：`shouldRemoveIntel()` 返回 true 的情报被移除并调 `reportRemovedIntel()`；`IntelManagerAPI.removeIntel` 会同时移除并出队。
-
-**`BaseIntelPlugin`**(`com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`) 是自带的完整默认实现 (同时实现 `IntelInfoPlugin` / `EveryFrameScript` / `CallableEvent` / `CommSnifferReadableIntel`)，MOD 自定义情报的标准父类。
-
-### BaseIntelPlugin 常用行为速查表
-
-| 成员 | 语义 |
-|---|---|
-| `advance(amount)` | 把秒数换算成游戏日推进 ending 倒计时；`isDone()` = `isEnded()` |
-| `runWhilePaused()` | 默认 `false`(暂停不推进) |
-| `endImmediately()` / `endAfterDelay()` / `endAfterDelay(days)` | 结束流程；`getBaseDaysAfterEnd()` 默认 **3 游戏日** |
-| `createIntelInfo` / `getName()` | 列表条目由名称与子弹行组成；`getName()` 返回 null 则不显示 |
-| `createSmallDescription` | 小描述 (默认 "请覆写")；`hasSmallDescription()` 默认 true |
-| `getIcon()` | 返回 null 表示无图标 (`IntelInfoPlugin` "40x40, no icon if null.") |
-| `getIntelTags(map)` | 默认含 `INTEL_IMPORTANT` / `INTEL_NEW` / 中继范围内的 `INTEL_LOCAL`；**map 为 null 时安全返回** (基类内部已做 null 判断) |
-| `sendUpdate` / `sendUpdateIfPlayerHasIntel` | 更新消息；后者要求已有玩家可见时间戳 |
-| `BUTTON_DELETE` / `addDeleteButton` / `buttonPressConfirmed` | 删除按钮 (确认框 + `endImmediately`) |
-| `getCommMessageSound` | 发布/更新音效 (`ui_intel_something_posted` / `ui_intel_update` 等常量) |
-
-**`MessageIntel`**(`com.fs.starfarer.api.impl.campaign.intel.MessageIntel`) 是左下消息区的**纯消息**类，"For campaign messages that show up in the lower-left corner, but are not tied to an actual piece of intel." —— 它不绑定任何情报页面。构造与追加入口：`new MessageIntel(text[, color[, highlights]])`、`addLine(...)` 多行追加、`getCommMessageSound` 默认 `ui_intel_minor_message`；用 `CampaignUIAPI.addMessage(IntelInfoPlugin)` 发送。
-
-**`IntelInfoPlugin` 约定要点** (`com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`)：`getIntelTags(map)` **必须处理 map 为 null**("Method NEEDS to handle map being null gracefully.")；`NEW_DAYS = 5` 是新情报 "NEW" 标记窗口；`IntelSortTier` 是排序档；`getMapLocation(map)` 与 `getArrowData(map)` 控制地图定位与箭头；`isHidden()` 让已可见情报在 UI 与消息中隐藏 (`BaseIntelPlugin` 默认实现含教程状态判断)。
-
-### 交互对话框 (InteractionDialogAPI / InteractionDialogPlugin)
-
-**打开**：`CampaignUIAPI.showInteractionDialog(plugin, interactionTarget)`，"Returns true if dialog was actually shown, false otherwise (if, for example, UI is already showing another dialog)."、"interactionTarget can be null."。
-
-**插件生命周期 (`InteractionDialogPlugin`)**：`init(dialog)` → `optionSelected(optionText, optionData)` / `optionMousedOver` → 每帧 `advance(amount)` → 战斗返回 `backFromEngagement(result)`；另有 `getContext()` / `getMemoryMap()`(Rules 侧用)。
-
-### InteractionDialogAPI 入口分组速查表
-
-| 分组 | 成员 | 语义 |
-|---|---|---|
-| 面板 | `getOptionPanel()`、`getTextPanel()`、`getVisualPanel()` | 三个面板的访问入口 |
-| 内容写入 | `setPromptText`、`setOptionOnEscape(text, optionId)`、`setOptionOnConfirm`、`addOptionSelectedText`、`setOptionColor`、`makeStoryOption` | 提示文本、ESC/确认键行为、选项点击后的回显 |
-| 布局 | `setTextWidth`/`setTextHeight`/`setXOffset`/`setYOffset`、`setOpacity`、`setBackgroundDimAmount`、`hideTextPanel`/`showTextPanel`、`hideVisualPanel`/`showVisualPanel` | 尺寸、透明度与面板显隐 |
-| 关闭 | `dismiss()`、`dismissAsCancel()` | 正常关闭 / 以取消语义关闭 |
-| picker | `showCargoPickerDialog`、`showFleetMemberPickerDialog`、`showFleetMemberRecoveryDialog`、`showIndustryPicker`、`showCustomDialog`、`showCustomVisualDialog`、`showCampaignEntityPicker`、`showGroundRaidTargetPicker`、`showCommDirectoryDialog` | 各类选择器 |
-| core UI 与战斗 | `makeOptionOpenCore(optionId, tabId, mode)`、`startBattle(context)` | 打开 core UI 页签 / 从对话框开战 |
-| 上下文 | `getInteractionTarget()`、`getPlugin()`、`setPlugin`、`setInteractionTarget` | 交互目标与插件互写 |
-
-交互目标与插件互写
-
-选项分支判断用 `optionData`，不要用 `optionText`
-
-`optionSelected(optionText, optionData)` 的第一个参数是用户看到的显示文本 (可随 UI 文案变化)，第二个才是 `addOption` 时传入的 id。按 `optionText` 做分支会在文案改动后静默失效。
-
-把 `showInteractionDialog` 的返回值写进日志
-
-对话框在已有对话框显示时会静默返回 `false` —— 不记录返回值，故障就只剩 "对话框没弹出来" 这个没有报错的现象。本节演示正是把 `shown` 布尔值记入日志，`shown=false` 时其余演示不受影响。
-
-**面板常用成员**：`OptionPanelAPI`(`com.fs.starfarer.api.campaign.OptionPanelAPI`)：`addOption(text, data[, tooltip])`、`addOption(text, data, color, tooltip)`、`clearOptions`；`setEnabled(data, enabled)`("Only works for options, not selectors.")、`setShortcut`、`addSelector`、`addOptionConfirmation`、`removeOption`、`setStoryOptionParams`。
-
-`TextPanelAPI`(`com.fs.starfarer.api.campaign.TextPanelAPI`)：`addPara(text[, color])`、`addPara(format, hl, highlights)`、`addParagraph`、`highlightInLastPara`、`setHighlightColorsInLastPara`、`clear`；另有 `getDialog`、`beginTooltip`/`addTooltip`。
-
-本节的 `GearInServicesDialog` 只用到 `addOption` 建立选项与 `addPara` 追加文本行两个入口；其余成员在需要时再查。
-
-## 实现情报与交互服务
-
-情报和对话框共用生涯 UI，但有各自的创建、登记和清理链。下面用 6 个局部片段分别接通两条链，每段都能从消息区、Intel 页、对话框或日志观察结果。
-
-### 登记并移除自定义情报
-
-这段代码写在 `GearInIntelServicesScript.runDemo` 开头。先直接登记自定义情报，核对管理器持有它，再于同一演示中移除，避免测试对象进入存档。
-
-```java
-SectorAPI sector = Global.getSector();
-IntelManagerAPI intelManager = sector.getIntelManager();
-GearInServicesIntel intel = new GearInServicesIntel();
-
-intelManager.addIntel(intel);
-boolean present = intelManager.hasIntel(intel);
-int intelCount = intelManager.getIntel(GearInServicesIntel.class).size();
-
-intelManager.removeIntel(intel);
-boolean absent = !intelManager.hasIntel(intel);
-```
-
-生效后，第一条日志显示 `present=true` 且计数增加，第二条显示 `absent=true` 且计数恢复；左下消息区仍保留登记时发布的消息。
-
-### 发布不绑定页面的纯消息
-
-这段代码写在自定义情报移除之后。`MessageIntel` 只进入左下消息区，可以追加多行，但不会在 Intel 页留下条目。
-
-```java
-MessageIntel message = new MessageIntel(
-		"GearIn 生涯服务速览：纯消息情报演示", Misc.getTextColor());
-message.addLine("这条追加内容不绑定情报页面。", Misc.getGrayColor());
-sector.getCampaignUI().addMessage(message);
-```
-
-生效后，消息区出现两行文本，点击后不跳转到 Intel 页；`getIntel(GearInServicesIntel.class)` 的计数不变。
-
-### 为自定义情报提供列表与标签
-
-这三个覆写在 `GearInServicesIntel` 中实现。名称决定列表文本，小描述负责详情内容；标签实现先调用父类以继承 null map 处理，再追加探索分类。
+本节插件显式返回 transient。transient 插件不写入存档，每次新档或读档建立生涯状态后，都在 `onGameLoad()` 注册新实例。相同 ID 的替换机制使同一回调被重复执行时，集合中仍只有当前实现。
 
 ```java
 @Override
-public String getName() {
-	return "GearIn 服务速览 (自定义情报演示)";
-}
-
-@Override
-public void createSmallDescription(TooltipMakerAPI info, float width, float height) {
-	info.addPara("这是一条用于核对登记与移除流程的演示情报。",
-			Misc.getTextColor(), 0f);
-}
-
-@Override
-public Set<String> getIntelTags(SectorMapAPI map) {
-	Set<String> tags = super.getIntelTags(map);
-	tags.add(Tags.INTEL_EXPLORATION);
-	return tags;
+public void onGameLoad(boolean newGame) {
+    Global.getSector().registerPlugin(new GearInCampaignPlugin());
 }
 ```
 
-生效后，情报登记期间能按名称显示，并归入探索标签；以 null 调用 `getIntelTags(null)` 不抛异常。
+非 transient 插件会随存档保存，适合确实需要保存内部字段的插件，并在 `onNewGame()` 登记。Campaign 插件通常只提供无状态选择规则和 facts 计算，使用 transient 能让旧存档在启用或移除 MOD 时保持更清晰的对象边界。
 
-### 打开对话框并记录结果
+## 理解 ID 替换与候选选择
 
-这段代码写在 `GearInDialogServicesScript.runDemo` 中。普通对话不需要交互目标，因此传 null；返回值必须进入日志，才能区分 "已打开" 和 "当前 UI 拒绝打开"。
+注册替换和 picker 选择是两条不同链。ID 替换发生在 `registerPlugin()` 时，用于决定插件集合中保留哪些对象；picker 选择发生在游戏需要某项服务时，用于比较当前集合中各插件返回的候选。
+
+相同 ID 的第二次登记会先移除旧实例。局部探针可以让两个实现返回同一个 ID，分别写出不同日志；第二次登记后，后续 picker 只会进入新实现。
 
 ```java
-CampaignUIAPI ui = Global.getSector().getCampaignUI();
-boolean shown = ui.showInteractionDialog(new GearInServicesDialog(), null);
-LOG.info("GearIn campaign services dialog: shown=" + shown);
+Global.getSector().registerPlugin(new GearInPluginProbe("GearIn_same_id", "first"));
+Global.getSector().registerPlugin(new GearInPluginProbe("GearIn_same_id", "second"));
 ```
 
-生效后，UI 空闲时日志为 `shown=true` 并弹出对话框；已有模态对话时日志为 `shown=false`，且没有异常。
+`getId()` 返回 `null` 时，注册器没有替换键，每次登记都会追加新对象。无 ID 插件仍会参加所有 picker 与 facts 更新，重复登记可能产生多个候选或重复写入，因此 MOD 插件应提供稳定、带 MOD 前缀的非空 ID。
 
-### 初始化文本与选项
+## 返回 PluginPick 或让出目标
 
-这段代码写在 `GearInServicesDialog.init` 中。保存对话框引用，写入说明文本，再用稳定的 option ID 建立两个查询动作和一个关闭动作。
+游戏需要交互、战场、舰队 AI 或其他可替换服务时，会遍历全部 Campaign 插件，调用对应 picker，并收集非空的 `PluginPick<T>`。没有插件返回候选时，结果为 `null`；只有一个候选时直接使用其 `plugin`；多个候选按 `priority.ordinal()` 排序，取枚举序号最大的一个。
+
+picker 的第一项职责是判断目标是否属于自己。匹配时返回插件实例与优先级；不匹配时返回 `null`，让其他 Campaign 插件继续提供默认或专用实现。返回一个低优先级占位对象会参与竞争，无法表达真正的退让。
+
+### 选择优先级速查表
+
+| 优先级 | 适用范围 | 选择关系 |
+| --- | --- | --- |
+| `CORE_GENERAL` | 原版通用实现 | 枚举序号最低 |
+| `MOD_GENERAL` | MOD 全局替换 | 高于通用原版实现 |
+| `CORE_SET` | 原版对象集合规则 | 高于 general 级 |
+| `MOD_SET` | MOD 对一组对象的规则 | 高于 `CORE_SET` |
+| `CORE_SPECIFIC` | 原版特定遭遇 | 高于 set 级 |
+| `MOD_SPECIFIC` | MOD 特定对象或遭遇 | 高于 `CORE_SPECIFIC` |
+| `HIGHEST` | 明确解决全局冲突 | 枚举序号最高，使用条件最严格 |
+
+本节两个 picker 都检查专用 Memory 标记，只处理明确标记的对象，因此使用 `MOD_SPECIFIC`。两个不同 ID 的探针可分别返回 `MOD_SET` 和 `MOD_SPECIFIC`，最终结果应来自后者。
 
 ```java
-this.dialog = dialog;
-dialog.getTextPanel().addPara("GearIn 生涯服务速览：选择要查询的内容。");
-OptionPanelAPI options = dialog.getOptionPanel();
-options.addOption("查看势力关系", OPTION_FACTION);
-options.addOption("查看舰队货物", OPTION_CARGO);
-options.addOption("关闭演示", OPTION_CLOSE);
-dialog.setOptionOnEscape("关闭演示", OPTION_CLOSE);
+PluginPick<InteractionDialogPlugin> setPick = new PluginPick<>(
+        new GearInSetDialog(), PickPriority.MOD_SET);
+PluginPick<InteractionDialogPlugin> specificPick = new PluginPick<>(
+        new GearInSpecificDialog(), PickPriority.MOD_SPECIFIC);
 ```
 
-生效后，对话框固定显示 3 个选项，ESC 与 "关闭演示" 进入同一个 `OPTION_CLOSE` 分支。
+多个候选具有相同优先级时，排序后的先后结果没有公开稳定保证。业务规则需要唯一胜者时，应通过互斥条件或不同优先级建立明确判据。
 
-### 按 optionData 处理选择
+## 准备三个独立目标
 
-这段代码写在 `GearInServicesDialog.optionSelected` 中。显示文本只用于回显，分支始终比较 `optionData`；关闭分支显式调用 `dismiss()`。
+交互、战斗和市场 facts 使用三个不同输入键。测试前分别标记交互实体、敌舰队和市场；市场片段同时保存刷新前后的 ready 值，用于证明两个 Memory 入口的差别。
 
 ```java
-if (OPTION_FACTION.equals(optionData)) {
-	FactionAPI faction = Global.getSector().getPlayerFaction();
-	dialog.getTextPanel().addPara("与霸主关系："
-			+ faction.getRelationship(Factions.HEGEMONY));
-} else if (OPTION_CARGO.equals(optionData)) {
-	CargoAPI cargo = Global.getSector().getPlayerFleet().getCargo();
-	dialog.getTextPanel().addPara("舰队补给：" + cargo.getSupplies());
-} else if (OPTION_CLOSE.equals(optionData)) {
-	dialog.dismiss();
+dialogTarget.getMemoryWithoutUpdate().set(
+        GearInCampaignPlugin.DIALOG_TARGET_KEY, true);
+enemyFleet.getMemoryWithoutUpdate().set(
+        GearInCampaignPlugin.BATTLE_TARGET_KEY, true);
+
+MemoryAPI marketMemory = market.getMemoryWithoutUpdate();
+marketMemory.set(GearInCampaignPlugin.MARKET_FACTS_TARGET_KEY, true);
+boolean readyBeforeRefresh = marketMemory.getBoolean(
+        GearInCampaignPlugin.MARKET_READY_KEY);
+boolean readyAfterRefresh = market.getMemory().getBoolean(
+        GearInCampaignPlugin.MARKET_READY_KEY);
+```
+
+三个键彼此独立，一个对象可以只获得自定义对话或只改变战场创建规则。`readyBeforeRefresh` 读取当前保存值，`readyAfterRefresh` 则来自 Campaign 插件完成 facts 更新后的 Memory。
+
+## 为标记实体选择交互对话框
+
+交互 picker 接收玩家正在接触的 `SectorEntityToken`。本节使用 `$GearIn_dialog_target` 标记具体实体；判断读取 `getMemoryWithoutUpdate()`，避免只为决定 picker 就触发另一轮 facts 更新。
+
+```java
+if (interactionTarget == null
+        || !interactionTarget.getMemoryWithoutUpdate()
+                .getBoolean(DIALOG_TARGET_KEY)) {
+    return null;
 }
+return new PluginPick<>(
+        new GearInTargetDialog(interactionTarget),
+        PickPriority.MOD_SPECIFIC);
 ```
 
-生效后，两个查询选项各追加一行对应数据；关闭选项和 ESC 都关闭对话框并恢复生涯界面。
+测试对象需要在玩家开始交互前写入标记。picker 只读取当前 Memory，不会自行创建或修改目标标记。
 
-## 组装情报对话实现
+`GearInTargetDialog` 保存 picker 传入的目标。初始化时显示目标 ID、对话标记和目标市场的 ready fact，并提供关闭选项。目标没有市场时 ready 状态为 `false`；目标或市场读取均经过判空。选项分支使用稳定的 `optionData`，显示文本只负责界面呈现。
 
-在既有 MOD 工程 (布局与插件入口 `GearInModPlugin`) 之上，沿用 [C10-S3] 定义的抽象基类 `GearInOneShotScript`，本节在其上新增两个服务演示脚本与两个插件类，共五个类。一文件一角色，不新增任何资源文件；两个脚本在 `onGameLoad` 各自注册，首个 `advance()` 各执行一次演示并自停：
+## 为标记舰队选择战场创建插件
 
-```text {9-12}
-mods/GearIndustry/
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data\
-├── src\
-│   └── data/scripts/gearin/campaign\
-│       ├── GearInOneShotScript          # 沿用 C10-S5 的抽象基类 (不参与注册)
-│       ├── GearInIntelServicesScript    # 本节新增 (情报段脚本)
-│       ├── GearInDialogServicesScript   # 本节新增 (对话框段脚本)
-│       ├── GearInServicesIntel          # 本节新增 (情报插件)
-│       └── GearInServicesDialog         # 本节新增 (对话框插件)
-└── jars\
-```
-
-### 复用一次性脚本基类
-
-**职责**：一次性演示脚本骨架 —— 封装 `EveryFrameScript` 三方法 (`isDone` / `runWhilePaused` / `advance`)，首次 `advance()` 执行一次子类实现的 `runDemo()` 后自停。
-
-**绑定注册入口**：不参与任何注册；两个服务演示脚本继承它，各自负责自己的注册。
-
-### GearInIntelServicesScript(情报段脚本)
-
-**职责**：`IntelManagerAPI` 常用入口演示，创建自定义情报 `GearInServicesIntel`(`BaseIntelPlugin` 子类)，依次 `addIntel` 登记、`hasIntel` 验证、`removeIntel` 移除 (不留存档残留)；再用 `MessageIntel` 发一条纯消息 (左下消息区)。
-
-**绑定注册入口**：onGameLoad 的一次性注册判断内执行 `addScript` 注册，persistent data 键 `REGISTER_MARK = "GearIn_IntelServices"` 与调用点片段逐字一致。
-
-### GearInDialogServicesScript(对话框段脚本)
-
-**职责**：`InteractionDialogAPI` 常用入口演示，用 `CampaignUIAPI.showInteractionDialog(plugin, null)` 打开演示对话框 (`GearInServicesDialog`)，记录返回的 `shown` 布尔值 (已有对话框显示时返回 false)。
-
-**绑定注册入口**：onGameLoad 的一次性注册判断内执行 `addScript` 注册，persistent data 键 `REGISTER_MARK = "GearIn_DialogServices"` 与调用点片段逐字一致。
-
-### GearInServicesIntel(情报插件)
-
-**职责**：自定义情报插件 (`BaseIntelPlugin` 子类)，实现名称/图标/小描述/Intel 标签；`getIcon()` 返回 null 时不显示图标；`getIntelTags(map)` 先调 `super.getIntelTags(map)`(基类默认实现内部已做 null 判断) 再追加自定义 tag。
-
-**绑定注册入口**：由 `GearInIntelServicesScript` 经 `IntelManagerAPI.addIntel(plugin)` 登记 (`addIntel` 绕过可见性检查，立即置玩家可见时间戳并弹出左下消息)。
-
-### GearInServicesDialog(对话框插件)
-
-**职责**：演示对话框插件 (`InteractionDialogPlugin`)，`init` 写入文本面板与三个选项 (查看势力关系 / 查看舰队货物 / 关闭演示) 并绑定 ESC；`optionSelected` 按 `optionData` 分支展示对应信息，关闭选项与 ESC 走 `dismiss()`；未使用的回调保留空实现。
-
-**绑定注册入口**：由 `GearInDialogServicesScript` 经 `CampaignUIAPI.showInteractionDialog(plugin, null)` 打开 (target 传 null，`getInteractionTarget()` 返回 null)。
-
-### 绑定位置一览速查表
-
-| 类 | 角色 | 绑定注册入口 |
-|---|---|---|
-| `GearInOneShotScript` | 抽象基类：一次性演示脚本骨架 (沿用 [C10-S3]) | 不参与注册 |
-| `GearInIntelServicesScript` | 情报段演示脚本 | onGameLoad `addScript`，persistent data 键 `GearIn_IntelServices` |
-| `GearInDialogServicesScript` | 对话框段演示脚本 | onGameLoad `addScript`，persistent data 键 `GearIn_DialogServices` |
-| `GearInServicesIntel` | 自定义情报插件 (`BaseIntelPlugin` 子类) | `IntelManagerAPI.addIntel(plugin)`(由情报段脚本调用) |
-| `GearInServicesDialog` | 演示对话框插件 (`InteractionDialogPlugin`) | `CampaignUIAPI.showInteractionDialog(plugin, null)`(由对话框段脚本调用) |
-
-### 行为要点
-
-- `extends GearInOneShotScript`：沿用脚本节的一次性演示模式 —— 首帧 `advance()` 执行一次 `runDemo()`，`isDone()` 置位后引擎下一帧自动移除。
-- `REGISTER_MARK`：注册判断用的 persistent data 键，两个脚本各自独立 (`GearIn_IntelServices` / `GearIn_DialogServices`)。
-    - **必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致；不并入既有插件的 `CLASS_MARK` 标记。
-- 情报段：`addIntel` → `hasIntel` → `removeIntel` 同帧形成完整流程，不留存档残留；`addIntel` 触发 `autoAddCampaignMessage()`(左下消息)；`MessageIntel` 走 `CampaignUIAPI.addMessage` 发纯消息。
-- 对话框段：`showInteractionDialog(plugin, null)` 返回 `shown`；对话框由用户点选驱动 (`optionSelected` 写文本与日志)，`OPTION_CLOSE` 调 `dismiss()` 关闭。
-
-### 调用点片段
-
-在既有 MOD 插件的 `onGameLoad(boolean newGame)` 内新增本节注册块 (该插件类归前置单元所有，本节只演示调用，不改动那个文件)：
+战场 picker 的参数类型仍是 `SectorEntityToken`，因为战斗对手来自生涯实体。完整实现先用 `instanceof CampaignFleetAPI` 限定对象类型，再读取 `$GearIn_battle_target`。普通行星或带错误标记的其他实体不会进入舰队战场逻辑。
 
 ```java
-    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInIntelServicesScript.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInIntelServicesScript.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInIntelServicesScript());
-    }
-    if (!Global.getSector().getPersistentData().containsKey(GearInDialogServicesScript.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInDialogServicesScript.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInDialogServicesScript());
-    }
+if (!(opponent instanceof CampaignFleetAPI)
+        || !opponent.getMemoryWithoutUpdate().getBoolean(BATTLE_TARGET_KEY)) {
+    return null;
+}
+return new PluginPick<>(
+        new GearInObjectiveBattleCreationPlugin(),
+        PickPriority.MOD_SPECIFIC);
 ```
 
-### 构建命令
+测试敌舰队需要在战斗建立前写入独立标记。战斗上下文创建后再修改舰队 Memory，不会追溯替换已经选定的战场插件。
 
-在 `Starsector/mods/GearIndustry/` 执行：
+`GearInObjectiveBattleCreationPlugin` 继承原版 `BattleCreationPluginImpl`。它在调用父类前把 `BattleCreationContext.forceObjectivesOnMap` 设为 `true`，父类随后仍负责装入双方舰队、计算地图尺寸、创建地图并设置部署时间。调用顺序不能颠倒，因为父类在创建地图时读取该字段来决定是否生成战术目标。
 
-```text
-gradle jar
-```
+这个实现只改变目标生成判据。带标记敌舰队进入战斗时，小规模战斗也会生成战术目标；未标记舰队使当前 Campaign 插件返回 `null`，由其他候选选择正常战场实现。
 
-产物 `jars/GearIndustry.jar` 应包含五个类的 `.class` 条目 (可用 `jar tf` 核对)。
+## 在读取 Memory 时更新市场 facts
+
+Campaign 插件除了选择服务，还能在对象 Memory 被请求时更新事实。实体、人物、势力、全局、玩家和市场各自有对应的 `update...Facts()`。引擎取得对象的 `getMemory()` 时遍历当前 Campaign 插件，并把对象与它的 Memory 传给更新方法。
+
+### Facts 更新入口速查表
+
+| 更新方法 | 触发对象 | 典型用途 |
+| --- | --- | --- |
+| `updateEntityFacts(entity, memory)` | 生涯实体 | 位置、标签和交互条件 |
+| `updatePersonFacts(person, memory)` | 人物 | 身份、关系与角色状态 |
+| `updateFactionFacts(faction, memory)` | 势力 | 势力关系与全局规则 |
+| `updateGlobalFacts(memory)` | 星区全局 Memory | 全局进度与环境条件 |
+| `updatePlayerFacts(memory)` | 玩家角色数据 | 玩家能力与任务条件 |
+| `updateMarketFacts(market, memory)` | 市场 | 规模、产业、管理与市场交互条件 |
+
+本节只处理带 `$GearIn_market_facts_target` 的市场。更新方法使用引擎传入的 `memory` 检查输入标记，并写入 `$GearIn_campaign_plugin_ready`。facts 键具有 GearIn 前缀，避免与原版或其他 MOD 的规则变量冲突。
+
+准备片段中的第一次读取不会执行 facts 更新，因此 `readyBeforeRefresh` 仍反映当前已保存值。第二次调用 `getMemory()` 会先运行 `updateMarketFacts()`，`readyAfterRefresh` 随后读取到 `true`。对话框也调用目标市场的 `getMemory()`，所以界面显示的 ready 状态来自本次刷新后的事实。
+
+`memory.set(key, value, 0f)` 的零过期时间用于当前刷新产生的事实。更新方法每次 `getMemory()` 都重新计算它，避免长期过期项堆积。更新方法严禁再次调用 `market.getMemory()`，否则会重新进入同一 facts 更新链并递归；当前值和输入条件都从传入的 `MemoryAPI` 读取。
+
+## 注销插件并观察恢复结果
+
+插件 ID 也是注销入口。注销后，当前插件不再参与新的 picker 选择和 facts 刷新；已经创建并显示的对话框、已经进入初始化的战斗不会被追溯替换。
+
+调用 `Global.getSector().unregisterPlugin(GearInCampaignPlugin.PLUGIN_ID)` 即可按稳定 ID 注销。
+
+注销后再次与标记实体交互，其他 Campaign 插件会重新竞争该目标。再次读取市场 Memory 时，本插件不再写入 ready 键；若要观察这一点，应先从 `getMemoryWithoutUpdate()` 中 `unset()` 旧键，再调用 `getMemory()`。
 
 ## 验证方案
 
-前置数据：既有 MOD 工程：`mod_info.json`、构建脚本与插件入口 `GearInModPlugin`[C7-S1]，以及脚本注册判断模式 [C10-S1]、本节五个类与调用点片段中的两个 `addScript` 注册块 (各带独立的 `REGISTER_MARK` 键)。
+前置数据：已启用包含 [C14-S3] 三个完整类的测试 MOD；准备一个可交互实体、一支可开战的敌舰队和一个市场，并能够在三者 Memory 中写入测试标记。
 
-1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含五个类的 `.class` 条目。
-2. **新建生涯 (首次进入存档后第一帧)**：确认 `starsector.log` 按顺序出现两个脚本的日志行 (情报段 ×3、对话框段 1 行)，且**没有**旧复合演示的收尾 `done` 行。
-3. **消息区**：演示帧后左下消息区出现两条 `GearIn` 消息 —— 点击第一条跳转 Intel 页签 (`addIntel` 的自动发布消息)、点击第二条无跳转 (`MessageIntel` 纯消息)。
-4. **对话框**：游戏暂停并弹出演示对话框；依次点 "查看势力关系"(文本面板追加关系行、日志 `option selected: faction`)、"查看舰队货物"(追加货物行、日志 `option selected: cargo`)、"关闭演示" 或按 ESC(日志 `option selected: close`、对话框关闭、游戏恢复)。
+1. 编译 `GearInCampaignPlugin`、`GearInTargetDialog` 和 `GearInObjectiveBattleCreationPlugin`。
+2. 在 `onGameLoad()` 注册 `GearInCampaignPlugin`，核对 `getId()` 返回 `GearIn_campaign_plugin` 且 `isTransient()` 返回 `true`。
+3. 连续登记两个相同 ID 的探针实例，检查插件集合只保留第二个实例。
+4. 给交互实体写入 `$GearIn_dialog_target` 并开始交互，核对对话框显示的目标 ID、标记和市场 ready 状态。
+5. 与未标记实体交互，确认当前插件返回 `null`，并观察其他插件提供的交互结果。
+6. 给测试敌舰队写入 `$GearIn_battle_target` 并开战，观察小规模战场中的战术目标。
+7. 与未标记敌舰队开战，确认战场采用其他 Campaign 插件提供的规则。
+8. 给市场写入 `$GearIn_market_facts_target`，依次读取 `getMemoryWithoutUpdate()` 和 `getMemory()`，比较 ready 键。
+9. 登记分别返回 `MOD_SET` 和 `MOD_SPECIFIC` 的不同 ID 探针，触发同一个 picker 并记录获选实现。
+10. 保存并读档，确认 `onGameLoad()` 重新登记 transient 插件，插件集合中只有一个 `GearIn_campaign_plugin`。
+11. 调用 `unregisterPlugin(GearInCampaignPlugin.PLUGIN_ID)`，再次测试对话与战场选择。
+12. 注销后从市场 Memory 清除 ready 键，再调用 `market.getMemory()`，确认本插件不再写入该事实。
 
 预期结果：
 
-- 点 "查看势力关系"：文本面板追加一行 `势力关系：霸主 ... 海盗 ... 独立 ...`，日志出现 `dialog option selected: faction`。
-- 点 "查看舰队货物"：文本面板追加 `舰队货物：补给 ...` 行，日志出现 `dialog option selected: cargo`。
-- 点 "关闭演示"(或按 ESC)：对话框关闭，日志出现 `dialog option selected: close`。
-- **读档**：不出现任何 `GearIn campaign services` 日志 (两个 `REGISTER_MARK` 标记均已置位、脚本不再注册)；演示遗留的对话框与消息不会随存档保存。
-- **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志。
+- 三个 Java 类编译完成，加载期没有类缺失或方法签名错误；
+- 相同非空 ID 的新插件替换旧实例，集合中只有当前实例；
+- 标记实体使用 `GearInTargetDialog`，对话框显示正确目标 ID、对话标记和市场 ready 状态；
+- 未标记实体使当前 picker 返回 `null`，其他插件仍可提供交互；
+- 标记敌舰队使用 `GearInObjectiveBattleCreationPlugin`，战场生成战术目标；
+- 未标记敌舰队不使用本节战场插件；
+- `getMemoryWithoutUpdate()` 不触发 ready 写入，`getMemory()` 刷新后 ready 为 `true`；
+- `MOD_SPECIFIC` 候选高于 `MOD_SET` 候选并成为最终结果；
+- 读档后 transient 插件重新登记，稳定 ID 避免重复实例；
+- 注销后本插件停止参与新的对话、战场和市场 facts 更新。
 
 ## 故障分析
 
-- **`showInteractionDialog` 返回 false 且对话框没有出现**：生涯 UI 已有对话框时，后续打开请求会被拒绝。
+- **读档后所有自定义选择都消失**：插件返回 transient，但 `onGameLoad()` 没有重新登记实例。
 
-    - **解决方案**：调用前检查 `CampaignUIAPI.isShowingDialog()`，并记录返回值，在 UI 空闲时重试。
+    - **解决方案**：每次 `onGameLoad()` 调用 `registerPlugin(new GearInCampaignPlugin())`。
 
-- **日志已有情报记录但 Intel 页没有条目**：`queueIntel` 会让情报等待通信中继可见性检查，舰队不在范围内且未设置 `forceAddNextFrame` 时，`getIntel()` 暂时查不到它。
+- **相同插件 ID 的两个实现没有并存**：注册器把非空 ID 作为替换键，新实例登记前会移除旧实例。
 
-    - **解决方案**：需要立即显示时改用 `addIntel`；需要延迟可见时配置 `setPostingLocation` 和 `setPostingRangeLY`。
+    - **解决方案**：需要竞争的插件使用不同稳定 ID；同一功能的新版本继续使用相同 ID 完成替换。
 
-- **情报始终不消失**：直接实现 `IntelInfoPlugin` 而未提供结束语义时，情报会一直保留在页面和存档中。
+- **每次读档后 picker 调用次数增加**：`getId()` 返回 `null`，每次登记都向集合追加新实例。
 
-    - **解决方案**：继承 `BaseIntelPlugin`，并用 `endAfterDelay()` 或 `endImmediately()` 结束。
+    - **解决方案**：让 `getId()` 始终返回 `GearIn_campaign_plugin`。
 
-- **`getIntelTags(map)` 抛出 NPE**：该方法可能在 `map` 为 null 时调用，直接解引用 `map.getPlayerFleet()` 会使地图提示或 Intel 页渲染中止。
+- **未标记实体也打开自定义对话框**：交互 picker 在条件不匹配时仍返回了 `PluginPick`。
 
-    - **解决方案**：先判 null，或调用已处理 null 的 `super.getIntelTags(map)`。
+    - **解决方案**：先判空并检查 `$GearIn_dialog_target`，任一条件不成立时返回 `null`。
 
-- **点击对话框选项后没有反应**：`optionSelected` 的 `optionText` 是显示文本，`optionData` 才是 `addOption` 传入的 ID。
+- **`MOD_SPECIFIC` 候选没有获选**：另一个插件返回了枚举序号更高的优先级，或本插件因过滤条件返回 `null`。
 
-    - **解决方案**：改用 `OPTION_FACTION.equals(optionData)` 判断分支。
+    - **解决方案**：记录每个候选的命中条件和 `PickPriority`，核对目标 Memory 与全部非空候选。
 
-- **对话框无法关闭**：未绑定关闭选项或 `setOptionOnEscape` 时，点击关闭和 ESC 都无法进入退出分支。
+- **标记敌舰队的小规模战斗没有战术目标**：战场插件在父类创建地图之后才修改 `forceObjectivesOnMap`。
 
-    - **解决方案**：用 `setOptionOnEscape(text, optionId)` 绑定 ESC，并在关闭回调中调用 `dismiss()`。
+    - **解决方案**：在 `super.initBattle(context, api)` 之前设置 `context.forceObjectivesOnMap = true`。
 
-- **游戏在进入生涯前因服务注册中止**：`onApplicationLoad` 阶段的 `Global.getSector()` 仍为 null，在此访问生涯服务会抛出 NPE。
+- **读取 `getMemoryWithoutUpdate()` 后 ready 仍为 `false`**：该入口只返回当前 Memory，不执行 Campaign 插件的 facts 更新。
 
-    - **解决方案**：把注册移到 `onGameLoad` 的一次性注册判断内。
+    - **解决方案**：需要刷新事实时调用 `market.getMemory()`，再从返回对象读取 ready 键。
 
-- **`MessageIntel` 点击后跳转到意外页面**：把纯消息绑定 `MessageClickAction` 或加入情报管理器，会赋予它不符合用途的交互路径。
+- **读取市场 Memory 时发生递归调用**：`updateMarketFacts()` 内再次调用了 `market.getMemory()`。
 
-    - **解决方案**：纯消息只通过 `CampaignUIAPI.addMessage(intel)` 投入左下消息区；需要 Intel 页面条目时改用 `BaseIntelPlugin` 子类和 `addIntel`。
+    - **解决方案**：只读取和写入方法参数 `memory`，需要市场属性时直接使用参数 `market`。
+
+- **动态 facts 在 Memory 中形成长期过期项**：更新方法为每次读取都重算的键设置了正数期限。
+
+    - **解决方案**：使用 `memory.set(MARKET_READY_KEY, true, 0f)` 写入当前刷新事实。
+
+- **调用注销后插件仍在参与选择**：传给 `unregisterPlugin()` 的字符串与插件 `getId()` 不一致。
+
+    - **解决方案**：注销时统一使用 `GearInCampaignPlugin.PLUGIN_ID`。
 
 ## 总结
 
-本节把两个生涯服务入口做成两条可复用链，并在示例里组合验证：情报经 `getIntelManager()` 登记并随存档存活，对话框经 `showInteractionDialog()` 打开并受其返回值约束。两条链都挂在 `REGISTER_MARK` 一次性注册判断与 `Global` 阶段语义这套底座上。
+Campaign 插件先通过稳定 ID 进入注册集合，再在具体服务请求发生时返回候选。ID 解决实例替换，picker 的目标判断决定是否参与，`PickPriority` 决定多个候选中的最终结果。transient 插件需要每次读档重登，稳定 ID 让重复回调收敛为一个当前实例。
 
-记忆要点：
-
-- `addIntel` 立即登记 (弹消息、绕过通信中继可见性检查)；`queueIntel` 才走中继可见性链路；intel 随存档保存。
-- `showInteractionDialog` 可能返回 `false`；对话框选项比较用 `optionData` 不用 `optionText`。
-- `getIntelTags(map)` 必须处理 map 为 null。
-
-排查时沿数据文件 → 注册入口 → 运行使用方 → 可观察结果四个位置复核，比对着症状猜接口更快。
-
-本节只覆盖两个入口的 "常用高频面"，Rules 侧对话框、`BarEventPlugin` 对话框入口与任务类情报 (`BaseMissionIntel`) 在逻辑上属于更深的主题，本节不展开。
+facts 更新沿对象的 `getMemory()` 调用发生。更新方法使用传入 Memory 写入零过期时间的 MOD 键，`getMemoryWithoutUpdate()` 则保留只读当前值的语义。把交互、战场与市场事实分别绑定到三个标记后，每条链都能独立启用、退让和验证。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global`：全局入口，`getSector()`、`getLogger()`；
-- `com.fs.starfarer.api.campaign.SectorAPI`：生涯引擎入口，情报与对话框入口都能从这里进入 (`getIntelManager` / `getCampaignUI` / `getPersistentData` / `addScript`)；
-- `com.fs.starfarer.api.campaign.comm.IntelManagerAPI`：情报登记集合，`addIntel` / `queueIntel` / `removeIntel` / `removeAllThatShouldBeRemoved`；
-- `com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`：单条情报约定，`getIntelTags(map)` 必须容忍 null map；
-- `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`：MOD 自定义情报标准父类，结束倒计时、删除按钮、更新消息、默认图标语义；
-- `com.fs.starfarer.api.impl.campaign.intel.MessageIntel`：左下消息区纯消息类，`new MessageIntel(...)` + `addLine(...)`；
-- `com.fs.starfarer.api.campaign.InteractionDialogAPI`：对话框本体，面板、选项行为 (ESC/确认/回显)、picker 族、`dismiss()`；
-- `com.fs.starfarer.api.campaign.InteractionDialogPlugin`：对话框内容插件，七方法生命周期 (`init` → `optionSelected` → `advance` → `backFromEngagement`)；
-- `com.fs.starfarer.api.campaign.OptionPanelAPI`：选项面板，`addOption` / `setEnabled` / `addSelector` / `addOptionConfirmation`；
-- `com.fs.starfarer.api.campaign.TextPanelAPI`：文本面板，`addPara` / `highlightInLastPara` / `clear`；
-- `com.fs.starfarer.api.campaign.CampaignUIAPI`：生涯 UI，`showInteractionDialog` / `addMessage` / `isShowingDialog`。
-- `com.fs.starfarer.api.util.Misc`：文本与高亮颜色常量 (`getTextColor` / `getGrayColor` 等)。
-- `com.fs.starfarer.api.impl.campaign.ids.Tags`：intel 标签常量。
+- `com.fs.starfarer.api.campaign.CampaignPlugin`：插件 ID、存档性质、选择优先级、picker 和 facts 更新合同；
+- `com.fs.starfarer.api.campaign.BaseCampaignPlugin`：全部 Campaign 插件方法的默认实现；
+- `com.fs.starfarer.api.PluginPick`：候选插件与 `PickPriority` 的组合对象；
+- `com.fs.starfarer.api.campaign.SectorAPI`：Campaign 插件注册与注销入口；
+- `com.fs.starfarer.api.campaign.InteractionDialogPlugin`：交互对话框的初始化、选项和状态接口；
+- `com.fs.starfarer.api.impl.combat.BattleCreationPluginImpl`：原版舰队装载、地图创建和部署规则实现；
+- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：目标标记、动态 facts 和过期时间读写。
 
 ## 完整最小例
 
-::: details 完整成品：GearInOneShotScript
+::: details 完整成品：GearInCampaignPlugin
 
 ```java
 package data.scripts.gearin.campaign;
 
-import com.fs.starfarer.api.EveryFrameScript;
+import com.fs.starfarer.api.PluginPick;
+import com.fs.starfarer.api.campaign.BaseCampaignPlugin;
+import com.fs.starfarer.api.campaign.BattleCreationPlugin;
+import com.fs.starfarer.api.campaign.CampaignFleetAPI;
+import com.fs.starfarer.api.campaign.InteractionDialogPlugin;
+import com.fs.starfarer.api.campaign.SectorEntityToken;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 
 /**
- * 一次性演示脚本基类：挂载后第一次 advance() 执行一次子类实现的 runDemo() 并自停
- * (isDone() 返回 true，引擎在下一帧自动从脚本列表移除本脚本)。
- *
- * 两个服务演示脚本 (情报 / 对话框) 都继承本类，各自只实现 runDemo()，
- * 避免每个演示类重复 EveryFrameScript 的骨架方法。本类是抽象基类，不参与任何注册；
- * 各子类的注册在 onGameLoad 的 persistent data 门内各自执行。
+ * 根据对象 Memory 选择交互与战场插件，并在市场 Memory 刷新时写入动态事实。
  */
-public abstract class GearInOneShotScript implements EveryFrameScript {
+public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
-    /** 演示是否已执行；置位后 isDone() 返回 true，引擎下一帧自动移除本脚本。 */
-    private boolean executed = false;
+    public static final String PLUGIN_ID = "GearIn_campaign_plugin";
+    public static final String DIALOG_TARGET_KEY = "$GearIn_dialog_target";
+    public static final String BATTLE_TARGET_KEY = "$GearIn_battle_target";
+    public static final String MARKET_FACTS_TARGET_KEY = "$GearIn_market_facts_target";
+    public static final String MARKET_READY_KEY = "$GearIn_campaign_plugin_ready";
 
-    public GearInOneShotScript() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
+    @Override
+    public String getId() {
+        return PLUGIN_ID;
     }
 
     @Override
-    public boolean isDone() {
-        return executed;
+    public boolean isTransient() {
+        return true;
     }
 
     @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        if (executed) {
-            return;
+    public PluginPick<InteractionDialogPlugin> pickInteractionDialogPlugin(
+            SectorEntityToken interactionTarget) {
+        if (interactionTarget == null
+                || !interactionTarget.getMemoryWithoutUpdate().getBoolean(DIALOG_TARGET_KEY)) {
+            return null;
         }
-        executed = true;
-        runDemo();
+        return new PluginPick<>(
+                new GearInTargetDialog(interactionTarget),
+                PickPriority.MOD_SPECIFIC);
     }
 
-    /** 子类实现一次演示：只在第一次 advance() 时被调用，全部行为在一个调用内完成。 */
-    protected abstract void runDemo();
-}
-```
-
-:::
-
-::: details 完整成品：GearInIntelServicesScript
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignUIAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.campaign.comm.IntelManagerAPI;
-import com.fs.starfarer.api.impl.campaign.intel.MessageIntel;
-import com.fs.starfarer.api.util.Misc;
-
-/**
- * 完整最小例 (情报段)：IntelManagerAPI 常用入口演示脚本。
- *
- * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK
- * 一次性门控 (每个注册项用各自的键)。
- *
- * 行为：创建自定义情报 GearInServicesIntel(extends BaseIntelPlugin)addIntel 登记、
- * hasIntel 验证、removeIntel 移除 (不留存档残留)；再用 MessageIntel 发一条纯消息
- * (左下消息区)。演示全程不遗留持久状态。
- */
-public class GearInIntelServicesScript extends GearInOneShotScript {
-
-    /** 存档持久化标记：本脚本是否已在该存档执行过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_IntelServices";
-
-    private static final Logger LOG = Global.getLogger(GearInIntelServicesScript.class);
+    @Override
+    public PluginPick<BattleCreationPlugin> pickBattleCreationPlugin(
+            SectorEntityToken opponent) {
+        if (!(opponent instanceof CampaignFleetAPI)
+                || !opponent.getMemoryWithoutUpdate().getBoolean(BATTLE_TARGET_KEY)) {
+            return null;
+        }
+        return new PluginPick<>(
+                new GearInObjectiveBattleCreationPlugin(),
+                PickPriority.MOD_SPECIFIC);
+    }
 
     @Override
-    protected void runDemo() {
-        SectorAPI sector = Global.getSector();
-        IntelManagerAPI intelManager = sector.getIntelManager();
-        GearInServicesIntel intel = new GearInServicesIntel();
-        intelManager.addIntel(intel);
-        boolean present = intelManager.hasIntel(intel);
-        int intelCount = intelManager.getIntel(GearInServicesIntel.class).size();
-        LOG.info(String.format(
-                "GearIn campaign services intel: added present=%s count=%d (campaign message posted)",
-                present, intelCount));
-        intelManager.removeIntel(intel);
-        boolean absent = !intelManager.hasIntel(intel);
-        LOG.info(String.format(
-                "GearIn campaign services intel: removed absent=%s count=%d",
-                absent, intelManager.getIntel(GearInServicesIntel.class).size()));
-
-        MessageIntel message = new MessageIntel(
-                "GearIn 生涯服务速览：纯消息情报 (MessageIntel) 演示", Misc.getTextColor());
-        message.addLine("addLine 追加的第二行：消息不绑定情报页面，只在左下消息区显示。",
-                Misc.getGrayColor());
-        CampaignUIAPI ui = sector.getCampaignUI();
-        ui.addMessage(message);
-        LOG.info("GearIn campaign services intel: message-only intel posted");
+    public void updateMarketFacts(MarketAPI market, MemoryAPI memory) {
+        if (memory.getBoolean(MARKET_FACTS_TARGET_KEY)) {
+            memory.set(MARKET_READY_KEY, true, 0f);
+        }
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInDialogServicesScript
+::: details 完整成品：GearInTargetDialog
 
 ```java
 package data.scripts.gearin.campaign;
 
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignUIAPI;
-
-/**
- * 完整最小例 (对话框段)：InteractionDialogAPI 常用入口演示脚本。
- *
- * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK
- * 一次性门控 (每个注册项用各自的键)。
- *
- * 行为：用 CampaignUIAPI.showInteractionDialog(plugin, null) 打开演示对话框
- * (GearInServicesDialog implements InteractionDialogPlugin)，记录返回的 shown 布尔值
- * (已有对话框显示时返回 false，见 javadoc)；对话框由玩家点选选项后自行关闭，
- * 本脚本不留持久状态。
- */
-public class GearInDialogServicesScript extends GearInOneShotScript {
-
-    /** 存档持久化标记：本脚本是否已在该存档执行过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_DialogServices";
-
-    private static final Logger LOG = Global.getLogger(GearInDialogServicesScript.class);
-
-    @Override
-    protected void runDemo() {
-        CampaignUIAPI ui = Global.getSector().getCampaignUI();
-        boolean shown = ui.showInteractionDialog(new GearInServicesDialog(), null);
-        LOG.info("GearIn campaign services dialog: shown=" + shown
-                + " (interactionTarget=null; 玩家在对话框内点选选项后由选项回调关闭)");
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInServicesIntel
-
-```java
-package data.scripts.gearin.campaign;
-
-import java.util.Set;
-
-import com.fs.starfarer.api.impl.campaign.ids.Tags;
-import com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin;
-import com.fs.starfarer.api.ui.SectorMapAPI;
-import com.fs.starfarer.api.ui.TooltipMakerAPI;
-import com.fs.starfarer.api.util.Misc;
-
-/**
- * 完整最小例 (情报插件)：自定义情报 (IntelInfoPlugin 的默认实现 BaseIntelPlugin 子类)。
- *
- * 绑定位置：由 GearInIntelServicesScript 经 IntelManagerAPI.addIntel(plugin) 登记
- * (addIntel 绕过可见性检查，立即置玩家可见时间戳并弹出左下消息)。
- *
- * 契约要点：getIcon() 返回 null 时 Intel 页面不显示图标 (IntelInfoPlugin
- * "40x40, no icon if null.")；getIntelTags(map) 必须处理 map 为 null
- * ("Method NEEDS to handle map being null gracefully.") —— 本类先调
- * super.getIntelTags(map)，基类默认实现内部已做 null 判断，再追加自定义 tag。
- */
-public class GearInServicesIntel extends BaseIntelPlugin {
-
-    @Override
-    public String getName() {
-        return "GearIn 服务速览 (自定义情报演示)";
-    }
-
-    @Override
-    public String getIcon() {
-        return null; // null = 无图标，Intel 页面使用默认图标
-    }
-
-    @Override
-    public void createSmallDescription(TooltipMakerAPI info, float width, float height) {
-        info.addPara("这是一条由 GearInIntelServicesScript 创建并立即移除的演示情报。", Misc.getTextColor(), 0f);
-        info.addPara("登记入口 addIntel(plugin) 会直接置玩家可见时间戳并弹出左下消息；"
-                + "本演示在同一帧调用 removeIntel(plugin) 移除，不留存档残留。", Misc.getGrayColor(), 10f);
-    }
-
-    @Override
-    public Set<String> getIntelTags(SectorMapAPI map) {
-        // 基类默认实现已处理 map == null(map 非 null 时才计算 INTEL_LOCAL 距离)
-        Set<String> tags = super.getIntelTags(map);
-        tags.add(Tags.INTEL_EXPLORATION);
-        return tags;
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInServicesDialog
-
-```java
-package data.scripts.gearin.campaign;
-
+import java.util.Collections;
 import java.util.Map;
 
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CargoAPI;
-import com.fs.starfarer.api.campaign.FactionAPI;
 import com.fs.starfarer.api.campaign.InteractionDialogAPI;
 import com.fs.starfarer.api.campaign.InteractionDialogPlugin;
-import com.fs.starfarer.api.campaign.OptionPanelAPI;
+import com.fs.starfarer.api.campaign.SectorEntityToken;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.combat.EngagementResultAPI;
-import com.fs.starfarer.api.impl.campaign.ids.Factions;
 
 /**
- * 完整最小例 (对话框插件)：演示交互对话框 (InteractionDialogPlugin)。
- * 绑定位置：GearInDialogServicesScript 经 CampaignUIAPI.showInteractionDialog(plugin,
- * target) 打开 (target 传 null)。optionSelected 的 optionText 是显示文本、optionData 是
- * addOption 传入的 id，分支判断必须用 optionData；未使用的回调保留空实现。
+ * 显示 Campaign 插件选中的交互目标及其市场事实。
  */
-public class GearInServicesDialog implements InteractionDialogPlugin {
+public class GearInTargetDialog implements InteractionDialogPlugin {
 
-    public static final String OPTION_FACTION = "faction";
-    public static final String OPTION_CARGO = "cargo";
-    public static final String OPTION_CLOSE = "close";
+    private static final String OPTION_CLOSE = "GearIn_close_campaign_plugin_dialog";
 
-    private static final Logger LOG = Global.getLogger(GearInServicesDialog.class);
-
+    private final SectorEntityToken target;
     private InteractionDialogAPI dialog;
+
+    public GearInTargetDialog(SectorEntityToken target) {
+        this.target = target;
+    }
 
     @Override
     public void init(InteractionDialogAPI dialog) {
         this.dialog = dialog;
-        String target = dialog.getInteractionTarget() == null ? "null(本演示未绑定交互目标)"
-                : dialog.getInteractionTarget().getName();
-        dialog.getTextPanel().addPara("GearIn 生涯服务速览：交互对话框演示。交互目标=" + target
-                + "。选择下方选项查看对应服务信息，或选择关闭结束对话框。");
-        OptionPanelAPI options = dialog.getOptionPanel();
-        options.addOption("查看势力关系", OPTION_FACTION, "显示玩家与霸主、海盗、独立势力的关系数值与等级");
-        options.addOption("查看舰队货物", OPTION_CARGO, "显示玩家舰队补给、燃料、船员与信用状态");
-        options.addOption("关闭演示", OPTION_CLOSE, "关闭本演示对话框");
-        dialog.setOptionOnEscape("关闭演示", OPTION_CLOSE);
-        LOG.info("GearIn campaign services dialog init: interactionTarget=" + target);
+        boolean dialogTarget = target != null
+                && target.getMemoryWithoutUpdate()
+                        .getBoolean(GearInCampaignPlugin.DIALOG_TARGET_KEY);
+        MarketAPI market = target == null ? null : target.getMarket();
+        boolean marketReady = market != null
+                && market.getMemory().getBoolean(GearInCampaignPlugin.MARKET_READY_KEY);
+
+        dialog.getTextPanel().addPara("GearIn CampaignPlugin 选择了这个交互对话框。");
+        dialog.getTextPanel().addPara("目标 ID：" + (target == null ? "null" : target.getId()));
+        dialog.getTextPanel().addPara("对话标记：" + dialogTarget);
+        dialog.getTextPanel().addPara("市场 ready fact：" + marketReady);
+        dialog.getOptionPanel().addOption("关闭", OPTION_CLOSE);
+        dialog.setOptionOnEscape("关闭", OPTION_CLOSE);
     }
 
     @Override
     public void optionSelected(String optionText, Object optionData) {
-        if (OPTION_FACTION.equals(optionData)) {
-            FactionAPI playerFaction = Global.getSector().getPlayerFaction();
-            dialog.getTextPanel().addPara(String.format(
-                    "势力关系：霸主 %s(%s) 海盗 %s(%s) 独立 %s(%s)",
-                    fmt(playerFaction.getRelationship(Factions.HEGEMONY)),
-                    playerFaction.getRelationshipLevel(Factions.HEGEMONY).getDisplayName(),
-                    fmt(playerFaction.getRelationship(Factions.PIRATES)),
-                    playerFaction.getRelationshipLevel(Factions.PIRATES).getDisplayName(),
-                    fmt(playerFaction.getRelationship(Factions.INDEPENDENT)),
-                    playerFaction.getRelationshipLevel(Factions.INDEPENDENT).getDisplayName()));
-            LOG.info("GearIn campaign services dialog option selected: " + OPTION_FACTION);
-        } else if (OPTION_CARGO.equals(optionData)) {
-            CargoAPI cargo = Global.getSector().getPlayerFleet().getCargo();
-            dialog.getTextPanel().addPara(String.format(
-                    "舰队货物：补给 %.0f 燃料 %.0f 船员 %d 陆战队员 %d 信用 %.0f 已用空间 %.0f/%.0f",
-                    cargo.getSupplies(), cargo.getFuel(), cargo.getCrew(), cargo.getMarines(),
-                    cargo.getCredits().get(), cargo.getSpaceUsed(), cargo.getMaxCapacity()));
-            LOG.info("GearIn campaign services dialog option selected: " + OPTION_CARGO);
-        } else if (OPTION_CLOSE.equals(optionData)) {
-            LOG.info("GearIn campaign services dialog option selected: " + OPTION_CLOSE);
+        if (OPTION_CLOSE.equals(optionData)) {
             dialog.dismiss();
         }
     }
 
-    // 未使用的回调保留空实现 (InteractionDialogPlugin 要求全部实现)。
     @Override
     public void optionMousedOver(String optionText, Object optionData) {
     }
@@ -696,17 +395,36 @@ public class GearInServicesDialog implements InteractionDialogPlugin {
 
     @Override
     public Object getContext() {
-        return null;
+        return target;
     }
 
     @Override
     public Map<String, MemoryAPI> getMemoryMap() {
-        return null;
+        return Collections.emptyMap();
     }
+}
+```
 
-    /** 关系数值统一格式：保留两位小数。 */
-    private static String fmt(float value) {
-        return String.format("%.2f", value);
+:::
+
+::: details 完整成品：GearInObjectiveBattleCreationPlugin
+
+```java
+package data.scripts.gearin.campaign;
+
+import com.fs.starfarer.api.combat.BattleCreationContext;
+import com.fs.starfarer.api.impl.combat.BattleCreationPluginImpl;
+import com.fs.starfarer.api.mission.MissionDefinitionAPI;
+
+/**
+ * 沿用原版战场创建流程，并为匹配的战斗强制生成战术目标。
+ */
+public class GearInObjectiveBattleCreationPlugin extends BattleCreationPluginImpl {
+
+    @Override
+    public void initBattle(BattleCreationContext context, MissionDefinitionAPI api) {
+        context.forceObjectivesOnMap = true;
+        super.initBattle(context, api);
     }
 }
 ```

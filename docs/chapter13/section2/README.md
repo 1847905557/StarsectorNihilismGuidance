@@ -1,786 +1,433 @@
-# 制作舰队技能
+# 让人物承担角色
 
-本节为 GearIndustry 制作第一个舰队技能 `GearIn_gunnery`。示例会完成技能注册、等级判断与数值应用，并在整备界面汇总舰队效果。
+本节把人物放进舰长、舰队指挥官和管理员槽位，并从真实持有者读取结果。军官使用 `OfficerDataAPI` 保存 roster 与成长数据，人物本身仍由 `PersonAPI`、`MutableCharacterStatsAPI` 和 `PersonalityAPI` 提供资料与状态。
 
-*本节预期阅读时间：~25 分钟。*
+*本节预期阅读时间：~18 分钟。*
 
-*本节预期操作时间：~45 分钟。*
+*本节预期操作时间：~25 分钟。*
 
 ## 学习目标
 
-完成后，您将能够：
-
-- 使用注册行、`.skill` 文件和效果脚本创建舰队技能；
-- 根据 `SkillEffectType` 选择效果接口与作用对象；
-- 使用技能等级和稳定 effect ID 应用数值修饰；
-- 实现 `FleetTotalSource` 并在整备界面汇总效果；
-- 根据界面和日志定位技能注册、等级与残留故障。
+- 区分三种角色的归属对象、写入入口和读取入口；
+- 使用 `MutableCharacterStatsAPI` 读取等级、经验和技能状态，并在修改后刷新；
+- 使用 `OfficerDataAPI` 创建军官数据、加入 roster、增加经验和升级；
+- 使用 `PersonalityAPI` 读取 ID、显示名和描述，并把性格与舰队行为联系起来；
+- 从舰队、舰船、军官和殖民地界面判断绑定是否成功。
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 命名约定、数据键前缀、包路径与类名；
-- [C6-S1] 的 JAR 构建、脚本类加载与 `.skill` 文件注册；
-- [C7-S2] 的 `Global` 生命周期与生涯阶段判断；
-- [C8-S4] 的 `MutableStat modifier ID、修饰公式与原样解除；
-- [C10-S3] 的 `FleetMemberAPI` 与成员 stats 落点；
-- [C13-S1] 的人物、captain、officer、`MutableCharacterStatsAPI`、`setSkillLevel` 与 `refreshCharacterStatsEffects`。
+- [C13-S1] 的 `PersonAPI` 创建、人物资料和稳定 ID；
+- [C11-S2] 的 `CampaignFleetAPI`、`FleetDataAPI` 和成员集合；
+- [C11-S4] 的 `FleetMemberAPI`、旗舰和舰长读取；
+- [C12-S1] 创建的 `GearIn_market_foundry`；
+- 能够打开舰队、舰船和殖民地管理界面。
 
-## 技能数据的三件套
+## 人物对象与角色槽位
 
-写任何效果脚本之前，先弄清技能在磁盘上由什么组成、游戏从哪里读入。技能 (skill) 的运行时对象是 `SkillSpecAPI`，挂在人物 `MutableCharacterStatsAPI` 上的可学习能力，由 `skill_data.csv` 注册行、`<id>.skill` JSON 定义与效果脚本类三件套合成。
+`PersonAPI` 是人物对象，角色槽位由其他对象保存引用。舰长字段属于 `FleetMemberAPI`，舰队指挥官字段属于 `CampaignFleetAPI`，管理员字段属于 `MarketAPI`。写入槽位不会改变人物的 Java 类型，只会改变持有引用的对象状态。
 
-注册信息 (名称、order、tier、reqPoints、icon 等) 集中在 `skill_data.csv`，定义信息 (aptitude、等级组、效果清单) 按技能各自放在独立的 `<id>.skill` 文件里，两者在 CSV spec 加载期经 `loadSkills` 按 id 合并成一个 `SkillSpecAPI`。
+因此，验证必须从持有者开始。舰长使用 `member.getCaptain()`，指挥官使用 `fleet.getCommander()`，管理员使用 `market.getAdmin()`。人物的姓名、势力、性格和资料仍从 `PersonAPI` 读取；人物等级、经验和技能状态从 `person.getStats()` 读取。
 
-### 三件套角色速查表
+### 角色归属速查表
 
-三件套各自的角色与关键字段：
+| 角色 | 持有对象 | 写入入口 | 读取入口 | 下游表现 |
+|---|---|---|---|---|
+| 舰长 | `FleetMemberAPI` | `setCaptain(person)` | `getCaptain()` | 单舰 stats、舰船详情和战斗舰船 |
+| 舰队指挥官 | `CampaignFleetAPI` | `setCommander(person)` | `getCommander()` | 舰队同步与成员 `getFleetCommander()` |
+| 管理员 | `MarketAPI` | `setAdmin(person)` | `getAdmin()` | 殖民地管理和市场产业 |
+| 军官数据 | `FleetDataAPI` | `addOfficer(...)` | `getOfficerData(person)` | 军官面板和成长状态 |
 
-| 文件 | 角色 | 关键字段 |
-|---|---|---|
-| `skill_data.csv` | 注册表：技能必须在此有行 | `id,name,order,tier,reqPoints,reqPointsPerExtraSkill,description,author,combat officer,admiral,admin,tags,icon` |
-| `<id>.skill`(JSON) | 技能定义：aptitude、等级组、效果清单 | `id`、`governingAptitude`、`compressHullmods`(默认 true)、`elite`(默认 false)、`permanent`(默认 false)、`scope` / `scopeStr`、`scope2` / `scopeStr2`、`effectGroups[]` |
-| `aptitude_data.csv` | 能力树分组 | `id,name,color,description,order,effect_skill_id,sound1..5,sound_story,elite_overlay*` |
-| `<id>.skill` 的 effect | 效果清单 | 每项 `type`(`SkillEffectType` 枚举，必填)、`script`(类名，可选)、`hullmods`(对象：船插 id → 解锁等级)、`abilities`(数组) |
+表中的持有对象决定了写入和回读入口。一个人物可以被多个系统读取，但每个角色的状态只能从自己的持有对象判断。
 
-`effectGroups[]` 每组的字段：`governingSkill`(可选，**默认为本技能 id**)、`name`(可选，如 "Elite")、`effectBasedOnLevel`(可选，**默认为 true**)、`requiredSkillLevel`(可选，**默认为 1**)、`effects[]`。
+## MutableCharacterStatsAPI：人物的可变状态
 
-注册链 (CSV spec 加载期 `loadSkills`)：
+`MutableCharacterStatsAPI` 位于人物内部，负责成长和技能状态。`getLevel()`、`getXP()`、`getSkillLevel(id)` 和 `hasSkill(id)` 只读取当前值；`addXP(long)` 与 `setSkillLevel(id, level)` 修改人物状态；`refreshCharacterStatsEffects()` 重新应用已经注册的效果。
 
-```text
-skill_data.csv(按 id 读行，收集全部注册 id)
-  + aptitude_data.csv 的 effect_skill_id(能力树自身的 "技能")
-  → 遍历 data/characters/skills/*.skill：
-       SkillSpecAPI(readJSON) → id 已注册？"Skipping skill [...], was already loaded" 跳过
-                          → id 不在 skill_data.csv？"Skipping loading skill [...], it's not listed in skill_data.csv." 跳过
-                          → 否则 putSpec 注册，并把每个 effect 的 script 类 registerScriptClass
-  → 回头按 skill_data.csv 行补写 order / tier / reqPoints / 角色类型 flags / tags / icon / name / description / author
+经验和技能写入是两个不同动作。增加经验可能触发等级变化，但不会替代技能选择；直接设置技能等级可以改变人物状态，但不会创建技能文件或效果脚本。技能实现继续由 [C13-S3] 负责。
+
+```java
+MutableCharacterStatsAPI stats = person.getStats();
+int levelBefore = stats.getLevel();
+long xpBefore = stats.getXP();
+stats.addXP(1000L);
+stats.setSkillLevel("helmsmanship", 1f);
+stats.refreshCharacterStatsEffects();
+LOG.info(String.format("stats: level=%d->%d xp=%d->%d skill=%s has=%s",
+        levelBefore, stats.getLevel(), xpBefore, stats.getXP(),
+        stats.getSkillLevel("helmsmanship"), stats.hasSkill("helmsmanship")));
 ```
 
-技能被静默跳过时不报错
+日志同时记录修改前后的值和刷新后的技能状态。`hasSkill` 只能证明人物拥有技能，不能证明舰长或指挥官效果已经到达成员 stats；下游对象还要经过自己的更新入口。
 
-两个 "跳过" 分支都只写日志、不报错 —— 技能在技能树里不出现且没有任何 ERROR 时，先到日志里查这两行，再动手改代码。技能树里少了一个技能，日志却风平浪静。
+### stats 方法速查表
 
-注册完成后，读取入口在 `com.fs.starfarer.api.SettingsAPI`：
+| 方法 | 作用 | 结果 |
+|---|---|---|
+| `getLevel()` | 读取人物等级 | 角色面板中的等级 |
+| `getXP()` | 读取累计经验 | 日志中的经验值 |
+| `addXP(long)` | 增加人物经验 | XP 增加或达到升级条件 |
+| `getSkillLevel(id)` | 读取技能等级 | 技能树对应等级 |
+| `setSkillLevel(id, level)` | 写入技能等级 | 人物技能状态改变 |
+| `hasSkill(id)` | 判断是否拥有技能 | 与等级读取相互核对 |
+| `refreshCharacterStatsEffects()` | 重放人物效果 | 下游读取刷新后的状态 |
 
-- `Global.getSettings().getSkillSpec(String skillId)` (`com.fs.starfarer.api.SettingsAPI`)：读 `SkillSpecAPI`；未注册的 id 由 CSV spec 加载期静默返回 null。
-- `Global.getSettings().getSortedSkillIds()`：按 order 排序的技能 id 列表 (技能树 UI 用)。
-- `MutableCharacterStatsAPI` (`com.fs.starfarer.api.characters.MutableCharacterStatsAPI`) 的角色侧方法：`getSkillLevel(id)` / `setSkillLevel(id, level)` / `increaseSkill` / `hasSkill` / `refreshCharacterStatsEffects()`，技能状态与刷新入口都在这里。
+## OfficerDataAPI：roster 与成长
 
-注册只决定技能存在，每个效果作用到哪一组对象由本页下一小节的 `type` 决定。
+`OfficerDataAPI` 不是人物资料的替代品。`Global.getFactory().createOfficerData(person)` 创建成长容器，`getPerson()` 返回它关联的 `PersonAPI`；经验、候选技能和升级状态保存在这个容器中。人物资料、性格和 stats 仍从关联人物读取。
 
-## 效果作用域：type 决定作用对象
+把人物设置为舰长不会自动加入 roster，把人物加入 roster 也不会自动分配舰船。两个关系分别由 `FleetDataAPI` 和 `FleetMemberAPI` 维护，所以教程把它们作为相邻但独立的步骤。
 
-注册只决定技能存在，每个效果作用到哪一组对象由 `SkillEffectType` 决定，并与脚本类实现的接口一一对应。数值与范围效果接口继承 `LevelBasedEffect` (`getEffectDescription(float)` / `getEffectPerLevelDescription()` / `getScopeDescription()`)；`DescriptionSkillEffect` 独立提供描述文本方法。
+```java
+FleetDataAPI fleetData = fleet.getFleetData();
+OfficerDataAPI officerData = Global.getFactory().createOfficerData(person);
+fleetData.addOfficer(officerData);
+OfficerDataAPI stored = fleetData.getOfficerData(person);
+stored.addXP(500L);
+if (stored.canLevelUp()) {
+    stored.makeSkillPicks();
+}
+```
 
-### SkillEffectType 速查表
+升级时先读取 `getSkillPicks()`，再把候选 ID 交给 `levelUp(skillId)`。再次调用 `makeSkillPicks()` 会重新生成候选，验证应记录候选后再选择。升级完成后从 `stored.getPerson()` 回到人物，读取 `getSkillLevel` 和 `hasSkill`，才能确认结果写回了关联人物。
 
-`SkillEffectType` 与接口、作用对象、应用入口的对应：
+### OfficerDataAPI 速查表
 
-| `SkillEffectType` | 效果接口 | 作用对象 | 应用入口 |
+| 方法 | 职责 | 判断依据 |
+|---|---|---|
+| `getPerson()` | 回到人物对象 | 返回关联 `PersonAPI` |
+| `setPerson(person)` | 替换关联人物 | 后续成长指向新人物 |
+| `addXP(xp)` | 增加军官经验 | `canLevelUp()` 可能变为真 |
+| `canLevelUp()` | 判断升级条件 | 是否可生成候选 |
+| `makeSkillPicks()` | 生成候选技能 | 更新候选状态 |
+| `getSkillPicks()` | 读取候选 ID | 选择 `levelUp` 参数 |
+| `levelUp(skillId)` | 完成技能升级 | 人物技能等级改变 |
+| `isMadePicks()` | 判断候选是否生成 | 避免重复投骰 |
+
+## 舰长：单个 FleetMemberAPI 的范围
+
+舰长是单舰成员的属性。示例从玩家舰队取得旗舰，把 `GearIn_officer` 写入 `setCaptain`，再从同一个成员读取 `getCaptain()`。其他成员不会因为旗舰有舰长而自动复用该人物。
+
+舰长人物的个人技能在成员 stats 更新时参与单舰计算。`person.getStats()` 和 `member.getStats()` 是不同层级的对象；前者描述人物，后者描述船。设置舰长后只打印人物对象，不能证明成员已经保存了字段。
+
+```java
+CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
+FleetMemberAPI flagship = fleet.getFlagship();
+PersonAPI captain = flagship.getCaptain();
+if (captain == null || !"GearIn_officer".equals(captain.getId())) {
+    captain = createCaptain();
+}
+flagship.setCaptain(captain);
+flagship.setStatUpdateNeeded(true);
+LOG.info("captain=" + flagship.getCaptain().getId());
+```
+
+`setStatUpdateNeeded(true)` 只是标记成员需要重新计算 stats，并不等于完成计算。战斗侧 `ShipAPI` 是由生涯成员生成的临时对象，生涯验证先以 `FleetMemberAPI` 为准。
+
+## 舰队指挥官：CampaignFleetAPI 的范围
+
+舰队指挥官由 `CampaignFleetAPI` 保存。调用 `setCommander` 后，`getCommander()` 返回指挥官，成员的 `getFleetCommander()` 读取同一舰队上下文。示例使用 `GearIn_commander`，与旗舰的 `GearIn_officer` 分开，日志可以直接检查两个槽位是否串线。
+
+指挥官的舰队级效果要经过舰队同步和成员更新才能进入下游。`forceSync()` 会重新计算当前舰队组成和相关 stats，但不会创建 `OfficerDataAPI`，也不会把指挥官加入玩家 roster。
+
+```java
+CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
+PersonAPI commander = fleet.getCommander();
+if (commander == null || !"GearIn_commander".equals(commander.getId())) {
+    commander = createCommander();
+}
+fleet.setCommander(commander);
+fleet.forceSync();
+LOG.info(String.format("commander=%s flagshipCommander=%s",
+        fleet.getCommander().getId(),
+        fleet.getFlagship().getFleetCommander().getId()));
+```
+
+成员读取到的指挥官是集合传播结果。若 `getCommander()` 正确而 `getFleetCommander()` 为空，先确认成员仍属于当前舰队，再检查同步是否完成。
+
+## 管理员：MarketAPI 的范围
+
+管理员由市场保存。`setAdmin(person)` 替换市场字段，`getAdmin()` 返回当前管理员。人物的 `setMarket(market)` 与 `getMarket()` 是反向关系，脚本同时维护两个方向，便于日志验证。
+
+市场产业从 `market.getAdmin().getStats()` 读取管理员的动态数值。这个入口说明管理员 stats 会影响经济计算，但本节只验证绑定和刷新，不实现管理员技能效果。
+
+```java
+MarketAPI market = Global.getSector().getEconomy().getMarket("GearIn_market_foundry");
+PersonAPI admin = market.getAdmin();
+if (admin == null || !"GearIn_admin".equals(admin.getId())) {
+    admin = createAdministrator();
+}
+market.setAdmin(admin);
+admin.setMarket(market);
+admin.getStats().refreshCharacterStatsEffects();
+LOG.info(String.format("admin=%s market=%s",
+        market.getAdmin().getId(), admin.getMarket().getId()));
+```
+
+市场界面读取市场字段，不能用旧的 `PersonAPI` 引用代替 `market.getAdmin()`。管理员替换后，先从市场重新取得对象，再检查人物反向市场字段。
+
+### 角色状态边界速查表
+
+| 维度 | 舰长 | 舰队指挥官 | 管理员 |
 |---|---|---|---|
-| `SHIP` | `ShipSkillEffect` `apply(stats, hullSize, id, level)` | 被驾驶舰船 (舰长 / 指挥官个人技能作用到其旗舰) | 生涯 `FleetMemberAPI.updateStats` 的 `captain.getStats().applyPersonalToStats`；战斗侧舰船构造时 `setCaptain` → `applyPersonalToShip` |
-| `ALL_SHIPS_IN_FLEET` | `ShipSkillEffect` | 舰队全部非战机舰船 | `FleetMemberAPI.updateStats`、舰船对象创建的 `applyFleetwideToStats`、`FleetDataAPI.syncIfNeeded`(指挥官回退链)、tooltip 渲染 |
-| `SHIP_FIGHTERS` | `ShipSkillEffect` | 被驾驶舰船起飞的本舰战机 | 战斗起飞 `FighterLaunchBayAPI`(母舰舰长 stats) |
-| `ALL_FIGHTERS_IN_FLEET` | `ShipSkillEffect` | 舰队全部战机 | 战斗起飞 `FighterLaunchBayAPI`(舰队指挥官 → 舰队数据指挥官 → 默认指挥官回退链) |
-| `CHARACTER_STATS` | `CharacterStatsSkillEffect` `apply(stats, id, level)` | 角色自身 `MutableCharacterStatsAPI` | `MutableCharacterStatsAPI.refreshCharacterStatsEffects` |
-| `FLEET` | `FleetStatsSkillEffect` `apply(stats, id, level)` | 该角色指挥舰队的 `MutableFleetStatsAPI` | `MutableCharacterStatsAPI.refreshCharacterStatsEffects` |
-| `GOVERNED_OUTPOST` | `MarketSkillEffect` `apply(market, id, level)` | 治理的殖民地市场 | `refreshGovernedOutpostEffects` |
-| `ALL_OUTPOSTS` | `MarketSkillEffect` | 玩家全部殖民地市场 | `refreshAllOutpostsEffectsForPlayerOutposts` / `refreshAllOutpostsEffects` |
-| `DESCRIPTION` | `DescriptionSkillEffect` | 技能面板 / tooltip 文本行 | 纯 UI，无数值写入 |
-| `HULLMOD_UNLOCK` / `ABILITY_UNLOCK` | 无脚本接口 (数据声明) | 解锁集合 | effect 内 `hullmods` / `abilities` 键；使用方 `getUnlockedHullMods(level)`、`MutableCharacterStatsAPI.getGrantedAbilityIds`；`isHullModAvailable` 由 `CampaignUIAPI` 提供 |
+| 归属字段 | `FleetMemberAPI` | `CampaignFleetAPI` | `MarketAPI` |
+| 直接读取 | `getCaptain()` | `getCommander()` | `getAdmin()` |
+| 主要下游 | 单舰 stats、战斗舰船 | 舰队 stats、成员同步 | 市场产业、殖民地界面 |
+| 复核入口 | `member.getStats()` | `member.getFleetCommander()` | `person.getMarket()` |
 
-生效范围只看 type，别信 scope
+## PersonalityAPI：性格资料与行为
 
-`ALL_SHIPS_IN_FLEET` 与 `SHIP` 的**接口相同** (都是 `ShipSkillEffect`)，作用对象集合完全由 `type` 决定；最容易误导读者的是 `scope` 字段：`scope` 只是 UI 文本，写 `"scope":"FLEET"` 不会把 SHIP 效果变成全舰队加成。
-
-本节示例用到 SHIP、SHIP\_FIGHTERS、FLEET、CHARACTER\_STATS 与 DESCRIPTION 五类，写效果脚本时每个 effect 的 `type` 决定类实现哪个接口，先对照上面的表格再落笔。
-
-## 技能等级
-
-作用对象定了，接下来是何时生效、按什么等级生效：
-
-- 技能等级只有 0 (未学) / 1 (已学) / 2 (精英)。UI 加点走 `increaseSkill` / `decreaseSkill`，钳制到 1 (非精英) 或 2 (`elite:true`)；`setSkillLevel(id, level)` 不钳制，直接写任意 float 并触发 `refreshCharacterStatsEffects`。
-- 每个 effectGroup 的 `requiredSkillLevel` (默认 1) 是门槛：`getSkillLevel(governingSkill) >= requiredSkillLevel` 的效果才进入应用列表 (如 `getShipEffects` 的过滤)。
-- `apply()` 收到的 `level` 参数取 `getSkillLevel(governingSkill)`，不是等级增量，也不会逐帧变化。
-- `effectBasedOnLevel` (默认 true) 只供 UI 的 tooltip 渲染读取：true 时标准 tooltip 追加渲染 `getEffectPerLevelDescription()`。
-- 引擎组合 effect id 并传入 `apply` / `unapply`：`<技能id>_<类型后缀>_<效果序号>`：
-    - 后缀：`SHIP→_ship_`、`ALL_SHIPS_IN_FLEET→_ships_`、`SHIP_FIGHTERS→_ship_fighters_`、`ALL_FIGHTERS_IN_FLEET→_all_fighters_`；
-    - `CHARACTER_STATS` 与 `FLEET` 都是 `_stats_`、`GOVERNED_OUTPOST→_GO_`、`ALL_OUTPOSTS→_AO_`；
-    - 序号是效果在本技能平铺效果列表 (跨 effectGroups 累计) 中的下标；本节示例 `GearIn_gunnery` 的 Level1 (SHIP) 拿到的 id 是 `GearIn_gunnery_ship_1`。
-
-等级门槛是最容易落空的一处：把 `requiredSkillLevel` 写成 2 却不配 `elite:true`，这个门槛会一直等一个到不了的等级。
-
-::: caution modifier id 必须原样使用引擎传入的 effect id
-
-`apply(id)` 与 `unapply(id)` 里的 modifier id 就是引擎传入的 effect id (本节示例为 `GearIn_gunnery_ship_1`)，原样收下、原样解除即可；不要自造 id，也不要用字符串拼接。
-
-自造或拼接的 id 会让效果残留、解除静默失效，重复触发后数值越叠越高，全程没有任何报错。
-
-:::
-
-## fleet total 管道
-
-效果按等级生效后，数值写进角色、舰船与舰队 stats；需要整备界面汇总展示的一类走 fleet total 管道：
-
-- 接口：`FleetTotalSource.getFleetTotalItem()` → `FleetTotalItem` (字段 `label` / `value` / `valueColor` / `labelColor` / `sortOrder` / `tooltipCreator`)。
-- 汇总：`getFleetTotals()` 遍历已学技能的全部效果，凡 `level >= requiredSkillLevel` 且脚本实例 `instanceof FleetTotalSource`，就取 `getFleetTotalItem()`：
-    - 按 `label + "_" + value` 去重 (两个技能 / 效果返回相同 label+value 只保留一行)，按 `sortOrder` 升序排成舰队构成表的行数据 (附 `skillLevels`，供 tooltip 列出贡献技能)。
-- 使用方：整备界面 (refit) 的舰队构成表 —— 界面把 `getPlayerStats().getFleetTotals()` 渲染成构成表行，`tooltipCreator` 挂可展开 tooltip；全库调用 `getFleetTotals()` 的地方只有这一处 (技能面板 tooltip 不读取它)。
-- 原版聚合做法：`BaseSkillEffectDescription.getOPTotal()` / `getCombatOPTotal()` / `getAutomatedPointsTotal()` (`com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription`)：
-    - 对舰队成员逐艘收集贡献 (`FleetMemberPointContrib`) 再汇总；
-    - 本节示例只演示最小管道 (静态值 + 自定义 tooltip)。
-
-机制到这里已经齐全，接下来把三件套、等级与 fleet total 全部落成 GearIndustry 的一个真实技能。
-
-## 规则强度速查表
-
-下表集中列出本节涉及的注册与生效规则；每条都给出违反后的可观察结果，原因在正文各节展开，故障分析按症状复用这些条目。
-
-| 规则 | 强度 | 违反后的可观察结果 |
-|---|---|---|
-| `.skill` 的 `id` **必须**在 `skill_data.csv` 有对应行 | 必须 | 加载期日志 `Skipping loading skill [...], it's not listed in skill_data.csv.`，技能不注册、技能树不出现、`getSkillSpec(id)` 返回 null，**无任何 ERROR** |
-| 技能 id **必须**全局唯一 (跨 MOD) | 必须 | 后加载的同 id 技能被跳过 (日志 `Skipping skill [...], was already loaded`)，本 MOD 的版本静默失效 |
-| effect 的 `type` **必须**与脚本类实现的接口族匹配 (SHIP → `ShipSkillEffect`、FLEET → `FleetStatsSkillEffect`、CHARACTER\_STATS → `CharacterStatsSkillEffect`、市场 → `MarketSkillEffect`、DESCRIPTION → `DescriptionSkillEffect`) | 必须 | 效果实例化时 `getAsXxxEffect()` 强转抛 `ClassCastException`(如舰船 stats 重放 / 起飞 / tooltip 渲染处)，游戏画面报错或加载失败 |
-| 效果脚本类 **必须**无参可实例化 (不写构造器或显式无参构造器；脚本类加载流程 `loadScriptInstance` 用 `newInstance()`) | 必须 | `InstantiationException` 包装为 `RuntimeException "Problem loading class [<类名>]"`，在效果被实例化的时刻 (不是加载期) 抛出 |
-| 效果脚本 **必须**把引擎传入的 `id` 原样用作 modifier id，`unapply` 用同一个 id 解除 | 必须 | 数值残留 / 累计或解除不生效 (稳定 ID 规则在技能域的直接应用；引擎给的 id 形如 `GearIn_gunnery_ship_1`) |
-| 生效范围**必须**按 `SkillEffectType` 判断；`.skill` 的 `scope` / `scopeStr` 只是 UI 文本 | 必须 | 把 `scope:FLEET` 的 SHIP 效果当 "全舰队加成" 排查，实际它只作用于被驾驶舰船，舰队其它船 "没变化" |
-| 战机效果 (SHIP\_FIGHTERS / ALL\_FIGHTERS\_IN\_FLEET) 只在战斗起飞时应用 | 必须 | 在生涯侧读战机 stats 期望已生效，读不到；战机加成 "部署前看不到" 属正常语义 |
-| 非精英技能 (`elite` 缺省 / false) 经 UI 加点最高到 1 级，`requiredSkillLevel:2` 的效果组永不激活 | 必须 | 2 级门槛的效果 "不生效"；精英加成必须配 `"elite":true` |
-| fleet total 的 `label` + `value` 必须能区分不同的汇总行 | 必须 | 两个技能返回相同 label+value 时 `getFleetTotals()` 去重合并成一行，其中一行的汇总 "消失" |
-| 技能 `icon` 列 **必须**指向可加载的纹理 | 必须 | `loadSkills` 末尾 `queueResource(TEXTURE, ...)` 排队纹理，缺失时资源加载阶段报错 (TEXTURE 无 try/catch) |
-| 技能 id 使用 MOD 专属前缀 (`GearIn_`)，数据 id、`.skill` 文件名、脚本类名三处一致 | 建议 | 撞原版 / 其它 MOD id 时被先加载者覆盖，行为随 MOD 启用顺序漂移 |
-| 效果脚本在 `.skill` 里按 "外层类 `$` 嵌套类" 书写类名 (如 `...GearInGunnerySkill$Level1`) | 建议 | 类名拼写错误 → 效果实例化时 `Problem loading class` |
-
-## 实现舰队技能
-
-这项技能同时改变舰船、战机、舰队与角色数值。实现顺序应当从数据侧分派开始，再逐个接通作用域；这样每增加一个效果，都有独立的界面数值或日志可以核对。
-
-### 注册技能与效果分派
-
-先在 `skill_data.csv` 注册技能，再把以下内容放入 `data/characters/skills/GearIn_gunnery.skill` 的 `effectGroups`。`type` 决定引擎传入哪一种 stats 对象，`script` 决定实例化哪个嵌套类。
-
-```json
-{
-    "name":"Level 1",
-    "requiredSkillLevel":1,
-    "effectBasedOnLevel":false,
-    "effects":[
-        {"type":"SHIP", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$Level1"},
-        {"type":"SHIP_FIGHTERS", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$LevelShipFighters"}
-    ]
-}
-```
-
-启动后，日志出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]`，并且没有跳过该技能的记录。
-
-### 修改被驾驶舰船
-
-在 `GearInGunnerySkill` 内新增 `Level1`。把引擎传入的 `id` 原样交给三个 modifier；技能刷新时，相同 ID 会覆盖旧值，而不是继续叠加。
-
-```java {4,5,6}
-public static class Level1 extends BaseSkillEffectDescription implements ShipSkillEffect {
-    @Override
-    public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
-        stats.getBallisticWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS);
-        stats.getEnergyWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS);
-        stats.getAutofireAimAccuracy().modifyFlat(id, AIM_BONUS * 0.01f);
-    }
-
-    @Override
-    public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
-        stats.getBallisticWeaponDamageMult().unmodify(id);
-        stats.getEnergyWeaponDamageMult().unmodify(id);
-        stats.getAutofireAimAccuracy().unmodify(id);
-    }
-}
-```
-
-技能达到 1 级后，角色驾驶舰船的实弹与能量武器伤害均增加 15%，自动开火精度增加 100%；降回 0 级后全部恢复。
-
-### 扩展到本舰战机
-
-在同一外层类中新增 `LevelShipFighters`，并让 `.skill` 中的 `SHIP_FIGHTERS` 指向它。这里收到的是战机自己的 `MutableShipStatsAPI`，因此速度修改不会落到母舰上。
+性格由 `PersonAPI` 保存。`setPersonality(Personalities.STEADY)` 写入稳定 ID，`getPersonalityAPI()` 返回 `PersonalityAPI`，再用 `getId()`、`getDisplayName()` 和 `getDescription()` 分别读取机器标识、界面名称和说明文本。
 
 ```java
-public static class LevelShipFighters extends BaseSkillEffectDescription implements ShipSkillEffect {
-    @Override
-    public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
-        stats.getMaxSpeed().modifyPercent(id, FIGHTER_SPEED_BONUS);
-    }
-
-    @Override
-    public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
-        stats.getMaxSpeed().unmodify(id);
-    }
-}
+person.setPersonality(Personalities.STEADY);
+PersonalityAPI personality = person.getPersonalityAPI();
+LOG.info(String.format("personality: id=%s name=%s description=%s",
+        personality.getId(), personality.getDisplayName(),
+        personality.getDescription()));
 ```
 
-由角色驾驶舰船放出的战机最高速度增加 10%，其它舰船放出的同型战机不受影响。
+脚本逻辑应比较 ID，界面验证可以观察显示名和描述。性格是 AI 决策输入，不决定人物是否属于军官、舰长、舰队指挥官或管理员；角色归属仍由外部持有对象的字段决定。
 
-### 修改整支舰队
+观察行为时固定舰队组成、目标和战斗条件。单次路线变化不足以证明性格设置失败，先确认当前舰长或指挥官字段确实引用了设置性格的人物。
 
-在 `GearInGunnerySkill` 内新增 `LevelFleet`。`FLEET` 效果由角色数值刷新流程重放，修改对象是 `MutableFleetStatsAPI`。
+## 角色的生命周期与对象复用
 
-```java
-public static class LevelFleet extends BaseSkillEffectDescription implements FleetStatsSkillEffect {
-    @Override
-    public void apply(MutableFleetStatsAPI stats, String id, float level) {
-        stats.getFleetwideMaxBurnMod().modifyFlat(id, FLEET_BURN_BONUS);
-    }
+角色入口的顺序是取得目标对象、按稳定 ID 复用或创建人物、补齐资料、写入角色槽位、从持有者回读。这个顺序把输入、人物和角色三个故障层分开，日志也能证明写入确实进入游戏对象。
 
-    @Override
-    public void unapply(MutableFleetStatsAPI stats, String id) {
-        stats.getFleetwideMaxBurnMod().unmodifyFlat(id);
-    }
-}
-```
+重复运行时，先读取槽位中的人物或 roster 数据。只有当前对象为空或 ID 不符时才创建人物；无条件调用 `createPerson()` 会让新对象覆盖旧引用，姓名即使相同也无法证明是同一个对象。
 
-技能达到 1 级后舰队最大燃烧等级增加 2，解除技能后立即恢复。
+一次运行内可以用对象相等性比较传入人物和回读人物。跨运行或读档后使用稳定 ID，因为载入会产生新的 Java 引用，引用地址变化不表示角色关系丢失。
 
-### 修改角色数值
+舰长、指挥官和管理员的对象复用条件不同：舰长从成员字段复用，指挥官从舰队字段复用，管理员从市场字段复用。军官数据从 `getOfficerData(person)` 复用。四个入口都遵守 "先读后建"。
 
-再新增 `LevelStats`，并由 `.skill` 中的 `CHARACTER_STATS` 分派。该效果直接进入角色 stats，不需要等待战斗舰船构造。
+## 三层 stats 的传播
 
-```java
-public static class LevelStats extends BaseSkillEffectDescription implements CharacterStatsSkillEffect {
-    @Override
-    public void apply(MutableCharacterStatsAPI stats, String id, float level) {
-        stats.getCommandPoints().modifyFlat(id, COMMAND_POINTS_BONUS);
-    }
+人物 stats、成员 stats 和舰队 stats 是不同层级。舰长人物 stats 通过成员更新进入单舰，舰队指挥官人物 stats 通过舰队同步进入成员，管理员人物 stats 由市场产业读取。数值相同不代表对象相同，日志应带上层级名称。
 
-    @Override
-    public void unapply(MutableCharacterStatsAPI stats, String id) {
-        stats.getCommandPoints().unmodify(id);
-    }
-}
-```
+修改人物技能后只刷新人物 stats，成员或舰队是否重新计算取决于它们自己的更新入口。舰长示例标记成员更新，指挥官示例调用 `forceSync`，管理员示例刷新人物 stats；这三个动作不能互相替代。
 
-技能达到 1 级后，部署界面的指挥点数增加 1；解除技能并刷新角色数值后恢复。
+技能效果出现异常时，先检查人物技能等级，再检查角色槽位，最后检查对应下游 stats。[C13-S3] 只处理技能注册和效果实现，角色归属错误应在本节的数据流中修复。
 
-### 显示舰队汇总项
+## 替换与恢复
 
-让 `Level1` 同时实现 `FleetTotalSource`，并加入以下方法。整备界面会按需重新实例化效果类，再读取这个对象生成汇总行。
+测试替换角色前保存原人物 ID 和持有对象。舰长恢复到原成员，指挥官恢复到原舰队，管理员恢复到原市场；每次恢复后重新读取字段确认完成。
 
-```java
-@Override
-public FleetTotalItem getFleetTotalItem() {
-    FleetTotalItem item = new FleetTotalItem();
-    item.label = "Gunnery damage bonus";
-    item.value = "+" + (int) DAMAGE_BONUS + "%";
-    item.sortOrder = 50;
-    return item;
-}
-```
+移除舰长不会自动删除 roster 中的军官，移除 roster 也不会替成员清空舰长。清理必须分别调用对应对象的 API，不能用清空整个舰队或市场来掩盖关系错误。
 
-整备界面的舰队构成汇总会出现 `Gunnery damage bonus +15%`，重复打开界面不会增加重复行。
+管理员替换可能影响市场通信目录。验证先检查 `getAdmin()` 与 `getMarket()`，再观察殖民地界面；旧人物引用只用于比较，不作为当前状态来源。
 
-## 数据文件：data/characters/skills/GearIn\_gunnery.skill
+## 角色实现的组织
 
-要点：
+三个完整类分别负责舰长、舰队指挥官和管理员。每个类的 `run()` 只操作一个持有对象，创建方法只返回该角色需要的人物，日志只记录该角色的关键回读字段。
 
-- `elite:true` 允许技能到 2 级；第 2 个 effectGroup (`requiredSkillLevel:2`，`name:"Elite"`) 在 2 级才激活 —— 与 `gunnery_implants.skill` 同款结构。
-- 六个 effect 平铺后的序号：Level0=0、Level1=1、LevelShipFighters=2、LevelFleet=3、LevelStats=4、Level1A=5。由此引擎组合的 effect id：
-    - `GearIn_gunnery_ship_1`、`GearIn_gunnery_ship_fighters_2`、`GearIn_gunnery_stats_3` (FLEET)、`GearIn_gunnery_stats_4` (CHARACTER\_STATS)、`GearIn_gunnery_ship_5` (精英)。
-    - 效果脚本必须原样使用。
-- `governingSkill` 未写 → 默认本技能 id：所有效果的等级判据都是 `GearIn_gunnery` 自己的等级。
+舰长类使用 `GearIn_officer` 和 Mira Vale，并把人物加入 roster；舰队指挥官类使用 `GearIn_commander` 和 Rowan Hale；管理员类使用 `GearIn_admin` 和 Selene Ward。不同 ID 让验证能够区分角色槽位。
 
-## 数据文件：data/characters/skills/skill\_data.csv(表头 + 本节行)
-
-要点：
-
-- `id` 与 `.skill` 的 `id` 逐字一致；`tier:2` (战斗系 2 阶)、`reqPoints:1` (消耗 1 技能点)。
-- `combat officer` 列 `TRUE`：军官也可以学。
-- `icon` 指向本 MOD 图标资源。**本单元无 PNG 资产**：冒烟时请临时把 icon 列指向原版 `graphics/icons/skills/gunnery_implants.png` (资源加载期会排队校验纹理，缺失会导致加载失败)；生产 MOD 必须自备图标 (资产不在本单元范围)。
-
-## GearInGunnerySkill
-
-对应关系：
-
-- 外层类只是容器：嵌套类名 (`Level0` / `Level1` / `Level1A` / `LevelShipFighters` / `LevelFleet` / `LevelStats`) 与 `.skill` 的 `script` 值 (`GearInGunnerySkill$Level1` 等) 逐字对应 —— 原版 `GunneryImplants` 同款做法。
-- `Level1 implements ShipSkillEffect, FleetTotalSource`：同一个脚本类被两处调用 —— `SHIP` 效果重放时经 `getAsShipEffect()` 强转，`getFleetTotals()` 时经 `getAsFleetTotalSource()` 检查 `instanceof`：
-    - 两处都是**每次按类名重新实例化** (脚本类加载流程 `loadScriptInstance` → `newInstance()`)，效果类不能有带参构造器。
-- `apply` 里的 modifier id 全部用传入的 `id`：`modifyPercent(id, ...)` / `modifyFlat(id, ...)`，`unapply` 用同一个 `id` 调 `unmodify(id)` / `unmodifyFlat(id)` —— 稳定 ID 规则的直接应用 (引擎每次重放传入的 id 逐字相同)。
-- `Level1.getFleetTotalItem()` 返回 `label="Gunnery damage bonus"`、`value="+15%"`、`sortOrder=50` 与自定义 tooltip：这是 fleet total 行的最小完整形态；`TOOLTIP_WIDTH` 继承自 `BaseSkillEffectDescription`(450)。
-- `LevelFleet` / `LevelStats` 的 `getScopeDescription()` 返回 `FLEET`：这只是 tooltip 的 "作用范围" 文本；实际生效对象由 `type`(FLEET / CHARACTER\_STATS) 决定。
-- 五个 `apply` 各打一行 `GearIn gunnery ...` 日志：`id` 与 `level` 直接可见，是 "效果作用域 + 等级" 的现场表现。
-- `getEffectPerLevelDescription()` 返回 null：`.skill` 里 `effectBasedOnLevel:false`，tooltip 不渲染每级描述行 (本节不演示 per-level 描述)。
-
-## 读取与调用点
-
-以下工程片段所在类归 [C7-S1] 所有，本节只演示调用，不改动那些文件。
-
-```java
-    // 读取 (消费者，任何生涯代码)：
-    SkillSpecAPI spec = Global.getSettings().getSkillSpec("GearIn_gunnery");
-    if (spec == null) {
-        LOG.info("GearIn skill spec missing - check skill_data.csv registration");
-    }
-
-    // 学习 (脚本侧演示钩子；正式路径是玩家在技能树里花技能点，走 increaseSkill)：
-    Global.getSector().getPlayerStats().setSkillLevel("GearIn_gunnery", 1f);
-    // 精英：
-    Global.getSector().getPlayerStats().setSkillLevel("GearIn_gunnery", 2f);
-```
-
-学习入口小结 (`MutableCharacterStatsAPI`)：`setSkillLevel` 与 `increaseSkill` 都会触发 `refreshCharacterStatsEffects`；FLEET 与 CHARACTER\_STATS 效果在刷新时**立即**重放。
-
-SHIP 族效果要等成员 stats 重建 (`FleetMemberAPI.updateStats`，开舰队界面 / 舰队同步触发) 或舰船构造 / 战机起飞。
-
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行，编译链路见前置知识)：
-
-```text
-gradle jar
-```
-
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 及六个内部类 (可用 `jar tf` 核对)：
-
-- `$Level0` / `$Level1` / `$Level1A` / `$LevelShipFighters` / `$LevelFleet` / `$LevelStats`
-
-## 启动游戏前的静态核对
-
-注册行、技能定义与效果脚本在启动游戏前先逐项核对，任何一处不一致都会在对应环节中断：
-
-1. `skill_data.csv` 注册行的 `id=GearIn_gunnery` (order 1025、tier 2、reqPoints 1、combat officer TRUE) 与 `.skill` 的 `id` 逐字一致；
-2. `GearIn_gunnery.skill` 的 `governingAptitude=combat`、`elite=true` 与两个 `effectGroups` 就位，每个 effect 的 `type` 与脚本类实现的接口族匹配；
-3. `data.scripts.gearin.campaign.GearInGunnerySkill` 的六个嵌套类 `$Level0` / `$Level1` / `$Level1A` / `$LevelShipFighters` / `$LevelFleet` / `$LevelStats` 与 `.skill` 的六个 `script` 值逐字一致。
-
-静态核对通过后，生效沿调用链展开：CSV spec 加载期 `loadSkills` 完成注册，玩家 `setSkillLevel` 或 UI 加点后经 `refreshCharacterStatsEffects` 与 `FleetMemberAPI.updateStats` 重放，战斗侧在舰船对象构造与战机起飞 (`FighterLaunchBayAPI`) 时应用，整备界面经 `getFleetTotals` 读出汇总行。结果可从日志与界面核对：`GearIn gunnery ... apply` 日志行、技能树的 "Gunnery" 行、整备界面的 "Gunnery damage bonus +15%" 行。
+军官升级用局部片段说明，不增加第四个角色类。军官是 `FleetDataAPI` 中的人物成长数据，不是新的角色持有者；成为舰长后仍要单独调用成员的 `setCaptain`。
 
 ## 完整最小例
 
-在既有 MOD 布局 (前置知识所列的编译链路) 之上新增一个技能：两个数据文件加一个效果脚本类，全部由本节定义，技能 id 为 `GearIn_gunnery`：
+三个类分别作为入口运行，完整源码与 fixture 保持一致。
 
-```text
-mods/GearIndustry/
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data\
-│   └── characters/skills\
-│       ├── GearIn_gunnery.skill          # 本节新增
-│       └── skill_data.csv                # 新建 (表头 + 本节行；若已有该文件则把行追加进去)
-├── src\
-│   └── data/scripts/gearin\
-│       ├── GearInModPlugin               # C7-S1 所有；本节不改动
-│       └── campaign\
-│           └── GearInGunnerySkill        # 本节新增
-└── jars\
-```
-
-```json
-{
-	"id":"GearIn_gunnery",
-	"governingAptitude":"combat",
-	"compressHullmods":false,
-	"elite":true,
-	"scope":"PILOTED_SHIP",
-	"effectGroups":[
-		{
-			"name":"Level 1",
-			"requiredSkillLevel":1,
-			"effectBasedOnLevel":false,
-			"effects":[
-				{"type":"DESCRIPTION", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$Level0"},
-				{"type":"SHIP", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$Level1"},
-				{"type":"SHIP_FIGHTERS", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$LevelShipFighters"},
-				{"type":"FLEET", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$LevelFleet"},
-				{"type":"CHARACTER_STATS", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$LevelStats"},
-			]
-		},
-		{
-			"name":"Elite",
-			"requiredSkillLevel":2,
-			"effectBasedOnLevel":false,
-			"effects":[
-				{"type":"SHIP", "script":"data.scripts.gearin.campaign.GearInGunnerySkill$Level1A"},
-			]
-		},
-	],
-}
-```
-
-```csv
-id,name,order,tier,reqPoints,reqPointsPerExtraSkill,description,author,combat officer,admiral,admin,tags,icon,
-GearIn_gunnery,Gunnery,1025,2,1,0,"Precision gunnery drills: ballistic and energy weapon damage up, autofire accuracy up, fighter top speed up, fleet burn up, command points up.","GearIndustry Weapons Division",TRUE,,,,graphics/icons/skills/GearIn_gunnery.png,
-```
-
-::: details 完整成品：GearInGunnerySkill
+::: details 完整成品：GearInCaptainRole
 
 ```java
 package data.scripts.gearin.campaign;
 
-import java.awt.Color;
-
 import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.characters.CharacterStatsSkillEffect;
-import com.fs.starfarer.api.characters.DescriptionSkillEffect;
-import com.fs.starfarer.api.characters.FleetStatsSkillEffect;
-import com.fs.starfarer.api.characters.FleetTotalItem;
-import com.fs.starfarer.api.characters.FleetTotalSource;
-import com.fs.starfarer.api.characters.LevelBasedEffect.ScopeDescription;
-import com.fs.starfarer.api.characters.MutableCharacterStatsAPI;
-import com.fs.starfarer.api.characters.ShipSkillEffect;
-import com.fs.starfarer.api.combat.MutableShipStatsAPI;
-import com.fs.starfarer.api.combat.ShipAPI.HullSize;
-import com.fs.starfarer.api.fleet.MutableFleetStatsAPI;
-import com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription;
-import com.fs.starfarer.api.ui.TooltipMakerAPI;
-import com.fs.starfarer.api.ui.TooltipMakerAPI.TooltipCreator;
-import com.fs.starfarer.api.util.Misc;
+import com.fs.starfarer.api.campaign.CampaignFleetAPI;
+import com.fs.starfarer.api.campaign.FleetDataAPI;
+import com.fs.starfarer.api.characters.FullName;
+import com.fs.starfarer.api.characters.OfficerDataAPI;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Personalities;
 
-/**
- * 完整最小例：SkillSpecAPI、效果作用域、技能等级与 fleet total。
- * 本类只是效果脚本的容器 (效果类必须无参可实例化)：.skill 文件与 skill_data.csv
- * 把每个 effect 的 type 分派到下面的嵌套类，type 决定作用对象集合 (与接口一一对应)。
- * 等级只有 0/1/2 (UI 加点钳制到 1/2，setSkillLevel 不钳制)，effectGroup 的
- * requiredSkillLevel 是生效门槛 (默认 governingSkill = 本技能 id)；apply() 收到的
- * level 是当前等级而非增量，引擎组合出的 effect id 必须原样用作 modifier id；
- * Level1 同时实现 FleetTotalSource，整备界面展示一行 fleet total 汇总。
- */
-public class GearInGunnerySkill {
+public class GearInCaptainRole {
+    private static final Logger LOG = Global.getLogger(GearInCaptainRole.class);
 
-    private static final Logger LOG = Global.getLogger(GearInGunnerySkill.class);
-
-    /** 数据侧技能 id(skill_data.csv 行 + GearIn_gunnery.skill 的 id 字段，三者必须逐字一致)。 */
-    public static final String SKILL_ID = "GearIn_gunnery";
-
-    /** 数值常量：与 .skill 的 effectGroups、skill_data.csv 行、页面描述文本保持一致。 */
-    public static final float DAMAGE_BONUS = 15f;
-    public static final float DAMAGE_BONUS_ELITE = 5f;
-    public static final float AIM_BONUS = 100f;
-    public static final float FIGHTER_SPEED_BONUS = 10f;
-    public static final float FLEET_BURN_BONUS = 2f;
-    public static final float COMMAND_POINTS_BONUS = 1f;
-
-    /** DESCRIPTION：纯文本行；数值写入由其它 effect type 承担。 */
-    public static class Level0 implements DescriptionSkillEffect {
-        @Override
-        public Color getTextColor() {
-            return null;
+    public void run() {
+        CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
+        FleetMemberAPI flagship = fleet.getFlagship();
+        PersonAPI person = flagship.getCaptain();
+        if (person == null || !"GearIn_officer".equals(person.getId())) {
+            person = createCaptain();
         }
-
-        @Override
-        public String getString() {
-            return "Precision gunnery drills: ballistic and energy weapon damage up by 15%, "
-                    + "autofire accuracy up by 100%, fighters' top speed up by 10%, "
-                    + "fleet burn up by 2, and command points up by 1.";
+        flagship.setCaptain(person);
+        flagship.setStatUpdateNeeded(true);
+        FleetDataAPI data = fleet.getFleetData();
+        OfficerDataAPI officer = data.getOfficerData(person);
+        if (officer == null) {
+            data.addOfficer(person);
+            officer = data.getOfficerData(person);
         }
-
-        @Override
-        public String[] getHighlights() {
-            return new String[] {"15%", "100%", "10%", "2", "1"};
-        }
-
-        @Override
-        public Color[] getHighlightColors() {
-            Color h = Misc.getHighlightColor();
-            return new Color[] {h, h, h, h, h};
-        }
+        LOG.info(String.format("captain=%s officer=%s personality=%s",
+                flagship.getCaptain().getId(), officer != null,
+                person.getPersonalityAPI().getId()));
     }
 
-    /** SHIP：被驾驶舰船 (角色为舰长 / 指挥官时作用于其旗舰)，同时提供 fleet total 行。 */
-    public static class Level1 extends BaseSkillEffectDescription implements ShipSkillEffect, FleetTotalSource {
-
-        @Override
-        public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
-            stats.getBallisticWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS);
-            stats.getEnergyWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS);
-            stats.getAutofireAimAccuracy().modifyFlat(id, AIM_BONUS * 0.01f);
-            LOG.info(String.format("GearIn gunnery ship apply: id=%s level=%.1f hull=%s damage=+%.0f%% aim=+%.0f%%",
-                    id, level, hullSize, DAMAGE_BONUS, AIM_BONUS));
-        }
-
-        @Override
-        public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
-            stats.getBallisticWeaponDamageMult().unmodify(id);
-            stats.getEnergyWeaponDamageMult().unmodify(id);
-            stats.getAutofireAimAccuracy().unmodify(id);
-        }
-
-        @Override
-        public String getEffectDescription(float level) {
-            return "+" + (int) DAMAGE_BONUS + "% ballistic and energy weapon damage, "
-                    + "+" + (int) AIM_BONUS + "% autofire accuracy";
-        }
-
-        @Override
-        public String getEffectPerLevelDescription() {
-            return null;
-        }
-
-        @Override
-        public ScopeDescription getScopeDescription() {
-            return ScopeDescription.PILOTED_SHIP;
-        }
-
-        /** fleet total：整备界面 (refit) 的舰队构成表按 label+value 去重后展示这一行。 */
-        @Override
-        public FleetTotalItem getFleetTotalItem() {
-            FleetTotalItem item = new FleetTotalItem();
-            item.label = "Gunnery damage bonus";
-            item.value = "+" + (int) DAMAGE_BONUS + "%";
-            item.sortOrder = 50;
-            item.tooltipCreator = new TooltipCreator() {
-                @Override
-                public boolean isTooltipExpandable(Object tooltipParam) {
-                    return false;
-                }
-
-                @Override
-                public float getTooltipWidth(Object tooltipParam) {
-                    return TOOLTIP_WIDTH;
-                }
-
-                @Override
-                public void createTooltip(TooltipMakerAPI tooltip, boolean expanded, Object tooltipParam) {
-                    tooltip.addPara("Ballistic and energy weapon damage bonus granted to the piloted ship "
-                            + "while this skill is learned.", 0f);
-                }
-            };
-            return item;
-        }
-    }
-
-    /** SHIP(精英组)：技能到 2 级 (精英) 后追加的加成。 */
-    public static class Level1A extends BaseSkillEffectDescription implements ShipSkillEffect {
-
-        @Override
-        public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
-            stats.getBallisticWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS_ELITE);
-            stats.getEnergyWeaponDamageMult().modifyPercent(id, DAMAGE_BONUS_ELITE);
-            LOG.info(String.format("GearIn gunnery elite apply: id=%s level=%.1f hull=%s damage=+%.0f%%",
-                    id, level, hullSize, DAMAGE_BONUS_ELITE));
-        }
-
-        @Override
-        public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
-            stats.getBallisticWeaponDamageMult().unmodify(id);
-            stats.getEnergyWeaponDamageMult().unmodify(id);
-        }
-
-        @Override
-        public String getEffectDescription(float level) {
-            return "+" + (int) DAMAGE_BONUS_ELITE + "% ballistic and energy weapon damage";
-        }
-
-        @Override
-        public String getEffectPerLevelDescription() {
-            return null;
-        }
-
-        @Override
-        public ScopeDescription getScopeDescription() {
-            return ScopeDescription.PILOTED_SHIP;
-        }
-    }
-
-    /** SHIP_FIGHTERS：本舰 (被驾驶舰船) 起飞的战机，起飞时由 FighterLaunchBayAPI 应用。 */
-    public static class LevelShipFighters extends BaseSkillEffectDescription implements ShipSkillEffect {
-
-        @Override
-        public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
-            stats.getMaxSpeed().modifyPercent(id, FIGHTER_SPEED_BONUS);
-            LOG.info(String.format("GearIn gunnery fighters apply: id=%s level=%.1f hull=%s speed=+%.0f%%",
-                    id, level, hullSize, FIGHTER_SPEED_BONUS));
-        }
-
-        @Override
-        public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
-            stats.getMaxSpeed().unmodify(id);
-        }
-
-        @Override
-        public String getEffectDescription(float level) {
-            return "+" + (int) FIGHTER_SPEED_BONUS + "% top speed for fighters launched by the piloted ship";
-        }
-
-        @Override
-        public String getEffectPerLevelDescription() {
-            return null;
-        }
-
-        @Override
-        public ScopeDescription getScopeDescription() {
-            return ScopeDescription.SHIP_FIGHTERS;
-        }
-    }
-
-    /** FLEET：角色指挥舰队的 MutableFleetStatsAPI，由 refreshCharacterStatsEffects 统一重放。 */
-    public static class LevelFleet extends BaseSkillEffectDescription implements FleetStatsSkillEffect {
-
-        @Override
-        public void apply(MutableFleetStatsAPI stats, String id, float level) {
-            stats.getFleetwideMaxBurnMod().modifyFlat(id, FLEET_BURN_BONUS);
-            LOG.info(String.format("GearIn gunnery fleet apply: id=%s level=%.1f burn=+%.0f",
-                    id, level, FLEET_BURN_BONUS));
-        }
-
-        @Override
-        public void unapply(MutableFleetStatsAPI stats, String id) {
-            stats.getFleetwideMaxBurnMod().unmodifyFlat(id);
-        }
-
-        @Override
-        public String getEffectDescription(float level) {
-            return "+" + (int) FLEET_BURN_BONUS + " fleet burn level";
-        }
-
-        @Override
-        public String getEffectPerLevelDescription() {
-            return null;
-        }
-
-        @Override
-        public ScopeDescription getScopeDescription() {
-            return ScopeDescription.FLEET;
-        }
-    }
-
-    /** CHARACTER_STATS：角色自身数值，由 refreshCharacterStatsEffects 统一重放。 */
-    public static class LevelStats extends BaseSkillEffectDescription implements CharacterStatsSkillEffect {
-
-        @Override
-        public void apply(MutableCharacterStatsAPI stats, String id, float level) {
-            stats.getCommandPoints().modifyFlat(id, COMMAND_POINTS_BONUS);
-            LOG.info(String.format("GearIn gunnery stats apply: id=%s level=%.1f commandPoints=+%.0f",
-                    id, level, COMMAND_POINTS_BONUS));
-        }
-
-        @Override
-        public void unapply(MutableCharacterStatsAPI stats, String id) {
-            stats.getCommandPoints().unmodify(id);
-        }
-
-        @Override
-        public String getEffectDescription(float level) {
-            return "+" + (int) COMMAND_POINTS_BONUS + " command point";
-        }
-
-        @Override
-        public String getEffectPerLevelDescription() {
-            return null;
-        }
-
-        @Override
-        public ScopeDescription getScopeDescription() {
-            return ScopeDescription.FLEET;
-        }
+    private PersonAPI createCaptain() {
+        PersonAPI person = Global.getFactory().createPerson();
+        person.setId("GearIn_officer");
+        person.setName(new FullName("Mira", "Vale", FullName.Gender.FEMALE));
+        person.setFaction("gear_industry");
+        person.setPersonality(Personalities.STEADY);
+        return person;
     }
 }
 ```
 
 :::
 
-apply 日志样例如下 (effect id 组合与数值以实际日志为准)：
+::: details 完整成品：GearInFleetCommanderRole
 
-```text
-GearIn gunnery stats apply: id=GearIn_gunnery_stats_4 level=1.0 commandPoints=+1 GearIn gunnery fleet apply: id=GearIn_gunnery_stats_3 level=1.0 burn=+2
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.CampaignFleetAPI;
+import com.fs.starfarer.api.characters.FullName;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Personalities;
+
+public class GearInFleetCommanderRole {
+    private static final Logger LOG = Global.getLogger(GearInFleetCommanderRole.class);
+
+    public void run() {
+        CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
+        PersonAPI person = fleet.getCommander();
+        if (person == null || !"GearIn_commander".equals(person.getId())) {
+            person = createCommander();
+        }
+        fleet.setCommander(person);
+        fleet.forceSync();
+        LOG.info(String.format("commander=%s flagshipCommander=%s personality=%s",
+                fleet.getCommander().getId(),
+                fleet.getFlagship().getFleetCommander().getId(),
+                person.getPersonalityAPI().getId()));
+    }
+
+    private PersonAPI createCommander() {
+        PersonAPI person = Global.getFactory().createPerson();
+        person.setId("GearIn_commander");
+        person.setName(new FullName("Rowan", "Hale", FullName.Gender.MALE));
+        person.setFaction("gear_industry");
+        person.setPersonality(Personalities.STEADY);
+        return person;
+    }
+}
 ```
 
-(FLEET 与 CHARACTER\_STATS 在 `refreshCharacterStatsEffects` 内即时重放；`_stats_3` / `_stats_4` 与 "技能等级" 一节的 effect id 组合规则一致。)
+:::
 
-```text
-GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damage=+15% aim=+100%
+::: details 完整成品：GearInAdministratorRole
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.characters.FullName;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Personalities;
+
+public class GearInAdministratorRole {
+    private static final Logger LOG = Global.getLogger(GearInAdministratorRole.class);
+
+    public void run() {
+        MarketAPI market = Global.getSector().getEconomy().getMarket("GearIn_market_foundry");
+        PersonAPI person = market.getAdmin();
+        if (person == null || !"GearIn_admin".equals(person.getId())) {
+            person = createAdministrator();
+        }
+        market.setAdmin(person);
+        person.setMarket(market);
+        person.getStats().refreshCharacterStatsEffects();
+        LOG.info(String.format("admin=%s market=%s personality=%s",
+                market.getAdmin().getId(), person.getMarket().getId(),
+                person.getPersonalityAPI().getId()));
+    }
+
+    private PersonAPI createAdministrator() {
+        PersonAPI person = Global.getFactory().createPerson();
+        person.setId("GearIn_admin");
+        person.setName(new FullName("Selene", "Ward", FullName.Gender.FEMALE));
+        person.setFaction("gear_industry");
+        person.setPersonality(Personalities.STEADY);
+        return person;
+    }
+}
 ```
 
-(hull 以实际日志为准。)
+:::
 
 ## 验证方案
 
-前置数据：既有 MOD 布局与编译链路 (前置知识所列)、`GearIn_gunnery.skill`、`skill_data.csv` 行、`GearInGunnerySkill` 源码 (含读取与调用点片段中的演示钩子)。
+前置数据：启用包含本节脚本的 MOD，准备玩家舰队、可部署旗舰和 [C12-S1] 创建的 `GearIn_market_foundry`。保存测试存档副本，重复运行和读档都使用副本。
 
-1. **资源准备**：冒烟期间把 `skill_data.csv` 的 icon 列指向原版 `graphics/icons/skills/gunnery_implants.png`。
-2. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL` 且 `jar tf jars/GearIndustry.jar` 含 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类。
-3. **启动与注册**：新建生涯 (或读档)，在 `starsector.log` 中观察 `GearIn_gunnery` 的技能加载记录。
-4. **等级 1**：演示钩子 `setSkillLevel("GearIn_gunnery", 1f)` (放在 `onGameLoad` 内)，随后打开舰队界面 (F 键) 并进入一场战斗部署。
-5. **界面核对**：打开技能树 (C 键)、整备界面 (R 键) 与舰队面板，查看战斗部署界面的指挥点数与武器伤害。
-6. **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)`。
-7. **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill`。
-8. 打开 `starsector.log`，查看 `GearIn gunnery` 前缀的 apply 日志；在技能树、整备界面、舰队面板和战斗部署界面观察对应数值。
+1. 运行 `GearInCaptainRole`，打开舰队界面并选中旗舰，读取舰长姓名和日志中的 `captain`；
+2. 打开军官面板，确认 `GearIn_officer` 出现在 roster，并检查 `getOfficerData(person)` 返回数据；
+3. 运行 `GearInFleetCommanderRole`，重新打开舰队界面，比较舰队指挥官与旗舰舰长的 ID；
+4. 让舰队完成一次移动或战斗部署，确认成员仍能读取舰队指挥官；
+5. 运行 `GearInAdministratorRole`，打开 `GearIn_market_foundry` 的殖民地管理界面，确认管理员显示为 Selene Ward；
+6. 读取管理员的 `getMarket()` 和市场的 `getAdmin()`，确认两者指向同一市场；
+7. 查看三个入口输出的 `PersonalityAPI` 日志，核对 ID、显示名和描述来自 `steady`；
+8. 在存档副本中再次运行三个入口，确认没有新增角色对象；
+9. 重新载入存档后读取舰长、指挥官、管理员和军官 roster，确认稳定 ID 仍可取得。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInGunnerySkill.class` 与六个 `$` 内部类；启动后加载期无 `gear_in` 引起的 ERROR (注意 icon 列在冒烟期间指向原版图标)。
-- **注册确认**：`starsector.log` 出现 `Loading skill [data/characters/skills/GearIn_gunnery.skill]` (loadSkills 的加载日志)，没有 `Skipping skill [...]` 或 `Skipping loading skill [...]` 两行。
-- **等级 1**：演示钩子 `setSkillLevel("GearIn_gunnery", 1f)` 生效后，日志立即出现 `GearIn gunnery stats apply: id=GearIn_gunnery_stats_4 level=1.0 commandPoints=+1` 与 `GearIn gunnery fleet apply: id=GearIn_gunnery_stats_3 level=1.0 burn=+2`。
-- **stats 重建后 SHIP 效果**：打开舰队界面 (F 键，触发成员 stats 重建) 或进入一场战斗部署，日志出现 `GearIn gunnery ship apply: id=GearIn_gunnery_ship_1 level=1.0 hull=CRUISER damage=+15% aim=+100%`(hull 以实际日志为准)；战斗内载机起飞时出现 `GearIn gunnery fighters apply: id=GearIn_gunnery_ship_fighters_2 ... speed=+10%`。
-- **界面**：C 键技能树战斗系出现 "Gunnery" 行与 DESCRIPTION 文本；R 键整备界面舰队构成表出现 `Gunnery damage bonus +15%` 行，悬停显示自定义 tooltip；舰队面板 burn 提升 2(无条件叠加，上限 20)；战斗部署界面指挥点数 +1；玩家旗舰武器伤害倍率提升 (`GearIn_artizan` 等装配里实弹 / 能量武器 +15%，精英 +5%)，瞄准误差降低。
-- **等级 2 / 精英**：钩子改为 `setSkillLevel("GearIn_gunnery", 2f)` 后，日志追加 `GearIn gunnery elite apply: id=GearIn_gunnery_ship_5 level=2.0 hull=... damage=+5%`。
-- **解除**：`setSkillLevel("GearIn_gunnery", 0f)` 或 `decreaseSkill` 后日志不再出现新 apply 行，burn / 指挥点数 / fleet total 行恢复基线；`unapply` 用同一 id 解除，数值无残留。
+- 旗舰的 `getCaptain()` 返回 `GearIn_officer`；
+- `getOfficerData(person)` 返回关联的 `OfficerDataAPI`；
+- `getCommander()` 返回 `GearIn_commander`；
+- 旗舰的 `getFleetCommander()` 与舰队指挥官一致；
+- `getAdmin()` 返回 `GearIn_admin`；
+- `GearIn_admin.getMarket()` 返回 `GearIn_market_foundry`；
+- 三个人物的性格 ID 均为 `steady`；
+- 重复运行不会新增角色对象；
+- 重新载入后角色资料和槽位归属仍可读取。
 
 ## 故障分析
 
-- **技能没有出现在技能树中**：`.skill` 缺少 `skill_data.csv` 注册行，或各处 ID 不一致。
+- **舰队界面没有显示新的舰长**：目标成员不是当前旗舰，或没有调用 `setCaptain`。
 
-    - **解决方案**：补齐注册并统一 ID，重启。
+  - **解决方案**：从当前舰队重新取得 `getFlagship()`，绑定人物后读取同一成员的 `getCaptain()`。
 
-- **技能定义被静默跳过**：技能 ID 与原版或其他 MOD 重复，后加载的定义不会覆盖已有项。
+- **军官出现在 roster，但舰船没有舰长**：`OfficerDataAPI` 不负责写入成员舰长字段。
 
-    - **解决方案**：改用带 MOD 前缀的唯一 ID，重启。
+  - **解决方案**：保留 `addOfficer(...)`，再对目标成员调用 `setCaptain(person)`。
 
-- **效果实例化时出现 `ClassCastException`**：`.skill` 的 `type` 与脚本实现的效果接口不匹配。
+- **舰队指挥官日志正确，成员读取为空**：舰队尚未同步，或读取的是旧成员对象。
 
-    - **解决方案**：让 `type` 对应正确接口族，再触发 stats 重建。
+  - **解决方案**：调用 `forceSync()`，再从当前舰队取得成员并读取 `getFleetCommander()`。
 
-- **首次应用效果时报 `Problem loading class`**：脚本类名错误，或效果类缺少无参构造器。
+- **管理员界面仍显示旧人物**：市场字段已被覆盖，代码继续读取旧引用。
 
-    - **解决方案**：核对完整类名并保留可访问的无参构造器，重新进入触发该效果的界面或战斗。
+  - **解决方案**：从 `market.getAdmin()` 重新读取当前管理员，并同步设置 `person.setMarket(market)`。
 
-- **移除技能后数值仍然残留**：`apply` 和 `unapply` 使用了自造 modifier ID，无法成对解除。
+- **管理员 stats 改变但市场数值不变**：管理员效果尚未刷新或市场尚未重算。
 
-    - **解决方案**：两处都使用引擎传入的 `id`，重放 stats。
+  - **解决方案**：刷新管理员 stats，再重新打开市场界面读取当前值。
 
-- **加成只作用于旗舰**：`.skill` 的 `type` 是 `SHIP`，而 `scope` 只改变说明文字。
+- **性格显示为空或行为没有变化**：性格 ID 无效，或人物没有绑定到当前角色槽位。
 
-    - **解决方案**：根据目标对象改用正确的效果类型。
-
-- **战前找不到战机加成**：`SHIP_FIGHTERS` 在战机起飞并生成战斗 stats 后应用。
-
-    - **解决方案**：进入战斗放出战机。
-
-- **精英效果始终不生效**：二级效果设置了 `requiredSkillLevel: 2`，技能却没有启用 `elite`。
-
-    - **解决方案**：加入 `"elite": true`，重新加点。
-
-- **舰队汇总行少了一项**：两个效果返回了相同的 `label` 与 `value`，汇总键发生重复。
-
-    - **解决方案**：让 label 或 value 可区分。
-
-- **SHIP 效果日志延迟出现**：这类效果要等成员 stats 重建或舰船部署后才应用。
-
-    - **解决方案**：打开舰队界面触发同步，或部署舰船后检查对应日志。
-
-- **启动时纹理加载失败**：`skill_data.csv` 的 icon 指向不存在的文件。
-
-    - **解决方案**：修正为实际纹理路径，重启。
+  - **解决方案**：使用 `Personalities.STEADY` 等有效 ID，读取 `getPersonalityAPI()` 后检查角色字段。
 
 ## 总结
 
-本节完成了技能域从数据到生效的完整流程：三件套在 `loadSkills` 汇成 `SkillSpecAPI`，type 决定作用对象，等级决定是否生效，fleet total 把需要汇总的数值送到整备界面。
-
-留作复用的判断有三条。第一，技能没出现且无报错时，先查两条跳过日志，再核对 `.skill` 的 `type` 与脚本类实现的接口是否对应。第二，生效范围只看 `type`，`scope` 只是 UI 文本；2 级门槛必须配 `elite:true`。第三，effect id 就是 modifier id，引擎传入什么就用什么，`unapply` 用同一个 id 解除 —— 数值残留与解除失效几乎都源于这里。
-
-这套 "type → 作用域 → 应用入口" 模型也适用于生涯数值链下游：从人物经 `FleetMemberAPI` 到舰船 stats 的交接中，SHIP / ALL\_SHIPS\_IN\_FLEET 效果正是 "人物技能到达成员 stats" 的关键一跳。
+`PersonAPI` 保存人物资料，`MutableCharacterStatsAPI` 保存成长和技能状态，`OfficerDataAPI` 保存军官 roster 数据。舰长、舰队指挥官和管理员分别由成员、舰队和市场持有引用；绑定后从持有者回读，才能证明关系已经写入并进入下游计算。`PersonalityAPI` 提供性格 ID、界面名称和描述，角色对象再把人物资料交给舰船、舰队或市场行为使用。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.characters.SkillSpecAPI`：技能规格对象 (`getSkillSpec(id)` 的返回类型)；其内部类型 `SkillEffectSpecAPI` 承载 `getType` / `getAsXxxEffect` / `getRequiredSkillLevel` / `getUnlockedHullMods` 等效果字段访问。
-- `com.fs.starfarer.api.characters.SkillEffectType`：11 个效果类型枚举 (`SHIP` / `ALL_SHIPS_IN_FLEET` / `SHIP_FIGHTERS` / `ALL_FIGHTERS_IN_FLEET` / `CHARACTER_STATS` / `FLEET` / `HULLMOD_UNLOCK` / `ABILITY_UNLOCK` / `GOVERNED_OUTPOST` / `ALL_OUTPOSTS` / `DESCRIPTION`)。
-- `com.fs.starfarer.api.characters.ShipSkillEffect`：舰船技能效果接口，继承 `LevelBasedEffect`；
-- `com.fs.starfarer.api.characters.FleetStatsSkillEffect`：舰队 stats 技能效果接口，继承 `LevelBasedEffect`；
-- `com.fs.starfarer.api.characters.CharacterStatsSkillEffect`：人物 stats 技能效果接口，继承 `LevelBasedEffect`；
-- `com.fs.starfarer.api.characters.MarketSkillEffect`：市场技能效果接口，继承 `LevelBasedEffect`；
-- `com.fs.starfarer.api.characters.DescriptionSkillEffect`：独立效果接口，提供描述文本方法。
-- `com.fs.starfarer.api.characters.LevelBasedEffect`：数值与范围效果接口的共同父接口，`getEffectDescription` / `getEffectPerLevelDescription` / `getScopeDescription` 与 `ScopeDescription` 枚举。
-- `com.fs.starfarer.api.characters.FleetTotalSource`：fleet total 行的提供接口；
-- `com.fs.starfarer.api.characters.FleetTotalItem`：fleet total 行数据对象 (`label` / `value` / `sortOrder` / `tooltipCreator`)。
-- `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：`getSkillLevel` / `setSkillLevel` / `increaseSkill` / `hasSkill` / `refreshCharacterStatsEffects` / `getCommandPoints` 所在。
-- `com.fs.starfarer.api.fleet.MutableFleetStatsAPI`：`getFleetwideMaxBurnMod` 等舰队 stats 访问器。
-- `com.fs.starfarer.api.SettingsAPI`：`getSkillSpec` / `getSortedSkillIds` 读取入口。
-- `com.fs.starfarer.api.impl.campaign.skills.BaseSkillEffectDescription`：示例各效果类继承的基类 (`TOOLTIP_WIDTH` 与 fleet total 聚合做法)。
-- `data/characters/skills/skill_data.csv`：技能注册表 (id / order / tier / reqPoints / 角色 flags / tags / icon)。
-- `data/characters/skills/aptitude_data.csv`：能力树分组表 (`effect_skill_id` 列)。
-- `data/characters/skills/gunnery_implants.skill`：原版 SHIP + 精英组样例 (本节示例的蓝本)。
-- `Starsector/starsector-core/starsector.log`：游戏运行日志 (注册与 apply 日志的核对位置)。
+- `com.fs.starfarer.api.characters.PersonAPI`：人物资料、stats、性格和反向归属；
+- `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：等级、经验、技能状态和刷新；
+- `com.fs.starfarer.api.characters.OfficerDataAPI`：军官 roster 数据与升级；
+- `com.fs.starfarer.api.characters.PersonalityAPI`：性格 ID、显示名和描述；
+- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：舰队指挥官和同步；
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：舰长字段和成员 stats；
+- `com.fs.starfarer.api.campaign.econ.MarketAPI`：管理员字段和市场读取。

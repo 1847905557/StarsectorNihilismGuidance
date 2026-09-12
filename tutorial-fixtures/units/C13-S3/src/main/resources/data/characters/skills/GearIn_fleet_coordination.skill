@@ -1,0 +1,16 @@
+{
+    "id":"GearIn_fleet_coordination",
+    "governingAptitude":"leadership",
+    "scope":"FLEET",
+    "effectGroups":[
+        {
+            "name":"Level 1",
+            "requiredSkillLevel":1,
+            "effectBasedOnLevel":false,
+            "effects":[
+                {"type":"DESCRIPTION", "script":"data.scripts.gearin.campaign.GearInFleetCoordinationDescription"},
+                {"type":"FLEET", "script":"data.scripts.gearin.campaign.GearInFleetCoordinationEffect"}
+            ]
+        }
+    ]
+}

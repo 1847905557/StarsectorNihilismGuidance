@@ -1,0 +1,25 @@
+{
+    "id":"GearIn_captain_mobility",
+    "governingAptitude":"combat",
+    "elite":true,
+    "scope":"PILOTED_SHIP",
+    "effectGroups":[
+        {
+            "name":"Level 1",
+            "requiredSkillLevel":1,
+            "effectBasedOnLevel":false,
+            "effects":[
+                {"type":"DESCRIPTION", "script":"data.scripts.gearin.campaign.GearInCaptainMobilityDescription"},
+                {"type":"SHIP", "script":"data.scripts.gearin.campaign.GearInCaptainMobilityEffect"}
+            ]
+        },
+        {
+            "name":"Elite",
+            "requiredSkillLevel":2,
+            "effectBasedOnLevel":false,
+            "effects":[
+                {"type":"SHIP", "script":"data.scripts.gearin.campaign.GearInCaptainMobilityEliteEffect"}
+            ]
+        }
+    ]
+}

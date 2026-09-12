@@ -1,154 +1,87 @@
 # 编写生涯逐帧脚本
 
-本节制作能够保存进度的每日与周期生涯脚本。脚本会按游戏时间推进并随存档序列化，日志用于确认注册、时间换算和读档后的进度。
+本节制作一个按游戏天累计、每游戏日执行一次并在 30 个游戏日后自动结束的生涯脚本。重点是理解引擎何时调用 `advance()`、如何处理暂停和脚本完成状态，以及普通脚本与 transient 脚本在存档中的不同边界。
 
-*本节预期阅读时间：~30 分钟。*
+*本节预期阅读时间：~18 分钟。*
 
-*本节预期操作时间：~60 分钟。*
+*本节预期操作时间：~35 分钟。*
 
 ## 学习目标
 
-完成后，您将能够：
-
-- 区分帧时间、生涯时钟与暂停、加速和战斗期间的推进结果；
-- 使用 `isDone()`、`runWhilePaused()` 和清理回调控制脚本生命周期；
-- 为每日、周期或倒计时任务选择合适的时间判断方式；
-- 管理普通脚本、transient 脚本和字段的存档恢复边界；
-- 根据时间、日志和读档结果定位生涯脚本故障。
+- 解释 `isDone()`、`runWhilePaused()` 和 `advance(float amount)` 在引擎中的调用顺序；
+- 使用 `CampaignClockAPI.convertToDays()` 累计游戏天，并用 `while` 补齐单帧跨越的多个周期；
+- 使用 `hasScript()` 防止重复注册，并区分普通脚本与 transient 脚本的读档结果；
+- 根据暂停、战斗、读档和自动移除后的日志定位脚本生命周期问题。
 
 ## 前置知识
 
-- [C7-S1] 的 `modPlugin` 生命周期与持久数据标记；
-- [C7-S2] 的 `Global.getSector()` 阶段语义与生涯引擎建立边界；
-- [C8-S3] 的战斗域每帧回调、暂停语义与生涯域的差异；
-- [C10-S1] 的星区结构、生涯时钟、`EveryFrameScript` 注册、推进循环、暂停与加速语义。
+- [C7-S1] 的 MOD 插件生命周期与 `onGameLoad`；
+- [C7-S2] 的 `Global.getSector()` 和生涯引擎建立时机；
+- [C10-S1] 的 `SectorAPI`、生涯时钟、脚本注册和暂停语义；
+- 能够编译 Java source set，并从 `starsector.log` 搜索稳定日志文本。
 
-## 梳理生涯脚本关系
+## 让引擎按规则推进脚本
 
-脚本要能稳定运行，先得看清引擎怎么调脚本、`amount` 是什么、时间怎么换算、进度存在哪里这四个约定。本节依次讲完这四个机制，再据此给出四种实现模式。
+`EveryFrameScript` 是一个由生涯引擎主动调用的接口，只有三个方法。它不规定业务周期，也不保存注册信息；脚本类自己保存状态，注册容器负责让引擎找到它。
 
-### EveryFrameScript 三方法约定速查表
+### 接口方法速查表
 
-`EveryFrameScript`(`com.fs.starfarer.api.EveryFrameScript`) 只有三个方法，是生涯按帧脚本的完整约定。此前已讲过三方法是什么，本节讲引擎到底怎么用它们：
+| 方法 | 责任 | 本节脚本的实现 |
+| --- | --- | --- |
+| `isDone()` | 告诉引擎脚本是否已经完成，可以从当前列表移除 | 返回 `done`，达到 30 个游戏日后变为 `true` |
+| `runWhilePaused()` | 决定暂停时是否仍调用 `advance()` | 返回 `false`，暂停时不累计游戏天 |
+| `advance(float amount)` | 执行一轮推进；`amount` 是上一帧经过的真实秒数 | 先换算成游戏天，再累计并触发每日例程 |
 
-| 方法 | 引擎执行约定 |
-|---|---|
-| `boolean isDone()` | 每帧**最多查两次**：`advance` 前查一次，为 `true` 直接移除 (不调 `advance`)；`advance` 返回后再查一次，为 `true` 移除。常驻脚本返回 `false` |
-| `boolean runWhilePaused()` | 暂停时 `advance` 只对返回 `true` 的脚本调用；脚本基类默认 `false` |
-| `void advance(float amount)` | `amount` 是**上一帧经过的真实秒数** ("seconds elapsed during the last frame"；"Use SectorAPI.getClock() to convert to campaign days")。**必须**经时钟换算才是游戏天 |
+`CampaignEngine` 对普通脚本列表和 transient 脚本列表分别建立快照。每个对象进入快照后，先检查一次 `isDone()`；已经完成的对象直接移除，未完成对象在游戏未暂停或 `runWhilePaused()` 返回 `true` 时收到 `advance(amount)`。回调返回后引擎再检查一次 `isDone()`，因此脚本在自己的 `advance()` 中把 `done` 设为 `true`，就能在同一轮推进结束时被移除。
 
-执行细节：
+快照解释了两个容易混淆的现象。脚本在 `advance()` 内新增或移除对象时，修改的是原列表，当前快照仍按开始这一轮时的内容遍历；新脚本要到下一轮才会推进，已经取出的对象仍可能完成当前回调。`addScript()` 也不承担业务去重，同一个实例重复加入会得到多次推进，等价的新实例也会分别推进，所以注册入口必须自行查重。
 
-1. 引擎遍历的是**列表快照** (`new ArrayList<>(this.scripts)`)，脚本在 `advance` 里 `addScript` / `removeScript` 安全；代价是 advance 里新加的脚本下一帧才推进。
-2. 移除是 "遍历快照、改原列表"：
-    - `isDone` 自动清理；
-    - `removeScript(script)` 按**对象同一性**；
-    - `removeScriptsOfClass(Class)` 按**精确类** `getClass() == clazz`；
-    - `hasScript(Class)` 用 `isInstance`；查重用 `hasScript`，批量删用 `removeScriptsOfClass`，别混用。
-3. **`addScript` 不去重**：同一实例或等价实例重复注册会各自推进，一次性注册必须用 persistent data 标记 (必须遵守的规则)。
-4. 脚本基类把 `runWhilePaused()` 默认设为 `false`；引擎内置脚本也走同一机制。
-5. `EveryFrameScriptWithCleanup`(`com.fs.starfarer.api.EveryFrameScriptWithCleanup`) 只多一个 `cleanup()`："附着实体从生涯引擎移除时调用"(实体级脚本；引擎级脚本不触发)。该接口没有可观测的调用点，行为表述即上述语义。
+### 注册容器决定生命周期
 
-### amount 五种时序取值速查表
+`SectorAPI.addScript()` 把脚本放进随生涯保存的普通列表，适合周期管理器和需要跨读档继续的状态。`addTransientScript()` 放进不写入存档的 transient 列表，适合只存在于当前运行阶段的探针或临时动画；读档后它不会自动出现，注册入口需要再次执行。`removeScript()` 按对象实例移除，`removeScriptsOfClass()` 按精确类移除，`hasScript(Class)` 则用 `isInstance` 判断当前列表中是否存在匹配对象。
 
-方法约定说明脚本自身怎么写，时序约定决定引擎每次怎么调、传多少 `amount`。引擎在五种时序下推进脚本与时钟的方式各不相同：
-
-| 时序 | 引擎行为 | 脚本与时钟后果 |
-|---|---|---|
-| 正常帧 | 每渲染帧调一次 `engine.advance(amount)`，`amount` 是该帧真实秒数 | 脚本 `advance(amount)` 每帧一次，`amount` 即帧真实秒；时钟按 10 秒/游戏日前进 |
-| 暂停 (空格) | 引擎照常每帧调 `advance`，但暂停时只有 `runWhilePaused()` 为 `true` 的脚本被推进 | 时钟冻结；`runWhilePaused()` 为 `false` 的脚本一并停住，为 `true` 的脚本继续收到 `amount` |
-| 加速 (按住 Shift) | `fastForward` 时按 `round(campaignSpeedupMult)`(`settings.json` 的 `campaignSpeedupMult`，取值为 2) 的次数，同一渲染帧连调 `engine.advance(amount)`，每次 `amount` 都是完整帧秒 | 脚本与时钟同帧推进两次，游戏日流速翻倍；`Global.getSector().isFastForwardIteration()` 可探测 "本次调用来自加速帧的第 2 次及以后的迭代"(`SectorAPI.isFastForwardIteration()`；第 1 次连调时标志尚未置位)。devMode 下还有 10x/100x 调试键 |
-| 新档推进 | 新建生涯时有一段快速推进窗口 (`isInFastAdvance()`)，窗口内时钟与脚本连续推进，之后才调 `onNewGameAfterTimePass` 与 `onGameLoad(true)`(游戏管理器) | `onNewGame` 注册的脚本经历这次推进；`onGameLoad` 里注册的脚本**不**经历 (窗口已关闭) |
-| 战斗 | 进入战斗后运行的是战斗状态，生涯状态不再推进 | 生涯脚本、时钟、经济全部冻结，回生涯后恢复 |
-
-### 时间换算速查表
-
-`CampaignClockAPI`(`com.fs.starfarer.api.campaign.CampaignClockAPI`) 由引擎内部实现。此前已给出换算基线，本节把高频换算方法收成速查表；换算的**内部机制**与两个推论列在表格之后：
-
-| 方法 | 返回 | 语义 |
-|---|---|---|
-| `convertToDays(amount)` | `float` | 真实秒 → 游戏天 (`advance` 里**必须**用它换算) |
-| `convertToSeconds(days)` | `float` | 游戏天 → 真实秒 |
-| `convertToMonths(amount)` | `float` | 真实秒 → 游戏月 (÷10÷30) |
-| `getTimestamp()` | `long` | 日历毫秒；暂停时冻结；跨存档安全的间隔基准 |
-| `getElapsedDaysSince(ts)` | `float` | 从 `ts` 到现在的游戏天数；`ts == 0` 返回 `Float.MAX_VALUE` |
-| `createClock(ts)` | `CampaignClockAPI` | 按时间戳建独立时钟 (局部计时) |
-| `isFastForwardIteration()` | `boolean` | 本次推进来自加速帧的第 2 次及以后的迭代 (第 1 次连调时为 false；`SectorAPI.isFastForwardIteration()`) |
-
-- **基线：10 真实秒 = 1 游戏日** (`SECONDS_PER_GAME_DAY = 10.0F`)。`convertToDays(秒)` = 秒 ÷ 10；`convertToSeconds(天)` = 天 × 10；`convertToMonths(秒)` = 秒 ÷ 10 ÷ 30。
-- **日历按整游戏秒推进**：`advance(float)` 的实作是 `(int)(秒 / secondsPerDay * 86400)`，把整游戏秒加进日历；每帧独立截断，余数不结转。
-    - 推论一：`getDay()` / `getDateString()` / `getTimestamp()` 全部来自这个日历，因此是整秒粒度；而 `convertToDays(amount)` 的累加保留小数。
-    - 推论二：长期漂移等于各帧被截去的小数游戏秒之和，取决于实际帧时分布；帧率本身不能确定漂移量或趋势。
-    - 结论：**以日历为准 (跨日检测) 与以累加器为准 (`convertToDays` 累加) 是两种不同的时间基准**：短会话一致、长会话错位；统计型进度用累加器，日历事件用跨日检测。
-- **`getElapsedDaysSince(ts)`**：`(now - ts) / 86400000`，返回游戏天数；`ts == 0` 时返回 `Float.MAX_VALUE`，计算未初始化间隔时不要传 0。
-- **`getTimestamp()`** 是日历毫秒值，暂停时冻结；`createClock(ts)` 按时间戳建独立时钟做局部计时。
-- **读档重建**：`readResolve()` 按保存的时间戳重建内部日历，读档后时钟从存档时刻继续 —— 您在读档前度过的真实时间，游戏日历一概不认。
-
-两种基准的分工
-
-日历以整游戏秒前进，适合 "某一天做什么" 这类事件判定；`convertToDays` 累加保留小数、每帧追加，适合跨帧累计的统计。长会话里两者错位不是 bug，而是按需选基准的设计：日历事件用跨日检测、精确统计用累加器。
-
-### 注册与存档：序列化边界
-
-时间换算解决怎么算时间，序列化解决算出来的进度怎么保留。
-
-**保存与读档的机制** (游戏管理器)：
-
-- 保存：`saveGame(...)` 用 XStream 序列化**整个生涯引擎 (星区)** —— 包括 `scripts` 列表里每个脚本的全部非 `transient` 字段。
-- 读档：`fromXML` 还原生涯引擎 (星区) 与脚本字段，脚本状态从存档值继续。
-
-**两个脚本列表的序列化边界** (生涯引擎)：
-
-- `scripts` **非** `transient` → **随存档保存**：常驻脚本 (管理器、周期脚本) 跨读档继续运行，其非 `transient` 字段原样恢复；`readResolve` 只补 null 备用值。
-- `transientScripts` 是 `transient` → **不随存档保存**，且 `readResolve` 直接重建空列表 → **transient 脚本读档后必然消失，需要重新注册**。
-- 实体级脚本：实体的脚本列表也非 `transient` → 随实体保存。
-
-由此得到三条必须遵守的规则与两条建议：
-
-- **必须**：脚本字段只放可随 XStream 序列化的状态 (基础类型、可序列化对象)。
-    - 把引擎单例、`CampaignUIAPI`、声音播放器等句柄存进字段，会把整个可达对象图拖进存档 —— 可观察结果：存档文件异常膨胀、保存/读档异常，或读档后字段指向失效对象导致行为错乱。
-- **必须**：一次性注册用随存档保存的 persistent data 标记 ([C7-S1] 的 `CLASS_MARK` 模式；本节示例用各自键 `REGISTER_MARK`)：`addScript` 不去重，标记缺失的可观察结果是读档次数越多日志越成双、行为叠加。
-- **必须**：transient 脚本的重新注册写在读档回调里，否则可观察结果是读档后脚本消失且无报错。
-- **建议**：跨会话的小数据放 `SectorAPI.getPersistentData()`(persistent data 随档保存；注意 XStream 存档边界)。
-- **建议**：脚本内瞬态句柄 (贴图、粒子、UI 引用) 声明为 `transient` 字段并用 `readResolve()` 重建，成熟实例：实体插件用 `readResolve()` 恢复 `SpriteAPI` 句柄。
-
-### 每日/周期脚本模式速查表
-
-机制已经齐备，剩下的是把它们组合成完整写法。本节把按时间反复执行的生涯脚本分成两类：以游戏日为最小时间颗粒、每个游戏日执行一次 (或每 N 个游戏日一次) 的每日脚本 (daily script)，以及按固定或随机间隔反复执行某段逻辑的周期脚本 (periodic script)。判断新的一天有两种基准：日历日期变化，或游戏天累加器跨过整数；间隔单位可以是真实秒 (间隔器直接推进) 或游戏天 (先 `convertToDays` 再推进)。四种经过验证的模式 (判据：原版内部实现与成熟实例模组) 如下：
-
-| 模式 | 实现要点 | 适用场景 | 成熟实例 |
-|---|---|---|---|
-| A. 日历跨日检测 | `dateKey = cycle*10000 + month*100 + day`(示例自用辅助键，非原版机制)，与上次比较，变化即 "新的一天" | 日历事件 (征兵、账单、节日)；每游戏日恰好一次 | — |
-| B. 天数累加器 | `acc += clock.convertToDays(amount)`，`while (acc >= period) { acc -= period; ... }` | 精确天数统计；单帧跨多天也要逐日补触发 | — |
-| C. 间隔器 | `IntervalUtil`(公开 API `com.fs.starfarer.api.util.IntervalUtil`) 每帧 `advance`、`intervalElapsed()` 判定；原版游戏内置的同类间隔计时用法一致 | 固定/随机间隔的周期任务；喂秒就是真实时间周期，喂 `convertToDays(amount)` 就是游戏天周期 | 原版游戏的事故判定 (按游戏天在 0.5–1.5 天区间内判定) |
-| D. 自注册倒计时 | 构造器 `Global.getSector().addScript(this)` 自注册，`isDone()` 完成即被引擎清理；倒计时按天扣减 (`isDay` 模式先把 `amount` 换成天) | 一次性延迟任务 (剧情事件、临时效果)；少一处调用点 | — |
-
-选型建议：日历事件用模式 A；需要精确累计 (含小数) 或单帧可能跨多天时用模式 B (用 `while` 而不是 `if`)；固定/随机真实时间节奏用模式 C；一次性倒计时任务用模式 D。模式 A 与 B 混用时，注意时间换算一节的漂移结论。
-
-## 实现可保存生涯脚本
-
-先让脚本只执行并保存，再加入时间判断。这样可以分别验证注册、换算与停止条件，避免把 "没有注册" 和 "周期尚未到" 混成同一种无日志症状。
-
-### 注册常驻脚本
-
-把以下判断放入 `GearInModPlugin.onGameLoad()`。标记与脚本列表都随存档保存，因此新档和读档共用同一个一次性门。
+transient 脚本需要在每次 `onGameLoad()` 中按 transient 列表查重。普通列表与 transient 列表是两个独立容器，因此这里使用 `hasTransientScript()`。
 
 ```java
 SectorAPI sector = Global.getSector();
-if (!sector.getPersistentData().containsKey(GearInCalendarDayScript.REGISTER_MARK)) {
-    sector.getPersistentData().put(GearInCalendarDayScript.REGISTER_MARK, true);
-    sector.addScript(new GearInCalendarDayScript());
+if (!sector.hasTransientScript(GearInRuntimeProbe.class)) {
+    sector.addTransientScript(new GearInRuntimeProbe());
 }
 ```
 
-首次进入存档后，`hasScript(GearInCalendarDayScript.class)` 为 `true`；保存并读档，脚本实例数量仍为 1。
+地点、实体和舰队也有自己的脚本容器。把脚本挂在星区时，它的生命周期跟随整个生涯；把脚本挂在实体时，实体被移除会结束这条附着关系。`EveryFrameScriptWithCleanup` 在 `EveryFrameScript` 三个方法之外增加 `cleanup()`，它是实体从生涯引擎移除时的清理入口；它不是普通星区脚本在 `isDone()` 后的通用回调。
 
-### 检测日历跨日
+实现该接口的实体脚本在 `cleanup()` 中撤销自己建立的外部状态。`target.addScript(new GearInEntityProbe())` 决定它附着在哪个实体；实体离开生涯引擎时，下面的方法才会收到调用。
 
-在 `GearInCalendarDayScript.advance()` 中把年月日折叠为键。首帧只建立基线，后续日期变化才执行事件。
+```java
+@Override
+public void cleanup() {
+    Global.getLogger(GearInEntityProbe.class)
+            .info("GearIn entity probe: attached entity removed");
+}
+```
+
+## 选择时间基准
+
+`advance(float amount)` 的 `amount` 单位是真实秒，不能直接当作游戏天。游戏时间换算必须使用 `Global.getSector().getClock().convertToDays(amount)`。正常速度下，当前版本约 10 个真实秒对应 1 个游戏日；暂停时生涯时钟冻结，返回 `false` 的脚本也不会收到推进。
+
+日历跨日检测和精确累计适合不同任务。需要在日期变化时执行一次的事件，可以把 `cycle`、`month` 和 `day` 折叠成日期键；它只回答本次调用是否跨日。需要累计精确游戏天数的任务，应保存浮点余量，每次把 `convertToDays(amount)` 加入累加器。若一次调用跨过多个周期，使用 `while` 而不是 `if`，才能逐个补触发。
 
 ```java
 CampaignClockAPI clock = Global.getSector().getClock();
+float daysThisFrame = clock.convertToDays(amount);
+daysSinceMount += daysThisFrame;
+daysAccumulator += daysThisFrame;
+
+while (daysAccumulator >= tickEveryDays) {
+    daysAccumulator -= tickEveryDays;
+    routineCount++;
+}
+```
+
+日历键的局部写法如下。首帧只建立基线；如果一次推进跳过了几天，它仍然只产生一次日期改变，不会补发中间日期。
+
+```java
 int dateKey = clock.getCycle() * 10000 + clock.getMonth() * 100 + clock.getDay();
 if (dateKey != lastDateKey) {
     if (lastDateKey != -1) {
@@ -158,298 +91,102 @@ if (dateKey != lastDateKey) {
 }
 ```
 
-正常速度下约每 10 真实秒出现一次新日期；暂停期间日期与日志同时冻结。
+## 注册并恢复周期脚本
 
-### 把帧时间换成游戏天
-
-在 `GearInDayAccumulatorScript.advance()` 开头换算 `amount`。这条路径保留小数余量，适合统计累计进度。
+本节完整例使用 `hasScript()` 做实际列表查重。注册代码应放在 `onGameLoad()` 或 `onNewGame()`，此时 `Global.getSector()` 已经存在。每次进入存档都执行检查：列表中已有实例时不再加入；普通脚本因为随档保存，读档后通常会命中；实例因故缺失时，门禁可以补回它。
 
 ```java
-CampaignClockAPI clock = Global.getSector().getClock();
-float daysThisFrame = clock.convertToDays(amount);
-daysSinceMount += daysThisFrame;
-daysAccumulator += daysThisFrame;
-```
-
-正常速度运行约 10 真实秒后，`daysSinceMount` 增加约 1.0；按住 Shift 时增长速度约翻倍。
-
-### 补齐跨帧周期
-
-继续在同一 `advance()` 中使用 `while` 消耗累加值。若调试推进一次跨过多天，循环会补齐每一个完整周期。
-
-```java
-while (daysAccumulator >= tickEveryDays) {
-    daysAccumulator -= tickEveryDays;
-    routineCount++;
-    LOG.info(String.format("GearIn daily: routine #%d at %s",
-            routineCount, clock.getShortDate()));
+SectorAPI sector = Global.getSector();
+if (!sector.hasScript(GearInDayAccumulatorScript.class)) {
+    sector.addScript(new GearInDayAccumulatorScript());
 }
 ```
 
-把 `tickEveryDays` 设为 1 后，每累计一个完整游戏日增加一次 `routineCount`；单帧跨过 3 天时连续增加 3 次。
+这段门禁检查当前列表是否已有对象。功能若要在一个存档中只执行一次，即使脚本已经结束也不能重新创建，应另用独立的 persistent data 标记；本节周期脚本需要在缺失时恢复，所以结束历史不作为注册条件。
 
-### 让脚本按条件自停
+## 让脚本累计 30 个游戏日后结束
 
-在 `advance()` 末尾设置完成标记，并让 `isDone()` 返回该字段。引擎会在回调返回后再次检查并移除脚本。
+完整类只负责四件事：把帧秒换成游戏天、保留周期余量、记录每日例程次数，以及在 30 个游戏日后设置完成标记。`tickEveryDays` 和 `daysToRun` 固定为 `1.0f` 与 `30.0f`，这样每个游戏日触发一次，累计满 30 天后由引擎自动清理。
 
-```java
-if (daysToRun >= 0 && daysSinceMount >= daysToRun) {
-    done = true;
-}
+`daysAccumulator` 保存当前周期的未用余量，不能在每次回调后归零；否则帧边界会吞掉小数，周期会随帧率漂移。`daysSinceMount` 记录脚本挂载以来的累计天数，并作为结束条件。所有字段都是基础类型，能够随普通脚本进入存档；不把 `SectorAPI`、UI 或声音对象存进字段，避免把瞬态引擎句柄带入序列化数据。
 
-@Override
-public boolean isDone() {
-    return done;
-}
-```
+### 观察自动移除
 
-`daysToRun=30` 时累计满约 30 个游戏日，`hasScript(GearInDayAccumulatorScript.class)` 变为 `false`，日志不再增长。
-
-## 组装生涯脚本实现
-
-选型之后落到代码。在已有 MOD 布局 [C6-S1] 与 `GearInModPlugin`[C7-S1] 之上新增两个脚本类 (不新增任何资源、不新增任何注册项，此处指不新增数据/资源注册项；脚本经 `onGameLoad` 注册属于代码注册)：
-
-```text
-mods/GearIndustry/
-├── build.gradle
-├── settings.gradle
-├── mod_info.json
-├── data\
-├── src\
-│   └── data/scripts/gearin/campaign\
-│       ├── GearInCalendarDayScript     # 模式 A：日历跨日检测 (本节新增)
-│       └── GearInDayAccumulatorScript  # 模式 B：天数累加器 + daysToRun 自停 (本节新增)
-└── jars\
-```
-
-### GearInCalendarDayScript：模式 A(日历跨日检测，常驻)
-
-对应关系：
-
-- `implements EveryFrameScript`：三个方法全来自接口 (`isDone` / `runWhilePaused` / `advance`)；`isDone()` 恒返回 `false` —— 常驻脚本永不结束，日历事件逐日触发。
-- `REGISTER_MARK`：persistent data 注册标记的键 (`"GearIn_CalendarDayScript"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
-- `dateKey` 跨日检测 (模式 A)：`getCycle() * 10000 + getMonth() * 100 + getDay()` 折叠日期为整数键；首帧只初始化不打印，之后每个游戏日打印一次 `GearIn calendar: new day ...`。
-- 时间换算与逐日补触发不在本类：本模式只看日历日期、不直接用 `amount`，那是模式 B(`GearInDayAccumulatorScript`) 的职责；两个类可同档共存，各自用独立的 persistent data 标记注册。
-- 字段只有 `int`(`lastDateKey`)，可随存档序列化；`runWhilePaused()` 恒 `false`(暂停时本脚本与时钟一并冻结)。
-
-模式 A 在单帧跨多个游戏日 (加速、新档推进) 时一帧只报一次 "新的一天"
-
-这是正常行为而非漏触发；需要逐日补触发的逻辑应改用模式 B 的 `while` 累加器。
-
-模式 A 只回答是不是新的一天，回答不了累计了多少天；模式 B 用累加器补上这一半，并演示运行天数上限自停。
-
-### GearInDayAccumulatorScript：模式 B(天数累加器 + 自停)
-
-对应关系：
-
-- `implements EveryFrameScript`：`isDone()` 返回字段 `done` —— 累计满 `daysToRun` 后引擎在 `advance` 返回后的同一次推进中移除本脚本 (引擎在 `advance` 前与返回后各查一次 `isDone()`，返回后为 `true` 即移除)；`daysToRun < 0` 时恒 `false`，常驻。
-- `REGISTER_MARK`：persistent data 注册标记的键 (`"GearIn_DayAccumulatorScript"`)，**必须**与调用点片段里的键逐字一致 (与模式 A 各自独立，互不复用)。
-- `convertToDays(amount)`：`amount` 是上一帧真实秒数，`clock.convertToDays(amount)` 才是本帧折合的游戏天数，本类 `advance` 第一行就是换算。
-- `daysAccumulator` / `while`(模式 B)：累计满 `tickEveryDays` 个游戏天触发一次例程 (日志 `GearIn daily: routine #N ...`)，余数跨帧保留；单帧跨多个游戏日时逐日补触发。
-- `daysSinceMount`：挂载以来的精确游戏天数，兼作 `daysToRun` 自停判据与日志统计；全部字段 (`int` / `float` / `boolean`) 都是可随存档序列化的基础类型，读档后从存档值继续。
-
-调用点 (工程片段，方法所在类归 [C7-S1] 所有，本节只演示调用，不改动那些文件)：
-
-```java
-    // onGameLoad(boolean newGame) 内新增本节注册块 (GearInModPlugin 归 C7-S1 所有)。
-    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInCalendarDayScript.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInCalendarDayScript.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInCalendarDayScript());
-    }
-    if (!Global.getSector().getPersistentData().containsKey(GearInDayAccumulatorScript.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInDayAccumulatorScript.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInDayAccumulatorScript());
-    }
-    // 可选冗余查重 (C7-S1 建议：hasScript 与 persistent data 门互为冗余)：
-    if (!Global.getSector().hasScript(GearInCalendarDayScript.class)) {
-        Global.getSector().addScript(new GearInCalendarDayScript());
-    }
-    if (!Global.getSector().hasScript(GearInDayAccumulatorScript.class)) {
-        Global.getSector().addScript(new GearInDayAccumulatorScript());
-    }
-```
-
-(标记段与查重段只取一段即满足 "不重复注册"；两段同留时查重段会在标记段之后补注册，不会叠加，但演示时建议只保留标记段，避免混淆。)
-
-每个注册项必须用各自的 persistent data 键做标记
-
-本节两个类各持一个 `REGISTER_MARK`，且不要并入插件已有的 `CLASS_MARK` 标记 (该键在新档首次进入时就已置位，标记内的注册对旧档永远不会再执行)。
-
-想演示周期与自停，在注册前先设参数 (模式 B 专用；模式 A 无参数)：
-
-```java
-    GearInDayAccumulatorScript script = new GearInDayAccumulatorScript();
-    script.setTickEveryDays(1);  // 每 1 个游戏日一次例程 (默认)
-    script.setDaysToRun(30);     // 约 30 个游戏日 (约 300 真实秒) 后自停
-    Global.getSector().addScript(script);
-```
-
-演示周期与自停
-
-先 `setTickEveryDays` / `setDaysToRun` 再 `addScript`；该实例不经过 persistent data 标记，仅用于演示，看完记得移除，避免与常驻实例的日志混淆。
-
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行，沿用 [C6-S1])：
-
-```text
-gradle jar
-```
-
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/campaign/` 下两个脚本类的 class 条目 (可用 `jar tf` 核对)。
+当 `daysSinceMount >= daysToRun` 时，脚本先写出完成日志，再把 `done` 设为 `true`。这一帧的 `advance()` 返回后，`CampaignEngine` 的第二次 `isDone()` 检查会移除脚本；下一帧不会再进入该对象。`hasScript(GearInDayAccumulatorScript.class)` 随后应返回 `false`。
 
 ## 验证方案
 
-前置数据：已有 MOD 布局 [C6-S1]、`GearInModPlugin` ([C7-S1]，含本节调用点片段) 与两个脚本类。
+前置数据：已启用包含 [C14-S1] 代码的 GearIn MOD，拥有可保存的测试存档；游戏验证使用日志和脚本列表观察结果。
 
-1. 构建游戏 MOD：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`，并核对 `jar tf jars/GearIndustry.jar` 含两个脚本类的 class 条目。
-2. 新建生涯，在 `starsector.log` 中观察两个脚本的周期记录。
-3. 暂停与加速对照：生涯中按空格暂停 20 秒以上，再按住 Shift 约 10 秒。
-4. 保存并读档：确认注册不重复、累计值从存档继续。
-5. 进入任意遭遇战再返回：确认战斗期间日志停止、回生涯后继续。
-6. 自停演示：把 `daysToRun` 设为 30 重新构建，挂载约 300 真实秒。
+1. 编译包含 [C14-S1] 代码的 MOD，确认 Java 编译完成。
+2. 启动游戏并进入测试存档，在 `onGameLoad()` 注册脚本后搜索 `GearIn daily` 日志。
+3. 正常推进约一个游戏日，记录一次 `routine #` 日志及 `since mount` 数值。
+4. 按空格暂停至少 20 个真实秒，观察日志和生涯日期；随后解除暂停。
+5. 使用加速或调试推进制造一次跨越多个游戏日的 `advance()` 调用，比较该次 `routine #` 增量。
+6. 保存并重新载入存档，比较读档前后的 `since mount` 与 `routine #`。
+7. 继续推进到累计 30 个游戏日，搜索 `GearIn daily: done`，再检查 `hasScript(GearInDayAccumulatorScript.class)`。
+8. 使用独立 transient 脚本片段注册一个探针，保存并重新载入，确认它需要在读档回调中重新注册。
+9. 在实体脚本测试中移除附着实体，观察 `cleanup()` 的调用边界，并与 `isDone()` 自动移除区分。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/campaign/GearInCalendarDayScript` 与 `GearInDayAccumulatorScript` 两个脚本类的 class 条目。
-- **新建生涯**：`starsector.log` 出现 `GearIn calendar: new day 206.3.3` 与 `GearIn daily: routine #1 at 206.3.3 | since mount=1.0 game days`；随后每 10 真实秒 (未暂停、未加速) 各出现一次：`GearIn calendar: new day ...` (模式 A，日期逐日前进) 与 `GearIn daily: routine #N ...` (模式 B，`since mount` 逐日 +1.0)。挂载点约为 206.3.2 (新档初始 206.1.1，推进窗口 60.2 游戏日)。
-- **暂停 (空格)**：等待 20 秒以上无新日志 (脚本冻结、时钟冻结)；恢复后继续，`since mount` 不因暂停丢失进度。
-- **加速 (按住 Shift)**：日志频率约翻倍 (`campaignSpeedupMult = 2`，每帧推进两次)，约每 5 真实秒各一次。
-- **读档**：不重复注册 (两个 `REGISTER_MARK` 标记已置位、`hasScript` 命中)；`since mount` / `routine #` 从存档时的累计值继续 (字段随档)，不出现新的 `routine #1`。
-- **战斗**：进入战斗期间无任何日志 (生涯引擎冻结)；回生涯后继续。
-- **自停 (`daysToRun = 30`)**：挂载约 300 真实秒后出现 `GearIn daily: done, isDone()=true after 30.0 game days`；之后不再有日志，引擎在置位后的同一帧从 `scripts` 列表移除了该脚本 (可验证 `Global.getSector().hasScript(GearInDayAccumulatorScript.class)` 为 `false`)。
-- **退出到主菜单**：脚本停止推进 (生涯状态不再运行)；回到主菜单后再进档 (读档)，行为与读档一行相同。
-- 启动与游玩期间没有由 `gear_in` 引起的 `ERROR`。
+- Java 编译完成，且没有加载期类缺失或方法签名错误；
+- 未暂停时每累计 `1.0` 个游戏日增加一次 `routineCount`，日志包含 `GearIn daily: routine #N`；
+- 暂停期间日期、`since mount` 和例程日志均停止；
+- 单帧跨越多个周期时，`while` 为每个完整周期各增加一次次数，余量继续保留；
+- 读档后累计字段从保存值继续，不重新产生 `routine #1`；
+- 达到 `30.0` 个游戏日后出现完成日志，`isDone()` 变为 `true`，脚本从普通列表移除；
+- transient 探针读档后不自动存在，重新注册后才继续推进；
+- `cleanup()` 只对应实体移除路径，普通星区脚本结束时不调用该方法。
 
 ## 故障分析
 
-- **脚本没有产生任何日志**：脚本没有通过 `addScript` 注册。
+- **脚本每次读档后出现两份日志**：注册入口无条件调用 `addScript()`，而普通脚本实例已经随存档恢复。
 
-    - **解决方案**：把注册放在 `onGameLoad` 或 `onNewGame` 的独立持久标记块中。
+    - **解决方案**：在 `onGameLoad()` 使用 `hasScript(GearInDayAccumulatorScript.class)`，只在列表缺少实例时加入新对象。
 
-- **`onApplicationLoad` 抛出空指针异常**：该阶段尚无生涯 sector，注册代码解引用了 `Global.getSector()`。
+- **脚本没有任何日志**：脚本没有进入星区脚本列表，或注册发生在 `Global.getSector()` 尚未建立的应用加载阶段。
 
-    - **解决方案**：将生涯注册移到游戏载入回调，重启。
+    - **解决方案**：把注册放在 `onGameLoad()` 或 `onNewGame()`，并在注册后检查 `hasScript()`。
 
-- **按天计算的逻辑快了约 10 倍**：代码直接把 `advance` 的 `amount` 当作游戏天数。
+- **周期速度约快十倍**：`advance()` 把真实秒 `amount` 直接当成游戏天。
 
-    - **解决方案**：先调用 `clock.convertToDays(amount)`。
+    - **解决方案**：先调用 `Global.getSector().getClock().convertToDays(amount)`，再把结果加入天数累加器。
 
-- **`advance` 从未执行**：`isDone()` 初始就返回 true，引擎在推进前移除了脚本。
+- **单帧跨过三天却只执行一次**：周期判断使用 `if`，一次回调只消耗一个周期。
 
-    - **解决方案**：初始返回 false，只在完成条件成立时置位。
+    - **解决方案**：使用 `while (daysAccumulator >= tickEveryDays)`，每次循环扣除一个周期并保留余量。
 
-- **调用 `removeScript` 后日志仍在继续**：传入对象不是注册时的同一实例。
+- **暂停时仍然累计游戏天**：脚本的 `runWhilePaused()` 返回了 `true`，或逻辑累计的是原始 `amount`。
 
-    - **解决方案**：保存并移除原实例，或按精确类调用 `removeScriptsOfClass`。
+    - **解决方案**：暂停敏感的生涯逻辑返回 `false`，并始终通过生涯时钟换算时间。
 
-- **暂停后两种计时结果分离**：`runWhilePaused()` 允许 `advance` 继续收到真实秒数，但生涯时钟保持冻结。
+- **脚本一直存在，完成日志却出现了**：`advance()` 设置了完成条件，但 `isDone()` 没有返回同一个 `done` 字段。
 
-    - **解决方案**：暂停敏感逻辑使用时钟换算，暂停期间必须推进的界面逻辑才累计原始 `amount`。
+    - **解决方案**：让 `isDone()` 返回 `done`，由引擎在回调返回后自动移除脚本。
 
-- **单帧跨越多天却只触发一次**：日期键每帧只比较一次，不会补齐中间日期。
+- **transient 脚本读档后消失**：脚本注册在 transient 列表，而该列表不写入存档。
 
-    - **解决方案**：需要逐日执行时改用带 `while` 的天数累加器。
+    - **解决方案**：把需要跨档保存的逻辑注册到 `addScript()`；临时逻辑在每次读档回调中重新调用 `addTransientScript()`。
 
-- **保存或读档时脚本字段报错**：脚本保存了 UI、播放器等引擎句柄。
+- **保存或读档时出现序列化错误**：脚本字段持有 UI、声音播放器或其他瞬态引擎句柄。
 
-    - **解决方案**：字段只保留可序列化状态，瞬态句柄标记为 `transient` 并在读档后重建。
-
-- **读档后 transient 脚本消失**：`addTransientScript` 注册项不会随存档恢复。
-
-    - **解决方案**：常驻逻辑改用 `addScript`，临时逻辑则在读档回调重新注册。
-
-- **旧存档始终没有新脚本**：注册复用了已经置位的其他功能标记。
-
-    - **解决方案**：为该脚本使用独立的 `REGISTER_MARK`。
-
-- **暂停期间倒计时停住**：倒计时读取生涯时钟，暂停时该时钟不会前进。
-
-    - **解决方案**：需要真实时间倒计时就累计 `amount`。
-
-- **进入战斗后生涯脚本停止输出**：生涯推进循环在战斗期间暂停。
-
-    - **解决方案**：战斗期逻辑交给战斗插件承担。
+    - **解决方案**：字段只保存可序列化的业务状态，瞬态对象使用 `transient` 字段并在运行时重建。
 
 ## 总结
 
-本节把 `EveryFrameScript` 从会用推进到讲透，全部机制围绕一条主线：脚本在每帧被唤醒、按时钟与累加器决策、随存档往返。排错时只需核对脚本注册了吗 (persistent data 标记是否置位)、换算对了吗 (`amount` 是否经 `convertToDays`)、字段能随档吗 (是否全部可序列化) 这三个问题。三个答案定位完毕，剩下的通常只是时序或数值问题。
-
-值得记住的判断：暂停就是停表，时钟、日历与 `convertToDays` 累加全部冻结，真实时间倒计时只能靠 `amount` 累计；日历按整游戏秒前进、累加器保留小数，短会话一致、长会话漂移，日历事件用跨日检测、精确统计用累加器；`scripts` 随存档保存、`transientScripts` 读档后必然清空，一次性注册必须用 persistent data 标记；`isFastForwardIteration()` 可探测加速帧的第 2 次及以后的迭代 (`campaignSpeedupMult = 2`)。
-
-同一套生涯对象还有另一条驱动轴 —— 事件在状态变化时被同步唤醒 (监听器与事件派发)。两条轴的推进时机、存档边界与生命周期清理需要与本节的 persistent data 标记和阶段语义对齐。
+`EveryFrameScript` 的行为由三层共同决定：引擎按帧调用接口，脚本用时钟换算和累加器保存进度，注册容器决定对象是否跨存档存在。周期脚本需要保留小数余量，用 `while` 处理单帧跨周期，并在完成后通过 `isDone()` 让引擎清理。排查时沿注册列表、时间单位、暂停门控、完成字段和存档容器依次核对，就能区分没有运行、运行过快、读档消失和重复运行。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.EveryFrameScript`：生涯按帧脚本的三方法约定 (`isDone` / `runWhilePaused` / `advance`)。
-- `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：实体级脚本的清理钩子 (附着实体从生涯引擎移除时调用)。
-- `com.fs.starfarer.api.campaign.SectorAPI`：脚本注册、查重与 persistent data 入口 (`addScript` / `addTransientScript` / `hasScript` / `getScripts` / `getPersistentData` / `isFastForwardIteration`)。
-- `com.fs.starfarer.api.campaign.CampaignClockAPI`：时间换算与日历接口 (`convertToDays` / `convertToMonths` / `convertToSeconds` / `getTimestamp` / `getElapsedDaysSince` / `createClock`)。
-- `com.fs.starfarer.api.util.IntervalUtil`：公开间隔器 (`advance` 每帧调用、`intervalElapsed` 仅真一次)。
-- `data/config/settings.json`：`campaignSpeedupMult`(加速倍率，取值为 2)。
+- `com.fs.starfarer.api.EveryFrameScript`：`isDone()`、`runWhilePaused()`、`advance(float amount)` 的公开契约；
+- `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：实体移除时的 `cleanup()` 钩子；
+- `com.fs.starfarer.api.campaign.SectorAPI`：`addScript`、`addTransientScript`、`removeScript`、`hasScript` 和脚本列表；
+- `com.fs.starfarer.api.campaign.CampaignClockAPI`：`convertToDays` 与日历读取；
+- `com.fs.starfarer.api.campaign.Global`：取得当前生涯 `SectorAPI` 的全局入口；
+- `D:\Starsector\starsector-core\deobf\sources\com\fs\starfarer\campaign\CampaignEngine.java`：脚本快照遍历、暂停门控和前后两次 `isDone()` 检查。
 
 ## 完整最小例
-
-::: details 完整成品：GearInCalendarDayScript
-
-```java
-package data.scripts.gearin.campaign;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignClockAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
-
-/**
- * 每日/周期脚本模式 A：日历跨日检测。dateKey = cycle * 10000 + month * 100 + day，
- * 把日历日期折叠为整数键，与上次比较，变化即 "新的一天"；每个游戏日恰好触发一次
- * (首帧只初始化不打印)。单帧跨多个游戏日 (加速、新档推进) 时一帧只报一次 ——
- * 日历事件一帧至多一次是正常行为，需要逐日补触发的逻辑请改用天数累加器
- * (本单元 GearInDayAccumulatorScript)。runWhilePaused() 返回 false；字段只有
- * int，可随存档序列化 (XStream 存档边界)，脚本随存档保存、读档后继续。
- *
- * 注册入口：生涯回调 onGameLoad，注册前用 persistent data
- * 键 REGISTER_MARK 做一次性门控。
- */
-public class GearInCalendarDayScript implements EveryFrameScript {
-
-    /** 存档持久化标记：本脚本是否已在该存档注册过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_CalendarDayScript";
-
-    private static final Logger LOG = Global.getLogger(GearInCalendarDayScript.class);
-
-    /** 跨日判定键 (cycle * 10000 + month * 100 + day)；-1 表示尚未初始化。 */
-    private int lastDateKey = -1;
-
-    @Override
-    public boolean isDone() {
-        return false; // 常驻脚本：日历事件逐日触发，永不结束
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        SectorAPI sector = Global.getSector();
-        CampaignClockAPI clock = sector.getClock();
-
-        // 本模式只看日历日期，不直接用 amount(时间换算与逐日补触发见 GearInDayAccumulatorScript)。
-        int dateKey = clock.getCycle() * 10000 + clock.getMonth() * 100 + clock.getDay();
-        if (dateKey != lastDateKey) {
-            if (lastDateKey != -1) {
-                LOG.info(String.format("GearIn calendar: new day %s", clock.getShortDate()));
-            }
-            lastDateKey = dateKey;
-        }
-    }
-}
-```
-
-:::
 
 ::: details 完整成品：GearInDayAccumulatorScript
 
@@ -464,47 +201,20 @@ import com.fs.starfarer.api.campaign.CampaignClockAPI;
 import com.fs.starfarer.api.campaign.SectorAPI;
 
 /**
- * 每日/周期脚本模式 B：天数累加器。amount 是上一帧真实秒数，必须经
- * clock.convertToDays(amount) 换算成游戏天 (10 真实秒 = 1 游戏日)；
- * 余数跨帧保留；单帧跨多个游戏日 (加速、新档推进) 时 while 逐日补触发；
- * daysToRun >= 0 时累计满该游戏天数后 isDone() 返回 true，引擎在置位同一次推进中
- * 自动移除；全部字段可随存档序列化 (XStream 存档边界)，读档后继续。
- * 注册入口：onGameLoad 的 persistent data 门内 (REGISTER_MARK 一次性门控)。
+ * 按游戏天累计的周期脚本：每 1 个游戏日执行一次，累计 30 个游戏日后结束。
+ * amount 是上一帧真实秒数，必须经 clock.convertToDays(amount) 换算；
+ * daysAccumulator 保留周期余量，while 负责补齐单帧跨越的多个周期。
  */
 public class GearInDayAccumulatorScript implements EveryFrameScript {
 
-    /** 存档持久化标记：本脚本是否已在该存档注册过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_DayAccumulatorScript";
-
     private static final Logger LOG = Global.getLogger(GearInDayAccumulatorScript.class);
 
-    /** 挂载以来的游戏天数 (精确累加，保留小数)；随存档序列化，读档后继续累计。 */
     private float daysSinceMount = 0f;
-
-    /** 例程周期余数：累计满 tickEveryDays 个游戏天触发一次每日例程。 */
     private float daysAccumulator = 0f;
-
-    /** 已执行的每日例程次数 (跨存档累计)。 */
     private int routineCount = 0;
-
-    /** 演示参数：每多少个游戏天执行一次例程；默认 1(每日一次)。 */
-    private int tickEveryDays = 1;
-
-    /** 演示参数：最多运行多少游戏天后自停；< 0 表示常驻不停止。 */
-    private int daysToRun = -1;
-
-    /** 完成标记：isDone() 返回 true 后引擎在置位同一次推进中自动移除本脚本。 */
+    private final float tickEveryDays = 1.0f;
+    private final float daysToRun = 30.0f;
     private boolean done = false;
-
-    /** 修改例程周期；周期至少为 1 个游戏天。 */
-    public void setTickEveryDays(int tickEveryDays) {
-        this.tickEveryDays = Math.max(1, tickEveryDays);
-    }
-
-    /** 修改运行天数上限；改回 -1 恢复常驻。 */
-    public void setDaysToRun(int daysToRun) {
-        this.daysToRun = daysToRun;
-    }
 
     @Override
     public boolean isDone() {
@@ -520,13 +230,10 @@ public class GearInDayAccumulatorScript implements EveryFrameScript {
     public void advance(float amount) {
         SectorAPI sector = Global.getSector();
         CampaignClockAPI clock = sector.getClock();
-
-        // amount 是上一帧真实秒数；经时钟换算才是本帧的游戏天数 (10 真实秒 = 1 游戏日)。
         float daysThisFrame = clock.convertToDays(amount);
         daysSinceMount += daysThisFrame;
         daysAccumulator += daysThisFrame;
 
-        // while 而非 if：单帧跨多个游戏日时逐日补触发；余数保留在 daysAccumulator 里继续累计。
         while (daysAccumulator >= tickEveryDays) {
             daysAccumulator -= tickEveryDays;
             routineCount++;
@@ -535,7 +242,7 @@ public class GearInDayAccumulatorScript implements EveryFrameScript {
                     routineCount, clock.getShortDate(), daysSinceMount));
         }
 
-        if (daysToRun >= 0 && daysSinceMount >= daysToRun) {
+        if (daysSinceMount >= daysToRun) {
             LOG.info(String.format(
                     "GearIn daily: done, isDone()=true after %.1f game days", daysSinceMount));
             done = true;

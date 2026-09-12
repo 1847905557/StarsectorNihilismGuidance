@@ -1,0 +1,4 @@
+id,name,order,tier,reqPoints,reqPointsPerExtraSkill,description,author,combat officer,admiral,admin,tags,icon,
+GearIn_captain_mobility,Captain Mobility,1025,2,1,0,"Improve the speed and handling of the piloted ship.","GearIndustry",TRUE,,,,graphics/icons/skills/helmsmanship.png,
+GearIn_fleet_coordination,Fleet Coordination,2025,2,1,0,"Improve fleet movement and hyperspace fuel economy.","GearIndustry",,TRUE,,,graphics/icons/skills/navigation.png,
+GearIn_colony_governance,Colony Governance,3025,2,1,0,"Improve stability and income at the governed market.","GearIndustry",,,TRUE,,graphics/icons/skills/industrial_planning.png,

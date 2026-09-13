@@ -101,7 +101,7 @@ boolean readyAfterRefresh = market.getMemory().getBoolean(
 
 ## 为标记实体选择交互对话框
 
-交互 picker 接收玩家正在接触的 `SectorEntityToken`。本节使用 `$GearIn_dialog_target` 标记具体实体；判断读取 `getMemoryWithoutUpdate()`，避免只为决定 picker 就触发另一轮 facts 更新。
+交互 picker 接收玩家正在接触的 `SectorEntityToken`。本节使用 `$GearIn_dialog_target` 标记具体实体；判断读取 `getMemoryWithoutUpdate()`，避免只为决定 picker 就触发另一轮 facts 更新。对话会话的完整 API、三个面板和关闭语义由 [C15-S1] 负责，本节只保留 picker 如何把目标交给插件的桥接关系。
 
 ```java
 if (interactionTarget == null
@@ -116,7 +116,7 @@ return new PluginPick<>(
 
 测试对象需要在玩家开始交互前写入标记。picker 只读取当前 Memory，不会自行创建或修改目标标记。
 
-`GearInTargetDialog` 保存 picker 传入的目标。初始化时显示目标 ID、对话标记和目标市场的 ready fact，并提供关闭选项。目标没有市场时 ready 状态为 `false`；目标或市场读取均经过判空。选项分支使用稳定的 `optionData`，显示文本只负责界面呈现。
+`GearInTargetDialog` 保存 picker 传入的目标。初始化时显示目标 ID、对话标记和目标市场的 ready fact，并提供关闭选项。目标没有市场时 ready 状态为 `false`；目标或市场读取均经过判空。选项分支使用稳定的 `optionData`，显示文本只负责界面呈现。这个类是 picker 返回插件的最小桥接示例；需要完整交互会话时使用 [C15-S1] 的 `GearInConversationDialog`。
 
 ## 为标记舰队选择战场创建插件
 

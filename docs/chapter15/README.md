@@ -2,7 +2,7 @@
 
 本章技术基线：Starsector `0.98a-RC8`。
 
-本章先制作能够进入酒吧、完成交互并正确收尾的事件，再把人物、市场、情报、阶段图和 Rules 组合为完整生涯任务。玩家看到的是两段对话，代码需要维护的是一整套可保存、可回滚的生命周期。
+本章从 `InteractionDialogAPI` 会话和三个面板开始，接着实现普通对话插件、Java `BarEvent`、`BaseHubMission` 阶段任务，以及通过 `bar_events.csv` 接入 `HubMissionWithBarEvent` 的酒吧任务，逐步建立从即时选项到可保存生涯状态的完整链路。
 
 ## 本章各节
 

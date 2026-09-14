@@ -114,7 +114,7 @@ GearIn_combat_desc_forging,SHIP,"锻件-级相位护卫舰围绕一门中型实�
 - **弯引号**：加载时会把弯引号 (" " ' ') 替换为直引号，但尽可能不要利用这一特性。
 - **键唯一**：`id + type` 在同一文件内**必须**唯一，否则加载期抛异常。
 - 也不要重定义原版或其他 MOD 已存在的 `id + type` 组合：跨文件合并时，无法稳定决定覆盖顺序。
-- 需要整体替换某个数据文件时，支持在 `mod_info.json` 的 `replace` 数组里声明 (文件读取语义见 [C16-S2])。
+- 需要整体替换某个数据文件时，支持在 `mod_info.json` 的 `replace` 数组里声明 (文件读取语义见 [C16-S1])。
 
 原版参考行 (`Starsector/starsector-core/data/strings/descriptions.csv`，仅观察不修改)：
 

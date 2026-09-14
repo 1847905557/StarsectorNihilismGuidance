@@ -2,7 +2,7 @@
 
 本章技术基线：Starsector `0.98a-RC8`。
 
-规则表决定何时命中，Rules 命令决定命中后执行什么，内存决定结果如何保存，Rules 系统按这三步工作。本章沿这条主线依次讲解 `rules.csv` 七列语义与匹配、常用 trigger 场景、rulecmd 命令与 Token，以及 MemoryAPI 与持久化。
+规则表先把数据装入 Rules 引擎，对话再用选项、分数和 fire 方法组织结果；原版生涯场景提供实际 trigger，自定义命令扩展脚本能力，Memory 保存运行状态。本章沿这条链路依次讲解 `rules.csv` 的结构与加载、Rules 对话编排、原版场景接入、rulecmd 命令，以及 `MemoryAPI` 与持久化。
 
 ## 本章各节
 

@@ -21,7 +21,7 @@ import {
   Trash2,
   Undo2,
   X,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { defineComponent, h, onBeforeUnmount, ref, watch, type Component } from 'vue'
 import { defineClientConfig, usePageData } from 'vuepress/client'
 

@@ -18,7 +18,7 @@
 
 ## 前置知识
 
-- [C16-S1] 的文件读取概念、MOD 相对路径和 `modId`；
+- [C17-S1] 的文件读取概念、MOD 相对路径和 `modId`；
 - [C1-S1] 的 JSON 基础与 UTF-8 无 BOM 要求；
 - [C7-S2] 的 `Global.getSettings()` 和日志入口。
 
@@ -104,7 +104,7 @@ String serviceId = services.getString("serviceId");
 int interval = services.optInt("interval", 10);
 ```
 
-JSON 路径继续遵守 [C16-S1] 的资源路径规则。引擎在读取前拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径。`getString` 在字段缺失时抛出异常；类型不符时静默转为字符串 (`getInt`/`getBoolean` 等才有类型检查)。允许字段缺失时使用 `optString`、`optInt` 等入口并提供明确的替代值。
+JSON 路径继续遵守 [C17-S1] 的资源路径规则。引擎在读取前拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径。`getString` 在字段缺失时抛出异常；类型不符时静默转为字符串 (`getInt`/`getBoolean` 等才有类型检查)。允许字段缺失时使用 `optString`、`optInt` 等入口并提供明确的替代值。
 
 ### 自有 JSON 最小实例
 

@@ -1,385 +1,269 @@
-# 使用 Rules 制作对话
+# 组织 Rules 规则表
 
-本节使用 `data/campaign/rules.csv` 制作一个由规则表驱动的对话框。规则会完成触发匹配、条件判断与结果执行，并为 [C16-S3] 的自定义命令和 [C16-S4] 的内存状态提供基础。
+`data/campaign/rules.csv` 是 Rules 系统的数据入口。加载器先按表头把一行拆成七个字段，再把字段内部的换行解释为条件、脚本、文本变体或选项。本节沿这条读取顺序讲清每一列，随后处理合并与加载错误，最后用两条 `OpenCommLink` greeting 验证数据已经进入引擎。
 
 *本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：~30 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 在 `rules.csv` 中编写并合并自定义对话规则；
-- 使用 trigger、条件表达式与 `FireBest` 或 `FireAll` 选择规则；
-- 通过 script、text 和 options 生成对话内容与选项；
-- 创建规则驱动的交互入口并验证完整对话；
-- 根据匹配、文本和选项结果定位 Rules 故障。
+- 说明 `rules.csv` 七列各自生成什么运行时数据；
+- 在多行单元格中正确使用引号、换行和字段注释；
+- 判断同路径合并、`replace` 和重复 ID 对加载结果的影响；
+- 从日志区分数据未加载、规则未注册和表达式语法错误；
+- 用两条独立势力 `OpenCommLink` 规则验证加载结果。
 
 ## 前置知识
 
-- [C7-S1] 的 `onGameLoad` 生命周期与注册时机；
-- [C10-S1] 的 `addScript` 与持久数据一次性判断；
-- [C14-S3] 的交互对话框生命周期与 `showInteractionDialog`；
-- [C16-S3] 的 `BaseCommandPlugin` 职责与原版命令；
-- [C16-S4] 的 `MemoryAPI` 过期、持久化与记忆键分组解析。
+- [C14-S3] 的交互对话框生命周期；
+- [C15-S1] 的 `InteractionDialogAPI` 与选项分支；
+- [C17-S3] 的 CSV 表头、单元格和合并读取。
 
-## 术语
+## 从表头建立规则对象
 
-本节先固定规则系统的六个核心词；API 类名保留源码大小写。其中规则命令的实现见 [C16-S3]，Rules 内存的完整语义见 [C16-S4]：
-
-- **规则 (rule)**：API 名保留 `RuleAPI`。`rules.csv` 中的一行就是一条规则：id、trigger、条件列表、脚本列表、文本变体列表、选项列表。
-- **触发器 (trigger)**：规则的字符串分组 key (`trigger` 列)。同一触发器的规则构成一个候选池；对话插件以触发器名为入口发起匹配。
-- **条件 (condition)**：API 名保留 `ExpressionAPI`。规则命中前必须全部为真的表达式行 (`conditions` 列)；条件也在匹配阶段被求值。
-- **结果 (result)**：规则命中后发生的事，由三列共同描述 —— `script` (脚本表达式)、`text` (对话文本)、`options` (对话选项)。
-- **规则命令 (rule command)**：类名保留 `BaseCommandPlugin`；本节把它们当作内置命令使用，自定义命令的编写与注册见 [C16-S3]。
-- **Rules 内存 (memory)**：API 名保留 `MemoryAPI`；本节只使用记忆键语法，内存生命周期见 [C16-S4]。
-
-## 梳理 Rules 数据关系
-
-### rules.csv 列语义速查表
-
-词义固定后，从数据入口开始，沿加载、匹配、执行三条链看机制。规则表只有一份来源：**所有** `data/campaign/rules.csv`(原版 + 全部启用 MOD 各自一份，加载时合并)。原版表头为七列 (`data/campaign/rules.csv` 首行；加载器按列名读取，列顺序即表头顺序)：
-
-| 列 | 加载方式 | 语义 |
-|---|---|---|
-| `id` | `getString("id")` | 规则唯一标识；id 以 `#` 开头 → 整行跳过；空 id → 行跳过 |
-| `trigger` | `getString("trigger")` | 规则所属触发器名 (分组 key) |
-| `conditions` | `getString("conditions")`：去 `\r`、trim、按 `\n` 拆行，每行一条条件表达式 | 匹配阶段必须全部为真 |
-| `script` | `getString("script")`：去 `\r`、trim、按 `\n` 拆行，每行一条脚本表达式 | 命中后按顺序执行的结果 |
-| `text` | `optString("text", null)`：去尾部空白、按 `\nOR\n` 拆段 | 文本变体列表；`pickText()` 随机取一条展示 |
-| `options` | `getString("options")`：去 `\r`、按 `\n` 拆行 | 选项列表：每行 `id:text` 或 `order:id:text` |
-| `notes` | **不读取** (加载流程没有该列的取值入口) | 备注，供人阅读 |
-
-`conditions` / `script` / `options` 中 `#` 开头的行是注释行；空行跳过。
-
-加载期还会对只出现一次的变量向**标准输出**打印 `WARNING: variable [...] only used once; rule id: [...]`(`System.out.println`，不进 `starsector.log`，且 `tag:` / `$market.mc:` 变量排除)。
-
-> 规则系统是纯数据驱动的：MOD 侧不需要任何注册文件，把行写进自己的 `data/campaign/rules.csv` 就会被加载器自动合并 —— 原版大量对话、选项与事件文本都是同一套机制的产物。
-
-> 这也是为什么确认规则是否真的被读进来，要看加载日志而不是找报错。
-
-### 加载链与合并语义
-
-行与列的含义定了，下一步是这些行如何进入游戏。
-
-1. **加载时机**：CSV spec 加载期，`loadStarmap` 末尾调用 `Rules.loadRules`，一次游戏启动只加载一次，规则表不属于存档数据。
-2. **合并读取**：文本读取工具的 `readCSV(["id"], "data/campaign/rules.csv", true, true)`：
-    - 打开原版与所有启用 MOD 的同路径资源；某个 MOD 把该路径列入 `replace` 时整文件替换；
-    - **同文件**内重复 id → `RuntimeException("Duplicate key [...] while loading [...]")`，加载崩溃；
-    - **跨文件**重复 id → 按资源处理顺序先到先得，后处理文件中的同 id 行**静默跳过** (无任何报错)；
-    - 每份文件读取前过 `replaceSmartQuotes`(`readCSV` 第 4 参为 true，spec 加载期执行 `replaceSmartQuotes`)。
-3. **逐行解析与严格校验** (规则文件加载流程的校验，错误均为加载期 `RuntimeException`)。
-4. **注册入口**：MOD 侧不需要任何注册文件：把行写进自己的 `data/campaign/rules.csv`，加载器自动合并；`starsector.log` 逐条打印 `Loading rule: <id>` 与 `Loading CSV data from [...]`，是确认规则是否真的被读进来的第一手证明。
-
-### 匹配链
-
-行被加载后，下一步是匹配，要回答对话插件发起一次触发时哪些规则会被选中。匹配入口是 `RulesAPI.getAllMatching(currentRule, trigger, dialog, memoryMap)` 与 `RulesAPI.getBestMatching(...)` 两个公开面，都在 `com.fs.starfarer.api.campaign.rules.RulesAPI` 上；`SectorAPI.getRules()` 可以拿到 `RulesAPI`，生涯引擎内是包装实现。
-
-规则引擎的匹配流程如下：
-
-1. `getRulesForTrigger(trigger)` 按触发器名取候选池 (未知触发器用到时才建空列表)。
-2. 逐条规则：跳过 id 等于当前规则 id(currentRule) 的规则，防止自再入；逐条求值条件 (表达式判真)，首个失败即短路。
-3. `getRulesFor`：返回全部条件通过者，供 `FireAll` 作为候选集。
-4. `getBestMatchingRule`：通过条件分数求和 (每条条件默认 1 分，`score:` 可改) + 规则 `scoreBonus` (CSV 无此列，恒 0) → 只保留最高分候选 → 同分用 `WeightedRandomPicker` 随机取一条 → 返回单条或 `null` (无匹配)。
-5. `RulesAPI.setRandomForNextRulePick(random)` 只影响下一次 pick，用后即清，跨多次匹配复用随机源会改变文本选择语义。
-
-### 条件表达式语法
-
-匹配靠逐条求值条件，条件与结果都写成表达式。每条条件/脚本行是一个表达式。
-
-token 化规则 (`Misc.tokenize`，`com.fs.starfarer.api.util.Misc`)：以 `$` 开头表示变量；引号包裹表示字面量 (含空格/特殊字符)；`\` 转义；操作符独立成 token。
-
-操作符全集：`=`(赋值)、`==`、`!=`、`>`、`>=`、`<`、`<=`、`!`(取反)、`++`、`--`。
-
-### 表达式形式速查表
-
-| 形式 | 示例 | 语义与归属 |
-|---|---|---|
-| 纯变量 (判真) | `$tag:warning_beacon` | `IS` 语义：记忆值 null → false；字符串 `"true"`(去空白、忽略大小写) 或 `Boolean.TRUE` → true；其余 (含 `"1"`、`"false"`)→ false |
-| 比较 | `$option == GearIn_rules_intro_leave`、`$entity.relativeStrength >= 0`、`$faction.id == independent` | `==`/`!=`/`<`/`<=`/`>`/`>=`；字符串比较大小写敏感；数值经 `Memory.parseFloat`；`==` 双侧都 null → true、null 与字面量 `"null"` 互等、`0` 与 `"false"`/`"null"` 互等 |
-| 取反 | `!$var`、`!Command args` | 变量判反 / 命令结果取反；`!` 的运算对象必须是变量或命令 |
-| 赋值 | `$menuState = fleetConvMain 0` | `=` 只能出现在**脚本列** (条件列出现 → 加载崩溃)；第三 token 为过期天数 (可选，`0` 表示立即过期语义；过期天数的完整语义属 [C16-S4]) |
-| 增减 | `$GearIn_rules_intro_visits++`、`$x--` | 浮点自增/自减；第三 token 为过期天数 (原版脚本列含 595 处 `++`、16 处 `--`) |
-| 命令 | `RollProbability 0.5`、`FireAll PopulateOptions`、`SetShortcut beaconLeave "ESCAPE"` | 首 token 非变量即命令：按 `ruleCommandPackages`(`data/config/settings.json`，5 个包，默认回退 `com.fs.starfarer.api.impl.campaign.rulecmd`) 逐个 `Class.forName` 定位；找不到 → 加载崩溃 `Command [...] not found in packages`；命令执行异常在对话内显示红字段落 (`<异常类>: <消息>`)，dialog 为 null 时重抛 |
-| 分数 | `$temporarilyIgnoreYou score:10` | 行尾字面量 `score:N` 改写该条件分数 (默认 1)，参与 `FireBest` 竞争 |
-
-> 判真很严格：只有字符串 `"true"`(忽略大小写) 与 `Boolean.TRUE` 为真，null、`"1"`、`"false"` 一律为假；比较操作符对字符串大小写敏感。
-
-> 把 `"1"` / `"yes"` 当真值、把记忆键拼错 (如少了 `$tag:` 前缀)，是条件恒假最常见的两个原因。
-
-**变量解析** (`Misc.Token.getVarNameAndMemory`)：`$memkey.name` → 从 `memoryMap` 取 `memkey` 记忆，再读记忆中的 `$name` 键；token 无 `.`(如 `$option`、`$tag:x`)→ 记忆键为 null → 回落 `local` 记忆；两者都找不到 → `RuleException("No memory found for keys: ...")`。
-
-对话插件向 `memoryMap` 装入 `local`(即交互目标记忆或活动人物记忆)、`faction`、`global`、`player`、`market`、`sourceMarket` 等槽位 (活动人物对话时另有 `personFaction`/`entity`)。`$tag:`、`$mc:`、`$friendlyToPlayer` 等 facts 键由 `CoreCampaignPluginImpl` 的 `updateEntityFacts` / `updateMarketFacts` / `updatePersonFacts` / `updateFactionFacts` 钩子写入 (`com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`)；使用 `$tag:xxx` 条件的前提是目标实体确实带该 tag。
-
-### FireBest 与 FireAll 结果执行速查表
-
-规则命中后，结果由内置命令 `FireBest` / `FireAll` (`com.fs.starfarer.api.impl.campaign.rulecmd` 包) 执行，两条路径的对比如下：
-
-| 步骤 | `FireBest` | `FireAll` |
-|---|---|---|
-| 触发名 | `params[0]`(变量则取记忆值)；`params[1]` = keepOptions | 同左；另在实体记忆写 `$fireAllTrigger`(expire 0)，并先 `FireBest` 触发 `FireAllIntercept`，有命中规则即整体拦截 |
-| 选规则 | `getBestMatching`(分数竞争，null → 返回 `false`) | `getAllMatching`(全部通过者，空 → 返回 `false`) |
-| 选项 | 收集 `rule.getOptions()` + 脚本中 `doesCommandAddOptions()==true` 的表达式 → 按 `order`(选项 `order` 字段 / `getOptionOrder`) 排序 → 非 keepOptions 时清空选项面板 → 逐个添加 (选项文本先做 token 替换) | 全部命中规则的选项合并、排序、清空后添加 |
-| 文本 | `addText`：`rule.pickText()` 随机取一条文本变体 → `performTokenReplacement` → `textPanel.addParagraph` | 每条命中规则各执行一次 `addText` |
-| 脚本 | `rule.runScript(dialog, memoryMap)` | 每条命中规则各执行一次 |
-
-`Rule.runScript` 按声明顺序执行脚本表达式，跳过选项型命令 (`doesCommandAddOptions()==true` 的由 `FireBest` / `FireAll` 提前执行)，所以选项型命令即使写在脚本列里，也不会在脚本阶段重复执行。
-
-**文本 token 替换** (`SectorAPI.getRules().performTokenReplacement`)：先汇总所有注册的 `RuleTokenReplacementGeneratorPlugin` 生成的替换表 (默认注册 `CoreRuleTokenReplacementGeneratorImpl`，提供 `$playerName` / `$Playername` / `$marketName` / `$entityName` / `$faction` / `$heOrShe` / `$personRank` / `$personName` 等，`com.fs.starfarer.api.impl.campaign.CoreRuleTokenReplacementGeneratorImpl`)，替换键按长度降序 `replaceAll`；再对 `memoryMap` 各记忆的键做 `$memkey.key` / `$key` 替换 (`Misc.replaceTokensFromMemory`，仅 String/Boolean/Float/Integer 值)。
-
-rulecmd 参数内需要替换时用 `Misc.Token.getStringWithTokenReplacement`。
-
-### 使用方完整流程速查表
-
-机制到这里已经齐全，最后看实际的使用方 —— 对话插件如何把规则变成对话。
-
-| 使用方 | 位置 | 触发方式 |
-|---|---|---|
-| 规则驱动对话插件 `RuleBasedInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl` | 构造器指定初始 trigger(默认 `OpenInteractionDialog`)；`init` 组装 `memoryMap`(`local` 即交互目标记忆或活动人物记忆、`faction`、`global`、`player`、`market`、`sourceMarket`、活动人物时的 `personFaction`/`entity`)→ `fireBest(initialTrigger)` → 无任何选项时加 failsafe `Leave`；玩家点选项 → 本地记忆写 `$option`(expire 0)→ `fireBest("DialogOptionSelected")` → 无匹配规则时文本报 `ERROR: no rule found for option [...]` 并加 failsafe `Exit dialog` |
-| 舰队遭遇对话 `FleetInteractionDialogPluginImpl` | `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl` | `reinit` 用 `getBestMatching(null, "BeginFleetEncounter", ...)` 决定是否给 "Continue" 选项；开通讯 (`OPEN_COMM`) 时内嵌 `RuleBasedInteractionDialogPluginImpl` 并 `fireBest("OpenCommLink")`，无匹配则报 "only get static" |
-| 非对话面板 (规则记忆组装) | 非对话文本面板 (内部实现) | 组装简化 memoryMap 后 `FireBest.fire(...)` 面板文本 trigger(使用例：已选阵营信息面板的 `RelationshipLevelDesc`) |
-
-原版 `rules.csv` 有 10270 条非注释记录，其中 521 条 ID 为空并被跳过；最终加载 9749 条规则，分属 800 个 trigger。大族为：
-
-- `DialogOptionSelected`(6050)；
-- `PopulateOptions` (334)；
-- `PickGreeting`(199)；
-- `OpenCommLink`(183)；
-- `OpenInteractionDialog`(121)；
-- `BeginFleetEncounter`(61)；
-- `MarketPostDock`(32)；
-- `TradePanelFlavorText`(23)。
-
-6050 条 `DialogOptionSelected` 规则都有非空条件：6048 条包含 `$option ==`，另 2 条用状态旗标接管下一次选项选择。
-
-## 规则强度速查表
-
-把引擎的行为边界汇总成一张核对表：必须项违反后加载中止，事实项描述运行时的真实行为；每行都附上违反后的可观察结果。
-
-| 规则 | 强度 | 违反后的可观察结果 |
-|---|---|---|
-| `conditions` 列禁止出现 `=`(赋值) 操作符 (报错文案："rule \[...\] has = ('assignment') operator in its conditions, this is most likely an error") | 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
-| `script` 列禁止出现 `==` 操作符 (加载期校验) | 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
-| 选项 id 禁止以 `$` 开头 (报错文案："Option id starts with $ for rule \[...\]") | 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
-| 条件/脚本引用的命令类必须能在 `ruleCommandPackages`(`data/config/settings.json`) 中找到 | 必须 | 资源加载期 `RuntimeException`(`Command [...] not found in packages:`)，游戏启动中止 |
-| 同一份 `rules.csv` 内规则 id 不得重复 (文本读取工具同文件去重逻辑："Duplicate key \[...\]") | 必须 | 资源加载期 `RuntimeException`，游戏启动中止 |
-| 跨文件重复规则 id：后处理文件的同 id 行静默跳过 (先到先得) | 事实 | 规则不触发且无任何报错；`starsector.log` 中看不到该 id 的 `Loading rule:` 行 |
-| 文本变体分隔符必须独占一行，且严格为 `\nOR\n`(变体按该分隔符切分) | 必须 | 分隔符不匹配时多段文本被当作单条变体整段展示 |
-| `options` 每行必须是 `id:text`(2 段) 或 `order:id:text`(3 段)，按**所有**冒号切分；文本内不得再有冒号 | 必须 | 3 段且首段非数字 → `NumberFormatException` 加载崩溃；3 段以上 → 文本静默截断 (只保留第 3 段) |
-| 选项 id 必须与 `DialogOptionSelected` 规则里的 `$option == <id>` 逐字一致 (含大小写；表达式比较大小写敏感) | 必须 | 点选后无规则匹配：文本面板出现 `ERROR: no rule found for option <id>` + failsafe 选项 (`RuleBasedInteractionDialogPluginImpl`) |
-| `FireAll` 之前会先匹配 `FireAllIntercept` 触发器 (`FireAll`) | 事实 | 拦截规则命中时本次 `FireAll` 被整体跳过 (原版仅 1 条拦截规则，条件是 `$fireAllTrigger == PopulateOptions` 等，不影响自定义 trigger) |
-| 条件列会执行命令：带副作用的 rulecmd 在**匹配阶段**就写状态 (条件求值路径会直接执行命令) | 事实 | 每次匹配 (包括候选失败前已通过的条件) 都执行副作用；写状态应放脚本列 |
-| 同分规则随机挑选 | 事实 | 期望确定性结果时必须用 `score:` 拉开分数差 |
-| `setRandomForNextRulePick` 只影响下一次 pick | 事实 | 跨多次匹配复用随机源会改变文本选择语义 |
-
-## 组装 Rules 对话实现
-
-机制与边界都清楚了，现在把它们组合成最小可运行的一套：一份规则表加一个使用入口，覆盖从加载到对话的完整流程。在既有 MOD 工程布局之上新增：一份 `data/campaign/rules.csv`(含本节拥有的 `GearIn_rules_intro_*` 规则，与其它 MOD 的同路径文件自动合并) 与一个 Java 使用入口类。
-
-不新增其它资源、不修改任何既有文件：
-
-```text
-mods/GearIndustry/
-├── build.gradle
-├── mod_info.json
-├── data\
-│   └── campaign\
-│       └── rules.csv                     # 本节新增：GearIn_rules_intro_* 规则 (本节示例所有权)
-├── src\
-│   └── data/scripts/gearin/rules\
-│       └── GearInRulesIntro             # 本节新增：Java 消费入口 (归本节所有)
-└── jars\
-```
-
-### 配置 Rules 数据
-
-新建 MOD 侧的 `data/campaign/rules.csv`，只写本节拥有的行。命名沿用语义约定：规则 id 为 `GearIn_rules_intro_*`、自定义触发器为 `GearInRulesIntro*`、Java 类 `GearInRulesIntro` 位于包 `data.scripts.gearin.rules`：
+Rules 从 `data/campaign/rules.csv` 的表头识别字段。每个有效数据行生成一个规则对象，列名决定单元格进入哪个字段。列的物理顺序可以随表头调整；一旦表头确定，下面每行都要保持相同的列边界。
 
 ```csv
 id,trigger,conditions,script,text,options,notes
-GearIn_rules_intro_welcome,GearInRulesIntro,,"ShowDefaultVisual
-SetShortcut GearIn_rules_intro_leave ""ESCAPE"""," 欢迎，$playerName。这个对话框完全由 data/campaign/rules.csv 驱动：列、匹配、条件、结果与文本。
+```
+
+### id 保存规则身份
+
+`id` 是加载器识别规则的稳定键，也会出现在 `Loading rule: <id>` 日志中。ID 为空时不创建规则；去掉首尾空白后以 `#` 开头时，加载器跳过整行。
+
+```csv
+#GearIn_rules_comm_disabled,OpenCommLink,,,,,暂时停用
+GearIn_rules_comm_friendly,OpenCommLink,,,,,独立势力的非敌对问候
+```
+
+第一行不会进入规则集合，第二行会注册为 `GearIn_rules_comm_friendly`。ID 应带 MOD 前缀，使日志归属和跨文件唯一性都能直接检查。
+
+### trigger 建立候选集合
+
+`trigger` 是候选集合的名称。使用方调用 `OpenCommLink` 时，引擎只检查 trigger 与这个字符串相同的规则；同一行不会因为写入一个新名字而自动产生调用入口。
+
+```csv
+GearIn_rules_comm_friendly,OpenCommLink,,,,,独立势力的非敌对问候
+```
+
+这条规则加入 `OpenCommLink` 候选集合。trigger 拼写和大小写需要与调用方传入的字符串一致；写成 `OpenCommlink` 会得到一条已经加载、但原版通讯入口从不查询的规则。
+
+### conditions 保存命中条件
+
+`conditions` 使用物理换行保存多条表达式。加载器去掉每行首尾空白，跳过空行和以 `#` 开头的子行；规则参与匹配时按顺序求值，任意一行失败都会淘汰当前候选。
+
+```csv
+GearIn_rules_comm_friendly,OpenCommLink,"# 只处理独立势力
+$faction.id == independent
+!$entity.isHostile score:100",,,,独立势力的非敌对问候
+```
+
+注释行不生成表达式。剩余两行分别检查势力 ID 和敌对状态；`score:100` 仍属于第二条条件。条件如何判真与计分由 [C16-S2] 展开，本节只要求比较留在 `conditions`，赋值留在 `script`。
+
+### script 保存命中结果
+
+`script` 同样按物理换行拆分，但每行表示赋值或 Rules 命令。规则选中后，脚本从上到下执行，因此前一行写入的状态可以被后一行命令读取。
+
+```csv
+GearIn_rules_comm_friendly,OpenCommLink,,"$menuState = fleetConvMain 0
+FireAll PopulateOptions",,,独立势力的非敌对问候
+```
+
+第一行把菜单状态写为 `fleetConvMain`，第二行调用 `PopulateOptions`。命令名由 `data/config/settings.json` 的 `ruleCommandPackages` 解析；默认包为 `com.fs.starfarer.api.impl.campaign.rulecmd`，未知命令会在加载阶段报告错误。
+
+命令参数需要字面双引号时，CSV 使用两个连续双引号转义。例如 `SetShortcut optionId "ESCAPE"` 在单元格中写成 `SetShortcut optionId ""ESCAPE""`。
+
+### text 生成对话文本
+
+`text` 保存规则命中后写入文本面板的内容。规则执行器先替换其中的 token，再把结果交给当前对话；文本中的 `#` 保持为普通显示字符。
+
+```csv
+GearIn_rules_comm_friendly,OpenCommLink,"$faction.id == independent
+!$entity.isHostile score:100","$menuState = fleetConvMain 0
+FireAll PopulateOptions",对方很快回应了通讯请求。,,独立势力的非敌对问候
+```
+
+第五列的普通字符串会成为通讯建立后的问候文本。条件、脚本和 notes 不会拼进这段正文；若 text 写成 `# 通讯接通了。`，玩家看到的文本也会保留开头的井号。
+
+::: tip 用独占一行的 OR 准备候选文本
+
+同一条规则需要随机采用多种措辞时，可以用独占一行的 `OR` 分隔候选文本，并用一对双引号包住整个多行单元格：
+
+```csv
+GearIn_rules_text_variants,OpenCommLink,,,"对方很快回应了通讯请求。
 OR
-再次见到您，$playerName。规则系统按独占一行的 OR 把 text 列拆成多条变体，每次随机取一条。","GearIn_rules_intro_open:查看详情
-5:GearIn_rules_intro_leave:结束 ","本节示例所有权 GearIn_rules_intro_*"
-GearIn_rules_intro_add_a,GearInRulesIntroAdd,,,FireAll 附加文本：条件为空，必然追加。,,
-GearIn_rules_intro_add_b,GearInRulesIntroAdd,RollProbability 0.0,,FireAll 附加文本：命令条件恒假 (RollProbability 0.0)，永不追加。,,
-GearIn_rules_intro_open,DialogOptionSelected,$option == GearIn_rules_intro_open,"$GearIn_rules_intro_opens = 1 0
-FireAll GearInRulesIntroAdd
-FireBest GearInRulesIntroDetail",,,
-GearIn_rules_intro_detail_low,GearInRulesIntroDetail,$GearIn_rules_intro_opens >= 1,,低分规则：条件总分 1，FireBest 竞争失败。,,
-GearIn_rules_intro_detail_high,GearInRulesIntroDetail,"$GearIn_rules_intro_opens >= 1
-RollProbability 1.0
-!$GearIn_rules_intro_skip score:100","$GearIn_rules_intro_last = detail 0",高分规则：条件总分 102(1 + 1 + 100)，FireBest 必然选中。,GearIn_rules_intro_leave:结束,
-GearIn_rules_intro_leave,DialogOptionSelected,$option == GearIn_rules_intro_leave,DismissDialog,,,
+# 通讯接通了。",,两种问候文本
 ```
 
-> 这是跨单元共享文件：本节只拥有 `GearIn_rules_intro_*` 前缀。禁止改写原版或其它 MOD 的既有规则行，禁止与既有 id 重复 —— 跨文件重复 id 先到先得，本 MOD 的行会被静默跳过且无任何报错。
+加载器按精确的换行序列 `\nOR\n` 拆分内容，执行规则时再随机选择其中一段。第二个候选开头的井号会正常显示；`OR` 与其他文字共处一行时属于正文。
+:::
 
-对应关系：
+### options 生成对话选项
 
-- **welcome** (trigger `GearInRulesIntro`)：初始对话。
-    - `text` 两段变体用独占一行的 `OR` 分隔，`pickText()` 每次随机取一条；文本里的 `$playerName` 由 token 替换链换成本档人物名。
-    - `script` 先 `ShowDefaultVisual`(显示交互目标默认视觉)，再 `SetShortcut` 把 ESC 绑定到 `GearIn_rules_intro_leave` 选项。
-    - `options` 演示两种格式：`id:text`(order 0) 与 `5:id:text`(order 5)，`FireBest` 按 order 升序排。
-- **add\_a / add\_b** (trigger `GearInRulesIntroAdd`)：演示 `FireAll` 与命令条件。`RollProbability 0.0` 恒假 (`f < 0.0` 不可能为真)，`RollProbability 1.0` 恒真 —— 不引入随机性。
-- **open** (trigger `DialogOptionSelected`)：演示 `$option` 回流。脚本做三件事：`$GearIn_rules_intro_opens = 1 0`(赋值 + 0 天过期)、`FireAll GearInRulesIntroAdd`(追加 add\_a 文本)、`FireBest GearInRulesIntroDetail`(进入分数竞争)。
-- **detail\_low / detail\_high** (trigger `GearInRulesIntroDetail`)：演示 `FireBest` 分数竞争。
-    - 两规则条件都成立，但 high 总分 102(两条 1 分 + `!$GearIn_rules_intro_skip score:100`) 恒大于 low 的 1 分，结果确定性选中 high。
-    - high 的 `script` 演示赋值并携带选项。
-- **leave** (trigger `DialogOptionSelected`)：`$option == GearIn_rules_intro_leave` → 内置命令 `DismissDialog` 关闭对话。
-- 内置命令 (`ShowDefaultVisual` / `SetShortcut` / `DismissDialog` / `FireBest` / `FireAll` / `RollProbability`) 都是 `BaseCommandPlugin` 子类 (`com.fs.starfarer.api.impl.campaign.rulecmd`)，本节只使用不实现；自定义规则命令见 [C16-S3]。
-- 记忆键 `$option` / `$GearIn_rules_intro_opens` / `$GearIn_rules_intro_skip` / `$GearIn_rules_intro_last` 的过期、持久化与维护语义见 [C16-S4]；本节只保证演示流程内的取值逻辑。
-- `rules.csv` 是跨单元共享文件：本节只拥有 `GearIn_rules_intro_*` 前缀；其他页面使用各自前缀追加行，同前缀内 id 唯一，跨文件重复 id 先到先得。
+`options` 的每个有效子行采用 `id:text` 或 `order:id:text`。两段形式使用默认顺序，三段形式把第一段解析为排序数值；ID 进入程序分支，text 进入选项面板。
 
-### 编写 Rules 命令
-
-```java
-package data.scripts.gearin.rules;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignUIAPI;
-import com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl;
-
-/**
- * 完整最小例：rules.csv 数据驱动对话的 Java 消费入口。
- *
- * 注册入口：生涯回调 onGameLoad，persistent data 键 REGISTER_MARK
- * 一次性门控 (每个注册项用各自的键)。
- *
- * 行为：挂载后第一次 advance() 用 RuleBasedInteractionDialogPluginImpl 打开一个初始
- * trigger 为 GearInRulesIntro 的对话；对话的文本、脚本与选项全部来自 data/campaign/rules.csv
- * 中本节拥有的 GearIn_rules_intro_* 规则 —— Java 侧不写任何文本与选项。
- * 验证闭环：注册入口 (本类 + onGameLoad 门控)→ 数据文件 (rules.csv)→ 运行消费者
- * (RuleBasedInteractionDialogPluginImpl → Rules 引擎)→ 可观察结果 (对话文本与日志)。
- */
-public class GearInRulesIntro implements EveryFrameScript {
-
-    /** 存档持久化标记：本演示是否已在该存档执行过 (随存档保存)。 */
-    public static final String REGISTER_MARK = "GearIn_RulesIntro";
-
-    private static final Logger LOG = Global.getLogger(GearInRulesIntro.class);
-
-    /** 演示是否已执行；置位后 isDone() 返回 true，引擎在置位同一次推进中自动移除本脚本。 */
-    private boolean executed = false;
-
-    public GearInRulesIntro() {
-        // 空构造：注册由调用方执行 (onGameLoad 的 persistent data 门内)
-    }
-
-    @Override
-    public boolean isDone() {
-        return executed;
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        if (executed) {
-            return;
-        }
-        executed = true;
-        CampaignUIAPI ui = Global.getSector().getCampaignUI();
-        boolean shown = ui.showInteractionDialog(
-                new RuleBasedInteractionDialogPluginImpl("GearInRulesIntro"),
-                Global.getSector().getPlayerFleet());
-        LOG.info("GearIn rules intro dialog shown=" + shown
-                + " (initial trigger GearInRulesIntro; 对话内容全部来自 rules.csv)");
-    }
-}
+```csv
+GearIn_rules_options,PopulateOptions,,,,"GearIn_rules_apply_open:检查通讯记录
+50:cutCommLink:切断通讯",两个选项
 ```
 
-对应关系：
+玩家看到 "检查通讯记录" 和 "切断通讯"，程序收到 `GearIn_rules_apply_open` 或 `cutCommLink`。读取器按半角冒号切分，显示文本中的额外冒号会改变字段数量；以 `$` 开头的选项 ID 会在加载阶段被拒绝。
 
-- `implements EveryFrameScript`：沿用一次性演示模式，`executed` 置位后 `isDone()` 返回 true，引擎在置位同一次推进中自动移除。
-- `REGISTER_MARK`：persistent data 注册判断键 (`"GearIn_RulesIntro"`)，**必须**与调用点片段里 `containsKey` / `put` 用的键逐字一致。
-- `new RuleBasedInteractionDialogPluginImpl("GearInRulesIntro")`：自定义初始 trigger(原版默认 `OpenInteractionDialog` 有 121 条规则，会与演示规则混战；自定义 trigger 保证候选池只有本节规则，`FleetInteractionDialogPluginImpl` / 非对话面板文本触发同样使用自定义 trigger)。
-- `showInteractionDialog(plugin, playerFleet)`：交互目标非 null(`init` 里 `getInteractionTarget().getMemory()` 依赖它)；返回值记入日志 (对话框打开失败时用于定位的防御写法)。
-- 无匹配规则时插件会加 failsafe `Leave` (`RuleBasedInteractionDialogPluginImpl`) —— 整套规则都没加载时，对话框依然恭候您离开，除此之外什么也不显示。它是规则没加载或 trigger 拼错时最直接的可观察信号。
+和条件、脚本一样，options 中以 `#` 开头的子行是注释。选项 ID 与 `$option` 的回流关系由 [C16-S2] 负责。
 
-调用点 (工程片段，该方法属于插件生命周期主题所持有的类，本节只演示调用，不改动那些文件)：
+### notes 只保存维护说明
 
-```java
-    // GearInModPlugin(C7-S1 所有)onGameLoad(boolean newGame) 内新增本节注册块。
-    // 每个注册项用各自的 persistent data 键，不要挂进插件已有的 CLASS_MARK 门。
-    if (!Global.getSector().getPersistentData().containsKey(GearInRulesIntro.REGISTER_MARK)) {
-        Global.getSector().getPersistentData().put(GearInRulesIntro.REGISTER_MARK, true);
-        Global.getSector().addScript(new GearInRulesIntro());
-    }
+`notes` 不生成条件、脚本、文本或选项。它适合记录规则用途、数据所有者和与其他规则的关系，加载器不会把内容显示给玩家。
+
+```csv
+GearIn_rules_comm_friendly,OpenCommLink,,,,,GearIn 独立势力通讯问候
 ```
 
-构建命令 (在 `Starsector/mods/GearIndustry/` 执行)：
+修改 notes 不会改变候选集合和游戏画面。需要暂时停用一行时应修改 `id`，不能把 notes 当作开关。
 
-```text
-gradle jar
+## 保持 CSV 列边界
+
+### 用双引号包住多行单元格
+
+`conditions`、`script`、`text` 和 `options` 都可能包含物理换行。CSV 必须用一对双引号包住整个多行单元格；换行发生在引号内部时仍属于当前列，发生在引号外部时才结束当前记录。
+
+```csv
+GearIn_rules_comm_friendly,OpenCommLink,"$faction.id == independent
+!$entity.isHostile score:100","$menuState = fleetConvMain 0
+FireAll PopulateOptions",对方很快回应了通讯请求。,,独立势力的非敌对问候
 ```
 
-产物 `jars/GearIndustry.jar` 应包含 `data/scripts/gearin/rules/GearInRulesIntro.class`(可用 `jar tf` 核对)；`data/campaign/rules.csv` 是 MOD 数据文件，随 MOD 目录被加载器读取 (无需进 jar，规则行放 jar 外与放 jar 内等效，资源加载器都读)。
+这条记录虽然占用四个物理行，仍只有七列和一条规则。少掉 conditions 左侧或右侧的双引号后，后续换行会开始新记录，日志通常会把错误定位在看似无关的下一行。
 
-注意示例路径 `mods/GearIndustry` 是教程虚构路径，页面内路径互相自洽即可。
+### 转义逗号和双引号
+
+含半角逗号的单元格也要放进双引号。单元格内部的一个字面双引号写成 `""`；反斜杠不会替代 CSV 的双引号转义。
+
+```csv
+GearIn_rules_quoted,OpenCommLink,,"AddText ""信号稳定，继续通讯。""",,,含逗号和引号
+```
+
+加载器交给命令的参数是 `信号稳定，继续通讯。`。若逗号没有被双引号保护，它会开始下一列，使 script、text、options 和 notes 整体错位。
+
+### 区分整行注释与字段注释
+
+`#` 的效果取决于所在字段：`id` 以 `#` 开头时跳过整行；`conditions`、`script`、`options` 中以 `#` 开头的子行作为注释；`text` 中的 `#` 保持为显示文本。notes 不参与运行，本身也不需要注释语法。
+
+```csv
+#GearIn_rules_comm_disabled,OpenCommLink,,,,,整行停用
+GearIn_rules_comm_note,OpenCommLink,"# 条件注释
+$faction.id == independent","# 脚本注释
+$menuState = fleetConvMain 0","# 这里的井号会显示",,字段内注释
+```
+
+第二条规则仍会注册。它只有一个有效条件和一条有效脚本，而文本面板会完整显示 "# 这里的井号会显示"。
+
+::: warning 井号只注释所在的数据层
+
+停用整条规则需要让 `id` 以 `#` 开头；conditions、script 或 options 中的井号只跳过当前子行，text 中的井号会显示给玩家。
+:::
+
+### 保存为 UTF-8 无 BOM
+
+规则表使用 UTF-8 无 BOM。BOM 位于文件首字节时可能进入首个表头或键的解析结果；智能引号替换只处理弯引号等字符，不负责移除错误编码标记。
+
+::: warning 多行错误会移动后续列
+
+每条数据记录都要解析出七列；缺失包围引号、未转义双引号和裸逗号会让后续字段进入错误列，必须先修复 CSV 结构再检查 Rules 条件。
+:::
+
+## 让规则进入运行时
+
+### 读取并合并同路径资源
+
+游戏在 CSV spec 加载阶段调用 `Rules.loadRules`。读取器执行 `readCSV(["id"], "data/campaign/rules.csv", true, true)`，扫描原版和所有已启用 MOD 的同路径文件。`["id"]` 提供跨来源去重键，第三个参数控制合并顺序，第四个参数让每份文件在 CSV 解析前经过 `replaceSmartQuotes`。
+
+这项加载发生在启动阶段。规则对象由当前启用的数据文件重建，不作为单独对象写进存档。
+
+加载日志会出现 `Loading CSV data from [...]`，随后为每条成功注册的规则输出 `Loading rule: <id>`。确认数据进入引擎时，先找这些稳定 ID，再判断对话是否有匹配；只有出现 `Loading rule:` 的行，规则才进入后续候选池。
+
+::: warning 重复 ID 有两种结果
+
+同一文件中的重复 ID 会抛出 `RuntimeException("Duplicate key [...] while loading [...]")` 并停止加载；跨文件重复时先处理的规则保留，后处理的同 ID 行静默跳过。
+:::
+
+某个 MOD 在 `mod_info.json` 的 `replace` 数组中声明 `data/campaign/rules.csv` 时，读取器只采用替换文件，同路径的原版和其他合并来源不会进入结果。
+
+::: caution replace 会切断原版 Rules 数据
+
+普通扩展应让 `data/campaign/rules.csv` 参与同路径合并；声明 `replace` 后，MOD 文件需要独自承担原版整张规则表的职责。
+:::
+
+加载器还会统计只出现一次的变量，并向标准输出打印 `WARNING: variable [...] only used once; rule id: [...]`。`$tag:` 和 `$market.mc:` 不参与这项统计；WARNING 不会改变规则匹配。
+
+## 识别加载期错误
+
+加载器把 conditions 与 script 交给同一套表达式解析器，但两列允许的操作不同。`=` 只用于脚本赋值，`==`、`!=`、`>`、`>=`、`<` 和 `<=` 用于条件比较。解析器先验证操作符位置，再加载命令类，因此这些错误在进入生涯之前就会暴露。
+
+条件列出现赋值、脚本列出现比较、未知命令、选项 ID 以 `$` 开头、三段选项的 order 不是数值，以及同一文件出现重复 ID，都会阻止对应数据正常进入运行时。堆栈中的规则 ID 和 CSV 路径是修复入口。
+
+跨文件重复 ID 的表现不同。按同路径合并时，先处理的规则保留，后处理的同 ID 行静默跳过，因此日志中只会看到一条 `Loading rule:`。定位 "文件被读取但某条规则没有注册" 时，需要同时检查 ID 唯一性和日志中的具体规则 ID。
+
+## 七列速查表
+
+| 字段 | 读取结果 | 内部拆分 | 主要错误 |
+|---|---|---|---|
+| `id` | 规则稳定身份 | 不拆分 | 空值、`#` 跳过、重复 ID |
+| `trigger` | 候选集合名称 | 不拆分 | 拼写或大小写与调用方不一致 |
+| `conditions` | 候选匹配条件 | 按换行拆分，跳过空行和 `#` 子行 | 写入赋值或错误比较 |
+| `script` | 命中后的赋值与命令 | 按换行顺序拆分，跳过空行和 `#` 子行 | 未知命令、比较进入脚本 |
+| `text` | 文本面板内容 | 整个单元格作为文本内容读取 | 把 `#` 误认为字段注释 |
+| `options` | 选项 ID、文本与顺序 | 按换行拆分，再按冒号分成 2 或 3 段 | 裸冒号、非法 order、`$` 开头 ID |
+| `notes` | 维护说明 | 不参与运行时解析 | 把 notes 当作停用开关 |
+
+## 用 OpenCommLink 验证规则表
+
+`OpenCommLink` 是原版舰队通讯建立连接时使用的 trigger。本页只借它验证加载结果：两条规则都限定 `independent`，friendly 再限定非敌对；脚本把菜单切回 `fleetConvMain`，再调用 `FireAll PopulateOptions` 取得原版通讯选项。分数竞争和 FireAll 的执行机制由 [C16-S2] 解释。
+
+## 完整最小例
+
+把下面三行放入 MOD 的 `data/campaign/rules.csv`。两条数据行共享 `OpenCommLink`，并各自保持完整的七列结构。
+
+```csv
+id,trigger,conditions,script,text,options,notes
+GearIn_rules_comm_friendly,OpenCommLink,"$faction.id == independent
+!$entity.isHostile score:100","$menuState = fleetConvMain 0
+FireAll PopulateOptions",对方很快回应了通讯请求。,,独立势力的非敌对问候
+GearIn_rules_comm_fallback,OpenCommLink,$faction.id == independent score:50,"$menuState = fleetConvMain 0
+FireAll PopulateOptions",独立舰队接通了通讯。,,独立势力的回退问候
+```
 
 ## 验证方案
 
-前置数据：既有 MOD 工程布局与插件生命周期注册回调 ([C6-S1]、[C7-S1] 建立)、本节的 `data/campaign/rules.csv` 规则表与 `GearInRulesIntro` 使用入口。验证入口为启动器与新建生涯，观察位置是 `starsector.log`、启动器控制台标准输出与对话界面。
+前置数据：已启用包含本页 `data/campaign/rules.csv` 的 MOD。观察位置包括启动日志、启动器标准输出和独立舰队通讯界面。
 
-1. **游戏构建**：在 `Starsector/mods/GearIndustry/` 执行 `gradle jar`，确认 `BUILD SUCCESSFUL`；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
-2. **规则注册**：启动游戏，查看 `starsector.log` 中的 `Loading CSV data from [...]` 与本节 7 条 `Loading rule: GearIn_rules_intro_*` 行。
-3. 查看启动器控制台标准输出中的 `$GearIn_rules_intro_skip`、`$GearIn_rules_intro_last` 两条单次使用变量 WARNING(正常现象，原版同样大量存在)。
-4. **对话完整流程**：新建生涯，日志出现 `GearIn rules intro dialog shown=true`，对话弹出；文本为两条欢迎变体之一且含玩家名；选项为 "查看详情" / "结束"；按 ESC 等效点选 "结束"。
-5. **结果链**：点 "查看详情"→ 追加 `FireAll 附加文本` 与 `高分规则` 两段文本，选项只剩 "结束"；点 "结束" 关闭对话。
-6. **读档**：保存后读档，不再出现 `shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关)。
+1. 启动游戏，确认日志出现 `Loading CSV data from [...]`，并找到 `GearIn_rules_comm_friendly` 与 `GearIn_rules_comm_fallback` 的 `Loading rule:` 行。
+2. 向非敌对的独立舰队打开通讯，确认显示 friendly 文本，并出现原版舰队通讯选项。
+3. 让同一势力舰队进入敌对状态后再次通讯，确认 fallback 文本接替 friendly 文本。
+4. 在启动器标准输出中核对单次使用变量 WARNING，并把变量名与规则 ID 对应起来。
+5. 分别制造同文件重复 ID 和跨文件重复 ID，确认前者中止加载、后者只注册先处理的规则；恢复两个唯一 ID。
+6. 在 `conditions` 中写赋值、在 `script` 中写比较、把命令名写错，逐项确认加载期错误后恢复正确表达式。
+7. 在 options 文本中加入半角冒号，确认选项解析错误；改用全角冒号或改写句子。
+8. 给 MOD 声明同路径 `replace`，确认原版规则未参与合并；移除该声明后确认原版和 MOD 规则共同加载。
 
 预期结果：
 
-- **游戏构建**：`gradle jar` 以 `BUILD SUCCESSFUL` 结束；`jar tf jars/GearIndustry.jar` 能看到 `data/scripts/gearin/rules/GearInRulesIntro.class`。
-- **规则注册 (加载期)**：
-    - 启动日志 `starsector.log` 出现 `Loading CSV data from [...data/campaign/rules.csv]` 与逐条 `Loading rule: GearIn_rules_intro_welcome` / `..._add_a` / `..._add_b` / `..._open` / `..._detail_low` / `..._detail_high` / `..._leave` —— 注册入口完整流程的静态证明。
-    - 标准输出 (启动器控制台) 出现两条变量警告 (`System.out.println`，非日志)：`WARNING: variable [$GearIn_rules_intro_skip] only used once; rule id: [GearIn_rules_intro_detail_high]` 与 `...[$GearIn_rules_intro_last] only used once; rule id: [GearIn_rules_intro_detail_high]` —— 单次使用变量属正常现象 (原版同样大量存在)，不是错误。
-- **对话弹出 (新档首次进入生涯后第一帧)**：`starsector.log` 出现 `GearIn rules intro dialog shown=true`；游戏暂停并弹出对话：
-    - 文本面板显示两条欢迎变体之一 (每次随机)：含玩家名的句子 (`$playerName` 已替换)；
-    - 选项面板按 order 显示 "查看详情"(order 0) 与 "结束"(order 5)；
-    - 按 ESC 等于点选 "结束"(`SetShortcut` 生效)。
-- **点 "查看详情"**：文本面板按顺序追加三段：
-    - `FireAll 附加文本：条件为空，必然追加。`(`add_a` 命中；`add_b` 的 `RollProbability 0.0` 恒假不触发)；
-    - `高分规则：条件总分 102(1 + 1 + 100)，FireBest 必然选中。`(`detail_high` 总分 102 恒胜 `detail_low` 的 1 分，确定性)；
-    - 选项面板被替换为单个 "结束"(`detail_high` 的选项；`FireBest` 非 keepOptions 时先清空再添加)。
-- **点 "结束"(或按 ESC)**：`DismissDialog` 关闭对话，游戏恢复。
-- **读档**：不出现 `GearIn rules intro dialog shown=` 日志、不再弹对话 (`REGISTER_MARK` 门已关)；对话本身不随存档保存。
-- **全程无 ERROR**：启动与游玩期间无 `gear_in` 引起的 `ERROR` 日志；加载期无 `Duplicate key` / `Duplicate rule id` / `Command [...] not found` / `has = ('assignment')` / `has == ('equals')` / `Option id starts with $` 等规则加载异常。
+- 日志同时出现规则文件路径和两个稳定 ID；数据结构错误在进入生涯前暴露。
+- 非敌对独立舰队使用 friendly 文本，敌对独立舰队使用 fallback 文本。
+- 两条脚本都恢复 `fleetConvMain` 并追加原版 `PopulateOptions` 结果。
 
 ## 故障分析
 
-- **对话只显示 failsafe `Leave`**：初始 trigger 与规则表不一致，或 welcome 规则没有载入。
-
-    - **解决方案**：核对 `Loading rule:` 日志和构造器中的 trigger，修正后重新打开对话。
-
-- **规则加载时启动中止**：conditions 中出现赋值、script 中出现比较、选项 ID 以 `$` 开头、命令类缺失或同文件 ID 重复。
+- **规则加载时启动中止**：`conditions` 中出现赋值、`script` 中出现比较、选项 ID 以 `$` 开头、命令类缺失或同文件 ID 重复。
 
     - **解决方案**：按堆栈定位 CSV 行并把表达式放回正确列，重启。
 
 - **规则没有触发且日志无异常**：本规则 ID 与其他文件重复，后加载项被静默跳过。
 
     - **解决方案**：改用带 MOD 前缀的唯一 ID。
-
-- **点击选项后显示 `no rule found`**：`$option` 比较值与 options 列的 ID 不完全一致。
-
-    - **解决方案**：统一大小写和空格，重新点击。
-
-- **条件始终为 false**：memory 键、作用域前缀或 tag 写错，也可能把 `"1"`、`"yes"` 当作真值。
-
-    - **解决方案**：用 `DumpMemory` 核对实际键和值，改为 `Boolean.TRUE` 或字符串 `"true"`。
-
-- **文本变体没有随机切换**：分隔符 `OR` 没有独占一行。
-
-    - **解决方案**：修正 CSV 单元格内换行并保持 UTF-8 无 BOM。
 
 - **选项文本在冒号后被截断**：加载器把冒号解释为选项字段分隔。
 
@@ -389,53 +273,21 @@ gradle jar
 
     - **解决方案**：删除多余冒号或提供合法 order，重启。
 
-- **`FireBest` 每次选中不同规则**：多个候选得分相同，picker 会随机选择。
+- **整份原版规则消失**：MOD 对 `data/campaign/rules.csv` 声明了 `replace`。
 
-    - **解决方案**：为需要确定结果的规则设置不同 `score`。
-
-- **`FireAll` 没有追加任何内容**：目标 trigger 无匹配项，或 `FireAllIntercept` 拦截了调用。
-
-    - **解决方案**：核对目标 trigger 和拦截条件，再执行一次。
-
-- **求值条件时状态被重复修改**：有副作用的命令被放进 conditions。
-
-    - **解决方案**：将写状态操作移到 script。
-
-- **对话出现红色异常文字**：规则命令执行时抛出异常。
-
-    - **解决方案**：按红字中的类名和消息修正参数；非对话调用还要处理 null dialog，再触发。
-
-- **日志显示 `shown=false`**：现有对话或新手引导占用了交互界面。
-
-    - **解决方案**：只在 CAMPAIGN 状态且界面空闲时调用。
-
-- **对话结束后 memory 值仍然保留**：该键设置了持久或正数天数的过期时间。
-
-    - **解决方案**：根据用途显式设置期限。
+    - **解决方案**：移除 `replace`，让同路径 CSV 参与合并。
 
 ## 总结
 
-本节把规则系统走通成一条从数据到对话的流程：`data/campaign/rules.csv` 的七列决定一条规则能写什么，加载与合并决定它是否真的进入游戏，匹配与条件决定它何时被选中，`FireBest` / `FireAll` 与 `$option` 回流把它变成对话文本和选项。最小示例把这条流程全部接通：规则表只负责数据，`GearInRulesIntro` 只负责打开对话，文本与选项全部来自 CSV。
+`rules.csv` 的表头决定字段，CSV 引号保护多行单元格，字段读取器再按换行、`#` 和冒号解释内部结构。加载阶段负责同路径合并、智能引号替换、重复 ID 处理、表达式解析和规则注册；`Loading rule:` 是单条规则进入候选池的直接证据。
 
-排错判断可以浓缩成几条：注册看 `Loading rule:` 日志而不是找报错；加载期致命错误全部是启动中止级 (条件列 `=`、脚本列 `==`、`$` 开头选项 id、命令找不到、同文件重复 id)；跨文件重复 id 静默跳过是规则不触发且无报错的首要原因；`FireBest` 只取一条而 `FireAll` 执行全部；判真只有 `"true"` 与 `Boolean.TRUE` 为真，比较大小写敏感；文本变体靠独占一行的 `OR`，选项文本里不能有冒号，选项 id 与 `$option ==` 必须逐字一致。
-
-对话框生命周期与脚本注册判断是本节的两个底座。[C16-S3] 和 [C16-S4] 会继续使用这份 `GearIn_rules_intro_*` 规则表与 `$option` 回流约定。
+本页的两条 `OpenCommLink` 规则只承担数据接入：friendly 用额外条件和更高分数覆盖非敌对独立舰队，fallback 接住剩余独立舰队。选项回流、分数竞争和 fire 方法从 [C16-S2] 开始组织成完整对话。
 
 ## 建议参考项
 
-- `data/campaign/rules.csv`：本节示例规则表 (`GearIn_rules_intro_*` 前缀) 与原版规则表的存放路径。
+- `data/campaign/rules.csv`：本节 `GearIn_rules_comm_*` 数据与原版规则表的存放路径。
 - `data/config/settings.json`：`ruleCommandPackages` 命令包配置。
-- `com.fs.starfarer.api.campaign.rules.RulesAPI`：规则匹配入口 (`getAllMatching` / `getBestMatching` / `performTokenReplacement` / `setRandomForNextRulePick`)。
-- `com.fs.starfarer.api.campaign.rules.RuleAPI`：单条规则的文本、选项与脚本访问。
-- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：规则记忆键读写；
-- `com.fs.starfarer.api.campaign.rules.MemKeys`：内存分组键。
+- `com.fs.starfarer.api.campaign.rules.RuleAPI`：加载后单条规则的字段对象。
 - `com.fs.starfarer.api.campaign.rules.Option`：对话选项的 `id` / `text` / `order`。
-- `com.fs.starfarer.api.campaign.rules.CommandPlugin`：规则命令的约定接口；
-- `com.fs.starfarer.api.campaign.rules.ExpressionAPI`：条件表达式的约定接口。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin`：内置规则命令基类 (`FireBest` / `FireAll` / `DismissDialog` / `RollProbability` / `SetShortcut` / `ShowDefaultVisual` 等均为其子类)。
-- `com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl`：规则驱动对话插件，本节使用方完整流程的核心。
-- `com.fs.starfarer.api.impl.campaign.FleetInteractionDialogPluginImpl`：舰队遭遇对话对规则引擎的调用。
-- `com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`：`$tag:` / `$mc:` / `$friendlyToPlayer` 等 facts 记忆键的来源。
-- `com.fs.starfarer.api.impl.campaign.CoreRuleTokenReplacementGeneratorImpl`：文本 token 替换表的默认实现。
-- `com.fs.starfarer.api.util.Misc`：规则表达式 token 化、变量解析与 token 替换工具。
-- `com.fs.starfarer.api.campaign.SectorAPI`：`getRules()` 获取 `RulesAPI`。
+- `com.fs.starfarer.api.campaign.rules.ExpressionAPI`：条件和脚本表达式的加载结果。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.FireAll`：示例脚本调用的原版菜单填充命令。

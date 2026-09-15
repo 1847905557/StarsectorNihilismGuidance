@@ -228,12 +228,19 @@ public class GearInBarHubMission extends HubMissionWithBarEvent {
 ## 故障分析
 
 - **事件没有出现**：`plugin` 全类名无法实例化或 `prob` 筛选未命中。
+
     - **解决方案**：核对全类名、无参构造器和概率字段。
+
 - **任务被当作普通事件创建**：plugin 没有继承 `HubMissionWithBarEvent`。
+
     - **解决方案**：让任务类继承正确的 HubMission 酒吧基类。
+
 - **酒吧出现选项但接受后没有任务**：任务的 `create(...)` 返回了 `false`。
+
     - **解决方案**：确认 wrapper 传入 `barEvent=true` 且市场条件满足。
+
 - **事件消失时间不符合预期**：CSV 三组时长列顺序错误。
+
     - **解决方案**：按表头重新核对 dur、timeout 和 accepted timeout。
 
 ## 总结
@@ -242,10 +249,9 @@ public class GearInBarHubMission extends HubMissionWithBarEvent {
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.loading.BarEventSpec`；
-- `com.fs.starfarer.api.impl.campaign.intel.bar.events.SpecBarEventCreator`；
-- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithBarEvent`；
-- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionBarEventWrapper`；
-- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`；
-- `data/campaign/bar_events.csv`；
-- [C15-S3] 与 [C15-S4]。
+- `com.fs.starfarer.api.loading.BarEventSpec`：CSV 行的读取结果，保存概率、权重和时长字段并判断 plugin 类型；
+- `com.fs.starfarer.api.impl.campaign.intel.bar.events.SpecBarEventCreator`：manager 为每个 spec 自动建立的 creator，按类型返回 wrapper 或普通事件；
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithBarEvent`：本页 `GearInBarHubMission` 的基类，也是自动创建分支的类型判据；
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionBarEventWrapper`：在酒吧上下文中创建任务并传递 spec ID 和随机源；
+- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`：读取全部 spec，并为尚未拥有 creator 的 spec 建立 creator；
+- `data/campaign/bar_events.csv`：原版酒吧事件数据表，本页 MOD 行的格式基准。

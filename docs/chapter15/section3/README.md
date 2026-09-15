@@ -332,12 +332,19 @@ public class GearInBarEventCreator extends BaseBarEventCreator {
 ## 故障分析
 
 - **事件从未进入酒吧**：市场没有空间站或事件实例已经被 `shownAt` 锁定到另一市场。
+
     - **解决方案**：检查市场条件和事件是否已经在其他市场展示。
+
 - **同一事件重复注册**：注册入口没有先调用 `hasEventCreator(...)`。
+
     - **解决方案**：把 `addEventCreator(...)` 放在类型去重判断之后。
+
 - **接受分支没有奖励**：货舱中的 `metals` 少于 100。
+
     - **解决方案**：补充金属后重新进入事件。
+
 - **拒绝后事件再次出现**：拒绝分支没有通知 `BarEventManager`。
+
     - **解决方案**：在设置 `done` 后调用 `notifyWasInteractedWith(this)`。
 
 ## 总结
@@ -346,10 +353,10 @@ public class GearInBarEventCreator extends BaseBarEventCreator {
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent`；
-- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent`；
-- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventCreator`；
-- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`；
-- `com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin`；
-- `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`；
-- `com.fs.starfarer.api.campaign.CargoAPI`。
+- `com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent`：本页事件的声明类型，`createBarEvent` 返回它并被 `BarCMD` 识别；
+- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEvent`：`GearInBarEvent` 的基类，init 已把对话与面板引用保存到受保护字段；
+- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BaseBarEventCreator`：`GearInBarEventCreator` 的基类，只负责生成事件实例和抽取参数；
+- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`：从存档取得的管理器，负责 creator 注册、活动跟踪和交互后冷却；
+- `com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin`：在 `BarCMD` 与事件对象之间转发初始化和选项回调；
+- `com.fs.starfarer.api.impl.campaign.rulecmd.missions.BarCMD`：酒吧场景入口，检查市场显示条件并把回调归属交还酒吧；
+- `com.fs.starfarer.api.campaign.CargoAPI`：玩家货舱接口，接受分支用它核对 `metals` 数量并写入 credits。

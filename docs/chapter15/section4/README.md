@@ -146,9 +146,9 @@ Intel 条目结束不会把任务退回调查阶段，任务结束也不会自�
 
 `currentStage`、`rewardGranted`、`missionEnded` 和目标引用属于任务对象字段。任务被 `BaseHubMission` 作为 Intel 和生涯脚本保存后，读档恢复的是同一个阶段状态；Intel 只重新读取任务字段并生成显示内容。
 
-`HubMissionWithBarEvent` 是把任务接入酒吧的专用子类，适合任务本身需要酒吧发现和接受入口的场景。本节使用独立 Java 入口创建普通 `BaseHubMission`，酒吧事件到任务的交接仍归 C15-S3；这样可以先观察阶段任务，再单独学习酒吧入口。
+`HubMissionWithBarEvent` 是把任务接入酒吧的专用子类，适合任务本身需要酒吧发现和接受入口的场景。本节使用独立 Java 入口创建普通 `BaseHubMission`，酒吧事件到任务的交接仍归 [C15-S3]；这样可以先观察阶段任务，再单独学习酒吧入口。
 
-### 方法索引
+### 方法速查表
 
 | 方法 | 责任 | 结果 |
 | --- | --- | --- |
@@ -343,12 +343,19 @@ public class GearInHubMissionIntel extends BaseIntelPlugin {
 ## 故障分析
 
 - **任务没有进入调查阶段**：入口没有先设置 `setStartingStage(...)` 或没有调用 `accept(...)`。
+
     - **解决方案**：检查构造器和任务接受顺序。
+
 - **目标完成后阶段不变**：`setStageOnMemoryFlag(...)` 读取的目标或键名不一致。
+
     - **解决方案**：核对目标对象和 `$GearIn_hub_target_complete`。
+
 - **完成奖励重复增加**：成功实现没有使用 `rewardGranted` 门控。
+
     - **解决方案**：在增加 credits 前检查并设置该字段。
+
 - **Intel 显示旧阶段**：Intel 自己保存了阶段副本。
+
     - **解决方案**：在显示方法中直接读取 `mission.getCurrentStage()`。
 
 ## 总结
@@ -357,9 +364,9 @@ public class GearInHubMissionIntel extends BaseIntelPlugin {
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.impl.campaign.missions.hub.BaseHubMission`；
-- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMission`；
-- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithBarEvent`；
-- `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`；
-- `com.fs.starfarer.api.campaign.rules.MemoryAPI`；
-- [C14-S4] 的 Intel 登记与结束延迟。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.BaseHubMission`：本页 `GearInHubMission` 的基类，提供接受、阶段连接和成功、失败、放弃入口；
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMission`：任务行为接口，`BaseHubMission` 按它实现任务契约；
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithBarEvent`：把任务接入酒吧的专用子类，适合需要酒吧发现和接受入口的场景；
+- `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`：`GearInHubMissionIntel` 的基类，任务对象也继承它进入 Intel 列表；
+- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：目标记忆接口，阶段连接用它检查调查条件；
+- `com.fs.starfarer.api.campaign.comm.IntelManagerAPI`：附属 Intel 的登记入口，本页在任务接受后单独调用 `addIntel`。

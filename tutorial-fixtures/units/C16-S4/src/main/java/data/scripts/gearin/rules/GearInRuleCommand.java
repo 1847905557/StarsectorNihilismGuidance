@@ -1,5 +1,6 @@
 package data.scripts.gearin.rules;
 
+import java.awt.Color;
 import java.util.List;
 import java.util.Map;
 
@@ -9,53 +10,64 @@ import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.InteractionDialogAPI;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin;
-import com.fs.starfarer.api.impl.campaign.rulecmd.FireBest;
+import com.fs.starfarer.api.util.Misc;
 import com.fs.starfarer.api.util.Misc.Token;
 
 /**
- * 完整最小例：自定义规则命令 (rulecmd)。
- * 注册入口：data/campaign/rules.csv 脚本列按简单类名调用 (如
- * "GearInRuleCommand GearInRuleCmdResult 2 true")，类经 ruleCommandPackages
- * (data/config/settings.json 追加的 data.scripts.gearin.rules) 定位。每次执行经
- * 脚本类加载器重新 newInstance 后调用 execute —— 实例字段不可跨调用使用。
- * 行为：守卫后解析 <trigger> [<amount>] [<keepOptions>]，把 amount 写入实体记忆
- * $GearIn_rulecmd_last，再 FireBest 再入同一 dialog 与 memoryMap；返回值在脚本列
- * 被丢弃、在条件列作为布尔判真。
+ * Parses Rules command parameters and writes the result to entity memory.
+ * The command returns the parsed boolean so it can also be used in a
+ * conditions cell.
  */
 public class GearInRuleCommand extends BaseCommandPlugin {
 
-    /** 命令写入的记忆键 (无过期)。 */
     public static final String MEM_KEY_LAST = "$GearIn_rulecmd_last";
+    public static final String MEM_KEY_LABEL = "$GearIn_rulecmd_label";
+    public static final String MEM_KEY_COUNT = "$GearIn_rulecmd_count";
+    public static final String MEM_KEY_COLOR = "$GearIn_rulecmd_color";
+    public static final String MEM_KEY_OBJECT = "$GearIn_rulecmd_object";
 
     private static final Logger LOG = Global.getLogger(GearInRuleCommand.class);
 
     @Override
     public boolean execute(String ruleId, InteractionDialogAPI dialog,
                            List<Token> params, Map<String, MemoryAPI> memoryMap) {
-        // 参数守卫：FireBest 自身都不判空直接 params.get(0)(越界即红字异常)，
-        // 自定义命令必须先守卫。
-        if (params.isEmpty()) {
-            LOG.warn("GearInRuleCommand: expected params <trigger> [<amount>] [<keepOptions>]");
+        if (params.size() < 3) {
+            LOG.warn("GearInRuleCommand: expected <label> <amount> <enabled> [<color>] [<object>]");
             return false;
         }
 
-        String trigger = params.get(0).getString(memoryMap);
-        float amount = params.size() > 1 ? params.get(1).getFloat(memoryMap) : 1f;
-        boolean keepOptions = params.size() > 2 && params.get(2).getBoolean(memoryMap);
+        Token labelToken = params.get(0);
+        Token amountToken = params.get(1);
+        Token enabledToken = params.get(2);
+        if ((!labelToken.isLiteral() && !labelToken.isVariable())
+                || !amountToken.isFloat(memoryMap)
+                || !enabledToken.isBoolean(memoryMap)) {
+            LOG.warn("GearInRuleCommand: invalid parameter type for rule " + ruleId);
+            return false;
+        }
+
+        String label = dialog == null
+                ? labelToken.getString(memoryMap)
+                : labelToken.getStringWithTokenReplacement(ruleId, dialog, memoryMap);
+        float amount = amountToken.getFloat(memoryMap);
+        int count = amountToken.getInt(memoryMap);
+        boolean enabled = enabledToken.getBoolean(memoryMap);
+        Color color = params.size() > 3
+                ? params.get(3).getColor(memoryMap)
+                : Misc.getHighlightColor();
+        Object object = params.size() > 4 ? params.get(4).getObject(memoryMap) : null;
 
         MemoryAPI memory = getEntityMemory(memoryMap);
+        memory.set(MEM_KEY_LABEL, label);
         memory.set(MEM_KEY_LAST, amount);
-
-        // dialog 可能为 null(非对话触发，如面板再入)：先判空再再入。
-        if (dialog == null) {
-            LOG.warn("GearInRuleCommand: dialog is null; cannot fire trigger " + trigger);
-            return false;
+        memory.set(MEM_KEY_COUNT, count);
+        memory.set(MEM_KEY_COLOR, color);
+        if (object != null) {
+            memory.set(MEM_KEY_OBJECT, object);
         }
 
-        boolean fired = FireBest.fire(ruleId, dialog, memoryMap,
-                trigger + (keepOptions ? " true" : ""));
-        LOG.info("GearInRuleCommand: ruleId=" + ruleId + " trigger=" + trigger
-                + " amount=" + amount + " keepOptions=" + keepOptions + " fired=" + fired);
-        return fired;
+        LOG.info("GearInRuleCommand: ruleId=" + ruleId + " label=" + label
+                + " amount=" + amount + " count=" + count + " enabled=" + enabled);
+        return enabled;
     }
 }

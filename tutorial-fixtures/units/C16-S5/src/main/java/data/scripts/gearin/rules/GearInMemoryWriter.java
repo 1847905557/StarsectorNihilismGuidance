@@ -1,27 +1,27 @@
 package data.scripts.gearin.rules;
 
-import java.util.TreeSet;
+import org.lwjgl.util.vector.Vector2f;
 
 import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.CampaignFleetAPI;
+import com.fs.starfarer.api.campaign.FactionAPI;
+import com.fs.starfarer.api.campaign.SectorEntityToken;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
+import com.fs.starfarer.api.characters.PersonAPI;
 
-/**
- * 记忆写入与读回脚本 (EveryFrameScript)：读档首个未暂停帧写入全部记忆键并立即
- * 读回验证 (键常量见 GearInMemoryKeys)。probe 键 (expire 0) 的 "写入后立即读回"
- * 必须在同一方法内完成 —— 跨脚本同帧执行顺序未定义，独立读回可能错过其存在状态。
- */
+/** Writes typed Memory values and observes an expire-zero key. */
 public class GearInMemoryWriter implements EveryFrameScript {
 
     private static final Logger LOG = Global.getLogger(GearInMemoryWriter.class);
-    private boolean done = false;
+    private int phase = 0;
 
     @Override
     public boolean isDone() {
-        return done;
+        return phase >= 2;
     }
 
     @Override
@@ -31,50 +31,78 @@ public class GearInMemoryWriter implements EveryFrameScript {
 
     @Override
     public void advance(float amount) {
-        if (Global.getSector() == null || done) {
+        if (Global.getSector() == null || phase >= 2) {
             return;
         }
         MemoryAPI sector = Global.getSector().getMemoryWithoutUpdate();
-        sector.set(GearInMemoryKeys.KEY_TAG, "GearInReady");
-        sector.set(GearInMemoryKeys.KEY_COUNTER, 1f, 1000f);
+        if (phase == 0) {
+            writeValues(sector);
+            phase = 1;
+            return;
+        }
+        if (sector.contains(GearInMemoryKeys.KEY_PROBE)) {
+            return;
+        }
+        sector.set(GearInMemoryKeys.KEY_READY, true);
+        LOG.info("GearInMemoryWriter: expire-zero probe removed; keys=" + sector.getKeys());
+        phase = 2;
+    }
+
+    private void writeValues(MemoryAPI sector) {
+        sector.set(GearInMemoryKeys.KEY_GLOBAL, "sector-ready");
+        sector.set(GearInMemoryKeys.KEY_NUMBER, 2.5f, 30f);
+        sector.set(GearInMemoryKeys.KEY_INTEGER, 3);
+        sector.set(GearInMemoryKeys.KEY_LONG, 4L);
+        sector.set(GearInMemoryKeys.KEY_VECTOR, new Vector2f(10f, 20f));
         sector.set(GearInMemoryKeys.KEY_PROBE, true, 0f);
-        sector.set(GearInMemoryKeys.KEY_REARM, "armed", 1000f);
-        sector.expire(GearInMemoryKeys.KEY_REARM, 30f);
-        float rearmedExpire = sector.getExpire(GearInMemoryKeys.KEY_REARM);
-        sector.set(GearInMemoryKeys.KEY_REARM, "permanent");
-        float clearedExpire = sector.getExpire(GearInMemoryKeys.KEY_REARM);
-        sector.set(GearInMemoryKeys.KEY_REQUIRED_CHILD, true);
-        sector.set(GearInMemoryKeys.KEY_REQUIRED_PARENT, true);
-        sector.addRequired(GearInMemoryKeys.KEY_REQUIRED_PARENT, GearInMemoryKeys.KEY_REQUIRED_CHILD);
+        sector.set(GearInMemoryKeys.KEY_REARM, "temporary", 10f);
+        sector.expire(GearInMemoryKeys.KEY_REARM, -1f);
 
-        LOG.info("GearInMemoryWriter: 记忆键必须 $ 前缀 (Memory.set 对无 $ 键抛 RuntimeException)");
-        LOG.info("GearInMemoryWriter: contains(KEY_TAG)="
-                + sector.contains(GearInMemoryKeys.KEY_TAG)
-                + " getString=" + sector.getString(GearInMemoryKeys.KEY_TAG)
-                + " is(key,\"GearInReady\")=" + sector.is(GearInMemoryKeys.KEY_TAG, "GearInReady"));
-        LOG.info("GearInMemoryWriter: getFloat(KEY_COUNTER)="
-                + sector.getFloat(GearInMemoryKeys.KEY_COUNTER)
-                + " is(key,1f)=" + sector.is(GearInMemoryKeys.KEY_COUNTER, 1f)
-                + " between(0,2)=" + sector.between(GearInMemoryKeys.KEY_COUNTER, 0f, 2f)
-                + " getExpire=" + sector.getExpire(GearInMemoryKeys.KEY_COUNTER) + "(游戏天)");
-        LOG.info("GearInMemoryWriter: KEY_PROBE(expire 0)contains="
-                + sector.contains(GearInMemoryKeys.KEY_PROBE)
-                + " getBoolean=" + sector.getBoolean(GearInMemoryKeys.KEY_PROBE)
-                + " getExpire=" + sector.getExpire(GearInMemoryKeys.KEY_PROBE)
-                + "；将在下一个未暂停推进帧被移除");
-        LOG.info("GearInMemoryWriter: expire(KEY_REARM, 30f) 重设后 getExpire=" + rearmedExpire
-                + "；两参 set 清除未决过期后 getExpire=" + clearedExpire
-                + "(-1 = 永不过期)");
-        LOG.info("GearInMemoryWriter: required 依赖 getRequired(KEY_REQUIRED_PARENT)="
-                + sector.getRequired(GearInMemoryKeys.KEY_REQUIRED_PARENT));
-
-        Global.getSector().getCharacterData().getMemoryWithoutUpdate().set(
-                GearInMemoryKeys.KEY_PLAYER, true);
         CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
         if (fleet != null) {
-            fleet.getMemoryWithoutUpdate().set(GearInMemoryKeys.KEY_FLEET, "fleet-local");
+            sector.set(GearInMemoryKeys.KEY_FLEET, fleet);
+            sector.set(GearInMemoryKeys.KEY_OBJECT, fleet);
+            fleet.getMemoryWithoutUpdate().set(GearInMemoryKeys.KEY_ENTITY, "fleet-ready");
         }
-        LOG.info("GearInMemoryWriter: sector 内存键 = " + new TreeSet<>(sector.getKeys()));
-        done = true;
+        Global.getSector().getCharacterData().getMemoryWithoutUpdate().set(
+                GearInMemoryKeys.KEY_PLAYER, true);
+
+        PersonAPI person = Global.getSector().getPlayerPerson();
+        person.getMemoryWithoutUpdate().set(GearInMemoryKeys.KEY_PERSON, "person-ready");
+        FactionAPI faction = person.getFaction();
+        faction.getMemoryWithoutUpdate().set(
+                GearInMemoryKeys.KEY_FACTION, "person-faction-ready");
+
+        MarketAPI market = Global.getSector().getEconomy().getMarket("jangala");
+        if (market != null && market.getPrimaryEntity() != null) {
+            market.getMemoryWithoutUpdate().set(GearInMemoryKeys.KEY_MARKET, "market-ready");
+            market.getFaction().getMemoryWithoutUpdate().set(
+                    GearInMemoryKeys.KEY_FACTION, "faction-ready");
+            SectorEntityToken entity = market.getPrimaryEntity();
+            entity.getMemoryWithoutUpdate().set(GearInMemoryKeys.KEY_ENTITY, "entity-ready");
+            entity.getMemoryWithoutUpdate().set(GearInMemoryKeys.KEY_SOURCE_MARKET, "jangala");
+        }
+
+        MemoryAPI scratch = Global.getFactory().createMemory();
+        scratch.set("$temporary", true);
+        scratch.unset("$temporary");
+        scratch.set("$clearMe", true);
+        scratch.clear();
+
+        Global.getSector().getMemory();
+        LOG.info("GearInMemoryWriter: string=" + sector.getString(GearInMemoryKeys.KEY_GLOBAL)
+                + " number=" + sector.getFloat(GearInMemoryKeys.KEY_NUMBER)
+                + " int=" + sector.getInt(GearInMemoryKeys.KEY_INTEGER)
+                + " long=" + sector.getLong(GearInMemoryKeys.KEY_LONG)
+                + " vector=" + sector.getVector2f(GearInMemoryKeys.KEY_VECTOR));
+        LOG.info("GearInMemoryWriter: contains=" + sector.contains(GearInMemoryKeys.KEY_GLOBAL)
+                + " is=" + sector.is(GearInMemoryKeys.KEY_PROBE, true)
+                + " between=" + sector.between(GearInMemoryKeys.KEY_NUMBER, 2f, 3f)
+                + " entity=" + sector.getEntity(GearInMemoryKeys.KEY_FLEET)
+                + " fleet=" + sector.getFleet(GearInMemoryKeys.KEY_FLEET)
+                + " object=" + sector.get(GearInMemoryKeys.KEY_OBJECT));
+        LOG.info("GearInMemoryWriter: probeExpire=" + sector.getExpire(GearInMemoryKeys.KEY_PROBE)
+                + " rearmExpire=" + sector.getExpire(GearInMemoryKeys.KEY_REARM)
+                + " scratchEmpty=" + scratch.isEmpty());
     }
 }

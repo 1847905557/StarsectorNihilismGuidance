@@ -154,6 +154,40 @@ FireBest 在胜出规则产生选项时默认重建选项列表。第二个参�
 FireBest 只执行一个胜出规则；覆盖原版回退时，原规则承担的菜单状态、视觉、文本和后续 fire 调用都要由新规则继续完成。
 :::
 
+## 理解 fire 的再入
+
+规则脚本执行 `FireBest` 或 `FireAll` 时，规则引擎会在当前执行过程里再次匹配目标 trigger。内层匹配继续使用外层的 `dialog` 与 `memoryMap`，所以内层脚本写入的 Memory 会立即被外层后续脚本读取，内层改动的文本和选项也会直接出现在同一对话面板。
+
+本页的回流规则就是一条单向再入路径：
+
+```csv
+GearIn_rules_apply_open,DialogOptionSelected,$option == GearIn_rules_apply_open,"FireAll GearInRulesApplyAdd
+FireBest GearInRulesApplyDetail",,,
+```
+
+`DialogOptionSelected` 规则先进入 `GearInRulesApplyAdd`，执行完成后再进入 `GearInRulesApplyDetail`。两个目标 trigger 都不会重新调用 `DialogOptionSelected`，执行方向在详情规则结束，因此这条路径有明确终点。
+
+### 跳过当前规则
+
+`FireBest` 与 `FireAll` 把当前 `ruleId` 传给下一次匹配。规则引擎会跳过同 ID 的当前规则，但目标 trigger 中其他 ID 的规则仍可命中。这个判断只能阻止一条规则立即选中自己，无法阻止两条不同规则互相调用。
+
+::: caution 再入关系必须有终点
+
+规则 A 调用能够选中规则 B 的 trigger，而规则 B 又调用能够选中规则 A 的 trigger 时，两个不同 ID 会持续递归，表现为游戏无响应或栈溢出。自定义 trigger 应按单一方向组织，并让最后一组规则结束脚本执行或返回菜单。
+:::
+
+### 共享选项与 Memory
+
+`FireBest` 的目标规则产生选项时，默认会清空当前选项面板再写入新选项。第二个参数 `true` 只改变这个步骤，让外层选项继续保留；它不会复制 `dialog` 或 `memoryMap`，也不会改变候选分数。
+
+```csv
+GearIn_rules_apply_keep,DialogOptionSelected,$option == GearIn_rules_apply_keep,FireBest GearInRulesApplyDetail true,,,
+```
+
+这条写法让 `GearInRulesApplyDetail` 的结果与已有选项共存。省略 `true` 后，胜出规则只要产生选项，就会用自己的选项替换当前列表。
+
+`FireAll` 会先写入 `$fireAllTrigger`，再调用 `FireBest FireAllIntercept`。拦截规则命中后，目标 trigger 不再执行；没有拦截时，全部匹配规则继续共享当前 Memory 和面板。`FireAll` 本身没有 `keepOptions` 参数，目标规则产生选项时会统一重建选项列表。
+
 ## 常见 trigger 速查表
 
 | trigger | 场景 | 主要用途 |

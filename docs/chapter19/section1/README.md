@@ -1,6 +1,6 @@
-# 让可选依赖缺席时安全降级
+# 用 BoxUtil 制作批量粒子与精灵实体
 
-软依赖允许 GearIn 在缺少 Nexerelin 或 LunaLib 时继续启动，但前提是库类引用被收敛在不会误加载的适配器中。本节建立启用检测、调用隔离和一次性降级日志。
+BoxUtil 的 `SpriteEntity` 可以用一次实体提交绘制多份实例数据。本节让玩家舰周围每两秒生成一圈 32 份青色粒子，并把 CPU 侧实例、GPU 提交和渲染数量明确分开。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,11 +10,10 @@
 
 完成后，您将能够：
 
-- 用精确 MOD ID 分别检测 Nexerelin 与 LunaLib；
-- 让基础入口只加载不含第三方类型的外层桥接类；
-- 在检测通过后才触发持有 LunaLib 类型的嵌套适配器；
-- 为缺库和缺键定义明确的默认返回值；
-- 让每项缺库日志在一次应用运行中最多出现 1 次。
+- 判断 BoxUtil 渲染能力与设备兼容开关；
+- 为一个 `SpriteEntity` 构造并更新多份 `Instance2Data`；
+- 区分 CPU 实例、刷新范围、提交范围与实际绘制数量；
+- 根据入队结果选择 BoxUtil 渲染或原版粒子反馈。
 
 ## 前置知识
 
@@ -24,134 +23,163 @@
 
 ## 明确当前需求
 
-同一份 GearIn 在两个库都缺席、只装 LunaLib、两个都安装这三种组合下启动。基础内容始终可用，扩展功能只在对应库启用时接入。
+进入战斗后，玩家舰周围每 2 秒出现一圈 32 个方形粒子，四档半径让轮廓具有厚度；BoxUtil shader 不可用时，原版平滑粒子承担同一可观察反馈。
 
 ## 文件与 API 链路
 
-`ModManagerAPI.isModEnabled` 判断启用状态；入口类只引用 `GearInCompatBridge`；外层桥接类只包含原版类型；私有 `LunaAdapter` 直接引用 LunaLib，并且只在启用分支首次调用时加载。`lunalib` 是库启用 ID，`gear_in` 是设置拥有者 ID。
+### 粒子实例 API 职责速查表
 
-### 用准确 MOD id 判断启用状态
+| 对象 | 职责 |
+|---|---|
+| `SpriteEntity` | 持有材质和实例集合 |
+| `Instance2Data` | 描述单个粒子的世界坐标、速度、颜色、缩放与计时 |
+| `CombatRenderingManager` | 接收实体 |
+| `BoxEnum` | 返回码决定实体所有权是否已经交给渲染管理器 |
 
-在 `GearInCompatBridge` 的两个查询方法中分别读取 Nexerelin 与 LunaLib 的启用状态：
+### 确认 BoxUtil 渲染路径可用
+
+`GearInBoxEntity.init()` 在 GL 上下文建立后检查配置和 `ShaderCore`：
 
 ```java
-boolean nex = Global.getSettings().getModManager().isModEnabled("nexerelin");
-boolean luna = Global.getSettings().getModManager().isModEnabled("lunalib");
+boxAvailable = BoxConfigs.isShaderEnable() && ShaderCore.isValid();
 ```
 
-三种安装组合各自得到对应的布尔值。
+关闭 shader 时，插件进入原版粒子分支。
 
-### 把库引用留在适配器类
+### 记录设备同步兼容状态
 
-`getFullGraphicEffect()` 的启用分支只在检测通过后触发持有 LunaLib 字节码引用的嵌套类：
+`GearInBoxEntity.init()` 的能力日志读取 `isCompatibleSync()`；它是 BoxUtil 对特定设备同步路径的兼容开关，不代替 shader 能力判断，也不应被写成必然开启的门禁：
 
 ```java
-if (isLunaLibEnabled()) {
-    return LunaAdapter.getFullGraphicEffect(fallback);
+boolean compatibleSync = BoxConfigs.isCompatibleSync();
+LOG.info("GearIn box sync: compatible=" + compatibleSync);
+```
+
+启动战斗时，日志记录当前兼容值；切换 BoxUtil 配置后，下一次初始化读取到对应值。
+
+### 创建一份精灵实体
+
+`GearInBoxSpawner.spawnBox()` 选择贴图、颜色、图层与混合方式：
+
+```java
+SpriteEntity box = new SpriteEntity(sprite);
+box.getMaterialData().setColor(Color.CYAN);
+box.setLayer(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
+```
+
+实体材质为青色加法混合。
+
+### 建立三十二份环形实例
+
+`spawnBox()` 在构造 `instances` 时均分角度并交错四档半径，再写入世界坐标、舰船速度、颜色、缩放与三段计时：
+
+```java
+for (int i = 0; i < PARTICLE_COUNT; i++) {
+    float angle = player.getFacing() + i * 360f / PARTICLE_COUNT;
+    float radius = 50f + (i % 4) * 18f;
+    Instance2Data data = new Instance2Data();
+    data.setLocation(MathUtils.getPoint(player.getLocation(), radius, angle));
+    data.setVelocity(player.getVelocity());
+    data.setColor(new Color(100, 220, 255, 210));
+    data.setTimer(BOX_IN, BOX_FULL, BOX_OUT);
+    instances.add(data);
 }
 ```
 
-LunaLib 缺席时，`LunaAdapter` 不初始化，外层桥接类仍可完成 Nexerelin 检测和默认值返回。
+循环结束后，CPU 列表包含 32 份实例，所有位置都围绕本次生成时的玩家舰坐标。
 
-### 为缺席功能定义明确行为
+### 完成 refresh、submit 与 count
 
-每个 disabled 分支保持基础玩法，并关闭增强 UI 或战略接入：
-
-```java
-if (!luna) {
-    LOG.info("GearIn optional feature disabled: LunaLib settings");
-}
-```
-
-玩家仍能进入存档，日志说明关闭了哪项增强。
-
-### 让降级日志只出现一次
-
-外层桥接类的缺席分支避免多个调用点重复报告同一缺席状态：
+在 `setInstanceData()` 之后，把修改范围提交到 GPU，并声明实际绘制数：
 
 ```java
-if (!lunaMissingReported) {
-    lunaMissingReported = true;
-    LOG.info(message);
-}
+box.setInstanceDataRefreshAllFromCurrentIndex();
+box.submitInstanceData();
+box.setRenderingCount(instances.size());
 ```
 
-starsector.log 每次读档只出现一条对应消息。
+提交完成后，粒子真正进入画面。
 
-### 对包装类型返回值处理 null
+### 处理入队失败
 
-`LunaAdapter.getFullGraphicEffect(boolean fallback)` 在拆箱前回退到调用方默认值：
+`CombatRenderingManager.addEntity()` 返回后检查返回码，失败时立即释放实体资源：
 
 ```java
-Boolean value = LunaSettings.getBoolean(SETTINGS_OWNER_MOD_ID, "GearIn_fullGraphicEffect");
-return value == null ? fallback : value;
+byte result = CombatRenderingManager.addEntity(box);
+if (result != BoxEnum.STATE_SUCCESS) box.delete();
 ```
 
-字段存在时返回实际值，缺键时返回调用方传入的 `fallback`。
-
-在 `data/config/LunaSettings.csv` 中注册同一个字段 ID：
-
-```csv
-fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab
-GearIn_fullGraphicEffect,Full graphic effect,Boolean,true,,,,,GearIn
-```
+日志出现返回码，战斗继续运行。
 
 ## 完整最小例
 
-完整桥接类同时覆盖两个可选依赖。Nexerelin 专题只在 `isNexerelinEnabled()` 为真时进入各自适配器；LunaLib 设置读取则通过延迟加载的嵌套类隔离第三方类型。
+接线插件每 2 秒调用一次生成器。生成器只创建一项 `SpriteEntity`，32 份粒子都通过同一实例列表提交；原版降级分支不创建 BoxUtil 资源。
 
-::: details 完整成品：GearInCompatBridge
+::: details 完整成品：GearInBoxEntity
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.lib;
+
+import java.util.List;
+
+import org.apache.log4j.Logger;
+import org.boxutil.BoxUtilModPlugin;
+import org.boxutil.config.BoxConfigs;
+import org.boxutil.manager.ShaderCore;
 
 import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.input.InputEventAPI;
 
-public final class GearInCompatBridge {
-    public static final String NEX_MOD_ID = "nexerelin";
-    public static final String LUNA_MOD_ID = "lunalib";
-    public static final String SETTINGS_OWNER_MOD_ID = "gear_in";
-    public static final String FULL_GRAPHIC_FIELD = "GearIn_fullGraphicEffect";
+/**
+ * 完整最小例的接线载体：BoxUtil 初始化 (initLater 守卫)、可用性判据与生成
+ * 计时在这里，实体生成委托给 GearInBoxSpawner；
+ * 由既有战斗插件在 init() 中 addPlugin 注册，只在本场战斗内有效。
+ */
+public class GearInBoxEntity extends BaseEveryFrameCombatPlugin {
 
-    private static boolean nexMissingReported;
-    private static boolean lunaMissingReported;
+    private static final Logger LOG = Global.getLogger(GearInBoxEntity.class);
 
-    private GearInCompatBridge() {
-    }
+    /** 生成间隔 (秒)。 */
+    private static final float SPAWN_INTERVAL = 2f;
 
-    public static boolean isNexerelinEnabled() {
-        return Global.getSettings().getModManager().isModEnabled(NEX_MOD_ID);
-    }
+    private CombatEngineAPI engine;
 
-    public static boolean isLunaLibEnabled() {
-        return Global.getSettings().getModManager().isModEnabled(LUNA_MOD_ID);
-    }
+    /** 初始化可用性：配置开关 && GPU 资源有效，二者共同决定 shader 渲染入口可用性。 */
+    private boolean boxAvailable;
 
-    public static boolean getFullGraphicEffect(boolean fallback) {
-        if (!isLunaLibEnabled()) {
-            if (!lunaMissingReported) {
-                lunaMissingReported = true;
-                Global.getLogger(GearInCompatBridge.class).info(
-                        "GearIn compat: LunaLib unavailable, fallback=" + fallback);
-            }
-            return fallback;
+    private GearInBoxSpawner spawner;
+    private float spawnTimer;
+
+    @Override
+    public void init(CombatEngineAPI engine) {
+        this.engine = engine;
+        // initLater 在 OpenGL context 创建后调用；isGlobalInitialized() 守卫保证只初始化一次
+        if (!BoxUtilModPlugin.isGlobalInitialized()) {
+            BoxUtilModPlugin.initLater();
         }
-        return LunaAdapter.getFullGraphicEffect(fallback);
+        boxAvailable = BoxConfigs.isShaderEnable() && ShaderCore.isValid();
+        boolean compatibleSync = BoxConfigs.isCompatibleSync();
+        spawner = new GearInBoxSpawner(engine, boxAvailable);
+        LOG.info("GearIn box init: shaderEnable=" + BoxConfigs.isShaderEnable()
+                + " shaderCoreValid=" + ShaderCore.isValid()
+                + " available=" + boxAvailable
+                + " compatibleSync=" + compatibleSync);
     }
 
-    public static void reportNexerelinFallback() {
-        if (!isNexerelinEnabled() && !nexMissingReported) {
-            nexMissingReported = true;
-            Global.getLogger(GearInCompatBridge.class).info(
-                    "GearIn compat: Nexerelin unavailable, strategic integration disabled");
+    @Override
+    public void advance(float amount, List<InputEventAPI> events) {
+        if (engine == null) {
+            return; // 防御性判空
         }
-    }
-
-    private static final class LunaAdapter {
-        private static boolean getFullGraphicEffect(boolean fallback) {
-            Boolean value = lunalib.lunaSettings.LunaSettings.getBoolean(
-                    SETTINGS_OWNER_MOD_ID, FULL_GRAPHIC_FIELD);
-            return value == null ? fallback : value;
+        if (engine.isPaused()) {
+            return; // 暂停守卫：实体生成只在非暂停推进
+        }
+        spawnTimer += amount;
+        if (spawnTimer >= SPAWN_INTERVAL) {
+            spawnTimer = 0f;
+            spawner.spawnBox();
         }
     }
 }
@@ -159,58 +187,157 @@ public final class GearInCompatBridge {
 
 :::
 
-### 启用组合检测结果速查表
+::: details 完整成品：GearInBoxSpawner
 
-| 安装组合 | Nexerelin 检测 | LunaLib 检测 |
-|---|---|---|
-| 两个库都缺席 | false | false |
-| 仅 Nexerelin | true | false |
-| 仅 LunaLib | false | true |
-| 两个库都启用 | true | true |
+```java
+package data.scripts.gearin.lib;
+
+import java.awt.Color;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.log4j.Logger;
+import org.boxutil.base.api.InstanceDataAPI;
+import org.boxutil.define.BoxEnum;
+import org.boxutil.manager.CombatRenderingManager;
+import org.boxutil.units.standard.attribute.Instance2Data;
+import org.boxutil.units.standard.entity.SpriteEntity;
+import org.lazywizard.lazylib.MathUtils;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.CombatEngineLayers;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.graphics.SpriteAPI;
+
+/**
+ * 方框实体生成 (BoxUtil Entity / 实例数据工具族)：SpriteEntity + Instance2Data，
+ * 写入实例字段只是客户端状态，必须 setInstanceDataRefreshAllFromCurrentIndex() +
+ * submitInstanceData() + setRenderingCount() 完成提交 (addInstanceData 成功
+ * 不等于 GPU 已上传)；addEntity 返回非 STATE_SUCCESS 时显式 delete()；
+ * BoxUtil 不可用时回退原版粒子 (降级分支)。
+ */
+public class GearInBoxSpawner {
+
+    private static final Logger LOG = Global.getLogger(GearInBoxSpawner.class);
+    private static final String SPRITE_PATH = "graphics/fx/particlealpha32sq.png";
+    private static final float BOX_IN = 0.2f;
+    private static final float BOX_FULL = 1.5f;
+    private static final float BOX_OUT = 0.5f;
+    private static final int PARTICLE_COUNT = 32;
+
+    private final CombatEngineAPI engine;
+    private final boolean boxAvailable;
+    private int boxCount;
+
+    public GearInBoxSpawner(CombatEngineAPI engine, boolean boxAvailable) {
+        this.engine = engine;
+        this.boxAvailable = boxAvailable;
+    }
+
+    public void spawnBox() {
+        ShipAPI player = engine.getPlayerShip();
+        if (player == null || !player.isAlive()) {
+            return;
+        }
+        if (!boxAvailable) {
+            // 降级分支：shader 渲染入口不可用时，BoxUtil 实体不能作为唯一视觉输出
+            engine.addSmoothParticle(player.getLocation(), player.getVelocity(),
+                    24f, 0.6f, BOX_IN + BOX_FULL + BOX_OUT, Color.CYAN);
+            LOG.info("GearIn box: box unavailable, vanilla fallback particle");
+            return;
+        }
+        SpriteAPI sprite = Global.getSettings().getSprite(SPRITE_PATH);
+        SpriteEntity box = new SpriteEntity(sprite);
+        box.getMaterialData().setColor(Color.CYAN);
+        box.setLayer(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
+        box.setAdditiveBlend();
+        List<InstanceDataAPI> instances = new ArrayList<>();
+        for (int i = 0; i < PARTICLE_COUNT; i++) {
+            float angle = player.getFacing() + i * 360f / PARTICLE_COUNT;
+            float radius = 50f + (i % 4) * 18f;
+            Instance2Data data = new Instance2Data();
+            data.setLocation(MathUtils.getPoint(player.getLocation(), radius, angle));
+            data.setVelocity(player.getVelocity());
+            data.setFacing(angle);
+            data.setTurnRate(90f);
+            data.setScale(0.6f, 0.6f);
+            data.setScaleRate(0.5f, 0.5f);
+            data.setColor(new Color(100, 220, 255, 210));
+            data.setTimer(BOX_IN, BOX_FULL, BOX_OUT);
+            instances.add(data);
+        }
+        // 实例数据提交链：写字段只是客户端状态，refresh + submit + count 才是提交点
+        box.setInstanceData(instances);
+        box.setInstanceDataRefreshAllFromCurrentIndex();
+        box.submitInstanceData();
+        box.setRenderingCount(instances.size());
+        box.setAlwaysRefreshInstanceData(true);
+        // 生命周期：全局计时到期后实体退出渲染
+        box.setGlobalTimer(BOX_IN, BOX_FULL, BOX_OUT);
+        byte result = CombatRenderingManager.addEntity(box);
+        if (result != BoxEnum.STATE_SUCCESS) {
+            box.delete(); // 入队失败：显式删除，不能当已入队继续推进
+            LOG.warn("GearIn box: addEntity failed result=" + result);
+            return;
+        }
+        boxCount++;
+        LOG.info("GearIn box: #" + boxCount
+                + " instances=" + instances.size()
+                + " hull=" + player.getHullSpec().getHullName()
+                + " layer=" + box.getCombatLayer());
+    }
+}
+```
+
+:::
 
 ## 验证方案
 
-前置数据：分别准备两个库都缺席、仅 Nexerelin、仅 LunaLib、两个库都启用这 4 种启用组合，每种组合使用同一 GearIn JAR。
+前置数据：BoxUtil 已完成全局初始化，粒子贴图路径有效，战斗插件已经注册。
 
-1. 启动并读档，记录两个 `is*Enabled()` 的返回值。
-2. 连续调用 `getFullGraphicEffect(true)` 100 次，记录返回值和缺席日志条数。
-3. 连续调用 `reportNexerelinFallback()` 100 次，记录 Nexerelin 缺席日志条数。
-4. LunaLib 启用时分别测试设置值 true、false 和字段缺失，并在另一个 MOD 中建立同名字段。
-5. 修改另一个 MOD 的同名字段，确认 GearIn 的读取结果保持不变。
-6. 两个库都缺席时进入基础战斗与生涯界面，确认非兼容内容可用。
+1. 进入战斗并等待 2 秒，搜索 `GearIn box` 日志，核对 `instances=32`。
+2. 暂停战斗，确认生成计时停止；恢复后等待下一组出现。
+3. 观察 32 份粒子分布在 50、68、86、104 su 四档半径，并继承生成瞬间的玩家舰速度。
+4. 关闭 BoxUtil shader，重启战斗并确认日志进入原版平滑粒子分支。
+5. 分别保持默认同步设置和兼容设置，核对 `GearIn box sync` 日志与 `ShaderCore.isValid()` 结果。
 
 预期结果：
 
-- 4 种组合的两个布尔值分别为 `false/false`、`true/false`、`false/true`、`true/true`；
-- LunaLib 缺席时 100 次读取均返回 fallback，缺席日志为 1 条；
-- Nexerelin 缺席时 100 次报告只产生 1 条战略接入禁用日志；
-- LunaLib 字段存在时返回实际值，字段缺失时返回 fallback；
-- 另一个 MOD 的同名字段变化不会改变 GearIn 的读取结果；
-- 两个库都缺席时基础内容仍可进入，没有 `NoClassDefFoundError`。
+- BoxUtil 可用时，每次生成只入队 1 个实体，但 `renderingCount` 为 32；
+- 32 份实例的位置、速度、颜色、缩放和三段寿命均已写入并提交；
+- shader 不可用时只生成原版粒子，战斗没有未处理异常。
+- 同步兼容设置只改变 BoxUtil 同步路径；能力不可用时仍进入原版粒子降级。
 
 ## 故障分析
 
-- **未安装 LunaLib 时仍抛 `NoClassDefFoundError`**：第三方类型仍出现在无条件路径，或被外层静态字段提前解析。
+- **实体入队后画面仍然空白**：实例只留在 CPU 集合，没有完成 submit 和 `renderingCount` 设置。
 
-    - **解决方案**：把直接引用收进延迟加载的适配器，只在启用分支调用。
+    - **解决方案**：补齐这两步 (显式 refresh 对新建实体冗余)。
 
-- **`isModEnabled` 始终返回 false**：检测 ID 的大小写或拼写与 manifest 不一致。
+- **粒子只显示一份**：`renderingCount` 仍为 1，或实例列表只添加了一项。
 
-    - **解决方案**：改用精确 MOD ID。
+    - **解决方案**：对照日志中的 `instances` 和提交数量补齐实例列表和 `renderingCount`。
 
-- **检测通过后仍在加载期崩溃**：适配器类在入口字段或静态初始化中被提前解析。
+- **颜色正确但位置不动**：`ControlData` 没有在 `advance` 中更新实例。
 
-    - **解决方案**：移除外层类型引用并延迟到分支内部，重启。
+    - **解决方案**：每帧写入新位置并提交。
 
-- **缺少前置时功能悄悄变化**：降级分支没有输出诊断。
+- **战斗退出后资源持续增长**：入队失败或结束路径没有调用 `delete`。
 
-    - **解决方案**：增加只记录一次的降级日志。
+    - **解决方案**：在退出回调清理全部实体。
+
+- **特定设备在同步调用处崩溃**：仍走不兼容的同步路径。
+
+    - **解决方案**：读取 `isCompatibleSync()` 并启用兼容设置，重启战斗。
 
 ## 总结
 
-软依赖的完整做法包括启用判断、库调用隔离、明确降级和可定位日志。判断本身只回答库是否启用，代码组织才决定缺库时类加载是否安全。
+BoxUtil 实例渲染的关键不是 new 出对象，而是把 CPU 修改明确提交给渲染端。写实例、标记刷新、提交和设置数量是相互独立的动作；返回码与释放路径同样属于成品。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.ModManagerAPI`：`isModEnabled` 判断可选 MOD 是否启用；
-- `starsector.log`：确认增强功能启用或降级。
+- `org.boxutil.units.standard.entity.SpriteEntity`：批量精灵实体；
+- `org.boxutil.units.standard.attribute.Instance2Data`：单个二维实例状态；
+- `org.boxutil.manager.CombatRenderingManager`：`addEntity` 加入 BoxUtil 战斗渲染队列；
+- `org.boxutil.config.BoxConfigs`：`isCompatibleSync` 读取设备同步兼容设置。

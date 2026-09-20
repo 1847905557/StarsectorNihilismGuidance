@@ -1,6 +1,6 @@
-# 让 Nexerelin 的战略 AI 使用 GearIn 扩张
+# 用 BoxUtil 排版文本、数值与界面边框
 
-势力能出现在星区，不代表战略 AI 会替它作出行动。本节确认 GearIn 拥有 StrategicAI，检查当前 concern，并把势力入侵倍率与全局规模共同算成可解释的舰队规模。
+调试文字若只用日志，玩家看不到即时状态；若每帧重建字形，又会浪费渲染预算。本节加载一次字体，用 `TextFieldEntity` 保存三行标签，再用 `NumberObject` 和 `UIBorderObject` 直接绘制右上角状态面板。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,9 +10,11 @@
 
 完成后，您将能够：
 
-- 用正确的 concern ID 调整自定义势力的战略优先级；
-- 在 StrategicAI 尚未创建时安全地等待，在创建后主动刷新一次会议；
-- 区分入侵规模倍率和复活全局条件，解释最终判断。
+- 用 `FontDataManager.tryFont()` 加载并验证 `.fnt` 字体数据；
+- 创建 `TextFieldEntity`，配置窗口正交矩阵并提交文本变化；
+- 用 `NumberObject` 绘制不需要重建字形的动态数值；
+- 用 `UIBorderObject` 建立固定尺寸面板边界；
+- 只在 `renderInUICoords()` 调用直接绘制入口。
 
 ## 前置知识
 
@@ -20,189 +22,266 @@
 - [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
-## 让战略 AI 获得可验证的行动入口
+## 明确当前需求
 
-随机星区运行数月后，GearIn 战略会议能产生经济或军事 concern；允许入侵时，其进攻舰队规模体现势力配置倍率，势力被消灭后仍遵守复活设置。
+右上角显示粒子批次、活动实体数和最近一次提交结果；数值变化时文本更新，窗口缩放后仍保持边距。
 
 ## 文件与 API 链路
 
-`StrategicAI.getAI` 从 sector persistent-data map 读取已经创建的 AI；`StrategicAI.addAIIfNeeded` 在缺少实例时负责补建；`strategyPriorityMults` 使用 `strategicAIConfig.json` 中的 concern ID；`InvasionFleetManager.getInvasionSizeMult` 返回已组合的势力与全局入侵倍率；`SectorManager` 和 `NexConfig` 共同决定复活是否有机会执行。
+### 界面绘制对象速查表
 
-### 允许 GearIn 参加战略系统
+| 对象 | 职责 |
+|---|---|
+| `FontDataManager` | 解析 `.fnt` 并返回 `FontMapData` |
+| `TextFieldEntity` | 把文本转换成可提交的字符数据 |
+| `NumberObject` | 直接用数字 shader 绘制数值 |
+| `UIBorderObject` | 使用九宫格资源绘制固定边框 |
 
-在 `gear_industry.json` 的战略字段中开启入侵，并按 concern ID 调整两个实际会被战略系统读取的关注项：
+后三者的绘制命令都必须出现在 UI 渲染回调。
 
-```json
-"canInvade": true,
-"strategyPriorityMults": {
-  "vulnerableEnemyTarget": 1.15,
-  "commodityCompetition": 0.9
+### 加载并验证字体数据
+
+`GearInTextField.initFont()` 用 MOD 资源路径解析 `.fnt`，并保留失败日志：
+
+```java
+font = FontDataManager.tryFont("graphics/fonts/insignia15LTaa.fnt");
+if (font == null || !font.isValid()) {
+    LOG.warn("GearIn box: font load failed");
 }
 ```
 
-`military` 和 `economy` 是 concern 标签，不是可供 `strategyPriorityMults` 查找的键；写入它们不会改变上述两个 concern 的优先级。
+`getFontInfo()` 返回字体路径与原始字号；失败时文本角色保持禁用。
 
-战略会议中的 Vulnerable Enemy Target 权重会上升，Competition 权重会下降。
+### 建立窗口空间文本实体
 
-### 确认 StrategicAI 已创建
-
-`GearInStrategicAIProbe` 的 `concernCount()`、`forceMeetingIfReady()` 与 `ensureAI()` 先从 sector persistent-data map 读取，再用 `null` 守卫确认 AI 生命周期；需要补建时调用 `addAIIfNeeded()`：
+`GearInTextField.initTextEntity()` 先确认文本 shader 可用，再创建字段、设置画布尺寸与窗口正交矩阵：
 
 ```java
-StrategicAI ai = StrategicAI.getAI(factionId);
-return ai == null ? 0 : ai.getExistingConcerns().size();
+textEntity = new TextFieldEntity(font, true);
+textEntity.setFieldSize(1024f, 128f);
+textEntity.addText("", 12f, Color.WHITE, false, false, false, false, 0);
+textEntity.setCustomPrimeMatrix();
+textEntity.setPrimeMatrix(TransformUtil.createWindowOrthoMatrix(null));
 ```
 
-`getAI()` 实际读取 `StrategicAI.getAIsMap()`；新档创建早期 map 尚未写入该势力时会返回 `null`。调用 `forceMeeting()` 只应发生在返回非空之后。
+文本实体有效，屏幕坐标不会被战斗相机缩放。
+
+### 只在字符串变化时刷新
+
+`GearInTextField.setText()` 比较旧值，修改 `TextData.text` 后标记刷新范围并提交：
 
 ```java
-public boolean ensureAI(String factionId) {
-    StrategicAI before = StrategicAI.getAI(factionId);
-    StrategicAI created = StrategicAI.addAIIfNeeded(factionId);
-    return before == null && (created != null || StrategicAI.getAI(factionId) != null);
-}
+TextFieldEntity.TextData message = textEntity.getTextDataList().get(0);
+if (text.equals(message.text)) return;
+message.text = text;
+textEntity.setTextDataRefreshAllFromCurrentIndex();
+textEntity.submitText();
 ```
 
-早期探针返回 `0`，进入生涯后可主动刷新并读取 concern 数量。
+静止数值期间没有重复提交。
 
-### 组合势力与全局入侵倍率
+### 配置数字与固定边框
 
-`GearInInvasionScaleProbe.estimate()` 让日志能解释最终规模来源，并避免重复乘全局值：
+`GearInStatusPanel` 构造方法把边框固定为 240 × 104 像素，并让数字保留 4 位整数和 0 位小数：
 
 ```java
-float combined = InvasionFleetManager.getInvasionSizeMult(factionId);
-return baseSize * combined;
+border.setSize(240f, 104f);
+border.setColor(0.25f, 0.85f, 1f, 0.9f);
+number.setIntegerLength(4);
+number.setDecimalLength(0);
 ```
 
-`getInvasionSizeMult()` 已经计算 `1 + invasionFleetSizeMod` 并乘上 `NexConfig.invasionFleetSizeMult`，调用方只再乘一次基础规模。
+边框 `isSizeValid()` 为真，三项整数使用相同的宽高和颜色参数。
 
-修改势力或全局倍率中的任意一项时，估算值只按该项变化一次。
+### 在 UI 回调发出直接绘制
 
-### 拆开三种事件的后处理
-
-`GearInInvasionScaleProbe.applyEventPostProcessing()` 先取得基础规模，再应用共同倍率和事件自己的后处理；invasion 不附加事件倍率，respawn 使用 `RESPAWN_SIZE_MULT`，blockade 先保证最小规模，再乘 `BLOCKADE_SIZE_MULT` 并加入固定 FP：
+战斗插件在 `renderInUICoords()` 中调用状态面板的 `render()`，由它按当前分辨率计算右上角锚点并依次绘制边框、标签和三项数字：
 
 ```java
-float fp = baseSize;
-if (type == InvasionFleetManager.EventType.BLOCKADE) {
-    fp = Math.max(fp, InvasionFleetManager.MIN_BLOCKADE_SIZE);
-}
-fp *= InvasionFleetManager.getInvasionSizeMult(factionId);
-if (type == InvasionFleetManager.EventType.RESPAWN) {
-    fp *= InvasionFleetManager.RESPAWN_SIZE_MULT;
-} else if (type == InvasionFleetManager.EventType.BLOCKADE) {
-    fp = fp * InvasionFleetManager.BLOCKADE_SIZE_MULT
-            + InvasionFleetManager.BLOCKADE_FLAT_FP_BONUS;
-}
-return fp;
+float x = screenWidth - PANEL_WIDTH - SCREEN_MARGIN;
+float y = screenHeight - PANEL_HEIGHT - SCREEN_MARGIN;
+border.render(x, y);
+labels.drawAt(x + 16f, y + PANEL_HEIGHT - 24f);
+number.render(batches, new Vector2f(x + 160f, y + 68f),
+        0f, 12f, 18f, false);
 ```
 
-目标筛选仍由事件类型自己的入口负责：blockade 检查 `canBlockade` 或伤害型 concern，respawn 额外受复活资格和目标权重影响。不能把这些资格条件折叠进 `getInvasionSizeMult()`。
-
-相同基础规模下，三种事件的最终 FP 能分别解释共同倍率、最小规模、固定加成和事件倍率。
-
-### 把复活作为独立策略验证
-
-`GearInStrategicAIProbe.respawnAllowedByRules()` 把复活开关、事件开关、势力资格和次数上限分开判断：
-
-```java
-SectorManager manager = SectorManager.getManager();
-boolean respawnPossible = manager != null
-        && manager.isRespawnFactions()
-        && NexConfig.enableHostileFleetEvents
-        && NexConfig.enableInvasions;
-```
-
-`factionRespawnInterval` 只决定检查间隔，`maxFactionRespawns` 为负数表示不设上限；`noHomeworld` 是程序化星区的母星配置，不是复活开关。
-
-探针只有在管理器已建立、复活和入侵事件均开启、势力可玩且未达到次数上限时返回 `true`。
+`advance()` 只调用 `update()` 保存三个整数，UI 回调负责全部 GL 绘制。
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+`GearInTextField` 管理字体、字符数据与文本直接绘制；`GearInStatusPanel` 管理固定布局、数字和边框。战斗插件在逻辑回调更新数值，在 UI 回调调用一次 `render()`。
 
-::: details 完整成品：GearInInvasionScaleProbe
+::: details 完整成品：GearInStatusPanel
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.lib;
 
-import exerelin.campaign.fleets.InvasionFleetManager;
+import java.awt.Color;
 
-public final class GearInInvasionScaleProbe {
-    public float estimate(String factionId, float baseSize) {
-        float combined = InvasionFleetManager.getInvasionSizeMult(factionId);
-        return baseSize * combined;
+import org.boxutil.units.standard.misc.NumberObject;
+import org.boxutil.units.standard.misc.UIBorderObject;
+import org.lwjgl.util.vector.Vector2f;
+
+import com.fs.starfarer.api.Global;
+
+public final class GearInStatusPanel {
+    private static final float PANEL_WIDTH = 240f;
+    private static final float PANEL_HEIGHT = 104f;
+    private static final float SCREEN_MARGIN = 20f;
+
+    private final GearInTextField labels = new GearInTextField();
+    private final NumberObject number = new NumberObject();
+    private final UIBorderObject border = new UIBorderObject(false, true);
+
+    private int batches;
+    private int activeEntities;
+    private int lastSubmitState;
+
+    public GearInStatusPanel() {
+        border.setSize(PANEL_WIDTH, PANEL_HEIGHT);
+        border.setColor(0.25f, 0.85f, 1f, 0.9f);
+        number.setColor(new Color(110, 225, 255));
+        number.setIntegerLength(4);
+        number.setDecimalLength(0);
+        labels.setText("BATCHES\nACTIVE\nSUBMIT");
     }
 
-    public float applyEventPostProcessing(String factionId, float baseSize,
-            InvasionFleetManager.EventType type) {
-        float fp = baseSize;
-        if (type == InvasionFleetManager.EventType.BLOCKADE) {
-            fp = Math.max(fp, InvasionFleetManager.MIN_BLOCKADE_SIZE);
-        }
-        fp *= InvasionFleetManager.getInvasionSizeMult(factionId);
-        if (type == InvasionFleetManager.EventType.RESPAWN) {
-            fp *= InvasionFleetManager.RESPAWN_SIZE_MULT;
-        } else if (type == InvasionFleetManager.EventType.BLOCKADE) {
-            fp = fp * InvasionFleetManager.BLOCKADE_SIZE_MULT
-                    + InvasionFleetManager.BLOCKADE_FLAT_FP_BONUS;
-        }
-        return fp;
+    public void update(int batches, int activeEntities, int lastSubmitState) {
+        this.batches = batches;
+        this.activeEntities = activeEntities;
+        this.lastSubmitState = lastSubmitState;
+    }
+
+    public void render() {
+        float x = Global.getSettings().getScreenWidthPixels()
+                - PANEL_WIDTH - SCREEN_MARGIN;
+        float y = Global.getSettings().getScreenHeightPixels()
+                - PANEL_HEIGHT - SCREEN_MARGIN;
+        border.render(x, y);
+        labels.drawAt(x + 16f, y + PANEL_HEIGHT - 24f);
+        number.render(batches, new Vector2f(x + 160f, y + 68f),
+                0f, 12f, 18f, false);
+        number.render(activeEntities, new Vector2f(x + 160f, y + 42f),
+                0f, 12f, 18f, false);
+        number.render(lastSubmitState, new Vector2f(x + 160f, y + 16f),
+                0f, 12f, 18f, false);
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInStrategicAIProbe
+::: details 完整成品：GearInTextField
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.lib;
 
-import java.util.Map;
+import java.awt.Color;
 
-import exerelin.campaign.SectorManager;
-import exerelin.campaign.ai.StrategicAI;
-import exerelin.utilities.NexConfig;
+import org.apache.log4j.Logger;
+import org.boxutil.base.BaseShaderData;
+import org.boxutil.define.BoxEnum;
+import org.boxutil.manager.FontDataManager;
+import org.boxutil.manager.ShaderCore;
+import org.boxutil.units.standard.attribute.FontMapData;
+import org.boxutil.units.standard.entity.TextFieldEntity;
+import org.boxutil.util.TransformUtil;
 
-public final class GearInStrategicAIProbe {
-    public int aiMapSize() {
-        Map<String, StrategicAI> ais = StrategicAI.getAIsMap();
-        return ais.size();
+import com.fs.starfarer.api.Global;
+
+/**
+ * 字体与屏幕文本 (BoxUtil 字体/绘制工具族)：FontDataManager.tryFont 解析 .fnt
+ * 得到 FontMapData，TextFieldEntity 以窗口正交矩阵 + directDraw() 在渲染回调里
+ * 绘制屏幕文本；文本修改后必须 setTextDataRefresh* + submitText() 才会上传。
+ */
+public class GearInTextField {
+
+    private static final Logger LOG = Global.getLogger(GearInTextField.class);
+    private static final String FONT_PATH = "graphics/fonts/insignia15LTaa.fnt";
+    private static final float TEXT_SIZE = 12f;
+
+    private FontMapData font;
+    private TextFieldEntity textEntity;
+
+    /** 创建时加载字体并创建文本实体；任一环节失败则文本功能禁用 (内部判空)。 */
+    public GearInTextField() {
+        initFont();
+        initTextEntity();
     }
 
-    public int concernCount(String factionId) {
-        StrategicAI ai = StrategicAI.getAI(factionId);
-        return ai == null ? 0 : ai.getExistingConcerns().size();
+    /** 字体信息 (供 init 日志)：未加载返回 "null"，否则 "路径/字号"。 */
+    public String getFontInfo() {
+        return font == null ? "null" : FONT_PATH + "/" + font.getFontSize();
     }
 
-    public boolean ensureAI(String factionId) {
-        StrategicAI before = StrategicAI.getAI(factionId);
-        StrategicAI created = StrategicAI.addAIIfNeeded(factionId);
-        return before == null && (created != null || StrategicAI.getAI(factionId) != null);
-    }
-
-    public boolean forceMeetingIfReady(String factionId) {
-        StrategicAI ai = StrategicAI.getAI(factionId);
-        if (ai == null) {
-            return false;
+    /** 更新屏幕文本：改 TextData.text 后必须 refresh + submitText() 才会上传。 */
+    public void setText(String text) {
+        if (textEntity == null) {
+            return;
         }
-        ai.forceMeeting();
-        return true;
+        TextFieldEntity.TextData message = textEntity.getTextDataList().get(0);
+        if (text.equals(message.text)) {
+            return;
+        }
+        message.text = text;
+        textEntity.setTextDataRefreshIndex(0);
+        textEntity.setTextDataRefreshAllFromCurrentIndex();
+        byte result = textEntity.submitText();
+        if (result != BoxEnum.STATE_SUCCESS) {
+            textEntity.setShouldRenderingCharCount(0);
+        }
     }
 
-    public boolean respawnAllowedByRules(String factionId) {
-        SectorManager manager = SectorManager.getManager();
-        if (manager == null || !manager.isRespawnFactions()) {
-            return false;
+    /** 屏幕空间绘制：只能在渲染回调 (renderInUICoords) 里调用 (GL 命令时机)。 */
+    public void drawAt(float x, float y) {
+        if (textEntity == null || textEntity.hasDelete()) {
+            return;
         }
-        int maxRespawns = NexConfig.maxFactionRespawns;
-        boolean hasAttempt = maxRespawns < 0
-                || manager.getNumRespawns(factionId) < maxRespawns;
-        return NexConfig.enableHostileFleetEvents
-                && NexConfig.enableInvasions
-                && NexConfig.getFactionConfig(factionId).playableFaction
-                && hasAttempt;
+        textEntity.setLocation(x, y);
+        textEntity.setFacingScale(0f, getFontScale(), getFontScale());
+        textEntity.directDraw();
+    }
+
+    /** 字体数据加载：FontDataManager.tryFont 解析 .fnt 并登记到字体表。 */
+    private void initFont() {
+        font = FontDataManager.tryFont(FONT_PATH);
+        if (font == null || !font.isValid()) {
+            LOG.warn("GearIn box: font load failed: " + FONT_PATH);
+        }
+    }
+
+    /** 文本实体创建：字体或文本程序不可用时禁用文本并写 warn。 */
+    private void initTextEntity() {
+        if (font == null) {
+            return;
+        }
+        if (!ShaderCore.isInitialized()) {
+            LOG.warn("GearIn box: shader core not initialized, text disabled");
+            return;
+        }
+        BaseShaderData program = ShaderCore.getTextProgram();
+        if (program == null || !program.isValid()) {
+            LOG.warn("GearIn box: text program invalid, text disabled");
+            return;
+        }
+        textEntity = new TextFieldEntity(font, true);
+        if (!textEntity.isValid()) {
+            textEntity.delete();
+            textEntity = null;
+            LOG.warn("GearIn box: text field entity invalid, text disabled");
+            return;
+        }
+        textEntity.setFieldSize(1024f, 128f);
+        textEntity.addText("", TEXT_SIZE, Color.WHITE, false, false, false, false, 0);
+        textEntity.setMappingModeSubmitData(false);
+        textEntity.setCustomPrimeMatrix();
+        textEntity.setPrimeMatrix(TransformUtil.createWindowOrthoMatrix(null));
+        textEntity.setGlobalColor(Color.WHITE);
+    }
+
+    private float getFontScale() {
+        return Math.abs(font.getFontSize()) > 0f ? TEXT_SIZE / Math.abs(font.getFontSize()) : 1f;
     }
 }
 ```
@@ -211,57 +290,45 @@ public final class GearInStrategicAIProbe {
 
 ## 验证方案
 
-前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含 [C19-S2] 的势力配置、[C19-S3] 的开局生成结果、本节 `gear_industry.json` 战略字段和两个探针类。
+前置数据：BoxUtil 字体、文本和数字 shader 可用，战斗插件持有一个 `GearInStatusPanel`。
 
-1. 构建示例 MOD，确认两个探针的方法签名与当前 `ExerelinCore.jar` 匹配。
-2. 在新档、读档和 AI 缺失时机分别记录 persistent-data map 的条目数、`getAI()` 返回值和 `ensureAI()` 结果。
-3. 进入战略 AI 已建立的生涯，刷新一次会议并记录 concern 数量。
-4. 分别修改 `invasionFleetSizeMod` 与全局 `invasionFleetSizeMult`，比较估算值变化。
-5. 对 invasion、blockade 和 respawn 使用同一基础规模，分别记录最小规模、事件倍率和固定 FP。
-6. 打开复活设置，记录 `respawnAllowedByRules()` 在达到次数上限前后的返回值，并核对目标资格。
+1. 进入战斗，核对字体路径、原始字号和文本 shader 状态。
+2. 调用 `update(12, 34, 0)`，在 UI 回调中渲染面板，核对三行标签与三个整数。
+3. 连续 60 帧传入相同值，确认 `TextFieldEntity` 不重复提交标签字符数据。
+4. 把窗口切换到另一分辨率，确认面板右边和上边仍各保留 20 像素边距。
 
 预期结果：
 
-- 两个配置中的 concern ID 能影响战略优先级；
-- AI 未建立时探针返回安全值，建立后可以刷新会议；
-- AI 缺失时 `ensureAI()` 补建实例，map 条目数增加 1；
-- `getInvasionSizeMult()` 的组合倍率只被应用一次；
-- blockade 的最小规模、1.2 倍事件倍率和 120 FP 固定加成分别可见；
-- respawn 的 1.2 倍事件倍率不会被误写成 invasion 的共同倍率；
-- 复活探针准确反映管理器、事件开关、势力资格和次数上限。
+- 字体和文本 shader 有效时，标签字符数据成功提交；
+- `NumberObject` 直接绘制三项动态整数，无需为每次变化重建文本；
+- `UIBorderObject` 使用稳定的 240 × 104 像素尺寸；
+- 分辨率变化后面板仍以 20 像素边距锚定右上角；
+- 逻辑更新与直接绘制分属各自回调，界面没有未处理异常。
 
 ## 故障分析
 
-- **新档创建早期出现 `NullPointerException`**：Nexerelin 尚未建立该势力的 `StrategicAI`。
+- **文字不显示**：直接绘制发生在逻辑推进回调，没有进入正确渲染上下文。
 
-    - **解决方案**：保留 null 守卫并延迟到进入生涯后调用 `forceMeeting()`。
+    - **解决方案**：把面板 `render()` 移入 `renderInUICoords()`。
 
-- **战略 AI 存在但不扩张**：`canInvade`、全局 `enableInvasions` 或 concern 的 `canInvade` 标签未满足。
+- **更新后文字仍是旧值**：`setText` 后漏掉 refresh 或 `submitText`。
 
-    - **解决方案**：逐项启用后推进战略周期。
+    - **解决方案**：补齐字形重建与提交。
 
-- **入侵舰队规模异常大**：调用方在 `getInvasionSizeMult()` 结果上又乘了一次全局倍率。
+- **中文显示为方框**：字体数据不包含对应字形。
 
-    - **解决方案**：移除重复乘法。
+    - **解决方案**：换用覆盖目标字符集的字体并重新提交文本。
 
-- **封锁舰队规模偏小**：只应用了共同倍率，没有先执行 `MIN_BLOCKADE_SIZE` 和 blockade 的固定后处理。
+- **边框随文字长度跳动**：面板宽高直接依赖当前文本尺寸。
 
-    - **解决方案**：按事件类型逐项记录。
-
-- **复活舰队被当作普通入侵**：没有应用 `RESPAWN_SIZE_MULT` 或复活目标筛选。
-
-    - **解决方案**：使用 `EventType.RESPAWN` 分支。
-
-- **被消灭势力没有复活**：复活开关、敌对舰队事件、入侵开关、次数上限、势力资格或检查间隔未满足。
-
-    - **解决方案**：逐项核对并推进到下一检查周期。
+    - **解决方案**：使用固定或受约束的面板尺寸。
 
 ## 总结
 
-战略接入要分别确认 AI 生命周期、concern ID、行动许可和规模计算。入侵倍率是一次组合运算，复活则是管理器、事件开关、势力资格和次数上限的联合条件；仅看到势力配置文件被读取，不能代替这些运行期验证。
+文本实体的昂贵步骤是字形刷新与提交，绘制入口则受渲染阶段约束。让数据更新、字形重建和 directDraw 分属正确时机，调试面板才能既即时又稳定。
 
 ## 建议参考项
 
-- `exerelin.campaign.ai.StrategicAI`：`getAI` 取得势力战略 AI；
-- `exerelin.campaign.fleets.InvasionFleetManager`：`getInvasionSizeMult` 读取入侵规模倍率，`EventType` 区分 invasion、blockade 和 respawn；
-- `exerelin.utilities.NexConfig`：全局战略、入侵与复活设置。
+- `org.boxutil.manager.FontDataManager`：加载与查询字体数据；
+- `org.boxutil.units.standard.entity.TextFieldEntity`：排版和提交文本实例；
+- `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：`renderInUICoords` 屏幕空间直接绘制入口。

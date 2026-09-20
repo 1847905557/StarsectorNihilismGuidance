@@ -1,147 +1,229 @@
-# 用 BoxUtil 绘制线段、圆环与曲线光束
+# 使用 MagicLib 辅助生涯开发
 
-战术范围提示和能量束都由节点组成，但两者需要不同的插值与材质策略。本节先用 SegmentEntity 画稳定圆环，再用 CurveEntity 画带弯曲的光束，并明确节点提交时机。
+`MagicCampaign` 把常见的生涯对象装配流程收进了两个直接入口。本节在 GearIn 星系放置一艘可回收残骸，并在同一次新档生成中清理星系周围的超空间地形。
 
-*本节预期阅读时间：~18 分钟。*
+预计阅读时间：20 分钟。
 
-*本节预期操作时间：~30 分钟。*
+预计操作时间：25 分钟。
 
 ## 学习目标
 
-完成后，您将能够：
-
-- 根据折线与平滑曲线的差异选择 `SegmentEntity` 或 `CurveEntity`；
-- 用实体初始化方法生成圆环和曲线光束的节点；
-- 配置纹理流速与暂停策略；
-- 在节点变化后标记刷新范围并重新提交；
-- 把构造完成的实体交给战斗渲染管理器，并处理入队失败。
+- 使用 `MagicCampaign.createDerelict(...)` 创建可发现、可回收的舰船残骸；
+- 使用 `MagicCampaign.hyperspaceCleanup(...)` 清理星系周围的超空间地形；
+- 在新档生成顺序中接入生涯布置器；
+- 使用 Sector Memory 保证同一存档只完成一次布置；
+- 在调用依赖库前检查星系、锚点和装配 ID。
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C3-S4] 的 `GearInSystemGenerator`、`GearIn` 星系和 `GearIn_planet1`；
+- [C4-S1] 定义的 `GearIn_artizan_combat` 装配；
+- [C16-S5] 的 Sector Memory 读写；
+- [C18-S1] 的 MagicLib 硬依赖与类加载边界。
 
-## 明确当前需求
+## 划分新档布置职责
 
-玩家舰周围显示一圈缓慢流动的 600 su 范围环；战斗接线在武器开火时从舰首创建一条平滑曲线光束。两个构造器只负责节点和材质状态，调用方负责入队、更新与删除。
+星系生成器负责建立恒星、行星、市场与跳跃点，生涯布置器负责使用既有对象追加残骸并整理超空间。两者共享 `SectorAPI`，调用顺序决定后者能否找到前者创建的运行时对象。
 
-## 文件与 API 链路
-
-### 线段与曲线实体速查表
-
-| 实体 | 适用形状 |
-|---|---|
-| `SegmentEntity` | 线段、折线、圆与椭圆 |
-| `CurveEntity` | 平滑曲线插值 |
-
-两者都在客户端节点列表和 GPU 节点缓冲之间保留明确的提交边界，构造完成后由 `CombatRenderingManager` 加入当前战斗。
-
-### 初始化战术范围圆环
-
-`GearInSegmentPainter.makeRangeRing()` 一次生成圆环节点与颜色：
-
-```java
-SegmentEntity ring = new SegmentEntity();
-ring.initCircle(center, radius, Color.CYAN, Color.WHITE, 5f);
-ring.setInterpolation((short) 64);
+```text
+GearInModPlugin.onNewGame()
+    -> GearInSystemGenerator.generate(sector)
+    -> GearInCampaignSetup.setup(sector)
+    -> seedRelations(sector)
 ```
 
-返回的 SegmentEntity 拥有有效节点。
+`setup(...)` 先取得 `GearIn` 星系，再取得 `GearIn_planet1`。残骸以行星为轨道焦点；超空间清理则接收整个 `StarSystemAPI`。同一个星系对象由此流向两个用途，但每个 API 的输入边界保持清楚。
 
-### 让纹理沿圆环缓慢流动
+## 检查生涯对象与装配
 
-`makeRangeRing()` 接着设置纹理速度并选择暂停策略：
-
-```java
-ring.setTextureSpeed(0.15f);
-ring.setFlowWhenPaused(false);
-```
-
-非暂停时纹理偏移持续变化。
-
-### 提交圆环节点
-
-`makeRangeRing()` 在返回前把节点数组上传到渲染端：
+`createDerelict(...)` 接收运行时星系实体和装配 ID。先检查三个前置对象，可以把缺失资源转化为带具体 ID 的日志，而不是让后续构造在更深的位置失败。
 
 ```java
-byte state = ring.submitNodes();
+StarSystemAPI system = sector.getStarSystem("GearIn");
+SectorEntityToken orbitCenter = sector.getEntityById("GearIn_planet1");
+boolean variantExists = Global.getSettings()
+        .doesVariantExist("GearIn_artizan_combat");
 ```
 
-submitNodes 返回成功状态且圆环出现。
+锚点还要属于目标星系。`sector.getEntityById(...)` 是全局查询；比较 `orbitCenter.getStarSystem()` 与 `system`，可以防止同名或错误来源的实体把残骸送到另一处地点。
 
-### 初始化平滑曲线光束
+前置对象缺失时，本例记录错误并结束本次布置。日志分别包含 `GearIn`、`GearIn_planet1` 或 `GearIn_artizan_combat`，因此可以直接回到星系生成、实体 ID 或装配注册链排查。
 
-`GearInCurveBeam.make()` 用起点、长度、颜色、宽度和混合系数建立曲线：
+## 配置可回收残骸
+
+本节使用 `createDerelict(...)` 的十参数重载。前九个参数建立残骸与回收交互，最后一个参数决定舰船本身是否允许回收。
 
 ```java
-CurveEntity beam = new CurveEntity();
-beam.initSmoothLine(start, length, Color.CYAN, Color.WHITE, 9f, 0.35f);
+MagicCampaign.createDerelict(
+        "GearIn_artizan_combat",
+        ShipCondition.BATTERED,
+        true,
+        null,
+        true,
+        orbitCenter,
+        90f,
+        orbitCenter.getRadius() + 50f,
+        100f,
+        true);
 ```
 
-光束从舰首延伸且边缘平滑。
+### 残骸参数速查表
 
-### 把构造结果加入当前战斗
+参数按下面的职责解释：
 
-战斗接线在取得圆环或光束后，先 `setLayer()` 指定渲染层 (实体默认 layer 为 null，`addEntity` 对 null 层恒返回 STATE_FAILED)，再根据返回码决定实体是否已经交给 BoxUtil 管理：
+| 参数 | 本例值 | 作用 |
+| --- | --- | --- |
+| `variantId` | `GearIn_artizan_combat` | 指定残骸使用的舰船装配 |
+| `condition` | `BATTERED` | 让回收结果带有明显损伤 |
+| `discoverable` | `true` | 让残骸进入传感器发现流程 |
+| `discoveryXp` | `null` | 使用默认发现经验 |
+| `recoverable` | `true` | 为实体附加舰船回收交互 |
+| `orbitCenter` | `GearIn_planet1` | 指定圆形轨道焦点 |
+| `orbitStartAngle` | `90f` | 从行星上方的轨道角开始 |
+| `orbitRadius` | 行星半径加 `50 su` | 将残骸放在近地轨道 |
+| `orbitDays` | `100f` 天 | 指定一圈轨道周期 |
+| `isRecoverable` | `true` | 允许玩家实际回收舰船 |
 
-```java {1}
-beam.setLayer(CombatEngineLayers.ABOVE_SHIPS_LAYER);
-byte state = CombatRenderingManager.addEntity(beam);
-if (state != BoxEnum.STATE_SUCCESS) {
-    beam.delete();
+两个回收布尔值控制不同层级。第一个 `recoverable` 决定是否创建回收特殊交互，最后的 `isRecoverable` 决定实体是否带有不可回收标签。本例把两者都设为 `true`，交互入口与最终结果因此一致。
+
+`ShipCondition.BATTERED` 控制舰船状况。它会影响 D-mod 数量和残留武器状况；具体结果仍由游戏的舰船回收流程生成，而不是由本节手工填写。
+
+## 清理星系周围的超空间
+
+`hyperspaceCleanup(...)` 接收整个 `StarSystemAPI`。MagicLib 根据该星系在超空间中的位置与最大半径清理周围云层，为跳跃点和星系边界留出通行区域。
+
+```java
+MagicCampaign.hyperspaceCleanup(system);
+```
+
+这个调用应放在星系的位置、跳跃点和边界已经生成之后。本例由 `GearInSystemGenerator.generate(...)` 先完成星系构造，再由 `GearInCampaignSetup.setup(...)` 清理超空间。
+
+清理结果作用于超空间地形，观察位置是星系外侧的超空间地图。把行星或残骸实体传给这个方法不符合其输入类型；这里的所有权对象始终是 `GearIn` 星系。
+
+## 使用 Memory 保证一次布置
+
+新档入口正常只执行一次，但布置方法仍应对重复调用保持稳定。本例在 Sector Memory 使用 `$GearIn_campaign_setup_done`：值为 `true` 时直接返回，值不存在时继续检查前置对象。
+
+```java
+MemoryAPI sectorMemory = sector.getMemoryWithoutUpdate();
+if (sectorMemory.getBoolean("$GearIn_campaign_setup_done")) {
+    return;
 }
 ```
 
-成功时实体进入当前战斗；失败时资源立即删除，调用侧不再更新该对象。
+成功标记写在残骸创建和超空间清理之后：
+
+```java
+MagicCampaign.createDerelict(/* 已核对的参数 */);
+MagicCampaign.hyperspaceCleanup(system);
+sectorMemory.set("$GearIn_campaign_setup_done", true);
+```
+
+前置检查失败或 MagicLib 调用抛出异常时，方法不会写入成功标记。若残骸已经创建而超空间清理失败，异常处理会先移除本次残骸，再保留故障日志；下次调用因此仍能从完整的布置起点重试。
+
+## 接入新档生成顺序
+
+在已有 `GearInModPlugin.onNewGame()` 中，先生成星系，再执行生涯布置，最后初始化势力关系：
+
+```java
+@Override
+public void onNewGame() {
+    SectorAPI sector = Global.getSector();
+    new GearInSystemGenerator().generate(sector);
+    new GearInCampaignSetup().setup(sector);
+    seedRelations(sector);
+}
+```
+
+这个顺序保证 `setup(...)` 运行时，`GearIn` 和 `GearIn_planet1` 已经加入 Sector。代码只从 `onNewGame()` 接入，因此成果属于新档生成阶段。
+
+## 常用方法速查表
+
+| API | 返回值或结果 | 本节用途 |
+| --- | --- | --- |
+| `SectorAPI.getStarSystem(String)` | `StarSystemAPI` 或 `null` | 按名称取得 GearIn 星系 |
+| `SectorAPI.getEntityById(String)` | `SectorEntityToken` 或 `null` | 取得残骸轨道焦点 |
+| `SettingsAPI.doesVariantExist(String)` | `boolean` | 在创建前检查装配 ID |
+| `MagicCampaign.createDerelict(...)` | `SectorEntityToken` | 创建带轨道与回收参数的残骸 |
+| `MagicCampaign.hyperspaceCleanup(StarSystemAPI)` | 无返回值 | 清理星系周围的超空间云层 |
+| `MemoryAPI.getBoolean(String)` | `boolean` | 读取布置完成状态 |
+| `MemoryAPI.set(String, Object)` | 无返回值 | 保存布置完成状态 |
 
 ## 完整最小例
 
-两个完整类是形状构造器，返回前已经提交初始节点，并禁止暂停时纹理继续流动。动态控制器若修改 `getNodes()` 中的数据，仍需标记刷新范围并重新提交。
+下面的类集中完成前置检查、残骸创建、超空间清理与成功标记。将它放在 `data/scripts/gearin/campaign/GearInCampaignSetup.java`，再按上一节的入口片段从 `onNewGame()` 调用。
 
-::: details 完整成品：GearInCurveBeam
-
-```java
-package data.scripts.gearin.lib;
-
-import java.awt.Color;
-
-import org.boxutil.units.standard.entity.CurveEntity;
-import org.lwjgl.util.vector.Vector2f;
-
-public final class GearInCurveBeam {
-    public CurveEntity make(Vector2f start, float length) {
-        CurveEntity beam = new CurveEntity();
-        beam.initSmoothLine(start, length, Color.CYAN, Color.WHITE, 9f, 0.35f);
-        beam.setTextureSpeed(0.4f);
-        beam.setFlowWhenPaused(false);
-        beam.submitNodes();
-        return beam;
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInSegmentPainter
+::: details 完整成品：GearInCampaignSetup
 
 ```java
-package data.scripts.gearin.lib;
+package data.scripts.gearin.campaign;
 
-import java.awt.Color;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.campaign.SectorEntityToken;
+import com.fs.starfarer.api.campaign.StarSystemAPI;
+import com.fs.starfarer.api.campaign.rules.MemoryAPI;
+import com.fs.starfarer.api.impl.campaign.rulecmd.salvage.special.ShipRecoverySpecial.ShipCondition;
+import org.apache.log4j.Logger;
+import org.magiclib.util.MagicCampaign;
 
-import org.boxutil.units.standard.entity.SegmentEntity;
-import org.lwjgl.util.vector.Vector2f;
+public final class GearInCampaignSetup {
 
-public final class GearInSegmentPainter {
-    public SegmentEntity makeRangeRing(Vector2f center, float radius) {
-        SegmentEntity ring = new SegmentEntity();
-        ring.initCircle(center, radius, new Color(30, 210, 255, 220), Color.WHITE, 5f);
-        ring.setInterpolation((short) 64);
-        ring.setTextureSpeed(0.15f);
-        ring.setFlowWhenPaused(false);
-        ring.submitNodes();
-        return ring;
+    private static final Logger LOGGER = Global.getLogger(GearInCampaignSetup.class);
+
+    private static final String SYSTEM_ID = "GearIn";
+    private static final String ORBIT_CENTER_ID = "GearIn_planet1";
+    private static final String VARIANT_ID = "GearIn_artizan_combat";
+    private static final String SETUP_DONE_KEY = "$GearIn_campaign_setup_done";
+
+    private static final float ORBIT_START_ANGLE = 90f;
+    private static final float ORBIT_ALTITUDE = 50f;
+    private static final float ORBIT_DAYS = 100f;
+
+    public void setup(SectorAPI sector) {
+        MemoryAPI sectorMemory = sector.getMemoryWithoutUpdate();
+        if (sectorMemory.getBoolean(SETUP_DONE_KEY)) {
+            return;
+        }
+
+        StarSystemAPI system = sector.getStarSystem(SYSTEM_ID);
+        if (system == null) {
+            LOGGER.error("GearIn campaign setup skipped: missing star system " + SYSTEM_ID);
+            return;
+        }
+
+        SectorEntityToken orbitCenter = sector.getEntityById(ORBIT_CENTER_ID);
+        if (orbitCenter == null || orbitCenter.getStarSystem() != system) {
+            LOGGER.error("GearIn campaign setup skipped: missing orbit center " + ORBIT_CENTER_ID);
+            return;
+        }
+
+        if (!Global.getSettings().doesVariantExist(VARIANT_ID)) {
+            LOGGER.error("GearIn campaign setup skipped: missing ship variant " + VARIANT_ID);
+            return;
+        }
+
+        SectorEntityToken derelict = null;
+        try {
+            derelict = MagicCampaign.createDerelict(
+                    VARIANT_ID,
+                    ShipCondition.BATTERED,
+                    true,
+                    null,
+                    true,
+                    orbitCenter,
+                    ORBIT_START_ANGLE,
+                    orbitCenter.getRadius() + ORBIT_ALTITUDE,
+                    ORBIT_DAYS,
+                    true);
+            MagicCampaign.hyperspaceCleanup(system);
+            sectorMemory.set(SETUP_DONE_KEY, true);
+        } catch (RuntimeException | LinkageError exception) {
+            if (derelict != null) {
+                system.removeEntity(derelict);
+            }
+            LOGGER.error("GearIn campaign setup failed while calling MagicLib", exception);
+        }
     }
 }
 ```
@@ -150,41 +232,64 @@ public final class GearInSegmentPainter {
 
 ## 验证方案
 
-前置数据：BoxUtil 渲染核心可用，战斗接线能在初始化时创建圆环，并在测试输入时创建曲线光束。
+前置数据：使用包含 `GearIn`、`GearIn_planet1` 与 `GearIn_artizan_combat` 的开发环境，并在 `onNewGame()` 中按本节顺序接入 `GearInCampaignSetup`。
 
-1. 以玩家舰坐标和 600 su 半径创建圆环，核对 `submitNodes()` 状态与入队返回码。
-2. 观察纹理以 0.15 的速度沿圆环流动；暂停后偏移保持不变。
-3. 以舰首位置和测试长度创建曲线，核对 9 su 宽度、0.35 混合系数与 0.4 纹理速度。
+1. 启动游戏并新建生涯，进入 GearIn 星系；
+2. 在 `GearIn_planet1` 周围开启传感器观测，接近并发现舰船残骸；
+3. 打开残骸交互，进入舰船回收界面并回收该舰船；
+4. 检查回收舰船的装配 ID、舰况和 D-mod；
+5. 返回星图，从 GearIn 星系跳入超空间并观察星系边界周围的云层；
+6. 在同一存档再次调用 `new GearInCampaignSetup().setup(Global.getSector())`，重新检查行星周围的残骸数量。
 
 预期结果：
 
-- 圆环与曲线的初始节点在返回构造器前完成提交；
-- 非暂停时纹理偏移按各自速度变化，暂停时保持不变；
-- 实体只有在 `addEntity()` 成功后才由渲染管理器持有；
+- 新档中只生成 `1` 艘 `GearIn_artizan_combat` 残骸；
+- 残骸围绕 `GearIn_planet1` 运行，轨道高度为行星半径外 `50 su`，周期为 `100 天`；
+- 残骸在传感器发现后显示，并能进入舰船回收界面；
+- 回收操作可以完成，舰船状况对应 `BATTERED`；
+- GearIn 星系边界周围形成可通行的超空间清理区域；
+- 第二次调用后残骸总数仍为 `1`，Sector Memory 中 `$GearIn_campaign_setup_done` 为 `true`。
 
 ## 故障分析
 
-- **节点列表变化但画面保持旧形状**：修改客户端节点后没有标记刷新并调用 `submitNodes()`。
+- **日志出现 `missing star system GearIn`**：生涯布置器运行时尚未生成 GearIn 星系。
 
-    - **解决方案**：移动末端控制点并完成两步提交。
+    - **解决方案**：确认 `GearInSystemGenerator.generate(sector)` 位于 `GearInCampaignSetup.setup(sector)` 之前。
 
-- **圆环缺少一段**：节点数量或闭合参数不完整。
+- **日志出现 `missing orbit center GearIn_planet1`**：行星 ID 不存在，或取得的实体不属于 GearIn 星系。
 
-    - **解决方案**：重新初始化闭合圆环，检查首尾节点连接。
+    - **解决方案**：核对 `addPlanet(...)` 的实体 ID，并确认生成器把行星加入同一个星系。
 
-- **曲线出现尖角**：插值数量过低，或控制点顺序反转。
+- **日志出现 `missing ship variant GearIn_artizan_combat`**：装配文件未注册为该 ID。
 
-    - **解决方案**：增加插值并按路径顺序提交控制点。
+    - **解决方案**：回到 [C4-S1]，核对文件名、`variantId` 与装配加载日志。
 
-- **暂停时纹理仍在流动**：`flowWhenPaused` 与目标语义相反。
+- **日志出现 `failed while calling MagicLib`**：MagicLib 调用阶段发生运行时异常或链接错误。
 
-    - **解决方案**：设置为 false。
+    - **解决方案**：核对 `mod_info.json` 的 MagicLib 硬依赖、实际安装版本和异常堆栈首个业务帧；本次已创建的残骸会在记录日志前移除。
+
+- **残骸可以发现但没有回收入口**：`recoverable` 没有设为 `true`。
+
+    - **解决方案**：核对十参数重载中的第五个参数。
+
+- **回收界面出现但舰船不可回收**：`isRecoverable` 被设为 `false`，实体带有不可回收标签。
+
+    - **解决方案**：核对十参数重载的最后一个参数。
+
+- **重复调用后出现多艘残骸**：成功标记没有写入 Sector Memory，或读取了不同对象的 Memory。
+
+    - **解决方案**：统一从 `sector.getMemoryWithoutUpdate()` 读写 `$GearIn_campaign_setup_done`，并把写入放在两项 MagicLib 操作之后。
 
 ## 总结
 
-SegmentEntity 与 CurveEntity 都依赖节点提交，但服务的形状不同。先选适合成果的实体，再把节点修改范围和提交时机控制清楚，曲线才不会用每帧全量上传换取表面稳定。
+`MagicCampaign.createDerelict(...)` 把装配、舰况、发现、回收和轨道参数组织成一个生涯实体创建入口；`hyperspaceCleanup(...)` 则以星系为边界整理对应的超空间地形。将两者放在星系生成之后，可以让对象依赖和观察位置保持一致。
+
+Sector Memory 为新档布置提供幂等边界。先检查运行时 ID，再执行两项 MagicLib 操作，最后写入成功标记，日志就能准确区分前置数据缺失与依赖调用失败。
 
 ## 建议参考项
 
-- `org.boxutil.units.standard.entity.SegmentEntity`：`initCircle` 快速建立圆环节点，`submitNodes` 把节点修改提交到渲染端；
-- `org.boxutil.units.standard.entity.CurveEntity`：`initSmoothLine` 建立平滑曲线。
+- `org.magiclib.util.MagicCampaign`：残骸创建与超空间清理；
+- `com.fs.starfarer.api.impl.campaign.rulecmd.salvage.special.ShipRecoverySpecial.ShipCondition`：残骸舰况枚举；
+- `com.fs.starfarer.api.campaign.StarSystemAPI`：星系对象与超空间位置边界；
+- `com.fs.starfarer.api.campaign.SectorEntityToken`：残骸和轨道焦点；
+- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：生涯布置完成状态。

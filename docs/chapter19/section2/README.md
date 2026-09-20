@@ -1,6 +1,6 @@
-# 让 Nexerelin 识别 GearIn 势力与外交立场
+# 用 BoxUtil 绘制线段、圆环与曲线光束
 
-Nexerelin 只有读到 GearIn 的势力配置，才会把它纳入开局、外交和联盟计算。本节登记 faction JSON，设置外交倾向与关系边界，再用 Java 探针确认读取的确是 GearIn 配置。
+战术范围提示和能量束都由节点组成，但两者需要不同的插值与材质策略。本节先用 SegmentEntity 画稳定圆环，再用 CurveEntity 画带弯曲的光束，并明确节点提交时机。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,9 +10,11 @@ Nexerelin 只有读到 GearIn 的势力配置，才会把它纳入开局、外�
 
 完成后，您将能够：
 
-- 用 `mod_factions.csv` 把自定义势力交给 Nexerelin 配置加载器；
-- 配置初始关系、关系边界、外交特性和联盟倾向；
-- 用运行期探针区分 "读到自定义配置" 和 "静默回退默认配置"。
+- 根据折线与平滑曲线的差异选择 `SegmentEntity` 或 `CurveEntity`；
+- 用实体初始化方法生成圆环和曲线光束的节点；
+- 配置纹理流速与暂停策略；
+- 在节点变化后标记刷新范围并重新提交；
+- 把构造完成的实体交给战斗渲染管理器，并处理入队失败。
 
 ## 前置知识
 
@@ -20,196 +22,126 @@ Nexerelin 只有读到 GearIn 的势力配置，才会把它纳入开局、外�
 - [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
-## 接入 Nexerelin 势力配置
+## 明确当前需求
 
-GearIn 已经是 Starsector 势力，但 Nexerelin 还不知道它能否成为开局势力、是否参加随机外交，以及它在联盟轴线上的位置。接入点是一行势力 ID；Nexerelin 随后按这个 ID 读取同名 JSON，并把配置交给外交、联盟和战略系统共享。
+玩家舰周围显示一圈缓慢流动的 600 su 范围环；战斗接线在武器开火时从舰首创建一条平滑曲线光束。两个构造器只负责节点和材质状态，调用方负责入队、更新与删除。
 
 ## 文件与 API 链路
 
-`mod_factions.csv` 登记势力 ID；`NexConfig` 从 `data/config/exerelinFactionConfig/<factionId>.json` 合并配置；`NexFactionConfig` 保存开局资格、外交规则和联盟倾向；`DiplomacyManager` 应用关系变化；`AllianceManager` 查询已经成立的联盟。
+### 线段与曲线实体速查表
 
-### 登记 GearIn 势力配置
+| 实体 | 适用形状 |
+|---|---|
+| `SegmentEntity` | 线段、折线、圆与椭圆 |
+| `CurveEntity` | 平滑曲线插值 |
 
-在 `data/config/exerelinFactionConfig/mod_factions.csv` 中保留 Nexerelin 的单列表头，再登记 GearIn 势力 ID：
+两者都在客户端节点列表和 GPU 节点缓冲之间保留明确的提交边界，构造完成后由 `CombatRenderingManager` 加入当前战斗。
 
-```csv
-faction
-gear_industry
-```
+### 初始化战术范围圆环
 
-这个 CSV 文件不接受配置路径列。加载器会根据这一行自动寻找 `data/config/exerelinFactionConfig/gear_industry.json`。
-
-登记后，`NexConfig.getFactionConfig("gear_industry")` 返回的配置对象其 `factionId` 为 `gear_industry`。
-
-### 声明可玩性与外交开关
-
-在 `gear_industry.json` 根对象中允许该势力出现在 Nexerelin 开局列表，并参加随机外交：
-
-```json
-"playableFaction": true,
-"startingFaction": true,
-"disableDiplomacy": false
-```
-
-`playableFaction` 控制玩家能否选择该势力；`startingFaction` 控制它是否参与开局生成；`disableDiplomacy` 决定外交管理器能否改变其关系。
-
-新档势力列表会出现 GearIn，进入生涯后该势力会收到外交事件。
-
-### 写清偏好与关系边界
-
-在 `gear_industry.json` 的外交字段中，先给两个关键势力设置初始关系，再限制随机外交能够触及的边界：
-
-```json
-"startRelationships": {
-  "independent": 0.25,
-  "pirates": -0.6
-},
-"minRelationships": {
-  "independent": 0.0
-},
-"maxRelationships": {
-  "pirates": -0.25
-}
-```
-
-`startRelationships` 决定 Nexerelin 初始化后的关系值；`minRelationships` 和 `maxRelationships` 是后续随机外交的硬边界。旧配置中的 `factionsLiked` 与 `factionsDisliked` 仍能被解析，但已被 Nexerelin 标记为弃用，新配置应直接写明关系值。
-
-这些边界生效后，独立势力关系不会降到敌对，海盗关系不会改善到高于 `-0.25`。
-
-### 配置外交特性与联盟倾向
-
-在 `gear_industry.json` 外交字段之后写外交特性和 alignment；外交特性影响事件选择，alignment 参与联盟兼容性计算：
-
-```json
-"diplomacyTraits": [
-  "helps_allies",
-  "law_and_order"
-],
-"alignments": {
-  "technocratic": 0.75,
-  "diplomatic": 0.4,
-  "hierarchical": 0.25
-}
-```
-
-探针能够读出三项 alignment，联盟系统据此计算 GearIn 与其他势力的长期兼容性。
-
-### 从运行期确认配置和联盟
-
-`GearInNexDiplomacyProbe.describe()` 同时输出配置身份、可玩性、外交开关、联盟倾向和当前联盟状态：
+`GearInSegmentPainter.makeRangeRing()` 一次生成圆环节点与颜色：
 
 ```java
-NexFactionConfig config = NexConfig.getFactionConfig(factionId);
-boolean allied = AllianceManager.areFactionsAllied(factionId, "hegemony");
+SegmentEntity ring = new SegmentEntity();
+ring.initCircle(center, radius, Color.CYAN, Color.WHITE, 5f);
+ring.setInterpolation((short) 64);
 ```
 
-完整探针把 `config.factionId` 和 `config.getBaseAlignments()` 一并写入结果。若 CSV 漏行，`NexConfig` 会静默回退默认配置；这两个值比单看 "没有异常" 更能证明配置确实命中。
+返回的 SegmentEntity 拥有有效节点。
 
-日志会同时出现 `factionId=gear_industry`、`playable=true`、`diplomacy=true` 和三项 alignment。
+### 让纹理沿圆环缓慢流动
+
+`makeRangeRing()` 接着设置纹理速度并选择暂停策略：
+
+```java
+ring.setTextureSpeed(0.15f);
+ring.setFlowWhenPaused(false);
+```
+
+非暂停时纹理偏移持续变化。
+
+### 提交圆环节点
+
+`makeRangeRing()` 在返回前把节点数组上传到渲染端：
+
+```java
+byte state = ring.submitNodes();
+```
+
+submitNodes 返回成功状态且圆环出现。
+
+### 初始化平滑曲线光束
+
+`GearInCurveBeam.make()` 用起点、长度、颜色、宽度和混合系数建立曲线：
+
+```java
+CurveEntity beam = new CurveEntity();
+beam.initSmoothLine(start, length, Color.CYAN, Color.WHITE, 9f, 0.35f);
+```
+
+光束从舰首延伸且边缘平滑。
+
+### 把构造结果加入当前战斗
+
+战斗接线在取得圆环或光束后，先 `setLayer()` 指定渲染层 (实体默认 layer 为 null，`addEntity` 对 null 层恒返回 STATE_FAILED)，再根据返回码决定实体是否已经交给 BoxUtil 管理：
+
+```java {1}
+beam.setLayer(CombatEngineLayers.ABOVE_SHIPS_LAYER);
+byte state = CombatRenderingManager.addEntity(beam);
+if (state != BoxEnum.STATE_SUCCESS) {
+    beam.delete();
+}
+```
+
+成功时实体进入当前战斗；失败时资源立即删除，调用侧不再更新该对象。
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+两个完整类是形状构造器，返回前已经提交初始节点，并禁止暂停时纹理继续流动。动态控制器若修改 `getNodes()` 中的数据，仍需标记刷新范围并重新提交。
 
-::: details 完整成品：GearInNexCompat
+::: details 完整成品：GearInCurveBeam
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.lib;
 
-import com.fs.starfarer.api.Global;
-import exerelin.campaign.SectorManager;
-import exerelin.utilities.NexConfig;
-import exerelin.world.ExerelinCorvusLocations;
+import java.awt.Color;
 
-/**
- * Nexerelin 软依赖适配器：把对 exerelin.* 的直接引用全部收敛在本类，
- * 工程里只有本类与特遣队命名器 (GearInSpecialForcesNamer，仅被 Nexerelin
- * 按配置类名加载) 出现 exerelin.* 类名。
- *
- * 调用链 (软依赖组合判据)：
- *   isModEnabled 判定 MOD 启用状态 -> SectorManager.getManager() 判管理器
- *   是否已创建 (null 守卫)-> isCorvusMode() 判当前模式。
- * NexConfig.getFactionConfig 读取本 MOD 势力配置 (经 mod_factions.csv 注册)；
- * ExerelinCorvusLocations 读取本 MOD 的出生点行 (corvus_spawnpoints.csv)。
- * Nexerelin 未启用时全部回落降级值，不抛异常。
- */
-public class GearInNexCompat {
+import org.boxutil.units.standard.entity.CurveEntity;
+import org.lwjgl.util.vector.Vector2f;
 
-    /** Nexerelin 的 MOD id，与 Starsector/mods/Nexerelin/mod_info.json 的 id 字段逐字一致。 */
-    public static final String NEX_MOD_ID = "nexerelin";
-
-    /** 本 MOD 势力 id(教程势力章节注册)。 */
-    public static final String GEAR_FACTION_ID = "gear_industry";
-
-    private GearInNexCompat() {
-    }
-
-    /** 判据一：Nexerelin 是否在启用列表 (启动器 MOD 管理器按 id 逐字比较，大小写敏感)。 */
-    public static boolean isNexEnabled() {
-        return Global.getSettings().getModManager().isModEnabled(NEX_MOD_ID);
-    }
-
-    /**
-     * 组合判据：Nexerelin 已启用、SectorManager 已创建且处于 Corvus 模式。
-     * SectorManager.getManager() 在 manager 尚未创建时返回 null(sector
-     * persistent data 中无条目) —— 直接调用 isCorvusMode() 会 NPE；
-     * manager 由 Nexerelin 的入口生成器创建，早于它的调用点必须靠这里守卫。
-     */
-    public static boolean isNexCorvusMode() {
-        if (!isNexEnabled()) {
-            return false;
-        }
-        SectorManager manager = SectorManager.getManager();
-        return manager != null && manager.isCorvusMode();
-    }
-
-    /**
-     * 读取本 MOD 势力配置的 marketSpawnWeight(随机星域模式的市场份额倍率)。
-     * NexConfig.getFactionConfig 未注册时回退默认配置 (neutral)，不抛异常 ——
-     * "读到的不是自己的配置" 是该 API 的静默失败模式 (mod_factions.csv 漏写时
-     * playableFaction 读回 false)。
-     */
-    public static float getFactionMarketSpawnWeight(String factionId) {
-        if (!isNexEnabled()) {
-            return 1f;
-        }
-        return NexConfig.getFactionConfig(factionId).marketSpawnWeight;
-    }
-
-    /**
-     * 读取本 MOD 势力在 corvus_spawnpoints.csv 里的生成点实体 id。
-     * 漏写行时返回 null —— 玩家出生点回退 homeworld / 随机位置，无报错。
-     */
-    public static String getFactionSpawnPointEntityId(String factionId) {
-        if (!isNexEnabled()) {
-            return null;
-        }
-        ExerelinCorvusLocations.SpawnPointEntry entry = ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
-        return entry == null ? null : entry.entityId;
+public final class GearInCurveBeam {
+    public CurveEntity make(Vector2f start, float length) {
+        CurveEntity beam = new CurveEntity();
+        beam.initSmoothLine(start, length, Color.CYAN, Color.WHITE, 9f, 0.35f);
+        beam.setTextureSpeed(0.4f);
+        beam.setFlowWhenPaused(false);
+        beam.submitNodes();
+        return beam;
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInNexDiplomacyProbe
+::: details 完整成品：GearInSegmentPainter
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.lib;
 
-import exerelin.campaign.AllianceManager;
-import exerelin.utilities.NexConfig;
-import exerelin.utilities.NexFactionConfig;
+import java.awt.Color;
 
-public final class GearInNexDiplomacyProbe {
-    public String describe(String factionId) {
-        NexFactionConfig config = NexConfig.getFactionConfig(factionId);
-        return "factionId=" + config.factionId
-                + ", playable=" + config.playableFaction
-                + ", diplomacy=" + !config.disableDiplomacy
-                + ", alignments=" + config.getBaseAlignments()
-                + ", alliedWithHegemony="
-                + AllianceManager.areFactionsAllied(factionId, "hegemony");
+import org.boxutil.units.standard.entity.SegmentEntity;
+import org.lwjgl.util.vector.Vector2f;
+
+public final class GearInSegmentPainter {
+    public SegmentEntity makeRangeRing(Vector2f center, float radius) {
+        SegmentEntity ring = new SegmentEntity();
+        ring.initCircle(center, radius, new Color(30, 210, 255, 220), Color.WHITE, 5f);
+        ring.setInterpolation((short) 64);
+        ring.setTextureSpeed(0.15f);
+        ring.setFlowWhenPaused(false);
+        ring.submitNodes();
+        return ring;
     }
 }
 ```
@@ -218,45 +150,41 @@ public final class GearInNexDiplomacyProbe {
 
 ## 验证方案
 
-前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含本节 `mod_factions.csv` 登记行、`gear_industry.json` 和两个探针类。
+前置数据：BoxUtil 渲染核心可用，战斗接线能在初始化时创建圆环，并在测试输入时创建曲线光束。
 
-1. 构建示例 MOD，确认两个探针类能够针对当前安装的 `ExerelinCore.jar` 编译。
-2. 启动新档，确认 GearIn 出现在势力选择列表，并记录探针输出。
-3. 触发至少一次外交关系变化，核对独立势力与海盗关系没有越过配置边界。
-4. 查看联盟界面，确认实际联盟状态与探针的 `alliedWithHegemony` 输出一致。
+1. 以玩家舰坐标和 600 su 半径创建圆环，核对 `submitNodes()` 状态与入队返回码。
+2. 观察纹理以 0.15 的速度沿圆环流动；暂停后偏移保持不变。
+3. 以舰首位置和测试长度创建曲线，核对 9 su 宽度、0.35 混合系数与 0.4 纹理速度。
 
 预期结果：
 
-- `NexConfig.getFactionConfig` 返回 `factionId=gear_industry`；
-- 新档列表出现 GearIn，外交事件可以选择它；
-- 独立势力与海盗关系始终处于各自边界内；
-- 日志出现 `playable=true`、`diplomacy=true` 和三项 alignment；
-- 当前联盟查询与联盟界面显示一致。
+- 圆环与曲线的初始节点在返回构造器前完成提交；
+- 非暂停时纹理偏移按各自速度变化，暂停时保持不变；
+- 实体只有在 `addEntity()` 成功后才由渲染管理器持有；
 
 ## 故障分析
 
-- **JSON 可解析但新档列表没有 GearIn**：`mod_factions.csv` 中的势力 ID 与 Starsector ID 或 JSON 文件名不一致。
+- **节点列表变化但画面保持旧形状**：修改客户端节点后没有标记刷新并调用 `submitNodes()`。
 
-    - **解决方案**：逐字统一三处名称并重启游戏。
+    - **解决方案**：移动末端控制点并完成两步提交。
 
-- **读取到 `neutral` 默认配置**：CSV 缺少注册行，或大小写与配置文件名不一致。
+- **圆环缺少一段**：节点数量或闭合参数不完整。
 
-    - **解决方案**：读取 `config.factionId` 确认实际命中的身份，修正后重新创建新档。
+    - **解决方案**：重新初始化闭合圆环，检查首尾节点连接。
 
-- **外交关系始终不变化**：`disableDiplomacy` 关闭了外交，或 `noRandomizeRelations` 阻止了开局随机化。
+- **曲线出现尖角**：插值数量过低，或控制点顺序反转。
 
-    - **解决方案**：按目标行为调整对应字段。
+    - **解决方案**：增加插值并按路径顺序提交控制点。
 
-- **联盟始终被拒绝**：关系满足但 alignment 不兼容，或其他准入条件未通过。
+- **暂停时纹理仍在流动**：`flowWhenPaused` 与目标语义相反。
 
-    - **解决方案**：先用 `getBaseAlignments()` 确认配置，再逐项检查联盟条件。
+    - **解决方案**：设置为 false。
 
 ## 总结
 
-Nexerelin 势力接入从唯一势力 ID 开始，CSV 行、JSON 文件名和 Java 查询必须一致。初始关系确定开局状态，关系边界约束后续变化，外交特性影响事件选择，alignment 则参与联盟判断。运行期探针应同时证明配置身份和关键字段，避免把静默回退误判为接入成功。
+SegmentEntity 与 CurveEntity 都依赖节点提交，但服务的形状不同。先选适合成果的实体，再把节点修改范围和提交时机控制清楚，曲线才不会用每帧全量上传换取表面稳定。
 
 ## 建议参考项
 
-- `exerelin.utilities.NexConfig`：`getFactionConfig` 读取合并后的势力配置；
-- `exerelin.utilities.NexFactionConfig`：势力外交与战略字段；
-- `exerelin.campaign.AllianceManager`：`areFactionsAllied` 查询当前联盟关系。
+- `org.boxutil.units.standard.entity.SegmentEntity`：`initCircle` 快速建立圆环节点，`submitNodes` 把节点修改提交到渲染端；
+- `org.boxutil.units.standard.entity.CurveEntity`：`initSmoothLine` 建立平滑曲线。

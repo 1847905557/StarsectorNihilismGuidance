@@ -1,381 +1,361 @@
-# 用 MagicLib 制作可调脉冲光束与状态条
+# 制作 GraphicsLib 纹理映射
 
-设置决定颜色与伤害，`MagicFakeBeam` 在一次调用中结算命中，`MagicUI` 持续刷新玩家状态条，脉冲光束需要这三个部分同时成立。本节让光束每 2 秒自动向最近敌舰发射一次，并让 HUD 同步显示充能与累计发射次数。
+舰船原始精灵只决定基础外观。GraphicsLib 还可以为同一个对象读取 material、normal 与 surface 贴图，让动态光源在船体上产生有方向的明暗变化和高光。本节以 `GearIn_artizan` 为坐标基准，先在应用加载入口登记 texture CSV，再说明两张贴图应该表达什么，随后把它们映射到同一个船体 ID，最后观察显式纹理、自动生成 normal 和动态加载之间的关系。
 
-*本节预期阅读时间：~18 分钟。*
+成熟项目会让 CSV 中的每一条路径都落到真实资源。本节给出可直接使用的目录和数据行；贴图文件按照工具无关的步骤制作，仓库不提供预制结果。
 
-*本节预期操作时间：~30 分钟。*
+*本节预期阅读时间：~20 分钟。*
+
+*本节预期操作时间：~35 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 用 `MagicSettings` 一次读取并缓存光束与 HUD 配置；
-- 按帧时间推进 0–1 充能，并在满充时只触发一次攻击；
-- 选择最近可见敌舰，计算实际发射角度；
-- 用 `MagicFakeBeam` 生成一次瞬时伤害与短暂视觉；
-- 用固定 key 刷新 `MagicUI` 状态条，并从调用次数定位重复伤害。
+- 区分原始精灵、material、normal 与 surface 贴图的职责；
+- 在 `onApplicationLoad()` 中登记 texture CSV 并选择覆盖策略；
+- 制作与舰船精灵画布、位置、透明区和朝向一致的 material／normal 贴图；
+- 用 texture CSV 的 6 个字段把两张贴图登记给 `GearIn_artizan`；
+- 按对象 ID、类型、纹理类型和动画帧查询 `TextureEntry`；
+- 在显式 normal 缺失时使用自动生成，并判断缓存与预载状态。
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C1-S2] 已完成 `GearIn_artizan` 的舰船精灵与船体登记；
+- [C18-S5] 已在 `onApplicationLoad()` 中初始化 GraphicsLib 并完成 shader／buffer 能力判断；
+- [C18-S6] 已建立能够照亮舰船表面的动态点光源；
+- 能够使用图像编辑器保存带透明通道的 PNG，并读取 `starsector.log`。
 
-## 明确当前需求
+## 在应用加载时登记 texture CSV
 
-玩家舰每 2 秒完成一次充能，随后向最近可见敌舰发射短促光束；命中在调用当帧结算，HUD 同时显示下一次发射的充能进度和累计次数。修改配置并重启后，宽度、射程、颜色、伤害与 EMP 随之变化。
-
-## 文件与 API 链路
-
-### 脉冲光束 API 职责速查表
-
-| 对象 | 职责 |
-|---|---|
-| `MagicSettings` | 从 `modSettings.json` 的 `gear_in` 段读取值 |
-| `AIUtils` 与 `VectorUtils` | 选择目标并计算角度 |
-| `MagicFakeBeam` | 完成射线、视觉与伤害 |
-| `MagicUI` | 为玩家舰绘制状态条，并要求定期刷新唯一 key |
-
-### 缓存光束与界面配置
-
-`GearInMagicSettings` 构造方法缓存宽度、射程、伤害、EMP 与颜色，避免每帧解析设置：
+S5 的 `onApplicationLoad()` 已经初始化 GraphicsLib，并在能力可用时登记 light CSV。纹理映射使用同一个能力分支，在现有入口中加入 `TextureData.readTextureDataCSV(...)`：
 
 ```java
-beamWidth = MagicSettings.getFloat(CONFIG_SECTION, "beam_width");
-beamRange = MagicSettings.getFloat(CONFIG_SECTION, "beam_range");
-beamDamage = MagicSettings.getFloat(CONFIG_SECTION, "beam_damage");
-beamCoreColor = MagicSettings.getColorRGB(CONFIG_SECTION, "beam_color_core");
-```
+@Override
+public void onApplicationLoad() {
+    ShaderLib.init();
 
-构造日志会一次打印 `width`、`range`、`damage`、`emp`、持续时间、颜色和标签。
-
-### 推进自动充能
-
-`GearInBeamCaster.advance()` 用帧时间推进充能，达到 1 时清零并触发一次发射：
-
-```java
-beamCharge += amount / BEAM_INTERVAL;
-if (beamCharge >= 1f) {
-    beamCharge = 0f;
-    fireBeam();
+    if (ShaderLib.areShadersAllowed() && ShaderLib.areBuffersAllowed()) {
+        LightData.readLightDataCSV("data/lights/GearIn_light_data.csv");
+        TextureData.readTextureDataCSV("data/lights/GearIn_texture_data.csv");
+    }
 }
 ```
 
-非暂停状态下约 2 秒触发一次；一次 `advance()` 至多调用一次 `fireBeam()`。
+`TextureData.readTextureDataCSV(...)` 读取全部数据行，把合法的 ID、对象类型、动画帧和 map 组合加入 GraphicsLib 的纹理注册表。能力判断失败时，这份 MOD 纹理表不会在本次应用运行中登记；能力恢复后需要重新启动游戏，让应用加载入口重新执行。
 
-### 选择目标并计算角度
+### 选择覆盖策略
 
-`GearInBeamCaster.fireBeam()` 在目标检查后选择最近可见敌舰，并从玩家舰位置计算世界角度：
+默认入口允许后读取的数据替换同一查询键下的旧登记：
 
 ```java
-ShipAPI enemy = AIUtils.getNearestEnemy(player);
-if (enemy == null) {
-    return;
+TextureData.readTextureDataCSV(
+        "data/lights/GearIn_texture_data.csv");
+```
+
+只想补充缺失映射时，使用不覆盖入口：
+
+```java
+TextureData.readTextureDataCSVNoOverwrite(
+        "data/lights/GearIn_texture_data.csv");
+```
+
+重复关系由 ID、对象类型、动画帧和 map 共同确定。覆盖入口让后读取行成为查询结果；不覆盖入口保留已经存在的条目，并跳过对应的重复映射。
+
+## 区分原始精灵与三类纹理
+
+`graphics/ships/GearIn_artizan.png` 是游戏直接绘制的舰船精灵，也是三类附加纹理的坐标基准。GraphicsLib 在相同像素位置采样附加贴图，因此舰首、舰尾、装甲板和透明区都要与原始精灵重合。
+
+material 贴图提供光照计算使用的表面颜色与反射差异。normal 贴图保存每个像素朝向哪个方向，让位于舰船左侧、右侧或上方的光源照出不同明暗。surface 贴图进一步控制镜面高光的强度和硬度；缺少它时，material 与 normal 仍然可以参与光照，只是没有该船专用的 surface 变化。
+
+三类纹理都通过同一份 texture CSV 登记。成熟项目通常先制作 material 与 normal，再根据美术需求决定是否加入 surface；本节完整登记前两类，并说明第三类的字段关系。
+
+## 制作 material 贴图
+
+先复制原始舰船精灵，保留画布尺寸与透明通道，再把副本改成 material 贴图。处理时以 "光照下希望保留什么颜色、哪些区域更容易反光" 为判断标准：装甲主体保留可辨认的色相，金属边缘和高光区域可以更亮，孔洞与完全透明区域保持透明。
+
+material 贴图仍是一张完整的 RGBA PNG。它不负责画出光源本身，也不替代原始舰船精灵；GraphicsLib 将它与场景光照组合，得到最终受光颜色。将结果保存为：
+
+```text
+graphics/material/ships/GearIn_artizan.png
+```
+
+## 制作 normal 贴图
+
+normal 贴图用 RGB 保存切线空间法线。接近 `(128, 128, 255)` 的中性蓝表示表面朝向观察者；红色与绿色分量的变化表示表面向左右或上下倾斜，蓝色分量表示朝向观察者的程度。
+
+制作时先从舰船轮廓与装甲高度得到一张连续的高度关系，再转换为切线空间 normal。平坦装甲保持接近中性蓝，舰体边缘、凹槽和隆起逐渐改变方向，透明区继续保持透明。将结果保存为：
+
+```text
+graphics/normal/ships/GearIn_artizan.png
+```
+
+normal 的颜色表示方向，不应直接使用原始舰船颜色。过强的高度梯度会让装甲像被切出尖锐沟槽；后面的 `magnitude` 还能在不重新绘图的情况下整体调整起伏强度。
+
+## 保持画布与透明区一致
+
+三张图必须具有相同的像素宽高，舰船中心位于相同像素，朝向也完全一致。不要裁切 material 或 normal 的透明边缘，因为原始精灵的中心点和武器槽位置仍以原画布计算。
+
+可以把三张图放入同一图像文档的三个图层组：原始精灵保持只读，material 与 normal 各自编辑；导出前同时检查画布边界、舰首方向和 alpha。运行后如果亮部整体偏离船体，首先比较三张 PNG 的尺寸和不透明像素包围盒，而不是调整 CSV ID。
+
+## 编写 texture CSV
+
+创建 `data/lights/GearIn_texture_data.csv`，写入下面两条纹理映射：
+
+```csv
+id,type,frame,magnitude,map,path
+GearIn_artizan,ship,,,material,graphics/material/ships/GearIn_artizan.png
+GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
+```
+
+两行共用 `GearIn_artizan` 与 `ship`，因此都进入这艘舰船的纹理登记；`map` 决定它们分别进入 material 表还是 normal 表。GraphicsLib 用 ID、对象类型和动画帧组成查询键，同一个 ID 可以同时拥有三类 map。
+
+### texture CSV 字段速查表
+
+| 字段 | 当前值 | 读取结果 | 常见错误 |
+|---|---|---|---|
+| `id` | `GearIn_artizan` | 对象查询键 | 写成装配 ID 后无法匹配船体 |
+| `type` | `ship` | 选择舰船纹理表 | 大小写或拼写错误会跳过该行 |
+| `frame` | 空 | 非动画对象使用第 0 帧 | 舰船填写正数会被丢弃并记录警告 |
+| `magnitude` | 空／`1` | 默认值为 1，normal 行控制起伏强度 | 过大时表面方向显得尖锐 |
+| `map` | `material`／`normal` | 选择三类纹理表之一 | 未使用规定小写值时无法登记 |
+| `path` | `graphics/...` | 指向实际 PNG | 路径存在拼写差异时加载失败 |
+
+`id` 对应对象本身，而不是 CSV 行的任意名称。对于舰船，使用 hull ID；对于武器，使用 weapon ID；对于导弹，使用其 missile hull 或 projectile 关系所使用的 ID。`path` 从 MOD 根目录开始书写，并保留实际文件名大小写。
+
+## 选择对象类型与动画帧
+
+`type` 的值决定 GraphicsLib 把纹理放入哪个对象注册表。CSV 只接受下面 15 个小写值：
+
+### 对象类型速查表
+
+| 分组 | `type` 值 | 对应对象 |
+|---|---|---|
+| 舰船 | `ship` | 舰船与战机船体 |
+| 炮塔主体 | `turret`、`turretbarrel`、`turretunder` | 炮塔、炮管与底图 |
+| 炮塔盖板 | `turretcoversmall`、`turretcovermedium`、`turretcoverlarge` | 三种尺寸的炮塔槽盖板 |
+| 硬点主体 | `hardpoint`、`hardpointbarrel`、`hardpointunder` | 硬点、炮管与底图 |
+| 硬点盖板 | `hardpointcoversmall`、`hardpointcovermedium`、`hardpointcoverlarge` | 三种尺寸的硬点槽盖板 |
+| 导弹 | `missile` | 使用舰船式精灵的导弹 |
+| 小行星 | `asteroid` | 战斗中的小行星 |
+
+只有 `turret` 与 `hardpoint` 会读取正数 `frame`。这两类对象可以按动画帧登记不同贴图；其他类型即使填写正数，加载器也会记录不兼容警告并把该帧值丢弃。舰船固定使用第 0 帧，因此示例保持空单元格。
+
+`map` 则只接受 `material`、`normal` 与 `surface`。surface 行使用相同的 ID、type、frame 和 path 关系，例如 `GearIn_artizan,ship,,,surface,graphics/surface/ships/GearIn_artizan.png`；本节不把这行加入最终数据。
+
+## 查询显式纹理条目
+
+`TextureData.readTextureDataCSV(...)` 完成登记后，可以按登记时使用的四部分键查询 material：
+
+```java
+TextureEntry material = TextureData.getTextureData(
+        "GearIn_artizan",
+        TextureData.TextureDataType.MATERIAL_MAP,
+        TextureData.ObjectType.SHIP,
+        0);
+```
+
+第一个参数是 hull ID，第二个参数选择 material 表，第三个参数对应 CSV 的 `ship`，最后的 `0` 是舰船使用的帧号。四项中任意一项与登记不一致，结果都是 `null`。普通查询只返回显式登记的条目，并在需要时载入纹理。
+
+normal 使用同样的对象键，只替换 map 枚举：
+
+```java
+TextureEntry normal = TextureData.getTextureData(
+        "GearIn_artizan",
+        TextureData.TextureDataType.NORMAL_MAP,
+        TextureData.ObjectType.SHIP,
+        0);
+```
+
+`TextureEntry` 将路径、强度、加载状态和精灵放在同一个对象中。查询成功后，`spriteName` 是 CSV 路径，`magnitude` 是解析后的数值，`sprite` 是当前可用的 `SpriteAPI`；路径不可加载时，普通查询最终返回 `null`。
+
+### `TextureEntry` 状态速查表
+
+下面的字段描述同一条登记从路径到显存的状态：
+
+| 字段 | 含义 | 直接观察 |
+|---|---|---|
+| `sprite` | 已载入的 `SpriteAPI` | 可交给渲染流程使用 |
+| `spriteName` | 原始或缓存纹理路径 | 核对实际资源来源 |
+| `magnitude` | CSV 解析出的强度 | normal 示例为 1 |
+| `autoGen` | 是否属于自动生成 normal | 显式 normal 为 `false` |
+| `validToLoad` | 路径是否具备后续加载条件 | 路径有效但尚未驻留时仍可为 `true` |
+| `loaded` | 纹理当前是否已经载入 | 动态加载前后会变化 |
+| `alwaysPreload` | 对象是否要求常驻预载 | 来自 `graphicslib_preload` 标签 |
+| `vramSize` | 估算显存占用 | 单位为字节 |
+
+`loaded` 与 `validToLoad` 描述两个不同阶段：前者表示纹理当前驻留，后者表示它可以在需要时载入。使用 `sprite` 之前应以查询结果为准；文件路径错误时，条目无法提供可用精灵。
+
+## 使用自动生成作为替代路径
+
+显式 normal 行提供稳定且由美术人员控制的表面方向。需要兼容尚未制作 normal 的舰船时，把实际舰船对象交给带自动生成能力的查询：
+
+```java
+TextureEntry normal = TextureData.getTextureDataWithAutoGen(
+        "GearIn_artizan",
+        TextureData.TextureDataType.NORMAL_MAP,
+        TextureData.ObjectType.SHIP,
+        0,
+        ship,
+        false);
+```
+
+`ship` 让 GraphicsLib 能从 `ShipAPI.getHullSpec().getSpriteName()` 找到原始精灵。最后的 `false` 表示返回前要取得可用的 sprite；设置为 `true` 时，方法可以返回尚未载入、`sprite == null` 的条目，因此通常不适合直接使用纹理的代码。
+
+如果相同对象键已经有显式 normal，查询直接返回显式条目。只有 normal 缺失、`ship` 有效且 `autoGenNormals` 已启用时，GraphicsLib 才会尝试生成；`autoGen` 字段能够区分最终来源。
+
+自动生成结果保存在 `GraphicsLib/cache`。游戏记录当前 MOD ID 与版本列表的哈希；列表变化后，缓存会在下次生成流程中失效并重建，从而避免继续使用旧精灵对应的 normal。
+
+### 控制自动生成范围
+
+需要主动建立某个精灵的 material、normal 与 surface 映射时，可以把对象键和原始精灵路径交给 `mapSpriteToMNSWithAutoGen(...)`：
+
+```java
+TextureData.mapSpriteToMNSWithAutoGen(
+        "GearIn_artizan",
+        "graphics/ships/GearIn_artizan.png",
+        TextureData.ObjectType.SHIP,
+        0,
+        true,
+        false);
+```
+
+前四个参数确定映射键；第五个参数允许生成缺失的 normal；最后一个参数为 `true` 时，生成结果不会被标记为自动生成，普通兼容路径保持为 `false`。`graphicslib_no_autogen` 标签会禁止对象参与自动生成，`graphicslib_autogen_override` 标签则改变生成结果的身份标记。显式 normal 仍然优先于自动生成结果。
+
+`autoGenNormalMap(...)` 直接从一张精灵生成 normal，并返回生成后的 `SpriteAPI`：
+
+```java
+SpriteAPI generated = TextureData.autoGenNormalMap(
+        "graphics/ships/GearIn_artizan.png",
+        "GearIn_artizan",
+        TextureData.ObjectType.SHIP,
+        0);
+```
+
+这个入口适合已经掌握对象键和缓存规则的专用工具。常规战斗代码使用 `getTextureDataWithAutoGen(...)` 即可；全局扫描入口 `autoGenMissingNormalMaps()` 由 GraphicsLib 的初始化流程负责。
+
+## 理解缓存、按需加载与预载
+
+GraphicsLib 默认按当前战斗需要加载舰船、武器和导弹纹理，并卸载已经不再需要的条目。遗漏的登记会在首次查询时按需加载，因此 `validToLoad == true` 与 `loaded == false` 可以同时出现；完成加载后，`loaded` 和 `sprite` 才反映当前可用状态。
+
+设置 `preloadAllMaps = true` 会在预载阶段加载全部 material、normal 与 surface 贴图。它能减少首次使用时的加载停顿，也会提前占用全部贴图的显存。对象标签 `graphicslib_preload` 只让对应对象的贴图常驻预载，适合少量关键舰船或武器。
+
+需要在战斗脚本中等待预载完成时，读取战斗引擎的 custom data：
+
+```java
+if (engine.getCustomData().containsKey(ShaderHook.TEXTURE_PRELOAD_KEY)) {
+    TextureEntry normal = TextureData.getTextureDataWithAutoGen(
+            "GearIn_artizan",
+            TextureData.TextureDataType.NORMAL_MAP,
+            TextureData.ObjectType.SHIP,
+            0,
+            ship,
+            false);
 }
-Vector2f from = player.getLocation();
-float angle = VectorUtils.getAngle(from, enemy.getLocation());
 ```
 
-没有敌舰时记录诊断并跳过发射；目标移动到另一侧后，光束角度随目标改变。
+`ShaderHook.TEXTURE_PRELOAD_KEY` 与 `TextureData.ALWAYS_PRELOAD_TAG` 的字符串值都是 `graphicslib_preload`，前者是战斗状态键，后者是对象标签。两个值存在于不同容器，读取时要分别使用 `engine.getCustomData()` 与对象 spec 的标签接口。
 
-### 结算一次伪光束
+## 常用字段与方法速查表
 
-在 `fireBeam()` 的目标分支里，一次调用同时生成视觉与瞬时伤害：
-
-```java
-MagicFakeBeam.spawnFakeBeam(engine, from, settings.beamRange, angle,
-        settings.beamWidth, settings.beamFull, settings.beamFading,
-        settings.beamImpactSize, settings.beamCoreColor,
-        settings.beamFringeColor, settings.beamDamage,
-        DamageType.ENERGY, settings.beamEmp, player);
-```
-
-`beamCount` 每次成功调用后增加 1，目标在该帧受到一次伤害，视觉按配置继续保留。
-
-### 用唯一 key 刷新状态条
-
-`GearInHudBar.refresh()` 使用固定 key、当前充能和累计次数刷新同一条 HUD 项：
-
-```java
-MagicUI.drawInterfaceStatusBar(player, HUD_BAR_KEY, beam.getBeamCharge(),
-        settings.beamCoreColor, settings.beamFringeColor, 0f,
-        "Beam charge", beam.getBeamCount());
-```
-
-HUD 只有一条 `Beam charge`，填充从 0 走向 1，右侧数字在成功发射后增加。
-
-### 安排刷新与暂停顺序
-
-战斗插件的 `advance()` 先刷新 HUD，再由暂停守卫决定是否推进充能：
-
-```java
-if (settings.hudEnabled) {
-    hud.refresh(engine);
-}
-if (engine.isPaused()) {
-    return;
-}
-beam.advance(amount);
-```
-
-暂停期间状态条不会因停止刷新而超时消失，充能数值保持不变。
+| 入口 | 关键参数 | 返回或结果 |
+|---|---|---|
+| `getTextureData(...)` | ID、map、对象类型、帧 | 查询显式登记并按需加载，缺失时返回 `null` |
+| `getTextureDataWithAutoGen(...)` | 显式查询参数、实际对象、`unloadedOk` | 优先显式条目，必要时生成 normal |
+| `mapSpriteToMNSWithAutoGen(...)` | 对象键、精灵路径、类型、帧、生成开关、覆盖开关 | 建立三类纹理映射并处理缺失 normal |
+| `autoGenNormalMap(...)` | 精灵路径、对象键、类型、帧 | 返回自动生成的 normal 精灵 |
+| `autoGenMissingNormalMaps()` | 无 | 由 GraphicsLib 初始化流程扫描缺失 normal |
+| `TextureEntry.spriteName` | — | 显式路径或缓存路径 |
+| `TextureEntry.magnitude` | — | normal 起伏强度，默认 1 |
+| `TextureEntry.loaded` | — | 当前是否已经载入 |
+| `TextureEntry.vramSize` | — | 估算显存占用，单位为字节 |
 
 ## 完整最小例
 
-设置、攻击与 HUD 各由不同角色承担。战斗插件负责按 "刷新 HUD、暂停判断、推进充能" 的顺序接线，完整类不假定任何按键或舰船系统状态。
-
-::: details 完整成品：GearInBeamCaster
+应用加载入口同时保留 S5 的 light 登记，并加入本节的 texture 登记：
 
 ```java
-package data.scripts.gearin.lib;
+@Override
+public void onApplicationLoad() {
+    ShaderLib.init();
 
-import org.apache.log4j.Logger;
-import org.lazywizard.lazylib.VectorUtils;
-import org.lazywizard.lazylib.combat.AIUtils;
-import org.lwjgl.util.vector.Vector2f;
-import org.magiclib.util.MagicFakeBeam;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.DamageType;
-import com.fs.starfarer.api.combat.ShipAPI;
-
-/** 伪光束 (MagicFakeBeam)：每 BEAM_INTERVAL 秒向最近可见敌舰发射一条伪光束。
- * 伤害瞬时结算，持续视觉时间不等于持续伤害时间；光束不会被中途物体截断；
- * HIGH_EXPLOSIVE 对装甲 200% 伤害、对护盾 50% (折减在护盾侧)，本类用 ENERGY 规避。 */
-public class GearInBeamCaster {
-    private static final Logger LOG = Global.getLogger(GearInBeamCaster.class);
-    private static final float BEAM_INTERVAL = 2f; // 光束发射间隔 (秒)；伤害瞬时，视觉时长由 modSettings.json 控制
-
-    private final GearInMagicSettings settings;
-    private CombatEngineAPI engine;
-    private float beamCharge; // 0..1：充能进度，HUD 状态条显示它
-    private int beamCount;
-
-    public GearInBeamCaster(GearInMagicSettings settings) {
-        this.settings = settings;
-    }
-
-    /** 战斗 init 时注入引擎 (由接线类调用)。 */
-    public void init(CombatEngineAPI engine) {
-        this.engine = engine;
-    }
-
-    /** 每帧推进充能，满 1 发射并清零；只在非暂停推进 (暂停守卫由接线类负责)。 */
-    public void advance(float amount) {
-        beamCharge += amount / BEAM_INTERVAL;
-        if (beamCharge >= 1f) {
-            beamCharge = 0f;
-            fireBeam();
-        }
-    }
-
-    public float getBeamCharge() {
-        return beamCharge;
-    }
-
-    public int getBeamCount() {
-        return beamCount;
-    }
-
-    /** 向最近可见敌舰发射一条伪光束：视觉立即生成，伤害在调用内瞬时结算。 */
-    private void fireBeam() {
-        ShipAPI player = engine.getPlayerShip();
-        if (player == null || !player.isAlive()) {
-            return;
-        }
-        ShipAPI enemy = AIUtils.getNearestEnemy(player); // @Nullable：判空后使用
-        if (enemy == null) {
-            LOG.info("GearIn magic beam: no enemy in sight");
-            return;
-        }
-        Vector2f from = player.getLocation();
-        float angle = VectorUtils.getAngle(from, enemy.getLocation());
-        MagicFakeBeam.spawnFakeBeam(
-                engine,
-                from,
-                settings.beamRange,
-                angle,
-                settings.beamWidth,
-                settings.beamFull,
-                settings.beamFading,
-                settings.beamImpactSize,
-                settings.beamCoreColor,
-                settings.beamFringeColor,
-                settings.beamDamage,
-                DamageType.ENERGY,
-                settings.beamEmp,
-                player);
-        beamCount++;
-        LOG.info("GearIn magic beam: #" + beamCount + " damage=" + settings.beamDamage
-                + " emp=" + settings.beamEmp + " width=" + settings.beamWidth
-                + " range=" + settings.beamRange + " tags=" + settings.beamTags);
+    if (ShaderLib.areShadersAllowed() && ShaderLib.areBuffersAllowed()) {
+        LightData.readLightDataCSV("data/lights/GearIn_light_data.csv");
+        TextureData.readTextureDataCSV("data/lights/GearIn_texture_data.csv");
     }
 }
 ```
 
-:::
+最终目录保留原始精灵，并为 GraphicsLib 增加两张坐标完全一致的贴图：
 
-::: details 完整成品：GearInHudBar
-
-```java
-package data.scripts.gearin.lib;
-
-import org.magiclib.util.MagicUI;
-
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.ShipAPI;
-
-/** 战斗 HUD 状态条 (MagicUI)：以固定 key 刷新玩家舰状态条。
- * 只注册数据，绘制由 MagicLib 的 MagicRenderPlugin(settings plugins 注册的
- * 战斗插件) 每帧完成；状态条约 5 秒不被刷新就会被移除 (含暂停时间)，因此
- * 刷新调用必须放在暂停守卫之前。 */
-public class GearInHudBar {
-
-    /** 战斗 HUD 状态条 key：MagicLib 要求对本 MOD 唯一；换 key 会生成另一条状态条。 */
-    private static final String HUD_BAR_KEY = "gear_in_beam_charge";
-
-    private final GearInBeamCaster beam;
-    private final GearInMagicSettings settings;
-
-    public GearInHudBar(GearInBeamCaster beam, GearInMagicSettings settings) {
-        this.beam = beam;
-        this.settings = settings;
-    }
-
-    /** 刷新状态条：填充进度 = 光束充能，颜色复用光束颜色 (改配置 → 光束与状态条一起变色)。 */
-    public void refresh(CombatEngineAPI engine) {
-        ShipAPI player = engine.getPlayerShip();
-        if (player == null) {
-            return;
-        }
-        MagicUI.drawInterfaceStatusBar(
-                player,
-                HUD_BAR_KEY,            // 固定 key：改变文本不会生成新条 (无 key 重载用文本兼作 key)
-                beam.getBeamCharge(),   // 0..1 的填充进度
-                settings.beamCoreColor,   // 填充色；null 时用原版 HUD 绿
-                settings.beamFringeColor, // 边框色；null 时用原版 HUD 绿
-                0f,                     // 第二段填充 (类硬幅能)，0 即关闭
-                "Beam charge",
-                beam.getBeamCount());   // 右侧数字，0..999999
-    }
-}
+```text
+graphics/ships/GearIn_artizan.png
+graphics/material/ships/GearIn_artizan.png
+graphics/normal/ships/GearIn_artizan.png
+data/lights/GearIn_texture_data.csv
 ```
 
-:::
+`GearIn_texture_data.csv` 使用以下完整内容：
 
-::: details 完整成品：GearInMagicSettings
-
-```java
-package data.scripts.gearin.lib;
-
-import java.awt.Color;
-import java.util.List;
-
-import org.apache.log4j.Logger;
-import org.magiclib.util.MagicSettings;
-
-import com.fs.starfarer.api.Global;
-
-/** 设置接入 (MagicSettings)：从 data/config/modSettings.json 的 "gear_in" 段读取
- * 光束与 HUD 配置，构造时缓存一次、不在每帧解析。
- * 键缺失返回类型缺省值 (false / 0 / Color.RED / 空集合) 并写 warn 日志，不抛
- * 异常 —— 缺省值会参与后续运行语义，业务开关不要依赖缺省值。 */
-public class GearInMagicSettings {
-
-    private static final Logger LOG = Global.getLogger(GearInMagicSettings.class);
-
-    /** data/config/modSettings.json 中本 MOD 的段名 (= MOD id "gear_in")。 */
-    private static final String CONFIG_SECTION = "gear_in";
-
-    /** HUD 状态条总开关。 */
-    public final boolean hudEnabled;
-    /** 光束宽度 / 射程 / 伤害 / EMP(数值键缺省 0)。 */
-    public final float beamWidth;
-    public final float beamRange;
-    public final float beamDamage;
-    public final float beamEmp;
-    /** 全亮与淡出时长 (秒)：只控制视觉，不影响伤害结算。 */
-    public final float beamFull;
-    public final float beamFading;
-    /** 命中光斑尺寸。 */
-    public final float beamImpactSize;
-    /** 光束核心 / 边缘颜色 (缺省 Color.RED)。 */
-    public final Color beamCoreColor;
-    public final Color beamFringeColor;
-    /** 光束标签列表 (缺省空集合)。 */
-    public final List<String> beamTags;
-
-    public GearInMagicSettings() {
-        hudEnabled = MagicSettings.getBoolean(CONFIG_SECTION, "hud_enabled");
-        beamWidth = MagicSettings.getFloat(CONFIG_SECTION, "beam_width");
-        beamRange = MagicSettings.getFloat(CONFIG_SECTION, "beam_range");
-        beamDamage = MagicSettings.getFloat(CONFIG_SECTION, "beam_damage");
-        beamEmp = MagicSettings.getFloat(CONFIG_SECTION, "beam_emp");
-        beamFull = MagicSettings.getFloat(CONFIG_SECTION, "beam_full");
-        beamFading = MagicSettings.getFloat(CONFIG_SECTION, "beam_fading");
-        beamImpactSize = MagicSettings.getFloat(CONFIG_SECTION, "beam_impact_size");
-        beamCoreColor = MagicSettings.getColorRGB(CONFIG_SECTION, "beam_color_core");
-        beamFringeColor = MagicSettings.getColorRGB(CONFIG_SECTION, "beam_color_fringe");
-        beamTags = MagicSettings.getList(CONFIG_SECTION, "beam_tags");
-        LOG.info("GearIn magic settings: hud=" + hudEnabled
-                + " width=" + beamWidth + " range=" + beamRange
-                + " damage=" + beamDamage + " emp=" + beamEmp
-                + " full=" + beamFull + " fading=" + beamFading
-                + " impact=" + beamImpactSize
-                + " core=(" + beamCoreColor.getRed() + "," + beamCoreColor.getGreen() + "," + beamCoreColor.getBlue() + ")"
-                + " tags=" + beamTags);
-    }
-}
+```csv
+id,type,frame,magnitude,map,path
+GearIn_artizan,ship,,,material,graphics/material/ships/GearIn_artizan.png
+GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
 ```
-
-:::
 
 ## 验证方案
 
-前置数据：`modSettings.json` 的 `gear_in` 段包含完整的 `beam_*` 键，三个角色已经由战斗插件构造和接线。
+前置数据：[C18-S5] 的入口已经初始化 GraphicsLib，三张 `GearIn_artizan` PNG 已按正文目录准备，[C18-S6] 的动态光源能够在战斗中照射测试舰船。
 
-1. 进入战斗，核对一次 `GearIn magic settings` 日志中的最终配置。
-2. 保持一艘敌舰可见，观察 HUD 在 2 秒内从 0 充到 1，随后清零并使右侧计数增加 1。
-3. 记录目标发射前后的装甲或船体值，确认每次计数变化只对应一次伤害。
-4. 移走所有敌舰并等待满充，确认日志出现 `no enemy in sight`，计数不增加。
-5. 暂停超过 5 秒，确认状态条仍在、充能不推进；恢复后继续充能。
-6. 修改颜色与伤害配置并重启，核对设置日志、光束颜色和单次伤害同时变化。
+1. 用相同画布导出 material 与 normal PNG，核对三张图片的像素尺寸、舰船中心、不透明像素包围盒和舰首方向。
+2. 启动游戏，确认 `onApplicationLoad()` 读取 `GearIn_texture_data.csv`，日志中没有路径、type、map 或 frame 警告。
+3. 用同一查询键分别测试覆盖与不覆盖入口，确认最终 `TextureEntry` 来自预期数据行。
+4. 查询 `GearIn_artizan` 的 material 与 normal，核对 `spriteName`、`magnitude`、`autoGen`、`validToLoad` 和 `loaded`。
+5. 使用 [C18-S6] 的动态光源照射工匠级，转动舰船并观察 material 颜色、normal 明暗方向与船体同步旋转。
+6. 临时移除 normal 数据行并启用 `autoGenNormals`，确认查询返回 `autoGen == true`，同时在 `GraphicsLib/cache` 产生缓存。
+7. 分别给测试船体加入 `graphicslib_no_autogen`、`graphicslib_autogen_override` 与 `graphicslib_preload`，核对生成来源和预载状态。
+8. 分别启用和关闭 `preloadAllMaps`，比较加载日志、第一次进入战斗的停顿和全部 `TextureEntry.vramSize` 之和。
+9. 依次制造错误 ID、错误 type、错误 map、缺失路径、错位画布和错误 frame，核对下面列出的症状与修正结果。
 
 预期结果：
 
-- 设置只在角色构造时读取一次，日志值与本次战斗的光束参数一致；
-- 非暂停状态下每 2 秒尝试一次发射，有目标时计数增加并结算一次伤害；
-- 无目标时不生成光束、不增加计数，下一周期重新查询；
-- 固定 key 让 HUD 保持为一条，填充与 `beamCharge` 一致；
-- 暂停期间 HUD 继续刷新，充能与攻击停止推进；
-- 配置修改在重启并重新构造设置角色后生效。
+- texture CSV 在应用加载阶段进入注册表，覆盖策略与同一查询键的预期一致；
+- 两条显式登记都以 `GearIn_artizan`、`SHIP` 和第 0 帧命中，normal 的 `magnitude` 为 1；
+- 动态光下的颜色与表面方向贴合原始舰船轮廓，透明区没有额外受光像素；
+- 移除显式 normal 后，自动生成结果来自缓存路径并标记 `autoGen`；
+- 动态加载只让当前战斗需要的条目驻留，全量预载则提前增加相应显存占用；
+- 三个标签分别改变自动生成许可、生成结果选择与常驻预载范围。
 
 ## 故障分析
 
-- **一次充能造成两次伤害**：`spawnFakeBeam()` 每次调用都会立即结算，视觉持续时间不会增加伤害次数。
+- **查询结果为 `null`**：查询键与 CSV 的 ID、对象类型、map、frame 或资源路径不一致。
 
-    - **解决方案**：让充能状态只调用一次 `fireBeam()`。
+    - **解决方案**：按四部分查询键逐项核对登记，并确认 PNG 路径能够加载。
 
-- **错误配置没有抛异常**：`MagicSettings` 对缺键或类型错误返回缺省值并写警告。
+- **贴图整体偏离舰船**：material 或 normal 的画布、中心、透明边界或朝向与原始精灵不同。
 
-    - **解决方案**：核对构造日志，修正配置。
+    - **解决方案**：在同一画布中重新对齐三张图后导出。
 
-- **HUD 状态条约五秒后消失**：状态条没有持续刷新，或刷新被暂停判断跳过。
+- **表面凹凸方向相反或过于尖锐**：normal 通道方向错误，或 `magnitude` 过大。
 
-    - **解决方案**：把 `refresh()` 放在暂停判断之前并保持固定 key。
+    - **解决方案**：修正法线通道，并从 `magnitude = 1` 开始校准。
 
-- **AI 舰没有显示状态条**：`MagicUI` 只在玩家舰且 HUD 可见时绘制。
+- **缺失 normal 后没有自动生成**：全局开关、对象标签、实际对象参数或原始精灵路径阻止了生成。
 
-    - **解决方案**：将验证目标换为玩家舰。
+    - **解决方案**：确认 `autoGenNormals` 已启用、对象未带禁止标签，并把实际 `ShipAPI` 传入查询。
+
+- **第一次进入战斗出现明显停顿**：大量纹理在首次使用时同时按需载入。
+
+    - **解决方案**：只给关键对象添加 `graphicslib_preload`，再以显存统计决定是否启用 `preloadAllMaps`。
 
 ## 总结
 
-`MagicSettings` 决定本次战斗使用的参数，`GearInBeamCaster` 每 2 秒尝试一次攻击，`MagicUI` 负责持续反馈。计数只在成功生成光束后增加，因此它既是 HUD 信息，也是核对伤害调用次数的直接证据。
+GraphicsLib 使用对象 ID、对象类型、动画帧和 map 类型把额外纹理绑定到原始精灵。material 决定受光颜色，normal 决定表面方向，surface 控制镜面高光；显式 CSV 提供稳定美术结果，自动生成与缓存负责补齐缺失 normal，动态加载和预载策略则决定这些资源何时进入显存。
 
 ## 建议参考项
 
-- `org.magiclib.util.MagicSettings`：读取合并后的 MOD 设置；
-- `org.magiclib.util.MagicFakeBeam`：`spawnFakeBeam` 生成瞬时伤害光束；
-- `org.magiclib.util.MagicUI`：`drawInterfaceStatusBar` 刷新玩家 HUD 状态条。
+- `org.dark.shaders.util.TextureData`：CSV 登记、纹理查询、自动生成与加载策略；
+- `org.dark.shaders.util.TextureData.TextureEntry`：纹理路径、强度、来源和驻留状态；
+- `org.dark.shaders.util.ShaderHook`：战斗纹理预载完成状态；
+- `GraphicsLib/data/lights/texture_data.csv`：原版对象类型与字段格式；
+- `GraphicsLib/README.md`：自动生成、缓存和预载配置。

@@ -1,6 +1,6 @@
-# 为 Nexerelin 特遣队添加命名与事件响应
+# 用 BoxUtil 为舰船与弹体添加动态光照
 
-特遣队名称提供势力风味，入侵监听器则让 GearIn 对市场易手作出反应。本节用配置加载命名器，以来源市场生成唯一候选名，并记录每轮入侵与最终转移。
+BoxUtil 提供点、线、聚光、区域与无限光五种形态，它们的选择应由发光对象决定。本节用点光表现弹体、线光表现光束、聚光表现舰首，并检查实体材质是否已登记。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,9 +10,11 @@
 
 完成后，您将能够：
 
-- 让 Nexerelin 通过配置加载自定义特遣队命名器；
-- 处理来源市场缺失和名称重复请求；
-- 注册一次瞬态监听器，分别记录入侵回合、结束和市场转移；读档后由生涯初始化入口重新注册。
+- 根据发光对象的几何选择点、线、聚光、区域或无限光；
+- 为局部光源配置世界位置、颜色、强度、衰减半径与寿命；
+- 为有方向的光源同步朝向，为无限光关闭距离衰减；
+- 在创建照明前核对舰船、导弹、弹体和光束的注册数据；
+- 从长度、锥角、材质集合和入队结果定位照明故障。
 
 ## 前置知识
 
@@ -20,193 +22,164 @@
 - [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
-## 让特遣队与入侵事件留下可追踪标识
+## 明确当前需求
 
-GearIn 特遣队显示 "编号 + 来源市场 + Forgeguard"；入侵 GearIn 市场时日志记录双方强度、结果和新所有者。来源市场缺失时仍能生成可读名称。
+弹体掠过船体时产生局部亮点，光束沿长度照亮装甲，舰首聚光随 facing 转动；关闭实体光照后，玩法状态保持不变。
 
 ## 文件与 API 链路
 
-`specialForcesNamerClass` 指向 `SpecialForcesNamer` 实现；Nexerelin 可能为去重重复请求名称；`InvasionListener` 提供战利品、回合、结束和市场转移回调。监听器要通过 `ListenerManager` 注册，并在持久化场景中只注册一次。
+五类 Light 都继承 `BaseIlluminantData`，共享位置、颜色、强度、衰减和全局计时；`LinearLight`、`SpotLight` 与 `AreaLight` 再增加各自几何状态。`EntityShadingDataManager` 分别查询舰船、导弹材质集合，以及弹体、光束、引擎的发光注册。
 
-### 在势力配置登记命名器
+### 光源选型速查表
 
-在 `gear_industry.json` 的 `specialForcesNamerClass` 中登记实现类，让 Nexerelin 经脚本类加载器创建它：
-
-```json
-"specialForcesNamerClass":"data.scripts.gearin.modcompat.GearInSpecialForcesNamer"
-```
-
-生成特遣队时会进入 `GearInSpecialForcesNamer`，而不是使用默认命名器。
-
-### 从来源市场生成名字主体
-
-`GearInSpecialForcesNamer.getFleetName()` 优先使用 `origin`，缺失时寻找势力市场：
-
-```java
-String marketName = market == null ? "GearIn" : market.getName();
-```
-
-正常来源显示市场名；来源为 `null` 时仍返回非空名称。
-
-### 加入可重复请求的编号
-
-`getFleetName()` 的返回处使用带序数后缀的 1 至 33 编号，接受 Nexerelin 的重复检查：
-
-```java
-int num = RANDOM.nextInt(33) + 1;
-return num + ordinalSuffix(num) + " " + marketName + " Forgeguard";
-```
-
-连续请求会产生可读的候选名；重复仍由 Nexerelin 的重试逻辑处理。
-
-### 记录入侵结果和市场转移
-
-`GearInInvasionReporter` 的四个回调保存市场 ID、回合强度、胜负和新所有者：
-
-```java
-LOG.info("GearIn invasion finished: " + market.getId() + " success=" + success);
-```
-
-`register()` 再用瞬态监听器把回调接入场景：
-
-```java
-ListenerManagerAPI listeners = Global.getSector().getListenerManager();
-if (!listeners.hasListenerOfClass(GearInInvasionReporter.class)) {
-    listeners.addListener(new GearInInvasionReporter(), true);
-}
-```
-
-重复调用注册入口仍只有一个监听器实例；每次入侵结束只出现一条 `finished` 与 `transfer` 日志。
-
-### 入侵回调职责速查表
-
-| 回调方法 | 触发时机 | 记录内容 |
+| 发光对象 | 光源类型 | 关键几何参数 |
 |---|---|---|
-| `reportInvadeLoot` | 入侵战利品结算 | 市场 ID |
-| `reportInvasionRound` | 每个入侵回合结束 | 市场 ID、攻守强度 |
-| `reportInvasionFinished` | 入侵整体结束 | 市场 ID、胜负结果 |
-| `reportMarketTransfered` | 市场所有权转移 | 市场 ID、新所有者 |
+| 弹体 | `PointLight` | 各向发散，衰减半径 180 su |
+| 光束 | `LinearLight` | 长度 240 su，柱半径 18 su |
+| 舰首 | `SpotLight` | 锥角 18°，朝向随舰首同步 |
+| 大面积面板 | `AreaLight` | 尺寸 180 × 70 su |
+| 全局环境 | `InfiniteLight` | 低强度，关闭距离衰减 |
+
+### 为弹体选择 PointLight
+
+`GearInLightFactory.createFiveKinds()` 创建各向发散的短程光源，并写入通用局部光参数：
+
+```java
+PointLight projectileLight = new PointLight();
+configure(projectileLight, location, new Color(90, 220, 255), 1.2f, 180f);
+```
+
+弹体附近船体得到局部照明。
+
+### 为光束选择 LinearLight
+
+`createFiveKinds()` 按光束长度和柱半径设置线形光源，再复用通用配置：
+
+```java
+LinearLight beamLight = new LinearLight();
+beamLight.setLength(240f);
+beamLight.setCylinderRadius(18f);
+```
+
+整段光束附近都有照明，而非只有起点。
+
+### 为舰首选择 SpotLight
+
+`createFiveKinds()` 接着设置锥角并同步舰首朝向：
+
+```java
+SpotLight spot = new SpotLight();
+spot.setCone(18f);
+spot.setFacingScale(facing, 1f, 1f);
+```
+
+舰首前方出现有边界的锥形照明。
+
+### 按对象选择 Area 与 Infinite
+
+`createFiveKinds()` 在返回前配置区域光覆盖面板；无限光使用低强度并关闭距离衰减，避免把局部参数误套到全局光：
+
+```java
+AreaLight area = new AreaLight();
+area.setSize(180f, 70f);
+InfiniteLight ambient = new InfiniteLight();
+ambient.setStrength(0.12f);
+ambient.setNoneAttenuation();
+```
+
+大面积对象不会被单点热点破坏。
+
+### 在创建光源前确认照明数据
+
+`GearInShadingProbe` 先按舰船与导弹 ID 查询材质集合，再按弹体或光束 ID 查询发光注册：
+
+```java
+boolean shipReady = EntityShadingDataManager.haveEntityTextureSet(hullId);
+boolean missileReady = EntityShadingDataManager.haveMissileTextureSet(missileId);
+boolean projectileReady = EntityShadingDataManager.haveProjectileIlluminantData(projectileId);
+boolean beamReady = EntityShadingDataManager.haveBeamIlluminantData(weaponId);
+```
+
+缺少数据时，跳过光源并给出具体 ID。
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+工厂返回 5 个已经配置位置、颜色、强度和 1 秒寿命的 `BaseIlluminantData`；调用方逐项入队。探针只回答注册状态，不创建 GPU 对象。
 
-::: details 完整成品：GearInInvasionReporter
+::: details 完整成品：GearInLightFactory
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.lib;
 
-import java.util.List;
+import java.awt.Color;
 
-import org.apache.log4j.Logger;
+import org.boxutil.base.BaseIlluminantData;
+import org.boxutil.units.standard.light.AreaLight;
+import org.boxutil.units.standard.light.InfiniteLight;
+import org.boxutil.units.standard.light.LinearLight;
+import org.boxutil.units.standard.light.PointLight;
+import org.boxutil.units.standard.light.SpotLight;
+import org.lwjgl.util.vector.Vector2f;
 
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.CargoAPI;
-import com.fs.starfarer.api.campaign.FactionAPI;
-import com.fs.starfarer.api.campaign.InteractionDialogAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.campaign.listeners.ListenerManagerAPI;
-import com.fs.starfarer.api.impl.campaign.rulecmd.salvage.Nex_MarketCMD.TempDataInvasion;
-
-import exerelin.campaign.InvasionRound.InvasionRoundResult;
-import exerelin.utilities.InvasionListener;
-
-public final class GearInInvasionReporter implements InvasionListener {
-    private static final Logger LOG = Global.getLogger(GearInInvasionReporter.class);
-
-    public static void register() {
-        ListenerManagerAPI listeners = Global.getSector().getListenerManager();
-        if (!listeners.hasListenerOfClass(GearInInvasionReporter.class)) {
-            listeners.addListener(new GearInInvasionReporter(), true);
-        }
+public final class GearInLightFactory {
+    public BaseIlluminantData[] createFiveKinds(Vector2f location, float facing) {
+        PointLight point = new PointLight();
+        configure(point, location, new Color(90, 220, 255), 1.2f, 180f);
+        AreaLight area = new AreaLight();
+        area.setSize(180f, 70f);
+        configure(area, location, new Color(80, 170, 255), 0.7f, 260f);
+        LinearLight linear = new LinearLight();
+        linear.setLength(240f);
+        linear.setCylinderRadius(18f);
+        configure(linear, location, new Color(100, 230, 255), 1f, 220f);
+        SpotLight spot = new SpotLight();
+        spot.setCone(18f);
+        spot.setFacingScale(facing, 1f, 1f);
+        configure(spot, location, new Color(180, 235, 255), 0.9f, 320f);
+        InfiniteLight infinite = new InfiniteLight();
+        infinite.setColor(new Color(90, 110, 150));
+        infinite.setStrength(0.12f);
+        infinite.setFacingScale(facing, 1f, 1f);
+        infinite.setNoneAttenuation();
+        infinite.setGlobalTimer(0.1f, 0.3f, 0.6f);
+        return new BaseIlluminantData[] {point, linear, spot, area, infinite};
     }
 
-    @Override
-    public void reportInvadeLoot(InteractionDialogAPI dialog, MarketAPI market,
-            TempDataInvasion data, CargoAPI loot) {
-        LOG.info("GearIn invasion loot: " + market.getId());
-    }
-
-    @Override
-    public void reportInvasionRound(InvasionRoundResult result, CampaignFleetAPI fleet,
-            MarketAPI market, float attackerStr, float defenderStr) {
-        LOG.info("GearIn invasion round: " + market.getId() + " attacker=" + attackerStr
-                + " defender=" + defenderStr);
-    }
-
-    @Override
-    public void reportInvasionFinished(CampaignFleetAPI fleet, FactionAPI attacker,
-            MarketAPI market, float numRounds, boolean success) {
-        LOG.info("GearIn invasion finished: " + market.getId() + " success=" + success);
-    }
-
-    @Override
-    public void reportMarketTransfered(MarketAPI market, FactionAPI newOwner,
-            FactionAPI oldOwner, boolean playerInvolved, boolean isCapture,
-            List<String> factionsToNotify, float repChangeStrength) {
-        LOG.info("GearIn market transferred: " + market.getId() + " owner=" + newOwner.getId());
+    private void configure(BaseIlluminantData light, Vector2f location,
+            Color color, float strength, float radius) {
+        light.setLocation(location);
+        light.setColor(color);
+        light.setStrength(strength);
+        light.setAttenuationRadius(radius);
+        light.setGlobalTimer(0.1f, 0.3f, 0.6f);
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInSpecialForcesNamer
+::: details 完整成品：GearInShadingProbe
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.lib;
 
-import java.util.List;
-import java.util.Random;
+import org.boxutil.manager.EntityShadingDataManager;
 
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.util.Misc;
-import exerelin.campaign.intel.specialforces.namer.SpecialForcesNamer;
-
-/**
- * 特遣队命名器：实现 Nexerelin 的 SpecialForcesNamer 接口。
- * 注册方式：gear_industry.json 的 specialForcesNamerClass 指向本类；
- * 由 Nexerelin 在生成特遣队时经脚本类加载器 loadClass + newInstance
- * (无参构造) 后调用 getFleetName，至多重试 25 次直到名字不重复。
- *
- * 命名形如 "1st GearIn Prime Forgeguard"：以起源市场命名，编号随机，
- * 降低与既有特遣队撞名概率；origin 缺失时回退势力首个市场，再回退 "GearIn"。
- * 本类只被 Nexerelin 侧加载，齿轮工业自己的代码从不引用它。
- */
-public class GearInSpecialForcesNamer implements SpecialForcesNamer {
-
-    private static final Random RANDOM = new Random();
-
-    @Override
-    public String getFleetName(CampaignFleetAPI fleet, MarketAPI origin, PersonAPI commander) {
-        MarketAPI market = origin;
-        if (market == null) {
-            List<MarketAPI> markets = Misc.getFactionMarkets(fleet.getFaction());
-            market = markets.isEmpty() ? null : markets.get(0);
-        }
-        String marketName = market == null ? "GearIn" : market.getName();
-
-        int num = RANDOM.nextInt(33) + 1;
-        return num + ordinalSuffix(num) + " " + marketName + " Forgeguard";
+public final class GearInShadingProbe {
+    public boolean hasShipTextures(String hullId) {
+        return EntityShadingDataManager.haveEntityTextureSet(hullId);
     }
 
-    private String ordinalSuffix(int num) {
-        if (num >= 11 && num <= 13) {
-            return "th";
-        }
-        switch (num % 10) {
-            case 1:
-                return "st";
-            case 2:
-                return "nd";
-            case 3:
-                return "rd";
-            default:
-                return "th";
-        }
+    public boolean hasMissileTextures(String missileId) {
+        return EntityShadingDataManager.haveMissileTextureSet(missileId);
+    }
+
+    public boolean hasProjectileLight(String projectileId) {
+        return EntityShadingDataManager.haveProjectileIlluminantData(projectileId);
+    }
+
+    public boolean hasBeamLight(String weaponId) {
+        return EntityShadingDataManager.haveBeamIlluminantData(weaponId);
     }
 }
 ```
@@ -215,45 +188,50 @@ public class GearInSpecialForcesNamer implements SpecialForcesNamer {
 
 ## 验证方案
 
-前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含本节 `gear_industry.json` 的 `specialForcesNamerClass` 登记、`GearInSpecialForcesNamer` 和 `GearInInvasionReporter`，并存在可重载的 GearIn 生涯存档。
+前置数据：BoxUtil 实体照明已启用，测试舰船和导弹已在 shading 数据表登记，战斗接线能逐项入队工厂结果。
 
-1. 构建示例 MOD，确认命名器和监听器都能编译。
-2. 在生涯初始化阶段调用 `GearInInvasionReporter.register()`，并在读档后的初始化入口再次调用。
-3. 生成 GearIn 特遣队，记录来源市场存在和缺失两种名称。
-4. 完成一轮入侵，按回合、结束和市场转移顺序核对日志。
+1. 先调用探针，记录舰船材质、导弹材质、弹体发光与光束发光 4 个布尔结果。
+2. 在同一命中点创建五类光源，核对返回数组长度为 5，局部光总寿命均为 1 秒。
+3. 让弹体点光经过船体，观察 180 su 衰减范围；让 240 su 线光横跨大型舰。
+4. 改变传入 `facing`，确认聚光和无限光方向同步变化。
+5. 移除舰船 normal 材质注册并重启，比较光源存在时的船体响应。
 
 预期结果：
 
-- 生成特遣队时进入 `GearInSpecialForcesNamer`；
-- 正常与缺失 origin 都返回非空名称；
-- 连续请求能得到不同编号候选；
-- 每次入侵结束只出现一条 `finished` 与 `transfer` 日志；
-- 重启或重复初始化不会增加瞬态监听器副本；读档后再次注册仍只保留一个实例。
+- 探针分别反映 2 类材质集合和 2 类发光数据的真实注册状态；
+- 点光、线光、聚光、区域光和无限光使用不同几何参数；
+- 局部光具有明确衰减半径，无限光使用低强度且不随距离衰减；
+- 聚光与无限光方向随传入朝向改变；
+- 材质集合缺失时能区分 "光源未创建" 和 "表面没有材质响应"；
+- 完整配置下战斗没有未处理异常。
 
 ## 故障分析
 
-- **特遣队名称变为 "error"**：配置类无法实例化，通常缺少公开无参构造或没有实现 `SpecialForcesNamer`。
+- **光束存在但船体没有沿线照明**：线光长度为零，照明体没有有效覆盖范围。
 
-    - **解决方案**：修正配置类，重启并生成 GearIn 特遣队。
+    - **解决方案**：设置非零长度并核对目标舰材质。
 
-- **特遣队名称频繁重复**：编号范围只提供候选，管理器仍可能重复请求。
+- **光源存在但船体没有材质响应**：`EntityShadingDataManager` 中没有目标纹理集合。
 
-    - **解决方案**：把来源市场和序数同时纳入名称，并保留去重重试。
+    - **解决方案**：注册材质数据。
 
-- **`origin` 为 null 时命名器崩溃**：代码没有市场和固定文本两级备用值。
+- **聚光方向保持固定**：每帧没有同步宿主舰船的 facing。
 
-    - **解决方案**：先检查 origin，再查询势力市场，最后回退到 `GearIn`。
+    - **解决方案**：推进时更新方向。
 
-- **一次入侵产生重复日志**：`register()` 从多个入口加入了同类监听器。
+- **无限光覆盖了全部颜色**：强度和衰减没有按场景限制。
 
-    - **解决方案**：保留唯一生涯初始化入口或注册前检查现有实例。
+    - **解决方案**：降低强度并设置合适的颜色贡献。
 
 ## 总结
 
-命名器必须能被配置加载、能处理 `origin` 缺失，也要接受重复请求。事件监听器按事件阶段记录不同事实；每次生涯初始化只幂等注册一个瞬态监听器，读档后重新注册，日志才会与一次入侵对应。
+五种光源解决不同几何问题。先按发光对象选形态，再确认材质与照明数据已经注册，最后同步位置和朝向；把所有效果都塞进 PointLight 只会得到错误的亮度分布。
 
 ## 建议参考项
 
-- `exerelin.campaign.intel.specialforces.namer.SpecialForcesNamer`：特遣队命名接口；
-- `exerelin.utilities.InvasionListener`：入侵与市场转移回调；
-- `specialForcesNamerClass`：势力配置中的命名器入口。
+- `org.boxutil.units.standard.light.PointLight`：点光源，局部动态光；
+- `org.boxutil.units.standard.light.LinearLight`：线性光源，局部动态光；
+- `org.boxutil.units.standard.light.SpotLight`：聚光灯，局部动态光；
+- `org.boxutil.units.standard.light.AreaLight`：区域照明；
+- `org.boxutil.units.standard.light.InfiniteLight`：全局方向照明；
+- `org.boxutil.manager.EntityShadingDataManager`：查询材质和照明注册数据。

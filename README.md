@@ -6,14 +6,14 @@
 
 ## 这是什么
 
-一份按章组织的教程，共 18 章 (`docs/chapter1` – `docs/chapter18`)、91 个节页 (`chapterN/sectionM/README.md`)：
+一份按章组织的教程，共 21 章 (`docs/chapter1` – `docs/chapter21`)、109 个节页 (`chapterN/sectionM/README.md`)：
 
 1. 基础：舰船、武器、船插、战术系统、战役数据、音频
 2. 进阶：模拟战、模块船、Java 工程、全局服务
 3. 战斗与生涯编程：战斗 API、生涯对象、人物技能、rules、监听器与任务
 4. 依赖库：LazyLib / GraphicsLib / MagicLib / LunaLib / BoxUtil 接入，以及 Nexerelin 等软依赖兼容
 
-配套仓库内还有一个 **`tutorial-fixtures`** 工程 —— 68 个按单元隔离、可直接编译的示例单元，包含 145 个 Java 文件和 8 个 shader 文件，与教程页面完整代码块逐字对应，作为「照着写就能跑」的权威示例。
+配套仓库内还有一个 **`tutorial-fixtures`** 工程 —— 74 个按单元隔离、可直接编译的示例单元，包含 126 个 Java 文件和 8 个 shader 文件，与教程页面完整代码块逐字对应，作为「照着写就能跑」的权威示例。
 
 ## 技术栈
 
@@ -23,7 +23,7 @@
 | 侧边栏 | 自研 `sidebarDiscoveryPlugin`：自动读取各页 H1 生成导航，**无需手工维护目录** |
 | 自动跳转 | 自研 markdown-it 插件 `markdown-splink`：正文中的 `[C1-S1]` 单元编号自动变为站内链接 |
 | 章索引 | 自研 `markdown-sectionlist`：章索引页的 section 列表由文件系统自动生成 (占位符 `<!-- AUTO:SECTION-LIST -->`)，标题与侧边栏同取各页 H1 |
-| 示例工程 | Gradle 多 sourceSet、Java 17；68 个 Java 单元编译任务 + 8 个 GLSL 着色器校验 |
+| 示例工程 | Gradle 多 sourceSet、Java 17；74 个 Java 单元编译任务 + 8 个 GLSL 着色器校验 |
 | 部署 | GitHub Pages(`gh-pages` 分支 + Actions 自动发布) |
 
 ## 编辑须知 (重要)

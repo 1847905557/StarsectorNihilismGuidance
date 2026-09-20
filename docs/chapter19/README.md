@@ -1,8 +1,8 @@
-# 软依赖与 Nexerelin
+# BoxUtil 渲染工具
 
-本章技术基线：Starsector `0.98a-RC8`；可选依赖：Nexerelin `0.12.1e`、LunaLib `2.0.5`。
+本章技术基线：Starsector `0.98a-RC8`；前置依赖：BoxUtil `1.5.5`。
 
-本章建立缺库可启动的适配边界，再让 GearIn 完整参与 Nexerelin 的外交、两种星区、战略 AI、地面战与特遣队事件，最后用 LunaLib 提供即时设置。
+本章从批量粒子与精灵实体开始，继续讲解线段、曲线、尾迹、扭曲、文字、模型、动态光照和批量实例提交。
 
 ## 本章各节
 

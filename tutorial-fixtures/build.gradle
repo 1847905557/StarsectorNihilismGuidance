@@ -30,12 +30,12 @@ def javaUnitIds = [
 	"C15-S1", "C15-S2", "C15-S3", "C15-S4", "C15-S5",
 	"C16-S4", "C16-S5",
 	"C17-S5",
-	"C18-S2", "C18-S3", "C18-S4", "C18-S5", "C18-S7", "C18-S8", "C18-S9",
-	"C18-S10", "C18-S11", "C18-S12", "C18-S13", "C18-S14", "C18-S15", "C18-S16",
+	"C18-S2", "C18-S3", "C18-S4", "C18-S6", "C18-S9", "C18-S11", "C18-S12",
 	"C19-S1", "C19-S2", "C19-S3", "C19-S4", "C19-S5", "C19-S6", "C19-S7",
-	"C20-S1", "C20-S2", "C20-S3", "C20-S4"
+	"C20-S1", "C20-S2", "C20-S3", "C20-S4", "C20-S5", "C20-S6", "C20-S7",
+	"C21-S1", "C21-S2", "C21-S3", "C21-S4"
 ]
-def shaderUnitIds = ["C20-S1", "C20-S2", "C20-S3", "C20-S4"]
+def shaderUnitIds = ["C21-S1", "C21-S2", "C21-S3", "C21-S4"]
 
 def fixtureJars = files(
 	fileTree(dir: "${gameRoot}/starsector-core", include: ["*.jar"]),

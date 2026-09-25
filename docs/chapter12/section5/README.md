@@ -473,43 +473,33 @@ public class GearInIndustryProbe {
 ## 故障分析
 
 - **产业没有出现在市场列表**：
-
     - **解决方案**：检查 CSV 行是否位于 `data/campaign/industries.csv`，并确认市场没有同 ID 的旧实例。
 
 - **产业 ID 找不到**：
-
     - **解决方案**：逐字核对 `GearIn_element_works` 的大小写、下划线和插件常量。
 
 - **插件无法实例化**：
-
     - **解决方案**：检查完整类名、包路径、无参构造和 JAR 内部路径。
 
 - **需求或产出为零**：
-
     - **解决方案**：确认供需声明位于 `apply()`，并确认市场已经完成一次经济重算。
 
 - **短缺没有减少产出**：
-
     - **解决方案**：确认 `getMaxDeficit()` 的输入列表只包含已声明需求，并把缺口传给 `applyDeficitToProduction()`。
 
 - **缺货削减方向错误**：
-
     - **解决方案**：检查削减目标是否为 `Commodities.RARE_METALS`，并核对输入商品与产出目标的方向。
 
 - **AI core 修饰残留**：
-
     - **解决方案**：检查 `applyAlphaCoreModifiers()` 与 `applyNoAICoreModifiers()` 是否使用相同的修饰 ID。
 
 - **中断状态没有恢复**：
-
     - **解决方案**：确认市场时间继续推进，并检查 `setDisrupted(0f)` 是否仅用于可回滚测试。
 
 - **改良状态与界面不同步**：
-
     - **解决方案**：先执行产业重算，再读取 `isImproved()`。
 
 - **建设进度异常**：
-
     - **解决方案**：检查 `build time`、建设队列和市场经济步，升级目标为空时不要调用升级入口。
 
 ## 总结

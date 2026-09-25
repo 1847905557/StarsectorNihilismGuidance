@@ -349,31 +349,24 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
 ## 故障分析
 
 - **Intel 条目显示但剩余天数不变**。
-
     - **解决方案**：确认创建方同时调用 `Global.getSector().addScript(intel)`。`addIntel()` 只写入 Intel 管理器，不会自动把对象加入生涯脚本列表。
 
 - **舰队移动后地图位置变化，但没有更新消息**。
-
     - **解决方案**：确认对象已经通过 `addIntel()` 获得玩家可见时间戳，并且位置 ID 与 `lastLocationId` 的比较只在发生变化时发送更新。
 
 - **重复调用 `addIntel()` 后出现两条相同情报**。
-
     - **解决方案**：确认复用同一个 Intel 实例；管理器按对象身份查重，反复创建新实例会产生多条独立记录。
 
 - **舰队失效后条目一直留在 Intel 列表**。
-
     - **解决方案**：确认 `advanceImpl()` 调用了 `endAfterDelay()`，并等待结束延迟归零；`isEnding()` 期间 `shouldRemoveIntel()` 仍然可以保持条目显示。
 
 - **舰队失效后脚本仍在推进**。
-
     - **解决方案**：确认 `BaseIntelPlugin.advance()` 已进入 ending，并检查引擎是否依据 `isDone()` 在下一轮移除了脚本对象。
 
 - **调用 `getIntelTags(null)` 抛出异常**。
-
     - **解决方案**：保留父类标签计算并保证实现不直接解引用 `map`；地图参数在列表排序和部分 UI 路径中可以为空。
 
 - **使用 `queueIntel()` 后立即看不到条目**。
-
     - **解决方案**：检查通信队列中的对象、玩家是否处于中继范围，以及 `canMakeVisibleToPlayer()` 的结果；需要立即可见时使用 `addIntel()`。
 
 ## 总结

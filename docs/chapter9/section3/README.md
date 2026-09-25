@@ -233,27 +233,21 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
 ## 故障分析
 
 - **基贴图路径没有以 `00.png` 结尾。**
-
     - **解决方案**：将 `turretSprite` 和 `hardpointSprite` 改为 `00.png` 基路径，并按连续编号补齐帧文件。
 
 - **`getAnimation()` 返回 `null`。**
-
     - **解决方案**：检查 `numFrames` 是否大于 1，并在调用动画方法前保留判空。
 
 - **动画闲置时持续播放。**
-
     - **解决方案**：将 `alwaysAnimate` 设为 `false`，并在闲置分支调用 `pause()` 与 `setFrame(0)`。
 
 - **开火后动画仍停在第 0 帧。**
-
     - **解决方案**：在充能或开火分支调用 `play()`，并确认 `animateWhileFiring` 为 `true`。
 
 - **炮管没有视觉后坐。**
-
     - **解决方案**：同时配置非零 `visualRecoil` 与 `turretGunSprite` 或 `hardpointGunSprite`。
 
 - **日志每帧刷屏。**
-
     - **解决方案**：只在帧号变化或开火边沿记录日志，不要在每次 `advance(...)` 中无条件输出。
 
 ## 总结

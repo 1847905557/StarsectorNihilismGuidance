@@ -221,15 +221,12 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 ## 故障分析
 
 - **新星系位于超空间原点**：`starmap.json` 的 `starSystemLocations` 没有恒星 ID `gearin`，且生成器没有显式设置位置。
-
     - **解决方案**：补齐位置数据或生成调用后创建新档。
 
 - **行星或实体没有出现**：类型 ID 已加载，但对象没有加入同一个 `system` 容器时，生成器不会自动补救。
-
     - **解决方案**：检查 `addPlanet` 和 `addCustomEntity` 的容器参数，重新创建新档。
 
 - **新档没有任何变化**：`onNewGame()` 只在新档生成阶段调用，旧存档不会重新执行。
-
     - **解决方案**：删除测试存档，确认 `modPlugin` 已启用并重新创建新档。
 
 ## 总结

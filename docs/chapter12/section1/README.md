@@ -414,23 +414,18 @@ public class GearInEconomyProbe implements EveryFrameScript {
 ## 故障分析
 
 - **行星存在但没有市场入口**：市场没有写回行星，或市场没有完成经济集合注册。
-
     - **解决方案**：确认 `EconomyAPI.addMarket(...)`、`planet.setMarket(...)` 和 `planet.setFaction(...)` 都在创建流程中执行。
 
 - **日志显示市场存在但地图查询不到**：`MarketAPI` 没有绑定正确的主实体。
-
     - **解决方案**：核对 `setPrimaryEntity(planet)` 和 `getPrimaryEntity().getId()`。
 
 - **管理员数量在纯读取后增加**：调用 `getAdmin()` 时市场没有管理员，API 创建了默认人物。
-
     - **解决方案**：只在需要管理员交互时调用 `getAdmin()`，其余读取使用 `getPeopleCopy()`。
 
 - **经济监听器没有回调**：监听器没有加入 `EconomyAPI`，或脚本在经济步前被移除。
-
     - **解决方案**：使用 `EconomyAPI.addUpdateListener(...)`，并保持监听器对象直到 `economyUpdated()` 触发。
 
 - **探针结束后市场状态仍被修改**：只恢复了税率，没有恢复自由港或子市场集合。
-
     - **解决方案**：保存每个被修改状态的原值，并在同一流程中逐项恢复。
 
 ## 总结

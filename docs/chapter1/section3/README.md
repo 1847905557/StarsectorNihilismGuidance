@@ -336,31 +336,24 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 ## 故障分析
 
 - **`AddShip` 找不到航母**：`ship_data.csv` 的 `GearIn_furnaceman` 行未加载，或 `.ship`、CSV 与装配引用的船体 ID 不一致。
-
     - **解决方案**：统一 ID 并重启游戏。
 
 - **航母战机从舰体中心生成**：对应甲板没有港口，无法提供出入位置。
-
     - **解决方案**：在舰船编辑器中补齐并保存甲板港口。
 
 - **联队无法补充或返航**：战机船体的 `hullSize` 不是 `FIGHTER`，或 wing、variant、hull 三段 ID 没有依次指向现有对象。
-
     - **解决方案**：修正引用后重新部署航母。
 
 - **`Addwing` 报 `No LPC found with id [...]`**：ID 未加载，或误用了 hull、variant ID。命令会自动补 `_wing` 后缀。
-
     - **解决方案**：核对后使用 wing ID，重启。
 
 - **战机生成后没有武器**：variant 中的槽位 ID 与 `.ship` 不一致，武器无法挂载到目标槽位。
-
     - **解决方案**：统一槽位 ID 并重新生成联队。
 
 - **装配界面的联队分类与 `role` 不一致**：`wing_data.csv` 的 `role`、`role desc` 或分类 tag 配置不匹配，或修改尚未重新加载。
-
     - **解决方案**：修正并重启游戏。
 
 - **日志出现航母或战机加载错误**：从首个异常开始，沿最终 ID 依次核对 CSV、wing、variant、hull 和资源路径。
-
     - **解决方案**：修正首个断点并重启。
 
 ## 总结

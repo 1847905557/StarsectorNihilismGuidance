@@ -271,23 +271,18 @@ public class GearInCommodityProbe {
 ## 故障分析
 
 - **商品规格为空**：`commodities.csv` 路径错误、列位错位或商品 ID 重复。
-
     - **解决方案**：核对文件路径、表头顺序和 `GearIn_tempered_alloy`，重启后查看加载日志。
 
 - **市场商品对象为空**：商品已注册，但目标市场没有建立该商品的市场数据。
-
     - **解决方案**：确认市场经济集合和商品需求类别，再使用 `market.getCommodityData(id)` 检查接入状态。
 
 - **基础价格与交易价格不同**：把 `CommoditySpecAPI.getBasePrice()` 当成了玩家当前交易价。
-
     - **解决方案**：使用 `MarketAPI.getDemandPrice()` 和 `getSupplyPrice()`，同时固定数量与玩家价格标志。
 
 - **违禁品标记没有出现**：势力文件中的 ID 与商品注册 ID 不一致。
-
     - **解决方案**：逐字核对 `illegalCommodities` 中的 `GearIn_tempered_alloy`，再读取 `isIllegal()`、`isSupplyLegal()` 和 `isDemandLegal()`。
 
 - **价格方向记录反了**：把需求价写成玩家买入，或把供给价写成玩家卖出。
-
     - **解决方案**：按需求方向是市场买入、供给方向是市场卖出的规则重新标注日志和验证结果。
 
 ## 总结

@@ -267,39 +267,30 @@ gear_industry,FACTION,以重型制造、耐用结构和严格工序闻名的工�
 ## 故障分析
 
 - **启动失败，日志含 `Mismatched quotes in the string; last quote: [...]`**：某个字段的引号不成对 (例如把示例行的 `""` 只写了一个)。CSV 解析器解析结束时检测到引号未闭合，直接抛 `JSONException`。
-
     - **解决方案**：保证引号成对，重启。
 
 - **启动失败，日志含 `Key [type] has invalid value [...]`**：某行 `type` 列不是枚举名 (拼写、大小写或多余空格)。
-
     - **解决方案**：与 11 个枚举名逐字符一致，重启。
 
 - **启动失败，日志含 `Duplicate key [...] while loading [data/strings/descriptions.csv from [...]`**：同一文件内出现相同 `id + type` 组合 (键串形如 `id | type |`)。
-
     - **解决方案**：保证键全文件唯一，重启。
 
 - **启动失败，日志含 `JSONObject["id"] not found` 一类异常**：文件带 BOM 或表头被污染。BOM 字符粘在表头第一列列名上 (`id` 变成 `\ufeffid`)。
-
     - **解决方案**：以 UTF-8 无 BOM 重新保存。
 
 - **文本错位、截断或串到别的列**：字段内含未加引号的英文逗号或换行，按列切分后错位；键列被污染时表现为未关联行或占位文本；比表头多的列被静默丢弃，表现为 "文本消失"。
-
     - **解决方案**：按转义规则补引号，重新执行前置讲解中的键检查脚本。
 
 - **某个新增对象没有描述**：键与对象不匹配。描述行本身合法时，键不匹配不会阻止加载。
-
     - **解决方案**：逐项核对商品 ID、行星类型的 `descriptionId`、势力 ID 和实体的 `customDescriptionId`。
 
 - **重定义原版或其他 MOD 已有键后没有任何效果**：跨文件同键先到先得、后到的同键行被静默跳过。
-
     - **解决方案**：不要重定义既有键。
 
 - **图库没有新增条目**：`GALLERY` 行缺 text1(`hasText1()` 为假不列出)，或键与 `graphics/illustrations` 的贴图键不一致。
-
     - **解决方案**：补上 `GALLERY` 行的 text1，或统一键与 `graphics/illustrations` 的贴图键。
 
 - **行星描述显示的是别的行**：行星类型经 `planets.json` 的 `descriptionId` 共享了另一个键，或行星被设置了 `customDescriptionId`(`CUSTOM` 行优先于 `PLANET` 行)。
-
     - **解决方案**：核对类型键与覆盖链。
 
 ## 总结

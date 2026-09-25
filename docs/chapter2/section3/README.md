@@ -279,23 +279,18 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 ## 故障分析
 
 - **游戏加载时报 `Fatal: ship_systems.csv is missing systems`**：`.system` 已创建，但 CSV 没有对应行或行首仍有 `#`。
-
     - **解决方案**：补回 `GearIn_burstdrive` 数据行并取消注释，重启。
 
 - **系统数值全为零、按键瞬间结束**：CSV 行与 `.system` 两处 ID 一致、但 `charge up`/`active`/`down`/`cooldown` 数值为空时，状态机一帧内跑完整个周期。注意：两处 ID 不一致不会造成 "瞬间结束" —— 加载期即抛 `Fatal: ship_systems.csv is missing systems` 中断 (日志至多先出现一行 `not found in store` 警告)。
-
     - **解决方案**：统一两处 ID 并填上数值，再重新进入战斗。
 
 - **舰船部署时报 `System with id [...] not found`**：船体的 `system id` 拼错，或对应系统尚未注册。
-
     - **解决方案**：核对 `.ship`、`.system` 与 CSV 的 ID，修正后重新部署。
 
 - **冷却结束后效果仍然残留**：`unapply` 没有撤销 `apply` 写入的修饰。
-
     - **解决方案**：使用同一 source id 成对撤销，再次完整激活并等待冷却结束。
 
 - **日志出现 `Error loading [...]`**：`statsScript` 类名、包声明和文件路径不一致，或文件错误地放在 `src\` 前缀下。
-
     - **解决方案**：将类放在 MOD 根目录对应包路径，统一三处名称后重启。
 
 ## 总结

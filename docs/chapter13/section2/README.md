@@ -395,27 +395,21 @@ public class GearInAdministratorRole {
 ## 故障分析
 
 - **舰队界面没有显示新的舰长**：目标成员不是当前旗舰，或没有调用 `setCaptain`。
-
   - **解决方案**：从当前舰队重新取得 `getFlagship()`，绑定人物后读取同一成员的 `getCaptain()`。
 
 - **军官出现在 roster，但舰船没有舰长**：`OfficerDataAPI` 不负责写入成员舰长字段。
-
   - **解决方案**：保留 `addOfficer(...)`，再对目标成员调用 `setCaptain(person)`。
 
 - **舰队指挥官日志正确，成员读取为空**：舰队尚未同步，或读取的是旧成员对象。
-
   - **解决方案**：调用 `forceSync()`，再从当前舰队取得成员并读取 `getFleetCommander()`。
 
 - **管理员界面仍显示旧人物**：市场字段已被覆盖，代码继续读取旧引用。
-
   - **解决方案**：从 `market.getAdmin()` 重新读取当前管理员，并同步设置 `person.setMarket(market)`。
 
 - **管理员 stats 改变但市场数值不变**：管理员效果尚未刷新或市场尚未重算。
-
   - **解决方案**：刷新管理员 stats，再重新打开市场界面读取当前值。
 
 - **性格显示为空或行为没有变化**：性格 ID 无效，或人物没有绑定到当前角色槽位。
-
   - **解决方案**：使用 `Personalities.STEADY` 等有效 ID，读取 `getPersonalityAPI()` 后检查角色字段。
 
 ## 总结

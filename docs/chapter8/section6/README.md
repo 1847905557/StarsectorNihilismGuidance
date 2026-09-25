@@ -277,35 +277,27 @@ public class GearInDamageDealtModifier implements DamageDealtModifier {
 ## 故障分析
 
 - **监听器注册后没有回调**：接口与挂载对象不匹配。
-
     - **解决方案**：按接口表确认对象归属；部署监听器注册到引擎，舰船级推进注册到 `ShipAPI`，OP 修饰器注册到 `MutableShipStatsAPI`。
 
 - **伤害修饰结果方向相反**：`DamageDealtModifier` 与 `DamageTakenModifier` 挂到了错误的一方。
-
     - **解决方案**：造成伤害的一方使用 `DamageDealtModifier`，承受伤害的一方使用 `DamageTakenModifier`，再次进行同一命中实验。
 
 - **舰船推进日志始终为空**：`AdvanceableListener` 被注册到引擎或统计对象。
-
     - **解决方案**：通过 `ship.getListenerManager()` 注册，并确认监听器实例绑定当前 `ShipAPI`。
 
 - **射程或 OP 数值没有变化**：修饰器挂载表面正确但实现了错误的接口。
-
     - **解决方案**：最终射程使用 `WeaponRangeModifier`，基础射程使用 `WeaponBaseRangeModifier`，武器和战机 OP 使用对应的 stats 修饰器。
 
 - **同一事件每次出现多条日志**：同一对象重复注册了监听器实例。
-
     - **解决方案**：注册前调用 `hasListenerOfClass(...)` 或 `hasListener(...)`，保留一个属于当前对象的实例。
 
 - **插件停止后仍出现部署日志**：引擎级监听器仍处于注册状态。
-
     - **解决方案**：在 `removePlugin(this)` 前调用 `engine.getListenerManager().removeListener(listener)`。
 
 - **第二场战斗沿用上一场状态**：监听器实例或其字段跨战斗保存。
-
     - **解决方案**：把计数器和计时器放在本场战斗创建的监听器中，清除静态字段和旧引擎引用。
 
 - **日志无法定位触发对象**：日志缺少接口、阶段或对象 ID。
-
     - **解决方案**：每条日志加入稳定的 `GearIn` 前缀、接口名称和舰船或成员 ID。
 
 ## 总结

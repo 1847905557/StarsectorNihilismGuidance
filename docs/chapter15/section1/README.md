@@ -325,19 +325,15 @@ public class GearInConversationDialog implements InteractionDialogPlugin {
 ## 故障分析
 
 - **带标记实体没有检查选项**：目标 Memory 的键名或写入对象与会话读取对象不一致。
-
     - **解决方案**：核对目标自己的 `getMemoryWithoutUpdate()`、`$GearIn_dialog_target` 拼写和布尔值，再重新进入 `showInteractionDialog`。
 
 - **未标记实体进入检查分支**：初始化阶段没有在建立选项前读取目标标记。
-
     - **解决方案**：把目标判定放在 `getOptionPanel()` 和 `addOption(...)` 之前，并在标记为假时调用 `dismissAsCancel()`。
 
 - **视觉区域显示错误实体**：通用 `SectorEntityToken` 被直接按特定实体类型展示。
-
     - **解决方案**：先检查自定义交互图像，存在时调用 `showImageVisual(...)`，否则调用 `hideVisualPanel()`。
 
 - **关闭后仍追加文本**：迟到回调只检查面板引用，没有检查 `closed`。
-
     - **解决方案**：在每个可能写入面板的回调入口先检查 `closed`，并在关闭分支设置状态后调用对应 dismiss 方法。
 
 ## 总结

@@ -290,7 +290,6 @@ public final class GearInCommonDataCounter {
 ## 故障分析
 
 - **每次载入都显示 `0 -> 1`**：数据对象没有正常关闭，或每次调用使用了不同的公共文件名。
-
     - **解决方案**：使用固定的 `GearIn_common_counter`，并让 try-with-resources 完成 `close()` 与保存。
 
 ## 总结

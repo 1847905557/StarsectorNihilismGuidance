@@ -199,31 +199,24 @@ tasks.named("jar") {
 ## 故障分析
 
 - **启动器找不到依赖**：GearIn 声明的 `id` 与依赖库 manifest 中的值不一致，或对应 MOD 没有安装。
-
     - **解决方案**：按三库 manifest 恢复精确 ID，并确认目录直接位于 `Starsector/mods/`。
 
 - **启动器阻止选择带版本的依赖**：声明版本与已安装版本发生 major 不匹配，或对方没有可判定的版本。
-
     - **解决方案**：核对实际兼容版本；确认接口兼容后更新具体版本值，或按本节成品省略该字段。
 
 - **Gradle 报告依赖库的包不存在**：`modsDir` 没有指向真实 `Starsector/mods`，或 JAR 目录名称与安装目录不一致。
-
     - **解决方案**：执行 classpath 查询并逐项修正四个目录。
 
 - **编译通过但进入游戏时报 `NoClassDefFoundError`**：Gradle 已看到 JAR，而 manifest 没有声明对应运行时依赖。
-
     - **解决方案**：在 `dependencies` 中补回该库的精确 ID，并通过启动器启用它。
 
 - **manifest 已声明但 Java 无法编译**：启动器关系已经存在，而依赖 JAR 没有进入 `compileClasspath`。
-
     - **解决方案**：补齐 `dependencyJarDirs` 和 `compileOnly fileTree(...)`。
 
 - **GearIndustry.jar 中出现依赖库包**：构建使用了 `implementation` 或把依赖 JAR 并入了归档任务。
-
     - **解决方案**：恢复 `compileOnly`，重新构建并用 `jar tf` 检查产物。
 
 - **GraphicsLib 类可以调用但光照和贴图数据没有生效**：manifest 与 classpath 已接通，使用方尚未完成 `ShaderLib.init()` 和数据登记。
-
     - **解决方案**：按后续 GraphicsLib 页面在应用加载阶段建立初始化与 CSV 加载链。
 
 ## 总结

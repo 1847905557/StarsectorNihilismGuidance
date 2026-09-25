@@ -116,15 +116,12 @@ public class GearInModPlugin extends BaseModPlugin {
 ## 故障分析
 
 - **启动阶段报告 `Error loading [data.scripts.gearin.GearInModPlugin]`**：`modPlugin`、`package`、文件路径或类名没有指向同一个类。
-
     - **解决方案**：逐段核对 `data.scripts.gearin.GearInModPlugin` 与文件中的 `package`、类名和目录，修正后重启。
 
 - **新档中的关系全部保持中立**：`onNewGame()` 没有调用 `seedRelations`，或入口类没有通过 `modPlugin` 注册。
-
     - **解决方案**：核对入口声明和 `onNewGame()` 的调用，再创建新档。
 
 - **修改关系后旧档没有变化**：`onNewGame()` 只在创建新生涯时执行，已有存档保留自己的运行时关系。
-
     - **解决方案**：创建新档并重新核对四组关系。
 
 ## 总结

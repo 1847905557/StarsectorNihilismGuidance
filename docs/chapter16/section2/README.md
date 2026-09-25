@@ -278,27 +278,21 @@ GearIn_rules_apply_back,DialogOptionSelected,$option == GearIn_rules_apply_back,
 ## 故障分析
 
 - **选项可见但选择后出现 `no rule found`**：options 中的 ID 与 `$option` 条件没有逐字对应。
-
     - **解决方案**：统一选项 ID 的前缀、大小写和空格。
 
 - **选择记录后只有附加文本**：`GearInRulesApplyDetail` 没有任何候选通过条件。
-
     - **解决方案**：检查势力槽位、敌对状态和一次性 flag。
 
 - **FireBest 在两个结果间变化**：最高总分相同，规则进入同分随机选择。
-
     - **解决方案**：用 `score:N` 建立确定的总分差。
 
 - **FireAll 没有追加记录**：目标 trigger 被 `FireAllIntercept` 拦截或全部条件失败。
-
     - **解决方案**：检查 `$fireAllTrigger`、拦截条件和目标规则条件。
 
 - **返回选项留下空白对话**：返回 ID 没有对应 `DialogOptionSelected` 规则。
-
     - **解决方案**：让 `GearIn_rules_apply_back` 命中执行 `EndConversation` 的处理器。
 
 - **一次性结果反复出现**：条件与脚本使用了不同 Memory 槽位。
-
     - **解决方案**：两侧统一使用 `$player.GearIn_rules_apply_seen`。
 
 ## 总结

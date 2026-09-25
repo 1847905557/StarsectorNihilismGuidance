@@ -469,27 +469,21 @@ public class GearInColonyGovernanceDescription implements DescriptionSkillEffect
 ## 故障分析
 
 - **技能树中没有新技能**：
-
   - **解决方案**：比较 CSV 行、`.skill` 文件名和 `.skill` 内的 `id`，确认三个字符串逐字一致，再检查日志中的跳过信息。
 
 - **技能面板出现，数值效果没有出现**：
-
   - **解决方案**：检查 `type` 与接口是否匹配，并确认脚本类的完整包名、公共无参构造和对应的 `apply()` 签名正确。
 
 - **舰长技能降级后舰船仍然加速**：
-
   - **解决方案**：在 `unapply()` 中使用引擎传入的同一个 `id`，并分别调用 `unmodify()` 清理速度和加速度。
 
 - **舰队汇总行出现，舰队状态没有改变**：
-
   - **解决方案**：检查 `FleetTotalSource` 是否只负责显示，确认真正的燃烧等级和燃料 modifier 写在 `FleetStatsSkillEffect.apply()` 中。
 
 - **管理员技能改变了错误的市场**：
-
   - **解决方案**：确认 `.skill` 使用 `GOVERNED_OUTPOST`，并在 `MarketSkillEffect.apply()` 中只使用引擎传入的 `MarketAPI`。
 
 - **重复进入界面后收入倍率不断叠加**：
-
   - **解决方案**：保持 modifier ID 稳定，使用 `modifyPercent` 覆盖同一来源，并在 `unapply()` 中调用 `unmodify()`。
 
 ## 总结

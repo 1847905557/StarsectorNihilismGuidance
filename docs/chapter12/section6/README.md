@@ -328,19 +328,15 @@ public class GearInSpecialItemProbe {
 ## 故障分析
 
 - **`getSpecialItemSpec(id)` 返回 `null`**：
-
     - **解决方案**：检查 CSV 的 `id`、MOD 数据路径和插件日志中的实际加载 ID，确保代码使用同一字符串。
 
 - **Cargo 栈存在但 `getPlugin()` 不是预期类**：
-
     - **解决方案**：核对注册行的 `plugin` 全限定类名，并确认类位于 MOD 的 `data.scripts.gearin.campaign` 包。
 
 - **产业产出没有变化**：
-
     - **解决方案**：确认产业 ID 是 `element_works`，且应用和撤销使用同一个 modifier ID。
 
 - **右键后物品被扣除两次**：
-
     - **解决方案**：插件已经通过 helper 移除当前栈时，将 `shouldRemoveOnRightClickAction()` 保持为 `false`。
 
 ## 总结

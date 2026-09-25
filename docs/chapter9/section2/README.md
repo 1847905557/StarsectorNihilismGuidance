@@ -253,31 +253,24 @@ public void unapply(MutableShipStatsAPI stats, String id) {
 ## 故障分析
 
 - **系统加载时报 `Problem loading class`**：`.system` 中的 `statsScript`、`aiScript` 或包名与 JAR 中的类不一致。
-
     - **解决方案**：逐字核对完整类名、`package` 声明和 JAR 条目后重启。
 
 - **AI 舰船从不激活系统**：`aiType` 不是 `CUSTOM`，或 `advance(...)` 的目标、冷却和存活检查始终返回。
-
     - **解决方案**：将 `aiType` 改为 `CUSTOM`，确认目标有效并用日志检查节流后的决策时机。
 
 - **系统结束后射程倍率仍然存在**：`unapply(...)` 没有用与 `apply(...)` 相同的 modifier ID 撤销。
-
     - **解决方案**：统一使用引擎传入的 `id`，重新激活并等待系统结束。
 
 - **只看到激活阶段日志**：`runScriptWhileIdle` 未写在 `.system` 顶层，或值不是 `true`。
-
     - **解决方案**：在待机演示系统的 `.system` 顶层设置 `runScriptWhileIdle: true`，重新加载后搜索 `IDLE` 与 `COOLDOWN`。
 
 - **系统每帧反复尝试激活**：自定义 AI 没有使用 `IntervalUtil`，或没有检查 `isActive()` 和 `isCoolingDown()`。
-
     - **解决方案**：保留决策间隔，并在调用 `ship.useSystem()` 前检查系统状态。
 
 - **待机脚本造成战斗卡顿**：开启 `runScriptWhileIdle` 后仍在每帧执行全战场扫描或大量日志输出。
-
     - **解决方案**：缩短待机脚本逻辑，只读取必要状态，并将高成本工作改为间隔执行。
 
 - **自定义 AI 保存的字段在 stats 脚本中为空**：stats 类与 AI 类是独立实例，实例字段不会互相共享。
-
     - **解决方案**：通过参数、静态工具方法或舰船 custom data 传递确需共享的信息。
 
 ## 总结

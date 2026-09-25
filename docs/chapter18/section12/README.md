@@ -273,27 +273,21 @@ public final class GearInTargetProbe extends BaseEveryFrameCombatPlugin {
 ## 故障分析
 
 - **锁定目标后 HUD 和粒子都没有出现**：插件没有从 settings 注册，或玩家取得的不是舰船目标。
-
     - **解决方案**：核对 `plugins.gearInTargetProbe` 的包名与类名，并确认目标来自 `player.getShipTarget()`。
 
 - **HUD 出现但圆周没有粒子**：交点结果为 `null`，或粒子节流尚未达到 `0.05 秒`。
-
     - **解决方案**：核对四个交点参数的顺序，并确认线段终点使用目标中心。
 
 - **状态条随距离增加而填满**：距离比例没有反转为接近度。
-
     - **解决方案**：使用 `1f - Math.min(distance / DISPLAY_RANGE, 1f)`。
 
 - **主条与副条完全重合**：两层传入了同一个进度，或目标恰好处于端点和中点。
-
     - **解决方案**：主条传入 `smoothProximity`，副条传入 `linearProximity`，并在约 `500 su` 或 `1500 su` 处比较。
 
 - **状态条显示在其他舰船旁边**：调用方传入了玩家以外的舰船。
-
     - **解决方案**：始终把 `engine.getPlayerShip()` 传给 `drawHUDStatusBar(...)`。
 
 - **切换目标后立即出现旧位置粒子**：目标变化时没有清零粒子计时器。
-
     - **解决方案**：比较 `target` 与 `previousTarget`，变化后把 `particleElapsed` 设为 `0f`。
 
 ## 总结

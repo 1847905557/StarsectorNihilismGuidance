@@ -131,15 +131,12 @@ PlanetAPI prime = system.addPlanet(
 ## 故障分析
 
 - **游戏在主菜单前停止加载**：检查 JSON 逗号、颜色数组长度和所有贴图路径。`planets.json` 会在加载期把贴图加入资源队列。
-
     - **解决方案**：修正后重新启动游戏。
 
 - **行星详情没有描述**：类型键和描述键可以不同，但必须通过 `descriptionId` 连接。
-
     - **解决方案**：核对 `descriptionId` 是否等于本页 `PLANET` 行的 ID，修正后创建新档。
 
 - **星体按错误的对象类型生成**：`initStar` 使用恒星类型，`addPlanet` 使用行星类型；二者共享 `planets.json` 注册表，但对象用途不同。
-
     - **解决方案**：核对 `isStar` 与生成调用，修正后创建新档。
 
 ## 总结

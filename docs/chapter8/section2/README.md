@@ -164,19 +164,15 @@ for (BeamAPI beam : engine.getBeams()) {
 ## 故障分析
 
 - **残骸仍然显示舰船标签**：直接遍历 `getShips()`，没有先判断 `isAlive()`。
-
     - **解决方案**：在 `addFloatingText(...)` 之前过滤残骸和已死亡舰船。
 
 - **弹体总数大于实际发射数**：把 `getProjectiles()` 和 `getMissiles()` 两个集合相加。
-
     - **解决方案**：总数只读取 `getProjectiles()`，导弹专属信息单独读取 `getMissiles()`。
 
 - **光束文字位置错误**：把 `BeamAPI` 当作 `CombatEntityAPI` 使用，或读取了错误坐标。
-
     - **解决方案**：使用 `beam.getTo()` 作为位置，使用 `getDamageTarget()` 作为附着对象。
 
 - **第二场战斗仍显示上一场对象**：保存了旧战斗的舰船、弹体或光束引用。
-
     - **解决方案**：每场战斗重新取得 `CombatEngineAPI` 和对象集合。
 
 ## 总结

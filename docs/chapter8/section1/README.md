@@ -241,19 +241,15 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 ## 故障分析
 
 - **战斗类型判断错误**：把 `isSimulation()`、`isInCampaignSim()` 和 `isMission()` 当作同一个状态。
-
     - **解决方案**：同时记录三个方法和 `getMissionId()`，按照实际战斗入口选择判断条件。
 
 - **暂停期间计时继续推进**：在 `isPaused()` 判断前累计 `amount`。
-
     - **解决方案**：把状态推进和报告间隔放到暂停守卫之后。
 
 - **胜者尚未确定却提前收尾**：用 `getWinningSideId() != -1` 代替战斗结束判定。
-
     - **解决方案**：用 `isCombatOver()` 判定收尾，再读取 `getWinningSideId()` 记录结果。
 
 - **界面提示出现在错误阶段**：没有检查对话框、HUD 或自动驾驶状态。
-
     - **解决方案**：在显示提示前读取对应的界面状态方法。
 
 ## 总结

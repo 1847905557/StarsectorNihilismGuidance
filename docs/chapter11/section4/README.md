@@ -459,35 +459,27 @@ public class GearInFleetMemberStatus implements EveryFrameScript {
 ## 故障分析
 
 - **日志显示成员已创建，但舰队界面没有成员**：创建了 `FleetMemberAPI`，却没有把它加入目标 `FleetDataAPI`。
-
     - **解决方案**：确认 `data.addFleetMember(member)` 在读取成员数量和设置旗舰之前执行，并核对 `member.getFleetData() == data`。
 
 - **新成员意外成为旗舰**：调用了 `data.setFlagship(member)`，或直接设置成员旗舰标志后没有恢复原旗舰。
-
     - **解决方案**：默认创建时传入 `makeFlagship=false`，需要切换时保存原旗舰，使用集合级 `setFlagship(...)` 完成切换和恢复。
 
 - **船体完整度恢复但仍然显示维修中**：装甲、模块或其他部件仍有损伤，`getHullFraction()` 没有覆盖这些状态。
-
     - **解决方案**：同时读取 `needsRepairs()` 与 `computeRepairednessFraction()`，通过游戏维修流程处理剩余损伤。
 
 - **CR 数值与预期不同**：读取的是 `getBaseCR()`、`getCR()` 或船员比例修正前后的不同阶段，或者把百分数当作 `0` 到 `1` 的小数传入。
-
     - **解决方案**：记录 `getCR()`、`getBaseCR()` 和 `getCrewFraction()`，调用 `setCR(0.3f)` 这类小数值，并在修改后重新读取。
 
 - **成员封存后仍尝试部署**：只检查船体状态，没有检查 `isMothballed()` 或 `canBeDeployedForCombat()`。
-
     - **解决方案**：在部署入口先读取 `canBeDeployedForCombat()`，将封存、CR、船员和维修状态分别写入日志。
 
 - **装配替换后派生值没有变化**：使用 `setVariant(..., false, false)` 后继续使用旧 stats，或只修改了共享装配对象。
-
     - **解决方案**：对装配先 `clone()`，写回时传入 `withStatsUpdate=true`，随后调用 `updateStats()` 并重新读取成员派生值。
 
 - **战斗结束后访问对象报错**：把战斗侧 `ShipAPI` 引用保存到跨战斗字段或存档数据。
-
     - **解决方案**：只保存生涯成员 ID；每次战斗结束后从玩家舰队的 `FleetDataAPI` 重新取得 `FleetMemberAPI`。
 
 - **演示成员重复出现**：一次性脚本实例被重新注册或没有使用持久标记判断已经创建过成员。
-
     - **解决方案**：为每个脚本保留 `done` 状态，并在正式入口使用专用 memory 记录成员 ID；执行前检查已有成员再决定复用或清理。
 
 ## 总结

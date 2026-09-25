@@ -343,19 +343,15 @@ public class GearInHubMissionIntel extends BaseIntelPlugin {
 ## 故障分析
 
 - **任务没有进入调查阶段**：入口没有先设置 `setStartingStage(...)` 或没有调用 `accept(...)`。
-
     - **解决方案**：检查构造器和任务接受顺序。
 
 - **目标完成后阶段不变**：`setStageOnMemoryFlag(...)` 读取的目标或键名不一致。
-
     - **解决方案**：核对目标对象和 `$GearIn_hub_target_complete`。
 
 - **完成奖励重复增加**：成功实现没有使用 `rewardGranted` 门控。
-
     - **解决方案**：在增加 credits 前检查并设置该字段。
 
 - **Intel 显示旧阶段**：Intel 自己保存了阶段副本。
-
     - **解决方案**：在显示方法中直接读取 `mission.getCurrentStage()`。
 
 ## 总结

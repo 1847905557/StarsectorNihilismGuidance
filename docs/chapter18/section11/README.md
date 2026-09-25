@@ -253,31 +253,24 @@ public final class GearInCampaignSetup {
 ## 故障分析
 
 - **日志出现 `missing star system GearIn`**：生涯布置器运行时尚未生成 GearIn 星系。
-
     - **解决方案**：确认 `GearInSystemGenerator.generate(sector)` 位于 `GearInCampaignSetup.setup(sector)` 之前。
 
 - **日志出现 `missing orbit center GearIn_planet1`**：行星 ID 不存在，或取得的实体不属于 GearIn 星系。
-
     - **解决方案**：核对 `addPlanet(...)` 的实体 ID，并确认生成器把行星加入同一个星系。
 
 - **日志出现 `missing ship variant GearIn_artizan_combat`**：装配文件未注册为该 ID。
-
     - **解决方案**：回到 [C4-S1]，核对文件名、`variantId` 与装配加载日志。
 
 - **日志出现 `failed while calling MagicLib`**：MagicLib 调用阶段发生运行时异常或链接错误。
-
     - **解决方案**：核对 `mod_info.json` 的 MagicLib 硬依赖、实际安装版本和异常堆栈首个业务帧；本次已创建的残骸会在记录日志前移除。
 
 - **残骸可以发现但没有回收入口**：`recoverable` 没有设为 `true`。
-
     - **解决方案**：核对十参数重载中的第五个参数。
 
 - **回收界面出现但舰船不可回收**：`isRecoverable` 被设为 `false`，实体带有不可回收标签。
-
     - **解决方案**：核对十参数重载的最后一个参数。
 
 - **重复调用后出现多艘残骸**：成功标记没有写入 Sector Memory，或读取了不同对象的 Memory。
-
     - **解决方案**：统一从 `sector.getMemoryWithoutUpdate()` 读写 `$GearIn_campaign_setup_done`，并把写入放在两项 MagicLib 操作之后。
 
 ## 总结

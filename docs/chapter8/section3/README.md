@@ -240,23 +240,18 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 ## 故障分析
 
 - **插件没有任何行为**：`settings.json` 缺少条目、文件路径错误，或 key 被其他来源覆盖时，游戏不会创建实例，日志和画面都没有 `GearIn:` 信号。
-
     - **解决方案**：确认文件位于 `data/config/settings.json`，key 全局唯一，值与 `package`、`class` 组成的完整类名一致，重新开战。
 
 - **日志出现 `Problem loading class [...]`**：注册类名与 `package`、`class` 不一致，或源码没有进入 JAR 时，类加载器无法解析插件。
-
     - **解决方案**：让注册值、包声明和类名逐字一致，把源码放入 `src/data/scripts/gearin/combat/` 并重新构建 JAR。
 
 - **暂停期间状态照常推进**：`advance` 在暂停检查前累计状态时，恢复后 `elapsed` 会包含暂停时间。
-
     - **解决方案**：把状态推进放在 `engine.isPaused()` 守卫之后，仅将 `calls++` 这类观测回调次数的计数放在守卫前。
 
 - **第一次 `advance` 抛出空指针**：在已废弃的 `init(engine)` 中保存引擎并假设它先执行，会让首次 `advance()` 看到 null。
-
     - **解决方案**：初始状态放入构造器，引擎在使用时通过 `Global.getCombatEngine()` 获取，重新开战。
 
 - **第二场战斗的数值接着上涨**：插件实例被保存到 `static` 字段或战斗外对象时，旧实例会跨战斗存活。
-
     - **解决方案**：只通过 `settings.json` 登记，让游戏每场创建新实例。
 
 ## 总结

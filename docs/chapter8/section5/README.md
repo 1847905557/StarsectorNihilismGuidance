@@ -341,31 +341,24 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 ## 故障分析
 
 - **`.wpn` 或 `.proj` 中没有出现任何对应日志**：字段、文件类型或完整类名不正确时，游戏不会调用脚本。
-
     - **解决方案**：检查字段名、文件类型和完整类名，确认 JAR 中存在对应的 `.class` 条目。
 
 - **日志出现 `Problem loading class`**：注册值与 Java 类的实际名称不一致。
-
     - **解决方案**：核对 `package`、类名、目录路径和注册字符串，重新构建 JAR。
 
 - **EveryFrame 只有 `advance` 日志，操作后的状态没有记录**：类没有实现带 `advanceAfter` 的接口，或没有实现对应方法。
-
     - **解决方案**：让类实现 `EveryFrameWeaponEffectPluginWithAdvanceAfter`，并实现 `advanceAfter(...)`。
 
 - **onFire 或 onHit 没有回调**：脚本类没有绑定到测试弹体实际使用的 `.proj`。
-
     - **解决方案**：把类名写入 `.proj` 的对应字段，确认测试武器实际使用了该弹体文件。
 
 - **BeamEffect 在非光束武器上没有日志**：`beamEffect` 只对光束武器的激活阶段生效。
-
     - **解决方案**：只在光束武器的 `.wpn` 中配置 `beamEffect`，并在光束激活期间观察日志。
 
 - **光束日志显示上一帧目标或命中状态**：回调中复用了上一帧的对象或状态。
-
     - **解决方案**：在每次 `advance(...)` 中重新读取 `didDamageThisFrame()` 和 `getDamageTarget()`，不要跨帧保存对象。
 
 - **暂停后恢复时报告时间偏移**：观察计时器在暂停帧继续累计。
-
     - **解决方案**：在需要暂停一致性的外层战斗插件中检查 `engine.isPaused()`，只在非暂停帧累计观察时间。
 
 ## 总结

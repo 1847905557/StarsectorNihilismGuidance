@@ -46,15 +46,12 @@ Gradle 只允许在编译期引用游戏核心目录中的 JAR，依赖声明必
 ## 故障分析
 
 - **加载时报 `UnsupportedClassVersionError`**：字节码目标高于 17。
-
     - **解决方案**：将 toolchain 和 `--release` 设为 17。
 
 - **编译时报 `cannot find symbol`**：游戏 API 未进入编译 classpath。
-
     - **解决方案**：检查核心目录路径和 `compileOnly` 声明。
 
 - **JAR 中出现游戏 API 类**：依赖被打包进产物。
-
     - **解决方案**：改用 `compileOnly`，不要把核心 JAR 打包。
 
 ## 总结

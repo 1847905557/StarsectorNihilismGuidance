@@ -278,31 +278,24 @@ hull style 是 "声音与材质的总线"：
 ## 故障分析
 
 - **加载进度条阶段出现风格键或颜色数组错误**：`engine_styles.json` 缺少必填键、颜色数组不足 4 个元素，或 `type` 不是 `GLOW`、`SMOKE` 时，日志会出现 `Key [...] is required`、`invalid value` 或颜色数组错误。`hull_styles.json` 缺少颜色字段时会回退为白色，非法值和 JSON 语法才会中断加载。
-
     - **解决方案**：补齐字段后重启。
 
 - **加载阶段失败且日志指向 `.ship`**：顶层 `style` 缺失会抛出 `JSONObject["style"] not found.`，引用不存在的 hull style 时会在读取护盾颜色处抛 NPE。
-
     - **解决方案**：让 `.ship` 的 `style` 与 `hull_styles.json` ID 逐字一致，重启。
 
 - **`Addship` 部署时抛 NPE 且舰船无法入场**：`engineSlots` 的 `style` 指向未注册的 engine style，战斗实体生成时会取得 null。
-
     - **解决方案**：改用已注册 ID 或补齐 `engine_styles.json` 条目，再次部署。
 
 - **部署时 NPE 堆栈指向引擎控制器构造链或 `Shield`**：hull style 引用了 `sounds.json` 中不存在的声音集 ID。
-
     - **解决方案**：注册对应声音集或改用现有 ID，重新部署。
 
 - **启动时声音资源加载失败**：`sounds.json` 中的 `.ogg` 路径不存在，或大小写与文件不一致。
-
     - **解决方案**：核对 `file` 相对 MOD 根目录的路径，重启。
 
 - **势力舰队生成时出现风格加载错误**：舰队装配引用的 `.ship` 可能带有损坏的风格或声音集关系。
-
     - **解决方案**：沿 `.ship`、风格 ID、声音集 ID 逐层核对，重新生成舰队。
 
 - **护盾和引擎声音仍像原版风格**：未引用自定义声音集时，hull style 会使用原版通用声音。
-
     - **解决方案**：按 "声音与材质的完整关联流程" 注册并引用自定义 ID，重新部署。
 
 ## 总结

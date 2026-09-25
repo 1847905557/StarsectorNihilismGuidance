@@ -586,39 +586,30 @@ public class GearInMemoryDialog implements EveryFrameScript {
 ## 故障分析
 
 - **Java 写入时报键名错误**：键缺少 `$` 前缀。
-
     - **解决方案**：修正键常量后重新写入。
 
 - **Rules 条件始终不命中**：变量前缀指向了错误槽位。
-
     - **解决方案**：按 `MemKeys` 表核对对象归属。
 
 - **人物键为空**：对话未设置 active person，`LOCAL` 仍是交互目标。
-
     - **解决方案**：设置人物后重建对话上下文。
 
 - **`$sourceMarket.*` 没有值**：local 的 `$sourceMarket` 没有有效市场 ID。
-
     - **解决方案**：写入目标市场 ID。
 
 - **缺失键与显式 false 无法区分**：`getBoolean` 对两者都返回 `false`。
-
     - **解决方案**：先用 `contains` 判断键是否存在。
 
 - **永久键意外过期**：调用了三参数 `set` 或正数 `expire`。
-
     - **解决方案**：使用两参数 `set` 清除过期时间。
 
 - **过期时间为 0 的键仍可读**：对话暂停了生涯推进。
-
     - **解决方案**：退出对话后恢复推进。
 
 - **普通读取持续触发 facts**：调用点使用了 `getMemory()`。
-
     - **解决方案**：自维护键改用 `getMemoryWithoutUpdate()`。
 
 - **读档后对象键消失**：实体引用无法恢复。
-
     - **解决方案**：保存稳定 ID 并在读档后重新查询。
 
 ## 总结

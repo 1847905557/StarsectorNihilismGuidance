@@ -512,31 +512,24 @@ public class GearInSubmarketProbe {
 ## 故障分析
 
 - **市场没有 Refinery Depot**：`submarkets.csv` 没有加载，或市场没有添加 `GearIn_refinery_depot`。
-
     - **解决方案**：核对 CSV 路径、ID、order 和市场子市场集合，再查看加载日志。
 
 - **插件类创建失败**：`script` 列的完整类名与 Java 包名不一致。
-
     - **解决方案**：逐字核对 `data.scripts.gearin.campaign.GearInRefineryDepotPlugin`，并确认类继承 `BaseSubmarketPlugin`。
 
 - **库存出现非金属商品**：`shouldHaveCommodity()` 白名单和库存刷新规则不一致。
-
     - **解决方案**：检查 `STOCKPILE_IDS` 与 `getStockpileLimit()`，不要用玩家出售白名单替代库存白名单。
 
 - **允许出售错误商品**：交易方向没有区分 `PLAYER_SELL` 与 `PLAYER_BUY`。
-
     - **解决方案**：在字符串和 CargoStack 重载中先判断 `TransferAction`，再使用对应集合。
 
 - **大型舰船无法出售**：舰船过滤代码对买卖方向使用了同一限制。
-
     - **解决方案**：只在 `PLAYER_BUY` 分支检查 `isFrigate()` 与 `isDestroyer()`，出售分支返回允许。
 
 - **子市场税率或按钮文字不对**：界面读取的是插件方法返回值，CSV 的 `desc` 不负责这些状态。
-
     - **解决方案**：核对 `getTariff()`、`getBuyVerb()` 和 `getSellVerb()`，再重新打开交易界面。
 
 - **货舱日志显示为空**：调用了 `getCargoNullOk()`，但玩家还没有打开或刷新该子市场。
-
     - **解决方案**：把 `null` 解释为尚未初始化；需要强制创建时使用 `getCargo()`，并记录这一行为。
 
 ## 总结

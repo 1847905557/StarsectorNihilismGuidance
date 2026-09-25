@@ -412,23 +412,18 @@ public final class GearInGeometryMissileAI implements MissileAIPlugin, GuidedMis
 ## 故障分析
 
 - **导弹总向目标当前坐标追尾**：提前时间使用了零速度、零距离或未经限制的错误输入。
-
     - **解决方案**：用中心距离除以至少 `1f` 的最大速度，并通过 `MathUtils.clamp(...)` 限制结果后缩放目标速度。
 
 - **导弹左右转向相反**：`getShortestRotation(...)` 的正负分支与 `TURN_LEFT`、`TURN_RIGHT` 对应颠倒。
-
     - **解决方案**：保持正值左转、负值右转，并用目标分别位于两侧的场景检查分支。
 
 - **计算预测线后导弹速度突然改变**：无 `dest` 的 `VectorUtils.resize(...)` 或 `rotate(...)` 直接修改了引擎速度向量。
-
     - **解决方案**：先复制 `getVelocity()`，或把独立目标向量传给带 `dest` 的重载。
 
 - **预测线穿过舰体却没有橙色粒子**：整条线已经位于目标 bounds 内，或弹体朝向使有限线段没有进入边界。
-
     - **解决方案**：同时检查预测起点的 `isPointWithinBounds(...)` 结果，并确认预测长度覆盖目标。
 
 - **所有导弹都持续生成大量粒子**：调试绘制没有经过 `DEBUG` 与 `IntervalUtil` 限制。
-
     - **解决方案**：只在计时区间结束后绘制一组标记，发布构建把 `DEBUG` 设为 `false`。
 
 ## 总结

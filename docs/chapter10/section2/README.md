@@ -313,19 +313,15 @@ public class GearInLocationQuery implements EveryFrameScript {
 ## 故障分析
 
 - **ID 查询返回 `null`**：实体没有进入地点集合，或查询 ID 与创建 ID 不一致。
-
     - **解决方案**：确认创建方法来自目标 `LocationAPI`，并逐字核对 `GearIn_observation_*` ID。
 
 - **标签数量为零但实体存在**：标签写入发生在另一个 token，或查询发生在生成器执行前。
-
     - **解决方案**：确认 `addTag` 作用于实际加入地点的对象，并先完成生成器再运行查询器。
 
 - **跳跃点没有出现在超空间**：自动生成调用发生在恒星系结构完成前，或重复生成覆盖了预期结果。
-
     - **解决方案**：先完成恒星和行星，再调用 `autogenerateHyperspaceJumpPoints`，并检查返回的自动跳跃点集合。
 
 - **最近访问天数显示极大值**：玩家尚未进入该地点。
-
     - **解决方案**：先进入恒星系，再在离开后读取 `getDaysSinceLastPlayerVisit()`。
 
 ## 总结

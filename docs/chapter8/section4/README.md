@@ -320,23 +320,18 @@ public class GearInDynamicStatsSystem extends BaseShipSystemScript {
 ## 故障分析
 
 - **普通 stat 数值持续增加**：每帧使用随机、时间戳或递增 modifier ID，修饰表不断新增条目。
-
     - **解决方案**：复用固定 ID，并在结束时使用同一个 ID 调用 `unmodify`。
 
 - **Dynamic 日志有变化但游戏行为没有变化**：写入的动态 stat 没有被当前功能消费，或 `computeEffective` 使用了错误的基础值。
-
     - **解决方案**：核对动态 stat ID、实际消费方和 `computeEffective(baseValue)` 的基准值。
 
 - **生涯数值没有变化**：只在战斗插件 `advance()` 中写入修改。
-
     - **解决方案**：把生涯和战斗创建阶段需要保留的修改写入 `applyEffectsBeforeShipCreation(...)`。
 
 - **战术系统结束后速度或 Dynamic 仍然增加**：`unapply()` 没有清理 `apply()` 写入的全部 ID。
-
     - **解决方案**：让普通 stat 和 Dynamic 分别使用对应的稳定 ID，并在 `unapply()` 中逐项清理。
 
 - **普通 stat 使用 percent 没有效果**：目标 stat 的 base 为 `0`，percent 修饰没有计算基准。
-
     - **解决方案**：读取目标 stat 的 base，改用 flat、mult 或实际消费方支持的 Dynamic stat。
 
 ## 总结

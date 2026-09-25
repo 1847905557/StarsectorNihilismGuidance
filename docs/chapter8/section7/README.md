@@ -351,35 +351,27 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 ## 故障分析
 
 - **游戏启动时报告 Sprite 不存在**：Java 使用的分类或键与 `settings.json` 注册值不一致。
-
     - **解决方案**：核对 `SPRITE_CATEGORY`、`SPRITE_KEY` 与 `gearin/layered_marker`，再检查注册路径 `graphics/fx/particlealpha32sq.png`。
 
 - **标记颜色或透明度异常**：Sprite 没有在绘制时同步颜色或透明度倍率。
-
     - **解决方案**：在 `render(...)` 中重新调用 `setColor(color)` 和 `setAlphaMult(1f)`。
 
 - **标记出现在战场原点**：承载实体位置没有跟随舰船更新。
-
     - **解决方案**：在 `advance(...)` 中调用 `entity.getLocation().set(trackedShip.getLocation())`。
 
 - **标记进入视口后仍然消失**：`getRenderRadius()` 小于 Sprite 的实际覆盖范围。
-
     - **解决方案**：让返回值覆盖 `setSize(...)` 设置的标记尺寸，并再次缩放镜头验证。
 
 - **暂停后标记继续移动**：暂停判断放在位置同步之后，或被省略。
-
     - **解决方案**：在 `advance(...)` 开头检查 `engine.isPaused()`，暂停时直接返回。
 
 - **标记层级错误**：`getActiveLayers()` 返回的图层不符合预期。
-
     - **解决方案**：确认返回 `ABOVE_SHIPS_AND_MISSILES_LAYER`，并检查注册后的画面遮挡关系。
 
 - **舰船销毁后标记仍然存在**：插件没有设置失效状态，或 `isExpired()` 没有返回失效结果。
-
     - **解决方案**：舰船不在引擎或不再存活时设置 `valid = false`，让引擎调用 `cleanup()`。
 
 - **下一场战斗沿用上一场位置**：插件或舰船引用跨战斗保存。
-
     - **解决方案**：每场战斗重新创建 `GearInLayeredRenderer`，只在当前实例中保存 `trackedShip`、`engine` 和 `entity`。
 
 ## 总结

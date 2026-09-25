@@ -139,19 +139,15 @@ public class GearInLogWriter {
 ## 故障分析
 
 - **日志中找不到 MOD 前缀**：调用使用了其他日志器或消息没有稳定的 `GearIn` 前缀。
-
     - **解决方案**：通过 `Global.getLogger(当前类.class)` 创建日志器，并统一使用 `GearIn` 前缀。
 
 - **日志有消息但无法定位对象**：消息缺少阶段、对象 ID 或关键参数。
-
     - **解决方案**：调用日志方法时补齐阶段和对象 ID，把关键状态拼接到同一行。
 
 - **错误日志没有异常堆栈**：`error` 只传入字符串，没有传入 `Throwable`。
-
     - **解决方案**：使用 `LOG.error(message, cause)`，保留捕获到的异常对象。
 
 - **日志显示旧状态**：修改后的 JAR 没有重新构建或游戏仍读取旧产物。
-
     - **解决方案**：重新执行 `gradle jar`，确认 `jar tf` 的 class 条目和 `mod_info.json` 的 JAR 路径。
 
 ## 总结

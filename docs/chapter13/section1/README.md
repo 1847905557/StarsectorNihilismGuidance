@@ -307,19 +307,15 @@ public class GearInPersonScript {
 ## 故障分析
 
 - **每次调用都创建人物**：查询 ID 与写入 ID 不一致，或登记没有执行。
-
   - **解决方案**：统一使用 `PERSON_ID`，并在返回前调用 `importantPeople.addPerson(person)`。
 
 - **市场存在但目录没有人物**：只维护了市场集合。
-
   - **解决方案**：查询 `getEntryForPerson(person)`，缺失时调用 `directory.addPerson(person)`。
 
 - **人物反查不到市场**：只调用了 `MarketAPI.addPerson`。
-
   - **解决方案**：每次运行同步调用 `person.setMarket(market)`。
 
 - **目录出现重复条目**：无条件调用 `directory.addPerson`。
-
   - **解决方案**：添加前查询目标人物。
 
 ## 总结

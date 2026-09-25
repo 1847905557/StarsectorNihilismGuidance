@@ -201,23 +201,18 @@ public class GearInModPlugin extends BaseModPlugin {
 ## 故障分析
 
 - **启动时报 `Error loading [data.scripts.gearin.GearInModPlugin]`**：`modPlugin`、包名、类名或 JAR 条目不一致。
-
     - **解决方案**：用 `jar tf` 核对 class 路径，再逐字核对 `modPlugin`、`package` 和类名。
 
 - **启动时报 `ClassCastException`**：入口类没有继承 `BaseModPlugin`。
-
     - **解决方案**：让入口类继承 `BaseModPlugin`，重新构建 JAR。
 
 - **`onApplicationLoad()` 抛出 `NullPointerException`**：启动阶段访问了尚未建立的 `Global.getSector()`。
-
     - **解决方案**：把生涯对象访问移到 `onNewGame()` 或 `onGameLoad()`。
 
 - **每次读档都出现首次初始化日志**：初始化没有使用 persistent data 标记。
-
     - **解决方案**：用 `CLASS_MARK` 判断并在首次执行后写入 `getPersistentData()`。
 
 - **游戏启动正常但没有 `GearIn lifecycle:` 日志**：`modPlugin` 没有声明有效的完整类名。
-
     - **解决方案**：补齐 `mod_info.json` 的 `modPlugin` 值，重新构建并重启。
 
 ## 总结

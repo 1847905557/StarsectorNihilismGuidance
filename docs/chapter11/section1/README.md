@@ -684,35 +684,27 @@ public class GearInFleetGeneratorAdvanced implements EveryFrameScript {
 ## 故障分析
 
 - **日志显示来源市场不可用**：测试存档中没有 Jangala，且经济中没有同时具备开放市场、地点和主实体的市场。
-
     - **解决方案**：改用当前存档中存在的市场，并在构造参数前分别检查 `getContainingLocation()` 与 `getPrimaryEntity()`。
 
 - **工厂返回 `null` 或空舰队**：势力、舰队类型、预算与候选内容没有形成有效结果。
-
     - **解决方案**：先使用存在的势力、标准 `FleetTypes` 常量和正数战斗预算，确认基础生成成立后再增加限制。
 
 - **实际 FP 与请求 FP 不相等**：角色候选、离散舰船 FP、市场倍率、数量限制或裁剪改变了结果。
-
     - **解决方案**：同时记录 `getTotalPts()`、`getFleetPoints()` 与 `$spawnFPMult`，按参数表逐项检查规模相关字段。
 
 - **指定旗舰没有出现**：装配 ID 无效、预算不足以容纳该舰船，或生成结果为空。
-
     - **解决方案**：核对 `flagshipVariantId`，提高战斗预算，并在读取旗舰前检查生成结果。
 
 - **装配随机化后的统计仍为空**：统计发生在 `inflateIfNeeded()` 之前，或代码继续使用调用前保存的成员与装配引用。
-
     - **解决方案**：先执行装配随机化，再从 `FleetDataAPI` 重新取得成员，并逐个重新读取装配。
 
 - **固定种子仍产生不同结果**：市场状态、势力候选、doctrine 或游戏数据发生变化。
-
     - **解决方案**：在相同版本和相同存档状态下比较固定种子结果，并把候选数据变化作为输入变化记录。
 
 - **地图中找不到舰队**：工厂只创建了对象，舰队尚未投放到地点。
-
     - **解决方案**：调用 `location.spawnFleet(...)`，随后核对 `getContainingLocation()` 和舰队坐标。
 
 - **`$spawnFPMult` 缺失或结果异常**：读取发生在工厂生成前，或使用了错误的 memory 值类型。
-
     - **解决方案**：只在 `createFleet(...)` 成功后通过 `Misc.getSpawnFPMult(fleet)` 读取浮点结果。
 
 ## 总结

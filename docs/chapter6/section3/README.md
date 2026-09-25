@@ -98,15 +98,12 @@ tasks.named("jar") {
 ## 故障分析
 
 - **没有发现 Java 文件**：`srcDirs` 仍指向旧目录。
-
     - **解决方案**：改为 `["src"]`。
 
 - **编译目标高于 17**：缺少 `options.release = 17`。
-
     - **解决方案**：补齐并重新构建。
 
 - **依赖被打包**：使用了 `implementation`。
-
     - **解决方案**：改为 `compileOnly`。
 
 ## 总结

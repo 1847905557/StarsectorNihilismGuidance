@@ -252,27 +252,21 @@ GearIn_durin_trail_glow,GearIn_durin_shot,base_trail_smooth,6,0,0.05,0.2,32,14,"
 ## 故障分析
 
 - **弹体完全没有尾迹**：CSV 路径、`projectile` ID 或表头字段与加载器不一致。
-
     - **解决方案**：使用当前默认路径，并逐字核对 `GearIn_durin_shot` 与 30 列表头。
 
 - **主体层不显示，辉光层正常**：`GearIn_trail_clean` 没有进入 `graphics.fx`，或 PNG 路径错误。
-
     - **解决方案**：核对 settings 键、CSV sprite 和 `graphics/fx/GearIn_trail_clean.png`。
 
 - **第二层覆盖第一层的数据**：两行复用了相同的 `trail` 合并键。
-
     - **解决方案**：为主体和辉光保留两个带 MOD 前缀的唯一行键。
 
 - **高速弹体的尾迹出现明显断口或节点过密**：正 `minLength` 与弹体每帧移动距离不匹配。
-
     - **解决方案**：从 6 su 开始增减采样距离，观察连续性和节点数量。
 
 - **尾迹朝向突然改变**：`angleAdjustment` 修改了弹体朝向，或用于 `BALLISTIC_AS_BEAM` projectile。
-
     - **解决方案**：普通都林弹体保持 `FALSE`，并用 `angle` 单独调整尾迹方向。
 
 - **普通色带亮得像能量辉光**：实体层错误使用加色混合。
-
     - **解决方案**：烟尘或实体色带使用 `additive = FALSE`，发光层使用 `TRUE`。
 
 ## 总结

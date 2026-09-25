@@ -507,19 +507,15 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
 ## 故障分析
 
 - **选项改名后分支失效**：回调比较了 optionText 而不是稳定 data。
-
     - **解决方案**：使用 setOptionText 改显示文字，分支始终比较 optionData。
 
 - **视觉显示成了交互目标**：视觉分支从 getInteractionTarget 推断对象类型。
-
     - **解决方案**：交互目标只负责初始展示，玩家对象分别从 Global 生涯服务取得。
 
 - **插图没有出现**：illustrations 键或 sprite 名称不在原版设置中。
-
     - **解决方案**：使用 space_wreckage，并保持分类和键逐字一致。
 
 - **结果重复写入**：确认分支没有 checked 状态门槛。
-
     - **解决方案**：写入前检查 checked，成功后立即设置为 true。
 
 ## 总结

@@ -236,19 +236,15 @@ public final class GearInNexDiplomacyProbe {
 ## 故障分析
 
 - **JSON 可解析但新档列表没有 GearIn**：`mod_factions.csv` 中的势力 ID 与 Starsector ID 或 JSON 文件名不一致。
-
     - **解决方案**：逐字统一三处名称并重启游戏。
 
 - **读取到 `neutral` 默认配置**：CSV 缺少注册行，或大小写与配置文件名不一致。
-
     - **解决方案**：读取 `config.factionId` 确认实际命中的身份，修正后重新创建新档。
 
 - **外交关系始终不变化**：`disableDiplomacy` 关闭了外交，或 `noRandomizeRelations` 阻止了开局随机化。
-
     - **解决方案**：按目标行为调整对应字段。
 
 - **联盟始终被拒绝**：关系满足但 alignment 不兼容，或其他准入条件未通过。
-
     - **解决方案**：先用 `getBaseAlignments()` 确认配置，再逐项检查联盟条件。
 
 ## 总结

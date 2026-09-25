@@ -200,43 +200,33 @@ Campaign 插件除了选择服务，还能在对象 Memory 被请求时更新事
 ## 故障分析
 
 - **读档后所有自定义选择都消失**：插件返回 transient，但 `onGameLoad()` 没有重新登记实例。
-
     - **解决方案**：每次 `onGameLoad()` 调用 `registerPlugin(new GearInCampaignPlugin())`。
 
 - **相同插件 ID 的两个实现没有并存**：注册器把非空 ID 作为替换键，新实例登记前会移除旧实例。
-
     - **解决方案**：需要竞争的插件使用不同稳定 ID；同一功能的新版本继续使用相同 ID 完成替换。
 
 - **每次读档后 picker 调用次数增加**：`getId()` 返回 `null`，每次登记都向集合追加新实例。
-
     - **解决方案**：让 `getId()` 始终返回 `GearIn_campaign_plugin`。
 
 - **未标记实体也打开自定义对话框**：交互 picker 在条件不匹配时仍返回了 `PluginPick`。
-
     - **解决方案**：先判空并检查 `$GearIn_dialog_target`，任一条件不成立时返回 `null`。
 
 - **`MOD_SPECIFIC` 候选没有获选**：另一个插件返回了枚举序号更高的优先级，或本插件因过滤条件返回 `null`。
-
     - **解决方案**：记录每个候选的命中条件和 `PickPriority`，核对目标 Memory 与全部非空候选。
 
 - **标记敌舰队的小规模战斗没有战术目标**：战场插件在父类创建地图之后才修改 `forceObjectivesOnMap`。
-
     - **解决方案**：在 `super.initBattle(context, api)` 之前设置 `context.forceObjectivesOnMap = true`。
 
 - **读取 `getMemoryWithoutUpdate()` 后 ready 仍为 `false`**：该入口只返回当前 Memory，不执行 Campaign 插件的 facts 更新。
-
     - **解决方案**：需要刷新事实时调用 `market.getMemory()`，再从返回对象读取 ready 键。
 
 - **读取市场 Memory 时发生递归调用**：`updateMarketFacts()` 内再次调用了 `market.getMemory()`。
-
     - **解决方案**：只读取和写入方法参数 `memory`，需要市场属性时直接使用参数 `market`。
 
 - **动态 facts 在 Memory 中形成长期过期项**：更新方法为每次读取都重算的键设置了正数期限。
-
     - **解决方案**：使用 `memory.set(MARKET_READY_KEY, true, 0f)` 写入当前刷新事实。
 
 - **调用注销后插件仍在参与选择**：传给 `unregisterPlugin()` 的字符串与插件 `getId()` 不一致。
-
     - **解决方案**：注销时统一使用 `GearInCampaignPlugin.PLUGIN_ID`。
 
 ## 总结

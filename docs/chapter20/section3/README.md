@@ -185,23 +185,18 @@ public final class GearInNexStartPlanner {
 ## 故障分析
 
 - **随机星区查询不到 Corvus 实体**：模式判断发生在固定实体查询之后。
-
     - **解决方案**：先确认 `SectorManager` 已创建并判断模式，随机分支改从当前 GearIn 市场取得主实体。
 
 - **Corvus 模式出生在星区中心**：CSV 路径、表头或 `entityID` 与已创建 token 不一致。
-
     - **解决方案**：改用真实实体 ID，创建固定模式新档。
 
 - **随机模式没有 GearIn 市场**：生成权重、势力启用状态或市场生成条件不满足。
-
     - **解决方案**：检查 `getFactionMarkets(factionId)` 的数量，修正配置。
 
 - **初始舰队为空**：请求的 `fleetType` 与 `startShips` 键不一致，且 fallback 已关闭。
-
     - **解决方案**：记录请求类型和返回列表，修正配置键。
 
 - **随机开局出现不允许的舰队类型**：调用方把任意字符串直接交给随机分支。
-
     - **解决方案**：先用 `StartFleetType.getType()` 和候选标志过滤。
 
 ## 总结

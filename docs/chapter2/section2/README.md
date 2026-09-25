@@ -163,19 +163,15 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 ## 故障分析
 
 - **速度加成没有生效**：数值修改写进 `applyEffectsAfterShipCreation` 时，生涯侧不会执行它。
-
     - **解决方案**：把 `modifyFlat(...)` 移入 `applyEffectsBeforeShipCreation`，再重新部署舰船。
 
 - **两个船插数值互相覆盖**：多个船插共用 `modifyFlat("bonus", ...)` 之类的硬编码 source id。
-
     - **解决方案**：改用回调传入的船插 `id`。
 
 - **互斥限制没有生效**：数据行本身不会建立互斥判断。
-
     - **解决方案**：补齐 `isApplicableToShip` 与 `getUnapplicableReason`。
 
 - **描述出现空位**：`desc` 中的 `%s` 数量超过 `getDescriptionParam` 返回的参数。
-
     - **解决方案**：为每个占位符提供对应 `index` 的非 null 字符串并重启。
 
 ## 总结

@@ -139,15 +139,12 @@ public class GearInGlobalAccess {
 ## 故障分析
 
 - **生涯加载期出现空指针**：代码在生涯建立前调用 `getSector()` 或继续使用返回对象。
-
     - **解决方案**：把生涯访问移到 `onNewGame()`、`onGameLoad()` 或其他生涯回调，并在调用前记录当前 `GameState`。
 
 - **第二场战斗仍使用旧引擎**：`CombatEngineAPI` 被保存到跨战斗字段或静态状态中。
-
     - **解决方案**：在每个战斗回调中重新调用 `Global.getCombatEngine()`，不要把上一场战斗的引用带入下一场。
 
 - **日志无法判断服务阶段**：日志行缺少 `state`、服务布尔值或 `loadingSave` 信息。
-
     - **解决方案**：调用 `logAccessorState()`，使用 `Global.getLogger(GearInGlobalAccess.class)` 写出完整状态，并在 `starsector.log` 中搜索 `GearIn` 前缀。
 
 ## 总结

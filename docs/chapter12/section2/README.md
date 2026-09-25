@@ -286,23 +286,18 @@ public class GearInCargoServicesScript implements EveryFrameScript {
 ## 故障分析
 
 - **写入后数量低于调用参数**：有限容量或对象规则限制了最终数量。
-
     - **解决方案**：读取 `getSpaceLeft()` 和实际数量，确认目标对象的容量语义。
 
 - **信用没有出现在栈遍历中**：信用没有生成货舱栈。
-
     - **解决方案**：通过 `getCredits()` 取得 `MutableValue`，再使用 `get()`、`add()` 或 `subtract()`。
 
 - **遍历过程中出现空栈**：转移或清理过程留下了没有有效内容的栈。
-
     - **解决方案**：使用 `isNull()` 记录状态，清理完成后重新调用 `getStacksCopy()`。
 
 - **把封存舰船当成普通货物处理**：舰船数据不属于 `CargoStackAPI`。
-
     - **解决方案**：通过 `getMothballedShips()` 取得 `FleetDataAPI`，再使用 `FleetMemberAPI` 读取舰船。
 
 - **副本变化影响原货舱**：代码继续修改了原 Cargo 或共享的栈对象。
-
     - **解决方案**：使用 `createCopy()` 建立独立对象，只有在需要时才调用 `addAll()` 合并。
 
 ## 总结

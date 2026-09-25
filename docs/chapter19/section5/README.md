@@ -167,19 +167,15 @@ public final class GearInModelTransform {
 ## 故障分析
 
 - **构造实体时抛空指针异常**：模型 ID 大小写与 CSV 不一致 (`getModelData()` 返回 null，`new CommonEntity(model, true)` 构造期即 NPE)，或 `ModelData.isValid()` 为 false。
-
     - **解决方案**：先通过 `require()` 验证数据，再构造实体。
 
 - **模型整体显示为黑色**：漫反射贴图或材质数据没有注册。
-
     - **解决方案**：补齐材质引用，重新载入。
 
 - **光照方向与模型表面相反**：OBJ 的法线或切线方向不一致。
-
     - **解决方案**：修正并重新导出网格。
 
 - **模型位置正确但比例巨大**：OBJ 单位与世界缩放没有统一。
-
     - **解决方案**：调整导出单位或模型矩阵缩放。
 
 ## 总结

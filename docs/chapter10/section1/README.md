@@ -222,15 +222,12 @@ public class GearInSectorStateSampler implements EveryFrameScript {
 ## 故障分析
 
 - **日志一直没有采样**：采样器的生涯天数阈值尚未达到，或脚本在暂停期间没有推进。
-
     - **解决方案**：恢复运行并推进至少 `SAMPLE_INTERVAL_DAYS`，再检查 `runWhilePaused()` 和 `getElapsedDaysSince` 的输入时间戳。
 
 - **读档后地点或舰队字段为空**：脚本保存了运行时对象或在星区对象完成前读取。
-
     - **解决方案**：只持久化 ID、标记和时间戳；每次采样重新从 `SectorAPI` 取得对象，并在缺失时等待下一次调用。
 
 - **persistent 标记读档后仍为 false**：写入使用了脚本字段或不同的键名。
-
     - **解决方案**：统一使用 `getPersistentData()` 和稳定键 `GearIn_sector_sampled`，不要把 memory 值当作持久 Map 值读取。
 
 ## 总结

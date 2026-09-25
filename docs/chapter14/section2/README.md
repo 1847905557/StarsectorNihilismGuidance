@@ -212,39 +212,30 @@ sector.removeScript(combined);
 ## 故障分析
 
 - **投放测试舰队后没有生成日志**：Memory 标记在 `LocationAPI.addEntity()` 之后写入，生成事件派发时过滤条件仍为 `false`。
-
     - **解决方案**：创建舰队后先向 `getMemoryWithoutUpdate()` 写入 `$GearIn_listener_probe`，再把舰队加入地点。
 
 - **日志持续记录后台舰队**：回调直接处理所有传入舰队，没有检查测试 Memory 键。
-
     - **解决方案**：让四个回调首先执行同一个 `isProbeFleet()` 判断，只处理标记为 `true` 的舰队。
 
 - **同一舰队事件出现两份相同日志**：同一对象进入了两个 Sector 监听器容器，或创建了两个不同的监听器实例。
-
     - **解决方案**：检查 `getAllListeners()` 中的对象身份和类型，为完整监听器只选择限时容器，并用 persistent data 控制实例创建。
 
 - **再次调用 `reRegister()` 后仍按原时间到期**：对象已经存在于 `TimeoutTracker`，限时登记入口跳过了重复写入。
-
     - **解决方案**：需要重置期限时先调用 `removeListener(listener)`，再对同一对象调用 `reRegister(newDays)`。
 
 - **暂停一段真实时间后监听器仍未超时**：限时容器只在生涯未暂停时扣减换算后的游戏天数。
-
     - **解决方案**：解除暂停并按生涯日期验证期限，记录登记时和检查时的游戏日差值。
 
 - **读档后 transient 类型化回调消失**：`ListenerManagerAPI` 的 transient 仓库在读档时重建为空集合。
-
     - **解决方案**：在每次 `onGameLoad()` 中使用 `hasListenerOfClass()` 检查，并以 `isTransient=true` 重新登记。
 
 - **组合监听器的 `advance()` 从未执行**：`BaseCampaignEventListenerAndScript` 的构造器只登记监听器部分。
-
     - **解决方案**：构造对象后把同一个实例传给 `SectorAPI.addScript()`。
 
 - **组合脚本已经完成，监听回调仍然出现**：`isDone()` 只控制脚本列表，没有修改监听器注册表。
-
     - **解决方案**：组合对象结束时同时调用 `removeListener(this)`，让监听器方向离开注册表。
 
 - **舰队消失事件抛出类型转换异常**：代码只根据预期原因直接转换 `param`，实际参数为空或类型与原因不符。
-
     - **解决方案**：同时检查 `FleetDespawnReason` 和 `instanceof`，未满足公开约定时记录空值或运行时类型。
 
 ## 总结

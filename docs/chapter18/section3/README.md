@@ -411,35 +411,27 @@ public final class GearInCombatScanner extends BaseEveryFrameCombatPlugin {
 ## 故障分析
 
 - **战斗中没有任何标记粒子**：`settings.json` 缺少插件登记、注册 key 被覆盖或完整类名与包声明不一致。
-
     - **解决方案**：核对 `data/config/settings.json` 的 `plugins` 条目和 JAR 内的 `data.scripts.gearin.lib.GearInCombatScanner`。
 
 - **暂停时粒子仍不断增加**：计时和查询发生在 `engine.isPaused()` 判断之前。
-
     - **解决方案**：把 `elapsed` 累加和全部查询放在暂停守卫之后。
 
 - **范围内出现友军或不可见敌军**：`CombatUtils` 的空间查询只检查类型和位置。
-
     - **解决方案**：按 `owner` 和 `isVisibleToSide(...)` 继续筛选，或改用对应的 `AIUtils` 关系查询。
 
 - **对 AIUtils 结果重复执行可见性循环**：敌方关系方法已经过滤战争迷雾，第二次判断只增加工作量。
-
     - **解决方案**：直接使用 `getNearbyEnemies(...)`、`getEnemiesOnMap(...)` 或敌方导弹方法的返回集合。
 
 - **大规模战斗出现周期性卡顿**：高频回调反复使用全图查询并处理全部实体。
-
     - **解决方案**：局部行为改用 nearby/range 方法，并用固定间隔限制刷新频率。
 
 - **大型舰船看起来更近却没有排在首位**：排序使用了实体中心距离，画面观察使用的是舰体边缘。
-
     - **解决方案**：构造 `SortEntitiesByDistance(origin, true)`，让比较包含碰撞半径。
 
 - **拦截点代码产生空引用异常**：当前速度关系没有会合解时，`getBestInterceptPoint(...)` 返回 `null`。
-
     - **解决方案**：使用拦截坐标前检查返回值，并为无解状态选择直瞄或放弃目标。
 
 - **相位斗篷判断始终与实际状态不一致**：`canUseSystemThisFrame` 读取的是 `ship.getSystem()`。
-
     - **解决方案**：从 `ship.getPhaseCloak()` 取得右键系统，并检查该对象的状态与规格。
 
 ## 总结

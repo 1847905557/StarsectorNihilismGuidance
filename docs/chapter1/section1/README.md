@@ -184,19 +184,15 @@ MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用�
 ## 故障分析
 
 - **启动器中没有 GearIn MOD**：`mod_info.json` 不在 MOD 的直接根目录，或文件实际名被写成了 `mod_info.json.txt`。这个问题常见于 Windows。
-
     - **解决方案**：确认文件恰好是 `Starsector/mods/GearIndustry/mod_info.json`。
 
 - **日志报告 manifest 解析失败**：JSON 缺少引号、逗号或花括号，文件带 BOM、编码并非 UTF-8，或缺少 `id`、`name`、`description` 时，`starsector.log` 会记录 `Error loading mod from [MOD 目录]` 和解析堆栈。
-
     - **解决方案**：逐字检查 JSON 是否写错，并以 UTF-8 无 BOM 保存。
 
 - **启动器将 MOD 标红并禁止勾选**：`gameVersion` 缺失时，启动器会提示 "Error: this mod does not specify which version of the game it requires and can not be enabled."；主版本不匹配时会显示 "Error: this mod requires a different version of the game."。已经启用的 MOD 会在下次启动时被取消勾选。
-
     - **解决方案**：将版本写为本教程使用的 `0.98a-RC8`。
 
 - **添加数据后出现重复条目或错误对象**：使用了 `test_ship`、`my_weapon` 等常见 ID，或复制数据后保留原 ID。非常可能导致 ID 重复。
-
     - **解决方案**：将 ID 改为 `GearIn_<语义名>` 形式，例如 `GearIn_artizan`，并同步全部引用。
 
 ## 总结

@@ -234,23 +234,18 @@ public class GearInEntityPlacement implements EveryFrameScript {
 ## 故障分析
 
 - **地点查询有实体但全局查询为空**：实体没有完成星区索引更新，或查询发生在地点注册之前。
-
     - **解决方案**：确认实体由地点的 `addCustomEntity` 创建，并在下一帧重新执行全局查询。
 
 - **实体位置保持旧坐标**：固定位置和轨道位置同时被写入。
-
     - **解决方案**：把固定位置和轨道位置作为互斥分支，只保留一种位置来源。
 
 - **交互图片或 custom plugin 没有生效**：type 对应的 custom entity spec 或资源路径不存在。
-
     - **解决方案**：检查 type 的数据定义、interaction image 的 category/key 和 custom plugin 配置。
 
 - **传感器属性已写入但实体不可见**：可见性还受到当前地点、距离、发现状态和传感器规则影响。
-
     - **解决方案**：同时记录 containing location、坐标、sensor strength/profile 和 VisibilityLevel，再逐项排除。
 
 - **memory 读取结果不稳定**：读取使用了会触发更新的 `getMemory()`，或把 entity memory 和地点 memory 混用。
-
     - **解决方案**：纯读取使用 `getMemoryWithoutUpdate()`，并为实体和地点使用不同键前缀。
 
 ## 总结

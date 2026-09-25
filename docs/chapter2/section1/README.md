@@ -123,31 +123,24 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 ## 故障分析
 
 - **类能编译但没有效果**：`hull_mods.csv` 缺少对应行时，类未被注册，游戏和日志都没有本船插的反应；`script` 列写错 (类名对应不到任何源码) 时该名字已进入启动编译队列，加载会在 `Error loading [...]` 处中断，不会静默。
-
     - **解决方案**：确认文件位于 MOD 根的 `data/hullmods/hull_mods.csv`，保留表头行并以 UTF-8 无 BOM 保存，核对 CSV 路径与完整类名后重启。
 
 - **日志出现 `Error loading [...]`**：`script` 列、`package` 行和 `class` 行没有指向同一个类。
-
     - **解决方案**：逐一对照文件名、`class` 后的名字与 `script` 列，再重启。
 
 - **日志报告 `Error loading [...]` 并带行号**：漏分号、括号不配对等 Java 书写错误会在日志中带行号报告。
-
     - **解决方案**：按报错行号对照本节代码逐字检查，修正后重启。
 
 - **修改参数后加成不变**：当前编辑的可能是另一份文件，或游戏仍在使用重启前加载的类。
-
     - **解决方案**：确认文件属于 `gear_in` 的 `GearInSpeedBooster.java` 并重启。
 
 - **日志文字没出现**：日志级别过滤或搜索词不对时，游戏内行为可以正常而搜索不到完整句子。
-
     - **解决方案**：验证前清空 `starsector.log`，再搜索稳定标识 `GearIn_speed_booster`。
 
 - **加载中断并报告 `JSONException`**：必填列缺失或某个 `cost_*` 留空会破坏数据行。
-
     - **解决方案**：补齐四档数字后重启。
 
 - **加载中断并报告 `Duplicate key`**：同一文件内存在重复 `id`。
-
     - **解决方案**：为每行保留唯一 ID 并重启。
 
 ## 总结

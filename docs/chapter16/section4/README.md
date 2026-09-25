@@ -299,31 +299,24 @@ public class GearInRuleCommand extends BaseCommandPlugin {
 ## 故障分析
 
 - **启动时报告 command not found**：`ruleCommandPackages` 缺少 `data.scripts.gearin.rules`，或 JAR 中没有对应完整类路径。
-
     - **解决方案**：核对设置数组、`data/scripts/gearin/rules/GearInRuleCommand.class` 和 MOD 的 JAR 声明。
 
 - **规则条件始终不成立**：布尔参数不是 `true`，或命令被参数数量与类型检查提前拒绝。
-
     - **解决方案**：核对前三个参数依次为字符串、可解析数值和 `true` / `false`。
 
 - **对话出现参数转换异常**：代码在检查 `isFloat(...)` 或 `isBoolean(...)` 之前直接调用了取值方法。
-
     - **解决方案**：先检查参数数量和格式，再调用 `getFloat(...)`、`getInt(...)` 或 `getBoolean(...)`。
 
 - **脚本列返回 false 后仍继续执行**：脚本执行只使用命令的写入结果，不使用 `execute(...)` 的返回值控制后续行。
-
     - **解决方案**：把需要参与匹配的调用放在 conditions，把状态变更放在 script。
 
 - **变量读取了错误的值**：变量前缀没有对应 Memory 槽位，解析转而从 LOCAL 读取完整键名。
-
     - **解决方案**：核对 `memoryMap` 提供的槽位，并让参数中的前缀与槽位名称一致。
 
 - **对象参数始终为 null**：`getObject(...)` 收到的是字面量，或目标 Memory 没有保存该键。
-
     - **解决方案**：传入指向现有对象的变量 token，并确认对象位于该变量指定的 Memory。
 
 - **非对话调用在替换字符串时异常**：`getStringWithTokenReplacement(...)` 需要非 null 的 `dialog`。
-
     - **解决方案**：先检查 `dialog`，非对话上下文使用 `getString(...)`。
 
 ## 总结

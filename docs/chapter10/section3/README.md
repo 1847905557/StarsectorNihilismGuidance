@@ -285,23 +285,18 @@ public class GearInFactionKnownShipProbe implements EveryFrameScript {
 ## 故障分析
 
 - **关系值变化方向相反**：把来源势力和目标势力的位置写反。
-
     - **解决方案**：确认调用者是读取关系的一方，参数是目标势力 ID，并同时记录反向读取。
 
 - **关系等级变化但数值恢复不准确**：用 `RepLevel` 枚举恢复而不是保存原始 float。
-
     - **解决方案**：保存实验前的具体关系值，恢复时调用 `setRelationship(String, float)`。
 
 - **玩家声望调用没有产生预期变化**：action response plugin 没有返回关系调整，或把它当成直接关系写入。
-
     - **解决方案**：单独记录 `ReputationAdjustmentResult`，不要用它替代直接关系实验。
 
 - **known ship 修改后舰队挑选结果仍旧**：priority 或 role cache 没有按同一对象恢复和重建。
-
     - **解决方案**：通过 `addKnownShip`、`removeKnownShip` 和 priority 方法修改，让实现负责清理缓存。
 
 - **示例结束后蓝图仍被删除**：没有区分实验前 known 状态和本次新增状态。
-
     - **解决方案**：只撤销本次新增的 hull ID，原本已知的对象保持原状态。
 
 ## 总结

@@ -218,27 +218,21 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 ## 故障分析
 
 - **生涯面板没有数值变化**：修饰写在只接受战斗实体的回调中。
-
     - **解决方案**：把共用数值移到 `applyEffectsBeforeShipCreation(...)`，再重建舰队成员 stats。
 
 - **战斗效果没有出现**：初始化或每帧逻辑写进了生涯回调。
-
     - **解决方案**：使用 `applyEffectsAfterShipAddedToCombatEngine(...)` 处理一次性战斗动作，使用 `advanceInCombat(...)` 处理持续动作。
 
 - **S-mod 提示段缺失**：`sModDesc` 为空或以 `#` 开头，或者参数方法返回值不足。
-
     - **解决方案**：提供有效的 `sModDesc` 和对应的 `getSModDescriptionParam(...)` 返回值，再重新打开 tooltip。
 
 - **装配界面只显示拒绝却没有原因**：`isApplicableToShip(...)` 和 `getUnapplicableReason(...)` 使用了不同条件。
-
     - **解决方案**：让两个方法共享同一判定，并在允许安装时返回 `null`。
 
 - **舰队传感范围没有更新**：`withOnFleetSync()` 返回 `false`，或修饰只写进了单舰 stats。
-
     - **解决方案**：返回 `true`，在 `onFleetSync(...)` 中重新遍历成员，并对没有目标成员的情况调用 `unmodify(...)`。
 
 - **下一场战斗出现上一场的对象状态**：效果类字段保存了舰船或战斗计时器。
-
     - **解决方案**：从当前回调参数重新取得对象，把跨存档数据放入 `SectorAPI.getPersistentData()`。
 
 ## 总结

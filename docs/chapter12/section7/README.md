@@ -361,31 +361,24 @@ public class GearInConditionProbe {
 ## 故障分析
 
 - **条件没有加载**：
-
     - **解决方案**：检查 `market_conditions.csv` 的表头、ID、脚本类和图标路径。
 
 - **插件类无法实例化**：
-
     - **解决方案**：核对 `data.scripts.gearin.campaign.GearInWarfrontCondition` 与无参构造。
 
 - **修饰互相覆盖**：
-
     - **解决方案**：使用 `getModId()` 返回的实例 token，不要使用 `GearIn_warfront` 作为 source。
 
 - **suppression 后数值没有立即变化**：
-
     - **解决方案**：调用 `reapplyConditions()`，再读取危险度、流通性和舰队质量。
 
 - **删除条件后其他实例也消失**：
-
     - **解决方案**：保存 `addCondition()` 返回的 token，并使用 `removeSpecificCondition(token)`。
 
 - **参数没有生效**：
-
     - **解决方案**：确认传入的是正数 `Float`，并在 `setParam()` 中记录倍率。
 
 - **舰队质量没有变化**：
-
     - **解决方案**：读取 `Stats.FLEET_QUALITY_MOD` dynamic stat 的 `computeEffective(0f)`，不要只观察已经生成的舰队。
 
 ## 总结

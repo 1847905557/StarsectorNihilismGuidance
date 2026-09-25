@@ -138,15 +138,12 @@ anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 ## 故障分析
 
 - **地图上没有实体名称**：地图显示开关与实体显示文本是两组字段。
-
     - **解决方案**：检查 `showNameOnMap`、`defaultName` 和 `nameInText`，修正后创建新档。
 
 - **靠近实体后没有发现提示**：`detectionRange` 不大于 0、`discoverable` 不为 true，或生成器没有把实体放进当前星系。
-
     - **解决方案**：修正后创建新档并让舰队进入探测范围。
 
 - **交互界面显示错误的描述**：实体类型 ID 与描述键可以不同，但必须显式连接。
-
     - **解决方案**：检查 `customDescriptionId` 是否逐字匹配本页的 CUSTOM 行，修正后重新进入实体交互界面。
 
 ## 总结

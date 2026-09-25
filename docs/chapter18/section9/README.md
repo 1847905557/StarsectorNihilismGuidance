@@ -437,7 +437,6 @@ public class GearInMagicTrail implements OnFireEffectPlugin {
 ## 故障分析
 
 - **尾迹只有互不连接的短亮点**：节点提交处每次调用 `getUniqueID()`，相邻节点进入了不同 tracker。
-
     - **解决方案**：在跟踪器初始化时保存 ID，提交节点时反复使用该字段，只在明确切段后更新。
 
 ## 总结

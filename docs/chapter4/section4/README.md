@@ -293,31 +293,24 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 ## 故障分析
 
 - **战斗中模块完全不生成**：主体 CSV 行的 hints 缺少或拼错 `SHIP_WITH_MODULES` 时，部署分支不会进入模块船生成流程；舰队列表和预览仍可能显示模块。
-
     - **解决方案**：给主体 hints 加上 `SHIP_WITH_MODULES`，重新部署。
 
 - **模块槽位被静默跳过**：`modules` 的键能找到真实槽位，但该槽位不是 `STATION_MODULE` 时，部署流程会跳过它。
-
     - **解决方案**：让键逐字对应 `.ship` 中的 `STATION_MODULE` 槽位 ID，重新部署。
 
 - **部署模块时抛出空引用**：`modules` 的槽位 ID 在 hull 上不存在时，`getHullSpec().getWeaponSlot(id)` 返回 null，模块生成处会在部署期失败。
-
     - **解决方案**：用编辑器确认槽位 ID 并同步映射键，再次部署。
 
 - **装配加载正常但进入战斗时报错**：`modules` 只保存字符串映射，加载期不会校验模块装配 ID；部署时 `getModuleVariant` 返回 null 才会抛出空引用或 variant 错误。
-
     - **解决方案**：确认模块装配已注册且 `variantId` 逐字一致，重新进入战斗。
 
 - **模块装配在加载阶段直接失败**：模块 variant 的 `hullId` 与注册船体不一致时，`Loading variant [...]` 后会抛出 `Ship hull spec [...] not found!`。
-
     - **解决方案**：让 `hullId` 等于模块 `.ship` 和 `ship_data.csv` 的 ID，重启。
 
 - **模块在装配界面无法选中**：模块船体的 `ordnance points` 为 0，或 tags 包含 `module_unselectable` 时，模块按钮不会接受点击。
-
     - **解决方案**：需要改装时提供装配点并移除该 tag。
 
 - **无盾模块的船体文件加载失败**：删除 `shieldCenter` 或 `shieldRadius` 会让 `.ship` 加载器的 `getVector2f`、`getInt` 抛出 JSONException。
-
     - **解决方案**：保留这两个字段，只把 `shield type` 设为 `NONE`，重启。
 
 ## 总结

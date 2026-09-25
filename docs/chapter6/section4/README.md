@@ -74,15 +74,12 @@ jar tf jars/GearIndustry.jar
 ## 故障分析
 
 - **找不到 JAR**：`jars` 路径不是相对 MOD 根目录的 `jars/GearIndustry.jar`。
-
     - **解决方案**：把 `jars` 改为 `jars/GearIndustry.jar`，然后重新启动游戏。
 
 - **JAR 中缺少 class**：源码未位于 `src/` 或 Gradle source set 配置错误。
-
     - **解决方案**：检查 [C6-S2] 和 [C6-S3]。
 
 - **出现 `UnsupportedClassVersionError`**：构建使用了高于 Java 17 的目标。
-
     - **解决方案**：回到 [C6-S1] 和 [C6-S3] 固定版本。
 
 ## 总结

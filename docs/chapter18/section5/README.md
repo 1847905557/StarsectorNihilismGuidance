@@ -186,15 +186,12 @@ GearIn_uri,beam,45,0.65,,"[135,175,135]",,100,0.35,,"[135,255,180]",60,0.35,,"[2
 ## 故障分析
 
 - **CSV 已放入 MOD，但 projectile 查询返回 `null`**：入口没有执行，或 `type` 不是精确的 `projectile`。
-
     - **解决方案**：确认 `ShaderLib.init()` 先执行，能力条件成立，并使用 `LightDataType.PROJECTILE` 查询。
 
 - **standard 光存在，但命中位置没有额外光效**：hit 组缺少有效尺寸、强度或颜色。
-
     - **解决方案**：补齐 `hit size`、`hit intensity`、`hit color`，再确认 `hasHit` 为 `true`。
 
 - **重复加载后仍显示旧参数**：使用了 `readLightDataCSVNoOverwrite(...)`，已有 ID 被保留。
-
     - **解决方案**：需要替换时改用 `readLightDataCSV(...)`。
 
 ## 总结

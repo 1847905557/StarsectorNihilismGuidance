@@ -315,19 +315,15 @@ public class GearInLunaSettingsReader {
 ## 故障分析
 
 - **保存设置时出现 `NullPointerException`**：读取方法返回 null 包装类型，调用方直接拆箱。
-
     - **解决方案**：恢复精确 `fieldID` 并保留默认值分支。
 
 - **设置面板没有 GearIn**：CSV 不是九列，或文件路径不正确。
-
     - **解决方案**：核对 `data/config/LunaSettings.csv`，重启。
 
 - **保存后设置必须重启才生效**：效果继续使用旧缓存，没有在保存通知后重新调用 getter。
-
     - **解决方案**：让下次效果计算集中读取当前值。
 
 - **每次读档后回调次数增加**：注册前没有用 `hasSettingsListenerOfClass` 去重。
-
     - **解决方案**：加入幂等检查。
 
 ## 总结

@@ -418,31 +418,24 @@ public class GearInFleetMemoryProbe implements EveryFrameScript {
 ## 故障分析
 
 - **数值没有变化**：没有触发重算，或读取的是旧 stats 引用。
-
     - **解决方案**：在 setVariant 或成员状态写入后调用 updateStats()，再重新取得 getStats() 并读取 modified value。
 
 - **舰长效果缺失**：成员没有加入 FleetDataAPI，或技能作用域不适用。
-
     - **解决方案**：确认成员已经加入目标舰队，读取 member.getCaptain() 与 fleet.getCommander()，再检查技能的作用域和等级。
 
 - **fleet total 停留旧值**：集合变化后使用了缓存的汇总值。
-
     - **解决方案**：重新取得 fleet.getStats()、fleet.getFleetPoints() 和 fleet.getFleetData()，不要继续使用写入前的对象引用。
 
 - **memory 类型错误**：写入类型与读取方法不一致。
-
     - **解决方案**：用 get() 查看原始对象类型，再选择 getBoolean()、getFloat()、getLong() 或 getInt()；无法确定类型时不要强制转换。
 
 - **标记持续存在**：恢复时没有区分原来不存在和原来存在。
-
     - **解决方案**：同时保存 contains(key) 和原值，原来没有键时调用 unset()，原来有键时写回原值并恢复过期时间。
 
 - **临时 modifier 在暂停后仍然存在**：把真实秒数当作了生涯天数，或测试期间没有继续推进生涯时间。
-
     - **解决方案**：按生涯天数设置有效期，在暂停和继续运行两个阶段分别记录 getExpire() 与当前值。
 
 - **memory 标记影响了其他 AI**：测试使用了原版常用键，却没有保存和恢复原状态。
-
     - **解决方案**：写入前保存 contains、原值和过期时间，测试结束后按原存在状态恢复；演示只使用短有效期。
 
 ## 总结

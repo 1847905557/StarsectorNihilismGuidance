@@ -329,23 +329,18 @@ GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
 ## 故障分析
 
 - **查询结果为 `null`**：查询键与 CSV 的 ID、对象类型、map、frame 或资源路径不一致。
-
     - **解决方案**：按四部分查询键逐项核对登记，并确认 PNG 路径能够加载。
 
 - **贴图整体偏离舰船**：material 或 normal 的画布、中心、透明边界或朝向与原始精灵不同。
-
     - **解决方案**：在同一画布中重新对齐三张图后导出。
 
 - **表面凹凸方向相反或过于尖锐**：normal 通道方向错误，或 `magnitude` 过大。
-
     - **解决方案**：修正法线通道，并从 `magnitude = 1` 开始校准。
 
 - **缺失 normal 后没有自动生成**：全局开关、对象标签、实际对象参数或原始精灵路径阻止了生成。
-
     - **解决方案**：确认 `autoGenNormals` 已启用、对象未带禁止标签，并把实际 `ShipAPI` 传入查询。
 
 - **第一次进入战斗出现明显停顿**：大量纹理在首次使用时同时按需载入。
-
     - **解决方案**：只给关键对象添加 `graphicslib_preload`，再以显存统计决定是否启用 `preloadAllMaps`。
 
 ## 总结

@@ -669,43 +669,33 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 ## 故障分析
 
 - **势力完全没有出现**：`factions.csv` 缺失、表头不是 `faction`、行首带 `#`、路径错误，或 faction 文件缺少 `id` 时，日志不会出现 `Loading gear_industry faction`。
-
     - **解决方案**：确认 CSV 第一行是 `faction`，第二行是相对 MOD 根目录的完整路径，以 UTF-8 无 BOM 保存并重启。
 
 - **游戏加载中断，进不了主菜单**：faction JSON 语法错误，必填字段或 `factionDoctrine` 的整数键缺失，或 `illegalCommodities` 引用了无效商品 ID 时，`Loading factions` 后会抛出 `JSONException` 或 `RuntimeException`。
-
     - **解决方案**：补齐字段并从 `data/campaign/commodities.csv` 选取有效 ID，重启。
 
 - **势力 ID 与其他来源冲突**：两份 faction 文件产生相同 `id` 时，加载会出现 `Spec of class [...] with id [X] already exists`。
-
     - **解决方案**：改用全局唯一 ID，并对照 `data/world/factions/factions.csv`，重启。
 
 - **势力舰队里没有自己的船**：`default_ship_roles.json` 缺失或为空时 `pickShip` 会改用共享默认角色表并抽取原版装配；装配 ID 拼错或目标装配尚未注册时不会回退 —— 角色表在创建阶段立即校验，抛 `Ship hull variant [X] not found!` 中断加载。联队由航母装配的 `wings` 数组提供。
-
     - **解决方案**：只提交自己的舰船装配角色并核对 `data/variants` 中的 ID，重新生成舰队。
 
 - **加载中断并报告 `Ship hull variant [X] not found!`**：`default_ship_roles.json` 或 faction `shipRoles` 中的 ID 无法解析时，`RoleEntryAPI` 会在创建阶段立即校验；以 `_wing` 结尾的 ID 按联队查询。
-
     - **解决方案**：删除无效条目或改成已注册 variant、wing ID，重启。
 
 - **某些势力舰船始终不出现**：`hullFrequency` 为 0、船体不在 `knownShips`，或它在普通池中被概率选择淹没时，生成结果会静默缺少该船。
-
     - **解决方案**：把倍率设为大于 0，核对 `knownShips.tags` 与 `ship_data.csv` 的 tags，必要时加入 `priorityShips`，重复生成。
 
 - **加载阶段报告势力贴图错误**：`logo`、`crest` 或头像路径指向不存在的文件时，TEXTURE 资源加载会直接失败。
-
     - **解决方案**：以 MOD 根目录为基准，把 410×256 和 256×256 PNG 放入 `graphics/factions/` 并核对文件名，重启。
 
 - **情报中的势力颜色不正确**：`color` 数组少于 4 个元素时，加载会抛出 `Color array with id [color] has less than 4 elements`。
-
     - **解决方案**：补齐 RGBA 四项并重启。
 
 - **情报中的势力名称不正确**：`displayName` 与 `displayNameWithArticle` 不一致时，界面会选用不同的冠词变体。
-
     - **解决方案**：中文环境将两个字段写成同一字符串，重启。
 
 - **势力蓝图或打捞池缺少组件**：`drop_groups.csv` 选择 `rare_bp` 并排除 `no_drop` 和 `restricted`，标签组合错误会让组件静默离开掉落池。
-
     - **解决方案**：可掉落组件使用 `rare_bp`，受限组件使用 `restricted`，重新生成掉落。
 
 ## 总结

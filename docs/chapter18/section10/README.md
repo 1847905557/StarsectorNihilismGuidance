@@ -569,23 +569,18 @@ MagicLib 会扫描各星系舰队，寻找自身 Memory 含有该键的对象。
 ## 故障分析
 
 - **酒吧始终没有赏金告示板**：记录没有通过市场、玩家或依赖条件，或者校验阶段已经移除了无效赏金。
-
     - **解决方案**：先从日志确认 `GearIn_magic_bounty : VALID`，再逐项核对市场势力与规模、玩家等级、日期、舰队 FP 和关系条件。
 
 - **日志提示旗舰或预设装配缺失**：字段使用了 hull ID、文件名或不存在的 variant ID。
-
     - **解决方案**：把 `fleet_flagship_variant` 和 `fleet_preset_ships` 的键改成已登记的装配 ID；可选第三方装配放入 MagicBounty 专用装配目录并声明依赖 MOD。
 
 - **任务出现了，但找不到目标地点**：允许的 theme、黑名单、距离与实体类型没有产生共同候选。
-
     - **解决方案**：保留至少一种可用 theme 和实体类型，并开启 `location_defaultToAnyEntity`；固定地点任务直接使用有效的 `location_entitiesID`。
 
 - **任务完成后没有额外 Rules 行为**：`job_pick_script` 或 `job_conclusion_script` 写成了 Java 类名，或者同名 trigger 没有匹配规则。
-
     - **解决方案**：字段填写 Rules trigger，并为该 trigger 添加能够由 `FireBest` 命中的规则。
 
 - **信用点奖励没有随舰队规模变化**：`job_reward_scaling` 或 `fleet_min_FP` 没有正值，缩放计算保持基础奖励。
-
     - **解决方案**：同时设置正数缩放倍率与最低 FP，并用不同规模的玩家舰队比较接受界面中的最终奖励。
 
 ## 总结

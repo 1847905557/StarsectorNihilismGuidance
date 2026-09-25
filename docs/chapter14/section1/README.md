@@ -142,35 +142,27 @@ if (!sector.hasScript(GearInDayAccumulatorScript.class)) {
 ## 故障分析
 
 - **脚本每次读档后出现两份日志**：注册入口无条件调用 `addScript()`，而普通脚本实例已经随存档恢复。
-
     - **解决方案**：在 `onGameLoad()` 使用 `hasScript(GearInDayAccumulatorScript.class)`，只在列表缺少实例时加入新对象。
 
 - **脚本没有任何日志**：脚本没有进入星区脚本列表，或注册发生在 `Global.getSector()` 尚未建立的应用加载阶段。
-
     - **解决方案**：把注册放在 `onGameLoad()` 或 `onNewGame()`，并在注册后检查 `hasScript()`。
 
 - **周期速度约快十倍**：`advance()` 把真实秒 `amount` 直接当成游戏天。
-
     - **解决方案**：先调用 `Global.getSector().getClock().convertToDays(amount)`，再把结果加入天数累加器。
 
 - **单帧跨过三天却只执行一次**：周期判断使用 `if`，一次回调只消耗一个周期。
-
     - **解决方案**：使用 `while (daysAccumulator >= tickEveryDays)`，每次循环扣除一个周期并保留余量。
 
 - **暂停时仍然累计游戏天**：脚本的 `runWhilePaused()` 返回了 `true`，或逻辑累计的是原始 `amount`。
-
     - **解决方案**：暂停敏感的生涯逻辑返回 `false`，并始终通过生涯时钟换算时间。
 
 - **脚本一直存在，完成日志却出现了**：`advance()` 设置了完成条件，但 `isDone()` 没有返回同一个 `done` 字段。
-
     - **解决方案**：让 `isDone()` 返回 `done`，由引擎在回调返回后自动移除脚本。
 
 - **transient 脚本读档后消失**：脚本注册在 transient 列表，而该列表不写入存档。
-
     - **解决方案**：把需要跨档保存的逻辑注册到 `addScript()`；临时逻辑在每次读档回调中重新调用 `addTransientScript()`。
 
 - **保存或读档时出现序列化错误**：脚本字段持有 UI、声音播放器或其他瞬态引擎句柄。
-
     - **解决方案**：字段只保存可序列化的业务状态，瞬态对象使用 `transient` 字段并在运行时重建。
 
 ## 总结

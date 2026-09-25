@@ -241,23 +241,18 @@ public class GearInHitLightEffect implements OnHitEffectPlugin {
 ## 故障分析
 
 - **命中后完全没有亮光**：`StandardLight` 的尺寸或强度仍为默认的 `0`，或 GraphicsLib 光照能力未启用。
-
     - **解决方案**：确认两项显示参数已经设置，并检查 GraphicsLib 的 shader 与 buffer 能力。
 
 - **护盾光跟着目标移动**：护盾分支错误地调用了 `attachTo(target)`。
-
     - **解决方案**：护盾分支只使用世界命中点调用 `setLocation(point)`。
 
 - **船体光绕着目标落在错误位置**：世界位移没有按目标朝向的负值旋转成本地偏移。
-
     - **解决方案**：使用 `Vector2f.sub(...)` 求出世界位移，再调用 `VectorUtils.rotate(offset, -target.getFacing())`。
 
 - **船体光只闪一下，没有完整的三阶段变化**：`fadeIn(...)` 之前没有设置目标强度，或保持时间与自动淡出时间没有写入。
-
     - **解决方案**：依次设置强度、淡入时间、寿命和自动淡出时间。
 
 - **持续战斗后光源数量异常增长**：同一个对象在逐帧入口被重复传给 `addLight(...)`。
-
     - **解决方案**：在命中事件中创建并提交一次光源。
 
 ## 总结

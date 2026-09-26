@@ -1,6 +1,6 @@
 # 制作一个自定义实体
 
-本节定义一个无需新 Java 插件的生涯实体：它使用已有中继资源的图标和精灵，拥有 GearIn 自己的名称、发现范围和 CUSTOM 描述，并由 [C3-S4] 的星系生成器投放。
+本节定义一个无需新 Java 插件的生涯实体：它使用已有中继资源的图标和 Sprite 贴图，拥有 GearIn 自己的名称、发现范围和 CUSTOM 描述，并由 [C3-S4] 的星系生成器投放。
 
 *本节预期阅读时间：~14 分钟。*
 
@@ -12,7 +12,7 @@
 
 - 在 `data/config/custom_entities.json` 增加静态实体类型；
 - 用 `baseId` 继承一组稳定的默认显示参数；
-- 配置图标、精灵、地图名称、可发现性和发现经验；
+- 配置图标、 Sprite 贴图、地图名称、可发现性和发现经验；
 - 用 `addCustomEntity` 投放类型，并由 CUSTOM 描述完成界面闭环。
 
 ## 前置知识
@@ -59,7 +59,7 @@
 "customDescriptionId":"GearIn_navigation_anchor",
 ```
 
-地图图标、实体精灵和描述键都指向 GearIn 类型。
+地图图标、实体 Sprite 贴图和描述键都指向 GearIn 类型。
 
 在 `data/strings/descriptions.csv` 中定义这个键：
 
@@ -157,4 +157,4 @@ anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 - `data/config/custom_entities.json`：生涯实体类型；
 - `data/strings/descriptions.csv`：CUSTOM 行格式的对照依据；
 - `graphics/icons/relay.png`：本节复用的原版图标；
-- `graphics/ships/com_relay.png`：本节复用的原版精灵。
+- `graphics/ships/com_relay.png`：本节复用的原版 Sprite 贴图。

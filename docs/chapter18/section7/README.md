@@ -1,6 +1,6 @@
 # 制作 GraphicsLib 纹理映射
 
-舰船原始精灵只决定基础外观。GraphicsLib 还可以为同一个对象读取 material、normal 与 surface 贴图，让动态光源在船体上产生有方向的明暗变化和高光。本节以 `GearIn_artizan` 为坐标基准，先在应用加载入口登记 texture CSV，再说明两张贴图应该表达什么，随后把它们映射到同一个船体 ID，最后观察显式纹理、自动生成 normal 和动态加载之间的关系。
+舰船原始 Sprite 贴图只决定基础外观。GraphicsLib 还可以为同一个对象读取 material、normal 与 surface 贴图，让动态光源在船体上产生有方向的明暗变化和高光。本节以 `GearIn_artizan` 为坐标基准，先在应用加载入口登记 texture CSV，再说明两张贴图应该表达什么，随后把它们映射到同一个船体 ID，最后观察显式纹理、自动生成 normal 和动态加载之间的关系。
 
 成熟项目会让 CSV 中的每一条路径都落到真实资源。本节给出可直接使用的目录和数据行；贴图文件按照工具无关的步骤制作，仓库不提供预制结果。
 
@@ -12,16 +12,16 @@
 
 完成后，您将能够：
 
-- 区分原始精灵、material、normal 与 surface 贴图的职责；
+- 区分原始 Sprite 贴图、material、normal 与 surface 贴图的职责；
 - 在 `onApplicationLoad()` 中登记 texture CSV 并选择覆盖策略；
-- 制作与舰船精灵画布、位置、透明区和朝向一致的 material／normal 贴图；
+- 制作与舰船 Sprite 贴图画布、位置、透明区和朝向一致的 material／normal 贴图；
 - 用 texture CSV 的 6 个字段把两张贴图登记给 `GearIn_artizan`；
 - 按对象 ID、类型、纹理类型和动画帧查询 `TextureEntry`；
 - 在显式 normal 缺失时使用自动生成，并判断缓存与预载状态。
 
 ## 前置知识
 
-- [C1-S2] 已完成 `GearIn_artizan` 的舰船精灵与船体登记；
+- [C1-S2] 已完成 `GearIn_artizan` 的舰船 Sprite 贴图与船体登记；
 - [C18-S5] 已在 `onApplicationLoad()` 中初始化 GraphicsLib 并完成 shader／buffer 能力判断；
 - [C18-S6] 已建立能够照亮舰船表面的动态点光源；
 - 能够使用图像编辑器保存带透明通道的 PNG，并读取 `starsector.log`。
@@ -62,9 +62,9 @@ TextureData.readTextureDataCSVNoOverwrite(
 
 重复关系由 ID、对象类型、动画帧和 map 共同确定。覆盖入口让后读取行成为查询结果；不覆盖入口保留已经存在的条目，并跳过对应的重复映射。
 
-## 区分原始精灵与三类纹理
+## 区分原始 Sprite 贴图与三类纹理
 
-`graphics/ships/GearIn_artizan.png` 是游戏直接绘制的舰船精灵，也是三类附加纹理的坐标基准。GraphicsLib 在相同像素位置采样附加贴图，因此舰首、舰尾、装甲板和透明区都要与原始精灵重合。
+`graphics/ships/GearIn_artizan.png` 是游戏直接绘制的舰船 Sprite 贴图，也是三类附加纹理的坐标基准。GraphicsLib 在相同像素位置采样附加贴图，因此舰首、舰尾、装甲板和透明区都要与原始 Sprite 贴图重合。
 
 material 贴图提供光照计算使用的表面颜色与反射差异。normal 贴图保存每个像素朝向哪个方向，让位于舰船左侧、右侧或上方的光源照出不同明暗。surface 贴图进一步控制镜面高光的强度和硬度；缺少它时，material 与 normal 仍然可以参与光照，只是没有该船专用的 surface 变化。
 
@@ -72,9 +72,9 @@ material 贴图提供光照计算使用的表面颜色与反射差异。normal �
 
 ## 制作 material 贴图
 
-先复制原始舰船精灵，保留画布尺寸与透明通道，再把副本改成 material 贴图。处理时以 "光照下希望保留什么颜色、哪些区域更容易反光" 为判断标准：装甲主体保留可辨认的色相，金属边缘和高光区域可以更亮，孔洞与完全透明区域保持透明。
+先复制原始舰船 Sprite 贴图，保留画布尺寸与透明通道，再把副本改成 material 贴图。处理时以 "光照下希望保留什么颜色、哪些区域更容易反光" 为判断标准：装甲主体保留可辨认的色相，金属边缘和高光区域可以更亮，孔洞与完全透明区域保持透明。
 
-material 贴图仍是一张完整的 RGBA PNG。它不负责画出光源本身，也不替代原始舰船精灵；GraphicsLib 将它与场景光照组合，得到最终受光颜色。将结果保存为：
+material 贴图仍是一张完整的 RGBA PNG。它不负责画出光源本身，也不替代原始舰船 Sprite 贴图；GraphicsLib 将它与场景光照组合，得到最终受光颜色。将结果保存为：
 
 ```text
 graphics/material/ships/GearIn_artizan.png
@@ -94,9 +94,9 @@ normal 的颜色表示方向，不应直接使用原始舰船颜色。过强的�
 
 ## 保持画布与透明区一致
 
-三张图必须具有相同的像素宽高，舰船中心位于相同像素，朝向也完全一致。不要裁切 material 或 normal 的透明边缘，因为原始精灵的中心点和武器槽位置仍以原画布计算。
+三张图必须具有相同的像素宽高，舰船中心位于相同像素，朝向也完全一致。不要裁切 material 或 normal 的透明边缘，因为原始 Sprite 贴图的中心点和武器槽位置仍以原画布计算。
 
-可以把三张图放入同一图像文档的三个图层组：原始精灵保持只读，material 与 normal 各自编辑；导出前同时检查画布边界、舰首方向和 alpha。运行后如果亮部整体偏离船体，首先比较三张 PNG 的尺寸和不透明像素包围盒，而不是调整 CSV ID。
+可以把三张图放入同一图像文档的三个图层组：原始 Sprite 贴图保持只读，material 与 normal 各自编辑；导出前同时检查画布边界、舰首方向和 alpha。运行后如果亮部整体偏离船体，首先比较三张 PNG 的尺寸和不透明像素包围盒，而不是调整 CSV ID。
 
 ## 编写 texture CSV
 
@@ -136,7 +136,7 @@ GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
 | 炮塔盖板 | `turretcoversmall`、`turretcovermedium`、`turretcoverlarge` | 三种尺寸的炮塔槽盖板 |
 | 硬点主体 | `hardpoint`、`hardpointbarrel`、`hardpointunder` | 硬点、炮管与底图 |
 | 硬点盖板 | `hardpointcoversmall`、`hardpointcovermedium`、`hardpointcoverlarge` | 三种尺寸的硬点槽盖板 |
-| 导弹 | `missile` | 使用舰船式精灵的导弹 |
+| 导弹 | `missile` | 使用舰船式 Sprite 贴图的导弹 |
 | 小行星 | `asteroid` | 战斗中的小行星 |
 
 只有 `turret` 与 `hardpoint` 会读取正数 `frame`。这两类对象可以按动画帧登记不同贴图；其他类型即使填写正数，加载器也会记录不兼容警告并把该帧值丢弃。舰船固定使用第 0 帧，因此示例保持空单元格。
@@ -167,7 +167,7 @@ TextureEntry normal = TextureData.getTextureData(
         0);
 ```
 
-`TextureEntry` 将路径、强度、加载状态和精灵放在同一个对象中。查询成功后，`spriteName` 是 CSV 路径，`magnitude` 是解析后的数值，`sprite` 是当前可用的 `SpriteAPI`；路径不可加载时，普通查询最终返回 `null`。
+`TextureEntry` 将路径、强度、加载状态和 Sprite 贴图放在同一个对象中。查询成功后，`spriteName` 是 CSV 路径，`magnitude` 是解析后的数值，`sprite` 是当前可用的 `SpriteAPI`；路径不可加载时，普通查询最终返回 `null`。
 
 ### `TextureEntry` 状态速查表
 
@@ -184,7 +184,7 @@ TextureEntry normal = TextureData.getTextureData(
 | `alwaysPreload` | 对象是否要求常驻预载 | 来自 `graphicslib_preload` 标签 |
 | `vramSize` | 估算显存占用 | 单位为字节 |
 
-`loaded` 与 `validToLoad` 描述两个不同阶段：前者表示纹理当前驻留，后者表示它可以在需要时载入。使用 `sprite` 之前应以查询结果为准；文件路径错误时，条目无法提供可用精灵。
+`loaded` 与 `validToLoad` 描述两个不同阶段：前者表示纹理当前驻留，后者表示它可以在需要时载入。使用 `sprite` 之前应以查询结果为准；文件路径错误时，条目无法提供可用 Sprite 贴图。
 
 ## 使用自动生成作为替代路径
 
@@ -200,15 +200,15 @@ TextureEntry normal = TextureData.getTextureDataWithAutoGen(
         false);
 ```
 
-`ship` 让 GraphicsLib 能从 `ShipAPI.getHullSpec().getSpriteName()` 找到原始精灵。最后的 `false` 表示返回前要取得可用的 sprite；设置为 `true` 时，方法可以返回尚未载入、`sprite == null` 的条目，因此通常不适合直接使用纹理的代码。
+`ship` 让 GraphicsLib 能从 `ShipAPI.getHullSpec().getSpriteName()` 找到原始 Sprite 贴图。最后的 `false` 表示返回前要取得可用的 sprite；设置为 `true` 时，方法可以返回尚未载入、`sprite == null` 的条目，因此通常不适合直接使用纹理的代码。
 
 如果相同对象键已经有显式 normal，查询直接返回显式条目。只有 normal 缺失、`ship` 有效且 `autoGenNormals` 已启用时，GraphicsLib 才会尝试生成；`autoGen` 字段能够区分最终来源。
 
-自动生成结果保存在 `GraphicsLib/cache`。游戏记录当前 MOD ID 与版本列表的哈希；列表变化后，缓存会在下次生成流程中失效并重建，从而避免继续使用旧精灵对应的 normal。
+自动生成结果保存在 `GraphicsLib/cache`。游戏记录当前 MOD ID 与版本列表的哈希；列表变化后，缓存会在下次生成流程中失效并重建，从而避免继续使用旧 Sprite 贴图对应的 normal。
 
 ### 控制自动生成范围
 
-需要主动建立某个精灵的 material、normal 与 surface 映射时，可以把对象键和原始精灵路径交给 `mapSpriteToMNSWithAutoGen(...)`：
+需要主动建立某个 Sprite 贴图的 material、normal 与 surface 映射时，可以把对象键和原始 Sprite 贴图路径交给 `mapSpriteToMNSWithAutoGen(...)`：
 
 ```java
 TextureData.mapSpriteToMNSWithAutoGen(
@@ -222,7 +222,7 @@ TextureData.mapSpriteToMNSWithAutoGen(
 
 前四个参数确定映射键；第五个参数允许生成缺失的 normal；最后一个参数为 `true` 时，生成结果不会被标记为自动生成，普通兼容路径保持为 `false`。`graphicslib_no_autogen` 标签会禁止对象参与自动生成，`graphicslib_autogen_override` 标签则改变生成结果的身份标记。显式 normal 仍然优先于自动生成结果。
 
-`autoGenNormalMap(...)` 直接从一张精灵生成 normal，并返回生成后的 `SpriteAPI`：
+`autoGenNormalMap(...)` 直接从一张 Sprite 贴图生成 normal，并返回生成后的 `SpriteAPI`：
 
 ```java
 SpriteAPI generated = TextureData.autoGenNormalMap(
@@ -262,8 +262,8 @@ if (engine.getCustomData().containsKey(ShaderHook.TEXTURE_PRELOAD_KEY)) {
 |---|---|---|
 | `getTextureData(...)` | ID、map、对象类型、帧 | 查询显式登记并按需加载，缺失时返回 `null` |
 | `getTextureDataWithAutoGen(...)` | 显式查询参数、实际对象、`unloadedOk` | 优先显式条目，必要时生成 normal |
-| `mapSpriteToMNSWithAutoGen(...)` | 对象键、精灵路径、类型、帧、生成开关、覆盖开关 | 建立三类纹理映射并处理缺失 normal |
-| `autoGenNormalMap(...)` | 精灵路径、对象键、类型、帧 | 返回自动生成的 normal 精灵 |
+| `mapSpriteToMNSWithAutoGen(...)` | 对象键、Sprite 贴图路径、类型、帧、生成开关、覆盖开关 | 建立三类纹理映射并处理缺失 normal |
+| `autoGenNormalMap(...)` | Sprite 贴图路径、对象键、类型、帧 | 返回自动生成的 normal Sprite 贴图 |
 | `autoGenMissingNormalMaps()` | 无 | 由 GraphicsLib 初始化流程扫描缺失 normal |
 | `TextureEntry.spriteName` | — | 显式路径或缓存路径 |
 | `TextureEntry.magnitude` | — | normal 起伏强度，默认 1 |
@@ -286,7 +286,7 @@ public void onApplicationLoad() {
 }
 ```
 
-最终目录保留原始精灵，并为 GraphicsLib 增加两张坐标完全一致的贴图：
+最终目录保留原始 Sprite 贴图，并为 GraphicsLib 增加两张坐标完全一致的贴图：
 
 ```text
 graphics/ships/GearIn_artizan.png
@@ -331,13 +331,13 @@ GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
 - **查询结果为 `null`**：查询键与 CSV 的 ID、对象类型、map、frame 或资源路径不一致。
     - **解决方案**：按四部分查询键逐项核对登记，并确认 PNG 路径能够加载。
 
-- **贴图整体偏离舰船**：material 或 normal 的画布、中心、透明边界或朝向与原始精灵不同。
+- **贴图整体偏离舰船**：material 或 normal 的画布、中心、透明边界或朝向与原始 Sprite 贴图不同。
     - **解决方案**：在同一画布中重新对齐三张图后导出。
 
 - **表面凹凸方向相反或过于尖锐**：normal 通道方向错误，或 `magnitude` 过大。
     - **解决方案**：修正法线通道，并从 `magnitude = 1` 开始校准。
 
-- **缺失 normal 后没有自动生成**：全局开关、对象标签、实际对象参数或原始精灵路径阻止了生成。
+- **缺失 normal 后没有自动生成**：全局开关、对象标签、实际对象参数或原始 Sprite 贴图路径阻止了生成。
     - **解决方案**：确认 `autoGenNormals` 已启用、对象未带禁止标签，并把实际 `ShipAPI` 传入查询。
 
 - **第一次进入战斗出现明显停顿**：大量纹理在首次使用时同时按需载入。
@@ -345,7 +345,7 @@ GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
 
 ## 总结
 
-GraphicsLib 使用对象 ID、对象类型、动画帧和 map 类型把额外纹理绑定到原始精灵。material 决定受光颜色，normal 决定表面方向，surface 控制镜面高光；显式 CSV 提供稳定美术结果，自动生成与缓存负责补齐缺失 normal，动态加载和预载策略则决定这些资源何时进入显存。
+GraphicsLib 使用对象 ID、对象类型、动画帧和 map 类型把额外纹理绑定到原始 Sprite 贴图。material 决定受光颜色，normal 决定表面方向，surface 控制镜面高光；显式 CSV 提供稳定美术结果，自动生成与缓存负责补齐缺失 normal，动态加载和预载策略则决定这些资源何时进入显存。
 
 ## 建议参考项
 

@@ -1,6 +1,6 @@
 # 使用 GLSL 进阶
 
-本节以 [C21-S1] 的方向标为输入，让 GLSL 1.20 根据坐标生成圆环与朝向线。Java 提交覆盖矩形和舰船状态，vertex shader 负责变换，fragment shader 决定形状、线宽和边缘透明度。
+本节沿用 [C21-S1] 的方向标，让 GLSL 1.20 在矩形内部生成圆环与朝向线。Java 提交顶点和舰船状态；您可以分别观察 vertex shader 如何放置矩形，以及 fragment shader 如何决定哪些像素可见。
 
 *本节预期阅读时间：~30 分钟。*
 
@@ -22,7 +22,7 @@
 
 ## 让矩形覆盖方向标
 
-方向标由半径 `80 su` 的圆环和局部正 X 轴上长 `120 su` 的朝向线组成。Java 只提交两个三角形构成的矩形，共 `6` 个局部顶点。矩形从圆环左侧延伸到朝向线末端，片元 shader 在其内部按距离决定哪些像素可见。每个顶点的位置和矩形内部的覆盖计算承担不同职责：矩形提供处理范围，圆环与线段的边界由 GLSL 决定。
+方向标仍是半径 `80 su` 的圆环，以及局部正 X 轴上长 `120 su` 的朝向线。Java 提交由两个三角形组成的矩形，共 `6` 个局部顶点。矩形只规定片元计算的范围；圆环、线段及透明边缘由 fragment shader 在这个范围内生成。
 
 Java 为矩形保留一个直接 `FloatBuffer`，在 `init(...)` 创建，在每帧绘制前按视口像素大小更新边界。它把顶点交给 `a_position`，把舰船位置、朝向、形状尺寸、线宽、像素比例和颜色交给 uniform，再发起一次 `GL_TRIANGLES` 绘制。放大的视口使 `1 px` 对应更少的世界单位；覆盖矩形随这一比例留出边距，圆环和朝向线的平滑边缘不会在矩形边界被裁掉。
 
@@ -41,7 +41,7 @@ vec2 world = u_center + rotated;
 gl_Position = gl_ModelViewProjectionMatrix * vec4(world, 0.0, 1.0);
 ```
 
-`v_local` 沿矩形三角形插值，所以片元 shader 能在每个像素附近取到连续的局部坐标。圆环转动后外形相同，朝向线仍指向舰船正 X 轴；两种形状共享一次顶点变换。
+三角形光栅化时，`v_local` 在顶点之间插值，fragment shader 因而能取得每个片元对应的局部坐标。圆环转动后外形不变，朝向线随舰船旋转；两种形状共用这次顶点变换。
 
 ## 用局部距离确定形状
 
@@ -70,7 +70,7 @@ float lineCoverage = 1.0 - smoothstep(
 float coverage = max(ringCoverage, lineCoverage);
 ```
 
-`smoothstep` 在两条距离边界之间连续过渡，边缘 Alpha 随距离下降。完全透明的片元由 `discard` 放弃，其余片元输出 `vec4(u_color.rgb, u_color.a * coverage)`。`.rgb` 是向量分量选择，`u_color.a` 承载视口 Alpha 和方向标自身透明度；标准混合函数 `GL_SRC_ALPHA`、`GL_ONE_MINUS_SRC_ALPHA` 把结果叠到战斗画面。矩形像素不会成为一块实心底色。
+`smoothstep` 让边缘 Alpha 随距离平滑下降。覆盖率为零的片元由 `discard` 放弃，其余片元输出 `vec4(u_color.rgb, u_color.a * coverage)`。`.rgb` 选取颜色分量，`u_color.a` 包含方向标透明度和视口 Alpha；`GL_SRC_ALPHA` 与 `GL_ONE_MINUS_SRC_ALPHA` 把可见部分叠到战斗画面。
 
 ## 创建、编译和链接 program
 
@@ -529,13 +529,14 @@ void main() {
 
 前置数据：启用中的 GearIn MOD 包含 `GearInGlslMarker` 和两份 `GearIn_glsl_marker` shader 资源；`GearIn_test` 战斗入口能够取得当前舰船并注册该插件。
 
-1. 在 MOD 工程执行 `gradle jar`，确认 JAR 包含 `data/scripts/gearin/combat/GearInGlslMarker.class`，并把两份 shader 资源放在 MOD 的 `data/shaders/`。
-2. 启动游戏，进入 `GearIn_test` 战斗并为玩家舰注册 `GearInGlslMarker`，检查 program 创建日志。
-3. 移动并转向玩家舰，观察圆环中心和朝向线方向。
-4. 放大和缩小视口，观察圆环与朝向线的线宽、平滑边缘及端点。
-5. 暂停战斗并记录方向标位置，恢复后继续移动舰船。
-6. 同时观察舰船 Sprite、HUD 与其他战场画面，再使舰船离场或死亡。
-7. 结束战斗并重新进入一场战斗，核对清理日志与新实例的创建日志；对测试实例重复调用 `cleanup()`，检查日志与资源状态。
+1. 在 MOD 工程执行 `gradle jar`，确认 JAR 包含 `data/scripts/gearin/combat/GearInGlslMarker.class`，两份 shader 资源位于 MOD 的 `data/shaders/`。
+2. 启动游戏并进入 `GearIn_test` 战斗，为玩家舰注册 `GearInGlslMarker`。
+3. 检查 program 创建日志中的 attribute 与 uniform location。
+4. 移动并转向玩家舰，观察圆环中心和朝向线方向。
+5. 放大和缩小视口，观察圆环与朝向线的线宽、平滑边缘及端点。
+6. 暂停战斗并记录方向标位置，恢复后继续移动舰船。
+7. 同时观察舰船 Sprite、HUD 与其他战场画面，再使舰船离场或死亡。
+8. 结束战斗并重新进入一场战斗，核对清理日志与新实例的创建日志；对测试实例重复调用 `cleanup()`，检查日志与资源状态。
 
 预期结果：
 

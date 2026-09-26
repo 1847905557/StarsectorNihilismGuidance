@@ -1,272 +1,364 @@
-# 用 BoxUtil 制作跟随舰船旋转的纹理投影
+# 使用 VBO 和 VAO 保存顶点
 
-纹理投影需要同时提交模型矩阵、世界视口矩阵和纹理单元。本节用 BoxUtil 的 BUtilGlobalData UBO 取得视口变换，再把舰船位置与 facing 写入 modelMatrix。
+本节将方向标的局部顶点放进 VBO，并让 VAO 记住顶点布局。舰船位置和朝向仍在绘制时更新；视口缩放改变像素对应的世界宽度时，矩形边界也会更新，以免裁掉线条边缘。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~35 分钟。*
 
 ## 学习目标
 
-完成后，您将能够：
-
-- 绑定 BoxUtil 的全局矩阵 UBO，并检查 block 名称与 binding；
-- 用可复用的模型矩阵让投影跟随舰船位置和 facing；
-- 把纹理绑定到明确的纹理单元，并在错误时定位 sampler 状态。
+- 区分客户端顶点数组、VBO 和 VAO 保存的数据与状态；
+- 使用 `GL15` 创建、上传、绑定和释放 VBO；
+- 使用 `GL30` 缓存 attribute 指针并在绘制时复用 VAO；
+- 保持程序化方向标的移动、转向、透明度和生命周期行为。
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C21-S2] 的 `attribute`、`uniform`、`varying` 和程序化片元形状；
+- [C21-S1] 的分层渲染插件、模型坐标和 OpenGL 状态恢复；
+- 能够用 Java 17 编译示例，并从 `starsector.log` 定位资源路径和 program 错误。
 
-## 建立跟随舰船的纹理投影
+## 区分顶点数据与布局
 
-青色纹理投影固定在玩家舰下方，舰船转向时投影同步旋转；相机缩放和移动不会让投影滑离世界坐标。
+方向标仍显示半径 `80 su` 的圆环和长度 `120 su` 的朝向线。vertex shader 负责把局部坐标放到舰船位置，fragment shader 负责生成线条。本节改变的是顶点来源：六个矩形顶点进入 VBO，VAO 记录 `a_position` 如何读取它们。客户端缓冲只在视口比例变化时更新 VBO，绘制指针始终读取 VBO。
 
-## 文件与 API 链路
+## 在 VBO 中保存六个局部顶点
 
-### 纹理投影提交链职责速查表
-
-| 对象或 API | 职责 |
-| --- | --- |
-| `ShaderProgram.getUBOIndex` | 绑定全局矩阵块 |
-| `modelMatrix` | 把局部坐标变换到世界坐标 |
-| `sampler2D` | 读取纹理单元 |
-| `FloatBuffer` | 复用，避免 render 内分配 |
-
-### 声明 BoxUtil 全局矩阵块
-
-在 `GearIn_shader_visual.vert` 顶部声明 BoxUtil 全局矩阵块，让顶点阶段取得游戏视口矩阵：
-
-```glsl
-layout (std140) uniform BUtilGlobalData {
-    mat4 gameViewport;
-    vec4 gameScreenBorder;
-};
-```
-
-相机移动与缩放后投影仍锚定世界。
-
-### 缓存 UBO 与 uniform location
-
-在 `GearInShaderVisual.createProgram()` 里创建程序后一次查询所有位置：
+VBO 是 `GL_ARRAY_BUFFER` 的数据存储。`glBufferData` 为矩形的 `12` 个浮点数分配空间；视口比例变化时，`glBufferSubData` 更新含有像素边距的顶点。attribute 指针的最后一个参数是 VBO 内的字节偏移，此处使用 `0L`：
 
 ```java
-program.uboLocation = new int[] {
-    program.getUBOIndex("BUtilGlobalData", ShaderCore.getMatrixUBOBinding())
-};
+coverageVertices = BufferUtils.createFloatBuffer(12);
+updateCoverageVertices(0f);
+vboId = GL15.glGenBuffers();
+GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
 ```
 
-日志中的 location 均非 -1。
+`GL_DYNAMIC_DRAW` 对应可能更新的矩形顶点。边界在圆环和朝向线之外留出 `3 px` 换算得到的世界单位，片元 shader 仍决定哪些片元可见。
 
-### 按舰船坐标建立模型矩阵
+## 用 VAO 缓存 attribute 布局
 
-在 `render()` 提交前把 location 与 facing 写进复用缓冲：
+VAO 保存 attribute 的启用状态、分量数和指向的 VBO。配置时先绑定 VAO 和 VBO，再指定 `a_position` 的读取方式；绘制时绑定 VAO，即可取回这套布局：
 
 ```java
-matrixBuffer = buildAnchoredMatrix(ship.getLocation(), ship.getFacing(), matrixBuffer);
+vaoId = GL30.glGenVertexArrays();
+GL30.glBindVertexArray(vaoId);
+GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+GL20.glEnableVertexAttribArray(positionLocation);
+GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT,
+        false, 0, 0L);
+GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+GL30.glBindVertexArray(0);
 ```
 
-舰船转向时纹理同角度旋转。
+位置由两个连续 `float` 组成，stride 为 `0` 表示没有交错字段。VAO 只保存布局和绑定关系，不保存舰船位置、朝向或颜色；这些值仍由每帧 uniform 更新。
 
-### 绑定纹理单元并提交采样器
+## 创建 program 并查询位置
 
-在 `render()` 的 `program.active()` 内绑定纹理单元并提交采样器，让 sampler 值与实际纹理单元一致：
+VBO 和 VAO 不改变 shader 接口。Java 仍加载两份 `#version 120` 源码，记录编译与链接 InfoLog，并查询一个 attribute 和六个 uniform：
 
 ```java
-GL13.glActiveTexture(GL13.GL_TEXTURE0);
-GL11.glBindTexture(GL11.GL_TEXTURE_2D, sprite.getTextureId());
-GL20.glUniform1i(program.location[3], 0);
+positionLocation = GL20.glGetAttribLocation(program, "a_position");
+centerLocation = GL20.glGetUniformLocation(program, "u_center");
+facingLocation = GL20.glGetUniformLocation(program, "u_facing");
+colorLocation = GL20.glGetUniformLocation(program, "u_color");
+geometryLocation = GL20.glGetUniformLocation(program, "u_geometry");
+widthsLocation = GL20.glGetUniformLocation(program, "u_widthPixels");
+worldPerPixelLocation = GL20.glGetUniformLocation(program, "u_worldPerPixel");
 ```
 
-投影将显示纹理内容而非纯色或黑块。
+位置查询失败时实例清理已经创建的资源。查询得到的 `a_position` location 用于配置 VAO；若 shader 声明与 Java 查询的名称不一致，布局就无法连接到 program。
+
+## 绘制时更新 uniform
+
+绘制阶段保存进入方法时的 VAO、VBO、program 和矩阵模式。若当前视口的像素换算值改变，先用 `3 px` 边距更新矩形；随后提交舰船位置、朝向、颜色、几何尺寸和像素换算值，再发起一次 `GL_TRIANGLES`：
+
+```java
+GL30.glBindVertexArray(vaoId);
+GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+if (Float.compare(worldPerPixel, lastWorldPerPixel) != 0) {
+    updateCoverageVertices(worldPerPixel);
+    GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, 0, coverageVertices);
+    lastWorldPerPixel = worldPerPixel;
+}
+GL20.glUseProgram(program);
+GL20.glUniform2f(centerLocation, entity.getLocation().x, entity.getLocation().y);
+GL20.glUniform1f(facingLocation, trackedShip.getFacing());
+GL20.glUniform2f(geometryLocation, RING_RADIUS, DIRECTION_LENGTH);
+GL20.glUniform2f(widthsLocation, RING_LINE_WIDTH, DIRECTION_LINE_WIDTH);
+GL20.glUniform1f(worldPerPixelLocation, worldPerPixel);
+GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
+```
+
+`u_center` 和 `u_facing` 让方向标跟随舰船，`u_worldPerPixel` 让片元线宽在缩放时保持 `2 px` 和 `3 px`。更新矩形只发生在换算值变化时；混合、矩阵、深度写入、纹理启用和 attribute 状态在 `finally` 中恢复。
+
+## 释放 VBO 与 VAO
+
+VAO 记录 VBO 的 attribute 关系。`cleanup()` 先删除 VAO，再删除 VBO、program 和两个 shader；初始化失败也进入这条路径，已创建的句柄删除后归零。这样重复清理不会再次使用旧句柄。
+
+## shader 与其他状态
+
+vertex shader 通过 `varying v_local` 把局部坐标传给 fragment shader。fragment shader 使用 `length`、`clamp` 和 `smoothstep` 计算圆环与有限线段的覆盖率；VBO/VAO 只改变顶点数据的存放位置，不改变这段形状算法。当前方向标使用颜色 uniform，不依赖纹理；如果使用 `sampler2D`，Java 仍需绑定纹理单元并提交单元编号。Alpha 混合属于绘制状态，也不由 VAO 保存。
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+以下资源共同完成 VBO/VAO 版本的方向标。
 
-::: details 完整成品：GearInShaderVisual
+::: details 完整成品：GearInVboVaoMarker
 
 ```java
 package data.scripts.gearin.combat;
 
+import java.io.IOException;
 import java.nio.FloatBuffer;
 import java.util.EnumSet;
 
 import org.apache.log4j.Logger;
-import org.boxutil.config.BoxConfigs;
-import org.boxutil.manager.ShaderCore;
-import org.boxutil.units.standard.ShaderProgram;
-import org.boxutil.util.ShaderUtil;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
-import org.lwjgl.util.vector.Vector2f;
+import org.lwjgl.opengl.GL30;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.CombatEngineLayers;
 import com.fs.starfarer.api.combat.CombatEntityAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
-import com.fs.starfarer.api.graphics.SpriteAPI;
 
 /**
- * 完整最小例：ShaderProgram、UBO、uniform、纹理与矩阵提交。
- * 程序经 ShaderUtil.createShaderVFFormPath 创建后立即保存 uniform/UBO location；
- * UBO 块名与 GLSL 声明逐字一致 (大小写敏感)；uniform 名称与类型与 GLSL 一致，
- * 拼错时 getUniformIndex 返回 -1 且提交被静默忽略；纹理用 glActiveTexture +
- * glBindTexture + glUniform1i(采样器=单元号) 提交；矩阵为列主序，transpose 必须 false。
- * 门禁 BoxConfigs.isShaderEnable() && ShaderCore.isValid() 失败即自废；render 内
- * active()/close() 配对提交，cleanup() 释放 GL 资源，失效程序不得继续绑定。
+ * 使用 VBO 和 VAO 绘制跟随舰船的程序化方向标。
+ * init() 创建几何缓冲区和 shader program，render() 按视口更新矩形并提交 uniform，
+ * cleanup() 按 VAO、VBO、program 和 shader 的顺序释放本实例的资源。
  */
-public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
+public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
 
-    private static final Logger LOG = Global.getLogger(GearInShaderVisual.class);
+    private static final Logger LOG = Global.getLogger(GearInVboVaoMarker.class);
+    private static final String VERT_PATH = "data/shaders/GearIn_vbo_vao_marker.vert";
+    private static final String FRAG_PATH = "data/shaders/GearIn_vbo_vao_marker.frag";
+    private static final float RING_RADIUS = 80f;
+    private static final float DIRECTION_LENGTH = 120f;
+    private static final float RING_LINE_WIDTH = 2f;
+    private static final float DIRECTION_LINE_WIDTH = 3f;
 
-    /** shader 资源路径 (MOD 根目录相对路径，必须用 /)。 */
-    private static final String VERT_PATH = "data/shaders/GearIn_shader_visual.vert";
-    private static final String FRAG_PATH = "data/shaders/GearIn_shader_visual.frag";
-
-    /** UBO 块名：必须与 GLSL 声明逐字一致 (大小写敏感)。 */
-    private static final String UBO_BLOCK_NAME = "BUtilGlobalData";
-
-    /** 采样贴图：引擎启动期必载的原版粒子贴图。 */
-    private static final String SPRITE_PATH = "graphics/fx/particlealpha32sq.png";
-
-    /** 四边形世界尺寸 (局部坐标 [-1,1] × size/2)。 */
-    private static final float QUAD_WIDTH = 160f;
-    private static final float QUAD_HEIGHT = 80f;
-
-    /** 演示寿命 (秒)：到时主动失效，驱动引擎移除并调用 cleanup()。 */
-    private static final float LIFETIME = 30f;
-
-    /** 交错顶点布局：位置 (2 float) + UV(2 float)，每顶点 4 个 float。 */
-    private static final int FLOATS_PER_VERTEX = 4;
+    private final ShipAPI trackedShip;
 
     private CombatEngineAPI engine;
+    private FloatBuffer coverageVertices;
+    private float lastWorldPerPixel = Float.NaN;
+    private int vaoId;
+    private int vboId;
+    private int vertexShader;
+    private int fragmentShader;
+    private int program;
+    private int positionLocation = -1;
+    private int centerLocation = -1;
+    private int facingLocation = -1;
+    private int colorLocation = -1;
+    private int geometryLocation = -1;
+    private int widthsLocation = -1;
+    private int worldPerPixelLocation = -1;
     private boolean valid = true;
-    private float elapsed = 0f;
+    private boolean cleaned;
 
-    private ShaderProgram program;
-    private SpriteAPI sprite;
-    private int vboId = 0;
-    private FloatBuffer matrixBuffer = null;
+    public GearInVboVaoMarker(ShipAPI trackedShip) {
+        this.trackedShip = trackedShip;
+        this.layer = CombatEngineLayers.ABOVE_SHIPS_AND_MISSILES_LAYER;
+    }
 
     @Override
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        // shader 路径可用性判据失败即自废，不创建程序
-        if (!BoxConfigs.isShaderEnable() || !ShaderCore.isValid()) {
-            LOG.info("GearIn shader visual: BoxUtil shader path unavailable (shaderEnable="
-                    + BoxConfigs.isShaderEnable() + ", shaderCoreValid="
-                    + ShaderCore.isValid() + "), visual disabled");
+        if (engine == null || trackedShip == null) {
             valid = false;
+            LOG.error("GearIn VBO/VAO marker: combat context or tracked ship missing");
             return;
         }
-        if (!createProgram() || !buildQuad() || !loadSprite()) {
-            valid = false; // 初始化失败：不渲染，等引擎正常移除
+        try {
+            if (!buildProgram() || !buildGeometry()) {
+                valid = false;
+                cleanup();
+                return;
+            }
+        } catch (IOException | RuntimeException e) {
+            valid = false;
+            LOG.error("GearIn VBO/VAO marker: initialization failed", e);
+            cleanup();
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧被剔除 (剔除依据是承载实体的位置)
-        LOG.info("GearIn shader visual init: u_model=" + program.location[0]
-                + ", u_size=" + program.location[1]
-                + ", u_time=" + program.location[2]
-                + ", u_tex=" + program.location[3]
-                + ", u_core=" + program.location[4]
-                + ", u_fringe=" + program.location[5]
-                + ", ubo=" + program.uboLocation[0]
-                + ", vert=" + VERT_PATH + ", frag=" + FRAG_PATH);
+        entity.getLocation().set(trackedShip.getLocation());
+        LOG.info("GearIn VBO/VAO marker init: ship=" + trackedShip.getId()
+                + " vao=" + vaoId + " vbo=" + vboId);
     }
 
-    /** 创建程序并保存 uniform/UBO location；失败时删除程序并返回 false。 */
-    private boolean createProgram() {
-        int programId = ShaderUtil.createShaderVFFormPath(getClass().getName(),
-                VERT_PATH, FRAG_PATH);
-        program = new ShaderProgram(programId);
-        // 创建后立即保存 uniform/UBO location
-        program.location = new int[] {
-                program.getUniformIndex("modelMatrix"),
-                program.getUniformIndex("size"),
-                program.getUniformIndex("time"),
-                program.getUniformIndex("tex"),
-                program.getUniformIndex("coreColor"),
-                program.getUniformIndex("fringeColor")
-        };
-        program.uboLocation = new int[] {
-                program.getUBOIndex(UBO_BLOCK_NAME, ShaderCore.getMatrixUBOBinding())
-        };
-        if (!program.isValid()) {
-            LOG.error("GearIn shader visual: program invalid after load");
-            program.delete();
-            program = null;
+    private int compileShader(int type, String source, String path) {
+        int shader = GL20.glCreateShader(type);
+        if (shader == 0) {
+            LOG.error("GearIn VBO/VAO marker: could not create shader " + path);
+            return 0;
+        }
+        GL20.glShaderSource(shader, source);
+        GL20.glCompileShader(shader);
+        if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
+            LOG.error("GearIn VBO/VAO marker: compile failed for " + path + ": "
+                    + GL20.glGetShaderInfoLog(shader, 4096));
+            GL20.glDeleteShader(shader);
+            return 0;
+        }
+        return shader;
+    }
+
+    private boolean buildProgram() throws IOException {
+        String vertexSource = Global.getSettings().loadText(VERT_PATH);
+        String fragmentSource = Global.getSettings().loadText(FRAG_PATH);
+        vertexShader = compileShader(GL20.GL_VERTEX_SHADER, vertexSource, VERT_PATH);
+        if (vertexShader == 0) {
+            return false;
+        }
+        fragmentShader = compileShader(GL20.GL_FRAGMENT_SHADER, fragmentSource, FRAG_PATH);
+        if (fragmentShader == 0) {
+            return false;
+        }
+        program = GL20.glCreateProgram();
+        if (program == 0) {
+            LOG.error("GearIn VBO/VAO marker: could not create program");
+            return false;
+        }
+        GL20.glAttachShader(program, vertexShader);
+        GL20.glAttachShader(program, fragmentShader);
+        GL20.glLinkProgram(program);
+        if (GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
+            LOG.error("GearIn VBO/VAO marker: link failed: "
+                    + GL20.glGetProgramInfoLog(program, 4096));
+            return false;
+        }
+        positionLocation = GL20.glGetAttribLocation(program, "a_position");
+        centerLocation = GL20.glGetUniformLocation(program, "u_center");
+        facingLocation = GL20.glGetUniformLocation(program, "u_facing");
+        colorLocation = GL20.glGetUniformLocation(program, "u_color");
+        geometryLocation = GL20.glGetUniformLocation(program, "u_geometry");
+        widthsLocation = GL20.glGetUniformLocation(program, "u_widthPixels");
+        worldPerPixelLocation = GL20.glGetUniformLocation(program, "u_worldPerPixel");
+        if (positionLocation < 0 || centerLocation < 0 || facingLocation < 0
+                || colorLocation < 0 || geometryLocation < 0 || widthsLocation < 0
+                || worldPerPixelLocation < 0) {
+            LOG.error("GearIn VBO/VAO marker: attribute or uniform location missing");
             return false;
         }
         return true;
     }
 
-    /** 两个三角形组成的四边形：6 个顶点，局部坐标 [-1,1]，位置与 UV 交错写入一个 VBO。 */
-    private boolean buildQuad() {
-        FloatBuffer quadBuffer = BufferUtils.createFloatBuffer(6 * FLOATS_PER_VERTEX);
-        quadBuffer.put(new float[]{
-                -1f, -1f, 0f, 0f,
-                1f, -1f, 1f, 0f,
-                1f, 1f, 1f, 1f,
-                -1f, -1f, 0f, 0f,
-                1f, 1f, 1f, 1f,
-                -1f, 1f, 0f, 1f
-        });
-        quadBuffer.flip();
+    private boolean buildGeometry() {
+        coverageVertices = BufferUtils.createFloatBuffer(12);
+        updateCoverageVertices(0f);
 
+        vaoId = GL30.glGenVertexArrays();
         vboId = GL15.glGenBuffers();
-        if (vboId == 0) {
-            LOG.error("GearIn shader visual: glGenBuffers returned 0");
+        if (vaoId == 0 || vboId == 0) {
+            LOG.error("GearIn VBO/VAO marker: could not create VAO or VBO");
             return false;
         }
+        GL30.glBindVertexArray(vaoId);
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, quadBuffer, GL15.GL_STATIC_DRAW);
+        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
+        GL20.glEnableVertexAttribArray(positionLocation);
+        GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+        GL30.glBindVertexArray(0);
         return true;
     }
 
-    /**
-     * 取采样贴图；文件未加载时 getTextureId() 返回 0，投影渲染为黑/不可见。
-     * 原版单参 getSprite 永不返回 null，缺键时返回纹理为 null 的 Sprite —— 原版用返回 0 代替失败信号。
-     */
-    private boolean loadSprite() {
-        sprite = Global.getSettings().getSprite(SPRITE_PATH);
-        return true;
-    }
-
-    @Override
-    public EnumSet<CombatEngineLayers> getActiveLayers() {
-        return EnumSet.of(CombatEngineLayers.ABOVE_SHIPS_AND_MISSILES_LAYER);
-    }
-
-    @Override
-    public float getRenderRadius() {
-        return Math.max(QUAD_WIDTH, QUAD_HEIGHT);
+    private void updateCoverageVertices(float worldPerPixel) {
+        float padding = 3f * worldPerPixel;
+        float left = -RING_RADIUS - padding;
+        float right = DIRECTION_LENGTH + padding;
+        float bottom = -RING_RADIUS - padding;
+        float top = RING_RADIUS + padding;
+        coverageVertices.clear();
+        coverageVertices.put(left).put(bottom);
+        coverageVertices.put(right).put(bottom);
+        coverageVertices.put(right).put(top);
+        coverageVertices.put(left).put(bottom);
+        coverageVertices.put(right).put(top);
+        coverageVertices.put(left).put(top);
+        coverageVertices.flip();
     }
 
     @Override
     public void advance(float amount) {
-        if (engine == null) {
+        if (!valid || engine == null || trackedShip == null || entity == null) {
+            valid = false;
+            return;
+        }
+        if (engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
+                || !trackedShip.isAlive()) {
+            valid = false;
             return;
         }
         if (engine.isPaused()) {
             return;
         }
-        elapsed += amount;
-        if (elapsed >= LIFETIME) {
-            valid = false; // 主动失效：驱动引擎移除并调用 cleanup()
+        entity.getLocation().set(trackedShip.getLocation());
+    }
+
+    @Override
+    public void render(CombatEngineLayers layer, ViewportAPI viewport) {
+        if (!valid || entity == null || viewport == null || vaoId == 0 || program == 0) {
             return;
         }
-        // 剔除依据是承载实体的位置：跟随玩家舰船
-        entity.getLocation().set(engine.getPlayerShip().getLocation());
+        float worldPerPixel = viewport.convertScreenWidthToWorldWidth(1f);
+        if (!Float.isFinite(worldPerPixel) || worldPerPixel <= 0f) {
+            return;
+        }
+
+        int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+        int previousVbo = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+        int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+        boolean matrixPushed = false;
+        GL11.glPushAttrib(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT
+                | GL11.GL_ENABLE_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
+        try {
+            GL30.glBindVertexArray(vaoId);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+            if (Float.compare(worldPerPixel, lastWorldPerPixel) != 0) {
+                updateCoverageVertices(worldPerPixel);
+                GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, 0, coverageVertices);
+                lastWorldPerPixel = worldPerPixel;
+            }
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPushMatrix();
+            matrixPushed = true;
+            GL20.glUseProgram(program);
+            GL11.glDisable(GL11.GL_TEXTURE_2D);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glDepthMask(false);
+            GL20.glUniform2f(centerLocation, entity.getLocation().x, entity.getLocation().y);
+            GL20.glUniform1f(facingLocation, trackedShip.getFacing());
+            GL20.glUniform4f(colorLocation, 0.1f, 0.9f, 1f,
+                    0.75f * viewport.getAlphaMult());
+            GL20.glUniform2f(geometryLocation, RING_RADIUS, DIRECTION_LENGTH);
+            GL20.glUniform2f(widthsLocation, RING_LINE_WIDTH, DIRECTION_LINE_WIDTH);
+            GL20.glUniform1f(worldPerPixelLocation, worldPerPixel);
+            GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
+        } finally {
+            if (matrixPushed) {
+                GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                GL11.glPopMatrix();
+            }
+            GL11.glPopClientAttrib();
+            GL11.glPopAttrib();
+            GL30.glBindVertexArray(previousVao);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
+            GL20.glUseProgram(previousProgram);
+            GL11.glMatrixMode(previousMatrixMode);
+        }
     }
 
     @Override
@@ -276,144 +368,104 @@ public class GearInShaderVisual extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void cleanup() {
+        if (cleaned) {
+            return;
+        }
+        cleaned = true;
+        valid = false;
+        if (vaoId != 0) {
+            GL30.glDeleteVertexArrays(vaoId);
+            vaoId = 0;
+        }
         if (vboId != 0) {
             GL15.glDeleteBuffers(vboId);
             vboId = 0;
         }
-        if (program != null) {
-            program.delete();
-            program = null;
+        coverageVertices = null;
+        if (program != 0) {
+            GL20.glDeleteProgram(program);
+            program = 0;
         }
-        LOG.info("GearIn shader visual cleanup");
+        if (vertexShader != 0) {
+            GL20.glDeleteShader(vertexShader);
+            vertexShader = 0;
+        }
+        if (fragmentShader != 0) {
+            GL20.glDeleteShader(fragmentShader);
+            fragmentShader = 0;
+        }
+        LOG.info("GearIn VBO/VAO marker cleanup: ship="
+                + (trackedShip == null ? "null" : trackedShip.getId()));
     }
 
     @Override
-    public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (program == null || sprite == null || vboId == 0) {
-            return;
-        }
-        if (!program.isValid()) {
-            return; // 程序失效不得继续绑定
-        }
-
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
-
-        // 矩阵 uniform：刚性变换 (旋转 + 平移)，列主序 16 float，transpose 必须 false
-        Vector2f center = engine.getPlayerShip().getLocation();
-        float facing = engine.getPlayerShip().getFacing();
-        matrixBuffer = buildAnchoredMatrix(center, facing, matrixBuffer);
-
-        // attribute：VBO 绑定 + long 偏移 (另有 FloatBuffer client 指针重载)
-        int stride = FLOATS_PER_VERTEX * Float.BYTES;
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL20.glVertexAttribPointer(0, 2, GL11.GL_FLOAT, false, stride, 0L);
-        GL20.glEnableVertexAttribArray(0);
-        GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, stride, 2L * Float.BYTES);
-        GL20.glEnableVertexAttribArray(1);
-
-        program.active(); // 提交段开始；必须与 close() 配对
-
-        // 矩阵提交：modelMatrix(uniform matrix4，列主序)
-        GL20.glUniformMatrix4(program.location[0], false, matrixBuffer);
-        // 标量/向量 uniform：size(世界尺寸)、time(暂停冻结的战斗总时间)
-        GL20.glUniform2f(program.location[1], QUAD_WIDTH, QUAD_HEIGHT);
-        GL20.glUniform1f(program.location[2], engine.getTotalElapsedTime(false));
-
-        // 纹理提交：单元 0 绑定 + 采样器指向单元 0(值必须等于单元号)
-        GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, sprite.getTextureId());
-        GL20.glUniform1i(program.location[3], 0);
-
-        // 颜色 uniform：外蓝内橙 (贴图红通道在两者之间插值)
-        float alpha = viewport.getAlphaMult();
-        GL20.glUniform4f(program.location[4], 1.0f, 0.55f, 0.2f, alpha);
-        GL20.glUniform4f(program.location[5], 0.15f, 0.45f, 1.0f, alpha);
-
-        GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
-
-        program.close(); // 提交段结束
-
-        GL20.glDisableVertexAttribArray(0);
-        GL20.glDisableVertexAttribArray(1);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0); // 解绑，避免影响后续绘制者的纹理状态
+    public EnumSet<CombatEngineLayers> getActiveLayers() {
+        return EnumSet.of(layer);
     }
 
-    /** 2D 刚性变换矩阵 (旋转 + 平移)，列主序 16 float；每帧复用缓冲 (clear/put/flip)。 */
-    private static FloatBuffer buildAnchoredMatrix(Vector2f location, float angle,
-            FloatBuffer buffer) {
-        if (buffer == null || buffer.capacity() < 16) {
-            buffer = BufferUtils.createFloatBuffer(16);
-        }
-        float radians = (float) Math.toRadians(angle);
-        float sin = (float) Math.sin(radians);
-        float cos = (float) Math.cos(radians);
-
-        buffer.clear();
-        buffer.put(cos).put(sin).put(0f).put(0f);   // 列 0
-        buffer.put(-sin).put(cos).put(0f).put(0f);  // 列 1
-        buffer.put(0f).put(0f).put(1f).put(0f);     // 列 2
-        buffer.put(location.x).put(location.y).put(0f).put(1f); // 列 3(平移)
-        buffer.flip();
-        return buffer;
+    @Override
+    public float getRenderRadius() {
+        return DIRECTION_LENGTH;
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearIn_shader_visual
+::: details 完整成品：GearIn_vbo_vao_marker.vert
 
 ```glsl
-#version 430
+#version 120
 
-in vec2 fragUV;
+attribute vec2 a_position;
 
-uniform sampler2D tex;
-uniform float time;
-uniform vec4 coreColor;
-uniform vec4 fringeColor;
-
-out vec4 fragColor;
-
-const float DISCARD_ALPHA = 0.001;
+uniform vec2 u_center;
+uniform float u_facing;
+varying vec2 v_local;
 
 void main() {
-    vec2 uv = vec2(fragUV.x, fract(fragUV.y + time * 0.25));
-    vec4 texSample = texture(tex, uv);
-    vec3 color = mix(fringeColor.rgb, coreColor.rgb, texSample.r);
-    float alpha = texSample.a;
-    if (alpha <= DISCARD_ALPHA) discard;
-    fragColor = vec4(color, alpha);
+    v_local = a_position;
+    float angle = radians(u_facing);
+    float cosine = cos(angle);
+    float sine = sin(angle);
+    vec2 rotated = vec2(
+            cosine * a_position.x - sine * a_position.y,
+            sine * a_position.x + cosine * a_position.y);
+    vec2 world = u_center + rotated;
+    gl_Position = gl_ModelViewProjectionMatrix * vec4(world, 0.0, 1.0);
 }
 ```
 
 :::
 
-::: details 完整成品：GearIn_shader_visual
+::: details 完整成品：GearIn_vbo_vao_marker.frag
 
 ```glsl
-#version 430
+#version 120
 
-layout (location = 0) in vec2 a_position;
-layout (location = 1) in vec2 a_uv;
-
-layout (std140) uniform BUtilGlobalData
-{
-    mat4 gameViewport;
-    vec4 gameScreenBorder;
-};
-
-uniform mat4 modelMatrix;
-uniform vec2 size;
-
-out vec2 fragUV;
+uniform vec4 u_color;
+uniform vec2 u_geometry;
+uniform vec2 u_widthPixels;
+uniform float u_worldPerPixel;
+varying vec2 v_local;
 
 void main() {
-    fragUV = a_uv;
-    vec4 local = vec4(a_position * size * 0.5, 0.0, 1.0);
-    gl_Position = gameViewport * vec4((modelMatrix * local).xy, 0.0, 1.0);
+    float ringDistance = abs(length(v_local) - u_geometry.x);
+    vec2 nearestOnLine = vec2(clamp(v_local.x, 0.0, u_geometry.y), 0.0);
+    float lineDistance = length(v_local - nearestOnLine);
+
+    float edge = 0.5 * u_worldPerPixel;
+    float ringHalfWidth = 0.5 * u_widthPixels.x * u_worldPerPixel;
+    float lineHalfWidth = 0.5 * u_widthPixels.y * u_worldPerPixel;
+    float ringCoverage = 1.0 - smoothstep(
+            ringHalfWidth - edge, ringHalfWidth + edge, ringDistance);
+    float lineCoverage = 1.0 - smoothstep(
+            lineHalfWidth - edge, lineHalfWidth + edge, lineDistance);
+    float coverage = max(ringCoverage, lineCoverage);
+    if (coverage <= 0.0) {
+        discard;
+    }
+    gl_FragColor = vec4(u_color.rgb, u_color.a * coverage);
 }
 ```
 
@@ -421,40 +473,50 @@ void main() {
 
 ## 验证方案
 
-前置数据：BoxUtil 已完成全局初始化，原版粒子贴图可读取，启用中的 GearIn MOD 已包含本节 `GearIn_shader_visual` 两个 shader 文件和 `GearInShaderVisual`，战斗接线能创建该投影。
+前置数据：启用中的 GearIn MOD 已包含 `GearInVboVaoMarker` 和两份 shader 资源，战斗入口能够取得当前舰船并注册方向标。
 
-1. 编译 Java fixture 与两个 GLSL 文件，确认 UBO 和 sampler 名称一致。
-2. 在战斗中移动并旋转玩家舰，观察投影中心和方向。
-3. 缩放相机并横移视口，确认投影仍固定在世界坐标。
+1. 执行 `gradle jar`，启动游戏并进入 `GearIn_test` 战斗，注册 `GearInVboVaoMarker`。
+2. 移动并转向玩家舰，观察圆环中心、朝向线和屏幕线宽。
+3. 缩放并横移视口，观察方向标是否仍固定在世界坐标，边缘是否完整。
+4. 暂停并恢复战斗，记录方向标位置变化；再使舰船离场或死亡。
+5. 结束战斗并重新进入另一场战斗，对同一测试实例重复调用 `cleanup()`，观察资源清理日志。
 
 预期结果：
 
-- 相机移动与缩放后投影仍锚定世界；
-- 日志中的 location 均非 -1；
-- 舰船转向时纹理同角度旋转；
-- 投影显示纹理内容而非纯色或黑块；
-- UBO、uniform 和 sampler 提交没有 `-1` location 或 GL 错误日志。
+- 玩家舰中心出现半径 `80 su` 的程序化圆环和长度 `120 su` 的朝向线；
+- 视口缩放后圆环线宽保持 `2 px`，朝向线保持 `3 px`，边缘没有被矩形裁掉；
+- 移动和转向时方向标同步，暂停期间保持最后位置；
+- VAO 和 VBO 在初始化阶段创建，视口比例变化时 VBO 中的矩形边界随之更新；
+- 舰船离场、死亡或战斗结束后方向标失效，重复 `cleanup()` 不产生二次删除；
+- 舰船 Sprite、HUD 和其他战场画面的颜色、纹理、混合与位置保持原有表现。
 
 ## 故障分析
 
-- **几何可见但采样结果为黑色**：纹理绑定单元与 sampler 读取单元不一致。
-    - **解决方案**：统一单元号。
+- **方向标不可见**：绘制阶段没有绑定正确的 VAO，或 VAO 记录的 VBO 已被删除。
+    - **解决方案**：核对初始化时的 VAO、VBO 绑定顺序和绘制阶段的 `glBindVertexArray(vaoId)`。
 
-- **投影随屏幕移动而漂移**：shader 没有使用 `BUtilGlobalData` 的 `gameViewport`。
-    - **解决方案**：绑定正确 UBO。
+- **顶点位置异常**：`glVertexAttribPointer` 的分量数、stride 或偏移与 VBO 数据布局不一致。
+    - **解决方案**：确认每个顶点由两个 `GL_FLOAT` 组成，stride 为 `0`，偏移为 `0L`。
 
-- **投影旋转方向相反**：模型矩阵的正弦项符号或列主序提交错误。
-    - **解决方案**：修正矩阵布局。
+- **视口缩放后线宽变化**：`u_worldPerPixel` 没有使用当前视口的世界单位换算值。
+    - **解决方案**：核对 `convertScreenWidthToWorldWidth(1f)` 的提交和 fragment shader 的半线宽计算。
 
-- **投影首帧出现在原点**：注册后没有立即同步宿主实体位置。
-    - **解决方案**：创建时先提交一次位置和矩阵。
+- **其他画面状态异常**：VAO、VBO、program、矩阵或混合状态没有在 `finally` 中恢复。
+    - **解决方案**：按进入顺序保存状态，并在绘制结束后恢复之前的 VAO、VBO、program 和矩阵模式。
+
+- **战斗结束后资源仍存在**：插件没有失效，或 `cleanup()` 没有按顺序删除 VAO、VBO、program 和 shader。
+    - **解决方案**：检查 `advance(...)` 的战斗状态判断与 `cleanup()` 的句柄归零逻辑。
 
 ## 总结
 
-局部四边形经 modelMatrix 到世界坐标，再经 gameViewport 到裁剪空间，三个坐标阶段必须一致；纹理单元只负责给片元提供内容。
+VBO 保存可复用的局部顶点，VAO 保存 attribute 与 VBO 的布局关系，uniform 继续承载每帧变化的舰船和视口参数。绘制阶段绑定 VAO，按视口比例更新矩形边界，再提交图元；S2 的程序化片元形状保持一致。
+
+共享 OpenGL 上下文要求 VAO、VBO、program、矩阵、混合和深度状态都有明确边界。初始化失败和战斗结束都进入同一个幂等清理路径，方向标才能与其他战场画面共存。
 
 ## 建议参考项
 
-- `BUtilGlobalData`：BoxUtil 着色器中的全局视口 UBO 块；
-- `org.boxutil.units.standard.ShaderProgram`：`getUBOIndex` 绑定 uniform block；
-- `org.lwjgl.opengl.GL20`：`glUniformMatrix4` 提交列主序模型矩阵。
+- `org.lwjgl.opengl.GL15`：创建、上传、绑定和删除 VBO；
+- `org.lwjgl.opengl.GL30`：创建、绑定和删除 VAO；
+- `org.lwjgl.opengl.GL20`：配置 attribute、uniform 和 shader program；
+- `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：分层渲染插件生命周期；
+- `com.fs.starfarer.api.combat.ViewportAPI`：获取 Alpha 和屏幕到世界单位的换算。

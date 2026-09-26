@@ -1,291 +1,349 @@
-# 用 BoxUtil 制作可随时关闭的常驻能量场
+# 使用 SSBO 传递参数
 
-常驻效果比一次性爆闪更考验资源管理，它要选择正确图层、参与离屏剔除、响应运行时开关，并在战斗结束释放 program 与 VBO。本节把这些职责集中到一个分层渲染插件。
+本节让 SSBO 保存一个方向标的运行时参数。Java 读取舰船状态并写入一条记录；绘制时，vertex shader 从这条记录取得位置和朝向，fragment shader 继续生成圆环与朝向线。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~35 分钟。*
 
 ## 学习目标
 
-完成后，您将能够：
-
-- 选择常驻插件的渲染层和有效剔除半径；
-- 在每次 render 使用点读取 BoxUtil 能力和运行时开关；
-- 在战斗结束和重复清理时准确统计并释放 GL 资源。
+- 解释 `std430`、shader storage block 和 binding `0` 的关系；
+- 使用两个 `vec4` 组织一个方向标的 GPU 参数；
+- 在 `advance(...)` 和 `render(...)` 之间传递可复用的 `FloatBuffer`；
+- 使用一次 `glDrawArrays` 绘制圆环和朝向线；
+- 处理暂停、舰船失效、战斗结束和重复清理。
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C21-S3] 的 VBO、VAO、attribute 布局和六顶点矩形；
+- [C21-S2] 的程序化圆环、朝向线、距离函数和 Alpha 混合；
+- Java 的 `FloatBuffer`、OpenGL program 生命周期和战斗渲染插件。
 
-## 管理常驻能量场生命周期
+## 确定参数由谁提供
 
-玩家舰周围持续显示脉动能量场；运行时关闭后下一帧停止所有 GL 提交，再开启即可恢复。战斗结束日志给出帧数和 draw call，并且资源只删除一次。
+战斗入口把目标舰船交给 `GearInSsboMarker` 构造器，再把插件注册到引擎。`init(entity)` 收到的是引擎创建的承载实体，用于定位和视口剔除。舰船移动或转向时，方向标同步改变位置和朝向；暂停时保留上一帧参数。SSBO 保存状态，六顶点矩形由 VBO 和 VAO 提供，圆环与朝向线由 fragment shader 计算。
 
-## 文件与 API 链路
+## 用两个 vec4 组织记录
 
-### 常驻能量场职责速查表
-
-| 对象或概念 | 职责 |
-| --- | --- |
-| `BaseCombatLayeredRenderingPlugin` | 提供图层、剔除半径和 cleanup |
-| BoxUtil `ShaderProgram` | 管理程序 |
-| 运行时开关 | 在 render 使用点读取 |
-| VBO 与程序句柄 | 删除后归零 |
-
-### 选择粒子之上的渲染层
-
-让 `GearInShaderPlugin.getActiveLayers()` 返回粒子之上的渲染层，使能量场与舰船和粒子的层序稳定：
+一条记录占用 `8` 个 `float`，即 `32` 字节。第一个 `vec4` 保存中心 `x/y`、朝向和 Alpha；第二个 `vec4` 保存 RGBA 颜色。两个向量各占 `16` 字节，Java 按 shader 声明的顺序写入：
 
 ```java
-return EnumSet.of(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
+markerBuffer.clear();
+markerBuffer.put(trackedShip.getLocation().x)
+        .put(trackedShip.getLocation().y)
+        .put(trackedShip.getFacing()).put(trackedShip.getAlphaMult());
+markerBuffer.put(0.1f).put(0.9f).put(1f).put(1f);
+markerBuffer.flip();
 ```
 
-画面不会被舰船主体错误遮挡。
+shader storage block 使用相同字段顺序。若 Java 把位置、朝向或颜色写错位置，shader 仍会照既定布局读取，方向标的位置或颜色就会异常。
 
-### 让剔除半径覆盖能量场
+## 创建并绑定 SSBO
 
-让 `getRenderRadius()` 使用实际世界尺寸而非无限半径：
+初始化阶段只分配 `8 * Float.BYTES` 字节的 GPU 缓冲区，并把 block 绑定到 `0`：
 
 ```java
-return Math.max(QUAD_WIDTH, QUAD_HEIGHT);
+ssboId = GL15.glGenBuffers();
+GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
+GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,
+        FLOATS_PER_MARKER * Float.BYTES, GL15.GL_DYNAMIC_DRAW);
+GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, BINDING, ssboId);
 ```
 
-离开视口后插件停止渲染，回到视口后恢复。
+`GL43.glGetProgramResourceIndex(...)` 找到 `MarkerInstances`，`glShaderStorageBlockBinding(...)` 把它和同一个 binding 关联。这样 Java 的 `glBindBufferBase(...)` 与 shader 的 `layout (std430, binding = 0)` 读取同一块存储。
 
-### 在使用点读取运行时开关
+## 在两个生命周期阶段传递参数
 
-在 `render()` 的 GL 调用之前读取运行时开关，关闭时直接返回，产生零 GL 提交：
+`advance(...)` 在战斗更新阶段写入 CPU 缓冲；`render(...)` 在 OpenGL 上下文中调用 `glBufferSubData(...)` 上传这条记录。暂停时保留上次写入的值，恢复后继续取舰船状态：
 
 ```java
-if (!runtimeEnabled || !BoxConfigs.isShaderEnable()) {
-    return;
-}
+GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
+GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, markerBuffer);
+GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, BINDING, ssboId);
+GL20.glUseProgram(program);
+GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
 ```
 
-切换关闭后 drawCalls 停止增长。
+一次 `glDrawArrays` 只提交六个顶点。vertex shader 读取 `markers[0]`，旋转并平移矩形；fragment shader 根据插值后的局部坐标计算圆周距离和有限线段距离。
 
-### 幂等释放 program 与 VBO
+## 让状态恢复覆盖整个绘制调用
 
-在 `cleanup()` 里删除 program 与 VBO，并把句柄和引用复位：
+绘制前记录 VAO、`GL_ARRAY_BUFFER`、SSBO 的通用绑定与 binding `0` 的索引绑定、program 和矩阵模式，并用属性栈保存混合、深度、纹理和客户端 attribute 状态。`finally` 恢复本次绘制改动的状态；后续渲染器才能继续使用自己的配置。
+
+## 纹理采样只承担纹理职责
+
+方向标颜色来自 SSBO。需要采样纹理时，sampler 只保存纹理单元编号，Java 绑定纹理并提交单元：
 
 ```java
-if (vboId != 0) { GL15.glDeleteBuffers(vboId); vboId = 0; }
-if (program != null) { program.delete(); program = null; }
+GL20.glUniform1i(samplerLocation, 0);
+GL13.glActiveTexture(GL13.GL_TEXTURE0);
+GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
 ```
 
-重复 cleanup 不产生二次删除错误。
+采样器、纹理单元和纹理对象共同决定采样来源，它们不改变 SSBO 的数据布局。
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+下面的 Java、vertex shader 和 fragment shader 共同完成单记录 SSBO 方向标。
 
-::: details 完整成品：GearInShaderPlugin
+::: details 完整成品：GearInSsboMarker
 
 ```java
 package data.scripts.gearin.combat;
 
+import java.io.IOException;
 import java.nio.FloatBuffer;
 import java.util.EnumSet;
 
 import org.apache.log4j.Logger;
-import org.boxutil.config.BoxConfigs;
-import org.boxutil.manager.ShaderCore;
-import org.boxutil.units.standard.ShaderProgram;
-import org.boxutil.util.ShaderUtil;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
-import org.lwjgl.util.vector.Vector2f;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GL43;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.CombatEngineLayers;
 import com.fs.starfarer.api.combat.CombatEntityAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
-import com.fs.starfarer.api.graphics.SpriteAPI;
 
 /**
- * 完整最小例：常驻渲染插件的渲染层接入、资源释放、开关与性能。
- * 常驻插件每场战斗注册一次，不按承载实体或寿命失效，跟随玩家舰船；
- * GL 资源在 cleanup() 释放并复位句柄 (幂等)；战斗结束 destroyInstance 不调
- * cleanup，必须在 advance() 里判 engine.isCombatOver() 主动失效驱动移除。
- * 开关 BoxConfigs.isShaderEnable() && ShaderCore.isValid() 必须在 GL 上下文就绪的
- * init 里判定且 render 每帧复核，禁止缓存进类加载期字段；运行时开关只改变渲染
- * 路径与显示成本。一次 glDrawArrays 就是一个 draw call，render 内零分配零日志。
+ * 使用 SSBO 保存单个方向标的参数并完成一次非实例化绘制。
+ * advance() 更新一个可复用的 CPU 记录，render() 上传记录并绘制矩形。
+ * cleanup() 按 VAO、SSBO、VBO、program 和 shader 的顺序释放资源。
  */
-public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
-
-    private static final Logger LOG = Global.getLogger(GearInShaderPlugin.class);
-
-    /** shader 资源路径 (MOD 根目录相对路径，必须用 /)。 */
-    private static final String VERT_PATH = "data/shaders/GearIn_field_shader.vert";
-    private static final String FRAG_PATH = "data/shaders/GearIn_field_shader.frag";
-
-    /** UBO 块名：必须与 GLSL 声明逐字一致 (大小写敏感)。 */
-    private static final String UBO_BLOCK_NAME = "BUtilGlobalData";
-
-    /** 采样贴图：引擎启动期必载的原版粒子贴图。 */
-    private static final String SPRITE_PATH = "graphics/fx/particlealpha32sq.png";
-
-    /** 能量场世界尺寸 (局部坐标 [-1,1] × size/2)。 */
-    private static final float QUAD_WIDTH = 220f;
-    private static final float QUAD_HEIGHT = 220f;
-
-    /** 交错顶点布局：位置 (2 float) + UV(2 float)，每顶点 4 个 float。 */
-    private static final int FLOATS_PER_VERTEX = 4;
-
-    /**
-     * 运行时开关：只改变渲染路径与显示成本，不改变玩法状态。
-     * 读取时机是每次使用点 (render 开头)，不缓存进 init 快照。
-     */
-    private static volatile boolean runtimeEnabled = true;
-
-    public static void setRuntimeEnabled(boolean enabled) {
-        if (runtimeEnabled == enabled) {
-            return;
-        }
-        runtimeEnabled = enabled;
-        LOG.info("GearIn shader plugin: runtime switch " + (enabled ? "on" : "off"));
-    }
-
-    public static boolean isRuntimeEnabled() {
-        return runtimeEnabled;
-    }
+public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
+    private static final Logger LOG = Global.getLogger(GearInSsboMarker.class);
+    private static final String VERT_PATH = "data/shaders/GearIn_ssbo_marker.vert";
+    private static final String FRAG_PATH = "data/shaders/GearIn_ssbo_marker.frag";
+    private static final String BLOCK_NAME = "MarkerInstances";
+    private static final int BINDING = 0;
+    private static final int FLOATS_PER_MARKER = 8;
+    private static final float RING_RADIUS = 80f;
+    private static final float DIRECTION_LENGTH = 120f;
 
     private CombatEngineAPI engine;
+    private final ShipAPI trackedShip;
+    private FloatBuffer markerBuffer;
+    private FloatBuffer coverageVertices;
+    private float lastWorldPerPixel = Float.NaN;
+    private int vaoId;
+    private int vboId;
+    private int ssboId;
+    private int vertexShader;
+    private int fragmentShader;
+    private int program;
+    private int positionLocation = -1;
+    private int worldPerPixelLocation = -1;
+    private int geometryLocation = -1;
+    private float renderRadius = DIRECTION_LENGTH;
     private boolean valid = true;
-    private long framesRendered = 0L;
-    private long drawCalls = 0L;
+    private boolean cleaned;
 
-    private ShaderProgram program;
-    private SpriteAPI sprite;
-    private int vboId = 0;
-    private FloatBuffer matrixBuffer = null;
+    public GearInSsboMarker(ShipAPI trackedShip) {
+        this.trackedShip = trackedShip;
+        layer = CombatEngineLayers.ABOVE_SHIPS_AND_MISSILES_LAYER;
+    }
 
     @Override
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        // shader 路径可用性必须在 GL 上下文就绪后的 init 里重新判定，
-        // 禁止缓存进类加载期 static final 字段 —— 类加载期无 GL 上下文，
-        // ShaderCore.isValid() 不可评估
-        if (!BoxConfigs.isShaderEnable() || !ShaderCore.isValid()) {
-            LOG.info("GearIn shader plugin: BoxUtil shader path unavailable (shaderEnable="
-                    + BoxConfigs.isShaderEnable() + ", shaderCoreValid="
-                    + ShaderCore.isValid() + "), plugin idle");
-            return; // 不创建任何 GL 资源；插件保持注册但不渲染，战斗结束时照常清理 (空清理)
-        }
-        if (!createProgram() || !buildQuad() || !loadSprite()) {
-            valid = false; // 初始化失败：不渲染，等引擎正常移除
-            cleanup();     // 已创建的部分资源立即释放；cleanup 幂等，引擎移除时再调一次也安全
+        if (engine == null || trackedShip == null) {
+            valid = false;
             return;
         }
-        advance(0f); // 立即同步一次位置，避免首帧画在战场原点
-        LOG.info("GearIn shader plugin init: layers=" + getActiveLayers()
-                + ", u_model=" + program.location[0]
-                + ", u_size=" + program.location[1]
-                + ", u_time=" + program.location[2]
-                + ", u_tex=" + program.location[3]
-                + ", u_intensity=" + program.location[4]
-                + ", u_core=" + program.location[5]
-                + ", u_fringe=" + program.location[6]
-                + ", ubo=" + program.uboLocation[0]
-                + ", vert=" + VERT_PATH + ", frag=" + FRAG_PATH);
+        markerBuffer = BufferUtils.createFloatBuffer(FLOATS_PER_MARKER);
+        try {
+            if (!buildProgram() || !buildGeometry()) {
+                valid = false;
+                cleanup();
+                return;
+            }
+        } catch (IOException | RuntimeException e) {
+            valid = false;
+            LOG.error("GearIn SSBO marker: initialization failed", e);
+            cleanup();
+            return;
+        }
+        updateMarkerData();
+        LOG.info("GearIn SSBO marker init: vao=" + vaoId + " vbo=" + vboId
+                + " ssbo=" + ssboId);
     }
 
-    /** 创建程序并保存 uniform/UBO location；失败时删除程序并返回 false。 */
-    private boolean createProgram() {
-        int programId = ShaderUtil.createShaderVFFormPath(getClass().getName(),
-                VERT_PATH, FRAG_PATH);
-        program = new ShaderProgram(programId);
-        // 创建后立即保存 uniform/UBO location
-        program.location = new int[] {
-                program.getUniformIndex("modelMatrix"),
-                program.getUniformIndex("size"),
-                program.getUniformIndex("time"),
-                program.getUniformIndex("tex"),
-                program.getUniformIndex("intensity"),
-                program.getUniformIndex("coreColor"),
-                program.getUniformIndex("fringeColor")
-        };
-        program.uboLocation = new int[] {
-                program.getUBOIndex(UBO_BLOCK_NAME, ShaderCore.getMatrixUBOBinding())
-        };
-        if (!program.isValid()) {
-            LOG.error("GearIn shader plugin: program invalid after load");
-            program.delete();
-            program = null;
+    private int compileShader(int type, String source, String path) {
+        int shader = GL20.glCreateShader(type);
+        if (shader == 0) {
+            LOG.error("GearIn SSBO marker: could not create shader " + path);
+            return 0;
+        }
+        GL20.glShaderSource(shader, source);
+        GL20.glCompileShader(shader);
+        if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
+            LOG.error("GearIn SSBO marker: compile failed for " + path + ": "
+                    + GL20.glGetShaderInfoLog(shader, 4096));
+            GL20.glDeleteShader(shader);
+            return 0;
+        }
+        return shader;
+    }
+
+    private boolean buildProgram() throws IOException {
+        vertexShader = compileShader(GL20.GL_VERTEX_SHADER,
+                Global.getSettings().loadText(VERT_PATH), VERT_PATH);
+        if (vertexShader == 0) {
             return false;
         }
+        fragmentShader = compileShader(GL20.GL_FRAGMENT_SHADER,
+                Global.getSettings().loadText(FRAG_PATH), FRAG_PATH);
+        if (fragmentShader == 0) {
+            return false;
+        }
+        program = GL20.glCreateProgram();
+        if (program == 0) {
+            return false;
+        }
+        GL20.glAttachShader(program, vertexShader);
+        GL20.glAttachShader(program, fragmentShader);
+        GL20.glLinkProgram(program);
+        if (GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
+            LOG.error("GearIn SSBO marker: link failed: "
+                    + GL20.glGetProgramInfoLog(program, 4096));
+            return false;
+        }
+        positionLocation = GL20.glGetAttribLocation(program, "a_position");
+        worldPerPixelLocation = GL20.glGetUniformLocation(program, "u_worldPerPixel");
+        geometryLocation = GL20.glGetUniformLocation(program, "u_geometry");
+        int blockIndex = GL43.glGetProgramResourceIndex(program,
+                GL43.GL_SHADER_STORAGE_BLOCK, BLOCK_NAME);
+        if (positionLocation < 0 || worldPerPixelLocation < 0
+                || geometryLocation < 0 || blockIndex < 0) {
+            LOG.error("GearIn SSBO marker: attribute, uniform or block missing");
+            return false;
+        }
+        GL43.glShaderStorageBlockBinding(program, blockIndex, BINDING);
         return true;
     }
 
-    /** 两个三角形组成的四边形：6 个顶点，局部坐标 [-1,1]，位置与 UV 交错写入一个 VBO。 */
-    private boolean buildQuad() {
-        FloatBuffer quadBuffer = BufferUtils.createFloatBuffer(6 * FLOATS_PER_VERTEX);
-        quadBuffer.put(new float[]{
-                -1f, -1f, 0f, 0f,
-                1f, -1f, 1f, 0f,
-                1f, 1f, 1f, 1f,
-                -1f, -1f, 0f, 0f,
-                1f, 1f, 1f, 1f,
-                -1f, 1f, 0f, 1f
-        });
-        quadBuffer.flip();
-
+    private boolean buildGeometry() {
+        coverageVertices = BufferUtils.createFloatBuffer(12);
+        updateCoverageVertices(0f);
+        vaoId = GL30.glGenVertexArrays();
         vboId = GL15.glGenBuffers();
-        if (vboId == 0) {
-            LOG.error("GearIn shader plugin: glGenBuffers returned 0");
+        ssboId = GL15.glGenBuffers();
+        if (vaoId == 0 || vboId == 0 || ssboId == 0) {
             return false;
         }
+        GL30.glBindVertexArray(vaoId);
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, quadBuffer, GL15.GL_STATIC_DRAW);
+        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
+        GL20.glEnableVertexAttribArray(positionLocation);
+        GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+        GL30.glBindVertexArray(0);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
+        GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,
+                FLOATS_PER_MARKER * Float.BYTES, GL15.GL_DYNAMIC_DRAW);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, 0);
         return true;
     }
 
-    /**
-     * 取采样贴图；文件未加载时 getTextureId() 返回 0，投影渲染为黑/不可见。
-     * 原版单参 getSprite 永不返回 null，缺键时返回纹理为 null 的 Sprite —— 原版用返回 0 代替失败信号。
-     */
-    private boolean loadSprite() {
-        sprite = Global.getSettings().getSprite(SPRITE_PATH);
-        return true;
+    private void updateCoverageVertices(float worldPerPixel) {
+        float padding = 3f * worldPerPixel;
+        float left = -RING_RADIUS - padding;
+        float right = DIRECTION_LENGTH + padding;
+        float bottom = -RING_RADIUS - padding;
+        float top = RING_RADIUS + padding;
+        coverageVertices.clear();
+        coverageVertices.put(left).put(bottom);
+        coverageVertices.put(right).put(bottom);
+        coverageVertices.put(right).put(top);
+        coverageVertices.put(left).put(bottom);
+        coverageVertices.put(right).put(top);
+        coverageVertices.put(left).put(top);
+        coverageVertices.flip();
     }
 
-    @Override
-    public EnumSet<CombatEngineLayers> getActiveLayers() {
-        // 顶层三图层之一：粒子系统之后渲染
-        return EnumSet.of(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
-    }
-
-    @Override
-    public float getRenderRadius() {
-        // 覆盖绘制范围即可；常驻插件也不需要 Float.MAX_VALUE，代价是永不触发视口剔除
-        return Math.max(QUAD_WIDTH, QUAD_HEIGHT);
+    private void updateMarkerData() {
+        entity.getLocation().set(trackedShip.getLocation());
+        markerBuffer.clear();
+        markerBuffer.put(trackedShip.getLocation().x)
+                .put(trackedShip.getLocation().y)
+                .put(trackedShip.getFacing()).put(trackedShip.getAlphaMult());
+        markerBuffer.put(0.1f).put(0.9f).put(1f).put(1f);
+        markerBuffer.flip();
     }
 
     @Override
     public void advance(float amount) {
-        if (engine == null) {
+        if (!valid || engine == null || trackedShip == null || markerBuffer == null) {
+            valid = false;
+            return;
+        }
+        if (engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
+                || !trackedShip.isAlive()) {
+            valid = false;
             return;
         }
         if (engine.isPaused()) {
             return;
         }
-        // 剔除依据是承载实体的位置：常驻插件跟随玩家舰船
-        entity.getLocation().set(engine.getPlayerShip().getLocation());
-        // 战斗结束收尾：isCombatOver() = 结束标志 && 淡出完成。
-        // 常驻插件必须在 advance 里主动失效驱动引擎移除并调用
-        // cleanup() —— 战斗结束 destroyInstance 不调 cleanup()，等它等于每场泄漏
-        if (engine.isCombatOver()) {
-            valid = false;
+        updateMarkerData();
+    }
+
+    @Override
+    public void render(CombatEngineLayers layer, ViewportAPI viewport) {
+        if (!valid || viewport == null || vaoId == 0 || ssboId == 0 || program == 0) {
+            return;
+        }
+        float worldPerPixel = viewport.convertScreenWidthToWorldWidth(1f);
+        if (!Float.isFinite(worldPerPixel) || worldPerPixel <= 0f) {
+            return;
+        }
+        int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+        int previousVbo = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+        int previousSsbo = GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_BINDING);
+        int previousSsboBase = GL30.glGetInteger(
+                GL43.GL_SHADER_STORAGE_BUFFER_BINDING, BINDING);
+        int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+        GL11.glPushAttrib(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT
+                | GL11.GL_ENABLE_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
+        try {
+            GL30.glBindVertexArray(vaoId);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+            if (Float.compare(worldPerPixel, lastWorldPerPixel) != 0) {
+                updateCoverageVertices(worldPerPixel);
+                GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, 0, coverageVertices);
+                lastWorldPerPixel = worldPerPixel;
+            }
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
+            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, markerBuffer);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, BINDING, ssboId);
+            GL20.glUseProgram(program);
+            GL11.glDisable(GL11.GL_TEXTURE_2D);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glDepthMask(false);
+            GL20.glUniform1f(worldPerPixelLocation, worldPerPixel);
+            GL20.glUniform2f(geometryLocation, RING_RADIUS, DIRECTION_LENGTH);
+            GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
+        } finally {
+            GL11.glPopClientAttrib();
+            GL11.glPopAttrib();
+            GL30.glBindVertexArray(previousVao);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, BINDING,
+                    previousSsboBase);
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, previousSsbo);
+            GL20.glUseProgram(previousProgram);
+            GL11.glMatrixMode(previousMatrixMode);
         }
     }
 
@@ -296,165 +354,116 @@ public class GearInShaderPlugin extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void cleanup() {
-        boolean hadResources = vboId != 0 || program != null;
+        if (cleaned) {
+            return;
+        }
+        cleaned = true;
+        valid = false;
+        if (vaoId != 0) {
+            GL30.glDeleteVertexArrays(vaoId);
+            vaoId = 0;
+        }
+        if (ssboId != 0) {
+            GL15.glDeleteBuffers(ssboId);
+            ssboId = 0;
+        }
         if (vboId != 0) {
             GL15.glDeleteBuffers(vboId);
-            vboId = 0; // 句柄复位：cleanup 幂等，重复调用安全 (防二次删除)
+            vboId = 0;
         }
-        if (program != null) {
-            program.delete();
-            program = null;
+        coverageVertices = null;
+        if (program != 0) {
+            GL20.glDeleteProgram(program);
+            program = 0;
         }
-        if (hadResources || framesRendered > 0) {
-            LOG.info("GearIn shader plugin cleanup: frames=" + framesRendered
-                    + ", drawCalls=" + drawCalls);
+        if (vertexShader != 0) {
+            GL20.glDeleteShader(vertexShader);
+            vertexShader = 0;
         }
+        if (fragmentShader != 0) {
+            GL20.glDeleteShader(fragmentShader);
+            fragmentShader = 0;
+        }
+        LOG.info("GearIn SSBO marker cleanup");
     }
 
     @Override
-    public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (program == null || sprite == null || vboId == 0) {
-            return;
-        }
-        // 运行时开关：每次使用点读取 (不缓存) —— 关闭即零 GL 提交
-        if (!runtimeEnabled) {
-            return;
-        }
-        // 每帧复核 shader 路径可用性，失败路径零提交
-        if (!BoxConfigs.isShaderEnable() || !ShaderCore.isValid()) {
-            return;
-        }
-        if (!program.isValid()) {
-            return; // 程序失效不得继续绑定
-        }
-        // 战斗 viewport 的 alpha 保持 1.0；战斗结束淡出由引擎全屏变暗处理
-        float alpha = viewport.getAlphaMult();
-
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
-
-        // 矩阵 uniform：刚性变换 (旋转 + 平移)，列主序 16 float，transpose 必须 false
-        Vector2f center = entity.getLocation();
-        float facing = engine.getPlayerShip().getFacing();
-        matrixBuffer = buildAnchoredMatrix(center, facing, matrixBuffer);
-
-        // attribute：VBO 绑定 + long 偏移 (另有 FloatBuffer client 指针重载)
-        int stride = FLOATS_PER_VERTEX * Float.BYTES;
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL20.glVertexAttribPointer(0, 2, GL11.GL_FLOAT, false, stride, 0L);
-        GL20.glEnableVertexAttribArray(0);
-        GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, stride, 2L * Float.BYTES);
-        GL20.glEnableVertexAttribArray(1);
-
-        program.active(); // 提交段开始；必须与 close() 配对
-
-        // 矩阵提交：modelMatrix(uniform matrix4，列主序)
-        GL20.glUniformMatrix4(program.location[0], false, matrixBuffer);
-        // 标量/向量 uniform：size(世界尺寸)、time(暂停冻结的战斗总时间)
-        GL20.glUniform2f(program.location[1], QUAD_WIDTH, QUAD_HEIGHT);
-        GL20.glUniform1f(program.location[2], engine.getTotalElapsedTime(false));
-
-        // 纹理提交：单元 0 绑定 + 采样器指向单元 0(值必须等于单元号)
-        GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, sprite.getTextureId());
-        GL20.glUniform1i(program.location[3], 0);
-
-        // intensity 使用战斗视口的常量透明度输入；颜色 uniform：外橙内蓝
-        GL20.glUniform1f(program.location[4], alpha);
-        GL20.glUniform4f(program.location[5], 1.0f, 0.55f, 0.2f, alpha);
-        GL20.glUniform4f(program.location[6], 0.15f, 0.45f, 1.0f, alpha);
-
-        GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
-
-        program.close(); // 提交段结束
-
-        GL20.glDisableVertexAttribArray(0);
-        GL20.glDisableVertexAttribArray(1);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0); // 解绑，避免影响后续绘制者的纹理状态
-
-        framesRendered++;
-        drawCalls++; // 一次 glDrawArrays = 一个 draw call
+    public EnumSet<CombatEngineLayers> getActiveLayers() {
+        return EnumSet.of(layer);
     }
 
-    /** 2D 刚性变换矩阵 (旋转 + 平移)，列主序 16 float；每帧复用缓冲 (clear/put/flip)。 */
-    private static FloatBuffer buildAnchoredMatrix(Vector2f location, float angle,
-            FloatBuffer buffer) {
-        if (buffer == null || buffer.capacity() < 16) {
-            buffer = BufferUtils.createFloatBuffer(16);
-        }
-        float radians = (float) Math.toRadians(angle);
-        float sin = (float) Math.sin(radians);
-        float cos = (float) Math.cos(radians);
-
-        buffer.clear();
-        buffer.put(cos).put(sin).put(0f).put(0f);   // 列 0
-        buffer.put(-sin).put(cos).put(0f).put(0f);  // 列 1
-        buffer.put(0f).put(0f).put(1f).put(0f);     // 列 2
-        buffer.put(location.x).put(location.y).put(0f).put(1f); // 列 3(平移)
-        buffer.flip();
-        return buffer;
+    @Override
+    public float getRenderRadius() {
+        return renderRadius;
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearIn_field_shader.frag
-
-```glsl
-#version 430
-
-in vec2 fragUV;
-
-uniform sampler2D tex;
-uniform float time;
-uniform float intensity;
-uniform vec4 coreColor;
-uniform vec4 fringeColor;
-
-out vec4 fragColor;
-
-const float DISCARD_ALPHA = 0.001;
-
-void main() {
-    vec2 uv = vec2(fragUV.x, fract(fragUV.y + time * 0.15));
-    vec4 texSample = texture(tex, uv);
-    float d = distance(fragUV, vec2(0.5, 0.5));
-    float edgeFade = 1.0 - smoothstep(0.38, 0.50, d);
-    float pulse = 0.55 + 0.45 * sin(time * 2.0 - d * 24.0);
-    vec3 color = mix(fringeColor.rgb, coreColor.rgb, texSample.r);
-    float alpha = texSample.a * edgeFade * pulse * intensity;
-    if (alpha <= DISCARD_ALPHA) discard;
-    fragColor = vec4(color, alpha);
-}
-```
-
-:::
-
-::: details 完整成品：GearIn_field_shader.vert
+::: details 完整成品：GearIn_ssbo_marker.vert
 
 ```glsl
 #version 430
 
 layout (location = 0) in vec2 a_position;
-layout (location = 1) in vec2 a_uv;
 
-layout (std140) uniform BUtilGlobalData
-{
-    mat4 gameViewport;
-    vec4 gameScreenBorder;
+struct MarkerData {
+    vec4 centerFacingAlpha;
+    vec4 color;
 };
 
-uniform mat4 modelMatrix;
-uniform vec2 size;
+layout (std430, binding = 0) buffer MarkerInstances {
+    MarkerData markers[];
+};
 
-out vec2 fragUV;
+out vec2 v_local;
+out vec4 v_color;
 
 void main() {
-    fragUV = a_uv;
-    vec4 local = vec4(a_position * size * 0.5, 0.0, 1.0);
-    gl_Position = gameViewport * vec4((modelMatrix * local).xy, 0.0, 1.0);
+    MarkerData marker = markers[0];
+    v_local = a_position;
+    v_color = vec4(marker.color.rgb, marker.color.a * marker.centerFacingAlpha.w);
+    float angle = radians(marker.centerFacingAlpha.z);
+    float cosine = cos(angle);
+    float sine = sin(angle);
+    vec2 rotated = vec2(
+            cosine * a_position.x - sine * a_position.y,
+            sine * a_position.x + cosine * a_position.y);
+    vec2 world = marker.centerFacingAlpha.xy + rotated;
+    gl_Position = gl_ModelViewProjectionMatrix * vec4(world, 0.0, 1.0);
+}
+```
+
+:::
+
+::: details 完整成品：GearIn_ssbo_marker.frag
+
+```glsl
+#version 430
+
+uniform vec2 u_geometry;
+uniform float u_worldPerPixel;
+in vec2 v_local;
+in vec4 v_color;
+out vec4 fragColor;
+
+void main() {
+    float ringDistance = abs(length(v_local) - u_geometry.x);
+    vec2 nearestOnLine = vec2(clamp(v_local.x, 0.0, u_geometry.y), 0.0);
+    float lineDistance = length(v_local - nearestOnLine);
+    float edge = 0.5 * u_worldPerPixel;
+    float ringHalfWidth = u_worldPerPixel;
+    float lineHalfWidth = 1.5 * u_worldPerPixel;
+    float ringCoverage = 1.0 - smoothstep(
+            ringHalfWidth - edge, ringHalfWidth + edge, ringDistance);
+    float lineCoverage = 1.0 - smoothstep(
+            lineHalfWidth - edge, lineHalfWidth + edge, lineDistance);
+    float coverage = max(ringCoverage, lineCoverage);
+    if (coverage <= 0.0) {
+        discard;
+    }
+    fragColor = vec4(v_color.rgb, v_color.a * coverage);
 }
 ```
 
@@ -462,43 +471,43 @@ void main() {
 
 ## 验证方案
 
-前置数据：BoxUtil 已完成全局初始化，原版粒子贴图可读取，启用中的 GearIn MOD 已包含本节 `GearIn_field_shader` 两个 shader 文件和 `GearInShaderPlugin`，战斗接线能注册该插件，测试入口能调用 `setRuntimeEnabled`。
+前置数据：已经启用包含方向标插件的 GearIn MOD，并进入能够取得目标舰船 `ShipAPI` 的测试战斗。
 
-1. 编译 Java fixture 与两个 GLSL 文件，确认常驻插件创建一次程序和 VBO。
-2. 在战斗中切换运行时开关两次，记录关闭区间的 draw call 计数。
-3. 把玩家舰移出并移回视口，观察剔除和恢复。
-4. 结束战斗并重复调用 cleanup，核对资源归零且只输出一次有效统计。
+1. 在 MOD 工程执行 `gradle jar`，确认插件类和两份 shader 资源已进入对应的 MOD 目录。
+2. 启动游戏并进入测试战斗，以目标舰船创建 `new GearInSsboMarker(ship)`，再调用 `engine.addLayeredRenderingPlugin(...)` 注册插件。
+3. 移动并转向目标舰船，观察方向标中心和朝向线同步变化。
+4. 暂停并恢复战斗，观察暂停期间方向标保留最后一帧。
+5. 让舰船离场或失效，结束战斗，再进入另一场战斗。
+6. 对同一插件重复调用 `cleanup()`，观察资源释放日志。
+7. 缩放和横移视口，观察圆环半径、朝向线长度和屏幕线宽。
 
 预期结果：
 
-- 画面不被舰船主体错误遮挡；
-- 离开视口后插件停止渲染，回到视口后恢复；
-- 切换关闭后 drawCalls 停止增长；
-- 重复 cleanup 不产生二次删除错误；
-- 关闭区间没有 GL 提交，重新开启后渲染恢复；
-- cleanup 日志的 frames 与 drawCalls 能解释实际渲染次数。
+- 方向标圆环半径为 `80 su`，朝向线长度为 `120 su`；
+- 圆环线宽为 `2 px`，朝向线线宽为 `3 px`；
+- 移动、转向和 Alpha 变化通过一条 SSBO 记录进入 shader；
+- 暂停、舰船失效和战斗结束后，插件按生命周期停止绘制；
+- 重复清理不会二次删除 VAO、SSBO、VBO、program 或 shader；
+- 其他战场画面的矩阵、混合、深度、纹理和 attribute 状态保持原有表现。
 
 ## 故障分析
 
-- **关闭 shader 后能量场仍在绘制**：开关只在类加载时读取，`render` 没有查询当前值。
-    - **解决方案**：让 `render` 查询当前开关值。
+- **方向标位置或颜色整体错位**：CPU 写入顺序与 `MarkerData` 字段顺序不同。
+    - **解决方案**：按中心/朝向/Alpha、RGBA 的顺序检查两个 `vec4`，并确认 Java 与 shader 都使用 binding `0`。
 
-- **能量场离开屏幕后仍持续渲染**：`renderRadius` 使用了 `Float.MAX_VALUE`，剔除永远不会发生。
-    - **解决方案**：按实际效果范围设置半径。
+- **只显示旧位置**：暂停状态一直保留，或 `advance(...)` 没有更新 `FloatBuffer`。
+    - **解决方案**：确认暂停分支只保留上一帧，恢复运行后重新执行 `clear()`、写入和 `flip()`。
 
-- **战斗结束后显存持续增长**：插件没有在 `isCombatOver` 后失效并执行 cleanup。
-    - **解决方案**：让结束条件触发幂等删除。
-
-- **关闭图形效果后玩法数值变化**：shader 开关参与了伤害或数值计算。
-    - **解决方案**：把玩法结算移出渲染分支。
+- **其他战场画面出现状态污染**：绘制结束路径没有执行完整恢复。
+    - **解决方案**：把所有恢复动作放入 `finally`，同时恢复 VAO、缓冲、program、矩阵、属性和客户端 attribute 状态。
 
 ## 总结
 
-常驻能量场的完成条件包括画面、开关、剔除和释放。render 只在当前设置允许时提交，插件位置决定剔除，cleanup 负责幂等删除；性能计数才有可信含义。
+本节把单个方向标的运行时状态组织成一条 SSBO 记录。Java 负责更新和上传两个 `vec4`，vertex shader 负责读取记录并变换矩形，fragment shader 负责生成圆环和朝向线；一次 `glDrawArrays` 完成单个方向标绘制。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：常驻分层渲染生命周期；
-- `org.boxutil.config.BoxConfigs`：`isShaderEnable` 当前 shader 设置；
-- `org.boxutil.units.standard.ShaderProgram`：shader 程序对象，`delete()` 释放程序；
-- `org.lwjgl.opengl.GL15`：`glDeleteBuffers` 的 buffer 释放入口。
+- `org.lwjgl.opengl.GL43`：shader storage block 查询和 SSBO 常量；
+- `org.lwjgl.opengl.GL30`：VAO 与 `glBindBufferBase`；
+- `org.lwjgl.opengl.GL15`：VBO、SSBO 和数据上传；
+- `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：战斗渲染生命周期。

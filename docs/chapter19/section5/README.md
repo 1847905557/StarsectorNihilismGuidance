@@ -1,6 +1,6 @@
-# 用 BoxUtil 加载 OBJ 模型并配置材质
+# 为 Nexerelin 地面战加入 GearIn 单位与产业
 
-OBJ 文件本身只描述几何；模型 ID、贴图材质与世界变换仍要由 BoxUtil 数据表和 Java 代码组合。本节先确认 ModelManager 已注册模型，再为实体建立平移、旋转和缩放矩阵。
+GearIn 的市场进入地面战后，原版定义不会自动理解专属产业和部队。本节在 groundBattleDefs 中登记产业效果与插件，再用 GBDataManager 确认合并结果。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,11 +10,9 @@ OBJ 文件本身只描述几何；模型 ID、贴图材质与世界变换仍要�
 
 完成后，您将能够：
 
-- 登记 BoxUtil 的 OBJ 与材质贴图；
-- 用 `ModelManager` 验证模型 ID 并取得共享 `ModelData`；
-- 用 `TransformUtil` 建立与游戏世界坐标一致的模型矩阵；
-- 用 `CommonEntity` 组合模型、变换与默认光照；
-- 从 ID、模型有效性、贴图通道和尺度定位空白模型。
+- 在 `groundBattleDefs.json` 中登记自定义产业和地面单位；
+- 为产业直接绑定插件类，并区分通用 `plugins` 表；
+- 用 `GBDataManager` 和 `GroundUnitDef` 在进入地面战前核对合并结果。
 
 ## 前置知识
 
@@ -22,126 +20,99 @@ OBJ 文件本身只描述几何；模型 ID、贴图材质与世界变换仍要�
 - [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
-## 明确当前需求
+## 接入地面战定义
 
-战斗开始后，玩家舰旁显示一个小型齿轮模型；舰船转向时模型保持自身角度，贴图缺失时日志明确指出模型 ID 或材质项。
+入侵 GearIn 军工市场时，地面战界面显示专属产业防御加成和 GearIn 单位；配置 ID 错误时，探针指出缺失定义而非等到战斗界面空白。
 
 ## 文件与 API 链路
 
-### 模型加载 API 速查表
+`groundBattleDefs.json` 合并 `industries`、`unitTypes`、条件、能力和通用插件；`GBDataManager` 提供产业与通用插件表；`GroundUnitDef` 保存单位定义。产业的 `plugin` 字段直接写完整 Java 类名，不能引用通用 `plugins` 表的别名。
 
-| 对象 | 职责 |
-|---|---|
-| `ModelManager` | 从 `data/config/modFiles/BUtil_obj_data.csv` 取得模型数据 |
-| `ModelData` | 保存几何缓冲和各贴图通道 |
-| `CommonEntity` | 使用模型与默认光照 |
-| `TransformUtil` | 构建与游戏坐标一致的模型矩阵 |
+### 登记 GearIn 产业定义
 
-自定义生成网格时才需要直接调用 `MeshUtil` 计算法线或切线。
+在 `data/config/exerelin/groundBattleDefs.json` 的 `industries` 对象中，为市场产业 ID 增加防御强度、部队贡献和插件类：
 
-### 在 CSV 中登记模型 ID
-
-在 `data/config/modFiles/BUtil_obj_data.csv` 的 GearIn 行中，按表头关联 OBJ、漫反射、法线、复杂、发光和切线贴图，空通道保留空字段。启动期只加载单文件 (无跨 MOD 行合并、资源优先级首个命中)，默认命名下 BoxUtil 自带 CSV 恒胜出，因此 GearIn 行需并入该文件，另建同名文件不会生效：
-
-```csv
-GearIn_gear,data/models/GearIn_gear.obj,data/models/GearIn_gear_diffuse.png,data/models/GearIn_gear_normal.png,,data/models/GearIn_gear_emissive.png,,,F32
-```
-
-GearIn 行并入生效后，ModelManager.containsModelID 返回 true。
-
-### 在创建实体前确认模型存在
-
-`GearInModelCatalog.require()` 把未知 ID 改成明确参数错误：
-
-```java
-if (!ModelManager.containsModelID(modelId)) {
-    throw new IllegalArgumentException("Unknown BoxUtil model: " + modelId);
+```json
+"GearIn_training_industry": {
+  "strengthMult": 1.35,
+  "troopCounts": {
+    "marine": 0.5,
+    "heavy": 0.25
+  },
+  "plugin": "data.scripts.gearin.modcompat.GearInGroundBattlePlugin"
 }
 ```
 
-错误日志包含未知 modelId。
+登记后，`GBDataManager.getIndustryDef("GearIn_training_industry")` 返回非默认定义，并能读到 `strengthMult`。
 
-### 取得已解析的 ModelData
+### 登记地面战插件类
 
-`require()` 在返回处从 `ModelManager` 取得已加载的模型数据，并让实体构造器再次检查 `model.isValid()`：
+在 `groundBattleDefs.json` 的 `unitTypes` 对象中登记一类可在地面战界面出现的 GearIn 单位；完整插件类写在单位自身的 `pluginClass` 字段，`plugin` 是产业条目的字段：
 
-```java
-ModelData model = ModelManager.getModelData(modelId);
+```json
+"GearIn_line_infantry": {
+  "name": "GearIn line infantry",
+  "type": "MARINE",
+  "playerCanCreate": true,
+  "strength": 1.2,
+  "personnel": {
+    "commodityId": "marines",
+    "crewReplacerJobId": "nex_groundBattle_marines",
+    "mult": 1
+  },
+  "tags": ["marine"],
+  "sortOrder": 1.5
+}
 ```
 
-返回对象包含模型缓冲与材质引用。
+`GroundUnitDef.getUnitDef("GearIn_line_infantry")` 会返回定义，且地面战部队选择器能按 `playerCanCreate` 显示它。
 
-### 组合模型与世界变换
+### 在加载后检查产业定义
 
-`GearInModelTransform.create()` 先用有效 `ModelData` 创建 `CommonEntity`，再把坐标、舰首角和缩放写入同一 `Matrix4f`：
-
-```java
-CommonEntity entity = new CommonEntity(model, true);
-entity.setModelMatrix(TransformUtil.createModelMatrixVanilla(
-        location, facing, scale, matrix));
-```
-
-实体持有同一份共享模型缓冲，模型矩阵包含本次位置、角度和缩放。
-
-### 建立可观察的基础光照
-
-`create()` 在返回前先使用 `CommonEntity` 的默认光照，证明法线与材质通道可读；动态光源留到 [C19-S6]：
+`GearInGroundBattleProbe.hasIndustry()` 与 `hasUnit()` 把缺失产业或单位 ID 变成可诊断布尔值：
 
 ```java
-entity.setDefaultLight();
-return entity;
+boolean ready = GBDataManager.getIndustryDef(industryId) != null;
+boolean unitReady = GroundUnitDef.getUnitDef(unitId) != null;
 ```
 
-GearIn 齿轮以漫反射、法线和发光通道渲染，朝向与传入 `facing` 一致。
+`getIndustryDef()` 对未知 ID 会回退到默认产业，因此还要检查返回对象的实际 ID 或关键数值，不能只判断非空。
+
+日志会同时显示产业 ID、`strengthMult` 和 `unit=true`。
+
+### 确认插件映射而非只看列表
+
+`GearInGroundBattleProbe.findPlugin()` 只在检查通用插件时才从 `getPluginsById()` 按短 ID 取类名：
+
+```java
+String className = GBDataManager.getPluginsById().get(pluginId);
+```
+
+通用插件的返回值与 JSON 中类名逐字一致；产业插件则直接从产业定义核对完整类名。
 
 ## 完整最小例
 
-目录类只负责模型注册表查询，变换类只接受有效 `ModelData` 并返回配置好矩阵与默认光照的 `CommonEntity`。战斗接线仍需检查 `CombatRenderingManager.addEntity()` 返回码。
+局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
 
-::: details 完整成品：GearInModelCatalog
+::: details 完整成品：GearInGroundBattleProbe
 
 ```java
-package data.scripts.gearin.lib;
+package data.scripts.gearin.modcompat;
 
-import org.boxutil.manager.ModelManager;
-import org.boxutil.units.standard.attribute.ModelData;
+import exerelin.campaign.intel.groundbattle.GBDataManager;
+import exerelin.campaign.intel.groundbattle.GroundUnitDef;
 
-public final class GearInModelCatalog {
-    public ModelData require(String modelId) {
-        if (!ModelManager.containsModelID(modelId)) {
-            throw new IllegalArgumentException("Unknown BoxUtil model: " + modelId);
-        }
-        return ModelManager.getModelData(modelId);
+public final class GearInGroundBattleProbe {
+    public boolean hasIndustry(String industryId) {
+        return GBDataManager.getIndustryDef(industryId) != null;
     }
-}
-```
 
-:::
+    public String findPlugin(String pluginId) {
+        return GBDataManager.getPluginsById().get(pluginId);
+    }
 
-::: details 完整成品：GearInModelTransform
-
-```java
-package data.scripts.gearin.lib;
-
-import org.boxutil.units.standard.attribute.ModelData;
-import org.boxutil.units.standard.entity.CommonEntity;
-import org.boxutil.util.TransformUtil;
-import org.lwjgl.util.vector.Matrix4f;
-import org.lwjgl.util.vector.Vector2f;
-
-public final class GearInModelTransform {
-    private final Matrix4f matrix = new Matrix4f();
-
-    public CommonEntity create(ModelData model, Vector2f location,
-            float facing, Vector2f scale) {
-        if (model == null || !model.isValid()) {
-            throw new IllegalArgumentException("BoxUtil model is not valid");
-        }
-        CommonEntity entity = new CommonEntity(model, true);
-        entity.setModelMatrix(TransformUtil.createModelMatrixVanilla(
-                location, facing, scale, matrix));
-        entity.setDefaultLight();
-        return entity;
+    public boolean hasUnit(String unitId) {
+        return GroundUnitDef.getUnitDef(unitId) != null;
     }
 }
 ```
@@ -150,40 +121,38 @@ public final class GearInModelTransform {
 
 ## 验证方案
 
-前置数据：GearIn 行已并入 BoxUtil 启动期加载的 9 列模型 CSV，OBJ、diffuse、normal 与 emissive 文件均存在，战斗接线能把返回实体入队。
+前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含本节 `groundBattleDefs.json` 登记行、`GearInGroundBattlePlugin` 和 `GearInGroundBattleProbe`，测试存档中存在拥有 `GearIn_training_industry` 产业的市场。
 
-1. 启动后核对 `ModelManager.containsModelID("GearIn_gear")` 和 `ModelData.isValid()`。
-2. 在玩家舰旁创建比例为 `(1, 1)` 的实体，核对位置和朝向。
-3. 把比例改为 `(0.5, 0.5)`，确认世界尺寸减半而模型缓冲仍被复用。
-4. 分别移除 emissive、normal 路径并重启，观察材质通道变化和加载日志。
+1. 执行 `gradle jar` 构建示例 MOD，确认编译完成且没有报错。
+2. 启动游戏并进入本页场景，执行标题描述的动作。
+3. 重复一次边界动作，观察日志、画面、数值或生涯对象是否保持一致。
 
 预期结果：
 
-- 精确模型 ID 返回有效、可复用的 `ModelData`；
-- `CommonEntity` 的模型矩阵与传入位置、朝向、缩放一致；
-- 默认光照能够区分漫反射、法线和发光通道的加载结果；
-- 有效实体入队后没有未处理异常。
+- `GBDataManager.getIndustryDef` 返回 GearIn 产业定义而非默认定义；
+- `GroundUnitDef.getUnitDef` 返回 GearIn 单位；
+- 产业插件类名和通用插件映射分别核对成功；
+- 地面战界面显示该产业贡献的部队数值。
 
 ## 故障分析
 
-- **构造实体时抛空指针异常**：模型 ID 大小写与 CSV 不一致 (`getModelData()` 返回 null，`new CommonEntity(model, true)` 构造期即 NPE)，或 `ModelData.isValid()` 为 false。
-    - **解决方案**：先通过 `require()` 验证数据，再构造实体。
+- **产业定义存在但插件没有运行**：产业 `plugin` 使用了通用插件短 ID，或完整类名无法实例化。
+    - **解决方案**：把可加载类名写在产业对象中，重载定义。
 
-- **模型整体显示为黑色**：漫反射贴图或材质数据没有注册。
-    - **解决方案**：补齐材质引用，重新载入。
+- **运行期查询不到产业**：`industries` 对象键与市场产业 ID 的大小写不一致。
+    - **解决方案**：统一 ID，并检查 `getIndustryDef()` 是否仍返回默认定义。
 
-- **光照方向与模型表面相反**：OBJ 的法线或切线方向不一致。
-    - **解决方案**：修正并重新导出网格。
+- **插件映射存在但加载失败**：产业引用了错误类名，或误把 `plugins` 别名当作产业类。
+    - **解决方案**：改用可实例化的完整类名。
 
-- **模型位置正确但比例巨大**：OBJ 单位与世界缩放没有统一。
-    - **解决方案**：调整导出单位或模型矩阵缩放。
+- **单位数值没有变化**：修改落在错误层级，`strengthMult`、`troopCounts` 和单位 `strength` 各自承担不同计算。
+    - **解决方案**：调整实际参与计算的字段。
 
 ## 总结
 
-模型加载分成数据注册、存在性确认、模型取得和世界变换。先让 ID 查询失败得足够明确，再处理法线、材质和尺度，排错顺序会短很多。
+地面战接入按定义类型分层：产业和单位使用各自的对象键，产业直接绑定插件类，通用插件才进入 `plugins` 映射。`GBDataManager` 与 `GroundUnitDef` 的运行期查询能在进入战斗前区分真实定义、默认回退和缺失单位。
 
 ## 建议参考项
 
-- `org.boxutil.manager.ModelManager`：注册并查询模型数据；
-- `org.boxutil.units.standard.entity.CommonEntity`：组合模型与材质；
-- `org.boxutil.util.TransformUtil`：`createModelMatrixVanilla` 建立世界变换。
+- `groundBattleDefs.json`：地面战合并定义；
+- `exerelin.campaign.intel.groundbattle.GBDataManager`：`getIndustryDef` 查询产业定义，`getPluginsById` 查询插件类映射。

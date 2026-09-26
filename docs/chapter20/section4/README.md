@@ -1,209 +1,469 @@
-# 让 Nexerelin 的战略 AI 使用 GearIn 扩张
+# 使用 SSBO 传递参数
 
-势力能出现在星区，不代表战略 AI 会替它作出行动。本节确认 GearIn 拥有 StrategicAI，检查当前 concern，并把势力入侵倍率与全局规模共同算成可解释的舰队规模。
+本节让 SSBO 保存一个方向标的运行时参数。Java 读取舰船状态并写入一条记录；绘制时，vertex shader 从这条记录取得位置和朝向，fragment shader 继续生成圆环与朝向线。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~35 分钟。*
 
 ## 学习目标
 
-完成后，您将能够：
-
-- 用正确的 concern ID 调整自定义势力的战略优先级；
-- 在 StrategicAI 尚未创建时安全地等待，在创建后主动刷新一次会议；
-- 区分入侵规模倍率和复活全局条件，解释最终判断。
+- 解释 `std430`、shader storage block 和 binding `0` 的关系；
+- 使用两个 `vec4` 组织一个方向标的 GPU 参数；
+- 在 `advance(...)` 和 `render(...)` 之间传递可复用的 `FloatBuffer`；
+- 使用一次 `glDrawArrays` 绘制圆环和朝向线；
+- 处理暂停、舰船失效、战斗结束和重复清理。
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C20-S3] 的 VBO、VAO、attribute 布局和六顶点矩形；
+- [C20-S2] 的程序化圆环、朝向线、距离函数和 Alpha 混合；
+- Java 的 `FloatBuffer`、OpenGL program 生命周期和战斗渲染插件。
 
-## 让战略 AI 获得可验证的行动入口
+## 确定参数由谁提供
 
-随机星区运行数月后，GearIn 战略会议能产生经济或军事 concern；允许入侵时，其进攻舰队规模体现势力配置倍率，势力被消灭后仍遵守复活设置。
+战斗入口把目标舰船交给 `GearInSsboMarker` 构造器，再把插件注册到引擎。`init(entity)` 收到的是引擎创建的承载实体，用于定位和视口剔除。舰船移动或转向时，方向标同步改变位置和朝向；暂停时保留上一帧参数。SSBO 保存状态，六顶点矩形由 VBO 和 VAO 提供，圆环与朝向线由 fragment shader 计算。
 
-## 文件与 API 链路
+## 用两个 vec4 组织记录
 
-`StrategicAI.getAI` 从 sector persistent-data map 读取已经创建的 AI；`StrategicAI.addAIIfNeeded` 在缺少实例时负责补建；`strategyPriorityMults` 使用 `strategicAIConfig.json` 中的 concern ID；`InvasionFleetManager.getInvasionSizeMult` 返回已组合的势力与全局入侵倍率；`SectorManager` 和 `NexConfig` 共同决定复活是否有机会执行。
-
-### 允许 GearIn 参加战略系统
-
-在 `gear_industry.json` 的战略字段中开启入侵，并按 concern ID 调整两个实际会被战略系统读取的关注项：
-
-```json
-"canInvade": true,
-"strategyPriorityMults": {
-  "vulnerableEnemyTarget": 1.15,
-  "commodityCompetition": 0.9
-}
-```
-
-`military` 和 `economy` 是 concern 标签，不是可供 `strategyPriorityMults` 查找的键；写入它们不会改变上述两个 concern 的优先级。
-
-战略会议中的 Vulnerable Enemy Target 权重会上升，Competition 权重会下降。
-
-### 确认 StrategicAI 已创建
-
-`GearInStrategicAIProbe` 的 `concernCount()`、`forceMeetingIfReady()` 与 `ensureAI()` 先从 sector persistent-data map 读取，再用 `null` 守卫确认 AI 生命周期；需要补建时调用 `addAIIfNeeded()`：
+一条记录占用 `8` 个 `float`，即 `32` 字节。第一个 `vec4` 保存中心 `x/y`、朝向和 Alpha；第二个 `vec4` 保存 RGBA 颜色。两个向量各占 `16` 字节，Java 按 shader 声明的顺序写入：
 
 ```java
-StrategicAI ai = StrategicAI.getAI(factionId);
-return ai == null ? 0 : ai.getExistingConcerns().size();
+markerBuffer.clear();
+markerBuffer.put(trackedShip.getLocation().x)
+        .put(trackedShip.getLocation().y)
+        .put(trackedShip.getFacing()).put(trackedShip.getAlphaMult());
+markerBuffer.put(0.1f).put(0.9f).put(1f).put(1f);
+markerBuffer.flip();
 ```
 
-`getAI()` 实际读取 `StrategicAI.getAIsMap()`；新档创建早期 map 尚未写入该势力时会返回 `null`。调用 `forceMeeting()` 只应发生在返回非空之后。
+shader storage block 使用相同字段顺序。若 Java 把位置、朝向或颜色写错位置，shader 仍会照既定布局读取，方向标的位置或颜色就会异常。
+
+## 创建并绑定 SSBO
+
+初始化阶段只分配 `8 * Float.BYTES` 字节的 GPU 缓冲区，并把 block 绑定到 `0`：
 
 ```java
-public boolean ensureAI(String factionId) {
-    StrategicAI before = StrategicAI.getAI(factionId);
-    StrategicAI created = StrategicAI.addAIIfNeeded(factionId);
-    return before == null && (created != null || StrategicAI.getAI(factionId) != null);
-}
+ssboId = GL15.glGenBuffers();
+GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
+GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,
+        FLOATS_PER_MARKER * Float.BYTES, GL15.GL_DYNAMIC_DRAW);
+GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, BINDING, ssboId);
 ```
 
-早期探针返回 `0`，进入生涯后可主动刷新并读取 concern 数量。
+`GL43.glGetProgramResourceIndex(...)` 找到 `MarkerInstances`，`glShaderStorageBlockBinding(...)` 把它和同一个 binding 关联。这样 Java 的 `glBindBufferBase(...)` 与 shader 的 `layout (std430, binding = 0)` 读取同一块存储。
 
-### 组合势力与全局入侵倍率
+## 在两个生命周期阶段传递参数
 
-`GearInInvasionScaleProbe.estimate()` 让日志能解释最终规模来源，并避免重复乘全局值：
+`advance(...)` 在战斗更新阶段写入 CPU 缓冲；`render(...)` 在 OpenGL 上下文中调用 `glBufferSubData(...)` 上传这条记录。暂停时保留上次写入的值，恢复后继续取舰船状态：
 
 ```java
-float combined = InvasionFleetManager.getInvasionSizeMult(factionId);
-return baseSize * combined;
+GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
+GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, markerBuffer);
+GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, BINDING, ssboId);
+GL20.glUseProgram(program);
+GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
 ```
 
-`getInvasionSizeMult()` 已经计算 `1 + invasionFleetSizeMod` 并乘上 `NexConfig.invasionFleetSizeMult`，调用方只再乘一次基础规模。
+一次 `glDrawArrays` 只提交六个顶点。vertex shader 读取 `markers[0]`，旋转并平移矩形；fragment shader 根据插值后的局部坐标计算圆周距离和有限线段距离。
 
-修改势力或全局倍率中的任意一项时，估算值只按该项变化一次。
+## 让状态恢复覆盖整个绘制调用
 
-### 拆开三种事件的后处理
+绘制前记录 VAO、`GL_ARRAY_BUFFER`、SSBO 的通用绑定与 binding `0` 的索引绑定、program 和矩阵模式，并用属性栈保存混合、深度、纹理和客户端 attribute 状态。`finally` 恢复本次绘制改动的状态；后续渲染器才能继续使用自己的配置。
 
-`GearInInvasionScaleProbe.applyEventPostProcessing()` 先取得基础规模，再应用共同倍率和事件自己的后处理；invasion 不附加事件倍率，respawn 使用 `RESPAWN_SIZE_MULT`，blockade 先保证最小规模，再乘 `BLOCKADE_SIZE_MULT` 并加入固定 FP：
+## 纹理采样只承担纹理职责
+
+方向标颜色来自 SSBO。需要采样纹理时，sampler 只保存纹理单元编号，Java 绑定纹理并提交单元：
 
 ```java
-float fp = baseSize;
-if (type == InvasionFleetManager.EventType.BLOCKADE) {
-    fp = Math.max(fp, InvasionFleetManager.MIN_BLOCKADE_SIZE);
-}
-fp *= InvasionFleetManager.getInvasionSizeMult(factionId);
-if (type == InvasionFleetManager.EventType.RESPAWN) {
-    fp *= InvasionFleetManager.RESPAWN_SIZE_MULT;
-} else if (type == InvasionFleetManager.EventType.BLOCKADE) {
-    fp = fp * InvasionFleetManager.BLOCKADE_SIZE_MULT
-            + InvasionFleetManager.BLOCKADE_FLAT_FP_BONUS;
-}
-return fp;
+GL20.glUniform1i(samplerLocation, 0);
+GL13.glActiveTexture(GL13.GL_TEXTURE0);
+GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
 ```
 
-目标筛选仍由事件类型自己的入口负责：blockade 检查 `canBlockade` 或伤害型 concern，respawn 额外受复活资格和目标权重影响。不能把这些资格条件折叠进 `getInvasionSizeMult()`。
-
-相同基础规模下，三种事件的最终 FP 能分别解释共同倍率、最小规模、固定加成和事件倍率。
-
-### 把复活作为独立策略验证
-
-`GearInStrategicAIProbe.respawnAllowedByRules()` 把复活开关、事件开关、势力资格和次数上限分开判断：
-
-```java
-SectorManager manager = SectorManager.getManager();
-boolean respawnPossible = manager != null
-        && manager.isRespawnFactions()
-        && NexConfig.enableHostileFleetEvents
-        && NexConfig.enableInvasions;
-```
-
-`factionRespawnInterval` 只决定检查间隔，`maxFactionRespawns` 为负数表示不设上限；`noHomeworld` 是程序化星区的母星配置，不是复活开关。
-
-探针只有在管理器已建立、复活和入侵事件均开启、势力可玩且未达到次数上限时返回 `true`。
+采样器、纹理单元和纹理对象共同决定采样来源，它们不改变 SSBO 的数据布局。
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+下面的 Java、vertex shader 和 fragment shader 共同完成单记录 SSBO 方向标。
 
-::: details 完整成品：GearInInvasionScaleProbe
+::: details 完整成品：GearInSsboMarker
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.combat;
 
-import exerelin.campaign.fleets.InvasionFleetManager;
+import java.io.IOException;
+import java.nio.FloatBuffer;
+import java.util.EnumSet;
 
-public final class GearInInvasionScaleProbe {
-    public float estimate(String factionId, float baseSize) {
-        float combined = InvasionFleetManager.getInvasionSizeMult(factionId);
-        return baseSize * combined;
+import org.apache.log4j.Logger;
+import org.lwjgl.BufferUtils;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL15;
+import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GL43;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.CombatEngineLayers;
+import com.fs.starfarer.api.combat.CombatEntityAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.combat.ViewportAPI;
+
+/**
+ * 使用 SSBO 保存单个方向标的参数并完成一次非实例化绘制。
+ * advance() 更新一个可复用的 CPU 记录，render() 上传记录并绘制矩形。
+ * cleanup() 按 VAO、SSBO、VBO、program 和 shader 的顺序释放资源。
+ */
+public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
+    private static final Logger LOG = Global.getLogger(GearInSsboMarker.class);
+    private static final String VERT_PATH = "data/shaders/GearIn_ssbo_marker.vert";
+    private static final String FRAG_PATH = "data/shaders/GearIn_ssbo_marker.frag";
+    private static final String BLOCK_NAME = "MarkerInstances";
+    private static final int BINDING = 0;
+    private static final int FLOATS_PER_MARKER = 8;
+    private static final float RING_RADIUS = 80f;
+    private static final float DIRECTION_LENGTH = 120f;
+
+    private CombatEngineAPI engine;
+    private final ShipAPI trackedShip;
+    private FloatBuffer markerBuffer;
+    private FloatBuffer coverageVertices;
+    private float lastWorldPerPixel = Float.NaN;
+    private int vaoId;
+    private int vboId;
+    private int ssboId;
+    private int vertexShader;
+    private int fragmentShader;
+    private int program;
+    private int positionLocation = -1;
+    private int worldPerPixelLocation = -1;
+    private int geometryLocation = -1;
+    private float renderRadius = DIRECTION_LENGTH;
+    private boolean valid = true;
+    private boolean cleaned;
+
+    public GearInSsboMarker(ShipAPI trackedShip) {
+        this.trackedShip = trackedShip;
+        layer = CombatEngineLayers.ABOVE_SHIPS_AND_MISSILES_LAYER;
     }
 
-    public float applyEventPostProcessing(String factionId, float baseSize,
-            InvasionFleetManager.EventType type) {
-        float fp = baseSize;
-        if (type == InvasionFleetManager.EventType.BLOCKADE) {
-            fp = Math.max(fp, InvasionFleetManager.MIN_BLOCKADE_SIZE);
+    @Override
+    public void init(CombatEntityAPI entity) {
+        super.init(entity);
+        engine = Global.getCombatEngine();
+        if (engine == null || trackedShip == null) {
+            valid = false;
+            return;
         }
-        fp *= InvasionFleetManager.getInvasionSizeMult(factionId);
-        if (type == InvasionFleetManager.EventType.RESPAWN) {
-            fp *= InvasionFleetManager.RESPAWN_SIZE_MULT;
-        } else if (type == InvasionFleetManager.EventType.BLOCKADE) {
-            fp = fp * InvasionFleetManager.BLOCKADE_SIZE_MULT
-                    + InvasionFleetManager.BLOCKADE_FLAT_FP_BONUS;
+        markerBuffer = BufferUtils.createFloatBuffer(FLOATS_PER_MARKER);
+        try {
+            if (!buildProgram() || !buildGeometry()) {
+                valid = false;
+                cleanup();
+                return;
+            }
+        } catch (IOException | RuntimeException e) {
+            valid = false;
+            LOG.error("GearIn SSBO marker: initialization failed", e);
+            cleanup();
+            return;
         }
-        return fp;
+        updateMarkerData();
+        LOG.info("GearIn SSBO marker init: vao=" + vaoId + " vbo=" + vboId
+                + " ssbo=" + ssboId);
+    }
+
+    private int compileShader(int type, String source, String path) {
+        int shader = GL20.glCreateShader(type);
+        if (shader == 0) {
+            LOG.error("GearIn SSBO marker: could not create shader " + path);
+            return 0;
+        }
+        GL20.glShaderSource(shader, source);
+        GL20.glCompileShader(shader);
+        if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
+            LOG.error("GearIn SSBO marker: compile failed for " + path + ": "
+                    + GL20.glGetShaderInfoLog(shader, 4096));
+            GL20.glDeleteShader(shader);
+            return 0;
+        }
+        return shader;
+    }
+
+    private boolean buildProgram() throws IOException {
+        vertexShader = compileShader(GL20.GL_VERTEX_SHADER,
+                Global.getSettings().loadText(VERT_PATH), VERT_PATH);
+        if (vertexShader == 0) {
+            return false;
+        }
+        fragmentShader = compileShader(GL20.GL_FRAGMENT_SHADER,
+                Global.getSettings().loadText(FRAG_PATH), FRAG_PATH);
+        if (fragmentShader == 0) {
+            return false;
+        }
+        program = GL20.glCreateProgram();
+        if (program == 0) {
+            return false;
+        }
+        GL20.glAttachShader(program, vertexShader);
+        GL20.glAttachShader(program, fragmentShader);
+        GL20.glLinkProgram(program);
+        if (GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
+            LOG.error("GearIn SSBO marker: link failed: "
+                    + GL20.glGetProgramInfoLog(program, 4096));
+            return false;
+        }
+        positionLocation = GL20.glGetAttribLocation(program, "a_position");
+        worldPerPixelLocation = GL20.glGetUniformLocation(program, "u_worldPerPixel");
+        geometryLocation = GL20.glGetUniformLocation(program, "u_geometry");
+        int blockIndex = GL43.glGetProgramResourceIndex(program,
+                GL43.GL_SHADER_STORAGE_BLOCK, BLOCK_NAME);
+        if (positionLocation < 0 || worldPerPixelLocation < 0
+                || geometryLocation < 0 || blockIndex < 0) {
+            LOG.error("GearIn SSBO marker: attribute, uniform or block missing");
+            return false;
+        }
+        GL43.glShaderStorageBlockBinding(program, blockIndex, BINDING);
+        return true;
+    }
+
+    private boolean buildGeometry() {
+        coverageVertices = BufferUtils.createFloatBuffer(12);
+        updateCoverageVertices(0f);
+        vaoId = GL30.glGenVertexArrays();
+        vboId = GL15.glGenBuffers();
+        ssboId = GL15.glGenBuffers();
+        if (vaoId == 0 || vboId == 0 || ssboId == 0) {
+            return false;
+        }
+        GL30.glBindVertexArray(vaoId);
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
+        GL20.glEnableVertexAttribArray(positionLocation);
+        GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+        GL30.glBindVertexArray(0);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
+        GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,
+                FLOATS_PER_MARKER * Float.BYTES, GL15.GL_DYNAMIC_DRAW);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, 0);
+        return true;
+    }
+
+    private void updateCoverageVertices(float worldPerPixel) {
+        float padding = 3f * worldPerPixel;
+        float left = -RING_RADIUS - padding;
+        float right = DIRECTION_LENGTH + padding;
+        float bottom = -RING_RADIUS - padding;
+        float top = RING_RADIUS + padding;
+        coverageVertices.clear();
+        coverageVertices.put(left).put(bottom);
+        coverageVertices.put(right).put(bottom);
+        coverageVertices.put(right).put(top);
+        coverageVertices.put(left).put(bottom);
+        coverageVertices.put(right).put(top);
+        coverageVertices.put(left).put(top);
+        coverageVertices.flip();
+    }
+
+    private void updateMarkerData() {
+        entity.getLocation().set(trackedShip.getLocation());
+        markerBuffer.clear();
+        markerBuffer.put(trackedShip.getLocation().x)
+                .put(trackedShip.getLocation().y)
+                .put(trackedShip.getFacing()).put(trackedShip.getAlphaMult());
+        markerBuffer.put(0.1f).put(0.9f).put(1f).put(1f);
+        markerBuffer.flip();
+    }
+
+    @Override
+    public void advance(float amount) {
+        if (!valid || engine == null || trackedShip == null || markerBuffer == null) {
+            valid = false;
+            return;
+        }
+        if (engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
+                || !trackedShip.isAlive()) {
+            valid = false;
+            return;
+        }
+        if (engine.isPaused()) {
+            return;
+        }
+        updateMarkerData();
+    }
+
+    @Override
+    public void render(CombatEngineLayers layer, ViewportAPI viewport) {
+        if (!valid || viewport == null || vaoId == 0 || ssboId == 0 || program == 0) {
+            return;
+        }
+        float worldPerPixel = viewport.convertScreenWidthToWorldWidth(1f);
+        if (!Float.isFinite(worldPerPixel) || worldPerPixel <= 0f) {
+            return;
+        }
+        int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+        int previousVbo = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+        int previousSsbo = GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_BINDING);
+        int previousSsboBase = GL30.glGetInteger(
+                GL43.GL_SHADER_STORAGE_BUFFER_BINDING, BINDING);
+        int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+        GL11.glPushAttrib(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT
+                | GL11.GL_ENABLE_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
+        try {
+            GL30.glBindVertexArray(vaoId);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+            if (Float.compare(worldPerPixel, lastWorldPerPixel) != 0) {
+                updateCoverageVertices(worldPerPixel);
+                GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, 0, coverageVertices);
+                lastWorldPerPixel = worldPerPixel;
+            }
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
+            GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, markerBuffer);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, BINDING, ssboId);
+            GL20.glUseProgram(program);
+            GL11.glDisable(GL11.GL_TEXTURE_2D);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glDepthMask(false);
+            GL20.glUniform1f(worldPerPixelLocation, worldPerPixel);
+            GL20.glUniform2f(geometryLocation, RING_RADIUS, DIRECTION_LENGTH);
+            GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
+        } finally {
+            GL11.glPopClientAttrib();
+            GL11.glPopAttrib();
+            GL30.glBindVertexArray(previousVao);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
+            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, BINDING,
+                    previousSsboBase);
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, previousSsbo);
+            GL20.glUseProgram(previousProgram);
+            GL11.glMatrixMode(previousMatrixMode);
+        }
+    }
+
+    @Override
+    public boolean isExpired() {
+        return !valid;
+    }
+
+    @Override
+    public void cleanup() {
+        if (cleaned) {
+            return;
+        }
+        cleaned = true;
+        valid = false;
+        if (vaoId != 0) {
+            GL30.glDeleteVertexArrays(vaoId);
+            vaoId = 0;
+        }
+        if (ssboId != 0) {
+            GL15.glDeleteBuffers(ssboId);
+            ssboId = 0;
+        }
+        if (vboId != 0) {
+            GL15.glDeleteBuffers(vboId);
+            vboId = 0;
+        }
+        coverageVertices = null;
+        if (program != 0) {
+            GL20.glDeleteProgram(program);
+            program = 0;
+        }
+        if (vertexShader != 0) {
+            GL20.glDeleteShader(vertexShader);
+            vertexShader = 0;
+        }
+        if (fragmentShader != 0) {
+            GL20.glDeleteShader(fragmentShader);
+            fragmentShader = 0;
+        }
+        LOG.info("GearIn SSBO marker cleanup");
+    }
+
+    @Override
+    public EnumSet<CombatEngineLayers> getActiveLayers() {
+        return EnumSet.of(layer);
+    }
+
+    @Override
+    public float getRenderRadius() {
+        return renderRadius;
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInStrategicAIProbe
+::: details 完整成品：GearIn_ssbo_marker.vert
 
-```java
-package data.scripts.gearin.modcompat;
+```glsl
+#version 430
 
-import java.util.Map;
+layout (location = 0) in vec2 a_position;
 
-import exerelin.campaign.SectorManager;
-import exerelin.campaign.ai.StrategicAI;
-import exerelin.utilities.NexConfig;
+struct MarkerData {
+    vec4 centerFacingAlpha;
+    vec4 color;
+};
 
-public final class GearInStrategicAIProbe {
-    public int aiMapSize() {
-        Map<String, StrategicAI> ais = StrategicAI.getAIsMap();
-        return ais.size();
+layout (std430, binding = 0) buffer MarkerInstances {
+    MarkerData markers[];
+};
+
+out vec2 v_local;
+out vec4 v_color;
+
+void main() {
+    MarkerData marker = markers[0];
+    v_local = a_position;
+    v_color = vec4(marker.color.rgb, marker.color.a * marker.centerFacingAlpha.w);
+    float angle = radians(marker.centerFacingAlpha.z);
+    float cosine = cos(angle);
+    float sine = sin(angle);
+    vec2 rotated = vec2(
+            cosine * a_position.x - sine * a_position.y,
+            sine * a_position.x + cosine * a_position.y);
+    vec2 world = marker.centerFacingAlpha.xy + rotated;
+    gl_Position = gl_ModelViewProjectionMatrix * vec4(world, 0.0, 1.0);
+}
+```
+
+:::
+
+::: details 完整成品：GearIn_ssbo_marker.frag
+
+```glsl
+#version 430
+
+uniform vec2 u_geometry;
+uniform float u_worldPerPixel;
+in vec2 v_local;
+in vec4 v_color;
+out vec4 fragColor;
+
+void main() {
+    float ringDistance = abs(length(v_local) - u_geometry.x);
+    vec2 nearestOnLine = vec2(clamp(v_local.x, 0.0, u_geometry.y), 0.0);
+    float lineDistance = length(v_local - nearestOnLine);
+    float edge = 0.5 * u_worldPerPixel;
+    float ringHalfWidth = u_worldPerPixel;
+    float lineHalfWidth = 1.5 * u_worldPerPixel;
+    float ringCoverage = 1.0 - smoothstep(
+            ringHalfWidth - edge, ringHalfWidth + edge, ringDistance);
+    float lineCoverage = 1.0 - smoothstep(
+            lineHalfWidth - edge, lineHalfWidth + edge, lineDistance);
+    float coverage = max(ringCoverage, lineCoverage);
+    if (coverage <= 0.0) {
+        discard;
     }
-
-    public int concernCount(String factionId) {
-        StrategicAI ai = StrategicAI.getAI(factionId);
-        return ai == null ? 0 : ai.getExistingConcerns().size();
-    }
-
-    public boolean ensureAI(String factionId) {
-        StrategicAI before = StrategicAI.getAI(factionId);
-        StrategicAI created = StrategicAI.addAIIfNeeded(factionId);
-        return before == null && (created != null || StrategicAI.getAI(factionId) != null);
-    }
-
-    public boolean forceMeetingIfReady(String factionId) {
-        StrategicAI ai = StrategicAI.getAI(factionId);
-        if (ai == null) {
-            return false;
-        }
-        ai.forceMeeting();
-        return true;
-    }
-
-    public boolean respawnAllowedByRules(String factionId) {
-        SectorManager manager = SectorManager.getManager();
-        if (manager == null || !manager.isRespawnFactions()) {
-            return false;
-        }
-        int maxRespawns = NexConfig.maxFactionRespawns;
-        boolean hasAttempt = maxRespawns < 0
-                || manager.getNumRespawns(factionId) < maxRespawns;
-        return NexConfig.enableHostileFleetEvents
-                && NexConfig.enableInvasions
-                && NexConfig.getFactionConfig(factionId).playableFaction
-                && hasAttempt;
-    }
+    fragColor = vec4(v_color.rgb, v_color.a * coverage);
 }
 ```
 
@@ -211,51 +471,43 @@ public final class GearInStrategicAIProbe {
 
 ## 验证方案
 
-前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含 [C20-S2] 的势力配置、[C20-S3] 的开局生成结果、本节 `gear_industry.json` 战略字段和两个探针类。
+前置数据：已经启用包含方向标插件的 GearIn MOD，并进入能够取得目标舰船 `ShipAPI` 的测试战斗。
 
-1. 构建示例 MOD，确认两个探针的方法签名与当前 `ExerelinCore.jar` 匹配。
-2. 在新档、读档和 AI 缺失时机分别记录 persistent-data map 的条目数、`getAI()` 返回值和 `ensureAI()` 结果。
-3. 进入战略 AI 已建立的生涯，刷新一次会议并记录 concern 数量。
-4. 分别修改 `invasionFleetSizeMod` 与全局 `invasionFleetSizeMult`，比较估算值变化。
-5. 对 invasion、blockade 和 respawn 使用同一基础规模，分别记录最小规模、事件倍率和固定 FP。
-6. 打开复活设置，记录 `respawnAllowedByRules()` 在达到次数上限前后的返回值，并核对目标资格。
+1. 在 MOD 工程执行 `gradle jar`，确认插件类和两份 shader 资源已进入对应的 MOD 目录。
+2. 启动游戏并进入测试战斗，以目标舰船创建 `new GearInSsboMarker(ship)`，再调用 `engine.addLayeredRenderingPlugin(...)` 注册插件。
+3. 移动并转向目标舰船，观察方向标中心和朝向线同步变化。
+4. 暂停并恢复战斗，观察暂停期间方向标保留最后一帧。
+5. 让舰船离场或失效，结束战斗，再进入另一场战斗。
+6. 对同一插件重复调用 `cleanup()`，观察资源释放日志。
+7. 缩放和横移视口，观察圆环半径、朝向线长度和屏幕线宽。
 
 预期结果：
 
-- 两个配置中的 concern ID 能影响战略优先级；
-- AI 未建立时探针返回安全值，建立后可以刷新会议；
-- AI 缺失时 `ensureAI()` 补建实例，map 条目数增加 1；
-- `getInvasionSizeMult()` 的组合倍率只被应用一次；
-- blockade 的最小规模、1.2 倍事件倍率和 120 FP 固定加成分别可见；
-- respawn 的 1.2 倍事件倍率不会被误写成 invasion 的共同倍率；
-- 复活探针准确反映管理器、事件开关、势力资格和次数上限。
+- 方向标圆环半径为 `80 su`，朝向线长度为 `120 su`；
+- 圆环线宽为 `2 px`，朝向线线宽为 `3 px`；
+- 移动、转向和 Alpha 变化通过一条 SSBO 记录进入 shader；
+- 暂停、舰船失效和战斗结束后，插件按生命周期停止绘制；
+- 重复清理不会二次删除 VAO、SSBO、VBO、program 或 shader；
+- 其他战场画面的矩阵、混合、深度、纹理和 attribute 状态保持原有表现。
 
 ## 故障分析
 
-- **新档创建早期出现 `NullPointerException`**：Nexerelin 尚未建立该势力的 `StrategicAI`。
-    - **解决方案**：保留 null 守卫并延迟到进入生涯后调用 `forceMeeting()`。
+- **方向标位置或颜色整体错位**：CPU 写入顺序与 `MarkerData` 字段顺序不同。
+    - **解决方案**：按中心/朝向/Alpha、RGBA 的顺序检查两个 `vec4`，并确认 Java 与 shader 都使用 binding `0`。
 
-- **战略 AI 存在但不扩张**：`canInvade`、全局 `enableInvasions` 或 concern 的 `canInvade` 标签未满足。
-    - **解决方案**：逐项启用后推进战略周期。
+- **只显示旧位置**：暂停状态一直保留，或 `advance(...)` 没有更新 `FloatBuffer`。
+    - **解决方案**：确认暂停分支只保留上一帧，恢复运行后重新执行 `clear()`、写入和 `flip()`。
 
-- **入侵舰队规模异常大**：调用方在 `getInvasionSizeMult()` 结果上又乘了一次全局倍率。
-    - **解决方案**：移除重复乘法。
-
-- **封锁舰队规模偏小**：只应用了共同倍率，没有先执行 `MIN_BLOCKADE_SIZE` 和 blockade 的固定后处理。
-    - **解决方案**：按事件类型逐项记录。
-
-- **复活舰队被当作普通入侵**：没有应用 `RESPAWN_SIZE_MULT` 或复活目标筛选。
-    - **解决方案**：使用 `EventType.RESPAWN` 分支。
-
-- **被消灭势力没有复活**：复活开关、敌对舰队事件、入侵开关、次数上限、势力资格或检查间隔未满足。
-    - **解决方案**：逐项核对并推进到下一检查周期。
+- **其他战场画面出现状态污染**：绘制结束路径没有执行完整恢复。
+    - **解决方案**：把所有恢复动作放入 `finally`，同时恢复 VAO、缓冲、program、矩阵、属性和客户端 attribute 状态。
 
 ## 总结
 
-战略接入要分别确认 AI 生命周期、concern ID、行动许可和规模计算。入侵倍率是一次组合运算，复活则是管理器、事件开关、势力资格和次数上限的联合条件；仅看到势力配置文件被读取，不能代替这些运行期验证。
+本节把单个方向标的运行时状态组织成一条 SSBO 记录。Java 负责更新和上传两个 `vec4`，vertex shader 负责读取记录并变换矩形，fragment shader 负责生成圆环和朝向线；一次 `glDrawArrays` 完成单个方向标绘制。
 
 ## 建议参考项
 
-- `exerelin.campaign.ai.StrategicAI`：`getAI` 取得势力战略 AI；
-- `exerelin.campaign.fleets.InvasionFleetManager`：`getInvasionSizeMult` 读取入侵规模倍率，`EventType` 区分 invasion、blockade 和 respawn；
-- `exerelin.utilities.NexConfig`：全局战略、入侵与复活设置。
+- `org.lwjgl.opengl.GL43`：shader storage block 查询和 SSBO 常量；
+- `org.lwjgl.opengl.GL30`：VAO 与 `glBindBufferBase`；
+- `org.lwjgl.opengl.GL15`：VBO、SSBO 和数据上传；
+- `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：战斗渲染生命周期。

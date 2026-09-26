@@ -1,8 +1,8 @@
-# 软依赖与 Nexerelin
+# 着色器与渲染
 
-本章技术基线：Starsector `0.98a-RC8`；可选依赖：Nexerelin `0.12.1e`、LunaLib `2.0.5`。
+本章技术基线：Starsector `0.98a-RC8`；前置依赖：BoxUtil `1.5.5`。
 
-本章建立缺库可启动的适配边界，再让 GearIn 完整参与 Nexerelin 的外交、两种星区、战略 AI、地面战与特遣队事件，最后用 LunaLib 提供即时设置。
+本章围绕跟随舰船的方向标逐步展开渲染技术。Java OpenGL 先绘制基础图元；GLSL 1.20 接管顶点变换与片元形状；VBO 和 VAO 保存顶点与布局；SSBO 传递方向标参数；实例化绘制让一份几何服务多艘舰船。最后根据战斗效果的形状、数量和坐标系选择 BoxUtil 对象。
 
 ## 本章各节
 

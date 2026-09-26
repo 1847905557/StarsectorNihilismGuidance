@@ -1,161 +1,471 @@
-# 让 Nexerelin 在两种星区模式生成 GearIn 开局
+# 使用 VBO 和 VAO 保存顶点
 
-固定 Corvus 与随机星区使用不同生成入口；只测其中一种，另一种往往会把玩家送到空坐标或没有 GearIn 市场的星区。本节为两种模式分别选择出生点，并从同一势力配置读取初始舰队。
+本节将方向标的局部顶点放进 VBO，并让 VAO 记住顶点布局。舰船位置和朝向仍在绘制时更新；视口缩放改变像素对应的世界宽度时，矩形边界也会更新，以免裁掉线条边缘。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：~25 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：~35 分钟。*
 
 ## 学习目标
 
-完成后，您将能够：
-
-- 在 `SectorManager` 可用后区分 Corvus 与随机星区；
-- 为 Corvus 模式登记固定出生实体，为随机星区选择已生成市场；
-- 从同一份 Nexerelin 势力配置读取起始舰队变体。
-- 区分固定 `fleetType`、`RANDOM` 候选和无法解析的舰队类型。
+- 区分客户端顶点数组、VBO 和 VAO 保存的数据与状态；
+- 使用 `GL15` 创建、上传、绑定和释放 VBO；
+- 使用 `GL30` 缓存 attribute 指针并在绘制时复用 VAO；
+- 保持程序化方向标的移动、转向、透明度和生命周期行为。
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C20-S2] 的 `attribute`、`uniform`、`varying` 和程序化片元形状；
+- [C20-S1] 的分层渲染插件、模型坐标和 OpenGL 状态恢复；
+- 能够用 Java 17 编译示例，并从 `starsector.log` 定位资源路径和 program 错误。
 
-## 分开处理两种星区
+## 区分顶点数据与布局
 
-Corvus 模式把玩家放在 `corvus_spawnpoints.csv` 登记的固定实体旁，前提是该实体已由 Corvus 星区生成器创建；随机星区先生成 GearIn 市场，再选择规模最大的已生成市场主实体作为出生点，前提是市场已经生成且包含主实体。两种模式都获得相同类型的起始舰队。
+方向标仍显示半径 `80 su` 的圆环和长度 `120 su` 的朝向线。vertex shader 负责把局部坐标放到舰船位置，fragment shader 负责生成线条。本节改变的是顶点来源：六个矩形顶点进入 VBO，VAO 记录 `a_position` 如何读取它们。客户端缓冲只在视口比例变化时更新 VBO，绘制指针始终读取 VBO。
 
-## 文件与 API 链路
+## 在 VBO 中保存六个局部顶点
 
-`SectorManager.isCorvusMode` 选择分支；`ExerelinCorvusLocations` 读取固定出生实体；`NexUtilsFaction.getFactionMarkets` 返回随机星区已经生成的本势力市场；`NexFactionConfig.getStartFleetForType` 读取起始舰队变体 ID。
-
-### 先判断当前星区模式
-
-`GearInNexStartPlanner.chooseSpawn()` 只在 manager 已建立后读取 Corvus 状态：
+VBO 是 `GL_ARRAY_BUFFER` 的数据存储。`glBufferData` 为矩形的 `12` 个浮点数分配空间；视口比例变化时，`glBufferSubData` 更新含有像素边距的顶点。attribute 指针的最后一个参数是 VBO 内的字节偏移，此处使用 `0L`：
 
 ```java
-if (GearInNexCompat.isNexCorvusMode()) {
-    return GearInNexCompat.getFactionSpawnPointEntityId(factionId);
+coverageVertices = BufferUtils.createFloatBuffer(12);
+updateCoverageVertices(0f);
+vboId = GL15.glGenBuffers();
+GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
+```
+
+`GL_DYNAMIC_DRAW` 对应可能更新的矩形顶点。边界在圆环和朝向线之外留出 `3 px` 换算得到的世界单位，片元 shader 仍决定哪些片元可见。
+
+## 用 VAO 缓存 attribute 布局
+
+VAO 保存 attribute 的启用状态、分量数和指向的 VBO。配置时先绑定 VAO 和 VBO，再指定 `a_position` 的读取方式；绘制时绑定 VAO，即可取回这套布局：
+
+```java
+vaoId = GL30.glGenVertexArrays();
+GL30.glBindVertexArray(vaoId);
+GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+GL20.glEnableVertexAttribArray(positionLocation);
+GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT,
+        false, 0, 0L);
+GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+GL30.glBindVertexArray(0);
+```
+
+位置由两个连续 `float` 组成，stride 为 `0` 表示没有交错字段。VAO 只保存布局和绑定关系，不保存舰船位置、朝向或颜色；这些值仍由每帧 uniform 更新。
+
+## 创建 program 并查询位置
+
+VBO 和 VAO 不改变 shader 接口。Java 仍加载两份 `#version 120` 源码，记录编译与链接 InfoLog，并查询一个 attribute 和六个 uniform：
+
+```java
+positionLocation = GL20.glGetAttribLocation(program, "a_position");
+centerLocation = GL20.glGetUniformLocation(program, "u_center");
+facingLocation = GL20.glGetUniformLocation(program, "u_facing");
+colorLocation = GL20.glGetUniformLocation(program, "u_color");
+geometryLocation = GL20.glGetUniformLocation(program, "u_geometry");
+widthsLocation = GL20.glGetUniformLocation(program, "u_widthPixels");
+worldPerPixelLocation = GL20.glGetUniformLocation(program, "u_worldPerPixel");
+```
+
+位置查询失败时实例清理已经创建的资源。查询得到的 `a_position` location 用于配置 VAO；若 shader 声明与 Java 查询的名称不一致，布局就无法连接到 program。
+
+## 绘制时更新 uniform
+
+绘制阶段保存进入方法时的 VAO、VBO、program 和矩阵模式。若当前视口的像素换算值改变，先用 `3 px` 边距更新矩形；随后提交舰船位置、朝向、颜色、几何尺寸和像素换算值，再发起一次 `GL_TRIANGLES`：
+
+```java
+GL30.glBindVertexArray(vaoId);
+GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+if (Float.compare(worldPerPixel, lastWorldPerPixel) != 0) {
+    updateCoverageVertices(worldPerPixel);
+    GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, 0, coverageVertices);
+    lastWorldPerPixel = worldPerPixel;
 }
+GL20.glUseProgram(program);
+GL20.glUniform2f(centerLocation, entity.getLocation().x, entity.getLocation().y);
+GL20.glUniform1f(facingLocation, trackedShip.getFacing());
+GL20.glUniform2f(geometryLocation, RING_RADIUS, DIRECTION_LENGTH);
+GL20.glUniform2f(widthsLocation, RING_LINE_WIDTH, DIRECTION_LINE_WIDTH);
+GL20.glUniform1f(worldPerPixelLocation, worldPerPixel);
+GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
 ```
 
-两种模式随后进入不同日志分支。
+`u_center` 和 `u_facing` 让方向标跟随舰船，`u_worldPerPixel` 让片元线宽在缩放时保持 `2 px` 和 `3 px`。更新矩形只发生在换算值变化时；混合、矩阵、深度写入、纹理启用和 attribute 状态在 `finally` 中恢复。
 
-### 为 Corvus 提供固定实体
+## 释放 VBO 与 VAO
 
-在 `data/config/exerelin/corvus_spawnpoints.csv` 的 GearIn 行写入三列，依次为势力 ID、星系名称和已存在实体 ID：
+VAO 记录 VBO 的 attribute 关系。`cleanup()` 先删除 VAO，再删除 VBO、program 和两个 shader；初始化失败也进入这条路径，已创建的句柄删除后归零。这样重复清理不会再次使用旧句柄。
 
-```csv
-faction,system,entityID
-gear_industry,GearIn Prime,GearIn_prime
-```
+## shader 与其他状态
 
-`system` 是便于定位的星系名称，真正交给开局逻辑的是 `entityID`。该实体必须已经由 Corvus 星区生成器创建。
-
-固定模式会解析到 `GearIn_prime`，玩家出生在该实体附近。
-
-### 为随机星区选择本势力市场
-
-`chooseSpawn()` 的随机分支在随机星区经济已经建立后，读取 GearIn 当前拥有的市场：
-
-```java
-for (MarketAPI market : NexUtilsFaction.getFactionMarkets(factionId)) {
-    if (largest == null || market.getSize() > largest.getSize()) {
-        largest = market;
-    }
-}
-```
-
-完整实现还会排除没有主实体的市场。选择规模最大的市场能让开局位置保持稳定，也避免引用只存在于 Corvus 模式的实体 ID。
-
-随机模式返回一个实际市场主实体 ID；GearIn 没有市场时明确返回 `null`。
-
-### 从配置取得初始舰队
-
-`GearInNexStartPlanner.chooseFleet()` 按 `fleetType` 读取变体列表：
-
-```java
-return NexConfig.getFactionConfig(factionId)
-        .getStartFleetForType(fleetType, false, 0);
-```
-
-第二个参数为 `false`，因此配置缺少该舰队类型时不会偷偷补一艘后备舰；索引 `0` 固定选择该类型的首组配置，便于两种模式做一致性复验。
-
-两个模式对同一个 `fleetType` 会返回相同的变体 ID 列表。
-
-### 让配置选择随机开局舰队
-
-`GearInNexStartPlanner.chooseFleet()` 的调用方传入 `RANDOM` 时，由 Nexerelin 从允许随机选择的舰队类型中挑选；固定类型仍直接读取对应配置：
-
-```java
-List<String> fleet = planner.chooseFleet(factionId, "RANDOM");
-```
-
-多次新档得到的舰队类型可能不同，但每次结果都来自允许的起始舰队集合。
-
-### 先拒绝无法解析的舰队类型
-
-在请求进入 `getStartFleetForType()` 之前，用 try/catch 接住 `StartFleetType.getType()` 对未知键抛出的 `IllegalArgumentException`，避免把拼写错误当成随机类型：
-
-```java
-boolean valid = true;
-try {
-    NexFactionConfig.StartFleetType.getType(fleetType);
-} catch (IllegalArgumentException e) {
-    valid = false;
-}
-```
-
-固定类型和 `RANDOM` 照常进入配置读取，未知类型在玩家放置前返回明确错误。
+vertex shader 通过 `varying v_local` 把局部坐标传给 fragment shader。fragment shader 使用 `length`、`clamp` 和 `smoothstep` 计算圆环与有限线段的覆盖率；VBO/VAO 只改变顶点数据的存放位置，不改变这段形状算法。当前方向标使用颜色 uniform，不依赖纹理；如果使用 `sampler2D`，Java 仍需绑定纹理单元并提交单元编号。Alpha 混合属于绘制状态，也不由 VAO 保存。
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+以下资源共同完成 VBO/VAO 版本的方向标。
 
-::: details 完整成品：GearInNexStartPlanner
+::: details 完整成品：GearInVboVaoMarker
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.combat;
 
-import java.util.List;
+import java.io.IOException;
+import java.nio.FloatBuffer;
+import java.util.EnumSet;
 
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import exerelin.campaign.SectorManager;
-import exerelin.utilities.NexConfig;
-import exerelin.utilities.NexFactionConfig;
-import exerelin.utilities.NexUtilsFaction;
-import exerelin.world.ExerelinCorvusLocations;
+import org.apache.log4j.Logger;
+import org.lwjgl.BufferUtils;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL15;
+import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
 
-public final class GearInNexStartPlanner {
-    public String chooseSpawn(String factionId) {
-        SectorManager manager = SectorManager.getManager();
-        if (manager != null && manager.isCorvusMode()) {
-            ExerelinCorvusLocations.SpawnPointEntry entry =
-                    ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
-            return entry == null ? null : entry.entityId;
-        }
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.CombatEngineLayers;
+import com.fs.starfarer.api.combat.CombatEntityAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.combat.ViewportAPI;
 
-        MarketAPI largest = null;
-        for (MarketAPI market : NexUtilsFaction.getFactionMarkets(factionId)) {
-            if (market.getPrimaryEntity() == null) {
-                continue;
-            }
-            if (largest == null || market.getSize() > largest.getSize()) {
-                largest = market;
-            }
-        }
-        return largest == null ? null : largest.getPrimaryEntity().getId();
+/**
+ * 使用 VBO 和 VAO 绘制跟随舰船的程序化方向标。
+ * init() 创建几何缓冲区和 shader program，render() 按视口更新矩形并提交 uniform，
+ * cleanup() 按 VAO、VBO、program 和 shader 的顺序释放本实例的资源。
+ */
+public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
+
+    private static final Logger LOG = Global.getLogger(GearInVboVaoMarker.class);
+    private static final String VERT_PATH = "data/shaders/GearIn_vbo_vao_marker.vert";
+    private static final String FRAG_PATH = "data/shaders/GearIn_vbo_vao_marker.frag";
+    private static final float RING_RADIUS = 80f;
+    private static final float DIRECTION_LENGTH = 120f;
+    private static final float RING_LINE_WIDTH = 2f;
+    private static final float DIRECTION_LINE_WIDTH = 3f;
+
+    private final ShipAPI trackedShip;
+
+    private CombatEngineAPI engine;
+    private FloatBuffer coverageVertices;
+    private float lastWorldPerPixel = Float.NaN;
+    private int vaoId;
+    private int vboId;
+    private int vertexShader;
+    private int fragmentShader;
+    private int program;
+    private int positionLocation = -1;
+    private int centerLocation = -1;
+    private int facingLocation = -1;
+    private int colorLocation = -1;
+    private int geometryLocation = -1;
+    private int widthsLocation = -1;
+    private int worldPerPixelLocation = -1;
+    private boolean valid = true;
+    private boolean cleaned;
+
+    public GearInVboVaoMarker(ShipAPI trackedShip) {
+        this.trackedShip = trackedShip;
+        this.layer = CombatEngineLayers.ABOVE_SHIPS_AND_MISSILES_LAYER;
     }
 
-    public List<String> chooseFleet(String factionId, String fleetType) {
-        NexFactionConfig config = NexConfig.getFactionConfig(factionId);
+    @Override
+    public void init(CombatEntityAPI entity) {
+        super.init(entity);
+        engine = Global.getCombatEngine();
+        if (engine == null || trackedShip == null) {
+            valid = false;
+            LOG.error("GearIn VBO/VAO marker: combat context or tracked ship missing");
+            return;
+        }
         try {
-            NexFactionConfig.StartFleetType.getType(fleetType);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Unknown start fleet type: " + fleetType);
+            if (!buildProgram() || !buildGeometry()) {
+                valid = false;
+                cleanup();
+                return;
+            }
+        } catch (IOException | RuntimeException e) {
+            valid = false;
+            LOG.error("GearIn VBO/VAO marker: initialization failed", e);
+            cleanup();
+            return;
         }
-        return config.getStartFleetForType(fleetType, false, 0);
+        entity.getLocation().set(trackedShip.getLocation());
+        LOG.info("GearIn VBO/VAO marker init: ship=" + trackedShip.getId()
+                + " vao=" + vaoId + " vbo=" + vboId);
     }
+
+    private int compileShader(int type, String source, String path) {
+        int shader = GL20.glCreateShader(type);
+        if (shader == 0) {
+            LOG.error("GearIn VBO/VAO marker: could not create shader " + path);
+            return 0;
+        }
+        GL20.glShaderSource(shader, source);
+        GL20.glCompileShader(shader);
+        if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
+            LOG.error("GearIn VBO/VAO marker: compile failed for " + path + ": "
+                    + GL20.glGetShaderInfoLog(shader, 4096));
+            GL20.glDeleteShader(shader);
+            return 0;
+        }
+        return shader;
+    }
+
+    private boolean buildProgram() throws IOException {
+        String vertexSource = Global.getSettings().loadText(VERT_PATH);
+        String fragmentSource = Global.getSettings().loadText(FRAG_PATH);
+        vertexShader = compileShader(GL20.GL_VERTEX_SHADER, vertexSource, VERT_PATH);
+        if (vertexShader == 0) {
+            return false;
+        }
+        fragmentShader = compileShader(GL20.GL_FRAGMENT_SHADER, fragmentSource, FRAG_PATH);
+        if (fragmentShader == 0) {
+            return false;
+        }
+        program = GL20.glCreateProgram();
+        if (program == 0) {
+            LOG.error("GearIn VBO/VAO marker: could not create program");
+            return false;
+        }
+        GL20.glAttachShader(program, vertexShader);
+        GL20.glAttachShader(program, fragmentShader);
+        GL20.glLinkProgram(program);
+        if (GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
+            LOG.error("GearIn VBO/VAO marker: link failed: "
+                    + GL20.glGetProgramInfoLog(program, 4096));
+            return false;
+        }
+        positionLocation = GL20.glGetAttribLocation(program, "a_position");
+        centerLocation = GL20.glGetUniformLocation(program, "u_center");
+        facingLocation = GL20.glGetUniformLocation(program, "u_facing");
+        colorLocation = GL20.glGetUniformLocation(program, "u_color");
+        geometryLocation = GL20.glGetUniformLocation(program, "u_geometry");
+        widthsLocation = GL20.glGetUniformLocation(program, "u_widthPixels");
+        worldPerPixelLocation = GL20.glGetUniformLocation(program, "u_worldPerPixel");
+        if (positionLocation < 0 || centerLocation < 0 || facingLocation < 0
+                || colorLocation < 0 || geometryLocation < 0 || widthsLocation < 0
+                || worldPerPixelLocation < 0) {
+            LOG.error("GearIn VBO/VAO marker: attribute or uniform location missing");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean buildGeometry() {
+        coverageVertices = BufferUtils.createFloatBuffer(12);
+        updateCoverageVertices(0f);
+
+        vaoId = GL30.glGenVertexArrays();
+        vboId = GL15.glGenBuffers();
+        if (vaoId == 0 || vboId == 0) {
+            LOG.error("GearIn VBO/VAO marker: could not create VAO or VBO");
+            return false;
+        }
+        GL30.glBindVertexArray(vaoId);
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
+        GL20.glEnableVertexAttribArray(positionLocation);
+        GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+        GL30.glBindVertexArray(0);
+        return true;
+    }
+
+    private void updateCoverageVertices(float worldPerPixel) {
+        float padding = 3f * worldPerPixel;
+        float left = -RING_RADIUS - padding;
+        float right = DIRECTION_LENGTH + padding;
+        float bottom = -RING_RADIUS - padding;
+        float top = RING_RADIUS + padding;
+        coverageVertices.clear();
+        coverageVertices.put(left).put(bottom);
+        coverageVertices.put(right).put(bottom);
+        coverageVertices.put(right).put(top);
+        coverageVertices.put(left).put(bottom);
+        coverageVertices.put(right).put(top);
+        coverageVertices.put(left).put(top);
+        coverageVertices.flip();
+    }
+
+    @Override
+    public void advance(float amount) {
+        if (!valid || engine == null || trackedShip == null || entity == null) {
+            valid = false;
+            return;
+        }
+        if (engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
+                || !trackedShip.isAlive()) {
+            valid = false;
+            return;
+        }
+        if (engine.isPaused()) {
+            return;
+        }
+        entity.getLocation().set(trackedShip.getLocation());
+    }
+
+    @Override
+    public void render(CombatEngineLayers layer, ViewportAPI viewport) {
+        if (!valid || entity == null || viewport == null || vaoId == 0 || program == 0) {
+            return;
+        }
+        float worldPerPixel = viewport.convertScreenWidthToWorldWidth(1f);
+        if (!Float.isFinite(worldPerPixel) || worldPerPixel <= 0f) {
+            return;
+        }
+
+        int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+        int previousVbo = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+        int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+        boolean matrixPushed = false;
+        GL11.glPushAttrib(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT
+                | GL11.GL_ENABLE_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
+        try {
+            GL30.glBindVertexArray(vaoId);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+            if (Float.compare(worldPerPixel, lastWorldPerPixel) != 0) {
+                updateCoverageVertices(worldPerPixel);
+                GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, 0, coverageVertices);
+                lastWorldPerPixel = worldPerPixel;
+            }
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPushMatrix();
+            matrixPushed = true;
+            GL20.glUseProgram(program);
+            GL11.glDisable(GL11.GL_TEXTURE_2D);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glDepthMask(false);
+            GL20.glUniform2f(centerLocation, entity.getLocation().x, entity.getLocation().y);
+            GL20.glUniform1f(facingLocation, trackedShip.getFacing());
+            GL20.glUniform4f(colorLocation, 0.1f, 0.9f, 1f,
+                    0.75f * viewport.getAlphaMult());
+            GL20.glUniform2f(geometryLocation, RING_RADIUS, DIRECTION_LENGTH);
+            GL20.glUniform2f(widthsLocation, RING_LINE_WIDTH, DIRECTION_LINE_WIDTH);
+            GL20.glUniform1f(worldPerPixelLocation, worldPerPixel);
+            GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
+        } finally {
+            if (matrixPushed) {
+                GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                GL11.glPopMatrix();
+            }
+            GL11.glPopClientAttrib();
+            GL11.glPopAttrib();
+            GL30.glBindVertexArray(previousVao);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
+            GL20.glUseProgram(previousProgram);
+            GL11.glMatrixMode(previousMatrixMode);
+        }
+    }
+
+    @Override
+    public boolean isExpired() {
+        return !valid;
+    }
+
+    @Override
+    public void cleanup() {
+        if (cleaned) {
+            return;
+        }
+        cleaned = true;
+        valid = false;
+        if (vaoId != 0) {
+            GL30.glDeleteVertexArrays(vaoId);
+            vaoId = 0;
+        }
+        if (vboId != 0) {
+            GL15.glDeleteBuffers(vboId);
+            vboId = 0;
+        }
+        coverageVertices = null;
+        if (program != 0) {
+            GL20.glDeleteProgram(program);
+            program = 0;
+        }
+        if (vertexShader != 0) {
+            GL20.glDeleteShader(vertexShader);
+            vertexShader = 0;
+        }
+        if (fragmentShader != 0) {
+            GL20.glDeleteShader(fragmentShader);
+            fragmentShader = 0;
+        }
+        LOG.info("GearIn VBO/VAO marker cleanup: ship="
+                + (trackedShip == null ? "null" : trackedShip.getId()));
+    }
+
+    @Override
+    public EnumSet<CombatEngineLayers> getActiveLayers() {
+        return EnumSet.of(layer);
+    }
+
+    @Override
+    public float getRenderRadius() {
+        return DIRECTION_LENGTH;
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearIn_vbo_vao_marker.vert
+
+```glsl
+#version 120
+
+attribute vec2 a_position;
+
+uniform vec2 u_center;
+uniform float u_facing;
+varying vec2 v_local;
+
+void main() {
+    v_local = a_position;
+    float angle = radians(u_facing);
+    float cosine = cos(angle);
+    float sine = sin(angle);
+    vec2 rotated = vec2(
+            cosine * a_position.x - sine * a_position.y,
+            sine * a_position.x + cosine * a_position.y);
+    vec2 world = u_center + rotated;
+    gl_Position = gl_ModelViewProjectionMatrix * vec4(world, 0.0, 1.0);
+}
+```
+
+:::
+
+::: details 完整成品：GearIn_vbo_vao_marker.frag
+
+```glsl
+#version 120
+
+uniform vec4 u_color;
+uniform vec2 u_geometry;
+uniform vec2 u_widthPixels;
+uniform float u_worldPerPixel;
+varying vec2 v_local;
+
+void main() {
+    float ringDistance = abs(length(v_local) - u_geometry.x);
+    vec2 nearestOnLine = vec2(clamp(v_local.x, 0.0, u_geometry.y), 0.0);
+    float lineDistance = length(v_local - nearestOnLine);
+
+    float edge = 0.5 * u_worldPerPixel;
+    float ringHalfWidth = 0.5 * u_widthPixels.x * u_worldPerPixel;
+    float lineHalfWidth = 0.5 * u_widthPixels.y * u_worldPerPixel;
+    float ringCoverage = 1.0 - smoothstep(
+            ringHalfWidth - edge, ringHalfWidth + edge, ringDistance);
+    float lineCoverage = 1.0 - smoothstep(
+            lineHalfWidth - edge, lineHalfWidth + edge, lineDistance);
+    float coverage = max(ringCoverage, lineCoverage);
+    if (coverage <= 0.0) {
+        discard;
+    }
+    gl_FragColor = vec4(u_color.rgb, u_color.a * coverage);
 }
 ```
 
@@ -163,48 +473,50 @@ public final class GearInNexStartPlanner {
 
 ## 验证方案
 
-前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含 [C20-S2] 的势力接入结果、本节 `corvus_spawnpoints.csv` 登记行和 `GearInNexStartPlanner`。
+前置数据：启用中的 GearIn MOD 已包含 `GearInVboVaoMarker` 和两份 shader 资源，战斗入口能够取得当前舰船并注册方向标。
 
-1. 构建示例 MOD，确认 `MarketAPI`、`NexUtilsFaction` 与开局配置方法签名匹配。
-2. 创建 Corvus 新档，记录出生实体 ID 和起始舰队变体列表。
-3. 创建随机星区新档，再次记录实体 ID 和同类型舰队列表。
-4. 以固定类型创建 1 次开局，再以 `RANDOM` 创建多次开局，记录舰队规模与类型来源。
-5. 传入未知 `fleetType`，确认规划器在玩家放置前返回错误。
-6. 临时把 GearIn 的随机星区生成权重设为 `0`，确认规划器返回 `null`，而不是一个伪造实体 ID。
+1. 执行 `gradle jar`，启动游戏并进入 `GearIn_test` 战斗，注册 `GearInVboVaoMarker`。
+2. 移动并转向玩家舰，观察圆环中心、朝向线和屏幕线宽。
+3. 缩放并横移视口，观察方向标是否仍固定在世界坐标，边缘是否完整。
+4. 暂停并恢复战斗，记录方向标位置变化；再使舰船离场或死亡。
+5. 结束战斗并重新进入另一场战斗，对同一测试实例重复调用 `cleanup()`，观察资源清理日志。
 
 预期结果：
 
-- 两种模式进入不同日志分支；
-- 固定模式返回 `corvus_spawnpoints.csv` 登记的实体；
-- 随机模式返回已生成 GearIn 市场的主实体；
-- 两个模式为同一舰队类型返回相同变体列表；
-- `RANDOM` 只从允许随机的起始舰队类型中选择；
-- 未知舰队类型不会静默退回 `RANDOM`；
-- 没有有效市场时返回 `null`，调用方能够在放置玩家前中止开局并报告原因。
+- 玩家舰中心出现半径 `80 su` 的程序化圆环和长度 `120 su` 的朝向线；
+- 视口缩放后圆环线宽保持 `2 px`，朝向线保持 `3 px`，边缘没有被矩形裁掉；
+- 移动和转向时方向标同步，暂停期间保持最后位置；
+- VAO 和 VBO 在初始化阶段创建，视口比例变化时 VBO 中的矩形边界随之更新；
+- 舰船离场、死亡或战斗结束后方向标失效，重复 `cleanup()` 不产生二次删除；
+- 舰船 Sprite、HUD 和其他战场画面的颜色、纹理、混合与位置保持原有表现。
 
 ## 故障分析
 
-- **随机星区查询不到 Corvus 实体**：模式判断发生在固定实体查询之后。
-    - **解决方案**：先确认 `SectorManager` 已创建并判断模式，随机分支改从当前 GearIn 市场取得主实体。
+- **方向标不可见**：绘制阶段没有绑定正确的 VAO，或 VAO 记录的 VBO 已被删除。
+    - **解决方案**：核对初始化时的 VAO、VBO 绑定顺序和绘制阶段的 `glBindVertexArray(vaoId)`。
 
-- **Corvus 模式出生在星区中心**：CSV 路径、表头或 `entityID` 与已创建 token 不一致。
-    - **解决方案**：改用真实实体 ID，创建固定模式新档。
+- **顶点位置异常**：`glVertexAttribPointer` 的分量数、stride 或偏移与 VBO 数据布局不一致。
+    - **解决方案**：确认每个顶点由两个 `GL_FLOAT` 组成，stride 为 `0`，偏移为 `0L`。
 
-- **随机模式没有 GearIn 市场**：生成权重、势力启用状态或市场生成条件不满足。
-    - **解决方案**：检查 `getFactionMarkets(factionId)` 的数量，修正配置。
+- **视口缩放后线宽变化**：`u_worldPerPixel` 没有使用当前视口的世界单位换算值。
+    - **解决方案**：核对 `convertScreenWidthToWorldWidth(1f)` 的提交和 fragment shader 的半线宽计算。
 
-- **初始舰队为空**：请求的 `fleetType` 与 `startShips` 键不一致，且 fallback 已关闭。
-    - **解决方案**：记录请求类型和返回列表，修正配置键。
+- **其他画面状态异常**：VAO、VBO、program、矩阵或混合状态没有在 `finally` 中恢复。
+    - **解决方案**：按进入顺序保存状态，并在绘制结束后恢复之前的 VAO、VBO、program 和矩阵模式。
 
-- **随机开局出现不允许的舰队类型**：调用方把任意字符串直接交给随机分支。
-    - **解决方案**：先用 `StartFleetType.getType()` 和候选标志过滤。
+- **战斗结束后资源仍存在**：插件没有失效，或 `cleanup()` 没有按顺序删除 VAO、VBO、program 和 shader。
+    - **解决方案**：检查 `advance(...)` 的战斗状态判断与 `cleanup()` 的句柄归零逻辑。
 
 ## 总结
 
-两种模式共享势力与舰队配置，只在空间对象来源上分支。固定模式使用 CSV 登记的现有 token，随机模式使用本次生成后实际存在的市场主实体；模式判断必须早于固定实体查询，市场存在性必须早于玩家放置。
+VBO 保存可复用的局部顶点，VAO 保存 attribute 与 VBO 的布局关系，uniform 继续承载每帧变化的舰船和视口参数。绘制阶段绑定 VAO，按视口比例更新矩形边界，再提交图元；S2 的程序化片元形状保持一致。
+
+共享 OpenGL 上下文要求 VAO、VBO、program、矩阵、混合和深度状态都有明确边界。初始化失败和战斗结束都进入同一个幂等清理路径，方向标才能与其他战场画面共存。
 
 ## 建议参考项
 
-- `exerelin.campaign.SectorManager`：`isCorvusMode` 判断星区生成模式；
-- `corvus_spawnpoints.csv`：固定模式出生点；
-- `exerelin.utilities.NexFactionConfig`：`getStartFleetForType` 读取起始舰队，`StartFleetType` 判断固定类型与 `RANDOM` 候选。
+- `org.lwjgl.opengl.GL15`：创建、上传、绑定和删除 VBO；
+- `org.lwjgl.opengl.GL30`：创建、绑定和删除 VAO；
+- `org.lwjgl.opengl.GL20`：配置 attribute、uniform 和 shader program；
+- `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：分层渲染插件生命周期；
+- `com.fs.starfarer.api.combat.ViewportAPI`：获取 Alpha 和屏幕到世界单位的换算。

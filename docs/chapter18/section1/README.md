@@ -105,7 +105,7 @@ GraphicsLib 还要求使用方在 `onApplicationLoad()` 中调用 `ShaderLib.ini
 ## 选择渲染依赖
 
 ::: tip GraphicsLib 与 BoxUtil 的职责
-GraphicsLib 用于 shader、动态光照以及 material/normal 贴图管线。需要创建自定义渲染实体、批量提交精灵或管理渲染队列时，使用 BoxUtil；对应专题从 [C19-S1] 开始。
+GraphicsLib 用于 shader、动态光照以及 material/normal 贴图管线。需要创建自定义渲染实体、批量提交精灵或管理渲染队列时，可以参考 [C20-S6] 的 BoxUtil 选型。
 :::
 
 ## 完整最小例

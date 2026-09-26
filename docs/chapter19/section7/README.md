@@ -1,6 +1,6 @@
-# 用 BoxUtil 批量提交千个渲染实例
+# 用 LunaLib 制作即时生效的设置面板
 
-一千个粒子若对应一千个实体，会把管理和提交成本同时放大。本节让一个 SpriteEntity 持有一千份 Instance2Data，复用对象池，并只上传本帧真正变化的范围。
+玩家无需重启就能调节视觉强度，前提是 CSV 定义、运行时读取和监听器更新同一组 key。本节建立开关与数值设置，并把变更写入缓存供战斗效果下一帧读取。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,10 +10,9 @@
 
 完成后，您将能够：
 
-- 用一个 `SpriteEntity` 管理 1000 份二维实例状态；
-- 使用对象池复用并清理 `Instance2Data`；
-- 区分完整初始化、局部刷新与 `renderingCount`；
-- 按移除顺序归还实例，并核对批处理成本。
+- 按 LunaLib 的九列表格式定义开关、整数、浮点数、颜色和文本设置；
+- 用包装类型读取设置，并在 LunaLib 缺席或字段缺失时回退默认值；
+- 注册幂等监听器，让保存后的值进入下一次效果读取。
 
 ## 前置知识
 
@@ -21,179 +20,274 @@
 - [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
-## 明确当前需求
+## 定义 GearIn 设置字段
 
-测试战斗中同时显示 1000 个小型能量点；统计面板显示一个实体、一批实例。重复生成与清理后，池中对象数量稳定复用。
+在 LunaLib 面板关闭 GearIn 轨迹、调整条目上限、脉冲间隔、标记颜色或标签文字后，GearIn 的下一次读取立即使用新值；LunaLib 缺席时安全地使用代码默认值。
+
+### GearIn 设置字段速查表
+
+| 字段 ID | 控件类型 | 默认值 | 取值范围 |
+|---|---|---|---|
+| `GearIn_trails_enabled` | Boolean | true | — |
+| `GearIn_max_entries` | Int | 12 | 1–64 |
+| `GearIn_pulse_delay` | Double | 1.5 | 0.1–10 |
+| `GearIn_marker_color` | Color | `#f22e6e` | — |
+| `GearIn_label_text` | String | GearIn | — |
 
 ## 文件与 API 链路
 
-### 批量实例 API 职责速查表
+`data/config/LunaSettings.csv` 定义控件；`LunaSettings.getBoolean/getInt/getFloat/getColor/getString` 返回可为空的包装值；`LunaSettingsListener` 在保存设置后通知 MOD；GearIn 读取器集中处理门控和默认值。
 
-| 对象 | 职责 |
-|---|---|
-| `SpriteEntity` | 一次批量绘制 |
-| `InstanceDataAPI` | 实例集合接口 |
-| `Instance2Data` | 保存二维状态 |
+### 在 CSV 定义开关和滑杆
 
-### 预分配一千容量的实例列表
+在 `data/config/LunaSettings.csv` 中，每个字段使用唯一 `fieldID`；MOD ID 由 Java 调用的第一个参数传入，不写进 CSV 行：
 
-`GearInThousandInstanceBatch.submit()` 开头按目标数量预分配列表，避免 `ArrayList` 在构造批次时多次扩容：
-
-```java
-List<InstanceDataAPI> instances = new ArrayList<>(count);
+```csv
+fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab
+GearIn_trails_enabled,Show GearIn trails,Boolean,true,,,,,GearIn
+GearIn_max_entries,Maximum entries,Int,12,,,1,64,GearIn
+GearIn_pulse_delay,Pulse delay,Double,1.5,,,0.1,10,GearIn
+GearIn_marker_color,Marker color,Color,#f22e6e,,,,,GearIn
+GearIn_label_text,Label text,String,GearIn,,,,,GearIn
 ```
 
-列表 capacity 与目标 count 一致。
+空白列仍要保留。缺少必需列时可能抛异常；只缺尾部可选 JSON 键时使用默认值；漏掉中间占位会使后续值错列。`fieldID` 要与 Java 中的 key 逐字一致。
 
-### 从池中取得可复用实例
+LunaLib 面板会显示五个 GearIn 字段，整数范围为 1–64，脉冲间隔范围为 0.1–10。
 
-`submit()` 的循环内从池取得实例，只在池为空时创建 `Instance2Data`：
+### 读取包装类型并提供默认值
+
+`GearInLunaSettingsReader` 的各个 getter 先检查 `lunalib` 是否启用，再读取可为空的包装类型：
 
 ```java
-Instance2Data data = pool.acquire();
+Boolean enabled = LunaSettings.getBoolean("gear_in", "GearIn_trails_enabled");
+Integer entries = LunaSettings.getInt("gear_in", "GearIn_max_entries");
+Float delay = LunaSettings.getFloat("gear_in", "GearIn_pulse_delay");
+Color color = LunaSettings.getColor("gear_in", "GearIn_marker_color");
+String label = LunaSettings.getString("gear_in", "GearIn_label_text");
 ```
 
-第二次生成批次时，大部分对象来自池。
+每次读取都保留 `null` 分支：缺库、字段删除或用户设置损坏时分别回退 `Defs` 中的默认值。
 
-### 为每份实例写入稳定网格位置
+缺键时轨迹仍开启、条目上限为 12、脉冲间隔为 1.5 秒、颜色为 `#f22e6e`、标签为 `GearIn`。
 
-`submit()` 的循环体为每份实例写入位置，建立可数的 40 × 25 测试阵列：
+### 注册设置监听器
+
+注册入口是 `GearInLunaSettingsListener.registerListener()`，并在 `onGameLoad()` 的 LunaLib 启用分支调用，每次加载只加入一个监听器：
 
 ```java
-data.setLocation(i % 40 * 18f, i / 40 * 18f);
-data.setScale(0.5f, 0.5f);
+GearInLunaSettingsListener.registerListener();
 ```
 
-画面完整出现 1000 个点且间距一致。
+`hasSettingsListenerOfClass` 用于幂等判断，`removeSettingsListener` 用于测试清理或卸载场景。
 
-### 一次提交全部实例
+保存面板时日志出现一次 `reloaded`，重复进档不会倍增回调。
 
-循环结束后，设置集合、刷新全部范围、上传并声明数量：
+### 在回调中刷新缓存
 
-```java
-entity.setInstanceData(instances);
-entity.setInstanceDataRefreshAllFromCurrentIndex();
-entity.submitInstanceData();
-entity.setRenderingCount(instances.size());
-```
-
-渲染统计显示一个 SpriteEntity 绘制 1000 份实例。
-
-### 只上传本帧变化的区间
-
-`GearInThousandInstanceBatch.updateRange()` 在调用方修改连续实例区间后，只标记该起点和长度：
+监听器的 `settingsChanged(String modId)` 只响应 `gear_in` 的保存事件：
 
 ```java
-entity.setInstanceDataRefreshIndex(start);
-entity.setInstanceDataRefreshSize(size);
-entity.submitInstanceData();
-```
-
-修改索引 400–499 时，刷新起点为 400、长度为 100，`renderingCount` 仍为 1000。
-
-### 结束时复位并归还对象池
-
-实体从渲染管理器移除后进行批次清理，逐项 `reset()` 并归还池，最后清空实体的客户端实例数据：
-
-```java
-for (InstanceDataAPI item : entity.getInstanceData()) {
-    pool.release((Instance2Data) item);
+public void settingsChanged(String modId) {
+    if ("gear_in".equals(modId)) {
+        GearInLunaSettingsListener.logCurrentValues();
+    }
 }
-entity.resetInstanceData();
 ```
 
-连续生成十轮后，池大小稳定为 1000。
-
-### 先移除实体再归还实例
-
-`GearInThousandInstanceBatch.removeAndRelease()` 中，管理器移除决定渲染所有权是否已经结束，池回收只能发生在移除成功之后：
-
-```java
-// removeEntity 已清理实例数据；再次 release 会遍历已置 null 的 instanceData 抛 NPE
-return CombatRenderingManager.removeEntity(entity);
-```
-
-实体不再出现在管理器中；重复 `removeEntity()` 仍返回 `true`，但不会重复归还。
+当前战斗的下一次读取会使用新值，其他 MOD 保存设置不会触发 GearIn 日志。
 
 ## 完整最小例
 
-池只管理 Java 实例对象，批次类管理它们与 `SpriteEntity` 的所有权转换。`release()` 只能在实体不再被渲染线程读取后调用。
+局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
 
-::: details 完整成品：GearInBatchPool
+::: details 完整成品：GearInLunaSettingsDefs
 
 ```java
 package data.scripts.gearin.lib;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
+import java.awt.Color;
 
-import org.boxutil.units.standard.attribute.Instance2Data;
+public final class GearInLunaSettingsDefs {
+    public static final String MOD_ID = "gear_in";
+    public static final String LUNA_LIB_MOD_ID = "lunalib";
 
-public final class GearInBatchPool {
-    private final Deque<Instance2Data> free = new ArrayDeque<>();
+    public static final String KEY_TRAILS = "GearIn_trails_enabled";
+    public static final String KEY_MAX_ENTRIES = "GearIn_max_entries";
+    public static final String KEY_PULSE_DELAY = "GearIn_pulse_delay";
+    public static final String KEY_MARKER_COLOR = "GearIn_marker_color";
+    public static final String KEY_LABEL_TEXT = "GearIn_label_text";
 
-    public Instance2Data acquire() {
-        Instance2Data data = free.pollFirst();
-        return data == null ? new Instance2Data() : data;
-    }
+    public static final boolean DEFAULT_TRAILS = true;
+    public static final int DEFAULT_MAX_ENTRIES = 12;
+    public static final float DEFAULT_PULSE_DELAY = 1.5f;
+    public static final Color DEFAULT_MARKER_COLOR = new Color(0xf2, 0x2e, 0x6e);
+    public static final String DEFAULT_LABEL_TEXT = "GearIn";
 
-    public void release(Instance2Data data) {
-        data.reset();
-        free.addFirst(data);
-    }
-
-    public int available() {
-        return free.size();
+    private GearInLunaSettingsDefs() {
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInThousandInstanceBatch
+::: details 完整成品：GearInLunaSettingsListener
 
 ```java
 package data.scripts.gearin.lib;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.awt.Color;
 
-import org.boxutil.manager.CombatRenderingManager;
-import org.boxutil.base.api.InstanceDataAPI;
-import org.boxutil.units.standard.attribute.Instance2Data;
-import org.boxutil.units.standard.entity.SpriteEntity;
+import org.apache.log4j.Logger;
 
-public final class GearInThousandInstanceBatch {
-    public void submit(SpriteEntity entity, GearInBatchPool pool, int count) {
-        List<InstanceDataAPI> instances = new ArrayList<>(count);
-        for (int i = 0; i < count; i++) {
-            Instance2Data data = pool.acquire();
-            data.setLocation(i % 40 * 18f, i / 40 * 18f);
-            data.setScale(0.5f, 0.5f);
-            instances.add(data);
+import com.fs.starfarer.api.Global;
+
+import lunalib.lunaSettings.LunaSettings;
+import lunalib.lunaSettings.LunaSettingsListener;
+
+/**
+ * 变更通知角色：注册/注销 LunaSettings 监听器，在设置界面保存后按本 MOD 过滤并
+ * 重读输出当前生效值。addSettingsListener 不去重，注册前必须用
+ * hasSettingsListenerOfClass 幂等查询 (重复注册会让同一次保存触发多次回调)。
+ *
+ * 监听器实例在门控通过之后才创建 —— 类加载路径不触碰 lunalib.**，LunaLib 未启用
+ * 时调用本类不会抛 NoClassDefFoundError。
+ */
+public class GearInLunaSettingsListener {
+
+    private static final Logger LOG = Global.getLogger(GearInLunaSettingsListener.class);
+    private static LunaSettingsListener registered;
+
+    private GearInLunaSettingsListener() {
+        // 工具类：不实例化
+    }
+
+    /**
+     * 注册 (幂等)：LunaLib 未启用时跳过并写 warn。注册入口：
+     * GearInModPlugin.onGameLoad 一行；监听器实例在门控之后才创建。
+     */
+    public static void registerListener() {
+        if (!GearInLunaSettingsReader.isLunaLibEnabled()) {
+            LOG.warn("GearIn luna settings: LunaLib not enabled, listener not registered");
+            return;
         }
-        entity.setInstanceData(instances);
-        entity.setInstanceDataRefreshAllFromCurrentIndex();
-        entity.submitInstanceData();
-        entity.setRenderingCount(instances.size());
-    }
-
-    public void updateRange(SpriteEntity entity, int start, int size) {
-        entity.setInstanceDataRefreshIndex(start);
-        entity.setInstanceDataRefreshSize(size);
-        entity.submitInstanceData();
-    }
-
-    public void release(SpriteEntity entity, GearInBatchPool pool) {
-        for (InstanceDataAPI item : entity.getInstanceData()) {
-            pool.release((Instance2Data) item);
+        if (registered != null && LunaSettings.hasSettingsListenerOfClass(registered.getClass())) {
+            LOG.info("GearIn luna settings: listener already registered");
+            return;
         }
-        entity.resetInstanceData();
+        registered = new LunaSettingsListener() {
+            @Override
+            public void settingsChanged(String modId) {
+                if (!GearInLunaSettingsDefs.MOD_ID.equals(modId)) {
+                    return; // 其他 MOD 的保存动作不影响本 MOD 的缓存
+                }
+                LOG.info("GearIn luna settings: reloaded");
+                logCurrentValues();
+            }
+        };
+        LunaSettings.addSettingsListener(registered);
+        LOG.info("GearIn luna settings: listener registered");
     }
 
-    public boolean removeAndRelease(SpriteEntity entity, GearInBatchPool pool) {
-        // removeEntity 已清理实例数据；再次 release 会遍历已置 null 的 instanceData 抛 NPE
-        return CombatRenderingManager.removeEntity(entity);
+    /** 取消注册 (测试清理或卸载场景)。 */
+    public static void unregisterListener() {
+        if (!GearInLunaSettingsReader.isLunaLibEnabled()) {
+            return;
+        }
+        if (registered != null) {
+            LunaSettings.removeSettingsListener(registered);
+            registered = null;
+        }
+    }
+
+    /** 输出当前生效值：用于对照设置界面与用户设置文件 (进档时可调用一次)。 */
+    public static void logCurrentValues() {
+        LOG.info("GearIn luna settings: trails=" + GearInLunaSettingsReader.isTrailsEnabled()
+                + " maxEntries=" + GearInLunaSettingsReader.getMaxEntries()
+                + " pulseDelay=" + GearInLunaSettingsReader.getPulseDelay()
+                + " markerColor=" + toHex(GearInLunaSettingsReader.getMarkerColor())
+                + " labelText=" + GearInLunaSettingsReader.getLabelText());
+    }
+
+    private static String toHex(Color color) {
+        return String.format("#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue());
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInLunaSettingsReader
+
+```java
+package data.scripts.gearin.lib;
+
+import java.awt.Color;
+
+import com.fs.starfarer.api.Global;
+
+import lunalib.lunaSettings.LunaSettings;
+
+/**
+ * 运行时读取角色：门控读取 LunaLib 设置 (LunaSettings 静态读取 API)。
+ * 每个 getter 都是三段式：先用 isModEnabled 检查 LunaLib 是否启用，
+ * 再调用 LunaSettings.getX，返回 null 时回退代码内默认值 (Defs)。
+ * 类自身不引用 lunalib.** 于类加载路径，未启用时可直接安全调用。
+ */
+public class GearInLunaSettingsReader {
+
+    private GearInLunaSettingsReader() {
+        // 工具类：不实例化
+    }
+
+    /** LunaLib 是否已启用：调用任何 lunalib.** 之前先执行启用检查。 */
+    public static boolean isLunaLibEnabled() {
+        return Global.getSettings().getModManager().isModEnabled(GearInLunaSettingsDefs.LUNA_LIB_MOD_ID);
+    }
+
+    /** 轨迹特效开关：Boolean 设置，缺省 true。 */
+    public static boolean isTrailsEnabled() {
+        if (!isLunaLibEnabled()) {
+            return GearInLunaSettingsDefs.DEFAULT_TRAILS;
+        }
+        Boolean value = LunaSettings.getBoolean(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_TRAILS);
+        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_TRAILS;
+    }
+
+    /** 面板最大条目数：Int 设置，缺省 12。 */
+    public static int getMaxEntries() {
+        if (!isLunaLibEnabled()) {
+            return GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
+        }
+        Integer value = LunaSettings.getInt(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_MAX_ENTRIES);
+        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
+    }
+
+    /** 脉冲间隔 (秒)：CSV 里是 Double 类型，读取时用 getFloat(从保存的 double 转换)。 */
+    public static float getPulseDelay() {
+        if (!isLunaLibEnabled()) {
+            return GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
+        }
+        Float value = LunaSettings.getFloat(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_PULSE_DELAY);
+        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
+    }
+
+    /** 标记颜色：Color 设置，保存/读取十六进制字符串 (# 前缀可省略)。 */
+    public static Color getMarkerColor() {
+        if (!isLunaLibEnabled()) {
+            return GearInLunaSettingsDefs.DEFAULT_MARKER_COLOR;
+        }
+        Color value = LunaSettings.getColor(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_MARKER_COLOR);
+        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MARKER_COLOR;
+    }
+
+    /** 标签文本：String 设置，按原样读取。 */
+    public static String getLabelText() {
+        if (!isLunaLibEnabled()) {
+            return GearInLunaSettingsDefs.DEFAULT_LABEL_TEXT;
+        }
+        String value = LunaSettings.getString(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_LABEL_TEXT);
+        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_LABEL_TEXT;
     }
 }
 ```
@@ -202,47 +296,42 @@ public final class GearInThousandInstanceBatch {
 
 ## 验证方案
 
-前置数据：一个有效 `SpriteEntity` 已创建但尚未持有实例，测试面板能显示实体数、实例数、提交次数和池容量。
+前置数据：LunaLib 已安装并启用，启用中的 GearIn MOD 已包含本节 `LunaSettings.csv` 登记行和三个设置类，监听器注册调用已位于 `onGameLoad()` 的 LunaLib 启用分支。
 
-1. 使用 `count=1000` 首次提交，核对 40 × 25 网格、`renderingCount=1000` 和 1 次上传。
-2. 修改索引 400–499 的位置，调用 `updateRange(entity, 400, 100)`，核对刷新区间和上传次数。
-3. 从渲染管理器移除实体后调用 `release()`，确认池容量变为 1000，实体实例数据清空。
-4. 通过 `removeAndRelease()` 移除实体，再次调用移除入口，确认第二次仍返回 `true`。
-5. 再次提交 1000 项，统计新建 `Instance2Data` 数量应为 0。
-6. 连续执行 10 轮提交、移除和归还，记录每轮池容量与上传次数。
+1. 构建示例 MOD，确认 LunaLib 存在时三个设置类能够编译。
+2. 打开 LunaLib 面板，修改轨迹开关、条目上限、脉冲间隔、颜色和标签。
+3. 保存设置，观察下一次效果读取和日志中的当前值。
+4. 将脉冲间隔设置为范围外的值并保存，确认面板按 CSV 的最小值和最大值处理输入。
+5. 禁用 LunaLib 后启动一次，确认所有 getter 返回默认值且没有类加载异常。
 
 预期结果：
 
-- 首轮由 1 个实体绘制 1000 项，完整提交次数为 1；
-- 100 项连续修改只标记 100 项刷新区间，不改变总绘制数量；
-- 实体移除后 1000 项全部重置并进入池，客户端实例列表清空；
-- 管理器重复移除不会重复归还实例，`delete()` 重复调用不会产生二次清理错误；
-- 第二轮不创建新的 `Instance2Data`，10 轮后池容量仍稳定为 1000；
-- 战斗没有未处理异常。
+- 面板显示五个 GearIn 字段并使用对应控件类型；
+- 缺库或缺键时返回 Defs 默认值；
+- 保存 GearIn 设置时只触发一次监听器回调；
+- 下一次效果读取看到新值。
+- 保存范围外的脉冲间隔后，读取到的值仍在 `0.1–10` 范围内。
 
 ## 故障分析
 
-- **千个实例出现但帧时间明显抖动**：完整实例缓冲在循环内重复上传了 1000 次。
-    - **解决方案**：字段写入留在循环内，刷新和提交移到循环后。
+- **保存设置时出现 `NullPointerException`**：读取方法返回 null 包装类型，调用方直接拆箱。
+    - **解决方案**：恢复精确 `fieldID` 并保留默认值分支。
 
-- **画面只显示前一部分实例**：`renderingCount` 小于实例集合大小。
-    - **解决方案**：将绘制数量设为本批有效实例数。
+- **设置面板没有 GearIn**：CSV 不是九列，或文件路径不正确。
+    - **解决方案**：核对 `data/config/LunaSettings.csv`，重启。
 
-- **复用实例仍带着旧位置**：对象归还池前没有重置状态。
-    - **解决方案**：`release` 时清理位置、颜色和寿命。
+- **保存后设置必须重启才生效**：效果继续使用旧缓存，没有在保存通知后重新调用 getter。
+    - **解决方案**：让下次效果计算集中读取当前值。
 
-- **对象池启用后每帧仍有大量分配**：`advance` 中反复创建临时列表、颜色或向量。
-    - **解决方案**：复用这些临时对象。
-
-- **归还后画面仍读取旧实例**：实体仍在渲染管理器中就先归还了池。
-    - **解决方案**：先 `removeEntity()` (其返回 true 时实例数据已清理，无需再归还)。
+- **每次读档后回调次数增加**：注册前没有用 `hasSettingsListenerOfClass` 去重。
+    - **解决方案**：加入幂等检查。
 
 ## 总结
 
-千实例的重点是把对象数量与提交次数分离。实例可以有一千份，实体和全量提交仍各为一次；对象池负责复用状态，刷新区间负责限制后续更新成本。
+LunaLib 设置完整流程是九列 CSV 定义、包装类型读取、一次幂等监听器注册和下一次效果读取。即时生效来自保存通知后重新读取，而不是每帧解析设置文件。
 
 ## 建议参考项
 
-- `org.boxutil.units.standard.attribute.Instance2Data`：二维实例状态；
-- `org.boxutil.units.standard.entity.SpriteEntity`：`submitInstanceData` 上传实例缓冲，`setRenderingCount` 声明本批实际绘制数量；
-- `org.boxutil.manager.CombatRenderingManager`：`removeEntity` 结束战斗渲染所有权。
+- `data/config/LunaSettings.csv`：设置控件定义；
+- `lunalib.lunaSettings.LunaSettings`：运行时读取包装类型值；
+- `lunalib.lunaSettings.LunaSettingsListener`：保存后的变更通知。

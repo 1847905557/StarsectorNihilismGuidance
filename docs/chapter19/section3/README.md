@@ -1,6 +1,6 @@
-# 用 BoxUtil 组合尾迹、扭曲与镜头光斑
+# 让 Nexerelin 在两种星区模式生成 GearIn 开局
 
-尾迹说明弹体从哪里来，扭曲表现冲击波，光斑给出瞬间亮点，一次有重量的命中需要这三个时间尺度。本节分别创建三类实体，再由同一命中入口协调它们的寿命。
+固定 Corvus 与随机星区使用不同生成入口；只测其中一种，另一种往往会把玩家送到空坐标或没有 GearIn 市场的星区。本节为两种模式分别选择出生点，并从同一势力配置读取初始舰队。
 
 *本节预期阅读时间：~18 分钟。*
 
@@ -10,10 +10,10 @@
 
 完成后，您将能够：
 
-- 使用 `TrailEntity`、`DistortionEntity` 和 `FlareEntity` 组合命中视觉；
-- 配置三个实体的位置、外观、寿命和计时阶段；
-- 使用共享默认畸变，并为尾迹与光斑选择图层；
-- 根据各自的入队结果保留或删除渲染实体。
+- 在 `SectorManager` 可用后区分 Corvus 与随机星区；
+- 为 Corvus 模式登记固定出生实体，为随机星区选择已生成市场；
+- 从同一份 Nexerelin 势力配置读取起始舰队变体。
+- 区分固定 `fleetType`、`RANDOM` 候选和无法解析的舰队类型。
 
 ## 前置知识
 
@@ -21,188 +21,140 @@
 - [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
-## 明确当前需求
+## 分开处理两种星区
 
-能量弹命中后，旧路径留下渐隐尾迹，命中点产生扩张扭曲和短促横向光斑；任一 shader 路径关闭时，其余效果仍可独立显示。
+Corvus 模式把玩家放在 `corvus_spawnpoints.csv` 登记的固定实体旁，前提是该实体已由 Corvus 星区生成器创建；随机星区先生成 GearIn 市场，再选择规模最大的已生成市场主实体作为出生点，前提是市场已经生成且包含主实体。两种模式都获得相同类型的起始舰队。
 
 ## 文件与 API 链路
 
-### 命中特效实体速查表
+`SectorManager.isCorvusMode` 选择分支；`ExerelinCorvusLocations` 读取固定出生实体；`NexUtilsFaction.getFactionMarkets` 返回随机星区已经生成的本势力市场；`NexFactionConfig.getStartFleetForType` 读取起始舰队变体 ID。
 
-| 实体 | 职责 |
-|---|---|
-| `TrailEntity` | 接收世界路径节点 |
-| `DistortionEntity` | 直接绘制三阶段冲击环 |
-| `FlareEntity` | 通过模型矩阵确定世界位置和朝向 |
+### 先判断当前星区模式
 
-三者都继承 BoxUtil 的全局计时与图层状态，并分别交给 `CombatRenderingManager`。
-
-### 用两个节点建立可见尾迹
-
-`GearInBoxTrailEffect.make()` 设置首尾宽度、颜色并追加路径点：
+`GearInNexStartPlanner.chooseSpawn()` 只在 manager 已建立后读取 Corvus 状态：
 
 ```java
-trail.addNode(first);
-trail.addNode(second);
-trail.submitNodes();
-```
-
-返回对象至少有两个节点。
-
-### 让尾迹从亮宽过渡到透明细线
-
-`make()` 在设置颜色与宽度时把方向感写进首尾状态，并给尾迹 1 秒总寿命：
-
-```java
-trail.setStartWidth(28f);
-trail.setEndWidth(2f);
-trail.setEndColor(new Color(20, 80, 255, 0));
-trail.setGlobalTimer(0.05f, 0.15f, 0.8f);
-```
-
-弹体后方逐渐变细并淡出。
-
-### 配置三阶段扭曲尺寸
-
-`GearInImpactSpecialFX.makeDistortion()` 先写命中位置，再让冲击从 20 su 扩张到 180 su，强度从 0 升到 0.8 后回到 0：
-
-```java
-distortion.setLocation(location);
-distortion.setSizeIn(20f, 20f);
-distortion.setSizeFull(120f, 120f);
-distortion.setSizeOut(180f, 180f);
-distortion.setPowerIn(0f);
-distortion.setPowerFull(0.8f);
-distortion.setPowerOut(0f);
-distortion.setGlobalTimer(0.05f, 0.1f, 0.55f);
-```
-
-命中点出现扩张环而非固定圆斑。
-
-### 比较默认畸变与手动实体
-
-需要统一默认冲击参数的命中入口可以改用默认控制器；它返回 `Instance2Data`，适合直接复用共享默认时序，但仍需按入队返回码处理实例所有权：
-
-```java
-Instance2Data defaultDistortion = RenderingUtil.SpecialFX
-        .addDefaultDistortion(false, 0.7f);
-```
-
-默认路径返回可入队的实例或明确返回 `null`；手动 `DistortionEntity` 仍保留自定义尺寸、强度和环硬度。
-
-### 配置横向镜头光斑
-
-`GearInImpactSpecialFX.makeFlare()` 设置命中位置、弹体朝向、长宽、颜色、混合和 0.4 秒总寿命：
-
-```java
-flare.setLocation(location);
-flare.setFacingScale(facing, 1f, 1f);
-flare.setSize(180f, 28f);
-flare.setCoreColor(Color.WHITE);
-flare.setFringeColor(new Color(70, 200, 255, 180));
-flare.setAdditiveBlend();
-flare.setGlobalTimer(0.05f, 0.05f, 0.3f);
-```
-
-命中瞬间出现白芯青边的短光斑。
-
-### 分别处理三个入队结果
-
-命中效果入口为每个实体独立检查返回码并释放失败项：
-
-```java
-for (RenderDataAPI effect : effects) {
-    byte state = CombatRenderingManager.addEntity(effect);
-    if (state != BoxEnum.STATE_SUCCESS) effect.delete();
+if (GearInNexCompat.isNexCorvusMode()) {
+    return GearInNexCompat.getFactionSpawnPointEntityId(factionId);
 }
 ```
 
-关闭扭曲时，尾迹与光斑仍可出现。
+两种模式随后进入不同日志分支。
+
+### 为 Corvus 提供固定实体
+
+在 `data/config/exerelin/corvus_spawnpoints.csv` 的 GearIn 行写入三列，依次为势力 ID、星系名称和已存在实体 ID：
+
+```csv
+faction,system,entityID
+gear_industry,GearIn Prime,GearIn_prime
+```
+
+`system` 是便于定位的星系名称，真正交给开局逻辑的是 `entityID`。该实体必须已经由 Corvus 星区生成器创建。
+
+固定模式会解析到 `GearIn_prime`，玩家出生在该实体附近。
+
+### 为随机星区选择本势力市场
+
+`chooseSpawn()` 的随机分支在随机星区经济已经建立后，读取 GearIn 当前拥有的市场：
+
+```java
+for (MarketAPI market : NexUtilsFaction.getFactionMarkets(factionId)) {
+    if (largest == null || market.getSize() > largest.getSize()) {
+        largest = market;
+    }
+}
+```
+
+完整实现还会排除没有主实体的市场。选择规模最大的市场能让开局位置保持稳定，也避免引用只存在于 Corvus 模式的实体 ID。
+
+随机模式返回一个实际市场主实体 ID；GearIn 没有市场时明确返回 `null`。
+
+### 从配置取得初始舰队
+
+`GearInNexStartPlanner.chooseFleet()` 按 `fleetType` 读取变体列表：
+
+```java
+return NexConfig.getFactionConfig(factionId)
+        .getStartFleetForType(fleetType, false, 0);
+```
+
+第二个参数为 `false`，因此配置缺少该舰队类型时不会偷偷补一艘后备舰；索引 `0` 固定选择该类型的首组配置，便于两种模式做一致性复验。
+
+两个模式对同一个 `fleetType` 会返回相同的变体 ID 列表。
+
+### 让配置选择随机开局舰队
+
+`GearInNexStartPlanner.chooseFleet()` 的调用方传入 `RANDOM` 时，由 Nexerelin 从允许随机选择的舰队类型中挑选；固定类型仍直接读取对应配置：
+
+```java
+List<String> fleet = planner.chooseFleet(factionId, "RANDOM");
+```
+
+多次新档得到的舰队类型可能不同，但每次结果都来自允许的起始舰队集合。
+
+### 先拒绝无法解析的舰队类型
+
+在请求进入 `getStartFleetForType()` 之前，用 try/catch 接住 `StartFleetType.getType()` 对未知键抛出的 `IllegalArgumentException`，避免把拼写错误当成随机类型：
+
+```java
+boolean valid = true;
+try {
+    NexFactionConfig.StartFleetType.getType(fleetType);
+} catch (IllegalArgumentException e) {
+    valid = false;
+}
+```
+
+固定类型和 `RANDOM` 照常进入配置读取，未知类型在玩家放置前返回明确错误。
 
 ## 完整最小例
 
-两个完整类只构造效果。命中入口传入两个轨迹点、命中位置和弹体朝向，再逐项入队；构造器已经写好世界位置、图层与寿命。
+局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
 
-::: details 完整成品：GearInBoxTrailEffect
-
-```java
-package data.scripts.gearin.lib;
-
-import java.awt.Color;
-
-import org.boxutil.units.standard.entity.TrailEntity;
-import org.lwjgl.util.vector.Vector2f;
-
-import com.fs.starfarer.api.combat.CombatEngineLayers;
-
-public final class GearInBoxTrailEffect {
-    public TrailEntity make(Vector2f first, Vector2f second) {
-        TrailEntity trail = new TrailEntity();
-        trail.setStartWidth(28f);
-        trail.setEndWidth(2f);
-        trail.setStartColor(new Color(80, 230, 255, 220));
-        trail.setEndColor(new Color(20, 80, 255, 0));
-        trail.addNode(first);
-        trail.addNode(second);
-        trail.setFlowWhenPaused(false);
-        trail.setGlobalTimer(0.05f, 0.15f, 0.8f);
-        trail.setLayer(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
-        trail.submitNodes();
-        return trail;
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInImpactSpecialFX
+::: details 完整成品：GearInNexStartPlanner
 
 ```java
-package data.scripts.gearin.lib;
+package data.scripts.gearin.modcompat;
 
-import java.awt.Color;
+import java.util.List;
 
-import org.boxutil.units.standard.attribute.Instance2Data;
-import org.boxutil.units.standard.entity.DistortionEntity;
-import org.boxutil.units.standard.entity.FlareEntity;
-import org.boxutil.util.RenderingUtil;
-import org.lwjgl.util.vector.Vector2f;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import exerelin.campaign.SectorManager;
+import exerelin.utilities.NexConfig;
+import exerelin.utilities.NexFactionConfig;
+import exerelin.utilities.NexUtilsFaction;
+import exerelin.world.ExerelinCorvusLocations;
 
-import com.fs.starfarer.api.combat.CombatEngineLayers;
+public final class GearInNexStartPlanner {
+    public String chooseSpawn(String factionId) {
+        SectorManager manager = SectorManager.getManager();
+        if (manager != null && manager.isCorvusMode()) {
+            ExerelinCorvusLocations.SpawnPointEntry entry =
+                    ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
+            return entry == null ? null : entry.entityId;
+        }
 
-public final class GearInImpactSpecialFX {
-    /** BoxUtil 缺陷：首参实为 isCampaign(战役管线)，命名易误导调用方。战斗入口应传 false。 */
-    public Instance2Data makeDefaultDistortion(boolean isCampaign, float duration) {
-        return RenderingUtil.SpecialFX.addDefaultDistortion(isCampaign, duration);
+        MarketAPI largest = null;
+        for (MarketAPI market : NexUtilsFaction.getFactionMarkets(factionId)) {
+            if (market.getPrimaryEntity() == null) {
+                continue;
+            }
+            if (largest == null || market.getSize() > largest.getSize()) {
+                largest = market;
+            }
+        }
+        return largest == null ? null : largest.getPrimaryEntity().getId();
     }
 
-    public DistortionEntity makeDistortion(Vector2f location) {
-        DistortionEntity distortion = new DistortionEntity();
-        distortion.setLocation(location);
-        distortion.setSizeIn(20f, 20f);
-        distortion.setSizeFull(120f, 120f);
-        distortion.setSizeOut(180f, 180f);
-        distortion.setPowerIn(0f);
-        distortion.setPowerFull(0.8f);
-        distortion.setPowerOut(0f);
-        distortion.setInnerFull(0.1f, 0.1f);
-        distortion.setRingHardness(0.75f);
-        distortion.setGlobalTimer(0.05f, 0.1f, 0.55f);
-        return distortion;
-    }
-
-    public FlareEntity makeFlare(Vector2f location, float facing) {
-        FlareEntity flare = new FlareEntity();
-        flare.setLocation(location);
-        flare.setFacingScale(facing, 1f, 1f);
-        flare.setSize(180f, 28f);
-        flare.setCoreColor(Color.WHITE);
-        flare.setFringeColor(new Color(70, 200, 255, 180));
-        flare.setSmooth();
-        flare.setAdditiveBlend();
-        flare.setGlobalTimer(0.05f, 0.05f, 0.3f);
-        flare.setLayer(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
-        return flare;
+    public List<String> chooseFleet(String factionId, String fleetType) {
+        NexFactionConfig config = NexConfig.getFactionConfig(factionId);
+        try {
+            NexFactionConfig.StartFleetType.getType(fleetType);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Unknown start fleet type: " + fleetType);
+        }
+        return config.getStartFleetForType(fleetType, false, 0);
     }
 }
 ```
@@ -211,45 +163,48 @@ public final class GearInImpactSpecialFX {
 
 ## 验证方案
 
-前置数据：BoxUtil 三项渲染路径可用，弹体命中效果能提供上一采样点、命中点与飞行朝向。
+前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含 [C19-S2] 的势力接入结果、本节 `corvus_spawnpoints.csv` 登记行和 `GearInNexStartPlanner`。
 
-1. 触发一次命中，确认尾迹连接两个输入点，并在 1 秒内渐细、淡出。
-2. 核对扭曲中心位于命中点，尺寸按 20、120、180 su 三阶段扩张，总寿命为 0.7 秒。
-3. 核对光斑位于同一命中点，长轴沿弹体朝向，总寿命为 0.4 秒。
-4. 用默认畸变路径连续触发 100 次，记录返回 `null` 的次数、入队次数和持续时间。
-5. 暂停战斗，确认三个实体的全局计时不推进；恢复后继续退出阶段。
+1. 构建示例 MOD，确认 `MarketAPI`、`NexUtilsFaction` 与开局配置方法签名匹配。
+2. 创建 Corvus 新档，记录出生实体 ID 和起始舰队变体列表。
+3. 创建随机星区新档，再次记录实体 ID 和同类型舰队列表。
+4. 以固定类型创建 1 次开局，再以 `RANDOM` 创建多次开局，记录舰队规模与类型来源。
+5. 传入未知 `fleetType`，确认规划器在玩家放置前返回错误。
+6. 临时把 GearIn 的随机星区生成权重设为 `0`，确认规划器返回 `null`，而不是一个伪造实体 ID。
 
 预期结果：
 
-- 尾迹至少有两个节点，并按首尾宽度、颜色和全局计时变化；
-- 扭曲的位置、尺寸、强度和环硬度都来自命中参数与构造器状态；
-- 光斑位置与朝向正确，使用白芯青边的加法混合；
-- 默认畸变的复用次数、空值数和持续时间可与手动实体分开记录。
+- 两种模式进入不同日志分支；
+- 固定模式返回 `corvus_spawnpoints.csv` 登记的实体；
+- 随机模式返回已生成 GearIn 市场的主实体；
+- 两个模式为同一舰队类型返回相同变体列表；
+- `RANDOM` 只从允许随机的起始舰队类型中选择；
+- 未知舰队类型不会静默退回 `RANDOM`；
+- 没有有效市场时返回 `null`，调用方能够在放置玩家前中止开局并报告原因。
 
 ## 故障分析
 
-- **关闭扭曲后无效对象持续积累**：调用方忽略入队返回码，也没有释放失败实体。
-    - **解决方案**：逐项检查状态，失败时立即 `delete()`。
+- **随机星区查询不到 Corvus 实体**：模式判断发生在固定实体查询之后。
+    - **解决方案**：先确认 `SectorManager` 已创建并判断模式，随机分支改从当前 GearIn 市场取得主实体。
 
-- **尾迹不可见**：节点少于两个，或没有执行 `submitNodes`。
-    - **解决方案**：补齐首尾节点并提交。
+- **Corvus 模式出生在星区中心**：CSV 路径、表头或 `entityID` 与已创建 token 不一致。
+    - **解决方案**：改用真实实体 ID，创建固定模式新档。
 
-- **扭曲方向与预期相反**：`power` 使用了负值，或内外尺寸参数顺序错误。
-    - **解决方案**：修正符号和尺寸顺序。
+- **随机模式没有 GearIn 市场**：生成权重、势力启用状态或市场生成条件不满足。
+    - **解决方案**：检查 `getFactionMarkets(factionId)` 的数量，修正配置。
 
-- **默认畸变没有返回实例**：发生在 3D 模式、forceDelete 或实体未初始化等情形，与畸变开关无关。
-    - **解决方案**：记录 `addDefaultDistortion()` 的空值结果，改用手动实体只作为对照，不把空值继续提交。
+- **初始舰队为空**：请求的 `fleetType` 与 `startShips` 键不一致，且 fallback 已关闭。
+    - **解决方案**：记录请求类型和返回列表，修正配置键。
 
-- **光斑遮住整个画面**：宽高按屏幕像素填写，但实体使用世界尺度。
-    - **解决方案**：按世界单位缩小尺寸。
+- **随机开局出现不允许的舰队类型**：调用方把任意字符串直接交给随机分支。
+    - **解决方案**：先用 `StartFleetType.getType()` 和候选标志过滤。
 
 ## 总结
 
-三个效果共享触发点，各自拥有节点、尺寸和寿命。独立创建、独立入队、独立失败，组合效果才能在配置降级时保持可控。
+两种模式共享势力与舰队配置，只在空间对象来源上分支。固定模式使用 CSV 登记的现有 token，随机模式使用本次生成后实际存在的市场主实体；模式判断必须早于固定实体查询，市场存在性必须早于玩家放置。
 
 ## 建议参考项
 
-- `org.boxutil.units.standard.entity.TrailEntity`：路径型尾迹；
-- `org.boxutil.units.standard.entity.DistortionEntity`：环形空间扭曲；
-- `org.boxutil.units.standard.entity.FlareEntity`：核心与边缘可调的光斑；
-- `org.boxutil.util.RenderingUtil`：`SpecialFX.addDefaultDistortion` 取得共享默认畸变实例。
+- `exerelin.campaign.SectorManager`：`isCorvusMode` 判断星区生成模式；
+- `corvus_spawnpoints.csv`：固定模式出生点；
+- `exerelin.utilities.NexFactionConfig`：`getStartFleetForType` 读取起始舰队，`StartFleetType` 判断固定类型与 `RANDOM` 候选。

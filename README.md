@@ -6,7 +6,7 @@
 
 ## 这是什么
 
-一份按章组织的教程，共 21 章 (`docs/chapter1` – `docs/chapter21`)、109 个节页 (`chapterN/sectionM/README.md`)：
+一份按章组织的教程，共 20 章 (`docs/chapter1` – `docs/chapter20`)、107 个节页 (`chapterN/sectionM/README.md`)：
 
 1. 基础：舰船、武器、船插、战术系统、战役数据、音频
 2. 进阶：模拟战、模块船、Java 工程、全局服务

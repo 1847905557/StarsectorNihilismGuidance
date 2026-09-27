@@ -127,7 +127,7 @@ public void onFleetSync(CampaignFleetAPI fleet) {
             count++;
         }
     }
-    fleet.getSensorRangeMod().modifyFlat(ID, count * SENSOR_RANGE_BONUS);
+    fleet.getStats().getSensorRangeMod().modifyFlat(ID, count * SENSOR_RANGE_BONUS);
 }
 ```
 
@@ -446,10 +446,10 @@ public class GearInFleetMaintenanceHullMod extends BaseHullMod
             }
         }
         if (count == 0) {
-            fleet.getSensorRangeMod().unmodify(SENSOR_MOD_ID);
+            fleet.getStats().getSensorRangeMod().unmodify(SENSOR_MOD_ID);
             return;
         }
-        fleet.getSensorRangeMod().modifyFlat(SENSOR_MOD_ID,
+        fleet.getStats().getSensorRangeMod().modifyFlat(SENSOR_MOD_ID,
                 count * SENSOR_RANGE_BONUS);
     }
 }

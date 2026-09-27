@@ -54,7 +54,7 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 
 ### 经济规模与扩展
 
-`economyTier`、`econUnitOrigUnused`、`econUnit` 和 `eU * base value` 服务于经济规模换算；`baseRaidDanger` 提供突袭危险度基础值。`plugin` 是可选的商品插件入口，`desc` 不承担货舱长描述的挂接；商品名称与货舱描述文本来自不同数据入口，本节只确认规格字段。
+`economyTier`、`econUnitOrigUnused`、`econUnit` 和 `eU * base value` 服务于经济规模换算；`baseRaidDanger` 提供突袭危险度基础值。商品加载器不读取 `plugin` 列，`desc` 也不承担货舱长描述的挂接；商品名称与货舱描述文本来自不同数据入口，本节只确认规格字段。
 
 ::: tip 先验证 ID，再验证经济
 

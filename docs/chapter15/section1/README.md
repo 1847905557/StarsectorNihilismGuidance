@@ -29,9 +29,8 @@
 生涯交互通常从 `BaseCampaignPlugin` 的 picker 开始。picker 接收候选实体，按实体状态决定是否返回一个 `InteractionDialogPlugin`；它负责选择处理实现，不负责创建已经运行的对话。调用方拿到插件后，再把插件和同一个 `SectorEntityToken` 交给 `showInteractionDialog(plugin, target)`。
 
 ```java
-InteractionDialogAPI dialog =
-        Global.getSector().getCampaignUI().showInteractionDialog(
-                new GearInConversationDialog(), target);
+Global.getSector().getCampaignUI().showInteractionDialog(
+        new GearInConversationDialog(), target);
 ```
 
 调用发生后，引擎创建 `InteractionDialogAPI`，把目标、插件和三个面板放进同一会话，再调用插件的 `init(dialog)`。`plugin` 是回调接收者，`target` 是入口传入的候选实体，`dialog` 是运行时唯一的会话容器；插件从 `dialog` 取得目标和面板，因而不会把 picker 阶段的临时引用误当成会话状态。
@@ -80,7 +79,7 @@ dialog.setOptionOnEscape("Cancel", "CANCEL");
 if (target.getCustomInteractionDialogImageVisual() != null) {
     visual.showImageVisual(target.getCustomInteractionDialogImageVisual());
 } else {
-    visual.hideVisualPanel();
+    dialog.hideVisualPanel();
 }
 ```
 
@@ -141,7 +140,7 @@ dialog.setBackgroundDimAmount(0.65f);
 
 ## 处理专用入口
 
-交互对话还可以暂时承载几类专用界面。`showCargo(...)` 与 `showLoot(...)` 接收货物、战利品和相应监听器，适合把奖励对象交给已有界面呈现；显示结束后，当前插件仍负责把结果写回文本或选项。
+交互对话还可以暂时承载几类专用界面。`showLoot(...)` 接收战利品和相应监听器，适合把奖励对象交给已有界面呈现；显示结束后，当前插件仍负责把结果写回文本或选项。
 
 `showCargoPickerDialog(...)`、`showFleetMemberPickerDialog(...)`、`showIndustryPicker(...)`、`showCampaignEntityPicker(...)` 和 `showCustomProductionPicker(...)` 把货物、舰队成员、行业、战役实体或生产方案的选择过程交给专用 picker。选择器返回的对象由回调提供，当前对话的选项不会自动替换成选择结果；返回后依据结果重建需要显示的文本和分支。
 
@@ -238,7 +237,7 @@ public class GearInConversationDialog implements InteractionDialogPlugin {
         if (target.getCustomInteractionDialogImageVisual() != null) {
             visual.showImageVisual(target.getCustomInteractionDialogImageVisual());
         } else {
-            visual.hideVisualPanel();
+            dialog.hideVisualPanel();
         }
     }
 

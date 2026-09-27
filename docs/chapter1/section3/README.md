@@ -283,7 +283,7 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 | attackRunRange | 当战机与敌舰交战时，最大允许的可后撤距离 |
 | attackPositionOffset | 战机攻击距离补正 |
 | num | 每联队的战机数 |
-| role | 战机的 AI 种类，允许的有 `FIGHTER`、`INTERCEPTOR`、`BOMBER`、`SUPPORT`、`ASSAULT`。`INTERCEPTOR` 目标选取独走一条路径 (优先锁定范围内最近的敌方战机)，攻击环绕距离最大 (500)；`ASSAULT` 最小 (75)，贴得最近；`BOMBER` 是轰炸机，`SUPPORT` 是不会主动离开母舰的支援机 |
+| role | 战机的 AI 种类，允许的有 `FIGHTER`、`INTERCEPTOR`、`BOMBER`、`SUPPORT`、`ASSAULT`。`INTERCEPTOR` 目标选取独走一条路径 (优先锁定范围内最近的敌方战机)；`BOMBER` 是轰炸机，`SUPPORT` 是不会主动离开母舰的支援机。环绕距离不随 role 变化：`attackRunRange` 按联队逐行设置，原版拦截机联队为 200–600，轰炸机反而最大 (2000–2500) |
 | role desc | 战机类型文字描述 |
 | refit | 战机整备所需秒数 |
 | base value | 每联队的成本价 |

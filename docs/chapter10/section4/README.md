@@ -256,4 +256,4 @@ public class GearInEntityPlacement implements EveryFrameScript {
 
 - `com.fs.starfarer.api.campaign.SectorEntityToken`：实体身份、位置、memory、tag、传感器和可见性入口；
 - `com.fs.starfarer.api.campaign.CustomCampaignEntityAPI`：custom entity plugin、交互状态与 spec 行为入口；
-- `data/campaign/custom_entities.csv`：custom entity type、图片和 plugin 配置。
+- `data/config/custom_entities.json`：custom entity type、图片和 plugin 配置。

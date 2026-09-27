@@ -31,9 +31,9 @@ CampaignFleetAPI 表示地图上的舰队实体，FleetDataAPI 保存这支舰�
 CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
 FleetDataAPI data = fleet.getFleetData();
 LOG.info("members=" + data.getNumMembers()
-        + " flagship=" + (data.getFlagship() == null
+        + " flagship=" + (fleet.getFlagship() == null
                 ? "none"
-                : data.getFlagship().getId()));
+                : fleet.getFlagship().getId()));
 ```
 
 玩家舰队适合作为读取入口，因为成员列表、旗舰和汇总值都能直接在舰队界面复核。写入示例只操作临时创建的成员，并在结尾恢复原旗舰和成员数量。
@@ -44,7 +44,7 @@ LOG.info("members=" + data.getNumMembers()
 
 ```java
 List<FleetMemberAPI> membersBefore = data.getMembersListCopy();
-FleetMemberAPI flagshipBefore = data.getFlagship();
+FleetMemberAPI flagshipBefore = fleet.getFlagship();
 int countBefore = data.getNumMembers();
 int pointsBefore = fleet.getFleetPoints();
 float burnBefore = data.getBurnLevel();
@@ -74,12 +74,16 @@ membersBefore 是一次性的当前状态副本。成员对象本身仍然是实
 | getMembersListCopy() | 当前成员列表副本 | 安全遍历和筛选 | 修改列表不会修改舰队 |
 | getMembersInPriorityOrder() | 按优先级排列的成员列表 | 部署和界面顺序观察 | 顺序由舰队数据维护 |
 | getNumMembers() | 当前成员数量 | 增删前后核对 | 只读汇总 |
-| getFlagship() | 当前旗舰引用 | 旗舰切换与恢复 | 可能返回 null |
+| fleet.getFlagship() | 当前旗舰引用 (CampaignFleetAPI) | 旗舰切换与恢复 | 可能返回 null |
 | getOfficersCopy() | 军官数据副本 | 读取军官归属 | 人物创建由人物专题负责 |
 
 getMembersListCopy() 的价值在于稳定遍历。舰队内部集合变化时，调用方持有的旧副本不会自动增加或删除元素；需要最新状态时重新调用。
 
-getMembersInPriorityOrder() 的顺序由舰队数据维护：后勤优先成员先出现，随后是非封存成员，最后是封存成员；同一类别保留原有顺序。这个返回值用于读取部署优先级，不能当作可写排序列表。需要把一个已经准备好的顺序写回时，调用 sortToMatchOrder(...)，并确认列表包含当前舰队中的全部成员。
+getMembersInPriorityOrder() 的顺序由舰队数据维护：先非封存成员，后封存成员，段内保留原有顺序。这个返回值用于读取部署优先级，不能当作可写排序列表。需要把一个已经准备好的顺序写回时，调用 sortToMatchOrder(...)，并确认列表包含当前舰队中的全部成员。
+
+::: warning 接口 javadoc 属过时描述
+`getMembersInPriorityOrder()` 的公开 javadoc 声称 "后勤优先" 成员先出现，这是已被移除功能的残留：对应的成员标记 API 在 0.98a-RC8 已被注释，界面入口为空操作，实现只有先非封存、后封存两段。以实现为准。
+:::
 
 getCombatReadyMembersListCopy() 只回答当前可用于战斗的成员数量。封存成员、船体状态和装配状态可能让它少于 getMembersListCopy()；因此不要用两个列表的长度相等作为正常条件。
 
@@ -134,10 +138,10 @@ setOnlySyncMemberLists(true) 会把同步范围限制在成员列表。它适用
 旗舰必须属于当前成员集合。保存原旗舰后，把临时成员设为旗舰，读取 FleetDataAPI 与 FleetMemberAPI 的两个观察入口；清理前先恢复原旗舰，再移除临时成员。
 
 ```java
-FleetMemberAPI originalFlagship = data.getFlagship();
+FleetMemberAPI originalFlagship = fleet.getFlagship();
 data.setFlagship(demo);
 
-LOG.info("dataFlagship=" + data.getFlagship().getId()
+LOG.info("dataFlagship=" + fleet.getFlagship().getId()
         + " memberFlagship=" + demo.isFlagship());
 
 data.setFlagship(originalFlagship);
@@ -222,7 +226,7 @@ addAssignment() 只改变待执行任务。舰队已经属于有效地点、目�
 下面的局部序列把集合写入和恢复放在同一作用域。try/finally 可以确保日志或观察代码抛出异常时仍执行清理。
 
 ```java
-FleetMemberAPI originalFlagship = data.getFlagship();
+FleetMemberAPI originalFlagship = fleet.getFlagship();
 FleetMemberAPI demo = Global.getFactory().createFleetMember(
         FleetMemberType.SHIP,
         "wolf_Assault");
@@ -444,7 +448,7 @@ if (current != null) {
 
 ```java
 List<FleetMemberAPI> membersBefore = data.getMembersListCopy();
-FleetMemberAPI flagshipBefore = data.getFlagship();
+FleetMemberAPI flagshipBefore = fleet.getFlagship();
 List<FleetAssignmentDataAPI> assignmentsBefore = fleet.getAssignmentsCopy();
 FleetMemberAPI demo = Global.getFactory().createFleetMember(
         FleetMemberType.SHIP,
@@ -460,7 +464,7 @@ try {
     data.syncIfNeeded();
 
     LOG.info("GearIn: temporary count=" + data.getNumMembers()
-            + " currentFlagship=" + data.getFlagship().getId());
+            + " currentFlagship=" + fleet.getFlagship().getId());
 } finally {
     boolean flagshipStillPresent = false;
     for (FleetMemberAPI member : data.getMembersListCopy()) {
@@ -496,9 +500,9 @@ try {
     data.syncIfNeeded();
     LOG.info("GearIn: restored count=" + data.getNumMembers()
             + " expected=" + membersBefore.size()
-            + " flagship=" + (data.getFlagship() == null
+            + " flagship=" + (fleet.getFlagship() == null
                     ? "none"
-                    : data.getFlagship().getId()));
+                    : fleet.getFlagship().getId()));
 }
 ```
 
@@ -557,6 +561,6 @@ FleetDataAPI 维护成员、旗舰、顺序和军官集合，CampaignFleetAPI �
 
 - `com.fs.starfarer.api.campaign.FleetDataAPI`：成员集合、旗舰、顺序和军官入口；
 - `com.fs.starfarer.api.campaign.CampaignFleetAPI`：舰队汇总、运动状态和任务队列；
-- `com.fs.starfarer.api.campaign.FleetAssignmentDataAPI`：当前任务与目标；
+- `com.fs.starfarer.api.campaign.ai.FleetAssignmentDataAPI`：当前任务与目标；
 - `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员身份与旗舰状态；
 - `com.fs.starfarer.api.FactoryAPI`：舰队成员创建入口。

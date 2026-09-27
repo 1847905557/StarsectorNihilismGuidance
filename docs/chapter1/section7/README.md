@@ -146,10 +146,10 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 - 副标题文本由 `primaryRoleStr + ", range"` 拼出 (`text2` 是备用值)。
 - 战术系统行显示 text3(例如锻件-级的相位系统行显示对应描述)，没有 text3 时显示完整 text1。
 - text4 非空时其中片段被高亮。
-- **舰队界面**：悬停工匠-级舰船成员，tooltip 引言显示 `descriptionPrefix + text2`(`GearIn_combat_desc_artizan` 行是 "由编者制作的第一艘示例舰船。中坚驱逐舰")。
+- **舰队界面**：悬停工匠-级舰船成员，tooltip 引言显示 `text2`(`GearIn_combat_desc_artizan` 行是 "中坚驱逐舰")。
 - 没有 text2 的对象显示 text1 第一段。
 - **数据库 (codex)**：船体详情显示 text1；武器详情显示 text1；战机详情显示其 hull 的 text1。
-- 舰船系统列表每个条目都列出 (`HIDE_IN_CODEX` 除外)，类型标签取 text2、缺 text2 时显示 `Special`。
+- 舰船系统列表每个条目都列出 (`restricted` 除外)，类型标签取 text2、缺 text2 时显示 `Special`。
 - 系统详情除 text1 外还有 `Effects` 节 (text5 逐行渲染，`{{...}}` 处高亮)。
 - **蓝图与货舱**：悬停舰船/武器蓝图或货舱里的物品，tooltip 显示 text1 第一段 (舰船带 `descriptionPrefix` 前缀)。
 - **最小任务链的验证流程**：修改某一行的 text1 后重启游戏，对应位置文本随之变化，证明该行确实被使用方读取，而不是碰巧显示别的文本。

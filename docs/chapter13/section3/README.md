@@ -71,7 +71,7 @@
 }
 ```
 
-`elite:true` 使第二组成为精英等级组，`requiredSkillLevel:2` 决定它只有在技能达到二级时才应用。`effectBasedOnLevel:false` 表示脚本收到当前等级，但本例把固定数值写入 modifier；如果改成 `true`，脚本就应该把 `level` 纳入计算，否则面板文字和实际增量会失去一致性。
+`elite:true` 使第二组成为精英等级组，`requiredSkillLevel:2` 决定它只有在技能达到二级时才应用。`effectBasedOnLevel` 只决定技能面板是否追加 "每级" 说明文字；无论取值如何，脚本都会收到当前等级，本例把固定数值写入 modifier。设为 `true` 时，才需要让 `level` 参与计算，保持面板文字与实际增量一致。
 
 ## 用 SkillEffectType 选作用对象
 

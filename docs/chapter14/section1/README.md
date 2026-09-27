@@ -175,7 +175,7 @@ if (!sector.hasScript(GearInDayAccumulatorScript.class)) {
 - `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：实体移除时的 `cleanup()` 钩子；
 - `com.fs.starfarer.api.campaign.SectorAPI`：`addScript`、`addTransientScript`、`removeScript`、`hasScript` 和脚本列表；
 - `com.fs.starfarer.api.campaign.CampaignClockAPI`：`convertToDays` 与日历读取；
-- `com.fs.starfarer.api.campaign.Global`：取得当前生涯 `SectorAPI` 的全局入口；
+- `com.fs.starfarer.api.Global`：取得当前生涯 `SectorAPI` 的全局入口；
 - `D:\Starsector\starsector-core\deobf\sources\com\fs\starfarer\campaign\CampaignEngine.java`：脚本快照遍历、暂停门控和前后两次 `isDone()` 检查。
 
 ## 完整最小例

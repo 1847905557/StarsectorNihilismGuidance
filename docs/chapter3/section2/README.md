@@ -223,8 +223,8 @@ color 系列决定势力在界面里的颜色观感。`color` 是势力主色，
 	"aggression":2,   # 越大越偏向鲁莽军官，建议 1–5
 
 	"combatFreighterProbability":0.1,                  # 用武装货舰替换部分货舰的概率
-	"combatFreighterCombatUseFraction":0,              # 舰队损失到低于此比率时才把武装货舰当战舰用
-	"combatFreighterCombatUseFractionWhenPriority":0,  # 标记为优先时武装货舰当战舰用的概率
+	"combatFreighterCombatUseFraction":0,              # 舰队生成时把武装货舰并入战斗阵容的权重倍率
+	"combatFreighterCombatUseFractionWhenPriority":0,  # 标记为优先时武装货舰当战舰用的权重倍率
 	"autofitRandomizeProbability":0.1,                 # 自动装配打乱程度
 
 	"officerSkillsShuffleProbability":1,

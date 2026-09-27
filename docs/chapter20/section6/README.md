@@ -166,7 +166,7 @@ spot.setFacingScale(facing, 1f, 1f);
 configure(spot, location, new Color(180, 235, 255), 0.9f, 320f);
 ```
 
-`AreaLight` 可覆盖一片区域，`InfiniteLight` 可提供环境光。创建前用 `EntityShadingDataManager` 核对受光对象的注册；若注册缺失，增加光源仍无法得到预期的受光画面。
+`AreaLight` 可覆盖一片区域，`InfiniteLight` 是无限远方向光：默认朝向 vec3(0, 0, -1)，衰减半径只约束照射深度，取消衰减后可照亮全场，但仍按受光面法线方向着色，并非无方向的环境光。创建前用 `EntityShadingDataManager` 核对受光对象的注册；若注册缺失，增加光源仍无法得到预期的受光画面。
 
 ## 处理大批量实例的更新范围
 

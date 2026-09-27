@@ -47,7 +47,7 @@ CSV 能被读取而插件类缺失时，子市场规格存在但运行时无法�
 
 ## 读取子市场规格
 
-`SubmarketSpecAPI` 保存注册阶段的静态信息。通过 `SubmarketAPI.getSpec()` 取得它，再读取规格 ID、名称、描述、默认势力、插件脚本和图标等字段。规格适合回答这个子市场在数据文件中被定义成什么。
+`SubmarketSpecAPI` 保存注册阶段的静态信息。通过 `SubmarketAPI.getSpec()` 取得它，再读取规格 ID、名称、描述、默认势力和图标等字段。规格适合回答这个子市场在数据文件中被定义成什么。
 
 ```java
 SubmarketSpecAPI spec = submarket.getSpec();

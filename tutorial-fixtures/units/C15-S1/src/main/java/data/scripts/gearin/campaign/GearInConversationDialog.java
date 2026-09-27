@@ -52,7 +52,7 @@ public class GearInConversationDialog implements InteractionDialogPlugin {
         if (target.getCustomInteractionDialogImageVisual() != null) {
             visual.showImageVisual(target.getCustomInteractionDialogImageVisual());
         } else {
-            visual.hideVisualPanel();
+            dialog.hideVisualPanel();
         }
     }
 

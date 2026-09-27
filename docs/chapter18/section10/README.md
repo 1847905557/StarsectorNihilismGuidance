@@ -72,7 +72,7 @@ MagicLib 随附的说明模板使用 `#` 注释和尾随逗号，游戏的宽松
 
 `trigger_market_id` 指定市场 ID。指定市场存在时，它优先于其余市场条件，使赏金固定出现在该市场；采用随机星区时，找不到该 ID 才继续使用势力与规模条件。
 
-`trigger_marketFaction_any` 允许列表内势力的市场。`trigger_marketFaction_alliedWith` 为 `true` 时，与列表中任意势力关系至少达到 `FAVORABLE` 的市场势力也可以发布任务。`trigger_marketFaction_none` 列出的市场势力始终被排除；启用 `trigger_marketFaction_enemyWith` 后，还会接受与排除列表中所有势力都处于 `HOSTILE` 的市场势力。市场规模最后由 `trigger_market_minSize` 检查。
+`trigger_marketFaction_any` 允许列表内势力的市场。`trigger_marketFaction_alliedWith` 为 `true` 时，与列表中任意势力关系至少达到 `WELCOMING` 的市场势力也可以发布任务。`trigger_marketFaction_none` 列出的市场势力始终被排除；启用 `trigger_marketFaction_enemyWith` 后，还会接受与排除列表中任意一个势力处于 `HOSTILE` 的市场势力。市场规模最后由 `trigger_market_minSize` 检查。
 
 玩家条件使用另一组字段：
 
@@ -87,9 +87,9 @@ MagicLib 随附的说明模板使用 `#` 注释和尾随逗号，游戏的宽松
 "trigger_playerRelationship_atMost": {}
 ```
 
-玩家达到 5 级、舰队实力至少为 30 FP、开局经过 30 个游戏日，并且与独立势力关系不低于 0 后，这条记录才成为候选。`trigger_min_fleet_size` 使用 MagicLib 计算的舰队实力，其中还会考虑军官和玩家等级；它用于避免把舰船暂存起来后，以一支临时缩小的舰队领取低强度任务。
+玩家达到 5 级、舰队实力至少为 30 FP、开局经过 30 个游戏日，并且与独立势力关系不低于 0 后，这条记录才成为候选。`trigger_min_fleet_size` 检查玩家舰队的舰队点数合计；它用于避免把舰船暂存起来后，以一支临时缩小的舰队领取低强度任务。
 
-`trigger_playerRelationship_atLeast` 与 `trigger_playerRelationship_atMost` 分别设置关系下限和上限。对象中的每一项都要满足，所以可以同时要求玩家受到发布方信任、又与目标势力保持敌对。
+`trigger_playerRelationship_atLeast` 与 `trigger_playerRelationship_atMost` 分别设置关系下限和上限。两个对象各自任意一项满足即可，所以可以同时要求玩家受到发布方信任、又与目标势力保持敌对。
 
 `trigger_weight_mult` 只在符合条件的赏金竞争有限告示板栏位时生效。市场规模 3 时，MagicLib 默认提供一个栏位；市场每增加一级，栏位也增加一个。候选权重相加后随机抽取，倍率越大，被选中的机会越高。
 
@@ -197,7 +197,7 @@ MagicBounty 在描述中替换目标与奖励变量。常用变量包括：
 "job_difficultyDescription": "auto"
 ```
 
-`job_show_type` 显示任务的完成要求。`job_show_captain` 显示舰长头像；关闭后，告示板改为显示发布势力旗帜。`job_difficultyDescription` 写 `auto` 时由 MagicLib 根据目标舰队生成危险程度，写 `none` 时隐藏该行，其他文本会原样显示。
+`job_show_type` 显示任务的完成要求。`job_show_captain` 显示舰长头像；关闭后，告示板显示通用灰色人像。`job_difficultyDescription` 写 `auto` 时由 MagicLib 根据目标舰队生成危险程度，写 `none` 时隐藏该行，其他文本会原样显示。
 
 `job_show_fleet` 与 `job_show_distance` 使用枚举字符串控制情报精度：
 

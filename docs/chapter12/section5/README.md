@@ -178,7 +178,7 @@ Pair<String, Integer> deficit = getMaxDeficit(
 applyDeficitToProduction(1, deficit, Commodities.RARE_METALS);
 ```
 
-第一个参数是每单位缺口削减的产出数量。本例中，最大的输入缺口每增加 1，稀有金属产出减少 1。
+第一个参数是供给修饰的槽位索引，只区分修饰来源；削减量等于整个缺口。本例中，最大的输入缺口每增加 1，稀有金属产出减少 1。
 
 该方法只会削减已经声明过的供给。若目标商品没有通过 `supply()` 写入供给 map，调用不会凭空创建产出。
 
@@ -280,7 +280,7 @@ industry.setDisrupted(0f);
 
 | 产业 | 输入与产出 | 典型插件 | 本节关注点 |
 | --- | --- | --- | --- |
-| `mining` | 矿石与有机物输入，矿产输出 | `Mining` | 多商品供给和地表条件 |
+| `mining` | `heavy_machinery`、`drugs` 输入，矿石与有机物等产出 | `Mining` | 多商品供给和地表条件 |
 | `refining` | `ore`、`rare_ore` 输入，`metals`、`transplutonics` 输出 | `Refining` | 原版精炼生产链 |
 | `GearIn_element_works` | `metals`、`fuel`、`heavy_machinery` 输入，`rare_metals` 输出 | `GearInElementWorksIndustry` | 规模化需求、最大短缺和状态观察 |
 

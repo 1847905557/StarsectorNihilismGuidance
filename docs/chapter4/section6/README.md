@@ -12,7 +12,7 @@
 
 - 在 `data/config/custom_entities.json` 增加静态实体类型；
 - 用 `baseId` 继承一组稳定的默认显示参数；
-- 配置图标、 Sprite 贴图、地图名称、可发现性和发现经验；
+- 配置图标、Sprite 贴图、地图名称、可发现性和发现经验；
 - 用 `addCustomEntity` 投放类型，并由 CUSTOM 描述完成界面闭环。
 
 ## 前置知识

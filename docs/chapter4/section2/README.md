@@ -106,7 +106,7 @@ GearIn_artizan_combat
 - 启动游戏 (启用测试 MOD)：正常进入主菜单 (没有加载中断)；
 - `starsector.log` 出现 `Loading CSV data from [DIRECTORY: ...]` 记录。该日志不含文件名。
 - 进入生涯，打开任意舰船的装配界面，点 "Run simulation"：敌方舰队包含 `GearIn_artizan_combat`；日志没有 `is not a valid ship variant id`。
-- 回到主菜单停留一段时间 (或多次重启)：背景战斗的舰船池会随机出现 GearIn 的船 (首次构建时第一艘非战机条目以受创形态出现)。
+- 回到主菜单停留一段时间 (或多次重启)：背景战斗的舰船池会随机出现 GearIn 的船。
 
 ## 故障分析
 

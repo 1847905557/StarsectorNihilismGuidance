@@ -31,7 +31,7 @@ public class GearInSpecialItemProbe {
             }
         }
 
-        Industry industry = findIndustry(market, "element_works");
+        Industry industry = findIndustry(market, "GearIn_element_works");
         if (industry == null) return;
         SpecialItemData previous = industry.getSpecialItem();
         SpecialItemSpecAPI coreSpec = Global.getSettings().getSpecialItemSpec(coreData.getId());

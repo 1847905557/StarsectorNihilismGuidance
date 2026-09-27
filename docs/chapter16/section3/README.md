@@ -79,7 +79,7 @@
 
 ### 选择人物问候与舰队问候
 
-通讯目录选择人物后，通讯面板先触发 `FireBest OpenCDE`。`convDefault` 再调用 `FireBest PickGreeting`，问候规则按人物 ID、`$voice`、`$postId` 和剧情 flag 选择人物视觉、文本与选项。NPC 主动请求通讯时，`NPCCommsRequest` 的 `npcCommsAccept` 规则也会把流程送入 `PickGreeting`。自定义入口可以直接把 `PickGreeting` 设为初始 trigger，也可以用带 score 的子 trigger 继续分派。
+通讯目录选择人物后，通讯面板先触发 `FireBest OpenCDE`。`convDefault` 再调用 `FireBest PickGreeting`，问候规则按人物 ID、`$voice`、`$postId` 和剧情 flag 选择人物视觉、文本与选项。NPC 主动请求通讯时，`NPCCommsRequest` 的 `npcCommsAccept` 规则也会把流程送入 `PickGreetingActive`。自定义入口可以直接把 `PickGreeting` 设为初始 trigger，也可以用带 score 的子 trigger 继续分派。
 
 舰队通讯由 `FleetInteractionDialogPluginImpl` 创建 embedded `RuleBasedInteractionDialogPluginImpl`，设置 embedded mode 和对方指挥官，再触发 `OpenCommLink`。`greetingCGRweirdHM` 这类特殊问候规则也在这个 trigger 上参与匹配；没有规则匹配时，文本面板显示 "You try to establish a comm link, but get only static."。
 
@@ -255,7 +255,7 @@ GearIn_rules_scene_bar_back,DialogOptionSelected,$option == GearIn_rules_scene_b
 
 `HubMissionBarEventWrapper.addPromptAndOption` 会暂时把 LOCAL 换成任务人物的 Memory，同时替换 ENTITY 与 PERSON_FACTION。它先调用 `mission.updateInteractionData(dialog, memoryMap)`，再执行 `FireBest <前缀>_blurbBar true` 和 `FireBest <前缀>_optionBar true`，最后恢复原有槽位。原版 `hijack_blurbBar` 与 `hijack_optionBar` 就使用这条路径。
 
-玩家选择包装任务后，`BarCMD.optionSelected` 进入任务对话，`abortMissions` 中止没有被选择的其他包装。通讯面板的 missions 页签使用 Java `MissionBoardAPI` 与 `MissionAvailability.playerAccept`，属于另一套任务板流程。
+玩家选择包装任务后，`BarCMD.optionSelected` 进入任务对话，`abortMissions` 中止没有被选择的其他包装。通讯面板的 missions 页签使用 Java `MissionBoardAPI` 与 `CampaignMissionPlugin.playerAccept`，属于另一套任务板流程。
 
 ## 新游戏流程
 

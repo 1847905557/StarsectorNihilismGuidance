@@ -36,7 +36,7 @@
 
 ```csv
 name,id,tags,tech/manufacturer,rarity,base price,stack size,cargo space,baseRaidDanger,icon,sound id,sound id drop,plugin,plugin params,desc,order
-Refinery Core,GearIn_refinery_core,"gear_industry, colony_item",GearIn Industries,0.5,75000,1000,1,MEDIUM,graphics/icons/cargo/nanoforge_pristine.png,ui_cargo_special_industrial_pickup,ui_cargo_special_industrial_drop,data.scripts.gearin.campaign.GearInRefineryCorePlugin,element_works,"A GearIn industrial core that increases rare metal output when installed in Element Works.",1450
+Refinery Core,GearIn_refinery_core,"gear_industry, colony_item",GearIn Industries,0.5,75000,1000,1,MEDIUM,graphics/icons/cargo/nanoforge_pristine.png,ui_cargo_special_industrial_pickup,ui_cargo_special_industrial_drop,data.scripts.gearin.campaign.GearInRefineryCorePlugin,GearIn_element_works,"A GearIn industrial core that increases rare metal output when installed in Element Works.",1450
 Salvage Token,GearIn_salvage_token,gear_industry,GearIn Industries,1,5000,1000,1,LOW,graphics/icons/cargo/modspec2.png,ui_chip_pickup,ui_modspec_drop,data.scripts.gearin.campaign.GearInSalvageTokenPlugin,,"A token that can be exchanged for a small supply cache.",1451
 ```
 
@@ -103,13 +103,13 @@ for (CargoStackAPI stack : cargo.getStacksCopy()) {
 }
 ```
 
-栈的数量由 `CargoStackAPI.getSize()` 或 `getSizeFP()` 提供，特殊物品的规格由 `getSpecialItemSpecIfSpecial()` 提供。栈上的插件已经绑定了对应 spec；直接从全局设置重新创建插件会丢失栈引用。
+栈的数量由 `CargoStackAPI.getSize()` 提供，特殊物品的规格由 `getSpecialItemSpecIfSpecial()` 提供。栈上的插件已经绑定了对应 spec；直接从全局设置重新创建插件会丢失栈引用。
 
 ## 特殊物品插件的初始化与行为入口
 
 插件实现 `SpecialItemPlugin`。通常从 `BaseSpecialItemPlugin` 继承，以获得 ID、规格、名称、默认价格、设计类型和基础 tooltip 行为。
 
-游戏先调用 `setId(id)`，基类随后读取 `SpecialItemSpecAPI`。当插件来自 Cargo 栈时，游戏继续调用 `init(stack)`；通过 spec 直接调用 `getNewPluginInstance(null)` 时，`init()` 可能收到空栈。
+游戏先调用 `setId(id)`，基类随后读取 `SpecialItemSpecAPI`。当插件来自 Cargo 栈时，游戏继续调用 `init(stack)`；通过 spec 直接调用 `getNewPluginInstance(null)` 时，`init()` 不会被调用，只有 `setId()` 一定执行。
 
 插件的 `getName()`、`getPrice(market, submarket)`、`getSpec()` 分别负责显示名、交易价格和规格访问。价格可以读取市场与子市场，但默认实现通常返回 CSV 的 base price。
 
@@ -129,7 +129,7 @@ plugin.setId(data.getId());
 plugin.applyToIndustry(industry);
 ```
 
-插件只对 ID 为 `element_works` 的产业写入 `rare_metals` 供给。修饰 ID 固定为 `GearIn_refinery_core`，撤销时使用同一个 ID 调用 `unmodifyFlat()`。
+插件只对 ID 为 `GearIn_element_works` 的产业写入 `rare_metals` 供给。修饰 ID 固定为 `GearIn_refinery_core`，撤销时使用同一个 ID 调用 `unmodifyFlat()`。
 
 ## 实现右键消耗动作
 
@@ -182,12 +182,12 @@ public class GearInRefineryCorePlugin extends BaseSpecialItemPlugin {
     }
 
     public void applyToIndustry(Industry industry) {
-        if (industry == null || !"element_works".equals(industry.getId())) return;
+        if (industry == null || !"GearIn_element_works".equals(industry.getId())) return;
         industry.getSupply("rare_metals").getQuantity().modifyFlat(MOD_ID, 3f, getName());
     }
 
     public void unapplyFromIndustry(Industry industry) {
-        if (industry == null || !"element_works".equals(industry.getId())) return;
+        if (industry == null || !"GearIn_element_works".equals(industry.getId())) return;
         industry.getSupply("rare_metals").getQuantity().unmodifyFlat(MOD_ID);
     }
 }
@@ -264,7 +264,7 @@ public class GearInSpecialItemProbe {
             }
         }
 
-        Industry industry = findIndustry(market, "element_works");
+        Industry industry = findIndustry(market, "GearIn_element_works");
         if (industry == null) return;
         SpecialItemData previous = industry.getSpecialItem();
         SpecialItemSpecAPI coreSpec = Global.getSettings().getSpecialItemSpec(coreData.getId());
@@ -306,7 +306,7 @@ public class GearInSpecialItemProbe {
 
 ## 验证方案
 
-前置数据：MOD 已加载两条 `special_items.csv` 注册行、三个 Java 类，并且测试市场包含 `element_works` 产业。
+前置数据：MOD 已加载两条 `special_items.csv` 注册行、三个 Java 类，并且测试市场包含 `GearIn_element_works` 产业。
 
 1. 启动游戏并进入测试市场，确认两个特殊物品规格已经加载。
 2. 运行观察器，读取两个 `SpecialItemSpecAPI` 的 ID、名称、价格、堆叠、空间和标签。
@@ -320,7 +320,7 @@ public class GearInSpecialItemProbe {
 
 - 两个 ID、显示名和插件类正确对应；
 - Cargo 栈能够返回 `SpecialItemData` 与插件实例；
-- `Refinery Core` 只对 `element_works` 的 `rare_metals` 供给增加 3；
+- `Refinery Core` 只对 `GearIn_element_works` 的 `rare_metals` 供给增加 3；
 - modifier 清理后供给数量恢复到观察前值；
 - `Salvage Token` 右键动作移除 1 个当前物品并增加 10 单位补给；
 - 产业原有特殊物品和测试 Cargo 状态完成恢复。
@@ -334,7 +334,7 @@ public class GearInSpecialItemProbe {
     - **解决方案**：核对注册行的 `plugin` 全限定类名，并确认类位于 MOD 的 `data.scripts.gearin.campaign` 包。
 
 - **产业产出没有变化**：
-    - **解决方案**：确认产业 ID 是 `element_works`，且应用和撤销使用同一个 modifier ID。
+    - **解决方案**：确认产业 ID 是 `GearIn_element_works`，且应用和撤销使用同一个 modifier ID。
 
 - **右键后物品被扣除两次**：
     - **解决方案**：插件已经通过 helper 移除当前栈时，将 `shouldRemoveOnRightClickAction()` 保持为 `false`。

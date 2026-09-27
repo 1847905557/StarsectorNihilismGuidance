@@ -18,31 +18,37 @@
 
 - [C5-S1] 的三个 OGG 文件、声音 ID、声道和目录；
 - JSON 对象、数组和字符串写法；
-- [C2-S2] 的 CSV 合并与 `replace` 规则。
+- [C1-S7] 的跨文件合并与 `replace` 规则。
 
 ## 创建声音定义文件
 
-在 MOD 根目录创建 `data/config/sounds.json`。普通音效直接使用声音 ID 作为根对象键，值中填写相对 `sounds/` 的 `file`。音乐必须放在根对象的 `music` 分类中，并使用 `source` 和 `file` 指向资源。
+在 MOD 根目录创建 `data/config/sounds.json`。普通音效直接使用声音 ID 作为根对象键，值中填写相对 MOD 根目录的 `file`。音乐必须放在根对象的 `music` 分类中，并使用 `source` 和 `file` 指向资源。
 
 ```json
 {
-  "GearIn_weapon_fire": {
-    "file": "sounds/GearIn_weapon_fire.ogg",
-    "volume": 1.0,
-    "pitch": 1.0
-  },
-  "GearIn_system_loop": {
-    "file": "sounds/GearIn_system_loop.ogg",
-    "volume": 0.8,
-    "pitch": 1.0
-  },
-  "music": {
-    "GearIn_market_theme": {
-      "source": "mod",
-      "file": "sounds/GearIn_market_theme.ogg",
+  "GearIn_weapon_fire": [
+    {
+      "file": "sounds/GearIn_weapon_fire.ogg",
+      "volume": 1.0,
+      "pitch": 1.0
+    }
+  ],
+  "GearIn_system_loop": [
+    {
+      "file": "sounds/GearIn_system_loop.ogg",
       "volume": 0.8,
       "pitch": 1.0
     }
+  ],
+  "music": {
+    "GearIn_market_music": [
+      {
+        "source": "sounds",
+        "file": "GearIn_market_theme.ogg",
+        "volume": 0.8,
+        "pitch": 1.0
+      }
+    ]
   }
 }
 ```
@@ -51,7 +57,7 @@
 
 ## 选择文件合并方式
 
-游戏会读取核心数据和 MOD 数据中的 `sounds.json`。默认文件会与其他定义合并；在数据文件旁提供同名 `replace` 列表时，指定的 ID 会替换原有定义。只在确实需要改变已有 ID 时使用 `replace`，新增 GearIn ID 直接写入普通文件。
+游戏会读取核心数据和 MOD 数据中的 `sounds.json`。默认文件会与其他定义合并；需要整体替换某个数据文件时，在 `mod_info.json` 的 `replace` 数组里声明该路径，整份文件改为替换读取。只在确实需要替换整个文件时使用 `replace`，新增 GearIn ID 直接写入普通文件。
 
 ## 让使用方引用 ID
 
@@ -64,13 +70,13 @@
 1. 启动游戏并检查 `sounds.json` 的 JSON 解析结果；
 2. 在日志中确认三个声音 ID 已加载；
 3. 进入 [C5-S3] 的武器或系统场景观察声音；
-4. 修改一个条目并使用 `replace` 覆盖，确认游戏读取了新值。
+4. 修改一个条目的 `volume` 并重启，确认游戏读取了新值。
 
 预期结果：
 
 - 三个 ID 都能被加载；
 - 音乐 ID 位于 `music` 分类；
-- 覆盖条目只改变指定 ID。
+- 修改的条目按新值生效，其余条目不受影响。
 
 ## 故障分析
 
@@ -83,13 +89,13 @@
 - **音乐不播放但普通音效正常**：音乐条目没有放入 `music`，或缺少 `source`。
     - **解决方案**：移动条目并补齐字段。
 
-- **覆盖没有生效**：`replace` 中的 ID 与目标条目不一致。
-    - **解决方案**：使两个 ID 完全相同。
+- **覆盖没有生效**：`replace` 数组中的路径与目标文件不一致。
+    - **解决方案**：核对 `mod_info.json` 中的路径逐字符一致后重启。
 
 ## 总结
 
-`data/config/sounds.json` 负责把声音 ID 映射到 OGG 文件。普通音效写在根对象，音乐写在 `music` 分类；追加用于新增定义，`replace` 用于覆盖已有定义。完成登记后，在 [C5-S3] 配置具体使用位置。
+`data/config/sounds.json` 负责把声音 ID 映射到 OGG 文件。普通音效写在根对象，音乐写在 `music` 分类；追加用于新增定义，`replace` 用于整文件替换。完成登记后，在 [C5-S3] 配置具体使用位置。
 
 ## 建议参考项
 
-- `data/config/sounds.json`：原版声音注册表，合并与 `replace` 行为的原版蓝本。
+- `data/config/sounds.json`：原版声音注册表，合并行为的原版蓝本。

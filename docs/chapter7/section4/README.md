@@ -69,13 +69,13 @@ Global.getSoundPlayer().playLoop(
 
 ## 播放音乐
 
-自定义音乐使用 `playCustomMusic(float fadeIn, float fadeOut, String id, boolean loop, boolean interruptable)`。音乐 ID 必须来自 `sounds.json` 的 `music` 分类，并且条目同时提供有效的 `source` 和 `file`：
+自定义音乐使用 `playCustomMusic(int fadeOutIfAny, int fadeIn, String musicSetId, boolean looping)`，淡入淡出以毫秒为单位。音乐 ID 必须来自 `sounds.json` 的 `music` 分类，并且条目同时提供有效的 `source` 和 `file`：
 
 ```java
-Global.getSoundPlayer().playCustomMusic(0.5f, 0.5f, "GearIn_market_music", true, true);
+Global.getSoundPlayer().playCustomMusic(500, 500, "GearIn_market_music", true);
 ```
 
-音乐调用负责选择和切换曲目，UI 或位置音效 ID 不能替代音乐条目。验证音乐时要单独核对分类、路径、淡入淡出参数和是否允许打断，避免把普通音效加载成功误判为音乐可播放。
+音乐调用负责选择和切换曲目，UI 或位置音效 ID 不能替代音乐条目。验证音乐时要单独核对分类、路径和淡入淡出参数，避免把普通音效加载成功误判为音乐可播放。
 
 ## 完整最小例
 
@@ -126,7 +126,7 @@ public class GearInSoundPlayer {
 2. 在战斗实体当前位置调用 `playPositionalSound`，移动实体并改变距离，观察声音是否随位置衰减。
 3. 在系统持续激活的每帧回调中调用 `playLoopSound`，观察 `GearIn_system_loop` 是否连续播放。
 4. 结束系统状态并停止调用循环方法，观察循环声音是否淡出且不会继续产生新的声源。
-5. 使用 `playCustomMusic(0.5f, 0.5f, "GearIn_market_music", true, true)` 播放 `music` 条目，观察曲目是否按循环和淡入淡出参数切换。
+5. 使用 `playCustomMusic(500, 500, "GearIn_market_music", true)` 播放 `music` 条目，观察曲目是否按循环和淡入淡出参数切换。
 6. 重启游戏后打开 `Starsector/starsector-core/starsector.log`，搜索 `GearIn_weapon_fire`、`GearIn_system_loop` 和 `GearIn_market_music`，核对资源加载与调用错误。
 
 预期结果：

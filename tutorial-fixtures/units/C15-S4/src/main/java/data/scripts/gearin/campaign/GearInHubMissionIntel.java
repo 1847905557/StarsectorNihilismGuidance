@@ -25,7 +25,7 @@ public class GearInHubMissionIntel extends BaseIntelPlugin {
 
     @Override
     public String getIcon() {
-        return Global.getSettings().getSpriteName("intel", "mission");
+        return Global.getSettings().getSpriteName("intel", "important_accepted_mission");
     }
 
     @Override

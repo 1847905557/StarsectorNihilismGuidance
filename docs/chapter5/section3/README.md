@@ -42,7 +42,7 @@
 ```json
 {
   "id": "GearIn_burst_drive",
-  "activateSound": "GearIn_weapon_fire",
+  "useSound": "GearIn_weapon_fire",
   "loopSound": "GearIn_system_loop",
   "deactivateSound": "GearIn_weapon_fire"
 }
@@ -56,9 +56,10 @@
 
 ```json
 {
-  "id": "GearIn_style",
-  "engineLoopSet": "GearIn_engine_loop",
-  "engineAccelerateSet": "GearIn_engine_accelerate"
+  "GearIn_style": {
+    "engineLoopSet": "GearIn_engine_loop",
+    "engineAccelerateSet": "GearIn_engine_accelerate"
+  }
 }
 ```
 
@@ -78,7 +79,7 @@
 2. 激活 `GearIn_burst_drive`，确认激活、循环和停用声音；
 3. 在战斗中移动带有 `GearIn_style` 的舰船，确认引擎声音；
 4. 打开使用 UI 播放调用的界面；
-5. 进入市场并观察 `GearIn_market_theme`；
+5. 进入市场并观察 `GearIn_market_music`；
 6. 查看日志并记录缺失 ID 或资源路径错误。
 
 预期结果：
@@ -98,7 +99,7 @@ import com.fs.starfarer.api.impl.MusicPlayerPluginImpl;
 public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
     @Override
     protected String getMarketMusicSetId(Object param) {
-        return "GearIn_market_theme";
+        return "GearIn_market_music";
     }
 }
 ```
@@ -179,6 +180,6 @@ public class GearInBurstDriveSystem extends BaseShipSystemScript {
 
 - `data/config/sounds.json`：`music` 分类条目的原版形态；
 - `data/weapons/`：原版武器定义，`fireSoundOne`、`fireSoundTwo` 字段实例；
-- `data/shipsystems/`：原版战术系统定义，`activateSound`、`loopSound`、`deactivateSound` 字段实例；
+- `data/shipsystems/`：原版战术系统定义，`useSound`、`loopSound`、`deactivateSound` 字段实例；
 - `data/config/hull_styles.json`：原版舰船风格，`engineLoopSet`、`engineAccelerateSet` 等引擎声音集字段实例；
 - `com.fs.starfarer.api.impl.MusicPlayerPluginImpl`：本节选曲示例继承的原版音乐插件。

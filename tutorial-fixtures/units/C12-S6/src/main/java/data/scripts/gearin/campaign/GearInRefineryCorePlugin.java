@@ -19,12 +19,12 @@ public class GearInRefineryCorePlugin extends BaseSpecialItemPlugin {
     }
 
     public void applyToIndustry(Industry industry) {
-        if (industry == null || !"element_works".equals(industry.getId())) return;
+        if (industry == null || !"GearIn_element_works".equals(industry.getId())) return;
         industry.getSupply("rare_metals").getQuantity().modifyFlat(MOD_ID, 3f, getName());
     }
 
     public void unapplyFromIndustry(Industry industry) {
-        if (industry == null || !"element_works".equals(industry.getId())) return;
+        if (industry == null || !"GearIn_element_works".equals(industry.getId())) return;
         industry.getSupply("rare_metals").getQuantity().unmodifyFlat(MOD_ID);
     }
 }

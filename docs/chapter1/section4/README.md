@@ -107,7 +107,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ![锻件级相位护卫舰在战斗中进入相位](./phase_play.png "phase_play.png")
 
-### 验证方案
+## 验证方案
 
 前置数据：已经完成 `GearIn_forging` 的船体、装配和 `ship_data.csv` 登记，并启用 Console Commands MOD。
 

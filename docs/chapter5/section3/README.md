@@ -75,11 +75,11 @@
 
 前置数据：[C5-S2] 登记的声音 ID 已随启用的 GearIn MOD 加载。
 
-1. 装配包含 `GearIn_weapon` 的舰船并开火；
-2. 激活 `GearIn_burst_drive`，确认激活、循环和停用声音；
-3. 在战斗中移动带有 `GearIn_style` 的舰船，确认引擎声音；
-4. 打开使用 UI 播放调用的界面；
-5. 进入市场并观察 `GearIn_market_music`；
+1. 装配包含 `GearIn_weapon` 的舰船并开火。
+2. 激活 `GearIn_burst_drive`，确认激活、循环和停用声音。
+3. 在战斗中移动带有 `GearIn_style` 的舰船，确认引擎声音。
+4. 打开使用 UI 播放调用的界面。
+5. 进入市场并观察 `GearIn_market_music`。
 6. 查看日志并记录缺失 ID 或资源路径错误。
 
 预期结果：

@@ -8,6 +8,8 @@ S3 的普通酒吧事件由 Java creator 主动注册；本节把一个 `HubMiss
 
 ## 学习目标
 
+完成后，您将能够：
+
 - 读懂 `bar_events.csv` 一行如何变成 `BarEventSpec`；
 - 区分普通 `PortsideBarEvent` 与 `HubMissionWithBarEvent` 的自动创建分支；
 - 解释 `SpecBarEventCreator` 和 `HubMissionBarEventWrapper` 的职责；
@@ -206,13 +208,13 @@ public class GearInBarHubMission extends HubMissionWithBarEvent {
 
 前置数据：启用包含 `GearInBarHubMission` 全类名和对应 `bar_events.csv` 行的 MOD，进入一个有空间站的市场酒吧。
 
-1. 载入生涯并进入有空间站的市场，确认 `BarEventManager` 从 spec 建立自动 creator；
-2. 观察事件抽取，确认 `GearIn_bar_hub` 通过 `isMission()` 进入 wrapper 分支；
-3. 进入酒吧，确认 Rules 显示由 wrapper 提供的任务 blurb 和 option；
-4. 选择任务选项，确认 wrapper 调用 `createAndAbortIfFailed(market, true)`；
-5. 接受任务，确认 Intel 列表出现 `GearIn dockside inspection`，当前阶段为 `GearIn_bar_stage_active`；
-6. 推进 1 个游戏天，确认任务进入 `GearIn_bar_stage_completed` 并执行成功结束；
-7. 对照普通 BarEvent plugin，确认普通分支直接创建事件实例，HubMission 分支先创建 wrapper；
+1. 载入生涯并进入有空间站的市场，确认 `BarEventManager` 从 spec 建立自动 creator。
+2. 观察事件抽取，确认 `GearIn_bar_hub` 通过 `isMission()` 进入 wrapper 分支。
+3. 进入酒吧，确认 Rules 显示由 wrapper 提供的任务 blurb 和 option。
+4. 选择任务选项，确认 wrapper 调用 `createAndAbortIfFailed(market, true)`。
+5. 接受任务，确认 Intel 列表出现 `GearIn dockside inspection`，当前阶段为 `GearIn_bar_stage_active`。
+6. 推进 1 个游戏天，确认任务进入 `GearIn_bar_stage_completed` 并执行成功结束。
+7. 对照普通 BarEvent plugin，确认普通分支直接创建事件实例，HubMission 分支先创建 wrapper。
 8. 观察未交互事件和已交互任务的冷却时间，确认分别使用普通 timeout 与 accepted timeout。
 
 预期结果：

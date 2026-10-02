@@ -49,8 +49,8 @@ GearIn_artizan_combat
 
 模拟战构建敌方舰队时，每个 ID 都要构造一个 `FleetMemberAPI`。装配 ID 查不到时会发生两件事：
 
-1. 打印堆栈 `[ID] is not a valid ship variant id`(`printStackTrace`，不中止战斗)；
-2. 回退到 `settings.json` 的 `"errorShipVariant":"nebula_Standard"` —— 一艘星云-级 (Nebula 级) 运输船。
+1. 打印堆栈 `[ID] is not a valid ship variant id`(`printStackTrace`，不中止战斗)。
+2. 回退到 `settings.json` 的 `"errorShipVariant":"nebula_Standard"`，即一艘星云-级 (Nebula 级) 运输船。
 
 因此迁移原文 "填错 ID 会导致它变成一艘星云-级" 依然成立，且机制如上：**日志里能同时搜到该堆栈和这艘星云-级**。
 
@@ -92,7 +92,7 @@ GearIn_artizan_combat
 
 因此标题演示的 ID 必须保证有效，"星云-级" 预期只适用于 `FleetMemberAPI` 路径。
 
-### 验证方案
+## 验证方案
 
 前置数据：装配注册单元的 `data/variants/GearIn_artizan_combat.variant`[C4-S1]，以及本节新建的两个 CSV —— `data/campaign/sim_opponents.csv` 与 `data/config/title_screen_variants.csv` (保持本例内容，UTF-8 无 BOM)。
 

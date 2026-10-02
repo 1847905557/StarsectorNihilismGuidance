@@ -27,7 +27,7 @@
 
 ## 市场条件的对象组成
 
-条件由三层对象组成。`market_conditions.csv` 保存静态注册行，`MarketConditionSpecAPI` 代表这条规格，`MarketConditionAPI` 代表挂在某个市场上的实例，`MarketConditionPlugin` 负责实际行为。
+`market_conditions.csv` 保存静态注册行，`MarketConditionSpecAPI` 代表这条规格，`MarketConditionAPI` 代表挂在某个市场上的实例，`MarketConditionPlugin` 负责实际行为。
 
 本节使用 `GearIn_warfront` 和 `Warfront`。它是市场条件，不设置 `planetary`，因此显示在市场条件区域。它提高危险度，降低流通性，并提升市场生成舰队时读取的舰队质量动态 stat。
 
@@ -200,8 +200,6 @@ float restored = market.getHazard().getModifiedValue();
 
 ## 完整最小例
 
-### 完整成品：GearInWarfrontCondition
-
 ::: details 完整成品：GearInWarfrontCondition
 
 ```java
@@ -275,8 +273,6 @@ public class GearInWarfrontCondition extends BaseMarketConditionPlugin {
 ```
 
 :::
-
-### 完整成品：GearInConditionProbe
 
 ::: details 完整成品：GearInConditionProbe
 

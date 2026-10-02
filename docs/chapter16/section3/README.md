@@ -347,7 +347,7 @@ gradle jar
 
 `rules.csv` 随 MOD 目录由加载器读取，构建仍用于确认 MOD 的现有 Java 产物可用。
 
-### 验证方案
+## 验证方案
 
 前置数据：已经启用包含本节 `data/campaign/rules.csv` 的 MOD，并追加 `GearIn_rules_scene_*` 规则行；启动 Dev Mode 以验证新游戏场景与开发选项。
 

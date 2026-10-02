@@ -197,61 +197,9 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 源码放在 `src/data/scripts/gearin/hullmods/`，构建后执行 `gradle jar`。JAR 中应同时包含 `GearInArmorTrainingHullMod.class` 和 `GearInFleetMaintenanceHullMod.class`，否则 CSV 注册值虽然正确，游戏仍然找不到效果类。
 
-## 验证方案
-
-前置数据：已登记两行 `hull_mods.csv`，测试战役使用 [C4-S1] 的 `GearIn_test`，并已将构建结果放进 MOD 的 `jars/`。
-
-1. 启动游戏并在装配界面安装 "装甲训练"，核对基础描述、S-mod 描述和互斥提示。
-2. 进入 `GearIn_test` 战斗，观察舰船加入战斗时的浮动文字；让舰船承受装甲损伤，确认 `advanceInCombat` 在运行时逐渐修复装甲，暂停后修复停止。
-3. 在生涯中安装 "舰队维护"，核对单舰燃料消耗；移动舰队成员后重新打开舰队信息，确认传感范围按装有该船插的成员数量更新。
-4. 移除 "舰队维护" 并再次触发舰队同步，确认传感范围修饰被清除。
-5. 开始第二场战斗，确认上一场的舰船状态和浮动文字没有被复用。
-
-预期结果：
-
-- 两个船插都能从装配选择器中找到，日志没有 `Problem loading class`。
-- "装甲训练" 的普通安装和 S-mod 都能显示护甲与修复参数，安装互斥时出现拒绝原因；已有不兼容船插时，`applyEffectsAfterShipCreation` 会移除 `unstable_injector`。
-- 战斗中的浮动文字只在舰船加入当前引擎后出现，暂停期间不推进装甲修复。
-- "舰队维护" 的燃料修饰来自成员 stats，舰队传感范围随同步后的成员集合变化。
-- 第二场战斗重新创建效果状态，日志和画面不会沿用第一场战斗的对象。
-
-## 故障分析
-
-- **生涯面板没有数值变化**：修饰写在只接受战斗实体的回调中。
-    - **解决方案**：把共用数值移到 `applyEffectsBeforeShipCreation(...)`，再重建舰队成员 stats。
-
-- **战斗效果没有出现**：初始化或每帧逻辑写进了生涯回调。
-    - **解决方案**：使用 `applyEffectsAfterShipAddedToCombatEngine(...)` 处理一次性战斗动作，使用 `advanceInCombat(...)` 处理持续动作。
-
-- **S-mod 提示段缺失**：`sModDesc` 为空或以 `#` 开头，或者参数方法返回值不足。
-    - **解决方案**：提供有效的 `sModDesc` 和对应的 `getSModDescriptionParam(...)` 返回值，再重新打开 tooltip。
-
-- **装配界面只显示拒绝却没有原因**：`isApplicableToShip(...)` 和 `getUnapplicableReason(...)` 使用了不同条件。
-    - **解决方案**：让两个方法共享同一判定，并在允许安装时返回 `null`。
-
-- **舰队传感范围没有更新**：`withOnFleetSync()` 返回 `false`，或修饰只写进了单舰 stats。
-    - **解决方案**：返回 `true`，在 `onFleetSync(...)` 中重新遍历成员，并对没有目标成员的情况调用 `unmodify(...)`。
-
-- **下一场战斗出现上一场的对象状态**：效果类字段保存了舰船或战斗计时器。
-    - **解决方案**：从当前回调参数重新取得对象，把跨存档数据放入 `SectorAPI.getPersistentData()`。
-
-## 总结
-
-船插效果类不是单一的战斗脚本。`applyEffectsBeforeShipCreation` 负责数值重建，战斗回调负责舰船实体和持续行为，生涯回调负责舰队成员或整支舰队，装配回调负责安装条件和 tooltip。`sModDesc`、参数方法和 S-mod 判断把同一效果的普通安装与故事点内置状态连接到界面。
-
-判断一个方法是否适合当前需求时，先确认它收到的是 `MutableShipStatsAPI`、`ShipAPI`、`FleetMemberAPI`、`CampaignFleetAPI` 还是 tooltip 对象，再检查该对象何时被创建、何时会重新计算。回调对象、状态归属和可观察结果一致时，船插才能在生涯、战斗和装配界面保持同一套设计。
-
-## 建议参考项
-
-- `com.fs.starfarer.api.combat.HullModEffect`：船插效果方法定义；
-- `com.fs.starfarer.api.combat.BaseHullMod`：默认实现、S-mod 判定与 tooltip 辅助方法；
-- `com.fs.starfarer.api.combat.HullModFleetEffect`：整支舰队的生涯回调；
-- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：生涯与战斗数值入口；
-- `com.fs.starfarer.api.fleet.FleetMemberAPI`：单舰成员回调参数；
-- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：整支舰队回调参数；
-- `data/hullmods/hull_mods.csv`：船插注册行与描述字段。
-
 ## 完整最小例
+
+下面的两个完整类把本节的数值重建、生涯同步与战斗表现放进同一个船插，页面片段均出自它们。
 
 ::: details 完整成品：GearInArmorTrainingHullMod
 
@@ -456,3 +404,57 @@ public class GearInFleetMaintenanceHullMod extends BaseHullMod
 ```
 
 :::
+
+## 验证方案
+
+前置数据：已登记两行 `hull_mods.csv`，测试战役使用 [C4-S1] 的 `GearIn_test`，并已将构建结果放进 MOD 的 `jars/`。
+
+1. 启动游戏并在装配界面安装 "装甲训练"，核对基础描述、S-mod 描述和互斥提示。
+2. 进入 `GearIn_test` 战斗，观察舰船加入战斗时的浮动文字；让舰船承受装甲损伤，确认 `advanceInCombat` 在运行时逐渐修复装甲，暂停后修复停止。
+3. 在生涯中安装 "舰队维护"，核对单舰燃料消耗；移动舰队成员后重新打开舰队信息，确认传感范围按装有该船插的成员数量更新。
+4. 移除 "舰队维护" 并再次触发舰队同步，确认传感范围修饰被清除。
+5. 开始第二场战斗，确认上一场的舰船状态和浮动文字没有被复用。
+
+预期结果：
+
+- 两个船插都能从装配选择器中找到，日志没有 `Problem loading class`。
+- "装甲训练" 的普通安装和 S-mod 都能显示护甲与修复参数，安装互斥时出现拒绝原因；已有不兼容船插时，`applyEffectsAfterShipCreation` 会移除 `unstable_injector`。
+- 战斗中的浮动文字只在舰船加入当前引擎后出现，暂停期间不推进装甲修复。
+- "舰队维护" 的燃料修饰来自成员 stats，舰队传感范围随同步后的成员集合变化。
+- 第二场战斗重新创建效果状态，日志和画面不会沿用第一场战斗的对象。
+
+## 故障分析
+
+- **生涯面板没有数值变化**：修饰写在只接受战斗实体的回调中。
+    - **解决方案**：把共用数值移到 `applyEffectsBeforeShipCreation(...)`，再重建舰队成员 stats。
+
+- **战斗效果没有出现**：初始化或每帧逻辑写进了生涯回调。
+    - **解决方案**：使用 `applyEffectsAfterShipAddedToCombatEngine(...)` 处理一次性战斗动作，使用 `advanceInCombat(...)` 处理持续动作。
+
+- **S-mod 提示段缺失**：`sModDesc` 为空或以 `#` 开头，或者参数方法返回值不足。
+    - **解决方案**：提供有效的 `sModDesc` 和对应的 `getSModDescriptionParam(...)` 返回值，再重新打开 tooltip。
+
+- **装配界面只显示拒绝却没有原因**：`isApplicableToShip(...)` 和 `getUnapplicableReason(...)` 使用了不同条件。
+    - **解决方案**：让两个方法共享同一判定，并在允许安装时返回 `null`。
+
+- **舰队传感范围没有更新**：`withOnFleetSync()` 返回 `false`，或修饰只写进了单舰 stats。
+    - **解决方案**：返回 `true`，在 `onFleetSync(...)` 中重新遍历成员，并对没有目标成员的情况调用 `unmodify(...)`。
+
+- **下一场战斗出现上一场的对象状态**：效果类字段保存了舰船或战斗计时器。
+    - **解决方案**：从当前回调参数重新取得对象，把跨存档数据放入 `SectorAPI.getPersistentData()`。
+
+## 总结
+
+船插效果类不是单一的战斗脚本。`applyEffectsBeforeShipCreation` 负责数值重建，战斗回调负责舰船实体和持续行为，生涯回调负责舰队成员或整支舰队，装配回调负责安装条件和 tooltip。`sModDesc`、参数方法和 S-mod 判断把同一效果的普通安装与故事点内置状态连接到界面。
+
+判断一个方法是否适合当前需求时，先确认它收到的是 `MutableShipStatsAPI`、`ShipAPI`、`FleetMemberAPI`、`CampaignFleetAPI` 还是 tooltip 对象，再检查该对象何时被创建、何时会重新计算。回调对象、状态归属和可观察结果一致时，船插才能在生涯、战斗和装配界面保持同一套设计。
+
+## 建议参考项
+
+- `com.fs.starfarer.api.combat.HullModEffect`：船插效果方法定义；
+- `com.fs.starfarer.api.combat.BaseHullMod`：默认实现、S-mod 判定与 tooltip 辅助方法；
+- `com.fs.starfarer.api.combat.HullModFleetEffect`：整支舰队的生涯回调；
+- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：生涯与战斗数值入口；
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：单舰成员回调参数；
+- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：整支舰队回调参数；
+- `data/hullmods/hull_mods.csv`：船插注册行与描述字段。

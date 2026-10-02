@@ -123,9 +123,9 @@ public final class GearInGroundBattleProbe {
 
 前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含本节 `groundBattleDefs.json` 登记行、`GearInGroundBattlePlugin` 和 `GearInGroundBattleProbe`，测试存档中存在拥有 `GearIn_training_industry` 产业的市场。
 
-1. 执行 `gradle jar` 构建示例 MOD，确认编译完成且没有报错。
-2. 启动游戏并进入本页场景，执行标题描述的动作。
-3. 重复一次边界动作，观察日志、画面、数值或生涯对象是否保持一致。
+1. 执行 `gradle jar` 构建示例 MOD，确认 `GearInGroundBattlePlugin` 与 `GearInGroundBattleProbe` 编译通过。
+2. 启动游戏并读取拥有 `GearIn_training_industry` 市场的测试存档，调用 `hasIndustry("GearIn_training_industry")` 与 `hasUnit("GearIn_line_infantry")`，记录日志中的产业 ID、`strengthMult` 和 `unit` 值。
+3. 打开对 GearIn 军工市场的入侵地面战界面，确认部队选择器按 `playerCanCreate` 显示 GearIn 线列步兵；再把 `groundBattleDefs.json` 中的产业键改为大小写错误的拼写并重载，确认 `getIndustryDef()` 返回默认产业定义而不是报错。
 
 预期结果：
 

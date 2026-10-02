@@ -84,9 +84,9 @@ tasks.named("jar") {
 
 前置数据：[C6-S2] 的源码迁移已完成，本节的 `build.gradle` 片段已写入工程。
 
-1. 检查 `settings.gradle` 的工程名；
-2. 检查 `srcDirs`、toolchain、`compileOnly` 和 `options.release`；
-3. 检查 JAR 输出目录和文件名；
+1. 检查 `settings.gradle` 的工程名。
+2. 检查 `srcDirs`、toolchain、`compileOnly` 和 `options.release`。
+3. 检查 JAR 输出目录和文件名。
 4. 进入 [C6-S4] 执行构建和 manifest 声明。
 
 预期结果：

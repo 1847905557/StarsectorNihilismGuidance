@@ -122,7 +122,7 @@
 
 :::
 
-### 验证方案
+## 验证方案
 
 前置数据：`gear_in` MOD[C1-S1]\+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_artizan`[C1-S2] 与武器 `GearIn_durin`[C1-S5]。
 
@@ -147,7 +147,7 @@
 - **不会被永久损坏**：装饰槽武器不会因损坏而失效。
 - **仍然显示**：战斗中和生涯舰船界面都会显示装饰武器。
 
-装饰武器适合纯视觉内容。原版例子：`buffalo.ship` 的红色/绿色信号灯 —— `builtInWeapons` 里装 `blinker_red`/`blinker_green` (`data/weapons/blinker_red.wpn`、`blinker_green.wpn`，`.wpn` 的 `"type": "DECORATIVE"`)，信号灯槽位为 `"type": "DECORATIVE"` 的 TURRET 槽。
+装饰武器适合纯视觉内容。原版例子是 `buffalo.ship` 的红色/绿色信号灯：`builtInWeapons` 里装 `blinker_red`/`blinker_green` (`data/weapons/blinker_red.wpn`、`blinker_green.wpn`，`.wpn` 的 `"type": "DECORATIVE"`)，信号灯槽位为 `"type": "DECORATIVE"` 的 TURRET 槽。
 
 ## 战机的内置武器？
 
@@ -200,7 +200,7 @@
 
 本节只涉及 "内置" 这一安装方式；effect 脚本和 S-mod 见 [C9-S1]。
 
-### 验证方案
+## 验证方案
 
 前置数据：`gear_in` MOD[C1-S1]\+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_forging`[C1-S4]。
 
@@ -248,7 +248,7 @@
 
 :::
 
-### 验证方案
+## 验证方案
 
 前置数据：`gear_in` MOD[C1-S1]\+ 本处 `.ship` 修改 + 前置章节已注册的船体 `GearIn_furnaceman` 与战机 `GearIn_slag_wing`[C1-S3]。
 

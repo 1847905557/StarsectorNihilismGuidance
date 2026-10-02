@@ -8,6 +8,8 @@
 
 ## 学习目标
 
+完成后，您将能够：
+
 - 解释 `std430`、shader storage block 和 binding `0` 的关系；
 - 使用两个 `vec4` 组织一个方向标的 GPU 参数；
 - 在 `advance(...)` 和 `render(...)` 之间传递可复用的 `FloatBuffer`；

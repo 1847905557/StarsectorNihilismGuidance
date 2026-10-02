@@ -1,12 +1,14 @@
 # 制作角色技能
 
-本节把同一套技能资源拆成三条可观察的角色技能：舰长只改变被驾驶舰船，舰队指挥官改变所属舰队，管理员改变自己治理的殖民地市场。读者会从注册行走到效果脚本，再用技能树、舰队界面、整备界面和殖民地界面确认每个对象收到的 modifier。
+本节把同一套技能资源拆成三条可观察的角色技能：舰长只改变被驾驶舰船，舰队指挥官改变所属舰队，管理员改变自己治理的殖民地市场。您会从注册行走到效果脚本，再用技能树、舰队界面、整备界面和殖民地界面确认每个对象收到的 modifier。
 
 *本节预期阅读时间：~30 分钟。*
 
 *本节预期操作时间：~50 分钟。*
 
 ## 学习目标
+
+完成后，您将能够：
 
 - 解释 `skill_data.csv`、`.skill` 和 Java 效果类如何按同一个 ID 组合；
 - 根据 `SkillEffectType` 选择单舰、舰队或治理市场的效果接口；
@@ -141,7 +143,7 @@ public void unapply(MarketAPI market, String id) {
 
 ## 让面板文字和数值保持同一来源
 
-`DescriptionSkillEffect` 不参与 stats 计算，它只返回技能面板需要的文本、高亮字符串和高亮颜色。描述类应当写清作用对象和数值结果，让读者可以把技能树上的一句话对应到舰船、舰队或市场中的实际变化。描述类与数值类分开后，修改 UI 文本不会意外改变 modifier。
+`DescriptionSkillEffect` 不参与 stats 计算，它只返回技能面板需要的文本、高亮字符串和高亮颜色。描述类应当写清作用对象和数值结果，让您可以把技能树上的一句话对应到舰船、舰队或市场中的实际变化。描述类与数值类分开后，修改 UI 文本不会意外改变 modifier。
 
 ```java
 public class GearInFleetCoordinationDescription implements DescriptionSkillEffect {
@@ -167,7 +169,7 @@ public class GearInFleetCoordinationDescription implements DescriptionSkillEffec
 
 ## 在整备界面提供舰队汇总
 
-实现 `FleetTotalSource` 的效果类可以返回一个 `FleetTotalItem`。这个对象只描述舰队汇总行，不会替代 `apply()` 的实际 modifier。指挥官技能把汇总行写成 "+1 burn, -10% fuel"，读者在整备界面看到它时，仍然可以回到舰队状态查看具体数值。
+实现 `FleetTotalSource` 的效果类可以返回一个 `FleetTotalItem`。这个对象只描述舰队汇总行，不会替代 `apply()` 的实际 modifier。指挥官技能把汇总行写成 "+1 burn, -10% fuel"，您在整备界面看到它时，仍然可以回到舰队状态查看具体数值。
 
 ```java
 public FleetTotalItem getFleetTotalItem() {

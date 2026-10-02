@@ -26,7 +26,7 @@
 
 ## 特殊物品的数据组成
 
-特殊物品由三层数据组成。CSV 行提供静态规格，`SpecialItemSpecAPI` 保存这些规格，`SpecialItemData` 保存一次物品实例的 ID 与 data，`SpecialItemPlugin` 再根据物品栈执行价格、显示和交互行为。
+CSV 行提供静态规格，`SpecialItemSpecAPI` 保存这些规格，`SpecialItemData` 保存一次物品实例的 ID 与 data，`SpecialItemPlugin` 再根据物品栈执行价格、显示和交互行为。
 
 同一份 `SpecialItemData` 可以放入 Cargo，也可以写入产业的特殊物品槽。Cargo 栈负责数量和容量，产业负责保存当前安装数据，插件负责解释数据并提供行为。
 

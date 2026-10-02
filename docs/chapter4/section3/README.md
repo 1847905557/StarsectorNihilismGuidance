@@ -196,7 +196,7 @@
 
 搭配舰船编辑器：在设置完舰船风格和引擎风格后，可以在舰船编辑器的 "导入 MOD" 功能中把 `GearIndustry` 导入，直接在编辑器内选择自定义风格。
 
-### 验证方案
+## 验证方案
 
 前置数据：`data/config/hull_styles.json`、`data/config/engine_styles.json`，以及已按本节完成接入的 `GearIn_artizan.ship`(顶层与引擎槽 `style` 均指向 `GEAR_TECH`)。
 
@@ -261,7 +261,7 @@ hull style 是 "声音与材质的总线"：
 
 :::
 
-### 验证方案
+## 验证方案
 
 前置数据：`data/config/sounds.json` 中的 `GearIn_engine_loop` 声音集与 `sounds/` 下对应的 `.ogg` 文件，hull style 的 `engineLoopSet` 已指向 `GearIn_engine_loop`。
 

@@ -1,12 +1,14 @@
 # 让人物承担角色
 
-本节把人物放进舰长、舰队指挥官和管理员槽位，并从真实持有者读取结果。军官使用 `OfficerDataAPI` 保存 roster 与成长数据，人物本身仍由 `PersonAPI`、`MutableCharacterStatsAPI` 和 `PersonalityAPI` 提供资料与状态。
+本节将引导您把人物放进舰长、舰队指挥官和管理员槽位，并从真实持有者读取结果。军官使用 `OfficerDataAPI` 保存 roster 与成长数据，人物本身仍由 `PersonAPI`、`MutableCharacterStatsAPI` 和 `PersonalityAPI` 提供资料与状态。
 
 *本节预期阅读时间：~18 分钟。*
 
 *本节预期操作时间：~25 分钟。*
 
 ## 学习目标
+
+完成后，您将能够：
 
 - 区分三种角色的归属对象、写入入口和读取入口；
 - 使用 `MutableCharacterStatsAPI` 读取等级、经验和技能状态，并在修改后刷新；
@@ -370,14 +372,14 @@ public class GearInAdministratorRole {
 
 前置数据：启用包含本节脚本的 MOD，准备玩家舰队、可部署旗舰和 [C12-S1] 创建的 `GearIn_market_foundry`。保存测试存档副本，重复运行和读档都使用副本。
 
-1. 运行 `GearInCaptainRole`，打开舰队界面并选中旗舰，读取舰长姓名和日志中的 `captain`；
-2. 打开军官面板，确认 `GearIn_officer` 出现在 roster，并检查 `getOfficerData(person)` 返回数据；
-3. 运行 `GearInFleetCommanderRole`，重新打开舰队界面，比较舰队指挥官与旗舰舰长的 ID；
-4. 让舰队完成一次移动或战斗部署，确认成员仍能读取舰队指挥官；
-5. 运行 `GearInAdministratorRole`，打开 `GearIn_market_foundry` 的殖民地管理界面，确认管理员显示为 Selene Ward；
-6. 读取管理员的 `getMarket()` 和市场的 `getAdmin()`，确认两者指向同一市场；
-7. 查看三个入口输出的 `PersonalityAPI` 日志，核对 ID、显示名和描述来自 `steady`；
-8. 在存档副本中再次运行三个入口，确认没有新增角色对象；
+1. 运行 `GearInCaptainRole`，打开舰队界面并选中旗舰，读取舰长姓名和日志中的 `captain`。
+2. 打开军官面板，确认 `GearIn_officer` 出现在 roster，并检查 `getOfficerData(person)` 返回数据。
+3. 运行 `GearInFleetCommanderRole`，重新打开舰队界面，比较舰队指挥官与旗舰舰长的 ID。
+4. 让舰队完成一次移动或战斗部署，确认成员仍能读取舰队指挥官。
+5. 运行 `GearInAdministratorRole`，打开 `GearIn_market_foundry` 的殖民地管理界面，确认管理员显示为 Selene Ward。
+6. 读取管理员的 `getMarket()` 和市场的 `getAdmin()`，确认两者指向同一市场。
+7. 查看三个入口输出的 `PersonalityAPI` 日志，核对 ID、显示名和描述来自 `steady`。
+8. 在存档副本中再次运行三个入口，确认没有新增角色对象。
 9. 重新载入存档后读取舰长、指挥官、管理员和军官 roster，确认稳定 ID 仍可取得。
 
 预期结果：

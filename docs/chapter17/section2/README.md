@@ -119,7 +119,7 @@ JSON 路径继续遵守 [C17-S1] 的资源路径规则。引擎在读取前拒�
 
 入口类在 `onApplicationLoad` 中读取文件，并把 `serviceId` 与 `interval` 写入日志。该文件是 MOD 自有配置，不参与 `strings.json` 的固定加载与合并。
 
-### 验证方案
+## 验证方案：自有 JSON
 
 前置数据：`gear_in` MOD、`services.json` 和入口类读取片段已就绪。
 
@@ -133,9 +133,7 @@ JSON 路径继续遵守 [C17-S1] 的资源路径规则。引擎在读取前拒�
 - 双参调用只读取 `gear_in` 的资源；
 - 路径、编码、语法和字段类型正确时，启动日志没有 JSON 读取异常。
 
-## strings.json 验证
-
-### 验证方案
+## 验证方案：strings 合并
 
 前置数据：原版和 `gear_in` 的 `data/strings/strings.json` 已存在，文件包含一个同名键和一个只由 `gear_in` 提供的新键。
 

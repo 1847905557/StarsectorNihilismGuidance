@@ -208,7 +208,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 }
 ```
 
-`ship_systems.csv` 加上从 `阻尼力场` 复制的一行，并修改改 `name` 与 `id`：
+`ship_systems.csv` 加上从 `阻尼力场` 复制的一行，并修改 `name` 与 `id`：
 
 ```text {3}
 name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle,noDissipation,noHardDissipation,hardFlux,noFiring,noTurning,noStrafing,noAccel,noShield,noVent,isPhaseCloak,tags,icon

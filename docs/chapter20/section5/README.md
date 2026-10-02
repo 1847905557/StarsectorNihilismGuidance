@@ -8,6 +8,8 @@
 
 ## 学习目标
 
+完成后，您将能够：
+
 - 使用两个 `vec4` 保存每个实例的中心、朝向、Alpha 和颜色；
 - 解释 SSBO binding `0`、`std430` 和 `gl_InstanceID` 的关系；
 - 使用一次 `glDrawArraysInstanced` 绘制多艘舰船的方向标；

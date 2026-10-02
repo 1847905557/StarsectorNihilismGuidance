@@ -1,12 +1,14 @@
 # 构建阶段任务
 
-`BaseHubMission` 把一次接受动作延长为可保存的任务状态。任务对象保存当前阶段、目标和奖励结果，附属 Intel 只把这些状态呈现给玩家；两者通过明确的读取关系协作，而不是各自维护一套阶段。本文用一个需要检查目标实体的任务说明这条边界。
+`BaseHubMission` 把一次接受动作延长为可保存的任务状态。任务对象保存当前阶段、目标和奖励结果，附属 Intel 只把这些状态呈现给玩家；两者通过明确的读取关系协作，而不是各自维护一套阶段。本节用一个需要检查目标实体的任务说明这条边界。
 
 *本节预期阅读时间：~35 分钟。*
 
 *本节预期操作时间：~45 分钟。*
 
 ## 学习目标
+
+完成后，您将能够：
 
 - 创建并接受一个 `BaseHubMission` 任务；
 - 用阶段和条件检查器组织调查、报告和完成路径；
@@ -319,15 +321,15 @@ public class GearInHubMissionIntel extends BaseIntelPlugin {
 
 前置数据：准备一个可交互目标实体，并能在其 Memory 中写入 `$GearIn_hub_target_complete`；准备一个可以显示 Intel 的新档或测试存档。
 
-1. 通过独立 Java 入口创建任务并调用 `accept(...)`，确认 Intel 列表出现 "GearIn inspection task"；
-2. 打开任务条目，确认当前阶段为 `GearIn_stage_investigate`；
-3. 在目标实体 Memory 写入 `$GearIn_hub_target_complete = true`，推进生涯时间，确认任务进入 `GearIn_stage_report`；
-4. 重新打开 Intel 条目，确认阶段文本从调查变为报告；
-5. 将任务设置为完成阶段，确认 credits 增加 50000 且任务进入结束状态；
-6. 重复触发完成路径，确认 `rewardGranted` 阻止第二次奖励；
-7. 保存并读档，确认当前阶段、`rewardGranted` 和 `missionEnded` 保持；
-8. 在报告阶段触发失败，确认任务显示 `GearIn_stage_failed` 并结束；
-9. 在报告阶段触发放弃，确认任务显示 `GearIn_stage_abandoned` 并结束；
+1. 通过独立 Java 入口创建任务并调用 `accept(...)`，确认 Intel 列表出现 "GearIn inspection task"。
+2. 打开任务条目，确认当前阶段为 `GearIn_stage_investigate`。
+3. 在目标实体 Memory 写入 `$GearIn_hub_target_complete = true`，推进生涯时间，确认任务进入 `GearIn_stage_report`。
+4. 重新打开 Intel 条目，确认阶段文本从调查变为报告。
+5. 将任务设置为完成阶段，确认 credits 增加 50000 且任务进入结束状态。
+6. 重复触发完成路径，确认 `rewardGranted` 阻止第二次奖励。
+7. 保存并读档，确认当前阶段、`rewardGranted` 和 `missionEnded` 保持。
+8. 在报告阶段触发失败，确认任务显示 `GearIn_stage_failed` 并结束。
+9. 在报告阶段触发放弃，确认任务显示 `GearIn_stage_abandoned` 并结束。
 10. 分别结束附属 Intel，确认 Intel 消失不会把任务阶段改回调查。
 
 预期结果：

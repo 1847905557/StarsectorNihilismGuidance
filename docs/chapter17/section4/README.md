@@ -57,7 +57,7 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json"))
 
 `gear_in/state.json` 保存 `schema`、`battles` 和 `lastReport`。在 `onGameLoad` 中读取文件：不存在时使用 `schema=1`、`battles=0`；存在时保留已有值，并把缺少的字段补齐到内存对象。
 
-### 验证方案
+## 验证方案
 
 前置数据：可加载 MOD、`onGameLoad` 读取片段和一个 `gear_in/state.json` 测试文件。
 
@@ -117,7 +117,7 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json"))
 
 写入失败时保留原文件，日志记录目标和异常。用户设置由专门的设置库管理时，MOD 不直接绕过其保存流程。
 
-### 验证方案
+## 验证方案
 
 前置数据：本节的读取对象、`gear_in/state.json` 和一个在 `onGameLoad` 或测试战斗中执行的写入片段。
 

@@ -231,7 +231,7 @@ FireAll 适合填充菜单和追加多段结果，因为所有匹配规则都参
 
 ### 保持回流链闭合
 
-一条可返回的 Rules 对话包含四段关系：`PopulateOptions` 提供入口，`DialogOptionSelected` 消费 `$option`，自定义 trigger 生成结果，返回选项再由 `DialogOptionSelected` 调用 `EndConversation`。任何一段 ID 断开，都会留下有文本但没有下一步的面板。
+一条可返回的 Rules 对话由入口、回流、结果与返回组成：`PopulateOptions` 提供入口，`DialogOptionSelected` 消费 `$option`，自定义 trigger 生成结果，返回选项再由 `DialogOptionSelected` 调用 `EndConversation`。任何一环 ID 断开，都会留下有文本但没有下一步的面板。
 
 ## 完整最小例
 

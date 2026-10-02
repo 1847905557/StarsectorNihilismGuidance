@@ -234,11 +234,11 @@ public final class GearInCampaignSetup {
 
 前置数据：使用包含 `GearIn`、`GearIn_planet1` 与 `GearIn_artizan_combat` 的开发环境，并在 `onNewGame()` 中按本节顺序接入 `GearInCampaignSetup`。
 
-1. 启动游戏并新建生涯，进入 GearIn 星系；
-2. 在 `GearIn_planet1` 周围开启传感器观测，接近并发现舰船残骸；
-3. 打开残骸交互，进入舰船回收界面并回收该舰船；
-4. 检查回收舰船的装配 ID、舰况和 D-mod；
-5. 返回星图，从 GearIn 星系跳入超空间并观察星系边界周围的云层；
+1. 启动游戏并新建生涯，进入 GearIn 星系。
+2. 在 `GearIn_planet1` 周围开启传感器观测，接近并发现舰船残骸。
+3. 打开残骸交互，进入舰船回收界面并回收该舰船。
+4. 检查回收舰船的装配 ID、舰况和 D-mod。
+5. 返回星图，从 GearIn 星系跳入超空间并观察星系边界周围的云层。
 6. 在同一存档再次调用 `new GearInCampaignSetup().setup(Global.getSector())`，重新检查行星周围的残骸数量。
 
 预期结果：

@@ -637,7 +637,7 @@ public class GearInFleetGeneratorAdvanced implements EveryFrameScript {
 
 ## 验证基础生成器
 
-### 验证方案
+## 验证方案
 
 前置数据：测试 MOD 已注册 `GearInFleetGenerator` 与 `GearInFleetGeneratorAdvanced` 两个脚本类，当前测试存档至少存在一个具有开放市场、地点和主实体的市场。
 
@@ -659,7 +659,7 @@ public class GearInFleetGeneratorAdvanced implements EveryFrameScript {
 
 ## 验证高级生成器
 
-### 验证方案
+## 验证方案
 
 前置数据：基础生成器验证已完成，同一测试进程与测试存档继续保留。
 

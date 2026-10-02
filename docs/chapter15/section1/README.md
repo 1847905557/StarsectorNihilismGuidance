@@ -87,7 +87,7 @@ if (target.getCustomInteractionDialogImageVisual() != null) {
 
 ### 文本面板承载会话状态
 
-`TextPanelAPI` 的第一条内容来自会话目标，而不是 picker。目标 ID 写入文本后，读者能把当前画面与 `getInteractionTarget()` 返回的实体对应起来；标记缺失分支写出的说明也属于同一文本面板，因此初始化结果在一个区域内完整呈现。
+`TextPanelAPI` 的第一条内容来自会话目标，而不是 picker。目标 ID 写入文本后，您能把当前画面与 `getInteractionTarget()` 返回的实体对应起来；标记缺失分支写出的说明也属于同一文本面板，因此初始化结果在一个区域内完整呈现。
 
 ```java
 text.addPara("Target ID: " + target.getId());

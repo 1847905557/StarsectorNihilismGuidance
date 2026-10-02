@@ -55,9 +55,9 @@ GearIndustry/
 
 前置数据：[C6-S1] 的工程配置已完成，待迁移的 Java 源文件仍位于 `data/`。
 
-1. 列出 `src/data/scripts/` 和 `src/data/missions/`；
-2. 对照 package、目录和类名；
-3. 确认 `data/` 只保留运行数据与资源；
+1. 列出 `src/data/scripts/` 和 `src/data/missions/`。
+2. 对照 package、目录和类名。
+3. 确认 `data/` 只保留运行数据与资源。
 4. 搜索重复的 `.java` 文件名。
 
 预期结果：

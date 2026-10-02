@@ -8,6 +8,8 @@
 
 ## 学习目标
 
+完成后，您将能够：
+
 - 解释 `attribute`、`uniform` 和 `varying` 在两个 shader 阶段间的数据流；
 - 用距离函数和 `smoothstep` 生成像素宽度稳定的圆环与朝向线；
 - 编译、链接、使用并释放 shader program；

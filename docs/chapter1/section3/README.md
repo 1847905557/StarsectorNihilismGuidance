@@ -66,7 +66,7 @@
 
 ![舰船编辑器中的航母甲板港口设置](./carrier_port.png "carrier_port.png")
 
-**每一个图标右下角的数字说明它属于第 x 个甲板**，由于 `守炉人-级` 航母只有 2 个甲板，所以右下角最大数字为 2\*\*。而图标的数量则说明这个甲板有多少个港口\*\*。
+**每一个图标右下角的数字说明它属于第 x 个甲板**，由于 `守炉人-级` 航母只有 2 个甲板，所以右下角最大数字为 2。而图标的数量则说明这个甲板有多少个港口。
 
 其它属性设置完毕后，按 `V` 保存。
 
@@ -100,7 +100,7 @@ tag 也作了与 `工匠-级` 相似的处理。
 
 ![守炉人级航母在战斗中投放战机](./carrier_play.png "carrier_play.png")
 
-### 验证方案
+## 验证方案
 
 前置数据：已经完成 `GearIn_furnaceman` 的船体文件和 `ship_data.csv` 登记，并准备一套可搭载战机联队的测试装配。
 
@@ -308,8 +308,8 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 | auto\_fighter | 只有包含此 tag 的战机才能被无人战舰使用 |
 | drone | tag 存在于数据中，引擎侧无消费点、不产生行为 |
 | rapid\_reform | 联队将倾向于保持严格的阵型而非四散而开 |
-| leader\_no\_swarm | 联队中的首机一旦接敌就会拉开距离，而非无脑蜂蛹而上 |
-| wingmen\_no\_swarm | 联队中的首机以外的战机旦接敌就会拉开距离，而非无脑蜂蛹而上 |
+| leader\_no\_swarm | 联队中的首机一旦接敌就会拉开距离，而非无脑蜂拥而上 |
+| wingmen\_no\_swarm | 联队中的首机以外的战机一旦接敌就会拉开距离，而非无脑蜂拥而上 |
 | match\_leader\_facing | 联队中的其它所有战机与首机保持朝向完全一致 |
 | attack\_at\_an\_angle | 战机 AI 将倾向于使用最大武器倾角侧舷对敌，而非正面对敌 |
 | independent\_of\_carrier | 当航母被消灭或无所属航母时，依然正常运作而非四散溃逃。且当场上没有任何同侧舰船时，这些战机不会自动自爆而是需要被手动消灭 |
@@ -319,7 +319,7 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 
 ![炉渣级战机联队在战斗中的表现](./fighter_play.png "fighter_play.png")
 
-### 验证方案
+## 验证方案
 
 前置数据：已经完成 `GearIn_slag` 船体、`GearIn_slag_normal` 装配和 `GearIn_slag_wing` 联队登记，并准备一艘可搭载该联队的航母。
 

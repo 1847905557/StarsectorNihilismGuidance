@@ -31,7 +31,7 @@
 
 产业挂在一个 `MarketAPI` 上。市场提供规模、商品库存、经济刷新和建设队列，产业根据这些输入声明自己的需求和产出。经济步读取产业声明，再把结果传播到市场商品价格、库存、短缺和贸易界面。
 
-产业有三层数据关系。`industries.csv` 保存静态规格，`IndustrySpecAPI` 代表这条规格，`Industry` 代表市场中的运行时接口，`BaseIndustry` 提供大多数通用实现。CSV 的 `plugin` 列指向一个可无参构造的 Java 类，市场添加产业时会实例化这个类并调用 `init()`。
+产业的注册数据落在 `industries.csv`，`IndustrySpecAPI` 代表这条规格，`Industry` 是市场中的运行时接口，`BaseIndustry` 提供大多数通用实现。CSV 的 `plugin` 列指向一个可无参构造的 Java 类，市场添加产业时会实例化这个类并调用 `init()`。
 
 本节的产业 ID 是 `GearIn_element_works`，显示名是 `Element Works`。它消耗 `metals`、`fuel` 和 `heavy_machinery`，产出 `rare_metals`。商品数量随市场规模线性变化，因此同一个产业放在不同规模的市场中会产生不同的供需值。
 
@@ -288,8 +288,6 @@ industry.setDisrupted(0f);
 
 ## 完整最小例
 
-### 完整成品：GearInElementWorksIndustry
-
 ::: details 完整成品：GearInElementWorksIndustry
 
 ```java
@@ -404,8 +402,6 @@ public class GearInElementWorksIndustry extends BaseIndustry {
 ```
 
 :::
-
-### 完整成品：GearInIndustryProbe
 
 ::: details 完整成品：GearInIndustryProbe
 

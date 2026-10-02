@@ -34,8 +34,8 @@ Gradle 只允许在编译期引用游戏核心目录中的 JAR，依赖声明必
 
 前置数据：Starsector 安装目录中的 `jre` 与 `starsector-core` 可读取，示例 MOD 工程已在 IDE 中打开。
 
-1. 确认 IDE SDK 为 Java 17；
-2. 查看 `jre/release`；
+1. 确认 IDE SDK 为 Java 17。
+2. 查看 `jre/release`。
 3. 确认工程依赖使用 `compileOnly`。
 
 预期结果：

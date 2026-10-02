@@ -58,7 +58,7 @@ GearIn file loading is ready.
 
 入口类在 `onApplicationLoad` 中读取该文件并把返回文本写入日志。代码只保存读取结果，不修改 MOD 目录中的源文件。
 
-### 验证方案
+## 验证方案
 
 前置数据：`gear_in` MOD、`notes.txt` 和入口类读取片段已就绪。
 

@@ -8,6 +8,8 @@
 
 ## 学习目标
 
+完成后，您将能够：
+
 - 使用稳定插件 ID 管理注册替换、读档重登和显式注销；
 - 根据目标对象返回 `PluginPick`，并用 `null` 把不匹配对象交给其他插件；
 - 使用 `PickPriority` 控制多个非空候选之间的最终选择；
@@ -167,85 +169,9 @@ Campaign 插件除了选择服务，还能在对象 Memory 被请求时更新事
 
 注销后再次与标记实体交互，其他 Campaign 插件会重新竞争该目标。再次读取市场 Memory 时，本插件不再写入 ready 键；若要观察这一点，应先从 `getMemoryWithoutUpdate()` 中 `unset()` 旧键，再调用 `getMemory()`。
 
-## 验证方案
-
-前置数据：已启用包含 [C14-S3] 三个完整类的测试 MOD；准备一个可交互实体、一支可开战的敌舰队和一个市场，并能够在三者 Memory 中写入测试标记。
-
-1. 编译 `GearInCampaignPlugin`、`GearInTargetDialog` 和 `GearInObjectiveBattleCreationPlugin`。
-2. 在 `onGameLoad()` 注册 `GearInCampaignPlugin`，核对 `getId()` 返回 `GearIn_campaign_plugin` 且 `isTransient()` 返回 `true`。
-3. 连续登记两个相同 ID 的探针实例，检查插件集合只保留第二个实例。
-4. 给交互实体写入 `$GearIn_dialog_target` 并开始交互，核对对话框显示的目标 ID、标记和市场 ready 状态。
-5. 与未标记实体交互，确认当前插件返回 `null`，并观察其他插件提供的交互结果。
-6. 给测试敌舰队写入 `$GearIn_battle_target` 并开战，观察小规模战场中的战术目标。
-7. 与未标记敌舰队开战，确认战场采用其他 Campaign 插件提供的规则。
-8. 给市场写入 `$GearIn_market_facts_target`，依次读取 `getMemoryWithoutUpdate()` 和 `getMemory()`，比较 ready 键。
-9. 登记分别返回 `MOD_SET` 和 `MOD_SPECIFIC` 的不同 ID 探针，触发同一个 picker 并记录获选实现。
-10. 保存并读档，确认 `onGameLoad()` 重新登记 transient 插件，插件集合中只有一个 `GearIn_campaign_plugin`。
-11. 调用 `unregisterPlugin(GearInCampaignPlugin.PLUGIN_ID)`，再次测试对话与战场选择。
-12. 注销后从市场 Memory 清除 ready 键，再调用 `market.getMemory()`，确认本插件不再写入该事实。
-
-预期结果：
-
-- 三个 Java 类编译完成，加载期没有类缺失或方法签名错误；
-- 相同非空 ID 的新插件替换旧实例，集合中只有当前实例；
-- 标记实体使用 `GearInTargetDialog`，对话框显示正确目标 ID、对话标记和市场 ready 状态；
-- 未标记实体使当前 picker 返回 `null`，其他插件仍可提供交互；
-- 标记敌舰队使用 `GearInObjectiveBattleCreationPlugin`，战场生成战术目标；
-- 未标记敌舰队不使用本节战场插件；
-- `getMemoryWithoutUpdate()` 不触发 ready 写入，`getMemory()` 刷新后 ready 为 `true`；
-- `MOD_SPECIFIC` 候选高于 `MOD_SET` 候选并成为最终结果；
-- 读档后 transient 插件重新登记，稳定 ID 避免重复实例；
-- 注销后本插件停止参与新的对话、战场和市场 facts 更新。
-
-## 故障分析
-
-- **读档后所有自定义选择都消失**：插件返回 transient，但 `onGameLoad()` 没有重新登记实例。
-    - **解决方案**：每次 `onGameLoad()` 调用 `registerPlugin(new GearInCampaignPlugin())`。
-
-- **相同插件 ID 的两个实现没有并存**：注册器把非空 ID 作为替换键，新实例登记前会移除旧实例。
-    - **解决方案**：需要竞争的插件使用不同稳定 ID；同一功能的新版本继续使用相同 ID 完成替换。
-
-- **每次读档后 picker 调用次数增加**：`getId()` 返回 `null`，每次登记都向集合追加新实例。
-    - **解决方案**：让 `getId()` 始终返回 `GearIn_campaign_plugin`。
-
-- **未标记实体也打开自定义对话框**：交互 picker 在条件不匹配时仍返回了 `PluginPick`。
-    - **解决方案**：先判空并检查 `$GearIn_dialog_target`，任一条件不成立时返回 `null`。
-
-- **`MOD_SPECIFIC` 候选没有获选**：另一个插件返回了枚举序号更高的优先级，或本插件因过滤条件返回 `null`。
-    - **解决方案**：记录每个候选的命中条件和 `PickPriority`，核对目标 Memory 与全部非空候选。
-
-- **标记敌舰队的小规模战斗没有战术目标**：战场插件在父类创建地图之后才修改 `forceObjectivesOnMap`。
-    - **解决方案**：在 `super.initBattle(context, api)` 之前设置 `context.forceObjectivesOnMap = true`。
-
-- **读取 `getMemoryWithoutUpdate()` 后 ready 仍为 `false`**：该入口只返回当前 Memory，不执行 Campaign 插件的 facts 更新。
-    - **解决方案**：需要刷新事实时调用 `market.getMemory()`，再从返回对象读取 ready 键。
-
-- **读取市场 Memory 时发生递归调用**：`updateMarketFacts()` 内再次调用了 `market.getMemory()`。
-    - **解决方案**：只读取和写入方法参数 `memory`，需要市场属性时直接使用参数 `market`。
-
-- **动态 facts 在 Memory 中形成长期过期项**：更新方法为每次读取都重算的键设置了正数期限。
-    - **解决方案**：使用 `memory.set(MARKET_READY_KEY, true, 0f)` 写入当前刷新事实。
-
-- **调用注销后插件仍在参与选择**：传给 `unregisterPlugin()` 的字符串与插件 `getId()` 不一致。
-    - **解决方案**：注销时统一使用 `GearInCampaignPlugin.PLUGIN_ID`。
-
-## 总结
-
-Campaign 插件先通过稳定 ID 进入注册集合，再在具体服务请求发生时返回候选。ID 解决实例替换，picker 的目标判断决定是否参与，`PickPriority` 决定多个候选中的最终结果。transient 插件需要每次读档重登，稳定 ID 让重复回调收敛为一个当前实例。
-
-facts 更新沿对象的 `getMemory()` 调用发生。更新方法使用传入 Memory 写入零过期时间的 MOD 键，`getMemoryWithoutUpdate()` 则保留只读当前值的语义。把交互、战场与市场事实分别绑定到三个标记后，每条链都能独立启用、退让和验证。
-
-## 建议参考项
-
-- `com.fs.starfarer.api.campaign.CampaignPlugin`：插件 ID、存档性质、选择优先级、picker 和 facts 更新合同；
-- `com.fs.starfarer.api.campaign.BaseCampaignPlugin`：全部 Campaign 插件方法的默认实现；
-- `com.fs.starfarer.api.PluginPick`：候选插件与 `PickPriority` 的组合对象；
-- `com.fs.starfarer.api.campaign.SectorAPI`：Campaign 插件注册与注销入口；
-- `com.fs.starfarer.api.campaign.InteractionDialogPlugin`：交互对话框的初始化、选项和状态接口；
-- `com.fs.starfarer.api.impl.combat.BattleCreationPluginImpl`：原版舰队装载、地图创建和部署规则实现；
-- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：目标标记、动态 facts 和过期时间读写。
-
 ## 完整最小例
+
+三个完整类分别承担 Campaign 插件、交互对话框与战场创建职责，页面片段均出自这三个类。
 
 ::: details 完整成品：GearInCampaignPlugin
 
@@ -420,3 +346,81 @@ public class GearInObjectiveBattleCreationPlugin extends BattleCreationPluginImp
 ```
 
 :::
+
+## 验证方案
+
+前置数据：已启用包含 [C14-S3] 三个完整类的测试 MOD；准备一个可交互实体、一支可开战的敌舰队和一个市场，并能够在三者 Memory 中写入测试标记。
+
+1. 编译 `GearInCampaignPlugin`、`GearInTargetDialog` 和 `GearInObjectiveBattleCreationPlugin`。
+2. 在 `onGameLoad()` 注册 `GearInCampaignPlugin`，核对 `getId()` 返回 `GearIn_campaign_plugin` 且 `isTransient()` 返回 `true`。
+3. 连续登记两个相同 ID 的探针实例，检查插件集合只保留第二个实例。
+4. 给交互实体写入 `$GearIn_dialog_target` 并开始交互，核对对话框显示的目标 ID、标记和市场 ready 状态。
+5. 与未标记实体交互，确认当前插件返回 `null`，并观察其他插件提供的交互结果。
+6. 给测试敌舰队写入 `$GearIn_battle_target` 并开战，观察小规模战场中的战术目标。
+7. 与未标记敌舰队开战，确认战场采用其他 Campaign 插件提供的规则。
+8. 给市场写入 `$GearIn_market_facts_target`，依次读取 `getMemoryWithoutUpdate()` 和 `getMemory()`，比较 ready 键。
+9. 登记分别返回 `MOD_SET` 和 `MOD_SPECIFIC` 的不同 ID 探针，触发同一个 picker 并记录获选实现。
+10. 保存并读档，确认 `onGameLoad()` 重新登记 transient 插件，插件集合中只有一个 `GearIn_campaign_plugin`。
+11. 调用 `unregisterPlugin(GearInCampaignPlugin.PLUGIN_ID)`，再次测试对话与战场选择。
+12. 注销后从市场 Memory 清除 ready 键，再调用 `market.getMemory()`，确认本插件不再写入该事实。
+
+预期结果：
+
+- 三个 Java 类编译完成，加载期没有类缺失或方法签名错误；
+- 相同非空 ID 的新插件替换旧实例，集合中只有当前实例；
+- 标记实体使用 `GearInTargetDialog`，对话框显示正确目标 ID、对话标记和市场 ready 状态；
+- 未标记实体使当前 picker 返回 `null`，其他插件仍可提供交互；
+- 标记敌舰队使用 `GearInObjectiveBattleCreationPlugin`，战场生成战术目标；
+- 未标记敌舰队不使用本节战场插件；
+- `getMemoryWithoutUpdate()` 不触发 ready 写入，`getMemory()` 刷新后 ready 为 `true`；
+- `MOD_SPECIFIC` 候选高于 `MOD_SET` 候选并成为最终结果；
+- 读档后 transient 插件重新登记，稳定 ID 避免重复实例；
+- 注销后本插件停止参与新的对话、战场和市场 facts 更新。
+
+## 故障分析
+
+- **读档后所有自定义选择都消失**：插件返回 transient，但 `onGameLoad()` 没有重新登记实例。
+    - **解决方案**：每次 `onGameLoad()` 调用 `registerPlugin(new GearInCampaignPlugin())`。
+
+- **相同插件 ID 的两个实现没有并存**：注册器把非空 ID 作为替换键，新实例登记前会移除旧实例。
+    - **解决方案**：需要竞争的插件使用不同稳定 ID；同一功能的新版本继续使用相同 ID 完成替换。
+
+- **每次读档后 picker 调用次数增加**：`getId()` 返回 `null`，每次登记都向集合追加新实例。
+    - **解决方案**：让 `getId()` 始终返回 `GearIn_campaign_plugin`。
+
+- **未标记实体也打开自定义对话框**：交互 picker 在条件不匹配时仍返回了 `PluginPick`。
+    - **解决方案**：先判空并检查 `$GearIn_dialog_target`，任一条件不成立时返回 `null`。
+
+- **`MOD_SPECIFIC` 候选没有获选**：另一个插件返回了枚举序号更高的优先级，或本插件因过滤条件返回 `null`。
+    - **解决方案**：记录每个候选的命中条件和 `PickPriority`，核对目标 Memory 与全部非空候选。
+
+- **标记敌舰队的小规模战斗没有战术目标**：战场插件在父类创建地图之后才修改 `forceObjectivesOnMap`。
+    - **解决方案**：在 `super.initBattle(context, api)` 之前设置 `context.forceObjectivesOnMap = true`。
+
+- **读取 `getMemoryWithoutUpdate()` 后 ready 仍为 `false`**：该入口只返回当前 Memory，不执行 Campaign 插件的 facts 更新。
+    - **解决方案**：需要刷新事实时调用 `market.getMemory()`，再从返回对象读取 ready 键。
+
+- **读取市场 Memory 时发生递归调用**：`updateMarketFacts()` 内再次调用了 `market.getMemory()`。
+    - **解决方案**：只读取和写入方法参数 `memory`，需要市场属性时直接使用参数 `market`。
+
+- **动态 facts 在 Memory 中形成长期过期项**：更新方法为每次读取都重算的键设置了正数期限。
+    - **解决方案**：使用 `memory.set(MARKET_READY_KEY, true, 0f)` 写入当前刷新事实。
+
+- **调用注销后插件仍在参与选择**：传给 `unregisterPlugin()` 的字符串与插件 `getId()` 不一致。
+    - **解决方案**：注销时统一使用 `GearInCampaignPlugin.PLUGIN_ID`。
+
+## 总结
+
+Campaign 插件先通过稳定 ID 进入注册集合，再在具体服务请求发生时返回候选。ID 解决实例替换，picker 的目标判断决定是否参与，`PickPriority` 决定多个候选中的最终结果。transient 插件需要每次读档重登，稳定 ID 让重复回调收敛为一个当前实例。
+
+facts 更新沿对象的 `getMemory()` 调用发生。更新方法使用传入 Memory 写入零过期时间的 MOD 键，`getMemoryWithoutUpdate()` 则保留只读当前值的语义。把交互、战场与市场事实分别绑定到三个标记后，每条链都能独立启用、退让和验证。
+
+## 建议参考项
+
+- `com.fs.starfarer.api.campaign.CampaignPlugin`：插件 ID、存档性质、选择优先级、picker 和 facts 更新合同；
+- `com.fs.starfarer.api.campaign.BaseCampaignPlugin`：全部 Campaign 插件方法的默认实现；
+- `com.fs.starfarer.api.PluginPick`：候选插件与 `PickPriority` 的组合对象；
+- `com.fs.starfarer.api.campaign.SectorAPI`：Campaign 插件注册与注销入口；
+- `com.fs.starfarer.api.campaign.InteractionDialogPlugin`：交互对话框的初始化、选项和状态接口；
+- `com.fs.starfarer.api.impl.combat.BattleCreationPluginImpl`：原版舰队装载、地图创建和部署规则实现；
+- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：目标标记、动态 facts 和过期时间读写。

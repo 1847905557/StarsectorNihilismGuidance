@@ -8,6 +8,8 @@
 
 ## 学习目标
 
+完成后，您将能够：
+
 - 区分 `IntelInfoPlugin` 的界面合同与 `BaseIntelPlugin` 的默认生命周期；
 - 解释 `IntelManagerAPI` 的立即登记、通信队列、文本面板渲染和移除路径；
 - 将同一个 Intel 对象分别登记到 Intel 列表和生涯脚本列表；
@@ -322,17 +324,17 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
 
 前置数据：使用一份可以推进 35 个游戏日的测试存档，并准备 [C11-S1] 的舰队生成入口。
 
-1. 编译本节对应的 source set；
-2. 创建一支舰队，在投放前写入 `$GearIn_intel_target`；
-3. 创建 `GearInFleetActivityIntel` 并调用 `IntelManagerAPI.addIntel()`；
-4. 调用 `Global.getSector().addScript(intel)`，确认 Intel 列表和脚本列表都包含同一个实例；
-5. 检查 Intel 图标、舰队标签、列表文本、地图位置和左下消息；
-6. 让舰队跨地点移动，确认出现一次位置更新；
-7. 保存并读档，确认累计天数、舰队引用和上次地点 ID 继续；
-8. 让舰队 `isAlive()` 变为 `false`，确认条目进入 ending；
-9. 在结束延迟期间检查 `isEnding()`、剩余比例和 Intel 列表；
-10. 等待默认 3 个游戏日，确认脚本引擎依据 `isDone()` 清理对象；
-11. 确认 Intel 管理器依据 `shouldRemoveIntel()` 清理同一对象；
+1. 编译本节对应的 source set。
+2. 创建一支舰队，在投放前写入 `$GearIn_intel_target`。
+3. 创建 `GearInFleetActivityIntel` 并调用 `IntelManagerAPI.addIntel()`。
+4. 调用 `Global.getSector().addScript(intel)`，确认 Intel 列表和脚本列表都包含同一个实例。
+5. 检查 Intel 图标、舰队标签、列表文本、地图位置和左下消息。
+6. 让舰队跨地点移动，确认出现一次位置更新。
+7. 保存并读档，确认累计天数、舰队引用和上次地点 ID 继续。
+8. 让舰队 `isAlive()` 变为 `false`，确认条目进入 ending。
+9. 在结束延迟期间检查 `isEnding()`、剩余比例和 Intel 列表。
+10. 等待默认 3 个游戏日，确认脚本引擎依据 `isDone()` 清理对象。
+11. 确认 Intel 管理器依据 `shouldRemoveIntel()` 清理同一对象。
 12. 对照 `queueIntel()`、`addIntelToTextPanel()`、`removeIntel()` 和重复 `addIntel()` 验证登记边界。
 
 预期结果：

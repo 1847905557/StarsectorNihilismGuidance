@@ -230,67 +230,9 @@ public void unapply(MutableShipStatsAPI stats, String id) {
 
 需要撤销数值或释放状态的脚本，应在 `apply(...)` 的状态分支中自行维护。
 
-## 验证方案
-
-前置数据：已把两个系统分别挂载到测试舰船，并完成 Java 17 构建。
-
-1. 执行 `gradle jar`，确认 JAR 包含三个示例类。
-2. 进入模拟战，激活 `GearIn_range_system`，观察前摇、全功率、后摇和冷却阶段。
-3. 核对主系统的武器射程倍率、`range amplified` 状态文字和 `RECHARGING` 信息文字。
-4. 将主系统舰船放入 AI 一方，观察 `GearInRangeSystemAI` 的初始化日志和间隔激活日志。
-5. 进入挂载 `GearIn_idle_probe` 的战斗，搜索 `GearIn idle probe`，确认 `IDLE` 与 `COOLDOWN` 也有记录。
-6. 暂停战斗并恢复，比较普通系统和待机演示系统的回调日志。
-7. 结束战斗后开始第二场战斗，确认 stats 与 AI 的实例状态重新建立。
-
-预期结果：
-
-- 主系统激活时射程倍率随 `effectLevel` 变化，结束后由 `unapply` 恢复；
-- 玩家界面出现 `range amplified` 和 `RECHARGING`；
-- AI 舰船按节流间隔调用 `ship.useSystem()`，而不是每帧重复尝试；
-- 待机演示系统在 `IDLE`、`IN`、`ACTIVE`、`OUT` 和 `COOLDOWN` 阶段输出日志；
-- 第二场战斗使用新的脚本实例和新的战斗对象。
-
-## 故障分析
-
-- **系统加载时报 `Problem loading class`**：`.system` 中的 `statsScript`、`aiScript` 或包名与 JAR 中的类不一致。
-    - **解决方案**：逐字核对完整类名、`package` 声明和 JAR 条目后重启。
-
-- **AI 舰船从不激活系统**：`aiType` 不是 `CUSTOM`，或 `advance(...)` 的目标、冷却和存活检查始终返回。
-    - **解决方案**：将 `aiType` 改为 `CUSTOM`，确认目标有效并用日志检查节流后的决策时机。
-
-- **系统结束后射程倍率仍然存在**：`unapply(...)` 没有用与 `apply(...)` 相同的 modifier ID 撤销。
-    - **解决方案**：统一使用引擎传入的 `id`，重新激活并等待系统结束。
-
-- **只看到激活阶段日志**：`runScriptWhileIdle` 未写在 `.system` 顶层，或值不是 `true`。
-    - **解决方案**：在待机演示系统的 `.system` 顶层设置 `runScriptWhileIdle: true`，重新加载后搜索 `IDLE` 与 `COOLDOWN`。
-
-- **系统每帧反复尝试激活**：自定义 AI 没有使用 `IntervalUtil`，或没有检查 `isActive()` 和 `isCoolingDown()`。
-    - **解决方案**：保留决策间隔，并在调用 `ship.useSystem()` 前检查系统状态。
-
-- **待机脚本造成战斗卡顿**：开启 `runScriptWhileIdle` 后仍在每帧执行全战场扫描或大量日志输出。
-    - **解决方案**：缩短待机脚本逻辑，只读取必要状态，并将高成本工作改为间隔执行。
-
-- **自定义 AI 保存的字段在 stats 脚本中为空**：stats 类与 AI 类是独立实例，实例字段不会互相共享。
-    - **解决方案**：通过参数、静态工具方法或舰船 custom data 传递确需共享的信息。
-
-## 总结
-
-战术系统的 `.system` 文件先确定 stats 脚本、AI 脚本和待机调用范围。`BaseShipSystemScript` 的 `apply` 与 `unapply` 负责数值效果，状态文字和覆盖方法负责界面与运行参数；`ShipSystemAIScript` 只负责在合适时机调用系统。`runScriptWhileIdle` 让 stats 脚本能够观察完整状态周期，但也扩大了每帧工作范围。
-
-## 建议参考项
-
-- `data/shipsystems/<id>.system`：战术系统数据文件，确定 stats 脚本、AI 脚本和待机调用范围；
-- `data/shipsystems/ship_systems.csv`：战术系统注册表；
-- `data/hulls/ship_data.csv`：舰船数据表，挂载系统的运行参数来源；
-- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：舰船数值修饰入口；
-- `com.fs.starfarer.api.combat.MutableStat`：单条数值的修饰对象；
-- `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：效果脚本基类；
-- `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：状态、效果和状态栏接口；
-- `com.fs.starfarer.api.plugins.ShipSystemStatsScriptAdvanced`：`isUsable` 与 `getInfoText`；
-- `com.fs.starfarer.api.combat.ShipSystemAIScript`：`init` 与 `advance`；
-- `com.fs.starfarer.api.combat.ShipSystemAPI`：状态、冷却和激活访问器；
-
 ## 完整最小例
+
+下面的三个完整类分别覆盖战术系统、自定义 AI 与待机探针，页面片段均出自它们。
 
 ::: details 完整成品：GearInRangeSystem
 
@@ -462,3 +404,63 @@ public class GearInIdleProbeSystem extends BaseShipSystemScript {
 ```
 
 :::
+
+## 验证方案
+
+前置数据：已把两个系统分别挂载到测试舰船，并完成 Java 17 构建。
+
+1. 执行 `gradle jar`，确认 JAR 包含三个示例类。
+2. 进入模拟战，激活 `GearIn_range_system`，观察前摇、全功率、后摇和冷却阶段。
+3. 核对主系统的武器射程倍率、`range amplified` 状态文字和 `RECHARGING` 信息文字。
+4. 将主系统舰船放入 AI 一方，观察 `GearInRangeSystemAI` 的初始化日志和间隔激活日志。
+5. 进入挂载 `GearIn_idle_probe` 的战斗，搜索 `GearIn idle probe`，确认 `IDLE` 与 `COOLDOWN` 也有记录。
+6. 暂停战斗并恢复，比较普通系统和待机演示系统的回调日志。
+7. 结束战斗后开始第二场战斗，确认 stats 与 AI 的实例状态重新建立。
+
+预期结果：
+
+- 主系统激活时射程倍率随 `effectLevel` 变化，结束后由 `unapply` 恢复；
+- 玩家界面出现 `range amplified` 和 `RECHARGING`；
+- AI 舰船按节流间隔调用 `ship.useSystem()`，而不是每帧重复尝试；
+- 待机演示系统在 `IDLE`、`IN`、`ACTIVE`、`OUT` 和 `COOLDOWN` 阶段输出日志；
+- 第二场战斗使用新的脚本实例和新的战斗对象。
+
+## 故障分析
+
+- **系统加载时报 `Problem loading class`**：`.system` 中的 `statsScript`、`aiScript` 或包名与 JAR 中的类不一致。
+    - **解决方案**：逐字核对完整类名、`package` 声明和 JAR 条目后重启。
+
+- **AI 舰船从不激活系统**：`aiType` 不是 `CUSTOM`，或 `advance(...)` 的目标、冷却和存活检查始终返回。
+    - **解决方案**：将 `aiType` 改为 `CUSTOM`，确认目标有效并用日志检查节流后的决策时机。
+
+- **系统结束后射程倍率仍然存在**：`unapply(...)` 没有用与 `apply(...)` 相同的 modifier ID 撤销。
+    - **解决方案**：统一使用引擎传入的 `id`，重新激活并等待系统结束。
+
+- **只看到激活阶段日志**：`runScriptWhileIdle` 未写在 `.system` 顶层，或值不是 `true`。
+    - **解决方案**：在待机演示系统的 `.system` 顶层设置 `runScriptWhileIdle: true`，重新加载后搜索 `IDLE` 与 `COOLDOWN`。
+
+- **系统每帧反复尝试激活**：自定义 AI 没有使用 `IntervalUtil`，或没有检查 `isActive()` 和 `isCoolingDown()`。
+    - **解决方案**：保留决策间隔，并在调用 `ship.useSystem()` 前检查系统状态。
+
+- **待机脚本造成战斗卡顿**：开启 `runScriptWhileIdle` 后仍在每帧执行全战场扫描或大量日志输出。
+    - **解决方案**：缩短待机脚本逻辑，只读取必要状态，并将高成本工作改为间隔执行。
+
+- **自定义 AI 保存的字段在 stats 脚本中为空**：stats 类与 AI 类是独立实例，实例字段不会互相共享。
+    - **解决方案**：通过参数、静态工具方法或舰船 custom data 传递确需共享的信息。
+
+## 总结
+
+战术系统的 `.system` 文件先确定 stats 脚本、AI 脚本和待机调用范围。`BaseShipSystemScript` 的 `apply` 与 `unapply` 负责数值效果，状态文字和覆盖方法负责界面与运行参数；`ShipSystemAIScript` 只负责在合适时机调用系统。`runScriptWhileIdle` 让 stats 脚本能够观察完整状态周期，但也扩大了每帧工作范围。
+
+## 建议参考项
+
+- `data/shipsystems/<id>.system`：战术系统数据文件，确定 stats 脚本、AI 脚本和待机调用范围；
+- `data/shipsystems/ship_systems.csv`：战术系统注册表；
+- `data/hulls/ship_data.csv`：舰船数据表，挂载系统的运行参数来源；
+- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：舰船数值修饰入口；
+- `com.fs.starfarer.api.combat.MutableStat`：单条数值的修饰对象；
+- `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：效果脚本基类；
+- `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：状态、效果和状态栏接口；
+- `com.fs.starfarer.api.plugins.ShipSystemStatsScriptAdvanced`：`isUsable` 与 `getInfoText`；
+- `com.fs.starfarer.api.combat.ShipSystemAIScript`：`init` 与 `advance`；
+- `com.fs.starfarer.api.combat.ShipSystemAPI`：状态、冷却和激活访问器。

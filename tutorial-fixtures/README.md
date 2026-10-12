@@ -19,9 +19,9 @@ gradle validateShaders
 gradle verifyTutorialFixtures
 ```
 
-54 个 Java 单元使用独立 source set。4 个 shader 单元在自己的资源目录中保存 `.vert`、`.frag` 和接入代码。执行编译或 shader 校验前会先运行页面与 fixture 契约检查。
+Java 单元按 `build.gradle` 的 `javaUnitIds` 使用独立 source set。shader 单元按 `shaderUnitIds` 在自己的资源目录中保存 `.vert`、`.frag` 和接入代码。执行编译或 shader 校验前会先运行页面与 fixture 契约检查。
 
 ```powershell
-python -B .zcode/tools/check_fixtures.py
+python -B tools/check_fixtures.py
 gradle checkFixtureContracts
 ```

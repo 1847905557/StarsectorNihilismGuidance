@@ -4,6 +4,8 @@
 /docs/.vuepress/.temp
 /docs/.vuepress/.cache
 node_modules/
+__pycache__/
+*.py[cod]
 sample/
 .zcode/
 .dev-logs/

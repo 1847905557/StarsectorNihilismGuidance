@@ -74,7 +74,7 @@ tasks.register("checkFixtureContracts", Exec) {
 	description = "Checks the bidirectional contract between tutorial pages, fixtures, and explicit unit lists."
 	workingDir rootDir.parentFile
 	def pythonExecutable = providers.gradleProperty("pythonExecutable").getOrElse("python")
-	commandLine pythonExecutable, "-B", ".zcode/tools/check_fixtures.py"
+	commandLine pythonExecutable, "-X", "utf8", "-B", "tools/check_fixtures.py"
 }
 
 def compileTasks = javaUnitIds.collect { unitId ->
@@ -90,7 +90,7 @@ tasks.register("compileAllFixtures") {
 
 tasks.register("validateShaders") {
 	group = "verification"
-	description = "Checks the three shader fixture resource sets."
+	description = "Checks the registered shader fixture resource sets."
 	dependsOn "checkFixtureContracts"
 	doLast {
 		shaderUnitIds.each { unitId ->

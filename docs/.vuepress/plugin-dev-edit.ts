@@ -15,7 +15,7 @@ import type { Plugin } from 'vuepress'
 
 const CLIENT_FILE = fileURLToPath(new URL('./client/dev-edit-client.ts', import.meta.url)).replace(/\\/g, '/')
 const RESTORE_SCRIPT = fileURLToPath(
-  new URL('../../.zcode/tools/restore_markdown.py', import.meta.url),
+  new URL('../../tools/restore_markdown.py', import.meta.url),
 )
 const BACKUP_DIR = resolve(process.cwd(), '.zcode', 'tutorial-work', 'backups', 'edit-writes')
 const MAX_BODY_BYTES = 8 * 1024 * 1024
@@ -51,10 +51,9 @@ interface EditRequest {
   html?: string
 }
 
-const encode = (content: string): string => {
+export const encode = (content: string): string => {
   let normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-  normalized = normalized.replace(/\n+$/, '\n')
-  return normalized.replace(/\n/g, '\r\n')
+  return normalized.replace(/\n*$/, '\n')
 }
 
 export const sourceRevision = (content: string | Buffer): string =>

@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
+  encode,
   resolveEditTarget,
   runMarkdownRestore,
   sourceRevision,
@@ -38,6 +39,10 @@ const fixture = () => {
 }
 
 describe('dev edit source binding', () => {
+  it('writes LF with a single terminal newline', () => {
+    expect(encode('# 标题\r\n正文\r\n\r\n')).toBe('# 标题\n正文\n')
+    expect(encode('# 标题')).toBe('# 标题\n')
+  })
   it('uses the exact source bytes for SHA-256 revisions', () => {
     const bytes = Buffer.from('# 标题\r\n', 'utf-8')
     expect(sourceRevision(bytes)).toBe(createHash('sha256').update(bytes).digest('hex'))

@@ -20,7 +20,8 @@
 
 - [C17-S2] 的 `strings.json` 固定入口、双参 `getString`、缺失键和占位符规则；
 - [C1-S1] 的 MOD 目录结构与 `gear_in` 示例 MOD；
-- [C1-S7]、[C3-S5] 的 `descriptions.csv` 键规则与使用方。
+- [C1-S7] 的基础对象描述注册；
+- [C3-S5] 的描述类型、字段用途与对象绑定。
 
 ## 本地化组织
 

@@ -76,6 +76,8 @@ Starsector/mods/GearIndustry/
 
 带 BOM 或其他编码会让文件解析失败，MOD 不出现在启动器列表中，`starsector.log` 也会因此记录 `Error loading mod from [MOD 目录]`。
 
+这也是推荐您使用诸如 VS Code 的专业编辑器的原因。它们几乎不会带来新的编码问题，而记事本则会。
+
 :::
 
 ::: info 示例使用标准 JSON
@@ -135,7 +137,7 @@ GearIn_faction_name
 
 例如 `data.scripts.gearin.combat.GearInShipStatsProbe`；数据注册继续沿用这一命名约定。
 
-如果上面这两行您没听懂，也没关系，目前暂时用不上。
+...如果上面这两行您没听懂，也没关系，目前暂时用不上。
 
 :::
 
@@ -150,7 +152,7 @@ MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用�
 
 ::: warning 避免合并重复
 
-对于各种明显是会合并的文件，不要复制整份原版 CSV 或 JSON 后只改一行。文件内应该只包含您希望增添的内容。
+对于各种明显是会合并的文件，比如 `ship_data.csv`，不要复制整份原版 CSV 或 JSON 后只改一行。文件内应该只包含您希望增添的内容。
 
 :::
 
@@ -160,11 +162,9 @@ MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用�
 
 游戏日志位于 `Starsector/starsector-core/starsector.log`，包罗万象，是排查问题的主要依据。
 
-对于本实例 MOD 而言，游戏启动器扫描 MOD 时将记录 `Found mod: gear_in [...]`，关键文件解析失败时将记录 `Error loading mod from [MOD 目录]` 及异常堆栈。
+**本教程的 "验证方案" 和 "故障分析" 都以这份日志为对照。**
 
-**本节的 "验证方案" 和 "故障分析" 都以这份日志为对照。**
-
-您可能此前在论坛上见过或用过[某些用于辅助检查日志的工具](https://www.fossic.org/thread-2751-1-1.html)，但本教程要求您直接阅读日志。作为一个合格的 Modder，您必须学会手撕日志，才能更有效率地找到问题。
+您可能此前在论坛上见过或用过[某些用于辅助检查日志的工具](https://www.fossic.org/thread-2751-1-1.html)，但本教程要求您直接阅读日志。作为一个合格的 Modder，**您必须学会手撕日志**，才能更有效率地找到问题。
 
 ## 验证方案
 
@@ -183,23 +183,23 @@ MOD 的 `data/` 会按加载结果并入游戏数据。不同类型文件采用�
 
 ## 故障分析
 
-- **启动器中没有 GearIn MOD**：`mod_info.json` 不在 MOD 的直接根目录，或文件实际名被写成了 `mod_info.json.txt`。这个问题常见于 Windows。
+- **启动器中没有 GearIn MOD**：`mod_info.json` 不在 MOD 的直接根目录，或文件实际名被写成了 `mod_info.json.txt`。这个问题常见于 Windows 未显示文件扩展名的时候。
     - **解决方案**：确认文件恰好是 `Starsector/mods/GearIndustry/mod_info.json`。
 
 - **日志报告 manifest 解析失败**：JSON 缺少引号、逗号或花括号，文件带 BOM、编码并非 UTF-8，或缺少 `id`、`name`、`description` 时，`starsector.log` 会记录 `Error loading mod from [MOD 目录]` 和解析堆栈。
     - **解决方案**：逐字检查 JSON 是否写错，并以 UTF-8 无 BOM 保存。
 
 - **启动器将 MOD 标红并禁止勾选**：`gameVersion` 缺失时，启动器会提示 "Error: this mod does not specify which version of the game it requires and can not be enabled."；主版本不匹配时会显示 "Error: this mod requires a different version of the game."。已经启用的 MOD 会在下次启动时被取消勾选。
-    - **解决方案**：将版本写为本教程使用的 `0.98a-RC8`。
+    - **解决方案**：将版本写为实际游戏版本。
 
 - **添加数据后出现重复条目或错误对象**：使用了 `test_ship`、`my_weapon` 等常见 ID，或复制数据后保留原 ID。非常可能导致 ID 重复。
     - **解决方案**：将 ID 改为 `GearIn_<语义名>` 形式，例如 `GearIn_artizan`，并同步全部引用。
 
 ## 总结
 
-只要在 `Starsector/mods` 下的某个新建文件夹中加入正确的 `mod_info.json`，您就完全可以开始自称为一个 Modder。
+只要在 `Starsector/mods` 下的某个新建文件夹中加入正确的 `mod_info.json`，您就一定程度上成为了一个 Modder。
 
-感想如何？
+感想如何？是兴奋还是怯魅？
 
 总而言之，恭喜您正式开始了您的 Modding 旅程。
 

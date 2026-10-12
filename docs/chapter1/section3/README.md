@@ -22,7 +22,7 @@
 
 ## 获取贴图
 
-相信获取贴图的部分已经无需赘述了，这些被提供的贴图制作时长共计不到 1 分钟：
+相信获取贴图的部分已经无需赘述了，这些贴图的制作时长共计不到 1 分钟：
 
 ![守炉人级航母贴图](./GearIn_furnaceman.png "GearIn_furnaceman.png")
 
@@ -56,7 +56,7 @@
 
 ::: warning 甲板设置
 
-每个甲板建议设置至少 2 个港口 (Port)，设置 4 个为最佳建议。
+每个甲板建议设置至少 2 个港口 (Port)，最佳建议是设置 4 个。
 
 港口数为 0 时，战机从舰船中心生成。
 
@@ -115,15 +115,15 @@ tag 也作了与 `工匠-级` 相似的处理。
 
 ## 制作战机舰船文件
 
-按照与寻常舰船无异的过程，制作 `炉渣-级` 战机的舰船文件。虽然 "战机舰船文件" 听上去很奇怪。
+按照与寻常舰船无异的过程，制作 `炉渣-级` 战机的舰船文件。虽然 "战机的舰船文件" 听上去很奇怪。
 
 ::: warning 战机制作注意点
 
 战机的碰撞箱**应该尽可能简单**，甚至可以为此牺牲一些精度。
 
-战机的武器 **不应该选用** `内置`，因为战机的装配是基于装配文件的，而对内置槽位进行装配可能会产生一些问题。
+战机的武器 **不应该选用** `内置`，因为战机的装配是基于装配文件的，而对内置槽位进行装配会产生一些问题。
 
-不要选错 `hullSize` —— 游戏以 `hullSize == FIGHTER` 判定战机身份 (`ShipAPI.isFighter()`)，选错时该单位不会被分配战机 AI，也不会被计入联队成员、返航与补充。
+不要选错 `hullSize` —— 游戏以 `hullSize == FIGHTER` 判定战机身份，选错时该单位不会被分配战机 AI，也不会被计入联队成员、返航与补充。
 
 :::
 
@@ -159,7 +159,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 虽然舰船编辑器的确拥有制作装配的功能，但编者**极度不推荐使用它**，因为它不利于建立文件直觉，且对于后期的进一步调整没有任何正面价值。
 
-继续复制黏贴。打开原版的 `variants/fighters/` 文件夹，找到 `阔剑-级` 的装配，将其复制到您 MOD 的对应位置。然后将文件名改为 `舰船 ID + 某个后缀`，一般来说推荐后缀为 `normal` 或 `variant`：
+继续复制黏贴。打开原版的 `variants/fighters/` 文件夹，找到 `阔剑-级` 的装配，将其复制到您 MOD 的对应位置。然后将文件名改为 `舰船 ID + 某个后缀`：
 
 ![炉渣级战机装配文件的命名与存放位置](./fighter_rename.png "fighter_rename.png")
 
@@ -233,13 +233,13 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 }
 ```
 
-**再次强调：一定要注意那些武器槽 (**`WSxxx`**) 是否存在于战机的船体文件里。**
+**再次强调：一定要注意那些武器槽 (**`WSxxx`**) 是否存在于战机的船体文件里。**原版的武器槽 ID 习惯是 "WS 00X"，而编辑器的习惯是 "WS000X"，非常容易出错。
 
 ## 制作战机的战机数据
 
 "战机的战机数据" 听上去比前两个还更奇怪。
 
-打开 `wing_data.csv`，继续复制粘贴。编者认为，既然 `炉渣-级` 是从 `阔剑-级` 修改而来的，那么就直接修改到底，战机数据也从 `阔剑-级` 里复制并修改：
+打开 `wing_data.csv`，继续复制粘贴。既然 `炉渣-级` 是从 `阔剑-级` 修改而来的，那么战机数据也应该从 `阔剑-级` 里复制并修改：
 
 ```csv {12}
 id,variant,tags,tier,rarity,fleet pts,op cost,formation,range,attackRunRange,attackPositionOffset,num,role,role desc,refit,base value,,,,,,,,,,,,,number
@@ -268,7 +268,7 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 
 ### wing\_data.csv 数据速查表
 
-**不在本表上的数据均为本教程用不到的数据 (如 fleet pts) 或不重要数据 (如 number)，照抄原版样本即可。**
+不在本表上的数据均为本教程用不到的数据 (如 fleet pts) 或不重要数据 (如 number)，照抄原版样本即可。
 
 | 英文 | 实际意义 |
 |---|---|
@@ -288,7 +288,7 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 | refit | 战机整备所需秒数 |
 | base value | 每联队的成本价 |
 
-原版 `MilitarySubmarketPlugin` 等通过 `addFighters` 生成常规市场战机池时，只纳入 tier 不大于 3 的联队。这个限制属于上述原版调用链；直接生成或显式添加联队不受该筛选限制。
+原版以常规方式在市场里刷新战机时，只纳入 tier 不大于 3 的联队，所以除非有意不希望让某种战机出现，否则 tier 最好不要大于 3。非常规方式不适用于此限制。
 
 ### wing\_data.csv tags 速查表
 

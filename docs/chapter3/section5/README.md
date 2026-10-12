@@ -1,321 +1,330 @@
-# 编写对象描述文本
+# 补完描述文本
 
-本节完善 `descriptions.csv`，为战斗对象以外的游戏对象编写描述文本。重点是不同描述类型的查找键、使用范围与 CSV 转义边界；格式错误可能造成文本错位、截断，严重时会中止加载。
+本节系统讲解 `descriptions.csv` 的描述类型、字段用途和对象绑定关系。您将沿用已有的描述文件，为齿轮工业势力与 GearIn Second 补上说明，再从各类界面确认对象如何读取这些文本。
 
-*本节预期阅读时间：\~15 分钟。*
+*本节预期阅读时间：\~20 分钟。*
 
-*本节预期操作时间：\~20 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
-完成后，您将能够：
-
-- 为 `Description.Type` 的 11 个枚举值选择正确的查找键和文本列；
-- 正确转义含双引号、英文逗号和换行的 CSV 字段，并使用行首 `#` 注释数据行；
-- 解释战机联队、船插 (hullmod)、市场条件、特殊物品为什么不在 `Description.Type` 里，以及它们各自的描述所在文件；
-- 为商品、行星类型、势力和自定义实体写入已经关联的描述行，并按键唯一、`type` 合法和 UTF-8 无 BOM 的要求保存；
-- 从加载期异常、文本错位/截断和对象键不匹配三类症状反推描述数据错误。
+- 按对象选择 `Description.Type`、查找键和文本字段；
+- 解释 `text1` 至 `text5` 的默认值与各类型的显示用途；
+- 使用船体描述键、行星描述键和实体自定义描述键连接对象与文本；
+- 为既有战术系统、势力和行星编写能够被读取的描述行；
+- 从界面显示位置定位描述绑定与字段使用问题。
 
 ## 前置知识
 
-- [C1-S7] 的 `descriptions.csv` 八列结构、`id + type` 键规则与加载失败表现；
-- [C1-S2] 至 [C1-S6] 的船体、武器、战术系统及相关对象 ID 来源；
-- 理解生涯 (campaign) 的基本界面与对象范围；
-- 理解数据库 (codex) 是生涯界面中的图鉴；
-- 理解 C2 命令是攻击、护航、撤退等战斗指挥命令；
-- 理解地形 (terrain) 包括星云、小行星带和日冕等星系区域。
+- [C1-S7] 的 CSV 转义、描述注册、`id + type` 与基础对象描述；
+- [C2-S3] 的战术系统 ID、舰船挂载与效果参数；
+- [C3-S1] 的 `gear_industry` 势力 ID；
+- [C3-S4] 的星系生成器、行星对象和新档生成入口；
+- 理解数据库 (codex)、货舱、行星详情与战斗指挥界面的用途。
 
-## 创建描述文件
+## 从描述行取得文本
 
-在 MOD 内创建 `data/strings/descriptions.csv`。这个固定路径就是描述数据的入口，游戏会自动合并原版与全部已启用 MOD 的同名文件。
+[C1-S7] 建立的 `data/strings/descriptions.csv` 继续作为描述入口。表头、空列、引号、注释和编码按 [C1-S7] 的规则书写；扩展对象时，在同一个文件中追加对应行。
 
-文件表头固定为 `id,type,text1,text2,text3,text4,text5,notes`。每一行由 `id + type` 确定唯一描述；`type` 必须逐字匹配 `Description.Type` 枚举，空键行会被跳过，非法类型会中止加载。
+`id + type` 共同标识描述。类型相同而 ID 不同的行属于不同对象；ID 相同而类型不同的行也属于不同描述。`Description.getUID()` 将这两个值组合为 `id + "_" + type.name()`。
 
-运行时可以调用 `Global.getSettings().getDescription(id, type)` 取得 `Description`，再按界面需要读取 text1–text5。键没有对应行时会得到带占位文本的描述对象，因此对象通常显示默认说明，而不会在查询位置抛出异常。
+游戏在启动阶段读取原版与已启用 MOD 的同路径描述文件。同一文件中的重复组合会中止加载，跨文件同键行按读取顺序保留先处理的行。自有描述必须保持键唯一；严禁把重复登记既有键当作修改描述的方式。
 
-## CSV 转义规则
+需要整体替换数据文件时，`mod_info.json` 的 `replace` 数组可以声明对应路径。这种配置改变的是整份文件的读取范围，替换文件必须承担该路径所需的全部描述。新增对象的文本直接追加自有行。
 
-`descriptions.csv` 由 CSV 解析器解析：先把全文的 `\r\n` 归一为 `\n`，首行按逗号切分得到表头，其后逐字符扫描数据行。以下规则全部有效，**违反时必然出现所述的可观察结果**。
+运行时通过 `SettingsAPI.getDescription(id, type)` 查询描述对象。下面的局部片段取出 [C1-S7] 已注册的工匠船体描述：
 
-1. \*\*字段内含有英文逗号 (半角 `,`) 时，必须用一对双引号把整个字段包起来。\*\*违反后果：字段被按列切分，该行后续所有列整体错位一格 —— 文本串到别的列，`id`/`type` 键值被污染 (变成未关联行或显示占位文本)，列数异常。中文逗号 "，" 不是分隔符，无需处理。
-
-```csv
-# 错误：text1 未加引号，含英文逗号，被切成两列
-GearIn_description_esc_comma,SHIP,This is a test ship, with a comma in its name.,,,,,,
-
-# 正确
-GearIn_description_esc_comma,SHIP,"This is a test ship, with a comma in its name.",,,,,
+```java
+Description description = Global.getSettings().getDescription(
+        "GearIn_artizan", Description.Type.SHIP);
+String firstParagraph = description.getText1FirstPara();
 ```
 
-2. \*\*字段内含有双引号时，必须把每个引号写成两个连续的双引号 `""`，并且必须用一对双引号把整个字段包起来。\*\*违反后果：单独出现的 `"` 被解析器当作引号段的起点或终点；引号数量不成对时，加载期直接抛 `JSONException("Mismatched quotes in the string; ...")`，游戏无法启动；即使恰好成对，也会把不该引用的内容包进引号段造成错位。
+`id` 为 `GearIn_artizan`，`type` 为 `SHIP`，`getText1FirstPara()` 读取 `text1` 的第一段。界面根据自己的用途选择全文、段落或其他文本列。
 
-```csv
-# 错误：裸引号不成对，启动期报 Mismatched quotes
-GearIn_description_esc_quote,SHIP,这艘船被称为 "工坊之锤"。,,,,,
+### 描述字段默认值速查表
 
-# 正确：字段内引号写双份，整个字段加引号
-GearIn_description_esc_quote,SHIP,"这艘船被称为""工坊之锤""。",,,,,
-```
+| 字段 | 默认值 | 读取方式 |
+|---|---|---|
+| `text1` | `No description... yet` | `getText1()`、`getText1FirstPara()`、`getText1Paras()` |
+| `text2` | `No description... yet` | `getText2()`、`getText2Paras()` |
+| `text3` | `No description... yet` | `getText3()`、`getText3Paras()` |
+| `text4` | `null` | `getText4()`、`getText4Paras()` |
+| `text5` | `null` | `getText5()`、`getText5Paras()` |
+| `notes` | 空 | CSV 中的维护备注 |
 
-3. \*\*字段内含有换行 (多行文本) 时，必须用一对双引号把整个字段包起来。\*\*引号内的换行会被保留 (text1 的段落之间习惯用空行分隔，显示时按 `\n` 分段)。违反后果：换行被当作行结束符，该行被拦腰截断、后续列错位，断出来的 "新行" 要么成为未关联数据，要么直接触发加载期异常。
+`hasText1()`、`hasText2()`、`hasText3()` 用于判断字段是否包含实际内容，占位字符串也会被判为空；`hasText4()`、`hasText5()` 判断对应字段是否为非空字符串。段落读取方法按换行拆分文本，去掉段落首尾空白并跳过空段落。
 
-```csv
-# 错误：多行未加引号，第二行被当作新的一行
-GearIn_description_esc_multiline,SHIP,这是第一段介绍。
-
-这是第二段介绍。,,,,,
-
-# 正确：整个多行字段用引号包住
-GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
-
-这是第二段介绍。",,,,,
-```
-
-4. **行首是 `#` 的整行被忽略** (注释)。可以用它暂时注释掉某条描述，或给文件写分节说明；`#` 必须位于行首第一列，行内其他位置的 `#` 是普通字符。
-
-5. **键必须唯一**：同一文件内 `id + type` 组合重复时，加载期抛 `RuntimeException("Duplicate key [...] while loading [data/strings/descriptions.csv from [<路径>]]")`；跨文件 (原版与其他 MOD 之间) 重复时不报错，先被枚举到的文件的行生效，后到的同键行被静默跳过。
-
-    - **不要重定义原版或其他 MOD 已有的 `id + type` 组合**，覆盖顺序不是可以依赖的约定。
-
-6. **文件必须 UTF-8 无 BOM**：加载器按 UTF-8 读取；BOM 字符会粘在表头第一列的列名上 (`id` 变成 `\ufeffid`)，加载期抛 `JSONObject["id"] not found` 一类异常。含中文的文件必须确认保存为 UTF-8 无 BOM，CSV 字段引号必须使用半角直双引号 `"`。
-
-7. **表头固定 8 列**：`id,type,text1,text2,text3,text4,text5,notes`。数据行缺列时对应键缺失；**比表头多的列被静默丢弃** —— 多写一列不会报错，只会让文本 "消失"，是排查文本丢失时容易漏掉的点。
-
-稳定性建议
-
-为所有含特殊字符的字段统一加引号、文本里能不用英文标点就不用，可以一次性避开规则 1–3 的所有坑。
+同一列在不同类型中承担不同职责。`text2` 可以是舰船引言、系统分类、武器署名、图库正文或实体标题，填写前先确认读取它的对象类型。
 
 ## 按对象选择描述类型
 
-### SHIP / WEAPON / SHIP\_SYSTEM
+### SHIP：舰船与战机船体
 
-这三个战斗对象都使用注册 ID 或对象声明的描述 ID：
+`SHIP` 的查找键取船体的 `descriptionId`，基础船体使用 `hullId`。[C1-S7] 已为工匠、守炉人、锻件和炉渣登记各自的船体描述，战机联队通过装配读取对应战机船体的同一行。
 
-- `SHIP` 的键取 `.ship` 的 `descriptionId`，未填写时使用 `hullId`；text1 供数据库船体详情、舰队 tooltip、装配界面和蓝图或货舱 tooltip 使用。
-- `WEAPON` 的键取 `weapon_data.csv` 的武器 ID；text1 是主要说明，text2 还可承担署名或装配列表副标题。
-- `SHIP_SYSTEM` 的键取 `.system` 与 `ship_systems.csv` 共用的系统 ID；装配界面和数据库系统详情会读取对应文本。
+- `text1`：船体详细说明，供数据库详情、装配、舰队与蓝图等界面读取；
+- `text2`：舰船简略引言；有实际内容且 `text3` 为空时，舰队 tooltip 使用它，其余情况采用 `text1` 第一段；
+- `text3`：受限船体详情使用的未知条目文本。
 
-此外还有两项界面规则：
+装配带 `ship_limited_tooltip` tag 时，数据库船体详情采用 `text3`；该列缺少实际内容时显示 `UNKNOWN ENTRY`。船体的 `limited_tooltip_if_locked` 用于锁定状态下的受限显示，两项标记分别作用于装配和船体。
 
-- **武器 text2 的署名规则**：货舱武器 tooltip 与数据库武器详情中，若 text2 以 `-` 开头 (原版惯例为署名，如欧米伽武器)，text1 第一段渲染为斜体，并把 `-` 开头的 text2 作为署名行附加；text2 不以 `-` 开头时正常显示。装配列表副标题仍然优先取 `weapon_data.csv` 的 `primaryRoleStr`，text2 只是备用值。
-- **舰船 text3 的 "未知条目" 用途**：数据库船体详情中，`variant` 带 `ship_limited_tooltip` tag 时，详情正文显示 text3；缺 text3 时显示默认的 `UNKNOWN ENTRY` 文本。该 tag 需写入 variant 文件 (原版欧米伽舰船不带此 tag；受限 tooltip 走 hull 级 `limited_tooltip_if_locked`)。
+### WEAPON：武器
 
-### RESOURCE：货物描述
+查找键为 `weapon_data.csv` 的武器 ID。`text1` 是详细说明，货舱武器 tooltip 与数据库武器详情读取它；`text2` 可以作为署名。
 
-- 键：`data/campaign/commodities.csv` 的 `id`(如 `supplies`、`fuel`)。
-- 货舱与交易界面的货物 tooltip 取 text1 段落，正文较长时 tooltip 可展开。
-- 注意：commodities.csv 自身也有 `desc` 列，但 `loadCommodities` 不读取它 —— **商品的显示文本一律以 `RESOURCE` 行为准**。
+`text2` 以 `-` 开头时，武器 tooltip 与数据库详情把 `text1` 第一段渲染为斜体，并附加署名行。普通说明可以保留正常正文。
 
-### PLANET：行星类型描述
+装配武器列表的副标题优先使用 `weapon_data.csv` 的 `primaryRoleStr`，描述行的 `text2` 是备用值。[C1-S5] 的三门武器已设置自己的 `primaryRoleStr`，修改详细描述和修改武器定位文字分别作用于对应位置。
 
-- 键：行星类型键。`data/config/planets.json` 的每个类型对象可写 `descriptionId`，缺省等于类型键本身 (如 `terran`、`gas_giant`)；多个类型可共享同一个 `descriptionId`(原版若干冰冻/荒漠类类型共用 `frozen`、`barren`、`desert` 等键)。运行期 `PlanetAPI.setDescriptionIdOverride()` 可以逐颗行星换键。
-- 行星悬停 tooltip 与行星详情面板显示 text1。
-- 行星若设置了 `customDescriptionId`(`CUSTOM` 类型)，tooltip 与详情面板会优先显示 `CUSTOM` 行。
+### SHIP_SYSTEM：战术系统
 
-### ASTEROID：小行星描述
+查找键为 `.system` 与 `ship_systems.csv` 共用的系统 ID，舰船通过 `ship_data.csv` 的 `system id` 或 `defense id` 使用这个系统。
 
-- 键固定为 `asteroid`，所有使用默认小行星说明的对象共享这一行。
-- 小行星悬停 tooltip 读取 text1，标题使用对象名称或默认的 `Asteroid`。
-- 这个键由对象类型固定，MOD 通常直接使用原版描述。
+- `text1`：系统详细说明；
+- `text2`：系统类型标签，数据库按它分类，缺少实际内容时使用 `Special`；
+- `text3`：装配界面的简略说明，缺少实际内容时显示 `text1`；
+- `text4`：装配说明中需要高亮的文本，多个片段必须用 `|` 分隔；
+- `text5`：数据库系统详情的 `Effects` 文本，`{{内容}}` 标记需要高亮的部分。
 
-### FACTION：势力描述
+原版 `maneuveringjets` 行同时展示系统分类、短说明和效果文本：
 
-- 键：势力 ID(faction 文件的 `id`)。
-- 通讯界面的势力信息面板与数据库势力详情逐段显示 text1。
-- 注意：势力本体属于生涯对象创建主题，本节只负责描述行的写法与键规则。
+```csv
+maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship's maneuverability. Also provides a slight boost to the ship's top speed.,Movement,Provides a brief boost to maneuverability and top speed.,,The ship's top speed is increased by {{50}}.,
+```
 
-### TERRAIN：星系地形描述
+`Movement` 写在 `text2`，简略说明写在 `text3`，带 `{{50}}` 的效果行写在 `text5`。这条原版行用于对照字段；本节为 [C2-S3] 已注册的 `GearIn_burstdrive` 和 `GearIn_resistfield` 编写各自的系统说明。
 
-- 键：地形插件的 `getTerrainId()`。公开 API 的 `com.fs.starfarer.api.impl.campaign.terrain` 包下 `*TerrainPlugin` 一族 (星云、小行星带、磁场、日冕、事件视界等) 各以 `getTerrainId()` 查询 `TERRAIN` 行；超空间地形 (`HyperspaceTerrainPlugin`) 按区域深度查询 `terrainId + "_abyssal"` / `"_normal"` / `"_deep"` / `"_storm"` 变体。
-- 地形悬停 tooltip 显示 text1 正文。
-- 注意：自定义地形需要让自己的 `terrainId` 与描述行键一致；`TERRAIN` 键同样无法另起别名。
+### RESOURCE：商品
 
-### ACTION\_TOOLTIP：战斗命令描述
+查找键为 `data/campaign/commodities.csv` 的商品 ID，例如 `supplies`、`fuel`。货舱与交易界面的商品说明读取 `RESOURCE` 行的 `text1`，正文按段落显示。
 
-- 键：战斗命令名的小写形式，例如 `avoid`、`assault`、`escort`。
-- 使用方：战斗中悬停对应 C2 命令时，tooltip 读取 text1，并按命令需要使用 text2。
-- 命令键由游戏固定，MOD 通常直接使用原版描述。
+商品的默认显示文本通过 `RESOURCE` 描述注册。观察原版补给时，可以把货舱 tooltip 与 `supplies,RESOURCE` 行对应起来。
 
-### GALLERY：图库 (插图) 描述
+### PLANET：行星类型
 
-- 键：`graphics/illustrations` 目录下插图贴图的键。`CodexDataV2.populateGallery`(公开 API) 遍历 `getSpriteKeys("illustrations")`，对每个贴图键查询 `getDescription(key, Type.GALLERY)`。
-- 使用方与列语义：
-    - text1：图库条目标题；**只有 `hasText1()` 为真的条目才会出现在图库列表**；
-    - text2：详情页正文，按段落渲染；用 `"` 成对包裹的段落渲染为斜体 (引文)，其后的 `-` 开头段落渲染为灰色署名；
-    - text3：小写后含 `HIDE_IN_CODEX` 的条目不列出；含 `unlocked` 的条目默认解锁，否则保持锁定直到玩家在游戏中见过该插图。
-- 原版参考行：`ai_core_uninstall,GALLERY,AI Core Cradle,"The AI administrator control bunker ..."`。
-- 注意：键必须与插图贴图键逐字符一致；行键没有对应贴图时是合法的未关联行 —— 不报错、图库不显示。
+查找键由 `data/config/planets.json` 中的行星类型决定。类型对象可以填写 `descriptionId`，缺省使用类型键；多个类型也可以共用一个描述键。行星悬停 tooltip 与详情面板读取对应 `PLANET` 行的 `text1`。
 
-### CUSTOM：生涯实体自定义描述
+`PlanetAPI.setDescriptionIdOverride()` 可以为一颗行星指定 `PLANET` 描述键，`setCustomDescriptionId()` 则连接 `CUSTOM` 描述。具有自定义描述的行星优先使用 `CUSTOM` 正文。
 
-- 键：任意字符串，由代码关联：`SectorEntityToken.setCustomDescriptionId(id)`(公开 API)。行星、跳跃点、空间站、自定义实体等 `SectorEntityToken` 都可以使用。**这是 11 个类型中唯一无默认绑定、"键完全自取" 的类型** (SHIP/PLANET 经 `descriptionId` 另起别名时，缺省仍各自回落 hull 类型与行星类型键)。
-- 使用方与列语义：
-    - text1：实体 tooltip 正文、自定义实体详情、`PrintDescription` 规则命令的第 1 段；
-    - text2：实体的默认标题/名称，实体 tooltip 的标题优先取它 (空间站与带自定义描述的小行星：`hasText2() ? getText2() : 实体名`)；
-    - text3：行星接触后显示的文本 (`PlanetInteractionDialogPluginImpl` 进入对话时若 `hasText3()` 先显示 text3)；
-    - text4/text5：`SHIP_SYSTEM` 行的 text4/text5 会显示在装配面板和图鉴系统详情中；`CUSTOM` 行的 text4/text5 没有显示位置，写入后不生效。
-- 优先级：行星/实体的 tooltip 与详情面板中，`customDescriptionId` 非空时 `CUSTOM` 行**覆盖** `PLANET` 行。
-- 原版参考行：`orbital_dockyard,CUSTOM,"An orbital dockyard, ..."`；自定义行星描述的常见写法是每颗行星一个 `CUSTOM` 键。
+[C3-S4] 的 GearIn Prime 使用原版 `terran` 类型，可以直接观察该类型的说明。[C4-S5] 的类型定义通过 `planets.json` 的 `descriptionId` 连接 `GearIn_ember_world` 描述行。
 
-### 非 descriptions.csv 描述来源速查表
+### ASTEROID：小行星
 
-常被误认为描述类型的几类对象，全部**不走 descriptions.csv**：
+默认查找键固定为 `asteroid`。小行星悬停 tooltip 读取 `asteroid,ASTEROID` 的 `text1`，标题使用对象名称或默认的 `Asteroid`。
 
-| 对象 | 描述所在文件 | 使用方 |
+默认小行星说明由这一行共用。观察时使用已有小行星对象，把悬停正文与原版描述行对应起来。
+
+### FACTION：势力
+
+查找键为势力文件的 `id`。势力信息面板读取 `FACTION` 行的 `text1`，按段落显示说明。
+
+[C3-S1] 已注册 `gear_industry`，因此描述行直接使用 `gear_industry,FACTION`。势力文件确定身份，描述文件提供正文，两个文件通过相同的势力 ID 对应。
+
+### TERRAIN：生涯地形
+
+查找键为地形插件的 `getTerrainId()`。星云、小行星带、磁场、日冕和事件视界等地形在悬停 tooltip 中显示对应 `TERRAIN` 行的 `text1`。
+
+超空间地形根据区域状态查询 `terrainId + "_abyssal"`、`"_normal"`、`"_deep"` 或 `"_storm"` 等变体键。自定义地形的描述键必须与插件实际查询的键一致，才能在对应区域显示正文。
+
+### ACTION_TOOLTIP：战斗命令
+
+查找键为战斗指挥命令的小写名称，例如 `avoid`、`assault`、`escort`。战斗中悬停对应 C2 命令时，tooltip 读取 `text1`，命令的短标签可以保存在 `text2`。
+
+原版 `avoid` 行包含分段正文和 `Avoid` 标签。观察时在战斗指挥界面选择目标并悬停命令，核对对应描述内容。
+
+### GALLERY：图库插图
+
+查找键为 graphics 配置中 `illustrations` 分类的贴图键。`CodexDataV2.populateGallery()` 遍历 `getSpriteKeys("illustrations")`，逐个查询同键的 `GALLERY` 描述。
+
+- `text1`：图库条目标题，`hasText1()` 为真时条目进入列表；
+- `text2`：详情正文，按段落显示；成对双引号包住的段落渲染为斜体，其后的 `-` 开头段落作为灰色署名；
+- `text3`：显示与解锁标记；转为小写后含 `hide_in_codex` 时隐藏，含 `unlocked` 时默认解锁，其余条目随玩家见过该插图而解锁。
+
+描述行的键必须与 `illustrations` 分类的贴图键逐字符一致。图库条目由贴图键和有效标题共同建立，填写描述时要同时确认这两个输入。
+
+### CUSTOM：实体自定义描述
+
+描述键由创建对象的代码或实体配置提供。`SectorEntityToken.setCustomDescriptionId(id)` 把一个描述键关联到行星、空间站、跳跃点或其他生涯实体；实体配置也可以使用 `customDescriptionId`。
+
+- `text1`：实体 tooltip 和详情正文；
+- `text2`：实体 tooltip 使用的自定义标题，实际采用它的界面优先于对象名称；
+- `text3`：行星接触后显示的文本；
+- `text4`、`text5`：可由 Rules 的 `PrintDescription` 命令按字段编号读取。
+
+`PrintDescription` 的参数 `1` 至 `5` 分别选择对应文本列。目标为行星且 CUSTOM 各列都没有实际内容时，该命令改用行星描述覆盖键或类型键查询 `PLANET` 行。
+
+行星的 CUSTOM 描述属于具体行星，PLANET 描述属于行星类型。本节使用 GearIn Second 连接自定义行星文本，GearIn Prime 继续使用类型描述。
+
+### 其他对象描述来源速查表
+
+| 对象 | 描述来源 | 使用方式 |
 |---|---|---|
-| 战机联队 | 对应战机 hull 的 `SHIP` 描述行 | 舰队、装配和数据库界面复用战机船体描述 |
-| 船插 (hullmod) | `data/hullmods/hull_mods.csv` 的 `desc` 列 | `HullModSpecAPI.getDescription(HullSize)`(`%s` 代换船体等级) |
-| 市场条件 (condition) | `data/campaign/market_conditions.csv` 的 `desc` 列 | 市场界面条件 tooltip |
-| 特殊物品 (special item) | `data/campaign/special_items.csv` 的 `desc` 列 | 货舱 tooltip 由物品插件渲染 (`BaseSpecialItemPlugin.createTooltip` → `spec.getDesc()`) |
-| 商品 (commodity) | 显示文本以 `RESOURCE` 行为准，commodities.csv 的 `desc` 列不被读取 | 货舱/交易 tooltip |
+| 战机联队 | 对应战机船体的 `SHIP` 行 | 联队通过装配读取船体说明 |
+| 船插 | `data/hullmods/hull_mods.csv` 的 `desc` | `HullModSpecAPI.getDescription(HullSize)` 按船体等级代换 `%s` |
+| 市场条件 | `data/campaign/market_conditions.csv` 的 `desc` | 市场条件 tooltip 读取说明 |
+| 特殊物品 | `data/campaign/special_items.csv` 的 `desc` | `BaseSpecialItemPlugin.createTooltip` 读取物品规格 |
+| 商品 | `descriptions.csv` 的 `RESOURCE` 行 | 货舱和交易界面读取商品说明 |
 
-这些 CSV 的 `desc` 列由同一个 CSV 解析器解析，同样适用本节的转义规则。
+各 CSV 描述列的字段转义采用 [C1-S7] 的写法，显示规则由对应对象决定。
 
 ### Description.Type 完整速查表
 
-`Description.Type` 共有 11 个枚举值。逐类确定键与显示位置后，可以用下表核对完整范围：
-
-| Type 枚举 | `id` 列 | 主要显示位置 |
+| 类型 | 描述键来源 | 主要显示位置 |
 |---|---|---|
-| `SHIP` | `.ship` 的 `descriptionId`，未填时使用 `hullId`[C1-S7] | 数据库船体详情、舰队与装配 tooltip |
-| `WEAPON` | `weapon_data.csv` 的武器 ID | 装配武器列表、武器 tooltip、数据库武器详情 |
-| `SHIP_SYSTEM` | `.system` 与 `ship_systems.csv` 共用的系统 ID | 装配界面系统行、数据库系统详情 |
-| `RESOURCE` | `commodities.csv` 的商品 ID | 货舱与交易界面 tooltip |
-| `PLANET` | 行星类型键或该类型的 `descriptionId` | 行星悬停 tooltip、行星详情面板 |
-| `ASTEROID` | 固定为 `asteroid` | 小行星悬停 tooltip |
-| `FACTION` | 势力 ID | 通讯界面势力信息、数据库势力详情 |
-| `TERRAIN` | 地形插件的 `getTerrainId()` | 星系地形 tooltip |
-| `ACTION_TOOLTIP` | 战斗命令名的小写形式 | 战斗命令 tooltip |
-| `GALLERY` | `graphics/illustrations` 下的插图贴图键 | 数据库图库标题、正文与解锁状态 |
-| `CUSTOM` | 自定义键，由 `setCustomDescriptionId()` 关联 | 实体 tooltip、接触文本与规则命令 |
+| `SHIP` | 船体 `descriptionId`，基础船体使用 `hullId` | 舰船与战机详情、舰队、装配和蓝图 |
+| `WEAPON` | 武器 ID | 武器 tooltip、装配列表和数据库 |
+| `SHIP_SYSTEM` | 系统 ID | 装配系统行和数据库系统详情 |
+| `RESOURCE` | 商品 ID | 货舱和交易界面 |
+| `PLANET` | 行星类型、类型 `descriptionId` 或运行时覆盖键 | 行星悬停与详情 |
+| `ASTEROID` | `asteroid` | 小行星悬停 |
+| `FACTION` | 势力 ID | 势力信息面板 |
+| `TERRAIN` | 地形插件实际查询的 ID | 地形悬停 |
+| `ACTION_TOOLTIP` | 战斗命令的小写名称 | 战斗指挥命令 |
+| `GALLERY` | `illustrations` 分类的贴图键 | 图库标题、正文和解锁状态 |
+| `CUSTOM` | 实体的 `customDescriptionId` | 实体说明、行星接触与 Rules 文本 |
 
-## 示例行要点
+## 扩展船体描述键与前置文字
 
-写示例行时覆盖三类写法：
+`.ship` 与 `.skin` 可以通过 `descriptionId` 指向 `SHIP` 描述行。字段改变的是描述查找键，船体注册仍使用原来的船体 ID；皮肤可以共享已有正文，也可以通过独立键使用自己的说明。
 
-- 含英文逗号、含双引号 (`""` 转义)、多行 (空行分段) 的文本全部用引号包络，列数与表头一致 (8 列)。
-- 武器署名：text2 以 `-` 开头；武器 tooltip 读取该行时，text1 第一段会斜体渲染并附加署名。
-- 键与对象的关系：`RESOURCE` 使用商品 ID，`PLANET` 使用类型的 `descriptionId`，`FACTION` 使用势力 ID，`CUSTOM` 使用实体的 `customDescriptionId`。示例用 [C3-S1] 注册的 `gear_industry` 连接 `FACTION` 行；`RESOURCE`、`PLANET` 与 `CUSTOM` 使用 [C3-S4] 已经投放的原版对象进行观察，教程不重复定义原版键。
+`descriptionPrefix` 保存正文之前的文字。`ShipBlueprintItemPlugin` 读取船体的前置文字，用 `前缀 + "\n\n" + text1 第一段` 组成蓝图说明。描述键负责选正文，前置文字负责补充这份正文。
 
-原版参考行 (仅观察不修改)：
+编者在基础船体上保留默认描述键，在皮肤需要独立说明时使用这两个字段。这样对象的注册 ID 与常用描述行可以直接对应，皮肤差异也有明确位置。
+
+## 把描述连接到既有对象
+
+### 为势力补上正文
+
+在已有 `descriptions.csv` 的表头后追加下面的局部片段：
 
 ```csv
-supplies,RESOURCE,"Assorted supplies required by ships and crew, ranging from rations and uniforms to munitions, spare parts, microfab feedstock, and prefab components.",,,,,
-gas_giant,PLANET,"Primarily composed of hydrogen and helium gases. The temperature and pressure at the core are extreme, but not enough to sustain the deuterium fusion that would turn the planet into a brown dwarf star.",,,,,
-luddic_church,FACTION,"Inspired by the martyrdom of a figure known as 'Ludd' during the fall of the Domain, the Church of Galactic Redemption is a hierarchical church with highly syncretic dogma formed from a core of Abrahamic texts and apocrypha along with Domain-era reaction against perceived corruption, depravity, hedonism, and transhuman abomination. The Church offers a vision of life lived more simply, of agrarian virtue and humanistic values and prayer against the violence and technological alienation that's torn the Sector apart in the years since the Fall.",,,,,
-slipstream,TERRAIN,"A flow in hyperspace, akin to currents navigated by ancient seafarers back on Old Earth.",,,,,
-avoid,ACTION_TOOLTIP,"Order your fleet to avoid this enemy if at all possible.
-
-No ships will be assigned automatically. Any ships explicitly assigned will engage the enemy.",Avoid,,,,
-orbital_dockyard,CUSTOM,"An orbital dockyard, with enormous gantries and other equipment required for ship construction or extensive modifications. Largely open to space.",,,,,
+gear_industry,FACTION,以重型制造、耐用结构和严格工序闻名的工业联合体。,,,,,
 ```
 
-## 描述在界面中的显示位置
+`gear_industry` 与 [C3-S1] 的势力文件 `id` 相同。势力信息面板查询这个 ID 时，读取 `text1` 作为正文。
 
-下面三张截图依次示意武器、舰船与行星/生涯实体描述在界面中的显示位置 (旧版界面截图，仅作位置示意)：
+### 给 GearIn Second 设置自定义描述
 
-![武器描述在界面中的显示位置](./desc_weapon.png "desc_weapon.png")
+在同一个文件中追加行星的局部描述片段：
 
-![舰船描述在界面中的显示位置](./desc_ship.png "desc_ship.png")
+```csv
+GearIn_description_second,CUSTOM,齿轮工业外围的一颗荒芜行星，表面留有早期勘探设施的遗迹。,GearIn Second,您的舰队接近了 GearIn Second，地表勘探设施的信号仍在重复播放。,,,
+```
 
-![行星与生涯实体描述在界面中的显示位置](./desc_planet.png "desc_planet.png")
+`text1` 是行星正文，`text2` 是供相应 tooltip 使用的标题，`text3` 是接触行星后显示的文本。`GearIn_description_second` 由本节定义，实体 ID 继续使用 [C3-S4] 的 `GearIn_planet2`。
+
+打开 [C3-S4] 的 `GearInSystemGenerator.generate()`，在创建第二颗行星的语句之后加入绑定调用。局部片段如下，其中 `second` 是生成器刚创建的行星：
+
+```java
+PlanetAPI second = system.addPlanet(
+        "GearIn_planet2", star, "GearIn Second",
+        "barren", 200, 90, 5200, 200);
+second.setCustomDescriptionId("GearIn_description_second");
+```
+
+`setCustomDescriptionId` 的参数必须与 CUSTOM 行的 `id` 一致。生成器在创建新档时执行这段代码，新档中的 GearIn Second 随后使用自定义描述；描述文件中的文本修改在重启后加载。
+
+### 给战术系统补上各列说明
+
+[C2-S3] 的燃烧驱动与抵抗力场已经注册并装到工匠上。本节以这两个系统 ID 登记 `SHIP_SYSTEM` 行，分别提供详细说明、分类、装配短说明、高亮片段和效果文本。
+
+燃烧驱动的效果脚本把速度与加速度加成设为 `200`，描述的 `text5` 使用 `{{200}}` 显示该数值。抵抗力场的描述对应最高高爆与 EMP 减伤 `75%`、动能与能量减伤 `50%`。这些文本随系统 ID 被读取，数值对应各自的效果脚本。
+
+## 行星描述在界面中的显示位置
+
+在行星悬停界面中，观察标题和说明正文：
+
+![行星描述在界面中的显示位置](./desc_planet.png "desc_planet.png")
+
+PLANET 行提供类型说明，CUSTOM 行通过具体实体的描述键提供正文与接触文字。行星接触文本显示在交互面板中。
 
 ## 完整最小例
 
-以下内容放在虚构示例 MOD `gear_in` 的 `data/strings/descriptions.csv` 中。转义演示键使用 `GearIn_description_*` 前缀，势力描述使用 [C3-S1] 注册的 `gear_industry`：
+本节在 `gear_in` 的 `data/strings/descriptions.csv` 中新增的记录如下。文件保留 [C1-S7] 的表头和基础对象描述，每个 `id + type` 必须只登记一次。这里各系统 ID 来自 [C2-S3]，势力 ID 来自 [C3-S1]：
 
 ```csv
-id,type,text1,text2,text3,text4,text5,notes
-# ---- 本节示例行 ----
-GearIn_description_esc_comma,SHIP,"This is a test ship, with a comma in its name.",,,,,
-GearIn_description_esc_quote,SHIP,"这艘船被称为""工坊之锤""。",,,,,
-GearIn_description_esc_multiline,SHIP,"这是第一段介绍。
-
-这是第二段介绍，与第一段之间用空行分隔。",,,,,
-GearIn_description_esc_attrib,WEAPON,一段用于演示署名斜体的武器说明。,- 武器测试员,,,,
+GearIn_burstdrive,SHIP_SYSTEM,启动额外推进器，提高舰船的速度与加速度。,机动,提高速度与加速度。,速度|加速度,"速度最多提高 {{200}}。
+加速度最多提高 {{200}}。",燃烧驱动
+GearIn_resistfield,SHIP_SYSTEM,启动抵抗力场，降低舰船受到的伤害。,防御,降低高爆、EMP、动能与能量伤害。,高爆|EMP|动能|能量,"高爆与 EMP 伤害最多降低 {{75%}}。
+动能与能量伤害最多降低 {{50%}}。",抵抗力场
 gear_industry,FACTION,以重型制造、耐用结构和严格工序闻名的工业联合体。,,,,,
+GearIn_description_second,CUSTOM,齿轮工业外围的一颗荒芜行星，表面留有早期勘探设施的遗迹。,GearIn Second,您的舰队接近了 GearIn Second，地表勘探设施的信号仍在重复播放。,,,
 ```
 
 ## 验证方案
 
-前置数据：`gear_in` MOD[C1-S1]、[C3-S1] 的势力和 [C3-S4] 的新档星系已就绪。
+前置数据：已启用 Console Commands 和包含 [C1-S7] 基础描述、[C2-S3] 战术系统与 [C3-S4] 星系生成器的 GearIn MOD，生成器已加入 Second 的描述绑定调用。
 
-1. 启动游戏进入生涯，观察 `Loading descriptions` 日志和新增演示行的加载情况。
-2. 货舱或交易界面悬停 `supplies` 与任意 GearIn 武器：核对 `RESOURCE` 行 text1 和武器署名斜体规则。
-3. 悬停使用 `terran` 类型的 GearIn Prime 与小行星：核对 `PLANET` 行 text1 与小行星 `ASTEROID` 行 (标题 `Asteroid`)。
-4. 通讯 → 势力信息面板、数据库 → 势力详情：核对 `gear_industry` 的 `FACTION` 行 text1。
-5. 数据库 → 图库：核对 `GALLERY` 行标题与详情正文 (斜体段落)。
-6. 悬停超空间地形；进入战斗悬停 C2 命令：核对 `TERRAIN` 与 `ACTION_TOOLTIP` 行。
-7. 靠近并悬停 GearIn 通讯中继：核对原版 `comm_relay,CUSTOM` 行的标题和正文。
-8. 回归：观察 GearIn 舰船、武器和系统描述。
+1. 保存描述文件与生成器，重启游戏，在 `starsector.log` 中观察 `Loading descriptions` 和描述文件加载结果。
+2. 创建新生涯并进入 GearIn 星系，悬停 GearIn Second、打开行星详情，再接触它，分别核对自定义正文和接触文字。
+3. 悬停 GearIn Prime 并打开详情，核对原版 `terran,PLANET` 的正文。
+4. 打开势力信息面板，选择齿轮工业，核对 `gear_industry,FACTION` 的正文。
+5. 使用控制台执行 `Addship GearIn_artizan`，打开工匠的装配界面，再打开数据库中的燃烧驱动与抵抗力场详情，核对短说明、分类、高亮片段与 `Effects` 文本。
+6. 在货舱悬停补给，核对 `supplies,RESOURCE` 的正文；在数据库中检查原版 text2 以 `-` 开头的武器，观察署名与斜体正文。
+7. 在数据库中查看工匠、守炉人、锻件、炉渣及三门 GearIn 武器，核对基础描述；查看受限船体条目，观察未知条目文本。
+8. 在已有小行星带悬停小行星，再悬停带区地形，分别核对 `asteroid,ASTEROID` 和该地形查询的 `TERRAIN` 行。
+9. 进入战斗指挥界面，选中目标并悬停规避、攻击和护航命令，核对 `avoid`、`assault`、`escort` 对应说明。
+10. 打开数据库图库，查看已解锁插图，核对 `GALLERY` 标题、详情段落和署名。
+11. 修改 `GearIn_description_second` 的 `text1` 后保存并重启，读取刚创建的生涯，核对 Second 正文。
 
 预期结果：
 
-- **启动日志**：出现 `Loading descriptions` 与 `Loading CSV data from [DIRECTORY: <MOD根目录>]` 日志，`starsector.log` 无 `ERROR`。
-- **原版行的使用位置**：不修改原版文件，分别观察各类型的显示位置。
-- 货舱/交易界面悬停 `supplies`：tooltip 正文等于 `supplies` 的 `RESOURCE` 行 text1；
-- 悬停行星 (如任一宜居行星) 与打开行星详情：正文等于该行星类型键的 `PLANET` 行 text1；
-- 悬停小行星：tooltip 标题为 `Asteroid`，正文等于 `asteroid` 的 `ASTEROID` 行 text1；
-- 通讯 → 势力信息面板与数据库 → 势力详情：`luddic_church` 等 `FACTION` 行 text1 逐段显示；
-- 悬停超空间星云、环带等地形：`TERRAIN` 行 text1 显示；
-- 进入战斗悬停 C2 命令 (攻击/护航/撤退等)：tooltip 正文等于对应 `ACTION_TOOLTIP` 行 text1；
-- 数据库 → 图库：条目标题等于 `GALLERY` 行 text1，详情页正文为 text2 段落 (`"..."` 包裹段斜体)；
-- 悬停空间站：tooltip 标题取 `CUSTOM` 行的 text2(无自定义描述的行显示站名)。
-- **武器署名规则回归**：悬停任意 text2 以 `-` 开头的原版武器 (如欧米伽武器)，tooltip 的 text1 第一段为斜体且带署名行；GearIn 三门武器 (text2 无 `-` 前缀)tooltip 正常显示。
-- **基础对象验证**：货舱显示 `supplies` 的 RESOURCE 文本，GearIn Prime 显示 `terran` 的 PLANET 文本，势力详情显示 GearIn 的 FACTION 文本，通讯中继显示 `comm_relay` 的 CUSTOM 标题与正文；GearIn 舰船、武器和系统描述照旧显示。
+- 描述文件加载完成，本节新增记录没有 CSV 或类型解析异常；
+- GearIn Second 的正文为 CUSTOM 行 `text1`，接触文本为 `text3`，重启后正文采用保存的新文字；
+- GearIn Prime 显示 `terran` 类型的 PLANET 正文；
+- 齿轮工业势力信息显示本节 FACTION 正文；
+- 燃烧驱动与抵抗力场分别显示 `机动`、`防御` 分类、短说明及带高亮数值的效果文本；
+- 补给说明来自 `RESOURCE` 行，署名武器正文的第一段以斜体显示并附加署名；
+- 基础船体、战机和武器详情继续读取各自描述，受限船体按 `text3` 或 `UNKNOWN ENTRY` 显示；
+- 小行星与地形 tooltip 分别读取各自类型的正文；
+- 战斗命令 tooltip 与命令键对应；
+- 图库条目的标题来自 `text1`，详情来自 `text2`，引文与署名按各自格式显示。
 
 ## 故障分析
 
-- **启动失败，日志含 `Mismatched quotes in the string; last quote: [...]`**：某个字段的引号不成对 (例如把示例行的 `""` 只写了一个)。CSV 解析器解析结束时检测到引号未闭合，直接抛 `JSONException`。
-    - **解决方案**：保证引号成对，重启。
+- **新增对象显示占位描述**：类型合法，但描述行的键与对象实际查询的键不一致。
+    - **解决方案**：从对象定义确认船体描述键、武器 ID、系统 ID、商品 ID、势力 ID 或实体描述键，再统一对应行。
 
-- **启动失败，日志含 `Key [type] has invalid value [...]`**：某行 `type` 列不是枚举名 (拼写、大小写或多余空格)。
-    - **解决方案**：与 11 个枚举名逐字符一致，重启。
+- **舰船引言与预期短文不同**：`text2` 缺少实际内容，或 `text3` 已被填写。
+    - **解决方案**：简略引言写入 `text2`，普通船体的 `text3` 保持空值。
 
-- **启动失败，日志含 `Duplicate key [...] while loading [data/strings/descriptions.csv from [...]`**：同一文件内出现相同 `id + type` 组合 (键串形如 `id | type |`)。
-    - **解决方案**：保证键全文件唯一，重启。
+- **武器列表副标题保持原样**：该武器的 `primaryRoleStr` 优先于描述行的 `text2`。
+    - **解决方案**：需要调整定位文字时修改 `weapon_data.csv` 的 `primaryRoleStr`。
 
-- **启动失败，日志含 `JSONObject["id"] not found` 一类异常**：文件带 BOM 或表头被污染。BOM 字符粘在表头第一列列名上 (`id` 变成 `\ufeffid`)。
-    - **解决方案**：以 UTF-8 无 BOM 重新保存。
+- **系统分类显示 `Special` 或短说明显示长文**：对应系统描述的 `text2` 或 `text3` 缺少实际内容。
+    - **解决方案**：按系统 ID 补齐分类与装配短说明。
 
-- **文本错位、截断或串到别的列**：字段内含未加引号的英文逗号或换行，按列切分后错位；键列被污染时表现为未关联行或占位文本；比表头多的列被静默丢弃，表现为 "文本消失"。
-    - **解决方案**：按转义规则补引号，重新执行前置讲解中的键检查脚本。
+- **系统说明中的文本没有高亮**：`text4` 的片段与 `text3` 实际文本不匹配，或多个片段的分隔符错误。
+    - **解决方案**：让高亮片段逐字对应短说明，并用 `|` 分隔。
 
-- **某个新增对象没有描述**：键与对象不匹配。描述行本身合法时，键不匹配不会阻止加载。
-    - **解决方案**：逐项核对商品 ID、行星类型的 `descriptionId`、势力 ID 和实体的 `customDescriptionId`。
+- **Second 仍显示行星类型说明**：当前生涯中的行星没有执行新的自定义描述绑定，或绑定键与描述行不一致。
+    - **解决方案**：确认 `second.setCustomDescriptionId("GearIn_description_second")` 位于第二颗行星创建后，重新创建测试生涯。
 
-- **重定义原版或其他 MOD 已有键后没有任何效果**：跨文件同键先到先得、后到的同键行被静默跳过。
-    - **解决方案**：不要重定义既有键。
+- **Second 接触界面缺少新增文字**：对应 CUSTOM 行的 `text3` 为空，或多行 CSV 的字段边界错误。
+    - **解决方案**：将接触文本写入该行 `text3`，按 [C1-S7] 的规则保存并重启。
 
-- **图库没有新增条目**：`GALLERY` 行缺 text1(`hasText1()` 为假不列出)，或键与 `graphics/illustrations` 的贴图键不一致。
-    - **解决方案**：补上 `GALLERY` 行的 text1，或统一键与 `graphics/illustrations` 的贴图键。
-
-- **行星描述显示的是别的行**：行星类型经 `planets.json` 的 `descriptionId` 共享了另一个键，或行星被设置了 `customDescriptionId`(`CUSTOM` 行优先于 `PLANET` 行)。
-    - **解决方案**：核对类型键与覆盖链。
+- **图库条目缺失或锁定**：贴图键、`text1` 标题和 `text3` 显示标记共同决定条目状态。
+    - **解决方案**：核对 `illustrations` 贴图键与描述键，填写有效标题，并按预期设置 `hide_in_codex` 或 `unlocked` 标记。
 
 ## 总结
 
-`data/strings/descriptions.csv` 会自动合并到描述注册表，每行由 `id + type` 唯一定位。11 个 `Description.Type` 分别使用对象 ID、`descriptionId` 或 `customDescriptionId` 找到文本，再由对应界面读取 text1–text5。
+`descriptions.csv` 用对象查询的键和类型确定描述，再由界面选择实际需要的文本列。把对象定义、描述行与显示位置对应起来，才能判断一段文字该写在哪里。
 
-含英文逗号、双引号或换行的字段必须正确引用，字段内双引号必须写成两个连续双引号。键必须唯一，类型必须合法，文件必须使用 UTF-8 无 BOM；这些要求共同保证描述行能够加载并显示在目标对象上。
-
-战机联队复用战机船体的 `SHIP` 描述，船插、市场条件和特殊物品从各自数据文件的描述列读取文本。完整类型表可以用于核对对象键与显示位置。
+类型说明和实体说明分别服务各自的对象。本节为势力与战术系统提供了对应字段，并把 Second 连接到独立的 CUSTOM 描述；正文、分类、效果与接触文本各自通过明确的读取位置显示。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.loading.Description`：11 个 `Type` 枚举、text1–text5 默认值与 `hasTextX()` 查询。
-- `com.fs.starfarer.api.SettingsAPI`：`getDescription(id, type)` 查询描述。
-- `com.fs.starfarer.api.campaign.PlanetAPI`：行星类型与 `descriptionId` 覆盖 (`getTypeId()`、`getDescriptionIdOverride()/setDescriptionIdOverride()`)。
-- `com.fs.starfarer.api.campaign.SectorEntityToken`：`setCustomDescriptionId()` 把 `CUSTOM` 描述挂到实体上。
-- `com.fs.starfarer.api.impl.codex.CodexDataV2`：图库填充逻辑 (GALLERY 键对应插图贴图键、text1 标题、text2 正文、text3 的 `HIDE_IN_CODEX`/`unlocked` 控制)。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.PrintDescription`：`CUSTOM` 行读取与 `PLANET` 备用关系。
-- `com.fs.starfarer.api.impl.campaign.PlanetInteractionDialogPluginImpl`：行星接触对话，消费 `CUSTOM` 行 text3。
-- `com.fs.starfarer.api.impl.campaign.terrain`：地形插件包，`*TerrainPlugin` 一族的 `getTerrainId()` 查询与超空间 `_abyssal`/`_normal`/`_deep`/`_storm` 变体键。
-- `com.fs.starfarer.api.campaign.impl.items.BaseSpecialItemPlugin`：特殊物品 tooltip 渲染 (`spec.getDesc()`)。
-- `data/strings/descriptions.csv`：本节核心数据文件，MOD 内同名文件自动合并。
-- `data/config/planets.json`：行星类型 `descriptionId` 与缺省值。
-- `data/campaign/commodities.csv`：商品的 `desc` 列边界；
-- `data/campaign/special_items.csv`：特殊物品的 `desc` 列边界；
-- `data/campaign/market_conditions.csv`：市场条件的 `desc` 列边界；
-- `data/hullmods/hull_mods.csv`：船插的 `desc` 列边界。
-- `graphics/illustrations/`：图库贴图键，`GALLERY` 行键必须与之逐字符一致。
+- `com.fs.starfarer.api.loading.Description`：描述类型、字段默认值与段落读取方法；
+- `com.fs.starfarer.api.SettingsAPI`：`getDescription(id, type)`；
+- `com.fs.starfarer.api.combat.ShipHullSpecAPI`：船体描述键与前置文字；
+- `com.fs.starfarer.api.campaign.PlanetAPI`：行星描述覆盖键；
+- `com.fs.starfarer.api.campaign.SectorEntityToken`：实体自定义描述键；
+- `com.fs.starfarer.api.impl.codex.CodexDataV2`：系统分类与图库条目；
+- `com.fs.starfarer.api.impl.campaign.rulecmd.PrintDescription`：按字段编号读取描述；
+- `com.fs.starfarer.api.impl.campaign.PlanetInteractionDialogPluginImpl`：行星接触文本；
+- `com.fs.starfarer.api.campaign.impl.items.ShipBlueprintItemPlugin`：舰船蓝图的前置文字与正文；
+- `com.fs.starfarer.api.impl.campaign.terrain`：地形描述查询；
+- `data/strings/descriptions.csv`：对象描述数据；
+- `data/config/planets.json`：行星类型与描述键；
+- `data/config/settings.json`：`graphics` 中的 `illustrations` 贴图键。

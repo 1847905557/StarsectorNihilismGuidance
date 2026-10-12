@@ -10,10 +10,10 @@
 
 ## 读取顺序
 
-1. `AGENTS.md`
-2. `.zcode/standards/`
-3. `.zcode/validation.md`
-4. `.zcode/plans/` (临时文件/工作区文件 存在这里，注意文件可能很乱)
+1. 必须阅读 `AGENTS.md`。
+2. 必须阅读 `.zcode/validation.md`。
+3. 必须按路由完整阅读 `.zcode/standards/writing.md`、`formatting.md`、`technical.md`。
+4. 临时工作、语料、规则裁决与验收报告必须放入 `.zcode/plans/`。
 
 ## 编辑规则
 

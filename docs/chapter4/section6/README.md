@@ -67,7 +67,7 @@
 GearIn_navigation_anchor,CUSTOM,一座用于校准本地航路的齿轮工业导航锚。,GearIn 导航锚,,,,
 ```
 
-CSV 键和转义规则见 [C3-S5]，本页负责定义 `GearIn_navigation_anchor` 这一行。
+[C1-S7] 提供 CSV 格式与转义规则，[C3-S5] 讲解 `CUSTOM` 的实体绑定；本节定义 `GearIn_navigation_anchor` 这一行。
 
 ### 配置发现规则
 

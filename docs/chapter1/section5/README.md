@@ -56,13 +56,11 @@
 
 ![德瓦林发射架的固定槽位主体贴图](./GearIn_dwalin_hardpoint_base.png "GearIn_dwalin_hardpoint_base.png")
 
-耗时约 45 秒。
+相信您大概也看得出来它们是从哪些原版武器改的了。
 
 ## 命名并将贴图放入正确的位置
 
-**武器命名也有规范可言**。
-
-武器的基础名称是 `MOD 前缀名 + 武器 ID`，例如本例中一个武器叫 `都林自动炮 (Durin)`，则它的 ID 应当为 `GearIn_durin`。以此类推，为所有武器命名并分配 ID。
+**武器的 ID 也应该遵循规范**。常用方式是 `MOD 前缀名 + 武器 ID`，例如本例中一个武器叫 `都林自动炮 (Durin)`，则它的 ID 应当为 `GearIn_durin`。以此类推，为所有武器命名并分配 ID。
 
 而武器各个贴图则是在基础名称的基础上继续扩写。
 
@@ -204,7 +202,7 @@
 }
 ```
 
-::: warning 复制原版武器文件时，先删去专属特效行
+::: warning 暂不涉及专属特效行
 
 原文件在 `id` 之后还有一行 `beamEffect`，指向引力子束专属的特效类 (推开目标并干扰护盾)。乌里光束是普通光束，不需要这个效果，所以这一行直接删去。
 
@@ -227,9 +225,9 @@
 | pierceSet | 光束可以穿透的碰撞类型 |
 | fireSoundTwo | 光束的持续时播放的循环音效 |
 
-上表的内容依然并不完全。
+上表的内容依然并不完全，不过够用了。
 
-总而言之，只需要修改 `id`、各个 sprite、各个 offsets 和 angleOffsets、以及光束的颜色即可，工作量依然极小：
+总而言之，只需要修改 `id`、各个 sprite、各个 offsets 和 angleOffsets、以及光束的颜色即可：
 
 ```json {3,7-10,15,17}
 {
@@ -425,9 +423,11 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 
 ::: tip 提前准备
 
-将新武器的 `tag` 中不希望保留的原版蓝图 tag(如 `midline_bp`) 替换为 `前缀名_bp`，在本例中为 `GearIn_bp`；仍然希望保留的原版蓝图来源 (如 `lowtech_bp`) 可以留下。日后将会有用。
+将新武器的 `tag` 中不希望保留的原版蓝图 tag(如 `midline_bp`) 替换为 `前缀名_bp`，在本例中为 `GearIn_bp`。如果您制作的是势力主题 MOD，那您大概不会希望保留任何原版蓝图 tag。
 
-除非它是您不希望大量出现的武器或它是内置武器 —— 在这种情况下，您可以将 `tag` 中的内容清空。
+日后将会有用。
+
+而对于您不希望大量出现的武器或它是内置武器 —— 在这种情况下，您可以将 `tag` 中的内容清空。
 
 :::
 
@@ -549,7 +549,7 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 | spawnType | 生成类型；`projectile` 可用 `BALLISTIC`、`BALLISTIC_AS_BEAM`、`PLASMA`、`BEAM`、`MISSILE`、`OTHER`。原版等离子炮即用 `PLASMA` |
 | onHitEffect | 弹体的命中特效代码路径，不填默认为无特效 |
 | onFireEffect | 弹体的开火特效代码路径，不填默认为无特效 |
-| collisionClass | 弹体的碰撞类型。`BALLISTIC` 类型的弹体用 `PROJECTILE_FF`(能命中包括友方在内的舰船，有友伤) 或 `PROJECTILE_NO_FF`(只命中敌方，无友伤)。`BALLISTIC_AS_BEAM` 类型的弹体用 `RAY`(能命中包括友方在内的舰船) 或 `RAY_FIGHTER`(只命中敌方舰船与战机)。全部碰撞类型：`NONE`、`RAY`、`RAY_FIGHTER`、`FIGHTER`、`SHIP`、`PROJECTILE_NO_FF`、`PROJECTILE_FF`、`MISSILE_NO_FF`、`MISSILE_FF`、`HITS_SHIPS_AND_ASTEROIDS`、`HITS_SHIPS_ONLY_FF`、`HITS_SHIPS_ONLY_NO_FF`、`PROJECTILE_FIGHTER`、`ASTEROID`、`PLANET`、`GAS_CLOUD`、`STAR`(后几类用于实体，弹体不会用到) |
+| collisionClass | 弹体的碰撞类型。一般来说，`BALLISTIC` 类型的弹体用 `PROJECTILE_FF`(能命中包括友方在内的舰船，有友伤) 或 `PROJECTILE_NO_FF`(只命中敌方，无友伤)。`BALLISTIC_AS_BEAM` 类型的弹体用 `RAY`(能命中包括友方在内的舰船) 或 `RAY_FIGHTER`(只命中敌方舰船与战机) |
 | collisionClassByFighter | 若这个弹体是由战机发射的，则它使用这个碰撞类型。一般来说根据类型而分别使用 `PROJECTILE_FIGHTER` 或 `RAY_FIGHTER` 来与舰船发射的弹体做区分 |
 | length | 弹体长度 |
 | width | 弹体宽度 |
@@ -589,7 +589,7 @@ EMP 保持留空 (原版暴风的 EMP 本就为空)，这有助于提高设计�
 
 ::: tip 颜色和伤害类型
 
-在原版里，弹体的颜色和伤害类型一般来说具有相关性。能量伤害的弹体一般来说是蓝色系的，动能伤害的弹体一般来说是黄色系的，高爆伤害的弹体一般来说是红色系的。例外存在，但较少。
+在原版里，弹体的颜色和伤害类型一般来说具有相关性。能量伤害的弹体一般来说是蓝色系的，动能伤害的弹体一般来说是白色系的，高爆伤害的弹体一般来说是黄色系的，破片伤害的弹体一般来说是红色系的。例外存在，但较少。
 
 :::
 
@@ -690,7 +690,7 @@ CSV 的导弹行会直接修改它引用的弹体 spec：当原版 `暴风 MLRS`
 }
 ```
 
-::: warning 复制原版弹体文件时，先删去专属特效行
+::: warning 依然记得删去专属特效行
 
 原文件在 `missileType` 之后还有一行 `onFireEffect`，指向暴风专属的开火特效类。德瓦林的导弹不需要它，所以这一行直接删去。
 
@@ -875,10 +875,6 @@ CSV 的导弹行会直接修改它引用的弹体 spec：当原版 `暴风 MLRS`
 - 火炮：`weapon_data.csv:GearIn_durin` → `GearIn_durin.wpn` → `GearIn_durin_shot.proj` → 武器/弹体贴图和开火音效。
 - 光束：`weapon_data.csv:GearIn_uri` → `GearIn_uri.wpn` → 光束颜色、材质和循环音效。
 - 导弹：`weapon_data.csv:GearIn_dwalin` → `GearIn_dwalin.wpn` → `GearIn_dwalin_rocket.proj` → 导弹贴图、引擎和爆炸表现。
-
-对应的加载后接口：`WeaponSpecAPI`(`.wpn` 与 `weapon_data.csv` 的合并结果)、`ProjectileSpecAPI`(`.proj` 射弹)、`MissileSpecAPI`(`.proj` 导弹)。
-
-数据读取入口是 `SettingsAPI.getMergedSpreadsheetData(...)`(按 id 列合并 CSV) 与 `SettingsAPI.getMergedJSON(...)`(按 MOD 合并语义读取 JSON)。
 
 加载成功时，三门武器能在装配界面找到并安装；战斗中的伤害类型、射程、弹速/光束、导弹寿命、贴图和声音与对应数据一致。
 

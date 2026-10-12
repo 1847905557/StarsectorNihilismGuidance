@@ -25,17 +25,17 @@
 
 ## 内置武器 (builtInWeapons)
 
-`builtInWeapons` 是 `.ship` 顶层的对象，键是槽位 ID，值是武器 ID。加载船体时，这个对象进入 `ShipHullSpecAPI.getBuiltInWeapons()`；游戏构建该船体的每一个装配时都会安装这些武器，包括自动生成的 `<hullId>_Hull` 空装配。`isBuiltIn(slotId)` 可以判断指定槽位是否属于内置武器。
-
-为舰船加入内置武器需要先有对应的内置槽位。`WeaponSlotAPI.getWeaponType()` 返回的槽位类型必须为 `WeaponAPI.WeaponType.BUILT_IN`。内置槽位在 `.ship` 文件中看上去大概是这样的 (本例为 `GearIn_artizan.ship` 的两门内置武器槽位，来自前置章节制作的工匠-级)：
+`builtInWeapons` 存在于 `.ship` 文件，键是槽位 ID，值是武器 ID。
 
 ::: info 在设计舰船时规划内置槽位
 
-内置槽位必须在设计舰船时设置好。舰船编辑器可以设置槽位类型，`builtInWeapons` 则需要在编辑器流程之外写入 `.ship` 顶层；先确定槽位位置和 ID，再填写武器映射。
+内置槽位必须在设计舰船时设置好。舰船编辑器可以设置槽位类型，`builtInWeapons` 则需要在编辑器流程之外写入 `.ship` 文件；先确定槽位位置和 ID，再填写武器映射。
 
 :::
 
-```json {3-6,12-14}
+内置槽位在 `.ship` 文件中看上去大概是这样的：
+
+```json {4,13}
     {
       "id": "WS0003",
       "size": "SMALL",
@@ -56,25 +56,7 @@
     },
 ```
 
-槽位与普通槽位一样有 `mount`、`type`、`size` 三个关键维度，分别决定形态 (TURRET/HARDPOINT/HIDDEN)、类型 (`BUILT_IN` 表示内置槽位) 与大小 (与所装武器一致)。
-
-`mount` 与 `type` 相互独立：原版攻势的两门内置 TPC 槽位是 `"mount": "HARDPOINT"`、`"arc": 5`(武器固定朝向)，监视者的内置槽位则是 `"mount": "TURRET"`。
-
-装饰槽位同理，例如原版 `buffalo.ship` 是 `"mount": "TURRET"` 配 `"type": "DECORATIVE"`。
-
-::: warning 槽位类型
-
-`type` 写成 `BUILT_IN` 的槽位**不能**在装配界面手动安装武器 —— `isWeaponSlot()` 只认 `BALLISTIC`、`ENERGY`、`MISSILE`、`UNIVERSAL`、`HYBRID`、`SYNERGY`、`COMPOSITE` 七种类型。
-
-内置武器只能由 `builtInWeapons` 提供。
-
-:::
-
-::: tip 操作方式
-
-增加内置武器建议手动打开 `.ship` 文件进行修改，但**能复制粘贴修改就不手写**。
-
-:::
+类型 `BUILT_IN` 表示内置。
 
 本例将对 `GearIn_artizan.ship` 加入两门内置武器。
 
@@ -106,19 +88,12 @@
 
 ![工匠级船体文件中的内置武器配置](./built_weapon.png "built_weapon.png")
 
-::: tip 内置武器的行为
-
-- **不占装配点**：装配界面显示 OP 只按非内置武器计算。
-- **不可拆卸**：在装配界面，无论是手动尝试拆卸，还是点击 "清空武器/返还货舱"，内置武器在默认情况下都不受影响。
-- `.variant` 文件也无法覆盖内置槽位，无法产生实质性影响。
-
-:::
-
 ::: tip 内置武器的其它建议
 
+- **不要在 `.variant` 文件中写内置槽位的武器**：它无法覆盖内置槽位，无法产生实质性影响。
 - **清空掉落标签**：内置武器通常不希望出现在市场和打捞中。
 - 此前武器数据章节给出的提示同样适用：清空或精简 `weapon_data.csv` 行的 `tags`。
-- 需要彻底隐藏时可用 `SYSTEM` hint(`SYSTEM` 单独使用时条目不出现在数据库；原版 `tpc` 是 `SYSTEM, SHOW_IN_CODEX`，`SHOW_IN_CODEX` 使其仍出现在数据库、不掉落)。
+- 需要彻底隐藏时可用 `SYSTEM` hint(`SYSTEM` 单独使用时条目不出现在数据库)。
 
 :::
 
@@ -147,7 +122,7 @@
 - **不会被永久损坏**：装饰槽武器不会因损坏而失效。
 - **仍然显示**：战斗中和生涯舰船界面都会显示装饰武器。
 
-装饰武器适合纯视觉内容。原版例子是 `buffalo.ship` 的红色/绿色信号灯：`builtInWeapons` 里装 `blinker_red`/`blinker_green` (`data/weapons/blinker_red.wpn`、`blinker_green.wpn`，`.wpn` 的 `"type": "DECORATIVE"`)，信号灯槽位为 `"type": "DECORATIVE"` 的 TURRET 槽。
+装饰武器适合纯视觉内容。原版例子是 `buffalo.ship` 的红色/绿色信号灯。
 
 ## 战机的内置武器？
 
@@ -189,16 +164,7 @@
 
 ![锻件级船体文件中的内置相位船插配置](./built_hullmod.png "built_hullmod.png")
 
-`builtInMods` 数组里的每个元素是**船插 ID**，取值来自 `hull_mods.csv` 的 `id` 列。
-
-::: tip 内置船插的行为
-
-- **不占装配点**：理所当然地。
-- **不可移除**：也是理所当然地。
-
-:::
-
-本节只涉及 "内置" 这一安装方式；effect 脚本和 S-mod 见 [C9-S1]。
+`builtInMods` 数组里的每个元素是**船插 ID**，取值来自 `hull_mods.csv` 的 `id` 列。本节只涉及 "内置" 这一安装方式；effect 脚本和 S-mod 见 [C9-S1]。
 
 ## 验证方案
 
@@ -239,12 +205,10 @@
 
 ![守炉人级船体文件中的内置炉渣联队配置](./built_wing.png "built_wing.png")
 
-::: tip 内置战机的行为
+::: tip 内置战机的行其它建议
 
 - **占据前几个甲板**：需要在数据里提前给它们预留好甲板数量。
 - 本例中 `GearIn_slag_wing` 占据守炉人的第一个甲板，第二个甲板仍可在装配界面正常装配。
-- **不可更换**：在装配界面，无论是手动尝试拆卸，还是点击 "清空战机槽"，内置战机在默认情况下都不受影响。
-- **不占装配点**：装配界面显示 OP 只按非内置战机计算。
 
 :::
 

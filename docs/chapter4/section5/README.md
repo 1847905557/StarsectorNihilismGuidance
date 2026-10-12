@@ -49,7 +49,7 @@ GearIn Prime 是炼厂世界：棕红色大气、厚云层、低速自转。贴�
 GearIn_ember_world,PLANET,被炼厂烟尘和赤红云层包围的工业世界，地表昼夜都映着熔炉的光。,,,,,
 ```
 
-`id` 与 `descriptionId` 保持一致。CSV 键和转义规则见 [C3-S5]，本页负责定义 `GearIn_ember_world` 这一行。
+`id` 与 `descriptionId` 必须保持一致。[C1-S7] 提供 CSV 格式与转义规则，[C3-S5] 讲解 `PLANET` 的描述键；本节定义 `GearIn_ember_world` 这一行。
 
 ### 配置大气颜色
 

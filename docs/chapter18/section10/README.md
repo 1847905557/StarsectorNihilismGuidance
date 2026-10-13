@@ -1,10 +1,10 @@
 # 配置 MagicLib 数据赏金
 
-MagicBounty 可以从一份 JSON 记录建立酒吧告示、目标舰队、限时 Intel 和战斗结算。本节用原版舰船与头像配置一项舰队歼灭委托，您可以沿同一个赏金 ID 检查加载、出现、接受、追踪和结束状态。
+我们用 MagicBounty 做一项酒吧歼灭委托：玩家达到指定条件后看到 "断齿航路"，接受后找到海盗舰队，按要求消灭目标并结算。先写一条可用的 JSON 记录，再沿玩家看到告示、接受、追踪和结束的过程解释字段。人物、舰队、地点与后续 Rules 都使用同一个赏金身份。
 
-*本节预期阅读时间：~32 分钟。*
+*本节预期阅读时间：\~32 分钟。*
 
-*本节预期操作时间：~40 分钟。*
+*本节预期操作时间：\~40 分钟。*
 
 ## 学习目标
 
@@ -25,9 +25,9 @@ MagicBounty 可以从一份 JSON 记录建立酒吧告示、目标舰队、限�
 - [C18-S1] 已经接入 MagicLib 硬依赖与编译路径；
 - 能够编辑严格 JSON，并能从 `starsector.log` 定位稳定 ID。
 
-## 加载赏金数据
+## 创建赏金记录并让库读取
 
-MagicLib 固定读取以下路径：
+在 MOD 内创建下面的文件，先保存本节完整成品的 `GearIn_magic_bounty` 记录，再按后续字段调整。MagicLib 固定读取该路径：
 
 ```text
 data/config/modFiles/magicBounty_data.json
@@ -43,7 +43,7 @@ data/config/modFiles/magicBounty_data.json
 }
 ```
 
-`MagicBountyLoader` 先把各 MOD 的根对象合并，再把每个子对象转换成 `MagicBountySpec`。因此 `GearIn_magic_bounty` 不只是便于阅读的名称；它还是活动赏金、完成清单、控制台命令和默认 Memory 键共同使用的身份。不同 MOD 写入相同顶层键时，后读入的数据会替换合并对象中的既有记录，固定前缀可以避免这种不太有礼貌的接管。
+`MagicBountyLoader` 先把各 MOD 的根对象合并，再把每个子对象转换成 `MagicBountySpec`。**`GearIn_magic_bounty` 同时标识配置和活动任务。**活动赏金、完成清单、控制台命令与默认 Memory 键都使用它。不同 MOD 写入相同顶层键时，后读入的数据会替换合并对象中的既有记录，固定前缀可以避免这种不太有礼貌的接管。
 
 `required_mods_id` 接收 MOD ID 数组。数组内每个 MOD 都已启用时，加载器才继续解析这条赏金；缺少任意一项时，记录会被跳过。它适合保护自定义势力、装配和资源引用，但不能替代 `mod_info.json` 中对 MagicLib 的硬依赖声明。
 
@@ -51,15 +51,15 @@ data/config/modFiles/magicBounty_data.json
 
 MagicLib 已经在自己的 `rules.csv` 中把告示板加入 `AddBarEvents`。市场存在可用赏金时，酒吧出现 "接入当地非正式的赏金告示板。" 选项；选择后由 `ShowMagicBountyBoardCmd` 打开告示板。因此这份数据不需要再配一套 `BaseBarEventCreator`。
 
-::: warning JSON 注释只属于 MagicLib 示例文件
+::: info 示例文件与编辑器解析
 
-MagicLib 随附的说明模板使用 `#` 注释和尾随逗号，游戏的宽松解析器能够读取它们。本页完整成果使用严格 JSON，便于交给编辑器、格式检查器和其他 JSON 工具共同检查。
+游戏的宽松解析器可以读取 MagicLib 模板里的 `#` 注释和尾逗号。本节成品采用严格 JSON，便于同时交给编辑器与普通 JSON 工具处理；复制字段说明时，把注释放在正文便于查阅。
 
 :::
 
 ## 限定酒吧与玩家条件
 
-一项赏金先通过市场条件，再通过玩家条件。当前成果只允许它出现在规模至少为 3 的独立势力市场：
+先决定玩家在哪里遇到委托，再决定此时是否有资格领取。本例选择规模至少为 3 的独立势力市场作为发布位置。以下为对象内的局部字段：
 
 ```json
 "trigger_market_id": [],
@@ -87,9 +87,9 @@ MagicLib 随附的说明模板使用 `#` 注释和尾随逗号，游戏的宽松
 "trigger_playerRelationship_atMost": {}
 ```
 
-玩家达到 5 级、舰队实力至少为 30 FP、开局经过 30 个游戏日，并且与独立势力关系不低于 0 后，这条记录才成为候选。`trigger_min_fleet_size` 检查玩家舰队的舰队点数合计；它用于避免把舰船暂存起来后，以一支临时缩小的舰队领取低强度任务。
+玩家达到 5 级、舰队实力至少为 30 FP、开局经过 30 个游戏日，并且与独立势力达到中立或更好关系后，这条记录才成为候选。`trigger_min_fleet_size` 检查玩家舰队的舰队点数合计；暂存的舰船离开当前舰队以后，也不计入这项阈值；该字段读取当前 FP。
 
-`trigger_playerRelationship_atLeast` 与 `trigger_playerRelationship_atMost` 分别设置关系下限和上限。两个对象各自任意一项满足即可，所以可以同时要求玩家受到发布方信任、又与目标势力保持敌对。
+`trigger_playerRelationship_atLeast` 与 `trigger_playerRelationship_atMost` 先把数值转成 RepLevel，再分别比较关系档位下限和上限。本例的 0 对应 NEUTRAL，按中立或更好的档位通过。两个对象各自任意一项满足即可，所以可以同时要求玩家受到发布方信任、又与目标势力保持敌对。
 
 `trigger_weight_mult` 只在符合条件的赏金竞争有限告示板栏位时生效。市场规模 3 时，MagicLib 默认提供一个栏位；市场每增加一级，栏位也增加一个。候选权重相加后随机抽取，倍率越大，被选中的机会越高。
 
@@ -116,7 +116,7 @@ MagicLib 随附的说明模板使用 `#` 注释和尾随逗号，游戏的宽松
 "trigger_giverTargetRelationship_atMost": -0.5
 ```
 
-这两个字段检查 `job_forFaction` 与 `fleet_faction` 之间的关系。它们适合要求双方至少敌对，避免友好势力发布一项逻辑上莫名其妙的互相歼灭委托。加载器的开放默认范围为 `-99` 到 `99`；当前成果省略两项，使用实际势力关系与敌对舰队态度。
+这两个字段检查 `job_forFaction` 与 `fleet_faction` 之间的关系。它们适合要求双方至少敌对，避免友好势力发布一项逻辑上莫名其妙的互相歼灭委托。这两项省略时，默认比较范围为 `-99` 到 `99`，不会进一步限制发布方与目标方的关系。本例按已有势力身份生成舰队，并明确设置敌对态度。
 
 ## 编写告示板文本
 
@@ -218,7 +218,7 @@ MagicBounty 在描述中替换目标与奖励变量。常用变量包括：
 | `job_show_distance` | `vanilla` / `vanillaDistance` | 显示原版风格环境描述，后者再附加光年数 |
 | `job_show_distance` | `exact` | 显示目标实体和星系的准确名称 |
 
-`job_show_arrow` 在 Intel 地图上绘制从接受地点指向目标地点的箭头。精确位置已经直接显示时，箭头只是视觉辅助；模糊任务大量使用它，会让所谓模糊显得颇有行政手续感。
+`job_show_arrow` 在 Intel 地图上绘制从接受地点指向目标地点的箭头。精确位置已经直接显示时，箭头只是视觉辅助；任务要求模糊位置却同时画出精确方向时，这点模糊也就只剩措辞了。编者建议让告示板精度与玩家实际需要的搜索过程一致。
 
 ## 创建目标人物
 
@@ -257,7 +257,7 @@ MagicBounty 在描述中替换目标与奖励变量。常用变量包括：
 
 `target_skills` 非空时会清除随机技能，再按对象写入指定技能；值 1 表示普通技能，值 2 表示精英技能。当前成果因此会得到三项确定技能。
 
-`target_skill_preference` 的现行加载器只专门识别 `CARRIER` 与 `PHASE`，其余值采用 `GENERIC`。MagicLib 随附模板列出的旧式武器与防御组合不会进入当前 `SkillPickPreference` 分支；新数据只使用 `ANY` 也不会产生额外偏好，显式 `target_skills` 仍然决定本例技能。
+`target_skill_preference` 的现行加载器只专门识别 `CARRIER` 与 `PHASE`，其余值采用 `GENERIC`。其他武器与防御组合值也进入 `GENERIC` 分支，`ANY` 同样采用这个默认偏好。本例提供显式 `target_skills`，最终技能按指定对象写入。
 
 ## 创建目标舰队
 
@@ -366,7 +366,7 @@ NotAccepted
 "job_memKey": "$GearIn_magic_bounty"
 ```
 
-接受时，`$GearIn_magic_bounty` 被写为 `false`。任务成功后，它变为 `true`，同时写入 `$GearIn_magic_bounty_succeeded = true`。这些键既能让后续 Rules 响应结局，也能防止加载新数据时把已领取赏金当成一条全新记录。
+**接受与结算分别留下可读取的任务状态。**接受时，`$GearIn_magic_bounty` 被写为 `false`。任务成功后，它变为 `true`，同时写入 `$GearIn_magic_bounty_succeeded = true`。这些键既能让后续 Rules 响应结局，也能防止加载新数据时把已领取赏金当成一条全新记录。
 
 其他结束阶段分别表示：
 
@@ -389,17 +389,17 @@ NotAccepted
 "job_conclusion_script": "GearInMagicBountyConcluded"
 ```
 
-接受任务并写入基础 Memory 后，MagicLib 对 `job_pick_script` 调用 `FireBest`。结算分支写完 `_succeeded`、`_failed` 或 `_expired` 后，再触发 `job_conclusion_script`。当前存在交互对话时，trigger 共用该 dialog 与插件提供的 `memoryMap`；没有对话时，MagicLib 建立最小的 LOCAL Memory 后执行规则。
+接受任务并写入基础 Memory 后，MagicLib 对 `job_pick_script` 调用 `FireBest`。结算分支写完 `_succeeded`、`_failed` 或 `_expired` 后，再触发 `job_conclusion_script`。当前存在交互对话时，trigger 使用该 dialog 与插件提供的 `memoryMap`；没有对话时，MagicLib 只提供 LOCAL Memory 后执行规则。下列 `$global` 条件用于已有交互对话且提供 GLOBAL 槽位的场景；无对话结算中，需要由 Rules 命令从 `Global.getSector().getMemoryWithoutUpdate()` 读取结局，并采用适合无 dialog 的动作。
 
 对应规则可以直接读取结局键：
 
 ```csv
 id,trigger,conditions,script,text,options,notes
-GearIn_magic_bounty_success,GearInMagicBountyConcluded,$global.GearIn_magic_bounty_succeeded,,,任务成功后的附加规则,
-GearIn_magic_bounty_expired,GearInMagicBountyConcluded,$global.GearIn_magic_bounty_expired,,,任务过期后的附加规则,
+GearIn_magic_bounty_success,GearInMagicBountyConcluded,$global.GearIn_magic_bounty_succeeded,,,,任务成功后的附加规则
+GearIn_magic_bounty_expired,GearInMagicBountyConcluded,$global.GearIn_magic_bounty_expired,,,,任务过期后的附加规则
 ```
 
-完整成果省略两个脚本字段，使任务只依赖 JSON 自身完成接受与结算。需要追加奖励、解锁市场或推进剧情时，再把 trigger 和对应规则同时加入 MOD。
+这两条是条件匹配的局部规则，说明写在 notes，实际附加动作填写 script。完整赏金省略两个脚本字段，先由 JSON 完成接受与结算。需要追加奖励、解锁市场或推进剧情时，再把 trigger 和对应规则同时加入 MOD。
 
 ## 使用既有舰队
 
@@ -419,7 +419,7 @@ MagicLib 会扫描各星系舰队，寻找自身 Memory 含有该键的对象。
 |---|---|---|
 | `fleet_flagship_recoverable` | 旗舰强制可回收的兼容字段 | `fleet_flagship_alwaysRecoverable` |
 | `fleet_min_DP` | 最低舰队规模的兼容备用值 | `fleet_min_FP` |
-| `location_marketIDs` | 固定 `SectorEntityToken` ID 列表的历史名称 | `location_entitiesID` |
+| `location_marketIDs` | 固定 `SectorEntityToken` ID 列表的可识别别名 | `location_entitiesID` |
 | `neutralisation` | `neutralization` 的拼写兼容值 | `neutralization` |
 | `location_defaultToAnySystem` | 当前加载器不会把该值送入 `MagicBountySpec` | 使用 `location_defaultToAnyEntity` 与 theme 黑名单 |
 
@@ -540,9 +540,9 @@ MagicLib 会扫描各星系舰队，寻找自身 Memory 含有该键的对象。
 
 ## 验证方案
 
-前置数据：启用 MagicLib、GearIn 与 Console Commands，使用一份可以推进至少 90 个游戏日的测试存档。
+前置数据：Console Commands 已启用，准备接受任务前的测试存档，用于分别观察成功、过期和永久忽略；存档能够推进至少 90 个游戏日。
 
-1. 开启 Dev Mode，启动游戏并检查 `starsector.log` 中 `GearIn_magic_bounty` 的读取与 `VALID` 日志。
+1. 保存赏金文件，开启 Dev Mode，重启游戏并检查 `starsector.log` 中 `GearIn_magic_bounty` 的读取与 `VALID` 日志。
 2. 在玩家低于 5 级、开局不足 30 日或舰队实力不足 30 FP 时进入独立势力酒吧，确认该任务不在告示板候选中。
 3. 满足等级、日期、舰队和关系条件，进入规模至少为 3 的独立势力市场，打开非正式赏金告示板。
 4. 选择 "断齿航路"，核对舰长、任务类型、舰队预览、距离、90 日期限、奖励与接受选项。
@@ -568,6 +568,9 @@ MagicLib 会扫描各星系舰队，寻找自身 Memory 含有该键的对象。
 
 ## 故障分析
 
+- **无对话结算时附加规则没有命中**：调用只提供 LOCAL Memory，`$global` 条件没有对应的 GLOBAL 槽位。
+    - **解决方案**：在 Rules 命令中从 `Global.getSector().getMemoryWithoutUpdate()` 读取结果，并让该命令处理无 dialog 的结算动作。
+
 - **酒吧始终没有赏金告示板**：记录没有通过市场、玩家或依赖条件，或者校验阶段已经移除了无效赏金。
     - **解决方案**：先从日志确认 `GearIn_magic_bounty : VALID`，再逐项核对市场势力与规模、玩家等级、日期、舰队 FP 和关系条件。
 
@@ -585,7 +588,7 @@ MagicLib 会扫描各星系舰队，寻找自身 Memory 含有该键的对象。
 
 ## 总结
 
-MagicBounty 用一个稳定 ID 把数据加载、酒吧筛选、目标生成、Intel 和战斗结算连成完整流程。出现条件决定玩家何时看到任务，人物、舰队与地点字段决定接受后生成什么，`ActiveBounty` 阶段和 Memory 键则把结果交给后续剧情。
+"断齿航路" 按市场与玩家条件进入告示板，接受后生成目标与 Intel，结束时按任务类型结算并写入 Memory。人物、舰队和地点的字段分别决定玩家遇到谁、打什么、去哪里；任务状态则让后续剧情取得结果。
 
 排错时应沿相同顺序检查：先确认 JSON 被读取并通过 ID 校验，再确认市场与玩家条件，最后检查地点和结算状态。告示板没有出现通常发生在前两处，接受后找不到目标则应从舰队或地点配置继续追查。
 

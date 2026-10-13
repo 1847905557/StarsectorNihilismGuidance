@@ -16,7 +16,7 @@ import com.fs.starfarer.api.campaign.SectorEntityToken;
 public class GearInFleetLifecycleListener extends BaseCampaignEventListener {
 
     public static final String PROBE_MEMORY_KEY = "$GearIn_listener_probe";
-    public static final String REGISTERED_KEY = "GearIn_C14S2_listener_registered";
+    public static final String REGISTERED_KEY = "GearIn_fleet_lifecycle_registered";
     public static final float ACTIVE_DAYS = 30.0f;
 
     private static final Logger LOG = Global.getLogger(GearInFleetLifecycleListener.class);
@@ -83,8 +83,7 @@ public class GearInFleetLifecycleListener extends BaseCampaignEventListener {
     }
 
     private static boolean isProbeFleet(CampaignFleetAPI fleet) {
-        return fleet != null
-                && fleet.getMemoryWithoutUpdate().getBoolean(PROBE_MEMORY_KEY);
+        return fleet.getMemoryWithoutUpdate().getBoolean(PROBE_MEMORY_KEY);
     }
 
     private static String despawnContext(FleetDespawnReason reason, Object param) {

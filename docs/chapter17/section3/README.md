@@ -1,10 +1,10 @@
 # 读取 MOD 内 CSV
 
-本节处理表格和跨 MOD 数据：先读取单个 CSV，再根据数据所有权选择合并入口。关键区别是文件是否需要参与全局合并，以及重复键最终由哪一方负责。
+JSON 配置已经能读取，接下来用一行工坊服务比较 CSV 的单文件和合并入口。本 MOD 提供基础行，另一个测试 MOD 提供同键覆盖与新行，再从日志看普通合并和 master 合并怎样选择。列名、来源与行键都对应到实际读取参数。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：\~18 分钟。*
 
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：\~35 分钟。*
 
 ## 学习目标
 
@@ -23,7 +23,27 @@
 - [C17-S1] 的 MOD 相对路径和 `modId` 限定读取；
 - [C17-S2] 的 JSON 单文件读取。
 
-## 单文件与合并入口
+## 创建服务表并读取当前 MOD
+
+先保存 `data/config/gear_in/services.csv`：
+
+```csv
+id,label,interval
+GearIn_service,工坊服务,10
+```
+
+在 `GearInModPlugin.onApplicationLoad(...)` 添加 `JSONArray`、`JSONObject` 的 import，追加局部读取并记录：
+
+```java
+JSONArray ownRows = Global.getSettings().loadCSV("data/config/gear_in/services.csv", "gear_in");
+for (int index = 0; index < ownRows.length(); index++) {
+    JSONObject row = ownRows.getJSONObject(index);
+    Global.getLogger(GearInModPlugin.class).info("GearIn CSV: id=" + row.getString("id")
+            + " label=" + row.getString("label") + " interval=" + row.getInt("interval"));
+}
+```
+
+**单文件选择一个来源，合并入口处理同路径的多份数据。** 本 MOD 用 `gear_in` 明确限定来源，以下局部片段比较三种调用：
 
 ```java
 JSONArray rows = Global.getSettings().loadCSV("data/config/gear_in/services.csv");
@@ -32,7 +52,7 @@ JSONArray master = Global.getSettings().getMergedSpreadsheetDataForMod(
         "id", "data/config/gear_in/services.csv", "gear_in");
 ```
 
-`loadCSV` 适合读取本 MOD 自己拥有的文件。`getMergedSpreadsheetData` 适合多个来源按同一路径合并的表；同一文件内部重复键会抛出异常，跨文件冲突按合并顺序处理。`getMergedSpreadsheetDataForMod` 把 `gear_in` 作为 master，其他 MOD 可以用同一键替换 master 行，适合提供可覆盖的基础数据。
+`loadCSV(path)` 从当前资源空间选择一份文件，`loadCSV(path, modId)` 明确选择对应 MOD。`getMergedSpreadsheetData` 适合多个来源按同一路径合并的表；同一文件内部重复键会抛出异常，跨文件同键时保留先纳入的行。`getMergedSpreadsheetDataForMod` 把 `gear_in` 作为 master，其他来源按行键替换 master，适合向外提供可覆盖的基础行；多个非 master 同键时，接口没有规定唯一覆盖者。
 
 ### JSON 合并
 
@@ -47,29 +67,41 @@ JSONArray master = Global.getSettings().getMergedSpreadsheetDataForMod(
 | 读取指定 master 并允许覆盖 | `getMergedSpreadsheetDataForMod` | master 行可被其他 MOD 替换 |
 | 读取合并 JSON | `getMergedJSON` | 递归合并对象 |
 
-### 最小实例
+## 数据所有权
 
-在 `data/config/gear_in/services.csv` 写入：
+**路径与键共同表达当前表的数据范围。** 自有目录带 MOD 前缀，公共表明确键列与覆盖入口，扩展 MOD 提交自己的基础或覆盖行。
+
+给第二份测试 MOD 的同路径文件写入：
 
 ```csv
 id,label,interval
-GearIn_service,工坊服务,10
+GearIn_service,外部覆盖服务,20
+GearIn_external_service,外部新增服务,15
 ```
 
-代码读取 `id`、`label` 和 `interval`，并把结果写入日志。第二份测试 MOD 使用同一路径和 `GearIn_service` 键，观察普通合并和 master 合并的差异。
+这份输入同时提供同键和新键。向应用加载方法追加以下局部片段，把两种合并结果直接写入日志：
 
-## 数据所有权
+```java
+JSONArray mergedRows = Global.getSettings().getMergedSpreadsheetData(
+        "id", "data/config/gear_in/services.csv");
+JSONArray masterRows = Global.getSettings().getMergedSpreadsheetDataForMod(
+        "id", "data/config/gear_in/services.csv", "gear_in");
+Global.getLogger(GearInModPlugin.class).info("GearIn merged CSV: " + mergedRows);
+Global.getLogger(GearInModPlugin.class).info("GearIn master CSV: " + masterRows);
+```
 
-文件路径相同不代表数据所有权相同。自己的数据路径使用 MOD 前缀；公共表格必须明确键列、覆盖者和预期合并入口。不要复制整份原版文件，只提交需要新增或覆盖的行。
+master 模式指定 `gear_in`，所以覆盖结果是 `外部覆盖服务`、20。普通合并按来源先后保留同键行；新增的 `GearIn_external_service` 在两种合并中都能看到。
+
+编者建议覆盖实验只启用一份外部输入。多个覆盖者共用同一键时，结果选择还受来源集合影响，当前先把基础行与覆盖行的关系看清。
 
 ## 验证方案
 
 前置数据：`services.csv`、一个提供同键覆盖行的测试 MOD，以及三种读取调用已就绪。
 
-1. 使用 `loadCSV` 读取 `services.csv`，观察日志中的 `GearIn_service` 行。
-2. 使用 `getMergedSpreadsheetData` 读取同一路径，观察合并后的 `label` 和 `interval`。
-3. 使用 `getMergedSpreadsheetDataForMod` 指定 `gear_in`，观察 master 行被覆盖后的字段值。
-4. 在测试 MOD 中加入一个不重复的键，重新启动并观察该行出现在合并结果中。
+1. 只启用 `gear_in`，保存服务表和应用调用，构建重启。观察 `GearIn CSV` 中 `工坊服务` 与 10。
+2. 启用提供上述两行的测试 MOD，重启并搜索 `GearIn merged CSV`，观察同键行的 `label` 与 `interval`。
+3. 比较 `GearIn master CSV`，确认 `GearIn_service` 为 `外部覆盖服务`、20。
+4. 在两种合并日志中查找 `GearIn_external_service`，确认 `外部新增服务`、15。
 
 预期结果：
 
@@ -86,7 +118,7 @@ GearIn_service,工坊服务,10
 - **合并结果缺少目标行**：路径、键列或来源 MOD 与调用参数不一致。
     - **解决方案**：逐项核对并重新合并。
 
-- **自有值被其他 MOD 覆盖**：普通合并按 "先加载者胜" 静默丢弃后到同键行。唯一键才能防覆盖；带 MOD master 的入口反而**启用**覆盖 (master 行恰是被替换的一方)，不是修复手段。
+- **普通合并取得其他来源的同键行**：同键行按先纳入者保留，读取结果受来源顺序影响。
     - **解决方案**：改用唯一键。
 
 - **结果只包含当前 MOD 的行**：代码使用了 `loadCSV(path, modId)` 单来源入口。
@@ -97,7 +129,9 @@ GearIn_service,工坊服务,10
 
 ## 总结
 
-CSV 和 JSON 的读取入口由数据所有权决定。单文件入口读取自己的资源，合并入口处理跨 MOD 数据；带 master 的表格还需要明确谁提供基础行、谁可以覆盖。
+服务表从列名生成 JSONObject 行，来源限定读取原始数据，普通合并按当前来源规则处理，master 合并则主动开放同键替换。新键继续进入合并结果，JSON 的对象键合并使用另一组方法。
+
+决定入口之前，先说明谁拥有基础数据、谁可以覆盖。文件路径相同以后，这个选择仍要在当前 API 调用里表达。
 
 ## 建议参考项
 

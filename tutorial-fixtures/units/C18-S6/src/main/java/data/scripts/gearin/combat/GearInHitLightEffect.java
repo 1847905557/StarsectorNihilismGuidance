@@ -24,7 +24,7 @@ public class GearInHitLightEffect implements OnHitEffectPlugin {
 
     @Override
     public void onHit(DamagingProjectileAPI projectile, CombatEntityAPI target, Vector2f point,
-                      boolean shieldHit, ApplyDamageResultAPI damageResult, CombatEngineAPI engine) {
+            boolean shieldHit, ApplyDamageResultAPI damageResult, CombatEngineAPI engine) {
         StandardLight light = new StandardLight();
         light.setHeight(100f);
         light.setSpecularMult(0.8f);

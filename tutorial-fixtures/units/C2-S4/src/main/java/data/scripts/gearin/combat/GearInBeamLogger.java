@@ -9,13 +9,10 @@ import com.fs.starfarer.api.combat.CombatEngineAPI;
 
 import org.lwjgl.util.vector.Vector2f;
 
-/**
- * 光束效果：光束武器激活期间每帧被调用，每累计 1 秒打一行日志并在光束末端放一个青色光点。
- * 注册在光束武器 .wpn 的 beamEffect 键；REPORT_INTERVAL 与日志文字是参数。
- */
+/** 光束激活期间计时，每秒记录日志并创建末端粒子。 */
 public class GearInBeamLogger implements BeamEffectPlugin {
 
-    /** 每累计多少秒打一行日志 (参数)。 */
+    /** 两次报告之间的秒数。 */
     private static final float REPORT_INTERVAL = 1f;
 
     private float timeSinceLastReport;

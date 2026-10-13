@@ -8,11 +8,7 @@ import com.fs.starfarer.api.combat.MutableShipStatsAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ShipAPI.HullSize;
 
-/**
- * 稳定化推进器：按船体等级提供小幅最大速度加成，与不稳定推进器 (unstable_injector) 互斥。
- * 注册在 hull_mods.csv 的 script 列；效果类每个应用会话只实例化一次。
- * 一般不会展示战机的加成数值。
- */
+/** 按船体等级提供速度加成，安装时检查不稳定推进器。 */
 public class GearInStableInjectorHullMod extends BaseHullMod {
 
     /** 与 hull_mods.csv 的 id 列保持一致；其他船插检查本船插时使用该常量。 */
@@ -40,10 +36,18 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 
     @Override
     public String getDescriptionParam(int index, HullSize hullSize) {
-        if (index == 0) return "" + SPEED_BONUS.get(HullSize.FRIGATE).intValue();
-        if (index == 1) return "" + SPEED_BONUS.get(HullSize.DESTROYER).intValue();
-        if (index == 2) return "" + SPEED_BONUS.get(HullSize.CRUISER).intValue();
-        if (index == 3) return "" + SPEED_BONUS.get(HullSize.CAPITAL_SHIP).intValue();
+        if (index == 0) {
+            return "" + SPEED_BONUS.get(HullSize.FRIGATE).intValue();
+        }
+        if (index == 1) {
+            return "" + SPEED_BONUS.get(HullSize.DESTROYER).intValue();
+        }
+        if (index == 2) {
+            return "" + SPEED_BONUS.get(HullSize.CRUISER).intValue();
+        }
+        if (index == 3) {
+            return "" + SPEED_BONUS.get(HullSize.CAPITAL_SHIP).intValue();
+        }
         return null;
     }
 

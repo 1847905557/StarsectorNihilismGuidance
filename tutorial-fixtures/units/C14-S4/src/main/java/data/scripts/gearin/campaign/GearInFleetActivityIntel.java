@@ -23,16 +23,14 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
 
     public GearInFleetActivityIntel(CampaignFleetAPI fleet) {
         this.fleet = fleet;
-        if (fleet != null) {
-            setPostingLocation(fleet);
-            lastLocationId = getLocationId(fleet.getContainingLocation());
-        }
+        setPostingLocation(fleet);
+        lastLocationId = getLocationId(fleet.getContainingLocation());
         setImportant(true);
     }
 
     @Override
     protected void advanceImpl(float amount) {
-        if (fleet == null || !fleet.isAlive()) {
+        if (!fleet.isAlive()) {
             finish("fleet unavailable");
             return;
         }
@@ -52,9 +50,6 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
     }
 
     private void finish(String reason) {
-        if (isEnding() || isEnded()) {
-            return;
-        }
         sendUpdateIfPlayerHasIntel(reason, false);
         endAfterDelay();
     }
@@ -87,7 +82,7 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
 
     @Override
     public CampaignFleetAPI getMapLocation(SectorMapAPI map) {
-        return fleet != null && fleet.isAlive() ? fleet : null;
+        return fleet.isAlive() ? fleet : null;
     }
 
     @Override
@@ -129,11 +124,11 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
     }
 
     private String getFleetId() {
-        return fleet == null ? "<none>" : fleet.getId();
+        return fleet.getId();
     }
 
     private String getLocationText() {
-        LocationAPI location = fleet == null ? null : fleet.getContainingLocation();
+        LocationAPI location = fleet.getContainingLocation();
         return location == null ? "unknown" : location.getId();
     }
 

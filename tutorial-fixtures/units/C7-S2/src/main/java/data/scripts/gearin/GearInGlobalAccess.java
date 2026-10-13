@@ -24,12 +24,7 @@ public class GearInGlobalAccess {
         CombatEngineAPI engine = Global.getCombatEngine();
         LOG.info("GearIn state=" + state + " settings=" + (Global.getSettings() != null)
                 + " sector=" + (sector != null) + " engine=" + (engine != null)
+                + " engineIdentity=" + System.identityHashCode(engine)
                 + " loadingSave=" + Global.LOADING_SAVE);
-        if (sector == null) {
-            LOG.warn("GearIn getSector() is null: 资源加载期访问生涯对象会空指针");
-        }
-        if (engine == null) {
-            LOG.warn("GearIn getCombatEngine() is null: 资源加载期访问战斗对象会空指针");
-        }
     }
 }

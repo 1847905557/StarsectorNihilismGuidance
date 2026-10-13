@@ -6,7 +6,7 @@ import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.LocationAPI;
+import com.fs.starfarer.api.campaign.CampaignClockAPI;
 import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.StarSystemAPI;
@@ -15,11 +15,12 @@ public class GearInLocationQuery implements EveryFrameScript {
 
     private static final Logger LOG = Global.getLogger(GearInLocationQuery.class);
 
-    private boolean done;
+    private boolean reported;
+    private long lastReportTimestamp;
 
     @Override
     public boolean isDone() {
-        return done;
+        return false;
     }
 
     @Override
@@ -29,19 +30,19 @@ public class GearInLocationQuery implements EveryFrameScript {
 
     @Override
     public void advance(float amount) {
-        if (done) {
-            return;
-        }
-
         SectorAPI sector = Global.getSector();
-        LocationAPI location = sector.getStarSystem("GearIn_observation_system");
-        if (!(location instanceof StarSystemAPI)) {
+        CampaignClockAPI clock = sector.getClock();
+        if (reported && clock.getElapsedDaysSince(lastReportTimestamp) < 1f) {
+            return;
+        }
+        lastReportTimestamp = clock.getTimestamp();
+        reported = true;
+        StarSystemAPI system = sector.getStarSystem("GearIn_observation_system");
+        if (system == null) {
             LOG.warn("GearIn location query: system missing");
-            done = true;
             return;
         }
 
-        StarSystemAPI system = (StarSystemAPI) location;
         SectorEntityToken relay = system.getEntityById("GearIn_observation_relay");
         List<SectorEntityToken> tagMatches = system.getEntitiesWithTag(
                 "GearIn_observation_tag");
@@ -61,6 +62,5 @@ public class GearInLocationQuery implements EveryFrameScript {
                 system.isEnteredByPlayer(),
                 daysSinceVisit,
                 relayLocation));
-        done = true;
     }
 }

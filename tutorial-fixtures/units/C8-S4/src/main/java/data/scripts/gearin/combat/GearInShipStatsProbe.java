@@ -16,15 +16,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
 import com.fs.starfarer.api.util.DynamicStatsAPI;
 import com.fs.starfarer.api.util.IntervalUtil;
 
-/**
- * 完整最小例：战斗插件中的 MutableShipStatsAPI 与 DynamicStatsAPI。
- *
- * 本插件由战斗上下文注册，只在本场战斗内取得并使用舰船 stats：
- * - advance() 先检查暂停和玩家舰对象，再取得 MutableShipStatsAPI；
- * - 普通 MutableStat 用 getModifiedValue() 读取当前战斗数值；
- * - DynamicStatsAPI.getMod() 返回 StatBonus，必须用 computeEffective(base) 读取结果；
- * - 每帧重复写入复用稳定 ID，结束时用同一 ID 清理。
- */
+/** 周期读取玩家舰数值，并在战斗开始十秒后移除临时修饰。 */
 public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInShipStatsProbe.class);
@@ -37,14 +29,12 @@ public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
     private final IntervalUtil reportInterval = new IntervalUtil(2f, 2f);
 
     @Override
-    public void init(CombatEngineAPI engine) {
-        this.engine = engine;
-        LOG.info("GearIn stats probe init: engine ready");
-    }
-
-    @Override
     public void advance(float amount, List<InputEventAPI> events) {
-        if (engine == null || engine.isPaused()) {
+        if (engine == null) {
+            engine = Global.getCombatEngine();
+            LOG.info("GearIn stats probe init: engine ready");
+        }
+        if (engine.isPaused()) {
             return;
         }
         ShipAPI ship = engine.getPlayerShip();
@@ -90,6 +80,8 @@ public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
                 + " flat=" + maxSpeed.getFlatMod()
                 + " unmodified=" + maxSpeed.isUnmodified()
                 + " dynamicMaxHullmods=" + hullmodLimit.computeEffective(2f)
-                + " dynamicEntries=" + dynamic.getMods().size());
+                + " dynamicEntries=" + dynamic.getMods().size()
+                + " probeSpeedPresent=" + maxSpeed.getFlatMods().containsKey(MOD_SPEED)
+                + " probeDynamicPresent=" + hullmodLimit.getFlatBonuses().containsKey(MOD_DYNAMIC));
     }
 }

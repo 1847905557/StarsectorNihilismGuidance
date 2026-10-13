@@ -11,11 +11,19 @@ import com.fs.starfarer.api.impl.campaign.missions.hub.BaseHubMission;
 
 public class GearInHubMission extends BaseHubMission {
 
-    public static final String STAGE_INVESTIGATE = "GearIn_stage_investigate";
-    public static final String STAGE_REPORT = "GearIn_stage_report";
-    public static final String STAGE_COMPLETED = "GearIn_stage_completed";
-    public static final String STAGE_FAILED = "GearIn_stage_failed";
-    public static final String STAGE_ABANDONED = "GearIn_stage_abandoned";
+    public enum Stage {
+        GearIn_stage_investigate,
+        GearIn_stage_report,
+        GearIn_stage_completed,
+        GearIn_stage_failed,
+        GearIn_stage_abandoned
+    }
+
+    public static final Stage STAGE_INVESTIGATE = Stage.GearIn_stage_investigate;
+    public static final Stage STAGE_REPORT = Stage.GearIn_stage_report;
+    public static final Stage STAGE_COMPLETED = Stage.GearIn_stage_completed;
+    public static final Stage STAGE_FAILED = Stage.GearIn_stage_failed;
+    public static final Stage STAGE_ABANDONED = Stage.GearIn_stage_abandoned;
     public static final String TARGET_COMPLETE_KEY = "$GearIn_hub_target_complete";
 
     private SectorEntityToken target;
@@ -34,10 +42,7 @@ public class GearInHubMission extends BaseHubMission {
 
     @Override
     protected boolean create(MarketAPI createdAt, boolean barEvent) {
-        if (target == null) {
-            return false;
-        }
-        setStageOnMemoryFlag(STAGE_REPORT, target, TARGET_COMPLETE_KEY);
+        connectWithMemoryFlag(STAGE_INVESTIGATE, STAGE_REPORT, target, TARGET_COMPLETE_KEY);
         return true;
     }
 

@@ -1,10 +1,10 @@
 # 使用 LazyLib 保存公共 JSON
 
-有些状态属于整个游戏安装，而不是某一份生涯存档。LazyLib 的 `CommonDataJSONObject` 把这类状态保存为存档公共数据，本节用它记录累计加载次数和最近一次角色名，让两份生涯能够读到同一份结果。
+这次记录一个跨生涯的加载计数器：每载入一次生涯，次数加 1，并保存最近角色名。先创建默认 JSON，再把 LazyLib 计数器接到 `onGameLoad(...)`。换另一份存档后继续读到此前的次数和名字，就能看出 common 与当前生涯状态的区别。
 
-*本节预期阅读时间：~20 分钟。*
+*本节预期阅读时间：\~20 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
@@ -18,25 +18,11 @@
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、静态方法和异常处理；
-- [C16-S5] 理解 `MemoryAPI` 随所属生涯对象保存的状态；
-- [C17-S4] 理解原版 common 文件的路径和读写职责；
-- [C18-S1] 已经把 LazyLib 加入运行时依赖与编译 classpath；
+- [C7-S1] 的生涯加载回调；
+- [C16-S5] 的 `MemoryAPI` 与生涯保存；
+- [C17-S4] 的原版 common 文件路径和读写；
+- [C18-S1] 的 LazyLib 运行时依赖与编译 classpath；
 - 能够读取 JSON 对象中的字符串和整数。
-
-## 理解公共数据的生命周期
-
-Memory 属于提供它的生涯对象，Sector PersistentData 属于当前生涯，存档公共数据则位于游戏安装目录的 `saves/common`。换用另一份存档不会改变 common 文件的路径，因此加载次数和最近角色名可以跨生涯延续。
-
-本节使用的逻辑文件名是 `GearIn_common_counter`。游戏为它追加 `.data` 后缀，最终写入：
-
-```text
-Starsector/saves/common/GearIn_common_counter.data
-```
-
-逻辑文件名应只包含当前 MOD 能稳定控制的名称。父目录跳转、绝对路径、反斜杠和驱动器路径会被 common 文件接口拒绝；传入 `GearIn_common_counter.json` 也不会得到普通 JSON 文件，而会生成 `GearIn_common_counter.json.data`。
-
-common 文本单次最多写入 1,048,576 个 Java 字符。这个容量足够保存设置、计数器和事件状态，但公共文件并不适合承担日志归档或大规模对象快照。
 
 ## 准备默认 JSON
 
@@ -51,11 +37,53 @@ common 文本单次最多写入 1,048,576 个 Java 字符。这个容量足够�
 
 `load_count` 保存累计成功记录的加载次数，`last_player` 保存最近一次角色名。默认资源随 MOD 发布，运行时公共文件则由玩家的实际使用过程产生；两者使用相同字段，使首次加载和后续读取进入同一套代码。
 
+## 在游戏加载时记录状态
+
+保存本节的 `GearInCommonDataCounter` 到 `src/data/scripts/gearin/lib/GearInCommonDataCounter.java`。在既有 `GearInModPlugin.onGameLoad(...)` 中追加下面的局部代码，保留原来的生涯初始化，并导入计数器及其嵌套类型 `GearInCommonDataCounter.LoadSnapshot`：
+
+```java
+@Override
+public void onGameLoad(boolean newGame) {
+    try {
+        String playerName = Global.getSector().getPlayerPerson().getNameString();
+        LoadSnapshot snapshot = GearInCommonDataCounter.recordLoad(playerName);
+        String previousPlayer = snapshot.getPreviousPlayerName().isEmpty()
+                ? "no record"
+                : snapshot.getPreviousPlayerName();
+
+        Global.getSector().getCampaignUI().addMessage(
+                "Common loads: " + snapshot.getPreviousLoadCount()
+                        + " -> " + snapshot.getCurrentLoadCount()
+                        + "; current: " + snapshot.getCurrentPlayerName()
+                        + "; previous: " + previousPlayer);
+    } catch (Exception ex) {
+        Global.getLogger(GearInModPlugin.class).error(
+                "Failed to update GearIn common data", ex);
+    }
+}
+```
+
+第一次成功记录会显示 `0 -> 1` 和 `previous: no record`。载入另一份生涯后，当前角色名改变，而旧角色名和累计次数来自同一个 common 文件。异常由入口记录，公共文件故障不会阻止其余 `onGameLoad(...)` 工作继续执行。
+
+## 理解公共数据的生命周期
+
+Memory 随提供它的生涯对象使用和保存，Sector PersistentData 属于当前生涯；**common 属于用户数据空间，跨生涯共享。**存档目录由启动配置决定，标准安装的默认位置是 `Starsector/saves/common`。换用另一份存档仍读取同名公共文件，加载次数和最近角色名由此延续。
+
+本节使用的逻辑文件名是 `GearIn_common_counter`。游戏为它追加 `.data` 后缀，最终写入：
+
+```text
+Starsector/saves/common/GearIn_common_counter.data
+```
+
+逻辑文件名应只包含当前 MOD 能稳定控制的名称。父目录跳转、绝对路径、反斜杠和驱动器路径会被 common 文件接口拒绝；传入 `GearIn_common_counter.json` 也不会得到普通 JSON 文件，而会生成 `GearIn_common_counter.json.data`。
+
+common 文本单次最多写入 1,048,576 个 Java 字符。这个容量足够保存设置、计数器和事件状态，但公共文件并不适合承担日志归档或大规模对象快照。
+
 ## 加载与修改公共 JSON
 
 ### 让默认资源接管首次加载
 
-双参数重载先尝试读取现有 common 文件。文件不存在、内容无法读取或 JSON 无法解析时，它改为加载默认资源，并把非空默认对象写入 common 目录：
+双参数重载先读取现有 common 文件。文件不存在、内容无法读取或 JSON 无法解析时，它改为加载默认资源，载入非空 JSON 后，包装对象在构造时保存一次；默认资源与已有文件都经过这一步：
 
 ```java
 try (CommonDataJSONObject data = JSONUtils.loadCommonJSON(
@@ -65,7 +93,7 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON(
 }
 ```
 
-`COMMON_FILE_NAME` 只决定运行时文件名，`DEFAULT_JSON_PATH` 则是 MOD 内资源路径。两个字符串不能互换：前者交给 common 文件接口，后者交给 MOD 资源加载器。
+`COMMON_FILE_NAME` 交给 common 文件接口，`DEFAULT_JSON_PATH` 交给 MOD 资源加载器。上面的局部片段展示取值；载入非空对象时已写入一次，try-with-resources 结束时仍会再保存。纯读取使用原版入口，LazyLib 读改写则明确安排载入与关闭的保存。
 
 单参数 `loadCommonJSON(filename)` 适合已经能够自行补齐字段的数据。读取失败时，它返回与该文件名关联的空 `CommonDataJSONObject`，不会寻找 MOD 内的默认模板。
 
@@ -75,17 +103,17 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON(
 
 ```java
 int currentLoadCount = previousLoadCount + 1;
-String currentPlayerName = playerName == null ? "" : playerName;
+String currentPlayerName = playerName;
 
 data.put(LOAD_COUNT_KEY, currentLoadCount);
 data.put(LAST_PLAYER_KEY, currentPlayerName);
 ```
 
-`optInt(...)` 和 `optString(...)` 为缺失字段提供初始值，因此旧文件缺少新增字段时仍能继续升级。修改原对象还会保留当前代码并不认识的其他键，避免一次小改动顺手清空整份公共状态。
+`optInt(...)` 和 `optString(...)` 为缺失字段提供初始值，本节采用缺省 0 和空字符串初始化这两个字段。修改原对象还会保留当前代码并不认识的其他键，避免一次小改动顺手清空整份公共状态。
 
 ## 保存并关闭数据对象
 
-`CommonDataJSONObject` 实现了 `AutoCloseable`。try-with-resources 离开作用域时调用 `close()`，而 `close()` 会调用 `save()`，因此正常路径只需要修改对象：
+`CommonDataJSONObject` 实现了 `AutoCloseable`。try-with-resources 离开作用域时调用 `close()`，而 `close()` 会调用 `save()`，因此载入非空数据后已保存原内容，正常修改路径在关闭时再保存更新：
 
 ```java
 try (CommonDataJSONObject data = JSONUtils.loadCommonJSON(
@@ -95,9 +123,9 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON(
 }
 ```
 
-`save()` 用于需要在作用域结束前立即写盘的场景。普通读取与修改在同一作用域完成时，再显式调用一次 `save()` 只会增加一次重复写入。
+`save()` 用于需要在作用域结束前立即写盘的场景。读改写在同一作用域完成时，载入非空对象、显式 `save()` 与关闭分别保存；省略显式调用，仍会保存原内容和关闭后的修改。
 
-直接调用 `new CommonDataJSONObject(filename)` 会得到与文件名关联的空对象。它适合明确创建空文件或覆盖全部内容；增量更新应先加载现有对象，否则关闭时会用新对象替换旧数据。公共文件对字面要求很认真，未加载的旧字段不会因为开发者心里惦记着它们而自动回来。
+直接调用 `new CommonDataJSONObject(filename)` 会得到与文件名关联的空对象。它适合明确创建空文件或覆盖全部内容；增量更新应先加载现有对象，否则关闭时会用新对象替换旧数据。字段要保留，先把文件读进来。编者见过为了 "重新整理结构" 而新建空对象的写法，最终整理得非常彻底，连用户的值也一起整理没了。
 
 ## 重置公共状态
 
@@ -133,40 +161,12 @@ Color translucent = JSONUtils.toColor(new JSONArray("[80, 200, 255, 160]"));
 
 三个整数依次表示红、绿、蓝，alpha 默认为 255；第四个整数会覆盖 alpha。数组少于三个分量时无法组成颜色，方法会抛出 `JSONException`。
 
-## 在游戏加载时记录状态
-
-`GearInModPlugin.onGameLoad(...)` 在生涯完成加载后取得当前角色名，再把数据操作交给计数器。以下是可以合入现有入口类的局部片段：
-
-```java
-@Override
-public void onGameLoad(boolean newGame) {
-    try {
-        String playerName = Global.getSector().getPlayerPerson().getNameString();
-        LoadSnapshot snapshot = GearInCommonDataCounter.recordLoad(playerName);
-        String previousPlayer = snapshot.getPreviousPlayerName().isEmpty()
-                ? "no record"
-                : snapshot.getPreviousPlayerName();
-
-        Global.getSector().getCampaignUI().addMessage(
-                "Common loads: " + snapshot.getPreviousLoadCount()
-                        + " -> " + snapshot.getCurrentLoadCount()
-                        + "; current: " + snapshot.getCurrentPlayerName()
-                        + "; previous: " + previousPlayer);
-    } catch (Exception ex) {
-        Global.getLogger(GearInModPlugin.class).error(
-                "Failed to update GearIn common data", ex);
-    }
-}
-```
-
-第一次成功记录会显示 `0 -> 1` 和 `previous: no record`。载入另一份生涯后，当前角色名改变，而旧角色名和累计次数来自同一个 common 文件。异常由入口记录，公共文件故障不会阻止其余 `onGameLoad(...)` 工作继续执行。
-
 ## 常用方法速查表
 
 | 方法 | 读取或写入结果 | 适用场景 |
 |---|---|---|
-| `loadCommonJSON(filename, defaultPath)` | 读取公共对象，失败时采用 MOD 默认 JSON | 拥有固定初始结构的数据 |
-| `loadCommonJSON(filename)` | 读取公共对象，失败时返回空对象 | 代码能够自行补齐全部字段的数据 |
+| `loadCommonJSON(filename, defaultPath)` | 读取公共对象，失败时采用默认 JSON；非空对象构造时保存 | 拥有固定初始结构的数据 |
+| `loadCommonJSON(filename)` | 读取公共对象；非空对象构造时保存，失败时返回空对象 | 代码能够自行补齐全部字段的数据 |
 | `new CommonDataJSONObject(filename)` | 创建与文件名关联的空对象 | 明确创建或覆盖全部内容 |
 | `save()` | 立即把当前对象写入 common 文件 | 作用域尚未结束但需要立即写盘 |
 | `close()` | 调用 `save()` 并结束当前对象的使用 | try-with-resources 自动保存 |
@@ -208,7 +208,7 @@ public final class GearInCommonDataCounter {
             int previousLoadCount = data.optInt(LOAD_COUNT_KEY, 0);
             String previousPlayerName = data.optString(LAST_PLAYER_KEY, "");
             int currentLoadCount = previousLoadCount + 1;
-            String currentPlayerName = playerName == null ? "" : playerName;
+            String currentPlayerName = playerName;
 
             data.put(LOAD_COUNT_KEY, currentLoadCount);
             data.put(LAST_PLAYER_KEY, currentPlayerName);
@@ -270,10 +270,10 @@ public final class GearInCommonDataCounter {
 前置数据：启用 LazyLib 与 Console Commands，并准备两份角色名不同的生涯存档。
 
 1. 执行 `gradle jar`，将构建产物放入 MOD 的 `jars` 目录，并确认默认 JSON 位于 `data/config`。
-2. 确认 `saves/common` 中没有 `GearIn_common_counter.data`，载入第一份生涯并观察生涯界面消息。
+2. 在实际存档公共目录核对计数器。首次实验尚未有该文件时，载入第一份生涯；已有计数器时记录原值，再通过正文重置命令从 0 开始比较。
 3. 再次载入第一份生涯，比较消息中的旧次数、本次次数和角色名。
 4. 载入第二份生涯，确认消息保留累计次数，并把第一份生涯的角色名显示为上次角色名。
-5. 打开 `saves/common/GearIn_common_counter.data`，核对 `load_count` 与 `last_player`。
+5. 打开实际公共目录中的 `GearIn_common_counter.data`，核对 `load_count` 与 `last_player`。
 6. 执行 `runcode data.scripts.gearin.lib.GearInCommonDataCounter.reset();`，核对文件中的默认字段。
 7. 再次载入任意生涯，确认次数从 0 增加到 1。
 8. 将测试颜色数组分别设为 RGB、RGBA 和少于三个分量，调用 `toColor(...)` 并观察解析结果与异常日志。
@@ -294,7 +294,7 @@ public final class GearInCommonDataCounter {
 
 ## 总结
 
-LazyLib 把 common 文件包装成可直接修改的 `JSONObject`，默认资源负责首次结构，`close()` 负责把修改保存到安装级公共目录。把异常留给入口处理后，公共状态既能跨生涯延续，也不会让一次读写失败阻断整个生涯加载过程。
+计数器从默认资源取得初始结构，后来读取同名公共文件，再在原对象上更新字段。LazyLib 将文件包装成可修改的 `JSONObject`，`close()` 将结果保存到用户的公共目录。把异常留给入口处理后，公共状态既能跨生涯延续，也不会让一次读写失败阻断整个生涯加载过程。
 
 ## 建议参考项
 

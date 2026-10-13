@@ -1,10 +1,10 @@
 # 配置人物基础
 
-本节将引导您创建 Aster Vance，并把同一个 `PersonAPI` 从身份资料传递到星区登记、市场成员和通信目录。每个对象负责一层关系；注册代码必须分别写入和检查这些关系。
+Foundry 的通信目录已经能够处理人物，这次正式放入 Aster Vance。先给她稳定 ID 与资料，再登记到重要人物服务，加入市场和目录。首次创建、重复调用与读档都沿同一个 ID 找回这位人物，日志也分别确认资料、归属和界面入口。
 
-*本节预期阅读时间：~25 分钟。*
+*本节预期阅读时间：\~25 分钟。*
 
-*本节预期操作时间：~20 分钟。*
+*本节预期操作时间：\~20 分钟。*
 
 ## 学习目标
 
@@ -23,7 +23,17 @@
 - [C10-S1] 的星区服务与日志；
 - [C12-S1] 创建的 `GearIn_market_foundry`。
 
-## 选择创建入口
+## 把人物注册接到现有市场
+
+创建 `src/data/scripts/gearin/campaign/GearInPersonScript.java`。把下面的局部调用加入 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()`，当前市场已建立，调用与其他观察顺序保留：
+
+```java
+new GearInPersonScript().run();
+```
+
+两个类在同一个包。每次进入存档后，经济观察器登记一轮监听，更新结束再执行当前人物注册；Aster 的对象与市场关系随存档保留。
+
+### 选择固定人物的创建入口
 
 `createPerson()` 返回空白人物，资料由调用方写入；`createRandomPerson()` 从势力资料池生成姓名和头像。固定剧情人物需要稳定身份，因此使用空白入口。两种入口都只创建对象，不会自动登记到重要人物、市场或通信目录。
 
@@ -72,7 +82,7 @@ rank 表示身份层级，post 表示职务。读取稳定值使用 `getRankId()
 
 ## 读取人物相关 MemFlags
 
-`MemFlags` 是原版约定键的集中定义，不是人物专用枚举。它同时包含舰队、市场、实体、全局和人物状态；判断一个键能否用于人物，必须同时看公开实现的写入对象、读取对象和数据类型。人物直接使用的键如下。
+`MemFlags` 是原版约定键的集中定义，不是人物专用枚举。它同时包含舰队、市场、实体、全局和人物状态；使用时把键、实际写入对象、读取方与数据类型对应起来。人物直接使用的键如下。
 
 ### 人物相关 Memory 速查表
 
@@ -117,7 +127,16 @@ importantPeople.addPerson(person);
 return person;
 ```
 
-`containsPerson` 检查对象是否登记，`getData(person).getPerson()` 检查附加数据是否指向同一引用。按 rank 或 post 筛选只能辅助查找，不能判断唯一身份。
+`containsPerson(...)` 按人物 ID 检查登记，`getData(person).getPerson()` 再比较实际关联引用。数据还保存人物位置，本例在市场关联后写入 `getLocation().setMarket(market)`，使重要人物服务也按当前市场定位她。
+
+需要按身份层级筛选时，`getPeopleWithRank(...)` 使用 rank 显示文本。按职务 ID 精确筛选，则使用 `getMatching(...)` 的人物过滤器：
+
+```java
+List<ImportantPeopleAPI.PersonDataAPI> traders = importantPeople.getMatching(
+        data -> Ranks.POST_TRADER.equals(data.getPerson().getPostId()));
+```
+
+这段局部观察需要 `java.util.List`。固定人物仍按 ID 查询，集合筛选用于查看当前相同职务的其他人物。
 
 ### ImportantPeopleAPI 速查表
 
@@ -127,8 +146,8 @@ return person;
 | `addPerson` | 登记人物 |
 | `containsPerson` | 检查登记 |
 | `getData` | 检查附加数据 |
-| `getPeopleWithRank` | 按 rank 筛选 |
-| `getPeopleWithPost` | 按 post 筛选 |
+| `getPeopleWithRank` | 按 rank 显示文本筛选 |
+| `getPeopleWithPost` | 现有筛选入口；本例职务筛选使用 `getMatching` 读取 post ID |
 | `canCheckOutPerson` | 检查能否借出 |
 | `checkOutPerson` | 写入借出 reason |
 | `returnPerson` | 移除借出 reason |
@@ -148,14 +167,13 @@ if (importantPeople.canCheckOutPerson(person, reason)) {
 
 ## 关联市场和通信目录
 
-`GearIn_market_foundry` 由 [C12-S1] 创建。`MarketAPI.addPerson(person)` 维护市场成员集合，`PersonAPI.setMarket(market)` 维护人物自身字段，两个方向必须同时成立。
+`GearIn_market_foundry` 由 [C12-S1] 创建。`MarketAPI.addPerson(person)` 同时加入成员集合并设置人物的市场字段。单独调用 `PersonAPI.setMarket(market)` 只写反查字段；当前使用集合入口，然后从两端回读：
 
 ```java
 MarketAPI market = Global.getSector().getEconomy().getMarket(MARKET_ID);
 if (!market.getPeopleCopy().contains(person)) {
     market.addPerson(person);
 }
-person.setMarket(market);
 ```
 
 市场成员不等于通信目录条目。目录是独立集合，先用 `getEntryForPerson(person)` 查询，缺失时才添加。
@@ -174,13 +192,13 @@ int entriesAfter = directory.getEntriesCopy().size();
 | 对象 | 写入 | 检查 | 结果 |
 |---|---|---|---|
 | 重要人物服务 | `addPerson` | `getPerson` | 可按 ID 查询 |
-| 市场集合 | `MarketAPI.addPerson` | `getPeopleCopy` | 市场拥有成员 |
-| 人物市场字段 | `PersonAPI.setMarket` | `getMarket` | 人物反查市场 |
+| 市场集合 | `MarketAPI.addPerson` | `getPeopleCopy` | 市场集合拥有成员 |
+| 人物市场字段 | `MarketAPI.addPerson` 同步人物字段 | `getMarket` | 人物反查市场 |
 | 通信目录 | `CommDirectoryAPI.addPerson` | `getEntryForPerson` | 界面出现条目 |
 
 ## 处理重复调用
 
-注册入口可以在 `onGameLoad` 多次执行。稳定性来自星区保存的对象关系，而不是脚本实例或静态缓存。首次运行创建人物；再次调用时固定 ID 返回已有对象，资料保持原值，代码只补齐缺失关联。重新载入后重新取得服务并按相同 ID 查询。
+注册入口可以在 `onGameLoad` 多次执行。稳定性来自星区保存的对象关系，而不是脚本实例或静态缓存。首次运行创建人物；再次调用时固定 ID 返回已有对象，当前资料与运行状态继续保留，代码补齐缺失市场和目录关联。重新载入后重新取得服务并按相同 ID 查询。
 
 日志记录 `created`、`important`、`dataLinked`、`market`、`personMarket`、`directory` 和 `entriesBefore->entriesAfter`。这些字段分别对应创建、登记、附加数据、市场集合、人物字段、通信目录和目录数量；只记录姓名无法证明引用一致。
 
@@ -199,6 +217,8 @@ int entriesAfter = directory.getEntriesCopy().size();
 执行顺序是查询 ID、必要时创建和配置、登记重要人物、取得市场、补齐市场关系、补齐目录、记录状态。每一步都有对应读取入口，故障可以定位到具体对象边界。
 
 ## 完整最小例
+
+保存下列类，调用入口保留在经济更新结束后的市场观察中。
 
 ::: details 完整成品：GearInPersonScript
 
@@ -237,8 +257,6 @@ public class GearInPersonScript {
         if (!market.getPeopleCopy().contains(person)) {
             market.addPerson(person);
         }
-        person.setMarket(market);
-
         CommDirectoryAPI directory = market.getCommDirectory();
         int entriesBefore = directory.getEntriesCopy().size();
         if (directory.getEntryForPerson(person) == null) {
@@ -247,13 +265,14 @@ public class GearInPersonScript {
         int entriesAfter = directory.getEntriesCopy().size();
 
         ImportantPeopleAPI.PersonDataAPI data = importantPeople.getData(person);
+        data.getLocation().setMarket(market);
         LOG.info(String.format(
                 "GearIn person: id=%s created=%s name=%s gender=%s faction=%s rank=%s post=%s "
-                        + "tag=%s ready=%s important=%s dataLinked=%s market=%s directory=%s entries=%d->%d",
+                        + "tag=%s ready=%s important=%s dataLinked=%s market=%s personMarket=%s directory=%s entries=%d->%d",
                 person.getId(), !existed, person.getNameString(), person.getGender(),
                 person.getFaction().getId(), person.getRankId(), person.getPostId(),
                 person.hasTag(PERSON_TAG), person.getMemoryWithoutUpdate().getBoolean(PERSON_READY),
-                importantPeople.containsPerson(person), data != null && data.getPerson() == person,
+                importantPeople.containsPerson(person), data.getPerson() == person,
                 market.getPeopleCopy().contains(person), person.getMarket() == market,
                 directory.getEntryForPerson(person) != null,
                 entriesBefore, entriesAfter));
@@ -288,10 +307,10 @@ public class GearInPersonScript {
 前置数据：测试 MOD 已包含 [C12-S1] 创建的市场，并准备可重新载入的存档。
 
 1. 执行 `gradle jar`，确认 MOD 构建完成。
-2. 载入存档，让 `onGameLoad` 调用 `run()`。
+2. 载入存档并推进一轮经济更新，触发现有观察器中的 `run()`。
 3. 在 `starsector.log` 查找 `GearIn person:`。
 4. 打开 GearIn Foundry 通信目录，确认姓名、头像和职务。
-5. 在同一存档再次调用 `run()`，比较 `created` 和 `entries`。
+5. 退出并重新载入同一存档，再推进经济更新，比较 `created` 与目录数量。
 6. 保存并重新载入，再次检查固定 ID 和目录条目。
 
 预期结果：
@@ -309,20 +328,22 @@ public class GearInPersonScript {
 ## 故障分析
 
 - **每次调用都创建人物**：查询 ID 与写入 ID 不一致，或登记没有执行。
-  - **解决方案**：统一使用 `PERSON_ID`，并在返回前调用 `importantPeople.addPerson(person)`。
+    - **解决方案**：统一使用 `PERSON_ID`，并在返回前调用 `importantPeople.addPerson(person)`。
 
 - **市场存在但目录没有人物**：只维护了市场集合。
-  - **解决方案**：查询 `getEntryForPerson(person)`，缺失时调用 `directory.addPerson(person)`。
+    - **解决方案**：查询 `getEntryForPerson(person)`，缺失时调用 `directory.addPerson(person)`。
 
-- **人物反查不到市场**：只调用了 `MarketAPI.addPerson`。
-  - **解决方案**：每次运行同步调用 `person.setMarket(market)`。
+- **市场集合中没有人物**：只写了人物反查字段。
+    - **解决方案**：通过 `market.addPerson(person)` 加入集合，再从 `person.getMarket()` 与 `getPeopleCopy()` 两端读取。
 
 - **目录出现重复条目**：无条件调用 `directory.addPerson`。
-  - **解决方案**：添加前查询目标人物。
+    - **解决方案**：添加前查询目标人物。
 
 ## 总结
 
-`PersonAPI` 保存人物资料，`ImportantPeopleAPI` 保存星区登记，`MarketAPI` 保存市场成员，`CommDirectoryAPI` 保存通信入口。固定 ID 负责复用人物，分开的集合检查负责补齐关系；四个对象都指向同一个 `PersonAPI` 时，任务、对话和市场界面才能取得一致结果。
+Aster 的资料保存在人物上，重要人物服务按 ID 查找，市场集合与通信目录各自提供入口。注册从当前市场出发，重复调用继续使用原人物，缺失关系按同一对象补齐。
+
+编者建议日志同时保留 ID、市场与目录数量。名字可以相同，只有这些关系对应起来，后面的任务与交互才能找到您准备的那位人物。
 
 ## 建议参考项
 

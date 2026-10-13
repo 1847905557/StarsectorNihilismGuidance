@@ -1,0 +1,7 @@
+fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab
+GearIn_fullGraphicEffect,Full graphic effect,Boolean,true,,,,,GearIn
+GearIn_trails_enabled,Show GearIn trails,Boolean,true,,,,,GearIn
+GearIn_max_entries,Maximum entries,Int,12,,,1,64,GearIn
+GearIn_pulse_delay,Pulse delay,Double,1.5,,,0.1,10,GearIn
+GearIn_marker_color,Marker color,Color,#f22e6e,,,,,GearIn
+GearIn_label_text,Label text,String,GearIn,,,,,GearIn

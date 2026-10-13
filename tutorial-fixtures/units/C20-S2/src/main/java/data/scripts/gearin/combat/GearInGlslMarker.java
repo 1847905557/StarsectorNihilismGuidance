@@ -9,6 +9,8 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GLContext;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
@@ -18,11 +20,7 @@ import com.fs.starfarer.api.combat.CombatEntityAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 
-/**
- * 使用 GLSL 1.20 和客户端顶点数组绘制跟随舰船的方向标。
- * init() 创建可复用的覆盖矩形缓冲区，首次 render() 创建 program，
- * cleanup() 释放本实例创建的全部 shader 资源。
- */
+/** 管理方向标的数据、绘制与资源生命周期。 */
 public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInGlslMarker.class);
@@ -60,11 +58,6 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        if (engine == null || trackedShip == null) {
-            valid = false;
-            LOG.error("GearIn GLSL marker: combat context or tracked ship missing");
-            return;
-        }
 
         coverageVertices = BufferUtils.createFloatBuffer(12);
 
@@ -155,8 +148,7 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void advance(float amount) {
-        if (!valid || engine == null || trackedShip == null || entity == null) {
-            valid = false;
+        if (!valid) {
             return;
         }
         if (engine.isCombatOver()
@@ -173,13 +165,10 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (!valid || entity == null || coverageVertices == null || viewport == null) {
+        if (!valid) {
             return;
         }
         float worldPerPixel = viewport.convertScreenWidthToWorldWidth(1f);
-        if (!Float.isFinite(worldPerPixel) || worldPerPixel <= 0f) {
-            return;
-        }
         updateCoverageVertices(worldPerPixel);
         if (!programAttempted) {
             programAttempted = true;
@@ -198,6 +187,8 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
             return;
         }
 
+        boolean vaoAvailable = GLContext.getCapabilities().OpenGL30;
+        int previousVao = vaoAvailable ? GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING) : 0;
         int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         int previousArrayBuffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
@@ -207,6 +198,9 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
                 | GL11.GL_CURRENT_BIT
                 | GL11.GL_ENABLE_BIT
                 | GL11.GL_DEPTH_BUFFER_BIT);
+        if (vaoAvailable) {
+            GL30.glBindVertexArray(0);
+        }
         GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
         try {
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
@@ -236,6 +230,9 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
             }
             GL11.glPopClientAttrib();
             GL11.glPopAttrib();
+            if (vaoAvailable) {
+                GL30.glBindVertexArray(previousVao);
+            }
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousArrayBuffer);
             GL20.glUseProgram(previousProgram);
             GL11.glMatrixMode(previousMatrixMode);
@@ -268,7 +265,7 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
         }
         coverageVertices = null;
         LOG.info("GearIn GLSL marker cleanup: ship="
-                + (trackedShip == null ? "null" : trackedShip.getId()));
+                + trackedShip.getId());
     }
 
     @Override
@@ -278,6 +275,6 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return DIRECTION_LENGTH;
+        return DIRECTION_LENGTH + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }

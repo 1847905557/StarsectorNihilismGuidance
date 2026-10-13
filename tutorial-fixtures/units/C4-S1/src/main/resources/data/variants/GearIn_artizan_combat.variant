@@ -1,21 +1,13 @@
 {
-    "displayName": "Custom",
+    "displayName": "突击型",
     "fluxCapacitors": 0,
     "fluxVents": 0,
     "hullId": "GearIn_artizan",
     "hullMods": [],
     "permaMods": [],
     "sMods": [],
-    "variantId": "mission_GearIn_test_ship_0",
+    "variantId": "GearIn_artizan_combat",
     "weaponGroups": [
-        {
-            "autofire": false,
-            "mode": "LINKED",
-            "weapons": {
-                "WS0003": "lightdualac",
-                "WS0004": "lightdualac"
-            }
-        },
         {
             "autofire": true,
             "mode": "ALTERNATING",
@@ -32,5 +24,6 @@
                 "WS0006": "GearIn_durin"
             }
         }
-    ]
+    ],
+    "goalVariant": true
 }

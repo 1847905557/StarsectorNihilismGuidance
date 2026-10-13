@@ -13,11 +13,7 @@ import com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin;
 import com.fs.starfarer.api.util.Misc;
 import com.fs.starfarer.api.util.Misc.Token;
 
-/**
- * Parses Rules command parameters and writes the result to entity memory.
- * The command returns the parsed boolean so it can also be used in a
- * conditions cell.
- */
+/** 解析当前规则参数，写入实体 Memory 并返回布尔条件结果。 */
 public class GearInRuleCommand extends BaseCommandPlugin {
 
     public static final String MEM_KEY_LAST = "$GearIn_rulecmd_last";
@@ -30,7 +26,7 @@ public class GearInRuleCommand extends BaseCommandPlugin {
 
     @Override
     public boolean execute(String ruleId, InteractionDialogAPI dialog,
-                           List<Token> params, Map<String, MemoryAPI> memoryMap) {
+            List<Token> params, Map<String, MemoryAPI> memoryMap) {
         if (params.size() < 3) {
             LOG.warn("GearInRuleCommand: expected <label> <amount> <enabled> [<color>] [<object>]");
             return false;

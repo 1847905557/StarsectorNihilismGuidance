@@ -1,10 +1,10 @@
 # 读取 MOD 内 JSON 文件
 
-本节先说明游戏如何处理固定的 `strings.json` 入口，再回到 MOD 自己定义的 JSON 文件。这样既能看清原版文本表的加载和取值规则，也能知道什么时候需要用 `loadJSON` 主动读取自己的数据。
+文本已经可以主动读回，现在把工坊服务写成 JSON，再把界面文字放入自动加载的 strings 表。两种文件各有入口：代码主动解释配置字段，游戏按固定路径合并文本分类，运行时再按分类和键取值。先完成自有配置读取，再比较这两种数据怎样进入代码。
 
-*本节预期阅读时间：~24 分钟。*
+*本节预期阅读时间：\~24 分钟。*
 
-*本节预期操作时间：~45 分钟。*
+*本节预期操作时间：\~45 分钟。*
 
 ## 学习目标
 
@@ -26,7 +26,58 @@
 
 `data/strings/strings.json` 是原版固定公开入口。游戏在启动资源加载阶段主动查找原版与全部已启用 MOD 的同名文件，并按 strings 规则处理内容；MOD 只需把文件放在该路径，不需要在 `mod_info.json` 中声明，也不需要调用 `loadJSON` 注册。
 
-其他 JSON 路径由 MOD 自己约定，例如 `data/config/gear_in/services.json`。游戏不会猜测这些文件的用途；代码必须给出路径并主动调用 `loadJSON`，读取后再解释字段。
+其他 JSON 路径由 MOD 自己约定，例如 `data/config/gear_in/services.json`。游戏不会猜测这些文件的用途；当前代码给出路径、调用 `loadJSON(...)`，再按本节字段解释结果。
+
+## 创建服务配置并读回字段
+
+在 `data/config/gear_in/services.json` 写入：
+
+```json
+{
+  "serviceId": "GearIn_service",
+  "interval": 10
+}
+```
+
+向 `GearInModPlugin.onApplicationLoad(...)` 追加以下局部读取，添加 `org.json.JSONObject` 的 import：
+
+```java
+JSONObject services = Global.getSettings().loadJSON(
+        "data/config/gear_in/services.json", "gear_in");
+Global.getLogger(GearInModPlugin.class).info("GearIn service: id="
+        + services.getString("serviceId") + " interval=" + services.optInt("interval", 10));
+```
+
+构建并重启后，搜索 `GearIn service`。日志应包含 `GearIn_service` 与 `interval=10`；服务什么时候运行，仍由使用这些字段的代码决定。游戏读到了文件，还没有替您做完服务。
+
+`loadJSON` 返回 `JSONObject`。本例明确提供 `serviceId`，所以直接取值；`interval` 是可选配置，省略时采用 10。**缺省值表达文件允许省略的内容。**需要必填的字段时，`get` 方法可以让错误在读取位置显现。
+
+### 来源与字段读取
+
+以下是用于比较来源和缺省值的局部片段：
+
+```java {4}
+JSONObject services = Global.getSettings().loadJSON(
+        "data/config/gear_in/services.json");
+String serviceId = services.getString("serviceId");
+int interval = services.optInt("interval", 10);
+```
+
+单参形式从当前资源空间选择文件；双参形式把来源限定为指定 MOD。本节使用已启用的 `gear_in`，与 `mod_info.json` 的 ID 对应。
+
+JSON 路径遵循 [C17-S1] 的资源路径规则。引擎在读取前拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径。`getString` 在字段缺失时抛出异常，已有值可以转为字符串；`getInt` 和 `getBoolean` 按各自规则转换，无法取得所需类型时抛出异常。允许缺省的字段用 `optString`、`optInt` 等方法并给出明确的替代值。
+
+### 验证方案
+
+1. 保存配置和读取调用，构建 JAR 并重启，在 `starsector.log` 搜索 `GearIn service`。
+2. 将调用改为单参形式，再次构建、重启并比较字段。
+3. 从配置省略 `interval`，重启并观察缺省值，然后恢复 `"interval": 10` 与来源限定调用。
+
+预期结果：
+
+- 两种读取均得到 `GearIn_service`，来源限定调用选择 `gear_in` 的文件；
+- `interval` 按文件读取，省略时采用 10；
+- 路径、编码、语法和字段类型正确时，启动正常完成。
 
 ## strings 文件的加载与合并
 
@@ -46,7 +97,7 @@ MOD 只需要写自己的键，原版和其他 MOD 的键会继续保留。相�
 
 加载前，引号之外的 `#` 到行尾内容会被剥离，再交给 JSON 解析器；尾逗号也会被接受。括号、字符串引号和字段结构仍须符合 JSON 解析要求。
 
-文件必须保存为 UTF-8 无 BOM。BOM 会粘在文件首字符并使加载失败；括号不配对或字符串引号不闭合会在加载阶段抛出带文件路径的 `JSONException`，启动随之中止。
+文件采用 UTF-8 无 BOM。BOM 会粘在文件首字符并使加载失败；括号不配对或字符串引号不闭合会在加载阶段抛出带文件路径的 `JSONException`，启动随之中止。
 
 分类名和键名逐字符匹配并区分大小写。分类或键不存在时，双参取值 API 返回 `Missing string: [<id>]`，并在 `starsector.log` 记录 ERROR；游戏继续运行，界面会显示该字面量。
 
@@ -62,10 +113,10 @@ String text = Global.getSettings().getString("GearIn_ui", "GearIn_text_hello");
 
 strings 的值可以包含两类占位符：
 
-- `$token` 不会由引擎自动替换，使用方必须在取值后替换；
+- `$token` 不会由引擎自动替换，使用方取值后再替换；
 - `%s` 不会由引擎自动格式化，取值侧使用 `String.format` 传入参数。
 
-例如，`$faction`、`$fleetOrShip` 等令牌由舰队遭遇文本的使用方替换；`%s` 的参数数量和类型必须与模板一致。
+例如，`$faction`、`$fleetOrShip` 等令牌由舰队遭遇文本的使用方替换；`%s` 的参数数量和类型与模板对应，格式化结果才符合当前显示。
 
 ## 原版分类速查表
 
@@ -84,68 +135,56 @@ MOD 可以使用自己的分类，不需要复用原版分类名。对话类值�
 
 `data/strings/tooltips.json` 与 `strings.json` 不合并，键空间独立；值可以是纯字符串，也可以是包含 `title` 和 `body` 的对象。`data/strings/tips.json` 保存加载界面的随机小贴士。两者都不能用双参 `getString` 读取。单参 `getString(key)` 的目标是 `data/config/settings.json`。
 
-## 读取自有 JSON
+## 定义并读取本节文本键
 
-```java
-JSONObject config = Global.getSettings().loadJSON(
-        "data/config/gear_in/services.json");
-JSONObject configFromMod = Global.getSettings().loadJSON(
-        "data/config/gear_in/services.json", "gear_in");
-```
-
-单参形式从当前资源空间寻找文件；双参形式把来源限定为指定 MOD。`modId` 必须与 `mod_info.json` 的 `id` 逐字符一致，且该 MOD 已启用。
-
-`loadJSON` 返回 `JSONObject`。读取成功只说明文件可以解析，访问字段时仍需判断字段是否存在及类型是否正确：
-
-```java {4}
-JSONObject services = Global.getSettings().loadJSON(
-        "data/config/gear_in/services.json");
-String serviceId = services.getString("serviceId");
-int interval = services.optInt("interval", 10);
-```
-
-JSON 路径继续遵守 [C17-S1] 的资源路径规则。引擎在读取前拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径。`getString` 在字段缺失时抛出异常；类型不符时静默转为字符串 (`getInt`/`getBoolean` 等才有类型检查)。允许字段缺失时使用 `optString`、`optInt` 等入口并提供明确的替代值。
-
-### 自有 JSON 最小实例
-
-在 `data/config/gear_in/services.json` 写入：
+在 MOD 的 `data/strings/strings.json` 加入本节分类与键，已有分类时在同一对象内追加：
 
 ```json
 {
-  "serviceId": "GearIn_service",
-  "interval": 10
+    "GearIn_ui": {
+        "GearIn_text_hello": "你好，工坊。"
+    }
 }
 ```
 
-入口类在 `onApplicationLoad` 中读取文件，并把 `serviceId` 与 `interval` 写入日志。该文件是 MOD 自有配置，不参与 `strings.json` 的固定加载与合并。
+这个分类与键在本节定义，后面的本地化封装继续沿用。将下列局部调用加入应用加载方法：
 
-## 验证方案：自有 JSON
+```java
+Global.getLogger(GearInModPlugin.class).info("GearIn strings: "
+        + Global.getSettings().getString("GearIn_ui", "GearIn_text_hello"));
+```
 
-前置数据：`gear_in` MOD、`services.json` 和入口类读取片段已就绪。
+需要比较已有键的覆盖时，在本 MOD 的文本表追加原版 `planetInteractionDialog` 分类中的 `approach` 键：
 
-1. 启动游戏，观察 `starsector.log` 中入口类写入的 JSON 读取日志。
-2. 使用单参 `loadJSON` 读取 `data/config/gear_in/services.json`，观察 `serviceId` 和 `interval`。
-3. 将调用改为双参形式并传入 `gear_in`，再次启动并观察相同字段。
+```json
+"planetInteractionDialog": {
+    "approach": "$fleetOrShip 正在接近 $planetName；这是工坊的覆盖文本。"
+}
+```
 
-预期结果：
+这是 JSON 对象内的局部字段，放在 `GearIn_ui` 分类之后，并补上分类之间的逗号。同一个文件同时保留自有分类和覆盖分类。再向应用加载方法追加观察：
 
-- JSON 返回 `GearIn_service` 和数值 `10`；
-- 双参调用只读取 `gear_in` 的资源；
-- 路径、编码、语法和字段类型正确时，启动日志没有 JSON 读取异常。
+```java
+Global.getLogger(GearInModPlugin.class).info("GearIn strings approach: "
+        + Global.getSettings().getString("planetInteractionDialog", "approach"));
+```
 
-## 验证方案：strings 合并
+**文本键决定取哪句话，调用方决定怎样填入动态内容。**这里日志保留令牌，行星对话使用方才会替换舰队与行星名称。
 
-前置数据：原版和 `gear_in` 的 `data/strings/strings.json` 已存在，文件包含一个同名键和一个只由 `gear_in` 提供的新键。
+## 比较 strings 的固定加载
 
-1. 启动游戏，观察 `Loading strings` 和包含 `data/strings/strings.json` 的加载日志。
-2. 在界面或日志中读取一个原版分类的已知键，再读取 `gear_in` 自有分类的新键。
-3. 让 `gear_in` 提供与原版相同的 `(category, id)`，重新启动并观察最终文本。
+### 验证方案
+
+1. 保存自有分类与观察调用，构建重启，搜索 `Loading strings`、`data/strings/strings.json` 和 `GearIn strings`。
+2. 追加覆盖分类及第二条日志，构建重启，观察 `GearIn strings approach`。在生涯中接近并交互一颗行星，比较接近文本。
+3. 实验完成后移除覆盖用的 `planetInteractionDialog` 字段，保留 `GearIn_ui`，重启确认原版行星文本恢复。
 
 预期结果：
 
 - 原版与 `gear_in` 的 strings 文件都在启动阶段被加载；
-- `gear_in` 自有键可以通过双参 `getString` 读取；
-- 相同键由后加载来源覆盖。
+- 自有键返回 `你好，工坊。`；
+- 覆盖键的日志保留 `$fleetOrShip` 和 `$planetName`，行星交互显示替换后的名称与工坊文字；
+- 只提供自有分类时，原版分类继续保留。
 
 ## 故障分析
 
@@ -172,7 +211,9 @@ JSON 路径继续遵守 [C17-S1] 的资源路径规则。引擎在读取前拒�
 
 ## 总结
 
-原版固定入口负责加载 `strings.json`，双参 `getString` 负责按分类和键取值；MOD 自有 JSON 则通过 `loadJSON` 主动读取。两条路径都依赖正确的文件位置、编码、结构和字段名。
+服务配置由当前来源限定读取，字段通过 JSONObject 解释；strings 表则按固定路径自动合并，通过分类与键取文字。可选字段的缺省、重复文本键的覆盖与模板替换分别由各自入口处理。
+
+编者建议先区分这份文件是谁读取，再决定数据放在哪里。结构相同的 JSON 不代表用途相同，配置和界面文字都需要自己的实际使用方。
 
 ## 建议参考项
 

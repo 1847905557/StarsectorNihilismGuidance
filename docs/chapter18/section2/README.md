@@ -1,10 +1,10 @@
 # 使用 LazyLib 几何工具
 
-战斗脚本经常需要回答同一组空间问题：目标有多远、某个方向指向哪里、导弹应该向哪边转，以及一条预测线会先碰到舰体的什么位置。LazyLib 把这些计算整理成稳定的工具方法，本节用可见的粒子标记逐一观察结果，并将它们组合为一个制导导弹 AI。
+让导弹追踪横向移动的目标，需要距离、方向、转角与提前量。这些计算可以直接用 LazyLib 组合。本节沿用德瓦林弹体制作一枚测试导弹，为它接入自定义 AI，再用粒子画出预测路径、交点、碰撞圆与椭圆，看看代码算出的坐标究竟落在哪里。
 
-*本节预期阅读时间：约 28 分钟。*
+*本节预期阅读时间：\~28 分钟。*
 
-*本节预期操作时间：约 35 分钟。*
+*本节预期操作时间：\~35 分钟。*
 
 ## 学习目标
 
@@ -19,14 +19,32 @@
 
 ## 前置知识
 
-- [C7-S1] 的 Java 类、方法、字段与 `BaseModPlugin`；
+- [C7-S1] 的 `BaseModPlugin` 与导弹 AI 选择入口；
+- [C1-S5] 的德瓦林武器、导弹弹体与 `engineSpec`；
 - [C8-S2] 的战斗实体、坐标、速度与碰撞类型；
 - [C8-S3] 的每帧调用、暂停判断与 `IntervalUtil`；
 - [C18-S1] 的 LazyLib 依赖声明与编译 classpath。
 
+## 准备测试导弹
+
+复制 [C1-S5] 的 `data/weapons/proj/GearIn_dwalin_rocket.proj`，将副本保存为同目录的 `GearIn_geometry_missile.proj`。在副本中修改以下局部字段，保留贴图、尺寸、中心、碰撞与引擎配置：
+
+```json
+"id": "GearIn_geometry_missile",
+"missileType": "MISSILE"
+```
+
+德瓦林的 `engineSpec` 已提供转向加速度 360、最大转向速度 180 和加速度 1000，足以观察后面的左右转向。测试时，把 `GearIn_dwalin.wpn` 的 `projectileSpecId` 改为新 ID：
+
+```json
+"projectileSpecId": "GearIn_geometry_missile"
+```
+
+新弹体在本节定义，原弹体继续保存。完成 AI 类和选择入口后再构建、发射；本次验证让德瓦林武器使用这枚测试导弹。
+
 ## 认识坐标、角度与可变向量
 
-战斗空间使用 `Vector2f` 保存二维坐标和向量。同一个对象既可以表示世界坐标，也可以表示从原点出发的方向；方法只看到两个浮点分量，因此含义由调用方决定。角度以度为单位，`0f` 指向世界坐标的正 X 轴，增加角度表示逆时针旋转。
+战斗空间使用 `Vector2f` 保存二维坐标和向量。坐标与方向都用两个浮点分量表示，含义由当前调用决定。**计算前先确认这份向量代表什么，以及方法会修改哪一个对象。**角度以度为单位，`0f` 指向世界坐标的正 X 轴，增加角度表示逆时针旋转。
 
 `CombatEntityAPI.getLocation()` 和 `getVelocity()` 返回引擎正在使用的可变对象。直接调用 `set(...)`、`scale(...)`，或者把它传给会原地修改向量的方法，都会改变这份对象本身。只做计算时先用 `new Vector2f(source)` 复制，或者选择带 `dest` 参数的重载。
 
@@ -137,11 +155,11 @@ private Vector2f inspectPath(Vector2f start, Vector2f end,
 }
 ```
 
-实体重载读取目标的 `BoundsAPI`，返回预测线进入舰体边界的坐标。两条线段的重载返回它们的交点。两个方法都以 `null` 表示没有相交，因此调用方应把交点是否存在与坐标本身分开判断。
+目标具有 exact bounds 时，实体重载返回有限预测线遇到的最近边界点；起点已在舰体内部时，返回起点副本。缺少 exact bounds 时，方法改用碰撞圆判断，发生碰撞就返回实体中心。两条线段的重载返回交点，未相交时返回 `null`。**交点的含义取决于实际使用的边界。**
 
 `isPointWithinBounds(...)` 检查具体坐标是否位于实体 bounds 内。它与碰撞圆判断不是同一件事：不规则舰体的角落可能落在碰撞圆内，却不在真实舰体边界内。
 
-实体交点方法有一个重要边界：当整条预测线已经完全位于目标 bounds 内部时，它没有进入边界的交点，方法会返回 `null`。需要识别这种状态时，再用 `isPointWithinBounds(start, target)` 检查起点。
+预测起点已经位于 bounds 内部时，标记落在起点，即使整条线都在舰体内。需要区分 "从外部进入" 与 "已经在内部" 时，读取 `isPointWithinBounds(start, target)`；这两种状态都可能得到有效坐标。
 
 ## 使用 `EllipseUtils` 描述旋转椭圆
 
@@ -166,13 +184,13 @@ private boolean inspectEllipse(Vector2f center, Vector2f testPoint) {
 }
 ```
 
-`width` 与 `height` 是椭圆在未旋转 X、Y 轴上的完整尺寸，`rotation` 再把整条椭圆轮廓旋转指定角度。`getPointOnEllipse(...)` 的最后一个角度选择轮廓上的确定位置；`getRandomPointOnEllipse(...)` 只在轮廓取点；`getRandomPointInEllipse(...)` 在内部面积均匀取点；`isPointWithinEllipse(...)` 同时接受内部和边界上的坐标。
+`width` 与 `height` 在这组 API 中是未旋转 X、Y 方向的半轴长度，`320f`、`140f` 对应完整尺寸 640 × 280 su。`rotation` 再旋转整条轮廓。名称看起来像完整宽高，画出来却会大一倍，这正是保留调试轮廓的用途。`getPointOnEllipse(...)` 的最后一个角度选择轮廓上的确定位置；`getRandomPointOnEllipse(...)` 只在轮廓取点；`getRandomPointInEllipse(...)` 在内部面积均匀取点；`isPointWithinEllipse(...)` 同时接受内部和边界上的坐标。
 
 连续绘制 `randomEdge` 会形成一圈随 `rotation` 转动的轮廓，绘制 `randomInside` 则会逐渐填满整片区域。导弹 AI 用目标朝向作为旋转角，因此紫色粒子会随着目标转向，而不是固定在世界坐标轴上。
 
 ## 组合制导与碰撞预测
 
-已经存在 projectile ID 为 `GearIn_geometry_missile`、具有可转向 `engineSpec` 的导弹弹体；本节只接入它的 AI。
+弹体与武器引用已经准备好，现在把计算接成 `GearInGeometryMissileAI`。保存到 `src/data/scripts/gearin/lib/GearInGeometryMissileAI.java`，完整类见本节成品。
 
 `GearInGeometryMissileAI` 在构造时读取发射舰当前目标。每帧先发出加速命令，再用目标中心距离除以导弹最大速度估算提前时间，并将时间限制在 `0f` 到 `2f`。目标速度乘以这段时间，便得到线性提前量。
 
@@ -199,7 +217,18 @@ public PluginPick<MissileAIPlugin> pickMissileAI(
 }
 ```
 
-这个入口需要导入 `PluginPick`、`PickPriority`、`MissileAIPlugin`、`MissileAPI`、`ShipAPI` 和 `GearInGeometryMissileAI`。发射时 `launchingShip.getShipTarget()` 决定初始目标，AI 本身不搜索附近实体；范围查询和自动目标选择由 [C18-S3] 负责。
+在入口类的 import 区域追加以下局部声明，`PickPriority` 来自 CampaignPlugin 的嵌套枚举：
+
+```java
+import com.fs.starfarer.api.PluginPick;
+import com.fs.starfarer.api.campaign.CampaignPlugin.PickPriority;
+import com.fs.starfarer.api.combat.MissileAIPlugin;
+import com.fs.starfarer.api.combat.MissileAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import data.scripts.gearin.lib.GearInGeometryMissileAI;
+```
+
+发射时 `launchingShip.getShipTarget()` 决定初始目标，AI 本身不搜索附近实体；范围查询和自动目标选择由 [C18-S3] 负责。
 
 ## 常用方法速查表
 
@@ -371,7 +400,7 @@ public final class GearInGeometryMissileAI implements MissileAIPlugin, GuidedMis
                     collisionPoint, 12f), HIT_COLOR);
         }
 
-        float radius = Math.max(20f, target.getCollisionRadius());
+        float radius = target.getCollisionRadius();
         addMarker(engine, MathUtils.getRandomPointOnCircumference(
                 target.getLocation(), radius), CIRCLE_COLOR);
         addMarker(engine, EllipseUtils.getRandomPointOnEllipse(
@@ -392,7 +421,7 @@ public final class GearInGeometryMissileAI implements MissileAIPlugin, GuidedMis
 
 前置数据：`GearIn_geometry_missile` 已绑定可转向导弹弹体，`GearInModPlugin` 已加入 AI 选择方法，并准备一艘能够发射该导弹的测试舰。
 
-1. 执行 `gradle jar`，启动游戏并让测试舰锁定一个静止目标。
+1. 保存新弹体、德瓦林武器引用、AI 类和选择方法，执行 `gradle jar`。重启后装备德瓦林并锁定一个静止目标。
 2. 发射导弹，分别让目标位于弹体左侧和右侧，观察导弹转向与四色粒子。
 3. 让目标横向移动，再让预测线分别穿过和偏离目标舰体。
 4. 让目标进入相位或暂时使用 `CollisionClass.NONE`，随后恢复原状态。
@@ -420,8 +449,8 @@ public final class GearInGeometryMissileAI implements MissileAIPlugin, GuidedMis
 - **计算预测线后导弹速度突然改变**：无 `dest` 的 `VectorUtils.resize(...)` 或 `rotate(...)` 直接修改了引擎速度向量。
     - **解决方案**：先复制 `getVelocity()`，或把独立目标向量传给带 `dest` 的重载。
 
-- **预测线穿过舰体却没有橙色粒子**：整条线已经位于目标 bounds 内，或弹体朝向使有限线段没有进入边界。
-    - **解决方案**：同时检查预测起点的 `isPointWithinBounds(...)` 结果，并确认预测长度覆盖目标。
+- **预测线附近没有橙色粒子**：有限线段实际未到达目标边界，或目标处于不可跟踪状态。
+    - **解决方案**：核对当前朝向、900 su 预测长度与目标碰撞状态，并用 `isPointWithinBounds(...)` 判断起点是否已在舰体内。
 
 - **所有导弹都持续生成大量粒子**：调试绘制没有经过 `DEBUG` 与 `IntervalUtil` 限制。
     - **解决方案**：只在计时区间结束后绘制一组标记，发布构建把 `DEBUG` 设为 `false`。

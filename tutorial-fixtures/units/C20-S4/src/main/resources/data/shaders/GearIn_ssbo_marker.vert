@@ -1,4 +1,4 @@
-#version 430
+#version 430 compatibility
 
 layout (location = 0) in vec2 a_position;
 

@@ -1,16 +1,16 @@
 # 管理舰队活动情报
 
-本节制作一条跟踪生涯舰队的 Intel。它会立即出现在 Intel 界面，随游戏时间推进，舰队移动时发送更新，舰队消失或活动期限结束后进入 ending 状态，最后由 Intel 管理器和生涯脚本引擎分别清理。
+专用巡逻队已经有了事件日志，这次把活动状态放到玩家能打开的情报页面。Intel 跟随这支舰队的位置，显示剩余日数，地点变化时发送消息，活动结束后先保留结束状态，再延迟清理。情报列表与逐帧脚本分别登记，同一个对象才能既显示又继续推进。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：\~18 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 区分 `IntelInfoPlugin` 的界面合同与 `BaseIntelPlugin` 的默认生命周期；
+- 区分 `IntelInfoPlugin` 的界面职责与 `BaseIntelPlugin` 的默认生命周期；
 - 解释 `IntelManagerAPI` 的立即登记、通信队列、文本面板渲染和移除路径；
 - 将同一个 Intel 对象分别登记到 Intel 列表和生涯脚本列表；
 - 实现地图位置、列表标签、剩余时间、更新消息和结束延迟；
@@ -25,11 +25,24 @@
 - 能够阅读 Java 继承、覆盖方法和集合接口；
 - 能够从 `starsector.log` 和游戏 Intel 界面核对稳定 ID、状态和日志。
 
-## 认识 Intel 的两份合同
+## 把同一对象登记到情报与脚本
+
+创建 `src/data/scripts/gearin/campaign/GearInFleetActivityIntel.java`。在 [C11-S1] 的 `GearInFleetGenerator` 添加该类的 import，把下面的局部片段放到基础舰队已经投放之后，当前使用 `generatedFleet`：
+
+```java
+generatedFleet.getMemoryWithoutUpdate().set(GearInFleetActivityIntel.TARGET_MEMORY_KEY, true);
+GearInFleetActivityIntel intel = new GearInFleetActivityIntel(generatedFleet);
+Global.getSector().getIntelManager().addIntel(intel);
+Global.getSector().addScript(intel);
+```
+
+这支舰队沿新档入口只生成一次，Intel 保存它的引用并继续跟随。**一份对象分别登记到情报列表和脚本列表。** 前者提供界面，后者提供运行。
+
+### 界面与推进各自负责什么
 
 `IntelInfoPlugin` 描述玩家看到的条目。`getName()`、`getIcon()`、`createIntelInfo()`、`createSmallDescription()` 和 `createLargeDescription()` 决定标题、图标、列表行和详情面板；`getIntelTags(SectorMapAPI map)` 决定筛选和地图相关标签；`getMapLocation()` 提供地图定位；`getTimeRemainingFraction()` 提供倒计时环或进度显示。接口还包含重要性、新标记、排序、按钮和可见性等 UI 状态。
 
-`BaseIntelPlugin` 将这份 UI 合同与 `EveryFrameScript` 合并。它提供结束状态字段、通信可见性、更新消息、默认声音和逐帧脚本方法。继承类通常只覆盖任务状态变化和显示内容，登记仍由创建方明确完成。这样可以看出对象究竟存在于哪个容器，而不是把 Intel 页面上的一行文字误认为完整生命周期。
+`BaseIntelPlugin` 将这份 UI 职责与 `EveryFrameScript` 合并。它提供结束状态字段、通信可见性、更新消息、默认声音和逐帧脚本方法。继承类通常只覆盖任务状态变化和显示内容，登记仍由创建方明确完成。这样可以看出对象究竟存在于哪个容器，而不是把 Intel 页面上的一行文字误认为完整生命周期。
 
 ## 选择登记入口
 
@@ -44,7 +57,7 @@
 | `addIntel(plugin)` | 立即进入可见列表，设置玩家可见时间戳并允许发送左下消息 |
 | `addIntel(plugin, forceNoMessage, textPanel)` | `forceNoMessage` 抑制消息；非空 `textPanel` 将新条目同时渲染到该面板 |
 | `queueIntel(plugin)` | 进入通信队列，等待可见性成立或 `shouldRemoveIntel()` 要求清理 |
-| `queueIntel(plugin, maxCommQueueDays)` | 接口声明通信队列的最长等待天数；当前 `0.98a-RC8` 实现没有保存或使用该参数，因此不会据此超时 |
+| `queueIntel(plugin, maxCommQueueDays)` | 当前等待期限参数不产生自动超时；结束仍按条目状态处理 |
 | `unqueueIntel(plugin)` | 只从通信队列移除指定实例，并返回是否找到对象 |
 | `removeIntel(plugin)` | 同时检查可见列表和通信队列，成功移除后调用 `reportRemovedIntel()` |
 | `hasIntel()`、`hasIntelQueued()` | 分别查询可见列表和通信队列中的对象身份 |
@@ -69,20 +82,18 @@ boolean visible = intel.canMakeVisibleToPlayer(
 
 ## 让舰队成为目标
 
-目标舰队在投放前写入 Memory 标记。标记是测试脚本与 Intel 之间的明确合同，避免监听器或 UI 误接管其他舰队。
+创建方把具体舰队传入 Intel，Memory 标记另用于其他功能查询这支目标。当前 Intel 自己按传入引用跟随，标记写入与构造调用各自表达作用：
 
 ```java
-CampaignFleetAPI fleet = FleetFactoryV3.createFleet(params);
-fleet.getMemoryWithoutUpdate().set(
+generatedFleet.getMemoryWithoutUpdate().set(
         GearInFleetActivityIntel.TARGET_MEMORY_KEY, true);
-location.addEntity(fleet);
 ```
 
-创建方随后把这支舰队传给 Intel。`setPostingLocation(fleet)` 影响通讯可见性；`getMapLocation()` 影响地图定位。两者可以返回同一个舰队，也可以在对象失效后分别降级。完整类在舰队死亡后返回 `null`，因此地图不会继续指向已经移除的对象。
+创建方随后把这支舰队传给 Intel。`setPostingLocation(fleet)` 影响通讯可见性；`getMapLocation()` 影响地图定位。两者可以返回同一个舰队，也可以在对象失效后分别降级。舰队失效后，地图方法返回 `null`，条目继续显示结束状态直到清理。
 
 ## 推进与结束状态
 
-`CampaignEngine` 先调用脚本的 `isDone()`，再根据暂停状态调用 `advance()`；调用后还会再次检查 `isDone()`。`BaseIntelPlugin.advance()` 自己先处理 `isEnded()`，把帧时间换算成游戏日；处于 ending 时只扣减 `endingTimeRemaining`，不会再调用 `advanceImpl()`。只有活动仍在运行时，子类的 `advanceImpl(amount)` 才负责业务状态。
+生涯引擎 先调用脚本的 `isDone()`，再根据暂停状态调用 `advance()`；调用后还会再次检查 `isDone()`。`BaseIntelPlugin.advance()` 自己先处理 `isEnded()`，把帧时间换算成游戏日；处于 ending 时只扣减 `endingTimeRemaining`，不会再调用 `advanceImpl()`。只有活动仍在运行时，子类的 `advanceImpl(amount)` 才负责业务状态。
 
 完整类累计 `Global.getSector().getClock().convertToDays(amount)` 的结果。舰队的 `isAlive()` 变为 `false` 时，或累计达到 `30.0f` 游戏日时，调用 `endAfterDelay()`。默认结束延迟是 `3.0f` 游戏日：对象先进入 `isEnding()`，结束延迟归零后才进入 `isEnded()`。脚本引擎随后依据 `isDone()` 把对象从脚本列表移除，Intel 管理器在 `shouldRemoveIntel()` 返回 `true` 后把它从 Intel 列表移除。
 
@@ -90,7 +101,7 @@ location.addEntity(fleet);
 @Override
 protected void advanceImpl(float amount) {
     elapsedDays += Global.getSector().getClock().convertToDays(amount);
-    if (fleet == null || !fleet.isAlive() || elapsedDays >= ACTIVITY_DAYS) {
+    if (!fleet.isAlive() || elapsedDays >= ACTIVITY_DAYS) {
         endAfterDelay();
     }
 }
@@ -111,13 +122,13 @@ boolean removeFromIntel = intel.shouldRemoveIntel();
 
 列表行由 `createIntelInfo()` 生成。它接收 `ListInfoMode`，可以依据 `INTEL`、`MESSAGES`、`MAP_TOOLTIP` 和 `IN_DESC` 调整文本颜色或密度。详情面板由 `createSmallDescription()` 和 `createLargeDescription()` 生成；小面板承担快速状态，大片面板承担上下文和完整说明。`getIcon()` 返回现有的 `intel/fleet_log` 图标，避免引入二进制资源。
 
-`getIntelTags()` 必须先调用父类。父类会根据重要性、新状态和地图范围加入基础标签；完整类再加入 `Tags.INTEL_FLEET_LOG`。实现必须接受 `map == null`，因为列表排序和部分调用路径没有地图对象。`getSortString()` 返回稳定标题，使 Intel 管理器在相同排序层级下能得到确定的文本比较结果。
+`getIntelTags()` 先调用父类取得基础标签。父类会根据重要性、新状态和地图范围加入基础标签；完整类再加入 `Tags.INTEL_FLEET_LOG`。列表排序等路径可以传入 `map == null`，当前沿用父类处理并追加业务标签。`getSortString()` 返回稳定标题，使 Intel 管理器在相同排序层级下能得到确定的文本比较结果。
 
 `getTimeRemainingFraction()` 返回 0 到 1 之间的剩余比例。活动运行时它随 `elapsedDays` 下降；进入 ending 后返回 0。这个值只描述显示状态，真正的结束判定仍由 `advanceImpl()` 和 `endAfterDelay()` 负责，UI 进度环不会替代脚本状态机。
 
-### Intel UI 合同速查表
+### Intel UI 职责速查表
 
-| UI 合同 | 当前用途 |
+| UI 职责 | 当前用途 |
 | --- | --- |
 | `getName()`、`getIcon()` | 提供稳定标题与 40×40 图标路径 |
 | `createIntelInfo()` | 为 Intel 列表、消息和地图提示生成紧凑信息 |
@@ -150,7 +161,7 @@ if (locationId != null && !locationId.equals(lastLocationId)) {
 
 ## 完整最小例
 
-下面的类只保存舰队引用、累计游戏日和上次地点 ID。登记、舰队生成和测试移动由页面片段负责，类自身只维护 Intel 生命周期和显示合同。
+保存下列类，当前舰队引用、累计日数与上次地点 ID 随普通脚本保存，登记采用前面的两处入口。
 
 ::: details 完整成品：GearInFleetActivityIntel
 
@@ -180,16 +191,14 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
 
     public GearInFleetActivityIntel(CampaignFleetAPI fleet) {
         this.fleet = fleet;
-        if (fleet != null) {
-            setPostingLocation(fleet);
-            lastLocationId = getLocationId(fleet.getContainingLocation());
-        }
+        setPostingLocation(fleet);
+        lastLocationId = getLocationId(fleet.getContainingLocation());
         setImportant(true);
     }
 
     @Override
     protected void advanceImpl(float amount) {
-        if (fleet == null || !fleet.isAlive()) {
+        if (!fleet.isAlive()) {
             finish("fleet unavailable");
             return;
         }
@@ -209,9 +218,6 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
     }
 
     private void finish(String reason) {
-        if (isEnding() || isEnded()) {
-            return;
-        }
         sendUpdateIfPlayerHasIntel(reason, false);
         endAfterDelay();
     }
@@ -244,7 +250,7 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
 
     @Override
     public CampaignFleetAPI getMapLocation(SectorMapAPI map) {
-        return fleet != null && fleet.isAlive() ? fleet : null;
+        return fleet.isAlive() ? fleet : null;
     }
 
     @Override
@@ -286,11 +292,11 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
     }
 
     private String getFleetId() {
-        return fleet == null ? "<none>" : fleet.getId();
+        return fleet.getId();
     }
 
     private String getLocationText() {
-        LocationAPI location = fleet == null ? null : fleet.getContainingLocation();
+        LocationAPI location = fleet.getContainingLocation();
         return location == null ? "unknown" : location.getId();
     }
 
@@ -324,14 +330,14 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
 
 前置数据：使用一份可以推进 35 个游戏日的测试存档，并准备 [C11-S1] 的舰队生成入口。
 
-1. 编译本节对应的 source set。
-2. 创建一支舰队，在投放前写入 `$GearIn_intel_target`。
+1. 保存类与生成器中的两处登记，构建并重启，新建测试存档，等待专用舰队生成。
+2. 搜索新情报消息，打开舰队活动条目，核对当前舰队 ID、图标和位置。
 3. 创建 `GearInFleetActivityIntel` 并调用 `IntelManagerAPI.addIntel()`。
-4. 调用 `Global.getSector().addScript(intel)`，确认 Intel 列表和脚本列表都包含同一个实例。
+4. 让生涯时间推进，比较剩余日数，确认同一对象也在普通脚本列表推进。
 5. 检查 Intel 图标、舰队标签、列表文本、地图位置和左下消息。
 6. 让舰队跨地点移动，确认出现一次位置更新。
 7. 保存并读档，确认累计天数、舰队引用和上次地点 ID 继续。
-8. 让舰队 `isAlive()` 变为 `false`，确认条目进入 ending。
+8. 通过 [C14-S2] 的实际消失入口结束测试舰队，查看情报的 ending 状态；另一轮让活动自然达到三十日，比较到期结束。
 9. 在结束延迟期间检查 `isEnding()`、剩余比例和 Intel 列表。
 10. 等待默认 3 个游戏日，确认脚本引擎依据 `isDone()` 清理对象。
 11. 确认 Intel 管理器依据 `shouldRemoveIntel()` 清理同一对象。
@@ -350,34 +356,36 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
 
 ## 故障分析
 
-- **Intel 条目显示但剩余天数不变**。
+- **条目显示而剩余日数保持原值**：只登记了 Intel 列表。
     - **解决方案**：确认创建方同时调用 `Global.getSector().addScript(intel)`。`addIntel()` 只写入 Intel 管理器，不会自动把对象加入生涯脚本列表。
 
-- **舰队移动后地图位置变化，但没有更新消息**。
+- **地图位置变化而没有更新消息**：玩家可见时间戳或地点变化条件不满足。
     - **解决方案**：确认对象已经通过 `addIntel()` 获得玩家可见时间戳，并且位置 ID 与 `lastLocationId` 的比较只在发生变化时发送更新。
 
-- **重复调用 `addIntel()` 后出现两条相同情报**。
+- **列表出现两条相同情报**：创建了两个不同实例。
     - **解决方案**：确认复用同一个 Intel 实例；管理器按对象身份查重，反复创建新实例会产生多条独立记录。
 
-- **舰队失效后条目一直留在 Intel 列表**。
+- **舰队失效后条目持续显示**：结束或延迟推进没有接入。
     - **解决方案**：确认 `advanceImpl()` 调用了 `endAfterDelay()`，并等待结束延迟归零；`isEnding()` 期间 `shouldRemoveIntel()` 仍然可以保持条目显示。
 
-- **舰队失效后脚本仍在推进**。
+- **结束延迟完成后脚本仍在列表**：完成状态与实际结束状态不一致。
     - **解决方案**：确认 `BaseIntelPlugin.advance()` 已进入 ending，并检查引擎是否依据 `isDone()` 在下一轮移除了脚本对象。
 
-- **调用 `getIntelTags(null)` 抛出异常**。
+- **空地图参数触发异常**：标签实现直接访问了 `map`。
     - **解决方案**：保留父类标签计算并保证实现不直接解引用 `map`；地图参数在列表排序和部分 UI 路径中可以为空。
 
-- **使用 `queueIntel()` 后立即看不到条目**。
+- **排队后条目尚未显示**：通信可见性还未满足。
     - **解决方案**：检查通信队列中的对象、玩家是否处于中继范围，以及 `canMakeVisibleToPlayer()` 的结果；需要立即可见时使用 `addIntel()`。
 
 ## 总结
 
-`BaseIntelPlugin` 把 Intel UI、逐帧推进和结束状态放在同一个对象中，但登记表仍然分开管理。可靠的舰队活动情报需要明确写入 Intel 列表和脚本列表，使用 `advanceImpl()` 更新可保存状态，使用 `sendUpdateIfPlayerHasIntel()` 发布可见变化，使用 `endAfterDelay()` 连接结束通知和最终清理。地图、标签、列表文本和日志必须共同反映同一支舰队的当前状态。
+舰队活动 Intel 从同一引用取得位置与身份，脚本推进剩余日数，界面显示当前状态，位置变化通过可见消息发布。活动结束后进入三日延迟，再由两个容器各自清理。
+
+编者建议先核对登记与推进，再调整面板内容。条目能够显示、时间能够变化、消息与地图能够对应，情报才具备完整的活动过程。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`：Intel UI、可见性、排序和结束合同；
+- `com.fs.starfarer.api.campaign.comm.IntelInfoPlugin`：Intel UI、可见性、排序和结束职责；
 - `com.fs.starfarer.api.campaign.comm.IntelManagerAPI`：立即登记、通信队列、文本面板渲染和移除；
 - `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`：Intel 与 `EveryFrameScript` 的默认实现；
 - `com.fs.starfarer.api.impl.campaign.intel.misc.FleetLogIntel`：舰队日志图标、标签和地图定位的原版实现。

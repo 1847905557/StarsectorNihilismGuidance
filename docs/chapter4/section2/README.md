@@ -1,6 +1,6 @@
 # 为模拟战与标题画面加入装配
 
-本节把既有装配 `GearIn_artizan_combat` 加入模拟战敌方舰队与标题画面背景战斗。两个入口分别由一张 CSV 清单控制，无效装配 ID 会让对应展示缺少舰船或在加载时暴露错误。
+上一节已经保存正式装配，本节把工匠的 `GearIn_artizan_combat` 加入模拟战对手与标题画面候选。两个入口都填写装配 ID，但出现时机和错误处理不同，分别从部署列表和背景战斗观察。
 
 *本节预期阅读时间：\~6 分钟。*
 
@@ -10,103 +10,77 @@
 
 完成后，您将能够：
 
-- 用 `data/campaign/sim_opponents.csv` 设置模拟战对手，并验证装配 ID 已进入模拟战候选列表；
-- 用 `data/config/title_screen_variants.csv` 设置标题画面演示舰船，并解释它随机展示的机制；
-- 验证装配 ID 是否有效，并根据日志和画面表现定位加载故障。
+- 在模拟战清单登记既有装配；
+- 在标题画面清单登记演示装配；
+- 按候选选择和加载结果核对装配 ID；
+- 区分两种入口遇到无效 ID 时的表现。
 
 ## 前置知识
 
-- [C4-S1] 的装配注册与 `GearIn_artizan_combat` 制作方法；
-- [C1-S2] 的船体注册、`GearIn_artizan` 与 `<hullId>_Hull` 空装配关系；
-- [C1-S3] 的战机联队注册与 `_wing` 后缀规则；
-- [C1-S5] 的武器注册规则；
-- [C2-S2] 的 CSV 跨 MOD 合并、表头和行首注释规则。
+- [C4-S1] 的 `GearIn_artizan_combat` 与装配注册；
+- [C1-S2] 的船体和自动空装配；
+- [C1-S3] 的联队 ID 与 `_wing` 后缀；
+- [C1-S7] 的 CSV 表头、注释与合并；
+- 能够启动模拟战并观察主菜单背景战斗。
 
-## 模拟战对手
+## 把装配加入模拟战
 
-### 登记模拟战对手
-
-原版与启用的 MOD 会按行合并该文件，因此 MOD 只提交自己的装配行。表头必须逐字写成 `variant id`；在 `mod_info.json` 的 `replace` 数组声明该路径时，整份文件改为替换读取。
-
-### 清单的最小形态
-
-在 MOD 中新建 `data/campaign/sim_opponents.csv`：
+创建 MOD 的 `data/campaign/sim_opponents.csv`：
 
 ```csv
 variant id
 GearIn_artizan_combat
 ```
 
-- 第一行 `variant id` 是表头，其余每行是一个装配 ID；
-- `GearIn_artizan_combat` 是前序装配注册单元的既有装配 (hull 为船体注册的 `GearIn_artizan`)，本节只使用、不新增装配 ID；
-- 保存即生效，无需其他注册：下次启动游戏时随 `loadCampaignData` 一起加载。
+`variant id` 为表头，后面每行登记一个已加载的装配。当前直接使用上一节的成品，船体仍是 `GearIn_artizan`。
 
-![模拟战中的敌方舰队列表](./sim.png "sim.png")
+**同路径清单按行合并，MOD 只添加自己的装配行。** 保存后在下一次游戏启动时加载，无需另写注册入口。需要整份控制时，`mod_info.json` 的 `replace` 可以声明该路径。
 
-*模拟战中的敌方舰队包含 MOD 装配*
+进入装配界面的 Run simulation，在敌方候选中观察自制舰船：
 
-### 无效 ID 的可观察结果 (星云-级回退)
+![模拟战敌方部署列表中的自制舰船](./sim.png "sim.png")
 
-模拟战构建敌方舰队时，每个 ID 都要构造一个 `FleetMemberAPI`。装配 ID 查不到时会发生两件事：
+列表按装配创建成员，装备与数据来自实际引用的 variant。核对当前工匠时，比较船体、武器和装配内容。
 
-1. 打印堆栈 `[ID] is not a valid ship variant id`(`printStackTrace`，不中止战斗)。
-2. 回退到 `settings.json` 的 `"errorShipVariant":"nebula_Standard"`，即一艘星云-级 (Nebula 级) 运输船。
+### 模拟战的无效 ID 回退
 
-因此迁移原文 "填错 ID 会导致它变成一艘星云-级" 依然成立，且机制如上：**日志里能同时搜到该堆栈和这艘星云-级**。
+模拟战通过 `FleetMemberAPI` 创建对手。查不到装配时，会打印 `[ID] is not a valid ship variant id`，再使用 `settings.json` 的 `errorShipVariant`，原版值为 `nebula_Standard`。
 
-模拟战、战役舰队和 `MissionDefinitionAPI.addToFleet` [C4-S1] 都通过 `FleetMemberAPI` 加载装配，因此会采用同一回退目标。
+因此，如果对手变成星云级运输船，先查装配 ID 和加载记录。战役的 `MissionDefinitionAPI.addToFleet` 采用同样的成员创建路径，也会使用这个回退目标。
 
-## 标题演示装配
+## 把代表装配加入标题画面
 
-### 登记标题画面装配
-
-MOD 在 `data/config/title_screen_variants.csv` 提交标题画面装配行，表头同样是 `variant id`。CSV spec 加载期的 `loadTitleScreenVariants()` 读取后把每行追加进 `titleScreenVariantIds`，标题画面背景战斗随后从这份列表随机选择装配：
-
-- 每次构建背景场景时，从整份列表**随机取一个 ID** 作为旗舰；`_wing` 结尾的按战机联队生成，其余按舰船生成；
-- 场景会在需要重建时重新抽取候选，因此每次看到的舰船可能不同。
-
-### 装配清单 (本例)
-
-在 MOD 中新建 `data/config/title_screen_variants.csv`：
+创建 `data/config/title_screen_variants.csv`，内容同样是表头与装配 ID：
 
 ```csv
 variant id
 GearIn_artizan_combat
 ```
 
-保存即可：下次启动后，标题画面背景战斗的候选池就包含这艘船。
+游戏加载清单后，标题背景场景从合并的候选中随机选择旗舰。场景重建时再次抽取，所以一次主菜单观察未必能看到工匠。`_wing` 结尾的条目按联队创建，其他条目按舰船创建。
 
-::: tip 减少演示装配数
+**编者建议只放最具代表性的装配。** 这一列表展示 MOD 的外观与配置，几套明确的选择往往比把全部测试设计放进去更合适；候选少一些也便于核对。
 
-每个条目都可能成为主角，因此**只放 MOD 内最具代表性的常规舰船**，避免候选列表过长而难以观察目标装配。
+标题场景的选择是随机的。验证时先确认清单与装配有效，再多次观察场景重建后的结果。
 
-:::
+### 标题画面的无效 ID
 
-由于刷新是随机的，截图时机不好把握；教程沿用迁移版本的做法，不提供标题画面截图。
-
-### 无效 ID 的表现 (与模拟战不同)
-
-标题画面建船直接走舰船对象创建流程：先按 ID 查变体装配，查不到时抛 `Ship hull variant [ID] not found!`，**没有星云-级回退**。
-
-可观察结果是标题画面背景战斗的场景构建中断，`starsector.log` 出现该异常。
-
-因此标题演示的 ID 必须保证有效，"星云-级" 预期只适用于 `FleetMemberAPI` 路径。
+标题背景战斗直接创建舰船对象，查不到装配时产生 `Ship hull variant [ID] not found!`，场景构建中断。这里的错误应通过日志和场景结果核对；星云回退属于前面的舰队成员创建路径。
 
 ## 验证方案
 
-前置数据：装配注册单元的 `data/variants/GearIn_artizan_combat.variant`[C4-S1]，以及本节新建的两个 CSV —— `data/campaign/sim_opponents.csv` 与 `data/config/title_screen_variants.csv` (保持本例内容，UTF-8 无 BOM)。
-
-1. 启动游戏 (启用测试 MOD)，进入主菜单。
-2. 查看 `starsector.log`。
-3. 在主菜单停留 10 秒以上，观察背景战斗中的舰船；必要时多等几次或重启几次。
-4. 读取或新建生涯存档，进入任意舰船装配界面，点 "Run simulation"，观察部署界面的敌方舰队。
+1. 保存两个 CSV，确认 `GearIn_artizan_combat.variant` 已登记，重启游戏进入主菜单。
+2. 检查本次日志中的 CSV 加载和装配错误；CSV 来源记录本身不包含文件名。
+3. 多次观察标题背景场景，比较工匠的外观和装备。
+4. 进入生涯装配界面，运行模拟战，在敌方候选中选择工匠。
+5. 部署该对手，核对船体和装备与正式装配一致。
 
 预期结果：
 
-- 启动游戏 (启用测试 MOD)：正常进入主菜单 (没有加载中断)；
-- `starsector.log` 出现 `Loading CSV data from [DIRECTORY: ...]` 记录。该日志不含文件名。
-- 进入生涯，打开任意舰船的装配界面，点 "Run simulation"：敌方舰队包含 `GearIn_artizan_combat`；日志没有 `is not a valid ship variant id`。
-- 回到主菜单停留一段时间 (或多次重启)：背景战斗的舰船池会随机出现 GearIn 的船。
+- 游戏正常进入主菜单，两个清单随启动读取。
+- 模拟战敌方候选包含工匠正式装配，实际装备与 variant 对应。
+- 标题背景重建后可以随机选择工匠，显示该装配的船体与武器。
+- 日志中的来源和错误记录与当前输入对应。
 
 ## 故障分析
 
@@ -130,16 +104,12 @@ GearIn_artizan_combat
 
 ## 总结
 
-本节把装配 ID(或 `_wing` 联队 ID) 分别写入 `data/campaign/sim_opponents.csv` 与 `data/config/title_screen_variants.csv`，让模拟战和标题画面能够读取这些装配。
+模拟战和标题画面都沿用已注册装配，通过各自的 CSV 清单加入候选。表头与装配 ID 对应后，再按不同的出现时机观察。
 
-两个文件都按行合并，MOD 只提交自己的装配行，并保持表头、编码和装配 ID 有效；需要整文件控制时，在 `mod_info.json` 使用 `replace`。
-
-关键区别在无效 ID 的失败表现：经 `FleetMemberAPI` 的路径 (模拟战、战役) 回退成 `nebula_Standard` 星云-级并打印堆栈，标题画面直接抛 `Ship hull variant [...] not found!`。
-
-装配注册后，样式与声音等观感要素也会通过船体引用进入渲染结果。
+错误处理由创建路径决定：舰队成员路径会使用 `errorShipVariant` 回退，标题背景场景直接报告无效装配。看到错误对象时先确认当前入口，再核对注册和文件。
 
 ## 建议参考项
 
-- `data/campaign/sim_opponents.csv`：MOD 模拟战对手清单，只写自己的行。
-- `data/config/title_screen_variants.csv`：MOD 标题画面演示清单。
-- `data/config/settings.json`：`errorShipVariant` 无效装配回退目标。
+- `data/campaign/sim_opponents.csv`：模拟战候选清单。
+- `data/config/title_screen_variants.csv`：标题背景装配候选。
+- `data/config/settings.json`：`errorShipVariant` 回退目标。

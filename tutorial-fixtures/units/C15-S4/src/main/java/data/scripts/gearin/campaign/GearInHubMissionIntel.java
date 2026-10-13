@@ -52,6 +52,6 @@ public class GearInHubMissionIntel extends BaseIntelPlugin {
     }
 
     private String getStageText() {
-        return mission == null ? "unavailable" : String.valueOf(mission.getCurrentStage());
+        return String.valueOf(mission.getCurrentStage());
     }
 }

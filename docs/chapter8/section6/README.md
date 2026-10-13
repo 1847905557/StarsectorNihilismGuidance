@@ -1,6 +1,6 @@
 # 配置战斗监听器
 
-战斗监听器把部署、伤害、舰船推进和装配数值计算交给对应的回调处理。先按事件选择接口，再把监听器放到引擎、舰船或统计对象上，运行时就能在正确的对象范围内收到结果。
+战斗回调之外，游戏还按部署、伤害和数值计算派发监听事件。本节先根据功能选择接口与挂载对象，再用两个伤害监听示例观察结算与修饰。注册插件负责本场实例的加入和收尾，其余局部方法展示舰船推进、射程与 OP 的对应位置。
 
 *本节预期阅读时间：\~18 分钟。*
 
@@ -10,21 +10,23 @@
 
 完成后，您将能够：
 
-- 按事件选择 Listener 或 Modifier 接口；
-- 把监听器注册到匹配的对象并读取回调参数；
-- 验证修饰结果并在战斗结束时清理实例。
+- 选择 `Listener` 或 `Modifier`；
+- 挂载到引擎、舰船或 `stats`；
+- 读取部署与伤害事件；
+- 修改射程与 OP 回调结果；
+- 管理注册、重复与收尾。
 
 ## 前置知识
 
-- [C8-S1] 的战斗引擎状态与时间读取；
-- [C8-S2] 的战斗对象和舰船归属；
-- [C8-S3] 的战斗插件注册、暂停判断与收尾；
-- [C8-S4] 的 `MutableStat`、Dynamic 和 modifier ID；
-- [C7-S5] 的日志记录方法。
+- [C8-S1] 的战斗状态和结束判断；
+- [C8-S2] 的当前对象；
+- [C8-S3] 的插件登记和实例；
+- [C8-S4] 的数值与来源 ID；
+- [C7-S5] 的日志。
 
-## 监听器接口速查表
+## 根据功能选择对象
 
-先把要观察或修改的事件写成一句话，再从下表选择接口和挂载对象。表格用于查阅，参数和调用结果在后文按类别展开。
+### 监听接口速查表
 
 | 接口 | 作用 | 合法挂载位置 |
 |---|---|---|
@@ -39,84 +41,79 @@
 | `WeaponOPCostModifier` | 修改武器 OP 消耗 | `MutableShipStatsAPI` |
 | `FighterOPCostModifier` | 修改战机 OP 消耗 | `MutableShipStatsAPI` |
 
-## 监听引擎级事件
+**接口与挂载对象一起决定是否收到回调。** 先说明希望观察谁，再选择表中的入口；舰船级功能只监听当前舰船，整场观察才使用引擎范围。
 
-`CombatEngineAPI.getListenerManager()` 管理整场战斗的引擎级监听器。伤害结算是最直接的例子：`DamageListener` 读取已经完成的结果，`DamageDealtModifier` 在伤害结算前写入造成方的修饰值。注册前用 `hasListenerOfClass(...)` 检查同类实例，再调用 `addListener(...)`；战斗结束时由负责注册的插件先移除监听器，再移除自身。
+## 观察伤害结算与造成方修饰
 
-### 读取伤害结算结果
+`DamageListener` 在伤害结算后收到 `ApplyDamageResultAPI`，提供实际护盾、装甲、结构与 EMP 结果。当前挂在引擎上观察整场结算，舰船也能使用对应监听记录自身伤害。
 
-`DamageListener` 在伤害已经结算后收到 `ApplyDamageResultAPI`，因此适合记录实际扣除的护盾、装甲、船体和 EMP 数值。将它注册到引擎监听器表可以观察整场战斗的结果：
-
-下面的片段创建一个伤害监听器，并在注册前按类去重。
+`DamageDealtModifier` 在造成方结算前写入 `damage.getModifier`，返回本次来源 ID。本例按 `GearIn_dealt` 增加 10%：
 
 ```java
-CombatListenerManagerAPI listeners = engine.getListenerManager();
-DamageListener damageListener = new GearInDamageListener();
-if (!listeners.hasListenerOfClass(GearInDamageListener.class)) {
-    listeners.addListener(damageListener);
+damage.getModifier().modifyPercent("GearIn_dealt", 10f);
+return "GearIn_dealt";
+```
+
+`param` 可以是弹体、光束、EMP 电弧或自定义事件对象，`target`、`point` 和 `shieldHit` 提供目标、位置与护盾上下文。
+
+完整的 `GearInDamageListener` 负责结果日志，`GearInDamageDealtModifier` 负责当前修饰，两者按角色分开。**修饰输入与结算结果分别观察**，同一命中可以按事件和结果对应。
+
+## 注册并在结束时解除
+
+创建本节 `GearInCombatListenerPlugin`，在 `settings` 的 `plugins` 加入：
+
+```json
+{
+    "plugins": {
+        "gearInCombatListenerPlugin": "data.scripts.gearin.combat.GearInCombatListenerPlugin"
+    }
 }
 ```
 
-::: warning 在注册前按类去重
-一般来说用 `hasListenerOfClass` 进行去重处理。不去重导致的效果问题往往不容易快速被发现。
-:::
+当前插件首次 `advance` 取得引擎，在它的 `getListenerManager` 中登记两个实例。按类检查防止同一功能重复注册；状态由本场实例保存，`isCombatOver` 时先解除监听，再移除插件。
 
-引擎级和舰船级的 `DamageListener` 都由 `CombatListenerUtil.reportDamageApplied(...)` 派发。把它挂在舰船上时，日志范围只覆盖该舰船相关的伤害。
-
-### 修改造成的伤害
-
-`DamageDealtModifier` 挂在造成伤害的舰船，或作为整场战斗的引擎级修饰器。回调返回本次伤害修饰的来源 ID，实际数值写入 `damage.getModifier()`。完整示例使用同一引擎级表面注册：
-
-下面的片段把造成方修饰器加入同一个引擎级监听器表。
+单独管理时采用下列局部操作：
 
 ```java
-DamageDealtModifier dealtModifier = new GearInDamageDealtModifier();
-if (!listeners.hasListenerOfClass(GearInDamageDealtModifier.class)) {
-    listeners.addListener(dealtModifier);
-}
+CombatListenerManagerAPI manager = owner.getListenerManager();
+manager.hasListener(listener);
+manager.hasListenerOfClass(MyListener.class);
+manager.addListener(listener);
+manager.getListeners(MyListener.class);
+manager.removeListener(listener);
+manager.removeListenerOfClass(MyListener.class);
 ```
 
-`param` 可能是射弹、光束、EMP 电弧或脚本自定义对象；`target`、`point` 和 `shieldHit` 描述本次命中的对象、位置和护盾结果。
+这里 `owner` 是当前引擎或舰船，`MyListener` 为实际类；`stats` 也提供自己的增删和查询方法。移除自己注册的实例，保持对象范围明确。
 
-### 修改承受的伤害
+## 其他伤害入口
 
-`DamageTakenModifier` 挂在承受伤害的舰船，参数结构与造成伤害的修饰器相同。它适合按命中来源、护盾状态或目标类型修改 `DamageAPI` 的 modifier：
-
-这个方法片段把承受伤害乘以 `0.9`，并返回本次修饰使用的稳定 ID。
+`DamageTakenModifier` 作用于承受伤害的一方，参数与造成方相似。下面是局部方法，装入对应接口实现后挂到承受方舰船：
 
 ```java
-public String modifyDamageTaken(Object param,
-                                CombatEntityAPI target,
-                                DamageAPI damage,
-                                Vector2f point,
-                                boolean shieldHit) {
+public String modifyDamageTaken(Object param, CombatEntityAPI target,
+        DamageAPI damage, Vector2f point, boolean shieldHit) {
     damage.getModifier().modifyMult("GearIn_taken", 0.9f);
     return "GearIn_taken";
 }
 ```
 
-### 在结构伤害前介入
-
-`HullDamageAboutToBeTakenListener` 在结构伤害落到舰船前触发。`damageAmount` 是本次即将造成的结构伤害；返回 `true` 会抵消这一笔伤害：
-
-这个回调片段只抵消低于 50 点的结构伤害，用返回值表达是否拦截本次结算。
+`HullDamageAboutToBeTakenListener` 在结构伤害前介入，`true` 抵消当前这一笔伤害：
 
 ```java
-public boolean notifyAboutToTakeHullDamage(Object param,
-                                           ShipAPI ship,
-                                           Vector2f point,
-                                           float damageAmount) {
+public boolean notifyAboutToTakeHullDamage(Object param, ShipAPI ship,
+        Vector2f point, float damageAmount) {
     return damageAmount < 50f;
 }
 ```
 
-该接口可以注册到引擎或承受伤害的舰船。若只保护一艘舰船，优先使用舰船级监听器，回调范围更小。
+当前片段保护低于 50 点的结构伤害。只需要保护一艘舰船时挂在该舰船，范围更直接；接口也支持引擎监听。
 
-## 监听舰船级推进
+`FleetMemberDeploymentListener` 只挂引擎，`reportFleetMemberDeployed` 接收本次 `DeployedFleetMemberAPI`。部署身份与场上舰体的关系按前面的对象映射理解。
 
-`AdvanceableListener` 只有挂在 `ShipAPI` 时才会推进。它的唯一方法接收舰船级的时间增量：
+## 在舰船上推进状态
 
-下面的实现把本次推进时间交给舰船自己的计时器。
+`AdvanceableListener` 挂 `ShipAPI`，`advance` 接收所属舰船的推进时间。局部方法如下：
 
 ```java
 public void advance(float amount) {
@@ -124,17 +121,13 @@ public void advance(float amount) {
 }
 ```
 
-在 `ship.getListenerManager()` 上使用 `hasListenerOfClass(...)`、`addListener(...)`、`removeListener(...)` 管理实例。计时器和计数器放在每艘舰船自己的监听器对象里，日志就能对应到具体舰船；暂停和舰船销毁由所属对象的生命周期决定。
+计时器属于当前监听实例，每艘舰船的计数独立。通过 `ship.getListenerManager` 登记与移除，暂停和销毁按所属对象运行阶段处理。
 
-伤害监听器也可以挂在舰船上：`DamageDealtModifier` 观察造成伤害的舰船，`DamageTakenModifier` 与 `HullDamageAboutToBeTakenListener` 观察承受伤害的舰船，`DamageListener` 记录该舰船收到的结算结果。
+## 用返回值修改射程与 OP
 
-## 配置射程与 OP 修饰器
+### 武器射程
 
-### 修改武器射程
-
-`WeaponRangeModifier` 和 `WeaponBaseRangeModifier` 都挂在 `ShipAPI`。前者作用于最终射程，后者作用于基础射程。引擎分别汇总 percent、mult 和 flat 返回值：
-
-这个片段只让大型武器增加最终射程百分比，其余两种修饰保持中性值。
+`WeaponRangeModifier` 挂 `ShipAPI`，通过 `percent`、`mult` 和 `flat` 返回最终射程修饰。局部方法使大型武器增加 10%：
 
 ```java
 public float getWeaponRangePercentMod(ShipAPI ship, WeaponAPI weapon) {
@@ -150,53 +143,29 @@ public float getWeaponRangeFlatMod(ShipAPI ship, WeaponAPI weapon) {
 }
 ```
 
-`WeaponBaseRangeModifier` 使用相同的三个返回方法，但修改的是基础射程。`weapon` 参数可以用于按武器类型、尺寸或 ID 返回不同数值。
+`WeaponBaseRangeModifier` 影响基础射程，方法名分别为 `getWeaponBaseRangePercentMod`、`getWeaponBaseRangeMultMod` 与 `getWeaponBaseRangeFlatMod`。参数同样可以按武器类型、尺寸或 ID 选择返回值，使用时按实际接口声明填写。
 
-### 修改武器与战机 OP
+### 武器与战机 OP
 
-`WeaponOPCostModifier` 和 `FighterOPCostModifier` 只挂在 `MutableShipStatsAPI`。回调接收当前计算值，返回值成为新的装配消耗：
-
-下面两个方法分别降低武器和战机的当前 OP 消耗，并把结果限制在零以上。
+`WeaponOPCostModifier` 和 `FighterOPCostModifier` 挂 `MutableShipStatsAPI`，接收当前计算值并返回新值：
 
 ```java
-public int getWeaponOPCost(MutableShipStatsAPI stats,
-                           WeaponSpecAPI weapon,
-                           int currCost) {
+public int getWeaponOPCost(MutableShipStatsAPI stats, WeaponSpecAPI weapon, int currCost) {
     return Math.max(0, currCost - 2);
 }
 
-public int getFighterOPCost(MutableShipStatsAPI stats,
-                            FighterWingSpecAPI fighter,
-                            int currCost) {
+public int getFighterOPCost(MutableShipStatsAPI stats, FighterWingSpecAPI fighter, int currCost) {
     return Math.max(0, currCost - 1);
 }
 ```
 
-多个修饰器同时存在时，应基于传入的 `currCost` 继续计算，使不同来源的结果能够连续传递。射程修饰器和 OP 修饰器通过监听器回调返回结果；普通 `MutableStat` 与 Dynamic 的 modifier 写入仍按 [C8-S4] 的规则处理。
-
-## 管理监听器实例
-
-引擎和舰船都通过 `CombatListenerManagerAPI` 提供增删查操作：
-
-下面的片段展示同一管理器上的去重、注册、查询和移除操作。
-
-```java
-CombatListenerManagerAPI manager = owner.getListenerManager();
-
-manager.hasListener(listener);
-manager.hasListenerOfClass(MyListener.class);
-manager.addListener(listener);
-
-manager.removeListener(listener);
-manager.removeListenerOfClass(MyListener.class);
-manager.getListeners(MyListener.class);
-```
-
-统计对象使用 `MutableShipStatsAPI.addListener(...)` 及对应移除方法。注册前完成去重，插件收尾时清理自己添加的监听器，下一场战斗或下一艘舰船重新创建所属实例。
+本例分别减 2 和 1，下限 0。多个来源基于 `currCost` 继续计算，便于连续传递结果。这里由回调返回数值，普通 `stats` 和 `Dynamic` 仍按上一节使用修饰表。
 
 ## 完整最小例
 
-::: details 完整成品：GearInDamageListener
+三个类保存到 `src/data/scripts/gearin/combat/`，插件登记采用上面的条目。当前成品验证伤害结算与造成方修饰，其他局部方法按其接口和挂载对象扩展。
+
+::: details 完整成品：`GearInDamageListener`
 
 ```java
 package data.scripts.gearin.combat;
@@ -214,8 +183,8 @@ public class GearInDamageListener implements DamageListener {
 
     @Override
     public void reportDamageApplied(Object source,
-                                    CombatEntityAPI target,
-                                    ApplyDamageResultAPI result) {
+            CombatEntityAPI target,
+            ApplyDamageResultAPI result) {
         LOG.info("GearIn damage: target=" + target
                 + " hull=" + result.getDamageToHull()
                 + " armor=" + result.getTotalDamageToArmor()
@@ -227,7 +196,7 @@ public class GearInDamageListener implements DamageListener {
 
 :::
 
-::: details 完整成品：GearInDamageDealtModifier
+::: details 完整成品：`GearInDamageDealtModifier`
 
 ```java
 package data.scripts.gearin.combat;
@@ -242,10 +211,10 @@ public class GearInDamageDealtModifier implements DamageDealtModifier {
 
     @Override
     public String modifyDamageDealt(Object param,
-                                    CombatEntityAPI target,
-                                    DamageAPI damage,
-                                    Vector2f point,
-                                    boolean shieldHit) {
+            CombatEntityAPI target,
+            DamageAPI damage,
+            Vector2f point,
+            boolean shieldHit) {
         damage.getModifier().modifyPercent("GearIn_dealt", 10f);
         return "GearIn_dealt";
     }
@@ -254,25 +223,68 @@ public class GearInDamageDealtModifier implements DamageDealtModifier {
 
 :::
 
+::: details 完整成品：`GearInCombatListenerPlugin`
+
+```java
+package data.scripts.gearin.combat;
+
+import java.util.List;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.listeners.CombatListenerManagerAPI;
+import com.fs.starfarer.api.input.InputEventAPI;
+
+/** 在本场战斗登记伤害监听与修饰，并在收尾时解除。 */
+public class GearInCombatListenerPlugin extends BaseEveryFrameCombatPlugin {
+
+    private final GearInDamageListener damageListener = new GearInDamageListener();
+    private final GearInDamageDealtModifier dealtModifier = new GearInDamageDealtModifier();
+    private CombatEngineAPI engine;
+    private boolean registered;
+
+    @Override
+    public void advance(float amount, List<InputEventAPI> events) {
+        if (engine == null) {
+            engine = Global.getCombatEngine();
+        }
+        CombatListenerManagerAPI manager = engine.getListenerManager();
+        if (!registered) {
+            if (!manager.hasListenerOfClass(GearInDamageListener.class)) {
+                manager.addListener(damageListener);
+            }
+            if (!manager.hasListenerOfClass(GearInDamageDealtModifier.class)) {
+                manager.addListener(dealtModifier);
+            }
+            registered = true;
+        }
+        if (engine.isCombatOver()) {
+            manager.removeListener(damageListener);
+            manager.removeListener(dealtModifier);
+            engine.removePlugin(this);
+        }
+    }
+}
+```
+
+:::
+
 ## 验证方案
 
-前置数据：已按 [C8-S3] 接入每帧战斗插件；[C4-S1] 的 `GearIn_test` 战役可用，本节的 `GearInDamageListener` 和 `GearInDamageDealtModifier` 已就绪。
-
-1. 启动 `GearIn_test` 战斗，确认 `GearInDamageListener` 和 `GearInDamageDealtModifier` 各完成一次注册。
-2. 让舰船承受护盾、装甲和结构伤害，搜索 `GearIn damage`，核对结算字段与造成方修饰结果。
-3. 观察舰船级 `AdvanceableListener` 的周期日志，暂停并恢复战斗后比较推进次数。
-4. 在装配界面检查武器射程、武器 OP 和战机 OP 的变化。
-5. 结束战斗，确认引擎级监听器先清理，再移除负责注册它的插件。
-6. 开始第二场战斗，确认监听器状态和对象引用重新建立。
-7. 在 `starsector.log` 中搜索稳定前缀、接口名称和对象 ID。
+1. 保存三个类和插件登记，构建并重启，进入 `GearIn_test`。
+2. 用武器命中护盾、装甲和结构，搜索 `GearIn damage` 并比较实际字段。
+3. 在对应局部接口实现中分别测试舰船推进、射程或 OP，核对挂载对象和返回值。
+4. 暂停再恢复，比较所属对象的推进。
+5. 结束战斗，核对引擎级实例解除，再进入下一场检查新注册。
+6. 比较日志中的接口、目标和来源 ID，确认同一功能只登记一次。
 
 预期结果：
 
-- `DamageListener` 记录实际结算字段，修饰器返回的来源 ID 出现在对应 modifier 中；
-- `AdvanceableListener` 只在所属舰船推进时输出；
-- 射程和 OP 结果与回调返回值一致；
-- 战斗结束后不再出现上一场战斗的监听器日志；
-- 第二场战斗的计数从新实例开始。
+- 伤害监听记录结算字段，造成方修饰写入 `GearIn_dealt`。
+- 各局部接口在匹配对象上生效，射程与 OP 采用相应返回值。
+- 状态属于当前舰船或战斗实例。
+- 收尾解除本插件登记的监听，下一场重新建立。
 
 ## 故障分析
 
@@ -286,7 +298,7 @@ public class GearInDamageDealtModifier implements DamageDealtModifier {
     - **解决方案**：通过 `ship.getListenerManager()` 注册，并确认监听器实例绑定当前 `ShipAPI`。
 
 - **射程或 OP 数值没有变化**：修饰器挂载表面正确但实现了错误的接口。
-    - **解决方案**：最终射程使用 `WeaponRangeModifier`，基础射程使用 `WeaponBaseRangeModifier`，武器和战机 OP 使用对应的 stats 修饰器。
+    - **解决方案**：最终射程使用 `WeaponRangeModifier`，基础射程使用 `WeaponBaseRangeModifier`，武器和战机 OP 使用对应的 `stats` 修饰器。
 
 - **同一事件每次出现多条日志**：同一对象重复注册了监听器实例。
     - **解决方案**：注册前调用 `hasListenerOfClass(...)` 或 `hasListener(...)`，保留一个属于当前对象的实例。
@@ -302,7 +314,9 @@ public class GearInDamageDealtModifier implements DamageDealtModifier {
 
 ## 总结
 
-配置战斗监听器时，先根据事件选择接口，再把实例挂到接口要求的引擎、舰船或 stats 对象。部署和伤害接口读取战斗事件，`AdvanceableListener` 负责舰船级推进，射程与 OP 修饰器通过回调返回对应的计算结果。注册前去重，战斗结束时清理引擎级监听器，下一场战斗重新建立属于当前对象的状态。
+监听接口按事件和计算过程派发，挂载对象限定范围。结果监听读取实际结算，`Modifier` 改变当前计算，舰船推进与射程作用于 `ShipAPI`，OP 作用于 `stats`。
+
+注册与清理由实际拥有它们的功能处理。编者建议按当前对象建立实例，先把一种事件完整验证，再增加其他监听；对象和范围清楚，重复和跨场问题就容易定位。
 
 ## 建议参考项
 

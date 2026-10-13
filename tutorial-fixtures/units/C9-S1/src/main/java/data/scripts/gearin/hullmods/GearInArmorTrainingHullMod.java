@@ -42,11 +42,9 @@ public class GearInArmorTrainingHullMod extends BaseHullMod {
     @Override
     public void applyEffectsAfterShipAddedToCombatEngine(ShipAPI ship, String id) {
         CombatEngineAPI engine = Global.getCombatEngine();
-        if (engine != null) {
-            engine.addFloatingText(ship.getLocation(),
-                    "GearIn armor training", 14f, Color.CYAN,
-                    ship, 0f, 1f);
-        }
+        engine.addFloatingText(ship.getLocation(),
+                "GearIn armor training", 14f, Color.CYAN,
+                ship, 0f, 1f);
     }
 
     @Override
@@ -108,7 +106,7 @@ public class GearInArmorTrainingHullMod extends BaseHullMod {
     public void addPostDescriptionSection(TooltipMakerAPI tooltip,
             HullSize hullSize, ShipAPI ship, float width,
             boolean isForModSpec) {
-        tooltip.addPara("S-mod 会把战斗中的装甲修复速度提高到每秒 8 点。", 10f);
+        tooltip.addPara("S-mod 会把每个装甲格的修复速度提高到每秒 8 点。", 10f);
     }
 
     private static void repairArmor(ShipAPI ship, float amount) {

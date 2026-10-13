@@ -33,7 +33,7 @@ public final class GearInTargetProbe extends BaseEveryFrameCombatPlugin {
 
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
-        if (engine == null || engine.isPaused()) {
+        if (engine.isPaused()) {
             return;
         }
 
@@ -54,7 +54,7 @@ public final class GearInTargetProbe extends BaseEveryFrameCombatPlugin {
             particleElapsed = 0f;
         }
 
-        float distance = MathUtils.getDistance(player, target);
+        float distance = MathUtils.getDistance(player.getLocation(), target.getLocation());
         float linearProximity = 1f - Math.min(distance / DISPLAY_RANGE, 1f);
         float smoothProximity = MagicAnim.smooth(linearProximity);
 

@@ -1,6 +1,6 @@
 # 使用 LazyLib 查询战场
 
-战斗逻辑通常先从一片空间中取得候选，再按敌我关系、战争迷雾和距离选出真正需要处理的目标。本节使用 LazyLib 组织这条查询链，并用战斗粒子直接标出每一步得到的对象。
+距离相近的舰船，未必都是当前 AI 可以处理的目标。我们先给战斗登记一个扫描器，用不同颜色标出附近对象、可见敌舰与拦截点，再对照 LazyLib 的空间查询和关系查询。画面上留下这些差异，后面编写武器或系统 AI 时就有了选择入口的依据。
 
 *本节预期阅读时间：\~30 分钟。*
 
@@ -19,15 +19,30 @@
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S2] 理解战斗引擎、舰船、导弹和弹丸对象；
-- [C8-S3] 理解每帧战斗插件、暂停判断和 `settings.json` 注册；
-- [C18-S2] 理解坐标、距离、向量与碰撞点；
+- [C7-S1] 的入口插件与构建后的加载；
+- [C8-S1] 的战斗引擎与玩家舰船；
+- [C8-S2] 的战斗实体、导弹和弹丸；
+- [C8-S3] 的每帧战斗插件、暂停判断和 `settings.json` 注册；
+- [C18-S2] 的坐标、距离、向量与碰撞点；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+
+## 注册战斗扫描器
+
+先将本节完整的 `GearInCombatScanner` 保存到 `src/data/scripts/gearin/lib/GearInCombatScanner.java`，再向既有 `data/config/settings.json` 的 `plugins` 对象追加：
+
+```json
+{
+    "plugins": {
+        "gearInCombatScanner": "data.scripts.gearin.lib.GearInCombatScanner"
+    }
+}
+```
+
+游戏为每场战斗创建一个扫描器实例。插件每 0.20 秒执行一次查询，1600 su 范围能够覆盖玩家周围的常见交战距离；较短间隔让粒子位置连续，查询频率也只有每秒 5 次。粒子持续 0.25 秒，相邻两次结果会短暂重叠，目标移动时形成连续标记。
 
 ## 区分空间查询与关系查询
 
-战斗目标选择通常有两个起点。已知坐标和半径时，`CombatUtils` 从该片空间取回指定类型的实体；已知一艘舰船、导弹或其他战斗实体时，`AIUtils` 根据该实体的 `owner` 判断敌我关系，并在敌方查询中应用战争迷雾。两组方法可以搜索同一片战场，但回答的问题不同。
+**位置查询先回答附近有什么，关系查询再回答哪些对象符合当前一方的关系与视野。**已知坐标和半径时，`CombatUtils` 从该片空间取回指定类型的实体；已知一艘舰船、导弹或其他战斗实体时，`AIUtils` 根据该实体的 `owner` 判断敌我关系，并在敌方查询中应用战争迷雾。两组方法可以搜索同一片战场，但回答的问题不同。
 
 例如，爆炸效果需要影响半径内的一切舰船，应从 `CombatUtils.getShipsWithinRange(...)` 开始；舰船系统 AI 只关心自己看得见的敌舰，则直接使用 `AIUtils.getNearbyEnemies(...)`。先确定空间候选，再决定是否需要敌我和可见性筛选，可以避免把两层规则混在一次循环中。
 
@@ -37,7 +52,7 @@
 
 ### 按实体类型查询范围
 
-范围查询接收世界坐标 `location` 和半径 `range`，返回当前战斗中落在圆形区域内的对象。下面的局部代码可以放入每帧战斗插件、舰船系统效果或武器效果的回调中：
+范围查询接收世界坐标 `location` 和半径 `range`。舰船、小行星按实体边缘到坐标的距离判断，导弹和弹丸按中心坐标判断；对照同一半径时，也要对照实际重载使用的对象。下面的局部代码可以放入每帧战斗插件、舰船系统效果或武器效果的回调中：
 
 ```java
 Vector2f center = ship.getLocation();
@@ -57,7 +72,7 @@ List<CombatEntityAPI> asteroids =
 
 `getObjectivesWithinRange(...)` 返回范围内的战斗目标点，适合判断导航浮标、传感器阵列等目标是否靠近当前单位。`getEntitiesWithinRange(...)` 把舰船、导弹、弹丸和小行星合并为 `CombatEntityAPI` 列表，适合射线、传送落点和统一排斥区域。
 
-综合列表省去了多次查询，但调用方仍要用 `instanceof` 或碰撞类别决定后续行为。只处理单一类型时，使用对应的专用方法可以让循环中的对象契约更明确。
+综合列表便于在同一次循环中处理不同实体，再用 `instanceof` 或碰撞类别选择行为。只处理导弹时，直接用导弹列表即可；编者建议从实际需要的对象类型选入口，这也让后面的循环容易阅读。
 
 ### 判断另一方能否看见实体
 
@@ -95,13 +110,13 @@ List<MissileAPI> nearbyEnemyMissiles =
 
 `getNearestEnemy(...)` 和 `getNearestEnemyMissile(...)` 同时限定敌对关系与可见性。`getNearestAlly(...)` 只选择友方舰船；`getNearestShip(...)` 与 `getNearestMissile(...)` 接受任意可见阵营，适合碰撞规避或寻找最近对象。`getNearestObjective(...)` 查找最近的战斗目标点。
 
-最近对象方法在没有候选时返回 `null`。局部集合方法返回列表，调用方可以继续按舰体级别、碰撞类别、相位状态、伤害载荷或自定义分数筛选。
+最近对象方法在没有候选时返回 `null`。局部集合方法按两实体碰撞圆之间的距离限定半径，所以与坐标为中心的查询边界有差异。它们返回列表，调用方可以继续按船体等级、碰撞类别、相位状态、伤害载荷或自定义分数筛选。
 
 ### 对比局部列表和全图列表
 
 `getEnemiesOnMap(...)`、`getAlliesOnMap(...)` 与 `getEnemyMissilesOnMap(...)` 查询整张战场。敌方版本继续遵守战争迷雾，友方版本返回当前仍在地图上的全部盟友。编队协调、全局目标分配和低频战术评估适合使用这些集合。
 
-全图查询的工作量随战场实体数量增长。只处理舰船附近威胁时，`getNearbyEnemies(...)`、`getNearbyAllies(...)` 与 `getNearbyEnemyMissiles(...)` 已经表达了明确半径，也能避免每 0.20 秒遍历整张战场。
+全图查询的工作量随战场实体数量增长。只处理舰船附近威胁时，`getNearbyEnemies(...)`、`getNearbyAllies(...)` 与 `getNearbyEnemyMissiles(...)` 限定返回集合的半径，让后续行为集中处理附近候选。它们仍会取得全图关系集合后筛选；舰船范围查询也遍历舰船列表，因此仍按间隔安排查询。导弹、小行星的空间查询会使用相应的网格。
 
 ## 排序并选择最终目标
 
@@ -124,9 +139,9 @@ Vector2f intercept = enemy == null ? null : AIUtils.getBestInterceptPoint(
         origin, INTERCEPT_SPEED, enemy.getLocation(), enemy.getVelocity());
 ```
 
-大型舰船的中心可能比护卫舰更远，但舰体边缘已经进入作用范围。计入碰撞半径的排序会优先选择真正更靠近效果边缘的实体。单参数构造器同样计入碰撞半径；只比较中心坐标时必须使用 `new SortEntitiesByDistance(origin, false)`。
+大型舰船的中心可能比护卫舰更远，但碰撞圆边缘更接近观察点。计入碰撞半径的排序会优先选择真正更靠近效果边缘的实体。单参数构造器同样计入碰撞半径；只比较中心坐标时必须使用 `new SortEntitiesByDistance(origin, false)`。
 
-排序只决定候选顺序。敌我关系、相位状态、碰撞类别和业务优先级仍应在排序前完成筛选，否则一个更近但不可处理的实体会占据首位。
+排序只决定候选顺序。敌我关系、相位状态、碰撞类别和业务优先级仍应在排序前完成筛选，这样排在首位的对象才符合当前动作的条件。
 
 ## 计算移动目标的拦截点
 
@@ -136,7 +151,7 @@ Vector2f intercept = enemy == null ? null : AIUtils.getBestInterceptPoint(
 
 ## 在所属回调中执行动作
 
-查询结果可以被武器 AI、导弹 AI、舰船系统 AI、系统效果或每帧插件使用。执行动作的方法需要留在拥有对应生命周期的角色中，避免只读扫描器意外改变战斗。
+扫描结果已经能显示出来。需要据此开火、启动系统或施力时，把下列局部片段放到相应角色的回调，沿用该角色已经取得的舰船、武器与时间参数。**谁负责动作，谁接收查询结果。**扫描器继续承担观察。
 
 ### 判断主舰船系统能否使用
 
@@ -184,7 +199,12 @@ public void apply(
         String id,
         State state,
         float effectLevel) {
+    CombatEngineAPI engine = Global.getCombatEngine();
+    if (engine.isPaused()) {
+        return;
+    }
     ShipAPI ship = (ShipAPI) stats.getEntity();
+    float amount = engine.getElapsedInLastFrame();
     for (MissileAPI missile : CombatUtils.getMissilesWithinRange(
             ship.getLocation(), 600f)) {
         if (missile.getOwner() == ship.getOwner()) {
@@ -192,14 +212,14 @@ public void apply(
         }
         Vector2f direction = Vector2f.sub(
                 missile.getLocation(), ship.getLocation(), null);
-        CombatUtils.applyForce(missile, direction, 120f * effectLevel);
+        CombatUtils.applyForce(missile, direction, 120f * effectLevel * amount);
     }
 
-    CombatUtils.applyForce(ship, ship.getFacing(), 40f * effectLevel);
+    CombatUtils.applyForce(ship, ship.getFacing(), 40f * effectLevel * amount);
 }
 ```
 
-向量重载会自动归一化 `direction`，角度重载按游戏角度施力。`force` 的单位考虑实体质量：同样的数值作用于高质量舰船时速度变化更小。持续系统通常让力随 `effectLevel` 缩放，避免进入和退出阶段突然跳变。
+向量重载会自动归一化 `direction`，角度重载按游戏角度施力。**`applyForce(...)` 每次直接改变速度。**同样的参数作用于高质量实体时，速度变化更小。持续回调把参数乘以本帧 `amount`，让每秒效果随实际经过的时间累计，再用 `effectLevel` 控制进入和退出的变化。`getElapsedInLastFrame()` 在暂停时仍返回当前帧时间，先按 `engine.isPaused()` 结束这一帧，力才会随战斗暂停。
 
 ## 补充武器与防御查询
 
@@ -247,20 +267,6 @@ if (nearest != null && WeaponUtils.isWithinArc(nearest, weapon)) {
 | `AIUtils` | `getBestInterceptPoint` | 解算匀速目标的拦截坐标，无解时返回 `null` |
 | `AIUtils` | `canUseSystemThisFrame` | 判断本帧能否操作 `ship.getSystem()` |
 | `CollectionUtils` | `SortEntitiesByDistance` | 按中心距离或实体边缘距离排序战斗实体 |
-
-## 注册战斗扫描器
-
-每帧战斗插件通过 `data/config/settings.json` 的 `plugins` 对象登记。注册 key 在合并后的配置中保持唯一，值由 Java 包名和类名组成：
-
-```json
-{
-    "plugins": {
-        "gearInCombatScanner": "data.scripts.gearin.lib.GearInCombatScanner"
-    }
-}
-```
-
-游戏为每场战斗创建一个扫描器实例。插件每 0.20 秒执行一次查询，1600 su 范围能够覆盖玩家周围的常见交战距离；较短间隔让粒子位置连续，查询频率也只有每秒 5 次。粒子持续 0.25 秒，相邻两次结果会短暂重叠，目标移动时形成连续标记。
 
 ## 完整最小例
 
@@ -311,7 +317,7 @@ public final class GearInCombatScanner extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         CombatEngineAPI engine = Global.getCombatEngine();
-        if (engine == null || engine.isPaused()) {
+        if (engine.isPaused()) {
             return;
         }
 
@@ -392,7 +398,7 @@ public final class GearInCombatScanner extends BaseEveryFrameCombatPlugin {
 5. 让一艘可见敌舰进入 1600 su，确认它出现红色粒子，同时在前方出现紫色拦截点。
 6. 让敌舰横向加速和转向，观察紫色粒子随当前速度改变位置。
 7. 让敌舰离开视野，比较红色目标标记与蓝色空间候选标记。
-8. 把全部对象移到 1600 su 外，确认对应类型的粒子在 0.25 秒后消失。
+8. 将导弹和弹丸的中心移到 1600 su 外，将舰船与小行星的近侧边缘移到该范围外；敌舰再与玩家碰撞圆保持超过 1600 su 的边缘间隔。等待下一次扫描与旧粒子结束。
 9. 在独立主系统 AI 中运行 `canUseSystemThisFrame` 片段，分别观察冷却、过载和可用状态。
 10. 在相位舰上读取 `getPhaseCloak()`，确认右键系统状态由该对象提供。
 
@@ -403,7 +409,7 @@ public final class GearInCombatScanner extends BaseEveryFrameCombatPlugin {
 - 红色粒子只标记玩家一方当前可见的最近敌舰；
 - 蓝色空间候选可以标记仍在范围内但尚未进入关系筛选结果的舰船；
 - 紫色粒子随目标当前位置和速度变化，无拦截解时不生成；
-- 1600 su 外的对象不会进入扫描结果，旧粒子在 0.25 秒后结束；
+- 对象按各查询的距离口径离开 1600 su 范围后，新标记停止；最后生成的粒子持续 0.25 秒；
 - 主系统冷却、过载或资源不足时，`canUseSystemThisFrame` 返回 `false`；
 - 相位斗篷状态来自 `getPhaseCloak()`，不由主系统判断代替；
 - `starsector.log` 没有未处理异常。
@@ -422,8 +428,8 @@ public final class GearInCombatScanner extends BaseEveryFrameCombatPlugin {
 - **对 AIUtils 结果重复执行可见性循环**：敌方关系方法已经过滤战争迷雾，第二次判断只增加工作量。
     - **解决方案**：直接使用 `getNearbyEnemies(...)`、`getEnemiesOnMap(...)` 或敌方导弹方法的返回集合。
 
-- **大规模战斗出现周期性卡顿**：高频回调反复使用全图查询并处理全部实体。
-    - **解决方案**：局部行为改用 nearby/range 方法，并用固定间隔限制刷新频率。
+- **大规模战斗出现周期性卡顿**：高频回调反复取得关系集合，并处理大量候选。
+    - **解决方案**：按实际半径选择 nearby/range 方法，减少后续处理对象，并用固定间隔限制查询频率。
 
 - **大型舰船看起来更近却没有排在首位**：排序使用了实体中心距离，画面观察使用的是舰体边缘。
     - **解决方案**：构造 `SortEntitiesByDistance(origin, true)`，让比较包含碰撞半径。

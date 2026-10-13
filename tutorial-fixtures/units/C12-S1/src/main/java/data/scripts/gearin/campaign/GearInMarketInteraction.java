@@ -59,11 +59,24 @@ public class GearInMarketInteraction implements EveryFrameScript {
 
     private void recordMemory(MarketAPI market) {
         MemoryAPI memory = market.getMemoryWithoutUpdate();
-        boolean oldPatrol = memory.getBoolean(MemFlags.MARKET_PATROL);
-        memory.set(MemFlags.MARKET_PATROL, true);
-        LOG.info("GearIn market memory: patrol="
-                + memory.getBoolean(MemFlags.MARKET_PATROL));
-        memory.set(MemFlags.MARKET_PATROL, oldPatrol);
+        boolean hadPatrol = memory.contains(MemFlags.MARKET_PATROL);
+        Object oldPatrol = memory.get(MemFlags.MARKET_PATROL);
+        float oldExpire = memory.getExpire(MemFlags.MARKET_PATROL);
+        try {
+            memory.set(MemFlags.MARKET_PATROL, true);
+            LOG.info("GearIn market memory: patrol="
+                    + memory.getBoolean(MemFlags.MARKET_PATROL));
+        } finally {
+            if (hadPatrol) {
+                memory.set(MemFlags.MARKET_PATROL, oldPatrol, oldExpire);
+            } else {
+                memory.unset(MemFlags.MARKET_PATROL);
+            }
+            LOG.info("GearIn market memory restored: present="
+                    + memory.contains(MemFlags.MARKET_PATROL)
+                    + " value=" + memory.get(MemFlags.MARKET_PATROL)
+                    + " expire=" + memory.getExpire(MemFlags.MARKET_PATROL));
+        }
     }
 
     private void restoreMarketState(MarketAPI market) {
@@ -71,6 +84,8 @@ public class GearInMarketInteraction implements EveryFrameScript {
         float oldTariff = tariff.getModifiedValue();
         boolean oldFreePort = market.isFreePort();
         boolean hadStorage = market.hasSubmarket("storage");
+        LOG.info(String.format("GearIn market interaction before: tariff=%.3f freePort=%s storage=%s",
+                oldTariff, oldFreePort, hadStorage));
         tariff.modifyFlat(TARIFF_ID, 0.05f);
         market.setFreePort(!oldFreePort);
         market.addSubmarket("storage");

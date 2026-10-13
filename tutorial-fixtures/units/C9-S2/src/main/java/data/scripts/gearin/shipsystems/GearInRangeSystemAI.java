@@ -32,7 +32,7 @@ public class GearInRangeSystemAI implements ShipSystemAIScript {
     @Override
     public void advance(float amount, Vector2f missileDangerDir,
             Vector2f collisionDangerDir, ShipAPI target) {
-        if (engine == null || engine.isPaused()) {
+        if (engine.isPaused()) {
             return;
         }
         interval.advance(amount);

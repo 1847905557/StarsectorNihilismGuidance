@@ -1,10 +1,10 @@
 # 使用 MagicLib 战斗小工具
 
-MagicLib 除了拖尾与生涯工具，还提供圆形边界求交、HUD 状态条和动画曲线。本节把三项小工具接到同一个战斗目标探针：锁定目标后，圆周粒子标出近侧边界，HUD 同时比较线性接近度与平滑接近度。
+最后做一个便于观察的小探针：锁定舰船后，在目标近侧圆周画粒子，并在玩家舰船旁显示接近度。距离先转为线性比例，再通过 MagicAnim 形成平滑曲线，两层 HUD 填充放在一起比较。几何、曲线与显示入口都使用同一组玩家和目标数据。
 
-预计阅读时间：20 分钟。
+*本节预期阅读时间：\~20 分钟。*
 
-预计操作时间：25 分钟。
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
@@ -16,14 +16,28 @@ MagicLib 除了拖尾与生涯工具，还提供圆形边界求交、HUD 状态�
 
 ## 前置知识
 
-- [C7-S1] 的战斗插件生命周期；
+- [C8-S3] 的战斗插件生命周期与暂停处理；
 - [C18-S1] 的 MagicLib 硬依赖和编译 classpath；
 - [C18-S2] 的位置、距离和 `Vector2f`；
 - [C18-S3] 的 `BaseEveryFrameCombatPlugin` 注册方式。
 
-## 组织目标探针的数据流
+## 注册战斗目标探针
 
-探针只读取玩家当前锁定的舰船目标。一个有效帧从同一组玩家与目标数据产生三项结果：中心距离形成线性接近度，平滑曲线形成主条进度，玩家至目标中心的线段形成圆周交点。
+先保存本节完整的 `GearInTargetProbe`，再向既有 `data/config/settings.json` 的 `plugins` 对象追加唯一登记键：
+
+```json
+{
+    "plugins": {
+        "gearInTargetProbe": "data.scripts.gearin.combat.GearInTargetProbe"
+    }
+}
+```
+
+游戏为每场战斗创建一个插件实例。实例字段只保存当前战斗的引擎、上一个目标与粒子计时器，不跨战斗或存档持久化。
+
+## 让目标与 HUD 使用同一次查询
+
+登记完成后，探针从玩家当前锁定的舰船目标取得数据。**HUD 每帧刷新，粒子按间隔补充。**一个有效帧从同一组玩家与目标数据产生三项结果：中心距离形成线性接近度，平滑曲线形成主条进度，玩家至目标中心的线段形成圆周交点。
 
 ```text
 玩家舰船 + 当前舰船目标
@@ -31,7 +45,7 @@ MagicLib 除了拖尾与生涯工具，还提供圆形边界求交、HUD 状态�
     -> 玩家位置到目标位置 -> MagicFakeBeam -> 圆周交点粒子
 ```
 
-`advance(...)` 在战斗暂停、玩家不存在、玩家已被摧毁、目标不存在或目标已被摧毁时结束本帧。失去目标时还会清零粒子计时器，重新锁定后从一个完整的 `0.05 秒` 周期开始。
+`advance(...)` 在战斗暂停、玩家不存在、玩家已被摧毁、目标不存在或目标已被摧毁时结束本帧。失去目标时还会清零粒子计时器，重新锁定后从零累计粒子计时，当前帧的 `amount` 也参与累积。
 
 ## 计算目标圆周交点
 
@@ -54,11 +68,11 @@ Vector2f collisionPoint = MagicFakeBeam.getCollisionPointOnCircumference(
 玩家与目标的中心距离使用 `MathUtils.getDistance(...)` 取得。本例把 `2000 su` 设为显示量程，距离越近，接近度越高：
 
 ```java
-float distance = MathUtils.getDistance(player, target);
+float distance = MathUtils.getDistance(player.getLocation(), target.getLocation());
 float linearProximity = 1f - Math.min(distance / 2000f, 1f);
 ```
 
-映射结果具有明确边界：距离为 `0 su` 时等于 `1`，距离为 `1000 su` 时等于 `0.5`，距离达到或超过 `2000 su` 时等于 `0`。战斗距离不会是负数，因此 `Math.min(...)` 已经完成本例需要的上限钳制。
+映射结果具有明确边界：距离为 `0 su` 时等于 `1`，距离为 `1000 su` 时等于 `0.5`，距离达到或超过 `2000 su` 时等于 `0`。两个位置的距离为非负数，`Math.min(...)` 将量程之外的比例截到 1。这里传入位置向量，HUD 显示的是中心距离；换成实体重载后，碰撞半径也会进入结果。
 
 接近度用于表现玩家与目标的空间关系，不参与伤害、命中或 AI 判断。改变 `DISPLAY_RANGE` 只会改变 HUD 的显示比例。
 
@@ -119,21 +133,7 @@ particleElapsed %= 0.05f;
 
 粒子寿命比间隔长 `0.03 秒`，相邻标记会轻微重叠。零速度让粒子停留在本次计算的交点；目标移动后，新粒子会出现在新的圆周位置，旧粒子在 `0.08 秒` 内自然消失。
 
-切换目标时，插件把计时器清零。新目标必须等待一个完整间隔才产生第一个粒子，旧目标的累计时间不会带入新目标。
-
-## 注册战斗目标探针
-
-在 `data/config/settings.json` 的 `plugins` 对象中登记插件。注册 key 在合并后的设置中必须唯一：
-
-```json
-{
-    "plugins": {
-        "gearInTargetProbe": "data.scripts.gearin.combat.GearInTargetProbe"
-    }
-}
-```
-
-游戏为每场战斗创建一个插件实例。实例字段只保存当前战斗的引擎、上一个目标与粒子计时器，不跨战斗或存档持久化。
+切换目标时，插件把计时器清零。新目标从零累计到阈值再生成粒子，旧目标的计时余量不带入。此前粒子继续按 0.08 秒寿命消失。
 
 ## 常用方法速查表
 
@@ -148,7 +148,7 @@ particleElapsed %= 0.05f;
 
 ## 完整最小例
 
-`GearInTargetProbe` 只读取当前玩家、舰船目标与距离，并生成 HUD 和诊断粒子。将它放在 `data/scripts/gearin/combat/GearInTargetProbe.java`，再按上一节的 settings 片段注册。
+`GearInTargetProbe` 读取当前玩家、舰船目标与中心距离，再生成 HUD 和标记粒子。源码保存到 `src/data/scripts/gearin/combat/GearInTargetProbe.java`：
 
 ::: details 完整成品：GearInTargetProbe
 
@@ -188,7 +188,7 @@ public final class GearInTargetProbe extends BaseEveryFrameCombatPlugin {
 
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
-        if (engine == null || engine.isPaused()) {
+        if (engine.isPaused()) {
             return;
         }
 
@@ -209,7 +209,7 @@ public final class GearInTargetProbe extends BaseEveryFrameCombatPlugin {
             particleElapsed = 0f;
         }
 
-        float distance = MathUtils.getDistance(player, target);
+        float distance = MathUtils.getDistance(player.getLocation(), target.getLocation());
         float linearProximity = 1f - Math.min(distance / DISPLAY_RANGE, 1f);
         float smoothProximity = MagicAnim.smooth(linearProximity);
 
@@ -254,7 +254,7 @@ public final class GearInTargetProbe extends BaseEveryFrameCombatPlugin {
 
 前置数据：MagicLib 与 LazyLib 已安装并启用，`GearInTargetProbe` 已加入 settings 的 `plugins` 对象，测试战斗包含至少两艘可以锁定的敌舰。
 
-1. 启动一场战斗，保持未锁定目标并观察玩家 HUD 与战场粒子。
+1. 保存源码与插件登记，构建并重启。进入战斗，保持未锁定目标，观察玩家 HUD 与战场粒子。
 2. 锁定一艘存活敌舰，观察目标近侧碰撞圆和玩家舰船左上方 HUD。
 3. 在 `2000 su` 内接近目标，比较绿色主填充与较宽副填充。
 4. 拉开到 `2000 su` 以外，继续观察距离文本和两层填充。
@@ -264,11 +264,11 @@ public final class GearInTargetProbe extends BaseEveryFrameCombatPlugin {
 预期结果：
 
 - 无有效目标时不显示目标接近度状态条，也不生成交点粒子；
-- 锁定有效目标后，绿色粒子以每秒 `20` 个的频率标记玩家一侧圆周；
+- 锁定有效目标后，绿色粒子按 0.05 秒间隔、每帧最多一个标记玩家一侧圆周；常规帧率下约每秒 20 个；
 - 接近目标时，主填充与副填充都增加，距离文本以整数 `su` 更新；
 - 平滑主条在量程两端变化较慢，线性副条按距离等比例变化；
 - 距离达到或超过 `2000 su` 时，两层填充均为 `0`；
-- 切换目标后，交点跟随新目标，等待 `0.05 秒` 后出现第一个新粒子。
+- 切换目标后，交点跟随新目标，计时从零累计达到 0.05 秒后生成新粒子，当前帧时间计入其中。
 
 ## 故障分析
 
@@ -287,12 +287,12 @@ public final class GearInTargetProbe extends BaseEveryFrameCombatPlugin {
 - **状态条显示在其他舰船旁边**：调用方传入了玩家以外的舰船。
     - **解决方案**：始终把 `engine.getPlayerShip()` 传给 `drawHUDStatusBar(...)`。
 
-- **切换目标后立即出现旧位置粒子**：目标变化时没有清零粒子计时器。
+- **切换目标后粒子沿用上次采样的计时余量**：目标变化时没有清零计时器。
     - **解决方案**：比较 `target` 与 `previousTarget`，变化后把 `particleElapsed` 设为 `0f`。
 
 ## 总结
 
-`MagicFakeBeam` 用圆心和半径把目标近侧边界转化为明确坐标，`MagicAnim` 把线性接近度变成缓入缓出曲线，`MagicUI` 则把两个进度放到同一条 HUD 状态条中。三项 API 共享玩家与当前目标，形成一个职责单一、结果可观察的战斗探针。
+`MagicFakeBeam` 用圆心和半径把目标近侧边界转化为明确坐标，`MagicAnim` 把线性接近度变成缓入缓出曲线，`MagicUI` 则把两个进度放到同一条 HUD 状态条中。同一次目标查询同时提供圆周位置、线性比例和平滑比例，画面可以对应到当前使用的输入。
 
 HUD 需要逐帧刷新，粒子需要按时间节流。把界面提交、几何计算和跨帧计时分开后，刷新频率、粒子寿命和目标切换行为都能独立核对。
 
@@ -301,5 +301,5 @@ HUD 需要逐帧刷新，粒子需要按时间节流。把界面提交、几何�
 - `org.magiclib.util.MagicFakeBeam`：假光束和圆形边界求交；
 - `org.magiclib.util.MagicAnim`：归一化进度的动画曲线；
 - `org.magiclib.util.MagicUI`：战斗 HUD 状态条、文字与颜色常量；
-- `org.lazywizard.lazylib.MathUtils`：战斗实体中心距离；
+- `org.lazywizard.lazylib.MathUtils`：两个位置向量之间的中心距离；
 - `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：每帧战斗入口。

@@ -62,17 +62,21 @@ public class GearInFleetMemberStatus implements EveryFrameScript {
         tracker.setMothballed(true);
 
         float hullAfter = status.getHullFraction();
-        float crAfter = tracker.getCR();
+        float crWhileMothballed = tracker.getCR();
         float crewAfter = crew.getCrew();
         boolean deployableWhileMothballed = member.canBeDeployedForCombat();
 
         tracker.setMothballed(false);
+        float crAfterRelease = tracker.getCR();
+        float baseCrAfterRelease = tracker.getBaseCR();
 
         LOG.info("GearIn member status: id=" + member.getId()
                 + " hull=" + hullBefore + "->" + hullAfter
                 + " crew=" + crewBefore + "->" + crewAfter
                 + " crewFraction=" + member.getCrewFraction()
-                + " cr=" + crBefore + "->" + crAfter
+                + " cr=" + crBefore + "->" + crAfterRelease
+                + " crWhileMothballed=" + crWhileMothballed
+                + " baseCrAfterRelease=" + baseCrAfterRelease
                 + " mothballed=false"
                 + " deployableWhileMothballed=" + deployableWhileMothballed
                 + " deployable=" + member.canBeDeployedForCombat()

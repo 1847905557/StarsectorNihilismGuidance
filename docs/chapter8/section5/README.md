@@ -1,59 +1,127 @@
 # 配置武器脚本
 
-同一把武器的持续状态、射弹生成、命中结算和光束运行由不同的脚本入口负责。本节从 `.wpn` 与 `.proj` 的字段开始，逐一把字段绑定到 Java 接口，并用日志和视觉效果确认回调确实发生。
+第二章已经给武器绑定命中与光束效果，本节继续区分武器每帧、生成射弹、命中结算和光束更新。各回调接收的对象范围不同，先按实际需要选择入口，再读取当前实例或事件提供的信息。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：\~18 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 为武器或弹体配置正确的脚本入口；
-- 根据回调参数读取开火、命中和光束状态；
-- 用日志和游戏内效果验证脚本调用。
+- 选择 `wpn` 或 `proj` 的对应脚本字段；
+- 读取当前武器、射弹、命中与光束参数；
+- 区分每实例状态和单次事件；
+- 用日志与粒子核对调用。
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录和 `starsector.log` 位置；
-- [C2-S4] 的命中效果、光束效果与脚本注册规则；
-- [C6-S1] 的 Java 编译与 JAR 输出；
-- [C8-S3] 的战斗插件、暂停状态和 `advance` 回调；
-- [C8-S2] 的战斗实体、弹体、导弹和光束遍历。
+- [C1-S5] 的都林弹体与乌里光束；
+- [C2-S4] 的效果登记；
+- [C6-S4] 的编译与 JAR；
+- [C8-S2] 的对象和帧状态；
+- [C8-S3] 的逐帧与暂停。
 
-## 选择武器脚本入口
+## 按事件选择入口
 
-武器脚本的字段决定游戏在什么对象、什么时机创建并调用 Java 类。先根据要观察的事件选择字段，再把完整类名写入对应数据文件。
+### 武器脚本字段速查表
 
-### 武器脚本注册速查表
+| 字段 | 接口 | 当前用途 |
+|---|---|---|
+| `wpn.everyFrameEffect` | `EveryFrameWeaponEffectPlugin` | 读取当前武器的持续状态 |
+| `proj.onFireEffect` | `OnFireEffectPlugin` | 弹体生成后的事件 |
+| `proj.onHitEffect` | `OnHitEffectPlugin` | 当前命中与结算 |
+| `wpn.beamEffect` | `BeamEffectPlugin` | 激活光束的逐帧信息 |
 
-先用这张表确定注册位置，再阅读后面的参数和完整示例。
+**字段决定调用位置，接口决定参数。** 完整类名和当前 JAR 对应，只有实际使用该数据文件的对象才会调用它。
 
-| 数据文件字段 | Java 接口 | 触发时机 |
-| --- | --- | --- |
-| `.wpn` 的 `everyFrameEffect` | `EveryFrameWeaponEffectPlugin` | 武器每帧运行 |
-| `.proj` 的 `onFireEffect` | `OnFireEffectPlugin` | 射弹生成后 |
-| `.proj` 的 `onHitEffect` | `OnHitEffectPlugin` | 射弹命中并完成命中上下文时 |
-| `.wpn` 的 `beamEffect` | `BeamEffectPlugin` | 光束激活期间逐帧运行 |
+## 观察每把武器的持续状态
 
-四个字段都使用 Java 完整类名。包名、类名和字段值保持一致，JAR 中也要存在对应的 `.class` 文件。
-
-## 配置 `.wpn` 的 EveryFrame
-
-`everyFrameEffect` 适合读取武器自身的持续状态，例如 `isFiring()`、弹药、冷却和蓄力。游戏为每把绑定了该脚本的武器创建独立实例，因此 `wasFiring` 这类字段只记录当前武器。
-
-实现 `WeaponEffectPluginWithInit` 后，`init(WeaponAPI weapon)` 在脚本实例绑定到武器时调用。实现 `EveryFrameWeaponEffectPluginWithAdvanceAfter` 后，`advance(...)` 在本帧武器转向、开火等操作前调用，`advanceAfter(...)` 在这些操作完成后调用。前后两个回调读取到的弹药和冷却状态可能不同。
+在都林 `wpn` 中设置局部字段：
 
 ```json
-{
-  "everyFrameEffect": "data.scripts.gearin.combat.GearInWeaponFlowEffect"
-}
+"everyFrameEffect": "data.scripts.gearin.combat.GearInWeaponFlowEffect"
 ```
 
-`advance()` 适合检测开火边沿；`advanceAfter()` 适合读取本帧操作完成后的弹药、冷却和蓄力值。下面的完整类用 `wasFiring` 记录从未开火到开火的变化，并以固定间隔输出操作后的状态。
+每把武器有自己的效果实例，`wasFiring` 因此只保存该武器的开火状态。`WeaponEffectPluginWithInit` 提供绑定时的 `init`，`EveryFrameWeaponEffectPluginWithAdvanceAfter` 提供操作完成后的 `advanceAfter`。
 
-::: details 完整成品：GearInWeaponFlowEffect
+**同一帧操作前后读取的值可能不同。** 当前 `advance` 记录开始开火的变化，`advanceAfter` 记录已经执行后的弹药、冷却和蓄力。
+
+开火边沿局部片段如下：
+
+```java
+if (weapon.isFiring() && !wasFiring) {
+    LOG.info("GearIn weapon " + weapon.getId() + " started firing"
+            + " (before-frame callback)");
+}
+wasFiring = weapon.isFiring();
+```
+
+操作后累计 2 秒再报告，完整类也记录 `init` 里的武器 ID、规格与是否光束。输出间隔用于减少持续日志，当前武器实例保留自己的计时器。
+
+## 观察射弹生成
+
+在都林实际引用的 `GearIn_durin_shot.proj` 中设置：
+
+```json
+"onFireEffect": "data.scripts.gearin.combat.GearInShotOnFireEffect"
+```
+
+`onFire` 接收刚生成的 `projectile`、来源 `weapon` 和当前 `engine`。它适合读取规格、伤害、EMP 和来源，并在生成位置安排单次表现。
+
+```java
+void onFire(DamagingProjectileAPI projectile,
+            WeaponAPI weapon,
+            CombatEngineAPI engine)
+```
+
+当前完整类记录这些字段，来源对象可能因创建方式不同而缺席，日志按实际对象状态记录。本次弹体用于本次事件，下一发仍从新的回调参数取得。
+
+## 观察本次命中结果
+
+在同一弹体登记：
+
+```json
+"onHitEffect": "data.scripts.gearin.combat.GearInShotOnHitEffect"
+```
+
+`onHit` 接收当前目标、位置、护盾状态和 `ApplyDamageResultAPI`。`shieldHit` 标记护盾命中，`damageResult` 提供当前护盾、装甲、结构与 EMP 结算。
+
+```java
+void onHit(DamagingProjectileAPI projectile,
+           CombatEntityAPI target,
+           Vector2f point,
+           boolean shieldHit,
+           ApplyDamageResultAPI damageResult,
+           CombatEngineAPI engine)
+```
+
+射弹、导弹和光束脉冲的对应命中沿这类弹体事件处理。**读取本次结果时，直接使用回调参数**，避免上一笔命中对象参与当前判断。
+
+## 观察光束当前帧
+
+在乌里 `wpn` 设置：
+
+```json
+"beamEffect": "data.scripts.gearin.combat.GearInBeamLogger"
+```
+
+`advance` 接收 `amount`、`engine` 和 `BeamAPI`。光束提供起点、终点、长度、伤害和当前目标，`didDamageThisFrame` 与 `getDamageTarget` 每次重新读取。
+
+```java
+void advance(float amount, CombatEngineAPI engine, BeamAPI beam)
+```
+
+完整类每累计 1 秒记录目标、帧伤害标志与长度，再在上一帧末端位置创建青色光点。停止激活后该更新过程停止，下一次激活继续按实例计时。
+
+编者建议比较光束命中与未命中的两段结果。持续存在的画面和逐帧伤害并不是同一个信息，读取参数时要按本帧结算解释。
+
+## 完整最小例
+
+四个类保存到 `src/data/scripts/gearin/combat/`，当前字段写入对应都林和乌里数据，保存后构建并重启。
+
+::: details 完整成品：`GearInWeaponFlowEffect`
 
 ```java
 package data.scripts.gearin.combat;
@@ -67,12 +135,7 @@ import com.fs.starfarer.api.combat.WeaponAPI;
 import com.fs.starfarer.api.combat.WeaponEffectPluginWithInit;
 import com.fs.starfarer.api.util.IntervalUtil;
 
-/**
- * 武器逐帧效果：只有把本类类名写进 .wpn 的 everyFrameEffect 字段时，
- * 游戏才会为每把武器创建独立实例并回调 init(weapon) / advance / advanceAfter。
- * advance 在本帧转向 / 开火等操作之前被调用，记录开火切换；
- * advanceAfter 在操作完成后按 2 秒节奏打印弹药 / 冷却 / 充能状态。
- */
+/** 记录武器实例的初始化、开火变化和操作后状态。 */
 public class GearInWeaponFlowEffect implements EveryFrameWeaponEffectPluginWithAdvanceAfter,
         WeaponEffectPluginWithInit {
 
@@ -115,27 +178,7 @@ public class GearInWeaponFlowEffect implements EveryFrameWeaponEffectPluginWithA
 
 :::
 
-## 配置 `.proj` 的 onFire
-
-`onFireEffect` 写在弹体文件 `.proj` 中。类名加载成功后，射弹生成完成就会调用：
-
-```java
-void onFire(DamagingProjectileAPI projectile,
-            WeaponAPI weapon,
-            CombatEngineAPI engine)
-```
-
-`projectile` 是刚生成的弹体，`weapon` 是触发射击的武器，`engine` 是当前战斗引擎。这个入口适合读取弹体规格、来源和伤害，也适合在生成位置添加一次性效果。
-
-```json
-{
-  "onFireEffect": "data.scripts.gearin.combat.GearInShotOnFireEffect"
-}
-```
-
-完整例子只消费本次回调提供的对象，不把弹体引用保存到下一次开火：
-
-::: details 完整成品：GearInShotOnFireEffect
+::: details 完整成品：`GearInShotOnFireEffect`
 
 ```java
 package data.scripts.gearin.combat;
@@ -148,11 +191,7 @@ import com.fs.starfarer.api.combat.DamagingProjectileAPI;
 import com.fs.starfarer.api.combat.OnFireEffectPlugin;
 import com.fs.starfarer.api.combat.WeaponAPI;
 
-/**
- * 射弹开火回调：只有把本类类名写进 .proj 的 onFireEffect 字段时才会被调用。
- * onFire 收到的就是刚生成的那一个射弹对象 (fireShot 生成后回调)；
- * 参数都是 "本次事件上下文"，禁止跨发缓存。
- */
+/** 记录本次生成弹体的规格、来源与伤害。 */
 public class GearInShotOnFireEffect implements OnFireEffectPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInShotOnFireEffect.class);
@@ -171,30 +210,7 @@ public class GearInShotOnFireEffect implements OnFireEffectPlugin {
 
 :::
 
-## 配置 `.proj` 的 onHit
-
-`onHitEffect` 同样写在 `.proj` 中。命中后，游戏把目标、命中点、护盾结果和实际伤害结果一起传入：
-
-```java
-void onHit(DamagingProjectileAPI projectile,
-           CombatEntityAPI target,
-           Vector2f point,
-           boolean shieldHit,
-           ApplyDamageResultAPI damageResult,
-           CombatEngineAPI engine)
-```
-
-`target` 是命中的实体，`point` 是命中位置，`shieldHit` 表示命中护盾，`damageResult` 保存护盾、装甲、船体和 EMP 的本次结算结果。`onHitEffect` 适合在命中位置添加效果、区分护盾与船体命中，并记录一次命中日志。
-
-```json
-{
-  "onHitEffect": "data.scripts.gearin.combat.GearInShotOnHitEffect"
-}
-```
-
-命中结果直接从当前回调的 `ApplyDamageResultAPI` 读取：
-
-::: details 完整成品：GearInShotOnHitEffect
+::: details 完整成品：`GearInShotOnHitEffect`
 
 ```java
 package data.scripts.gearin.combat;
@@ -209,18 +225,14 @@ import com.fs.starfarer.api.combat.DamagingProjectileAPI;
 import com.fs.starfarer.api.combat.OnHitEffectPlugin;
 import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
 
-/**
- * 射弹命中回调：只有把本类类名写进 .proj 的 onHitEffect 字段时才会被调用
- * (射弹 / 导弹 / 光束脉冲命中结算时触发)。参数都是 "本次命中上下文"，
- * 禁止跨命中缓存。
- */
+/** 记录本次命中的目标、护盾与伤害结算结果。 */
 public class GearInShotOnHitEffect implements OnHitEffectPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInShotOnHitEffect.class);
 
     @Override
     public void onHit(DamagingProjectileAPI projectile, CombatEntityAPI target, Vector2f point,
-                      boolean shieldHit, ApplyDamageResultAPI damageResult, CombatEngineAPI engine) {
+            boolean shieldHit, ApplyDamageResultAPI damageResult, CombatEngineAPI engine) {
         LOG.info("GearIn onHit " + projectile.getProjectileSpecId()
                 + " target=" + target.getClass().getSimpleName()
                 + " shieldHit=" + shieldHit
@@ -234,27 +246,7 @@ public class GearInShotOnHitEffect implements OnHitEffectPlugin {
 
 :::
 
-## 配置 `.wpn` 的 BeamEffect
-
-`beamEffect` 写在光束武器的 `.wpn` 中。光束激活期间，游戏按帧调用：
-
-```java
-void advance(float amount,
-             CombatEngineAPI engine,
-             BeamAPI beam)
-```
-
-`BeamAPI` 提供光束起点、终点、长度、伤害和当前帧目标。`didDamageThisFrame()` 与 `getDamageTarget()` 只表示本帧的命中状态；每次回调都重新读取，不能缓存上一帧目标。`amount` 是当前帧经过的时间，可用于控制日志或视觉效果的间隔。
-
-```json
-{
-  "beamEffect": "data.scripts.gearin.combat.GearInBeamLogger"
-}
-```
-
-下面的例子每累计约 1 秒记录一次当前帧状态，并在光束末端添加青色光点。光束停止后回调停止，下一次激活会继续创建新的调用周期。
-
-::: details 完整成品：GearInBeamLogger
+::: details 完整成品：`GearInBeamLogger`
 
 ```java
 package data.scripts.gearin.combat;
@@ -297,46 +289,22 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 :::
 
-## 核对注册值与类名
-
-四个完整类名分别写入实际使用的 `.wpn` 或 `.proj` 字段：
-
-```json
-{
-  "everyFrameEffect": "data.scripts.gearin.combat.GearInWeaponFlowEffect",
-  "beamEffect": "data.scripts.gearin.combat.GearInBeamLogger"
-}
-```
-
-```json
-{
-  "onFireEffect": "data.scripts.gearin.combat.GearInShotOnFireEffect",
-  "onHitEffect": "data.scripts.gearin.combat.GearInShotOnHitEffect"
-}
-```
-
-`package` 声明、类名、字段值和 JAR 条目必须逐字对应。每种回调都只会在对应对象和对应时机出现：EveryFrame 读取武器持续状态，onFire 读取刚生成的弹体，onHit 读取当前命中上下文，BeamEffect 读取当前激活光束。
-
 ## 验证方案
 
-前置数据：[C1-S5] 的弹体武器与光束武器数据文件可用，已按 [C6-S1] 至 [C6-S4] 配置 Java 17、`src/`、Gradle 和 JAR；本节四个脚本类已就绪。
-
-1. 为测试武器的 `.wpn` 写入 `everyFrameEffect`，为光束武器写入 `beamEffect`。
-2. 为测试弹体的 `.proj` 写入 `onFireEffect` 和 `onHitEffect`。
-3. 构建 JAR，并用 `jar tf` 核对四个 `.class` 条目。
-4. 进入包含测试武器的战斗，观察 `GearIn weapon init` 和开火前后日志。
-5. 开火并命中目标，核对 `GearIn onFire` 与 `GearIn onHit` 的弹体 ID、目标和伤害结果。
-6. 激活光束，核对 `GearIn beam tick`、当前帧命中标记、目标和末端青色光点。
-7. 暂停战斗后检查四类回调和计时日志是否停止，恢复后再次观察。
-8. 在 `starsector.log` 中搜索四组稳定前缀，并复核 `.wpn`、`.proj` 字段与类名。
+1. 保存四个类与武器／弹体字段，构建并核对 `class` 条目。
+2. 在测试战斗使用都林，查看 `weapon` `init` 和操作前后状态。
+3. 发射并命中目标，比较 `onFire` 的生成参数与 `onHit` 的实际结算。
+4. 使用乌里光束，比较有目标、无目标和当前帧伤害，观察末端青色粒子。
+5. 暂停再恢复，核对实际回调和计时变化。
+6. 搜索四组前缀，按字段、数据文件与完整类名确认调用归属。
 
 预期结果：
 
-- EveryFrame 日志显示初始化、开火边沿以及操作后的弹药、冷却和蓄力；
-- onFire 日志显示刚生成的弹体和来源武器；
-- onHit 日志显示命中目标、护盾标志和 `ApplyDamageResultAPI` 结果；
-- BeamEffect 日志只在光束激活期间出现，并显示当前帧目标和末端光点；
-- 暂停期间回调状态冻结，恢复后继续推进。
+- 每武器实例记录自己的 `init`、开火变化和操作后参数。
+- `onFire` 对应当前生成弹体，`onHit` 对应当前命中与结算。
+- 光束日志按当前帧读取目标和伤害，激活期间按秒记录。
+- 暂停时相关更新保持，恢复后继续当前状态。
+- 日志与视觉可以定位各入口实际使用的对象。
 
 ## 故障分析
 
@@ -346,13 +314,13 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 - **日志出现 `Problem loading class`**：注册值与 Java 类的实际名称不一致。
     - **解决方案**：核对 `package`、类名、目录路径和注册字符串，重新构建 JAR。
 
-- **EveryFrame 只有 `advance` 日志，操作后的状态没有记录**：类没有实现带 `advanceAfter` 的接口，或没有实现对应方法。
+- **`EveryFrame` 只有 `advance` 日志，操作后的状态没有记录**：类没有实现带 `advanceAfter` 的接口，或没有实现对应方法。
     - **解决方案**：让类实现 `EveryFrameWeaponEffectPluginWithAdvanceAfter`，并实现 `advanceAfter(...)`。
 
-- **onFire 或 onHit 没有回调**：脚本类没有绑定到测试弹体实际使用的 `.proj`。
+- **`onFire` 或 `onHit` 没有回调**：脚本类没有绑定到测试弹体实际使用的 `.proj`。
     - **解决方案**：把类名写入 `.proj` 的对应字段，确认测试武器实际使用了该弹体文件。
 
-- **BeamEffect 在非光束武器上没有日志**：`beamEffect` 只对光束武器的激活阶段生效。
+- **`BeamEffect` 在非光束武器上没有日志**：`beamEffect` 只对光束武器的激活阶段生效。
     - **解决方案**：只在光束武器的 `.wpn` 中配置 `beamEffect`，并在光束激活期间观察日志。
 
 - **光束日志显示上一帧目标或命中状态**：回调中复用了上一帧的对象或状态。
@@ -363,7 +331,9 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ## 总结
 
-`.wpn` 的 `everyFrameEffect` 处理武器级持续回调，`beamEffect` 处理光束激活期间的逐帧状态；`.proj` 的 `onFireEffect` 处理射弹生成，`onHitEffect` 处理当前命中上下文。回调参数只对应当前武器实例、当前射弹事件或当前光束帧，日志和视觉效果可以直接验证字段绑定与调用时机。
+武器每帧与光束属于持续实例，射弹生成与命中属于当前事件。`wpn` 和 `proj` 分别登记对应接口，实例字段保存自己的状态，事件参数则提供本次对象和结果。
+
+后续动画、伤害和复杂效果继续采用这些入口。先选对象与时机，再组织读取和表现，完整类名、数据引用与日志就能形成可核对的调用关系。
 
 ## 建议参考项
 

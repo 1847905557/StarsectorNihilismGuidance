@@ -37,24 +37,36 @@ public class GearInFleetMemoryProbe implements EveryFrameScript {
         CampaignFleetAPI fleet = sector.getPlayerFleet();
         MemoryAPI memory = fleet.getMemoryWithoutUpdate();
 
-        boolean oldBusy = memory.getBoolean(MemFlags.FLEET_BUSY);
+        boolean hadBusy = memory.contains(MemFlags.FLEET_BUSY);
+        Object oldBusy = memory.get(MemFlags.FLEET_BUSY);
+        float busyExpire = memory.getExpire(MemFlags.FLEET_BUSY);
+        boolean hadPatrolDistance = memory.contains(MemFlags.FLEET_PATROL_DISTANCE);
         Object oldPatrolDistance = memory.get(MemFlags.FLEET_PATROL_DISTANCE);
+        float patrolExpire = memory.getExpire(MemFlags.FLEET_PATROL_DISTANCE);
 
-        memory.set(MemFlags.FLEET_BUSY, true, 0.25f);
-        memory.set(MemFlags.FLEET_PATROL_DISTANCE, 5f, 0.25f);
-
-        LOG.info("GearIn fleet memory: busy=" + memory.getBoolean(MemFlags.FLEET_BUSY)
-                + " patrolDistance=" + memory.get(MemFlags.FLEET_PATROL_DISTANCE));
-
-        if (oldBusy) {
-            memory.set(MemFlags.FLEET_BUSY, true);
-        } else {
-            memory.unset(MemFlags.FLEET_BUSY);
-        }
-        if (oldPatrolDistance == null) {
-            memory.unset(MemFlags.FLEET_PATROL_DISTANCE);
-        } else {
-            memory.set(MemFlags.FLEET_PATROL_DISTANCE, oldPatrolDistance);
+        try {
+            memory.set(MemFlags.FLEET_BUSY, true, 0.25f);
+            memory.set(MemFlags.FLEET_PATROL_DISTANCE, 5f, 0.25f);
+            LOG.info("GearIn fleet memory: busy=" + memory.getBoolean(MemFlags.FLEET_BUSY)
+                    + " patrolDistance=" + memory.get(MemFlags.FLEET_PATROL_DISTANCE));
+        } finally {
+            if (hadBusy) {
+                memory.set(MemFlags.FLEET_BUSY, oldBusy, busyExpire);
+            } else {
+                memory.unset(MemFlags.FLEET_BUSY);
+            }
+            if (hadPatrolDistance) {
+                memory.set(MemFlags.FLEET_PATROL_DISTANCE, oldPatrolDistance, patrolExpire);
+            } else {
+                memory.unset(MemFlags.FLEET_PATROL_DISTANCE);
+            }
+            LOG.info("GearIn fleet memory restored: busyPresent="
+                    + memory.contains(MemFlags.FLEET_BUSY)
+                    + " busy=" + memory.get(MemFlags.FLEET_BUSY)
+                    + " busyExpire=" + memory.getExpire(MemFlags.FLEET_BUSY)
+                    + " patrolPresent=" + memory.contains(MemFlags.FLEET_PATROL_DISTANCE)
+                    + " patrol=" + memory.get(MemFlags.FLEET_PATROL_DISTANCE)
+                    + " patrolExpire=" + memory.getExpire(MemFlags.FLEET_PATROL_DISTANCE));
         }
     }
 }

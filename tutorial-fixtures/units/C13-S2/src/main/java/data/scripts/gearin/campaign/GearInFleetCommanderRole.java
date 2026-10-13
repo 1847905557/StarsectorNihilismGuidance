@@ -11,10 +11,9 @@ import com.fs.starfarer.api.impl.campaign.ids.Personalities;
 public class GearInFleetCommanderRole {
     private static final Logger LOG = Global.getLogger(GearInFleetCommanderRole.class);
 
-    public void run() {
-        CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
+    public void run(CampaignFleetAPI fleet) {
         PersonAPI person = fleet.getCommander();
-        if (person == null || !"GearIn_commander".equals(person.getId())) {
+        if (!"GearIn_commander".equals(person.getId())) {
             person = createCommander();
         }
         fleet.setCommander(person);

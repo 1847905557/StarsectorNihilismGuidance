@@ -1,40 +1,51 @@
 # 记录和定位 MOD 日志
 
-本节建立一套可复用的 MOD 日志写法，让启动、资源加载和运行阶段都能留下带上下文的排查信息。
+此前各类回调已经输出日志，本节整理正常记录、状态提示与异常堆栈的写法。类名提供代码来源，阶段与对象 ID 提供当前上下文；遇到加载或运行问题时，用这些信息追到实际调用位置。
 
-*本节预期阅读时间：约 12 分钟。*
+*本节预期阅读时间：\~12 分钟。*
 
-*本节预期操作时间：约 15 分钟。*
+*本节预期操作时间：\~15 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 取得与类对应的日志器并选择合适的日志级别；
-- 为日志加入稳定前缀、对象 ID 和阶段信息；
-- 记录异常堆栈并根据日志定位故障位置；
-- 在 `starsector.log` 中核对启动、加载和运行结果。
+- 取得类对应的日志器；
+- 按事实选择 info、warn 和 error；
+- 用稳定前缀、阶段与对象 ID 组织消息；
+- 保留异常堆栈并定位失败操作；
+- 比较本次启动和运行记录。
 
 ## 前置知识
 
-- [C6-S1] 至 [C6-S4] 的 Java 17、源码迁移、Gradle 和 JAR 构建；
-- [C7-S1] 的 MOD 入口回调和日志验证；
-- [C7-S2] 的 `Global` 服务访问阶段；
-- Java 方法、字符串拼接和异常对象的基本用法。
+- [C6-S4] 的构建与加载；
+- [C7-S1] 的生命周期日志；
+- [C7-S2] 的服务与阶段；
+- Java 字符串、异常对象与 try／catch。
 
-## 取得日志器
+## 让日志来源对应实际类
 
-在 Java 类中调用 `Global.getLogger(当前类.class)` 取得该类的日志器。日志器将内容写入 `Starsector/starsector-core/starsector.log`，类名会成为日志来源的一部分。
+在当前类中创建日志器：
 
 ```java
 private static final Logger LOG = Global.getLogger(GearInLogWriter.class);
 ```
 
-日志器应作为类级常量复用。每个类使用自己的 `Class` 参数，便于从日志直接定位代码来源。
+Global.getLogger 按 Class 取得 Log4j 日志器，输出进入 `Starsector/starsector-core/starsector.log`。类名作为来源信息，可以与消息里的业务对象对应。
 
-## 选择日志级别
+**每个功能类使用自己的日志来源**。工具类可以统一消息格式，但调用记录仍要提供足够上下文，让读者看到是哪一阶段、处理哪个对象。
 
-正常阶段、对象创建和验证结果使用 `info`；流程仍可继续但需要检查的状态使用 `warn`；当前操作失败或捕获到异常时使用 `error`。`error` 调用必须同时传入异常对象，日志才会保留堆栈和原始原因。
+## 按当前事实选择级别
+
+### 日志级别速查表
+
+| 级别 | 使用场合 |
+|---|---|
+| info | 阶段完成、对象创建和需要观察的结果 |
+| warn | 流程继续，但存在需要核对的状态 |
+| error | 当前操作失败或捕获异常 |
+
+下面的局部片段分别记录加载、阶段与失败：
 
 ```java
 LOG.info("GearIn load: variant=GearIn_artizan_combat");
@@ -42,48 +53,42 @@ LOG.warn("GearIn state: sector not ready");
 LOG.error("GearIn load failed: variant=GearIn_artizan_combat", exception);
 ```
 
-## 加入稳定上下文
+有实际异常对象时，作为第二参数传给 error，堆栈才会保留。消息说明正在处理什么，异常说明实际失败在哪里，二者一起使用。
 
-每条 MOD 日志必须以稳定的 `GearIn` 前缀开始，并写出当前阶段、对象 ID 或关键参数。固定前缀用于全文搜索，阶段和对象字段用于缩小核对范围；数值和布尔状态直接写入同一行，便于比较多次运行结果。
+编者建议把正常状态与失败区分清楚。正常的加载阶段缺少 Sector 可以记录为阶段信息；只有操作确实需要它却没有可用对象时，再按当前失败处理。否则 warning 堆多了，真正值得检查的记录反而难找。
+
+## 写出稳定的上下文
+
+当前日志以 GearIn 开头，再放阶段、对象 ID 和实际结果：
 
 ```java
 String prefix = "GearIn " + stage + ": object=" + objectId + " ";
 LOG.info(prefix + detail);
 ```
 
-同一对象的多条日志使用相同 ID 和阶段名称。这样可以沿着一个 ID 对照加载、初始化和运行记录。
+**前缀用于找到 MOD，阶段和对象用于找到具体操作。** 加载、初始化与运行可以沿同一个对象 ID 追踪；比较数值时把相关参数写在一行，避免只输出一个没有归属的数字。
 
-## 记录异常上下文
+例如记录装配时写 variantId，记录舰船时写 hullId，记录回调时写当前阶段。格式保持稳定，字段按实际判断需要选择。
 
-捕获异常时先写出正在处理的对象和阶段，再把异常作为最后一个参数传给 `error`。日志同时保留稳定上下文、异常类型和堆栈，排查时可以直接回到触发点。
+## 在捕获位置保留异常
+
+已有加载操作失败时，把上下文与捕获到的异常一起记录，局部片段如下：
 
 ```java
 try {
-    loadVariant("GearIn_artizan_combat");
+    Global.getSettings().getVariant("GearIn_artizan_combat");
 } catch (RuntimeException exception) {
     GearInLogWriter.error("variant-load", "GearIn_artizan_combat",
             "variant could not be loaded", exception);
+    throw exception;
 }
 ```
 
-可恢复状态使用 `warn` 并写出下一步检查对象；失败路径使用 `error` 并保留异常。日志内容必须描述当前事实和可观察结果。
-
-## 搜索运行日志
-
-验证时打开 `Starsector/starsector-core/starsector.log`，使用 `GearIn` 前缀或对象 ID 搜索。启动阶段核对类加载和资源路径，生涯阶段核对对象 ID 与状态，战斗阶段核对运行参数和异常堆栈。每次修改后重新构建并清理旧日志，再比较新的记录。
-
-日志行应包含足以复现判断的字段，例如：
-
-```text
-INFO GearIn load: object=GearIn_artizan_combat variant registered
-WARN GearIn combat: object=GearIn_artizan_combat target unavailable
-ERROR GearIn variant-load: object=GearIn_artizan_combat variant could not be loaded
-java.lang.RuntimeException: ...
-```
+这段记录不改变失败结果，当前异常继续交给调用链处理。可继续的业务状态按功能决定后续动作，日志本身只是说明事实。
 
 ## 完整最小例
 
-下面的工具类集中封装三个级别的日志写法。调用方把阶段、对象 ID 和具体内容传入，日志格式保持一致。
+工具类保存为 `src/data/scripts/gearin/GearInLogWriter.java`，调用方传入阶段、对象与信息。
 
 ::: details 完整成品：GearInLogWriter
 
@@ -121,41 +126,60 @@ public class GearInLogWriter {
 
 :::
 
+这个工具统一 info、warn 和 error 的格式。需要直接使用功能类日志器时，也可以沿用同一消息约定。
+
+## 搜索本次运行
+
+打开当前 starsector.log，搜索 GearIn 或具体 ID。应用阶段查看类和资源，生涯查看存档对象，战斗查看实体、参数与堆栈。重新构建和启动后，按当前启动位置区分记录。
+
+可观察日志形如：
+
+```text
+INFO GearIn load: object=GearIn_artizan_combat variant registered
+WARN GearIn combat: object=GearIn_artizan_combat target unavailable
+ERROR GearIn variant-load: object=GearIn_artizan_combat variant could not be loaded
+java.lang.RuntimeException: ...
+```
+
+**先从首个相关异常追起**，后面的错误可能由前面的失败继续产生。日志包含调用来源、阶段与目标后，再对照实际文件和数据，就能把问题落到当前链上的位置。
+
 ## 验证方案
 
-前置数据：已按 [C6-S1] 至 [C6-S4] 建立 Java 工程，并准备可写入 `starsector.log` 的测试环境。
-
-1. 编译包含 `GearInLogWriter` 的 JAR，并确认 class 条目位于 `data/scripts/gearin/GearInLogWriter.class`。
-2. 在已有入口或脚本中分别调用 `info`、`warn` 和 `error`，传入同一个对象 ID 与三个阶段名称。
-3. 启动游戏并打开 `Starsector/starsector-core/starsector.log`，搜索 `GearIn` 和测试对象 ID。
-4. 对照日志级别、阶段、对象 ID、消息内容和异常堆栈。
+1. 保存工具类，构建 JAR 并核对 class 条目。
+2. 在既有入口的当前操作中调用 info，记录阶段、ID 与一个实际结果。
+3. 在业务可继续的异常状态处调用 warn，明确当前条件。
+4. 在可复现的失败操作捕获处用 error 保留异常，再按实际处理逻辑继续或抛出。
+5. 运行对应场景，搜索前缀和对象 ID，比较消息与堆栈来源。
 
 预期结果：
 
-- 三种级别均写入稳定前缀、阶段和对象 ID；
-- `error` 行后保留异常类型与堆栈；
-- 日志搜索可以定位到调用阶段和对象。
+- 三种级别表达各自实际状态，字段与对象对应。
+- 捕获异常的 error 记录包含原异常和堆栈。
+- 前缀、阶段、ID 和关键参数可以定位实际调用。
+- 本次构建与运行使用当前产物，日志与修改对应。
 
 ## 故障分析
 
-- **日志中找不到 MOD 前缀**：调用使用了其他日志器或消息没有稳定的 `GearIn` 前缀。
-    - **解决方案**：通过 `Global.getLogger(当前类.class)` 创建日志器，并统一使用 `GearIn` 前缀。
+- **找不到 MOD 消息**：前缀、级别过滤或实际调用未对应。
+    - **解决方案**：核对当前日志器、消息和日志配置，运行实际触发点。
 
-- **日志有消息但无法定位对象**：消息缺少阶段、对象 ID 或关键参数。
-    - **解决方案**：调用日志方法时补齐阶段和对象 ID，把关键状态拼接到同一行。
+- **消息无法确定对象**：只记录笼统结果，缺少阶段和 ID。
+    - **解决方案**：补齐当前操作的对象与关键参数。
 
-- **错误日志没有异常堆栈**：`error` 只传入字符串，没有传入 `Throwable`。
-    - **解决方案**：使用 `LOG.error(message, cause)`，保留捕获到的异常对象。
+- **error 消息缺少堆栈**：调用只传入文字，异常对象未记录。
+    - **解决方案**：传入实际 Throwable 作为第二参数。
 
-- **日志显示旧状态**：修改后的 JAR 没有重新构建或游戏仍读取旧产物。
-    - **解决方案**：重新执行 `gradle jar`，确认 `jar tf` 的 class 条目和 `mod_info.json` 的 JAR 路径。
+- **仍显示旧结果**：产物或加载路径采用旧代码。
+    - **解决方案**：重新构建并核对 JAR 与 mod_info 路径，再启动场景。
 
 ## 总结
 
-`Global.getLogger` 为每个类提供可定位的日志器。`info`、`warn` 和 `error` 分别记录正常结果、需检查状态和失败路径；稳定的 `GearIn` 前缀、阶段和对象 ID 让日志可以全文搜索和逐次比较，异常对象则保留完整堆栈。
+类日志器提供来源，级别说明当前状态，消息字段说明阶段和对象，异常对象提供失败堆栈。稳定格式让记录可搜索，具体内容则由当前操作的实际判断决定。
+
+后续验证继续沿对象与回调记录。日志量不是判断精度，能把一次结果追到对应输入、调用和文件，才是这套写法的作用。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global.getLogger(Class)`：取得 MOD 日志器；
-- `org.apache.log4j.Logger`：`info`、`warn` 和 `error` 方法；
-- `Starsector/starsector-core/starsector.log`：读取日志和异常堆栈。
+- `com.fs.starfarer.api.Global`：getLogger 取得类日志器。
+- `org.apache.log4j.Logger`：info、warn 与 error。
+- `Starsector/starsector-core/starsector.log`：运行日志与异常堆栈。

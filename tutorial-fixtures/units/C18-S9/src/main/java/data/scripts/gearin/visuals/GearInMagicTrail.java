@@ -13,8 +13,8 @@ import org.magiclib.plugins.MagicTrailPlugin;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
-import com.fs.starfarer.api.combat.CombatEngineLayers;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.CombatEngineLayers;
 import com.fs.starfarer.api.combat.DamagingProjectileAPI;
 import com.fs.starfarer.api.combat.OnFireEffectPlugin;
 import com.fs.starfarer.api.combat.WeaponAPI;
@@ -71,7 +71,7 @@ public class GearInMagicTrail implements OnFireEffectPlugin {
 
         @Override
         public void advance(float amount, List<InputEventAPI> events) {
-            if (engine == null || engine.isPaused()) {
+            if (engine.isPaused()) {
                 return;
             }
             if (!engine.isEntityInPlay(projectile)
@@ -143,7 +143,7 @@ public class GearInMagicTrail implements OnFireEffectPlugin {
 
         @Override
         public void advance(float amount, List<InputEventAPI> events) {
-            if (engine == null || engine.isPaused()) {
+            if (engine.isPaused()) {
                 return;
             }
             elapsed += amount;

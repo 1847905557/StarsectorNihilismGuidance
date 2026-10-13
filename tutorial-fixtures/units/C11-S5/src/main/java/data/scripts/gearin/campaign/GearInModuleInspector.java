@@ -19,7 +19,7 @@ public class GearInModuleInspector implements EveryFrameScript {
 
     private static final Logger LOG = Global.getLogger(GearInModuleInspector.class);
 
-    private static final String VARIANT_ID = "wolf_Assault";
+    private static final String VARIANT_ID = "GearIn_kiln_combat";
 
     private boolean done;
 

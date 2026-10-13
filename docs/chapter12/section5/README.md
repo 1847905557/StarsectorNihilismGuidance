@@ -1,10 +1,10 @@
 # 制作专用产业
 
-产业把市场中的商品需求、商品产出、收入和维护费连接成一个可持续更新的生产单元。本节注册一个消耗金属、燃料和重型机械并产出稀有金属的产业，随后观察缺货、建设状态、AI core、改良和中断如何影响它。
+炼厂交易入口已经有了，接下来让市场真正生产。本节给 Foundry 添加 Element Works，按规模需求金属、燃料和重型机械，产出稀有金属，再用最大输入缺口削减供给。建设、AI 核心和中断继续经过产业生命周期，日志把产业声明与市场最终结果分别记录。
 
-*本节预期阅读时间：~30 分钟。*
+*本节预期阅读时间：\~30 分钟。*
 
-*本节预期操作时间：~45 分钟。*
+*本节预期操作时间：\~45 分钟。*
 
 ## 学习目标
 
@@ -25,7 +25,7 @@
 - [C12-S3] 的商品 ID、商品规格和市场商品状态；
 - [C7-S1] 的插件生命周期和持久数据；
 - [C8-S4] 的 `MutableStat` 与修饰值；
-- [C10-S1] 的经济步、生涯时钟和游戏日换算。
+- [C12-S1] 的经济更新监听与市场查询。
 
 ## 产业与市场的数据关系
 
@@ -33,7 +33,7 @@
 
 产业的注册数据落在 `industries.csv`，`IndustrySpecAPI` 代表这条规格，`Industry` 是市场中的运行时接口，`BaseIndustry` 提供大多数通用实现。CSV 的 `plugin` 列指向一个可无参构造的 Java 类，市场添加产业时会实例化这个类并调用 `init()`。
 
-本节的产业 ID 是 `GearIn_element_works`，显示名是 `Element Works`。它消耗 `metals`、`fuel` 和 `heavy_machinery`，产出 `rare_metals`。商品数量随市场规模线性变化，因此同一个产业放在不同规模的市场中会产生不同的供需值。
+本节的产业 ID 是 `GearIn_element_works`，显示名是 `Element Works`。它消耗 `metals`、`fuel` 和 `heavy_machinery`，产出 `rare_metals`。商品档位按市场规模计算，燃料与机械使用整数除法；放到不同规模的市场，当前输入与理论产出也随之改变。
 
 ## 注册产业规格
 
@@ -48,9 +48,9 @@ GearIn_element_works,Element Works,45,90,,3,,,"industry, industrial",,graphics/i
 
 `name` 是默认显示名。运行时名称还可能受到本地化或插件状态影响，因此界面读取通常使用 `getCurrentName()`。
 
-`cost mult` 和 `build time` 为建设流程提供基础参数。本例沿用原版 `refining` 的 45 成本和 90 天建设时间。
+`cost mult` 和 `build time` 为建设流程提供基础参数。本例沿用原版 `refining` 的成本倍率 45 和 90 生涯日建设时间。成本倍率再按设置中的信用单位与建设成本倍率换算，`getCost()` 读取换算后的信用金额。
 
-`income` 留空，`upkeep` 使用原版 `refining` 的 3。基类会按市场规模和危险度修饰维护费；本节的产业没有独立收入基础值。
+`income` 留空，`upkeep` 使用原版 `refining` 的维护倍率 3。基类会按市场规模和危险度修饰维护费；本节的产业没有独立收入基础值。
 
 `downgrade` 和 `upgrade` 留空表示产业没有预设的升级链。升级与降级接口仍然会在正文中说明，真正的升级链需要另一个已经注册的目标产业。
 
@@ -111,7 +111,13 @@ Industry industry = market.getIndustry(GearInElementWorksIndustry.INDUSTRY_ID);
 
 `BaseIndustry` 内部保存 `supply`、`demand`、`income`、`upkeep`、`building`、`buildProgress`、`upgradeId`、`aiCoreId`、`improved` 和特殊物品状态。子类只需要在明确的钩子中补充自己的规则。
 
-产业实例属于具体市场。读取某市场的产业时，始终从该市场重新取得对象，不把实例跨市场缓存。
+保存 `GearInElementWorksIndustry.java` 与 `GearInIndustryProbe.java` 到 `src/data/scripts/gearin/campaign/`。在 [C12-S1] 的 `GearInEconomyProbe.advance(...)` 已取得市场后，添加上面的产业检查与添加片段；把以下观察放到它的 `ProbeListener.economyUpdated()` 中，接到市场日志之后：
+
+```java
+GearInIndustryProbe.log(market);
+```
+
+先完成一轮经济更新，再从同一个市场取得产业，供需与缺口才对应当前市场条件。两个类与经济观察器位于同一包。
 
 ## 生命周期方法的触发时机
 
@@ -125,7 +131,7 @@ Industry industry = market.getIndustry(GearInElementWorksIndustry.INDUSTRY_ID);
 
 `advance(float amount)` 接收市场推进的帧时间。基类在这里推进建设进度，并检测 disruption 是否结束。
 
-供需只能在 `apply()` 中重建。存档清理会释放供需和收入对象，读档恢复后市场会重新调用产业应用逻辑。
+当前供需在 `apply()` 重建。存档过程中会清理无修饰对象，读档后市场重新应用产业规则，运行状态继续来自这个市场。
 
 ## 写入规模化供需
 
@@ -157,7 +163,7 @@ supply(Commodities.RARE_METALS, output, "Rare element output");
 
 数量进入 `MutableCommodityQuantity`，再由市场、管理员、AI core、改良和外部修饰合并计算。产业代码读取时应使用 `getQuantity().getModifiedValue()`，因为原始数量可能已经被修饰。
 
-`super.apply(true)` 应放在子类供需声明之前。基类会先重建收入、维护、AI core 和改良修饰，子类随后写入本产业的商品流。
+`super.apply(true)` 应放在子类供需声明之前。基类更新通用修饰、收入、维护、AI 核心与改良，子类再声明当前商品流。末尾检查 `isFunctional()`，首次建设或中断时清空本轮供给；需要停产时，效果代码也要处理这个状态。
 
 ## 计算输入短缺
 
@@ -193,7 +199,7 @@ int income = (int) industry.getIncome().getModifiedValue();
 int upkeep = (int) industry.getUpkeep().getModifiedValue();
 ```
 
-产业处于建设中或 disruption 状态时，`isFunctional()` 返回 `false`，收入修饰会被基类移除，供需结果也应按停摆状态理解。
+**首次建设与中断时，`isFunctional()` 为 `false`；升级中的既有产业仍可以运行。** 基类调整收入，本例同时清空供给，让生产状态跟随功能判断。
 
 市场经济步会使用产业供需更新商品价格和库存。产业类读取自己的收入和维护值，市场类读取所有产业汇总后的商品状态。
 
@@ -222,8 +228,12 @@ int upkeep = (int) industry.getUpkeep().getModifiedValue();
 ```java
 @Override
 protected void applyAlphaCoreModifiers() {
-    market.getStability().modifyFlat(getModId(2), 1,
-            "Alpha core (" + getNameForModifier() + ")");
+    if (isFunctional()) {
+        market.getStability().modifyFlat(getModId(2), 1,
+                "Alpha core (" + getNameForModifier() + ")");
+    } else {
+        applyNoAICoreModifiers();
+    }
 }
 
 @Override
@@ -232,7 +242,7 @@ protected void applyNoAICoreModifiers() {
 }
 ```
 
-两个方法使用同一个修饰 ID。重新应用、卸载或移除产业时，基类会调用撤销方向，避免稳定度修饰残留。
+两个方向复用同一修饰 ID。`reapply()` 先解除再应用，卸载或移除也解除当前来源。当前 Alpha 核心加成仅在产业正常运行时存在，停摆时按同一 ID 清理。
 
 基类也会处理 AI core 对供需和维护费的原版修饰。子类只添加自己的专用效果，不重复实现原版 core 规则。
 
@@ -246,7 +256,7 @@ protected void applyNoAICoreModifiers() {
 LOG.info("improved=" + industry.isImproved());
 ```
 
-本例不伪造改良菜单，也不新增特殊改良效果。这样日志可以确认状态，而改良具体效果仍由基类和原版产业规则负责。
+本例保留基类改良规则，观察 `isImproved()`。需要自有改良收益时覆写 `applyImproveModifiers()`，再按实际状态成对处理来源。
 
 ## 写入和结束中断状态
 
@@ -254,13 +264,13 @@ LOG.info("improved=" + industry.isImproved());
 
 ```java
 industry.setDisrupted(10f, false);
+industry.reapply();
 LOG.info("functional=" + industry.isFunctional());
-industry.setDisrupted(0f);
 ```
 
 中断期间产业不再被视为正常运行，收入和生产应按停摆状态观察。市场继续推进时间，倒计时结束后基类会调用 `disruptionFinished()`。
 
-本例覆盖 `notifyDisrupted()` 和 `disruptionFinished()`，只记录日志，不修改中断时长。
+本例在两个回调记录实际状态。观察器设置十日中断后让市场继续推进，`advance(...)` 经历中断与结束，才会收到结束回调。需要立即清除时可以调用 `setDisrupted(0f)` 并重算，当前验证等待自然结束。
 
 中断 key 默认由产业插件类名参与生成。多个产业共用同一个 Java 类时，应根据实际需求覆写 `getDisruptedKey()`，避免它们共享倒计时。
 
@@ -270,7 +280,13 @@ industry.setDisrupted(0f);
 
 因此，产业日志适合回答 "产业声明了什么"，市场商品日志适合回答 "市场最终得到了什么"。两者的数值可能因为其他产业、管理员、条件和势力修饰而不同。
 
-观察产业时先取得 `MarketAPI`，再通过 `getIndustry(INDUSTRY_ID)` 取得运行时实例。观察器不创建市场，也不代替市场经济步。
+观察器先从市场取得实际产业，再用 `log(...)` 或 `logState(...)` 记录状态。需要测试中断时，将经济结束后的调用设为下面的局部片段，设置十日中断后继续推进：
+
+```java
+GearInIndustryProbe.runDisruptionProbe(market);
+```
+
+验证完成后，观察入口恢复为 `GearInIndustryProbe.log(market)`。当前 helper 让中断自然结束，日志从实际 `advance(...)` 记录结束回调。
 
 ## 对照原版产业的生产规则
 
@@ -281,12 +297,14 @@ industry.setDisrupted(0f);
 | 产业 | 输入与产出 | 典型插件 | 本节关注点 |
 | --- | --- | --- | --- |
 | `mining` | `heavy_machinery`、`drugs` 输入，矿石与有机物等产出 | `Mining` | 多商品供给和地表条件 |
-| `refining` | `ore`、`rare_ore` 输入，`metals`、`transplutonics` 输出 | `Refining` | 原版精炼生产链 |
+| `refining` | `ore`、`rare_ore`、`heavy_machinery` 输入，`metals`、`rare_metals` 输出 | `Refining` | 原版精炼生产链 |
 | `GearIn_element_works` | `metals`、`fuel`、`heavy_machinery` 输入，`rare_metals` 输出 | `GearInElementWorksIndustry` | 规模化需求、最大短缺和状态观察 |
 
 原版插件提供平衡后的生产规则。GearIn 示例保留同一套 `BaseIndustry` 生命周期，只替换供需集合和缺货削减目标。
 
 ## 完整最小例
+
+两个类保存到前述路径，注册行、产业添加与经济结束后的观察入口一起保留。
 
 ::: details 完整成品：GearInElementWorksIndustry
 
@@ -296,9 +314,6 @@ package data.scripts.gearin.campaign;
 import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.econ.Industry;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.campaign.econ.MutableCommodityQuantity;
 import com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry;
 import com.fs.starfarer.api.impl.campaign.ids.Commodities;
 import com.fs.starfarer.api.util.Pair;
@@ -324,6 +339,9 @@ public class GearInElementWorksIndustry extends BaseIndustry {
         Pair<String, Integer> deficit = getMaxDeficit(
                 Commodities.METALS, Commodities.FUEL, Commodities.HEAVY_MACHINERY);
         applyDeficitToProduction(1, deficit, Commodities.RARE_METALS);
+        if (!isFunctional()) {
+            supply.clear();
+        }
 
         LOG.info(String.format(
                 "Element Works applied: market=%s size=%d output=%d income=%d upkeep=%d functional=%s disrupted=%s aiCore=%s improved=%s",
@@ -340,8 +358,12 @@ public class GearInElementWorksIndustry extends BaseIndustry {
 
     @Override
     protected void applyAlphaCoreModifiers() {
-        market.getStability().modifyFlat(getModId(2), 1,
-                "Alpha core (" + getNameForModifier() + ")");
+        if (isFunctional()) {
+            market.getStability().modifyFlat(getModId(2), 1,
+                    "Alpha core (" + getNameForModifier() + ")");
+        } else {
+            applyNoAICoreModifiers();
+        }
     }
 
     @Override
@@ -360,44 +382,6 @@ public class GearInElementWorksIndustry extends BaseIndustry {
         LOG.info("Element Works disruption finished: market=" + market.getName());
     }
 
-    public static void logState(MarketAPI market) {
-        Industry industry = market.getIndustry(INDUSTRY_ID);
-        if (industry == null) {
-            LOG.info("Element Works state: not present at " + market.getName());
-            return;
-        }
-        StringBuilder supply = new StringBuilder();
-        for (MutableCommodityQuantity quantity : industry.getAllSupply()) {
-            if (supply.length() > 0) supply.append(", ");
-            supply.append(quantity.getCommodityId()).append("=")
-                    .append((int) quantity.getQuantity().getModifiedValue());
-        }
-        StringBuilder demand = new StringBuilder();
-        for (MutableCommodityQuantity quantity : industry.getAllDemand()) {
-            if (demand.length() > 0) demand.append(", ");
-            demand.append(quantity.getCommodityId()).append("=")
-                    .append((int) quantity.getQuantity().getModifiedValue());
-        }
-        LOG.info(String.format(
-                "Element Works state: id=%s spec=%s supply=[%s] demand=[%s] income=%d upkeep=%d building=%s upgrading=%s functional=%s improved=%s disrupted=%s aiCore=%s",
-                industry.getId(), industry.getSpec().getId(), supply, demand,
-                (int) industry.getIncome().getModifiedValue(), (int) industry.getUpkeep().getModifiedValue(),
-                industry.isBuilding(), industry.isUpgrading(), industry.isFunctional(), industry.isImproved(),
-                industry.isDisrupted(), industry.getAICoreId() == null ? "none" : industry.getAICoreId()));
-    }
-
-    public static void runDisruptionProbe(MarketAPI market) {
-        Industry industry = market.getIndustry(INDUSTRY_ID);
-        if (industry == null) return;
-        LOG.info(String.format("Element Works disruption before: disrupted=%s days=%.1f",
-                industry.isDisrupted(), industry.getDisruptedDays()));
-        industry.setDisrupted(10f, false);
-        LOG.info(String.format("Element Works disruption during: disrupted=%s days=%.1f functional=%s",
-                industry.isDisrupted(), industry.getDisruptedDays(), industry.isFunctional()));
-        industry.setDisrupted(0f);
-        LOG.info(String.format("Element Works disruption after: disrupted=%s days=%.1f",
-                industry.isDisrupted(), industry.getDisruptedDays()));
-    }
 }
 ```
 
@@ -413,6 +397,7 @@ import org.apache.log4j.Logger;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.econ.Industry;
 import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.campaign.econ.MutableCommodityQuantity;
 import com.fs.starfarer.api.impl.campaign.ids.Commodities;
 
 public class GearInIndustryProbe {
@@ -439,6 +424,49 @@ public class GearInIndustryProbe {
                 (int) industry.getDemand(Commodities.HEAVY_MACHINERY).getQuantity().getModifiedValue(),
                 (int) industry.getSupply(Commodities.RARE_METALS).getQuantity().getModifiedValue()));
     }
+
+    public static void logState(MarketAPI market) {
+        Industry industry = market.getIndustry(GearInElementWorksIndustry.INDUSTRY_ID);
+        if (industry == null) {
+            LOG.info("Element Works state: not present at " + market.getName());
+            return;
+        }
+        StringBuilder supply = new StringBuilder();
+        for (MutableCommodityQuantity quantity : industry.getAllSupply()) {
+            if (supply.length() > 0) {
+                supply.append(", ");
+            }
+            supply.append(quantity.getCommodityId()).append("=")
+                    .append((int) quantity.getQuantity().getModifiedValue());
+        }
+        StringBuilder demand = new StringBuilder();
+        for (MutableCommodityQuantity quantity : industry.getAllDemand()) {
+            if (demand.length() > 0) {
+                demand.append(", ");
+            }
+            demand.append(quantity.getCommodityId()).append("=")
+                    .append((int) quantity.getQuantity().getModifiedValue());
+        }
+        LOG.info(String.format(
+                "Element Works state: id=%s spec=%s supply=[%s] demand=[%s] income=%d upkeep=%d building=%s upgrading=%s functional=%s improved=%s disrupted=%s aiCore=%s",
+                industry.getId(), industry.getSpec().getId(), supply, demand,
+                (int) industry.getIncome().getModifiedValue(), (int) industry.getUpkeep().getModifiedValue(),
+                industry.isBuilding(), industry.isUpgrading(), industry.isFunctional(), industry.isImproved(),
+                industry.isDisrupted(), industry.getAICoreId() == null ? "none" : industry.getAICoreId()));
+    }
+
+    public static void runDisruptionProbe(MarketAPI market) {
+        Industry industry = market.getIndustry(GearInElementWorksIndustry.INDUSTRY_ID);
+        if (industry == null) {
+            return;
+        }
+        LOG.info(String.format("Element Works disruption before: disrupted=%s days=%.1f",
+                industry.isDisrupted(), industry.getDisruptedDays()));
+        industry.setDisrupted(10f, false);
+        LOG.info(String.format("Element Works disruption during: disrupted=%s days=%.1f functional=%s",
+                industry.isDisrupted(), industry.getDisruptedDays(), industry.isFunctional()));
+        industry.reapply();
+    }
 }
 ```
 
@@ -448,13 +476,13 @@ public class GearInIndustryProbe {
 
 前置数据：启用包含本节产业注册行和两个 Java 类的 GearIn MOD，并使用拥有 `gear_industry` 市场的测试存档。
 
-1. 启动游戏并进入目标市场，在产业列表中添加 `GearIn_element_works`。
+1. 保存 CSV、两类与经济观察器中的添加调用，构建重启，进入 Foundry 市场存档，查看新产业。
 2. 打开产业详情，核对显示名、图标、描述和插件类 `GearInElementWorksIndustry`。
-3. 在规模为 6 的市场运行 `GearInIndustryProbe.log(market)`，读取三项需求、`rare_metals` 供给、收入、维护费和功能状态。
+3. 先在 Foundry 的规模 3 记录需求 3 金属、1 燃料、1 机械与理论产出 2，再在规模 6 的测试市场运行 `GearInIndustryProbe.log(market)`，读取三项需求、`rare_metals` 供给、收入、维护费和功能状态。
 4. 降低市场中 `metals`、`fuel` 或 `heavy_machinery` 的可得量，调用产业 `reapply()`，再次记录 `rare_metals` 供给和最大缺口。
 5. 将产业置于建设状态并推进市场时间，读取 `isBuilding()`、`getBuildOrUpgradeProgress()` 和 `isFunctional()`。
 6. 安装 Alpha core 并重新应用产业，读取市场稳定度；移除 Alpha core 后再次应用产业，读取同一修饰是否撤销。
-7. 调用 `GearInElementWorksIndustry.runDisruptionProbe(market)`，记录中断前、期间和清除后的状态，再推进市场时间观察结束回调。
+7. 调用 `GearInIndustryProbe.runDisruptionProbe(market)`，记录十日中断与停产，再推进至少十个生涯日，等待结束回调并重新读取供给。
 
 预期结果：
 
@@ -464,47 +492,45 @@ public class GearInIndustryProbe {
 - 市场规模改变后，三项需求和理论产出按同一规模规则变化；
 - 建设期间 `isBuilding()` 为 `true`，`isFunctional()` 为 `false`，进度随市场时间推进；
 - Alpha core 安装后稳定度出现固定修饰，移除或重算后该修饰被撤销；
-- disruption 期间 `isDisrupted()` 为 `true`、`isFunctional()` 为 `false`，清除并推进时间后出现 `disruptionFinished()` 日志。
+- 中断期间 `isDisrupted()` 为 `true`、`isFunctional()` 为 `false`，供给清空；十日结束后出现 `disruptionFinished()`，下一次应用恢复生产。
 
 ## 故障分析
 
-- **产业没有出现在市场列表**：
+- **产业没有出现在市场列表**：注册行或市场添加入口缺失。
     - **解决方案**：检查 CSV 行是否位于 `data/campaign/industries.csv`，并确认市场没有同 ID 的旧实例。
 
-- **产业 ID 找不到**：
+- **产业 ID 找不到**：数据 ID 与调用常量不一致。
     - **解决方案**：逐字核对 `GearIn_element_works` 的大小写、下划线和插件常量。
 
-- **插件无法实例化**：
+- **插件无法实例化**：完整类名与 JAR 条目不一致。
     - **解决方案**：检查完整类名、包路径、无参构造和 JAR 内部路径。
 
-- **需求或产出为零**：
+- **需求或产出为零**：产业尚未正常运行或经济重算未完成。
     - **解决方案**：确认供需声明位于 `apply()`，并确认市场已经完成一次经济重算。
 
-- **短缺没有减少产出**：
+- **短缺没有减少产出**：缺口或削减目标没有接到声明的供给。
     - **解决方案**：确认 `getMaxDeficit()` 的输入列表只包含已声明需求，并把缺口传给 `applyDeficitToProduction()`。
 
-- **缺货削减方向错误**：
+- **缺货削减方向错误**：把输入商品作为产出削减目标。
     - **解决方案**：检查削减目标是否为 `Commodities.RARE_METALS`，并核对输入商品与产出目标的方向。
 
-- **AI core 修饰残留**：
+- **AI 核心修饰残留**：撤销来源与写入来源不一致。
     - **解决方案**：检查 `applyAlphaCoreModifiers()` 与 `applyNoAICoreModifiers()` 是否使用相同的修饰 ID。
 
-- **中断状态没有恢复**：
-    - **解决方案**：确认市场时间继续推进，并检查 `setDisrupted(0f)` 是否仅用于可回滚测试。
+- **中断状态没有恢复**：市场时间未完成十日推进。
+    - **解决方案**：确认市场时间继续推进，确认本次中断日志只触发一次，再等待十个生涯日。
 
-- **改良状态与界面不同步**：
+- **改良状态与界面不同步**：状态修改后尚未重新应用效果。
     - **解决方案**：先执行产业重算，再读取 `isImproved()`。
 
-- **建设进度异常**：
+- **建设进度异常**：建设时间或队列目标与当前产业状态不一致。
     - **解决方案**：检查 `build time`、建设队列和市场经济步，升级目标为空时不要调用升级入口。
 
 ## 总结
 
-产业注册由 CSV 规格和 Java 插件共同完成。`IndustrySpecAPI` 负责读取静态身份和建设参数，`BaseIndustry` 负责运行时状态，子类在 `apply()` 中声明商品需求和产出。
+Element Works 从注册数据取得建设与维护参数，在当前市场按规模声明三项需求和稀有金属供给。最大缺口削减产出，功能状态决定是否继续供给，经济更新再传播到市场数据。
 
-缺货处理由需求、市场可得量和产出削减三部分组成。`getMaxDeficit()` 找到最大输入缺口，`applyDeficitToProduction()` 把缺口转换为产出负修饰，经济步再把修改后的供需传播到市场商品状态。
-
-建设、AI core、改良和 disruption 都通过基类生命周期进入产业。自定义修饰使用成对的应用与撤销入口，观察器通过市场取得产业并记录最终状态。
+观察器在同一个市场读取实际结果，建设、核心、改良与中断也沿生命周期处理。编者建议同时看理论产出、修改后供给和市场最终可得量：产业说明自己声明什么，市场说明这些声明与其他条件合并后得到什么。
 
 ## 建议参考项
 

@@ -40,7 +40,7 @@ public final class GearInCombatScanner extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         CombatEngineAPI engine = Global.getCombatEngine();
-        if (engine == null || engine.isPaused()) {
+        if (engine.isPaused()) {
             return;
         }
 

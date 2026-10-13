@@ -9,12 +9,7 @@ import com.fs.starfarer.api.combat.WeaponAPI;
 import com.fs.starfarer.api.combat.WeaponEffectPluginWithInit;
 import com.fs.starfarer.api.util.IntervalUtil;
 
-/**
- * 武器逐帧效果：只有把本类类名写进 .wpn 的 everyFrameEffect 字段时，
- * 游戏才会为每把武器创建独立实例并回调 init(weapon) / advance / advanceAfter。
- * advance 在本帧转向 / 开火等操作之前被调用，记录开火切换；
- * advanceAfter 在操作完成后按 2 秒节奏打印弹药 / 冷却 / 充能状态。
- */
+/** 记录武器实例的初始化、开火变化和操作后状态。 */
 public class GearInWeaponFlowEffect implements EveryFrameWeaponEffectPluginWithAdvanceAfter,
         WeaponEffectPluginWithInit {
 

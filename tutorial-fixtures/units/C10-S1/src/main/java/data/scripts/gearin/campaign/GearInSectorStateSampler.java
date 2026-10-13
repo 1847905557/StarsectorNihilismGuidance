@@ -38,10 +38,6 @@ public class GearInSectorStateSampler implements EveryFrameScript {
     @Override
     public void advance(float amount) {
         SectorAPI sector = Global.getSector();
-        if (sector == null || sector.getClock() == null) {
-            return;
-        }
-
         CampaignClockAPI clock = sector.getClock();
         if (!initialized) {
             lastSampleTimestamp = clock.getTimestamp();

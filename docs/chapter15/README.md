@@ -1,8 +1,8 @@
 # 酒吧事件与任务
 
-本章技术基线：Starsector `0.98a-RC8`。
+本章技术基线：Starsector `0.98a-RC8`，Java 17。
 
-本章从 `InteractionDialogAPI` 会话和三个面板开始，接着实现普通对话插件、Java `BarEvent`、`BaseHubMission` 阶段任务，以及通过 `bar_events.csv` 接入 `HubMissionWithBarEvent` 的酒吧任务，逐步建立从即时选项到可保存生涯状态的完整链路。
+从一次交互延伸到长期任务，本章先使用会话与三个面板处理目标、选项和显示，再把金属交易接入酒吧。阶段任务保存调查、报告与结果，最后通过事件表和 Rules 在酒吧提供接受入口。对象、数据、回调与存档状态按实际运行顺序连接，每一步都有对应观察位置。
 
 ## 本章各节
 

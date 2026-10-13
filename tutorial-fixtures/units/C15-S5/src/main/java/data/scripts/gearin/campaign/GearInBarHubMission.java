@@ -9,8 +9,13 @@ import com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithBarEvent;
 
 public class GearInBarHubMission extends HubMissionWithBarEvent {
 
-    public static final String STAGE_ACTIVE = "GearIn_bar_stage_active";
-    public static final String STAGE_COMPLETED = "GearIn_bar_stage_completed";
+    public enum Stage {
+        GearIn_bar_stage_active,
+        GearIn_bar_stage_completed
+    }
+
+    public static final Stage STAGE_ACTIVE = Stage.GearIn_bar_stage_active;
+    public static final Stage STAGE_COMPLETED = Stage.GearIn_bar_stage_completed;
 
     public GearInBarHubMission() {
         setMissionId("GearIn_bar_hub");
@@ -26,6 +31,11 @@ public class GearInBarHubMission extends HubMissionWithBarEvent {
         }
         setStageOnDaysElapsed(STAGE_COMPLETED, 1f);
         return true;
+    }
+
+    @Override
+    public String getStageDescriptionText() {
+        return "Current stage: " + getCurrentStage();
     }
 
     @Override

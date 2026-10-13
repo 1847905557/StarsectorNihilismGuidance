@@ -6,10 +6,7 @@ import com.fs.starfarer.api.campaign.FactionAPI;
 import com.fs.starfarer.api.campaign.RepLevel;
 import com.fs.starfarer.api.campaign.SectorAPI;
 
-/**
- * GearIn 的 MOD 入口类。
- * mod_info.json 的 modPlugin 字段指向本类；游戏在新建生涯时调用 onNewGame()。
- */
+/** 在新档生成时设置齿轮工业的初始关系。 */
 public class GearInModPlugin extends BaseModPlugin {
 
     @Override

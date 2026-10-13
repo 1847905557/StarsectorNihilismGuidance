@@ -1,6 +1,6 @@
 package data.scripts.gearin.rules;
 
-/** Memory keys shared by the Memory writer and Rules dialog. */
+/** 写入器与规则对话共用的 Memory 键。 */
 public final class GearInMemoryKeys {
 
     private GearInMemoryKeys() {

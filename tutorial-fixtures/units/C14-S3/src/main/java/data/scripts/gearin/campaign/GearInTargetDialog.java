@@ -27,15 +27,14 @@ public class GearInTargetDialog implements InteractionDialogPlugin {
     @Override
     public void init(InteractionDialogAPI dialog) {
         this.dialog = dialog;
-        boolean dialogTarget = target != null
-                && target.getMemoryWithoutUpdate()
-                        .getBoolean(GearInCampaignPlugin.DIALOG_TARGET_KEY);
-        MarketAPI market = target == null ? null : target.getMarket();
+        boolean dialogTarget = target.getMemoryWithoutUpdate()
+                .getBoolean(GearInCampaignPlugin.DIALOG_TARGET_KEY);
+        MarketAPI market = target.getMarket();
         boolean marketReady = market != null
                 && market.getMemory().getBoolean(GearInCampaignPlugin.MARKET_READY_KEY);
 
         dialog.getTextPanel().addPara("GearIn CampaignPlugin 选择了这个交互对话框。");
-        dialog.getTextPanel().addPara("目标 ID：" + (target == null ? "null" : target.getId()));
+        dialog.getTextPanel().addPara("目标 ID：" + target.getId());
         dialog.getTextPanel().addPara("对话标记：" + dialogTarget);
         dialog.getTextPanel().addPara("市场 ready fact：" + marketReady);
         dialog.getOptionPanel().addOption("关闭", OPTION_CLOSE);

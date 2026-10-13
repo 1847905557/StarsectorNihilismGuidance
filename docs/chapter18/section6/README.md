@@ -1,12 +1,10 @@
 # 创建 GraphicsLib 动态光源
 
-[C18-S5] 的 light CSV 会根据 projectile 或 beam ID 自动生成光源；当光应该出现在一次命中、一次系统启动或其他具体战斗事件中时，Java 代码可以直接创建 `StandardLight`。本节以弹体命中为入口：护盾命中留下固定在世界坐标中的蓝色闪光，船体命中留下随目标移动和旋转的橙色附着光。
+光照表适合让某个弹体一直使用同一组参数。需要根据本次命中的目标和位置改变表现时，就在回调里创建 `StandardLight`。我们为测试弹体接一个命中效果：护盾留下固定在世界坐标中的蓝光，船体留下随舰体移动和转向的橙光；各提交一次后，淡入、保持和淡出交给 GraphicsLib 推进。
 
-两种光源都只在命中回调中提交一次。GraphicsLib 接手之后逐帧推进淡入、保持和淡出状态，并在亮度归零后移除光源。
+*本节预期阅读时间：\~18 分钟。*
 
-*本节预期阅读时间：~18 分钟。*
-
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
@@ -22,8 +20,19 @@
 
 - [C18-S1] 已接入 GraphicsLib 与 LazyLib；
 - [C18-S5] 已在 `onApplicationLoad()` 中完成 `ShaderLib.init()`；
-- 了解 projectile 的 `.proj` 文件和 `OnHitEffectPlugin`；
+- [C1-S5] 的 projectile 配置；
+- [C8-S5] 的 `OnHitEffectPlugin` 与命中回调；
 - 能够在战斗中分别制造护盾命中与船体命中。
+
+## 登记命中效果
+
+复制 `data/weapons/proj/GearIn_durin_shot.proj` 为同目录的 `GearIn_light_hit_shot.proj`，把副本的 `id` 改为 `GearIn_light_hit_shot`。测试时将 `GearIn_durin.wpn` 的 `projectileSpecId` 改为这个新 ID；副本的命中字段使用：
+
+```json
+"onHitEffect": "data.scripts.gearin.combat.GearInHitLightEffect",
+```
+
+保存本节完整类到 `src/data/scripts/gearin/combat/GearInHitLightEffect.java`，构建后重启。弹体命中护盾或船体时，游戏调用该效果的 `onHit(...)`。`shieldHit` 决定使用哪组参数，`point` 和 `target` 提供本次命中的空间关系。
 
 ## 区分数据光源与动态光源
 
@@ -35,7 +44,7 @@ light CSV 适合 "只要这个 projectile 或 beam 出现，就按同一组数�
 
 ## 创建并配置点光源
 
-命中效果先创建一个光源，再设置所有分支共享的高度和镜面反射：
+在命中方法内先创建光源，再设置两条分支共用的高度和镜面反射。以下为局部片段：
 
 ```java
 StandardLight light = new StandardLight();
@@ -80,7 +89,7 @@ light.setAutoFadeOutTime(0.45f);
 
 调用 `fadeIn(0.06f)` 时，`StandardLight` 保存已经设置的最大强度，并把当前强度降为 `0`。接下来的 0.06 秒内，亮度升到 `1`；淡入结束后，`setLifetime(0.08f)` 提供 0.08 秒的保持时间；寿命耗尽时，`setAutoFadeOutTime(0.45f)` 让光源在 0.45 秒内自动淡出。
 
-三个时间参数表达的是连续阶段，总可见时间约为 `0.06 + 0.08 + 0.45 = 0.59` 秒。先调用 `setIntensity(...)` 再调用 `fadeIn(...)` 很重要，因为淡入要从当时的强度取得目标值。
+**先设目标强度，再安排淡入与寿命。**这些时间按连续阶段推进，总可见时间约为 `0.06 + 0.08 + 0.45 = 0.59` 秒。先调用 `setIntensity(...)` 再调用 `fadeIn(...)` 很重要，因为淡入要从当时的强度取得目标值。
 
 ## 将光源附着到战斗实体
 
@@ -116,7 +125,7 @@ LightShader.addLight(light);
 
 `addLight(...)` 把对象加入当前战斗的光源列表。光照 shader 未启用时，这个调用直接返回，因此武器命中流程仍能继续。成功加入后，GraphicsLib 在战斗未暂停时调用光源的 `advance(amount)`；淡入、寿命和淡出都由这一步推进，结束的光源会从列表移除。
 
-这个入口不会检查对象是否已经存在。把同一个光源放进逐帧回调并反复提交，会让列表积累重复引用；事件光应在事件发生时创建并提交一次。本节的 `onHit(...)` 每次调用只创建一个对象，也只执行一次 `addLight(...)`。
+一次命中对应一次提交。`addLight(...)` 会直接向列表加入对象，把同一个光源放进逐帧回调并反复提交，会让列表积累重复引用；事件光应在事件发生时创建并提交一次。本节的 `onHit(...)` 每次调用只创建一个对象，也只执行一次 `addLight(...)`。
 
 `StandardLight` 还支持线光、锥形光和方向光：三者分别需要第二位置、弧角或三维方向。`attachToBeam(...)` 可以跟随 beam 源端，带 `BeamAPI` 的构造器还能把位置或亮度连接到 beam 端点；命中亮斑只需要默认点光源。
 
@@ -141,19 +150,9 @@ LightShader.addLight(light);
 | `isFadingIn()`／`isFadingOut()` | 当前淡入或淡出状态 | 调试生命周期 |
 | `getRemainingLifetime()` | 当前剩余保持时间 | 调试自动淡出时机 |
 
-## 登记命中效果
-
-复制一个现有弹体配置并登记为 `GearIn_light_hit_shot`，让测试武器引用它，再在 `.proj` 文件中加入命中效果类：
-
-```json
-"onHitEffect": "data.scripts.gearin.combat.GearInHitLightEffect",
-```
-
-弹体命中护盾或船体时，游戏创建该类并调用 `onHit(...)`。`shieldHit` 决定使用哪组参数，`point` 和 `target` 提供本次命中的空间关系。
-
 ## 完整最小例
 
-下面的类保存到 `data/scripts/gearin/combat/GearInHitLightEffect.java`。
+完整类实现护盾与船体两条分支，共用一次光源提交：
 
 ::: details 完整成品：GearInHitLightEffect
 
@@ -184,7 +183,7 @@ public class GearInHitLightEffect implements OnHitEffectPlugin {
 
     @Override
     public void onHit(DamagingProjectileAPI projectile, CombatEntityAPI target, Vector2f point,
-                      boolean shieldHit, ApplyDamageResultAPI damageResult, CombatEngineAPI engine) {
+            boolean shieldHit, ApplyDamageResultAPI damageResult, CombatEngineAPI engine) {
         StandardLight light = new StandardLight();
         light.setHeight(100f);
         light.setSpecularMult(0.8f);
@@ -220,7 +219,7 @@ public class GearInHitLightEffect implements OnHitEffectPlugin {
 
 前置数据：GraphicsLib 已安装并启用，`GearInHitLightEffect` 已进入 MOD JAR，测试武器引用的 projectile ID 为 `GearIn_light_hit_shot`。
 
-1. 使用测试武器命中护盾，观察命中点出现 `(120, 200, 255)` 的蓝色光。
+1. 保存弹体与武器引用，构建 JAR 并重启。用都林命中护盾，观察命中点出现 `(120, 200, 255)` 的蓝光。
 2. 让目标在命中后立即移动，确认蓝色光停留在原世界坐标，并在 0.3 秒内淡出。
 3. 绕过护盾命中船体，观察 `(255, 120, 70)` 的橙色光先淡入、短暂保持，再自动淡出。
 4. 在橙色光存在时移动目标，确认光源跟随目标平移。
@@ -257,7 +256,7 @@ public class GearInHitLightEffect implements OnHitEffectPlugin {
 
 ## 总结
 
-动态光源从战斗事件取得位置和目标，再由 `StandardLight` 保存显示参数、附着关系与生命周期。世界坐标适合留下瞬时命中反馈，目标本地偏移适合让亮斑随舰体运动；光源提交一次后，GraphicsLib 会推进淡入、寿命和淡出，并在结束时移除对象。
+命中回调取得这次事件的位置与目标，光源保存显示参数和剩余时间。蓝光使用世界坐标，橙光保存目标本地偏移；目标移动后，位置差异就能直接看到。提交一次便可继续正常命中处理，光源的后续时间变化由库推进。
 
 ## 建议参考项
 

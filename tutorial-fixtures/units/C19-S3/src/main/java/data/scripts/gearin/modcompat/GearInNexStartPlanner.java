@@ -5,14 +5,17 @@ import java.util.List;
 import com.fs.starfarer.api.campaign.econ.MarketAPI;
 import exerelin.campaign.SectorManager;
 import exerelin.utilities.NexConfig;
-import exerelin.utilities.NexFactionConfig;
 import exerelin.utilities.NexUtilsFaction;
 import exerelin.world.ExerelinCorvusLocations;
 
+/** 在生涯已生成后查询出生实体与起始装配列表。 */
 public final class GearInNexStartPlanner {
     public String chooseSpawn(String factionId) {
         SectorManager manager = SectorManager.getManager();
-        if (manager != null && manager.isCorvusMode()) {
+        if (manager == null) {
+            return null;
+        }
+        if (manager.isCorvusMode()) {
             ExerelinCorvusLocations.SpawnPointEntry entry =
                     ExerelinCorvusLocations.getFactionSpawnPoint(factionId);
             return entry == null ? null : entry.entityId;
@@ -31,12 +34,7 @@ public final class GearInNexStartPlanner {
     }
 
     public List<String> chooseFleet(String factionId, String fleetType) {
-        NexFactionConfig config = NexConfig.getFactionConfig(factionId);
-        try {
-            NexFactionConfig.StartFleetType.getType(fleetType);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Unknown start fleet type: " + fleetType);
-        }
-        return config.getStartFleetForType(fleetType, false, 0);
+        return NexConfig.getFactionConfig(factionId)
+                .getStartFleetForType(fleetType, false, 0);
     }
 }

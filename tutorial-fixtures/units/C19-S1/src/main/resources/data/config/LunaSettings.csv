@@ -1,0 +1,2 @@
+fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab
+GearIn_fullGraphicEffect,Full graphic effect,Boolean,true,,,,,GearIn

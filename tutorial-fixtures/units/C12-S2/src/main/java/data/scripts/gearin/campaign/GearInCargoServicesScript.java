@@ -1,7 +1,9 @@
 package data.scripts.gearin.campaign;
 
 import java.util.List;
+
 import org.apache.log4j.Logger;
+
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.CargoAPI;
@@ -57,9 +59,10 @@ public class GearInCargoServicesScript implements EveryFrameScript {
         }
 
         cargo.removeCommodity(Commodities.HEAVY_MACHINERY, 5f);
-        LOG.info(String.format("GearIn cargo changed: machinery=%.0f snapshotMachinery=%.0f nullStacks=%d",
+        LOG.info(String.format("GearIn cargo changed: machinery=%.0f snapshotMachinery=%.0f credits=%.0f snapshotCredits=%.0f nullStacks=%d",
                 cargo.getCommodityQuantity(Commodities.HEAVY_MACHINERY),
-                snapshot.getCommodityQuantity(Commodities.HEAVY_MACHINERY), nullStacks));
+                snapshot.getCommodityQuantity(Commodities.HEAVY_MACHINERY),
+                cargo.getCredits().get(), snapshot.getCredits().get(), nullStacks));
         done = true;
     }
 }

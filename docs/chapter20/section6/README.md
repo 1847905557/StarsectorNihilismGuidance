@@ -1,6 +1,6 @@
 # 选择 BoxUtil 渲染方案
 
-本节从战斗效果的需求出发，选择合适的 BoxUtil 渲染对象。您将判断画面需要大量重复 Sprite 贴图、连续形状、界面元素、模型还是局部光照，并用短片段认识创建、提交与结束的边界。
+前面已经手动管理过顶点、参数和绘制状态，现在可以判断哪些工作适合交给 BoxUtil。我们从实际画面出发，分别选择重复粒子、连续形状、窗口面板、模型和光源所需的对象，再看数据怎样提交、效果怎样结束。对象选对了，后续更新才容易跟上画面的变化。
 
 *本节预期阅读时间：\~16 分钟。*
 
@@ -21,13 +21,26 @@
 
 ## 从画面需求选择对象
 
-先看效果中什么会变化。数百个外观相同的粒子主要改变位置、颜色和寿命，适合一份 `SpriteEntity` 配多份 `Instance2Data`。范围环和弯曲光束由节点决定形状，适合 `SegmentEntity` 与 `CurveEntity`。固定在窗口角落的数字要在屏幕坐标绘制；随舰船转动的 OBJ 模型则需要世界变换。光照还取决于受光对象的材质注册。
+先问一个实际问题：每次更新，这个效果到底改变什么？外观相同的粒子主要改变位置、颜色和寿命，一份 `SpriteEntity` 配多份 `Instance2Data` 就能表达这些差异。范围环和弯曲光束改变节点形状，分别选择 `SegmentEntity` 与 `CurveEntity`。固定在窗口角落的数字使用屏幕坐标；随舰船转动的 OBJ 模型使用世界变换。光源还要找到已经登记材质或光照数据的受光对象。
 
-[C20-S1] 至 [C20-S5] 的方向标由 Java 逐项管理绘制状态和 GPU 数据。BoxUtil 提供实体、材质和战斗渲染管理器，适合需要组合多种效果的场景；选型时仍要明确数据由谁更新、何时提交、画面位于哪一层，以及实体何时结束。
+[C20-S1] 至 [C20-S5] 已经把这些关系展开到 OpenGL 调用。BoxUtil 将实体、材质和战斗渲染管理组织在一起，适合组合多种效果。**编者建议先写清形状、变化的数据和结束条件，再选择实体。**这比先挑一个名字气派的类更容易做出预期画面。
 
 ## 为重复 Sprite 贴图提交实例
 
-下列局部片段展示批量 Sprite 贴图的关键关系。BoxUtil 初始化尚未完成时，当前调用先结束；shader 能力不可用时，原版粒子提供可见反馈。实体创建发生在这些判断之后：
+下面的片段用于已有战斗效果方法：`engine` 是当前 `CombatEngineAPI`，`player` 是该方法取得的当前玩家舰，`sprite` 是已加载的 `SpriteAPI`。实例列表与本次效果的参数在方法内准备；`BOX_IN`、`BOX_FULL`、`BOX_OUT` 分别给出淡入、完整显示和淡出的秒数：
+
+```java
+List<InstanceDataAPI> instances = new ArrayList<>();
+float BOX_IN = 0.1f;
+float BOX_FULL = 0.3f;
+float BOX_OUT = 0.6f;
+float radius = 80f;
+float angle = 30f;
+```
+
+`List`、`ArrayList` 来自 `java.util`，`Color` 来自 `java.awt`；`MathUtils` 来自 `org.lazywizard.lazylib`。BoxUtil 的入口是 `org.boxutil.BoxUtilModPlugin`，设置类为 `org.boxutil.config.BoxConfigs`，枚举类为 `org.boxutil.define.BoxEnum`；`ShaderCore`、`CombatRenderingManager` 来自 `org.boxutil.manager`，`Instance2Data` 来自 `org.boxutil.units.standard.attribute`，实体来自 `org.boxutil.units.standard.entity`。列表按 `setInstanceData(...)` 的参数类型声明为 `List<org.boxutil.base.api.InstanceDataAPI>`，里面保存本次创建的 `Instance2Data`。
+
+先确认渲染器能工作，再创建实体。BoxUtil 初始化尚未完成时，这次调用先结束；shader 能力不可用时，用原版粒子给出同样位置和寿命的反馈：
 
 ```java
 if (!BoxUtilModPlugin.isGlobalInitialized()) {
@@ -42,7 +55,7 @@ if (!boxAvailable) {
 }
 ```
 
-`SpriteEntity` 保存材质、图层和实例列表；每份 `Instance2Data` 保存位置、速度、朝向、缩放、颜色和寿命。一个实体对应同一类外观，实例数据负责彼此不同的运动：
+现在创建共享的 Sprite 贴图实体，设置材质、图层与加法混合，再给列表增加一份实例。位置放在玩家舰周围 `80 su`、`30` 度的方向，速度沿用舰船速度，缩放与颜色由实例保存。`setTimer(...)` 让这份实例自行经历淡入、显示和淡出：
 
 ```java
 SpriteEntity box = new SpriteEntity(sprite);
@@ -60,7 +73,7 @@ data.setTimer(BOX_IN, BOX_FULL, BOX_OUT);
 instances.add(data);
 ```
 
-实例写入完成后，刷新范围、提交数据和绘制数量共同决定画面。这个片段展示首次提交；后续只改动连续区间时，可以设置刷新起点和长度再提交：
+接着把列表交给实体，设置本次刷新范围并提交。`setRenderingCount(...)` 决定实际绘制多少份，`setGlobalTimer(...)` 决定整个实体的计时。下面按首次提交处理全部实例；后续更新可以缩小刷新区间：
 
 ```java
 box.setInstanceData(instances);
@@ -70,7 +83,7 @@ box.setRenderingCount(instances.size());
 box.setGlobalTimer(BOX_IN, BOX_FULL, BOX_OUT);
 ```
 
-入队返回码决定实体是否进入战斗渲染管理器。失败时删除尚未入队的实体：
+数据准备完毕后，调用 `CombatRenderingManager.addEntity(...)` 入队。返回码表示本次登记结果；失败时删除刚创建、尚未交给管理器的实体：
 
 ```java
 byte result = CombatRenderingManager.addEntity(box);
@@ -80,11 +93,11 @@ if (result != BoxEnum.STATE_SUCCESS) {
 }
 ```
 
-选用批量 Sprite 贴图的依据是大量对象共享材质和绘制方式。若每个效果都需要不同的几何形状，先按形状分组，再为每组建立实体。
+重复 Sprite 贴图的收益来自共享材质和绘制方式。效果中有多种几何时，先按形状分组，每组建立自己的实体，再让组内实例保存各自的运动数据。
 
 ## 用节点描述连续形状
 
-范围环和曲线光束的边界由节点或插值控制。以下局部片段分别配置圆环与曲线；节点写完后提交，显示时再按入队结果处理实体生命周期：
+范围环和曲线光束的边界由节点或插值控制。下面两个局部片段使用世界坐标：`center`、`start` 都是 `Vector2f`，`radius` 是圆环半径，`length` 是光束长度，单位为 `su`。节点写完后提交，再按前述入队返回码处理生命周期：
 
 ```java
 SegmentEntity ring = new SegmentEntity();
@@ -103,19 +116,19 @@ beam.setFlowWhenPaused(false);
 beam.submitNodes();
 ```
 
-范围环的关键数据是中心、半径和线宽；曲线光束还需要长度与平滑参数。形状改变后重新提交节点，暂停期间是否流动由 `setFlowWhenPaused(false)` 明确控制。
+圆环由中心、半径和线宽确定，曲线光束再增加长度与平滑参数。节点形状变化后，调用 `submitNodes()` 提交新数据；`setFlowWhenPaused(false)` 则让纹理流动服从暂停状态。几何更新与纹理流动分别有自己的入口。
 
 ## 判断命中特效的生命周期
 
-一次命中可以同时产生尾迹、扩张扭曲和短促光斑，但这三种效果有不同的结束时机。`TrailEntity` 的节点描述运动路径，`DistortionEntity` 的尺寸与强度描述冲击，`FlareEntity` 的朝向和颜色描述高亮。分别设置计时与入队结果，才能让某一种效果失败时仍准确处理其余实体。选择前先问：需要沿路径留下痕迹、改变背景采样，还是给命中点增加一瞬亮度？
+命中效果可以沿路径留下尾迹，也可以扭曲背景，或给命中点增加短促亮度。对应地，`TrailEntity` 用节点描述路径，`DistortionEntity` 用尺寸和强度描述扭曲，`FlareEntity` 用朝向和颜色描述高亮。组合效果时分别设置计时，并分别处理入队返回码：光斑已经结束，尾迹仍可能继续消散，每种实体都按自己的寿命处理。
 
 ## 判断界面与世界坐标
 
-战斗内状态面板固定在窗口角落时，文字、数字和边框使用 UI 坐标。`TextFieldEntity` 需要有效字体，`TransformUtil.createWindowOrthoMatrix(null)` 提供窗口正交矩阵；面板的像素边距应在窗口尺寸变化后重新计算。随舰船移动的标签则使用世界坐标，不能把窗口角落的坐标直接交给世界实体。
+状态面板固定在窗口角落，文字、数字与边框就按 UI 坐标放置。为 `TextFieldEntity` 准备有效字体，用 `TransformUtil.createWindowOrthoMatrix(null)` 建立窗口正交矩阵，再根据当前窗口尺寸计算像素边距。窗口改变后重新计算这些位置；需要跟随舰船的标签则放在世界坐标中，让视口变换决定它在屏幕上的位置。
 
 ## 为模型选择世界变换与光照
 
-OBJ 模型要随舰船转向时，先由 `ModelManager` 查询资源，再用 `ModelData` 和世界变换创建 `CommonEntity`。下列局部片段把无效 ID 与无效模型数据拦在创建之前：
+OBJ 模型要随舰船转向时，先由 `org.boxutil.manager.ModelManager` 查询资源，再用 `org.boxutil.units.standard.attribute.ModelData` 和世界变换创建 `CommonEntity`。下列局部片段接收本次效果选择的 `String modelId`，检查资源登记和模型数据，再创建实体：
 
 ```java
 if (!ModelManager.containsModelID(modelId)) {
@@ -134,11 +147,11 @@ entity.setModelMatrix(TransformUtil.createModelMatrixVanilla(
 entity.setDefaultLight();
 ```
 
-模型的位置、朝向和尺度由输入矩阵决定。材质通道或贴图缺失时，先核对模型资源登记，再判断是否需要光照；`setDefaultLight()` 为当前实体选择默认光照路径。
+第二段中的 `location`、`scale` 是世界位置与缩放用的 `Vector2f`，`facing` 是以度为单位的 `float` 朝向，`matrix` 是可复用的 `org.lwjgl.util.vector.Matrix4f`；`TransformUtil` 来自 `org.boxutil.util`。模型的位置、朝向和尺度由这个矩阵决定。材质通道或贴图缺失时，先核对模型资源登记，再判断是否需要光照；`setDefaultLight()` 为当前实体选择默认光照路径。
 
 ## 按受光对象选择光源
 
-局部光源还要求受光对象具有相应的材质或光照注册。点状命中适合 `PointLight`，沿光束延伸的亮带适合 `LinearLight`，舰首探照适合 `SpotLight`。以下局部片段展示三种光源共享的位置、颜色、强度、衰减和寿命设置：
+局部光源还要求受光对象具有相应的材质或光照注册。点状命中适合 `PointLight`，沿光束延伸的亮带适合 `LinearLight`，舰首探照适合 `SpotLight`。三种光源来自 `org.boxutil.units.standard.light`，共享基类为 `org.boxutil.base.BaseIlluminantData`；`location` 是世界位置，`facing` 是以度为单位的朝向。下面的局部方法统一设置颜色、强度、世界单位衰减半径和秒数计时：
 
 ```java
 private void configure(BaseIlluminantData light, Vector2f location,
@@ -166,11 +179,11 @@ spot.setFacingScale(facing, 1f, 1f);
 configure(spot, location, new Color(180, 235, 255), 0.9f, 320f);
 ```
 
-`AreaLight` 可覆盖一片区域，`InfiniteLight` 是无限远方向光：默认朝向 vec3(0, 0, -1)，衰减半径只约束照射深度，取消衰减后可照亮全场，但仍按受光面法线方向着色，并非无方向的环境光。创建前用 `EntityShadingDataManager` 核对受光对象的注册；若注册缺失，增加光源仍无法得到预期的受光画面。
+需要照亮区域时选择 `AreaLight`，需要无限远方向光时选择 `InfiniteLight`。后者默认朝向 `vec3(0, 0, -1)`，衰减半径只限制照射深度，取消衰减后可照亮全场；明暗仍取决于光照方向与受光面法线。创建前用 `EntityShadingDataManager` 确认受光对象的注册，光源才能和目标材质共同产生预期画面。
 
 ## 处理大批量实例的更新范围
 
-单个 `SpriteEntity` 可以承载大量 `Instance2Data`。首次提交时设置完整刷新范围；此后只有连续一段实例变化时，用 `setInstanceDataRefreshIndex(...)` 和 `setInstanceDataRefreshSize(...)` 限定上传范围。对象池只复用 Java 对象，不能代替 GPU 数据提交。结束时先让 `CombatRenderingManager` 移除实体，再重置实例状态并归还对象池，避免仍在绘制的数据被下一批效果复用。
+实例多起来以后，先看变化是否集中在连续区间。首次提交刷新整个集合，此后用 `setInstanceDataRefreshIndex(...)` 指定起点、`setInstanceDataRefreshSize(...)` 指定长度，再提交这段数据。若用对象池复用 Java 实例，GPU 数据仍按当前变化上传；效果结束后先从 `CombatRenderingManager` 移除实体，再重置状态并归还对象池。仍在绘制的实例要继续属于当前效果。
 
 ## 渲染需求速查表
 
@@ -181,10 +194,10 @@ configure(spot, location, new Color(180, 235, 255), 0.9f, 320f);
 |尾迹、扭曲或光斑|`TrailEntity`、`DistortionEntity` 或 `FlareEntity`|根据路径、背景扭曲或瞬时高亮分别选择|
 |固定在窗口的状态面板|`TextFieldEntity` 与 UI 绘制对象|位置由窗口尺寸和像素边距决定|
 |随舰船变换的 OBJ 模型|`ModelData` 与 `CommonEntity`|模型资源、材质和世界矩阵均有效|
-|局部或环境光|对应的光源数据|受光对象已有材质或光照注册|
+|局部或方向光|对应的光源数据|受光对象已有材质或光照注册|
 |大量实例的部分更新|实例刷新区间|变化连续且范围小于完整实例集合|
 
-先按画面需求选对象，再核对资源、图层、提交方式和结束条件。让同一实体承担互不相干的几何与生命周期，通常会使更新和清理难以判断。
+从表中选定对象后，继续确定资源、图层、提交入口和结束条件。每种形状按自己的数据与寿命组织，更新和清理时才有明确的对象。
 
 ## 验证方案
 
@@ -218,9 +231,9 @@ configure(spot, location, new Color(180, 235, 255), 0.9f, 320f);
 
 ## 总结
 
-BoxUtil 的选型从画面形状、重复数量和坐标系开始：重复 Sprite 贴图使用实例，连续形状使用节点，窗口面板使用 UI 坐标，模型和光照还需要资源与材质条件。确定对象后，再沿数据更新、提交、入队和清理核对生命周期。
+BoxUtil 的选择依据是画面需要什么数据：重复 Sprite 贴图由实例提供差异，连续形状由节点决定边界，窗口面板按 UI 坐标放置，模型和光照共同依赖资源与材质。确定实体后，把更新、提交、入队和结束接成连续的调用关系。
 
-方向标示例中的 OpenGL 状态与实例数据关系仍适用。选择高层实体时，您可以把精力放在效果本身，同时清楚每次画面变化由哪份数据驱动。
+前面手动绘制方向标的经验在这里仍有用：数据变化怎样进入 GPU，位置怎样进入坐标变换，生命周期怎样结束，都能用于判断效果。交给高层实体管理以后，我们集中设计画面，同时保留对这些关系的理解。
 
 ## 建议参考项
 

@@ -3,6 +3,9 @@ package data.scripts.gearin.campaign;
 import java.util.Collections;
 import java.util.Map;
 
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.InteractionDialogAPI;
 import com.fs.starfarer.api.campaign.InteractionDialogPlugin;
 import com.fs.starfarer.api.campaign.OptionPanelAPI;
@@ -14,6 +17,7 @@ import com.fs.starfarer.api.combat.EngagementResultAPI;
 
 public class GearInConversationDialog implements InteractionDialogPlugin {
 
+    private static final Logger LOG = Global.getLogger(GearInConversationDialog.class);
     private static final String TARGET_KEY = "$GearIn_dialog_target";
     private static final String OPTION_CHECK = "CHECK";
     private static final String OPTION_LEAVE = "LEAVE";
@@ -26,17 +30,18 @@ public class GearInConversationDialog implements InteractionDialogPlugin {
     @Override
     public void init(InteractionDialogAPI dialog) {
         this.dialog = dialog;
-        SectorEntityToken target = dialog == null ? null : dialog.getInteractionTarget();
-        if (dialog == null || target == null) {
-            if (dialog != null) {
-                dialog.dismissAsCancel();
-            }
+        SectorEntityToken target = dialog.getInteractionTarget();
+        if (target == null) {
+            LOG.info("GearIn conversation cancelled: target unavailable");
+            closed = true;
+            dialog.dismissAsCancel();
             return;
         }
 
         TextPanelAPI text = dialog.getTextPanel();
         if (!target.getMemoryWithoutUpdate().getBoolean(TARGET_KEY)) {
-            text.addPara("This target has no GearIn dialog marker.");
+            LOG.info("GearIn conversation cancelled: unmarked target=" + target.getId());
+            closed = true;
             dialog.dismissAsCancel();
             return;
         }
@@ -58,7 +63,7 @@ public class GearInConversationDialog implements InteractionDialogPlugin {
 
     @Override
     public void optionSelected(String optionText, Object optionData) {
-        if (closed || dialog == null) {
+        if (closed) {
             return;
         }
         if (OPTION_CHECK.equals(optionData)) {
@@ -85,7 +90,7 @@ public class GearInConversationDialog implements InteractionDialogPlugin {
 
     @Override
     public void backFromEngagement(EngagementResultAPI battleResult) {
-        if (closed || dialog == null) {
+        if (closed) {
             return;
         }
         dialog.getTextPanel().addPara("The inspection continues after Engagement.");

@@ -1,125 +1,98 @@
 # 制作一艘模块船
 
-本节制作 `窑-级 (Kiln)` 模块巡洋舰及其第一个舰体模块。主体与模块都按完整舰船注册，再由主体槽位和装配文件确定连接位置与所用模块。
+本节制作窑级模块巡洋舰及其第一个模块。主体和模块分别按舰船登记，再在主体装配中把模块装配连接到指定槽位。船体定义决定挂载位置，装配决定具体使用哪个模块，两者需要对应。
 
-*本节预期阅读时间：~10 分钟。*
+*本节预期阅读时间：\~10 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 在 `.ship` 中定义 `STATION_MODULE` 槽位，并设置模块挂载位置与朝向；
-- 在 `ship_data.csv` 中登记带 `SHIP_WITH_MODULES` 的主体和带 `UNBOARDABLE`、`HIDE_IN_CODEX`、`MODULE` 的模块；
-- 在主体装配 `.variant` 中用 `modules` 字段把模块装配挂到槽位 (对象与数组两种写法都认识)；
-- 用公开 API 检查模块槽位、装配映射、父子实体和运行位置；
-- 从部署画面与 `starsector.log` 定位模块缺失、槽位 ID 错误、模块装配 ID 错误三类故障。
+- 设置 STATION_MODULE 槽位与挂载几何；
+- 登记主体和模块的专用 hints；
+- 用 modules 连接槽位与模块装配；
+- 查询模块的槽位、父子对象和运行位置；
+- 按加载、部署与战斗表现定位模块问题。
 
 ## 前置知识
 
-- [C1-S2] 的舰船贴图、`.ship` 几何定义、槽位和 `ship_data.csv` 注册方法；
-- [C1-S5] 的武器注册与 `GearIn_durin` 使用方法；
-- [C4-S1] 的测试战役、装配导出和 `.variant` 字段结构。
+- [C1-S2] 的船体贴图、几何与数据登记；
+- [C1-S5] 的武器和 `GearIn_durin`；
+- [C4-S1] 的装配导出与正式 ID。
 
-## 准备主体与模块贴图
+## 分别制作主体和模块
 
-一艘模块船由主体和至少一个模块组成。主体与模块本身都是舰船，因此需要分别准备贴图。本例的主体 `窑-级` 由 `狮鹫`、模块由 `苍鹭` 的贴图简单修改而来，耗时不超过 20 秒：
+主体与模块本身都是舰船，因此先准备两张贴图。主体采用狮鹫贴图修改，ID 为 `GearIn_kiln`：
 
-![窑级模块巡洋舰的主体贴图](./GearIn_kiln.png "GearIn_kiln.png")
+![窑级主体舰船贴图](./GearIn_kiln.png "GearIn_kiln.png")
 
-主体贴图，宽高仍按舰船贴图的规则保持 2 的倍数。
+模块采用苍鹭贴图修改，ID 为 `GearIn_kiln_module`：
 
-![窑级模块巡洋舰的模块贴图](./GearIn_kiln_module.png "GearIn_kiln_module.png")
+![窑级舰体模块贴图](./GearIn_kiln_module.png "GearIn_kiln_module.png")
 
-模块贴图。模块通常比主体小得多，主体只挂这一个模块即可完成本节示例。
+两张图沿用第一章的尺寸与中心点约定。当前主体先连接一个模块，便于核对位置与朝向。
 
-## 制作主体与模块船体
+在舰船编辑器里分别创建主体和模块船体，主体继续设置质量中心、碰撞、护盾、武器槽和引擎：
 
-为它们分别分配 `GearIn_kiln` 和 `GearIn_kiln_module` 的舰船 ID，然后按舰船制作流程在编辑器里做出两个 `.ship` 文件：
+![编辑器中的窑级主体几何与槽位](./main.png "main.png")
 
-![舰船编辑器中的窑级主体船体](./main.png "main.png")
+模块也设置自己的碰撞与武器槽：
 
-主体的 `.ship` 制作：质量中心、碰撞圈、护盾、槽位与引擎照常设置。
+![编辑器中的模块船体几何与槽位](./sub.png "sub.png")
 
-![舰船编辑器中的窑级模块船体](./sub.png "sub.png")
+模块的位置跟随主体，当前可以不配置引擎。**无盾模块同样保留护盾中心与半径字段**，它们属于船体读取所需的几何，实际护盾类型在数据中填 NONE。
 
-模块的 `.ship` 制作。两个文件都会加载为 `ShipHullSpecAPI`；模块船体还可以用 `moduleAnchor` 指定自身连接到主体槽位的锚点，并通过 `getModuleAnchor()` 查询。
+编者建议先把两份船体分别保存并登记。连在一起之后再排查两套几何与数据，往往比单独核对更麻烦。
 
-::: tip 模块可以不设引擎
+## 为主体增加模块槽位
 
-模块的位置和朝向由主体槽位决定，它自己几乎不需要推进引擎。原版的模块船体 (如 `derelict_mothership_pod_m_left.ship`) 就没有 `engineSlots`。
+在主体添加 STATION_MODULE 类型槽位，编辑器显示为 Station Module：
 
-:::
+![主体船体上的模块槽位](./main_slot_1.png "main_slot_1.png")
 
-::: caution 护盾中心与护盾范围必须存在且必须正确设置
+将该槽位命名为 `MODULE_0`，设置位置和朝向：
 
-好像我们在更早的章节里提过这个了。如果您认为模块无盾就可以不设置，那编者只能希望，未来的您在谴责现在的您时语气能柔和一些。
+![MODULE_0的模块槽位参数](./main_slot_2.png "main_slot_2.png")
 
-:::
+`locations` 是主体坐标系中的挂载位置，`angle` 是基准朝向，`arc` 是允许的朝向范围。槽位 ID 用于后面装配的 modules 映射，大小写也要一致。
 
-## 添加模块槽位
+模块可以用 `moduleAnchor` 选择自身连接到槽位的锚点，API 的 `getModuleAnchor()` 返回该设置。连接后贴图偏移时，可以按挂载点和模块锚点分别核对。
 
-主体必须带有 `STATION_MODULE` 类型 (编辑器里显示为 Station Module) 的槽位，这是安装模块所需的槽位：
+## 登记主体与模块的数据
 
-![舰船编辑器中的模块槽位类型设置](./main_slot_1.png "main_slot_1.png")
+在 `ship_data.csv` 添加两个船体行。主体使用 SHIP_WITH_MODULES，模块使用 MODULE、UNBOARDABLE 和 HIDE_IN_CODEX。
 
-在槽位编辑里把槽位类型改为 `STATION_MODULE`，并为它取一个语义化 ID(本例为 `MODULE_0`；原版空间站用 `WS 001` 这类编号，用 `SUPPORT_L`、`HEAVY_L` 这类语义名也可以)。
+**可驾驶主体的 SHIP_WITH_MODULES 决定部署时生成模块。** 空间站主体使用 STATION，并采用空间站行为。模块的 UNBOARDABLE 控制打捞，HIDE_IN_CODEX 控制数据库显示，MODULE 标记模块身份。
 
-![舰船编辑器中的模块槽位位置与朝向设置](./main_slot_2.png "main_slot_2.png")
+模块后勤数据尽量填写为 0，designation 可以留空，tags 保持空值；它通过主体装配获得，蓝图与市场标签按对象用途安排。当前模块的装配点为 60，便于在装配界面选择并修改。
 
-`STATION_MODULE` 槽位与普通武器槽共享同一套字段。`angle` 是模块的基准朝向，`arc` 是模块朝向允许的摆动范围，`locations` 是槽位在主体坐标系中的位置，即模块的挂载点。
+## 在测试战役里制作两份装配
 
-公开 API 中，`WeaponSlotAPI.isStationModule()` 判断槽位类型，`computePosition()` 根据主体位置计算模块挂载点，`computeMidArcAngle()` 计算槽位朝向。
+重启后进入 Gear 测试，分别给主体和模块装上装备。模板会收集所有非战机装配，因此两者都能作为独立设计进行修改。
 
-槽位 ID 是大小写敏感的字符串，装配的 `modules` 字段必须逐字引用它。
+观察导出的两个任务文件：
 
-## 登记舰船数据
+![测试战役导出的主体和模块装配](./variant_make.png "variant_make.png")
 
-打开 `data/hulls/ship_data.csv`，在末尾追加 `GearIn_kiln` 与 `GearIn_kiln_module` 两行 (原版标本行与本 MOD 已有舰船行保持不变)：
+读取 hullId 后分别移入 `data/variants/`，改好文件名和内部 variantId：
 
-可驾驶主体必须使用 `SHIP_WITH_MODULES`，部署时 `ShipAPI.isShipWithModules()` 会据此进入模块生成分支；空间站主体使用 `STATION`，并带有空间站的操控语义。模块行使用 `MODULE` 标记自身身份，再用 `UNBOARDABLE` 和 `HIDE_IN_CODEX` 控制打捞与数据库展示。
+![主体与模块的正式装配文件](./variant_rename.png "variant_rename.png")
 
-::: caution 船体行的 hints 必须写对
+主体使用 `GearIn_kiln_combat`，模块使用 `GearIn_kiln_module_combat`。模块装配结构与普通装配相同，hullId 指向模块船体。
 
-- 模块行的 `hints` 必须带 `UNBOARDABLE` 和 `HIDE_IN_CODEX`：前者保证它不可被打捞，后者保证它不出现在数据库中 (原版模块行全部带这两个值)。原版模块还带 `MODULE`，标记模块身份，交易界面等列表会按模块处理它。
-- **主体行的 `hints` 必须带 `SHIP_WITH_MODULES`**，否则模块会在某些场合丢失：战斗部署时根本不生成模块。
+## 把模块装配连接到槽位
 
-:::
+打开主体装配，加入局部字段：
 
-::: tip 模块的数据可以精简
+```json
+"modules": {
+    "MODULE_0": "GearIn_kiln_module_combat"
+}
+```
 
-- 模块的舰级名 (`designation`) 可以不填。
-- 模块的后勤数据应当尽可能接近于 "无"：0 船员、0 货舱、0 燃料，`supplies/rec` 与 `supplies/mo` 为 0。
-- 模块行的 `tags` 不应该包含任何诸如 `x_bp` 或 `merc` 之类的蓝图/销售 tag —— 模块不是通过蓝图或市场渠道获得的舰船。原版模块行 (如 `platform1`) 的 tags 为空。
-
-:::
-
-测试战役模板会自动把本 MOD 所有非战机装配加入用户舰队，因此 `GearIn_kiln` 与 `GearIn_kiln_module` 都会出现。此时部署主体，可以看到它没有模块。
-
-## 制作主体与模块装配
-
-**因为模块只能通过装配文件的 `modules` 字段挂载，游戏内没有任何正常方法为它添加模块，必须要有一个 "带模块的主体装配"**，这艘船才会默认带有模块。
-
-使用测试战役分别为主体和模块制作一个装配 (模块的自动空装配也在舰队列表里，直接改装它即可)：
-
-![测试战役中制作主体与模块装配](./variant_make.png "variant_make.png")
-
-在装配界面为 `窑-级` 装上武器与船插，并为模块也做一份装配，游戏会把它们导出到存档目录 (`saves/missions/GearIn_test/`)。
-
-## 整理正式装配
-
-把导出的两个文件放入 MOD 的 `data/variants` 文件夹，修改文件名并同步修改文件内部的 `variantId` 等参数 (装配导出-改名流程)：
-
-![主体与模块装配文件的命名结果](./variant_rename.png "variant_rename.png")
-
-本例得到两个文件：`GearIn_kiln_combat.variant`(主体，`hullId: GearIn_kiln`) 与 `GearIn_kiln_module_combat.variant` (模块，`hullId: GearIn_kiln_module`)。
-
-模块装配与普通装配没有结构区别，只是它的 `hullId` 指向模块船体。
-
-## 挂载模块装配
-
-打开原版的 `data/variants/stations/station_small_Standard.variant`，可以看到类似这样的一段：
+**左侧是主体槽位 ID，右侧是模块装配 ID。** 原版空间站也采用这个关系，例如 station_small_Standard：
 
 ```json
     "modules": {
@@ -130,23 +103,19 @@
     }
 ```
 
-模块在装配文件里的设置方案是 **槽位 ID → 模块装配 ID** 的对象。把它略加修改后，插入本例的 `GearIn_kiln_combat.variant`：
+解析还接受数组写法，例如 `[{"WS 024":"remnant_armour3_Standard"}]`；原版 remnant_station2_Standard 使用这类结构，数据中也可保留井号注释。当前使用单个对象，目标关系比较直接。
 
-加载装配后，`ShipVariantAPI.getStationModules()` 返回原始映射，`getModuleSlots()` 返回实际对应 `STATION_MODULE` 的槽位，`getModuleVariant(slotId)` 取得模块装配；需要修改时使用 `setModuleVariant(slotId, variant)`。
+有模块槽位而暂时不安装模块时，可以使用 `"modules":[]`。要默认带上模块，则主体装配中需要有实际映射。游戏内普通装配操作保持这份映射，不会自动选出模块设计。
 
-几点说明：
+观察连接后的装配界面：
 
-- `modules` 的对象写法是 `"槽位 ID": "模块装配 ID"`；装配 JSON 解析也接受**数组写法**：`[{"WS 024": "remnant_armour3_Standard"}]`，原版 `remnant_station2_Standard.variant` 就用数组写法，且数组条目之间可以写 `#` 注释 (游戏的装配解析会剥离注释)。
-- 槽位 ID 必须逐字等于主体 `.ship` 里 `STATION_MODULE` 槽位的 id；模块装配 ID 必须逐字等于模块装配文件的 `variantId`。两者都是大小写敏感字符串。
-- 如果一个有模块槽位的 hull 不想挂模块，`modules` 可以写成空数组 `"modules": []` —— 主体部署时不会有模块，但加载完全合法。
+![装配界面中连接到主体的模块](./module_done.png "module_done.png")
 
-`窑-级` 模块巡洋舰现在默认带有模块了：
-
-![窑级模块巡洋舰挂载模块后的战斗效果](./module_done.png "module_done.png")
+模块贴图在主体槽位处显示，当前模块有装配点，可以选择并配置。战斗中是否实际生成，还要核对主体 hints 和部署结果。
 
 ## 完整最小例
 
-两行注册数据追加到 `data/hulls/ship_data.csv`(最后两行)；主体装配写入 `data/variants/GearIn_kiln_combat.variant`(含 `modules` 字段)，模块装配写入 `data/variants/GearIn_kiln_module_combat.variant`。
+以下数据包含既有船体示例和本节的主体、模块行，已有文件保留其表头与记录，只追加当前定义的两行。
 
 ```csv
 name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
@@ -156,11 +125,13 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 #Conquest,conquest,Battlecruiser,Midline,maneuveringjets,24,12000,1200,20000,30000,1200,315,,45,20,15,6,4,2500,OMNI,,90,0.4,1.4,,,400,500,300,300,10,30,8,300000,3,15,600,0.25,40,40,,,,,,,,"rare_bp, merc",,,,0.5,2,4,,503
 炉渣,GearIn_slag,,未知,flarelauncher_fighter,,750,100,200,,100,0,,180,400,350,90,180,30,NONE,,0,0,0,,,1,1,,,,,,,,,,,,,,,,,,,,,,,,0,,,,104
 锻件,GearIn_forging,相位护卫舰,未知,ammofeed,6,2000,350,1200,2000,100,35,,90,120,90,45,90,200,PHASE,phasecloak,90,,,0.075,0.075,4,10,10,20,1,20,9,26000,10,20,180,0.25,6,6,,,,,,,PHASE,GearIn_bp,,,,0.5,2,2,,228
-工匠,GearIn_artizan,驱逐舰,未知,GearIn_burstdrive,10,5000,500,3800,4167,200,95,,80,60,40,30,60,400,PHASE,GearIn_resistfield,,,,0.1,0,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,GearIn_bp,,,,0.5,2,3,,300
+工匠,GearIn_artizan,驱逐舰,未知,GearIn_assaultfeed,10,5000,500,3800,4167,200,95,,80,60,40,30,60,400,PHASE,GearIn_resistfield,,,,0.1,0,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,GearIn_bp,,,,0.5,2,3,,300
 守炉人,GearIn_furnaceman,轻型航母,未知,targetingfeed,11,4500,400,3000,2813,225,75,2,75,50,30,25,25,450,FRONT,,300,0.4,0.8,,,90,150,40,40,2,20,9,52000,5,15,360,0.25,11,13,,,,,,,CARRIER,"GearIn_bp",,,,0.5,2,3,,318
 窑,GearIn_kiln,模块巡洋舰,Midline,maneuveringjets,15,10000,1250,10000,,500,165,,60,40,30,15,20,1500,FRONT,,210,0.4,0.8,,,200,300,150,150,4,38,8,125000,4,12,480,0.25,25,25,,,,,,,SHIP_WITH_MODULES,"GearIn_bp",,,,0.5,2,4,,401.5
 ,GearIn_kiln_module,模块,Midline,,10,5000,500,3000,,250,60,,0,0,0,10,10,300,NONE,,0,0,0,,,0,0,0,0,1,0,,40000,,1,,,0,0,,,,,,,"UNBOARDABLE, HIDE_IN_CODEX, MODULE",,,,,0.5,2,3,,300
 ```
+
+主体装配保存到 `data/variants/GearIn_kiln_combat.variant`：
 
 ```json
 {
@@ -219,7 +190,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 }
 ```
 
-模块装配 `data/variants/GearIn_kiln_module_combat.variant` 使用模块船体 ID，并提供主体映射所引用的唯一装配 ID：
+模块装配保存到 `data/variants/GearIn_kiln_module_combat.variant`：
 
 ```json
 {
@@ -235,32 +206,23 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 }
 ```
 
-## 运行态：模块如何生成与绑定
+## 理解加载、部署与跟随关系
 
-### 部署时：模块船生成
+加载装配后，`ShipVariantAPI.getStationModules()` 返回映射，`getModuleSlots()` 返回模块槽位，`getModuleVariant(slotId)` 取得模块装配；运行时修改可以用 `setModuleVariant`。
 
-模块装配的字符串映射在加载时进入 `ShipVariantAPI`，真正的模块实体则在部署时生成。带 `STATION` 或 `SHIP_WITH_MODULES` 的主体会遍历 `getStationModules()`；每个映射必须找到有效的 `STATION_MODULE` 槽位和模块装配，随后创建独立的 `FleetMemberAPI` 与 `ShipAPI`。
+部署主体时，游戏按映射找到 STATION_MODULE 槽位和模块装配，创建模块的 `FleetMemberAPI` 与 `ShipAPI`。槽位的 `computePosition()` 和 `computeMidArcAngle()` 决定位置与朝向。
 
-新模块通过槽位的 `computePosition()` 与 `computeMidArcAngle()` 确定位置和朝向，并记录父子关系。`ShipAPI.getParentStation()`、`getStationSlot()` 和主体的 `getChildModulesCopy()` 可以查询这组关系；模块自身仍有装甲、幅能、武器组、战术系统和 AI。
+模块保存父子关系，`getParentStation()`、`getStationSlot()` 和主体的 `getChildModulesCopy()` 可以查询它们。模块仍有自己的装甲、幅能、武器、系统与 AI。
 
-如果主体装配里根本没有 `modules` 字段，或模块 ID 无法解析，这一步会得到 "没有模块的主体" 或部署报错 (详见故障分析)。
+### 位置、朝向与状态
 
-### 每帧：模块被钉在槽位上
+主体移动时，模块位置每帧按槽位更新，跟随主体平移和旋转。默认朝向使用槽位中间角；模块带 INDEPENDENT_ROTATION 时保留独立朝向，位置继续跟随。
 
-主体移动后，战斗引擎每帧按照槽位的 `computePosition()` 更新子模块位置，因此**模块永远跟随主体的平移与旋转**。
+`moduleAnchor` 决定模块自身的挂载锚点，缺省按槽位位置连接。预览用 `getSizeWithModules()` 把模块计入整体尺寸；预览和部署读取不同条件，因此缺少 SHIP_WITH_MODULES 的主体仍可能在列表中显示模块。
 
-默认情况下模块的朝向也会被强制设为槽位中间角；只有模块船体的 hints 带 `INDEPENDENT_ROTATION` 时才保留自己的朝向 (位置仍跟随)。
+**预览显示和战斗生成要分别确认。** 模块的战斗损伤按槽位记录在主体 `FleetMemberStatusAPI` 中，下次部署按记录恢复；摧毁模块后，主体也可以继续作战。
 
-模块船体的 `moduleAnchor`(可选字段，由 `.ship` 加载器读取) 决定模块以自身哪个点为锚挂到槽位上；缺省时以槽位位置为锚。视觉上模块贴图与槽位对不齐时，用 `moduleAnchor` 微调。
-
-### 战斗外的模块
-
-- 舰队列表与船体预览会显示模块：舰队列表界面直接读取装配的模块槽位渲染模块贴图，`getSizeWithModules()` 会把模块计入舰船整体预览尺寸。所以**即使主体缺 `SHIP_WITH_MODULES`，舰队列表里也看得到模块**；某些场合 "模块丢了却还在列表里" 的反差即源于此。
-- 模块的损伤状态按槽位记录在主体的 `FleetMemberStatusAPI` 里，部署时按槽位恢复；模块在战斗中被摧毁或脱离后，下次部署时按记录的状态呈现，而不只是 "满血复活"。
-
-### 装配界面里的模块
-
-主体在装配界面里会显示其模块；模块是否**可被选中改装**由模块船体的 `ordnance points` 决定：装配点上限为 0 的模块默认无法被选中 (装配面板按 `getOrdnancePoints() > 0` 判定)。
+装配界面默认按 `getOrdnancePoints() > 0` 决定模块能否选择。装配点为 0 时通常不可选，当前提供 60 点供测试。
 
 ### 模块行为 tag 速查表
 
@@ -275,20 +237,19 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ## 验证方案
 
-前置数据：本节制作的全部文件：`GearIn_kiln.ship`(含 `MODULE_0` 的 `STATION_MODULE` 槽位)、`GearIn_kiln_module.ship`、`ship_data.csv` 两行、`data/variants/GearIn_kiln_combat.variant`(含 `modules`) 与 `GearIn_kiln_module_combat.variant`。
-
-1. 启动游戏，在日志中观察两条 `Loading variant [...]` 记录。
-2. 进入测试战役，观察舰队列表中的 `窑-级`，然后部署该舰船。
-3. 在装配界面选中模块并改装其武器，再把主体的 `goalVariant` 装配加入自动装配候选。
-4. 在战斗中击毁模块，退出战斗后重新部署并观察主体与模块状态。
+1. 保存两份船体、数据行与两份装配，重启游戏，核对 variant 加载记录。
+2. 进入测试战役，查看主体预览，再部署窑级。
+3. 移动和转向主体，观察模块的相对位置与朝向。
+4. 回到装配界面选择模块，修改武器与船插，并核对主体自动装配目标。
+5. 在战斗中击毁模块，退出后观察主体记录的模块状态，再验证后续部署。
 
 预期结果：
 
-- 启动后日志出现 `Loading variant [data/variants/GearIn_kiln_combat.variant]` 与 `Loading variant [data/variants/GearIn_kiln_module_combat.variant]`，没有相关 `ERROR`。
-- 测试战役的舰队列表里 `窑-级` 的预览包含模块 (整体尺寸由 `getSizeWithModules` 计算)；部署后主体与模块实体同时出现，模块位置在槽位处、朝向沿槽位角，随主体平移旋转而移动。
-- 装配界面里点击模块可以改装它的武器与船插 (本例模块 `ordnance points` 为 60，可选中)；`goalVariant: true` 让主体装配出现在自动装配候选里。
-- 模块被摧毁后主体仍可继续作战；返回舰队后模块按战斗记录的状态呈现。
-- 战场中模块与主体各自显示独立的血条与状态 (默认都显示；需要隐藏时用 `module_no_status_bar` / `module_hull_bar_only`)。
+- 主体与模块装配加载完成，预览包含模块。
+- 部署时生成独立模块，挂载在 MODULE_0，位置跟随主体。
+- 模块有自己的武器和状态条，当前 60 装配点允许选择修改。
+- goalVariant 使主体设计进入对应自动装配候选。
+- 模块损伤按槽位记录，主体在失去模块后仍可继续作战。
 
 ## 故障分析
 
@@ -315,13 +276,9 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ## 总结
 
-模块船的主体与模块分别拥有贴图、`.ship`、`ship_data.csv` 行和装配。主体 `.ship` 的 `STATION_MODULE` 槽位声明挂载点，主体装配的 `modules` 字段把槽位 ID 映射到模块装配 ID。
+模块制作仍然建立在船体和装配上：主体槽位提供位置，modules 映射选择模块装配，部署逻辑创建子对象并维护相对关系。贴图、几何、数据和两份装配分别保存，按实际连接核对。
 
-运行态上，模块作为独立的 `ShipAPI` 实体在部署阶段生成，由模块船逻辑逐帧绑定到主体槽位，并随主体移动。
-
-调试模块船时按三层排查。加载期核对 `hullId` 与 `.ship`，部署期核对槽位 ID 和模块装配 ID，运行期核对 `SHIP_WITH_MODULES`、模块位置与父子实体状态。
-
-测试战役配合 `starsector.log` 可以分别验证装配加载、模块部署和战斗状态，并把异常定位到对应文件。
+先确认加载的 ID，再确认部署的槽位与装配，最后观察跟随和损伤记录。模块既是独立舰船，又受主体关系约束，这两部分决定了它的实际表现。
 
 ## 建议参考项
 

@@ -6,19 +6,13 @@ import com.fs.starfarer.api.Global;
 
 import lunalib.lunaSettings.LunaSettings;
 
-/**
- * 运行时读取角色：门控读取 LunaLib 设置 (LunaSettings 静态读取 API)。
- * 每个 getter 都是三段式：先用 isModEnabled 检查 LunaLib 是否启用，
- * 再调用 LunaSettings.getX，返回 null 时回退代码内默认值 (Defs)。
- * 类自身不引用 lunalib.** 于类加载路径，未启用时可直接安全调用。
- */
+/** 按启用状态读取设置，缺失值使用已定义的缺省。 */
 public class GearInLunaSettingsReader {
 
     private GearInLunaSettingsReader() {
-        // 工具类：不实例化
     }
 
-    /** LunaLib 是否已启用：调用任何 lunalib.** 之前先执行启用检查。 */
+    /** 查询 LunaLib 的启用状态。 */
     public static boolean isLunaLibEnabled() {
         return Global.getSettings().getModManager().isModEnabled(GearInLunaSettingsDefs.LUNA_LIB_MOD_ID);
     }
@@ -41,7 +35,7 @@ public class GearInLunaSettingsReader {
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
     }
 
-    /** 脉冲间隔 (秒)：CSV 里是 Double 类型，读取时用 getFloat(从保存的 double 转换)。 */
+    /** 脉冲间隔 (秒)：CSV 里是 Double 类型，读取时用 getFloat (从保存的 double 转换)。 */
     public static float getPulseDelay() {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;

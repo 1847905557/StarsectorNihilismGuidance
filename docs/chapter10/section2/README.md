@@ -1,10 +1,10 @@
 # 构建生涯地点
 
-本节以地点查询为中心，先取得 `LocationAPI` 和 `StarSystemAPI`，再建立一组可查询的恒星系对象。生成器只负责准备对象，查询器负责验证 ID、标签、类型、集合和访问状态。
+上一节已经取得当前星区，本节在其中建立一个观测星系，再分别按 ID、标签、类型和全量集合查找实体。恒星、行星和中继站提供可见对象，位置 token 提供坐标；查询日志继续记录玩家进入与离开后的变化，让容器归属和访问状态都有实际观察入口。
 
-*本节预期阅读时间：~24 分钟。*
+*本节预期阅读时间：\~24 分钟。*
 
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：\~35 分钟。*
 
 ## 学习目标
 
@@ -23,9 +23,22 @@
 - [C7-S1] 的生涯入口注册和日志读取；
 - 能够区分地点级对象与星区级对象。
 
-## 取得地点
+## 登记生成与查询，再取得地点
 
-`SectorAPI.getAllLocations()` 返回星区管理的地点集合，`getHyperspace()` 返回超空间，`getStarSystem(id)` 返回指定恒星系。`StarSystemAPI` 继承 `LocationAPI`，因此地点查询方法可以直接用于恒星系。
+创建 `src/data/scripts/gearin/campaign/GearInLocationBuilder.java` 和 `GearInLocationQuery.java`。在 [C7-S1] 的 `GearInModPlugin` 添加这两个类的 import，把下面的局部片段加入 `onGameLoad(...)`，登记顺序先生成、后查询，沿用方法内已有的 `sector`：
+
+```java
+if (!sector.hasTransientScript(GearInLocationBuilder.class)) {
+    sector.addTransientScript(new GearInLocationBuilder());
+}
+if (!sector.hasTransientScript(GearInLocationQuery.class)) {
+    sector.addTransientScript(new GearInLocationQuery());
+}
+```
+
+生成器建立星系后结束，再次读档时已有星系直接保留。查询器首次立即记录，之后每个生涯日记录一次，便于比较访问变化。当前登记沿用 [C10-S1] 的 transient 方式。
+
+**地点是实体的容器。** `getAllLocations()` 取得星区管理的地点，`getHyperspace()` 取得超空间，`getStarSystem(id)` 取得指定恒星系。`StarSystemAPI` 继承 `LocationAPI`，地点查询方法也可用于恒星系：
 
 ```java
 SectorAPI sector = Global.getSector();
@@ -38,7 +51,7 @@ if (system != null) {
 }
 ```
 
-地点保存实体集合、访问状态、地点 memory 和地点级脚本。实体必须通过地点创建方法或 `addEntity` 加入地点；单独创建 token 并保存引用不会让地点查询找到它。
+地点保存实体集合、访问状态、地点 memory 和地点级脚本。通过地点创建方法或 `addEntity(...)` 加入实体后，查询才会从该地点找到它。只保存 token 引用，仍要区分它是否已加入集合。
 
 ::: tip 容器归属
 所有查询先确认地点对象，再确认实体的 `getContainingLocation()`。地点 ID 正确而实体归属为空时，问题发生在注册阶段，不在查询条件。
@@ -46,7 +59,7 @@ if (system != null) {
 
 ## 创建用于查询的地点对象
 
-生成器使用固定 ID，便于查询器在任何帧重新取得对象。`initStar` 创建恒星，`addPlanet` 创建绕恒星运行的行星，`addCustomEntity` 直接把自定义实体加入地点。
+本节定义 `GearIn_observation_system` 为观测星系 ID，实体也使用固定 ID，查询器每次从星区重新取得它们。`initStar` 创建恒星，`addPlanet` 创建绕恒星运行的行星，`addCustomEntity` 直接把自定义实体加入地点。
 
 ```java
 StarSystemAPI system = sector.createStarSystem("GearIn_observation_system");
@@ -58,6 +71,8 @@ PlanetAPI star = system.initStar(
         100f,
         3f,
         2f);
+
+system.getLocation().set(-12000f, 7000f);
 
 PlanetAPI planet = system.addPlanet(
         "GearIn_observation_planet",
@@ -78,21 +93,22 @@ relay.addTag("GearIn_observation_tag");
 relay.setCircularOrbit(star, 70f, 3200f, 240f);
 ```
 
-恒星系生成完毕后可以调用 `autogenerateHyperspaceJumpPoints()`。该方法会根据系统中的行星和中心对象建立超空间跳跃点；它不是普通实体查询的替代入口。
+恒星初始化后，把星系放在超空间坐标 `(-12000, 7000)`，与此前的示例位置区分。行星与中继站就位后，再用 `autogenerateHyperspaceJumpPoints(...)` 建立往返入口。
 
 ```java
 system.autogenerateHyperspaceJumpPoints(false, false, true);
 
 SectorEntityToken marker = system.createToken(4200f, -900f);
+marker.setId("GearIn_observation_marker");
 marker.addTag("GearIn_observation_marker");
 system.addEntity(marker);
 ```
 
-`createToken` 只创建地点 token，`addEntity` 才把它加入地点对象集合。位置 token 没有自定义实体 spec，适合记录坐标和挂载关系，不应当被当成带交互插件的 custom entity。
+`createToken(...)` 创建坐标 token，`setId(...)` 让它可按本节 ID 找回，`addEntity(...)` 才加入地点集合。它没有 custom entity 的图像与插件，当前用于坐标和挂载关系；在地图上看见的对象是恒星、行星、中继站与跳跃点。
 
 ## 查询地点对象
 
-地点查询按范围从窄到宽排列：稳定 ID、业务标签、类型过滤、全量集合。查询器应把结果数量和关键对象 ID 一起记录，避免只看到 "查询成功" 却无法判断返回的是哪个对象。
+先找已知中继站，再找它的标签，最后比较类型集合与全量集合。**查询条件对应需要找的对象，日志同时保留 ID 和数量。** 一句 "成功" 无法解释到底找到了哪个中继站。
 
 ### 查询方式速查表
 
@@ -123,11 +139,15 @@ if (daysSinceVisit == Float.MAX_VALUE) {
 玩家正在地点内时 `current` 为 `true`；玩家离开后它会变成 `false`，但已经进入过的恒星系仍可保持 `entered=true`。两个值需要分别验证。
 :::
 
-## 运行生成器和查询器
+## 让生成与读取保持各自职责
 
-生成器只处理地点对象的创建，查询器只处理读取。两个脚本使用同一组新 ID，但不共享运行时对象引用；查询器每次执行都重新从星区取得地点。
+生成器在星系不存在时完整创建一次，查询器每次按同一个 ID 重新取得地点。读档后保留已经生成的世界，再建立本次运行的查询实例。
+
+编者建议先看初次进入前的日志，再进入、离开后比较。`current`、`entered` 与最近访问天数回答不同问题，留在星系里连续看几行日志，并不能替代这次往返。
 
 ## 完整最小例
+
+两个类保存到前述路径，保留生成与查询的登记片段。
 
 ::: details 完整成品：GearInLocationBuilder
 ```java
@@ -170,50 +190,40 @@ public class GearInLocationBuilder implements EveryFrameScript {
 
         SectorAPI sector = Global.getSector();
         StarSystemAPI system = sector.getStarSystem("GearIn_observation_system");
-        if (system == null) {
-            system = sector.createStarSystem("GearIn_observation_system");
+        if (system != null) {
+            done = true;
+            return;
         }
-
-        PlanetAPI star = system.getStar();
-        if (star == null) {
-            star = system.initStar(
-                    "GearIn_observation_star",
-                    "star_yellow",
-                    500f,
-                    250f,
-                    100f,
-                    3f,
-                    2f);
-        }
-
-        if (system.getEntityById("GearIn_observation_planet") == null) {
-            system.addPlanet(
-                    "GearIn_observation_planet",
-                    star,
-                    "观测行星",
-                    "terran",
-                    25f,
-                    140f,
-                    2400f,
-                    180f);
-        }
-
-        if (system.getEntityById("GearIn_observation_relay") == null) {
-            CustomCampaignEntityAPI relay = system.addCustomEntity(
-                    "GearIn_observation_relay",
-                    "观测中继站",
-                    "comm_relay",
-                    Factions.INDEPENDENT);
-            relay.addTag("GearIn_observation_tag");
-            relay.setCircularOrbit(star, 70f, 3200f, 240f);
-        }
-
-        if (system.getEntityById("GearIn_observation_marker") == null) {
-            SectorEntityToken marker = system.createToken(4200f, -900f);
-            marker.addTag("GearIn_observation_marker");
-            system.addEntity(marker);
-        }
-
+        system = sector.createStarSystem("GearIn_observation_system");
+        PlanetAPI star = system.initStar(
+                "GearIn_observation_star",
+                "star_yellow",
+                500f,
+                250f,
+                100f,
+                3f,
+                2f);
+        system.getLocation().set(-12000f, 7000f);
+        system.addPlanet(
+                "GearIn_observation_planet",
+                star,
+                "观测行星",
+                "terran",
+                25f,
+                140f,
+                2400f,
+                180f);
+        CustomCampaignEntityAPI relay = system.addCustomEntity(
+                "GearIn_observation_relay",
+                "观测中继站",
+                "comm_relay",
+                Factions.INDEPENDENT);
+        relay.addTag("GearIn_observation_tag");
+        relay.setCircularOrbit(star, 70f, 3200f, 240f);
+        SectorEntityToken marker = system.createToken(4200f, -900f);
+        marker.setId("GearIn_observation_marker");
+        marker.addTag("GearIn_observation_marker");
+        system.addEntity(marker);
         system.autogenerateHyperspaceJumpPoints(false, false, true);
         LOG.info("GearIn location built: id=" + system.getId());
         done = true;
@@ -232,7 +242,7 @@ import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.LocationAPI;
+import com.fs.starfarer.api.campaign.CampaignClockAPI;
 import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.StarSystemAPI;
@@ -241,11 +251,12 @@ public class GearInLocationQuery implements EveryFrameScript {
 
     private static final Logger LOG = Global.getLogger(GearInLocationQuery.class);
 
-    private boolean done;
+    private boolean reported;
+    private long lastReportTimestamp;
 
     @Override
     public boolean isDone() {
-        return done;
+        return false;
     }
 
     @Override
@@ -255,19 +266,19 @@ public class GearInLocationQuery implements EveryFrameScript {
 
     @Override
     public void advance(float amount) {
-        if (done) {
-            return;
-        }
-
         SectorAPI sector = Global.getSector();
-        LocationAPI location = sector.getStarSystem("GearIn_observation_system");
-        if (!(location instanceof StarSystemAPI)) {
+        CampaignClockAPI clock = sector.getClock();
+        if (reported && clock.getElapsedDaysSince(lastReportTimestamp) < 1f) {
+            return;
+        }
+        lastReportTimestamp = clock.getTimestamp();
+        reported = true;
+        StarSystemAPI system = sector.getStarSystem("GearIn_observation_system");
+        if (system == null) {
             LOG.warn("GearIn location query: system missing");
-            done = true;
             return;
         }
 
-        StarSystemAPI system = (StarSystemAPI) location;
         SectorEntityToken relay = system.getEntityById("GearIn_observation_relay");
         List<SectorEntityToken> tagMatches = system.getEntitiesWithTag(
                 "GearIn_observation_tag");
@@ -287,7 +298,6 @@ public class GearInLocationQuery implements EveryFrameScript {
                 system.isEnteredByPlayer(),
                 daysSinceVisit,
                 relayLocation));
-        done = true;
     }
 }
 ```
@@ -297,15 +307,15 @@ public class GearInLocationQuery implements EveryFrameScript {
 
 前置数据：包含本节生成器与查询器两个脚本类的 GearIn MOD 已构建并启用，并准备一个新档。
 
-1. 启用示例 MOD，在新档进入 `GearIn_observation_system`。
-2. 确认恒星、行星、中继站和位置 token 已出现在地图或地点集合中。
-3. 搜索 `GearIn location built` 和 `GearIn location query`，核对四种查询数量。
-4. 在系统内确认 `current=true`；离开后确认 `current=false`、`entered=true`。
-5. 对从未进入的测试系统读取 `daysSinceVisit`，确认结果为 `Float.MAX_VALUE`。
+1. 保存两个类与登记，构建、重启并进入新档，先查看 `GearIn location built` 与首次 `GearIn location query`。
+2. 前往超空间坐标 `(-12000, 7000)`，通过跳跃点进入观测星系，观察恒星、行星与中继站；位置 token 在地点集合日志中确认。
+3. 推进至少一个生涯日，再搜索 `GearIn location query`，核对 `all`、`typed`、`tags`、`relayLocation` 与访问状态。
+4. 在系统内记录 `current=true`，离开并推进一日后比较 `current=false` 与 `entered=true`。
+5. 比较首次进入前的 `Float.MAX_VALUE` 与离开后的最近访问天数，再保存读档，确认已有星系保留、查询继续记录。
 
 预期结果：
 
-- 恒星、行星、中继站和位置 token 出现在地图或地点集合中；
+- 恒星、行星、中继站与跳跃点可在地图观察，位置 token 通过 ID 与地点集合取得；
 - 日志出现 `GearIn location built` 与 `GearIn location query`，四种查询数量与创建结果一致；
 - 系统内 `current=true`，离开后 `current=false`、`entered=true`；
 - 从未进入的测试系统 `daysSinceVisit` 返回 `Float.MAX_VALUE`。
@@ -326,7 +336,9 @@ public class GearInLocationQuery implements EveryFrameScript {
 
 ## 总结
 
-地点页的核心是查询容器，而不是堆叠创建方法。先建立可重复取得的恒星系对象，再用 ID、标签、类型和全量集合逐层验证；访问状态需要把当前位置、曾经进入和最近访问天数分开读取。
+观测星系建立了固定 ID 的实体和往返入口，地点查询再分别使用 ID、标签、类型与全量集合。位置 token 的创建、命名和加入集合也分别完成，引用与容器归属能够一起核对。
+
+访问日志在进入前、系统内与离开后持续记录。当前地点、曾经访问和最近访问天数各有自己的含义，后续功能按实际需要选择。
 
 ## 建议参考项
 

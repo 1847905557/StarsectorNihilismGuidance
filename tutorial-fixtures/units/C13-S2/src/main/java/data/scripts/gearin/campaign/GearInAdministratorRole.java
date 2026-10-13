@@ -14,12 +14,12 @@ public class GearInAdministratorRole {
     public void run() {
         MarketAPI market = Global.getSector().getEconomy().getMarket("GearIn_market_foundry");
         PersonAPI person = market.getAdmin();
-        if (person == null || !"GearIn_admin".equals(person.getId())) {
+        if (!"GearIn_admin".equals(person.getId())) {
             person = createAdministrator();
         }
         market.setAdmin(person);
-        person.setMarket(market);
-        person.getStats().refreshCharacterStatsEffects();
+                person.getStats().refreshGovernedOutpostEffects(market);
+        market.reapplyIndustries();
         LOG.info(String.format("admin=%s market=%s personality=%s",
                 market.getAdmin().getId(), person.getMarket().getId(),
                 person.getPersonalityAPI().getId()));

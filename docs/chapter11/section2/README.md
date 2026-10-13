@@ -1,6 +1,6 @@
 # 管理舰队中的成员
 
-舰队成员是舰队数据中的可变集合。成员加入、移除、旗舰切换和优先顺序都会影响舰队界面、舰队汇总以及后续任务。FleetDataAPI 负责集合和旗舰，CampaignFleetAPI 负责地图实体与任务队列。
+舰队已经出现在地图上，接下来查看它由哪些成员组成，以及集合修改怎样进入旗舰、后勤汇总和任务。读取玩家舰队时，可以直接对照舰队界面；写入实验则使用上一节新生成的巡逻队，保存原状态、加入临时成员，再完整恢复。集合副本、真实写入与地图任务分别有自己的入口。
 
 *本节预期阅读时间：\~20 分钟。*
 
@@ -11,556 +11,343 @@
 完成后，您将能够：
 
 - 区分成员集合副本和舰队内部集合；
-- 添加、移除成员并恢复原旗舰；
-- 读取优先顺序、军官列表和舰队汇总；
-- 安排两步任务并观察当前任务和运动状态；
-- 根据成员数量、旗舰和日志定位集合故障。
+- 添加、移除成员并恢复旗舰与舰长；
+- 读取优先顺序、军官关联和舰队汇总；
+- 安排两步任务并观察当前任务与运动状态；
+- 根据对象、同步和日志定位集合问题。
 
 ## 前置知识
 
-- [C11-S1] 的 CampaignFleetAPI 取得方式；
-- [C11-S4] 的 FleetMemberAPI 创建和单舰状态；
-- Java List 副本、对象引用和空值判断；
-- 能够从 starsector.log 核对舰队状态。
+- [C11-S1] 的生成舰队、来源市场与投放锚点；
+- [C10-S1] 的生涯脚本、时间和日志；
+- Java 集合、对象身份、匿名接口实现与 `try`/`finally`。
 
-## 取得舰队数据
+## 先选择读取与写入对象
 
-CampaignFleetAPI 表示地图上的舰队实体，FleetDataAPI 保存这支舰队的成员、旗舰和军官集合。调用 getFleetData() 不会复制舰队；返回对象仍属于同一支舰队。
+`CampaignFleetAPI` 表示地图上的舰队，`FleetDataAPI` 保存这支舰队的成员、旗舰与军官。先取得容器，局部读取如下：
 
 ```java
 CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
 FleetDataAPI data = fleet.getFleetData();
-LOG.info("members=" + data.getNumMembers()
+LOG.info("GearIn members: count=" + data.getNumMembers()
         + " flagship=" + (fleet.getFlagship() == null
                 ? "none"
                 : fleet.getFlagship().getId()));
 ```
 
-玩家舰队适合作为读取入口，因为成员列表、旗舰和汇总值都能直接在舰队界面复核。写入示例只操作临时创建的成员，并在结尾恢复原旗舰和成员数量。
+`getFleetData()` 返回同一支舰队的容器，当前没有复制舰队。**列表副本用于观察，集合方法用于实际修改。** 船名和装配 ID 都可能重复，追踪同一个成员时使用对象引用或成员 ID。
 
-## 记录集合基线
-
-集合修改前先保存成员引用、旗舰和汇总值。列表副本用于比较成员集合，旗舰引用用于恢复，汇总值用于判断写入是否影响了舰队的派生状态。只保存船名或装配 ID 无法可靠定位同一个成员，因为它们都可能重复。
+本节的写入函数放入 [C11-S1] 的 `GearInFleetGenerator`。添加后文使用的 `FleetDataAPI`、`FleetMemberAPI`、`FleetMemberType`、`PersonAPI`、`List`、`Map`、`LinkedHashMap` 等 `import`；在基础舰队 `spawnFleet(...)` 完成后调用：
 
 ```java
-List<FleetMemberAPI> membersBefore = data.getMembersListCopy();
-FleetMemberAPI flagshipBefore = fleet.getFlagship();
-int countBefore = data.getNumMembers();
-int pointsBefore = fleet.getFleetPoints();
-float burnBefore = data.getBurnLevel();
-
-LOG.info("GearIn: baseline count=" + countBefore
-        + " fp=" + pointsBefore
-        + " burn=" + burnBefore
-        + " flagship=" + (flagshipBefore == null
-                ? "none"
-                : flagshipBefore.getId()));
+inspectMemberCollection(generatedFleet);
+scheduleAssignments(generatedFleet, anchor);
 ```
 
-membersBefore 是一次性的当前状态副本。成员对象本身仍然是实际对象，所以可以用它读取船体、装配和封存状态；列表的增删只影响副本。需要对照写入前后的成员时，保留副本中的对象引用，并在写入后重新调用 getMembersListCopy()。
+`generatedFleet` 与 `anchor` 都来自当前生成过程。成员实验在同一轮恢复，任务则留在这支专用巡逻队上推进。玩家舰队继续作为读取与界面对照对象。
 
-::: tip 先保存引用，再执行写入
-恢复操作需要知道原旗舰和演示成员的对象身份。把基线放在写入之前，才能区分新增成员、顺序变化和汇总延迟。
-:::
-
-## 读取成员视图
-
-成员读取入口回答的问题不同。选择入口前先确定需要遍历全部成员、读取旗舰，还是按部署优先级取得顺序。
+## 取得成员、顺序与军官视图
 
 ### 成员读取入口速查表
 
-| 方法 | 返回内容 | 适用场景 | 写入边界 |
-| --- | --- | --- | --- |
-| getMembersListCopy() | 当前成员列表副本 | 安全遍历和筛选 | 修改列表不会修改舰队 |
-| getMembersInPriorityOrder() | 按优先级排列的成员列表 | 部署和界面顺序观察 | 顺序由舰队数据维护 |
-| getNumMembers() | 当前成员数量 | 增删前后核对 | 只读汇总 |
-| fleet.getFlagship() | 当前旗舰引用 (CampaignFleetAPI) | 旗舰切换与恢复 | 可能返回 null |
-| getOfficersCopy() | 军官数据副本 | 读取军官归属 | 人物创建由人物专题负责 |
+| 方法 | 返回内容 | 当前用途 |
+|---|---|---|
+| `getMembersListCopy()` | 当前成员列表副本 | 遍历、筛选与保存基线 |
+| `getMembersInPriorityOrder()` | 非封存成员在前、封存成员在后的列表 | 比较部署优先顺序 |
+| `getNumMembers()` | 当前成员数量 | 增删与恢复核对 |
+| `fleet.getFlagship()` | 当前旗舰引用或 `null` | 集合级旗舰状态 |
+| `getCombatReadyMembersListCopy()` | 当前可参与战斗的成员副本 | 比较封存等状态的影响 |
+| `getOfficersCopy()` | 当前军官列表副本 | 读取人物与成员的关联 |
 
-getMembersListCopy() 的价值在于稳定遍历。舰队内部集合变化时，调用方持有的旧副本不会自动增加或删除元素；需要最新状态时重新调用。
-
-getMembersInPriorityOrder() 的顺序由舰队数据维护：先非封存成员，后封存成员，段内保留原有顺序。这个返回值用于读取部署优先级，不能当作可写排序列表。需要把一个已经准备好的顺序写回时，调用 sortToMatchOrder(...)，并确认列表包含当前舰队中的全部成员。
-
-::: warning 接口 javadoc 属过时描述
-`getMembersInPriorityOrder()` 的公开 javadoc 声称 "后勤优先" 成员先出现，这是已被移除功能的残留：对应的成员标记 API 在 0.98a-RC8 已被注释，界面入口为空操作，实现只有先非封存、后封存两段。以实现为准。
-:::
-
-getCombatReadyMembersListCopy() 只回答当前可用于战斗的成员数量。封存成员、船体状态和装配状态可能让它少于 getMembersListCopy()；因此不要用两个列表的长度相等作为正常条件。
+副本保留取得时的成员视图，增删本地 List 只改变副本。成员对象本身仍是实际对象，它们的船体、装配或封存状态变化仍可以从引用读取。需要最新集合时，再调用一次 `getMembersListCopy()`。
 
 ```java
 List<FleetMemberAPI> snapshot = data.getMembersListCopy();
 for (FleetMemberAPI member : snapshot) {
-    LOG.info("member=" + member.getId()
+    LOG.info("GearIn member: id=" + member.getId()
             + " hull=" + member.getHullId()
             + " flagship=" + member.isFlagship());
 }
 ```
 
-::: tip 副本保留取得时的成员视图
-副本适合遍历和比较。对副本调用 add() 或 remove() 只改变本地 List，FleetDataAPI 中的成员不会变化。
+当前优先顺序按非封存、封存分组，组内保留原顺序。可战斗成员还受单舰状态影响，因此两种列表的数量分别解释。
+
+::: tip 把副本与对象分别看
+列表回答 "取得时有哪些成员"，成员引用回答 "这艘船现在是什么状态"。重新取得列表后，仍可以按成员 ID 对照同一艘船。
 :::
 
-## 添加一名临时成员
+## 添加临时成员并完成同步
 
-成员由 FactoryAPI 创建，加入动作由 FleetDataAPI 完成。创建完成但尚未加入舰队时，成员没有这支舰队的集合归属；加入后，成员数量、FP 和后勤容量才会参与舰队汇总。
+`FactoryAPI.createFleetMember(...)` 创建成员，本例用原版 `wolf_Assault` 装配。`addFleetMember(...)` 将它加入当前舰队，成员归属、FP 和容量随后进入汇总：
 
 ```java
-FleetMemberAPI demo = Global.getFactory().createFleetMember(
+FleetMemberAPI temporary = Global.getFactory().createFleetMember(
         FleetMemberType.SHIP,
         "wolf_Assault");
-int membersBefore = data.getNumMembers();
-float fleetPointsBefore = fleet.getFleetPoints();
-
-data.addFleetMember(demo);
-
-LOG.info("members=" + membersBefore + "->" + data.getNumMembers()
-        + " fleetPoints=" + fleetPointsBefore + "->" + fleet.getFleetPoints());
-```
-
-同一成员引用只应加入一支舰队。需要把成员转移到另一支舰队时，先从原 FleetDataAPI 移除，再加入目标集合。
-
-加入后可以主动要求集合同步。setSyncNeeded() 只标记需要同步，syncIfNeeded() 在下一次读取前处理标记；syncMemberLists() 直接整理成员列表。通常使用 syncIfNeeded() 即可，只有需要明确控制同步边界的脚本才直接调用同步方法。
-
-```java
-data.setSyncNeeded();
+data.addFleetMember(temporary);
 data.syncIfNeeded();
-
-LOG.info("GearIn: synced count=" + data.getNumMembers()
-        + " fp=" + fleet.getFleetPoints()
-        + " combatReady="
-        + data.getCombatReadyMembersListCopy().size());
+LOG.info("GearIn member added: id=" + temporary.getId()
+        + " belongs=" + (temporary.getFleetData() == data)
+        + " count=" + data.getNumMembers());
 ```
 
-setOnlySyncMemberLists(true) 会把同步范围限制在成员列表。它适用于只想整理集合的读取场景，不适合需要同时更新货舱容量、舰船分类或技能效果的完整状态操作；页面示例保持默认设置，让舰队正常完成自身汇总更新。
+同一成员引用属于一支舰队。转移成员时先从原容器移除，再加入目标容器。加入也会为尚未有船名或舰长的成员补上默认值，默认 `steady` 舰长与军官列表中的人物分别处理。
 
-## 切换并恢复旗舰
+**集合写入会标记需要同步，读取时再完成同步。** `setSyncNeeded()` 登记待处理状态，`syncIfNeeded()` 重建成员列表并更新相关 `stats`、容量与缓存；`syncMemberLists()` 直接整理列表。`getNumMembers()` 等读取入口也可能触发待处理同步，观察时要把这个副作用一起考虑。
 
-旗舰必须属于当前成员集合。保存原旗舰后，把临时成员设为旗舰，读取 FleetDataAPI 与 FleetMemberAPI 的两个观察入口；清理前先恢复原旗舰，再移除临时成员。
+### 同步方法速查表
 
-```java
-FleetMemberAPI originalFlagship = fleet.getFlagship();
-data.setFlagship(demo);
+| 方法 | 作用与条件 |
+|---|---|
+| `setSyncNeeded()` | 标记需要处理后续同步 |
+| `syncIfNeeded()` | 按当前待处理标记完成同步 |
+| `syncMemberLists()` | 直接整理成员列表 |
+| `setOnlySyncMemberLists(true)` | 限制同步为列表整理，`stats`、容量与其他缓存另按完整同步处理 |
 
-LOG.info("dataFlagship=" + fleet.getFlagship().getId()
-        + " memberFlagship=" + demo.isFlagship());
-
-data.setFlagship(originalFlagship);
-data.removeFleetMember(demo);
-```
-
-原舰队可能没有旗舰。恢复代码先判断 originalFlagship 是否仍属于舰队；引用已经被其他逻辑移除时，需要从当前成员中选择有效替代对象。
-
-::: warning 移除当前旗舰前先完成替换
-旗舰被移除后，依赖 getFlagship() 的名称、指挥官和部署逻辑可能得到空值。集合清理先恢复旗舰，再移除演示成员。
-:::
-
-setFlagship(...) 的副作用还包括为其他舰船设置新的默认舰长对象。临时切换完成后只恢复旗舰引用，并不能把其他脚本在期间修改过的舰长或军官状态全部复原；演示代码只在自己的测试成员上切换，避免覆盖玩家已有人员配置。
-
-## 读取顺序和军官
-
-getMembersInPriorityOrder() 用于观察舰队维护的成员优先顺序。它不是 getMembersListCopy() 的排序开关，调用方也不应通过修改返回列表重排舰队。
+需要比较只整理列表与完整同步时，下面的局部片段保存并恢复原开关：
 
 ```java
-List<FleetMemberAPI> priority = data.getMembersInPriorityOrder();
-if (!priority.isEmpty()) {
-    LOG.info("firstPriority=" + priority.get(0).getShipName());
-}
-LOG.info("officers=" + data.getOfficersCopy().size());
-```
-
-军官列表表示人物与舰队成员的归属关系。人物创建、技能等级和舰长效果在人物与状态专题展开；本页只确认集合中存在多少军官，以及成员集合变化没有意外删除人物。
-
-## 观察舰队汇总
-
-成员加入或移除后，CampaignFleetAPI 提供的 FP、货舱容量和燃料容量会按当前成员重新计算。读取汇总时重新调用访问器，不缓存写入前的数值。
-
-```java
-LOG.info("fleetPoints=" + fleet.getFleetPoints()
-        + " cargoCapacity=" + fleet.getCargo().getMaxCapacity()
-        + " fuelCapacity=" + fleet.getCargo().getMaxFuel());
-```
-
-成员的装配、船插或封存状态也可能改变部分汇总值。集合写入只解释成员是否参与计算；具体单舰状态由 [C11-S4] 负责，stats 重算由 [C11-S3] 负责。
-
-getFleetPoints() 是舰队战力点数的当前汇总，getEffectiveStrength() 是按成员强度计算的另一种汇总。getMaxBurnLevel()、getMinBurnLevel() 和 getBurnLevel() 的含义不同：前两者分别描述最快和最慢成员的燃耗等级，getBurnLevel() 才是舰队当前可用的有效燃耗等级。封存成员不会参与最快燃耗等级的计算。
-
-如果脚本需要处理成员被打捞或拆解的结果，可以使用 scuttle(member)。这个入口会从舰队移除成员，并把拆解所得燃料、补给和已装备武器加入货舱；它不是普通的 removeFleetMember() 替代品。页面演示只使用普通移除，避免把经济变化混入集合验证。
-
-## 安排舰队任务
-
-任务队列属于 CampaignFleetAPI。addAssignment() 把新任务放到队尾；当前任务由 getCurrentAssignment() 返回。持续时间以生涯天数计，目标必须在舰队能够访问的地点关系中保持有效。
-
-```java
-fleet.addAssignment(
-        FleetAssignment.GO_TO_LOCATION,
-        target,
-        5f,
-        "moving to " + target.getName());
-fleet.addAssignment(
-        FleetAssignment.ORBIT_PASSIVE,
-        target,
-        2f,
-        "holding near " + target.getName());
-```
-
-加入队列后立即读取当前任务，可以确认第一项已经成为活动任务：
-
-```java
-FleetAssignmentDataAPI current = fleet.getCurrentAssignment();
-if (current != null) {
-    LOG.info("assignment=" + current.getAssignment()
-            + " target=" + current.getTarget().getId()
-            + " speed=" + fleet.getVelocity().length()
-            + " facing=" + fleet.getFacing());
-}
-```
-
-速度表示当前帧运动结果，不代表任务已经完成。舰队尚未投放、目标被移除或地点不可达时，队列仍可能存在，但地图上看不到预期移动。
-
-::: tip 任务队列按生涯时间推进
-addAssignment() 只改变待执行任务。舰队已经属于有效地点、目标仍然存在且生涯时间推进时，任务才会持续产生运动结果。
-:::
-
-## 处理一次集合修改
-
-下面的局部序列把集合写入和恢复放在同一作用域。try/finally 可以确保日志或观察代码抛出异常时仍执行清理。
-
-```java
-FleetMemberAPI originalFlagship = fleet.getFlagship();
-FleetMemberAPI demo = Global.getFactory().createFleetMember(
-        FleetMemberType.SHIP,
-        "wolf_Assault");
-try {
-    data.addFleetMember(demo);
-    data.setFlagship(demo);
-    LOG.info("temporary members=" + data.getNumMembers());
-} finally {
-    if (originalFlagship != null) {
-        data.setFlagship(originalFlagship);
-    }
-    data.removeFleetMember(demo);
-}
-```
-
-本页没有完整 Java 类。片段用于加入已有生涯脚本或控制台辅助代码，调用方负责提供 fleet、data、target 和 logger。
-
-## 让成员集合完成一次同步
-
-成员写入和成员可读列表之间存在一个明确的同步边界。`addFleetMember(...)` 与 `removeFleetMember(...)` 先修改内部槽位，再调用 `setSyncNeeded()`；这一步只登记后续需要处理的工作。`syncIfNeeded()` 才会重新建立不含空槽的成员列表，并按当前舰队上下文更新成员 stats、舰长、货舱容量和缓存。
-
-```java
-FleetMemberAPI demo = Global.getFactory().createFleetMember(
-        FleetMemberType.SHIP,
-        "wolf_Assault");
-
-if (demo == null) {
-    LOG.warn("GearIn: unable to create member for sync probe");
-    return;
-}
-
-data.addFleetMember(demo);
-
-LOG.info("GearIn: marked=" + data.getNumMembers()
-        + " syncOnly=" + data.isOnlySyncMemberLists());
-
-data.syncIfNeeded();
-
-LOG.info("GearIn: synchronized=" + data.getNumMembers()
-        + " memberFleetData=" + (demo.getFleetData() == data)
-        + " ready=" + data.getCombatReadyMembersListCopy().size());
-
-data.removeFleetMember(demo);
-data.syncIfNeeded();
-```
-
-`getNumMembers()` 会通过 `getMembers()` 读取同步后的列表，因此它可以触发一次待处理同步。显式调用 `syncIfNeeded()` 适合需要把日志分成写入时刻和完成时刻的调试代码；普通游戏逻辑可以直接重新访问读入口，让容器按需处理标记。
-
-### 控制只同步成员列表
-
-`setOnlySyncMemberLists(true)` 会让下一次同步只重建成员列表，随后 `syncIfNeeded()` 清除该次待处理标记。它不能代替完整舰队同步，因为成员 stats、货舱容量和舰队级缓存可能仍等待后续处理。
-
-```java
+boolean listOnlyBefore = data.isOnlySyncMemberLists();
 data.setOnlySyncMemberLists(true);
 data.setSyncNeeded();
 data.syncIfNeeded();
-
-LOG.info("GearIn: listOnly=" + data.isOnlySyncMemberLists()
-        + " members=" + data.getMembersListCopy().size());
-
-data.setOnlySyncMemberLists(false);
+LOG.info("GearIn list sync: members=" + data.getMembersListCopy().size());
+data.setOnlySyncMemberLists(listOnlyBefore);
 data.setSyncNeeded();
 data.syncIfNeeded();
 ```
 
-测试脚本使用该开关时，要在同一个作用域恢复原值。长时间保持 `true` 会使后续代码误以为完整状态已经刷新，最终表现为界面成员列表正确而 FP、燃耗或容量滞后。
+当前成品实验沿用完整同步。编者建议先让普通成员操作完成，再按实际需要收缩同步范围；列表看起来正确，与所有派生数值已经刷新，是两项观察。
 
-::: tip 观察点要放在同步之后
-集合写入后的第一个日志记录应区分 `setSyncNeeded()` 和 `syncIfNeeded()`。汇总值、可部署数量和成员 stats 应在同步完成后重新取得。
-:::
+## 切换旗舰并恢复人员
 
-## 读取成员顺序并写回排序
+`data.setFlagship(member)` 维护整个集合的旗舰标记，并把舰队指挥官交给新旗舰。这一步也会影响成员舰长，因此恢复实验同时保存原旗舰与每名原成员的舰长引用。
 
-成员有三个容易混淆的顺序来源。`getMembersListCopy()` 反映当前内部顺序，`getMembersInPriorityOrder()` 按非封存成员、封存成员分组，`sortToMatchOrder(...)` 才会把传入顺序写回成员槽位。读取入口返回的列表都不能直接当作写入口。
+把以下局部方法加入生成器：
+
+```java
+private void inspectMemberCollection(CampaignFleetAPI fleet) {
+    FleetDataAPI data = fleet.getFleetData();
+    List<FleetMemberAPI> membersBefore = data.getMembersListCopy();
+    FleetMemberAPI flagshipBefore = fleet.getFlagship();
+    Map<FleetMemberAPI, PersonAPI> captainsBefore = new LinkedHashMap<>();
+    for (FleetMemberAPI member : membersBefore) {
+        captainsBefore.put(member, member.getCaptain());
+    }
+    FleetMemberAPI temporary = Global.getFactory().createFleetMember(
+            FleetMemberType.SHIP,
+            "wolf_Assault");
+    try {
+        data.addFleetMember(temporary);
+        data.setFlagship(temporary);
+        data.syncIfNeeded();
+        LOG.info("GearIn collection temporary: count=" + data.getNumMembers()
+                + " flagship=" + fleet.getFlagship().getId()
+                + " memberFlagship=" + temporary.isFlagship()
+                + " fleetPoints=" + fleet.getFleetPoints());
+    } finally {
+        data.setFlagship(flagshipBefore);
+        for (Map.Entry<FleetMemberAPI, PersonAPI> entry : captainsBefore.entrySet()) {
+            entry.getKey().setCaptain(entry.getValue());
+        }
+        data.removeFleetMember(temporary);
+        data.syncIfNeeded();
+        LOG.info("GearIn collection restored: count=" + data.getNumMembers()
+                + " expected=" + membersBefore.size()
+                + " flagship=" + (fleet.getFlagship() == null
+                        ? "none"
+                        : fleet.getFlagship().getId()));
+    }
+}
+```
+
+`try/finally` 将写入与恢复放在同一作用域。先恢复旗舰和原舰长，再移除临时成员，最后同步读取。当前函数在一次调用里完成这些动作，保存的成员仍属于同一舰队。
+
+**旗舰标记与舰长关系一起恢复。** 单独调用 `FleetMemberAPI.setFlagship(true)` 只处理该成员，集合级切换使用 `FleetDataAPI`。原舰队没有旗舰时，保存的 `null` 也由集合入口恢复。较长时间运行的功能需要重新确认原成员是否仍属于舰队，再决定替代旗舰；本例的同步实验保持这一组成员不变。
+
+## 比较顺序与军官关联
+
+下面的局部观察分别记录内部顺序和优先顺序：
 
 ```java
 List<FleetMemberAPI> currentOrder = data.getMembersListCopy();
 List<FleetMemberAPI> priorityOrder = data.getMembersInPriorityOrder();
-
-LOG.info("GearIn: currentOrder=" + currentOrder.size()
-        + " priorityOrder=" + priorityOrder.size());
-
 for (int index = 0; index < currentOrder.size(); index++) {
-    FleetMemberAPI member = currentOrder.get(index);
-    LOG.info("GearIn: current=" + index
-            + " id=" + member.getId());
+    LOG.info("GearIn current order: index=" + index
+            + " id=" + currentOrder.get(index).getId());
 }
-
 for (int index = 0; index < priorityOrder.size(); index++) {
     FleetMemberAPI member = priorityOrder.get(index);
-    LOG.info("GearIn: priority=" + index
+    LOG.info("GearIn priority order: index=" + index
             + " id=" + member.getId()
             + " mothballed=" + member.getRepairTracker().isMothballed());
 }
 ```
 
-需要改变顺序时，先制作包含当前全部成员的副本，再调用 `sortToMatchOrder(...)`。传入缺少成员的列表会让剩余槽位由实现重新整理，造成下一次读取顺序与预期不同；演示代码只读取顺序，不对玩家舰队执行排序写入。
+`sortToMatchOrder(...)` 才将新顺序写回。传入当前全部成员，重排完成后重新读取列表。下面的局部实验交换前两名，再恢复原顺序：
 
 ```java
+List<FleetMemberAPI> originalOrder = data.getMembersListCopy();
 List<FleetMemberAPI> desiredOrder = data.getMembersListCopy();
-
 if (desiredOrder.size() >= 2) {
     FleetMemberAPI first = desiredOrder.get(0);
     desiredOrder.set(0, desiredOrder.get(1));
     desiredOrder.set(1, first);
     data.sortToMatchOrder(desiredOrder);
     data.syncIfNeeded();
+    LOG.info("GearIn reordered first=" + data.getMembersListCopy().get(0).getId());
+    data.sortToMatchOrder(originalOrder);
+    data.syncIfNeeded();
 }
 ```
 
-排序完成后重新调用 `getMembersListCopy()`，不要继续使用写入前的列表判断界面顺序。成员对象引用仍然稳定，列表位置不稳定；需要追踪某艘船时以对象引用或成员 ID 作为观察键。
+成员引用保持对象身份，列表位置随排序变化。缺少成员的排序列表会使剩余槽位由容器另行整理，完整副本更适合这次实验。
 
-## 读取军官 roster 与成员关联
-
-`getOfficersCopy()` 返回舰队 roster 的列表副本。它与 `getMembersListCopy()` 是两个独立集合：一名军官可以尚未挂到成员，也可以通过成员的 captain 关系挂到某艘船。`getMemberWithCaptain(person)` 用对象身份反查当前挂载成员。
+军官列表与成员列表分别存在。军官可以尚未分配舰船，`getMemberWithCaptain(person)` 按人物对象查找当前成员：
 
 ```java
-List<OfficerDataAPI> officers = data.getOfficersCopy();
-
-for (OfficerDataAPI officer : officers) {
+for (OfficerDataAPI officer : data.getOfficersCopy()) {
     PersonAPI person = officer.getPerson();
     FleetMemberAPI assigned = data.getMemberWithCaptain(person);
-
-    LOG.info("GearIn: officer=" + person.getNameString()
+    LOG.info("GearIn officer: name=" + person.getNameString()
             + " level=" + person.getStats().getLevel()
-            + " assigned=" + (assigned == null
-                    ? "none"
-                    : assigned.getId()));
+            + " assigned=" + (assigned == null ? "none" : assigned.getId()));
 }
 ```
 
-加入成员时，原版实现会为没有舰长的成员创建默认的 `steady` 人物；这项默认补全属于成员加入过程，不能推断为 roster 中已有一名玩家军官。人物专题负责 officer 的创建、等级和技能，本页只观察集合关系。
+这段读取需要 `com.fs.starfarer.api.characters.OfficerDataAPI` 的 `import`。人物创建与技能由后面专题展开；当前只核对归属。若功能调用 `addOfficer(...)`，结束时按保存的人物或军官数据调用 `removeOfficer(...)`，成员移除与军官列表移除分别完成。
 
-如果测试脚本主动调用 `addOfficer(...)`，清理阶段要保存 `OfficerDataAPI` 或 `PersonAPI` 对象并调用对应的 `removeOfficer(...)`。移除成员不会替您删除 roster 中独立存在的军官。
+## 重新读取舰队汇总
 
-## 读取舰队汇总的来源
-
-舰队汇总至少包含成员数量、FP、有效强度、燃耗和货舱容量。它们的读取入口分布在 `FleetDataAPI`、`CampaignFleetAPI` 和 `CargoAPI`，写入成员后要分别重新访问。一个缓存变量不能代表所有层级的同步状态。
+集合修改后，从各自入口重新取得汇总值，局部观察如下：
 
 ```java
-int members = data.getNumMembers();
-int fleetPoints = fleet.getFleetPoints();
-float effectiveStrength = fleet.getEffectiveStrength();
-float maxBurn = data.getMaxBurnLevel();
-float minBurn = data.getMinBurnLevel();
-float burn = data.getBurnLevel();
-float cargoCapacity = fleet.getCargo().getMaxCapacity();
-float fuelCapacity = fleet.getCargo().getMaxFuel();
-
-LOG.info("GearIn: members=" + members
-        + " fp=" + fleetPoints
-        + " strength=" + effectiveStrength
-        + " maxBurn=" + maxBurn
-        + " minBurn=" + minBurn
-        + " burn=" + burn
-        + " cargo=" + cargoCapacity
-        + " fuel=" + fuelCapacity);
+LOG.info("GearIn fleet totals: members=" + data.getNumMembers()
+        + " fp=" + fleet.getFleetPoints()
+        + " strength=" + fleet.getEffectiveStrength()
+        + " maxBurn=" + data.getMaxBurnLevel()
+        + " minBurn=" + data.getMinBurnLevel()
+        + " burn=" + data.getBurnLevel()
+        + " cargo=" + fleet.getCargo().getMaxCapacity()
+        + " fuel=" + fleet.getCargo().getMaxFuel());
 ```
 
-`getMaxBurnLevel()` 和 `getMinBurnLevel()` 描述成员燃耗范围，`getBurnLevel()` 描述舰队当前可以使用的有效值。最大和最小燃耗都包含舰队级最大燃耗修正；最大燃耗的成员筛选还会排除封存成员。深空等环境会进一步影响有效燃耗，因此地图运动验证要以 `getBurnLevel()` 和实际速度共同判断。
+FP 与有效强度分别表示当前战力汇总，货舱与燃料容量来自 `Cargo`。最大、最小燃耗描述成员范围，并包含对应最大燃耗修饰；最大燃耗计算排除封存成员。`getBurnLevel()` 则给出舰队有效燃耗，进一步合并舰队范围修饰与实际限制。地图速度还受运行环境影响，按有效值和实际速度一起观察。
 
-成员装配、船插、船员或封存状态变化也会改变汇总。集合页面只负责确认成员是否在容器中；单舰状态和 stats 重算分别由 [C11-S4] 和 [C11-S3] 说明。
+成员装配、船插、船员与封存状态也会影响汇总。单舰状态由 [C11-S4] 展开，重算关系由 [C11-S3] 接着说明。
 
-## 让任务队列按照顺序执行
-
-`CampaignFleetAPI.addAssignment(...)` 有多个重载。页面使用带动作文本的重载，让日志和舰队界面能够识别每一项任务；脚本回调、是否把时间加到下一项以及开始回调属于同一组高级参数，只有确实需要生命周期回调时才使用。
-
-```java
-SectorEntityToken target = fleet.getContainingLocation()
-        .getEntityById("gear_in_training_buoy");
-
-if (target == null) {
-    LOG.warn("GearIn: no target for assignment chain");
-    return;
-}
-
-fleet.clearAssignments();
-fleet.addAssignment(
-        FleetAssignment.GO_TO_LOCATION,
-        target,
-        5f,
-        "moving to training buoy");
-fleet.addAssignment(
-        FleetAssignment.ORBIT_PASSIVE,
-        target,
-        2f,
-        "orbiting training buoy");
-
-List<FleetAssignmentDataAPI> assignments = fleet.getAssignmentsCopy();
-LOG.info("GearIn: assignmentCount=" + assignments.size());
-```
-
-队列首项由 `getCurrentAssignment()` 返回，后续项通过 `getAssignmentsCopy()` 观察。`FleetAssignmentDataAPI` 的 `getElapsedDays()` 和 `getMaxDurationInDays()` 都以生涯天数表达；读取 `getTarget()` 时要处理目标为空的情况。
-
-```java
-FleetAssignmentDataAPI current = fleet.getCurrentAssignment();
-
-if (current != null) {
-    float remaining = current.getMaxDurationInDays()
-            - current.getElapsedDays();
-    LOG.info("GearIn: assignment=" + current.getAssignment()
-            + " target=" + (current.getTarget() == null
-                    ? "none"
-                    : current.getTarget().getId())
-            + " remainingDays=" + remaining
-            + " expired=" + current.isExpired());
-}
-```
-
-当第一项过期时，任务模块移除队首并让第二项成为当前任务。其他 AI 逻辑可能调用 `clearAssignments()` 或插入新的队首任务，因此验证要在添加后立即记录队列，再在生涯时间推进后重复记录。
-
-::: warning 任务目标需要保持有效
-任务记录的是 `SectorEntityToken` 对象引用。目标被移出地点、舰队不在有效地点或任务模块被冻结时，队列记录仍可能存在，运动结果却不会达到预期。
+::: warning 拆解带有经济结果
+`scuttle(member)` 会移除成员，并把拆解所得燃料、补给和装备武器加入货舱。当前临时成员实验使用 `removeFleetMember(...)`，集合恢复按原成员数量核对。
 :::
 
-## 用 try/finally 恢复舰队
+## 给专用舰队安排两步任务
 
-集合演示应把所有写入和恢复放在同一作用域。恢复阶段至少处理原旗舰、演示成员的归属、任务队列和同步标记；如果脚本修改了军官或成员舰长，还要按对象身份保存对应状态。
+任务队列属于 `CampaignFleetAPI`。`addAssignment(...)` 将任务加入队尾，`getCurrentAssignment()` 取得队首，`getAssignmentsCopy()` 观察整个队列。持续时间以生涯日计，目标使用当前生成过程的市场主实体。
+
+把下面两个局部方法加入生成器，并添加 `FleetAssignment`、`FleetAssignmentDataAPI`、`EveryFrameScript` 与 `IntervalUtil` 的 `import`：
 
 ```java
-List<FleetMemberAPI> membersBefore = data.getMembersListCopy();
-FleetMemberAPI flagshipBefore = fleet.getFlagship();
-List<FleetAssignmentDataAPI> assignmentsBefore = fleet.getAssignmentsCopy();
-FleetMemberAPI demo = Global.getFactory().createFleetMember(
-        FleetMemberType.SHIP,
-        "wolf_Assault");
+private void scheduleAssignments(CampaignFleetAPI fleet, SectorEntityToken target) {
+    fleet.clearAssignments();
+    fleet.addAssignment(FleetAssignment.GO_TO_LOCATION, target, 5f,
+            "moving to " + target.getName());
+    fleet.addAssignment(FleetAssignment.ORBIT_PASSIVE, target, 2f,
+            "holding near " + target.getName());
+    logAssignment(fleet);
+    fleet.addScript(new EveryFrameScript() {
+        private final IntervalUtil reportInterval = new IntervalUtil(0.1f, 0.1f);
 
-if (demo == null) {
-    throw new IllegalStateException("Unable to create temporary member");
+        @Override
+        public boolean isDone() {
+            return fleet.getCurrentAssignment() == null;
+        }
+
+        @Override
+        public boolean runWhilePaused() {
+            return false;
+        }
+
+        @Override
+        public void advance(float amount) {
+            reportInterval.advance(Global.getSector().getClock().convertToDays(amount));
+            if (reportInterval.intervalElapsed()) {
+                logAssignment(fleet);
+            }
+        }
+    });
 }
 
-try {
-    data.addFleetMember(demo);
-    data.setFlagship(demo);
-    data.syncIfNeeded();
-
-    LOG.info("GearIn: temporary count=" + data.getNumMembers()
-            + " currentFlagship=" + fleet.getFlagship().getId());
-} finally {
-    boolean flagshipStillPresent = false;
-    for (FleetMemberAPI member : data.getMembersListCopy()) {
-        if (member == flagshipBefore) {
-            flagshipStillPresent = true;
-            break;
-        }
+private void logAssignment(CampaignFleetAPI fleet) {
+    FleetAssignmentDataAPI current = fleet.getCurrentAssignment();
+    if (current != null) {
+        LOG.info("GearIn assignment: type=" + current.getAssignment()
+                + " target=" + (current.getTarget() == null
+                        ? "none"
+                        : current.getTarget().getId())
+                + " remainingDays=" + (current.getMaxDurationInDays()
+                        - current.getElapsedDays())
+                + " expired=" + current.isExpired()
+                + " count=" + fleet.getAssignmentsCopy().size()
+                + " speed=" + fleet.getVelocity().length()
+                + " facing=" + fleet.getFacing());
     }
-
-    if (flagshipStillPresent) {
-        data.setFlagship(flagshipBefore);
-    } else {
-        data.ensureHasFlagship();
-    }
-
-    if (demo.getFleetData() == data) {
-        data.removeFleetMember(demo);
-    }
-
-    fleet.clearAssignments();
-    for (FleetAssignmentDataAPI assignment : assignmentsBefore) {
-        if (assignment.getTarget() != null
-                && assignment.getTarget().getContainingLocation()
-                        == fleet.getContainingLocation()) {
-            fleet.addAssignment(
-                    assignment.getAssignment(),
-                    assignment.getTarget(),
-                    assignment.getMaxDurationInDays(),
-                    assignment.getActionText());
-        }
-    }
-
-    data.syncIfNeeded();
-    LOG.info("GearIn: restored count=" + data.getNumMembers()
-            + " expected=" + membersBefore.size()
-            + " flagship=" + (fleet.getFlagship() == null
-                    ? "none"
-                    : fleet.getFlagship().getId()));
 }
 ```
 
-任务对象的已用时间、脚本回调和内部自定义数据不一定能通过公开重载完整复制。测试脚本要把任务恢复目标限定在仍然有效的实体，并把不可复制的运行时上下文列入人工验证项；临时演示不应清空玩家原有任务后直接结束。
+任务先立即记录，再由附着在该舰队上的观察脚本每 0.1 生涯日记录。第一项到达目标或结束后，第二项成为当前任务；队列结束，观察脚本也结束。`FleetAssignment` 位于 `com.fs.starfarer.api.campaign`，`FleetAssignmentDataAPI` 位于其 `ai` 子包。
 
-## 完整最小例
+**队列改变与舰队实际运动分别观察。** 生涯时间推进、舰队已投放且目标有效，任务才产生地图结果。速度为当前帧结果，尚不能单独证明任务完成。其他 AI 也可能清空或插入任务，日志保留目标、剩余天数与队列数量用于比较。
 
-本页不新增完整 Java 类。成员集合和任务队列都依赖调用方已经取得的生涯舰队，因此完整代码会把多个职责重新混在一个入口中；正文片段分别展示每个写入动作，便于在现有脚本中安全接入。
+`addAssignment(...)` 的高级重载还接受结束脚本、开始脚本与时间转移等参数，用于相应生命周期。已有任务的已用时间、脚本回调和自定义上下文各有归属；将任务类型和目标重新加入队列，只复制了部分描述。本节把任务实验放在新生成的专用舰队上，清空和两步安排都属于这次任务。
 
 ## 验证方案
 
-前置数据：使用包含至少一艘舰船的测试存档，并保存一份可在验证后删除的副本。
+前置数据：保留原版核心世界的新档测试环境，已按本节将局部方法接到基础生成器。
 
-1. 记录玩家舰队的成员数量、旗舰名称、FP、货舱容量和燃料容量。
-2. 执行临时成员创建与加入片段，重新打开舰队界面。
-3. 核对成员数量增加一名，临时成员出现在列表中，FP 和容量按成员属性变化。
-4. 执行旗舰切换片段，确认舰队界面的旗舰标记转移到临时成员。
-5. 执行恢复与移除片段，确认成员数量、旗舰和汇总恢复。
-6. 对地图上的测试舰队添加两步任务，观察当前任务文本与位置变化。
-7. 打开 starsector.log，核对成员 ID、优先顺序、军官数量、当前任务和速度字段。
+1. 构建并重启，新建存档，等待两支巡逻队生成；搜索 `GearIn collection temporary` 与 `restored`。
+2. 比较成员数量、旗舰 ID 与 FP，核对临时成员增加一名，结束后恢复原集合及舰长引用。
+3. 在对应局部观察函数中比较列表副本、优先顺序、军官关联与汇总，执行排序实验后核对原顺序。
+4. 前往来源市场星系，观察基础舰队到达市场主实体后进入被动环绕；搜索 `GearIn assignment` 的队首变化、剩余天数与速度。
+5. 在玩家舰队界面读取成员与旗舰，对照读取日志；当前写入实验使用新生成的巡逻队。
 
 预期结果：
 
-- 列表副本包含取得时的成员，但修改副本不会改变舰队界面；
-- addFleetMember() 后成员数量和汇总重新计算；
-- FleetDataAPI 与成员对象对旗舰状态的读取一致；
-- 恢复顺序完成后，临时成员消失，原旗舰重新生效；
-- 当前任务首先是 GO_TO_LOCATION，到达后切换为 ORBIT_PASSIVE；
-- 日志没有空目标、空旗舰或重复成员异常。
+- 临时集合比基线多一名成员，恢复后数量、原旗舰与原舰长重新对应。
+- 副本保持取得时的成员，真实集合变化由成员方法写入；排序实验恢复原顺序。
+- 军官日志按人物对象关联成员，未分配者显示 `none`。
+- 同步后的 FP、有效强度、燃耗与容量从当前对象读取。
+- 专用巡逻队先执行 `GO_TO_LOCATION`，再执行 `ORBIT_PASSIVE`，任务状态与地图移动对应。
 
 ## 故障分析
 
-- **修改列表后舰队没有变化**：代码修改的是 getMembersListCopy() 返回的副本。
-    - **解决方案**：使用 addFleetMember() 和 removeFleetMember() 写入 FleetDataAPI。
+- **修改列表后舰队没有变化**：修改的是成员副本。
+    - **解决方案**：使用 `addFleetMember(...)`、`removeFleetMember(...)` 或 `sortToMatchOrder(...)` 写入当前容器。
 
-- **成员数量增加两次**：同一注册入口重复创建并加入成员。
-    - **解决方案**：记录成员引用或使用一次性注册标记，加入前检查目标集合。
+- **临时成员反复增加**：生成或调用入口重复执行。
+    - **解决方案**：保留新档的一次性登记，成员实验在同一次调用中完成恢复。
 
-- **移除成员后旗舰为空**：临时成员仍是当前旗舰。
-    - **解决方案**：先恢复仍在集合中的原旗舰，再移除临时成员。
+- **恢复旗舰后舰长发生变化**：只保存了旗舰引用。
+    - **解决方案**：保存每名原成员的舰长，恢复旗舰后按对象写回舰长，再移除临时成员。
 
-- **FP 或容量还是旧值**：日志使用了写入前缓存的数值。
-    - **解决方案**：集合修改后重新调用 CampaignFleetAPI 和 CargoAPI 的访问器。
+- **汇总与界面不一致**：使用旧数值或只完成了列表同步。
+    - **解决方案**：恢复完整同步开关，执行 `setSyncNeeded()` 与 `syncIfNeeded()`，再读取 FP、燃耗和容量。
 
-- **任务存在但舰队不移动**：舰队未加入地点、目标失效或生涯时间没有推进。
-    - **解决方案**：核对双方 containingLocation、目标存活状态和当前暂停状态。
+- **任务存在但舰队不移动**：舰队未投放、目标失效或时间暂停。
+    - **解决方案**：核对舰队与目标的地点、当前任务和暂停状态，使用生成过程取得的主实体。
 
-- **第二项任务覆盖第一项观察**：读取时第一项已经完成或被其他 AI 清除。
-    - **解决方案**：增加第一项持续时间，并在添加后立即记录 getCurrentAssignment()。
+- **只看到第二项任务**：读取前第一项已经到达或被其他 AI 改写。
+    - **解决方案**：保留添加后的即时日志，再比较间隔日志的队列数量与目标。
 
 ## 总结
 
-FleetDataAPI 维护成员、旗舰、顺序和军官集合，CampaignFleetAPI 根据当前集合提供汇总并执行任务队列。集合副本负责安全读取，写入入口负责真实状态变化，恢复顺序负责让测试存档回到原始成员结构。
+成员集合由 `FleetDataAPI` 写入与同步，副本用于当前观察，旗舰切换还涉及人员关系。保存对象基线、完成写入、恢复原状态，再重新读取汇总，成员实验就能对应明确结果。
+
+任务则由地图舰队按生涯时间执行。本节使用同一支新巡逻队观察队首与运动，把集合恢复与持续任务分别放到适合的运行位置。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.FleetDataAPI`：成员集合、旗舰、顺序和军官入口；
-- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：舰队汇总、运动状态和任务队列；
-- `com.fs.starfarer.api.campaign.ai.FleetAssignmentDataAPI`：当前任务与目标；
-- `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员身份与旗舰状态；
-- `com.fs.starfarer.api.FactoryAPI`：舰队成员创建入口。
+- `com.fs.starfarer.api.campaign.FleetDataAPI`：成员、旗舰、顺序、军官与同步。
+- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：汇总、投放与任务队列。
+- `com.fs.starfarer.api.campaign.ai.FleetAssignmentDataAPI`：队首、目标、已用与最大持续时间。
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员身份、舰长与旗舰标记。
+- `com.fs.starfarer.api.FactoryAPI`：按装配创建成员。

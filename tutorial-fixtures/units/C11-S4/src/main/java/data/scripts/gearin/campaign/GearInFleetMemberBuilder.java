@@ -34,13 +34,6 @@ public class GearInFleetMemberBuilder implements EveryFrameScript {
             CampaignFleetAPI fleet,
             String variantId,
             boolean makeFlagship) {
-        if (fleet == null) {
-            throw new IllegalArgumentException("fleet must not be null");
-        }
-        if (variantId == null || variantId.isEmpty()) {
-            throw new IllegalArgumentException("variantId must not be empty");
-        }
-
         FleetDataAPI data = fleet.getFleetData();
         FleetMemberAPI member = Global.getFactory().createFleetMember(
                 FleetMemberType.SHIP,

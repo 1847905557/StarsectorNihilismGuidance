@@ -1,10 +1,10 @@
 # 读取 MOD 内文本
 
-本节让 Java 主动读取一份 MOD 文本资源，把容易变化的数据从编译后的类中分离出来。这里建立的资源来源、路径和编码边界同样适用于 [C17-S2] 的 JSON、[C17-S3] 的 CSV 与 [C17-S4] 的 common 数据。
+前面的配置多由游戏按固定路径读取，这次让代码主动取一份自有文本。我们把工坊说明放到 MOD 资源目录，在应用加载时读回并记录。文件来源、相对路径与编码先确定，后面的 JSON 和 CSV 再沿同样的入口解释结构。
 
-*本节预期阅读时间：~12 分钟。*
+*本节预期阅读时间：\~12 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
@@ -19,14 +19,28 @@
 ## 前置知识
 
 - [C1-S1] 的 MOD 目录、`mod_info.json` 和 UTF-8 无 BOM 要求；
-- [C6-S1] 的 Java 构建与入口类；
+- [C6-S4] 的构建与游戏加载；
+- [C7-S1] 的应用加载回调；
 - [C7-S2] 的 `Global.getSettings()` 和日志入口。
 
-## 为什么先读取文本
+## 创建资源并接到应用加载
 
-前面章节使用的许多数据文件都由游戏在固定路径自动加载。主动读取则把选择权交给 MOD：代码决定何时读取哪个路径，也决定怎样解释返回内容。配置、文本模板和其他易变数据因此可以离开 Java 类；调整资源文件后，只需让游戏重新加载资源，无需重新编译 JAR，同一份数据也可以交给多个代码入口使用。
+先在 MOD 的 `data/config/gear_in/notes.txt` 写入以下文本：
 
-文本是这条主线最干净的起点。`loadText` 只暴露资源空间、路径和编码，JSON 与 CSV 在此基础上增加结构解析，common 再增加运行期写入与持久化；本节先固定这三个文件边界。
+```text
+GearIn file loading is ready.
+```
+
+向 [C7-S1] 的 `GearInModPlugin.onApplicationLoad(...)` 追加局部读取，既有代码保留；该方法已声明 `throws Exception`，当前读取异常沿应用加载报告：
+
+```java
+String notes = Global.getSettings().loadText("data/config/gear_in/notes.txt", "gear_in");
+Global.getLogger(GearInModPlugin.class).info("GearIn notes: " + notes);
+```
+
+**资源内容可以独立于 JAR 修改，代码决定何时读它、怎样使用它。**配置、文本模板和其他易变数据因此可以离开 Java 类；调整资源文件后，只需让游戏重新加载资源，无需重新编译 JAR，同一份数据也可以交给多个代码入口使用。
+
+本例先按字符串使用内容，JSON 与 CSV 再添加结构。需要运行期保存时，common 使用另一组读写入口；资源路径继续表达 MOD 发布的输入文件。
 
 ## 读取文本
 
@@ -38,7 +52,7 @@ String notesFromMod = Global.getSettings().loadText(
         "data/config/gear_in/notes.txt", "gear_in");
 ```
 
-单参形式从当前资源空间寻找文件；双参形式把来源限定为指定 MOD。`modId` 必须与 `mod_info.json` 的 `id` 逐字符一致，且该 MOD 已启用。
+单参形式从当前资源空间寻找文件；双参形式把来源限定为指定 MOD。当前 `modId` 对应 `mod_info.json` 的 `gear_in`，游戏按这个已启用 MOD 选择来源。
 
 `loadText` 返回文件的原始文本。引擎按 UTF-8 解码并移除 `\r`，不会替您剥离 BOM；因此含中文的资源文件保存为 UTF-8 无 BOM。读取失败由调用侧记录上下文，日志不会自动替您说明文件的业务用途。
 
@@ -48,21 +62,11 @@ String notesFromMod = Global.getSettings().loadText(
 
 文件带 BOM 时，BOM 会进入返回文本的首字符。文件找不到、路径非法和 MOD ID 找不到分别在读取调用点产生异常，排查时先核对入口、相对路径和文件编码。
 
-### 最小实例
-
-在 `data/config/gear_in/notes.txt` 写入：
-
-```text
-GearIn file loading is ready.
-```
-
-入口类在 `onApplicationLoad` 中读取该文件并把返回文本写入日志。代码只保存读取结果，不修改 MOD 目录中的源文件。
-
 ## 验证方案
 
 前置数据：`gear_in` MOD、`notes.txt` 和入口类读取片段已就绪。
 
-1. 启动游戏，观察 `starsector.log` 中入口类写入的读取日志。
+1. 保存资源与读取片段，构建 JAR 并重启，搜索 `GearIn notes`。
 2. 使用单参 `loadText` 读取 `data/config/gear_in/notes.txt`，观察返回文本。
 3. 将读取调用改为双参形式并传入 `gear_in`，再次启动并观察返回文本。
 
@@ -83,12 +87,14 @@ GearIn file loading is ready.
 - **返回文本的首字符异常**：源文件带有 BOM。
     - **解决方案**：以 UTF-8 无 BOM 重新保存。
 
-- **读取到另一份同名文件**：资源路径过于通用，合并后的文件覆盖了目标。
+- **读取到另一份同名文件**：资源路径过于通用，当前资源空间选择了其他来源。
     - **解决方案**：使用带 MOD 前缀的目录或双参入口限定来源。
 
 ## 总结
 
-文件读取先确定资源空间和相对路径，再把文件内容交给代码。`loadText` 返回字符串；路径校验、编码和 `modId` 决定能否取得目标文件。JSON 对象的读取与固定公开入口见 [C17-S2]。
+工坊说明从 MOD 根目录相对路径取得，当前用来源限定选择 `gear_in`，日志记录实际返回文本。编码与路径处理发生在读取，内容怎样使用则由当前代码决定。
+
+编者建议先让一份文本读回正确，再增加结构和共享来源。相同路径可以由不同 MOD 提供，来源写清以后，调整文件的结果才容易比较。
 
 ## 建议参考项
 

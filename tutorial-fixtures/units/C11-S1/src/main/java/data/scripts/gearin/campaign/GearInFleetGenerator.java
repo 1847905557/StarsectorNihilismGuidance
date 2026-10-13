@@ -13,11 +13,7 @@ import com.fs.starfarer.api.impl.campaign.fleets.FleetParamsV3;
 import com.fs.starfarer.api.impl.campaign.ids.FleetTypes;
 import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
 
-/**
- * 生成一支常规巡逻舰队并投放到来源市场附近。
- *
- * <p>本例保留生成结果，通过对象引用记录舰队，不设置自定义实体 ID。</p>
- */
+/** 生成一支常规巡逻舰队并投放到来源市场附近。 */
 public class GearInFleetGenerator implements EveryFrameScript {
 
     private static final Logger LOG = Global.getLogger(GearInFleetGenerator.class);

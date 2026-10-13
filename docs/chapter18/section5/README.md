@@ -1,10 +1,10 @@
 # 注册 GraphicsLib 光照数据
 
-GraphicsLib 可以根据 projectile 与 beam ID 自动生成飞行光、命中光和开火闪光。应用加载时先初始化 shader，再确认 shader 与 buffer 能力，最后读取 light CSV；战斗中的弹体与光束才能按 ID 找到对应光照参数。本节使用已经制作好的 `GearIn_durin_shot` 和 `GearIn_uri`，完整解释 light CSV 的登记入口、字段关系与覆盖策略。
+都林弹体和乌里光束已经可以发射，接下来让 GraphicsLib 按它们的 ID 提供光照。先保存 light CSV，在应用加载入口读取它，再到战斗中比较飞行光、命中光和开火光。两种武器使用同一组字段，光源跟随的位置与淡出方式却各有区别。
 
-*本节预期阅读时间：~16 分钟。*
+*本节预期阅读时间：\~16 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
@@ -23,13 +23,19 @@ GraphicsLib 可以根据 projectile 与 beam ID 自动生成飞行光、命中�
 - 了解 `GearInModPlugin` 的 `onApplicationLoad()` 入口和 CSV 文件路径；
 - 能够读取 `starsector.log` 中的加载错误。
 
+## 创建光照数据表
+
+在 MOD 内创建 `data/lights/GearIn_light_data.csv`，写入本节完整成品的表头与两条记录。行键分别使用弹体 `GearIn_durin_shot` 和光束武器 `GearIn_uri`，对应类型为 `projectile` 与 `beam`。CSV 中的 RGB 数组带英文逗号，沿 [C1-S7] 的规则用双引号包住整个字段。
+
+**资源先按真实对象登记，再调整光效参数。**接下来把读取调用加入应用加载方法；字段解释可以直接对照这两行。
+
 ## 认识 GraphicsLib 的初始化顺序
 
-`ShaderLib.init()` 负责建立库的运行环境，能力判断随后读取当前配置；只有两项能力都可用时，使用方才登记自己的光照数据。光照 CSV 的登记不依赖初始化顺序。
+`ShaderLib.init()` 建立库的运行环境，随后读取能力状态。本例在 shader 和 buffer 都可用时登记光照表。CSV 读取方法本身只向静态表保存条目，战斗中的光效还要由库的运行环境处理。
 
 ## 在 `onApplicationLoad()` 中初始化并判断能力
 
-将应用加载入口写成下面的局部片段：
+在既有 `GearInModPlugin.onApplicationLoad(...)` 中追加下面的初始化与读取局部代码，保留此前资源读取和入口日志。添加 `ShaderLib`、`LightData` 的 import：
 
 ```java
 @Override
@@ -46,7 +52,7 @@ public void onApplicationLoad() {
 
 ## 登记 light CSV
 
-`LightData.readLightDataCSV(...)` 读取 `data/lights/GearIn_light_data.csv` 后，把 `projectile` 行放入 projectile 表，把 `beam` 行放入 beam 表。`type` 必须逐字写成这两个值，其他拼写不会建立可查询条目。
+`LightData.readLightDataCSV(...)` 读取 `data/lights/GearIn_light_data.csv` 后，把 `projectile` 行放入 projectile 表，把 `beam` 行放入 beam 表。`type` 按这两个小写值选择注册表。查询时也选择相同类型，才能取得对应行。
 
 ## 认识 `LightData` 的 projectile／beam 分类
 
@@ -71,7 +77,7 @@ GearIn_durin_shot,projectile,125,0.5,0.75,"[255,70,70]",10
 GearIn_uri,beam,45,0.65,,"[135,175,135]",
 ```
 
-`size` 控制光源范围，`intensity` 控制亮度，`color` 是 RGB 数组，`offset` 是 GraphicsLib 创建光源时使用的相对偏移。projectile 的 `fadeout` 控制基础光源在弹体消失后的消退时间；beam 光源跟随 beam 生命周期，示例因此把该字段留空。尺寸、强度和颜色都有效时，`hasStandard` 为 `true`，对应值分别出现在 `standardSize`、`standardIntensity`、`standardFadeout`、`standardColor` 和 `standardOffset`。
+`size` 控制光源范围，`intensity` 控制亮度，`color` 是 RGB 数组，`offset` 是 GraphicsLib 创建光源时使用的相对偏移。projectile 的 `fadeout` 控制基础光源在弹体消失后的消退时间；beam 光源跟随 beam 生命周期，示例因此把该字段留空。尺寸和强度都大于 0、颜色非空并可解析时，`hasStandard` 为 `true`，对应值分别出现在 `standardSize`、`standardIntensity`、`standardFadeout`、`standardColor` 和 `standardOffset`。
 
 如果其中一个建立 standard 光源所需的关键值缺失，该组不会被标记为可用。查询代码应先判断 `LightEntry` 是否为 `null`，再读取 `hasStandard`。
 
@@ -85,7 +91,7 @@ hit size,hit intensity,hit fadeout,hit color
 100,0.35,,"[135,255,180]"
 ```
 
-projectile 命中目标时，GraphicsLib 根据 `hit size`、`hit intensity`、`hit fadeout` 和 `hit color` 创建命中后淡出的光。beam 则把 hit 组作为目标端光，并在光束持续期间跟随命中位置；示例因此把 beam 的 `hit fadeout` 留空。尺寸、强度和颜色都有效时，`hasHit` 为 `true`。
+projectile 命中目标时，GraphicsLib 根据 `hit size`、`hit intensity`、`hit fadeout` 和 `hit color` 创建命中后淡出的光。beam 则把 hit 组作为目标端光，并在光束持续期间跟随命中位置；示例因此把 beam 的 `hit fadeout` 留空。尺寸和强度都大于 0、颜色非空并可解析时，`hasHit` 为 `true`。
 
 ```java
 boolean hasHitLight = uri != null && uri.hasHit;
@@ -103,7 +109,7 @@ flash size,flash intensity,flash fadeout,flash color,flash offset
 60,0.35,,"[200,255,225]",
 ```
 
-只要尺寸、强度和颜色满足解析条件，`hasFlash` 就会为 `true`。projectile 的 flash 按 `flash fadeout` 消退；beam 的 flash 绑定在光束源端并随 beam 保持，示例将淡出字段留空。flash 使用自己的尺寸、亮度、颜色和偏移，不会覆盖 standard 组。
+尺寸和强度大于 0、颜色非空并可解析时，`hasFlash` 为 `true`。**每组分别成立，参数也分别使用。**projectile 的 flash 按 `flash fadeout` 消退；beam 的 flash 绑定在光束源端并随 beam 保持，示例将淡出字段留空。flash 使用自己的尺寸、亮度、颜色和偏移，不会覆盖 standard 组。
 
 ```java
 boolean hasFlashLight = durin != null && durin.hasFlash;
@@ -165,8 +171,8 @@ GearIn_uri,beam,45,0.65,,"[135,175,135]",,100,0.35,,"[135,255,180]",60,0.35,,"[2
 
 前置数据：GraphicsLib 已安装并启用，`GearIn_durin_shot` 和 `GearIn_uri` 已按前置章节加入武器数据，`onApplicationLoad()` 已挂载到 MOD plugin。
 
-1. 启动游戏并检查 `ShaderLib.init()` 所在应用加载入口没有异常。
-2. 关闭 shader 或 buffer 能力之一，确认 light CSV 不进入有效登记。
+1. 保存光照表与应用调用，构建 JAR 并重启，检查初始化和 light CSV 的日志。
+2. 在 GraphicsLib 配置中关闭 shader，重启并确认本节能力分支跳过读取；恢复开关后重启，再完成后面的查询。buffer 不可用时，同一分支也会跳过。
 3. 开启两项能力，按 `PROJECTILE` 查询 `GearIn_durin_shot`，确认得到 standard、hit 和 flash 条目。
 4. 按 `BEAM` 查询 `GearIn_uri`，确认类型匹配且 `hasStandard`、`hasHit`、`hasFlash` 均符合数据行。
 5. 发射都林自动炮，观察红色基础光、闪光和命中光的尺寸与淡出时间。
@@ -178,7 +184,7 @@ GearIn_uri,beam,45,0.65,,"[135,175,135]",,100,0.35,,"[135,255,180]",60,0.35,,"[2
 预期结果：
 
 - 能力判断成功时，light CSV 完成登记；
-- projectile 与 beam 必须使用各自的 `LightDataType` 查询；
+- projectile 与 beam 的查询分别命中各自 `LightDataType`；
 - standard、hit 和 flash 分别提供基础光、命中或目标端光，以及开火闪光或源端光；
 - `chance` 改变生成频率，`fighter dim` 只影响战机来源光效的尺寸与亮度；
 - 覆盖入口替换已有 ID，不覆盖入口保留先前条目。
@@ -196,7 +202,7 @@ GearIn_uri,beam,45,0.65,,"[135,175,135]",,100,0.35,,"[135,255,180]",60,0.35,,"[2
 
 ## 总结
 
-GraphicsLib 光照数据的关键是加载顺序和注册表职责。先初始化并确认能力，再读取 light CSV；数据表把 projectile／beam 登记到对应光照表中，standard、hit、flash 分别承担基础、命中和短暂开火表现，`chance` 与 `fighter dim` 调整生成概率和战机亮度。
+两条光照记录已经接到弹体与光束。按 ID 和类型查询可以确认登记，战斗画面再确认三组参数实际作用的位置与时长。编者建议先让每组各有一处容易辨认的差异，再调到正式数值；一开始就把所有颜色和亮度调得差不多，排查起来也会差不多难。
 
 ## 建议参考项
 

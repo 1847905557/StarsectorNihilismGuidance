@@ -10,14 +10,7 @@ import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.input.InputEventAPI;
 import com.fs.starfarer.api.util.IntervalUtil;
 
-/**
- * 完整最小例：战斗引擎状态读取 —— 上下文、时间、暂停与战斗结果。
- *
- * 本插件由战斗上下文注册，只在本场战斗内有效：
- * - 状态读取只使用当前战斗的引擎引用；
- * - advance() 在暂停时仍可能被调用，状态推进前必须检查 engine.isPaused()；
- * - getWinningSideId() 只表示胜者侧，战斗结束判定使用 isCombatOver()。
- */
+/** 周期记录当前战斗的场景、时间、界面与结果。 */
 public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInCombatStatePlugin.class);
@@ -25,9 +18,8 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
     private CombatEngineAPI engine;
     private final IntervalUtil reportInterval = new IntervalUtil(2f, 2f);
 
-    @Override
-    public void init(CombatEngineAPI engine) {
-        this.engine = engine;
+    private void bindEngine() {
+        engine = Global.getCombatEngine();
         LOG.info("GearIn battle init: campaign=" + engine.isInCampaign()
                 + " campaignSim=" + engine.isInCampaignSim()
                 + " simulation=" + engine.isSimulation()
@@ -37,6 +29,9 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
+        if (engine == null) {
+            bindEngine();
+        }
         if (engine.isPaused()) {
             return;
         }
@@ -69,6 +64,11 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
                 + " dialog=" + engine.isUIShowingDialog()
                 + " hud=" + engine.isUIShowingHUD()
                 + " fastTime=" + engine.isInFastTimeAdvance()
+                + " autopilot=" + engine.isUIAutopilotOn()
+                + " reserves=" + engine.playerHasNonAllyReserves()
+                + " allyReserves=" + engine.playerHasAllyReserves()
+                + " enemyRetreat=" + engine.isEnemyInFullRetreat()
+                + " map=" + engine.getMapWidth() + "/" + engine.getMapHeight()
                 + " combatOver=" + engine.isCombatOver()
                 + " winner=" + engine.getWinningSideId());
     }

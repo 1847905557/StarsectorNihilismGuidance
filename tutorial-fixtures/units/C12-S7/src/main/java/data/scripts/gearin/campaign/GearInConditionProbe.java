@@ -16,12 +16,9 @@ public class GearInConditionProbe {
     }
 
     public static void log(MarketAPI market) {
+        boolean wasSuppressed = market.isConditionSuppressed(GearInWarfrontCondition.CONDITION_ID);
         String token = market.addCondition(GearInWarfrontCondition.CONDITION_ID, 1.0f);
         MarketConditionAPI condition = market.getSpecificCondition(token);
-        if (condition == null) {
-            LOG.info("Warfront condition was not created");
-            return;
-        }
         MarketConditionSpecAPI spec = condition.getSpec();
         MarketConditionPlugin plugin = condition.getPlugin();
         LOG.info(String.format("Warfront condition: id=%s token=%s name=%s script=%s surveyed=%s requiresSurveying=%s planetary=%s",
@@ -45,9 +42,21 @@ public class GearInConditionProbe {
                 market.getStats().getDynamic().getMod(Stats.FLEET_QUALITY_MOD).computeEffective(0f)));
 
         condition.setSurveyed(false);
-        LOG.info("Warfront condition survey toggled: surveyed=" + condition.isSurveyed());
+        market.reapplyConditions();
+        LOG.info("Warfront condition survey all: surveyed=" + condition.isSurveyed()
+                + " hazard=" + market.getHazard().getModifiedValue());
+        market.reapplyCondition(token);
+        LOG.info("Warfront condition survey specific: hazard="
+                + market.getHazard().getModifiedValue());
         condition.setSurveyed(true);
         market.removeSpecificCondition(token);
-        LOG.info("Warfront condition removed: present=" + market.hasSpecificCondition(token));
+        if (wasSuppressed) {
+            market.suppressCondition(GearInWarfrontCondition.CONDITION_ID);
+        } else {
+            market.unsuppressCondition(GearInWarfrontCondition.CONDITION_ID);
+        }
+        market.reapplyConditions();
+        LOG.info("Warfront condition removed: present=" + market.hasSpecificCondition(token)
+                + " suppressed=" + market.isConditionSuppressed(GearInWarfrontCondition.CONDITION_ID));
     }
 }

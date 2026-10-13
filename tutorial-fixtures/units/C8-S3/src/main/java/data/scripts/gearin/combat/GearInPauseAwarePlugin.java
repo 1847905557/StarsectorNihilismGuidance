@@ -8,17 +8,7 @@ import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.input.InputEventAPI;
 
-/**
- * 每帧战斗插件：演示暂停守卫与状态归属。
- *
- * <p>注册：MOD 的 data/config/settings.json 的 plugins 段写入本类完整类名。
- * 游戏启动时读取 plugins 段中的完整类名；每场战斗开始时创建新实例，
- * 战斗结束实例随引擎销毁，不得缓存到下一场战斗。</p>
- *
- * <p>advance() 在战斗暂停期间仍然每帧被调用，amount 也仍然非零；是否推进状态
- * 由插件自己决定：本例只用非暂停帧累加 elapsed，暂停帧只累计调用次数 calls。
- * 初始状态在构造器设置，不依赖已废弃的 init()(不保证在第一次 advance() 之前调用)。</p>
- */
+/** 比较非暂停时间、总回调次数与暂停回调次数。 */
 public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 
     /** 非暂停时间每累计多少秒输出一次报告。 */
@@ -30,18 +20,11 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
     private int calls;
     private int pausedCalls;
 
-    public GearInPauseAwarePlugin() {
-        // 初始状态在这里设置；init() 已废弃，不保证在第一次 advance() 之前被调用
-    }
-
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         calls++;
         if (engine == null) {
             engine = Global.getCombatEngine();
-            if (engine == null) {
-                return;
-            }
         }
         if (engine.isPaused()) {
             pausedCalls++;

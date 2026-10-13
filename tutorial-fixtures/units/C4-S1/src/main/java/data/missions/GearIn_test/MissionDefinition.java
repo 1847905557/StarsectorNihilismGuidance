@@ -1,5 +1,9 @@
 package data.missions.GearIn_test;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ShipVariantAPI;
@@ -9,13 +13,7 @@ import com.fs.starfarer.api.mission.FleetSide;
 import com.fs.starfarer.api.mission.MissionDefinitionAPI;
 import com.fs.starfarer.api.mission.MissionDefinitionPlugin;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
-/**
- * 测试战役模板：把本 MOD 所有非战机装配自动加入玩家舰队，用于装配验证与导出。
- */
+/** 自动列出本MOD非战机装配，用于测试与导出。 */
 public class MissionDefinition implements MissionDefinitionPlugin {
 
     public static final String PREFIX = "GearIn_";

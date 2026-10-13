@@ -14,15 +14,7 @@ import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 import com.fs.starfarer.api.graphics.SpriteAPI;
 
-/**
- * 完整最小例：使用 BaseCombatLayeredRenderingPlugin 和 SpriteAPI 绘制战斗标记。
- *
- * 插件实例绑定一艘舰船和一个 Sprite：
- * - init() 保存承载实体、取得当前战斗引擎并读取已注册的 Sprite；
- * - advance() 在非暂停帧同步承载实体的位置，并在舰船离场时让插件失效；
- * - render() 设置 Sprite 的颜色和透明度，再以承载实体位置为中心绘制；
- * - isExpired() 与 cleanup() 负责结束当前实例。
- */
+/** 跟随当前舰船，在指定图层绘制 Sprite 标记。 */
 public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInLayeredRenderer.class);
@@ -48,6 +40,7 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
     @Override
     public void init(CombatEntityAPI entity) {
         super.init(entity);
+        entity.getLocation().set(trackedShip.getLocation());
         engine = Global.getCombatEngine();
         sprite = Global.getSettings().getSprite(SPRITE_CATEGORY, SPRITE_KEY);
         sprite.setSize(MARKER_SIZE, MARKER_SIZE);
@@ -67,7 +60,7 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void advance(float amount) {
-        if (engine == null || engine.isPaused()) {
+        if (engine.isPaused()) {
             return;
         }
         if (!engine.isEntityInPlay(trackedShip) || !trackedShip.isAlive()) {
@@ -90,9 +83,6 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (sprite == null || entity == null) {
-            return;
-        }
         sprite.setColor(color);
         sprite.setAlphaMult(1f);
         sprite.renderAtCenter(entity.getLocation().x, entity.getLocation().y);

@@ -1,29 +1,45 @@
 # 使用 Global 访问游戏服务
 
-本节按游戏运行阶段取得 `Global` 提供的服务，并把设置、生涯和战斗对象交给合适的 Java 代码。完成后可以从日志判断服务何时可用，并避免跨战斗保存失效的对象引用。
+前面的代码已经通过 Global 取得星区、播放器和日志器。本节把这些入口放回各自的运行阶段：设置用于应用加载，Sector 用于当前生涯，CombatEngine 用于当前战斗。服务存在与代码处于哪个场景分别观察，再把对象交给实际功能使用。
 
-*本节预期阅读时间：约 15 分钟。*
+*本节预期阅读时间：\~15 分钟。*
 
-*本节预期操作时间：约 15 分钟。*
+*本节预期操作时间：\~15 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 使用 `Global.getCurrentState()` 判断当前运行阶段；
-- 在资源加载、生涯和战斗回调中取得对应的服务对象；
-- 通过日志确认服务可用性，并避免复用上一场战斗的引擎引用。
+- 用 GameState 判断当前场景；
+- 在对应回调取得设置、生涯与战斗服务；
+- 记录当前服务和加载状态；
+- 按战斗实例范围保存和释放引用。
 
 ## 前置知识
 
-- [C6-S1] 的 Java 工具链和 JAR 构建；
-- [C7-S1] 的 `GearInModPlugin` 生命周期；
-- [C5-S2] 的资源注册方法；
-- [C7-S5] 的日志器、级别和稳定前缀。
+- [C6-S4] 的 JAR 构建与加载；
+- [C7-S1] 的入口生命周期；
+- [C5-S3] 的声音使用；
+- [C2-S4] 的命中与光束回调；
+- Java 静态方法、对象引用与字符串。
 
-## 判断当前运行阶段
+## 按运行阶段选择入口
 
-`Global.getCurrentState()` 返回当前 `GameState`。先根据它判断代码处于资源加载、生涯还是战斗，再取得对应服务；用某个对象是否为 `null` 作为阶段判断会把 `服务尚未建立` 和 `当前场景确实没有对象` 混为一谈。
+Global 的静态方法提供当前服务，不会替调用方改变运行阶段。**业务需要生涯对象时，在生涯回调取得；需要当前战斗时，在当前战斗回调取得。**
+
+### 全局服务速查表
+
+| 入口 | 当前职责与使用位置 |
+|---|---|
+| getCurrentState | 当前 GameState，判断实际场景 |
+| getSettings | 已加载的设置与资源，在应用加载后读取 |
+| getSector | 当前生涯，新档、读档与生涯回调使用 |
+| getCombatEngine | 当前战斗引用，在战斗回调使用 |
+| getSoundPlayer | 初始化后的播放服务，在对应运行回调使用 |
+| getLogger | 按类取得日志器，记录加载与运行 |
+| getFactory | 创建游戏对象，前文在生涯生成中使用 |
+
+当前阶段可以按 GameState 判断，局部方法如下：
 
 ```java
 public static boolean isInCombat() {
@@ -31,11 +47,11 @@ public static boolean isInCombat() {
 }
 ```
 
-这个判断适合放在需要区分战斗与其他场景的通用工具中。它只报告阶段，具体服务仍需在实际回调中重新取得。
+一个服务引用是否为空，是当前引用状态；GameState 则表示当前场景。战斗引擎引用也可能在其他场景存在，因此需要按场景决定业务逻辑是否使用它。
 
-## 在资源加载阶段读取设置
+## 在应用加载后读取设置
 
-资源加载和 `onApplicationLoad()` 阶段可以使用 `Global.getSettings()` 读取合并后的设置，也可以使用 `Global.getLogger(...)` 写入日志。设置对象适合读取版本、音量和开关等静态配置；具体键的读取方式见 [C7-S3]。
+在 GearInModPlugin.onApplicationLoad 使用：
 
 ```java
 com.fs.starfarer.api.SettingsAPI settings = Global.getSettings();
@@ -43,38 +59,38 @@ String version = settings.getGameVersion();
 Global.getLogger(GearInGlobalAccess.class).info("GearIn settings version=" + version);
 ```
 
-日志服务也在早期可用，记录阶段和服务状态后可以直接在 `starsector.log` 中搜索。日志器的级别选择和上下文格式统一由 [C7-S5] 说明。
+这里读取当前游戏版本并写日志。自有键、数值和颜色的读取由下一节处理，日志级别和上下文由 [C7-S5] 继续展开。
 
-## 在生涯阶段取得 SectorAPI
+## 在当前生涯访问 Sector
 
-`Global.getSector()` 返回当前生涯的 `SectorAPI`。生涯对象必须等生涯建立后再读取，因此新档和读档相关代码放在 `onNewGame()`、`onGameLoad()` 或其他生涯回调中。资源加载阶段直接读取它会得到空对象并在后续调用中触发空指针。
+新档或读档回调中取得：
 
 ```java
 SectorAPI sector = Global.getSector();
-Object marker = sector.getPersistentData().get("GearInGlobalAccess");
+Object marker = sector.getPersistentData().get("GearInModPlugin");
 ```
 
-`SectorAPI` 还提供存档持久数据；标记、关系或生成结果需要随存档保存时，应把值写入 `getPersistentData()`，而不是保存在静态字段中。
+标记沿用上一节入口的 CLASS_MARK 值，结果属于当前存档。关系、生成对象和持久状态都通过这个 Sector 访问。
 
-## 在战斗回调中取得 CombatEngineAPI
+**存档范围与进程范围分别管理。** 当前生涯的数据保存到 persistent data，静态字段不能代替存档数据；读取另一份生涯时也要按当前 Sector 取得状态。
 
-`Global.getCombatEngine()` 只代表当前战斗的 `CombatEngineAPI`。战斗插件或战斗脚本在当前回调中取得它，用完后随着战斗结束释放引用；第二场战斗必须重新调用访问器。
+## 在战斗回调访问引擎
+
+例如在命中效果的 onHit 中取得当前引擎，局部片段如下：
 
 ```java
-CombatEngineAPI engine = Global.getCombatEngine();
-boolean active = engine != null && !engine.isPaused();
+CombatEngineAPI currentEngine = Global.getCombatEngine();
+boolean active = !currentEngine.isPaused();
 Global.getLogger(GearInGlobalAccess.class).info("GearIn combat active=" + active);
 ```
 
-引擎对象包含战斗实体、时间和暂停状态。把它保存到跨战斗的静态字段会让下一场战斗继续指向旧引擎，表现为实体查询失败或调用没有效果。
+onHit 本身也传入 engine，业务可以直接使用该参数。Global 访问器用于已有战斗上下文中取得同一场景的服务，暂停、实体和时间都由当前引擎提供。
 
-## 了解其他全局入口
+跨战斗的 static 字段会保留旧引用。**战斗插件实例保存本场引擎，通用方法在当前调用点取得引用**；离开战斗后结束相应使用，下一场重新取得。工厂方法暂按前文对象创建使用，具体实体构建结合后面的场景讲解。
 
-`Global.getFactory()` 用于创建游戏对象；**目前暂不深化 `Global.getFactory()` 的对象创建 API 和具体用法**。本节只使用设置、生涯、战斗和日志服务完成阶段判断与验证。
+## 记录阶段与服务状态
 
-## 完整最小例
-
-下面的工具类把阶段判断和服务状态记录集中起来。`isInCombat()` 提供布尔判断，`logAccessorState()` 在一个调用点读取当前阶段、设置、生涯和战斗服务，便于比较不同运行阶段的结果。
+创建 `src/data/scripts/gearin/GearInGlobalAccess.java`。完整类记录 GameState、settings、sector、engine 和 LOADING_SAVE，engineIdentity 提供实例比较。
 
 ::: details 完整成品：GearInGlobalAccess
 
@@ -105,55 +121,65 @@ public class GearInGlobalAccess {
         CombatEngineAPI engine = Global.getCombatEngine();
         LOG.info("GearIn state=" + state + " settings=" + (Global.getSettings() != null)
                 + " sector=" + (sector != null) + " engine=" + (engine != null)
+                + " engineIdentity=" + System.identityHashCode(engine)
                 + " loadingSave=" + Global.LOADING_SAVE);
-        if (sector == null) {
-            LOG.warn("GearIn getSector() is null: 资源加载期访问生涯对象会空指针");
-        }
-        if (engine == null) {
-            LOG.warn("GearIn getCombatEngine() is null: 资源加载期访问战斗对象会空指针");
-        }
     }
 }
 ```
 
 :::
 
+在上一节的应用加载和读档回调加入局部调用：
+
+```java
+GearInGlobalAccess.logAccessorState();
+```
+
+再在 GearInHitLogger.onHit 中加入同一调用，必要时使用完整类名：
+
+```java
+data.scripts.gearin.GearInGlobalAccess.logAccessorState();
+```
+
+这三个位置分别观察应用、生涯和战斗的实际上下文。输出是诊断信息，服务布尔值按当前阶段解释，避免把正常加载阶段当成业务失败。
+
 ## 验证方案
 
-前置数据：已按 [C6-S1] 至 [C6-S4] 配置 Java 17、`src/`、Gradle 和 JAR；[C7-S1] 的 `GearInModPlugin` 和本节的 `GearInGlobalAccess` 已就绪。
-
-1. 在 `GearInModPlugin.onApplicationLoad()` 或其他入口脚本中调用 `GearInGlobalAccess.logAccessorState()`，重新构建 JAR。
-2. 启动游戏并查看 `Starsector/starsector-core/starsector.log`，记录资源加载阶段的 `state`、`settings`、`sector` 和 `engine` 值。
-3. 新建生涯后再次调用工具类，核对 `state` 已进入生涯且 `sector=true`。
-4. 进入第一场战斗，在战斗回调中取得 `Global.getCombatEngine()` 并记录当前引擎状态。
-5. 结束第一场战斗、进入第二场战斗并重新调用访问器，核对第二场使用的是当前引擎对象。
-6. 对照日志中的 `GearIn getSector() is null` 和 `GearIn getCombatEngine() is null`，确认警告只出现在对应服务尚未建立的阶段。
+1. 保存工具类与三个调用点，构建 JAR 并重启游戏。
+2. 查看应用加载的 GearIn state 记录，核对设置服务。
+3. 进入生涯，查看 Sector 和 loadingSave 记录。
+4. 第一场战斗中用都林命中目标，记录 engineIdentity 与场景。
+5. 结束后进入第二场，再触发命中，比较当前引擎与上一场的实例标识。
+6. 在对应生涯回调读取 CLASS_MARK，核对当前存档标记。
 
 预期结果：
 
-- 资源加载阶段可以读取设置和日志服务；
-- 生涯建立后 `SectorAPI` 可用，持久数据读取指向当前存档；
-- 战斗阶段取得的引擎只对应当前战斗，第二场战斗重新取得对象；
-- 阶段、服务状态和加载标记均写入 `starsector.log`，过早访问能够定位到具体服务。
+- 应用加载后设置和日志可用。
+- 生涯回调取得当前 Sector，持久数据随当前存档读取。
+- 战斗记录 GameState.COMBAT 和当前引擎信息，两场分别使用各自实例。
+- 阶段、引用状态与 loadingSave 同一行输出，能对照实际调用位置。
 
 ## 故障分析
 
-- **生涯加载期出现空指针**：代码在生涯建立前调用 `getSector()` 或继续使用返回对象。
-    - **解决方案**：把生涯访问移到 `onNewGame()`、`onGameLoad()` 或其他生涯回调，并在调用前记录当前 `GameState`。
+- **应用加载时使用 Sector 抛空指针**：生涯尚未创建或读取。
+    - **解决方案**：将生涯操作放在对应回调，核对当前 GameState。
 
-- **第二场战斗仍使用旧引擎**：`CombatEngineAPI` 被保存到跨战斗字段或静态状态中。
-    - **解决方案**：在每个战斗回调中重新调用 `Global.getCombatEngine()`，不要把上一场战斗的引用带入下一场。
+- **下一场仍使用旧实体或引擎**：跨战斗字段保留了上一场引用。
+    - **解决方案**：结束该场使用，在新的战斗实例或当前回调中取得服务。
 
-- **日志无法判断服务阶段**：日志行缺少 `state`、服务布尔值或 `loadingSave` 信息。
-    - **解决方案**：调用 `logAccessorState()`，使用 `Global.getLogger(GearInGlobalAccess.class)` 写出完整状态，并在 `starsector.log` 中搜索 `GearIn` 前缀。
+- **日志无法比较阶段**：缺少场景、服务状态或调用位置。
+    - **解决方案**：使用 logAccessorState 并结合所在回调查看记录。
 
 ## 总结
 
-`Global` 访问器必须与运行阶段配合使用：设置和日志服务用于早期检查，生涯对象等待生涯建立，战斗引擎在当前战斗回调中取得。`getCurrentState()` 负责阶段判断，`SectorAPI.getPersistentData()` 负责存档范围的状态，战斗引擎则在每场战斗重新获取。`Global.getFactory()` 目前暂不深化。
+Global 把服务入口集中起来，实际使用仍由生命周期和对象范围决定。设置、当前存档和当前战斗各自提供对应数据，GameState、持久标记和引擎实例信息用于核对这些范围。
+
+后续代码继续从具体任务出发选择服务。先明确当前回调与对象归属，再取得所需入口，数据和结果就能沿实际调用关系追踪。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global`：全局服务访问器；
-- `com.fs.starfarer.api.campaign.SectorAPI`：生涯对象和持久数据；
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：当前战斗引擎；
-- `Starsector/starsector-core/starsector.log`：核对各阶段服务状态的运行日志。
+- `com.fs.starfarer.api.Global`：服务访问器。
+- `com.fs.starfarer.api.GameState`：场景枚举。
+- `com.fs.starfarer.api.campaign.SectorAPI`：当前生涯和 persistent data。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：战斗状态与对象。
+- `Starsector/starsector-core/starsector.log`：阶段与服务记录。

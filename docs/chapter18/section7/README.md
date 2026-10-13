@@ -1,12 +1,10 @@
 # 制作 GraphicsLib 纹理映射
 
-舰船原始 Sprite 贴图只决定基础外观。GraphicsLib 还可以为同一个对象读取 material、normal 与 surface 贴图，让动态光源在船体上产生有方向的明暗变化和高光。本节以 `GearIn_artizan` 为坐标基准，先在应用加载入口登记 texture CSV，再说明两张贴图应该表达什么，随后把它们映射到同一个船体 ID，最后观察显式纹理、自动生成 normal 和动态加载之间的关系。
+动态光源已经能照亮命中位置，接下来让工匠级的装甲表面表现出起伏。以原始舰船贴图为坐标基准制作 material 和 normal，再用 texture CSV 登记到船体 ID。光源移动或舰船转向时，颜色、明暗与高光应贴着舰体变化；自动生成和预载则决定缺少贴图时怎样补齐、资源何时进入显存。
 
-成熟项目会让 CSV 中的每一条路径都落到真实资源。本节给出可直接使用的目录和数据行；贴图文件按照工具无关的步骤制作，仓库不提供预制结果。
+*本节预期阅读时间：\~20 分钟。*
 
-*本节预期阅读时间：~20 分钟。*
-
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：\~35 分钟。*
 
 ## 学习目标
 
@@ -26,9 +24,70 @@
 - [C18-S6] 已建立能够照亮舰船表面的动态点光源；
 - 能够使用图像编辑器保存带透明通道的 PNG，并读取 `starsector.log`。
 
+## 以原始贴图确定坐标基准
+
+`graphics/ships/GearIn_artizan.png` 是游戏直接绘制的舰船 Sprite 贴图，也是三类附加纹理的坐标基准。GraphicsLib 在相同像素位置采样附加贴图，因此舰首、舰尾、装甲板和透明区都要与原始 Sprite 贴图重合。
+
+material 贴图提供光照计算使用的表面颜色与反射差异。normal 贴图保存每个像素朝向哪个方向，让位于舰船左侧、右侧或上方的光源照出不同明暗。surface 贴图进一步控制镜面高光的强度和硬度；缺少它时，material 与 normal 仍然可以参与光照，只是没有该船专用的 surface 变化。
+
+**三类附加纹理在原始贴图的同一像素位置采样。**本节先制作 material 与 normal，再按美术需要决定是否加 surface。每类图表达的信息各有用途，画布和船体位置则一起保持一致。
+
+## 制作 material 贴图
+
+先复制原始舰船 Sprite 贴图，保留画布尺寸与透明通道，再把副本改成 material 贴图。处理时以 "光照下希望保留什么颜色、哪些区域更容易反光" 为判断标准：装甲主体保留可辨认的色相，金属边缘和高光区域可以更亮，孔洞与完全透明区域保持透明。
+
+material 贴图仍是一张完整的 RGBA PNG。它不负责画出光源本身，也不替代原始舰船 Sprite 贴图；GraphicsLib 将它与场景光照组合，得到最终受光颜色。将结果保存为：
+
+```text
+graphics/material/ships/GearIn_artizan.png
+```
+
+## 制作 normal 贴图
+
+normal 贴图用 RGB 保存切线空间法线。接近 `(128, 128, 255)` 的中性蓝表示表面朝向观察者；红色与绿色分量的变化表示表面向左右或上下倾斜，蓝色分量表示朝向观察者的程度。
+
+制作时先从舰船轮廓与装甲高度得到一张连续的高度关系，再转换为切线空间 normal。平坦装甲保持接近中性蓝，舰体边缘、凹槽和隆起逐渐改变方向，透明区继续保持透明。将结果保存为：
+
+```text
+graphics/normal/ships/GearIn_artizan.png
+```
+
+normal 的颜色表示方向，不应直接使用原始舰船颜色。过强的高度梯度会让装甲像被切出尖锐沟槽；后面的 `magnitude` 还能在不重新绘图的情况下整体调整起伏强度。
+
+## 保持画布与透明区一致
+
+将三张图保持为相同像素宽高，舰船中心位于相同像素，朝向一致。导出时保留原画布和透明边缘，原始贴图的中心点与武器槽也使用这套坐标。单独裁掉一张图的透明边缘以后，图片看起来更紧凑，光照却会整体偏到另一处。
+
+可以把三张图放入同一图像文档的三个图层组：原始 Sprite 贴图保持只读，material 与 normal 各自编辑；导出前同时检查画布边界、舰首方向和 alpha。运行后如果亮部整体偏离船体，首先比较三张 PNG 的尺寸和不透明像素包围盒，而不是调整 CSV ID。
+
+## 编写 texture CSV
+
+创建 `data/lights/GearIn_texture_data.csv`，写入下面两条纹理映射：
+
+```csv
+id,type,frame,magnitude,map,path
+GearIn_artizan,ship,,,material,graphics/material/ships/GearIn_artizan.png
+GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
+```
+
+两行共用 `GearIn_artizan` 与 `ship`，因此都进入这艘舰船的纹理登记；`map` 决定它们分别进入 material 表还是 normal 表。GraphicsLib 用 ID、对象类型和动画帧组成查询键，同一个 ID 可以同时拥有三类 map。
+
+### texture CSV 字段速查表
+
+| 字段 | 当前值 | 读取结果 | 常见错误 |
+|---|---|---|---|
+| `id` | `GearIn_artizan` | 对象查询键 | 写成装配 ID 后无法匹配船体 |
+| `type` | `ship` | 选择舰船纹理表 | 大小写或拼写错误会跳过该行 |
+| `frame` | 空 | 非动画对象使用第 0 帧 | 舰船填写正数会被丢弃并记录警告 |
+| `magnitude` | 空／`1` | 默认值为 1，normal 行控制起伏强度 | 过大时表面方向显得尖锐 |
+| `map` | `material`／`normal` | 选择三类纹理表之一 | 未使用规定小写值时无法登记 |
+| `path` | `graphics/...` | 指向实际 PNG | 路径存在拼写差异时加载失败 |
+
+`id` 对应对象本身，而不是 CSV 行的任意名称。对于舰船，使用 hull ID；对于武器，使用 weapon ID；对于导弹，使用其 missile hull 或 projectile 关系所使用的 ID。`path` 从 MOD 根目录开始书写，并保留实际文件名大小写。
+
 ## 在应用加载时登记 texture CSV
 
-S5 的 `onApplicationLoad()` 已经初始化 GraphicsLib，并在能力可用时登记 light CSV。纹理映射使用同一个能力分支，在现有入口中加入 `TextureData.readTextureDataCSV(...)`：
+[C18-S5] 的应用入口已经初始化 GraphicsLib，并在能力可用时登记 light CSV。纹理映射使用同一个能力分支，在现有入口中加入 `TextureData.readTextureDataCSV(...)`：
 
 ```java
 @Override
@@ -61,67 +120,6 @@ TextureData.readTextureDataCSVNoOverwrite(
 ```
 
 重复关系由 ID、对象类型、动画帧和 map 共同确定。覆盖入口让后读取行成为查询结果；不覆盖入口保留已经存在的条目，并跳过对应的重复映射。
-
-## 区分原始 Sprite 贴图与三类纹理
-
-`graphics/ships/GearIn_artizan.png` 是游戏直接绘制的舰船 Sprite 贴图，也是三类附加纹理的坐标基准。GraphicsLib 在相同像素位置采样附加贴图，因此舰首、舰尾、装甲板和透明区都要与原始 Sprite 贴图重合。
-
-material 贴图提供光照计算使用的表面颜色与反射差异。normal 贴图保存每个像素朝向哪个方向，让位于舰船左侧、右侧或上方的光源照出不同明暗。surface 贴图进一步控制镜面高光的强度和硬度；缺少它时，material 与 normal 仍然可以参与光照，只是没有该船专用的 surface 变化。
-
-三类纹理都通过同一份 texture CSV 登记。成熟项目通常先制作 material 与 normal，再根据美术需求决定是否加入 surface；本节完整登记前两类，并说明第三类的字段关系。
-
-## 制作 material 贴图
-
-先复制原始舰船 Sprite 贴图，保留画布尺寸与透明通道，再把副本改成 material 贴图。处理时以 "光照下希望保留什么颜色、哪些区域更容易反光" 为判断标准：装甲主体保留可辨认的色相，金属边缘和高光区域可以更亮，孔洞与完全透明区域保持透明。
-
-material 贴图仍是一张完整的 RGBA PNG。它不负责画出光源本身，也不替代原始舰船 Sprite 贴图；GraphicsLib 将它与场景光照组合，得到最终受光颜色。将结果保存为：
-
-```text
-graphics/material/ships/GearIn_artizan.png
-```
-
-## 制作 normal 贴图
-
-normal 贴图用 RGB 保存切线空间法线。接近 `(128, 128, 255)` 的中性蓝表示表面朝向观察者；红色与绿色分量的变化表示表面向左右或上下倾斜，蓝色分量表示朝向观察者的程度。
-
-制作时先从舰船轮廓与装甲高度得到一张连续的高度关系，再转换为切线空间 normal。平坦装甲保持接近中性蓝，舰体边缘、凹槽和隆起逐渐改变方向，透明区继续保持透明。将结果保存为：
-
-```text
-graphics/normal/ships/GearIn_artizan.png
-```
-
-normal 的颜色表示方向，不应直接使用原始舰船颜色。过强的高度梯度会让装甲像被切出尖锐沟槽；后面的 `magnitude` 还能在不重新绘图的情况下整体调整起伏强度。
-
-## 保持画布与透明区一致
-
-三张图必须具有相同的像素宽高，舰船中心位于相同像素，朝向也完全一致。不要裁切 material 或 normal 的透明边缘，因为原始 Sprite 贴图的中心点和武器槽位置仍以原画布计算。
-
-可以把三张图放入同一图像文档的三个图层组：原始 Sprite 贴图保持只读，material 与 normal 各自编辑；导出前同时检查画布边界、舰首方向和 alpha。运行后如果亮部整体偏离船体，首先比较三张 PNG 的尺寸和不透明像素包围盒，而不是调整 CSV ID。
-
-## 编写 texture CSV
-
-创建 `data/lights/GearIn_texture_data.csv`，写入下面两条纹理映射：
-
-```csv
-id,type,frame,magnitude,map,path
-GearIn_artizan,ship,,,material,graphics/material/ships/GearIn_artizan.png
-GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
-```
-
-两行共用 `GearIn_artizan` 与 `ship`，因此都进入这艘舰船的纹理登记；`map` 决定它们分别进入 material 表还是 normal 表。GraphicsLib 用 ID、对象类型和动画帧组成查询键，同一个 ID 可以同时拥有三类 map。
-
-### texture CSV 字段速查表
-
-| 字段 | 当前值 | 读取结果 | 常见错误 |
-|---|---|---|---|
-| `id` | `GearIn_artizan` | 对象查询键 | 写成装配 ID 后无法匹配船体 |
-| `type` | `ship` | 选择舰船纹理表 | 大小写或拼写错误会跳过该行 |
-| `frame` | 空 | 非动画对象使用第 0 帧 | 舰船填写正数会被丢弃并记录警告 |
-| `magnitude` | 空／`1` | 默认值为 1，normal 行控制起伏强度 | 过大时表面方向显得尖锐 |
-| `map` | `material`／`normal` | 选择三类纹理表之一 | 未使用规定小写值时无法登记 |
-| `path` | `graphics/...` | 指向实际 PNG | 路径存在拼写差异时加载失败 |
-
-`id` 对应对象本身，而不是 CSV 行的任意名称。对于舰船，使用 hull ID；对于武器，使用 weapon ID；对于导弹，使用其 missile hull 或 projectile 关系所使用的 ID。`path` 从 MOD 根目录开始书写，并保留实际文件名大小写。
 
 ## 选择对象类型与动画帧
 
@@ -204,7 +202,7 @@ TextureEntry normal = TextureData.getTextureDataWithAutoGen(
 
 如果相同对象键已经有显式 normal，查询直接返回显式条目。只有 normal 缺失、`ship` 有效且 `autoGenNormals` 已启用时，GraphicsLib 才会尝试生成；`autoGen` 字段能够区分最终来源。
 
-自动生成结果保存在 `GraphicsLib/cache`。游戏记录当前 MOD ID 与版本列表的哈希；列表变化后，缓存会在下次生成流程中失效并重建，从而避免继续使用旧 Sprite 贴图对应的 normal。
+自动生成结果保存在 `Starsector/mods/GraphicsLib/cache`。游戏记录当前 MOD ID 与版本列表的哈希；列表变化后，缓存会在下次生成流程中失效并重建，从而避免继续使用旧 Sprite 贴图对应的 normal。
 
 ### 控制自动生成范围
 
@@ -220,7 +218,7 @@ TextureData.mapSpriteToMNSWithAutoGen(
         false);
 ```
 
-前四个参数确定映射键；第五个参数允许生成缺失的 normal；最后一个参数为 `true` 时，生成结果不会被标记为自动生成，普通兼容路径保持为 `false`。`graphicslib_no_autogen` 标签会禁止对象参与自动生成，`graphicslib_autogen_override` 标签则改变生成结果的身份标记。显式 normal 仍然优先于自动生成结果。
+前四个参数确定映射键；第五个参数允许生成缺失的 normal；最后一个参数为 `true` 时，生成结果不会被标记为自动生成，普通兼容路径保持为 `false`。`graphicslib_no_autogen` 标签会禁止对象参与自动生成，`graphicslib_autogen_override` 标签则改变生成结果的身份标记。显式 normal 仍然优先于自动生成结果。编者建议把自动生成看作尚未制作 normal 时的可用结果；具体装甲形状和凹槽方向，仍由自己的法线图更容易控制。
 
 `autoGenNormalMap(...)` 直接从一张 Sprite 贴图生成 normal，并返回生成后的 `SpriteAPI`：
 
@@ -272,7 +270,7 @@ if (engine.getCustomData().containsKey(ShaderHook.TEXTURE_PRELOAD_KEY)) {
 
 ## 完整最小例
 
-应用加载入口同时保留 S5 的 light 登记，并加入本节的 texture 登记：
+应用加载入口同时保留 [C18-S5] 的 light 登记，并加入本节的 texture 登记：
 
 ```java
 @Override
@@ -312,7 +310,7 @@ GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
 3. 用同一查询键分别测试覆盖与不覆盖入口，确认最终 `TextureEntry` 来自预期数据行。
 4. 查询 `GearIn_artizan` 的 material 与 normal，核对 `spriteName`、`magnitude`、`autoGen`、`validToLoad` 和 `loaded`。
 5. 使用 [C18-S6] 的动态光源照射工匠级，转动舰船并观察 material 颜色、normal 明暗方向与船体同步旋转。
-6. 临时移除 normal 数据行并启用 `autoGenNormals`，确认查询返回 `autoGen == true`，同时在 `GraphicsLib/cache` 产生缓存。
+6. 临时移除 normal 数据行并启用 `autoGenNormals`，确认查询返回 `autoGen == true`，同时在 `Starsector/mods/GraphicsLib/cache` 产生缓存。
 7. 分别给测试船体加入 `graphicslib_no_autogen`、`graphicslib_autogen_override` 与 `graphicslib_preload`，核对生成来源和预载状态。
 8. 分别启用和关闭 `preloadAllMaps`，比较加载日志、第一次进入战斗的停顿和全部 `TextureEntry.vramSize` 之和。
 9. 依次制造错误 ID、错误 type、错误 map、缺失路径、错位画布和错误 frame，核对下面列出的症状与修正结果。
@@ -345,12 +343,12 @@ GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
 
 ## 总结
 
-GraphicsLib 使用对象 ID、对象类型、动画帧和 map 类型把额外纹理绑定到原始 Sprite 贴图。material 决定受光颜色，normal 决定表面方向，surface 控制镜面高光；显式 CSV 提供稳定美术结果，自动生成与缓存负责补齐缺失 normal，动态加载和预载策略则决定这些资源何时进入显存。
+工匠级现在通过同一个船体 ID 取得 material 与 normal。画布对齐决定光照落点，贴图内容决定颜色和表面方向，CSV 的对象类型与帧决定查询能否命中。继续制作其他舰船时沿用这组关系；是否自动生成、预载多少贴图，再根据实际画面和显存占用选择。
 
 ## 建议参考项
 
 - `org.dark.shaders.util.TextureData`：CSV 登记、纹理查询、自动生成与加载策略；
-- `org.dark.shaders.util.TextureData.TextureEntry`：纹理路径、强度、来源和驻留状态；
+- `org.dark.shaders.util.TextureEntry`：纹理路径、强度、来源和驻留状态；
 - `org.dark.shaders.util.ShaderHook`：战斗纹理预载完成状态；
-- `GraphicsLib/data/lights/texture_data.csv`：原版对象类型与字段格式；
-- `GraphicsLib/README.md`：自动生成、缓存和预载配置。
+- `Starsector/mods/GraphicsLib/data/lights/core_texture_data.csv`：对象类型与字段格式；
+- `Starsector/mods/GraphicsLib/GRAPHICS_OPTIONS.ini`：自动生成和预载配置。

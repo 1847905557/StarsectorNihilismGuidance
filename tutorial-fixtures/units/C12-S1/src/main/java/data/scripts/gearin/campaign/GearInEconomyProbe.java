@@ -41,7 +41,7 @@ public class GearInEconomyProbe implements EveryFrameScript {
         }
         logMarket(economy, market);
         logEconomy(economy, market);
-        economy.addUpdateListener(new ProbeListener());
+        economy.addUpdateListener(new ProbeListener(market));
         LOG.info("GearIn market probe: economy listener registered");
         done = true;
     }
@@ -61,7 +61,7 @@ public class GearInEconomyProbe implements EveryFrameScript {
         CommodityOnMarketAPI supplies = market.getCommodityData("supplies");
         MutableStat tariff = market.getTariff();
         LOG.info(String.format(
-                "GearIn market probe: id=%s entity=%s faction=%s size=%d markets=%d commodities=%d tariff=%.3f stockpile=%.1f available=%.1f demandPrice=%.1f supplyPrice=%.1f people=%d admin=%s commEntries=%d freePort=%s submarkets=%d",
+                "GearIn market probe: id=%s entity=%s faction=%s size=%d markets=%d commodities=%d tariff=%.3f stockpile=%.1f available=%d demandPrice=%.1f supplyPrice=%.1f people=%d admin=%s commEntries=%d freePort=%s submarkets=%d",
                 market.getId(), market.getPrimaryEntity().getId(), market.getFactionId(),
                 market.getSize(), economy.getNumMarkets(), economy.getAllCommodityIds().size(),
                 tariff.getModifiedValue(), supplies.getStockpile(), supplies.getAvailable(),
@@ -72,8 +72,13 @@ public class GearInEconomyProbe implements EveryFrameScript {
                 market.getSubmarketsCopy().size()));
     }
 
-    private static class ProbeListener implements EconomyAPI.EconomyUpdateListener {
+    private class ProbeListener implements EconomyAPI.EconomyUpdateListener {
+        private final MarketAPI market;
         private boolean expired;
+
+        private ProbeListener(MarketAPI market) {
+            this.market = market;
+        }
 
         @Override
         public void commodityUpdated(String commodityId) {
@@ -83,6 +88,7 @@ public class GearInEconomyProbe implements EveryFrameScript {
         @Override
         public void economyUpdated() {
             LOG.info("GearIn economy update: complete");
+            logMarket(Global.getSector().getEconomy(), market);
             expired = true;
         }
 

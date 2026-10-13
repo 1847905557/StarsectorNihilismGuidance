@@ -1,8 +1,6 @@
 # 生成生涯舰队
 
-舰队生成的核心不是直接拼装成员，而是先用 `FleetParamsV3` 描述势力、用途、各类舰船预算与质量要求，再把这份参数交给 `FleetFactoryV3`。工厂负责从势力可用内容中抽取成员并返回 `CampaignFleetAPI`；调用方检查结果、完成必要配置，最后把舰队投放到一个地点。
-
-本节先完成一条只使用常用参数的基础流程，再在保持相同结构的前提下补充质量覆盖、指定旗舰、军官、固定随机源与装配随机化。两个示例各生成一支舰队，便于在地图和日志中分别核对基础结果与高级结果。
+世界与势力已经可以读取，现在让一支舰队出现在地图上。本节从市场取得来源，用 `FleetParamsV3` 分配战斗与后勤预算，再交给 `FleetFactoryV3` 挑选成员并投放。先生成普通巡逻队，再沿同一流程指定质量、旗舰与军官；两支舰队分别出现在市场两侧，日志也各自记录请求和实际结果。
 
 *本节预期阅读时间：\~30 分钟。*
 
@@ -15,7 +13,7 @@
 - 解释 `FleetParamsV3` 在舰队生成过程中的职责；
 - 为六类舰船预算选择合适的点数；
 - 使用市场来源构造参数并调用 `FleetFactoryV3.createFleet(...)`；
-- 检查空结果、开启 transponder，并把舰队投放到地点；
+- 检查空结果、开启 `transponder`，并把舰队投放到地点；
 - 使用质量、旗舰、军官和随机源字段补充高级生成要求；
 - 在读取最终装配前执行装配随机化；
 - 比较请求 FP、实际 FP 和工厂记录的生成比例。
@@ -23,17 +21,31 @@
 ## 前置知识
 
 - [C10-S1] 的星区与经济入口；
-- [C10-S2] 的地点、市场主实体与对象归属；
+- [C10-S2] 的地点容器、实体位置与归属；
+- [C7-S1] 的新档生成与经济建立后的回调；
 - 能够构建 Java 17 MOD；
 - 能够在 `starsector.log` 中按类名或日志前缀查找输出。
 
-## 配置 FleetParamsV3
+## 接上新档入口，再配置生成参数
 
-`FleetParamsV3` 是一次舰队生成请求的参数对象。它只保存生成条件，不保存生成结果。势力 ID 和舰队类型决定工厂从哪里挑选内容，各类点数决定希望为不同角色分配多少 FP，来源市场和质量字段决定候选舰船及其最终装配质量。
+创建 `src/data/scripts/gearin/campaign/GearInFleetGenerator.java` 和 `GearInFleetGeneratorAdvanced.java`。在 [C7-S1] 的 `GearInModPlugin` 添加两个类的 `import`，并加入以下局部方法：
+
+```java
+@Override
+public void onNewGameAfterEconomyLoad() {
+    SectorAPI sector = Global.getSector();
+    sector.addTransientScript(new GearInFleetGenerator());
+    sector.addTransientScript(new GearInFleetGeneratorAdvanced());
+}
+```
+
+此时市场已经建立，进入生涯后两个脚本各生成一次并结束。既有星系与势力初始化继续保留在原回调，当前只增加这两次生成。
+
+**`FleetParamsV3` 描述本次请求，工厂返回实际舰队。**参数保存生成条件。势力 ID 和舰队类型决定工厂从哪里挑选内容，各类点数决定希望为不同角色分配多少 FP，来源市场和质量字段决定候选舰船及其最终装配质量。
 
 `FleetFactoryV3.createFleet(params)` 才会消费这些条件并返回 `CampaignFleetAPI`。参数对象仍然可以在调用后用于记录请求规模，但继续修改它不会追溯改变已经生成的舰队。
 
-### 使用市场构造器
+### 从市场带入势力与质量
 
 市场构造器适合普通生涯舰队。市场提供势力、超空间位置、生成时间戳和质量来源，调用方只需要选择舰队类型、六类点数及质量修正：
 
@@ -50,7 +62,7 @@ FleetParamsV3 params = new FleetParamsV3(
         0f);
 ```
 
-这组参数请求一支中型巡逻队：40 FP 用于战斗舰，12 FP 用于货船，6 FP 用于油船，其余角色预算为 0。最后一个 `0f` 是 `qualityMod`，表示不在来源质量上额外修正。
+这支中型巡逻队把 40 FP 分给战斗舰、12 FP 分给货船、6 FP 分给油船，其余角色为 0。最后的 `qualityMod` 为 0，保留市场来源质量。编者在这里留了后勤预算，让地图上的巡逻队确实带有油船与货船；只给战斗预算，则会形成另一种编成。
 
 ### 常用构造参数速查表
 
@@ -76,7 +88,7 @@ FleetParamsV3 params = new FleetParamsV3(
 
 ### 理解六类点数
 
-六类点数分别交给不同的舰船角色选择过程。它们是目标 FP，而不是成员数量，也不是工厂必须精确消费完的硬上限。
+**六类点数是目标 FP。** 每一类交给对应角色挑选过程，成员数量与最后消费的点数取决于可用舰船。
 
 - `combatPts` 形成战斗主体；
 - `freighterPts` 增加货运能力；
@@ -89,7 +101,7 @@ FleetParamsV3 params = new FleetParamsV3(
 
 ## 生成一支基础舰队
 
-基础流程只解决一件事：把一份常用参数变成一支能够在生涯地图中观察的舰队。代码依次取得来源、验证地点与锚点、创建参数、调用工厂、检查结果、开启 transponder、投放舰队并记录结果。
+先完成基础舰队的生成与投放，再展开高级参数。来源市场提供势力与质量，主实体提供投放坐标，地点负责接收返回舰队。
 
 ### 取得来源市场
 
@@ -110,7 +122,7 @@ if (location == null || anchor == null) {
 }
 ```
 
-市场提供生成来源；`getContainingLocation()` 返回舰队将被投放的地点；`getPrimaryEntity()` 返回本例的坐标锚点。三者需要分别检查，因为存在市场对象并不保证当前存档中的地点和主实体已经可用。
+这里分别读取市场、地点与主实体。市场可能来自不同存档配置，当前选择器检查这组来源；日志写明实际市场 ID，后续前往同一个星系观察。
 
 ::: tip 市场不会自动投放舰队
 市场构造器只把来源信息写入参数。工厂返回的舰队仍需通过地点的 `spawnFleet(...)` 加入生涯地图。
@@ -130,11 +142,11 @@ if (generatedFleet == null || generatedFleet.isEmpty()) {
 
 `null` 表示生成过程没有得到舰队对象；`isEmpty()` 表示对象存在，但成员列表为空。后续的旗舰、成员、FP 和投放操作都应放在这两项检查之后。
 
-基础生成器把返回值保存在字段 `generatedFleet` 中。对象引用足以让同一个脚本继续配置或查询这支舰队，因此示例不设置自定义实体 ID。
+返回的 `generatedFleet` 用于本次配置和投放，投放后由地点继续管理这支舰队。本例沿引用完成操作，后续也可以从该地点的舰队集合重新取得对象。
 
-### 开启 transponder 并投放舰队
+### 开启 `transponder` 并投放舰队
 
-工厂创建的对象尚未属于任何地点。示例先开启 transponder，再以市场主实体为锚点，把舰队投放到锚点右侧 300 个地图单位处：
+工厂创建的对象尚未属于任何地点。示例先开启 `transponder`，再以市场主实体为锚点，把舰队投放到锚点右侧 300 个地图单位处：
 
 ```java
 generatedFleet.setTransponderOn(true);
@@ -159,13 +171,33 @@ LOG.info("GearIn fleet generator: market=" + source.getId()
         + " transponder=" + generatedFleet.isTransponderOn());
 ```
 
-这条日志只描述基础生成结果。装配来源、D 插、指定旗舰、军官和装配随机化状态由后面的高级生成器负责。
+先比较成员数、实际 FP 和所属地点，再查看高级生成的旗舰、军官与装配。地图位置和对象数量一致，才能把参数差异对应到正确舰队。
 
-## 查阅 FleetParamsV3 的完整字段
+### 验证方案
+
+前置数据：测试存档保留原版核心世界，存在 `Jangala` 或其他具有开放市场、地点和主实体的市场。
+
+1. 使用 `Gradle` `Wrapper` 构建 MOD，并把生成的 JAR 放入测试 MOD。
+2. 新建生涯测试存档，进入后推进一帧，触发本节登记的两次生成。
+3. 打开来源市场所在星系的地图。
+4. 在市场右侧寻找基础生成器创建的舰队。
+5. 打开 `starsector.log`，搜索 `GearIn fleet generator`。
+6. 核对日志中的市场 ID、舰队名称、成员数、实际 FP、地点 ID、存活状态和 `transponder` 状态。
+
+预期结果：
+
+- 地图中出现一支属于来源市场势力的巡逻舰队；
+- 舰队位于市场主实体右侧；
+- `transponder` 已开启；
+- 成员数大于 0；
+- 日志中的 `alive` 为 `true`；
+- 日志中的地点 ID 与来源市场所在地点一致。
+
+## 查阅 `FleetParamsV3` 的完整字段
 
 当前技术基线中的 `FleetParamsV3` 公开声明 47 个字段。其中 44 个字段可由调用方配置，`mode`、`banPhaseShipsEtc` 和 `blockFallback` 这 3 个 `transient` 字段只用于工厂内部传递状态。
 
-各组按生成职责列出字段。默认值来自字段声明或 Java 默认初始化；市场构造器还会覆盖来源、位置、势力、时间戳和质量。
+下面按实际职责查字段。默认值采用字段初始化；市场构造器另行写入来源、坐标、势力、时间戳与质量。完成基础生成后，再按需要查质量、数量或人物字段。
 
 ### 来源、势力与质量速查表
 
@@ -176,7 +208,7 @@ LOG.info("GearIn fleet generator: market=" + source.getId()
 | `quality` | `float` | `0f` | 参数准备 | 当前来源质量；市场构造器会更新 |
 | `factionId` | `String` | `null` | 成员抽选 | 生成势力 ID；工厂需要取得对应势力 |
 | `fleetType` | `String` | `null` | 舰队初始化 | 舰队用途，如巡逻、贸易或袭击 |
-| `factionOverride` | `FactionAPI` | `null` | 成员抽选 | 临时替换势力对象，可携带不同 doctrine 或候选集合 |
+| `factionOverride` | `FactionAPI` | `null` | 成员抽选 | 临时替换势力对象，可携带不同 学说 或候选集合 |
 | `qualityMod` | `float` | `0f` | 质量计算 | 在来源质量上附加修正 |
 | `qualityOverride` | `Float` | `null` | 质量计算 | 直接指定质量；非空时作为明确覆盖 |
 | `averageSMods` | `Integer` | `null` | 装配随机化 | 指定平均内置船插数量 |
@@ -210,16 +242,16 @@ LOG.info("GearIn fleet generator: market=" + source.getId()
 | `doNotAddShipsBeforePruning` | `Boolean` | `null` | 结果裁剪 | 裁剪前不补充成员 |
 | `maxNumShips` | `Integer` | `null` | 结果裁剪 | 限制本次生成的最终舰船数量 |
 | `onlyRetainFlagship` | `Boolean` | `null` | 结果裁剪 | 最终只保留旗舰 |
-| `treatCombatFreighterSettingAsFraction` | `Boolean` | `null` | 角色预算 | 按比例解释 doctrine 的战斗货船设置 |
+| `treatCombatFreighterSettingAsFraction` | `Boolean` | `null` | 角色预算 | 按比例解释 学说 的战斗货船设置 |
 | `addShips` | `List<String>` | `null` | 成员抽选 | 优先加入指定装配 ID，再消费其他预算 |
 
-### 抽选模式与 doctrine 速查表
+### 抽选模式与 学说 速查表
 
 | 字段 | 类型 | 默认值 | 生成阶段 | 用途与边界 |
 | --- | --- | --- | --- | --- |
 | `modeOverride` | `ShipPickMode` | `null` | 成员抽选 | 覆盖势力提供的舰船抽选模式 |
 | `forceAllowPhaseShipsEtc` | `Boolean` | `null` | 候选过滤 | 放宽相位舰等特殊候选限制 |
-| `doctrineOverride` | `FactionDoctrineAPI` | `null` | 预算与抽选 | 替换势力 doctrine；影响舰体比例、军官与候选 |
+| `doctrineOverride` | `FactionDoctrineAPI` | `null` | 预算与抽选 | 替换势力 学说；影响舰体比例、军官与候选 |
 | `random` | `Random` | `null` | 整个生成过程 | 提供随机源；固定种子便于在同一数据环境中复验 |
 
 ### 军官、指挥官与 AI 核心速查表
@@ -268,7 +300,7 @@ LOG.info("GearIn fleet generator: market=" + source.getId()
 | 来源、势力与质量 | 11 |
 | 六类点数 | 6 |
 | 舰体限制、数量和裁剪 | 10 |
-| 抽选模式与 doctrine | 4 |
+| 抽选模式与 学说 | 4 |
 | 军官、指挥官与 AI 核心 | 11 |
 | 旗舰专属字段 | 2 |
 | **调用方字段合计** | **44** |
@@ -279,7 +311,7 @@ LOG.info("GearIn fleet generator: market=" + source.getId()
 
 ## 补充高级生成参数
 
-基础流程成立后，高级生成器仍按相同顺序取得市场、地点和锚点，创建参数并调用工厂。区别集中在三处：生成前覆盖更精确的质量、旗舰与人物要求；生成后执行装配随机化；最后记录能够解释高级结果的状态。
+高级生成仍从同一个市场出发。这次增加预算，在调用工厂前设置质量、旗舰与军官；返回后先完成装配随机化，再读取成员的实际装备与来源。
 
 ### 覆盖质量、旗舰和军官
 
@@ -307,11 +339,11 @@ params.withOfficers = true;
 
 `qualityOverride` 让本次生成使用明确质量，`averageSMods` 为装配随机化提供平均内置船插目标，`flagshipVariantId` 请求指定旗舰装配。军官等级加成与 `withOfficers` 共同影响人物生成，`maxNumShips` 对最终数量施加上限。
 
-固定种子 `104729L` 让相同版本、相同市场状态和相同候选数据更容易复验。候选池、势力数据或游戏版本变化后，即使种子不变，结果仍可能变化。
+固定种子 `104729L` 用来比较同一数据环境下的结果。**随机种子与候选数据共同决定抽选。** 市场、势力军备或学说变化后，输入已经变化，结果也可能随之变化；复验时把这组条件一起保留。
 
 ### 执行装配随机化
 
-工厂可能为舰队挂载 inflater，把最终武器、战机和船插的选择延迟到需要完整装配的时刻。高级示例先记录状态，再显式调用 `inflateIfNeeded()`：
+工厂可能为舰队挂载 `inflater`，把最终武器、战机和船插的选择延迟到需要完整装配的时刻。高级示例先记录状态，再显式调用 `inflateIfNeeded()`：
 
 ```java
 boolean inflatedBefore = generatedFleet.isInflated();
@@ -322,7 +354,7 @@ List<FleetMemberAPI> members =
         generatedFleet.getFleetData().getMembersListCopy();
 ```
 
-需要读取最终装配来源和 D 插时，应先完成装配随机化，再重新取得成员列表。这样日志描述的是调用后的成员状态，而不是此前保存的视图。
+**先完成装配随机化，再从成员取得当前装配。** 读取来源、D 插或武器时采用调用后的对象，日志才对应最终结果。
 
 随后遍历成员，统计 `VariantSource.REFIT` 和 D 插数量：
 
@@ -345,7 +377,7 @@ for (FleetMemberAPI member : members) {
 
 ### 观察高级生成结果
 
-高级日志同时记录请求 FP、实际 FP、装配随机化前后状态、成员数、REFIT 来源、D 插、指挥官和旗舰。读取指挥官前先处理 `null`，读取旗舰时也保留空值分支：
+高级日志同时记录请求 FP、实际 FP、装配随机化前后状态、成员数、`REFIT` 来源、D 插、指挥官和旗舰。读取指挥官前先处理 `null`，读取旗舰时也保留空值分支：
 
 ```java
 float spawnFPMult = Misc.getSpawnFPMult(generatedFleet);
@@ -355,14 +387,14 @@ String commanderName = generatedFleet.getCommander() == null
 ```
 
 ::: tip $spawnFPMult
-`FleetFactoryV3.KEY_SPAWN_FP_MULT` 的键值是 `$spawnFPMult`。工厂用它记录实际舰队 FP 与请求 FP 的比例，`Misc.getSpawnFPMult(fleet)` 可用于分析生成规模；本节不把该键扩展为舰队 memory 索引。
+`FleetFactoryV3.KEY_SPAWN_FP_MULT` 的键值是 `$spawnFPMult`。工厂用它记录实际舰队 FP 与请求 FP 的比例，`Misc.getSpawnFPMult(fleet)` 可用于分析生成规模；本节不把该键扩展为舰队 Memory 索引。
 :::
 
 高级舰队被投放到市场主实体左侧 300 个地图单位处，与基础舰队分开。日志中的 `requestedPoints` 来自 `params.getTotalPts()`，`actualPoints` 来自生成后的舰队，`spawnFPMult` 则是工厂保存的比例结果。
 
 ## 完整最小例
 
-下面两个类分别生成并保留一支舰队。基础类只包含常用生成链；高级类按相同结构补充高级参数和装配随机化观察。
+两个类保存到前述路径，保留经济建立后的登记。基础与高级舰队分别生成、投放和记录。
 
 ::: details 完整成品：GearInFleetGenerator
 
@@ -382,11 +414,7 @@ import com.fs.starfarer.api.impl.campaign.fleets.FleetParamsV3;
 import com.fs.starfarer.api.impl.campaign.ids.FleetTypes;
 import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
 
-/**
- * 生成一支常规巡逻舰队并投放到来源市场附近。
- *
- * <p>本例保留生成结果，通过对象引用记录舰队，不设置自定义实体 ID。</p>
- */
+/** 生成一支常规巡逻舰队并投放到来源市场附近。 */
 public class GearInFleetGenerator implements EveryFrameScript {
 
     private static final Logger LOG = Global.getLogger(GearInFleetGenerator.class);
@@ -503,11 +531,7 @@ import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
 import com.fs.starfarer.api.loading.VariantSource;
 import com.fs.starfarer.api.util.Misc;
 
-/**
- * 生成、进行装配随机化并投放一支使用高级参数的巡逻舰队。
- *
- * <p>本例固定随机源，记录旗舰、指挥官、装配来源、D 插和生成规模。</p>
- */
+/** 生成并投放巡逻舰队，记录高级参数与装配随机化结果。 */
 public class GearInFleetGeneratorAdvanced implements EveryFrameScript {
 
     private static final Logger LOG = Global.getLogger(GearInFleetGeneratorAdvanced.class);
@@ -635,31 +659,9 @@ public class GearInFleetGeneratorAdvanced implements EveryFrameScript {
 
 :::
 
-## 验证基础生成器
+## 观察高级舰队
 
-## 验证方案
-
-前置数据：测试 MOD 已注册 `GearInFleetGenerator` 与 `GearInFleetGeneratorAdvanced` 两个脚本类，当前测试存档至少存在一个具有开放市场、地点和主实体的市场。
-
-1. 使用 Gradle Wrapper 构建 MOD，并把生成的 JAR 放入测试 MOD。
-2. 进入可删除的生涯测试存档，让生涯时间推进一帧。
-3. 打开来源市场所在星系的地图。
-4. 在市场右侧寻找基础生成器创建的舰队。
-5. 打开 `starsector.log`，搜索 `GearIn fleet generator`。
-6. 核对日志中的市场 ID、舰队名称、成员数、实际 FP、地点 ID、存活状态和 transponder 状态。
-
-预期结果：
-
-- 地图中出现一支属于来源市场势力的巡逻舰队；
-- 舰队位于市场主实体右侧；
-- transponder 已开启；
-- 成员数大于 0；
-- 日志中的 `alive` 为 `true`；
-- 日志中的地点 ID 与来源市场所在地点一致。
-
-## 验证高级生成器
-
-## 验证方案
+### 验证方案
 
 前置数据：基础生成器验证已完成，同一测试进程与测试存档继续保留。
 
@@ -668,7 +670,7 @@ public class GearInFleetGeneratorAdvanced implements EveryFrameScript {
 3. 搜索 `GearIn advanced fleet` 日志。
 4. 比较 `requestedPoints` 与 `actualPoints`。
 5. 核对 `spawnFPMult` 是否与两者的比例关系一致。
-6. 查看 `inflatedBefore`、`inflatedAfter` 和 inflater 状态。
+6. 查看 `inflatedBefore`、`inflatedAfter` 和 `inflater` 状态。
 7. 核对 `members`、`refitMembers`、`dMods`、`commander` 和 `flagship`。
 8. 在舰队界面查看旗舰和成员装配，确认日志描述与界面结果一致。
 
@@ -678,12 +680,12 @@ public class GearInFleetGeneratorAdvanced implements EveryFrameScript {
 - `inflatedAfter` 为 `true`；
 - 日志包含请求 FP、实际 FP 与 `spawnFPMult`；
 - 指挥官和旗舰字段能够定位生成结果；
-- REFIT 来源与 D 插统计来自装配随机化后的成员；
+- `REFIT` 来源与 D 插统计来自装配随机化后的成员；
 - 两支示例舰队同时保留在地图上。
 
 ## 故障分析
 
-- **日志显示来源市场不可用**：测试存档中没有 Jangala，且经济中没有同时具备开放市场、地点和主实体的市场。
+- **日志显示来源市场不可用**：测试存档中没有 `Jangala`，且经济中没有同时具备开放市场、地点和主实体的市场。
     - **解决方案**：改用当前存档中存在的市场，并在构造参数前分别检查 `getContainingLocation()` 与 `getPrimaryEntity()`。
 
 - **工厂返回 `null` 或空舰队**：势力、舰队类型、预算与候选内容没有形成有效结果。
@@ -698,20 +700,20 @@ public class GearInFleetGeneratorAdvanced implements EveryFrameScript {
 - **装配随机化后的统计仍为空**：统计发生在 `inflateIfNeeded()` 之前，或代码继续使用调用前保存的成员与装配引用。
     - **解决方案**：先执行装配随机化，再从 `FleetDataAPI` 重新取得成员，并逐个重新读取装配。
 
-- **固定种子仍产生不同结果**：市场状态、势力候选、doctrine 或游戏数据发生变化。
+- **固定种子仍产生不同结果**：市场状态、势力候选、学说 或游戏数据发生变化。
     - **解决方案**：在相同版本和相同存档状态下比较固定种子结果，并把候选数据变化作为输入变化记录。
 
 - **地图中找不到舰队**：工厂只创建了对象，舰队尚未投放到地点。
     - **解决方案**：调用 `location.spawnFleet(...)`，随后核对 `getContainingLocation()` 和舰队坐标。
 
-- **`$spawnFPMult` 缺失或结果异常**：读取发生在工厂生成前，或使用了错误的 memory 值类型。
+- **`$spawnFPMult` 缺失或结果异常**：读取发生在工厂生成前，或使用了错误的 Memory 值类型。
     - **解决方案**：只在 `createFleet(...)` 成功后通过 `Misc.getSpawnFPMult(fleet)` 读取浮点结果。
 
 ## 总结
 
-`FleetParamsV3` 描述舰队生成请求，`FleetFactoryV3.createFleet(...)` 把请求转换为可操作的舰队对象。基础流程负责来源检查、参数构造、结果检查、transponder 与投放；高级流程在同一骨架上增加质量、旗舰、军官、固定随机源和装配随机化。
+两支舰队沿同一生成过程取得来源、构造请求并投放，高级示例再指定质量、旗舰、军官和随机源，装配随机化后读取当前成员结果。
 
-请求 FP 是目标预算，实际 FP 由候选内容和生成限制共同决定。最终结果需要结合地图位置、成员集合、装配随机化状态、旗舰、指挥官与 `$spawnFPMult` 进行验证。
+FP 是目标预算，实际舰队由候选与限制共同形成。编者建议把请求规模和地图上的实际舰队一起看；一串参数能够解释设计，成员与装配才说明最后生成了什么。
 
 ## 建议参考项
 

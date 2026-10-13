@@ -1,10 +1,10 @@
 # 使用 GLSL 进阶
 
-本节沿用 [C20-S1] 的方向标，让 GLSL 1.20 在矩形内部生成圆环与朝向线。Java 提交顶点和舰船状态；您可以分别观察 vertex shader 如何放置矩形，以及 fragment shader 如何决定哪些像素可见。
+圆环与朝向线已经能显示，现在换一种画法：Java 只提交覆盖它们的矩形，GLSL 根据每个片元的位置算出哪里该留下颜色。我们保留原来的半径和长度，先把 Java 与两份 shader 接起来，再观察缩放时线宽和边缘如何变化。这样，画面里的每一处差异都有明确的来源。
 
-*本节预期阅读时间：~30 分钟。*
+*本节预期阅读时间：\~30 分钟。*
 
-*本节预期操作时间：~40 分钟。*
+*本节预期操作时间：\~40 分钟。*
 
 ## 学习目标
 
@@ -21,6 +21,16 @@
 - [C20-S1] 的局部顶点、客户端顶点数组、模型视图矩阵和方向标生命周期；
 - [C8-S7] 的分层渲染插件、图层与视口剔除；
 - 理解 Java 类、方法和直接缓冲区，并能从 `starsector.log` 定位加载错误。
+
+## 保存资源并在战斗登记
+
+将完整类保存到 `src/data/scripts/gearin/combat/GearInGlslMarker.java`，两份 shader 保存到本节列出的 `data/shaders/` 路径。构建 JAR 并重启，进入测试战斗、部署并控制玩家舰后，通过 Console Commands 执行：
+
+```text
+runcode com.fs.starfarer.api.combat.CombatEngineAPI e = com.fs.starfarer.api.Global.getCombatEngine(); com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = new data.scripts.gearin.combat.GearInGlslMarker(e.getPlayerShip()); e.addLayeredRenderingPlugin(marker); e.getCustomData().put("GearIn_marker", marker);
+```
+
+**每场战斗登记一次当前版本。**`init(...)` 准备 CPU 缓冲并同步承载实体，`render(...)` 使用当前战斗的上下文。命令把实例放入当前战斗的 `GearIn_marker` 项，便于随后验证清理。比较各版本时分别进入新的战斗。
 
 ## 让矩形覆盖方向标
 
@@ -129,7 +139,7 @@ coverageVertices.put(left).put(top);
 coverageVertices.flip();
 ```
 
-`clear()` 使缓冲区可重写，`flip()` 把有效范围设为刚写入的 `12` 个浮点数。`a_position` 是每个顶点的二维输入。提交客户端 `FloatBuffer` 前将 `GL_ARRAY_BUFFER` 绑定设为 `0`，再为 attribute 指定指针；`GL_TRIANGLES` 一次处理两个三角形。以下是局部 Java 片段：
+`clear()` 使缓冲区可重写，`flip()` 把有效范围设为刚写入的 `12` 个浮点数。`a_position` 是每个顶点的二维输入。提交客户端 `FloatBuffer` 前，先选择默认 VAO 并保存其布局，再将 `GL_ARRAY_BUFFER` 绑定设为 `0`，为 attribute 指定指针；`GL_TRIANGLES` 一次处理两个三角形。以下局部片段展示布局已经保存后的顶点提交：
 
 ```java
 GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
@@ -155,7 +165,9 @@ GL20.glUniform1f(worldPerPixelLocation, worldPerPixel);
 
 ## 绘制圆环与朝向线
 
-一次矩形绘制运行两个 shader 阶段。圆环和朝向线的宽度由片元计算控制，`glDepthMask(false)` 防止透明边缘写入深度。渲染层保持 `ABOVE_SHIPS_AND_MISSILES_LAYER`，`getRenderRadius()` 返回 `120f`；矩形额外边距随视口变化，战斗内的可见性还需在不同缩放下观察。
+本例在默认 VAO 中建立客户端 attribute 指针。上下文支持 OpenGL 3.0 时，先保存原 VAO，再绑定 `0`，随后才用客户端属性栈保存默认 VAO 的数组布局。绘制结束先弹出属性栈恢复默认布局，再绑定原 VAO；OpenGL 2 兼容路径直接保存和恢复客户端数组状态。VBO 与 program 分别恢复。当前 VBO 绑定为 `0` 和当前 VAO 为默认对象共同决定这条客户端指针能怎样建立。
+
+一次矩形绘制运行两个 shader 阶段。圆环和朝向线的宽度由片元计算控制，`glDepthMask(false)` 防止透明边缘写入深度。渲染层保持 `ABOVE_SHIPS_AND_MISSILES_LAYER`，`getRenderRadius()` 覆盖 `120 su` 与当前 `3 px` 世界边距；矩形额外边距随视口变化，战斗内的可见性还需在不同缩放下观察。
 
 `render(...)` 保存进入方法时的 program、`GL_ARRAY_BUFFER` 绑定和矩阵模式，属性栈保存混合、颜色、深度写入、纹理启用与客户端顶点数组状态。`finally` 恢复这些状态；同一战斗帧中的后续绘制因此继续使用它们原有的设置。`advance(...)` 先判断战斗结束、舰船离场或死亡，再处理暂停；实例失效后由 `isExpired()` 通知引擎清理。
 
@@ -192,6 +204,8 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GLContext;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
@@ -201,11 +215,7 @@ import com.fs.starfarer.api.combat.CombatEntityAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 
-/**
- * 使用 GLSL 1.20 和客户端顶点数组绘制跟随舰船的方向标。
- * init() 创建可复用的覆盖矩形缓冲区，首次 render() 创建 program，
- * cleanup() 释放本实例创建的全部 shader 资源。
- */
+/** 管理方向标的数据、绘制与资源生命周期。 */
 public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInGlslMarker.class);
@@ -243,11 +253,6 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        if (engine == null || trackedShip == null) {
-            valid = false;
-            LOG.error("GearIn GLSL marker: combat context or tracked ship missing");
-            return;
-        }
 
         coverageVertices = BufferUtils.createFloatBuffer(12);
 
@@ -338,8 +343,7 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void advance(float amount) {
-        if (!valid || engine == null || trackedShip == null || entity == null) {
-            valid = false;
+        if (!valid) {
             return;
         }
         if (engine.isCombatOver()
@@ -356,13 +360,10 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (!valid || entity == null || coverageVertices == null || viewport == null) {
+        if (!valid) {
             return;
         }
         float worldPerPixel = viewport.convertScreenWidthToWorldWidth(1f);
-        if (!Float.isFinite(worldPerPixel) || worldPerPixel <= 0f) {
-            return;
-        }
         updateCoverageVertices(worldPerPixel);
         if (!programAttempted) {
             programAttempted = true;
@@ -381,6 +382,8 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
             return;
         }
 
+        boolean vaoAvailable = GLContext.getCapabilities().OpenGL30;
+        int previousVao = vaoAvailable ? GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING) : 0;
         int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         int previousArrayBuffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
@@ -390,6 +393,9 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
                 | GL11.GL_CURRENT_BIT
                 | GL11.GL_ENABLE_BIT
                 | GL11.GL_DEPTH_BUFFER_BIT);
+        if (vaoAvailable) {
+            GL30.glBindVertexArray(0);
+        }
         GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
         try {
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
@@ -419,6 +425,9 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
             }
             GL11.glPopClientAttrib();
             GL11.glPopAttrib();
+            if (vaoAvailable) {
+                GL30.glBindVertexArray(previousVao);
+            }
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousArrayBuffer);
             GL20.glUseProgram(previousProgram);
             GL11.glMatrixMode(previousMatrixMode);
@@ -451,7 +460,7 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
         }
         coverageVertices = null;
         LOG.info("GearIn GLSL marker cleanup: ship="
-                + (trackedShip == null ? "null" : trackedShip.getId()));
+                + trackedShip.getId());
     }
 
     @Override
@@ -461,7 +470,7 @@ public class GearInGlslMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return DIRECTION_LENGTH;
+        return DIRECTION_LENGTH + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }
 ```
@@ -529,7 +538,13 @@ void main() {
 
 ## 验证方案
 
-前置数据：启用中的 GearIn MOD 包含 `GearInGlslMarker` 和两份 `GearIn_glsl_marker` shader 资源；`GearIn_test` 战斗入口能够取得当前舰船并注册该插件。
+前置数据：显卡和游戏渲染上下文支持 OpenGL 2 兼容管线，Console Commands 已启用。
+
+完成本方案中的移动、缩放和生命周期观察后，用下面的 Console Commands 命令连续清理当前实例两次；重新观察时进入新的战斗并登记：
+
+```text
+runcode com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = (com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin) com.fs.starfarer.api.Global.getCombatEngine().getCustomData().get("GearIn_marker"); marker.cleanup(); marker.cleanup();
+```
 
 1. 在 MOD 工程执行 `gradle jar`，确认 JAR 包含 `data/scripts/gearin/combat/GearInGlslMarker.class`，两份 shader 资源位于 MOD 的 `data/shaders/`。
 2. 启动游戏并进入 `GearIn_test` 战斗，为玩家舰注册 `GearInGlslMarker`。
@@ -549,7 +564,7 @@ void main() {
 - 日志显示 attribute 与六个 uniform 的 location 均不小于 `0`，编译和链接成功；
 - 舰船 Sprite、HUD 与其他战场画面的颜色、纹理、混合和位置保持原有表现；
 - 舰船离场、死亡或战斗结束后方向标失效，每个实例只记录一次清理；重复 `cleanup()` 不重复删除 program 与 shader；
-- 新战斗创建新的实例及 shader 资源，视口剔除使用 `120 su` 渲染半径。
+- 新战斗创建新的实例及 shader 资源，视口剔除使用 `120 su` 加当前 `3 px` 世界边距的渲染半径。
 
 ## 故障分析
 

@@ -12,6 +12,8 @@ import com.fs.starfarer.api.combat.WeaponEffectPluginWithInit;
 public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
         EveryFrameWeaponEffectPlugin {
     private static final Logger LOG = Global.getLogger(GearInWeaponFrameEffect.class);
+    private static final float FRAME_RATE = 12f;
+
     private int lastReportedFrame = -1;
     private boolean idleFrameApplied = false;
     private boolean wasFiring = false;
@@ -23,6 +25,7 @@ public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
             LOG.warn("GearIn weapon animation unavailable: " + weapon.getId());
             return;
         }
+        animation.setFrameRate(FRAME_RATE);
         LOG.info("GearIn weapon animation: " + weapon.getId()
                 + " frames=" + animation.getNumFrames()
                 + " rate=" + animation.getFrameRate());

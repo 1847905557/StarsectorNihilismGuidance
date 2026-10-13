@@ -1,10 +1,10 @@
 # 实现本地化机制
 
-本节使用 [C17-S2] 已建立的 strings 规则，在 `gear_in` MOD 中组织分类和键，并写出 `GearInI18n` 取值封装。完成后，静态文本、`%s` 参数和 `$token` 都通过同一组调用入口进入界面或日志。
+工坊文字已经能通过分类和键取值，这次把按钮、对话与动态句子组织到同一组代码入口。沿用 `GearIn_ui`，增加对话分类，再让 `GearInI18n` 分别处理普通取值、格式化和令牌替换。日志先比较实际返回值，界面继续使用同样的方法。
 
-*本节预期阅读时间：~12 分钟。*
+*本节预期阅读时间：\~12 分钟。*
 
-*本节预期操作时间：~20 分钟。*
+*本节预期操作时间：\~20 分钟。*
 
 ## 学习目标
 
@@ -27,13 +27,13 @@
 
 两级键由 `(category, id)` 组成。分类按功能域命名，键使用 MOD 前缀，代码和文件只要保持这两个值一致，多个界面就可以共享同一份文本。
 
-本节为 `gear_in` 使用 `GearIn_ui` 与 `GearIn_dialog` 两个分类，前者保存界面文本，后者保存对话文本；两类键统一使用 `GearIn_text_*` 前缀。新增文本只写入这两个分类，避免与原版或其他 MOD 的键冲突。
+沿用 [C17-S2] 定义的 `GearIn_ui` 与 `GearIn_text_hello`，在同一对象追加界面键，再定义 `GearIn_dialog` 保存对话。两类键采用 `GearIn_text_*` 前缀，当前分类常量与 JSON 一起对应。
 
-`descriptions.csv` 负责舰船、武器、行星和势力等对象的风味文本；`strings.json` 负责代码主动取用的界面标签、按钮、弹窗和对话行。同一段文本如果同时按对象和代码取用，两份文件分别保存对应版本。
+`descriptions.csv` 负责舰船、武器、行星和势力等对象的风味文本；`strings.json` 负责代码主动取用的界面标签、按钮、弹窗和对话行。同一个对象也可以同时有风味描述与代码提示，按实际显示入口分别保存文本。
 
-## 实现 GearInI18n
+## 扩展文本表，再保存取值类
 
-以下文件放在 `data/strings/strings.json`。它只声明本节的两个分类和 `GearIn_text_*` 键：
+把以下键合入 `data/strings/strings.json`，现有分类与前文键继续保留。完整例包含当前使用的六个键：
 
 ```json
 {
@@ -46,7 +46,7 @@
 	},
 	# 对话文本
 	"GearIn_dialog": {
-		"GearIn_text_approach": "你的舰队正在接近 $planetName。",
+		"GearIn_text_approach": "您的舰队正在接近 $planetName。",
 		"GearIn_text_dock": "停靠请求已接受。",
 	}
 }
@@ -54,7 +54,9 @@
 
 三种值形态分别演示纯文本、`%s` 模板和 `$token` 文本。
 
-代码侧封装分类常量、双参取值、格式化和令牌替换：
+保存 `src/data/scripts/gearin/campaign/GearInI18n.java`，这个类把常用分类固定下来，调用方仍按方法传入文本键和动态内容：
+
+::: details 完整成品：GearInI18n
 
 ```java
 package data.scripts.gearin.campaign;
@@ -83,9 +85,6 @@ public final class GearInI18n {
 
     public static String format(String category, String id, Object... args) {
         String template = get(category, id);
-        if (args == null || args.length == 0) {
-            return template;
-        }
         return String.format(template, args);
     }
 
@@ -95,7 +94,9 @@ public final class GearInI18n {
 }
 ```
 
-`get` 是唯一的双参取值入口；`ui` 和 `dialog` 只固定分类，调用方只传键名。`format` 负责填入 `%s` 参数，`replaceToken` 负责填入 `$token`。
+:::
+
+`get` 集中调用双参取值入口；`ui` 和 `dialog` 只固定分类，调用方只传键名。`format` 负责填入 `%s` 参数，`replaceToken` 负责填入 `$token`。
 
 ## 调用示例速查表
 
@@ -103,15 +104,32 @@ public final class GearInI18n {
 | --- | --- |
 | `GearInI18n.ui("GearIn_text_hello")` | `你好，工坊。` |
 | `GearInI18n.format("GearIn_ui", "GearIn_text_ship_name", "工坊之锤", "Chicomoztoc")` | `工坊之锤 正在向 Chicomoztoc 靠近。` |
-| `GearInI18n.dialog("GearIn_text_approach")` | `你的舰队正在接近 $planetName。` |
-| `GearInI18n.replaceToken(GearInI18n.dialog("GearIn_text_approach"), "planetName", "Jangala")` | `你的舰队正在接近 Jangala。` |
+| `GearInI18n.dialog("GearIn_text_approach")` | `您的舰队正在接近 $planetName。` |
+| `GearInI18n.replaceToken(GearInI18n.dialog("GearIn_text_approach"), "planetName", "Jangala")` | `您的舰队正在接近 Jangala。` |
 | `GearInI18n.ui("GearIn_text_does_not_exist")` | `Missing string: [GearIn_text_does_not_exist]`，日志出现 ERROR |
+
+## 在应用入口比较实际文本
+
+在 `GearInModPlugin.onApplicationLoad(...)` 添加 `GearInI18n` 的 import，并追加局部观察：
+
+```java
+Global.getLogger(GearInModPlugin.class).info("GearIn i18n hello: "
+        + GearInI18n.ui("GearIn_text_hello"));
+Global.getLogger(GearInModPlugin.class).info("GearIn i18n format: "
+        + GearInI18n.format("GearIn_ui", "GearIn_text_ship_name", "工坊之锤", "Chicomoztoc"));
+Global.getLogger(GearInModPlugin.class).info("GearIn i18n token: "
+        + GearInI18n.replaceToken(GearInI18n.dialog("GearIn_text_approach"), "planetName", "Jangala"));
+```
+
+**模板取值与动态内容分别完成。** `format(...)` 对传入模板执行格式化，参数不足会报告当前格式问题；`replaceToken(...)` 只替换指定的字面令牌。日志确认后，面板与按钮沿同样的入口取得文本。
+
+编者建议先把模板与调用实参一起看，再做翻译。占位符的顺序和类型也是文本用途的一部分，换了措辞以后，当前调用仍需要填入正确内容。
 
 ## 验证方案
 
 前置数据：`gear_in` MOD、`data/strings/strings.json` 中的 `GearIn_text_*` 键、`GearInI18n` 和一个可调用这些方法的界面或日志入口已就绪。
 
-1. 进入对应界面或触发日志入口，调用 `GearInI18n.ui("GearIn_text_hello")`。
+1. 保存资源、取值类与应用调用，构建重启，搜索三条 `GearIn i18n` 日志。
 2. 调用 `GearInI18n.format("GearIn_ui", "GearIn_text_ship_name", "工坊之锤", "Chicomoztoc")`，观察格式化文本。
 3. 调用 `GearInI18n.dialog("GearIn_text_approach")`，再用 `replaceToken` 填入 `Jangala`。
 4. 观察 `descriptions.csv` 提供的对象描述，确认它与代码取用的 strings 文本各自显示在对应位置。
@@ -142,10 +160,12 @@ public final class GearInI18n {
 
 ## 总结
 
-本节把 `strings.json` 的两级键落成了一个可复用的 `GearInI18n` 入口：分类常量限制取值范围，`format` 处理 `%s`，`replaceToken` 处理 `$token`。以后新增代码驱动文本时，只需沿用分类、键前缀和封装入口，页面与日志就能共享同一套本地化组织。
+当前文本表按界面与对话分类，取值类将普通文字、格式参数和字面令牌分别接到调用方。对象描述继续按 descriptions 注册，代码提示从 strings 取得。
+
+新增文字时沿功能分类与稳定键安排，模板和使用位置一起对应。这样界面、日志和翻译文件都能找到当前这句话的实际用途。
 
 ## 建议参考项
 
 - `data/strings/strings.json`：本节示例的分类和键；
-- `com.fs.starfarer.api.SettingsAPI.getString(String category, String id)`：双参取值入口；
-- `descriptions.csv`：对象风味文本的独立数据入口。
+- `com.fs.starfarer.api.SettingsAPI`：`getString(category, id)` 提供双参取值入口；
+- `data/strings/descriptions.csv`：对象风味文本的独立数据入口。

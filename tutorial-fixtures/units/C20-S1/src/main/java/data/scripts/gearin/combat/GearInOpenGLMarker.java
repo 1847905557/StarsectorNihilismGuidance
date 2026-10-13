@@ -8,6 +8,8 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GLContext;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
@@ -17,11 +19,7 @@ import com.fs.starfarer.api.combat.CombatEntityAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 
-/**
- * 使用客户端顶点数组绘制跟随舰船的圆环与朝向线。
- * 顶点缓冲只在初始化时创建，render() 负责局部坐标变换和绘制，
- * 并在返回前恢复进入方法时的 OpenGL 状态。
- */
+/** 管理方向标的数据、绘制与资源生命周期。 */
 public class GearInOpenGLMarker extends BaseCombatLayeredRenderingPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInOpenGLMarker.class);
@@ -49,10 +47,6 @@ public class GearInOpenGLMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        if (engine == null || trackedShip == null) {
-            valid = false;
-            return;
-        }
 
         ringVertices = BufferUtils.createFloatBuffer(RING_SEGMENTS * 2);
         for (int i = 0; i < RING_SEGMENTS; i++) {
@@ -73,8 +67,7 @@ public class GearInOpenGLMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void advance(float amount) {
-        if (!valid || engine == null || trackedShip == null || entity == null) {
-            valid = false;
+        if (!valid) {
             return;
         }
         if (engine.isCombatOver()
@@ -91,10 +84,12 @@ public class GearInOpenGLMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (!valid || entity == null || ringVertices == null || directionVertices == null) {
+        if (!valid) {
             return;
         }
 
+        boolean vaoAvailable = GLContext.getCapabilities().OpenGL30;
+        int previousVao = vaoAvailable ? GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING) : 0;
         int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         int previousArrayBuffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
@@ -104,6 +99,9 @@ public class GearInOpenGLMarker extends BaseCombatLayeredRenderingPlugin {
                 | GL11.GL_CURRENT_BIT
                 | GL11.GL_ENABLE_BIT
                 | GL11.GL_LINE_BIT);
+        if (vaoAvailable) {
+            GL30.glBindVertexArray(0);
+        }
         GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
         try {
             GL20.glUseProgram(0);
@@ -137,6 +135,9 @@ public class GearInOpenGLMarker extends BaseCombatLayeredRenderingPlugin {
             }
             GL11.glPopClientAttrib();
             GL11.glPopAttrib();
+            if (vaoAvailable) {
+                GL30.glBindVertexArray(previousVao);
+            }
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousArrayBuffer);
             GL20.glUseProgram(previousProgram);
             GL11.glMatrixMode(previousMatrixMode);
@@ -150,12 +151,13 @@ public class GearInOpenGLMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void cleanup() {
+        valid = false;
         ringVertices = null;
         directionVertices = null;
         if (!cleanupLogged) {
             cleanupLogged = true;
             LOG.info("GearIn OpenGL marker cleanup: ship="
-                    + (trackedShip == null ? "null" : trackedShip.getId()));
+                    + trackedShip.getId());
         }
     }
 
@@ -166,6 +168,6 @@ public class GearInOpenGLMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return DIRECTION_LENGTH;
+        return DIRECTION_LENGTH + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }

@@ -7,6 +7,7 @@ import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.ShipVariantAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.fleet.FleetMemberType;
+import com.fs.starfarer.api.loading.VariantSource;
 import com.fs.starfarer.api.loading.WeaponGroupSpec;
 
 /**
@@ -43,8 +44,10 @@ public class GearInVariantRefitter implements EveryFrameScript {
         FleetMemberAPI member = Global.getFactory().createFleetMember(
                 FleetMemberType.SHIP,
                 VARIANT_ID);
+        Global.getSector().getPlayerFleet().getFleetData().addFleetMember(member);
         ShipVariantAPI original = member.getVariant();
         ShipVariantAPI refit = original.clone();
+        refit.setSource(VariantSource.REFIT);
 
         String weaponBefore = refit.getWeaponId(SLOT_ID);
         int ventsBefore = refit.getNumFluxVents();

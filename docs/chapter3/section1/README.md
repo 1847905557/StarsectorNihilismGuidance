@@ -1,6 +1,6 @@
 # 注册一个势力
 
-本节为 GearIn 注册一个能够被生涯星区读取的势力身份，做法与全书其他数据文件一致，先复制原版势力文件，再修改需要区分的身份字段。页面只处理注册文件和势力 ID、显示名称、旗帜、配色这几个可视键；其余内容沿用原版，由下一节逐段讲解和替换。
+从本章开始，我们为此前制作的内容建立生涯势力。齿轮工业将以霸主为基础修改，本节先完成势力注册、名称、旗帜与配色，舰队配置由下一节继续处理。
 
 *本节预期阅读时间：\~12 分钟。*
 
@@ -10,33 +10,111 @@
 
 完成后，您将能够：
 
-- 用 `data/world/factions/factions.csv` 注册一个 faction 文件；
-- 复制原版 `hegemony.faction` 并修改势力 ID、显示名称、旗帜与配色；
-- 根据启动日志和情报界面确认势力身份已经加载；
-- 从路径、必填字段和贴图资源定位加载故障。
+- 复制原版势力文件，修改 ID、显示名称、旗帜与配色；
+- 用 `data/world/factions/factions.csv` 登记势力文件；
+- 在启动日志和情报界面确认势力身份；
+- 根据路径、必填字段与资源定位加载故障。
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录、数据文件合并和全局 ID 规则；
-- [C1-S2] 的资源路径和贴图加载规则；
+- [C1-S1] 的 MOD 目录、数据合并与全局 ID 规则；
+- [C1-S2] 的贴图路径和资源放置方法；
+- [C1-S7] 的 CSV 表头、行首注释与文本编码；
 - 能够打开生涯情报界面并读取 `starsector.log`。
 
-## 注册势力文件
+## 复制原版势力文件
 
-势力注册由 `factions.csv` 和一个 `.faction` 文件完成。`factions.csv` 提供 faction 文件读取路径，`.faction` 文件则完成势力具体配置。文件名可以与文件内部的 `id` 不同，但教程统一使用 `gear_industry.faction` 和 `gear_industry`，保持对应关系。
+从原版的 `data/world/factions/` 复制 `hegemony.faction`，放进 MOD 的同路径，改名为 `gear_industry.faction`。
 
-在 `data/world/factions/factions.csv` 中写入表头和一行路径：
+编者相信您应该已经熟悉复制、粘贴、修改的流程了。势力文件同样如此，不过这次的文件相当长。**本节只改身份字段，其余内容保留原版配置**，下一节再逐段调整。
+
+用编辑器打开副本，找到开头的 `id`、名称、配色和旗帜字段。下面的局部片段对应本次修改：
+
+```json
+{
+    "id": "gear_industry",
+    "color": [180, 120, 60, 255],
+    "displayName": "齿轮工业",
+    "displayNameWithArticle": "齿轮工业",
+    "logo": "graphics/factions/gear_industry.png",
+    "crest": "graphics/factions/crest_gear_industry.png"
+}
+```
+
+将这几个字段替换到副本的对应位置，其用途如下。
+
+### 确定后续引用的 ID
+
+`id` 改为 `gear_industry`。**星系实体、市场和舰队以后都用这个 ID 表示所属势力**，因此它需要独特、稳定，并与后续引用逐字符一致。
+
+注册表填写文件路径，其他生涯对象引用文件内部的势力 ID。两者可以不同；本教程统一采用 `gear_industry.faction` 与 `gear_industry`，便于核对。
+
+这里的势力 ID 为 `gear_industry`，MOD ID 仍为 `gear_in`。一个 MOD 可以注册多个势力，各自使用独立 ID。
+
+### 写入势力名称
+
+把 `displayName` 和 `displayNameWithArticle` 都改为 "齿轮工业"。前者用于普通名称，后者用于需要冠词的语境；中文示例中，两项写成一样即可。
+
+副本中的 `shipNamePrefix`、`names` 和 `portraits` 仍采用霸主的舰船名前缀、人名与头像配置，[C3-S2] 会与舰队配置一起替换。
+
+### 设置势力主色
+
+`color` 使用 RGBA 数组。本例填写 `[180,120,60,255]`，前三个数字决定红、绿、蓝，最后一个数字决定不透明度。
+
+主色用于星图和情报中的势力显示。这个字段可以省略，不过编者建议自定义势力采用能与原版区分的配色，便于识别舰队和所属地点。
+
+### 放入旗帜与徽章
+
+准备两张 PNG，并放到 MOD 的 `graphics/factions/`：
+
+- `gear_industry.png`：作为 `logo`，本例采用宽 410 像素、高 256 像素的长方形旗帜。
+- `crest_gear_industry.png`：作为 `crest`，本例采用边长 256 像素的方形徽章。
+
+`logo` 用于情报界面的主要旗帜；`crest` 用在市场、收入、勘测与百科等界面。路径都是相对于 MOD 根目录的路径。
+
+::: tip 旗帜制作规格
+
+这两组尺寸是常用制作规格。贴图可以从原版加工，资源路径填写相对于 MOD 根目录的位置，文件名与大小写保持一致。
+
+:::
+
+### 保留副本中的必填内容
+
+`id`、`logo`、`displayName`、`displayNameWithArticle`、`names` 和 `portraits` 是加载时读取的必填字段。复制完整原版文件可以保留它们；修改时继续保留这些键。
+
+`crest` 与 `color` 为可选字段，本例同时填写。其余舰船池、学说与人物配置当前采用霸主的值，下一节继续调整。
+
+### 身份字段速查表
+
+| 字段 | 当前作用与填写方式 |
+|---|---|
+| `id` | 后续生涯对象使用的势力 ID，本例为 `gear_industry` |
+| `displayName` | 普通显示名称，本例为 "齿轮工业" |
+| `displayNameWithArticle` | 带冠词语境的名称，中文示例与普通名一致 |
+| `color` | 主色 RGBA，本例为 `[180,120,60,255]` |
+| `logo` | 情报界面主要旗帜的资源路径 |
+| `crest` | 市场、收入、勘测与百科等界面的徽章路径 |
+| `names` | 加载需要的人名分类配置，当前保留霸主副本 |
+| `portraits` | 加载需要的头像配置，当前保留霸主副本 |
+
+## 登记势力文件
+
+副本和图片保存好后，在 MOD 的 `data/world/factions/` 创建 `factions.csv`。已有这个文件时，在其中追加路径即可：
 
 ```csv
 faction
 data/world/factions/gear_industry.faction
 ```
 
-不过由于`gear_industry.faction`还不存在，此时启动游戏大概不会产生什么很好的结果。
+第一行的表头为 `faction`，后面的数据行填写文件路径。游戏读取该路径的 `.faction` 文件，再按内部的 `id` 注册势力。
 
-## 配置身份字段
+按 [C1-S7] 的 CSV 规则保存，确认注册行有效，然后启动游戏核对结果。
 
-把原版的 `data/world/factions/hegemony.faction` 复制到 MOD 的 `data/world/factions/gear_industry.faction`。和以往一样，我们先改几行最关键的：
+## 完整最小例
+
+`factions.csv` 使用上面的表头与路径。下面是保留霸主配置、改好身份字段的完整副本，写入 `data/world/factions/gear_industry.faction`，并准备对应的两张旗帜图片。
+
+::: details 完整势力文件：gear_industry.faction
 
 ```json {2-7}
 {
@@ -414,67 +492,50 @@ data/world/factions/gear_industry.faction
 },
 ```
 
-`id`、`logo`、`displayName`、`displayNameWithArticle`、`names` 和 `portraits` 是必填字段，复制原版文件已经保证了它们全部存在。修改时误删其中任何一个，加载阶段都会在读取对应键时中断。
-
-`crest` 与 `color` 虽然不是必填字段，但不同的颜色和方形徽章有助于在游戏内快速识别。
-
-::: tip 图片规格
-
-一般来说，logo 是一张 宽 410 像素 高 256 像素 的长方形 png 图片，crest 是一张 边长 256 像素 的正方形 png 图片。
-
 :::
-
-### 关键身份字段速查表
-
-| 字段 | 作用 |
-|---|---|
-| `id` | 唯一指定身份标识 |
-| `displayName` | 普通势力名称 |
-| `displayNameWithArticle` | 带冠词语境中的名称 |
-| `logo` | 主要旗帜 |
-| `crest` | 市场、收入、勘测、百科等界面的徽章 |
-
-这些字段用于核对一个势力是否已经具备可被其它生涯对象引用的身份。副本中的舰船池、舰队学说、`shipNamePrefix`、`names` 与 `portraits` 仍是 hegemony 的内容，它们的语义与替换方式在 [C3-S2] 逐段处理。
 
 ## 验证方案
 
-前置数据：基于`hegemony.faction` 修改的势力文件已就位，两个旗帜路径能够读取。
-
-1. 启动游戏并等待主菜单完成加载。
-2. 在 `starsector.log` 中查找 `Loading gear_industry faction`。
-3. 新建或读取生涯，打开情报界面的势力列表。
-4. 选择齿轮工业，核对显示名称、颜色和 logo。
+1. 保存势力文件、旗帜图片与注册表，启动游戏并等待主菜单加载完成。
+2. 打开 `starsector.log`，搜索 `Loading gear_industry faction`，检查随后是否有 JSON 字段或资源加载错误。
+3. 新建或读取生涯，按 `F` 打开情报，再进入势力列表。
+4. 选择齿轮工业，核对名称、主色与旗帜。
 
 预期结果：
 
-- 日志确认 `gear_industry` 势力已经加载，随后没有 faction JSON 或贴图异常；
-- 情报界面出现齿轮工业；
-- 势力名称、主色和大旗与 faction 文件一致；
-- `Global.getSector().getFaction("gear_industry")` 能够取得势力对象。
+- 日志出现 `Loading gear_industry faction`，势力加载完成。
+- 势力列表出现 "齿轮工业"，名称、主色和旗帜与当前配置一致。
+- 后续代码可以通过 `Global.getSector().getFaction("gear_industry")` 取得该势力。
+
+观察势力列表中的齿轮工业条目与右侧名称：
+
+![情报界面中的齿轮工业势力条目](./faction.png "faction.png")
+
+图中展示了齿轮工业在势力列表中的位置与名称。实际配色按当前 `color` 核对，势力描述由 [C3-S5] 补充。
 
 ## 故障分析
 
-- **势力没有出现在情报界面**：`factions.csv` 路径错误、表头不是 `faction` 或注册行以 `#` 开头时，游戏不会读取目标 faction 文件。
-    - **解决方案**：核对表头和相对 MOD 根目录的完整路径，重启。
+- **势力没有出现在情报界面**：`factions.csv` 表头、路径或行首注释错误，游戏没有读取目标文件。
+    - **解决方案**：确认表头为 `faction`，登记路径为 `data/world/factions/gear_industry.faction`，保存后重启。
 
-- **加载阶段报告缺少 JSON 字段**：修改时误删了六个必填键之一。
-    - **解决方案**：根据异常中的键名补齐字段，重启。
+- **加载时报缺少 JSON 字段**：副本中的六个必填键被误删。
+    - **解决方案**：按异常中的键名补齐 `id`、`logo`、`displayName`、`displayNameWithArticle`、`names` 或 `portraits`，保存后重启。
 
-- **加载阶段报告重复 spec**：另一个来源已经注册相同 `id`，例如复制后忘记修改 `id`，副本仍携带 hegemony 的注册键。
-    - **解决方案**：为 GearIn 选择全局唯一的势力 ID，并同步后续页面的引用，重启。
+- **加载时报重复 spec**：其他来源已经注册了相同势力 ID，或副本仍使用 `hegemony`。
+    - **解决方案**：将副本 ID 改为 `gear_industry`，核对它在所有启用的 MOD 中唯一，并同步引用。
 
-- **旗帜或头像无法加载**：资源路径指向不存在的文件，TEXTURE 加载会报告目标路径。
-    - **解决方案**：以 MOD 根目录为基准核对文件名和大小写，重启。
+- **旗帜或头像加载失败**：资源路径指向不存在的文件，日志报告对应 TEXTURE 路径。
+    - **解决方案**：以 MOD 根目录为基准检查文件名、大小写与目录，保存后重启。
 
 ## 总结
 
-势力身份由 `factions.csv` 的路径和 faction 文件内部的 `id` 共同建立。复制 hegemony.faction 保证了全部必填键存在，修改后的名称、旗帜与配色提供可以在情报界面核对的显示结果。
+本节完成了势力身份注册：`factions.csv` 提供读取路径，文件内部的 `id` 用于生涯引用，名称、颜色与旗帜用于界面显示。
 
-后续页面只需引用 `gear_industry`，就能把星系实体、市场和舰队归到同一个势力。下一节会逐段替换副本中剩余的 hegemony 内容，加入 GearIn 自己的舰船池、舰队学说和初始关系。
+改完这些字段，齿轮工业的舰船池与学说仍然采用霸主配置。对于一个以自制舰船为主体的势力，这些内容也需要重新安排。下一节配置舰队，[C3-S3] 则通过 MOD 入口设置初始关系。
 
 ## 建议参考项
 
-- `data/world/factions/factions.csv`：势力文件注册表；
-- `data/world/factions/hegemony.faction`：本节复制的源文件；
-- `com.fs.starfarer.api.campaign.FactionSpecAPI`：加载后的势力规格；
-- `com.fs.starfarer.api.campaign.SectorAPI`：`getFaction(id)` 运行时势力查询入口。
+- `data/world/factions/factions.csv`：登记势力文件路径的注册表。
+- `data/world/factions/hegemony.faction`：本节复制的完整势力配置。
+- `com.fs.starfarer.api.campaign.FactionSpecAPI`：加载后的势力规格。
+- `com.fs.starfarer.api.campaign.SectorAPI`：`getFaction(id)` 提供生涯势力查询。

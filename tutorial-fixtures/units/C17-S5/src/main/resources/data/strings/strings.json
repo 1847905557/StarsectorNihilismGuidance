@@ -1,14 +1,14 @@
 {
-	# 本页拥有的分类：界面文本
+	# 界面文本
 	"GearIn_ui": {
 		"GearIn_text_hello": "你好，工坊。",
 		"GearIn_text_ship_name": "%s 正在向 %s 靠近。",
 		"GearIn_text_dismiss": "关闭",
 		"GearIn_text_unknown": "未知对象",
 	},
-	# 本页拥有的分类：对话文本
+	# 对话文本
 	"GearIn_dialog": {
-		"GearIn_text_approach": "你的舰队正在接近 $planetName。",
+		"GearIn_text_approach": "您的舰队正在接近 $planetName。",
 		"GearIn_text_dock": "停靠请求已接受。",
 	}
 }

@@ -8,6 +8,9 @@ import com.fs.starfarer.api.campaign.FactionAPI;
 import com.fs.starfarer.api.campaign.RepLevel;
 import com.fs.starfarer.api.campaign.ReputationActionResponsePlugin.ReputationAdjustmentResult;
 import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.impl.campaign.CoreReputationPlugin.CustomRepImpact;
+import com.fs.starfarer.api.impl.campaign.CoreReputationPlugin.RepActionEnvelope;
+import com.fs.starfarer.api.impl.campaign.CoreReputationPlugin.RepActions;
 import com.fs.starfarer.api.impl.campaign.ids.Factions;
 
 public class GearInFactionRelationProbe implements EveryFrameScript {
@@ -48,14 +51,24 @@ public class GearInFactionRelationProbe implements EveryFrameScript {
         float after = player.getRelationship(targetId);
         logRelation("after", player, target);
 
+        CustomRepImpact impact = new CustomRepImpact();
+        impact.delta = 0.05f;
+        RepActionEnvelope envelope = new RepActionEnvelope(RepActions.CUSTOM, impact);
+        envelope.withMessage = false;
         ReputationAdjustmentResult reputationResult = sector.adjustPlayerReputation(
-                null,
+                envelope,
                 targetId);
+        float actionDuring = player.getRelationship(targetId);
+        logRelation("action", player, target);
+        player.setRelationship(targetId, before);
+        float actionAfter = player.getRelationship(targetId);
+        logRelation("actionRestored", player, target);
         LOG.info(String.format(
-                "GearIn faction action: faction=%s result=%s restored=%.3f",
+                "GearIn faction action: faction=%s delta=%.3f during=%.3f restored=%.3f",
                 targetId,
-                reputationResult,
-                after));
+                reputationResult.delta,
+                actionDuring,
+                actionAfter));
         LOG.info(String.format(
                 "GearIn faction values: before=%.3f during=%.3f after=%.3f",
                 before,

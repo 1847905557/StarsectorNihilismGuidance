@@ -32,8 +32,6 @@ public class GearInPersonScript {
         if (!market.getPeopleCopy().contains(person)) {
             market.addPerson(person);
         }
-        person.setMarket(market);
-
         CommDirectoryAPI directory = market.getCommDirectory();
         int entriesBefore = directory.getEntriesCopy().size();
         if (directory.getEntryForPerson(person) == null) {
@@ -42,13 +40,14 @@ public class GearInPersonScript {
         int entriesAfter = directory.getEntriesCopy().size();
 
         ImportantPeopleAPI.PersonDataAPI data = importantPeople.getData(person);
+        data.getLocation().setMarket(market);
         LOG.info(String.format(
                 "GearIn person: id=%s created=%s name=%s gender=%s faction=%s rank=%s post=%s "
-                        + "tag=%s ready=%s important=%s dataLinked=%s market=%s directory=%s entries=%d->%d",
+                        + "tag=%s ready=%s important=%s dataLinked=%s market=%s personMarket=%s directory=%s entries=%d->%d",
                 person.getId(), !existed, person.getNameString(), person.getGender(),
                 person.getFaction().getId(), person.getRankId(), person.getPostId(),
                 person.hasTag(PERSON_TAG), person.getMemoryWithoutUpdate().getBoolean(PERSON_READY),
-                importantPeople.containsPerson(person), data != null && data.getPerson() == person,
+                importantPeople.containsPerson(person), data.getPerson() == person,
                 market.getPeopleCopy().contains(person), person.getMarket() == market,
                 directory.getEntryForPerson(person) != null,
                 entriesBefore, entriesAfter));

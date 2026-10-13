@@ -13,6 +13,7 @@ import com.fs.starfarer.api.impl.campaign.ids.Factions;
 public class GearInEntityPlacement implements EveryFrameScript {
 
     private static final Logger LOG = Global.getLogger(GearInEntityPlacement.class);
+    private static final boolean USE_FIXED_LOCATION = false;
 
     private boolean done;
 
@@ -33,7 +34,7 @@ public class GearInEntityPlacement implements EveryFrameScript {
         }
 
         SectorAPI sector = Global.getSector();
-        StarSystemAPI system = sector.getStarSystem("GearIn_entity_system");
+        StarSystemAPI system = sector.getStarSystem("GearIn_observation_system");
         if (system == null) {
             LOG.warn("GearIn entity placement: system missing");
             done = true;
@@ -48,25 +49,30 @@ public class GearInEntityPlacement implements EveryFrameScript {
                     "观测信标",
                     "comm_relay",
                     Factions.INDEPENDENT);
-            entity.setName("观测信标");
-            entity.setFaction(Factions.INDEPENDENT);
-            entity.addTag("GearIn_entity_probe");
-            entity.setFacing(90f);
-            entity.getCustomData().put("GearIn_entity_role", "sensor");
-            entity.getMemoryWithoutUpdate().set(
-                    "$GearIn_entity_ready",
-                    true);
-            entity.setInteractionImage(
-                    "illustrations",
-                    "GearIn_entity_interaction");
+        }
+
+        entity.setName("观测信标");
+        entity.setFaction(Factions.INDEPENDENT);
+        entity.addTag("GearIn_entity_probe");
+        entity.setFacing(90f);
+        entity.getCustomData().put("GearIn_entity_role", "sensor");
+        entity.getMemoryWithoutUpdate().set(
+                "$GearIn_entity_ready",
+                true);
+        entity.setInteractionImage(
+                "illustrations",
+                "GearIn_entity_interaction");
+        if (USE_FIXED_LOCATION) {
+            entity.setFixedLocation(1600f, -900f);
+        } else {
             entity.setCircularOrbit(
                     system.getStar(),
                     45f,
                     2600f,
                     160f);
-            entity.setSensorStrength(1f);
-            entity.setSensorProfile(1f);
         }
+        entity.setSensorStrength(1f);
+        entity.setSensorProfile(1f);
 
         CustomCampaignEntityAPI customEntity =
                 (CustomCampaignEntityAPI) entity;

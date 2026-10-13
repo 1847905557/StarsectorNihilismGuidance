@@ -136,7 +136,7 @@ public final class GearInGeometryMissileAI implements MissileAIPlugin, GuidedMis
                     collisionPoint, 12f), HIT_COLOR);
         }
 
-        float radius = Math.max(20f, target.getCollisionRadius());
+        float radius = target.getCollisionRadius();
         addMarker(engine, MathUtils.getRandomPointOnCircumference(
                 target.getLocation(), radius), CIRCLE_COLOR);
         addMarker(engine, EllipseUtils.getRandomPointOnEllipse(

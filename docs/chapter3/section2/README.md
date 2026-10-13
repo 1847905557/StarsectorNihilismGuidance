@@ -1,6 +1,6 @@
 # 配置势力舰队
 
-本节从 [C3-S1] 复制出的 hegemony 副本出发，把身份之外的内容逐段讲解并替换为 GearIn 自己的舰船池、装配角色与舰队学说。完成后，齿轮工业能够用自己的舰船组成生涯舰队。
+齿轮工业的身份字段已经确定，接下来替换霸主副本中的军备、舰队学说与人物配置。本节先把此前制作的舰船、战机、武器和船插放进势力可用集合，再为工匠准备一个当前可用的装配，登记到舰队角色表中。
 
 *本节预期阅读时间：\~18 分钟。*
 
@@ -10,74 +10,43 @@
 
 完成后，您将能够：
 
-- 用 `factionDoctrine` 配置势力的舰队组成、质量与性格倾向，并解释玩家势力编辑器对同一组字段的取值约束；
-- 用 `knownShips` / `knownWeapons` / `knownFighters` / `knownHullMods`、`hullFrequency`、`priority*` 配置势力舰船池，并解释 tags 展开与 `pickShip` 的过滤规则；
-- 用 `default_ship_roles.json`(或势力文件内的 `shipRoles`) 把装配引入生涯舰队。
+- 设置舰队组成、质量与性格倾向，并区分文件配置和玩家势力编辑器的取值范围；
+- 用 `known*`、`hullFrequency` 与 `priority*` 组织军备和出现权重；
+- 为已注册船体准备装配，并通过角色表让势力使用它；
+- 根据加载日志与生成结果核对军备、装配和学说。
 
 ## 前置知识
 
-- [C3-S1] 的势力注册、可视身份字段、`gear_industry` 势力 ID 以及对应的势力文件；
-- [C1-S2] 的船体登记与 ID 规则；
-- [C1-S3] 的战机、联队与航母登记规则；
-- [C1-S5] 的武器登记与 tags 规则；
-- [C2-S2] 的船插登记规则；
-- [C4-S1] 的战役与舰船装配组织方式。
+- [C3-S1] 的势力注册与 `gear_industry.faction`；
+- [C1-S2] 的工匠船体与数据 ID；
+- [C1-S3] 的航母、战机、装配和联队；
+- [C1-S5] 的武器 ID 与标签；
+- [C1-S6] 的工匠内置武器；
+- [C2-S2] 的稳定化推进器；
+- [C1-S7] 的 CSV 格式与标签所在列。
 
-## 详细地配置势力文件
+## 保留身份，调整名称与人物
 
-从 [C3-S1] 复制并改完可视身份键的 `gear_industry.faction` 开始。副本中其余段落仍是 hegemony 的内容，本节逐段讲解，并把它们替换为 GearIn 自己的配置。
-
-势力 ID 是 `gear_industry`，以 `齿轮工业` 为显示名，舰船池只使用前面各页已注册的 `GearIn_` 内容，另加两艘原版辅助船。
-
-### 势力注册键
-
-`id` 键是势力在整个生涯里的注册键，市场、舰队与星系实体也都用这个 ID 表示归属，它是后续所有页面引用 GearIn 势力的唯一凭据。
-
-本节沿用 `gear_industry`。`id` 必须全局唯一。
+打开上一节的 `gear_industry.faction`。ID、旗帜和主色继续使用齿轮工业的配置，下面的局部片段补齐两个长名字段：
 
 ```json
-id:"gear_industry",
+{
+    "id": "gear_industry",
+    "displayName": "齿轮工业",
+    "displayNameWithArticle": "齿轮工业",
+    "displayNameLong": "齿轮工业",
+    "displayNameLongWithArticle": "齿轮工业",
+    "color": [180, 120, 60, 255]
+}
 ```
 
-### 势力名称
+普通短名和带冠词的短名已在上一节设置；`displayNameLong` 与 `displayNameLongWithArticle` 用于长名语境，缺省时分别采用对应短名。本例中文环境四项都填 "齿轮工业"。
 
-displayName 系列共四个键，都是势力名的形态变体。`displayName` 是短名，显示在情报界面势力列表、舰队名与对话文本里；`displayNameWithArticle` 是带冠词的短名，在中文里最好与 `displayName` 一致。`displayNameLong` 与 `displayNameLongWithArticle` 是长名形态，用在较长的界面文本里。
+`logo` 与 `crest` 的显示位置沿用上一节。还有五个可选界面颜色字段：`baseUIColor`、`darkUIColor`、`gridUIColor`、`brightUIColor` 与 `secondaryUIColor`，分别控制基础、暗、网格、亮和次级配色。当前保留默认处理，主色仍为 `[180,120,60,255]`。
 
-长名两键不写时分别回落到 `displayName` 与 `displayNameWithArticle`；本节四个键全部显式设置，中文语境下取值一致，均为 `齿轮工业`。
+### 舰船名与人物名
 
-```json
-"displayName":"齿轮工业",
-"displayNameWithArticle":"齿轮工业",
-"displayNameLong":"齿轮工业",
-"displayNameLongWithArticle":"齿轮工业",
-```
-
-### 势力颜色
-
-color 系列决定势力在界面里的颜色观感。`color` 是势力主色，星图上的势力色与情报界面的势力标识都取自它。
-
-势力文件还可以提供 `baseUIColor` / `darkUIColor` / `gridUIColor` / `brightUIColor` / `secondaryUIColor` 五个界面色，用于势力相关界面的基础、暗、网格、亮与次级配色，但也可留空让默认自行处理。本节沿用 [C3-S1] 设置的 `color`，界面色族不设。
-
-```json
-"color":[180,120,60,255],
-```
-
-### 势力旗帜
-
-`logo` 与 `crest` 是势力的两面旗帜。`logo` 大旗显示在情报界面的势力条目里；`crest` 小旗出现在市场、收入、勘测与百科等界面。
-
-本节沿用 [C3-S1] 修改过的 `gear_industry.png` 与 `crest_gear_industry.png`。
-
-```json
-"logo":"graphics/factions/gear_industry.png",
-"crest":"graphics/factions/crest_gear_industry.png",
-```
-
-### 舰船与人物名称
-
-`shipNamePrefix` 与 `shipNameSources` 决定舰船名：引擎为舰船取名时 (`pickRandomShipName`) 用前缀拼上从分类里按权重抽出的词，原版 hegemony 的舰船因此以 `HSS` 起名；本节前缀改为 `GIS`，分类则只使用 `GENERAL` 与 `SPACE`。
-
-`names` 以同样的权重方式决定军官、舰队指挥官与市场联系人的人物名，词典在 `data/characters/person_names.csv`；本节只使用为 `modern` 与 `world` 两类。
+将舰船名前缀改为 `GIS`，名字词典选 `GENERAL` 与 `SPACE`；人物名选 `modern` 与 `world`，局部片段如下：
 
 ```json
 "shipNamePrefix":"GIS",
@@ -91,51 +60,57 @@ color 系列决定势力在界面里的颜色观感。`color` 是势力主色，
 },
 ```
 
-### 装配覆盖
+每个名称后的数字是抽取权重。`pickRandomShipName` 组合舰船名前缀与抽出的名字，人物名字则来自 `data/characters/person_names.csv` 中的分类。
 
-`variantOverrides` 按装配 ID 覆盖势力实际可用的装配并改写其抽取权重，命中的条目在 `pickShip` 抽取时生效。
+名称也是势力风格的一部分。编者建议先选定相互协调的类别，再添加自己的名字；舰队里的舰船与人物会频繁同时出现，随意混合往往比某个名字单独看起来更突兀。
 
-本节不锁定具体变体，整段留空。
+### 头像、头衔与人物声音
+
+`portraits` 按 `standard_male` 和 `standard_female` 提供头像池，本例保留男女各两张原版头像。需要换成自己的图片时，修改对应路径。
 
 ```json
-"variantOverrides":{
+"portraits":{
+	"standard_male":[
+		"graphics/portraits/portrait_hegemony01.png",
+		"graphics/portraits/portrait_mercenary03.png",
+	],
+	"standard_female":[
+		"graphics/portraits/portrait_hegemony03.png",
+		"graphics/portraits/portrait16.png",
+	],
 },
 ```
 
-### 舰船出现倍率
-
-`hullFrequency` 按船体设置出现倍率，直接决定每种船在本势力舰队里出现的频繁程度。`tags` 当场展开为所有带该 tag 的已注册船体，`hulls` 按 ID 指定，`0` 表示绝不出现。
-
-本节给 `GearIn_bp` 设 `1`，让前面各页打上该 tag 的舰船以正常频率进入 GearIn 舰队；但实际上即使不明确写出倍率，该出现的舰船也会按默认频率出现。
+`ranks` 提供军衔和职位名称，人物显示时先用势力自定义值，其余使用 `default_ranks.json`。本例把势力领袖的两种称呼都改为 "总工程师"：
 
 ```json
-"hullFrequency":{
-	"tags":{
-		"GearIn_bp":1,
+"ranks":{
+	"ranks":{
+		"factionLeader":{"name":"总工程师"},
 	},
-	"hulls":{
+	"posts":{
+		"factionLeader":{"name":"总工程师"},
 	},
 },
 ```
 
-### 引入外部蓝图
-
-势力引入其他势力的蓝图时，`shipsWhenImporting` 声明此时额外可用的船体，它是一个独立于 `knownShips` 的集合，加载期单独登记。**但一般来说不会大量使用这个功能**。
-
-留空则回退为 `knownShips`；本节不涉及外部蓝图，整段留空。
+`voices` 影响人物对话的行文与气质。LOW、MEDIUM、HIGH 对应人物重要度，分类值同样是权重。本例使用 soldier、spacer、official 与 aristo：
 
 ```json
-"shipsWhenImporting":{
-	"tags":[],
-	"hulls":[],
+"voices":{
+	"LOW":{"soldier":5,"spacer":5},
+	"MEDIUM":{"official":5,"soldier":5},
+	"HIGH":{"official":5,"aristo":2},
 },
 ```
 
-### 舰船池
+LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIGH 以 official 为主。这些都是原版已定义的类型，完整成品中保留对应分类。
 
-`knownShips` 是势力的舰船池：舰队生成时 `pickShip` 只从池里抽船，舰队里出现什么船完全由池决定。tags 与 ID 直列两种写法可混用，tags 里的 `gear_industry` 是本节定义的势力专属 tag，打在 `ship_data.csv` 的 tags 列即可让对应船体入池。
+## 将自己的军备放入势力集合
 
-本节收入前面各页注册的 `GearIn_artizan` 与 `GearIn_furnaceman`，另加原版辅助船 `dram` 与 `valkyrie` 补充后勤运力。`priorityShips` 把所列船体标记为优先，舰队生成会显著偏向它们，会极大地改动势力舰船构成，一般不填。
+此前多次填写的 `GearIn_bp` 现在开始发挥作用。**势力在 `tags` 中填写这个标签，会收集对应注册表中带有它的对象。** 还可以在各自的 ID 数组中直接列出单个对象，两种写法可以混用。
+
+### 设置舰船池
 
 ```json
 "knownShips":{
@@ -153,21 +128,11 @@ color 系列决定势力在界面里的颜色观感。`color` 是势力主色，
 },
 ```
 
-::: info 舰船池的加载与抽取细节
+`knownShips` 使用船体 ID，纳入工匠与守炉人，并保留原版 `dram`、`valkyrie` 补充后勤运力。`gear_industry` 在这里同时作为自定义标签使用，可以写进船体数据的 tags 列。
 
-加载期，`loadFactionList` 逐块处理 `known*` 与 `priority*`。`tags` 数组里的每个 tag 去对应的注册表找出带该 tag 的对象：`knownShips` 查船体、`knownWeapons` 查武器、`knownFighters` 查联队、`knownHullMods` 查船插；ID 数组则直接入集合。
+`priorityShips` 的对象会在优先抽取模式中获得优先位置，明显改变舰队构成，本例保持空集合。后续按角色挑选装配时，船体要先属于已知舰船池。
 
-抽取时，`pickShip` 先过滤再加权。船体必须在 `knownShips` 里 (`knowsShip`)，出现频率再乘上 `hullFrequency` 的倍率；`ShipPickMode` 决定抽取范围，`priority*` 集合在优先模式下先被抽中。
-
-有两个坑要留意。**拼错的 tag 或 ID 不会报错**，只是匹配不到任何对象，池子悄悄变小。排查 "势力缺船" 时，先对照各注册表的 tags 列逐字核对。另外，抽取权重带缓存，运行时改动舰船池后要调 `clearShipRoleCache()`，否则改动不会生效。
-
-:::
-
-### 战机、武器与船插池
-
-`knownFighters`、`knownWeapons` 与 `knownHullMods` 与舰船池同一套语义，分别决定势力舰队的航母携带哪些联队、舰船装备哪些武器、autofit 自动装配可以使用哪些船插。
-
-本节只收入前面各页注册的 `GearIn_slag_wing`、`GearIn_durin`、`GearIn_dwalin` 与 `GearIn_stable_injector`；`knownHullMods` 的 tags 保留原版通用 tag `standard`，让原版通用船插照常入池。三个对应的 `priority*` 段全部留空，且一般来说最好留空。
+### 设置战机、武器与船插
 
 ```json
 "knownFighters":{
@@ -185,6 +150,8 @@ color 系列决定势力在界面里的颜色观感。`color` 是势力主色，
 	"weapons":[
 		"GearIn_durin",
 		"GearIn_dwalin",
+		"lightdualac",
+		"phasecl",
 	],
 },
 "priorityWeapons":{
@@ -199,13 +166,47 @@ color 系列决定势力在界面里的颜色观感。`color` 是势力主色，
 },
 ```
 
-### 舰队学说
+战机集合使用联队 ID `GearIn_slag_wing`，武器集合使用武器 ID，船插集合使用船插 ID。本例同时保留 `standard` 标签，以便使用原版通用船插。
 
-`factionDoctrine` 决定生涯里势力舰队的编成风格。
+本节的工匠装配使用 `lightdualac` 与 `phasecl`，因此也把它们加入已知武器。**军备池和实际装配需要一起安排**；完全脱离原版军备当然可以，但要先有足够的自制内容支撑舰队。
 
-`warships` / `carriers` / `phaseShips` 是战舰、航母与相位舰的编成比例；`officerQuality` / `shipQuality` / `numShips` 控制军官质量、船体质量与舰队规模倾向；`shipSize` 偏向船型大小，`aggression` 偏向军官性格的激进程度；`officerSkills` 与 `commanderSkills` 给军官和指挥官指定技能。
+加载时，标签分别在船体、联队、武器和船插注册表中展开。拼错标签或直接列出的 ID，集合可能会缺少对象而没有明显加载提示，排查时与各表的 tags 和 id 列逐字核对。
 
-本节按玩家势力编辑器的取值习惯填写：组内总和 7、单项 1–5。
+运行时，`FactionAPI.pickShip` 先限定已知船体，再结合角色与权重抽取。`ShipPickMode` 影响抽取范围；运行中改变舰船池后，`clearShipRoleCache()` 清理抽取缓存，让新配置进入下一次选择。
+
+## 调整舰船出现频率
+
+`hullFrequency` 为船体提供出现倍率，下面给 `GearIn_bp` 设为 1：
+
+```json
+"hullFrequency":{
+	"tags":{
+		"GearIn_bp":1,
+	},
+	"hulls":{
+	},
+},
+```
+
+`tags` 按标签收集船体，`hulls` 按具体 ID 调整。1 为正常倍率，0 表示该船体不参与这类抽取。默认频率已经足以使用普通候选；只有需要偏向或排除对象时，再为它单独配置。
+
+`variantOverrides` 以装配 ID 限定可用装配或调整其权重，当前保持空对象。`shipsWhenImporting` 则提供势力引入外部蓝图时使用的独立舰船集合；留空时使用 `knownShips`。两个局部片段如下：
+
+```json
+"variantOverrides":{
+},
+```
+
+```json
+"shipsWhenImporting":{
+	"tags":[],
+	"hulls":[],
+},
+```
+
+## 确定舰队学说
+
+舰队学说决定组成与风格。**军备池提供可以使用的对象，学说决定倾向怎样组织它们。** 本例以普通战舰为主，保留一部分航母和相位舰，军官质量较高，船体质量与数量采用较低档位。
 
 ```json
 "factionDoctrine":{
@@ -240,23 +241,88 @@ color 系列决定势力在界面里的颜色观感。`color` 是势力主色，
 },
 ```
 
-::: info 学说的解析与运行时读取
+`warships`、`carriers` 与 `phaseShips` 控制三类舰船比例；`officerQuality`、`shipQuality` 与 `numShips` 控制军官、船体质量和数量倾向。`shipSize` 偏向船型大小，`aggression` 偏向军官性格。`officerSkills` 与 `commanderSkills` 分别指定军官和指挥官技能，ShuffleProbability 控制相应技能选择的随机程度。
 
-写了 `factionDoctrine` 块，就有六个键不能少：`warships`、`carriers`、`phaseShips`、`officerQuality`、`shipQuality`、`numShips`。少任何一个，加载当场以 `JSONObject["<键>"] not found` 中断。
+两个三项组都按玩家势力编辑器的习惯取总和 7、单项 1–5。这是本例的设计约定；文件读取允许其他数值，游戏内编辑器则采用该范围。
 
-可选键有缺省值兜底：`shipSize`、`aggression` 与 `fleets` 缺省为 3，`autofitRandomizeProbability` 缺省为 0.25，`strictComposition` 缺省为 false。
+`combatFreighterProbability` 控制替换为武装货舰的比例，两个 CombatUseFraction 调整它们进入战斗阵容的权重。`autofitRandomizeProbability` 控制装配随机化，本例填 0.1。
 
-加载之后，学说成为 `FactionDoctrineAPI`，运行时可经 `FactionAPI.getDoctrine()` 读写。船体质量贡献按 `(shipQuality - 1) * doctrineFleetQualityPerPoint` 计算，`settings.json` 里这个系数是 0.125。
+### 学说读取规则速查表
 
-游戏内的势力编辑器与文件使用同一组字段，编辑器把两组各三条的总和固定为 7、单项 1–5；文件本身并不校验这些范围，越界值照样能加载。
+| 内容 | 规则 |
+|---|---|
+| 必填整数 | warships、carriers、phaseShips、officerQuality、shipQuality、numShips |
+| shipSize、aggression、fleets | 缺省为 3 |
+| autofitRandomizeProbability | 缺省为 0.25 |
+| strictComposition | 缺省为 false |
+| 船体质量贡献 | `(shipQuality - 1) * doctrineFleetQualityPerPoint` |
+| 当前质量系数 | `settings.json` 中为 0.125 |
+| 运行时对象 | `FactionAPI.getDoctrine()` 返回 `FactionDoctrineAPI` |
 
-:::
+配置了学说对象后，六个必填整数都需要存在；缺少时会出现对应的 JSON 键错误。设置完整后再进入游戏比较实际编成。
 
-### 违禁商品
+## 准备当前可用的舰船装配
 
-`illegalCommodities` 声明在该势力市场属于违禁的商品：市场规格创建时读入这份列表，情报界面的非法货物面板也按势力展示违禁商品的列表。
+舰队使用的是装配 ID。战机制作时已经接触过 `.variant`，本节沿用同一结构，为工匠创建 `data/variants/GearIn_artizan_faction.variant`：
 
-本节只使用 `drugs` 与 `organs` 两项。
+```json
+{
+    "displayName": "Faction",
+    "fluxCapacitors": 0,
+    "fluxVents": 0,
+    "hullId": "GearIn_artizan",
+    "hullMods": [],
+    "variantId": "GearIn_artizan_faction",
+    "weaponGroups": [
+        {
+            "autofire": false,
+            "mode": "LINKED",
+            "weapons": {
+                "WS0005": "lightdualac",
+                "WS0006": "lightdualac"
+            }
+        },
+        {
+            "autofire": true,
+            "mode": "ALTERNATING",
+            "weapons": {
+                "WS0001": "phasecl",
+                "WS0002": "phasecl"
+            }
+        }
+    ]
+}
+```
+
+`hullId` 指向工匠，`variantId` 定义本节的装配 ID。两门双联轻型自动炮填入 WS0005、WS0006，两门相位长矛填入 WS0001、WS0002。槽位 ID 按 [C1-S2] 的实际船体检查，[C1-S6] 的内置都林仍由船体提供。
+
+这是当前用于角色登记的装配。后续 [C4-S1] 会通过测试战役导出更多配置，再按相同方法添加到角色表；航母联队则写在航母装配的 `wings` 数组中，并从 `knownFighters` 取得可用联队。
+
+## 登记舰队角色
+
+创建 `data/world/factions/default_ship_roles.json`，把工匠装配放进 `combatSmall`：
+
+```json
+{
+    "combatSmall": {
+        "GearIn_artizan_faction": 10
+    }
+}
+```
+
+每个角色保存 "装配 ID → 权重"。战斗角色还有 combatMedium、combatLarge、combatCapital，航母角色包括 carrierSmall 等。角色名用于选择该类候选装配。
+
+**这个共享文件只写 MOD 自己添加的条目。** 同路径数据按角色对象合并，同键条目会被新值覆盖；保留自己的记录便于维护。势力文件也可以设置独立 `shipRoles`，有自己的角色内容时优先使用，缺失或为空时使用共享角色表。
+
+`includeDefault: true` 会把同名角色的默认条目纳入独立角色配置。当前走共享表，直接追加自有装配即可。登记时需要已经存在对应装配，错误 ID 会在加载阶段产生 `Ship hull variant [X] not found!`。
+
+角色查询也有将 `_wing` 后缀按联队解析的行为；本例使用舰船装配来定义舰队角色，航母联队由装配的 `wings` 提供。
+
+## 设置市场、音乐与行为字段
+
+### 违禁商品与音乐
+
+`illegalCommodities` 决定势力市场的违禁品，情报面板也显示这一列表。本例填写 `drugs` 和 `organs`，ID 取自 `data/campaign/commodities.csv`。
 
 ```json
 "illegalCommodities":[
@@ -265,11 +331,7 @@ color 系列决定势力在界面里的颜色观感。`color` 是势力主色，
 ],
 ```
 
-### 场景音乐
-
-`music` 把势力相关的各场景映射到已注册的音乐 ID，由音乐播放器在对应场景取曲播放。`theme` 是势力主题曲；`market_neutral` / `market_hostile` / `market_friendly` 在访问该势力市场时按关系状态播放；`encounter_neutral` / `encounter_hostile` / `encounter_friendly` 在生涯遭遇该势力舰队时播放。
-
-这些 ID 必须已在 `sounds.json` 注册，本节沿用副本的 `music_hegemony_*` 系列，它们的注册链见 [C5-S2]。
+`music` 把场景对应到音乐 ID。主题、市场中立／敌对／友好、舰队遭遇中立／敌对／友好分别读取下面的键：
 
 ```json
 "music":{
@@ -283,69 +345,13 @@ color 系列决定势力在界面里的颜色观感。`color` 是势力主色，
 },
 ```
 
-### 内部频道
+这里沿用原版已登记的 `music_hegemony_*`；自定义音乐的登记由 [C5-S2] 讲解。
 
-副本携带 `internalComms:"hegemony_internal"`，值指向 `data/campaign/channels.json` 里注册的情报频道 (原版即 "Hegemony Intelligence")。
+`internalComms` 保留原版的 `hegemony_internal`，指向 channels.json 的原版情报频道。当前原版会解析这个字段，具体游戏行为并不使用它，本节沿用副本值。
 
-**但它不被任何游戏系统读取，写入与否完全不影响游戏**。本节保留副本原值，仅仅是出于习惯。
+### 自定义行为开关
 
-```json
-"internalComms":"hegemony_internal",  # 原版只解析不读取，写入与否不影响游戏；沿用原版频道占位
-```
-
-### 人物头像池
-
-`portraits` 是随机人物头像池：势力生成军官、舰队指挥官与市场联系人时，按 `standard_male` / `standard_female` 从池里抽取。
-
-本节只使用男女各二的四张原版头像，如需使用自己的头像贴图，自行替换路径即可。
-
-```json
-"portraits":{
-	"standard_male":[
-		"graphics/portraits/portrait_hegemony01.png",
-		"graphics/portraits/portrait_mercenary03.png",
-	],
-	"standard_female":[
-		"graphics/portraits/portrait_hegemony03.png",
-		"graphics/portraits/portrait16.png",
-	],
-},
-```
-
-### 势力头衔
-
-`ranks` 与 `posts` 改写势力的头衔与职位名，显示在本势力重要人物的名称旁与对话称呼里：解析人物身份时先查势力自己的覆写表，没有覆盖的条目回退 `data/world/factions/default_ranks.json` 的默认值。
-
-本节只象征性地覆写势力领袖，`factionLeader` 的头衔与职位都定为 `总工程师`，其余沿用原版默认。
-
-```json
-"ranks":{
-	"ranks":{
-		"factionLeader":{"name":"总工程师"},
-	},
-	"posts":{
-		"factionLeader":{"name":"总工程师"},
-	},
-},
-```
-
-### 联络人声音
-
-`voices` 决定本势力随机人物的声音类型。`LOW` / `MEDIUM` / `HIGH` 三档对应人物的重要度档位 (`PersonImportance`)：生成人物时按其重要度进入对应档位的权重器 (`pickVoice`)，抽出的声音类型决定人物的对话行文与气质，可选类型是原版已定义的 spacer、official、soldier、aristo 等。
-
-本节沿用副本的三档结构与取值，LOW 档以 soldier / spacer 为主，MEDIUM 档以 official / soldier 为主，HIGH 档以 official 为主。
-
-```json
-"voices":{
-	"LOW":{"soldier":5,"spacer":5},
-	"MEDIUM":{"official":5,"soldier":5},
-	"HIGH":{"official":5,"aristo":2},
-},
-```
-
-### 势力行为开关
-
-`custom` 是自由键值表，原版各系统按键读取其中的开关，每个键的效果过于冗长，因此只以备注直接写在片段注释里。本例将按适当的方式取值。
+`custom` 保存各系统读取的行为参数，按照当前设计替换为：
 
 ```json
 "custom":{
@@ -372,35 +378,15 @@ color 系列决定势力在界面里的颜色观感。`color` 是势力主色，
 },
 ```
 
-## 接入舰队装配
+这组配置决定委任、收购、关系事件、走私交易、基地与远征等行为。参数旁的注释说明当前用途；需要扩展某种行为时，再结合对应系统调整。
 
-faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`combatSmall`、`combatMedium`、`combatLarge`、`combatCapital`、`carrierSmall` 等) 从角色表里抽装配。角色表有两个层级：势力文件自己的 `shipRoles` 段优先生效，缺失或为空时改用全 MOD 共享的 `default_ship_roles.json`；本节不写文件内段，统一走共享角色表。
-
-角色表就是共享的 `default_ship_roles.json`：没有它 (或没有本 MOD 的条目)，装配就不会出现在生涯舰队里，势力只能改用原版装配。
-
-在 MOD 中新建 `data/world/factions/default_ship_roles.json`，**只提交自己的角色条目** (这个文件跨来源按角色对象合并；整份复制会覆盖同键条目，版本不同步时留下陈旧配置)：
-
-::: caution 只提交自己的角色条目，禁止整份复制原版文件
-
-`default_ship_roles.json` 跨来源按角色对象合并：整份复制原版文件会用同键条目的副本值覆盖原版值，版本不同步时会留下陈旧配置，但不会删除原版角色。MOD 只提交自己的角色条目。
-
-:::
-
-每个条目是 `装配 ID → 权重`。**查不到装配会当场抛 `Ship hull variant [X] not found!` 并中断加载**。`includeDefault: true` 可把原版同名角色的条目复制进来再叠加自己的条目 (参考原版文件里各角色的写法；本教程示例不使用)。
-
-注意角色表里只放**舰船装配**：航母角色 (`carrierSmall` 等) 的条目是航母船体的装配，战机联队不进角色表 —— 联队经由舰船装配的 `wings` 数组 [C4-S1] 与 `knownFighters` 池进入舰队。
-
-角色条目 (`RoleEntryAPI`) 对 `_wing` 结尾的 ID 有按联队 ID 查找的历史兼容路径，原版数据不使用它，本教程也不建议使用。
-
-想加更多装配 (例如按 [C4-S1] 的导出流程为其它船体做的装配)，按同一格式加行即可。
-
-装配文件进入角色表后，`knownShips` 先限定势力知道的船体，角色表再限定可抽取的装配；`hullFrequency` 与 `priority*` 调整候选权重，`pickShip` 按这些条件返回装配。
-
-势力文件和舰队配置已经就位。[C3-S3] 将创建 MOD 入口类，并在新档生成时为 `gear_industry` 设置初始关系。
+完整文件还可以用 `weaponSellFrequency`、`fighterSellFrequency` 和 `hullmodSellFrequency` 调整原版市场的装备出售频率，它们与舰队出现频率分别服务于对应位置。
 
 ## 完整最小例
 
-以下文件是副本中全部段落替换完成后的最终形态。势力文件写入 `data/world/factions/gear_industry.faction`；装配角色表写入 `data/world/factions/default_ship_roles.json`(文件不存在就新建)。
+势力配置写入 `data/world/factions/gear_industry.faction`，角色表采用上面的内容，工匠装配保存到 `data/variants/GearIn_artizan_faction.variant`。`factions.csv` 继续登记 [C3-S1] 的路径。
+
+::: details 完整势力配置：gear_industry.faction
 
 ```json
 {
@@ -466,6 +452,8 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 		"weapons":[
 			"GearIn_durin",
 			"GearIn_dwalin",
+			"lightdualac",
+			"phasecl",
 		],
 	},
 	"priorityWeapons":{
@@ -493,8 +481,8 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 		"aggression":2,   # 越大越偏向鲁莽军官，建议 1–5
 
 		"combatFreighterProbability":0.1,                  # 用武装货舰替换部分货舰的概率
-		"combatFreighterCombatUseFraction":0,              # 舰队损失到低于此比率时才把武装货舰当战舰用
-		"combatFreighterCombatUseFractionWhenPriority":0,  # 标记为优先时武装货舰当战舰用的概率
+		"combatFreighterCombatUseFraction":0,              # 舰队生成时把武装货舰并入战斗阵容的权重倍率
+		"combatFreighterCombatUseFractionWhenPriority":0,  # 标记为优先时武装货舰加入战斗阵容的权重倍率
 		"autofitRandomizeProbability":0.1,                 # 自动装配打乱程度
 
 		"officerSkillsShuffleProbability":1,
@@ -570,13 +558,7 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 }
 ```
 
-```json
-{
-	"combatSmall":{
-		"GearIn_artizan_combat":10,
-	},
-}
-```
+:::
 
 ## 势力字段速查表
 
@@ -604,25 +586,9 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 | `voices` | 人物声音类型权重 (按重要度分档) |
 | `custom` | 势力行为开关 |
 
-## 验证方案
+## 生成型标签速查表
 
-前置数据：[C1-S1] 的 `mod_info.json`、[C1-S2] 的船体 (`GearIn_artizan`)、[C1-S3] 的联队与航母 (`GearIn_slag_wing`、`GearIn_furnaceman`)、[C1-S5] 的武器 (`GearIn_durin`、`GearIn_dwalin`)、[C2-S2] 的船插 (`GearIn_stable_injector`)、[C4-S1] 的装配 (`GearIn_artizan_combat` 等)、本节的 `factions.csv`、`gear_industry.faction`、`default_ship_roles.json`。
-
-1. 启动游戏，加载到主菜单，检查 `starsector.log`。
-2. 进入生涯 (或读取已有生涯存档)，按 `F` 打开情报。
-3. 在星区里遭遇或靠近齿轮工业的巡逻队/贸易队。
-4. 与齿轮工业舰队交互，核对舰船、装配和舰队学说表现。
-
-预期结果：
-
-- 启动游戏加载到势力阶段时，`starsector.log` 出现 `Loading factions`、`Loading default_ship_roles.json` 与 `Loading gear_industry faction`，之后没有任何 `ERROR`。
-- 进入生涯 (或任意读取生涯的存档) 后，按 `F` 打开情报 (intel)，齿轮工业出现在势力列表里，显示名、颜色、大旗 (logo) 与小旗 (crest) 与 faction 文件一致。
-- 齿轮工业生成的巡逻队、贸易队使用 `knownShips` 里的舰船，组成符合 `factionDoctrine`(战舰/航母比例、船型大小、军官质量)；`GearIn_artizan` / `GearIn_furnaceman` 及其在 `default_ship_roles.json` 里的装配出现在其舰队中；`hullFrequency` 里倍率为 0 的船体永不出现。
-- 市场蓝图与打捞层面：带 `rare_bp` 的组件不出现在本势力默认池里，符合掉落池规则 (本节不展开市场)。
-
-## 实用势力包 (bp) 与其它生成型 tags 速查表
-
-下表 tag 存在性来自 `data/weapons/weapon_data.csv`、`data/hulls/ship_data.csv`、`data/hulls/wing_data.csv`、`data/hullmods/hull_mods.csv`；"引用它的势力文件" 来自 `data/world/factions/*.faction`。**原版势力文件还引用本表外的生成 tag：`LG_bp`、`LC_bp`、`dweller`、`threat`。**
+标签位于船体、武器、联队与船插各自的 CSV 中，对应集合按对象类别收集。原版势力还使用 LG_bp、LC_bp、dweller 和 threat 等标签。
 
 | tag | 引用它的原版势力文件 | 实际意义 |
 |---|---|---|
@@ -652,59 +618,61 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 | `hist1t` / `hist2t` / `hist3t` | 无 | 与历史学家相关的蓝图筛选 tag |
 | `standard` | 11 个势力文件 | 通用船插 tag：`knownHullMods` 用它作为基础船插的默认来源，等价于武器侧的 `base_bp` |
 
-船体的 tag 打在 `ship_data.csv` 的 `tags` 列，武器打在 `weapon_data.csv` 的 `tags` 列，战机联队打在 `wing_data.csv`，船插打在 `hull_mods.csv` 的 `tags` 列 ([C1-S2] / [C1-S5] / [C2-S2] 各自的注册页)。
+`GearIn_bp` 用于本教程自有军备，写入 CSV 的 tags 后，再在势力 `known*` 的 tags 中引用。按明确的对象集合使用标签，后续增加军备时可以沿用同一个入口。
 
-打出 `GearIn_bp` 后，本节 `knownShips` 等块里写上 `"GearIn_bp"` 即自动导入。
+## 验证方案
 
-::: info 为什么例子里的 tags 与旧教程不同
+前置数据：已启用 Console Commands，以便生成当前势力测试舰队。
 
-旧版教程示例给 `knownShips` 写了 `base_bp`、`lowtech_bp` 等一串 tag。
+1. 保存势力文件、工匠装配与角色表，重启游戏，检查 factions、default_ship_roles 和装配的加载记录。
+2. 进入生涯，打开情报中的齿轮工业，核对名称、旗帜、颜色与违禁品。
+3. 执行 `SpawnFleet gear_industry 60`，观察玩家附近的测试舰队，检查工匠及其装备。
+4. 多次生成测试舰队，核对军备集合、装配与出现权重；Console Commands 的该命令用于军备和装配接入检查。
+5. 本章星系和市场建立后，再观察原版生成的该势力舰队，比较舰队学说的组成、船型、军官和质量倾向。
 
-这些 tag 仍然存在，但霸主等正规势力已经在 `hulls` 数组里显式列出全部舰船；势力专属 tag(`hegemony`、`GearIn_bp`、`gear_industry`) 仍然是舰队池的推荐入口。
+预期结果：
 
-**给自家舰船打上专属 tag 并从 tags 导入，永远比逐个列举船体更省事。**
-
-:::
+- 势力与装配加载完成，角色表能读取 `GearIn_artizan_faction`。
+- 情报中的名称、旗帜、颜色和违禁品与配置一致。
+- 测试舰队可以使用已知池中的工匠及登记装配。
+- 标签、直接 ID、角色与权重共同参与候选选择，频率为 0 的船体不进入该候选抽取。
+- 原版生成的舰队按学说组织；测试命令的编成采用其自身生成参数。
+- 市场与打捞使用各自的标签筛选，按 rare_bp、restricted 和对应掉落标签核对。
 
 ## 故障分析
 
-- **势力完全没有出现**：`factions.csv` 缺失、表头不是 `faction`、行首带 `#`、路径错误，或 faction 文件缺少 `id` 时，日志不会出现 `Loading gear_industry faction`。
-    - **解决方案**：确认 CSV 第一行是 `faction`，第二行是相对 MOD 根目录的完整路径，以 UTF-8 无 BOM 保存并重启。
+- **势力没有加载**：注册表路径、表头或行首注释错误。
+    - **解决方案**：核对 faction 表头与相对 MOD 根目录的文件路径，保存后重启。
 
-- **游戏加载中断，进不了主菜单**：faction JSON 语法错误，必填字段或 `factionDoctrine` 的整数键缺失，或 `illegalCommodities` 引用了无效商品 ID 时，`Loading factions` 后会抛出 `JSONException` 或 `RuntimeException`。
-    - **解决方案**：补齐字段并从 `data/campaign/commodities.csv` 选取有效 ID，重启。
+- **加载时报 JSON 错误**：必填字段、学说整数或数据结构缺失。
+    - **解决方案**：按日志键名检查字段，保留六项学说整数和完整身份数据。
 
-- **势力 ID 与其他来源冲突**：两份 faction 文件产生相同 `id` 时，加载会出现 `Spec of class [...] with id [X] already exists`。
-    - **解决方案**：改用全局唯一 ID，并对照 `data/world/factions/factions.csv`，重启。
+- **加载时报重复势力 ID**：其他已启用来源使用相同 ID。
+    - **解决方案**：核对势力注册值及后续引用，保留唯一身份。
 
-- **势力舰队里没有自己的船**：`default_ship_roles.json` 缺失或为空时 `pickShip` 会改用共享默认角色表并抽取原版装配；装配 ID 拼错或目标装配尚未注册时不会回退 —— 角色表在创建阶段立即校验，抛 `Ship hull variant [X] not found!` 中断加载。联队由航母装配的 `wings` 数组提供。
-    - **解决方案**：只提交自己的舰船装配角色并核对 `data/variants` 中的 ID，重新生成舰队。
+- **角色表报告 Ship hull variant [X] not found!**：装配尚未保存，或角色条目使用不同 ID。
+    - **解决方案**：核对 `.variant` 中的 `variantId`，再登记同一值。
 
-- **加载中断并报告 `Ship hull variant [X] not found!`**：`default_ship_roles.json` 或 faction `shipRoles` 中的 ID 无法解析时，`RoleEntryAPI` 会在创建阶段立即校验；以 `_wing` 结尾的 ID 按联队查询。
-    - **解决方案**：删除无效条目或改成已注册 variant、wing ID，重启。
+- **舰队缺少某种自制舰船**：船体不在 knownShips，装配未进入可用角色，或出现倍率为 0。
+    - **解决方案**：依次核对注册表、标签、装配和角色，调整权重后重新生成。
 
-- **某些势力舰船始终不出现**：`hullFrequency` 为 0、船体不在 `knownShips`，或它在普通池中被概率选择淹没时，生成结果会静默缺少该船。
-    - **解决方案**：把倍率设为大于 0，核对 `knownShips.tags` 与 `ship_data.csv` 的 tags，必要时加入 `priorityShips`，重复生成。
+- **运行时修改军备后抽取结果保持原样**：角色缓存仍保存原来的候选。
+    - **解决方案**：通过 `clearShipRoleCache()` 清理缓存，再进行下一次抽取。
 
-- **加载阶段报告势力贴图错误**：`logo`、`crest` 或头像路径指向不存在的文件时，TEXTURE 资源加载会直接失败。
-    - **解决方案**：以 MOD 根目录为基准，把 410×256 和 256×256 PNG 放入 `graphics/factions/` 并核对文件名，重启。
+- **资源加载报 TEXTURE 错误**：旗帜或头像路径没有对应文件。
+    - **解决方案**：以 MOD 根目录为基准核对图片目录、名称与大小写。
 
-- **情报中的势力颜色不正确**：`color` 数组少于 4 个元素时，加载会抛出 `Color array with id [color] has less than 4 elements`。
-    - **解决方案**：补齐 RGBA 四项并重启。
+- **势力颜色或名称不符**：RGBA 项数错误，或名称的语境变体不同。
+    - **解决方案**：填写四项颜色值，并在中文配置中统一对应名称字段。
 
-- **情报中的势力名称不正确**：`displayName` 与 `displayNameWithArticle` 不一致时，界面会选用不同的冠词变体。
-    - **解决方案**：中文环境将两个字段写成同一字符串，重启。
-
-- **势力蓝图或打捞池缺少组件**：`drop_groups.csv` 选择 `rare_bp` 并排除 `no_drop` 和 `restricted`，标签组合错误会让组件静默离开掉落池。
-    - **解决方案**：可掉落组件使用 `rare_bp`，受限组件使用 `restricted`，重新生成掉落。
+- **蓝图或打捞结果不符**：组件标签没有满足对应掉落池的筛选。
+    - **解决方案**：按 drop_groups.csv 核对 rare_bp、restricted、no_drop 与其他相关标签。
 
 ## 总结
 
-本节把 [C3-S1] 副本中剩余的 hegemony 段落逐段替换为 GearIn 自己的配置，接通舰船池、角色表和舰队学说。`FactionAPI.pickShip` 只从势力已知的船体和可用角色中选择装配，`hullFrequency` 与优先集合继续改变抽取权重。
+势力的军备集合、角色装配与学说共同决定舰队配置。标签收集对象，装配指定具体装备，角色为生成提供候选，出现倍率与优先集合再调整权重。
 
-`known*` / `priority*` 的 tags 会展开为候选集合，角色表决定装配可用性，`pickShip` 再按过滤结果和权重抽取；势力 `shipRoles` 为空时使用共享 `default_ship_roles.json`，`factionDoctrine` 与玩家势力编辑器读取同一组学说字段。
-
-调试时先核对舰船池是否包含目标船体、装配是否进入角色表，以及学说字段是否完整。势力的运行时关系由 [C3-S3] 的 MOD 入口类在新档生成时设置。
+本节把霸主副本改为齿轮工业的配置，并提供了可以立即登记的工匠装配。接下来通过 MOD 入口设置关系、创建星系和市场，这些军备与人物配置会继续用于生涯内容。
 
 ## 建议参考项
 
@@ -724,3 +692,4 @@ faction 文件只决定 "势力知道哪些船"，舰队生成时按角色 (`com
 - `data/weapons/weapon_data.csv`：武器注册表，按 `tags` 列核对 tag 存在性；
 - `data/hulls/wing_data.csv`：战机联队注册表，按 `tags` 列核对 tag 存在性；
 - `data/hullmods/hull_mods.csv`：船插注册表，按 `tags` 列核对 tag 存在性。
+- `Starsector/mods/Console Commands/data/console/commands.csv`：`SpawnFleet` 参数及测试适用范围。

@@ -1,0 +1,2 @@
+bar event id,tags,freq,prob,min dur,max dur,min timeout,max timeout,min accepted timeout,max accepted timeout,plugin
+GearIn_bar_hub,,10,1,30,40,30,40,60,90,data.scripts.gearin.campaign.GearInBarHubMission

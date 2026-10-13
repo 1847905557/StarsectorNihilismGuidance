@@ -1,64 +1,77 @@
 # 读取战斗对象
 
-战斗引擎提供了多组对象集合。读取对象时先选择正确的集合，再用对象自身的位置、存活状态和当前帧状态完成观察；本节用 `addFloatingText(...)` 把遍历结果直接显示在战场上。
+战斗状态已经可以读取，接下来选择实际对象集合。本节分别观察舰船、部署成员、弹体、导弹和光束，用浮动文字标明位置与当前信息。对象来源不同，过滤条件和附着位置也按各自类型处理。
 
-*本节预期阅读时间：~14 分钟。*
+*本节预期阅读时间：\~14 分钟。*
 
-*本节预期操作时间：~20 分钟。*
+*本节预期操作时间：\~20 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 从引擎集合读取舰船、弹体、导弹和光束；
-- 过滤残骸、未部署成员和无效实体；
-- 为对象选择位置与附着对象；
-- 用浮动文字确认遍历结果。
+- 从引擎读取四类战斗对象和部署映射；
+- 按存活、部署与当前帧信息选择对象；
+- 设置浮动文字的位置和附着实体；
+- 在当前战斗内按间隔观察集合。
 
 ## 前置知识
 
-- [C8-S1] 的当前 `CombatEngineAPI` 和暂停判断；
-- [C8-S3] 的每帧战斗插件接入方式；
-- Java `for` 循环、`instanceof` 和对象方法调用；
-- `addFloatingText(Vector2f, String, float, Color, CombatEntityAPI, float, float)` 的参数顺序。
+- [C8-S1] 的状态插件、登记与当前引擎；
+- [C7-S2] 的战斗引用范围；
+- Java 循环、`instanceof` 和对象方法；
+- 能够部署舰船，使用弹体、导弹与光束。
 
-## 遍历舰船
+## 在现有插件中加入观察入口
 
-`engine.getShips()` 返回当前引擎对象表中的 `ShipAPI`。对象表包含残骸和等待移除的舰船，因此需要先用 `isAlive()` 过滤。玩家舰船还需要结合 `getPlayerShip()`、`isHulk()` 和 `isEntityInPlay()` 判断实际状态。
-
-下面的片段放在每帧插件的 `advance()` 中，显示每艘存活舰船的船体 ID：
+沿用上一节 `GearInCombatStatePlugin`。添加下面的 `import`，原有 `import` 保留：
 
 ```java
-for (ShipAPI ship : engine.getShips()) {
-    if (!ship.isAlive()) {
-        continue;
-    }
-    engine.addFloatingText(
-            ship.getLocation(),
-            "ship " + ship.getHullSpec().getHullId(),
-            12f,
-            Color.WHITE,
-            ship,
-            0f,
-            0.5f);
+import java.awt.Color;
+
+import com.fs.starfarer.api.combat.BeamAPI;
+import com.fs.starfarer.api.combat.CombatEntityAPI;
+import com.fs.starfarer.api.combat.DamagingProjectileAPI;
+import com.fs.starfarer.api.combat.DeployedFleetMemberAPI;
+import com.fs.starfarer.api.combat.MissileAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.mission.FleetSide;
+```
+
+字段区添加局部计时器：
+
+```java
+private final IntervalUtil objectInterval = new IntervalUtil(0.25f, 0.25f);
+```
+
+在 `advance` 的暂停判断之后增加观察计时，当前先调用 `showShips`：
+
+```java
+objectInterval.advance(amount);
+if (objectInterval.intervalElapsed()) {
+    showShips();
 }
 ```
 
-`getDeployedCopyDFM()` 提供部署成员与场上舰船的映射。它适合回答 "哪些舰队成员已经部署"，而 `getShips()` 适合回答 "当前对象表里有哪些舰船"。读取成员时跳过战机联队和空间站模块，再从 `member.getShip()` 取得场上实体：
+下面分别给出五种观察方法。每次选择一种调用，方法保留在同一个插件类中。**观察结果先按对象来源分开**，密集同时标记所有弹体与光束，会影响判断。
+
+## 舰船与部署成员
+
+`getShips` 读取当前引擎对象表，它也包含残骸和等待移除的舰船，因此先判断 `isAlive`。玩家舰还可以结合 `getPlayerShip`、`isHulk` 与 `isEntityInPlay` 检查当前状态。
+
+将以下局部方法加入类中：
 
 ```java
-for (DeployedFleetMemberAPI member : engine
-        .getFleetManager(FleetSide.PLAYER).getDeployedCopyDFM()) {
-    if (member.isFighterWing() || member.isStationModule()) {
-        continue;
-    }
-    ShipAPI ship = member.getShip();
-    if (ship != null && ship.isAlive()) {
+private void showShips() {
+    for (ShipAPI ship : engine.getShips()) {
+        if (!ship.isAlive()) {
+            continue;
+        }
         engine.addFloatingText(
                 ship.getLocation(),
-                "deployed " + ship.getHullSpec().getHullId(),
+                "ship " + ship.getHullSpec().getHullId(),
                 12f,
-                Color.GREEN,
+                Color.WHITE,
                 ship,
                 0f,
                 0.5f);
@@ -66,124 +79,145 @@ for (DeployedFleetMemberAPI member : engine
 }
 ```
 
-## 遍历弹体
+`addFloatingText` 的参数依次为位置、文字、字体尺寸、颜色、附着实体、调整项与显示时间。这里传入舰船位置并附着到同一 `ship`，显示 0.5 秒。
 
-`engine.getProjectiles()` 返回 `DamagingProjectileAPI` 集合，并且已经包含导弹。统计所有弹体时只遍历这一集合，避免把导弹再次加入总数。弹体位置通过 `getLocation()` 取得，附着对象可以直接传入弹体：
+部署成员提供另一种关系：从玩家侧 `getDeployedCopyDFM` 取得已经部署的成员，再用 `getShip` 得到当前实体。它适合查看舰队成员怎样对应到场上舰船：
 
 ```java
-for (DamagingProjectileAPI projectile : engine.getProjectiles()) {
-    engine.addFloatingText(
-            projectile.getLocation(),
-            "projectile " + projectile.getProjectileSpecId(),
-            10f,
-            Color.YELLOW,
-            projectile,
-            0f,
-            0.25f);
+private void showDeployed() {
+    for (DeployedFleetMemberAPI member : engine
+            .getFleetManager(FleetSide.PLAYER).getDeployedCopyDFM()) {
+        if (member.isFighterWing() || member.isStationModule()) {
+            continue;
+        }
+        ShipAPI ship = member.getShip();
+        if (ship != null && ship.isAlive()) {
+            engine.addFloatingText(
+                    ship.getLocation(),
+                    "deployed " + ship.getHullSpec().getHullId(),
+                    12f,
+                    Color.GREEN,
+                    ship,
+                    0f,
+                    0.5f);
+        }
+    }
 }
 ```
 
-弹体只属于当前战斗。需要持续观察时，每帧重新读取集合或按间隔重新读取，不保存上一场战斗的对象引用。
+先过滤联队和模块，再查看可用存活舰体。要观察这一类时，把计时器内的调用改为 `showDeployed`。
 
-## 遍历导弹
+## 弹体与导弹
 
-`engine.getMissiles()` 返回 `MissileAPI` 子集，适合读取制导、熄火、装填和飞行时间等导弹专属状态：
+`getProjectiles` 已经包含导弹。总弹体统计只使用这个集合，`getMissiles` 则单独读取导弹专属信息。
 
 ```java
-for (MissileAPI missile : engine.getMissiles()) {
-    String text = "missile " + missile.getProjectileSpecId()
-            + " guided=" + missile.isGuided();
-    engine.addFloatingText(
-            missile.getLocation(),
-            text,
-            10f,
-            Color.ORANGE,
-            missile,
-            0f,
-            0.25f);
+private void showProjectiles() {
+    for (DamagingProjectileAPI projectile : engine.getProjectiles()) {
+        engine.addFloatingText(
+                projectile.getLocation(),
+                "projectile " + projectile.getProjectileSpecId(),
+                10f,
+                Color.YELLOW,
+                projectile,
+                0f,
+                0.25f);
+    }
 }
 ```
 
-导弹同时出现在 `getProjectiles()` 中。`getProjectiles()` 用于总弹体统计，`getMissiles()` 用于导弹专属字段读取。
-
-## 遍历光束
-
-`engine.getBeams()` 返回当前战斗中的 `BeamAPI`。光束本身不是 `CombatEntityAPI`，所以浮动文字位置使用 `beam.getTo()`，附着对象使用当前命中目标；没有命中目标时传入 `null`。
+文字显示 `projectileSpecId`，位置和附着对象来自当前弹体，显示时间为 0.25 秒。观察导弹时改用：
 
 ```java
-for (BeamAPI beam : engine.getBeams()) {
-    CombatEntityAPI target = beam.getDamageTarget();
-    engine.addFloatingText(
-            beam.getTo(),
-            beam.didDamageThisFrame() ? "beam hit" : "beam",
-            12f,
-            Color.CYAN,
-            target,
-            0f,
-            0.5f);
+private void showMissiles() {
+    for (MissileAPI missile : engine.getMissiles()) {
+        String text = "missile " + missile.getProjectileSpecId()
+                + " guided=" + missile.isGuided();
+        engine.addFloatingText(
+                missile.getLocation(),
+                text,
+                10f,
+                Color.ORANGE,
+                missile,
+                0f,
+                0.25f);
+    }
 }
 ```
 
-`didDamageThisFrame()` 与 `getDamageTarget()` 只描述当前帧。需要观察持续光束时，每次重新遍历并读取这两个值，不能跨帧缓存目标。
+导弹还提供制导、熄火和飞行时间等状态，本例先记录 `isGuided`。**总数与子集用途分别计算**，把两份集合相加会重复算导弹。
 
-::: warning 对象集合只属于当前战斗
+## 光束与当前帧目标
 
-`ShipAPI`、`DamagingProjectileAPI`、`MissileAPI` 和 `CombatEntityAPI` 引用都绑定当前战斗引擎。战斗结束后下一场战斗重新读取集合；旧引用即使还能调用方法，也不再代表新战斗中的对象。
+`BeamAPI` 不是 `CombatEntityAPI`。文字位置使用 `getTo`，附着对象使用当前伤害目标，目标缺席时该参数可以为 `null`：
 
-:::
+```java
+private void showBeams() {
+    for (BeamAPI beam : engine.getBeams()) {
+        CombatEntityAPI target = beam.getDamageTarget();
+        engine.addFloatingText(
+                beam.getTo(),
+                beam.didDamageThisFrame() ? "beam hit" : "beam",
+                12f,
+                Color.CYAN,
+                target,
+                0f,
+                0.5f);
+    }
+}
+```
 
-## 观察结果与过滤规则
+`didDamageThisFrame` 和 `getDamageTarget` 描述当前帧。每次观察重新取得值，光束持续照射也可能在不同帧改变目标。
 
-浮动文字适合确认遍历入口是否选对，但不适合每帧无间隔地显示全部对象。实际观察时使用较短显示时间，或在 `IntervalUtil` 到期后再执行一次遍历。
+选择 `showBeams` 后，比较文字位置与光束终点。附着实体和坐标并不是同一参数，先把位置对齐，再判断目标状态是否对应。
 
-对象过滤遵循三个判断：
+## 让观察范围跟随本场战斗
 
-- 舰船使用 `isAlive()` 排除残骸；
-- 部署成员使用 `isFighterWing()`、`isStationModule()` 和 `getShip()` 选择可显示的舰体；
-- 光束使用当前帧的 `didDamageThisFrame()` 和 `getDamageTarget()` 描述本帧结果。
+本例按 0.25 秒间隔重新遍历，标签使用较短显示时间。舰船状态、弹体存在和光束目标都在读取时重新判断，下一场使用新的插件实例。
+
+编者建议观察时固定一种武器和目标，再换另一类集合。先确认自己读的对象是什么，比在屏幕上输出一大堆文字更有价值。
 
 ## 验证方案
 
-前置数据：已按 [C8-S3] 在 `settings.json` 注册每帧战斗插件；[C4-S1] 的 `GearIn_test` 战役可用，本节的遍历片段已就绪。
-
-1. 在现有每帧战斗插件的 `advance()` 中临时加入一种遍历片段。
-2. 进入测试战斗，观察对应对象位置的浮动文字。
-3. 逐次测试舰船、部署成员、弹体、导弹和光束五种对象来源。
-4. 击毁一艘舰船，确认残骸不会继续显示 `ship` 标签。
-5. 发射导弹，确认导弹同时属于弹体集合且导弹片段可以读取 `guided`。
-6. 激活光束，确认终点文字随 `didDamageThisFrame()` 改变。
-7. 结束战斗并进入下一场，确认对象引用重新取得。
+1. 将方法与计时器加入上一节插件，选择 `showShips`，构建并进入测试战役。
+2. 部署舰船并击毁一艘，比较存活标签和残骸。
+3. 依次切换 `showDeployed`、`showProjectiles`、`showMissiles`，每次构建重启，用对应对象测试。
+4. 使用 `showBeams`，持续照射目标并比较命中与未命中标签。
+5. 结束战斗后重新进入，确认集合与实体来自当前场景。
 
 预期结果：
 
-- 存活舰船和已部署成员在对应位置显示浮动文字；
-- 弹体文字显示规格 ID，导弹文字额外显示导弹状态；
-- 光束文字显示在终点，并按照当前帧命中状态变化；
-- 残骸、空成员和跨战斗旧引用不会被当作当前对象使用。
+- 存活舰船和实际部署成员在对应位置显示 ID。
+- 弹体显示 `spec` ID，导弹增加 `guided` 状态。
+- 导弹同属总弹体集合，读取时各用途分开。
+- 光束文字位于终点，命中标签采用当前帧信息。
+- 每次场景采用新的引擎与对象引用。
 
 ## 故障分析
 
-- **残骸仍然显示舰船标签**：直接遍历 `getShips()`，没有先判断 `isAlive()`。
-    - **解决方案**：在 `addFloatingText(...)` 之前过滤残骸和已死亡舰船。
+- **残骸仍带 `ship` 标签**：遍历未过滤存活状态。
+    - **解决方案**：在文字创建前检查 `isAlive`。
 
-- **弹体总数大于实际发射数**：把 `getProjectiles()` 和 `getMissiles()` 两个集合相加。
-    - **解决方案**：总数只读取 `getProjectiles()`，导弹专属信息单独读取 `getMissiles()`。
+- **弹体数量重复**：总弹体与导弹集合相加。
+    - **解决方案**：总统计用 `getProjectiles`，导弹专属字段另读。
 
-- **光束文字位置错误**：把 `BeamAPI` 当作 `CombatEntityAPI` 使用，或读取了错误坐标。
-    - **解决方案**：使用 `beam.getTo()` 作为位置，使用 `getDamageTarget()` 作为附着对象。
+- **光束文字位置不符**：使用了不同坐标或把光束当成附着实体。
+    - **解决方案**：位置用 `getTo`，附着用 `getDamageTarget`。
 
-- **第二场战斗仍显示上一场对象**：保存了旧战斗的舰船、弹体或光束引用。
-    - **解决方案**：每场战斗重新取得 `CombatEngineAPI` 和对象集合。
+- **下一场显示上一场对象**：跨场保存了旧引用。
+    - **解决方案**：在当前战斗实例重新读取集合。
 
 ## 总结
 
-舰船、弹体、导弹和光束分别由 `getShips()`、`getProjectiles()`、`getMissiles()` 和 `getBeams()` 提供。遍历后要根据对象类型选择位置、附着对象和当前帧状态；浮动文字可以把集合关系和过滤结果直接显示在战场上。
+对象集合按类型提供当前战斗信息。舰船表、部署映射、弹体总集、导弹子集和光束帧状态各自回答不同问题，读取后再选择位置与附着对象。
+
+本节在已有插件中建立固定观察入口，接下来会解释它的逐帧与暂停处理。对象范围和运行时机一起确认后，再把数据用于实际效果。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：四类对象集合与 `addFloatingText(...)`；
-- `com.fs.starfarer.api.combat.ShipAPI`：舰船位置与状态访问器；
-- `com.fs.starfarer.api.combat.DamagingProjectileAPI`：弹体位置与状态访问器；
-- `com.fs.starfarer.api.combat.MissileAPI`：导弹位置与状态访问器；
-- `com.fs.starfarer.api.combat.BeamAPI`：光束位置与状态访问器；
-- `com.fs.starfarer.api.combat.CombatFleetManagerAPI`：`getDeployedCopyDFM()` 部署成员到场上舰船的映射。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：对象集合与 `addFloatingText`。
+- `com.fs.starfarer.api.combat.ShipAPI`：舰船位置、存活与部署状态。
+- `com.fs.starfarer.api.combat.DamagingProjectileAPI`：弹体状态。
+- `com.fs.starfarer.api.combat.MissileAPI`：导弹专属状态。
+- `com.fs.starfarer.api.combat.BeamAPI`：位置与当前目标。
+- `com.fs.starfarer.api.combat.CombatFleetManagerAPI`：部署成员映射。

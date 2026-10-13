@@ -1,6 +1,6 @@
 # 制作最小战术系统
 
-本节将以原版 `burn drive` 为基础，复制改造出一个新的最小战术系统，并解释 `.system`、`ship_systems.csv`、`ship_data.csv` 与效果脚本。
+本节为工匠制作 "突击填弹器"：以原版加速填弹器为基础，增加速度与机动加成，再为它设置持续时间和冷却。随后制作右键使用的抵抗力场。两种系统都由定义文件、CSV 参数和效果类组成，舰船数据决定安装哪个系统。
 
 *本节预期阅读时间：\~20 分钟。*
 
@@ -10,173 +10,141 @@
 
 完成后，您将能够：
 
-- 用 `.system` 文件声明战术系统类型和效果脚本；
-- 在 `ship_systems.csv` 中注册名称、持续时间和幅能参数，并通过 `ship_data.csv` 挂载到舰船；
-- 解释时间类参数各管什么：`charge up`(前摇)、`active`(全功率)、`down`(后摇)、`cooldown`(冷却)；
-- 用 "效果强度" 理解效果脚本：前摇期间加成从 0 平滑升至满值，后摇期间回落；
-- 通过修改三个参数 (时长、加成数值、冷却) 在模拟战中观察到行为差异。
+- 用 `.system` 声明战术系统类型和效果类；
+- 在 `ship_systems.csv` 登记名称、时间和幅能参数，通过舰船数据挂载；
+- 区分前摇、全功率、后摇与冷却；
+- 根据效果强度修改加成，并在结束时撤销；
+- 调整加成、持续时间与冷却，在模拟战中比较结果。
 
 ## 前置知识
 
-- [C1-S2] 的舰船数据与 `ship_data.csv` 登记规则；
-- [C2-S1] 的最小示例 Java 文件、参数修改、注册与回调；
-- [C2-S2] 的文件名、类名与注册类名一致规则。
+- [C1-S2] 的工匠船体与 `ship_data.csv`；
+- [C1-S7] 的 CSV 表头、空列与转义；
+- [C2-S1] 的 Java 文件、参数修改、注册与回调；
+- [C2-S2] 的效果类与数据登记对应关系。
 
-## 复制原版战术系统
+## 从原版加速填弹器开始
 
-把原版 `data/shipsystems/burndrive.system` 复制到 MOD 的 `data/shipsystems` 下，改名为 `GearIn_burstdrive.system`。这个文件声明系统 ID、运作类型、效果脚本及视听表现；先把 `id` 与 `statsScript` 改为本节的值：
+把原版 `data/shipsystems/ammofeed.system` 复制到 MOD 的同目录，改名为 `GearIn_assaultfeed.system`。系统名称定为 "突击填弹器"，ID 为 `GearIn_assaultfeed`，效果类为 `GearInAssaultFeedSystem`。
 
-```json {2,6}
+编者准备让工匠在提高实弹射速的同时获得短暂的机动优势，便于压近距离或调整射击位置。**原版加速填弹器的武器收益继续保留，机动收益则写进同一个效果类。** 持续时间稍短一些，让使用时机也成为操作的一部分。
+
+先修改定义文件，内容如下：
+
+```json
 {
-    "id": "GearIn_burstdrive",
-    "type": "ENGINE_MOD",
-    "aiType": "BURN_DRIVE_TOGGLE",
-
-    "statsScript": "data.scripts.gearin.shipsystems.GearInBurstDriveSystem",
-
+    "id": "GearIn_assaultfeed",
+    "type": "STAT_MOD",
+    "aiType": "WEAPON_BOOST",
+    "statsScript": "data.scripts.gearin.shipsystems.GearInAssaultFeedSystem",
+    "weaponGlowColor": [255, 200, 0, 155],
+    "weaponTypes": ["BALLISTIC"],
     "engineGlowLengthMult": 2.5,
     "engineGlowWidthMult": 3,
     "engineGlowGlowMult": 2,
-
-    "flameoutOnImpactChance": 0.5,
-
-    "clampTurnRateAfter": true,
-    "clampMaxSpeedAfter": true,
-    "alwaysAccelerate": true,
-
-    "useSound": "system_burn_drive_activate",
-    "loopSound": "system_burn_drive_loop",
-    "deactivateSound": "system_burn_drive_deactivate",
-    "outOfUsesSound": "engine_disabled"
+    "useSound": "system_ammo_feeder",
+    "outOfUsesSound": "gun_out_of_ammo"
 }
 ```
 
-本节只关注三个字段，其余保持原样：
+`id` 与后面的 CSV 共用；`statsScript` 指向效果类。`type: "STAT_MOD"` 表示属性修改型系统，`aiType: "WEAPON_BOOST"` 沿用加速填弹器的使用判断。系统 AI 的详细写法由 [C9-S2] 讲解。
 
-- **`id`**：系统 ID，与 `ship_systems.csv` 的 `id` 必须一致。后续 `ship_data.csv` 引用时也必须一致。
-- **`type`**：系统运作方式。`ENGINE_MOD` 是引擎类系统，体现为需要引擎上线才能启动；大多数情况下使用 `STAT_MOD`。
-- **`statsScript`**：效果脚本完整类名。
+`weaponGlowColor` 与 `weaponTypes` 控制实弹武器的激活光效，三个 `engineGlow*` 字段调整引擎焰表现。`useSound` 继续使用原版激活声音。这里填的是声音 ID，文件关系按原版样本保留即可。
 
-其余字段是视觉 (引擎焰)、声音与物理细节，按需保留。文件中的 `aiType` 字段属于系统 AI 配置，本教程在 [C9-S2] 讲解。
+## 登记时间与使用参数
 
-## 注册战术系统参数
+打开 MOD 的 `data/shipsystems/ship_systems.csv`，复制原版 `ammofeed` 行，修改名称、ID 与时间参数。本例登记行如下，已有表头时只追加系统数据：
 
-`.system` 文件确定系统类型和脚本，`data/shipsystems/ship_systems.csv` 则用同一个 ID 提供名称、持续时间、幅能和使用限制。在这个 CSV 中从原版复制 `Burn Drive` 行，只改 `name` 与 `id`：
-
-```text {5}
+```csv
 name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle,noDissipation,noHardDissipation,hardFlux,noFiring,noTurning,noStrafing,noAccel,noShield,noVent,isPhaseCloak,tags,icon
-,,,,,,,,,,,,,,,,,,,,,,,,,,,
-Burn Drive,burndrive,1,,,,,,,,,2,5,1,10,TRUE,,,,,TRUE,TRUE,TRUE,TRUE,,,movement,graphics/icons/hullsys/burn_drive.png
-,,,,,,,,,,,,,,,,,,,,,,,,,,,
-燃烧驱动,GearIn_burstdrive,1,,,,,,,,,2,5,1,10,TRUE,,,,,TRUE,TRUE,TRUE,TRUE,,,movement,graphics/icons/hullsys/burn_drive.png
+突击填弹器,GearIn_assaultfeed,,,,,,,,,,0.5,3,0.5,10,,,,,,,,,,,,offensive,graphics/icons/hullsys/ammo_feeder.png
 ```
 
-### 常用参数速查表
+本例前摇 0.5 秒、全功率 3 秒、后摇 0.5 秒、冷却 10 秒。**系统的强度既取决于效果，也取决于能维持多久、多久能再用。** 编者建议您先按这组值完成测试，再根据工匠的实际表现调整。
 
-最常用的五个参数 (后续微调数据也基本上是调这几个)：
+### 常用系统参数速查表
 
 | 列 | 作用 |
 |---|---|
-| `charge up` | 前摇：按下到全功率的秒数，期间效果从 0 爬升至满 |
-| `active` | 全功率：维持满效果的秒数 |
-| `down` | 后摇：效果回落到 0 的秒数 |
-| `cooldown` | 冷却：结束后到能再次激活的秒数 |
+| `charge up` | 前摇秒数，效果强度从 0 升至 1 |
+| `active` | 全功率秒数，效果强度保持 1 |
+| `down` | 后摇秒数，效果强度从 1 回到 0 |
+| `cooldown` | 冷却秒数，结束后到下一次可用 |
 | `flux/second` | 激活期间每秒产生的幅能 |
+| `toggle` | `TRUE` 为开关式，再按一次关闭；留空按持续时间结束 |
+| `max uses` | 可用次数，留空表示无限 |
+| `noAccel`、`noFiring`、`noTurning` 等 | 激活期间禁止的对应操作，`TRUE` 表示禁止 |
 
-系统激活后依次进入前摇、全功率、后摇和冷却。`charge up`、`active`、`down`、`cooldown` 四列分别控制这四个阶段的秒数，效果脚本会在前三个阶段收到当前状态与效果强度。
+突击填弹器的 `toggle` 留空，按一次后运行前摇、全功率、后摇与冷却周期。开关式系统采用同一组阶段，但关闭动作由再次按键触发。当前这行同时保留加速填弹器的使用参数；`f/s`、`f/u` 和 `cr/u` 等进阶列以后再结合具体系统处理。
 
-其余参数：
+## 把射速与机动效果写进同一个类
 
-- **`toggle`**：填 `TRUE` 为开关式，再按一次才关闭 (本系统如此)；留空为非开关式，按一次后完整运行 `charge up → active → down → cooldown` 周期。
-- **`max uses`**：充能次数，留空表示无限。
-- **`noAccel`/`noFiring`/`noTurning` 等 `no*` 列**：激活期间禁止的行为，填 `TRUE` 表示禁止。本行禁止了转向、平移、加速与护盾；而开火不受禁止。
+效果类参考原版 `data/shipsystems/scripts/AmmoFeedStats.java` 与 `ManeuveringJetsStats.java`。创建 `data/scripts/gearin/shipsystems/GearInAssaultFeedSystem.java`，包名和 import 按完整文件填写。
 
-`f/s`、`f/u` 系列与 `cr/u` 等列暂时不讲。
+这两份原版效果分别提供实弹强化与辅助推进。组合时，我们选择当前设计需要的操作，在同一个 `apply` 中写入，随后在 `unapply` 中逐项解除。
 
-## 实现战术系统效果
+### 参数与效果强度
 
-`GearIn_burstdrive.system` 的 `statsScript` 已经指向完整类名 `data.scripts.gearin.shipsystems.GearInBurstDriveSystem`。按照这个包名，在 `data/scripts/gearin/shipsystems/GearInBurstDriveSystem.java` 建类：
+本例的可调整参数为：
 
 ```java
-package data.scripts.gearin.shipsystems;
-
-import com.fs.starfarer.api.combat.MutableShipStatsAPI;
-import com.fs.starfarer.api.impl.combat.BaseShipSystemScript;
-import com.fs.starfarer.api.plugins.ShipSystemStatsScript;
-
-public class GearInBurstDriveSystem extends BaseShipSystemScript {
-
-    public static final float SPEED_BONUS = 200f;
-    public static final float ACCELERATION_BONUS = 200f;
-
-    @Override
-    public void apply(MutableShipStatsAPI stats, String id, State state, float effectLevel) {
-        if (state == ShipSystemStatsScript.State.OUT) {
-            stats.getMaxSpeed().unmodify(id);
-        } else {
-            stats.getMaxSpeed().modifyFlat(id, SPEED_BONUS * effectLevel);
-            stats.getAcceleration().modifyFlat(id, ACCELERATION_BONUS * effectLevel);
-        }
-    }
-
-    @Override
-    public void unapply(MutableShipStatsAPI stats, String id) {
-        stats.getMaxSpeed().unmodify(id);
-        stats.getAcceleration().unmodify(id);
-    }
-
-    @Override
-    public StatusData getStatusData(int index, State state, float effectLevel) {
-        if (index == 0) {
-            return new StatusData("engine power increased", false);
-        }
-        return null;
-    }
-}
+public static final float SPEED_BONUS = 50f;
+public static final float MANEUVER_BONUS = 200f;
+public static final float ROF_BONUS = 1f;
+public static final float FLUX_REDUCTION = 50f;
 ```
 
-您应该已经能猜出 `SPEED_BONUS` 和 `ACCELERATION_BONUS` 分别是速度和加速度的加成了。除此之外，可以开始逐步介绍关键概念：
+最大速度增加 50，前进加速、减速与转向加速采用 200% 加成；`ROF_BONUS = 1f` 表示额外增加一倍射速，`FLUX_REDUCTION = 50f` 表示实弹武器开火幅能降低 50%。
 
-**启动 `apply`**
+游戏在效果期间反复调用 `apply(...)`，并传入 `effectLevel`。**前摇时该值从 0 升至 1，全功率为 1，后摇时再回到 0。** 以速度为例，局部片段如下：
 
-效果期间每帧被调用。在本例中，按当前 `effectLevel` 写入速度与加速度加成。`state == OUT`(后摇) 时额外处理立刻**撤销**速度加成，这样速度衰减会更可感知一点。
+```java
+stats.getMaxSpeed().modifyFlat(id, SPEED_BONUS * effectLevel);
+```
 
-**结束 `unapply`**
+`effectLevel` 为 0.5 时，加成是 25；为 1 时，加成是 50。本例让各项增益都随这个值变化，进入和退出系统时便有相应的过渡。
 
-效果结束时由游戏调用一次。一般来说用于清除 `apply` 里的效果。在舰船被部署/生成时其实也会调用一次。
+### 射速和幅能的倍率
 
-**文本说明 `getStatusData`**
+实弹射速与开火幅能通过倍率修改，局部片段如下：
 
-- 左下角状态栏文字 (`false` 显示增益，`true` 显示红色减益)。
+```java
+stats.getBallisticRoFMult().modifyMult(id, 1f + ROF_BONUS * effectLevel);
+stats.getBallisticWeaponFluxCostMod().modifyMult(id,
+        1f - FLUX_REDUCTION * 0.01f * effectLevel);
+```
 
-**效果强度 `effectLevel`**
+`modifyMult` 写入倍率。满效果时，射速倍率为 2，幅能倍率为 0.5；200% 射速和 50% 单发幅能同时生效，持续开火的每秒幅能也会随射速变化。设计时把两项一起看，比只看某一条加成更有意义。
 
-游戏在前摇期间把一个名为 `effectLevel` 的值从 **0 平滑升至 1**，全功率段保持 1，后摇期间从 1 落回 0。一般来说，效果脚本中的所有数值都**应该**乘以它：`SPEED_BONUS * effectLevel` = 200 × 0.5 = 100 —— 因此前摇那两秒里速度加成 **从 0 平滑爬到 200**。
+### 结束时撤销，状态栏显示参数
 
-::: warning apply 与 unapply 必须成对
+`unapply(...)` 在系统未生效或结束时解除修饰，舰船生成时也会调用它。下面是速度与射速清理的局部片段：
 
-`apply` 里 `modify` 过什么，`unapply` 里就必须用同一个 `id` `unmodify` 什么。漏一项的后果：系统结束后那一项加成永远残留。
+```java
+stats.getMaxSpeed().unmodify(id);
+stats.getBallisticRoFMult().unmodify(id);
+```
 
-:::
+完整文件把所有写入项都清理。**写入与解除使用相同的 `id`**，这样系统结束后才会恢复其余效果共同决定的数值。
 
-## 挂载战术系统
+`getStatusData(...)` 返回左下角状态栏文字，`index` 选择显示哪一行，`false` 表示增益，`true` 表示红色减益。本例显示速度、机动、幅能与射速四项状态，数值从当前参数和效果强度计算。
 
-系统数据与效果脚本就绪后，舰船仍需通过 `data/hulls/ship_data.csv` 引用它。打开该文件，把 `工匠-级` 行的 `system id` 列 (第 5 列) 改为 `GearIn_burstdrive`：
+## 给工匠安装突击填弹器
 
-```text {2}
+打开 `data/hulls/ship_data.csv`，把工匠行的 `system id` 改为 `GearIn_assaultfeed`：
+
+```csv
 name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
-工匠,GearIn_artizan,驱逐舰,未知,GearIn_burstdrive,10,5000,500,3800,4167,200,95,,80,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,GearIn_bp,,,,0.5,2,3,,300
+工匠,GearIn_artizan,驱逐舰,未知,GearIn_assaultfeed,10,5000,500,3800,4167,200,95,,80,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,GearIn_bp,,,,0.5,2,3,,300
 ```
 
-不过，在进入游戏之前，我们先把另一个战术系统也做好。
+定义文件、系统 CSV 和舰船引用使用同一个系统 ID；效果类使用的是 `statsScript` 中的完整类名。保存这些文件后，主系统就接到了工匠上。
 
-## 第二个例子：右键系统 (抵抗力场)
+## 再制作右键抵抗力场
 
-右键系统与主系统是同一套机制，只是填写在 `ship_data.csv` 的另一列里。当 `shield type` 为 `PHASE` 时，`defense id` 列填写的系统 ID 就是右键系统。
+右键系统采用相同的注册过程。把原版 `data/shipsystems/damper.system` 复制为 `GearIn_resistfield.system`，改名为 "抵抗力场"，并填写自己的 ID 与效果类：
 
-把原版 `damper.system` 复制为 `GearIn_resistfield.system`，改 `id` 与 `statsScript`：
-
-```json {2,6}
+```json
 {
     "id": "GearIn_resistfield",
     "type": "STAT_MOD",
@@ -208,15 +176,102 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 }
 ```
 
-`ship_systems.csv` 加上从 `阻尼力场` 复制的一行，并修改 `name` 与 `id`：
+`STAT_MOD` 和 `DAMPER_FIELD` 沿用阻尼力场的类型和 AI。橙色扰动与声音字段也由原版文件提供。
 
-```text {3}
+在 `ship_systems.csv` 追加：
+
+```csv
 name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle,noDissipation,noHardDissipation,hardFlux,noFiring,noTurning,noStrafing,noAccel,noShield,noVent,isPhaseCloak,tags,icon
-,,,,,,,,,,,,,,,,,,,,,,,,,,,
 抵抗力场,GearIn_resistfield,1,,,,,,,2,0.05,0.25,3,0.25,0,,,,,TRUE,,,,TRUE,TRUE,,"uses_damper_ai, defensive",graphics/icons/hullsys/damper_field.png
 ```
 
-效果脚本 `GearInResistFieldSystem` 令人感到十分眼熟：
+该行的 `uses_damper_ai` 与 `defensive` 标签继续保留。效果类保存到 `data/scripts/gearin/shipsystems/GearInResistFieldSystem.java`。
+
+### 设置分伤害类型的减伤
+
+本例让高爆与 EMP 最高降低 75%，动能与能量最高降低 50%。局部写法如下：
+
+```java
+stats.getHighExplosiveDamageTakenMult().modifyMult(id,
+        1f - HE_REDUCTION * 0.01f * effectLevel);
+```
+
+满效果时，高爆伤害倍率为 0.25，意味着承担原来 25% 的伤害。其他类型使用对应 getter，结束时各自清理。
+
+最后把工匠行的 `shield type` 改为 `PHASE`，`defense id` 填为 `GearIn_resistfield`。这里的 `PHASE` 选择右键系统入口，实际行为由抵抗力场定义与脚本决定。
+
+观察舰船详情中主系统与右键系统的位置：
+
+![工匠详情中的突击填弹器与抵抗力场](./right_show.png "right_show.png")
+
+主系统和右键系统分别显示在 System 与 Special 位置，两个名称来自各自的系统数据行。
+
+## 完整最小例
+
+两个效果类分别保存到上文指定的包目录。系统定义、CSV 和工匠挂载沿用上面的成品；CSV 表头只保留一次。
+
+::: details 完整成品：GearInAssaultFeedSystem
+
+```java
+package data.scripts.gearin.shipsystems;
+
+import com.fs.starfarer.api.combat.MutableShipStatsAPI;
+import com.fs.starfarer.api.impl.combat.BaseShipSystemScript;
+
+public class GearInAssaultFeedSystem extends BaseShipSystemScript {
+
+    public static final float SPEED_BONUS = 50f;
+    public static final float MANEUVER_BONUS = 200f;
+    public static final float ROF_BONUS = 1f;
+    public static final float FLUX_REDUCTION = 50f;
+
+    @Override
+    public void apply(MutableShipStatsAPI stats, String id, State state, float effectLevel) {
+        stats.getBallisticRoFMult().modifyMult(id, 1f + ROF_BONUS * effectLevel);
+        stats.getBallisticWeaponFluxCostMod().modifyMult(id,
+                1f - FLUX_REDUCTION * 0.01f * effectLevel);
+        stats.getMaxSpeed().modifyFlat(id, SPEED_BONUS * effectLevel);
+        stats.getAcceleration().modifyPercent(id, MANEUVER_BONUS * effectLevel);
+        stats.getDeceleration().modifyPercent(id, MANEUVER_BONUS * effectLevel);
+        stats.getTurnAcceleration().modifyFlat(id, 30f * effectLevel);
+        stats.getTurnAcceleration().modifyPercent(id, MANEUVER_BONUS * effectLevel);
+        stats.getMaxTurnRate().modifyFlat(id, 15f * effectLevel);
+        stats.getMaxTurnRate().modifyPercent(id, 100f * effectLevel);
+    }
+
+    @Override
+    public void unapply(MutableShipStatsAPI stats, String id) {
+        stats.getBallisticRoFMult().unmodify(id);
+        stats.getBallisticWeaponFluxCostMod().unmodify(id);
+        stats.getMaxSpeed().unmodify(id);
+        stats.getAcceleration().unmodify(id);
+        stats.getDeceleration().unmodify(id);
+        stats.getTurnAcceleration().unmodify(id);
+        stats.getMaxTurnRate().unmodify(id);
+    }
+
+    @Override
+    public StatusData getStatusData(int index, State state, float effectLevel) {
+        if (index == 0) {
+            return new StatusData("+" + (int) (SPEED_BONUS * effectLevel) + " top speed", false);
+        }
+        if (index == 1) {
+            return new StatusData("improved maneuverability", false);
+        }
+        if (index == 2) {
+            return new StatusData("ballistic flux use -" + (int) (FLUX_REDUCTION * effectLevel) + "%", false);
+        }
+        if (index == 3) {
+            return new StatusData("ballistic rate of fire +" + (int) (ROF_BONUS * effectLevel * 100f) + "%", false);
+        }
+        return null;
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInResistFieldSystem
 
 ```java
 package data.scripts.gearin.shipsystems;
@@ -257,57 +312,68 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 }
 ```
 
-最后把 `工匠-级` 的 `shield type` 改为 `PHASE`、`defense id` 填 `GearIn_resistfield`，这艘船就同时拥有主系统与右键系统。
+:::
 
 ## 验证方案
 
-前置数据：本节注册并挂载的 `GearIn_burstdrive` 与 `GearIn_resistfield` 战术系统。
-
-1. 重启游戏，在 `starsector.log` 中观察战术系统加载记录。
-2. 进入模拟战，按 F 激活和关闭燃烧驱动，观察前摇、后摇与冷却。
-3. 调整 `SPEED_BONUS`、`active` 或 `cooldown` 后重启，比较行为差异。
-4. 使用右键抵抗力场，观察状态文字、持续时间与减伤效果。
+1. 保存两个效果类、系统定义、系统 CSV 与工匠数据，重启游戏，检查系统加载日志。
+2. 获取工匠并进入模拟战，安装实弹武器，按 `F` 激活突击填弹器，观察射速、开火幅能、速度与转向。
+3. 比较 0.5 秒前摇、3 秒全功率和 0.5 秒后摇中的变化，结束后等待 10 秒冷却。
+4. 修改 `SPEED_BONUS`、`active` 或 `cooldown` 中的一项，保存并重启，在同一测试配置下比较结果。
+5. 使用右键抵抗力场，观察橙色扰动、状态文字、持续时间及减伤效果。
 
 预期结果：
 
-- 日志出现 `Loading ship system [data/shipsystems/GearIn_burstdrive.system]` 与 `Applying data from ship_systems.csv to [GearIn_burstdrive]`，且没有相关 `ERROR`。
-- 前摇约 2 秒内速度与加速度平滑升至 +200；左下角状态栏出现 `engine power increased`；开关式 (`toggle=TRUE`) 再按 F 关闭。
-- 关闭后约 1 秒后摇内按基础速度减速；随后约 10 秒冷却，冷却结束可再次激活。
-- 参数实验 (`SPEED_BONUS`、`active`、`cooldown`) 各自产生可感知的行为差异。
-- 状态文字、时长与减伤数值 (高爆/EMP 最高 75%、动能/能量最高 50%) 符合预期。
+- 日志包含 `GearIn_assaultfeed.system`、`GearIn_resistfield.system` 的加载与 CSV 应用记录。
+- 突击填弹器满效果时，速度增加 50，机动提高，实弹射速增加 100%，开火幅能降低 50%。
+- 增益随前摇上升、后摇回落，系统结束后各项修饰解除，冷却完成后可再次激活。
+- 参数实验分别改变速度加成、持续时间或下一次可用时机。
+- 抵抗力场满效果时，高爆与 EMP 减伤为 75%，动能与能量为 50%，结束后恢复。
+- 左下角状态栏分别显示主系统增益与右键减伤说明。
+
+观察突击填弹器激活后的引擎与四项状态：
+
+![突击填弹器的引擎表现与增益状态](./system_play.png "system_play.png")
+
+图中额外的 "Zero Flux Engine Boost" 来自舰船的零幅能加速。核对本系统时，使用以 "突击填弹器" 为标题的四项状态与脚本参数比较。
+
+再观察抵抗力场的橙色扰动：
+
+![抵抗力场激活时的舰船扰动效果](./right_play.png "right_play.png")
+
+主系统与右键系统可以分别验证。视效来自定义文件，减伤则由效果脚本写入。
 
 ## 故障分析
 
-- **游戏加载时报 `Fatal: ship_systems.csv is missing systems`**：`.system` 已创建，但 CSV 没有对应行或行首仍有 `#`。
-    - **解决方案**：补回 `GearIn_burstdrive` 数据行并取消注释，重启。
+- **加载时报 Fatal: ship_systems.csv is missing systems**：系统定义已有 ID，但 CSV 缺少对应行或该行被注释。
+    - **解决方案**：登记同一个系统 ID，检查行首与表头，保存后重启。
 
-- **系统数值全为零、按键瞬间结束**：CSV 行与 `.system` 两处 ID 一致、但 `charge up`/`active`/`down`/`cooldown` 数值为空时，状态机一帧内跑完整个周期。注意：两处 ID 不一致不会造成 "瞬间结束" —— 加载期即抛 `Fatal: ship_systems.csv is missing systems` 中断 (日志至多先出现一行 `not found in store` 警告)。
-    - **解决方案**：统一两处 ID 并填上数值，再重新进入战斗。
+- **系统按键后立即结束**：前摇、全功率、后摇和冷却参数均为空或为 0，状态在一帧内完成。
+    - **解决方案**：填写对应时间；定义与 CSV 的 ID 不一致时先修正加载错误。
 
-- **舰船部署时报 `System with id [...] not found`**：船体的 `system id` 拼错，或对应系统尚未注册。
-    - **解决方案**：核对 `.ship`、`.system` 与 CSV 的 ID，修正后重新部署。
+- **舰船部署时报 System with id [...] not found**：舰船引用的系统 ID 拼错或没有注册。
+    - **解决方案**：核对工匠的 `system id`、`defense id` 与两份系统定义和 CSV。
 
-- **冷却结束后效果仍然残留**：`unapply` 没有撤销 `apply` 写入的修饰。
-    - **解决方案**：使用同一 source id 成对撤销，再次完整激活并等待冷却结束。
+- **系统结束后加成保留**：`unapply` 缺少某个写入项的清理。
+    - **解决方案**：按 `apply` 中的对象逐项补齐相同 ID 的 `unmodify`，重启后完整测试一个周期。
 
-- **日志出现 `Error loading [...]`**：`statsScript` 类名、包声明和文件路径不一致，或文件错误地放在 `src\` 前缀下。
-    - **解决方案**：将类放在 MOD 根目录对应包路径，统一三处名称后重启。
+- **加载时报 Error loading [...]**：`statsScript` 与源码包名、类名或当前保存目录不一致。
+    - **解决方案**：把源码保存到 MOD 根目录对应的 `data/scripts/gearin/shipsystems/`，核对完整类名后重启。
 
 ## 总结
 
-`.system` 文件声明系统类型和效果脚本，`ship_systems.csv` 用同一 ID 提供名称与数值，`ship_data.csv` 再把这个 ID 挂到舰船。系统激活后，效果脚本按照当前状态和 `effectLevel` 修改舰船属性。
+主系统与右键系统采用相同的定义、登记和效果类结构，舰船数据使用不同字段挂载。系统的时间参数决定各阶段长度，`effectLevel` 把阶段进度交给效果类，`unapply` 负责解除当前系统的修饰。
 
-脚本侧只需要掌握 "效果强度" 一个概念：`effectLevel` 从 0 升至 1 再落回 0，所有数值乘以它；`apply`/`unapply` 成对撤销是唯一的纪律。
-
-这种文件关系适用于武器类、护盾类和相位类系统，各类系统只需更换数据与脚本内容。系统 AI(`aiType`) 与自定义使用时机见 [C9-S2]。
+本例组合了实弹强化与机动加成，右键则处理不同伤害类型。继续调整时，把数值、持续时间和冷却一起测试；系统 AI 与更深入的调用规则在 [C9-S2] 展开。
 
 ## 建议参考项
 
-- `data/shipsystems/<id>.system`：战术系统本体文件，承载效果参数与脚本入口；
-- `data/shipsystems/ship_systems.csv`：战术系统注册表，登记系统 ID；
-- `data/hulls/ship_data.csv`：舰船数据表，为舰船挂载战术系统；
-- `data/shipsystems/burndrive.system`：本节第一个示例的复制来源；
-- `data/shipsystems/damper.system`：本节第二个示例的复制来源。
-- `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：效果脚本基类。
-- `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：效果脚本接口 (`State` 枚举、`apply`/`unapply`/`getStatusData`)。
-- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：数值入口 (`getMaxSpeed()`、`getHighExplosiveDamageTakenMult()` 等)。
+- `data/shipsystems/ammofeed.system`：突击填弹器的定义基础。
+- `data/shipsystems/damper.system`：右键抵抗力场的定义基础。
+- `data/shipsystems/ship_systems.csv`：名称、时间、幅能、使用限制与标签。
+- `data/hulls/ship_data.csv`：`system id` 和 `defense id` 的挂载位置。
+- `data/shipsystems/scripts/AmmoFeedStats.java`：实弹射速与幅能修改。
+- `data/shipsystems/scripts/ManeuveringJetsStats.java`：速度与机动修改。
+- `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：效果类的基类。
+- `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：状态、效果强度和效果回调。
+- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：各类舰船数值的修改入口。

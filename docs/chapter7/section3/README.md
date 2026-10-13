@@ -1,91 +1,79 @@
 # 读取设置
 
-本节处理 `data/config/settings.json` 的读取，从 `Global.getSettings()` 取得 `SettingsAPI`，按键读取字符串、数值、布尔值和颜色，并观察缺失键、类型不符与缓存造成的结果。
+设置文件提供功能代码使用的参数，本节从已合并的 settings.json 读取字符串、数值、布尔与颜色，再比较必填读取、可选值和缓存。读取放在应用加载回调，日志把输入和实际结果对应起来。
 
-*本节预期阅读时间：~15 分钟。*
+*本节预期阅读时间：\~15 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 使用 `Global.getSettings().getSettingsJSON()` 观察合并后的 settings 对象；
-- 使用 `getString`、`getFloat`、`getInt`、`getBoolean`、`getColor` 和 `optBoolean` 读取设置；
-- 解释 settings.json 的对象键合并和启动器关键键边界；
-- 解释 `getInt` 的截断、缺失键异常和可选键缺省值；
-- 识别 settings 缓存、内存修改与存档持久化之间的区别。
+- 使用合并后的 settings 对象；
+- 按键与类型读取自有配置；
+- 区分整数截断、缺省值和缺键异常；
+- 观察并刷新数值缓存；
+- 区分内存设置与跨启动持久化。
 
 ## 前置知识
 
-- [C6-S1] 的 Java 工具链、入口类和 `mod_info.json` 结构；
-- [C7-S1] 的生命周期回调；
-- [C7-S2] 的 `Global.getSettings()` 和日志入口；
-- [C1-S1] 的 MOD 数据文件编码要求。
+- [C6-S4] 的构建与加载；
+- [C7-S1] 的应用加载回调；
+- [C7-S2] 的 Global 设置服务；
+- [C1-S1] 的同路径合并；
+- Java 方法、JSON 对象与异常。
 
-## 读取设置数据
+## 在 settings.json 定义自有键
 
-`data/config/settings.json` 是设置读取入口。原版与已启用 MOD 的对象键合并后，`SettingsAPI` 从合并对象读取键值。MOD 只提交自己的键；启动器管理的窗口、开发模式和内存上限等关键键由启动器处理，MOD 写入它们不会改变启动器行为。
+在 MOD 的 `data/config/settings.json` 合入下面的键：
 
 ```json
 {
-  "GearIn_loop_volume": 0.8,
-  "GearIn_service_name": "齿轮工业服务",
-  "GearIn_feature_enabled": true
+    "GearIn_loop_volume": 0.8,
+    "GearIn_service_name": "齿轮工业服务",
+    "GearIn_feature_enabled": true,
+    "GearIn_example_count": 3.75,
+    "GearIn_accent_color": [180, 120, 60, 255]
 }
 ```
 
-### 读取设置值速查表
+保留已有 plugins 等对象，只添加这些自有内容。键名采用 GearIn_前缀，避免与原版或其他功能共用同一名字。当前这些值用于观察读取结果，功能代码按自己的用途消费它们。
 
-| 方法 | 类型 | 缺失或类型不符 |
-|---|---|---|
-| `getString(String key)` | 字符串 | 抛 `RuntimeException` |
-| `getFloat(String key)` | 浮点数 | 抛 `RuntimeException` |
-| `getInt(String key)` | 整数 | 先按浮点读取，再截断小数；缺失抛 `RuntimeException` |
-| `getBoolean(String key)` | 布尔值 | 抛 `RuntimeException` |
-| `getColor(String key)` | 4 元素 RGBA 数组 | 键缺失返回并缓存 `Color.white`；类型不符时抛 `RuntimeException` |
-| `optBoolean(String key, boolean fallback)` | 布尔值 | 返回传入的缺省值 |
-| `getSettingsJSON()` | 合并后的 JSON 对象 | 直接访问对象；类型由调用侧判断 |
+**设置键的归属与实际读取位置要对应。** 原版和 MOD 配置按对象键合并，启动器读取的窗口、开发模式与进程配置有各自入口，当前 MOD 参数在游戏设置服务中使用。
 
-### 刷新设置缓存
+## 按类型读取
 
-`getFloat`、`getBoolean`、`getInt` 使用进程级缓存，修改设置对象后需调用 `resetCached()`。`getColor` 的缓存不被 `resetCached()` 清除，只能重载设置刷新。
-
-`setFloat` 和 `setBoolean` 只修改内存中的 settings 对象，不会写回 MOD 目录，也不会形成存档持久化。需要保存跨启动数据时，使用 Chapter 16 的 common 写入入口。
-
-## 接入设置读取
-
-设置已经在资源加载期合并完成，因此把读取放进 `GearInModPlugin.onApplicationLoad()`。以下片段依次增加严格读取、可选开关和缓存复验；每次只加入当前片段，看到对应日志后再继续。
-
-### 读取必填设置
-
-把下面的读取放进 `GearInModPlugin.onApplicationLoad()` 的版本检查之后，启动时同时验证字符串与浮点键：
+在 GearInModPlugin.onApplicationLoad 中加入局部读取：
 
 ```java
 com.fs.starfarer.api.SettingsAPI settings = Global.getSettings();
 float volume = settings.getFloat("GearIn_loop_volume");
 String serviceName = settings.getString("GearIn_service_name");
-Global.getLogger(GearInModPlugin.class)
-        .info("GearIn settings required: name=" + serviceName + ", volume=" + volume);
-```
-
-启动后日志出现 `name=齿轮工业服务, volume=0.8`；任一键缺失或类型错误时，启动在对应 getter 处中止并留下堆栈。
-
-### 接受可选开关缺席
-
-在紧接必填设置日志之后加入 `optBoolean` 读取，配置未声明功能开关时使用关闭状态：
-
-```java
 boolean enabled = settings.optBoolean("GearIn_feature_enabled", false);
-Global.getLogger(GearInModPlugin.class)
-        .info("GearIn settings optional: enabled=" + enabled);
 ```
 
-保留该键时日志为 `enabled=true`；临时删除该键并重启后日志为 `enabled=false`，启动继续完成。
+getFloat 和 getString 要求能取得对应值，可选开关用 optBoolean 并提供 false 作为缺省。默认配置返回 0.8、齿轮工业服务与 true。
 
-### 观察并恢复缓存
+### 设置读取方法速查表
 
-把这段实验代码放在 `onApplicationLoad()` 末尾，仅用于本节缓存实验，复验后删除。它在同一次启动内证明 JSON 对象与 getter 缓存是两层状态，并在日志前恢复原值：
+| 方法 | 当前用途与异常／缺省 |
+|---|---|
+| getString | 字符串，缺失或无法按要求读取时抛 RuntimeException |
+| getFloat | 浮点数，缺失或转换失败时抛 RuntimeException |
+| getInt | 按浮点读取再截断，3.75 返回 3 |
+| getBoolean | 布尔值，缺失或转换失败时抛 RuntimeException |
+| optBoolean | 读取不到有效布尔时采用给定缺省值 |
+| getColor | RGBA，缺键采用并缓存 Color.white，格式错误产生异常 |
+| getSettingsJSON | 当前合并对象，供直接查询与修改 |
+
+完整方法也读取 example_count 和 accent_color。需要小数时使用 getFloat，getInt 的截断与四舍五入是不同操作；颜色保持四项 RGBA。
+
+## 比较内存对象与缓存
+
+getFloat、getBoolean 与 getInt 使用进程缓存。直接修改 getSettingsJSON 返回的对象后，旧缓存可能仍被读取，resetCached 用于刷新这些缓存。
+
+下面的局部实验读取原音量，改变对象，再比较缓存和刷新值，最后恢复本键：
 
 ```java
 org.json.JSONObject json = settings.getSettingsJSON();
@@ -96,64 +84,84 @@ settings.resetCached();
 float refreshed = settings.getFloat("GearIn_loop_volume");
 json.put("GearIn_loop_volume", original);
 settings.resetCached();
-Global.getLogger(GearInModPlugin.class).info(
-        "GearIn settings cache: cached=" + cached + ", refreshed=" + refreshed);
 ```
 
-生效后，日志显示 `cached=0.8, refreshed=0.25`；随后再次读取 `GearIn_loop_volume` 得到 `0.8`。
+**JSON 对象和 getter 缓存分别观察。** 本例原值 0.8，刷新前仍读 0.8，刷新后为 0.25，恢复后再读原值。getColor 有独立缓存，resetCached 不会清除它，颜色要随设置重载刷新。
 
-### 汇总读取三个设置键
+setFloat 和 setBoolean 同样操作内存设置；文件内容、运行缓存和存档是不同范围。需要保存跨启动数据时，通过 [C17-S4] 的 common 入口写入，再在相应阶段读取。
 
-在 `data/config/settings.json` 添加三个带 MOD 前缀的键，在入口类中读取：
+编者建议把明确固定的配置放在资源文件，运行状态按所属对象保存。为了调一个设置把资源、缓存与存档一起改，往往会把原本简单的问题变得难以判断。
+
+## 用固定诊断方法核对参数
+
+把下面的局部方法加入 GearInModPlugin 方法区，并在 onApplicationLoad 调用 logSettings：
 
 ```java
-com.fs.starfarer.api.SettingsAPI settings = Global.getSettings();
-float volume = settings.getFloat("GearIn_loop_volume");
-String serviceName = settings.getString("GearIn_service_name");
-boolean enabled = settings.optBoolean("GearIn_feature_enabled", false);
-Global.getLogger(GearInModPlugin.class)
-        .info("GearIn settings: " + serviceName + ", volume=" + volume + ", enabled=" + enabled);
+private void logSettings() throws org.json.JSONException {
+    com.fs.starfarer.api.SettingsAPI settings = Global.getSettings();
+    float volume = settings.getFloat("GearIn_loop_volume");
+    String serviceName = settings.getString("GearIn_service_name");
+    boolean enabled = settings.optBoolean("GearIn_feature_enabled", false);
+    int count = settings.getInt("GearIn_example_count");
+    java.awt.Color color = settings.getColor("GearIn_accent_color");
+    org.json.JSONObject json = settings.getSettingsJSON();
+
+    json.put("GearIn_loop_volume", 0.25f);
+    float cached = settings.getFloat("GearIn_loop_volume");
+    settings.resetCached();
+    float refreshed = settings.getFloat("GearIn_loop_volume");
+    json.put("GearIn_loop_volume", volume);
+    settings.resetCached();
+
+    Global.getLogger(GearInModPlugin.class).info(
+            "GearIn settings: name=" + serviceName + ", volume=" + volume
+            + ", enabled=" + enabled + ", count=" + count + ", color=" + color
+            + ", cached=" + cached + ", refreshed=" + refreshed);
+}
 ```
 
-读取代码只消费设置值。设置文件的文本内容和结构属于资源输入，不在本节运行期写回。
+这段方法在同一次应用加载中记录必填值、可选值、整数、颜色和缓存差异，并在结束前恢复自有音量。日志器沿用入口类，当前方法用于本节参数核对。JSON 写入声明 JSONException，调用它的 onApplicationLoad 保留接口允许的 throws Exception。
 
 ## 验证方案
 
-前置数据：`gear_in` MOD、`settings.json` 中的三个设置键和入口类读取片段已就绪。
-
-1. 启动游戏，进入入口类读取方法并观察 `starsector.log`。
-2. 读取 `GearIn_loop_volume`，观察日志中的浮点值。
-3. 读取 `GearIn_service_name`，观察日志中的字符串。
-4. 删除 `GearIn_feature_enabled` 后重新启动，观察 `optBoolean` 返回的缺省值。
+1. 保存自有设置键和读取方法，构建 JAR，重启游戏。
+2. 搜索 GearIn settings，核对名称、音量、开关、整数和颜色。
+3. 比较 cached 与 refreshed，再读取原键确认恢复值。
+4. 将 feature_enabled 暂时省略，保存并重启，比较 optBoolean 的 false 缺省。
+5. 恢复当前功能开关，核对 MOD 资源文件保持手动保存的内容。
 
 预期结果：
 
-- 日志显示 `volume=0.8`、`serviceName=齿轮工业服务` 和 `enabled=true`；
-- 设置键缺失时，`optBoolean` 返回调用方提供的缺省值；
-- settings 读取不会产生 common 文件或修改 MOD 资源文件。
+- 默认名称与音量为齿轮工业服务和 0.8，开关为 true。
+- example_count 截断为 3，颜色读取当前 RGBA。
+- 缓存实验为 cached0.8、refreshed0.25，恢复后音量 0.8。
+- 省略可选开关时返回 false，读取按给定缺省进行。
+- 方法记录运行结果，内存设置修改按进程范围生效。
 
 ## 故障分析
 
-- **严格读取抛出 `RuntimeException`**：键不存在或 JSON 类型不符。
-    - **解决方案**：核对 `settings.json` 的键名和类型，修正后重新载入配置。
+- **严格读取抛 RuntimeException**：键未合入或值不能按所需类型读取。
+    - **解决方案**：核对自有键、JSON 值与 getter，保存并重启。
 
-- **`getInt` 的结果丢失小数**：该方法通过 `getFloat` 读取后执行整数截断。
-    - **解决方案**：需要小数时改用 `getFloat`。
+- **整数读取丢失小数**：getInt 采用截断。
+    - **解决方案**：需要小数时使用 getFloat。
 
-- **修改 JSON 后读取仍是旧值**：直接修改 `getSettingsJSON()` 返回对象却没有调用 `resetCached()`，缓存仍然有效。`getColor` 例外，其缓存只能重载设置刷新。
-    - **解决方案**：调用 `resetCached()` 清理缓存后再读取。
+- **对象修改后读取旧值**：对应 getter 缓存尚未刷新。
+    - **解决方案**：对数值与布尔使用 resetCached，颜色通过设置重载核对。
 
-- **设置在重启后消失**：`setFloat` 和 `setBoolean` 只修改内存。
-    - **解决方案**：跨启动数据写入 common，重启后重新读取 common。
+- **重启后内存设置恢复文件值**：修改只作用于运行对象。
+    - **解决方案**：固定配置保存到资源，需要跨启动运行数据时使用 common。
 
-- **提交启动器关键键后数值没有变化**：这些键由启动器管理，MOD 中的同名键不属于可覆盖设置。
-    - **解决方案**：改用启动器提供的入口或换一个自有键，重启。
+- **启动器配置未按 MOD 键变化**：实际读取位置属于启动器或进程参数。
+    - **解决方案**：按该参数的实际入口设置，功能参数使用独立自有键。
 
 ## 总结
 
-settings 读取有清晰的边界：对象键先合并，取值方法再按类型解析；严格方法在键缺失或类型不符时抛异常，可选方法返回调用方提供的缺省值。内存修改、缓存刷新和 common 持久化各自承担不同职责，不能混用。
+设置先按键合并，再由类型 getter 读取。必填值、可选缺省、整数截断和颜色有各自的读取条件，缓存则决定内存修改何时进入下一次结果。
+
+配置文件、运行对象与持久数据分别服务不同范围。确认读取方、修改位置和刷新时机后，参数变化就能从日志和实际功能中核对。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.SettingsAPI`：`getSettingsJSON`、`getString`、`getFloat`、`getInt`、`getBoolean`、`getColor`、`optBoolean`、`resetCached`；
-- `data/config/settings.json`：设置键和值的来源；
+- `com.fs.starfarer.api.SettingsAPI`：类型 getter、getSettingsJSON、setFloat、setBoolean 和 resetCached。
+- `data/config/settings.json`：自有键和对象合并输入。

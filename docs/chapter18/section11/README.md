@@ -1,10 +1,10 @@
 # 使用 MagicLib 辅助生涯开发
 
-`MagicCampaign` 把常见的生涯对象装配流程收进了两个直接入口。本节在 GearIn 星系放置一艘可回收残骸，并在同一次新档生成中清理星系周围的超空间地形。
+GearIn 星系已经生成，可以再放一艘工匠级残骸，给玩家一个实际探索目标。残骸以第一颗行星为轨道焦点，超空间清理则以整个星系为范围；把两项 MagicCampaign 操作接在星系生成之后，新档里就能直接观察发现、回收与云层变化。
 
-预计阅读时间：20 分钟。
+*本节预期阅读时间：\~20 分钟。*
 
-预计操作时间：25 分钟。
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
@@ -21,9 +21,9 @@
 - [C16-S5] 的 Sector Memory 读写；
 - [C18-S1] 的 MagicLib 硬依赖与类加载边界。
 
-## 划分新档布置职责
+## 将布置器接在星系生成之后
 
-星系生成器负责建立恒星、行星、市场与跳跃点，生涯布置器负责使用既有对象追加残骸并整理超空间。两者共享 `SectorAPI`，调用顺序决定后者能否找到前者创建的运行时对象。
+先保存本节完整类到 `src/data/scripts/gearin/campaign/GearInCampaignSetup.java`。在 `GearInModPlugin.onNewGame()` 中沿用星系生成，再调用布置器；势力关系初始化保留。**对象先生成，使用这些对象的布置随后执行。**
 
 ```text
 GearInModPlugin.onNewGame()
@@ -33,6 +33,22 @@ GearInModPlugin.onNewGame()
 ```
 
 `setup(...)` 先取得 `GearIn` 星系，再取得 `GearIn_planet1`。残骸以行星为轨道焦点；超空间清理则接收整个 `StarSystemAPI`。同一个星系对象由此流向两个用途，但每个 API 的输入边界保持清楚。
+
+## 新档入口的局部调用
+
+在已有 `GearInModPlugin.onNewGame()` 中，先生成星系，再执行生涯布置，最后初始化势力关系：
+
+```java
+@Override
+public void onNewGame() {
+    SectorAPI sector = Global.getSector();
+    new GearInSystemGenerator().generate(sector);
+    new GearInCampaignSetup().setup(sector);
+    seedRelations(sector);
+}
+```
+
+这个顺序保证 `setup(...)` 运行时，`GearIn` 和 `GearIn_planet1` 已经加入 Sector。代码只从 `onNewGame()` 接入，因此成果属于新档生成阶段。
 
 ## 检查生涯对象与装配
 
@@ -114,28 +130,12 @@ if (sectorMemory.getBoolean("$GearIn_campaign_setup_done")) {
 成功标记写在残骸创建和超空间清理之后：
 
 ```java
-MagicCampaign.createDerelict(/* 已核对的参数 */);
+MagicCampaign.createDerelict(/* 本节的残骸参数 */);
 MagicCampaign.hyperspaceCleanup(system);
 sectorMemory.set("$GearIn_campaign_setup_done", true);
 ```
 
-前置检查失败或 MagicLib 调用抛出异常时，方法不会写入成功标记。若残骸已经创建而超空间清理失败，异常处理会先移除本次残骸，再保留故障日志；下次调用因此仍能从完整的布置起点重试。
-
-## 接入新档生成顺序
-
-在已有 `GearInModPlugin.onNewGame()` 中，先生成星系，再执行生涯布置，最后初始化势力关系：
-
-```java
-@Override
-public void onNewGame() {
-    SectorAPI sector = Global.getSector();
-    new GearInSystemGenerator().generate(sector);
-    new GearInCampaignSetup().setup(sector);
-    seedRelations(sector);
-}
-```
-
-这个顺序保证 `setup(...)` 运行时，`GearIn` 和 `GearIn_planet1` 已经加入 Sector。代码只从 `onNewGame()` 接入，因此成果属于新档生成阶段。
+前置检查失败或 MagicLib 调用抛出异常时，成功标记保持未写入。残骸已创建而清理失败时，处理分支移除本次残骸并记录异常，下次调用重新创建并清理。地形操作可能已执行一部分，这份处理只明确移除残骸；再次清理继续按当前星系范围执行。
 
 ## 常用方法速查表
 
@@ -151,7 +151,7 @@ public void onNewGame() {
 
 ## 完整最小例
 
-下面的类集中完成前置检查、残骸创建、超空间清理与成功标记。将它放在 `data/scripts/gearin/campaign/GearInCampaignSetup.java`，再按上一节的入口片段从 `onNewGame()` 调用。
+完整布置器先读完成标记，再取得星系、锚点与装配，随后创建残骸、清理云层并写入成功状态：
 
 ::: details 完整成品：GearInCampaignSetup
 
@@ -236,10 +236,9 @@ public final class GearInCampaignSetup {
 
 1. 启动游戏并新建生涯，进入 GearIn 星系。
 2. 在 `GearIn_planet1` 周围开启传感器观测，接近并发现舰船残骸。
-3. 打开残骸交互，进入舰船回收界面并回收该舰船。
-4. 检查回收舰船的装配 ID、舰况和 D-mod。
-5. 返回星图，从 GearIn 星系跳入超空间并观察星系边界周围的云层。
-6. 在同一存档再次调用 `new GearInCampaignSetup().setup(Global.getSector())`，重新检查行星周围的残骸数量。
+3. 在残骸尚未回收时再次调用 `new GearInCampaignSetup().setup(Global.getSector())`，确认数量仍为 1。
+4. 打开残骸交互，进入舰船回收界面并回收，检查船体、装配来源、舰况与 D-mod。
+5. 返回星图，从 GearIn 星系跳入超空间，观察边界周围的云层。
 
 预期结果：
 
@@ -277,7 +276,7 @@ public final class GearInCampaignSetup {
 
 `MagicCampaign.createDerelict(...)` 把装配、舰况、发现、回收和轨道参数组织成一个生涯实体创建入口；`hyperspaceCleanup(...)` 则以星系为边界整理对应的超空间地形。将两者放在星系生成之后，可以让对象依赖和观察位置保持一致。
 
-Sector Memory 为新档布置提供幂等边界。先检查运行时 ID，再执行两项 MagicLib 操作，最后写入成功标记，日志就能准确区分前置数据缺失与依赖调用失败。
+Sector Memory 保存这次生涯的完成标记，重复调用可以据此结束。编者建议先观察未回收时的残骸数量，再完成回收；把首次生成、重复调用和玩家取走舰船分别看清，才能知道数量变化发生在哪一步。
 
 ## 建议参考项
 

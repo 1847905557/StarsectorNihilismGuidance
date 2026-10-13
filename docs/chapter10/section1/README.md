@@ -1,10 +1,10 @@
 # 读取生涯世界状态
 
-本节从 `SectorAPI` 取得当前存档的生涯世界，并把时间、地点、势力、玩家对象和持久数据整理成可以观察的状态日志。完整示例按固定生涯天数采样；脚本外壳只承担重复调用，不在这里展开脚本生命周期专题。
+生涯中的对象都属于当前存档，`SectorAPI` 是取得它们的总入口。本节给已有 MOD 入口加一个每五个生涯日记录一次的观察脚本，读取地点、玩家舰队、势力与时间，再比较暂停和读档后的状态。脚本负责定期调用，重点放在这些对象怎样取得、数据保存在哪个范围。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：\~18 分钟。*
 
-*本节预期操作时间：~25 分钟。*
+*本节预期操作时间：\~25 分钟。*
 
 ## 学习目标
 
@@ -20,26 +20,32 @@
 
 - [C7-S1] 的 MOD 入口和生涯回调；
 - [C7-S2] 的 `Global.getSector()` 对象取得方式；
-- [C1-S1] 的 `starsector.log` 日志位置和搜索方法；
+- [C7-S5] 的日志位置、前缀与上下文；
 - 能够区分存档数据、运行时对象和当前帧状态。
 
-## 取得当前星区
+## 把状态观察接到生涯入口
 
-`Global.getSector()` 返回当前存档的 `SectorAPI`。它是生涯世界的根入口：地点、玩家舰队、玩家势力、经济、事件管理器和全局 memory 都从这里继续取得。
+创建 `src/data/scripts/gearin/campaign/GearInSectorStateSampler.java`，完整类稍后给出。在 [C7-S1] 的 `GearInModPlugin` 添加这个类的 import，并把以下局部片段加入现有 `onGameLoad(...)` 方法，既有功能继续保留，以下使用方法内已有的 `sector`：
+
+```java
+if (!sector.hasTransientScript(GearInSectorStateSampler.class)) {
+    sector.addTransientScript(new GearInSectorStateSampler());
+}
+```
+
+`addTransientScript(...)` 让生涯引擎反复调用这个观察脚本，每次进入存档重新登记；`hasTransientScript(...)` 查询当前列表，保持一个实例。它的字段属于当前运行阶段，存档标记另存于 persistent data。完整的脚本生命周期由 [C14-S1] 继续讲解。
+
+**先在生涯入口取得当前星区，再从它取得下属对象。** `Global.getSector()` 返回当前存档的 `SectorAPI`，地点、玩家舰队、势力、经济与事件服务都从这里展开。以下是已经进入生涯后的局部读取：
 
 ```java
 SectorAPI sector = Global.getSector();
-if (sector == null) {
-    return;
-}
-
 LocationAPI currentLocation = sector.getCurrentLocation();
 CampaignFleetAPI playerFleet = sector.getPlayerFleet();
 FactionAPI playerFaction = sector.getPlayerFaction();
 CampaignClockAPI clock = sector.getClock();
 ```
 
-对象取得顺序先确认星区，再读取下属对象。新档生成、战斗切换或读档尚未完成时，某个下属对象可能暂时为空；读取代码应记录缺失对象并等待下一次调用，而不是立即把空值写入持久状态。
+应用资源加载阶段尚未建立生涯，读取放在 `onGameLoad(...)` 和它登记的生涯脚本中。当前对象由本次回调重新取得，日志可以记录具体 ID；运行阶段与读取位置一起确认。
 
 ### 生涯服务入口速查表
 
@@ -51,13 +57,13 @@ CampaignClockAPI clock = sector.getClock();
 | 经济 | `getEconomy()` | 取得市场与经济集合的总入口 |
 | 事件 | `getEventManager()`、`getIntelManager()` | 取得生涯事件和情报服务 |
 
-::: tip 对象取得时机
-`SectorAPI` 本身是存档根对象，但下属服务可能在新档生成或读档阶段延迟建立。遇到 `null` 时保留下一次读取机会，不能把一次缺失当作永久不存在。
+::: tip 当前存档的对象
+静态工具方法也使用当前 `Global.getSector()`。读档后要处理的新星区从这里取得，保存长期进度时使用实际存档数据。
 :::
 
 ## 读取生涯时间
 
-`CampaignClockAPI.getTimestamp()` 返回当前生涯时间戳，`getElapsedDaysSince(timestamp)` 返回从指定时间戳经过的生涯天数。时间换算使用生涯时钟，而不是把 `advance(float amount)` 当作天数。
+`CampaignClockAPI.getTimestamp()` 返回当前生涯时间戳，`getElapsedDaysSince(timestamp)` 返回从指定时间戳经过的生涯天数。**采样间隔采用生涯日，时间戳与换算由生涯时钟提供。** `advance(float amount)` 的输入单位是秒，当前脚本直接比较时钟时间戳。
 
 ```java
 CampaignClockAPI clock = sector.getClock();
@@ -67,7 +73,7 @@ String date = clock.getDateString();
 String shortDate = clock.getShortDate();
 ```
 
-采样器保存上一次采样时间戳，并在经过目标天数后再次读取。暂停期间全局 memory 的推进量为零，普通脚本也不会调用 `advance`；恢复运行后，时钟和采样器才会继续前进。
+脚本保存上次采样时间戳，经过五个生涯日后输出，再把当前时间作为下一次基线。暂停时生涯时钟冻结，本例的 `runWhilePaused()` 返回 `false`，脚本等待恢复后继续推进。
 
 ### 固定天数采样
 
@@ -79,11 +85,11 @@ if (daysSinceSample >= SAMPLE_INTERVAL_DAYS) {
 }
 ```
 
-这里的阈值是生涯天数，不是现实秒数。若采样期间发生读档，脚本应重新取得 `SectorAPI` 和 `CampaignClockAPI`，再根据持久时间戳决定是否补记一次日志。
+这里的阈值是生涯日。当前使用 transient 登记，读档后新实例从当前时间重新计五日；已经写入的存档标记仍恢复。如果功能需要跨读档保留采样进度，把时间戳放入随存档保存的脚本或持久数据，再按那个基线比较。
 
 ## 查看全局数据
 
-`getPersistentData()` 适合保存跨读档的简单标记；`getMemoryWithoutUpdate()` 适合读取星区 memory 而不主动触发更新。脚本自己的字段只属于当前脚本实例，不能当作存档持久状态。
+`getPersistentData()` 返回随存档保存的 Map，适合当前 "已经采样过" 标记。`getMemoryWithoutUpdate()` 取得星区 Memory 并保持当前事实，Memory 还提供过期时间语义。本例 transient 脚本的字段在读档后重建；字段的保存范围由实际登记方式决定。
 
 ```java
 Map<String, Object> persistentData = sector.getPersistentData();
@@ -94,7 +100,7 @@ boolean hasSampled = Boolean.TRUE.equals(
 Object probeValue = sectorMemory.get("$GearIn_sector_probe");
 ```
 
-写入 persistent data 时使用稳定、带主题前缀的键；写入 memory 时明确键的作用域和过期策略。读档后 persistent data 会恢复，脚本字段是否存在取决于脚本实例是否重新创建。
+本节定义 `GearIn_sector_sampled` 为 persistent 键，`$GearIn_sector_probe` 为星区 Memory 观察键。采样完成后写入前者，后者只读取，当前未设置时为 `null`。需要添加规则状态时，再确定它属于哪个 Memory 与何时过期。
 
 ::: tip 持久数据与 memory
 持久 Map 适合保存 "是否执行过" 这类存档标记；memory 还承担事实更新和过期值语义。两者都不能替代当前帧重新取得的地点、舰队和势力对象。
@@ -102,9 +108,13 @@ Object probeValue = sectorMemory.get("$GearIn_sector_probe");
 
 ## 观察状态日志
 
-完整示例把一次采样拆成三部分：先取得当前对象，再判断是否达到采样间隔，最后输出稳定字段。日志不保存对象引用，只保存 ID、日期、地点数量和暂停状态，读档后可以重新建立同一观察链。
+每次采样重新取得对象，日志只记录 ID、日期、地点数量、暂停与两种状态值。第一次日志先读取标记再写入，因此新档第一次为 `false`，下一次为 `true`；读档后该标记继续恢复。
+
+编者建议先固定采样间隔，再比较同一组字段。暂停、跨地点和读档分别改变不同条件，输出内容保持稳定，变化才容易对应。
 
 ## 完整最小例
+
+保存下列类，并保留前面的生涯登记片段，再构建 JAR。
 
 ::: details 完整成品：GearInSectorStateSampler
 ```java
@@ -148,10 +158,6 @@ public class GearInSectorStateSampler implements EveryFrameScript {
     @Override
     public void advance(float amount) {
         SectorAPI sector = Global.getSector();
-        if (sector == null || sector.getClock() == null) {
-            return;
-        }
-
         CampaignClockAPI clock = sector.getClock();
         if (!initialized) {
             lastSampleTimestamp = clock.getTimestamp();
@@ -206,33 +212,36 @@ public class GearInSectorStateSampler implements EveryFrameScript {
 
 前置数据：包含本节采样脚本类的 GearIn MOD 已构建并启用，并准备一个新档。
 
-1. 构建并启用示例 MOD，使用新档进入生涯。
+1. 保存类与 `onGameLoad(...)` 登记，构建 JAR，重启游戏并进入新档。
 2. 推进至少 5 个生涯天数，搜索 `GearIn sector sample`。
 3. 暂停游戏并保持一段时间，确认没有新的普通采样日志。
 4. 恢复运行并切换地点，确认 `date`、`timestamp` 和 `location` 发生变化。
-5. 保存、退出并重新读档，确认 persistent 标记可以读取，地点和玩家舰队通过当前星区重新取得。
+5. 完成一次采样后保存并退出，重新读档，再推进五日，比较 persistent 标记与当前地点、玩家舰队。
 
 预期结果：
 
 - 生涯天数达到采样阈值后，日志出现 `GearIn sector sample`；
 - 暂停游戏期间没有新的普通采样日志；
 - 恢复运行并切换地点后，`date`、`timestamp` 和 `location` 发生变化；
-- 保存、退出并重新读档后，persistent 标记可以读取，地点和玩家舰队通过当前星区重新取得。
+- 首次采样时 `persistent=false`，之后及读档后的采样为 `true`；`probe` 未设置时为 `null`。
+- 读档后脚本重新计五日，地点与玩家舰队从当前星区取得。
 
 ## 故障分析
 
-- **日志一直没有采样**：采样器的生涯天数阈值尚未达到，或脚本在暂停期间没有推进。
-    - **解决方案**：恢复运行并推进至少 `SAMPLE_INTERVAL_DAYS`，再检查 `runWhilePaused()` 和 `getElapsedDaysSince` 的输入时间戳。
+- **日志一直没有采样**：生涯登记缺失、五日阈值尚未达到，或当前处于暂停。
+    - **解决方案**：核对 `onGameLoad(...)` 的 transient 登记，恢复运行并推进五日，再比较时间戳与 `runWhilePaused()`。
 
-- **读档后地点或舰队字段为空**：脚本保存了运行时对象或在星区对象完成前读取。
-    - **解决方案**：只持久化 ID、标记和时间戳；每次采样重新从 `SectorAPI` 取得对象，并在缺失时等待下一次调用。
+- **读取地点或舰队时发生空引用**：读取代码放在生涯尚未建立的应用回调中。
+    - **解决方案**：将当前世界读取放入 `onGameLoad(...)` 登记的生涯脚本，并在采样时取得当前星区对象。
 
 - **persistent 标记读档后仍为 false**：写入使用了脚本字段或不同的键名。
     - **解决方案**：统一使用 `getPersistentData()` 和稳定键 `GearIn_sector_sampled`，不要把 memory 值当作持久 Map 值读取。
 
 ## 总结
 
-`SectorAPI` 是生涯世界的根入口。读取状态时先取得当前星区，再按服务分类取得地点、势力、玩家、经济和事件对象；时间采样使用 `CampaignClockAPI` 的生涯天数；跨读档标记使用 persistent data；暂停和读档期间始终重新取得运行时对象。
+状态脚本从当前星区取得地点、玩家与服务，按生涯时钟每五日记录一次。当前脚本随运行阶段重建，persistent 标记随存档恢复，Memory 观察则属于星区作用域。
+
+时间、对象与保存范围一起说明，日志才有明确的比较基线。后面继续取得地点、势力和实体，仍沿这组关系安排读取。
 
 ## 建议参考项
 

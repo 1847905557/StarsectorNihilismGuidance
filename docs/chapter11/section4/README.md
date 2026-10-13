@@ -1,10 +1,10 @@
 # 维护舰队成员状态
 
-本节把一艘舰船当作一个独立的生涯成员来处理。示例先创建成员并把它交给玩家舰队，再从同一个 `FleetMemberAPI` 读取船体、船员、战斗准备度和封存状态，最后保留成员让舰队界面继续显示。这样可以把成员自身的状态与舰队集合的职责分开观察。
+舰队集合已经能操作，这次把观察集中到一艘成员。先创建并加入玩家舰队，再比较船体、船员、CR、维修与封存，最后保留成员供界面和部署列表核对。即时日志记录本次写入，后续界面则继续受舰队船员分配与维修推进影响，两者的时机也一起说明。
 
-*本节预期阅读时间：~26 分钟。*
+*本节预期阅读时间：\~26 分钟。*
 
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：\~35 分钟。*
 
 ## 学习目标
 
@@ -12,19 +12,27 @@
 
 - 创建一艘拥有稳定生涯身份的 `FleetMemberAPI`，并把它加入指定舰队；
 - 读取船体完整度、船员数量、CR、维修状态、封存状态和可部署结果；
-- 在修改单舰状态后重新读取结果，并判断是否需要更新成员 stats；
+- 在修改单舰状态后重新读取结果，并判断是否需要更新成员 `stats`；
 - 解释 `FleetMemberAPI` 与战斗侧 `ShipAPI` 的对象边界。
 
 ## 前置知识
 
 - [C11-S2] 的 `FleetDataAPI` 成员归属、旗舰和集合顺序；
-- [C11-S3] 的成员 stats 重算与装配替换边界；
-- [C11-S5] 的 `ShipVariantAPI` 装配读取；
+- [C11-S3] 的成员 `stats` 重算与装配替换边界；
 - Java 对象引用、一次性脚本和 `starsector.log` 的基本用法。
 
-## 从舰队取得成员容器
+## 登记创建与状态脚本
 
-`CampaignFleetAPI.getFleetData()` 返回当前舰队的成员容器。`FleetDataAPI.addFleetMember(...)` 接受一艘新成员，把它放入成员集合，设置成员的 `FleetDataAPI` 引用，并标记集合需要同步。成员加入之前只有船体和装配等自身数据，加入之后才有舰队指挥官、旗舰和汇总值等上下文。
+创建 `src/data/scripts/gearin/campaign/GearInFleetMemberBuilder.java` 和 `GearInFleetMemberStatus.java`。在 `GearInModPlugin` 添加两个类的 `import`，并向 [C11-S3] 已有的 `onNewGameAfterTimePass(...)` 方法追加局部登记，沿用其中的 `sector`：
+
+```java
+sector.addTransientScript(new GearInFleetMemberBuilder());
+sector.addTransientScript(new GearInFleetMemberStatus());
+```
+
+新档推进完成后创建一艘狼与一艘锤头鲨。前者展示创建，后者记录状态变化；两者保留在玩家舰队，当前入口只在新档执行一次。
+
+**成员创建与加入舰队分别完成。** `CampaignFleetAPI.getFleetData()` 返回当前舰队的成员容器。`FleetDataAPI.addFleetMember(...)` 接受一艘新成员，把它放入成员集合，设置成员的 `FleetDataAPI` 引用，并标记集合需要同步。成员加入之前只有船体和装配等自身数据，加入之后才有舰队指挥官、旗舰和汇总值等上下文。
 
 ```java
 CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
@@ -46,7 +54,7 @@ LOG.info("member id=" + member.getId()
 调用 `addFleetMember(...)` 后再读取 `member.getFleetData()`，返回值才会指向当前容器。只把成员保存到 Java 字段而没有加入容器时，舰队界面、汇总值和战斗编队都不会把它当作舰队成员。
 :::
 
-## 记录创建前后的身份
+## 把同一个成员从创建追到集合
 
 创建和加入是两个不同动作。为了在验证时确认动作确实发生，先记录成员加入前的 `getFleetData()`，再记录加入后的容器、成员 ID、船体 ID、装配 ID 和舰队数量。
 
@@ -70,24 +78,27 @@ LOG.info("after add: id=" + member.getId()
         + " count=" + data.getNumMembers());
 ```
 
-加入操作还会为没有船名的成员生成船名，为没有舰长的成员设置默认舰长，并把成员的旗舰标记清除。需要让成员成为旗舰时，应当通过 `FleetDataAPI.setFlagship(...)` 统一切换，而不是只调用成员自身的布尔 setter。
+加入时，容器会补上船名与默认舰长，并清除新成员的旗舰标记。需要切换旗舰时，沿 [C11-S2] 的集合入口保存和恢复旗舰、舰长；本节的创建参数保持 `makeFlagship=false`。
 
 ## 设置旗舰并保留原状态
 
-`FleetDataAPI.setFlagship(member)` 会遍历当前集合，清除其他成员的旗舰状态，再把舰队指挥官设置给新旗舰。这个调用可能改变原旗舰的舰长，因此演示脚本在修改前保存原旗舰引用，恢复时先把原成员设回旗舰，再处理演示成员。
+`FleetDataAPI.setFlagship(member)` 会遍历当前集合，清除其他成员的旗舰状态，再把舰队指挥官设置给新旗舰。切换时保存原旗舰与各成员舰长，恢复两种关系。下面的局部片段在同一次调用完成，使用 `Map`、`LinkedHashMap` 与 `PersonAPI`：
 
 ```java
-FleetMemberAPI originalFlagship = data.getFleet().getFlagship();
+FleetMemberAPI originalFlagship = fleet.getFlagship();
 FleetMemberAPI demoMember = GearInFleetMemberBuilder.createMember(
         fleet,
         "wolf_Assault",
         false);
-
+Map<FleetMemberAPI, PersonAPI> captains = new LinkedHashMap<>();
+for (FleetMemberAPI member : data.getMembersListCopy()) {
+    captains.put(member, member.getCaptain());
+}
 data.setFlagship(demoMember);
-LOG.info("temporary flagship=" + data.getFleet().getFlagship().getId());
-
-if (originalFlagship != null && data.getMembersListCopy().contains(originalFlagship)) {
-    data.setFlagship(originalFlagship);
+LOG.info("temporary flagship=" + fleet.getFlagship().getId());
+data.setFlagship(originalFlagship);
+for (Map.Entry<FleetMemberAPI, PersonAPI> entry : captains.entrySet()) {
+    entry.getKey().setCaptain(entry.getValue());
 }
 ```
 
@@ -97,7 +108,7 @@ if (originalFlagship != null && data.getMembersListCopy().contains(originalFlags
 如果原旗舰已被移除或已转入另一个 `FleetDataAPI`，直接恢复会留下错误的舰长和旗舰状态。恢复前重新取得成员列表并确认对象仍属于当前舰队。
 :::
 
-## 读取船体、船员和装配
+## 先记录船体、船员与 CR 基线
 
 `FleetMemberAPI.getStatus()` 返回船体和模块状态，`getCrewComposition()` 返回当前船员组成，`getRepairTracker()` 返回 CR、维修和封存状态，`getVariant()` 返回成员当前装配。它们都属于同一个生涯成员，但含义不同，读取日志时应使用不同字段记录。
 
@@ -127,11 +138,13 @@ LOG.info("member status: id=" + member.getId()
         + " variant=" + hullVariantId);
 ```
 
-船员数量使用 `getCrewInt()` 便于日志阅读，参与部署判断的是 `getCrewFraction()`。船体完整度是 `0` 到 `1` 的比例；CR 由 `RepairTrackerAPI.getCR()` 返回，也会受到船员比例影响。维修系统的速率和最近的 CR 事件属于 `RepairTrackerAPI` 的进一步状态，可以在同一个对象上读取，但不应把它们当作船体损伤值。
+`getCrewInt()` 记录数量，`getCrewFraction()` 记录最低船员需求的满足比例。船体完整度与 CR 都使用 0 到 1；`getBaseCR()` 读取基础 CR，`getCR()` 再受船员比例影响。
+
+**基础 CR 与当前有效 CR 分别记录。** 设置 0.3 后，船员比例为 0.5 时有效值为 0.15。维修速率、近期 CR 事件与损伤状态也有各自入口，观察船体损伤时继续读取 `status`。
 
 ## 修改船体并观察维修状态
 
-`FleetMemberStatusAPI.applyHullFractionDamage(...)` 按船体最大值施加比例损伤，`setHullFraction(...)` 直接设置当前完整度，`repairFully()` 恢复船体和装甲状态。修改后应重新调用 getter，因为状态对象的结果才是游戏后续逻辑读取的值。
+`FleetMemberStatusAPI.applyHullFractionDamage(...)` 按船体最大值施加比例损伤，`setHullFraction(...)` 直接设置当前完整度，`repairFully()` 恢复船体和装甲状态。修改后应重新调用 `getter`，因为状态对象的结果才是游戏后续逻辑读取的值。
 
 ```java
 float hullBefore = member.getStatus().getHullFraction();
@@ -158,7 +171,7 @@ LOG.info("hull transition: before=" + hullBefore
 
 ## 修改船员与战斗准备度
 
-`CrewCompositionAPI.setCrew(...)` 修改成员携带的船员数量。`getCrewFraction()` 会把当前船员与成员需要的最低船员数比较，并在 `canBeDeployedForCombat()` 中参与判断。`RepairTrackerAPI.setCR(...)` 直接设置 CR，参数范围是 `0` 到 `1`；读取 `getCR()` 时仍会经过船员比例修正。
+`CrewCompositionAPI.setCrew(...)` 修改当前成员的船员组成。`getCrewFraction()` 会把当前船员与成员需要的最低船员数比较，并在 `canBeDeployedForCombat()` 中参与判断。`RepairTrackerAPI.setCR(...)` 直接设置 CR，参数范围是 `0` 到 `1`；读取 `getCR()` 时仍会经过船员比例修正。
 
 ```java
 CrewCompositionAPI composition = member.getCrewComposition();
@@ -181,11 +194,13 @@ LOG.info("readiness transition: crew=" + crewBefore
         + " deployable=" + deployable);
 ```
 
-原版部署判断会先拒绝封存成员，再比较 CR 和船员阈值。当前 `settings.json` 中 `noDeployCRPercent` 为 `0`、`noDeployCrewPercent` 为 `5`，具体阈值仍由游戏设置和成员类型共同决定；示例不把这些设置硬编码到恢复逻辑中。
+当前部署先判断封存，再比较 CR 和船员阈值。`settings.json` 的 `noDeployCRPercent` 为 0、`noDeployCrewPercent` 为 5，读取时转换为比例；战机还需要有效 CR 大于 0。具体结果用 `canBeDeployedForCombat()` 记录。
+
+玩家舰队的船员来自公共货舱，舰队同步会重新分配各成员的组成。因此直接 `setCrew(...)` 展示的是本次即时状态，后续界面可能显示重新分配的数量。需要改变长期缺员状况时，实际操作舰队货舱和成员需求。
 
 ## 切换封存状态
 
-`RepairTrackerAPI.setMothballed(true)` 把成员置于后勤封存状态。封存成员的 `canBeDeployedForCombat()` 返回 `false`，其 `getMemberStrength()` 也会按封存状态处理。恢复时先设置 `false`，再重新读取可部署结果。
+`setMothballed(true)` 保存封存前基础 CR，并把当前基础 CR 置为 0，成员同时退出可部署集合。设置 `false` 后恢复之前的基础 CR，再按当前船员比例读取有效 CR。`getMemberStrength()` 也按当前状态计算。
 
 ```java
 RepairTrackerAPI tracker = member.getRepairTracker();
@@ -204,7 +219,7 @@ LOG.info("mothball transition: before=" + mothballedBefore
         + " deployableAfterRelease=" + deployableAfterRelease);
 ```
 
-设置封存状态会影响成员 stats 和维修行为。原版 `RepairTracker.setMothballed(...)` 在成员关联有效时会调用成员的 stats 更新入口，因此切换后不要继续使用未经重新读取的派生值。
+封存切换还触发成员 `stats` 更新并标记集合同步。**切换后重新取得派生值**，当前日志分别记录封存期间的部署结果与解除后的 CR。
 
 ## 让装配替换进入成员状态
 
@@ -226,7 +241,7 @@ LOG.info("variant applied: id=" + member.getId()
         + " memberStrength=" + member.getMemberStrength());
 ```
 
-`withRefit` 为 `true` 时，原版实现可能依据新旧装配差异产生 CR 事件；需要保持 CR 不变的观察脚本可以传 `false`，再由页面明确记录这个选择。替换后重新读取成员的 stats 和 `getMemberStrength()`，不要保留旧的派生对象引用。
+`withRefit` 为 `true` 时，原版实现可能依据新旧装配差异产生 CR 事件；需要保持 CR 不变的观察脚本可以传 `false`，再由页面明确记录这个选择。替换后重新读取成员的 `stats` 和 `getMemberStrength()`，不要保留旧的派生对象引用。
 
 ::: tip 装配替换与成员归属是两件事
 `setVariant(...)` 只改变单个成员的装配。成员是否属于舰队仍由 `FleetDataAPI` 决定；替换后要在同一个舰队容器中观察成员数量、旗舰和汇总变化。
@@ -234,7 +249,7 @@ LOG.info("variant applied: id=" + member.getId()
 
 ## 观察战斗转换边界
 
-生涯成员在 `CombatFleetManager` 进入战斗时被转换为战斗侧 `ShipAPI`。转换过程会使用成员装配、舰长、舰队指挥官、CR、船员和船体状态创建战斗对象；封存或不可部署成员会被锁定或排除。战斗中的 `ShipAPI` 只代表当前战斗实例，战斗结束后应重新从生涯舰队取得 `FleetMemberAPI`。
+进入战斗后，引擎根据生涯成员建立战斗侧 `ShipAPI`。转换过程会使用成员装配、舰长、舰队指挥官、CR、船员和船体状态创建战斗对象；封存或不可部署成员会被锁定或排除。战斗中的 `ShipAPI` 只代表当前战斗实例，战斗结束后应重新从生涯舰队取得 `FleetMemberAPI`。
 
 ```java
 boolean deployable = member.canBeDeployedForCombat();
@@ -246,11 +261,11 @@ LOG.info("combat boundary: campaignMember=" + campaignId
         + " cr=" + member.getRepairTracker().getCR());
 ```
 
-本节的 fixture 不主动启动战斗。人工验证时只确认舰队界面能看到成员、战斗部署列表采用当前状态，并在退出战斗后重新读取成员 ID、CR 和船体完整度。不要把战斗侧引用写入 persistent data 或静态字段。
+进入战斗后比较部署列表，再回到生涯读取同一成员 ID、CR 和船体完整度。生涯成员跟随存档，战斗实体跟随本场战斗；长期功能按成员身份重新取得对象。
 
 ## 完整最小例
 
-下面两个类各自承担一个职责。`GearInFleetMemberBuilder` 提供可复用的创建入口并在脚本上下文中执行一次；`GearInFleetMemberStatus` 调用同一个入口，记录状态变化后把演示成员保留在玩家舰队中。
+创建类提供可复用的 `createMember(...)`，状态类用同一入口创建锤头鲨。保存两类并保留前面的新档登记。
 
 ::: details 完整成品：GearInFleetMemberBuilder
 
@@ -291,13 +306,6 @@ public class GearInFleetMemberBuilder implements EveryFrameScript {
             CampaignFleetAPI fleet,
             String variantId,
             boolean makeFlagship) {
-        if (fleet == null) {
-            throw new IllegalArgumentException("fleet must not be null");
-        }
-        if (variantId == null || variantId.isEmpty()) {
-            throw new IllegalArgumentException("variantId must not be empty");
-        }
-
         FleetDataAPI data = fleet.getFleetData();
         FleetMemberAPI member = Global.getFactory().createFleetMember(
                 FleetMemberType.SHIP,
@@ -413,17 +421,21 @@ public class GearInFleetMemberStatus implements EveryFrameScript {
         tracker.setMothballed(true);
 
         float hullAfter = status.getHullFraction();
-        float crAfter = tracker.getCR();
+        float crWhileMothballed = tracker.getCR();
         float crewAfter = crew.getCrew();
         boolean deployableWhileMothballed = member.canBeDeployedForCombat();
 
         tracker.setMothballed(false);
+        float crAfterRelease = tracker.getCR();
+        float baseCrAfterRelease = tracker.getBaseCR();
 
         LOG.info("GearIn member status: id=" + member.getId()
                 + " hull=" + hullBefore + "->" + hullAfter
                 + " crew=" + crewBefore + "->" + crewAfter
                 + " crewFraction=" + member.getCrewFraction()
-                + " cr=" + crBefore + "->" + crAfter
+                + " cr=" + crBefore + "->" + crAfterRelease
+                + " crWhileMothballed=" + crWhileMothballed
+                + " baseCrAfterRelease=" + baseCrAfterRelease
                 + " mothballed=false"
                 + " deployableWhileMothballed=" + deployableWhileMothballed
                 + " deployable=" + member.canBeDeployedForCombat()
@@ -435,23 +447,23 @@ public class GearInFleetMemberStatus implements EveryFrameScript {
 
 :::
 
-两个脚本都以 `done` 防止同一实例重复创建成员。状态脚本没有移除演示成员，因此重新运行前应在日志和舰队界面确认上一轮成员是否仍然存在；正式 MOD 可以把成员 ID 写入本节专用的 memory，再在下一次执行时复用或清理。
+当前两实例执行后结束，成员继续保留在玩家舰队。正式功能需要按已保存的成员 ID 取得对象时，先从当前集合找到它，再安排后续状态操作。编者建议把 "新建一艘" 和 "继续处理这一艘" 的入口明确区分，自动 ID 才能持续用于追踪。
 
 ## 验证方案
 
-前置数据：玩家舰队已经存在，并且测试 MOD 的脚本注册入口能在生涯推进时执行一次。
+前置数据：按本章新档入口测试，玩家舰队已建立，两个脚本在新档推进后登记。
 
 1. 构建 MOD，确认 JAR 包含 `GearInFleetMemberBuilder.class` 和 `GearInFleetMemberStatus.class`。
 2. 开始新档或载入测试存档，运行 `GearInFleetMemberBuilder`，在 `starsector.log` 搜索 `GearIn member builder`。
 3. 打开舰队界面，按日志中的成员 ID、船体和装配名称定位新成员，确认它属于玩家舰队且未被错误设为旗舰。
 4. 运行 `GearInFleetMemberStatus`，记录 `hull`、`crew`、`cr`、`mothballed`、`needsRepairs` 和 `deployable` 字段。
-5. 在舰队界面确认演示成员仍然存在，检查船体损伤、CR、船员数量和封存图标；重新读取成员后核对日志值。
+5. 在舰队界面确认锤头鲨保留、最终解除封存，比较船体和 CR；船员组成按货舱重新分配，维修与 CR 也会随生涯时间继续推进。
 6. 在不修改脚本对象引用的情况下进入一次战斗，观察部署列表对不可部署状态的提示；退出战斗后重新取得同一成员 ID。
 
 预期结果：
 
 - 创建日志包含自动生成的成员 ID、`wolf_Assault` 装配和玩家舰队成员数量；
-- 状态日志显示船体比例下降、船员比例改变、CR 变为设置值，并且封存期间 `deployableWhileMothballed=false`；
+- 即时状态日志显示船体与船员变化，封存期间有效 CR 为 0、`deployableWhileMothballed=false`；解除后基础 CR 为 0.3，有效 CR 按当时船员比例计算；
 - 释放封存后，最终可部署结果只由当前 CR、船员、船体和其他状态决定；
 - 演示成员保留在玩家舰队中，舰队界面和日志使用同一个成员 ID；
 - 战斗结束后重新取得 `FleetMemberAPI`，没有依赖战斗侧 `ShipAPI` 的旧引用。
@@ -473,28 +485,28 @@ public class GearInFleetMemberStatus implements EveryFrameScript {
 - **成员封存后仍尝试部署**：只检查船体状态，没有检查 `isMothballed()` 或 `canBeDeployedForCombat()`。
     - **解决方案**：在部署入口先读取 `canBeDeployedForCombat()`，将封存、CR、船员和维修状态分别写入日志。
 
-- **装配替换后派生值没有变化**：使用 `setVariant(..., false, false)` 后继续使用旧 stats，或只修改了共享装配对象。
+- **装配替换后派生值没有变化**：使用 `setVariant(..., false, false)` 后继续使用旧 `stats`，或只修改了共享装配对象。
     - **解决方案**：对装配先 `clone()`，写回时传入 `withStatsUpdate=true`，随后调用 `updateStats()` 并重新读取成员派生值。
 
 - **战斗结束后访问对象报错**：把战斗侧 `ShipAPI` 引用保存到跨战斗字段或存档数据。
     - **解决方案**：只保存生涯成员 ID；每次战斗结束后从玩家舰队的 `FleetDataAPI` 重新取得 `FleetMemberAPI`。
 
 - **演示成员重复出现**：一次性脚本实例被重新注册或没有使用持久标记判断已经创建过成员。
-    - **解决方案**：为每个脚本保留 `done` 状态，并在正式入口使用专用 memory 记录成员 ID；执行前检查已有成员再决定复用或清理。
+    - **解决方案**：为每个脚本保留 `done` 状态，并在正式入口使用专用 Memory 记录成员 ID；执行前检查已有成员再决定复用或清理。
 
 ## 总结
 
 `FleetMemberAPI` 负责一艘舰船在生涯中的身份、装配、船体、船员、CR、维修和部署状态。`FleetDataAPI` 负责成员是否属于舰队、旗舰切换和集合级同步。创建结果只有在加入 `FleetDataAPI` 后才拥有完整舰队上下文。
 
-读取单舰状态时分别记录船体比例、船员比例、CR、维修完成度和封存状态；修改任一状态后重新读取 `canBeDeployedForCombat()` 与派生 stats。装配替换使用隔离副本并触发 stats 更新，战斗侧 `ShipAPI` 只在当前战斗生命周期内有效。
+同一个成员的损伤、船员、基础与有效 CR、维修和封存分别记录。即时设置之后，集合分配与生涯推进继续改变结果，所以日志和界面也按观察时机比较。装配使用副本写回，战斗实体则在当前战斗取得，成员 ID 继续承担跨场追踪。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员身份、装配、状态、部署和 stats 入口；
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员身份、装配、状态、部署和 `stats` 入口；
 - `com.fs.starfarer.api.campaign.FleetDataAPI`：成员加入、移除、旗舰和集合同步；
 - `com.fs.starfarer.api.fleet.FleetMemberStatusAPI`：船体、装甲、部件损伤和维修状态；
 - `com.fs.starfarer.api.fleet.CrewCompositionAPI`：船员和海军陆战队数量；
 - `com.fs.starfarer.api.fleet.RepairTrackerAPI`：CR、维修事件、封存和恢复速率；
 - `com.fs.starfarer.api.combat.ShipAPI`：战斗侧舰船对象及其生命周期；
-- `D:/Starsector/starsector-core/data/config/settings.json`：部署阈值配置；
+- `data/config/settings.json`：部署阈值配置；
 - `Starsector/starsector-core/starsector.log`：核对脚本输出与运行时错误。

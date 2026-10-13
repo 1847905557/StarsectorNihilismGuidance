@@ -1,12 +1,12 @@
 package data.scripts.gearin.campaign;
 
-import org.apache.log4j.Logger;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.CargoAPI;
 import com.fs.starfarer.api.campaign.SubmarketPlugin;
 import com.fs.starfarer.api.campaign.econ.MarketAPI;
 import com.fs.starfarer.api.campaign.econ.SubmarketAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
+import org.apache.log4j.Logger;
 
 public class GearInSubmarketProbe {
     private static final Logger LOG = Global.getLogger(GearInSubmarketProbe.class);

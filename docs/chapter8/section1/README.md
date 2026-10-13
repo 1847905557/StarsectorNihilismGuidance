@@ -1,39 +1,47 @@
 # 读取战斗引擎状态
 
-战斗代码先要判断当前引擎处于什么阶段，再决定是否读取时间、界面或战斗结果。本节围绕 `CombatEngineAPI` 解释这些状态，并用一份周期日志确认判断结果。
+进入战斗之后，代码还需要区分战役、模拟战与生涯遭遇，选择时间口径，并在结束时处理收尾。本节用一个周期日志插件读取 `CombatEngineAPI`，先观察当前场景和状态，再把这些判断用于后续功能。
 
-*本节预期阅读时间：~16 分钟。*
+*本节预期阅读时间：\~16 分钟。*
 
-*本节预期操作时间：~20 分钟。*
+*本节预期操作时间：\~20 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
 - 区分战斗上下文；
-- 读取时间、暂停和结果状态；
-- 根据引擎状态选择运行逻辑；
-- 用日志确认状态变化。
+- 读取时间、暂停和结果；
+- 按场景、界面和战场状态安排逻辑；
+- 用日志比较实际变化。
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录和 `starsector.log` 位置；
-- [C4-S1] 的测试战役和战斗验证方法；
-- [C6-S1] 的 Java 构建与 JAR 输出；
-- [C7-S2] 的 `Global` 服务阶段与跨战斗引用边界；
-- [C8-S3] 的每帧战斗插件注册与暂停守卫。
+- [C4-S1] 的 `GearIn_test` 战役；
+- [C6-S4] 的构建与加载；
+- [C7-S2] 的 `Global` 服务和战斗引用；
+- [C7-S5] 的日志与上下文；
+- Java 覆写方法、字段与计时。
 
-## 取得当前战斗引擎
+## 在本节登记状态插件
 
-在战斗插件的回调中使用当前 `CombatEngineAPI`。每场战斗都重新取得引擎对象，状态判断和时间读取都以这份引用为准。
+创建 `src/data/scripts/gearin/combat/GearInCombatStatePlugin.java`，完整类在后面给出。在 `settings.json` 的 `plugins` 中加入本节局部登记：
 
-```java
-CombatEngineAPI engine = Global.getCombatEngine();
+```json
+{
+    "plugins": {
+        "gearInCombatStatePlugin": "data.scripts.gearin.combat.GearInCombatStatePlugin"
+    }
+}
 ```
 
-## 判断战斗上下文
+游戏会在每场战斗创建这个实例。当前 `advance` 第一次调用取得引擎，在非暂停帧累计两秒，再记录状态。完整的每帧插件结构由 [C8-S3] 继续展开，当前登记已经足够运行本例。
 
-同一段逻辑可能运行在生涯遭遇战、模拟战或战役中。先读取上下文，再决定是否执行只适用于某种战斗的代码。
+**本场战斗的状态使用本场引擎。** 服务通过 `Global.getCombatEngine` 取得，状态与时间都基于该引用，下一场使用新插件实例。
+
+## 判断战役、模拟战与生涯遭遇
+
+相同效果可能用于不同入口。先读取上下文，再决定哪些状态适合当前功能。
 
 ### 战斗上下文速查表
 
@@ -47,15 +55,9 @@ CombatEngineAPI engine = Global.getCombatEngine();
 
 `getMissionId()` 只有在战役上下文中才有明确的战役用途。日志同时记录 `isMission()` 与 ID，便于确认进入的是预期战斗。
 
-## 读取战斗时间与暂停
+## 选择时间统计口径
 
-战斗时间有不同的统计口径。需要推进逻辑时使用不含暂停的累计时间；需要记录玩家实际经历的时间时使用包含暂停的累计时间；逐帧逻辑直接使用上下文传入的 `amount`，如果没有则使用 `getElapsedInLastFrame()`。
-
-::: tip 帧与时间步长
-
-正常速度下每秒约 60 帧。`amount` 是当前帧经过的秒数，时间倍率会改变这个值。
-
-:::
+逐帧计时采用回调 `amount`；其他已有战斗代码可以读取 `getElapsedInLastFrame`。不含暂停的累计时间用于推进状态，含暂停时间用于比较玩家经历的整段过程。
 
 ### 战斗时间速查表
 
@@ -64,7 +66,7 @@ CombatEngineAPI engine = Global.getCombatEngine();
 | `getTotalElapsedTime(false)` | 战斗推进时间 | 不累计 |
 | `getTotalElapsedTime(true)` | 实际经历时间 | 继续累计 |
 | `getElapsedInLastFrame()` | 当前帧时间步长 | 返回当前帧值 |
-| `getTimeMult()` | 引擎时间倍率 stat | 读取修正后的倍率 |
+| `getTimeMult()` | 引擎时间倍率 `stat` | 读取修正后的倍率 |
 | `getElapsedInContactWithEnemy()` | 双方接敌累计时间 | 不累计 |
 | `isFleetsInContact()` | 双方当前是否接敌 | 读取当前状态 |
 | `isPaused()` | 当前是否暂停 | 返回暂停标志 |
@@ -72,13 +74,17 @@ CombatEngineAPI engine = Global.getCombatEngine();
 
 暂停不会跳过插件的 `advance()`。凡是累计状态或修改数值的代码，都在 `isPaused()` 判断之后执行。
 
-## 读取战斗结果
+正常速度下常见每秒约 60 帧，但 `amount` 随时间倍率和运行情况变化。**按秒累计，再按暂停条件决定是否推进**，固定假设每帧 0.017 秒会让计时偏离实际。
 
-`isCombatOver()` 是战斗收尾判据；`getWinningSideId()` 只提供胜者侧。胜者 ID 尚未确定时可以是 `-1`，所以不能用胜者 ID 代替结束判定。
+本例报告间隔只用非暂停 `amount`。暂停后恢复，比较 `total` 与 `totalWithPause`，就能看到两种累计时间的差异。
 
-`setCombatNotOverFor(float)` 与 `getCombatNotOverFor()` 用于读取或延长战斗继续时间。需要让战斗继续时，先确认这项延长是否与当前胜负逻辑相符。
+## 核对结果与收尾
 
-## 读取界面与战斗环境
+`isCombatOver` 表示战斗收尾状态，`getWinningSideId` 提供当前胜者侧。尚未确定时胜者可能为-1，结束判断仍使用 `isCombatOver`。
+
+`setCombatNotOverFor` 与 `getCombatNotOverFor` 用于延长或读取继续时间。需要让战斗继续时，确认这项延长与当前胜负和撤退逻辑对应，再处理插件收尾。
+
+## 读取界面与战场
 
 引擎还提供几组直接影响战斗逻辑的状态：
 
@@ -105,22 +111,11 @@ CombatEngineAPI engine = Global.getCombatEngine();
 
 这些方法读取的是引擎级战斗状态。舰船、弹体和光束对象的遍历放在 [C8-S2]。
 
-## 用周期日志观察状态
+本例把其中的界面、地图和后备状态同样记录到周期日志。需要据此显示提示时，按实际状态使用；例如 HUD 可见与对话框出现会影响提示是否适合当前画面。
 
-`GearInCombatStatePlugin` 每 2 秒记录上下文、时间和战斗结果。它只负责读取引擎状态，舰船、弹体、导弹和光束的遍历由 [C8-S2] 处理。
+## 用周期日志比较变化
 
-初始化时记录战斗上下文：
-
-```java
-this.engine = engine;
-LOG.info("GearIn battle init: campaign=" + engine.isInCampaign()
-        + " campaignSim=" + engine.isInCampaignSim()
-        + " simulation=" + engine.isSimulation()
-        + " mission=" + engine.isMission()
-        + " missionId=" + engine.getMissionId());
-```
-
-周期报告在非暂停帧累计间隔，并把两种累计时间、时间倍率、接敌状态和胜负结果写到同一行：
+首次 `advance` 调用时绑定当前引擎并记录入口；方法不依赖已废弃 `init` 先于 `advance` 的顺序。随后在非暂停帧累计间隔，局部片段如下：
 
 ```java
 if (engine.isPaused()) {
@@ -133,11 +128,13 @@ if (reportInterval.intervalElapsed()) {
 }
 ```
 
+**周期输出需要能够回答当前问题。** 本例把时间、上下文、界面与结果分为两行，便于一起查看，实例仍只服务本场战斗。
+
 ## 完整最小例
 
-下面的类只读取当前战斗引擎状态，并把上下文、时间、暂停和结果写入日志。
+保存本节类并保留上面的 `settings` 登记，再构建 JAR。
 
-::: details 完整成品：GearInCombatStatePlugin
+::: details 完整成品：`GearInCombatStatePlugin`
 
 ```java
 package data.scripts.gearin.combat;
@@ -152,14 +149,7 @@ import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.input.InputEventAPI;
 import com.fs.starfarer.api.util.IntervalUtil;
 
-/**
- * 完整最小例：战斗引擎状态读取 —— 上下文、时间、暂停与战斗结果。
- *
- * 本插件由战斗上下文注册，只在本场战斗内有效：
- * - 状态读取只使用当前战斗的引擎引用；
- * - advance() 在暂停时仍可能被调用，状态推进前必须检查 engine.isPaused()；
- * - getWinningSideId() 只表示胜者侧，战斗结束判定使用 isCombatOver()。
- */
+/** 周期记录当前战斗的场景、时间、界面与结果。 */
 public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInCombatStatePlugin.class);
@@ -167,9 +157,8 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
     private CombatEngineAPI engine;
     private final IntervalUtil reportInterval = new IntervalUtil(2f, 2f);
 
-    @Override
-    public void init(CombatEngineAPI engine) {
-        this.engine = engine;
+    private void bindEngine() {
+        engine = Global.getCombatEngine();
         LOG.info("GearIn battle init: campaign=" + engine.isInCampaign()
                 + " campaignSim=" + engine.isInCampaignSim()
                 + " simulation=" + engine.isSimulation()
@@ -179,6 +168,9 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
+        if (engine == null) {
+            bindEngine();
+        }
         if (engine.isPaused()) {
             return;
         }
@@ -211,6 +203,11 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
                 + " dialog=" + engine.isUIShowingDialog()
                 + " hud=" + engine.isUIShowingHUD()
                 + " fastTime=" + engine.isInFastTimeAdvance()
+                + " autopilot=" + engine.isUIAutopilotOn()
+                + " reserves=" + engine.playerHasNonAllyReserves()
+                + " allyReserves=" + engine.playerHasAllyReserves()
+                + " enemyRetreat=" + engine.isEnemyInFullRetreat()
+                + " map=" + engine.getMapWidth() + "/" + engine.getMapHeight()
                 + " combatOver=" + engine.isCombatOver()
                 + " winner=" + engine.getWinningSideId());
     }
@@ -221,22 +218,20 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 
 ## 验证方案
 
-前置数据：已按 [C6-S1] 至 [C6-S4] 配置 Java 17、`src/`、Gradle 和 JAR；[C4-S1] 的 `GearIn_test` 战役可用，本节的 `GearInCombatStatePlugin` 已就绪。
-
-1. 按 [C8-S3] 的方式注册并构建 `GearInCombatStatePlugin`。
-2. 进入 `GearIn_test`，观察初始化日志中的战斗类型和 `missionId`。
-3. 正常运行数秒，核对 `GearIn time:` 与 `GearIn context:` 的时间、接敌和胜负字段。
-4. 暂停战斗约 10 秒再恢复，比较 `total`、`totalWithPause` 和 `lastFrame`。
-5. 打开战斗对话框或自动驾驶，观察对应界面状态字段变化。
-6. 结束战斗，核对 `isCombatOver()` 与胜者字段的先后关系。
+1. 保存源码与登记，构建并重启，进入 `GearIn_test`。
+2. 搜索 `GearIn battle init`，核对 `mission` 与战役 ID。
+3. 正常运行数秒，比较 `GearIn time` 和 `context` 的时间、接敌、地图与界面。
+4. 暂停约 10 秒再恢复，比较两种累计时间和报告间隔。
+5. 开关自动驾驶、查看战斗对话与 HUD，比较对应状态。
+6. 结束战斗，查看 `combatOver`、`winner`、撤退与后备状态。
 
 预期结果：
 
-- 战役战斗显示 `mission=true` 和对应 `missionId`；
-- 暂停期间不推进不含暂停的战斗时间；
-- 包含暂停的累计时间可以继续增长；
-- 胜者字段用于显示胜者侧，结束判定使用 `isCombatOver()`；
-- 日志没有与 `GearInCombatStatePlugin` 相关的错误。
+- 战役入口 `mission` 为 `true`，`missionId` 对应 `GearIn_test`。
+- 非暂停报告按 2 秒间隔出现，暂停期间计时保持，恢复后继续。
+- `total` 和 `totalWithPause` 分别按自身口径累计。
+- 自动驾驶、HUD、对话、地图和后备读取当前引擎状态。
+- 结果判断采用 `combatOver`，`winner` 提供对应侧信息。
 
 ## 故障分析
 
@@ -254,10 +249,13 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 
 ## 总结
 
-本节把 `CombatEngineAPI` 的读取分成四类判断：上下文确认当前战斗类型，时间方法决定推进口径，结果方法决定收尾状态，界面与战场方法决定提示是否适合当前阶段。读取结果应绑定当前战斗引擎，具体舰船、弹体、导弹和光束对象交给 [C8-S2]。
+战斗引擎提供场景、时间、结果与界面状态。读取以当前引擎为范围，推进以 `amount` 和暂停条件为依据，结束则按 `combatOver` 处理。
+
+后面会把这些判断用于对象遍历、数值、监听与绘制。先明确当前功能需要什么状态，再选择读取位置，日志才能对应真正影响结果的条件。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：战斗上下文、时间、暂停、界面和结果访问器；
-- `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：战斗插件的 `advance` 回调；
-- `Starsector/starsector-core/starsector.log`：核对状态日志的读取位置。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：状态、时间、界面、后备与结果。
+- `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：`advance` 与其他战斗回调。
+- `com.fs.starfarer.api.combat.CombatEnginePlugin`：`init` 的调用约定。
+- `Starsector/starsector-core/starsector.log`：状态比较。

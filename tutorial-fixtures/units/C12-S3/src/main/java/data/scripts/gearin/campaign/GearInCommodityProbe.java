@@ -1,10 +1,10 @@
 package data.scripts.gearin.campaign;
 
-import org.apache.log4j.Logger;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.econ.CommodityOnMarketAPI;
 import com.fs.starfarer.api.campaign.econ.CommoditySpecAPI;
 import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import org.apache.log4j.Logger;
 
 public class GearInCommodityProbe {
     private static final Logger LOG = Global.getLogger(GearInCommodityProbe.class);
@@ -19,13 +19,10 @@ public class GearInCommodityProbe {
     }
 
     public static void log(MarketAPI market) {
+        LOG.info("GearIn commodity context: market=" + market.getId());
         for (String commodityId : COMMODITY_IDS) {
             CommoditySpecAPI spec = Global.getSettings().getCommoditySpec(commodityId);
             CommodityOnMarketAPI onMarket = market.getCommodityData(commodityId);
-            if (spec == null || onMarket == null) {
-                LOG.warn("GearIn commodity unavailable: " + commodityId);
-                continue;
-            }
             LOG.info(String.format(
                     "GearIn commodity %s: name=%s demand=%s base=%.0f stack=%d space=%.1f tags=%s stockpile=%.1f available=%d maxSupply=%d maxDemand=%d utility=%.2f deficit=%d excess=%d tradeMod=%.1f illegal=%s supplyLegal=%s demandLegal=%s demandPrice(100)=%.0f supplyPrice(100)=%.0f",
                     spec.getId(), spec.getName(), spec.getDemandClass(), spec.getBasePrice(),

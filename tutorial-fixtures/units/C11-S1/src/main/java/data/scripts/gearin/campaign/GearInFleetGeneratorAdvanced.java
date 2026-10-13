@@ -20,11 +20,7 @@ import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
 import com.fs.starfarer.api.loading.VariantSource;
 import com.fs.starfarer.api.util.Misc;
 
-/**
- * 生成、进行装配随机化并投放一支使用高级参数的巡逻舰队。
- *
- * <p>本例固定随机源，记录旗舰、指挥官、装配来源、D 插和生成规模。</p>
- */
+/** 生成并投放巡逻舰队，记录高级参数与装配随机化结果。 */
 public class GearInFleetGeneratorAdvanced implements EveryFrameScript {
 
     private static final Logger LOG = Global.getLogger(GearInFleetGeneratorAdvanced.class);

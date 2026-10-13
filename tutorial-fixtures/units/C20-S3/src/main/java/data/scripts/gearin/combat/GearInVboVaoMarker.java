@@ -10,6 +10,7 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GLContext;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
@@ -19,11 +20,7 @@ import com.fs.starfarer.api.combat.CombatEntityAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 
-/**
- * 使用 VBO 和 VAO 绘制跟随舰船的程序化方向标。
- * init() 创建几何缓冲区和 shader program，render() 按视口更新矩形并提交 uniform，
- * cleanup() 按 VAO、VBO、program 和 shader 的顺序释放本实例的资源。
- */
+/** 管理方向标的数据、绘制与资源生命周期。 */
 public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInVboVaoMarker.class);
@@ -51,6 +48,7 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
     private int geometryLocation = -1;
     private int widthsLocation = -1;
     private int worldPerPixelLocation = -1;
+    private boolean programAttempted;
     private boolean valid = true;
     private boolean cleaned;
 
@@ -63,23 +61,7 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        if (engine == null || trackedShip == null) {
-            valid = false;
-            LOG.error("GearIn VBO/VAO marker: combat context or tracked ship missing");
-            return;
-        }
-        try {
-            if (!buildProgram() || !buildGeometry()) {
-                valid = false;
-                cleanup();
-                return;
-            }
-        } catch (IOException | RuntimeException e) {
-            valid = false;
-            LOG.error("GearIn VBO/VAO marker: initialization failed", e);
-            cleanup();
-            return;
-        }
+
         entity.getLocation().set(trackedShip.getLocation());
         LOG.info("GearIn VBO/VAO marker init: ship=" + trackedShip.getId()
                 + " vao=" + vaoId + " vbo=" + vboId);
@@ -143,23 +125,30 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
     }
 
     private boolean buildGeometry() {
-        coverageVertices = BufferUtils.createFloatBuffer(12);
-        updateCoverageVertices(0f);
+        int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+        int previousVbo = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+        try {
+            coverageVertices = BufferUtils.createFloatBuffer(12);
+            updateCoverageVertices(0f);
 
-        vaoId = GL30.glGenVertexArrays();
-        vboId = GL15.glGenBuffers();
-        if (vaoId == 0 || vboId == 0) {
-            LOG.error("GearIn VBO/VAO marker: could not create VAO or VBO");
-            return false;
+            vaoId = GL30.glGenVertexArrays();
+            vboId = GL15.glGenBuffers();
+            if (vaoId == 0 || vboId == 0) {
+                LOG.error("GearIn VBO/VAO marker: could not create VAO or VBO");
+                return false;
+            }
+            GL30.glBindVertexArray(vaoId);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
+            GL20.glEnableVertexAttribArray(positionLocation);
+            GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+            GL30.glBindVertexArray(0);
+            return true;
+        } finally {
+            GL30.glBindVertexArray(previousVao);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
         }
-        GL30.glBindVertexArray(vaoId);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
-        GL20.glEnableVertexAttribArray(positionLocation);
-        GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL30.glBindVertexArray(0);
-        return true;
     }
 
     private void updateCoverageVertices(float worldPerPixel) {
@@ -180,8 +169,7 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void advance(float amount) {
-        if (!valid || engine == null || trackedShip == null || entity == null) {
-            valid = false;
+        if (!valid) {
             return;
         }
         if (engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
@@ -197,13 +185,29 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (!valid || entity == null || viewport == null || vaoId == 0 || program == 0) {
+        if (!valid) {
             return;
+        }
+        if (!programAttempted) {
+            programAttempted = true;
+            if (!GLContext.getCapabilities().OpenGL30) {
+                LOG.error("GearInVboVaoMarker: required OpenGL capability unavailable");
+                valid = false;
+                return;
+            }
+            try {
+                if (!buildProgram() || !buildGeometry()) {
+                    cleanup();
+                    return;
+                }
+            } catch (IOException | RuntimeException ex) {
+                LOG.error("GearInVboVaoMarker: GPU resource creation failed", ex);
+                cleanup();
+                return;
+            }
+            LOG.info("GearInVboVaoMarker GPU resources ready: vao=" + vaoId + " vbo=" + vboId);
         }
         float worldPerPixel = viewport.convertScreenWidthToWorldWidth(1f);
-        if (!Float.isFinite(worldPerPixel) || worldPerPixel <= 0f) {
-            return;
-        }
 
         int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
         int previousVbo = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
@@ -285,7 +289,7 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
             fragmentShader = 0;
         }
         LOG.info("GearIn VBO/VAO marker cleanup: ship="
-                + (trackedShip == null ? "null" : trackedShip.getId()));
+                + trackedShip.getId());
     }
 
     @Override
@@ -295,6 +299,6 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return DIRECTION_LENGTH;
+        return DIRECTION_LENGTH + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }

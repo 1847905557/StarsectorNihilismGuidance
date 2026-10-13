@@ -37,50 +37,40 @@ public class GearInLocationBuilder implements EveryFrameScript {
 
         SectorAPI sector = Global.getSector();
         StarSystemAPI system = sector.getStarSystem("GearIn_observation_system");
-        if (system == null) {
-            system = sector.createStarSystem("GearIn_observation_system");
+        if (system != null) {
+            done = true;
+            return;
         }
-
-        PlanetAPI star = system.getStar();
-        if (star == null) {
-            star = system.initStar(
-                    "GearIn_observation_star",
-                    "star_yellow",
-                    500f,
-                    250f,
-                    100f,
-                    3f,
-                    2f);
-        }
-
-        if (system.getEntityById("GearIn_observation_planet") == null) {
-            system.addPlanet(
-                    "GearIn_observation_planet",
-                    star,
-                    "观测行星",
-                    "terran",
-                    25f,
-                    140f,
-                    2400f,
-                    180f);
-        }
-
-        if (system.getEntityById("GearIn_observation_relay") == null) {
-            CustomCampaignEntityAPI relay = system.addCustomEntity(
-                    "GearIn_observation_relay",
-                    "观测中继站",
-                    "comm_relay",
-                    Factions.INDEPENDENT);
-            relay.addTag("GearIn_observation_tag");
-            relay.setCircularOrbit(star, 70f, 3200f, 240f);
-        }
-
-        if (system.getEntityById("GearIn_observation_marker") == null) {
-            SectorEntityToken marker = system.createToken(4200f, -900f);
-            marker.addTag("GearIn_observation_marker");
-            system.addEntity(marker);
-        }
-
+        system = sector.createStarSystem("GearIn_observation_system");
+        PlanetAPI star = system.initStar(
+                "GearIn_observation_star",
+                "star_yellow",
+                500f,
+                250f,
+                100f,
+                3f,
+                2f);
+        system.getLocation().set(-12000f, 7000f);
+        system.addPlanet(
+                "GearIn_observation_planet",
+                star,
+                "观测行星",
+                "terran",
+                25f,
+                140f,
+                2400f,
+                180f);
+        CustomCampaignEntityAPI relay = system.addCustomEntity(
+                "GearIn_observation_relay",
+                "观测中继站",
+                "comm_relay",
+                Factions.INDEPENDENT);
+        relay.addTag("GearIn_observation_tag");
+        relay.setCircularOrbit(star, 70f, 3200f, 240f);
+        SectorEntityToken marker = system.createToken(4200f, -900f);
+        marker.setId("GearIn_observation_marker");
+        marker.addTag("GearIn_observation_marker");
+        system.addEntity(marker);
         system.autogenerateHyperspaceJumpPoints(false, false, true);
         LOG.info("GearIn location built: id=" + system.getId());
         done = true;

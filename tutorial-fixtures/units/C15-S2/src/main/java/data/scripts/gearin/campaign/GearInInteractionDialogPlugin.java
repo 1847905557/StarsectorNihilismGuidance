@@ -19,6 +19,14 @@ import com.fs.starfarer.api.ui.ValueDisplayMode;
 
 public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
     private static final String NEXT = "NEXT";
+    private static final String REMOVE_TEMP = "REMOVE_TEMP";
+    private static final String READ_SELECTOR = "READ_SELECTOR";
+    private static final String PERSON_COMPACT = "PERSON_COMPACT";
+    private static final String PERSON_HIDE = "PERSON_HIDE";
+    private static final String PERSON_SHOW = "PERSON_SHOW";
+    private static final String VISUAL_FADE = "VISUAL_FADE";
+    private static final String VISUAL_FINISH_FADE = "VISUAL_FINISH_FADE";
+    private static final String VISUAL_RESTORE = "VISUAL_RESTORE";
     private static final String CONFIRM = "CONFIRM";
     private static final String SELECTOR = "SELECTOR";
     private static final String LEAVE = "LEAVE";
@@ -35,7 +43,6 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
     @Override
     public void init(InteractionDialogAPI dialog) {
         this.dialog = dialog;
-        if (dialog == null) { closed = true; return; }
         options = dialog.getOptionPanel();
         text = dialog.getTextPanel();
         visual = dialog.getVisualPanel();
@@ -58,9 +65,55 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
 
     @Override
     public void optionSelected(String optionText, Object optionData) {
-        if (closed || dialog == null) return;
-        if (LEAVE.equals(optionData)) { close(false); return; }
-        if (CANCEL.equals(optionData)) { close(true); return; }
+        if (closed) {
+            return;
+        }
+        if (LEAVE.equals(optionData)) {
+            close(false);
+            return;
+        }
+        if (CANCEL.equals(optionData)) {
+            close(true);
+            return;
+        }
+        if ("TEMP".equals(optionData)) {
+            text.addPara("Renamed display text still has optionData TEMP.");
+            return;
+        }
+        if (REMOVE_TEMP.equals(optionData)) {
+            options.removeOption("TEMP");
+            options.removeOption(REMOVE_TEMP);
+            return;
+        }
+        if (PERSON_COMPACT.equals(optionData)) {
+            visual.showPersonInfo(Global.getSector().getPlayerPerson(), true, true);
+            return;
+        }
+        if (PERSON_HIDE.equals(optionData)) {
+            visual.hideFirstPerson();
+            return;
+        }
+        if (PERSON_SHOW.equals(optionData)) {
+            visual.showFirstPerson();
+            return;
+        }
+        if (VISUAL_FADE.equals(optionData)) {
+            visual.setVisualFade(0.2f, 0.2f);
+            visual.fadeVisualOut();
+            return;
+        }
+        if (VISUAL_FINISH_FADE.equals(optionData)) {
+            visual.finishFadeFast();
+            return;
+        }
+        if (VISUAL_RESTORE.equals(optionData)) {
+            visual.restoreSavedVisual();
+            return;
+        }
+        if (READ_SELECTOR.equals(optionData)) {
+            text.addPara("Selected value=" + options.getSelectorValue(SELECTOR));
+            return;
+        }
         if (CONFIRM.equals(optionData)) {
             if (!checked) {
                 checked = true;
@@ -69,7 +122,9 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
             }
             return;
         }
-        if (!NEXT.equals(optionData) || round >= 9) return;
+        if (!NEXT.equals(optionData) || round >= 9) {
+            return;
+        }
         round++;
         options.clearOptions();
         switch (round) {
@@ -108,7 +163,7 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
                 options.setTooltipHighlightColors("TEMP", Color.YELLOW);
                 options.setShortcut("TEMP", org.lwjgl.input.Keyboard.KEY_O, false, false, false, false);
                 options.setEnabled("TEMP", true);
-                options.removeOption("TEMP");
+                options.addOption("Remove the renamed option", REMOVE_TEMP);
                 options.addOption("Continue to selector", NEXT);
                 break;
             case 5:
@@ -119,6 +174,7 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
                 text.addPara("Current=" + options.getSelectorValue(SELECTOR)
                         + ", min=" + options.getMinSelectorValue(SELECTOR)
                         + ", max=" + options.getMaxSelectorValue(SELECTOR));
+                options.addOption("Read the selector value", READ_SELECTOR);
                 options.addOption("Continue to confirmation", NEXT);
                 break;
             case 6:
@@ -141,19 +197,18 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
                 text.addPara("Round 8: show the player person and person slots.");
                 PersonAPI player = Global.getSector().getPlayerPerson();
                 visual.showPersonInfo(player);
-                visual.showPersonInfo(player, true, true);
-                visual.showFirstPerson();
-                visual.hideFirstPerson();
+                options.addOption("Show compact person view", PERSON_COMPACT);
+                options.addOption("Hide the first person", PERSON_HIDE);
+                options.addOption("Show the first person", PERSON_SHOW);
                 options.addOption("Continue to original illustration", NEXT);
                 break;
             case 9:
                 text.addPara("Round 9: show, fade and restore an original illustration.");
                 visual.showImagePortion("illustrations", "space_wreckage", 640f, 400f,
                         0f, 0f, 480f, 300f);
-                visual.setVisualFade(0.2f, 0.2f);
-                visual.fadeVisualOut();
-                visual.finishFadeFast();
-                visual.restoreSavedVisual();
+                options.addOption("Fade the visual out", VISUAL_FADE);
+                options.addOption("Finish the fade immediately", VISUAL_FINISH_FADE);
+                options.addOption("Restore the saved visual", VISUAL_RESTORE);
                 options.addOption("Finish", LEAVE);
                 options.addOption("Cancel", CANCEL);
                 break;
@@ -164,13 +219,31 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
 
     @Override
     public void optionMousedOver(String optionText, Object optionData) {
-        if (!closed && NEXT.equals(optionData)) options.setTooltip(NEXT, "Advance one tutorial round.");
+        if (!closed && NEXT.equals(optionData)) {
+            options.setTooltip(NEXT, "Advance one tutorial round.");
+        }
     }
 
-    @Override public void advance(float amount) { if (text != null) text.advance(amount); }
-    @Override public void backFromEngagement(EngagementResultAPI battleResult) { }
-    @Override public Object getContext() { return dialog == null ? null : dialog.getInteractionTarget(); }
-    @Override public Map<String, MemoryAPI> getMemoryMap() { return Collections.emptyMap(); }
+    @Override
+    public void advance(float amount) {
+        if (!closed) {
+            text.advance(amount);
+        }
+    }
+
+    @Override
+    public void backFromEngagement(EngagementResultAPI battleResult) {
+    }
+
+    @Override
+    public Object getContext() {
+        return dialog == null ? null : dialog.getInteractionTarget();
+    }
+
+    @Override
+    public Map<String, MemoryAPI> getMemoryMap() {
+        return Collections.emptyMap();
+    }
 
     private void rebuildOptions(String nextText) {
         options.clearOptions();
@@ -180,8 +253,14 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
     }
 
     private void close(boolean cancel) {
-        if (closed) return;
+        if (closed) {
+            return;
+        }
         closed = true;
-        if (cancel) dialog.dismissAsCancel(); else dialog.dismiss();
+        if (cancel) {
+            dialog.dismissAsCancel();
+        } else {
+            dialog.dismiss();
+        }
     }
 }

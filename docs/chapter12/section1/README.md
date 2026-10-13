@@ -1,10 +1,10 @@
 # 创建生涯市场
 
-本节从一个独立行星开始，创建市场并把它绑定到实体和经济集合。随后读取 `MarketAPI` 常用状态、执行可恢复的人物与交易入口交互，再用 `EconomyAPI` 观察市场集合和自然经济更新。
+观测星系已经有了行星与实体，现在给它加一个能够交易的市场。本节创建 Foundry 行星，把市场、主实体和经济集合连接起来，再通过人物目录、税率、自由港与库存日志观察当前状态。经济监听继续等待自然更新，创建和读取都沿着这一个市场展开。
 
-*本节预期阅读时间：~24 分钟。*
+*本节预期阅读时间：\~24 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：\~30 分钟。*
 
 ## 学习目标
 
@@ -21,15 +21,23 @@
 - [C3-S4] 的星系、行星和生涯对象创建；
 - [C7-S1] 的生涯入口和日志读取；
 - [C10-S2] 的 `StarSystemAPI` 与 `SectorEntityToken` 查询；
-- [C12-S3] 的商品 ID 与商品数据；
-- [C12-S4] 的子市场取得和货舱初始化边界；
 - 理解 Java 接口、集合遍历和 `EveryFrameScript` 生命周期。
 
-## 创建行星并绑定 MarketAPI
+## 接到现有生涯入口
 
-市场由 `Global.getFactory().createMarket(id, name, size)` 创建。这个调用只返回运行时对象；市场要进入经济循环，还需要设置势力和主实体，调用 `EconomyAPI.addMarket(...)`，再把市场写回实体。
+创建 `src/data/scripts/gearin/campaign/` 下的 `GearInMarketBuilder.java`、`GearInMarketInteraction.java` 和 `GearInEconomyProbe.java`。把三个类加入 `GearInModPlugin` 的 import，向 [C10-S2] 已有的 `onGameLoad(...)` 登记追加下面的局部片段，沿用其 `sector`：
 
-示例使用 `GearIn_foundry` 行星和 `GearIn_market_foundry` 市场。行星创建沿用已有的 `StarSystemAPI.addPlanet(...)` 用法，本节只保留能够承接市场绑定的最小调用：
+```java
+sector.addTransientScript(new GearInMarketBuilder());
+sector.addTransientScript(new GearInMarketInteraction());
+sector.addTransientScript(new GearInEconomyProbe());
+```
+
+地点生成先登记，市场创建随后登记，再执行交互与经济观察。各脚本完成一轮后结束；读档保留已创建的市场，再运行本次观察。
+
+## 创建行星并绑定市场
+
+`createMarket(id, name, size)` 得到市场对象。**主实体、经济集合与实体上的市场引用分别接好，玩家才能从地图进入这个市场。** 当前先定义 `GearIn_foundry` 行星与 `GearIn_market_foundry` 市场，规模为 3：
 
 ```java
 StarSystemAPI system = Global.getSector().getStarSystem("GearIn_observation_system");
@@ -52,11 +60,11 @@ planet.setFaction("gear_industry");
 
 `setPrimaryEntity` 建立市场到行星的主实体关系，`addMarket` 让经济对象能够找到市场，`planet.setMarket` 才让玩家从行星进入市场交互。三处缺少任意一处，市场对象仍可能存在，但地图交互、经济集合或势力显示会断开。
 
-创建脚本再次运行时按实体 ID 检查；已有行星直接结束，不删除或重建存档对象。您需要把 `GearInMarketBuilder` 注册到生涯脚本，或在已有生涯入口中调用它。
+再次进入存档时，生成器按行星 ID 取得已有对象，当前市场继续保留。补给等商品直接沿用原版 ID，本节先确认市场、库存与价格，商品注册和专用交易规则再分别展开。
 
 ## 读取 MarketAPI 的常用状态
 
-市场配置完成后，`MarketAPI` 同时提供结构读取和运行时修改入口。先把市场看成一个有明确归属的对象：`getPrimaryEntity()` 返回主实体，`getContainingLocation()` 返回实体所在地点，`getFactionId()` 返回市场势力，`isInEconomy()` 则确认市场已经进入经济集合。条件、产业和子市场是市场的组成部分，但它们的深入规则由对应小节负责。
+配置完成后，先从经济集合按 `GearIn_market_foundry` 找到市场，再读取身份与归属：`getPrimaryEntity()` 返回主实体，`getContainingLocation()` 返回实体所在地点，`getFactionId()` 返回市场势力，`isInEconomy()` 则确认市场已经进入经济集合。条件、产业和子市场是市场的组成部分，但它们的深入规则由对应小节负责。
 
 ### 市场状态速查表
 
@@ -76,13 +84,13 @@ planet.setFaction("gear_industry");
 
 税率是 `MutableStat`，价格接口的方向以市场为主体：`getDemandPrice` 是市场买入价，也就是用户卖出时看到的价格；`getSupplyPrice` 是市场卖出价。库存读取使用 `getCommodityData(id)`，商品对象存在并不代表库存大于零，需要同时检查 `getStockpile()` 和 `getAvailable()`。修改税率或开放状态后，界面和价格会在相应刷新时使用新的值。
 
-条件、产业和子市场的共同特点是 "对象挂在市场上，市场负责提供查询入口"。`addCondition` 和 `addIndustry` 按 ID 创建实例，`addSubmarket` 按 spec ID 创建交易入口；`getConditions()`、`getIndustries()` 和 `getSubmarketsCopy()` 返回当前集合。创建时只需要接入这些对象，具体的条件效果、产业生命周期和交易规则分别在后续小节展开。
+条件、产业和子市场都挂在当前市场，通过各自的 ID 创建与查询。`addCondition` 和 `addIndustry` 按 ID 创建实例，`addSubmarket` 按 spec ID 创建交易入口；`getConditions()`、`getIndustries()` 和 `getSubmarketsCopy()` 返回当前集合。创建时只需要接入这些对象，具体的条件效果、产业生命周期和交易规则分别在后续小节展开。
 
 ## 管理人物与通信目录
 
 市场人物列表和通信目录是两个集合。`MarketAPI.addPerson(person)` 记录人物属于哪个市场；`CommDirectoryAPI.addPerson(person)` 才会建立可显示的通信目录条目。目录返回的是 `CommDirectoryEntryAPI`，它保存条目 ID、人物和显示所需的入口信息。读取目录使用 `getEntriesCopy()`，按人物查找使用 `getEntryForPerson(person)`，移除时使用 `removePerson(person)` 或 `removeEntry(entry)`。
 
-下面的局部流程只展示集合关系。人物本身的姓名、技能和职业不属于本节重点：
+本例创建一个临时人物，分别加入人物列表和通信目录，再按同一人物恢复。局部操作如下：
 
 ```java
 PersonAPI person = Global.getFactory().createPerson();
@@ -94,7 +102,7 @@ market.getCommDirectory().removePerson(person);
 market.removePerson(person);
 ```
 
-`getAdmin()` 在市场没有管理员时可能创建默认人物，因此它不是普通的无副作用 getter。需要保留管理员时明确调用并随后从人物与目录中管理它；只查看市场是否有人物时使用 `getPeopleCopy()`。
+**`getAdmin()` 可能建立默认管理员，并把它加入市场人物列表。** 当前日志读取管理员用于观察这一对象；需要只查看已有成员集合时，用 `getPeopleCopy()`。人物列表与通信目录仍各自维护，默认管理员不会凭空替代目录条目。
 
 ## 读取市场 Memory 与 MemFlags
 
@@ -118,14 +126,13 @@ market.removePerson(person);
 MemoryAPI memory = market.getMemoryWithoutUpdate();
 boolean military = memory.getBoolean(MemFlags.MARKET_MILITARY);
 
-// 一般由对应的产业设置
-memory.set(MemFlags.MARKET_PATROL, true);
-memory.unset(MemFlags.MARKET_PATROL);
+// 临时写入采用记录原状态的完整观察流程。
+boolean patrol = memory.getBoolean(MemFlags.MARKET_PATROL);
 ```
 
 这些键改变的是原版系统读取到的市场状态；它们不会替代 `setFactionId`、`addIndustry` 或 `addSubmarket` 这样的结构配置。
 
-自由港状态、子市场集合和税率都可以在一次交互流程中被读取和修改。示例会记录原值，完成观察后按同一对象恢复；这样您能够看到修改的影响，同时不会把演示状态留在存档里。
+本例保存自由港、仓储入口与税率基线，再记录临时状态并恢复。Memory 也同时保存存在状态、原对象与剩余期限。编者建议把恢复和写入放在一起：原本没有一个键，和那个键写着 `false`，对于后续规则是两种状态。
 
 ## 使用 EconomyAPI 观察经济集合
 
@@ -135,9 +142,11 @@ memory.unset(MemFlags.MARKET_PATROL);
 
 经济更新监听器必须交给 `EconomyAPI.addUpdateListener(...)`。`commodityUpdated` 表示某个商品完成更新，`economyUpdated` 表示本轮经济更新结束；监听器返回过期后，经济对象会在后续更新中移除它。`nextStep()`、`doubleStep()` 和 `tripleStep()` 只适合市场界面等 UI 交互，不应从后台生涯脚本调用。
 
-`GearInMarketInteraction` 负责一次市场交互，记录人物与通信目录、市场 Memory，并把税率、自由港和子市场恢复到原值。`GearInEconomyProbe` 负责经济集合查询和自然经济更新监听；`commodityUpdated` 先报告商品更新，`economyUpdated` 再报告整轮更新。`nextStep()`、`doubleStep()` 和 `tripleStep()` 只能由 UI 交互使用，后台脚本只监听自然更新。
+交互脚本记录原状态并恢复，经济脚本记录市场集合后加入更新监听。监听器保留当前市场，整轮更新后再记录同一个市场的状态。**等待自然经济步，再把商品更新与整轮结束对应起来。** 打开交易界面也可能引发经济重算，观察时记录实际触发过程。
 
 ## 完整最小例
+
+三个类保存到前述路径，保留按顺序追加的生涯登记。
 
 ::: details 完整成品：GearInMarketBuilder
 ```java
@@ -265,11 +274,24 @@ public class GearInMarketInteraction implements EveryFrameScript {
 
     private void recordMemory(MarketAPI market) {
         MemoryAPI memory = market.getMemoryWithoutUpdate();
-        boolean oldPatrol = memory.getBoolean(MemFlags.MARKET_PATROL);
-        memory.set(MemFlags.MARKET_PATROL, true);
-        LOG.info("GearIn market memory: patrol="
-                + memory.getBoolean(MemFlags.MARKET_PATROL));
-        memory.set(MemFlags.MARKET_PATROL, oldPatrol);
+        boolean hadPatrol = memory.contains(MemFlags.MARKET_PATROL);
+        Object oldPatrol = memory.get(MemFlags.MARKET_PATROL);
+        float oldExpire = memory.getExpire(MemFlags.MARKET_PATROL);
+        try {
+            memory.set(MemFlags.MARKET_PATROL, true);
+            LOG.info("GearIn market memory: patrol="
+                    + memory.getBoolean(MemFlags.MARKET_PATROL));
+        } finally {
+            if (hadPatrol) {
+                memory.set(MemFlags.MARKET_PATROL, oldPatrol, oldExpire);
+            } else {
+                memory.unset(MemFlags.MARKET_PATROL);
+            }
+            LOG.info("GearIn market memory restored: present="
+                    + memory.contains(MemFlags.MARKET_PATROL)
+                    + " value=" + memory.get(MemFlags.MARKET_PATROL)
+                    + " expire=" + memory.getExpire(MemFlags.MARKET_PATROL));
+        }
     }
 
     private void restoreMarketState(MarketAPI market) {
@@ -277,6 +299,8 @@ public class GearInMarketInteraction implements EveryFrameScript {
         float oldTariff = tariff.getModifiedValue();
         boolean oldFreePort = market.isFreePort();
         boolean hadStorage = market.hasSubmarket("storage");
+        LOG.info(String.format("GearIn market interaction before: tariff=%.3f freePort=%s storage=%s",
+                oldTariff, oldFreePort, hadStorage));
         tariff.modifyFlat(TARIFF_ID, 0.05f);
         market.setFreePort(!oldFreePort);
         market.addSubmarket("storage");
@@ -339,7 +363,7 @@ public class GearInEconomyProbe implements EveryFrameScript {
         }
         logMarket(economy, market);
         logEconomy(economy, market);
-        economy.addUpdateListener(new ProbeListener());
+        economy.addUpdateListener(new ProbeListener(market));
         LOG.info("GearIn market probe: economy listener registered");
         done = true;
     }
@@ -359,7 +383,7 @@ public class GearInEconomyProbe implements EveryFrameScript {
         CommodityOnMarketAPI supplies = market.getCommodityData("supplies");
         MutableStat tariff = market.getTariff();
         LOG.info(String.format(
-                "GearIn market probe: id=%s entity=%s faction=%s size=%d markets=%d commodities=%d tariff=%.3f stockpile=%.1f available=%.1f demandPrice=%.1f supplyPrice=%.1f people=%d admin=%s commEntries=%d freePort=%s submarkets=%d",
+                "GearIn market probe: id=%s entity=%s faction=%s size=%d markets=%d commodities=%d tariff=%.3f stockpile=%.1f available=%d demandPrice=%.1f supplyPrice=%.1f people=%d admin=%s commEntries=%d freePort=%s submarkets=%d",
                 market.getId(), market.getPrimaryEntity().getId(), market.getFactionId(),
                 market.getSize(), economy.getNumMarkets(), economy.getAllCommodityIds().size(),
                 tariff.getModifiedValue(), supplies.getStockpile(), supplies.getAvailable(),
@@ -370,8 +394,13 @@ public class GearInEconomyProbe implements EveryFrameScript {
                 market.getSubmarketsCopy().size()));
     }
 
-    private static class ProbeListener implements EconomyAPI.EconomyUpdateListener {
+    private class ProbeListener implements EconomyAPI.EconomyUpdateListener {
+        private final MarketAPI market;
         private boolean expired;
+
+        private ProbeListener(MarketAPI market) {
+            this.market = market;
+        }
 
         @Override
         public void commodityUpdated(String commodityId) {
@@ -381,6 +410,7 @@ public class GearInEconomyProbe implements EveryFrameScript {
         @Override
         public void economyUpdated() {
             LOG.info("GearIn economy update: complete");
+            logMarket(Global.getSector().getEconomy(), market);
             expired = true;
         }
 
@@ -395,11 +425,11 @@ public class GearInEconomyProbe implements EveryFrameScript {
 
 ## 验证方案
 
-前置数据：已经建立 `GearIn_observation_system`，并且您知道如何自行注册或调用三个示例脚本。
+前置数据：按 [C10-S2] 生成的观测星系；本节三类与生涯登记已保存。
 
-1. 注册并运行 `GearInMarketBuilder`，在地图中找到 `GearIn Foundry` 行星。
+1. 构建 JAR 并重启，进入观测星系存档，推进一帧后在地图找到 `GearIn Foundry`。
 2. 点击行星进入市场，确认市场名称、势力和三个子市场入口。
-3. 运行 `GearInMarketInteraction`，搜索 `GearIn directory` 和 `GearIn market interaction`，核对人物、通信目录、Memory、税率、自由港和子市场恢复日志。
+3. 搜索 `GearIn directory`、`GearIn market memory` 与 `GearIn market interaction`，核对临时人物移除、Memory 的存在与期限，以及税率、自由港与仓储恢复。
 4. 运行 `GearInEconomyProbe`，搜索 `GearIn market probe` 和 `GearIn economy probe`，核对市场 ID、实体 ID、规模、经济组、地点市场数和商品规格。
 5. 等待自然经济步，搜索 `GearIn economy update`，确认商品更新后出现整轮经济更新。
 
@@ -430,9 +460,9 @@ public class GearInEconomyProbe implements EveryFrameScript {
 
 ## 总结
 
-`MarketAPI` 先完成对象创建，再经实体绑定进入经济集合注册。条件、产业和子市场在创建后附加到市场对象，玩家通过实体上的市场入口进入交互。
+Foundry 市场通过主实体、经济集合与行星引用接到生涯世界，条件、产业和三个子市场提供当前交易环境。读取时按对象区分身份、库存、整笔价格、人物与目录，临时交互则恢复具体基线。
 
-常用 MarketAPI 读取覆盖身份、势力、价格、库存、人物、管理员、通信目录、开放状态和子市场。`EconomyAPI` 负责跨市场查询与经济更新监听；临时交互保存原值并恢复，才能让测试结果保持可重复。
+经济监听把这些对象接到持续更新。市场已经可以打开之后，再沿商品、子市场和产业分别扩展，变化仍从同一个市场 ID 找回。
 
 ## 建议参考项
 

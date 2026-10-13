@@ -1,10 +1,10 @@
 # 为 Nexerelin 特遣队添加命名与事件响应
 
-特遣队名称提供势力风味，入侵监听器则让 GearIn 对市场易手作出反应。本节用配置加载命名器，以来源市场生成唯一候选名，并记录每轮入侵与最终转移。
+特遣队的名称可以来自它出发的市场，市场易手也可以留下明确的事件记录。本节把命名类接到齿轮工业配置，再登记一个生涯监听器。名字采用编号和来源市场，回调则按其实际适用的入侵模式记录；来源缺失、重复请求和读档后的登记都放到具体调用中说明。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：\~18 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：\~30 分钟。*
 
 ## 学习目标
 
@@ -16,21 +16,18 @@
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C19-S2] 的势力配置与可选接入；
+- [C14-S2] 的生涯监听器登记与存档；
+- [C12-S1] 的市场与所有者；
+- [C13-S2] 的舰队指挥官。
 
-## 让特遣队与入侵事件留下可追踪标识
+## 命名与事件分别由谁调用
 
-GearIn 特遣队显示 "编号 + 来源市场 + Forgeguard"；入侵 GearIn 市场时日志记录双方强度、结果和新所有者。来源市场缺失时仍能生成可读名称。
+`specialForcesNamerClass` 指向 `SpecialForcesNamer` 实现；Nexerelin 可能为去重重复请求名称；`InvasionListener` 提供战利品、回合、结束和市场转移回调。监听器要通过 `ListenerManager` 注册，以瞬态形式在每次生涯加载后登记，当前实例去重。
 
-## 文件与 API 链路
+## 保存命名器并登记类名
 
-`specialForcesNamerClass` 指向 `SpecialForcesNamer` 实现；Nexerelin 可能为去重重复请求名称；`InvasionListener` 提供战利品、回合、结束和市场转移回调。监听器要通过 `ListenerManager` 注册，并在持久化场景中只注册一次。
-
-### 在势力配置登记命名器
-
-在 `gear_industry.json` 的 `specialForcesNamerClass` 中登记实现类，让 Nexerelin 经脚本类加载器创建它：
+将完整 `GearInSpecialForcesNamer` 保存到 `src/data/scripts/gearin/modcompat/`，在既有 `gear_industry.json` 根对象追加：
 
 ```json
 "specialForcesNamerClass":"data.scripts.gearin.modcompat.GearInSpecialForcesNamer"
@@ -38,7 +35,7 @@ GearIn 特遣队显示 "编号 + 来源市场 + Forgeguard"；入侵 GearIn 市�
 
 生成特遣队时会进入 `GearInSpecialForcesNamer`，而不是使用默认命名器。
 
-### 从来源市场生成名字主体
+## 从来源市场取得名字主体
 
 `GearInSpecialForcesNamer.getFleetName()` 优先使用 `origin`，缺失时寻找势力市场：
 
@@ -48,7 +45,7 @@ String marketName = market == null ? "GearIn" : market.getName();
 
 正常来源显示市场名；来源为 `null` 时仍返回非空名称。
 
-### 加入可重复请求的编号
+## 给重复请求提供编号候选
 
 `getFleetName()` 的返回处使用带序数后缀的 1 至 33 编号，接受 Nexerelin 的重复检查：
 
@@ -57,11 +54,11 @@ int num = RANDOM.nextInt(33) + 1;
 return num + ordinalSuffix(num) + " " + marketName + " Forgeguard";
 ```
 
-连续请求会产生可读的候选名；重复仍由 Nexerelin 的重试逻辑处理。
+1 到 33 提供候选编号，11、12、13 使用 th，其余按末位选择 st、nd、rd 或 th。Nexerelin 最多请求 25 次，直到取得非空且未重复的名字；编号随机仍可能碰到此前名称，有限候选也可能耗尽。**命名器提供候选，管理器判断重复。**
 
-### 记录入侵结果和市场转移
+## 登记监听器并记录事件
 
-`GearInInvasionReporter` 的四个回调保存市场 ID、回合强度、胜负和新所有者：
+保存完整 `GearInInvasionReporter` 到同一源码目录。它记录市场 ID、回合强度、胜负和新所有者，局部结束日志为：
 
 ```java
 LOG.info("GearIn invasion finished: " + market.getId() + " success=" + success);
@@ -76,20 +73,28 @@ if (!listeners.hasListenerOfClass(GearInInvasionReporter.class)) {
 }
 ```
 
-重复调用注册入口仍只有一个监听器实例；每次入侵结束只出现一条 `finished` 与 `transfer` 日志。
+在既有 `GearInModPlugin.onGameLoad(...)` 追加实际调用，并导入桥与监听器：
+
+```java
+if (GearInCompatBridge.isNexerelinEnabled()) {
+    GearInInvasionReporter.register();
+}
+```
+
+同一生涯重复调用时按类去重，读档后重新建立瞬态实例。**回调取决于事件实际发生。**loot、round、finished 用于 Nexerelin 的旧式入侵模式；当前地面战通过自己的事件处理，市场真正发生转移时才调用 `reportMarketTransfered`。失败的入侵可以结束而保持市场所有者。
 
 ### 入侵回调职责速查表
 
 | 回调方法 | 触发时机 | 记录内容 |
 |---|---|---|
-| `reportInvadeLoot` | 入侵战利品结算 | 市场 ID |
-| `reportInvasionRound` | 每个入侵回合结束 | 市场 ID、攻守强度 |
-| `reportInvasionFinished` | 入侵整体结束 | 市场 ID、胜负结果 |
+| `reportInvadeLoot` | 旧式入侵战利品结算 | 市场 ID |
+| `reportInvasionRound` | 旧式入侵回合结束 | 市场 ID、攻守强度 |
+| `reportInvasionFinished` | 旧式入侵整体结束 | 市场 ID、胜负结果 |
 | `reportMarketTransfered` | 市场所有权转移 | 市场 ID、新所有者 |
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+两个角色分别承担事件记录与名称生成：
 
 ::: details 完整成品：GearInInvasionReporter
 
@@ -166,16 +171,7 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.util.Misc;
 import exerelin.campaign.intel.specialforces.namer.SpecialForcesNamer;
 
-/**
- * 特遣队命名器：实现 Nexerelin 的 SpecialForcesNamer 接口。
- * 注册方式：gear_industry.json 的 specialForcesNamerClass 指向本类；
- * 由 Nexerelin 在生成特遣队时经脚本类加载器 loadClass + newInstance
- * (无参构造) 后调用 getFleetName，至多重试 25 次直到名字不重复。
- *
- * 命名形如 "1st GearIn Prime Forgeguard"：以起源市场命名，编号随机，
- * 降低与既有特遣队撞名概率；origin 缺失时回退势力首个市场，再回退 "GearIn"。
- * 本类只被 Nexerelin 侧加载，齿轮工业自己的代码从不引用它。
- */
+/** 根据来源市场与随机序数生成特遣队候选名称。 */
 public class GearInSpecialForcesNamer implements SpecialForcesNamer {
 
     private static final Random RANDOM = new Random();
@@ -215,19 +211,19 @@ public class GearInSpecialForcesNamer implements SpecialForcesNamer {
 
 ## 验证方案
 
-前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含本节 `gear_industry.json` 的 `specialForcesNamerClass` 登记、`GearInSpecialForcesNamer` 和 `GearInInvasionReporter`，并存在可重载的 GearIn 生涯存档。
+前置数据：Nexerelin 与 Console Commands 已启用，准备能发生特遣队生成与市场转移的测试生涯；旧式回合实验使用 `legacyInvasions` 开启的独立测试配置，完成后恢复原设置。
 
-1. 构建示例 MOD，确认命名器和监听器都能编译。
-2. 在生涯初始化阶段调用 `GearInInvasionReporter.register()`，并在读档后的初始化入口再次调用。
+1. 保存两个类、命名字段和生涯登记调用，构建重启，载入测试生涯。
+2. 重复读档并调用登记入口，核对当前监听器按类保持一个实例。
 3. 生成 GearIn 特遣队，记录来源市场存在和缺失两种名称。
-4. 完成一轮入侵，按回合、结束和市场转移顺序核对日志。
+4. 完成旧式入侵，分别观察回合与结束；成功易手时核对市场转移，失败时核对所有者保持。再用当前地面战成功转移市场，观察独立 transfer 日志。
 
 预期结果：
 
 - 生成特遣队时进入 `GearInSpecialForcesNamer`；
 - 正常与缺失 origin 都返回非空名称；
-- 连续请求能得到不同编号候选；
-- 每次入侵结束只出现一条 `finished` 与 `transfer` 日志；
+- 连续请求得到 1–33 范围的序数候选，重复由库重试；
+- 每次旧式结束回调产生一条 finished，实际易手回调产生一条 transferred；当前地面战的市场转移也进入对应回调；
 - 重启或重复初始化不会增加瞬态监听器副本；读档后再次注册仍只保留一个实例。
 
 ## 故障分析
@@ -246,7 +242,9 @@ public class GearInSpecialForcesNamer implements SpecialForcesNamer {
 
 ## 总结
 
-命名器必须能被配置加载、能处理 `origin` 缺失，也要接受重复请求。事件监听器按事件阶段记录不同事实；每次生涯初始化只幂等注册一个瞬态监听器，读档后重新注册，日志才会与一次入侵对应。
+命名器从来源市场取得文本，随机序数提供候选，库在生成特遣队时加载并判断重复。监听器按旧式入侵阶段和实际市场转移记录事件，读档后登记瞬态实例，同一生涯按类去重。
+
+编者建议按玩家实际采用的入侵模式观察日志。名称、回合结果和市场所有者分别有自己的入口，记录清楚以后，剧情响应也能选择正确事件。
 
 ## 建议参考项
 

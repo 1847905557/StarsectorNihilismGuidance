@@ -1,0 +1,13 @@
+{
+    "id": "GearIn_assaultfeed",
+    "type": "STAT_MOD",
+    "aiType": "WEAPON_BOOST",
+    "statsScript": "data.scripts.gearin.shipsystems.GearInAssaultFeedSystem",
+    "weaponGlowColor": [255, 200, 0, 155],
+    "weaponTypes": ["BALLISTIC"],
+    "engineGlowLengthMult": 2.5,
+    "engineGlowWidthMult": 3,
+    "engineGlowGlowMult": 2,
+    "useSound": "system_ammo_feeder",
+    "outOfUsesSound": "gun_out_of_ammo"
+}

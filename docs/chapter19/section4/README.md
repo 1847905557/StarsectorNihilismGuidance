@@ -1,10 +1,10 @@
 # 让 Nexerelin 的战略 AI 使用 GearIn 扩张
 
-势力能出现在星区，不代表战略 AI 会替它作出行动。本节确认 GearIn 拥有 StrategicAI，检查当前 concern，并把势力入侵倍率与全局规模共同算成可解释的舰队规模。
+齿轮工业已经拥有市场和外交配置，接下来让它参加战略会议，并比较入侵、封锁与复活的规模。先开启战略 AI 和关注项倍率，再用查询角色读回实际实例和参数。会议会推进真实行动，规模方法则解释当前采用的系数，各自在对应生涯条件下观察。
 
-*本节预期阅读时间：~18 分钟。*
+*本节预期阅读时间：\~18 分钟。*
 
-*本节预期操作时间：~30 分钟。*
+*本节预期操作时间：\~30 分钟。*
 
 ## 学习目标
 
@@ -16,24 +16,19 @@
 
 ## 前置知识
 
-- [C7-S1] 理解 Java 类、方法、字段与入口插件；
-- [C8-S3] 理解每帧回调与暂停判断；[C8-S2] 理解战斗对象读取与对象边界；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C19-S2] 的势力配置与身份；
+- [C19-S3] 的两种星区和已生成市场；
+- [C14-S1] 的生涯时间推进；
+- [C11-S1] 的舰队点数和生成规模。
 
-## 让战略 AI 获得可验证的行动入口
-
-随机星区运行数月后，GearIn 战略会议能产生经济或军事 concern；允许入侵时，其进攻舰队规模体现势力配置倍率，势力被消灭后仍遵守复活设置。
-
-## 文件与 API 链路
-
-`StrategicAI.getAI` 从 sector persistent-data map 读取已经创建的 AI；`StrategicAI.addAIIfNeeded` 在缺少实例时负责补建；`strategyPriorityMults` 使用 `strategicAIConfig.json` 中的 concern ID；`InvasionFleetManager.getInvasionSizeMult` 返回已组合的势力与全局入侵倍率；`SectorManager` 和 `NexConfig` 共同决定复活是否有机会执行。
-
-### 允许 GearIn 参加战略系统
+## 开启战略 AI 与关注项
 
 在 `gear_industry.json` 的战略字段中开启入侵，并按 concern ID 调整两个实际会被战略系统读取的关注项：
 
 ```json
+"useStrategicAI": true,
 "canInvade": true,
+"invasionFleetSizeMod": 0.25,
 "strategyPriorityMults": {
   "vulnerableEnemyTarget": 1.15,
   "commodityCompetition": 0.9
@@ -42,9 +37,35 @@
 
 `military` 和 `economy` 是 concern 标签，不是可供 `strategyPriorityMults` 查找的键；写入它们不会改变上述两个 concern 的优先级。
 
-战略会议中的 Vulnerable Enemy Target 权重会上升，Competition 权重会下降。
+`useStrategicAI` 允许库为存活势力建立战略 AI，`canInvade` 参与行动许可。脆弱敌方目标的基础优先级乘 1.15，商品竞争乘 0.9；当前战略条件仍决定能否形成行动。势力规模字段 0.25 对应共同系数中的 1.25。
 
-### 确认 StrategicAI 已创建
+## 在生涯中调用查询角色
+
+将完整类保存到 `src/data/scripts/gearin/modcompat/`。在已启用 Nexerelin 的测试生涯中，通过 Console Commands 运行：
+
+```text
+runcode data.scripts.gearin.modcompat.GearInStrategicAIProbe p = new data.scripts.gearin.modcompat.GearInStrategicAIProbe(); com.fs.starfarer.api.Global.getLogger(p.getClass()).info("GearIn strategy: map=" + p.aiMapSize() + " concerns=" + p.concernCount("gear_industry") + " respawnChecks=" + p.respawnAllowedByRules("gear_industry"));
+```
+
+需要观察会议时，再执行：
+
+```text
+runcode new data.scripts.gearin.modcompat.GearInStrategicAIProbe().forceMeetingIfReady("gear_industry");
+```
+
+**查询读取状态，会议推进真实战略行为。**采用测试存档，执行后查看战略 Intel 中的 concern 与行动。实例不存在时会议返回 `false`；给当前已生成的势力补建时调用 `ensureAI(...)`，再比较 map。
+
+固定基础规模 100，可以直接比较事件后处理：
+
+```text
+runcode data.scripts.gearin.modcompat.GearInInvasionScaleProbe p = new data.scripts.gearin.modcompat.GearInInvasionScaleProbe(); for (exerelin.campaign.fleets.InvasionFleetManager.EventType t : new exerelin.campaign.fleets.InvasionFleetManager.EventType[]{exerelin.campaign.fleets.InvasionFleetManager.EventType.INVASION, exerelin.campaign.fleets.InvasionFleetManager.EventType.BLOCKADE, exerelin.campaign.fleets.InvasionFleetManager.EventType.RESPAWN}) { com.fs.starfarer.api.Global.getLogger(p.getClass()).info("GearIn scale: " + t + " fp=" + p.applyEventPostProcessing("gear_industry", 100f, t)); }
+```
+
+## 谁建立 AI，谁决定行动
+
+`StrategicAI.getAI` 从 sector persistent-data map 读取已经创建的 AI；`StrategicAI.addAIIfNeeded` 在缺少实例时负责补建；`strategyPriorityMults` 使用 `strategicAIConfig.json` 中的 concern ID；`InvasionFleetManager.getInvasionSizeMult` 返回已组合的势力与全局入侵倍率；`SectorManager` 和 `NexConfig` 共同决定复活是否有机会执行。
+
+## 查询已有 AI
 
 `GearInStrategicAIProbe` 的 `concernCount()`、`forceMeetingIfReady()` 与 `ensureAI()` 先从 sector persistent-data map 读取，再用 `null` 守卫确认 AI 生命周期；需要补建时调用 `addAIIfNeeded()`：
 
@@ -53,7 +74,7 @@ StrategicAI ai = StrategicAI.getAI(factionId);
 return ai == null ? 0 : ai.getExistingConcerns().size();
 ```
 
-`getAI()` 实际读取 `StrategicAI.getAIsMap()`；新档创建早期 map 尚未写入该势力时会返回 `null`。调用 `forceMeeting()` 只应发生在返回非空之后。
+`getAIsMap()` 按需在 Sector PersistentData 建立 map，当前势力尚无实例时 `getAI()` 返回 `null`。`addAIIfNeeded()` 创建实例后登记 Intel、脚本与 map；正常接入由库按存活势力和 `useStrategicAI` 进行。已有实例后再调用会议。
 
 ```java
 public boolean ensureAI(String factionId) {
@@ -65,7 +86,7 @@ public boolean ensureAI(String factionId) {
 
 早期探针返回 `0`，进入生涯后可主动刷新并读取 concern 数量。
 
-### 组合势力与全局入侵倍率
+## 从共同倍率读出规模
 
 `GearInInvasionScaleProbe.estimate()` 让日志能解释最终规模来源，并避免重复乘全局值：
 
@@ -76,9 +97,9 @@ return baseSize * combined;
 
 `getInvasionSizeMult()` 已经计算 `1 + invasionFleetSizeMod` 并乘上 `NexConfig.invasionFleetSizeMult`，调用方只再乘一次基础规模。
 
-修改势力或全局倍率中的任意一项时，估算值只按该项变化一次。
+本例势力部分为 1.25，全局 `invasionFleetSizeMult` 为 1 时，基础 100 得到 125；全局改为 1.2 后得到 150。每个系数只乘一次。
 
-### 拆开三种事件的后处理
+## 比较入侵、封锁与复活
 
 `GearInInvasionScaleProbe.applyEventPostProcessing()` 先取得基础规模，再应用共同倍率和事件自己的后处理；invasion 不附加事件倍率，respawn 使用 `RESPAWN_SIZE_MULT`，blockade 先保证最小规模，再乘 `BLOCKADE_SIZE_MULT` 并加入固定 FP：
 
@@ -99,9 +120,9 @@ return fp;
 
 目标筛选仍由事件类型自己的入口负责：blockade 检查 `canBlockade` 或伤害型 concern，respawn 额外受复活资格和目标权重影响。不能把这些资格条件折叠进 `getInvasionSizeMult()`。
 
-相同基础规模下，三种事件的最终 FP 能分别解释共同倍率、最小规模、固定加成和事件倍率。
+**本方法估算当前片段的规模后处理。**实际生成还会使用调用方 `sizeMult`、资金池和目标条件，最终舰队按本次事件确认。这里固定基础值，比较共同倍率、封锁最小规模、事件倍率和固定 FP。
 
-### 把复活作为独立策略验证
+## 分别观察复活开关与资格
 
 `GearInStrategicAIProbe.respawnAllowedByRules()` 把复活开关、事件开关、势力资格和次数上限分开判断：
 
@@ -115,11 +136,11 @@ boolean respawnPossible = manager != null
 
 `factionRespawnInterval` 只决定检查间隔，`maxFactionRespawns` 为负数表示不设上限；`noHomeworld` 是程序化星区的母星配置，不是复活开关。
 
-探针只有在管理器已建立、复活和入侵事件均开启、势力可玩且未达到次数上限时返回 `true`。
+这些条件满足时探针返回 `true`。实际候选还受起始势力限制、存活状态、复活冷却、排除势力和可选目标影响，返回值表示本方法检查的条件通过。
 
 ## 完整最小例
 
-局部片段说明了行为如何逐步增加；以下是可直接放入示例 MOD 的完整角色类与资源。
+两个完整角色分别读取 AI 状态和计算事件规模：
 
 ::: details 完整成品：GearInInvasionScaleProbe
 
@@ -211,12 +232,12 @@ public final class GearInStrategicAIProbe {
 
 ## 验证方案
 
-前置数据：Nexerelin 已启用，启用中的 GearIn MOD 已包含 [C19-S2] 的势力配置、[C19-S3] 的开局生成结果、本节 `gear_industry.json` 战略字段和两个探针类。
+前置数据：Nexerelin 与 Console Commands 已启用，准备齿轮工业拥有市场的随机测试新档与测试存档。
 
-1. 构建示例 MOD，确认两个探针的方法签名与当前 `ExerelinCore.jar` 匹配。
-2. 在新档、读档和 AI 缺失时机分别记录 persistent-data map 的条目数、`getAI()` 返回值和 `ensureAI()` 结果。
-3. 进入战略 AI 已建立的生涯，刷新一次会议并记录 concern 数量。
-4. 分别修改 `invasionFleetSizeMod` 与全局 `invasionFleetSizeMult`，比较估算值变化。
+1. 保存战略字段与两个类，构建重启，进入测试生涯并执行正文状态查询。
+2. 比较 map 与 concern；补建实验采用当前有效势力确无实例的输入，调用 `ensureAI` 后再查询。
+3. 在 AI 已建立的生涯执行正文会议命令，观察 concern 和实际行动。
+4. 用基础 100 比较势力 0.25、全局 1 与 1.2 的估算；实验完成后恢复全局原值。
 5. 对 invasion、blockade 和 respawn 使用同一基础规模，分别记录最小规模、事件倍率和固定 FP。
 6. 打开复活设置，记录 `respawnAllowedByRules()` 在达到次数上限前后的返回值，并核对目标资格。
 
@@ -228,7 +249,7 @@ public final class GearInStrategicAIProbe {
 - `getInvasionSizeMult()` 的组合倍率只被应用一次；
 - blockade 的最小规模、1.2 倍事件倍率和 120 FP 固定加成分别可见；
 - respawn 的 1.2 倍事件倍率不会被误写成 invasion 的共同倍率；
-- 复活探针准确反映管理器、事件开关、势力资格和次数上限。
+- 复活查询反映其检查的管理器、事件开关、可玩性和次数；实际候选继续按冷却、存活和目标处理。
 
 ## 故障分析
 
@@ -252,7 +273,9 @@ public final class GearInStrategicAIProbe {
 
 ## 总结
 
-战略接入要分别确认 AI 生命周期、concern ID、行动许可和规模计算。入侵倍率是一次组合运算，复活则是管理器、事件开关、势力资格和次数上限的联合条件；仅看到势力配置文件被读取，不能代替这些运行期验证。
+战略实例承担会议和行动，关注项 ID 对应优先级，规模方法对应本次采用的系数。复活的开关、次数和候选条件继续分别判断。
+
+编者建议先读回实例与参数，再推进一次会议。配置倍率表达取舍，行动是否发生还取决于当前星区，两种结果各自放在实际观察位置。
 
 ## 建议参考项
 

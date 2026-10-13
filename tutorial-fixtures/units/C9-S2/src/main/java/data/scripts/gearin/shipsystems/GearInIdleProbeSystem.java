@@ -9,12 +9,16 @@ import com.fs.starfarer.api.impl.combat.BaseShipSystemScript;
 public class GearInIdleProbeSystem extends BaseShipSystemScript {
 
     private static final Logger LOG = Global.getLogger(GearInIdleProbeSystem.class);
+    private State lastState;
 
     @Override
     public void apply(MutableShipStatsAPI stats, String id,
             State state, float effectLevel) {
-        LOG.info("GearIn idle probe: state=" + state
-                + " effectLevel=" + effectLevel);
+        if (state != lastState) {
+            LOG.info("GearIn idle probe: state=" + state
+                    + " effectLevel=" + effectLevel);
+            lastState = state;
+        }
     }
 
     @Override

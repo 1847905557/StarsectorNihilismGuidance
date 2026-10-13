@@ -13,8 +13,8 @@ public class GearInDamageListener implements DamageListener {
 
     @Override
     public void reportDamageApplied(Object source,
-                                    CombatEntityAPI target,
-                                    ApplyDamageResultAPI result) {
+            CombatEntityAPI target,
+            ApplyDamageResultAPI result) {
         LOG.info("GearIn damage: target=" + target
                 + " hull=" + result.getDamageToHull()
                 + " armor=" + result.getTotalDamageToArmor()

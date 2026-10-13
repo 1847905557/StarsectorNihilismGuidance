@@ -1,33 +1,41 @@
 # 实现对话插件
 
-本节先从对话插件的生命周期和面板归属开始，再按 TextPanelAPI、OptionPanelAPI、VisualPanelAPI 的实际调用顺序拆解方法。每个片段只负责一个 API 关系，代码后紧跟参数解释和直接结果；最后再把片段拼接成完整示例。
+会话已经能打开并处理选项，这次让三个面板分别完成文本、输入与视觉操作。示例沿九个主题推进：文字样式与编辑、选项与数值选择、确认、舰队、人物和插图。需要看见中间结果的动作保留独立按钮，您可以在同一个会话里比较修改前后。
 
-*本节预期阅读时间：~45 分钟。*
+*本节预期阅读时间：\~45 分钟。*
 
-*本节预期操作时间：~40 分钟。*
+*本节预期操作时间：\~40 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
 - 解释对话插件回调与三个面板的对象归属；
-- 使用 TextPanelAPI 写入、修改、追加、标记和排版文本；
-- 使用 OptionPanelAPI 管理选项、提示、快捷键、确认和 selector；
-- 使用 VisualPanelAPI 显示交互目标、玩家舰队、玩家本人和原版插图；
+- 使用 `TextPanelAPI` 写入、修改、追加、标记和排版文本；
+- 使用 `OptionPanelAPI` 管理选项、提示、快捷键、确认和 `selector`；
+- 使用 `VisualPanelAPI` 显示交互目标、玩家舰队、玩家本人和原版插图；
 - 根据参数和状态字段判断调用结果。
 
 ## 前置知识
 
-- [C15-S1] 的 InteractionDialogAPI 会话入口；
-- [C7-S2] 的 Global 生涯服务；
+- [C15-S1] 的 `InteractionDialogAPI` 会话入口；
+- [C7-S2] 的 `Global` 生涯服务；
 - Java 接口、字段、重载和枚举；
 - 能够启动测试生涯并观察对话界面。
 
-## 对话插件的生命周期
+## 把面板示例接到现有 `picker`
 
-游戏创建插件后调用 init。插件从传入的 InteractionDialogAPI 取得三个面板并保存引用。玩家选择选项时调用 optionSelected，鼠标悬停调用 optionMousedOver，动画推进调用 advance，Engagement 返回调用 backFromEngagement。面板 API 只在对话对象建立后使用，业务状态由插件字段保存。
+保存 `src/data/scripts/gearin/campaign/GearInInteractionDialogPlugin.java`，在 [C14-S3] 的交互 `picker` 已命中 `Foundry` 后，把返回实例换为本节类：
 
-## TextPanelAPI
+```java
+return new PluginPick<>(new GearInInteractionDialogPlugin(), PickPriority.MOD_SPECIFIC);
+```
+
+构建重启后，从地图打开同一实体，进入本节面板示例。初始化仍从传入的 `dialog` 取得三个面板，业务状态保存在当前实例。
+
+游戏调用 `init(...)` 时，插件从传入的 `InteractionDialogAPI` 取得三个面板并保存引用。玩家选择选项时调用 `optionSelected`，鼠标悬停调用 `optionMousedOver`，动画推进调用 `advance`，`Engagement` 返回调用 `backFromEngagement`。面板 API 只在对话对象建立后使用，业务状态由插件字段保存。
+
+## 在文本区域安排输出
 
 ### 保存面板引用
 
@@ -82,7 +90,7 @@ text.appendToLastParagraph(" appendToLastParagraph adds text.");
 text.appendToLastParagraph(8, " trimmed prefix remains.");
 ```
 
-最近段落的选择由写入顺序决定；截断参数按字符数处理。
+第二种追加重载先截去最近段落末尾的 8 个字符，再追加新文本。**编辑目标是最近一次写入的段落。** 输出顺序改变后，替换与高亮也会跟着处理新的那一段。
 
 ### 高亮文本
 
@@ -94,7 +102,7 @@ text.highlightLastInLastPara("remains", Color.GREEN);
 text.highlightInLastPara(Color.CYAN, "appendToLastParagraph", "remains");
 ```
 
-多个字符串按段落出现顺序传入，颜色数组随后按相同顺序应用。
+高亮字符串按出现顺序提供，颜色序列对应当前标记。后面的整体高亮会更新最近段落的标记，当前最终显示以最后一次设置为准。
 
 ### 更新高亮颜色
 
@@ -117,7 +125,7 @@ text.updateSize();
 
 图片资源来自 `illustrations/space_wreckage`，尺寸更新使后续内容按新高度排列。
 
-## OptionPanelAPI
+## 让选项与数值输入对应业务
 
 ### 建立选项
 
@@ -134,7 +142,7 @@ options.addOption("Cancel", CANCEL);
 
 ### 改名、启用和删除
 
-`setOptionText` 只改显示文本，`setEnabled` 改可用状态，`removeOption` 按 data 删除。
+`setOptionText` 只改显示文本，`setEnabled` 改可用状态，`removeOption` 按 `data` 删除。
 
 ```java
 options.addOption("Temporary option", "TEMP", "Created with a tooltip.");
@@ -147,7 +155,7 @@ options.removeOption("TEMP");
 
 ### 提示和快捷键
 
-提示高亮与快捷键都附着在 data 键上。
+提示高亮与快捷键都附着在 `data` 键上。
 
 ```java
 options.setTooltip("TEMP", "Tooltip for the stable optionData key.");
@@ -156,9 +164,9 @@ options.setTooltipHighlightColors("TEMP", Color.YELLOW);
 options.setShortcut("TEMP", org.lwjgl.input.Keyboard.KEY_O, false, false, false, false);
 ```
 
-快捷键的四个布尔参数依次控制 Ctrl、Alt、Shift 和位置标志。
+前三个布尔参数控制 Ctrl、Alt、Shift，最后的 `putLast` 当前被忽略。稳定 `data` 仍指向同一个选项，改名之后快捷键也继续属于它。
 
-### selector
+### `selector`
 
 `addSelector` 定义范围和显示模式，`setSelectorValue` 写入初始值。
 
@@ -170,7 +178,7 @@ options.setSelectorValue(SELECTOR, 3f);
 
 当前值为 3，边界由 1f 和 5f 决定；读取时继续使用 `SELECTOR`。
 
-### 读取 selector 边界
+### 读取 `selector` 边界
 
 三个读取方法分别返回当前值、最小值和最大值。
 
@@ -198,7 +206,7 @@ if (!checked) {
 
 确认键仍是 `CONFIRM`，禁用选项和业务状态共同保持一次性语义。
 
-## VisualPanelAPI
+## 选择视觉面板的实际对象
 
 ### 显示交互目标
 
@@ -250,9 +258,9 @@ visual.showImagePortion("illustrations", "space_wreckage", 640f, 400f,
 
 源区域尺寸、偏移和显示尺寸共同决定裁剪后的插图。
 
-### 淡出、快速完成和恢复
+### 分别观察淡出与恢复
 
-视觉切换前保存状态，淡出完成后恢复保存快照。
+保存视觉快照后，插图、淡出、快速完成与恢复用各自按钮触发。局部操作如下，完整例把它们放到独立分支：
 
 ```java
 visual.setVisualFade(0.2f, 0.2f);
@@ -263,34 +271,36 @@ visual.restoreSavedVisual();
 
 恢复读取此前 `saveCurrentVisual()` 保存的画面。
 
-## InteractionDialogPlugin
+## 让当前插件处理推进和关闭
 
 ### 推进和关闭
 
 `advance` 可转发动画时间；关闭入口区分正常离开与取消。
 
 ```java
-@Override public void advance(float amount) { if (text != null) text.advance(amount); }
-if (closed || dialog == null) return;
-if (LEAVE.equals(optionData)) { close(false); return; }
-if (CANCEL.equals(optionData)) { close(true); return; }
+@Override
+public void advance(float amount) {
+    if (!closed) {
+        text.advance(amount);
+    }
+}
 ```
 
 `dismiss()` 和 `dismissAsCancel()` 表示不同结束原因，`closed` 防止重复关闭。
 
 ## 复杂方法的边界
 
-TextPanelAPI 的 `addCostPanel` 和 `addSkillPanel` 都是在文本区域嵌入结构化信息：前者接收费用条目，后者接收人物及其技能数据。它们适合已经拥有对应经济或人物对象的界面，普通段落不需要为了调用它们而伪造这些对象。
+`TextPanelAPI` 的 `addCostPanel` 和 `addSkillPanel` 都是在文本区域嵌入结构化信息：前者接收费用条目，后者接收人物及其技能数据。它们适合已经拥有对应经济或人物对象的界面，普通段落不需要为了调用它们而伪造这些对象。
 
-OptionPanelAPI 的 `setStoryOptionParams` 把一个选项接入规则系统，需要 `StoryOptionParams` 和 `StoryPointActionDelegate`。它处理的是故事节点的参数与确认委托，普通 `addOption` 的 `optionData` 不能替代这条规则链。
+`OptionPanelAPI` 的 `setStoryOptionParams` 把一个选项接入规则系统，需要 `StoryOptionParams` 和 `StoryPointActionDelegate`。它处理的是故事节点的参数与确认委托，普通 `addOption` 的 `optionData` 不能替代这条规则链。
 
-VisualPanelAPI 的实体展示方法要求传入匹配的对象：`showPlanetInfo` 与 `showLargePlanet` 使用行星，`showFleetMemberInfo` 使用舰队成员，带 `FleetEncounterContextPlugin` 的 `showFleetInfo` 使用遭遇战上下文。`showLoot` 需要货物和交互监听器；`showCore`、`hideCore`、`closeCoreUI` 依赖核心界面；`showCustomPanel` 依赖自定义面板插件；`showMapMarker` 依赖地图标记及 Intel 标签；`showPreBattleJoinInfo` 依赖战斗上下文；`showNewGameOptionsPanel` 依赖角色创建数据。
+`VisualPanelAPI` 的实体展示方法要求传入匹配的对象：`showPlanetInfo` 与 `showLargePlanet` 使用行星，`showFleetMemberInfo` 使用舰队成员，带 `FleetEncounterContextPlugin` 的 `showFleetInfo` 使用遭遇战上下文。`showLoot` 需要货物和交互监听器；`showCore`、`hideCore`、`closeCoreUI` 依赖核心界面；`showCustomPanel` 依赖自定义面板插件；`showMapMarker` 依赖地图标记及 Intel 标签；`showPreBattleJoinInfo` 依赖战斗上下文；`showNewGameOptionsPanel` 依赖角色创建数据。
 
 这些调用分别属于费用、规则、战斗、核心界面、地图或角色创建流程。当前页面只演示能由普通对话直接提供的对象，其他方法应在其所属系统已经准备好上下文后再接入。
 
-## 片段组合
+## 完整最小例
 
-完整示例按照初始化、文本、选项、selector、确认、玩家舰队、玩家本人、原版插图和关闭顺序组合。每个分支只修改当前负责的 API 对象；轮次字段把这些片段串成可观察的连续状态。
+保存下列类，`picker` 沿前述入口选择它。当前主题和独立按钮共同组织观察。
 
 ::: details 完整成品：GearInInteractionDialogPlugin
 
@@ -316,6 +326,14 @@ import com.fs.starfarer.api.ui.ValueDisplayMode;
 
 public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
     private static final String NEXT = "NEXT";
+    private static final String REMOVE_TEMP = "REMOVE_TEMP";
+    private static final String READ_SELECTOR = "READ_SELECTOR";
+    private static final String PERSON_COMPACT = "PERSON_COMPACT";
+    private static final String PERSON_HIDE = "PERSON_HIDE";
+    private static final String PERSON_SHOW = "PERSON_SHOW";
+    private static final String VISUAL_FADE = "VISUAL_FADE";
+    private static final String VISUAL_FINISH_FADE = "VISUAL_FINISH_FADE";
+    private static final String VISUAL_RESTORE = "VISUAL_RESTORE";
     private static final String CONFIRM = "CONFIRM";
     private static final String SELECTOR = "SELECTOR";
     private static final String LEAVE = "LEAVE";
@@ -332,7 +350,6 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
     @Override
     public void init(InteractionDialogAPI dialog) {
         this.dialog = dialog;
-        if (dialog == null) { closed = true; return; }
         options = dialog.getOptionPanel();
         text = dialog.getTextPanel();
         visual = dialog.getVisualPanel();
@@ -355,9 +372,55 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
 
     @Override
     public void optionSelected(String optionText, Object optionData) {
-        if (closed || dialog == null) return;
-        if (LEAVE.equals(optionData)) { close(false); return; }
-        if (CANCEL.equals(optionData)) { close(true); return; }
+        if (closed) {
+            return;
+        }
+        if (LEAVE.equals(optionData)) {
+            close(false);
+            return;
+        }
+        if (CANCEL.equals(optionData)) {
+            close(true);
+            return;
+        }
+        if ("TEMP".equals(optionData)) {
+            text.addPara("Renamed display text still has optionData TEMP.");
+            return;
+        }
+        if (REMOVE_TEMP.equals(optionData)) {
+            options.removeOption("TEMP");
+            options.removeOption(REMOVE_TEMP);
+            return;
+        }
+        if (PERSON_COMPACT.equals(optionData)) {
+            visual.showPersonInfo(Global.getSector().getPlayerPerson(), true, true);
+            return;
+        }
+        if (PERSON_HIDE.equals(optionData)) {
+            visual.hideFirstPerson();
+            return;
+        }
+        if (PERSON_SHOW.equals(optionData)) {
+            visual.showFirstPerson();
+            return;
+        }
+        if (VISUAL_FADE.equals(optionData)) {
+            visual.setVisualFade(0.2f, 0.2f);
+            visual.fadeVisualOut();
+            return;
+        }
+        if (VISUAL_FINISH_FADE.equals(optionData)) {
+            visual.finishFadeFast();
+            return;
+        }
+        if (VISUAL_RESTORE.equals(optionData)) {
+            visual.restoreSavedVisual();
+            return;
+        }
+        if (READ_SELECTOR.equals(optionData)) {
+            text.addPara("Selected value=" + options.getSelectorValue(SELECTOR));
+            return;
+        }
         if (CONFIRM.equals(optionData)) {
             if (!checked) {
                 checked = true;
@@ -366,7 +429,9 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
             }
             return;
         }
-        if (!NEXT.equals(optionData) || round >= 9) return;
+        if (!NEXT.equals(optionData) || round >= 9) {
+            return;
+        }
         round++;
         options.clearOptions();
         switch (round) {
@@ -405,7 +470,7 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
                 options.setTooltipHighlightColors("TEMP", Color.YELLOW);
                 options.setShortcut("TEMP", org.lwjgl.input.Keyboard.KEY_O, false, false, false, false);
                 options.setEnabled("TEMP", true);
-                options.removeOption("TEMP");
+                options.addOption("Remove the renamed option", REMOVE_TEMP);
                 options.addOption("Continue to selector", NEXT);
                 break;
             case 5:
@@ -416,6 +481,7 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
                 text.addPara("Current=" + options.getSelectorValue(SELECTOR)
                         + ", min=" + options.getMinSelectorValue(SELECTOR)
                         + ", max=" + options.getMaxSelectorValue(SELECTOR));
+                options.addOption("Read the selector value", READ_SELECTOR);
                 options.addOption("Continue to confirmation", NEXT);
                 break;
             case 6:
@@ -438,19 +504,18 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
                 text.addPara("Round 8: show the player person and person slots.");
                 PersonAPI player = Global.getSector().getPlayerPerson();
                 visual.showPersonInfo(player);
-                visual.showPersonInfo(player, true, true);
-                visual.showFirstPerson();
-                visual.hideFirstPerson();
+                options.addOption("Show compact person view", PERSON_COMPACT);
+                options.addOption("Hide the first person", PERSON_HIDE);
+                options.addOption("Show the first person", PERSON_SHOW);
                 options.addOption("Continue to original illustration", NEXT);
                 break;
             case 9:
                 text.addPara("Round 9: show, fade and restore an original illustration.");
                 visual.showImagePortion("illustrations", "space_wreckage", 640f, 400f,
                         0f, 0f, 480f, 300f);
-                visual.setVisualFade(0.2f, 0.2f);
-                visual.fadeVisualOut();
-                visual.finishFadeFast();
-                visual.restoreSavedVisual();
+                options.addOption("Fade the visual out", VISUAL_FADE);
+                options.addOption("Finish the fade immediately", VISUAL_FINISH_FADE);
+                options.addOption("Restore the saved visual", VISUAL_RESTORE);
                 options.addOption("Finish", LEAVE);
                 options.addOption("Cancel", CANCEL);
                 break;
@@ -461,13 +526,31 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
 
     @Override
     public void optionMousedOver(String optionText, Object optionData) {
-        if (!closed && NEXT.equals(optionData)) options.setTooltip(NEXT, "Advance one tutorial round.");
+        if (!closed && NEXT.equals(optionData)) {
+            options.setTooltip(NEXT, "Advance one tutorial round.");
+        }
     }
 
-    @Override public void advance(float amount) { if (text != null) text.advance(amount); }
-    @Override public void backFromEngagement(EngagementResultAPI battleResult) { }
-    @Override public Object getContext() { return dialog == null ? null : dialog.getInteractionTarget(); }
-    @Override public Map<String, MemoryAPI> getMemoryMap() { return Collections.emptyMap(); }
+    @Override
+    public void advance(float amount) {
+        if (!closed) {
+            text.advance(amount);
+        }
+    }
+
+    @Override
+    public void backFromEngagement(EngagementResultAPI battleResult) {
+    }
+
+    @Override
+    public Object getContext() {
+        return dialog == null ? null : dialog.getInteractionTarget();
+    }
+
+    @Override
+    public Map<String, MemoryAPI> getMemoryMap() {
+        return Collections.emptyMap();
+    }
 
     private void rebuildOptions(String nextText) {
         options.clearOptions();
@@ -477,9 +560,15 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
     }
 
     private void close(boolean cancel) {
-        if (closed) return;
+        if (closed) {
+            return;
+        }
         closed = true;
-        if (cancel) dialog.dismissAsCancel(); else dialog.dismiss();
+        if (cancel) {
+            dialog.dismissAsCancel();
+        } else {
+            dialog.dismiss();
+        }
     }
 }
 ```
@@ -488,47 +577,49 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
 
 ## 验证方案
 
-前置数据：新建一个带交互目标的生涯，确保玩家舰队、玩家人物和原版 illustration 资源可用。
+前置数据：新建一个带交互目标的生涯，确保玩家舰队、玩家人物和原版 `illustration` 资源可用。
 
-1. 打开对话，核对交互目标 ID 和初始选项。
+1. 保存类与 `picker` 替换，构建重启，与 `Foundry` 交互，核对目标 ID 和初始选项。
 2. 依次执行文本片段，核对字体、段落、替换、追加、高亮、图片和布局。
-3. 执行选项片段，核对改名、tooltip、快捷键、selector 当前值 3、最小值 1 和最大值 5。
+3. 在选项主题悬停改名按钮，按 O 触发并查看稳定 `data`；选择删除后再继续到 `selector`，拖动并读取当前值，核对范围 1 到 5、初始 3。
 4. 触发确认，核对结果只写入一次并保持禁用状态。
 5. 核对玩家舰队、玩家本人和人物视图入口。
-6. 核对 illustrations/space_wreckage 显示、淡出、快速完成和恢复。
+6. 在插图主题分别点击淡出、快速完成与恢复，比较 `illustrations/space_wreckage` 及之前保存的视觉状态。
 7. 分别选择离开、取消和 ESC，核对关闭结果。
 
 预期结果：
 
 - 每个方法片段都产生对应面板变化；
-- optionText 改变不会改变 optionData；
-- 玩家舰队、玩家本人和 space_wreckage 来自固定来源；
+- `optionText` 改变不会改变 `optionData`；
+- 玩家舰队、玩家本人和 `space_wreckage` 来自固定来源；
 - 重复确认不会重复写入结果；
 - 关闭后不再修改面板。
 
 ## 故障分析
 
-- **选项改名后分支失效**：回调比较了 optionText 而不是稳定 data。
-    - **解决方案**：使用 setOptionText 改显示文字，分支始终比较 optionData。
+- **选项改名后分支失效**：回调比较了 `optionText` 而不是稳定 `data`。
+    - **解决方案**：使用 `setOptionText` 改显示文字，分支始终比较 `optionData`。
 
-- **视觉显示成了交互目标**：视觉分支从 getInteractionTarget 推断对象类型。
-    - **解决方案**：交互目标只负责初始展示，玩家对象分别从 Global 生涯服务取得。
+- **视觉显示成了交互目标**：视觉分支从 `getInteractionTarget` 推断对象类型。
+    - **解决方案**：交互目标只负责初始展示，玩家对象分别从 `Global` 生涯服务取得。
 
-- **插图没有出现**：illustrations 键或 sprite 名称不在原版设置中。
-    - **解决方案**：使用 space_wreckage，并保持分类和键逐字一致。
+- **插图没有出现**：`illustrations` 键或 `sprite` 名称不在原版设置中。
+    - **解决方案**：使用 `space_wreckage`，并保持分类和键逐字一致。
 
-- **结果重复写入**：确认分支没有 checked 状态门槛。
-    - **解决方案**：写入前检查 checked，成功后立即设置为 true。
+- **结果重复写入**：确认分支没有 `checked` 状态门槛。
+    - **解决方案**：写入前检查 `checked`，成功后立即设置为 `true`。
 
 ## 总结
 
-TextPanelAPI 管理文本组件，OptionPanelAPI 管理玩家输入，VisualPanelAPI 管理右侧展示。教学片段先分别说明 API 契约，再通过轮次状态组合成可运行的对话插件。
+面板各自处理文本、输入和视觉，当前插件则把动作接成可观察的会话。段落编辑按写入顺序选择目标，选项按 `data` 定位，视觉按明确的玩家或资源对象显示。
+
+编者建议把需要比较的两个画面留到两次操作中。同一帧显示又恢复，最后的画面当然只能告诉您最后那一步做了什么；本节的独立按钮就为这些观察保留了位置。
 
 ## 建议参考项
 
 - `com.fs.starfarer.api.campaign.TextPanelAPI`：本页写入、修改和排版文本都作用于该面板对象；
-- `com.fs.starfarer.api.campaign.OptionPanelAPI`：选项、提示和确认门槛的实现接口，分支判断依赖 optionData；
+- `com.fs.starfarer.api.campaign.OptionPanelAPI`：选项、提示和确认门槛的实现接口，分支判断依赖 `optionData`；
 - `com.fs.starfarer.api.campaign.VisualPanelAPI`：交互目标、玩家舰队和原版插图的显示入口；
-- `com.fs.starfarer.api.campaign.InteractionDialogAPI`：插件在 init 阶段从它取得三个面板引用的会话入口；
+- `com.fs.starfarer.api.campaign.InteractionDialogAPI`：插件在 `init` 阶段从它取得三个面板引用的会话入口；
 - `com.fs.starfarer.api.impl.campaign.tutorial.TutorialWelcomeDialogPluginImpl`：原版教学对话插件，可对照入口与关闭流程；
 - `com.fs.starfarer.api.impl.campaign.StandardRespawnDialogPluginImpl`：原版重生对话插件，可对照关闭语义和状态门槛。

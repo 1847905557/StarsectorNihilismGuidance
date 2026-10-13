@@ -1,10 +1,10 @@
 # 读写 common 数据
 
-本节在存档 `common` 中读取并保存持久状态。完整流程是先处理文件不存在、字段缺失和版本变化，再修改目标字段并明确写盘；重启后重新读取的结果决定这次保存是否成立。
+配置文件提供随 MOD 发布的输入，运行中产生的状态则需要另一处保存。本节把战斗报告写到 common：载入生涯时读回，记录一份报告后保存，再换存档或重启核对。读取同时处理缺失字段与 schema 迁移，已有对象中的其他字段继续保留；公共文件的共享范围和真正的写入时机也一起确认。
 
-*本节预期阅读时间：~28 分钟。*
+*本节预期阅读时间：\~28 分钟。*
 
-*本节预期操作时间：~50 分钟。*
+*本节预期操作时间：\~50 分钟。*
 
 ## 学习目标
 
@@ -21,85 +21,135 @@
 - [C7-S2] 的 `Global.getSettings()`；
 - [C17-S2] 的 JSON 结构、字段读取和编码规则。
 
-## common 的位置与语义
+## 先确定这份数据由谁共享
 
-游戏存档目录由启动器决定，MOD 不应把绝对路径写入代码。相对 common 文件名由 MOD 自己命名，例如 `gear_in/state.json`；实际文件位于 `<存档目录>/common/gear_in/state.json.data`。
+**common 属于用户数据空间，跨生涯存档共享。**换一份存档，代码仍读取同名公共文件。某一生涯中的剧情进度继续随该生涯保存；跨生涯计数、共用设置和报告可以放到 common。
 
-MOD 资源目录提供随 MOD 发布的只读输入，common 则保存运行期间产生的持久状态。common 文件属于当前用户数据；代码只读写自己的相对文件，不覆盖其他 MOD 的内容。
+游戏的存档目录由启动配置决定，代码给出相对文件名即可。本节使用 `gear_in/state.json`，实际文件位于 `<存档目录>/common/gear_in/state.json.data`；游戏追加 `.data` 后缀。
 
-## 读取 common
+MOD 资源目录保存发布时的输入，common 保存运行期状态。文件名使用自己的目录和名称，读取方法也选择 common 入口。资源路径和公共文件名即使看起来相同，读取位置仍由 API 决定。
 
-原版 `SettingsAPI` 提供 common 文本和 JSON 读取入口。LazyLib `JSONUtils.loadCommonJSON` 返回 `CommonDataJSONObject`，可以使用 `get`、`has` 和 `opt` 方法读取字段。
+## 在载入生涯时读回报告
 
-```java
-JSONObject state = new JSONObject();
-if (Global.getSettings().fileExistsInCommon("gear_in/state.json")) {
-    state = Global.getSettings().readJSONFromCommon("gear_in/state.json", false);
-}
-int battles = state.optInt("battles", 0);
-String schema = state.optString("schema", "1");
-```
+在既有 `GearInModPlugin` 中加入下面的局部辅助方法，添加 `org.json.JSONObject` 的 import：
 
 ```java
-try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json")) {
-    int battles = data.optInt("battles", 0);
-    String schema = data.optString("schema", "1");
+private static JSONObject readCommonState() throws Exception {
+    JSONObject state = new JSONObject();
+    if (Global.getSettings().fileExistsInCommon("gear_in/state.json")) {
+        state = Global.getSettings().readJSONFromCommon("gear_in/state.json", false);
+    }
+    if (!state.has("schema")) {
+        state.put("schema", 1);
+    }
+    if (!state.has("battles")) {
+        state.put("battles", 0);
+    }
+    if (!state.has("lastReport")) {
+        state.put("lastReport", "");
+    }
+    return state;
 }
 ```
 
-文件不存在时，文本入口返回空字符串，LazyLib `loadCommonJSON` 捕获解析异常并返回空对象。原版 `readJSONFromCommon` 会抛 `JSONException`，因此直接读取前先检查文件是否存在。
+文件首次使用时还不存在，因此先检查存在性；已有文件读成原来的 JSONObject，再为缺失字段补值。`schema` 标识数据格式，`battles` 记录已保存的测试战斗报告次数，`lastReport` 保存最近的说明。这里补入的是内存对象，保存仍由后面的写入入口完成。
 
-### 版本字段
+向既有 `onGameLoad(boolean newGame)` 追加下面的局部调用，保留此前的生涯初始化：
 
-每个持久化对象写入 `schema` 或 `version` 字段。读取时先判断版本，再执行迁移；未知字段保留在对象中，避免新版本读取旧文件后丢失用户数据。
+```java
+try {
+    JSONObject state = readCommonState();
+    Global.getLogger(GearInModPlugin.class).info("GearIn common read: " + state);
+} catch (Exception ex) {
+    Global.getLogger(GearInModPlugin.class).error("GearIn common read failed", ex);
+}
+```
 
-### 读取实例
+构建、重启并载入生涯后，搜索 `GearIn common read`。首次读取使用 `schema` 为 1、`battles` 为 0 和空的 `lastReport`；已有字段按文件内容进入日志。**载入只读取，报告在实际记录时增加。**
 
-`gear_in/state.json` 保存 `schema`、`battles` 和 `lastReport`。在 `onGameLoad` 中读取文件：不存在时使用 `schema=1`、`battles=0`；存在时保留已有值，并把缺少的字段补齐到内存对象。
+### 原版与 LazyLib 的读取入口
 
-## 验证方案
+原版可以读取公共文本和 JSON。文件不存在时，`readTextFileFromCommon(...)` 返回空字符串；`readJSONFromCommon(...)` 解析空内容会抛出 `JSONException`。本节通过存在性判断安排首次初始化；已有文件无法解析时，异常由生涯入口记录。
 
-前置数据：可加载 MOD、`onGameLoad` 读取片段和一个 `gear_in/state.json` 测试文件。
+LazyLib 将文件名和 JSONObject 包装在一起。以下为 LazyLib 取值的局部用法，需要该库已启用并进入编译依赖；载入非空对象时也会保存一次：
 
-1. 启动游戏并加载一个已有存档，观察读取日志中的 common 文件名。
-2. 读取 `state.json` 的 `schema` 和 `battles`，观察代码使用的值。
-3. 删除 `battles` 键后重新加载存档，观察内存中补入的缺省值。
-4. 写入较旧的 `schema` 后重新加载，观察迁移分支和最终使用的版本。
+```java
+CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json");
+int battles = data.optInt("battles", 0);
+String schema = data.optString("schema", "1");
+```
+
+添加 `org.lazywizard.lazylib.JSONUtils` 和其嵌套类型 `JSONUtils.CommonDataJSONObject` 的 import。`loadCommonJSON(...)` 捕获读取或解析异常，单参形式可返回空对象；带默认资源路径的重载则可从 MOD 配置取得初始结构。载入的 JSON 非空时，包装对象在构造期间调用 save，将内容写回；空对象直接返回，尚未执行这次保存。
+
+`opt` 方法在缺失或无法按所需类型取值时使用给定缺省，`get` 方法适合要求字段存在并能转换的场合。是否采用缺省，由这份数据允许的内容决定。
+
+::: warning LazyLib 载入与关闭都可能保存
+
+`loadCommonJSON(...)` 载入非空 JSON 时会保存一次，`CommonDataJSONObject.close()` 再调用 `save()`。需要纯读取时采用原版入口；使用 LazyLib 读改写时，把载入、修改和关闭对应的保存安排清楚。
+
+:::
+
+### 验证方案
+
+1. 保存读取方法和生涯调用，构建 JAR 并重启，载入测试生涯，搜索 `GearIn common read`。
+2. 已有测试文件时，记录字段值；游戏退出后，省略文件中的 `battles`，重新启动并载入，观察内存补入的 0。比较完成后恢复原值。
+3. 在测试 JSON 中增加一个自定字段，再次读取，确认日志仍包含它。保留该字段，随后观察写入。
 
 预期结果：
 
-- 读取路径指向当前存档的 `common` 目录；
-- 已有字段按文件值读取；
-- 缺失文件或字段不会让读取流程失去可运行状态；
-- 版本迁移后对象包含当前代码要求的字段；
-- 未知字段仍保留在读取对象中。
+- 首次读取采用格式 1、次数 0 与空说明，已有值按文件读取；
+- 缺失的字段补入内存对象，自定字段继续保留；
+- 原版读取方法处理的是实际公共目录，读取调用本身没有保存内存修改。
 
-## 写入 common
+## 记录报告，再把对象保存
 
-原版写入入口分别处理文本与 JSON：
+向 `GearInModPlugin` 加入下面的局部静态方法：
+
+```java
+public static void recordCommonReport() throws Exception {
+    JSONObject state = readCommonState();
+    int schema = state.getInt("schema");
+    if (schema < 2) {
+        state.put("reports", state.optInt("reports", 0));
+        state.put("schema", 2);
+    }
+    state.put("battles", state.getInt("battles") + 1);
+    state.put("lastReport", "GearIn test report");
+    Global.getSettings().writeJSONToCommon("gear_in/state.json", state, false);
+    Global.getLogger(GearInModPlugin.class).info("GearIn common saved: " + state);
+}
+```
+
+**先读原对象，再改目标字段，最后保存。**格式 1 增加 `reports` 并写为格式 2；已有 `reports` 和其他字段保留。这就是本节的迁移：根据已知旧格式建立当前需要的字段，迁移完成后保存当前 schema，下次读取便可使用它。
+
+迁移的动作随数据结构决定。这里新增一个字段，直接补值即可；真实格式需要转换字段含义时，再把相应转换放进版本分支。编者建议把旧输入、转换结果和使用方一起写清，版本号本身不会替您完成转换。
+
+测试战斗结束后，通过 Console Commands 执行一次：
+
+```text
+runcode data.scripts.gearin.GearInModPlugin.recordCommonReport();
+```
+
+该入口显式记录一份测试报告，`battles` 加 1，`lastReport` 写入示例文本。`false` 让本次 JSON 写入直接执行，随后按磁盘内容读回；载入另一份生涯也能看到同一份结果。
+
+### 文本写入与 JSON 写缓存
+
+原版写入入口分别接受文本和 JSON。下面是用于说明参数的局部片段：
 
 ```java
 Global.getSettings().writeTextFileToCommon("gear_in/state.txt", text);
 Global.getSettings().writeJSONToCommon("gear_in/state.json", state, true);
 ```
 
-`writeJSONToCommon` 的 `onlyIfChanged` 可以避免内容没有变化时重复写入。文本写入有单次大小边界，写入过程先写临时文件，再替换目标文件；调用侧仍需记录异常和文件名。
+`writeJSONToCommon(..., true)` 使用序列化内容缓存，内容变化时将写入放到后台队列；相同内容可以省去重复写入。对应的 `readJSONFromCommon(..., true)` 用于准备采用写缓存的数据。`false` 适合本节直接观察磁盘的实验。
 
-LazyLib 的 `CommonDataJSONObject` 直接封装 JSON：
+后台模式返回时，调用已经完成，磁盘可能仍在等待写入。验证持久化时，重启后从文件读回；需要比较缓存是否省去了写入时，再观察相同内容重复提交后的文件更新时间。
 
-```java
-try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json")) {
-    data.put("schema", 1);
-    data.put("battles", data.optInt("battles", 0) + 1);
-    data.save();
-}
-```
+common 文本单次最多写入 **1,048,576 个 Java 字符**。写入先使用 `.data.inprogress` 临时文件，再替换目标文件。异常发生在哪一步会影响磁盘状态，因此按目标文件、临时文件和异常日志核对本次结果；调用失败后的原文件状态也按实际文件判断。
 
-`put` 先改变内存对象；`close()` 会调用 `save()` 完成写盘。try-with-resources 块结束时数据即保存，显式 `save()` 用于块内提前持久化；写入后重新加载文件，才能确认磁盘内容已经更新。
+### 使用 LazyLib 保存同一个对象
 
-### 读 → 改 → 写与迁移
-
-写入前先读取当前对象，再修改需要修改的键。保留未知字段，缺省值只在字段不存在时补入。版本迁移完成后写回当前版本，避免每次启动重复迁移。
+准备修改并保存时，try-with-resources 可以安排关闭。以下为局部写入片段：
 
 ```java
 try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json")) {
@@ -109,71 +159,76 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json"))
         data.put("schema", 2);
     }
     data.put("battles", data.optInt("battles", 0) + 1);
-    data.save();
+    data.put("lastReport", "GearIn test report");
 }
 ```
 
-### 写入边界
+载入非空 JSON 时，原内容已保存一次；`put` 再改变内存对象，结束作用域时 `close()` 调用 `save()` 写入修改。需要在块内提前保存时可以显式调用 `data.save()`；正常结束时仍会再保存一次。增量修改继续使用读回的对象，未知字段也就留在其中。
 
-写入失败时保留原文件，日志记录目标和异常。用户设置由专门的设置库管理时，MOD 不直接绕过其保存流程。
+用户设置若由设置库管理，使用该库的读取与保存入口。文件看起来是普通 common JSON，实际还有自己的使用方和刷新时机；直接改写后，库的保存可能再次写回它掌握的值。
 
-## 验证方案
+### 验证方案
 
-前置数据：本节的读取对象、`gear_in/state.json` 和一个在 `onGameLoad` 或测试战斗中执行的写入片段。
+前置数据：Console Commands 已启用，准备两份生涯存档；同一公共测试文件用于观察跨存档结果。
 
-1. 读取当前 `state.json`，记录 `battles` 的初始值。
-2. 将 `battles` 加 1，并调用 `save()` 或 `writeJSONToCommon`。
-3. 退出当前场景并重新加载存档，观察读取到的 `battles`。
-4. 写入一个旧版本对象，重新加载并观察迁移后的 `schema` 与新增字段。
-5. 重复写入相同内容，观察 `onlyIfChanged` 对文件更新时间的影响。
+1. 记录当前 `battles`，完成一场测试战斗后执行报告命令，检查 `GearIn common saved` 和实际 `gear_in/state.json.data`。
+2. 退出游戏后重新启动、载入原生涯，确认读取到增加后的次数；再载入另一份生涯比较同名文件。
+3. 在游戏退出时，把测试文件的 `schema` 设为 1，省略 `reports`，保留此前增加的自定字段。重启后执行报告命令，检查迁移与保存结果。
+4. 保存同一对象时采用 JSON 写缓存参数 `true`，重复提交相同内容，等待后台写入后比较文件更新时间；完成缓存实验后恢复报告方法中的 `false`。
+5. 采用 LazyLib 局部片段时，在相同报告入口中用它替换原版读写，观察关闭后保存的字段与再次读取结果。
 
 预期结果：
 
-- common 文件位于当前存档的 `common` 目录；
-- 写入后重新加载能读到递增后的 `battles`；
-- 未知字段保持不变；
-- 旧版本文件迁移到当前 `schema`；
-- 内容未变化时不会产生不必要的 JSON 写入；
-- 写入失败时原文件仍可读取，并有明确错误日志。
+- 每次报告命令将 `battles` 增加 1，`lastReport` 为 `GearIn test report`；
+- 重启与换存档后读到同一个公共文件的已保存值；
+- 格式 1 迁移后包含 `reports`，schema 为 2，自定字段保持原值；
+- 相同序列化内容可以由写缓存省去重复写入，持久化结果按文件读回确认；
+- LazyLib 载入非空对象时保存原内容，关闭后保存修改；提前 `save()` 再增加一次保存。
 
 ## 故障分析
 
-- **读取 common 文件得到空值**：文件不存在、名称不一致或当前打开了另一存档。
-    - **解决方案**：记录存档标识和相对文件名，修正后重新读取。
+- **原版 JSON 读取抛出异常**：公共文件不存在，或已有内容不能解析。
+    - **解决方案**：按逻辑文件名检查存在性；已有文件时根据异常位置修正 JSON，再读取。
 
-- **读取可选字段时抛出异常**：代码直接对缺失键使用 `get`。
-    - **解决方案**：初始化字段改用 `opt` 或先调用 `has`。
+- **读取可选字段时抛出异常**：直接对缺失键使用了 `get`。
+    - **解决方案**：按字段的可选含义用 `opt`，或先通过 `has` 补入缺省值。
 
-- **旧存档载入后行为异常**：数据缺少版本字段，或迁移分支没有覆盖该版本。
-    - **解决方案**：先读取版本并执行对应迁移。
+- **迁移后字段仍不符合当前格式**：版本分支没有执行所需转换，或迁移完成后没有保存当前 schema。
+    - **解决方案**：对照旧输入补齐对应转换，并在本节写入入口保存当前格式。
 
-- **升级后未知字段消失**：迁移时重建了只含已知字段的新对象。
-    - **解决方案**：改为在原对象上补充和转换字段。
+- **保存后自定字段消失**：更新时创建了只含已知字段的新对象。
+    - **解决方案**：读取现有对象，在该对象上补充与修改字段。
 
-- **重启后数值恢复为零**：普通 `JSONObject` 只在内存中修改，没有传给 common 写入入口；或 `CommonDataJSONObject` 既未显式保存也未关闭。
-    - **解决方案**：调用对应写入入口，或让 try-with-resources 正常关闭对象。
+- **重启后次数没有保留**：内存修改尚未交给写入入口，或 LazyLib 对象尚未保存、关闭。
+    - **解决方案**：执行报告写入方法，或让自动关闭完成保存，再从公共文件读回。
 
-- **文件内容被缺省值覆盖**：载入时把完整缺省对象写回了已有文件。
-    - **解决方案**：只为缺失键填充默认值。
+- **已有值被缺省覆盖**：每次载入都把整份默认对象写回已有文件。
+    - **解决方案**：读取已有对象，只为缺失字段补值，并在需要记录时保存。
 
-- **用户设置被自动改回**：代码直接写入了设置库管理的 common 文件。
-    - **解决方案**：改由设置库读取和保存。
+- **后台写入返回后文件仍是此前内容**：JSON 写缓存的后台队列尚未完成。
+    - **解决方案**：等待写入完成并重新读取；直接磁盘实验采用本节的 `false` 参数。
 
-- **写入后 common 文件无法解析**：写入过程覆盖了原文件且失败时没有保留副本。
-    - **解决方案**：使用原子写入入口并保留旧文件。
+- **写入异常后文件无法解析**：写入或替换阶段失败，目标文件的实际状态需要核对。
+    - **解决方案**：停止使用损坏内容，核对目标、`.data.inprogress` 与异常日志，修正并恢复测试数据后再写入。
 
-- **大文件写入失败**：单次文本超过写入入口可处理的边界。
-    - **解决方案**：拆分数据或缩减结构，重新写入。
+- **大文本写入失败**：单次文本超过 1,048,576 个 Java 字符。
+    - **解决方案**：缩减或按用途拆分数据后写入。
 
-- **读取结果来自 MOD 目录**：资源路径与 common 相对文件名混用了不同入口。
-    - **解决方案**：改用 common 读取方法并记录实际存档路径。
+- **用户设置再次恢复为此前数值**：设置库继续按自身保存流程写回它管理的文件。
+    - **解决方案**：通过该库的入口读取、更新和保存。
+
+- **读到的是 MOD 资源文件**：调用使用了资源读取入口。
+    - **解决方案**：为公共逻辑文件名使用 common 读写方法，按实际存档目录核对文件。
 
 ## 总结
 
-common 是存档持久数据空间。读取时处理缺失字段和版本迁移，写入时保留未知字段并调用真正的写盘入口；重启后再次读取的结果决定持久化是否成立。
+报告先从公共文件读成对象，缺失字段在内存中补齐，格式分支完成已有数据的迁移；记录时修改次数和说明，再调用写入入口。文件由用户数据空间共享，所以换存档也继续使用同名结果。
+
+原版直接写入、JSON 写缓存和 LazyLib 自动关闭分别安排不同的保存时机。观察调用结果以后，再从文件读回，才能把内存变化与持久化对应起来。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.SettingsAPI`：`readJSONFromCommon` 原版 common JSON 读取、`writeTextFileToCommon` common 文本写入、`writeJSONToCommon` common JSON 写入；
-- `org.lazywizard.lazylib.JSONUtils`：`loadCommonJSON` LazyLib common JSON 读取入口，写盘经其嵌套对象 `CommonDataJSONObject` 的 `save()` 完成；
-- `<存档目录>/common/`：存档持久化文件位置。
+- `com.fs.starfarer.api.SettingsAPI`：`fileExistsInCommon`、`readTextFileFromCommon`、`readJSONFromCommon`、`writeTextFileToCommon` 与 `writeJSONToCommon` 提供公共文件入口；
+- `org.lazywizard.lazylib.JSONUtils`：`loadCommonJSON` 将公共 JSON 关联到文件名；
+- `org.lazywizard.lazylib.JSONUtils.CommonDataJSONObject`：`save()` 写入，`close()` 调用保存；
+- `<存档目录>/common/`：用户的跨存档公共文件位置。

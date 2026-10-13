@@ -1,10 +1,10 @@
 # 构建阶段任务
 
-`BaseHubMission` 把一次接受动作延长为可保存的任务状态。任务对象保存当前阶段、目标和奖励结果，附属 Intel 只把这些状态呈现给玩家；两者通过明确的读取关系协作，而不是各自维护一套阶段。本节用一个需要检查目标实体的任务说明这条边界。
+检查对话已经可以记录一次操作，这次让它推进一个长期任务。玩家接受后调查 `Foundry`，完成检查再提交报告，获得一次 50000 信用点奖励。任务保存阶段与结果，附属 Intel 读取同一任务，失败、放弃和显示条目的结束也分别处理。
 
-*本节预期阅读时间：~35 分钟。*
+*本节预期阅读时间：\~35 分钟。*
 
-*本节预期操作时间：~45 分钟。*
+*本节预期操作时间：\~45 分钟。*
 
 ## 学习目标
 
@@ -12,7 +12,7 @@
 
 - 创建并接受一个 `BaseHubMission` 任务；
 - 用阶段和条件检查器组织调查、报告和完成路径；
-- 处理失败、放弃和一次性 credits 奖励；
+- 处理失败、放弃和一次性 `credits` 奖励；
 - 让附属 Intel 读取任务当前阶段；
 - 验证保存、读档和任务/Intel 分离后的结果。
 
@@ -27,19 +27,39 @@
 
 `BaseHubMission` 继承 `BaseIntelPlugin`，因此它可以出现在 Intel 列表并由生涯脚本推进；任务特有的阶段连接、接受、成功、失败和放弃仍由 `BaseHubMission` 管理。创建方先设置任务 ID 和起始阶段，再调用 `createAndAbortIfFailed(...)` 生成任务数据，成功后通过 `accept(...)` 把任务登记到 Intel 管理器和生涯脚本列表。
 
-独立入口只负责提供任务依赖的市场和目标。它不直接修改当前阶段，也不把目标状态复制到全局 Memory。
+保存 `GearInHubMission.java` 与 `GearInHubMissionIntel.java` 到 `src/data/scripts/gearin/campaign/`。在 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 追加下面的局部入口，目标使用当前市场主实体：
 
 ```java
-GearInHubMission mission = new GearInHubMission(target);
-mission.createAndAbortIfFailed(createdAt, false);
-mission.accept(dialog, memoryMap);
+SectorAPI sector = Global.getSector();
+if (!sector.getPersistentData().containsKey("GearIn_hub_mission")) {
+    GearInHubMission mission = new GearInHubMission(market.getPrimaryEntity());
+    mission.createAndAbortIfFailed(market, false);
+    mission.accept(null, Collections.emptyMap());
+    GearInHubMissionIntel intel = new GearInHubMissionIntel(mission);
+    sector.getIntelManager().addIntel(intel);
+    sector.getPersistentData().put("GearIn_hub_mission", mission);
+}
 ```
 
-`createAndAbortIfFailed` 先调用子类的 `create(...)`。创建返回 `false` 时，基类执行 `abort()`，任务不会进入 Intel 列表；返回 `true` 后，`accept(...)` 设置起始阶段、执行 `acceptImpl(...)`，然后调用 `IntelManagerAPI.addIntel(...)` 和 `Global.getSector().addScript(this)`。这两个登记分别负责可见条目和逐帧推进。
+`createAndAbortIfFailed` 先调用子类的 `create(...)`。创建返回 `false` 时，基类执行 `abort()`，调用方按创建结果继续处理；本例传入当前已存在目标，创建成功。之后，`accept(...)` 设置起始阶段、执行 `acceptImpl(...)`，然后调用 `IntelManagerAPI.addIntel(...)` 和 `Global.getSector().addScript(this)`。这两个登记分别负责可见条目和逐帧推进。
 
 ### 固定任务身份
 
-构造器把任务 ID、名称和阶段终止入口固定下来。阶段 ID 使用字符串常量，能够同时出现在任务对象、条件连接和 Intel 文本中。
+构造器把任务 ID、名称和阶段终止入口固定下来。阶段使用枚举值，常量在任务、连接与显示之间传递同一个阶段对象。当前枚举成员保留各阶段名称，**任务交互与更新使用阶段枚举**：
+
+五种阶段在类内声明，当前值使用 `Stage` 类型：
+
+```java
+public enum Stage {
+    GearIn_stage_investigate,
+    GearIn_stage_report,
+    GearIn_stage_completed,
+    GearIn_stage_failed,
+    GearIn_stage_abandoned
+}
+```
+
+`STAGE_INVESTIGATE` 等常量指向对应枚举成员，代码与显示使用同一个值。构造器再指定起始和终止阶段：
 
 ```java
 public GearInHubMission(SectorEntityToken target) {
@@ -62,19 +82,16 @@ public GearInHubMission(SectorEntityToken target) {
 ```java
 @Override
 protected boolean create(MarketAPI createdAt, boolean barEvent) {
-    if (target == null) {
-        return false;
-    }
-    setStageOnMemoryFlag(STAGE_REPORT, target, TARGET_COMPLETE_KEY);
+    connectWithMemoryFlag(STAGE_INVESTIGATE, STAGE_REPORT, target, TARGET_COMPLETE_KEY);
     return true;
 }
 ```
 
-`setStageOnMemoryFlag` 接收下一阶段、实现 `HasMemory` 的目标和键名。目标标记仍由外部交互或规则写入；任务只读取它，并在标记为真时把当前阶段推进到报告。任务因此不会把 "目标已完成" 伪装成任务自身字段。
+本例 `connectWithMemoryFlag(...)` 明确连接调查与报告，接收起点、终点、目标和键名。需要所有阶段都共享的条件时，使用 `setStageOnMemoryFlag(...)` 的无起点形式。目标标记仍由外部交互或规则写入；任务只读取它，并在标记为真时把当前阶段推进到报告。**目标事实与任务阶段分别保存。** 本例还让任务管理这一标记的清理，任务结束时由基类解除相应状态。
 
 ### 阶段连接的实际结果
 
-任务接受后 `currentStage` 是 `GearIn_stage_investigate`。玩家完成目标后，基类的 `advanceImpl(...)` 周期性调用阶段检查，条件成立时执行 `setCurrentStage(GearIn_stage_report, null, null)`。报告阶段不会自动发放奖励，它只是把任务推进到可以作出最终决定的状态。
+任务接受后 `currentStage` 是 `GearIn_stage_investigate`。玩家完成目标后，基类的 `advanceImpl(...)` 周期性调用阶段检查，条件成立时执行 `setCurrentStage(STAGE_REPORT, null, null)`。报告阶段不会自动发放奖励，它只是把任务推进到可以作出最终决定的状态。
 
 ```text
 GearIn_stage_investigate
@@ -105,7 +122,7 @@ protected void endAbandonImpl() {
 
 ### 一次性完成奖励
 
-成功入口由基类统一触发，子类在 `endSuccessImpl(...)` 中加入本任务的 50000 credits 奖励。`rewardGranted` 先判断再写入，避免重复进入成功实现时再次增加资金。
+成功入口由基类统一触发，子类在 `endSuccessImpl(...)` 中加入本任务的 50000 `credits` 奖励。`rewardGranted` 先判断再写入，避免重复进入成功实现时再次增加资金。
 
 ```java
 @Override
@@ -119,7 +136,7 @@ protected void endSuccessImpl(InteractionDialogAPI dialog,
 }
 ```
 
-基类的 `endSuccess(...)` 负责建立 `HubMissionResult`、发放标准奖励、调用 `endSuccessImpl(...)`、发送结束更新并执行 `abort()`。本例只在子类实现中增加固定 credits，因此任务逻辑不会重复接管基类的结束流程。
+基类的 `endSuccess(...)` 负责建立 `HubMissionResult`、发放标准奖励、调用 `endSuccessImpl(...)`、发送结束更新并执行 `abort()`。本例只在子类实现中增加固定 `credits`，因此任务逻辑不会重复接管基类的结束流程。
 
 ## 让附属 Intel 读取任务
 
@@ -127,7 +144,7 @@ protected void endSuccessImpl(InteractionDialogAPI dialog,
 
 ```java
 private String getStageText() {
-    return mission == null ? "unavailable" : String.valueOf(mission.getCurrentStage());
+    return String.valueOf(mission.getCurrentStage());
 }
 ```
 
@@ -135,14 +152,14 @@ private String getStageText() {
 
 ### 分开登记 Intel 和脚本
 
-任务接受时，`BaseHubMission.accept(...)` 同时执行 Intel 登记和脚本登记。附属 Intel 若需要逐帧过期或结束逻辑，则由创建方按 [C14-S4] 的方式单独调用 `IntelManagerAPI.addIntel(...)` 与 `Global.getSector().addScript(intel)`；本例的附属 Intel 只显示任务阶段，因此不复制任务计时器。
+任务接受时，`BaseHubMission.accept(...)` 同时执行 Intel 登记和脚本登记。附属 Intel 若需要逐帧过期或结束逻辑，则由创建方按 [C14-S4] 的方式单独调用 `IntelManagerAPI.addIntel(...)` 与 `Global.getSector().addScript(intel)`；本例的附属 Intel 只显示任务阶段。结束它时使用 `endImmediately()` 并 `removeIntel(intel)`，当前没有额外脚本推进它的延迟。
 
 ```java
 GearInHubMissionIntel intel = new GearInHubMissionIntel(mission);
 Global.getSector().getIntelManager().addIntel(intel);
 ```
 
-Intel 条目结束不会把任务退回调查阶段，任务结束也不会自动替代 Intel 的结束调用。两个对象分别由自己的结束入口管理，页面和日志可以据此定位是任务状态还是可见条目出了问题。
+附属条目结束不改变任务阶段，任务结束后它继续从同一对象读取最终阶段。需要移除附属条目时显式调用结束与移除。两个对象分别由自己的结束入口管理，页面和日志可以据此定位是任务状态还是可见条目出了问题。
 
 ## 保存、读档和边界
 
@@ -160,12 +177,50 @@ Intel 条目结束不会把任务退回调查阶段，任务结束也不会自�
 | `setCurrentStage` | 改变当前阶段 | 触发阶段更新或终止逻辑 |
 | `setSuccessStage` / `setFailureStage` | 绑定终止阶段 | 成功或失败入口生效 |
 | `setAbandonStage` | 绑定放弃阶段 | 放弃路径结束任务 |
-| `endSuccessImpl` | 添加任务专属成功结果 | 增加一次 50000 credits |
+| `endSuccessImpl` | 添加任务专属成功结果 | 增加一次 50000 `credits` |
 | `getCurrentStage` | 供 Intel 读取阶段 | 列表文本与任务一致 |
+
+## 从检查对话进入报告
+
+在 [C15-S1] 的 `GearInConversationDialog` 检查分支、已经设置 `checked = true` 后加入局部片段：
+
+```java
+dialog.getInteractionTarget().getMemoryWithoutUpdate().set(
+        GearInHubMission.TARGET_COMPLETE_KEY, true);
+```
+
+对话打开时生涯通常暂停。**关闭检查对话，让任务推进一次，再查看报告阶段。** 这次不是文字写入后立刻完成任务，任务检查器需要收到生涯推进。
+
+在该对话的 `init(...)` 已建立选项后，读取存档中本节任务，报告阶段显示提交按钮：
+
+```java
+GearInHubMission mission = (GearInHubMission) Global.getSector()
+        .getPersistentData().get("GearIn_hub_mission");
+if (mission.getCurrentStage() == GearInHubMission.STAGE_REPORT) {
+    options.addOption("Submit the inspection report", GearInHubMission.STAGE_COMPLETED);
+}
+```
+
+在 `optionSelected(...)` 的实际业务分支前处理这个阶段对象：
+
+```java
+if (GearInHubMission.STAGE_COMPLETED.equals(optionData)) {
+    GearInHubMission mission = (GearInHubMission) Global.getSector()
+            .getPersistentData().get("GearIn_hub_mission");
+    if (mission.getCurrentStage() == GearInHubMission.STAGE_REPORT) {
+        mission.setCurrentStage(GearInHubMission.STAGE_COMPLETED, dialog, getMemoryMap());
+    }
+    return;
+}
+```
+
+当前使用存档中已接受的任务。提交按钮提供阶段对象，显示文字继续只服务界面；成功实现增加一次奖励，基类安排其余结束过程。
+
+失败与放弃分别调用 `setCurrentStage(STAGE_FAILED, ...)` 与 `setCurrentStage(STAGE_ABANDONED, ...)`。用测试存档的不同分支观察它们，当前阶段和结束结果都从任务读取；两种终止入口也各自保存实际状态。
 
 ## 完整最小例
 
-两个类分别承担任务状态和可见展示。任务类保存阶段与奖励字段，Intel 类只通过任务引用读取当前阶段。
+两个类保存到前述路径，任务接受和附属条目采用实际市场入口。
 
 ::: details 完整成品：GearInHubMission
 
@@ -183,11 +238,19 @@ import com.fs.starfarer.api.impl.campaign.missions.hub.BaseHubMission;
 
 public class GearInHubMission extends BaseHubMission {
 
-    public static final String STAGE_INVESTIGATE = "GearIn_stage_investigate";
-    public static final String STAGE_REPORT = "GearIn_stage_report";
-    public static final String STAGE_COMPLETED = "GearIn_stage_completed";
-    public static final String STAGE_FAILED = "GearIn_stage_failed";
-    public static final String STAGE_ABANDONED = "GearIn_stage_abandoned";
+    public enum Stage {
+        GearIn_stage_investigate,
+        GearIn_stage_report,
+        GearIn_stage_completed,
+        GearIn_stage_failed,
+        GearIn_stage_abandoned
+    }
+
+    public static final Stage STAGE_INVESTIGATE = Stage.GearIn_stage_investigate;
+    public static final Stage STAGE_REPORT = Stage.GearIn_stage_report;
+    public static final Stage STAGE_COMPLETED = Stage.GearIn_stage_completed;
+    public static final Stage STAGE_FAILED = Stage.GearIn_stage_failed;
+    public static final Stage STAGE_ABANDONED = Stage.GearIn_stage_abandoned;
     public static final String TARGET_COMPLETE_KEY = "$GearIn_hub_target_complete";
 
     private SectorEntityToken target;
@@ -206,10 +269,7 @@ public class GearInHubMission extends BaseHubMission {
 
     @Override
     protected boolean create(MarketAPI createdAt, boolean barEvent) {
-        if (target == null) {
-            return false;
-        }
-        setStageOnMemoryFlag(STAGE_REPORT, target, TARGET_COMPLETE_KEY);
+        connectWithMemoryFlag(STAGE_INVESTIGATE, STAGE_REPORT, target, TARGET_COMPLETE_KEY);
         return true;
     }
 
@@ -310,7 +370,7 @@ public class GearInHubMissionIntel extends BaseIntelPlugin {
     }
 
     private String getStageText() {
-        return mission == null ? "unavailable" : String.valueOf(mission.getCurrentStage());
+        return String.valueOf(mission.getCurrentStage());
     }
 }
 ```
@@ -321,11 +381,11 @@ public class GearInHubMissionIntel extends BaseIntelPlugin {
 
 前置数据：准备一个可交互目标实体，并能在其 Memory 中写入 `$GearIn_hub_target_complete`；准备一个可以显示 Intel 的新档或测试存档。
 
-1. 通过独立 Java 入口创建任务并调用 `accept(...)`，确认 Intel 列表出现 "GearIn inspection task"。
+1. 保存类与经济观察器入口，构建重启，进入 `Foundry` 存档并推进经济更新，查看任务与附属 Intel。
 2. 打开任务条目，确认当前阶段为 `GearIn_stage_investigate`。
-3. 在目标实体 Memory 写入 `$GearIn_hub_target_complete = true`，推进生涯时间，确认任务进入 `GearIn_stage_report`。
+3. 在检查对话选择继续，关闭对话让生涯推进，再打开任务条目，确认报告阶段。
 4. 重新打开 Intel 条目，确认阶段文本从调查变为报告。
-5. 将任务设置为完成阶段，确认 credits 增加 50000 且任务进入结束状态。
+5. 重新打开检查对话，提交报告，比较玩家信用增加 50000 与终止阶段。
 6. 重复触发完成路径，确认 `rewardGranted` 阻止第二次奖励。
 7. 保存并读档，确认当前阶段、`rewardGranted` 和 `missionEnded` 保持。
 8. 在报告阶段触发失败，确认任务显示 `GearIn_stage_failed` 并结束。
@@ -337,7 +397,7 @@ public class GearInHubMissionIntel extends BaseIntelPlugin {
 - 任务接受后进入调查阶段；
 - 目标 Memory 标记成立后进入报告阶段；
 - Intel 文本始终读取任务当前阶段；
-- 完成只增加一次 50000 credits；
+- 完成只增加一次 50000 `credits`；
 - 保存和读档保留任务字段；
 - 失败和放弃使用各自终止阶段；
 - 任务与附属 Intel 可以分别结束。
@@ -351,14 +411,16 @@ public class GearInHubMissionIntel extends BaseIntelPlugin {
     - **解决方案**：核对目标对象和 `$GearIn_hub_target_complete`。
 
 - **完成奖励重复增加**：成功实现没有使用 `rewardGranted` 门控。
-    - **解决方案**：在增加 credits 前检查并设置该字段。
+    - **解决方案**：在增加 `credits` 前检查并设置该字段。
 
 - **Intel 显示旧阶段**：Intel 自己保存了阶段副本。
     - **解决方案**：在显示方法中直接读取 `mission.getCurrentStage()`。
 
 ## 总结
 
-`BaseHubMission` 把接受、阶段连接、条件检查、成功/失败/放弃和保存恢复放进任务对象。目标 Memory 只提供调查条件，任务字段保存当前阶段和奖励门控，附属 Intel 读取任务阶段并负责显示。完成、失败和放弃由不同终止阶段表达，任务与 Intel 的结束入口分别执行。
+调查任务从当前市场与目标创建，接受后保存枚举阶段。检查写入目标 Memory，连接条件把任务推进到报告，再由明确终止阶段处理奖励、失败或放弃。
+
+编者建议始终让任务保存阶段、显示对象读取阶段。目标事实、一次性奖励和条目结束各自有归属，保存读档后也能继续从同一个任务对象解释结果。
 
 ## 建议参考项
 

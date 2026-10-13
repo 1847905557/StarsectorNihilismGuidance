@@ -37,6 +37,8 @@ public class GearInBarEvent extends BaseBarEvent {
     @Override
     public void init(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
         super.init(dialog, memoryMap);
+        done = false;
+        noContinue = false;
         options.clearOptions();
         options.addOption("Provide 100 metals", OPTION_ACCEPT);
         options.addOption("Refuse the trade", OPTION_DECLINE);

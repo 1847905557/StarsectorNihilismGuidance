@@ -6,7 +6,6 @@ import com.fs.starfarer.api.campaign.FactionAPI.ShipPickMode;
 import com.fs.starfarer.api.campaign.SubmarketPlugin.PlayerEconomyImpactMode;
 import com.fs.starfarer.api.campaign.SubmarketPlugin.TransferAction;
 import com.fs.starfarer.api.campaign.econ.CommodityOnMarketAPI;
-import com.fs.starfarer.api.campaign.econ.SubmarketAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.impl.campaign.submarkets.BaseSubmarketPlugin;
 
@@ -22,11 +21,6 @@ public class GearInRefineryDepotPlugin extends BaseSubmarketPlugin {
             "rare_ore",
             "heavy_machinery"
     };
-
-    @Override
-    public void init(SubmarketAPI submarket) {
-        super.init(submarket);
-    }
 
     @Override
     public void updateCargoPrePlayerInteraction() {
@@ -71,7 +65,7 @@ public class GearInRefineryDepotPlugin extends BaseSubmarketPlugin {
     @Override
     public String getIllegalTransferText(CargoStackAPI stack, TransferAction action) {
         return action == TransferAction.PLAYER_SELL
-                ? "Only refinery metals can be sold here"
+                ? "Only ores and heavy machinery can be sold here"
                 : "This depot does not stock that commodity";
     }
 
@@ -146,11 +140,6 @@ public class GearInRefineryDepotPlugin extends BaseSubmarketPlugin {
     @Override
     public boolean showInCargoScreen() {
         return true;
-    }
-
-    @Override
-    public boolean okToUpdateShipsAndWeapons() {
-        return super.okToUpdateShipsAndWeapons();
     }
 
     private static boolean contains(String[] values, String value) {

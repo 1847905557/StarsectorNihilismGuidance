@@ -19,7 +19,7 @@ public final class GearInCommonDataCounter {
             int previousLoadCount = data.optInt(LOAD_COUNT_KEY, 0);
             String previousPlayerName = data.optString(LAST_PLAYER_KEY, "");
             int currentLoadCount = previousLoadCount + 1;
-            String currentPlayerName = playerName == null ? "" : playerName;
+            String currentPlayerName = playerName;
 
             data.put(LOAD_COUNT_KEY, currentLoadCount);
             data.put(LAST_PLAYER_KEY, currentPlayerName);

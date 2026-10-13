@@ -11,7 +11,6 @@ import com.fs.starfarer.api.campaign.econ.MarketAPI;
 
 public class GearInSpecialItemProbe {
     public void log(MarketAPI market) {
-        if (market == null) return;
         inspectSpec("GearIn_refinery_core");
         inspectSpec("GearIn_salvage_token");
 
@@ -31,18 +30,20 @@ public class GearInSpecialItemProbe {
             }
         }
 
-        Industry industry = findIndustry(market, "GearIn_element_works");
-        if (industry == null) return;
+        Industry industry = market.getIndustry("GearIn_element_works");
         SpecialItemData previous = industry.getSpecialItem();
         SpecialItemSpecAPI coreSpec = Global.getSettings().getSpecialItemSpec(coreData.getId());
         GearInRefineryCorePlugin corePlugin = (GearInRefineryCorePlugin) coreSpec.getNewPluginInstance(null);
-        corePlugin.setId(coreData.getId());
         float before = industry.getSupply("rare_metals").getQuantity().getModifiedValue();
-        industry.setSpecialItem(coreData);
-        corePlugin.applyToIndustry(industry);
-        float during = industry.getSupply("rare_metals").getQuantity().getModifiedValue();
-        corePlugin.unapplyFromIndustry(industry);
-        industry.setSpecialItem(previous);
+        float during;
+        try {
+            industry.setSpecialItem(coreData);
+            corePlugin.applyToIndustry(industry);
+            during = industry.getSupply("rare_metals").getQuantity().getModifiedValue();
+        } finally {
+            corePlugin.unapplyFromIndustry(industry);
+            industry.setSpecialItem(previous);
+        }
         float after = industry.getSupply("rare_metals").getQuantity().getModifiedValue();
         Global.getLogger(GearInSpecialItemProbe.class).info(
                 "rare_metals before=" + before + ", during=" + during + ", after=" + after);
@@ -60,10 +61,4 @@ public class GearInSpecialItemProbe {
                 ", space=" + spec.getCargoSpace() + ", tags=" + spec.getTags());
     }
 
-    private Industry findIndustry(MarketAPI market, String id) {
-        for (Industry industry : market.getIndustries()) {
-            if (id.equals(industry.getId())) return industry;
-        }
-        return null;
-    }
 }

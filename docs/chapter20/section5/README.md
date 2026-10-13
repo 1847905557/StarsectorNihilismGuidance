@@ -1,10 +1,10 @@
 # 使用实例化进行绘制
 
-本节让一份矩形几何服务多艘舰船。Java 收集在场舰船并写入 SSBO，vertex shader 用 `gl_InstanceID` 取出各自的位置、朝向和颜色；一次 `glDrawArraysInstanced` 调用提交这些方向标。视口比例变化时，Java 更新矩形边界，为线条保留像素边距。
+上一节只读一条记录，这次让在场舰船各有一条，再用一次实例化调用绘制。矩形几何和 program 继续共享，`gl_InstanceID` 决定当前方向标读取哪艘舰船的数据。数量增加后，容量、阵营颜色和视口范围也要跟着集合处理，单舰版本里理所当然的条件现在需要明确写出来。
 
-*本节预期阅读时间：~30 分钟。*
+*本节预期阅读时间：\~30 分钟。*
 
-*本节预期操作时间：~45 分钟。*
+*本节预期操作时间：\~45 分钟。*
 
 ## 学习目标
 
@@ -21,9 +21,19 @@
 - [C20-S3] 的 VBO、VAO 和六顶点矩形；
 - `CombatEngineAPI.getShips()`、舰船位置、朝向、阵营和存活状态。
 
+## 保存资源并在战斗登记
+
+将完整类保存到 `src/data/scripts/gearin/combat/GearInInstancedMarker.java`，两份 shader 保存到本节列出的 `data/shaders/` 路径。构建 JAR 并重启，进入测试战斗、部署并控制玩家舰后，通过 Console Commands 执行：
+
+```text
+runcode com.fs.starfarer.api.combat.CombatEngineAPI e = com.fs.starfarer.api.Global.getCombatEngine(); com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = new data.scripts.gearin.combat.GearInInstancedMarker(); e.addLayeredRenderingPlugin(marker); e.getCustomData().put("GearIn_marker", marker);
+```
+
+**每场战斗登记一次当前版本。**`init(...)` 取得当前战斗并设置承载实体，GPU 资源在首次 `render(...)` 的有效上下文中创建；能力不足时记录条件并结束实例。命令沿用 [C20-S1] 的 `GearIn_marker` 项保存实例，便于随后验证清理。比较各版本时分别进入新的战斗。
+
 ## 确定每艘舰船的参数
 
-在场且存活的舰船各自需要一个方向标。玩家舰使用青色，盟友使用绿色，其他舰船使用橙红色；移动和转向只更新对应记录。VBO 保存一份矩形几何，SSBO 保存每艘舰船的中心、朝向、Alpha 和颜色。
+先确定哪些舰船进入集合：本例收集当前在场且存活的舰船，玩家舰使用青色，与玩家舰 `owner` 相同的其他舰船使用绿色，其余阵营使用橙红色。这里按战斗所属侧区分颜色，便于直接观察记录是否跟对了对象。VBO 保存一份矩形，SSBO 保存每艘舰船的中心、朝向、Alpha 和颜色；移动和转向只改变对应记录。
 
 ## 让一条记录对应一个实例
 
@@ -37,6 +47,8 @@ instanceBuffer.put(red).put(green).put(blue).put(1f);
 Java 按遍历顺序写入记录，shader 根据实例编号读取。`instanceCount` 决定本次绘制多少个方向标，缓冲区容量为 `128` 条记录；两者分别管理。
 
 ## 收集实例并处理容量
+
+`init(...)` 先调用 `updateInstances()` 收集当前舰船，后续 `advance(...)` 复用同一个方法。这样首帧就有实际记录，暂停时也能显示已经收集的方向标。包围盒中心用于定位承载实体，半对角线加 `120 su` 方向标范围，再加当前 `3 px` 对应的世界边距，构成渲染半径。
 
 `advance(...)` 遍历 `engine.getShips()`，过滤不在场或已死亡的舰船，再写入可复用的 CPU 缓冲。达到 `128` 条时保留先取得的记录，并记录一次容量日志：
 
@@ -85,7 +97,13 @@ fragment shader 继续使用圆周距离和有限线段距离生成方向标，�
 
 ## 释放共享资源
 
-所有实例共享一个 VAO、VBO、program 和两份 shader，SSBO 保存逐实例数据。清理顺序为 VAO、SSBO、VBO、program、shader；初始化失败、战斗结束和重复清理都进入同一个幂等路径。
+**创建资源也会改变共享状态。**`buildGeometry()` 保存原 VAO、VBO 和 SSBO 通用绑定，在 `finally` 中恢复。绘制阶段另保存 binding `0` 的索引绑定，恢复索引后再恢复通用绑定。
+
+所有实例共享一个 VAO、VBO、program 和两份 shader，SSBO 保存逐实例数据。清理顺序为 VAO、SSBO、VBO、program、shader；资源创建失败、战斗结束和重复清理都由 `cleanup()` 处理。每个已删除的句柄随即归零。
+
+## 让兼容声明与画面淡出对应
+
+两份资源沿用 `#version 430 compatibility` 和游戏的模型视图投影矩阵，Java 在首次 `render(...)` 检查 OpenGL 4.3 能力并创建资源。每条记录的舰船 Alpha 与颜色 Alpha 相乘，片元输出再乘共享的 `u_viewportAlpha`，同一视口中的全部实例一起服从画面淡出。
 
 ## 完整最小例
 
@@ -109,6 +127,7 @@ import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL31;
 import org.lwjgl.opengl.GL43;
+import org.lwjgl.opengl.GLContext;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
@@ -118,10 +137,7 @@ import com.fs.starfarer.api.combat.CombatEntityAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 
-/**
- * 使用 SSBO 和实例化绘制显示多艘舰船的程序化方向标。
- * advance() 收集实例数据，render() 上传共享缓冲并执行一次实例化绘制。
- */
+/** 管理方向标的数据、绘制与资源生命周期。 */
 public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
     private static final Logger LOG = Global.getLogger(GearInInstancedMarker.class);
     private static final String VERT_PATH = "data/shaders/GearIn_instanced_marker.vert";
@@ -147,7 +163,9 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
     private int positionLocation = -1;
     private int worldPerPixelLocation = -1;
     private int geometryLocation = -1;
+    private int viewportAlphaLocation = -1;
     private float renderRadius = DIRECTION_LENGTH;
+    private boolean programAttempted;
     private boolean valid = true;
     private boolean overflowLogged;
     private boolean cleaned;
@@ -160,24 +178,9 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        if (engine == null) {
-            valid = false;
-            return;
-        }
         instanceBuffer = BufferUtils.createFloatBuffer(
                 MAX_INSTANCES * FLOATS_PER_INSTANCE);
-        try {
-            if (!buildProgram() || !buildGeometry()) {
-                valid = false;
-                cleanup();
-                return;
-            }
-        } catch (IOException | RuntimeException e) {
-            valid = false;
-            LOG.error("GearIn instanced marker: initialization failed", e);
-            cleanup();
-            return;
-        }
+        updateInstances();
     }
 
     private int compileShader(int type, String source, String path) {
@@ -223,10 +226,11 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
         positionLocation = GL20.glGetAttribLocation(program, "a_position");
         worldPerPixelLocation = GL20.glGetUniformLocation(program, "u_worldPerPixel");
         geometryLocation = GL20.glGetUniformLocation(program, "u_geometry");
+        viewportAlphaLocation = GL20.glGetUniformLocation(program, "u_viewportAlpha");
         int blockIndex = GL43.glGetProgramResourceIndex(program,
                 GL43.GL_SHADER_STORAGE_BLOCK, BLOCK_NAME);
         if (positionLocation < 0 || worldPerPixelLocation < 0
-                || geometryLocation < 0 || blockIndex < 0) {
+                || geometryLocation < 0 || viewportAlphaLocation < 0 || blockIndex < 0) {
             LOG.error("GearIn instanced marker: attribute, uniform or block missing");
             return false;
         }
@@ -235,27 +239,36 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
     }
 
     private boolean buildGeometry() {
-        coverageVertices = BufferUtils.createFloatBuffer(12);
-        updateCoverageVertices(0f);
-        vaoId = GL30.glGenVertexArrays();
-        vboId = GL15.glGenBuffers();
-        ssboId = GL15.glGenBuffers();
-        if (vaoId == 0 || vboId == 0 || ssboId == 0) {
-            return false;
+        int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+        int previousVbo = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+        int previousSsbo = GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_BINDING);
+        try {
+            coverageVertices = BufferUtils.createFloatBuffer(12);
+            updateCoverageVertices(0f);
+            vaoId = GL30.glGenVertexArrays();
+            vboId = GL15.glGenBuffers();
+            ssboId = GL15.glGenBuffers();
+            if (vaoId == 0 || vboId == 0 || ssboId == 0) {
+                return false;
+            }
+            GL30.glBindVertexArray(vaoId);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
+            GL20.glEnableVertexAttribArray(positionLocation);
+            GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+            GL30.glBindVertexArray(0);
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
+            GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,
+                    MAX_INSTANCES * FLOATS_PER_INSTANCE * Float.BYTES,
+                    GL15.GL_DYNAMIC_DRAW);
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, 0);
+            return true;
+        } finally {
+            GL30.glBindVertexArray(previousVao);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, previousSsbo);
         }
-        GL30.glBindVertexArray(vaoId);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
-        GL20.glEnableVertexAttribArray(positionLocation);
-        GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL30.glBindVertexArray(0);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
-        GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,
-                MAX_INSTANCES * FLOATS_PER_INSTANCE * Float.BYTES,
-                GL15.GL_DYNAMIC_DRAW);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, 0);
-        return true;
     }
 
     private void updateCoverageVertices(float worldPerPixel) {
@@ -276,8 +289,7 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void advance(float amount) {
-        if (!valid || engine == null || instanceBuffer == null) {
-            valid = false;
+        if (!valid) {
             return;
         }
         if (engine.isCombatOver()) {
@@ -287,12 +299,18 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
         if (engine.isPaused()) {
             return;
         }
+        updateInstances();
+    }
+
+    private void updateInstances() {
         instanceBuffer.clear();
         instanceCount = 0;
         float minX = Float.POSITIVE_INFINITY;
         float minY = Float.POSITIVE_INFINITY;
         float maxX = Float.NEGATIVE_INFINITY;
         float maxY = Float.NEGATIVE_INFINITY;
+        ShipAPI player = engine.getPlayerShip();
+        int playerSide = player == null ? 0 : player.getOwner();
         List<ShipAPI> ships = engine.getShips();
         for (ShipAPI ship : ships) {
             if (!engine.isEntityInPlay(ship) || !ship.isAlive()) {
@@ -309,9 +327,9 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
             float x = ship.getLocation().x;
             float y = ship.getLocation().y;
             instanceBuffer.put(x).put(y).put(ship.getFacing()).put(ship.getAlphaMult());
-            float red = ship == engine.getPlayerShip() ? 0.1f : ship.isAlly() ? 0.2f : 1f;
-            float green = ship == engine.getPlayerShip() ? 0.9f : ship.isAlly() ? 0.7f : 0.25f;
-            float blue = ship == engine.getPlayerShip() ? 1f : ship.isAlly() ? 0.2f : 0.1f;
+            float red = ship == player ? 0.1f : ship.getOwner() == playerSide ? 0.2f : 1f;
+            float green = ship == player ? 0.9f : ship.getOwner() == playerSide ? 0.7f : 0.25f;
+            float blue = ship == player ? 1f : ship.getOwner() == playerSide ? 0.2f : 0.1f;
             instanceBuffer.put(red).put(green).put(blue).put(1f);
             instanceCount++;
             minX = Math.min(minX, x);
@@ -329,14 +347,29 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (!valid || viewport == null || instanceCount == 0 || vaoId == 0
-                || ssboId == 0 || program == 0) {
+        if (!valid || instanceCount == 0) {
             return;
+        }
+        if (!programAttempted) {
+            programAttempted = true;
+            if (!GLContext.getCapabilities().OpenGL43) {
+                LOG.error("GearInInstancedMarker: required OpenGL capability unavailable");
+                valid = false;
+                return;
+            }
+            try {
+                if (!buildProgram() || !buildGeometry()) {
+                    cleanup();
+                    return;
+                }
+            } catch (IOException | RuntimeException ex) {
+                LOG.error("GearInInstancedMarker: GPU resource creation failed", ex);
+                cleanup();
+                return;
+            }
+            LOG.info("GearInInstancedMarker GPU resources ready: vao=" + vaoId + " vbo=" + vboId + " ssbo=" + ssboId);
         }
         float worldPerPixel = viewport.convertScreenWidthToWorldWidth(1f);
-        if (!Float.isFinite(worldPerPixel) || worldPerPixel <= 0f) {
-            return;
-        }
         int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
         int previousVbo = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
         int previousSsbo = GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_BINDING);
@@ -365,6 +398,7 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
             GL11.glDepthMask(false);
             GL20.glUniform1f(worldPerPixelLocation, worldPerPixel);
             GL20.glUniform2f(geometryLocation, RING_RADIUS, DIRECTION_LENGTH);
+            GL20.glUniform1f(viewportAlphaLocation, viewport.getAlphaMult());
             GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES, 0, 6, instanceCount);
         } finally {
             GL11.glPopClientAttrib();
@@ -426,7 +460,7 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return renderRadius;
+        return renderRadius + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }
 ```
@@ -436,7 +470,7 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
 ::: details 完整成品：GearIn_instanced_marker.vert
 
 ```glsl
-#version 430
+#version 430 compatibility
 
 layout (location = 0) in vec2 a_position;
 
@@ -472,9 +506,10 @@ void main() {
 ::: details 完整成品：GearIn_instanced_marker.frag
 
 ```glsl
-#version 430
+#version 430 compatibility
 
 uniform vec2 u_geometry;
+uniform float u_viewportAlpha;
 uniform float u_worldPerPixel;
 in vec2 v_local;
 in vec4 v_color;
@@ -495,7 +530,7 @@ void main() {
     if (coverage <= 0.0) {
         discard;
     }
-    fragColor = vec4(v_color.rgb, v_color.a * coverage);
+    fragColor = vec4(v_color.rgb, v_color.a * coverage * u_viewportAlpha);
 }
 ```
 
@@ -503,7 +538,13 @@ void main() {
 
 ## 验证方案
 
-前置数据：已经启用包含实例化方向标插件的 GearIn MOD，并进入能够生成多艘舰船的测试战斗。
+前置数据：显卡和游戏渲染上下文支持 OpenGL 4.3 兼容上下文，Console Commands 已启用。
+
+完成本方案中的移动、缩放和生命周期观察后，用下面的 Console Commands 命令连续清理当前实例两次；重新观察时进入新的战斗并登记：
+
+```text
+runcode com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = (com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin) com.fs.starfarer.api.Global.getCombatEngine().getCustomData().get("GearIn_marker"); marker.cleanup(); marker.cleanup();
+```
 
 1. 在 MOD 工程执行 `gradle jar`，确认插件类和两份 shader 资源已进入对应的 MOD 目录。
 2. 启动游戏并进入测试战斗，注册 `GearInInstancedMarker`。
@@ -516,7 +557,7 @@ void main() {
 预期结果：
 
 - 一次 `glDrawArraysInstanced` 绘制多个半径 `80 su`、长度 `120 su` 的方向标；
-- 玩家、盟友和敌人分别显示青色、绿色和橙红色；
+- 玩家、同侧其他舰船与其余阵营分别显示青色、绿色和橙红色；
 - 移动、转向和 Alpha 变化由对应的 SSBO 记录独立驱动；
 - 超过 `128` 个实例时保留先取得的记录并记录一次容量日志；
 - 暂停、舰船失效和战斗结束后实例数量与生命周期状态一致；

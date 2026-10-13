@@ -1,10 +1,10 @@
 # 使用 SSBO 传递参数
 
-本节让 SSBO 保存一个方向标的运行时参数。Java 读取舰船状态并写入一条记录；绘制时，vertex shader 从这条记录取得位置和朝向，fragment shader 继续生成圆环与朝向线。
+方向标已经有了可复用的几何，这次把位置、朝向和颜色集中到一条 SSBO 记录中。Java 按约定顺序写入，vertex shader 从 binding `0` 读取，fragment shader 继续生成原来的形状。先把一条记录读对，下一节才有依据把它扩展成整个舰船集合。
 
-*本节预期阅读时间：~25 分钟。*
+*本节预期阅读时间：\~25 分钟。*
 
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：\~35 分钟。*
 
 ## 学习目标
 
@@ -21,6 +21,16 @@
 - [C20-S3] 的 VBO、VAO、attribute 布局和六顶点矩形；
 - [C20-S2] 的程序化圆环、朝向线、距离函数和 Alpha 混合；
 - Java 的 `FloatBuffer`、OpenGL program 生命周期和战斗渲染插件。
+
+## 保存资源并在战斗登记
+
+将完整类保存到 `src/data/scripts/gearin/combat/GearInSsboMarker.java`，两份 shader 保存到本节列出的 `data/shaders/` 路径。构建 JAR 并重启，进入测试战斗、部署并控制玩家舰后，通过 Console Commands 执行：
+
+```text
+runcode com.fs.starfarer.api.combat.CombatEngineAPI e = com.fs.starfarer.api.Global.getCombatEngine(); com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = new data.scripts.gearin.combat.GearInSsboMarker(e.getPlayerShip()); e.addLayeredRenderingPlugin(marker); e.getCustomData().put("GearIn_marker", marker);
+```
+
+**每场战斗登记一次当前版本。**`init(...)` 取得当前战斗并设置承载实体，GPU 资源在首次 `render(...)` 的有效上下文中创建；能力不足时记录条件并结束实例。命令沿用 [C20-S1] 的 `GearIn_marker` 项保存实例，便于随后验证清理。比较各版本时分别进入新的战斗。
 
 ## 确定参数由谁提供
 
@@ -43,17 +53,16 @@ shader storage block 使用相同字段顺序。若 Java 把位置、朝向或�
 
 ## 创建并绑定 SSBO
 
-初始化阶段只分配 `8 * Float.BYTES` 字节的 GPU 缓冲区，并把 block 绑定到 `0`：
+首次 `render(...)` 创建 SSBO 并分配 `8 * Float.BYTES` 字节。下面是 `buildGeometry()` 中的局部片段，调用结束后恢复原通用绑定：
 
 ```java
 ssboId = GL15.glGenBuffers();
 GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
 GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,
         FLOATS_PER_MARKER * Float.BYTES, GL15.GL_DYNAMIC_DRAW);
-GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, BINDING, ssboId);
 ```
 
-`GL43.glGetProgramResourceIndex(...)` 找到 `MarkerInstances`，`glShaderStorageBlockBinding(...)` 把它和同一个 binding 关联。这样 Java 的 `glBindBufferBase(...)` 与 shader 的 `layout (std430, binding = 0)` 读取同一块存储。
+`buildProgram()` 用 `GL43.glGetProgramResourceIndex(...)` 找到 `MarkerInstances`，再用 `glShaderStorageBlockBinding(...)` 把它关联到 binding `0`。实际绘制时，`glBindBufferBase(...)` 将本实例的 SSBO 绑定到这个索引；shader 的 `layout (std430, binding = 0)` 因而读取同一块存储。**block 索引、binding 索引和缓冲对象 ID 各有自己的用途，数值相同也要按用途传参。**
 
 ## 在两个生命周期阶段传递参数
 
@@ -71,6 +80,8 @@ GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
 
 ## 让状态恢复覆盖整个绘制调用
 
+**创建资源也会改变共享状态。**`buildGeometry()` 保存原 VAO、VBO 和 SSBO 通用绑定，再在 `finally` 中恢复。绘制阶段另保存 binding `0` 的索引绑定，因为 `glBindBufferBase(...)` 同时改变索引绑定与通用绑定；恢复时先还原索引，再还原通用绑定。
+
 绘制前记录 VAO、`GL_ARRAY_BUFFER`、SSBO 的通用绑定与 binding `0` 的索引绑定、program 和矩阵模式，并用属性栈保存混合、深度、纹理和客户端 attribute 状态。`finally` 恢复本次绘制改动的状态；后续渲染器才能继续使用自己的配置。
 
 ## 纹理采样只承担纹理职责
@@ -84,6 +95,12 @@ GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
 ```
 
 采样器、纹理单元和纹理对象共同决定采样来源，它们不改变 SSBO 的数据布局。
+
+## 让兼容声明与画面淡出对应
+
+两份资源采用 `#version 430 compatibility`，让 shader 继续使用游戏设置的 `gl_ModelViewProjectionMatrix`。`GLContext.getCapabilities().OpenGL43` 决定是否具备本例所需的 OpenGL 功能；兼容上下文则提供这套内建矩阵。只提高版本数字还不能解决矩阵来源，本例选择兼容声明，是为了沿用此前已经讲清的世界坐标变换。
+
+舰船 Alpha 随记录进入 `v_color.a`，视口 Alpha 由 Java 每次绘制提交给 `u_viewportAlpha`。fragment shader 将两者和形状覆盖率相乘，使方向标既服从舰船透明度，也服从画面淡出。
 
 ## 完整最小例
 
@@ -105,6 +122,7 @@ import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL43;
+import org.lwjgl.opengl.GLContext;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
@@ -114,11 +132,7 @@ import com.fs.starfarer.api.combat.CombatEntityAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 
-/**
- * 使用 SSBO 保存单个方向标的参数并完成一次非实例化绘制。
- * advance() 更新一个可复用的 CPU 记录，render() 上传记录并绘制矩形。
- * cleanup() 按 VAO、SSBO、VBO、program 和 shader 的顺序释放资源。
- */
+/** 管理方向标的数据、绘制与资源生命周期。 */
 public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
     private static final Logger LOG = Global.getLogger(GearInSsboMarker.class);
     private static final String VERT_PATH = "data/shaders/GearIn_ssbo_marker.vert";
@@ -143,7 +157,9 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
     private int positionLocation = -1;
     private int worldPerPixelLocation = -1;
     private int geometryLocation = -1;
+    private int viewportAlphaLocation = -1;
     private float renderRadius = DIRECTION_LENGTH;
+    private boolean programAttempted;
     private boolean valid = true;
     private boolean cleaned;
 
@@ -156,23 +172,8 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        if (engine == null || trackedShip == null) {
-            valid = false;
-            return;
-        }
         markerBuffer = BufferUtils.createFloatBuffer(FLOATS_PER_MARKER);
-        try {
-            if (!buildProgram() || !buildGeometry()) {
-                valid = false;
-                cleanup();
-                return;
-            }
-        } catch (IOException | RuntimeException e) {
-            valid = false;
-            LOG.error("GearIn SSBO marker: initialization failed", e);
-            cleanup();
-            return;
-        }
+
         updateMarkerData();
         LOG.info("GearIn SSBO marker init: vao=" + vaoId + " vbo=" + vboId
                 + " ssbo=" + ssboId);
@@ -221,10 +222,11 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
         positionLocation = GL20.glGetAttribLocation(program, "a_position");
         worldPerPixelLocation = GL20.glGetUniformLocation(program, "u_worldPerPixel");
         geometryLocation = GL20.glGetUniformLocation(program, "u_geometry");
+        viewportAlphaLocation = GL20.glGetUniformLocation(program, "u_viewportAlpha");
         int blockIndex = GL43.glGetProgramResourceIndex(program,
                 GL43.GL_SHADER_STORAGE_BLOCK, BLOCK_NAME);
         if (positionLocation < 0 || worldPerPixelLocation < 0
-                || geometryLocation < 0 || blockIndex < 0) {
+                || geometryLocation < 0 || viewportAlphaLocation < 0 || blockIndex < 0) {
             LOG.error("GearIn SSBO marker: attribute, uniform or block missing");
             return false;
         }
@@ -233,26 +235,35 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
     }
 
     private boolean buildGeometry() {
-        coverageVertices = BufferUtils.createFloatBuffer(12);
-        updateCoverageVertices(0f);
-        vaoId = GL30.glGenVertexArrays();
-        vboId = GL15.glGenBuffers();
-        ssboId = GL15.glGenBuffers();
-        if (vaoId == 0 || vboId == 0 || ssboId == 0) {
-            return false;
+        int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+        int previousVbo = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+        int previousSsbo = GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_BINDING);
+        try {
+            coverageVertices = BufferUtils.createFloatBuffer(12);
+            updateCoverageVertices(0f);
+            vaoId = GL30.glGenVertexArrays();
+            vboId = GL15.glGenBuffers();
+            ssboId = GL15.glGenBuffers();
+            if (vaoId == 0 || vboId == 0 || ssboId == 0) {
+                return false;
+            }
+            GL30.glBindVertexArray(vaoId);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
+            GL20.glEnableVertexAttribArray(positionLocation);
+            GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+            GL30.glBindVertexArray(0);
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
+            GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,
+                    FLOATS_PER_MARKER * Float.BYTES, GL15.GL_DYNAMIC_DRAW);
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, 0);
+            return true;
+        } finally {
+            GL30.glBindVertexArray(previousVao);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
+            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, previousSsbo);
         }
-        GL30.glBindVertexArray(vaoId);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
-        GL20.glEnableVertexAttribArray(positionLocation);
-        GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL30.glBindVertexArray(0);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
-        GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,
-                FLOATS_PER_MARKER * Float.BYTES, GL15.GL_DYNAMIC_DRAW);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, 0);
-        return true;
     }
 
     private void updateCoverageVertices(float worldPerPixel) {
@@ -283,8 +294,7 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void advance(float amount) {
-        if (!valid || engine == null || trackedShip == null || markerBuffer == null) {
-            valid = false;
+        if (!valid) {
             return;
         }
         if (engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
@@ -300,13 +310,29 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (!valid || viewport == null || vaoId == 0 || ssboId == 0 || program == 0) {
+        if (!valid) {
             return;
+        }
+        if (!programAttempted) {
+            programAttempted = true;
+            if (!GLContext.getCapabilities().OpenGL43) {
+                LOG.error("GearInSsboMarker: required OpenGL capability unavailable");
+                valid = false;
+                return;
+            }
+            try {
+                if (!buildProgram() || !buildGeometry()) {
+                    cleanup();
+                    return;
+                }
+            } catch (IOException | RuntimeException ex) {
+                LOG.error("GearInSsboMarker: GPU resource creation failed", ex);
+                cleanup();
+                return;
+            }
+            LOG.info("GearInSsboMarker GPU resources ready: vao=" + vaoId + " vbo=" + vboId + " ssbo=" + ssboId);
         }
         float worldPerPixel = viewport.convertScreenWidthToWorldWidth(1f);
-        if (!Float.isFinite(worldPerPixel) || worldPerPixel <= 0f) {
-            return;
-        }
         int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
         int previousVbo = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
         int previousSsbo = GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_BINDING);
@@ -335,6 +361,7 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
             GL11.glDepthMask(false);
             GL20.glUniform1f(worldPerPixelLocation, worldPerPixel);
             GL20.glUniform2f(geometryLocation, RING_RADIUS, DIRECTION_LENGTH);
+            GL20.glUniform1f(viewportAlphaLocation, viewport.getAlphaMult());
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
         } finally {
             GL11.glPopClientAttrib();
@@ -396,7 +423,7 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return renderRadius;
+        return renderRadius + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }
 ```
@@ -406,7 +433,7 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
 ::: details 完整成品：GearIn_ssbo_marker.vert
 
 ```glsl
-#version 430
+#version 430 compatibility
 
 layout (location = 0) in vec2 a_position;
 
@@ -442,9 +469,10 @@ void main() {
 ::: details 完整成品：GearIn_ssbo_marker.frag
 
 ```glsl
-#version 430
+#version 430 compatibility
 
 uniform vec2 u_geometry;
+uniform float u_viewportAlpha;
 uniform float u_worldPerPixel;
 in vec2 v_local;
 in vec4 v_color;
@@ -465,7 +493,7 @@ void main() {
     if (coverage <= 0.0) {
         discard;
     }
-    fragColor = vec4(v_color.rgb, v_color.a * coverage);
+    fragColor = vec4(v_color.rgb, v_color.a * coverage * u_viewportAlpha);
 }
 ```
 
@@ -473,7 +501,13 @@ void main() {
 
 ## 验证方案
 
-前置数据：已经启用包含方向标插件的 GearIn MOD，并进入能够取得目标舰船 `ShipAPI` 的测试战斗。
+前置数据：显卡和游戏渲染上下文支持 OpenGL 4.3 兼容上下文，Console Commands 已启用。
+
+完成本方案中的移动、缩放和生命周期观察后，用下面的 Console Commands 命令连续清理当前实例两次；重新观察时进入新的战斗并登记：
+
+```text
+runcode com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = (com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin) com.fs.starfarer.api.Global.getCombatEngine().getCustomData().get("GearIn_marker"); marker.cleanup(); marker.cleanup();
+```
 
 1. 在 MOD 工程执行 `gradle jar`，确认插件类和两份 shader 资源已进入对应的 MOD 目录。
 2. 启动游戏并进入测试战斗，以目标舰船创建 `new GearInSsboMarker(ship)`，再调用 `engine.addLayeredRenderingPlugin(...)` 注册插件。

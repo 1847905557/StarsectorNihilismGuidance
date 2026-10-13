@@ -1,6 +1,7 @@
-#version 430
+#version 430 compatibility
 
 uniform vec2 u_geometry;
+uniform float u_viewportAlpha;
 uniform float u_worldPerPixel;
 in vec2 v_local;
 in vec4 v_color;
@@ -21,5 +22,5 @@ void main() {
     if (coverage <= 0.0) {
         discard;
     }
-    fragColor = vec4(v_color.rgb, v_color.a * coverage);
+    fragColor = vec4(v_color.rgb, v_color.a * coverage * u_viewportAlpha);
 }

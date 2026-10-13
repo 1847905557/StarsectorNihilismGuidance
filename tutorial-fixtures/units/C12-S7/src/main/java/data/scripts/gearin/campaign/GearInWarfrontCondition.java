@@ -57,6 +57,11 @@ public class GearInWarfrontCondition extends BaseMarketConditionPlugin {
         elapsed += amount;
     }
 
+    @Override
+    public boolean isTransient() {
+        return false;
+    }
+
     public float getMultiplier() {
         return multiplier;
     }

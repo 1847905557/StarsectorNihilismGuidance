@@ -24,9 +24,6 @@ public final class GearInI18n {
 
     public static String format(String category, String id, Object... args) {
         String template = get(category, id);
-        if (args == null || args.length == 0) {
-            return template;
-        }
         return String.format(template, args);
     }
 

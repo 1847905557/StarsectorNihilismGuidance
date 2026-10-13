@@ -1,10 +1,10 @@
 # 配置 MagicLib 自动尾迹
 
-MagicLib 可以只凭一份数据表为弹体持续生成尾迹。MOD 提供 sprite 登记和 projectile 对应关系，`MagicAutoTrails` 负责读取数据、发现战斗中的匹配弹体、分配尾迹 ID，并随着弹体移动追加节点。本节让 `GearIn_durin_shot` 同时产生一条收窄的主体层和一条更宽的辉光层，从画面直接观察每组字段改变了什么。
+让都林弹体拖出两层尾迹，先从数据做起。准备一张纹理，在 settings 登记 sprite，再把两条 CSV 记录绑定到 `GearIn_durin_shot`。MagicLib 会随弹体移动提交节点，我们集中调整主体的收窄、辉光的宽度与各自的消失时间，看看这些参数怎样组合成一条连续色带。
 
-*本节预期阅读时间：~24 分钟。*
+*本节预期阅读时间：\~24 分钟。*
 
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：\~35 分钟。*
 
 ## 学习目标
 
@@ -22,41 +22,6 @@ MagicLib 可以只凭一份数据表为弹体持续生成尾迹。MOD 提供 spr
 - [C1-S5] 已登记 projectile ID 为 `GearIn_durin_shot` 的都林弹体；
 - 能够编辑 `data/config/settings.json` 与 CSV，并从 `starsector.log` 读取加载警告；
 - 能够准备一张带透明通道、横向延伸的 trail PNG。
-
-## 理解自动尾迹加载链
-
-MagicLib 已经在自己的 `data/config/settings.json` 中注册 `MagicAutoTrails`。应用加载时，`Magic_modPlugin` 调用 `MagicAutoTrails.getTrailData()`；加载器读取配置中的 `magicTrail_files`，再固定加入当前默认文件 `data/config/modFiles/magicTrail_data.csv`。
-
-每份表通过下面的关系进入运行时：
-
-```text
-trail 行键
-→ merged spreadsheet
-→ 按 projectile 分组的 PROJ_TRAILS
-→ DamagingProjectileAPI.getProjectileSpecId()
-→ 每条匹配记录各自取得 trail ID
-→ MagicTrailPlugin.addTrailMemberAdvanced(...)
-```
-
-战斗插件只处理 `projectileSpecId` 出现在数据表中的弹体。同一个 projectile 分组中有两条记录时，插件会分配两个独立 ID，并在相同弹体位置提交两层节点。GearIn 不需要再注册自己的战斗插件。
-
-Dev Mode 下，`MagicAutoTrails.init(...)` 会在每场战斗开始时重新读取数据。修改 CSV 后退出当前战斗并重新进入，新的参数就会参与下一次初始化。
-
-## 选择当前数据文件路径
-
-当前数据文件使用：
-
-```text
-data/config/modFiles/magicTrail_data.csv
-```
-
-MagicLib 会主动把这一路径加入读取列表，因此使用默认位置时不需要修改 `modSettings.json`。各 MOD 的同路径文件按 `trail` 列合并；`trail` 是稳定行键，应该带有 MOD 前缀并在表内保持唯一。
-
-::: tip 兼容路径
-
-`data/trails/trail_data.csv` 仍位于 MagicLib 的 `magicTrail_files` 列表中，用于读取采用旧目录结构的 MOD。新数据使用 `data/config/modFiles/magicTrail_data.csv`，可以直接取得当前 30 列表头和 `frameOffsetMult` 字段。
-
-:::
 
 ## 在 settings 中登记自定义 sprite
 
@@ -76,9 +41,25 @@ CSV 的 `sprite` 列保存 `GearIn_trail_clean` 这个键，`MagicAutoTrails` �
 
 辉光层使用 MagicLib 已经登记的 `base_trail_smooth`，无需在 GearIn 的 settings 中重复写入。这样两条数据同时展示了成熟项目常见的两种资源来源：自有 sprite 与依赖库现成 sprite。
 
+## 选择当前数据文件路径
+
+当前数据文件使用：
+
+```text
+data/config/modFiles/magicTrail_data.csv
+```
+
+MagicLib 会主动把这一路径加入读取列表，因此使用默认位置时不需要修改 `modSettings.json`。各 MOD 的同路径文件按 `trail` 列合并；`trail` 是稳定行键，应该带有 MOD 前缀并在表内保持唯一。
+
+::: tip 兼容路径
+
+`data/trails/trail_data.csv` 仍位于 MagicLib 的 `magicTrail_files` 列表中，用于读取采用旧目录结构的 MOD。新数据使用 `data/config/modFiles/magicTrail_data.csv`，可以直接取得当前 30 列表头和 `frameOffsetMult` 字段。
+
+:::
+
 ## 用 projectile ID 绑定尾迹
 
-每条数据都必须把 `projectile` 写成实际的 projectile spec ID：
+**`projectile` 对应实际弹体，`trail` 对应一层尾迹记录。**主体的局部绑定为：
 
 ```csv
 trail,projectile,sprite
@@ -99,6 +80,25 @@ GearIn_durin_trail_glow,GearIn_durin_shot,base_trail_smooth
 
 主体层从 10 su 收窄到 3 su，颜色由亮红橙过渡到暗红；辉光层从 32 su 收窄到 14 su，透明度较低。发射一次弹体后，两层共享移动路径和采样时机，却分别按自己的尺寸、颜色与生命周期淡出。
 
+## 谁负责读取和追加尾迹
+
+MagicLib 已经在自己的 `data/config/settings.json` 中注册 `MagicAutoTrails`。应用加载时，`Magic_modPlugin` 调用 `MagicAutoTrails.getTrailData()`；加载器读取配置中的 `magicTrail_files`，再固定加入当前默认文件 `data/config/modFiles/magicTrail_data.csv`。
+
+每份表通过下面的关系进入运行时：
+
+```text
+trail 行键
+→ merged spreadsheet
+→ 按 projectile 分组的 PROJ_TRAILS
+→ DamagingProjectileAPI.getProjectileSpecId()
+→ 每条匹配记录各自取得 trail ID
+→ MagicTrailPlugin.addTrailMemberAdvanced(...)
+```
+
+战斗插件只处理 `projectileSpecId` 出现在数据表中的弹体。同一个 projectile 分组中有两条记录时，插件会分配两个独立 ID，并在相同弹体位置提交两层节点。GearIn 不需要再注册自己的战斗插件。
+
+Dev Mode 下，`MagicAutoTrails.init(...)` 会在每场战斗开始时重新读取数据。修改 CSV 后退出当前战斗并重新进入，新的参数就会参与下一次初始化。
+
 ## 控制节点采样与生命周期
 
 示例主体层使用以下值：
@@ -108,7 +108,7 @@ minLength,fadeIn,duration,fadeOut
 6,0,0.04,0.35
 ```
 
-正数 `minLength` 表示弹体与上一个采样位置至少相距 6 su 才增加节点。数值越小，快速弹体的带状表现越连续，提交的节点也越多。负数会进入慢速模式，由 MagicLib 约每 0.06–0.07 秒为弹体追加一次节点，适合速度低于 500 su/s 的弹体。
+正数 `minLength` 让距离超过阈值后增加节点，本例使用 6 su；值越小，带状表现通常越连续，节点也越多。同一 projectile 的多层尾迹共用分组首条记录的采样模式与距离，两行保持相同值便于调整。负数进入慢速模式，使用间隔设为 0.06–0.07 秒的共享计时器；计时器在弹体遍历中推进，实际单弹采样还受对象数量与顺序影响。需要精确控制每枚弹体的采样时，可使用运行时跟踪器。
 
 每个节点先按 `fadeIn` 淡入，保持 `duration` 秒，再按 `fadeOut` 淡出。主体层立即出现、保持 0.04 秒并在 0.35 秒内消失；辉光层的保持时间为 0.05 秒、淡出时间为 0.2 秒，因此宽光晕比主体更快收回。
 
@@ -123,7 +123,7 @@ sizeIn,sizeOut,colorIn,colorOut,opacity
 10,3,"[255,90,70]","[120,25,20]",0.8
 ```
 
-`sizeIn` 与 `sizeOut` 是节点开头和结尾的宽度。10→3 形成逐渐收窄的实体尾部；32→14 则让辉光包在主体外侧。`colorIn` 与 `colorOut` 分别控制同一节点生命周期两端的 RGB，`opacity` 把最终透明度限制在 0–1 范围内。
+`sizeIn` 与 `sizeOut` 是节点生成时与生命周期结束前的宽度。10→3 形成逐渐收窄的实体尾部；32→14 则让辉光包在主体外侧。`colorIn` 与 `colorOut` 分别控制同一节点生命周期两端的 RGB，`opacity` 设置最终透明度倍率，本例采用 0–1 范围内的值。
 
 这五项共同决定单个节点如何变化。连续节点使用同一组变化规则，最终在弹体后方组成稳定色带。
 
@@ -136,7 +136,7 @@ textLength,textScroll,randomTextureOffset
 256,600,TRUE
 ```
 
-`textLength` 表示纹理在尾迹方向上的像素长度，`textScroll` 表示每秒滚动的像素数。正值让纹理沿既定方向移动；改变符号会反转滚动方向。`randomTextureOffset = TRUE` 让不同尾迹从随机纹理位置开始，避免多枚弹体的纹理接缝完全对齐。
+`textLength` 表示纹理在尾迹方向上的世界长度，单位为 su；`textScroll` 表示每秒滚动的世界长度，单位为 su/s。正值让纹理沿既定方向移动；改变符号会反转滚动方向。`randomTextureOffset = TRUE` 让不同尾迹从随机纹理位置开始，避免多枚弹体的纹理接缝完全对齐。
 
 辉光层使用 `textLength = -1` 与 `textScroll = 0`，让平滑光晕保持静态。纹理长度、节点宽度与 sprite 的实际图案需要一起校准；长度过短时重复接缝会变得明显。
 
@@ -165,7 +165,7 @@ velocityIn,velocityOut,randomVelocity,angle,rotationIn,rotationOut,randomRotatio
 
 | 字段 | 类型 | 示例值 | 直接结果或主要错误 |
 |---|---|---|---|
-| `trail` | 字符串 | `GearIn_durin_trail_body` | 合并行键；重复键会合并为同一记录 |
+| `trail` | 字符串 | `GearIn_durin_trail_body` | 合并行键；同文件重复键会导致加载错误，跨来源同键参与合并 |
 | `projectile` | 字符串 | `GearIn_durin_shot` | 与 projectile spec ID 不一致时不会生成尾迹 |
 | `sprite` | 字符串 | `GearIn_trail_clean` | 从 `graphics.fx` 取图；键缺失时无法绘制 |
 | `minLength` | 浮点 | `6` | 正值按距离采样，负值启用慢速模式 |
@@ -177,11 +177,11 @@ velocityIn,velocityOut,randomVelocity,angle,rotationIn,rotationOut,randomRotatio
 | `colorIn` | RGB 字符串 | `[255,90,70]` | 节点初始颜色；格式错误会跳过数据行 |
 | `colorOut` | RGB 字符串 | `[120,25,20]` | 节点结束颜色 |
 | `opacity` | 浮点 | `0.8` | 最大透明度 |
-| `textLength` | 浮点像素 | `256` | 纹理重复长度 |
-| `textScroll` | 浮点像素/秒 | `600` | 纹理滚动速度与方向 |
+| `textLength` | 浮点 su | `256` | 纹理重复长度 |
+| `textScroll` | 浮点 su/s | `600` | 纹理滚动速度与方向 |
 | `randomTextureOffset` | 布尔 | `TRUE` | 随机选择纹理起点 |
 | `distance` | 浮点 su | `18` | 节点相对弹体位置的偏移 |
-| `dispersion` | 浮点 su | `0` | 节点速度的随机散布范围 |
+| `dispersion` | 浮点 su/s | `0` | 节点速度的随机散布范围 |
 | `drift` | 浮点比例 | `1` | 继承弹体横向速度的比例 |
 | `frameOffsetMult` | 浮点倍率 | `1` | 帧间偏移补偿；字段缺失时默认 1 |
 | `fadeOnFadeOut` | 布尔 | `TRUE` | 弹体 fading 时同步压低节点透明度 |
@@ -234,8 +234,8 @@ GearIn_durin_trail_glow,GearIn_durin_shot,base_trail_smooth,6,0,0.05,0.2,32,14,"
 2. 发射 `GearIn_durin_shot`，观察窄主体和宽辉光同时从弹体后方延伸。
 3. 修改武器显示名称并保持 projectile ID 不变，确认两层尾迹继续出现。
 4. 临时把 CSV 的 `projectile` 改成不存在的 ID，确认同一弹体不再获得自动尾迹。
-5. 让两行使用相同 `trail` 键，观察合并结果，再恢复两个唯一行键。
-6. 分别使用 `minLength = 6`、更大的正数和负数，比较高速距离采样与慢速模式。
+5. 在测试表中让两行使用相同 `trail`，重新进入战斗并观察重复键加载日志；恢复两个唯一行键后再次进入战斗。
+6. 两行同步采用 `minLength = 6`、更大的正数和负数，比较距离采样与共享计时模式，再恢复两行的 6。
 7. 调整主体层的尺寸、颜色、透明度和 `textScroll`，逐项观察带宽、渐变与滚动方向。
 8. 比较 `additive` 两种值，并让弹体进入 fading 状态，观察混合与 `fadeOnFadeOut`。
 9. 切换 `renderBelowExplosions`，在爆炸附近比较尾迹的遮挡顺序。
@@ -246,7 +246,7 @@ GearIn_durin_trail_glow,GearIn_durin_shot,base_trail_smooth,6,0,0.05,0.2,32,14,"
 - 一枚 `GearIn_durin_shot` 同时获得 2 个独立 trail ID；
 - 主体和辉光共享 projectile 路径，各自使用自己的 sprite、尺寸、颜色和生命周期；
 - projectile ID 不匹配时，`MagicAutoTrails` 跳过该弹体；
-- 正 `minLength` 按移动距离提交节点，负值进入约 0.06–0.07 秒的慢速模式；
+- 正 `minLength` 按移动距离提交节点，负值采用间隔为 0.06–0.07 秒的共享计时器；
 - Dev Mode 在新战斗初始化时重新读取 CSV。
 
 ## 故障分析
@@ -257,7 +257,7 @@ GearIn_durin_trail_glow,GearIn_durin_shot,base_trail_smooth,6,0,0.05,0.2,32,14,"
 - **主体层不显示，辉光层正常**：`GearIn_trail_clean` 没有进入 `graphics.fx`，或 PNG 路径错误。
     - **解决方案**：核对 settings 键、CSV sprite 和 `graphics/fx/GearIn_trail_clean.png`。
 
-- **第二层覆盖第一层的数据**：两行复用了相同的 `trail` 合并键。
+- **尾迹表加载报告重复键**：同一文件中的两行使用了相同 `trail`。
     - **解决方案**：为主体和辉光保留两个带 MOD 前缀的唯一行键。
 
 - **高速弹体的尾迹出现明显断口或节点过密**：正 `minLength` 与弹体每帧移动距离不匹配。
@@ -271,11 +271,11 @@ GearIn_durin_trail_glow,GearIn_durin_shot,base_trail_smooth,6,0,0.05,0.2,32,14,"
 
 ## 总结
 
-`MagicAutoTrails` 把 CSV 中的 projectile 分组转换为战斗中的连续尾迹。稳定 `trail` 键决定数据如何合并，projectile ID 决定哪些弹体命中配置，sprite 与其余 27 个字段共同决定每层节点的资源、采样、外观、运动和渲染顺序。同一个 projectile 写入多条唯一记录，就能在不编写 Java 插件的情况下组合多层效果。
+`MagicAutoTrails` 把 CSV 中的 projectile 分组转换为战斗中的连续尾迹。稳定 `trail` 键决定数据如何合并，projectile ID 决定哪些弹体命中配置，sprite 与其他字段决定资源、采样、外观、运动和渲染顺序。同一个 projectile 写入多条唯一记录，就能在不编写 Java 插件的情况下组合多层效果。
 
 ## 建议参考项
 
 - `org.magiclib.plugins.MagicAutoTrails`：读取、分组并消费 projectile 尾迹数据；
 - `org.magiclib.plugins.MagicTrailPlugin`：为自动尾迹分配 ID 并接收节点；
-- `MagicLib/data/config/modFiles/magicTrail_data.csv`：当前 30 列表头与字段说明；
-- `MagicLib/data/config/modSettings.json`：`magicTrail_files` 与兼容路径。
+- `Starsector/mods/MagicLib/data/config/modFiles/magicTrail_data.csv`：当前 30 列表头与字段说明；
+- `Starsector/mods/MagicLib/data/config/modSettings.json`：`magicTrail_files` 与兼容路径。

@@ -1,0 +1,26 @@
+{
+    "playableFaction": true,
+    "startingFaction": true,
+    "corvusCompatible": true,
+    "useConfigRelationshipsInNonRandomSector": true,
+    "disableDiplomacy": false,
+    "startRelationships": {
+        "independent": 0.25,
+        "pirates": -0.6
+    },
+    "minRelationships": {
+        "independent": 0.0
+    },
+    "maxRelationships": {
+        "pirates": -0.25
+    },
+    "diplomacyTraits": [
+        "helps_allies",
+        "law_and_order"
+    ],
+    "alignments": {
+        "technocratic": 0.75,
+        "diplomatic": 0.4,
+        "hierarchical": 0.25
+    }
+}

@@ -1,10 +1,10 @@
 # 制作角色技能
 
-本节把同一套技能资源拆成三条可观察的角色技能：舰长只改变被驾驶舰船，舰队指挥官改变所属舰队，管理员改变自己治理的殖民地市场。您会从注册行走到效果脚本，再用技能树、舰队界面、整备界面和殖民地界面确认每个对象收到的 modifier。
+角色已经绑定，接下来给 Mira、Rowan 和 Selene 各加一条技能。舰长获得机动收益，指挥官提高舰队燃耗并减少超空间燃料消耗，管理员提高治理市场的稳定度与收入。先注册三份资源，再按作用对象实现效果和描述，技能等级与实际加成沿上一节的角色入口观察。
 
-*本节预期阅读时间：~30 分钟。*
+*本节预期阅读时间：\~30 分钟。*
 
-*本节预期操作时间：~50 分钟。*
+*本节预期操作时间：\~50 分钟。*
 
 ## 学习目标
 
@@ -18,16 +18,16 @@
 
 ## 前置知识
 
-- [C1-S1] 的 MOD ID、包名和资源路径约定；
-- [C6-S1] 的 Java 构建、脚本类加载和数据资源注册；
+- [C1-S7] 的 CSV 列与转义；
+- [C6-S4] 的构建、JAR 与加载；
 - [C8-S4] 的 `MutableStat` modifier ID、`modify` 方法和 `unmodify` 方法；
-- [C10-S3] 的 `FleetMemberAPI` 与舰船 stats；
-- [C13-S1] 的 `PersonAPI`、角色槽位、技能等级和 `refreshCharacterStatsEffects()`；
+- [C11-S3] 的成员与舰队数值；
+- [C13-S2] 的角色槽位、技能等级与刷新；
 - 能够在生涯中打开技能树、舰队信息、整备界面和殖民地管理界面。
 
 ## 让三个文件组成一个技能
 
-技能不是单个 Java 类。`skill_data.csv` 提供技能树需要的名称、排序、层级、角色资格和图标；同 ID 的 `.skill` 文件声明能力树、作用域、等级组和每个效果的 `type`；脚本类实现这些效果要求的接口。加载器把三处 ID 对齐后才得到一个可学习的 `SkillSpecAPI`。任意一处写成另一个 ID，数据就无法汇合，技能树也没有可以展示的完整定义。
+技能由注册行、定义文件和效果类共同接入。`skill_data.csv` 提供技能树需要的名称、排序、层级、角色资格和图标；同 ID 的 `.skill` 文件声明能力树、作用域、等级组和每个效果的 `type`；脚本类实现这些效果要求的接口。加载器把三处 ID 对齐后才得到一个可学习的 `SkillSpecAPI`。任意一处写成另一个 ID，数据就无法汇合，技能树也没有可以展示的完整定义。
 
 ### 技能资源速查表
 
@@ -37,11 +37,20 @@
 | `<id>.skill` | 能力树分组和效果作用域 | `id`、`governingAptitude`、`scope`、`elite`、`effectGroups` |
 | Java 效果类 | 运行时数值和描述 | `apply()`、`unapply()`、`getEffectDescription()`、接口对应的方法 |
 
-三个 ID 在本节保持逐字一致：`GearIn_captain_mobility`、`GearIn_fleet_coordination` 和 `GearIn_colony_governance`。CSV 的 `combat officer`、`admiral` 和 `admin` 字段分别把技能放入舰长、舰队指挥官和管理员可以学习的角色范围；`.skill` 的 `scope` 再决定效果说明应该显示为单舰、舰队还是治理市场。
+本节分别定义三个 ID：`GearIn_captain_mobility`、`GearIn_fleet_coordination` 和 `GearIn_colony_governance`。CSV 的三个角色资格字段分别用于军官、舰队指挥官与管理员的选择范围，`.skill` 的 `scope` 提供说明范围。当前给专用人物直接设置技能等级，资格与实际 `type` 都在定义中核对。
 
-### 让注册失败留下可定位信号
+### 先保存注册与三份定义
 
-加载器先读取 CSV 中的注册行，再读取 `data/characters/skills/` 下的 `.skill` 文件。`.skill` 的 `id` 如果没有对应 CSV 行，加载器会跳过它；CSV 有行而 `.skill` 的 ID 拼错时，技能树仍然缺少完整定义。两种情况都表现为技能不出现，因此排查顺序应该是先比较三个文件的 ID，再看日志中的跳过信息，最后检查脚本类的完整包名。
+先保存 `data/characters/skills/skill_data.csv` 的三条记录，已有表头时只追加数据行。再在同目录保存三个同名 `.skill` 文件。加载器先读取 CSV 的身份与角色字段，再加载效果定义。`.skill` 的 `id` 如果没有对应 CSV 行，加载器会跳过它；CSV 有行而 `.skill` 的 ID 拼错时，技能树仍然缺少完整定义。两种情况都表现为技能不出现，因此排查顺序应该是先比较三个文件的 ID，再看日志中的跳过信息，最后检查脚本类的完整包名。
+
+注册行如下：
+
+```csv
+id,name,order,tier,reqPoints,reqPointsPerExtraSkill,description,author,combat officer,admiral,admin,tags,icon,
+GearIn_captain_mobility,Captain Mobility,1025,2,1,0,"Improve the speed and handling of the piloted ship.","GearIndustry",TRUE,,,,graphics/icons/skills/helmsmanship.png,
+GearIn_fleet_coordination,Fleet Coordination,2025,2,1,0,"Improve fleet movement and hyperspace fuel economy.","GearIndustry",,TRUE,,,graphics/icons/skills/navigation.png,
+GearIn_colony_governance,Colony Governance,3025,2,1,0,"Improve stability and income at the governed market.","GearIndustry",,,TRUE,,graphics/icons/skills/industrial_planning.png,
+```
 
 下面的资源片段展示舰长技能如何把描述类和数值类放入同一等级组。`DESCRIPTION` 只负责技能面板文字，`SHIP` 才会收到 `MutableShipStatsAPI`；两者共享 `requiredSkillLevel`，所以技能升到一级时一起出现。
 
@@ -73,7 +82,47 @@
 }
 ```
 
-`elite:true` 使第二组成为精英等级组，`requiredSkillLevel:2` 决定它只有在技能达到二级时才应用。`effectBasedOnLevel` 只决定技能面板是否追加 "每级" 说明文字；无论取值如何，脚本都会收到当前等级，本例把固定数值写入 modifier。设为 `true` 时，才需要让 `level` 参与计算，保持面板文字与实际增量一致。
+`elite:true` 声明精英技能，第二组的 `requiredSkillLevel:2` 指定实际阈值。`effectBasedOnLevel` 只决定技能面板是否追加 "每级" 说明文字；无论取值如何，脚本都会收到当前等级，本例把固定数值写入 modifier。选择每级说明时，让返回的每级文本与代码实际计算方式对应。本例三种技能采用固定增量，当前等级用于决定哪些组已达到阈值。
+
+其余两份定义保存为 `GearIn_fleet_coordination.skill` 和 `GearIn_colony_governance.skill`，分别连接舰队与市场作用域：
+
+```json
+{
+    "id":"GearIn_fleet_coordination",
+    "governingAptitude":"leadership",
+    "scope":"FLEET",
+    "effectGroups":[
+        {
+            "name":"Level 1",
+            "requiredSkillLevel":1,
+            "effectBasedOnLevel":false,
+            "effects":[
+                {"type":"DESCRIPTION", "script":"data.scripts.gearin.campaign.GearInFleetCoordinationDescription"},
+                {"type":"FLEET", "script":"data.scripts.gearin.campaign.GearInFleetCoordinationEffect"}
+            ]
+        }
+    ]
+}
+```
+
+```json
+{
+    "id":"GearIn_colony_governance",
+    "governingAptitude":"industry",
+    "scope":"GOVERNED_OUTPOST",
+    "effectGroups":[
+        {
+            "name":"Level 1",
+            "requiredSkillLevel":1,
+            "effectBasedOnLevel":false,
+            "effects":[
+                {"type":"DESCRIPTION", "script":"data.scripts.gearin.campaign.GearInColonyGovernanceDescription"},
+                {"type":"GOVERNED_OUTPOST", "script":"data.scripts.gearin.campaign.GearInColonyGovernanceEffect"}
+            ]
+        }
+    ]
+}
+```
 
 ## 用 SkillEffectType 选作用对象
 
@@ -92,12 +141,14 @@
 | `GOVERNED_OUTPOST` | `MarketSkillEffect` | 角色治理的 `MarketAPI` | 殖民地治理 |
 | `ALL_OUTPOSTS` | `MarketSkillEffect` | 玩家全部治理市场 | 需要全市场效果时使用 |
 | `DESCRIPTION` | `DescriptionSkillEffect` | 技能面板文字 | 描述和高亮，不写数值 |
+| `HULLMOD_UNLOCK` | 定义中的船插解锁列表 | 船插 ID | 提供船插解锁 |
+| `ABILITY_UNLOCK` | 定义中的能力解锁列表 | 能力 ID | 提供能力解锁 |
 
 所有数值接口都继承 `LevelBasedEffect`，因此需要返回效果说明、每级说明和 `ScopeDescription`。`CharacterStatsSkillEffect` 适合角色本身的状态，`FleetStatsSkillEffect` 适合舰队移动和补给状态；两者都由角色 stats 刷新时重新应用。`MarketSkillEffect` 的市场参数只代表当前技能的治理市场，脚本直接使用这个参数即可保持作用范围。
 
 ## 让 apply 和 unapply 成对工作
 
-每次 modifier 都需要一个稳定的 `id`。引擎可能因为换舰、换角色、重新载入存档或刷新技能而再次调用 `apply()`；同一 ID 会覆盖同一来源的旧值，`unapply()` 再用这个 ID 移除它。下面的局部片段展示单舰效果的最小结构：数值集中在 `apply()`，清理由同一字段和同一 ID 完成。
+**引擎提供效果来源 ID，写入与解除复用它。**引擎可能因为换舰、换角色、重新载入存档或刷新技能而再次调用 `apply()`；同一 ID 会覆盖同一来源的旧值，`unapply()` 再用这个 ID 移除它。下面的局部片段展示单舰效果的最小结构：数值集中在 `apply()`，清理由同一字段和同一 ID 完成。
 
 ```java
 public void apply(MutableShipStatsAPI stats, HullSize hullSize, String id, float level) {
@@ -111,9 +162,9 @@ public void unapply(MutableShipStatsAPI stats, HullSize hullSize, String id) {
 }
 ```
 
-这里的 `id` 来自引擎，而不是技能作者自行拼接的临时字符串。把 `apply()` 写成 `modifyPercent("captain", ...)`，再在 `unapply()` 使用另一个字符串，会留下旧 modifier；玩家会看到技能已经降级，舰船速度仍然没有恢复。
+这里的 `id` 来自引擎，而不是技能作者自行拼接的临时字符串。数值变化随同来源更新，撤销从同字段解除，反复刷新仍能回到其他来源共同决定的基线。
 
-指挥官效果接收 `MutableFleetStatsAPI`，同样按字段逐项清理。`getFleetwideMaxBurnMod()` 是加法型 `StatBonus`，所以使用 `modifyFlat`；`getFuelUseHyperMult()` 是乘法型统计项，`0.9f` 表示保留原消耗的百分之九十。两种 modifier 混在一个脚本里时，必须保留各自对应的解除方法。
+指挥官效果接收 `MutableFleetStatsAPI`，同样按字段逐项清理。`getFleetwideMaxBurnMod()` 是加法型 `StatBonus`，所以使用 `modifyFlat`；`getFuelUseHyperMult()` 是乘法型统计项，`0.9f` 表示保留原消耗的百分之九十。两个字段在解除时各自采用对应方法。
 
 ```java
 public void apply(MutableFleetStatsAPI stats, String id, float level) {
@@ -165,7 +216,7 @@ public class GearInFleetCoordinationDescription implements DescriptionSkillEffec
 }
 ```
 
-`getHighlights()` 与 `getHighlightColors()` 必须按相同顺序返回对应数组。描述里写了两个高亮词，就返回两个颜色；数组长度不一致时，技能文本可能显示但高亮渲染会出现缺失。
+高亮文字与颜色按相同顺序一一对应。描述里写了两个高亮词，就返回两个颜色；数组长度不一致时，技能文本可能显示但高亮渲染会出现缺失。
 
 ## 在整备界面提供舰队汇总
 
@@ -191,13 +242,44 @@ public FleetTotalItem getFleetTotalItem() {
 
 ## 三条技能如何连接到角色
 
-舰长技能的 `SHIP` 效果只影响拥有该技能的角色所驾驶的舰船；同一角色被绑定到舰队指挥官槽位时，技能仍然按照 `type` 的单舰规则工作。指挥官技能的 `FLEET` 效果作用于该角色指挥的舰队，舰船的单独 stats 会在舰队状态刷新后反映新的移动值。管理员技能的 `GOVERNED_OUTPOST` 效果只作用于该角色管理的市场，换管理员后旧市场会执行 `unapply()`，新市场再执行 `apply()`。
+舰长技能的 `SHIP` 效果只影响拥有该技能的角色所驾驶的舰船；只作为舰队指挥官持有该技能时，`SHIP` 也不会变为逐舰舰队效果；要影响每艘成员，需要对应的 `ALL_SHIPS_IN_FLEET` 类型。指挥官技能的 `FLEET` 效果作用于该角色指挥的舰队，舰船的单独 stats 会在舰队状态刷新后反映新的移动值。管理员技能的 `GOVERNED_OUTPOST` 效果只作用于该角色管理的市场，换管理员后旧市场会执行 `unapply()`，新市场再执行 `apply()`。
 
-把三条技能分别分配给不同角色，可以清楚观察对象归属：舰长换船时只有单舰数值变化，指挥官改变后整支舰队的移动数值变化，管理员替换后只有其治理市场的稳定度和收入变化。这个分配也让同一个 `PersonAPI` 不会同时承担三个不同槽位的验证结果。
+本例分别给三个人物赋值，日志可以直接对应作用对象。舰长换船后重新建立成员 stats，指挥官变化后刷新舰队，管理员变化后从治理市场刷新；角色与实际数值分别确认。
+
+## 给已有角色设置技能并刷新
+
+在 [C13-S2] 的 `GearInCaptainRole.run(member)` 中，已经取得或创建人物后、`member.setCaptain(person)` 之前加入局部片段：
+
+```java
+person.getStats().setSkillLevel("GearIn_captain_mobility", 2f);
+person.getStats().refreshCharacterStatsEffects();
+```
+
+2 让普通与精英组同时生效，1 只启用普通组。之后沿原方法绑定舰长并更新成员，读取当前舰船 stats。
+
+在 `GearInFleetCommanderRole.run(fleet)` 取得人物后、`fleet.setCommander(person)` 之前加入：
+
+```java
+person.getStats().setSkillLevel("GearIn_fleet_coordination", 1f);
+```
+
+指挥官写入时将人物 stats 关联到当前舰队并刷新，原有 `forceSync()` 再更新成员与汇总。
+
+在 `GearInAdministratorRole.run()` 已执行 `market.setAdmin(person)` 之后加入局部片段：
+
+```java
+person.getStats().setSkillLevel("GearIn_colony_governance", 1f);
+person.getStats().refreshGovernedOutpostEffects(market);
+market.reapplyIndustries();
+```
+
+**人物技能、角色绑定与下游更新各自完成。** 管理员刷新明确传入 Foundry，再让产业按当前市场值重算。需要比较清理时，保存原技能等级，改为 0 并按同一入口刷新，再恢复原等级；一次观察就能对应写入、解除和恢复。
+
+`Global.getSettings().getSkillSpec(id)` 还可以读取名称、图标、角色资格、作用域与效果列表。规格可加载、人物已取得等级、对象收到修饰分别从各自位置观察。
 
 ## 完整最小例
 
-下面的资源和 Java 类组成三条可加载的技能。代码块与项目中的完整源文件保持逐字一致。
+七个类保存到 `src/data/scripts/gearin/campaign/`，各自承担普通、精英、舰队、市场或描述职责。注册与赋值入口采用前述片段。
 
 ::: details 完整成品：GearInCaptainMobilityEffect
 
@@ -450,52 +532,57 @@ public class GearInColonyGovernanceDescription implements DescriptionSkillEffect
 
 ## 验证方案
 
-前置数据：已安装包含三条技能资源的 MOD，并拥有可绑定舰长、舰队指挥官和管理员的生涯存档。
+前置数据：[C13-S2] 的专用巡逻队、测试狼与 Foundry 管理员入口已经就位，三份技能定义、CSV 与七类保存完成。
 
-1. 构建并安装包含三条技能资源的 MOD，进入技能树，确认三个名称、图标和角色资格分别对应舰长、舰队指挥官和管理员。
-2. 将舰长技能升到一级，把角色绑定到一艘舰船，打开整备界面，记录速度和加速度；升到精英等级后重新打开舰船 stats，确认转向加速度增加。
-3. 将舰队指挥官技能升到一级，绑定到当前舰队指挥官，观察舰队最高燃烧等级、超空间燃料消耗和整备界面的舰队汇总行。
-4. 将管理员技能升到一级并任命到一个市场，记录市场稳定度和收入倍率，再查看技能面板中的描述和高亮。
-5. 替换舰长、舰队指挥官或管理员后重新进入对应界面，确认旧对象的 modifier 被清除，新对象获得自己的技能效果。
-6. 保存并重新载入存档，重复查看三类状态，确认技能等级、角色槽位和市场治理关系仍然对应原对象。
-7. 查看 `starsector.log`，将技能树缺失、脚本类名错误或效果未生效的现象与资源 ID、完整包名和作用域逐项对照。
+1. 保存技能资源和角色赋值片段，构建重启，新建测试存档，让巡逻队与角色入口执行。
+2. 通过 `getSkillSpec(id)` 或人物技能提示查看三个名称、图标、角色资格和效果说明，核对各自注册 ID。
+3. 查看 Mira 的测试狼，普通等级读取最大速度与加速度；当前等级 2 还启用转向加速度 15% 加成。把等级改为 1 后重新构建新档比较，普通效果继续保留。
+4. 在专用巡逻队读取有效燃耗与超空间燃料统计，核对 Rowan 的 +1 舰队范围最大燃耗和 0.9 燃料倍率；舰队汇总项同时提供说明。
+5. 打开 Foundry，查看 Selene 的技能与市场稳定度、收入倍率，核对 +1 稳定度和 10% 收入修饰。
+6. 在同一对象的局部等级实验中保存原等级，改为 0 并完成成员、舰队或治理市场刷新，观察来源解除；恢复原等级，再读取同一组数值。
+7. 保存读档后比较角色 ID、等级与当前数值；日志发生加载错误时，逐项对照资源 ID、作用类型与完整类名。
 
 预期结果：
 
-- 技能树显示三条技能及正确角色资格；
-- 舰长技能改变被驾驶舰船的速度、加速度和精英转向加速度；
-- 指挥官技能改变舰队移动、燃料消耗并显示汇总行；
-- 管理员技能改变治理市场的稳定度和收入；
-- 重复刷新与存档载入保留正确的 modifier 状态。
+- 三个技能规格分别取得 `GearIn_captain_mobility`、`GearIn_fleet_coordination` 与 `GearIn_colony_governance`。
+- Mira 的舰船有 8% 最大速度、12% 加速度，等级 2 再有 15% 转向加速度；等级 1 保留普通组。
+- Rowan 的关联舰队获得 +1 范围最大燃耗和 0.9 超空间燃料倍率，汇总行解释这一组收益。
+- Selene 的治理市场写入 +1 稳定度和 10% 收入，其他来源继续参与合并。
+- 降为 0 并刷新后解除对应来源，恢复等级后重新应用；读档保留角色与技能对应关系。
 
 ## 故障分析
 
-- **技能树中没有新技能**：
-  - **解决方案**：比较 CSV 行、`.skill` 文件名和 `.skill` 内的 `id`，确认三个字符串逐字一致，再检查日志中的跳过信息。
+- **新技能定义无法取得**：注册行与定义文件 ID 不一致。
+    - **解决方案**：比较 CSV 行、`.skill` 文件名和 `.skill` 内的 `id`，确认三个字符串逐字一致，再检查日志中的跳过信息。
 
-- **技能面板出现，数值效果没有出现**：
-  - **解决方案**：检查 `type` 与接口是否匹配，并确认脚本类的完整包名、公共无参构造和对应的 `apply()` 签名正确。
+- **技能面板出现，数值效果未生效**：作用对象或接口与当前角色不匹配。
+    - **解决方案**：检查 `type` 与接口是否匹配，并确认脚本类的完整包名、公共无参构造和对应的 `apply()` 签名正确。
 
-- **舰长技能降级后舰船仍然加速**：
-  - **解决方案**：在 `unapply()` 中使用引擎传入的同一个 `id`，并分别调用 `unmodify()` 清理速度和加速度。
+- **舰长技能降级后仍有加成**：来源或字段清理遗漏。
+    - **解决方案**：在 `unapply()` 中使用引擎传入的同一个 `id`，并分别调用 `unmodify()` 清理速度和加速度。
 
-- **舰队汇总行出现，舰队状态没有改变**：
-  - **解决方案**：检查 `FleetTotalSource` 是否只负责显示，确认真正的燃烧等级和燃料 modifier 写在 `FleetStatsSkillEffect.apply()` 中。
+- **舰队汇总行出现而状态保持原值**：显示对象已接入，实际效果尚未写入。
+    - **解决方案**：检查 `FleetTotalSource` 是否只负责显示，确认真正的燃烧等级和燃料 modifier 写在 `FleetStatsSkillEffect.apply()` 中。
 
-- **管理员技能改变了错误的市场**：
-  - **解决方案**：确认 `.skill` 使用 `GOVERNED_OUTPOST`，并在 `MarketSkillEffect.apply()` 中只使用引擎传入的 `MarketAPI`。
+- **管理员技能改变了其他市场**：实现重新查找了错误市场。
+    - **解决方案**：确认 `.skill` 使用 `GOVERNED_OUTPOST`，并在 `MarketSkillEffect.apply()` 中只使用引擎传入的 `MarketAPI`。
 
-- **重复进入界面后收入倍率不断叠加**：
-  - **解决方案**：保持 modifier ID 稳定，使用 `modifyPercent` 覆盖同一来源，并在 `unapply()` 中调用 `unmodify()`。
+- **反复刷新后收入倍率持续叠加**：每次使用新的来源 ID。
+    - **解决方案**：保持 modifier ID 稳定，使用 `modifyPercent` 覆盖同一来源，并在 `unapply()` 中调用 `unmodify()`。
 
 ## 总结
 
-三条技能共享同一套注册结构，却把数值写入三个不同对象：`ShipSkillEffect` 处理舰船，`FleetStatsSkillEffect` 处理舰队，`MarketSkillEffect` 处理治理市场。`.skill` 的 `type` 决定对象选择，Java 接口决定可调用的 stats API，稳定 modifier ID 负责刷新和移除。描述类与汇总对象把运行时结果翻译成技能面板和整备界面中的可读信息。
+三条技能分别写入单舰、舰队与治理市场，普通和精英组由等级阈值选择。CSV 给出身份与资格，定义文件连接作用对象与脚本，描述和汇总再把实际效果显示出来。
+
+编者建议沿 "人物等级 → 角色持有者 → 当前数值" 核对技能。界面文字与加成都接好后，再改变等级或角色，稳定来源和成对清理才能让结果按设计恢复。
 
 ## 建议参考项
 
-- `C13-S1`：人物创建、角色槽位和技能等级刷新；
-- `C13-S2`：舰长、舰队指挥官和管理员对象归属；
-- `技能效果接口`：`SkillEffectType`、`ShipSkillEffect`、`FleetStatsSkillEffect`、`MarketSkillEffect`、`DescriptionSkillEffect` 和 `FleetTotalSource`；
-- `运行时 stats`：`MutableShipStatsAPI`、`MutableFleetStatsAPI` 和 `MarketAPI` 中与本节效果对应的访问器；
-- `原版技能资源`：`Helmsmanship`、`Navigation` 和 `IndustrialPlanning`。
+- `com.fs.starfarer.api.characters.SkillSpecAPI`：技能规格、资格、作用域和效果列表。
+- `com.fs.starfarer.api.characters.SkillEffectType`：定义文件的作用对象选择。
+- `com.fs.starfarer.api.characters.ShipSkillEffect`：单舰与战机数值。
+- `com.fs.starfarer.api.characters.FleetStatsSkillEffect`：关联舰队数值。
+- `com.fs.starfarer.api.characters.MarketSkillEffect`：治理市场的效果。
+- `com.fs.starfarer.api.characters.DescriptionSkillEffect`：面板文本和高亮。
+- `com.fs.starfarer.api.characters.FleetTotalSource`：提供舰队汇总显示项。
+- `com.fs.starfarer.api.characters.MutableCharacterStatsAPI`：等级设置与角色、治理市场刷新。

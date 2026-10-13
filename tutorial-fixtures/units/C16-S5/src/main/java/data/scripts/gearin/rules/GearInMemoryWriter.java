@@ -1,8 +1,7 @@
 package data.scripts.gearin.rules;
 
-import org.lwjgl.util.vector.Vector2f;
-
 import org.apache.log4j.Logger;
+import org.lwjgl.util.vector.Vector2f;
 
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
@@ -13,7 +12,7 @@ import com.fs.starfarer.api.campaign.econ.MarketAPI;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.characters.PersonAPI;
 
-/** Writes typed Memory values and observes an expire-zero key. */
+/** 写入各对象状态，并等待零期限键过期。 */
 public class GearInMemoryWriter implements EveryFrameScript {
 
     private static final Logger LOG = Global.getLogger(GearInMemoryWriter.class);
@@ -31,11 +30,9 @@ public class GearInMemoryWriter implements EveryFrameScript {
 
     @Override
     public void advance(float amount) {
-        if (Global.getSector() == null || phase >= 2) {
-            return;
-        }
         MemoryAPI sector = Global.getSector().getMemoryWithoutUpdate();
         if (phase == 0) {
+            sector.unset(GearInMemoryKeys.KEY_READY);
             writeValues(sector);
             phase = 1;
             return;

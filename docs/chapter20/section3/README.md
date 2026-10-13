@@ -1,10 +1,10 @@
 # 使用 VBO 和 VAO 保存顶点
 
-本节将方向标的局部顶点放进 VBO，并让 VAO 记住顶点布局。舰船位置和朝向仍在绘制时更新；视口缩放改变像素对应的世界宽度时，矩形边界也会更新，以免裁掉线条边缘。
+上一节每次绘制都从客户端缓冲提交矩形。这次把顶点放进 VBO，并用 VAO 保存读取布局，绘制时绑定这套布局即可。圆环、朝向线和 shader 算法都沿用已有成果；我们集中观察数据存放在哪里、何时上传，以及绑定对象后究竟恢复了哪些设置。
 
-*本节预期阅读时间：~25 分钟。*
+*本节预期阅读时间：\~25 分钟。*
 
-*本节预期操作时间：~35 分钟。*
+*本节预期操作时间：\~35 分钟。*
 
 ## 学习目标
 
@@ -21,17 +21,25 @@
 - [C20-S1] 的分层渲染插件、模型坐标和 OpenGL 状态恢复；
 - 能够用 Java 17 编译示例，并从 `starsector.log` 定位资源路径和 program 错误。
 
+## 保存资源并在战斗登记
+
+将完整类保存到 `src/data/scripts/gearin/combat/GearInVboVaoMarker.java`，两份 shader 保存到本节列出的 `data/shaders/` 路径。构建 JAR 并重启，进入测试战斗、部署并控制玩家舰后，通过 Console Commands 执行：
+
+```text
+runcode com.fs.starfarer.api.combat.CombatEngineAPI e = com.fs.starfarer.api.Global.getCombatEngine(); com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = new data.scripts.gearin.combat.GearInVboVaoMarker(e.getPlayerShip()); e.addLayeredRenderingPlugin(marker); e.getCustomData().put("GearIn_marker", marker);
+```
+
+**每场战斗登记一次当前版本。**`init(...)` 取得当前战斗并设置承载实体，GPU 资源在首次 `render(...)` 的有效上下文中创建；能力不足时记录条件并结束实例。命令沿用 [C20-S1] 的 `GearIn_marker` 项保存实例，便于随后验证清理。比较各版本时分别进入新的战斗。
+
 ## 区分顶点数据与布局
 
 方向标仍显示半径 `80 su` 的圆环和长度 `120 su` 的朝向线。vertex shader 负责把局部坐标放到舰船位置，fragment shader 负责生成线条。本节改变的是顶点来源：六个矩形顶点进入 VBO，VAO 记录 `a_position` 如何读取它们。客户端缓冲只在视口比例变化时更新 VBO，绘制指针始终读取 VBO。
 
 ## 在 VBO 中保存六个局部顶点
 
-VBO 是 `GL_ARRAY_BUFFER` 的数据存储。`glBufferData` 为矩形的 `12` 个浮点数分配空间；视口比例变化时，`glBufferSubData` 更新含有像素边距的顶点。attribute 指针的最后一个参数是 VBO 内的字节偏移，此处使用 `0L`：
+首次 `render(...)` 创建 program 后，`buildGeometry()` 准备一个可容纳 `12` 个浮点数的客户端缓冲，再把矩形上传到 VBO。`glBufferData` 分配并填入数据；视口比例变化时，`glBufferSubData` 更新含有像素边距的顶点。以下是 VBO 创建与上传的局部片段：
 
 ```java
-coverageVertices = BufferUtils.createFloatBuffer(12);
-updateCoverageVertices(0f);
 vboId = GL15.glGenBuffers();
 GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
 GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
@@ -50,8 +58,6 @@ GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
 GL20.glEnableVertexAttribArray(positionLocation);
 GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT,
         false, 0, 0L);
-GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-GL30.glBindVertexArray(0);
 ```
 
 位置由两个连续 `float` 组成，stride 为 `0` 表示没有交错字段。VAO 只保存布局和绑定关系，不保存舰船位置、朝向或颜色；这些值仍由每帧 uniform 更新。
@@ -97,7 +103,9 @@ GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
 
 ## 释放 VBO 与 VAO
 
-VAO 记录 VBO 的 attribute 关系。`cleanup()` 先删除 VAO，再删除 VBO、program 和两个 shader；初始化失败也进入这条路径，已创建的句柄删除后归零。这样重复清理不会再次使用旧句柄。
+**创建资源也会改变共享状态。**`buildGeometry()` 在首次 `render(...)` 中执行，先保存原 VAO 和 VBO 绑定，再配置本实例的布局，最后在 `finally` 中恢复。这和每次绘制后的恢复承担同一种职责。
+
+VAO 记录 VBO 的 attribute 关系。`cleanup()` 先删除 VAO，再删除 VBO、program 和两个 shader；资源创建失败也进入这条路径，已创建的句柄删除后归零。重复清理时，这些句柄已经是 `0`。
 
 ## shader 与其他状态
 
@@ -122,6 +130,7 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GLContext;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
@@ -131,11 +140,7 @@ import com.fs.starfarer.api.combat.CombatEntityAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 
-/**
- * 使用 VBO 和 VAO 绘制跟随舰船的程序化方向标。
- * init() 创建几何缓冲区和 shader program，render() 按视口更新矩形并提交 uniform，
- * cleanup() 按 VAO、VBO、program 和 shader 的顺序释放本实例的资源。
- */
+/** 管理方向标的数据、绘制与资源生命周期。 */
 public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
 
     private static final Logger LOG = Global.getLogger(GearInVboVaoMarker.class);
@@ -163,6 +168,7 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
     private int geometryLocation = -1;
     private int widthsLocation = -1;
     private int worldPerPixelLocation = -1;
+    private boolean programAttempted;
     private boolean valid = true;
     private boolean cleaned;
 
@@ -175,23 +181,7 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
-        if (engine == null || trackedShip == null) {
-            valid = false;
-            LOG.error("GearIn VBO/VAO marker: combat context or tracked ship missing");
-            return;
-        }
-        try {
-            if (!buildProgram() || !buildGeometry()) {
-                valid = false;
-                cleanup();
-                return;
-            }
-        } catch (IOException | RuntimeException e) {
-            valid = false;
-            LOG.error("GearIn VBO/VAO marker: initialization failed", e);
-            cleanup();
-            return;
-        }
+
         entity.getLocation().set(trackedShip.getLocation());
         LOG.info("GearIn VBO/VAO marker init: ship=" + trackedShip.getId()
                 + " vao=" + vaoId + " vbo=" + vboId);
@@ -255,23 +245,30 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
     }
 
     private boolean buildGeometry() {
-        coverageVertices = BufferUtils.createFloatBuffer(12);
-        updateCoverageVertices(0f);
+        int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+        int previousVbo = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+        try {
+            coverageVertices = BufferUtils.createFloatBuffer(12);
+            updateCoverageVertices(0f);
 
-        vaoId = GL30.glGenVertexArrays();
-        vboId = GL15.glGenBuffers();
-        if (vaoId == 0 || vboId == 0) {
-            LOG.error("GearIn VBO/VAO marker: could not create VAO or VBO");
-            return false;
+            vaoId = GL30.glGenVertexArrays();
+            vboId = GL15.glGenBuffers();
+            if (vaoId == 0 || vboId == 0) {
+                LOG.error("GearIn VBO/VAO marker: could not create VAO or VBO");
+                return false;
+            }
+            GL30.glBindVertexArray(vaoId);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
+            GL20.glEnableVertexAttribArray(positionLocation);
+            GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+            GL30.glBindVertexArray(0);
+            return true;
+        } finally {
+            GL30.glBindVertexArray(previousVao);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
         }
-        GL30.glBindVertexArray(vaoId);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
-        GL20.glEnableVertexAttribArray(positionLocation);
-        GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL30.glBindVertexArray(0);
-        return true;
     }
 
     private void updateCoverageVertices(float worldPerPixel) {
@@ -292,8 +289,7 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void advance(float amount) {
-        if (!valid || engine == null || trackedShip == null || entity == null) {
-            valid = false;
+        if (!valid) {
             return;
         }
         if (engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
@@ -309,13 +305,29 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        if (!valid || entity == null || viewport == null || vaoId == 0 || program == 0) {
+        if (!valid) {
             return;
+        }
+        if (!programAttempted) {
+            programAttempted = true;
+            if (!GLContext.getCapabilities().OpenGL30) {
+                LOG.error("GearInVboVaoMarker: required OpenGL capability unavailable");
+                valid = false;
+                return;
+            }
+            try {
+                if (!buildProgram() || !buildGeometry()) {
+                    cleanup();
+                    return;
+                }
+            } catch (IOException | RuntimeException ex) {
+                LOG.error("GearInVboVaoMarker: GPU resource creation failed", ex);
+                cleanup();
+                return;
+            }
+            LOG.info("GearInVboVaoMarker GPU resources ready: vao=" + vaoId + " vbo=" + vboId);
         }
         float worldPerPixel = viewport.convertScreenWidthToWorldWidth(1f);
-        if (!Float.isFinite(worldPerPixel) || worldPerPixel <= 0f) {
-            return;
-        }
 
         int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
         int previousVbo = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
@@ -397,7 +409,7 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
             fragmentShader = 0;
         }
         LOG.info("GearIn VBO/VAO marker cleanup: ship="
-                + (trackedShip == null ? "null" : trackedShip.getId()));
+                + trackedShip.getId());
     }
 
     @Override
@@ -407,7 +419,7 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return DIRECTION_LENGTH;
+        return DIRECTION_LENGTH + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }
 ```
@@ -475,7 +487,13 @@ void main() {
 
 ## 验证方案
 
-前置数据：启用中的 GearIn MOD 已包含 `GearInVboVaoMarker` 和两份 shader 资源，战斗入口能够取得当前舰船并注册方向标。
+前置数据：显卡和游戏渲染上下文支持 OpenGL 3.0 兼容上下文，Console Commands 已启用。
+
+完成本方案中的移动、缩放和生命周期观察后，用下面的 Console Commands 命令连续清理当前实例两次；重新观察时进入新的战斗并登记：
+
+```text
+runcode com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = (com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin) com.fs.starfarer.api.Global.getCombatEngine().getCustomData().get("GearIn_marker"); marker.cleanup(); marker.cleanup();
+```
 
 1. 执行 `gradle jar`，启动游戏并进入 `GearIn_test` 战斗，注册 `GearInVboVaoMarker`。
 2. 移动并转向玩家舰，观察圆环中心、朝向线和屏幕线宽。
@@ -488,14 +506,14 @@ void main() {
 - 玩家舰中心出现半径 `80 su` 的程序化圆环和长度 `120 su` 的朝向线；
 - 视口缩放后圆环线宽保持 `2 px`，朝向线保持 `3 px`，边缘没有被矩形裁掉；
 - 移动和转向时方向标同步，暂停期间保持最后位置；
-- VAO 和 VBO 在初始化阶段创建，视口比例变化时 VBO 中的矩形边界随之更新；
+- VAO 和 VBO 在首次渲染创建，视口比例变化时 VBO 中的矩形边界随之更新；
 - 舰船离场、死亡或战斗结束后方向标失效，重复 `cleanup()` 不产生二次删除；
 - 舰船 Sprite、HUD 和其他战场画面的颜色、纹理、混合与位置保持原有表现。
 
 ## 故障分析
 
 - **方向标不可见**：绘制阶段没有绑定正确的 VAO，或 VAO 记录的 VBO 已被删除。
-    - **解决方案**：核对初始化时的 VAO、VBO 绑定顺序和绘制阶段的 `glBindVertexArray(vaoId)`。
+    - **解决方案**：核对 `buildGeometry()` 中的 VAO、VBO 绑定顺序和绘制阶段的 `glBindVertexArray(vaoId)`。
 
 - **顶点位置异常**：`glVertexAttribPointer` 的分量数、stride 或偏移与 VBO 数据布局不一致。
     - **解决方案**：确认每个顶点由两个 `GL_FLOAT` 组成，stride 为 `0`，偏移为 `0L`。
@@ -511,9 +529,9 @@ void main() {
 
 ## 总结
 
-VBO 保存可复用的局部顶点，VAO 保存 attribute 与 VBO 的布局关系，uniform 继续承载每帧变化的舰船和视口参数。绘制阶段绑定 VAO，按视口比例更新矩形边界，再提交图元；S2 的程序化片元形状保持一致。
+VBO 保存可复用的局部顶点，VAO 保存 attribute 与 VBO 的布局关系，uniform 继续承载每帧变化的舰船和视口参数。绘制阶段绑定 VAO，按视口比例更新矩形边界，再提交图元；[C20-S2] 的程序化片元形状保持一致。
 
-共享 OpenGL 上下文要求 VAO、VBO、program、矩阵、混合和深度状态都有明确边界。初始化失败和战斗结束都进入同一个幂等清理路径，方向标才能与其他战场画面共存。
+共享 OpenGL 上下文要求 VAO、VBO、program、矩阵、混合和深度状态都有明确边界。资源创建失败和战斗结束都进入同一个清理方法；创建与绘制分别恢复调用前的绑定，方向标才能与其他战场画面共存。
 
 ## 建议参考项
 

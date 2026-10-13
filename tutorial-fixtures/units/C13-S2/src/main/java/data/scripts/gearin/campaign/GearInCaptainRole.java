@@ -14,23 +14,23 @@ import com.fs.starfarer.api.impl.campaign.ids.Personalities;
 public class GearInCaptainRole {
     private static final Logger LOG = Global.getLogger(GearInCaptainRole.class);
 
-    public void run() {
-        CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
-        FleetMemberAPI flagship = fleet.getFlagship();
-        PersonAPI person = flagship.getCaptain();
-        if (person == null || !"GearIn_officer".equals(person.getId())) {
+    public void run(FleetMemberAPI member) {
+        CampaignFleetAPI fleet = member.getFleetData().getFleet();
+        PersonAPI person = member.getCaptain();
+        if (!"GearIn_officer".equals(person.getId())) {
             person = createCaptain();
         }
-        flagship.setCaptain(person);
-        flagship.setStatUpdateNeeded(true);
+        member.setCaptain(person);
+        member.setStatUpdateNeeded(true);
         FleetDataAPI data = fleet.getFleetData();
         OfficerDataAPI officer = data.getOfficerData(person);
         if (officer == null) {
             data.addOfficer(person);
             officer = data.getOfficerData(person);
         }
-        LOG.info(String.format("captain=%s officer=%s personality=%s",
-                flagship.getCaptain().getId(), officer != null,
+        member.updateStats();
+        LOG.info(String.format("GearIn captain: member=%s captain=%s officer=%s personality=%s",
+                member.getId(), member.getCaptain().getId(), officer != null,
                 person.getPersonalityAPI().getId()));
     }
 

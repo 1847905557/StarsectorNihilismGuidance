@@ -1,10 +1,10 @@
 # 创建 MagicLib 运行时尾迹
 
-自动尾迹适合让 projectile ID 持续使用一组固定数据，运行时尾迹则允许 Java 为每个节点决定位置、外观和生命周期。本节为每枚导弹创建两条关联尾迹，再用 `SimpleEntity` 生成一条沿初始速度独立移动的发射残影；导弹转向或跳变时，三条轨迹会把各自的关联方式直接画在战场上。
+自动尾迹已经能按数据生成，这次由 Java 决定每一组节点何时出现、接在哪条轨迹上。沿用测试导弹，为每枚弹体保存主体与辉光的 ID，再用 `SimpleEntity` 生成沿初始方向前进的残影。导弹转向、跳变和命中以后，画面可以直接比较连续段、关联实体与节点位置的区别。
 
-*本节预期阅读时间：~32 分钟。*
+*本节预期阅读时间：\~32 分钟。*
 
-*本节预期操作时间：~50 分钟。*
+*本节预期操作时间：\~50 分钟。*
 
 ## 学习目标
 
@@ -20,7 +20,8 @@
 
 - [C8-S2] 理解战斗实体有效性与对象结束边界；
 - [C8-S3] 理解战斗插件、暂停判断与每帧时间；
-- [C18-S8] 理解 trail sprite、节点生命周期和自动尾迹字段；
+- [C18-S8] 的 trail sprite、节点生命周期和自动尾迹字段；
+- [C18-S2] 的 `GearIn_geometry_missile` 弹体与德瓦林测试引用；
 - 能够在 `.proj` 中为弹体注册 `OnFireEffectPlugin`。
 
 ## 区分自动尾迹与运行时节点
@@ -29,7 +30,7 @@
 
 `MagicTrailPlugin` 把具有相同 ID、sprite 和渲染层的节点连接为一条带状轨迹。单个节点没有相邻点可以连接，至少提交两个节点后才会出现连续尾迹。运行时代码因此需要同时管理采样频率和 ID 生命周期，少管任何一个，画面都会很诚实地暴露问题。
 
-本页的 `.proj` 通过 `onFireEffect` 把每枚新弹体交给 `GearInMagicTrail`：
+先保存本节完整类到 `src/data/scripts/gearin/visuals/GearInMagicTrail.java`。在 `GearIn_geometry_missile.proj` 中追加下面的局部字段，保留现有 ID、引擎和 AI 选择关系：
 
 ```json
 "onFireEffect": "data.scripts.gearin.visuals.GearInMagicTrail",
@@ -37,7 +38,7 @@
 
 ## 用稳定 ID 连接节点
 
-`OnFireEffectPlugin` 的对象可能服务多次开火。把 trail ID 放在效果类字段中，会让后续弹体继续使用前一枚弹体的轨迹；在 `onFire(...)` 中为当前弹体创建独立跟踪器，状态才能与该弹体一起开始和结束：
+`OnFireEffectPlugin` 的对象可能服务多次开火。**每枚弹体保存自己的尾迹状态。**把 trail ID 放在共用效果类字段中，会让后续弹体继续使用前一枚弹体的轨迹；在 `onFire(...)` 中为当前弹体创建独立跟踪器，状态才能与该弹体一起开始和结束：
 
 ```java
 public void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon,
@@ -116,7 +117,7 @@ private TrailTracker(DamagingProjectileAPI projectile) {
 
 ::: warning 同一条尾迹保持渲染属性稳定
 
-同一 ID 的 sprite、加色模式、渲染层和传播方式应保持一致。更换 sprite 会进入另一份纹理 tracker，渲染层或混合方式中途改变则会让同一逻辑 ID 产生不一致的绘制结果；需要另一种表现时分配新的 ID。
+**同一段轨迹使用稳定的 sprite、混合方式、渲染层和传播方式。**更换 sprite 会进入另一份纹理 tracker，渲染层或混合方式中途改变则会让同一逻辑 ID 产生不一致的绘制结果；需要另一种表现时分配新的 ID。
 
 :::
 
@@ -170,7 +171,7 @@ if (segmentTimer >= SEGMENT_INTERVAL) {
 }
 ```
 
-导弹可能被脚本直接移动到另一处。当前坐标与上一帧相差超过 250 su 时，旧 ID 已经代表跳变前的连续段，因此先切断，再为两层取得新 ID：
+导弹被直接移动到另一处以后，旧坐标和新坐标已经失去空间连续性。当前坐标与上一帧相差超过 250 su 时，旧 ID 已经代表跳变前的连续段，因此先切断，再为两层取得新 ID：
 
 ```java
 if (MathUtils.getDistance(lastLocation, projectile.getLocation())
@@ -182,6 +183,16 @@ if (MathUtils.getDistance(lastLocation, projectile.getLocation())
 ```
 
 命中、淡出和离场都结束当前弹体的采样。`cutTrailsOnEntity(...)` 只阻止新节点接回旧 tracker，已经生成的节点仍按自己的淡入、保持和淡出时间消失；随后移除每帧插件，避免没有弹体的跟踪器继续运行。
+
+## 在战斗中触发位置跳变
+
+准备 Console Commands，在场上只有玩家这枚测试导弹、弹体仍在飞行时执行：
+
+```text
+runcode com.fs.starfarer.api.Global.getCombatEngine().getMissiles().get(0).getLocation().translate(600f, 0f);
+```
+
+这次直接改变导弹的位置，下一帧与此前位置相差 600 su，超过切段阈值。恢复战斗后观察旧段淡出、新段从新坐标开始。
 
 ## 常用方法速查表
 
@@ -247,8 +258,8 @@ import org.magiclib.plugins.MagicTrailPlugin;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
-import com.fs.starfarer.api.combat.CombatEngineLayers;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.CombatEngineLayers;
 import com.fs.starfarer.api.combat.DamagingProjectileAPI;
 import com.fs.starfarer.api.combat.OnFireEffectPlugin;
 import com.fs.starfarer.api.combat.WeaponAPI;
@@ -305,7 +316,7 @@ public class GearInMagicTrail implements OnFireEffectPlugin {
 
         @Override
         public void advance(float amount, List<InputEventAPI> events) {
-            if (engine == null || engine.isPaused()) {
+            if (engine.isPaused()) {
                 return;
             }
             if (!engine.isEntityInPlay(projectile)
@@ -377,7 +388,7 @@ public class GearInMagicTrail implements OnFireEffectPlugin {
 
         @Override
         public void advance(float amount, List<InputEventAPI> events) {
-            if (engine == null || engine.isPaused()) {
+            if (engine.isPaused()) {
                 return;
             }
             elapsed += amount;
@@ -412,14 +423,14 @@ public class GearInMagicTrail implements OnFireEffectPlugin {
 
 ## 验证方案
 
-前置数据：测试弹体已注册 `GearInMagicTrail`，MagicLib 提供的两张 `fx` sprite 可以读取，测试入口能够让飞行中的弹体转向和改变位置。
+前置数据：Console Commands 已启用，测试敌舰使用不发射导弹的装配，便于按正文命令选择玩家弹体。
 
 1. 构建 MOD，启动游戏并进入能够连续发射测试导弹的战斗。
 2. 连续发射两枚导弹，观察每枚弹体后方的青色主体、蓝色辉光和洋红色残影。
 3. 让第一枚导弹转向，比较弹体关联尾迹与保持初始方向的独立残影。
 4. 观察蓝色辉光的首尾颜色、纹理滚动和两次尺寸脉冲。
 5. 暂停战斗 2 秒，确认节点提交和独立锚点移动同时停止，再恢复战斗。
-6. 把仍在飞行的弹体移动 600 su，观察旧段留在原处淡出，新段从目标位置开始。
+6. 场上只保留一枚飞行中的测试导弹，执行正文位置跳变命令，观察旧段留在原处淡出，新段从新位置开始。
 7. 让导弹命中目标或进入淡出，观察关联尾迹停止增加，已有节点继续完成自身生命周期。
 8. 等待发射后的 0.75 秒，确认洋红色残影停止增加；再次连续发射，比较各枚弹体的尾迹关联。
 
@@ -441,7 +452,7 @@ public class GearInMagicTrail implements OnFireEffectPlugin {
 
 ## 总结
 
-运行时尾迹把连续性拆成三个明确关系：稳定 ID 连接节点，`position` 决定节点坐标，`linkedEntity` 决定按哪个对象切断。Simple 适合单一速度和颜色的基础节点，Advanced 继续控制首尾状态、纹理与渲染属性。
+尾迹跟踪器随弹体开始和结束，固定 ID 把相邻节点接成一段轨迹。节点坐标每次由代码提交，关联实体则用于切断；独立锚点沿自己的速度前进，两种关系因此可以分别控制。Simple 提供基础节点，Advanced 增加首尾状态、纹理与渲染属性。
 
 导弹跟踪器让尾迹服从实体生命周期，`SimpleEntity` 则让纯计算位置也能拥有相同的切断关系。只要为每段轨迹保存自己的 ID，并在空间或生命周期不连续时主动切段，运行时生成的效果就能保持连续而不跨越不该连接的位置。
 

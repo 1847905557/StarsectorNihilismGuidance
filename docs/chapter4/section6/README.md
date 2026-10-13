@@ -1,88 +1,88 @@
 # 制作一个自定义实体
 
-本节定义一个无需新 Java 插件的生涯实体：它使用已有中继资源的图标和 Sprite 贴图，拥有 GearIn 自己的名称、发现范围和 CUSTOM 描述，并由 [C3-S4] 的星系生成器投放。
+本节在 GearIn 星系加入 "导航锚"，沿用原版中继的图标与贴图，设置自己的名称、发现范围和描述。它采用无插件的基础实体配置，生成器负责放置和轨道，当前先完成可显示、可发现的静态对象。
 
-*本节预期阅读时间：~14 分钟。*
+*本节预期阅读时间：\~14 分钟。*
 
-*本节预期操作时间：~12 分钟。*
+*本节预期操作时间：\~12 分钟。*
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 在 `data/config/custom_entities.json` 增加静态实体类型；
-- 用 `baseId` 继承一组稳定的默认显示参数；
-- 配置图标、Sprite 贴图、地图名称、可发现性和发现经验；
-- 用 `addCustomEntity` 投放类型，并由 CUSTOM 描述完成界面闭环。
+- 在 custom_entities.json 登记实体类型；
+- 通过 baseId 复用原版基础配置；
+- 设置资源、名称、发现参数与地图显示；
+- 用 addCustomEntity 放置实体，并绑定 CUSTOM 正文。
 
 ## 前置知识
 
-- [C4-S5] 的数据文件合并和资源路径；
-- [C3-S4] 的 `addCustomEntity` 与轨道设置；
-- [C3-S5] 的 CUSTOM 描述键。
+- [C4-S5] 的数据对象合并和资源路径；
+- [C3-S4] 的生成器、实体创建和轨道；
+- [C3-S5] 的 CUSTOM 描述；
+- [C1-S7] 的 CSV 转义和字段边界。
 
-## 确定实体用途
+## 复用基础实体配置
 
-"导航锚" 不会提供新的交互逻辑，它负责一件基础世界对象应该负责的事：在星图上显示、靠近后被发现、拥有稳定的图标和描述。动态交互与自绘插件留给后续进阶篇。
-
-## 配置实体属性
-
-### 建立实体类型键
+在 MOD 的 `data/config/custom_entities.json` 创建 `GearIn_navigation_anchor`。它使用原版 `base_campaign_objective` 作为基础，局部字段如下：
 
 ```json
-"GearIn_navigation_anchor":{
-    "baseId":"comm_relay",
-    "pluginClass":"",
-    "defaultName":"GearIn Navigation Anchor",
-    "nameInText":"navigation anchor",
-    "shortName":"anchor"
-},
+"GearIn_navigation_anchor": {
+    "baseId": "base_campaign_objective",
+    "defaultName": "GearIn Navigation Anchor",
+    "nameInText": "navigation anchor",
+    "shortName": "anchor"
+}
 ```
 
-加载器能在 `baseId` 解析后得到一个完整实体 spec，空 `pluginClass` 让它保持静态实体。
+`baseId` 复用默认半径、地图显示与渲染层等基础参数。`defaultName` 提供默认显示名，nameInText 与 shortName 提供文本中的名称形态。
 
-::: caution `baseId` 必须指向已加载的实体类型
+**基础类型的行为也属于继承内容。** 当前选择原版无插件基础，显式设置自己的资源和发现参数；未来需要动态效果时，再按对象职责编写实体插件。基础 ID 需要存在，加载才能建立对应类型。
 
-`baseId` 指向不存在的类型时，继承解析无法完成，主菜单加载阶段就生成不出完整实体 spec，后续 `addCustomEntity` 也找不到该类型。
+## 指定图标、贴图与描述
 
-:::
-
-### 配置图标与外观
+地图图标采用原版 relay，实体贴图采用 com_relay，局部字段如下：
 
 ```json
-"icon":"graphics/icons/relay.png",
-"sprite":"graphics/ships/com_relay.png",
-"iconWidth":24,
-"iconHeight":24,
-"spriteWidth":89,
-"spriteHeight":48,
-"customDescriptionId":"GearIn_navigation_anchor",
+"icon": "graphics/icons/relay.png",
+"sprite": "graphics/ships/com_relay.png",
+"iconWidth": 24,
+"iconHeight": 24,
+"spriteWidth": 89,
+"spriteHeight": 48,
+"customDescriptionId": "GearIn_navigation_anchor"
 ```
 
-地图图标、实体 Sprite 贴图和描述键都指向 GearIn 类型。
+两个资源分别用于图标和实体绘制，宽高字段控制显示尺寸。路径相对于 MOD 根目录，原版资源可以直接引用。
 
-在 `data/strings/descriptions.csv` 中定义这个键：
+在描述文件追加：
 
 ```csv
 GearIn_navigation_anchor,CUSTOM,一座用于校准本地航路的齿轮工业导航锚。,GearIn 导航锚,,,,
 ```
 
-[C1-S7] 提供 CSV 格式与转义规则，[C3-S5] 讲解 `CUSTOM` 的实体绑定；本节定义 `GearIn_navigation_anchor` 这一行。
+本节定义这个描述键。text1 为正文，text2 提供相应界面的标题；实体的 customDescriptionId 按同一键绑定，字段和转义继续沿用 [C3-S5] 与 [C1-S7]。
 
-### 配置发现规则
+## 设置发现与地图显示
+
+使用以下局部字段：
 
 ```json
-"detectionRange":1800,
-"discoverable":true,
-"discoveryXP":150,
-"showIconOnMap":true,
-"showNameOnMap":true,
-"layers":[STATIONS]
+"detectionRange": 1800,
+"discoverable": true,
+"discoveryXP": 150,
+"showIconOnMap": true,
+"showNameOnMap": true,
+"layers": ["STATIONS"]
 ```
 
-玩家舰队靠近时，实体从未知状态变为可见，并在日志/经验反馈中出现发现结果。
+玩家舰队进入发现范围后可以发现实体，并取得150 发现经验；地图显示开关分别控制图标与名称。STATIONS选择实体的渲染层。
 
-### 投放生涯实体
+**发现状态与地图显示分别配置。** 编者建议从远处和近处各看一次：实体是否被发现、图标何时出现、名字是否正确，这些都可以单独核对。
+
+## 放到既有星系
+
+在 `GearInSystemGenerator.generate()` 中，把此前通讯中继的类型替换为导航锚：
 
 ```java
 SectorEntityToken anchor = system.addCustomEntity(
@@ -91,70 +91,82 @@ SectorEntityToken anchor = system.addCustomEntity(
 anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 ```
 
-新档中导航锚位于恒星轨道上，势力颜色和地图名称可观察。
+`GearIn_stable` 仍为实体 ID，类型为 GearIn_navigation_anchor，势力为 gear_industry，当前显示名为 "GearIn 导航锚"。在原有位置替换创建语句，避免重复创建同 ID 实体。
 
-::: details 完整成品：GearIn_navigation_anchor
+类型数据负责表现与发现，生成器给位置和轨道，描述行提供文字。修改任一部分时，先确定当前要影响的对象和阶段。
+
+## 完整最小例
+
+以下内容写入 `data/config/custom_entities.json`；已有文件时添加自有类型键，保留原有内容。描述行和生成器使用上面的绑定。
 
 ```json
-"GearIn_navigation_anchor":{
-    "baseId":"comm_relay",
-    "pluginClass":"",
-    "defaultName":"GearIn Navigation Anchor",
-    "nameInText":"navigation anchor",
-    "shortName":"anchor",
-    "icon":"graphics/icons/relay.png",
-    "sprite":"graphics/ships/com_relay.png",
-    "iconWidth":24,
-    "iconHeight":24,
-    "spriteWidth":89,
-    "spriteHeight":48,
-    "customDescriptionId":"GearIn_navigation_anchor",
-    "detectionRange":1800,
-    "discoverable":true,
-    "discoveryXP":150,
-    "showIconOnMap":true,
-    "showNameOnMap":true,
-    "layers":[STATIONS]
-},
+{
+    "GearIn_navigation_anchor": {
+        "baseId": "base_campaign_objective",
+        "defaultName": "GearIn Navigation Anchor",
+        "nameInText": "navigation anchor",
+        "shortName": "anchor",
+        "icon": "graphics/icons/relay.png",
+        "sprite": "graphics/ships/com_relay.png",
+        "iconWidth": 24,
+        "iconHeight": 24,
+        "spriteWidth": 89,
+        "spriteHeight": 48,
+        "customDescriptionId": "GearIn_navigation_anchor",
+        "detectionRange": 1800,
+        "discoverable": true,
+        "discoveryXP": 150,
+        "showIconOnMap": true,
+        "showNameOnMap": true,
+        "layers": ["STATIONS"]
+    }
+}
 ```
-
-:::
 
 ## 验证方案
 
-前置数据：已启用包含本节 `GearIn_navigation_anchor` 类型注册、CUSTOM 描述行和 `addCustomEntity` 投放替换的 GearIn MOD。
-
-1. 启动游戏并观察自定义实体 spec 加载日志。
-2. 创建新档进入 GearIn 星系，沿导航锚轨道寻找实体。
-3. 先在远处观察地图信息，再靠近实体，打开详情并核对 CUSTOM 描述。
+1. 保存实体配置、描述行与生成器，重启游戏，核对自定义实体加载阶段。
+2. 创建生涯进入 GearIn，沿半径 2200 的轨道寻找导航锚。
+3. 在远处查看地图，再靠近到发现范围，观察名字、图标和经验反馈。
+4. 悬停实体并打开详情，核对当前名称和 CUSTOM 正文。
+5. 比较轨道和所属势力与创建参数一致。
 
 预期结果：
 
-- 实体有 GearIn 名称、图标和中继外观；
-- 进入检测范围后实体可被发现并获得发现经验；
-- 详情标题来自实体名，正文来自 `GearIn_navigation_anchor,CUSTOM` 的 text1；
-- 日志没有 `baseId`、贴图或实体类型缺失错误。
+- 当前实体采用导航锚名称与原版中继贴图、图标。
+- 进入发现范围后产生发现结果和 150 经验反馈。
+- 地图显示图标和名称，正文读取 GearIn_navigation_anchor,CUSTOM。
+- 实体围绕恒星运行，所属势力为齿轮工业。
+- 数据加载与生成调用使用已登记基础和类型。
 
 ## 故障分析
 
-- **地图上没有实体名称**：地图显示开关与实体显示文本是两组字段。
-    - **解决方案**：检查 `showNameOnMap`、`defaultName` 和 `nameInText`，修正后创建新档。
+- **类型加载失败**：baseId 未登记或配置对象结构错误。
+    - **解决方案**：核对 base_campaign_objective 和文件顶层对象，保存后重启。
 
-- **靠近实体后没有发现提示**：`detectionRange` 不大于 0、`discoverable` 不为 true，或生成器没有把实体放进当前星系。
-    - **解决方案**：修正后创建新档并让舰队进入探测范围。
+- **地图名称不符**：显示开关或创建时的名称与预期不同。
+    - **解决方案**：核对 showNameOnMap、defaultName、nameInText 和 addCustomEntity 传入的名称。
 
-- **交互界面显示错误的描述**：实体类型 ID 与描述键可以不同，但必须显式连接。
-    - **解决方案**：检查 `customDescriptionId` 是否逐字匹配本页的 CUSTOM 行，修正后重新进入实体交互界面。
+- **靠近后未发现**：发现范围、开关或实体实际所在容器不同。
+    - **解决方案**：确认detectionRange 为正、discoverable 为 true，并核对生成器当前 system。
+
+- **正文不符**：customDescriptionId 与 CUSTOM 描述行没有对应。
+    - **解决方案**：统一描述键，保存并重启，查看当前实体。
+
+- **新档生成时报告效果类加载错误**：继承的插件类或显式 pluginClass 值无效。
+    - **解决方案**：使用本节无插件的基础类型，保留静态配置，再重新创建生涯。
 
 ## 总结
 
-静态 custom entity 的工作量集中在 spec：继承一套可靠默认值，再覆盖身份、资源和发现参数。生成器只负责投放位置，描述文件负责最后的界面文字；spec、生成器、描述文件可以分开排错。
+导航锚通过原版基础类型复用显示参数，自有配置提供名称、资源与发现规则。生成器在具体位置放入实体，描述文件绑定独立正文，三部分按对象 ID和类型键连接。
+
+静态对象先完成这组关系，动态交互与绘制再结合后续实体插件讲解。核对时分别看类型加载、生成位置、发现状态和描述结果，问题就能落到对应文件。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.CustomEntitySpecAPI`：运行期实体 spec 字段；
-- `com.fs.starfarer.api.campaign.LocationAPI`：`addCustomEntity` 投放入口；
-- `data/config/custom_entities.json`：生涯实体类型；
-- `data/strings/descriptions.csv`：CUSTOM 行格式的对照依据；
-- `graphics/icons/relay.png`：本节复用的原版图标；
-- `graphics/ships/com_relay.png`：本节复用的原版 Sprite 贴图。
+- `com.fs.starfarer.api.campaign.CustomEntitySpecAPI`：实体类型、资源、显示与发现字段。
+- `com.fs.starfarer.api.campaign.LocationAPI`：addCustomEntity 创建入口。
+- `data/config/custom_entities.json`：基础实体和自有类型登记。
+- `data/strings/descriptions.csv`：CUSTOM 行与文本字段。
+- `graphics/icons/relay.png`：地图图标。
+- `graphics/ships/com_relay.png`：实体贴图。

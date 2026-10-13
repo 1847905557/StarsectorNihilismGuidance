@@ -1,6 +1,6 @@
 # 制作完整船插
 
-本节将复用 [C2-S1] 介绍的船插目标，制作一个相对完整的船插。
+上一节的加速器只提供固定百分比加成，本节把它扩展为一个实际可用的速度船插：按船体等级设置不同数值，让描述随参数更新，并限制它与原版不稳定推进器同时安装。齿轮工业的 "稳定化推进器" 采用较小的速度收益，保留武器射程和甲板性能。
 
 *本节预期阅读时间：\~15 分钟。*
 
@@ -10,69 +10,124 @@
 
 完成后，您将能够：
 
-- 列出船插的组成：`hull_mods.csv` 的一行数据 + 一个 Java 效果类；
-- 核对船插的文件名、`class` 后的名字与 CSV `script` 列，确认注册值指向实际效果类；
-- 读懂效果类中四类内容：按船体等级给出的数值参数、描述联动 (`%s`)、安装限制 (互斥)、固定句式 (`modifyFlat`/`modifyPercent`)；
-- 独立排查本节新增的加载中断 (`JSONException`/`Duplicate key`) 与效果类故障。
+- 用一条 CSV 数据与一个效果类组成船插；
+- 核对文件、类名和 `script` 注册值；
+- 按船体等级设置参数，用 `%s` 联动描述，并检查安装条件；
+- 根据日志、装配说明与实际数值定位注册或效果问题。
 
 ## 前置知识
 
 - [C1-S1] 的 MOD 目录与 `GearIn_` 前缀规则；
-- [C1-S2] 的 CSV 数据行读取方法；
-- [C2-S1] 的最小示例 Java 文件、参数修改、注册、回调与重启生效流程。
+- [C1-S7] 的 CSV 数据行、描述转义与编码；
+- [C2-S1] 的效果文件、参数修改、注册、回调与重启生效流程。
 
-## 补充更多船插数据
+## 以不稳定推进器为基础修改
 
-其余列沿用 [C2-S1] 的规则，本节再介绍几列即将用到的：
+原版不稳定推进器提高速度，同时影响射程与战机整备。编者准备保留它的分档速度写法，去掉这些代价，再相应降低速度收益。**改造原版效果时，加成和代价需要一起考虑**；单纯去掉所有代价，当然也能做出一个船插，但结果往往只是原版的直接上位替代。
 
-- **`unlocked`**：填 `TRUE` 表示玩家默认解锁。
-- **`desc`**：装配界面显示的描述。`desc` 列支持 `%s` 占位符，由效果类的 `getDescriptionParam` 按 `index` 顺序填充。
-- **`sprite`**：图标路径。本节假设您已经准备好了一张 32×32 的 PNG 贴图，就像前几节那样。
+从原版 `data/hullmods/hull_mods.csv` 复制 `unstable_injector` 行到 MOD 的同路径文件，改为 `GearIn_stable_injector`。效果类参考原版 `data/hullmods/UnstableInjector.java`，本例保存为 `data/scripts/gearin/hullmods/GearInStableInjectorHullMod.java`。
 
-## 实现船插效果
+先给它准备一张 32×32 的 PNG 图标，放入 `graphics/hullmods/GearIn_stable_injector.png`。本例使用的图标如下：
 
-本节将进一步复现原版插件使用过的按船体等级分档数值、描述占位符联动、插件不兼容限制三种通用机制，它们在 Mod 设计中也很有用。
+![稳定化推进器的装配图标](./GearIn_stable_injector.png "GearIn_stable_injector.png")
 
-### 按船体等级分档数值
+包名仍按文件目录填写，类名与文件名一致，CSV 的 `script` 填完整类名。登记方式与上一节相同。
 
-一般来说，插件的数值主要考虑 护卫舰/驱逐舰/巡洋舰/主力舰，但最好也要总是把 战机 纳入考量 —— 一方面是为了适配插件装在战机上的情况，另一方面也是为了某些奇奇怪怪的兼容性。
+## 给各船体等级设置速度加成
 
-效果类的 `applyEffectsBeforeShipCreation(HullSize hullSize, ...)` 直接收到当前船体等级，因此 "按等级查表取值" 是数值类船插的标准写法：数值放进 `Map<HullSize, Float>`，方法内按传入的 `hullSize` 取对应值，再进行使用。
+固定加 15 对不同船型的影响并不一样。本例为护卫舰设 15、驱逐舰设 10、巡洋舰和主力舰设 5；战机档也填 15。这样可以用同一份文件处理不同船体，同时把大的速度增量集中在较小船型上。
 
-### 描述占位符联动
+在效果类的字段区使用下面的局部片段：
 
-"静态文本 + 代码填充" 是游戏显示体系的通用模式：船插、武器、战术系统的 `desc` 描述列都支持 `%s` 占位符，由对应效果类的 `getDescriptionParam(int index, HullSize hullSize)` 按 `index` 0→N 顺序返回填充文本。
+```java
+private static final Map<HullSize, Float> SPEED_BONUS = new HashMap<>();
+static {
+    SPEED_BONUS.put(HullSize.FIGHTER, 15f);
+    SPEED_BONUS.put(HullSize.FRIGATE, 15f);
+    SPEED_BONUS.put(HullSize.DESTROYER, 10f);
+    SPEED_BONUS.put(HullSize.CRUISER, 5f);
+    SPEED_BONUS.put(HullSize.CAPITAL_SHIP, 5f);
+}
+```
 
-数据 (CSV 描述) 与显示逻辑 (代码返回值) 分离 —— 改数值表后描述自动同步，不用改文案；`%s` 多于返回值时显示 `null`，少于时多余参数被忽略。
+`HullSize.FRIGATE` 等名称是游戏的船体等级。`put(...)` 把该等级与加成数值配对；`Map` 在这里作为一张按等级取值的表。调整设计时，直接修改每行末尾的数字即可，`import` 按完整文件复制。
 
-### 安装合法性限制
+游戏调用 `applyEffectsBeforeShipCreation(...)` 时会传入当前的 `hullSize`。效果方法据此取值，局部片段如下：
 
-`isApplicableToShip(ShipAPI ship)` 与 `getUnapplicableReason(ShipAPI ship)` 是装配系统对船插的唯一合法性入口：前者返回能否安装，后者返回拒绝原因文本。
+```java
+Float bonus = SPEED_BONUS.get(hullSize);
+if (bonus != null) {
+    stats.getMaxSpeed().modifyFlat(id, bonus);
+}
+```
 
-互斥只是最常见的用法，用 `ship.getVariant().hasHullMod(id)` 检查目标船插是否已装即可。
+`get(hullSize)` 取得当前等级的加成，`modifyFlat` 把它作为固定速度写入。回调传入的 `id` 标记这条修饰的来源，沿用这个 ID，反复计算时会更新同一项效果。
 
-::: info 太长不看版
+**数值放在创建前回调中，生涯和战斗都能使用它。** 当前设计适用于不同船体，因此参数表同时包含战机；它的描述仍以常见四档舰船为主。
 
-- `applyEffectsBeforeShipCreation`：不妨试试根据船体等级修改数值；
-- `getDescriptionParam`：填充描述里的 `%s`；
-- `isApplicableToShip` \+ `getUnapplicableReason`：限制能否安装。
+## 让描述跟着参数更新
 
-:::
+上一节修改了速度，CSV 描述却保持原值。本节改用 `%s` 占位符：
 
-::: tip 建议
+```text
+提高舰船最大速度 %s/%s/%s/%s 单位/秒，随船体等级变化。不兼容 不稳定推进器。
+```
 
-沿用第一章的惯例：能复制粘贴就绝不硬写。复制原版 `unstable_injector` 行与效果类骨架，再修改参数，比从零输入更不易出错。
+这段文字填入 `hull_mods.csv` 的 `desc`。游戏显示船插描述时，调用效果类的 `getDescriptionParam(...)`，依次用返回的文字替换占位符。
 
-:::
+例如，第一个占位符使用护卫舰参数，局部片段如下：
+
+```java
+@Override
+public String getDescriptionParam(int index, HullSize hullSize) {
+    if (index == 0) {
+        return "" + SPEED_BONUS.get(HullSize.FRIGATE).intValue();
+    }
+    return null;
+}
+```
+
+`index` 从 0 开始，0 对应第一个 `%s`，1 对应第二个，以此类推。`intValue()` 把 15f 转成整数 15，前面的 `"" +` 将它转为可显示的字符串。完整文件继续返回驱逐舰、巡洋舰和主力舰的三个参数。
+
+**描述与效果读取同一张数值表，调整参数后两者一起变化。** 四个占位符需要四个返回值；缺少对应返回值会在描述中出现 `null`，多出的返回值则没有对应显示位置。
+
+这里使用的是船插的描述接口。以后遇到其他对象时，继续核对该对象实际采用的文本来源与填充方法。
+
+## 加入安装条件
+
+"稳定化推进器" 与 "不稳定推进器" 提供相似功能，本例限制它安装到已有不稳定推进器的舰船上。
+
+`isApplicableToShip(...)` 返回是否允许安装，`getUnapplicableReason(...)` 返回拒绝原因。两个方法都检查同一个装配条件：
+
+```java
+@Override
+public boolean isApplicableToShip(ShipAPI ship) {
+    return !ship.getVariant().hasHullMod(UNSTABLE_INJECTOR);
+}
+
+@Override
+public String getUnapplicableReason(ShipAPI ship) {
+    if (ship.getVariant().hasHullMod(UNSTABLE_INJECTOR)) {
+        return "不兼容 不稳定推进器";
+    }
+    return null;
+}
+```
+
+`ship.getVariant()` 取得舰船装配，`hasHullMod(...)` 检查其中是否包含指定船插；`!` 表示取反。完整文件把原版 ID `unstable_injector` 保存在 `UNSTABLE_INJECTOR` 中。
+
+这个判断由稳定化推进器执行，验证时先安装原版不稳定推进器，再尝试安装本船插。需要在两个安装方向都实施互斥时，两种船插各自的安装判断都要包含对应条件。
 
 ## 完整最小例
 
-注册行写入 `data/hullmods/hull_mods.csv`；效果类写入 `data/scripts/gearin/hullmods/GearInStableInjectorHullMod.java`。
+CSV 写入 `data/hullmods/hull_mods.csv`，效果类保存到 `data/scripts/gearin/hullmods/GearInStableInjectorHullMod.java`。已有表头时只追加本船插记录，图标使用上面准备的路径。
 
-```text
+```csv
 name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
-稳定化推进器,GearIn_stable_injector,0,,,"engines, merc, standard",引擎,2500,TRUE,,,5,10,15,25,data.scripts.gearin.hullmods.GearInStableInjectorHullMod,"提高舰船最大速度 %s/%s/%s/%s，随船体等级变化。不兼容 不稳定推进器。","提高舰船最大速度。",,graphics/hullmods/GearIn_stable_injector.png
+稳定化推进器,GearIn_stable_injector,0,,,"engines, merc, standard",引擎,2500,TRUE,,,5,10,15,25,data.scripts.gearin.hullmods.GearInStableInjectorHullMod,"提高舰船最大速度 %s/%s/%s/%s 单位/秒，随船体等级变化。不兼容 不稳定推进器。","提高舰船最大速度。",,graphics/hullmods/GearIn_stable_injector.png
 ```
+
+`unlocked=TRUE` 让玩家默认解锁；四档装配点分别为 5、10、15、25；`sprite` 提供图标。其余数据沿用已有船插登记规则。
 
 ::: details 完整成品：GearInStableInjectorHullMod
 
@@ -87,11 +142,7 @@ import com.fs.starfarer.api.combat.MutableShipStatsAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ShipAPI.HullSize;
 
-/**
- * 稳定化推进器：按船体等级提供小幅最大速度加成，与不稳定推进器 (unstable_injector) 互斥。
- * 注册在 hull_mods.csv 的 script 列；效果类每个应用会话只实例化一次。
- * 一般不会展示战机的加成数值。
- */
+/** 按船体等级提供速度加成，安装时检查不稳定推进器。 */
 public class GearInStableInjectorHullMod extends BaseHullMod {
 
     /** 与 hull_mods.csv 的 id 列保持一致；其他船插检查本船插时使用该常量。 */
@@ -119,10 +170,18 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 
     @Override
     public String getDescriptionParam(int index, HullSize hullSize) {
-        if (index == 0) return "" + SPEED_BONUS.get(HullSize.FRIGATE).intValue();
-        if (index == 1) return "" + SPEED_BONUS.get(HullSize.DESTROYER).intValue();
-        if (index == 2) return "" + SPEED_BONUS.get(HullSize.CRUISER).intValue();
-        if (index == 3) return "" + SPEED_BONUS.get(HullSize.CAPITAL_SHIP).intValue();
+        if (index == 0) {
+            return "" + SPEED_BONUS.get(HullSize.FRIGATE).intValue();
+        }
+        if (index == 1) {
+            return "" + SPEED_BONUS.get(HullSize.DESTROYER).intValue();
+        }
+        if (index == 2) {
+            return "" + SPEED_BONUS.get(HullSize.CRUISER).intValue();
+        }
+        if (index == 3) {
+            return "" + SPEED_BONUS.get(HullSize.CAPITAL_SHIP).intValue();
+        }
         return null;
     }
 
@@ -145,46 +204,61 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 
 ## 验证方案
 
-前置数据：本节的 `hull_mods.csv` 注册行与 `GearInStableInjectorHullMod` 效果类。
-
-1. 重启游戏并进入生涯装配界面，找到 "稳定化推进器"。
-2. 把它安装到护卫舰上，观察 tooltip、最大速度和互斥提示。
-3. 进入模拟战比较安装前后的最大速度。
-4. 退出战斗，在 `starsector.log` 中观察船插加载记录。
+1. 保存效果文件、CSV 和图标，重启游戏，在装配界面查找 "稳定化推进器"。
+2. 分别在护卫舰、驱逐舰、巡洋舰和主力舰上查看描述与速度，核对 15、10、5、5 四档加成。
+3. 在一艘舰船上先安装原版 "不稳定推进器"，再尝试安装 "稳定化推进器"，观察拒绝原因。
+4. 移除原版船插，安装稳定化推进器，进入模拟战比较最大速度与武器射程。
+5. 修改参数表中的护卫舰数值，保存并重启，再查看同一档船体的速度和描述。
+6. 在 `Starsector/starsector-core/starsector.log` 中查找 `Loading hullmod [稳定化推进器]`，核对相关加载错误。
 
 预期结果：
 
-- 装配界面出现 "稳定化推进器"，`unlocked=TRUE` 时无需蓝图。
-- 护卫舰 tooltip 显示 `提高舰船最大速度 15/10/5/5，随船体等级变化。不兼容 不稳定推进器。`，四个数字高亮。
-- 舰船最大速度增加 15(护卫舰档)，生涯舰队面板与战斗数值一致。
-- "稳定化推进器" 与 "不稳定推进器" 互斥，安装被拒并显示原因。
-- `starsector.log` 出现 `Loading hullmod [稳定化推进器]`，且没有相关 `ERROR`。
+- 船插默认解锁，图标显示正常，装配点消耗对应当前船型。
+- 描述显示 15/10/5/5，四个数字高亮，实际速度按当前档增加。
+- 已安装不稳定推进器时，本船插安装被拒，并显示 "不兼容 不稳定推进器"。
+- 稳定化推进器提高速度，武器射程与战机整备保留原来的数值。
+- 护卫舰参数修改后，描述中的第一项和该档速度同时更新。
+- 日志包含本船插的加载记录。
+
+观察装配列表中的图标、四档参数与不兼容说明：
+
+![稳定化推进器在装配界面中的描述参数](./hullmod_play.png "hullmod_play.png")
+
+四个高亮数字由效果类返回，固定说明保存在 CSV 中。验证时把这两部分分别与参数表和描述行核对。
 
 ## 故障分析
 
-- **速度加成没有生效**：数值修改写进 `applyEffectsAfterShipCreation` 时，生涯侧不会执行它。
-    - **解决方案**：把 `modifyFlat(...)` 移入 `applyEffectsBeforeShipCreation`，再重新部署舰船。
+- **装配界面找不到船插**：注册行未加载，或 `script` 指向了不同的效果类。
+    - **解决方案**：核对 CSV 的 ID、文件路径与完整类名，保存后重启。
 
-- **两个船插数值互相覆盖**：多个船插共用 `modifyFlat("bonus", ...)` 之类的硬编码 source id。
-    - **解决方案**：改用回调传入的船插 `id`。
+- **生涯速度加成没有生效**：数值修改写在创建后回调中，该回调只参与战斗对象创建。
+    - **解决方案**：将速度修改放入 `applyEffectsBeforeShipCreation`，重启后重新检查。
 
-- **互斥限制没有生效**：数据行本身不会建立互斥判断。
-    - **解决方案**：补齐 `isApplicableToShip` 与 `getUnapplicableReason`。
+- **两个船插的加成互相覆盖**：效果使用了相同的硬编码来源 ID。
+    - **解决方案**：使用回调传入的船插 `id`，让不同来源各自记录修饰。
 
-- **描述出现空位**：`desc` 中的 `%s` 数量超过 `getDescriptionParam` 返回的参数。
-    - **解决方案**：为每个占位符提供对应 `index` 的非 null 字符串并重启。
+- **安装条件没有生效**：判断使用了错误的船插 ID，或只改了说明文字。
+    - **解决方案**：确认两个方法都检查 `unstable_injector`，先安装原版船插再测试。
+
+- **描述出现 null**：`%s` 数量超过已提供的描述参数。
+    - **解决方案**：按 0、1、2、3 为四个占位符提供返回值，保存后重启。
+
+- **加载时报 JSONException 或 Duplicate key**：必填列留空、列边界错误或重复登记了船插 ID。
+    - **解决方案**：按表头核对数据行，填写四档成本并保留唯一 ID。
 
 ## 总结
 
-一个船插由 `hull_mods.csv` 里的一行数据 (`id` 唯一、`script` 指向效果类、四档 `cost` 必填) 和一个效果类 (数值、描述、限制三类职责分属不同方法) 两部分组成。
+本节把固定加速效果扩展为分档参数、联动描述与安装条件。参数表提供数值，创建前回调写入效果，描述回调返回显示参数，安装方法检查装配条件；各自负责的内容都有明确位置。
 
-"数据行 + 效果类" 是本教程所有可注册游戏对象的通用结构，战术系统、武器、舰船都会沿用 "注册数据行 + 类回调" 的关系，只是数据表与接口不同。遇到 `Problem loading class` 时，继续核对文件名、类声明和注册列中的完整类名。
+以后调整船插时，沿着这些位置修改，比把所有逻辑塞进一个方法更方便。本例采用原版已有的结构，设计判断主要落实在速度收益、装配成本和安装条件上。
 
 ## 建议参考项
 
-- `data/hullmods/hull_mods.csv`：船插注册表，其中的 `unstable_injector` 行可对照。
-- `com.fs.starfarer.api.combat.BaseHullMod`：船插效果类基类 (含 `isBuiltIn` 等现成逻辑)。
-- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：数值入口 (`getMaxSpeed()` 等)，配合 `modifyFlat`/`modifyPercent` 使用。
-- `com.fs.starfarer.api.combat.ShipAPI.HullSize`：舰船的船体等级。
-- `com.fs.starfarer.api.impl.hullmods.ShieldShunt`：原版互斥船插写法参考。
-- `graphics/hullmods/generic_mod.png`：`sprite` 缺省图标。
+- `data/hullmods/hull_mods.csv`：船插登记与 `desc`、`script`、`sprite` 字段。
+- `data/hullmods/UnstableInjector.java`：原版分档速度与描述填充写法。
+- `com.fs.starfarer.api.combat.BaseHullMod`：船插基类和默认实现。
+- `com.fs.starfarer.api.combat.HullModEffect`：效果、描述与安装条件的回调。
+- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：最大速度修改入口。
+- `com.fs.starfarer.api.combat.ShipAPI.HullSize`：船体等级枚举。
+- `com.fs.starfarer.api.impl.hullmods.ShieldShunt`：安装条件与拒绝原因的原版写法。
+- `graphics/hullmods/generic_mod.png`：缺省船插图标。

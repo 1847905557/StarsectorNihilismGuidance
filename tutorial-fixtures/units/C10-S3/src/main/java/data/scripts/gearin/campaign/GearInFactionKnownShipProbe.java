@@ -43,26 +43,24 @@ public class GearInFactionKnownShipProbe implements EveryFrameScript {
         faction.addKnownShip(hullId, false);
         faction.addPriorityShip(hullId);
         LOG.info(String.format(
-                "GearIn faction known: hull=%s known=%s priority=%s cacheTimestamp=%s",
+                "GearIn faction known: hull=%s known=%s priority=%s timestamp=%s",
                 hullId,
                 faction.knowsShip(hullId),
                 faction.isShipPriority(hullId),
                 faction.getShipTimestamps().get(hullId)));
 
+        if (!wasKnown) {
+            faction.removeKnownShip(hullId);
+        }
         if (wasPriority) {
             faction.addPriorityShip(hullId);
         } else {
             faction.removePriorityShip(hullId);
         }
-
-        if (wasKnown) {
-            if (previousTimestamp == null) {
-                timestamps.remove(hullId);
-            } else {
-                timestamps.put(hullId, previousTimestamp);
-            }
+        if (previousTimestamp == null) {
+            timestamps.remove(hullId);
         } else {
-            faction.removeKnownShip(hullId);
+            timestamps.put(hullId, previousTimestamp);
         }
 
         LOG.info(String.format(

@@ -1,6 +1,6 @@
 # 选择生涯插件
 
-监听器在事件发生后收到结果，生涯插件则参与 "这次使用哪个实现" 的选择。本节用 Memory 标记给 Foundry 选择专用对话，为测试舰队选择带战术目标的战场，再在市场 Memory 刷新时写入 ready 事实。三个入口各自匹配目标，稳定 ID 与优先级也分别承担登记和选择。
+与指定实体交互时，可以选择自己的对话；与指定舰队开战时，也可以改用专用战场。`CampaignPlugin` 在这些请求发生时提供候选，本节用它处理 Foundry 和测试巡逻队，再在市场 Memory 读取时生成当前事实，说明选择规则怎样进入实际生涯功能。
 
 *本节预期阅读时间：\~25 分钟。*
 
@@ -22,71 +22,25 @@
 - [C11-S1] 的测试舰队创建和投放；
 - [C14-S2] 的回调注册、对象过滤和读档恢复边界。
 
-## 注册 transient Campaign 插件
+## 登记本次生涯的选择规则
 
-`BaseCampaignPlugin` 为 `CampaignPlugin` 的全部 picker 和 facts 更新方法提供默认实现。默认 `getId()` 返回 `null`，默认 `isTransient()` 返回 `true`，picker 返回 `null`，facts 方法不写入状态。子类只覆写当前任务需要的方法，后续游戏版本向接口增加方法时也能继承基类提供的默认实现。
+创建 `src/data/scripts/gearin/campaign/GearInCampaignPlugin.java`，继承 `BaseCampaignPlugin`。基类为全部选择与事实方法准备了默认实现，子类只覆写本次交互、战场和市场事实；其余请求继续返回默认结果。
 
-创建 `src/data/scripts/gearin/campaign/GearInCampaignPlugin.java` 及后面的对话、战场类。向现有 `GearInModPlugin.onGameLoad(...)` 追加局部注册，原回调保留：
+在 `GearInModPlugin` 添加该类的 import，向已有 `onGameLoad(...)` 追加局部登记，沿用 `sector`：
 
 ```java
 sector.registerPlugin(new GearInCampaignPlugin());
 ```
 
-**稳定 ID 用于登记替换与注销。** `getId()` 非空时，再次登记同 ID 会移除旧对象并加入当前实例。
+完整类的 `getId()` 返回 `GearIn_campaign_plugin`，`isTransient()` 返回 `true`。选择规则没有需要保存的字段，目标状态留在实体与市场 Memory；每次载入生涯重新创建规则实例。
 
-本节插件显式返回 transient。transient 插件不写入存档，每次新档或读档建立生涯状态后，都在 `onGameLoad()` 注册新实例。相同 ID 的替换机制使同一回调被重复执行时，集合中仍只有当前实现。
+**相同非空 ID 的登记会替换原插件。** 当前入口重复执行时，注册表仍保留一份实现；游戏随后需要对话或战场，才调用该实例的选择方法。
 
-注册使用方法内已有的 `sector`，并给 MOD 入口添加该类的 import。当前插件显式选择 transient，读档后创建本次实例。
+## 标记 Foundry 与测试巡逻队
 
-非 transient 插件会随存档保存，适合确实需要保存内部字段的插件，并在 `onNewGame()` 登记。Campaign 插件通常只提供无状态选择规则和 facts 计算，当前无状态选择规则采用 transient，长期状态继续保存到实际对象或 Memory。
+对话目标使用 Foundry 的主实体，市场事实使用 Foundry 的 `MarketAPI`，战场目标使用巡逻队。三个对象各保存自己的标记，选择方法读取实际传入对象。
 
-## 理解 ID 替换与候选选择
-
-注册替换和 picker 选择是两条不同链。ID 替换发生在 `registerPlugin()` 时，用于决定插件集合中保留哪些对象；picker 选择发生在游戏需要某项服务时，用于比较当前集合中各插件返回的候选。
-
-用当前类连续登记即可观察同 ID 替换。局部片段返回第二次登记的当前实例，后续选择仍由它执行：
-
-```java
-sector.registerPlugin(new GearInCampaignPlugin());
-sector.registerPlugin(new GearInCampaignPlugin());
-```
-
-`getId()` 返回 `null` 时，注册器没有替换键，每次登记都会追加新对象。无 ID 插件仍会参加所有 picker 与 facts 更新，重复登记可能产生多个候选或重复写入，因此 MOD 插件应提供稳定、带 MOD 前缀的非空 ID。
-
-## 返回 PluginPick 或让出目标
-
-游戏需要交互、战场、舰队 AI 或其他可替换服务时，会遍历全部 Campaign 插件，调用对应 picker，并收集非空的 `PluginPick<T>`。没有插件返回候选时，结果为 `null`；只有一个候选时直接使用其 `plugin`；多个候选按 `priority.ordinal()` 排序，取枚举序号最大的一个。
-
-**先匹配目标，再提供候选。**匹配时返回插件实例与优先级；不匹配时返回 `null`，让其他 Campaign 插件继续提供默认或专用实现。需要让其他实现接手时返回 `null`，实际匹配时再创建自己的插件。
-
-### 选择优先级速查表
-
-| 优先级 | 适用范围 | 选择关系 |
-| --- | --- | --- |
-| `CORE_GENERAL` | 原版通用实现 | 枚举序号最低 |
-| `MOD_GENERAL` | MOD 全局替换 | 高于通用原版实现 |
-| `CORE_SET` | 原版对象集合规则 | 高于 general 级 |
-| `MOD_SET` | MOD 对一组对象的规则 | 高于 `CORE_SET` |
-| `CORE_SPECIFIC` | 原版特定遭遇 | 高于 set 级 |
-| `MOD_SPECIFIC` | MOD 特定对象或遭遇 | 高于 `CORE_SPECIFIC` |
-| `HIGHEST` | 明确解决全局冲突 | 枚举序号最高，使用条件最严格 |
-
-本节两个 picker 都检查专用 Memory 标记，只处理明确标记的对象，因此使用 `MOD_SPECIFIC`。局部比较使用真实的目标对话类，把同一个输入分别包装为 set 与 specific 候选：
-
-```java
-PluginPick<InteractionDialogPlugin> setPick = new PluginPick<>(
-        new GearInTargetDialog(dialogTarget), PickPriority.MOD_SET);
-PluginPick<InteractionDialogPlugin> specificPick = new PluginPick<>(
-        new GearInTargetDialog(dialogTarget), PickPriority.MOD_SPECIFIC);
-```
-
-多个候选具有相同优先级时，排序后的先后结果没有公开稳定保证。业务规则需要唯一胜者时，应通过互斥条件或不同优先级建立明确判据。
-
-## 准备三个独立目标
-
-本节使用 Foundry 主实体、测试巡逻队和 Foundry 市场，三个键分别限定交互、战场与 facts。
-
-在 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 中已取得 `market`，加入局部片段：
+在 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 已取得 `market` 后，加入局部片段，并添加 `SectorEntityToken`、`MemoryAPI` 与本节插件的 import：
 
 ```java
 SectorEntityToken dialogTarget = market.getPrimaryEntity();
@@ -110,11 +64,11 @@ LOG.info("GearIn campaign facts: before=" + readyBeforeRefresh
 generatedFleet.getMemoryWithoutUpdate().set(GearInCampaignPlugin.BATTLE_TARGET_KEY, true);
 ```
 
-市场片段需要 `SectorEntityToken`、`MemoryAPI` 与本节插件的 import。三个键分别保留各自对象范围，交互标记与战场标记各自选择。`readyBeforeRefresh` 读取当前保存值，`readyAfterRefresh` 则来自 Campaign 插件完成 facts 更新后的 Memory。
+实体标记决定使用专用对话，市场标记决定计算 ready 事实。片段先清除旧 ready 值，再分别通过普通读取与事实刷新取得结果，二者的区别在后文展开。巡逻队则在开战前取得独立战场标记。
 
 ## 为标记实体选择交互对话框
 
-交互 picker 接收玩家正在接触的 `SectorEntityToken`。本节使用 `$GearIn_dialog_target` 标记具体实体；判断读取 `getMemoryWithoutUpdate()`，避免只为决定 picker 就触发另一轮 facts 更新。对话会话的完整 API、三个面板和关闭语义由 [C15-S1] 负责，本节只保留 picker 如何把目标交给插件的桥接关系。
+玩家开始交互时，`pickInteractionDialogPlugin(...)` 接收当前目标。本例从实体的 `getMemoryWithoutUpdate()` 读取 `$GearIn_dialog_target`，命中后返回专用对话与优先级：
 
 ```java
 if (interactionTarget == null
@@ -127,13 +81,15 @@ return new PluginPick<>(
         PickPriority.MOD_SPECIFIC);
 ```
 
-测试对象需要在玩家开始交互前写入标记。picker 只读取当前 Memory，不会自行创建或修改目标标记。
+**不匹配的请求返回 `null`。** 这样其他生涯插件继续提供自己的实现，当前规则只处理被标记的实体。标记在交互前写入，选择方法读取已有状态；调用 `getMemoryWithoutUpdate()` 也让判断保持在当前 Memory 上。
 
-`GearInTargetDialog` 保存 picker 传入的目标。初始化时显示目标 ID、对话标记和目标市场的 ready fact，并提供关闭选项。目标由已经命中的 picker 提供；没有市场的目标以 `false` 显示 ready，Foundry 则按当前市场 facts 读取。选项分支使用稳定的 `optionData`，显示文本只负责界面呈现。这个类是 picker 返回插件的最小桥接示例；需要完整交互会话时使用 [C15-S1] 的 `GearInConversationDialog`。
+`GearInTargetDialog` 保存命中的目标，在初始化时显示 ID、标记与市场 ready，再提供关闭选项。Foundry 有市场，因此读取其当前事实；其他无市场目标显示 `false`。选项用稳定 `optionData` 判断，显示文字用于界面。
+
+这个类只展示选择结果怎样进入对话。[C15-S1] 再展开三个面板、选项与关闭过程，本节先让玩家实际打开被选中的实现。
 
 ## 为标记舰队选择战场创建插件
 
-战场 picker 的参数类型仍是 `SectorEntityToken`，因为战斗对手来自生涯实体。完整实现先用 `instanceof CampaignFleetAPI` 限定对象类型，再读取 `$GearIn_battle_target`。普通行星或带错误标记的其他实体不会进入舰队战场逻辑。
+战斗建立时，`pickBattleCreationPlugin(...)` 同样接收生涯实体。先限定为 `CampaignFleetAPI`，再检查 `$GearIn_battle_target`，命中后返回 `GearInObjectiveBattleCreationPlugin`：
 
 ```java
 if (!(opponent instanceof CampaignFleetAPI)
@@ -145,15 +101,55 @@ return new PluginPick<>(
         PickPriority.MOD_SPECIFIC);
 ```
 
-测试敌舰队需要在战斗建立前写入独立标记。战斗上下文创建后再修改舰队 Memory，不会追溯替换已经选定的战场插件。
+这个战场类继承原版 `BattleCreationPluginImpl`。在 `super.initBattle(...)` 前把 `context.forceObjectivesOnMap` 设为 `true`，让父类创建地图时采用这个条件，双方舰队装入、地图尺寸与部署时间继续沿用父类处理。
 
-`GearInObjectiveBattleCreationPlugin` 继承原版 `BattleCreationPluginImpl`。它在调用父类前把 `BattleCreationContext.forceObjectivesOnMap` 设为 `true`，父类随后仍负责装入双方舰队、计算地图尺寸、创建地图并设置部署时间。调用顺序不能颠倒，因为父类在创建地图时读取该字段来决定是否生成战术目标。
+`objectivesAllowed` 为 `true` 时，小规模战斗也生成战术目标；为 `false` 时仍按许可跳过。当前只改变这项生成条件。标记在战斗建立前准备，战场已经选定后再改 Memory，对这场已建立的战斗没有追溯作用。
 
-这个实现只改变目标生成判据。当前 `objectivesAllowed` 允许目标的战斗中，带标记舰队即使规模较小也会生成目标；许可为 `false` 时仍按其条件跳过目标。未标记舰队使当前 Campaign 插件返回 `null`，由其他候选选择正常战场实现。
+## 比较候选优先级与插件 ID
+
+每个选择请求都会调用当前注册插件的相应方法，收集非空 `PluginPick<T>`。它保存 `plugin` 与 `priority`：没有候选时返回 `null`，一份候选直接采用，多份则选择枚举序号最大的优先级。
+
+### 选择优先级速查表
+
+| 优先级 | 适用范围 | 选择关系 |
+| --- | --- | --- |
+| `CORE_GENERAL` | 原版通用实现 | 枚举序号最低 |
+| `MOD_GENERAL` | MOD 全局替换 | 高于通用原版实现 |
+| `CORE_SET` | 原版对象集合规则 | 高于 general 级 |
+| `MOD_SET` | MOD 对一组对象的规则 | 高于 `CORE_SET` |
+| `CORE_SPECIFIC` | 原版特定遭遇 | 高于 set 级 |
+| `MOD_SPECIFIC` | MOD 特定对象或遭遇 | 高于 `CORE_SPECIFIC` |
+| `HIGHEST` | 有依据的冲突裁决 | 枚举序号最高 |
+
+本节只处理标记的特定对象，采用 `MOD_SPECIFIC`。下面的局部片段把同一对话包装为 set 与 specific 候选，后者优先：
+
+```java
+PluginPick<InteractionDialogPlugin> setPick = new PluginPick<>(
+        new GearInTargetDialog(dialogTarget), PickPriority.MOD_SET);
+PluginPick<InteractionDialogPlugin> specificPick = new PluginPick<>(
+        new GearInTargetDialog(dialogTarget), PickPriority.MOD_SPECIFIC);
+```
+
+相同优先级的竞争没有公开稳定的胜者约定，需要唯一结果时，让命中条件互斥或明确区分优先级。编者认为优先级应当表达接管范围：全局替换给特定遭遇保留位置，剧情对象再由专用规则处理。使用 `HIGHEST` 时，当前候选还会压过同一目标上的其他专用规则，因此选择它要有实际冲突与明确的裁决依据。
+
+### ID 决定注册替换
+
+插件 ID 与优先级处理不同关系。ID 在登记时决定是否替换旧对象，优先级在请求时决定采用哪份候选。连续登记同一 ID 的局部实验如下：
+
+```java
+sector.registerPlugin(new GearInCampaignPlugin());
+sector.registerPlugin(new GearInCampaignPlugin());
+```
+
+第二次登记成为当前实例。基类默认 ID 为 `null`，这时每次登记追加对象，所有实例都会参与选择与事实更新；本例显式提供稳定 ID，便于替换和注销。
+
+`isTransient()` 决定插件是否进入存档。基类默认 `true`，本例每次 `onGameLoad()` 重登；确实保存插件字段的实现可以返回 `false`，在新档时登记并随档恢复。长期对象状态放在哪里，要结合功能实际持有的对象决定。
 
 ## 在读取 Memory 时更新市场 facts
 
-Campaign 插件除了选择服务，还能在对象 Memory 被请求时更新事实。实体、人物、势力、全局、玩家和市场各自有对应的 `update...Facts()`。引擎取得对象的 `getMemory()` 时遍历当前 Campaign 插件，并把对象与它的 Memory 传给更新方法。
+生涯插件还提供读取时计算的 facts。对象的 `getMemory()` 调用当前插件，传入对象与 Memory；`getMemoryWithoutUpdate()` 则取得已有值。本节的 `updateMarketFacts(...)` 检查市场标记，向传入 `memory` 写入 `$GearIn_campaign_plugin_ready`。
+
+因此准备片段在 `unset(...)` 后，`readyBeforeRefresh` 为 `false`；调用 `market.getMemory()` 后，更新方法写入 ready，`readyAfterRefresh` 为 `true`。对话也用目标市场的 `getMemory()`，显示本次读取后的事实。
 
 ### Facts 更新入口速查表
 
@@ -166,19 +162,17 @@ Campaign 插件除了选择服务，还能在对象 Memory 被请求时更新事
 | `updatePlayerFacts(memory)` | 玩家角色数据 | 玩家能力与任务条件 |
 | `updateMarketFacts(market, memory)` | 市场 | 规模、产业、管理与市场交互条件 |
 
-本节只处理带 `$GearIn_market_facts_target` 的市场。更新方法使用引擎传入的 `memory` 检查输入标记，并写入 `$GearIn_campaign_plugin_ready`。facts 键具有 GearIn 前缀，避免与原版或其他 MOD 的规则变量冲突。
+其他对象各有对应事实入口，仍使用当前方法收到的对象与 Memory。动态键采用 MOD 前缀，并用 `memory.set(key, value, 0f)` 写本次事实，下一次推进过期，后续读取时重新计算。
 
-准备片段中的第一次读取不会执行 facts 更新，因此 `readyBeforeRefresh` 仍反映当前已保存值。第二次调用 `getMemory()` 会先运行 `updateMarketFacts()`，`readyAfterRefresh` 随后读取到 `true`。对话框也调用目标市场的 `getMemory()`，所以界面显示的 ready 状态来自本次刷新后的事实。
-
-`memory.set(key, value, 0f)` 的零过期时间用于当前刷新产生的事实。更新方法每次 `getMemory()` 都重新计算它，避免长期过期项堆积。更新方法再次调用 `market.getMemory()` 会递归进入相同链，因此当前只操作传入的 `memory`；当前值和输入条件都从传入的 `MemoryAPI` 读取。
+::: warning facts 更新中使用传入的 Memory
+在 `updateMarketFacts()` 中再次调用 `market.getMemory()`，会递归触发相同更新。当前值和输入条件都从方法参数 `memory` 读取，写入也使用这份对象。
+:::
 
 ## 注销插件并观察恢复结果
 
-插件 ID 也是注销入口。注销后，当前插件不再参与新的 picker 选择和 facts 刷新；已经创建并显示的对话框、已经进入初始化的战斗不会被追溯替换。
+调用 `Global.getSector().unregisterPlugin(GearInCampaignPlugin.PLUGIN_ID)` 按稳定 ID 注销。当前插件退出后续选择与事实刷新，已经打开的对话和已经建立的战斗各自继续原流程。
 
-调用 `Global.getSector().unregisterPlugin(GearInCampaignPlugin.PLUGIN_ID)` 即可按稳定 ID 注销。
-
-注销后再次与标记实体交互，其他 Campaign 插件会重新竞争该目标。再次读取市场 Memory 时，本插件不再写入 ready 键；若要观察这一点，应先从 `getMemoryWithoutUpdate()` 中 `unset()` 旧键，再调用 `getMemory()`。
+再次交互时，其他候选重新处理目标。验证 facts 时先从 `getMemoryWithoutUpdate()` 清除 ready，再调用 `getMemory()`，才能确认本插件没有重新写入；现有 Memory 值与插件是否登记分别观察。
 
 ## 完整最小例
 
@@ -421,9 +415,9 @@ public class GearInObjectiveBattleCreationPlugin extends BattleCreationPluginImp
 
 ## 总结
 
-生涯插件在具体请求里匹配对象并返回候选，稳定 ID 处理登记与注销，优先级处理非空候选之间的选择。Foundry 的对话、巡逻队的战场与市场事实各由自己的标记接入。
+Foundry 的交互与巡逻队战场在实际请求中取得专用候选，目标标记决定命中范围，优先级决定候选竞争。稳定插件 ID 负责登记替换与注销，选择结果再进入对话或地图创建。
 
-编者建议把目标与入口先对应好，再调整优先级。facts 则直接使用本次传入的 Memory，刷新与当前值读取分别安排，选择规则和动态状态就能各自解释结果。
+市场 facts 在读取 Memory 时更新，使用传入对象计算当前值。长期目标状态与读取时事实分别保存，注册、匹配与刷新各自明确，生涯插件就能与其他功能共同处理当前请求。
 
 ## 建议参考项
 

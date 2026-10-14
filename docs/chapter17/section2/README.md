@@ -1,6 +1,6 @@
 # 读取 MOD 内 JSON 文件
 
-文本已经可以主动读回，现在把工坊服务写成 JSON，再把界面文字放入自动加载的 strings 表。两种文件各有入口：代码主动解释配置字段，游戏按固定路径合并文本分类，运行时再按分类和键取值。先完成自有配置读取，再比较这两种数据怎样进入代码。
+服务配置和界面文字都可以写成 JSON，但游戏取得它们的方式各有约定。本节先主动读取工坊服务的字段，再把一句问候放进自动加载的 strings 表。文件放在哪里、谁读取它、同名内容怎样合并，分别决定这两份数据如何生效。
 
 *本节预期阅读时间：\~24 分钟。*
 
@@ -22,11 +22,11 @@
 - [C1-S1] 的 JSON 基础与 UTF-8 无 BOM 要求；
 - [C7-S2] 的 `Global.getSettings()` 和日志入口。
 
-## 固定入口与自有路径
+## 区分文件的使用方
 
-`data/strings/strings.json` 是原版固定公开入口。游戏在启动资源加载阶段主动查找原版与全部已启用 MOD 的同名文件，并按 strings 规则处理内容；MOD 只需把文件放在该路径，不需要在 `mod_info.json` 中声明，也不需要调用 `loadJSON` 注册。
+`data/strings/strings.json` 是游戏约定的文本入口。游戏启动时会主动查找原版与已启用 MOD 的同名文件，合并后供代码取值；文件放在这个路径即可参与加载。
 
-其他 JSON 路径由 MOD 自己约定，例如 `data/config/gear_in/services.json`。游戏不会猜测这些文件的用途；当前代码给出路径、调用 `loadJSON(...)`，再按本节字段解释结果。
+`data/config/gear_in/services.json` 则由 MOD 自己约定。我们需要给出读取路径，调用 `loadJSON(...)`，并解释其中的字段。JSON 描述的是数据结构，文件的用途由实际使用方确定。
 
 ## 创建服务配置并读回字段
 
@@ -48,9 +48,9 @@ Global.getLogger(GearInModPlugin.class).info("GearIn service: id="
         + services.getString("serviceId") + " interval=" + services.optInt("interval", 10));
 ```
 
-构建并重启后，搜索 `GearIn service`。日志应包含 `GearIn_service` 与 `interval=10`；服务什么时候运行，仍由使用这些字段的代码决定。游戏读到了文件，还没有替您做完服务。
+构建并重启后，搜索 `GearIn service`，日志应包含 `GearIn_service` 与 `interval=10`。这一步确认配置能被读取；服务何时运行、间隔怎样使用，仍要由后续代码实现。文件名叫 services，并不会让游戏凭空增加一项服务。
 
-`loadJSON` 返回 `JSONObject`。本例明确提供 `serviceId`，所以直接取值；`interval` 是可选配置，省略时采用 10。**缺省值表达文件允许省略的内容。**需要必填的字段时，`get` 方法可以让错误在读取位置显现。
+`loadJSON` 返回 `JSONObject`。本例把 `serviceId` 作为必填字段，用 `getString` 直接取得；`interval` 允许省略，`optInt` 此时采用 10。**缺省值是配置约定的一部分。** 哪个字段可以省略，应由这份数据的含义决定。
 
 ### 来源与字段读取
 
@@ -79,63 +79,7 @@ JSON 路径遵循 [C17-S1] 的资源路径规则。引擎在读取前拒绝 `..`
 - `interval` 按文件读取，省略时采用 10；
 - 路径、编码、语法和字段类型正确时，启动正常完成。
 
-## strings 文件的加载与合并
-
-字符串表在启动资源加载阶段自动载入。日志先出现 `Loading strings`，随后加载 `data/strings/tooltips.json`、`data/strings/strings.json` 和 `data/strings/tips.json`。原版与各个已启用 MOD 的 `strings.json` 分别产生一行 `Loading JSON from [...]`，日志路径包含 `data/strings/strings.json`。
-
-各来源的 `strings.json` 按启用顺序合并：
-
-- 原版内容先进入结果，后续 MOD 依次合并；
-- 对象值按键递归合并；
-- 标量值由后加载来源覆盖前一个来源；
-- 数组按键的合并规则处理，`music_*`、长度为 4 的 `color` 或 `button` 数组，以及首元素为 `core_clearArray` 的数组可以整体替换；
-- `mod_info.json` 的 `replace` 可以整体替换某个文件。
-
-MOD 只需要写自己的键，原版和其他 MOD 的键会继续保留。相同 `(category, id)` 的文本会受启用顺序影响，因此自有分类和键应使用 MOD 前缀，避免覆盖已有文本。
-
-## 语法与编码
-
-加载前，引号之外的 `#` 到行尾内容会被剥离，再交给 JSON 解析器；尾逗号也会被接受。括号、字符串引号和字段结构仍须符合 JSON 解析要求。
-
-文件采用 UTF-8 无 BOM。BOM 会粘在文件首字符并使加载失败；括号不配对或字符串引号不闭合会在加载阶段抛出带文件路径的 `JSONException`，启动随之中止。
-
-分类名和键名逐字符匹配并区分大小写。分类或键不存在时，双参取值 API 返回 `Missing string: [<id>]`，并在 `starsector.log` 记录 ERROR；游戏继续运行，界面会显示该字面量。
-
-## 取值 API 与占位符
-
-运行期读取 strings 文本使用公开 API：
-
-```java
-String text = Global.getSettings().getString("GearIn_ui", "GearIn_text_hello");
-```
-
-双参 `getString(category, id)` 读取 `strings.json`。单参 `getString(key)` 读取 `data/config/settings.json`，两者的文件和键空间不同。
-
-strings 的值可以包含两类占位符：
-
-- `$token` 不会由引擎自动替换，使用方取值后再替换；
-- `%s` 不会由引擎自动格式化，取值侧使用 `String.format` 传入参数。
-
-例如，`$faction`、`$fleetOrShip` 等令牌由舰队遭遇文本的使用方替换；`%s` 的参数数量和类型与模板对应，格式化结果才符合当前显示。
-
-## 原版分类速查表
-
-原版 `strings.json` 有 4 个顶层分类：
-
-| 分类 | 内容 | 键风格 | 主要使用方 | 键数 |
-| --- | --- | --- | --- | ---: |
-| `fleetInteractionDialog` | 生涯舰队遭遇对话：交战、追击、撤退、接舷、打捞和友军增援 | 大量 `$faction`、`$fleetOrShip` 等令牌 | 舰队遭遇对话 | 160 |
-| `campaignHelp` | 首次生涯提示和低 CR、低补给等提示 | 键后缀使用 `_text`、`_dismiss` 或 `_action` | 生涯帮助弹窗 | 63 |
-| `jumpPointInteractionDialog` | 跳跃点交互：`approach`、`starAnchor`、`noFuel`、`noExits` 等 | `$fleetOrShip` | 跳跃点交互对话 | 5 |
-| `planetInteractionDialog` | 行星接近文本：`approach` | `$fleetOrShip`、`$planetName` | 行星交互对话 | 1 |
-
-MOD 可以使用自己的分类，不需要复用原版分类名。对话类值依靠 `$token` 注入动态内容，帮助类值可以使用 `\n` 组织多段文本。
-
-## 同目录文件
-
-`data/strings/tooltips.json` 与 `strings.json` 不合并，键空间独立；值可以是纯字符串，也可以是包含 `title` 和 `body` 的对象。`data/strings/tips.json` 保存加载界面的随机小贴士。两者都不能用双参 `getString` 读取。单参 `getString(key)` 的目标是 `data/config/settings.json`。
-
-## 定义并读取本节文本键
+## 在 strings 表中登记问候
 
 在 MOD 的 `data/strings/strings.json` 加入本节分类与键，已有分类时在同一对象内追加：
 
@@ -147,14 +91,34 @@ MOD 可以使用自己的分类，不需要复用原版分类名。对话类值�
 }
 ```
 
-这个分类与键在本节定义，后面的本地化封装继续沿用。将下列局部调用加入应用加载方法：
+`GearIn_ui` 是分类，`GearIn_text_hello` 是分类内的键，后面的本地化封装继续沿用它们。游戏加载该文件后，双参 `getString(category, id)` 就可以取回文字。局部调用如下：
+
+```java
+String text = Global.getSettings().getString("GearIn_ui", "GearIn_text_hello");
+```
+
+将取值与日志加入应用加载方法：
 
 ```java
 Global.getLogger(GearInModPlugin.class).info("GearIn strings: "
         + Global.getSettings().getString("GearIn_ui", "GearIn_text_hello"));
 ```
 
-需要比较已有键的覆盖时，在本 MOD 的文本表追加原版 `planetInteractionDialog` 分类中的 `approach` 键：
+构建并重启，`GearIn strings` 应记录 `你好，工坊。`。**分类和键选择文字，调用方负责把它送到显示位置。** 单参 `getString(key)` 读取的是 `data/config/settings.json`；此处取 strings 文本使用双参形式。
+
+## 合并之后，同名文字由谁提供
+
+字符串表在启动资源加载阶段自动载入。日志先出现 `Loading strings`，随后加载 `data/strings/tooltips.json`、`data/strings/strings.json` 和 `data/strings/tips.json`。原版与各个已启用 MOD 的 `strings.json` 分别产生一行 `Loading JSON from [...]`，路径包含 `data/strings/strings.json`。
+
+各来源的 `strings.json` 按启用顺序合并：原版内容先进入结果，后续 MOD 依次加入。对象按键递归合并，标量由后加载来源覆盖，因此一个 MOD 只写自己的分类和键，其余内容仍会保留。
+
+数组通常追加内容；键以 `music_` 开头，或原有数组长度为 4 且键名包含 `color` 或 `button` 时，会清除原数组后加入新内容。新数组以 `core_clearArray` 为首元素时也会先清除原内容。`mod_info.json` 的 `replace` 可以进一步整体替换文件。
+
+自有分类和键采用 MOD 前缀，便于维持这种归属。若有意修改已有文字，就需要使用原来的分类与键。
+
+编者不赞成为了几句文字接管整份原版文本表。按键合并已经能完成这项工作；整体替换还会把原版内容的维护、其他 MOD 的同路径输入一并牵涉进来，取舍应当与实际修改范围相称。
+
+下面用行星接近文本演示覆盖，在本 MOD 的文本表追加原版 `planetInteractionDialog` 分类中的 `approach`：
 
 ```json
 "planetInteractionDialog": {
@@ -169,7 +133,34 @@ Global.getLogger(GearInModPlugin.class).info("GearIn strings approach: "
         + Global.getSettings().getString("planetInteractionDialog", "approach"));
 ```
 
-**文本键决定取哪句话，调用方决定怎样填入动态内容。**这里日志保留令牌，行星对话使用方才会替换舰队与行星名称。
+日志会保留 `$fleetOrShip` 和 `$planetName`，行星对话的使用方才会替换它们。`getString` 只取回模板；`$token` 的替换、`%s` 的 `String.format` 格式化，都由取值后的代码处理。舰队遭遇文本里的 `$faction`、`$fleetOrShip` 同样由对应对话填入动态内容，格式参数的数量与类型也要符合模板。
+
+::: warning 覆盖的是整个文本键
+同名 `(category, id)` 的后加载值会替换原句。新增自己的文字使用自有键；覆盖实验结束后移除 `planetInteractionDialog.approach`，行星对话才会重新采用原版文本。
+:::
+
+## 文件语法与缺失文本
+
+加载前，引号之外的 `#` 到行尾内容会被剥离，尾逗号也能被解析。括号、字符串引号和字段结构仍按 JSON 组织，文件保存为 UTF-8 无 BOM。BOM 会留在首字符，括号不配对或引号不闭合会产生带文件路径的 `JSONException`，使启动中止。
+
+分类名和键名区分大小写。分类或键缺失时，双参 API 返回 `Missing string: [<id>]` 并记录 ERROR，游戏继续运行，界面可能显示这句占位文字。于是，文件能解析、文本键能取值和界面显示正确，需要分别确认。
+
+## 原版分类速查表
+
+原版 `strings.json` 有 4 个顶层分类：
+
+| 分类 | 内容 | 键风格 | 主要使用方 | 键数 |
+| --- | --- | --- | --- | ---: |
+| `fleetInteractionDialog` | 生涯舰队遭遇对话：交战、追击、撤退、接舷、打捞和友军增援 | 大量 `$faction`、`$fleetOrShip` 等令牌 | 舰队遭遇对话 | 160 |
+| `campaignHelp` | 首次生涯提示和低 CR、低补给等提示 | 键后缀使用 `_text`、`_dismiss` 或 `_action` | 生涯帮助弹窗 | 63 |
+| `jumpPointInteractionDialog` | 跳跃点交互：`approach`、`starAnchor`、`noFuel`、`noExits` 等 | `$fleetOrShip` | 跳跃点交互对话 | 5 |
+| `planetInteractionDialog` | 行星接近文本：`approach` | `$fleetOrShip`、`$planetName` | 行星交互对话 | 1 |
+
+MOD 可以建立自己的分类。对话文本用令牌填入动态内容，帮助文字可以用 `\n` 分段，分类本身只负责组织这些键。
+
+### 同目录下的其他文本文件
+
+`data/strings/tooltips.json` 与 strings 各自加载，内容彼此独立；tooltip 值可以是纯字符串，也可以是含 `title` 和 `body` 的对象。`data/strings/tips.json` 保存加载界面的随机小贴士。这两份文件由各自使用方读取，双参 `getString` 的目标仍是 strings 表。
 
 ## 比较 strings 的固定加载
 
@@ -211,9 +202,7 @@ Global.getLogger(GearInModPlugin.class).info("GearIn strings approach: "
 
 ## 总结
 
-服务配置由当前来源限定读取，字段通过 JSONObject 解释；strings 表则按固定路径自动合并，通过分类与键取文字。可选字段的缺省、重复文本键的覆盖与模板替换分别由各自入口处理。
-
-编者建议先区分这份文件是谁读取，再决定数据放在哪里。结构相同的 JSON 不代表用途相同，配置和界面文字都需要自己的实际使用方。
+自有服务配置由 `loadJSON` 读成对象，代码解释字段；strings 则由游戏按固定路径合并，调用方以分类和键取得模板。字段缺省、同名文本覆盖和动态内容替换各有明确入口，文件的 JSON 外形并不能代替这些使用约定。
 
 ## 建议参考项
 

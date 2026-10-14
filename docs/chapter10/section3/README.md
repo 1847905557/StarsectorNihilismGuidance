@@ -1,6 +1,6 @@
 # 配置生涯势力
 
-势力对象既提供名称与配色，也保存关系和军备知识。本节先比较直接关系调整与玩家声望事件，再临时把一艘船加入已知、优先集合，最后恢复实验前状态。所有变化都在日志里保留前后值，便于看清写入入口与实际结果。
+本节通过势力对象调整关系与军备知识。关系实验比较直接写入和玩家声望事件，舰船实验比较已知、优先与学习时间；两项操作都保存原状态并恢复。我们将从这些具体结果说明，界面关系、知识集合与后续舰船挑选怎样使用它们。
 
 *本节预期阅读时间：\~22 分钟。*
 
@@ -23,18 +23,9 @@
 - [C1-S1] 的日志搜索和稳定前缀定位；
 - 能够保存运行前状态，并在实验结束后恢复它。
 
-## 登记两项实验并取得势力
+## 取得当前势力对象
 
-创建 `src/data/scripts/gearin/campaign/GearInFactionRelationProbe.java` 和 `GearInFactionKnownShipProbe.java`。在 [C7-S1] 的 `GearInModPlugin` 添加这两个类的 import，把局部登记加入 `onGameLoad(...)`，沿用其中已有的 `sector`：
-
-```java
-sector.addTransientScript(new GearInFactionRelationProbe());
-sector.addTransientScript(new GearInFactionKnownShipProbe());
-```
-
-每次进入存档执行一轮实验，完成后 `isDone()` 返回 `true`，生涯引擎移除本次实例。保存前状态、修改和恢复都在同一轮完成。
-
-玩家势力通过 `getPlayerFaction()` 取得，其他势力通过 `getFaction(factionId)` 取得。`FactionAPI` 同时提供稳定 ID、显示名称、颜色、memory 和关系读取入口。
+`FactionAPI` 提供显示资料、关系和军备知识。玩家势力从当前 Sector 取得，指定势力则按稳定 ID 查询。以下局部片段使用玩家与霸主：
 
 ```java
 SectorAPI sector = Global.getSector();
@@ -46,11 +37,20 @@ String displayName = hegemony.getDisplayName();
 Color baseColor = hegemony.getBaseUIColor();
 ```
 
-**名称与颜色用于显示，关系方法使用稳定 ID。** 中文显示名可能被本地化或修改，`getRelationship(...)` 的参数仍填写 `Factions.HEGEMONY` 等 ID。
+`getDisplayName()` 和 `getBaseUIColor()` 用于界面显示，关系查询使用 `getId()` 或 `Factions.HEGEMONY`。显示名称可以本地化，调用键继续按势力 ID 对应。
 
-## 读取关系状态
+本节分别做关系与已知舰船两项实验，每次写入之后恢复原状态。创建 `src/data/scripts/gearin/campaign/GearInFactionRelationProbe.java` 和 `GearInFactionKnownShipProbe.java`，将类的 import 加入 `GearInModPlugin`，在已有 `onGameLoad(...)` 中登记：
 
-当前同时记录数值、等级、敌对状态和读取方向，方便与界面比较。`source.getRelationship(targetId)` 表示 source 读取自己对 target 的关系；反向读取需要交换调用者和参数。
+```java
+sector.addTransientScript(new GearInFactionRelationProbe());
+sector.addTransientScript(new GearInFactionKnownShipProbe());
+```
+
+两个脚本各执行一轮，完成后 `isDone()` 返回 `true`，由生涯引擎移除。读取、修改与恢复都在这一轮中完成，下一次进入存档再建立本次实验。
+
+## 关系数值怎样成为界面状态
+
+当前关系同时可以表示为 float、`RepLevel` 与敌对状态。读取时指定调用势力与目标 ID，反向读取则交换两端：
 
 ```java
 float playerToHegemony = player.getRelationship(hegemony.getId());
@@ -59,11 +59,15 @@ RepLevel level = player.getRelationshipLevel(hegemony.getId());
 boolean hostile = player.isHostileTo(hegemony.getId());
 ```
 
-关系等级由数值计算，敌对状态按等级判定。**普通势力对共享同一项双边关系**，交换两端读取会得到对应的同一数值。双向日志用于确认调用对象，等级与敌对字段则解释界面表现。
+`playerToHegemony` 与 `hegemonyToPlayer` 来自同一项普通双边关系。日志保留两种方向，是为了确认调用的双方；`RepLevel` 根据数值计算，敌对状态再按等级判定。
 
-## 对照两种关系写入
+这几个结果可以一起解释界面：数值记录具体变化，等级提供当前关系档位，敌对状态提供实际行为判断。只是等级相同，并不说明档位内的数值也完全相同。
 
-`FactionAPI.setRelationship` 和 `adjustRelationship` 直接写入关系表；`SectorAPI.adjustPlayerReputation(action, factionId)` 先寻找 reputation action response plugin，再由插件决定关系变化和返回结果。两者的输入、触发链和观察结果不同。
+## 直接调整关系，或提交玩家声望事件
+
+要直接写入两势力的关系，使用 `setRelationship(...)` 或 `adjustRelationship(...)`。前者设值，后者按增量调整。玩家声望事件则从 `SectorAPI.adjustPlayerReputation(...)` 提交，游戏选择对应的响应插件，再由插件处理变化并返回结果。
+
+本例让两种方式各增加 `0.05f`，在它们之间先恢复关系。局部过程如下：
 
 ```java
 float before = player.getRelationship(hegemony.getId());
@@ -80,23 +84,55 @@ ReputationAdjustmentResult result = sector.adjustPlayerReputation(
         hegemony.getId());
 ```
 
-`CustomRepImpact` 指定变化量，`RepActionEnvelope` 将它交给 `CUSTOM` 声望事件，`withMessage=false` 让本次观察集中在日志。完整类记录 `result.delta` 与关系实值，再恢复原始关系。
+前半段直接调整并写回 `before`。后半段用 `CustomRepImpact.delta` 提供请求增量，`RepActionEnvelope` 将它包装为 `CUSTOM` 声望事件；`withMessage=false` 让本次记录集中到日志。
 
-**恢复使用实验前的 float。** `setRelationship(String, RepLevel)` 会把等级转换为对应数值；一个等级内原有的具体关系值仍由保存的 float 保留。
+`ReputationAdjustmentResult.delta` 保存事件处理结果，当前关系还要从势力重新读取。接近关系上限时，实际增量受到范围限制，响应插件也参与声望处理，因此比较请求值、返回值与关系实值。
 
-::: tip 读取双方
-交换调用者与目标参数，可以核对同一对势力。普通势力关系是双边数据，直接写入也会在双方读取中体现。
+### 精确恢复实验前的关系
+
+完整例分别记录直接调整的 `before`、`during` 与 `after`，以及声望事件的 `delta`、`during` 与 `restored`。每项修改结束后，都用实验前保存的 float 恢复。
+
+::: warning 关系等级不足以恢复具体原值
+
+`setRelationship(String, RepLevel)` 会将等级转换为对应数值。原值可能位于等级中的任意位置，恢复实验时使用 `setRelationship(String, float)`，才能保留原来那一项具体关系。
+
 :::
 
-## 恢复关系基线
+这次恢复针对关系表。声望事件的调用与返回仍按自己的路径记录，后续正式功能选择入口时，也依据需要直接设定关系还是产生声望响应来决定。
 
-本例先保存原值，做直接调整并恢复，再调用玩家声望事件并恢复。两次修改分别记录实际值，声望返回的 `delta` 记录插件处理结果。接近关系上限时，实际增量会受到范围限制；日志按结果比较。
+## 修改势力可以使用的舰船
 
-编者建议从一开始就把恢复写进实验。关系影响生涯行为，测试结束后的状态也属于这次实验的成果。
+势力的已知舰船集合与优先集合参与舰船挑选。`getKnownShips()` 读取知识，`knowsShip(...)` 与 `isShipPriority(...)` 分别查询指定船体。局部修改方法为：
+
+```java
+Set<String> knownShips = faction.getKnownShips();
+boolean wasKnown = faction.knowsShip(hullId);
+boolean wasPriority = faction.isShipPriority(hullId);
+
+faction.addKnownShip(hullId, false);
+faction.addPriorityShip(hullId);
+faction.removePriorityShip(hullId);
+faction.removeKnownShip(hullId);
+```
+
+本例使用原版 `lasher`。加入之前保存是否已知、是否优先和学习时间戳，再写入 known 与 priority，记录之后按原状态恢复。
+
+`addKnownShip(hullId, false)` 的第二个参数控制新增时是否记录学习时间。这里传入 `false`，本次新增不写时间戳。若船体原来已经已知，完成实验后仍然保留；优先状态与原时间戳也分别写回。
+
+### 集合变化与挑选缓存
+
+`addKnownShip(...)`、`removeKnownShip(...)` 与 priority 修改方法还会清理舰船角色挑选缓存，后续生成才能依据新集合重新选择。移除已知舰船也涉及优先状态与学习时间，所以恢复不能只记住一个 known 布尔值。
+
+**编者建议通过这些修改方法调整知识集合。** getter 返回的集合可以用于读取，直接改集合却不会替您执行配套的缓存清理与状态处理。集合中的 ID 已经变化而后续挑选仍用旧结果，正是这种差别难以从界面直接辨认的地方。
+
+武器、战机与船插还有各自的知识集合。本节只完整处理舰船，后续使用其他对象时，也核对它对应的修改入口与配套状态。
 
 ## 完整最小例
 
+将两类保存到前述源码目录，保留生涯登记，再构建 JAR。关系脚本完成两种写入与恢复，舰船脚本完成 known、priority 与时间戳的比较。
+
 ::: details 完整成品：GearInFactionRelationProbe
+
 ```java
 package data.scripts.gearin.campaign;
 
@@ -195,26 +231,11 @@ public class GearInFactionRelationProbe implements EveryFrameScript {
     }
 }
 ```
+
 :::
 
-## 读取与恢复舰船 known 状态
-
-`getKnownShips()` 取得已知舰船集合，priority 集合参与舰船挑选优先级。使用 `addKnownShip(...)`、`removeKnownShip(...)` 与 priority 方法修改时，游戏也会清理舰船角色挑选缓存；后续生成按新集合重新选择。武器、战机与船插各有对应知识集合，当前只展开舰船实验。
-
-```java
-Set<String> knownShips = faction.getKnownShips();
-boolean wasKnown = faction.knowsShip(hullId);
-boolean wasPriority = faction.isShipPriority(hullId);
-
-faction.addKnownShip(hullId, false);
-faction.addPriorityShip(hullId);
-faction.removePriorityShip(hullId);
-faction.removeKnownShip(hullId);
-```
-
-先保存是否已知、是否优先与原时间戳，再加入原版 `lasher` 并记录。`addKnownShip(hullId, false)` 中的 `false` 表示本次新增时不写学习时间戳。恢复按保存的三个状态处理，势力原本拥有的舰船继续保留。
-
 ::: details 完整成品：GearInFactionKnownShipProbe
+
 ```java
 package data.scripts.gearin.campaign;
 
@@ -291,6 +312,7 @@ public class GearInFactionKnownShipProbe implements EveryFrameScript {
     }
 }
 ```
+
 :::
 
 ## 验证方案
@@ -329,13 +351,13 @@ public class GearInFactionKnownShipProbe implements EveryFrameScript {
 
 ## 总结
 
-身份信息服务显示，稳定 ID 连接关系与知识查询。关系实验分别使用直接写入与声望事件，已知舰船实验通过对应方法更新集合与缓存，最后按保存的基线恢复。
+关系与军备知识都属于当前势力，显示文本则由身份资料提供。直接写入关系表与提交玩家声望事件经过不同处理，已知舰船方法还维护优先、时间戳与挑选缓存。
 
-这里可复用的方法是把原值、修改入口、实际结果和恢复放在一起。后面用这些状态安排生涯行为时，读取对象与保存范围仍按当前势力确认。
+两个实验都回到保存的原状态。正式功能使用这些方法时，再按当前目的选择写入路径，实际结果从对应势力与返回对象取得。
 
 ## 建议参考项
 
 - `com.fs.starfarer.api.campaign.FactionAPI`：势力身份、关系和 known 集合入口，关系表与等级转换由其承载；
 - `com.fs.starfarer.api.campaign.RepLevel`：关系等级和敌对边界；
 - `com.fs.starfarer.api.campaign.SectorAPI`：`adjustPlayerReputation` 玩家声望 action 入口；
-- `data/campaign/factions/`：势力配置和已知舰船数据。
+- `data/world/factions/`：势力配置和已知舰船数据。

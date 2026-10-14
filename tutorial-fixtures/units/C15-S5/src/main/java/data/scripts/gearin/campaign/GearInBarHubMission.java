@@ -29,7 +29,7 @@ public class GearInBarHubMission extends HubMissionWithBarEvent {
         if (createdAt == null || !barEvent) {
             return false;
         }
-        setStageOnDaysElapsed(STAGE_COMPLETED, 1f);
+        connectWithDaysElapsed(STAGE_ACTIVE, STAGE_COMPLETED, 1f);
         return true;
     }
 

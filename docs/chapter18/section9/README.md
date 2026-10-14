@@ -1,6 +1,6 @@
 # 创建 MagicLib 运行时尾迹
 
-自动尾迹已经能按数据生成，这次由 Java 决定每一组节点何时出现、接在哪条轨迹上。沿用测试导弹，为每枚弹体保存主体与辉光的 ID，再用 `SimpleEntity` 生成沿初始方向前进的残影。导弹转向、跳变和命中以后，画面可以直接比较连续段、关联实体与节点位置的区别。
+运行时尾迹由 Java 决定节点何时出现、放在哪里，以及接入哪一段轨迹。本节为测试导弹保存主体与辉光的独立 ID，再以 `SimpleEntity` 产生沿初始方向前进的残影。弹体转向、跳变与命中时，采样、切段和结束各自对应到跟踪器中的状态。
 
 *本节预期阅读时间：\~32 分钟。*
 
@@ -63,6 +63,32 @@ addSegments();
 
 ID 只标识当前战斗中的一段尾迹。新的战斗会重新初始化 MagicTrail 插件；需要永久保存的是产生尾迹的规则，而不是这个运行时数值。
 
+### 比较节点 ID 的使用方式
+
+下面的局部故障片段在每次提交时生成新 ID。各节点分别进入新 tracker，无法与相邻节点连接：
+
+```java
+MagicTrailPlugin.addTrailMemberSimple(
+        projectile, MagicTrailPlugin.getUniqueID(), bodySprite, location,
+        0f, facing, 14f, 3f, new Color(120, 220, 255),
+        0.8f, 0.05f, 0.2f, 0.8f, true);
+```
+
+修正片段在初始化时保存 ID：
+
+```java
+bodyTrailId = MagicTrailPlugin.getUniqueID();
+```
+
+后续提交反复使用这个字段，同一连续段的节点才能相互连接：
+
+```java
+MagicTrailPlugin.addTrailMemberSimple(
+        projectile, bodyTrailId, bodySprite, location,
+        0f, facing, 14f, 3f, new Color(120, 220, 255),
+        0.8f, 0.05f, 0.2f, 0.8f, true);
+```
+
 ## 使用 Simple 提交主体节点
 
 主体层直接使用 `addTrailMemberSimple(...)`：
@@ -96,9 +122,9 @@ MagicTrailPlugin.addTrailMemberAdvanced(
 
 `startSpeed` 与 `endSpeed` 控制节点从生成到消失的移动速度，随后的 `startAngularVelocity` 与 `endAngularVelocity` 控制旋转速度。本例把四项都设为 0，让节点停在采样位置；22→6 的尺寸与亮蓝→深蓝的颜色负责可见变化。
 
-`textureLoopLength = 192f` 表示纹理每 192 su 重复一次，`textureScrollSpeed = 600f` 让纹理持续滚动。`textureOffset = -1f` 会为同一 trail tracker 选择固定的随机起点，连续节点仍共享同一纹理相位。零向量 `offsetVelocity` 不增加额外世界速度。
+`textureLoopLength = 192f` 表示纹理每 192 su 重复一次；`textureScrollSpeed = 600f` 表示每秒滚动 0.6 个完整纹理周期。`textureOffset = -1f` 为同一个 tracker 选择固定随机起点，后续节点共享这份相位，零向量 `offsetVelocity` 则不增加额外世界速度。
 
-`CONTRAILS_LAYER` 明确渲染层，`frameOffsetMult = 1f` 保留完整的帧间位置修正。传入 `null` 渲染层时也会选择该层；倍率传入 0 时按 1 处理。自定义 OpenGL 混合重载把 `boolean additive` 替换为源与目标混合常量，其余生命周期相同。
+`CONTRAILS_LAYER` 明确渲染层，传入 `null` 也会采用这一层。`frameOffsetMult = 1f` 保留弹体节点的位置修正：Advanced 用发射舰速度与本帧时间计算位移，再从传入位置扣除它；Simple 没有这项修正。倍率传入 0 仍按 1 处理。自定义 OpenGL 混合重载则用源与目标混合常量替换 `boolean additive`，节点寿命的含义相同。
 
 高级选项使用准确的包装类型：
 
@@ -115,9 +141,9 @@ private TrailTracker(DamagingProjectileAPI projectile) {
 
 `addTrailMemberAnimated(...)` 是兼容既有动态换图代码的弃用入口。当前静态 sprite 使用 `addTrailMemberAdvanced(...)`，避免让整条尾迹随最后一次提交反复切换纹理。
 
-::: warning 同一条尾迹保持渲染属性稳定
+::: warning 纹理与渲染层也决定连续段
 
-**同一段轨迹使用稳定的 sprite、混合方式、渲染层和传播方式。**更换 sprite 会进入另一份纹理 tracker，渲染层或混合方式中途改变则会让同一逻辑 ID 产生不一致的绘制结果；需要另一种表现时分配新的 ID。
+同一 ID 更换 sprite 或渲染层，会进入另一份 tracker，原节点继续留在原段。需要独立表现时分配新 ID，并保持该段的混合与传播方式稳定。
 
 :::
 
@@ -148,7 +174,7 @@ public static void spawnDetachedTrail(CombatEngineAPI engine,
 }
 ```
 
-跟踪器用位置构造 `SimpleEntity`，防止调用方后续修改原向量时连带改变锚点：
+`SimpleEntity` 的坐标构造器保存位置副本，跟踪器也单独保存速度副本。局部构造如下：
 
 ```java
 private DetachedTrailTracker(Vector2f location, Vector2f velocity) {
@@ -203,32 +229,6 @@ runcode com.fs.starfarer.api.Global.getCombatEngine().getMissiles().get(0).getLo
 | `addTrailMemberAdvanced(...)` | 起止状态、纹理、额外速度、选项与渲染层 | 提交完整可调节点 |
 | `cutTrailsOnEntity(...)` | 建立节点时使用的关联实体 | 当前关联 tracker 改用内部切断 ID，后续节点形成新段 |
 | `spawnDetachedTrail(...)` | 世界坐标与速度副本 | 创建由 `SimpleEntity` 驱动的短寿命残影 |
-
-## 比较错误与正确的 ID 生命周期
-
-下面的局部故障片段在每次提交节点时创建新 ID。每个节点都会进入新的 tracker，画面只剩互不连接的短亮点：
-
-```java
-MagicTrailPlugin.addTrailMemberSimple(
-        projectile, MagicTrailPlugin.getUniqueID(), bodySprite, location,
-        0f, facing, 14f, 3f, new Color(120, 220, 255),
-        0.8f, 0.05f, 0.2f, 0.8f, true);
-```
-
-正确写法在初始化时保存 ID：
-
-```java
-bodyTrailId = MagicTrailPlugin.getUniqueID();
-```
-
-提交节点时只读取该字段：
-
-```java
-MagicTrailPlugin.addTrailMemberSimple(
-        projectile, bodyTrailId, bodySprite, location,
-        0f, facing, 14f, 3f, new Color(120, 220, 255),
-        0.8f, 0.05f, 0.2f, 0.8f, true);
-```
 
 ## 完整最小例
 
@@ -447,7 +447,7 @@ public class GearInMagicTrail implements OnFireEffectPlugin {
 
 ## 故障分析
 
-- **尾迹只有互不连接的短亮点**：节点提交处每次调用 `getUniqueID()`，相邻节点进入了不同 tracker。
+- **节点持续提交却没有连续尾迹**：每次调用 `getUniqueID()`，各 tracker 只有一个节点，达不到连接所需的两个节点。
     - **解决方案**：在跟踪器初始化时保存 ID，提交节点时反复使用该字段，只在明确切段后更新。
 
 ## 总结

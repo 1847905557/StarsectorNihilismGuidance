@@ -1611,5 +1611,87 @@ class ToolTests(unittest.TestCase):
                     )
                     self.assertEqual(completed.returncode, expected, completed.stderr)
 
+    def test_73_chapter_accepts_baseline_forms_and_introduction(self) -> None:
+        docs = Path("docs")
+        for chapter, baseline in (
+            (1, "本章技术基线：Starsector `0.98a-RC8`。"),
+            (6, "本章技术基线：Starsector `0.98a-RC8` 与 Java 17。"),
+            (11, "本章技术基线：Starsector `0.98a-RC8`，Java 17。"),
+            (17, "本章技术基线：Starsector `0.98a-RC8` 与 Java 17；前置知识：MOD 目录、Global 服务、生命周期和 JSON/CSV 基础。"),
+            (18, "本章技术基线：Starsector `0.98a-RC8` 与 Java 17；依赖基线：LazyLib `3.0.0`、GraphicsLib `1.12.1`、MagicLib `1.5.6`。"),
+            (19, "本章技术基线：Starsector `0.98a-RC8` 与 Java 17；可选依赖基线：Nexerelin `0.12.1e`、LunaLib `2.0.5`。"),
+            (20, "本章技术基线：Starsector `0.98a-RC8` 与 Java 17；前置依赖：BoxUtil `1.5.5`。"),
+        ):
+            with self.subTest(chapter=chapter):
+                source = docs / f"chapter{chapter}" / "README.md"
+                text = f"# 章页\n\n{baseline}\n\n共同主题。\n\n实际用途。\n\n理解重点。\n\n## 本章各节\n\n<!-- AUTO:SECTION-LIST -->\n"
+                self.assertEqual(check_markdown_structure.inspect_markdown(source, text, docs_root=docs), [])
+                self.assertEqual(check_markdown_structure.inspect_markdown(source, text.replace("\n", "\r\n"), docs_root=docs), [])
+
+    def test_74_chapter_reports_missing_duplicate_and_misplaced_baseline(self) -> None:
+        docs = Path("docs")
+        source = docs / "chapter1" / "README.md"
+        baseline = "本章技术基线：Starsector `0.98a-RC8`。"
+        valid = f"# 章页\n\n{baseline}\n\n共同主题。\n\n实际用途。\n\n理解重点。\n\n## 本章各节\n\n<!-- AUTO:SECTION-LIST -->\n"
+        for text, expected in (
+            (valid.replace(baseline + "\n\n", ""), "当前 0 个"),
+            (valid.replace(baseline, baseline + "\n\n" + baseline), "当前 2 个"),
+            (valid.replace(baseline + "\n\n", "").replace("共同主题。", "共同主题。\n\n" + baseline), "必须紧接 H1"),
+            (valid.replace("`0.98a-RC8`", "0.98a-RC8"), "技术基线格式错误"),
+            (valid.replace(baseline, "**" + baseline + "**"), "当前 0 个"),
+            (valid.replace(baseline + "\n\n", baseline + "\n"), "必须独占普通段落"),
+            (valid.replace(baseline, "```text\n" + baseline + "\n```"), "当前 0 个"),
+        ):
+            with self.subTest(expected=expected, text=text):
+                issues = check_markdown_structure.inspect_markdown(source, text, docs_root=docs)
+                self.assertTrue(any(expected in issue for issue in issues), issues)
+
+    def test_75_chapter_reports_catalog_order_and_placeholder(self) -> None:
+        docs = Path("docs")
+        source = docs / "chapter1" / "README.md"
+        placeholder = "<!-- AUTO:SECTION-LIST -->"
+        valid = f"# 章页\n\n本章技术基线：Starsector `0.98a-RC8`。\n\n章介绍。\n\n## 本章各节\n\n{placeholder}\n"
+        for text, expected in (
+            (valid.replace("## 本章各节\n\n", ""), "一个本章各节标题"),
+            (valid.replace("## 本章各节", "### 本章各节"), "本章各节必须使用 H2"),
+            (valid.replace("## 本章各节", "## 本章各节\n\n## 本章各节"), "当前 2 个"),
+            (valid.replace(placeholder, ""), "一个自动列表占位符"),
+            (valid.replace(placeholder, placeholder + "\n\n" + placeholder), "当前 2 个"),
+            (valid.replace("章介绍。\n\n", ""), "提供章介绍"),
+            (valid.replace("章介绍。", "## 操作\n\n章介绍。"), "正文分区标题"),
+            (valid.replace("## 本章各节\n\n" + placeholder, placeholder + "\n\n## 本章各节"), "独立自动列表占位符结束"),
+            (valid.replace(placeholder, "```html\n" + placeholder + "\n```"), "当前 0 个"),
+            (valid + "\n附加内容。\n", "独立自动列表占位符结束"),
+            (valid + "\n```text\n附加内容。\n```\n", "独立自动列表占位符结束"),
+        ):
+            with self.subTest(expected=expected, text=text):
+                issues = check_markdown_structure.inspect_markdown(source, text, docs_root=docs)
+                self.assertTrue(any(expected in issue for issue in issues), issues)
+
+    def test_76_chapter_contract_uses_page_role_and_docs_boundary(self) -> None:
+        docs = Path("docs")
+        text = "# 页面\n\n正文。\n"
+        for source in (
+            docs / "README.md",
+            docs / "chapter1" / "section1" / "README.md",
+            docs / "appendix" / "chapter1" / "README.md",
+            Path("outside") / "chapter1" / "README.md",
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(check_markdown_structure.inspect_markdown(source, text, docs_root=docs), [])
+
+    def test_77_chapter_checks_flow_through_structure_runner(self) -> None:
+        with self.make_root() as directory:
+            docs = Path(directory) / "docs"
+            source = docs / "chapter1" / "README.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("# 章页\n\n介绍。\n", encoding="utf-8", newline="\n")
+            summary = check_markdown_structure.run([str(source)], docs_root=docs)
+            self.assertEqual(summary["scanned"], 1)
+            self.assertEqual(summary["problem_files"], 1)
+            self.assertEqual(summary["errors"], [])
+            self.assertEqual(summary["problems"], 3)
+            self.assertTrue(any("本章技术基线" in issue for issue in summary["files"][0]["issues"]))
+
 if __name__ == "__main__":
     unittest.main()

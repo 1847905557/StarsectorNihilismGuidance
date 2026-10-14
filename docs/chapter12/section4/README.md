@@ -1,6 +1,6 @@
 # 实现专用子市场
 
-Foundry 已经能交易，现在给它加一个有明确工业用途的入口。Refinery Depot 卖出精炼金属与重型机械，收购矿石与机械，舰船购买限定护卫舰和驱逐舰。注册数据决定名字与插件，插件再按库存、买卖方向和经济影响实现这些选择，界面里的每项限制都有对应方法。
+本节给 Foundry 添加 Refinery Depot：出售金属与重型机械，收购矿石和机械，并提供小型舰船交易。这个入口需要同时决定库存怎样刷新、玩家能买卖什么，以及交易怎样影响市场经济；我们继承 `BaseSubmarketPlugin`，把这些规则接到实际交易界面。
 
 *本节预期阅读时间：\~28 分钟。*
 
@@ -26,73 +26,25 @@ Foundry 已经能交易，现在给它加一个有明确工业用途的入口。
 
 ## 注册子市场身份
 
-子市场由 CSV 行注册，但 CSV 行本身不会执行交易。它先建立一个静态规格，游戏把规格放进运行时市场后，再创建 `SubmarketAPI` 和对应的 `SubmarketPlugin`。CSV 的 ID 连接市场实例，插件类名连接具体行为。当前先登记，再添加到 Foundry 市场。
-
-本节使用 `GearIn_refinery_depot` 作为 ID，显示名为 `Refinery Depot`。它代表工业势力专门处理金属原料、精炼金属和重型机械的交易站。`gear_industry` 是它的默认势力；市场创建或接入时仍可以按实际场景决定最终归属。
-
-文件位置是 `data/campaign/submarkets.csv`。MOD 提交自己的数据行，并保持原版表头的列顺序：
+在 `data/campaign/submarkets.csv` 注册 `GearIn_refinery_depot`，显示名为 `Refinery Depot`。记录中的 `script` 指向本节的插件类，市场随后按 ID 添加这个入口。文件内容如下：
 
 ```csv
 id,name,faction,desc,script,icon,order
 GearIn_refinery_depot,Refinery Depot,gear_industry,"An industrial depot for metal stockpiles and refinery equipment.",data.scripts.gearin.campaign.GearInRefineryDepotPlugin,graphics/factions/neutral_traders.png,1100
 ```
 
-`id` 是代码和市场集合使用的稳定键，`name` 是玩家看到的名称，`faction` 提供默认势力，`desc` 描述市场定位，`script` 指向插件类，`icon` 提供入口图标，`order` 决定同一市场中子市场的排列位置。`order` 只影响排序，不改变交易优先级。
-
-::: tip 注册与类名一起核对
-
-CSV 能被读取而插件类缺失时，子市场规格存在但运行时无法创建行为对象。插件类能编译而 CSV 行拼写错误时，市场又不会出现对应入口。排查时先对照 ID，再对照完整类名和包路径。
-
-:::
+`faction` 使用 `gear_industry`，作为子市场的默认势力；`icon` 沿用原版中立商人图标，`order=1100` 使入口排在本例三个原版子市场之后。`desc` 描述交易站，实际库存与限制由插件提供。CSV 建立 `SubmarketSpecAPI`，市场添加时创建 `SubmarketAPI` 并实例化 `script`，因此 ID 与完整类名都要对应。
 
 ## 把新入口添加到 Foundry
 
-创建 `src/data/scripts/gearin/campaign/GearInRefineryDepotPlugin.java` 和 `GearInSubmarketProbe.java`。在 [C12-S1] 的 `GearInEconomyProbe.advance(...)` 已取得市场之后、调用市场日志之前添加局部片段：
+创建 `src/data/scripts/gearin/campaign/GearInRefineryDepotPlugin.java` 与 `GearInSubmarketProbe.java`。前者继承 `BaseSubmarketPlugin`，后者读取交易入口的运行状态。在 [C12-S1] 的 `GearInEconomyProbe.advance(...)` 取得市场后、记录市场之前，加入局部调用：
 
 ```java
 market.addSubmarket("GearIn_refinery_depot");
 GearInSubmarketProbe.log(market);
 ```
 
-市场已经有同 ID 子市场时，`addSubmarket(String)` 保留原实例。第一次添加后，探针会记录刚建立的交易入口；打开界面时再初始化货舱并刷新库存。
-
-### 读取规格与运行实例
-
-`SubmarketSpecAPI` 保存注册阶段的静态信息。通过 `SubmarketAPI.getSpec()` 取得它，再读取规格 ID、名称、描述、默认势力和图标等字段。规格适合回答这个子市场在数据文件中被定义成什么。
-
-```java
-SubmarketSpecAPI spec = submarket.getSpec();
-LOG.info(String.format("spec=%s name=%s faction=%s",
-        spec.getId(), spec.getName(), spec.getFactionId()));
-```
-
-规格对象不是交易对象。它不会保存某个市场当前货舱，也不会代替插件判断某件货物是否合法。进入市场以后，代码应从 `SubmarketAPI` 取得运行时实例，再从 `getPlugin()` 取得实际行为。
-
-`script` 列使用 Java 类的完整包名。加载器根据这个名称创建 `SubmarketPlugin`，然后调用插件的 `init(SubmarketAPI)`，让插件获得市场和子市场引用。类名、包名或大小写错误都会在创建运行时对象时暴露出来。
-
-## 从市场取得子市场实例
-
-市场持有子市场集合。调用方先用 `market.hasSubmarket(specId)` 判断，再用 `market.getSubmarket(specId)` 取得具体实例。不存在时不要直接解引用返回值；缺少入口可能是 CSV 没加载，也可能是该市场没有添加这个规格。
-
-```java
-if (market.hasSubmarket("GearIn_refinery_depot")) {
-    SubmarketAPI depot = market.getSubmarket("GearIn_refinery_depot");
-    SubmarketPlugin plugin = depot.getPlugin();
-    LOG.info("plugin=" + plugin.getClass().getName());
-}
-```
-
-`SubmarketAPI` 是某个市场中的运行时持有者。`getMarket()` 返回所属市场，`getSpec()` 返回静态规格，`getPlugin()` 返回行为插件，`getFaction()` 返回当前势力。`setFaction()` 能改变运行时势力，但它不会修改 CSV 的默认值。
-
-`getSpecId()` 是子市场集合索引，`getName()` 和 `getNameOneLine()` 提供显示名称，`getTariff()` 读取当前税率，`getCargo()` 取得可写货舱，`getCargoNullOk()` 只读取已经建立的货舱。`isIllegalOnSubmarket(CargoStackAPI, TransferAction)` 是 API 层的转发入口，最终交易判断仍由插件提供。
-
-## 子市场插件的初始化与推进
-
-`SubmarketPlugin` 是本节的核心。它不只是一组标志 getter，而是子市场在运行时执行的行为集合：插件负责初始化、推进时间、刷新货舱、判断交易、返回界面文字，并决定玩家交易是否影响市场经济。
-
-绑定时调用 `init(SubmarketAPI)`，基类保存 `market` 与 `submarket`。需要额外初始化时覆写并先调用 `super.init(...)`；当前没有新增初始化状态，沿用默认实现即可。
-
-`advance(float amount)` 接收生涯时间推进。它适合累计刷新间隔或处理插件自己的计时；货舱刷新通常集中在 `updateCargoPrePlayerInteraction()`，这样玩家打开交易界面前可以得到最新状态。
+市场已有同 ID 入口时，`addSubmarket(...)` 保留原实例。第一次添加会调用插件的 `init(SubmarketAPI)`，基类保存 `market` 与 `submarket`。本例直接沿用这些引用，计时也沿用基类的 `advance(...)`；需要添加自有状态时，再覆写相应方法并调用 `super`。下面是局部继承写法，完整类无需重复这些空转发：
 
 ```java
 @Override
@@ -106,17 +58,15 @@ public void advance(float amount) {
 }
 ```
 
-`advance(...)` 把秒换成生涯日，更新两种刷新间隔。当前仍用基类实现，货物与舰船集中在交互前刷新；它们由经过时间与既有库存决定。**每帧推进计时，交互前执行库存更新。**
+基类在 `advance(...)` 中把帧时间转换成生涯日，累计货物与舰船刷新间隔。玩家进入交易时，界面调用 `updateCargoPrePlayerInteraction()`，插件再根据累计时间更新库存。**库存刷新跟随交互入口，计时跟随生涯推进。**
 
-## 刷新子市场货舱库存
+## 决定库存与收购范围
 
-`getCargo()` 会在需要时创建货舱，`getCargoNullOk()` 只返回已存在对象。基类创建货舱时还会初始化封存舰船集合；这也是为什么插件代码可以把普通商品和封存舰船放在同一个 Cargo 容器中，却仍然使用不同的 API 处理它们。
+Refinery Depot 补充的商品是 `metals`、`rare_metals` 与 `heavy_machinery`，收购范围是 `ore`、`rare_ore` 与 `heavy_machinery`。库存与收购使用两份集合，分别进入刷新和交易判断：炼厂出售精炼材料，也接收原料与设备。
 
-`addAllCargo(CargoAPI)` 按栈合并另一份货舱。它适合把奖励或外部货物并入子市场，但不负责费用、权限或交易记录。子市场交易流程应由界面和插件共同完成，不能用一次 `addAllCargo()` 代替真实交易。
+### 按时间补充指定商品
 
-`updateCargoPrePlayerInteraction()` 是玩家打开交易界面前的刷新入口。Refinery Depot 复用基类的 `addAndRemoveStockpiledResources()` 流程，只覆盖 `shouldHaveCommodity()` 和 `getStockpileLimit()`，这样市场经济仍然提供供需数据，插件负责限制库存集合。
-
-本例的刷新实现先把经过的时间交给基类库存流程，再按更新间隔清空旧舰船并调用 `addShips()`。`maxShipSize` 设为 `2`，让基类生成流程只挑选护卫舰和驱逐舰；玩家出售大型舰船的判断仍由另一个交易方向重载负责。
+刷新使用基类的 `addAndRemoveStockpiledResources(...)`，市场继续提供供需状态，插件通过 `shouldHaveCommodity()` 选择哪些商品进入补货流程。`getStockpileLimit()` 返回当前子市场希望保有的物品件数，本例取 20 与最大供给档位乘 2 中较大的值：
 
 ```java
 @Override
@@ -132,13 +82,11 @@ public int getStockpileLimit(CommodityOnMarketAPI commodity) {
 }
 ```
 
-`shouldHaveCommodity()` 只回答库存刷新时是否保留该商品。玩家出售另由 `isIllegalOnSubmarket(String, TransferAction)` 判断。库存集合回答商店提供什么，出售集合回答商店收什么，本例按炼厂的两种用途分别设计。
+完整刷新方法把 `sinceLastCargoUpdate` 转回秒后交给基类，再清零计时。库存低于上限时随经过时间补充，高于上限时逐步减少；未选中的商品使用上限 0，已有数量也逐步消退。玩家卖入的矿石因此可以暂时留在 Cargo 中，补货集合只说明插件主动供应哪些商品。
 
-## 过滤商品交易
+### 按买卖方向判断商品
 
-Refinery Depot 的库存集合是 `metals`、`rare_metals` 和 `heavy_machinery`。玩家出售集合是 `ore`、`rare_ore` 和 `heavy_machinery`。这两个集合有意不同：市场可以卖出精炼后的金属，玩家则把矿物和重型机械卖给炼厂。
-
-`isIllegalOnSubmarket(String commodityId, TransferAction action)` 接收商品 ID 和交易方向。`PLAYER_BUY` 方向检查市场库存白名单，`PLAYER_SELL` 方向检查玩家出售白名单。返回 `true` 表示该交易不允许继续。
+玩家出售时检查 `PLAYER_SELL_IDS`，购买时检查 `STOCKPILE_IDS`。`isIllegalOnSubmarket(...)` 返回 `true` 表示拒绝这笔转移，局部方法如下：
 
 ```java
 @Override
@@ -150,7 +98,7 @@ public boolean isIllegalOnSubmarket(String commodityId, TransferAction action) {
 }
 ```
 
-货物栈重载先确认商品，再转交字符串方法。当前商品按两份集合判断，其他栈沿默认允许路径；实际刷新只生成本节商品与小型舰船。需要进一步限制装备交易时，再按栈类型增加对应规则。
+界面传入货物栈时，另一个重载先判断商品栈，再转交同一套 ID 规则。当前对非商品栈返回 `false`，允许其交易；主动生成的货物仍是上述商品，舰船库存另行处理：
 
 ```java
 @Override
@@ -162,13 +110,11 @@ public boolean isIllegalOnSubmarket(CargoStackAPI stack, TransferAction action) 
 }
 ```
 
-`getIllegalTransferText(CargoStackAPI, TransferAction)` 提供玩家看到的失败原因。它不负责做判断，判断已经在 `isIllegalOnSubmarket` 完成；两者都需要维护时，应先修改白名单，再修改对应的提示文本。
+拒绝原因由 `getIllegalTransferText(CargoStackAPI, TransferAction)` 返回，完整类为买卖分别提供文字。修改收购或库存范围时，提示也对应这份集合更新，玩家才能从拒绝原因理解当前限制。
 
-## 限制舰船交易
+## 补充小型舰船并限制购买
 
-舰船交易使用另一个重载：`isIllegalOnSubmarket(FleetMemberAPI, TransferAction)`。这条入口与货物栈重载完全分开，不能把舰船对象转换成 CargoStackAPI。
-
-Refinery Depot 只限制玩家购买：`PLAYER_BUY` 时允许 `member.isFrigate()` 或 `member.isDestroyer()`，巡洋舰、主力舰和其他舰级被拒绝；`PLAYER_SELL` 时返回 `false`，所以玩家仍可出售更大型舰船。
+舰船放在 Cargo 的封存舰船集合中，交易判断直接接收 `FleetMemberAPI`。本例购买时只允许护卫舰与驱逐舰，出售方向保留大型舰船交易：
 
 ```java
 @Override
@@ -180,15 +126,15 @@ public boolean isIllegalOnSubmarket(FleetMemberAPI member, TransferAction action
 }
 ```
 
-`okToUpdateShipsAndWeapons()` 控制插件是否到了更新舰船和武器库存的时间。自定义插件可以复用基类的刷新间隔；如果重新生成舰船，应在更新时清理旧集合，并通过基类的舰船添加方法限制 `maxShipSize`。
+生成库存时，`okToUpdateShipsAndWeapons()` 使用基类默认的 30 生涯日间隔。完整方法达到间隔后清空旧舰船，用 `addShips(...)` 请求 30 FP 的战斗舰船，`maxShipSize` 取 2，按市场势力挑选护卫舰与驱逐舰，再清零 `sinceSWUpdate`。
 
-`showInFleetScreen()` 和 `showInCargoScreen()` 决定子市场是否出现在舰队和货舱相关界面。Refinery Depot 两者都返回 `true`，因为它既处理货物也提供舰船交易。
+生成限制与交易限制分别成立。玩家卖入的巡洋舰可以留在库存中，但购买判断仍会拒绝它；下一次舰船刷新还会重建集合。因此验证大型舰船出售后，要同时确认购买方向和后续刷新结果。
+
+`showInFleetScreen()` 与 `showInCargoScreen()` 都返回 `true`，货物和舰船界面都显示这个子市场。货物栈与舰船各使用自己的交易重载，提示文字也分别提供。
 
 ## 设置税率和交易文字
 
-`getTariff()` 返回本子市场的交易税率。Refinery Depot 固定返回 `0.30f`，表示本子市场固定的 30% 税率。税率只负责费用比例，不决定商品是否合法，也不决定市场库存。
-
-`getBuyVerb()` 和 `getSellVerb()` 改变交易界面里的动作文字。Refinery Depot 使用 `Acquire` 和 `Refine and sell`，用于表达它和普通公开市场的工业定位。文字改变不改变交易方向，实际方向仍由 `TransferAction` 决定。
+费用采用固定的 30% 税率，`getTariff()` 返回 `0.30f`。动作文字采用 `Acquire` 与 `Refine and sell`，实际买卖方向继续由 `TransferAction` 判断。以下局部方法给出界面用值：
 
 ```java
 @Override
@@ -207,13 +153,11 @@ public String getSellVerb() {
 }
 ```
 
-## 公开市场标志与经济影响
+## 让出售商品影响市场经济
 
-`isFreeTransfer()` 表示交易是否绕过普通转移费用，Refinery Depot 返回 `false`。`isOpenMarket()` 返回 `true`，`isBlackMarket()` 返回 `false`，`isMilitaryMarket()` 返回 `false`，这组标志会影响交易界面、非法货物基线和舰船生成规则。
+Refinery Depot 是公开子市场，`isOpenMarket()` 为 `true`，黑市与军事市场标志为 `false`，免费转移也为 `false`。这些标志供交易界面、基类规则和舰船生成使用，当前商品许可仍采用本节覆写的集合判断。
 
-`isParticipatesInEconomy()` 返回 `true` 时，玩家交易可以进入市场经济记录。`getPlayerEconomyImpactMode()` 返回 `PLAYER_SELL_ONLY`，意味着玩家出售的商品会影响经济调节，玩家买入不会按同一方式产生影响。
-
-`getPlayerTradeImpactMult()` 返回 `1f`，表示不对玩家交易数量再做倍率修正。插件基类会在 `reportPlayerMarketTransaction()` 中读取这些设置，并把交易转换为市场商品的 trade modifier。
+成交时，界面把交易交给 `reportPlayerMarketTransaction(...)`。基类根据 `isParticipatesInEconomy()`、影响模式与 `getPlayerTradeImpactMult()` 写入 [C12-S3] 的贸易调节。本例参与经济，数量倍率为 1，模式采用 `PLAYER_SELL_ONLY`：
 
 ```java
 @Override
@@ -227,25 +171,23 @@ public PlayerEconomyImpactMode getPlayerEconomyImpactMode() {
 }
 ```
 
-经济参与、玩家影响方向和价格变化是三件相关但独立的事。插件返回参与经济，不等于每一笔交易都会改变库存；影响模式也不等于直接修改 `CommodityOnMarketAPI` 的 stockpile。
+这个模式使用正向贸易调节：玩家净出售可以提高可得量，买回商品则抵消同一方向的调节。正向通道的最终影响以 0 为下限，所以购买不会把可得量压到原基准以下。实际库存仍在交易时转移，经济调节另按物品数量换算成档位。
 
-## 界面入口与文本覆盖
+::: info PLAYER_SELL_ONLY 仍记录购买
+基类将出售数量写为正值，购买数量写为负值，合并后只采用正向部分。购买可以抵消此前出售带来的提升；这个模式限定的是最终影响方向。
+:::
 
-`getOnClickAction(CoreUIAPI)` 决定点击子市场时打开交易面板还是显示文本对话框。基类默认返回 `OPEN_SUBMARKET`，Refinery Depot 沿用这个行为。
+## 扩展入口与提示的可选用法
 
-`getDialogText()`、`getDialogOptions()` 和 `getDialogTextHighlights()` 适合需要先经过对话的子市场。Refinery Depot 不实现完整对话面板，因此这些方法只在正文中说明职责，不放进自定义插件的复杂实现。
+本例点击后直接打开交易面板，沿用基类 `getOnClickAction(CoreUIAPI)` 的 `OPEN_SUBMARKET`。需要先显示对话时，采用 `SHOW_TEXT_DIALOG`，通过 `getDialogText()`、`getDialogOptions()` 与 `getDialogTextHighlights()` 提供文本、动作和高亮；原版仓储就用对话处理首次开放。
 
-`getTooltipAppendix()` 和 `getTooltipAppendixHighlights()` 可以在交易界面追加限制说明；`isTooltipExpandable()`、`hasCustomTooltip()`、`createTooltip()` 和 `getTooltipWidth()` 则控制提示框是否展开、是否使用自定义绘制以及绘制尺寸。
+交易入口的补充提示用 `getTooltipAppendix()` 与 `getTooltipAppendixHighlights()`。需要自定义 tooltip 时，再配合 `hasCustomTooltip()`、`createTooltip()`、`isTooltipExpandable()` 与 `getTooltipWidth()` 处理绘制、展开和宽度。`isHidden()` 控制入口隐藏，两种库存界面的显示由前述方法决定。
 
-`isHidden()` 控制子市场是否隐藏，`showInFleetScreen()` 与 `showInCargoScreen()` 控制两个库存入口。`getTariffTextOverride()`、`getTariffValueOverride()`、`getTotalTextOverride()` 和 `getTotalValueOverride()` 可以覆盖费用和总额文本，但不改变实际费用计算。
-
-这些 UI 方法的职责是呈现和入口，交易白名单仍由商品与舰船的 `isIllegalOnSubmarket` 重载决定。文字与运行判断一起对应，玩家看到的拒绝原因才符合实际交易方向。
-
-## 对照原版与自定义子市场的定位
+费用显示还可通过 `getTariffTextOverride()`、`getTariffValueOverride()`、`getTotalTextOverride()` 与 `getTotalValueOverride()` 覆盖。它们提供文字，实际税率和费用计算仍使用交易规则。Refinery Depot 当前只改动作与拒绝文本，基础面板已经能够表达本例交易。
 
 ### 原版子市场速查表
 
-先用这张表确定四个子市场的定位，再回到插件方法判断具体行为。
+表中列出各子市场的交易定位，以及用于判断具体行为的主要标志。
 
 | spec ID | 典型插件 | 税率/转移 | 主要标志 | 主要用途 |
 | --- | --- | --- | --- | --- |
@@ -254,11 +196,31 @@ public PlayerEconomyImpactMode getPlayerEconomyImpactMode() {
 | `storage` | `StoragePlugin` | 免费转移 | 仓储 | 保存货物和舰船 |
 | `GearIn_refinery_depot` | `GearInRefineryDepotPlugin` | 0.30、非免费转移 | 公开工业市场 | 金属库存、矿物出售和小型舰船购买 |
 
-这组差异只用于建立方向。实际行为仍来自插件方法：公开标志不会自动生成金属库存，免费转移也不会自动允许所有舰船，必须回到对应的插件入口确认。
-
 ## 读取子市场运行状态
 
-观察器接收调用方传入的 `MarketAPI`，不负责选择市场、创建市场或添加子市场。它遍历三个原版子市场和 Refinery Depot，记录 `SubmarketAPI` 的规格、势力、税率、货舱初始化状态和插件标志。
+规则实现后，从 Foundry 取得实际子市场验证。观察器先用 `hasSubmarket(specId)` 确认入口，再用 `getSubmarket(specId)` 取得 `SubmarketAPI`。局部查询如下：
+
+```java
+if (market.hasSubmarket("GearIn_refinery_depot")) {
+    SubmarketAPI depot = market.getSubmarket("GearIn_refinery_depot");
+    SubmarketPlugin plugin = depot.getPlugin();
+    LOG.info("plugin=" + plugin.getClass().getName());
+}
+```
+
+`getMarket()` 返回所属市场，`getPlugin()` 返回行为插件，`getSpecId()` 是集合使用的 ID。名称从 `getName()` 与 `getNameOneLine()` 读取，税率从 `getTariff()` 读取，货物转移判断由 `isIllegalOnSubmarket(...)` 转发给插件。
+
+规格通过 `getSpec()` 读取，保存注册时的 ID、名称、描述、图标与默认势力：
+
+```java
+SubmarketSpecAPI spec = submarket.getSpec();
+LOG.info(String.format("spec=%s name=%s faction=%s",
+        spec.getId(), spec.getName(), spec.getFactionId()));
+```
+
+实际势力使用 `submarket.getFaction()`，`setFaction(...)` 可以修改这个运行实例，CSV 默认值保持原样。规格、当前实例与插件分别提供数据定义、所属市场和行为，日志将它们对应到同一个 spec ID。
+
+完整观察器遍历三个原版入口与 Refinery Depot，记录货舱是否初始化及插件标志。局部记录如下：
 
 ```java
 SubmarketAPI submarket = market.getSubmarket(specId);
@@ -269,7 +231,7 @@ LOG.info(String.format("%s plugin=%s cargo=%s tariff=%.2f",
         cargo == null ? "null" : "created", plugin.getTariff()));
 ```
 
-优先使用 `getCargoNullOk()` 做观察。它返回 `null` 时表示货舱尚未建立，不代表库存数量为零。只有需要写入或明确触发创建时，才使用 `getCargo()`。
+`getCargoNullOk()` 返回 `null` 时，货舱还未建立；`getCargo()` 会在需要时创建，并由基类初始化封存舰船集合。当前日志用前者观察初始化状态，打开交易后再比较实际库存。`addAllCargo(...)` 可以按栈加入外部货物，费用、权限与交易报告仍由调用流程负责。
 
 ## 完整最小例
 
@@ -491,10 +453,10 @@ public class GearInSubmarketProbe {
 
 1. 保存 CSV、两类与经济观察器中的添加调用，构建重启，进入已有 Foundry 市场的存档并推进一帧。
 2. 打开市场入口，确认出现 `Refinery Depot`，并记录子市场的显示名称和图标。
-3. 打开 Refinery Depot，观察库存只出现 `metals`、`rare_metals` 和 `heavy_machinery`。
+3. 首次打开 Refinery Depot，观察主动补充的商品为 `metals`、`rare_metals` 和 `heavy_machinery`。
 4. 尝试把 `ore`、`rare_ore`、`heavy_machinery` 和其他商品卖入，比较允许与拒绝的提示。
 5. 打开舰船交易列表，确认玩家可购买的舰船只有护卫舰和驱逐舰。
-6. 选择一艘更大型舰船尝试出售，确认出售方向不受舰级限制。
+6. 选择一艘更大型舰船出售，确认出售方向允许，再尝试购买同一艘，确认购买方向仍按舰级拒绝。
 7. 查看 30% 税率、`Acquire`、`Refine and sell` 与拒绝商品时的文字，核对文字说明的矿石和机械范围。
 8. 查看入口执行时的 `GearIn submarket` 日志，再重新读档执行探针，比较四个子市场的插件、货舱初始化、开放状态与经济影响。
 
@@ -502,7 +464,7 @@ public class GearInSubmarketProbe {
 
 - `Refinery Depot` 的 ID、名称、势力和插件类正确；
 - 税率为 `0.30`，公开市场为真，黑市为假，免费转移为假；
-- 子市场库存只刷新三种指定商品；
+- 子市场主动补充三种指定商品，卖入的矿石可暂时保留并随刷新逐步减少；
 - 玩家出售白名单只允许 `ore`、`rare_ore` 和 `heavy_machinery`；
 - 玩家购买舰船只允许护卫舰和驱逐舰；
 - 玩家出售舰船不受舰级限制；
@@ -534,9 +496,9 @@ public class GearInSubmarketProbe {
 
 ## 总结
 
-Refinery Depot 从注册行接到 Foundry 市场，插件再分别处理库存、收购商品、舰船购买、税率与经济影响。买卖方向用 `TransferAction` 判断，界面文字跟随同一组实际限制。
+Refinery Depot 已将注册规格接到 Foundry，插件按经过时间补充商品与小型舰船，并按买卖方向判断许可。库存集合、收购集合和舰船重载分别决定玩家实际能进行的交易，税率与提示提供对应的费用和说明。
 
-编者建议先固定交易站的用途，再写集合与规则。本例卖金属、收矿石，两个列表有意不同；交易入口的行为就由这些具体选择组成。
+成交还进入市场经济记录。正向贸易调节保留净出售带来的提升，库存转移与经济档位变化分别发生。子市场的作用由这些实际规则共同完成，名称与按钮文字只是界面的表达。
 
 ## 建议参考项
 

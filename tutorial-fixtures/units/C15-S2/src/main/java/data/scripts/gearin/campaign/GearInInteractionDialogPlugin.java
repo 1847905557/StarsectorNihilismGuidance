@@ -189,8 +189,8 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
             case 7:
                 text.addPara("Round 7: show the player's fleet.");
                 CampaignFleetAPI playerFleet = Global.getSector().getPlayerFleet();
-                visual.saveCurrentVisual();
                 visual.showFleetInfo("Your fleet", playerFleet, null, null);
+                visual.saveCurrentVisual();
                 options.addOption("Continue to player person", NEXT);
                 break;
             case 8:
@@ -226,9 +226,6 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
 
     @Override
     public void advance(float amount) {
-        if (!closed) {
-            text.advance(amount);
-        }
     }
 
     @Override

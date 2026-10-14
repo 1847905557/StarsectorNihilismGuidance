@@ -1,6 +1,6 @@
 # 详解战术系统
 
-系统的数值效果已经能运行，接下来决定它怎样显示、何时允许激活，以及 AI 怎样使用它。本节给工匠换上能量射程增幅系统，再用一个待机探针观察完整阶段。效果类与 AI 类各自接入，时间覆盖、界面文字和清理也沿着实际激活过程安排。
+本节为工匠实现能量射程增幅，处理加成、实际持续时间、状态显示与激活许可，再让自定义 AI 提出使用请求。另用一个待机观察系统说明 `runScriptWhileIdle` 怎样扩大调用范围，以及它为什么会改变效果的清理方式。
 
 *本节预期阅读时间：\~24 分钟。*
 
@@ -22,11 +22,13 @@
 - [C8-S1] 的战斗引擎状态和暂停语义；
 - [C7-S2] 的全局服务访问阶段。
 
-## 登记战术系统
+## 建立范围增幅系统
 
-先保存两个定义文件，并向已有 CSV 追加两行。主系统增加能量武器射程，待机系统记录阶段；测试时依次把工匠的 `system id` 换成对应 ID，每次构建、重启后观察一种系统。文件与舰船挂载沿用 [C2-S3]。
+范围增幅使用 `GearIn_range_system`，满效果时将能量武器射程乘以 1.5。普通运行经过前摇、全功率和后摇，效果也随强度进入与退出。玩家手动操作和 AI 使用同一项效果，激活判断则分别由按键与 AI 提交。
 
-主系统的 `data/shipsystems/GearIn_range_system.system` 使用独立的 stats 脚本和 AI 脚本：
+创建 `src/data/scripts/gearin/shipsystems/GearInRangeSystem.java` 和 `GearInRangeSystemAI.java`。效果类继承 `BaseShipSystemScript`，基类已为 `ShipSystemStatsScriptAdvanced` 提供默认实现，未覆写的方法继续采用默认返回值。
+
+在 `data/shipsystems/GearIn_range_system.system` 写入定义：
 
 ```json
 {
@@ -38,46 +40,22 @@
 }
 ```
 
-`statsScript` 决定激活期间修改舰船数值的类，`aiType: "CUSTOM"` 让舰船 AI 进入自定义分支，`aiScript` 决定由哪个 `ShipSystemAIScript` 做激活判断。持续时间、使用次数与开关方式写进 `ship_systems.csv`。当前使用完整表头，已有表头时只追加数据行：
+`statsScript` 连接效果类，`aiType: "CUSTOM"` 与 `aiScript` 连接自定义 AI。两个类各自实例化：效果类应用数值，AI 提出激活请求。确需共同使用的数据，通过参数或舰船 custom data 传递，实例字段不会自动共享。
+
+向 `ship_systems.csv` 追加注册行，已有表头时只追加数据：
 
 ```csv
 name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle,noDissipation,noHardDissipation,hardFlux,noFiring,noTurning,noStrafing,noAccel,noShield,noVent,isPhaseCloak,tags,icon
 范围增幅,GearIn_range_system,1,,,,,,,1,0.1,1,5,1,10,FALSE,,,,,,,,,,,,
 ```
 
-`ship_data.csv` 的 `system id` 填写 `GearIn_range_system` 后，舰船才会挂载这个系统。
+这条记录设置使用次数、恢复、前后摇、全功率、冷却与开关方式。将工匠在 `ship_data.csv` 中的 `system id` 改为 `GearIn_range_system`，它才会挂载本系统。文件引用与舰船挂载沿用 [C2-S3]，下面继续完成效果和 AI。
 
-待机演示系统 `data/shipsystems/GearIn_idle_probe.system` 只使用 stats 脚本，并把 `runScriptWhileIdle` 打开：
+## 让射程随效果强度变化
 
-```json
-{
-    "id": "GearIn_idle_probe",
-    "type": "STAT_MOD",
-    "aiType": "NONE",
-    "statsScript": "data.scripts.gearin.shipsystems.GearInIdleProbeSystem",
-    "runScriptWhileIdle": true
-}
-```
+系统进入效果阶段时，`apply(...)` 每帧接收本舰 stats、来源 `id`、当前 `state` 与 `effectLevel`。普通系统在 `IN`、`ACTIVE` 和 `OUT` 中应用效果，强度由 0 升至 1，再随后摇回落。
 
-普通系统在 `IN`、`ACTIVE` 与 `OUT` 阶段调用 `apply(...)`。**开启 `runScriptWhileIdle` 后，`IDLE` 和 `COOLDOWN` 也继续调用它，清理则由 `apply(...)` 的阶段分支处理。** 该选项使 `unapply(...)` 停止调用，本节探针保留这个方法用于观察区别。
-
-待机时也运行，就意味着即使玩家整场没按系统键，脚本仍在工作。编者建议按状态变化记录探针日志，实际效果也只处理当前阶段需要的动作。
-
-待机系统的数据行只负责提供名称和时间：
-
-```csv
-待机观察,GearIn_idle_probe,1,,,,,,,1,0,1,2,1,4,FALSE,,,,,,,,,,,,
-```
-
-## 把效果与 AI 分别保存
-
-`BaseShipSystemScript` 为 `ShipSystemStatsScriptAdvanced` 提供默认实现。继承它后，类只覆写当前效果需要的方法；未覆写的方法继续使用默认返回值。
-
-将 `GearInRangeSystem`、`GearInRangeSystemAI` 和 `GearInIdleProbeSystem` 保存到 `src/data/scripts/gearin/shipsystems/`。系统创建时取得效果实例，自定义 AI 另行初始化。**效果类负责加成，AI 类负责提出激活请求。** 两个实例的字段分别保存，确需共享的数据通过参数或舰船 custom data 传递。
-
-## 在效果阶段修改舰船属性
-
-`apply(MutableShipStatsAPI stats, String id, State state, float effectLevel)` 在效果阶段逐帧调用。`state` 表示前摇、全功率或后摇，`effectLevel` 在这些阶段从 0 变化到 1 再回落。本例使用传入的 `id` 修改能量武器射程倍率，局部方法如下：
+在 `GearInRangeSystem` 中加入局部方法：
 
 ```java
 @Override
@@ -88,9 +66,9 @@ public void apply(MutableShipStatsAPI stats, String id,
 }
 ```
 
-`RANGE_MULT_BONUS` 为 0.5，前摇从 1 倍升到 1.5 倍，全功率保持，后摇回落。射程收益随阶段变化，实际激活时机也就影响能否打到目标。
+`RANGE_MULT_BONUS` 为 0.5，因此前摇中的倍率逐渐接近 1.5，全功率保持 1.5，后摇回到 1。射程收益取决于本帧强度，不能将前摇开始就当作已经获得全部增幅。
 
-普通系统用 `unapply(MutableShipStatsAPI stats, String id)` 解除自己的来源，舰船创建时也会调用它。局部方法如下：
+来源使用引擎传入的 `id`，结束时在同一属性解除它：
 
 ```java
 @Override
@@ -99,45 +77,11 @@ public void unapply(MutableShipStatsAPI stats, String id) {
 }
 ```
 
-## 提供状态栏和激活许可
+普通系统用 `unapply(...)` 完成撤销，舰船创建时也会调用这个入口。沿用稳定来源，重复应用只更新本系统的记录，结束后其他射程加成继续保留。
 
-玩家舰船的系统状态栏通过 `getStatusData(int index, State state, float effectLevel)` 取得文字。返回 `StatusData` 时，第二个参数决定文字是否按减益样式显示；返回 `null` 表示当前索引没有内容。
+### 指定实际持续时间
 
-```java
-@Override
-public StatusData getStatusData(int index, State state, float effectLevel) {
-    if (index == 0 && state == State.ACTIVE) {
-        return new StatusData("range amplified", false);
-    }
-    return null;
-}
-```
-
-`isUsable(ShipSystemAPI system, ShipAPI ship)` 在激活请求被接受前查询。返回 `false` 时，按键请求会被丢弃；本例要求舰船存活，系统处于非激活、非冷却状态。这个返回值提供额外许可，系统自身的次数与幅能条件仍参与激活判断。
-
-```java
-@Override
-public boolean isUsable(ShipSystemAPI system, ShipAPI ship) {
-    return ship != null && ship.isAlive()
-            && !system.isActive() && !system.isCoolingDown();
-}
-```
-
-`getInfoText(ShipSystemAPI system, ShipAPI ship)` 决定系统图标下方的信息文字。返回 `null` 时，界面使用默认的 `READY` 或 `ACTIVE`：
-
-```java
-@Override
-public String getInfoText(ShipSystemAPI system, ShipAPI ship) {
-    if (system.isCoolingDown()) {
-        return "RECHARGING";
-    }
-    return null;
-}
-```
-
-## 覆盖系统参数
-
-本例 CSV 的全功率时间为 5 秒，`getActiveOverride(...)` 返回 6，使实际全功率持续 6 秒。**脚本覆盖值参与运行参数，负值则沿用数据值。** 其余前后摇、恢复速度和次数都返回负值，便于在同一系统里比较数据与覆盖：
+数据表的全功率时间是 5 秒，本例用 `getActiveOverride(...)` 返回 6，使实际全功率持续 6 秒。其余覆盖方法返回负值，沿用数据中的前后摇、恢复速度与次数：
 
 ```java
 @Override
@@ -166,7 +110,37 @@ public int getUsesOverride(ShipAPI ship) {
 }
 ```
 
-`getDisplayNameOverride(State state, float effectLevel)` 可以根据当前阶段替换系统名称。它返回 `null` 时沿用数据文件名称：
+**非负覆盖值参与运行参数，负值保留数据设置。** 以后调整持续时间时，先确认效果类是否提供覆盖；数据行改动以后，实际时长仍可能由脚本决定。
+
+## 告诉玩家系统处于什么状态
+
+射程已经按阶段变化，界面还要说明当前效果与冷却。玩家舰的系统状态栏从 `getStatusData(...)` 取得内容，本例只在全功率阶段提供一条说明：
+
+```java
+@Override
+public StatusData getStatusData(int index, State state, float effectLevel) {
+    if (index == 0 && state == State.ACTIVE) {
+        return new StatusData("range amplified", false);
+    }
+    return null;
+}
+```
+
+`index` 选择状态条目，返回 `null` 表示当前索引没有内容。`StatusData` 的第二个参数决定是否采用减益样式，这里为 `false`。
+
+系统图标下方的信息文字由 `getInfoText(...)` 提供。本例在冷却时显示 `RECHARGING`，其他时候返回 `null`，沿用默认 `READY` 或 `ACTIVE`：
+
+```java
+@Override
+public String getInfoText(ShipSystemAPI system, ShipAPI ship) {
+    if (system.isCoolingDown()) {
+        return "RECHARGING";
+    }
+    return null;
+}
+```
+
+系统名称也能随阶段变化。在全功率时显示 `Range Amplified`，其他阶段沿用数据名称：
 
 ```java
 @Override
@@ -175,11 +149,27 @@ public String getDisplayNameOverride(State state, float effectLevel) {
 }
 ```
 
-## 接入自定义系统 AI
+名称、图标信息与状态条目有各自的显示位置。这些方法返回文字，实际射程仍由前面的数值修饰提供。
 
-`ShipSystemAIScript` 与 stats 脚本分工不同：AI 只决定何时激活，数值效果仍由 `BaseShipSystemScript` 的 `apply` 处理。`.system` 中只有 `aiType: "CUSTOM"` 时，`aiScript` 才会被加载。
+## 在激活之前判断是否可用
 
-`init(...)` 在 AI 实例创建时调用一次，适合保存当前舰船、系统和战斗引擎。`advance(...)` 每帧调用，示例用 `IntervalUtil` 节流实际决策：
+玩家按键或 AI 提出激活请求后，`isUsable(...)` 提供额外许可。本例要求舰船有效且存活，系统尚未激活、也未冷却：
+
+```java
+@Override
+public boolean isUsable(ShipSystemAPI system, ShipAPI ship) {
+    return ship != null && ship.isAlive()
+            && !system.isActive() && !system.isCoolingDown();
+}
+```
+
+返回 `false` 时，本次请求被丢弃。返回 `true` 则允许继续处理，使用次数与幅能等系统条件仍然参与判断。因此它适合补充本功能的限制，不能将它的返回值当成最终激活结果。
+
+## 给 AI 提供使用入口
+
+`aiScript` 只有在 `aiType` 为 `CUSTOM` 时才进入自定义分支。`ShipSystemAIScript.init(...)` 在 AI 实例建立时保存当前舰船、系统和引擎，`advance(...)` 再根据当前目标决定是否提出请求。
+
+在 `GearInRangeSystemAI` 中采用以下局部实现：
 
 ```java
 @Override
@@ -210,13 +200,41 @@ public void advance(float amount, Vector2f missileDangerDir,
 }
 ```
 
-`target` 来自当前舰船 AI。每隔 0.2 到 0.3 秒，目标有效、系统非激活且非冷却、舰船未过载或散幅时，调用 `ship.useSystem()` 提出请求。它经过与玩家按键相同的激活入口。
+`target` 来自舰船 AI。`IntervalUtil` 将实际判断放到每隔 0.2 至 0.3 秒执行；暂停、无有效目标、系统已激活或冷却、舰船过载或散幅时结束本次判断。满足条件后调用 `ship.useSystem()`，提交与玩家按键相同的激活请求。
 
-这个最小判断只确认有目标；射程增幅是否值得现在使用，还可以结合目标距离与武器状态取舍。玩家手动驾驶时不会运行舰船 AI，交给自动驾驶或部署到 AI 一方时再观察这段逻辑。
+完整类的 `GearIn range AI activated` 日志记录调用发生，实际系统是否启动仍要结合次数、冷却、幅能与界面状态确认。玩家手动驾驶时不运行舰船 AI，将舰船交给自动驾驶或部署到 AI 一方，才能观察这条使用路径。
 
-## 观察待机回调
+::: details 射程系统的使用判断
 
-探针只观察阶段，不修改属性。在类字段区保存 `lastState`，`apply(...)` 每帧仍会执行，日志只在阶段切换时输出。记录的 `effectLevel` 是切换那一帧的值，便于把阶段和强度对应起来：
+编者不会将 "有目标" 作为射程系统决策的终点。目标本就在当前武器的有效射程内，或武器尚未能够射击时，额外射程未必带来本次收益；目标距离与武器状态应当参与取舍。本例先验证自定义 AI 能提出请求，进一步的使用策略再根据实际舰船与武器组合设计。
+
+:::
+
+## 让脚本在待机时继续运行
+
+普通效果在激活周期中执行。有些功能还需要处理待机和冷却，这时才采用 `runScriptWhileIdle`。创建 `GearInIdleProbeSystem.java`，先用它记录阶段，避免把观察逻辑与射程效果混在同一系统里。
+
+在 `data/shipsystems/GearIn_idle_probe.system` 写入：
+
+```json
+{
+    "id": "GearIn_idle_probe",
+    "type": "STAT_MOD",
+    "aiType": "NONE",
+    "statsScript": "data.scripts.gearin.shipsystems.GearInIdleProbeSystem",
+    "runScriptWhileIdle": true
+}
+```
+
+注册行使用前面的 CSV 表头，追加以下数据：
+
+```csv
+待机观察,GearIn_idle_probe,1,,,,,,,1,0,1,2,1,4,FALSE,,,,,,,,,,,,
+```
+
+测试这项功能时，将工匠的 `system id` 改为 `GearIn_idle_probe`，重启后观察一轮。两个系统依次挂载，每次使用一个。
+
+探针在字段中保存 `lastState`，只在阶段变化时输出日志：
 
 ```java
 @Override
@@ -235,7 +253,15 @@ public void unapply(MutableShipStatsAPI stats, String id) {
 }
 ```
 
-需要撤销数值或释放状态的脚本，应在 `apply(...)` 的状态分支中自行维护。
+`apply(...)` 仍然每帧执行，日志则只记录切换那一帧的阶段与强度。开启待机执行后，即使整场没有按系统键，也会收到 `IDLE` 调用；激活之后继续经过 `IN`、`ACTIVE`、`OUT` 与 `COOLDOWN`。
+
+::: warning 待机执行改变了清理方式
+
+**`runScriptWhileIdle` 不只是增加调用阶段，也会使普通推进不再调用 `unapply(...)`。** 需要撤销修饰或释放状态时，在 `apply(...)` 的待机与冷却分支处理。本探针保留 `unapply(...)`，用于比较它没有进入普通清理路径。
+
+:::
+
+这项开关扩大了持续工作的范围。全战场扫描或大量日志如果仍放在每帧中，待机期间也会支付相应代价。本例只记录阶段变化，其他高成本工作则按真实需要采用间隔执行。
 
 ## 完整最小例
 
@@ -448,7 +474,7 @@ public class GearInIdleProbeSystem extends BaseShipSystemScript {
 - **系统结束后射程倍率仍然存在**：`unapply(...)` 没有用与 `apply(...)` 相同的 来源 ID 撤销。
     - **解决方案**：统一使用引擎传入的 `id`，重新激活并等待系统结束。
 
-- **只看到激活阶段日志**：`runScriptWhileIdle` 未写在 `.system` 顶层，或值不是 `true`。
+- **仅出现激活阶段日志**：`runScriptWhileIdle` 未写在 `.system` 顶层，或值不是 `true`。
     - **解决方案**：在待机演示系统的 `.system` 顶层设置 `runScriptWhileIdle: true`，重新加载后搜索 `IDLE` 与 `COOLDOWN`。
 
 - **系统每帧反复尝试激活**：自定义 AI 没有使用 `IntervalUtil`，或没有检查 `isActive()` 和 `isCoolingDown()`。
@@ -462,9 +488,9 @@ public class GearInIdleProbeSystem extends BaseShipSystemScript {
 
 ## 总结
 
-主系统把能量射程效果、状态文字和自定义 AI 分别接到对应入口，实际持续时间同时受数据与脚本覆盖影响。AI 提出激活请求，效果类按阶段写入与解除数值，各自保存当前实例状态。
+范围增幅从舰船挂载进入系统：效果类按阶段修改射程，覆盖方法决定实际时长，界面方法呈现状态，激活许可与系统条件共同处理请求。AI 的职责是选择何时提出这个请求，它使用独立实例。
 
-待机探针则展示另一种调用范围：`apply(...)` 接收完整周期，清理也由阶段分支承担。选择这个开关时，把运行范围、清理位置和每帧代价一起安排。
+待机观察则说明了另一种执行方式。开启 `runScriptWhileIdle` 后，`apply(...)` 继续处理待机和冷却，清理也随之进入阶段分支。采用这个开关时，持续范围与撤销方式需要一同设计。
 
 ## 建议参考项
 

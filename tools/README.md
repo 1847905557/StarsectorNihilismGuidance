@@ -14,7 +14,7 @@
 |---|---|
 | `check_text_format.py PATH...` | 检查 UTF-8、BOM、换行、行尾空白与末尾换行；`--apply` 写入规范化结果 |
 | `check_markdown_format.py PATH...` | 检查 Markdown 标记、字符与间距；`--apply` 修复可确定的格式 |
-| `check_markdown_structure.py PATH...` | 检查 docs 页面的标题、围栏、容器、章节引用、速查表、图片、验证与故障结构 |
+| `check_markdown_structure.py PATH...` | 检查 docs 页面的章页外框、标题、围栏、容器、章节引用、速查表、图片、验证与故障结构 |
 | `check_standards.py PATH...` | 检查三份标准和核验入口的文件集合、职责声明、链接、路由与 Unicode 字符总量 |
 | `check_fixtures.py` | 核对页面、Java 源码、shader、fixture 目录与 Gradle 清单的双向一致性 |
 | `hash_scope.py PATH...` | 记录文件数、字节数与按路径排序的聚合 SHA-256 |
@@ -23,6 +23,8 @@
 | `restore_markdown.py INDEX_HTML` | 从单个 VuePress HTML 的 `div#content` 恢复 Markdown 和图片；`--out PATH` 写入产物 |
 
 各工具的完整参数见 `--help`。`--json` 输出结构化结果；提供 `--verbose` 的工具可列出逐文件明细。
+
+章页结构检查识别 `docs/chapter数字/README.md`，核对技术基线的存在、唯一性、位置与行格式，以及章介绍、目录标题和自动列表占位符的顺序。节页按验证、故障、参考项和完整成品等适用职责检查。介绍的段落组织、教学范围与作者表达由人工核对；技术基线整行的保留情况通过编辑前后逐字比较确认。
 
 ## 检查与写入
 

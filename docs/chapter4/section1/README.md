@@ -28,7 +28,7 @@
 
 ## 建立测试战役目录
 
-游戏本身就能保存装配界面中的设计。我们先提供一个固定入口，把自己的舰船列出来，之后新增内容也能继续用它测试。
+游戏本身就能保存装配界面中的设计。这里先建立固定的测试战役，将自己的舰船列为候选；以后新增内容也能继续通过这个入口装配和测试。
 
 创建 `data/missions/GearIn_test/`。从原版 `data/missions/afistfulofcredits/` 复制全部文件到这里，保留图标，准备修改描述、文本与定义类。
 
@@ -71,13 +71,13 @@
 测试齿轮工业的舰船。
 ```
 
-这个文件显示在详情页，内容可以按需要修改，文件本身继续保留。
+这段文字显示在战役详情页，可以按需要修改；`mission_text.txt` 作为战役数据的一部分继续保留。
 
 ## 用代码列出自有装配
 
 把目录中的源码改为完整例里的 `MissionDefinition.java`。**战役类的完整名字由目录 ID 决定**：本例是 `data.missions.GearIn_test.MissionDefinition`，包名与类名按这个位置填写。
 
-游戏在选择战役时创建类，并调用 `defineMission(...)`。当前模板已经提供所需结构，下面说明改成其他测试项目时会涉及的位置。
+游戏在选择战役时创建类，并调用 `defineMission(...)`。当前模板已经提供所需结构，舰队与地图的配置都由这个方法完成。下面说明改成其他测试项目时会涉及的位置。
 
 ### 收集已加载装配
 
@@ -94,17 +94,17 @@ for (String id : Global.getSettings().getAllVariantIds()) {
 }
 ```
 
-`PREFIX` 为 `GearIn_`，每次找到对应装配就把 ID 放进列表。战机与任务导出项按条件跳过。**这是按船体归属收集装配**，同一个船体有多个正式配置时，它们也会一起出现。
+`PREFIX` 为 `GearIn_`，筛选时检查的是装配所用船体的 ID，符合前缀的装配才加入列表。战机与任务导出项按条件跳过。**这是按船体归属收集装配**，同一个船体有多个正式配置时，它们也会一起出现。
 
 已注册船体还有自动生成的 `<hullId>_Hull` 空装配，因此尚未做正式设计的船也能进入测试。第三章的工匠势力装配则作为已有配置一同列出。
 
 ### 设置双方与地图
 
-`initFleet` 初始化玩家和敌方舰队，SIM 是自动命名前缀，5 为初始指挥点。`addToFleet` 按装配 ID 加入成员，第一个玩家成员设为旗舰。
+列表中的装配由 `addToFleet` 加入舰队。在此之前，`initFleet` 初始化玩家和敌方舰队，SIM 是自动命名前缀，5 为初始指挥点。`addToFleet` 按装配 ID 加入成员，第一个玩家成员设为旗舰。
 
 当前模板使用原版 `remnant_station2_Standard` 作为敌方目标，并配置星云、点位和小行星带。舰队说明由 `setFleetTagline` 设置，简报项目由 `addBriefingItem` 设置。
 
-若要制作另一套测试战役，调整包名中的战役 ID 和 `PREFIX`，再选择敌舰与地图。编者建议先保持一个稳定的测试环境；每次连敌人、装配和场地一起改，比较结果会麻烦得多。
+若要制作另一套测试战役，调整包名中的战役 ID 和 `PREFIX`，再选择敌舰与地图。比较某项设计改动时，敌方配置与场地保持稳定，才能区分变化来自设计本身还是测试条件。
 
 ## 注册并保存完整战役
 
@@ -217,7 +217,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 ![测试战役保存到存档目录的装配文件](./variant_export.png "variant_export.png")
 
-文件形如 `mission_GearIn_test_ship_0.variant`，序号对应玩家舰队中的成员。当前模板列出多个装配，选择导出文件时先核对内部 `hullId`。
+文件形如 `mission_GearIn_test_ship_0.variant`，序号对应玩家舰队中的成员。当前模板列出多个装配，因此选择导出文件时要核对内部 `hullId`，确认它对应刚才修改的船体。
 
 **正式装配需要自己的 ID。** 把工匠的导出文件移到 MOD 的 `data/variants/`，命名为 `GearIn_artizan_combat.variant`，将内部 `variantId` 同步改为 `GearIn_artizan_combat`，`displayName` 改为 "突击型"。
 
@@ -273,7 +273,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 }
 ```
 
-`goalVariant: true` 把这个装配作为对应船体的自动装配目标。它和文件名、装配显示名是不同的字段；改完后重启游戏再查看候选列表。
+`goalVariant: true` 把这个装配作为对应船体的自动装配目标。文件名便于管理，`displayName` 提供显示名称，是否进入自动装配候选则由这个字段决定。改完后重启游戏，核对候选列表。
 
 舰船和战机使用同一套装配结构。编者建议为自己的船体准备 2\~3 个不同定位的配置，例如突击、支援与长程。装配会决定舰船在势力舰队里的实际表现，也方便重复比较。
 

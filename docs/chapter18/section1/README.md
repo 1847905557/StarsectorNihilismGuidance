@@ -1,6 +1,6 @@
 # 接入常用依赖库
 
-后面的示例要用到 LazyLib、GraphicsLib 和 MagicLib，先把它们接到现有 MOD。三库安装到游戏后，在 `mod_info.json` 声明依赖，再把 JAR 加入 Gradle。做到这里，启动器能找到前置，编译器能找到类；库的具体服务则在各自的加载入口中开始工作。
+LazyLib、GraphicsLib 和 MagicLib 分别提供计算、图形与其他常用功能。使用它们之前，现有 MOD 要同时接通启动器的依赖关系和 Gradle 的编译路径。本节完成这两份配置，再说明库加载后，哪些服务可以直接调用，哪些数据仍由使用方登记。
 
 *本节预期阅读时间：\~20 分钟。*
 
@@ -43,7 +43,11 @@
 {"id":"lw_lazylib","name":"LazyLib","version":"3.0.0"}
 ```
 
-这个值会被拆成 major、minor 和 patch 三部分，再与已安装 MOD 的版本逐级比较。它表达的是一个待比较的具体版本，不是最低版本范围：major 不同属于阻断加载的主版本不匹配，minor 或 patch 不同会形成相应的兼容级别，启动器仍允许选择。
+启动器把这个值拆成 major、minor 和 patch，与已安装版本逐级比较。major 不同会阻断加载，minor 或 patch 不同则形成相应的兼容级别，仍允许选择。
+
+::: warning version 使用具体版本比较
+`"version":"3.0.0"` 表达与 3.0.0 的版本比较，较高版本也可能发生不匹配。填入该字段时，按 major、minor、patch 的实际结果判断。
+:::
 
 本节成品省略三项依赖的 `version`，让启动器只按稳定 ID 确认三库是否存在。需要锁定经过验证的接口版本时，再为对应依赖填入具体版本并按上述兼容级别检查结果。
 
@@ -63,7 +67,7 @@ def dependencyJarDirs = [
 ]
 ```
 
-LazyLib 的主目录与 `internal` 目录共同进入成熟项目的 classpath；GraphicsLib 和 MagicLib 各自从 `jars` 目录取得主 JAR 及配套 JAR。目录数组只描述文件位置，随后由 `dependencies` 块决定这些文件以什么方式参与构建：
+LazyLib 的主目录与 `internal` 目录一起提供其主 JAR 和配套 JAR，GraphicsLib 与 MagicLib 则从各自的 `jars` 目录取得文件。数组先确定位置，下面的 `dependencies` 再把这些文件交给编译器：
 
 ```groovy
 dependencies {
@@ -90,11 +94,11 @@ Gradle 能够据此解析三库的类，但打包 GearIn 时不会把这些外�
 
 这份配置通过游戏路径属性定位依赖，工程放在其他目录也可以编译。若按目录层级推导路径，只有工程位于 `Starsector/mods/GearIndustry` 时，`rootDir.parentFile` 才是 `mods`；工程移动后，这个条件也跟着变化。依赖数组中的库目录名仍按您实际安装的名称填写。
 
-## 区分三层依赖
+## 让编译配置与游戏加载对应
 
-现在可以写下 `import org.lazywizard.lazylib.MathUtils;`。这行代码能否编译，取决于 Gradle 的 classpath；玩家能否启用 GearIn，取决于 manifest；进游戏后能否使用它，取决于前置 MOD 的实际加载。**同一组依赖，在这几个位置各有一份职责。**
+现在可以在代码中导入 `org.lazywizard.lazylib.MathUtils`。编译器从 classpath 找到这个类，启动器根据 manifest 联动启用 LazyLib，游戏再加载它的 JAR。**编译通过与依赖 MOD 已加载，各自有对应的配置。**
 
-### 三层依赖职责速查表
+### 依赖配置职责速查表
 
 | 层次 | 配置入口 | 直接结果 |
 |---|---|---|
@@ -104,7 +108,7 @@ Gradle 能够据此解析三库的类，但打包 GearIn 时不会把这些外�
 
 `compileOnly` 不会替 GearIn 声明运行时依赖，`dependencies` 也不会替 Gradle 寻找 JAR。两份配置描述的是同一组库，却服务于两个不同阶段。
 
-## 理解运行时加载
+## 接到库已有的运行入口
 
 启动器完成依赖检查后，游戏根据每个前置 MOD 的 `mod_info.json` 加载它自己的 JAR 与入口插件。GearIn 只负责调用公开入口，以及登记只属于 GearIn 的数据文件。
 
@@ -112,7 +116,7 @@ LazyLib 的运行环境由 LazyLib 自身建立。GearIn 编译通过后，可�
 
 MagicLib 同样通过自己的入口处理库初始化和约定数据文件。Java API 由 GearIn 的调用点使用，MagicTrail、MagicBounty 等数据则放在 MagicLib 规定的路径；两类接入都以 MagicLib MOD 已被加载为前提。
 
-GraphicsLib 还要求使用方在 `onApplicationLoad()` 中调用 `ShaderLib.init()`。初始化完成后，GearIn 才检查 shader 与 buffer 能力，并读取自己的 light/texture CSV。后续 GraphicsLib 页面会逐步建立这条入口，本节先把 manifest 与 classpath 准备到位。
+GraphicsLib 的入口也调用 `ShaderLib.init()`。使用方在自己的 `onApplicationLoad()` 中调用它，可以确保检查能力与读取数据之前已经完成初始化；环境已建立时，这个调用直接返回。GearIn 随后检查 shader 与 buffer 能力，再登记自己的 light/texture CSV，具体操作由后续 GraphicsLib 页面展开。
 
 ## 选择渲染依赖
 
@@ -239,7 +243,7 @@ tasks.register("printCompileClasspath") {
 
 ## 总结
 
-三库现在已进入 manifest 和编译 classpath。继续写示例时，先使用库已有的入口，再按功能补自己的数据和注册。编者建议依赖出问题时先确认当前失败发生在哪里：启动器提示、编译错误和游戏加载异常，各自都有对应的配置位置。
+三库通过 manifest 参与游戏加载，通过 `compileOnly` 提供编译所需类型，外部类继续由各库自己的 JAR 提供。接下来使用库的服务时，调用点负责自己的参数与资源登记，库入口负责建立运行环境；加载与调用由此能够分别追到实际配置。
 
 ## 建议参考项
 

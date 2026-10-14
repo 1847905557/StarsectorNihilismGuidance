@@ -1,6 +1,6 @@
 # 编排 Rules 对话
 
-规则已经能够提供通讯问候，这次给菜单加一条可返回的检查分支。玩家选择 "检查通讯记录" 后，先追加信号记录，再按分数选择首次或重复读取结果。选项 ID、Memory 标记、两个 `fire` 调用与返回规则都放在同一段通讯中，后续场景也沿这组关系组织。
+本节在独立舰队通讯中加入 "检查通讯记录"：选择后追加一段信号记录，再按首次或重复读取给出详情，最后返回舰队菜单。规则之间通过选项 ID、Memory 与 trigger 连接，`FireAll` 和 `FireBest` 分别承担追加与选择，形成一段能进入也能结束的对话。
 
 *本节预期阅读时间：\~25 分钟。*
 
@@ -22,13 +22,9 @@
 - [C15-S1] 的选项显示文本与稳定 `optionData`；
 - 能够在游戏中打开一支非敌对独立舰队的通讯菜单。
 
-## 在已有通讯菜单追加检查入口
+## 在通讯菜单添加入口
 
-### 显示文本和选项 ID
-
-Rules 选项同时保存显示文本和 ID。显示文本面向玩家，ID 面向程序；修改文字不会改变分支，修改 ID 会改变后续匹配。
-
-向 MOD 的 `data/campaign/rules.csv` 追加本节自己的七条成品记录，保留已有表头与通讯规则。先看入口字段：下面的 `PopulateOptions` 行在非敌对独立舰队的通讯主菜单中添加入口：
+向 MOD 的 `data/campaign/rules.csv` 追加本节七条成品，保留现有问候和表头。首先在 `PopulateOptions` 中限定 `fleetConvMain`、独立势力与非敌对，添加入口，局部记录如下：
 
 ```csv
 GearIn_rules_apply_menu,PopulateOptions,"$menuState == fleetConvMain
@@ -36,31 +32,25 @@ $faction.id == independent
 !$entity.isHostile",,,"GearIn_rules_apply_open:检查通讯记录",独立通讯菜单入口
 ```
 
-玩家看到 "检查通讯记录"，选项面板保存的 ID 是 `GearIn_rules_apply_open`。这个 ID 不需要与规则的 `id` 相同，但必须与负责回流的条件逐字一致。
+玩家看到 "检查通讯记录"，实际选项 ID 为 `GearIn_rules_apply_open`。它与当前规则 ID 分别提供身份，后续处理按选项 ID 查询。
 
-### `$option` 保存本次选择
-
-`RuleBasedInteractionDialogPluginImpl.optionSelected(...)` 收到选项数据后，把它写进 `local` Memory 的 `$option`，过期时间为 0，然后调用 `DialogOptionSelected`。因此选项分支写成一条普通条件：
+玩家选择后，规则对话插件将数据写入 LOCAL 的 `$option`，期限为 0，再触发 `DialogOptionSelected`。回流规则用这个值进入结果处理，局部记录如下：
 
 ```csv
 GearIn_rules_apply_open,DialogOptionSelected,$option == GearIn_rules_apply_open,"FireAll GearInRulesApplyAdd
 FireBest GearInRulesApplyDetail",,,
 ```
 
-选择 "检查通讯记录" 后，`$option` 等于 `GearIn_rules_apply_open`，脚本依次调用两个自定义 `trigger`。显示文本仍可改成 "读取记录"，回流条件不需要修改。
+当前选项命中后，先调用 `GearInRulesApplyAdd`，再调用 `GearInRulesApplyDetail`。显示文本可以改为 "读取记录"，业务键与回流条件继续对应。
 
 ::: warning 选项 ID 必须逐字一致
 
 `options` 中的 ID 与 `$option == <id>` 比较大小写敏感；多一个空格、改变前缀或改变字母大小写，都会让可见选项失去回流规则。
 :::
 
-## 读懂条件和脚本表达式
+## 让首次读取与重复结果使用不同条件
 
-### `token` 与操作符
-
-`Misc.tokenize` 把 `$` 开头的内容识别为变量，把引号包围的内容保留为字面量，并让反斜杠转义下一个字符。`=`、`==`、`!=`、`>`、`>=`、`<`、`<=`、`!`、`++` 和 `--` 会成为独立 `token`。
-
-比较写在 `conditions`，赋值写在 `script`。下面的条件读取势力、敌对状态和一次性 `flag`；脚本在命中后写入这个 `flag`：
+详情根据玩家是否已经读取选择。条件用 `!$player.GearIn_rules_apply_seen`，命中后的脚本向同一玩家 Memory 写入 `true`，局部记录如下：
 
 ```csv
 GearIn_rules_apply_once,GearInRulesApplyDetail,"$faction.id == independent
@@ -68,24 +58,28 @@ GearIn_rules_apply_once,GearInRulesApplyDetail,"$faction.id == independent
 !$player.GearIn_rules_apply_seen score:100","$player.GearIn_rules_apply_seen = true",第一次读取到完整通讯记录。,"GearIn_rules_apply_back:返回舰队菜单",
 ```
 
-`!` 对变量判真结果取反。第一次进入时 `flag` 不存在，条件通过；脚本写入后再次进入，这条规则不再匹配。
+`!` 取反，缺失标记时首次条件通过，写入后重复进入则不再成立。**条件与结果使用同一个对象上的键。** 这里显式用 `player`，关闭通讯或换目标后，已读状态仍属于玩家。
+
+### 字面量、变量与比较
+
+表达式经过 `Misc.tokenize(...)` 拆为 token。`$` 开头的内容识别为变量，引号将文本保留为字面量，反斜杠转义下一字符；`=`、`==`、`!=`、`>`、`>=`、`<`、`<=`、`!`、`++` 与 `--` 分别形成操作符。
 
 ### 字符串、数值和纯变量判真
 
 字符串比较区分大小写。数值比较通过 `Memory.parseFloat` 解析，因此 `$count >= 2` 比较的是数值；无法解析成数值的内容不能承担数值条件。
 
-纯变量表达式只把 `Boolean.TRUE` 和忽略大小写的字符串 `"true"` 判为真。`null`、`"1"`、`"false"` 和 `"yes"` 都不会通过纯变量条件。
+纯变量条件接受 `Boolean.TRUE`，或去掉首尾空白、忽略大小写后为 `"true"` 的字符串。计数与是否启用分别使用数值比较和布尔判断，下面的局部记录要求两者同时成立：
 
 ```csv
 GearIn_rules_apply_truth,GearInRulesApplyAdd,"$player.GearIn_rules_apply_enabled
 $player.GearIn_rules_apply_count >= 2",,通讯记录已达到读取条件。,"GearIn_rules_apply_back:返回舰队菜单",
 ```
 
-两行都通过时这条规则才进入 `FireAll` 结果。布尔 `flag` 与计数值承担不同类型的检查，不能用 "非空就是真" 的方式混用。
+数值字符串按 `Memory.parseFloat(...)` 解析，字符串比较区分大小写。条件返回的是当前判断，不是简单的非空检查；每条条件通过后，当前规则才继续参与匹配。
 
 ### 赋值、自增和自减
 
-脚本赋值使用 `=`。值后可以附加过期天数；`0` 表示写入后供当前规则流程使用，并由 Memory 的推进机制处理。数值还可以用 `++` 和 `--` 改变。
+脚本用 `=` 写值，值后可提供生涯日期限；`++` 与 `--` 增减数值。下面是局部计数操作：
 
 ```csv
 GearIn_rules_apply_count,DialogOptionSelected,$option == GearIn_rules_apply_open,"$GearIn_rules_apply_count = 1 0
@@ -93,17 +87,17 @@ $GearIn_rules_apply_count++
 $GearIn_rules_apply_budget--",,,
 ```
 
-三行按顺序运行：先写 1，再增为 2，最后让 `budget` 减 1。后续 `FireBest` 或 `FireAll` 能读到这些已经更新的值。
+三行依次写 1、增为 2、将 budget 减 1，后面的调用可以立即读取结果。无期限的自增、自减会重新写入永久值，因此这段计数的最初 0 日期限也会被后面的自增清除；需要期限时，增减表达式另提供对应天数。
 
 ### Memory 槽位决定变量来源
 
 `$memkey.name` 先从 `memoryMap` 找到 `memkey` 槽位，再读取其中的 `$name`。常见前缀包括 `$global.`、`$player.`、`$market.`、`$faction.` 和 `$entity.`；没有点号的 `$option`、`$menuState` 与自定义 `local` 变量回落到 `local` Memory。
 
-同名键写在不同槽位时是不同状态。一次性玩家标记应在条件和脚本两侧都使用完整的 `$player.GearIn_rules_apply_seen`，不能一侧省略为 `local`。
+没有对应前缀槽位时，变量解析会把完整变量名交给 LOCAL。因此当前一次性标记在条件与脚本两侧都使用完整 `player` 前缀，[C16-S5] 再展开这些对象的寿命与槽位。
 
-## 用 `score` 建立竞争顺序
+## 从通过条件的详情中选一条
 
-每条普通条件默认贡献 1 分。`score:N` 只改变它所在条件行的分值，总分由通过条件相加得到，**分数决定竞争，条件决定是否入选。**
+`FireBest` 先淘汰条件失败的规则，再比较总分。普通条件各贡献 1，`score:N` 改变所在行的分值。以下局部候选说明高低两种结果：
 
 ```csv
 GearIn_rules_apply_detail_low,GearInRulesApplyDetail,$faction.id == independent,,通讯记录只有一行摘要。,"GearIn_rules_apply_back:返回舰队菜单",
@@ -111,52 +105,52 @@ GearIn_rules_apply_detail_high,GearInRulesApplyDetail,"$faction.id == independen
 !$entity.isHostile score:100",,通讯记录包含完整航行数据。,"GearIn_rules_apply_back:返回舰队菜单",
 ```
 
-`low` 通过一条普通条件，总分 1。`high` 通过一条普通条件和一条 `score:100` 条件，总分 101；在非敌对独立舰队上，`FireBest` 选择 `high`。
+low 通过一条条件，总分 1；high 通过一条普通条件与一条 100 分条件，总分 101。**分数只在条件已经通过的候选之间竞争。** 目标非敌对且属于独立势力时，high 获选；高分也不能使失败条件通过。
 
 多个最高分候选并列时，引擎使用 `WeightedRandomPicker` 随机选择。`RulesAPI.setRandomForNextRulePick(random)` 只影响下一次规则选择，完成后清除。需要确定结果时应给候选建立不同总分。
 
-原版普通回退常处于 1–3 分，MOD 的 100 级规则可以压过这类回退；剧情规则常用 1000 级分数，仍能优先接管特殊流程。
+本例较高分数可以覆盖 1 到 3 分的普通回退，1000 分的剧情候选仍然优先。分值由规则约定，具体胜者同时取决于当前对象与命中条件。
 
-## 调用自定义 `trigger`
+### 自有 trigger 由当前回流调用
 
-自定义 `trigger` 是 MOD 自己约定的候选集合名称，例如 `GearInRulesApplyAdd` 和 `GearInRulesApplyDetail`。把名字写进 `trigger` 列只会建立候选集合；它需要由另一条规则的 `FireAll` 或 `FireBest` 主动调用。
+`GearInRulesApplyAdd` 与 `GearInRulesApplyDetail` 都是自有候选集合，需要调用才能运行。当前回流中的两个命令已经提供实际入口，局部记录如下：
 
 ```csv
 GearIn_rules_apply_open,DialogOptionSelected,$option == GearIn_rules_apply_open,"FireAll GearInRulesApplyAdd
 FireBest GearInRulesApplyDetail",,,
 ```
 
-这条回流规则先完成追加，再选择详情。两个 `trigger` 没有原版固定派发点，也不需要 Java 入口，因为它们已经位于一条可到达的 Rules 脚本中。
+入口来自玩家选择，内层处理继续使用当前对话与 Memory。两个集合分别承担追加与详情，完成后留给返回选项处理，整段对话仍在同一会话中。
 
 ## 用 `FireAll` 追加全部结果
 
-`FireAll` 调用 `RulesAPI.getAllMatching(...)`，保留目标 `trigger` 下全部通过条件的规则。它会先在目标实体 Memory 写入 `$fireAllTrigger`，再触发 `FireAllIntercept`；拦截规则命中时，目标 `trigger` 的整次执行被跳过。
+先用 `FireAll` 加入共同的信号记录。它取得目标 trigger 下全部匹配规则，以下局部候选一条无条件，另一条概率为 0：
 
 ```csv
 GearIn_rules_apply_add_a,GearInRulesApplyAdd,,,附加记录：信号来源已经确认。,"GearIn_rules_apply_back:返回舰队菜单",
 GearIn_rules_apply_add_b,GearInRulesApplyAdd,RollProbability 0.0,,这段记录不会显示。,"GearIn_rules_apply_back:返回舰队菜单",
 ```
 
-`FireAll GearInRulesApplyAdd` 执行全部匹配项。`add_a` 没有条件，会写入文本；`add_b` 的 `RollProbability 0.0` 返回 `false`，不进入结果。
+`add_a` 写入文本，`RollProbability 0.0` 始终返回 `false`，`add_b` 不进入结果。执行前，`FireAll` 还将目标 trigger 写入 `$fireAllTrigger` 并查询 `FireAllIntercept`；有拦截命中时，当前整次目标调用被接管。
 
-`FireAll` 先收集全部匹配规则的 `options`，以及脚本中会添加选项的命令。只要收集结果非空，它就清空选项面板、排序并写入新选项；随后才按规则顺序追加文本并运行普通脚本。`FireAll` 没有 `keepOptions` 参数。
+通过匹配后，先汇总所有 `options` 和会添加选项的命令。集合非空时清理旧选项，按顺序写入新菜单，再依规则追加文字并执行普通脚本；没有选项结果时，当前菜单保留。`FireAll` 没有 `keepOptions` 参数。
 
 ## 用 `FireBest` 选择一条结果
 
-`FireBest` 调用 `RulesAPI.getBestMatching(...)`，只运行总分最高的一条规则。命中后先收集并排序该规则的 `options` 与会添加选项的命令，再追加经过 `token` 替换的文本，最后执行普通脚本；没有匹配时返回 `false`。
+详情用 `RulesAPI.getBestMatching(...)` 取得最高分的一条。获选后先处理选项，再追加替换 token 后的文字，最后执行普通脚本。没有匹配则返回 `false`，当前例中也就没有详情结果。
 
 前面的 `low` 与 `high` 同属 `GearInRulesApplyDetail`。非敌对独立舰队命中 `high`，文本面板只出现 "通讯记录包含完整航行数据。"，`low` 文本不会同时追加。
 
-`FireBest` 在胜出规则产生选项时默认重建选项列表。第二个参数 `true` 表示 `keepOptions`，旧选项会和新结果共存；这个参数不改变候选分数和胜出规则。
+获选规则有选项时，默认重建列表；第二参数 `true` 表示保留原选项并追加，候选与分数仍按原规则判断。本节成品的详情提供返回按钮，因此玩家读完后有明确下一步。
 
 ::: warning 覆盖规则需要承接原有结果
 
 `FireBest` 只执行一个胜出规则；覆盖原版回退时，原规则承担的菜单状态、视觉、文本和后续 `fire` 调用都要由新规则继续完成。
 :::
 
-## 理解 `fire` 的再入
+## 保留当前结果，并让调用结束
 
-规则脚本执行 `FireBest` 或 `FireAll` 时，规则引擎会在当前执行过程里再次匹配目标 `trigger`。内层匹配继续使用外层的 `dialog` 与 `memoryMap`，所以内层脚本写入的 Memory 会立即被外层后续脚本读取，内层改动的文本和选项也会直接出现在同一对话面板。
+内层 fire 在当前规则执行中立即匹配，沿用外层 `dialog` 与 `memoryMap`。内层写入的状态供后面的脚本读取，文字与选项也直接写入同一面板。当前顺序是追加完成后再选择详情，局部回流如下：
 
 当前回流按追加、详情两个方向依次调用：
 
@@ -165,11 +159,11 @@ GearIn_rules_apply_open,DialogOptionSelected,$option == GearIn_rules_apply_open,
 FireBest GearInRulesApplyDetail",,,
 ```
 
-`DialogOptionSelected` 规则先进入 `GearInRulesApplyAdd`，执行完成后再进入 `GearInRulesApplyDetail`。两个目标 `trigger` 都不会重新调用 `DialogOptionSelected`，执行方向在详情规则结束，因此这条路径有明确终点。
+这两个结果集合处理结束后返回当前调用，等待玩家选择返回按钮。它们没有再调用外层选项 trigger，当前执行也就有明确终点。
 
 ### 跳过当前规则
 
-`FireBest` 与 `FireAll` 把当前 `ruleId` 传给下一次匹配。规则引擎会跳过同 ID 的当前规则，但目标 `trigger` 中其他 ID 的规则仍可命中。这个判断只能阻止一条规则立即选中自己，无法阻止两条不同规则互相调用。
+fire 将当前规则 ID 交给下一次匹配，引擎跳过这个 ID。其他规则仍可获选，所以不同 ID 的两条规则互相调用时，仍可能形成递归。
 
 ::: caution 再入关系必须有终点
 
@@ -184,7 +178,7 @@ FireBest GearInRulesApplyDetail",,,
 GearIn_rules_apply_keep,DialogOptionSelected,$option == GearIn_rules_apply_keep,FireBest GearInRulesApplyDetail true,,,
 ```
 
-内层规则继续使用当前 `dialog` 与 `memoryMap`，写入后外层后续命令立即读到同一状态。这个片段只改变选项保留，候选与分数继续按当前规则计算。
+这个局部片段保留当前选项，内层文字和状态仍写入原会话。它改变菜单合并方式，实际选择继续由条件和分数决定。
 
 ## 常见 `trigger` 速查表
 
@@ -209,27 +203,15 @@ GearIn_rules_apply_keep,DialogOptionSelected,$option == GearIn_rules_apply_keep,
 
 表格只用于判断规则应挂在哪类入口。每个 `trigger` 的原版调用类、精确派发顺序、规则记录数和特殊状态由 [C16-S3] 逐场景解释。
 
-## 组合一段完整对话
-
-### 用状态控制菜单
+## 返回菜单，并保留玩家已读状态
 
 `$menuState` 和 `$tradeMode` 表示当前界面状态。舰队通讯菜单通常使用 `fleetConvMain`，市场主菜单使用 `main`；菜单规则根据这些值决定是否加入选项。
 
-进入和退出要成对维护。进入通讯时写 `$menuState = fleetConvMain 0`，结束通讯时由 `EndConversation` 恢复舰队主菜单；市场与酒吧则在各自返回规则中复位状态。
+本节进入通讯时使用 `fleetConvMain`，结果中的 `GearIn_rules_apply_back` 再通过 `DialogOptionSelected` 调用 `EndConversation`，回到舰队主菜单。市场与酒吧也按各自返回规则恢复状态，菜单选项继续使用对应场景。
 
-### 用不同 `fire` 方法分工
+已读标记采用无期限写入，关闭通讯后保留，再次建立通讯选择重复结果；菜单状态与 `$option` 的 0 日期限则服务当前流程。需要重演时，通过 `unset $player.GearIn_rules_apply_seen` 删除该键，`unsetAll` 按前缀清理，开发模式中的 `DumpMemory` 可核对槽位与值。
 
-`FireAll` 适合填充菜单和追加多段结果，因为所有匹配规则都参与；`FireBest` 适合问候、叙述和转场，因为同一次调用只需要一个胜出结果。
-
-本页的回流脚本先 `FireAll` 追加通讯记录，再 `FireBest` 选择记录详情。两次调用使用不同自定义 `trigger`，职责不会混在同一个候选集合中。
-
-### 用一次性 `flag` 限制重复结果
-
-条件写 `!$player.GearIn_rules_apply_seen`，脚本写 `$player.GearIn_rules_apply_seen = true`，当前玩家标记使用无期限写入，关闭通讯后仍保留，再次建立通讯改走重复结果。菜单与选项的零期限状态继续用于当前流程。调试时可以用 `unset $player.GearIn_rules_apply_seen` 删除单个键，`unsetAll` 按前缀清理，`devMode` 下用 `DumpMemory` 查看实际槽位和值。
-
-### 保持回流链闭合
-
-一条可返回的 Rules 对话由入口、回流、结果与返回组成：`PopulateOptions` 提供入口，`DialogOptionSelected` 消费 `$option`，自定义 `trigger` 生成结果，返回选项再由 `DialogOptionSelected` 调用 `EndConversation`。任何一环 ID 断开，都会留下有文本但没有下一步的面板。
+**入口、处理结果与返回都对应实际调用。** `PopulateOptions` 提供检查，选项回流进入两个结果集合，返回数据再结束通讯。状态与规则 ID 各自对应，玩家才能沿这段对话完成一次操作。
 
 ## 完整最小例
 
@@ -295,9 +277,9 @@ GearIn_rules_apply_back,DialogOptionSelected,$option == GearIn_rules_apply_back,
 
 ## 总结
 
-通讯检查从稳定选项 ID 回流，`FireAll` 追加记录，`FireBest` 按总分选择详情，返回规则再结束通讯。永久玩家标记保存 "已经读取"，当前菜单状态与 `$option` 则继续服务这次对话。
+通讯检查通过稳定选项回流，先追加信号记录，再选择一条详情，最后返回舰队菜单。玩家 Memory 保留已读结果，下一次通讯继续按这个状态选择。
 
-编者建议先让入口和返回连通，再增加竞争规则。自定义 `trigger` 需要真实调用，内层结果也写入同一面板与 Memory，顺着这一次选择就能看清匹配与状态怎样共同工作。
+条件决定候选，总分决定竞争，fire 在当前会话中执行结果。选项、状态与返回各有实际入口，规则也就能组成一段完整对话。
 
 ## 建议参考项
 

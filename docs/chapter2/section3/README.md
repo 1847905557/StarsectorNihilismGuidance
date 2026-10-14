@@ -29,7 +29,7 @@
 
 编者准备让工匠在提高实弹射速的同时获得短暂的机动优势，便于压近距离或调整射击位置。**原版加速填弹器的武器收益继续保留，机动收益则写进同一个效果类。** 持续时间稍短一些，让使用时机也成为操作的一部分。
 
-先修改定义文件，内容如下：
+先修改定义文件，让它登记自己的 ID 并引用新的效果类，内容如下：
 
 ```json
 {
@@ -47,9 +47,9 @@
 }
 ```
 
-`id` 与后面的 CSV 共用；`statsScript` 指向效果类。`type: "STAT_MOD"` 表示属性修改型系统，`aiType: "WEAPON_BOOST"` 沿用加速填弹器的使用判断。系统 AI 的详细写法由 [C9-S2] 讲解。
+`id` 与后面的 CSV 共用；`statsScript` 指向效果类，写法与船插的完整类名相同。`type: "STAT_MOD"` 表示属性修改型系统，`aiType: "WEAPON_BOOST"` 沿用加速填弹器的使用判断。当前先保留这一对类型与 AI，系统 AI 的详细写法由 [C9-S2] 讲解。
 
-`weaponGlowColor` 与 `weaponTypes` 控制实弹武器的激活光效，三个 `engineGlow*` 字段调整引擎焰表现。`useSound` 继续使用原版激活声音。这里填的是声音 ID，文件关系按原版样本保留即可。
+`weaponGlowColor` 与 `weaponTypes` 控制实弹武器的激活光效，三个 `engineGlow*` 字段调整引擎焰表现。它们决定系统的视觉表现；具体数值增益稍后写入效果类。`useSound` 继续使用原版激活声音，这里填的是声音 ID，文件关系按原版样本保留即可。
 
 ## 登记时间与使用参数
 
@@ -60,7 +60,7 @@ name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u 
 突击填弹器,GearIn_assaultfeed,,,,,,,,,,0.5,3,0.5,10,,,,,,,,,,,,offensive,graphics/icons/hullsys/ammo_feeder.png
 ```
 
-本例前摇 0.5 秒、全功率 3 秒、后摇 0.5 秒、冷却 10 秒。**系统的强度既取决于效果，也取决于能维持多久、多久能再用。** 编者建议您先按这组值完成测试，再根据工匠的实际表现调整。
+本例前摇 0.5 秒、全功率 3 秒、后摇 0.5 秒、冷却 10 秒。**系统的强度既取决于效果，也取决于能维持多久、多久能再用。** 这组时间对应前面的短时强化设计，完成测试后再根据工匠的实际表现调整。
 
 ### 常用系统参数速查表
 
@@ -81,11 +81,11 @@ name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u 
 
 效果类参考原版 `data/shipsystems/scripts/AmmoFeedStats.java` 与 `ManeuveringJetsStats.java`。创建 `data/scripts/gearin/shipsystems/GearInAssaultFeedSystem.java`，包名和 import 按完整文件填写。
 
-这两份原版效果分别提供实弹强化与辅助推进。组合时，我们选择当前设计需要的操作，在同一个 `apply` 中写入，随后在 `unapply` 中逐项解除。
+这两份原版效果分别提供实弹强化与辅助推进。组合时，我们选择当前设计需要的操作，在同一个 `apply` 中写入，随后在 `unapply` 中逐项解除。需要组合的是效果语句，下面仍然只保存一个系统类。
 
 ### 参数与效果强度
 
-本例的可调整参数为：
+先在类的字段区填写本例的可调整参数：
 
 ```java
 public static final float SPEED_BONUS = 50f;
@@ -96,17 +96,17 @@ public static final float FLUX_REDUCTION = 50f;
 
 最大速度增加 50，前进加速、减速与转向加速采用 200% 加成；`ROF_BONUS = 1f` 表示额外增加一倍射速，`FLUX_REDUCTION = 50f` 表示实弹武器开火幅能降低 50%。
 
-游戏在效果期间反复调用 `apply(...)`，并传入 `effectLevel`。**前摇时该值从 0 升至 1，全功率为 1，后摇时再回到 0。** 以速度为例，局部片段如下：
+刚才的参数表示满效果加成，当前能获得多少则由系统阶段决定。游戏在效果期间反复调用 `apply(...)`，并传入 `effectLevel`。**前摇时该值从 0 升至 1，全功率为 1，后摇时再回到 0。** 以速度为例，局部片段如下：
 
 ```java
 stats.getMaxSpeed().modifyFlat(id, SPEED_BONUS * effectLevel);
 ```
 
-`effectLevel` 为 0.5 时，加成是 25；为 1 时，加成是 50。本例让各项增益都随这个值变化，进入和退出系统时便有相应的过渡。
+`effectLevel` 为 0.5 时，加成是 25；为 1 时，加成是 50。CSV 决定这些阶段持续多久，乘上 `effectLevel` 的效果代码则决定加成怎样随阶段变化。本例让各项增益都随这个值变化，进入和退出系统时便有相应的过渡。
 
 ### 射速和幅能的倍率
 
-实弹射速与开火幅能通过倍率修改，局部片段如下：
+速度使用固定增量，实弹射速与开火幅能则通过倍率修改，局部片段如下：
 
 ```java
 stats.getBallisticRoFMult().modifyMult(id, 1f + ROF_BONUS * effectLevel);
@@ -114,7 +114,7 @@ stats.getBallisticWeaponFluxCostMod().modifyMult(id,
         1f - FLUX_REDUCTION * 0.01f * effectLevel);
 ```
 
-`modifyMult` 写入倍率。满效果时，射速倍率为 2，幅能倍率为 0.5；200% 射速和 50% 单发幅能同时生效，持续开火的每秒幅能也会随射速变化。设计时把两项一起看，比只看某一条加成更有意义。
+`modifyMult` 写入倍率。这里的 1f 是原始倍率，再随 `effectLevel` 加上射速收益或扣去幅能比例。满效果时，射速倍率为 2，幅能倍率为 0.5；200% 射速和 50% 单发幅能同时生效，持续开火的每秒幅能也会随射速变化。评价幅能收益时，射速与单发幅能需要共同计算。
 
 ### 结束时撤销，状态栏显示参数
 
@@ -125,7 +125,7 @@ stats.getMaxSpeed().unmodify(id);
 stats.getBallisticRoFMult().unmodify(id);
 ```
 
-完整文件把所有写入项都清理。**写入与解除使用相同的 `id`**，这样系统结束后才会恢复其余效果共同决定的数值。
+完整文件把所有写入项都清理。**写入与解除使用相同的 `id`**，才能找到当前系统留下的修饰；系统结束后，数值恢复到其余效果共同决定的结果。
 
 `getStatusData(...)` 返回左下角状态栏文字，`index` 选择显示哪一行，`false` 表示增益，`true` 表示红色减益。本例显示速度、机动、幅能与射速四项状态，数值从当前参数和效果强度计算。
 
@@ -142,7 +142,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ## 再制作右键抵抗力场
 
-右键系统采用相同的注册过程。把原版 `data/shipsystems/damper.system` 复制为 `GearIn_resistfield.system`，改名为 "抵抗力场"，并填写自己的 ID 与效果类：
+右键系统采用相同的注册过程，变化的是基础样本和舰船的挂载字段。把原版 `data/shipsystems/damper.system` 复制为 `GearIn_resistfield.system`，改名为 "抵抗力场"，并填写自己的 ID 与效果类：
 
 ```json
 {
@@ -196,9 +196,9 @@ stats.getHighExplosiveDamageTakenMult().modifyMult(id,
         1f - HE_REDUCTION * 0.01f * effectLevel);
 ```
 
-满效果时，高爆伤害倍率为 0.25，意味着承担原来 25% 的伤害。其他类型使用对应 getter，结束时各自清理。
+满效果时，高爆伤害倍率为 0.25，意味着承担原来 25% 的伤害。这里仍然使用前面的倍率写法，只是修改对象换成了高爆伤害承受值。其他类型使用对应 getter，结束时各自清理。
 
-最后把工匠行的 `shield type` 改为 `PHASE`，`defense id` 填为 `GearIn_resistfield`。这里的 `PHASE` 选择右键系统入口，实际行为由抵抗力场定义与脚本决定。
+最后把工匠行的 `shield type` 改为 `PHASE`，`defense id` 填为 `GearIn_resistfield`。`PHASE` 在这里选择右键系统入口，实际行为由抵抗力场定义与脚本决定，所以本例仍然是减伤系统。
 
 观察舰船详情中主系统与右键系统的位置：
 

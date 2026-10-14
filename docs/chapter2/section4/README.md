@@ -23,7 +23,7 @@
 
 ## 先确定效果在哪个时机发生
 
-同样是武器特效，射弹命中与光束持续照射需要不同回调。**效果类的接口决定它接收什么信息，数据里的注册位置决定它被哪个对象使用。**
+同样是武器特效，射弹命中与光束持续照射的调用时机不同，因此需要不同回调。**效果类的接口决定它接收什么信息，数据里的注册位置决定它被哪个对象使用。**
 
 ### 武器效果入口速查表
 
@@ -32,24 +32,24 @@
 | `onHitEffect` | 弹体 `.proj` | 弹体命中目标时 |
 | `beamEffect` | 光束武器 `.wpn` | 光束激活期间每帧 |
 
-两处都填写完整类名，`beamEffect` 由 `specClass: "beam"` 的光束武器读取。下面沿用前面章节的包名与文件组织方式，分别制作两个效果类。
+两处都填写完整类名，`beamEffect` 由 `specClass: "beam"` 的光束武器读取。包名与文件组织继续沿用前面章节的写法，下面分别处理命中时的一次操作和光束期间的持续操作。
 
 ## 给都林自动炮添加命中光点
 
-在 MOD 根目录创建 `data/scripts/gearin/combat/GearInHitLogger.java`。完整类在后面给出，先看 `onHit(...)` 方法体中的局部片段：
+在 MOD 根目录创建 `data/scripts/gearin/combat/GearInHitLogger.java`。完整类在后面给出，`onHit(...)` 方法体中的局部片段如下：
 
 ```java
 Global.getLogger(GearInHitLogger.class).info("GearIn hit! shieldHit=" + shieldHit);
 engine.addHitParticle(point, new Vector2f(), 30f, 1f, 0.4f, Color.ORANGE);
 ```
 
-游戏在射弹命中时传入射弹、目标、命中点、护盾状态、伤害结果和战斗引擎。方法声明按接口填写，本例先使用命中点 `point`、护盾状态 `shieldHit` 与引擎 `engine`。
+游戏在射弹命中时传入射弹、目标、命中点、护盾状态、伤害结果和战斗引擎。这些参数已经描述了本次命中，我们先使用其中的命中点 `point`、护盾状态 `shieldHit` 与引擎 `engine`，方法声明按接口填写。
 
-第一行记录本次命中；`shieldHit` 为 `true` 表示打在护盾上，为 `false` 则是其他命中。引号里的日志文字按需要修改，验证时使用相同搜索词。
+第一条语句记录本次命中；`shieldHit` 为 `true` 表示打在护盾上，为 `false` 则是其他命中。引号里的日志文字按需要修改，验证时使用相同搜索词，就能把这次观察与实际回调对应起来。
 
-第二行创建橙色光点。`point` 指定位置，`new Vector2f()` 提供零速度，后面的 30、1、0.4 分别是尺寸、亮度和持续秒数，`Color.ORANGE` 指定颜色。**本节可直接调整的是日志文字与粒子参数**，类名、import 和方法声明按完整示例填写。
+第二条语句创建橙色光点，位置直接采用本次命中的 `point`。`new Vector2f()` 提供零速度，后面的 30、1、0.4 分别是尺寸、亮度和持续秒数，`Color.ORANGE` 指定颜色。**本节可直接调整的是日志文字与粒子参数**，类名、import 和方法声明按完整示例填写。
 
-编者建议先用明显的尺寸与颜色验证。确认回调确实执行之后，再调出合适的表现；粒子小得看不见和效果根本没有触发，需要用不同办法排查。
+测试时先用明显的尺寸与颜色验证。确认回调确实执行之后，再调整正式表现；粒子难以辨认与效果未触发，需要分别通过画面和日志判断。
 
 ### 在弹体文件中登记
 
@@ -59,7 +59,7 @@ engine.addHitParticle(point, new Vector2f(), 30f, 1f, 0.4f, Color.ORANGE);
 "onHitEffect": "data.scripts.gearin.combat.GearInHitLogger"
 ```
 
-都林自动炮的 `.wpn` 已通过 `projectileSpecId` 引用这个弹体。登记后，命中效果随该弹体调用。
+都林自动炮的 `.wpn` 已通过 `projectileSpecId` 引用这个弹体。登记后，武器发射它，弹体命中时再调用这里指定的效果类，命中光点就接到了实际射击过程。
 
 ## 给乌里光束添加周期光点
 
@@ -70,9 +70,9 @@ private static final float REPORT_INTERVAL = 1f;
 private float timeSinceLastReport;
 ```
 
-`REPORT_INTERVAL` 是两次报告之间的秒数，`timeSinceLastReport` 保存上次报告之后累计的时间。它作为类的字段，在多次调用之间保留。
+`REPORT_INTERVAL` 是两次报告之间的秒数，`timeSinceLastReport` 保存上次报告之后累计的时间。它写在方法外，作为类的字段在多次调用之间保留，才能把这些更新经过的时间累加起来。
 
-在 `advance(...)` 中累计 `amount`，局部片段如下：
+接着在 `advance(...)` 中累计 `amount`，达到间隔才执行光点与日志操作，局部片段如下：
 
 ```java
 timeSinceLastReport += amount;
@@ -83,9 +83,9 @@ if (timeSinceLastReport >= REPORT_INTERVAL) {
 }
 ```
 
-`amount` 是本次更新经过的秒数，正常情况下常见值约为 0.017，但它随运行情况变化。**按时间计效果，就累计秒数**。累计达到 1 秒时输出日志，在上一帧的光束末端位置创建青色光点，然后重新计时。
+`amount` 是本次更新经过的秒数，正常情况下常见值约为 0.017，但它随运行情况变化。**按时间计效果，就累计秒数**。这里每次把 `amount` 加到字段中，累计达到 1 秒时输出日志，在上一帧的光束末端位置创建青色光点，然后清零并重新计时。
 
-`Color.CYAN` 指定青色，20 为粒子尺寸，0.3 为持续秒数。想让效果更频繁，缩短 `REPORT_INTERVAL`；想改变外观，调整粒子参数。其他逻辑先沿用这个结构，持续伤害与更复杂的每帧效果以后再展开。
+`Color.CYAN` 指定青色，20 为粒子尺寸，0.3 为持续秒数。出现频率由 `REPORT_INTERVAL` 决定，外观仍由粒子参数决定：缩短间隔会更频繁地产生光点，修改尺寸与颜色则改变每个光点的表现。其他逻辑先沿用这个结构，持续伤害与更复杂的每帧效果以后再展开。
 
 ### 在光束武器文件中登记
 
@@ -95,7 +95,7 @@ if (timeSinceLastReport >= REPORT_INTERVAL) {
 "beamEffect": "data.scripts.gearin.combat.GearInBeamLogger"
 ```
 
-`beamEffect` 属于光束武器定义。包声明为 `data.scripts.gearin.combat`，类名为 `GearInBeamLogger`，完整类名与这里的值对应。
+`beamEffect` 属于光束武器定义，因此这次登记在 `.wpn` 中。包声明为 `data.scripts.gearin.combat`，类名为 `GearInBeamLogger`，完整类名与这里的值对应。
 
 ## 完整最小例
 

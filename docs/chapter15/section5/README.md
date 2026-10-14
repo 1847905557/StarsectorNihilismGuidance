@@ -1,6 +1,6 @@
 # 接入酒吧任务
 
-普通酒吧事件已经接入，这次让数据表创建一个长期任务。`bar_events.csv` 提供频率与期限，任务类提供状态，`wrapper` 在当前酒吧市场建立实例，再由 Rules 显示邀请和接受按钮。接受后运行一个生涯日便完成，整个入口从注册一直连到情报与结束。
+酒吧里的邀请可以通向一项离开对话后仍在运行的任务。本节制作码头检查：用 `bar_events.csv` 登记任务类，由 Rules 提供邀请和接受选项，接受后经过一个生涯日完成。我们沿这次交接组织代码，再说明酒吧的出现频率、冷却与任务自身的计时分别由谁处理。
 
 *本节预期阅读时间：\~30 分钟。*
 
@@ -23,65 +23,22 @@
 - Java 无参构造器、继承和全类名；
 - CSV 表头、字段顺序和数值类型。
 
-## 从一行 CSV 建立 `spec`
+## 登记码头检查任务
 
-将下面注册行写入 `data/campaign/bar_events.csv`，已有表头时只追加数据行。每行先由 `BarEventSpec(JSONObject row)` 读取。字段名称不是装饰文字：`bar event id` 形成 `spec` ID，`plugin` 保存脚本全类名，数值字段直接进入概率、权重和 `timeout` 计算。
+将下面注册行写入 `data/campaign/bar_events.csv`，已有表头时只追加数据行。事件 ID 使用 `GearIn_bar_hub`，`plugin` 指向本节的任务类：
 
 ```csv
 bar event id,tags,freq,prob,min dur,max dur,min timeout,max timeout,min accepted timeout,max accepted timeout,plugin
 GearIn_bar_hub,,10,1,30,40,30,40,60,90,data.scripts.gearin.campaign.GearInBarHubMission
 ```
 
-这一行表示：事件 ID 是 `GearIn_bar_hub`；没有额外标签；抽取权重为 10；市场筛选概率为 1；活动时长在 30 到 40 游戏天之间；未交互超时在 30 到 40 天之间；交互后超时在 60 到 90 天之间；脚本由 `GearInBarHubMission` 提供。
+`BarEventSpec(JSONObject row)` 将这一行读成规格：抽取权重为 10，市场筛选概率为 1，没有额外标签。活动时长与未交互冷却各取 30 到 40 生涯日，交互后冷却取 60 到 90 日。这些时间属于酒吧事件管理；玩家接受的检查只运行一日，由任务类另行设置。
 
-`freq` 只参与 `creator` `picker` 的权重，`prob` 在任务 `wrapper` 按市场种子进行筛选，三组时长分别进入 `active`、普通 `timeout` 和 `accepted` `timeout`。字段顺序改变后，解析器会把数值写入错误的属性，酒吧中的出现频率和消失时间都会随之偏移。
-
-## 让管理器自动生成 `creator`
-
-`BarEventManager.readResolve()` 读取 `Global.getSettings().getAllBarEventSpecs()`。每个尚未拥有 `creator` 的 `spec` 都会得到一个 `SpecBarEventCreator`，其 `getBarEventId()` 返回 `spec` ID，频率和时长方法直接读取 `spec` 字段。
-
-```java
-SpecBarEventCreator creator = new SpecBarEventCreator("GearIn_bar_hub");
-PortsideBarEvent event = creator.createBarEvent();
-```
-
-实际运行由管理器建立 `creator`，当前局部片段说明规格与事件对象的关系；本节直接使用 CSV 自动接入。`manager` 仍会跳过已有同 ID 的自动 `creator`，读档恢复后也会依据 `spec` 重建缺失的自动项。
-
-### `plugin` 类型决定创建分支
-
-`BarEventSpec.isMission()` 会调用 `Global.getSettings().getInstanceOfScript(pluginClass)`，检查实例是否为 `HubMissionWithBarEvent`。返回 `true` 时，`SpecBarEventCreator.createBarEvent()` 返回 `new HubMissionBarEventWrapper(specId)`；普通 `PortsideBarEvent` 则直接由 `spec.createEvent()` 返回事件实例。
-
-```java
-if (spec.isMission()) {
-    return new HubMissionBarEventWrapper(specId);
-}
-return spec.createEvent();
-```
-
-因此 CSV 的 `plugin` 必须指向可实例化的 `HubMission` 子类。把普通事件类名填入这一行，会改变 `isMission()` 分支；把没有无参构造器的类名填入 `spec`，则实例化阶段无法建立可用对象。
-
-## `wrapper` 如何取得酒吧上下文
-
-`HubMissionBarEventWrapper` 先在 `shouldShowAtMarket(market)` 中根据 `spec` 概率和市场 ID 生成随机判断，再创建任务、设置 `spec` ID 和随机源，并调用任务自己的 `shouldShowAtMarket(...)`。任务通过筛选后，`wrapper` 在 `addPromptAndOption(...)` 中调用 `createAndAbortIfFailed(market, true)`。
-
-```java
-mission.createAndAbortIfFailed(market, true);
-if (mission.isMissionCreationAborted()) {
-    mission = null;
-    return;
-}
-mission.updateInteractionData(dialog, memoryMap);
-FireBest.fire(null, dialog, memoryMap,
-        mission.getTriggerPrefix() + "_blurbBar true");
-FireBest.fire(null, dialog, memoryMap,
-        mission.getTriggerPrefix() + "_optionBar true");
-```
-
-**任务创建使用实际酒吧市场。** `market` 来自当前交互目标，`true` 表示酒吧路径。任务创建成功后，`wrapper` 把任务的触发前缀交给 Rules，Rules 再写酒吧 `blurb` 和 `option`；因此任务类负责状态，酒吧文本和选项仍由规则入口完成。
+这次也沿用 [C15-S3] 的事件管理器。不过 CSV 已经提供自动建立 `creator` 的入口，我们直接完成注册、任务与 Rules。
 
 ## 编写 `HubMission` 任务类
 
-任务类需要无参构造器，因为 `BarEventSpec.createMission()` 通过脚本全类名实例化它。构造器设置任务 ID、名称与阶段枚举；`create(...)` 接收 `wrapper` 传入的市场和 `barEvent` 标记。
+保存 `src/data/scripts/gearin/campaign/GearInBarHubMission.java`，继承 `HubMissionWithBarEvent`。它沿用 [C15-S4] 的任务阶段，同时允许酒吧管理器通过无参构造器创建。构造器设置身份、显示名、接受后的起点与成功终点，局部实现如下：
 
 ```java
 public GearInBarHubMission() {
@@ -92,7 +49,7 @@ public GearInBarHubMission() {
 }
 ```
 
-保存 `src/data/scripts/gearin/campaign/GearInBarHubMission.java`。任务连接 `active` 与 `completed` 两个枚举阶段。`setStageOnDaysElapsed(STAGE_COMPLETED, 1f)` 让任务运行一个游戏天后进入成功阶段，基类随即执行成功收尾；已有调查、报告与奖励按 [C15-S4] 的任务对象安排，当前集中观察酒吧接入。
+本例的工作是确认酒吧邀请怎样成为已接受的任务，因此采用一日的阶段连接。向 `create(...)` 加入以下局部方法，起点和终点都使用完整类中的枚举常量：
 
 ```java
 @Override
@@ -100,18 +57,18 @@ protected boolean create(MarketAPI createdAt, boolean barEvent) {
     if (createdAt == null || !barEvent) {
         return false;
     }
-    setStageOnDaysElapsed(STAGE_COMPLETED, 1f);
+    connectWithDaysElapsed(STAGE_ACTIVE, STAGE_COMPLETED, 1f);
     return true;
 }
 ```
 
-`createdAt` 说明任务由哪个市场创建，`barEvent` 说明当前调用来自 `wrapper` 的酒吧路径。条件符合后返回 `true`，`wrapper` 继续准备规则；创建失败返回 `false`，基类标记中止。
+`createdAt` 来自当前酒吧市场，`barEvent` 为 `true`。符合这条创建路径就返回成功，否则基类中止创建。`connectWithDaysElapsed(...)` 读取 `STAGE_ACTIVE` 的累计时间，接受后进入这个阶段，经过一日再转入成功阶段，由基类收尾。
 
-## 观察 Rules 与任务的交接
+::: warning 阶段计时需要明确起点
+`connectWithDaysElapsed(...)` 的计时器读取起点阶段的进度。本例明确传入 `STAGE_ACTIVE`；无起点的 `setStageOnDaysElapsed(...)` 无法为这次检查提供有效的阶段计时对象。
+:::
 
-`updateInteractionData(dialog, memoryMap)` 把任务对象提供的触发前缀、人物和市场上下文准备给 Rules。`wrapper` 随后分别触发 `blurb` 和 `option` 分类；玩家在酒吧看到的文字来自这些规则，而不是 `GearInBarHubMission.acceptImpl(...)`。
-
-接受行通过 `BarCMD` 从当前 `wrapper` 取得任务，`accept(...)` 设置起始阶段、执行 `acceptImpl(...)`，并加入 Intel 与生涯脚本列表。任务文本可以在接受对话中出现：
+接受时在对话中写入提示，局部回调如下：
 
 ```java
 @Override
@@ -122,7 +79,7 @@ public void acceptImpl(InteractionDialogAPI dialog, Map<String, MemoryAPI> memor
 }
 ```
 
-酒吧 `blurb`、酒吧 `option` 和任务接受文本属于不同入口：前两者由 `wrapper` 的 Rules 触发，后者由任务接受回调写入。把任务接受文本写进 `addPromptAndOption(...)` 会让它在玩家尚未接受任务时提前出现。
+这句话出现在任务被接受之后。邀请和接受按钮由下面的 Rules 提供，当前阶段说明则由完整类的 `getStageDescriptionText()` 提供。三处文字各有实际发生时机。
 
 ## 把酒吧文字和接受接到 Rules
 
@@ -139,15 +96,56 @@ BarCMD returnFromEvent true",,,接受与返回
 GearIn_bar_hub_decline,DialogOptionSelected,$option == GearIn_bar_hub_declineBar,BarCMD returnFromEvent false,,,拒绝与返回
 ```
 
-`GearIn_bar_hub_blurbBar` 与 `GearIn_bar_hub_optionBar` 由 `wrapper` 触发，分别写描述与邀请选项。玩家选择字符串选项后，酒吧恢复规则对话并触发 `DialogOptionSelected`，`offer` 行显示接受与拒绝。
+`GearIn_bar_hub_blurbBar` 与 `GearIn_bar_hub_optionBar` 分别写描述与邀请选项。玩家选择字符串选项后，酒吧恢复规则对话并触发 `DialogOptionSelected`，`offer` 行显示接受与拒绝。
 
 **选项 ID 使用当前任务前缀。** `BarCMD` 按这一前缀保留对应 `wrapper` 的任务，其他候选可以中止。接受行的 `BarCMD accept GearIn_bar_hub` 从当前 `wrapper` 取得任务，通知事件已交互，再执行任务接受；`returnFromEvent` 把控制权交回酒吧。当前不需要额外手工创建 `creator`。
 
-任务 ID 连接事件表、`wrapper`、规则 `trigger` 与选项前缀。文字可以随设计修改，调用入口继续按这些稳定键对应。Rules 字段与表达式由后面的规则专题完整展开，本节先把这条酒吧任务运行起来。
+任务 ID 连接事件表、wrapper、规则 trigger 与选项前缀。显示文字可以随设计修改，这些调用键则保持对应。后面的规则专题会展开 Rules 字段与表达式，本节使用这组记录完成酒吧任务的入口。
+
+## 从事件规格到当前任务
+
+注册、任务和 Rules 已经接好，管理器怎样把它们送到玩家面前？`BarEventManager.readResolve()` 读取 `Global.getSettings().getAllBarEventSpecs()`，为缺少 `creator` 的规格建立 `SpecBarEventCreator`。它按 spec ID 识别自动项，读档后也会补齐缺失项，并从规格取得权重与时长。以下局部片段展示规格创建事件的关系，实际登记由管理器完成：
+
+```java
+SpecBarEventCreator creator = new SpecBarEventCreator("GearIn_bar_hub");
+PortsideBarEvent event = creator.createBarEvent();
+```
+
+`BarEventSpec.isMission()` 实例化 `plugin`，判断它是否为 `HubMissionWithBarEvent`。`SpecBarEventCreator.createBarEvent()` 据此选择创建方式，局部逻辑如下：
+
+```java
+if (spec.isMission()) {
+    return new HubMissionBarEventWrapper(specId);
+}
+return spec.createEvent();
+```
+
+普通 `PortsideBarEvent` 直接成为酒吧事件。任务则先由 `HubMissionBarEventWrapper` 代管酒吧入口，候选接受之后，任务才进入长期运行。**同样是 CSV 的 `plugin`，继承类型决定它实际接入哪一条流程。**
+
+wrapper 在 `shouldShowAtMarket(market)` 中用市场 ID 与自己的种子建立随机源，按 `prob` 筛选，再创建任务、设置 spec ID 和随机源，并调用任务自己的市场条件。筛选通过后，`addPromptAndOption(...)` 使用当前交互目标的市场创建任务，再触发前面两类 Rules。下面的局部片段保留创建与规则交接：
+
+```java
+mission.createAndAbortIfFailed(market, true);
+if (mission.isMissionCreationAborted()) {
+    mission = null;
+    return;
+}
+mission.updateInteractionData(dialog, memoryMap);
+FireBest.fire(null, dialog, memoryMap,
+        mission.getTriggerPrefix() + "_blurbBar true");
+FireBest.fire(null, dialog, memoryMap,
+        mission.getTriggerPrefix() + "_optionBar true");
+```
+
+`updateInteractionData(...)` 准备任务前缀、人物与市场上下文，Rules 据此写入邀请。玩家接受时，`BarCMD` 从当前 wrapper 取得这份任务，`accept(...)` 设置起始阶段、执行 `acceptImpl(...)`，并登记 Intel 与生涯脚本。现在离开酒吧，计时仍由已接受的任务推进。
+
+::: info 构造器也会用于类型判断
+`isMission()` 会实例化插件来判断类型，筛选时还会另外创建任务。编者建议把依赖市场、会改变世界的创建操作放在 `create(...)`，构造器只设置任务本身；类型判断同样会运行构造器。
+:::
 
 ## 读取 CSV 生命周期字段
 
-`spec` 的概率、权重和三个时长在不同阶段生效。概率决定 `wrapper` 是否在当前市场建立任务；权重只影响 `manager` 从多个 `creator` 中抽取谁；`active` `duration` 决定事件保持在活动列表的时间；普通 `timeout` 处理未交互过期；`accepted` `timeout` 处理玩家已经交互后的冷却。
+`freq` 决定管理器抽取 creator 时的权重，`prob` 决定 wrapper 是否在当前市场建立任务。活动期限限制事件留在候选列表的时间，两组 timeout 分别控制未交互与已交互后的冷却。CSV 的三组时长沿着下面的入口生效：
 
 ```text
 prob → shouldShowAtMarket(market)
@@ -215,7 +213,7 @@ public class GearInBarHubMission extends HubMissionWithBarEvent {
         if (createdAt == null || !barEvent) {
             return false;
         }
-        setStageOnDaysElapsed(STAGE_COMPLETED, 1f);
+        connectWithDaysElapsed(STAGE_ACTIVE, STAGE_COMPLETED, 1f);
         return true;
     }
 
@@ -269,6 +267,9 @@ public class GearInBarHubMission extends HubMissionWithBarEvent {
 - **酒吧出现选项但接受后没有任务**：任务的 `create(...)` 返回了 `false`。
     - **解决方案**：确认 `wrapper` 传入 `barEvent=true` 且市场条件满足。
 
+- **接受后阶段计时发生异常**：计时连接没有提供有效的起点阶段。
+    - **解决方案**：在 `create(...)` 使用 `connectWithDaysElapsed(STAGE_ACTIVE, STAGE_COMPLETED, 1f)`，确认构造器也将起始阶段设为 `STAGE_ACTIVE`。
+
 - **事件消失时间不符合预期**：CSV 三组时长列顺序错误。
     - **解决方案**：按表头重新核对 `dur`、`timeout` 和 `accepted` `timeout`。
 
@@ -276,7 +277,7 @@ public class GearInBarHubMission extends HubMissionWithBarEvent {
 
 酒吧任务从事件表取得规格与 `creator`，`wrapper` 使用当前市场创建实例，Rules 提供邀请、选项与接受动作。任务接受后进入情报和脚本，一日连接再推进到完成。
 
-编者建议把酒吧入口与任务状态分别验证。概率、权重和冷却决定何时看到邀请，实际阶段与计时决定接受后发生什么，两者组合才是完整的任务接入。
+概率、权重和冷却控制玩家何时收到邀请，任务阶段与计时控制接受之后的过程。前者由事件管理器处理，后者由已接受的任务推进，观察时分别对应酒吧入口与情报状态。
 
 ## 建议参考项
 

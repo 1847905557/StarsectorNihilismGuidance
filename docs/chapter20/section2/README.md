@@ -1,6 +1,6 @@
 # 使用 GLSL 进阶
 
-圆环与朝向线已经能显示，现在换一种画法：Java 只提交覆盖它们的矩形，GLSL 根据每个片元的位置算出哪里该留下颜色。我们保留原来的半径和长度，先把 Java 与两份 shader 接起来，再观察缩放时线宽和边缘如何变化。这样，画面里的每一处差异都有明确的来源。
+本节把圆环和朝向线交给 GLSL 生成。Java 提交覆盖形状的矩形，顶点 shader 将它放到舰船位置，片元 shader 根据局部距离留下可见部分。半径和长度沿用前一节，线宽改由像素比例计算，缩放时便能比较边缘与宽度的变化。
 
 *本节预期阅读时间：\~30 分钟。*
 
@@ -38,7 +38,7 @@ runcode com.fs.starfarer.api.combat.CombatEngineAPI e = com.fs.starfarer.api.Glo
 
 Java 为矩形保留一个直接 `FloatBuffer`，在 `init(...)` 创建，在每帧绘制前按视口像素大小更新边界。它把顶点交给 `a_position`，把舰船位置、朝向、形状尺寸、线宽、像素比例和颜色交给 uniform，再发起一次 `GL_TRIANGLES` 绘制。放大的视口使 `1 px` 对应更少的世界单位；覆盖矩形随这一比例留出边距，圆环和朝向线的平滑边缘不会在矩形边界被裁掉。
 
-## 组织两个 shader 阶段
+## 将局部坐标传到片元阶段
 
 `data/shaders/GearIn_glsl_marker.vert` 和 `data/shaders/GearIn_glsl_marker.frag` 是相对 MOD 根目录的资源路径。两个文件都以 `#version 120` 开头，`SettingsAPI.loadText(...)` 读取它们的源码。vertex shader 对每个顶点执行一次；三角形光栅化后，fragment shader 对覆盖区域内的片元执行。GLSL 1.20 用 `attribute` 接收逐顶点输入，用 `uniform` 接收一次绘制内共享的值，用两阶段同名同类型的 `varying` 传递插值后的局部坐标。
 
@@ -65,7 +65,7 @@ vec2 nearestOnLine = vec2(clamp(v_local.x, 0.0, u_geometry.y), 0.0);
 float lineDistance = length(v_local - nearestOnLine);
 ```
 
-`u_geometry` 的两个分量分别为半径 `80 su` 和长度 `120 su`。线段两端按距离形成圆头；圆环与线段在正 X 轴附近相交。两个形状的覆盖率取较大值，因此交点只混合一次。
+`u_geometry` 的两个分量分别为半径 `80 su` 和长度 `120 su`。有限线段的最近点在两端停止延伸，端点附近的等距区域形成圆头。圆环与线段在正 X 轴附近相交，后面用同一次输出处理它们的覆盖率。
 
 ## 把像素线宽换算为透明度
 
@@ -82,7 +82,9 @@ float lineCoverage = 1.0 - smoothstep(
 float coverage = max(ringCoverage, lineCoverage);
 ```
 
-`smoothstep` 让边缘 Alpha 随距离平滑下降。覆盖率为零的片元由 `discard` 放弃，其余片元输出 `vec4(u_color.rgb, u_color.a * coverage)`。`.rgb` 选取颜色分量，`u_color.a` 包含方向标透明度和视口 Alpha；`GL_SRC_ALPHA` 与 `GL_ONE_MINUS_SRC_ALPHA` 把可见部分叠到战斗画面。
+`smoothstep` 让 Alpha 在半像素边缘内平滑下降。两个覆盖率取最大值，**圆环与线段交点仍只输出一次颜色**，透明度不会因同一形状内的叠加而变深。覆盖率为零时 `discard` 放弃片元，其余输出 `vec4(u_color.rgb, u_color.a * coverage)`。
+
+`.rgb` 取得颜色分量，`u_color.a` 已包含方向标透明度与视口 Alpha；Java 的 `GL_SRC_ALPHA`、`GL_ONE_MINUS_SRC_ALPHA` 再把它与当前画面混合。片元计算决定留下多少颜色，混合状态决定颜色怎样叠到已有画面。
 
 ## 创建、编译和链接 program
 
@@ -115,7 +117,11 @@ widthsLocation = GL20.glGetUniformLocation(program, "u_widthPixels");
 worldPerPixelLocation = GL20.glGetUniformLocation(program, "u_worldPerPixel");
 ```
 
-链接失败的 InfoLog 指向 program；读取、编译、链接或位置查询失败时，当前实例释放已经创建的句柄并停止绘制。成功创建的 program 与两份 shader 由 `cleanup()` 释放，句柄随后归零；重复清理不会再次删除。
+编译日志对应某份源码，链接日志对应两阶段组成的 program。成功链接后，查询得到的 location 才用于顶点输入与参数提交。任何一步失败，本实例释放已创建的句柄并停止绘制；正常结束也由 `cleanup()` 删除 program 和 shader，再把句柄归零。
+
+::: warning 声明过的 uniform 也可能没有 location
+未参与最终计算的 uniform 可以被优化移除，查询返回 `-1`。修改 shader 后，核对参数是否仍实际使用，再判断拼写或接口问题；本例查询的参数都参与形状、变换或颜色计算。
+:::
 
 ## 复用客户端矩形缓冲区
 
@@ -165,7 +171,7 @@ GL20.glUniform1f(worldPerPixelLocation, worldPerPixel);
 
 ## 绘制圆环与朝向线
 
-本例在默认 VAO 中建立客户端 attribute 指针。上下文支持 OpenGL 3.0 时，先保存原 VAO，再绑定 `0`，随后才用客户端属性栈保存默认 VAO 的数组布局。绘制结束先弹出属性栈恢复默认布局，再绑定原 VAO；OpenGL 2 兼容路径直接保存和恢复客户端数组状态。VBO 与 program 分别恢复。当前 VBO 绑定为 `0` 和当前 VAO 为默认对象共同决定这条客户端指针能怎样建立。
+客户端 attribute 指针在默认 VAO、VBO 绑定 `0` 的状态下建立，读取本节的直接缓冲。支持 OpenGL 3.0 时先保存原 VAO，绑定默认对象后再保存其布局；结束时恢复布局，再还原原 VAO。OpenGL 2 兼容路径直接处理客户端数组，program 和 VBO 绑定各自恢复。
 
 一次矩形绘制运行两个 shader 阶段。圆环和朝向线的宽度由片元计算控制，`glDepthMask(false)` 防止透明边缘写入深度。渲染层保持 `ABOVE_SHIPS_AND_MISSILES_LAYER`，`getRenderRadius()` 覆盖 `120 su` 与当前 `3 px` 世界边距；矩形额外边距随视口变化，战斗内的可见性还需在不同缩放下观察。
 

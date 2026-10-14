@@ -1,6 +1,6 @@
 # 配置 Gradle 工程
 
-源码迁入 `src/` 后，需要配置编译依赖与构建产物。本节使用 Gradle 编译 Java 17 源码，并将 JAR 输出到 MOD 的 `jars/`。源码目录、游戏路径和输出位置确定后，后续修改可以沿用同一份构建配置。
+本节为 MOD 配置 Gradle，让它从 `src/` 编译源码，引用游戏核心 JAR，最后生成 `jars/GearIndustry.jar`。源码位置、游戏路径和 Java 目标都写进工程文件，此后修改代码便可以沿用同一组构建任务。
 
 *本节预期阅读时间：\~12 分钟。*
 
@@ -24,15 +24,19 @@
 
 ## 准备构建文件
 
-在 `GearIndustry/` 根目录创建 `settings.gradle`、`build.gradle` 和 `gradle.properties`。它们分别保存工程名、构建配置与本机游戏路径。
-
-Gradle 是执行这份构建配置的工具。使用 [C6-S1] 配置好的 JDK，并确认终端能够运行：
+Gradle 根据工程配置安排编译和打包。沿用 [C6-S1] 的 JDK，安装并配置 Gradle 后，在终端执行：
 
 ```text
 gradle --version
 ```
 
-确认命令可用后，以下操作均在 MOD 根目录进行。**Gradle 从当前工程读取构建配置**，终端所在目录需要与构建文件对应。
+命令可用后，在 `GearIndustry/` 根目录创建 `settings.gradle`、`build.gradle` 和 `gradle.properties`。它们分别保存工程名、构建任务与本机游戏路径。下面的命令都在这个目录执行，**终端所在工程决定 Gradle 读取哪份配置**。
+
+::: details 构建配置也属于工程
+
+**编者更看重工程能够完整交接。** 源码目录、依赖与目标版本如果只存在于某个编辑器的本机设置里，拿到源码的人还要重新猜一遍。本节将这些条件保存为 Gradle 配置，换编辑器或交给他人时继续使用。这里配置的 Java 编译与普通 JAR 打包，已经足以承担当前 MOD 的构建。
+
+:::
 
 ### 设置工程名
 
@@ -42,7 +46,7 @@ gradle --version
 rootProject.name = "gear_in"
 ```
 
-这是 Gradle 的工程名。MOD 的注册 ID 仍由 `mod_info.json` 决定，JAR 文件名则在后面的 `jar` 任务中设置；本教程为工程沿用 `gear_in`，方便辨认。
+Gradle 用它标识当前工程。教程沿用 `gear_in`，便于与练习 MOD 对应；MOD 的注册 ID 仍在 `mod_info.json`，产物文件名则由稍后的 `jar` 任务设置。
 
 ### 设置游戏路径
 
@@ -52,15 +56,15 @@ rootProject.name = "gear_in"
 starsectorRoot=C:/Games/Starsector
 ```
 
-路径要指向包含 `starsector-core` 的游戏根目录，Windows 下也可以使用 `/`。在 `build.gradle` 中用下面的局部片段读取它：
+路径指向包含 `starsector-core` 的游戏根目录，Windows 下也可以使用 `/`。接下来需要从这个位置收集依赖。在 `build.gradle` 中，Java 插件声明之后加入以下局部片段：
 
 ```groovy
 def gameRoot = file(providers.gradleProperty("starsectorRoot").get())
 ```
 
-`gradleProperty("starsectorRoot")` 取得同名工程属性，`file(...)` 把它交给 Gradle 作为文件路径使用。之后的依赖声明都从 `gameRoot` 出发；游戏换了位置，就修改这条属性。
+`gradleProperty("starsectorRoot")` 读取工程属性，`file(...)` 将它解析为路径，保存到 `gameRoot`。本机安装位置只需在属性文件中填写一次，后面的依赖声明都从这里取得游戏目录。
 
-## 让 Gradle 编译 src
+## 配置 Java 编译任务
 
 在 `build.gradle` 开头启用 Java 插件，并选择 JDK 17：
 
@@ -76,11 +80,13 @@ java {
 }
 ```
 
-Java 插件提供 `compileJava`、`jar` 等任务，toolchain 为编译任务选择 JDK。后面分别用这两个任务编译源码和生成 JAR。
+Java 插件提供 `compileJava`、`jar` 等任务，toolchain 则指定编译使用 JDK 17。现在任务已经建立，还需要告诉它们源码与依赖的位置。
 
-Gradle 会查找本机可用的 JDK。若 JDK 17 位于它没有自动发现的位置，在 `gradle.properties` 中补充 `org.gradle.java.installations.paths`，填写 JDK 根目录；IDE 的 SDK 选择与 Gradle 的查找结果分别核对。
+Gradle 会查找本机可用的 JDK。若 JDK 17 位于它没有自动发现的位置，在 `gradle.properties` 中补充 `org.gradle.java.installations.paths`，填写 JDK 根目录。IDE 的 SDK 与 Gradle 的 toolchain 分别设置，IDE 中选好 JDK 17 后，仍要确认 Gradle 实际找到的安装。
 
-再写入源码目录的局部片段：
+### 指定源码集合
+
+在 `build.gradle` 加入：
 
 ```groovy
 sourceSets {
@@ -92,11 +98,11 @@ sourceSets {
 }
 ```
 
-`main` 是本工程的主源码集合，`srcDirs = ["src"]` 将 MOD 根目录下的 `src/` 设为源码目录。[C6-S2] 迁入的 Java 文件按包名保留目录层级，Gradle 从这里读取编译输入。
+`main` 表示主源码集合，`srcDirs` 指向 MOD 根目录下的 `src/`。[C6-S2] 迁入的 Java 文件因而成为编译输入，内部的包目录层级继续保留。
 
-## 加入游戏 API 依赖
+### 提供游戏依赖
 
-源码引用了游戏 API，因此编译时需要游戏的核心 JAR。在 `gameRoot` 定义之后加入依赖声明：
+源码中已经使用了游戏 API，所以编译器还需要游戏核心 JAR。在 `gameRoot` 定义之后声明依赖：
 
 ```groovy
 dependencies {
@@ -104,11 +110,11 @@ dependencies {
 }
 ```
 
-`fileTree` 收集游戏核心目录中的 JAR，`include` 选择该目录下的 `*.jar`。`compileOnly` 把它们放入编译依赖，供编译器解析游戏类。
+`fileTree` 从核心目录收集 `*.jar`，`compileOnly` 将它们提供给编译器。源码中的游戏类型与方法由此能够解析。
 
-**游戏本身提供这些类，MOD 的产物只需要保存您自己的代码。** 普通 Java 插件的 `jar` 任务打包本工程输出；这里也采用 `compileOnly` 表达游戏依赖由运行环境提供。若自行加入合并依赖 JAR 的打包配置，还需要确认其中的游戏类保持由游戏提供。
+**游戏核心类仍由游戏提供，MOD JAR 保存本工程的类。** 普通 Java 插件的 `jar` 任务打包工程输出，与这里的依赖方式相配。以后若增加合并依赖的打包任务，还要检查输入，避免把核心 JAR 也合入产物。
 
-## 固定编码和字节码目标
+### 固定源码编码与产物目标
 
 继续在 `build.gradle` 中加入：
 
@@ -119,9 +125,13 @@ tasks.withType(JavaCompile).configureEach {
 }
 ```
 
-toolchain 选择编译器，`options.release` 固定目标 Java 版本。两项都设为 17，生成的 class 才与本教程使用的游戏运行时一致。`options.encoding` 则让编译器按 UTF-8 读取源码，中文注释和字符串也有确定的编码。
+`options.encoding` 指定编译器以 UTF-8 读取源码，中文注释与字符串也就有了确定的编码。`options.release` 固定目标 Java 版本，与前面选择的 JDK 一同设为 17，使生成的 class 能由教程采用的游戏运行时加载。
 
-源码可以正常编译，产物也可能因目标版本过高而在游戏中报 `UnsupportedClassVersionError`。**编译器版本和游戏加载的字节码版本需要分别确认**，因此这里同时设置 toolchain 与 `release`。
+::: warning 编译器版本与目标版本
+
+toolchain 选择编译器，`release` 选择产物目标。目标版本过高时，编译仍可能成功，游戏加载时才报告 `UnsupportedClassVersionError`，因此这两项设置都保留为 17。
+
+:::
 
 ## 设置 JAR 输出
 
@@ -134,9 +144,7 @@ tasks.named("jar") {
 }
 ```
 
-`archiveFileName` 设置文件名，`destinationDirectory` 设置输出目录。两者合起来得到 `jars/GearIndustry.jar`，下一节会把同一个路径写入 `mod_info.json`。
-
-**JAR 输出路径需要与 `mod_info.json` 的加载路径一致。** 本节确定输出位置，下一节构建产物并填写加载声明。
+`destinationDirectory` 指定输出目录，`archiveFileName` 指定文件名，合起来得到 `jars/GearIndustry.jar`。这也是下一节写入 `mod_info.json` 的路径。**构建输出与游戏加载声明使用同一个文件位置**，生成产物后才能让游戏读取它。
 
 ## 完整最小例
 
@@ -225,9 +233,9 @@ tasks.named("jar") {
 
 ## 总结
 
-工程配置将 `src/` 中的源码、核心 JAR 编译依赖与 Java 17 目标组织为一套构建任务。`compileJava` 生成 class 文件，`jar` 将本工程输出打包到 `jars/GearIndustry.jar`。
+至此，工程已经知道源码在哪里、依赖哪些游戏类、采用什么编译目标，以及产物输出到哪里。`compileJava` 成功后出现的 class，是这份配置实际工作的结果。
 
-下一节执行 JAR 构建，并在 `mod_info.json` 中声明产物路径。后续修改代码时继续使用这份配置，重新构建即可更新产物。
+下一节执行 `jar` 并填写加载声明。后续修改源码继续使用当前任务，构建条件也随工程保留下来。
 
 ## 建议参考项
 

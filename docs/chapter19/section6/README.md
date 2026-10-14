@@ -1,6 +1,6 @@
 # 为 Nexerelin 特遣队添加命名与事件响应
 
-特遣队的名称可以来自它出发的市场，市场易手也可以留下明确的事件记录。本节把命名类接到齿轮工业配置，再登记一个生涯监听器。名字采用编号和来源市场，回调则按其实际适用的入侵模式记录；来源缺失、重复请求和读档后的登记都放到具体调用中说明。
+Nexerelin 在生成特遣队时请求候选名称，在入侵或市场转移时派发事件。本节为齿轮工业绑定来源市场与序数命名器，再登记事件记录角色。命名器处理每次请求，监听器区分回合、结束与实际易手，各自使用调用方提供的对象。
 
 *本节预期阅读时间：\~18 分钟。*
 
@@ -21,10 +21,6 @@
 - [C12-S1] 的市场与所有者；
 - [C13-S2] 的舰队指挥官。
 
-## 命名与事件分别由谁调用
-
-`specialForcesNamerClass` 指向 `SpecialForcesNamer` 实现；Nexerelin 可能为去重重复请求名称；`InvasionListener` 提供战利品、回合、结束和市场转移回调。监听器要通过 `ListenerManager` 注册，以瞬态形式在每次生涯加载后登记，当前实例去重。
-
 ## 保存命名器并登记类名
 
 将完整 `GearInSpecialForcesNamer` 保存到 `src/data/scripts/gearin/modcompat/`，在既有 `gear_industry.json` 根对象追加：
@@ -33,7 +29,7 @@
 "specialForcesNamerClass":"data.scripts.gearin.modcompat.GearInSpecialForcesNamer"
 ```
 
-生成特遣队时会进入 `GearInSpecialForcesNamer`，而不是使用默认命名器。
+生成特遣队时，库用这个完整类名实例化 `SpecialForcesNamer`，再调用 `getFleetName(fleet, origin, commander)`。当前舰队、来源市场与指挥官都由这次请求提供，名称只需按自己的规则返回。
 
 ## 从来源市场取得名字主体
 
@@ -43,7 +39,7 @@
 String marketName = market == null ? "GearIn" : market.getName();
 ```
 
-正常来源显示市场名；来源为 `null` 时仍返回非空名称。
+有 `origin` 时使用来源市场名；缺失时取得该舰队势力的市场列表，使用首个市场；列表也为空时采用 `GearIn`。这个备用名称保持示例可识别，选中的市场则由实际集合顺序决定。
 
 ## 给重复请求提供编号候选
 
@@ -54,7 +50,7 @@ int num = RANDOM.nextInt(33) + 1;
 return num + ordinalSuffix(num) + " " + marketName + " Forgeguard";
 ```
 
-1 到 33 提供候选编号，11、12、13 使用 th，其余按末位选择 st、nd、rd 或 th。Nexerelin 最多请求 25 次，直到取得非空且未重复的名字；编号随机仍可能碰到此前名称，有限候选也可能耗尽。**命名器提供候选，管理器判断重复。**
+编号在 1 到 33 之间，11、12、13 使用 th，其余按末位选择 st、nd、rd 或 th。库将候选与活动特遣队名称比较，非空且未重复时接受，最多请求 25 次；次数耗尽以后仍采用最后返回值。因此，随机序数提供候选，去重重试也有明确上限。
 
 ## 登记监听器并记录事件
 
@@ -81,7 +77,11 @@ if (GearInCompatBridge.isNexerelinEnabled()) {
 }
 ```
 
-同一生涯重复调用时按类去重，读档后重新建立瞬态实例。**回调取决于事件实际发生。**loot、round、finished 用于 Nexerelin 的旧式入侵模式；当前地面战通过自己的事件处理，市场真正发生转移时才调用 `reportMarketTransfered`。失败的入侵可以结束而保持市场所有者。
+Nexerelin 派发这组事件时，从 `ListenerManager` 取得 `InvasionListener`，所以记录角色登记到这个管理器。布尔值 `true` 选择瞬态列表，同一生涯重复调用按类去重，读档后由 `onGameLoad(...)` 重新建立实例。
+
+loot、round、finished 用于 `legacyInvasions` 选择的旧式入侵；当前地面战使用自己的战斗事件，实际易手仍会派发 `reportMarketTransfered`。失败的入侵可以结束，而市场所有者保持原状。
+
+编者建议让剧情条件明确指向战斗结局或实际势力归属变化。`reportInvasionFinished` 的名称无法替代它适用的入侵模式；市场转移又可能来自征服或转交。处理转移时，用新旧势力、`playerInvolved` 与 `isCapture` 判断当前事件；行政管理权由市场的玩家拥有状态另外表示。
 
 ### 入侵回调职责速查表
 
@@ -242,9 +242,7 @@ public class GearInSpecialForcesNamer implements SpecialForcesNamer {
 
 ## 总结
 
-命名器从来源市场取得文本，随机序数提供候选，库在生成特遣队时加载并判断重复。监听器按旧式入侵阶段和实际市场转移记录事件，读档后登记瞬态实例，同一生涯按类去重。
-
-编者建议按玩家实际采用的入侵模式观察日志。名称、回合结果和市场所有者分别有自己的入口，记录清楚以后，剧情响应也能选择正确事件。
+命名器从请求中的来源对象组织候选，库执行有限次数的去重重试。监听器则登记到 Nexerelin 实际派发使用的管理器，按适用模式记录入侵阶段，并独立记录市场转移；名称、战斗结局与所有权变化由此各有自己的入口。
 
 ## 建议参考项
 

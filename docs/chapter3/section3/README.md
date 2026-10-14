@@ -25,7 +25,7 @@
 
 在 MOD 中创建 `data/scripts/gearin/GearInModPlugin.java`。入口类继承 `BaseModPlugin`，写法与此前船插继承基类的结构相似。
 
-这次需要的回调是 `onNewGame()`：游戏创建新生涯时调用它。下面是入口中的局部片段：
+本例在创建新生涯时设置关系，因此使用 `onNewGame()` 回调。游戏在这个时机调用它，下面是入口中的局部片段：
 
 ```java
 @Override
@@ -34,13 +34,13 @@ public void onNewGame() {
 }
 ```
 
-`Global.getSector()` 取得正在生成的生涯星区；`seedRelations(...)` 是本例定义的关系设置方法，把星区交给它后再进行设置。
+`Global.getSector()` 取得正在生成的生涯星区；`seedRelations(...)` 是本例定义的关系设置方法。这里将星区作为参数传入，关系设置便作用于这次生成的生涯。
 
 **方法名与调用位置共同决定代码何时生效。** 关系设置放在新档回调，已有存档会继续保留自己的关系。修改代码后，需要创建新档观察初始值。
 
 ## 设置齿轮工业的初始关系
 
-在同一个类中加入 `seedRelations(...)`，局部片段如下：
+在同一个类中加入刚才调用的 `seedRelations(...)` 方法，局部片段如下：
 
 ```java
 private void seedRelations(SectorAPI sector) {
@@ -52,15 +52,15 @@ private void seedRelations(SectorAPI sector) {
 }
 ```
 
-`sector.getFaction("gear_industry")` 按本章定义的 ID 取得势力，`gear` 保存这个对象。后面每行都调用 `setRelationship`，第一项填写对方势力 ID，第二项填写关系。
+`sector.getFaction("gear_industry")` 按本章定义的 ID 取得势力，`gear` 保存这个对象。后面每行都通过它调用 `setRelationship`，第一项填写对方势力 ID，第二项填写关系；这些语句因此都以齿轮工业为设置对象。
 
-`0f` 为中立，`RepLevel.HOSTILE` 为敌对，`RepLevel.FRIENDLY` 为友好。等级写法由游戏选择对应关系值，并同步双方的关系。后续生涯事件仍然可以继续改变它们。
+`0f` 为中立，`RepLevel.HOSTILE` 为敌对，`RepLevel.FRIENDLY` 为友好。采用关系等级时，游戏选择对应数值，并同步双方的关系。设置的是开局关系，后续生涯事件仍然可以继续改变它们。
 
-本例让齿轮工业与玩家中立、与霸主友好、与海盗和速子科技敌对。编者建议您根据势力设定安排关系：舰队构成、市场归属和外交行为最终都会在同一个星区中发生，关系也应当服务于这个设计。
+本例让齿轮工业与玩家中立、与霸主友好、与海盗和速子科技敌对。关系按势力设定安排：舰队构成、市场归属和外交行为最终都会在同一个星区中发生，关系也应当服务于这个设计。
 
 ## 在 mod_info.json 中声明入口
 
-保存文件后，在 MOD 的 `mod_info.json` 顶层对象中加入下面的局部字段：
+关系方法写好后，还需要声明这个类作为 MOD 入口。在 MOD 的 `mod_info.json` 顶层对象中加入下面的局部字段：
 
 ```json
 "modPlugin": "data.scripts.gearin.GearInModPlugin"

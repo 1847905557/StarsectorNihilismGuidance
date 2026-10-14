@@ -1,6 +1,6 @@
 # 登记 Nexerelin 势力与外交配置
 
-齿轮工业已经是游戏中的势力，现在把它交给 Nexerelin 的开局与外交系统。先登记势力 ID 和同名 JSON，写入初始关系、关系边界与联盟倾向，再进入生涯读出实际配置身份。参数和对象对应以后，开局选项、外交事件与联盟状态才有明确的观察位置。
+Nexerelin 为势力另外读取开局资格、外交关系与联盟倾向。齿轮工业的核心定义已经存在，本节为同一个势力 ID 登记配置，分别设置初始关系、后续边界和外交特性，再通过生涯中的查询确认实际采用了哪份记录。
 
 *本节预期阅读时间：\~18 分钟。*
 
@@ -46,9 +46,9 @@ gear_industry
 "disableDiplomacy": false
 ```
 
-`playableFaction` 允许玩家选择该势力，`startingFaction` 允许它参与开局生成。`corvusCompatible` 表示支持固定星区模式，本例同时为后面的两种星区准备资格。`useConfigRelationshipsInNonRandomSector` 为 `true`，让固定模式采用本势力的配置关系。`disableDiplomacy` 为 `false` 时，势力可以参与外交；全局外交开关和具体事件条件也继续生效。
+`playableFaction` 允许玩家选择该势力，`startingFaction` 让它成为开局生成的候选，`corvusCompatible` 表示支持固定 Corvus 星区。`useConfigRelationshipsInNonRandomSector` 为 `true` 时，固定模式采用本势力的配置关系。两种模式的对象生成由下一节继续接入，这里先建立资格。
 
-保存重启以后，在 Nexerelin 新档设置中确认齿轮工业出现在可选势力列表。外交行为在生涯中观察，配置登记和事件发生各有自己的条件。
+`disableDiplomacy` 为 `false` 允许参与外交，实际事件还受全局开关与具体条件影响。保存并重启后，新档势力列表可以确认选择资格；外交结果则到生涯中观察。
 
 ## 给关系设定起点与边界
 
@@ -69,9 +69,9 @@ gear_industry
 
 `startRelationships` 给出默认初始化关系；验证采用默认关系设置的新档，随机关系选项则按其初始化规则处理。启用全局 `useRelationshipBounds` 时，`minRelationships` 与 `maxRelationships` 参与关系边界；默认关系模式下，独立势力的配置下限为 0，海盗的配置上限为 -0.25。双方配置取更严格的边界，运行期上限修饰还会参与最终值。
 
-**起点、边界与改变关系的入口分别确认。**本节观察 Nexerelin 的外交变化；直接用核心 `FactionAPI` 设置关系或其他 MOD 的行为，按各自调用处理。
+**初始关系决定开局状态，边界约束 Nexerelin 后续采用的变化。** 直接使用核心 `FactionAPI` 设置关系，或由其他 MOD 修改关系时，结果按各自调用处理。
 
-`factionsLiked` 和 `factionsDisliked` 仍可被读取并标为弃用字段。本例用实际关系值表达偏好，读起来也能知道 "喜欢" 究竟到了哪个档位。编者建议先确定游戏中期望的关系，再写起点与上下限。
+`factionsLiked` 与 `factionsDisliked` 是仍可读取的弃用字段。本例改用实际关系值表达起点，独立势力从 0.25 开始、下限为中立，海盗从 -0.6 开始、上限为 -0.25，两组关系各自保留一定变化范围。
 
 ## 用特性和 alignment 表达外交倾向
 
@@ -89,7 +89,9 @@ gear_industry
 }
 ```
 
-外交特性影响事件选择，alignment 参与联盟兼容性。本例偏重技术官僚倾向，再给外交与等级秩序一定权重。三项数值是配置的基础倾向；运行期修饰另在联盟状态中参与计算。
+`helps_allies` 使朋友与盟友的敌人获得不利倾向，`law_and_order` 对拥有自由港的势力施加不利倾向，外交判断由此使用当前星区的实际关系与市场。alignment 则参与联盟兼容性，本例以技术官僚倾向为主，另给外交与等级秩序基础值。
+
+编者更倾向于让这些特性参与具体决策，同时给关系保留变化余地。起点、上下限与特性若把一切都固定下来，外交事件留下的结果也就很有限；本例各组数值承担不同职责，势力立场由它们共同表现。
 
 `getBaseAlignments()` 返回基础值的副本，适合对照 JSON。已有联盟用 `AllianceManager.areFactionsAllied(...)` 查询；读出了倾向，还需要按实际关系和联盟准入条件观察结果。
 
@@ -101,7 +103,11 @@ gear_industry
 runcode com.fs.starfarer.api.Global.getLogger(data.scripts.gearin.modcompat.GearInNexDiplomacyProbe.class).info(new data.scripts.gearin.modcompat.GearInNexDiplomacyProbe().describe("gear_industry"));
 ```
 
-搜索 `factionId=gear_industry`，同时确认 `playable`、`diplomacy`、基础 alignment 和霸主联盟状态。**先确认配置身份，再判断参数。**NexConfig 未找到注册记录时可以返回 `neutral` 默认配置，正常返回本身还需要对应到实际对象。
+搜索 `factionId=gear_industry`，核对 `playable`、`diplomacy`、基础 alignment 与当前是否和霸主同盟。`getBaseAlignments()` 返回 JSON 基础值的副本，运行期修饰参与的倾向由另一份状态计算；实际同盟关系则由 `areFactionsAllied(...)` 查询。
+
+::: warning 查询可以返回 neutral 默认配置
+`NexConfig.getFactionConfig(...)` 未命中注册记录时，会返回 `neutral` 配置。核对返回对象的 `factionId`，才能确认查询取得齿轮工业的参数。
+:::
 
 `getFactionConfig(factionId)` 的配置查找忽略大小写；核心势力 ID、资源路径和其他调用继续沿用实际拼写。本节各处使用 `gear_industry`，并通过返回对象的 `factionId` 确认命中记录。
 
@@ -255,9 +261,7 @@ public final class GearInNexDiplomacyProbe {
 
 ## 总结
 
-一行势力 ID 将齿轮工业的 Nexerelin 配置接到加载器，JSON 决定开局资格、外交边界与基础联盟倾向。查询角色在生涯中读出配置身份和实际联盟，数据与观察由此对应。
-
-后面的生成和战略字段继续写进同一文件。每次新增参数，先确认使用的是自己的配置，再观察该参数所负责的行为。
+势力 ID 将核心对象与 Nexerelin 配置联系起来，开局资格、关系起点、后续边界和外交倾向分别服务自己的使用方。查询确认自有配置身份，再把基础参数与当前联盟、外交变化对应；后续生成和战略字段继续扩展同一份文件。
 
 ## 建议参考项
 

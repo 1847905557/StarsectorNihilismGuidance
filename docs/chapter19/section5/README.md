@@ -1,6 +1,6 @@
 # 登记 Nexerelin 地面战单位与产业
 
-Element Works 已经在市场中生产商品，现在给它补一份地面战定义。我们登记驻军贡献和防御强度，再创建一种玩家可组建的线列步兵。配置读取以后先查询实际 ID 与数值，再进入该市场的地面战观察；市场产业、地面战产业和单位各自使用自己的定义入口。
+地面战为市场产业另外读取防御与驻军参数。本节把 Element Works 的产业 ID 接到这份定义，并增加玩家可组建的线列步兵。产业插件根据市场中的实际状态计算效果，单位插件则使用人数与基础强度，配置登记和战斗结果由此分别核对。
 
 *本节预期阅读时间：\~18 分钟。*
 
@@ -37,9 +37,11 @@ Element Works 已经在市场中生产商品，现在给它补一份地面战定
 }
 ```
 
-**地面战产业键对应实际市场产业 ID。**这份记录提供基础防御强度倍率 1.35，以及 marine、heavy 两类驻军贡献。贡献值参与库的驻军生成计算，实际数量还取决于市场和驻军基础；它们不是直接写入 0.5 个士兵。
+**地面战产业键对应实际市场产业 ID。** 防御基础倍率为 1.35，marine 和 heavy 的驻军贡献分别为 0.5 与 0.25。库把各产业、条件的贡献汇总，再结合市场规模、稳定度、物资与驻军修饰计算数量，所以贡献字段采用的是生成系数。
 
-本例直接使用 Nexerelin 的 `IndustryForBattlePlugin`。它读取这份定义，按产业建造、中断和其他状态处理强度与贡献。正常完成的产业可以观察基础值，建造或真正中断时相应效果会改变；实际 AI 核心等修饰也继续参与。
+本例使用 `IndustryForBattlePlugin`。建造中的产业贡献为 0，防御倍率回到 1；中断时贡献按中断系数减少，真正中断的场所也回到防御倍率 1。正常完成以后，插件读取本节基础参数，再应用对应修饰。
+
+AI 核心在两项计算中的条件不同：通用插件给防御倍率应用 beta 的 1.1 或 alpha 的 1.25；驻军的核心与改善加成则另检查产业是否带有地面防御标签。Element Works 的生产属性继续由市场产业脚本处理，地面战按照这里的条件取得自己的结果。
 
 `plugin` 放完整类名，库创建产业战斗对象时实例化它。市场生产继续使用 `GearInElementWorksIndustry`，地面战插件处理的是另一份战斗对象。
 
@@ -63,7 +65,9 @@ Element Works 已经在市场中生产商品，现在给它补一份地面战定
 }
 ```
 
-`type` 选择部队类型，`playerCanCreate` 允许玩家组建；`strength` 为 1.2，人员使用 `marines`，每份人数比例为 1。`crewReplacerJobId` 连接人员替代规则，`tags` 用于部队分类，`sortOrder` 调整显示顺序。
+`type` 采用 `MARINE`，`playerCanCreate` 让创建入口提供这支部队。基础强度由单位规模与 `strength` 1.2 共同计算，实际战斗再应用士气等修饰。人员从 `marines` 取得，`mult` 为 1，每份单位规模使用一份人员。
+
+`crewReplacerJobId` 供人员替代规则读取，`tags` 用于分类，`sortOrder` 为 1.5，调整显示顺序。玩家人员不足以建立所选规模时，创建按钮会被禁用。
 
 单位插件字段叫 `pluginClass`，省略时使用 `GroundUnitPlugin`。本例保持库的普通单位插件，数值与人员输入已经足够表达这支步兵。需要特殊单位行为时，再为 `pluginClass` 指定实际实现。
 
@@ -87,9 +91,11 @@ String className = GBDataManager.getPluginsById().get(pluginId);
 runcode data.scripts.gearin.modcompat.GearInGroundBattleProbe p = new data.scripts.gearin.modcompat.GearInGroundBattleProbe(); com.fs.starfarer.api.Global.getLogger(p.getClass()).info("GearIn ground: " + p.describeIndustry("GearIn_element_works") + " exact=" + p.hasIndustry("GearIn_element_works") + " unit=" + p.hasUnit("GearIn_line_infantry"));
 ```
 
-查询的产业 ID、强度、贡献与插件都进入日志。未知产业会返回 `industryId` 为 `default` 的对象，所以 `hasIndustry` 比较实际 ID；单位未登记时，`GroundUnitDef.getUnitDef(...)` 返回 `null`。
+日志记录产业定义的 ID、基础倍率、贡献和插件。`hasIndustry` 比较返回对象的 `industryId`，因为未知产业会取得 `default` 定义；单位查询则在缺失时返回 `null`。两个入口的缺失结果不同，探针按各自含义判断登记。
 
-编者建议从对象身份开始查。默认定义能让地面战继续运行，但自有字段也会一起回到默认；画面没有崩溃，还需要确认到底使用了哪条记录。
+::: warning 重载定义会追加通用插件列表
+`loadDefs()` 清空产业与单位等定义，但会继续追加通用插件列表。重复重载后，新战斗可能实例化多份同类插件；本节通过保存并重启比较配置。
+:::
 
 ## 完整最小例
 
@@ -161,7 +167,7 @@ public final class GearInGroundBattleProbe {
 
 ## 验证方案
 
-前置数据：Nexerelin 与 Console Commands 已启用，测试生涯存在完成建造、正常运作的 Element Works 市场；玩家拥有用于组建部队的陆战队员。
+前置数据：Nexerelin 与 Console Commands 已启用，测试市场的 Element Works 完成建造并正常运作，基础倍率比较时未安装 AI 核心；玩家拥有足够建立所选规模的陆战队员。
 
 1. 保存定义和探针，构建重启，载入测试生涯并执行正文查询。
 2. 打开该市场的入侵地面战，查看 Element Works 与驻军；在玩家部队创建入口选择 GearIn line infantry，观察人数、基础强度与显示位置。
@@ -191,13 +197,11 @@ public final class GearInGroundBattleProbe {
     - **解决方案**：先以正常完成的产业核对基础定义，再观察各修饰。
 
 - **修改 JSON 后仍读到旧数据**：当前定义表尚未重新加载。
-    - **解决方案**：保存并重启后查询，采用库的 `loadDefs()` 重载时在测试生涯核对当前活动战斗。
+    - **解决方案**：保存并重启后查询，再进入测试战斗核对定义。
 
 ## 总结
 
-已有市场产业通过同一个 ID 取得地面战定义，玩家部队则从 unitTypes 创建。产业插件直接绑定类名，通用插件用独立映射；探针先确认身份，再对照数值和画面。
-
-Element Works 的生产职责继续保留，地面战新增自己的防御与驻军关系。按实际使用方分开配置，两个场景都能找到各自的输入和观察位置。
+产业定义沿实际产业 ID 提供防御与驻军参数，玩家单位定义提供类型、人员和强度；两个插件分别使用市场状态与单位状态计算结果。探针确认定义身份和基础字段，战斗再显示各修饰参与后的效果，生产与地面战各自保留自己的职责。
 
 ## 建议参考项
 

@@ -1,6 +1,6 @@
 # 记录和定位 MOD 日志
 
-此前各类回调已经输出日志，本节整理正常记录、状态提示与异常堆栈的写法。类名提供代码来源，阶段与对象 ID 提供当前上下文；遇到加载或运行问题时，用这些信息追到实际调用位置。
+日志需要让一次结果能够追溯到实际操作。本节从加载与运行记录出发，说明来源、级别、对象 ID 和异常堆栈怎样配合，再将消息格式整理为工具类。代码能够输出文字之后，还要决定这些文字能否帮助定位问题。
 
 *本节预期阅读时间：\~12 分钟。*
 
@@ -23,7 +23,24 @@
 - [C7-S2] 的服务与阶段；
 - Java 字符串、异常对象与 try／catch。
 
-## 让日志来源对应实际类
+## 从记录定位本次失败
+
+打开 `Starsector/starsector-core/starsector.log`，搜索 `GearIn` 或当前对象 ID。重新构建并启动之后，将记录对应到本次启动：应用阶段涉及类和资源，生涯阶段涉及存档对象，战斗阶段则涉及实体与参数。
+
+本节采用的消息形如：
+
+```text
+INFO GearIn load: object=GearIn_artizan_combat variant registered
+WARN GearIn combat: object=GearIn_artizan_combat target unavailable
+ERROR GearIn variant-load: object=GearIn_artizan_combat variant could not be loaded
+java.lang.RuntimeException: ...
+```
+
+前缀与对象 ID 用于找到相关记录，阶段说明当时正在做什么。发生异常时还需要完整堆栈，才能追到失败的调用。**定位从首个相关异常开始**，后面的错误可能只是前面的失败继续产生的结果。
+
+下面的写法就为这些信息提供对应位置。
+
+## 为功能类取得日志器
 
 在当前类中创建日志器：
 
@@ -31,11 +48,11 @@
 private static final Logger LOG = Global.getLogger(GearInLogWriter.class);
 ```
 
-Global.getLogger 按 Class 取得 Log4j 日志器，输出进入 `Starsector/starsector-core/starsector.log`。类名作为来源信息，可以与消息里的业务对象对应。
+`Global.getLogger(...)` 按 Class 取得 Log4j 日志器，输出进入前述日志文件。类名提供代码来源，消息中的 ID 提供本次处理的对象。
 
-**每个功能类使用自己的日志来源**。工具类可以统一消息格式，但调用记录仍要提供足够上下文，让读者看到是哪一阶段、处理哪个对象。
+**功能类使用自己的日志来源。** 需要统一格式时可以使用工具类，但调用方仍要提供阶段和对象。本节的辅助类会集中输出来源，消息中因此保留这些业务信息。
 
-## 按当前事实选择级别
+## 用级别说明发生了什么
 
 ### 日志级别速查表
 
@@ -45,7 +62,7 @@ Global.getLogger 按 Class 取得 Log4j 日志器，输出进入 `Starsector/sta
 | warn | 流程继续，但存在需要核对的状态 |
 | error | 当前操作失败或捕获异常 |
 
-下面的局部片段分别记录加载、阶段与失败：
+记录正常加载、需要核对的状态和加载失败时，分别使用：
 
 ```java
 LOG.info("GearIn load: variant=GearIn_artizan_combat");
@@ -53,26 +70,26 @@ LOG.warn("GearIn state: sector not ready");
 LOG.error("GearIn load failed: variant=GearIn_artizan_combat", exception);
 ```
 
-有实际异常对象时，作为第二参数传给 error，堆栈才会保留。消息说明正在处理什么，异常说明实际失败在哪里，二者一起使用。
+这里的 `error` 同时传入消息与异常对象。消息说明加载哪个装配，异常堆栈说明加载在哪个调用中失败。只输出 `exception.getMessage()`，会丢失这部分调用信息。
 
-编者建议把正常状态与失败区分清楚。正常的加载阶段缺少 Sector 可以记录为阶段信息；只有操作确实需要它却没有可用对象时，再按当前失败处理。否则 warning 堆多了，真正值得检查的记录反而难找。
+**编者认为警告也应当有分量。** 正常加载阶段缺少 Sector，可以记录为阶段信息；只有操作确实需要它却没有可用对象时，再按失败处理。警告积累过多，真正需要检查的记录反而容易被掩盖。
 
-## 写出稳定的上下文
+## 将消息对应到具体操作
 
-当前日志以 GearIn 开头，再放阶段、对象 ID 和实际结果：
+日志以 `GearIn` 开头，随后写阶段、对象 ID 与结果。局部格式如下：
 
 ```java
 String prefix = "GearIn " + stage + ": object=" + objectId + " ";
 LOG.info(prefix + detail);
 ```
 
-**前缀用于找到 MOD，阶段和对象用于找到具体操作。** 加载、初始化与运行可以沿同一个对象 ID 追踪；比较数值时把相关参数写在一行，避免只输出一个没有归属的数字。
+**固定格式方便搜索，具体字段解释本次操作。** 装配日志保留 `variantId`，舰船日志保留 `hullId`，生命周期日志保留回调。需要比较数值时，将相关输入与结果写在同一行，就能沿同一个 ID 追踪加载、初始化与运行过程。
 
-例如记录装配时写 variantId，记录舰船时写 hullId，记录回调时写当前阶段。格式保持稳定，字段按实际判断需要选择。
+消息内容随任务选择。只有一个脱离对象的数字，即使打印得再精确，也无法说明它属于哪次计算。
 
-## 在捕获位置保留异常
+## 在异常发生处保留上下文
 
-已有加载操作失败时，把上下文与捕获到的异常一起记录，局部片段如下：
+例如装配加载失败时，捕获位置同时知道本次请求的 ID 与实际异常。把两者交给日志工具，再沿原调用链处理失败：
 
 ```java
 try {
@@ -84,7 +101,7 @@ try {
 }
 ```
 
-这段记录不改变失败结果，当前异常继续交给调用链处理。可继续的业务状态按功能决定后续动作，日志本身只是说明事实。
+这段片段记录后重新抛出原异常，加载失败继续由调用链处理。若某种业务状态允许继续运行，后续动作则由该功能决定。日志保存发生的事实，捕获异常之后是否继续，仍是业务代码的职责。
 
 ## 完整最小例
 
@@ -126,22 +143,7 @@ public class GearInLogWriter {
 
 :::
 
-这个工具统一 info、warn 和 error 的格式。需要直接使用功能类日志器时，也可以沿用同一消息约定。
-
-## 搜索本次运行
-
-打开当前 starsector.log，搜索 GearIn 或具体 ID。应用阶段查看类和资源，生涯查看存档对象，战斗查看实体、参数与堆栈。重新构建和启动后，按当前启动位置区分记录。
-
-可观察日志形如：
-
-```text
-INFO GearIn load: object=GearIn_artizan_combat variant registered
-WARN GearIn combat: object=GearIn_artizan_combat target unavailable
-ERROR GearIn variant-load: object=GearIn_artizan_combat variant could not be loaded
-java.lang.RuntimeException: ...
-```
-
-**先从首个相关异常追起**，后面的错误可能由前面的失败继续产生。日志包含调用来源、阶段与目标后，再对照实际文件和数据，就能把问题落到当前链上的位置。
+工具统一 `info`、`warn` 与 `error` 的消息格式，调用方提供实际阶段、ID 和结果。直接使用功能类的日志器时，也可以沿用这套字段。回到前面的日志例子，来源、对象与堆栈便都有了明确的写入位置。
 
 ## 验证方案
 
@@ -174,9 +176,9 @@ java.lang.RuntimeException: ...
 
 ## 总结
 
-类日志器提供来源，级别说明当前状态，消息字段说明阶段和对象，异常对象提供失败堆栈。稳定格式让记录可搜索，具体内容则由当前操作的实际判断决定。
+从消息定位对象，从级别判断状态，再通过异常堆栈追到失败调用。类日志器与稳定格式帮助检索，实际输入和结果解释发生的过程。
 
-后续验证继续沿对象与回调记录。日志量不是判断精度，能把一次结果追到对应输入、调用和文件，才是这套写法的作用。
+后续验证继续按对象与回调记录。能够把结果对应到输入、调用和文件，日志才提供了排错所需的信息。
 
 ## 建议参考项
 

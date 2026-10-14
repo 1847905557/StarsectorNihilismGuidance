@@ -1,6 +1,6 @@
 # 让人物承担角色
 
-人物资料已经可以登记，这次让三位人物真正承担角色。Mira 指挥专用巡逻队中的一艘狼，Rowan 负责这支舰队，Selene 管理 Foundry；每项绑定都从持有对象回读。人物技能、军官成长与性格继续按各自对象处理，日志也区分人物、成员和市场。
+本节把 Mira 分配给巡逻队中的一艘狼，让 Rowan 指挥整支舰队，再让 Selene 管理 Foundry。人物写入不同对象后，技能也沿不同范围应用；我们完成这些绑定，再处理军官成长与性格资料，确认人物状态如何影响实际角色。
 
 *本节预期阅读时间：\~18 分钟。*
 
@@ -24,92 +24,34 @@
 - [C12-S1] 创建的 `GearIn_market_foundry`；
 - 能够打开舰队、舰船和殖民地管理界面。
 
-## 人物对象与角色槽位
+## 给舰队与市场准备角色入口
 
-`PersonAPI` 是人物对象，角色槽位由其他对象保存引用。舰长字段属于 `FleetMemberAPI`，舰队指挥官字段属于 `CampaignFleetAPI`，管理员字段属于 `MarketAPI`。写入槽位不会改变人物的 Java 类型，只会改变持有引用的对象状态。
+保存 `GearInCaptainRole.java`、`GearInFleetCommanderRole.java` 与 `GearInAdministratorRole.java` 到 `src/data/scripts/gearin/campaign/`。三个类分别负责舰长、舰队指挥官与管理员，完整代码在后文给出。
 
-**绑定结果从持有者回读。**舰长使用 `member.getCaptain()`，指挥官使用 `fleet.getCommander()`，管理员使用 `market.getAdmin()`。人物的姓名、势力、性格和资料仍从 `PersonAPI` 读取；人物等级、经验和技能状态从 `person.getStats()` 读取。
-
-### 角色归属速查表
-
-| 角色 | 持有对象 | 写入入口 | 读取入口 | 下游表现 |
-|---|---|---|---|---|
-| 舰长 | `FleetMemberAPI` | `setCaptain(person)` | `getCaptain()` | 单舰 stats、舰船详情和战斗舰船 |
-| 舰队指挥官 | `CampaignFleetAPI` | `setCommander(person)` | `getCommander()` | 舰队同步与成员 `getFleetCommander()` |
-| 管理员 | `MarketAPI` | `setAdmin(person)` | `getAdmin()` | 殖民地管理和市场产业 |
-| 军官数据 | `FleetDataAPI` | `addOfficer(...)` | `getOfficerData(person)` | 军官面板和成长状态 |
-
-表中的持有对象决定了写入和回读入口。一个人物可以被多个系统读取，但每个角色的状态只能从自己的持有对象判断。
-
-## MutableCharacterStatsAPI：人物的可变状态
-
-`MutableCharacterStatsAPI` 位于人物内部，负责成长和技能状态。`getLevel()`、`getXP()`、`getSkillLevel(id)` 和 `hasSkill(id)` 只读取当前值；`addXP(long)` 与 `setSkillLevel(id, level)` 修改人物状态；`refreshCharacterStatsEffects()` 重新应用已经注册的效果。
-
-经验和技能写入是两个不同动作。增加经验可能触发等级变化，但不会替代技能选择；直接设置技能等级可以改变人物状态，但不会创建技能文件或效果脚本。技能实现继续由 [C13-S3] 负责。
+在 [C11-S1] 的 `GearInFleetGenerator` 添加前两个角色类及 `FleetMemberAPI`、`FleetMemberType` 的 import，在基础舰队投放后、成员集合与任务实验之前加入局部调用：
 
 ```java
-MutableCharacterStatsAPI stats = person.getStats();
-int levelBefore = stats.getLevel();
-long xpBefore = stats.getXP();
-stats.addXP(1000L);
-stats.setSkillLevel("helmsmanship", 1f);
-stats.refreshCharacterStatsEffects();
-LOG.info(String.format("stats: level=%d->%d xp=%d->%d skill=%s has=%s",
-        levelBefore, stats.getLevel(), xpBefore, stats.getXP(),
-        stats.getSkillLevel("helmsmanship"), stats.hasSkill("helmsmanship")));
+new GearInFleetCommanderRole().run(generatedFleet);
+FleetMemberAPI roleMember = Global.getFactory().createFleetMember(
+        FleetMemberType.SHIP,
+        "wolf_Assault");
+generatedFleet.getFleetData().addFleetMember(roleMember);
+new GearInCaptainRole().run(roleMember);
 ```
 
-日志同时记录修改前后的值和刷新后的技能状态。`hasSkill` 只能证明人物拥有技能，不能证明舰长或指挥官效果已经到达成员 stats；下游对象还要经过自己的更新入口。
+Rowan 指挥这支巡逻队，新增的狼由 Mira 担任舰长，舰队 FP 与成员数也包含它。新档生成执行一次，人物与舰队一起留在生涯中。玩家旗舰的舰长来自玩家人物，这里使用专用巡逻队，才能明确观察自定义舰长。
 
-### stats 方法速查表
-
-| 方法 | 作用 | 结果 |
-|---|---|---|
-| `getLevel()` | 读取人物等级 | 角色面板中的等级 |
-| `getXP()` | 读取累计经验 | 日志中的经验值 |
-| `addXP(long)` | 增加人物经验 | XP 增加或达到升级条件 |
-| `getSkillLevel(id)` | 读取技能等级 | 技能树对应等级 |
-| `setSkillLevel(id, level)` | 写入技能等级 | 人物技能状态改变 |
-| `hasSkill(id)` | 判断是否拥有技能 | 与等级读取相互核对 |
-| `refreshCharacterStatsEffects()` | 重放人物效果 | 下游读取刷新后的状态 |
-
-## OfficerDataAPI：roster 与成长
-
-`OfficerDataAPI` 不是人物资料的替代品。`Global.getFactory().createOfficerData(person)` 创建成长容器，`getPerson()` 返回它关联的 `PersonAPI`；经验写入关联人物的 stats，候选技能和升级选择状态由 `OfficerDataAPI` 保存。人物资料、性格和 stats 仍从关联人物读取。
-
-把人物设置为舰长不会自动加入 roster，把人物加入 roster 也不会自动分配舰船。两个关系分别由 `FleetDataAPI` 和 `FleetMemberAPI` 维护，所以教程把它们作为相邻但独立的步骤。
+管理员从已有 Foundry 市场接入，在 [C12-S1] 的经济更新结束回调添加：
 
 ```java
-FleetDataAPI fleetData = fleet.getFleetData();
-OfficerDataAPI officerData = Global.getFactory().createOfficerData(person);
-fleetData.addOfficer(officerData);
-OfficerDataAPI stored = fleetData.getOfficerData(person);
-stored.addXP(500L);
-if (stored.canLevelUp() && !stored.isMadePicks()) {
-    stored.makeSkillPicks();
-}
+new GearInAdministratorRole().run();
 ```
 
-`addXP(...)` 达到条件时会自动生成尚未建立的候选。升级先读取 `getSkillPicks()`，再将当前候选 ID 交给 `levelUp(skillId)`。**候选已经建立时继续使用这份列表。** 再调用 `makeSkillPicks()` 会重掷，只有主动重新生成时才使用。升级完成后从 `stored.getPerson()` 回到人物，读取 `getSkillLevel` 和 `hasSkill`，才能确认结果写回了关联人物。
+`PersonAPI` 保存人物资料，成员、舰队与市场各自保存角色引用。写入后从这些持有对象回读，再确认数值更新。下面分别处理这几个实际动作。
 
-### OfficerDataAPI 速查表
+## 把 Mira 分配给狼
 
-| 方法 | 职责 | 判断依据 |
-|---|---|---|
-| `getPerson()` | 回到人物对象 | 返回关联 `PersonAPI` |
-| `setPerson(person)` | 替换关联人物 | 后续成长指向新人物 |
-| `addXP(xp)` | 增加军官经验 | `canLevelUp()` 可能变为真 |
-| `canLevelUp()` | 判断升级条件 | 是否可生成候选 |
-| `makeSkillPicks()` | 生成候选技能 | 更新候选状态 |
-| `getSkillPicks()` | 读取候选 ID | 选择 `levelUp` 参数 |
-| `levelUp(skillId)` | 完成技能升级 | 人物技能等级改变 |
-| `isMadePicks()` | 判断候选是否生成 | 避免重复投骰 |
-
-## 舰长：单个 FleetMemberAPI 的范围
-
-舰长属于单舰成员。本例让 `GearInCaptainRole.run(member)` 接收已经加入测试巡逻队的成员，将 `GearIn_officer` 写入它的舰长字段，再从同一成员读取。玩家旗舰的舰长由玩家人物提供，本节另建一艘测试狼，让自定义舰长拥有明确载体。
-
-舰长人物的个人技能在成员 stats 更新时参与单舰计算。`person.getStats()` 和 `member.getStats()` 是不同层级的对象；前者描述人物，后者描述船。设置舰长后只打印人物对象，不能证明成员已经保存了字段。
+`GearInCaptainRole.run(member)` 接收刚加入巡逻队的成员。读取已有舰长，ID 为 `GearIn_officer` 时复用，否则创建 Mira Vale，再写入 `setCaptain(...)`。局部绑定如下：
 
 ```java
 PersonAPI captain = member.getCaptain();
@@ -122,13 +64,13 @@ member.updateStats();
 LOG.info("captain=" + member.getCaptain().getId());
 ```
 
-`setStatUpdateNeeded(true)` 标记需要重算，`updateStats()` 完成当前更新。进入战斗后，引擎再根据成员创建本场 `ShipAPI`，当前先核对生涯成员与军官数据。
+`setStatUpdateNeeded(true)` 标记重算，`updateStats()` 按当前舰长更新成员数值。[C11-S3] 已说明 `person.getStats()` 与 `member.getStats()` 的区别，个人技能通过这个成员上下文进入单舰。战斗部署再从成员创建本场 `ShipAPI`。
 
-## 舰队指挥官：CampaignFleetAPI 的范围
+完整类还把 Mira 加入当前舰队的军官名册，已有 `getOfficerData(person)` 时沿用原数据。**舰长分配与军官名册分别写入。** 成员保存谁驾驶它，名册保存可分配的军官及成长状态；设置舰长与加入名册各完成一个关系。
 
-舰队指挥官由 `CampaignFleetAPI` 保存。调用 `setCommander` 后，`getCommander()` 返回指挥官，成员的 `getFleetCommander()` 读取同一舰队上下文。示例使用 `GearIn_commander`，与测试狼的 `GearIn_officer` 分开，日志可以直接检查两个槽位是否串线。
+## 让 Rowan 指挥整支巡逻队
 
-传入本节专用巡逻队后，`setCommander(...)` 将人物 stats 关联这支舰队并刷新，`forceSync()` 再更新成员与汇总。军官数据仍按 roster 单独加入，指挥官字段与军官列表分别提供不同关系。
+指挥官的 ID 使用 `GearIn_commander`，姓名为 Rowan Hale。`setCommander(...)` 写入舰队，把人物 stats 关联到这支舰队并刷新效果，随后 `forceSync()` 更新成员与汇总。局部操作如下：
 
 ```java
 PersonAPI commander = fleet.getCommander();
@@ -142,13 +84,11 @@ LOG.info(String.format("commander=%s flagshipCommander=%s",
         fleet.getFlagship().getFleetCommander().getId()));
 ```
 
-成员读取到的指挥官是集合传播结果。若 `getCommander()` 正确而 `getFleetCommander()` 为空，先确认成员仍属于当前舰队，再检查同步是否完成。
+`fleet.getCommander()` 返回 Rowan，成员的 `getFleetCommander()` 从所属舰队取得同一指挥官。Mira 继续担任狼的舰长，两个人物的作用范围可以同时存在。核对时先确认成员属于这支舰队，再比较两个指挥官 ID。
 
-## 管理员：MarketAPI 的范围
+## 让 Selene 管理 Foundry
 
-管理员由市场保存。`setAdmin(person)` 替换市场字段，`getAdmin()` 返回当前管理员。`setAdmin(...)` 也通过人物集合维护其市场反查，绑定后从 `getAdmin()` 和人物的 `getMarket()` 两端核对。
-
-市场产业从 `market.getAdmin().getStats()` 读取管理员的动态数值。这个入口说明管理员 stats 会影响经济计算，但本节只验证绑定和刷新，不实现管理员技能效果。
+管理员入口按 `GearIn_market_foundry` 取得市场，从已有管理员复用或创建 Selene Ward，ID 使用 `GearIn_admin`。`setAdmin(...)` 替换管理员，也维护人物集合和市场反查；绑定后刷新治理效果，再重算产业：
 
 ```java
 MarketAPI market = Global.getSector().getEconomy().getMarket("GearIn_market_foundry");
@@ -163,20 +103,76 @@ LOG.info(String.format("admin=%s market=%s",
         market.getAdmin().getId(), admin.getMarket().getId()));
 ```
 
-市场界面读取市场字段，不能用旧的 `PersonAPI` 引用代替 `market.getAdmin()`。管理员替换后，先从市场重新取得对象，再检查人物反向市场字段。
+市场产业从 `market.getAdmin().getStats()` 读取管理员动态数值。当前完成角色绑定和刷新，[C13-S3] 再添加技能。`getAdmin()` 与 `person.getMarket()` 分别确认正向角色与反向归属；替换之后从市场取得当前人物，再观察产业和殖民地界面。
 
-### 角色状态边界速查表
+### 角色归属速查表
 
-| 维度 | 舰长 | 舰队指挥官 | 管理员 |
+| 角色 | 持有对象 | 写入与读取 | 作用范围 |
 |---|---|---|---|
-| 归属字段 | `FleetMemberAPI` | `CampaignFleetAPI` | `MarketAPI` |
-| 直接读取 | `getCaptain()` | `getCommander()` | `getAdmin()` |
-| 主要下游 | 单舰 stats、战斗舰船 | 舰队 stats、成员同步 | 市场产业、殖民地界面 |
-| 复核入口 | `member.getStats()` | `member.getFleetCommander()` | `person.getMarket()` |
+| 舰长 | `FleetMemberAPI` | `setCaptain(person)` / `getCaptain()` | 单舰 stats、舰船详情与战斗对象 |
+| 指挥官 | `CampaignFleetAPI` | `setCommander(person)` / `getCommander()` | 舰队效果，成员通过 `getFleetCommander()` 读取 |
+| 管理员 | `MarketAPI` | `setAdmin(person)` / `getAdmin()` | 治理市场与产业，人物用 `getMarket()` 反查 |
+| 军官数据 | `FleetDataAPI` | `addOfficer(...)` / `getOfficerData(person)` | 军官名册与成长状态 |
 
-## PersonalityAPI：性格资料与行为
+## 修改人物技能，再更新对应角色
 
-性格由 `PersonAPI` 保存。`setPersonality(Personalities.STEADY)` 写入稳定 ID，`getPersonalityAPI()` 返回 `PersonalityAPI`，再用 `getId()`、`getDisplayName()` 和 `getDescription()` 分别读取机器标识、界面名称和说明文本。
+三种角色都使用 `PersonAPI`，姓名、势力和性格保存在人物中，等级、经验与技能保存在 `MutableCharacterStatsAPI`。以下局部片段增加经验，设置原版舵手技能，再读取人物结果：
+
+```java
+MutableCharacterStatsAPI stats = person.getStats();
+int levelBefore = stats.getLevel();
+long xpBefore = stats.getXP();
+stats.addXP(1000L);
+stats.setSkillLevel("helmsmanship", 1f);
+stats.refreshCharacterStatsEffects();
+LOG.info(String.format("stats: level=%d->%d xp=%d->%d skill=%s has=%s",
+        levelBefore, stats.getLevel(), xpBefore, stats.getXP(),
+        stats.getSkillLevel("helmsmanship"), stats.hasSkill("helmsmanship")));
+```
+
+增加经验和选择技能分别处理，达到升级条件并没有替人物选完技能。`setSkillLevel(...)` 直接改变已注册技能的等级，`refreshCharacterStatsEffects()` 重放相应人物与舰队效果；技能文件和效果实现由下一节提供。
+
+**人物等级已经写入，还要让实际角色取得更新结果。** 舰长技能通过成员重算进入单舰，指挥官效果依赖人物 stats 已关联舰队，再同步成员与汇总；管理员效果刷新传入治理市场，再让产业重算。三个角色使用各自的对象与更新入口。
+
+### 人物 stats 读取与写入速查表
+
+| 方法 | 当前职责 |
+|---|---|
+| `getLevel()` / `getXP()` | 读取等级与累计经验 |
+| `addXP(long)` | 增加人物经验，按成长规则处理等级 |
+| `getSkillLevel(id)` / `hasSkill(id)` | 读取技能等级并确认是否拥有技能 |
+| `setSkillLevel(id, level)` | 写入已注册技能的等级 |
+| `refreshCharacterStatsEffects()` | 刷新人物效果及已关联舰队效果 |
+| `refreshGovernedOutpostEffects(market)` | 刷新指定治理市场的效果 |
+
+## 在军官数据中处理成长
+
+军官经验仍写入关联人物的 stats，技能候选与选择状态由 `OfficerDataAPI` 保存。工厂的 `createOfficerData(person)` 创建这份数据，加入名册后再用 `getOfficerData(person)` 取得，局部片段如下：
+
+```java
+FleetDataAPI fleetData = fleet.getFleetData();
+OfficerDataAPI officerData = Global.getFactory().createOfficerData(person);
+fleetData.addOfficer(officerData);
+OfficerDataAPI stored = fleetData.getOfficerData(person);
+stored.addXP(500L);
+if (stored.canLevelUp() && !stored.isMadePicks()) {
+    stored.makeSkillPicks();
+}
+```
+
+这段用于尚未登记的军官数据，已有名册记录时继续取得原记录。`getPerson()` 返回关联人物，资料与性格也从它读取；`setPerson(...)` 替换这份数据的关联人物。
+
+`addXP(...)` 达到军官升级条件时，会为尚未建立的选择自动生成候选。`canLevelUp()` 确认条件，`getSkillPicks()` 读取候选 ID，将选中的 ID 交给 `levelUp(skillId)` 后，人物等级和技能随之增加。完成后候选清空，仍满足下一级条件时再生成下一组。
+
+::: warning 已生成的候选不要在刷新界面时重掷
+`makeSkillPicks()` 再次调用会清空并重新生成候选。使用 `isMadePicks()` 判断当前状态，已建立时读取 `getSkillPicks()`，玩家的本轮选择才能保持一致。
+:::
+
+升级后从 `stored.getPerson()` 读取 `getSkillLevel(...)` 与 `hasSkill(...)`，再按前述角色更新数值。名册拥有这份成长数据，成员舰长字段仍单独维护。
+
+## 设置性格并观察实际人物
+
+三个人物都采用 `Personalities.STEADY`。`setPersonality(...)` 写性格 ID，`getPersonalityAPI()` 返回名称与说明，以下局部日志读取三项资料：
 
 ```java
 person.setPersonality(Personalities.STEADY);
@@ -186,64 +182,17 @@ LOG.info(String.format("personality: id=%s name=%s description=%s",
         personality.getDescription()));
 ```
 
-脚本逻辑应比较 ID，界面验证可以观察显示名和描述。性格是 AI 决策输入，不决定人物是否属于军官、舰长、舰队指挥官或管理员；角色归属仍由外部持有对象的字段决定。
+脚本比较稳定 ID，界面读取显示名与说明。舰长性格参与战斗 AI，指挥官性格也参与舰队决策；角色关系仍由成员、舰队和市场的引用决定。观察行为时使用相同的舰队组成、目标与战斗条件，并先确认当前角色引用了这位人物。
 
-观察行为时固定舰队组成、目标和战斗条件。单次路线变化不足以证明性格设置失败，先确认当前舰长或指挥官字段确实引用了设置性格的人物。
+## 保留角色，并按原对象恢复
 
-## 角色的生命周期与对象复用
+本节的三个入口从当前角色字段复用人物：Mira 从成员舰长读取，Rowan 从舰队指挥官读取，Selene 从市场管理员读取；军官数据则从名册查询。重复调用先取得这些对象，再决定是否创建，当前资料与成长状态就能保留。
 
-角色入口的顺序是取得目标对象、按稳定 ID 复用或创建人物、补齐资料、写入角色槽位、从持有者回读。这个顺序把输入、人物和角色三个故障层分开，日志也能证明写入确实进入游戏对象。
+跨读档继续使用稳定 ID，同一次调用中再比较传入与回读的引用。人物、成员和舰队 stats 各自属于当前对象，数值恰好相同也没有改变它们的作用范围。
 
-重复运行时，先读取槽位中的人物或 roster 数据。只有当前对象为空或 ID 不符时才创建人物；无条件调用 `createPerson()` 会让新对象覆盖旧引用，姓名即使相同也无法证明是同一个对象。
+可逆角色实验保存原人物与持有对象，结束时把舰长写回原成员、指挥官写回原舰队、管理员写回原市场，并完成对应更新。军官名册和舰长分配分别清理，管理员替换还可能移除旧人物的市场与目录关联，恢复时按实际关系处理。
 
-一次运行内可以用对象相等性比较传入人物和回读人物。跨运行或读档后使用稳定 ID，因为载入会产生新的 Java 引用，引用地址变化不表示角色关系丢失。
-
-舰长、指挥官和管理员的对象复用条件不同：舰长从成员字段复用，指挥官从舰队字段复用，管理员从市场字段复用。军官数据从 `getOfficerData(person)` 复用。四个入口都遵守 "先读后建"。
-
-## 三层 stats 的传播
-
-人物 stats、成员 stats 和舰队 stats 是不同层级。舰长人物 stats 通过成员更新进入单舰，舰队指挥官人物 stats 通过舰队同步进入成员，管理员人物 stats 由市场产业读取。数值相同不代表对象相同，日志应带上层级名称。
-
-修改人物技能后只刷新人物 stats，成员或舰队是否重新计算取决于它们自己的更新入口。舰长示例标记成员更新，指挥官示例调用 `forceSync`，管理员示例刷新治理市场效果与产业；这三个动作不能互相替代。
-
-技能效果出现异常时，先检查人物技能等级，再检查角色槽位，最后检查对应下游 stats。[C13-S3] 只处理技能注册和效果实现，角色归属错误应在本节的数据流中修复。
-
-## 替换与恢复
-
-测试替换角色前保存原人物引用、ID 和持有对象。舰长恢复到原成员，指挥官恢复到原舰队，管理员恢复到原市场；每次恢复后重新读取字段确认完成。
-
-移除舰长不会自动删除 roster 中的军官，移除 roster 也不会替成员清空舰长。清理必须分别调用对应对象的 API，不能用清空整个舰队或市场来掩盖关系错误。
-
-管理员替换可能影响市场通信目录。验证先检查 `getAdmin()` 与 `getMarket()`，再观察殖民地界面；旧人物引用只用于比较，不作为当前状态来源。
-
-## 角色实现的组织
-
-三个完整类分别负责舰长、舰队指挥官和管理员。舰长类接收成员，指挥官类接收舰队，管理员类按已有市场 ID 取得对象；各自的创建方法提供对应人物，日志记录实际回读。
-
-舰长类使用 `GearIn_officer` 和 Mira Vale，并把人物加入 roster；舰队指挥官类使用 `GearIn_commander` 和 Rowan Hale；管理员类使用 `GearIn_admin` 和 Selene Ward。不同 ID 让验证能够区分角色槽位。
-
-军官升级用局部片段说明，不增加第四个角色类。军官是 `FleetDataAPI` 中的人物成长数据，不是新的角色持有者；成为舰长后仍要单独调用成员的 `setCaptain`。
-
-## 接到已有舰队与市场
-
-保存三个类到 `src/data/scripts/gearin/campaign/`。在 [C11-S1] 的 `GearInFleetGenerator` 加入两个角色类及 `FleetMemberAPI`、`FleetMemberType` 的 import，在基础舰队投放后、集合与任务实验之前加入局部片段：
-
-```java
-new GearInFleetCommanderRole().run(generatedFleet);
-FleetMemberAPI roleMember = Global.getFactory().createFleetMember(
-        FleetMemberType.SHIP,
-        "wolf_Assault");
-generatedFleet.getFleetData().addFleetMember(roleMember);
-new GearInCaptainRole().run(roleMember);
-```
-
-这一艘狼加入实际巡逻队，Mira 与 Rowan 分别承担舰长和指挥官，基础生成的成员数与 FP 也包含它。新档生成入口仍执行一次。管理员沿已有市场，在 [C12-S1] 的经济观察器结束回调加入：
-
-```java
-new GearInAdministratorRole().run();
-```
-
-当前调用在市场创建与经济更新之后，重复读档从市场取得同一管理员。编者建议先把三个持有者对应清楚，再添加技能；同一名字出现在日志里，尚不能解释它到底绑定到了哪艘船。
+技能异常也沿同一过程定位：人物是否拥有等级，角色是否引用这个人物，下游对象是否已经更新。下一节的技能实现继续使用本节建立的三个角色。
 
 ## 完整最小例
 
@@ -391,10 +340,10 @@ public class GearInAdministratorRole {
 前置数据：[C11-S1] 的基础巡逻队生成入口及 [C12-S1] 的 Foundry 市场；三个角色调用按正文接入。
 
 1. 构建重启并创建新档，等待巡逻队生成，搜索舰长日志，按成员 ID 定位加入的测试狼。
-2. 查看专用巡逻队的军官记录，核对 `getOfficerData(person)` 与成员舰长回读，Mira 的军官数据属于这支舰队。
+2. 在 `GearIn captain` 日志确认 `captain=GearIn_officer`、`officer=true`，再在战斗预览中核对测试狼的舰长；军官数据来自当前巡逻队的 `getOfficerData(person)`。
 3. 前往巡逻队所在星系，在接触或战斗预览中查看人物，比较日志中的指挥官与当前成员的指挥官 ID。
 4. 让巡逻队移动或进入战斗预览，核对成员仍读取 Rowan 的舰队上下文。
-5. 运行 `GearInAdministratorRole`，打开 `GearIn_market_foundry` 的殖民地管理界面，确认管理员显示为 Selene Ward。
+5. 等待经济更新结束后的管理员入口，搜索 `admin=GearIn_admin` 日志，打开 Foundry 的殖民地界面，确认管理员显示为 Selene Ward。
 6. 读取管理员的 `getMarket()` 和市场的 `getAdmin()`，确认两者指向同一市场。
 7. 查看三个入口输出的 `PersonalityAPI` 日志，核对 ID、显示名和描述来自 `steady`。
 8. 在同一对象上重复调用角色入口，再保存读档；原巡逻队与成员保留，市场入口复用已绑定的 Selene。
@@ -434,9 +383,9 @@ public class GearInAdministratorRole {
 
 ## 总结
 
-三个人物分别写入成员、舰队与市场，军官数据另加入当前舰队的 roster。人物 stats 保存经验与技能，军官数据安排候选与升级，性格则提供 AI 使用的资料。
+Mira、Rowan 与 Selene 分别写入成员、舰队与市场，角色关系从各自对象回读。人物 stats 保存经验与技能，名册中的军官数据管理升级候选，性格提供 AI 使用的资料。
 
-角色效果沿持有者更新：单舰重算、舰队关联与同步、市场管理员刷新各自对应实际对象。接下来再把技能写入这些人物，观察同样的对象收到哪些数值。
+人物状态沿角色进入实际对象，更新也在相应范围完成。保留当前人物、处理对应关系，再确认成员或市场结果，下一节的技能就有了明确的作用对象。
 
 ## 建议参考项
 

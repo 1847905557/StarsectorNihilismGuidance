@@ -1,6 +1,6 @@
 # 制作专用产业
 
-炼厂交易入口已经有了，接下来让市场真正生产。本节给 Foundry 添加 Element Works，按规模需求金属、燃料和重型机械，产出稀有金属，再用最大输入缺口削减供给。建设、AI 核心和中断继续经过产业生命周期，日志把产业声明与市场最终结果分别记录。
+本节给 Foundry 添加 Element Works，消耗金属、燃料与重型机械，生产稀有金属。输入不足时削减产出，建设或中断时停止供给，安装 Alpha core 后另提供稳定度效果。我们围绕这条生产过程实现产业，说明规模、缺货与功能状态怎样共同决定结果。
 
 *本节预期阅读时间：\~30 分钟。*
 
@@ -27,76 +27,22 @@
 - [C8-S4] 的 `MutableStat` 与修饰值；
 - [C12-S1] 的经济更新监听与市场查询。
 
-## 产业与市场的数据关系
+## 注册 Element Works
 
-产业挂在一个 `MarketAPI` 上。市场提供规模、商品库存、经济刷新和建设队列，产业根据这些输入声明自己的需求和产出。经济步读取产业声明，再把结果传播到市场商品价格、库存、短缺和贸易界面。
-
-产业的注册数据落在 `industries.csv`，`IndustrySpecAPI` 代表这条规格，`Industry` 是市场中的运行时接口，`BaseIndustry` 提供大多数通用实现。CSV 的 `plugin` 列指向一个可无参构造的 Java 类，市场添加产业时会实例化这个类并调用 `init()`。
-
-本节的产业 ID 是 `GearIn_element_works`，显示名是 `Element Works`。它消耗 `metals`、`fuel` 和 `heavy_machinery`，产出 `rare_metals`。商品档位按市场规模计算，燃料与机械使用整数除法；放到不同规模的市场，当前输入与理论产出也随之改变。
-
-## 注册产业规格
-
-产业数据文件位于 `data/campaign/industries.csv`。原版表头包含 15 列，MOD 数据行必须保持相同顺序：
+在 `data/campaign/industries.csv` 添加以下记录，产业 ID 使用 `GearIn_element_works`，插件指向本节的 `GearInElementWorksIndustry`：
 
 ```csv
 id,name,cost mult,build time,income,upkeep,downgrade,upgrade,tags,data,image,plugin,desc,order,disruptDanger
 GearIn_element_works,Element Works,45,90,,3,,,"industry, industrial",,graphics/icons/industry/refining.png,data.scripts.gearin.campaign.GearInElementWorksIndustry,"Consumes metals, fuel, and heavy machinery to produce rare metals.",510,MEDIUM
 ```
 
-注册行的 `id` 是全局查找键。`MarketAPI.addIndustry("GearIn_element_works")` 和 `market.getIndustry("GearIn_element_works")` 都依赖这个值。
+成本倍率 45、建设时间 90 生涯日与维护倍率 3 沿用原版 `refining`，图像也采用精炼产业图标。`income` 留空，本例没有独立的收入基础值；生产贡献继续进入市场经济。`order` 取 510，排在原版精炼的 500 之后。
 
-`name` 是默认显示名。运行时名称还可能受到本地化或插件状态影响，因此界面读取通常使用 `getCurrentName()`。
+`industry` 标签让它计入产业数量，`industrial` 提供分类。`desc` 给出静态说明，真正的供需与状态由 `plugin` 类实现。该类通过无参构造创建，完整类名与包路径逐字符对应。升级、降级与附加 `data` 当前留空，`disruptDanger` 使用 `MEDIUM`。
 
-`cost mult` 和 `build time` 为建设流程提供基础参数。本例沿用原版 `refining` 的成本倍率 45 和 90 生涯日建设时间。成本倍率再按设置中的信用单位与建设成本倍率换算，`getCost()` 读取换算后的信用金额。
+## 将产业添加到 Foundry
 
-`income` 留空，`upkeep` 使用原版 `refining` 的维护倍率 3。基类会按市场规模和危险度修饰维护费；本节的产业没有独立收入基础值。
-
-`downgrade` 和 `upgrade` 留空表示产业没有预设的升级链。升级与降级接口仍然会在正文中说明，真正的升级链需要另一个已经注册的目标产业。
-
-`tags` 使用 `industry, industrial`。前者让产业计入产业数量，后者用于产业分类和部分界面筛选。
-
-`data` 是传给产业规格的附加字符串。本例没有额外参数，因此留空。
-
-`image` 指向产业图像。示例使用原版精炼产业图标，MOD 也可以使用自己的资源路径。
-
-`plugin` 必须填写完整 Java 类名。类名、包名和文件路径任何一处不一致，产业都无法被正确实例化。
-
-`desc` 是产业规格描述，通常显示在产业 tooltip 中。它描述静态定位，不承担运行时产出计算。
-
-`order` 影响产业列表中的排序。本例使用 510，排在原版 `refining` 的 500 之后。
-
-`disruptDanger` 选择突袭或其他行动施加中断时使用的危险等级。本例与 `refining` 一样使用 `MEDIUM`。
-
-## 读取产业规格
-
-`IndustrySpecAPI` 是读取 CSV 结果的入口。它描述产业身份、显示、建设和经济参数，不持有某个市场的当前供需值。
-
-```java
-IndustrySpecAPI spec = Global.getSettings().getIndustrySpec(
-        GearInElementWorksIndustry.INDUSTRY_ID);
-if (spec != null) {
-    LOG.info(String.format("id=%s name=%s plugin=%s build=%.0f cost=%.0f",
-            spec.getId(), spec.getName(), spec.getPluginClass().getName(),
-            spec.getBuildTime(), spec.getCost()));
-}
-```
-
-`getId()`、`getName()` 和 `getPluginClass()` 对应 CSV 的身份和插件列。`getImageName()`、`getDesc()` 和 `getOrder()` 对应界面资源、描述和排序。
-
-`getCost()`、`getBuildTime()`、`getIncome()` 和 `getUpkeep()` 是建设与经济的基础值。市场规模、稳定度、危险度、AI core 和改良状态会在运行时影响最终统计项。
-
-`getUpgrade()` 和 `getDowngrade()` 返回目标产业 ID。目标为空时，产业没有对应方向的转换；目标存在时，目标 ID 仍然必须能在全局产业规格表中找到。
-
-`getTags()` 返回标签集合。`hasTag()` 适合判断 `industry`、`industrial`、`structure` 等分类。
-
-`getDisruptDanger()` 返回 `RaidDangerLevel`。它只提供中断危险等级，实际中断状态由运行时产业和市场 memory 保存。
-
-规格对象适合用于注册检查和界面描述。商品数量、功能状态、缺货和中断天数属于运行时产业，应从 `Industry` 实例读取。
-
-## 取得运行时产业
-
-市场添加产业时使用注册 ID：
+保存 `GearInElementWorksIndustry.java` 与 `GearInIndustryProbe.java` 到 `src/data/scripts/gearin/campaign/`。在 [C12-S1] 的 `GearInEconomyProbe.advance(...)` 取得市场后添加以下局部操作：
 
 ```java
 if (!market.hasIndustry(GearInElementWorksIndustry.INDUSTRY_ID)) {
@@ -105,37 +51,21 @@ if (!market.hasIndustry(GearInElementWorksIndustry.INDUSTRY_ID)) {
 Industry industry = market.getIndustry(GearInElementWorksIndustry.INDUSTRY_ID);
 ```
 
-`hasIndustry()` 先做存在判断，避免重复添加。`addIndustry()` 会从规格表取出插件类，实例化后调用 `init(id, market)`，随后执行一次 `apply()`。
+`addIndustry(...)` 从注册规格取得插件，调用 `init(id, market)` 建立归属，再执行 `apply()`。本例用 `Industry` 接口取得市场中的运行实例，已经存在时沿用它。后台调用直接添加成品产业，建设状态由后面的实验另行设置。
 
-`Industry` 是调用方依赖的稳定接口。它提供市场、规格、供需、收入、维护、建设和中断状态。自定义实现通常继承 `BaseIndustry`，让基类承担通用状态和撤销流程。
-
-`BaseIndustry` 内部保存 `supply`、`demand`、`income`、`upkeep`、`building`、`buildProgress`、`upgradeId`、`aiCoreId`、`improved` 和特殊物品状态。子类只需要在明确的钩子中补充自己的规则。
-
-保存 `GearInElementWorksIndustry.java` 与 `GearInIndustryProbe.java` 到 `src/data/scripts/gearin/campaign/`。在 [C12-S1] 的 `GearInEconomyProbe.advance(...)` 已取得市场后，添加上面的产业检查与添加片段；把以下观察放到它的 `ProbeListener.economyUpdated()` 中，接到市场日志之后：
+然后在 `ProbeListener.economyUpdated()` 的市场日志之后加入局部观察：
 
 ```java
 GearInIndustryProbe.log(market);
 ```
 
-先完成一轮经济更新，再从同一个市场取得产业，供需与缺口才对应当前市场条件。两个类与经济观察器位于同一包。
+两类与观察器位于同一包。产业先声明供需，经济更新再汇总市场结果，因此观察放在整轮结束后。接下来实现 `apply()`，让这份声明随市场规模与运行状态重新计算。
 
-## 生命周期方法的触发时机
+## 按市场规模声明生产
 
-`init(String id, MarketAPI market)` 建立产业与市场的关系。基类会保存 ID 和市场引用，并读取对应 `IndustrySpecAPI`。
+`GearInElementWorksIndustry` 继承 `BaseIndustry`，由基类保存供需、收入、维护、建设、核心、改良和特殊物品状态。自己的 `apply()` 先调用 `super.apply(true)`，更新通用供需修饰、收入维护与安装效果，再定义当前生产规则。
 
-`apply()` 是产业声明供需和应用修饰的主要入口。市场添加产业、经济重算、稳定度变化和外部调用都可能触发它。
-
-`unapply()` 撤销当前产业写入的修饰。移除产业、重新应用产业和开始建设时，基类会先走撤销流程。
-
-`reapply()` 的语义是先 `unapply()` 再 `apply()`。自定义产业应让同一修饰 ID 在两个方向保持一致。
-
-`advance(float amount)` 接收市场推进的帧时间。基类在这里推进建设进度，并检测 disruption 是否结束。
-
-当前供需在 `apply()` 重建。存档过程中会清理无修饰对象，读档后市场重新应用产业规则，运行状态继续来自这个市场。
-
-## 写入规模化供需
-
-本例使用市场规模作为数量基准：
+金属需求取市场规模，燃料与机械各取规模的一半，稀有金属理论产出取规模减 1。以下局部片段计算这些档位，整数除法用于燃料与机械：
 
 ```java
 int size = market.getSize();
@@ -145,9 +75,9 @@ int machinery = Math.max(1, size / 2);
 int output = Math.max(1, size - 1);
 ```
 
-规模 1 的市场也会保留至少 1 单位输入和产出。规模 6 的市场会需求 6 金属、3 燃料、3 重型机械，并在完整供给时产生 5 单位稀有金属。
+Foundry 规模为 3，基准需求是 3 金属、1 燃料、1 机械，理论产出为 2。规模 6 时分别为 6、3、3 与 5；规模 1 也保留至少 1 档输入和产出。[C12-S3] 已说明这些档位与货舱件数的区别。
 
-`demand()` 把商品需求写入产业的需求 map：
+通过 `demand(...)` 将三项输入写入需求：
 
 ```java
 demand(Commodities.METALS, metals, "Metal feedstock");
@@ -155,75 +85,48 @@ demand(Commodities.FUEL, fuel, "Refinery fuel");
 demand(Commodities.HEAVY_MACHINERY, machinery, "Refinery equipment");
 ```
 
-`supply()` 把商品产出写入供给 map：
+通过 `supply(...)` 声明产出：
 
 ```java
 supply(Commodities.RARE_METALS, output, "Rare element output");
 ```
 
-数量进入 `MutableCommodityQuantity`，再由市场、管理员、AI core、改良和外部修饰合并计算。产业代码读取时应使用 `getQuantity().getModifiedValue()`，因为原始数量可能已经被修饰。
+每项数量保存在 `MutableCommodityQuantity` 的 `MutableStat` 中，管理员、核心与外部效果还会提供修饰。读取结果用 `getQuantity().getModifiedValue()`，才能取得声明和修饰共同形成的数量。
 
-`super.apply(true)` 应放在子类供需声明之前。基类更新通用修饰、收入、维护、AI 核心与改良，子类再声明当前商品流。末尾检查 `isFunctional()`，首次建设或中断时清空本轮供给；需要停产时，效果代码也要处理这个状态。
+这些方法按修饰来源写入，不是每次调用都把数量累加。市场添加、经济重算、稳定度变化或显式 `reapply()` 都可能再次应用产业，供需规则因而能跟随当前市场重新建立。
 
 ## 计算输入短缺
 
-需求声明只表示产业想要多少商品，市场库存是否满足需求由市场商品对象提供。`getMaxDeficit()` 会在给定输入中寻找最大的缺口：
+声明需求后，将它与当前市场的可得量比较。`getMaxDeficit(...)` 在三项输入中取最大正缺口：
 
 ```java
 Pair<String, Integer> deficit = getMaxDeficit(
         Commodities.METALS, Commodities.FUEL, Commodities.HEAVY_MACHINERY);
 ```
 
-缺口大致等于修改后的需求减去市场可得量。返回的 `Pair` 包含商品 ID 和缺口数量；没有正缺口时，数量为零。
+每项缺口由修改后的整数需求减去市场可得档位，并以 0 为下限。返回的 `Pair` 保存最缺的商品 ID 与缺口数，没有正缺口时数量为 0。需要逐项处理时，`getAllDeficit()` 返回所有正缺口；本例只取最严重的一项。
 
-`getAllDeficit()` 返回所有正缺口，适合需要分别记录多种输入短缺的产业。它不会自动改变产出。
-
-`applyDeficitToProduction()` 把指定缺口转成负供给修饰：
+将这个缺口交给 `applyDeficitToProduction(...)`，削减刚才声明的稀有金属供给：
 
 ```java
 applyDeficitToProduction(1, deficit, Commodities.RARE_METALS);
 ```
 
-第一个参数是供给修饰的槽位索引，只区分修饰来源；削减量等于整个缺口。本例中，最大的输入缺口每增加 1，稀有金属产出减少 1。
+第一个参数 1 区分缺货修饰与基础供给来源。最大缺口每增加 1，产出减少 1，其他输入的缺口不再叠加扣除。目标先通过 `supply(...)` 声明，这个方法才有供给可以削减；计算完成后，经济更新读取新的供给并传播到市场商品状态。
 
-该方法只会削减已经声明过的供给。若目标商品没有通过 `supply()` 写入供给 map，调用不会凭空创建产出。
+::: details 生产链的循环依赖
+编者建议正式调整这组需求前，同时核对输入商品由哪些产业生产。原版重工业消耗金属与稀有金属，产出重型机械；本例又消耗机械生产稀有金属，已经形成相互依赖。
 
-短缺削减发生在同一轮 `apply()` 中。经济步随后读取新的修改后供给，并更新市场商品状态。
+两边缺货时都按缺口停产，可能使生产链难以自行恢复。原版重工业限制了缺货削减，保留一定产出。本例集中演示最大缺口，实际产业还要结合进口来源与最低产出决定这种循环是否可接受。
+:::
 
-## 观察收入与维护费
+## 让停产与安装效果跟随功能状态
 
-`getIncome()` 与 `getUpkeep()` 返回产业级 `MutableStat`。基类根据规格基础值、市场规模、稳定度、危险度、AI core 和功能状态计算它们。
+完整 `apply()` 在声明和缺货削减后检查 `isFunctional()`，功能状态为 `false` 时清空供给。首次建设与中断都属于停产，升级中的既有产业仍可运行。**功能状态的判断要落实到产出写入，界面上的状态才有经济结果。**
 
-```java
-int income = (int) industry.getIncome().getModifiedValue();
-int upkeep = (int) industry.getUpkeep().getModifiedValue();
-```
+### 为 Alpha core 增加稳定度
 
-**首次建设与中断时，`isFunctional()` 为 `false`；升级中的既有产业仍可以运行。** 基类调整收入，本例同时清空供给，让生产状态跟随功能判断。
-
-市场经济步会使用产业供需更新商品价格和库存。产业类读取自己的收入和维护值，市场类读取所有产业汇总后的商品状态。
-
-## 读取建设与升级状态
-
-`isBuilding()` 表示首次建设或升级正在进行。`isUpgrading()` 表示建设状态中存在升级目标。
-
-`getBuildOrUpgradeProgress()` 返回当前进度比例，`getBuildTime()` 返回本次建设或升级的天数。
-
-`startBuilding()` 会清零进度并调用 `unapply()`，因此未建成产业不会继续贡献正常供需。
-
-`startUpgrading()` 读取规格中的 `upgrade` 目标，目标规格必须已经注册。
-
-`finishBuildingOrUpgrading()` 在达到建设时间后完成首次建设或替换为升级目标，并迁移 AI core 与改良状态。
-
-`downgrade()` 使用规格中的 `downgrade` 目标。目标为空时，调用方应先通过 `canDowngrade()` 判断。
-
-本例的 CSV 没有升级和降级目标，因此完整代码只读取这些状态。需要升级链时，新增目标产业行并在 UI 或建设队列中调用对应入口。
-
-## 应用和撤销 AI core
-
-`setAICoreId()` 保存安装的 AI core ID。基类根据该 ID 调用 `applyAlphaCoreModifiers()`、`applyBetaCoreModifiers()`、`applyGammaCoreModifiers()` 或 `applyNoAICoreModifiers()`。
-
-本例让 Alpha core 为市场稳定度增加 1 点：
+本例额外让 Alpha core 提供 1 点稳定度，并限定为产业正常运行时生效。`setAICoreId()` 保存安装 ID，基类再按 Alpha、Beta、Gamma 或无核心调用对应方法。局部实现如下：
 
 ```java
 @Override
@@ -242,25 +145,19 @@ protected void applyNoAICoreModifiers() {
 }
 ```
 
-两个方向复用同一修饰 ID。`reapply()` 先解除再应用，卸载或移除也解除当前来源。当前 Alpha 核心加成仅在产业正常运行时存在，停摆时按同一 ID 清理。
+写入与清理使用同一个 `getModId(2)`。`reapply()` 先调用 `unapply()`，再调用 `apply()`；基类撤销时会进入 `applyNoAICoreModifiers()`，这里解除稳定度来源。停产时也走这条清理路径，稳定度收益就与功能状态对应。
 
-基类也会处理 AI core 对供需和维护费的原版修饰。子类只添加自己的专用效果，不重复实现原版 core 规则。
-
-## 读取改良状态
-
-`isImproved()` 返回产业是否已经改良，`setImproved(boolean)` 改变状态，`applyImproveModifiers()` 负责应用规格或插件定义的改良修饰。
-
-改良通常由产业界面和故事点流程触发。观察类可以读取改良状态并记录前后变化：
+核心对供需与维护费的通用效果继续由基类处理，子类只添加这项专用效果。改良也有自己的状态，通常通过产业界面和故事点流程设置，以下局部日志读取结果：
 
 ```java
 LOG.info("improved=" + industry.isImproved());
 ```
 
-本例保留基类改良规则，观察 `isImproved()`。需要自有改良收益时覆写 `applyImproveModifiers()`，再按实际状态成对处理来源。
+`setImproved(boolean)` 改变状态，`applyImproveModifiers()` 提供专用修饰入口。本例保留基类状态处理，当前没有另外定义改良收益；需要自有收益时，在该回调中按状态成对写入和清理。
 
-## 写入和结束中断状态
+### 设置十日中断
 
-`setDisrupted(float days)` 在市场 memory 中写入中断倒计时。`isDisrupted()` 判断当前状态，`getDisruptedDays()` 返回剩余天数。
+`setDisrupted(...)` 将期限写入市场 Memory，`isDisrupted()` 判断是否中断，`getDisruptedDays()` 返回剩余生涯日。下面的局部操作设置 10 日，再重算供给：
 
 ```java
 industry.setDisrupted(10f, false);
@@ -268,29 +165,73 @@ industry.reapply();
 LOG.info("functional=" + industry.isFunctional());
 ```
 
-中断期间产业不再被视为正常运行，收入和生产应按停摆状态观察。市场继续推进时间，倒计时结束后基类会调用 `disruptionFinished()`。
+完整观察器的 `runDisruptionProbe(...)` 用这条路径记录中断前后状态。市场继续推进，基类的 `advance(...)` 检测到中断结束时调用 `disruptionFinished()`，本例在通知与结束回调中记录日志。需要主动结束时可以设为 0 日并重算，这次实验等待自然结束。
 
-本例在两个回调记录实际状态。观察器设置十日中断后让市场继续推进，`advance(...)` 经历中断与结束，才会收到结束回调。需要立即清除时可以调用 `setDisrupted(0f)` 并重算，当前验证等待自然结束。
+::: warning 共用插件类可能共享中断期限
+中断键默认使用插件简单类名。同一市场中的多个产业共用一个插件类时，会读写同一个期限；需要独立中断时，覆写 `getDisruptedKey()`，将产业身份纳入键。
+:::
 
-中断 key 默认由产业插件类名参与生成。多个产业共用同一个 Java 类时，应根据实际需求覆写 `getDisruptedKey()`，避免它们共享倒计时。
-
-## 产业声明与市场经济步的衔接
-
-产业的 `apply()` 写入市场侧供需，市场经济步再调用商品市场对象的更新逻辑。`CommodityOnMarketAPI` 的库存、可得量、最大供需和价格由市场经济状态决定。
-
-因此，产业日志适合回答 "产业声明了什么"，市场商品日志适合回答 "市场最终得到了什么"。两者的数值可能因为其他产业、管理员、条件和势力修饰而不同。
-
-观察器先从市场取得实际产业，再用 `log(...)` 或 `logState(...)` 记录状态。需要测试中断时，将经济结束后的调用设为下面的局部片段，设置十日中断后继续推进：
+中断测试接在当前经济观察器里，将整轮结束后的调用改为以下局部片段：
 
 ```java
 GearInIndustryProbe.runDisruptionProbe(market);
 ```
 
-验证完成后，观察入口恢复为 `GearInIndustryProbe.log(market)`。当前 helper 让中断自然结束，日志从实际 `advance(...)` 记录结束回调。
+验证完成后把观察入口恢复为 `GearInIndustryProbe.log(market)`。中断自然结束后，下次应用重新声明生产，市场商品数据也随经济更新刷新。
 
-## 对照原版产业的生产规则
+## 建设、收入与市场结果
 
-下面的速查表用于比较输入、产出和本节示例的教学重点。
+### 首次建设与升级
+
+`startBuilding()` 清零进度并调用 `unapply()`，本例在后续 `apply()` 中根据功能状态清空供给。市场的 `advance(...)` 换算生涯日并推进建设，中断期间停止建设进度；完成后调用 `finishBuildingOrUpgrading()`。
+
+`isBuilding()` 同时表示首次建设与升级，`isUpgrading()` 区分已有升级目标的情况。`getBuildOrUpgradeProgress()` 返回进度比例，`getBuildTime()` 读取当前产业规格的建设时间；升级流程使用目标规格的时间推进。
+
+升级完成时，市场用目标产业替换当前产业，迁移 AI core 与改良，再重新应用。`downgrade()` 使用规格的降级目标。本例两种目标都为空；需要建立转换关系时，先注册目标产业，再接到 UI 或建设队列。
+
+::: warning 基类许可不证明升级目标存在
+`BaseIndustry` 默认的 `canUpgrade()` 与 `canDowngrade()` 返回 `true`。调用转换前还要确认规格的 `upgrade` 或 `downgrade` 指向有效产业；本例没有这两个目标。
+:::
+
+### 读取收入、维护与供需
+
+`getIncome()` 与 `getUpkeep()` 返回产业级 `MutableStat`。规格提供基础值，市场规模、收入与维护倍率、核心和功能状态决定最终值，局部读取如下：
+
+```java
+int income = (int) industry.getIncome().getModifiedValue();
+int upkeep = (int) industry.getUpkeep().getModifiedValue();
+```
+
+收入基础值为 0 时，Element Works 仍能贡献商品供给。市场商品的可得量、价格与库存由经济系统汇总其他产业、条件和贸易后计算，因此产业供给与市场最终状态要分别记录。`log(...)` 读取当前数量和状态，`logState(...)` 还列出所有供需。
+
+供需在 `apply()` 中重建。保存时可清理并重建这些统计对象，读档后市场重新应用产业，建设、核心、改良等状态继续提供上下文。
+
+## 核对注册规格与原版规则
+
+`IndustrySpecAPI` 保存身份、显示、建设与基础经济参数。以下局部片段取得本例规格：
+
+```java
+IndustrySpecAPI spec = Global.getSettings().getIndustrySpec(
+        GearInElementWorksIndustry.INDUSTRY_ID);
+if (spec != null) {
+    LOG.info(String.format("id=%s name=%s plugin=%s build=%.0f cost=%.0f",
+            spec.getId(), spec.getName(), spec.getPluginClass(),
+            spec.getBuildTime(), spec.getCost()));
+}
+```
+
+### 产业规格字段速查表
+
+| 字段与读取入口 | 当前含义 |
+|---|---|
+| `id`、`name`、`plugin`；`getId()`、`getName()`、`getPluginClass()` | 稳定 ID、默认名称与插件完整类名；运行名称用产业的 `getCurrentName()` |
+| `cost mult`、`build time`；`getCost()`、`getBuildTime()` | 成本倍率按信用单位与建设倍率换算为金额，建设时间采用生涯日 |
+| `income`、`upkeep`；`getIncome()`、`getUpkeep()` | 规格基础收入与维护值，运行时继续按市场条件修饰 |
+| `upgrade`、`downgrade`；`getUpgrade()`、`getDowngrade()` | 已注册的目标产业 ID，本例留空 |
+| `tags`；`getTags()`、`hasTag()` | `industry`、`industrial`、`structure` 等分类 |
+| `data`；`getData()` | 规格附加字符串，本例留空 |
+| `image`、`desc`、`order`；`getImageName()`、`getDesc()`、`getOrder()` | 图像、静态描述与列表顺序 |
+| `disruptDanger`；`getDisruptDanger()` | 突袭中断的 `RaidDangerLevel`，当前中断期限由产业与市场 Memory 保存 |
 
 ### 原版产业速查表
 
@@ -300,7 +241,7 @@ GearInIndustryProbe.runDisruptionProbe(market);
 | `refining` | `ore`、`rare_ore`、`heavy_machinery` 输入，`metals`、`rare_metals` 输出 | `Refining` | 原版精炼生产链 |
 | `GearIn_element_works` | `metals`、`fuel`、`heavy_machinery` 输入，`rare_metals` 输出 | `GearInElementWorksIndustry` | 规模化需求、最大短缺和状态观察 |
 
-原版插件提供平衡后的生产规则。GearIn 示例保留同一套 `BaseIndustry` 生命周期，只替换供需集合和缺货削减目标。
+原版精炼分别对金属与稀有金属选择输入缺口，采矿还依赖地表资源条件。本例沿用同一套产业生命周期，只把当前生产对象集中为一项稀有金属供给，便于确认规模、短缺与停产关系。
 
 ## 完整最小例
 
@@ -480,7 +421,7 @@ public class GearInIndustryProbe {
 2. 打开产业详情，核对显示名、图标、描述和插件类 `GearInElementWorksIndustry`。
 3. 先在 Foundry 的规模 3 记录需求 3 金属、1 燃料、1 机械与理论产出 2，再在规模 6 的测试市场运行 `GearInIndustryProbe.log(market)`，读取三项需求、`rare_metals` 供给、收入、维护费和功能状态。
 4. 降低市场中 `metals`、`fuel` 或 `heavy_machinery` 的可得量，调用产业 `reapply()`，再次记录 `rare_metals` 供给和最大缺口。
-5. 将产业置于建设状态并推进市场时间，读取 `isBuilding()`、`getBuildOrUpgradeProgress()` 和 `isFunctional()`。
+5. 在测试市场取得产业，调用 `startBuilding()` 与 `reapply()`，再推进市场时间，读取 `isBuilding()`、`getBuildOrUpgradeProgress()` 和 `isFunctional()`；本例建设时间为 90 生涯日，完成后确认供给恢复。
 6. 安装 Alpha core 并重新应用产业，读取市场稳定度；移除 Alpha core 后再次应用产业，读取同一修饰是否撤销。
 7. 调用 `GearInIndustryProbe.runDisruptionProbe(market)`，记录十日中断与停产，再推进至少十个生涯日，等待结束回调并重新读取供给。
 
@@ -528,9 +469,9 @@ public class GearInIndustryProbe {
 
 ## 总结
 
-Element Works 从注册数据取得建设与维护参数，在当前市场按规模声明三项需求和稀有金属供给。最大缺口削减产出，功能状态决定是否继续供给，经济更新再传播到市场数据。
+Element Works 按当前市场规模声明三项需求与稀有金属供给，再按最大输入短缺削减产出，停产时清空供给。建设、核心和中断都沿产业生命周期推进，专用稳定度效果也与正常运行状态对应。
 
-观察器在同一个市场读取实际结果，建设、核心、改良与中断也沿生命周期处理。编者建议同时看理论产出、修改后供给和市场最终可得量：产业说明自己声明什么，市场说明这些声明与其他条件合并后得到什么。
+产业声明进入经济更新后，还与其他生产、市场条件和贸易共同形成结果。理论产出、当前产业供给与市场可得量分别读取，生产链中的输入来源和循环依赖也就能随实际数量一起判断。
 
 ## 建议参考项
 

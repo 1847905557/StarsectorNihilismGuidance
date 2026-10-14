@@ -34,7 +34,7 @@
 
 ### 查询与段落读取
 
-下面的局部片段从第一章的工匠描述取出第一段：
+查询时同时提供描述键与类型。下面的局部片段从第一章的工匠描述取出第一段：
 
 ```java
 Description description = Global.getSettings().getDescription(
@@ -42,9 +42,9 @@ Description description = Global.getSettings().getDescription(
 String firstParagraph = description.getText1FirstPara();
 ```
 
-`getDescription` 用船体 ID 与 SHIP 类型取得对象，`getText1FirstPara` 读取详细正文的第一段。界面也可以读取全文、其他段落或别的文本列，具体取决于显示用途。
+`getDescription` 用船体 ID 与 SHIP 类型取得描述对象，`getText1FirstPara` 再从这个对象读取详细正文的第一段。界面也可以读取全文、其他段落或别的文本列，具体取决于显示用途。
 
-**同一列在不同类型中承担不同职责。** 例如 text2 可以是舰船引言、系统分类、武器署名或实体标题。编写前先确定对象的类型，再选择字段，比看到某个空列就往里填更可靠。
+**同一列在不同类型中承担不同职责。** 例如 text2 可以是舰船引言、系统分类、武器署名、图库正文或实体标题。填写字段的依据是对象类型与显示用途，列名本身并不规定统一的内容。
 
 ### 描述字段默认值速查表
 
@@ -59,13 +59,11 @@ String firstParagraph = description.getText1FirstPara();
 
 `hasText1()`、`hasText2()`、`hasText3()` 用于判断字段是否包含实际内容，占位字符串也会被判为空；`hasText4()`、`hasText5()` 判断对应字段是否为非空字符串。段落读取方法按换行拆分文本，去掉段落首尾空白并跳过空段落。
 
-同一列在不同类型中承担不同职责。`text2` 可以是舰船引言、系统分类、武器署名、图库正文或实体标题，填写前先确认读取它的对象类型。
-
 ## 按对象选择描述类型
 
 ### SHIP：舰船与战机船体
 
-先沿用第一章的船体描述。`SHIP` 查询船体的 `descriptionId`，基础船体采用 `hullId`；战机联队仍通过装配找到对应船体。工匠、守炉人、锻件和炉渣的记录继续由 [C1-S7] 提供，本节主要看另外两列在什么场合使用。
+这里沿用第一章的船体描述。`SHIP` 查询船体的 `descriptionId`，基础船体采用 `hullId`；战机联队仍通过装配找到对应船体。工匠、守炉人、锻件和炉渣的记录继续由 [C1-S7] 提供，本节补充引言与受限条目的字段用途。
 
 - `text1`：船体详细说明，供数据库详情、装配、舰队与蓝图等界面读取；
 - `text2`：舰船简略引言；有实际内容且 `text3` 为空时，舰队 tooltip 使用它，其余情况采用 `text1` 第一段；
@@ -83,7 +81,7 @@ String firstParagraph = description.getText1FirstPara();
 
 ### SHIP_SYSTEM：战术系统
 
-现在给本章的两个系统补说明。`SHIP_SYSTEM` 使用 `.system` 和 `ship_systems.csv` 共用的 ID；主系统与右键系统分别由舰船的 `system id`、`defense id` 引用。
+两个战术系统已经有了定义和效果，说明文本则通过 `SHIP_SYSTEM` 补齐。它使用 `.system` 和 `ship_systems.csv` 共用的 ID；主系统与右键系统分别由舰船的 `system id`、`defense id` 引用。
 
 - `text1`：系统详细说明；
 - `text2`：系统类型标签，数据库按它分类，缺少实际内容时使用 `Special`；
@@ -109,7 +107,7 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 行星类型说明写在 `PLANET` 行中。`planets.json` 的类型可以填写 `descriptionId`，否则使用类型本身的键，悬停和详情面板读取对应正文。多个类型也可以共用一个描述键。
 
-`PlanetAPI.setDescriptionIdOverride()` 可以为一颗行星指定 `PLANET` 描述键，`setCustomDescriptionId()` 则连接 `CUSTOM` 描述。具有自定义描述的行星优先使用 `CUSTOM` 正文。
+`PlanetAPI.setDescriptionIdOverride()` 可以为一颗行星指定 `PLANET` 描述键，`setCustomDescriptionId()` 则连接 `CUSTOM` 描述。两个方法选择的描述类型不同，具有自定义描述的行星优先使用 `CUSTOM` 正文。
 
 本节先在 GearIn Prime 上观察原版 `terran` 说明，再为 Second 设置具体行星的自定义正文。后续 [C4-S5] 创建新类型时，会把 `descriptionId` 连接到 `GearIn_ember_world` 的 PLANET 行。
 
@@ -158,7 +156,7 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 `PrintDescription` 的参数 `1` 至 `5` 分别选择对应文本列。目标为行星且 CUSTOM 各列都没有实际内容时，该命令改用行星描述覆盖键或类型键查询 `PLANET` 行。
 
-行星的 CUSTOM 描述属于具体行星，PLANET 描述属于行星类型。本节使用 GearIn Second 连接自定义行星文本，GearIn Prime 继续使用类型描述。
+**行星的 CUSTOM 描述属于具体行星，PLANET 描述属于行星类型。** 本节使用 GearIn Second 连接自定义行星文本，GearIn Prime 继续使用类型描述，分别观察这两种范围。
 
 ### 其他对象描述来源速查表
 
@@ -190,7 +188,7 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 ## 扩展船体描述键与前置文字
 
-`.ship` 与 `.skin` 可以通过 `descriptionId` 指向 `SHIP` 描述行。字段改变的是描述查找键，船体注册仍使用原来的船体 ID；皮肤可以共享已有正文，也可以通过独立键使用自己的说明。
+`.ship` 与 `.skin` 可以通过 `descriptionId` 指向 `SHIP` 描述行。**字段改变的是描述查找键，船体注册仍使用原来的船体 ID**；皮肤可以共享已有正文，也可以通过独立键使用自己的说明。
 
 `descriptionPrefix` 保存正文之前的文字。`ShipBlueprintItemPlugin` 读取船体的前置文字，用 `前缀 + "\n\n" + text1 第一段` 组成蓝图说明。描述键负责选正文，前置文字负责补充这份正文。
 
@@ -198,7 +196,7 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 ## 给既有对象补上描述
 
-现在分别写入势力、行星与系统的文本。每种对象都已经由前文创建，当前操作只设置它实际查询的描述键与文本列。
+类型与字段的用途确定后，再分别写入势力、行星与系统的文本。每种对象都已经由前文创建，当前操作只设置它实际查询的描述键与文本列。
 
 ### 为势力补上正文
 
@@ -218,7 +216,7 @@ gear_industry,FACTION,以重型制造、耐用结构和严格工序闻名的工�
 GearIn_description_second,CUSTOM,齿轮工业外围的一颗荒芜行星，表面留有早期勘探设施的遗迹。,GearIn Second,您的舰队接近了 GearIn Second，地表勘探设施的信号仍在重复播放。,,,
 ```
 
-`text1` 是行星正文，`text2` 是供相应 tooltip 使用的标题，`text3` 是接触行星后显示的文本。`GearIn_description_second` 由本节定义，实体 ID 继续使用 [C3-S4] 的 `GearIn_planet2`。
+`text1` 是行星正文，`text2` 是供相应 tooltip 使用的标题，`text3` 是接触行星后显示的文本。这里定义描述键 `GearIn_description_second`，实体 ID 继续使用 [C3-S4] 的 `GearIn_planet2`；两者的连接由生成器中的绑定调用完成。
 
 打开 [C3-S4] 的 `GearInSystemGenerator.generate()`，在创建第二颗行星的语句之后加入绑定调用。局部片段如下，其中 `second` 是生成器刚创建的行星：
 
@@ -229,7 +227,7 @@ PlanetAPI second = system.addPlanet(
 second.setCustomDescriptionId("GearIn_description_second");
 ```
 
-`setCustomDescriptionId` 的参数必须与 CUSTOM 行的 `id` 一致。生成器在创建新档时执行这段代码，新档中的 GearIn Second 随后使用自定义描述；描述文件中的文本修改在重启后加载。
+`setCustomDescriptionId` 的参数必须与 CUSTOM 行的 `id` 一致。生成器在创建新档时执行这段绑定代码，新档中的 GearIn Second 随后使用自定义描述；已有绑定所引用的描述文本，则在保存文件并重启后加载。因此，修改绑定与修改正文采用各自的生效步骤。
 
 ### 给战术系统补上各列说明
 

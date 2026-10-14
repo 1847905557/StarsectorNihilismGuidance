@@ -1,6 +1,6 @@
 # 舰队状态的重算过程
 
-成员集合已经可以修改，接下来确认修改后的数值从哪里来。本节克隆临时成员的装配，比较重算前后的 `stats`，再读取舰队汇总与短期 `Memory` 标记。装配、人物、来源修饰和过期时间都放到同一次操作中观察，实验结束后恢复成员与原标记。
+装配里增加一个幅能电容，成员的数值会随之重算；此前取得的 `stats` 却可能已经被替换。本节借一艘临时加入的狼说明这次变化，再为舰队添加短期航速效果、写入带期限的 Memory，分别确认数值的来源与状态的寿命。
 
 *本节预期阅读时间：\~24 分钟。*
 
@@ -20,26 +20,9 @@
 - [C11-S2] 的舰队成员集合；
 - [C8-S4] 的 `MutableStat` 和来源 ID。
 
-## 登记观察，再取得当前状态
+## 成员数值与舰队数值分别从哪里取得
 
-创建 `src/data/scripts/gearin/campaign/GearInFleetStatsChain.java` 和 `GearInFleetMemoryProbe.java`。在 `GearInModPlugin` 添加两个类的 `import`，将以下局部方法加入现有入口：
-
-```java
-@Override
-public void onNewGameAfterTimePass() {
-    SectorAPI sector = Global.getSector();
-    sector.addTransientScript(new GearInFleetStatsChain());
-    sector.addTransientScript(new GearInFleetMemoryProbe());
-}
-```
-
-当前新档推进完成后，各脚本执行一轮。状态脚本临时加入一名成员并恢复，`Memory` 脚本写入与恢复两个键，既有生成回调继续保留。
-
-`FleetMemberAPI.getStats()` 返回当前成员的 `MutableShipStatsAPI`。装配、舰长、指挥官或舰队归属发生变化时，成员可能建立新的 `stats` 对象；保存旧引用只能用于比较重算前后的结果。
-
-成员进入舰队后，舰长个人效果和舰队指挥官效果才拥有完整上下文。舰队汇总读取舰队级结果，成员 `stats` 读取单舰结果。
-
-读取顺序决定您看到的是哪一层状态。先从 `FleetMemberAPI` 取得成员，再从成员取得 `MutableShipStatsAPI`；需要舰队级结果时，再从 `CampaignFleetAPI` 取得 `MutableFleetStatsAPI`。三种引用分别属于成员、单舰 `stats` 和舰队 `stats`，不能用其中一个替代另外两个。
+生涯中的舰船保存在 `FleetMemberAPI` 中，它的 `getStats()` 返回单舰的 `MutableShipStatsAPI`；整支舰队的 `getStats()` 返回 `MutableFleetStatsAPI`，参与移动、传感器和后勤计算。单舰战斗速度与舰队地图航速从不同位置读取，下面是局部观察片段：
 
 ```java
 CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
@@ -57,26 +40,11 @@ LOG.info("GearIn: member=" + member.getId()
                 fleet.getSensorStrength()));
 ```
 
-日志中的单舰速度与舰队燃耗分别确认当前读取层级，随后再对临时成员做一次装配修改。
+`memberSpeed` 是这艘船的战斗速度，`fleetBurn` 是舰队的有效航速等级，`fleetSensor` 则把舰队传感器修饰应用到当前传感器强度。读取时先确定所需结果属于舰船还是舰队，才能选对对象。
 
-### 状态来源速查表
+## 改变装配后重新取得 stats
 
-| 来源 | 进入位置 | 观察对象 |
-| --- | --- | --- |
-| 船体规格 | 成员创建和 `stats` 初始化 | 基值 |
-| 舰船装配 | `setVariant` 与 `updateStats` | 成员 `stats` |
-| 舰长 | 成员归属后的重算 | 当前成员 |
-| 指挥官 | `FleetDataAPI` 的舰队重算 | 多个成员 |
-| 舰队汇总 | 舰队级 `stats` | 移动和后勤汇总 |
-| CR 与船员 | `RepairTrackerAPI` 和成员状态 | 可部署性和修正值 |
-
-## 观察装配触发重算
-
-克隆当前装配并修改幅能配置，再调用 `setVariant`。`withStatsUpdate` 为 `true` 时，成员立即建立新 `stats`；`withRefit` 控制是否按改装流程处理 CR 影响。
-
-**重算建立新的 `stats`，之后从成员重新取得它。** 直接写在旧对象上的来源仅属于那个实例；正式效果由船体、人物、船插、幅能与当前状态重新应用。需要持续生效时，把修饰放到实际来源的回调中。
-
-`setVariant(variant, withRefit, withStatsUpdate)` 的三个参数承担不同职责。`variant` 提供新的装配对象，`withRefit` 决定是否按改装流程处理成员状态，`withStatsUpdate` 决定是否在本次调用中更新 `stats`。页面示例把装配修改和 `stats` 读取放在同一段，便于比较调用前后的对象引用；实际脚本若连续修改多个属性，可以先完成克隆，再只调用一次 `setVariant`。
+本节的 `GearInFleetStatsChain` 临时创建一艘 `wolf_Assault`，加入玩家舰队后克隆其装配。克隆上增加一个幅能电容，随后通过 `setVariant(...)` 写回成员。下面是这一操作的局部片段：
 
 ```java
 ShipVariantAPI cloned = member.getVariant().clone();
@@ -92,15 +60,36 @@ LOG.info("GearIn: capacitors=" + capacitorsBefore
         + " statsReplaced=" + (statsBefore != statsAfter));
 ```
 
-如果只把 `withStatsUpdate` 设为 `false`，装配已经替换，但成员的派生数值可能仍等待后续 `updateStats`。读取前调用 `member.updateStats()` 可以明确建立观察边界；读取后仍需重新取得 `getStats()`，因为重算可能替换对象。
+`setVariant(variant, withRefit, withStatsUpdate)` 的第二个参数控制改装差异对 CR 的处理，第三个参数控制本次是否立即重算。这里传入 `false, true`，应用新装配并立即重建数值；连续修改多项装配内容时，可以在副本上完成修改后统一写回。
+
+**重算会建立新的 `stats`，后续操作从成员重新取得它。** 因此日志比较 `statsBefore != statsAfter`，确认的是对象替换。新增电容影响幅能容量，日志里的速度与航速仍可以保持原值；有些数值没变，并不意味着重算没有发生。
+
+传入 `withStatsUpdate=false` 时，装配已经写回，派生数值却未在这次调用中重算。需要立即使用结果时，调用 `member.updateStats()`，再取得 `member.getStats()`。同时，已有的待更新标记也可能使 `getStats()` 在读取时完成重算。
 
 ::: warning stats 引用不能跨重算保存
-重算可能整体替换 `MutableShipStatsAPI`。修改旧引用不会改变成员当前数值，日志通常也不会直接报错。
+成员已经换用新对象后，旧引用仍然是合法的 Java 对象。向它写入修饰可以正常执行，成员当前数值却不会改变。
 :::
 
-## 读取舰长和指挥官效果
+## 哪些效果会在重算中重新应用
 
-从当前成员与舰队取得已有舰长、指挥官，分别对应个人与舰队作用域。技能定义和等级由人物专题展开，当前观察这些人物怎样提供数值上下文。
+成员重算先从船体与装配建立数值，再应用舰长个人技能、指挥官的舰队技能和船插，加入幅能配置，并处理船员、CR、封存等状态。成员进入舰队后，人物效果才具有所需的舰队上下文。舰队完整同步还会重算成员、应用舰队效果并更新汇总。
+
+这也说明了持续效果应放在哪里。直接向某个 `stats` 实例写入的修饰，属于那个实例；船插和技能在正式回调中提供的修饰，则会随着重算再次应用。[C9-S1] 的 `applyEffectsBeforeShipCreation(...)` 正承担这项职责。**持续效果要有重算时能够重新找到的来源。** 即使一次修改已经在界面上显示，来源缺失仍会在下次重算时暴露。
+
+### 状态来源速查表
+
+| 来源 | 进入位置 | 观察对象 |
+| --- | --- | --- |
+| 船体规格 | 成员创建和 `stats` 初始化 | 基值 |
+| 舰船装配 | `setVariant` 与 `updateStats` | 成员 `stats` |
+| 舰长 | 成员归属后的重算 | 当前成员 |
+| 指挥官 | 成员与舰队完整重算 | 多个成员 |
+| 舰队汇总 | 舰队级 `stats` 与成员汇总入口 | 移动和后勤结果 |
+| CR 与船员 | `RepairTrackerAPI` 和成员状态 | 可部署性和修正值 |
+
+### 对应舰长与指挥官
+
+下面取得当前舰长与舰队指挥官，记录这次重算使用的人物：
 
 ```java
 PersonAPI captain = member.getCaptain();
@@ -110,7 +99,9 @@ LOG.info("captain=" + (captain == null ? "none" : captain.getNameString())
 member.updateStats();
 ```
 
-`member.updateStats()` 会按当前成员装配、舰长、舰队归属和指挥官上下文重新应用正式修正。舰长为空时，成员仍然可以更新船体和装配来源；指挥官效果则依赖成员已经加入 `FleetDataAPI`。当前日志保留人物名称，再调用重算，以便对应这次成员的上下文。
+舰长提供个人效果，指挥官提供舰队效果，技能还要满足各自的作用域与等级条件。人物创建和技能定义由后面的专题展开，这里先确认参与重算的人物。船体与装配也有自己的来源，人物效果是否适用要单独判断。
+
+从成员还可以取得它所属舰队的指挥官。下面的局部片段适合与成员归属一起记录：
 
 ```java
 PersonAPI captain = member.getCaptain();
@@ -124,9 +115,9 @@ LOG.info("GearIn: captain="
                 : fleetCommander.getNameString()));
 ```
 
-## 读取舰队汇总
+## 给舰队添加有期限的航速效果
 
-舰队级 `stats` 与成员 `stats` 各自有生命周期。集合变化、成员状态变化或人物变化后，重新读取舰队汇总和成员 最终数值。
+舰队汇总在成员与人物变化后重新读取。以下片段继续观察 FP、有效航速与传感器结果：
 
 ```java
 MutableFleetStatsAPI fleetStats = fleet.getStats();
@@ -136,9 +127,7 @@ LOG.info("fleetPoints=" + fleet.getFleetPoints()
                 fleet.getSensorStrength()));
 ```
 
-舰队 `stats` 的修饰参与移动、传感器和后勤计算。`addTemporaryModFlat(...)`、`addTemporaryModPercent(...)` 与 `addTemporaryModMult(...)` 接收生涯日有效期，来源 ID 也用于移除。
-
-**一个临时来源绑定一个 `stats` 对象。** 同来源再次写入同对象会更新修饰并重新设置剩余期限；修改另一项属性时使用另一来源。当前定义 `GearIn_FleetStatsProbe`，给舰队范围最大燃耗临时加 2，期限为半日：
+如果只是给舰队短暂提高航速，可以使用舰队的临时修饰。`addTemporaryModFlat(...)`、`addTemporaryModPercent(...)` 与 `addTemporaryModMult(...)` 都接受以生涯日为单位的有效期。本例给舰队范围最大航速加 2，持续半日，使用来源 ID `GearIn_FleetStatsProbe`：
 
 ```java
 MutableFleetStatsAPI stats = fleet.getStats();
@@ -158,34 +147,15 @@ LOG.info("GearIn: hasMod=" + stats.hasMod(source)
 stats.removeTemporaryMod(source);
 ```
 
-`getBurnLevel()` 已合并舰队范围最大燃耗修饰，直接读取最终结果即可。暂停时有效期也停止推进，当前实验使用相同来源主动移除；只比较数值还不足以确认自己的记录已经解除。
+`getBurnLevel()` 合并了这项舰队航速修饰，日志可以直接读取有效结果。这个局部实验随后调用 `removeTemporaryMod(source)` 主动移除；实际功能也可以让它随生涯时间自动到期，暂停期间有效期停止推进。
+
+临时修饰的来源 ID 同时登记目标属性和期限。重复写入同一目标时，会更新修饰并重新设置期限；**同一个来源 ID 不能用于另一项属性，否则会抛出异常。** 需要同时提高航速和传感器范围时，为两项属性各用一个来源。移除后用 `hasMod(source)` 核对记录，最终数值还可能受到其他效果影响。
 
 ## 写入并恢复舰队 Memory
 
-`MemoryAPI` 通过字符串键保存运行时状态。`set` 写入值并可附带生涯天数过期时间，`getBoolean`、`getFloat` 或 `get` 按类型读取，`contains` 判断键是否存在，`unset` 立即移除。
+临时数值效果有自己的登记入口，AI 状态则常通过舰队的 `MemoryAPI` 保存。Memory 用以 `$` 开头的字符串作键：`set(key, value)` 写入无期限值，三参数重载附带生涯日期限；`contains(...)` 判断键是否存在，`get(...)` 取得原对象，`unset(...)` 立即移除键。
 
-### `FLEET` 标记速查表
-
-| 常量 | 键值 | 常用值 | 直接影响 |
-| --- | --- | --- | --- |
-| `FLEET_DO_NOT_IGNORE_PLAYER` | `$cfai_doNotIgnorePlayer` | `boolean` | AI 考虑玩家 |
-| `FLEET_IGNORES_OTHER_FLEETS` | `$cfai_ignoreOtherFleets` | `boolean` | 忽略其他舰队 |
-| `FLEET_IGNORED_BY_OTHER_FLEETS` | `$cfai_ignoredByOtherFleets` | `boolean` | 被其他舰队忽略 |
-| `FLEET_IGNORED_BY_FACTION` | `$cfai_ignoredByFaction` | 势力 ID 字符串 | 指定忽略势力 |
-| `FLEET_PATROL_DISTANCE` | `$cfai_patrolDist` | `float` | 巡逻距离 |
-| `FLEET_INTERACTION_DIALOG_CONFIG_OVERRIDE_GEN` | `$fidConifgGen` | `FleetInteractionDialogPluginImpl.FIDConfigGen` | 创建舰队交互配置 |
-| `FLEET_NO_MILITARY_RESPONSE` | `$core_fleetNoMilitaryResponse` | `boolean` | 禁止军事响应 |
-| `FLEET_FIGHT_TO_THE_LAST` | `$core_fightToTheLast` | `boolean` | 改变撤退判断 |
-| `FLEET_BUSY` | `$core_fleetBusy` | `boolean` | 标记忙碌 |
-| `FLEET_SPECIAL_ACTION` | `$core_fleetSpecialAction` | `boolean` | 与 `FLEET_BUSY` 配合标记特殊行动 |
-| `FLEET_MILITARY_RESPONSE` | `$core_fleetMilitaryResponse` | `boolean` | 标记军事响应 |
-| `FLEET_CHASING_GHOST` | `$core_fleetChasingGhost` | `boolean` | 标记追逐幽灵 |
-| `FLEET_NOT_CHASING_GHOST` | `$core_fleetNotChasingGhost` | `boolean` | 禁止追逐幽灵 |
-| `FLEET_CHASING_GHOST_RANDOM` | `$core_fleetChasingGhostRandom` | `boolean` | 随机追逐幽灵 |
-
-过期时间按生涯时间推进。暂停时生涯时间不增长，标记的剩余有效期也不会按真实时间减少。
-
-`set(key, value)` 写入无期限值，`set(key, value, expire)` 按生涯日设置期限；`getExpire(...)` 的 -1 表示没有期限。`get()` 保留原对象，`getBoolean`、`getFloat`、`getLong` 和 `getInt` 按指定类型读取。`getMemoryWithoutUpdate()` 取得现有事实，当前用于先保存原状态。
+本例用 `getMemoryWithoutUpdate()` 取得舰队 Memory，临时写入原版的 `FLEET_BUSY`。这个键已经可能由别的功能使用，所以先保存存在状态、原值与剩余期限：
 
 ```java
 String key = MemFlags.FLEET_BUSY;
@@ -207,11 +177,45 @@ if (hadKey) {
 }
 ```
 
-**恢复同时保存存在状态、原对象与剩余期限。** 原键存在时用三参数 `set(...)` 写回，原键缺席时 `unset(...)`。本例在同一轮执行恢复，剩余期限按这次操作前的值保留。
+`getExpire(...)` 返回剩余生涯日，-1 表示没有期限。`getBoolean`、`getFloat`、`getLong` 和 `getInt` 按所需类型读取，`get()` 则用于保留原对象。**原来没有键与原值为 `false` 是两种状态，恢复时分别处理。** 原键存在时用三参数 `set(...)` 写回，缺席时调用 `unset(...)`。
+
+完整的 `GearInFleetMemoryProbe` 对 `FLEET_BUSY` 和 `FLEET_PATROL_DISTANCE` 都做这项操作，写入期限为 0.25 日，并在同一轮恢复。因此日志验证的是写入和恢复；如果要观察自然过期，还要让标记保留到生涯时间超过有效期。暂停时剩余期限也停止减少。
+
+### `FLEET` 标记速查表
+
+这些键由原版 AI 或交互功能读取，值的类型由读取方决定。Memory 本身只保存对象，写入键后发生什么，要结合消费它的功能判断。
+
+| 常量 | 键值 | 保存的值 | 作用 |
+| --- | --- | --- | --- |
+| `FLEET_DO_NOT_IGNORE_PLAYER` | `$cfai_doNotIgnorePlayer` | `boolean` | 让 AI 考虑玩家 |
+| `FLEET_IGNORES_OTHER_FLEETS` | `$cfai_ignoreOtherFleets` | `boolean` | 让舰队忽略其他舰队 |
+| `FLEET_IGNORED_BY_OTHER_FLEETS` | `$cfai_ignoredByOtherFleets` | `boolean` | 让其他舰队忽略当前舰队 |
+| `FLEET_IGNORED_BY_FACTION` | `$cfai_ignoredByFaction` | 势力 ID 字符串 | 指定忽略当前舰队的势力 |
+| `FLEET_PATROL_DISTANCE` | `$cfai_patrolDist` | `float` | 提供巡逻距离 |
+| `FLEET_INTERACTION_DIALOG_CONFIG_OVERRIDE_GEN` | `$fidConifgGen` | `FleetInteractionDialogPluginImpl.FIDConfigGen` | 创建舰队交互配置 |
+| `FLEET_NO_MILITARY_RESPONSE` | `$core_fleetNoMilitaryResponse` | `boolean` | 阻止舰队参加军事响应 |
+| `FLEET_FIGHT_TO_THE_LAST` | `$core_fightToTheLast` | `boolean` | 改变战斗中的撤退判断 |
+| `FLEET_BUSY` | `$core_fleetBusy` | `boolean` | 标记忙碌，影响其他功能是否接管舰队 |
+| `FLEET_SPECIAL_ACTION` | `$core_fleetSpecialAction` | `boolean` | 与 `FLEET_BUSY` 配合标记正在执行特定行动 |
+| `FLEET_MILITARY_RESPONSE` | `$core_fleetMilitaryResponse` | `boolean` | 标记正在参与军事响应 |
+| `FLEET_CHASING_GHOST` | `$core_fleetChasingGhost` | `boolean` | 标记正在调查虚假传感器信号 |
+| `FLEET_NOT_CHASING_GHOST` | `$core_fleetNotChasingGhost` | `boolean` | 暂时阻止调查虚假传感器信号 |
+| `FLEET_CHASING_GHOST_RANDOM` | `$core_fleetChasingGhostRandom` | `java.util.Random` | 保存调查虚假传感器信号所用的随机源 |
 
 ## 完整最小例
 
-两个类保存到前述路径，保留新档推进后的登记。
+创建 `src/data/scripts/gearin/campaign/GearInFleetStatsChain.java` 与 `GearInFleetMemoryProbe.java`，分别保存下面的两个类。在 `GearInModPlugin` 添加它们的 `import`，把以下局部登记加入现有的新档推进后回调：
+
+```java
+@Override
+public void onNewGameAfterTimePass() {
+    SectorAPI sector = Global.getSector();
+    sector.addTransientScript(new GearInFleetStatsChain());
+    sector.addTransientScript(new GearInFleetMemoryProbe());
+}
+```
+
+两份脚本各执行一轮。状态脚本移除临时成员，Memory 脚本恢复两个原键；当前入口继续保留已有的新档生成逻辑。
 
 ::: details 完整成品：GearInFleetStatsChain
 
@@ -396,33 +400,32 @@ public class GearInFleetMemoryProbe implements EveryFrameScript {
 前置数据：玩家舰队拥有至少一艘成员，并且存档已经完成人物和舰队初始化。
 
 1. 构建并重启，建立新档，触发新档推进后的两个一轮脚本。
-2. 核对日志中的 `statsRebuilt`、`fleetPoints` 和成员移除结果。
+2. 搜索 `GearIn fleet stats`，核对 `statsRebuilt`、人物名称、速度、航速与 `fleetPoints`，随后打开舰队界面确认临时成员已经移除。
 3. 搜索 `GearIn fleet memory` 与 `restored`，比较 `busy`、`patrolDistance` 的写入、原存在状态和剩余期限。
 4. 重新读取两个键，确认恢复为脚本执行前的存在状态和值。
 
 预期结果：
 
-- 装配修改后 `stats` 对象发生重建；
-- 舰队汇总 能读取当前舰队汇总；
-- Memory 标记按指定类型读取；
-- 过期和恢复不会污染测试存档。
+- 装配修改后 `statsRebuilt=true`，日志读取新对象的数值；增加电容时速度和航速可以保持原值。
+- `fleetPoints` 等汇总在临时成员加入期间读取，脚本完成后临时成员已移除。
+- Memory 写入日志显示 `busy=true`、`patrolDistance=5`，恢复日志显示原存在状态、值与剩余期限。
 
 ## 故障分析
 
 - **数值没有变化**：没有触发重算，或读取的是旧 `stats` 引用。
-    - **解决方案**：在 `setVariant` 或成员状态写入后调用 `updateStats()`，再重新取得 `getStats()` 并读取 最终数值。
+    - **解决方案**：在 `setVariant` 或成员状态写入后调用 `updateStats()`，再重新取得 `getStats()` 并读取最终数值。
 
 - **舰长效果缺失**：成员没有加入 `FleetDataAPI`，或技能作用域不适用。
     - **解决方案**：确认成员已经加入目标舰队，读取 `member.getCaptain()` 与 `fleet.getCommander()`，再检查技能的作用域和等级。
 
-- **舰队汇总 停留旧值**：集合变化后使用了缓存的汇总值。
+- **舰队汇总停留在旧值**：集合变化后使用了缓存的汇总值。
     - **解决方案**：重新取得 `fleet.getStats()`、`fleet.getFleetPoints()` 和 `fleet.getFleetData()`，不要继续使用写入前的对象引用。
 
 - **Memory 类型错误**：写入类型与读取方法不一致。
     - **解决方案**：用 `get()` 查看原始对象类型，再选择 `getBoolean()`、`getFloat()`、`getLong()` 或 `getInt()`；无法确定类型时不要强制转换。
 
 - **标记持续存在**：恢复时没有区分原来不存在和原来存在。
-    - **解决方案**：同时保存 `contains`(`key`) 和原值，原来没有键时调用 `unset()`，原来有键时写回原值并恢复过期时间。
+    - **解决方案**：同时保存 `contains(key)` 和原值，原来没有键时调用 `unset()`，原来有键时写回原值并恢复过期时间。
 
 - **临时 `modifier` 在暂停后仍然存在**：把真实秒数当作了生涯天数，或测试期间没有继续推进生涯时间。
     - **解决方案**：按生涯天数设置有效期，在暂停和继续运行两个阶段分别记录 `getExpire()` 与当前值。
@@ -432,9 +435,9 @@ public class GearInFleetMemoryProbe implements EveryFrameScript {
 
 ## 总结
 
-装配与正式效果重建成员 `stats`，舰队 `stats` 和集合另行提供汇总。读取时确认当前对象，临时修饰使用稳定来源与生涯日期限，`Memory` 实验则完整恢复存在、值和过期状态。
+成员的数值由船体、装配、人物和当前状态重新建立。修改装配后，从成员取得新的 `stats`，持续效果放在重算会再次调用的来源中，单次写入才能成为可持续的功能。
 
-编者建议先把一次修改的来源与恢复对应清楚，再让它持续运行。重算后的旧引用与恢复遗漏都可能让日志看起来正常，实际读取却已经换了对象或范围。
+舰队临时修饰登记属性与生涯日期限，Memory 保存供其他功能读取的状态。两者都有有效期，也有各自的移除与恢复方法；本节用日志确认对象替换和原状态恢复，使这两个过程各有明确结果。
 
 ## 建议参考项
 

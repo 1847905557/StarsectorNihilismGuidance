@@ -1,6 +1,6 @@
 # 读取并修改舰船装配
 
-成员状态已经能够读取，这次实际改装一艘狼。先从成员取得当前装配，克隆后把一个小型能量槽改为点防激光，再调整武器组、船插与幅能，写回同一个成员。另用已有窑级装配查看模块与 JSON，把成员当前装备、父子关系和正式数据文件分别核对。
+本节给一艘狼更换武器、调整武器组与幅能，再将改装结果保留到存档中。操作从成员当前装配的副本开始，说明装备写入、分组和 OP 怎样共同决定结果；随后借窑级装配处理模块关系，并用 JSON 观察装配的数据表示。
 
 *本节预期阅读时间：\~30 分钟。*
 
@@ -24,18 +24,16 @@
 - Java 对象引用、集合遍历、异常处理和日志输出；
 - 能够打开舰队界面观察装配，并在 `starsector.log` 搜索固定前缀。
 
-## 登记改装与模块观察
+## 准备这次改装
 
-创建 `src/data/scripts/gearin/campaign/GearInVariantRefitter.java` 和 `GearInModuleInspector.java`，添加到 `GearInModPlugin` 的 `import`。向 [C11-S3] 已有的 `onNewGameAfterTimePass(...)` 追加局部登记，沿用 `sector`：
+创建 `src/data/scripts/gearin/campaign/GearInVariantRefitter.java` 与 `GearInModuleInspector.java`。前者把改装狼留在玩家舰队，后者读取 [C4-S4] 已定义的窑级模块装配。在 `GearInModPlugin` 添加两类的 `import`，向已有的 `onNewGameAfterTimePass(...)` 追加登记，沿用 `sector`：
 
 ```java
 sector.addTransientScript(new GearInVariantRefitter());
 sector.addTransientScript(new GearInModuleInspector());
 ```
 
-改装类将狼加入玩家舰队，保留结果供界面核对。模块类以窑级主体装配建立观察对象，读取它已定义的模块槽。
-
-**从目标成员取得当前装配，再建立独立副本。** `FleetMemberAPI.getVariant()` 返回成员当前正在使用的装配。这个对象同时保存船体规格、武器槽映射、船插集合、武器组、幅能电容与散热数量、模块映射和来源枚举。创建成员后立即读取时，装配可能来自规格库；需要人物与舰队上下文时，加入后再更新 `stats`。
+两份脚本在新档推进后各执行一次。先处理狼，从成员取得它正在使用的 `ShipVariantAPI`。装配保存武器、武器组、船插、幅能数量、战机、模块映射与来源，船体规格则提供槽位和基础限制。以下局部片段记录当前装配：
 
 ```java
 FleetMemberAPI member = Global.getFactory().createFleetMember(
@@ -56,17 +54,13 @@ LOG.info("variant read: hull=" + hullId
         + " capacitors=" + variant.getNumFluxCapacitors());
 ```
 
-`VariantSource` 表示来源，装配 ID 仍由 `getHullVariantId()` 读取。五种枚举为 `STOCK`、`MISSION_DESIGN`、`MISSION_SAVE`、`REFIT` 和 `HULL`。当前运行时改装副本设置为 `REFIT`，让修改后的装备作为成员装配保存；`STOCK` 装配按规格库 ID 恢复。
+狼按 `wolf_Assault` 创建，`getHullVariantId()` 返回装配 ID，`getVariantFilePath()` 保留文件来源，`getSource()` 表示当前来源类别。`VariantSource` 有 `STOCK`、`MISSION_DESIGN`、`MISSION_SAVE`、`REFIT` 与 `HULL`，本节要从原版预设装配得到运行时改装结果。
 
-这也解释了为什么克隆后还要处理来源：复制提供独立对象，`REFIT` 表达当前改装的保存语义，两步各有作用。
+## 建立副本，并让改装随成员保存
 
-::: tip 先确认对象来源，再决定写回方式
-成员返回的装配可能属于规格库、任务数据或改装结果。修改前记录 `getSource()` 和 `getVariantFilePath()`，写回后重新读取这两个值，才能判断修改发生在目标成员上。
-:::
+成员创建时可以从规格库取得设计，成员当前装配也可能已经有玩家的改动。我们从这个当前对象 `clone()`，在副本上集中修改，完成后一次写回。克隆会复制武器映射、武器组、普通与永久船插、受抑制船插、战机、模块映射和标签；船体规格继续共用。
 
-## 建立隔离副本
-
-`ShipVariantAPI.clone()` 会复制武器映射、武器组、船插集合、永久船插、受抑制船插、战机列表、模块映射和标签集合。副本仍然引用同一艘船体规格，但对装配字段的修改不会回写原始装配。
+**副本还要设置 `REFIT` 来源。** 克隆保留原来源，`STOCK` 装配在读档时按规格库 ID 恢复，`REFIT` 改装则随成员保存。以下局部片段同时确认对象独立与来源变化：
 
 ```java
 ShipVariantAPI original = member.getVariant();
@@ -84,11 +78,15 @@ LOG.info("variant clone: isolated=" + isolated
         + " copiedGroups=" + copy.getWeaponGroups().size());
 ```
 
-副本应用到成员后，成员会持有这份副本的引用。此后继续修改 `copy` 会直接影响成员，因此完成改装后应把副本视为成员的当前装配，不能再把它当作可复用的模板对象。
+编者建议将保存、读档作为这类运行时改装的验收环节。`clone()` 已经成功、界面也显示了新武器，仍不能证明这份装备会留在存档中；来源保持 `STOCK` 时，问题恰好要到读档才出现。
 
-## 修改武器槽位
+写回后，成员持有的就是 `copy`。随后再修改它，会直接改变成员当前装配；要将设计用于另一艘舰船，再为那艘成员建立独立副本。
 
-`addWeapon(slotId, weaponId)` 把指定武器写入指定槽位，`getWeaponId(slotId)` 读取槽位当前的武器 ID，`clearSlot(slotId)` 清空槽位。槽位 ID 来自船体规格，武器 ID 来自武器规格；两者不匹配时，装配可能无法应用或在界面中显示空槽。
+## 为狼更换装备
+
+### 用点防激光替换离子炮
+
+狼的 `WS 001` 是小型能量槽，`wolf_Assault` 在其中安装了离子炮。本例用 `pdlaser` 点防激光替换它：`addWeapon(slotId, weaponId)` 写入武器，`getWeaponId(slotId)` 读取当前武器 ID，`clearSlot(slotId)` 则清空槽位。局部片段如下：
 
 ```java
 String slotId = "WS 001";
@@ -107,15 +105,15 @@ LOG.info("weapon slot: slot=" + slotId
         + " spec=" + (weaponSpec == null ? "null" : weaponSpec.getWeaponId()));
 ```
 
-`getNonBuiltInWeaponSlots()` 只返回实际装有武器的非内置槽位，`getFittedWeaponSlots()` 返回当前装配的已安装槽集合。读取这两个集合可以区分空槽、内置武器和改装脚本写入的槽位。
+这里两个参数来自不同定义：槽位 ID 来自船体，武器 ID 来自武器规格。两者都存在，还要满足尺寸与类型的适配。`getNonBuiltInWeaponSlots()` 返回实际装有武器的非内置槽，`getFittedWeaponSlots()` 返回当前已安装的槽集合，可用于确认本次写入的位置。
 
 ::: warning 写入武器前核对槽位规格
-武器 ID、武器尺寸和武器类型都必须适配目标槽位。先通过 `getSlot(slotId)` 取得槽位，再用 `getWeaponSpec(slotId)` 观察写入结果；日志显示 ID 不代表该武器已经有效安装。
+`addWeapon(...)` 写入映射，读回 ID 只证明映射已改变。通过 `getSlot(slotId)` 核对尺寸与类型，再用 `getWeaponSpec(slotId)` 读取武器规格，才能确认适配。
 :::
 
-## 重新生成和读取武器组
+### 安排武器组
 
-武器安装与武器组是两层数据。`autoGenerateWeaponGroups()` 根据当前武器集合生成分组；`getWeaponGroups()` 返回分组对象，`WeaponGroupSpec.getSlots()` 返回该组引用的槽位。组模式由 `WeaponGroupType` 表示，自动开火默认值由 `isAutofireOnByDefault()` 表示。
+武器写入槽位之后，分组还要单独处理。组里保存槽位 ID，通过 `getWeaponGroups()` 取得 `WeaponGroupSpec`，再读取类型、槽位与默认自动开火。本例用 `autoGenerateWeaponGroups()` 按当前装备重建，局部日志记录生成结果：
 
 ```java
 copy.autoGenerateWeaponGroups();
@@ -130,7 +128,9 @@ for (int i = 0; i < groups.size(); i++) {
 }
 ```
 
-本例修改武器后重建分组，再切换第一组的默认自动开火。自动生成会按武器与槽位相似度重新组织，原手动顺序也可能随之变化。**分组写入按当前设计选择，读后无需自动重建。** 保留玩家分组时，按现有组调整目标槽位；重建时则逐组核对类型、槽位与默认开火。
+自动生成会清除原分组，再按武器与槽位特征重新组织，组模式用 `WeaponGroupType` 表示。完整例还切换第一组的默认自动开火，用于展示 `setAutofireOnByDefault(...)` 的写入结果。
+
+**重建分组意味着接受原安排被替换。** 本节使用新创建的狼，可以由脚本决定分组；修改玩家已有的装配时，原分组本身也是玩家的设计，需要保留就沿现有组调整槽位。读取分组直接调用 getter，自动生成是一项写入操作。
 
 ### 武器组字段速查表
 
@@ -143,11 +143,9 @@ for (int i = 0; i < groups.size(); i++) {
 | 分组模式 | `WeaponGroupSpec.getType()` | 联动或交替等组行为 |
 | 默认自动开火 | `isAutofireOnByDefault()` | 进入战斗时的组开火默认值 |
 
-## 修改船插和幅能分配
+### 调整船插与幅能，核对 OP
 
-`addMod(modId)`、`removeMod(modId)` 修改普通船插集合；`getHullMods()` 读取包含普通船插的集合，`getNonBuiltInHullmods()` 可用于观察非内置部分。永久船插和受抑制船插有独立入口，不要用普通集合的清空操作代替它们。
-
-`setNumFluxVents(...)` 与 `setNumFluxCapacitors(...)` 直接设置幅能散热和电容数量。数值是否允许由船体和军械点数共同决定；装配对象可以暂时保存超出 OP 的值，但应用到成员或进入改装界面时会出现校验或回退。
+离子炮换成点防激光后腾出 OP，本例增加一散热和一电容，同时用移除、添加 `fluxdistributor` 展示船插集合操作。`addMod(...)` 与 `removeMod(...)` 使用船插 ID，`setNumFluxVents(...)` 与 `setNumFluxCapacitors(...)` 直接设置数量：
 
 ```java
 boolean hadFluxDistributor = copy.hasHullMod("fluxdistributor");
@@ -166,7 +164,9 @@ LOG.info("variant resources: hadFluxDistributor=" + hadFluxDistributor
         + copy.getNumFluxCapacitors());
 ```
 
-本例保留改装结果，并记录 OP。需要可逆实验时保存原装配引用，结束后写回；需要观察超限时，则同时记录总成本、船插成本与剩余 OP。当前狼的 `WS 001` 是小型能量槽，原装离子炮换成点防激光后，腾出的点数用于增加一散热和一电容。
+`getHullMods()` 读取装配中的船插集合，`getNonBuiltInHullmods()` 筛出普通可拆卸部分；永久船插与受抑制船插各有专门入口，清空普通集合不能代替这些操作。幅能数量还受船体限制与军械点数约束，setter 写入成功并不保证设计合法。
+
+应用前记录成本。`computeOPCost(null)` 返回总 OP，`getUnusedOP(null)` 返回剩余点数，需要区分武器与船插成本时再读取对应成本方法：
 
 ```java
 int opCost = copy.computeOPCost(null);
@@ -174,9 +174,9 @@ int unusedOp = copy.getUnusedOP(null);
 LOG.info("variant OP: cost=" + opCost + " unused=" + unusedOp);
 ```
 
-## 把副本应用到成员
+## 把完成的改装写回成员
 
-`FleetMemberAPI.setVariant(variant, withRefit, withStatsUpdate)` 把调用方提供的装配引用写入成员。`withRefit` 控制是否按改装差异处理 CR 影响，`withStatsUpdate` 控制是否立即调用成员 `stats` 更新。改装结果需要进入舰队界面和部署判断时，应在写回后重新读取成员的 `getVariant()`、`getStats()` 和 `canBeDeployedForCombat()`。
+武器、武器组、船插与幅能全部调整后，将 `copy` 写回成员。沿 [C11-S3] 的重算方式调用 `setVariant(..., false, true)`，再从成员读取当前装配与派生结果：
 
 ```java
 member.setVariant(
@@ -194,15 +194,13 @@ LOG.info("variant applied: sameReference=" + (applied == copy)
         + " deployable=" + member.canBeDeployedForCombat());
 ```
 
-`setVariant(..., false, true)` 适合本节的可逆观察，因为它不会把改装差异作为一次 "field refit" CR 事件处理，但会重建成员 `stats`。若使用 `withRefit=true`，应同时记录 CR 前后值，并按 [C11-S3] 的 `stats` 重算规则观察派生结果。
+`withRefit` 决定是否按装配差异处理 "field refit" CR 事件，`withStatsUpdate` 决定是否立即更新成员数值。这里传入 `false, true`，保留改装结果并重建 `stats`；采用 `withRefit=true` 时，CR 前后值也纳入观察。写回后的 `getVariant()` 就是当前副本，`getStats()` 与 `canBeDeployedForCombat()` 则读取更新后的结果。
 
-::: tip 应用后的副本就是成员当前装配
-写回后不要继续修改 `original`，也不要把 `copy` 当作多个成员共用的模板。每艘演示成员都从自己的当前装配重新 `clone()`，才能避免连带修改。
-:::
+本例让改装狼留在玩家舰队。可逆实验可以保存 `original`，结束后将它写回；原装配与改装副本各自保留，恢复时才能取得正确对象。
 
-## 读取模块和父子关系
+## 沿父装配读取与修改模块
 
-带模块槽的父装配通过 `getModuleSlots()` 返回槽位 ID；`getModuleVariant(slotId)` 返回该槽位当前的模块装配，可能为 `null`。`getStationModules()` 返回槽位到模块装配 ID 的映射。`setModuleVariant(slotId, moduleVariant)` 只应在槽位属于当前父装配时调用。
+窑级的 `GearIn_kiln_combat` 在 `MODULE_0` 上使用 `GearIn_kiln_module_combat`。这些关系已经在 [C4-S4] 的主体装配定义，现在从加载后的对象读取：`getModuleSlots()` 提供模块槽，`getStationModules()` 提供槽位到装配 ID 的映射，`getModuleVariant(slotId)` 取得当前模块装配。以下是局部观察片段：
 
 ```java
 List<String> moduleSlots = variant.getModuleSlots();
@@ -220,7 +218,9 @@ for (String slotId : moduleSlots) {
 }
 ```
 
-窑级主体定义了 `MODULE_0`，映射到 `GearIn_kiln_module_combat`。父装配的 `clone()` 会递归复制已存在的模块装配。修改父装配副本不会自动改变已经单独应用到其他成员的模块；反过来，修改一个模块副本也不会替换父装配映射，除非显式调用 `setModuleVariant(...)`。
+模块槽没有有效映射时，`getModuleVariant(...)` 可以返回 `null`；有默认映射时，也可能直接返回规格库中的模块装配。**克隆父装配不等于所有默认模块都已成为独立副本。** 父装配会递归克隆已有的模块覆盖对象，默认的装配 ID 映射仍可继续引用规格库。
+
+因此修改某个模块时，从 `getModuleVariant(slotId)` 取得当前模块，另行克隆并设置 `REFIT`，再用父装配的 `setModuleVariant(slotId, moduleCopy)` 写回。槽位先按父装配核对，写回后重新读取模块与映射；单独修改一个模块副本，还没有改变父装配所用的模块。已经交给其他成员的模块装配也保持自己的引用关系。
 
 ### 模块关系速查表
 
@@ -232,9 +232,9 @@ for (String slotId : moduleSlots) {
 | 写入模块 | `setModuleVariant(slotId, variant)` | 更新父装配的模块关系 |
 | 模块来源 | `module.getSource()` | 该模块装配自身的来源 |
 
-## 观察来源和 JSON 序列化
+## 用 JSON 观察装配数据
 
-`toJSONObject()` 把装配的显示名、船体 ID、装配 ID、幅能数量、武器组、模块映射和战机等字段写入一个 `JSONObject`。它用于调试、日志和保存前检查，调用本身不会创建 `.variant` 文件，也不会把结果登记到规格库。
+装配还可以通过 `toJSONObject()` 转为 JSON。返回对象包含显示名、船体与装配 ID、幅能数量、武器组、船插，以及适用的战机和模块映射，适合核对数据文件中的字段。以下局部片段记录返回结果：
 
 ```java
 try {
@@ -247,7 +247,9 @@ try {
 }
 ```
 
-序列化结果中的 `weaponGroups` 是当前分组快照，`modules` 是父装配当前的模块 ID 映射。需要正式保存时，应使用游戏装配数据流程生成目标文件，并重新加载验证；不要把日志中的 JSON 文本直接当作已保存装配。
+`weaponGroups` 记录当前组模式、自动开火与槽位武器，`modules` 保存模块 ID 映射。这个 JSON 并没有把运行时模块副本的所有内部状态嵌入其中，成员存档与 `.variant` 数据文件也采用各自的保存方式。
+
+调用只返回 `JSONObject`。要制作正式 `.variant`，仍按 [C4-S1] 的装配导出与文件登记流程保存，然后重新加载验证；这里的日志用于观察字段。
 
 ## 完整最小例
 
@@ -426,7 +428,7 @@ public class GearInModuleInspector implements EveryFrameScript {
 
 :::
 
-改装结果从成员当前装配重新读取，模块结果沿父装配的槽位与映射读取。JSON 返回当前字段快照，正式 `.variant` 文件仍按数据文件流程保存与登记。
+改装脚本结束后，狼留在玩家舰队；模块脚本只读取窑级装配与 JSON。两类分别使用自己的对象，结果由下面的界面、日志与读档步骤确认。
 
 ## 验证方案
 
@@ -435,9 +437,9 @@ public class GearInModuleInspector implements EveryFrameScript {
 1. 构建 MOD，确认 JAR 中存在 `GearInVariantRefitter.class` 和 `GearInModuleInspector.class`。
 2. 新建存档，等待入口执行后搜索 `GearIn variant refitter`，记录成员 ID、槽位武器、幅能、分组、OP 与 `REFIT` 来源。
 3. 打开舰队界面，按成员 ID 定位演示成员，核对武器、武器组、船插、散热和电容；重新取得装配确认应用结果。
-4. 运行 `GearInModuleInspector`，搜索 `GearIn module inspector`、`GearIn module` 和 `GearIn module JSON`，记录模块槽、模块来源和 JSON 长度。
+4. 搜索同一轮执行的 `GearIn module inspector`、`GearIn module` 和 `GearIn module JSON`，记录模块槽、模块来源和 JSON 长度。
 5. 与 [C11-S4] 保留的未改装狼比较 `WS 001` 与幅能数量，确认两艘拥有各自装配；保存读档后再查看改装狼。
-6. 在不写入文件的情况下重新载入存档，确认 JSON 日志只用于观察，正式装配文件没有被脚本意外生成。
+6. 核对 MOD 的 `data/variants/`，确认本节 JSON 观察返回数据对象，目录中的正式装配仍是已保存的数据文件。
 
 预期结果：
 
@@ -484,9 +486,9 @@ public class GearInModuleInspector implements EveryFrameScript {
 
 ## 总结
 
-改装狼从自身装配克隆副本，设置 `REFIT` 来源，再完成武器、分组、船插与幅能修改，写回成员并刷新数值。成员加入舰队后，界面与读档都能继续观察同一份改装。
+这艘狼的改装从独立副本开始，在槽位、分组与 OP 之间完成配置，再写回成员并重算。`REFIT` 来源使运行时设计随成员保存，界面与读档共同确认这份改装。
 
-窑级装配则提供实际父子关系，模块副本通过父装配入口写回，JSON 用于查看当前字段。编者建议把对象独立性、来源、槽位与 OP 一起确认；改装能够显示、能够保存、能够正确部署，各自有明确的观察位置。
+模块仍通过父装配选择，修改时取得当前模块副本再显式写回。JSON 便于观察数据字段，成员存档和正式装配文件则各有保存职责。对象独立、装备适配与保存来源都成立，改装才算完成。
 
 ## 建议参考项
 

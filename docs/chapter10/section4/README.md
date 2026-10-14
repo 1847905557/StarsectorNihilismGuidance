@@ -1,6 +1,6 @@
 # 放置生涯实体
 
-观测星系已经建立，本节在其中放置一个信标，配置名称、势力、交互图片和轨道，再从地点与星区两处把它找回。实体自己的标签、Memory、custom data 与传感器分别承担不同用途；配置完成后，用定期日志比较它与玩家舰队的位置和可见性。
+本节在观测星系放置一个信标，配置位置、身份、交互图片与业务状态，再比较它和玩家舰队之间的可见性。放置脚本负责创建与配置，已有采样器继续读取同一实体，让坐标、轨道和检测结果都能对应到实际操作。
 
 *本节预期阅读时间：\~22 分钟。*
 
@@ -23,17 +23,17 @@
 - [C7-S1] 的生涯入口与日志读取；
 - 理解实体 ID 必须在存档内稳定且唯一。
 
-## 登记放置脚本并确认归属
+## 将信标放入已有星系
 
-创建 `src/data/scripts/gearin/campaign/GearInEntityPlacement.java`。在 [C7-S1] 的 `GearInModPlugin` 添加这个类的 import，把以下局部登记放到 `onGameLoad(...)` 中地点生成器登记之后，沿用已有的 `sector`：
+信标沿用 [C10-S2] 的 `GearIn_observation_system`，实体 ID 为 `GearIn_entity_beacon`。创建 `src/data/scripts/gearin/campaign/GearInEntityPlacement.java`，加入 `GearInModPlugin` 的 import，再将局部登记放在地点生成器登记之后：
 
 ```java
 sector.addTransientScript(new GearInEntityPlacement());
 ```
 
-本节沿用 [C10-S2] 的 `GearIn_observation_system`。脚本第一次创建信标，之后进入存档时对同一个 ID 配置当前参数，完成一轮后结束。
+脚本首次创建信标，后续进入存档时查询同一 ID，对已有对象应用当前配置，完成一轮便结束。因此改变参数后，可以通过构建、重启与读档继续使用同一个信标。
 
-实体由 `addCustomEntity(...)` 创建并加入地点，`getContainingLocation()` 读取实际归属。下面的局部查询分别从地点与星区取得同一个信标：
+下面的局部片段展示创建与查询关系：
 
 ```java
 StarSystemAPI system = Global.getSector().getStarSystem(
@@ -50,15 +50,35 @@ SectorEntityToken bySector = Global.getSector().getEntityById(
         "GearIn_entity_beacon");
 ```
 
-`byLocation` 和 `bySector` 应指向同一个 token，`entity.getContainingLocation()` 应返回 `GearIn_observation_system`。如果地点查询为空，先检查创建调用和地点注册，再检查全局索引。
+`addCustomEntity(...)` 将对象加入星系，使用原版 `comm_relay` 类型。地点与星区查询应取得同一个 token，`getContainingLocation()` 回读观测星系。名字可以在后面调整，ID 则用于存档、索引与后续交互查找，重复创建同 ID 会让这些读取失去明确对象。
 
-::: tip 稳定 ID
-ID 同时用于存档、地点 ID 索引、星区全局索引和后续交互查找。重复创建相同 ID 会让调用方无法判断目标对象，也会污染验证日志。
-:::
+## 选择固定坐标或轨道
 
-## 设置身份和显示属性
+实体已经属于地点，接下来确定它在哪里。本例的 `USE_FIXED_LOCATION` 选择两种方式，读档时重新应用当前分支。
 
-**ID 用于查找，名称与势力用于显示，标签用于分类。** `facing` 设置朝向。custom data 随实体保存，本例放入字符串角色 `sensor`；Memory 则用于规则与事实，并可配置过期时间。保存到 custom data 的对象也参与存档序列化，长期数据按实际所属实体安排。
+固定位置调用会清除现有轨道，并写入坐标：
+
+```java
+entity.setFixedLocation(1600f, -900f);
+```
+
+需要绕恒星移动时，改用圆轨道：
+
+```java
+entity.setCircularOrbit(
+        system.getStar(),
+        45f,
+        2600f,
+        160f);
+```
+
+锚点为本系恒星，初始角度 45，半径 2600 个生涯地图单位，周期 160 个生涯日。位置随锚点与周期计算，锚点也应属于同一个地点。
+
+**固定坐标与轨道分别提供位置，采用其中一种。** 仅改坐标却保留原有轨道，后续推进仍可能按轨道更新位置；本例的两个分支分别建立或清除轨道，验证也比较这两种结果。
+
+## 配置名称、归属与业务状态
+
+在同一实体上设置名称、势力、标签与朝向，再写入角色和就绪状态：
 
 ```java
 entity.setName("观测信标");
@@ -69,11 +89,15 @@ entity.getCustomData().put("GearIn_entity_role", "sensor");
 entity.getMemoryWithoutUpdate().set("$GearIn_entity_ready", true);
 ```
 
-`getMemory()` 会更新实体事实，当前读取已有状态用 `getMemoryWithoutUpdate()`。`hasTag(...)` 与地点的 `getEntitiesWithTag(...)` 查标签，custom data 按 Map 的键查值，两种分类入口各自对应本例的数据。
+名称和势力用于显示，`facing` 提供朝向，`GearIn_entity_probe` 标签用于分类。`hasTag(...)` 查询当前实体，地点的 `getEntitiesWithTag(...)` 查询具有该标签的实体集合。
 
-## 配置交互入口
+custom data 是随实体保存的 Map，本例在 `GearIn_entity_role` 下保存字符串 `sensor`。其中对象也参与存档序列化，长期状态按实际所属实体安排。
 
-先在 `data/config/settings.json` 的 `graphics.illustrations` 中登记本节键，使用原版中继站图片：
+Memory 则提供规则状态、事实与过期值语义。这里写入 `$GearIn_entity_ready`，纯读取时使用 `getMemoryWithoutUpdate()`；需要更新实体事实时，调用 `getMemory()`。不同的读取入口可能触发不同处理，日志与规则也沿实体自己的 Memory 查询。
+
+## 将交互图片接到信标
+
+`comm_relay` 类型从 `custom_entities.json` 提供地图外观与插件。交互图片另通过设置中的分类与键选择。本例登记原版中继站插图：
 
 ```json
 {
@@ -85,7 +109,7 @@ entity.getMemoryWithoutUpdate().set("$GearIn_entity_ready", true);
 }
 ```
 
-`setInteractionImage(category, key)` 再选择分类与键。custom entity 的插件由 `custom_entities.json` 中的 type 提供，本例使用 `comm_relay`，通过 `getCustomPlugin()` 读取它的运行实例。局部检查如下：
+把 `GearIn_entity_interaction` 合入已有 `graphics.illustrations`，然后在实体配置中选择这份登记，并取得 custom plugin：
 
 ```java
 entity.setInteractionImage("illustrations", "GearIn_entity_interaction");
@@ -93,31 +117,11 @@ CustomCampaignEntityAPI customEntity = (CustomCampaignEntityAPI) entity;
 boolean pluginLoaded = customEntity.getCustomPlugin() != null;
 ```
 
-type 提供实体外观与插件，当前 `setInteractionImage(...)` 按 settings 分类与键选择交互图片。地图上出现一个中继站，尚不能代替交互图片与插件的验证；靠近后打开交互界面，再看实际显示。
+`setInteractionImage(...)` 指定交互时的图片，`getCustomPlugin()` 读取该实体类型创建的插件。地图显示中继站、交互界面显示插图、插件引用存在，分别对应这几处配置。靠近信标打开交互时，再将实际画面与日志对照。
 
-## 对照固定位置和轨道位置
+## 从双方的传感器判断可见性
 
-`setFixedLocation(x, y)` 会清除现有 orbit 并写入固定坐标；`setCircularOrbit(focus, angle, radius, days)` 会建立 orbit，位置由锚点和周期持续计算。**当前位置由固定坐标或轨道中的一种方式提供。** 本例用 `USE_FIXED_LOCATION` 选择两种配置，重新进入存档时应用当前选择。
-
-```java
-entity.setFixedLocation(1600f, -900f);
-```
-
-需要运动时改为：
-
-```java
-entity.setCircularOrbit(
-        system.getStar(),
-        45f,
-        2600f,
-        160f);
-```
-
-锚点应属于同一个地点；轨道半径和周期是生涯地图单位与生涯天数，不是像素和现实秒数。
-
-## 让传感器日志持续观察当前位置
-
-传感器属性属于实体。`setSensorStrength` 与 `setSensorProfile` 只写入检测参数，玩家是否看见实体还取决于地点、距离、传感器规则和实体自身的可发现状态。
+信标的传感器强度与轮廓都设为 1。写入参数后，读取玩家是否能发现它以及观察等级：
 
 ```java
 entity.setSensorStrength(1f);
@@ -128,9 +132,13 @@ boolean visible = entity.isVisibleToPlayerFleet();
 VisibilityLevel level = entity.getVisibilityLevelToPlayerFleet();
 ```
 
-这里的方向也要分清：`getVisibilityLevelToPlayerFleet()` 表示玩家对实体的观察等级，`getVisibilityLevelOfPlayerFleet()` 表示实体对玩家舰队的观察等级。检测方的传感器强度、被检测方的轮廓与实际距离一起参与计算。
+检测还取决于地点、距离、传感器规则与实体的可发现状态，不能只凭两个参数已经写入就判断玩家必然看见它。
 
-在 [C10-S1] 的 `GearInSectorStateSampler` 添加 `SectorEntityToken` 的 import，把以下局部片段加入 `writeStateLog(...)`。它跟随已有五日采样，不增加另一份计时：
+**`toPlayer` 与 `ofPlayer` 的检测方向相反。** `getVisibilityLevelToPlayerFleet()` 描述玩家对信标的观察，`getVisibilityLevelOfPlayerFleet()` 描述信标对玩家舰队的观察。每个方向都使用检测方的强度、被检测方的轮廓与双方距离，返回等级也可能不同。
+
+### 沿现有采样器比较变化
+
+信标放置完成后，由 [C10-S1] 的五日采样持续观察。在 `GearInSectorStateSampler` 加入 `SectorEntityToken` 的 import，将以下局部片段放入 `writeStateLog(...)`：
 
 ```java
 SectorEntityToken entity = sector.getEntityById("GearIn_entity_beacon");
@@ -145,11 +153,9 @@ if (entity != null) {
 }
 ```
 
-信标创建之后，这个观察入口就会记录它的状态。**配置值与检测结果一起比较。** 靠近、远离或切换地点后，先看坐标和所属地点，再看可见性；两种方向的等级也按各自检测方解释。
+放置脚本记录初始配置后结束，采样器按稳定 ID 继续取得信标。靠近、远离和切换地点时，日志一起保留坐标、所属地点、检测参数与两种方向的等级。
 
-## 配置一个实体
-
-放置类负责创建、应用配置和初次日志，定期观察沿用已有采样器。编者建议把身份与位置先看清，再增加交互：找到同一个对象，才能确定后面的状态属于谁。
+比较时按当前地点和距离解释可见性，再对应观察等级。固定位置与轨道的实验也采用同一信标，参数变化就能沿这个 ID 找回，而无需重新创建另一份观察对象。
 
 ## 完整最小例
 
@@ -295,9 +301,9 @@ public class GearInEntityPlacement implements EveryFrameScript {
 
 ## 总结
 
-信标以稳定 ID 加入观测星系，地点与星区查询找到同一个对象。名称、势力、标签与数据各有用途，settings 的图片键和实体 type 分别接到交互显示与插件。
+信标以稳定 ID 加入地点，固定坐标或轨道提供位置，类型提供外观与插件，设置中的图片键提供交互画面。标签、custom data 与 Memory 则分别保存分类和状态。
 
-位置由当前配置选择固定坐标或轨道，定期采样则把坐标与检测方向一起记录。配置已经写入、对象在什么地方、玩家能看见多少信息，这几项分别确认后，再用它们驱动生涯功能。
+创建完成之后，采样器持续读取同一实体。玩家对信标与信标对玩家采用各自检测方向，实际可见性再结合地点和距离判断。
 
 ## 建议参考项
 

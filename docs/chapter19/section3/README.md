@@ -1,6 +1,6 @@
 # 配置 Nexerelin 的两种星区开局
 
-固定 Corvus 使用已有星系和出生实体，随机星区则使用本次生成的市场。我们给齿轮工业登记 Prime 出生点，再补两类起始舰队；进入两种生涯后，用规划器读出实际实体和装配列表。固定对象、程序化市场与舰队数据分别准备，开局结果也按这些来源比较。
+Corvus 的出生登记可以指向固定实体，随机星区的出生位置则来自本次生成的对象。本节为齿轮工业登记 Prime 和两组起始装配，再用规划器比较配置 ID、当前市场与舰队列表。规划器负责查询，Nexerelin 的开局流程负责实际放置和生成，两者的结果分别确认。
 
 *本节预期阅读时间：\~18 分钟。*
 
@@ -31,7 +31,7 @@ faction,system,entityID
 gear_industry,GearIn,GearIn_planet1
 ```
 
-`system` 是星系名称，`entityID` 是 [C3-S4] 创建的 Prime 行星 ID。**显示名和实体 ID 分别填写。**Prime 的显示名是 GearIn Prime，星系则是 GearIn；出生逻辑按这份星系与实体关系取得位置。
+`system` 保存星系名 GearIn，`entityID` 保存 [C3-S4] 创建的 `GearIn_planet1`；Prime 的显示名则是 GearIn Prime。库读取这份登记以后，普通 Corvus 放置分支通过实体 ID 从星区查询对象。**出生入口使用实际实体 ID。**
 
 固定模式保留 `GearInSystemGenerator` 的生成调用，让该实体在玩家放置前存在。CSV 本身登记引用，实际对象仍由生成器创建。
 
@@ -43,9 +43,9 @@ gear_industry,GearIn,GearIn_planet1
 "marketSpawnWeight": 1
 ```
 
-随机星区生成设置中启用齿轮工业，权重参与本次程序化市场分配。生涯生成后，`NexUtilsFaction.getFactionMarkets("gear_industry")` 才取得当前拥有的市场。
+随机星区生成设置中启用齿轮工业，再启用势力权重并采用配置权重。`marketSpawnWeight` 此时参与程序化市场分配；关闭权重或采用随机权重时，分配使用对应设置。生成完成以后，`NexUtilsFaction.getFactionMarkets("gear_industry")` 才取得当前市场。
 
-本教程的自定义星系生成器也可能为随机模式追加自有市场。因此权重为 0 并不等于最终没有市场；观察时读取实际集合，再判断市场来自哪里。**模式决定来源，查询确认本次已经生成的对象。**
+自定义星系生成器也可能为随机模式追加市场，程序化生成还有母星等分配步骤。因此，权重为 0 只改变相应分配，最终市场集合仍由实际生成过程确定。
 
 ## 填写两类起始舰队
 
@@ -64,28 +64,19 @@ gear_industry,GearIn,GearIn_planet1
 
 Nexerelin 加载时确认装配能够取得。新档界面选择固定舰队类型，或者随机类型；开局舰船由库的实际生成流程建立。本节的规划器读取配置与地点，方便对照这些结果。
 
-## 保存规划器，在已生成的生涯查询
+## 按模式查询地点与装配
 
-将完整 `GearInNexStartPlanner` 保存到 `src/data/scripts/gearin/modcompat/GearInNexStartPlanner.java`。以下局部调用在 Sector、Nexerelin 管理器和经济已经建立后执行；可以追加到既有 `onGameLoad(...)` 的启用分支：
+保存完整 `GearInNexStartPlanner` 到 `src/data/scripts/gearin/modcompat/GearInNexStartPlanner.java`。它在生涯建立后查询数据，返回地点 ID 和装配列表。
 
-```java
-if (GearInCompatBridge.isNexerelinEnabled()) {
-    GearInNexStartPlanner planner = new GearInNexStartPlanner();
-    Global.getLogger(GearInModPlugin.class).info(
-            "GearIn start: corvus=" + GearInNexCompat.isNexCorvusMode()
-                    + " entity=" + planner.chooseSpawn("gear_industry")
-                    + " solo=" + planner.chooseFleet("gear_industry", "SOLO")
-                    + " combatSmall=" + planner.chooseFleet("gear_industry", "COMBAT_SMALL"));
-}
-```
+### 地点查询与玩家实际出生
 
-添加这些自有角色类的 import，保留原有加载代码。规划器只返回 ID 与列表，日志观察在生涯加载后执行；需要在自己的玩家放置逻辑中使用返回值时，则先等待相同前置对象就绪，再把实际实体交给放置代码。
+管理器尚未建立时，`chooseSpawn` 返回 `null`。Corvus 分支返回登记行中的实体 ID，登记行缺失时返回 `null`；随机分支遍历本势力市场，跳过没有主实体的市场，再选择规模最大者。
 
-### 固定与随机地点的查询关系
+规模相同时保留先遇到的市场，集合顺序影响选择。这是本例自行采用的最大市场策略。库的普通随机开局还会使用母星或随机市场，背景指定位置、玩家选择的起点与随机出生开关也会改变实际放置。
 
-管理器尚未建立时，`chooseSpawn` 返回 `null`，调用方等待。Corvus 分支从 `ExerelinCorvusLocations` 取得出生行；随机分支遍历本势力市场，跳过无主实体的市场，再选择规模最大者。
-
-规模相同时保留先遇到的市场，集合顺序会影响选择。编者建议把这一结果当作 "当前最大市场" 的查询：需要固定首都时，使用明确的市场或实体 ID。
+::: warning 规划器只返回地点 ID
+Corvus 查询返回 CSV 里的 ID，尚未检查该实体是否存在；随机查询返回当前最大市场主实体。自有放置代码需要再取得实体，库的正常开局则继续使用自己的放置规则。
+:::
 
 ### 固定舰队和 RANDOM
 
@@ -110,7 +101,24 @@ API 内部通过 `StartFleetType.getType(...)` 解析字符串，忽略大小写
 runcode new data.scripts.gearin.modcompat.GearInNexStartPlanner().chooseFleet("gear_industry", "GearIn_unknown_type");
 ```
 
-该命令只查询数据，错误发生在类型解析，玩家位置和舰队保持原状态。查询不到有效出生实体时也返回 `null`，自有放置入口需要据此等待或报告。
+这个命令在类型解析时报告输入问题，查询过程保留玩家当前的位置和舰队。自有放置入口根据地点查询结果取得实体，登记 ID 对应不到对象时再处理缺失状态。
+
+## 在生涯加载后比较查询结果
+
+Sector、Nexerelin 管理器与经济已建立后，在既有 `onGameLoad(...)` 的启用分支追加局部调用，添加自有角色类的 import，保留原初始化：
+
+```java
+if (GearInCompatBridge.isNexerelinEnabled()) {
+    GearInNexStartPlanner planner = new GearInNexStartPlanner();
+    Global.getLogger(GearInModPlugin.class).info(
+            "GearIn start: corvus=" + GearInNexCompat.isNexCorvusMode()
+                    + " entity=" + planner.chooseSpawn("gear_industry")
+                    + " solo=" + planner.chooseFleet("gear_industry", "SOLO")
+                    + " combatSmall=" + planner.chooseFleet("gear_industry", "COMBAT_SMALL"));
+}
+```
+
+固定类型读取同一份配置，地点查询按模式读取不同来源。日志确认这份输入，地图与开局舰队再确认实际生成结果，便能区分查询策略与库的开局规则。
 
 ## 完整最小例
 
@@ -165,7 +173,7 @@ public final class GearInNexStartPlanner {
 
 ## 验证方案
 
-前置数据：Console Commands 已启用，准备固定 Corvus 与随机星区两种新档。
+前置数据：Console Commands 已启用，准备 Corvus 与随机星区两种新档；固定验证采用普通背景、默认出生点并关闭随机出生，权重验证启用配置势力权重。
 
 1. 保存出生 CSV、市场权重、起始舰队字段、规划器与日志调用，构建并重启，选择齿轮工业的 SOLO 开局。
 2. 创建 Corvus 新档，观察玩家出生位置，再搜索 `GearIn start` 中的实体与两类装配列表。
@@ -201,9 +209,7 @@ public final class GearInNexStartPlanner {
 
 ## 总结
 
-固定出生点由 CSV 指向已生成实体，随机地点查询来自本次市场集合；两种模式共享同一份起始舰队配置。规划器在生成后返回实际 ID 与列表，开局界面的放置与舰队生成再按库的流程执行。
-
-先让输入存在，再在正确时机查询。两种模式的区别落实到对象来源以后，日志、地图和开局舰船可以分别对照。
+出生登记、市场权重与起始装配分别提供开局输入。规划器在生成后返回配置 ID 或当前最大市场，并读取固定类型的装配列表；Nexerelin 再按实际开局选择完成放置与舰队生成。查询和生成各自对应来源，两个模式的结果也就能分别解释。
 
 ## 建议参考项
 

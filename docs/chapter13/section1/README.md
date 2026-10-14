@@ -1,6 +1,6 @@
 # 配置人物基础
 
-Foundry 的通信目录已经能够处理人物，这次正式放入 Aster Vance。先给她稳定 ID 与资料，再登记到重要人物服务，加入市场和目录。首次创建、重复调用与读档都沿同一个 ID 找回这位人物，日志也分别确认资料、归属和界面入口。
+本节让 Aster Vance 留在 Foundry 的通信目录中，供后续脚本按固定身份找到她。姓名、头像与职务组成界面资料，重要人物服务保存可查询的对象，市场和目录提供实际接触入口。创建、登记与关联分别完成，读档后才能继续使用同一位人物。
 
 *本节预期阅读时间：\~25 分钟。*
 
@@ -31,27 +31,40 @@ Foundry 的通信目录已经能够处理人物，这次正式放入 Aster Vance
 new GearInPersonScript().run();
 ```
 
-两个类在同一个包。每次进入存档后，经济观察器登记一轮监听，更新结束再执行当前人物注册；Aster 的对象与市场关系随存档保留。
+两类在同一个包。每次载入存档，经济观察器等待一轮更新后调用人物流程，当前市场已经建立。Aster 与关联关系会随存档保存，这个入口因此既要处理首次创建，也要处理已有的人物。
 
 ### 选择固定人物的创建入口
 
-`createPerson()` 返回空白人物，资料由调用方写入；`createRandomPerson()` 从势力资料池生成姓名和头像。固定剧情人物需要稳定身份，因此使用空白入口。两种入口都只创建对象，不会自动登记到重要人物、市场或通信目录。
+固定人物采用 `createPerson()`，由调用方填写资料。需要随机背景人物时，`createRandomPerson()` 从势力资料池生成姓名与头像。以下局部片段对照两个入口：
 
 ```java
 PersonAPI blank = Global.getFactory().createPerson();
 PersonAPI random = Global.getSector().getFaction("gear_industry").createRandomPerson();
 ```
 
-### 创建入口速查表
+两者得到的是人物对象，重要人物登记与市场关联由调用方继续完成。本节把创建放在固定 ID 查询之后，首次运行才建立 Aster。
 
-| 入口 | 资料来源 | 用途 |
-|---|---|---|
-| `createPerson()` | 调用方写入 | 固定剧情人物 |
-| `createRandomPerson()` | 势力资料池 | 随机背景人物 |
+## 先按 ID 取得人物，再配置首次资料
 
-## 配置人物身份
+从 `Global.getSector().getImportantPeople()` 取得重要人物服务，查询 `GearIn_aster_vance`。已有对象直接返回，只有首次调用才创建并登记。`getOrCreatePerson()` 的局部结构如下：
 
-人物 ID 是跨脚本复用的稳定键，姓名只是显示资料。Aster Vance 使用 `GearIn_aster_vance`，女性，属于 `gear_industry`，rank 为 `Ranks.CITIZEN`，post 为 `Ranks.POST_TRADER`，头像为 `graphics/portraits/portrait_hegemony01.png`。
+```java
+ImportantPeopleAPI importantPeople = Global.getSector().getImportantPeople();
+PersonAPI person = importantPeople.getPerson(PERSON_ID);
+if (person != null) {
+    return person;
+}
+person = Global.getFactory().createPerson();
+// 写入资料与 Memory
+importantPeople.addPerson(person);
+return person;
+```
+
+这样，已有对话进度和人物状态继续留在原对象上，读取存档不会再用一份新建资料覆盖它。完整类在创建分支写完身份、标签与 Memory，最后调用 `addPerson(...)`。
+
+### 写入 Aster 的身份
+
+人物 ID 先设为 `GearIn_aster_vance`，然后填写 Aster Vance、女性、齿轮工业公民与商人职务。头像采用 `graphics/portraits/portrait_hegemony01.png`，标签使用同一前缀。局部配置如下：
 
 ```java
 person.setId(PERSON_ID);
@@ -63,7 +76,9 @@ person.setPortraitSprite("graphics/portraits/portrait_hegemony01.png");
 person.addTag(PERSON_TAG);
 ```
 
-rank 表示身份层级，post 表示职务。读取稳定值使用 `getRankId()` 和 `getPostId()`；`getRank()` 和 `getPost()` 返回显示文本。标签是字符串集合，适合 MOD 分类，不能替代 ID。
+**固定 ID 在登记前确定，后续脚本继续使用它。** 重要人物服务按 ID 建立查询，姓名与头像则供玩家辨认。`rank` 表示身份层级，`post` 表示职务；`getRankId()`、`getPostId()` 返回稳定值，`getRank()`、`getPost()` 按人物势力取得显示文本。
+
+标签是分类集合，供 MOD 查询使用。完整类还写入 `$GearIn_aster_vance_ready`，标记这份基础资料已经完成；状态含义与人物 ID 分别保存。
 
 ### 人物资料速查表
 
@@ -78,96 +93,11 @@ rank 表示身份层级，post 表示职务。读取稳定值使用 `getRankId()
 | 头像 | `setPortraitSprite` | `getPortraitSprite` | 人物图像 |
 | 标签 | `addTag` | `hasTag` | 分类 |
 
-`getRelToPlayer()` 只读取人物对玩家的关系，关系会参与对话显示；本节不修改关系。
-
-## 读取人物相关 MemFlags
-
-`MemFlags` 是原版约定键的集中定义，不是人物专用枚举。它同时包含舰队、市场、实体、全局和人物状态；使用时把键、实际写入对象、读取方与数据类型对应起来。人物直接使用的键如下。
-
-### 人物相关 Memory 速查表
-
-| 常量 | 字符串值 | 人物上的数据类型 | 具体语义 |
-|---|---|---|---|
-| `ENTITY_MISSION_IMPORTANT` | `$missionImportant` | reason 组合布尔标记 | 任务或其它流程把人物标为重要；通信目录和重要目标逻辑会读取它 |
-| `MEMORY_KEY_MISSION_IMPORTANT` | `$missionImportant` | reason 组合布尔标记 | 与 `ENTITY_MISSION_IMPORTANT` 使用同一个原版键值，代码应通过 `Misc.makeImportant` 管理 |
-| `EXCEPTIONAL_SLEEPER_POD_OFFICER` | `$exceptionalSleeperPodOfficer` | 布尔值 | 标记人物是特殊睡眠舱军官，军官技能变更逻辑据此处理 |
-| `SUSPECTED_AI` | `$suspectedAI` | 布尔值 | 标记人物被判定为疑似 AI，原版生命周期逻辑会写入该状态 |
-| `OFFICER_SKILL_PICKS_PER_LEVEL` | `$officerSkillPicksPerLevel` | 整数 | 覆盖军官每级获得的技能选择数量 |
-| `OFFICER_MAX_LEVEL` | `$officerMaxLevel` | 整数 | 覆盖军官可达到的最高等级 |
-| `OFFICER_MAX_ELITE_SKILLS` | `$officerMaxEliteSkills` | 整数 | 覆盖军官可拥有的精英技能数量上限 |
-
-这些键的适用范围不同。`EXCEPTIONAL_SLEEPER_POD_OFFICER` 和 `SUSPECTED_AI` 属于人物身份或来源判定，三个 `OFFICER_` 键只在人物已经作为军官使用时才有意义。本节的 Aster Vance 只是普通重要人物，因此最终代码只写 MOD 自定义的 `$GearIn_aster_vance_ready`。
-
-::: info $missionImportant
-原版通过 reason 组合管理这个键，标记和解除使用 `Misc.makeImportant` 与 `Misc.makeUnimportant`，不能直接写 `false`，也不能用它替代 `ImportantPeopleAPI.addPerson`。
-:::
-
-每个人物都有自己的 `MemoryAPI`。注册流程使用 `getMemoryWithoutUpdate()` 写入 `$GearIn_aster_vance_ready`，表示基础资料已经完成。无期限值随人物保存，适合这个状态；带过期时间的值适合短期事件。
-
-```java
-person.getMemoryWithoutUpdate().set(PERSON_READY, true);
-boolean ready = person.getMemoryWithoutUpdate().getBoolean(PERSON_READY);
-```
-
-标签表达分类，Memory 表达运行时状态。二者同时存在时，日志分别读取，避免把标签存在误认为注册完成。
-
-## 登记重要人物
-
-`Global.getSector().getImportantPeople()` 返回星区人物服务。先用 `getPerson(PERSON_ID)` 查询；已有对象直接复用，查询为空才创建。创建分支完成资料、标签和 Memory 后调用 `addPerson(person)`，这样返回对象已经可以按 ID 再次取得。
-
-```java
-ImportantPeopleAPI importantPeople = Global.getSector().getImportantPeople();
-PersonAPI person = importantPeople.getPerson(PERSON_ID);
-if (person != null) {
-    return person;
-}
-person = Global.getFactory().createPerson();
-// 写入资料与 Memory
-importantPeople.addPerson(person);
-return person;
-```
-
-`containsPerson(...)` 按人物 ID 检查登记，`getData(person).getPerson()` 再比较实际关联引用。数据还保存人物位置，本例在市场关联后写入 `getLocation().setMarket(market)`，使重要人物服务也按当前市场定位她。
-
-需要按身份层级筛选时，`getPeopleWithRank(...)` 使用 rank 显示文本。按职务 ID 精确筛选，则使用 `getMatching(...)` 的人物过滤器：
-
-```java
-List<ImportantPeopleAPI.PersonDataAPI> traders = importantPeople.getMatching(
-        data -> Ranks.POST_TRADER.equals(data.getPerson().getPostId()));
-```
-
-这段局部观察需要 `java.util.List`。固定人物仍按 ID 查询，集合筛选用于查看当前相同职务的其他人物。
-
-### ImportantPeopleAPI 速查表
-
-| 方法 | 作用 |
-|---|---|
-| `getPerson` | 按 ID 查询 |
-| `addPerson` | 登记人物 |
-| `containsPerson` | 检查登记 |
-| `getData` | 检查附加数据 |
-| `getPeopleWithRank` | 按 rank 显示文本筛选 |
-| `getPeopleWithPost` | 现有筛选入口；本例职务筛选使用 `getMatching` 读取 post ID |
-| `canCheckOutPerson` | 检查能否借出 |
-| `checkOutPerson` | 写入借出 reason |
-| `returnPerson` | 移除借出 reason |
-
-### 借出与归还
-
-借出只改变占用集合。借出和归还使用同一个 reason，`getCheckedOutFor()` 可以观察该 reason 是否存在。
-
-```java
-String reason = "GearIn_person_example";
-if (importantPeople.canCheckOutPerson(person, reason)) {
-    importantPeople.checkOutPerson(person, reason);
-    Set<String> during = importantPeople.getData(person).getCheckedOutFor();
-    importantPeople.returnPerson(person, reason);
-}
-```
+`getRelToPlayer()` 返回人物与玩家的关系对象，参与对话等显示。本节读取身份与归属，关系沿用已有状态。
 
 ## 关联市场和通信目录
 
-`GearIn_market_foundry` 由 [C12-S1] 创建。`MarketAPI.addPerson(person)` 同时加入成员集合并设置人物的市场字段。单独调用 `PersonAPI.setMarket(market)` 只写反查字段；当前使用集合入口，然后从两端回读：
+人物登记后，`run()` 将她关联到 [C12-S1] 的 `GearIn_market_foundry`。`market.addPerson(person)` 同时加入人物集合并设置人物的市场字段，局部操作如下：
 
 ```java
 MarketAPI market = Global.getSector().getEconomy().getMarket(MARKET_ID);
@@ -176,7 +106,9 @@ if (!market.getPeopleCopy().contains(person)) {
 }
 ```
 
-市场成员不等于通信目录条目。目录是独立集合，先用 `getEntryForPerson(person)` 查询，缺失时才添加。
+单独调用 `person.setMarket(market)` 只保存人物的反查字段。这里从集合入口加入，随后可以从 `getPeopleCopy()` 与 `person.getMarket()` 两端确认归属。
+
+再将人物放进通信目录。目录另有自己的条目，按人物查询后添加：
 
 ```java
 CommDirectoryAPI directory = market.getCommDirectory();
@@ -187,7 +119,9 @@ if (directory.getEntryForPerson(person) == null) {
 int entriesAfter = directory.getEntriesCopy().size();
 ```
 
-### 归属边界速查表
+`ImportantPeopleAPI` 的附加数据也保存位置，完整类调用 `getData(person).getLocation().setMarket(market)`。这样后续人物服务既能按 ID 找到她，也能知道她位于 Foundry。目录出现人物，说明界面入口已接好；市场集合、人物字段和服务位置仍各有职责。
+
+### 人物关联速查表
 
 | 对象 | 写入 | 检查 | 结果 |
 |---|---|---|---|
@@ -196,25 +130,68 @@ int entriesAfter = directory.getEntriesCopy().size();
 | 人物市场字段 | `MarketAPI.addPerson` 同步人物字段 | `getMarket` | 人物反查市场 |
 | 通信目录 | `CommDirectoryAPI.addPerson` | `getEntryForPerson` | 界面出现条目 |
 
-## 处理重复调用
+## 让重复调用继续使用原人物
 
-注册入口可以在 `onGameLoad` 多次执行。稳定性来自星区保存的对象关系，而不是脚本实例或静态缓存。首次运行创建人物；再次调用时固定 ID 返回已有对象，当前资料与运行状态继续保留，代码补齐缺失市场和目录关联。重新载入后重新取得服务并按相同 ID 查询。
+`getOrCreatePerson()` 处理固定 ID 查询与首次登记，`run()` 处理市场、目录、服务位置和日志，两者传递同一个人物。首次运行时 `created=true`；同存档再次调用或读档后，人物服务返回已有对象，`created=false`，入口只补齐缺失的关联。
 
-日志记录 `created`、`important`、`dataLinked`、`market`、`personMarket`、`directory` 和 `entriesBefore->entriesAfter`。这些字段分别对应创建、登记、附加数据、市场集合、人物字段、通信目录和目录数量；只记录姓名无法证明引用一致。
+`containsPerson(person)` 按人物 ID 检查登记，`getData(person).getPerson() == person` 则确认服务保存的具体对象。因此日志分别记录 `important` 与 `dataLinked`，再记录 `market`、`personMarket`、`directory` 和目录数量前后值。姓名相同的两个对象，仍可能在这些关系中得到不同结果。
 
-### 运行状态速查表
+本例的 `important=true` 表示已登记到重要人物服务。任务中的重要标志另由 Memory 管理，二者的作用在下面区分。跨读档继续按 ID 查询，当前一次调用中再用对象引用核对关联。
 
-| 场景 | `created` | 人物 | 关联行为 |
+## 用 Memory 保存人物状态
+
+人物有自己的 `MemoryAPI`。当前 `$GearIn_aster_vance_ready` 使用无期限值，表示首次资料已经写完，随人物保存。局部读写如下：
+
+```java
+person.getMemoryWithoutUpdate().set(PERSON_READY, true);
+boolean ready = person.getMemoryWithoutUpdate().getBoolean(PERSON_READY);
+```
+
+标签表达分类，Memory 表达当前运行状态；带期限值适合短期事件。本例的最终代码只写自己的资料标记，原版 `MemFlags` 还供任务与军官功能使用，按实际读取方选择。
+
+### 人物相关 Memory 速查表
+
+| 常量 | 字符串值 | 人物上的数据类型 | 具体语义 |
 |---|---|---|---|
-| 首次运行 | `true` | 新建并登记 | 补齐市场和目录 |
-| 同存档再次运行 | `false` | 复用已有对象 | 只补缺失关联 |
-| 重新载入存档 | `false` | 从存档恢复 | 检查并补齐关联 |
+| `ENTITY_MISSION_IMPORTANT` | `$missionImportant` | reason 组合布尔标记 | 任务等流程标为重要，通信目录与重要目标逻辑读取 |
+| `MEMORY_KEY_MISSION_IMPORTANT` | `$missionImportant` | reason 组合布尔标记 | 与前一常量共用键，通过 `Misc.makeImportant` 管理 |
+| `EXCEPTIONAL_SLEEPER_POD_OFFICER` | `$exceptionalSleeperPodOfficer` | 布尔值 | 特殊睡眠舱军官身份，技能变更逻辑据此处理 |
+| `SUSPECTED_AI` | `$suspectedAI` | 布尔值 | 疑似 AI 身份，原版生命周期逻辑会写入 |
+| `OFFICER_SKILL_PICKS_PER_LEVEL` | `$officerSkillPicksPerLevel` | 整数 | 军官每级的技能候选数量 |
+| `OFFICER_MAX_LEVEL` | `$officerMaxLevel` | 整数 | 军官最高等级 |
+| `OFFICER_MAX_ELITE_SKILLS` | `$officerMaxEliteSkills` | 整数 | 军官精英技能上限 |
 
-## 组合注册流程
+三个 `OFFICER_` 键由军官成长功能读取，Aster 当前只是普通剧情人物。`MemFlags` 也集中定义市场、舰队与全局键，使用时仍要对应实际对象和类型。
 
-完整类只保留两个业务方法。`getOrCreatePerson()` 负责 ID 查询、创建、配置和登记；`run()` 负责市场双向关系、通信目录和日志。两个方法之间传递同一个 `PersonAPI`，因此所有集合检查都针对同一对象。
+::: warning 任务重要标志按 reason 管理
+`$missionImportant` 由多个 reason 共同决定。使用 `Misc.makeImportant(...)` 标记，`Misc.makeUnimportant(...)` 解除自己的原因，才能保留其他任务的标记。人物服务登记继续调用 `ImportantPeopleAPI.addPerson(...)`。
+:::
 
-执行顺序是查询 ID、必要时创建和配置、登记重要人物、取得市场、补齐市场关系、补齐目录、记录状态。每一步都有对应读取入口，故障可以定位到具体对象边界。
+## 筛选人物与登记占用
+
+固定人物按 ID 查询。需要取得同类人物时，使用 `getMatching(...)` 按人物字段筛选。下面的局部片段按 `Ranks.POST_TRADER` 读取商人，需要 `java.util.List`：
+
+```java
+List<ImportantPeopleAPI.PersonDataAPI> traders = importantPeople.getMatching(
+        data -> Ranks.POST_TRADER.equals(data.getPerson().getPostId()));
+```
+
+`getPeopleWithRank(...)` 使用 rank 显示文本。当前 `getPeopleWithPost(...)` 也不能据传入 post ID 完成这里的职务筛选，因此本节明确比较 `getPostId()`，数据 ID 与界面文本分别使用。
+
+任务还可以登记人物占用。`checkOutPerson(person, reason)` 将原因加入附加数据的集合，`returnPerson(...)` 移除同一原因，市场与目录关系继续保留。以下局部片段登记后立即归还，需要 `java.util.Set`：
+
+```java
+String reason = "GearIn_person_example";
+if (importantPeople.canCheckOutPerson(person, reason)) {
+    importantPeople.checkOutPerson(person, reason);
+    Set<String> during = importantPeople.getData(person).getCheckedOutFor();
+    importantPeople.returnPerson(person, reason);
+}
+```
+
+::: warning canCheckOutPerson 检查当前 reason
+返回 `true` 表示当前原因尚未登记，人物仍可能被其他原因占用。需要独占使用时，再结合 `isCheckedOutForAnything()` 或 `getCheckedOutFor()` 确认全部占用记录。
+:::
 
 ## 完整最小例
 
@@ -336,14 +313,14 @@ public class GearInPersonScript {
 - **市场集合中没有人物**：只写了人物反查字段。
     - **解决方案**：通过 `market.addPerson(person)` 加入集合，再从 `person.getMarket()` 与 `getPeopleCopy()` 两端读取。
 
-- **目录出现重复条目**：无条件调用 `directory.addPerson`。
-    - **解决方案**：添加前查询目标人物。
+- **目录出现同名人物的多个条目**：反复创建了不同人物对象，再分别加入目录。
+    - **解决方案**：按固定 ID 从人物服务复用对象，添加目录前用 `getEntryForPerson(person)` 查询当前条目。
 
 ## 总结
 
-Aster 的资料保存在人物上，重要人物服务按 ID 查找，市场集合与通信目录各自提供入口。注册从当前市场出发，重复调用继续使用原人物，缺失关系按同一对象补齐。
+Aster 的首次资料保存在人物对象中，重要人物服务按固定 ID 查找，市场集合与通信目录让她出现在 Foundry。重复调用取得原人物并补齐关联，读档后也沿同一身份继续使用。
 
-编者建议日志同时保留 ID、市场与目录数量。名字可以相同，只有这些关系对应起来，后面的任务与交互才能找到您准备的那位人物。
+人物状态、任务重要标志与占用原因分别管理。后续任务可以找到这位商人，也能判断当前关系与占用；姓名和头像完成了界面资料，固定身份与实际关联完成了接入。
 
 ## 建议参考项
 

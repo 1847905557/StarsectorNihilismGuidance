@@ -1,6 +1,6 @@
 # 使用实例化进行绘制
 
-上一节只读一条记录，这次让在场舰船各有一条，再用一次实例化调用绘制。矩形几何和 program 继续共享，`gl_InstanceID` 决定当前方向标读取哪艘舰船的数据。数量增加后，容量、阵营颜色和视口范围也要跟着集合处理，单舰版本里理所当然的条件现在需要明确写出来。
+实例化让多份方向标共用几何与 program，每个实例从 SSBO 读取自己的舰船记录。本节收集在场舰船，通过 `gl_InstanceID` 选择位置、朝向和颜色，一次提交完成绘制。集合同时决定容量与剔除范围，这些关系要随实例数据一起更新。
 
 *本节预期阅读时间：\~30 分钟。*
 
@@ -44,11 +44,11 @@ instanceBuffer.put(x).put(y).put(ship.getFacing()).put(ship.getAlphaMult());
 instanceBuffer.put(red).put(green).put(blue).put(1f);
 ```
 
-Java 按遍历顺序写入记录，shader 根据实例编号读取。`instanceCount` 决定本次绘制多少个方向标，缓冲区容量为 `128` 条记录；两者分别管理。
+Java 按遍历顺序写记录，shader 按实例编号读取，`instanceCount` 决定本次使用的条数。缓冲预先容纳 128 条，共 4096 字节；容量固定，实际数量随舰船集合变化。
 
 ## 收集实例并处理容量
 
-`init(...)` 先调用 `updateInstances()` 收集当前舰船，后续 `advance(...)` 复用同一个方法。这样首帧就有实际记录，暂停时也能显示已经收集的方向标。包围盒中心用于定位承载实体，半对角线加 `120 su` 方向标范围，再加当前 `3 px` 对应的世界边距，构成渲染半径。
+`init(...)` 调用 `updateInstances()` 准备首帧记录，后续 `advance(...)` 继续更新。暂停时保留已有数量与内容，恢复后重新收集；战斗结束时插件失效。
 
 `advance(...)` 遍历 `engine.getShips()`，过滤不在场或已死亡的舰船，再写入可复用的 CPU 缓冲。达到 `128` 条时保留先取得的记录，并记录一次容量日志：
 
@@ -67,7 +67,13 @@ for (ShipAPI ship : engine.getShips()) {
 instanceBuffer.flip();
 ```
 
-暂停期间沿用上一帧的实例数量和缓冲内容。恢复后重新收集舰船；战斗结束时插件失效，清理共享的 GPU 资源。
+完整方法同时保存颜色与舰船 Alpha，达到容量时只报告一次。截断保留遍历中先取得的记录，因此有效舰船过多时，哪些对象显示也取决于当前集合顺序。
+
+### 用整个集合确定剔除范围
+
+引擎只按承载实体的位置和渲染半径判断是否调用插件。这里将承载实体放到已收集舰船包围盒的中心，用半对角线覆盖它们，再加 120 su 的方向标范围与当前 3 px 世界边距。
+
+编者建议批量渲染时把这个范围与实际记录一起计算。单舰插件以一艘船为中心，集合已经扩散到战场各处以后，仍沿用那份半径会使整批方向标在中心离开视口时消失；实例数量正确也无法补救被跳过的 render。
 
 ## 一次调用绘制所有实例
 
@@ -99,7 +105,9 @@ fragment shader 继续使用圆周距离和有限线段距离生成方向标，�
 
 **创建资源也会改变共享状态。**`buildGeometry()` 保存原 VAO、VBO 和 SSBO 通用绑定，在 `finally` 中恢复。绘制阶段另保存 binding `0` 的索引绑定，恢复索引后再恢复通用绑定。
 
-所有实例共享一个 VAO、VBO、program 和两份 shader，SSBO 保存逐实例数据。清理顺序为 VAO、SSBO、VBO、program、shader；资源创建失败、战斗结束和重复清理都由 `cleanup()` 处理。每个已删除的句柄随即归零。
+所有实例共用 VAO、VBO、program 和两份 shader，SSBO 保存逐实例数据。资源创建失败或战斗结束时，`cleanup()` 依次删除 VAO、SSBO、VBO、program 和 shader，句柄归零；重复清理直接结束。
+
+实例化减少重复提交几何和切换状态的调用，顶点与片元处理仍按实例实际执行。方向标覆盖矩形中的透明区域也会进入片元计算，批量绘制的取舍因而还包含覆盖面积与数量。
 
 ## 让兼容声明与画面淡出对应
 
@@ -566,7 +574,7 @@ runcode com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = (c
 
 ## 故障分析
 
-- **只显示一个方向标**：绘制调用使用了 `glDrawArrays`，或实例数量为 `0`。
+- **只显示一个方向标**：绘制调用使用了 `glDrawArrays`，或实例数量只写为 `1`。
     - **解决方案**：确认使用 `glDrawArraysInstanced`，并检查 `instanceCount` 与 `FloatBuffer` 的有效记录数量一致。
 
 - **实例方向或颜色错位**：CPU 记录顺序与 `std430` 的两个 `vec4` 顺序不一致。
@@ -577,7 +585,7 @@ runcode com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = (c
 
 ## 总结
 
-本节把一份 SSBO 记录扩展成舰船集合。VAO 和 VBO 提供共享矩形，SSBO 提供逐实例参数，`gl_InstanceID` 选择当前记录，`glDrawArraysInstanced` 让 GPU 一次重复执行同一套顶点和片元逻辑。
+舰船集合按遍历顺序形成记录，实例编号选择当前数据，共享几何则由一次实例化调用重复绘制。容量控制写入与提交的条数，包围盒控制整批效果的剔除范围；数据、绘制次数和可见范围一起对应，批量结果才完整。
 
 ## 建议参考项
 

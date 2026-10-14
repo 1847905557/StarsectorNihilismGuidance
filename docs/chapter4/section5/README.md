@@ -26,7 +26,7 @@
 
 GearIn Prime 使用棕红大气、厚云层和较低的旋转参数，表现炼厂世界。纹理先采用原版 terran，云层也采用已登记的原版资源。
 
-**外观设计可以先从组合现有资源开始。** 编者建议先观察光照、色调与云层叠加的结果，再决定哪些部分需要自己的贴图；单独看图片和放进行星渲染，效果未必相同。
+**外观设计可以从组合现有资源开始。** 地表纹理还会受到光照、色调与云层叠加的影响，单独的图片预览与行星渲染未必相同。确定需要自制的贴图时，以这组叠加后的表现为依据。
 
 ## 登记类型与描述
 
@@ -42,7 +42,7 @@ GearIn Prime 使用棕红大气、厚云层和较低的旋转参数，表现炼�
 },
 ```
 
-`name` 是类型名称，`isStar: false` 表示行星类型，texture 与 icon 指向原版地表和星图图标。`descriptionId` 选择 PLANET 描述行。
+`name` 是类型名称，`isStar: false` 表示行星类型，texture 与 icon 分别指向原版地表纹理和星图图标。`descriptionId` 再将这个类型连接到 PLANET 描述行。
 
 在已有 `descriptions.csv` 追加：
 
@@ -54,7 +54,7 @@ GearIn_ember_world,PLANET,被炼厂烟尘和赤红云层包围的工业世界，
 
 ## 配置地表、大气与星图颜色
 
-继续填写以下局部字段：
+身份与资源确定后，在同一个类型对象中继续填写颜色字段：
 
 ```json
 "planetColor":[255,255,255,255],
@@ -66,7 +66,7 @@ GearIn_ember_world,PLANET,被炼厂烟尘和赤红云层包围的工业世界，
 
 planetColor 为地表贴图着色，本例保留白色；atmosphereColor 设置棕红大气，iconColor 设置星图图标的橙色。颜色均使用 RGBA 四项。
 
-atmosphereThickness 与 atmosphereThicknessMin 控制大气层的厚度表现，当前采用 0.18 与 35。观察时分别查看行星边缘与星图图标，不同显示位置读取各自字段。
+atmosphereThickness 与 atmosphereThicknessMin 控制大气层的厚度表现，当前采用 0.18 与 35。行星边缘的大气与星图图标分别由对应字段控制，验证时也在这两处分别核对。
 
 ## 设置云层与旋转
 
@@ -78,7 +78,7 @@ atmosphereThickness 与 atmosphereThicknessMin 控制大气层的厚度表现，
 "rotation":-3
 ```
 
-cloudTexture 使用原版云纹理，cloudColor 给云层着色。rotation 与 cloudRotation 分别控制地表和云层的旋转，本例为 -3 与 -8，云层相对地表独立变化。
+cloudTexture 使用原版云纹理，cloudColor 给云层着色。rotation 与 cloudRotation 分别控制地表和云层的旋转，本例为 -3 与 -8。两层使用各自的参数，因此云层可以相对地表独立变化。
 
 完整例还设置 tilt 为 20、pitch 为 30，lightPosition 为 `[-2,1,8]`，共同影响表面的角度与受光。调整时先固定贴图，比较一组参数带来的变化，再继续修改下一组。
 
@@ -92,7 +92,7 @@ PlanetAPI prime = system.addPlanet(
         "GearIn_ember_world", 55, 150, 3200, 120);
 ```
 
-行星实体 ID、名称和轨道保留，只替换类型。Second 继续使用 barren，市场仍绑定 Prime。
+行星实体 ID、名称和轨道保留，只将类型参数替换为刚才登记的键。Second 继续使用 barren，市场仍绑定 Prime，已有的实体与市场关系继续沿用。
 
 ## 完整最小例
 

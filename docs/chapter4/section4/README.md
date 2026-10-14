@@ -44,7 +44,7 @@
 
 模块的位置跟随主体，当前可以不配置引擎。**无盾模块同样保留护盾中心与半径字段**，它们属于船体读取所需的几何，实际护盾类型在数据中填 NONE。
 
-编者建议先把两份船体分别保存并登记。连在一起之后再排查两套几何与数据，往往比单独核对更麻烦。
+两份船体分别保存并登记，再进行装配连接。各自的几何与数据仍由对应文件提供，可以在连接之前分别核对。
 
 ## 为主体增加模块槽位
 
@@ -56,7 +56,7 @@
 
 ![MODULE_0的模块槽位参数](./main_slot_2.png "main_slot_2.png")
 
-`locations` 是主体坐标系中的挂载位置，`angle` 是基准朝向，`arc` 是允许的朝向范围。槽位 ID 用于后面装配的 modules 映射，大小写也要一致。
+`locations` 是主体坐标系中的挂载位置，`angle` 是基准朝向，`arc` 是允许的朝向范围。位置与朝向由船体定义，后面的装配则通过槽位 ID 指定模块，因此 modules 映射中的大小写也要一致。
 
 模块可以用 `moduleAnchor` 选择自身连接到槽位的锚点，API 的 `getModuleAnchor()` 返回该设置。连接后贴图偏移时，可以按挂载点和模块锚点分别核对。
 
@@ -66,7 +66,7 @@
 
 **可驾驶主体的 SHIP_WITH_MODULES 决定部署时生成模块。** 空间站主体使用 STATION，并采用空间站行为。模块的 UNBOARDABLE 控制打捞，HIDE_IN_CODEX 控制数据库显示，MODULE 标记模块身份。
 
-模块后勤数据尽量填写为 0，designation 可以留空，tags 保持空值；它通过主体装配获得，蓝图与市场标签按对象用途安排。当前模块的装配点为 60，便于在装配界面选择并修改。
+模块后勤数据尽量填写为 0，designation 可以留空，tags 保持空值。模块通过主体装配获得，蓝图与市场标签因此按这个用途安排。当前模块的装配点为 60，便于在装配界面选择并修改。
 
 ## 在测试战役里制作两份装配
 
@@ -80,7 +80,7 @@
 
 ![主体与模块的正式装配文件](./variant_rename.png "variant_rename.png")
 
-主体使用 `GearIn_kiln_combat`，模块使用 `GearIn_kiln_module_combat`。模块装配结构与普通装配相同，hullId 指向模块船体。
+主体使用 `GearIn_kiln_combat`，模块使用 `GearIn_kiln_module_combat`。这两个名称都是装配 ID，模块装配结构与普通装配相同，内部的 hullId 再指向模块船体。
 
 ## 把模块装配连接到槽位
 
@@ -105,7 +105,7 @@
 
 解析还接受数组写法，例如 `[{"WS 024":"remnant_armour3_Standard"}]`；原版 remnant_station2_Standard 使用这类结构，数据中也可保留井号注释。当前使用单个对象，目标关系比较直接。
 
-有模块槽位而暂时不安装模块时，可以使用 `"modules":[]`。要默认带上模块，则主体装配中需要有实际映射。游戏内普通装配操作保持这份映射，不会自动选出模块设计。
+有模块槽位而暂时不安装模块时，可以使用 `"modules":[]`。要默认带上模块，则主体装配中需要有实际映射。游戏内普通装配操作保持这份映射，不会自动选出模块设计。编者认为模块制作最别扭的部分就在这里：船体已经有了连接点，具体连接仍要落实到装配文件。
 
 观察连接后的装配界面：
 
@@ -210,7 +210,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 加载装配后，`ShipVariantAPI.getStationModules()` 返回映射，`getModuleSlots()` 返回模块槽位，`getModuleVariant(slotId)` 取得模块装配；运行时修改可以用 `setModuleVariant`。
 
-部署主体时，游戏按映射找到 STATION_MODULE 槽位和模块装配，创建模块的 `FleetMemberAPI` 与 `ShipAPI`。槽位的 `computePosition()` 和 `computeMidArcAngle()` 决定位置与朝向。
+部署主体时，游戏按刚才的映射取得 STATION_MODULE 槽位和模块装配，再创建模块的 `FleetMemberAPI` 与 `ShipAPI`。槽位的 `computePosition()` 和 `computeMidArcAngle()` 决定位置与朝向，装配则提供模块的具体设计。
 
 模块保存父子关系，`getParentStation()`、`getStationSlot()` 和主体的 `getChildModulesCopy()` 可以查询它们。模块仍有自己的装甲、幅能、武器、系统与 AI。
 
@@ -218,9 +218,15 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 主体移动时，模块位置每帧按槽位更新，跟随主体平移和旋转。默认朝向使用槽位中间角；模块带 INDEPENDENT_ROTATION 时保留独立朝向，位置继续跟随。
 
-`moduleAnchor` 决定模块自身的挂载锚点，缺省按槽位位置连接。预览用 `getSizeWithModules()` 把模块计入整体尺寸；预览和部署读取不同条件，因此缺少 SHIP_WITH_MODULES 的主体仍可能在列表中显示模块。
+`moduleAnchor` 决定模块自身的挂载锚点，缺省按槽位位置连接。预览用 `getSizeWithModules()` 把模块计入整体尺寸。
 
-**预览显示和战斗生成要分别确认。** 模块的战斗损伤按槽位记录在主体 `FleetMemberStatusAPI` 中，下次部署按记录恢复；摧毁模块后，主体也可以继续作战。
+::: warning 预览与部署的条件不同
+
+缺少 SHIP_WITH_MODULES 的主体仍可能在列表中显示模块。**预览显示和战斗生成要分别确认。**
+
+:::
+
+模块的战斗损伤按槽位记录在主体 `FleetMemberStatusAPI` 中，下次部署按记录恢复；摧毁模块后，主体也可以继续作战。
 
 装配界面默认按 `getOrdnancePoints() > 0` 决定模块能否选择。装配点为 0 时通常不可选，当前提供 60 点供测试。
 

@@ -1,6 +1,6 @@
 # 使用 LazyLib 查询战场
 
-距离相近的舰船，未必都是当前 AI 可以处理的目标。我们先给战斗登记一个扫描器，用不同颜色标出附近对象、可见敌舰与拦截点，再对照 LazyLib 的空间查询和关系查询。画面上留下这些差异，后面编写武器或系统 AI 时就有了选择入口的依据。
+距离相近的对象，未必都适合作为当前 AI 的目标。本节用扫描器分别标记空间候选、可见敌舰与拦截点，沿查询、筛选和选择的过程说明 LazyLib 的入口。对象类型、距离口径和可见性各自影响结果，方法名相近时尤其需要区分。
 
 *本节预期阅读时间：\~30 分钟。*
 
@@ -42,7 +42,7 @@
 
 ## 区分空间查询与关系查询
 
-**位置查询先回答附近有什么，关系查询再回答哪些对象符合当前一方的关系与视野。**已知坐标和半径时，`CombatUtils` 从该片空间取回指定类型的实体；已知一艘舰船、导弹或其他战斗实体时，`AIUtils` 根据该实体的 `owner` 判断敌我关系，并在敌方查询中应用战争迷雾。两组方法可以搜索同一片战场，但回答的问题不同。
+**空间查询按类型与位置取得候选，关系查询进一步使用观察者的所属方。** `CombatUtils` 接收坐标和半径，`AIUtils` 接收一艘舰船、导弹或其他战斗实体，从它的 `owner` 判断关系。敌舰查询还会处理战争迷雾；导弹的集合与 nearest 入口各有筛选条件，后面分别说明。
 
 例如，爆炸效果需要影响半径内的一切舰船，应从 `CombatUtils.getShipsWithinRange(...)` 开始；舰船系统 AI 只关心自己看得见的敌舰，则直接使用 `AIUtils.getNearbyEnemies(...)`。先确定空间候选，再决定是否需要敌我和可见性筛选，可以避免把两层规则混在一次循环中。
 
@@ -72,21 +72,13 @@ List<CombatEntityAPI> asteroids =
 
 `getObjectivesWithinRange(...)` 返回范围内的战斗目标点，适合判断导航浮标、传感器阵列等目标是否靠近当前单位。`getEntitiesWithinRange(...)` 把舰船、导弹、弹丸和小行星合并为 `CombatEntityAPI` 列表，适合射线、传送落点和统一排斥区域。
 
-综合列表便于在同一次循环中处理不同实体，再用 `instanceof` 或碰撞类别选择行为。只处理导弹时，直接用导弹列表即可；编者建议从实际需要的对象类型选入口，这也让后面的循环容易阅读。
+综合列表便于在同一次循环中处理不同实体，再用 `instanceof` 或碰撞类别选择行为。只处理导弹时，使用导弹列表就能限定后续对象。综合查询按实体重载计算距离，弹丸与导弹的边界也计入碰撞半径，与它们各自的专用范围入口有所区别。
 
 ### 判断另一方能否看见实体
 
 `isVisibleToSide(entity, side)` 以战斗阵营编号检查战争迷雾。`side` 通常来自观察者的 `getOwner()`；友方和中立实体始终可见，敌方实体则取决于当前一方的视野。
 
-`CombatUtils` 的范围方法没有自动调用这项检查。需要从空间候选中建立战术目标时，可以在循环中使用 `CombatUtils.isVisibleToSide(candidate, ship.getOwner())`。`AIUtils` 的敌方舰船和敌方导弹方法已经应用同一可见性规则，对它们的结果再次检查不会改变集合。
-
-### 取得舰队成员和处理特殊入口
-
-战斗舰船由 `ShipAPI` 表示，生涯舰队中的持久成员由 `FleetMemberAPI` 表示。`getFleetMember(ship)` 会寻找与战斗舰船对应的舰队成员；模拟战、临时生成物或特殊战斗对象没有对应成员时返回 `null`。需要读取舰船设计、船员或持久舰队数据时，先确认返回对象存在。
-
-`spawnShipOrWingDirectly(...)` 按 variant 或 wing ID、成员类型、战斗方、战备值、位置和朝向直接生成舰船或战机联队。它属于战斗生成入口，调用结果会立即改变当前战场，适合任务战或脚本化增援。
-
-`toWorldCoordinates(...)` 把屏幕坐标转换为世界坐标，`toScreenCoordinates(...)` 执行相反转换，`centerViewport(...)` 则把战斗视口中心移动到指定世界坐标。它们服务于输入、HUD 和镜头效果，不参与实体筛选。
+`CombatUtils` 的范围方法没有自动调用这项检查。需要从空间候选建立可见目标时，在循环中使用 `CombatUtils.isVisibleToSide(candidate, ship.getOwner())`。`AIUtils` 的敌舰查询和 `getNearestEnemyMissile(...)` 已应用可见性规则；导弹集合入口仍要由使用方决定是否补充检查。
 
 ## 使用 AIUtils 筛选战斗目标
 
@@ -108,15 +100,19 @@ List<MissileAPI> nearbyEnemyMissiles =
         AIUtils.getNearbyEnemyMissiles(ship, 1600f);
 ```
 
-`getNearestEnemy(...)` 和 `getNearestEnemyMissile(...)` 同时限定敌对关系与可见性。`getNearestAlly(...)` 只选择友方舰船；`getNearestShip(...)` 与 `getNearestMissile(...)` 接受任意可见阵营，适合碰撞规避或寻找最近对象。`getNearestObjective(...)` 查找最近的战斗目标点。
+`getNearestEnemy(...)` 和 `getNearestEnemyMissile(...)` 同时限定所属方差异与可见性。`getNearestAlly(...)` 选择友舰，`getNearestShip(...)` 与 `getNearestMissile(...)` 接受任意可见阵营，`getNearestObjective(...)` 则寻找最近的战斗目标点。舰船查询还会排除废船与 shuttle pod，友舰查询排除观察者自身。
 
-最近对象方法在没有候选时返回 `null`。局部集合方法按两实体碰撞圆之间的距离限定半径，所以与坐标为中心的查询边界有差异。它们返回列表，调用方可以继续按船体等级、碰撞类别、相位状态、伤害载荷或自定义分数筛选。
+最近对象方法在没有候选时返回 `null`。舰船的 nearest 方法比较候选碰撞圆到观察者坐标的距离，导弹的 nearest 方法比较中心坐标距离；nearby 集合则按两实体碰撞圆之间的间隔限定半径。取得列表后，调用方继续按船体等级、相位状态、碰撞类别、载荷或业务分数筛选。
 
 ### 对比局部列表和全图列表
 
-`getEnemiesOnMap(...)`、`getAlliesOnMap(...)` 与 `getEnemyMissilesOnMap(...)` 查询整张战场。敌方版本继续遵守战争迷雾，友方版本返回当前仍在地图上的全部盟友。编队协调、全局目标分配和低频战术评估适合使用这些集合。
+`getEnemiesOnMap(...)` 与 `getAlliesOnMap(...)` 取得整张战场的敌舰、友舰集合；敌舰继续遵守战争迷雾，友舰排除观察者，双方都排除废船与 shuttle pod。它们适合编队协调、全局目标分配和低频战术评估。
 
-全图查询的工作量随战场实体数量增长。只处理舰船附近威胁时，`getNearbyEnemies(...)`、`getNearbyAllies(...)` 与 `getNearbyEnemyMissiles(...)` 限定返回集合的半径，让后续行为集中处理附近候选。它们仍会取得全图关系集合后筛选；舰船范围查询也遍历舰船列表，因此仍按间隔安排查询。导弹、小行星的空间查询会使用相应的网格。
+`getEnemyMissilesOnMap(...)` 的实际条件不同：它纳入所属方不同的导弹，也纳入本方已熄火的导弹，查询过程没有检查战争迷雾。`getNearbyEnemyMissiles(...)` 再从这份集合按距离筛选，保留同样的关系条件。
+
+编者建议防御 AI 在这份导弹集合上补齐当前所需的所属方、可见性与熄火状态判断。这里的差异会直接改变是否启动防御系统、是否把一个对象当作威胁，单凭 `Enemy` 这个名称无法决定全部行为。
+
+nearby 方法限定返回集合的半径，后续行为只处理附近候选，但它们仍从全图关系集合开始筛选。敌舰查询启用 LazyLib 缓存时可以取得缓存集合，其余遍历与后续处理仍有各自的工作量。舰船范围查询遍历舰船列表，导弹、小行星的专用空间查询使用相应网格，因此扫描器仍按间隔执行。
 
 ## 排序并选择最终目标
 
@@ -184,7 +180,9 @@ public void advance(
 }
 ```
 
-这里的 `ship` 由 `ShipSystemAIScript.init(...)` 保存。方法检查 `ship.getSystem()` 是否存在，并综合过载或散逸、弹药、冷却、激活状态与可用幅能；返回 `true` 表示本帧发出主系统指令能够产生作用，系统已经开启时也可能返回 `true`。
+这里的 `ship` 由 `ShipSystemAIScript.init(...)` 保存。方法检查主系统是否存在，并判断过载或散逸、弹药、冷却、激活状态与可用幅能。`true` 表示这些通用条件通过，已开启且可以切换的系统也可能通过；特定系统效果的可用条件仍由游戏侧处理。
+
+片段用范围内导弹集合非空作为启动条件。按前面的集合规则，本方已熄火导弹也可能使条件成立；实际防御 AI 再根据自己的威胁定义筛选。
 
 `canUseSystemThisFrame(ship)` 只检查主舰船系统。右键系统走另一条控制入口，相位斗篷通过 `ship.getPhaseCloak()` 取得；右键防御系统及相位斗篷的可用性必须根据该对象的状态和规格判断。
 
@@ -236,7 +234,9 @@ if (nearest != null && WeaponUtils.isWithinArc(nearest, weapon)) {
 }
 ```
 
-`getEnemiesInArc(...)` 与 `getAlliesInArc(...)` 返回射程和射界内的舰船；`getNearestEnemyInArc(...)` 与 `getNearestAllyInArc(...)` 直接返回最近对象。`isWithinArc(...)` 同时检查射程和射界，`getTimeToAim(...)` 给出炮塔转到指定坐标所需时间，`aimTowardsPoint(...)` 按本帧 `amount` 手动推进炮塔朝向。
+`getEnemiesInArc(...)` 与 `getAlliesInArc(...)` 从相应舰船集合按射程和射界筛选；nearest 入口直接遍历舰船，筛选条件还包括所属方差异，因此仍要按当前 AI 需要处理可见性与舰况。导弹集合入口沿用 `AIUtils.getEnemyMissilesOnMap(...)`，nearest 导弹入口则自行排除同方导弹，并按中心距离与射界选择。
+
+`isWithinArc(...)` 判断射程和射界，还接受碰撞圆与射界边线相交的对象。`getTimeToAim(...)` 用坐标到射界的角差除以转速，坐标已在射界内时返回 0；`aimTowardsPoint(...)` 才按 `amount` 直接推进炮塔当前朝向。两者的计算用途要分别对照。
 
 这些方法适合 `AutofireAIPlugin` 或武器每帧效果。调用手动瞄准后，目标保持、切换阈值和是否开火仍由武器角色负责。
 
@@ -244,9 +244,17 @@ if (nearest != null && WeaponUtils.isWithinArc(nearest, weapon)) {
 
 `DefenseUtils.getArmorValue(ship, location)` 把世界坐标映射到装甲格并返回当前装甲值；`getArmorDamage(...)` 返回该处累计损失，`getArmorLevel(...)` 返回装甲比例。坐标落在装甲网格之外时，这三个方法返回 `DefenseUtils.NOT_IN_GRID`。
 
-`getDefenseAtPoint(...)` 进一步判断世界坐标命中护盾、装甲、船体或落空，并把舰体实际边界纳入判断。`hasArmorDamage(...)` 与 `hasHullDamage(...)` 适合快速决定维修或防御行为，`getMostDamagedArmorCell(...)` 返回损伤最重的装甲格坐标；舰船装甲完整时返回 `null`。
+`getDefenseAtPoint(...)` 先判断相位斗篷与舰体边界，再判断该坐标是否由开启的护盾覆盖，最后按装甲值区分装甲与船体。`hasArmorDamage(...)` 与 `hasHullDamage(...)` 用于判断维修需要，`getMostDamagedArmorCell(...)` 返回装甲最少的网格坐标；装甲完整时返回 `null`。
 
 防御查询提供目标评分所需的数据，不负责选择目标。维修无人机可以从友军列表中选择已经受损的舰船，攻击 AI 则可以把薄弱装甲位置转换为世界坐标后作为瞄准依据。
+
+### 取得持久成员、生成对象与调整视口
+
+战斗舰船使用 `ShipAPI`，对应的舰队成员使用 `FleetMemberAPI`。`getFleetMember(ship)` 从战斗舰队管理器寻找已部署或预备的成员，缺少对应关系时返回 `null`。模拟战与临时对象也按是否具有这个成员关系判断；取得对象以后，再读取设计、船员或舰队数据。
+
+`spawnShipOrWingDirectly(...)` 根据 variant 或 wing ID、成员类型、战斗方、战备值、位置与朝向直接生成舰船或联队，会立即改变战场，适合任务战和脚本化增援。
+
+`toWorldCoordinates(...)` 将屏幕坐标转换成世界坐标，`toScreenCoordinates(...)` 做相反转换，`centerViewport(...)` 把视口中心移到指定坐标。它们用于输入、HUD 与镜头，接收的是当前用途所需的位置。
 
 ## 常用方法速查表
 
@@ -425,8 +433,8 @@ public final class GearInCombatScanner extends BaseEveryFrameCombatPlugin {
 - **范围内出现友军或不可见敌军**：`CombatUtils` 的空间查询只检查类型和位置。
     - **解决方案**：按 `owner` 和 `isVisibleToSide(...)` 继续筛选，或改用对应的 `AIUtils` 关系查询。
 
-- **对 AIUtils 结果重复执行可见性循环**：敌方关系方法已经过滤战争迷雾，第二次判断只增加工作量。
-    - **解决方案**：直接使用 `getNearbyEnemies(...)`、`getEnemiesOnMap(...)` 或敌方导弹方法的返回集合。
+- **导弹集合触发了不符合预期的防御动作**：集合入口包含本方已熄火导弹，也没有自动处理战争迷雾。
+    - **解决方案**：在 `getEnemyMissilesOnMap(...)` 或 `getNearbyEnemyMissiles(...)` 返回集合上，按当前威胁条件筛选所属方、可见性和熄火状态。
 
 - **大规模战斗出现周期性卡顿**：高频回调反复取得关系集合，并处理大量候选。
     - **解决方案**：按实际半径选择 nearby/range 方法，减少后续处理对象，并用固定间隔限制查询频率。
@@ -442,7 +450,7 @@ public final class GearInCombatScanner extends BaseEveryFrameCombatPlugin {
 
 ## 总结
 
-`CombatUtils` 从坐标和半径建立原始候选，`AIUtils` 再根据查询实体的所属方和战争迷雾建立战术目标。距离排序与拦截点计算把集合收敛为一个可执行结果，武器、系统和效果角色再决定如何使用它。
+扫描器用空间查询取得附近对象，用敌舰关系查询取得可见候选，再按边缘距离选出目标并计算拦截点。每一项查询的对象类型、距离口径与筛选条件都影响这个结果；导弹集合与 nearest 入口的条件尤其需要分别处理。武器、系统与效果角色最后根据自己的动作职责使用这些数据。
 
 扫描器用每秒 5 次的只读查询把这些差异直接显示在战场上。空间候选、可见敌舰和预测坐标使用独立颜色，您可以从画面判断查询链停在了哪一层。
 

@@ -1,6 +1,6 @@
 # 制作分层渲染插件
 
-前面已经能取得舰船和修改数值，这次把结果画到战场上：给玩家舰加一个青色标记，让它跟随舰船、在暂停时保持位置，并随舰船离场而结束。先用 `SpriteAPI` 完成贴图绘制，再由分层插件安排显示位置和生命周期；图层、坐标与视口范围都需要对应这一个标记。
+本节给玩家舰绘制一个青色标记，让它跟随舰船，并在舰船死亡或离场后结束。贴图由 `SpriteAPI` 绘制，分层插件负责图层、位置和清理。除了画在哪里，还要让视口剔除使用正确的位置，标记才能在镜头移动时正常显示。
 
 *本节预期阅读时间：\~16 分钟。*
 
@@ -22,13 +22,27 @@
 - [C4-S1] 的 `GearIn_test` 测试战役；
 - [C6-S4] 的 JAR 构建与游戏加载。
 
-::: tip 本节的绘制入口
-`SpriteAPI` 已经提供贴图尺寸、颜色和绘制方法，本节直接使用它。OpenGL 的资源与绘制状态放在后方专题展开。
-:::
+## 准备标记的 Sprite
+
+`SpriteAPI` 提供尺寸、颜色与绘制方法，本节直接使用它，OpenGL 的资源与状态在后方专题展开。先把标记贴图登记到 `data/config/settings.json` 的 `graphics` 对象：
+
+```json
+{
+  "graphics": {
+    "gearin": {
+      "layered_marker": "graphics/fx/particlealpha32sq.png"
+    }
+  }
+}
+```
+
+`gearin` 是分类，`layered_marker` 是代码查找的键，值指向实际图片。本例沿用原版 `graphics/fx/particlealpha32sq.png`。改用自有图片时，填写相对 MOD 根目录的路径，代码中的分类与键可以继续保留。
+
+已有 `graphics` 对象时，将 `gearin` 加入其中，避免在同一个 JSON 对象中重复声明 `graphics`。
 
 ## 在玩家舰部署后创建标记
 
-创建 `src/data/scripts/gearin/combat/GearInLayeredRenderer.java`，继承 `BaseCombatLayeredRenderingPlugin`。它提供默认实现，我们覆写当前标记需要的方法。完整类在后面给出，先接上创建入口。
+创建 `src/data/scripts/gearin/combat/GearInLayeredRenderer.java`，继承 `BaseCombatLayeredRenderingPlugin`。它提供默认实现，我们覆写标记需要的初始化、更新、绘制和结束方法，完整类放在后面。
 
 沿用 [C8-S1] 的 `GearInCombatStatePlugin` 及其登记，增加 `java.awt.Color` 和 `com.fs.starfarer.api.combat.ShipAPI` 的 `import`，字段区加入：
 
@@ -49,11 +63,11 @@ if (!markerCreated) {
 }
 ```
 
-玩家舰尚未部署时引用为空，后续帧继续等待。取得舰船后创建一次，颜色保存在这个渲染实例中。**逐帧检查创建条件，成功后停止创建。** 在每一帧无条件添加，几十个重叠标记很快就会把颜色和性能一起改掉。
+玩家舰尚未部署时没有可用引用，后续帧继续等待。取得舰船之后创建一份标记，将颜色交给它，并设置 `markerCreated`。**创建成功后停止重复添加。** 若每帧都加一份，重叠标记很快就会把颜色和性能一起改掉。
 
-引擎为插件创建承载实体，并将它传给 `init(...)`。这个实体提供位置和视口剔除依据；我们的 `trackedShip` 则提供被追踪舰船的位置与存活状态，两者的用途分别保留。
+`addLayeredRenderingPlugin(...)` 让引擎为插件创建承载实体，再将这个实体传给 `init(...)`。它的位置参与绘制和视口剔除，`trackedShip` 则提供舰船位置与存活状态。后面的更新将两者位置同步，完成跟随。
 
-## 选择渲染图层
+## 决定标记与其他效果的遮挡关系
 
 本例把标记放在 `ABOVE_SHIPS_AND_MISSILES_LAYER`，这样它会显示在舰船和导弹之上。`getActiveLayers()` 返回这个枚举值，`render(...)` 收到的 `layer` 参数就是当前被调用的图层。
 
@@ -87,7 +101,7 @@ ABOVE_PARTICLES
 JUST_BELOW_WIDGETS
 ```
 
-枚举声明顺序就是绘制顺序。选择层时先看需要覆盖什么，再看它附近还有什么效果；当前标记要盖在舰船与导弹上方，因此选择这一层。
+枚举声明顺序就是绘制顺序。本例需要盖在舰船与导弹上，因此选取这一层；其他效果则按实际遮挡关系决定位置。
 
 ```java
 @Override
@@ -96,31 +110,13 @@ public EnumSet<CombatEngineLayers> getActiveLayers() {
 }
 ```
 
-引擎只在返回的图层调用当前插件。声明多个层时，每层会分别收到 `render(...)`，再用它的 `layer` 参数选择该层内容。
+引擎在 `getActiveLayers()` 返回的图层调用 `render(...)`。声明多个层时，每层分别调用一次，方法根据传入的 `layer` 绘制该层内容。
 
-## 注册、取得并配置 Sprite
-
-### 在 `settings.json` 注册 Sprite
-
-先把贴图登记到 `data/config/settings.json` 的 `graphics` 对象中。本例新建 `gearin` 分类，并把 `layered_marker` 指向用于战斗标记的图片：
-
-```json
-{
-  "graphics": {
-    "gearin": {
-      "layered_marker": "graphics/fx/particlealpha32sq.png"
-    }
-  }
-}
-```
-
-代码会按 `gearin` 分类中的 `layered_marker` 键取得 Sprite。值是游戏加载的资源路径，当前沿用原版 `graphics/fx/particlealpha32sq.png`；自有图片按相对 MOD 根目录的路径填写。分类与键保持不变，替换图片时修改路径即可。
-
-如果 `settings.json` 已经包含 `graphics`，应把 `gearin` 加入现有对象；同一个 JSON 对象中只保留一个 `graphics` 键。
+## 初始化贴图外观
 
 ### 取得贴图
 
-`Global.getSettings().getSprite(String category, String key)` 根据 `settings.json` 中的分类和键返回 `SpriteAPI`。插件初始化时使用刚才注册的 `gearin/layered_marker`：
+在 `init(...)` 中使用 `Global.getSettings().getSprite(String category, String key)`，按前面的分类与键取得 `SpriteAPI`：
 
 ```java
 private static final String SPRITE_CATEGORY = "gearin";
@@ -135,7 +131,7 @@ public void init(CombatEntityAPI entity) {
 }
 ```
 
-这里分为两次查找：`getSprite(...)` 查分类与键，登记值指向实际图片。加载失败时顺着这两个关系检查，位置和大小稍后再看。
+代码查找 `gearin/layered_marker`，设置中的值再指向图片。资源无法取得时，就沿分类、键和实际路径检查。取得后继续设置标记外观。
 
 ### 设置尺寸、颜色和透明度
 
@@ -147,7 +143,9 @@ sprite.setColor(color);
 sprite.setAlphaMult(1f);
 ```
 
-`setSize(...)` 使用世界单位设置宽高，`setColor(...)` 设置颜色和基础 Alpha，`setAlphaMult(...)` 再乘上一层透明度倍率。`setCenter(...)` 调整贴图中心，`setAngle(...)` 旋转贴图；本例使用默认中心和角度。`renderAtCenter(...)` 按中心坐标绘制，`render(...)` 则按 Sprite 的角点位置绘制。
+`setSize(...)` 设置世界单位的宽高，`setColor(...)` 提供颜色和基础 Alpha，`setAlphaMult(...)` 再乘透明度倍率。标记使用默认中心与角度，需要调整时分别调用 `setCenter(...)` 和 `setAngle(...)`。
+
+绘制时，`renderAtCenter(...)` 将传入坐标作为中心，`render(...)` 则采用 Sprite 角点位置。本例要让标记中心跟随舰船，因此使用前者。
 
 ### `SpriteAPI` 常用属性速查表
 
@@ -163,7 +161,7 @@ sprite.setAlphaMult(1f);
 
 ## 同步承载实体位置
 
-**承载实体的位置同时参与绘制和视口剔除。** `init(...)` 里先把它放到舰船位置，即使开场立即暂停，标记也能显示在正确位置：
+**承载实体的位置同时参与绘制和视口剔除。** 在 `init(...)` 中就把它放到舰船位置，开场立即暂停时也能取得正确的初始位置：
 
 ```java
 entity.getLocation().set(trackedShip.getLocation());
@@ -183,7 +181,7 @@ elapsed += amount;
 entity.getLocation().set(trackedShip.getLocation());
 ```
 
-`getRenderRadius()` 给出以承载实体为中心的剔除半径。本例返回 `MARKER_SIZE`，足以覆盖 120 单位的正方形。位置来自当前舰船，每场创建新的渲染实例。
+`getRenderRadius()` 给出以承载实体为中心的剔除半径。标记使用 120 世界单位的正方形，返回 `MARKER_SIZE` 足以覆盖这块区域。镜头移出范围时，引擎就能据此决定是否绘制：
 
 ```java
 @Override
@@ -194,7 +192,7 @@ public float getRenderRadius() {
 
 ## 在 `render` 中绘制 Sprite
 
-轮到当前图层时，`render(...)` 写入这个实例使用的颜色与透明度，再按承载实体中心绘制。局部方法如下：
+轮到本例图层时，`render(...)` 设置实例使用的颜色与透明度，再按承载实体中心绘制：
 
 ```java
 @Override
@@ -205,11 +203,7 @@ public void render(CombatEngineLayers layer, ViewportAPI viewport) {
 }
 ```
 
-::: tip 透明度
-`setAlphaMult(...)` 的常用范围为 0 到 1。当前倍率为 1，最终仍受 `Color` 的基础 Alpha 180 影响；把倍率改为 0.5，可以观察颜色透明度再减半。
-:::
-
-`renderAtCenter(...)` 使用承载实体的世界坐标，因此标记中心会跟随舰船。
+当前倍率为 1，基础 Alpha 仍是构造时的 180。`setAlphaMult(...)` 常用范围为 0 到 1，改为 0.5 就再降低一半透明度。中心坐标来自承载实体，它已经在非暂停更新中跟随舰船。
 
 ## 处理失效与清理
 
@@ -227,7 +221,7 @@ public void cleanup() {
 }
 ```
 
-本例的结束动作只有记录日志。功能持有额外资源或需要恢复外观状态时，把相应释放与恢复放进 `cleanup()`；它服务的是这个实例的收尾。
+本例在 `cleanup()` 记录累计时间。若功能还持有额外资源或改变了需要恢复的外观状态，也在这个实例的清理方法中完成释放与恢复。下一场战斗重新创建标记和相关引用。
 
 ## 完整最小例
 
@@ -379,9 +373,9 @@ public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
 
 ## 总结
 
-标记由当前战斗插件在玩家舰部署后创建。贴图按分类与键取得，承载实体从初始化开始跟随舰船，图层与半径决定它在哪里绘制、何时进入视口。
+标记现在随玩家舰创建、移动与结束。Sprite 提供外观，图层提供遮挡顺序，承载实体的位置与半径共同决定绘制和剔除，失效状态再连接到清理。
 
-编者建议先把这个静态标记的位置、遮挡和结束条件看清，再增加动画。颜色会动、尺寸会变之后，坐标错误往往也跟着热闹起来。
+增加动画时仍然沿用这些关系。颜色和尺寸可以变化，跟随位置、视口覆盖范围与结束条件也要继续对应实际画面。
 
 ## 建议参考项
 

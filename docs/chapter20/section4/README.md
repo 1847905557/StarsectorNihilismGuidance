@@ -1,6 +1,6 @@
 # 使用 SSBO 传递参数
 
-方向标已经有了可复用的几何，这次把位置、朝向和颜色集中到一条 SSBO 记录中。Java 按约定顺序写入，vertex shader 从 binding `0` 读取，fragment shader 继续生成原来的形状。先把一条记录读对，下一节才有依据把它扩展成整个舰船集合。
+SSBO 可以按约定布局保存 shader 使用的一组记录。本节把方向标的位置、朝向、Alpha 和颜色写成一条记录，Java 上传缓冲，顶点 shader 读取并变换共享矩形。单条记录先明确字段与绑定关系，后面再扩展到舰船集合。
 
 *本节预期阅读时间：\~25 分钟。*
 
@@ -51,6 +51,8 @@ markerBuffer.flip();
 
 shader storage block 使用相同字段顺序。若 Java 把位置、朝向或颜色写错位置，shader 仍会照既定布局读取，方向标的位置或颜色就会异常。
 
+本节选择两个 `vec4`，每个向量占 16 字节，记录跨度为 32 字节。它让 Java 的连续写入顺序能够直接对应 shader 字段；改用其他字段组合时，还要按实际布局处理对齐与间距。
+
 ## 创建并绑定 SSBO
 
 首次 `render(...)` 创建 SSBO 并分配 `8 * Float.BYTES` 字节。下面是 `buildGeometry()` 中的局部片段，调用结束后恢复原通用绑定：
@@ -62,7 +64,9 @@ GL15.glBufferData(GL43.GL_SHADER_STORAGE_BUFFER,
         FLOATS_PER_MARKER * Float.BYTES, GL15.GL_DYNAMIC_DRAW);
 ```
 
-`buildProgram()` 用 `GL43.glGetProgramResourceIndex(...)` 找到 `MarkerInstances`，再用 `glShaderStorageBlockBinding(...)` 把它关联到 binding `0`。实际绘制时，`glBindBufferBase(...)` 将本实例的 SSBO 绑定到这个索引；shader 的 `layout (std430, binding = 0)` 因而读取同一块存储。**block 索引、binding 索引和缓冲对象 ID 各有自己的用途，数值相同也要按用途传参。**
+缓冲已经分配，还要让 program 找到它。`glGetProgramResourceIndex(...)` 查询链接后 `MarkerInstances` 的 block 索引，`glShaderStorageBlockBinding(...)` 把这个 block 对应到 binding `0`，实际绘制时 `glBindBufferBase(...)` 再把 SSBO 对象放到该绑定点。shader 的声明因而能够读到上传的记录。
+
+**block 索引标识 program 内的块，binding 索引标识上下文中的位置，缓冲 ID 标识实际对象。** 这几项即使恰好出现相同数字，也各有对应参数。
 
 ## 在两个生命周期阶段传递参数
 
@@ -80,7 +84,11 @@ GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
 
 ## 让状态恢复覆盖整个绘制调用
 
-**创建资源也会改变共享状态。**`buildGeometry()` 保存原 VAO、VBO 和 SSBO 通用绑定，再在 `finally` 中恢复。绘制阶段另保存 binding `0` 的索引绑定，因为 `glBindBufferBase(...)` 同时改变索引绑定与通用绑定；恢复时先还原索引，再还原通用绑定。
+`buildGeometry()` 保存并恢复原 VAO、VBO 与 SSBO 通用绑定，绘制阶段则另外处理 binding `0`。上传用通用绑定确定操作对象，shader 用索引绑定选择记录来源，两项状态都由本次调用改变。
+
+::: warning bindBufferBase 同时修改两种绑定
+`glBindBufferBase(...)` 修改指定索引，也修改 SSBO 通用绑定。结束绘制时先恢复索引，再恢复通用绑定，才能保留两项各自的原值。
+:::
 
 绘制前记录 VAO、`GL_ARRAY_BUFFER`、SSBO 的通用绑定与 binding `0` 的索引绑定、program 和矩阵模式，并用属性栈保存混合、深度、纹理和客户端 attribute 状态。`finally` 恢复本次绘制改动的状态；后续渲染器才能继续使用自己的配置。
 
@@ -539,7 +547,9 @@ runcode com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = (c
 
 ## 总结
 
-本节把单个方向标的运行时状态组织成一条 SSBO 记录。Java 负责更新和上传两个 `vec4`，vertex shader 负责读取记录并变换矩形，fragment shader 负责生成圆环和朝向线；一次 `glDrawArrays` 完成单个方向标绘制。
+两个 `vec4` 让 Java 写入与 shader 读取使用同一条 32 字节记录，block、绑定点和缓冲对象把这份数据接到 program。几何仍由 VBO 提供，形状仍由片元计算；SSBO 在此承担参数来源，为后面的多记录绘制建立布局。
+
+对单个方向标，前一节的 uniform 已足以传递这些值。编者在这里采用 SSBO，是为了展开记录与集合的组织；是否值得增加这套存储，应由实际需要共享、索引或批量处理的数据决定。
 
 ## 建议参考项
 

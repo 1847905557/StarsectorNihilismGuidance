@@ -35,7 +35,7 @@
 package data.scripts.gearin.hullmods;
 ```
 
-再看 import 行之后的类声明，局部片段如下：
+类声明位于 import 行之后，局部片段如下：
 
 ```java
 public class GearInSpeedBooster extends BaseHullMod {
@@ -43,27 +43,27 @@ public class GearInSpeedBooster extends BaseHullMod {
 }
 ```
 
-`package` 说明这个类属于哪个包；在当前的源码目录里，点号对应目录层级。因此它放在 `data/scripts/gearin/hullmods/` 中，文件名则与 `class` 后面的 `GearInSpeedBooster` 一致。
+`package` 说明这个类属于哪个包；在当前的源码目录里，点号对应目录层级。沿包名逐级找到 `data/scripts/gearin/hullmods/`，就是这个文件的保存位置。文件名则与 `class` 后面的 `GearInSpeedBooster` 一致。
 
-`extends BaseHullMod` 表示继承游戏提供的船插基类，它提供了船插效果的标准结构。`import` 行引入下面用到的游戏类，本例按完整文件复制。
+`extends BaseHullMod` 表示继承游戏提供的船插基类，它提供了船插效果的标准结构。当前的加速效果也写在这个结构中。`import` 行引入下面用到的游戏类，本例按完整文件复制。
 
-编者建议在当前阶段保持最小改动：包名、类名和方法声明按示例填写，效果参数按需要调整。这样加载失败时也容易对照原文件定位。
+当前阶段先保持最小改动：包名、类名和方法声明按示例填写，效果参数按需要调整。加载失败时，就能沿刚才的目录、文件名和声明对照原文件定位。
 
 ### 速度参数
 
-在类里面找到这一行：
+结构按示例保存后，在类里面找到这一行：
 
 ```java
 private static final float SPEED_PERCENT = 10f;
 ```
 
-`SPEED_PERCENT` 保存速度加成百分比。数字后的 `f` 表示 Java 的 `float` 类型；`10f` 与 `10.0f` 表示同一个值，`0.5f`、`3.14f` 也按这种方式书写。
+`SPEED_PERCENT` 保存速度加成百分比，当前数值就是等号后的 `10f`。数字后的 `f` 表示 Java 的 `float` 类型；`10f` 与 `10.0f` 表示同一个值，`0.5f`、`3.14f` 也按这种方式书写。
 
 把这里的 `10f` 改成 `50f`，速度加成就变成 50%。本次修改只替换这个数字，保留行末分号与声明的其他部分。
 
 ### 修改速度与记录回调
 
-效果方法的局部片段如下：
+效果方法使用上述参数写入速度加成，局部片段如下：
 
 ```java
 @Override
@@ -73,15 +73,15 @@ public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAP
 }
 ```
 
-游戏在计算这艘舰船的船插效果时调用这个方法，并把数值对象交给它。我们通过 `stats.getMaxSpeed()` 取得最大速度，再用 `modifyPercent(id, SPEED_PERCENT)` 写入加成。
+游戏在计算这艘舰船的船插效果时调用这个方法，并把数值对象交给它。第一条语句通过 `stats.getMaxSpeed()` 取得最大速度，再用 `modifyPercent(id, SPEED_PERCENT)` 写入加成。刚才修改的数字，就在这里参与计算。
 
-**游戏在对应时机调用效果方法，这个过程称为回调。** 本例的方法名和参数列表采用船插接口规定的写法，具体效果写在方法体的大括号内。
+**游戏在对应时机调用效果方法，这个过程称为回调。** 因此，本例的方法名和参数列表采用船插接口规定的写法；我们要调整的具体效果，写在方法体的大括号内。
 
-第二行把 `GearIn_speed_booster applied` 写入 `starsector.log`，用于确认回调执行。引号内的字符串决定日志内容，本节保留这个固定搜索词。
+第二条语句把 `GearIn_speed_booster applied` 写入 `starsector.log`，用于确认回调执行。引号内的字符串决定日志内容，本节保留这个固定搜索词，稍后用它确认游戏确实调用了刚才的方法。
 
 ## 注册船插数据
 
-保存效果文件后，打开 MOD 的 `data/hullmods/hull_mods.csv`，为船插添加数据行。文件不存在时，新建文件并写入表头。
+保存效果文件后，还要让船插数据引用它。打开 MOD 的 `data/hullmods/hull_mods.csv`，为船插添加数据行。文件不存在时，新建文件并写入表头。
 
 **`script` 列负责把数据行接到 Java 类。** 本节填写：
 
@@ -89,13 +89,13 @@ public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAP
 data.scripts.gearin.hullmods.GearInSpeedBooster
 ```
 
-这个完整类名由包名与类名组成。它必须与文件中的 `package` 和 `class` 声明一致，路径按包名对应，大小写也要一致。
+这个完整类名由包名与类名组成，正好对应前面检查的两处声明。它必须与文件中的 `package` 和 `class` 一致，路径按包名对应，大小写也要一致。
 
 **在数据中登记船插 ID 和效果类，这个过程称为注册。** 游戏读取数据后，装配界面使用其中的名称、成本与描述，效果计算则调用 `script` 指向的类。
 
 ### 确认数据行中的关键列
 
-本节先看下面这些内容，其余值按完整示例保存：
+填入这条船插记录时，先确认下面几列，其余值按完整示例保存：
 
 - **`id`**：第 2 列，填写船插 ID `GearIn_speed_booster`，沿用 [C1-S1] 的数据前缀规则。
 - **`cost_frigate`、`cost_dest`、`cost_cruiser`、`cost_capital`**：四种船体等级的装配点消耗，分别填写 `3`、`6`、`9`、`12`。
@@ -147,7 +147,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 保存这两个文件，重启游戏，在装配界面给 [C1-S2] 的工匠安装 "加速器"，先观察 `10f` 的效果。然后把 Java 文件中的 `SPEED_PERCENT` 改为 `50f`，再次保存、重启和观察。
 
-**实际加成已经变成 50%，描述仍然写着 10%。** `desc` 是 CSV 中的固定文字，效果类使用的是 Java 参数，两处分别修改。参数调整后也要同步描述；[C2-S2] 会介绍用代码填充描述参数的做法。
+**实际加成已经变成 50%，描述仍然写着 10%。** 为什么改了数值，文字却没变？`desc` 是 CSV 中的固定文字，效果类使用的是 Java 参数，两处分别修改。参数调整后也要同步描述；[C2-S2] 会介绍用代码填充描述参数的做法。
 
 ### 选择百分比或固定增量
 
@@ -157,7 +157,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 stats.getMaxSpeed().modifyFlat(id, 50f);
 ```
 
-它表示增加 50 单位/秒。百分比加成随基础速度变化，固定增量则直接加上指定数值。**同一种速度加成，对不同船体的价值也不同。** 例如固定加 50 对慢速主力舰的影响往往比对快速护卫舰更明显，编者建议您连同船体定位一起考虑。
+它表示增加 50 单位/秒。百分比加成随基础速度变化，固定增量则直接加上指定数值。**同一种速度加成，对不同船体的价值也不同。** 例如固定加 50 对慢速主力舰的影响往往比对快速护卫舰更明显，因此选择加成方式时，也要考虑它将用于哪类船体。
 
 ## 验证方案
 

@@ -1,6 +1,6 @@
 # 接入酒吧事件
 
-对话已经能处理一次选择，这次把它放进市场酒吧。工人收购 100 金属并支付 5000 信用点，玩家可以接受、拒绝或暂时离开。管理器负责候选与时限，`creator` 负责生成，事件负责本次交易与对话状态；离开后再回来，也要从同一事件继续。
+本节把金属交易放进市场酒吧：工人收购 100 金属，支付 5000 信用点，玩家可以接受、拒绝或暂时离开。交易在一次对话中完成，邀请却可能继续留在酒吧中。我们分别处理事件生成、对话结束和活动期限，让暂时离开后的再次交互继续使用原事件。
 
 *本节预期阅读时间：\~32 分钟。*
 
@@ -24,15 +24,9 @@
 - Java 接口实现、继承和布尔状态；
 - `CargoAPI` 的商品数量、移除商品和 `credits` 读写。
 
-## 认识酒吧事件的对象关系
+## 登记生成器，让管理器创建事件
 
-酒吧刷新时，`BarEventManager` 从 `creator` 集合中挑选一个 `creator`。`creator` 返回 `PortsideBarEvent`，管理器把实例加入活动列表；玩家进入有酒吧的市场后，`BarCMD` 检查事件是否应该在该市场显示，再调用事件的 `addPromptAndOption(...)`。玩家选择事件选项后，`BarEventDialogPlugin` 接管同一个 `InteractionDialogAPI`，把初始化和选项回调转发给事件。
-
-这里的职责边界很具体：`creator` 只生成事件并提供抽取参数，事件只描述条件、文本和结果，`BarCMD` 只负责酒吧界面与事件插件交接。把注册代码写进事件类会让生命周期混在一起，也无法解释为什么同一个 `creator` 被重复加入后权重会增加。
-
-### 在现有生涯入口登记 `creator`
-
-创建 `src/data/scripts/gearin/campaign/GearInBarEvent.java` 和 `GearInBarEventCreator.java`。在 `GearInModPlugin` 加入这两个类和 `BarEventManager` 的 `import`，把下面的局部登记追加到现有 `onGameLoad(...)`：`BarEventManager.getInstance()` 取得存档中的管理器，`hasEventCreator(...)` 按类型检查当前集合，缺失时才加入新实例。
+创建 `src/data/scripts/gearin/campaign/GearInBarEvent.java` 与 `GearInBarEventCreator.java`。事件类实现当前交易，creator 类返回事件并提供权重与期限。在 `GearInModPlugin` 添加对应类及 `BarEventManager` 的 import，向已有 `onGameLoad(...)` 追加局部登记：
 
 ```java
 BarEventManager manager = BarEventManager.getInstance();
@@ -41,11 +35,11 @@ if (!manager.hasEventCreator(GearInBarEventCreator.class)) {
 }
 ```
 
-`addEventCreator` 本身直接追加集合；因此去重判断决定了抽取权重是否保持预期。**登记次数也会影响抽取机会。** 当前先按 `creator` 类型查找，再加入缺失项，使这组参数保持预期。
+`getInstance()` 取得存档中的管理器，`hasEventCreator(...)` 按类型查询。已有生成器继续保留，缺失时才添加。**`addEventCreator(...)` 直接追加候选项，重复登记会改变抽取机会。** 因此登记放在生涯入口，事件每次对话只处理自己的状态。
 
 ### `creator` 提供抽取参数
 
-`creator` 的 `createBarEvent()` 返回一个新的事件实例。四个时长方法使用游戏天：活跃时长决定事件留在活动跟踪器中的时间，普通超时用于事件未被交互便过期后的冷却，`accepted` `timeout` 用于玩家已经处理事件后的冷却，频率权重参与随机选择。
+管理器在生涯推进中按权重选择可用 creator，调用 `createBarEvent()`，将返回的 `PortsideBarEvent` 放入活动跟踪器与酒吧事件集合。局部创建与权重如下：
 
 ```java
 @Override
@@ -59,11 +53,15 @@ public float getBarEventFrequencyWeight() {
 }
 ```
 
-本例把活跃时长设为 30 天、未交互超时设为 30 天、交互后超时设为 60 天。事件被玩家处理后，管理器会移除活动实例并使用 `accepted` `timeout`；事件始终没有进入酒吧，则由普通超时回收。
+权重 10 只参与当前候选中的相对抽取，市场显示还要经过酒吧筛选。本例采用普通候选，保留基类默认优先级。活跃期限为 30 生涯日，未处理过期后的冷却为 30 日，通知已交互后的冷却为 60 日，完整 creator 分别返回这三个值。
 
-## 让事件进入酒吧
+::: info 活动期限与 creator 冷却分别计时
+30 日活动期限跟随生成的事件实例。事件过期或被处理后，creator 再进入对应冷却；冷却期间停止生成下一份事件。
+:::
 
-事件是否出现在某个市场由 `shouldShowAtMarket(MarketAPI market)` 决定。示例要求市场存在太空港，并继续调用基类实现的 `shownAt` 约束；第一次展示后，`shownAt` 保存该市场，同一实例继续属于这里。补给货物再返回时，仍从这个市场进入。
+## 在太空港市场显示邀请
+
+玩家进入市场酒吧时，`BarCMD` 从酒吧事件集合取得候选，调用 `shouldShowAtMarket(...)`。本例要求有太空港，并沿用基类 `shownAt` 约束，局部判断如下：
 
 ```java
 @Override
@@ -72,11 +70,9 @@ public boolean shouldShowAtMarket(MarketAPI market) {
 }
 ```
 
-`shouldRemoveEvent()` 默认返回 `false`，因此本例的过期回收由管理器的 `active` 跟踪器完成。需要事件自行消失时，才在该方法和 `advance(float amount)` 中维护额外倒计时。
+首次实际展示后，`BarCMD` 调用 `wasShownAtMarket(...)`，基类保存该市场。同一实例此后留在这里，所以玩家补充货物后返回同一酒吧，可以继续原邀请。
 
-### 把事件写成酒吧选项
-
-`addPromptAndOption(...)` 同时写入酒吧描述和选项。关键在于把事件实例本身作为 `optionData`：`BarCMD.optionSelected(...)` 正是通过这个对象识别 `PortsideBarEvent`，然后创建 `BarEventDialogPlugin`。
+筛选通过后，用 `addPromptAndOption(...)` 写描述与选项。**这里的 `optionData` 使用事件对象本身**，酒吧从这个对象识别需要交接的事件：
 
 ```java
 @Override
@@ -88,11 +84,11 @@ public void addPromptAndOption(InteractionDialogAPI dialog,
 }
 ```
 
-显示文字只负责告诉玩家交易内容，事件对象负责把回调送进正确的事件实例。把 `this` 换成普通字符串后，酒吧仍然能显示一行选项，但事件对话交接不会发生。
+显示文字提供交易内容，`this` 把选择对应到当前实例。字符串选项会进入酒吧的另一条规则路径，[C15-S5] 使用那种入口接任务；这里让 Java 事件接收玩家的选择。
 
-## 让事件插件处理对话
+## 进入事件，重新建立本次选项
 
-`BarEventDialogPlugin` 保存原来的 `BarCMD` 和事件对象。进入事件时，它调用 `event.init(dialog, memoryMap)`；玩家选择选项时，它先回显选项文本，再调用 `event.optionSelected(...)`。事件把 `done` 设为 `true` 后，外壳执行 `endEvent()`，将原来的插件交还给 `BarCMD`。
+选择邀请后，`BarCMD` 创建 `BarEventDialogPlugin` 并接管当前会话，显式初始化。外壳保存原酒吧插件与事件，把初始化和选项回调转发给这份事件；事件结束后，再交回原插件。
 
 事件的初始化只负责建立当前选项集合：
 
@@ -109,11 +105,11 @@ public void init(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) 
 }
 ```
 
-基类保存当前 `dialog`、面板与 Memory `map`。**每次进入重置本次对话的 `done` 和 `noContinue`。** 离开保留事件实例，这两个字段也留在实例中；重新进入时先让当前对话恢复活动状态，再建立选项。事件完成后交还 `BarCMD`，酒吧选项才会重新成为当前界面。
+`super.init(...)` 保存这次对话、面板与 Memory map，子类清理旧选项并建立交易分支。**每次进入都将 `done` 与 `noContinue` 重置。** 暂时离开保留事件实例，原对话已经完成，下一次进入要建立新的活动会话；实例中的 `rewardGranted` 则继续表示交易结果。
 
-## 处理金属交易
+## 接受时检查货物，再完成交易
 
-接受分支先读取玩家舰队货舱中的 `metals` 数量。数量不足时只写出原因并保留当前事件，玩家可以补充货物后再次进入；数量满足时才移除金属、增加 `credits` 和记录奖励状态。
+接受分支从玩家舰队取得货舱，确认 `metals` 至少为 100。满足条件后扣除货物、增加资金，并通知管理器；局部操作如下：
 
 ```java
 if (OPTION_ACCEPT.equals(optionData)) {
@@ -133,11 +129,13 @@ if (OPTION_ACCEPT.equals(optionData)) {
 }
 ```
 
-`getCommodityQuantity("metals")` 返回当前货舱数量，`removeCommodity` 扣除实际交易量，`getCredits().add(5000)` 增加玩家资金。`rewardGranted` 让交易写入和 `manager` 通知保持一次；通知发生后，管理器从活动列表移除事件并设置交互后超时。
+`getCommodityQuantity(...)` 取得当前数量，`removeCommodity(...)` 扣除 100，信用通过独立 `MutableValue` 增加 5000。[C12-S2] 已说明移除不足时可以部分扣除，所以数量判断放在写入前。货物不足只追加说明，交易与事件仍可继续。
 
-## 区分拒绝与离开
+成功后设置 `rewardGranted`，本次货物、资金和管理器通知只执行一次。`notifyWasInteractedWith(this)` 移除活动实例，并让对应 creator 进入交互后的冷却。外壳读取 `done=true` 后交还酒吧，当前成功分支保留默认的继续选项，让玩家读完结果再返回。
 
-拒绝代表玩家已经处理了这条酒吧事件，因此事件写入拒绝文本、设置 `done`，并调用 `notifyWasInteractedWith(this)`。这条路径不会发放奖励，但会让 `creator` 进入交互后的冷却。
+## 拒绝与暂时离开产生不同结果
+
+拒绝表示邀请已经处理，写入结果后通知管理器并进入 60 日冷却，资金与货物保持原值。局部分支如下：
 
 ```java
 if (OPTION_DECLINE.equals(optionData)) {
@@ -148,7 +146,7 @@ if (OPTION_DECLINE.equals(optionData)) {
 }
 ```
 
-离开表示玩家尚未作出决定。事件写出离开文本并结束当前事件对话，但不调用 `manager` 通知；活动实例仍由 `manager` 跟踪，后续酒吧刷新可以再次显示它。
+暂时离开只结束这次会话，活动事件仍留在管理器中。这个分支没有已交互通知，局部处理如下：
 
 ```java
 if (OPTION_LEAVE.equals(optionData)) {
@@ -158,23 +156,15 @@ if (OPTION_LEAVE.equals(optionData)) {
 }
 ```
 
-`noContinue = true` 让事件外壳返回 `BarCMD` 时不再显示事件自己的继续入口。它只影响对话收尾，不改变事件是否已经被 `manager` 认定为已交互。
+`noContinue=true` 让外壳直接重建酒吧选项，省去继续按钮。它控制会话收尾，是否开始交互后冷却则取决于管理器通知。所以两种离开都能返回酒吧，后续邀请是否保留却不同。
 
-## 观察事件状态如何结束
+## 让活动期限负责未处理的邀请
 
-事件由活动列表保存，经市场筛选写入酒吧，再把选项回调交给本次对话。接受和拒绝调用 `notifyWasInteractedWith`，因此活动列表移除事件并建立 `accepted` `timeout`；离开没有通知，事件仍留在活动列表；任何路径都没有被玩家处理并且 `active` 时长耗尽时，`manager` 建立普通 `timeout`。
+本例 `shouldRemoveEvent()` 沿用默认的 `false`，期限由管理器的 `active` 跟踪器处理。30 日耗尽后，实例离开活动集合，管理器回收对应关系并开始普通的 30 日冷却。事件自己的 `advance(...)` 与移除判断可用于额外状态，本次沿用管理器时限即可。
 
-事件自己的 `rewardGranted` 是奖励门控，`done` 是对话完成标记，`manager` 的 `active` 和 `timeout` 跟踪器则负责全局生命周期。它们描述不同层次的状态，不能用一个字段替代另一个。
+**完成对话、完成交易与结束活动分别记录。** `done` 交还当前对话，`rewardGranted` 保存交易已经写入，活动与冷却跟踪器控制邀请还能存在多久。暂时离开后重入，要重置会话状态，交易状态与剩余活动期限则继续保留。
 
-### 按当前状态选择观察点
-
-- 事件在酒吧完全不出现：先检查市场是否有太空港，再检查 `shouldShowAtMarket` 是否受 `shownAt` 限制；
-- 同一个事件出现多份：检查 `creator` 注册是否绕过 `hasEventCreator`；
-- 接受后金属没有减少：确认货舱中 `metals` 数量达到 100，且分支使用的是 `getCommodityQuantity` 与 `removeCommodity`；
-- 拒绝后仍能立即看到事件：确认拒绝分支调用了 `notifyWasInteractedWith(this)`；
-- 离开后事件消失：检查离开分支是否误调用了 `manager` 通知。
-
-## 速查表
+### 酒吧接入速查表
 
 | 对象或方法 | 作用 | 本例中的结果 |
 | --- | --- | --- |
@@ -315,7 +305,7 @@ public class GearInBarEventCreator extends BaseBarEventCreator {
 前置数据：启用包含两个 Java 类和注册片段的 MOD，进入一个有太空港的市场酒吧，并准备一份金属不足 100 的存档和一份至少有 100 金属的存档。
 
 1. 保存两类和生涯登记，构建重启，载入存档；重复读档后核对 `creator` 仍只有一份。
-2. 进入有太空港的市场酒吧，确认出现 "`Trade` 100 `metals` `for` 5000 `credits`"。
+2. 进入有太空港的市场酒吧，确认出现 "Trade 100 metals for 5000 credits"。
 3. 在金属不足的存档中选择接受，确认文本提示需要 100 金属，货舱和 `credits` 数值不变。
 4. 在至少有 100 金属的存档中选择接受，确认金属减少 100、`credits` 增加 5000，事件结束并离开活动列表。
 5. 观察交易成功后回到酒吧，当前事件已处理，比较货舱与信用仅发生一次本次交易。
@@ -351,9 +341,9 @@ public class GearInBarEventCreator extends BaseBarEventCreator {
 
 ## 总结
 
-金属交易从 `creator` 进入活动列表，在有太空港的市场形成选项，事件外壳再转发本次对话。接受与拒绝通知管理器进入处理后的冷却，暂时离开则保留事件，重入时重新建立对话状态。
+creator 生成金属交易，酒吧按市场筛选并展示邀请，外壳将当前会话交给事件。接受先确认货物再完成资金写入，接受与拒绝通知管理器进入冷却，暂时离开则保留原实例。
 
-编者建议把货物、资金与事件状态一起观察。奖励门控、当前对话结束和全局活动期限各自有用途，同一事件才能在不同选择后继续按设计工作。
+会话与活动有各自的寿命，交易结果也单独保存。重入恢复对话状态，活动期限继续推进，玩家才能在暂时离开、正式拒绝与交易完成之后得到对应结果。
 
 ## 建议参考项
 

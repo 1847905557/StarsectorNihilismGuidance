@@ -34,6 +34,12 @@ IMAGE_FILENAME = re.compile(
 )
 SECTION_REFERENCE = re.compile(r"C(\d+)-S(\d+)")
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+CHAPTER_BASELINE = re.compile(
+    r"^本章技术基线：Starsector `[^`\s]+`"
+    r"(?: 与 Java [1-9]\d*|，Java [1-9]\d*)?"
+    r"(?:；(?:前置知识|依赖基线|可选依赖基线|前置依赖)：\S.+)?。$"
+)
+SECTION_LIST_PLACEHOLDER = "<!-- AUTO:SECTION-LIST -->"
 ORDERED_HEADING = re.compile(
     r"^(?:第[一二三四五六七八九十百]+(?:步|部分|阶段|项|段)|"
     r"链路[一二三四五六七八九十百]+(?:：|:)|"
@@ -419,6 +425,73 @@ def inspect_validation_contract(path: Path, text: str, *, docs_root: Path) -> li
     return issues
 
 
+def inspect_chapter_contract(path: Path, text: str, *, docs_root: Path) -> list[str]:
+    if not tutorial_page(path, docs_root):
+        return []
+    relative = path.resolve().relative_to(docs_root.resolve()).as_posix()
+    if re.fullmatch(r"chapter[1-9]\d*/README\.md", relative) is None:
+        return []
+
+    issues: list[str] = []
+    content: list[tuple[int, str]] = []
+    lines = NEWLINE.split(text)
+    in_fence = False
+    marker = ""
+    length = 0
+    for index, line in enumerate(lines):
+        if in_fence:
+            if closing_fence(line, marker, length):
+                in_fence = False
+            continue
+        opener = opening_fence(line)
+        if opener:
+            content.append((index + 1, line))
+            marker, length = opener
+            in_fence = True
+            continue
+        if line.strip():
+            content.append((index + 1, line))
+
+    baselines = [(number, line) for number, line in content if line.startswith("本章技术基线")]
+    if len(baselines) != 1:
+        issues.append(f"章页必须包含一个本章技术基线段落；当前 {len(baselines)} 个")
+    else:
+        number, baseline = baselines[0]
+        if CHAPTER_BASELINE.fullmatch(baseline) is None:
+            issues.append(f"第 {number} 行本章技术基线格式错误")
+        if content.index(baselines[0]) != 1:
+            issues.append(f"第 {number} 行本章技术基线必须紧接 H1")
+        if (number > 1 and lines[number - 2].strip()) or (
+            number < len(lines) and lines[number].strip()
+        ):
+            issues.append(f"第 {number} 行本章技术基线必须独占普通段落")
+
+    headings = [
+        (number, match)
+        for number, line in content
+        if (match := HEADING.match(mask_inline_code(line))) is not None
+    ]
+    catalogs = [(number, match) for number, match in headings if match.group(2) == "本章各节"]
+    if len(catalogs) != 1:
+        issues.append(f"章页必须包含一个本章各节标题；当前 {len(catalogs)} 个")
+    elif len(catalogs[0][1].group(1)) != 2:
+        issues.append(f"第 {catalogs[0][0]} 行本章各节必须使用 H2")
+    if any(len(match.group(1)) > 1 and match.group(2) != "本章各节" for _, match in headings):
+        issues.append("章页只允许以本章各节作为正文分区标题")
+
+    placeholders = [(number, line) for number, line in content if line == SECTION_LIST_PLACEHOLDER]
+    if len(placeholders) != 1:
+        issues.append(f"章页必须包含一个自动列表占位符；当前 {len(placeholders)} 个")
+    if len(catalogs) == 1 and len(placeholders) == 1:
+        if content[-2:] != [(catalogs[0][0], "## 本章各节"), placeholders[0]]:
+            issues.append("章页必须以本章各节和独立自动列表占位符结束")
+        if len(baselines) == 1 and not any(
+            baselines[0][0] < number < catalogs[0][0] for number, _ in content
+        ):
+            issues.append("章页必须在本章技术基线与本章各节之间提供章介绍")
+    return issues
+
+
 def inspect_markdown(path: Path, text: str, *, docs_root: Path | None = None) -> list[str]:
     issues: list[str] = []
     resolved_docs_root = docs_root or repository_root() / "docs"
@@ -640,6 +713,7 @@ def inspect_markdown(path: Path, text: str, *, docs_root: Path | None = None) ->
         issues.append("进阶页的完整最小例缺少“完整成品：<类名>”details 容器")
     issues.extend(inspect_validation_contract(path, text, docs_root=resolved_docs_root))
     issues.extend(inspect_table_contract(path, text, docs_root=resolved_docs_root))
+    issues.extend(inspect_chapter_contract(path, text, docs_root=resolved_docs_root))
     return issues
 
 
@@ -698,7 +772,7 @@ def run(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="检查 docs 目录中的教程 Markdown 标题、围栏、速查表、相对链接和 Section 页面编号。"
+        description="检查 docs 的章页外框、节页结构、标题、围栏、容器、速查表、引用与图片。"
     )
     parser.add_argument("paths", nargs="*", metavar="PATH", help="docs 内的文件或目录；默认 docs。")
     parser.add_argument("--json", action="store_true", help="输出 JSON。")

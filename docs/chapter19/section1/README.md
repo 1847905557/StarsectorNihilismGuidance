@@ -1,6 +1,6 @@
 # 接入可选依赖
 
-Nexerelin 和 LunaLib 可以增强 MOD，也可以由玩家选择启用。我们先为现有工程加入编译依赖，再用一个外层桥接类判断运行时状态。库缺席时读回明确的默认值，启用时才进入适配器；同一份 JAR 分别在四种组合下启动，类加载和功能接入都能实际比较。
+可选依赖要同时处理库存在与缺席时的行为。本节为 Nexerelin 和 LunaLib 加入编译路径，用桥接类检测启用状态，再把 LunaLib 的直接调用留在适配器里。库缺席时图形开关采用调用方缺省，已有基础内容继续运行；同一份 JAR 用四种组合验证这个约定。
 
 *本节预期阅读时间：\~18 分钟。*
 
@@ -22,7 +22,7 @@ Nexerelin 和 LunaLib 可以增强 MOD，也可以由玩家选择启用。我们
 - [C7-S2] 的 Global 服务与日志；
 - [C18-S1] 的运行时依赖、编译 classpath 和 JAR 输出。
 
-## 先让开发工程找到两库
+## 为开发工程提供两库 JAR
 
 开发环境安装 Nexerelin 与 LunaLib，按实际目录名把 JAR 加入 [C18-S1] 的 `dependencyJarDirs`。下面的局部代码放在该数组定义后、`dependencies` 块之前：
 
@@ -33,9 +33,9 @@ dependencyJarDirs += [
 ]
 ```
 
-继续使用 `compileOnly`，保存后运行 `gradle printCompileClasspath`，确认包含 `ExerelinCore.jar` 与 `LunaLib.jar`。**编译期能找到库，与玩家运行时启用了库，是两个条件。**本节按可选接入安排，运行时启用状态由 Java 查询，前文章节的三库硬依赖继续保留。
+继续使用 `compileOnly`，保存后执行 `gradle printCompileClasspath`，确认包含 `ExerelinCore.jar` 与 `LunaLib.jar`。编译器需要这些类型，玩家运行时则可以选择是否启用两库。前文章节的三库硬依赖继续保留，本节的可选状态由 Java 查询。
 
-## 保存桥接类，再调用它
+## 用 MOD ID 检测启用状态
 
 把本节完整的 `GearInCompatBridge` 保存到 `src/data/scripts/gearin/modcompat/GearInCompatBridge.java`。外层查询使用原版 `ModManagerAPI`：
 
@@ -44,20 +44,7 @@ boolean nex = Global.getSettings().getModManager().isModEnabled("nexerelin");
 boolean luna = Global.getSettings().getModManager().isModEnabled("lunalib");
 ```
 
-这两个 ID 来自依赖 MOD 的 `mod_info.json`。设置拥有者继续使用我们的 MOD ID `gear_in`，三者各有用途。
-
-向既有 `GearInModPlugin.onGameLoad(...)` 追加以下局部调用，并导入桥接类，保留此前生涯初始化：
-
-```java
-boolean nex = GearInCompatBridge.isNexerelinEnabled();
-boolean luna = GearInCompatBridge.isLunaLibEnabled();
-boolean fullGraphic = GearInCompatBridge.getFullGraphicEffect(true);
-GearInCompatBridge.reportNexerelinFallback();
-Global.getLogger(GearInModPlugin.class).info(
-        "GearIn optional: nex=" + nex + " luna=" + luna + " fullGraphic=" + fullGraphic);
-```
-
-构建重启、载入生涯后搜索 `GearIn optional`。这次先观察布尔值，后面的 Nexerelin 功能在启用分支接入。图形开关的 `true` 是调用方选择的缺省，库缺席时仍返回它；具体效果由使用这个值的代码决定。
+这两个 ID 来自依赖 MOD 的 `mod_info.json`。LunaLib 设置的拥有者则是 `gear_in`，读取时由自己的 MOD ID 与字段名共同定位值。启用检测决定能否调用库，拥有者决定调用后读取哪份设置。
 
 ## 把库类型留在启用分支后面
 
@@ -69,9 +56,11 @@ if (isLunaLibEnabled()) {
 }
 ```
 
-分支通过后，才调用 `LunaAdapter`。LunaLib 缺席时返回默认值，基础入口可以继续完成自己的工作。
+分支通过后才进入 `LunaAdapter`，库缺席时直接返回缺省。适配器的 class 文件与外层分开，基础入口可以取得检测结果，而无需先建立 LunaLib 的直接类型关系。
 
-只在基础类中加一个启用判断，还需要看第三方类型放在哪里。父类、接口、字段和方法签名会参与类加载；把这些关系留在适配角色，基础调用方才能保留自己的加载边界。
+::: warning 父类依赖发生在方法判断之前
+基础入口若继承依赖库的类，缺库时可能在加载父类阶段就失败，方法里的启用判断尚未执行。接口、公用签名与字段类型也要按实际使用位置核对；外层桥接保留 Java、原版和自有类型。
+:::
 
 ## 定义字段与缺省值
 
@@ -103,7 +92,22 @@ if (!lunaMissingReported) {
 }
 ```
 
-读另一份存档时静态标记继续保留；退出游戏并重新启动后，标记重新初始化。编者建议把这条消息用于确认接入状态：需要查的是哪项功能采用了什么缺省，重复打印同一句话并不会提供更多信息。
+读另一份存档时静态标记继续保留，退出并重启应用后再初始化。这个记录范围与依赖的启用状态一致：库在本次应用中缺席，重复调用仍采用相同缺省；日志因此按应用报告一次。
+
+## 接到生涯入口比较结果
+
+向既有 `GearInModPlugin.onGameLoad(...)` 追加局部调用，导入桥接类并保留此前初始化：
+
+```java
+boolean nex = GearInCompatBridge.isNexerelinEnabled();
+boolean luna = GearInCompatBridge.isLunaLibEnabled();
+boolean fullGraphic = GearInCompatBridge.getFullGraphicEffect(true);
+GearInCompatBridge.reportNexerelinFallback();
+Global.getLogger(GearInModPlugin.class).info(
+        "GearIn optional: nex=" + nex + " luna=" + luna + " fullGraphic=" + fullGraphic);
+```
+
+构建、重启并载入生涯后，搜索 `GearIn optional`。调用方给图形开关选择缺省 `true`，库缺席时返回这个值；已有设置为 `false` 时读取它本身。具体效果由后面的使用方处理，Nexerelin 功能也在启用分支接入。
 
 ## 启用组合速查表
 
@@ -221,9 +225,7 @@ public final class GearInCompatBridge {
 
 ## 总结
 
-编译配置让开发工程找到库，桥接类在运行时判断是否启用，适配器在分支通过后调用第三方代码。默认值由使用方决定，已有设置按拥有者和字段读取，日志记录本次应用采用的接入状态。
-
-用四种组合运行同一产物，才能把编译依赖、类加载和实际调用对应起来。后面的兼容角色继续沿用这组检测入口。
+桥接把启用检测、直接库调用与缺席行为接成明确的分支：基础入口取得状态，适配器读取第三方设置，调用方决定缺省。四种组合使用同一份产物，分别确认类加载与运行结果；后续兼容角色继续沿用这些检测入口。
 
 ## 建议参考项
 

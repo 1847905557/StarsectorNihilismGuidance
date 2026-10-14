@@ -1,6 +1,6 @@
 # 使用 VBO 和 VAO 保存顶点
 
-上一节每次绘制都从客户端缓冲提交矩形。这次把顶点放进 VBO，并用 VAO 保存读取布局，绘制时绑定这套布局即可。圆环、朝向线和 shader 算法都沿用已有成果；我们集中观察数据存放在哪里、何时上传，以及绑定对象后究竟恢复了哪些设置。
+VBO 保存 GPU 使用的顶点数据，VAO 保存 shader 怎样读取这份数据。本节把方向标的六个矩形顶点迁入 VBO，建立一次布局，再在视口比例变化时更新边界。舰船位置、朝向与颜色继续通过 uniform 提交，形状计算沿用 GLSL 版本。
 
 *本节预期阅读时间：\~25 分钟。*
 
@@ -35,6 +35,22 @@ runcode com.fs.starfarer.api.combat.CombatEngineAPI e = com.fs.starfarer.api.Glo
 
 方向标仍显示半径 `80 su` 的圆环和长度 `120 su` 的朝向线。vertex shader 负责把局部坐标放到舰船位置，fragment shader 负责生成线条。本节改变的是顶点来源：六个矩形顶点进入 VBO，VAO 记录 `a_position` 如何读取它们。客户端缓冲只在视口比例变化时更新 VBO，绘制指针始终读取 VBO。
 
+## 从链接后的 program 取得输入位置
+
+VBO 和 VAO 沿用原来的 shader 接口。Java 加载两份 `#version 120` 源码，完成编译、链接并记录 InfoLog，再查询一个 attribute 和六个 uniform：
+
+```java
+positionLocation = GL20.glGetAttribLocation(program, "a_position");
+centerLocation = GL20.glGetUniformLocation(program, "u_center");
+facingLocation = GL20.glGetUniformLocation(program, "u_facing");
+colorLocation = GL20.glGetUniformLocation(program, "u_color");
+geometryLocation = GL20.glGetUniformLocation(program, "u_geometry");
+widthsLocation = GL20.glGetUniformLocation(program, "u_widthPixels");
+worldPerPixelLocation = GL20.glGetUniformLocation(program, "u_worldPerPixel");
+```
+
+查询得到的 `a_position` location 用于建立布局。任何位置缺失时，本实例清理已创建资源；成功以后才继续创建几何。
+
 ## 在 VBO 中保存六个局部顶点
 
 首次 `render(...)` 创建 program 后，`buildGeometry()` 准备一个可容纳 `12` 个浮点数的客户端缓冲，再把矩形上传到 VBO。`glBufferData` 分配并填入数据；视口比例变化时，`glBufferSubData` 更新含有像素边距的顶点。以下是 VBO 创建与上传的局部片段：
@@ -60,23 +76,9 @@ GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT,
         false, 0, 0L);
 ```
 
-位置由两个连续 `float` 组成，stride 为 `0` 表示没有交错字段。VAO 只保存布局和绑定关系，不保存舰船位置、朝向或颜色；这些值仍由每帧 uniform 更新。
+位置由两个连续 `float` 组成，stride 为 `0` 表示紧密排列。这里的 `0L` 是当前 VBO 内的字节偏移。`glVertexAttribPointer` 把当时绑定的 VBO 记入 attribute 关系，随后解除 `GL_ARRAY_BUFFER` 绑定，VAO 中的关系仍然保留。
 
-## 创建 program 并查询位置
-
-VBO 和 VAO 不改变 shader 接口。Java 仍加载两份 `#version 120` 源码，记录编译与链接 InfoLog，并查询一个 attribute 和六个 uniform：
-
-```java
-positionLocation = GL20.glGetAttribLocation(program, "a_position");
-centerLocation = GL20.glGetUniformLocation(program, "u_center");
-facingLocation = GL20.glGetUniformLocation(program, "u_facing");
-colorLocation = GL20.glGetUniformLocation(program, "u_color");
-geometryLocation = GL20.glGetUniformLocation(program, "u_geometry");
-widthsLocation = GL20.glGetUniformLocation(program, "u_widthPixels");
-worldPerPixelLocation = GL20.glGetUniformLocation(program, "u_worldPerPixel");
-```
-
-位置查询失败时实例清理已经创建的资源。查询得到的 `a_position` location 用于配置 VAO；若 shader 声明与 Java 查询的名称不一致，布局就无法连接到 program。
+**VAO 记录顶点从哪里读、怎样读，uniform 继续传递舰船状态。** 位置、朝向与颜色各有自己的参数，尚未因建立 VAO 而保存到顶点布局中。
 
 ## 绘制时更新 uniform
 
@@ -103,7 +105,11 @@ GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
 
 ## 释放 VBO 与 VAO
 
-**创建资源也会改变共享状态。**`buildGeometry()` 在首次 `render(...)` 中执行，先保存原 VAO 和 VBO 绑定，再配置本实例的布局，最后在 `finally` 中恢复。这和每次绘制后的恢复承担同一种职责。
+`buildGeometry()` 首次创建对象时，也会修改当前 VAO 和 VBO 绑定。它在配置之前保存原值，结束时通过 `finally` 恢复；每次绘制则另外恢复本次使用的 program、混合、矩阵与缓冲绑定。
+
+::: warning VAO 不保存普通 ARRAY_BUFFER 绑定
+attribute 指针记录自己的 VBO 关系，普通 `GL_ARRAY_BUFFER` 绑定仍是另一项上下文状态。创建和绘制结束后，各自恢复原 VAO 与原 ARRAY_BUFFER。
+:::
 
 VAO 记录 VBO 的 attribute 关系。`cleanup()` 先删除 VAO，再删除 VBO、program 和两个 shader；资源创建失败也进入这条路径，已创建的句柄删除后归零。重复清理时，这些句柄已经是 `0`。
 

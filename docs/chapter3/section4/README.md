@@ -43,7 +43,7 @@ public void onNewGame() {
 }
 ```
 
-第一行创建生成器并调用 `generate`，第二行继续设置关系。`mod_info.json` 的入口值仍指向 `GearInModPlugin`。**生成器由入口主动调用**，保存类文件后还要核对这条调用关系。
+第一条语句创建生成器并调用 `generate`，第二条继续设置关系。`mod_info.json` 的入口值仍指向 `GearInModPlugin`。**生成器由入口主动调用**，因此保存生成器类文件后，还要在入口中保留这条调用。
 
 接下来依次向 `generate` 中加入代码。每段创建的对象会供后面的操作使用，因此按当前顺序排列。
 
@@ -57,7 +57,7 @@ system.setBackgroundTextureFilename("graphics/backgrounds/background2.jpg");
 system.setLightColor(new Color(200, 200, 210));
 ```
 
-`system` 保存这个星系，背景路径和光照颜色采用原版资源。之后所有行星、实体和入口都放到这里。
+`system` 保存刚创建的星系，背景路径和光照颜色采用原版资源。之后的行星、实体和入口都加入这个 `system`，让它们属于同一个地点。
 
 再初始化恒星并设置超空间位置：
 
@@ -66,7 +66,7 @@ PlanetAPI star = system.initStar("gearin", "star_yellow", 600f, 550f, 3f, 0.75f,
 system.getLocation().set(-16000f, -9000f);
 ```
 
-`gearin` 是恒星 ID，`star_yellow` 是原版黄色恒星类型。`star` 保存恒星，行星和通讯中继随后以它作为轨道焦点。
+`gearin` 是恒星 ID，`star_yellow` 是原版黄色恒星类型。`star` 保存创建得到的恒星，行星和通讯中继随后以它作为轨道焦点，因此这一步放在行星创建之前。
 
 ### initStar 参数速查表
 
@@ -97,11 +97,11 @@ PlanetAPI second = system.addPlanet(
         "barren", 200, 90, 5200, 200);
 ```
 
-`GearIn_planet1`、`GearIn_planet2` 是实体 ID，Prime 与 Second 是显示名。`terran` 和 `barren` 都是原版行星类型。
+`GearIn_planet1`、`GearIn_planet2` 是实体 ID，Prime 与 Second 是显示名。第二个参数 `star` 指定轨道焦点，`terran` 和 `barren` 则选择原版行星类型。
 
-`addPlanet` 后四个数字依次为轨道角、行星半径、轨道半径和轨道周期天数。主行星半径为 150，轨道半径为 3200，周期为 120 天；外侧行星半径 90，轨道半径 5200，周期 200 天。**先确定对象与轨道关系，再调数值**，这样看星图时能直接对应每行代码。
+`addPlanet` 后四个数字依次为轨道角、行星半径、轨道半径和轨道周期天数。主行星半径为 150，轨道半径为 3200，周期为 120 天；外侧行星半径 90，轨道半径 5200，周期 200 天。**轨道焦点与轨道参数共同确定行星的位置关系**，可以按代码中的对象与数值核对星图。
 
-`addPlanet` 同时把行星加入当前星系。两颗行星返回的对象可以继续设置市场、描述或其他属性。
+`addPlanet` 同时把行星加入当前星系。它返回的对象分别保存在 `prime` 与 `second` 中，后面的市场、描述等配置继续使用这两个引用。
 
 ## 加入原版通讯中继
 
@@ -114,13 +114,13 @@ SectorEntityToken stable = system.addCustomEntity(
 stable.setCircularOrbitPointingDown(star, 90, 2200, 100);
 ```
 
-`comm_relay` 是原版实体类型，`gear_industry` 指定所属势力。返回的 `stable` 就是这个中继实体，随后给它设置围绕恒星的轨道。
+`comm_relay` 是原版实体类型，`gear_industry` 指定所属势力。返回的中继实体保存在 `stable` 中，随后通过它设置围绕恒星的轨道，仍然使用刚才的 `star` 作为焦点。
 
 轨道角为 90，半径为 2200，周期为 100 天，`PointingDown` 采用该类实体常用的朝向方式。原版实体类型可以直接用于本节制作，自定义类型则由 [C4-S6] 展开。
 
 ## 给主行星建立基础市场
 
-行星的外观类型与它的市场是两组内容。本节给 Prime 创建规模 4 的市场，使用人口、太空港、公开市场和仓储这些原版组件。
+行星的外观类型与它的市场分别配置，`terran` 类型本身不会完成这里的市场创建。本节给 Prime 创建规模 4 的市场，使用人口、太空港、公开市场和仓储这些原版组件。
 
 先建立市场与行星的归属，局部片段如下：
 
@@ -131,7 +131,7 @@ market.setPrimaryEntity(prime);
 market.setSurveyLevel(MarketAPI.SurveyLevel.FULL);
 ```
 
-`createMarket` 使用行星 ID、名称与规模。`setPrimaryEntity` 指定主实体，`FULL` 把勘测状态设为已完成。接着添加市场内容：
+`createMarket` 使用行星 ID、名称与规模，创建得到的市场保存在 `market` 中。`setPrimaryEntity` 将 Prime 指定为主实体，`FULL` 把勘测状态设为已完成。归属关系设置后，再添加市场内容：
 
 ```java
 market.addCondition("population_4");
@@ -141,7 +141,7 @@ market.addSubmarket("open_market");
 market.addSubmarket("storage");
 ```
 
-这些字符串都是原版已注册的 ID。市场条件描述规模 4 的人口，产业提供人口与太空港，子市场提供公开交易与仓储。
+这些字符串都是原版已注册的 ID，分别写入市场的条件、产业与子市场。市场条件描述规模 4 的人口，产业提供人口与太空港，子市场提供公开交易与仓储。
 
 最后把它加入星区经济，并连接回行星：
 
@@ -151,7 +151,7 @@ prime.setMarket(market);
 prime.setFaction("gear_industry");
 ```
 
-**创建市场、加入经济与绑定实体都要完成。** 完成后，玩家靠近 Prime 就可以打开对应市场。当前配置先验证交易与归属，市场的完整行为与自定义商品由 [C12-S1]、[C12-S3] 继续讲解。
+**创建市场、加入经济与绑定实体都要完成。** 使用行星的 ID 和名称创建市场之后，仍要通过上面的调用建立实际连接。完成后，玩家靠近 Prime 就可以打开对应市场。当前配置用于验证交易与归属，市场的完整行为与自定义商品由 [C12-S1]、[C12-S3] 继续讲解。
 
 ## 生成往返星系的入口
 

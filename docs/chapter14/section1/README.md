@@ -1,6 +1,6 @@
 # 编写生涯逐帧脚本
 
-前面的生涯观察已经在逐帧脚本里运行，现在把登记、时间和结束方式展开。本节制作一个每日记录、持续三十日的普通脚本，保存后继续累计，暂停时等待，完成后由引擎移除。再用同一份观察代码比较 transient 登记与实体清理，进度属于哪个对象、什么时候结束，都有实际入口。
+本节制作一个每日记录、持续三十日的生涯脚本：暂停时等待，保存读档后继续计数，到期后由引擎移除。时间累计、登记方式与结束状态共同决定它怎样运行，我们分别处理这些关系，再比较 transient 登记与实体附着的清理职责。
 
 *本节预期阅读时间：\~18 分钟。*
 
@@ -22,9 +22,45 @@
 - [C10-S1] 的 `SectorAPI`、生涯时钟、脚本注册和暂停语义；
 - 能够构建 Java MOD，并从 `starsector.log` 搜索稳定日志文本。
 
-## 先登记每日脚本
+## 先让每日记录按生涯时间运行
 
-创建 `src/data/scripts/gearin/campaign/GearInDayAccumulatorScript.java`，并加入 `GearInModPlugin` 的 import。向 [C7-S1] 已有的 `onGameLoad(...)` 追加局部登记，沿用 `sector`：
+创建 `src/data/scripts/gearin/campaign/GearInDayAccumulatorScript.java`，实现 `EveryFrameScript`。引擎每帧调用 `advance(amount)`，我们把传入的秒数转换成生涯日，再累计到下一次每日操作。
+
+**周期按生涯日计算。** `Global.getSector().getClock().convertToDays(amount)` 使用生涯时钟的换算，正常速度下 10 秒对应一日。加速等推进条件由引擎提供的帧时间体现，脚本继续使用同一换算。当前 `runWhilePaused()` 返回 `false`，暂停时没有时间推进回调。
+
+局部累计片段如下，`daysSinceMount` 保存总进度，`daysAccumulator` 保存尚未处理的周期余量：
+
+```java
+CampaignClockAPI clock = Global.getSector().getClock();
+float daysThisFrame = clock.convertToDays(amount);
+daysSinceMount += daysThisFrame;
+daysAccumulator += daysThisFrame;
+
+while (daysAccumulator >= tickEveryDays) {
+    daysAccumulator -= tickEveryDays;
+    routineCount++;
+}
+```
+
+本次回调可能跨过多个完整周期，`while` 逐次处理并扣除对应天数。余下的小数留给下一帧，每日记录才能在不同帧时间下继续保持周期。
+
+日历变化适合另一个目的：某个动作只需要知道日期是否改变，可以将年、月、日组成日期键。下面的局部片段首帧建立基线，随后记录日期变化：
+
+```java
+int dateKey = clock.getCycle() * 10000 + clock.getMonth() * 100 + clock.getDay();
+if (dateKey != lastDateKey) {
+    if (lastDateKey != -1) {
+        LOG.info("GearIn calendar: new day " + clock.getShortDate());
+    }
+    lastDateKey = dateKey;
+}
+```
+
+跨过几天后，日期键也只产生一次变化；要补齐每个周期，继续使用前面的累计方式。本节完整脚本按周期逐次记录，日历只用于输出日期。
+
+## 登记脚本，并让进度进入存档
+
+在 `GearInModPlugin` 添加该类的 import，向已有的 `onGameLoad(...)` 追加局部登记，沿用 `sector`：
 
 ```java
 if (!sector.hasScript(GearInDayAccumulatorScript.class)) {
@@ -32,27 +68,46 @@ if (!sector.hasScript(GearInDayAccumulatorScript.class)) {
 }
 ```
 
-已有普通脚本时继续使用它，读档恢复剩余状态；三十日完成后，下一次读档发现列表缺席，会建立新一轮。当前设计选择持续补回，结束历史也就不作为登记条件。
+`addScript(...)` 放入随生涯保存的普通脚本列表，字段也随实例保存。读档后已有实例继续累计，`hasScript(...)` 根据类型判断列表中是否已经存在，入口只补入缺失的脚本。
 
-**登记容器决定保存范围，脚本字段保存本次进度。** `EveryFrameScript` 提供三个方法，实际周期由我们的时间累计实现。
+如果登记方法自己取得星区，等价的局部写法如下；同一入口采用一份登记即可：
 
-### 接口方法速查表
+```java
+SectorAPI sector = Global.getSector();
+if (!sector.hasScript(GearInDayAccumulatorScript.class)) {
+    sector.addScript(new GearInDayAccumulatorScript());
+}
+```
 
-| 方法 | 责任 | 本节脚本的实现 |
-| --- | --- | --- |
-| `isDone()` | 告诉引擎脚本是否已经完成，可以从当前列表移除 | 返回 `done`，达到 30 个游戏日后变为 `true` |
-| `runWhilePaused()` | 决定暂停时是否仍调用 `advance()` | 返回 `false`，暂停时不累计游戏天 |
-| `advance(float amount)` | 执行一轮推进；`amount` 是上一帧经过的真实秒数 | 先换算成游戏天，再累计并触发每日例程 |
+`addScript(...)` 本身不去重，相同对象重复加入也可以多次推进。当前按类登记，适合整份功能只需要一个周期脚本的情况；本次字段保存进度，登记列表决定它是否在运行。
 
-生涯引擎 对普通脚本列表和 transient 脚本列表分别建立快照。每个对象进入快照后，先检查一次 `isDone()`；已经完成的对象直接移除，未完成对象在游戏未暂停或 `runWhilePaused()` 返回 `true` 时收到 `advance(amount)`。回调返回后引擎再检查一次 `isDone()`，因此脚本在自己的 `advance()` 中把 `done` 设为 `true`，就能在同一轮推进结束时被移除。
+## 让脚本累计 30 个游戏日后结束
 
-快照解释了两个容易混淆的现象。脚本在 `advance()` 内新增或移除对象时，修改的是原列表，当前快照仍按开始这一轮时的内容遍历；新脚本要到下一轮才会推进，已经取出的对象仍可能完成当前回调。`addScript()` 也不承担业务去重，同一个实例重复加入会得到多次推进，等价的新实例也会分别推进，所以登记入口按实际类查重。
+完整类采用周期 1 日、总时长 30 日。累计时先将本帧采用的时间限制在剩余时长内，再用总天数减去已执行周期计算余量。跨过终点的一帧也只处理到第 30 日，总例程保持三十次。
 
-### 注册容器决定生命周期
+达到终点后写完成日志，将 `done` 设为 `true`，`isDone()` 返回这个字段。引擎在回调后再次检查完成状态并移除实例，随后 `hasScript(...)` 返回 `false`。字段都是基础业务数据，UI 与声音播放器等瞬态对象在运行时取得，保存继续累计所需的内容即可。
 
-`SectorAPI.addScript()` 把脚本放进随生涯保存的普通列表，适合周期管理器和需要跨读档继续的状态。`addTransientScript()` 放进不写入存档的 transient 列表，适合只存在于当前运行阶段的探针或临时动画；读档后它不会自动出现，注册入口需要再次执行。`removeScript()` 按对象实例移除，`removeScriptsOfClass()` 按精确类移除，`hasScript(Class)` 则用 `isInstance` 判断当前列表中是否存在匹配对象。
+### 脚本回调速查表
 
-需要让同一个观察类只存在于当前运行阶段时，把前面的普通登记替换为以下局部片段。两种登记选择一种；当前已有普通实例时，先从它的列表移除：
+| 方法 | 引擎使用方式 | 本节实现 |
+|---|---|---|
+| `isDone()` | 推进前与回调返回后检查，成立时移除实例 | 返回 `done` |
+| `runWhilePaused()` | 暂停时决定是否调用 `advance(...)` | 返回 `false` |
+| `advance(amount)` | 按帧提供秒数，执行当前逻辑 | 转为生涯日，补齐每日周期并检查终点 |
+
+**本轮结束后，下次读档会按登记策略开始新一轮。** 当前登记只查询列表，已完成实例被移除后，缺失条件又成立。希望每份存档永久只执行一次时，还要保存独立的完成标记；本节采用缺失时重新开始的周期观察。
+
+## 当前回调使用哪一份列表
+
+星区先为普通脚本列表建立快照，遍历时检查完成状态，再按暂停条件推进。当前普通列表结束后，transient 列表另行建立快照并推进。
+
+回调中修改原列表，当前快照保持原有内容。向同一列表新增脚本，它到后续快照才会推进；移除已经取出的对象，也仍可能让该对象完成当前一轮。跨普通与 transient 列表操作时，还要考虑两份快照建立的先后。
+
+`removeScript(...)` 按对象移除，`removeScriptsOfClass(...)` 按精确类移除；`hasScript(Class)` 则使用 `isInstance`，可以匹配该类的子类。登记与清理按当前功能需要的范围选择。
+
+## 改为本次运行中的 transient 脚本
+
+只需要当前运行期观察时，使用 `addTransientScript(...)`。这个列表不保存，读档后重新登记的实例从初始字段开始。以下局部片段替换普通登记，先移除原普通实例，再按 transient 列表查重：
 
 ```java
 sector.removeScriptsOfClass(GearInDayAccumulatorScript.class);
@@ -61,14 +116,19 @@ if (!sector.hasTransientScript(GearInDayAccumulatorScript.class)) {
 }
 ```
 
-地点、实体和舰队也有自己的脚本容器。把脚本挂在星区时，它的生命周期跟随整个生涯；把脚本挂在实体时，实体被移除会结束这条附着关系。`EveryFrameScriptWithCleanup` 在 `EveryFrameScript` 三个方法之外增加 `cleanup()`，它是实体从生涯引擎移除时的清理入口；它不是普通星区脚本在 `isDone()` 后的通用回调。
+普通登记用在跨读档的周期功能，transient 登记用在当前运行期的观察或临时动画。本节的时间逻辑相同，保存结果由登记方式决定。
 
-例如在 [C10-S4] 的实体放置类中，创建一个用于清理观察的坐标 token，并附上局部匿名脚本。这里需要 `EveryFrameScriptWithCleanup` 的 import，片段放在已取得 `system` 之后：
+## 实体附着与清理接口
+
+地点、实体和舰队也提供脚本入口，进度随实际登记的持有对象存在。`EveryFrameScriptWithCleanup` 额外声明 `cleanup()`，用于解除脚本持有的资源或外部登记。接口声明了清理方法，具体调用仍取决于持有者的移除流程；自己控制实体寿命时，也应明确安排这一步。
+
+下面是 [C10-S4] 实体放置上下文中的局部实验，需要 `EveryFrameScriptWithCleanup` 的 import，并使用已取得的 `system`。创建一个实际的中继站，附着脚本，再显式清理、解除附着并移除实体：
 
 ```java
-SectorEntityToken cleanupTarget = system.createToken(1200f, 400f);
-system.addEntity(cleanupTarget);
-cleanupTarget.addScript(new EveryFrameScriptWithCleanup() {
+SectorEntityToken cleanupTarget = system.addCustomEntity(
+        "GearIn_cleanup_relay", "清理实验中继站", "comm_relay", "independent");
+cleanupTarget.setLocation(1200f, 400f);
+EveryFrameScriptWithCleanup cleanupScript = new EveryFrameScriptWithCleanup() {
     @Override
     public boolean isDone() {
         return false;
@@ -86,64 +146,16 @@ cleanupTarget.addScript(new EveryFrameScriptWithCleanup() {
     @Override
     public void cleanup() {
         Global.getLogger(GearInDayAccumulatorScript.class)
-                .info("GearIn entity script cleanup: entity removed");
+                .info("GearIn entity script cleanup: explicit cleanup");
     }
-});
+};
+cleanupTarget.addScript(cleanupScript);
+cleanupScript.cleanup();
+cleanupTarget.removeScript(cleanupScript);
 system.removeEntity(cleanupTarget);
 ```
 
-## 选择时间基准
-
-`advance(float amount)` 的 `amount` 单位是真实秒，不能直接当作游戏天。时间换算使用 `Global.getSector().getClock().convertToDays(amount)`。正常速度下，当前版本约 10 个真实秒对应 1 个游戏日；暂停时生涯时钟冻结，返回 `false` 的脚本也不会收到推进。
-
-日历跨日检测和精确累计适合不同任务。需要在日期变化时执行一次的事件，可以把 `cycle`、`month` 和 `day` 折叠成日期键；它只回答本次调用是否跨日。需要累计精确游戏天数的任务，应保存浮点余量，每次把 `convertToDays(amount)` 加入累加器。若一次调用跨过多个周期，使用 `while` 而不是 `if`，才能逐个补触发。
-
-```java
-CampaignClockAPI clock = Global.getSector().getClock();
-float daysThisFrame = clock.convertToDays(amount);
-daysSinceMount += daysThisFrame;
-daysAccumulator += daysThisFrame;
-
-while (daysAccumulator >= tickEveryDays) {
-    daysAccumulator -= tickEveryDays;
-    routineCount++;
-}
-```
-
-日历键的局部写法如下。首帧只建立基线；如果一次推进跳过了几天，它仍然只产生一次日期改变，不会补发中间日期。
-
-```java
-int dateKey = clock.getCycle() * 10000 + clock.getMonth() * 100 + clock.getDay();
-if (dateKey != lastDateKey) {
-    if (lastDateKey != -1) {
-        LOG.info("GearIn calendar: new day " + clock.getShortDate());
-    }
-    lastDateKey = dateKey;
-}
-```
-
-## 注册并恢复周期脚本
-
-本节完整例使用 `hasScript()` 做实际列表查重。注册代码应放在 `onGameLoad()` 或 `onNewGame()`，此时 `Global.getSector()` 已经存在。每次进入存档都执行检查：列表中已有实例时不再加入；普通脚本因为随档保存，读档后通常会命中；实例因故缺失时，门禁可以补回它。
-
-```java
-SectorAPI sector = Global.getSector();
-if (!sector.hasScript(GearInDayAccumulatorScript.class)) {
-    sector.addScript(new GearInDayAccumulatorScript());
-}
-```
-
-这段门禁检查当前列表是否已有对象。功能若要在一个存档中只执行一次，即使脚本已经结束也不能重新创建，应另用独立的 persistent data 标记；本节周期脚本需要在缺失时恢复，所以结束历史不作为注册条件。
-
-## 让脚本累计 30 个游戏日后结束
-
-完整类将回调时间换成生涯日，保留周期余量、记录次数，到三十日设置完成标记。`tickEveryDays` 和 `daysToRun` 固定为 `1.0f` 与 `30.0f`，这样每个游戏日触发一次，累计满 30 天后由引擎自动清理。
-
-**累计量保留实际进度，周期余量只扣已经执行的部分。** 完整类用累计天数减去已执行周期计算余量，单帧跨过多个周期时逐个处理。跨过三十日终点的那一帧只采用剩余天数，总例程因此保持三十次。所有字段都是基础类型，能够随普通脚本进入存档；不把 `SectorAPI`、UI 或声音对象存进字段，避免把瞬态引擎句柄带入序列化数据。
-
-### 观察自动移除
-
-当 `daysSinceMount >= daysToRun` 时，脚本先写出完成日志，再把 `done` 设为 `true`。这一帧的 `advance()` 返回后，生涯引擎 的第二次 `isDone()` 检查会移除脚本；下一帧不会再进入该对象。`hasScript(GearInDayAccumulatorScript.class)` 随后应返回 `false`。
+这次日志来自显式的 `cleanup()` 调用，随后脚本和实体分别从持有者中移除。坐标 token 只承担位置引用，附着实验使用具有脚本实现的实体；普通星区列表则依据 `isDone()` 移除脚本，两种清理职责分别由各自入口完成。
 
 ## 完整最小例
 
@@ -215,14 +227,14 @@ public class GearInDayAccumulatorScript implements EveryFrameScript {
 前置数据：能够保存、读档并推进三十个生涯日的测试存档。
 
 1. 保存类和普通登记，构建并重启，进入测试存档，搜索 `GearIn daily`。
-2. 启动游戏并进入测试存档，在 `onGameLoad()` 注册脚本后搜索 `GearIn daily` 日志。
-3. 正常推进约一个游戏日，记录一次 `routine #` 日志及 `since mount` 数值。
+2. 正常推进约一个游戏日，记录 `routine #1` 与 `since mount`，确认普通登记已经开始推进。
+3. 继续推进，比较后续 `routine #` 与累计日数，确认例程按每日周期执行。
 4. 按空格暂停至少 20 个真实秒，观察日志和生涯日期；随后解除暂停。
 5. 继续推进，比较每个完整周期与余量；使用局部时间换算片段理解一次推进跨过多个周期时，`while` 如何逐次扣除。
 6. 保存并重新载入存档，比较读档前后的 `since mount` 与 `routine #`。
 7. 继续推进到累计 30 个游戏日，搜索 `GearIn daily: done`，再检查 `hasScript(GearInDayAccumulatorScript.class)`。
 8. 把登记改为前述 transient 片段，构建重启，再保存读档；比较新的运行期计数，完成后将登记恢复为普通方式。
-9. 运行前述实体附着与移除片段，查看 `GearIn entity script cleanup`，比较实体清理与普通周期脚本的完成日志。
+9. 运行前述实体清理片段，搜索 `GearIn entity script cleanup: explicit cleanup`，确认显式调用产生日志，并确认实验中继站已移除。
 
 预期结果：
 
@@ -233,7 +245,7 @@ public class GearInDayAccumulatorScript implements EveryFrameScript {
 - 读档后累计字段从保存值继续，不重新产生 `routine #1`；
 - 三十日后总例程为三十次，完成日志出现，普通列表移除该实例；下一次读档按登记策略开始新一轮；
 - transient 探针读档后不自动存在，重新注册后才继续推进；
-- `cleanup()` 只对应实体移除路径，普通星区脚本结束时不调用该方法。
+- 实体实验显式调用 `cleanup()` 后记录清理日志，再解除脚本并移除中继站；普通星区脚本按 `isDone()` 结束。
 
 ## 故障分析
 
@@ -263,14 +275,14 @@ public class GearInDayAccumulatorScript implements EveryFrameScript {
 
 ## 总结
 
-每日脚本通过普通列表保存本次进度，生涯时钟提供日数，周期余量与 `while` 处理完整周期，三十日边界再连接到完成与自动移除。
+每日脚本将帧时间换成生涯日，保存总进度与周期余量，逐次处理完整周期，到三十日设置完成状态。普通列表保存这份实例，读档后从原进度继续，结束后引擎移除它。
 
-普通、transient 与实体附着各有保存和清理范围。编者建议把登记与结束一起安排：希望读档继续哪一段状态，结束后是否开始下一轮，代码都在这些入口表达。
+登记也决定下一轮何时开始。当前列表缺失就创建新实例，永久一次性功能另存完成状态；transient 列表则每次载入重新建立。时间、实例字段与登记条件共同形成脚本的实际寿命。
 
 ## 建议参考项
 
 - `com.fs.starfarer.api.EveryFrameScript`：`isDone()`、`runWhilePaused()`、`advance(float amount)` 的公开契约；
-- `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：实体移除时的 `cleanup()` 钩子；
+- `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：声明 `cleanup()`，用于安排附着脚本的资源清理；
 - `com.fs.starfarer.api.campaign.SectorAPI`：`addScript`、`addTransientScript`、`removeScript`、`hasScript` 和脚本列表；
 - `com.fs.starfarer.api.campaign.CampaignClockAPI`：`convertToDays` 与日历读取；
 - `com.fs.starfarer.api.Global`：取得当前生涯 `SectorAPI` 的全局入口；

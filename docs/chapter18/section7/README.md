@@ -1,6 +1,6 @@
 # 制作 GraphicsLib 纹理映射
 
-动态光源已经能照亮命中位置，接下来让工匠级的装甲表面表现出起伏。以原始舰船贴图为坐标基准制作 material 和 normal，再用 texture CSV 登记到船体 ID。光源移动或舰船转向时，颜色、明暗与高光应贴着舰体变化；自动生成和预载则决定缺少贴图时怎样补齐、资源何时进入显存。
+material 与 normal 为光照提供表面颜色和方向，工匠级的装甲起伏由此能够随光源位置变化。本节以原始舰船贴图为基准制作两张附加纹理，用 texture CSV 连接船体，再说明查询、自动生成和预载怎样取得这些资源。
 
 *本节预期阅读时间：\~20 分钟。*
 
@@ -32,7 +32,9 @@ material 贴图提供光照计算使用的表面颜色与反射差异。normal �
 
 **三类附加纹理在原始贴图的同一像素位置采样。**本节先制作 material 与 normal，再按美术需要决定是否加 surface。每类图表达的信息各有用途，画布和船体位置则一起保持一致。
 
-## 制作 material 贴图
+## 制作同坐标的附加纹理
+
+### 保留 material 的受光颜色
 
 先复制原始舰船 Sprite 贴图，保留画布尺寸与透明通道，再把副本改成 material 贴图。处理时以 "光照下希望保留什么颜色、哪些区域更容易反光" 为判断标准：装甲主体保留可辨认的色相，金属边缘和高光区域可以更亮，孔洞与完全透明区域保持透明。
 
@@ -42,7 +44,7 @@ material 贴图仍是一张完整的 RGBA PNG。它不负责画出光源本身�
 graphics/material/ships/GearIn_artizan.png
 ```
 
-## 制作 normal 贴图
+### 用 normal 表现表面方向
 
 normal 贴图用 RGB 保存切线空间法线。接近 `(128, 128, 255)` 的中性蓝表示表面朝向观察者；红色与绿色分量的变化表示表面向左右或上下倾斜，蓝色分量表示朝向观察者的程度。
 
@@ -54,7 +56,7 @@ graphics/normal/ships/GearIn_artizan.png
 
 normal 的颜色表示方向，不应直接使用原始舰船颜色。过强的高度梯度会让装甲像被切出尖锐沟槽；后面的 `magnitude` 还能在不重新绘图的情况下整体调整起伏强度。
 
-## 保持画布与透明区一致
+### 对齐画布、船体与透明区
 
 将三张图保持为相同像素宽高，舰船中心位于相同像素，朝向一致。导出时保留原画布和透明边缘，原始贴图的中心点与武器槽也使用这套坐标。单独裁掉一张图的透明边缘以后，图片看起来更紧凑，光照却会整体偏到另一处。
 
@@ -153,7 +155,9 @@ TextureEntry material = TextureData.getTextureData(
         0);
 ```
 
-第一个参数是 hull ID，第二个参数选择 material 表，第三个参数对应 CSV 的 `ship`，最后的 `0` 是舰船使用的帧号。四项中任意一项与登记不一致，结果都是 `null`。普通查询只返回显式登记的条目，并在需要时载入纹理。
+第一个参数是 hull ID，第二个参数选择 material 表，第三个参数对应 CSV 的 `ship`。舰船忽略帧参数，这里统一传 `0`；turret 与 hardpoint 才按具体帧号匹配。ID、map 或对象类型不对应，或者该类贴图的加载开关关闭时，查询返回 `null`。
+
+普通查询会在需要时加载纹理，但不会返回标记为 `autoGen` 的 normal。显式登记以及不带该标记的已建立映射，都能按相应键取得。
 
 normal 使用同样的对象键，只替换 map 枚举：
 
@@ -177,7 +181,7 @@ TextureEntry normal = TextureData.getTextureData(
 | `spriteName` | 原始或缓存纹理路径 | 核对实际资源来源 |
 | `magnitude` | CSV 解析出的强度 | normal 示例为 1 |
 | `autoGen` | 是否属于自动生成 normal | 显式 normal 为 `false` |
-| `validToLoad` | 路径是否具备后续加载条件 | 路径有效但尚未驻留时仍可为 `true` |
+| `validToLoad` | 条目是否允许按路径加载纹理 | 允许加载但尚未驻留时仍可为 `true` |
 | `loaded` | 纹理当前是否已经载入 | 动态加载前后会变化 |
 | `alwaysPreload` | 对象是否要求常驻预载 | 来自 `graphicslib_preload` 标签 |
 | `vramSize` | 估算显存占用 | 单位为字节 |
@@ -202,7 +206,11 @@ TextureEntry normal = TextureData.getTextureDataWithAutoGen(
 
 如果相同对象键已经有显式 normal，查询直接返回显式条目。只有 normal 缺失、`ship` 有效且 `autoGenNormals` 已启用时，GraphicsLib 才会尝试生成；`autoGen` 字段能够区分最终来源。
 
-自动生成结果保存在 `Starsector/mods/GraphicsLib/cache`。游戏记录当前 MOD ID 与版本列表的哈希；列表变化后，缓存会在下次生成流程中失效并重建，从而避免继续使用旧 Sprite 贴图对应的 normal。
+自动生成结果保存在 `Starsector/mods/GraphicsLib/cache`。游戏版本、已启用 MOD 的 ID 与版本列表共同决定缓存是否继续有效，发生变化后再生成。
+
+::: warning 修改 Sprite 贴图不会自动改变缓存依据
+只修改 PNG 内容、保持游戏与 MOD 版本信息不变时，现有自动法线缓存仍可能继续使用。测试工匠新贴图时，关闭游戏后移除 `Starsector/mods/GraphicsLib/cache/GearIn_artizan___SHIP_normal.png`，再启动并触发生成，比较新结果。
+:::
 
 ### 控制自动生成范围
 
@@ -218,7 +226,9 @@ TextureData.mapSpriteToMNSWithAutoGen(
         false);
 ```
 
-前四个参数确定映射键；第五个参数允许生成缺失的 normal；最后一个参数为 `true` 时，生成结果不会被标记为自动生成，普通兼容路径保持为 `false`。`graphicslib_no_autogen` 标签会禁止对象参与自动生成，`graphicslib_autogen_override` 标签则改变生成结果的身份标记。显式 normal 仍然优先于自动生成结果。编者建议把自动生成看作尚未制作 normal 时的可用结果；具体装甲形状和凹槽方向，仍由自己的法线图更容易控制。
+前四个参数确定映射键，第五个参数允许生成缺失的 normal；最后一个参数为 `true` 时，生成结果不带自动生成标记，普通兼容路径保持为 `false`。自动查询识别 `graphicslib_no_autogen` 以限制生成，`graphicslib_autogen_override` 则影响结果标记；已有显式 normal 继续优先使用。
+
+**编者更愿意为需要突出装甲结构的舰船制作显式 normal。** 自动生成根据原始 Sprite 贴图的亮度推算高度，再生成表面方向，涂装和原图阴影也会进入这份推算。它能提供通用受光效果，具体凹槽和装甲隆起则由自己的高度关系控制。
 
 `autoGenNormalMap(...)` 直接从一张 Sprite 贴图生成 normal，并返回生成后的 `SpriteAPI`：
 
@@ -326,8 +336,8 @@ GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
 
 ## 故障分析
 
-- **查询结果为 `null`**：查询键与 CSV 的 ID、对象类型、map、frame 或资源路径不一致。
-    - **解决方案**：按四部分查询键逐项核对登记，并确认 PNG 路径能够加载。
+- **查询结果为 `null`**：ID、对象类型、map、适用的动画帧、加载开关或资源路径没有对应到可用条目。
+    - **解决方案**：核对登记与加载开关；turret 和 hardpoint 另核对帧号，并确认 PNG 能够加载。
 
 - **贴图整体偏离舰船**：material 或 normal 的画布、中心、透明边界或朝向与原始 Sprite 贴图不同。
     - **解决方案**：在同一画布中重新对齐三张图后导出。
@@ -343,7 +353,7 @@ GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
 
 ## 总结
 
-工匠级现在通过同一个船体 ID 取得 material 与 normal。画布对齐决定光照落点，贴图内容决定颜色和表面方向，CSV 的对象类型与帧决定查询能否命中。继续制作其他舰船时沿用这组关系；是否自动生成、预载多少贴图，再根据实际画面和显存占用选择。
+工匠级通过船体 ID 与 SHIP 类型取得两种 map：画布对齐决定采样位置，material 和 normal 分别提供颜色与表面方向。查询再按加载状态取得资源；自动生成、显式制作和预载范围，则分别依据表面结构的控制需要与显存占用选择。
 
 ## 建议参考项
 

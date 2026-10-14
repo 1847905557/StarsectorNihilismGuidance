@@ -1,6 +1,6 @@
 # 详解舰船插件
 
-船插已经能登记、安装和修改数值，接下来把效果放到它真正需要的运行场合。本节制作装甲训练与舰队维护两个船插：一个处理装配提示、S-mod 和战斗修复，另一个处理燃料与整支舰队的传感范围。沿着这两种效果看回调，才容易分清同一个船插怎样参与生涯、装配和战斗。
+一个船插可以同时参与数值重建、战斗与生涯，但这些效果并不在同一个时机执行。本节制作装甲训练和舰队维护，分别处理装甲加成与修复、安装说明，以及单舰燃料和舰队传感范围。两个示例将展示回调怎样取得当前对象，效果又怎样保存到正确位置。
 
 *本节预期阅读时间：\~28 分钟。*
 
@@ -23,9 +23,11 @@
 - [C8-S1] 的战斗引擎状态与暂停语义；
 - [C8-S4] 的 `MutableShipStatsAPI`、modifier ID 与 Dynamic。
 
-## 编写两个船插示例
+## 准备两个船插
 
-本节把前面的回调放进两个不同运行环境。装甲训练船插负责装配提示、S-mod 和战斗表现；舰队维护船插负责生涯成员效果与舰队同步。两行数据都放在 `data/hullmods/hull_mods.csv`，`script` 列分别指向对应完整类。
+装甲训练既提高装甲，也在战斗中修复受损装甲格。普通安装时，两种装甲加成各为 10%，每格每秒修复 4 点；S-mod 将加成提高到各 25%，修复速度提高到每格每秒 8 点。舰队维护则降低安装舰船的燃料消耗，并根据安装数量增加舰队传感范围。
+
+在 `src/data/scripts/gearin/hullmods/` 创建 `GearInArmorTrainingHullMod.java` 和 `GearInFleetMaintenanceHullMod.java`，两类都继承 `BaseHullMod`。注册写入 `data/hullmods/hull_mods.csv`，已有表头时只追加数据行：
 
 ```csv
 name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
@@ -33,23 +35,15 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 舰队维护,GearIn_fleet_maintenance,0,,,"logistics, merc, standard",Logistics,2500,TRUE,,,4,8,12,20,data.scripts.gearin.hullmods.GearInFleetMaintenanceHullMod,"降低舰队成员的燃料消耗 %s。","降低燃料消耗。",,
 ```
 
-装甲训练直接使用当前 `ShipAPI` 回调，分别展示不兼容船插处理、战斗初始化和装甲修复。舰队维护则把单舰数值写入 `applyEffectsBeforeShipCreation`，把全舰队传感范围写入 `onFleetSync`；两个效果各自使用稳定的 modifier ID。
+`script` 指向两个完整类名，装甲训练使用原版 `graphics/hullmods/generic_mod.png` 图标。类完成后执行 `gradle jar`，产物中提供 `GearInArmorTrainingHullMod.class` 和 `GearInFleetMaintenanceHullMod.class`，游戏才能按注册行加载它们。
 
-## 注册与构建
+## 让安装收益进入舰船数值
 
-源码放在 `src/data/scripts/gearin/hullmods/`，执行 `gradle jar` 构建。JAR 中应同时包含 `GearInArmorTrainingHullMod.class` 和 `GearInFleetMaintenanceHullMod.class`，否则 CSV 注册值虽然正确，游戏仍然找不到效果类。
+安装装甲训练后，装配面板与战斗中的舰船都应当使用加成。这部分放在 `applyEffectsBeforeShipCreation(...)`：生涯数值重建会调用它，战斗舰船创建前也会调用它。
 
-## 先分清效果对象与当前舰船
+参数 `hullSize` 提供船体等级，`stats` 提供本次重建的数值对象，`id` 提供船插注册 ID。沿用 [C8-S4] 的来源写法，以这个 ID 记录加成，就能在再次重建时覆盖自己的值。
 
-`script` 列连接船插数据与效果类，继承 `BaseHullMod` 后只覆写当前功能需要的方法。下面从数值、战斗和生涯三个场合安排它们，再补上安装与显示。
-
-游戏第一次取得该船插的效果对象时调用 `init(HullModSpecAPI spec)`。`BaseHullMod` 会把 `spec` 保存下来，`isSMod(...)`、`isBuiltIn(...)` 和 `hasSModEffect()` 都从这里读取当前船插的静态配置。**效果类在一个应用会话内复用，当前舰船由回调参数提供。** 临时计算使用局部变量，持续状态放在实际所属的舰船或存档对象上；生涯持久数据可以放入 `SectorAPI.getPersistentData()`。若把第一艘船的计时器直接放进效果类字段，下一艘船收到的就也是这份计时器。
-
-## 在数值重建时修改舰船
-
-先处理安装后就存在的加成。需要同时影响生涯面板和战斗舰船时，使用 `applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAPI stats, String id)`。生涯重建会调用它，战斗舰船创建前也会调用它，所以 `MutableShipStatsAPI` 的普通 `MutableStat` 和 Dynamic 修饰都应在这里写入。
-
-`hullSize` 是当前船体等级，`stats` 是这艘船本次重建使用的数值对象，`id` 是船插的注册 ID。使用 `id` 作为 modifier ID，可以让同一船插在重建时覆盖自己的旧值，并与其他船插的来源区分开。
+在 `GearInArmorTrainingHullMod` 中加入局部方法：
 
 ```java
 @Override
@@ -64,13 +58,32 @@ public void applyEffectsBeforeShipCreation(HullSize hullSize,
 }
 ```
 
-普通安装的 `bonus` 为 10，S-mod 再加 15，得到 25。`isSMod(stats)` 同时识别故事点内置与增强内置船插，两种分支都在数值重建时写入。
+普通安装使用 `ARMOR_BONUS_PERCENT` 的 10，S-mod 再加上 `SMOD_ADDITIONAL_PERCENT` 的 15。`isSMod(stats)` 同时识别故事点内置与增强内置船插，因此两种安装方式都能进入对应分支。
 
-这里有两项加成：`getArmorBonus()` 增加实际装甲容量，`getEffectiveArmorBonus()` 再提高伤害计算采用的有效装甲。**两项各加 10%，并不是最终只加 10%。** 满装甲且其他修饰为空时，普通效果的两项倍率相乘为 1.21；S-mod 时为 1.5625。损伤和最低装甲条件还会影响实际减伤，设计描述也要把两项分开说明。
+这里修改了两项属性。`getArmorBonus()` 提高实际装甲容量，`getEffectiveArmorBonus()` 提高伤害计算采用的有效装甲。**两项各加 10%，会共同参与装甲计算。** 满装甲且其他修饰为空时，倍率相乘为 1.21；S-mod 的两项 25% 相乘为 1.5625。损伤和最低装甲条件还会影响实际减伤。
 
-## 让战斗效果跟随当前舰船
+因此 CSV 描述分别说明装甲与有效装甲。只写一句笼统的 "护甲提高 10%"，会把这两项效果压成另一种含义。
 
-`applyEffectsAfterShipCreation(ShipAPI ship, String id)` 在舰船实体创建后调用，装配界面的预览舰也会经过这个阶段。此时可以读取完整的 `ShipAPI`，处理舰体初始化；共用数值仍在之前的重建回调写入。本例检查不兼容的 `unstable_injector`，装配界面的拒绝条件稍后使用同一判断。
+## 在安装界面处理互斥
+
+装甲训练不允许装到已有 `unstable_injector` 的舰船上。界面需要先知道是否允许安装，再显示拒绝原因，这两个方法便采用相同条件：
+
+```java
+@Override
+public boolean isApplicableToShip(ShipAPI ship) {
+    return !ship.getVariant().hasHullMod("unstable_injector");
+}
+
+@Override
+public String getUnapplicableReason(ShipAPI ship) {
+    if (ship.getVariant().hasHullMod("unstable_injector")) {
+        return "不兼容 不稳定推进器";
+    }
+    return null;
+}
+```
+
+[C2-S2] 已经讲过这种安装判断：它由本船插执行，不能替另一个船插规定反向安装条件。本例还在舰体创建后处理已经存在于装配中的不兼容组合。此时 `applyEffectsAfterShipCreation(...)` 提供完整 `ShipAPI`，装配预览舰也会经过这个阶段：
 
 ```java
 @Override
@@ -83,19 +96,11 @@ public void applyEffectsAfterShipCreation(ShipAPI ship, String id) {
 }
 ```
 
-舰船第一次加入战斗引擎后调用 `applyEffectsAfterShipAddedToCombatEngine(ShipAPI ship, String id)`。本例在这里显示一次提示，确认舰船已加入当前引擎。同一舰船移除后再加入时，这个回调也只执行首次初始化。
+界面判断负责拒绝本次安装，创建后的处理负责移除装配中已经存在的 `unstable_injector`。共用数值仍放在前面的重建回调里，否则生涯面板不会取得同样的加成。
 
-```java
-@Override
-public void applyEffectsAfterShipAddedToCombatEngine(ShipAPI ship, String id) {
-    CombatEngineAPI engine = Global.getCombatEngine();
-    engine.addFloatingText(ship.getLocation(),
-            "GearIn armor training", 14f, Color.CYAN,
-            ship, 0f, 1f);
-}
-```
+## 让受损装甲在战斗中恢复
 
-需要每帧读取舰船状态时使用 `advanceInCombat(ShipAPI ship, float amount)`。它在暂停时不调用。本例过滤失效舰船，再遍历装甲网格：普通安装每格每秒修复 4 点，S-mod 每格每秒 8 点，满格时停止增加。
+战斗中的持续修复使用 `advanceInCombat(ShipAPI ship, float amount)`。这个回调在暂停时不调用，本例再过滤死亡与残骸状态，按步长计算本次修复量：
 
 ```java
 @Override
@@ -107,11 +112,74 @@ public void advanceInCombat(ShipAPI ship, float amount) {
 }
 ```
 
-航母船插需要把效果传给新生成的战机时实现 `applyEffectsToFighterSpawnedByShip(ShipAPI fighter, ShipAPI ship, String id)`。`fighter` 是新战机，`ship` 是母舰；回调只处理这次生成需要的状态，不把战机对象保存到效果类字段。
+完整类的 `repairArmor(...)` 从当前舰船取得装甲网格，遍历每一个格子，增加本次修复量，并以 `getMaxArmorInCell()` 限制单格上限。写回后调用 `syncWithArmorGridState()`，让损伤外观与网格状态同步。
 
-## 在生涯中处理单舰与整支舰队
+这里的 4 点或 8 点是**每个装甲格的每秒速率**，修复会同时发生在各个受损格上。它并非整艘船共用的一份修复额度；安排类似效果的数值时，覆盖范围与速率需要一起考虑。
 
-`advanceInCampaign(FleetMemberAPI member, float amount)` 以舰队成员为单位运行。它提供单舰的 `MutableShipStatsAPI`、船体等级和装配，适合处理该成员的持续效果。舰队数据重新同步时也会以 `amount == 0f` 调用，因此需要区分正常时间推进和同步重算。
+### 舰体创建与加入战斗是两个时机
+
+前面的创建后回调也用于装配预览。要确认舰船已经进入战斗引擎，使用 `applyEffectsAfterShipAddedToCombatEngine(...)`。本例在这里显示一次青色提示：
+
+```java
+@Override
+public void applyEffectsAfterShipAddedToCombatEngine(ShipAPI ship, String id) {
+    CombatEngineAPI engine = Global.getCombatEngine();
+    engine.addFloatingText(ship.getLocation(),
+            "GearIn armor training", 14f, Color.CYAN,
+            ship, 0f, 1f);
+}
+```
+
+它只执行首次加入时的初始化。同一舰船移出引擎后再次加入，也不会重复执行，因此适合本例的一次性战斗提示。
+
+航母船插还有 `applyEffectsToFighterSpawnedByShip(...)`。它把新战机 `fighter` 与母舰 `ship` 一同传入，适合处理这次战机生成。本例只记录生成来源，实际战机状态仍保存在战机对象上。
+
+## 让说明准确呈现这些效果
+
+基础描述与 S-mod 描述分别来自 CSV 的 `desc` 和 `sModDesc`。[C2-S2] 的 `%s` 参数方式继续适用：`getDescriptionParam(...)` 返回普通参数，`getSModDescriptionParam(...)` 返回 S-mod 参数。本例分别提供 `10%` 与 `4`、`25%` 与 `8`，与前面的实际效果对应。
+
+这两种方法都有带 `ShipAPI` 的重载。固定数值说明使用不带舰船的版本，需要显示当前舰船状态时才使用舰船参数；基类会保存 `init(HullModSpecAPI spec)` 取得的规格，供安装方式与说明方法使用。
+
+需要追加说明时，保留 CSV 正文，并在其后写入新段落：
+
+```java
+@Override
+public boolean shouldAddDescriptionToTooltip(HullSize hullSize,
+        ShipAPI ship, boolean isForModSpec) {
+    return true;
+}
+
+@Override
+public void addPostDescriptionSection(TooltipMakerAPI tooltip,
+        HullSize hullSize, ShipAPI ship, float width,
+        boolean isForModSpec) {
+    tooltip.addPara("S-mod 会把每个装甲格的修复速度提高到每秒 8 点。", 10f);
+}
+```
+
+`shouldAddDescriptionToTooltip(...)` 决定是否保留基础段落，`addPostDescriptionSection(...)` 提供追加内容。动态结果、安装条件或当前舰船数据都可以放在这里，必要的效果说明则保持直接可读。
+
+S-mod 的效果段由 `hasSModEffect()` 判断是否存在：`sModDesc` 为空或以 `#` 开头时，基类不显示这一段。有内容时，`hasSModEffectSection(...)` 判断当前界面是否呈现，`addSModEffectSection(...)` 写效果内容，`addSModSection(...)` 安排标题与说明。`isSModEffectAPenalty()` 返回 `true` 时，使用惩罚样式。
+
+## 舰队维护怎样影响整支舰队
+
+单舰燃料消耗同样在 `applyEffectsBeforeShipCreation(...)` 中修改，完整例使用 `getFuelUseMod().modifyMult(id, 0.9f)`。安装收益因此进入成员数值，生涯中就能读取。
+
+CSV 中的 `%s` 也由这个倍率换算。向 `GearInFleetMaintenanceHullMod` 加入局部方法，索引 0 返回降低的百分比：
+
+```java
+@Override
+public String getDescriptionParam(int index, HullSize hullSize) {
+    if (index == 0) {
+        return Math.round((1f - FUEL_USE_MULT) * 100f) + "%";
+    }
+    return null;
+}
+```
+
+`FUEL_USE_MULT` 为 `0.9f` 时，说明显示 "降低舰队成员的燃料消耗 10%。"。修改倍率时，数值效果与说明一起变化。
+
+持续处理某名成员时，使用 `advanceInCampaign(FleetMemberAPI member, float amount)`。成员提供自己的 stats、船体等级和装配；舰队同步还会以 `amount == 0f` 调用它，本例专门记录这种调用：
 
 ```java
 @Override
@@ -122,7 +190,7 @@ public void advanceInCampaign(FleetMemberAPI member, float amount) {
 }
 ```
 
-如果效果作用于整支舰队，可以让类同时实现 `HullModFleetEffect`。`withAdvanceInCampaign()` 返回 `true` 时，游戏会调用 `advanceInCampaign(CampaignFleetAPI fleet)`；`withOnFleetSync()` 返回 `true` 时，舰队成员变化或船插变化会调用 `onFleetSync(CampaignFleetAPI fleet)`。**这组回调覆盖所有舰队，包括没有安装当前船插的舰队。** 本例只启用同步回调，根据成员数量写入传感范围；数量为 0 时解除自身来源。每帧全舰队计算的代价由所有舰队共同承担，编者建议先看成员变化是否已经足够触发所需更新。
+传感范围则属于舰队。让类同时实现 `HullModFleetEffect`，在 `onFleetSync(...)` 中统计装有本船插的成员，每艘提供 50 范围，移除最后一艘安装舰后解除自身来源：
 
 ```java
 @Override
@@ -152,55 +220,34 @@ public void onFleetSync(CampaignFleetAPI fleet) {
 }
 ```
 
-## 在装配界面决定能否安装
+`withOnFleetSync()` 返回 `true`，让成员组成或船插变化触发更新。需要舰队级持续推进时，则让 `withAdvanceInCampaign()` 返回 `true`，执行 `advanceInCampaign(CampaignFleetAPI fleet)`。
 
-`isApplicableToShip(ShipAPI ship)` 只回答当前船能否安装，`getUnapplicableReason(ShipAPI ship)` 提供拒绝文本。把允许条件和拒绝原因一起写。本例检测不稳定推进器，已有它时拒绝安装并说明原因：
+**这两个舰队级入口会处理所有舰队，包括没有安装本船插的舰队。** 编者建议先由这个调用范围决定是否需要逐帧逻辑。本例的收益只随安装数量变化，同步已经提供所需时机；开启持续遍历，只会让全生涯的舰队反复执行同一计算。
 
-```java
-@Override
-public boolean isApplicableToShip(ShipAPI ship) {
-    return !ship.getVariant().hasHullMod("unstable_injector");
-}
+## 船插类中的字段属于谁
 
-@Override
-public String getUnapplicableReason(ShipAPI ship) {
-    if (ship.getVariant().hasHullMod("unstable_injector")) {
-        return "不兼容 不稳定推进器";
-    }
-    return null;
-}
-```
+前面的战斗修复与舰队统计都从参数取得当前对象。这里还有一项重要区别：普通船插效果在应用会话中复用，同一实例会继续处理其他舰船；舰队级效果又有自己的实例入口。
 
-`canBeAddedOrRemovedNow(ShipAPI ship, MarketAPI marketOrNull, CoreUITradeMode mode)` 处理当前地点和交易模式是否允许改装，`getCanNotBeInstalledNowReason(...)` 提供对应原因。`ship` 在自动装配时可能为 `null`，方法需要先处理这个输入。
+::: warning 单舰状态不能放进共享效果字段
 
-## 让 tooltip 解释效果
+**编者建议将随舰船变化的状态保存在所属舰船上。** 效果类字段不会随每艘安装舰独立建立，单舰与舰队回调的实例字段也不能用来共享进度。临时计算使用局部变量，生涯持久状态可以保存在 `SectorAPI.getPersistentData()`。
 
-`getDescriptionParam(int index, HullSize hullSize)` 和带 `ShipAPI` 的重载返回 `desc` 中 `%s` 的填充值；`getSModDescriptionParam(...)` 为 `sModDesc` 提供同样的参数。静态船插说明适合使用不带 `ShipAPI` 的重载，需要显示当前舰船状态时再使用带舰船参数的版本。
+:::
 
-`shouldAddDescriptionToTooltip(HullSize hullSize, ShipAPI ship, boolean isForModSpec)` 决定是否保留 CSV 的 `desc` 段。需要把动态结果、安装条件或当前舰船数据放到描述后面时，实现 `addPostDescriptionSection(TooltipMakerAPI tooltip, HullSize hullSize, ShipAPI ship, float width, boolean isForModSpec)`。
+例如修复某艘舰船时，网格来自本次 `ship`；计算舰队传感范围时，成员来自本次 `fleet`。保持这种归属，同一个效果类处理下一艘船或另一支舰队时，结果才仍对应当前对象。
 
-```java
-@Override
-public boolean shouldAddDescriptionToTooltip(HullSize hullSize,
-        ShipAPI ship, boolean isForModSpec) {
-    return true;
-}
+## 其他安装与显示入口速查表
 
-@Override
-public void addPostDescriptionSection(TooltipMakerAPI tooltip,
-        HullSize hullSize, ShipAPI ship, float width,
-        boolean isForModSpec) {
-    tooltip.addPara("S-mod 会把每个装甲格的修复速度提高到每秒 8 点。", 10f);
-}
-```
+下面的入口用于进一步调整改装条件和提示外观，两个完整示例沿用未覆写的方法的基类行为。
 
-S-mod 是否有独立效果由 `hasSModEffect()` 决定。`sModDesc` 为空或以 `#` 开头时，`BaseHullMod` 不会显示 S-mod 效果段；有文本时，`hasSModEffectSection(...)` 决定当前界面是否显示，`addSModEffectSection(...)` 负责写入效果内容，`addSModSection(...)` 负责标题和说明。`isSModEffectAPenalty()` 返回 `true` 时，界面会按惩罚样式显示该段。
-
-## 补充装配界面的显示方法
-
-`getTooltipWidth()` 返回船插提示宽度；`getBorderColor()` 和 `getNameColor()` 分别控制边框和名称颜色。`getDisplayCategoryIndex()` 选择显示分类，`getDisplaySortOrder()` 控制分类内排序，`showInRefitScreenModPickerFor(ShipAPI ship)` 决定船插是否出现在当前装配选择器中。
-
-需要物品才能安装时，`getRequiredItem()` 返回需求物品，`addRequiredItemSection(...)` 写入提示。`affectsOPCosts()` 声明船插会影响装配点成本；这类成本变化用于内置船插，普通安装与移除不会处理相应成本变化。
+| 需要调整的内容 | 方法与生效条件 |
+|---|---|
+| 当前地点是否允许改装 | `canBeAddedOrRemovedNow(...)` 接收舰船、市场与 `CoreUITradeMode`；`getCanNotBeInstalledNowReason(...)` 提供原因。自动装配时舰船参数可能为 `null` |
+| 提示宽度与颜色 | `getTooltipWidth()` 返回宽度，`getBorderColor()` 与 `getNameColor()` 设置边框与名称颜色 |
+| 装配分类与顺序 | `getDisplayCategoryIndex()` 选择分类，`getDisplaySortOrder()` 控制分类内排序 |
+| 是否出现在当前选择器 | `showInRefitScreenModPickerFor(ShipAPI ship)` 判断当前舰船的显示 |
+| 安装所需物品 | `getRequiredItem()` 返回物品，`addRequiredItemSection(...)` 写入对应提示 |
+| 改变 OP 成本 | `affectsOPCosts()` 声明成本影响；这类效果用于内置船插，普通安装与移除不处理相应成本变化 |
 
 ## 完整最小例
 
@@ -368,6 +415,14 @@ public class GearInFleetMaintenanceHullMod extends BaseHullMod
     }
 
     @Override
+    public String getDescriptionParam(int index, HullSize hullSize) {
+        if (index == 0) {
+            return Math.round((1f - FUEL_USE_MULT) * 100f) + "%";
+        }
+        return null;
+    }
+
+    @Override
     public void advanceInCampaign(FleetMemberAPI member, float amount) {
         if (amount <= 0f) {
             LOG.info("GearIn fleet maintenance sync: " + member.getShipName());
@@ -414,7 +469,7 @@ public class GearInFleetMaintenanceHullMod extends BaseHullMod
 
 1. 启动游戏并在装配界面安装 "装甲训练"，核对基础描述、S-mod 描述和互斥提示。
 2. 进入 `GearIn_test` 战斗，观察舰船加入战斗时的浮动文字；让舰船承受装甲损伤，确认 `advanceInCombat` 在运行时逐渐修复装甲，暂停后修复停止。
-3. 在生涯中安装 "舰队维护"，核对单舰燃料消耗；移动舰队成员后重新打开舰队信息，确认传感范围按装有该船插的成员数量更新。
+3. 在生涯中安装 "舰队维护"，核对说明中的 `10%` 与单舰燃料消耗；移动舰队成员后重新打开舰队信息，确认传感范围按装有该船插的成员数量更新。
 4. 移除 "舰队维护" 并再次触发舰队同步，确认传感范围修饰被清除。
 5. 开始第二场战斗，确认提示与修复读取当前舰船；两场使用同一个船插效果类，舰船状态分别计算。
 
@@ -423,7 +478,7 @@ public class GearInFleetMaintenanceHullMod extends BaseHullMod
 - 两个船插都能从装配选择器中找到，日志没有 `Problem loading class`。
 - "装甲训练" 的普通安装和 S-mod 都能显示护甲与修复参数，安装互斥时出现拒绝原因；已有不兼容船插时，`applyEffectsAfterShipCreation` 会移除 `unstable_injector`。
 - 战斗中的浮动文字只在舰船加入当前引擎后出现，暂停期间不推进装甲修复。
-- "舰队维护" 的燃料修饰来自成员 stats，舰队传感范围随同步后的成员集合变化。
+- "舰队维护" 显示燃料消耗降低 `10%`，成员 stats 使用 `0.9` 倍率，舰队传感范围随同步后的成员集合变化。
 - 第二场战斗通过当前舰船参数重新执行初始化，效果类继续复用，船体状态与浮动文字属于当前战斗。
 
 ## 故障分析
@@ -448,9 +503,9 @@ public class GearInFleetMaintenanceHullMod extends BaseHullMod
 
 ## 总结
 
-这两个船插分别把战斗修复与生涯维护放到对应回调，共用数值在重建时写入，当前舰船和成员从参数取得。安装条件、描述参数与 S-mod 分支把这些效果接到装配界面。
+装甲训练在重建时应用装甲收益，在战斗回调中修复，并在装配界面说明安装与 S-mod 效果。舰队维护则分别修改成员燃料与同步后的全舰队传感范围。
 
-选方法时先看它收到什么对象，再看什么时候调用。尤其要记住效果类的共享范围：当前船的状态有自己的归属，回调参数变化后，效果也跟着处理下一艘船。
+同一个效果对象会继续处理其他舰船，回调参数才提供本次对象。加成写到对应 stats，持续状态保存在所属对象，安装与显示方法再将这些规则交给玩家。
 
 ## 建议参考项
 

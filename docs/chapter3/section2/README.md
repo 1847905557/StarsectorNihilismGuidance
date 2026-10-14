@@ -60,9 +60,9 @@
 },
 ```
 
-每个名称后的数字是抽取权重。`pickRandomShipName` 组合舰船名前缀与抽出的名字，人物名字则来自 `data/characters/person_names.csv` 中的分类。
+每个分类后的数字是抽取权重。`pickRandomShipName` 从所选词典抽取名字，再与舰船名前缀组合；人物名字则来自 `data/characters/person_names.csv` 中的分类。
 
-名称也是势力风格的一部分。编者建议先选定相互协调的类别，再添加自己的名字；舰队里的舰船与人物会频繁同时出现，随意混合往往比某个名字单独看起来更突兀。
+**名称也是势力风格的一部分。** 编者建议采用相互协调的类别，再添加自己的名字；舰队里的舰船与人物会频繁同时出现，随意混合往往比某个名字单独使用更突兀。
 
 ### 头像、头衔与人物声音
 
@@ -108,7 +108,7 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 
 ## 将自己的军备放入势力集合
 
-此前多次填写的 `GearIn_bp` 现在开始发挥作用。**势力在 `tags` 中填写这个标签，会收集对应注册表中带有它的对象。** 还可以在各自的 ID 数组中直接列出单个对象，两种写法可以混用。
+此前多次填写的 `GearIn_bp`，到这里终于开始发挥作用。**势力在军备集合的 `tags` 中填写这个标签，会收集对应注册表中带有它的对象。** 也可以在各自的 ID 数组中直接列出单个对象，两种写法可以混用。
 
 ### 设置舰船池
 
@@ -128,9 +128,9 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 },
 ```
 
-`knownShips` 使用船体 ID，纳入工匠与守炉人，并保留原版 `dram`、`valkyrie` 补充后勤运力。`gear_industry` 在这里同时作为自定义标签使用，可以写进船体数据的 tags 列。
+`knownShips` 使用船体 ID，本例纳入工匠与守炉人，并保留原版 `dram`、`valkyrie` 补充后勤运力。`gear_industry` 在这里还作为自定义标签使用，可以写进船体数据的 tags 列；它在这处配置中承担的是标签用途。
 
-`priorityShips` 的对象会在优先抽取模式中获得优先位置，明显改变舰队构成，本例保持空集合。后续按角色挑选装配时，船体要先属于已知舰船池。
+`priorityShips` 中的对象参与优先抽取，会明显改变舰队构成，本例保持空集合。后续按角色挑选装配时，候选船体要属于刚才配置的已知舰船池。
 
 ### 设置战机、武器与船插
 
@@ -168,7 +168,7 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 
 战机集合使用联队 ID `GearIn_slag_wing`，武器集合使用武器 ID，船插集合使用船插 ID。本例同时保留 `standard` 标签，以便使用原版通用船插。
 
-本节的工匠装配使用 `lightdualac` 与 `phasecl`，因此也把它们加入已知武器。**军备池和实际装配需要一起安排**；完全脱离原版军备当然可以，但要先有足够的自制内容支撑舰队。
+本节稍后制作的工匠装配使用 `lightdualac` 与 `phasecl`，因此这两种原版武器也加入已知武器。**军备池和实际装配需要一起安排**；完全脱离原版军备当然可以，但要有足够的自制内容支撑舰队。
 
 加载时，标签分别在船体、联队、武器和船插注册表中展开。拼错标签或直接列出的 ID，集合可能会缺少对象而没有明显加载提示，排查时与各表的 tags 和 id 列逐字核对。
 
@@ -188,7 +188,7 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 },
 ```
 
-`tags` 按标签收集船体，`hulls` 按具体 ID 调整。1 为正常倍率，0 表示该船体不参与这类抽取。默认频率已经足以使用普通候选；只有需要偏向或排除对象时，再为它单独配置。
+`tags` 按标签收集船体，`hulls` 按具体 ID 调整。1 为正常倍率，0 表示该船体不参与这类抽取。因此，普通候选可以沿用默认频率，需要偏向或排除的船体才单独配置。
 
 `variantOverrides` 以装配 ID 限定可用装配或调整其权重，当前保持空对象。`shipsWhenImporting` 则提供势力引入外部蓝图时使用的独立舰船集合；留空时使用 `knownShips`。两个局部片段如下：
 
@@ -206,7 +206,7 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 
 ## 确定舰队学说
 
-舰队学说决定组成与风格。**军备池提供可以使用的对象，学说决定倾向怎样组织它们。** 本例以普通战舰为主，保留一部分航母和相位舰，军官质量较高，船体质量与数量采用较低档位。
+舰队学说决定组成与风格。**军备池提供可用对象，学说决定它们的编成倾向。** 本例以普通战舰为主，保留一部分航母和相位舰，军官质量较高，船体质量与数量采用较低档位。
 
 ```json
 "factionDoctrine":{
@@ -243,7 +243,7 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 
 `warships`、`carriers` 与 `phaseShips` 控制三类舰船比例；`officerQuality`、`shipQuality` 与 `numShips` 控制军官、船体质量和数量倾向。`shipSize` 偏向船型大小，`aggression` 偏向军官性格。`officerSkills` 与 `commanderSkills` 分别指定军官和指挥官技能，ShuffleProbability 控制相应技能选择的随机程度。
 
-两个三项组都按玩家势力编辑器的习惯取总和 7、单项 1–5。这是本例的设计约定；文件读取允许其他数值，游戏内编辑器则采用该范围。
+两个三项组都按玩家势力编辑器的习惯取总和 7、单项 1–5。**这是本例的设计约定**，文件读取允许其他数值；游戏内编辑器采用该范围，两者的限制分别由各自的使用方式决定。
 
 `combatFreighterProbability` 控制替换为武装货舰的比例，两个 CombatUseFraction 调整它们进入战斗阵容的权重。`autofitRandomizeProbability` 控制装配随机化，本例填 0.1。
 
@@ -263,7 +263,7 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 
 ## 准备当前可用的舰船装配
 
-舰队使用的是装配 ID。战机制作时已经接触过 `.variant`，本节沿用同一结构，为工匠创建 `data/variants/GearIn_artizan_faction.variant`：
+舰船池已经配置，接下来还需要指定舰船采用的装配。舰队使用的是装配 ID，战机制作时已经接触过 `.variant`，本节沿用同一结构，为工匠创建 `data/variants/GearIn_artizan_faction.variant`：
 
 ```json
 {
@@ -310,7 +310,7 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 }
 ```
 
-每个角色保存 "装配 ID → 权重"。战斗角色还有 combatMedium、combatLarge、combatCapital，航母角色包括 carrierSmall 等。角色名用于选择该类候选装配。
+每个角色保存 "装配 ID → 权重"，将刚才的设计纳入对应类别的候选。战斗角色还有 combatMedium、combatLarge、combatCapital，航母角色包括 carrierSmall 等。生成代码按角色名选择该类装配。
 
 **这个共享文件只写 MOD 自己添加的条目。** 同路径数据按角色对象合并，同键条目会被新值覆盖；保留自己的记录便于维护。势力文件也可以设置独立 `shipRoles`，有自己的角色内容时优先使用，缺失或为空时使用共享角色表。
 
@@ -378,7 +378,7 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 },
 ```
 
-这组配置决定委任、收购、关系事件、走私交易、基地与远征等行为。参数旁的注释说明当前用途；需要扩展某种行为时，再结合对应系统调整。
+这组配置决定委任、收购、关系事件、走私交易、基地与远征等行为。参数旁的注释说明当前用途，调整时以所需行为为依据，再修改对应的开关。
 
 完整文件还可以用 `weaponSellFrequency`、`fighterSellFrequency` 和 `hullmodSellFrequency` 调整原版市场的装备出售频率，它们与舰队出现频率分别服务于对应位置。
 

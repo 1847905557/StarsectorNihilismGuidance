@@ -27,11 +27,11 @@ afterEach(() => {
   temporaryRoots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true }))
 })
 
-const fixture = () => {
+const fixture = (relativeDir = 'chapter1/section1') => {
   const root = mkdtempSync(join(tmpdir(), 'dev-edit-'))
   temporaryRoots.push(root)
   const docs = join(root, 'docs')
-  const pageDir = join(docs, 'chapter1')
+  const pageDir = join(docs, relativeDir)
   mkdirSync(pageDir, { recursive: true })
   const page = join(pageDir, 'README.md')
   writeFileSync(page, '# 原标题\r\n', 'utf-8')
@@ -51,10 +51,10 @@ describe('dev edit source binding', () => {
 
   it('allows existing Markdown below docs and rejects traversal or other extensions', () => {
     const { docs, page } = fixture()
-    expect(resolveEditTarget(docs, 'chapter1/README.md')).toBe(page)
+    expect(resolveEditTarget(docs, 'chapter1/section1/README.md')).toBe(page)
     expect(resolveEditTarget(docs, '../README.md')).toBeNull()
-    expect(resolveEditTarget(docs, 'chapter1/missing.md')).toBeNull()
-    expect(resolveEditTarget(docs, 'chapter1/image.png')).toBeNull()
+    expect(resolveEditTarget(docs, 'chapter1/section1/missing.md')).toBeNull()
+    expect(resolveEditTarget(docs, 'chapter1/section1/image.png')).toBeNull()
   })
 })
 
@@ -115,6 +115,37 @@ describe('restore process boundary', () => {
     const result = await runMarkdownRestore('', page, docs)
     expect(result.ok).toBe(false)
     expect(result.diagnostics?.length).toBeGreaterThan(0)
+  })
+
+  it('restores a chapter baseline, introduction, and automatic section list', async () => {
+    const { docs, page } = fixture('chapter1')
+    const result = await runMarkdownRestore(
+      '<h1>章页</h1><p>本章技术基线：Starsector <code>0.98a-RC8</code>。</p>' +
+        '<p>共同主题。</p><p>实际用途。</p><p>理解重点。</p>' +
+        '<h2>本章各节</h2><div data-auto-section-list="true"></div>',
+      page,
+      docs,
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.markdown).toBe(
+      '# 章页\n\n本章技术基线：Starsector `0.98a-RC8`。\n\n' +
+        '共同主题。\n\n实际用途。\n\n理解重点。\n\n' +
+        '## 本章各节\n\n<!-- AUTO:SECTION-LIST -->\n',
+    )
+  })
+
+  it('returns chapter diagnostics when the baseline is missing', async () => {
+    const { docs, page } = fixture('chapter1')
+    const result = await runMarkdownRestore(
+      '<h1>章页</h1><p>章介绍。</p>' +
+        '<h2>本章各节</h2><div data-auto-section-list="true"></div>',
+      page,
+      docs,
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.diagnostics).toContain('章页必须包含一个本章技术基线段落；当前 0 个')
   })
 })
 

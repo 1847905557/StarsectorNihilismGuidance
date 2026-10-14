@@ -1,6 +1,6 @@
 # 管理舰队中的成员
 
-舰队已经出现在地图上，接下来查看它由哪些成员组成，以及集合修改怎样进入旗舰、后勤汇总和任务。读取玩家舰队时，可以直接对照舰队界面；写入实验则使用上一节新生成的巡逻队，保存原状态、加入临时成员，再完整恢复。集合副本、真实写入与地图任务分别有自己的入口。
+生成舰队时，我们把舰船的选择交给了工厂。现在直接管理其中的成员：加入一艘狼，把它临时设为旗舰，再恢复原有舰船与舰长。随后给这支巡逻队安排前往市场、停留环绕的任务，从成员管理接到地图上的行动。
 
 *本节预期阅读时间：\~20 分钟。*
 
@@ -22,9 +22,9 @@
 - [C10-S1] 的生涯脚本、时间和日志；
 - Java 集合、对象身份、匿名接口实现与 `try`/`finally`。
 
-## 先选择读取与写入对象
+## 从舰队取得成员
 
-`CampaignFleetAPI` 表示地图上的舰队，`FleetDataAPI` 保存这支舰队的成员、旗舰与军官。先取得容器，局部读取如下：
+从玩家舰队开始读取，舰队界面正好可以与日志对照。`CampaignFleetAPI` 表示地图上的整支舰队，它的 `getFleetData()` 返回管理成员、旗舰与军官的 `FleetDataAPI`：
 
 ```java
 CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
@@ -35,31 +35,7 @@ LOG.info("GearIn members: count=" + data.getNumMembers()
                 : fleet.getFlagship().getId()));
 ```
 
-`getFleetData()` 返回同一支舰队的容器，当前没有复制舰队。**列表副本用于观察，集合方法用于实际修改。** 船名和装配 ID 都可能重复，追踪同一个成员时使用对象引用或成员 ID。
-
-本节的写入函数放入 [C11-S1] 的 `GearInFleetGenerator`。添加后文使用的 `FleetDataAPI`、`FleetMemberAPI`、`FleetMemberType`、`PersonAPI`、`List`、`Map`、`LinkedHashMap` 等 `import`；在基础舰队 `spawnFleet(...)` 完成后调用：
-
-```java
-inspectMemberCollection(generatedFleet);
-scheduleAssignments(generatedFleet, anchor);
-```
-
-`generatedFleet` 与 `anchor` 都来自当前生成过程。成员实验在同一轮恢复，任务则留在这支专用巡逻队上推进。玩家舰队继续作为读取与界面对照对象。
-
-## 取得成员、顺序与军官视图
-
-### 成员读取入口速查表
-
-| 方法 | 返回内容 | 当前用途 |
-|---|---|---|
-| `getMembersListCopy()` | 当前成员列表副本 | 遍历、筛选与保存基线 |
-| `getMembersInPriorityOrder()` | 非封存成员在前、封存成员在后的列表 | 比较部署优先顺序 |
-| `getNumMembers()` | 当前成员数量 | 增删与恢复核对 |
-| `fleet.getFlagship()` | 当前旗舰引用或 `null` | 集合级旗舰状态 |
-| `getCombatReadyMembersListCopy()` | 当前可参与战斗的成员副本 | 比较封存等状态的影响 |
-| `getOfficersCopy()` | 当前军官列表副本 | 读取人物与成员的关联 |
-
-副本保留取得时的成员视图，增删本地 List 只改变副本。成员对象本身仍是实际对象，它们的船体、装配或封存状态变化仍可以从引用读取。需要最新集合时，再调用一次 `getMembersListCopy()`。
+这里的 `data` 管理的就是玩家舰队。取得成员列表时，游戏提供的是列表副本，适合遍历、筛选和保存当前顺序：
 
 ```java
 List<FleetMemberAPI> snapshot = data.getMembersListCopy();
@@ -70,15 +46,26 @@ for (FleetMemberAPI member : snapshot) {
 }
 ```
 
-当前优先顺序按非封存、封存分组，组内保留原顺序。可战斗成员还受单舰状态影响，因此两种列表的数量分别解释。
+列表保存取得时有哪些成员，以及它们当时的排列顺序。此后增删这个 List，舰队本身保持原样；再次调用 `getMembersListCopy()`，才能取得最新名单。船名和装配 ID 都可能重复，日志用成员 ID 识别具体舰船，后面的恢复操作则直接保存成员引用。
 
-::: tip 把副本与对象分别看
-列表回答 "取得时有哪些成员"，成员引用回答 "这艘船现在是什么状态"。重新取得列表后，仍可以按成员 ID 对照同一艘船。
+::: warning 列表副本保留真实成员引用
+列表里的成员仍是真实舰船。通过这些引用修改舰长、装配或封存状态，会直接影响对应成员；复制名单并没有复制每艘舰船。
 :::
 
-## 添加临时成员并完成同步
+## 加入一艘狼，再恢复原舰队
 
-`FactoryAPI.createFleetMember(...)` 创建成员，本例用原版 `wolf_Assault` 装配。`addFleetMember(...)` 将它加入当前舰队，成员归属、FP 和容量随后进入汇总：
+写入实验使用 [C11-S1] 新生成的基础巡逻队。把本节的局部方法加入 `GearInFleetGenerator`，在基础舰队的 `spawnFleet(...)` 完成后调用：
+
+```java
+inspectMemberCollection(generatedFleet);
+scheduleAssignments(generatedFleet, anchor);
+```
+
+`generatedFleet` 是刚投放的舰队，`anchor` 是来源市场的主实体。第一个方法在一次调用里完成成员实验和恢复，第二个方法留下任务供生涯继续执行。添加这些方法所用的 `FleetDataAPI`、`FleetMemberAPI`、`FleetMemberType`、`PersonAPI`、`List`、`Map` 与 `LinkedHashMap` 等 `import`；任务部分的类型在后文说明。
+
+### 创建成员并加入舰队
+
+用原版 `wolf_Assault` 装配创建一名成员，再交给 `addFleetMember(...)`。下面是成员实验中的加入操作：
 
 ```java
 FleetMemberAPI temporary = Global.getFactory().createFleetMember(
@@ -91,39 +78,15 @@ LOG.info("GearIn member added: id=" + temporary.getId()
         + " count=" + data.getNumMembers());
 ```
 
-同一成员引用属于一支舰队。转移成员时先从原容器移除，再加入目标容器。加入也会为尚未有船名或舰长的成员补上默认值，默认 `steady` 舰长与军官列表中的人物分别处理。
+加入时，成员会取得舰队归属，缺少的船名和舰长也会补齐；默认舰长采用 `steady` 性格。已有成员转移到另一支舰队时，要先从原舰队移除，同一个成员只属于一支舰队。
 
-**集合写入会标记需要同步，读取时再完成同步。** `setSyncNeeded()` 登记待处理状态，`syncIfNeeded()` 重建成员列表并更新相关 `stats`、容量与缓存；`syncMemberLists()` 直接整理列表。`getNumMembers()` 等读取入口也可能触发待处理同步，观察时要把这个副作用一起考虑。
+数量、FP 和容量需要跟随成员变化更新。加入操作会标记待同步，`syncIfNeeded()` 完成这次更新，然后日志读取结果。`getNumMembers()` 这样的读取也可能触发待处理同步，因此不能把每个 getter 都当成毫无副作用的观察。
 
-### 同步方法速查表
+### 临时切换旗舰
 
-| 方法 | 作用与条件 |
-|---|---|
-| `setSyncNeeded()` | 标记需要处理后续同步 |
-| `syncIfNeeded()` | 按当前待处理标记完成同步 |
-| `syncMemberLists()` | 直接整理成员列表 |
-| `setOnlySyncMemberLists(true)` | 限制同步为列表整理，`stats`、容量与其他缓存另按完整同步处理 |
+接下来把这艘狼设为旗舰。**切换旗舰也会调整舰长，恢复时要同时恢复人员关系。** `data.setFlagship(...)` 把舰队指挥官交给新旗舰，并维护集合中的旗舰标记。只保存原旗舰引用，还不足以恢复这次操作前的舰队。
 
-需要比较只整理列表与完整同步时，下面的局部片段保存并恢复原开关：
-
-```java
-boolean listOnlyBefore = data.isOnlySyncMemberLists();
-data.setOnlySyncMemberLists(true);
-data.setSyncNeeded();
-data.syncIfNeeded();
-LOG.info("GearIn list sync: members=" + data.getMembersListCopy().size());
-data.setOnlySyncMemberLists(listOnlyBefore);
-data.setSyncNeeded();
-data.syncIfNeeded();
-```
-
-当前成品实验沿用完整同步。编者建议先让普通成员操作完成，再按实际需要收缩同步范围；列表看起来正确，与所有派生数值已经刷新，是两项观察。
-
-## 切换旗舰并恢复人员
-
-`data.setFlagship(member)` 维护整个集合的旗舰标记，并把舰队指挥官交给新旗舰。这一步也会影响成员舰长，因此恢复实验同时保存原旗舰与每名原成员的舰长引用。
-
-把以下局部方法加入生成器：
+下面的局部方法先保存原名单、旗舰与各成员的舰长，在 `finally` 中按原引用恢复：
 
 ```java
 private void inspectMemberCollection(CampaignFleetAPI fleet) {
@@ -161,13 +124,58 @@ private void inspectMemberCollection(CampaignFleetAPI fleet) {
 }
 ```
 
-`try/finally` 将写入与恢复放在同一作用域。先恢复旗舰和原舰长，再移除临时成员，最后同步读取。当前函数在一次调用里完成这些动作，保存的成员仍属于同一舰队。
+恢复顺序也有意义：先切回原旗舰，再写回各舰长，随后移除狼并同步。这样，恢复旗舰时产生的人员调整才会被原舰长覆盖。原来没有旗舰时，保存的 `null` 同样通过集合入口写回。
 
-**旗舰标记与舰长关系一起恢复。** 单独调用 `FleetMemberAPI.setFlagship(true)` 只处理该成员，集合级切换使用 `FleetDataAPI`。原舰队没有旗舰时，保存的 `null` 也由集合入口恢复。较长时间运行的功能需要重新确认原成员是否仍属于舰队，再决定替代旗舰；本例的同步实验保持这一组成员不变。
+`FleetMemberAPI.setFlagship(true)` 只改一个成员的标记；要切换整支舰队的旗舰，使用这里的 `FleetDataAPI.setFlagship(...)`。本例在同一次调用里恢复，原成员始终留在舰队。若功能跨越一段生涯时间，原旗舰可能已经损失或转移，恢复时就要根据当时的成员决定旗舰。
 
-## 比较顺序与军官关联
+::: warning 拆解会产生回收物
+`scuttle(member)` 会移除成员，并将拆解所得燃料、补给和装备武器等加入货舱。这里用 `removeFleetMember(...)` 撤销临时加入，恢复后按原成员数量核对。
+:::
 
-下面的局部观察分别记录内部顺序和优先顺序：
+## 让汇总跟随成员变化
+
+成员名单只是舰队状态的一部分。装配、船插、船员、封存状态和人物效果都会参与汇总，[C11-S3] 继续解释数值重算，[C11-S4] 展开单舰状态。本节先在集合操作完成后读取结果：
+
+```java
+LOG.info("GearIn fleet totals: members=" + data.getNumMembers()
+        + " fp=" + fleet.getFleetPoints()
+        + " strength=" + fleet.getEffectiveStrength()
+        + " maxBurn=" + data.getMaxBurnLevel()
+        + " minBurn=" + data.getMinBurnLevel()
+        + " burn=" + data.getBurnLevel()
+        + " cargo=" + fleet.getCargo().getMaxCapacity()
+        + " fuel=" + fleet.getCargo().getMaxFuel());
+```
+
+FP 与有效强度用于观察舰队战力，货舱和燃料容量从 `Cargo` 读取。日志里的 `burn` 是**航速等级**：`getMaxBurnLevel()` 取非封存成员中最高的最大航速，`getMinBurnLevel()` 取成员中最低的最大航速，两者读取各成员已修饰的最大航速。`getBurnLevel()` 进一步合并舰队范围的航速修饰并处理有效值的限制，地图上的实际运动还可以结合速度向量观察。
+
+### 同步方法速查表
+
+| 方法 | 作用与条件 |
+|---|---|
+| `setSyncNeeded()` | 标记需要处理后续同步 |
+| `syncIfNeeded()` | 按当前待处理标记完成同步，更新成员数值、容量与缓存 |
+| `syncMemberLists()` | 直接整理成员列表 |
+| `setOnlySyncMemberLists(true)` | 将同步限制为列表整理，成员数值、容量与其他缓存留待完整同步 |
+
+只需要整理成员顺序时，可以启用列表同步。下面的局部片段保存开关，完成列表操作后恢复原设置，再安排一次同步：
+
+```java
+boolean listOnlyBefore = data.isOnlySyncMemberLists();
+data.setOnlySyncMemberLists(true);
+data.setSyncNeeded();
+data.syncIfNeeded();
+LOG.info("GearIn list sync: members=" + data.getMembersListCopy().size());
+data.setOnlySyncMemberLists(listOnlyBefore);
+data.setSyncNeeded();
+data.syncIfNeeded();
+```
+
+本节的成员实验采用完整同步，因为我们还要比较 FP 和容量。限制同步后，名单已经正确，派生数值却可能尚未刷新；这两项结果要分别确认。
+
+## 调整排列顺序与查询军官
+
+成员名单还有不同的读取用途。普通列表保留当前排列，`getMembersInPriorityOrder()` 将非封存成员放在封存成员之前，组内保留原顺序；`getCombatReadyMembersListCopy()` 则筛选当前能参加战斗的成员。下面的局部日志比较前两种顺序：
 
 ```java
 List<FleetMemberAPI> currentOrder = data.getMembersListCopy();
@@ -184,7 +192,7 @@ for (int index = 0; index < priorityOrder.size(); index++) {
 }
 ```
 
-`sortToMatchOrder(...)` 才将新顺序写回。传入当前全部成员，重排完成后重新读取列表。下面的局部实验交换前两名，再恢复原顺序：
+取得优先顺序的列表不会重排原名单。要写回顺序，把希望采用的排列交给 `sortToMatchOrder(...)`。本例交换前两名，再恢复原顺序：
 
 ```java
 List<FleetMemberAPI> originalOrder = data.getMembersListCopy();
@@ -201,9 +209,9 @@ if (desiredOrder.size() >= 2) {
 }
 ```
 
-成员引用保持对象身份，列表位置随排序变化。缺少成员的排序列表会使剩余槽位由容器另行整理，完整副本更适合这次实验。
+这个操作改变排列位置，成员身份保持原样。排序列表只列出部分成员时，余下成员会在这些成员之后继续排列；本例使用完整名单，恢复结果可以逐项对照。
 
-军官列表与成员列表分别存在。军官可以尚未分配舰船，`getMemberWithCaptain(person)` 按人物对象查找当前成员：
+舰队的军官另有一份名单。军官可以尚未分配舰船，普通成员也可以使用默认舰长，因此成员数量与军官数量没有一一对应关系。用 `getMemberWithCaptain(person)` 按人物引用查询分配结果：
 
 ```java
 for (OfficerDataAPI officer : data.getOfficersCopy()) {
@@ -215,34 +223,22 @@ for (OfficerDataAPI officer : data.getOfficersCopy()) {
 }
 ```
 
-这段读取需要 `com.fs.starfarer.api.characters.OfficerDataAPI` 的 `import`。人物创建与技能由后面专题展开；当前只核对归属。若功能调用 `addOfficer(...)`，结束时按保存的人物或军官数据调用 `removeOfficer(...)`，成员移除与军官列表移除分别完成。
+添加 `com.fs.starfarer.api.characters.OfficerDataAPI` 的 `import` 后，可以把这段放在成员观察中。`getMemberWithCaptain(...)` 比较人物对象，姓名相同的人物仍可能是不同对象。若实验还调用了 `addOfficer(...)`，结束时按保存的人物调用 `removeOfficer(...)`；移除舰船和移除军官分别处理。
 
-## 重新读取舰队汇总
+### 成员读取入口速查表
 
-集合修改后，从各自入口重新取得汇总值，局部观察如下：
-
-```java
-LOG.info("GearIn fleet totals: members=" + data.getNumMembers()
-        + " fp=" + fleet.getFleetPoints()
-        + " strength=" + fleet.getEffectiveStrength()
-        + " maxBurn=" + data.getMaxBurnLevel()
-        + " minBurn=" + data.getMinBurnLevel()
-        + " burn=" + data.getBurnLevel()
-        + " cargo=" + fleet.getCargo().getMaxCapacity()
-        + " fuel=" + fleet.getCargo().getMaxFuel());
-```
-
-FP 与有效强度分别表示当前战力汇总，货舱与燃料容量来自 `Cargo`。最大、最小燃耗描述成员范围，并包含对应最大燃耗修饰；最大燃耗计算排除封存成员。`getBurnLevel()` 则给出舰队有效燃耗，进一步合并舰队范围修饰与实际限制。地图速度还受运行环境影响，按有效值和实际速度一起观察。
-
-成员装配、船插、船员与封存状态也会影响汇总。单舰状态由 [C11-S4] 展开，重算关系由 [C11-S3] 接着说明。
-
-::: warning 拆解带有经济结果
-`scuttle(member)` 会移除成员，并把拆解所得燃料、补给和装备武器加入货舱。当前临时成员实验使用 `removeFleetMember(...)`，集合恢复按原成员数量核对。
-:::
+| 方法 | 返回内容 | 当前用途 |
+|---|---|---|
+| `getMembersListCopy()` | 当前成员列表副本 | 遍历、筛选与保存原顺序 |
+| `getMembersInPriorityOrder()` | 非封存成员在前、封存成员在后的列表 | 比较成员优先顺序 |
+| `getNumMembers()` | 当前成员数量 | 增删与恢复核对 |
+| `fleet.getFlagship()` | 当前旗舰引用或 `null` | 确认舰队旗舰 |
+| `getCombatReadyMembersListCopy()` | 当前可参与战斗的成员副本 | 比较封存等状态的影响 |
+| `getOfficersCopy()` | 当前军官列表副本 | 查询人物与成员的关联 |
 
 ## 给专用舰队安排两步任务
 
-任务队列属于 `CampaignFleetAPI`。`addAssignment(...)` 将任务加入队尾，`getCurrentAssignment()` 取得队首，`getAssignmentsCopy()` 观察整个队列。持续时间以生涯日计，目标使用当前生成过程的市场主实体。
+成员管理完成后，让巡逻队前往来源市场，再在那里停留两日。通过 `CampaignFleetAPI.addAssignment(...)` 依次加入任务，AI 按队列执行；持续时间采用生涯日，目标用生成过程取得的市场主实体。
 
 把下面两个局部方法加入生成器，并添加 `FleetAssignment`、`FleetAssignmentDataAPI`、`EveryFrameScript` 与 `IntervalUtil` 的 `import`：
 
@@ -294,11 +290,13 @@ private void logAssignment(CampaignFleetAPI fleet) {
 }
 ```
 
-任务先立即记录，再由附着在该舰队上的观察脚本每 0.1 生涯日记录。第一项到达目标或结束后，第二项成为当前任务；队列结束，观察脚本也结束。`FleetAssignment` 位于 `com.fs.starfarer.api.campaign`，`FleetAssignmentDataAPI` 位于其 `ai` 子包。
+`GO_TO_LOCATION` 最多持续 5 日，到达目标后可以提前结束；随后执行 2 日的 `ORBIT_PASSIVE`。`getCurrentAssignment()` 返回当前队首，`getAssignmentsCopy()` 返回队列副本，副本中的任务对象仍属于原队列。这里先立即记录一轮，再由舰队脚本每 0.1 生涯日记录，队列结束后观察脚本也结束。
 
-**队列改变与舰队实际运动分别观察。** 生涯时间推进、舰队已投放且目标有效，任务才产生地图结果。速度为当前帧结果，尚不能单独证明任务完成。其他 AI 也可能清空或插入任务，日志保留目标、剩余天数与队列数量用于比较。
+`FleetAssignment` 位于 `com.fs.starfarer.api.campaign`，`FleetAssignmentDataAPI` 位于其 `ai` 子包。观察脚本沿用 [C10-S1] 的生涯时间换算，将帧时间转换成日后推进 `IntervalUtil`。
 
-`addAssignment(...)` 的高级重载还接受结束脚本、开始脚本与时间转移等参数，用于相应生命周期。已有任务的已用时间、脚本回调和自定义上下文各有归属；将任务类型和目标重新加入队列，只复制了部分描述。本节把任务实验放在新生成的专用舰队上，清空和两步安排都属于这次任务。
+舰队已投放、目标有效，并且生涯时间继续推进时，任务才能产生地图行为。速度反映当前运动，队首说明正在执行的任务；其他 AI 可能插入或清空任务，所以日志同时保留目标、剩余天数与队列数量。
+
+本节可以清空任务，是因为这支新舰队的行动由当前生成器安排。**编者建议在接管已有舰队前，先确定其原任务是否允许丢失。** 将类型和目标保存下来，再重新入队，并不能恢复已经消耗的时间、回调和自定义上下文。`addAssignment(...)` 的高级重载还接受开始脚本、结束脚本与时间转移等参数，原任务可能正依靠这些内容推进所属功能。
 
 ## 验证方案
 
@@ -315,7 +313,7 @@ private void logAssignment(CampaignFleetAPI fleet) {
 - 临时集合比基线多一名成员，恢复后数量、原旗舰与原舰长重新对应。
 - 副本保持取得时的成员，真实集合变化由成员方法写入；排序实验恢复原顺序。
 - 军官日志按人物对象关联成员，未分配者显示 `none`。
-- 同步后的 FP、有效强度、燃耗与容量从当前对象读取。
+- 同步后的 FP、有效强度、航速等级与容量从当前对象读取。
 - 专用巡逻队先执行 `GO_TO_LOCATION`，再执行 `ORBIT_PASSIVE`，任务状态与地图移动对应。
 
 ## 故障分析
@@ -330,19 +328,19 @@ private void logAssignment(CampaignFleetAPI fleet) {
     - **解决方案**：保存每名原成员的舰长，恢复旗舰后按对象写回舰长，再移除临时成员。
 
 - **汇总与界面不一致**：使用旧数值或只完成了列表同步。
-    - **解决方案**：恢复完整同步开关，执行 `setSyncNeeded()` 与 `syncIfNeeded()`，再读取 FP、燃耗和容量。
+    - **解决方案**：恢复完整同步开关，执行 `setSyncNeeded()` 与 `syncIfNeeded()`，再读取 FP、航速等级和容量。
 
 - **任务存在但舰队不移动**：舰队未投放、目标失效或时间暂停。
     - **解决方案**：核对舰队与目标的地点、当前任务和暂停状态，使用生成过程取得的主实体。
 
-- **只看到第二项任务**：读取前第一项已经到达或被其他 AI 改写。
+- **日志只记录了第二项任务**：读取前第一项已经到达或被其他 AI 改写。
     - **解决方案**：保留添加后的即时日志，再比较间隔日志的队列数量与目标。
 
 ## 总结
 
-成员集合由 `FleetDataAPI` 写入与同步，副本用于当前观察，旗舰切换还涉及人员关系。保存对象基线、完成写入、恢复原状态，再重新读取汇总，成员实验就能对应明确结果。
+这艘临时加入的狼让我们同时接触了成员归属、旗舰和舰长。名单副本保存成员引用，真正的增删与排序由 `FleetDataAPI` 写入；操作完成后同步，再读取数量与汇总，才能确认当前舰队。
 
-任务则由地图舰队按生涯时间执行。本节使用同一支新巡逻队观察队首与运动，把集合恢复与持续任务分别放到适合的运行位置。
+地图行动由任务队列继续推进。对自己生成的巡逻队，可以直接决定去哪里、停留多久；接管已有舰队时，还要承担原任务中时间、回调和上下文的去留。
 
 ## 建议参考项
 

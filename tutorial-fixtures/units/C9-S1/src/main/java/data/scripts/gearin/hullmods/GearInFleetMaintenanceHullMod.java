@@ -26,6 +26,14 @@ public class GearInFleetMaintenanceHullMod extends BaseHullMod
     }
 
     @Override
+    public String getDescriptionParam(int index, HullSize hullSize) {
+        if (index == 0) {
+            return Math.round((1f - FUEL_USE_MULT) * 100f) + "%";
+        }
+        return null;
+    }
+
+    @Override
     public void advanceInCampaign(FleetMemberAPI member, float amount) {
         if (amount <= 0f) {
             LOG.info("GearIn fleet maintenance sync: " + member.getShipName());

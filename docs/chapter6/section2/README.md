@@ -1,6 +1,6 @@
 # 迁移代码文件到 src
 
-本节将现有 Java 源码放入 MOD 工程的 src 目录，游戏直接读取的数据与资源继续留在原位置。包名与完整类名保持一致，后面的 Gradle 配置编译 src 中的文件，注册数据则继续引用同一组类。
+准备好编译环境后，需要为编译器指定源码。本节将已有 Java 文件迁入 MOD 根目录的 `src/`，保留原来的包名和注册值。战役目录中还混有描述与图片，我们也将借此区分哪些文件交给编译器，哪些继续由游戏直接读取。
 
 *本节预期阅读时间：\~8 分钟。*
 
@@ -20,12 +20,12 @@
 - [C1-S1] 的 MOD 目录；
 - [C2-S3] 的系统源码和 [C3-S4] 的入口、生成器；
 - [C4-S1] 的 MissionDefinition 目录；
-- [C6-S1] 的 JDK17 与编译依赖；
+- [C6-S1] 的 JDK 17 与编译依赖；
 - Java 包名、类名与目录结构。
 
-## 以 src 为编译输入
+## 建立源码目录
 
-在 MOD 根目录建立 src，把 Java 文件连同对应包目录迁入。数据目录继续保存 JSON、CSV、文本与图标，例如：
+在 MOD 根目录建立 `src/`。后面的 Gradle 配置将从这里收集 Java 文件，因此迁移时要连同包目录一起保留。游戏直接读取的 JSON、CSV、文本和图片继续留在原位置。整理后的目录例如：
 
 ```text
 GearIndustry/
@@ -41,35 +41,37 @@ GearIndustry/
         └── missions/GearIn_test/MissionDefinition.java
 ```
 
-**源码目录的根与 Java 包名是不同层次。** src 作为编译输入，内部仍按 package 组织，因此 data.scripts.gearin 对应 src/data/scripts/gearin。
+这里容易产生一个误解：文件多了一层 `src/`，包名是否也要增加 `src`？
 
-## 整理脚本类
+**包目录从源码根目录开始计算。** 将 `src/` 指定为根目录后，`data.scripts.gearin` 仍对应它内部的 `data/scripts/gearin/`。完整文件位置因此是 `src/data/scripts/gearin/`，包名保留原值。
 
-将 `data/scripts/gearin/<domain>/ClassName.java` 移到 `src/data/scripts/gearin/<domain>/ClassName.java`。包名、类声明和注册字段保留。
+## 迁移系统、入口与生成器
 
-例如突击填弹器改为：
+先将 `data/scripts/gearin/<domain>/ClassName.java` 移到 `src/data/scripts/gearin/<domain>/ClassName.java`。文件中的 `package` 与类声明保持原样，数据文件引用的完整类名也继续使用。
+
+以突击填弹器为例，迁移后的文件位置是：
 
 ```text
 src/data/scripts/gearin/shipsystems/GearInAssaultFeedSystem.java
 ```
 
-其 package 仍为 data.scripts.gearin.shipsystems，系统定义的 statsScript 仍为 data.scripts.gearin.shipsystems.GearInAssaultFeedSystem。入口与生成器采用相同的路径整理。
+它的包声明仍为 `data.scripts.gearin.shipsystems`，系统定义中的 `statsScript` 仍为 `data.scripts.gearin.shipsystems.GearInAssaultFeedSystem`。后续编译得到同名 class，游戏再按这个名字加载系统实现。
 
-**迁移改变编译输入的位置，运行时仍按完整类名找对象。** 后续源码进入 JAR 后，注册关系继续成立。
+MOD 入口与星系生成器也按各自包路径迁入。**文件位置增加了源码根目录，运行时身份保持不变。** 因此这次迁移无需重新命名系统、船插或 MOD 入口。
 
-## 整理战役定义类
+## 分开战役代码与战役数据
 
-将 `data/missions/GearIn_test/MissionDefinition.java` 移到 `src/data/missions/GearIn_test/MissionDefinition.java`，package 仍为 data.missions.GearIn_test。
+战役的 `MissionDefinition.java` 原本和描述、图标放在同一个目录。将它移到 `src/data/missions/GearIn_test/MissionDefinition.java`，包名保留 `data.missions.GearIn_test`。
 
-descriptor.json、mission_text.txt、icon.jpg 与 mission_list.csv 继续放在 data/missions 下。游戏按战役 ID 读取这些文件，定义类则在产物中提供同一完整名字。
+`descriptor.json`、`mission_text.txt`、`icon.jpg` 与 `mission_list.csv` 仍然放在 `data/missions/` 下。游戏按战役 ID 读取这些文件，定义类则从编译产物中加载。若把整套战役文件一起迁入 `src/`，Java 文件的位置虽然正确，游戏却会失去原路径下的描述和图标。
 
-这也是后续检查 JAR 条目的依据：包名转为内部目录，类名成为 class 文件名。
+后面检查 JAR 时也沿用这个对应关系：包名转成内部目录，类名成为 class 文件名。`src/` 只参与选择编译输入，不进入 class 的包路径。
 
-## 核对唯一源码与引用
+## 收束源码与注册关系
 
-迁移后按完整类名搜索，每个类只保留当前 src 中的一份源码。尤其是 MOD 入口、系统效果和战役定义，复制整理后容易出现同名文件。
+迁移完成后，按完整类名搜索 MOD 目录。每个类保留 `src/` 中的一份源码，尤其要核对 MOD 入口、系统效果与战役定义。此前复制样本时，副本是工作的起点；现在若将同名副本也作为编译输入，就会得到重复类错误。
 
-编者建议先按角色逐类迁移，再对照注册值核对。改包名、改 ID 和改构建方式一起进行时，错误来源会更多；本节保持已经使用过的名字，只整理目录。
+随后对照数据注册：系统的 `statsScript`、船插的脚本字段、MOD 的 `modPlugin` 与战役定义，都应继续指向原来的完整类名。至此，编译器将从新位置取得源码，游戏仍按既有名字取得实现。
 
 ## 验证方案
 
@@ -77,7 +79,7 @@ descriptor.json、mission_text.txt、icon.jpg 与 mission_list.csv 继续放在 
 2. 对照 package、目录、文件名和类声明。
 3. 搜索每个完整类名，确认源码位置唯一。
 4. 核对系统、船插、插件和战役数据仍引用当前类名。
-5. 查看 data 目录中的 JSON、CSV、文本和图片保持原路径。
+5. 确认 data 目录中的 JSON、CSV、文本和图片保持原路径。
 
 预期结果：
 
@@ -102,9 +104,9 @@ descriptor.json、mission_text.txt、icon.jpg 与 mission_list.csv 继续放在 
 
 ## 总结
 
-src 提供编译输入，data 继续提供游戏运行数据。脚本类和战役类按已有 package 组织，完整名字保持原值，注册字段也沿用原来的引用。
+源码已经集中到 `src/`，包目录保留原来的层级，游戏数据和资源则留在原路径。改变的是编译器取得文件的位置，完整类名与数据注册继续成立。
 
-目录整理完成后，下一节让 Gradle 读取 src、解析核心依赖并设置 JAR 输出。源码、构建输入和运行引用各有对应位置，后续新增类也按这套关系保存。
+下一节将这个源码目录写入 Gradle 配置。之后新增 Java 类也保存到相应包目录，构建任务就能统一收集它们。
 
 ## 建议参考项
 

@@ -1,6 +1,6 @@
 # 选择 BoxUtil 渲染方案
 
-前面已经手动管理过顶点、参数和绘制状态，现在可以判断哪些工作适合交给 BoxUtil。我们从实际画面出发，分别选择重复粒子、连续形状、窗口面板、模型和光源所需的对象，再看数据怎样提交、效果怎样结束。对象选对了，后续更新才容易跟上画面的变化。
+BoxUtil 用实体组织材质、实例数据与渲染管理。本节围绕重复粒子、连续形状、窗口面板、模型和光源选择对象，再说明数据提交、入队与结束的关系。前面的 OpenGL 经验用于判断这些接口各自接管了哪项工作，选型则依据实际画面与变化的数据。
 
 *本节预期阅读时间：\~16 分钟。*
 
@@ -21,9 +21,11 @@
 
 ## 从画面需求选择对象
 
-先问一个实际问题：每次更新，这个效果到底改变什么？外观相同的粒子主要改变位置、颜色和寿命，一份 `SpriteEntity` 配多份 `Instance2Data` 就能表达这些差异。范围环和弯曲光束改变节点形状，分别选择 `SegmentEntity` 与 `CurveEntity`。固定在窗口角落的数字使用屏幕坐标；随舰船转动的 OBJ 模型使用世界变换。光源还要找到已经登记材质或光照数据的受光对象。
+选型从每次更新的数据开始。外观相同的粒子主要改变位置、颜色与寿命，用一份 `SpriteEntity` 配多份 `Instance2Data`；范围环和曲线光束通过节点改变形状，分别使用 `SegmentEntity` 与 `CurveEntity`。窗口数字采用屏幕坐标，随舰船转动的 OBJ 模型采用世界变换，光源再与受光对象的材质一起工作。
 
-[C20-S1] 至 [C20-S5] 已经把这些关系展开到 OpenGL 调用。BoxUtil 将实体、材质和战斗渲染管理组织在一起，适合组合多种效果。**编者建议先写清形状、变化的数据和结束条件，再选择实体。**这比先挑一个名字气派的类更容易做出预期画面。
+[C20-S1] 至 [C20-S5] 已经展开顶点、参数与批量绘制。编者选择 BoxUtil 的依据是这些工作是否能由同一套实体和管理入口组织起来：组合多种几何、模型或光照时，资源与提交有共同约定，效果侧便能集中处理自己的变化。
+
+实际接入沿用 [C18-S1] 的依赖方式：manifest 的 `dependencies` 声明 `BoxUtil`，Gradle 编译路径包含其 `jars` 与 `jars/backends`。本页的片段用于相应功能已有的回调，以下按对象分别说明用法。
 
 ## 为重复 Sprite 贴图提交实例
 
@@ -40,7 +42,7 @@ float angle = 30f;
 
 `List`、`ArrayList` 来自 `java.util`，`Color` 来自 `java.awt`；`MathUtils` 来自 `org.lazywizard.lazylib`。BoxUtil 的入口是 `org.boxutil.BoxUtilModPlugin`，设置类为 `org.boxutil.config.BoxConfigs`，枚举类为 `org.boxutil.define.BoxEnum`；`ShaderCore`、`CombatRenderingManager` 来自 `org.boxutil.manager`，`Instance2Data` 来自 `org.boxutil.units.standard.attribute`，实体来自 `org.boxutil.units.standard.entity`。列表按 `setInstanceData(...)` 的参数类型声明为 `List<org.boxutil.base.api.InstanceDataAPI>`，里面保存本次创建的 `Instance2Data`。
 
-先确认渲染器能工作，再创建实体。BoxUtil 初始化尚未完成时，这次调用先结束；shader 能力不可用时，用原版粒子给出同样位置和寿命的反馈：
+创建实体之前检查初始化与 shader 能力。初始化尚未完成时调用 `initLater()` 并结束本次调用，下一次功能调用再按状态继续；shader 不可用时，在玩家舰位置生成原版粒子，保留这次事件的短时反馈：
 
 ```java
 if (!BoxUtilModPlugin.isGlobalInitialized()) {
@@ -55,10 +57,11 @@ if (!boxAvailable) {
 }
 ```
 
-现在创建共享的 Sprite 贴图实体，设置材质、图层与加法混合，再给列表增加一份实例。位置放在玩家舰周围 `80 su`、`30` 度的方向，速度沿用舰船速度，缩放与颜色由实例保存。`setTimer(...)` 让这份实例自行经历淡入、显示和淡出：
+能力可用时创建 Sprite 实体，设置材质、图层和加法混合，再准备实例。位置距玩家舰 80 su、角度为 30 度，速度取当时的舰船速度，缩放与颜色保存在实例中，`setTimer(...)` 安排淡入、显示与淡出：
 
 ```java
 SpriteEntity box = new SpriteEntity(sprite);
+box.setBaseSizePerTiles(sprite.getWidth() * 0.5f, sprite.getHeight() * 0.5f);
 box.getMaterialData().setColor(Color.CYAN);
 box.setLayer(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
 box.setAdditiveBlend();
@@ -73,6 +76,10 @@ data.setTimer(BOX_IN, BOX_FULL, BOX_OUT);
 instances.add(data);
 ```
 
+实例保存的是这次提交的位置与速度分量，后续运动按自身数据推进。舰船以后转向或改变速度，不会自动把这份实例重新附着到舰船；需要跟随时，由效果侧继续更新对应位置。
+
+`setBaseSizePerTiles(...)` 接收每张贴图的基础半宽、半高，实例的 `0.6f` 缩放再乘到这个尺寸上。因此本例图案的完整宽高为原 Sprite 尺寸的 60%；创建实体时的基础半尺寸默认是 1，仅传入贴图还没有设置它的世界尺寸。
+
 接着把列表交给实体，设置本次刷新范围并提交。`setRenderingCount(...)` 决定实际绘制多少份，`setGlobalTimer(...)` 决定整个实体的计时。下面按首次提交处理全部实例；后续更新可以缩小刷新区间：
 
 ```java
@@ -83,7 +90,7 @@ box.setRenderingCount(instances.size());
 box.setGlobalTimer(BOX_IN, BOX_FULL, BOX_OUT);
 ```
 
-数据准备完毕后，调用 `CombatRenderingManager.addEntity(...)` 入队。返回码表示本次登记结果；失败时删除刚创建、尚未交给管理器的实体：
+数据准备完毕后调用 `CombatRenderingManager.addEntity(...)`。成功表示登记到后续处理的队列，绘制由管理器接着完成；失败时删除这份尚未交出的实体：
 
 ```java
 byte result = CombatRenderingManager.addEntity(box);
@@ -116,7 +123,7 @@ beam.setFlowWhenPaused(false);
 beam.submitNodes();
 ```
 
-圆环由中心、半径和线宽确定，曲线光束再增加长度与平滑参数。节点形状变化后，调用 `submitNodes()` 提交新数据；`setFlowWhenPaused(false)` 则让纹理流动服从暂停状态。几何更新与纹理流动分别有自己的入口。
+`initCircle(...)` 与 `initSmoothLine(...)` 建立初始节点并提交，后续修改节点形状再调用 `submitNodes()`。圆环根据中心、半径与线宽拟合，曲线光束从起点沿正 X 方向建立，再通过节点或变换调整需要的形状。`setFlowWhenPaused(false)` 让纹理流动随暂停停止，几何更新继续由自己的调用安排。
 
 ## 判断命中特效的生命周期
 
@@ -128,7 +135,7 @@ beam.submitNodes();
 
 ## 为模型选择世界变换与光照
 
-OBJ 模型要随舰船转向时，先由 `org.boxutil.manager.ModelManager` 查询资源，再用 `org.boxutil.units.standard.attribute.ModelData` 和世界变换创建 `CommonEntity`。下列局部片段接收本次效果选择的 `String modelId`，检查资源登记和模型数据，再创建实体：
+OBJ 模型从 `org.boxutil.manager.ModelManager` 取得 `org.boxutil.units.standard.attribute.ModelData`，交给 `CommonEntity` 使用。下面的局部片段接收本次选择的 `String modelId`，在资源取得处确认模型登记与数据：
 
 ```java
 if (!ModelManager.containsModelID(modelId)) {
@@ -147,7 +154,7 @@ entity.setModelMatrix(TransformUtil.createModelMatrixVanilla(
 entity.setDefaultLight();
 ```
 
-第二段中的 `location`、`scale` 是世界位置与缩放用的 `Vector2f`，`facing` 是以度为单位的 `float` 朝向，`matrix` 是可复用的 `org.lwjgl.util.vector.Matrix4f`；`TransformUtil` 来自 `org.boxutil.util`。模型的位置、朝向和尺度由这个矩阵决定。材质通道或贴图缺失时，先核对模型资源登记，再判断是否需要光照；`setDefaultLight()` 为当前实体选择默认光照路径。
+`location` 与 `scale` 是世界位置和缩放向量，`facing` 是以度为单位的朝向，`matrix` 为可复用的 `Matrix4f`，`TransformUtil` 来自 `org.boxutil.util`。模型按这个矩阵放置；`CommonEntity(model, true)` 同步模型纹理，`setDefaultLight()` 设置默认白色光照值。材质通道与局部光照再按实际显示要求配置。
 
 ## 按受光对象选择光源
 
@@ -183,7 +190,13 @@ configure(spot, location, new Color(180, 235, 255), 0.9f, 320f);
 
 ## 处理大批量实例的更新范围
 
-实例多起来以后，先看变化是否集中在连续区间。首次提交刷新整个集合，此后用 `setInstanceDataRefreshIndex(...)` 指定起点、`setInstanceDataRefreshSize(...)` 指定长度，再提交这段数据。若用对象池复用 Java 实例，GPU 数据仍按当前变化上传；效果结束后先从 `CombatRenderingManager` 移除实体，再重置状态并归还对象池。仍在绘制的实例要继续属于当前效果。
+变化集中在连续区间时，可以只刷新那一段实例。`setInstanceDataRefreshIndex(...)` 选择 Java 列表的起点，`setInstanceDataRefreshOffset(...)` 选择 GPU 数据的目标起点，`setInstanceDataRefreshSize(...)` 指定长度。源与目标索引各自对应，随后再提交；首次提交则刷新整个集合。
+
+::: warning 移除实体与清除队列引用各有时机
+`CombatRenderingManager.removeEntity(...)` 调用实体的 `delete()`，管理器中的引用随后清理。复用对象前确认它已离开管理器，再重置并重新交出，才能保留正确的结束与入队关系。
+:::
+
+对象池复用 Java 对象以后，变化的数据仍要上传。是否采用对象池由实际创建频率与成本决定，实例更新范围则按本次变化独立选择。
 
 ## 渲染需求速查表
 

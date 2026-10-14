@@ -1,6 +1,6 @@
 # 监听生涯事件
 
-逐帧脚本已经能按日推进，这次在舰队事件发生时记录结果。本节给专用巡逻队写入 Memory 标记，只观察它的生成、到达、跃迁与消失。监听窗口持续三十日，计数与剩余期限随档保存，投放前的标记和实际登记时机也一起安排。
+舰队生成、到达、跃迁或消失时，生涯引擎会派发相应事件，我们可以在这些时机处理自己的功能。本节用监听器观察一支舰队三十个游戏日，重点说明事件回调与登记方式，以及保存、读档和到期结束的关系。
 
 *本节预期阅读时间：\~20 分钟。*
 
@@ -20,21 +20,21 @@
 - [C7-S1] 的 MOD 插件生命周期与 `onGameLoad()`；
 - [C11-S1] 的舰队创建、配置与投放顺序；
 - [C11-S2] 的舰队任务队列、目标实体和跨地点移动；
-- [C14-S1] 的游戏天换算、暂停门控与普通对象的存档边界。
+- [C14-S1] 的游戏天换算、暂停时的推进条件与普通对象的存档边界。
 
 ## 在生涯入口登记三十日监听
 
-创建 `src/data/scripts/gearin/campaign/GearInFleetLifecycleListener.java`，加入 `GearInModPlugin` 的 import。将后面的限时登记片段放入现有 `onGameLoad(...)`，当前生涯已经建立；字段与计数保存到这个监听实例。
+先创建 `src/data/scripts/gearin/campaign/GearInFleetLifecycleListener.java`，在 `GearInModPlugin` 中加入它的 import。限时登记片段放入生涯已经建立的 `onGameLoad(...)`，本轮计数保存在监听器实例的字段中。
 
-**事件回调在实际状态变化时执行。** `EveryFrameScript` 按帧推进，适合计时与连续检查。`CampaignEventListener` 只在具体事件发生时收到回调，适合处理市场结算、战斗结束、舰队到达或经济迭代。监听器不会因为生涯时间流逝而自行执行代码；引擎必须先发生对应事件，再从注册表取出监听对象并调用匹配的方法。
+**事件回调在实际状态变化时执行。** 上一节用 `EveryFrameScript` 按帧累计时间，适合计时与连续检查。现在要记录的是舰队到达这样的事件，`CampaignEventListener` 会在事件发生时收到对应回调；市场结算、战斗结束和经济迭代也按各自的事件处理。生涯时间流逝本身不会执行监听代码，引擎要先发生事件，再从注册表取出对象调用匹配的方法。
 
-`CampaignEventListener` 声明了整组生涯事件。直接实现该接口需要提供所有方法，即使任务只关心其中四个。`BaseCampaignEventListener` 已为全部方法提供空实现，子类只覆写所需回调即可。这个基类还把注册方式收进构造器和 `reRegister()`，但注册发生的时机和容器仍由调用方选择。
+直接实现 `CampaignEventListener` 时，要提供整组事件方法，即使本次只需要其中四个。我们从 `BaseCampaignEventListener` 继承，它已经准备好空实现，子类覆写所需回调即可。基类还提供构造登记和 `reRegister()`，至于在哪个时机、进入哪个容器，则由调用方决定。
 
-`super(true)` 会在基类构造期间直接执行 `Global.getSector().addListener(this)`，适合明确在生涯引擎建立后创建的永久监听器。`super(false)` 只构造对象，调用方可以完成字段初始化，再选择永久、transient 或限时入口。本节完整类使用 `super(false)`，在 `onGameLoad(...)` 调用 `reRegister(30.0f)` 进入限时容器。
+`super(true)` 会在基类构造期间直接执行 `Global.getSector().addListener(this)`，适合在生涯引擎建立后创建的永久监听器。`super(false)` 只构造对象，调用方可以先完成字段初始化，再选择永久、transient 或限时入口。本节使用 `super(false)`，在 `onGameLoad(...)` 调用 `reRegister(30.0f)`，把实例放入限时容器。
 
 ## 选择监听器容器
 
-三个入口保存到三个独立容器。选择入口会同时决定对象是否写入存档、是否自动到期，以及读档后是否需要重新登记。
+先根据这个功能要持续多久选择入口。三个入口对应三个独立容器，同时决定对象是否进入存档、是否自动到期，以及读档后是否重新登记。
 
 ### 注册容器速查表
 
@@ -44,23 +44,33 @@
 | `addTransientListener(listener)` | transient 列表 | 列表不写入存档，每次读档后重新登记 |
 | `addListenerWithTimeout(listener, days)` | `TimeoutTracker` | 对象与剩余游戏天数随存档保存，期限归零后自动移除 |
 
-`removeListener(listener)` 会从三个容器同时移除给定对象。永久和 transient 列表分别用 `contains()` 防止同一对象在同一列表中重复加入；限时容器用集合判断对象是否已经存在。这里的判等通常表现为对象身份判等，因此新建两个字段相同的监听器仍是两个登记项。
+需要结束监听时，`removeListener(listener)` 会从三个容器同时移除这个对象。各容器也有自己的判重：永久和 transient 列表使用 `contains()`，限时容器用集合检查对象是否存在。这里通常按对象身份判断，新建两个字段相同的监听器，仍会得到两个登记项。
 
-同一对象也可能被加入不同容器。`getAllListeners()` 会依次复制永久列表、追加 transient 列表，再追加限时容器中的对象，并不对合并结果去重。如果一个对象同时进入永久列表和限时容器，同一个事件就会对它调用两次。**每个监听功能选择实际需要的容器。** 当前完整例只进入限时列表，集合合并就只包含这一份事件观察。
+`getAllListeners()` 依次复制永久列表、追加 transient 列表，再追加限时容器中的对象，合并结果不会去重。本节只进入限时列表，合并后只有这一份事件观察。
+
+::: warning 同一对象也可能收到多次回调
+
+同一个对象若同时进入永久列表与限时容器，同一事件就会调用它两次。各容器自身的判重不处理这种跨容器重复。
+
+:::
 
 ### 派发使用当前集合的快照
 
 每个 `report...()` 派发方法都会遍历 `getAllListeners()` 返回的新列表。监听器可以在回调中调用 `removeListener(this)`，因为修改的是原注册表，不会破坏这次遍历。当前回调已经开始时，移除动作只影响后续事件；本轮方法仍会执行到返回。
 
-新监听器在回调中加入注册表后，也要等下一次事件才会出现于新的合并列表。这个边界与 [C14-S1] 的脚本列表快照相似，但触发单位从下一帧变成了下一次对应事件。
+回调中新登记的监听器，要等下一次事件才会进入新的合并列表。与 [C14-S1] 的脚本快照类似，当前遍历使用的对象集合已经确定；这里的后续调用由下一次对应事件触发。
 
 ## 让限时登记只发生一次
 
 `BaseCampaignEventListener.reRegister(daysToKeep)` 内部调用 `addListenerWithTimeout(this, daysToKeep)`。`daysToKeep` 的单位是游戏日，引擎先用 `CampaignClockAPI.convertToDays(amount)` 换算本帧时间，再在未暂停时推进 `TimeoutTracker`。暂停会同时冻结生涯日期和监听器期限。
 
-`reRegister()` 的名字容易造成误判。对象已经存在于限时容器时，`addListenerWithTimeout()` 会跳过写入，所以再次调用不会把剩余时间恢复为 30 天。确实需要延期时，应先 `removeListener(listener)`，再调用 `reRegister(newDays)`；这两步也会改变该对象在其他监听器容器中的状态，调用点需要明确承担重新登记。
+::: warning reRegister 不会重置现有期限
 
-本节采用每个存档只登记一次的策略。persistent data 键保存已经登记这一事实；监听器本身和四个计数器由限时容器保存。保存发生在 30 天期限内时，读档会恢复剩余期限和计数。期限归零后监听器离开容器，persistent data 键继续存在，因此后续读档保持结束状态。
+对象已在限时容器中时，重复登记会被跳过，剩余期限保持原值。需要延期时，先 `removeListener(listener)`，再调用 `reRegister(newDays)`；移除也会清理它在其他监听器容器中的登记。
+
+:::
+
+本节希望每个存档只观察一轮，所以用 persistent data 键记录已经登记这一事实。限时容器则保存监听器、四个计数器和剩余期限：30 天以内保存读档，继续这轮观察；期限归零以后，监听器离开容器，persistent data 键仍保留，后续读档也就保持结束状态。
 
 ```java
 Map<String, Object> data = sector.getPersistentData();
@@ -75,7 +85,7 @@ if (!data.containsKey(GearInFleetLifecycleListener.REGISTERED_KEY)) {
 
 ## 用 Memory 选择目标舰队
 
-生涯中持续有后台舰队生成、移动和消失。监听全部舰队会让日志被无关事件淹没，也无法把一次操作对应到一个计数。完整监听器读取舰队自身的 Memory，只处理 `$GearIn_listener_probe` 为 `true` 的对象。
+生涯里的后台舰队也会不断生成、移动和消失，监听器会收到它们的事件。为了让本例的计数对应到指定舰队，回调读取舰队自身的 Memory，只处理 `$GearIn_listener_probe` 为 `true` 的对象。
 
 **生成标记写在投放之前。** 在 [C11-S1] 的 `GearInFleetGenerator` 已取得 `generatedFleet` 后、`spawnFleet(...)` 前加入局部片段，沿用既有投放：
 
@@ -85,11 +95,11 @@ generatedFleet.getMemoryWithoutUpdate().set(
 location.spawnFleet(anchor, 300f, 0f, generatedFleet);
 ```
 
-如果先投放再写标记，监听器会错过该舰队唯一一次生成回调，后续到达、跃迁和消失事件仍能通过过滤。使用 `getMemoryWithoutUpdate()` 可以直接读取 MOD 自己写入的键，避免为了一个布尔标记触发事实刷新。
+投放时就会派发舰队生成回调，因此标记要提前写好。顺序颠倒时，监听器会错过唯一一次生成回调，后续到达、跃迁和消失仍能通过过滤。这里用 `getMemoryWithoutUpdate()` 直接读取 MOD 写入的键，省去为一个布尔标记刷新事实的操作。
 
 ## 读取舰队生命周期参数
 
-四个回调描述的是不同状态转换。完整类为每类事件保存独立整数计数，使保存读档后能够判断具体哪条链路继续，而不是只看到一个无法归因的总数。
+接下来逐个观察状态转换。完整类为四类回调各保存一个整数计数，读档后比较时，就能看出哪一种事件继续发生了。计数、舰队 ID 与目标参数一起保留，才能对应到实际动作。
 
 ### 舰队回调速查表
 
@@ -100,7 +110,7 @@ location.spawnFleet(anchor, 300f, 0f, generatedFleet);
 | `reportFleetJumped(fleet, from, to)` | 舰队完成地点间跃迁 | 起点实体与 `JumpDestination`；任一层都可能为空 |
 | `reportFleetDespawned(fleet, reason, param)` | 舰队进入消失流程 | 原因枚举决定 `param` 的可解释类型 |
 
-`reportFleetReachedEntity()` 对应的是舰队任务系统确认到达目标，不是玩家视野中的距离估计。某些 assignment 在完成时先触发消失或完成回调，观察时同时看事件、当前任务与实际目标，日志顺序反映相应调用。
+`reportFleetReachedEntity()` 对应舰队任务系统确认到达目标的时机，不能只凭画面中的距离判断。某些 assignment 在完成时先触发消失或完成回调，记录事件时同时保留当前任务与实际目标，日志顺序也就能对应到这些调用。
 
 跃迁参数有两层对象关系。`from` 通常是起点跳跃实体；`to` 是 `JumpDestination`，真正的目的地实体由 `to.getDestination()` 返回。完整类逐层判空，把缺失位置记录为 `null`，避免日志代码本身打断事件派发。
 
@@ -115,7 +125,7 @@ location.spawnFleet(anchor, 300f, 0f, generatedFleet);
 | `NO_REASON_PROVIDED` | 未限定 | 记录空值或实际运行时类型 |
 | `PLAYER_FAR_AWAY` | 未限定 | 记录空值或实际运行时类型 |
 
-原因与参数类型一起决定怎样记录。公开约定提供常见输入，通用回调也保留实际参数的类型，日志就能解释当前消失过程。
+记录消失时，根据原因与参数类型解释上下文。公开约定给出常见输入，通用回调还要记录实际参数类型；下面的局部片段据此选择可以读取的内容：
 
 ```java
 if (reason == FleetDespawnReason.REACHED_DESTINATION
@@ -146,7 +156,7 @@ Global.getSector().doHyperspaceTransition(
 generatedFleet.despawn(FleetDespawnReason.REACHED_DESTINATION, target);
 ```
 
-生成、到达、跃迁和消失按各自动作验证。跳转后先让时间推进、观察对应事件，再安排结束，生命周期日志才能逐项对应同一舰队。
+按生成、到达、跃迁和消失的顺序分别制造事件。跳转后先推进时间，看到对应日志，再安排舰队结束，这样每个计数都能对应到同一支舰队的动作。
 
 ### 提前结束监听
 
@@ -163,9 +173,9 @@ for (CampaignEventListener candidate : Global.getSector().getAllListeners()) {
 
 这段代码只移除活动对象。每存档一次性策略还由 `REGISTERED_KEY` 控制；保留该键表示监听任务已经结束，移除该键表示允许下一次 `onGameLoad()` 开始新的 30 日窗口。
 
-## 划清另外两种监听方式
+## 类型化监听器与组合类
 
-`ListenerManagerAPI` 按接口类型存放监听器，由 `ListenerUtil` 的对应方法派发。它适合 `CurrentLocationChangedListener`、`EconomyTickListener` 等窄接口。部分事件会同时派发旧式 `CampaignEventListener` 和类型化接口，同一对象接入两条通道时会收到两次业务回调。
+需要观察当前地点或经济迭代时，还可以选择 `CurrentLocationChangedListener`、`EconomyTickListener` 这样的窄接口。`ListenerManagerAPI` 按接口类型保存对象，`ListenerUtil` 的对应方法负责派发。部分事件同时派发旧式 `CampaignEventListener` 与类型化接口，同一对象若接入两条通道，就会收到两次业务回调。
 
 transient 类型化监听器需要在每次 `onGameLoad()` 中检查并补回。这里查询 `ListenerManagerAPI` 的集合，与旧式事件容器分别登记。
 
@@ -176,7 +186,13 @@ if (!manager.hasListenerOfClass(GearInLocationChangeProbe.class)) {
 }
 ```
 
-`BaseCampaignEventListenerAndScript` 同时具备监听器和 `EveryFrameScript` 类型，但两个基类构造器只登记监听器部分。默认构造器调用永久监听入口，带天数的构造器调用限时监听入口；两者都不会把对象加入脚本列表。需要执行 `advance()` 时，调用方还要显式调用 `addScript()`。
+`BaseCampaignEventListenerAndScript` 同时具备监听器与 `EveryFrameScript` 类型。默认构造器调用永久监听入口，带天数的构造器调用限时监听入口。
+
+::: warning 组合类仍需单独登记脚本
+
+两个构造器都只登记监听器。需要执行 `advance()` 时，还要把同一个实例传给 `addScript()`。
+
+:::
 
 ```java
 BaseCampaignEventListenerAndScript combined = new BaseCampaignEventListenerAndScript(30f) {
@@ -208,11 +224,11 @@ sector.removeListener(combined);
 sector.removeScript(combined);
 ```
 
-`isDone()` 只参与脚本列表的自动移除。它变为 `true` 后，监听器登记仍然存在；监听回调中调用 `removeListener(this)` 也不会结束脚本推进。组合类必须为两个方向各自定义结束条件和清理动作。
+`isDone()` 只控制脚本列表的自动移除。它变为 `true` 后，监听器登记仍在；监听回调中调用 `removeListener(this)`，脚本也仍会推进。**组合类的结束条件与清理，要分别落实到这两份登记。**
 
 ## 其他事件类别速查表
 
-舰队生命周期用于完整实现，`BaseCampaignEventListener` 的其余回调仍遵循相同注册和派发规则。选择回调时应从需要观察的状态转换反推方法，而不是一次覆写全部接口。
+舰队事件之外，`BaseCampaignEventListener` 还提供市场、战斗、声望与经济等回调。这些方法沿用相同的登记和派发机制，区别在于事件发生的时机与传入的对象：
 
 | 事件类别 | 代表回调 | 适合读取的状态 |
 | --- | --- | --- |
@@ -425,9 +441,9 @@ public class GearInLocationChangeProbe implements CurrentLocationChangedListener
 
 ## 总结
 
-舰队监听在实际事件中读取当前对象，投放前标记限定观察范围，四个计数分别记录状态变化。限时登记保存期限与实例，一次性存档标记继续保留结束状态。
+这轮观察从投放前的 Memory 标记开始，四类回调记录同一支舰队的状态变化。限时容器保存实例与剩余期限，persistent data 则记住这轮观察已经开始，结束后也保留这个事实。
 
-编者建议按生成、到达、跃迁与消失各做一次观察，再比较保存后的计数。容器、过滤与参数关系明确，日志才能对应同一条舰队活动。
+使用组合类时，**编者建议把两个移除入口安排在同一个结束动作中**。`isDone()` 成立只会结束脚本，监听器仍留在自己的注册表里。这个类替您合并了接口，两套生命周期却仍由您负责。
 
 ## 建议参考项
 

@@ -71,7 +71,7 @@ public class GearInLocationBuilder implements EveryFrameScript {
         marker.setId("GearIn_observation_marker");
         marker.addTag("GearIn_observation_marker");
         system.addEntity(marker);
-        system.autogenerateHyperspaceJumpPoints(false, false, true);
+        system.autogenerateHyperspaceJumpPoints(false, true, true);
         LOG.info("GearIn location built: id=" + system.getId());
         done = true;
     }

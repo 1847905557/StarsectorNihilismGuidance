@@ -25,9 +25,9 @@
 
 ## 定义舰船风格
 
-在 MOD 的 `data/config/hull_styles.json` 创建 `GEAR_TECH`。顶层 `style` 使用这个键读取舰船风格，后续同势力的其他船体也可以引用它。
+在 MOD 的 `data/config/hull_styles.json` 创建 `GEAR_TECH`。船体文件顶层的 `style` 使用这个键读取舰船风格，后续同势力的其他船体也可以引用它。
 
-从原版 `LOW_TECH` 复制后修改颜色和资源。**风格统一靠各船体的实际引用**，在文件中写一个名字还需要接到每艘船上。当前以黄铜色系替换护盾、排散与爆炸配色：
+从原版 `LOW_TECH` 复制后修改颜色和资源。**各船体通过引用同一套风格统一表现**，配置文件中的键还需要写入对应船体。当前以黄铜色系替换护盾、排散与爆炸配色：
 
 ```json
 {
@@ -79,13 +79,13 @@
 }
 ```
 
-颜色采用 RGBA，材质字段填写资源路径，声音字段填写 `sounds.json` 的声音集 ID。同路径文件按对象键合并，当前只提交自有 `GEAR_TECH`。
+颜色采用 RGBA，材质字段填写资源路径，声音字段填写 `sounds.json` 的声音集 ID；三类字段分别引用自己的数据。同路径文件按对象键合并，当前只提交自有 `GEAR_TECH`。
 
 ### 颜色与资源读取规则
 
 九个常用颜色字段分别为：hyperspaceJitterColor、baseCampaignExplosionColor、baseCombatExplosionColor、fighterRepairFlickerColor、weaponDisabledExplosionColor、shieldRingColor、shieldInnerColor、fluxVentCoreColor、fluxVentFringeColor。缺少其中一项时，对应表现采用白色；错误数组格式才会导致加载失败。
 
-**复制完整风格后再调整，比较容易保留已有表现。** 游戏能进入主菜单，并不代表每个颜色都符合设计；护盾、爆炸和排散需要分别看。当前 `overloadColor` 沿用缺省的蓝紫色 `(150,150,255)`。
+**复制完整风格后再调整，比较容易保留已有表现。** 游戏能进入主菜单，只说明加载条件已经满足；护盾、爆炸和排散的配色还需要在对应场景分别确认。当前 `overloadColor` 沿用缺省的蓝紫色 `(150,150,255)`。
 
 `fighterChipIconColor` 缺省采用 fighterRepairFlickerColor，`combatExplosionNonFlashColorOverride` 可单独调整较蓬松的爆炸部分。盖板用 coversColorShiftAmount 与 coversMatchShipBrightness 调整，colorShiftCovers 不参与当前配置。
 
@@ -119,7 +119,7 @@
 }
 ```
 
-本例使用 `SMOKE` 的常规混合方式，`GLOW` 使用加法混合。火焰与航迹颜色可以分别配置，大地图颜色不填时采用对应普通颜色。
+本例使用 `SMOKE` 的常规混合方式，`GLOW` 使用加法混合。火焰与航迹颜色分别配置，因此橙色火焰与暗色烟雾可以同时使用。大地图颜色不填时，采用对应普通颜色。
 
 ### 引擎参数读取速查表
 
@@ -132,7 +132,7 @@
 | 颜色缺省 | engineColor、contrailColor 为白色 |
 | 粒子最终尺寸缺省 | contrailParticleFinalSizeMult 为 0.5 |
 
-`type` 使用 GLOW 或 SMOKE，`mode` 决定粒子与光带参数。缺少必填值或使用无效枚举，游戏在加载阶段报告对应键的错误。
+`type` 使用 GLOW 或 SMOKE，`mode` 则决定按粒子还是光带读取参数。选择模式以后，按上表补齐该模式的字段；缺少必填值或使用无效枚举，游戏在加载阶段报告对应键的错误。
 
 ### 使用光带型航迹
 
@@ -164,7 +164,7 @@
 
 `glowSprite`、`glowOutline` 提供材质，glowSizeMult 与 glowAlternateColor 调整泛光。`omegaMode` 让停止加速时切断航迹。当前工匠使用普通 GEAR_TECH，此条目作为可选的光带配置。
 
-引擎槽也能用 `style: "CUSTOM"` 与 `styleSpec` 内联完整风格。这个方式依赖 CUSTOM 保持为保留键，内联对象同样需要该模式的完整字段。普通制作采用文件中的 ID 引用即可。
+引擎槽也能用 `style: "CUSTOM"` 与 `styleSpec` 内联完整风格。此时风格内容直接写在引擎槽中，仍需要该模式的完整字段，并依赖 CUSTOM 保持为保留键。普通制作采用文件中的 ID 引用即可。
 
 ## 接到工匠船体
 
@@ -189,7 +189,7 @@
   ],
 ```
 
-**顶层 style 与引擎槽 style 分别查询两份风格文件。** 本例两者同名，仍需分别登记。保存后，可以通过舰船编辑器的 "导入 MOD" 加载齿轮工业，直接选择自定义风格。
+**顶层 style 与引擎槽 style 分别查询两份风格文件。** 本例两者虽然同名，登记与引用仍分别进行。保存后，可以通过舰船编辑器的 "导入 MOD" 加载齿轮工业，直接选择自定义风格。
 
 ## 验证方案
 
@@ -233,7 +233,7 @@
 }
 ```
 
-音频放到 MOD 的 `sounds/` 下，路径对应每个 file，船体等级按声音数组索引选择。把舰船风格的 `engineLoopSet` 改为 `GearIn_engine_loop`，该声音集就用于循环引擎声。其余加速、护盾和排散声音沿同一结构处理，音频准备与播放由第五章继续讲解。
+音频放到 MOD 的 `sounds/` 下，路径对应每个 file；声音集再按船体等级选择数组中的资源。把舰船风格的 `engineLoopSet` 改为 `GearIn_engine_loop`，便将这个声音集用于循环引擎声。其余加速、护盾和排散声音沿同一结构处理，音频准备与播放由第五章继续讲解。
 
 **声音集 ID 与音频文件都需要存在。** 风格缺省时使用原版通用集；填写了不存在的自定义集，部署时可能在对应声音对象创建处产生空引用；音频资源路径错误则在加载阶段报错。
 
@@ -278,7 +278,7 @@
 
 舰船风格负责护盾、损伤、排散、声音与相关材质，引擎风格负责火焰和航迹。两者通过船体的不同 style 字段引用，可以复用同一套势力外观，也可以为特殊船体单独配置。
 
-调整表现时，把注册键、字段、资源和运行位置对应起来。编者建议先用原版资源确认自己的配色和模式，再替换材质与声音，这样每次变化的原因都比较明确。
+调整表现时，将注册键、字段、资源和运行位置对应起来。本例先使用原版资源确认配色与模式，再替换所需的材质和声音，每次改动就有明确的观察对象。
 
 ## 建议参考项
 

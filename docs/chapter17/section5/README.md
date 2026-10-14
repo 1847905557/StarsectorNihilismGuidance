@@ -1,6 +1,6 @@
 # 实现本地化机制
 
-工坊文字已经能通过分类和键取值，这次把按钮、对话与动态句子组织到同一组代码入口。沿用 `GearIn_ui`，增加对话分类，再让 `GearInI18n` 分别处理普通取值、格式化和令牌替换。日志先比较实际返回值，界面继续使用同样的方法。
+界面文字外置以后，调用方仍要选择分类、取得模板并填入动态内容。本节沿用 `GearIn_ui`，增加对话分类，用一个简短的 `GearInI18n` 集中这些调用。重点是让文本与用途保持对应，使修改和翻译文字时仍能保留参数的实际含义。
 
 *本节预期阅读时间：\~12 分钟。*
 
@@ -23,15 +23,15 @@
 - [C1-S7] 的基础对象描述注册；
 - [C3-S5] 的描述类型、字段用途与对象绑定。
 
-## 本地化组织
+## 按文字用途安排分类和键
 
-两级键由 `(category, id)` 组成。分类按功能域命名，键使用 MOD 前缀，代码和文件只要保持这两个值一致，多个界面就可以共享同一份文本。
+一条 strings 文本由 `(category, id)` 定位。分类按功能组织，键使用 MOD 前缀；同一条文字可以供多个界面使用，它的身份由分类和键确定。
 
-沿用 [C17-S2] 定义的 `GearIn_ui` 与 `GearIn_text_hello`，在同一对象追加界面键，再定义 `GearIn_dialog` 保存对话。两类键采用 `GearIn_text_*` 前缀，当前分类常量与 JSON 一起对应。
+我们沿用 [C17-S2] 的 `GearIn_ui` 与 `GearIn_text_hello`，在原分类增加按钮和模板，再建立 `GearIn_dialog` 保存对话。两类键都采用 `GearIn_text_*` 前缀，稍后的代码常量固定这两个分类。
 
-`descriptions.csv` 负责舰船、武器、行星和势力等对象的风味文本；`strings.json` 负责代码主动取用的界面标签、按钮、弹窗和对话行。同一个对象也可以同时有风味描述与代码提示，按实际显示入口分别保存文本。
+文字的显示入口仍要区分。舰船、武器、行星和势力等对象的风味文本由 `descriptions.csv` 注册，代码主动取用的标签、按钮、弹窗和对话行放在 `strings.json`。同一个对象可以同时使用两者，分别服务对象描述与代码提示。
 
-## 扩展文本表，再保存取值类
+## 准备纯文本与动态模板
 
 把以下键合入 `data/strings/strings.json`，现有分类与前文键继续保留。完整例包含当前使用的六个键：
 
@@ -52,7 +52,11 @@
 }
 ```
 
-三种值形态分别演示纯文本、`%s` 模板和 `$token` 文本。
+`hello`、`dismiss`、`unknown` 与 `dock` 是纯文本；`ship_name` 的两个 `%s` 依次接受舰船名和目的地；`approach` 的 `$planetName` 保留给对话调用方替换。文字的形式由使用方式决定，模板里的参数也属于这句话的含义。
+
+翻译如果需要调换语序，格式模板可以使用 `%2$s`、`%1$s` 指定既有参数的位置；调用方传入的舰船与目的地仍各有原来的含义。字面令牌则通过名称指定内容。**句子可以重新组织，参数与对象的对应关系要保留。**
+
+## 集中取值与模板处理
 
 保存 `src/data/scripts/gearin/campaign/GearInI18n.java`，这个类把常用分类固定下来，调用方仍按方法传入文本键和动态内容：
 
@@ -96,7 +100,9 @@ public final class GearInI18n {
 
 :::
 
-`get` 集中调用双参取值入口；`ui` 和 `dialog` 只固定分类，调用方只传键名。`format` 负责填入 `%s` 参数，`replaceToken` 负责填入 `$token`。
+`ui` 和 `dialog` 固定常用分类，实际取值集中到 `get` 的双参 API 调用。`format` 取得模板后执行 `String.format`，`replaceToken` 则替换指定的字面令牌。调用方据此选择方法，并传入本次显示所需的动态内容。
+
+本例保留原版的缺失键结果。编者认为在制作阶段，能从界面和日志追到具体键名，比掩盖缺失文本更有价值；文字是否齐全，也属于本地化交付的一部分。
 
 ## 调用示例速查表
 
@@ -108,7 +114,7 @@ public final class GearInI18n {
 | `GearInI18n.replaceToken(GearInI18n.dialog("GearIn_text_approach"), "planetName", "Jangala")` | `您的舰队正在接近 Jangala。` |
 | `GearInI18n.ui("GearIn_text_does_not_exist")` | `Missing string: [GearIn_text_does_not_exist]`，日志出现 ERROR |
 
-## 在应用入口比较实际文本
+## 把文本送到使用位置
 
 在 `GearInModPlugin.onApplicationLoad(...)` 添加 `GearInI18n` 的 import，并追加局部观察：
 
@@ -121,9 +127,7 @@ Global.getLogger(GearInModPlugin.class).info("GearIn i18n token: "
         + GearInI18n.replaceToken(GearInI18n.dialog("GearIn_text_approach"), "planetName", "Jangala"));
 ```
 
-**模板取值与动态内容分别完成。** `format(...)` 对传入模板执行格式化，参数不足会报告当前格式问题；`replaceToken(...)` 只替换指定的字面令牌。日志确认后，面板与按钮沿同样的入口取得文本。
-
-编者建议先把模板与调用实参一起看，再做翻译。占位符的顺序和类型也是文本用途的一部分，换了措辞以后，当前调用仍需要填入正确内容。
+三条日志依次确认纯文本、格式模板和令牌文本的结果。面板和按钮沿用相同方法，取得的是已经适合本次显示的文字。`format(...)` 的参数不足会报告格式问题；`replaceToken(...)` 只处理指定的字面令牌，其他令牌继续保留在字符串中。
 
 ## 验证方案
 
@@ -160,9 +164,7 @@ Global.getLogger(GearInModPlugin.class).info("GearIn i18n token: "
 
 ## 总结
 
-当前文本表按界面与对话分类，取值类将普通文字、格式参数和字面令牌分别接到调用方。对象描述继续按 descriptions 注册，代码提示从 strings 取得。
-
-新增文字时沿功能分类与稳定键安排，模板和使用位置一起对应。这样界面、日志和翻译文件都能找到当前这句话的实际用途。
+文本表按用途组织分类与稳定键，取值类集中调用，实际使用方再提供动态内容。翻译可以改变措辞和语序，分类、键与参数的含义继续对应到原来的显示职责；对象的风味描述则沿用 descriptions 注册。
 
 ## 建议参考项
 

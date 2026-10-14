@@ -1,6 +1,6 @@
 # 读写货舱内容
 
-交易市场已经建立，这次直接读写它所使用的货舱数据。本节创建一份独立 `CargoAPI`，加入补给、燃料、人员和重型机械，记录数量、信用与空间，再用副本比较一次移除。库存容器可以由舰队、子市场或打捞界面提供；货物栈、信用和封存舰船的复制范围也分别确认。
+舰队货舱、子市场库存与打捞物都可以通过 `CargoAPI` 读写。本节建立一份独立货舱，加入补给、燃料、人员和重型机械，再复制其中的货物，比较数量、空间与信用。掌握这些操作后，奖励和交易流程就有了实际修改库存的入口。
 
 *本节预期阅读时间：\~18 分钟。*
 
@@ -22,23 +22,15 @@
 - [C12-S1] 的市场、子市场和实体绑定关系；
 - [C10-S1] 的生涯登记与观察脚本。
 
-## 登记独立货舱观察
+## 创建一份独立货舱
 
-创建 `src/data/scripts/gearin/campaign/GearInCargoServicesScript.java`，把这个类加入 `GearInModPlugin` 的 import。向 [C11-S3] 已有的 `onNewGameAfterTimePass(...)` 追加局部登记，沿用 `sector`：
+创建 `src/data/scripts/gearin/campaign/GearInCargoServicesScript.java`，在 `GearInModPlugin` 添加该类的 import，并向已有的 `onNewGameAfterTimePass(...)` 追加以下局部登记，沿用 `sector`：
 
 ```java
 sector.addTransientScript(new GearInCargoServicesScript());
 ```
 
-脚本在新档推进后创建独立货舱、记录并比较，完成后结束。当前数据用于日志实验。
-
-**Cargo 是库存容器，先确认谁持有它。** 舰队、子市场与打捞界面都可以提供这份对象。读取已有对象时，舰队通常通过 `CampaignFleetAPI.getCargo()` 取得，子市场通过 `SubmarketAPI.getCargo()` 取得；交易或打捞界面会把正在操作的 Cargo 传给界面代码。拿到对象以后，读取数量、遍历栈和计算空间都使用同一套 `CargoAPI` 方法。
-
-Cargo 自身只描述内容和库存状态，市场的价格、税率和子市场规则由 `MarketAPI` 与 `SubmarketAPI` 管理。需要判断某件货物属于哪一类时，读取它所在的 `CargoStackAPI`，不要把 Cargo 当成单一的商品列表。
-
-## 创建独立货舱
-
-用 `Global.getFactory().createCargo(true)` 创建独立货舱，再写入本次实验内容。当前创建结果默认启用 `unlimitedStacks`，它决定单个货物栈的数量上限；需要改为规格的栈上限时，调用 `setUnlimitedStacks(false)`，再用 `isUnlimitedStacks()` 读取选择。舰队的总容量另由成员与游戏规则计算。
+脚本在新档推进后执行一次，创建独立对象并记录结果。用 `Global.getFactory().createCargo(true)` 取得货舱，加入当前实验的物品：
 
 ```java
 CargoAPI cargo = Global.getFactory().createCargo(true);
@@ -49,11 +41,15 @@ cargo.addMarines(12);
 cargo.addCommodity(Commodities.HEAVY_MACHINERY, 25f);
 ```
 
-`createCargo(true)` 返回的是一份新的对象，不会自动挂到玩家舰队或市场。要让它成为某个系统的一部分，调用方需要把内容合并到目标 Cargo，或者把它交给能够接收 Cargo 的交易、奖励或打捞流程。
+这里的 `cargo` 没有挂到玩家舰队或市场，数量变化只发生在这份实验对象中。要修改实际库存，从舰队的 `getCargo()`、子市场的 `getCargo()` 或交易、打捞流程提供的对象取得货舱，再执行对应操作。
 
-## 读取补给、燃料和人员
+**取得哪份 Cargo，就修改哪份库存。** `CargoAPI` 管理内容，市场价格、税率与交易规则仍由市场和子市场处理。独立货舱也可以作为奖励或计算结果，最后交给相应流程接收。
 
-补给和燃料有独立的读写方法，数量使用 `float`。船员和陆战队都属于人员，但 API 分别提供了 `getCrew()` 与 `getMarines()`；`getTotalCrew()` 只统计船员，`getTotalPersonnel()` 则把船员和陆战队合在一起。本例初始船员 40、陆战队 12，总人员 52。写入后再从同一 Cargo 读取，局部操作如下：
+## 按物品与数量读写内容
+
+### 补给、燃料和人员
+
+补给与燃料有专门的增减方法，数量采用 `float`。船员与陆战队分别用 `getCrew()` 和 `getMarines()` 读取；`getTotalCrew()` 统计船员，`getTotalPersonnel()` 合计船员与陆战队。本例初始总人员为 52，下面的局部片段读取后再做一次增减：
 
 ```java
 float supplies = cargo.getSupplies();
@@ -68,11 +64,9 @@ cargo.addCrew(5);
 cargo.removeMarines(2);
 ```
 
-商品通过商品 ID 读写。`getCommodityQuantity(id)` 返回当前数量，`addCommodity()` 与 `removeCommodity()` 会更新对应商品栈；ID 应该来自 `Commodities` 或其他已注册的商品规格。
+### 用商品 ID 定位重型机械
 
-## 按商品 ID 读写商品
-
-商品数量可以是小数，因此读取结果使用 `float`。添加商品时，Cargo 会按商品规格建立或更新对应栈；移除数量超过现有库存时，实际结果仍应通过再次读取确认。商品 ID 只描述是哪一种商品，价格和交易限制属于市场经济对象，不由 Cargo 保存。
+普通商品通过 ID 读写，`Commodities` 提供原版常量，自有商品则用已注册 ID。`getCommodityQuantity(...)` 返回所有对应商品栈的总量，`addCommodity(...)` 与 `removeCommodity(...)` 更新它们。数量可以带小数，局部片段如下：
 
 ```java
 float machineryBefore = cargo.getCommodityQuantity(Commodities.HEAVY_MACHINERY);
@@ -84,11 +78,13 @@ LOG.info(String.format("machinery %.1f -> %.1f -> %.1f",
         cargo.getCommodityQuantity(Commodities.HEAVY_MACHINERY)));
 ```
 
-商品、武器、战机和特殊物品都可以出现在 Cargo 中，但它们的附加数据不同。商品适合用商品 ID 直接查询；其他物品通常先取得栈，再通过栈上的类型和数据对象继续处理。这样既能保持商品查询的简单性，也能保留装备对象所需的规格信息。
+日志会记录重型机械从 25 增加到 30，再减少到 28。完整脚本另做一次副本比较，将原货舱从 25 减到 20，两个片段各自展示不同操作。
 
-## 读写 MutableValue 信用
+移除数量超过现有数量时，现有货物可能已经被扣除。`removeCommodity(...)` 没有返回值，通用 `removeItems(...)` 返回 `false` 时也可能已经部分移除；按固定数量扣费的功能，要在扣除前确认数量满足本次需求。
 
-Cargo 的信用不是一个普通 `float` 字段，而是 `MutableValue` 对象。`getCredits()` 取得这个可变值，`get()` 读取当前金额，`set()` 直接设值，`add()` 与 `subtract()` 用于增减。交易、奖励和费用代码通常使用增减方法，这样可以保持调用意图清晰。
+### 信用使用独立的可变值
+
+`getCredits()` 返回 `MutableValue`。`get()` 读取金额，`set()` 直接设值，`add()` 与 `subtract()` 表示增减。以下局部片段先奖励 2500，再扣除 500：
 
 ```java
 MutableValue credits = cargo.getCredits();
@@ -98,17 +94,43 @@ LOG.info("credits=" + credits.get() + " before=" + before);
 credits.subtract(500f);
 ```
 
-信用不会生成 `CargoStackAPI`，遍历货舱栈时也不会看到它。需要复制或清空 Cargo 时，应按照 `CargoAPI` 对信用的语义单独确认结果。
+信用独立于货物栈。遍历物品时不会取得信用，复制与清空物品时也要单独确认金额；本节的副本实验会展示这个区别。
 
-## 读取容量和空间占用
+## 从货物栈读取类型与空间
 
-`getMaxCapacity()` 是货舱容量上限，`getSpaceUsed()` 是当前物品占用的空间，`getSpaceLeft()` 是可用空间。空间不是商品数量的简单相加：人员、燃料、武器和特殊物品可能有不同的单件空间，封存舰船也由独立的舰队数据承载。向有限容量货舱写入后，应重新读取实际数量和空间。
+货舱会把同类物品组成 `CargoStackAPI`。`getStacksCopy()` 返回当前栈名单的副本，下面逐栈记录类型、名称、数量与空间：
 
-**容量描述当前状态，直接添加方法仍可能形成超载。** `addCommodity(...)` 按货物与栈规则加入数量，不会替调用方按总货舱容量截断。实际转移、奖励与界面代码按照各自流程处理容量，当前记录添加后的数量与空间。
+```java
+for (CargoStackAPI stack : cargo.getStacksCopy()) {
+    LOG.info(String.format("type=%s name=%s size=%.1f space=%.1f null=%s",
+            stack.getType(), stack.getDisplayName(), stack.getSize(),
+            stack.getCargoSpace(), stack.isNull()));
+    if (stack.isCommodityStack()) {
+        LOG.info("commodity=" + stack.getCommodityId());
+    }
+}
+```
 
-`getSpaceLeft()` 将容量减去已用空间，并以 0 为下限。独立 Cargo 使用自身默认容量，当前为 1000；舰队货舱再由实际舰队配置容量。超过上限时仍按实际数量与已用空间观察，剩余空间以 0 为下限。
+`CargoItemType` 的 `RESOURCES`、`WEAPONS`、`FIGHTER_CHIP`、`SPECIAL` 与 `NULL` 分别表示资源、武器、战机、特殊物品与空占位。`getData()` 的含义随类型变化：前三类使用相应 ID，特殊物品使用 `SpecialItemData`。读取商品用 `isCommodityStack()` 和 `getCommodityId()`，读取武器用 `isWeaponStack()` 和 `getWeaponSpecIfWeapon()`，实际规格按物品类型取得。
 
-如果需要判断某一类物品是否会超出容量，先用 `getCargoSpacePerUnit()` 取得单位空间，再结合 `getSize()` 和当前 `getSpaceLeft()` 计算一个估算值。这个估算只用于界面提示；真正写入后仍以 Cargo 的实际数量为准。
+`getDisplayName()` 供界面与日志辨认，稳定引用仍使用 ID 或数据对象。`getSize()` 是数量，`getCargoSpace()` 是整栈空间，`getCargoSpacePerUnit()` 是单件空间。`isNull()` 判断空占位，它可能由玩家整理货物或转移操作留下；清理使用 `removeEmptyStacks()`，清理后重新取得栈名单。
+
+数量还可以通过栈的 `setSize()`、`add()` 与 `subtract()` 修改。按某种商品增减时，本节采用 Cargo 层方法，让它定位对应栈；需要编辑具体一栈时才使用栈方法。**列表副本中的栈仍属于原货舱**，通过栈引用写入，原库存也会改变。
+
+### 总容量与单栈上限
+
+独立 Cargo 的默认总容量为 1000。`getMaxCapacity()` 读取上限，`getSpaceUsed()` 读取占用，`getSpaceLeft()` 返回剩余空间并以 0 为下限：
+
+```java
+float capacity = cargo.getMaxCapacity();
+float used = cargo.getSpaceUsed();
+float left = cargo.getSpaceLeft();
+LOG.info(String.format("cargo space: %.1f / %.1f, left=%.1f", used, capacity, left));
+```
+
+物品空间按规格计算。本例补给与重型机械占货舱，燃料和人员的商品空间为 0，它们另有燃料与人员容量。武器、战机及特殊物品也有各自的单位空间，不能把所有数量简单相加。
+
+要估算还能加入多少重型机械，从它的栈取得单位空间，再结合剩余容量计算。局部观察如下：
 
 ```java
 float leftBefore = cargo.getSpaceLeft();
@@ -122,54 +144,17 @@ for (CargoStackAPI stack : cargo.getStacksCopy()) {
 LOG.info(String.format("space before=%.1f machinery unit=%.2f", leftBefore, unitSpace));
 ```
 
-```java
-float capacity = cargo.getMaxCapacity();
-float used = cargo.getSpaceUsed();
-float left = cargo.getSpaceLeft();
-LOG.info(String.format("cargo space: %.1f / %.1f, left=%.1f", used, capacity, left));
-```
+**直接添加货物可以造成超载。** `addCommodity(...)` 按栈规则写入，并不会按总容量截断；超载后 `getSpaceLeft()` 仍为 0，超出多少要结合已用空间与上限判断。实际奖励、转移与界面流程各自决定如何处理容量，写入后的数量与空间再从当前 Cargo 读取。
 
-::: tip 单栈上限与总容量
+单栈上限另由 `unlimitedStacks` 控制，使用 `isUnlimitedStacks()` 读取。它决定同类货物怎样堆叠，舰队总容量则来自成员与游戏规则。
 
-`unlimitedStacks` 处理每一栈能容纳多少件，`getMaxCapacity()` 处理总空间，两者各有用途。当前创建默认使用无限栈，参数写成 `false` 也采用这个默认结果；需要选择规格栈上限时显式调用 `setUnlimitedStacks(false)`。
-
+::: warning 工厂参数不切换单栈上限
+当前 `createCargo(...)` 的参数为 `true` 或 `false` 时都会启用无限栈。需要使用规格中的栈上限时，显式调用 `setUnlimitedStacks(false)`。
 :::
 
-## 按类型读取货舱栈
+## 复制货物，比较原对象与副本
 
-`CargoStackAPI` 是 Cargo 内的一项货物栈。`getStacksCopy()` 返回当前栈集合的副本，适合遍历和记录；它不是对内部集合的实时视图。每个栈都有一个 `CargoItemType`，可以通过 `getType()` 判断大类，再使用对应的专用方法读取数据。
-
-常用读取方式如下：
-
-- `getSize()`：栈内数量；
-- `getCargoSpace()`：该栈当前占用的货舱空间；
-- `getCargoSpacePerUnit()`：单件空间；
-- `getDisplayName()`：适合日志或界面显示的名称；
-- `getData()`：栈关联的原始数据对象；
-- `isCommodityStack()`、`getCommodityId()`：判断并读取商品栈；
-- `isWeaponStack()`、`getWeaponSpecIfWeapon()`：判断并读取武器栈；
-- `isNull()`：判断栈是否没有有效内容。
-
-```java
-for (CargoStackAPI stack : cargo.getStacksCopy()) {
-    LOG.info(String.format("type=%s name=%s size=%.1f space=%.1f null=%s",
-            stack.getType(), stack.getDisplayName(), stack.getSize(),
-            stack.getCargoSpace(), stack.isNull()));
-    if (stack.isCommodityStack()) {
-        LOG.info("commodity=" + stack.getCommodityId());
-    }
-}
-```
-
-类型决定 `getData()` 的解释：商品、武器和战机栈使用相应 ID，特殊物品栈使用 `SpecialItemData`。武器规格则通过 `getWeaponSpecIfWeapon()` 取得。读取前先判断类型，再调用对应 getter，可以避免把不同物品的底层数据混在一起。
-
-`CargoItemType.RESOURCES`、`WEAPONS`、`FIGHTER_CHIP`、`SPECIAL` 和 `NULL` 是栈分类，而不是商品 ID。一个资源分类下仍然可能有多种商品；一个特殊物品栈的 `getData()` 也不能直接转换成商品规格。代码通常先判断 `getType()`，然后调用与该分类匹配的 getter。
-
-栈数量可以由 `setSize()` 直接设置，也可以用 `add()`、`subtract()` 做增减。教学示例优先使用 Cargo 层的 `addCommodity()`、`removeCommodity()` 等专用方法，因为它们会按商品语义定位目标栈；只有已经取得明确栈对象并且确实需要逐栈编辑时，才直接修改栈数量。
-
-`getDisplayName()` 适合日志和玩家可见文本，`getData()` 适合继续交给规格或插件处理。两者承担的职责不同：显示名称不能作为稳定 ID 保存，数据对象也不适合直接拼接给玩家展示。
-
-`getStacksCopy()` 的副本只保证遍历时集合稳定。栈本身仍然属于原 Cargo，直接调用栈的修改方法会改变原对象。需要分别计算货物数量时使用 `createCopy()`，副本中的栈数量独立；附加 data 对象的共享范围继续按其类型确认。
+现在用 `createCopy()` 复制货物，在原货舱移除 5 重型机械。完整脚本的日志会显示原数量 20、副本数量 25；两份栈的数量已经独立。以下局部片段取得用于计算的副本：
 
 ```java
 CargoAPI calculation = cargo.createCopy();
@@ -180,25 +165,15 @@ for (CargoStackAPI stack : calculation.getStacksCopy()) {
 }
 ```
 
-::: warning 货物栈和封存舰船分开处理
+**`createCopy()` 复制货物数量与无限栈设置，信用和封存舰船分别处理。** 所以本例原信用为 2500，副本信用为 0。附加 data 对象也可能继续共用：商品 ID 是不可变字符串，本次数量比较可以直接使用；带可变实例数据的物品，还要按数据类型判断复制范围。
 
-普通货物通过 `CargoStackAPI` 遍历；封存舰船通过 `cargo.getMothballedShips()` 取得 `FleetDataAPI`，每艘船再以 `FleetMemberAPI` 表示。两组数据都属于 Cargo 的内容，但不会在同一个 `CargoStackAPI` 中出现。处理舰船时应使用舰队 API 的方法，不要尝试把 `FleetMemberAPI` 强行转换成货物栈。
+保存某次结算前的货物，可以保存这样的独立副本。市场或打捞界面继续使用实际 Cargo，跨帧操作时重新从持有者取得当前库存与栈；日志也记录持有者，几份都装着补给的货舱才不会混淆。
 
-:::
+### 合并与清空的范围
 
-## 清理、合并和复制 Cargo
+`addAll(other)` 按栈把另一份货物加入目标，`removeAll(other)` 按栈移除对应数量。信用单独增减，`clear()` 清空普通货物栈。把打捞结果加入玩家货舱时，这些方法承担库存写入，费用、权限和结算仍由所属流程完成；市场库存同样不能仅靠合并代替交易。
 
-`removeEmptyStacks()` 会清理当前 Cargo 中的空栈。清理后重新调用 `getStacksCopy()`，不要继续使用已经移除的栈引用。`addAll(CargoAPI)` 可以把另一份 Cargo 的内容合并进来，`removeAll(CargoAPI)` 按栈移除内容；这两个操作都应在确认目标容量和权限后执行。
-
-**`createCopy()` 复制货物栈数量与无限栈设置，信用和封存舰船另行处理。** 栈上的规格与附加 data 对象也可能继续共享。本节用不可变商品 ID 比较数量，重型机械的移除只改变原 Cargo；信用副本初始为 0，单独记录即可看清两种范围。
-
-合并时要先确认两份 Cargo 的用途。把打捞结果合并到玩家货舱属于一次明确的库存转移；把市场 Cargo 合并到临时清单则可能绕过交易流程。`addAll()` 只负责数据合并，费用、权限、市场库存和界面刷新仍由调用方承担。
-
-清空操作也要区分范围。`clear()` 处理 Cargo 保存的普通库存，封存舰船仍由舰队数据保存；如果业务需要同时移除舰船、信用和物品，应该分别记录每组数据的原值，再按相同对象边界执行清理。日志至少记录操作前后的 Cargo 身份、商品数量和空间占用，便于确认清理没有误触其他持有者。
-
-对于市场和打捞流程，Cargo 往往会在界面关闭、交易完成或奖励结算时继续被使用。脚本在这些流程中保存的栈引用只适合短时观察；跨帧保存时应重新取得持有者提供的 Cargo，或者保存 `createCopy()` 结果作为只读快照。
-
-编者建议先固定货舱对象，再按同一组字段比较操作。几份货舱都装着补给，名称并不能区分它们；持有者与对象引用才说明当前改的是哪一份。
+Cargo 中还可以保存封存舰船。使用前调用 `initMothballedShips(factionId)`，再从 `getMothballedShips()` 取得 `FleetDataAPI`，通过 [C11-S2] 的成员 API 操作舰船。它们与货物栈分别维护，`clear()` 清空货物时仍保留舰船与信用。需要同时清理时，对每组实际对象分别处理。
 
 ## 完整最小例
 
@@ -313,9 +288,9 @@ public class GearInCargoServicesScript implements EveryFrameScript {
 
 ## 总结
 
-独立货舱用资源与商品方法写入数量，用 `MutableValue` 记录信用，再从栈读取类型与空间。总容量、单栈上限和实际数量分别处理，货物栈副本、信用和封存舰船也各有复制范围。
+独立货舱中的补给、燃料、人员与重型机械通过对应方法写入，信用单独增减，栈提供数量、类型与空间。复制后的物品数量独立，信用、舰船与附加数据按各自范围处理。
 
-这些方法可以复用到舰队、子市场与打捞数据，持有者则决定后续流程。当前先把一份货舱的数量前后值看清，交易与奖励再接到各自入口。
+实际功能从所属舰队、子市场或打捞流程取得 Cargo，库存修改才会落到正确对象。数量、容量与结算也分别确认，这套读写方法才能用于完整的奖励或交易。
 
 ## 建议参考项
 

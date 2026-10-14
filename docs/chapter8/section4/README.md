@@ -1,6 +1,6 @@
 # 修改舰船数值
 
-第二章的船插和战术系统已经使用过数值修改。多个效果同时作用于舰船时，各项加成会合并计算；效果结束后，还需要解除自己的修饰。本节以速度和 S-mod 上限为例，讲解普通数值与动态统计项，并比较船插、战斗插件和战术系统的写入时机。
+一艘舰船可以同时受到船插、技能和战术系统的修饰。自己的效果写入之后，要与这些来源共同计算；结束时，也应只解除自己的部分。本节以速度和 S-mod 上限为例，讲清来源 ID、数值合并与动态项的读取，再分别实现安装加成、十秒临时效果和战术系统加成。
 
 *本节预期阅读时间：\~25 分钟。*
 
@@ -25,7 +25,7 @@
 
 ## 取得舰船数值
 
-在战斗代码中取得玩家舰的 `MutableShipStatsAPI`，再读取最大速度。以下局部片段使用已经确认可用的玩家舰：
+从有效玩家舰取得 `MutableShipStatsAPI`，再取得它的最大速度。下面的局部片段使用已经确认可用的舰船：
 
 ```java
 ShipAPI ship = engine.getPlayerShip();
@@ -33,22 +33,38 @@ MutableShipStatsAPI stats = ship.getMutableStats();
 MutableStat maxSpeed = stats.getMaxSpeed();
 ```
 
-`getMutableStats()` 取得这艘舰船的数值对象，`getMaxSpeed()` 再取得最大速度。`getFluxCapacity()` 和 `getFluxDissipation()` 等普通 getter 也按这种方式返回 `MutableStat`。
+`getMaxSpeed()` 返回的 `MutableStat` 属于这艘舰船，幅能容量与耗散等普通属性也通过相应 getter 取得。它保存基础值 `base` 和各项修饰：`getBaseValue()` 读取基值，`getModifiedValue()` 读取合并后的结果。
 
-每帧插件取得玩家舰时，要处理尚未部署、舰船已被摧毁和逃生艇等状态。完整示例在读取数值前检查这些条件。
+实际逐帧运行时，玩家舰可能尚未部署、已经被摧毁或变为逃生艇。完整例在读取数值前处理这些状态，然后才操作当前舰船的 stats。
 
-`MutableStat` 保存基础值 `base` 和当前修饰。`getBaseValue()` 返回基础值，`getModifiedValue()` 返回合并全部修饰后的结果。比较加成时，先区分这两个值。
+## 为效果写入自己的来源
 
-## 写入与合并修饰
-
-给最大速度增加固定的 20，并读取修改结果，局部片段如下：
+给最大速度增加固定的 20，并读取结果：
 
 ```java
 maxSpeed.modifyFlat("GearIn_speed_example", 20f);
 float speed = maxSpeed.getModifiedValue();
 ```
 
-`modifyFlat` 沿用第二章的写法。`"GearIn_speed_example"` 是来源 ID，`20f` 是增量；这项修饰被写入当前舰船的最大速度对象。
+`"GearIn_speed_example"` 标识来源，`20f` 指定增量。`modifyFlat(...)` 将这项记录写入最大速度对象，随后读取时与已有加成一起计算。
+
+在每帧回调中重复执行同一写入：
+
+```java
+stats.getMaxSpeed().modifyFlat("GearIn_speed_example", 20f);
+```
+
+**同一个来源 ID、同一类修饰覆盖同一条记录。** 因此反复写入仍然只增加 20；换一个来源 ID，才会增加另一条参与计算的修饰。同一个效果保持稳定 ID，不同效果各自使用独立来源。
+
+效果结束后，用相同来源解除：
+
+```java
+stats.getMaxSpeed().unmodify("GearIn_speed_example");
+```
+
+其他船插与技能的记录继续保留，最终速度也仍由它们共同决定。确认清理时，检查自己的来源记录是否存在，再比较最终数值，才能区分残留修饰与其他加成。
+
+## 计算多个来源的合并结果
 
 ### 数值修饰速查表
 
@@ -58,7 +74,7 @@ float speed = maxSpeed.getModifiedValue();
 | percent | `modifyPercent(source, value)` | 各来源百分比相加，按基础值计算 |
 | mult | `modifyMult(source, value)` | 各来源倍率连乘，作用于此前合并结果 |
 
-`MutableStat` 分别用 `flatMods`、`percentMods` 和 `multMods` 保存这三类修饰，最终按下面的公式计算：
+`MutableStat` 用 `flatMods`、`percentMods` 和 `multMods` 分别保存三类记录。相同类型的来源先汇总，再按下式计算：
 
 ```text
 modified = (base + base * percentMod / 100 + flatMod) * mult
@@ -70,15 +86,15 @@ modified = (base + base * percentMod / 100 + flatMod) * mult
 (80 + 80 * 25 / 100 + 20) * 0.5 = 60
 ```
 
-**percent 按 base 计算，mult 作用于合并后的整体。** 需要整体减半时使用 `modifyMult(source, 0.5f)`；base 为 0 时，percent 的贡献也为 0。
+**percent 按 base 计算，mult 缩放此前合并的整体。** 所以上面的 25% 提供 20，最后的 0.5 再将结果减半。需要整体减半时使用 `modifyMult(source, 0.5f)`；基值为 0 时，percent 的贡献也为 0。
 
 ::: warning 根据计算对象选择减益写法
 
-负 percent 同样按 base 计算。例如基础值 80、固定增量 20，再写入 -100% 时，结果仍为 20。数值还可能被减到负数。编者建议您在需要整体缩放时使用 mult，并确认目标属性实际允许的范围。
+负 percent 同样按 base 计算。例如基础值 80、固定增量 20，再写入 -100% 时，结果仍为 20，数值也可能被减到负数。需要整体缩放时使用 mult，并确认目标属性实际允许的范围。
 
 :::
 
-修改后调用 `getModifiedValue()` 即可取得当前结果。`setBaseValue(...)` 用于修改基础值；船插和战术系统通常在基础值之上添加修饰。
+修改后调用 `getModifiedValue()` 读取当前结果。`setBaseValue(...)` 直接改变基础值，船插和战术系统通常采用来源修饰，在已有基础值之上参与计算。
 
 ### 修改与读取方法速查表
 
@@ -93,29 +109,9 @@ modified = (base + base * percentMod / 100 + flatMod) * mult
 | 检查状态 | `isUnmodified` | 检查修饰表是否为空 |
 | 修改基础值 | `setBaseValue` | 设置 base，并在读取时重新计算 |
 
-### 使用稳定的来源 ID
-
-在每帧回调中重复执行下面的局部片段：
-
-```java
-stats.getMaxSpeed().modifyFlat("GearIn_speed_example", 20f);
-```
-
-**同一个来源 ID、同一类修饰更新同一条记录。** 因此每帧写入仍是固定加 20。换一个来源 ID，则新增一项参与计算的修饰。
-
-不同效果使用独立的稳定 ID，同一个效果写入与解除时使用相同 ID。下面的局部片段清理刚才的速度修饰：
-
-```java
-stats.getMaxSpeed().unmodify("GearIn_speed_example");
-```
-
-清理后，其他船插与技能的加成继续参与计算。编者建议您调试时同时检查来源记录和最终数值；舰船已有其他加成时，仅凭最终值判断自己的效果是否残留，很容易误判。
-
 ## 读写动态统计项
 
-普通速度可以直接通过 getter 取得，动态统计项则用字符串 ID 查找。`stats.getDynamic()` 返回 `DynamicStatsAPI`，其中 `getMod(id)` 返回保存修饰的 `StatBonus`。
-
-下面用 S-mod 数量上限演示一个局部片段：
+速度有固定 getter，动态统计项则使用字符串 ID 查找。从 `stats.getDynamic()` 取得 `DynamicStatsAPI`，调用 `getMod(id)` 获得保存修饰的 `StatBonus`。下面用 S-mod 数量上限演示：
 
 ```java
 DynamicStatsAPI dynamic = stats.getDynamic();
@@ -124,25 +120,29 @@ hullmodLimit.modifyFlat("GearIn_dynamic_example", 1f);
 float effective = hullmodLimit.computeEffective(2f);
 ```
 
-`Stats.MAX_PERMANENT_HULLMODS_MOD` 指定动态统计项，`GearIn_dynamic_example` 标记本次修饰的来源。前者用于取得对象，后者用于覆盖和清理其中的修饰。
+这里同时使用两个 ID：`Stats.MAX_PERMANENT_HULLMODS_MOD` 选择动态项，`GearIn_dynamic_example` 标识本次来源。不同效果可以向同一个动态项写入自己的记录，再分别覆盖和解除。
 
-`StatBonus` 保存 flat、percent、mult 修饰，基础值在读取时提供。`computeEffective(2f)` 就是把 2 作为基准，连同当前修饰计算结果。原版的 `Misc.getMaxPermanentMods(...)` 读取这项修饰时，从设置中的 `maxPermanentHullmods` 取得基准，再计算并取整。
+`StatBonus` 保存 flat、percent 和 mult 修饰，基础值由读取方提供。`computeEffective(2f)` 将 2 与当前记录一起计算。原版 `Misc.getMaxPermanentMods(...)` 则从设置中的 `maxPermanentHullmods` 取得基准，再计算并取整。
 
-**动态修饰的实际效果由读取方和计算基准决定。** 本节日志使用 `2f` 演示计算，实际 S-mod 上限由装配侧按设置中的基准读取。战斗日志中的这个值用于观察修饰的写入与清理。
+::: info 本节日志使用的动态基准
 
-`getMods()` 返回动态 `StatBonus` 集合，`getStats()` 返回动态 `MutableStat` 集合；后者可以通过 `getStat(id)` 按需取得，默认基础值为 1。调试时可以查看这两类集合，但撤销自己的效果仍使用来源 ID 调用 `unmodify`。
+战斗日志以 `2f` 演示写入与清理，实际 S-mod 上限由装配侧按设置中的基准计算。动态记录是否产生功能效果，还取决于读取方在哪里、采用什么基础值。
 
-自定义功能也可以使用自己的动态 ID，同时在功能代码中读取修饰并计算结果。这样不同船插、技能或环境效果可以向同一项统计写入加成，再由该功能统一使用。
+:::
+
+`getMods()` 返回动态 `StatBonus` 集合，`getStats()` 返回动态 `MutableStat` 集合。后者通过 `getStat(id)` 取得，默认基础值为 1。可以用集合观察当前有哪些动态项，解除自己的效果仍然使用来源 ID。
+
+自定义功能也可以约定自己的动态 ID，让船插、技能或环境效果向它写入。但功能代码还要读取这些记录并计算结果；创建一个动态项本身，不会让游戏自动获得新功能。
 
 ## 把修改放到对应时机
 
-同一种数值可以从不同入口修改。**效果的适用场合与持续时间决定写入位置**：
+掌握记录与计算之后，再决定它们何时存在。**适用场合与持续时间决定写入回调**：
 
 - **船插的 `applyEffectsBeforeShipCreation(...)`**：在生涯数值重建和战斗舰船创建前写入，适合安装船插后持续存在的加成。
 - **战斗插件的 `advance(...)`**：在当前战斗中读取实时对象和数值，适合计时与临时效果。
 - **战术系统的 `apply(...)` 与 `unapply(...)`**：在系统效果期间持续写入，再在结束时清理。
 
-本节分别使用 `GearInStatsHullMod`、`GearInShipStatsProbe` 与 `GearInDynamicStatsSystem` 实现这三种效果，完整类在局部操作说明后给出。
+本节用 `GearInStatsHullMod` 提供安装加成，`GearInShipStatsProbe` 提供前十秒临时效果，`GearInDynamicStatsSystem` 提供系统效果。三者写入独立来源，结束时也分别处理。
 
 ### 船插写入持续加成
 
@@ -153,7 +153,7 @@ stats.getMaxSpeed().modifyFlat(SPEED_ID, 10f);
 stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD).modifyFlat(DYNAMIC_ID, 1f);
 ```
 
-船插增加 10 速度，并给动态上限增加 1。每次重建仍使用 `SPEED_ID` 与 `DYNAMIC_ID`，更新的还是自己的记录。两个 ID 在完整类中固定为 `GearIn_stats_hullmod_speed` 与 `GearIn_stats_hullmod_dynamic`。
+安装船插后增加 10 速度与 1 动态上限。每次数值重建都以相同的 `SPEED_ID` 和 `DYNAMIC_ID` 写入，覆盖自己的旧记录。完整类将它们固定为 `GearIn_stats_hullmod_speed` 与 `GearIn_stats_hullmod_dynamic`。
 
 ### 战斗插件先取得当前引擎
 
@@ -184,9 +184,9 @@ if (t < REMOVE_AT) {
 }
 ```
 
-`REMOVE_AT` 为 `10f`，时间从本场战斗开始计算，暂停时间由 `false` 排除。前十秒，插件用自己的 ID 加 20 速度、加 1 动态修饰；十秒后，持续解除自己的来源。
+`REMOVE_AT` 为 `10f`，按本场战斗的非暂停时间判断。前十秒写入 +20 速度与 +1 动态修饰，之后解除这两个来源。时间从战斗开始计算，所以验证时立即部署工匠，才能观察完整的临时效果。
 
-日志每两秒输出普通数值、Dynamic 计算结果和两个来源 ID 的存在状态。十秒后，插件来源被移除，船插的 10 速度继续保留。**清理结果应回到保留其他来源的基线**，后面的验证按这个结果比较。
+日志每两秒记录普通数值、Dynamic 结果与来源存在状态。十秒后临时来源消失，船插的 +10 速度仍然保留。**清理后的基线包括其他仍生效的来源**，验证也据此比较。
 
 ### 战术系统跟随效果强度
 
@@ -198,7 +198,7 @@ stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD)
         .modifyFlat(DYNAMIC_ID, effectLevel);
 ```
 
-`SPEED_BONUS` 为 `80f`。前摇中，`effectLevel` 从 0 升至 1，全功率保持 1，后摇再回到 0，速度加成也随它变化。普通速度使用游戏传入的系统 `id`，动态修饰使用 `GearIn_dynamic_system`。
+系统的 `SPEED_BONUS` 为 `80f`。前摇时 `effectLevel` 从 0 升至 1，全功率保持 1，后摇回落至 0，速度因此随强度变化。普通速度使用游戏传入的系统 `id`，动态记录使用 `GearIn_dynamic_system`，两者都在结束时解除。
 
 在 `unapply(...)` 中，用相同 ID 清理：
 
@@ -452,9 +452,9 @@ public class GearInDynamicStatsSystem extends BaseShipSystemScript {
 
 ## 总结
 
-普通 `MutableStat` 保存基础值，动态 `StatBonus` 在计算时接收基础值；两者都使用来源 ID 管理修饰。覆盖与清理需要复用相同来源，结果则按 flat、percent 和 mult 的规则合并。
+来源 ID 让多个效果共同修改数值，又能各自撤销。`MutableStat` 保存基础值，`StatBonus` 则在计算时接收基准，最终都按 flat、percent 与 mult 的规则使用当前记录。
 
-船插参与数值重建，战斗插件维护临时修饰，战术系统按效果强度持续写入并在结束时清理。排查数值问题时，沿对象、来源、读取方与调用时机核对，便能区分效果尚未写入、其他来源仍在生效和清理遗漏这几种情况。
+本节的安装加成、十秒临时效果与系统加成分别接到自己的回调。写入对象、来源、持续条件和读取基准确定之后，日志中的结果也就能对应到每项效果的应用与结束。
 
 ## 建议参考项
 

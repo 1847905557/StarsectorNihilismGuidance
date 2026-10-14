@@ -96,6 +96,11 @@ public class GearInFleetActivityIntel extends BaseIntelPlugin {
     @Override
     public void createIntelInfo(TooltipMakerAPI info, ListInfoMode mode) {
         info.addPara(getName(), getTitleColor(mode), 0f);
+        Object update = getListInfoParam();
+        if (update != null) {
+            info.addPara((String) update, 3f);
+            return;
+        }
         info.addPara("Fleet ID: " + getFleetId(), 3f);
         info.addPara("Location: " + getLocationText(), 3f);
         info.addPara(getStatusText(), 3f);

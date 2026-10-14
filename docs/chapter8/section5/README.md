@@ -1,6 +1,6 @@
 # 配置武器脚本
 
-第二章已经给武器绑定命中与光束效果，本节继续区分武器每帧、生成射弹、命中结算和光束更新。各回调接收的对象范围不同，先按实际需要选择入口，再读取当前实例或事件提供的信息。
+武器持续开火、弹体生成、命中与光束照射，会在不同位置调用脚本。本节将这些入口分别绑定到都林和乌里，用日志记录武器状态、射弹来源与伤害结算，再以光束末端的粒子对应逐帧信息。每段逻辑都使用本次回调提供的对象。
 
 *本节预期阅读时间：\~18 分钟。*
 
@@ -23,7 +23,7 @@
 - [C8-S2] 的对象和帧状态；
 - [C8-S3] 的逐帧与暂停。
 
-## 按事件选择入口
+## 将脚本绑定到实际使用的数据
 
 ### 武器脚本字段速查表
 
@@ -34,21 +34,19 @@
 | `proj.onHitEffect` | `OnHitEffectPlugin` | 当前命中与结算 |
 | `wpn.beamEffect` | `BeamEffectPlugin` | 激活光束的逐帧信息 |
 
-**字段决定调用位置，接口决定参数。** 完整类名和当前 JAR 对应，只有实际使用该数据文件的对象才会调用它。
+**`.wpn` 绑定武器与光束逻辑，`.proj` 绑定弹体事件。** 完整类名指向 JAR 中的实现，但还要由当前武器实际使用这份数据。特别是生成与命中脚本，登记在武器引用的弹体文件里，事件才能到达对应类。
 
-## 观察每把武器的持续状态
+## 记录武器实例的开火过程
 
-在都林 `wpn` 中设置局部字段：
+在都林的 `.wpn` 中，将每帧效果绑定到 `GearInWeaponFlowEffect`。局部字段如下：
 
 ```json
 "everyFrameEffect": "data.scripts.gearin.combat.GearInWeaponFlowEffect"
 ```
 
-每把武器有自己的效果实例，`wasFiring` 因此只保存该武器的开火状态。`WeaponEffectPluginWithInit` 提供绑定时的 `init`，`EveryFrameWeaponEffectPluginWithAdvanceAfter` 提供操作完成后的 `advanceAfter`。
+每把武器拥有自己的效果实例，所以它的计时器与 `wasFiring` 只跟踪当前这把武器。绑定时，`WeaponEffectPluginWithInit.init(...)` 记录武器标识、规格与光束分类。
 
-**同一帧操作前后读取的值可能不同。** 当前 `advance` 记录开始开火的变化，`advanceAfter` 记录已经执行后的弹药、冷却和蓄力。
-
-开火边沿局部片段如下：
+随后在 `advance(...)` 中比较当前与上次开火状态。由未开火转为开火时，记录一次变化，再保存本帧状态：
 
 ```java
 if (weapon.isFiring() && !wasFiring) {
@@ -58,17 +56,19 @@ if (weapon.isFiring() && !wasFiring) {
 wasFiring = weapon.isFiring();
 ```
 
-操作后累计 2 秒再报告，完整类也记录 `init` 里的武器 ID、规格与是否光束。输出间隔用于减少持续日志，当前武器实例保留自己的计时器。
+这个比较只在开始开火时产生日志。持续射击中的弹药、冷却与蓄力，放到 `EveryFrameWeaponEffectPluginWithAdvanceAfter.advanceAfter(...)` 记录；本例采用 2 秒报告间隔，避免连续输出淹没开火变化。
 
-## 观察射弹生成
+**同一帧操作前后，读到的武器状态可能不同。** `advanceAfter(...)` 提供武器本帧操作完成后的观察位置，因此两个方法分别记录变化与执行后的结果。
 
-在都林实际引用的 `GearIn_durin_shot.proj` 中设置：
+## 在生成回调处理本次弹体
+
+都林引用的是 `GearIn_durin_shot.proj`，将生成脚本登记在这份文件中：
 
 ```json
 "onFireEffect": "data.scripts.gearin.combat.GearInShotOnFireEffect"
 ```
 
-`onFire` 接收刚生成的 `projectile`、来源 `weapon` 和当前 `engine`。它适合读取规格、伤害、EMP 和来源，并在生成位置安排单次表现。
+`onFire(...)` 收到刚生成的 `projectile`、来源 `weapon` 与本场 `engine`。规格、伤害、EMP 与来源都可以在这个时机读取，生成位置也可用于安排单次表现。接口参数为：
 
 ```java
 void onFire(DamagingProjectileAPI projectile,
@@ -76,17 +76,17 @@ void onFire(DamagingProjectileAPI projectile,
             CombatEngineAPI engine)
 ```
 
-当前完整类记录这些字段，来源对象可能因创建方式不同而缺席，日志按实际对象状态记录。本次弹体用于本次事件，下一发仍从新的回调参数取得。
+完整例将这些信息写入同一条记录。来源武器或舰船可能因创建方式不同而缺席，日志保留相应空值。每次开火事件传入的是本次生成的弹体，下一发继续使用下一次参数。
 
-## 观察本次命中结果
+## 从命中参数读取结算
 
-在同一弹体登记：
+在同一份弹体文件中登记命中效果：
 
 ```json
 "onHitEffect": "data.scripts.gearin.combat.GearInShotOnHitEffect"
 ```
 
-`onHit` 接收当前目标、位置、护盾状态和 `ApplyDamageResultAPI`。`shieldHit` 标记护盾命中，`damageResult` 提供当前护盾、装甲、结构与 EMP 结算。
+弹体命中后，`onHit(...)` 接收目标、命中位置、护盾状态与 `ApplyDamageResultAPI`。`shieldHit` 标记是否命中护盾，`damageResult` 提供本次护盾、装甲、结构与 EMP 结算：
 
 ```java
 void onHit(DamagingProjectileAPI projectile,
@@ -97,25 +97,25 @@ void onHit(DamagingProjectileAPI projectile,
            CombatEngineAPI engine)
 ```
 
-射弹、导弹和光束脉冲的对应命中沿这类弹体事件处理。**读取本次结果时，直接使用回调参数**，避免上一笔命中对象参与当前判断。
+射弹、导弹与光束脉冲的对应命中都可以沿弹体事件处理。**目标与结果使用本次回调参数。** 它们一起描述当前这笔命中，保留上一次的目标或结算来处理下一次事件，会混淆实际结果。
 
-## 观察光束当前帧
+## 在照射期间读取光束
 
-在乌里 `wpn` 设置：
+乌里光束的逐帧脚本登记在 `.wpn`：
 
 ```json
 "beamEffect": "data.scripts.gearin.combat.GearInBeamLogger"
 ```
 
-`advance` 接收 `amount`、`engine` 和 `BeamAPI`。光束提供起点、终点、长度、伤害和当前目标，`didDamageThisFrame` 与 `getDamageTarget` 每次重新读取。
+光束激活期间，`advance(...)` 接收步长、引擎与 `BeamAPI`。起点、终点、长度、伤害和目标都从这次传入的光束读取：
 
 ```java
 void advance(float amount, CombatEngineAPI engine, BeamAPI beam)
 ```
 
-完整类每累计 1 秒记录目标、帧伤害标志与长度，再在上一帧末端位置创建青色光点。停止激活后该更新过程停止，下一次激活继续按实例计时。
+完整类每累计 1 秒记录目标、`didDamageThisFrame()` 与长度，再在上一帧末端位置创建青色光点。日志对应帧状态，粒子对应读取的末端位置。光束停止激活后更新停止，下一次激活沿实例中的计时继续。
 
-编者建议比较光束命中与未命中的两段结果。持续存在的画面和逐帧伤害并不是同一个信息，读取参数时要按本帧结算解释。
+**光束在画面中存在，不代表每一帧都产生伤害。** 比较命中与未命中时，重新读取 `getDamageTarget()` 和 `didDamageThisFrame()`，才能把持续照射与本帧结算区分开。
 
 ## 完整最小例
 
@@ -331,9 +331,9 @@ public class GearInBeamLogger implements BeamEffectPlugin {
 
 ## 总结
 
-武器每帧与光束属于持续实例，射弹生成与命中属于当前事件。`wpn` 和 `proj` 分别登记对应接口，实例字段保存自己的状态，事件参数则提供本次对象和结果。
+武器效果保存每把武器的持续状态，开火与命中回调提供本次弹体及结算，光束效果读取激活期间的帧信息。它们分别由武器和弹体数据中的字段接入。
 
-后续动画、伤害和复杂效果继续采用这些入口。先选对象与时机，再组织读取和表现，完整类名、数据引用与日志就能形成可核对的调用关系。
+都林与乌里的日志现在能够对应到这些时机。后续动画和复杂效果沿用同一组入口，在需要的事件中读取对象、计算结果并安排表现。
 
 ## 建议参考项
 

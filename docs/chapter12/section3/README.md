@@ -1,6 +1,6 @@
 # 注册市场商品
 
-货舱已经能按商品 ID 读写，这次注册自己的回火合金。先给它定义全局规格与货舱描述，再在 Foundry 市场读取库存、供需、价格和合法性。名字、经济类别和市场状态分别有对应字段，把同一个 ID 从注册追到交易界面，才能看清哪些结果已经生效。
+本节注册回火合金，使它能作为货物加入 Cargo，并在悬停时显示描述。随后到 Foundry 市场读取它的库存、供需与买卖报价，再通过势力规则将它列为违禁品。同一种商品在不同市场会有不同结果，规格与市场状态也要分别处理。
 
 *本节预期阅读时间：\~20 分钟。*
 
@@ -25,55 +25,53 @@
 - [C12-S1] 的市场对象和市场查询入口；
 - 能够启用 Console Commands 并进入生涯市场。
 
-## 注册商品身份
+## 为回火合金建立规格
 
-商品首先要有一个稳定的 ID。`name` 是玩家看到的显示名称，`id` 是代码、势力规则和市场数据共同使用的键。本节定义 `GearIn_tempered_alloy`，显示名为 `Tempered Alloy`。经济类别沿用 `heavy_machinery`，用于观察自有物品怎样接到已有工业需求；新名称和需求类别各自设置。
-
-文件位置是 `data/campaign/commodities.csv`。MOD 只提交自己的数据行，表头和原版表头保持一致；当前使用自己的前缀与 ID，保持注册和调用对应；同 ID 数据的合并会影响最终规格。
+在 MOD 的 `data/campaign/commodities.csv` 注册本节商品。已有文件时只追加数据行；同 ID 行参与数据合并，因此新商品使用独立 ID `GearIn_tempered_alloy`。文件内容如下：
 
 ```csv
 name,id,demand class,base price,export value,price variability,utility,origin,tags,stack size,cargo space,icon,sound id,sound id drop,order,economyTier,econUnitOrigUnused,econUnit,baseRaidDanger,eU * base value,iconWidthMult,plugin,desc
 Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,108000,1,,
 ```
 
-加载成功后，`Global.getSettings().getCommoditySpec("GearIn_tempered_alloy")` 能取得一个 `CommoditySpecAPI`。**规格、描述与市场状态分别接入。** 先取得规格，再登记货舱描述，库存与合法性从目标市场读取。
+显示名采用 `Tempered Alloy`，需求类别沿用 `heavy_machinery`。新商品身份与已有经济类别分别设置，市场才能按这个类别处理需求；本节先说明商品如何接入，生产规则留给产业实现。
 
-## 配置 CSV 字段
+基础价格为 180，出口价值为 700，价格波动级别为 3，效用为 1。它们是经济计算的输入，实际报价还要结合市场。`economyTier` 取 2.2，`econUnit` 取 600，参与经济规模与物品数量换算；货舱空间每件为 1，规格单栈上限为 1000，栈是否采用这个上限由 [C12-S2] 的 Cargo 设置决定。
 
-字段可以按四组理解。身份字段决定代码如何找到商品；经济字段决定市场如何把商品纳入需求和价格计算；货舱字段决定玩家如何携带和看到它；扩展字段则把图像、声音或插件接到已经注册的商品上。
+图标沿用原版金属图标，两列声音使用已注册的补给拾取与放下声音。`tags` 的 `industrial, expensive` 是两个独立标签，CSV 按 [C1-S7] 的规则给含逗号字段加引号。标签供分类与筛选使用，具体用途取决于读取它的功能。
 
-### 身份与显示
+### 商品字段速查表
 
-`name` 写入显示名称，`id` 是稳定键，`origin` 保存来源标识，`tags` 是可供规则和筛选使用的标签集合。标签以逗号分隔，`CommoditySpecAPI.hasTag()` 会对单个标签进行判断。
+| 字段 | 当前职责 |
+|---|---|
+| `name` / `id` | 显示名与代码、规则使用的稳定 ID |
+| `demand class` | 经济需求类别，本例使用已建立的 `heavy_machinery` |
+| `base price` / `export value` | 基础价格与出口价值 |
+| `price variability` / `utility` | 价格波动级别与商品效用 |
+| `origin` / `tags` | 来源标识与逗号分隔的标签集合 |
+| `stack size` / `cargo space` | 规格单栈上限与单件空间 |
+| `icon` / `iconWidthMult` | 图标路径与显示宽度倍率 |
+| `sound id` / `sound id drop` | 物品拾取与放下声音 ID |
+| `order` | 列表显示顺序 |
+| `economyTier` / `econUnit` | 经济规模参数与数量换算基准 |
+| `baseRaidDanger` | 突袭危险度 |
+| `econUnitOrigUnused` / `eU * base value` | 表中的辅助数据列，保留原列位 |
+| `plugin` / `desc` | 保留表头位置；商品插件和货舱长描述不从这两列接入 |
 
-### 经济与价格
+## 登记货舱描述
 
-`demand class` 指向已有的需求类别，`base price` 是商品规格的基础价格，`export value` 是出口价值，`price variability` 表示价格波动范围，`utility` 参与商品效用计算。需求类别必须是游戏已经认识的类别；`heavy_machinery` 能让本例沿用原版工业经济分类。
-
-### 货舱表现
-
-`stack size` 是单个栈允许的数量，`cargo space` 是单位货物占用的货舱空间。`icon`、`sound id` 和 `sound id drop` 决定货舱与交易界面的视觉和音效资源。空间与堆叠是两个字段，数量能堆叠不代表单位空间为零。
-
-### 经济规模与扩展
-
-`economyTier` 与 `econUnit` 参与经济规模和数量换算，`baseRaidDanger` 提供突袭危险度。表头中的辅助计算列也保留原位置，当前规格读取继续使用实际 getter。`plugin` 列不提供商品插件入口，货舱长描述通过 `descriptions.csv` 的 `RESOURCE` 行登记。把下面两行写入 `data/strings/descriptions.csv`，已有表头时只追加数据行：
+货舱长描述沿 [C3-S5] 的 `RESOURCE` 类型注册，键使用商品 ID。把下面两行写入 `data/strings/descriptions.csv`，已有表头时只追加记录：
 
 ```csv
 id,type,text1,text2,text3,text4,text5,notes
 GearIn_tempered_alloy,RESOURCE,经过回火处理的工业合金，可用于需要耐磨与韧性的结构部件。,,,,,
 ```
 
-该行使用商品 ID 与 `RESOURCE` 类型，`text1` 在货舱和交易界面的悬停说明中显示。这里沿用 [C3-S5] 的类型关系，CSV 规则继续由 [C1-S7] 承接。
-
-::: tip 先验证 ID，再验证经济
-
-商品 ID、需求类别和资源路径属于不同加载环节。先在日志中确认 `GearIn_tempered_alloy` 建立了规格，再检查市场对象和交易界面，故障定位会比同时修改多组字段更直接。
-
-:::
+`text1` 在货舱与交易界面的悬停说明中显示。商品规格让货物可以被识别，描述行给它提供正文，两处 ID 逐字符对应。启动后先确认规格能够取得，再通过控制台加入货物，观察图标、声音与悬停结果。
 
 ## 读取全局商品规格
 
-`CommoditySpecAPI` 描述这种商品的全局规格。它不代表某一个市场的库存，也不保存某个市场当前的买卖价。最常用的读取方式是从设置或经济对象取得规格，再按用途读取身份、价格、货舱和分类。
+通过设置或经济对象取得 `CommoditySpecAPI`，可以读取刚才的全局定义。以下局部片段记录回火合金的身份、经济类别、基础价格与货舱规格：
 
 ```java
 CommoditySpecAPI spec = Global.getSettings().getCommoditySpec("GearIn_tempered_alloy");
@@ -82,27 +80,33 @@ LOG.info(String.format("spec id=%s name=%s demand=%s base=%.0f stack=%d space=%.
         spec.getStackSize(), spec.getCargoSpace()));
 ```
 
-身份和显示 getter 包括 `getId()`、`getName()`、`getLowerCaseName()`、`getOrigin()`、`getIconName()` 和 `getIconLargeName()`。其中 `getId()` 适合日志和规则引用，`getName()` 适合玩家可见文本，图标 getter 返回资源路径或图标标识。
+这些值说明商品注册成了什么。即使规格的基础价格为 180，当前市场报价也可以不同；库存与供需从市场对象继续取得。
 
-经济 getter 包括 `getBasePrice()`、`getExportValue()`、`getPriceVariability()`、`getDemandClass()`、`getUtility()`、`getEconomyTier()` 和 `getEconUnit()`。这些值来自商品规格，不能直接当成某个市场已经计算出的最终价格。
+### 规格读取入口速查表
 
-货舱与资源分类 getter 包括 `getStackSize()`、`getCargoSpace()`、`getIconWidthMult()`、`getSoundId()` 和 `getSoundIdDrop()`。`isPersonnel()`、`isFuel()`、`isSupplies()` 能帮助通用代码识别原版特殊资源；普通商品通常返回 `false`。
+| 读取目的 | 入口 |
+|---|---|
+| 身份与名称 | `getId()`、`getName()`、`getLowerCaseName()`、`getOrigin()` |
+| 图标与声音 | `getIconName()`、`getIconLargeName()`、`getIconWidthMult()`、`getSoundId()`、`getSoundIdDrop()` |
+| 经济参数 | `getBasePrice()`、`getExportValue()`、`getPriceVariability()`、`getDemandClass()`、`getUtility()`、`getEconomyTier()`、`getEconUnit()` |
+| 堆叠与空间 | `getStackSize()`、`getCargoSpace()` |
+| 标签与经济分类 | `getTags()`、`hasTag()`、`isPrimary()`、`isExotic()`、`isMeta()`、`isNonEcon()` |
+| 物流资源身份 | `isPersonnel()`、`isFuel()`、`isSupplies()` |
+| 数据来源 | 来源 MOD 查询，供注册冲突与加载来源定位 |
 
-标签和类型判断使用 `getTags()`、`hasTag()`、`isPrimary()`、`isExotic()`、`isMeta()` 与 `isNonEcon()`。这些判断适合筛选和显示，不替代市场对象上的库存和合法性状态。
+`isPrimary()` 判断商品 ID 是否也是它自己的需求类别。本例使用 `heavy_machinery` 类别，因此回火合金不是这个类别的主商品。`exotic`、`meta` 与 `nonecon` 标签分别影响对应经济分类，人员、燃料与补给判断则供物流功能使用。分类、库存与违禁规则各有读取入口，标签本身不会自动建立市场货物或势力限制。
 
-`setName()`、`setIconName()`、`setDemandClass()`、`setBasePrice()`、`setExportValue()` 和 `setBaseDanger()` 会改变运行时规格。它们适合明确的全局重配置；临时查看市场状态时保持规格只读，避免把一次运行时修改误认为 CSV 已经生效。
+`setName()`、`setIconName()`、`setDemandClass()`、`setBasePrice()`、`setExportValue()` 与 `setBaseDanger()` 会改变运行时全局规格，随后读取它的对象也会取得新值。本例只读规格，商品数据由 CSV 提供，市场即时状态按下面的对象处理。
 
-规格对象还提供来源 Mod 查询能力。来源信息适合排查同名 ID 来自哪个数据包，但它不能代替 `getId()` 作为业务键。规则文件、货舱数据和市场查询都应继续使用稳定 ID。
+## 到 Foundry 读取商品状态
 
-商品分类判断也要和市场状态分开。`isFuel()`、`isSupplies()` 和 `isPersonnel()` 说明商品在通用物流代码中的特殊角色；`isNonEcon()`、`isMeta()` 和 `isExotic()` 则说明它参与经济计算的方式。它们都来自规格，不能直接说明当前市场有没有这种商品。
+创建 `src/data/scripts/gearin/campaign/GearInCommodityProbe.java`。在 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 中，将以下局部调用放在市场日志之后、`expired = true` 之前：
 
-`getTags()` 返回标签集合，适合用于筛选或调试。标签是数据声明，不是市场库存，也不会自动替代势力的 `illegalCommodities` 规则。需要判断交易是否合法时，继续读取市场对象的合法性 API。
+```java
+GearInCommodityProbe.log(market);
+```
 
-因此，规格日志通常回答商品注册成了什么，市场日志回答这个市场现在怎样处理它。把两组字段放在同一行时，应保留商品 ID 作为连接键，避免把全局基础值和市场即时值混成一个数字。
-
-## 读取市场商品状态
-
-`CommodityOnMarketAPI` 描述这件商品在这个市场上的当前状态。通过 `MarketAPI.getCommodityData(id)` 取得它，再用 `getCommodity()` 回到全局 `CommoditySpecAPI`，用 `getMarket()` 确认所属市场。
+两类位于同一包，监听器已经保存 Foundry 市场引用。完整观察器对回火合金、补给与毒品逐项读取，零库存也可以记录当前经济状态。它从 `market.getCommodityData(id)` 取得 `CommodityOnMarketAPI`，再通过 `getCommodity()` 回到规格、`getMarket()` 确认市场，局部片段如下：
 
 ```java
 CommodityOnMarketAPI onMarket = market.getCommodityData("GearIn_tempered_alloy");
@@ -110,21 +114,17 @@ CommoditySpecAPI spec = onMarket.getCommodity();
 LOG.info("market=" + onMarket.getMarket().getId() + " spec=" + spec.getId());
 ```
 
-`getStockpile()` 读取库存状态，`getAvailable()` 读取经济可得量档位。产业界面的需求档位与货舱里的商品件数分别使用经济单位和物品数量，换算由当前经济规则处理。
+### 区分经济档位与货物件数
 
-`getDeficitQuantity()` 和 `getExcessQuantity()` 则表示能按较高或较低价格出售、购买的物品数量，适合在交易时判断数量范围。**档位与件数一起看，先确认当前 getter 返回哪一种单位。**
+`getStockpile()` 读取库存状态，`getAvailable()` 读取经济可得量档位。`getMaxSupply()`、`getMaxDemand()` 是产业供需档位，`getDemand()` 返回需求对象，`getDemandValue()` 读取需求值。经济更新通过 `updateMaxSupplyAndDemand()` 重新取得当前产业的供需，观察器在更新结束后读取。
 
-供需相关 getter 是 `getMaxSupply()`、`getMaxDemand()`、`getDemand()` 和 `getDemandValue()`。`updateMaxSupplyAndDemand()` 会按当前市场状态重新计算上下限，通常由经济更新流程调用；读取时应记录计算后的实际值。
+**产业的供需档位与 Cargo 中的件数采用不同单位。** `getDeficitQuantity()` 返回可按较高价格向市场出售的件数，`getExcessQuantity()` 返回可按较低价格从市场购买的件数，适合与本次交易数量比较。换算还受到 `econUnit` 与当前经济规模影响，档位 3 不能直接理解为库存 3 件。
 
-市场对象还提供 `getUtilityOnMarket()`、`isPersonnel()`、`isFuel()`、`isNonEcon()`、`isMeta()`、`getExportIncome()` 和 `getCommodityMarketData()`。其中 `getUtilityOnMarket()` 已经考虑市场上的商品效用，适合与市场状态一起记录。
+需要进一步解释当前市场时，`getUtilityOnMarket()` 已考虑当地商品效用，`getExportIncome()` 读取出口收入，`getCommodityMarketData()` 取得商品的市场汇总数据。市场商品也提供 `isPersonnel()`、`isFuel()`、`isNonEcon()` 与 `isMeta()` 等分类，用于相应计算。
 
-## 分解贸易调节的正负方向
+### 读取近期贸易带来的调节
 
-经济事件通过贸易修饰改变商品的可得状态。`getTradeMod()` 保存综合通道，`getTradeModPlus()` 和 `getTradeModMinus()` 保存正向、负向通道；合并时分别采用 plus 的正值、minus 的负值，`getCombinedTradeModQuantity()` 返回最终数量影响。
-
-贸易调节是数量方向的附加状态。它可能来自事件、产业或其他市场效果，持续时间和来源由写入方管理。调节结果变化时，`available`、赤字/盈余和最终价格可能一起变化，但这不代表 `stockpile` 已经被同量修改。
-
-读取调节器时要区分原始值和修正值。`MutableStatWithTempMods` 能继续提供修正后的统计结果，`getCombinedTradeModQuantity()` 则适合在日志中记录合并后的数量；页面示例只记录结果，不把临时修正保存成商品规格字段。
+贸易和经济事件通过带期限的修饰改变可得状态。`getTradeMod()` 允许正负值，`getTradeModPlus()` 只取正向部分，`getTradeModMinus()` 只取负向部分，`getCombinedTradeModQuantity()` 返回三者合并后的物品数量影响。下面两段局部日志分别记录总结果与各通道：
 
 ```java
 float tradeQuantity = onMarket.getCombinedTradeModQuantity();
@@ -141,11 +141,13 @@ LOG.info(String.format("trade mod=%.1f plus=%.1f minus=%.1f combined=%.1f",
         onMarket.getCombinedTradeModQuantity()));
 ```
 
-`addTradeMod()`、`addTradeModPlus()` 和 `addTradeModMinus()` 是写入入口，分别对应综合、正向和负向调节，并接受来源、数量和持续天数。它们属于经济事件或市场效果的职责；观察器只读取当前调节结果，不把调节器当成永久库存修改。
+这些通道使用 `MutableStatWithTempMods`，日志从 `getModifiedValue()` 取得修饰后的值。`addTradeMod(...)`、`addTradeModPlus(...)` 与 `addTradeModMinus(...)` 接受来源、数量与持续生涯日，写入后再换算成可得量档位修饰。
 
-## 区分市场买入价与卖出价
+因此近期交易可以改变可得量、赤字或盈余和报价，而库存并未按同样数量直接改变。需要直接设置当前市场库存时使用 `setStockpile(...)`，设置供需上限时使用 `setMaxSupply(...)`、`setMaxDemand(...)`；它们与带期限的事件效果分别处理。本节的观察器只读当前结果。
 
-商品规格提供基础价格，市场商品对象提供库存和供需状态，实际交易价格由 `MarketAPI` 根据数量、市场状态和玩家价格标志计算。`getDemandPrice(id, quantity, isPlayerPrice)` 是需求方向价格，表示市场买入、玩家卖出；`getSupplyPrice(id, quantity, isPlayerPrice)` 是供给方向价格，表示市场卖出、玩家买入。
+## 为指定数量取得买卖报价
+
+有了规格与当前市场状态，再从 `MarketAPI` 取得报价。`getDemandPrice(...)` 表示市场买入，即玩家卖出；`getSupplyPrice(...)` 表示市场卖出，即玩家买入。本例固定 100 件，并采用玩家价格：
 
 ```java
 float demandPrice = market.getDemandPrice("GearIn_tempered_alloy", 100, true);
@@ -153,11 +155,9 @@ float supplyPrice = market.getSupplyPrice("GearIn_tempered_alloy", 100, true);
 LOG.info(String.format("price for 100: demand=%.0f supply=%.0f", demandPrice, supplyPrice));
 ```
 
-两个价格方法返回当前数量的商品金额。`isPlayerPrice` 选择玩家价格修饰，子市场税费另按税率计算。日志记录 ID、100 件与两个方向，界面则把商品金额和税额分别显示；市场状态刷新后，报价也可能改变。
+**返回值是这 100 件商品的金额，子市场税额另计。** `isPlayerPrice` 决定是否应用玩家价格修饰，库存、供需与近期贸易决定当前报价，市场刷新后结果可能改变。规格基础价格与出口价值仍是各自的参数，显示名称也没有参与 ID 查询。
 
-市场价格读取应该和市场对象使用同一个商品 ID。不要先用规格对象的名称查找价格，也不要把 `getExportValue()` 当成玩家在市场界面看到的价格。基础价格是规格输入，需求、供给、贸易调节和数量共同参与最终计算。
-
-同一市场中，需求方向与供给方向可以有不同结果。玩家卖出时使用需求方向，玩家买入时使用供给方向；日志字段应直接写出方向名称，避免只记录两个没有语义的浮点数。
+两个方向可以有不同金额。需要让日志直接对应玩家操作时，用下面的局部写法保留方向名称：
 
 ```java
 String id = onMarket.getId();
@@ -168,7 +168,7 @@ LOG.info(String.format("%s sell=%.0f buy=%.0f", id, sellToMarket, buyFromMarket)
 
 ## 判断商品交易合法性
 
-`CommodityOnMarketAPI.isIllegal()` 和 `isIllegalAssumePrimary()` 直接反映市场对商品的合法性判断，`isSupplyLegal()` 与 `isDemandLegal()` 则分别说明供给和需求方向是否允许。打开 [C3-S1] 的 `data/world/factions/gear_industry.faction`，向已有 `illegalCommodities` 数组追加商品 ID，其余条目保留。局部形式如下：
+把回火合金列为齿轮工业的违禁品。打开 [C3-S1] 的 `data/world/factions/gear_industry.faction`，在已有 `illegalCommodities` 数组中追加商品 ID，其余条目保留。局部形式如下：
 
 ```json
 "illegalCommodities":[
@@ -178,31 +178,17 @@ LOG.info(String.format("%s sell=%.0f buy=%.0f", id, sellToMarket, buyFromMarket)
 ],
 ```
 
-进入 GearIn 市场后，分别观察注册规格、悬停正文与违禁品状态。**货舱能加入商品，证明 ID 可以使用；描述和交易规则继续按各自入口确认。** 自由港等市场状态还会影响当前合法性，日志与目标市场一起比较。
+`CommodityOnMarketAPI.isIllegal()` 读取当前市场判断，普通势力规则同时考虑商品 ID 与需求类别，自由港还会改变结果。`isIllegalAssumePrimary()` 直接检查势力违禁列表中的商品 ID，适合取得这项直接声明。比较两者时，同时确认市场势力与自由港状态。
 
-`isIllegal()` 是市场针对当前商品的直接判断，`isIllegalAssumePrimary()` 会按主商品规则进行判断；两者适用于不同的规则查询场景。`isSupplyLegal()` 和 `isDemandLegal()` 则把合法性拆成供给与需求方向，适合在交易界面或交易脚本中分别给出提示。
+`isSupplyLegal()`、`isDemandLegal()` 则保留产业供给与需求的合法性结果，经济更新从提供相应供需的产业读取。具体子市场是否允许一笔买卖，由 [C12-S4] 的交易插件决定。产业合法性、市场违禁判断与子市场交易许可各自有用途，当前日志分别记录。
 
-注册规格后，从目标市场按同一个 ID 取得数据，再比较市场势力与 `illegalCommodities`。`isIllegalAssumePrimary()` 直接查看势力规则，`isIllegal()` 则读取市场当前判断，两者按实际自由港等条件分别解释。
-
-## 在已有经济观察器中调用
-
-创建探针类并构建之后，在 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 中，接到当前市场日志之后、`expired = true` 之前。两个类位于同一个包，局部调用如下：
-
-```java
-GearInCommodityProbe.log(market);
-```
-
-监听器已保存 Foundry 市场引用。这次整轮经济更新结束后再记录商品数据，三个 ID 分别由本节与原版登记。
-
-本例传入已建立的 `GearIn_market_foundry`，三个商品 ID 分别由本节与原版登记。市场按有效 ID 取得已有数据或创建对应商品对象，零库存仍能记录经济状态。
-
-全局规格用于名称、类别与基础参数，市场对象用于当前库存、贸易与合法性。规格 setter 修改所有后续使用该规格的对象；`setStockpile(...)`、`setMaxSupply(...)` 与 `setMaxDemand(...)` 修改具体市场状态。需要产生经济效果时，按其所属市场和来源安排写入，当前探针按同一对市场与商品读取。
+最后让日志保留市场上下文。完整观察器的 `log(...)` 已在循环前加入以下局部行：
 
 ```java
 LOG.info("GearIn commodity context: market=" + market.getId());
 ```
 
-把这一行放在探针 `log(...)` 的循环之前。市场 ID 与商品 ID 一起定位当前记录，经济更新后的变化也能找回同一对象。
+市场 ID 与商品 ID 一起定位结果。控制台能加入回火合金后，继续悬停确认描述、进入目标市场确认违禁标记，再按相同数量比较报价与税额。
 
 ## 完整最小例
 
@@ -283,16 +269,16 @@ public class GearInCommodityProbe {
     - **解决方案**：使用 `MarketAPI.getDemandPrice()` 和 `getSupplyPrice()`，同时固定数量与玩家价格标志。
 
 - **违禁品标记没有出现**：势力文件中的 ID 与商品注册 ID 不一致。
-    - **解决方案**：逐字核对 `illegalCommodities` 中的 `GearIn_tempered_alloy`，再读取 `isIllegal()`、`isSupplyLegal()` 和 `isDemandLegal()`。
+    - **解决方案**：逐字核对 `illegalCommodities` 中的 `GearIn_tempered_alloy`，确认当前市场属于 `gear_industry` 且未启用自由港，再读取 `isIllegal()` 并核对所用子市场的交易规则。
 
 - **价格方向记录反了**：把需求价写成玩家买入，或把供给价写成玩家卖出。
     - **解决方案**：按需求方向是市场买入、供给方向是市场卖出的规则重新标注日志和验证结果。
 
 ## 总结
 
-回火合金通过 CSV 建立规格，通过 RESOURCE 行提供货舱正文，再从当前市场读取经济档位、贸易调节与合法性。报价按数量返回商品金额，税额由子市场处理。
+回火合金的规格由 CSV 提供，货舱正文用同一 ID 登记为 `RESOURCE`，市场再按当前供需和贸易计算状态。经济档位、物品件数与交易金额各有单位，报价也区分市场买入和卖出。
 
-编者建议记录市场 ID、商品 ID 和数量，再比较界面。全局规格和即时市场数据能够各自解释结果，名称相同也不意味着两个市场给出同样的库存与报价。
+势力违禁列表提供商品规则，市场条件影响当前判断，子市场决定实际交易许可。记录市场、商品与数量，就能把这些结果对应到玩家正在进行的交易。
 
 ## 建议参考项
 

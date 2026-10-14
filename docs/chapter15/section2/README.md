@@ -1,6 +1,6 @@
 # 实现对话插件
 
-会话已经能打开并处理选项，这次让三个面板分别完成文本、输入与视觉操作。示例沿九个主题推进：文字样式与编辑、选项与数值选择、确认、舰队、人物和插图。需要看见中间结果的动作保留独立按钮，您可以在同一个会话里比较修改前后。
+对话中的一段文字、一个数值选项和一张插图，都由当前面板保存并显示。本节继续使用 Foundry 会话，按文本编辑、选项管理和视觉切换依次操作，说明方法调用怎样改变画面，以及这些显示状态怎样与插件中的业务结果配合。
 
 *本节预期阅读时间：\~45 分钟。*
 
@@ -23,7 +23,7 @@
 - Java 接口、字段、重载和枚举；
 - 能够启动测试生涯并观察对话界面。
 
-## 把面板示例接到现有 `picker`
+## 打开本节的面板会话
 
 保存 `src/data/scripts/gearin/campaign/GearInInteractionDialogPlugin.java`，在 [C14-S3] 的交互 `picker` 已命中 `Foundry` 后，把返回实例换为本节类：
 
@@ -31,25 +31,21 @@
 return new PluginPick<>(new GearInInteractionDialogPlugin(), PickPriority.MOD_SPECIFIC);
 ```
 
-构建重启后，从地图打开同一实体，进入本节面板示例。初始化仍从传入的 `dialog` 取得三个面板，业务状态保存在当前实例。
+构建重启，从地图与 Foundry 交互。`init(...)` 取得同一 `dialog` 的三个面板，完整类用继续按钮切换当前主题，另用按钮保留输入、确认和视觉变换的中间状态。
 
-游戏调用 `init(...)` 时，插件从传入的 `InteractionDialogAPI` 取得三个面板并保存引用。玩家选择选项时调用 `optionSelected`，鼠标悬停调用 `optionMousedOver`，动画推进调用 `advance`，`Engagement` 返回调用 `backFromEngagement`。面板 API 只在对话对象建立后使用，业务状态由插件字段保存。
+选项回调进入 `optionSelected(...)`，悬停进入 `optionMousedOver(...)`，界面推进调用 `advance(...)`，生涯战斗结果经 `backFromEngagement(...)` 返回。面板保存画面内容，插件保存当前主题、检查结果与关闭状态，调用时分别使用它们。
 
-## 在文本区域安排输出
+## 写入文字，再编辑当前段落
 
-### 保存面板引用
-
-`getTextPanel()` 返回当前对话的文本区域。插件把它保存到字段，后续段落操作都作用于同一对象。
+从 `dialog.getTextPanel()` 取得文本区域，保存在字段，后续写入都作用于这份面板。局部取得如下：
 
 ```java
 this.text = dialog.getTextPanel();
 ```
 
-文本区域由对话实例创建；插件只保存引用，不负责构造面板。
+### 选择字体并创建段落
 
-### 设置字体和模式
-
-字体方法改变随后创建的文本组件。`setOrbitronMode` 设置模式，`isOrbitronMode` 读取当前状态。
+初始化使用 Insignia 字体，Orbitron 模式设为 `false`，再写入目标 ID：
 
 ```java
 text.setFontInsignia();
@@ -57,32 +53,26 @@ text.setOrbitronMode(false);
 text.addPara("Interaction target: " + target.getId());
 ```
 
-段落沿用当前字体与模式，读取结果可以直接写入说明文本。
+字体设置作用于随后创建的段落，已有段落继续使用原样式。`setFontOrbitron()`、`setFontVictor()` 改变字体，`setOrbitronMode(...)` 与 `isOrbitronMode()` 则分别设置和读取模式；选择字体与改变模式有各自入口。
 
-### 写入普通段落
-
-`addPara` 的基础重载创建新段落；颜色重载只改变整段颜色。
+`addPara(...)` 与 `addParagraph(...)` 都创建段落，下面的颜色重载为整段指定颜色：
 
 ```java
 text.addPara("Colored paragraph", Color.YELLOW);
 text.addParagraph("Paragraph alias", Color.GREEN);
 ```
 
-颜色参数不是字符串高亮，最近段落会变成后续编辑的目标。
-
-### 写入格式化段落
-
-格式化重载把段落颜色、高亮颜色和高亮字符串一并传入。示例只有一个 `%s` 格式标记，因此只提供一个 `value`。
+需要同时填入值并高亮时，使用格式化重载。段落颜色与高亮颜色分别传入，字符串参数替换 `%s`，这里的局部片段只有一个值：
 
 ```java
 text.addPara("Format %s", Color.WHITE, Color.YELLOW, "value");
 ```
 
-格式字符串中的标记由参数替换，高亮字符串按出现顺序匹配。
+后续值按格式顺序提供，最终段落也成为接下来编辑的目标。完整例先写入这些段落，再切到编辑主题，最近一段正是格式化文本。
 
-### 替换和追加
+### 对最近一段替换、追加与高亮
 
-`replaceLastParagraph` 改写最近段落；两个 `appendToLastParagraph` 重载分别追加和先截断再追加。
+`replaceLastParagraph(...)` 替换最近段落，`appendToLastParagraph(...)` 追加；带数量参数的追加先截去末尾字符。以下局部片段先替换，再追加，最后截去 8 个字符并追加新文本：
 
 ```java
 text.replaceLastParagraph("Round 3: replaceLastParagraph changed this line.");
@@ -90,11 +80,9 @@ text.appendToLastParagraph(" appendToLastParagraph adds text.");
 text.appendToLastParagraph(8, " trimmed prefix remains.");
 ```
 
-第二种追加重载先截去最近段落末尾的 8 个字符，再追加新文本。**编辑目标是最近一次写入的段落。** 输出顺序改变后，替换与高亮也会跟着处理新的那一段。
+**编辑目标由段落写入顺序决定。** 中间再添加一段，后面的替换与高亮就转到新段。因此这些调用围绕同一段连续完成，读者看到的变化也能对应到正在编辑的文本。
 
-### 高亮文本
-
-首个、末个和变长参数高亮入口都操作最近段落。
+高亮同样取得最近段落，分别选择首个匹配、末个匹配或一组字符串：
 
 ```java
 text.highlightFirstInLastPara("prefix", Color.YELLOW);
@@ -102,34 +90,24 @@ text.highlightLastInLastPara("remains", Color.GREEN);
 text.highlightInLastPara(Color.CYAN, "appendToLastParagraph", "remains");
 ```
 
-高亮字符串按出现顺序提供，颜色序列对应当前标记。后面的整体高亮会更新最近段落的标记，当前最终显示以最后一次设置为准。
-
-### 更新高亮颜色
-
-`setHighlightColorsInLastPara` 改变最近段落的高亮颜色序列。
+一组高亮字符串按段落中的出现顺序提供，最终这次设置确定当前标记。需要每项不同颜色时，再使用颜色序列：
 
 ```java
 text.setHighlightColorsInLastPara(Color.YELLOW, Color.GREEN);
 ```
 
-颜色只影响标记显示，不会改写段落文字。
-
-### 图片和布局
-
-`addImage` 使用分类与键插入资源；`updateSize` 重新计算文本区域布局。
+颜色改变高亮的显示，文字本身保留。编辑完成后，完整例在文本区添加原版插图，再更新布局：
 
 ```java
 text.addImage("illustrations", "space_wreckage");
 text.updateSize();
 ```
 
-图片资源来自 `illustrations/space_wreckage`，尺寸更新使后续内容按新高度排列。
+资源使用 `illustrations/space_wreckage`，`updateSize()` 根据内容重新计算尺寸。文本图片与右侧视觉面板分别显示，本节后面还用同一资源观察视觉切换。
 
-## 让选项与数值输入对应业务
+## 修改选项，保留同一个业务键
 
-### 建立选项
-
-`clearOptions` 清除旧集合；`addOption` 将显示文字与业务键绑定。
+主题切换时清理旧选项，再创建本次可执行动作。初始化的局部集合如下：
 
 ```java
 options.clearOptions();
@@ -138,11 +116,7 @@ options.addOption("Leave", LEAVE);
 options.addOption("Cancel", CANCEL);
 ```
 
-回调使用第二个参数定位选项，显示文字只是界面文案。
-
-### 改名、启用和删除
-
-`setOptionText` 只改显示文本，`setEnabled` 改可用状态，`removeOption` 按 `data` 删除。
+回调使用第二个参数定位动作。这个关系在改名后也继续成立：下面的局部片段用 `TEMP` 创建、改名、启用与删除，完整类将删除留给独立按钮执行：
 
 ```java
 options.addOption("Temporary option", "TEMP", "Created with a tooltip.");
@@ -151,11 +125,9 @@ options.setEnabled("TEMP", true);
 options.removeOption("TEMP");
 ```
 
-同一个 `TEMP` 键贯穿创建、改名、状态设置和删除。
+### 给尚未删除的选项设置提示与快捷键
 
-### 提示和快捷键
-
-提示高亮与快捷键都附着在 `data` 键上。
+在完整例的选项主题，`TEMP` 改名后仍保留，提示与 O 快捷键也按这个键设置。以下局部调用用于这个阶段：
 
 ```java
 options.setTooltip("TEMP", "Tooltip for the stable optionData key.");
@@ -164,11 +136,13 @@ options.setTooltipHighlightColors("TEMP", Color.YELLOW);
 options.setShortcut("TEMP", org.lwjgl.input.Keyboard.KEY_O, false, false, false, false);
 ```
 
-前三个布尔参数控制 Ctrl、Alt、Shift，最后的 `putLast` 当前被忽略。稳定 `data` 仍指向同一个选项，改名之后快捷键也继续属于它。
+提示字符串与颜色数组按对应顺序提供。快捷键前三个布尔参数控制 Ctrl、Alt、Shift，`putLast` 的公开约定为忽略；当前示例都传入 `false`。按 O 后回调仍取得 `TEMP`，显示文本变化并没有改变动作身份。
 
-### `selector`
+## 读取数值并确认一次结果
 
-`addSelector` 定义范围和显示模式，`setSelectorValue` 写入初始值。
+### 创建范围输入
+
+`addSelector(...)` 在选项区加入可拖动数值条，以 `SELECTOR` 为数据键，范围 1 到 5，初始值设为 3：
 
 ```java
 options.addSelector("Scan range", SELECTOR, Color.CYAN, 220f, 50f, 1f, 5f,
@@ -176,11 +150,7 @@ options.addSelector("Scan range", SELECTOR, Color.CYAN, 220f, 50f, 1f, 5f,
 options.setSelectorValue(SELECTOR, 3f);
 ```
 
-当前值为 3，边界由 1f 和 5f 决定；读取时继续使用 `SELECTOR`。
-
-### 读取 `selector` 边界
-
-三个读取方法分别返回当前值、最小值和最大值。
+宽度 220 包含数值区域，数值标签预留宽度 50，显示模式采用 `VALUE`。拖动后从相同键取得当前值，最小与最大范围继续保留。局部记录如下：
 
 ```java
 text.addPara("Current=" + options.getSelectorValue(SELECTOR)
@@ -188,11 +158,11 @@ text.addPara("Current=" + options.getSelectorValue(SELECTOR)
         + ", max=" + options.getMaxSelectorValue(SELECTOR));
 ```
 
-拖动只改变当前值，创建时的最小值和最大值保持不变。
+完整例提供读取按钮，点击后记录拖动结果。输入条保存在选项面板，插件在实际动作回调时读取它，才能使用玩家当前选择。
 
-### 确认和一次性结果
+### 确认后写入结果
 
-确认文本由面板显示，业务结果由插件写入；`checked` 防止重复写入。
+`addOptionConfirmation(...)` 为 `CONFIRM` 加入确认对话。以下局部片段的前两行建立选项，后面的 `checked` 判断属于玩家确认后的回调：
 
 ```java
 options.addOption("Record inspection", CONFIRM);
@@ -204,13 +174,15 @@ if (!checked) {
 }
 ```
 
-确认键仍是 `CONFIRM`，禁用选项和业务状态共同保持一次性语义。
+完整类在 `optionSelected(...)` 的 `CONFIRM` 分支写结果，设置 `checked` 并禁用按钮。确认面板决定是否提交这个选项，业务字段决定是否已经处理成功，两者分别完成本次动作。
 
-## 选择视觉面板的实际对象
+`optionHasConfirmDelegate(...)`、`getOptionDataBeingConfirmed()` 与 `getSavedOptionList()` 还能读取确认与选项上下文。完整例记录这些入口所在阶段，当前的选项恢复或额外处理由调用方继续安排。
 
-### 显示交互目标
+## 切换视觉对象与原版插图
 
-初始化时从 `getInteractionTarget()` 取得对话对象，并显示其自定义交互图像。
+### 从目标图像切到玩家舰队
+
+初始视觉从会话实体取得自定义交互图像，局部读取如下：
 
 ```java
 SectorEntityToken target = dialog.getInteractionTarget();
@@ -219,23 +191,19 @@ if (target.getCustomInteractionDialogImageVisual() != null) {
 }
 ```
 
-这一步只建立对话起点，后续视觉对象不从目标类型推断。
-
-### 显示玩家舰队
-
-玩家舰队固定来自 `Global.getSector().getPlayerFleet()`。
+进入舰队主题时，从 `Global.getSector().getPlayerFleet()` 取得玩家舰队。下面的局部片段先显示舰队，再保存这份视觉，供后面的恢复按钮使用：
 
 ```java
 CampaignFleetAPI playerFleet = Global.getSector().getPlayerFleet();
-visual.saveCurrentVisual();
 visual.showFleetInfo("Your fleet", playerFleet, null, null);
+visual.saveCurrentVisual();
 ```
 
-第二个舰队参数为 `null`，因此视觉面板只展示玩家舰队。
+第二个舰队为空，当前只展示玩家舰队。`saveCurrentVisual()` 保存调用时的面板引用；此时舰队面板已经建立，Foundry 是否提供初始交互图像就不会影响本次恢复。
 
-### 显示玩家本人
+### 显示玩家人物
 
-玩家人物固定来自 `Global.getSector().getPlayerPerson()`，三个重载展示不同模式。
+人物主题从 `getPlayerPerson()` 取得玩家本人，普通显示、紧凑显示与人物区域显隐分别调用：
 
 ```java
 PersonAPI player = Global.getSector().getPlayerPerson();
@@ -245,22 +213,20 @@ visual.showFirstPerson();
 visual.hideFirstPerson();
 ```
 
-人物显示与交互目标无关，`minimalMode` 和 `withRelBar` 由布尔参数控制。
+`showPersonInfo(player, true, true)` 选择紧凑模式并请求关系条，`showFirstPerson()` 与 `hideFirstPerson()` 改变第一人物区域的显示。这里明确提供玩家对象，当前会话的实体继续留作交互目标。
 
-### 显示原版插图
-
-`space_wreckage` 是原版 `illustrations` 分类中已有的键。
+插图主题使用原版 `illustrations` 中的 `space_wreckage`：
 
 ```java
 visual.showImagePortion("illustrations", "space_wreckage", 640f, 400f,
         0f, 0f, 480f, 300f);
 ```
 
-源区域尺寸、偏移和显示尺寸共同决定裁剪后的插图。
+源区域采用 640×400，偏移为 0，显示区域为 480×300。区域尺寸、偏移与显示尺寸共同决定插图呈现，文本区的 `addImage(...)` 仍是另一个显示入口。
 
-### 分别观察淡出与恢复
+### 保留淡出过程，再恢复已保存视觉
 
-保存视觉快照后，插图、淡出、快速完成与恢复用各自按钮触发。局部操作如下，完整例把它们放到独立分支：
+完整类将淡出、快速完成与恢复放在不同按钮中。以下局部方法分别由这些分支调用：
 
 ```java
 visual.setVisualFade(0.2f, 0.2f);
@@ -269,34 +235,33 @@ visual.finishFadeFast();
 visual.restoreSavedVisual();
 ```
 
-恢复读取此前 `saveCurrentVisual()` 保存的画面。
+`setVisualFade(0.2f, 0.2f)` 设置淡入淡出时长，`fadeVisualOut()` 开始淡出，`finishFadeFast()` 快速推进到结束。`restoreSavedVisual()` 使用保存的有效面板引用，完成一次恢复后清空该保存引用，因此它不是多次撤销的历史列表。
 
-## 让当前插件处理推进和关闭
+**变换分开触发，中间画面才有观察机会。** 同一次回调里连续显示和恢复，后一个结果可以覆盖前一步。本例从插图恢复到此前保存的玩家舰队面板，保存引用随后清空。
 
-### 推进和关闭
+## 推进回调与关闭状态
 
-`advance` 可转发动画时间；关闭入口区分正常离开与取消。
+`advance(...)` 供插件按界面帧时间处理自己的动画与状态。文本面板由对话界面推进，本例的操作都由选项触发，因此这个回调保留空实现：
 
 ```java
 @Override
 public void advance(float amount) {
-    if (!closed) {
-        text.advance(amount);
-    }
 }
 ```
 
-`dismiss()` 和 `dismissAsCancel()` 表示不同结束原因，`closed` 防止重复关闭。
+需要持续更新自己的动画时，再把业务推进写入这个回调。额外调用 `text.advance(amount)` 会让同一面板重复推进。
 
-## 复杂方法的边界
+离开与取消沿 [C15-S1] 的两种关闭方法，先设置 `closed`，后续选项与面板写入按业务结束状态处理。完整类把关闭统一放在 `close(boolean cancel)`，按钮与 ESC 共用对应结果。
 
-`TextPanelAPI` 的 `addCostPanel` 和 `addSkillPanel` 都是在文本区域嵌入结构化信息：前者接收费用条目，后者接收人物及其技能数据。它们适合已经拥有对应经济或人物对象的界面，普通段落不需要为了调用它们而伪造这些对象。
+## 为结构化面板准备实际上下文
 
-`OptionPanelAPI` 的 `setStoryOptionParams` 把一个选项接入规则系统，需要 `StoryOptionParams` 和 `StoryPointActionDelegate`。它处理的是故事节点的参数与确认委托，普通 `addOption` 的 `optionData` 不能替代这条规则链。
+需要费用或人物技能信息时，`addCostPanel(...)` 与 `addSkillPanel(...)` 在文本区域嵌入对应面板。调用方提供实际费用条目或人物，面板才能显示当前业务数据。
+
+故事点选项通过 `setStoryOptionParams(...)` 接入，需要 `StoryOptionParams` 与 `StoryPointActionDelegate`，参数与确认委托共同管理这项操作。普通选项仍通过当前 `optionData` 处理回调。
 
 `VisualPanelAPI` 的实体展示方法要求传入匹配的对象：`showPlanetInfo` 与 `showLargePlanet` 使用行星，`showFleetMemberInfo` 使用舰队成员，带 `FleetEncounterContextPlugin` 的 `showFleetInfo` 使用遭遇战上下文。`showLoot` 需要货物和交互监听器；`showCore`、`hideCore`、`closeCoreUI` 依赖核心界面；`showCustomPanel` 依赖自定义面板插件；`showMapMarker` 依赖地图标记及 Intel 标签；`showPreBattleJoinInfo` 依赖战斗上下文；`showNewGameOptionsPanel` 依赖角色创建数据。
 
-这些调用分别属于费用、规则、战斗、核心界面、地图或角色创建流程。当前页面只演示能由普通对话直接提供的对象，其他方法应在其所属系统已经准备好上下文后再接入。
+这些入口延伸到费用、规则、战斗、核心界面、地图与角色创建。先从对应流程取得对象，再调用面板方法，当前会话也就能显示实际结果。[C15-S3] 将对话接到酒吧，后续任务再使用这些上下文。
 
 ## 完整最小例
 
@@ -496,8 +461,8 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
             case 7:
                 text.addPara("Round 7: show the player's fleet.");
                 CampaignFleetAPI playerFleet = Global.getSector().getPlayerFleet();
-                visual.saveCurrentVisual();
                 visual.showFleetInfo("Your fleet", playerFleet, null, null);
+                visual.saveCurrentVisual();
                 options.addOption("Continue to player person", NEXT);
                 break;
             case 8:
@@ -533,9 +498,6 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
 
     @Override
     public void advance(float amount) {
-        if (!closed) {
-            text.advance(amount);
-        }
     }
 
     @Override
@@ -584,7 +546,7 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
 3. 在选项主题悬停改名按钮，按 O 触发并查看稳定 `data`；选择删除后再继续到 `selector`，拖动并读取当前值，核对范围 1 到 5、初始 3。
 4. 触发确认，核对结果只写入一次并保持禁用状态。
 5. 核对玩家舰队、玩家本人和人物视图入口。
-6. 在插图主题分别点击淡出、快速完成与恢复，比较 `illustrations/space_wreckage` 及之前保存的视觉状态。
+6. 在插图主题分别点击淡出、快速完成与恢复，确认 `illustrations/space_wreckage` 淡出，恢复按钮重新显示此前保存的玩家舰队。
 7. 分别选择离开、取消和 ESC，核对关闭结果。
 
 预期结果：
@@ -592,6 +554,7 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
 - 每个方法片段都产生对应面板变化；
 - `optionText` 改变不会改变 `optionData`；
 - 玩家舰队、玩家本人和 `space_wreckage` 来自固定来源；
+- 恢复按钮返回玩家舰队面板，即使 Foundry 没有初始交互图像也能完成恢复；
 - 重复确认不会重复写入结果；
 - 关闭后不再修改面板。
 
@@ -611,9 +574,9 @@ public class GearInInteractionDialogPlugin implements InteractionDialogPlugin {
 
 ## 总结
 
-面板各自处理文本、输入和视觉，当前插件则把动作接成可观察的会话。段落编辑按写入顺序选择目标，选项按 `data` 定位，视觉按明确的玩家或资源对象显示。
+文字编辑围绕最近段落，选项修改和数值输入使用稳定数据键，视觉切换使用实际人物、舰队与资源。面板显示当前状态，插件字段决定是否已经完成业务动作。
 
-编者建议把需要比较的两个画面留到两次操作中。同一帧显示又恢复，最后的画面当然只能告诉您最后那一步做了什么；本节的独立按钮就为这些观察保留了位置。
+同一会话把这些动作连接起来，独立按钮保留变化的中间状态，确认与关闭继续按对应回调处理。显示结果、输入值与一次性状态各自明确，对话才能继续接到实际交易或任务。
 
 ## 建议参考项
 

@@ -1,6 +1,6 @@
 # 读取 MOD 内文本
 
-前面的配置多由游戏按固定路径读取，这次让代码主动取一份自有文本。我们把工坊说明放到 MOD 资源目录，在应用加载时读回并记录。文件来源、相对路径与编码先确定，后面的 JSON 和 CSV 再沿同样的入口解释结构。
+说明文字、模板和可调整的数据都可以随 MOD 单独发布，代码在需要时取得内容。本节从一份工坊说明开始，用 `SettingsAPI.loadText` 在应用加载时读回它，再区分默认来源与指定 MOD 的读取方式。
 
 *本节预期阅读时间：\~12 分钟。*
 
@@ -23,28 +23,28 @@
 - [C7-S1] 的应用加载回调；
 - [C7-S2] 的 `Global.getSettings()` 和日志入口。
 
-## 创建资源并接到应用加载
+## 把说明文字放入资源文件
 
-先在 MOD 的 `data/config/gear_in/notes.txt` 写入以下文本：
+在 MOD 的 `data/config/gear_in/notes.txt` 写入以下文本。路径从 MOD 根目录起算，目录名中的 `gear_in` 用来标明这份资源的归属：
 
 ```text
 GearIn file loading is ready.
 ```
 
-向 [C7-S1] 的 `GearInModPlugin.onApplicationLoad(...)` 追加局部读取，既有代码保留；该方法已声明 `throws Exception`，当前读取异常沿应用加载报告：
+接着在 [C7-S1] 的 `GearInModPlugin.onApplicationLoad(...)` 追加读取与日志，保留既有代码。这个回调已声明 `throws Exception`，读取失败时由应用加载流程报告异常：
 
 ```java
 String notes = Global.getSettings().loadText("data/config/gear_in/notes.txt", "gear_in");
 Global.getLogger(GearInModPlugin.class).info("GearIn notes: " + notes);
 ```
 
-**资源内容可以独立于 JAR 修改，代码决定何时读它、怎样使用它。**配置、文本模板和其他易变数据因此可以离开 Java 类；调整资源文件后，只需让游戏重新加载资源，无需重新编译 JAR，同一份数据也可以交给多个代码入口使用。
+构建并重新启动游戏后，`GearIn notes` 日志应包含文件里的句子。这里取得的是字符串，使用方可以把它交给界面、解析成自己的格式，或像本例一样直接记录。
 
-本例先按字符串使用内容，JSON 与 CSV 再添加结构。需要运行期保存时，common 使用另一组读写入口；资源路径继续表达 MOD 发布的输入文件。
+**文字修改与代码修改有了各自的发布方式。** 调整 `notes.txt` 后重新加载资源即可；调整读取时机或处理方法，才需要重新构建 JAR。同一份文件也可以供多个代码入口使用。后续的 JSON 和 CSV 会为内容增加结构，运行期产生的数据则由 common 的读写入口保存。
 
-## 读取文本
+## 为读取选择来源
 
-MOD 资源路径从 MOD 根目录开始，使用 `/` 分隔，例如 `data/config/gear_in/notes.txt`。路径不包含盘符、反斜杠、`..` 或首字符 `/`。
+上面的调用有两个参数：资源相对路径与 MOD ID。下面的局部片段比较它与单参数形式：
 
 ```java
 String notes = Global.getSettings().loadText("data/config/gear_in/notes.txt");
@@ -52,15 +52,21 @@ String notesFromMod = Global.getSettings().loadText(
         "data/config/gear_in/notes.txt", "gear_in");
 ```
 
-单参形式从当前资源空间寻找文件；双参形式把来源限定为指定 MOD。当前 `modId` 对应 `mod_info.json` 的 `gear_in`，游戏按这个已启用 MOD 选择来源。
+单参形式从当前资源空间选择一份文件。同一路径若由多个 MOD 提供，选中的来源会影响返回内容。双参形式把来源限定为指定 MOD；这里的 `gear_in` 对应 `mod_info.json` 的 `id`，并且该 MOD 已启用。
 
-`loadText` 返回文件的原始文本。引擎按 UTF-8 解码并移除 `\r`，不会替您剥离 BOM；因此含中文的资源文件保存为 UTF-8 无 BOM。读取失败由调用侧记录上下文，日志不会自动替您说明文件的业务用途。
+对这份自有说明，来源限定能够直接表达我们要读哪一个 MOD。向外开放的共享资源可以另行约定默认来源，但这个选择应当在调用处明确。
 
-### 路径与编码边界
+## 路径与返回文本
 
-引擎在读取前拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径。资源路径使用 `/`，文件位于 MOD 目录内；绝对路径 (含盘符) 不属于资源读取入口。
+资源路径使用 `/` 分隔，例如 `data/config/gear_in/notes.txt`，起点是 MOD 根目录。引擎在读取前拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径；带盘符的绝对路径同样会被拒绝。
 
-文件带 BOM 时，BOM 会进入返回文本的首字符。文件找不到、路径非法和 MOD ID 找不到分别在读取调用点产生异常，排查时先核对入口、相对路径和文件编码。
+`loadText` 按 UTF-8 解码，移除 `\r` 后返回文本，BOM 则会留在首字符。资源文件保存为 UTF-8 无 BOM，后续解析才能从真正的内容开始。
+
+::: warning 读取成功也可能带回异常首字符
+带 BOM 的文本可以被 `loadText` 读回；异常往往在后续解析或比较字符串时才出现。核对文件编码时，同时检查首字符。
+:::
+
+文件找不到、路径非法或 MOD ID 找不到，会在读取调用点产生异常。本例让异常沿应用加载报告，日志中的 `GearIn notes` 则标明成功读回内容的用途。
 
 ## 验证方案
 
@@ -92,9 +98,7 @@ String notesFromMod = Global.getSettings().loadText(
 
 ## 总结
 
-工坊说明从 MOD 根目录相对路径取得，当前用来源限定选择 `gear_in`，日志记录实际返回文本。编码与路径处理发生在读取，内容怎样使用则由当前代码决定。
-
-编者建议先让一份文本读回正确，再增加结构和共享来源。相同路径可以由不同 MOD 提供，来源写清以后，调整文件的结果才容易比较。
+`loadText` 把资源文件交给代码使用：相对路径定位文件，MOD ID 限定来源，返回的字符串再由调用方处理。文件里的内容可以独立于 JAR 调整；读取时机与使用方式仍属于代码职责。
 
 ## 建议参考项
 

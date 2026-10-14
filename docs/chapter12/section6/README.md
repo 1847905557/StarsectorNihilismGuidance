@@ -1,6 +1,6 @@
 # 注册特殊物品
 
-商品与产业都已经接入，现在制作两件带行为的特殊物品。Refinery Core 在一次产业实验中给稀有金属供给加 3，再解除并恢复原安装数据；Salvage Token 放入玩家货舱，右键消耗一枚换取 10 补给。注册规格、实例 data、货物栈和插件分别接好，才能让同一物品在不同入口工作。
+特殊物品可以保存附加数据，并通过插件提供显示与交互。本节制作两件物品：Salvage Token 在玩家货舱右键消耗，换取 10 补给；Refinery Core 在产业实验中提高 3 档稀有金属供给，再解除效果。两种用途分别说明货舱动作与产业数据怎样调用插件。
 
 *本节预期阅读时间：\~22 分钟。*
 
@@ -24,15 +24,9 @@
 - [C7-S1] 的插件实例化与生命周期；
 - 能够编辑 UTF-8 无 BOM 的 CSV 和 Java 文件。
 
-## 特殊物品的数据组成
-
-CSV 行提供静态规格，`SpecialItemSpecAPI` 保存这些规格，`SpecialItemData` 保存一次物品实例的 ID 与 data，`SpecialItemPlugin` 再根据物品栈执行价格、显示和交互行为。
-
-同一份 `SpecialItemData` 可以放入 Cargo，也可以写入产业的特殊物品槽。Cargo 栈负责数量和容量，产业负责保存当前安装数据，插件负责解释数据并提供行为。
-
 ## 注册特殊物品身份
 
-文件路径是 `data/campaign/special_items.csv`。表头列出名称、ID、标签、制造商、稀有度、价格、堆叠、空间、袭击危险度、图标、声音、插件、参数、描述和排序。
+在 `data/campaign/special_items.csv` 添加以下两条记录。核心 ID 使用 `GearIn_refinery_core`，代币使用 `GearIn_salvage_token`，分别登记各自的插件类：
 
 ```csv
 name,id,tags,tech/manufacturer,rarity,base price,stack size,cargo space,baseRaidDanger,icon,sound id,sound id drop,plugin,plugin params,desc,order
@@ -40,41 +34,13 @@ Refinery Core,GearIn_refinery_core,"gear_industry, colony_item",GearIn Industrie
 Salvage Token,GearIn_salvage_token,gear_industry,GearIn Industries,1,5000,1000,1,LOW,graphics/icons/cargo/modspec2.png,ui_chip_pickup,ui_modspec_drop,data.scripts.gearin.campaign.GearInSalvageTokenPlugin,,"A token that can be exchanged for a small supply cache.",1451
 ```
 
-`name` 是界面显示名，`id` 是代码和 `SpecialItemData` 使用的稳定键。名称可以修改，ID 一旦投入存档就应保持稳定。
+图标与声音采用原版资源，价格、稀有度和排序分别填写。`name` 用于显示，`id` 供代码与存档引用；名称可以调整，使用中的 ID 保持稳定。`tech/manufacturer` 提供设计来源文本，插件选择由完整类名决定。
 
-`tags` 用于分类和原版逻辑筛选。`tech/manufacturer` 只提供设计来源文本，不承担插件选择。`rarity` 影响掉落选择，`base price` 供插件默认价格使用。
-
-`stack size` 和 `cargo space` 决定货舱中的数量与空间表现。图标采用实际资源路径，两列声音采用已登记的声音 ID。
-
-`plugin` 是实例化入口。游戏读取该类名后，会在特殊物品栈创建插件并调用 `setId()` 与 `init()`。`plugin params` 是规格级字符串，插件可以通过 `getSpec().getParams()` 读取。
-
-特殊物品描述直接来自 CSV 的 `desc`。货舱 tooltip 通常由插件调用 `spec.getDesc()` 显示，文本描述系统不参与这条链路。
-
-## 读取特殊物品规格
-
-全局设置通过 `Global.getSettings().getSpecialItemSpec(id)` 返回 `SpecialItemSpecAPI`。这个对象描述 "这类物品是什么"，与某个 Cargo 栈的数量和 data 分开。
-
-```java
-SpecialItemSpecAPI spec = Global.getSettings().getSpecialItemSpec("GearIn_refinery_core");
-if (spec != null) {
-    log.info(spec.getId() + " / " + spec.getName());
-    log.info("price=" + spec.getBasePrice() + ", stack=" + spec.getStackSize());
-    log.info("space=" + spec.getCargoSpace() + ", icon=" + spec.getIconName());
-    log.info("tags=" + spec.getTags() + ", rarity=" + spec.getRarity());
-}
-```
-
-常用身份读取包括 `getId()`、`getName()`、`getDesc()`、`getManufacturer()` 和 `getParams()`。货舱布局使用 `getStackSize()` 与 `getCargoSpace()`，界面资源使用 `getIconName()`、`getSoundId()` 和 `getSoundIdDrop()`。
-
-`getBasePrice()` 是规格默认值。插件可以根据市场或子市场返回另一价格，但不应把这种运行时价格写回 CSV 规格。
-
-`getTags()` 返回标签集合，`hasTag(tag)` 适合做单个分类判断。`getOrder()` 控制列表排序，排序值只影响显示顺序。
-
-规格也提供 `setDesc()`、`setName()`、`setIconName()`、`setBasePrice()`、`setManufacturer()`、`setParams()` 和 `setOrder()`。这些 setter 改变当前运行时规格，影响所有随后读取同一 spec 的插件；临时状态应放进 `SpecialItemData.data`，避免污染全局规格。
+**特殊物品的长描述直接写在 CSV 的 `desc`。** 基础插件从规格读取它显示在 tooltip 中；本页采用这条描述关系。`plugin params` 则是整类物品的附加字符串，核心记录中保存 `GearIn_element_works`，插件可以通过 `getSpec().getParams()` 读取。
 
 ## 保存实例数据
 
-`SpecialItemData` 只有两个字段：`id` 和 `data`。构造时传入注册 ID 与附加字符串：
+注册行描述整类物品，`SpecialItemData` 描述当前实例的 ID 与附加 `data`。例如核心的批次为 `batch-01`，产业槽保存这份数据。下面是局部写入：
 
 ```java
 SpecialItemData installed = new SpecialItemData("GearIn_refinery_core", "batch-01");
@@ -82,15 +48,60 @@ industry.setSpecialItem(installed);
 SpecialItemData current = industry.getSpecialItem();
 ```
 
-`getId()` 返回注册 ID，`getData()` 返回附加数据，`setData()` 可以修改附加数据。`equals()` 与 `hashCode()` 同时比较 ID 和 data，因此同一 ID 的不同批次是不同的数据对象。
+`getId()` 读取注册 ID，`getData()` 读取实例字符串，`setData()` 可以修改它。批次、来源与少量参数适合放在 data 中，本节使用 `batch-01` 与 `salvage-cache`；需要结构化内容时，再约定当前功能的 JSON 字段。
 
-data 适合保存批次、来源或少量参数。本节使用 `batch-01` 和 `salvage-cache` 两个简单字符串；需要结构化内容时，再为当前功能约定 JSON 字段。
+`equals()` 与 `hashCode()` 同时比较 ID 和 data，所以两个同 ID、不同批次的物品可以保存在不同栈中。显示名称用于辨认，实例的相等与合并按数据判断。产业槽保存一份当前安装数据，货舱栈另外保存数量和空间。
 
-产业槽只保存一份当前 `SpecialItemData`。写入新对象前记录旧对象，完成观察后恢复旧值，能够避免测试改变存档中的产业状态。
+## 把右键物品放入玩家货舱
 
-## 从货舱栈取得插件
+先实现可以直接观察的右键动作。保存 `GearInSalvageTokenPlugin.java` 到 `src/data/scripts/gearin/campaign/`，它继承 `BaseSpecialItemPlugin`。在已有的 `onNewGameAfterTimePass(...)` 追加以下局部片段，沿用 `sector`，并添加 `SpecialItemData` 的 import：
 
-通过 `CargoAPI.addSpecial(data, quantity)` 加入特殊物品。随后从 `getStacksCopy()` 遍历栈，并用 `getSpecialDataIfSpecial()` 与 `getPlugin()` 读取实例。
+```java
+sector.getPlayerFleet().getCargo().addSpecial(
+        new SpecialItemData("GearIn_salvage_token", "salvage-cache"), 1f);
+```
+
+新档向玩家货舱加入一枚代币。插件的 `hasRightClickAction()` 返回 `true`，界面就能调用 `performRightClickAction(RightClickActionHelper helper)`。用 helper 扣除当前物品并添加 10 补给，局部方法如下：
+
+```java
+public void performRightClickAction(RightClickActionHelper helper) {
+    helper.removeFromClickedStackFirst(1);
+    helper.addItems(CargoItemType.RESOURCES, Commodities.SUPPLIES, 10f);
+}
+```
+
+helper 作用于当前交互中的货物，扣除优先从被右键点击的栈进行。`shouldRemoveOnRightClickAction()` 控制动作后自动移除一件；本例已经手动扣除，因此返回 `false`。实际右键从玩家货舱进行，交易界面已有待结算交易时，先完成交易再使用物品。
+
+::: warning 手动扣除与自动移除分别选择
+调用 `removeFromClickedStackFirst(1)` 后，再让 `shouldRemoveOnRightClickAction()` 返回 `true`，同一次动作会尝试两次移除。本例使用 helper 手动扣除，自动移除保持 `false`。
+:::
+
+## 给产业临时应用核心效果
+
+核心实验使用 [C12-S5] 的 Element Works。保存 `GearInRefineryCorePlugin.java` 与 `GearInSpecialItemProbe.java` 到同一目录，在 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 中，将以下局部调用放在产业状态日志之后：
+
+```java
+new GearInSpecialItemProbe().log(market);
+```
+
+观察器从当前市场取得产业，保存原安装数据，再创建 `SpecialItemData` 并写入槽。核心的应用由本节自定义方法显式调用，局部操作如下：
+
+```java
+SpecialItemData data = new SpecialItemData("GearIn_refinery_core", "batch-01");
+industry.setSpecialItem(data);
+GearInRefineryCorePlugin plugin = (GearInRefineryCorePlugin) spec.getNewPluginInstance(null);
+plugin.applyToIndustry(industry);
+```
+
+`applyToIndustry(...)` 只对 `GearIn_element_works` 写入 `rare_metals` 供给，使用 `GearIn_refinery_core` 来源增加 3 档。`unapplyFromIndustry(...)` 按同一来源解除，完整观察器在 `finally` 中恢复安装数据，日志比较应用前、生效中与撤销后。
+
+**写入产业槽、调用效果与建立安装菜单分别完成。** 本例验证槽数据与显式供给修饰；产业菜单由 `InstallableIndustryItemPlugin` 接入，持续效果还要进入产业的应用和撤销流程。CSV 的 `colony_item` 标签与参数字符串并没有自动完成这些工作。
+
+原版 `GenericSpecialItemPlugin` 配合 `plugin params` 与 `ItemEffectsRepo` 提供产业安装物品的通用处理。本例从基础插件继承，当前方法由观察器直接调用，所以核心实验结束后解除，玩家代币的消耗与奖励则保留。
+
+## 从栈与规格取得插件
+
+上面的两个调用入口创建插件时，需要的上下文不同。货舱通过 `addSpecial(data, quantity)` 创建特殊物品栈，随后从栈取得实例数据与插件。以下局部片段使用独立测试货舱：
 
 ```java
 CargoAPI cargo = Global.getFactory().createCargo(true);
@@ -105,76 +116,49 @@ for (CargoStackAPI stack : cargo.getStacksCopy()) {
 }
 ```
 
-栈的数量由 `CargoStackAPI.getSize()` 提供，特殊物品的规格由 `getSpecialItemSpecIfSpecial()` 提供。栈上的插件已经绑定了对应 spec；直接从全局设置重新创建插件会丢失栈引用。
+`getSize()` 提供数量，`getSpecialDataIfSpecial()` 返回当前 ID 与 data，`getSpecialItemSpecIfSpecial()` 返回规格。插件先通过 `setId(id)` 取得规格，再通过 `init(stack)` 保存当前栈，右键与货舱 tooltip 就拥有了栈上下文。
 
-## 特殊物品插件的初始化与行为入口
+::: warning 无栈插件不会调用 init
+`spec.getNewPluginInstance(null)` 只调用 `setId()`。这个实例可以读取名称、价格与描述；需要数量或实例 data 的方法，要由已绑定栈的入口调用。
+:::
 
-插件实现 `SpecialItemPlugin`。通常从 `BaseSpecialItemPlugin` 继承，以获得 ID、规格、名称、默认价格、设计类型和基础 tooltip 行为。
+核心方法只需要规格名称与传入产业，因而可以使用无栈实例。插件可能为绘制、提示和交互分别创建，实例字段是否已有栈要按调用入口判断。
 
-游戏先调用 `setId(id)`，基类随后读取 `SpecialItemSpecAPI`。当插件来自 Cargo 栈时，游戏继续调用 `init(stack)`；通过 spec 直接调用 `getNewPluginInstance(null)` 时，`init()` 不会被调用，只有 `setId()` 一定执行。
+## 读取规格，扩展显示与掉落
 
-插件的 `getName()`、`getPrice(market, submarket)`、`getSpec()` 分别负责显示名、交易价格和规格访问。价格可以读取市场与子市场，但默认实现通常返回 CSV 的 base price。
-
-`createTooltip()` 负责货舱和图鉴中的说明。`isTooltipExpandable()` 与 `getTooltipWidth()` 控制展开方式和宽度。`render()` 接收渲染器接口；简单物品可以保留空实现。
-
-掉落组可以把参数传给 `resolveDropParamsToSpecificItemData(params, random)`，由插件把随机结果转换成 `SpecialItemData.data`。没有参数时返回空字符串即可。
-
-## 把物品安装进产业槽
-
-**产业槽数据与安装菜单是两个入口。** 当前观察器直接写 `Industry.setSpecialItem()` 并调用自定义应用方法，验证数据和供给修饰。正式产业菜单的安装按钮由 `InstallableIndustryItemPlugin` 提供；仅登记特殊物品不会自动出现那个按钮。
+`Global.getSettings().getSpecialItemSpec(id)` 返回整类物品的 `SpecialItemSpecAPI`，局部读取如下：
 
 ```java
-SpecialItemData data = new SpecialItemData("GearIn_refinery_core", "batch-01");
-industry.setSpecialItem(data);
-GearInRefineryCorePlugin plugin = (GearInRefineryCorePlugin) spec.getNewPluginInstance(null);
-plugin.applyToIndustry(industry);
-```
-
-插件只对 ID 为 `GearIn_element_works` 的产业写入 `rare_metals` 供给。修饰 ID 固定为 `GearIn_refinery_core`，撤销时使用同一个 ID 调用 `unmodifyFlat()`。
-
-## 把右键物品放入玩家货舱
-
-保存 `GearInSalvageTokenPlugin.java` 与本节其他类到 `src/data/scripts/gearin/campaign/`。向 [C11-S3] 已有的 `onNewGameAfterTimePass(...)` 追加下面的局部片段，沿用 `sector`，并添加 `SpecialItemData` 的 import：
-
-```java
-sector.getPlayerFleet().getCargo().addSpecial(
-        new SpecialItemData("GearIn_salvage_token", "salvage-cache"), 1f);
-```
-
-新档创建一枚代币，打开玩家货舱即可操作。插件让 `hasRightClickAction()` 返回 `true`，在 `performRightClickAction(RightClickActionHelper helper)` 完成扣除与奖励。局部方法如下：
-
-```java
-public void performRightClickAction(RightClickActionHelper helper) {
-    helper.removeFromClickedStackFirst(1);
-    helper.addItems(CargoItemType.RESOURCES, Commodities.SUPPLIES, 10f);
+SpecialItemSpecAPI spec = Global.getSettings().getSpecialItemSpec("GearIn_refinery_core");
+if (spec != null) {
+    log.info(spec.getId() + " / " + spec.getName());
+    log.info("price=" + spec.getBasePrice() + ", stack=" + spec.getStackSize());
+    log.info("space=" + spec.getCargoSpace() + ", icon=" + spec.getIconName());
+    log.info("tags=" + spec.getTags() + ", rarity=" + spec.getRarity());
 }
 ```
 
-`shouldRemoveOnRightClickAction()` 决定交互完成后是否自动移除。插件已经手动移除当前栈时返回 `false`，可以避免一次动作扣除两次。
+### 特殊物品规格速查表
 
-## 观察 tooltip、掉落和 UI 边界
+| 字段与读取入口 | 用途 |
+|---|---|
+| `name`、`id`；`getName()`、`getId()` | 显示名称与稳定 ID |
+| `tags`；`getTags()`、`hasTag()` | 分类与读取方的筛选 |
+| `tech/manufacturer`；`getManufacturer()` | 设计来源文本 |
+| `rarity`、`base price`；`getRarity()`、`getBasePrice()` | 掉落选择参数与默认价格 |
+| `stack size`、`cargo space`；`getStackSize()`、`getCargoSpace()` | 堆叠上限与单件空间 |
+| `baseRaidDanger`；`getBaseDanger()` | 突袭危险度 |
+| `icon`、两列声音；`getIconName()`、`getSoundId()`、`getSoundIdDrop()` | 图标与已登记声音 |
+| `plugin`、`plugin params`；`getNewPluginInstance(...)`、`getParams()` | 插件创建与规格级参数字符串 |
+| `desc`、`order`；`getDesc()`、`getOrder()` | 描述正文与列表排序 |
 
-基础插件的 tooltip 会使用规格名称、制造商和描述。自定义插件可以追加物品 data、产业状态或动作提示，但应把费用和交易合法性留给交易界面已有流程。
+规格的 `setDesc()`、`setName()`、`setIconName()`、`setBasePrice()`、`setManufacturer()`、`setParams()` 与 `setOrder()` 修改全局定义，随后读取同一规格的插件也会受影响。临时实例状态保存到 data，插件依当前栈解释它。
 
-`getDesignType()` 返回制造商文本，`getPrice()` 返回当前交易价格，`render()` 只在物品需要特殊图形时实现。`resolveDropParamsToSpecificItemData()` 只负责掉落参数转换，不负责向 Cargo 写入物品。
+基础插件的 `getName()` 读取规格名，`getDesignType()` 读取制造商，`getPrice(market, submarket)` 默认采用基础价格。自定义价格可以结合传入市场计算，费用与合法性继续由交易流程处理。
 
-插件通过 `getSpec()` 取得静态字段，通过保存的 `stack` 取得当前栈。没有栈的插件实例仍可以显示名称和 tooltip，但不能读取栈数量或调用栈来源相关逻辑。
+`createTooltip(...)` 提供货舱和图鉴说明，`isTooltipExpandable()` 与 `getTooltipWidth()` 控制展开和宽度。需要特殊图形时实现 `render(...)` 并使用渲染接口；当前物品保留基础图标与说明。原版蓝图在右键时更新已知设计，`WormholeScannerPlugin` 则在右键动作中改变通行能力，可以分别参考它们的对象与入口。
 
-## 对照原版插件的接口边界
-
-原版 `GenericSpecialItemPlugin` 根据 `plugin params` 和 `ItemEffectsRepo` 处理产业安装物品；蓝图插件在右键动作中修改已知蓝图；`WormholeScannerPlugin` 展示了带参数的右键入口。GearIn 示例把产业修饰和消耗流程写在自定义类中，便于观察每个接口的调用边界。
-
-## 在经济观察器中运行产业实验
-
-保存 `GearInSpecialItemProbe.java` 与核心插件之后，把下面的局部调用加入 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()`，位于产业状态日志之后：
-
-```java
-new GearInSpecialItemProbe().log(market);
-```
-
-当前市场已添加 Element Works，观察器建立独立测试货舱、取得已注册规格，再在同一轮保存产业原物品、应用 +3、解除并恢复。右键实验则在玩家货舱完成。
-
-编者建议把物品的 data 与数量分别记录。两枚名称相同的核心可以有不同批次，栈的合并与相等判断也受 data 影响，名称并不足以定位当前实例。
+掉落参数由 `resolveDropParamsToSpecificItemData(params, random)` 转换为实例 data。无参数时返回空字符串，返回 `null` 表示不产生该物品；实际加入 Cargo 仍由掉落流程完成。
 
 ## 完整最小例
 
@@ -323,7 +307,7 @@ public class GearInSpecialItemProbe {
 3. 创建两份 `SpecialItemData`，加入独立 Cargo 并遍历特殊物品栈。
 4. 将 `GearIn_refinery_core` 写入产业槽，调用插件应用 `rare_metals` 产出修饰。
 5. 记录安装修饰生效前、生效中和撤销后的供给数量。
-6. 打开玩家货舱，记录补给数量，右键 Salvage Token，比较代币与补给的变化。
+6. 打开玩家货舱，完成已有待结算交易，记录补给数量，右键 Salvage Token，比较代币与补给的变化。
 7. 查看产业实验的 before/during/after 日志，确认原安装数据恢复；右键的消耗与 10 补给奖励保留在玩家货舱。
 
 预期结果：
@@ -351,9 +335,9 @@ public class GearInSpecialItemProbe {
 
 ## 总结
 
-两件物品从 CSV 取得规格，用 `SpecialItemData` 保存 ID 与批次，再由栈插件提供显示与行为。核心实验显式应用并解除供给修饰，代币则通过货舱右键消耗和奖励。
+代币通过货舱栈取得插件，右键动作使用 helper 完成消耗与奖励；核心实验从规格创建无栈插件，显式写入产业供给并按来源撤销。注册规格、实例 data 与栈数量分别提供两种功能所需的信息。
 
-物品规格、产业槽与安装菜单各有接入入口。先确定当前操作由谁调用、需要什么对象，再组合插件方法，实际结果就能在产业日志或玩家货舱中确认。
+产业槽数据还要通过安装菜单与产业生命周期接入，才能成为长期安装效果。本节先把每个实际调用说明清楚，结果分别在玩家货舱与产业日志中确认。
 
 ## 建议参考项
 

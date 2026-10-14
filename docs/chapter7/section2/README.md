@@ -1,6 +1,6 @@
 # 使用 Global 访问游戏服务
 
-前面的代码已经通过 Global 取得星区、播放器和日志器。本节把这些入口放回各自的运行阶段：设置用于应用加载，Sector 用于当前生涯，CombatEngine 用于当前战斗。服务存在与代码处于哪个场景分别观察，再把对象交给实际功能使用。
+`Global` 集中提供设置、星区、战斗引擎、播放器与日志器等入口。使用这些静态方法很简单，真正需要区分的是返回对象属于哪个运行阶段。本节分别在应用、生涯和战斗回调中取得服务，并用日志比较两场战斗中的引擎引用。
 
 *本节预期阅读时间：\~15 分钟。*
 
@@ -23,9 +23,9 @@
 - [C2-S4] 的命中与光束回调；
 - Java 静态方法、对象引用与字符串。
 
-## 按运行阶段选择入口
+## Global 提供哪些服务
 
-Global 的静态方法提供当前服务，不会替调用方改变运行阶段。**业务需要生涯对象时，在生涯回调取得；需要当前战斗时，在当前战斗回调取得。**
+`Global` 的方法返回游戏当前提供的对象。调用 `getSector()` 不会创建生涯，调用 `getCombatEngine()` 也不会开始战斗。操作需要什么对象，就在提供该对象的运行阶段取得它。
 
 ### 全局服务速查表
 
@@ -39,7 +39,7 @@ Global 的静态方法提供当前服务，不会替调用方改变运行阶段�
 | getLogger | 按类取得日志器，记录加载与运行 |
 | getFactory | 创建游戏对象，前文在生涯生成中使用 |
 
-当前阶段可以按 GameState 判断，局部方法如下：
+前面的 MOD 入口已经给出明确的应用和生涯回调。通用方法需要判断场景时，可以使用 `GameState`，例如下面的局部方法：
 
 ```java
 public static boolean isInCombat() {
@@ -47,11 +47,11 @@ public static boolean isInCombat() {
 }
 ```
 
-一个服务引用是否为空，是当前引用状态；GameState 则表示当前场景。战斗引擎引用也可能在其他场景存在，因此需要按场景决定业务逻辑是否使用它。
+**引用存在，并不代表当前就处于它所服务的场景。** 战斗引擎引用在其他场景也可能存在，判断是否正在战斗时使用 `GameState.COMBAT`。后面的日志因此同时记录场景与引用状态。
 
-## 在应用加载后读取设置
+## 从应用加载回调读取设置
 
-在 GearInModPlugin.onApplicationLoad 使用：
+在 `GearInModPlugin.onApplicationLoad()` 中，设置已经加载完成，可以取得 `SettingsAPI`。下面的局部片段读取版本并输出日志：
 
 ```java
 com.fs.starfarer.api.SettingsAPI settings = Global.getSettings();
@@ -59,24 +59,24 @@ String version = settings.getGameVersion();
 Global.getLogger(GearInGlobalAccess.class).info("GearIn settings version=" + version);
 ```
 
-这里读取当前游戏版本并写日志。自有键、数值和颜色的读取由下一节处理，日志级别和上下文由 [C7-S5] 继续展开。
+设置还包含 MOD 自有键、数值与颜色，下一节将实际读取这些内容。这里先确认应用回调能够取得服务；日志器从 `Global.getLogger(...)` 获得，记录方式在 [C7-S5] 展开。
 
-## 在当前生涯访问 Sector
+## 从当前星区取得存档数据
 
-新档或读档回调中取得：
+进入新档或读档回调后，通过 `Global.getSector()` 取得这次生涯的 `SectorAPI`。上一节的初始化标记也从这个对象读取：
 
 ```java
 SectorAPI sector = Global.getSector();
 Object marker = sector.getPersistentData().get("GearInModPlugin");
 ```
 
-标记沿用上一节入口的 CLASS_MARK 值，结果属于当前存档。关系、生成对象和持久状态都通过这个 Sector 访问。
+键名沿用 `GearInModPlugin.CLASS_MARK` 的值。关系、生成的星系与 persistent data 都属于当前 Sector，载入另一份存档之后，应当从新的 Sector 读取它们。
 
-**存档范围与进程范围分别管理。** 当前生涯的数据保存到 persistent data，静态字段不能代替存档数据；读取另一份生涯时也要按当前 Sector 取得状态。
+静态方法提供入口，返回的数据却仍有自己的归属。**需要随生涯保存的状态，写入这份生涯的数据。** 用 `static` 字段缓存标记，无法代替每份存档中的初始化结果。
 
-## 在战斗回调访问引擎
+## 使用本场战斗的引擎
 
-例如在命中效果的 onHit 中取得当前引擎，局部片段如下：
+命中效果的 `onHit(...)` 已经处于战斗中，可以使用当前引擎。以下局部片段通过 `Global` 取得它并记录暂停状态：
 
 ```java
 CombatEngineAPI currentEngine = Global.getCombatEngine();
@@ -84,13 +84,15 @@ boolean active = !currentEngine.isPaused();
 Global.getLogger(GearInGlobalAccess.class).info("GearIn combat active=" + active);
 ```
 
-onHit 本身也传入 engine，业务可以直接使用该参数。Global 访问器用于已有战斗上下文中取得同一场景的服务，暂停、实体和时间都由当前引擎提供。
+`onHit(...)` 本身也传入 `engine`，效果代码可以直接使用参数。这里展示的访问器用于已有战斗上下文中的通用调用；暂停状态、实体与计时都来自本场引擎。
 
-跨战斗的 static 字段会保留旧引用。**战斗插件实例保存本场引擎，通用方法在当前调用点取得引用**；离开战斗后结束相应使用，下一场重新取得。工厂方法暂按前文对象创建使用，具体实体构建结合后面的场景讲解。
+下一场战斗会建立新的引擎。若把旧引用留在跨战斗的 `static` 字段中，即使 `Global.getCombatEngine()` 已经返回新对象，字段也仍指向上一场。**本场插件保存本场引擎，通用方法在调用时取得当前对象。** 战斗结束后结束相应使用，下一场重新取得。
 
-## 记录阶段与服务状态
+`Global.getFactory()` 则提供游戏对象的创建方法，前文生成星系时已经使用过。具体实体还需要相应的生涯或战斗上下文，后续结合创建任务展开。
 
-创建 `src/data/scripts/gearin/GearInGlobalAccess.java`。完整类记录 GameState、settings、sector、engine 和 LOADING_SAVE，engineIdentity 提供实例比较。
+## 在不同回调记录访问结果
+
+创建 `src/data/scripts/gearin/GearInGlobalAccess.java`，将场景、服务引用与加载状态放到同一条日志。`engineIdentity` 用于比较引擎实例，`Global.LOADING_SAVE` 记录读取存档的状态。
 
 ::: details 完整成品：GearInGlobalAccess
 
@@ -129,19 +131,19 @@ public class GearInGlobalAccess {
 
 :::
 
-在上一节的应用加载和读档回调加入局部调用：
+在 `GearInModPlugin` 的应用加载与读档回调中加入：
 
 ```java
 GearInGlobalAccess.logAccessorState();
 ```
 
-再在 GearInHitLogger.onHit 中加入同一调用，必要时使用完整类名：
+然后在 `GearInHitLogger.onHit(...)` 中调用同一方法。这里使用完整类名：
 
 ```java
 data.scripts.gearin.GearInGlobalAccess.logAccessorState();
 ```
 
-这三个位置分别观察应用、生涯和战斗的实际上下文。输出是诊断信息，服务布尔值按当前阶段解释，避免把正常加载阶段当成业务失败。
+同一份记录现在分别来自应用加载、进入生涯与弹体命中。`state` 说明实际场景，服务布尔值说明引用是否存在；进入第二场战斗后，再比较引擎标识。这样，调用位置与返回对象都能对应到实际过程。
 
 ## 验证方案
 
@@ -172,9 +174,9 @@ data.scripts.gearin.GearInGlobalAccess.logAccessorState();
 
 ## 总结
 
-Global 把服务入口集中起来，实际使用仍由生命周期和对象范围决定。设置、当前存档和当前战斗各自提供对应数据，GameState、持久标记和引擎实例信息用于核对这些范围。
+`Global` 让各类服务容易取得，返回对象仍然属于当前加载、存档或战斗。设置在应用加载后读取，存档状态从当前 Sector 取得，战斗逻辑使用本场引擎。
 
-后续代码继续从具体任务出发选择服务。先明确当前回调与对象归属，再取得所需入口，数据和结果就能沿实际调用关系追踪。
+日志同时保留场景与引用状态，正是为了区分对象存在和场景适用。后续使用这些入口时，回调已经提供对象的地方可以直接沿用参数，需要访问全局服务时再取得当前引用。
 
 ## 建议参考项
 

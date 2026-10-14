@@ -1,6 +1,6 @@
 # 实现市场条件
 
-市场已有交易与生产，最后给它加一项环境条件。本节的 Warfront 提高危险度、降低流通性并增加新生成舰队的质量，每个实例用自己的 token 管理修饰。观察器比较应用、抑制、勘测与移除，倍率和计时也按插件的保存范围安排。
+市场条件可以把一组环境效果集中到同一个实例。本节实现 Warfront，提高危险度、降低流通性并修饰来源市场的舰队质量，再比较抑制、勘测与移除时的结果。实例 token 管理各项修饰，参数与保存方式决定这份条件怎样延续。
 
 *本节预期阅读时间：\~24 分钟。*
 
@@ -25,91 +25,43 @@
 - [C8-S4] 的 `MutableStat`、`StatBonus` 和 modifier ID；
 - [C12-S1] 的市场推进与经济观察入口。
 
-## 市场条件的对象组成
+## 注册 Warfront 并接到当前市场
 
-`market_conditions.csv` 保存静态注册行，`MarketConditionSpecAPI` 代表这条规格，`MarketConditionAPI` 代表挂在某个市场上的实例，`MarketConditionPlugin` 负责实际行为。
-
-本节使用 `GearIn_warfront` 和 `Warfront`。它是市场条件，不设置 `planetary`，因此显示在市场条件区域。它提高危险度，降低流通性，并提升市场生成舰队时读取的舰队质量动态 stat。
-
-## 注册市场条件身份
-
-文件位置是 `data/campaign/market_conditions.csv`。原版表头顺序如下：
+在 `data/campaign/market_conditions.csv` 注册 `GearIn_warfront`，显示名采用 `Warfront`，插件使用本节的 `GearInWarfrontCondition`。文件内容如下：
 
 ```csv
 name,id,tags,planetary,decivRemove,script,desc,icon,order
 Warfront,GearIn_warfront,,,,data.scripts.gearin.campaign.GearInWarfrontCondition,"A contested market with elevated hazards and improved fleet readiness.",graphics/icons/markets/hostile_activity.png,1450
 ```
 
-`name` 是默认显示名，`id` 是全局 spec key。代码调用 `addCondition()` 时传入的是这个 ID。
+`script` 写完整类名，`icon` 沿用原版敌对活动图标，`order` 取 1450。`planetary` 留空使它位于条件栏的市场条件区域；设为 `TRUE` 时进入右侧的行星条件区域。`decivRemove` 控制文明衰退时移除，本例留空采用默认的 `false`，标签也留空。
 
-`tags` 为条件分类标签。本例不需要额外标签，因此留空。
+`desc` 是 tooltip 正文，基类支持 `$marketName` 等替换字段。注册行保存 `MarketConditionSpecAPI`，实际效果由当前市场的条件实例与插件提供。
 
-`planetary` 留空表示市场条件；填入 `TRUE` 才会进入行星条件区域。
-
-`decivRemove` 控制文明衰退时是否自动移除。本例留空，使用默认值。
-
-`script` 必须是插件类完整名称，游戏在创建条件实例时按名称实例化它。
-
-`desc` 是 tooltip 描述，支持 `$marketName` 等基类 token replacement。
-
-`icon` 使用原版市场图标。`order` 只影响条件列表排序。
-
-保存 `GearInWarfrontCondition.java` 和 `GearInConditionProbe.java` 到 `src/data/scripts/gearin/campaign/`，完整类名与 CSV 对应。向 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 添加局部调用，接在前面的产业与物品观察之后：
+保存 `GearInWarfrontCondition.java` 与 `GearInConditionProbe.java` 到 `src/data/scripts/gearin/campaign/`。在 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 中，将以下局部调用接到产业与物品观察之后：
 
 ```java
 GearInConditionProbe.log(market);
 ```
 
-当前观察器只在一轮经济更新后运行，创建本次实例、比较并移除，原有条件继续保留。
+观察器在整轮经济更新后创建一次条件，比较各种状态，最后移除本次实例并恢复原抑制标记。当前市场引用由经济观察器提供，条件本身属于创建它的市场。
 
-## 读取市场条件规格
+## 用实例 token 管理效果
 
-`MarketConditionSpecAPI` 位于 `com.fs.starfarer.api.characters` 包，保存 CSV 的静态字段：
-
-```java
-MarketConditionSpecAPI spec = Global.getSettings()
-        .getMarketConditionSpec(GearInWarfrontCondition.CONDITION_ID);
-LOG.info(String.format("id=%s name=%s script=%s icon=%s order=%.0f",
-        spec.getId(), spec.getName(), spec.getScriptClass(),
-        spec.getIcon(), spec.getOrder()));
-```
-
-`getId()`、`getName()`、`getScriptClass()` 和 `getIcon()` 适合做注册检查。`getDesc()` 用于读取 tooltip 原文，`getTags()` 和 `hasTag()` 用于分类。
-
-`isPlanetary()` 和 `isDecivRemove()` 分别读取两个布尔字段。`getGenSpec()` 返回可选的 procgen 规格；本节条件没有 `condition_gen_data.csv` 行，因此它不参与自动生成。
-
-规格对象不保存某个市场的危险度或流通性当前值。那些值来自 `MarketAPI` 和条件插件写入的 modifier。
-
-## 创建运行时实例
-
-市场通过 `addCondition()` 创建条件。无参数形式使用插件默认状态，带参数形式会在 `apply()` 前调用 `setParam()`：
+通过 `addCondition(...)` 添加 Warfront，返回值保存为 `token`。以下局部片段传入倍率 1，并精确取得刚创建的实例：
 
 ```java
 String token = market.addCondition(GearInWarfrontCondition.CONDITION_ID, 1.0f);
 MarketConditionAPI condition = market.getSpecificCondition(token);
 ```
 
-返回值是实例 token，例如 `GearIn_warfront_ab12c`。同一个规格添加两次会取得两个 token，精确移除也沿 token 执行。
+`GearIn_warfront` 是规格 ID，每次添加返回不同的实例 token，例如 `GearIn_warfront_ab12c`。`getCondition(id)` 与 `getFirstCondition(id)` 按规格找首个实例，`getSpecificCondition(token)` 才对应这一份条件。
 
-`getCondition(id)` 和 `getFirstCondition(id)` 按 spec ID 查找首个实例。需要精确操作某一个实例时，使用 `getSpecificCondition(token)`。
+**规格 ID 用于选择，实例 token 用于隔离修饰。** 同类型条件可以有多个实例，来源都写规格 ID 时，效果会互相覆盖。`BaseMarketConditionPlugin.getModId()` 返回本实例的 token，`apply(String id)` 接收到的也是这个 token。
 
-条件实例属于创建它的市场。读取和移除时从目标市场取得实例，不把实例对象跨市场缓存。
+### 写入危险度、流通性与舰队质量
 
-## 条件插件的方法与调用时机
-
-`init(MarketAPI, MarketConditionAPI)` 保存市场和实例引用。基类的 `getModId()` 会返回当前实例 token。
-
-`setParam(Object)` 接收 `addCondition(id, param)` 的参数。大多数固定条件并不需要这个入口，本例只为展示 API 边界而接受正数 `Float`。
-
-`apply(String id)` 在条件生效时写入市场修饰。传入的 `id` 是实例 token，应直接作为 modifier source 使用。
-
-`advance(float amount)` 在市场推进时运行，`elapsed` 按传入的秒数累计。本例用它观察实例时间，三项修饰仍由 `apply(...)` 写入。
-
-`unapply(String id)` 在移除或重算前清理修饰。当前三项写入各有对应的解除方法。
-
-## 写入三项市场修饰
-
-危险度使用 `market.getHazard()`，流通性使用 `market.getAccessibilityMod()`。舰队质量使用 `market.getStats().getDynamic().getMod(Stats.FLEET_QUALITY_MOD)`。
+插件的 `init(...)` 保存市场和条件引用，然后由 `apply(...)` 写入效果。危险度通过 `getHazard()`，流通性通过 `getAccessibilityMod()`，舰队质量通过 `Stats.FLEET_QUALITY_MOD` 的动态修饰。局部代码如下：
 
 ```java
 String source = getModId();
@@ -119,13 +71,13 @@ market.getStats().getDynamic().getMod(Stats.FLEET_QUALITY_MOD)
         .modifyFlatAlways(source, 0.15f * multiplier, getName());
 ```
 
-危险度是百分比形式的市场危险值，`0.15` 表示增加 15 个百分点。流通性以 1.0 为基础，负修饰会降低市场可达性。舰队质量 dynamic stat 由舰队生成逻辑读取，不等于某一支已经存在舰队的固定属性。
+倍率为 1 时，危险度增加 15 个百分点，流通性修饰降低 5 个百分点，舰队质量增加 0.15。日志里的 `getAccessibilityMod().computeEffective(0f)` 读取流通性修饰，最终流通性还合并市场的其他条件。
 
-**规格 ID 选择条件，实例 token 隔离每份修饰。** 两个实例使用不同 token 后各自参与计算，移除当前一份时就只解除它的来源。
+舰队生成从来源市场取得质量时会读取质量动态项，它影响后续生成条件。已经生成的舰队仍持有原来的装配与质量结果，所以当前观察先确认市场动态值，实际生成沿 [C11-S1] 的来源市场处理。
 
-## 使用参数倍率
+### 用参数统一调整倍率
 
-本例把 `Float` 参数解释为三项效果的统一倍率：
+`addCondition(id, param)` 在应用前将参数交给 `setParam(Object)`。本例接受正数 `Float`，将它解释为三项效果的统一倍率，局部处理如下：
 
 ```java
 if (param instanceof Float && ((Float) param) > 0f) {
@@ -135,11 +87,11 @@ if (param instanceof Float && ((Float) param) > 0f) {
 }
 ```
 
-`1.0f` 保持基准值，`2.0f` 使三项修饰翻倍。本例接受正数 `Float`，其余输入恢复默认 1；调用传 `1f` 或 `2f`，插件仍按当前市场统计项写入。
+传入 `1f` 使用基准值，`2f` 使三项效果翻倍，其他输入采用默认 1。固定条件可以使用无参数添加，保留插件默认状态；需要参数时，调用方与插件约定类型，日志记录实际倍率。
 
-多数条件可以直接使用 CSV 固定效果，不需要调用带参数的添加入口。使用参数时，插件应记录实际倍率，便于排查存档中的不同实例。
+### 撤销同一实例的来源
 
-## 配对清理修饰
+移除或重算前，`unapply(...)` 按同一 token 解除三项修饰：
 
 ```java
 String source = getModId();
@@ -149,13 +101,11 @@ market.getStats().getDynamic().getMod(Stats.FLEET_QUALITY_MOD)
         .unmodifyFlat(source);
 ```
 
-`reapplyConditions()` 会对条件执行 unapply，再对满足条件的实例执行 apply。固定 source 能保证重算不会积累重复 modifier。
+这份来源在各属性中对应同一条件。重新应用替换它的当前值，移除本实例也只清理自己的来源，其他实例仍可参与市场计算。
 
-## 使用抑制和重算
+## 比较抑制与两种重算
 
-`suppressCondition(specId)` 把 spec ID 加入市场抑制集合。它不会立刻撤销当前效果；下一次 `reapplyConditions()` 才会执行 unapply 并跳过 apply。
-
-`unsuppressCondition(specId)` 只解除集合标记，同样需要重算才能恢复效果。抑制和解除抑制应成对出现。
+条件可以保留在市场中而暂时停止生效。`suppressCondition(specId)` 将规格 ID 加入抑制集合，随后调用 `reapplyConditions()` 撤销并跳过这些实例；解除抑制后再重算，才能恢复效果。以下局部片段分别记录标记后、重算后与恢复后：
 
 ```java
 market.suppressCondition(GearInWarfrontCondition.CONDITION_ID);
@@ -167,25 +117,29 @@ market.reapplyConditions();
 float restored = market.getHazard().getModifiedValue();
 ```
 
-抑制只影响生效，不会从 `getConditions()` 删除实例。需要删除一个实例时，仍然使用它的 token。
+**抑制先改变标记，效果在重算时改变。** 所以 `before` 仍可以保留应用值，`suppressed` 才反映撤销。抑制按规格 ID 处理同类实例，`getConditions()` 仍包含这些对象。
 
-## 区分 survey 状态
+### 勘测状态怎样参与重算
 
-条件级 `isSurveyed()` 表示这一实例是否已勘测，`requiresSurveying()` 来自 procgen 规则。市场级 `getSurveyLevel()` 表示玩家对整个市场的勘测进度。
+条件的 `isSurveyed()` 保存实例勘测状态，`requiresSurveying()` 来自可选的生成规格；市场的 `getSurveyLevel()` 表示整个市场的勘测等级。本例没有 `condition_gen_data.csv` 记录，默认不要求勘测，创建后的实例仍拥有自己的勘测状态。
 
-本例没有 procgen 行，因此 `requiresSurveying()` 为 `false`。观察器仍然手动读取并切换 `setSurveyed(false)` 和 `setSurveyed(true)`，用于说明状态接口，不把它当作本条件的生效门槛。
+观察器手动执行 `setSurveyed(false)`，随后全量重算，再单独重算本次 token。**全量重算检查勘测与抑制，单实例重算只检查抑制。** 全量入口先撤销每份条件，再应用已勘测且未抑制者；单实例入口撤销指定对象，再按抑制标记决定应用。因此本例手动设为未勘测后，前者移除效果，后者重新应用效果。
 
-**全量重算检查勘测与抑制，单实例重算检查抑制。** `reapplyConditions()` 对所有实例先解除，再对已勘测且未抑制者应用；`reapplyCondition(token)` 精确重算一份，按抑制状态决定应用。当前观察器分别记录这些结果。
+::: warning 单实例重算会略过勘测状态
+`reapplyCondition(token)` 可以让未勘测实例重新提供效果。需要按市场勘测状态统一应用时，使用 `reapplyConditions()`；本节两种调用用于比较这项差异。
+:::
 
-## 删除具体实例
+### 移除本次条件
 
-`removeSpecificCondition(token)` 只删除 token 对应的一个实例，并调用该实例的 `unapply()`。
+比较结束后，观察器把勘测状态改回 `true`，用 `removeSpecificCondition(token)` 删除本次实例，并恢复原抑制状态。删除会调用它的 `unapply()`，三项修饰随来源解除。
 
-`removeCondition(specId)` 会删除同一 spec ID 的全部实例。页面示例只有一个实例，但实际代码应保留 `addCondition()` 返回的 token，以避免误删其他实例。
+`removeCondition(specId)` 则移除同一规格的所有实例。当前实验只处理自己添加的一份，所以保存返回的 token；其他功能添加了同类型条件时，仍能保留它们。
 
-## 存档和界面边界
+## 保存倍率与计时
 
-基类 `isTransient()` 默认为 `true`，读档时插件按规格重新建立，实例字段回到初始值。本例接收倍率并累计时间，因此覆写为 `false`，让这份插件状态随条件保存：
+Warfront 除了当前修饰，还保存 `multiplier` 与 `elapsed`。市场推进时调用 `advance(amount)`，本例直接累计传入的秒数，三项效果仍由 `apply(...)` 写入。
+
+`BaseMarketConditionPlugin.isTransient()` 默认返回 `true`，保存时只保留条件，读档后重新创建插件，字段回到初始值。本例要让倍率与计时延续，因此返回 `false`：
 
 ```java
 @Override
@@ -194,15 +148,25 @@ public boolean isTransient() {
 }
 ```
 
-固定效果可以沿用默认值，需要按生涯日累计的功能也可使用 `BaseMarketConditionPlugin2`。另一种保存方式是把实际状态放入市场 Memory，重建时再读取。**保存范围由当前功能状态决定。** 倍率设为 2 却在读档后恢复默认 1，已经改变了效果设计。
+**插件保存方式取决于需要延续的实例状态。** 固定效果可以按规格重建，倍率已经设为 2 时，读档恢复成 1 就改变了效果。也可以把必要状态放到市场 Memory，再在重建时读取；需要按生涯日累计的插件可参考 `BaseMarketConditionPlugin2`，它保存插件并提供 `daysActive`。
 
-基类默认提供 `getName()`、`getIconName()`、`getTokenReplacements()`、`hasCustomTooltip()` 和 `createTooltip()`。CSV 描述由 token replacement 生成最终文本。
+本节观察器在同一轮移除条件，日志验证的是应用和恢复。长期保留条件的功能还要在保存读档后比较倍率与计时，才能确认状态实际延续。
 
-`isTooltipExpandable()`、`getTooltipWidth()` 和 `runWhilePaused()` 控制界面与暂停推进行为。本例不覆盖复杂 tooltip，只使用基类的描述和图标入口。
+## 读取规格与显示条件
 
-## 对照原版条件的插件职责
+`MarketConditionSpecAPI` 位于 `com.fs.starfarer.api.characters` 包，从设置取得注册结果。局部读取如下：
 
-下面的速查表用于比较原版条件插件与本节自定义插件的职责。
+```java
+MarketConditionSpecAPI spec = Global.getSettings()
+        .getMarketConditionSpec(GearInWarfrontCondition.CONDITION_ID);
+LOG.info(String.format("id=%s name=%s script=%s icon=%s order=%.0f",
+        spec.getId(), spec.getName(), spec.getScriptClass(),
+        spec.getIcon(), spec.getOrder()));
+```
+
+`getId()`、`getName()`、`getScriptClass()`、`getIcon()` 与 `getOrder()` 对应身份、插件和显示，`getDesc()` 取得原描述，`getTags()` 与 `hasTag()` 读取分类。`isPlanetary()`、`isDecivRemove()` 读取两项布尔设置，`getGenSpec()` 返回可选生成规格；当前条件由脚本添加，未配置自动生成。
+
+界面沿用基类的 `getName()`、`getIconName()`、`hasCustomTooltip()` 与 `createTooltip()`，通过 `getTokenReplacements()` 替换描述中的市场字段。`isTooltipExpandable()` 与 `getTooltipWidth()` 控制提示展开和宽度，`runWhilePaused()` 决定暂停推进，当前采用默认的 `false`。市场数值仍从 `MarketAPI` 读取，规格只提供定义。
 
 ### 原版条件速查表
 
@@ -410,9 +374,9 @@ public class GearInConditionProbe {
 
 ## 总结
 
-Warfront 从规格创建当前市场的条件实例，倍率决定三项效果，实例 token 管理写入与解除。抑制、勘测和重算按各自入口影响生效，删除本次 token 后恢复原市场状态。
+Warfront 用规格 ID 创建，用实例 token 写入和解除效果。倍率控制三项修饰，抑制与勘测决定重算时是否生效，删除本次实例后按原抑制状态恢复市场。
 
-插件字段的保存也属于这份设计：固定效果可以重建，持久倍率与计时按需要保存。编者建议把注册身份、修饰来源和保存范围分别写清，再让条件长期留在市场上。
+全量与单实例重算各有条件，插件是否保存又决定字段能否延续。明确当前实例、应用入口与状态寿命，市场条件才会在重算和读档后继续保持预期行为。
 
 ## 建议参考项
 

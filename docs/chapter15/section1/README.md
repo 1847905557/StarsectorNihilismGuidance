@@ -1,6 +1,6 @@
 # 组织生涯交互对话
 
-`Foundry` 已经能打开专用对话，这次把会话本身展开：目标怎样传入，三个面板怎样从同一会话取得，选项怎样记录一次检查，再怎样正常离开或取消。插件交接与布局也沿当前会话操作，您可以把画面里的实体、按钮和结果对应到实际对象。
+本节为 Foundry 建立一次检查对话，显示目标、记录检查结果，并提供离开与取消。目标和面板由同一会话提供，插件处理玩家选择；完成这次会话后，再说明插件交接、布局与专用界面怎样继续使用当前上下文。
 
 *本节预期阅读时间：\~28 分钟。*
 
@@ -24,7 +24,7 @@
 - Java 接口实现、对象字段和布尔状态；
 - `MemoryAPI` 的键值读写和 `getMemoryWithoutUpdate()` 的读取语义。
 
-## 在 `Foundry` 选择本节对话
+## 从 Foundry 打开检查对话
 
 保存 `src/data/scripts/gearin/campaign/GearInConversationDialog.java`。在 [C14-S3] 的 `GearInCampaignPlugin.pickInteractionDialogPlugin(...)` 已命中标记后，把返回的对话实例改为：
 
@@ -32,20 +32,22 @@
 return new PluginPick<>(new GearInConversationDialog(), PickPriority.MOD_SPECIFIC);
 ```
 
-`Foundry` 主实体继续沿前文标记。重启后从地图与它交互，会进入本节插件。
+Foundry 主实体沿 [C14-S3] 的标记继续作为目标。重启后从地图交互，生涯插件选出 `GearInConversationDialog`，引擎建立会话并调用 `init(dialog)`。
 
-生涯交互可以从 `BaseCampaignPlugin` 的 `picker` 开始。`picker` 接收候选实体，按实体状态决定是否返回一个 `InteractionDialogPlugin`；它负责选择处理实现，不负责创建已经运行的对话。调用方拿到插件后，再把插件和同一个 `SectorEntityToken` 交给 `showInteractionDialog(plugin, target)`。
+需要由 Java 功能主动打开对话时，也可以直接传入插件与实体。以下局部入口使用 `showInteractionDialog(...)`：
 
 ```java
 boolean shown = Global.getSector().getCampaignUI().showInteractionDialog(
         new GearInConversationDialog(), target);
 ```
 
-**入口被接受后，引擎建立当前会话并调用 `init(dialog)`。** `shown` 表示这次对话是否真的打开，已有其他对话时可能为 `false`。引擎创建 `InteractionDialogAPI`，把目标、插件和三个面板放进同一会话，再调用插件的 `init(dialog)`。`plugin` 接收回调，`target` 是入口提供的实体，`dialog` 保存本次会话；插件从 `dialog` 取得目标和面板，因而不会把 `picker` 阶段的临时引用误当成会话状态。
+`shown` 表示是否接受了打开请求，已有其他对话或正在切换状态时可以返回 `false`。地图选择与直接调用两种入口都把插件交给实际会话，插件随后从 `InteractionDialogAPI` 取得当前目标和面板。
 
-## 读取目标并决定分支
+**初始化使用会话提供的目标与面板。** 入口选择实现，`init(...)` 建立这次会话的状态，后续选项与返回回调也继续使用这份状态。
 
-`getInteractionTarget()` 返回通用的 `SectorEntityToken`。先取得它，再读取 Memory 或访问 ID；这样目标判断和后续显示使用同一对象。
+## 确认本次会话的目标
+
+在 `init(...)` 保存 `dialog`，再从 `getInteractionTarget()` 取得当前实体。目标不可用时，结束本次检查对话，局部判断如下：
 
 ```java
 SectorEntityToken target = dialog.getInteractionTarget();
@@ -55,22 +57,24 @@ if (target == null) {
 }
 ```
 
-目标准备阶段把 `$GearIn_dialog_target` 写进目标自己的 Memory。`picker` 在返回插件前读取同一个键筛选候选；通过筛选的实体才进入 `showInteractionDialog`，插件初始化时再从会话目标读取一次，确认实际进入会话的实体仍满足条件。
+Foundry 的目标准备代码使用下面的局部写入，把标记保存在实体自身：
 
 ```java
 target.getMemoryWithoutUpdate().set("$GearIn_dialog_target", true);
 ```
+
+初始化从实际会话目标读取，直接调用入口也采用相同条件：
 
 ```java
 boolean marked = target.getMemoryWithoutUpdate()
         .getBoolean("$GearIn_dialog_target");
 ```
 
-标记为假或键不存在时，插件记录原因并调用 `dismissAsCancel()`；标记为真时才建立检查选项。写入方是目标准备代码，读取方先是 `picker`、后是 `init(dialog)`，读取时机分别对应候选筛选和会话初始化；`getMemoryWithoutUpdate()` 只读取当前值，不为筛选额外推进 `facts` 更新。
+标记为假或缺席时，完整类记录原因并取消；成立后再建立选项。生涯 picker 筛选地图请求，插件也支持直接传入目标，所以初始化负责当前检查的适用条件。这里用 `getMemoryWithoutUpdate()` 读取已有布尔值，事实刷新仍按 [C14-S3] 的另一个入口处理。
 
-## 让三个面板在初始化时协作
+## 建立检查内容与选项
 
-三个面板由同一个 `dialog` 提供。文本面板先写目标说明，选项面板清掉进入会话前可能残留的选项并建立稳定分支，视觉面板根据目标是否提供自定义交互图像决定显示或隐藏。
+文本面板写目标 ID，选项面板建立检查、离开与取消，视觉面板显示实体提供的交互图像。以下局部片段从同一 `dialog` 取得三者：
 
 ```java
 TextPanelAPI text = dialog.getTextPanel();
@@ -91,21 +95,21 @@ if (target.getCustomInteractionDialogImageVisual() != null) {
 }
 ```
 
-`optionText` 只是玩家看到的文字；`optionData` 才是 `optionSelected` 用来判断分支的对象。ESC 映射到取消数据后，鼠标选项和键盘入口进入同一个取消路径。
+文本与视觉从当前目标取得资料，选项的业务结果由插件字段处理。图像存在时调用 `showImageVisual(...)`，否则隐藏视觉区域，普通 `SectorEntityToken` 也就能沿同一入口使用。
 
-### 文本面板承载会话状态
+### 文本显示当前目标与结果
 
-`TextPanelAPI` 的第一条内容来自会话目标，而不是 `picker`。目标 ID 写入文本后，您能把当前画面与 `getInteractionTarget()` 返回的实体对应起来；标记缺失分支写出的说明也属于同一文本面板，因此初始化结果在一个区域内完整呈现。
+目标 ID 写入文本后，可以与实际实体对应。以下局部行来自前面的初始化：
 
 ```java
 text.addPara("Target ID: " + target.getId());
 ```
 
-检查分支把业务结果追加到同一面板。`checked` 记录结果是否已经写入，文本面板本身只负责显示，不负责决定选项是否还能再次进入。
+检查完成时继续向同一面板追加结果，是否已经完成由 `checked` 保存。面板提供显示，插件保存业务状态，重新进入这次回调时才能决定是否再次写入。
 
 ### 选项面板区分显示和分支键
 
-`clearOptions()` 清理进入会话前可能遗留的内容，三个 `addOption` 调用分别建立继续、离开和取消。玩家看到的是 `optionText`，回调收到的 `optionData` 是稳定字符串；因此把 "`Continue` `inspection`" 改成别的语言不会改变分支判断。
+`clearOptions()` 清理旧集合，`addOption(...)` 分别传入显示文字与业务数据。以下局部片段保留三个稳定键，改动显示文字也能继续进入原分支：
 
 ```java
 options.clearOptions();
@@ -115,51 +119,23 @@ options.addOption("Cancel", "CANCEL");
 dialog.setOptionOnEscape("Cancel", "CANCEL");
 ```
 
-`setOptionOnEscape` 让 ESC 直接提交取消键，键盘路径与取消选项共享同一个业务结果。选项的增删改和启用状态属于 `OptionPanelAPI`，关闭结果仍由插件根据 `optionData` 决定。
+玩家看到 `optionText`，`optionSelected(...)` 则按 `optionData` 选择动作。ESC 提交 `CANCEL`，与取消按钮共用分支；启用、删除与提示由 `OptionPanelAPI` 提供，[C15-S2] 再展开这些操作。
 
-## 交接当前插件
+## 记录一次检查，再结束会话
 
-`getPlugin()` 用于读取当前回调接收者，`setPlugin(nextPlugin)` 只替换接收者。面板和目标仍属于原会话，新插件字段则由自己的初始化建立。**`setPlugin(...)` 不自动调用 `init(...)`。** 需要交接时，创建方显式初始化新接收者：
+选择检查时，先确认会话仍活动，再按 `checked` 判断是否已写入结果。局部处理如下：
 
 ```java
-InteractionDialogPlugin current = dialog.getPlugin();
-if (current == this) {
-    dialog.setPlugin(nextPlugin);
-    nextPlugin.init(dialog);
+if (closed) {
+    return;
+}
+if (OPTION_CHECK.equals(optionData) && !checked) {
+    checked = true;
+    dialog.getTextPanel().addPara("The target responds to the inspection.");
 }
 ```
 
-身份比较针对当前实际接收者，交接完成后回调再进入新插件。交接完成后，旧插件不再接收后续选项回调，仍需传递的数据由交接方显式保存。
-
-## 调整会话显示层
-
-布局调用只改变当前会话的显示层。文本宽高和偏移决定可读区域，提示文字、透明度和背景暗度决定界面呈现；它们不改变目标、插件或业务状态。
-
-```java
-dialog.setTextWidth(560f);
-dialog.setTextHeight(380f);
-dialog.setXOffset(24f);
-dialog.setYOffset(12f);
-dialog.setPromptText("Inspection workspace");
-dialog.setOpacity(0.96f);
-dialog.setBackgroundDimAmount(0.65f);
-```
-
-`showTextPanel()`、`hideTextPanel()` 和 `hideVisualPanel()` 也只改变可见区域。调整后应观察文本是否被选项遮挡、偏移是否仍在屏幕内，再决定参数是否合适。
-
-## 处理专用入口
-
-交互对话还可以暂时承载几类专用界面。`showLoot(...)` 接收战利品和相应监听器，适合把奖励对象交给已有界面呈现；显示结束后，当前插件仍负责把结果写回文本或选项。
-
-`showCargoPickerDialog(...)`、`showFleetMemberPickerDialog(...)`、`showIndustryPicker(...)`、`showCampaignEntityPicker(...)` 和 `showCustomProductionPicker(...)` 把货物、舰队成员、行业、生涯实体或生产方案的选择过程交给专用 `picker`。选择器返回的对象由回调提供，当前对话的选项不会自动替换成选择结果；返回后依据结果重建需要显示的文本和分支。
-
-`showCustomDialog(...)`、`showCustomVisualDialog(...)`、`showCommDirectoryDialog(...)` 和 `makeOptionOpenCore(...)` 会改变当前可见界面，有些入口还会把回调交给临时插件。调用方需要保留仍要继续使用的业务字段，并以 `getPlugin()` 确认返回后的回调接收者，再恢复面板内容。
-
-`startBattle(...)` 把控制权交给 `Engagement`。战斗结束后由 `backFromEngagement(...)` 接收结果，插件继续使用原会话目标和业务状态；战斗结果本身不会自动完成检查，也不会替代关闭调用。
-
-## 区分关闭结果并保护业务状态
-
-`dismiss()` 表示正常离开，`dismissAsCancel()` 表示取消或中止。ESC 使用取消数据，因此和取消选项共享同一结果。关闭函数先记录 `closed`，再调用对应 API；检查结果则由 `checked` 单独记录。
+**检查完成与会话关闭分别保存。** 检查后玩家还可以继续停留，`checked` 为真，`closed` 仍为假；离开后两者可以同时为真。关闭分支先写 `closed`，再调用对应结束方法：
 
 ```java
 if (OPTION_LEAVE.equals(optionData)) {
@@ -173,17 +149,51 @@ if (OPTION_CANCEL.equals(optionData)) {
 }
 ```
 
-**检查结果与会话结束分别记录。** `checked` 保证同一检查只写一次，`closed` 表示当前会话已经结束。先检查再离开时，两项状态都成立。
+`dismiss()` 表示正常离开，`dismissAsCancel()` 使用取消结果。两者负责会话关闭，已完成的检查结果是否保留则由当前功能决定，本例单独记录这个结果。
+
+::: info 关闭请求与画面消失之间仍有界面推进
+`dismiss()` 请求关闭后，界面可以等待文本滚动与淡入完成。插件先设置 `closed`，后续回调据此结束业务写入，关闭过程也能继续完成。
+:::
+
+## 交接当前插件
+
+需要让另一份实现继续当前会话时，用 `getPlugin()` 确认接收者，再用 `setPlugin(...)` 替换。目标与面板继续属于当前对话，新插件的字段则另行建立。**替换不会自动调用 `init(...)`**，局部交接因此显式初始化：
 
 ```java
-if (closed) {
-    return;
-}
-if (OPTION_CHECK.equals(optionData) && !checked) {
-    checked = true;
-    dialog.getTextPanel().addPara("The target responds to the inspection.");
+InteractionDialogPlugin current = dialog.getPlugin();
+if (current == this) {
+    dialog.setPlugin(nextPlugin);
+    nextPlugin.init(dialog);
 }
 ```
+
+随后选项回调交给新插件。需要延续的检查结果或其他字段，由交接方传递，目标和面板并没有代替这些业务数据。[C15-S3] 的酒吧事件会采用当前对话上的插件交接。
+
+## 调整会话显示层
+
+布局作用于当前会话的显示区域。文本宽高、偏移、提示、透明度与背景暗度可以分别设置，以下局部片段给出一组观察参数：
+
+```java
+dialog.setTextWidth(560f);
+dialog.setTextHeight(380f);
+dialog.setXOffset(24f);
+dialog.setYOffset(12f);
+dialog.setPromptText("Inspection workspace");
+dialog.setOpacity(0.96f);
+dialog.setBackgroundDimAmount(0.65f);
+```
+
+这些设置保留目标与插件状态，`showTextPanel()`、`hideTextPanel()` 和 `hideVisualPanel()` 控制可见区域。验证时观察文本、选项是否遮挡，以及偏移后的内容是否仍在屏幕内，尺寸按实际阅读区域选择。
+
+## 在当前会话中打开专用界面
+
+已经拥有奖励 Cargo 时，`showLoot(...)` 可以把它交给战利品界面，结束结果通过相应监听器接回。当前插件再根据结果安排后续文字和选项。
+
+货物、舰队成员、产业、实体与生产方案分别用 `showCargoPickerDialog(...)`、`showFleetMemberPickerDialog(...)`、`showIndustryPicker(...)`、`showCampaignEntityPicker(...)` 和 `showCustomProductionPicker(...)` 选择。回调提供选中的对象，对话据此继续流程并重建需要的内容。
+
+`showCustomDialog(...)`、`showCustomVisualDialog(...)`、`showCommDirectoryDialog(...)` 和 `makeOptionOpenCore(...)` 接到自定义、目录或核心界面。各入口按自己的流程返回，业务字段继续保留，需要交接插件时确认当前 `getPlugin()`，再安排返回后的面板内容。
+
+`startBattle(...)` 开始生涯战斗，结果通过 `backFromEngagement(...)` 返回。完整类在返回回调检查 `closed`，活动会话再追加说明；实际功能根据战斗结果决定任务动作，关闭与检查状态仍由各自分支处理。
 
 ## 完整最小例
 
@@ -351,9 +361,9 @@ public class GearInConversationDialog implements InteractionDialogPlugin {
 
 ## 总结
 
-`Foundry` 会话由 `picker` 选择插件，初始化从同一 `dialog` 取得实体与面板，Memory 标记决定检查是否适用。按钮显示与稳定分支键分别处理，一次检查与会话关闭也各有字段。
+Foundry 对话从会话取得目标与面板，标记决定检查是否适用，选项用稳定数据进入检查、离开或取消。`checked` 保存结果，`closed` 表示业务已经结束，画面关闭与返回回调都能按这个状态处理。
 
-编者建议先确认这次对话的实际目标，再追面板与选项。交接时显式初始化新插件，关闭时记录对应结果，当前会话的对象与状态就能连续读下来。
+交接插件时保留当前会话，再显式初始化接收者并传递所需结果。布局、选择器与战斗各有显示或返回入口，会话继续围绕同一个目标完成实际操作。
 
 ## 建议参考项
 

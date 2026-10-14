@@ -1,6 +1,6 @@
 # 编写 Rules 命令
 
-现有规则已经能填菜单与读状态，接下来让它调用自己的 Java 命令。本节从通讯菜单触发两种调用，解析文本、数值、布尔、颜色和对象，写到当前实体 Memory。条件调用使用布尔结果筛选，脚本调用完成写入；相同类通过当前参数承担两种明确用途。
+Rules 命令把规则中的一行交给 Java 处理。本节从独立舰队通讯调用 `GearInRuleCommand`，解析文字、数值、布尔值与可选颜色、对象，再把结果保存到当前实体 Memory。同一实现分别用于条件和脚本，借此说明返回值与状态写入何时被使用。
 
 *本节预期阅读时间：\~20 分钟。*
 
@@ -22,22 +22,47 @@
 - [C16-S1] 的 `rules.csv` 七列、加载流程与数据语法；
 - [C16-S2] 的条件表达式、脚本执行与 Memory 槽位；
 
-## 从规则文本找到命令类
+## 保存命令，并登记搜索包
 
-Rules 命令是 `CommandPlugin` 的实现类。条件列或脚本列的一行以简单类名开头，后续文本经过分词后成为命令参数；例如 `GearInRuleCommand "扫描 $playerName" 2.4 true highlight` 会寻找名为 `GearInRuleCommand` 的类，并把其余内容传给 `execute(...)`。
+保存 `src/data/scripts/gearin/rules/GearInRuleCommand.java`，继承 `BaseCommandPlugin`。命令行用简单类名开头，后面的文本经分词后传入 `execute(...)`；本例接受文字、数值、是否启用，以及可选颜色与对象。
+
+Java 类所在包还要进入 Rules 的搜索配置。在 MOD 的 `data/config/settings.json` 合并以下局部数组：
+
+```json
+{
+  "ruleCommandPackages": [
+    "data.scripts.gearin.rules"
+  ]
+}
+```
+
+同名数组按现有设置合并，原版包继续保留。规则写 `GearInRuleCommand`，搜索器用包名组成 `data.scripts.gearin.rules.GearInRuleCommand`，找到无参构造可用的实现。
 
 ### 区分两种路径
 
 Java 源码中的导入路径是 `com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin`。它说明基类位于 API 的 `impl.campaign.rulecmd` 包，与 `CommandPlugin` 所在的 `campaign.rules` 包不同。
 
-运行时搜索路径来自 `data/config/settings.json` 的 `ruleCommandPackages`。原版列表包含 `com.fs.starfarer.api.impl.campaign.rulecmd` 及其 `salvage`、`newgame`、`missions`、`academy` 子包；MOD 自己的命令位于 `data.scripts.gearin.rules`，因此需要把这个包追加到同名数组。加载器按数组中的包依次组合 `<包名>.<简单类名>`，直到找到可实例化的类。
+原版搜索列表包括 `rulecmd` 基础包与 `salvage`、`newgame`、`missions`、`academy` 子包。数组按顺序组合简单类名，找到后使用该实现；本节的前缀让自有类名保持独立。
 
 ::: warning 导入路径不会自动成为搜索路径
 
 Java 可以正确编译只证明 `import` 成立。`ruleCommandPackages` 没有 `data.scripts.gearin.rules` 时，`rules.csv` 仍然无法通过简单类名找到 `GearInRuleCommand`，游戏会在加载规则时报告命令不存在。
 :::
 
-## 认识 `BaseCommandPlugin`
+## 从通讯分别触发条件与脚本调用
+
+成品菜单接到非敌对独立舰队的 `fleetConvMain`，两条选项分别 fire 自有结果 trigger。以下局部记录展示实际命令参数：
+
+```csv
+id,trigger,conditions,script,text,options,notes
+GearIn_rules_cmd_condition,GearInRulesCommandCondition,"GearInRuleCommand ""扫描 $playerName"" 2.4 true highlight
+$entity.GearIn_rulecmd_last >= 2",,命令返回 true 后，这条规则进入候选。,,条件列调用
+GearIn_rules_cmd_script,GearInRulesCommandScript,,"GearInRuleCommand ""补给"" 3.0 false good $entity.GearIn_rulecmd_object",命令把参数写入实体 Memory。,,脚本列调用
+```
+
+条件调用返回 `true` 后，还要通过数值条件，规则才参加选择。脚本调用则执行写入，返回 `false` 也不会停止后续脚本。通讯菜单与完整回流记录在成品中组合，两个 trigger 都有实际调用。
+
+## 用 execute 处理本次请求
 
 `CommandPlugin` 定义 Rules 命令与引擎之间的三个入口：
 
@@ -49,11 +74,11 @@ public interface CommandPlugin {
 }
 ```
 
-`BaseCommandPlugin` 已经实现后两个方法：`doesCommandAddOptions()` 返回 `false`，`getOptionOrder(...)` 返回 0。普通命令继承它后只需实现 `execute(...)`；需要生成选项的特殊命令才覆写另外两个方法。
+普通命令继承基类只需实现 `execute(...)`，生成选项时再覆写 `doesCommandAddOptions()` 与 `getOptionOrder(...)`。当前沿用默认 `false` 与 0，表示它没有提前收集的选项结果。
 
-它还提供静态 `getEntityMemory(memoryMap)`。该方法优先返回 `MemKeys.ENTITY`，没有 ENTITY 槽位时返回 `MemKeys.LOCAL`。命令用它写入当前交互对象的状态，不需要自行重复槽位选择逻辑。
+基类的 `getEntityMemory(memoryMap)` 选择 ENTITY，缺少该槽位时使用 LOCAL。舰队通讯把指挥官作为当前人物，同时保留背后的舰队实体，所以本节写入 ENTITY，再用 `$entity.*` 读回结果。
 
-规则加载时会尝试实例化命令，确认类存在且无参构造可用；运行时每次调用也会取得新的实例。跨调用数据应写入 `memoryMap` 指向的 `MemoryAPI`，**跨调用状态保存在实际 Memory，命令实例处理当前请求。**
+搜索命令时会尝试实例化，运行调用也创建当前实例。**跨调用结果保存在实际 Memory 中。** 当前类解析这次参数，日志用规则 ID 定位来源；命令字段不承担长期状态。
 
 ### `execute` 的四个参数
 
@@ -62,15 +87,15 @@ public interface CommandPlugin {
 - `params` 是命令名之后经过分词的 `Token` 列表；
 - `memoryMap` 保存 LOCAL、ENTITY、PLAYER 等 Memory 槽位。
 
-条件列调用会使用 `execute(...)` 的布尔返回值决定该条件是否成立。脚本列只按顺序执行命令，返回值不会停止下一行脚本。因此示例返回解析出的 `enabled`：同一命令写在条件列时能够筛选规则，写在脚本列时仍会完成 Memory 写入。
+本例最后返回解析出的 `enabled`。条件列使用这个值筛选，脚本列使用已经完成的写入结果，两条通讯路径因而能直接比较同一方法的不同调用。
 
 ## 解析 `Token` 参数
 
-`Misc.tokenize(...)` 按空白切分普通参数，引号把包含空格的文本保留为一个参数，反斜杠转义下一个字符，表达式操作符会独立成为 `token`。命令收到的是切分完成的 `List<Token>`，因此先检查参数数量，再检查各位置允许的类型。
+`params` 已经是 `Misc.tokenize(...)` 得到的 `List<Token>`。空白分隔普通参数，引号保留含空格的字面量，反斜杠处理转义，操作符独立。本例的三个必需参数来自规则与可能的变量值，当前命令按这份约定解析。
 
 ### 区分变量、字面量和操作符
 
-`Token` 使用 `VARIABLE`、`LITERAL` 和 `OPERATOR` 三种类型。`isVariable()`、`isLiteral()` 与 `isOperator()` 只判断类型；示例的第一个参数允许变量或字面量，因此先拒绝操作符：
+Token 分为 `VARIABLE`、`LITERAL` 与 `OPERATOR`，判断方法读取各自类型。文字接受字面量或变量，数值与布尔参数检查当前取值，局部处理如下：
 
 ```java
         Token labelToken = params.get(0);
@@ -84,11 +109,11 @@ public interface CommandPlugin {
         }
 ```
 
-`isFloat(memoryMap)` 与 `isBoolean(memoryMap)` 会读取变量值后判断格式。数值检查失败时提前返回，可以避免 `getFloat(...)` 抛出格式异常；布尔检查只接受文本 `true` 或 `false`。
+数值检查用于这次参数的可解析值，布尔检查接受 `true` 或 `false`。不符合约定时返回 `false` 并记录规则 ID；有效输入继续进入实际取值。
 
 ### 读取字符串并替换文本 `token`
 
-`getString(memoryMap)` 对字面量返回原文本，对变量则从对应 Memory 取得字符串。`getStringWithTokenReplacement(...)` 在此基础上继续替换 `$playerName` 等对话文本 `token`；它需要 `dialog.getInteractionTarget()`，所以非对话上下文要改用普通 `getString(...)`：
+`getString(...)` 取得原字面量或变量字符串，带 token replacement 的版本继续替换 `$playerName` 等文本字段。后者需要当前对话目标，局部选择如下：
 
 ```java
         String label = dialog == null
@@ -96,7 +121,7 @@ public interface CommandPlugin {
                 : labelToken.getStringWithTokenReplacement(ruleId, dialog, memoryMap);
 ```
 
-命令参数写成 `"扫描 $playerName"` 时，对话调用会得到包含玩家姓名的 `label`；没有对话对象时保留原字符串。
+通讯中的文字参数变为 "扫描 <玩家名>"。非对话调用直接读取原字符串，当前请求有哪些界面对象，决定采用哪种文本处理。
 
 ### 读取数值和布尔值
 
@@ -108,11 +133,11 @@ public interface CommandPlugin {
         boolean enabled = enabledToken.getBoolean(memoryMap);
 ```
 
-参数 `2.4 true` 会产生 `amount=2.4`、`count=2` 和 `enabled=true`。命令最后返回 `enabled`，因此该布尔参数直接决定条件列能否通过。
+输入 `2.4 true` 得到浮点 2.4、四舍五入后的整数 2 和布尔真值。最终返回布尔结果，数值则保存到 Memory，供后一条条件或其他脚本读取。
 
 ### 读取颜色和对象
 
-`getColor(memoryMap)` 接受 `Color` 对象、`RGBA` 文本、设置中的颜色 ID、势力 ID，以及 `bad`、`good`、`highlight`、`story`、`gray` 等简写。示例把第四个参数解析为 `Color`；省略时使用高亮色：
+第四参数用 `getColor(...)` 解析，可以来自 Color 对象、RGBA 文本、设置颜色 ID、势力 ID，或 `bad`、`good`、`highlight`、`story`、`gray` 等简写。省略时用高亮色，局部取值如下：
 
 ```java
         Color color = params.size() > 3
@@ -120,7 +145,7 @@ public interface CommandPlugin {
                 : Misc.getHighlightColor();
 ```
 
-`getObject(memoryMap)` 只对变量 `token` 返回 Memory 中保存的原对象，字面量会得到 `null`。第五个参数可以传入 `$entity.someObject`，命令取得对象后再写到当前实体 Memory：
+第五参数是已有对象的变量。`getObject(...)` 返回 Memory 中的原对象，字面量没有对应对象，本节将可用结果写回当前实体：
 
 ```java
         Object object = params.size() > 4 ? params.get(4).getObject(memoryMap) : null;
@@ -130,36 +155,11 @@ public interface CommandPlugin {
 
 带点变量 `$player.name` 会把 `player` 作为槽位名，把 `$name` 作为键。槽位不存在时，`getVarNameAndMemory(...)` 会把完整变量名交给 LOCAL；LOCAL 也不存在时抛出 `RuleException`。没有点号的 `$option` 与 `$menuState` 直接读取 LOCAL。
 
-`getObject(...)`、`getString(...)` 与数值方法都沿用这套槽位解析。调用方传入的 `memoryMap` 决定可用槽位，命令不应自行假定每种场景都提供 MARKET、FACTION 或 ENTITY。
+字符串、对象与数值都采用这套槽位解析。实际 `memoryMap` 提供当前上下文，市场、人物与交易面板能提供的槽位并不相同，变量前缀随调用场景选择。
 
-## 组装 Rules 命令
+## 写入当前实体并读取结果
 
-前面的路径、接口和 `Token` 关系现在合并为一个最小命令：规则文本传入字符串、浮点数、布尔值、颜色和对象，命令把解析结果写入实体 Memory，并用 `enabled` 的值决定条件是否成立。
-
-### 将当前包加入运行时搜索
-
-```json
-{
-  "ruleCommandPackages": [
-    "data.scripts.gearin.rules"
-  ]
-}
-```
-
-把局部数组写入 `data/config/settings.json`，按现有设置合并追加 MOD 包。Rules 数据使用简单类名 `GearInRuleCommand`，加载器会从该包拼出 `data.scripts.gearin.rules.GearInRuleCommand`。
-
-### 让条件列和脚本列调用命令
-
-```csv
-id,trigger,conditions,script,text,options,notes
-GearIn_rules_cmd_condition,GearInRulesCommandCondition,"GearInRuleCommand ""扫描 $playerName"" 2.4 true highlight
-$entity.GearIn_rulecmd_last >= 2",,命令返回 true 后，这条规则进入候选。,,条件列调用
-GearIn_rules_cmd_script,GearInRulesCommandScript,,"GearInRuleCommand ""补给"" 3.0 false good $entity.GearIn_rulecmd_object",命令把参数写入实体 Memory。,,脚本列调用
-```
-
-第一行把 `GearInRuleCommand` 当作条件命令，只有 `enabled=true` 且随后条件成立时才进入候选。第二行只关心命令的写入结果，`execute(...)` 返回 `false` 不会停止脚本列。
-
-### 保存解析结果
+解析完成后，通过基类选择的 Memory 保存五项结果，局部操作如下：
 
 ```java
         MemoryAPI memory = getEntityMemory(memoryMap);
@@ -172,13 +172,13 @@ GearIn_rules_cmd_script,GearInRulesCommandScript,,"GearInRuleCommand ""补给"" 
         }
 ```
 
-`getEntityMemory(...)` 选择 ENTITY 或 LOCAL 后，五个结果都写入同一个 Memory。对象参数不存在时不覆盖旧对象；命令最后记录 `rule` ID 与解析值，并返回 `enabled`。
+对象参数存在时写入原对象，缺席时保留原键。命令日志记录当前规则与解析值，随后返回 `enabled`。条件示例的后一行读取 `$entity.GearIn_rulecmd_last`，可以立即取得这次刚写入的 2.4。
 
-## 从现有通讯触发两种调用
+**条件命令在候选匹配时就执行。** 当前候选是否最终胜出，是后面的分数选择。因此本例演示状态写入与布尔结果，正式条件中的副作用要另行决定。
 
-把下面成品的菜单与选项回流一起追加到 `rules.csv`，自有 `trigger` 由对应的 `FireBest` 实际调用。舰队通讯当前提供 `ENTITY`，所以结果条件明确读取 `$entity.GearIn_rulecmd_last`；人物 `LOCAL` 与背后的舰队实体是不同对象。
-
-条件命令会先写入当前数值，后续条件再读取它。**有状态的条件调用也会在匹配时执行。** 本例刻意用它演示布尔结果，实际选择条件时按所需副作用安排；纯读取判断则只返回当前状态。
+::: warning 条件通过与结果获选是不同时间
+候选条件中的命令已经可以改写 Memory，即使当前规则随后落选。编者建议把费用扣除、货物转移与奖励写入放在结果脚本中，让这些动作跟随实际获选结果执行。
+:::
 
 需要验证对象参数时，在已取得目标实体的 Java 调用点，向它的 Memory 保存现有对象：
 
@@ -186,7 +186,7 @@ GearIn_rules_cmd_script,GearInRulesCommandScript,,"GearInRuleCommand ""补给"" 
 target.getMemoryWithoutUpdate().set(GearInRuleCommand.MEM_KEY_OBJECT, target);
 ```
 
-脚本行再用 `$entity.GearIn_rulecmd_object` 取得这个对象。省略第五参数时沿用当前可选输入语义，日志仍记录实际数值与规则 ID。
+脚本再通过 `$entity.GearIn_rulecmd_object` 取得同一对象。结果属于舰队实体，当前人物 LOCAL 保留自己的状态，读取时继续使用对应前缀。
 
 ## 完整最小例
 
@@ -314,7 +314,7 @@ public class GearInRuleCommand extends BaseCommandPlugin {
 
 ## 故障分析
 
-- **启动时报告 `command` `not` `found`**：`ruleCommandPackages` 缺少 `data.scripts.gearin.rules`，或 JAR 中没有对应完整类路径。
+- **启动时报告命令找不到**：`ruleCommandPackages` 缺少 `data.scripts.gearin.rules`，或 JAR 中没有对应完整类路径。
     - **解决方案**：核对设置数组、`data/scripts/gearin/rules/GearInRuleCommand.class` 和 MOD 的 JAR 声明。
 
 - **规则条件始终不成立**：布尔参数不是 `true`，或命令被参数数量与类型检查提前拒绝。
@@ -337,9 +337,9 @@ public class GearInRuleCommand extends BaseCommandPlugin {
 
 ## 总结
 
-自有命令通过设置里的包找到运行类，通过 `Token` 读取当前参数，再写入实体 Memory。条件与脚本分别使用返回值与写入结果，实际通讯入口也分别提供观察分支。
+通讯规则通过搜索包找到命令，参数 token 取得当前输入，Java 将解析结果写到实体 Memory。条件使用返回值，脚本执行写入，两个入口分别确认这项行为。
 
-编者建议从简单类名、完整包名和调用规则一起追。源码能编译、命令能找到、参数能解析、状态能读回，每一步都对应当前这次规则调用。
+命令处理当前请求，实际对象保存跨调用结果。搜索配置、参数来源与保存槽位对应起来，Rules 就能继续使用这次 Java 操作产生的状态。
 
 ## 建议参考项
 

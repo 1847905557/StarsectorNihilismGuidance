@@ -1,6 +1,6 @@
 # 使用 `MemoryAPI` 保存状态
 
-规则已经能调用命令并保存结果，接下来明确状态属于谁、能留多久。本节在星区、玩家、人物、市场与实体分别写入数据，等待一个零期限键过期后打开 Jangala 的 Rules 对话。界面按不同槽位读回同一组值，保存、读档与关闭后的恢复也沿对象范围处理。
+Rules 里的变量最终来自某个对象的 Memory。同名键写在人物、市场或星区上，含义可以完全不同；对话切换人物以后，裸变量的读取对象也会改变。本节用一组状态把这些关系接起来：Java 写入，生涯推进期限，Jangala 的对话再分别读出各个对象上的值。
 
 *本节预期阅读时间：\~35 分钟。*
 
@@ -26,7 +26,7 @@
 - [C16-S3] 的原版场景如何组装 Rules 上下文；
 - [C16-S4] 的 `Token` 如何从 `memoryMap` 解析变量。
 
-## 登记写入与对话，再选择状态对象
+## 为状态选择持有者
 
 保存本节三个类到 `src/data/scripts/gearin/rules/`，将写入器与对话器加入 `GearInModPlugin` 的 `import`。在既有 `onGameLoad(...)` 追加以下局部登记，沿用 `sector`：
 
@@ -39,9 +39,9 @@ if (!sector.hasTransientScript(GearInMemoryDialog.class)) {
 }
 ```
 
-两个观察脚本按当前运行阶段创建，键仍随各自所属对象保存。写入器先清除旧 `ready`，写入本轮 `probe`，等它实际过期后再准备对话。
+写入器和对话器都是读档后创建的临时脚本；它们读写的状态却属于存档中的生涯对象。写入器先清除旧 `ready`，写入 `probe`，等它实际过期后再允许对话启动。脚本的寿命与状态的寿命在这里已经分开了。
 
-**Memory 由对象持有，先找到状态的实际主人。**实现了 `HasMemory` 的生涯对象负责持有它，调用方先找到对象，再从对象取得 Memory。状态因此天然带有归属：写在市场上的键随市场保存，写在人物上的键随人物保存，写在 `Sector` 上的键则属于全局生涯。
+**Memory 的归属由持有它的对象决定。**`HasMemory` 提供取得 Memory 的入口：市场状态从市场取得，人物状态从人物取得，全局生涯状态从 `Sector` 取得。选定对象以后，再讨论键名、类型和期限才有意义。
 
 ### 直接取得当前 Memory
 
@@ -51,7 +51,7 @@ if (!sector.hasTransientScript(GearInMemoryDialog.class)) {
 MemoryAPI sector = Global.getSector().getMemoryWithoutUpdate();
 ```
 
-玩家状态属于 `CharacterData`，人物状态属于 `PersonAPI`，势力状态属于 `FactionAPI`。它们可以保存同名键，因为每个对象持有独立的 Memory：
+玩家与玩家人物尤其值得区分。`CharacterData` 保存玩家状态，`PersonAPI` 保存这个人物的状态；`FactionAPI` 又有自己的 Memory。它们可以使用同名键，存储仍彼此独立：
 
 ```java
 Global.getSector().getCharacterData().getMemoryWithoutUpdate().set(
@@ -64,7 +64,7 @@ faction.getMemoryWithoutUpdate().set(
         GearInMemoryKeys.KEY_FACTION, "person-faction-ready");
 ```
 
-市场和实体各有自己的 Memory。Jangala 市场保存市场状态，主实体保存实体状态；标准对话先读取该实体上的 `$sourceMarket` 建立来源市场槽位，然后才可能把 LOCAL 切到 `active` `person`。局部写入如下：
+接着给 Jangala 的市场与主实体分别写值。两者虽共同表现为一个殖民地，Memory 仍各自持有。实体上的 `$sourceMarket` 另有用途：它保存市场 ID，标准对话据此建立来源市场槽位。这份联系也由写入器准备：
 
 ```java
 MarketAPI market = Global.getSector().getEconomy().getMarket("jangala");
@@ -78,7 +78,7 @@ if (market != null && market.getPrimaryEntity() != null) {
 }
 ```
 
-`getMemoryWithoutUpdate()` 返回对象当前持有的 Memory，不主动要求生涯插件重新生成 `facts`。上面的键全部由示例自己维护，因此读取和写入都使用这一入口。
+上述调用使用 `getMemoryWithoutUpdate()`，取得对象当前持有的 Memory。示例自己的键由写入器维护，读取时无需要求生涯插件重新生成 `facts`。
 
 玩家舰队同样是生涯实体。下面的代码同时演示两种归属：`KEY_ENTITY` 写在舰队自身，`KEY_FLEET` 与 `KEY_OBJECT` 写在 `Sector` Memory，值都指向玩家舰队。
 
@@ -91,7 +91,7 @@ if (fleet != null) {
 }
 ```
 
-### 需要最新 `facts` 时刷新 Memory
+### 读取动态 `facts` 时再刷新
 
 `getMemory()` 会让已注册的 `CampaignPlugin` 更新对应对象的 Rules `facts`。`Sector`、实体、市场、人物和势力分别进入 `updateGlobalFacts`、`updateEntityFacts`、`updateMarketFacts`、`updatePersonFacts` 或 `updateFactionFacts`；返回的仍是该对象持有的 Memory。
 
@@ -101,19 +101,15 @@ if (fleet != null) {
 Global.getSector().getMemory();
 ```
 
-这次调用会刷新 `$isDevMode`、`$daysSinceStart` 一类全局 `facts`。自己写入的 `$GearIn_*` 状态已经存在于当前 Memory，不需要借助 `facts` 更新。
+这次调用会刷新 `$isDevMode`、`$daysSinceStart` 一类全局 `facts`。因此，读取动态事实时用 `getMemory()`，读取和写入 MOD 自己维护的键时用 `getMemoryWithoutUpdate()`。这两个方法决定是否刷新内容，状态的持有者始终是原对象。
 
-::: tip 如何选择两个入口
-读取或写入 MOD 自己维护的键时使用 `getMemoryWithoutUpdate()`。只有当前判断依赖最新 Rules `facts` 时才调用 `getMemory()`，并把刷新放在真正需要这些 `facts` 的操作之前。
-:::
-
-## 使用 `MemoryAPI` 读写状态
+## 写入值，并按实际含义读取
 
 Memory 键在 Java 中包含开头的 `$`。例如 `"$GearIn_memory_global"` 是实际键名；Rules 中的 `global.` 是选择 Memory 槽位的语法，不会存进键名。
 
 ### 写入永久值和限时值
 
-**无期限状态与本次流程状态分别选择寿命。** 两参数 `set(...)` 写入永久值，三参数同时提供生涯日有效期：
+两参数 `set(...)` 写入无期限的值，三参数形式再提供以游戏天计的有效期。写入器给常用类型各准备一个值，其中数值 `2.5f` 保留 30 天：
 
 ```java
 sector.set(GearInMemoryKeys.KEY_GLOBAL, "sector-ready");
@@ -123,7 +119,7 @@ sector.set(GearInMemoryKeys.KEY_LONG, 4L);
 sector.set(GearInMemoryKeys.KEY_VECTOR, new Vector2f(10f, 20f));
 ```
 
-这里的字符串、整数、长整数和向量不会过期；`KEY_NUMBER` 在写入时获得 30 游戏天寿命。再次使用两参数 `set` 写同一个键，会把它改为永久值并清除原有过期计时。
+这里的字符串、整数、长整数和向量不会过期。`KEY_NUMBER` 则从写入时开始消耗 30 游戏天寿命。**再次用两参数 `set` 写入同一个键，会清除原有期限。** 更新数值时若仍需要限时状态，就要同时处理它的剩余寿命。
 
 ### 按当前类型读取状态
 
@@ -148,7 +144,11 @@ LOG.info("GearInMemoryWriter: contains=" + sector.contains(GearInMemoryKeys.KEY_
         + " object=" + sector.get(GearInMemoryKeys.KEY_OBJECT));
 ```
 
-同一个舰队值可以由 `getEntity` 作为生涯实体读取，也可以由 `getFleet` 取得更具体的舰队接口；读档后先让 `get()` 或 `getEntity()` 完成对象引用恢复，再读取具体类型。
+玩家舰队既是生涯实体，也是舰队，因此同一个值可以由 `getEntity` 或 `getFleet` 读取。日志里的判断还确认了全局键存在、`probe` 为 `true`，以及 `2.5` 落在 `[2, 3]` 内。
+
+::: warning 读档后的舰队引用
+`getFleet()` 本身不触发 Memory 中实体引用的恢复。读档后首次访问这份 Memory 时，先由 `get()`、`getEntity()` 或 `contains()` 完成恢复，再读取舰队；无法找到的实体引用会被移除。
+:::
 
 ### 判断键是否存在以及值是否匹配
 
@@ -168,7 +168,7 @@ scratch.set("$clearMe", true);
 scratch.clear();
 ```
 
-`getKeys()` 返回当前全部键，可用于日志核对；`getExpire(key)` 返回指定键剩余的游戏天数。永久键没有过期记录，返回 `-1`。
+`getKeys()` 返回当前全部键，写入器在准备完成时把它们记录到日志。`getExpire(key)` 则返回剩余游戏天数；无期限键没有过期记录，返回 `-1`。
 
 ### `MemoryAPI` 常用方法速查表
 
@@ -184,7 +184,7 @@ scratch.clear();
 | `expire` | 修改或取消已有键的过期时间 |
 | `advance` | 由引擎推进过期计时 |
 
-## 控制状态过期
+## 等待生涯实际推进期限
 
 过期时间使用游戏天。`set(key, value, 10f)` 让键在生涯推进约 10 游戏天后移除；`expire(key, days)` 可以重新设置已有键的寿命。
 
@@ -204,11 +204,13 @@ sector.set(GearInMemoryKeys.KEY_READY, true);
 LOG.info("GearInMemoryWriter: expire-zero probe removed; keys=" + sector.getKeys());
 ```
 
-写入器在后续生涯帧等待 `probe` 消失，再写入 `KEY_READY`。这让对话器只在过期机制确实推进之后启动。Memory 期限由引擎推进，本节脚本等待实际移除；`getMemory()` 的 `facts` 刷新不会替代这次时间推进。
+写入器在后续生涯帧检测 `probe`，消失后才设置 `KEY_READY`。对话器据此启动，初始规则便能读到确实过期后的状态。`getMemory()` 的事实刷新与这次推进各有职责，刷新一次并不能让零期限键立即消失。
 
-## 使用 `MemKeys` 组织槽位
+编者更倾向于用实际状态衔接这两个脚本，而不依赖它们的登记顺序。期限由引擎推进；写入器确认移除，对话器确认准备完成，各自的条件都能独立说明为何继续执行。
 
-Rules 收到的不是一个 Memory，而是 `Map<String, MemoryAPI>`。每个 `MemKeys` 常量命名一个槽位，变量前缀据此选择具体对象。
+## 让对话读到对应对象
+
+状态已经写好，Rules 如何选择其中一份？对话交给规则的是 `Map<String, MemoryAPI>`，其中每个槽位指向一份 Memory。`MemKeys` 规定槽位名称，变量前缀选择槽位，余下部分才是对象上的实际键。
 
 ### `MemKeys` 速查表
 
@@ -239,7 +241,7 @@ boolean shown = ui.showInteractionDialog(
         new RuleBasedInteractionDialogPluginImpl(INITIAL_TRIGGER), target);
 ```
 
-`active` `person` 会替换 `LOCAL`：裸变量从人物 Memory 读取；同时插件保留目标实体的 `ENTITY`，并加入人物势力的 `PERSON_FACTION`。于是人物、交互实体和人物势力可以在同一组规则中分别访问。
+设置活动人物以后，`LOCAL` 改为人物 Memory，裸变量随之改从人物读取。插件同时保留目标实体的 `ENTITY`，并加入人物势力的 `PERSON_FACTION`。因此，同一段对话可以分别读取人物、实体和人物势力。
 
 `MISSION` 只在对话插件设置 `active` `mission` 后出现。任务规则使用它保存任务实例自己的状态，普通实体对话不会拥有这一槽位。
 
@@ -261,7 +263,7 @@ boolean shown = ui.showInteractionDialog(
 
 裸变量没有点号，Rules 将它交给 `LOCAL`。人物对话里 `LOCAL` 是 `active` `person`，因此人物状态使用 `$GearIn_memory_person`，并不存在单独的 `person` 前缀。
 
-## 在 Rules 中读取 Memory
+## 检查条件并替换对话文本
 
 Java 负责把状态写进正确对象，Rules 只需选择对应槽位。初始规则同时检查八个已建立的 Memory：
 
@@ -282,7 +284,7 @@ $personFaction.GearIn_memory_faction == person-faction-ready",,"全局：$global
 GearIn_memory_leave:结束","C16-S5 Memory 槽位"
 ```
 
-八条条件全部通过后，文本 `token` `replacement` 从六类对象读出实际值。玩家人物是 `active` `person`，所以裸 `$GearIn_memory_person` 从 `LOCAL` 取得 `person-ready`；`$entity.*` 仍指向 Jangala 主实体。
+八条条件共同确认状态写入和槽位组装成功，文本再用变量替换读出六类对象上的值。玩家人物是活动人物，裸 `$GearIn_memory_person` 从 `LOCAL` 取得 `person-ready`；`$entity.*` 仍指向 Jangala 主实体。两份 Memory 同时参与对话，但承担不同含义。
 
 选择 "检查过期状态" 会写入一个过期时间为 0 的玩家键，并调用结果 `trigger`：
 
@@ -306,7 +308,7 @@ GearIn_memory_mission,GearInMemoryMission,$mission.GearIn_memory_mission,,当前
 
 这里的实际键仍是 `$GearIn_memory_mission`；`mission.` 只负责从 `memoryMap` 选择任务对象。
 
-## 组装 Memory 状态
+## 接入脚本，并恢复临时人物
 
 三个类各自承担一项职责：`GearInMemoryKeys` 统一键名，`GearInMemoryWriter` 写入并观察过期状态，`GearInMemoryDialog` 在状态准备完成后建立 Rules 对话。它们位于同一包中：
 
@@ -322,7 +324,7 @@ mods/GearIndustry/
         └── GearInMemoryDialog.java
 ```
 
-在 `onGameLoad(...)` 中注册两个 `EveryFrameScript`：
+本节开头的登记位于 `onGameLoad(...)`。两个脚本在每次加载存档后创建，已有同类临时脚本时沿用当前实例：
 
 ```java
 if (!sector.hasTransientScript(GearInMemoryWriter.class)) {
@@ -333,11 +335,9 @@ if (!sector.hasTransientScript(GearInMemoryDialog.class)) {
 }
 ```
 
-写入器先设置 `probe`；引擎推进 Memory 并移除 `probe` 后，写入器设置 `ready`。对话器只观察 `ready`，因此两个脚本用明确状态衔接。
+`GearInMemoryWriter` 完成写入并等待 `probe` 消失，`GearInMemoryDialog` 等待 `ready`，随后临时把玩家人物设为活动人物。为了让八个槽位的比较不影响原对话，它在修改前保存原人物，关闭选项与 ESC 使用同一选项 ID，关闭前恢复人物；界面未能打开时也立即恢复，下一次回调再尝试。
 
-对话器临时把玩家人物设为 `active` `person`，形成八个槽位的实际比较。它保存原人物，关闭选项与 ESC 走同一稳定 ID，关闭前恢复该字段；本次未能打开界面时，也立即恢复，下一次回调再尝试。
-
-Memory 随所属生涯对象进入存档。永久键在读档后继续存在，限时键保留剩余寿命；对象本身消失时，其 Memory 也不再提供这些状态。
+**人物的临时切换随对话结束，Memory 中的状态随持有者保存。** 无期限键读档后继续存在，限时键保留剩余寿命；对象本身消失时，也就失去了从该对象取得状态的入口。
 
 ## 完整最小例
 
@@ -646,9 +646,7 @@ public class GearInMemoryDialog implements EveryFrameScript {
 
 ## 总结
 
-本轮状态按星区、玩家、人物、实体、市场与势力分别保存，写入器等待零期限键移除，规则对话再按标准槽位读取。永久键、剩余期限和对象恢复都属于这些实际持有者，`transient` 观察器则在读档后重建。
-
-编者建议先确认键在哪个对象上，再决定变量前缀与寿命。名字相同的键可以存在于多份 Memory，只有归属、类型和期限对应好，条件与显示才会读到您准备的状态。
+Memory 让 Java 与 Rules 共用对象上的状态。持有者决定状态归属，写入方法决定值和期限，对话槽位决定规则从哪里读取。示例用零期限键衔接生涯推进与界面打开，同时把临时人物切换的恢复留在对话结束处；存档中的状态与运行中的脚本由此各有明确寿命。
 
 ## 建议参考项
 

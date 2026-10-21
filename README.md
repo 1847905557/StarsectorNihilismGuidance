@@ -24,7 +24,7 @@
 | 自动跳转 | 自研 markdown-it 插件 `markdown-splink`：正文中的 `[C1-S1]` 单元编号自动变为站内链接 |
 | 章索引 | 自研 `markdown-sectionlist`：章索引页的 section 列表由文件系统自动生成 (占位符 `<!-- AUTO:SECTION-LIST -->`)，标题与侧边栏同取各页 H1 |
 | 示例工程 | Gradle 多 sourceSet、Java 17；74 个 Java 单元编译任务 + 8 个 GLSL 着色器校验 |
-| 部署 | GitHub Pages(`gh-pages` 分支 + Actions 自动发布) |
+| 部署 | GitHub Actions 构建并上传 Pages artifact，再发布到 GitHub Pages；生产发布只允许使用 `main` 分支 |
 
 ## 编辑须知 (重要)
 

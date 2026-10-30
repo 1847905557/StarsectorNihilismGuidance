@@ -1,4 +1,5 @@
 name: docs
+run-name: Tutorial
 
 on:
   push:
@@ -49,11 +50,12 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
+      deployments: write
       pages: write
       id-token: write
     concurrency:
       group: pages
-      cancel-in-progress: true
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -65,3 +67,25 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+
+      - name: Remove previous deployments
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const deployments = await github.paginate(github.rest.repos.listDeployments, {
+              ...context.repo,
+              environment: "github-pages",
+              per_page: 100,
+            });
+            deployments.sort((left, right) => right.id - left.id);
+            for (const deployment of deployments.slice(1)) {
+              await github.rest.repos.createDeploymentStatus({
+                ...context.repo,
+                deployment_id: deployment.id,
+                state: "inactive",
+              });
+              await github.rest.repos.deleteDeployment({
+                ...context.repo,
+                deployment_id: deployment.id,
+              });
+            }

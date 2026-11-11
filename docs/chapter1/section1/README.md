@@ -68,7 +68,7 @@ Starsector/mods/GearIndustry/
     "patch": 0
   },
   "description": "Starsector MOD 教程的练习项目。",
-  "gameVersion": "0.98a-RC8"
+  "gameVersion": "0.98.5a-RC3"
 }
 ```
 

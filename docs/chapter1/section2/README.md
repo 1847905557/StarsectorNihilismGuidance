@@ -244,12 +244,12 @@
 :::
 
 ```csv {6}
-name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
-#Lasher,lasher,Frigate,Low Tech,ammofeed,5,1750,300,2100,1750,140,55,,120,110,90,60,90,200,FRONT,,210,0.4,1,,,25,50,40,25,1,25,10,9000,8,10,240,0.25,4,4,,,,,,,,"lowtech_bp, merc, ind",,,,0.4,2,2,,204
-#Hammerhead,hammerhead,Destroyer,Midline,ammofeed,10,5000,500,4200,4167,250,95,,90,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,"midline_bp, merc, ind",,,,0.5,2,3,,300
-#Eagle,eagle,Cruiser,Midline,maneuveringjets,14,8000,1000,11000,14000,700,155,,60,40,30,15,20,1200,FRONT,,270,0.4,0.8,,,150,250,150,100,3,33,8,100000,3,12,480,0.25,20,20,,,,,,,,"rare_bp, merc, ind",,,,0.5,2,3,,401
-#Conquest,conquest,Battlecruiser,Midline,maneuveringjets,24,12000,1200,20000,30000,1200,315,,45,20,15,6,4,2500,OMNI,,90,0.4,1.4,,,400,500,300,300,10,30,8,300000,3,15,600,0.25,40,40,,,,,,,,"rare_bp, merc",,,,0.5,2,4,,503
-工匠,GearIn_artizan,驱逐舰,未知,ammofeed,10,5000,500,3800,4167,200,95,,80,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,5,12,360,0.25,10,10,,,,,,,,GearIn_bp,,,,0.5,2,3,,300
+name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating,max flux,8/6/5/4%,flux dissipation,ordnance points,fighter bays,max speed,acceleration,deceleration,max turn rate,turn acceleration,mass,shield type,defense id,shield arc,shield upkeep,shield efficiency,phase cost,phase upkeep,min crew,max crew,cargo,fuel,fuel/ly,range,max burn,base value,parts/dmod,cr %/day,CR to deploy,peak CR sec,CR loss/sec,supplies/rec,supplies/mo,salary,salMult,c/s,c/f,f/s,f/f,crew/s,crew/f,hints,tags,logistics n/a reason,codex variant id,rarity,breakProb,minPieces,maxPieces,travel drive,number
+#Lasher,lasher,Frigate,Low Tech,ammofeed,5,1750,300,2100,1750,140,55,,120,110,90,60,90,200,FRONT,,210,0.4,1,,,25,50,40,25,1,25,10,9000,,8,10,240,0.25,4,4,,,,,,,,,,"lowtech_bp, merc, ind",,,,0.4,2,2,,204
+#Hammerhead,hammerhead,Destroyer,Midline,ammofeed,10,5000,500,5000,4167,250,95,,90,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,,5,12,360,0.25,10,10,,,,,,,,,,"midline_bp, merc, ind",,,,0.5,2,3,,300
+#Eagle,eagle,Cruiser,Midline,maneuveringjets,14,8000,1000,11000,14000,700,155,,60,40,30,15,20,1200,FRONT,,270,0.4,0.8,,,150,250,150,100,3,33,8,100000,,3,12,480,0.25,20,20,,,,,,,,,,"rare_bp, merc, ind",,,,0.5,2,3,,401
+#Conquest,conquest,Battlecruiser,Midline,maneuveringjets,24,12000,1200,20000,30000,1200,315,,55,25,20,6,4,2500,OMNI,,90,0.4,1.4,,,400,500,300,300,10,30,8,300000,,3,15,600,0.25,40,40,,,,,,,,,,"rare_bp, merc",,,,0.5,2,4,,503
+工匠,GearIn_artizan,驱逐舰,未知,ammofeed,10,5000,500,3800,4167,200,95,,80,60,40,30,60,400,FRONT,,300,0.4,0.8,,,50,100,100,60,2,30,9,40000,,5,12,360,0.25,10,10,,,,,,,,,,GearIn_bp,,,,0.5,2,3,,300
 ```
 
 **一艘船最重要的特征是要有趣**。
@@ -267,11 +267,11 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 | name | 舰船的名称，可以为空。为空时将以 `designation` 作为舰船的名称 |
 | id | 在此填写舰船 ID |
 | designation | 设计类型，会显示在舰船名称后面的那一段字，可随意填写 |
-| tech/manu | 科技类型，原版包括诸如 `Low Tech`、`Midline`、`High Tech`、`Pirate` 等，可随意填写 |
+| tech/manufacturer | 科技类型，原版包括诸如 `Low Tech`、`Midline`、`High Tech`、`Pirate` 等，可随意填写 |
 | system id | 战术系统 ID，原版的战术系统在 `data/shipsystems/ship_systems.csv` |
 | fleet pts | 在大地图自动作战时的战斗力系数。但因为生成舰队本就是按固定总量战斗力生成，因此写得太高也没有用 |
 | hitpoints | 结构 |
-| armor | 装甲 |
+| armor rating | 装甲 |
 | max flux | 幅能容量 |
 | flux dissipation | 幅能耗散 |
 | ordnance points | 装配点数 |
@@ -296,12 +296,15 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 | fuel/ly | 在超空间中，每航行 `1 ly(1 光年)` 消耗的燃料数 |
 | max burn | 大地图中最大速度 |
 | base value | 成本价 |
+| parts/dmod | 单项 D 类损伤的修复零件数，填写整数。留空时按基础价值与全局零件费用配置计算 |
 | cr %/day | 在补给充足的情况下，每日回复的 `CR` 数量 |
 | CR to deploy | 每次部署消耗的 `CR` 比例 (如 12 表示 12%)；部署最低 `CR` 门槛由全局 `noDeployCRPercent` 决定 |
 | peak CR sec | 峰值时间 |
 | CR loss/sec | 当峰值时间耗尽后，每秒下降的 `CR` 量 |
 | supplies/rec | 部署点，且还是每次部署消耗的补给数量 |
 | supplies/mo | 每月消耗的补给数 |
+| salary | 整艘舰船的固定基础船员月薪，填写整数。留空时按舰级工资系数、维护补给和工资倍率计算 |
+| salMult | 自动计算基础船员月薪时使用的倍率，留空为 1 |
 | hints | 进阶内容，不可随意编纂 |
 | tags | 进阶内容，可随意编纂。示例中的 `GearIn_bp` 用于蓝图与销售规则 |
 | rarity | 稀有度。影响生涯中某些环节里蓝图抽选的权重，对战斗与装配数值无影响 |
@@ -309,6 +312,37 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 | minPieces | 如果停机时被炸碎了，那么至少变成多少块 |
 | maxPieces | 如果停机时被炸碎了，那么至多变成多少块 |
 | travel drive | 进场与出场时使用的战术系统。但坑点比较多，不建议一上来就碰这个 |
+
+### 零件费用与船员月薪
+
+除了战斗性能，舰船的维修费用与船员工资也会影响玩家是否愿意使用它。`parts/dmod` 决定修复一个 D 插需要多少零件，填写整数即可。留空时，游戏将成本价除以 15000，四舍五入，再与船级下限取较大值。护卫舰、驱逐舰、巡洋舰和主力舰的下限分别是 1、2、4、8。在本例中，工匠的成本价为 40000，修复一个 D 插需要 3 个零件。
+
+`salary` 填写整艘船的基础船员月薪，单位为星币。留空时，游戏按 `船级工资系数 × supplies/mo × salMult` 计算并四舍五入。上述四种船级的工资系数分别是 50、50、75、150，`salMult` 默认为 1。工匠每月消耗 10 个补给，因此基础月薪为 `50 × 10 × 1 = 500` 星币，实际支出还受缺员、技能和游戏模式等因素影响。
+
+`salMult` 可以填写小数。上述除数、零件数下限和工资系数分别由 `settings.json` 中的 `defaultDModRepairPartsBaseValueDivisor`、`minDModRepairCostInParts` 和 `shipSalaryBySize` 设置。
+
+::: details 进阶：船体皮肤的数值覆盖
+
+同一艘船可以通过 `.skin` 制作不同型号，继承原船的船体和槽位，再调整部分属性。本例为工匠制作一个后勤型，将下面的文件保存为 `data/hulls/skins/GearIn_artizan_logistics.skin`。其中 `baseHullId` 指向原船，`skinHullId` 是后勤型的 ID：
+
+```json
+{
+    "baseHullId": "GearIn_artizan",
+    "skinHullId": "GearIn_artizan_logistics",
+    "hullName": "工匠 (后勤型)",
+    "parts/dmod": 5,
+    "salary": 300,
+    "salMult": 0.75
+}
+```
+
+这个型号修复一个 D 插需要 5 个零件，基础月薪为 300 星币。这里同时填写了 `salary` 和 `salMult`，游戏优先采用 `salary` 的固定值。删去 `salary` 后，基础月薪按 `salMult` 重新计算，得到 `50 × 10 × 0.75 = 375` 星币。
+
+皮肤也可以继承另一张皮肤。`parts/dmod` 从基础船体开始都留空时，费用随当前成本价计算；填写后则由后续皮肤继承，直到再次覆盖。工资优先采用当前皮肤的 `salary`；当前皮肤只修改了 `suppliesPerMonth` 或 `salMult` 时重新计算，其余情况继承父级工资。
+
+使用控制台指令 `Addship GearIn_artizan_logistics` 获取后勤型工匠，检查名称、修复零件数和基础月薪。删去 `salary` 后，重启游戏并重新生成，基础月薪应由 300 变为 375 星币。
+
+:::
 
 ### ship\_data.csv Hints 速查表
 
@@ -334,6 +368,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 | RENDER\_ENGINES\_BELOW\_HULL | 这艘船的引擎被渲染在舰船贴图的底下而非上方 |
 | NO\_NEURAL\_LINK | 这艘船无法安装 `神经链接` |
 | PLAY\_FIGHTER\_OVERLOAD\_SOUNDS | 仅对战机生效，过载时播放如同舰船一样的过载音效 |
+| DO\_NOT\_TURN\_TO\_ARMOR | 正常战斗时保持既定朝向；舰船失去作战能力时允许转向较完整的装甲 |
 
 ## 首舰下水
 

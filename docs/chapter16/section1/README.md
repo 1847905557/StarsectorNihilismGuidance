@@ -170,22 +170,22 @@ $menuState = fleetConvMain 0","# 这里的井号会显示",,字段内注释
 
 ## 从加载结果定位规则
 
-### 读取并合并同路径资源
+### 登记规则文件并合并同路径资源
 
-启动时读取原版与 MOD 的同路径 CSV，按 ID 合并，并处理智能引号。**当前记录参与合并，保留独立 ID。** 规则从启用的数据重建，存档中的运行状态另由 Memory 等对象保存。
+游戏先从 `data/config/settings.json` 的 `rules` 数组取得规则文件路径，再逐个读取。原版登记了 `data/campaign/rules.csv` 和 `data/campaign/rules/askoniaCrisis2.csv`。本节的两条问候放在前一个路径下，与原版及其他 MOD 的同路径 CSV 按 ID 合并，并处理智能引号。规则从启用的数据重建，存档中的运行状态另由 Memory 等对象保存。
 
 日志先出现 `Loading CSV data from [...]`，再输出 `Loading rule: <id>`。后者表示开始解析这条规则，随后还可能发生表达式错误；确认启动加载成功后，再用同一个 ID 找到实际通讯候选。文件路径、规则解析和运行命中各有对应结果。
 
-::: warning 重复 ID 有两种结果
+::: warning 重复 ID 要按文件路径区分
 
-同一文件中的重复 ID 会抛出 `RuntimeException("Duplicate key [...] while loading [...]")` 并停止加载；跨文件重复时先处理的规则保留，后处理的同 ID 行静默跳过。
+同一个 CSV 文件内的重复 ID 会抛出 `RuntimeException("Duplicate key [...] while loading [...]")`。合并原版与 MOD 的同路径 CSV 时，先处理的同 ID 行保留，后处理的跳过。对于 `rules` 数组中分别登记的不同路径，游戏会继续逐个加载；它们若在同一 trigger 下使用了相同 ID，会抛出 `Duplicate rule id: <id>`。
 :::
 
-`mod_info.json` 中的 `replace` 若包含这条路径，读取器改为采用替换文件。当前文件承接整张结果，原版与其他同路径来源也就不再参与合并。
+`mod_info.json` 中的 `replace` 按路径生效。例如，替换 `data/campaign/rules.csv` 后，这个路径采用替换文件，`rules` 数组中的其他路径仍会加载。
 
-::: caution replace 会切断原版 Rules 数据
+::: caution replace 要提供被替换路径的完整规则
 
-当前扩展参与同路径合并。选择 `replace` 后，当前 MOD 文件承担整张表的结果，原版通讯、市场、任务等规则也需要完整提供。
+`data/campaign/rules.csv` 包含原版通讯、市场和任务等规则。替换这个路径，就需要在替换文件中完整提供这些内容。本节通过同路径合并添加两条问候。
 :::
 
 加载器还会统计只出现一次的变量，并向标准输出打印 `WARNING: variable [...] only used once; rule id: [...]`。`$tag:` 和 `$market.mc:` 不参与这项统计；WARNING 不会改变规则匹配。
@@ -196,7 +196,7 @@ $menuState = fleetConvMain 0","# 这里的井号会显示",,字段内注释
 
 条件列出现赋值、脚本列出现 `==`、未知命令、选项 ID 以 `$` 开头、三段选项的 `order` 不是数值，以及同一文件出现重复 ID，都会阻止对应数据正常进入运行时。堆栈中的规则 ID 和 CSV 路径是修复入口。
 
-同文件重复键会在 CSV 读取时失败，跨文件重复则保留先处理项。定位文件已读取、目标 ID 却没有进入规则解析时，按这些合并关系核对来源与唯一性。
+定位文件已读取、目标 ID 却没有进入规则解析时，先查同路径合并中是否已有相同 ID。日志若报告 `Duplicate rule id`，则查 `rules` 分别登记的文件中，哪个文件在同一 trigger 下使用了这个 ID。
 
 ## 七列速查表
 
@@ -235,10 +235,10 @@ FireAll PopulateOptions",独立舰队接通了通讯。,,独立势力的回退�
 2. 找到非敌对独立舰队，选择建立通讯，查看 `friendly` 文本与原版选项。
 3. 让同一势力舰队进入敌对状态后再次通讯，确认 `fallback` 文本接替 `friendly` 文本。
 4. 在启动器标准输出中核对单次使用变量 WARNING，并把变量名与规则 ID 对应起来。
-5. 分别制造同文件重复 ID 和跨文件重复 ID，确认前者中止加载、后者只注册先处理的规则；恢复两个唯一 ID。
+5. 在测试副本中依次检查三种重复：同一 CSV 内重复 ID 时加载报错；两个 MOD 的同路径 CSV 使用相同 ID 时保留先处理项；两个已分别登记的路径在同一 trigger 下重复 ID 时报告 `Duplicate rule id`。每次检查后恢复唯一 ID。
 6. 在 `conditions` 中写赋值、在 `script` 中写比较、把命令名写错，逐项确认加载期错误后恢复正确表达式。
 7. 在 `options` 文本中加入半角冒号，确认选项解析错误；改用全角冒号或改写句子。
-8. 给 MOD 声明同路径 `replace`，确认原版规则未参与合并；移除该声明后确认原版和 MOD 规则共同加载。
+8. 在测试副本中给 `data/campaign/rules.csv` 声明 `replace`，确认该路径采用替换文件，而 `data/campaign/rules/askoniaCrisis2.csv` 仍有加载记录；移除声明后，确认主规则表恢复同路径合并。
 
 预期结果：
 
@@ -251,8 +251,11 @@ FireAll PopulateOptions",独立舰队接通了通讯。,,独立势力的回退�
 - **规则加载时启动中止**：`conditions` 中出现赋值、`script` 中出现 `==`、选项 ID 以 `$` 开头、命令类缺失或同文件 ID 重复。
     - **解决方案**：按堆栈定位 CSV 行并把表达式放回正确列，重启。
 
-- **规则没有触发且日志无异常**：本规则 ID 与其他文件重复，后加载项被静默跳过。
+- **规则没有触发且日志无异常**：本规则 ID 与其他同路径来源重复，后处理项被跳过。
     - **解决方案**：改用带 MOD 前缀的唯一 ID。
+
+- **加载时报 Duplicate rule id**：分别登记的规则文件在同一 trigger 下使用了相同 ID。
+    - **解决方案**：按日志中的 ID 检查 `settings.json` 的 `rules` 所列文件，为自有规则使用唯一 ID。
 
 - **选项文本在冒号后被截断**：加载器把冒号解释为选项字段分隔。
     - **解决方案**：改写文本或使用全角冒号，重启。
@@ -260,7 +263,7 @@ FireAll PopulateOptions",独立舰队接通了通讯。,,独立势力的回退�
 - **选项加载时报 `NumberFormatException`**：三段选项的首段不是可解析的排序数值。
     - **解决方案**：删除多余冒号或提供合法 `order`，重启。
 
-- **整份原版规则消失**：MOD 对 `data/campaign/rules.csv` 声明了 `replace`。
+- **原版主规则表中的通讯或市场规则缺失**：MOD 对 `data/campaign/rules.csv` 声明了 `replace`。
     - **解决方案**：移除 `replace`，让同路径 CSV 参与合并。
 
 ## 总结
@@ -272,7 +275,7 @@ FireAll PopulateOptions",独立舰队接通了通讯。,,独立势力的回退�
 ## 建议参考项
 
 - `data/campaign/rules.csv`：本节 `GearIn_rules_comm_*` 数据与原版规则表的存放路径。
-- `data/config/settings.json`：`ruleCommandPackages` 命令包配置。
+- `data/config/settings.json`：`rules` 规则文件列表与 `ruleCommandPackages` 命令包配置。
 - `com.fs.starfarer.api.campaign.rules.RuleAPI`：加载后单条规则的字段对象。
 - `com.fs.starfarer.api.campaign.rules.Option`：对话选项的 `id` / `text` / `order`。
 - `com.fs.starfarer.api.campaign.rules.ExpressionAPI`：条件和脚本表达式的加载结果。

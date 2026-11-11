@@ -249,6 +249,15 @@ public void onFleetSync(CampaignFleetAPI fleet) {
 | 安装所需物品 | `getRequiredItem()` 返回物品，`addRequiredItemSection(...)` 写入对应提示 |
 | 改变 OP 成本 | `affectsOPCosts()` 声明成本影响；这类效果用于内置船插，普通安装与移除不处理相应成本变化 |
 
+### D 类损伤重排标签速查表
+
+`Derelict Operations` (技能 ID 为 `derelict_contingent`) 通过 `FieldRepairsScript` 重排舰船的 D 类损伤。自制 D 插可以在 `hull_mods.csv` 的 `tags` 列填写下面两个标签，控制它在重排时的处理方式：
+
+| 标签 | 技能重排时的用途 |
+|---|---|
+| `DO_can_not_add` | 从新增 D 插的候选中排除 |
+| `DO_can_not_remove` | 保留舰船上已有的这类 D 插 |
+
 ## 完整最小例
 
 按前面的源码路径保存两个类，再构建 JAR。

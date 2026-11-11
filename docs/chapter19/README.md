@@ -1,6 +1,6 @@
 # 可选依赖与 Nexerelin
 
-本章技术基线：Starsector `0.98a-RC8` 与 Java 17；可选依赖基线：Nexerelin `0.12.1e`、LunaLib `2.0.5`。
+本章技术基线：Starsector `0.98.5a-RC3` 与 Java 17；可选依赖基线：Nexerelin `0.12.1e`、LunaLib `2.0.5`。
 
 玩家采用的 MOD 组合会改变一份内容的运行环境。可选依赖接入需要为这些组合安排各自的行为：依赖启用时，内容参与对方提供的系统；依赖缺席时，基础功能按既定方式运行。本章用 Nexerelin 与 LunaLib 展开这种接入，说明编译依赖、类加载和实际调用之间的关系。
 

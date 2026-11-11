@@ -34,7 +34,7 @@ MOD 入口接收游戏加载、新档、读档与保存时的回调。代码放�
     "author": "YourName",
     "version": {"major": 0, "minor": 1, "patch": 0},
     "description": "Starsector MOD 教程的练习项目。",
-    "gameVersion": "0.98a-RC8",
+    "gameVersion": "0.98.5a-RC3",
     "jars": ["jars/GearIndustry.jar"],
     "modPlugin": "data.scripts.gearin.GearInModPlugin"
 }

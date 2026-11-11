@@ -13,7 +13,7 @@ if (!starsectorRootProp.present) {
 	throw new GradleException("未配置 starsectorRoot：请在 tutorial-fixtures/gradle.properties 中补充 starsectorRoot=<你的 Starsector 游戏安装根目录>（该文件被 .gitignore 忽略，需自行创建）")
 }
 def gameRoot = file(starsectorRootProp.get())
-def modsRoot = file("${gameRoot}/mods")
+def modsRoot = file(providers.gradleProperty("starsectorModsRoot").getOrElse("${gameRoot}/mods"))
 def javaUnitIds = [
 	"C2-S1", "C2-S2", "C2-S3", "C2-S4",
 	"C3-S3", "C3-S4",

@@ -44,6 +44,8 @@
 
 `logo` 与 `crest` 的显示位置沿用上一节。还有五个可选界面颜色字段：`baseUIColor`、`darkUIColor`、`gridUIColor`、`brightUIColor` 与 `secondaryUIColor`，分别控制基础、暗、网格、亮和次级配色。当前保留默认处理，主色仍为 `[180,120,60,255]`。
 
+`secondaryUIColor` 还用于势力标记的交替配色，`secondarySegments` 控制分段数，默认为 8。
+
 ### 舰船名与人物名
 
 将舰船名前缀改为 `GIS`，名字词典选 `GENERAL` 与 `SPACE`；人物名选 `modern` 与 `world`，局部片段如下：
@@ -67,6 +69,8 @@
 ### 头像、头衔与人物声音
 
 `portraits` 按 `standard_male` 和 `standard_female` 提供头像池，本例保留男女各两张原版头像。需要换成自己的图片时，修改对应路径。
+
+玩家创建角色时使用 `player_male` 和 `player_female` 头像池。在 MOD 的 `data/world/factions/player.faction` 中，将自制头像的路径加入 `portraits` 下的这两个列表，即可用于开局选择。
 
 ```json
 "portraits":{
@@ -568,6 +572,7 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 | `displayName` 系列 (含 `displayNameLong` / `displayNameLongWithArticle`) | 势力名称的四种形态 |
 | `shipNamePrefix` / `shipNameSources` / `names` | 舰船名与人物名 |
 | `color` 与 `*UIColor` 界面色族 | 势力主色与界面配色 |
+| `secondarySegments` | 标记的次级颜色分段数，默认 8 |
 | `logo` / `crest` | 情报界面大旗与各界面小旗 |
 | `variantOverrides` | 个别装配的可用性与权重覆盖 |
 | `hullFrequency` | 船体出现倍率 |
@@ -582,9 +587,11 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 | `music` | 场景音乐 (主题曲/访问市场/遭遇舰队) |
 | `internalComms` | 内部频道 |
 | `portraits` | 人物头像池 |
+| `portraits.player_male` / `portraits.player_female` | 玩家新建角色的头像池 |
 | `ranks` | 势力头衔与职位名 |
 | `voices` | 人物声音类型权重 (按重要度分档) |
 | `custom` | 势力行为开关 |
+| `custom.noBountyForDefeating` | 击败该势力舰队时，雇佣协议和星系悬赏结算跳过该舰队，默认 false |
 
 ## 生成型标签速查表
 

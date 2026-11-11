@@ -24,7 +24,7 @@ public class GearInCommodityProbe {
             CommoditySpecAPI spec = Global.getSettings().getCommoditySpec(commodityId);
             CommodityOnMarketAPI onMarket = market.getCommodityData(commodityId);
             LOG.info(String.format(
-                    "GearIn commodity %s: name=%s demand=%s base=%.0f stack=%d space=%.1f tags=%s stockpile=%.1f available=%d maxSupply=%d maxDemand=%d utility=%.2f deficit=%d excess=%d tradeMod=%.1f illegal=%s supplyLegal=%s demandLegal=%s demandPrice(100)=%.0f supplyPrice(100)=%.0f",
+                    "GearIn commodity %s: name=%s demand=%s base=%.0f stack=%d space=%.1f tags=%s stockpile=%.1f available=%d maxSupply=%d maxDemand=%d utility=%.2f deficit=%d excess=%d tradeMod=%.1f illegal=%s supplyLegal=%s demandLegal=%s demandPrice(100)=%.0f supplyPrice(100)=%.0f sellMult=%.3f sellBeforeTariff(100)=%.0f",
                     spec.getId(), spec.getName(), spec.getDemandClass(), spec.getBasePrice(),
                     spec.getStackSize(), spec.getCargoSpace(), spec.getTags(),
                     onMarket.getStockpile(), onMarket.getAvailable(), onMarket.getMaxSupply(),
@@ -33,7 +33,9 @@ public class GearInCommodityProbe {
                     onMarket.getCombinedTradeModQuantity(), onMarket.isIllegal(),
                     onMarket.isSupplyLegal(), onMarket.isDemandLegal(),
                     market.getDemandPrice(commodityId, 100, true),
-                    market.getSupplyPrice(commodityId, 100, true)));
+                    market.getSupplyPrice(commodityId, 100, true),
+                    spec.getSellPriceMult(),
+                    market.getDemandPrice(commodityId, 100, true) * spec.getSellPriceMult()));
         }
     }
 }

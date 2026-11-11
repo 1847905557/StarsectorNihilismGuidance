@@ -1,6 +1,6 @@
 # 常用依赖库
 
-本章技术基线：Starsector `0.98a-RC8` 与 Java 17；依赖基线：LazyLib `3.0.0`、GraphicsLib `1.12.1`、MagicLib `1.5.6`。
+本章技术基线：Starsector `0.98.5a-RC3` 与 Java 17；依赖基线：LazyLib `3.0.0`、GraphicsLib `1.12.1`、MagicLib `1.5.6`。
 
 社区依赖库把许多 MOD 反复需要的计算和功能整理成了公开入口。使用这些入口，可以把精力更多地放在当前效果与内容上：让几何计算服务于导弹制导，让光照和纹理表现舰船表面，也让生涯事件复用已有的生成与结算流程。本章以 LazyLib、GraphicsLib 和 MagicLib 为基础，讲解这些功能怎样进入自己的 MOD。
 

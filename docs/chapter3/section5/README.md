@@ -75,6 +75,8 @@ String firstParagraph = description.getText1FirstPara();
 
 武器的详细说明仍写入武器 ID 对应的 `WEAPON` 行。货舱和数据库读取 `text1`，`text2` 还可以用于署名。
 
+武器的 `codex_require_related` 标签还会限制数据库条目的显示与解锁：至少有一个关联条目可见时才显示，至少有一个关联条目解锁时才解除锁定。原版 `vortex_launcher` 使用了这个标签。
+
 `text2` 以 `-` 开头时，武器 tooltip 与数据库详情把 `text1` 第一段渲染为斜体，并附加署名行。普通说明可以保留正常正文。
 
 装配列表的武器定位文字先读取 `weapon_data.csv` 中的 `primaryRoleStr`，描述的 `text2` 作为备用值。因此调整 [C1-S5] 三门武器的详细正文时，列表中已有的定位文字仍由武器数据决定。

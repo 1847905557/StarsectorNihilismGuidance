@@ -30,13 +30,15 @@
 在 MOD 的 `data/campaign/commodities.csv` 注册本节商品。已有文件时只追加数据行；同 ID 行参与数据合并，因此新商品使用独立 ID `GearIn_tempered_alloy`。文件内容如下：
 
 ```csv
-name,id,demand class,base price,export value,price variability,utility,origin,tags,stack size,cargo space,icon,sound id,sound id drop,order,economyTier,econUnitOrigUnused,econUnit,baseRaidDanger,eU * base value,iconWidthMult,plugin,desc
-Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,108000,1,,
+name,id,demand class,base price,sell price mult,export value,price variability,utility,origin,tags,stack size,cargo space,icon,sound id,sound id drop,order,economyTier,econUnitOrigUnused,econUnit,baseRaidDanger,eU * base value,iconWidthMult,plugin,desc
+Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,0.5,700,3,1,,"industrial, expensive",1000,1,graphics/icons/cargo/materials.png,ui_cargo_supplies,ui_cargo_supplies_drop,2.9,2.2,200,600,,108000,1,,
 ```
 
 显示名采用 `Tempered Alloy`，需求类别沿用 `heavy_machinery`。新商品身份与已有经济类别分别设置，市场才能按这个类别处理需求；本节先说明商品如何接入，生产规则留给产业实现。
 
 基础价格为 180，出口价值为 700，价格波动级别为 3，效用为 1。它们是经济计算的输入，实际报价还要结合市场。`economyTier` 取 2.2，`econUnit` 取 600，参与经济规模与物品数量换算；货舱空间每件为 1，规格单栈上限为 1000，栈是否采用这个上限由 [C12-S2] 的 Cargo 设置决定。
+
+`sell price mult` 是玩家出售商品时的价格倍率，默认为 1。本例设为 0.5，使回火合金的出售金额降为市场需求报价的一半，税费另计。对于这种按供需定价的普通经济商品，降低这一倍率会直接压低倒卖收益。
 
 图标沿用原版金属图标，两列声音使用已注册的补给拾取与放下声音。`tags` 的 `industrial, expensive` 是两个独立标签，CSV 按 [C1-S7] 的规则给含逗号字段加引号。标签供分类与筛选使用，具体用途取决于读取它的功能。
 
@@ -47,6 +49,7 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,700,3,1,,"industrial, e
 | `name` / `id` | 显示名与代码、规则使用的稳定 ID |
 | `demand class` | 经济需求类别，本例使用已建立的 `heavy_machinery` |
 | `base price` / `export value` | 基础价格与出口价值 |
+| `sell price mult` | 玩家出售时的价格倍率，默认 1，本例为 0.5 |
 | `price variability` / `utility` | 价格波动级别与商品效用 |
 | `origin` / `tags` | 来源标识与逗号分隔的标签集合 |
 | `stack size` / `cargo space` | 规格单栈上限与单件空间 |
@@ -89,6 +92,7 @@ LOG.info(String.format("spec id=%s name=%s demand=%s base=%.0f stack=%d space=%.
 | 身份与名称 | `getId()`、`getName()`、`getLowerCaseName()`、`getOrigin()` |
 | 图标与声音 | `getIconName()`、`getIconLargeName()`、`getIconWidthMult()`、`getSoundId()`、`getSoundIdDrop()` |
 | 经济参数 | `getBasePrice()`、`getExportValue()`、`getPriceVariability()`、`getDemandClass()`、`getUtility()`、`getEconomyTier()`、`getEconUnit()` |
+| 出售价格倍率 | `getSellPriceMult()` |
 | 堆叠与空间 | `getStackSize()`、`getCargoSpace()` |
 | 标签与经济分类 | `getTags()`、`hasTag()`、`isPrimary()`、`isExotic()`、`isMeta()`、`isNonEcon()` |
 | 物流资源身份 | `isPersonnel()`、`isFuel()`、`isSupplies()` |
@@ -155,15 +159,16 @@ float supplyPrice = market.getSupplyPrice("GearIn_tempered_alloy", 100, true);
 LOG.info(String.format("price for 100: demand=%.0f supply=%.0f", demandPrice, supplyPrice));
 ```
 
-**返回值是这 100 件商品的金额，子市场税额另计。** `isPlayerPrice` 决定是否应用玩家价格修饰，库存、供需与近期贸易决定当前报价，市场刷新后结果可能改变。规格基础价格与出口价值仍是各自的参数，显示名称也没有参与 ID 查询。
+**返回值是这 100 件商品的市场报价。** `isPlayerPrice` 决定是否应用玩家价格修饰，库存、供需与近期贸易决定当前报价。交易界面还会给玩家的出售金额乘上 `sell price mult`，之后计算税费。例如，本例 100 件回火合金的需求报价为 18000 星币时，税前出售金额为 `18000 × 0.5 = 9000` 星币。
 
-两个方向可以有不同金额。需要让日志直接对应玩家操作时，用下面的局部写法保留方向名称：
+下面分别计算回火合金的税前买卖金额。人员、非经济商品和自定义子市场采用各自的交易规则，本例使用普通经济商品的供需报价：
 
 ```java
 String id = onMarket.getId();
-float sellToMarket = market.getDemandPrice(id, 100, true);
+float sellToMarket = market.getDemandPrice(id, 100, true) * spec.getSellPriceMult();
 float buyFromMarket = market.getSupplyPrice(id, 100, true);
-LOG.info(String.format("%s sell=%.0f buy=%.0f", id, sellToMarket, buyFromMarket));
+LOG.info(String.format("%s sellBeforeTariff=%.0f buyBeforeTariff=%.0f",
+        id, sellToMarket, buyFromMarket));
 ```
 
 ## 判断商品交易合法性
@@ -223,7 +228,7 @@ public class GearInCommodityProbe {
             CommoditySpecAPI spec = Global.getSettings().getCommoditySpec(commodityId);
             CommodityOnMarketAPI onMarket = market.getCommodityData(commodityId);
             LOG.info(String.format(
-                    "GearIn commodity %s: name=%s demand=%s base=%.0f stack=%d space=%.1f tags=%s stockpile=%.1f available=%d maxSupply=%d maxDemand=%d utility=%.2f deficit=%d excess=%d tradeMod=%.1f illegal=%s supplyLegal=%s demandLegal=%s demandPrice(100)=%.0f supplyPrice(100)=%.0f",
+                    "GearIn commodity %s: name=%s demand=%s base=%.0f stack=%d space=%.1f tags=%s stockpile=%.1f available=%d maxSupply=%d maxDemand=%d utility=%.2f deficit=%d excess=%d tradeMod=%.1f illegal=%s supplyLegal=%s demandLegal=%s demandPrice(100)=%.0f supplyPrice(100)=%.0f sellMult=%.3f sellBeforeTariff(100)=%.0f",
                     spec.getId(), spec.getName(), spec.getDemandClass(), spec.getBasePrice(),
                     spec.getStackSize(), spec.getCargoSpace(), spec.getTags(),
                     onMarket.getStockpile(), onMarket.getAvailable(), onMarket.getMaxSupply(),
@@ -232,7 +237,9 @@ public class GearInCommodityProbe {
                     onMarket.getCombinedTradeModQuantity(), onMarket.isIllegal(),
                     onMarket.isSupplyLegal(), onMarket.isDemandLegal(),
                     market.getDemandPrice(commodityId, 100, true),
-                    market.getSupplyPrice(commodityId, 100, true)));
+                    market.getSupplyPrice(commodityId, 100, true),
+                    spec.getSellPriceMult(),
+                    market.getDemandPrice(commodityId, 100, true) * spec.getSellPriceMult()));
         }
     }
 }
@@ -247,13 +254,13 @@ public class GearInCommodityProbe {
 1. 启动游戏并进入 GearIn 市场，确认 `commodities.csv` 已经加载。
 2. 执行 `additem GearIn_tempered_alloy 10`，打开货舱和交易界面。
 3. 查看 `GearIn commodity` 日志，按市场 ID 对应回火合金、补给与毒品，核对规格、经济档位、物品数量和两个价格方向。
-4. 悬停回火合金，查看 RESOURCE 正文与违禁品标记；比较界面的商品金额与税额，日志给出 100 件的报价，金额比较采用同数量、同市场状态。
+4. 悬停回火合金，查看 RESOURCE 正文与违禁品标记；在同一市场状态下交易 100 件，比较界面的税前出售金额与日志的 `sellBeforeTariff(100)`，另行核对税额。
 
 预期结果：
 
 - 日志出现 `GearIn_tempered_alloy` 的名称、需求类别、基础价格、堆叠和货舱空间；
 - 市场商品日志同时出现库存、可得量、供需上限、赤字/盈余和贸易调节；
-- `demandPrice(100)` 对应市场买入、玩家卖出，`supplyPrice(100)` 对应市场卖出、玩家买入；
+- 回火合金的 `sellMult` 为 0.5，`sellBeforeTariff(100)` 为 `demandPrice(100)` 的一半；`supplyPrice(100)` 是玩家买入这 100 件商品的税前金额；
 - 市场合法性状态与 `illegalCommodities` 中的商品 ID 一致；
 - 货舱显示 `Tempered Alloy ×10`，悬停正文来自本节 RESOURCE 行；价格方向与税费分别观察。
 
@@ -266,7 +273,7 @@ public class GearInCommodityProbe {
     - **解决方案**：先用设置取得商品规格，再核对 CSV 的 ID 与 `demand class`，重启后从目标市场查询。
 
 - **基础价格与交易价格不同**：把 `CommoditySpecAPI.getBasePrice()` 当成了玩家当前交易价。
-    - **解决方案**：使用 `MarketAPI.getDemandPrice()` 和 `getSupplyPrice()`，同时固定数量与玩家价格标志。
+    - **解决方案**：使用 `MarketAPI.getDemandPrice()` 和 `getSupplyPrice()`，固定数量与玩家价格标志，再给出售金额乘上 `getSellPriceMult()`，最后核对税费。
 
 - **违禁品标记没有出现**：势力文件中的 ID 与商品注册 ID 不一致。
     - **解决方案**：逐字核对 `illegalCommodities` 中的 `GearIn_tempered_alloy`，确认当前市场属于 `gear_industry` 且未启用自由港，再读取 `isIllegal()` 并核对所用子市场的交易规则。

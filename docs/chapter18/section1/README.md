@@ -133,7 +133,7 @@ GraphicsLib 用于 shader、动态光照以及 material/normal 贴图管线。�
   "id":"gear_in",
   "name":"Gear Industry",
   "version":"1.0.0",
-  "gameVersion":"0.98a-RC8",
+  "gameVersion":"0.98.5a-RC3",
   "dependencies":[
     {"id":"lw_lazylib","name":"LazyLib"},
     {"id":"shaderLib","name":"GraphicsLib"},

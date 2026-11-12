@@ -1,8 +1,8 @@
-# 组织 Rules 规则表
+# 组织生涯交互对话
 
-本节给独立舰队添加两种通讯问候，非敌对时采用一段，其他情况采用另一段，通讯菜单仍保留原版选项。借这两条规则，我们说明身份、条件、脚本与文字怎样放进 `rules.csv`，再从加载日志和实际通讯确认它们的作用。
+本节为 Foundry 建立一次检查对话，显示目标、记录检查结果，并提供离开与取消。目标和面板由同一会话提供，插件处理玩家选择；完成这次会话后，再说明插件交接、布局与专用界面怎样继续使用当前上下文。
 
-_本节预期阅读时间：\~25 分钟。_
+_本节预期阅读时间：\~28 分钟。_
 
 _本节预期操作时间：\~30 分钟。_
 
@@ -10,273 +10,367 @@ _本节预期操作时间：\~30 分钟。_
 
 完成后，您将能够：
 
-- 说明 `rules.csv` 七列各自生成什么运行时数据；
-- 在多行单元格中正确使用引号、换行和字段注释；
-- 判断同路径合并、`replace` 和重复 ID 对加载结果的影响；
-- 从日志区分数据未加载、规则未注册和表达式语法错误；
-- 用两条独立势力 `OpenCommLink` 规则验证加载结果。
+- 使用 `showInteractionDialog(plugin, target)` 启动交互会话；
+- 从 `getInteractionTarget()` 取得会话实际持有的 `SectorEntityToken`；
+- 读写目标 Memory 中的 `$GearIn_dialog_target`；
+- 从同一 `InteractionDialogAPI` 取得并协作使用三个面板；
+- 用稳定 `optionData` 区分业务分支；
+- 用 `dismiss()`、`dismissAsCancel()`、`checked` 和 `closed` 表达会话结果。
 
 ## 前置知识
 
-- [C14-S3] 的交互对话框生命周期；
-- [C15-S1] 的 `InteractionDialogAPI` 与选项分支；
-- [C1-S7] 的 CSV 表头、单元格与引号；
-- [C15-S5] 的 `trigger`、条件、脚本与选项最小记录。
+- [C10-S4] 的生涯实体与目标 Memory；
+- [C14-S3] 的 `BaseCampaignPlugin` `picker` 选取和桥接对象；
+- Java 接口实现、对象字段和布尔状态；
+- `MemoryAPI` 的键值读写和 `getMemoryWithoutUpdate()` 的读取语义。
 
-## 给独立舰队安排通讯问候
+## 从 Foundry 打开检查对话
 
-在 MOD 的 `data/campaign/rules.csv` 追加 `GearIn_rules_comm_friendly` 与 `GearIn_rules_comm_fallback`，保留已有规则与表头。前者限定非敌对独立舰队，后者接住其他独立舰队，实际成品在后面的完整记录中保存。下面的局部片段分别展开这些字段。
+保存 `src/data/scripts/gearin/campaign/GearInConversationDialog.java`。在 [C14-S3] 的 `GearInCampaignPlugin.pickInteractionDialogPlugin(...)` 已命中标记后，把返回的对话实例改为：
 
-规则表采用七列。表头把每个单元格对应到字段，字段内部还各有自己的语法：
-
-```csv
-id,trigger,conditions,script,text,options,notes
+```java
+return new PluginPick<>(new GearInConversationDialog(), PickPriority.MOD_SPECIFIC);
 ```
 
-每个有效数据行生成规则，列名决定它读入哪份内容。列可以随表头调整顺序，同一文件中的记录继续按该表头排列。当前沿原版顺序组织，便于与已有数据对应。
+Foundry 主实体沿 [C14-S3] 的标记继续作为目标。重启后从地图交互，生涯插件选出 `GearInConversationDialog`，引擎建立会话并调用 `init(dialog)`。
 
-### 让 ID 与通讯入口分别对应
+需要由 Java 功能主动打开对话时，也可以直接传入插件与实体。以下局部入口使用 `showInteractionDialog(...)`：
 
-`id` 表示规则身份，加载日志用它定位本条记录。空 ID 不创建规则，以 `#` 开头则停用整行，局部对照如下：
-
-```csv
-#GearIn_rules_comm_disabled,OpenCommLink,,,,,暂时停用
-GearIn_rules_comm_friendly,OpenCommLink,,,,,独立势力的非敌对问候
+```java
+boolean shown = Global.getSector().getCampaignUI().showInteractionDialog(
+        new GearInConversationDialog(), target);
 ```
 
-第二条使用自己的前缀，日志与后续匹配可以找到同一个 ID。`trigger` 另决定规则在何时参加候选：独立舰队建立通讯时，原版调用 `OpenCommLink`，所以这两条规则都挂到这个名字。
+`shown` 表示是否接受了打开请求，已有其他对话或正在切换状态时可以返回 `false`。地图选择与直接调用两种入口都把插件交给实际会话，插件随后从 `InteractionDialogAPI` 取得当前目标和面板。
 
-```csv
-GearIn_rules_comm_friendly,OpenCommLink,,,,,独立势力的非敌对问候
+**初始化使用会话提供的目标与面板。** 入口选择实现，`init(...)` 建立这次会话的状态，后续选项与返回回调也继续使用这份状态。
+
+## 确认本次会话的目标
+
+在 `init(...)` 保存 `dialog`，再从 `getInteractionTarget()` 取得当前实体。目标不可用时，结束本次检查对话，局部判断如下：
+
+```java
+SectorEntityToken target = dialog.getInteractionTarget();
+if (target == null) {
+    dialog.dismissAsCancel();
+    return;
+}
 ```
 
-**规则身份与触发入口分别填写。** `id` 独立，`trigger` 与实际调用字符串逐字符一致。自有 trigger 也可以组织规则，但还要由 Java 或另一条 Rules 脚本发起调用。
+Foundry 的目标准备代码使用下面的局部写入，把标记保存在实体自身：
 
-### 按势力与敌对关系选择候选
-
-`conditions` 按物理换行写多条条件。下面的局部片段先限定 `independent`，再限定非敌对，注释只说明这份条件：
-
-```csv
-GearIn_rules_comm_friendly,OpenCommLink,"# 只处理独立势力
-$faction.id == independent
-!$entity.isHostile score:100",,,,独立势力的非敌对问候
+```java
+target.getMemoryWithoutUpdate().set("$GearIn_dialog_target", true);
 ```
 
-读取时跳过空行与 `#` 子行，其余表达式去掉首尾空白后依次求值。任意一条失败，候选就不成立；`score:100` 改变第二条条件的分值，[C16-S2] 继续说明计分与选择。
+初始化从实际会话目标读取，直接调用入口也采用相同条件：
 
-## 命中后恢复通讯菜单
-
-本节的问候命中后，还要让玩家继续操作。`script` 先写通讯菜单状态，再用 `FireAll PopulateOptions` 填入原版选项：
-
-```csv
-GearIn_rules_comm_friendly,OpenCommLink,,"$menuState = fleetConvMain 0
-FireAll PopulateOptions",,,独立势力的非敌对问候
+```java
+boolean marked = target.getMemoryWithoutUpdate()
+        .getBoolean("$GearIn_dialog_target");
 ```
 
-两行按顺序执行，后面的菜单规则能取得前面刚写入的 `fleetConvMain`。脚本也按换行跳过空行和 `#` 注释，普通命令从上到下执行。
+标记为假或缺席时，完整类记录原因并取消；成立后再建立选项。生涯 picker 筛选地图请求，插件也支持直接传入目标，所以初始化负责当前检查的适用条件。这里用 `getMemoryWithoutUpdate()` 读取已有布尔值，事实刷新仍按 [C14-S3] 的另一个入口处理。
 
-命令简单名由 `data/config/settings.json` 的 `ruleCommandPackages` 查找，原版基础包为 `com.fs.starfarer.api.impl.campaign.rulecmd`。命令没有对应类时，在加载阶段报告错误，[C16-S4] 再接入自有命令包。
+## 建立检查内容与选项
 
-命令参数需要字面双引号时，CSV 使用两个连续双引号转义。例如 `SetShortcut optionId "ESCAPE"` 在单元格中写成 `SetShortcut optionId ""ESCAPE""`。
+文本面板写目标 ID，选项面板建立检查、离开与取消，视觉面板显示实体提供的交互图像。以下局部片段从同一 `dialog` 取得三者：
 
-### 文字与菜单各自提供结果
+```java
+TextPanelAPI text = dialog.getTextPanel();
+OptionPanelAPI options = dialog.getOptionPanel();
+VisualPanelAPI visual = dialog.getVisualPanel();
 
-`text` 是命中后显示的正文，规则执行器替换其中的文本 token，再写入当前对话。将条件、脚本与文字放在一起，局部记录如下：
+text.addPara("Target ID: " + target.getId());
+options.clearOptions();
+options.addOption("Continue inspection", "CHECK");
+options.addOption("Leave", "LEAVE");
+options.addOption("Cancel", "CANCEL");
+dialog.setOptionOnEscape("Cancel", "CANCEL");
 
-```csv
-GearIn_rules_comm_friendly,OpenCommLink,"$faction.id == independent
-!$entity.isHostile score:100","$menuState = fleetConvMain 0
-FireAll PopulateOptions",对方很快回应了通讯请求。,,独立势力的非敌对问候
+if (target.getCustomInteractionDialogImageVisual() != null) {
+    visual.showImageVisual(target.getCustomInteractionDialogImageVisual());
+} else {
+    dialog.hideVisualPanel();
+}
 ```
 
-第五列提供问候，脚本另恢复菜单，`notes` 留作维护说明。文本中的井号仍是显示字符，例如 `# 通讯接通了。` 会原样出现在面板中。
+文本与视觉从当前目标取得资料，选项的业务结果由插件字段处理。图像存在时调用 `showImageVisual(...)`，否则隐藏视觉区域，普通 `SectorEntityToken` 也就能沿同一入口使用。
 
-::: tip 用独占一行的 OR 准备候选文本
+### 文本显示当前目标与结果
 
-同一条规则需要随机采用多种措辞时，可以用独占一行的 `OR` 分隔候选文本，并用一对双引号包住整个多行单元格：
+目标 ID 写入文本后，可以与实际实体对应。以下局部行来自前面的初始化：
 
-```csv
-GearIn_rules_text_variants,OpenCommLink,,,"对方很快回应了通讯请求。
-OR
-# 通讯接通了。",,两种问候文本
+```java
+text.addPara("Target ID: " + target.getId());
 ```
 
-加载器按精确的换行序列 `\nOR\n` 拆分内容，执行规则时再随机选择其中一段。第二个候选开头的井号会正常显示；`OR` 与其他文字共处一行时属于正文。
+检查完成时继续向同一面板追加结果，是否已经完成由 `checked` 保存。面板提供显示，插件保存业务状态，重新进入这次回调时才能决定是否再次写入。
+
+### 选项面板区分显示和分支键
+
+`clearOptions()` 清理旧集合，`addOption(...)` 分别传入显示文字与业务数据。以下局部片段保留三个稳定键，改动显示文字也能继续进入原分支：
+
+```java
+options.clearOptions();
+options.addOption("Continue inspection", "CHECK");
+options.addOption("Leave", "LEAVE");
+options.addOption("Cancel", "CANCEL");
+dialog.setOptionOnEscape("Cancel", "CANCEL");
+```
+
+玩家看到 `optionText`，`optionSelected(...)` 则按 `optionData` 选择动作。ESC 提交 `CANCEL`，与取消按钮共用分支；启用、删除与提示由 `OptionPanelAPI` 提供，[C15-S2] 再展开这些操作。
+
+## 记录一次检查，再结束会话
+
+选择检查时，先确认会话仍活动，再按 `checked` 判断是否已写入结果。局部处理如下：
+
+```java
+if (closed) {
+    return;
+}
+if (OPTION_CHECK.equals(optionData) && !checked) {
+    checked = true;
+    dialog.getTextPanel().addPara("The target responds to the inspection.");
+}
+```
+
+**检查完成与会话关闭分别保存。** 检查后玩家还可以继续停留，`checked` 为真，`closed` 仍为假；离开后两者可以同时为真。关闭分支先写 `closed`，再调用对应结束方法：
+
+```java
+if (OPTION_LEAVE.equals(optionData)) {
+    closed = true;
+    dialog.dismiss();
+    return;
+}
+if (OPTION_CANCEL.equals(optionData)) {
+    closed = true;
+    dialog.dismissAsCancel();
+}
+```
+
+`dismiss()` 表示正常离开，`dismissAsCancel()` 使用取消结果。两者负责会话关闭，已完成的检查结果是否保留则由当前功能决定，本例单独记录这个结果。
+
+::: info 关闭请求与画面消失之间仍有界面推进
+`dismiss()` 请求关闭后，界面可以等待文本滚动与淡入完成。插件先设置 `closed`，后续回调据此结束业务写入，关闭过程也能继续完成。
 :::
 
-## 给规则添加选项与维护说明
+## 交接当前插件
 
-当前问候通过原版 `PopulateOptions` 取得选项，需要自有选项时，还可以在 `options` 列逐行写 `id:text` 或 `order:id:text`。以下局部片段分别使用默认顺序与顺序 50：
+需要让另一份实现继续当前会话时，用 `getPlugin()` 确认接收者，再用 `setPlugin(...)` 替换。目标与面板继续属于当前对话，新插件的字段则另行建立。**替换不会自动调用 `init(...)`**，局部交接因此显式初始化：
 
-```csv
-GearIn_rules_options,PopulateOptions,,,,"GearIn_rules_apply_open:检查通讯记录
-50:cutCommLink:切断通讯",两个选项
+```java
+InteractionDialogPlugin current = dialog.getPlugin();
+if (current == this) {
+    dialog.setPlugin(nextPlugin);
+    nextPlugin.init(dialog);
+}
 ```
 
-玩家看到两段显示文字，选项数据分别为 `GearIn_rules_apply_open` 与 `cutCommLink`。两段格式默认顺序为 0，三段格式把首段解析为数值。读取器按半角冒号拆分，显示文字多出半角冒号就会改变这份结构；ID 以 `$` 开头时加载失败。
+随后选项回调交给新插件。需要延续的检查结果或其他字段，由交接方传递，目标和面板并没有代替这些业务数据。[C15-S3] 的酒吧事件会采用当前对话上的插件交接。
 
-和条件、脚本一样，`options` 中以 `#` 开头的子行是注释。选项 ID 与 `$option` 的回流关系由 [C16-S2] 负责。
+## 调整会话显示层
 
-`notes` 保存用途、数据归属与规则关系，不参与运行。局部记录如下：
+布局作用于当前会话的显示区域。文本宽高、偏移、提示、透明度与背景暗度可以分别设置，以下局部片段给出一组观察参数：
 
-```csv
-GearIn_rules_comm_friendly,OpenCommLink,,,,,GearIn 独立势力通讯问候
+```java
+dialog.setTextWidth(560f);
+dialog.setTextHeight(380f);
+dialog.setXOffset(24f);
+dialog.setYOffset(12f);
+dialog.setPromptText("Inspection workspace");
+dialog.setOpacity(0.96f);
+dialog.setBackgroundDimAmount(0.65f);
 ```
 
-这里的维护说明不会出现在玩家面板中，停用仍通过行首 ID 处理。
+这些设置保留目标与插件状态，`showTextPanel()`、`hideTextPanel()` 和 `hideVisualPanel()` 控制可见区域。验证时观察文本、选项是否遮挡，以及偏移后的内容是否仍在屏幕内，尺寸按实际阅读区域选择。
 
-## 把多行内容保留在同一条记录中
+## 在当前会话中打开专用界面
 
-### 用双引号包住多行单元格
+已经拥有奖励 Cargo 时，`showLoot(...)` 可以把它交给战利品界面，结束结果通过相应监听器接回。当前插件再根据结果安排后续文字和选项。
 
-Rules 先按 [C1-S7] 的 CSV 规则读取单元格，再解释字段内部内容。条件、脚本、文字与选项都可多行，用一对双引号包住整个字段。局部记录如下：
+货物、舰队成员、产业、实体与生产方案分别用 `showCargoPickerDialog(...)`、`showFleetMemberPickerDialog(...)`、`showIndustryPicker(...)`、`showCampaignEntityPicker(...)` 和 `showCustomProductionPicker(...)` 选择。回调提供选中的对象，对话据此继续流程并重建需要的内容。
 
-```csv
-GearIn_rules_comm_friendly,OpenCommLink,"$faction.id == independent
-!$entity.isHostile score:100","$menuState = fleetConvMain 0
-FireAll PopulateOptions",对方很快回应了通讯请求。,,独立势力的非敌对问候
-```
+`showCustomDialog(...)`、`showCustomVisualDialog(...)`、`showCommDirectoryDialog(...)` 和 `makeOptionOpenCore(...)` 接到自定义、目录或核心界面。各入口按自己的流程返回，业务字段继续保留，需要交接插件时确认当前 `getPlugin()`，再安排返回后的面板内容。
 
-这条记录占四个物理行，解析后仍是一条七列记录。引号内换行属于当前字段，引号外换行结束记录。加载错误指向后面的行时，前一条是否闭合也参与定位。
-
-### 转义逗号和双引号
-
-含半角逗号的单元格也要放进双引号。单元格内部的一个字面双引号写成 `""`；反斜杠不会替代 CSV 的双引号转义。
-
-```csv
-GearIn_rules_quoted,OpenCommLink,,"AddText ""信号稳定，继续通讯。""",,,含逗号和引号
-```
-
-命令取得的参数为 `信号稳定，继续通讯。`，字面引号通过 CSV 的 `""` 保留到命令层。参数中使用半角逗号时，单元格外层引号也继续保留，逗号才能留在字段内。
-
-### 区分整行注释与字段注释
-
-井号作用于所在层：ID 中停用记录，条件、脚本与选项中跳过子行，文字中保留显示。以下局部对照把这几种情况放在同一表头下：
-
-```csv
-#GearIn_rules_comm_disabled,OpenCommLink,,,,,整行停用
-GearIn_rules_comm_note,OpenCommLink,"# 条件注释
-$faction.id == independent","# 脚本注释
-$menuState = fleetConvMain 0","# 这里的井号会显示",,字段内注释
-```
-
-第二条规则仍会注册。它只有一个有效条件和一条有效脚本，而文本面板会完整显示 "# 这里的井号会显示"。
-
-### 保存为 UTF-8 无 BOM
-
-规则表使用 UTF-8 无 BOM。BOM 位于文件首字节时可能进入首个表头或键的解析结果；智能引号替换只处理弯引号等字符，不负责移除错误编码标记。
-
-先让当前记录解析出七列，字段内部的 Rules 表达式才会交给正确读取器。缺失引号或裸逗号改变列边界时，条件与脚本的语法判断也会随之落到错误内容上。
-
-## 从加载结果定位规则
-
-### 登记规则文件并合并同路径资源
-
-游戏先从 `data/config/settings.json` 的 `rules` 数组取得规则文件路径，再逐个读取。原版登记了 `data/campaign/rules.csv` 和 `data/campaign/rules/askoniaCrisis2.csv`。本节的两条问候放在前一个路径下，与原版及其他 MOD 的同路径 CSV 按 ID 合并，并处理智能引号。规则从启用的数据重建，存档中的运行状态另由 Memory 等对象保存。
-
-日志先出现 `Loading CSV data from [...]`，再输出 `Loading rule: <id>`。后者表示开始解析这条规则，随后还可能发生表达式错误；确认启动加载成功后，再用同一个 ID 找到实际通讯候选。文件路径、规则解析和运行命中各有对应结果。
-
-::: warning 重复 ID 要按文件路径区分
-
-同一个 CSV 文件内的重复 ID 会抛出 `RuntimeException("Duplicate key [...] while loading [...]")`。合并原版与 MOD 的同路径 CSV 时，先处理的同 ID 行保留，后处理的跳过。对于 `rules` 数组中分别登记的不同路径，游戏会继续逐个加载；它们若在同一 trigger 下使用了相同 ID，会抛出 `Duplicate rule id: <id>`。
-:::
-
-`mod_info.json` 中的 `replace` 按路径生效。例如，替换 `data/campaign/rules.csv` 后，这个路径采用替换文件，`rules` 数组中的其他路径仍会加载。
-
-::: caution replace 要提供被替换路径的完整规则
-
-`data/campaign/rules.csv` 包含原版通讯、市场和任务等规则。替换这个路径，就需要在替换文件中完整提供这些内容。本节通过同路径合并添加两条问候。
-:::
-
-加载器还会统计只出现一次的变量，并向标准输出打印 `WARNING: variable [...] only used once; rule id: [...]`。`$tag:` 和 `$market.mc:` 不参与这项统计；WARNING 不会改变规则匹配。
-
-### 表达式错误发生在哪一列
-
-条件和脚本使用同一套表达式解析。状态赋值写在脚本，比较放在条件；加载明确拒绝条件中的 `=` 和脚本中的 `==`。`!=`、`>`、`>=`、`<`、`<=` 同样用于比较，脚本中的计算返回值也不承担候选筛选。
-
-条件列出现赋值、脚本列出现 `==`、未知命令、选项 ID 以 `$` 开头、三段选项的 `order` 不是数值，以及同一文件出现重复 ID，都会阻止对应数据正常进入运行时。堆栈中的规则 ID 和 CSV 路径是修复入口。
-
-定位文件已读取、目标 ID 却没有进入规则解析时，先查同路径合并中是否已有相同 ID。日志若报告 `Duplicate rule id`，则查 `rules` 分别登记的文件中，哪个文件在同一 trigger 下使用了这个 ID。
-
-## 七列速查表
-
-| 字段         | 读取结果            | 内部拆分                            | 主要错误                          |
-| ------------ | ------------------- | ----------------------------------- | --------------------------------- |
-| `id`         | 规则稳定身份        | 不拆分                              | 空值、`#` 跳过、重复 ID           |
-| `trigger`    | 候选集合名称        | 不拆分                              | 拼写或大小写与调用方不一致        |
-| `conditions` | 候选匹配条件        | 按换行拆分，跳过空行和 `#` 子行     | 写入赋值或错误比较                |
-| `script`     | 命中后的赋值与命令  | 按换行顺序拆分，跳过空行和 `#` 子行 | 未知命令、比较进入脚本            |
-| `text`       | 文本面板内容        | 整个单元格作为文本内容读取          | 把 `#` 误认为字段注释             |
-| `options`    | 选项 ID、文本与顺序 | 按换行拆分，再按冒号分成 2 或 3 段  | 裸冒号、非法 `order`、`$` 开头 ID |
-| `notes`      | 维护说明            | 不参与运行时解析                    | 把 `notes` 当作停用开关           |
-
-## 用 `OpenCommLink` 验证规则表
-
-`OpenCommLink` 从原版舰队通讯进入规则匹配。两个成品都限定 `independent`，friendly 另限定非敌对并取得较高分数，脚本恢复 `fleetConvMain` 与原版选项。目标关系变化时采用对应问候，通讯操作继续保留。
+`startBattle(...)` 开始生涯战斗，结果通过 `backFromEngagement(...)` 返回。完整类在返回回调检查 `closed`，活动会话再追加说明；实际功能根据战斗结果决定任务动作，关闭与检查状态仍由各自分支处理。
 
 ## 完整最小例
 
-把下列完整表头与两条数据写入前述文件。已有表头时追加两条记录，保留前文规则。
+保存下列类，`picker` 选择采用前面的替换片段。
 
-```csv
-id,trigger,conditions,script,text,options,notes
-GearIn_rules_comm_friendly,OpenCommLink,"$faction.id == independent
-!$entity.isHostile score:100","$menuState = fleetConvMain 0
-FireAll PopulateOptions",对方很快回应了通讯请求。,,独立势力的非敌对问候
-GearIn_rules_comm_fallback,OpenCommLink,$faction.id == independent score:50,"$menuState = fleetConvMain 0
-FireAll PopulateOptions",独立舰队接通了通讯。,,独立势力的回退问候
+::: details 完整成品：GearInConversationDialog
+
+```java
+package data.scripts.gearin.campaign;
+
+import java.util.Collections;
+import java.util.Map;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.InteractionDialogAPI;
+import com.fs.starfarer.api.campaign.InteractionDialogPlugin;
+import com.fs.starfarer.api.campaign.OptionPanelAPI;
+import com.fs.starfarer.api.campaign.SectorEntityToken;
+import com.fs.starfarer.api.campaign.TextPanelAPI;
+import com.fs.starfarer.api.campaign.VisualPanelAPI;
+import com.fs.starfarer.api.campaign.rules.MemoryAPI;
+import com.fs.starfarer.api.combat.EngagementResultAPI;
+
+public class GearInConversationDialog implements InteractionDialogPlugin {
+
+    private static final Logger LOG = Global.getLogger(GearInConversationDialog.class);
+    private static final String TARGET_KEY = "$GearIn_dialog_target";
+    private static final String OPTION_CHECK = "CHECK";
+    private static final String OPTION_LEAVE = "LEAVE";
+    private static final String OPTION_CANCEL = "CANCEL";
+
+    private InteractionDialogAPI dialog;
+    private boolean checked;
+    private boolean closed;
+
+    @Override
+    public void init(InteractionDialogAPI dialog) {
+        this.dialog = dialog;
+        SectorEntityToken target = dialog.getInteractionTarget();
+        if (target == null) {
+            LOG.info("GearIn conversation cancelled: target unavailable");
+            closed = true;
+            dialog.dismissAsCancel();
+            return;
+        }
+
+        TextPanelAPI text = dialog.getTextPanel();
+        if (!target.getMemoryWithoutUpdate().getBoolean(TARGET_KEY)) {
+            LOG.info("GearIn conversation cancelled: unmarked target=" + target.getId());
+            closed = true;
+            dialog.dismissAsCancel();
+            return;
+        }
+
+        text.addPara("Target ID: " + target.getId());
+        OptionPanelAPI options = dialog.getOptionPanel();
+        options.clearOptions();
+        options.addOption("Continue inspection", OPTION_CHECK);
+        options.addOption("Leave", OPTION_LEAVE);
+        options.addOption("Cancel", OPTION_CANCEL);
+        dialog.setOptionOnEscape("Cancel", OPTION_CANCEL);
+        VisualPanelAPI visual = dialog.getVisualPanel();
+        if (target.getCustomInteractionDialogImageVisual() != null) {
+            visual.showImageVisual(target.getCustomInteractionDialogImageVisual());
+        } else {
+            dialog.hideVisualPanel();
+        }
+    }
+
+    @Override
+    public void optionSelected(String optionText, Object optionData) {
+        if (closed) {
+            return;
+        }
+        if (OPTION_CHECK.equals(optionData)) {
+            if (!checked) {
+                checked = true;
+                dialog.getTextPanel().addPara("The target responds to the inspection.");
+            }
+        } else if (OPTION_LEAVE.equals(optionData)) {
+            closed = true;
+            dialog.dismiss();
+        } else if (OPTION_CANCEL.equals(optionData)) {
+            closed = true;
+            dialog.dismissAsCancel();
+        }
+    }
+
+    @Override
+    public void optionMousedOver(String optionText, Object optionData) {
+    }
+
+    @Override
+    public void advance(float amount) {
+    }
+
+    @Override
+    public void backFromEngagement(EngagementResultAPI battleResult) {
+        if (closed) {
+            return;
+        }
+        dialog.getTextPanel().addPara("The inspection continues after Engagement.");
+    }
+
+    @Override
+    public Object getContext() {
+        return dialog == null ? null : dialog.getInteractionTarget();
+    }
+
+    @Override
+    public Map<String, MemoryAPI> getMemoryMap() {
+        return Collections.emptyMap();
+    }
+
+}
 ```
+
+:::
 
 ## 验证方案
 
-前置数据：已启用包含本页 `data/campaign/rules.csv` 的 MOD。观察位置包括启动日志、启动器标准输出和独立舰队通讯界面。
+前置数据：准备一个带 `$GearIn_dialog_target` 的实体、一个未写入该键的实体，以及一个能够重复选择继续选项的交互入口。
 
-1. 启动游戏，确认日志出现 `Loading CSV data from [...]`，并找到 `GearIn_rules_comm_friendly` 与 `GearIn_rules_comm_fallback` 的 `Loading rule:` 行。
-2. 找到非敌对独立舰队，选择建立通讯，查看 `friendly` 文本与原版选项。
-3. 让同一势力舰队进入敌对状态后再次通讯，确认 `fallback` 文本接替 `friendly` 文本。
-4. 在启动器标准输出中核对单次使用变量 WARNING，并把变量名与规则 ID 对应起来。
-5. 在测试副本中依次检查三种重复：同一 CSV 内重复 ID 时加载报错；两个 MOD 的同路径 CSV 使用相同 ID 时保留先处理项；两个已分别登记的路径在同一 trigger 下重复 ID 时报告 `Duplicate rule id`。每次检查后恢复唯一 ID。
-6. 在 `conditions` 中写赋值、在 `script` 中写比较、把命令名写错，逐项确认加载期错误后恢复正确表达式。
-7. 在 `options` 文本中加入半角冒号，确认选项解析错误；改用全角冒号或改写句子。
-8. 在测试副本中给 `data/campaign/rules.csv` 声明 `replace`，确认该路径采用替换文件，而 `data/campaign/rules/askoniaCrisis2.csv` 仍有加载记录；移除声明后，确认主规则表恢复同路径合并。
+1. 保存类与 `picker` 替换，构建重启，从地图与已标记的 `Foundry` 交互。
+2. 核对 `getInteractionTarget()` 返回的目标 ID。
+3. 核对文本区域显示目标说明。
+4. 核对选项区域显示继续、离开和取消。
+5. 核对视觉区域显示目标图像或隐藏视觉区域。
+6. 选择继续两次，比较两次文本结果。
+7. 选择离开，观察会话关闭结果。
+8. 重新打开会话并选择取消，观察取消关闭结果。
+9. 重新打开会话并按 ESC，观察 ESC 的取消结果。
+10. 在直接调用入口传入未标记实体，查看取消日志，确认没有建立检查选项。
+11. 在直接入口传入 `null` 目标，查看 `target unavailable` 取消日志。
+12. 在返回战斗或子界面时，按会话 `closed` 状态处理写入，确认已经结束的会话保持关闭。
 
 预期结果：
 
-- 日志同时出现规则文件路径和两个稳定 ID；数据结构错误在进入生涯前暴露。
-- 非敌对独立舰队使用 `friendly` 文本，敌对独立舰队使用 `fallback` 文本。
-- 两条脚本都恢复 `fleetConvMain` 并追加原版 `PopulateOptions` 结果。
+- 会话目标 ID 与实际交互实体一致；
+- 文本区域显示目标 ID 和检查说明；
+- 选项区域显示三个稳定业务分支；
+- 视觉区域根据目标图像可用性显示或隐藏；
+- 第二次继续不追加第二份检查结果；
+- 离开使用正常关闭语义；
+- 取消和 ESC 使用取消关闭语义；
+- 未标记与空目标通过日志记录取消原因，检查选项没有建立；
+- 空目标不会发生目标解引用异常；
+- 关闭后没有新的文本、选项或视觉写入。
 
 ## 故障分析
 
-- **规则加载时启动中止**：`conditions` 中出现赋值、`script` 中出现 `==`、选项 ID 以 `$` 开头、命令类缺失或同文件 ID 重复。
-    - **解决方案**：按堆栈定位 CSV 行并把表达式放回正确列，重启。
+- **带标记实体没有检查选项**：目标 Memory 的键名或写入对象与会话读取对象不一致。
+    - **解决方案**：核对目标自己的 `getMemoryWithoutUpdate()`、`$GearIn_dialog_target` 拼写和布尔值，再重新进入 `showInteractionDialog`。
 
-- **规则没有触发且日志无异常**：本规则 ID 与其他同路径来源重复，后处理项被跳过。
-    - **解决方案**：改用带 MOD 前缀的唯一 ID。
+- **未标记实体进入检查分支**：初始化阶段没有在建立选项前读取目标标记。
+    - **解决方案**：把目标判定放在 `getOptionPanel()` 和 `addOption(...)` 之前，并在标记为假时调用 `dismissAsCancel()`。
 
-- **加载时报 Duplicate rule id**：分别登记的规则文件在同一 trigger 下使用了相同 ID。
-    - **解决方案**：按日志中的 ID 检查 `settings.json` 的 `rules` 所列文件，为自有规则使用唯一 ID。
+- **视觉区域显示错误实体**：通用 `SectorEntityToken` 被直接按特定实体类型展示。
+    - **解决方案**：先检查自定义交互图像，存在时调用 `showImageVisual(...)`，否则调用 `hideVisualPanel()`。
 
-- **选项文本在冒号后被截断**：加载器把冒号解释为选项字段分隔。
-    - **解决方案**：改写文本或使用全角冒号，重启。
-
-- **选项加载时报 `NumberFormatException`**：三段选项的首段不是可解析的排序数值。
-    - **解决方案**：删除多余冒号或提供合法 `order`，重启。
-
-- **原版主规则表中的通讯或市场规则缺失**：MOD 对 `data/campaign/rules.csv` 声明了 `replace`。
-    - **解决方案**：移除 `replace`，让同路径 CSV 参与合并。
+- **关闭后仍追加文本**：迟到回调只检查面板引用，没有检查 `closed`。
+    - **解决方案**：在每个可能写入面板的回调入口先检查 `closed`，并在关闭分支设置状态后调用对应 `dismiss` 方法。
 
 ## 总结
 
-两条通讯记录用规则 ID 保存身份，trigger 连接通讯请求，条件按目标关系选择，脚本恢复菜单，文字提供问候。CSV 保留多行字段，Rules 再解析其中的表达式与显示内容。
+Foundry 对话从会话取得目标与面板，标记决定检查是否适用，选项用稳定数据进入检查、离开或取消。`checked` 保存结果，`closed` 表示业务已经结束，画面关闭与返回回调都能按这个状态处理。
 
-加载成功后，规则还要进入实际调用的候选并满足条件。日志与通讯界面共同确认这些结果，下一节再把选项回流与结果选择连接成完整分支。
+交接插件时保留当前会话，再显式初始化接收者并传递所需结果。布局、选择器与战斗各有显示或返回入口，会话继续围绕同一个目标完成实际操作。
 
 ## 建议参考项
 
-- `data/campaign/rules.csv`：本节 `GearIn_rules_comm_*` 数据与原版规则表的存放路径。
-- `data/config/settings.json`：`rules` 规则文件列表与 `ruleCommandPackages` 命令包配置。
-- `com.fs.starfarer.api.campaign.rules.RuleAPI`：加载后单条规则的字段对象。
-- `com.fs.starfarer.api.campaign.rules.Option`：对话选项的 `id` / `text` / `order`。
-- `com.fs.starfarer.api.campaign.rules.ExpressionAPI`：条件和脚本表达式的加载结果。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.FireAll`：示例脚本调用的原版菜单填充命令。
+- `com.fs.starfarer.api.campaign.InteractionDialogAPI`：交互目标、插件、`TextPanelAPI`、`OptionPanelAPI`、`VisualPanelAPI`、布局和关闭入口；
+- `com.fs.starfarer.api.campaign.InteractionDialogPlugin`：交互会话的初始化、选项和返回回调；
+- `com.fs.starfarer.api.campaign.TextPanelAPI`：当前会话的文本写入区域；
+- `com.fs.starfarer.api.campaign.OptionPanelAPI`：当前会话的选项区域；
+- `com.fs.starfarer.api.campaign.VisualPanelAPI`：当前会话的视觉区域；
+- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：目标标记的读取和写入；
+- `com.fs.starfarer.api.campaign.BaseCampaignPlugin`：从目标条件返回交互插件的 `picker` 基类。

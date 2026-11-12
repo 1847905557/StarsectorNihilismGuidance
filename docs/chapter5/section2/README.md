@@ -1,265 +1,267 @@
-# 注册音频资源
+# 为游戏对象加入音频
 
-音频文件准备好后，在 sounds.json 中登记 ID、路径、音量与音高。普通音效、船体分档声音集和音乐采用各自的结构；本节提供一份完整配置，下一节将这些 ID 用于都林、突击填弹器、舰船风格和市场。
+声音已经登记，本节将它们用于都林自动炮、突击填弹器、GEAR_TECH 舰船风格、进入生涯的界面反馈与齿轮工业市场。各入口使用同一组已登记 ID，分别观察触发、持续与停止时的结果。
 
-_本节预期阅读时间：\~8 分钟。_
+_本节预期阅读时间：\~15 分钟。_
 
-_本节预期操作时间：\~10 分钟。_
+_本节预期操作时间：\~20 分钟。_
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 创建普通声音、分档声音集和音乐条目；
-- 设置 file、source、volume 与 pitch；
-- 按同路径合并添加自有内容；
-- 用 replace 控制整份数据读取，并定位资源错误。
+- 在武器和系统定义中引用声音；
+- 在舰船风格中选择分档声音集；
+- 在回调中播放 UI 提示并保持循环；
+- 通过音乐插件选择市场曲目；
+- 按资源、登记与调用位置定位播放问题。
 
 ## 前置知识
 
-- [C5-S1] 的四个音频、声道与目录；
-- [C1-S1] 的 MOD 目录和数据合并；
-- [C4-S3] 的风格声音集引用；
-- 能够编辑 JSON 对象、数组与字符串。
+- [C5-S1] 的四个 OGG 文件；
+- [C5-S2] 的音效、分档集与音乐登记；
+- [C1-S5] 的都林武器定义；
+- [C2-S3] 的突击填弹器效果；
+- [C3-S3] 的 GearInModPlugin 入口与回调；
+- [C3-S4] 的 Prime 市场；
+- [C4-S3] 的 GEAR_TECH 风格。
 
-## 登记普通音效
+## 为都林设置开火声音
 
-打开或创建 MOD 的 `data/config/sounds.json`，顶层使用声音 ID 作为键。都林开火的局部条目如下：
+打开 `data/weapons/GearIn_durin.wpn`，把两种安装形式的开火字段设置为本节音效，局部片段如下：
 
 ```json
-{
-    "GearIn_weapon_fire": [
-        {
-            "file": "sounds/GearIn_weapon_fire.ogg",
-            "volume": 1,
-            "pitch": 1
-        }
-    ]
+"fireSoundOne": "GearIn_weapon_fire",
+"fireSoundTwo": "GearIn_weapon_fire"
+```
+
+武器开火时按这些 ID 取得声音，实际资源由上一节的注册条目提供。文件仍使用第一章的武器 ID 与弹体，当前只更换播放资源。
+
+命中音另由武器与冲击设置决定。需要关闭默认冲击音时配置 noImpactSounds；自定义位置播放还可以用 `Global.getSoundPlayer().playSound(...)`，完整方法与位置参数由 [C7-S4] 讲解。
+
+## 为突击填弹器设置三段声音
+
+在 `GearIn_assaultfeed.system` 中添加或替换：
+
+```json
+"useSound": "GearIn_weapon_fire",
+"loopSound": "GearIn_system_loop",
+"deactivateSound": "GearIn_weapon_fire"
+```
+
+useSound 在激活时播放，deactivateSound 在停用时播放，loopSound 用于持续阶段。三个字段对应系统的三个播放时机，当前先使用已登记资源，最终设计可以换成自己的系统素材。
+
+**循环播放需要持续续期。** 定义字段由系统控制播放；由效果脚本控制时，持续调用放在每帧 apply 中，通过 playLoop 传入稳定的舰船对象和当前坐标、速度。
+
+下面是效果类 apply 末尾的局部片段，添加在原来的属性修改之后：
+
+```java
+ShipAPI ship = (ShipAPI) stats.getEntity();
+if (ship != null && effectLevel > 0f) {
+    Global.getSoundPlayer().playLoop("GearIn_system_loop", ship, 1f,
+            effectLevel, ship.getLocation(), ship.getVelocity());
 }
 ```
 
-file 指定资源路径，volume 设置音量，pitch 设置音高倍率，1 表示原始值。一个 ID 可以提供多个候选资源；当前数组只有一项，使用刚才准备的开火文件。
+创建前的数值对象可能没有战斗舰船，实际播放使用可用的舰船实体，因此这段代码在取得舰船后才调用播放器。effectLevel 同时作为音量，让声音随系统进入和退出变化。同一个声音 ID 与同一实体标记对应持续声源，后续调用延续这个声源，停止调用后自然淡出。
 
-系统循环和 UI 反馈同样登记为普通音效，ID 分别为 GearIn_system_loop 与 GearIn_ui_feedback。登记结构相同，资源声道和播放方法仍按各自用途选择，声道已经在上一节确定。
+## 给舰船风格选择声音集
 
-## 登记舰船分档声音集
-
-舰船风格中的 engineLoopSet 与 engineAccelerateSet 读取声音集。同一个声音集先列出资源，再按船体等级选择其中的索引，局部结构如下：
+在 `hull_styles.json` 的 GEAR_TECH 中修改两个字段：
 
 ```json
 {
-    "GearIn_engine_loop": {
-        "sounds": [
-            {"file": "sounds/GearIn_system_loop.ogg", "pitch": 1, "volume": 1}
-        ],
-        "FIGHTER": {"sounds": [0], "pitch": 1, "volume": 0.2},
-        "FRIGATE": {"sounds": [0], "pitch": 1, "volume": 0.3},
-        "DESTROYER": {"sounds": [0], "pitch": 1, "volume": 0.4},
-        "CRUISER": {"sounds": [0], "pitch": 1, "volume": 0.5},
-        "CAPITAL_SHIP": {"sounds": [0], "pitch": 1, "volume": 0.6}
+    "GEAR_TECH": {
+        "engineLoopSet": "GearIn_engine_loop",
+        "engineAccelerateSet": "GearIn_engine_accelerate"
     }
 }
 ```
 
-sounds 数组第一个资源的索引为 0，各档的 `sounds: [0]` 都引用这一项。本例复用已有循环文件，每档采用相同索引，只将音量分档。以后准备了独立引擎资源，再扩充数组并替换索引即可。
+这是局部合并示意，当前风格的颜色与其他声音字段保留。两个字段分别引用上一节的引擎循环与加速声音集，再按船体等级选择资源和音量。其他护盾、排散等声音仍使用当前已有的原版 ID。
 
-**声音集的档位和资源选择可以分别调整。** 当前配置用于验证登记与引用；实际制作时，素材与各档参数分别依据小型引擎和大型引擎的听感选择。
+**一个风格引用一组明确的声音集**，比逐艘船重复填写素材更容易维护。新增船体继续引用 GEAR_TECH 时，也会沿用它的声音配置，替换该声音集中的资源便可统一调整。
 
-GearIn_engine_accelerate 采用相同结构，暂用开火文件作为可辨认的瞬时音。它与循环声音集分别登记，完整配置在下面给出。
+## 在进入生涯时播放 UI 反馈
 
-## 登记市场音乐
+在既有 `data/scripts/gearin/GearInModPlugin.java` 的方法区添加下面的局部回调：
 
-音乐条目集中写进顶层的 music 分类，局部片段如下：
+```java
+@Override
+public void onGameLoad(boolean newGame) {
+    Global.getSoundPlayer().playUISound("GearIn_ui_feedback", 1f, 1f);
+}
+```
+
+Global 已由前文入口类导入。onGameLoad 在进入生涯时调用，这条播放语句随回调执行一次；以后给按钮或选项配声音，同样放到对应动作回调中。
+
+playUISound 接收 ID、音高、音量，使用上一节独立准备的双声道资源。界面提示按调用触发，因此这里提供播放参数即可，不需要实体位置。
+
+## 为齿轮工业市场选择音乐
+
+创建 `data/scripts/gearin/campaign/GearInMusicPlayerPlugin.java`，使用后面的完整类。它继承原版音乐选择逻辑，只为所属势力为 gear_industry 的市场返回 GearIn_market_music，其他市场交由基类继续选择。
+
+在 `data/config/settings.json` 的 plugins 对象中登记：
 
 ```json
 {
-    "music": {
-        "GearIn_market_music": [
-            {
-                "source": "sounds",
-                "file": "GearIn_market_theme.ogg",
-                "volume": 0.8,
-                "pitch": 1
-            }
-        ]
+    "plugins": {
+        "musicPlugin": "data.scripts.gearin.campaign.GearInMusicPlayerPlugin"
     }
 }
 ```
 
-source 可以是资源目录，也可以是原版使用的音频归档。当前 source 为 sounds，file 为该目录内的文件名；两者组合后指向 sounds/GearIn_market_theme.ogg。音乐 ID 为 GearIn_market_music，实际文件可以保持不同名称，使用方通过这个 ID 取得曲目。
+musicPlugin 是原版音乐插件入口键，游戏通过它选择当前配置的音乐插件。**这个入口服务整个音乐选择流程**，本例因此保留基类的其他行为，只调整目标市场。项目中多个功能需要修改音乐选择时，在同一个插件中组织对应条件。
 
-## 选择合并与替换范围
-
-新增 ID 写入自有对象，游戏启动时与其他来源的 sounds.json 合并。**当前只提交本节定义的内容**，原版声音继续由原版提供。
-
-需要替换整份配置时，在 mod_info.json 的 replace 数组中声明 data/config/sounds.json。路径逐字符一致后，该操作改变整份文件的读取范围，**替换内容需要承担相关声音定义**。当前新增声音使用普通合并即可。
+原版市场选择方法也读取势力 music 映射和市场状态，本节通过类返回已登记的音乐 ID。返回值确定曲目，sounds.json 的 music 分类提供资源，source 与 file 再组合为实际文件路径。
 
 ## 完整最小例
 
-保存到 `data/config/sounds.json`。已有文件时合入这些自有键，music 里的条目放进已有 music 对象。
+系统类替换现有 `data/scripts/gearin/shipsystems/GearInAssaultFeedSystem.java`，音乐类保存到上面的 campaign 目录。入口 UI 回调、武器和风格的局部修改按前文接入。
 
-```json
-{
-    "GearIn_weapon_fire": [
-        {
-            "file": "sounds/GearIn_weapon_fire.ogg",
-            "volume": 1,
-            "pitch": 1
+::: details 完整成品：GearInAssaultFeedSystem
+
+```java
+package data.scripts.gearin.shipsystems;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.MutableShipStatsAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.impl.combat.BaseShipSystemScript;
+
+public class GearInAssaultFeedSystem extends BaseShipSystemScript {
+
+    public static final float SPEED_BONUS = 50f;
+    public static final float MANEUVER_BONUS = 200f;
+    public static final float ROF_BONUS = 1f;
+    public static final float FLUX_REDUCTION = 50f;
+
+    @Override
+    public void apply(MutableShipStatsAPI stats, String id, State state, float effectLevel) {
+        stats.getBallisticRoFMult().modifyMult(id, 1f + ROF_BONUS * effectLevel);
+        stats.getBallisticWeaponFluxCostMod().modifyMult(id,
+                1f - FLUX_REDUCTION * 0.01f * effectLevel);
+        stats.getMaxSpeed().modifyFlat(id, SPEED_BONUS * effectLevel);
+        stats.getAcceleration().modifyPercent(id, MANEUVER_BONUS * effectLevel);
+        stats.getDeceleration().modifyPercent(id, MANEUVER_BONUS * effectLevel);
+        stats.getTurnAcceleration().modifyFlat(id, 30f * effectLevel);
+        stats.getTurnAcceleration().modifyPercent(id, MANEUVER_BONUS * effectLevel);
+        stats.getMaxTurnRate().modifyFlat(id, 15f * effectLevel);
+        stats.getMaxTurnRate().modifyPercent(id, 100f * effectLevel);
+
+        ShipAPI ship = (ShipAPI) stats.getEntity();
+        if (ship != null && effectLevel > 0f) {
+            Global.getSoundPlayer().playLoop("GearIn_system_loop", ship, 1f,
+                    effectLevel, ship.getLocation(), ship.getVelocity());
         }
-    ],
-    "GearIn_system_loop": [
-        {
-            "file": "sounds/GearIn_system_loop.ogg",
-            "volume": 0.8,
-            "pitch": 1
+    }
+
+    @Override
+    public void unapply(MutableShipStatsAPI stats, String id) {
+        stats.getBallisticRoFMult().unmodify(id);
+        stats.getBallisticWeaponFluxCostMod().unmodify(id);
+        stats.getMaxSpeed().unmodify(id);
+        stats.getAcceleration().unmodify(id);
+        stats.getDeceleration().unmodify(id);
+        stats.getTurnAcceleration().unmodify(id);
+        stats.getMaxTurnRate().unmodify(id);
+    }
+
+    @Override
+    public StatusData getStatusData(int index, State state, float effectLevel) {
+        if (index == 0) {
+            return new StatusData("+" + (int) (SPEED_BONUS * effectLevel) + " top speed", false);
         }
-    ],
-    "GearIn_ui_feedback": [
-        {
-            "file": "sounds/GearIn_ui_feedback.ogg",
-            "volume": 0.8,
-            "pitch": 1
+        if (index == 1) {
+            return new StatusData("improved maneuverability", false);
         }
-    ],
-    "GearIn_engine_loop": {
-        "sounds": [
-            {
-                "file": "sounds/GearIn_system_loop.ogg",
-                "pitch": 1,
-                "volume": 1
-            }
-        ],
-        "FIGHTER": {
-            "sounds": [
-                0
-            ],
-            "pitch": 1,
-            "volume": 0.2
-        },
-        "FRIGATE": {
-            "sounds": [
-                0
-            ],
-            "pitch": 1,
-            "volume": 0.3
-        },
-        "DESTROYER": {
-            "sounds": [
-                0
-            ],
-            "pitch": 1,
-            "volume": 0.4
-        },
-        "CRUISER": {
-            "sounds": [
-                0
-            ],
-            "pitch": 1,
-            "volume": 0.5
-        },
-        "CAPITAL_SHIP": {
-            "sounds": [
-                0
-            ],
-            "pitch": 1,
-            "volume": 0.6
+        if (index == 2) {
+            return new StatusData("ballistic flux use -" + (int) (FLUX_REDUCTION * effectLevel) + "%", false);
         }
-    },
-    "GearIn_engine_accelerate": {
-        "sounds": [
-            {
-                "file": "sounds/GearIn_weapon_fire.ogg",
-                "pitch": 1,
-                "volume": 1
-            }
-        ],
-        "FIGHTER": {
-            "sounds": [
-                0
-            ],
-            "pitch": 1,
-            "volume": 0.2
-        },
-        "FRIGATE": {
-            "sounds": [
-                0
-            ],
-            "pitch": 1,
-            "volume": 0.3
-        },
-        "DESTROYER": {
-            "sounds": [
-                0
-            ],
-            "pitch": 1,
-            "volume": 0.4
-        },
-        "CRUISER": {
-            "sounds": [
-                0
-            ],
-            "pitch": 1,
-            "volume": 0.5
-        },
-        "CAPITAL_SHIP": {
-            "sounds": [
-                0
-            ],
-            "pitch": 1,
-            "volume": 0.6
+        if (index == 3) {
+            return new StatusData("ballistic rate of fire +" + (int) (ROF_BONUS * effectLevel * 100f) + "%", false);
         }
-    },
-    "music": {
-        "GearIn_market_music": [
-            {
-                "source": "sounds",
-                "file": "GearIn_market_theme.ogg",
-                "volume": 0.8,
-                "pitch": 1
-            }
-        ]
+        return null;
     }
 }
 ```
 
+:::
+
+::: details 完整成品：GearInMusicPlayerPlugin
+
+```java
+package data.scripts.gearin.campaign;
+
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.impl.MusicPlayerPluginImpl;
+
+public class GearInMusicPlayerPlugin extends MusicPlayerPluginImpl {
+
+    @Override
+    protected String getMarketMusicSetId(Object param) {
+        MarketAPI market = (MarketAPI) param;
+        if ("gear_industry".equals(market.getFactionId())) {
+            return "GearIn_market_music";
+        }
+        return super.getMarketMusicSetId(param);
+    }
+}
+```
+
+:::
+
 ## 验证方案
 
-1. 保存声音配置，确认上一节资源位于对应 file 或 source 目录。
-2. 重启游戏，检查 JSON 解析与声音资源加载记录。
-3. 核对普通音效、两套分档集和 music 分类中的 ID。
-4. 按下一节的具体接入播放声音，再调整某个条目的 volume，保存并重启比较。
+1. 保存声音资源、登记与对象引用，重启游戏，检查音频加载。
+2. 进入生涯，观察 UI 提示，再给工匠安装都林并进入模拟战。
+3. 开火、移动与进入零幅能加速，分别比较武器、引擎循环和加速声音。
+4. 激活突击填弹器，观察激活、持续和停用声音，结束后确认循环淡出。
+5. 进入 Prime 市场，听取市场曲目；再进入其他势力市场，核对原版选择继续生效。
+6. 调整一个条目的 volume，重启后以同一场景比较，并核对相关日志。
 
 预期结果：
 
-- 配置可读取，文件路径指向已准备的 Ogg 资源。
-- 普通音效和船体声音集位于顶层，音乐位于 music。
-- 使用方能按 ID 取得资源，volume 变化后采用新值。
-- 原版与其他自有条目继续按同路径合并读取。
+- 进入生涯时播放 UI 反馈，武器开火采用 GearIn_weapon_fire。
+- GEAR_TECH 移动与加速采用两个自有声音集，分档与当前船体对应。
+- 系统持续阶段保持循环，结束后停止续期。
+- 齿轮工业市场播放 GearIn_market_music，其他市场沿用原版选择。
+- 声音参数修改后实际听感随新值变化。
+- 日志可以定位无效 ID、分类与资源路径错误。
 
 ## 故障分析
 
-- **JSON 解析失败**：对象、数组、字符串或逗号不完整。
-    - **解决方案**：按编辑器与日志检查错误位置，保存后重启。
+- **开火没有声音**：武器字段 ID 未登记或不同。
+    - **解决方案**：核对 GearIn_durin.wpn 字段与 sounds.json 自有键。
 
-- **资源不存在**：file 与 source 组合后的路径或大小写错误。
-    - **解决方案**：普通音效按相对 MOD 根目录核对，音乐按 source 目录与 file 核对。
+- **循环只响一下**：脚本未持续调用或声源对象每次不同。
+    - **解决方案**：在效果回调中用同一舰船对象持续调用 playLoop。
 
-- **音乐条目没有播放**：分类或 source 字段未对应音乐读取结构。
-    - **解决方案**：将 ID 登记在 music 对象中，补齐目录与文件。
+- **引擎声音不符**：GEAR_TECH 引用了不同或未登记的声音集。
+    - **解决方案**：核对 engineLoopSet、engineAccelerateSet 及分档结构。
 
-- **声音集分档不符**：档位索引没有对应 sounds 数组资源。
-    - **解决方案**：从 0 开始核对索引和每档 pitch、volume。
+- **UI 声音空间表现不符**：播放入口或资源声道不同。
+    - **解决方案**：使用 GearIn_ui_feedback 双声道与 playUISound。
 
-- **整文件替换范围不符**：replace 路径不同或替换配置缺少相关定义。
-    - **解决方案**：核对目标路径与整份配置的实际职责。
+- **市场音乐未选择**：musicPlugin 未登记、类加载错误或市场所属势力不同。
+    - **解决方案**：核对插件完整类名与 gear_industry 归属，再进入市场。
+
+- **音乐资源未播放**：声音 ID 未处于 music 分类，或 source／file 组合错误。
+    - **解决方案**：核对注册结构和当前资源路径，重启后比较。
 
 ## 总结
 
-声音注册将 ID 连接到资源及播放参数。普通条目提供文件候选，分档集按船体等级选择资源与音量，音乐按 source 读取文件；三种结构分别供对应的使用方读取。
+本节将已登记声音用于实际对象和回调。武器和系统读取定义字段，舰船风格选择分档集，UI 反馈由动作回调播放，市场音乐由选择插件返回曲目 ID。
 
-登记完成后，下一节写入对象引用并测试播放。资源、注册与播放分开核对，便能把没有声音的问题定位到相应位置。
+资源声道、注册分类与调用时机共同决定播放结果。测试时分别触发每个入口，记录声音何时开始、何时保持、何时结束，再调整素材和参数。
 
 ## 建议参考项
 
-- `data/config/sounds.json`：原版音效、分档集与音乐结构。
-- `mod_info.json`：replace 整文件读取范围。
+- `data/config/sounds.json`：普通音效、分档集与 music 分类。
+- `data/config/settings.json`：plugins.musicPlugin 入口。
+- `data/config/hull_styles.json`：风格声音集字段。
+- `data/weapons/`：武器开火与冲击声音字段。
+- `data/shipsystems/`：系统激活、持续和停用声音字段。
+- `com.fs.starfarer.api.SoundPlayerAPI`：UI、位置和循环播放。
+- `com.fs.starfarer.api.BaseModPlugin`：onGameLoad 回调。
+- `com.fs.starfarer.api.impl.MusicPlayerPluginImpl`：市场音乐选择与原版行为。

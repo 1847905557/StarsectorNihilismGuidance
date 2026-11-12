@@ -1,269 +1,261 @@
-# 维护舰队成员状态
+# 读取并修改舰船装配
 
-给玩家一艘舰船时，除了船体和装配，还要决定它的损伤、船员、CR 与封存状态。本节创建一艘狼和一艘锤头鲨，用后者演示损伤、缺员与封存，再把它留在舰队中，比较脚本写入的即时状态与游戏继续整备后的结果。
+本节给一艘狼更换武器、调整武器组与幅能，再将改装结果保留到存档中。操作从成员当前装配的副本开始，说明装备写入、分组和 OP 怎样共同决定结果；随后借窑级装配处理模块关系，并用 JSON 观察装配的数据表示。
 
-_本节预期阅读时间：\~26 分钟。_
+_本节预期阅读时间：\~30 分钟。_
 
-_本节预期操作时间：\~35 分钟。_
+_本节预期操作时间：\~40 分钟。_
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 创建一艘拥有稳定生涯身份的 `FleetMemberAPI`，并把它加入指定舰队；
-- 读取船体完整度、船员数量、CR、维修状态、封存状态和可部署结果；
-- 在修改单舰状态后重新读取结果，并判断是否需要更新成员 `stats`；
-- 解释 `FleetMemberAPI` 与战斗侧 `ShipAPI` 的对象边界。
+- 从 `FleetMemberAPI` 取得当前装配并读取 `VariantSource`、船体和文件来源；
+- 使用 `clone()` 建立隔离副本，修改武器槽、武器组、船插和幅能配置；
+- 通过 `setVariant(...)` 将副本应用到成员，并观察 `stats` 与装配结果；
+- 按模块槽读取父子装配关系，判断模块覆盖是否存在；
+- 使用 `toJSONObject()` 检查序列化边界，并定位共享引用、槽位和 OP 相关故障。
 
 ## 前置知识
 
-- [C11-S2] 的 `FleetDataAPI` 成员归属、旗舰和集合顺序；
-- [C11-S3] 的成员 `stats` 重算与装配替换边界；
-- Java 对象引用、一次性脚本和 `starsector.log` 的基本用法。
+- [C4-S4] 的窑级主体、模块与 `GearIn_kiln_combat` 装配；
+- [C11-S3] 的成员 `stats` 更新和派生值读取；
+- [C11-S4] 的 `FleetMemberAPI` 成员归属与可部署状态；
+- Java 对象引用、集合遍历、异常处理和日志输出；
+- 能够打开舰队界面观察装配，并在 `starsector.log` 搜索固定前缀。
 
-## 创建并保留生涯成员
+## 准备这次改装
 
-创建 `src/data/scripts/gearin/campaign/GearInFleetMemberBuilder.java` 与 `GearInFleetMemberStatus.java`。前者提供可复用的成员创建方法，后者调用这个方法创建锤头鲨，再修改它的状态。在 `GearInModPlugin` 添加两类的 `import`，向已有的 `onNewGameAfterTimePass(...)` 追加登记，沿用其中的 `sector`：
+创建 `src/data/scripts/gearin/campaign/GearInVariantRefitter.java` 与 `GearInModuleInspector.java`。前者把改装狼留在玩家舰队，后者读取 [C4-S4] 已定义的窑级模块装配。在 `GearInModPlugin` 添加两类的 `import`，向已有的 `onNewGameAfterTimePass(...)` 追加登记，沿用 `sector`：
 
 ```java
-sector.addTransientScript(new GearInFleetMemberBuilder());
-sector.addTransientScript(new GearInFleetMemberStatus());
+sector.addTransientScript(new GearInVariantRefitter());
+sector.addTransientScript(new GearInModuleInspector());
 ```
 
-新档推进完成后，两份脚本各执行一轮。狼采用 `wolf_Assault`，锤头鲨采用 `hammerhead_Elite`，两艘都保留在玩家舰队，便于后面通过界面和战斗继续观察。
-
-成员创建沿用 [C11-S2] 的工厂入口。**创建后还要加入舰队**，舰队界面、汇总与部署编队才会包含它。下面是创建方法的核心操作：
+两份脚本在新档推进后各执行一次。先处理狼，从成员取得它正在使用的 `ShipVariantAPI`。装配保存武器、武器组、船插、幅能数量、战机、模块映射与来源，船体规格则提供槽位和基础限制。以下局部片段记录当前装配：
 
 ```java
-CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
-FleetDataAPI data = fleet.getFleetData();
 FleetMemberAPI member = Global.getFactory().createFleetMember(
         FleetMemberType.SHIP,
         "wolf_Assault");
-
-data.addFleetMember(member);
-
-LOG.info("member id=" + member.getId()
-        + " fleet=" + fleet.getName()
-        + " count=" + data.getNumMembers());
-```
-
-`createFleetMember(...)` 的第二个参数是装配或战机联队的规格 ID；`member.getId()` 是游戏为这个成员生成的独立 ID。本节保留生成的 ID，后续用它追踪同一艘船。
-
-加入后，成员的 `getFleetData()` 指向目标舰队，集合也会标记待同步。记录加入前后的归属，可以把新对象与舰队里的成员对应起来。以下局部片段使用锤头鲨：
-
-```java
-FleetMemberAPI member = Global.getFactory().createFleetMember(
-        FleetMemberType.SHIP,
-        "hammerhead_Elite");
-
-LOG.info("before add: id=" + member.getId()
-        + " fleetData=" + member.getFleetData());
-
-data.addFleetMember(member);
-
-String variantId = member.getVariant() == null
-        ? "<none>"
-        : member.getVariant().getHullVariantId();
-LOG.info("after add: id=" + member.getId()
-        + " hull=" + member.getHullId()
-        + " variant=" + variantId
-        + " fleetData=" + member.getFleetData()
-        + " count=" + data.getNumMembers());
-```
-
-成员加入时会补齐缺少的船名与默认舰长，并清除新成员的旗舰标记。完整创建方法另外接受 `makeFlagship` 参数，本次传入 `false`，保持玩家原旗舰。旗舰切换的可选用法在状态说明之后给出。
-
-## 记录修改前的状态
-
-锤头鲨创建后，先取得它的状态对象。损伤从 `getStatus()` 读取，船员从 `getCrewComposition()` 读取，CR、维修速率与封存由 `getRepairTracker()` 管理。下面的局部日志把这些结果记录在同一个成员 ID 下：
-
-```java
-FleetMemberStatusAPI status = member.getStatus();
-CrewCompositionAPI crewComposition = member.getCrewComposition();
-RepairTrackerAPI repairTracker = member.getRepairTracker();
 ShipVariantAPI variant = member.getVariant();
 
-float hullFraction = status.getHullFraction();
-float crewFraction = member.getCrewFraction();
-int crew = crewComposition.getCrewInt();
-float cr = repairTracker.getCR();
-boolean needsRepairs = status.needsRepairs();
-boolean mothballed = repairTracker.isMothballed();
-String hullVariantId = variant == null
-        ? "<none>"
-        : variant.getHullVariantId();
+String hullVariantId = variant.getHullVariantId();
+String hullId = variant.getHullSpec().getHullId();
+VariantSource source = variant.getSource();
+String filePath = variant.getVariantFilePath();
 
-LOG.info("member status: id=" + member.getId()
-        + " hull=" + hullFraction
-        + " crew=" + crew
-        + " crewFraction=" + crewFraction
-        + " cr=" + cr
-        + " repairs=" + needsRepairs
-        + " mothballed=" + mothballed
-        + " variant=" + hullVariantId);
+LOG.info("variant read: hull=" + hullId
+        + " variant=" + hullVariantId
+        + " source=" + source
+        + " file=" + filePath
+        + " vents=" + variant.getNumFluxVents()
+        + " capacitors=" + variant.getNumFluxCapacitors());
 ```
 
-船体完整度与 CR 都使用 0 到 1 的比例。`getCrewInt()` 返回船员数量，`getCrewFraction()` 返回最低船员需求的满足比例；`getBaseCR()` 保留基础 CR，`getCR()` 则反映船员不足后的有效 CR。这些数值需要分别记录，否则缺员造成的 CR 下降很容易被误认为 `setCR(...)` 没有生效。
+狼按 `wolf_Assault` 创建，`getHullVariantId()` 返回装配 ID，`getVariantFilePath()` 保留文件来源，`getSource()` 表示当前来源类别。`VariantSource` 有 `STOCK`、`MISSION_DESIGN`、`MISSION_SAVE`、`REFIT` 与 `HULL`，本节要从原版预设装配得到运行时改装结果。
 
-维修速率与近期 CR 事件也可以从维修跟踪器读取，损伤本身仍由 `status` 表示。接下来按完整状态脚本的顺序，先施加损伤，再修改船员和 CR，最后切换封存。
+## 建立副本，并让改装随成员保存
 
-## 施加损伤与修复船体
+成员创建时可以从规格库取得设计，成员当前装配也可能已经有玩家的改动。我们从这个当前对象 `clone()`，在副本上集中修改，完成后一次写回。克隆会复制武器映射、武器组、普通与永久船插、受抑制船插、战机、模块映射和标签；船体规格继续共用。
 
-状态脚本用 `applyHullFractionDamage(0.2f)` 施加相当于最大船体 20% 的损伤。需要指定完整度时还可以使用 `setHullFraction(...)`，直接修复则使用 `repairFully()`。下面的局部实验在损伤后立即修复，分别记录两次结果；完整状态脚本会保留损伤供界面观察：
+**副本还要设置 `REFIT` 来源。** 克隆保留原来源，`STOCK` 装配在读档时按规格库 ID 恢复，`REFIT` 改装则随成员保存。以下局部片段同时确认对象独立与来源变化：
 
 ```java
-float hullBefore = member.getStatus().getHullFraction();
-member.getStatus().applyHullFractionDamage(0.2f);
-float hullAfterDamage = member.getStatus().getHullFraction();
-boolean needsRepairAfterDamage = member.needsRepairs();
+ShipVariantAPI original = member.getVariant();
+ShipVariantAPI copy = original.clone();
+copy.setSource(VariantSource.REFIT);
 
-member.getStatus().repairFully();
-float hullAfterRepair = member.getStatus().getHullFraction();
-boolean needsRepairAfterRepair = member.needsRepairs();
+boolean isolated = copy != original;
+String originalSource = original.getSource().name();
+String copiedSource = copy.getSource().name();
 
-LOG.info("hull transition: before=" + hullBefore
-        + " damaged=" + hullAfterDamage
-        + " repaired=" + hullAfterRepair
-        + " needsRepairs=" + needsRepairAfterDamage
-        + "->" + needsRepairAfterRepair);
+LOG.info("variant clone: isolated=" + isolated
+        + " originalSource=" + originalSource
+        + " copiedSource=" + copiedSource
+        + " originalGroups=" + original.getWeaponGroups().size()
+        + " copiedGroups=" + copy.getWeaponGroups().size());
 ```
 
-`repairFully()` 恢复可修复的船体、装甲及模块状态。只将船体比例设为 1 时，装甲或模块脱离状态仍可能使 `needsRepairs()` 为 `true`；因此维修结果还要结合 `computeRepairednessFraction()` 读取，它同时考虑船体与装甲。
+编者建议将保存、读档作为这类运行时改装的验收环节。`clone()` 已经成功、界面也显示了新武器，仍不能证明这份装备会留在存档中；来源保持 `STOCK` 时，问题恰好要到读档才出现。
 
-实际生涯维修继续受维修速率与资源条件影响。本例直接调用状态接口，说明的是损伤如何写入成员；后续消耗与恢复由游戏的维修流程处理。
+写回后，成员持有的就是 `copy`。随后再修改它，会直接改变成员当前装配；要将设计用于另一艘舰船，再为那艘成员建立独立副本。
 
-## 让船员不足反映到 CR
+## 为狼更换装备
 
-把锤头鲨的船员改为最低需求的一半，再将基础 CR 设置为 0.3。`setCrew(...)` 写入当前船员组成，`setCR(...)` 的值使用 0 到 1 的比例。局部片段如下：
+### 用点防激光替换离子炮
+
+狼的 `WS 001` 是小型能量槽，`wolf_Assault` 在其中安装了离子炮。本例用 `pdlaser` 点防激光替换它：`addWeapon(slotId, weaponId)` 写入武器，`getWeaponId(slotId)` 读取当前武器 ID，`clearSlot(slotId)` 则清空槽位。局部片段如下：
 
 ```java
-CrewCompositionAPI composition = member.getCrewComposition();
-float crewBefore = composition.getCrew();
-float crBefore = member.getRepairTracker().getCR();
+String slotId = "WS 001";
+String weaponBefore = copy.getWeaponId(slotId);
 
-composition.setCrew(Math.max(1f, member.getMinCrew() * 0.5f));
-member.getRepairTracker().setCR(0.3f);
+copy.addWeapon(
+        slotId,
+        "pdlaser");
 
-float crewAfter = composition.getCrew();
-float crewFractionAfter = member.getCrewFraction();
-float crAfter = member.getRepairTracker().getCR();
-boolean deployable = member.canBeDeployedForCombat();
+String weaponAfter = copy.getWeaponId(slotId);
+WeaponSpecAPI weaponSpec = copy.getWeaponSpec(slotId);
 
-LOG.info("readiness transition: crew=" + crewBefore
-        + "->" + crewAfter
-        + " crewFraction=" + crewFractionAfter
-        + " cr=" + crBefore
-        + "->" + crAfter
-        + " deployable=" + deployable);
+LOG.info("weapon slot: slot=" + slotId
+        + " before=" + weaponBefore
+        + " after=" + weaponAfter
+        + " spec=" + (weaponSpec == null ? "null" : weaponSpec.getWeaponId()));
 ```
 
-**基础 CR 为 0.3、船员比例为 0.5 时，有效 CR 为 0.15。** `getCR()` 给出的正是后一个结果，`getBaseCR()` 仍为 0.3。`canBeDeployedForCombat()` 先判断封存，再比较 CR 与船员阈值：`settings.json` 中 `noDeployCRPercent` 为 0、`noDeployCrewPercent` 为 5，读取时转换成比例；战机还要求有效 CR 大于 0。因此半员与低 CR 不等于必然禁止部署，实际布尔结果由该方法读取。
+这里两个参数来自不同定义：槽位 ID 来自船体，武器 ID 来自武器规格。两者都存在，还要满足尺寸与类型的适配。`getNonBuiltInWeaponSlots()` 返回实际装有武器的非内置槽，`getFittedWeaponSlots()` 返回当前已安装的槽集合，可用于确认本次写入的位置。
 
-::: warning 单舰船员会在舰队同步时重新分配
-玩家舰队从公共货舱向各成员分配船员。本例直接修改的是即时组成，后续同步可能重新填满；长期缺员需要结合舰队货舱中的船员与各成员需求处理。
+::: warning 写入武器前核对槽位规格
+`addWeapon(...)` 写入映射，读回 ID 只证明映射已改变。通过 `getSlot(slotId)` 核对尺寸与类型，再用 `getWeaponSpec(slotId)` 读取武器规格，才能确认适配。
 :::
 
-## 切换封存状态
+### 安排武器组
 
-有些成员需要保留在舰队中，暂时停止使用。`setMothballed(true)` 保存封存前的基础 CR，再将基础 CR 置为 0，部署判断返回 `false`。下面的局部片段先封存，再解除封存：
+武器写入槽位之后，分组还要单独处理。组里保存槽位 ID，通过 `getWeaponGroups()` 取得 `WeaponGroupSpec`，再读取类型、槽位与默认自动开火。本例用 `autoGenerateWeaponGroups()` 按当前装备重建，局部日志记录生成结果：
 
 ```java
-RepairTrackerAPI tracker = member.getRepairTracker();
-boolean mothballedBefore = tracker.isMothballed();
+copy.autoGenerateWeaponGroups();
+List<WeaponGroupSpec> groups = copy.getWeaponGroups();
 
-tracker.setMothballed(true);
-boolean mothballedAfter = tracker.isMothballed();
-boolean deployableWhileMothballed = member.canBeDeployedForCombat();
-
-tracker.setMothballed(false);
-boolean deployableAfterRelease = member.canBeDeployedForCombat();
-
-LOG.info("mothball transition: before=" + mothballedBefore
-        + " after=" + mothballedAfter
-        + " deployableWhileMothballed=" + deployableWhileMothballed
-        + " deployableAfterRelease=" + deployableAfterRelease);
+for (int i = 0; i < groups.size(); i++) {
+    WeaponGroupSpec group = groups.get(i);
+    LOG.info("weapon group: index=" + i
+            + " type=" + group.getType()
+            + " autofire=" + group.isAutofireOnByDefault()
+            + " slots=" + group.getSlots());
+}
 ```
 
-解除封存时，跟踪器恢复封存前保存的基础 CR，再按当前船员比例计算有效 CR。完整脚本先设置 0.3，封存期间读取 0，解除后基础值回到 0.3。封存切换还会更新成员 `stats` 并标记舰队待同步，因此解除后的界面结果继续受船员重新分配与生涯整备影响。
+自动生成会清除原分组，再按武器与槽位特征重新组织，组模式用 `WeaponGroupType` 表示。完整例还切换第一组的默认自动开火，用于展示 `setAutofireOnByDefault(...)` 的写入结果。
 
-`getMemberStrength()` 也受封存与 CR 等状态影响。比较当前强度时，在状态更新后重新读取，避免保留切换前的数值。
+**重建分组意味着接受原安排被替换。** 本节使用新创建的狼，可以由脚本决定分组；修改玩家已有的装配时，原分组本身也是玩家的设计，需要保留就沿现有组调整槽位。读取分组直接调用 getter，自动生成是一项写入操作。
 
-## 装配与旗舰对成员状态的影响
+### 武器组字段速查表
 
-### 更换装配后刷新派生数值
+| 要观察的对象 | 读取入口                     | 观察含义                 |
+| ------------ | ---------------------------- | ------------------------ |
+| 槽位中的武器 | `getWeaponId(slotId)`        | 当前槽位的武器 ID        |
+| 已安装槽位   | `getFittedWeaponSlots()`     | 包含实际武器的槽位集合   |
+| 武器组       | `getWeaponGroups()`          | 当前分组对象集合         |
+| 分组槽位     | `WeaponGroupSpec.getSlots()` | 该组引用的槽位 ID        |
+| 分组模式     | `WeaponGroupSpec.getType()`  | 联动或交替等组行为       |
+| 默认自动开火 | `isAutofireOnByDefault()`    | 进入战斗时的组开火默认值 |
 
-本节的损伤与封存操作直接作用于成员状态；装配替换还会改变这些状态所依赖的数值。沿 [C11-S3] 的方式克隆当前装配，用 `setVariant(..., false, true)` 写回并重算。下面的局部片段只修改显示名，再记录部署 CR 消耗与成员强度，[C11-S5] 继续修改实际装备：
+### 调整船插与幅能，核对 OP
+
+离子炮换成点防激光后腾出 OP，本例增加一散热和一电容，同时用移除、添加 `fluxdistributor` 展示船插集合操作。`addMod(...)` 与 `removeMod(...)` 使用船插 ID，`setNumFluxVents(...)` 与 `setNumFluxCapacitors(...)` 直接设置数量：
 
 ```java
-ShipVariantAPI replacement = member.getVariant().clone();
-replacement.setVariantDisplayName("GearIn status check");
+boolean hadFluxDistributor = copy.hasHullMod("fluxdistributor");
+int ventsBefore = copy.getNumFluxVents();
+int capacitorsBefore = copy.getNumFluxCapacitors();
 
+copy.removeMod("fluxdistributor");
+copy.addMod("fluxdistributor");
+copy.setNumFluxVents(ventsBefore + 1);
+copy.setNumFluxCapacitors(capacitorsBefore + 1);
+
+LOG.info("variant resources: hadFluxDistributor=" + hadFluxDistributor
+        + " hullMods=" + copy.getNonBuiltInHullmods()
+        + " vents=" + ventsBefore + "->" + copy.getNumFluxVents()
+        + " capacitors=" + capacitorsBefore + "->"
+        + copy.getNumFluxCapacitors());
+```
+
+`getHullMods()` 读取装配中的船插集合，`getNonBuiltInHullmods()` 筛出普通可拆卸部分；永久船插与受抑制船插各有专门入口，清空普通集合不能代替这些操作。幅能数量还受船体限制与军械点数约束，setter 写入成功并不保证设计合法。
+
+应用前记录成本。`computeOPCost(null)` 返回总 OP，`getUnusedOP(null)` 返回剩余点数，需要区分武器与船插成本时再读取对应成本方法：
+
+```java
+int opCost = copy.computeOPCost(null);
+int unusedOp = copy.getUnusedOP(null);
+LOG.info("variant OP: cost=" + opCost + " unused=" + unusedOp);
+```
+
+## 把完成的改装写回成员
+
+武器、武器组、船插与幅能全部调整后，将 `copy` 写回成员。沿 [C11-S3] 的重算方式调用 `setVariant(..., false, true)`，再从成员读取当前装配与派生结果：
+
+```java
 member.setVariant(
-        replacement,
+        copy,
         false,
         true);
-
 member.updateStats();
-LOG.info("variant applied: id=" + member.getId()
-        + " variant=" + member.getVariant().getHullVariantId()
-        + " deployCost=" + member.getDeployCost()
-        + " memberStrength=" + member.getMemberStrength());
+
+ShipVariantAPI applied = member.getVariant();
+LOG.info("variant applied: sameReference=" + (applied == copy)
+        + " source=" + applied.getSource()
+        + " vents=" + applied.getNumFluxVents()
+        + " capacitors=" + applied.getNumFluxCapacitors()
+        + " memberStrength=" + member.getMemberStrength()
+        + " deployable=" + member.canBeDeployedForCombat());
 ```
 
-`withRefit=true` 会按新旧装配差异处理改装 CR 影响，这里传入 `false`，让 CR 比较集中在当前状态操作上。第三个参数 `true` 触发 `updateStats()`，最低船员需求、CR 上限等派生值按新装配重算，后续 `stats` 也重新取得。
+`withRefit` 决定是否按装配差异处理 "field refit" CR 事件，`withStatsUpdate` 决定是否立即更新成员数值。这里传入 `false, true`，保留改装结果并重建 `stats`；采用 `withRefit=true` 时，CR 前后值也纳入观察。写回后的 `getVariant()` 就是当前副本，`getStats()` 与 `canBeDeployedForCombat()` 则读取更新后的结果。
 
-装配替换作用于这个成员，舰队归属仍由 `FleetDataAPI` 管理。重算后在原舰队重新读取数量、旗舰和汇总，才能继续对应同一个成员。
+本例让改装狼留在玩家舰队。可逆实验可以保存 `original`，结束后将它写回；原装配与改装副本各自保留，恢复时才能取得正确对象。
 
-### 可选：让新成员临时成为旗舰
+## 沿父装配读取与修改模块
 
-创建方法的 `makeFlagship=true` 调用集合级 `setFlagship(...)`，清除其他成员的旗舰标记，并将指挥官交给新旗舰。沿 [C11-S2] 的恢复方法，同时保存原旗舰与舰长。以下局部片段另创建一艘演示狼，并在同一次调用中切换和恢复：
+窑级的 `GearIn_kiln_combat` 在 `MODULE_0` 上使用 `GearIn_kiln_module_combat`。这些关系已经在 [C4-S4] 的主体装配定义，现在从加载后的对象读取：`getModuleSlots()` 提供模块槽，`getStationModules()` 提供槽位到装配 ID 的映射，`getModuleVariant(slotId)` 取得当前模块装配。以下是局部观察片段：
 
 ```java
-FleetMemberAPI originalFlagship = fleet.getFlagship();
-FleetMemberAPI demoMember = GearInFleetMemberBuilder.createMember(
-        fleet,
-        "wolf_Assault",
-        false);
-Map<FleetMemberAPI, PersonAPI> captains = new LinkedHashMap<>();
-for (FleetMemberAPI member : data.getMembersListCopy()) {
-    captains.put(member, member.getCaptain());
-}
-data.setFlagship(demoMember);
-LOG.info("temporary flagship=" + fleet.getFlagship().getId());
-data.setFlagship(originalFlagship);
-for (Map.Entry<FleetMemberAPI, PersonAPI> entry : captains.entrySet()) {
-    entry.getKey().setCaptain(entry.getValue());
+List<String> moduleSlots = variant.getModuleSlots();
+Map<String, String> moduleIds = variant.getStationModules();
+
+for (String slotId : moduleSlots) {
+    ShipVariantAPI module = variant.getModuleVariant(slotId);
+    String moduleId = module == null
+            ? "<none>"
+            : module.getHullVariantId();
+    LOG.info("module relation: slot=" + slotId
+            + " mapId=" + moduleIds.get(slotId)
+            + " variant=" + moduleId
+            + " source=" + (module == null ? "<none>" : module.getSource()));
 }
 ```
 
-这段需要 `Map`、`LinkedHashMap` 与 `PersonAPI`，恢复完成后新增的演示狼仍留在舰队。`FleetMemberAPI.setFlagship(true)` 只处理当前成员的标记，并可能设置其舰长；集合级入口才同时维护其他成员。因此本例切换和恢复都调用 `FleetDataAPI`。
+模块槽没有有效映射时，`getModuleVariant(...)` 可以返回 `null`；有默认映射时，也可能直接返回规格库中的模块装配。**克隆父装配不等于所有默认模块都已成为独立副本。** 父装配会递归克隆已有的模块覆盖对象，默认的装配 ID 映射仍可继续引用规格库。
 
-::: warning 跨生涯时间恢复旗舰要确认原成员的归属
-原旗舰已经损失或转入另一支舰队时，原引用不能直接恢复为当前舰队旗舰。恢复前从当前名单确认其归属，再决定旗舰与舰长安排。
-:::
+因此修改某个模块时，从 `getModuleVariant(slotId)` 取得当前模块，另行克隆并设置 `REFIT`，再用父装配的 `setModuleVariant(slotId, moduleCopy)` 写回。槽位先按父装配核对，写回后重新读取模块与映射；单独修改一个模块副本，还没有改变父装配所用的模块。已经交给其他成员的模块装配也保持自己的引用关系。
 
-## 从生涯成员进入战斗
+### 模块关系速查表
 
-成员保留在舰队后，可以继续验证战斗中的结果。部署时，游戏根据它的装配、舰长、指挥官、CR、船员和损伤创建战斗侧 `ShipAPI`。封存与不可部署状态会限制控制或部署，进入战斗前先记录当前成员：
+| 模块关系      | 入口                                | 返回结果             |
+| ------------- | ----------------------------------- | -------------------- |
+| 可用模块槽    | `getModuleSlots()`                  | 父装配定义的槽位 ID  |
+| 当前模块      | `getModuleVariant(slotId)`          | 模块装配或 `null`    |
+| 保存的模块 ID | `getStationModules()`               | 槽位到装配 ID 的映射 |
+| 写入模块      | `setModuleVariant(slotId, variant)` | 更新父装配的模块关系 |
+| 模块来源      | `module.getSource()`                | 该模块装配自身的来源 |
+
+## 用 JSON 观察装配数据
+
+装配还可以通过 `toJSONObject()` 转为 JSON。返回对象包含显示名、船体与装配 ID、幅能数量、武器组、船插，以及适用的战机和模块映射，适合核对数据文件中的字段。以下局部片段记录返回结果：
 
 ```java
-boolean deployable = member.canBeDeployedForCombat();
-String campaignId = member.getId();
-
-LOG.info("combat boundary: campaignMember=" + campaignId
-        + " deployable=" + deployable
-        + " hull=" + member.getHullId()
-        + " cr=" + member.getRepairTracker().getCR());
+try {
+    JSONObject json = member.getVariant().toJSONObject();
+    LOG.info("variant json: length=" + json.toString().length()
+            + " source=" + member.getVariant().getSource()
+            + " variant=" + member.getVariant().getHullVariantId());
+} catch (JSONException ex) {
+    LOG.error("GearIn variant JSON failed", ex);
+}
 ```
 
-部署列表反映当时的状态，退出战斗后从生涯舰队重新取得同一成员 ID，读取 CR 与船体完整度。生涯成员跟随存档，`ShipAPI` 对应本场战斗实例；跨战斗功能保存成员身份，再从当前舰队取得对象。
+`weaponGroups` 记录当前组模式、自动开火与槽位武器，`modules` 保存模块 ID 映射。这个 JSON 并没有把运行时模块副本的所有内部状态嵌入其中，成员存档与 `.variant` 数据文件也采用各自的保存方式。
+
+调用只返回 `JSONObject`。要制作正式 `.variant`，仍按 [C4-S1] 的装配导出与文件登记流程保存，然后重新加载验证；这里的日志用于观察字段。
 
 ## 完整最小例
 
-创建类提供可复用的 `createMember(...)`，状态类用同一入口创建锤头鲨。保存两类并保留前面的新档登记。
+两个类保存到前述路径，分别提供成员改装与父子装配观察。新档入口执行一轮，改装后的成员继续留在玩家舰队。
 
-::: details 完整成品：GearInFleetMemberBuilder
+::: details 完整成品：GearInVariantRefitter
 
 ```java
 package data.scripts.gearin.campaign;
@@ -272,49 +264,26 @@ import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.FleetDataAPI;
+import com.fs.starfarer.api.combat.ShipVariantAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.fleet.FleetMemberType;
+import com.fs.starfarer.api.loading.VariantSource;
+import com.fs.starfarer.api.loading.WeaponGroupSpec;
 
 /**
- * 创建一艘生涯舰队成员，并可选择把它设为旗舰。
+ * 克隆一份装配，修改武器、武器组、船插和幅能后应用到演示成员。
  */
-public class GearInFleetMemberBuilder implements EveryFrameScript {
+public class GearInVariantRefitter implements EveryFrameScript {
 
-    public static final String REGISTER_MARK = "GearIn_FleetMemberBuilder";
+    public static final String REGISTER_MARK = "GearIn_VariantRefitter";
 
-    private static final Logger LOG = Global.getLogger(GearInFleetMemberBuilder.class);
+    private static final Logger LOG = Global.getLogger(GearInVariantRefitter.class);
 
+    private static final String SLOT_ID = "WS 001";
     private static final String VARIANT_ID = "wolf_Assault";
 
     private boolean done;
 
-    /**
-     * 创建成员、加入舰队并返回创建结果。
-     *
-     * @param fleet 目标舰队
-     * @param variantId 船体装配 ID
-     * @param makeFlagship 是否把新成员设为旗舰
-     * @return 已加入目标舰队的成员
-     */
-    public static FleetMemberAPI createMember(
-            CampaignFleetAPI fleet,
-            String variantId,
-            boolean makeFlagship) {
-        FleetDataAPI data = fleet.getFleetData();
-        FleetMemberAPI member = Global.getFactory().createFleetMember(
-                FleetMemberType.SHIP,
-                variantId);
-        data.addFleetMember(member);
-
-        if (makeFlagship) {
-            data.setFlagship(member);
-        }
-
-        return member;
-    }
-
     @Override
     public boolean isDone() {
         return done;
@@ -332,50 +301,81 @@ public class GearInFleetMemberBuilder implements EveryFrameScript {
         }
         done = true;
 
-        CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
-        FleetMemberAPI member = createMember(
-                fleet,
-                VARIANT_ID,
-                false);
+        FleetMemberAPI member = Global.getFactory().createFleetMember(
+                FleetMemberType.SHIP,
+                VARIANT_ID);
+        Global.getSector().getPlayerFleet().getFleetData().addFleetMember(member);
+        ShipVariantAPI original = member.getVariant();
+        ShipVariantAPI refit = original.clone();
+        refit.setSource(VariantSource.REFIT);
 
-        LOG.info("GearIn member builder: id=" + member.getId()
+        String weaponBefore = refit.getWeaponId(SLOT_ID);
+        int ventsBefore = refit.getNumFluxVents();
+        int capacitorsBefore = refit.getNumFluxCapacitors();
+
+        refit.addWeapon(
+                SLOT_ID,
+                "pdlaser");
+        refit.autoGenerateWeaponGroups();
+
+        if (!refit.getWeaponGroups().isEmpty()) {
+            WeaponGroupSpec firstGroup = refit.getWeaponGroups().get(0);
+            firstGroup.setAutofireOnByDefault(
+                    !firstGroup.isAutofireOnByDefault());
+        }
+
+        refit.removeMod("fluxdistributor");
+        refit.addMod("fluxdistributor");
+        refit.setNumFluxVents(ventsBefore + 1);
+        refit.setNumFluxCapacitors(capacitorsBefore + 1);
+
+        member.setVariant(
+                refit,
+                false,
+                true);
+        member.updateStats();
+
+        LOG.info("GearIn variant refitter: id=" + member.getId()
                 + " hull=" + member.getHullId()
-                + " variant=" + member.getVariant().getHullVariantId()
-                + " fleet=" + fleet.getName()
-                + " members=" + fleet.getFleetData().getNumMembers()
-                + " flagship=" + member.isFlagship());
+                + " source=" + refit.getSource()
+                + " weapon=" + weaponBefore + "->" + refit.getWeaponId(SLOT_ID)
+                + " vents=" + ventsBefore + "->" + refit.getNumFluxVents()
+                + " capacitors=" + capacitorsBefore + "->"
+                + refit.getNumFluxCapacitors()
+                + " groups=" + refit.getWeaponGroups().size()
+                + " op=" + refit.computeOPCost(null)
+                + " deployable=" + member.canBeDeployedForCombat());
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInFleetMemberStatus
+::: details 完整成品：GearInModuleInspector
 
 ```java
 package data.scripts.gearin.campaign;
 
 import org.apache.log4j.Logger;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.FleetDataAPI;
-import com.fs.starfarer.api.fleet.CrewCompositionAPI;
+import com.fs.starfarer.api.combat.ShipVariantAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
-import com.fs.starfarer.api.fleet.FleetMemberStatusAPI;
-import com.fs.starfarer.api.fleet.RepairTrackerAPI;
+import com.fs.starfarer.api.fleet.FleetMemberType;
 
 /**
- * 修改并记录一艘生涯成员的状态，随后保留成员供舰队界面观察。
+ * 读取父装配的模块关系、来源和 JSON 序列化结果。
  */
-public class GearInFleetMemberStatus implements EveryFrameScript {
+public class GearInModuleInspector implements EveryFrameScript {
 
-    public static final String REGISTER_MARK = "GearIn_FleetMemberStatus";
+    public static final String REGISTER_MARK = "GearIn_ModuleInspector";
 
-    private static final Logger LOG = Global.getLogger(GearInFleetMemberStatus.class);
+    private static final Logger LOG = Global.getLogger(GearInModuleInspector.class);
 
-    private static final String VARIANT_ID = "hammerhead_Elite";
+    private static final String VARIANT_ID = "GearIn_kiln_combat";
 
     private boolean done;
 
@@ -396,113 +396,107 @@ public class GearInFleetMemberStatus implements EveryFrameScript {
         }
         done = true;
 
-        CampaignFleetAPI fleet = Global.getSector().getPlayerFleet();
-        FleetDataAPI data = fleet.getFleetData();
-        FleetMemberAPI member = GearInFleetMemberBuilder.createMember(
-                fleet,
-                VARIANT_ID,
-                false);
+        FleetMemberAPI member = Global.getFactory().createFleetMember(
+                FleetMemberType.SHIP,
+                VARIANT_ID);
+        ShipVariantAPI variant = member.getVariant();
 
-        FleetMemberStatusAPI status = member.getStatus();
-        CrewCompositionAPI crew = member.getCrewComposition();
-        RepairTrackerAPI tracker = member.getRepairTracker();
+        LOG.info("GearIn module inspector: variant="
+                + variant.getHullVariantId()
+                + " source=" + variant.getSource()
+                + " moduleSlots=" + variant.getModuleSlots().size()
+                + " stationModules=" + variant.getStationModules().size());
 
-        float hullBefore = status.getHullFraction();
-        float crBefore = tracker.getCR();
-        float crewBefore = crew.getCrew();
+        for (String slotId : variant.getModuleSlots()) {
+            ShipVariantAPI module = variant.getModuleVariant(slotId);
+            LOG.info("GearIn module: slot=" + slotId
+                    + " variant=" + (module == null ? "null" : module.getHullVariantId())
+                    + " source=" + (module == null ? "null" : module.getSource()));
+        }
 
-        status.applyHullFractionDamage(0.2f);
-        crew.setCrew(Math.max(1f, member.getMinCrew() * 0.5f));
-        tracker.setCR(0.3f);
-        tracker.setMothballed(true);
-
-        float hullAfter = status.getHullFraction();
-        float crWhileMothballed = tracker.getCR();
-        float crewAfter = crew.getCrew();
-        boolean deployableWhileMothballed = member.canBeDeployedForCombat();
-
-        tracker.setMothballed(false);
-        float crAfterRelease = tracker.getCR();
-        float baseCrAfterRelease = tracker.getBaseCR();
-
-        LOG.info("GearIn member status: id=" + member.getId()
-                + " hull=" + hullBefore + "->" + hullAfter
-                + " crew=" + crewBefore + "->" + crewAfter
-                + " crewFraction=" + member.getCrewFraction()
-                + " cr=" + crBefore + "->" + crAfterRelease
-                + " crWhileMothballed=" + crWhileMothballed
-                + " baseCrAfterRelease=" + baseCrAfterRelease
-                + " mothballed=false"
-                + " deployableWhileMothballed=" + deployableWhileMothballed
-                + " deployable=" + member.canBeDeployedForCombat()
-                + " needsRepairs=" + member.needsRepairs()
-                + " fleetMembers=" + data.getNumMembers());
+        try {
+            JSONObject json = variant.toJSONObject();
+            LOG.info("GearIn module JSON: length=" + json.toString().length()
+                    + " hasWeaponGroups=" + json.has("weaponGroups")
+                    + " hasModules=" + json.has("modules"));
+        } catch (JSONException ex) {
+            LOG.error("GearIn module JSON failed", ex);
+        }
     }
 }
 ```
 
 :::
 
-两个脚本执行后结束，成员继续保留在玩家舰队。后续功能通过已保存的成员 ID 从当前集合取得对象，再修改它的状态；重新调用创建入口会得到另一艘船和另一个 ID。
+改装脚本结束后，狼留在玩家舰队；模块脚本只读取窑级装配与 JSON。两类分别使用自己的对象，结果由下面的界面、日志与读档步骤确认。
 
 ## 验证方案
 
-前置数据：按本章新档入口测试，玩家舰队已建立，两个脚本在新档推进后登记。
+前置数据：[C4-S4] 的窑级主体与模块数据、贴图和两份装配已经就位；本节登记使用新档推进后的入口。
 
-1. 构建 MOD，确认 JAR 包含 `GearInFleetMemberBuilder.class` 和 `GearInFleetMemberStatus.class`。
-2. 开始新档，等待两份脚本执行，在 `starsector.log` 搜索 `GearIn member builder` 与 `GearIn member status`。
-3. 打开舰队界面，按日志中的成员 ID、船体和装配名称定位新成员，确认它属于玩家舰队且未被错误设为旗舰。
-4. 在状态日志中记录 `hull`、`crew`、`cr`、`mothballed`、`needsRepairs` 和 `deployable` 字段，比较封存期间与解除后的值。
-5. 在舰队界面确认锤头鲨保留、最终解除封存，比较船体和 CR；船员组成按货舱重新分配，维修与 CR 也会随生涯时间继续推进。
-6. 在不修改脚本对象引用的情况下进入一次战斗，观察部署列表对不可部署状态的提示；退出战斗后重新取得同一成员 ID。
+1. 构建 MOD，确认 JAR 中存在 `GearInVariantRefitter.class` 和 `GearInModuleInspector.class`。
+2. 新建存档，等待入口执行后搜索 `GearIn variant refitter`，记录成员 ID、槽位武器、幅能、分组、OP 与 `REFIT` 来源。
+3. 打开舰队界面，按成员 ID 定位演示成员，核对武器、武器组、船插、散热和电容；重新取得装配确认应用结果。
+4. 搜索同一轮执行的 `GearIn module inspector`、`GearIn module` 和 `GearIn module JSON`，记录模块槽、模块来源和 JSON 长度。
+5. 与 [C11-S4] 保留的未改装狼比较 `WS 001` 与幅能数量，确认两艘拥有各自装配；保存读档后再查看改装狼。
+6. 核对 MOD 的 `data/variants/`，确认本节 JSON 观察返回数据对象，目录中的正式装配仍是已保存的数据文件。
 
 预期结果：
 
-- 创建日志包含自动生成的成员 ID、`wolf_Assault` 装配和玩家舰队成员数量；
-- 即时状态日志显示船体与船员变化，封存期间有效 CR 为 0、`deployableWhileMothballed=false`；解除后基础 CR 为 0.3，有效 CR 按当时船员比例计算；
-- 解除封存后，`canBeDeployedForCombat()` 按当前 CR 与船员阈值返回结果；船体损伤另由损伤和维修字段记录；
-- 演示成员保留在玩家舰队中，舰队界面和日志使用同一个成员 ID；
-- 战斗结束后重新取得 `FleetMemberAPI`，没有依赖战斗侧 `ShipAPI` 的旧引用。
+- 改装类日志显示原槽位武器与新武器 ID、幅能变化和重新生成后的武器组；
+- 改装狼加入玩家舰队，来源为 `REFIT`，界面显示点防激光、幅能与武器组，读档后改装结果仍保留；
+- 模块日志读取 `GearIn_kiln_combat` 的 `MODULE_0` 与 `GearIn_kiln_module_combat`，JSON 包含武器组与模块映射；
+- 未改装成员和规格库对象保持原值；
+- 没有产生跨脚本共享装配引用或未经请求的 `.variant` 文件。
 
 ## 故障分析
 
-- **日志显示成员已创建，但舰队界面没有成员**：创建了 `FleetMemberAPI`，却没有把它加入目标 `FleetDataAPI`。
-    - **解决方案**：确认 `data.addFleetMember(member)` 在读取成员数量和设置旗舰之前执行，并核对 `member.getFleetData() == data`。
+- **另一艘舰船也出现同样改装**：直接修改了规格库或其他成员共用的装配对象。
+    - **解决方案**：始终从目标成员的 `getVariant()` 创建 `clone()`，只把副本交给该成员，并在日志中确认引用关系。
 
-- **新成员意外成为旗舰**：调用了 `data.setFlagship(member)`，或直接设置成员旗舰标志后没有恢复原旗舰。
-    - **解决方案**：默认创建时传入 `makeFlagship=false`，需要切换时保存原旗舰，使用集合级 `setFlagship(...)` 完成切换和恢复。
+- **武器槽读取为空**：槽位 ID 不属于当前船体，或武器 ID 与槽位类型不匹配。
+    - **解决方案**：先读取 `getSlot(slotId)`、`getWeaponSpec(slotId)` 和 `getWeaponId(slotId)`，确认槽位存在、武器规格可解析且尺寸与类型匹配。
 
-- **船体完整度恢复但仍然显示维修中**：装甲、模块或其他部件仍有损伤，`getHullFraction()` 没有覆盖这些状态。
-    - **解决方案**：同时读取 `needsRepairs()` 与 `computeRepairednessFraction()`，通过游戏维修流程处理剩余损伤。
+- **武器已经安装但武器组没有变化**：只调用了 `addWeapon(...)`，保留的旧分组没有引用新槽位，或自动生成时机错误。
+    - **解决方案**：武器写入完成后选择 `autoGenerateWeaponGroups()`，再读取每个 `WeaponGroupSpec.getSlots()`，必要时重新建立分组。
 
-- **CR 数值与预期不同**：读取的是 `getBaseCR()`、`getCR()` 或船员比例修正前后的不同阶段，或者把百分数当作 `0` 到 `1` 的小数传入。
-    - **解决方案**：记录 `getCR()`、`getBaseCR()` 和 `getCrewFraction()`，调用 `setCR(0.3f)` 这类小数值，并在修改后重新读取。
+- **武器组顺序或自动开火状态异常**：无条件重建分组覆盖了原有手动分组，或只修改了一个分组而没有观察其他分组。
+    - **解决方案**：先记录组数量、类型、槽位和自动开火标志；只在明确需要重建时调用自动生成，并逐组验证。
 
-- **成员封存后仍尝试部署**：只检查船体状态，没有检查 `isMothballed()` 或 `canBeDeployedForCombat()`。
-    - **解决方案**：在部署入口先读取 `canBeDeployedForCombat()`，将封存、CR、船员和维修状态分别写入日志。
+- **船插看似写入但 OP 超限**：装配集合发生变化，但 `computeOPCost(...)` 已超过船体可用军械点数。
+    - **解决方案**：在应用前记录 `computeOPCost(...)` 和 `getUnusedOP(...)`，将幅能数量和船插调整到合法范围，再调用 `setVariant(copy, false, true)` 触发成员 `stats` 更新。
 
-- **装配替换后派生值没有变化**：使用 `setVariant(..., false, false)` 后继续使用旧 `stats`，或只修改了共享装配对象。
-    - **解决方案**：对装配先 `clone()`，写回时传入 `withStatsUpdate=true`，随后调用 `updateStats()` 并重新读取成员派生值。
+- **成员装配改变但舰队界面仍显示旧数值**：`setVariant(...)` 的 `withStatsUpdate` 为 `false`，或读取了更新前缓存的 `stats`。
+    - **解决方案**：写回时传入 `withStatsUpdate=true`，随后调用 `member.updateStats()`，重新取得 `getStats()`、`getMemberStrength()` 和 `canBeDeployedForCombat()`。
 
-- **战斗结束后访问对象报错**：把战斗侧 `ShipAPI` 引用保存到跨战斗字段或存档数据。
-    - **解决方案**：只保存生涯成员 ID；每次战斗结束后从玩家舰队的 `FleetDataAPI` 重新取得 `FleetMemberAPI`。
+- **模块检查没有返回模块**：父装配没有模块槽、槽位 ID 不属于该父装配，或模块映射只保存了默认来源。
+    - **解决方案**：先遍历 `getModuleSlots()`，再对每个槽位调用 `getModuleVariant(...)`，同时记录 `getStationModules()` 中的映射值；父装配为空时保留 `null` 结果。
 
-- **演示成员重复出现**：一次性脚本实例被重新注册或没有使用持久标记判断已经创建过成员。
-    - **解决方案**：为每个脚本保留 `done` 状态，并在正式入口使用专用 Memory 记录成员 ID；执行前检查已有成员再决定复用或清理。
+- **模块修改没有进入父装配**：只修改了模块副本，没有调用父装配的 `setModuleVariant(...)`。
+    - **解决方案**：确认槽位属于父装配，并显式写回 `setModuleVariant(slotId, moduleCopy)`；随后重新读取父装配映射。
+
+- **来源值被错误覆盖**：为了让装配可保存而随意调用 `setSource(...)`，导致来源语义与数据流不一致。
+    - **解决方案**：只在明确的装配生命周期边界设置 `VariantSource`，记录修改前后来源；来源枚举不代替正式文件保存流程。
+
+- **JSON 日志存在但没有保存文件**：把 `toJSONObject()` 的返回值当成文件写入结果。
+    - **解决方案**：把 JSON 仅用于日志和字段核对；正式保存时使用游戏装配数据流程，并重新加载文件验证。
+
+- **脚本重复产生成员**：一次性脚本没有持久标记，或每次启动都把同一示例注册为新实例。
+    - **解决方案**：使用实例级 `done` 防止重复执行，并在正式 MOD 中用专用 Memory 记录演示成员 ID，执行前先检查已有成员。
 
 ## 总结
 
-一艘生涯舰船由成员保存身份与当前状态，加入 `FleetDataAPI` 后才参与舰队上下文。损伤、船员、CR 与封存各有入口，也相互影响：缺员降低有效 CR，封存保存并清零基础 CR，同步与生涯推进继续改变整备结果。
+这艘狼的改装从独立副本开始，在槽位、分组与 OP 之间完成配置，再写回成员并重算。`REFIT` 来源使运行时设计随成员保存，界面与读档共同确认这份改装。
 
-脚本的即时日志与稍后打开的界面可能处于不同阶段。本节保留两艘成员，用 ID 对应日志、界面和战斗；状态发生变化时，就能沿着同一艘船确认变化的原因。
+模块仍通过父装配选择，修改时取得当前模块副本再显式写回。JSON 便于观察数据字段，成员存档和正式装配文件则各有保存职责。对象独立、装备适配与保存来源都成立，改装才算完成。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.fleet.FleetMemberAPI`：成员身份、装配、状态、部署和 `stats` 入口；
-- `com.fs.starfarer.api.campaign.FleetDataAPI`：成员加入、移除、旗舰和集合同步；
-- `com.fs.starfarer.api.fleet.FleetMemberStatusAPI`：船体、装甲、部件损伤和维修状态；
-- `com.fs.starfarer.api.fleet.CrewCompositionAPI`：船员和海军陆战队数量；
-- `com.fs.starfarer.api.fleet.RepairTrackerAPI`：CR、维修事件、封存和恢复速率；
-- `com.fs.starfarer.api.combat.ShipAPI`：战斗侧舰船对象及其生命周期；
-- `data/config/settings.json`：部署阈值配置；
-- `Starsector/starsector-core/starsector.log`：核对脚本输出与运行时错误。
+- `com.fs.starfarer.api.combat.ShipVariantAPI`：装配读取、克隆、武器、船插、幅能、模块和 JSON；
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：装配应用、`stats` 更新和部署判断；
+- `com.fs.starfarer.api.loading.VariantSource`：装配来源枚举；
+- `com.fs.starfarer.api.loading.WeaponGroupSpec`：武器组类型、槽位和自动开火默认值；
+- `com.fs.starfarer.api.loading.WeaponSlotAPI`：槽位类型、尺寸和适配检查；
+- `data/variants/`：原版装配文件和字段示例；
+- `data/weapons/`：原版武器规格和武器 ID；
+- `Starsector/starsector-core/starsector.log`：核对装配读取、应用和 JSON 日志。

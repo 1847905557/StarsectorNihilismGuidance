@@ -1,8 +1,8 @@
-# 制作每帧战斗插件
+# 配置武器脚本
 
-持续战斗效果需要反复更新，`EveryFrameCombatPlugin` 提供这样的运行入口。本节制作一个计时插件，同时记录回调次数与非暂停时间：暂停后恢复时，两种记录会表现出不同变化，插件状态也随本场战斗保存和结束。
+武器持续开火、弹体生成、命中与光束照射，会在不同位置调用脚本。本节将这些入口分别绑定到都林和乌里，用日志记录武器状态、射弹来源与伤害结算，再以光束末端的粒子对应逐帧信息。每段逻辑都使用本次回调提供的对象。
 
-_本节预期阅读时间：\~15 分钟。_
+_本节预期阅读时间：\~18 分钟。_
 
 _本节预期操作时间：\~25 分钟。_
 
@@ -10,151 +10,279 @@ _本节预期操作时间：\~25 分钟。_
 
 完成后，您将能够：
 
-- 在 `settings.json` 登记每帧插件；
-- 按 `amount` 和暂停状态推进数据；
-- 管理本场实例与引擎引用；
-- 根据日志确认计时和回调。
+- 选择 `wpn` 或 `proj` 的对应脚本字段；
+- 读取当前武器、射弹、命中与光束参数；
+- 区分每实例状态和单次事件；
+- 用日志与粒子核对调用。
 
 ## 前置知识
 
-- [C6-S4] 的构建与 JAR；
-- [C7-S2] 的服务和战斗引用；
-- [C8-S1] 的时间、场景与暂停；
-- [C8-S2] 的对象和浮动文字。
+- [C1-S5] 的都林弹体与乌里光束；
+- [C2-S4] 的效果登记；
+- [C6-S4] 的编译与 JAR；
+- [C8-S2] 的对象和帧状态；
+- [C8-S3] 的逐帧与暂停。
 
-## 创建并登记计时插件
+## 将脚本绑定到实际使用的数据
 
-创建 `src/data/scripts/gearin/combat/GearInPauseAwarePlugin.java`，继承 `BaseEveryFrameCombatPlugin`。基类提供默认实现，本例覆写 `advance(...)`，接收本帧 `amount` 与输入事件列表。完整类在后面给出。
+### 武器脚本字段速查表
 
-在 `data/config/settings.json` 的 `plugins` 中加入局部登记：
+| 字段                   | 接口                           | 当前用途               |
+| ---------------------- | ------------------------------ | ---------------------- |
+| `wpn.everyFrameEffect` | `EveryFrameWeaponEffectPlugin` | 读取当前武器的持续状态 |
+| `proj.onFireEffect`    | `OnFireEffectPlugin`           | 弹体生成后的事件       |
+| `proj.onHitEffect`     | `OnHitEffectPlugin`            | 当前命中与结算         |
+| `wpn.beamEffect`       | `BeamEffectPlugin`             | 激活光束的逐帧信息     |
+
+**`.wpn` 绑定武器与光束逻辑，`.proj` 绑定弹体事件。** 完整类名指向 JAR 中的实现，但还要由当前武器实际使用这份数据。特别是生成与命中脚本，登记在武器引用的弹体文件里，事件才能到达对应类。
+
+## 记录武器实例的开火过程
+
+在都林的 `.wpn` 中，将每帧效果绑定到 `GearInWeaponFlowEffect`。局部字段如下：
 
 ```json
-{
-    "plugins": {
-        "gearInPauseAwarePlugin": "data.scripts.gearin.combat.GearInPauseAwarePlugin"
+"everyFrameEffect": "data.scripts.gearin.combat.GearInWeaponFlowEffect"
+```
+
+每把武器拥有自己的效果实例，所以它的计时器与 `wasFiring` 只跟踪当前这把武器。绑定时，`WeaponEffectPluginWithInit.init(...)` 记录武器标识、规格与光束分类。
+
+随后在 `advance(...)` 中比较当前与上次开火状态。由未开火转为开火时，记录一次变化，再保存本帧状态：
+
+```java
+if (weapon.isFiring() && !wasFiring) {
+    LOG.info("GearIn weapon " + weapon.getId() + " started firing"
+            + " (before-frame callback)");
+}
+wasFiring = weapon.isFiring();
+```
+
+这个比较只在开始开火时产生日志。持续射击中的弹药、冷却与蓄力，放到 `EveryFrameWeaponEffectPluginWithAdvanceAfter.advanceAfter(...)` 记录；本例采用 2 秒报告间隔，避免连续输出淹没开火变化。
+
+**同一帧操作前后，读到的武器状态可能不同。** `advanceAfter(...)` 提供武器本帧操作完成后的观察位置，因此两个方法分别记录变化与执行后的结果。
+
+## 在生成回调处理本次弹体
+
+都林引用的是 `GearIn_durin_shot.proj`，将生成脚本登记在这份文件中：
+
+```json
+"onFireEffect": "data.scripts.gearin.combat.GearInShotOnFireEffect"
+```
+
+`onFire(...)` 收到刚生成的 `projectile`、来源 `weapon` 与本场 `engine`。规格、伤害、EMP 与来源都可以在这个时机读取，生成位置也可用于安排单次表现。接口参数为：
+
+```java
+void onFire(DamagingProjectileAPI projectile,
+            WeaponAPI weapon,
+            CombatEngineAPI engine)
+```
+
+完整例将这些信息写入同一条记录。来源武器或舰船可能因创建方式不同而缺席，日志保留相应空值。每次开火事件传入的是本次生成的弹体，下一发继续使用下一次参数。
+
+## 从命中参数读取结算
+
+在同一份弹体文件中登记命中效果：
+
+```json
+"onHitEffect": "data.scripts.gearin.combat.GearInShotOnHitEffect"
+```
+
+弹体命中后，`onHit(...)` 接收目标、命中位置、护盾状态与 `ApplyDamageResultAPI`。`shieldHit` 标记是否命中护盾，`damageResult` 提供本次护盾、装甲、结构与 EMP 结算：
+
+```java
+void onHit(DamagingProjectileAPI projectile,
+           CombatEntityAPI target,
+           Vector2f point,
+           boolean shieldHit,
+           ApplyDamageResultAPI damageResult,
+           CombatEngineAPI engine)
+```
+
+射弹、导弹与光束脉冲的对应命中都可以沿弹体事件处理。**目标与结果使用本次回调参数。** 它们一起描述当前这笔命中，保留上一次的目标或结算来处理下一次事件，会混淆实际结果。
+
+## 在照射期间读取光束
+
+乌里光束的逐帧脚本登记在 `.wpn`：
+
+```json
+"beamEffect": "data.scripts.gearin.combat.GearInBeamLogger"
+```
+
+光束激活期间，`advance(...)` 接收步长、引擎与 `BeamAPI`。起点、终点、长度、伤害和目标都从这次传入的光束读取：
+
+```java
+void advance(float amount, CombatEngineAPI engine, BeamAPI beam)
+```
+
+完整类每累计 1 秒记录目标、`didDamageThisFrame()` 与长度，再在上一帧末端位置创建青色光点。日志对应帧状态，粒子对应读取的末端位置。光束停止激活后更新停止，下一次激活沿实例中的计时继续。
+
+**光束在画面中存在，不代表每一帧都产生伤害。** 比较命中与未命中时，重新读取 `getDamageTarget()` 和 `didDamageThisFrame()`，才能把持续照射与本帧结算区分开。
+
+## 完整最小例
+
+四个类保存到 `src/data/scripts/gearin/combat/`，当前字段写入对应都林和乌里数据，保存后构建并重启。
+
+::: details 完整成品：`GearInWeaponFlowEffect`
+
+```java
+package data.scripts.gearin.combat;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.EveryFrameWeaponEffectPluginWithAdvanceAfter;
+import com.fs.starfarer.api.combat.WeaponAPI;
+import com.fs.starfarer.api.combat.WeaponEffectPluginWithInit;
+import com.fs.starfarer.api.util.IntervalUtil;
+
+/** 记录武器实例的初始化、开火变化和操作后状态。 */
+public class GearInWeaponFlowEffect implements EveryFrameWeaponEffectPluginWithAdvanceAfter,
+        WeaponEffectPluginWithInit {
+
+    private static final Logger LOG = Global.getLogger(GearInWeaponFlowEffect.class);
+
+    /** 开火状态 (每个武器效果实例各有一份)。 */
+    private boolean wasFiring = false;
+    private final IntervalUtil weaponReportInterval = new IntervalUtil(2f, 2f);
+
+    @Override
+    public void init(WeaponAPI weapon) {
+        LOG.info("GearIn weapon init " + weapon.getId()
+                + " spec=" + weapon.getSpec().getWeaponId()
+                + " beam=" + weapon.isBeam());
+    }
+
+    @Override
+    public void advance(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
+        if (weapon.isFiring() && !wasFiring) {
+            LOG.info("GearIn weapon " + weapon.getId() + " started firing"
+                    + " (before-frame callback)");
+        }
+        wasFiring = weapon.isFiring();
+    }
+
+    @Override
+    public void advanceAfter(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
+        // 本帧武器操作完成后 (EveryFrameWeaponEffectPluginWithAdvanceAfter)
+        weaponReportInterval.advance(amount);
+        if (weapon.isFiring() && weaponReportInterval.intervalElapsed()) {
+            LOG.info("GearIn weapon " + weapon.getId() + " after-frame:"
+                    + " ammo=" + weapon.getAmmo() + "/" + weapon.getMaxAmmo()
+                    + " cooldown=" + weapon.getCooldownRemaining()
+                    + " charge=" + weapon.getChargeLevel()
+                    + " firing=" + weapon.isFiring());
+        }
     }
 }
 ```
 
-游戏启动时读取这个自有键与完整类名，每场战斗再创建对应实例。`package`、类声明与 JAR 条目共同提供这个名字，因此登记值要与它们一致。需要在已经运行的战斗中动态加入插件时，也可以使用 `engine.addPlugin(...)`。
+:::
 
-本例将累计时间与计数器保存在实例字段中。由登记建立新实例之后，这场战斗从初始状态开始，下一场也会重新建立自己的记录。
-
-## 暂停时保留调用记录
-
-玩家按下暂停后，战斗状态应该停止推进，插件却仍会收到 `advance(...)`。本例用 `calls` 记录全部回调，用 `pausedCalls` 记录其中的暂停调用；累计时间另存于 `elapsed` 与 `timeSinceLastReport`。
-
-在 `advance(...)` 开头加入以下局部片段。计数发生在暂停判断前，暂停帧记录完成后返回：
+::: details 完整成品：`GearInShotOnFireEffect`
 
 ```java
-calls++;
-if (engine == null) {
-    engine = Global.getCombatEngine();
-}
-if (engine.isPaused()) {
-    pausedCalls++;
-    return;
+package data.scripts.gearin.combat;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.DamagingProjectileAPI;
+import com.fs.starfarer.api.combat.OnFireEffectPlugin;
+import com.fs.starfarer.api.combat.WeaponAPI;
+
+/** 记录本次生成弹体的规格、来源与伤害。 */
+public class GearInShotOnFireEffect implements OnFireEffectPlugin {
+
+    private static final Logger LOG = Global.getLogger(GearInShotOnFireEffect.class);
+
+    @Override
+    public void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon, CombatEngineAPI engine) {
+        LOG.info("GearIn onFire " + projectile.getProjectileSpecId()
+                + " weapon=" + (weapon == null ? "null" : weapon.getId())
+                + " source=" + (projectile.getSource() == null ? "null" : projectile.getSource().getHullSpec().getHullId())
+                + " spawnType=" + projectile.getSpawnType()
+                + " damage=" + projectile.getDamageAmount()
+                + " emp=" + projectile.getEmpAmount());
+    }
 }
 ```
-
-引擎在首次使用时通过 `Global.getCombatEngine()` 取得，之后保存到本场实例。这个绑定发生在战斗回调内，与当前战斗对应。
-
-::: warning init 不保证先执行
-
-`CombatEnginePlugin.init(...)` 不保证先于 `advance(...)`。编者建议将普通初始状态放在字段或构造器中，引擎则在首次使用时取得，避免第一次推进就依赖尚未写入的引用。
 
 :::
 
-## 累计时间并输出报告
-
-**回调次数描述调用频率，`amount` 描述经过的秒数。** 帧率、时间倍率和运行情况都会影响步长，计时使用实际传入的增量。将以下局部片段放在暂停判断之后：
+::: details 完整成品：`GearInShotOnHitEffect`
 
 ```java
-elapsed += amount;
-timeSinceLastReport += amount;
-if (timeSinceLastReport >= REPORT_INTERVAL) {
-    timeSinceLastReport = 0f;
-    report(engine);
+package data.scripts.gearin.combat;
+
+import org.apache.log4j.Logger;
+import org.lwjgl.util.vector.Vector2f;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.CombatEntityAPI;
+import com.fs.starfarer.api.combat.DamagingProjectileAPI;
+import com.fs.starfarer.api.combat.OnHitEffectPlugin;
+import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
+
+/** 记录本次命中的目标、护盾与伤害结算结果。 */
+public class GearInShotOnHitEffect implements OnHitEffectPlugin {
+
+    private static final Logger LOG = Global.getLogger(GearInShotOnHitEffect.class);
+
+    @Override
+    public void onHit(DamagingProjectileAPI projectile, CombatEntityAPI target, Vector2f point,
+            boolean shieldHit, ApplyDamageResultAPI damageResult, CombatEngineAPI engine) {
+        LOG.info("GearIn onHit " + projectile.getProjectileSpecId()
+                + " target=" + target.getClass().getSimpleName()
+                + " shieldHit=" + shieldHit
+                + " hull=" + damageResult.getDamageToHull()
+                + " armor=" + damageResult.getTotalDamageToArmor()
+                + " shields=" + damageResult.getDamageToShields()
+                + " emp=" + damageResult.getEmpDamage());
+    }
 }
 ```
 
-`elapsed` 保存本场累计时间，`timeSinceLastReport` 累计到 `REPORT_INTERVAL` 的 10 秒后执行报告，再从零开始计下一段间隔。暂停帧已经返回，所以暂停期间两者都保持原值，恢复后继续。
+:::
 
-报告同时包含时间、全部调用次数和暂停调用次数。在 `report(...)` 中写入日志，并在有效玩家舰位置显示同一文字：
-
-```java
-String text = "GearIn: elapsed " + Math.round(elapsed) + "s, calls " + calls
-        + " (paused " + pausedCalls + ")";
-Global.getLogger(GearInPauseAwarePlugin.class).info(text);
-if (engine.getPlayerShip() != null) {
-    engine.addFloatingText(engine.getPlayerShip().getLocation(), text,
-            14f, Color.WHITE, engine.getPlayerShip(), 0f, 3f);
-}
-```
-
-日志始终记录本次报告。玩家舰存在时，再将白色文字附着到它的位置，显示 3 秒。这样即使还没有可用玩家舰，计时结果仍然能够从日志取得。
-
-## 让下一场从新状态开始
-
-本场计时与引擎引用都属于当前插件。若将实例或字段保存在跨战斗的 `static`、外部对象中，下一场便可能继续使用旧记录。通过本节的 `settings.json` 登记，让游戏每场创建新实例，就能保持当前对象与当前计时对应。
-
-功能需要主动结束时，以 `isCombatOver()` 等实际条件安排收尾。如果还登记了自己的监听器，先解除它们，再移除插件；这些登记各自有结束入口，下一节之后的监听示例会使用这套关系。
-
-## 完整最小例
-
-保存为 `src/data/scripts/gearin/combat/GearInPauseAwarePlugin.java`，登记采用上面的 `plugins` 条目。
-
-::: details 完整成品：`GearInPauseAwarePlugin`
+::: details 完整成品：`GearInBeamLogger`
 
 ```java
 package data.scripts.gearin.combat;
 
 import java.awt.Color;
-import java.util.List;
+
+import org.apache.log4j.Logger;
+import org.lwjgl.util.vector.Vector2f;
 
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
+import com.fs.starfarer.api.combat.BeamAPI;
+import com.fs.starfarer.api.combat.BeamEffectPlugin;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.input.InputEventAPI;
 
-/** 比较非暂停时间、总回调次数与暂停回调次数。 */
-public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
+public class GearInBeamLogger implements BeamEffectPlugin {
 
-    /** 非暂停时间每累计多少秒输出一次报告。 */
-    public static final float REPORT_INTERVAL = 10f;
+    private static final Logger LOG = Global.getLogger(GearInBeamLogger.class);
+    private static final float REPORT_INTERVAL = 1f;
 
-    private CombatEngineAPI engine;
-    private float elapsed;
     private float timeSinceLastReport;
-    private int calls;
-    private int pausedCalls;
 
     @Override
-    public void advance(float amount, List<InputEventAPI> events) {
-        calls++;
-        if (engine == null) {
-            engine = Global.getCombatEngine();
-        }
-        if (engine.isPaused()) {
-            pausedCalls++;
+    public void advance(float amount, CombatEngineAPI engine, BeamAPI beam) {
+        timeSinceLastReport += amount;
+        if (timeSinceLastReport < REPORT_INTERVAL) {
             return;
         }
-        elapsed += amount;
-        timeSinceLastReport += amount;
-        if (timeSinceLastReport >= REPORT_INTERVAL) {
-            timeSinceLastReport = 0f;
-            report(engine);
-        }
-    }
-
-    private void report(CombatEngineAPI engine) {
-        String text = "GearIn: elapsed " + Math.round(elapsed) + "s, calls " + calls
-                + " (paused " + pausedCalls + ")";
-        Global.getLogger(GearInPauseAwarePlugin.class).info(text);
-        if (engine.getPlayerShip() != null) {
-            engine.addFloatingText(engine.getPlayerShip().getLocation(), text,
-                    14f, Color.WHITE, engine.getPlayerShip(), 0f, 3f);
-        }
+        timeSinceLastReport = 0f;
+        String target = beam.getDamageTarget() == null
+                ? "null"
+                : beam.getDamageTarget().getClass().getSimpleName();
+        LOG.info("GearIn beam tick target=" + target
+                + " didDamageThisFrame=" + beam.didDamageThisFrame()
+                + " length=" + beam.getLength());
+        engine.addHitParticle(beam.getRayEndPrevFrame(), new Vector2f(),
+                20f, 1f, 0.3f, Color.CYAN);
     }
 }
 ```
@@ -163,47 +291,55 @@ public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
 
 ## 验证方案
 
-1. 保存源码与登记，构建 JAR 并重启，进入有玩家舰的模拟战。
-2. 正常运行约 15 秒，查看 `GearIn: elapsed` 报告与白色浮动文字。
-3. 暂停约 20 秒，再恢复，比较 `elapsed`、`calls` 和 `pausedCalls`。
-4. 结束后进入第二场，比较新实例的起始计时。
-5. 在日志核对完整类名与当前回调结果。
+1. 保存四个类与武器／弹体字段，构建并核对 `class` 条目。
+2. 在测试战斗使用都林，查看 `weapon` `init` 和操作前后状态。
+3. 发射并命中目标，比较 `onFire` 的生成参数与 `onHit` 的实际结算。
+4. 使用乌里光束，比较有目标、无目标和当前帧伤害，观察末端青色粒子。
+5. 暂停再恢复，核对实际回调和计时变化。
+6. 搜索四组前缀，按字段、数据文件与完整类名确认调用归属。
 
 预期结果：
 
-- 每累计 10 秒报告一次，文字约 3 秒后消失。
-- 暂停期间报告数量为 0，`calls` 和 `pausedCalls` 仍记录回调。
-- 恢复后 `elapsed` 保持非暂停时间口径。
-- 第二场从新实例状态开始，引用属于当前引擎。
+- 每武器实例记录自己的 `init`、开火变化和操作后参数。
+- `onFire` 对应当前生成弹体，`onHit` 对应当前命中与结算。
+- 光束日志按当前帧读取目标和伤害，激活期间按秒记录。
+- 暂停时相关更新保持，恢复后继续当前状态。
+- 日志与视觉可以定位各入口实际使用的对象。
 
 ## 故障分析
 
-- **插件没有任何行为**：`settings.json` 缺少条目、文件路径错误，或 `key` 被其他来源覆盖时，游戏不会创建实例，日志和画面都没有 `GearIn:` 信号。
-    - **解决方案**：确认文件位于 `data/config/settings.json`，`key` 全局唯一，值与 `package`、`class` 组成的完整类名一致，重新开战。
+- **`.wpn` 或 `.proj` 中没有出现任何对应日志**：字段、文件类型或完整类名不正确时，游戏不会调用脚本。
+    - **解决方案**：检查字段名、文件类型和完整类名，确认 JAR 中存在对应的 `.class` 条目。
 
-- **日志出现 `Problem loading class [...]`**：注册类名与 `package`、`class` 不一致，或源码没有进入 JAR 时，类加载器无法解析插件。
-    - **解决方案**：让注册值、包声明和类名逐字一致，把源码放入 `src/data/scripts/gearin/combat/` 并重新构建 JAR。
+- **日志出现 `Problem loading class`**：注册值与 Java 类的实际名称不一致。
+    - **解决方案**：核对 `package`、类名、目录路径和注册字符串，重新构建 JAR。
 
-- **暂停期间状态照常推进**：`advance` 在暂停检查前累计状态时，恢复后 `elapsed` 会包含暂停时间。
-    - **解决方案**：把状态推进放在 `engine.isPaused()` 守卫之后，仅将 `calls++` 这类观测回调次数的计数放在守卫前。
+- **`EveryFrame` 只有 `advance` 日志，操作后的状态没有记录**：类没有实现带 `advanceAfter` 的接口，或没有实现对应方法。
+    - **解决方案**：让类实现 `EveryFrameWeaponEffectPluginWithAdvanceAfter`，并实现 `advanceAfter(...)`。
 
-- **第一次 `advance` 抛出空指针**：在已废弃的 `init(engine)` 中保存引擎并假设它先执行，会让首次 `advance()` 看到 `null`。
-    - **解决方案**：初始状态放入构造器，引擎在使用时通过 `Global.getCombatEngine()` 获取，重新开战。
+- **`onFire` 或 `onHit` 没有回调**：脚本类没有绑定到测试弹体实际使用的 `.proj`。
+    - **解决方案**：把类名写入 `.proj` 的对应字段，确认测试武器实际使用了该弹体文件。
 
-- **第二场战斗的数值接着上涨**：插件实例被保存到 `static` 字段或战斗外对象时，旧实例会跨战斗存活。
-    - **解决方案**：只通过 `settings.json` 登记，让游戏每场创建新实例。
+- **`BeamEffect` 在非光束武器上没有日志**：`beamEffect` 只对光束武器的激活阶段生效。
+    - **解决方案**：只在光束武器的 `.wpn` 中配置 `beamEffect`，并在光束激活期间观察日志。
+
+- **光束日志显示上一帧目标或命中状态**：回调中复用了上一帧的对象或状态。
+    - **解决方案**：在每次 `advance(...)` 中重新读取 `didDamageThisFrame()` 和 `getDamageTarget()`，不要跨帧保存对象。
+
+- **暂停后恢复时报告时间偏移**：观察计时器在暂停帧继续累计。
+    - **解决方案**：在需要暂停一致性的外层战斗插件中检查 `engine.isPaused()`，只在非暂停帧累计观察时间。
 
 ## 总结
 
-暂停期间仍有回调，计时是否继续则由代码中的暂停判断决定。本例把调用计数放在判断前，把时间累计放在判断后，恢复时就能同时确认两种行为。
+武器效果保存每把武器的持续状态，开火与命中回调提供本次弹体及结算，光束效果读取激活期间的帧信息。它们分别由武器和弹体数据中的字段接入。
 
-引擎与状态由本场实例保存，新的战斗从新的实例开始。后面的监听与绘制会继续使用这个运行入口，在相应对象上增加功能。
+都林与乌里的日志现在能够对应到这些时机。后续动画和复杂效果沿用同一组入口，在需要的事件中读取对象、计算结果并安排表现。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：逐帧、输入和绘制方法。
-- `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：默认实现。
-- `com.fs.starfarer.api.combat.CombatEnginePlugin`：`init` 调用约定。
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：暂停、`addPlugin`、`removePlugin` 和文字。
-- `data/config/settings.json`：`plugins` 登记。
-- `Starsector/starsector-core/starsector.log`：回调与计时。
+- `com.fs.starfarer.api.combat.EveryFrameWeaponEffectPlugin`：武器级持续回调 (`everyFrameEffect`)；
+- `com.fs.starfarer.api.combat.BeamEffectPlugin`：光束激活期间的逐帧回调 (`beamEffect`)；
+- `com.fs.starfarer.api.combat.OnFireEffectPlugin`：射弹生成回调 (`onFireEffect`)；
+- `com.fs.starfarer.api.combat.OnHitEffectPlugin`：当前命中上下文回调 (`onHitEffect`)；
+- `data/weapons/`：原版武器与弹体定义，`everyFrameEffect`、`beamEffect`、`onFireEffect`、`onHitEffect` 注册字段的原版实例；
+- `Starsector/starsector-core/starsector.log`：核对回调日志的读取位置。

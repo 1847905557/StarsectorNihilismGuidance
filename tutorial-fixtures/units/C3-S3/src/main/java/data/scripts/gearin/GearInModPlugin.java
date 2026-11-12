@@ -6,11 +6,14 @@ import com.fs.starfarer.api.campaign.FactionAPI;
 import com.fs.starfarer.api.campaign.RepLevel;
 import com.fs.starfarer.api.campaign.SectorAPI;
 
-/** 在新档生成时设置齿轮工业的初始关系。 */
+import data.scripts.gearin.campaign.GearInSystemGenerator;
+
+/** 在新档生成时建立齿轮工业星系与初始关系。 */
 public class GearInModPlugin extends BaseModPlugin {
 
     @Override
     public void onNewGame() {
+        new GearInSystemGenerator().generate(Global.getSector());
         seedRelations(Global.getSector());
     }
 

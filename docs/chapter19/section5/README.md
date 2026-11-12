@@ -1,6 +1,6 @@
-# 登记 Nexerelin 地面战单位与产业
+# 制作即时生效的 LunaLib 设置面板
 
-地面战为市场产业另外读取防御与驻军参数。本节把 Element Works 的产业 ID 接到这份定义，并增加玩家可组建的线列步兵。产业插件根据市场中的实际状态计算效果，单位插件则使用人数与基础强度，配置登记和战斗结果由此分别核对。
+本节让 LunaLib 的开关、数量、间隔、颜色和标签进入实际战斗显示。控件负责保存，读取器取得当前值，战斗插件在自己的调用时机使用它们；变更监听另外记录通知。设置保存后无需重新构建代码，库缺席时同一个插件采用代码缺省。
 
 _本节预期阅读时间：\~18 分钟。_
 
@@ -10,155 +10,341 @@ _本节预期操作时间：\~30 分钟。_
 
 完成后，您将能够：
 
-- 在 `groundBattleDefs.json` 登记产业和地面单位；
-- 为产业绑定实际插件类，区分通用插件映射；
-- 查询真实产业定义、默认回退与单位记录；
-- 在地面战中观察配置的防御与部队结果。
+- 按九列 CSV 定义开关、整数、浮点数、颜色和文本；
+- 用包装类型读取字段，并处理库缺席和缺失值；
+- 登记一次变更监听，按 MOD ID 过滤通知；
+- 将设置接到战斗标记与标签，观察保存后的实际结果。
 
 ## 前置知识
 
-- [C12-S5] 的 `GearIn_element_works` 与实际市场产业；
-- [C19-S1] 的 Nexerelin 编译与运行时接入；
-- [C19-S2] 的齿轮工业势力；
-- [C17-S2] 的 JSON 字段和合并对象。
+- [C19-S1] 的 LunaLib 编译依赖、拥有者 ID 和可选适配；
+- [C8-S3] 的战斗插件、暂停和 settings 登记；
+- [C18-S3] 的附近敌舰查询；
+- [C1-S7] 的 CSV 空列与转义规则。
 
-## 给已有产业补一份地面战定义
+## 在现有设置表追加字段
 
-创建 `data/config/exerelin/groundBattleDefs.json`，先保存本节完整 JSON。产业使用 [C12-S5] 已定义的 `GearIn_element_works`，以下为 `industries` 对象中的局部条目：
+打开 `data/config/LunaSettings.csv`，保留 [C19-S1] 的 `GearIn_fullGraphicEffect`，追加本节五行。完整输入为：
 
-```json
-"GearIn_element_works": {
-    "strengthMult": 1.35,
-    "troopCounts": {
-        "marine": 0.5,
-        "heavy": 0.25
-    },
-    "plugin": "exerelin.campaign.intel.groundbattle.plugins.IndustryForBattlePlugin"
-}
+```csv
+fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab
+GearIn_fullGraphicEffect,Full graphic effect,Boolean,true,,,,,GearIn
+GearIn_trails_enabled,Show GearIn trails,Boolean,true,,,,,GearIn
+GearIn_max_entries,Maximum entries,Int,12,,,1,64,GearIn
+GearIn_pulse_delay,Pulse delay,Double,1.5,,,0.1,10,GearIn
+GearIn_marker_color,Marker color,Color,#f22e6e,,,,,GearIn
+GearIn_label_text,Label text,String,GearIn,,,,,GearIn
 ```
 
-**地面战产业键对应实际市场产业 ID。** 防御基础倍率为 1.35，marine 和 heavy 的驻军贡献分别为 0.5 与 0.25。库把各产业、条件的贡献汇总，再结合市场规模、稳定度、物资与驻军修饰计算数量，所以贡献字段采用的是生成系数。
+**字段 ID、控件类型和读取方法对应同一份设置。**CSV 按来源 MOD 记录拥有者，Java 再以 `gear_in` 和字段 ID 读取；空列保留位置，文本中含英文逗号时按 CSV 转义。
 
-本例使用 `IndustryForBattlePlugin`。建造中的产业贡献为 0，防御倍率回到 1；中断时贡献按中断系数减少，真正中断的场所也回到防御倍率 1。正常完成以后，插件读取本节基础参数，再应用对应修饰。
+`fieldID`、`fieldName`、`fieldType` 与 `defaultValue` 参与控件创建，描述、次值、范围和 tab 各自按用途读取。类型为 Int 或 Double 时，面板使用范围组织输入；getter 取得已保存值，当前代码的缺省只处理缺席或缺失。
 
-AI 核心在两项计算中的条件不同：通用插件给防御倍率应用 beta 的 1.1 或 alpha 的 1.25；驻军的核心与改善加成则另检查产业是否带有地面防御标签。Element Works 的生产属性继续由市场产业脚本处理，地面战按照这里的条件取得自己的结果。
+### 设置与画面速查表
 
-`plugin` 放完整类名，库创建产业战斗对象时实例化它。市场生产继续使用 `GearInElementWorksIndustry`，地面战插件处理的是另一份战斗对象。
+| 字段 ID                 | 类型与缺省          | 当前使用方             |
+| ----------------------- | ------------------- | ---------------------- |
+| `GearIn_trails_enabled` | Boolean，true       | 控制附近敌舰标记生成   |
+| `GearIn_max_entries`    | Int，12，1–64       | 限制一次标记的目标数   |
+| `GearIn_pulse_delay`    | Double，1.5，0.1–10 | 控制两次标记的间隔秒数 |
+| `GearIn_marker_color`   | Color，`#f22e6e`    | 标记颜色               |
+| `GearIn_label_text`     | String，GearIn      | 玩家状态标签文字       |
 
-## 登记玩家可创建的线列步兵
+本节定义 `GearIn_trails_enabled`，当前插件用短寿命粒子提供观察结果。需要接到尾迹效果时，同一个布尔值也可以决定是否追加节点，实际使用由效果类安排。
 
-在 `unitTypes` 对象加入：
+## 保存定义和读取器
 
-```json
-"GearIn_line_infantry": {
-    "name": "GearIn line infantry",
-    "type": "MARINE",
-    "playerCanCreate": true,
-    "strength": 1.2,
-    "personnel": {
-        "commodityId": "marines",
-        "crewReplacerJobId": "nex_groundBattle_marines",
-        "mult": 1
-    },
-    "tags": ["marine"],
-    "sortOrder": 1.5
-}
-```
-
-`type` 采用 `MARINE`，`playerCanCreate` 让创建入口提供这支部队。基础强度由单位规模与 `strength` 1.2 共同计算，实际战斗再应用士气等修饰。人员从 `marines` 取得，`mult` 为 1，每份单位规模使用一份人员。
-
-`crewReplacerJobId` 供人员替代规则读取，`tags` 用于分类，`sortOrder` 为 1.5，调整显示顺序。玩家人员不足以建立所选规模时，创建按钮会被禁用。
-
-单位插件字段叫 `pluginClass`，省略时使用 `GroundUnitPlugin`。本例保持库的普通单位插件，数值与人员输入已经足够表达这支步兵。需要特殊单位行为时，再为 `pluginClass` 指定实际实现。
-
-## 合并定义与通用插件各自读取什么
-
-Nexerelin 从各 MOD 合并同路径 JSON。`industries`、`unitTypes`、`conditions`、`abilities` 与 `plugins` 分别保存不同定义；本例只增加产业与单位，库自己的条件、能力和通用插件继续存在。
-
-通用 `plugins` 对象将短 ID 映射到完整类名。以下局部查询只读取该表：
+将 Defs、Reader、Listener 完整类保存到 `src/data/scripts/gearin/lib/`。Defs 保存键和代码默认，Reader 各方法先查询启用状态，再用对应包装类型取值。局部调用如下：
 
 ```java
-String className = GBDataManager.getPluginsById().get(pluginId);
+Boolean enabled = LunaSettings.getBoolean("gear_in", "GearIn_trails_enabled");
+Integer entries = LunaSettings.getInt("gear_in", "GearIn_max_entries");
+Float delay = LunaSettings.getFloat("gear_in", "GearIn_pulse_delay");
+Color color = LunaSettings.getColor("gear_in", "GearIn_marker_color");
+String label = LunaSettings.getString("gear_in", "GearIn_label_text");
 ```
 
-产业的 `plugin` 则直接读取该产业条目的类名。**通用映射与产业绑定分别核对。**复制一个短 ID 到产业字段时，类加载器仍会把它当类名，因而无法实例化。
+LunaLib 缺少 MOD、字段或不能取得所需类型时，getter 记录错误并返回 `null`，Reader 返回 Defs 缺省。Double 配置通过 `getFloat` 转成浮点秒数，Color 从十六进制文本取得 RGB，String 保留保存的文字。
 
-## 保存探针，确认真实登记
+首次 getter 可以触发库加载设置，后续从已加载数据取值。**值更新以后，使用方的下一次读取才能改变行为。** 保存通知可以处理缓存更新或其他工作，本例的监听器用于记录字段值。
 
-将完整类保存到 `src/data/scripts/gearin/modcompat/GearInGroundBattleProbe.java`。在 Nexerelin 已启用的生涯中，用 Console Commands 运行：
+编者在这个示例选择直接读取：这些参数改变下一次标签显示与粒子生成，无需重新建立战斗插件。若设置改变涉及纹理预载等较重操作，再把对应重建安排到通知中，职责和代价会更明确。
 
-```text
-runcode data.scripts.gearin.modcompat.GearInGroundBattleProbe p = new data.scripts.gearin.modcompat.GearInGroundBattleProbe(); com.fs.starfarer.api.Global.getLogger(p.getClass()).info("GearIn ground: " + p.describeIndustry("GearIn_element_works") + " exact=" + p.hasIndustry("GearIn_element_works") + " unit=" + p.hasUnit("GearIn_line_infantry"));
+## 将监听器接到生涯加载
+
+在既有 `GearInModPlugin.onGameLoad(...)` 追加下面的局部调用，导入 Reader 与 Listener，原有初始化继续保留：
+
+```java
+if (GearInLunaSettingsReader.isLunaLibEnabled()) {
+    GearInLunaSettingsListener.registerListener();
+    GearInLunaSettingsListener.logCurrentValues();
+}
 ```
 
-日志记录产业定义的 ID、基础倍率、贡献和插件。`hasIndustry` 比较返回对象的 `industryId`，因为未知产业会取得 `default` 定义；单位查询则在缺失时返回 `null`。两个入口的缺失结果不同，探针按各自含义判断登记。
+Listener 的外层只使用 Java 和自有类型，第三方接口字段与实例留在嵌套 `LunaAdapter`。启用分支通过后才调用适配器；同类监听已经存在时结束登记，读档继续使用应用级注册。
 
-::: warning 重载定义会追加通用插件列表
-`loadDefs()` 清空产业与单位等定义，但会继续追加通用插件列表。重复重载后，新战斗可能实例化多份同类插件；本节通过保存并重启比较配置。
+面板保存实际修改的字段后，按拥有者分别更新值并发送通知。`settingsChanged(modId)` 只处理 `gear_in`，输出 `reloaded` 和当前字段；`unregisterListener()` 移除本例实例，之后再注册会重新建立。
+
+::: warning 新档设置面板不会发送这项通知
+新档创建过程中的面板保存会更新数据，但跳过 `settingsChanged`。本节在进入生涯后登记监听，并通过正常生涯的保存操作观察回调。
 :::
+
+## 让五个字段进入战斗
+
+保存完整 `GearInSettingsVisualPlugin` 到 `src/data/scripts/gearin/combat/`，在已有 `data/config/settings.json` 的 plugins 对象追加：
+
+```json
+"GearIn_settings_visual": "data.scripts.gearin.combat.GearInSettingsVisualPlugin"
+```
+
+插件在每个有效帧读取五项设置，状态标签显示文字、开关、上限与间隔。开关开启时累积非暂停时间，到达阈值后查询与玩家碰撞圆间隔不超过 1600 su 的可见敌舰，再按集合顺序标记前若干目标。数量采用配置上限与候选数中的较小者，24 su 粒子持续 0.4 秒。
+
+关闭开关会清零计时，新标记停止；已经生成的粒子继续结束自己的寿命。保存颜色后，下一组粒子采用新颜色；保存文字后，下一有效帧更新标签。改变间隔时，当前已经累计的时间与新阈值继续比较。
 
 ## 完整最小例
 
-JSON 保存到 `data/config/exerelin/groundBattleDefs.json`，两个对象分别增加产业和单位：
+配置采用前面的 CSV 与战斗登记，四个类分别承担常量、读取、通知与实际效果：
 
-```json
-{
-    "industries": {
-        "GearIn_element_works": {
-            "strengthMult": 1.35,
-            "troopCounts": {
-                "marine": 0.5,
-                "heavy": 0.25
-            },
-            "plugin": "exerelin.campaign.intel.groundbattle.plugins.IndustryForBattlePlugin"
+::: details 完整成品：GearInLunaSettingsDefs
+
+```java
+package data.scripts.gearin.lib;
+
+import java.awt.Color;
+
+public final class GearInLunaSettingsDefs {
+    public static final String MOD_ID = "gear_in";
+    public static final String LUNA_LIB_MOD_ID = "lunalib";
+
+    public static final String KEY_TRAILS = "GearIn_trails_enabled";
+    public static final String KEY_MAX_ENTRIES = "GearIn_max_entries";
+    public static final String KEY_PULSE_DELAY = "GearIn_pulse_delay";
+    public static final String KEY_MARKER_COLOR = "GearIn_marker_color";
+    public static final String KEY_LABEL_TEXT = "GearIn_label_text";
+
+    public static final boolean DEFAULT_TRAILS = true;
+    public static final int DEFAULT_MAX_ENTRIES = 12;
+    public static final float DEFAULT_PULSE_DELAY = 1.5f;
+    public static final Color DEFAULT_MARKER_COLOR = new Color(0xf2, 0x2e, 0x6e);
+    public static final String DEFAULT_LABEL_TEXT = "GearIn";
+
+    private GearInLunaSettingsDefs() {
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInLunaSettingsReader
+
+```java
+package data.scripts.gearin.lib;
+
+import java.awt.Color;
+
+import com.fs.starfarer.api.Global;
+
+import lunalib.lunaSettings.LunaSettings;
+
+/** 按启用状态读取设置，缺失值使用已定义的缺省。 */
+public class GearInLunaSettingsReader {
+
+    private GearInLunaSettingsReader() {
+    }
+
+    /** 查询 LunaLib 的启用状态。 */
+    public static boolean isLunaLibEnabled() {
+        return Global.getSettings().getModManager().isModEnabled(GearInLunaSettingsDefs.LUNA_LIB_MOD_ID);
+    }
+
+    /** 轨迹特效开关：Boolean 设置，缺省 true。 */
+    public static boolean isTrailsEnabled() {
+        if (!isLunaLibEnabled()) {
+            return GearInLunaSettingsDefs.DEFAULT_TRAILS;
         }
-    },
-    "unitTypes": {
-        "GearIn_line_infantry": {
-            "name": "GearIn line infantry",
-            "type": "MARINE",
-            "playerCanCreate": true,
-            "strength": 1.2,
-            "personnel": {
-                "commodityId": "marines",
-                "crewReplacerJobId": "nex_groundBattle_marines",
-                "mult": 1
-            },
-            "tags": ["marine"],
-            "sortOrder": 1.5
+        Boolean value = LunaSettings.getBoolean(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_TRAILS);
+        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_TRAILS;
+    }
+
+    /** 面板最大条目数：Int 设置，缺省 12。 */
+    public static int getMaxEntries() {
+        if (!isLunaLibEnabled()) {
+            return GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
+        }
+        Integer value = LunaSettings.getInt(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_MAX_ENTRIES);
+        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
+    }
+
+    /** 脉冲间隔 (秒)：CSV 里是 Double 类型，读取时用 getFloat (从保存的 double 转换)。 */
+    public static float getPulseDelay() {
+        if (!isLunaLibEnabled()) {
+            return GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
+        }
+        Float value = LunaSettings.getFloat(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_PULSE_DELAY);
+        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
+    }
+
+    /** 标记颜色：Color 设置，保存/读取十六进制字符串 (# 前缀可省略)。 */
+    public static Color getMarkerColor() {
+        if (!isLunaLibEnabled()) {
+            return GearInLunaSettingsDefs.DEFAULT_MARKER_COLOR;
+        }
+        Color value = LunaSettings.getColor(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_MARKER_COLOR);
+        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MARKER_COLOR;
+    }
+
+    /** 标签文本：String 设置，按原样读取。 */
+    public static String getLabelText() {
+        if (!isLunaLibEnabled()) {
+            return GearInLunaSettingsDefs.DEFAULT_LABEL_TEXT;
+        }
+        String value = LunaSettings.getString(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_LABEL_TEXT);
+        return value != null ? value : GearInLunaSettingsDefs.DEFAULT_LABEL_TEXT;
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInLunaSettingsListener
+
+```java
+package data.scripts.gearin.lib;
+
+import java.awt.Color;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+
+import lunalib.lunaSettings.LunaSettings;
+import lunalib.lunaSettings.LunaSettingsListener;
+
+/** 登记设置变更通知，并记录本 MOD 当前生效值。 */
+public class GearInLunaSettingsListener {
+    private static final Logger LOG = Global.getLogger(GearInLunaSettingsListener.class);
+
+    private GearInLunaSettingsListener() {
+    }
+
+    public static void registerListener() {
+        if (!GearInLunaSettingsReader.isLunaLibEnabled()) {
+            return;
+        }
+        LunaAdapter.register();
+    }
+
+    public static void unregisterListener() {
+        if (!GearInLunaSettingsReader.isLunaLibEnabled()) {
+            return;
+        }
+        LunaAdapter.unregister();
+    }
+
+    public static void logCurrentValues() {
+        LOG.info("GearIn luna settings: trails=" + GearInLunaSettingsReader.isTrailsEnabled()
+                + " maxEntries=" + GearInLunaSettingsReader.getMaxEntries()
+                + " pulseDelay=" + GearInLunaSettingsReader.getPulseDelay()
+                + " markerColor=" + toHex(GearInLunaSettingsReader.getMarkerColor())
+                + " labelText=" + GearInLunaSettingsReader.getLabelText());
+    }
+
+    private static String toHex(Color color) {
+        return String.format("#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue());
+    }
+
+    private static final class LunaAdapter {
+        private static LunaSettingsListener registered;
+
+        private static void register() {
+            if (registered != null && LunaSettings.hasSettingsListenerOfClass(registered.getClass())) {
+                return;
+            }
+            registered = new LunaSettingsListener() {
+                @Override
+                public void settingsChanged(String modId) {
+                    if (!GearInLunaSettingsDefs.MOD_ID.equals(modId)) {
+                        return;
+                    }
+                    LOG.info("GearIn luna settings: reloaded");
+                    logCurrentValues();
+                }
+            };
+            LunaSettings.addSettingsListener(registered);
+            LOG.info("GearIn luna settings: listener registered");
+        }
+
+        private static void unregister() {
+            if (registered != null) {
+                LunaSettings.removeSettingsListener(registered);
+                registered = null;
+            }
         }
     }
 }
 ```
 
-探针读取登记结果：
+:::
 
-::: details 完整成品：GearInGroundBattleProbe
+::: details 完整成品：GearInSettingsVisualPlugin
 
 ```java
-package data.scripts.gearin.modcompat;
+package data.scripts.gearin.combat;
 
-import exerelin.campaign.intel.groundbattle.GBDataManager;
-import exerelin.campaign.intel.groundbattle.GroundUnitDef;
+import java.awt.Color;
+import java.util.List;
 
-/** 查询地面战产业、单位与通用插件的实际登记。 */
-public final class GearInGroundBattleProbe {
-    public boolean hasIndustry(String industryId) {
-        return industryId.equals(GBDataManager.getIndustryDef(industryId).industryId);
+import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.input.InputEventAPI;
+import data.scripts.gearin.lib.GearInLunaSettingsReader;
+import org.lazywizard.lazylib.combat.AIUtils;
+import org.lwjgl.util.vector.Vector2f;
+
+/** 使用当前设置生成附近敌舰标记和玩家状态标签。 */
+public final class GearInSettingsVisualPlugin extends BaseEveryFrameCombatPlugin {
+    private CombatEngineAPI engine;
+    private float elapsed;
+
+    @Override
+    public void init(CombatEngineAPI engine) {
+        this.engine = engine;
     }
 
-    public String describeIndustry(String industryId) {
-        GBDataManager.IndustryDef def = GBDataManager.getIndustryDef(industryId);
-        return "industry=" + def.industryId + " strengthMult=" + def.strengthMult
-                + " troops=" + def.troopCounts + " plugin=" + def.plugin;
-    }
+    @Override
+    public void advance(float amount, List<InputEventAPI> events) {
+        if (engine.isPaused()) {
+            return;
+        }
+        ShipAPI player = engine.getPlayerShip();
+        if (player == null || !player.isAlive() || !engine.isEntityInPlay(player)) {
+            return;
+        }
 
-    public String findPlugin(String pluginId) {
-        return GBDataManager.getPluginsById().get(pluginId);
-    }
+        boolean enabled = GearInLunaSettingsReader.isTrailsEnabled();
+        int maxEntries = GearInLunaSettingsReader.getMaxEntries();
+        float delay = GearInLunaSettingsReader.getPulseDelay();
+        Color color = GearInLunaSettingsReader.getMarkerColor();
+        String label = GearInLunaSettingsReader.getLabelText();
+        engine.maintainStatusForPlayerShip(this, null, label,
+                "markers=" + enabled + " limit=" + maxEntries + " delay=" + delay, false);
+        if (!enabled) {
+            elapsed = 0f;
+            return;
+        }
 
-    public boolean hasUnit(String unitId) {
-        return GroundUnitDef.getUnitDef(unitId) != null;
+        elapsed += amount;
+        if (elapsed < delay) {
+            return;
+        }
+        elapsed = 0f;
+        List<ShipAPI> enemies = AIUtils.getNearbyEnemies(player, 1600f);
+        int count = Math.min(maxEntries, enemies.size());
+        for (int index = 0; index < count; index++) {
+            engine.addSmoothParticle(enemies.get(index).getLocation(), new Vector2f(),
+                    24f, 1f, 0.4f, color);
+        }
     }
 }
 ```
@@ -167,46 +353,51 @@ public final class GearInGroundBattleProbe {
 
 ## 验证方案
 
-前置数据：Nexerelin 与 Console Commands 已启用，测试市场的 Element Works 完成建造并正常运作，基础倍率比较时未安装 AI 核心；玩家拥有足够建立所选规模的陆战队员。
+前置数据：准备包含至少两艘可见敌舰的测试战斗，LunaLib 可在启动器启用与禁用。
 
-1. 保存定义和探针，构建重启，载入测试生涯并执行正文查询。
-2. 打开该市场的入侵地面战，查看 Element Works 与驻军；在玩家部队创建入口选择 GearIn line infantry，观察人数、基础强度与显示位置。
-3. 将测试 JSON 的产业键暂时改为大小写不同的名称，重启并查询原 ID；记录默认结果，再恢复 `GearIn_element_works`、重启。
-4. 比较正常产业与建造或中断状态下的防御和贡献，结合市场与其他修饰判断最终数值。
-5. 用原版通用插件短 ID 调用 `findPlugin(...)`，比较 JSON 的通用映射和产业查询的完整类名。
+1. 保存 CSV、四个类、生涯调用与战斗插件登记，构建并重启，载入生涯确认注册和字段日志。
+2. 进入测试战斗，查看 GearIn 标签与默认粉色标记。返回生涯，在 LunaLib 面板把上限改为 1、间隔改为 0.5、颜色改为绿色、标签改为新文字，保存后再次进入测试战斗。
+3. 比较下一有效帧的标签、下一组粒子的颜色、每次目标数与间隔。关闭开关后观察新标记停止，再开启比较。
+4. 在面板尝试范围外的间隔，通过控件观察输入结果并保存，确认界面和实际读取对应；恢复 1.5。
+5. 重复读档，再实际修改并保存本 MOD 设置，核对每次变更通知只产生一组 reloaded 日志；修改并保存其他 MOD 时比较本 MOD 日志。
+6. 禁用 LunaLib 后重启，进入同一基础内容和测试战斗，核对 Defs 默认及类加载。
 
 预期结果：
 
-- 原 ID 的 `exact=true`，`industry=GearIn_element_works`，基础倍率 1.35，驻军贡献包含 marine 0.5 与 heavy 0.25；
-- `unit=true`，玩家部队入口显示可创建的线列步兵，并采用其人员与强度定义；
-- 未登记原 ID 时 `exact=false`，描述返回 default，而单位查询按自身 ID 进行；
-- 地面战按产业当前状态和其他修饰计算实际效果，通用插件与产业类名分别来自各自对象。
+- 本节五个字段与前文图形开关共同出现，拥有者为 gear_in；
+- 保存后标签采用当前文字，粒子采用新颜色、数量与间隔；
+- 关闭时停止新增，已有粒子在 0.4 秒内结束；
+- 本 MOD 保存只通知当前登记的一份监听，读档保持注册状态；
+- 库缺席时四个自有角色按默认运行，当前默认为 true、12、1.5、粉色和 GearIn。
 
 ## 故障分析
 
-- **产业查询一直显示 default**：定义键与实际市场产业 ID 不一致。
-    - **解决方案**：统一 `GearIn_element_works`，重启并比较 `industryId`。
+- **库缺席时调用监听器出现类加载异常**：外层字段或接口直接引用 LunaLib 类型。
+    - **解决方案**：采用本节嵌套适配器，把接口实例留在启用分支后的类中。
 
-- **产业插件实例化失败**：`plugin` 填入了通用短 ID 或无法加载的类名。
-    - **解决方案**：采用本节完整 `IndustryForBattlePlugin` 类名，重新启动。
+- **字段读取回到默认**：拥有者、字段名或保存类型不匹配。
+    - **解决方案**：核对 gear_in、Defs 的键和 LunaLib 取值日志，恢复 CSV 中的定义。
 
-- **线列步兵没有出现在创建入口**：单位 ID、type、可创建开关或人员资源未对应。
-    - **解决方案**：核对 `GearIn_line_infantry` 条目与玩家陆战队员，再打开部队创建。
+- **面板没有本节控件**：路径、必需列或字段类型无法建立控件。
+    - **解决方案**：核对九列表头与实际空列，保存后重启。
 
-- **实际防御与 1.35 不同**：当前产业状态、AI 核心或其他修饰参与最终计算。
-    - **解决方案**：先以正常完成的产业核对基础定义，再观察各修饰。
+- **日志更新但画面保持此前参数**：效果仍保存旧副本或没有调用当前读取器。
+    - **解决方案**：核对战斗插件登记和五个 getter 的使用位置。
 
-- **修改 JSON 后仍读到旧数据**：当前定义表尚未重新加载。
-    - **解决方案**：保存并重启后查询，再进入测试战斗核对定义。
+- **保存后回调次数增加**：同类监听器被重复登记。
+    - **解决方案**：按 registered 类查询已存在实例，再加入监听。
+
+- **关闭后仍短暂看到此前粒子**：已生成粒子继续按自身寿命显示。
+    - **解决方案**：观察新生成停止，并等待本节 0.4 秒粒子结束。
 
 ## 总结
 
-产业定义沿实际产业 ID 提供防御与驻军参数，玩家单位定义提供类型、人员和强度；两个插件分别使用市场状态与单位状态计算结果。探针确认定义身份和基础字段，战斗再显示各修饰参与后的效果，生产与地面战各自保留自己的职责。
+面板更新已加载设置，读取器按拥有者和字段取得值，战斗插件再将它们用于当前显示与粒子生成。通知在旁记录保存结果；即时生效来自实际读取，已有粒子与累计计时仍遵循自己的状态。库缺席时采用同一组缺省，使用方的工作继续成立。
 
 ## 建议参考项
 
-- `exerelin.campaign.intel.groundbattle.GBDataManager`：定义合并、产业回退和通用插件映射；
-- `exerelin.campaign.intel.groundbattle.GroundUnitDef`：单位字段与查询；
-- `exerelin.campaign.intel.groundbattle.plugins.IndustryForBattlePlugin`：产业战斗状态、强度与驻军贡献；
-- `exerelin.campaign.intel.groundbattle.plugins.GroundUnitPlugin`：普通单位行为；
-- `data/config/exerelin/groundBattleDefs.json`：本节定义入口。
+- `data/config/LunaSettings.csv`：控件与范围定义；
+- `lunalib.lunaSettings.LunaSettings`：包装值读取与监听器登记；
+- `lunalib.lunaSettings.LunaSettingsListener`：保存通知；
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：玩家状态标签和粒子；
+- `org.lazywizard.lazylib.combat.AIUtils`：可见敌舰候选。

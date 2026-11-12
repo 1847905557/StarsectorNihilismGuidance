@@ -1,298 +1,329 @@
-# 注册特殊物品
+# 实现市场条件
 
-特殊物品可以保存附加数据，并通过插件提供显示与交互。本节制作两件物品：Salvage Token 在玩家货舱右键消耗，换取 10 补给；Refinery Core 在产业实验中提高 3 档稀有金属供给，再解除效果。两种用途分别说明货舱动作与产业数据怎样调用插件。
+市场条件可以把一组环境效果集中到同一个实例。本节实现 Warfront，提高危险度、降低流通性并修饰来源市场的舰队质量，再比较抑制、勘测与移除时的结果。实例 token 管理各项修饰，参数与保存方式决定这份条件怎样延续。
 
-_本节预期阅读时间：\~22 分钟。_
+_本节预期阅读时间：\~24 分钟。_
 
-_本节预期操作时间：\~30 分钟。_
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 在 `special_items.csv` 注册可加载的特殊物品；
-- 使用 `SpecialItemSpecAPI` 读取静态规格；
-- 使用 `SpecialItemData` 表达物品 ID 与附加数据；
-- 从 Cargo 栈取得 `SpecialItemPlugin` 实例；
-- 为产业安装物品和右键物品编写最小插件；
-- 处理插件的 tooltip、价格、掉落参数和交互入口。
+- 在 `market_conditions.csv` 注册条件；
+- 使用 `MarketConditionSpecAPI` 读取静态规格；
+- 区分 spec ID、实例 token 和插件对象；
+- 继承 `BaseMarketConditionPlugin` 实现条件生命周期；
+- 使用实例 token 写入并清理市场修饰；
+- 处理 `setParam(Object)`、抑制、survey 和重算；
+- 读取危险度、流通性和舰队质量动态 stat。
 
 ## 前置知识
 
-- [C12-S2] 的 `CargoAPI`、`CargoStackAPI` 和特殊物品栈；
-- [C12-S5] 的产业对象、供需数量和修饰器；
-- [C7-S1] 的插件实例化与生命周期；
-- 能够编辑 UTF-8 无 BOM 的 CSV 和 Java 文件。
+- [C12-S1] 的 `MarketAPI` 和市场 stat；
+- [C7-S1] 的插件生命周期与持久数据；
+- [C8-S4] 的 `MutableStat`、`StatBonus` 和 modifier ID；
+- [C12-S1] 的市场推进与经济观察入口。
 
-## 注册特殊物品身份
+## 注册 Warfront 并接到当前市场
 
-在 `data/campaign/special_items.csv` 添加以下两条记录。核心 ID 使用 `GearIn_refinery_core`，代币使用 `GearIn_salvage_token`，分别登记各自的插件类：
+在 `data/campaign/market_conditions.csv` 注册 `GearIn_warfront`，显示名采用 `Warfront`，插件使用本节的 `GearInWarfrontCondition`。文件内容如下：
 
 ```csv
-name,id,tags,tech/manufacturer,rarity,base price,stack size,cargo space,baseRaidDanger,icon,sound id,sound id drop,plugin,plugin params,desc,order
-Refinery Core,GearIn_refinery_core,"gear_industry, colony_item",GearIn Industries,0.5,75000,1000,1,MEDIUM,graphics/icons/cargo/nanoforge_pristine.png,ui_cargo_special_industrial_pickup,ui_cargo_special_industrial_drop,data.scripts.gearin.campaign.GearInRefineryCorePlugin,GearIn_element_works,"A GearIn industrial core that increases rare metal output when installed in Element Works.",1450
-Salvage Token,GearIn_salvage_token,gear_industry,GearIn Industries,1,5000,1000,1,LOW,graphics/icons/cargo/modspec2.png,ui_chip_pickup,ui_modspec_drop,data.scripts.gearin.campaign.GearInSalvageTokenPlugin,,"A token that can be exchanged for a small supply cache.",1451
+name,id,tags,planetary,decivRemove,script,desc,icon,order
+Warfront,GearIn_warfront,,,,data.scripts.gearin.campaign.GearInWarfrontCondition,"A contested market with elevated hazards and improved fleet readiness.",graphics/icons/markets/hostile_activity.png,1450
 ```
 
-图标与声音采用原版资源，价格、稀有度和排序分别填写。`name` 用于显示，`id` 供代码与存档引用；名称可以调整，使用中的 ID 保持稳定。`tech/manufacturer` 提供设计来源文本，插件选择由完整类名决定。
+`script` 写完整类名，`icon` 沿用原版敌对活动图标，`order` 取 1450。`planetary` 留空使它位于条件栏的市场条件区域；设为 `TRUE` 时进入右侧的行星条件区域。`decivRemove` 控制文明衰退时移除，本例留空采用默认的 `false`，标签也留空。
 
-**特殊物品的长描述直接写在 CSV 的 `desc`。** 基础插件从规格读取它显示在 tooltip 中；本页采用这条描述关系。`plugin params` 则是整类物品的附加字符串，核心记录中保存 `GearIn_element_works`，插件可以通过 `getSpec().getParams()` 读取。
+`desc` 是 tooltip 正文，基类支持 `$marketName` 等替换字段。注册行保存 `MarketConditionSpecAPI`，实际效果由当前市场的条件实例与插件提供。
 
-## 保存实例数据
-
-注册行描述整类物品，`SpecialItemData` 描述当前实例的 ID 与附加 `data`。例如核心的批次为 `batch-01`，产业槽保存这份数据。下面是局部写入：
+保存 `GearInWarfrontCondition.java` 与 `GearInConditionProbe.java` 到 `src/data/scripts/gearin/campaign/`。在 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 中，将以下局部调用接到产业与物品观察之后：
 
 ```java
-SpecialItemData installed = new SpecialItemData("GearIn_refinery_core", "batch-01");
-industry.setSpecialItem(installed);
-SpecialItemData current = industry.getSpecialItem();
+GearInConditionProbe.log(market);
 ```
 
-`getId()` 读取注册 ID，`getData()` 读取实例字符串，`setData()` 可以修改它。批次、来源与少量参数适合放在 data 中，本节使用 `batch-01` 与 `salvage-cache`；需要结构化内容时，再约定当前功能的 JSON 字段。
+观察器在整轮经济更新后创建一次条件，比较各种状态，最后移除本次实例并恢复原抑制标记。当前市场引用由经济观察器提供，条件本身属于创建它的市场。
 
-`equals()` 与 `hashCode()` 同时比较 ID 和 data，所以两个同 ID、不同批次的物品可以保存在不同栈中。显示名称用于辨认，实例的相等与合并按数据判断。产业槽保存一份当前安装数据，货舱栈另外保存数量和空间。
+## 用实例 token 管理效果
 
-## 把右键物品放入玩家货舱
-
-先实现可以直接观察的右键动作。保存 `GearInSalvageTokenPlugin.java` 到 `src/data/scripts/gearin/campaign/`，它继承 `BaseSpecialItemPlugin`。在已有的 `onNewGameAfterTimePass(...)` 追加以下局部片段，沿用 `sector`，并添加 `SpecialItemData` 的 import：
+通过 `addCondition(...)` 添加 Warfront，返回值保存为 `token`。以下局部片段传入倍率 1，并精确取得刚创建的实例：
 
 ```java
-sector.getPlayerFleet().getCargo().addSpecial(
-        new SpecialItemData("GearIn_salvage_token", "salvage-cache"), 1f);
+String token = market.addCondition(GearInWarfrontCondition.CONDITION_ID, 1.0f);
+MarketConditionAPI condition = market.getSpecificCondition(token);
 ```
 
-新档向玩家货舱加入一枚代币。插件的 `hasRightClickAction()` 返回 `true`，界面就能调用 `performRightClickAction(RightClickActionHelper helper)`。用 helper 扣除当前物品并添加 10 补给，局部方法如下：
+`GearIn_warfront` 是规格 ID，每次添加返回不同的实例 token，例如 `GearIn_warfront_ab12c`。`getCondition(id)` 与 `getFirstCondition(id)` 按规格找首个实例，`getSpecificCondition(token)` 才对应这一份条件。
+
+**规格 ID 用于选择，实例 token 用于隔离修饰。** 同类型条件可以有多个实例，来源都写规格 ID 时，效果会互相覆盖。`BaseMarketConditionPlugin.getModId()` 返回本实例的 token，`apply(String id)` 接收到的也是这个 token。
+
+### 写入危险度、流通性与舰队质量
+
+插件的 `init(...)` 保存市场和条件引用，然后由 `apply(...)` 写入效果。危险度通过 `getHazard()`，流通性通过 `getAccessibilityMod()`，舰队质量通过 `Stats.FLEET_QUALITY_MOD` 的动态修饰。局部代码如下：
 
 ```java
-public void performRightClickAction(RightClickActionHelper helper) {
-    helper.removeFromClickedStackFirst(1);
-    helper.addItems(CargoItemType.RESOURCES, Commodities.SUPPLIES, 10f);
+String source = getModId();
+market.getHazard().modifyFlat(source, 0.15f * multiplier, getName());
+market.getAccessibilityMod().modifyFlat(source, -0.05f * multiplier, getName());
+market.getStats().getDynamic().getMod(Stats.FLEET_QUALITY_MOD)
+        .modifyFlatAlways(source, 0.15f * multiplier, getName());
+```
+
+倍率为 1 时，危险度增加 15 个百分点，流通性修饰降低 5 个百分点，舰队质量增加 0.15。日志里的 `getAccessibilityMod().computeEffective(0f)` 读取流通性修饰，最终流通性还合并市场的其他条件。
+
+舰队生成从来源市场取得质量时会读取质量动态项，它影响后续生成条件。已经生成的舰队仍持有原来的装配与质量结果，所以当前观察先确认市场动态值，实际生成沿 [C11-S1] 的来源市场处理。
+
+### 用参数统一调整倍率
+
+`addCondition(id, param)` 在应用前将参数交给 `setParam(Object)`。本例接受正数 `Float`，将它解释为三项效果的统一倍率，局部处理如下：
+
+```java
+if (param instanceof Float && ((Float) param) > 0f) {
+    multiplier = (Float) param;
+} else {
+    multiplier = 1f;
 }
 ```
 
-helper 作用于当前交互中的货物，扣除优先从被右键点击的栈进行。`shouldRemoveOnRightClickAction()` 控制动作后自动移除一件；本例已经手动扣除，因此返回 `false`。实际右键从玩家货舱进行，交易界面已有待结算交易时，先完成交易再使用物品。
+传入 `1f` 使用基准值，`2f` 使三项效果翻倍，其他输入采用默认 1。固定条件可以使用无参数添加，保留插件默认状态；需要参数时，调用方与插件约定类型，日志记录实际倍率。
 
-::: warning 手动扣除与自动移除分别选择
-调用 `removeFromClickedStackFirst(1)` 后，再让 `shouldRemoveOnRightClickAction()` 返回 `true`，同一次动作会尝试两次移除。本例使用 helper 手动扣除，自动移除保持 `false`。
+### 撤销同一实例的来源
+
+移除或重算前，`unapply(...)` 按同一 token 解除三项修饰：
+
+```java
+String source = getModId();
+market.getHazard().unmodifyFlat(source);
+market.getAccessibilityMod().unmodifyFlat(source);
+market.getStats().getDynamic().getMod(Stats.FLEET_QUALITY_MOD)
+        .unmodifyFlat(source);
+```
+
+这份来源在各属性中对应同一条件。重新应用替换它的当前值，移除本实例也只清理自己的来源，其他实例仍可参与市场计算。
+
+## 比较抑制与两种重算
+
+条件可以保留在市场中而暂时停止生效。`suppressCondition(specId)` 将规格 ID 加入抑制集合，随后调用 `reapplyConditions()` 撤销并跳过这些实例；解除抑制后再重算，才能恢复效果。以下局部片段分别记录标记后、重算后与恢复后：
+
+```java
+market.suppressCondition(GearInWarfrontCondition.CONDITION_ID);
+float before = market.getHazard().getModifiedValue();
+market.reapplyConditions();
+float suppressed = market.getHazard().getModifiedValue();
+market.unsuppressCondition(GearInWarfrontCondition.CONDITION_ID);
+market.reapplyConditions();
+float restored = market.getHazard().getModifiedValue();
+```
+
+**抑制先改变标记，效果在重算时改变。** 所以 `before` 仍可以保留应用值，`suppressed` 才反映撤销。抑制按规格 ID 处理同类实例，`getConditions()` 仍包含这些对象。
+
+### 勘测状态怎样参与重算
+
+条件的 `isSurveyed()` 保存实例勘测状态，`requiresSurveying()` 来自可选的生成规格；市场的 `getSurveyLevel()` 表示整个市场的勘测等级。本例没有 `condition_gen_data.csv` 记录，默认不要求勘测，创建后的实例仍拥有自己的勘测状态。
+
+观察器手动执行 `setSurveyed(false)`，随后全量重算，再单独重算本次 token。**全量重算检查勘测与抑制，单实例重算只检查抑制。** 全量入口先撤销每份条件，再应用已勘测且未抑制者；单实例入口撤销指定对象，再按抑制标记决定应用。因此本例手动设为未勘测后，前者移除效果，后者重新应用效果。
+
+::: warning 单实例重算会略过勘测状态
+`reapplyCondition(token)` 可以让未勘测实例重新提供效果。需要按市场勘测状态统一应用时，使用 `reapplyConditions()`；本节两种调用用于比较这项差异。
 :::
 
-## 给产业临时应用核心效果
+### 移除本次条件
 
-核心实验使用 [C12-S5] 的 Element Works。保存 `GearInRefineryCorePlugin.java` 与 `GearInSpecialItemProbe.java` 到同一目录，在 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 中，将以下局部调用放在产业状态日志之后：
+比较结束后，观察器把勘测状态改回 `true`，用 `removeSpecificCondition(token)` 删除本次实例，并恢复原抑制状态。删除会调用它的 `unapply()`，三项修饰随来源解除。
 
-```java
-new GearInSpecialItemProbe().log(market);
-```
+`removeCondition(specId)` 则移除同一规格的所有实例。当前实验只处理自己添加的一份，所以保存返回的 token；其他功能添加了同类型条件时，仍能保留它们。
 
-观察器从当前市场取得产业，保存原安装数据，再创建 `SpecialItemData` 并写入槽。核心的应用由本节自定义方法显式调用，局部操作如下：
+## 保存倍率与计时
 
-```java
-SpecialItemData data = new SpecialItemData("GearIn_refinery_core", "batch-01");
-industry.setSpecialItem(data);
-GearInRefineryCorePlugin plugin = (GearInRefineryCorePlugin) spec.getNewPluginInstance(null);
-plugin.applyToIndustry(industry);
-```
+Warfront 除了当前修饰，还保存 `multiplier` 与 `elapsed`。市场推进时调用 `advance(amount)`，本例直接累计传入的秒数，三项效果仍由 `apply(...)` 写入。
 
-`applyToIndustry(...)` 只对 `GearIn_element_works` 写入 `rare_metals` 供给，使用 `GearIn_refinery_core` 来源增加 3 档。`unapplyFromIndustry(...)` 按同一来源解除，完整观察器在 `finally` 中恢复安装数据，日志比较应用前、生效中与撤销后。
-
-**写入产业槽、调用效果与建立安装菜单分别完成。** 本例验证槽数据与显式供给修饰；产业菜单由 `InstallableIndustryItemPlugin` 接入，持续效果还要进入产业的应用和撤销流程。CSV 的 `colony_item` 标签与参数字符串并没有自动完成这些工作。
-
-原版 `GenericSpecialItemPlugin` 配合 `plugin params` 与 `ItemEffectsRepo` 提供产业安装物品的通用处理。本例从基础插件继承，当前方法由观察器直接调用，所以核心实验结束后解除，玩家代币的消耗与奖励则保留。
-
-## 从栈与规格取得插件
-
-上面的两个调用入口创建插件时，需要的上下文不同。货舱通过 `addSpecial(data, quantity)` 创建特殊物品栈，随后从栈取得实例数据与插件。以下局部片段使用独立测试货舱：
+`BaseMarketConditionPlugin.isTransient()` 默认返回 `true`，保存时只保留条件，读档后重新创建插件，字段回到初始值。本例要让倍率与计时延续，因此返回 `false`：
 
 ```java
-CargoAPI cargo = Global.getFactory().createCargo(true);
-cargo.addSpecial(new SpecialItemData("GearIn_salvage_token", "salvage-cache"), 1);
-for (CargoStackAPI stack : cargo.getStacksCopy()) {
-    if (!stack.isSpecialStack()) {
-        continue;
-    }
-    SpecialItemData data = stack.getSpecialDataIfSpecial();
-    SpecialItemPlugin plugin = stack.getPlugin();
-    log.info(data.getId() + " / " + data.getData() + " / " + plugin.getName());
+@Override
+public boolean isTransient() {
+    return false;
 }
 ```
 
-`getSize()` 提供数量，`getSpecialDataIfSpecial()` 返回当前 ID 与 data，`getSpecialItemSpecIfSpecial()` 返回规格。插件先通过 `setId(id)` 取得规格，再通过 `init(stack)` 保存当前栈，右键与货舱 tooltip 就拥有了栈上下文。
+**插件保存方式取决于需要延续的实例状态。** 固定效果可以按规格重建，倍率已经设为 2 时，读档恢复成 1 就改变了效果。也可以把必要状态放到市场 Memory，再在重建时读取；需要按生涯日累计的插件可参考 `BaseMarketConditionPlugin2`，它保存插件并提供 `daysActive`。
 
-::: warning 无栈插件不会调用 init
-`spec.getNewPluginInstance(null)` 只调用 `setId()`。这个实例可以读取名称、价格与描述；需要数量或实例 data 的方法，要由已绑定栈的入口调用。
-:::
+本节观察器在同一轮移除条件，日志验证的是应用和恢复。长期保留条件的功能还要在保存读档后比较倍率与计时，才能确认状态实际延续。
 
-核心方法只需要规格名称与传入产业，因而可以使用无栈实例。插件可能为绘制、提示和交互分别创建，实例字段是否已有栈要按调用入口判断。
+## 读取规格与显示条件
 
-## 读取规格，扩展显示与掉落
-
-`Global.getSettings().getSpecialItemSpec(id)` 返回整类物品的 `SpecialItemSpecAPI`，局部读取如下：
+`MarketConditionSpecAPI` 位于 `com.fs.starfarer.api.characters` 包，从设置取得注册结果。局部读取如下：
 
 ```java
-SpecialItemSpecAPI spec = Global.getSettings().getSpecialItemSpec("GearIn_refinery_core");
-if (spec != null) {
-    log.info(spec.getId() + " / " + spec.getName());
-    log.info("price=" + spec.getBasePrice() + ", stack=" + spec.getStackSize());
-    log.info("space=" + spec.getCargoSpace() + ", icon=" + spec.getIconName());
-    log.info("tags=" + spec.getTags() + ", rarity=" + spec.getRarity());
-}
+MarketConditionSpecAPI spec = Global.getSettings()
+        .getMarketConditionSpec(GearInWarfrontCondition.CONDITION_ID);
+LOG.info(String.format("id=%s name=%s script=%s icon=%s order=%.0f",
+        spec.getId(), spec.getName(), spec.getScriptClass(),
+        spec.getIcon(), spec.getOrder()));
 ```
 
-### 特殊物品规格速查表
+`getId()`、`getName()`、`getScriptClass()`、`getIcon()` 与 `getOrder()` 对应身份、插件和显示，`getDesc()` 取得原描述，`getTags()` 与 `hasTag()` 读取分类。`isPlanetary()`、`isDecivRemove()` 读取两项布尔设置，`getGenSpec()` 返回可选生成规格；当前条件由脚本添加，未配置自动生成。
 
-| 字段与读取入口                                                        | 用途                       |
-| --------------------------------------------------------------------- | -------------------------- |
-| `name`、`id`；`getName()`、`getId()`                                  | 显示名称与稳定 ID          |
-| `tags`；`getTags()`、`hasTag()`                                       | 分类与读取方的筛选         |
-| `tech/manufacturer`；`getManufacturer()`                              | 设计来源文本               |
-| `rarity`、`base price`；`getRarity()`、`getBasePrice()`               | 掉落选择参数与默认价格     |
-| `stack size`、`cargo space`；`getStackSize()`、`getCargoSpace()`      | 堆叠上限与单件空间         |
-| `baseRaidDanger`；`getBaseDanger()`                                   | 突袭危险度                 |
-| `icon`、两列声音；`getIconName()`、`getSoundId()`、`getSoundIdDrop()` | 图标与已登记声音           |
-| `plugin`、`plugin params`；`getNewPluginInstance(...)`、`getParams()` | 插件创建与规格级参数字符串 |
-| `desc`、`order`；`getDesc()`、`getOrder()`                            | 描述正文与列表排序         |
+界面沿用基类的 `getName()`、`getIconName()`、`hasCustomTooltip()` 与 `createTooltip()`，通过 `getTokenReplacements()` 替换描述中的市场字段。`isTooltipExpandable()` 与 `getTooltipWidth()` 控制提示展开和宽度，`runWhilePaused()` 决定暂停推进，当前采用默认的 `false`。市场数值仍从 `MarketAPI` 读取，规格只提供定义。
 
-规格的 `setDesc()`、`setName()`、`setIconName()`、`setBasePrice()`、`setManufacturer()`、`setParams()` 与 `setOrder()` 修改全局定义，随后读取同一规格的插件也会受影响。临时实例状态保存到 data，插件依当前栈解释它。
+### 原版条件速查表
 
-基础插件的 `getName()` 读取规格名，`getDesignType()` 读取制造商，`getPrice(market, submarket)` 默认采用基础价格。自定义价格可以结合传入市场计算，费用与合法性继续由交易流程处理。
-
-`createTooltip(...)` 提供货舱和图鉴说明，`isTooltipExpandable()` 与 `getTooltipWidth()` 控制展开和宽度。需要特殊图形时实现 `render(...)` 并使用渲染接口；当前物品保留基础图标与说明。原版蓝图在右键时更新已知设计，`WormholeScannerPlugin` 则在右键动作中改变通行能力，可以分别参考它们的对象与入口。
-
-掉落参数由 `resolveDropParamsToSpecificItemData(params, random)` 转换为实例 data。无参数时返回空字符串，返回 `null` 表示不产生该物品；实际加入 Cargo 仍由掉落流程完成。
+| 条件              | 插件                        | 主要效果                 | 本节关系          |
+| ----------------- | --------------------------- | ------------------------ | ----------------- |
+| `ore_sparse`      | `ResourceDepositsCondition` | 资源供给                 | 原版 procgen 条件 |
+| `hot`             | `BaseHazardCondition`       | 危险度                   | 基类修饰范式      |
+| `solar_array`     | `SolarArray`                | 抑制环境条件             | suppression 范式  |
+| `GearIn_warfront` | `GearInWarfrontCondition`   | 危险度、流通性、舰队质量 | 参数与 token 示例 |
 
 ## 完整最小例
 
-三个类保存到前述路径，产业实验与玩家代币分别采用上述入口。
+两类保存到前述路径，保留条件注册与经济观察器调用。
 
-::: details 完整成品：GearInRefineryCorePlugin
-
-```java
-package data.scripts.gearin.campaign;
-
-import com.fs.starfarer.api.campaign.econ.Industry;
-import com.fs.starfarer.api.campaign.impl.items.BaseSpecialItemPlugin;
-
-public class GearInRefineryCorePlugin extends BaseSpecialItemPlugin {
-    public static final String ITEM_ID = "GearIn_refinery_core";
-    public static final String MOD_ID = "GearIn_refinery_core";
-
-    public void applyToIndustry(Industry industry) {
-        if (!"GearIn_element_works".equals(industry.getId())) {
-            return;
-        }
-        industry.getSupply("rare_metals").getQuantity().modifyFlat(MOD_ID, 3f, getName());
-    }
-
-    public void unapplyFromIndustry(Industry industry) {
-        if (!"GearIn_element_works".equals(industry.getId())) {
-            return;
-        }
-        industry.getSupply("rare_metals").getQuantity().unmodifyFlat(MOD_ID);
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInSalvageTokenPlugin
+::: details 完整成品：GearInWarfrontCondition
 
 ```java
 package data.scripts.gearin.campaign;
 
-import com.fs.starfarer.api.campaign.CargoAPI.CargoItemType;
-import com.fs.starfarer.api.campaign.SpecialItemPlugin.RightClickActionHelper;
-import com.fs.starfarer.api.campaign.impl.items.BaseSpecialItemPlugin;
-import com.fs.starfarer.api.impl.campaign.ids.Commodities;
-
-public class GearInSalvageTokenPlugin extends BaseSpecialItemPlugin {
-    public static final String ITEM_ID = "GearIn_salvage_token";
-
-    @Override
-    public boolean hasRightClickAction() {
-        return true;
-    }
-
-    @Override
-    public void performRightClickAction(RightClickActionHelper helper) {
-        helper.removeFromClickedStackFirst(1);
-        helper.addItems(CargoItemType.RESOURCES, Commodities.SUPPLIES, 10f);
-    }
-
-    @Override
-    public boolean shouldRemoveOnRightClickAction() {
-        return false;
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInSpecialItemProbe
-
-```java
-package data.scripts.gearin.campaign;
+import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CargoAPI;
-import com.fs.starfarer.api.campaign.CargoStackAPI;
-import com.fs.starfarer.api.campaign.SpecialItemData;
-import com.fs.starfarer.api.campaign.SpecialItemPlugin;
-import com.fs.starfarer.api.campaign.SpecialItemSpecAPI;
-import com.fs.starfarer.api.campaign.econ.Industry;
 import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.campaign.econ.MarketConditionAPI;
+import com.fs.starfarer.api.impl.campaign.econ.BaseMarketConditionPlugin;
+import com.fs.starfarer.api.impl.campaign.ids.Stats;
 
-public class GearInSpecialItemProbe {
-    public void log(MarketAPI market) {
-        inspectSpec("GearIn_refinery_core");
-        inspectSpec("GearIn_salvage_token");
+public class GearInWarfrontCondition extends BaseMarketConditionPlugin {
+    public static final String CONDITION_ID = "GearIn_warfront";
+    private static final Logger LOG = Global.getLogger(GearInWarfrontCondition.class);
+    private float multiplier = 1f;
+    private float elapsed;
 
-        CargoAPI cargo = Global.getFactory().createCargo(true);
-        SpecialItemData coreData = new SpecialItemData("GearIn_refinery_core", "batch-01");
-        SpecialItemData tokenData = new SpecialItemData("GearIn_salvage_token", "salvage-cache");
-        cargo.addSpecial(coreData, 1f);
-        cargo.addSpecial(tokenData, 1f);
-
-        for (CargoStackAPI stack : cargo.getStacksCopy()) {
-            if (stack.isSpecialStack()) {
-                SpecialItemData data = stack.getSpecialDataIfSpecial();
-                SpecialItemPlugin plugin = stack.getPlugin();
-                Global.getLogger(GearInSpecialItemProbe.class).info(
-                        "special=" + data.getId() + ", data=" + data.getData() +
-                        ", plugin=" + plugin.getClass().getSimpleName());
-            }
-        }
-
-        Industry industry = market.getIndustry("GearIn_element_works");
-        SpecialItemData previous = industry.getSpecialItem();
-        SpecialItemSpecAPI coreSpec = Global.getSettings().getSpecialItemSpec(coreData.getId());
-        GearInRefineryCorePlugin corePlugin = (GearInRefineryCorePlugin) coreSpec.getNewPluginInstance(null);
-        float before = industry.getSupply("rare_metals").getQuantity().getModifiedValue();
-        float during;
-        try {
-            industry.setSpecialItem(coreData);
-            corePlugin.applyToIndustry(industry);
-            during = industry.getSupply("rare_metals").getQuantity().getModifiedValue();
-        } finally {
-            corePlugin.unapplyFromIndustry(industry);
-            industry.setSpecialItem(previous);
-        }
-        float after = industry.getSupply("rare_metals").getQuantity().getModifiedValue();
-        Global.getLogger(GearInSpecialItemProbe.class).info(
-                "rare_metals before=" + before + ", during=" + during + ", after=" + after);
+    @Override
+    public void init(MarketAPI market, MarketConditionAPI condition) {
+        super.init(market, condition);
+        multiplier = 1f;
+        elapsed = 0f;
     }
 
-    private void inspectSpec(String id) {
-        SpecialItemSpecAPI spec = Global.getSettings().getSpecialItemSpec(id);
-        if (spec == null) {
-            Global.getLogger(GearInSpecialItemProbe.class).warn("missing special item spec=" + id);
-            return;
+    @Override
+    public void setParam(Object param) {
+        if (param instanceof Float && ((Float) param) > 0f) {
+            multiplier = (Float) param;
+        } else {
+            multiplier = 1f;
         }
-        Global.getLogger(GearInSpecialItemProbe.class).info(
-                "spec=" + spec.getId() + ", name=" + spec.getName() +
-                ", price=" + spec.getBasePrice() + ", stack=" + spec.getStackSize() +
-                ", space=" + spec.getCargoSpace() + ", tags=" + spec.getTags());
     }
 
+    @Override
+    public void apply(String id) {
+        String source = getModId();
+        market.getHazard().modifyFlat(source, 0.15f * multiplier, getName());
+        market.getAccessibilityMod().modifyFlat(source, -0.05f * multiplier, getName());
+        market.getStats().getDynamic().getMod(Stats.FLEET_QUALITY_MOD)
+                .modifyFlatAlways(source, 0.15f * multiplier, getName());
+        LOG.info(String.format("Warfront applied: market=%s token=%s multiplier=%.2f hazard=%.2f accessibility=%.2f fleetQuality=%.2f",
+                market.getName(), source, multiplier,
+                market.getHazard().getModifiedValue(),
+                market.getAccessibilityMod().computeEffective(0f),
+                market.getStats().getDynamic().getMod(Stats.FLEET_QUALITY_MOD).computeEffective(0f)));
+    }
+
+    @Override
+    public void unapply(String id) {
+        String source = getModId();
+        market.getHazard().unmodifyFlat(source);
+        market.getAccessibilityMod().unmodifyFlat(source);
+        market.getStats().getDynamic().getMod(Stats.FLEET_QUALITY_MOD).unmodifyFlat(source);
+    }
+
+    @Override
+    public void advance(float amount) {
+        elapsed += amount;
+    }
+
+    @Override
+    public boolean isTransient() {
+        return false;
+    }
+
+    public float getMultiplier() {
+        return multiplier;
+    }
+
+    public float getElapsed() {
+        return elapsed;
+    }
+}
+```
+
+:::
+
+::: details 完整成品：GearInConditionProbe
+
+```java
+package data.scripts.gearin.campaign;
+
+import org.apache.log4j.Logger;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.campaign.econ.MarketConditionAPI;
+import com.fs.starfarer.api.campaign.econ.MarketConditionPlugin;
+import com.fs.starfarer.api.characters.MarketConditionSpecAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Stats;
+
+public class GearInConditionProbe {
+    private static final Logger LOG = Global.getLogger(GearInConditionProbe.class);
+
+    private GearInConditionProbe() {
+    }
+
+    public static void log(MarketAPI market) {
+        boolean wasSuppressed = market.isConditionSuppressed(GearInWarfrontCondition.CONDITION_ID);
+        String token = market.addCondition(GearInWarfrontCondition.CONDITION_ID, 1.0f);
+        MarketConditionAPI condition = market.getSpecificCondition(token);
+        MarketConditionSpecAPI spec = condition.getSpec();
+        MarketConditionPlugin plugin = condition.getPlugin();
+        LOG.info(String.format("Warfront condition: id=%s token=%s name=%s script=%s surveyed=%s requiresSurveying=%s planetary=%s",
+                condition.getId(), condition.getIdForPluginModifications(), condition.getName(),
+                spec.getScriptClass(), condition.isSurveyed(), condition.requiresSurveying(), condition.isPlanetary()));
+        LOG.info(String.format("Warfront values: hazard=%.2f accessibility=%.2f fleetQuality=%.2f plugin=%s",
+                market.getHazard().getModifiedValue(), market.getAccessibilityMod().computeEffective(0f),
+                market.getStats().getDynamic().getMod(Stats.FLEET_QUALITY_MOD).computeEffective(0f),
+                plugin.getClass().getSimpleName()));
+        LOG.info("Warfront market survey level=" + market.getSurveyLevel());
+
+        market.suppressCondition(GearInWarfrontCondition.CONDITION_ID);
+        float beforeReapply = market.getHazard().getModifiedValue();
+        market.reapplyConditions();
+        LOG.info(String.format("Warfront suppressed: beforeReapplyHazard=%.2f afterReapplyHazard=%.2f",
+                beforeReapply, market.getHazard().getModifiedValue()));
+        market.unsuppressCondition(GearInWarfrontCondition.CONDITION_ID);
+        market.reapplyConditions();
+        LOG.info(String.format("Warfront restored: hazard=%.2f accessibility=%.2f fleetQuality=%.2f",
+                market.getHazard().getModifiedValue(), market.getAccessibilityMod().computeEffective(0f),
+                market.getStats().getDynamic().getMod(Stats.FLEET_QUALITY_MOD).computeEffective(0f)));
+
+        condition.setSurveyed(false);
+        market.reapplyConditions();
+        LOG.info("Warfront condition survey all: surveyed=" + condition.isSurveyed()
+                + " hazard=" + market.getHazard().getModifiedValue());
+        market.reapplyCondition(token);
+        LOG.info("Warfront condition survey specific: hazard="
+                + market.getHazard().getModifiedValue());
+        condition.setSurveyed(true);
+        market.removeSpecificCondition(token);
+        if (wasSuppressed) {
+            market.suppressCondition(GearInWarfrontCondition.CONDITION_ID);
+        } else {
+            market.unsuppressCondition(GearInWarfrontCondition.CONDITION_ID);
+        }
+        market.reapplyConditions();
+        LOG.info("Warfront condition removed: present=" + market.hasSpecificCondition(token)
+                + " suppressed=" + market.isConditionSuppressed(GearInWarfrontCondition.CONDITION_ID));
+    }
 }
 ```
 
@@ -300,50 +331,57 @@ public class GearInSpecialItemProbe {
 
 ## 验证方案
 
-前置数据：MOD 已加载两条 `special_items.csv` 注册行、三个 Java 类，并且测试市场包含 `GearIn_element_works` 产业。
+前置数据：启用包含本节 `market_conditions.csv` 行和两个 Java 类的 GearIn MOD，并使用拥有 `gear_industry` 市场的测试存档。
 
-1. 保存 CSV、三个类、产业实验与新档代币入口，构建重启并创建测试新档，再进入 Foundry 市场。
-2. 运行观察器，读取两个 `SpecialItemSpecAPI` 的 ID、名称、价格、堆叠、空间和标签。
-3. 创建两份 `SpecialItemData`，加入独立 Cargo 并遍历特殊物品栈。
-4. 将 `GearIn_refinery_core` 写入产业槽，调用插件应用 `rare_metals` 产出修饰。
-5. 记录安装修饰生效前、生效中和撤销后的供给数量。
-6. 打开玩家货舱，完成已有待结算交易，记录补给数量，右键 Salvage Token，比较代币与补给的变化。
-7. 查看产业实验的 before/during/after 日志，确认原安装数据恢复；右键的消耗与 10 补给奖励保留在玩家货舱。
+1. 保存 CSV、两类与调用入口，构建重启，进入 Foundry 存档，推进一轮经济更新后查看 Warfront 日志。
+2. 读取日志中的 `GearIn_warfront`、实例 token、`Warfront` 名称、插件类和规格脚本类。
+3. 核对危险度、流通性和 `Stats.FLEET_QUALITY_MOD` 的动态值。
+4. 观察 suppression 前的数值，执行 `reapplyConditions()`，再观察 suppression 后的数值。
+5. 解除 suppression 并再次执行 `reapplyConditions()`，读取恢复后的三项数值。
+6. 比较条件勘测、市场勘测与单实例、全量重算的日志，再查看本次 token 删除后的原状态。
 
 预期结果：
 
-- 两个 ID、显示名和插件类正确对应；
-- Cargo 栈能够返回 `SpecialItemData` 与插件实例；
-- `Refinery Core` 只对 `GearIn_element_works` 的 `rare_metals` 供给增加 3；
-- modifier 清理后供给数量恢复到观察前值；
-- `Salvage Token` 右键动作移除 1 个当前物品并增加 10 单位补给；
-- 产业原安装数据与供给恢复；玩家货舱保存本次右键消耗与奖励结果。
+- spec ID 为 `GearIn_warfront`，名称为 `Warfront`，插件类为 `GearInWarfrontCondition`；
+- 参数 `1.0f` 下危险度修饰为 `+0.15`、流通性修饰为 `-0.05`、舰队质量修饰为 `+0.15`；
+- suppression 重算前效果仍在，重算后效果被移除；
+- unsuppression 并重算后，三项修饰恢复；
+- `requiresSurveying()` 为 `false`，条件级和市场级 survey 值可以分别读取；
+- `removeSpecificCondition(token)` 后实例不存在，三项市场修饰回到观察前状态。
 
 ## 故障分析
 
-- **规格读取失败**：注册路径或 ID 与代码不一致。
-    - **解决方案**：检查 CSV 的 `id`、MOD 数据路径和插件日志中的实际加载 ID，确保代码使用同一字符串。
+- **条件没有加载**：注册路径、ID 或脚本字段不一致。
+    - **解决方案**：检查 `market_conditions.csv` 的表头、ID、脚本类和图标路径。
 
-- **货物栈插件与预期不同**：注册行的插件名称指向其他类。
-    - **解决方案**：核对注册行的 `plugin` 全限定类名，并确认类位于 MOD 的 `data.scripts.gearin.campaign` 包。
+- **插件类无法实例化**：完整类名或 JAR 条目与注册不同。
+    - **解决方案**：核对 `data.scripts.gearin.campaign.GearInWarfrontCondition` 与无参构造。
 
-- **产业产出没有变化**：产业 ID 或应用入口与当前物品实验不一致。
-    - **解决方案**：确认产业 ID 是 `GearIn_element_works`，且应用和撤销使用同一个 modifier ID。
+- **修饰互相覆盖**：不同实例共用规格 ID 作为来源。
+    - **解决方案**：使用 `getModId()` 返回的实例 token，不要使用 `GearIn_warfront` 作为 source。
 
-- **右键后物品被扣除两次**：手动扣除与自动移除同时启用。
-    - **解决方案**：插件已经通过 helper 移除当前栈时，将 `shouldRemoveOnRightClickAction()` 保持为 `false`。
+- **抑制后数值尚未变化**：尚未执行条件重算。
+    - **解决方案**：调用 `reapplyConditions()`，再读取危险度、流通性和舰队质量。
+
+- **删除后同类型条件都消失**：按规格 ID 执行了全类型移除。
+    - **解决方案**：保存 `addCondition()` 返回的 token，并使用 `removeSpecificCondition(token)`。
+
+- **参数没有生效**：输入类型或范围不符合当前正数 Float 约定。
+    - **解决方案**：确认传入的是正数 `Float`，并在 `setParam()` 中记录倍率。
+
+- **现有舰队质量保持原值**：动态项影响后续生成参数。
+    - **解决方案**：读取 `Stats.FLEET_QUALITY_MOD` dynamic stat 的 `computeEffective(0f)`，不要只观察已经生成的舰队。
 
 ## 总结
 
-代币通过货舱栈取得插件，右键动作使用 helper 完成消耗与奖励；核心实验从规格创建无栈插件，显式写入产业供给并按来源撤销。注册规格、实例 data 与栈数量分别提供两种功能所需的信息。
+Warfront 用规格 ID 创建，用实例 token 写入和解除效果。倍率控制三项修饰，抑制与勘测决定重算时是否生效，删除本次实例后按原抑制状态恢复市场。
 
-产业槽数据还要通过安装菜单与产业生命周期接入，才能成为长期安装效果。本节先把每个实际调用说明清楚，结果分别在玩家货舱与产业日志中确认。
+全量与单实例重算各有条件，插件是否保存又决定字段能否延续。明确当前实例、应用入口与状态寿命，市场条件才会在重算和读档后继续保持预期行为。
 
 ## 建议参考项
 
-- `data/campaign/special_items.csv`：特殊物品规格与插件入口的注册来源；
-- `com.fs.starfarer.api.campaign.SpecialItemSpecAPI`：特殊物品静态规格的读取入口；
-- `com.fs.starfarer.api.campaign.SpecialItemData`：物品实例 ID 与附加数据的表达对象；
-- `com.fs.starfarer.api.campaign.SpecialItemPlugin`：价格、显示、掉落和交互行为的插件接口；
-- `com.fs.starfarer.api.campaign.impl.items.BaseSpecialItemPlugin`：特殊物品插件的继承起点；
-- `com.fs.starfarer.api.campaign.econ.Industry`：产业特殊物品槽的写入与读取入口。
+- `com.fs.starfarer.api.campaign.econ.MarketConditionAPI`：市场条件实例和 token；
+- `com.fs.starfarer.api.campaign.econ.MarketConditionPlugin`：条件插件生命周期；
+- `com.fs.starfarer.api.characters.MarketConditionSpecAPI`：CSV 静态规格；
+- `com.fs.starfarer.api.impl.campaign.econ.BaseMarketConditionPlugin`：条件基类默认行为；
+- `com.fs.starfarer.api.campaign.econ.MarketAPI`：条件添加、重算、抑制和移除入口。

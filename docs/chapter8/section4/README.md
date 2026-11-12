@@ -1,411 +1,273 @@
-# 修改舰船数值
+# 配置战斗监听器
 
-一艘舰船可以同时受到船插、技能和战术系统的修饰。自己的效果写入之后，要与这些来源共同计算；结束时，也应只解除自己的部分。本节以速度和 S-mod 上限为例，讲清来源 ID、数值合并与动态项的读取，再分别实现安装加成、十秒临时效果和战术系统加成。
+本节通过战斗监听器给伤害增加 10%，并记录实际结算结果。一个接口参与计算，另一个接口在结算后收到通知；它们还需要登记到适用的引擎或舰船上。完成这个示例后，再将同样的登记方式用于舰船推进、射程与 OP 修改。
 
-_本节预期阅读时间：\~25 分钟。_
+_本节预期阅读时间：\~18 分钟。_
 
-_本节预期操作时间：\~35 分钟。_
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 从 `ShipAPI` 取得普通数值与动态统计项；
-- 选择 `MutableStat` 或 `StatBonus` 写入修饰，并读取结果；
-- 在船插、战斗插件和战术系统的回调中安排修改与清理；
-- 根据日志与游戏表现定位加成未生效或未撤销的问题。
+- 选择 `Listener` 或 `Modifier`；
+- 挂载到引擎、舰船或 `stats`；
+- 读取部署与伤害事件；
+- 修改射程与 OP 回调结果；
+- 管理注册、重复与收尾。
 
 ## 前置知识
 
-- [C2-S1] 的船插登记与 `modifyPercent`、`modifyFlat` 用法；
-- [C2-S3] 的 `GearIn_assaultfeed`、战术系统效果脚本与舰船挂载；
-- [C4-S1] 的 `GearIn_test` 测试战役；
-- [C6-S2] 的源码布局与 [C6-S4] 的 JAR 构建、声明；
-- [C8-S3] 的战斗插件注册、暂停判断与每帧回调。
+- [C8-S1] 的战斗状态和结束判断；
+- [C8-S2] 的当前对象；
+- [C8-S3] 的插件登记和实例；
+- [C8-S4] 的数值与来源 ID；
+- [C7-S5] 的日志。
 
-## 取得舰船数值
+## 选择事件与监听范围
 
-从有效玩家舰取得 `MutableShipStatsAPI`，再取得它的最大速度。下面的局部片段使用已经确认可用的舰船：
+监听器接收特定事件，登记对象决定它监听哪一部分。整场战斗的伤害观察可以挂在引擎上，单舰效果则挂在对应舰船；OP 修饰由 stats 提供入口。先按功能选择接口与对象：
 
-```java
-ShipAPI ship = engine.getPlayerShip();
-MutableShipStatsAPI stats = ship.getMutableStats();
-MutableStat maxSpeed = stats.getMaxSpeed();
-```
+### 监听接口速查表
 
-`getMaxSpeed()` 返回的 `MutableStat` 属于这艘舰船，幅能容量与耗散等普通属性也通过相应 getter 取得。它保存基础值 `base` 和各项修饰：`getBaseValue()` 读取基值，`getModifiedValue()` 读取合并后的结果。
+| 接口                               | 作用                 | 合法挂载位置          |
+| ---------------------------------- | -------------------- | --------------------- |
+| `FleetMemberDeploymentListener`    | 监听舰队成员部署     | `CombatEngineAPI`     |
+| `DamageListener`                   | 读取伤害结算结果     | 引擎或舰船            |
+| `DamageDealtModifier`              | 修改造成的伤害       | 引擎或造成伤害的舰船  |
+| `DamageTakenModifier`              | 修改承受的伤害       | 引擎或承受伤害的舰船  |
+| `HullDamageAboutToBeTakenListener` | 在结构伤害结算前介入 | 引擎或承受伤害的舰船  |
+| `AdvanceableListener`              | 舰船级持续推进       | `ShipAPI`             |
+| `WeaponRangeModifier`              | 修改武器最终射程     | `ShipAPI`             |
+| `WeaponBaseRangeModifier`          | 修改武器基础射程     | `ShipAPI`             |
+| `WeaponOPCostModifier`             | 修改武器 OP 消耗     | `MutableShipStatsAPI` |
+| `FighterOPCostModifier`            | 修改战机 OP 消耗     | `MutableShipStatsAPI` |
 
-实际逐帧运行时，玩家舰可能尚未部署、已经被摧毁或变为逃生艇。完整例在读取数值前处理这些状态，然后才操作当前舰船的 stats。
+**接口与登记对象共同决定回调。** 实现了接口，还要进入对应对象的监听器管理器。下面的伤害示例作用于整场战斗，所以两类实例都登记到引擎。
 
-## 为效果写入自己的来源
+## 增加伤害并记录结算
 
-给最大速度增加固定的 20，并读取结果：
-
-```java
-maxSpeed.modifyFlat("GearIn_speed_example", 20f);
-float speed = maxSpeed.getModifiedValue();
-```
-
-`"GearIn_speed_example"` 标识来源，`20f` 指定增量。`modifyFlat(...)` 将这项记录写入最大速度对象，随后读取时与已有加成一起计算。
-
-在每帧回调中重复执行同一写入：
+效果由 `DamageDealtModifier` 在造成方结算前处理。向 `damage.getModifier()` 写入本次修饰，再返回来源 ID。本例使用 `GearIn_dealt` 增加 10%：
 
 ```java
-stats.getMaxSpeed().modifyFlat("GearIn_speed_example", 20f);
+damage.getModifier().modifyPercent("GearIn_dealt", 10f);
+return "GearIn_dealt";
 ```
 
-**同一个来源 ID、同一类修饰覆盖同一条记录。** 因此反复写入仍然只增加 20；换一个来源 ID，才会增加另一条参与计算的修饰。同一个效果保持稳定 ID，不同效果各自使用独立来源。
+回调的 `param` 可以是弹体、光束、EMP 电弧或自定义事件对象，`target`、`point` 与 `shieldHit` 提供目标、位置和护盾上下文。需要限定这项加成的适用事件时，就从这些参数判断。
 
-效果结束后，用相同来源解除：
+结算完成后，`DamageListener` 收到 `ApplyDamageResultAPI`，读取实际护盾、装甲、结构与 EMP 结果。它可以在引擎上记录整场结算，也可以挂到舰船上观察自身伤害。
 
-```java
-stats.getMaxSpeed().unmodify("GearIn_speed_example");
-```
+完整例分别用 `GearInDamageDealtModifier` 写入修饰，用 `GearInDamageListener` 记录结果。**输入修饰与最终结算在不同回调中取得**，日志中的伤害仍由整个结算过程决定。
 
-其他船插与技能的记录继续保留，最终速度也仍由它们共同决定。确认清理时，检查自己的来源记录是否存在，再比较最终数值，才能区分残留修饰与其他加成。
+## 登记本场监听实例
 
-## 计算多个来源的合并结果
-
-### 数值修饰速查表
-
-| 修饰    | 写入方法                       | 汇总与单位                         |
-| ------- | ------------------------------ | ---------------------------------- |
-| flat    | `modifyFlat(source, value)`    | 各来源增量相加，与目标数值同单位   |
-| percent | `modifyPercent(source, value)` | 各来源百分比相加，按基础值计算     |
-| mult    | `modifyMult(source, value)`    | 各来源倍率连乘，作用于此前合并结果 |
-
-`MutableStat` 用 `flatMods`、`percentMods` 和 `multMods` 分别保存三类记录。相同类型的来源先汇总，再按下式计算：
-
-```text
-modified = (base + base * percentMod / 100 + flatMod) * mult
-```
-
-例如基础速度为 80，再加 20、加基础值的 25%、乘 0.5，结果是：
-
-```text
-(80 + 80 * 25 / 100 + 20) * 0.5 = 60
-```
-
-**percent 按 base 计算，mult 缩放此前合并的整体。** 所以上面的 25% 提供 20，最后的 0.5 再将结果减半。需要整体减半时使用 `modifyMult(source, 0.5f)`；基值为 0 时，percent 的贡献也为 0。
-
-::: warning 根据计算对象选择减益写法
-
-负 percent 同样按 base 计算。例如基础值 80、固定增量 20，再写入 -100% 时，结果仍为 20，数值也可能被减到负数。需要整体缩放时使用 mult，并确认目标属性实际允许的范围。
-
-:::
-
-修改后调用 `getModifiedValue()` 读取当前结果。`setBaseValue(...)` 直接改变基础值，船插和战术系统通常采用来源修饰，在已有基础值之上参与计算。
-
-### 修改与读取方法速查表
-
-| 操作           | 方法                                                          | 当前用途                                         |
-| -------------- | ------------------------------------------------------------- | ------------------------------------------------ |
-| 写入           | `modifyFlat`、`modifyPercent`、`modifyMult`                   | 同来源、同类型覆盖已有值                         |
-| 保留条目       | `modifyFlatAlways`、`modifyPercentAlways`、`modifyMultAlways` | 即使数值为中性值，也写入条目；按签名提供描述参数 |
-| 全部解除某来源 | `unmodify(source)`                                            | 清除该来源在三张表中的修饰                       |
-| 解除某类型     | `unmodifyFlat`、`unmodifyPercent`、`unmodifyMult`             | 清除该来源的指定类型修饰                         |
-| 读取结果       | `getBaseValue`、`getModifiedValue`                            | 读取基础值与最终值                               |
-| 读取汇总       | `getFlatMod`、`getPercentMod`、`getMult`                      | 查看三类修饰各自的合计                           |
-| 检查状态       | `isUnmodified`                                                | 检查修饰表是否为空                               |
-| 修改基础值     | `setBaseValue`                                                | 设置 base，并在读取时重新计算                    |
-
-## 读写动态统计项
-
-速度有固定 getter，动态统计项则使用字符串 ID 查找。从 `stats.getDynamic()` 取得 `DynamicStatsAPI`，调用 `getMod(id)` 获得保存修饰的 `StatBonus`。下面用 S-mod 数量上限演示：
-
-```java
-DynamicStatsAPI dynamic = stats.getDynamic();
-StatBonus hullmodLimit = dynamic.getMod(Stats.MAX_PERMANENT_HULLMODS_MOD);
-hullmodLimit.modifyFlat("GearIn_dynamic_example", 1f);
-float effective = hullmodLimit.computeEffective(2f);
-```
-
-这里同时使用两个 ID：`Stats.MAX_PERMANENT_HULLMODS_MOD` 选择动态项，`GearIn_dynamic_example` 标识本次来源。不同效果可以向同一个动态项写入自己的记录，再分别覆盖和解除。
-
-`StatBonus` 保存 flat、percent 和 mult 修饰，基础值由读取方提供。`computeEffective(2f)` 将 2 与当前记录一起计算。原版 `Misc.getMaxPermanentMods(...)` 则从设置中的 `maxPermanentHullmods` 取得基准，再计算并取整。
-
-::: info 本节日志使用的动态基准
-
-战斗日志以 `2f` 演示写入与清理，实际 S-mod 上限由装配侧按设置中的基准计算。动态记录是否产生功能效果，还取决于读取方在哪里、采用什么基础值。
-
-:::
-
-`getMods()` 返回动态 `StatBonus` 集合，`getStats()` 返回动态 `MutableStat` 集合。后者通过 `getStat(id)` 取得，默认基础值为 1。可以用集合观察当前有哪些动态项，解除自己的效果仍然使用来源 ID。
-
-自定义功能也可以约定自己的动态 ID，让船插、技能或环境效果向它写入。但功能代码还要读取这些记录并计算结果；创建一个动态项本身，不会让游戏自动获得新功能。
-
-## 把修改放到对应时机
-
-掌握记录与计算之后，再决定它们何时存在。**适用场合与持续时间决定写入回调**：
-
-- **船插的 `applyEffectsBeforeShipCreation(...)`**：在生涯数值重建和战斗舰船创建前写入，适合安装船插后持续存在的加成。
-- **战斗插件的 `advance(...)`**：在当前战斗中读取实时对象和数值，适合计时与临时效果。
-- **战术系统的 `apply(...)` 与 `unapply(...)`**：在系统效果期间持续写入，再在结束时清理。
-
-本节用 `GearInStatsHullMod` 提供安装加成，`GearInShipStatsProbe` 提供前十秒临时效果，`GearInDynamicStatsSystem` 提供系统效果。三者写入独立来源，结束时也分别处理。
-
-### 船插写入持续加成
-
-在 `GearInStatsHullMod.applyEffectsBeforeShipCreation(...)` 中写入以下局部片段：
-
-```java
-stats.getMaxSpeed().modifyFlat(SPEED_ID, 10f);
-stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD).modifyFlat(DYNAMIC_ID, 1f);
-```
-
-安装船插后增加 10 速度与 1 动态上限。每次数值重建都以相同的 `SPEED_ID` 和 `DYNAMIC_ID` 写入，覆盖自己的旧记录。完整类将它们固定为 `GearIn_stats_hullmod_speed` 与 `GearIn_stats_hullmod_dynamic`。
-
-### 战斗插件先取得当前引擎
-
-在 `GearInShipStatsProbe.advance(...)` 开头写入：
-
-```java
-if (engine == null) {
-    engine = Global.getCombatEngine();
-    LOG.info("GearIn stats probe init: engine ready");
-}
-if (engine.isPaused()) {
-    return;
-}
-```
-
-本插件在战斗回调中第一次使用引擎时取得引用，之后只在本场战斗内使用。接着取得玩家舰，并确认它存活、属于可操作舰船；暂停帧在这里结束。
-
-### 前十秒写入，之后清理
-
-在引擎和玩家舰检查之后，用下面的局部片段安排时间：
-
-```java
-float t = engine.getTotalElapsedTime(false);
-if (t < REMOVE_AT) {
-    applyModifiers(stats);
-} else {
-    unapplyModifiers(stats);
-}
-```
-
-`REMOVE_AT` 为 `10f`，按本场战斗的非暂停时间判断。前十秒写入 +20 速度与 +1 动态修饰，之后解除这两个来源。时间从战斗开始计算，所以验证时立即部署工匠，才能观察完整的临时效果。
-
-日志每两秒记录普通数值、Dynamic 结果与来源存在状态。十秒后临时来源消失，船插的 +10 速度仍然保留。**清理后的基线包括其他仍生效的来源**，验证也据此比较。
-
-### 战术系统跟随效果强度
-
-`GearInDynamicStatsSystem.apply(...)` 的局部片段如下：
-
-```java
-stats.getMaxSpeed().modifyFlat(id, SPEED_BONUS * effectLevel);
-stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD)
-        .modifyFlat(DYNAMIC_ID, effectLevel);
-```
-
-系统的 `SPEED_BONUS` 为 `80f`。前摇时 `effectLevel` 从 0 升至 1，全功率保持 1，后摇回落至 0，速度因此随强度变化。普通速度使用游戏传入的系统 `id`，动态记录使用 `GearIn_dynamic_system`，两者都在结束时解除。
-
-在 `unapply(...)` 中，用相同 ID 清理：
-
-```java
-stats.getMaxSpeed().unmodify(id);
-stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD).unmodify(DYNAMIC_ID);
-```
-
-::: warning 写入与清理一一对应
-
-`apply` 写入的每个来源都要在 `unapply` 中清理。普通数值与 Dynamic 使用各自的来源时，分别调用对应对象的 `unmodify`。
-
-:::
-
-## 登记三种示例
-
-三个 Java 文件分别放入 `src/data/scripts/gearin/hullmods/`、`src/data/scripts/gearin/combat/` 与 `src/data/scripts/gearin/shipsystems/`，包名与完整文件一致。
-
-在 `data/hullmods/hull_mods.csv` 追加下列记录，已有表头时只追加第二行。船插 ID `GearIn_stats_hullmod` 在这里定义，四档装配点沿用最初示例的 3、6、9、12：
-
-```csv
-name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
-数值测试船插,GearIn_stats_hullmod,0,,,engines,引擎,1000,TRUE,,,3,6,9,12,data.scripts.gearin.hullmods.GearInStatsHullMod,"最大速度增加 10，S-mod 上限增加 1。","用于观察数值修饰。",,
-```
-
-在 `data/config/settings.json` 的 `plugins` 对象中加入本插件的局部登记：
+创建负责登记的 `GearInCombatListenerPlugin`，在 `settings.json` 的 `plugins` 中加入：
 
 ```json
 {
     "plugins": {
-        "gearInShipStatsProbe": "data.scripts.gearin.combat.GearInShipStatsProbe"
+        "gearInCombatListenerPlugin": "data.scripts.gearin.combat.GearInCombatListenerPlugin"
     }
 }
 ```
 
-沿用 [C2-S3] 的 `GearIn_assaultfeed` 系统与工匠挂载关系，将 `GearIn_assaultfeed.system` 的 `statsScript` 值改为：
+插件在首次 `advance(...)` 取得本场引擎，通过 `getListenerManager()` 登记两个实例。登记前按类查询，当前对象已有同类监听器时继续使用已有登记。插件字段保存自己创建的实例，以便结束时移除。
 
-```text
-data.scripts.gearin.shipsystems.GearInDynamicStatsSystem
+单独管理监听器时，使用下列局部方法：
+
+```java
+CombatListenerManagerAPI manager = owner.getListenerManager();
+manager.hasListener(listener);
+manager.hasListenerOfClass(MyListener.class);
+manager.addListener(listener);
+manager.getListeners(MyListener.class);
+manager.removeListener(listener);
+manager.removeListenerOfClass(MyListener.class);
 ```
 
-系统 CSV 与舰船的 `system id` 沿用已有登记。测试时安装船插，进入战斗观察临时修饰，再激活系统比较三种来源的效果。
+`owner` 是引擎或舰船，`MyListener` 换成实际类。查询、加入和移除都通过登记对象的管理器完成；stats 则提供自己的对应方法。
+
+战斗进入 `isCombatOver()` 时，完整例先解除这两个监听器，再移除登记插件。**插件列表与监听器管理器分别保存对象。** 结束插件后，监听器登记仍可能存在，因此收尾也分别完成。
+
+## 处理承受方与结构伤害
+
+需要减少承受的伤害时，使用 `DamageTakenModifier`。它的参数与造成方相似，登记到承受方舰船之后，可采用下面的局部方法乘上 0.9：
+
+```java
+public String modifyDamageTaken(Object param, CombatEntityAPI target,
+        DamageAPI damage, Vector2f point, boolean shieldHit) {
+    damage.getModifier().modifyMult("GearIn_taken", 0.9f);
+    return "GearIn_taken";
+}
+```
+
+结构伤害结算前还可以使用 `HullDamageAboutToBeTakenListener`。返回 `true` 会抵消当前这一笔伤害，下面的局部方法保护低于 50 点的结构伤害：
+
+```java
+public boolean notifyAboutToTakeHullDamage(Object param, ShipAPI ship,
+        Vector2f point, float damageAmount) {
+    return damageAmount < 50f;
+}
+```
+
+只保护一艘舰船时，将监听器挂到该舰船；接口也支持引擎范围。这个返回值针对本次结构伤害，不是修改舰船的永久减伤属性。
+
+部署事件使用 `FleetMemberDeploymentListener`，它只登记到引擎。`reportFleetMemberDeployed(...)` 提供本次 `DeployedFleetMemberAPI`，从部署成员取得舰体的关系沿用 [C8-S2]。
+
+## 在舰船上推进状态
+
+需要随着某艘舰船持续推进的状态，可以使用 `AdvanceableListener` 并挂到 `ShipAPI`。它的 `advance(...)` 接收所属舰船的推进时间，例如局部计时：
+
+```java
+public void advance(float amount) {
+    reportInterval.advance(amount);
+}
+```
+
+计时器属于这份监听实例，每艘舰船可以保留独立计数。登记和移除使用 `ship.getListenerManager()`，暂停与销毁也按所属舰船的运行阶段处理。
+
+## 用返回值修改射程与 OP
+
+### 武器射程
+
+`WeaponRangeModifier` 挂到 `ShipAPI`，用返回值提供最终射程的 percent、mult 与 flat 修饰。下面的大型武器增加 10%，另外两个方法返回中性值：
+
+```java
+public float getWeaponRangePercentMod(ShipAPI ship, WeaponAPI weapon) {
+    return weapon.getSize() == WeaponAPI.WeaponSize.LARGE ? 10f : 0f;
+}
+
+public float getWeaponRangeMultMod(ShipAPI ship, WeaponAPI weapon) {
+    return 1f;
+}
+
+public float getWeaponRangeFlatMod(ShipAPI ship, WeaponAPI weapon) {
+    return 0f;
+}
+```
+
+`WeaponBaseRangeModifier` 影响基础射程，方法名分别为 `getWeaponBaseRangePercentMod`、`getWeaponBaseRangeMultMod` 与 `getWeaponBaseRangeFlatMod`。参数同样可以按武器类型、尺寸或 ID 选择返回值，使用时按实际接口声明填写。
+
+### 武器与战机 OP
+
+`WeaponOPCostModifier` 和 `FighterOPCostModifier` 挂 `MutableShipStatsAPI`，接收当前计算值并返回新值：
+
+```java
+public int getWeaponOPCost(MutableShipStatsAPI stats, WeaponSpecAPI weapon, int currCost) {
+    return Math.max(0, currCost - 2);
+}
+
+public int getFighterOPCost(MutableShipStatsAPI stats, FighterWingSpecAPI fighter, int currCost) {
+    return Math.max(0, currCost - 1);
+}
+```
+
+武器成本减 2，战机成本减 1，两者下限都为 0。`currCost` 提供已经计算到当前步骤的值，多个来源在它的基础上继续计算。这里将新成本作为返回值交回调用方，普通 stats 与 Dynamic 的来源记录仍采用 [C8-S4] 的写法。
 
 ## 完整最小例
 
-三个类分别承担船插、临时战斗修饰和战术系统效果。按上面的路径保存，再构建 `jars/GearIndustry.jar`。
+三个类保存到 `src/data/scripts/gearin/combat/`，插件登记采用上面的条目。当前成品验证伤害结算与造成方修饰，其他局部方法按其接口和挂载对象扩展。
 
-::: details 完整成品：GearInStatsHullMod
+::: details 完整成品：`GearInDamageListener`
 
 ```java
-package data.scripts.gearin.hullmods;
+package data.scripts.gearin.combat;
 
 import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.BaseHullMod;
-import com.fs.starfarer.api.combat.MutableShipStatsAPI;
-import com.fs.starfarer.api.combat.ShipAPI.HullSize;
-import com.fs.starfarer.api.impl.campaign.ids.Stats;
+import com.fs.starfarer.api.combat.CombatEntityAPI;
+import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
+import com.fs.starfarer.api.combat.listeners.DamageListener;
 
-public class GearInStatsHullMod extends BaseHullMod {
+public class GearInDamageListener implements DamageListener {
 
-    private static final Logger LOG = Global.getLogger(GearInStatsHullMod.class);
-    private static final String SPEED_ID = "GearIn_stats_hullmod_speed";
-    private static final String DYNAMIC_ID = "GearIn_stats_hullmod_dynamic";
+    private static final Logger LOG = Global.getLogger(GearInDamageListener.class);
 
     @Override
-    public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAPI stats, String id) {
-        stats.getMaxSpeed().modifyFlat(SPEED_ID, 10f);
-        stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD).modifyFlat(DYNAMIC_ID, 1f);
-        LOG.info("GearIn hullmod stats: speed=" + stats.getMaxSpeed().getModifiedValue()
-                + " dynamicMaxHullmods="
-                + stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD).computeEffective(2f));
+    public void reportDamageApplied(Object source,
+            CombatEntityAPI target,
+            ApplyDamageResultAPI result) {
+        LOG.info("GearIn damage: target=" + target
+                + " hull=" + result.getDamageToHull()
+                + " armor=" + result.getTotalDamageToArmor()
+                + " shields=" + result.getDamageToShields()
+                + " emp=" + result.getEmpDamage());
     }
 }
 ```
 
 :::
 
-::: details 完整成品：GearInShipStatsProbe
+::: details 完整成品：`GearInDamageDealtModifier`
+
+```java
+package data.scripts.gearin.combat;
+
+import org.lwjgl.util.vector.Vector2f;
+
+import com.fs.starfarer.api.combat.CombatEntityAPI;
+import com.fs.starfarer.api.combat.DamageAPI;
+import com.fs.starfarer.api.combat.listeners.DamageDealtModifier;
+
+public class GearInDamageDealtModifier implements DamageDealtModifier {
+
+    @Override
+    public String modifyDamageDealt(Object param,
+            CombatEntityAPI target,
+            DamageAPI damage,
+            Vector2f point,
+            boolean shieldHit) {
+        damage.getModifier().modifyPercent("GearIn_dealt", 10f);
+        return "GearIn_dealt";
+    }
+}
+```
+
+:::
+
+::: details 完整成品：`GearInCombatListenerPlugin`
 
 ```java
 package data.scripts.gearin.combat;
 
 import java.util.List;
 
-import org.apache.log4j.Logger;
-
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.MutableShipStatsAPI;
-import com.fs.starfarer.api.combat.MutableStat;
-import com.fs.starfarer.api.combat.StatBonus;
-import com.fs.starfarer.api.combat.ShipAPI;
-import com.fs.starfarer.api.impl.campaign.ids.Stats;
+import com.fs.starfarer.api.combat.listeners.CombatListenerManagerAPI;
 import com.fs.starfarer.api.input.InputEventAPI;
-import com.fs.starfarer.api.util.DynamicStatsAPI;
-import com.fs.starfarer.api.util.IntervalUtil;
 
-/** 周期读取玩家舰数值，并在战斗开始十秒后移除临时修饰。 */
-public class GearInShipStatsProbe extends BaseEveryFrameCombatPlugin {
+/** 在本场战斗登记伤害监听与修饰，并在收尾时解除。 */
+public class GearInCombatListenerPlugin extends BaseEveryFrameCombatPlugin {
 
-    private static final Logger LOG = Global.getLogger(GearInShipStatsProbe.class);
-
-    private static final String MOD_SPEED = "GearIn_ship_stats_probe_speed";
-    private static final String MOD_DYNAMIC = "GearIn_ship_stats_probe_dynamic";
-    private static final float REMOVE_AT = 10f;
-
+    private final GearInDamageListener damageListener = new GearInDamageListener();
+    private final GearInDamageDealtModifier dealtModifier = new GearInDamageDealtModifier();
     private CombatEngineAPI engine;
-    private final IntervalUtil reportInterval = new IntervalUtil(2f, 2f);
+    private boolean registered;
 
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (engine == null) {
             engine = Global.getCombatEngine();
-            LOG.info("GearIn stats probe init: engine ready");
         }
-        if (engine.isPaused()) {
-            return;
+        CombatListenerManagerAPI manager = engine.getListenerManager();
+        if (!registered) {
+            if (!manager.hasListenerOfClass(GearInDamageListener.class)) {
+                manager.addListener(damageListener);
+            }
+            if (!manager.hasListenerOfClass(GearInDamageDealtModifier.class)) {
+                manager.addListener(dealtModifier);
+            }
+            registered = true;
         }
-        ShipAPI ship = engine.getPlayerShip();
-        if (ship == null || !ship.isAlive() || ship.isHulk() || ship.isShuttlePod()) {
-            return;
+        if (engine.isCombatOver()) {
+            manager.removeListener(damageListener);
+            manager.removeListener(dealtModifier);
+            engine.removePlugin(this);
         }
-        MutableShipStatsAPI stats = ship.getMutableStats();
-
-        float t = engine.getTotalElapsedTime(false);
-        if (t < REMOVE_AT) {
-            applyModifiers(stats);
-        } else {
-            unapplyModifiers(stats);
-        }
-
-        reportInterval.advance(amount);
-        if (reportInterval.intervalElapsed()) {
-            logStats(ship, stats);
-        }
-    }
-
-    /** 战斗运行期重复写入普通 MutableStat 和 Dynamic StatBonus。 */
-    private void applyModifiers(MutableShipStatsAPI stats) {
-        stats.getMaxSpeed().modifyFlat(MOD_SPEED, 20f);
-        stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD)
-                .modifyFlat(MOD_DYNAMIC, 1f);
-    }
-
-    /** 使用相同 ID 清理普通 stat 与 Dynamic。 */
-    private void unapplyModifiers(MutableShipStatsAPI stats) {
-        stats.getMaxSpeed().unmodify(MOD_SPEED);
-        stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD).unmodify(MOD_DYNAMIC);
-    }
-
-    /** 周期报告普通 MutableStat 与 Dynamic 的读取结果。 */
-    private void logStats(ShipAPI ship, MutableShipStatsAPI stats) {
-        MutableStat maxSpeed = stats.getMaxSpeed();
-        DynamicStatsAPI dynamic = stats.getDynamic();
-        StatBonus hullmodLimit = dynamic.getMod(Stats.MAX_PERMANENT_HULLMODS_MOD);
-        LOG.info("GearIn stats read: hull=" + ship.getHullSpec().getHullId()
-                + " maxSpeed base=" + maxSpeed.getBaseValue()
-                + " modified=" + maxSpeed.getModifiedValue()
-                + " flat=" + maxSpeed.getFlatMod()
-                + " unmodified=" + maxSpeed.isUnmodified()
-                + " dynamicMaxHullmods=" + hullmodLimit.computeEffective(2f)
-                + " dynamicEntries=" + dynamic.getMods().size()
-                + " probeSpeedPresent=" + maxSpeed.getFlatMods().containsKey(MOD_SPEED)
-                + " probeDynamicPresent=" + hullmodLimit.getFlatBonuses().containsKey(MOD_DYNAMIC));
-    }
-}
-```
-
-:::
-
-::: details 完整成品：GearInDynamicStatsSystem
-
-```java
-package data.scripts.gearin.shipsystems;
-
-import com.fs.starfarer.api.combat.MutableShipStatsAPI;
-import com.fs.starfarer.api.impl.campaign.ids.Stats;
-import com.fs.starfarer.api.impl.combat.BaseShipSystemScript;
-import com.fs.starfarer.api.plugins.ShipSystemStatsScript;
-
-public class GearInDynamicStatsSystem extends BaseShipSystemScript {
-
-    private static final float SPEED_BONUS = 80f;
-    private static final String DYNAMIC_ID = "GearIn_dynamic_system";
-
-    @Override
-    public void apply(MutableShipStatsAPI stats, String id, State state, float effectLevel) {
-        stats.getMaxSpeed().modifyFlat(id, SPEED_BONUS * effectLevel);
-        stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD)
-                .modifyFlat(DYNAMIC_ID, effectLevel);
-    }
-
-    @Override
-    public void unapply(MutableShipStatsAPI stats, String id) {
-        stats.getMaxSpeed().unmodify(id);
-        stats.getDynamic().getMod(Stats.MAX_PERMANENT_HULLMODS_MOD).unmodify(DYNAMIC_ID);
-    }
-
-    @Override
-    public StatusData getStatusData(int index, State state, float effectLevel) {
-        if (index == 0) {
-            return new StatusData("dynamic stats system active", false);
-        }
-        return null;
     }
 }
 ```
@@ -414,57 +276,63 @@ public class GearInDynamicStatsSystem extends BaseShipSystemScript {
 
 ## 验证方案
 
-前置数据：使用 [C4-S1] 的 `GearIn_test` 与工匠测试装配，完成本节三个效果的登记和挂载；测试舰船保留本节数值船插，以便比较各来源。
-
-1. 构建 MOD，用 `jar tf jars/GearIndustry.jar` 确认三个类的 class 条目存在，保存数据后重启游戏。
-2. 在测试战役的装配界面安装 "数值测试船插"，观察 `GearIn hullmod stats` 日志，记录此时的速度基线。
-3. 进入战斗并立即部署工匠，先保持战术系统关闭，在前十秒观察 `GearIn stats read`。
-4. 十秒后继续观察，比较速度、`dynamicMaxHullmods`、`probeSpeedPresent` 和 `probeDynamicPresent`。
-5. 激活战术系统，观察全功率与自动结束，观察速度和 Dynamic 计算值随 `effectLevel` 变化，以及结束后的恢复。
-6. 暂停约十秒再恢复，比较暂停前后的运行期日志。
+1. 保存三个类和插件登记，构建并重启，进入 `GearIn_test`。
+2. 用武器命中护盾、装甲和结构，搜索 `GearIn damage` 并比较实际字段。
+3. 在对应局部接口实现中分别测试舰船推进、射程或 OP，核对挂载对象和返回值。
+4. 暂停再恢复，比较所属对象的推进。
+5. 结束战斗，核对引擎级实例解除，再进入下一场检查新注册。
+6. 比较日志中的接口、目标和来源 ID，确认同一功能只登记一次。
 
 预期结果：
 
-- JAR 中包含 `GearInStatsHullMod.class`、`GearInShipStatsProbe.class` 和 `GearInDynamicStatsSystem.class`。
-- 船插写入速度 +10 和 Dynamic +1；其日志确认创建前回调已经执行。
-- 前十秒，插件再加 20 速度和 1 动态修饰，两个 `probe*Present` 为 `true`；十秒后两者为 `false`。
-- 临时效果清理后，速度回到保留其他来源的基线；以 2 计算的 Dynamic 同样保留船插的 +1。其他修饰均为空时，两阶段速度为 110 与 90，Dynamic 为 4 与 3；实际结果以实际日志为准。
-- 战术系统满效果时增加 80 速度和 1 动态修饰，结束后回到激活前结果。
-- `dynamicEntries` 用于观察动态集合大小，来源清理结果由两个 `probe*Present` 确认。
-- 暂停期间产生的运行期报告数量为 0，恢复后继续按非暂停时间运行。
+- 伤害监听记录结算字段，造成方修饰写入 `GearIn_dealt`。
+- 各局部接口在匹配对象上生效，射程与 OP 采用相应返回值。
+- 状态属于当前舰船或战斗实例。
+- 收尾解除本插件登记的监听，下一场重新建立。
 
 ## 故障分析
 
-- **普通数值每帧持续增加**：每次调用使用随机、时间戳或递增来源 ID，修饰表不断新增记录。
-    - **解决方案**：为同一效果复用稳定 ID，并在结束时用相同 ID 调用 `unmodify`。
+- **监听器注册后没有回调**：接口与挂载对象不匹配。
+    - **解决方案**：按接口表确认对象归属；部署监听器注册到引擎，舰船级推进注册到 `ShipAPI`，OP 修饰器注册到 `MutableShipStatsAPI`。
 
-- **Dynamic 日志变化，实际功能保持原样**：当前功能没有读取该动态项，或测试时提供的基础值与读取方不同。
-    - **解决方案**：核对动态统计项 ID、实际读取场合与 `computeEffective(baseValue)` 的基础值。
+- **伤害修饰结果方向相反**：`DamageDealtModifier` 与 `DamageTakenModifier` 挂到了错误的一方。
+    - **解决方案**：造成伤害的一方使用 `DamageDealtModifier`，承受伤害的一方使用 `DamageTakenModifier`，再次进行同一命中实验。
 
-- **生涯数值没有变化**：效果只在战斗插件的 `advance()` 中写入。
-    - **解决方案**：将安装后需要持续保留的修饰放进船插的 `applyEffectsBeforeShipCreation(...)`。
+- **舰船推进日志始终为空**：`AdvanceableListener` 被注册到引擎或统计对象。
+    - **解决方案**：通过 `ship.getListenerManager()` 注册，并确认监听器实例绑定当前 `ShipAPI`。
 
-- **战术系统结束后仍有加成**：`unapply()` 未清理 `apply()` 写入的全部来源。
-    - **解决方案**：分别核对普通数值与 Dynamic 的来源 ID，并在对应对象上解除。
+- **射程或 OP 数值没有变化**：修饰器挂载表面正确但实现了错误的接口。
+    - **解决方案**：最终射程使用 `WeaponRangeModifier`，基础射程使用 `WeaponBaseRangeModifier`，武器和战机 OP 使用对应的 `stats` 修饰器。
 
-- **percent 写入后结果不变**：目标数值的 base 为 0，百分比没有计算基准。
-    - **解决方案**：读取 base，按效果用途选择 flat、mult 或有实际读取方的动态统计项。
+- **同一事件每次出现多条日志**：同一对象重复注册了监听器实例。
+    - **解决方案**：注册前调用 `hasListenerOfClass(...)` 或 `hasListener(...)`，保留一个属于当前对象的实例。
+
+- **插件停止后仍出现部署日志**：引擎级监听器仍处于注册状态。
+    - **解决方案**：在 `removePlugin(this)` 前调用 `engine.getListenerManager().removeListener(listener)`。
+
+- **第二场战斗沿用上一场状态**：监听器实例或其字段跨战斗保存。
+    - **解决方案**：把计数器和计时器放在本场战斗创建的监听器中，清除静态字段和旧引擎引用。
+
+- **日志无法定位触发对象**：日志缺少接口、阶段或对象 ID。
+    - **解决方案**：每条日志加入稳定的 `GearIn` 前缀、接口名称和舰船或成员 ID。
 
 ## 总结
 
-来源 ID 让多个效果共同修改数值，又能各自撤销。`MutableStat` 保存基础值，`StatBonus` 则在计算时接收基准，最终都按 flat、percent 与 mult 的规则使用当前记录。
+伤害修饰参与计算，结果监听读取结算；舰船推进、射程和 OP 则分别登记到适用对象。接口决定事件，登记对象决定范围，单独实现接口还不足以收到通知。
 
-本节的安装加成、十秒临时效果与系统加成分别接到自己的回调。写入对象、来源、持续条件和读取基准确定之后，日志中的结果也就能对应到每项效果的应用与结束。
+本场插件负责创建、登记与解除伤害监听。结束时从管理器移除自己的实例，再结束插件，下一场重新建立这一组对象。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：普通数值与 Dynamic 的访问入口。
-- `com.fs.starfarer.api.combat.MutableStat`：base、三类修饰、覆盖、计算与解除方法。
-- `com.fs.starfarer.api.combat.StatBonus`：动态修饰与 `computeEffective` 计算。
-- `com.fs.starfarer.api.util.DynamicStatsAPI`：`getMod`、`getStat` 及两类动态集合。
-- `com.fs.starfarer.api.util.Misc`：`getMaxPermanentMods` 提供 S-mod 上限的实际读取示例。
-- `com.fs.starfarer.api.combat.HullModEffect`：创建前船插效果入口。
-- `com.fs.starfarer.api.combat.CombatEnginePlugin`：战斗插件 `init` 的调用约定。
-- `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：`apply`、`unapply` 与 `effectLevel`。
-- `data/config/settings.json`：本节插件登记与 `maxPermanentHullmods` 基础值。
-- `Starsector/starsector-core/starsector.log`：数值、修饰来源与回调的观察位置。
+- `com.fs.starfarer.api.combat.listeners.CombatListenerManagerAPI`：监听器增删查；
+- `com.fs.starfarer.api.combat.listeners.CombatListenerUtil`：伤害与结构伤害事件派发；
+- `com.fs.starfarer.api.combat.listeners.FleetMemberDeploymentListener`：部署成员回调；
+- `com.fs.starfarer.api.combat.listeners.DamageListener`：伤害事件监听；
+- `com.fs.starfarer.api.combat.listeners.DamageDealtModifier`：造成伤害修正；
+- `com.fs.starfarer.api.combat.listeners.DamageTakenModifier`：承受伤害修正；
+- `com.fs.starfarer.api.combat.listeners.HullDamageAboutToBeTakenListener`：舰体濒损预警；
+- `com.fs.starfarer.api.combat.listeners.AdvanceableListener`：逐帧推进回调；
+- `com.fs.starfarer.api.combat.listeners.WeaponRangeModifier`：武器射程修正；
+- `com.fs.starfarer.api.combat.listeners.WeaponBaseRangeModifier`：武器基础射程修正；
+- `com.fs.starfarer.api.combat.listeners.WeaponOPCostModifier`：武器 OP 消耗修正；
+- `com.fs.starfarer.api.combat.listeners.FighterOPCostModifier`：战机 OP 消耗修正。

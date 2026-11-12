@@ -1,211 +1,228 @@
-# 读取 MOD 内 JSON 文件
+# 读写 common 数据
 
-服务配置和界面文字都可以写成 JSON，但游戏取得它们的方式各有约定。本节先主动读取工坊服务的字段，再把一句问候放进自动加载的 strings 表。文件放在哪里、谁读取它、同名内容怎样合并，分别决定这两份数据如何生效。
+一份跨生涯保存的战斗报告，需要在载入时读回，在记录后写入，并在数据格式改变时继续解释已有内容。本节把这份报告放到 common，以次数、最近说明和 schema 演示完整的读改写过程，再比较原版写缓存与 LazyLib 的保存时机。
 
-_本节预期阅读时间：\~24 分钟。_
+_本节预期阅读时间：\~28 分钟。_
 
-_本节预期操作时间：\~45 分钟。_
+_本节预期操作时间：\~50 分钟。_
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 区分原版固定公开入口与 MOD 自有 JSON 路径；
-- 说明 `strings.json` 的加载、合并、分类和取值方式；
-- 说明 JSON 注释、尾逗号、编码和字段大小写边界；
-- 使用 `SettingsAPI.loadJSON` 读取 MOD 自有 JSON；
-- 从路径、BOM、JSON 语法、字段类型和缺失文本定位故障。
+- 定位并读取 common 目录中的 MOD 文本与 JSON；
+- 使用原版入口或 LazyLib 写回 common 数据；
+- 在读写过程中处理缺失字段、版本迁移与未知字段；
+- 根据文件、重启结果和日志定位 common 数据故障。
 
 ## 前置知识
 
-- [C17-S1] 的文件读取概念、MOD 相对路径和 `modId`；
-- [C1-S1] 的 JSON 基础与 UTF-8 无 BOM 要求；
-- [C7-S2] 的 `Global.getSettings()` 和日志入口。
+- [C7-S1] 的生涯生命周期回调；
+- [C7-S2] 的 `Global.getSettings()`；
+- [C17-S2] 的 JSON 结构、字段读取和编码规则。
 
-## 区分文件的使用方
+## 选择报告的保存位置
 
-`data/strings/strings.json` 是游戏约定的文本入口。游戏启动时会主动查找原版与已启用 MOD 的同名文件，合并后供代码取值；文件放在这个路径即可参与加载。
+**common 属于用户数据空间，同名文件跨生涯存档共享。** 换一份存档，报告仍从同一个文件读回。这适合跨生涯计数、共用设置与报告；某一生涯中的剧情进度则随该生涯保存。
 
-`data/config/gear_in/services.json` 则由 MOD 自己约定。我们需要给出读取路径，调用 `loadJSON(...)`，并解释其中的字段。JSON 描述的是数据结构，文件的用途由实际使用方确定。
+游戏的存档目录由启动配置决定，代码给出相对文件名即可。本节使用 `gear_in/state.json`，实际文件位于 `<存档目录>/common/gear_in/state.json.data`；游戏追加 `.data` 后缀。
 
-## 创建服务配置并读回字段
+文件名使用 MOD 自己的目录和名称，读写也采用 common 入口。MOD 资源目录用于发布输入，common 用于保存运行中的结果；即使逻辑文件名相同，实际位置仍由 API 决定。
 
-在 `data/config/gear_in/services.json` 写入：
+## 在载入生涯时读回报告
 
-```json
-{
-  "serviceId": "GearIn_service",
-  "interval": 10
+在既有 `GearInModPlugin` 中加入下面的局部辅助方法，添加 `org.json.JSONObject` 的 import：
+
+```java
+private static JSONObject readCommonState() throws Exception {
+    JSONObject state = new JSONObject();
+    if (Global.getSettings().fileExistsInCommon("gear_in/state.json")) {
+        state = Global.getSettings().readJSONFromCommon("gear_in/state.json", false);
+    }
+    if (!state.has("schema")) {
+        state.put("schema", 1);
+    }
+    if (!state.has("battles")) {
+        state.put("battles", 0);
+    }
+    if (!state.has("lastReport")) {
+        state.put("lastReport", "");
+    }
+    return state;
 }
 ```
 
-向 `GearInModPlugin.onApplicationLoad(...)` 追加以下局部读取，添加 `org.json.JSONObject` 的 import：
+`schema` 标识数据格式，`battles` 记录已保存的测试战斗报告次数，`lastReport` 保存最近的说明。首次使用时文件尚未建立，方法从空对象补出这三个字段；已有文件则读成原对象，只补入缺失字段。文件里其他内容因此继续保留。
+
+补值发生在内存中，保存要等实际记录报告。原版 `readTextFileFromCommon(...)` 在目标与临时文件都不存在时返回空字符串，`readJSONFromCommon(...)` 解析这份空内容会抛出 `JSONException`，所以本例先判断文件存在性。已有文件的解析错误交给生涯入口记录。
+
+向既有 `onGameLoad(boolean newGame)` 追加下面的局部调用，保留此前的生涯初始化：
 
 ```java
-JSONObject services = Global.getSettings().loadJSON(
-        "data/config/gear_in/services.json", "gear_in");
-Global.getLogger(GearInModPlugin.class).info("GearIn service: id="
-        + services.getString("serviceId") + " interval=" + services.optInt("interval", 10));
+try {
+    JSONObject state = readCommonState();
+    Global.getLogger(GearInModPlugin.class).info("GearIn common read: " + state);
+} catch (Exception ex) {
+    Global.getLogger(GearInModPlugin.class).error("GearIn common read failed", ex);
+}
 ```
 
-构建并重启后，搜索 `GearIn service`，日志应包含 `GearIn_service` 与 `interval=10`。这一步确认配置能被读取；服务何时运行、间隔怎样使用，仍要由后续代码实现。文件名叫 services，并不会让游戏凭空增加一项服务。
-
-`loadJSON` 返回 `JSONObject`。本例把 `serviceId` 作为必填字段，用 `getString` 直接取得；`interval` 允许省略，`optInt` 此时采用 10。**缺省值是配置约定的一部分。** 哪个字段可以省略，应由这份数据的含义决定。
-
-### 来源与字段读取
-
-以下是用于比较来源和缺省值的局部片段：
-
-```java {4}
-JSONObject services = Global.getSettings().loadJSON(
-        "data/config/gear_in/services.json");
-String serviceId = services.getString("serviceId");
-int interval = services.optInt("interval", 10);
-```
-
-单参形式从当前资源空间选择文件；双参形式把来源限定为指定 MOD。本节使用已启用的 `gear_in`，与 `mod_info.json` 的 ID 对应。
-
-JSON 路径遵循 [C17-S1] 的资源路径规则。引擎在读取前拒绝 `..`、反斜杠、冒号和以 `/` 开头的路径。`getString` 在字段缺失时抛出异常，已有值可以转为字符串；`getInt` 和 `getBoolean` 按各自规则转换，无法取得所需类型时抛出异常。允许缺省的字段用 `optString`、`optInt` 等方法并给出明确的替代值。
+构建、重启并载入生涯后，搜索 `GearIn common read`。首次读取的 schema 为 1、次数为 0、最近说明为空；已有字段则按文件进入日志。**载入只读取，次数在记录报告时增加。**
 
 ### 验证方案
 
-1. 保存配置和读取调用，构建 JAR 并重启，在 `starsector.log` 搜索 `GearIn service`。
-2. 将调用改为单参形式，再次构建、重启并比较字段。
-3. 从配置省略 `interval`，重启并观察缺省值，然后恢复 `"interval": 10` 与来源限定调用。
+1. 保存读取方法和生涯调用，构建 JAR 并重启，载入测试生涯，搜索 `GearIn common read`。
+2. 已有测试文件时，记录字段值；游戏退出后，省略文件中的 `battles`，重新启动并载入，观察内存补入的 0。比较完成后恢复原值。
+3. 在测试 JSON 中增加一个自定字段，再次读取，确认日志仍包含它。保留该字段，随后观察写入。
 
 预期结果：
 
-- 两种读取均得到 `GearIn_service`，来源限定调用选择 `gear_in` 的文件；
-- `interval` 按文件读取，省略时采用 10；
-- 路径、编码、语法和字段类型正确时，启动正常完成。
+- 首次读取采用格式 1、次数 0 与空说明，已有值按文件读取；
+- 缺失的字段补入内存对象，自定字段继续保留；
+- 原版读取方法处理的是实际公共目录，读取调用本身没有保存内存修改。
 
-## 在 strings 表中登记问候
+## 在记录报告时修改并保存
 
-在 MOD 的 `data/strings/strings.json` 加入本节分类与键，已有分类时在同一对象内追加：
+向 `GearInModPlugin` 加入下面的局部静态方法：
 
-```json
-{
-    "GearIn_ui": {
-        "GearIn_text_hello": "你好，工坊。"
+```java
+public static void recordCommonReport() throws Exception {
+    JSONObject state = readCommonState();
+    int schema = state.getInt("schema");
+    if (schema < 2) {
+        state.put("reports", state.optInt("reports", 0));
+        state.put("schema", 2);
     }
+    state.put("battles", state.getInt("battles") + 1);
+    state.put("lastReport", "GearIn test report");
+    Global.getSettings().writeJSONToCommon("gear_in/state.json", state, false);
+    Global.getLogger(GearInModPlugin.class).info("GearIn common saved: " + state);
 }
 ```
 
-`GearIn_ui` 是分类，`GearIn_text_hello` 是分类内的键，后面的本地化封装继续沿用它们。游戏加载该文件后，双参 `getString(category, id)` 就可以取回文字。局部调用如下：
+报告方法读回原对象，在格式低于 2 时补出 `reports`，并把 schema 改为 2；已有的 `reports` 和其他字段继续保留。随后次数加 1、写入最近说明，整个对象交给原版入口保存。
+
+这就是示例的数据迁移。旧格式只缺少一个字段，补值就能建立新结构；若字段含义也有改变，版本分支还要完成相应转换。保存当前 schema 后，下次读取才能知道这份数据已经按哪个格式处理。
+
+测试战斗结束后，通过 Console Commands 执行一次：
+
+```text
+runcode data.scripts.gearin.GearInModPlugin.recordCommonReport();
+```
+
+执行一次便记录一份测试报告：`battles` 加 1，`lastReport` 写为示例文本。写入参数 `false` 让本次保存直接执行，随后可以从磁盘读回；换另一份生涯仍能取得同一结果。
+
+## 根据保存频率选择写入方式
+
+原版写入入口分别接受文本和 JSON。下面是用于说明参数的局部片段：
 
 ```java
-String text = Global.getSettings().getString("GearIn_ui", "GearIn_text_hello");
+Global.getSettings().writeTextFileToCommon("gear_in/state.txt", text);
+Global.getSettings().writeJSONToCommon("gear_in/state.json", state, true);
 ```
 
-将取值与日志加入应用加载方法：
+`writeJSONToCommon(..., true)` 缓存序列化内容，变化时把写入放到后台队列；重复提交相同内容可以省去一次写入。对应的 `readJSONFromCommon(..., true)` 可以把读取内容放入写缓存，缓存已有该文件时会直接从缓存解析对象。`false` 适合本节直接比较磁盘内容的实验。
+
+**后台调用返回与磁盘写入完成是两个时机。** 验证持久化时，重启后从文件读回；比较缓存是否省去写入时，再观察重复提交相同内容后的文件更新时间。缓存读取适合配合这种保存方式使用，也会使返回对象反映缓存里的内容。
+
+common 文本单次最多写入 **1,048,576 个 Java 字符**。写入先使用 `.data.inprogress` 临时文件，再替换目标文件。异常发生在哪一步会影响磁盘状态，因此按目标文件、临时文件和异常日志核对本次结果；调用失败后的原文件状态也按实际文件判断。
+
+## 用 LazyLib 组织读改写
+
+LazyLib 的 `CommonDataJSONObject` 把 JSONObject 与公共文件名关联起来。以下是局部取值用法，需要 LazyLib 已启用并进入编译依赖，添加 `org.lazywizard.lazylib.JSONUtils` 及嵌套类型 `JSONUtils.CommonDataJSONObject` 的 import：
 
 ```java
-Global.getLogger(GearInModPlugin.class).info("GearIn strings: "
-        + Global.getSettings().getString("GearIn_ui", "GearIn_text_hello"));
+CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json");
+int battles = data.optInt("battles", 0);
+String schema = data.optString("schema", "1");
 ```
 
-构建并重启，`GearIn strings` 应记录 `你好，工坊。`。**分类和键选择文字，调用方负责把它送到显示位置。** 单参 `getString(key)` 读取的是 `data/config/settings.json`；此处取 strings 文本使用双参形式。
+`opt` 方法在字段缺失或无法转换为所需类型时采用给定缺省，`get` 方法则要求字段能够取值。`loadCommonJSON(...)` 会捕获读取与解析异常：单参形式返回空对象，带默认资源路径的重载可以改从 MOD 配置取得初始结构。
 
-## 合并之后，同名文字由谁提供
+编者建议对不可丢失的记录采用本例的原版读取入口，并在解析失败时保留明确的处理机会。LazyLib 返回空对象很方便，但随后若按初始数据修改并保存，已有文件的内容也会被覆盖；是否接受这个结果，取决于这份数据能否重新建立。
 
-字符串表在启动资源加载阶段自动载入。日志先出现 `Loading strings`，随后加载 `data/strings/tooltips.json`、`data/strings/strings.json` 和 `data/strings/tips.json`。原版与各个已启用 MOD 的 `strings.json` 分别产生一行 `Loading JSON from [...]`，路径包含 `data/strings/strings.json`。
-
-各来源的 `strings.json` 按启用顺序合并：原版内容先进入结果，后续 MOD 依次加入。对象按键递归合并，标量由后加载来源覆盖，因此一个 MOD 只写自己的分类和键，其余内容仍会保留。
-
-数组通常追加内容；键以 `music_` 开头，或原有数组长度为 4 且键名包含 `color` 或 `button` 时，会清除原数组后加入新内容。新数组以 `core_clearArray` 为首元素时也会先清除原内容。`mod_info.json` 的 `replace` 可以进一步整体替换文件。
-
-自有分类和键采用 MOD 前缀，便于维持这种归属。若有意修改已有文字，就需要使用原来的分类与键。
-
-编者不赞成为了几句文字接管整份原版文本表。按键合并已经能完成这项工作；整体替换还会把原版内容的维护、其他 MOD 的同路径输入一并牵涉进来，取舍应当与实际修改范围相称。
-
-下面用行星接近文本演示覆盖，在本 MOD 的文本表追加原版 `planetInteractionDialog` 分类中的 `approach`：
-
-```json
-"planetInteractionDialog": {
-    "approach": "$fleetOrShip 正在接近 $planetName；这是工坊的覆盖文本。"
-}
-```
-
-这是 JSON 对象内的局部字段，放在 `GearIn_ui` 分类之后，并补上分类之间的逗号。同一个文件同时保留自有分类和覆盖分类。再向应用加载方法追加观察：
-
-```java
-Global.getLogger(GearInModPlugin.class).info("GearIn strings approach: "
-        + Global.getSettings().getString("planetInteractionDialog", "approach"));
-```
-
-日志会保留 `$fleetOrShip` 和 `$planetName`，行星对话的使用方才会替换它们。`getString` 只取回模板；`$token` 的替换、`%s` 的 `String.format` 格式化，都由取值后的代码处理。舰队遭遇文本里的 `$faction`、`$fleetOrShip` 同样由对应对话填入动态内容，格式参数的数量与类型也要符合模板。
-
-::: warning 覆盖的是整个文本键
-同名 `(category, id)` 的后加载值会替换原句。新增自己的文字使用自有键；覆盖实验结束后移除 `planetInteractionDialog.approach`，行星对话才会重新采用原版文本。
+::: warning LazyLib 载入时也可能写入
+载入非空 JSON 时，包装对象在构造期间调用 `save()`；空对象尚未执行这次保存。`close()` 还会再次调用 `save()`，因此载入与关闭各有自己的写入时机。
 :::
 
-## 文件语法与缺失文本
+准备修改并保存时，try-with-resources 可以安排关闭。以下为局部写入片段：
 
-加载前，引号之外的 `#` 到行尾内容会被剥离，尾逗号也能被解析。括号、字符串引号和字段结构仍按 JSON 组织，文件保存为 UTF-8 无 BOM。BOM 会留在首字符，括号不配对或引号不闭合会产生带文件路径的 `JSONException`，使启动中止。
+```java
+try (CommonDataJSONObject data = JSONUtils.loadCommonJSON("gear_in/state.json")) {
+    int schema = data.optInt("schema", 1);
+    if (schema < 2) {
+        data.put("reports", data.optInt("reports", 0));
+        data.put("schema", 2);
+    }
+    data.put("battles", data.optInt("battles", 0) + 1);
+    data.put("lastReport", "GearIn test report");
+}
+```
 
-分类名和键名区分大小写。分类或键缺失时，双参 API 返回 `Missing string: [<id>]` 并记录 ERROR，游戏继续运行，界面可能显示这句占位文字。于是，文件能解析、文本键能取值和界面显示正确，需要分别确认。
+这里载入非空 JSON 时先保存原内容，`put` 修改内存对象，离开作用域后 `close()` 再保存修改。块内也可以显式调用 `data.save()` 提前保存，正常关闭时仍会增加一次写入。增量修改使用读回的对象，未知字段继续留在其中。
 
-## 原版分类速查表
-
-原版 `strings.json` 有 4 个顶层分类：
-
-| 分类                         | 内容                                                         | 键风格                                      | 主要使用方     | 键数 |
-| ---------------------------- | ------------------------------------------------------------ | ------------------------------------------- | -------------- | ---: |
-| `fleetInteractionDialog`     | 生涯舰队遭遇对话：交战、追击、撤退、接舷、打捞和友军增援     | 大量 `$faction`、`$fleetOrShip` 等令牌      | 舰队遭遇对话   |  160 |
-| `campaignHelp`               | 首次生涯提示和低 CR、低补给等提示                            | 键后缀使用 `_text`、`_dismiss` 或 `_action` | 生涯帮助弹窗   |   63 |
-| `jumpPointInteractionDialog` | 跳跃点交互：`approach`、`starAnchor`、`noFuel`、`noExits` 等 | `$fleetOrShip`                              | 跳跃点交互对话 |    5 |
-| `planetInteractionDialog`    | 行星接近文本：`approach`                                     | `$fleetOrShip`、`$planetName`               | 行星交互对话   |    1 |
-
-MOD 可以建立自己的分类。对话文本用令牌填入动态内容，帮助文字可以用 `\n` 分段，分类本身只负责组织这些键。
-
-### 同目录下的其他文本文件
-
-`data/strings/tooltips.json` 与 strings 各自加载，内容彼此独立；tooltip 值可以是纯字符串，也可以是含 `title` 和 `body` 的对象。`data/strings/tips.json` 保存加载界面的随机小贴士。这两份文件由各自使用方读取，双参 `getString` 的目标仍是 strings 表。
-
-## 比较 strings 的固定加载
+用户设置若由设置库管理，使用该库的读取与保存入口。文件看起来是普通 common JSON，实际还有自己的使用方和刷新时机；直接改写后，库的保存可能再次写回它掌握的值。
 
 ### 验证方案
 
-1. 保存自有分类与观察调用，构建重启，搜索 `Loading strings`、`data/strings/strings.json` 和 `GearIn strings`。
-2. 追加覆盖分类及第二条日志，构建重启，观察 `GearIn strings approach`。在生涯中接近并交互一颗行星，比较接近文本。
-3. 实验完成后移除覆盖用的 `planetInteractionDialog` 字段，保留 `GearIn_ui`，重启确认原版行星文本恢复。
+前置数据：Console Commands 已启用，准备两份生涯存档；同一公共测试文件用于观察跨存档结果。
+
+1. 记录当前 `battles`，完成一场测试战斗后执行报告命令，检查 `GearIn common saved` 和实际 `gear_in/state.json.data`。
+2. 退出游戏后重新启动、载入原生涯，确认读取到增加后的次数；再载入另一份生涯比较同名文件。
+3. 在游戏退出时，把测试文件的 `schema` 设为 1，省略 `reports`，保留此前增加的自定字段。重启后执行报告命令，检查迁移与保存结果。
+4. 保存同一对象时采用 JSON 写缓存参数 `true`，重复提交相同内容，等待后台写入后比较文件更新时间；完成缓存实验后恢复报告方法中的 `false`。
+5. 采用 LazyLib 局部片段时，在相同报告入口中用它替换原版读写，观察关闭后保存的字段与再次读取结果。
 
 预期结果：
 
-- 原版与 `gear_in` 的 strings 文件都在启动阶段被加载；
-- 自有键返回 `你好，工坊。`；
-- 覆盖键的日志保留 `$fleetOrShip` 和 `$planetName`，行星交互显示替换后的名称与工坊文字；
-- 只提供自有分类时，原版分类继续保留。
+- 每次报告命令将 `battles` 增加 1，`lastReport` 为 `GearIn test report`；
+- 重启与换存档后读到同一个公共文件的已保存值；
+- 格式 1 迁移后包含 `reports`，schema 为 2，自定字段保持原值；
+- 相同序列化内容可以由写缓存省去重复写入，持久化结果按文件读回确认；
+- LazyLib 载入非空对象时保存原内容，关闭后保存修改；提前 `save()` 再增加一次保存。
 
 ## 故障分析
 
-- **JSON 在首字符处解析失败**：文件带有 BOM。
-    - **解决方案**：以 UTF-8 无 BOM 重新保存，再调用 `loadJSON`。
+- **原版 JSON 读取抛出异常**：公共文件不存在，或已有内容不能解析。
+    - **解决方案**：按逻辑文件名检查存在性；已有文件时根据异常位置修正 JSON，再读取。
 
-- **JSON 报告括号或字符串错误**：对象结构、引号或逗号不合法。
-    - **解决方案**：根据错误位置修正相邻字段，再次加载。
+- **读取可选字段时抛出异常**：直接对缺失键使用了 `get`。
+    - **解决方案**：按字段的可选含义用 `opt`，或先通过 `has` 补入缺省值。
 
-- **读取字段时抛出异常**：字段缺失。
-    - **解决方案**：核对字段名和类型，允许缺失时改用对应 `opt` 方法。
+- **迁移后字段仍不符合当前格式**：版本分支没有执行所需转换，或迁移完成后没有保存当前 schema。
+    - **解决方案**：对照旧输入补齐对应转换，并在本节写入入口保存当前格式。
 
-- **双参读取出现空对象异常**：传入的 `modId` 与已启用 MOD 不一致。
-    - **解决方案**：核对 `mod_info.json` 的 `id` 和启用状态。
+- **保存后自定字段消失**：更新时创建了只含已知字段的新对象。
+    - **解决方案**：读取现有对象，在该对象上补充与修改字段。
 
-- **自有 JSON 没有产生任何业务结果**：文件没有使用方，固定路径只负责资源加载。
-    - **解决方案**：通过 `loadJSON` 主动读取并解释字段。
+- **重启后次数没有保留**：内存修改尚未交给写入入口，或 LazyLib 对象尚未保存、关闭。
+    - **解决方案**：执行报告写入方法，或让自动关闭完成保存，再从公共文件读回。
 
-- **strings 文本被其他内容替换**：分类或键与后加载来源重复。
-    - **解决方案**：为自有分类和键添加 MOD 前缀，重启。
+- **已有值被缺省覆盖**：每次载入都把整份默认对象写回已有文件。
+    - **解决方案**：读取已有对象，只为缺失字段补值，并在需要记录时保存。
 
-- **`getString` 返回 `Missing string`**：分类、键、固定路径或 MOD 启用状态不正确。
-    - **解决方案**：逐字符核对这些入口，再调用 `getString`。
+- **后台写入返回后文件仍是此前内容**：JSON 写缓存的后台队列尚未完成。
+    - **解决方案**：等待写入完成并重新读取；直接磁盘实验采用本节的 `false` 参数。
+
+- **写入异常后文件无法解析**：写入或替换阶段失败，目标文件的实际状态需要核对。
+    - **解决方案**：停止使用损坏内容，核对目标、`.data.inprogress` 与异常日志，修正并恢复测试数据后再写入。
+
+- **大文本写入失败**：单次文本超过 1,048,576 个 Java 字符。
+    - **解决方案**：缩减或按用途拆分数据后写入。
+
+- **用户设置再次恢复为此前数值**：设置库继续按自身保存流程写回它管理的文件。
+    - **解决方案**：通过该库的入口读取、更新和保存。
+
+- **读到的是 MOD 资源文件**：调用使用了资源读取入口。
+    - **解决方案**：为公共逻辑文件名使用 common 读写方法，按实际存档目录核对文件。
 
 ## 总结
 
-自有服务配置由 `loadJSON` 读成对象，代码解释字段；strings 则由游戏按固定路径合并，调用方以分类和键取得模板。字段缺省、同名文本覆盖和动态内容替换各有明确入口，文件的 JSON 外形并不能代替这些使用约定。
+公共报告的完整过程是读回原对象、补齐缺失字段、按 schema 处理格式，再于实际记录时修改并保存。文件跨生涯共享，换存档仍会取得同名结果。原版直接写入、后台写缓存与 LazyLib 的载入、关闭各有保存时机，确认持久化时便要同时对应调用和磁盘内容。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.SettingsAPI`：`loadJSON`、`getString`；路径安全校验由读取入口内部执行。
-- `data/strings/strings.json`：原版公开的本地化文本入口；
-- `data/config/`：MOD 自有 JSON 资源目录；
+- `com.fs.starfarer.api.SettingsAPI`：`fileExistsInCommon`、`readTextFileFromCommon`、`readJSONFromCommon`、`writeTextFileToCommon` 与 `writeJSONToCommon` 提供公共文件入口；
+- `org.lazywizard.lazylib.JSONUtils`：`loadCommonJSON` 将公共 JSON 关联到文件名；
+- `org.lazywizard.lazylib.JSONUtils.CommonDataJSONObject`：`save()` 写入，`close()` 调用保存；
+- `<存档目录>/common/`：用户的跨存档公共文件位置。

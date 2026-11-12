@@ -1,316 +1,336 @@
-# 制作一个生涯星系
+# 补完描述文本
 
-势力已经注册，入口类也能在新档中执行代码。本节继续通过这个入口生成 GearIn 星系：放入恒星、两颗行星和通讯中继，给主行星建立基础市场，再生成超空间入口。原版已经提供这些对象的类型，我们主要决定名称、位置与归属。
+第一章已经为舰船、战机和武器登记了基础描述。本节继续使用同一个文件，为齿轮工业、两个战术系统和 GearIn Second 补上文本，再展开描述类型、字段与绑定关系。哪些文字属于类型，哪些属于具体实体，分别在哪个界面显示，都要与对象一起考虑。
 
-_本节预期阅读时间：\~14 分钟。_
+_本节预期阅读时间：\~20 分钟。_
 
-_本节预期操作时间：\~15 分钟。_
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
-完成后，您将能够：
-
-- 从新档回调调用星系生成器；
-- 放置恒星、行星、通讯中继与跳跃点；
-- 区分创建星系、创建实体与加入实体的操作；
-- 给主行星绑定基础市场、产业与子市场；
-- 在星图、轨道、交互和交易界面核对生成结果。
+- 按对象选择描述类型、键和文本字段；
+- 解释 text1 至 text5 的默认值与显示用途；
+- 使用船体、行星类型和自定义描述键连接正文；
+- 为既有系统、势力与行星登记文本；
+- 根据界面结果定位字段与绑定问题。
 
 ## 前置知识
 
+- [C1-S7] 的 CSV 转义、描述注册、`id + type` 与基础对象文本；
+- [C2-S3] 的突击填弹器、抵抗力场与效果参数；
 - [C3-S1] 的 `gear_industry` 势力；
-- [C3-S3] 的 `GearInModPlugin` 与新档回调；
-- [C2-S1] 的 Java 文件、包名与类名对应关系；
-- 能够在生涯星图中定位星系、通过跳跃点移动并与行星交互。
+- [C3-S4] 的 GearIn Prime、Second、生成器与新档入口；
+- 能够使用数据库、货舱、行星交互与战斗指挥界面。
 
-## 创建星系生成器并接入入口
+## 从对象确定描述行
 
-创建 `data/scripts/gearin/campaign/GearInSystemGenerator.java`。这个类采用 `SectorGeneratorPlugin` 的生成器结构，操作都写在 `generate(SectorAPI sector)` 方法中，完整文件在后面给出。
+打开 MOD 的 `data/strings/descriptions.csv`，保留第一章的表头和已有记录。本节在其中追加自有行，列边界与转义继续按 [C1-S7] 处理。
 
-回到上一节的 `GearInModPlugin.java`，在 import 区加入：
+**`id` 和 `type` 共同确定描述。** 同一个 ID 可以分别用于不同类型，界面查询时仍会指定所需类型。`Description.getUID()` 将它们组合成 `id + "_" + type.name()`。
+
+游戏启动时读取原版与已启用 MOD 的同路径文件。同一文件内的重复组合会中止加载，跨文件同键行按读取顺序保留先处理的记录。新增描述必须使用唯一的自有键。
+
+需要整体替换数据文件时，`mod_info.json` 的 `replace` 可以声明该路径，替换内容需要承担整份文件的描述。普通新增内容直接登记自己的记录，保持对象与文本的归属明确。
+
+### 查询与段落读取
+
+查询时同时提供描述键与类型。下面的局部片段从第一章的工匠描述取出第一段：
 
 ```java
-import data.scripts.gearin.campaign.GearInSystemGenerator;
+Description description = Global.getSettings().getDescription(
+        "GearIn_artizan", Description.Type.SHIP);
+String firstParagraph = description.getText1FirstPara();
 ```
 
-再把新档回调改为下面的局部片段：
+`getDescription` 用船体 ID 与 SHIP 类型取得描述对象，`getText1FirstPara` 再从这个对象读取详细正文的第一段。界面也可以读取全文、其他段落或别的文本列，具体取决于显示用途。
 
-```java
-@Override
-public void onNewGame() {
-    new GearInSystemGenerator().generate(Global.getSector());
-    seedRelations(Global.getSector());
-}
+**同一列在不同类型中承担不同职责。** 例如 text2 可以是舰船引言、系统分类、武器署名、图库正文或实体标题。填写字段的依据是对象类型与显示用途，列名本身并不规定统一的内容。
+
+### 描述字段默认值速查表
+
+| 字段    | 默认值                  | 读取方式                                               |
+| ------- | ----------------------- | ------------------------------------------------------ |
+| `text1` | `No description... yet` | `getText1()`、`getText1FirstPara()`、`getText1Paras()` |
+| `text2` | `No description... yet` | `getText2()`、`getText2Paras()`                        |
+| `text3` | `No description... yet` | `getText3()`、`getText3Paras()`                        |
+| `text4` | `null`                  | `getText4()`、`getText4Paras()`                        |
+| `text5` | `null`                  | `getText5()`、`getText5Paras()`                        |
+| `notes` | 空                      | CSV 中的维护备注                                       |
+
+`hasText1()`、`hasText2()`、`hasText3()` 用于判断字段是否包含实际内容，占位字符串也会被判为空；`hasText4()`、`hasText5()` 判断对应字段是否为非空字符串。段落读取方法按换行拆分文本，去掉段落首尾空白并跳过空段落。
+
+## 按对象选择描述类型
+
+### SHIP：舰船与战机船体
+
+这里沿用第一章的船体描述。`SHIP` 查询船体的 `descriptionId`，基础船体采用 `hullId`；战机联队仍通过装配找到对应船体。工匠、守炉人、锻件和炉渣的记录继续由 [C1-S7] 提供，本节补充引言与受限条目的字段用途。
+
+- `text1`：船体详细说明，供数据库详情、装配、舰队与蓝图等界面读取；
+- `text2`：舰船简略引言；有实际内容且 `text3` 为空时，舰队 tooltip 使用它，其余情况采用 `text1` 第一段；
+- `text3`：受限船体详情使用的未知条目文本。
+
+装配带 `ship_limited_tooltip` tag 时，数据库船体详情采用 `text3`；该列缺少实际内容时显示 `UNKNOWN ENTRY`。船体的 `limited_tooltip_if_locked` 用于锁定状态下的受限显示，两项标记分别作用于装配和船体。
+
+### WEAPON：武器
+
+武器的详细说明仍写入武器 ID 对应的 `WEAPON` 行。货舱和数据库读取 `text1`，`text2` 还可以用于署名。
+
+武器的 `codex_require_related` 标签还会限制数据库条目的显示与解锁：至少有一个关联条目可见时才显示，至少有一个关联条目解锁时才解除锁定。原版 `vortex_launcher` 使用了这个标签。
+
+`text2` 以 `-` 开头时，武器 tooltip 与数据库详情把 `text1` 第一段渲染为斜体，并附加署名行。普通说明可以保留正常正文。
+
+装配列表的武器定位文字先读取 `weapon_data.csv` 中的 `primaryRoleStr`，描述的 `text2` 作为备用值。因此调整 [C1-S5] 三门武器的详细正文时，列表中已有的定位文字仍由武器数据决定。
+
+### SHIP_SYSTEM：战术系统
+
+两个战术系统已经有了定义和效果，说明文本则通过 `SHIP_SYSTEM` 补齐。它使用 `.system` 和 `ship_systems.csv` 共用的 ID；主系统与右键系统分别由舰船的 `system id`、`defense id` 引用。
+
+- `text1`：系统详细说明；
+- `text2`：系统类型标签，数据库按它分类，缺少实际内容时使用 `Special`；
+- `text3`：装配界面的简略说明，缺少实际内容时显示 `text1`；
+- `text4`：装配说明中需要高亮的文本，多个片段必须用 `|` 分隔；
+- `text5`：数据库系统详情的 `Effects` 文本，`{{内容}}` 标记需要高亮的部分。
+
+原版 `maneuveringjets` 行同时展示系统分类、短说明和效果文本：
+
+```csv
+maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship's maneuverability. Also provides a slight boost to the ship's top speed.,Movement,Provides a brief boost to maneuverability and top speed.,,The ship's top speed is increased by {{50}}.,
 ```
 
-第一条语句创建生成器并调用 `generate`，第二条继续设置关系。`mod_info.json` 的入口值仍指向 `GearInModPlugin`。**生成器由入口主动调用**，因此保存生成器类文件后，还要在入口中保留这条调用。
+`Movement` 写在 `text2`，简略说明写在 `text3`，带 `{{50}}` 的效果行写在 `text5`。这条原版行用于对照字段；本节为 [C2-S3] 已注册的 `GearIn_assaultfeed` 和 `GearIn_resistfield` 编写各自的系统说明。
 
-接下来依次向 `generate` 中加入代码。每段创建的对象会供后面的操作使用，因此按当前顺序排列。
+### RESOURCE：商品
 
-## 建立星系、恒星与超空间位置
+商品说明使用 `RESOURCE`，键来自 `data/campaign/commodities.csv`，例如 `supplies` 和 `fuel`。货舱与交易界面显示这一行的 `text1`，换行分成不同段落。
 
-先创建星系容器：
+核对时在货舱悬停补给，把显示的文字与 `supplies,RESOURCE` 对应起来。自定义商品也使用相同的注册关系。
 
-```java
-StarSystemAPI system = sector.createStarSystem("GearIn");
-system.setBackgroundTextureFilename("graphics/backgrounds/background2.jpg");
-system.setLightColor(new Color(200, 200, 210));
+### PLANET：行星类型
+
+行星类型说明写在 `PLANET` 行中。`planets.json` 的类型可以填写 `descriptionId`，否则使用类型本身的键，悬停和详情面板读取对应正文。多个类型也可以共用一个描述键。
+
+`PlanetAPI.setDescriptionIdOverride()` 可以为一颗行星指定 `PLANET` 描述键，`setCustomDescriptionId()` 则连接 `CUSTOM` 描述。两个方法选择的描述类型不同，具有自定义描述的行星优先使用 `CUSTOM` 正文。
+
+本节先在 GearIn Prime 上观察原版 `terran` 说明，再为 Second 设置具体行星的自定义正文。后续 [C4-S5] 创建新类型时，会把 `descriptionId` 连接到 `GearIn_ember_world` 的 PLANET 行。
+
+### ASTEROID：小行星
+
+默认查找键固定为 `asteroid`。小行星悬停 tooltip 读取 `asteroid,ASTEROID` 的 `text1`，标题使用对象名称或默认的 `Asteroid`。
+
+这是一条共用说明，在现有星系中悬停小行星即可观察。
+
+### FACTION：势力
+
+势力信息面板查询 `FACTION`，键就是势力文件的 `id`，正文来自 `text1`。
+
+[C3-S1] 已确定 `gear_industry`，本节就用 `gear_industry,FACTION` 登记齿轮工业的正文。
+
+### TERRAIN：生涯地形
+
+星云、小行星带、磁场、日冕和事件视界的悬停说明使用 `TERRAIN`。键由地形插件的 `getTerrainId()` 提供，对应行的 `text1` 保存正文。
+
+超空间地形根据区域状态查询 `terrainId + "_abyssal"`、`"_normal"`、`"_deep"` 或 `"_storm"` 等变体键。自定义地形的描述键必须与插件实际查询的键一致，才能在对应区域显示正文。
+
+### ACTION_TOOLTIP：战斗命令
+
+查找键为战斗指挥命令的小写名称，例如 `avoid`、`assault`、`escort`。战斗中悬停对应指挥命令时，tooltip 读取 `text1`，命令的短标签可以保存在 `text2`。
+
+原版 `avoid` 行包含分段正文和 `Avoid` 标签。观察时在战斗指挥界面选择目标并悬停命令，核对对应描述内容。
+
+### GALLERY：图库插图
+
+数据库图库使用 `GALLERY`。它按 graphics 配置中 `illustrations` 的贴图键查找描述；`CodexDataV2.populateGallery()` 通过 `getSpriteKeys("illustrations")` 取得这些键。准备图库条目时，贴图和描述使用相同的键。
+
+- `text1`：图库条目标题，`hasText1()` 为真时条目进入列表；
+- `text2`：详情正文，按段落显示；成对双引号包住的段落渲染为斜体，其后的 `-` 开头段落作为灰色署名；
+- `text3`：显示与解锁标记；转为小写后含 `hide_in_codex` 时隐藏，含 `unlocked` 时默认解锁，其余条目随玩家见过该插图而解锁。
+
+描述行的键必须与 `illustrations` 分类的贴图键逐字符一致。图库条目由贴图键和有效标题共同建立，填写描述时要同时确认这两个输入。
+
+### CUSTOM：实体自定义描述
+
+为某一颗行星或某一个实体写独立正文时，使用 `CUSTOM`。创建代码调用 `setCustomDescriptionId(id)` 连接描述键；实体配置中的 `customDescriptionId` 也可提供这个键。行星、空间站与跳跃点都可以沿用这种方式。
+
+- `text1`：实体 tooltip 和详情正文；
+- `text2`：实体 tooltip 使用的自定义标题，实际采用它的界面优先于对象名称；
+- `text3`：行星接触后显示的文本；
+- `text4`、`text5`：可由 Rules 的 `PrintDescription` 命令按字段编号读取。
+
+`PrintDescription` 的参数 `1` 至 `5` 分别选择对应文本列。目标为行星且 CUSTOM 各列都没有实际内容时，该命令改用行星描述覆盖键或类型键查询 `PLANET` 行。
+
+**行星的 CUSTOM 描述属于具体行星，PLANET 描述属于行星类型。** 本节使用 GearIn Second 连接自定义行星文本，GearIn Prime 继续使用类型描述，分别观察这两种范围。
+
+### 其他对象描述来源速查表
+
+| 对象     | 描述来源                                        | 使用方式                                                      |
+| -------- | ----------------------------------------------- | ------------------------------------------------------------- |
+| 战机联队 | 对应战机船体的 `SHIP` 行                        | 联队通过装配读取船体说明                                      |
+| 船插     | `data/hullmods/hull_mods.csv` 的 `desc`         | `HullModSpecAPI.getDescription(HullSize)` 按船体等级代换 `%s` |
+| 市场条件 | `data/campaign/market_conditions.csv` 的 `desc` | 市场条件 tooltip 读取说明                                     |
+| 特殊物品 | `data/campaign/special_items.csv` 的 `desc`     | `BaseSpecialItemPlugin.createTooltip` 读取物品规格            |
+| 商品     | `descriptions.csv` 的 `RESOURCE` 行             | 货舱和交易界面读取商品说明                                    |
+
+各 CSV 描述列的字段转义采用 [C1-S7] 的写法，显示规则由对应对象决定。
+
+### Description.Type 完整速查表
+
+| 类型             | 描述键来源                                    | 主要显示位置                     |
+| ---------------- | --------------------------------------------- | -------------------------------- |
+| `SHIP`           | 船体 `descriptionId`，基础船体使用 `hullId`   | 舰船与战机详情、舰队、装配和蓝图 |
+| `WEAPON`         | 武器 ID                                       | 武器 tooltip、装配列表和数据库   |
+| `SHIP_SYSTEM`    | 系统 ID                                       | 装配系统行和数据库系统详情       |
+| `RESOURCE`       | 商品 ID                                       | 货舱和交易界面                   |
+| `PLANET`         | 行星类型、类型 `descriptionId` 或运行时覆盖键 | 行星悬停与详情                   |
+| `ASTEROID`       | `asteroid`                                    | 小行星悬停                       |
+| `FACTION`        | 势力 ID                                       | 势力信息面板                     |
+| `TERRAIN`        | 地形插件实际查询的 ID                         | 地形悬停                         |
+| `ACTION_TOOLTIP` | 战斗命令的小写名称                            | 战斗指挥命令                     |
+| `GALLERY`        | `illustrations` 分类的贴图键                  | 图库标题、正文和解锁状态         |
+| `CUSTOM`         | 实体的 `customDescriptionId`                  | 实体说明、行星接触与 Rules 文本  |
+
+## 扩展船体描述键与前置文字
+
+`.ship` 与 `.skin` 可以通过 `descriptionId` 指向 `SHIP` 描述行。**字段改变的是描述查找键，船体注册仍使用原来的船体 ID**；皮肤可以共享已有正文，也可以通过独立键使用自己的说明。
+
+`descriptionPrefix` 保存正文之前的文字。`ShipBlueprintItemPlugin` 读取船体的前置文字，用 `前缀 + "\n\n" + text1 第一段` 组成蓝图说明。描述键负责选正文，前置文字负责补充这份正文。
+
+编者在基础船体上保留默认描述键，在皮肤需要独立说明时使用这两个字段。这样对象的注册 ID 与常用描述行可以直接对应，皮肤差异也有明确位置。
+
+## 给既有对象补上描述
+
+类型与字段的用途确定后，再分别写入势力、行星与系统的文本。每种对象都已经由前文创建，当前操作只设置它实际查询的描述键与文本列。
+
+### 为势力补上正文
+
+在已有 `descriptions.csv` 的表头后追加下面的局部片段：
+
+```csv
+gear_industry,FACTION,以重型制造、耐用结构和严格工序闻名的工业联合体。,,,,,
 ```
 
-`system` 保存刚创建的星系，背景路径和光照颜色采用原版资源。之后的行星、实体和入口都加入这个 `system`，让它们属于同一个地点。
+`gear_industry` 与 [C3-S1] 的势力文件 `id` 相同。势力信息面板查询这个 ID 时，读取 `text1` 作为正文。
 
-再初始化恒星并设置超空间位置：
+### 给 GearIn Second 设置自定义描述
 
-```java
-PlanetAPI star = system.initStar("gearin", "star_yellow", 600f, 550f, 3f, 0.75f, 1f);
-system.getLocation().set(-16000f, -9000f);
+在同一个文件中追加行星的局部描述片段：
+
+```csv
+GearIn_description_second,CUSTOM,齿轮工业外围的一颗荒芜行星，表面留有早期勘探设施的遗迹。,GearIn Second,您的舰队接近了 GearIn Second，地表勘探设施的信号仍在重复播放。,,,
 ```
 
-`gearin` 是恒星 ID，`star_yellow` 是原版黄色恒星类型。`star` 保存创建得到的恒星，行星和通讯中继随后以它作为轨道焦点，因此这一步放在行星创建之前。
+`text1` 是行星正文，`text2` 是供相应 tooltip 使用的标题，`text3` 是接触行星后显示的文本。这里定义描述键 `GearIn_description_second`，实体 ID 继续使用 [C3-S4] 的 `GearIn_planet2`；两者的连接由生成器中的绑定调用完成。
 
-### initStar 参数速查表
-
-| 参数             | 当前填写      |
-| ---------------- | ------------- |
-| 恒星 ID          | `gearin`      |
-| 恒星类型         | `star_yellow` |
-| 恒星半径         | 600           |
-| 日冕范围         | 550           |
-| 恒星风移动影响   | 3             |
-| 耀斑概率         | 0.75          |
-| 日冕 CR 损耗倍率 | 1             |
-
-**星系内部的轨道位置与星系在超空间中的位置分别设置。** `system.getLocation().set(...)` 使用超空间坐标，本例选取 `(-16000,-9000)`。它决定 GearIn 在星图中的位置，调整时可以先以原版核心区作为参照，再留出希望的航程。
-
-恒星初始化也会按恒星 ID 查询 `data/campaign/starmap.json` 中的 `starSystemLocations`。本例直接写超空间坐标；采用数据表定位时，登记 `gearin` 对应的位置即可。
-
-## 放置两颗行星
-
-在恒星之后添加主行星与外侧行星：
+打开 [C3-S4] 的 `GearInSystemGenerator.generate()`，在创建第二颗行星的语句之后加入绑定调用。局部片段如下，其中 `second` 是生成器刚创建的行星：
 
 ```java
-PlanetAPI prime = system.addPlanet(
-        "GearIn_planet1", star, "GearIn Prime",
-        "terran", 55, 150, 3200, 120);
 PlanetAPI second = system.addPlanet(
         "GearIn_planet2", star, "GearIn Second",
         "barren", 200, 90, 5200, 200);
+second.setCustomDescriptionId("GearIn_description_second");
 ```
 
-`GearIn_planet1`、`GearIn_planet2` 是实体 ID，Prime 与 Second 是显示名。第二个参数 `star` 指定轨道焦点，`terran` 和 `barren` 则选择原版行星类型。
+`setCustomDescriptionId` 的参数必须与 CUSTOM 行的 `id` 一致。生成器在创建新档时执行这段绑定代码，新档中的 GearIn Second 随后使用自定义描述；已有绑定所引用的描述文本，则在保存文件并重启后加载。因此，修改绑定与修改正文采用各自的生效步骤。
 
-`addPlanet` 后四个数字依次为轨道角、行星半径、轨道半径和轨道周期天数。主行星半径为 150，轨道半径为 3200，周期为 120 天；外侧行星半径 90，轨道半径 5200，周期 200 天。**轨道焦点与轨道参数共同确定行星的位置关系**，可以按代码中的对象与数值核对星图。
+### 给战术系统补上各列说明
 
-`addPlanet` 同时把行星加入当前星系。它返回的对象分别保存在 `prime` 与 `second` 中，后面的市场、描述等配置继续使用这两个引用。
+[C2-S3] 的突击填弹器与抵抗力场已经注册并装到工匠上。本节以这两个系统 ID 登记 `SHIP_SYSTEM` 行，分别提供详细说明、分类、装配短说明、高亮片段和效果文本。
 
-## 加入原版通讯中继
+突击填弹器满效果时增加 `50` 速度、提高机动、增加 `100%` 实弹射速并降低 `50%` 实弹开火幅能，`text5` 对应这些参数。抵抗力场的描述对应最高高爆与 EMP 减伤 `75%`、动能与能量减伤 `50%`。这些文本随系统 ID 被读取，数值对应各自的效果脚本。
 
-在同一个 `system` 中添加中继：
+## 观察行星说明的位置
 
-```java
-SectorEntityToken stable = system.addCustomEntity(
-        "GearIn_stable", "GearIn 通讯中继",
-        "comm_relay", "gear_industry");
-stable.setCircularOrbitPointingDown(star, 90, 2200, 100);
-```
+悬停行星时，观察对象标题、所属势力与正文的排列：
 
-`comm_relay` 是原版实体类型，`gear_industry` 指定所属势力。返回的中继实体保存在 `stable` 中，随后通过它设置围绕恒星的轨道，仍然使用刚才的 `star` 作为焦点。
+![行星悬停标题与描述正文](./desc_planet.png 'desc_planet.png')
 
-轨道角为 90，半径为 2200，周期为 100 天，`PointingDown` 采用该类实体常用的朝向方式。原版实体类型可以直接用于本节制作，自定义类型则由 [C4-S6] 展开。
-
-## 给主行星建立基础市场
-
-行星的外观类型与它的市场分别配置，`terran` 类型本身不会完成这里的市场创建。本节给 Prime 创建规模 4 的市场，使用人口、太空港、公开市场和仓储这些原版组件。
-
-先建立市场与行星的归属，局部片段如下：
-
-```java
-MarketAPI market = Global.getFactory().createMarket(prime.getId(), prime.getName(), 4);
-market.setFactionId("gear_industry");
-market.setPrimaryEntity(prime);
-market.setSurveyLevel(MarketAPI.SurveyLevel.FULL);
-```
-
-`createMarket` 使用行星 ID、名称与规模，创建得到的市场保存在 `market` 中。`setPrimaryEntity` 将 Prime 指定为主实体，`FULL` 把勘测状态设为已完成。归属关系设置后，再添加市场内容：
-
-```java
-market.addCondition("population_4");
-market.addIndustry("population");
-market.addIndustry("spaceport");
-market.addSubmarket("open_market");
-market.addSubmarket("storage");
-```
-
-这些字符串都是原版已注册的 ID，分别写入市场的条件、产业与子市场。市场条件描述规模 4 的人口，产业提供人口与太空港，子市场提供公开交易与仓储。
-
-最后把它加入星区经济，并连接回行星：
-
-```java
-sector.getEconomy().addMarket(market, true);
-prime.setMarket(market);
-prime.setFaction("gear_industry");
-```
-
-**创建市场、加入经济与绑定实体都要完成。** 使用行星的 ID 和名称创建市场之后，仍要通过上面的调用建立实际连接。完成后，玩家靠近 Prime 就可以打开对应市场。当前配置用于验证交易与归属，市场的完整行为与自定义商品由 [C12-S1]、[C12-S3] 继续讲解。
-
-## 生成往返星系的入口
-
-创建跳跃点并设置轨道：
-
-```java
-JumpPointAPI jump = Global.getFactory().createJumpPoint("GearIn_jump", "GearIn 跳跃点");
-jump.setCircularOrbit(star, 300, 1800, 100);
-jump.setRelatedPlanet(prime);
-system.addEntity(jump);
-system.autogenerateHyperspaceJumpPoints(true, true);
-```
-
-`createJumpPoint` 先返回跳跃点对象，`system.addEntity(jump)` 再把它加入星系。与前面的 `addPlanet`、`addCustomEntity` 相比，这个创建方法需要单独完成加入操作。
-
-`autogenerateHyperspaceJumpPoints` 根据星系内部的入口生成超空间端，并连接目的地。两个 `true` 分别允许生成气态巨行星入口与边缘跳跃点。**在调整星系时，入口位置也属于设计的一部分**：玩家抵达后还需要从这里驶向行星，轨道间距直接影响这段航程。
+图中使用 Cablim 展示标题与正文区域。验证本节 Second 时，以 GearIn Second 的对象与实际写入内容核对；PLANET 提供类型说明，CUSTOM 为具体行星提供正文，接触文本则显示在交互面板中。
 
 ## 完整最小例
 
-入口类保存到 `data/scripts/gearin/GearInModPlugin.java`，生成器保存到 `data/scripts/gearin/campaign/GearInSystemGenerator.java`。入口声明继续采用 [C3-S3] 的完整类名。
+本节在 `gear_in` 的 `data/strings/descriptions.csv` 中新增的记录如下。文件保留 [C1-S7] 的表头和基础对象描述，每个 `id + type` 必须只登记一次。这里各系统 ID 来自 [C2-S3]，势力 ID 来自 [C3-S1]：
 
-::: details 完整成品：GearInModPlugin
-
-```java
-package data.scripts.gearin;
-
-import com.fs.starfarer.api.BaseModPlugin;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.FactionAPI;
-import com.fs.starfarer.api.campaign.RepLevel;
-import com.fs.starfarer.api.campaign.SectorAPI;
-
-import data.scripts.gearin.campaign.GearInSystemGenerator;
-
-/** 在新档生成时建立齿轮工业星系与初始关系。 */
-public class GearInModPlugin extends BaseModPlugin {
-
-    @Override
-    public void onNewGame() {
-        new GearInSystemGenerator().generate(Global.getSector());
-        seedRelations(Global.getSector());
-    }
-
-    private void seedRelations(SectorAPI sector) {
-        FactionAPI gear = sector.getFaction("gear_industry");
-        gear.setRelationship("player", 0f);
-        gear.setRelationship("pirates", RepLevel.HOSTILE);
-        gear.setRelationship("hegemony", RepLevel.FRIENDLY);
-        gear.setRelationship("tritachyon", RepLevel.HOSTILE);
-    }
-}
+```csv
+GearIn_assaultfeed,SHIP_SYSTEM,提高实弹射速与舰船机动，降低实弹开火幅能。,进攻,提高实弹射速与机动，降低开火幅能。,实弹|射速|机动,"速度最多提高 {{50}}。
+实弹射速最多提高 {{100%}}，开火幅能最多降低 {{50%}}。",突击填弹器
+GearIn_resistfield,SHIP_SYSTEM,启动抵抗力场，降低舰船受到的伤害。,防御,降低高爆、EMP、动能与能量伤害。,高爆|EMP|动能|能量,"高爆与 EMP 伤害最多降低 {{75%}}。
+动能与能量伤害最多降低 {{50%}}。",抵抗力场
+gear_industry,FACTION,以重型制造、耐用结构和严格工序闻名的工业联合体。,,,,,
+GearIn_description_second,CUSTOM,齿轮工业外围的一颗荒芜行星，表面留有早期勘探设施的遗迹。,GearIn Second,您的舰队接近了 GearIn Second，地表勘探设施的信号仍在重复播放。,,,
 ```
-
-:::
-
-::: details 完整成品：GearInSystemGenerator
-
-```java
-package data.scripts.gearin.campaign;
-
-import java.awt.Color;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.JumpPointAPI;
-import com.fs.starfarer.api.campaign.PlanetAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.campaign.SectorEntityToken;
-import com.fs.starfarer.api.campaign.SectorGeneratorPlugin;
-import com.fs.starfarer.api.campaign.StarSystemAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-
-/** 创建包含两颗行星、通讯中继、基础市场与跳跃点的齿轮工业星系。 */
-public class GearInSystemGenerator implements SectorGeneratorPlugin {
-
-    @Override
-    public void generate(SectorAPI sector) {
-        StarSystemAPI system = sector.createStarSystem("GearIn");
-        system.setBackgroundTextureFilename("graphics/backgrounds/background2.jpg");
-        system.setLightColor(new Color(200, 200, 210));
-
-        PlanetAPI star = system.initStar("gearin", "star_yellow", 600f, 550f, 3f, 0.75f, 1f);
-        system.getLocation().set(-16000f, -9000f);
-
-        PlanetAPI prime = system.addPlanet(
-                "GearIn_planet1", star, "GearIn Prime", "terran", 55, 150, 3200, 120);
-        PlanetAPI second = system.addPlanet(
-                "GearIn_planet2", star, "GearIn Second", "barren", 200, 90, 5200, 200);
-
-        SectorEntityToken stable = system.addCustomEntity(
-                "GearIn_stable", "GearIn 通讯中继", "comm_relay", "gear_industry");
-        stable.setCircularOrbitPointingDown(star, 90, 2200, 100);
-
-        MarketAPI market = Global.getFactory().createMarket(prime.getId(), prime.getName(), 4);
-        market.setFactionId("gear_industry");
-        market.setPrimaryEntity(prime);
-        market.setSurveyLevel(MarketAPI.SurveyLevel.FULL);
-        market.addCondition("population_4");
-        market.addIndustry("population");
-        market.addIndustry("spaceport");
-        market.addSubmarket("open_market");
-        market.addSubmarket("storage");
-        sector.getEconomy().addMarket(market, true);
-        prime.setMarket(market);
-        prime.setFaction("gear_industry");
-
-        JumpPointAPI jump = Global.getFactory().createJumpPoint("GearIn_jump", "GearIn 跳跃点");
-        jump.setCircularOrbit(star, 300, 1800, 100);
-        jump.setRelatedPlanet(prime);
-        system.addEntity(jump);
-        system.autogenerateHyperspaceJumpPoints(true, true);
-    }
-}
-```
-
-:::
 
 ## 验证方案
 
-1. 保存入口和生成器，重启游戏，确认 `modPlugin` 指向 `data.scripts.gearin.GearInModPlugin`，创建新生涯。
-2. 在星图定位 GearIn，从超空间入口进入，核对黄色恒星、Prime、Second 和通讯中继。
-3. 查看轨道焦点与相对距离，核对中继归属齿轮工业。
-4. 靠近 Prime，进入公开市场和仓储，观察规模、商品与所属势力。
-5. 返回超空间再进入，确认星系入口与跳跃点连接正常。
+前置数据：已启用 Console Commands 和包含 [C1-S7] 基础描述、[C2-S3] 战术系统与 [C3-S4] 星系生成器的 GearIn MOD，生成器已加入 Second 的描述绑定调用。
+
+1. 保存描述文件与生成器，重启游戏，在 `starsector.log` 中观察 `Loading descriptions` 和描述文件加载结果。
+2. 创建新生涯并进入 GearIn 星系，悬停 GearIn Second、打开行星详情，再接触它，分别核对自定义正文和接触文字。
+3. 悬停 GearIn Prime 并打开详情，核对原版 `terran,PLANET` 的正文。
+4. 打开势力信息面板，选择齿轮工业，核对 `gear_industry,FACTION` 的正文。
+5. 使用控制台执行 `Addship GearIn_artizan`，打开工匠的装配界面，再打开数据库中的突击填弹器与抵抗力场详情，核对短说明、分类、高亮片段与 `Effects` 文本。
+6. 在货舱悬停补给，核对 `supplies,RESOURCE` 的正文；在数据库中检查原版 text2 以 `-` 开头的武器，观察署名与斜体正文。
+7. 在数据库中查看工匠、守炉人、锻件、炉渣及三门 GearIn 武器，核对基础描述；查看受限船体条目，观察未知条目文本。
+8. 在已有小行星带悬停小行星，再悬停带区地形，分别核对 `asteroid,ASTEROID` 和该地形查询的 `TERRAIN` 行。
+9. 进入战斗指挥界面，选中目标并悬停规避、攻击和护航命令，核对 `avoid`、`assault`、`escort` 对应说明。
+10. 打开数据库图库，查看已解锁插图，核对 `GALLERY` 标题、详情段落和署名。
+11. 修改 `GearIn_description_second` 的 `text1` 后保存并重启，读取刚创建的生涯，核对 Second 正文。
 
 预期结果：
 
-- GearIn 位于设置的超空间坐标，新档中可以进入。
-- 恒星使用 `star_yellow`，Prime 使用 `terran`，Second 使用 `barren`，轨道分别围绕恒星。
-- 中继采用 `comm_relay`，归属 `gear_industry`。
-- Prime 的规模 4 市场可以打开公开交易与仓储，勘测状态为已完成。
-- 星系内的手动跳跃点与超空间端连接，玩家可以往返。
+- 描述文件加载完成，本节新增记录没有 CSV 或类型解析异常；
+- GearIn Second 的正文为 CUSTOM 行 `text1`，接触文本为 `text3`，重启后正文采用保存的新文字；
+- GearIn Prime 显示 `terran` 类型的 PLANET 正文；
+- 齿轮工业势力信息显示本节 FACTION 正文；
+- 突击填弹器与抵抗力场分别显示 `进攻`、`防御` 分类、短说明及带高亮数值的效果文本；
+- 补给说明来自 `RESOURCE` 行，署名武器正文的第一段以斜体显示并附加署名；
+- 基础船体、战机和武器详情继续读取各自描述，受限船体按 `text3` 或 `UNKNOWN ENTRY` 显示；
+- 小行星与地形 tooltip 分别读取各自类型的正文；
+- 战斗命令 tooltip 与命令键对应；
+- 图库条目的标题来自 `text1`，详情来自 `text2`，引文与署名按各自格式显示。
 
 ## 故障分析
 
-- **星系位于超空间原点**：位置表缺少恒星 ID，生成器也未写入超空间位置。
-    - **解决方案**：在恒星初始化后设置 `system.getLocation()`，或登记 `starmap.json` 位置，保存后创建新档。
+- **新增对象显示占位描述**：类型合法，但描述行的键与对象实际查询的键不一致。
+    - **解决方案**：从对象定义确认船体描述键、武器 ID、系统 ID、商品 ID、势力 ID 或实体描述键，再统一对应行。
 
-- **行星或实体没有出现**：创建使用了不同星系容器，或跳跃点尚未加入实体集合。
-    - **解决方案**：核对当前 `system`，为工厂创建的跳跃点调用 `addEntity`，重新创建生涯。
+- **舰船引言与预期短文不同**：`text2` 缺少实际内容，或 `text3` 已被填写。
+    - **解决方案**：简略引言写入 `text2`，普通船体的 `text3` 保持空值。
 
-- **新档没有生成星系**：入口未加载，或回调未调用生成器。
-    - **解决方案**：核对入口声明、import 和 `generate` 调用，重启并创建测试生涯。
+- **武器列表副标题保持原样**：该武器的 `primaryRoleStr` 优先于描述行的 `text2`。
+    - **解决方案**：需要调整定位文字时修改 `weapon_data.csv` 的 `primaryRoleStr`。
 
-- **行星没有可交易市场**：市场未加入经济、主实体未指定或子市场 ID 填错。
-    - **解决方案**：核对市场创建、经济登记、实体绑定与 `open_market`、`storage`，创建新档验证。
+- **系统分类显示 `Special` 或短说明显示长文**：对应系统描述的 `text2` 或 `text3` 缺少实际内容。
+    - **解决方案**：按系统 ID 补齐分类与装配短说明。
+
+- **系统说明中的文本没有高亮**：`text4` 的片段与 `text3` 实际文本不匹配，或多个片段的分隔符错误。
+    - **解决方案**：让高亮片段逐字对应短说明，并用 `|` 分隔。
+
+- **Second 仍显示行星类型说明**：当前生涯中的行星没有执行新的自定义描述绑定，或绑定键与描述行不一致。
+    - **解决方案**：确认 `second.setCustomDescriptionId("GearIn_description_second")` 位于第二颗行星创建后，重新创建测试生涯。
+
+- **Second 接触界面缺少新增文字**：对应 CUSTOM 行的 `text3` 为空，或多行 CSV 的字段边界错误。
+    - **解决方案**：将接触文本写入该行 `text3`，按 [C1-S7] 的规则保存并重启。
+
+- **图库条目缺失或锁定**：贴图键、`text1` 标题和 `text3` 显示标记共同决定条目状态。
+    - **解决方案**：核对 `illustrations` 贴图键与描述键，填写有效标题，并按预期设置 `hide_in_codex` 或 `unlocked` 标记。
 
 ## 总结
 
-本节从新档回调调用生成器，建立星系与实体，再为 Prime 接入基础市场，并生成超空间入口。对象类型来自原版定义，代码提供位置、轨道与归属，各步骤返回的对象用于后续配置。
+描述文件按键与类型找到记录，各界面再读取对应文本列。先确定对象，再确定它的描述键，最后按显示用途填写字段；基础正文、分类、高亮、署名和接触文本就能各自落到正确的位置。
 
-现在已经有了一个能进入、交互与交易的星系。继续扩充时，沿着同样的对象关系加入内容，再分别核对星图、轨道和交互结果；下一节为势力、系统和行星补上各自的描述。
+本节把势力与战术系统接到了对应记录，并给 Second 设置独立 CUSTOM 正文。继续扩展其他对象时，沿用同一组关系核对，尤其留意类型说明和具体实体说明的作用范围。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.SectorGeneratorPlugin`：生成器的 `generate` 方法。
-- `com.fs.starfarer.api.campaign.SectorAPI`：创建星系和取得星区经济。
-- `com.fs.starfarer.api.campaign.StarSystemAPI`：初始化恒星、放置实体、超空间位置与入口生成。
-- `com.fs.starfarer.api.campaign.JumpPointAPI`：跳跃点对象与行星关联。
-- `com.fs.starfarer.api.campaign.econ.MarketAPI`：市场组件、主实体与勘测状态。
-- `data/config/planets.json`：原版恒星与行星类型。
-- `data/config/custom_entities.json`：原版生涯实体类型。
-- `data/campaign/starmap.json`：`starSystemLocations` 超空间位置数据。
+- `com.fs.starfarer.api.loading.Description`：描述类型、字段默认值与段落读取方法；
+- `com.fs.starfarer.api.SettingsAPI`：`getDescription(id, type)`；
+- `com.fs.starfarer.api.combat.ShipHullSpecAPI`：船体描述键与前置文字；
+- `com.fs.starfarer.api.campaign.PlanetAPI`：行星描述覆盖键；
+- `com.fs.starfarer.api.campaign.SectorEntityToken`：实体自定义描述键；
+- `com.fs.starfarer.api.impl.codex.CodexDataV2`：系统分类与图库条目；
+- `com.fs.starfarer.api.impl.campaign.rulecmd.PrintDescription`：按字段编号读取描述；
+- `com.fs.starfarer.api.impl.campaign.PlanetInteractionDialogPluginImpl`：行星接触文本；
+- `com.fs.starfarer.api.campaign.impl.items.ShipBlueprintItemPlugin`：舰船蓝图的前置文字与正文；
+- `com.fs.starfarer.api.impl.campaign.terrain`：地形描述查询；
+- `data/strings/descriptions.csv`：对象描述数据；
+- `data/config/planets.json`：行星类型与描述键；
+- `data/config/settings.json`：`graphics` 中的 `illustrations` 贴图键。

@@ -1,352 +1,436 @@
-# 编写 Rules 命令
+# 构建阶段任务
 
-Rules 命令把规则中的一行交给 Java 处理。本节从独立舰队通讯调用 `GearInRuleCommand`，解析文字、数值、布尔值与可选颜色、对象，再把结果保存到当前实体 Memory。同一实现分别用于条件和脚本，借此说明返回值与状态写入何时被使用。
+本节把 Foundry 检查连接到长期任务：接受后调查目标，完成检查再提交报告，获得 50000 信用点。对话结束以后任务继续存在，阶段、奖励与终止结果都由任务保存；附属情报读取它的当前阶段，用来比较任务状态与显示对象的职责。
 
-_本节预期阅读时间：\~20 分钟。_
+_本节预期阅读时间：\~35 分钟。_
 
-_本节预期操作时间：\~15 分钟。_
+_本节预期操作时间：\~45 分钟。_
 
 ## 学习目标
 
 完成后，您将能够：
 
-- 使用 `BaseCommandPlugin` 实现一个 Rules 命令；
-- 区分 Java 导入路径与运行时命令搜索路径；
-- 读取 `execute(...)` 的调用信息、参数与 Memory 槽位；
-- 使用 `Misc.Token` 解析字符串、数值、布尔值、颜色和对象；
-- 根据条件列、脚本列和日志结果定位命令故障。
+- 创建并接受一个 `BaseHubMission` 任务；
+- 用阶段和条件检查器组织调查、报告和完成路径；
+- 处理失败、放弃和一次性 `credits` 奖励；
+- 让附属 Intel 读取任务当前阶段；
+- 验证保存、读档和任务/Intel 分离后的结果。
 
 ## 前置知识
 
-- [C6-S4] 的构建、JAR 声明与加载；
-- [C16-S1] 的 `rules.csv` 七列、加载流程与数据语法；
-- [C16-S2] 的条件表达式、脚本执行与 Memory 槽位；
+- [C14-S4] 的 `BaseIntelPlugin`、Intel 注册和结束延迟；
+- [C15-S1] 的 `SectorEntityToken`、目标 Memory 和生涯入口；
+- Java 继承、构造器和布尔状态；
+- `MemoryAPI.getBoolean(...)` 与 `Global.getSector()`。
 
-## 保存命令，并登记搜索包
+## 从已有市场创建并接受任务
 
-保存 `src/data/scripts/gearin/rules/GearInRuleCommand.java`，继承 `BaseCommandPlugin`。命令行用简单类名开头，后面的文本经分词后传入 `execute(...)`；本例接受文字、数值、是否启用，以及可选颜色与对象。
+保存 `GearInHubMission.java` 与 `GearInHubMissionIntel.java` 到 `src/data/scripts/gearin/campaign/`。任务继承 `BaseHubMission`，它已经提供阶段、接受与终止流程，也通过 `BaseIntelPlugin` 提供情报和脚本职责。
 
-Java 类所在包还要进入 Rules 的搜索配置。在 MOD 的 `data/config/settings.json` 合并以下局部数组：
+在 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 追加以下局部入口，目标使用当前市场主实体：
 
-```json
-{
-  "ruleCommandPackages": [
-    "data.scripts.gearin.rules"
-  ]
+```java
+SectorAPI sector = Global.getSector();
+if (!sector.getPersistentData().containsKey("GearIn_hub_mission")) {
+    GearInHubMission mission = new GearInHubMission(market.getPrimaryEntity());
+    mission.createAndAbortIfFailed(market, false);
+    mission.accept(null, Collections.emptyMap());
+    GearInHubMissionIntel intel = new GearInHubMissionIntel(mission);
+    sector.getIntelManager().addIntel(intel);
+    sector.getPersistentData().put("GearIn_hub_mission", mission);
 }
 ```
 
-同名数组按现有设置合并，原版包继续保留。规则写 `GearInRuleCommand`，搜索器用包名组成 `data.scripts.gearin.rules.GearInRuleCommand`，找到无参构造可用的实现。
+当前目标已经存在，子类 `create(...)` 建立阶段条件并返回成功，随后 `accept(...)` 设置起始阶段、执行 `acceptImpl(...)`，登记任务情报与生涯脚本。创建返回 `false` 时，`createAndAbortIfFailed(...)` 会中止任务；本例的有效目标沿成功路径接受。
 
-### 区分两种路径
+创建后把任务保存到 persistent data。后续对话取得这份实例，读档观察入口也会沿已有键保留它。附属 Intel 另行登记，读取同一任务供阶段核对。
 
-Java 源码中的导入路径是 `com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin`。它说明基类位于 API 的 `impl.campaign.rulecmd` 包，与 `CommandPlugin` 所在的 `campaign.rules` 包不同。
+## 为调查与终止结果定义阶段
 
-原版搜索列表包括 `rulecmd` 基础包与 `salvage`、`newgame`、`missions`、`academy` 子包。数组按顺序组合简单类名，找到后使用该实现；本节的前缀让自有类名保持独立。
-
-::: warning 导入路径不会自动成为搜索路径
-
-Java 可以正确编译只证明 `import` 成立。`ruleCommandPackages` 没有 `data.scripts.gearin.rules` 时，`rules.csv` 仍然无法通过简单类名找到 `GearInRuleCommand`，游戏会在加载规则时报告命令不存在。
-:::
-
-## 从通讯分别触发条件与脚本调用
-
-成品菜单接到非敌对独立舰队的 `fleetConvMain`，两条选项分别 fire 自有结果 trigger。以下局部记录展示实际命令参数：
-
-```csv
-id,trigger,conditions,script,text,options,notes
-GearIn_rules_cmd_condition,GearInRulesCommandCondition,"GearInRuleCommand ""扫描 $playerName"" 2.4 true highlight
-$entity.GearIn_rulecmd_last >= 2",,命令返回 true 后，这条规则进入候选。,,条件列调用
-GearIn_rules_cmd_script,GearInRulesCommandScript,,"GearInRuleCommand ""补给"" 3.0 false good $entity.GearIn_rulecmd_object",命令把参数写入实体 Memory。,,脚本列调用
-```
-
-条件调用返回 `true` 后，还要通过数值条件，规则才参加选择。脚本调用则执行写入，返回 `false` 也不会停止后续脚本。通讯菜单与完整回流记录在成品中组合，两个 trigger 都有实际调用。
-
-## 用 execute 处理本次请求
-
-`CommandPlugin` 定义 Rules 命令与引擎之间的三个入口：
+类内使用一组枚举表示调查、报告、完成、失败与放弃。**条件连接、对话选项与阶段查询都使用这些值**，局部声明如下：
 
 ```java
-public interface CommandPlugin {
-    boolean execute(String ruleId, InteractionDialogAPI dialog, List<Token> params, Map<String, MemoryAPI> memoryMap);
-    boolean doesCommandAddOptions();
-    int getOptionOrder(List<Token> params, Map<String, MemoryAPI> memoryMap);
+public enum Stage {
+    GearIn_stage_investigate,
+    GearIn_stage_report,
+    GearIn_stage_completed,
+    GearIn_stage_failed,
+    GearIn_stage_abandoned
 }
 ```
 
-普通命令继承基类只需实现 `execute(...)`，生成选项时再覆写 `doesCommandAddOptions()` 与 `getOptionOrder(...)`。当前沿用默认 `false` 与 0，表示它没有提前收集的选项结果。
-
-基类的 `getEntityMemory(memoryMap)` 选择 ENTITY，缺少该槽位时使用 LOCAL。舰队通讯把指挥官作为当前人物，同时保留背后的舰队实体，所以本节写入 ENTITY，再用 `$entity.*` 读回结果。
-
-搜索命令时会尝试实例化，运行调用也创建当前实例。**跨调用结果保存在实际 Memory 中。** 当前类解析这次参数，日志用规则 ID 定位来源；命令字段不承担长期状态。
-
-### `execute` 的四个参数
-
-- `ruleId` 是当前规则 ID，日志可以用它定位调用来源；
-- `dialog` 是当前对话对象，非对话规则调用可以传入 `null`；
-- `params` 是命令名之后经过分词的 `Token` 列表；
-- `memoryMap` 保存 LOCAL、ENTITY、PLAYER 等 Memory 槽位。
-
-本例最后返回解析出的 `enabled`。条件列使用这个值筛选，脚本列使用已经完成的写入结果，两条通讯路径因而能直接比较同一方法的不同调用。
-
-## 解析 `Token` 参数
-
-`params` 已经是 `Misc.tokenize(...)` 得到的 `List<Token>`。空白分隔普通参数，引号保留含空格的字面量，反斜杠处理转义，操作符独立。本例的三个必需参数来自规则与可能的变量值，当前命令按这份约定解析。
-
-### 区分变量、字面量和操作符
-
-Token 分为 `VARIABLE`、`LITERAL` 与 `OPERATOR`，判断方法读取各自类型。文字接受字面量或变量，数值与布尔参数检查当前取值，局部处理如下：
+`STAGE_INVESTIGATE` 等常量指向对应成员。构造器设置 ID 与显示名，再声明接受后的起点和终止阶段：
 
 ```java
-        Token labelToken = params.get(0);
-        Token amountToken = params.get(1);
-        Token enabledToken = params.get(2);
-        if ((!labelToken.isLiteral() && !labelToken.isVariable())
-                || !amountToken.isFloat(memoryMap)
-                || !enabledToken.isBoolean(memoryMap)) {
-            LOG.warn("GearInRuleCommand: invalid parameter type for rule " + ruleId);
-            return false;
-        }
+public GearInHubMission(SectorEntityToken target) {
+    this.target = target;
+    setMissionId("GearIn_hub_mission");
+    setName("GearIn field inspection");
+    setStartingStage(STAGE_INVESTIGATE);
+    setSuccessStage(STAGE_COMPLETED);
+    setFailureStage(STAGE_FAILED);
+    setAbandonStage(STAGE_ABANDONED);
+}
 ```
 
-数值检查用于这次参数的可解析值，布尔检查接受 `true` 或 `false`。不符合约定时返回 `false` 并记录规则 ID；有效输入继续进入实际取值。
+`setStartingStage(...)` 选择调查起点，完成、失败与放弃各接到基类的结束方法。任务 ID 是稳定身份，名称用于情报列表；进入报告仍是活动状态，进入已声明的终止阶段才产生结束结果。
 
-### 读取字符串并替换文本 `token`
+## 用目标条件推进阶段
 
-`getString(...)` 取得原字面量或变量字符串，带 token replacement 的版本继续替换 `$playerName` 等文本字段。后者需要当前对话目标，局部选择如下：
+在 `create(...)` 中，把调查阶段连接到报告，条件是目标自身的 `$GearIn_hub_target_complete`：
 
 ```java
-        String label = dialog == null
-                ? labelToken.getString(memoryMap)
-                : labelToken.getStringWithTokenReplacement(ruleId, dialog, memoryMap);
+@Override
+protected boolean create(MarketAPI createdAt, boolean barEvent) {
+    connectWithMemoryFlag(STAGE_INVESTIGATE, STAGE_REPORT, target, TARGET_COMPLETE_KEY);
+    return true;
+}
 ```
 
-通讯中的文字参数变为 "扫描 <玩家名>"。非对话调用直接读取原字符串，当前请求有哪些界面对象，决定采用哪种文本处理。
+连接明确给出起点、终点、Memory 对象与键。无起点的 `setStageOnMemoryFlag(...)` 可用于跨阶段条件，本节将检查结果限定在调查阶段使用。任务也登记这项 Memory 变更的清理，结束时基类解除目标标记。
 
-### 读取数值和布尔值
+`advanceImpl(...)` 累计当前阶段的生涯日数，并周期性检查条件。调查中读到 `true` 后进入报告，关系如下：
 
-`getFloat(memoryMap)` 返回浮点数，`getInt(memoryMap)` 对同一个浮点结果执行四舍五入。`getBoolean(memoryMap)` 使用 `Boolean.parseBoolean`，只有忽略大小写的 `true` 会得到 `true`；`1` 与 `yes` 都会得到 `false`。
+```text
+GearIn_stage_investigate
+    → 目标 Memory: $GearIn_hub_target_complete == true
+    → GearIn_stage_report
+```
+
+报告本身还没有发放奖励，它表示玩家已经完成调查，可以提交结果。当前阶段与阶段计时保存在任务中，保存读档后继续推进。
+
+## 从检查对话进入报告
+
+在 [C15-S1] 的 `GearInConversationDialog` 检查分支已经设置 `checked=true` 后，加入以下局部写入：
 
 ```java
-        float amount = amountToken.getFloat(memoryMap);
-        int count = amountToken.getInt(memoryMap);
-        boolean enabled = enabledToken.getBoolean(memoryMap);
+dialog.getInteractionTarget().getMemoryWithoutUpdate().set(
+        GearInHubMission.TARGET_COMPLETE_KEY, true);
 ```
 
-输入 `2.4 true` 得到浮点 2.4、四舍五入后的整数 2 和布尔真值。最终返回布尔结果，数值则保存到 Memory，供后一条条件或其他脚本读取。
+**关闭对话，让生涯推进，再确认报告阶段。** 检查文字在当前会话中写入，任务条件在自己的脚本推进中读取，对话打开时生涯通常处于暂停。
 
-### 读取颜色和对象
-
-第四参数用 `getColor(...)` 解析，可以来自 Color 对象、RGBA 文本、设置颜色 ID、势力 ID，或 `bad`、`good`、`highlight`、`story`、`gray` 等简写。省略时用高亮色，局部取值如下：
+再次打开检查对话，`init(...)` 建立基础选项后，从存档取得任务。报告阶段追加提交按钮，局部片段如下：
 
 ```java
-        Color color = params.size() > 3
-                ? params.get(3).getColor(memoryMap)
-                : Misc.getHighlightColor();
+GearInHubMission mission = (GearInHubMission) Global.getSector()
+        .getPersistentData().get("GearIn_hub_mission");
+if (mission.getCurrentStage() == GearInHubMission.STAGE_REPORT) {
+    options.addOption("Submit the inspection report", GearInHubMission.STAGE_COMPLETED);
+}
 ```
 
-第五参数是已有对象的变量。`getObject(...)` 返回 Memory 中的原对象，字面量没有对应对象，本节将可用结果写回当前实体：
+按钮数据直接使用阶段枚举。将以下局部处理放在 `optionSelected(...)` 的业务分支中，仍确认当前报告状态，再进入完成阶段：
 
 ```java
-        Object object = params.size() > 4 ? params.get(4).getObject(memoryMap) : null;
+if (GearInHubMission.STAGE_COMPLETED.equals(optionData)) {
+    GearInHubMission mission = (GearInHubMission) Global.getSector()
+            .getPersistentData().get("GearIn_hub_mission");
+    if (mission.getCurrentStage() == GearInHubMission.STAGE_REPORT) {
+        mission.setCurrentStage(GearInHubMission.STAGE_COMPLETED, dialog, getMemoryMap());
+    }
+    return;
+}
 ```
 
-### 找到变量对应的 Memory
+检查目标、条件读取与最终提交分别完成，玩家确认报告后才进入成功收尾。文字可以调整，阶段对象与保存任务的键继续保持对应。
 
-带点变量 `$player.name` 会把 `player` 作为槽位名，把 `$name` 作为键。槽位不存在时，`getVarNameAndMemory(...)` 会把完整变量名交给 LOCAL；LOCAL 也不存在时抛出 `RuleException`。没有点号的 `$option` 与 `$menuState` 直接读取 LOCAL。
+## 让报告阶段产生结果
 
-字符串、对象与数值都采用这套槽位解析。实际 `memoryMap` 提供当前上下文，市场、人物与交易面板能提供的槽位并不相同，变量前缀随调用场景选择。
-
-## 写入当前实体并读取结果
-
-解析完成后，通过基类选择的 Memory 保存五项结果，局部操作如下：
+`setCurrentStage(...)` 根据构造器声明的终止阶段选择 `endSuccess(...)`、`endFailure(...)` 或 `endAbandon()`。子类在对应的 `Impl` 回调中补充专属结果，基类继续完成标准收尾。失败与放弃的局部实现如下：
 
 ```java
-        MemoryAPI memory = getEntityMemory(memoryMap);
-        memory.set(MEM_KEY_LABEL, label);
-        memory.set(MEM_KEY_LAST, amount);
-        memory.set(MEM_KEY_COUNT, count);
-        memory.set(MEM_KEY_COLOR, color);
-        if (object != null) {
-            memory.set(MEM_KEY_OBJECT, object);
-        }
+@Override
+protected void endFailureImpl(InteractionDialogAPI dialog,
+        Map<String, MemoryAPI> memoryMap) {
+    missionEnded = true;
+}
+
+@Override
+protected void endAbandonImpl() {
+    missionEnded = true;
+}
 ```
 
-对象参数存在时写入原对象，缺席时保留原键。命令日志记录当前规则与解析值，随后返回 `enabled`。条件示例的后一行读取 `$entity.GearIn_rulecmd_last`，可以立即取得这次刚写入的 2.4。
+本例两条路径都记录 `missionEnded=true`。失败按任务配置处理声望，放弃还根据 `canAbandonWithoutPenalty()` 决定惩罚。测试时分别进入 `STAGE_FAILED` 与 `STAGE_ABANDONED`，当前阶段保留各自结果。
 
-**条件命令在候选匹配时就执行。** 当前候选是否最终胜出，是后面的分数选择。因此本例演示状态写入与布尔结果，正式条件中的副作用要另行决定。
+### 一次性完成奖励
 
-::: warning 条件通过与结果获选是不同时间
-候选条件中的命令已经可以改写 Memory，即使当前规则随后落选。编者建议把费用扣除、货物转移与奖励写入放在结果脚本中，让这些动作跟随实际获选结果执行。
+成功回调增加固定的 50000 信用点，先检查 `rewardGranted`，再记录奖励已经写入。局部实现如下：
+
+```java
+@Override
+protected void endSuccessImpl(InteractionDialogAPI dialog,
+        Map<String, MemoryAPI> memoryMap) {
+    if (!rewardGranted) {
+        Global.getSector().getPlayerFleet().getCargo().getCredits().add(50000);
+        rewardGranted = true;
+    }
+    missionEnded = true;
+}
+```
+
+基类建立 `HubMissionResult`，处理已配置的标准奖励与声望，调用成功实现，再发送结束更新、进入结束延迟并执行清理。本例固定金额由子类写入，`rewardGranted` 保存这次结果，其他结束动作继续沿基类。
+
+## 让附属 Intel 读取任务
+
+`GearInHubMissionIntel` 保存任务引用，显示时直接读取 `mission.getCurrentStage()`。局部取值如下：
+
+```java
+private String getStageText() {
+    return String.valueOf(mission.getCurrentStage());
+}
+```
+
+任务进入报告后，下一次绘制就取得报告值，终止时也读取最终枚举。阶段只由任务修改，附属 Intel 从同一对象生成列表与详情文本。
+
+### 分开登记 Intel 和脚本
+
+任务接受时已经登记为情报与脚本，附属条目另行登记。本例附属 Intel 只在绘制时读取任务阶段，创建方采用下面的局部操作：
+
+```java
+GearInHubMissionIntel intel = new GearInHubMissionIntel(mission);
+Global.getSector().getIntelManager().addIntel(intel);
+```
+
+需要附属条目按时间结束时，再按 [C14-S4] 添加自己的脚本推进。本例没有这项登记，结束附属条目用 `endImmediately()` 与 `removeIntel(intel)`，不采用需要继续推进的延迟结束。
+
+附属条目结束只改变显示，任务阶段保持原值。任务结束后，这条情报也可以继续读取最终阶段，直到创建方显式移除。
+
+::: details 为每一条情报确定用途
+任务本身已经是 Intel，本节另外保留一条阶段观察情报，用来比较任务状态与独立显示对象。正式设计若只需要一个任务页面，直接在任务的显示方法中提供完整内容即可。
+
+编者倾向于为额外条目提供明确的玩家用途。同一个任务重复占据两行情报，并不会因此多出一份可用信息；独立提示或需要长期保留的记录，才有单独登记的理由。
 :::
 
-需要验证对象参数时，在已取得目标实体的 Java 调用点，向它的 Memory 保存现有对象：
+## 保存阶段，并核对当前结果
 
-```java
-target.getMemoryWithoutUpdate().set(GearInRuleCommand.MEM_KEY_OBJECT, target);
-```
+当前阶段、阶段计时、`rewardGranted`、`missionEnded` 与目标引用都属于任务对象。情报与普通脚本登记保存它，persistent data 还提供后续对话的稳定入口，读档继续使用已保存的状态。
 
-脚本再通过 `$entity.GearIn_rulecmd_object` 取得同一对象。结果属于舰队实体，当前人物 LOCAL 保留自己的状态，读取时继续使用对应前缀。
+附属条目通过当前引用重新绘制，不另存阶段副本。本节从 Java 市场入口直接接受，酒吧邀请与接受可以改用 `HubMissionWithBarEvent`，由 [C15-S5] 连接发现流程。
+
+### 方法速查表
+
+| 方法                                             | 责任                                 | 结果                     |
+| ------------------------------------------------ | ------------------------------------ | ------------------------ |
+| `createAndAbortIfFailed`                         | 创建任务并处理创建失败               | 成功后可接受             |
+| `accept`                                         | 设置起始阶段并登记任务               | Intel 与脚本开始运行     |
+| `connectWithMemoryFlag` / `setStageOnMemoryFlag` | 连接指定起点或不限起点的 Memory 条件 | 标记成立后选择目标阶段   |
+| `setCurrentStage`                                | 改变当前阶段                         | 触发阶段更新或终止逻辑   |
+| `setSuccessStage` / `setFailureStage`            | 绑定终止阶段                         | 成功或失败入口生效       |
+| `setAbandonStage`                                | 绑定放弃阶段                         | 放弃路径结束任务         |
+| `endSuccessImpl`                                 | 添加任务专属成功结果                 | 增加一次 50000 `credits` |
+| `getCurrentStage`                                | 供 Intel 读取阶段                    | 列表文本与任务一致       |
 
 ## 完整最小例
 
-保存 `src/data/scripts/gearin/rules/GearInRuleCommand.java`，设置文件追加命令包，规则文件保留原表头并加入本节入口。
+两个类保存到前述路径，任务接受和附属条目采用实际市场入口。
 
-```json
-{
-  "ruleCommandPackages": [
-    "data.scripts.gearin.rules"
-  ]
-}
-```
-
-```csv
-id,trigger,conditions,script,text,options,notes
-GearIn_rules_cmd_menu,PopulateOptions,"$menuState == fleetConvMain
-$faction.id == independent
-!$entity.isHostile",,,"GearIn_rules_cmd_open_condition:解析命令参数
-GearIn_rules_cmd_open_script:记录命令参数",通讯命令入口
-GearIn_rules_cmd_open_condition,DialogOptionSelected,$option == GearIn_rules_cmd_open_condition,FireBest GearInRulesCommandCondition,,,条件调用
-GearIn_rules_cmd_open_script,DialogOptionSelected,$option == GearIn_rules_cmd_open_script,FireBest GearInRulesCommandScript,,,脚本调用
-GearIn_rules_cmd_condition,GearInRulesCommandCondition,"GearInRuleCommand ""扫描 $playerName"" 2.4 true highlight
-$entity.GearIn_rulecmd_last >= 2",,扫描参数已经解析。,"GearIn_rules_cmd_back:返回通讯",条件结果
-GearIn_rules_cmd_script,GearInRulesCommandScript,,"GearInRuleCommand ""补给"" 3.0 false good $entity.GearIn_rulecmd_object",参数已经记录到当前实体。,"GearIn_rules_cmd_back:返回通讯",脚本结果
-GearIn_rules_cmd_back,DialogOptionSelected,$option == GearIn_rules_cmd_back,EndConversation,,,返回
-```
-
-::: details 完整成品：GearInRuleCommand
+::: details 完整成品：GearInHubMission
 
 ```java
-package data.scripts.gearin.rules;
+package data.scripts.gearin.campaign;
 
-import java.awt.Color;
-import java.util.List;
 import java.util.Map;
-
-import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.InteractionDialogAPI;
+import com.fs.starfarer.api.campaign.SectorEntityToken;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
-import com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin;
-import com.fs.starfarer.api.util.Misc;
-import com.fs.starfarer.api.util.Misc.Token;
+import com.fs.starfarer.api.impl.campaign.missions.hub.BaseHubMission;
 
-/** 解析当前规则参数，写入实体 Memory 并返回布尔条件结果。 */
-public class GearInRuleCommand extends BaseCommandPlugin {
+public class GearInHubMission extends BaseHubMission {
 
-    public static final String MEM_KEY_LAST = "$GearIn_rulecmd_last";
-    public static final String MEM_KEY_LABEL = "$GearIn_rulecmd_label";
-    public static final String MEM_KEY_COUNT = "$GearIn_rulecmd_count";
-    public static final String MEM_KEY_COLOR = "$GearIn_rulecmd_color";
-    public static final String MEM_KEY_OBJECT = "$GearIn_rulecmd_object";
+    public enum Stage {
+        GearIn_stage_investigate,
+        GearIn_stage_report,
+        GearIn_stage_completed,
+        GearIn_stage_failed,
+        GearIn_stage_abandoned
+    }
 
-    private static final Logger LOG = Global.getLogger(GearInRuleCommand.class);
+    public static final Stage STAGE_INVESTIGATE = Stage.GearIn_stage_investigate;
+    public static final Stage STAGE_REPORT = Stage.GearIn_stage_report;
+    public static final Stage STAGE_COMPLETED = Stage.GearIn_stage_completed;
+    public static final Stage STAGE_FAILED = Stage.GearIn_stage_failed;
+    public static final Stage STAGE_ABANDONED = Stage.GearIn_stage_abandoned;
+    public static final String TARGET_COMPLETE_KEY = "$GearIn_hub_target_complete";
+
+    private SectorEntityToken target;
+    private boolean rewardGranted;
+    private boolean missionEnded;
+
+    public GearInHubMission(SectorEntityToken target) {
+        this.target = target;
+        setMissionId("GearIn_hub_mission");
+        setName("GearIn field inspection");
+        setStartingStage(STAGE_INVESTIGATE);
+        setSuccessStage(STAGE_COMPLETED);
+        setFailureStage(STAGE_FAILED);
+        setAbandonStage(STAGE_ABANDONED);
+    }
 
     @Override
-    public boolean execute(String ruleId, InteractionDialogAPI dialog,
-            List<Token> params, Map<String, MemoryAPI> memoryMap) {
-        if (params.size() < 3) {
-            LOG.warn("GearInRuleCommand: expected <label> <amount> <enabled> [<color>] [<object>]");
-            return false;
+    protected boolean create(MarketAPI createdAt, boolean barEvent) {
+        connectWithMemoryFlag(STAGE_INVESTIGATE, STAGE_REPORT, target, TARGET_COMPLETE_KEY);
+        return true;
+    }
+
+    @Override
+    public void acceptImpl(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
+        if (dialog != null) {
+            dialog.getTextPanel().addPara("The inspection task is now active.");
         }
+    }
 
-        Token labelToken = params.get(0);
-        Token amountToken = params.get(1);
-        Token enabledToken = params.get(2);
-        if ((!labelToken.isLiteral() && !labelToken.isVariable())
-                || !amountToken.isFloat(memoryMap)
-                || !enabledToken.isBoolean(memoryMap)) {
-            LOG.warn("GearInRuleCommand: invalid parameter type for rule " + ruleId);
-            return false;
+    @Override
+    protected void endSuccessImpl(InteractionDialogAPI dialog,
+            Map<String, MemoryAPI> memoryMap) {
+        if (!rewardGranted) {
+            Global.getSector().getPlayerFleet().getCargo().getCredits().add(50000);
+            rewardGranted = true;
         }
+        missionEnded = true;
+    }
 
-        String label = dialog == null
-                ? labelToken.getString(memoryMap)
-                : labelToken.getStringWithTokenReplacement(ruleId, dialog, memoryMap);
-        float amount = amountToken.getFloat(memoryMap);
-        int count = amountToken.getInt(memoryMap);
-        boolean enabled = enabledToken.getBoolean(memoryMap);
-        Color color = params.size() > 3
-                ? params.get(3).getColor(memoryMap)
-                : Misc.getHighlightColor();
-        Object object = params.size() > 4 ? params.get(4).getObject(memoryMap) : null;
+    @Override
+    protected void endFailureImpl(InteractionDialogAPI dialog,
+            Map<String, MemoryAPI> memoryMap) {
+        missionEnded = true;
+    }
 
-        MemoryAPI memory = getEntityMemory(memoryMap);
-        memory.set(MEM_KEY_LABEL, label);
-        memory.set(MEM_KEY_LAST, amount);
-        memory.set(MEM_KEY_COUNT, count);
-        memory.set(MEM_KEY_COLOR, color);
-        if (object != null) {
-            memory.set(MEM_KEY_OBJECT, object);
-        }
+    @Override
+    protected void endAbandonImpl() {
+        missionEnded = true;
+    }
 
-        LOG.info("GearInRuleCommand: ruleId=" + ruleId + " label=" + label
-                + " amount=" + amount + " count=" + count + " enabled=" + enabled);
-        return enabled;
+    public boolean isRewardGranted() {
+        return rewardGranted;
+    }
+
+    public boolean isMissionEnded() {
+        return missionEnded;
     }
 }
+```
 
+:::
+
+::: details 完整成品：GearInHubMissionIntel
+
+```java
+package data.scripts.gearin.campaign;
+
+import java.util.LinkedHashSet;
+import java.util.Set;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.comm.IntelInfoPlugin.ListInfoMode;
+import com.fs.starfarer.api.impl.campaign.ids.Tags;
+import com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin;
+import com.fs.starfarer.api.ui.SectorMapAPI;
+import com.fs.starfarer.api.ui.TooltipMakerAPI;
+
+public class GearInHubMissionIntel extends BaseIntelPlugin {
+
+    private GearInHubMission mission;
+
+    public GearInHubMissionIntel(GearInHubMission mission) {
+        this.mission = mission;
+    }
+
+    @Override
+    public String getName() {
+        return "GearIn inspection task";
+    }
+
+    @Override
+    public String getIcon() {
+        return Global.getSettings().getSpriteName("intel", "important_accepted_mission");
+    }
+
+    @Override
+    public String getSortString() {
+        return getName();
+    }
+
+    @Override
+    public Set<String> getIntelTags(SectorMapAPI map) {
+        Set<String> tags = new LinkedHashSet<String>(super.getIntelTags(map));
+        tags.add(Tags.INTEL_MISSIONS);
+        return tags;
+    }
+
+    @Override
+    public void createIntelInfo(TooltipMakerAPI info, ListInfoMode mode) {
+        info.addPara(getName(), getTitleColor(mode), 0f);
+        info.addPara("Current stage: " + getStageText(), 3f);
+    }
+
+    @Override
+    public void createSmallDescription(TooltipMakerAPI info, float width, float height) {
+        info.addPara("Current stage: " + getStageText(), 0f);
+    }
+
+    private String getStageText() {
+        return String.valueOf(mission.getCurrentStage());
+    }
+}
 ```
 
 :::
 
 ## 验证方案
 
-前置数据：已加入命令包、Java 类与本节实际通讯入口记录，能够与非敌对独立舰队通讯。
+前置数据：准备一个可交互目标实体，并能在其 Memory 中写入 `$GearIn_hub_target_complete`；准备一个可以显示 Intel 的新档或测试存档。
 
-1. 在 MOD 根目录执行 `gradle jar`，再用 `jar tf jars/GearIndustry.jar` 查找 `data/scripts/gearin/rules/GearInRuleCommand.class`。
-2. 启动游戏，在 `starsector.log` 中确认两条 `GearIn_rules_cmd_*` 规则完成加载。
-3. 在独立舰队通讯选择 "解析命令参数"，查看条件结果与命令日志，再选择返回通讯。
-4. 在同一通讯选择 "记录命令参数"，读取实体中的 `label`、`last`、`count` 与 `color`；对象参数按该实体已有键读取。
-5. 把数值参数改为非数字文本并重启，确认命令记录类型错误；随后恢复为 `2.4`。
-6. 分别把布尔参数改为 `false` 与 `1`，确认两次条件规则都不会进入候选；随后恢复为 `true`。
-7. 通过变量参数传入一个已有对象，确认 `getObject(...)` 把同一个对象写入 `$GearIn_rulecmd_object`。
+1. 保存类与经济观察器入口，构建重启，进入 `Foundry` 存档并推进经济更新，查看任务与附属 Intel。
+2. 打开附属的 `GearIn inspection task` 条目，确认当前阶段为 `GearIn_stage_investigate`。
+3. 在检查对话选择继续，关闭对话让生涯推进，再打开任务条目，确认报告阶段。
+4. 在附属条目确认 `GearIn_stage_report`，保存一份报告阶段测试存档，供三种终止分支分别使用。
+5. 重新打开检查对话，提交报告，比较玩家信用增加 50000 与终止阶段。
+6. 重复触发完成路径，确认 `rewardGranted` 阻止第二次奖励。
+7. 保存并读档，确认当前阶段、`rewardGranted` 和 `missionEnded` 保持。
+8. 在提交按钮与处理片段中，将完成阶段的选项数据、分支比较与 `setCurrentStage(...)` 参数统一改为 `STAGE_FAILED`，构建重启并载入报告阶段测试档，提交后确认失败阶段与结束标记。
+9. 用同样方式改为 `STAGE_ABANDONED`，构建重启并再次载入报告阶段测试档，确认放弃结果；完成验证后将三处阶段恢复为 `STAGE_COMPLETED`。
+10. 分别结束附属 Intel，确认 Intel 消失不会把任务阶段改回调查。
 
 预期结果：
 
-- JAR 包含完整路径的 `GearInRuleCommand.class`；
-- 条件调用解析出 `label=扫描 <玩家名>`、`amount=2.4`、`count=2`、`enabled=true`，并显示条件规则文本；
-- 脚本调用返回 `false` 后仍写入 `label`、数值、颜色和可用的对象；
-- 非数字参数被 `isFloat(...)` 拒绝，日志出现 `invalid parameter type`；
-- `false` 与 `1` 都不能让条件规则成立，只有 `true` 返回 `true`；
-- 每次日志包含当前 `ruleId`，多次调用之间的结果由 Memory 保存。
+- 任务接受后进入调查阶段；
+- 目标 Memory 标记成立后进入报告阶段；
+- Intel 文本始终读取任务当前阶段；
+- 完成只增加一次 50000 `credits`；
+- 保存和读档保留任务字段；
+- 失败和放弃使用各自终止阶段；
+- 任务与附属 Intel 可以分别结束。
 
 ## 故障分析
 
-- **启动时报告命令找不到**：`ruleCommandPackages` 缺少 `data.scripts.gearin.rules`，或 JAR 中没有对应完整类路径。
-    - **解决方案**：核对设置数组、`data/scripts/gearin/rules/GearInRuleCommand.class` 和 MOD 的 JAR 声明。
+- **任务没有进入调查阶段**：入口没有先设置 `setStartingStage(...)` 或没有调用 `accept(...)`。
+    - **解决方案**：检查构造器和任务接受顺序。
 
-- **规则条件始终不成立**：布尔参数不是 `true`，或命令被参数数量与类型检查提前拒绝。
-    - **解决方案**：核对前三个参数依次为字符串、可解析数值和 `true` / `false`。
+- **目标完成后阶段不变**：`setStageOnMemoryFlag(...)` 读取的目标或键名不一致。
+    - **解决方案**：核对目标对象和 `$GearIn_hub_target_complete`。
 
-- **对话出现参数转换异常**：代码在检查 `isFloat(...)` 或 `isBoolean(...)` 之前直接调用了取值方法。
-    - **解决方案**：先检查参数数量和格式，再调用 `getFloat(...)`、`getInt(...)` 或 `getBoolean(...)`。
+- **完成奖励重复增加**：成功实现没有使用 `rewardGranted` 门控。
+    - **解决方案**：在增加 `credits` 前检查并设置该字段。
 
-- **脚本列返回 `false` 后仍继续执行**：脚本执行只使用命令的写入结果，不使用 `execute(...)` 的返回值控制后续行。
-    - **解决方案**：把需要参与匹配的调用放在 `conditions`，把状态变更放在 `script`。
-
-- **变量读取了错误的值**：变量前缀没有对应 Memory 槽位，解析转而从 LOCAL 读取完整键名。
-    - **解决方案**：核对 `memoryMap` 提供的槽位，并让参数中的前缀与槽位名称一致。
-
-- **对象参数始终为 `null`**：`getObject(...)` 收到的是字面量，或目标 Memory 没有保存该键。
-    - **解决方案**：传入指向现有对象的变量 `token`，并确认对象位于该变量指定的 Memory。
-
-- **非对话调用在替换字符串时异常**：`getStringWithTokenReplacement(...)` 需要非 `null` 的 `dialog`。
-    - **解决方案**：先检查 `dialog`，非对话上下文使用 `getString(...)`。
+- **Intel 显示旧阶段**：Intel 自己保存了阶段副本。
+    - **解决方案**：在显示方法中直接读取 `mission.getCurrentStage()`。
 
 ## 总结
 
-通讯规则通过搜索包找到命令，参数 token 取得当前输入，Java 将解析结果写到实体 Memory。条件使用返回值，脚本执行写入，两个入口分别确认这项行为。
+检查对话写入目标结果，任务条件在生涯推进中进入报告，玩家提交后才触发成功。阶段枚举连接调查与终止，成功奖励保存一次性状态，失败与放弃各进入对应收尾。
 
-命令处理当前请求，实际对象保存跨调用结果。搜索配置、参数来源与保存槽位对应起来，Rules 就能继续使用这次 Java 操作产生的状态。
+任务拥有阶段和结果，附属情报读取当前状态。两者分别结束，保存读档后也沿原任务继续，交互画面结束便不会带走长期任务的进度。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.rules.CommandPlugin`：Rules 命令接口与三个调用入口；
-- `com.fs.starfarer.api.impl.campaign.rulecmd.BaseCommandPlugin`：普通命令的默认实现与实体 Memory 选择；
-- `com.fs.starfarer.api.util.Misc`：`tokenize` 与 `Token` 参数解析方法；
-- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：命令参数来源与解析结果保存位置；
-- `com.fs.starfarer.api.campaign.InteractionDialogAPI`：文本 `token` `replacement` 使用的对话目标；
-- `data/config/settings.json`：`ruleCommandPackages` 搜索包配置；
-- `data/campaign/rules.csv`：命令简单类名、参数和调用列。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.BaseHubMission`：本页 `GearInHubMission` 的基类，提供接受、阶段连接和成功、失败、放弃入口；
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMission`：任务行为接口，`BaseHubMission` 按它实现任务契约；
+- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithBarEvent`：把任务接入酒吧的专用子类，适合需要酒吧发现和接受入口的场景；
+- `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`：`GearInHubMissionIntel` 的基类，任务对象也继承它进入 Intel 列表；
+- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：目标记忆接口，阶段连接用它检查调查条件；
+- `com.fs.starfarer.api.campaign.comm.IntelManagerAPI`：附属 Intel 的登记入口，本页在任务接受后单独调用 `addIntel`。

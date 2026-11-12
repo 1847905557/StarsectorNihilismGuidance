@@ -2,9 +2,9 @@
 
 Rules 里的变量最终来自某个对象的 Memory。同名键写在人物、市场或星区上，含义可以完全不同；对话切换人物以后，裸变量的读取对象也会改变。本节用一组状态把这些关系接起来：Java 写入，生涯推进期限，Jangala 的对话再分别读出各个对象上的值。
 
-*本节预期阅读时间：\~35 分钟。*
+_本节预期阅读时间：\~35 分钟。_
 
-*本节预期操作时间：\~60 分钟。*
+_本节预期操作时间：\~60 分钟。_
 
 ## 学习目标
 
@@ -172,17 +172,17 @@ scratch.clear();
 
 ### `MemoryAPI` 常用方法速查表
 
-| 方法组 | 直接结果 |
-|---|---|
-| `set(key, value)` | 写入永久键，并清除该键原有过期时间 |
-| `set(key, value, expire)` | 写入值并设置游戏天寿命 |
-| `get`、`getString`、`getFloat`、`getInt`、`getLong`、`getBoolean` | 读取原始对象或基础类型 |
-| `getVector2f`、`getEntity`、`getFleet` | 读取向量或生涯对象 |
-| `contains`、`is`、`between` | 判断存在性、相等关系和闭区间 |
-| `unset`、`clear`、`isEmpty` | 移除键、清空容器和判断空容器 |
-| `getKeys`、`getExpire` | 检查键集合和剩余游戏天数 |
-| `expire` | 修改或取消已有键的过期时间 |
-| `advance` | 由引擎推进过期计时 |
+| 方法组                                                            | 直接结果                           |
+| ----------------------------------------------------------------- | ---------------------------------- |
+| `set(key, value)`                                                 | 写入永久键，并清除该键原有过期时间 |
+| `set(key, value, expire)`                                         | 写入值并设置游戏天寿命             |
+| `get`、`getString`、`getFloat`、`getInt`、`getLong`、`getBoolean` | 读取原始对象或基础类型             |
+| `getVector2f`、`getEntity`、`getFleet`                            | 读取向量或生涯对象                 |
+| `contains`、`is`、`between`                                       | 判断存在性、相等关系和闭区间       |
+| `unset`、`clear`、`isEmpty`                                       | 移除键、清空容器和判断空容器       |
+| `getKeys`、`getExpire`                                            | 检查键集合和剩余游戏天数           |
+| `expire`                                                          | 修改或取消已有键的过期时间         |
+| `advance`                                                         | 由引擎推进过期计时                 |
 
 ## 等待生涯实际推进期限
 
@@ -214,17 +214,17 @@ LOG.info("GearInMemoryWriter: expire-zero probe removed; keys=" + sector.getKeys
 
 ### `MemKeys` 速查表
 
-| 常量 | 字符串值 | 当前对象 |
-|---|---|---|
-| `MemKeys.GLOBAL` | `global` | `Sector` 全局 Memory |
-| `MemKeys.PLAYER` | `player` | 玩家 `CharacterData` Memory |
-| `MemKeys.LOCAL` | `local` | 当前局部对象；人物对话中通常是 `active` `person` |
-| `MemKeys.MARKET` | `market` | 当前交互市场 |
-| `MemKeys.SOURCE_MARKET` | `sourceMarket` | 由交互实体的 `$sourceMarket` 指定的来源市场 |
-| `MemKeys.FACTION` | `faction` | 当前规则上下文势力 |
-| `MemKeys.ENTITY` | `entity` | `active` `person` 对话背后的交互实体 |
-| `MemKeys.PERSON_FACTION` | `personFaction` | `active` `person` 所属势力 |
-| `MemKeys.MISSION` | `mission` | 当前 `active` `mission` 的 Memory |
+| 常量                     | 字符串值        | 当前对象                                         |
+| ------------------------ | --------------- | ------------------------------------------------ |
+| `MemKeys.GLOBAL`         | `global`        | `Sector` 全局 Memory                             |
+| `MemKeys.PLAYER`         | `player`        | 玩家 `CharacterData` Memory                      |
+| `MemKeys.LOCAL`          | `local`         | 当前局部对象；人物对话中通常是 `active` `person` |
+| `MemKeys.MARKET`         | `market`        | 当前交互市场                                     |
+| `MemKeys.SOURCE_MARKET`  | `sourceMarket`  | 由交互实体的 `$sourceMarket` 指定的来源市场      |
+| `MemKeys.FACTION`        | `faction`       | 当前规则上下文势力                               |
+| `MemKeys.ENTITY`         | `entity`        | `active` `person` 对话背后的交互实体             |
+| `MemKeys.PERSON_FACTION` | `personFaction` | `active` `person` 所属势力                       |
+| `MemKeys.MISSION`        | `mission`       | 当前 `active` `mission` 的 Memory                |
 
 ### 对话插件建立标准槽位
 
@@ -249,17 +249,17 @@ boolean shown = ui.showInteractionDialog(
 
 变量 `$memkey.name` 先用 `memkey` 查找槽位，再从该 Memory 读取实际键 `$name`。下面这些变量分别指向不同对象：
 
-| Rules 写法 | 读取对象 | 实际 Memory 键 |
-|---|---|---|
-| `$global.GearIn_memory_global` | `Sector` | `$GearIn_memory_global` |
-| `$player.GearIn_memory_player` | 玩家 `CharacterData` | `$GearIn_memory_player` |
-| `$GearIn_memory_person` | LOCAL；本例为玩家人物 | `$GearIn_memory_person` |
-| `$entity.GearIn_memory_entity` | Jangala 主实体 | `$GearIn_memory_entity` |
-| `$market.GearIn_memory_market` | Jangala 市场 | `$GearIn_memory_market` |
-| `$sourceMarket.GearIn_memory_market` | `$sourceMarket` 指向的 Jangala 市场 | `$GearIn_memory_market` |
-| `$faction.GearIn_memory_faction` | Jangala 所属势力 | `$GearIn_memory_faction` |
-| `$personFaction.GearIn_memory_faction` | 玩家人物所属势力 | `$GearIn_memory_faction` |
-| `$mission.GearIn_memory_mission` | `active` `mission` | `$GearIn_memory_mission` |
+| Rules 写法                             | 读取对象                            | 实际 Memory 键           |
+| -------------------------------------- | ----------------------------------- | ------------------------ |
+| `$global.GearIn_memory_global`         | `Sector`                            | `$GearIn_memory_global`  |
+| `$player.GearIn_memory_player`         | 玩家 `CharacterData`                | `$GearIn_memory_player`  |
+| `$GearIn_memory_person`                | LOCAL；本例为玩家人物               | `$GearIn_memory_person`  |
+| `$entity.GearIn_memory_entity`         | Jangala 主实体                      | `$GearIn_memory_entity`  |
+| `$market.GearIn_memory_market`         | Jangala 市场                        | `$GearIn_memory_market`  |
+| `$sourceMarket.GearIn_memory_market`   | `$sourceMarket` 指向的 Jangala 市场 | `$GearIn_memory_market`  |
+| `$faction.GearIn_memory_faction`       | Jangala 所属势力                    | `$GearIn_memory_faction` |
+| `$personFaction.GearIn_memory_faction` | 玩家人物所属势力                    | `$GearIn_memory_faction` |
+| `$mission.GearIn_memory_mission`       | `active` `mission`                  | `$GearIn_memory_mission` |
 
 裸变量没有点号，Rules 将它交给 `LOCAL`。人物对话里 `LOCAL` 是 `active` `person`，因此人物状态使用 `$GearIn_memory_person`，并不存在单独的 `person` 前缀。
 

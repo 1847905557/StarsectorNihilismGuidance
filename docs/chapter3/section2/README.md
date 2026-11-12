@@ -2,9 +2,9 @@
 
 齿轮工业的身份字段已经确定，接下来替换霸主副本中的军备、舰队学说与人物配置。本节先把此前制作的舰船、战机、武器和船插放进势力可用集合，再为工匠准备一个当前可用的装配，登记到舰队角色表中。
 
-*本节预期阅读时间：\~18 分钟。*
+_本节预期阅读时间：\~18 分钟。_
 
-*本节预期操作时间：\~15 分钟。*
+_本节预期操作时间：\~15 分钟。_
 
 ## 学习目标
 
@@ -253,15 +253,15 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 
 ### 学说读取规则速查表
 
-| 内容 | 规则 |
-|---|---|
-| 必填整数 | warships、carriers、phaseShips、officerQuality、shipQuality、numShips |
-| shipSize、aggression、fleets | 缺省为 3 |
-| autofitRandomizeProbability | 缺省为 0.25 |
-| strictComposition | 缺省为 false |
-| 船体质量贡献 | `(shipQuality - 1) * doctrineFleetQualityPerPoint` |
-| 当前质量系数 | `settings.json` 中为 0.125 |
-| 运行时对象 | `FactionAPI.getDoctrine()` 返回 `FactionDoctrineAPI` |
+| 内容                         | 规则                                                                  |
+| ---------------------------- | --------------------------------------------------------------------- |
+| 必填整数                     | warships、carriers、phaseShips、officerQuality、shipQuality、numShips |
+| shipSize、aggression、fleets | 缺省为 3                                                              |
+| autofitRandomizeProbability  | 缺省为 0.25                                                           |
+| strictComposition            | 缺省为 false                                                          |
+| 船体质量贡献                 | `(shipQuality - 1) * doctrineFleetQualityPerPoint`                    |
+| 当前质量系数                 | `settings.json` 中为 0.125                                            |
+| 运行时对象                   | `FactionAPI.getDoctrine()` 返回 `FactionDoctrineAPI`                  |
 
 配置了学说对象后，六个必填整数都需要存在；缺少时会出现对应的 JSON 键错误。设置完整后再进入游戏比较实际编成。
 
@@ -566,64 +566,64 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 
 ## 势力字段速查表
 
-| 字段 | 作用 |
-|---|---|
-| `id` | 势力注册键，运行时取对象的凭据 |
-| `displayName` 系列 (含 `displayNameLong` / `displayNameLongWithArticle`) | 势力名称的四种形态 |
-| `shipNamePrefix` / `shipNameSources` / `names` | 舰船名与人物名 |
-| `color` 与 `*UIColor` 界面色族 | 势力主色与界面配色 |
-| `secondarySegments` | 标记的次级颜色分段数，默认 8 |
-| `logo` / `crest` | 情报界面大旗与各界面小旗 |
-| `variantOverrides` | 个别装配的可用性与权重覆盖 |
-| `hullFrequency` | 船体出现倍率 |
-| `shipsWhenImporting` | 引入外部蓝图时的可用舰船 |
-| `knownShips` / `priorityShips` | 舰船池与优先集合 |
-| `knownFighters` / `priorityFighters` | 战机联队池 |
-| `knownWeapons` / `priorityWeapons` | 武器池 |
-| `knownHullMods` | 船插池 |
-| `weaponSellFrequency` 等三段 | 原版市场的装备出售频率 |
-| `factionDoctrine` | 舰队组成与风格 |
-| `illegalCommodities` | 势力违禁品 |
-| `music` | 场景音乐 (主题曲/访问市场/遭遇舰队) |
-| `internalComms` | 内部频道 |
-| `portraits` | 人物头像池 |
-| `portraits.player_male` / `portraits.player_female` | 玩家新建角色的头像池 |
-| `ranks` | 势力头衔与职位名 |
-| `voices` | 人物声音类型权重 (按重要度分档) |
-| `custom` | 势力行为开关 |
-| `custom.noBountyForDefeating` | 击败该势力舰队时，雇佣协议和星系悬赏结算跳过该舰队，默认 false |
+| 字段                                                                     | 作用                                                           |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `id`                                                                     | 势力注册键，运行时取对象的凭据                                 |
+| `displayName` 系列 (含 `displayNameLong` / `displayNameLongWithArticle`) | 势力名称的四种形态                                             |
+| `shipNamePrefix` / `shipNameSources` / `names`                           | 舰船名与人物名                                                 |
+| `color` 与 `*UIColor` 界面色族                                           | 势力主色与界面配色                                             |
+| `secondarySegments`                                                      | 标记的次级颜色分段数，默认 8                                   |
+| `logo` / `crest`                                                         | 情报界面大旗与各界面小旗                                       |
+| `variantOverrides`                                                       | 个别装配的可用性与权重覆盖                                     |
+| `hullFrequency`                                                          | 船体出现倍率                                                   |
+| `shipsWhenImporting`                                                     | 引入外部蓝图时的可用舰船                                       |
+| `knownShips` / `priorityShips`                                           | 舰船池与优先集合                                               |
+| `knownFighters` / `priorityFighters`                                     | 战机联队池                                                     |
+| `knownWeapons` / `priorityWeapons`                                       | 武器池                                                         |
+| `knownHullMods`                                                          | 船插池                                                         |
+| `weaponSellFrequency` 等三段                                             | 原版市场的装备出售频率                                         |
+| `factionDoctrine`                                                        | 舰队组成与风格                                                 |
+| `illegalCommodities`                                                     | 势力违禁品                                                     |
+| `music`                                                                  | 场景音乐 (主题曲/访问市场/遭遇舰队)                            |
+| `internalComms`                                                          | 内部频道                                                       |
+| `portraits`                                                              | 人物头像池                                                     |
+| `portraits.player_male` / `portraits.player_female`                      | 玩家新建角色的头像池                                           |
+| `ranks`                                                                  | 势力头衔与职位名                                               |
+| `voices`                                                                 | 人物声音类型权重 (按重要度分档)                                |
+| `custom`                                                                 | 势力行为开关                                                   |
+| `custom.noBountyForDefeating`                                            | 击败该势力舰队时，雇佣协议和星系悬赏结算跳过该舰队，默认 false |
 
 ## 生成型标签速查表
 
 标签位于船体、武器、联队与船插各自的 CSV 中，对应集合按对象类别收集。原版势力还使用 LG_bp、LC_bp、dweller 和 threat 等标签。
 
-| tag | 引用它的原版势力文件 | 实际意义 |
-|---|---|---|
-| `base_bp` | 海盗、卢德左径、derelict、余晖、欧米伽、玩家势力 | 通用默认池 tag，构成上述势力的舰船/武器池主体；玩家势力的 known\* 也引用它 |
-| `lowtech_bp` / `midline_bp` / `hightech_bp` / `missile_bp` | 海盗、卢德左径、余晖 | 科技线 tag。注意：**不是所有对应科技的组件都在其中**；多数正规势力 (霸主、英仙座联盟、辛达强权、卢德教会等) 不再依赖这些 tag，而是在 `hulls` 数组里显式列出舰船 |
-| `pirate_bp` | 海盗 | 海盗改造型 (D 插变体) 蓝图 tag |
-| `LP_bp` | 卢德左径 | 左径安超 (LP) 型改造包，只有卢德左径拥有它 |
-| `XIV_bp` / `heg_aux_bp` | 霸主 | 第十四军团 (XIV) / 霸主辅助军 (A) 型改造包，只有霸主拥有它 |
-| `hegemony` | 霸主 | 霸主势力专属 tag |
-| `ind` | 非势力团体、拾荒者 | 非势力团体 tag (拾荒者的文件也用它) |
-| `persean` | 英仙座联盟 | 英仙座联盟势力 tag |
-| `tritachyon` | 速子科技 | 速子科技势力 tag |
-| `luddic_church` | 卢德教会 | 卢德教会势力 tag |
-| `luddic_path` | 卢德左径 | 卢德左径势力 tag |
-| `lions_guard` | 狮心守卫 (文件也引用辛达强权 tag) | 狮心守卫势力 tag，辛达强权的少量特殊舰队使用 |
-| `sindrian_diktat` | 辛达强权、狮心守卫 | 辛达强权势力 tag |
-| `pirates` | 海盗 | 海盗势力 tag |
-| `derelict` | derelict | 遗弃船 (绿粽子) 势力 tag |
-| `remnant` | 余晖 | 余晖势力 tag |
-| `omega` | 欧米伽 | 欧米伽势力 tag |
-| `merc` | mercenary | 佣兵系 tag |
-| `rare_bp` | 无 (所有势力默认不拥有) | 稀有蓝图 tag：`campaign/procgen/drop_groups.csv` 的蓝图掉落池只挑带 `rare_bp` 的组件，因此它决定组件能否在野外掉落/挖坟得出 |
-| `restricted` | 无 | 限制级：默认不出现在数据库与掉落 (掉落池显式排除 `!restricted`)，适合隐藏数据 |
-| `no_drop` | 无 | 不会在战后掉落 (掉落池显式排除) |
-| `no_drop_salvage` | 无 | 不会在残骸区打捞得到 (掉落池显式排除) |
-| `no_sell` / `no_dealer` | 无 | 不出售或不被联络人任务提供 |
-| `hist1t` / `hist2t` / `hist3t` | 无 | 与历史学家相关的蓝图筛选 tag |
-| `standard` | 11 个势力文件 | 通用船插 tag：`knownHullMods` 用它作为基础船插的默认来源，等价于武器侧的 `base_bp` |
+| tag                                                        | 引用它的原版势力文件                             | 实际意义                                                                                                                                                        |
+| ---------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `base_bp`                                                  | 海盗、卢德左径、derelict、余晖、欧米伽、玩家势力 | 通用默认池 tag，构成上述势力的舰船/武器池主体；玩家势力的 known\* 也引用它                                                                                      |
+| `lowtech_bp` / `midline_bp` / `hightech_bp` / `missile_bp` | 海盗、卢德左径、余晖                             | 科技线 tag。注意：**不是所有对应科技的组件都在其中**；多数正规势力 (霸主、英仙座联盟、辛达强权、卢德教会等) 不再依赖这些 tag，而是在 `hulls` 数组里显式列出舰船 |
+| `pirate_bp`                                                | 海盗                                             | 海盗改造型 (D 插变体) 蓝图 tag                                                                                                                                  |
+| `LP_bp`                                                    | 卢德左径                                         | 左径安超 (LP) 型改造包，只有卢德左径拥有它                                                                                                                      |
+| `XIV_bp` / `heg_aux_bp`                                    | 霸主                                             | 第十四军团 (XIV) / 霸主辅助军 (A) 型改造包，只有霸主拥有它                                                                                                      |
+| `hegemony`                                                 | 霸主                                             | 霸主势力专属 tag                                                                                                                                                |
+| `ind`                                                      | 非势力团体、拾荒者                               | 非势力团体 tag (拾荒者的文件也用它)                                                                                                                             |
+| `persean`                                                  | 英仙座联盟                                       | 英仙座联盟势力 tag                                                                                                                                              |
+| `tritachyon`                                               | 速子科技                                         | 速子科技势力 tag                                                                                                                                                |
+| `luddic_church`                                            | 卢德教会                                         | 卢德教会势力 tag                                                                                                                                                |
+| `luddic_path`                                              | 卢德左径                                         | 卢德左径势力 tag                                                                                                                                                |
+| `lions_guard`                                              | 狮心守卫 (文件也引用辛达强权 tag)                | 狮心守卫势力 tag，辛达强权的少量特殊舰队使用                                                                                                                    |
+| `sindrian_diktat`                                          | 辛达强权、狮心守卫                               | 辛达强权势力 tag                                                                                                                                                |
+| `pirates`                                                  | 海盗                                             | 海盗势力 tag                                                                                                                                                    |
+| `derelict`                                                 | derelict                                         | 遗弃船 (绿粽子) 势力 tag                                                                                                                                        |
+| `remnant`                                                  | 余晖                                             | 余晖势力 tag                                                                                                                                                    |
+| `omega`                                                    | 欧米伽                                           | 欧米伽势力 tag                                                                                                                                                  |
+| `merc`                                                     | mercenary                                        | 佣兵系 tag                                                                                                                                                      |
+| `rare_bp`                                                  | 无 (所有势力默认不拥有)                          | 稀有蓝图 tag：`campaign/procgen/drop_groups.csv` 的蓝图掉落池只挑带 `rare_bp` 的组件，因此它决定组件能否在野外掉落/挖坟得出                                     |
+| `restricted`                                               | 无                                               | 限制级：默认不出现在数据库与掉落 (掉落池显式排除 `!restricted`)，适合隐藏数据                                                                                   |
+| `no_drop`                                                  | 无                                               | 不会在战后掉落 (掉落池显式排除)                                                                                                                                 |
+| `no_drop_salvage`                                          | 无                                               | 不会在残骸区打捞得到 (掉落池显式排除)                                                                                                                           |
+| `no_sell` / `no_dealer`                                    | 无                                               | 不出售或不被联络人任务提供                                                                                                                                      |
+| `hist1t` / `hist2t` / `hist3t`                             | 无                                               | 与历史学家相关的蓝图筛选 tag                                                                                                                                    |
+| `standard`                                                 | 11 个势力文件                                    | 通用船插 tag：`knownHullMods` 用它作为基础船插的默认来源，等价于武器侧的 `base_bp`                                                                              |
 
 `GearIn_bp` 用于本教程自有军备，写入 CSV 的 tags 后，再在势力 `known*` 的 tags 中引用。按明确的对象集合使用标签，后续增加军备时可以沿用同一个入口。
 

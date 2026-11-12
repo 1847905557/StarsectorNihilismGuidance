@@ -2,9 +2,9 @@
 
 本节让 Aster Vance 留在 Foundry 的通信目录中，供后续脚本按固定身份找到她。姓名、头像与职务组成界面资料，重要人物服务保存可查询的对象，市场和目录提供实际接触入口。创建、登记与关联分别完成，读档后才能继续使用同一位人物。
 
-*本节预期阅读时间：\~25 分钟。*
+_本节预期阅读时间：\~25 分钟。_
 
-*本节预期操作时间：\~20 分钟。*
+_本节预期操作时间：\~20 分钟。_
 
 ## 学习目标
 
@@ -82,16 +82,16 @@ person.addTag(PERSON_TAG);
 
 ### 人物资料速查表
 
-| 资料 | 写入 | 读取 | 用途 |
-|---|---|---|---|
-| ID | `setId` | `getId` | 跨脚本定位 |
-| 姓名 | `setName` | `getNameString` | 界面显示 |
-| 性别 | `FullName.Gender` | `getGender` | 人物文本 |
-| 势力 | `setFaction` | `getFaction` | 归属 |
-| rank | `setRankId` | `getRankId` | 身份层级 |
-| post | `setPostId` | `getPostId` | 职务 |
-| 头像 | `setPortraitSprite` | `getPortraitSprite` | 人物图像 |
-| 标签 | `addTag` | `hasTag` | 分类 |
+| 资料 | 写入                | 读取                | 用途       |
+| ---- | ------------------- | ------------------- | ---------- |
+| ID   | `setId`             | `getId`             | 跨脚本定位 |
+| 姓名 | `setName`           | `getNameString`     | 界面显示   |
+| 性别 | `FullName.Gender`   | `getGender`         | 人物文本   |
+| 势力 | `setFaction`        | `getFaction`        | 归属       |
+| rank | `setRankId`         | `getRankId`         | 身份层级   |
+| post | `setPostId`         | `getPostId`         | 职务       |
+| 头像 | `setPortraitSprite` | `getPortraitSprite` | 人物图像   |
+| 标签 | `addTag`            | `hasTag`            | 分类       |
 
 `getRelToPlayer()` 返回人物与玩家的关系对象，参与对话等显示。本节读取身份与归属，关系沿用已有状态。
 
@@ -123,12 +123,12 @@ int entriesAfter = directory.getEntriesCopy().size();
 
 ### 人物关联速查表
 
-| 对象 | 写入 | 检查 | 结果 |
-|---|---|---|---|
-| 重要人物服务 | `addPerson` | `getPerson` | 可按 ID 查询 |
-| 市场集合 | `MarketAPI.addPerson` | `getPeopleCopy` | 市场集合拥有成员 |
-| 人物市场字段 | `MarketAPI.addPerson` 同步人物字段 | `getMarket` | 人物反查市场 |
-| 通信目录 | `CommDirectoryAPI.addPerson` | `getEntryForPerson` | 界面出现条目 |
+| 对象         | 写入                               | 检查                | 结果             |
+| ------------ | ---------------------------------- | ------------------- | ---------------- |
+| 重要人物服务 | `addPerson`                        | `getPerson`         | 可按 ID 查询     |
+| 市场集合     | `MarketAPI.addPerson`              | `getPeopleCopy`     | 市场集合拥有成员 |
+| 人物市场字段 | `MarketAPI.addPerson` 同步人物字段 | `getMarket`         | 人物反查市场     |
+| 通信目录     | `CommDirectoryAPI.addPerson`       | `getEntryForPerson` | 界面出现条目     |
 
 ## 让重复调用继续使用原人物
 
@@ -151,15 +151,15 @@ boolean ready = person.getMemoryWithoutUpdate().getBoolean(PERSON_READY);
 
 ### 人物相关 Memory 速查表
 
-| 常量 | 字符串值 | 人物上的数据类型 | 具体语义 |
-|---|---|---|---|
-| `ENTITY_MISSION_IMPORTANT` | `$missionImportant` | reason 组合布尔标记 | 任务等流程标为重要，通信目录与重要目标逻辑读取 |
-| `MEMORY_KEY_MISSION_IMPORTANT` | `$missionImportant` | reason 组合布尔标记 | 与前一常量共用键，通过 `Misc.makeImportant` 管理 |
-| `EXCEPTIONAL_SLEEPER_POD_OFFICER` | `$exceptionalSleeperPodOfficer` | 布尔值 | 特殊睡眠舱军官身份，技能变更逻辑据此处理 |
-| `SUSPECTED_AI` | `$suspectedAI` | 布尔值 | 疑似 AI 身份，原版生命周期逻辑会写入 |
-| `OFFICER_SKILL_PICKS_PER_LEVEL` | `$officerSkillPicksPerLevel` | 整数 | 军官每级的技能候选数量 |
-| `OFFICER_MAX_LEVEL` | `$officerMaxLevel` | 整数 | 军官最高等级 |
-| `OFFICER_MAX_ELITE_SKILLS` | `$officerMaxEliteSkills` | 整数 | 军官精英技能上限 |
+| 常量                              | 字符串值                        | 人物上的数据类型    | 具体语义                                         |
+| --------------------------------- | ------------------------------- | ------------------- | ------------------------------------------------ |
+| `ENTITY_MISSION_IMPORTANT`        | `$missionImportant`             | reason 组合布尔标记 | 任务等流程标为重要，通信目录与重要目标逻辑读取   |
+| `MEMORY_KEY_MISSION_IMPORTANT`    | `$missionImportant`             | reason 组合布尔标记 | 与前一常量共用键，通过 `Misc.makeImportant` 管理 |
+| `EXCEPTIONAL_SLEEPER_POD_OFFICER` | `$exceptionalSleeperPodOfficer` | 布尔值              | 特殊睡眠舱军官身份，技能变更逻辑据此处理         |
+| `SUSPECTED_AI`                    | `$suspectedAI`                  | 布尔值              | 疑似 AI 身份，原版生命周期逻辑会写入             |
+| `OFFICER_SKILL_PICKS_PER_LEVEL`   | `$officerSkillPicksPerLevel`    | 整数                | 军官每级的技能候选数量                           |
+| `OFFICER_MAX_LEVEL`               | `$officerMaxLevel`              | 整数                | 军官最高等级                                     |
+| `OFFICER_MAX_ELITE_SKILLS`        | `$officerMaxEliteSkills`        | 整数                | 军官精英技能上限                                 |
 
 三个 `OFFICER_` 键由军官成长功能读取，Aster 当前只是普通剧情人物。`MemFlags` 也集中定义市场、舰队与全局键，使用时仍要对应实际对象和类型。
 

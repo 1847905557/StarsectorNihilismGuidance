@@ -2,9 +2,9 @@
 
 本节为巡逻队建立活动情报，让玩家从情报页面取得位置与剩余日数，地点变化时收到更新，活动结束后保留三日再移除。状态推进与界面显示分别登记，我们用同一份 Intel 对象连接它们，说明更新、结束与清理怎样完成。
 
-*本节预期阅读时间：\~18 分钟。*
+_本节预期阅读时间：\~18 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -152,35 +152,35 @@ boolean visible = intel.canMakeVisibleToPlayer(
 
 ### IntelManagerAPI 方法速查表
 
-| 方法 | 当前作用 |
-|---|---|
-| `addIntel(plugin)` | 进入可见列表，设置时间戳并按默认规则发送消息 |
+| 方法                                          | 当前作用                                                                                 |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `addIntel(plugin)`                            | 进入可见列表，设置时间戳并按默认规则发送消息                                             |
 | `addIntel(plugin, forceNoMessage, textPanel)` | `forceNoMessage` 为 `false` 时，非空面板渲染条目；为 `true` 时同时抑制这次面板显示与消息 |
-| `queueIntel(plugin)` | 进入通信队列，等到可见或条目要求移除 |
-| `queueIntel(plugin, maxCommQueueDays)` | 当前按前述队列规则处理，期限参数不自动移除 |
-| `unqueueIntel(plugin)` | 仅从通信队列移除，返回是否找到实例 |
-| `removeIntel(plugin)` | 处理可见与排队对象，并报告已移除 |
-| `hasIntel()` / `hasIntelQueued()` | 分别查询可见列表与通信队列的对象 |
-| `getIntel()` / `getCommQueue()` | 取得对应容器中的列表，并支持按类查询 |
-| `addIntelToTextPanel()` | 仅渲染当前文本面板 |
+| `queueIntel(plugin)`                          | 进入通信队列，等到可见或条目要求移除                                                     |
+| `queueIntel(plugin, maxCommQueueDays)`        | 当前按前述队列规则处理，期限参数不自动移除                                               |
+| `unqueueIntel(plugin)`                        | 仅从通信队列移除，返回是否找到实例                                                       |
+| `removeIntel(plugin)`                         | 处理可见与排队对象，并报告已移除                                                         |
+| `hasIntel()` / `hasIntelQueued()`             | 分别查询可见列表与通信队列的对象                                                         |
+| `getIntel()` / `getCommQueue()`               | 取得对应容器中的列表，并支持按类查询                                                     |
+| `addIntelToTextPanel()`                       | 仅渲染当前文本面板                                                                       |
 
 ### Intel UI 职责速查表
 
-| UI 职责 | 当前用途 |
-| --- | --- |
-| `getName()`、`getIcon()` | 提供稳定标题与 40×40 图标路径 |
-| `createIntelInfo()` | 为列表、消息与地图提示生成紧凑信息 |
-| `hasSmallDescription()`、`createSmallDescription()` | 控制并生成常规详情 |
-| `hasLargeDescription()`、`createLargeDescription()` | 控制并生成自定义大面板 |
-| `getIntelTags(map)` | 提供重要、新、附近与业务标签，处理空地图参数 |
-| `getMapLocation(map)`、`getArrowData(map)` | 提供地图锚点与可选连线，目标失效时锚点返回 `null` |
-| `isImportant()`、`setImportant()` | 控制重要标签与按钮状态 |
-| `isNew()`、`setNew()`、`reportPlayerClickedOn()` | 管理新标记，点击后基类清除新状态 |
-| `isHidden()`、`setHidden()` | 控制已知条目的显示与普通更新消息 |
-| `getSortTier()`、`getSortString()` | 提供层级与文本排序，ending 条目进入完成层级 |
-| `getTimeRemainingFraction()` | 提供 0 到 1 的剩余比例 |
-| `autoAddCampaignMessage()`、`getCommMessageSound()` | 提供自动消息规则与声音 |
-| `canMakeVisibleToPlayer()`、`setPostingLocation()`、`setPostingRangeLY()` | 判断通信队列中的条目何时可见 |
+| UI 职责                                                                   | 当前用途                                          |
+| ------------------------------------------------------------------------- | ------------------------------------------------- |
+| `getName()`、`getIcon()`                                                  | 提供稳定标题与 40×40 图标路径                     |
+| `createIntelInfo()`                                                       | 为列表、消息与地图提示生成紧凑信息                |
+| `hasSmallDescription()`、`createSmallDescription()`                       | 控制并生成常规详情                                |
+| `hasLargeDescription()`、`createLargeDescription()`                       | 控制并生成自定义大面板                            |
+| `getIntelTags(map)`                                                       | 提供重要、新、附近与业务标签，处理空地图参数      |
+| `getMapLocation(map)`、`getArrowData(map)`                                | 提供地图锚点与可选连线，目标失效时锚点返回 `null` |
+| `isImportant()`、`setImportant()`                                         | 控制重要标签与按钮状态                            |
+| `isNew()`、`setNew()`、`reportPlayerClickedOn()`                          | 管理新标记，点击后基类清除新状态                  |
+| `isHidden()`、`setHidden()`                                               | 控制已知条目的显示与普通更新消息                  |
+| `getSortTier()`、`getSortString()`                                        | 提供层级与文本排序，ending 条目进入完成层级       |
+| `getTimeRemainingFraction()`                                              | 提供 0 到 1 的剩余比例                            |
+| `autoAddCampaignMessage()`、`getCommMessageSound()`                       | 提供自动消息规则与声音                            |
+| `canMakeVisibleToPlayer()`、`setPostingLocation()`、`setPostingRangeLY()` | 判断通信队列中的条目何时可见                      |
 
 ## 完整最小例
 

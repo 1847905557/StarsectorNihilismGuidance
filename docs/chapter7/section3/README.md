@@ -2,9 +2,9 @@
 
 将参数放入 `settings.json`，便能在不修改 Java 源码的情况下调整功能配置。本节写入自有设置键，在应用加载时读取字符串、数值、开关与颜色，再通过一次音量修改解释设置缓存。文件中的值、内存对象与 getter 的结果将在这个实验中分别呈现。
 
-*本节预期阅读时间：\~15 分钟。*
+_本节预期阅读时间：\~15 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -59,15 +59,15 @@ boolean enabled = settings.optBoolean("GearIn_feature_enabled", false);
 
 ### 设置读取方法速查表
 
-| 方法 | 当前用途与异常／缺省 |
-|---|---|
-| getString | 字符串，缺失或无法按要求读取时抛 RuntimeException |
-| getFloat | 浮点数，缺失或转换失败时抛 RuntimeException |
-| getInt | 按浮点读取再截断，3.75 返回 3 |
-| getBoolean | 布尔值，缺失或转换失败时抛 RuntimeException |
-| optBoolean | 读取不到有效布尔时采用给定缺省值 |
-| getColor | RGBA，缺键采用并缓存 Color.white，格式错误产生异常 |
-| getSettingsJSON | 当前合并对象，供直接查询与修改 |
+| 方法            | 当前用途与异常／缺省                               |
+| --------------- | -------------------------------------------------- |
+| getString       | 字符串，缺失或无法按要求读取时抛 RuntimeException  |
+| getFloat        | 浮点数，缺失或转换失败时抛 RuntimeException        |
+| getInt          | 按浮点读取再截断，3.75 返回 3                      |
+| getBoolean      | 布尔值，缺失或转换失败时抛 RuntimeException        |
+| optBoolean      | 读取不到有效布尔时采用给定缺省值                   |
+| getColor        | RGBA，缺键采用并缓存 Color.white，格式错误产生异常 |
+| getSettingsJSON | 当前合并对象，供直接查询与修改                     |
 
 完整方法还读取 `GearIn_example_count` 与 `GearIn_accent_color`。`getInt` 将 `3.75` 截断为 `3`；需要保留小数时使用 `getFloat`，需要四舍五入时另行处理。颜色使用四项 RGBA，格式错误会产生异常，缺键则采用并缓存 `Color.white`。
 

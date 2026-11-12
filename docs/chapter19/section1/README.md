@@ -2,9 +2,9 @@
 
 可选依赖要同时处理库存在与缺席时的行为。本节为 Nexerelin 和 LunaLib 加入编译路径，用桥接类检测启用状态，再把 LunaLib 的直接调用留在适配器里。库缺席时图形开关采用调用方缺省，已有基础内容继续运行；同一份 JAR 用四种组合验证这个约定。
 
-*本节预期阅读时间：\~18 分钟。*
+_本节预期阅读时间：\~18 分钟。_
 
-*本节预期操作时间：\~30 分钟。*
+_本节预期操作时间：\~30 分钟。_
 
 ## 学习目标
 
@@ -111,12 +111,12 @@ Global.getLogger(GearInModPlugin.class).info(
 
 ## 启用组合速查表
 
-| 启用组合 | Nexerelin 检测 | LunaLib 检测 |
-|---|---|---|
-| 两库都缺席 | false | false |
-| 仅 Nexerelin | true | false |
-| 仅 LunaLib | false | true |
-| 两库都启用 | true | true |
+| 启用组合     | Nexerelin 检测 | LunaLib 检测 |
+| ------------ | -------------- | ------------ |
+| 两库都缺席   | false          | false        |
+| 仅 Nexerelin | true           | false        |
+| 仅 LunaLib   | false          | true         |
+| 两库都启用   | true           | true         |
 
 ## 连续查询接入状态
 

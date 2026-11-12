@@ -2,9 +2,9 @@
 
 本节通过 `SectorAPI` 读取当前生涯，用每五日一次的记录比较地点、玩家舰队、势力与日期。采样器在读档后重新计时，存档标记则继续保留，我们将利用这个区别说明运行进度和生涯数据各自怎样保存。
 
-*本节预期阅读时间：\~18 分钟。*
+_本节预期阅读时间：\~18 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -55,13 +55,13 @@ CampaignClockAPI clock = sector.getClock();
 
 ### 生涯服务入口速查表
 
-| 服务 | 入口 | 当前用途 |
-|---|---|---|
-| 地点 | `getCurrentLocation()`、`getAllLocations()` | 取得玩家当前地点与全星区地点集合 |
-| 势力 | `getPlayerFaction()`、`getFaction(id)` | 取得玩家势力与指定势力 |
-| 玩家 | `getPlayerFleet()`、`getPlayerPerson()`、`getPlayerStats()` | 取得玩家舰队、人物与统计对象 |
-| 经济 | `getEconomy()` | 查询市场与经济集合 |
-| 事件与情报 | `getEventManager()`、`getIntelManager()` | 访问生涯事件与情报服务 |
+| 服务       | 入口                                                        | 当前用途                         |
+| ---------- | ----------------------------------------------------------- | -------------------------------- |
+| 地点       | `getCurrentLocation()`、`getAllLocations()`                 | 取得玩家当前地点与全星区地点集合 |
+| 势力       | `getPlayerFaction()`、`getFaction(id)`                      | 取得玩家势力与指定势力           |
+| 玩家       | `getPlayerFleet()`、`getPlayerPerson()`、`getPlayerStats()` | 取得玩家舰队、人物与统计对象     |
+| 经济       | `getEconomy()`                                              | 查询市场与经济集合               |
+| 事件与情报 | `getEventManager()`、`getIntelManager()`                    | 访问生涯事件与情报服务           |
 
 本节将地点、舰队和势力的 ID 写入日志。后续专用页面再从相同入口展开各自的对象，读取来源继续保持一致。
 
@@ -123,6 +123,7 @@ Object probeValue = sectorMemory.get("$GearIn_sector_probe");
 保存下列类，并保留前面的生涯登记片段，再构建 JAR。
 
 ::: details 完整成品：GearInSectorStateSampler
+
 ```java
 package data.scripts.gearin.campaign;
 
@@ -212,6 +213,7 @@ public class GearInSectorStateSampler implements EveryFrameScript {
     }
 }
 ```
+
 :::
 
 ## 验证方案

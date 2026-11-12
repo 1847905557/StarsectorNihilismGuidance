@@ -2,9 +2,9 @@
 
 本节在独立舰队通讯中加入 "检查通讯记录"：选择后追加一段信号记录，再按首次或重复读取给出详情，最后返回舰队菜单。规则之间通过选项 ID、Memory 与 trigger 连接，`FireAll` 和 `FireBest` 分别承担追加与选择，形成一段能进入也能结束的对话。
 
-*本节预期阅读时间：\~25 分钟。*
+_本节预期阅读时间：\~25 分钟。_
 
-*本节预期操作时间：\~35 分钟。*
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
@@ -182,24 +182,24 @@ GearIn_rules_apply_keep,DialogOptionSelected,$option == GearIn_rules_apply_keep,
 
 ## 常见 `trigger` 速查表
 
-| `trigger` | 场景 | 主要用途 |
-|---|---|---|
+| `trigger`               | 场景     | 主要用途                     |
+| ----------------------- | -------- | ---------------------------- |
 | `OpenInteractionDialog` | 通用交互 | 建立默认视觉、描述和初始选项 |
-| `PopulateOptions` | 通用菜单 | 按当前状态批量添加选项 |
-| `DialogOptionSelected` | 生涯对话 | 根据 `$option` 处理选择 |
-| `PickGreeting` | 人物通讯 | 选择人物问候 |
-| `OpenCommLink` | 舰队通讯 | 建立通讯文本与菜单 |
-| `MarketPostOpen` | 市场 | 处理停靠许可与贸易状态 |
-| `MarketPostDock` | 市场 | 建立市场主菜单 |
-| `TradePanelFlavorText` | 交易面板 | 生成交易环境文本 |
-| `BeginFleetEncounter` | 舰队遭遇 | 生成遭遇开场与通讯请求 |
-| `AddBarEvents` | 酒吧 | 添加本次酒吧菜单的事件 |
-| `BarPrintDesc` | 酒吧 | 生成酒吧环境描述 |
-| `ReturnFromBar` | 酒吧 | 返回市场菜单 |
-| `MHOpenText` | 任务列表 | 生成任务列表前文本 |
-| `AddMHCloseOption` | 任务列表 | 添加关闭任务列表的选项 |
-| `AddNewGameChoices` | 新游戏 | 填充开局选择 |
-| `NewGameOptionSelected` | 新游戏 | 处理新游戏选项回流 |
+| `PopulateOptions`       | 通用菜单 | 按当前状态批量添加选项       |
+| `DialogOptionSelected`  | 生涯对话 | 根据 `$option` 处理选择      |
+| `PickGreeting`          | 人物通讯 | 选择人物问候                 |
+| `OpenCommLink`          | 舰队通讯 | 建立通讯文本与菜单           |
+| `MarketPostOpen`        | 市场     | 处理停靠许可与贸易状态       |
+| `MarketPostDock`        | 市场     | 建立市场主菜单               |
+| `TradePanelFlavorText`  | 交易面板 | 生成交易环境文本             |
+| `BeginFleetEncounter`   | 舰队遭遇 | 生成遭遇开场与通讯请求       |
+| `AddBarEvents`          | 酒吧     | 添加本次酒吧菜单的事件       |
+| `BarPrintDesc`          | 酒吧     | 生成酒吧环境描述             |
+| `ReturnFromBar`         | 酒吧     | 返回市场菜单                 |
+| `MHOpenText`            | 任务列表 | 生成任务列表前文本           |
+| `AddMHCloseOption`      | 任务列表 | 添加关闭任务列表的选项       |
+| `AddNewGameChoices`     | 新游戏   | 填充开局选择                 |
+| `NewGameOptionSelected` | 新游戏   | 处理新游戏选项回流           |
 
 表格只用于判断规则应挂在哪类入口。每个 `trigger` 的原版调用类、精确派发顺序、规则记录数和特殊状态由 [C16-S3] 逐场景解释。
 

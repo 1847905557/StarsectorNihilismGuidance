@@ -2,9 +2,9 @@
 
 本节给 Foundry 添加 Element Works，消耗金属、燃料与重型机械，生产稀有金属。输入不足时削减产出，建设或中断时停止供给，安装 Alpha core 后另提供稳定度效果。我们围绕这条生产过程实现产业，说明规模、缺货与功能状态怎样共同决定结果。
 
-*本节预期阅读时间：\~30 分钟。*
+_本节预期阅读时间：\~30 分钟。_
 
-*本节预期操作时间：\~45 分钟。*
+_本节预期操作时间：\~45 分钟。_
 
 ## 学习目标
 
@@ -222,24 +222,24 @@ if (spec != null) {
 
 ### 产业规格字段速查表
 
-| 字段与读取入口 | 当前含义 |
-|---|---|
-| `id`、`name`、`plugin`；`getId()`、`getName()`、`getPluginClass()` | 稳定 ID、默认名称与插件完整类名；运行名称用产业的 `getCurrentName()` |
-| `cost mult`、`build time`；`getCost()`、`getBuildTime()` | 成本倍率按信用单位与建设倍率换算为金额，建设时间采用生涯日 |
-| `income`、`upkeep`；`getIncome()`、`getUpkeep()` | 规格基础收入与维护值，运行时继续按市场条件修饰 |
-| `upgrade`、`downgrade`；`getUpgrade()`、`getDowngrade()` | 已注册的目标产业 ID，本例留空 |
-| `tags`；`getTags()`、`hasTag()` | `industry`、`industrial`、`structure` 等分类 |
-| `data`；`getData()` | 规格附加字符串，本例留空 |
-| `image`、`desc`、`order`；`getImageName()`、`getDesc()`、`getOrder()` | 图像、静态描述与列表顺序 |
-| `disruptDanger`；`getDisruptDanger()` | 突袭中断的 `RaidDangerLevel`，当前中断期限由产业与市场 Memory 保存 |
+| 字段与读取入口                                                        | 当前含义                                                             |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `id`、`name`、`plugin`；`getId()`、`getName()`、`getPluginClass()`    | 稳定 ID、默认名称与插件完整类名；运行名称用产业的 `getCurrentName()` |
+| `cost mult`、`build time`；`getCost()`、`getBuildTime()`              | 成本倍率按信用单位与建设倍率换算为金额，建设时间采用生涯日           |
+| `income`、`upkeep`；`getIncome()`、`getUpkeep()`                      | 规格基础收入与维护值，运行时继续按市场条件修饰                       |
+| `upgrade`、`downgrade`；`getUpgrade()`、`getDowngrade()`              | 已注册的目标产业 ID，本例留空                                        |
+| `tags`；`getTags()`、`hasTag()`                                       | `industry`、`industrial`、`structure` 等分类                         |
+| `data`；`getData()`                                                   | 规格附加字符串，本例留空                                             |
+| `image`、`desc`、`order`；`getImageName()`、`getDesc()`、`getOrder()` | 图像、静态描述与列表顺序                                             |
+| `disruptDanger`；`getDisruptDanger()`                                 | 突袭中断的 `RaidDangerLevel`，当前中断期限由产业与市场 Memory 保存   |
 
 ### 原版产业速查表
 
-| 产业 | 输入与产出 | 典型插件 | 本节关注点 |
-| --- | --- | --- | --- |
-| `mining` | `heavy_machinery`、`drugs` 输入，矿石与有机物等产出 | `Mining` | 多商品供给和地表条件 |
-| `refining` | `ore`、`rare_ore`、`heavy_machinery` 输入，`metals`、`rare_metals` 输出 | `Refining` | 原版精炼生产链 |
-| `GearIn_element_works` | `metals`、`fuel`、`heavy_machinery` 输入，`rare_metals` 输出 | `GearInElementWorksIndustry` | 规模化需求、最大短缺和状态观察 |
+| 产业                   | 输入与产出                                                              | 典型插件                     | 本节关注点                     |
+| ---------------------- | ----------------------------------------------------------------------- | ---------------------------- | ------------------------------ |
+| `mining`               | `heavy_machinery`、`drugs` 输入，矿石与有机物等产出                     | `Mining`                     | 多商品供给和地表条件           |
+| `refining`             | `ore`、`rare_ore`、`heavy_machinery` 输入，`metals`、`rare_metals` 输出 | `Refining`                   | 原版精炼生产链                 |
+| `GearIn_element_works` | `metals`、`fuel`、`heavy_machinery` 输入，`rare_metals` 输出            | `GearInElementWorksIndustry` | 规模化需求、最大短缺和状态观察 |
 
 原版精炼分别对金属与稀有金属选择输入缺口，采矿还依赖地表资源条件。本例沿用同一套产业生命周期，只把当前生产对象集中为一项稀有金属供给，便于确认规模、短缺与停产关系。
 

@@ -2,9 +2,9 @@
 
 本节让 LunaLib 的开关、数量、间隔、颜色和标签进入实际战斗显示。控件负责保存，读取器取得当前值，战斗插件在自己的调用时机使用它们；变更监听另外记录通知。设置保存后无需重新构建代码，库缺席时同一个插件采用代码缺省。
 
-*本节预期阅读时间：\~18 分钟。*
+_本节预期阅读时间：\~18 分钟。_
 
-*本节预期操作时间：\~30 分钟。*
+_本节预期操作时间：\~30 分钟。_
 
 ## 学习目标
 
@@ -42,13 +42,13 @@ GearIn_label_text,Label text,String,GearIn,,,,,GearIn
 
 ### 设置与画面速查表
 
-| 字段 ID | 类型与缺省 | 当前使用方 |
-|---|---|---|
-| `GearIn_trails_enabled` | Boolean，true | 控制附近敌舰标记生成 |
-| `GearIn_max_entries` | Int，12，1–64 | 限制一次标记的目标数 |
-| `GearIn_pulse_delay` | Double，1.5，0.1–10 | 控制两次标记的间隔秒数 |
-| `GearIn_marker_color` | Color，`#f22e6e` | 标记颜色 |
-| `GearIn_label_text` | String，GearIn | 玩家状态标签文字 |
+| 字段 ID                 | 类型与缺省          | 当前使用方             |
+| ----------------------- | ------------------- | ---------------------- |
+| `GearIn_trails_enabled` | Boolean，true       | 控制附近敌舰标记生成   |
+| `GearIn_max_entries`    | Int，12，1–64       | 限制一次标记的目标数   |
+| `GearIn_pulse_delay`    | Double，1.5，0.1–10 | 控制两次标记的间隔秒数 |
+| `GearIn_marker_color`   | Color，`#f22e6e`    | 标记颜色               |
+| `GearIn_label_text`     | String，GearIn      | 玩家状态标签文字       |
 
 本节定义 `GearIn_trails_enabled`，当前插件用短寿命粒子提供观察结果。需要接到尾迹效果时，同一个布尔值也可以决定是否追加节点，实际使用由效果类安排。
 

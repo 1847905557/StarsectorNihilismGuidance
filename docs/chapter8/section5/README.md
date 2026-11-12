@@ -2,9 +2,9 @@
 
 武器持续开火、弹体生成、命中与光束照射，会在不同位置调用脚本。本节将这些入口分别绑定到都林和乌里，用日志记录武器状态、射弹来源与伤害结算，再以光束末端的粒子对应逐帧信息。每段逻辑都使用本次回调提供的对象。
 
-*本节预期阅读时间：\~18 分钟。*
+_本节预期阅读时间：\~18 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -27,12 +27,12 @@
 
 ### 武器脚本字段速查表
 
-| 字段 | 接口 | 当前用途 |
-|---|---|---|
+| 字段                   | 接口                           | 当前用途               |
+| ---------------------- | ------------------------------ | ---------------------- |
 | `wpn.everyFrameEffect` | `EveryFrameWeaponEffectPlugin` | 读取当前武器的持续状态 |
-| `proj.onFireEffect` | `OnFireEffectPlugin` | 弹体生成后的事件 |
-| `proj.onHitEffect` | `OnHitEffectPlugin` | 当前命中与结算 |
-| `wpn.beamEffect` | `BeamEffectPlugin` | 激活光束的逐帧信息 |
+| `proj.onFireEffect`    | `OnFireEffectPlugin`           | 弹体生成后的事件       |
+| `proj.onHitEffect`     | `OnHitEffectPlugin`            | 当前命中与结算         |
+| `wpn.beamEffect`       | `BeamEffectPlugin`             | 激活光束的逐帧信息     |
 
 **`.wpn` 绑定武器与光束逻辑，`.proj` 绑定弹体事件。** 完整类名指向 JAR 中的实现，但还要由当前武器实际使用这份数据。特别是生成与命中脚本，登记在武器引用的弹体文件里，事件才能到达对应类。
 

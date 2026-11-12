@@ -2,9 +2,9 @@
 
 装配里增加一个幅能电容，成员的数值会随之重算；此前取得的 `stats` 却可能已经被替换。本节借一艘临时加入的狼说明这次变化，再为舰队添加短期航速效果、写入带期限的 Memory，分别确认数值的来源与状态的寿命。
 
-*本节预期阅读时间：\~24 分钟。*
+_本节预期阅读时间：\~24 分钟。_
 
-*本节预期操作时间：\~28 分钟。*
+_本节预期操作时间：\~28 分钟。_
 
 ## 学习目标
 
@@ -78,13 +78,13 @@ LOG.info("GearIn: capacitors=" + capacitorsBefore
 
 ### 状态来源速查表
 
-| 来源 | 进入位置 | 观察对象 |
-| --- | --- | --- |
-| 船体规格 | 成员创建和 `stats` 初始化 | 基值 |
-| 舰船装配 | `setVariant` 与 `updateStats` | 成员 `stats` |
-| 舰长 | 成员归属后的重算 | 当前成员 |
-| 指挥官 | 成员与舰队完整重算 | 多个成员 |
-| 舰队汇总 | 舰队级 `stats` 与成员汇总入口 | 移动和后勤结果 |
+| 来源      | 进入位置                      | 观察对象         |
+| --------- | ----------------------------- | ---------------- |
+| 船体规格  | 成员创建和 `stats` 初始化     | 基值             |
+| 舰船装配  | `setVariant` 与 `updateStats` | 成员 `stats`     |
+| 舰长      | 成员归属后的重算              | 当前成员         |
+| 指挥官    | 成员与舰队完整重算            | 多个成员         |
+| 舰队汇总  | 舰队级 `stats` 与成员汇总入口 | 移动和后勤结果   |
 | CR 与船员 | `RepairTrackerAPI` 和成员状态 | 可部署性和修正值 |
 
 ### 对应舰长与指挥官
@@ -185,22 +185,22 @@ if (hadKey) {
 
 这些键由原版 AI 或交互功能读取，值的类型由读取方决定。Memory 本身只保存对象，写入键后发生什么，要结合消费它的功能判断。
 
-| 常量 | 键值 | 保存的值 | 作用 |
-| --- | --- | --- | --- |
-| `FLEET_DO_NOT_IGNORE_PLAYER` | `$cfai_doNotIgnorePlayer` | `boolean` | 让 AI 考虑玩家 |
-| `FLEET_IGNORES_OTHER_FLEETS` | `$cfai_ignoreOtherFleets` | `boolean` | 让舰队忽略其他舰队 |
-| `FLEET_IGNORED_BY_OTHER_FLEETS` | `$cfai_ignoredByOtherFleets` | `boolean` | 让其他舰队忽略当前舰队 |
-| `FLEET_IGNORED_BY_FACTION` | `$cfai_ignoredByFaction` | 势力 ID 字符串 | 指定忽略当前舰队的势力 |
-| `FLEET_PATROL_DISTANCE` | `$cfai_patrolDist` | `float` | 提供巡逻距离 |
-| `FLEET_INTERACTION_DIALOG_CONFIG_OVERRIDE_GEN` | `$fidConifgGen` | `FleetInteractionDialogPluginImpl.FIDConfigGen` | 创建舰队交互配置 |
-| `FLEET_NO_MILITARY_RESPONSE` | `$core_fleetNoMilitaryResponse` | `boolean` | 阻止舰队参加军事响应 |
-| `FLEET_FIGHT_TO_THE_LAST` | `$core_fightToTheLast` | `boolean` | 改变战斗中的撤退判断 |
-| `FLEET_BUSY` | `$core_fleetBusy` | `boolean` | 标记忙碌，影响其他功能是否接管舰队 |
-| `FLEET_SPECIAL_ACTION` | `$core_fleetSpecialAction` | `boolean` | 与 `FLEET_BUSY` 配合标记正在执行特定行动 |
-| `FLEET_MILITARY_RESPONSE` | `$core_fleetMilitaryResponse` | `boolean` | 标记正在参与军事响应 |
-| `FLEET_CHASING_GHOST` | `$core_fleetChasingGhost` | `boolean` | 标记正在调查虚假传感器信号 |
-| `FLEET_NOT_CHASING_GHOST` | `$core_fleetNotChasingGhost` | `boolean` | 暂时阻止调查虚假传感器信号 |
-| `FLEET_CHASING_GHOST_RANDOM` | `$core_fleetChasingGhostRandom` | `java.util.Random` | 保存调查虚假传感器信号所用的随机源 |
+| 常量                                           | 键值                            | 保存的值                                        | 作用                                     |
+| ---------------------------------------------- | ------------------------------- | ----------------------------------------------- | ---------------------------------------- |
+| `FLEET_DO_NOT_IGNORE_PLAYER`                   | `$cfai_doNotIgnorePlayer`       | `boolean`                                       | 让 AI 考虑玩家                           |
+| `FLEET_IGNORES_OTHER_FLEETS`                   | `$cfai_ignoreOtherFleets`       | `boolean`                                       | 让舰队忽略其他舰队                       |
+| `FLEET_IGNORED_BY_OTHER_FLEETS`                | `$cfai_ignoredByOtherFleets`    | `boolean`                                       | 让其他舰队忽略当前舰队                   |
+| `FLEET_IGNORED_BY_FACTION`                     | `$cfai_ignoredByFaction`        | 势力 ID 字符串                                  | 指定忽略当前舰队的势力                   |
+| `FLEET_PATROL_DISTANCE`                        | `$cfai_patrolDist`              | `float`                                         | 提供巡逻距离                             |
+| `FLEET_INTERACTION_DIALOG_CONFIG_OVERRIDE_GEN` | `$fidConifgGen`                 | `FleetInteractionDialogPluginImpl.FIDConfigGen` | 创建舰队交互配置                         |
+| `FLEET_NO_MILITARY_RESPONSE`                   | `$core_fleetNoMilitaryResponse` | `boolean`                                       | 阻止舰队参加军事响应                     |
+| `FLEET_FIGHT_TO_THE_LAST`                      | `$core_fightToTheLast`          | `boolean`                                       | 改变战斗中的撤退判断                     |
+| `FLEET_BUSY`                                   | `$core_fleetBusy`               | `boolean`                                       | 标记忙碌，影响其他功能是否接管舰队       |
+| `FLEET_SPECIAL_ACTION`                         | `$core_fleetSpecialAction`      | `boolean`                                       | 与 `FLEET_BUSY` 配合标记正在执行特定行动 |
+| `FLEET_MILITARY_RESPONSE`                      | `$core_fleetMilitaryResponse`   | `boolean`                                       | 标记正在参与军事响应                     |
+| `FLEET_CHASING_GHOST`                          | `$core_fleetChasingGhost`       | `boolean`                                       | 标记正在调查虚假传感器信号               |
+| `FLEET_NOT_CHASING_GHOST`                      | `$core_fleetNotChasingGhost`    | `boolean`                                       | 暂时阻止调查虚假传感器信号               |
+| `FLEET_CHASING_GHOST_RANDOM`                   | `$core_fleetChasingGhostRandom` | `java.util.Random`                              | 保存调查虚假传感器信号所用的随机源       |
 
 ## 完整最小例
 

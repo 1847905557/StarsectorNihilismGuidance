@@ -2,9 +2,9 @@
 
 本节在观测星系放置一个信标，配置位置、身份、交互图片与业务状态，再比较它和玩家舰队之间的可见性。放置脚本负责创建与配置，已有采样器继续读取同一实体，让坐标、轨道和检测结果都能对应到实际操作。
 
-*本节预期阅读时间：\~22 分钟。*
+_本节预期阅读时间：\~22 分钟。_
 
-*本节预期操作时间：\~30 分钟。*
+_本节预期操作时间：\~30 分钟。_
 
 ## 学习目标
 
@@ -162,6 +162,7 @@ if (entity != null) {
 保存下列类并保留前面的登记、图片配置与采样片段。
 
 ::: details 完整成品：GearInEntityPlacement
+
 ```java
 package data.scripts.gearin.campaign;
 
@@ -263,6 +264,7 @@ public class GearInEntityPlacement implements EveryFrameScript {
     }
 }
 ```
+
 :::
 
 ## 验证方案

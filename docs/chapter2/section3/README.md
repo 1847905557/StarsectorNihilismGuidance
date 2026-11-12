@@ -2,9 +2,9 @@
 
 本节为工匠制作 "突击填弹器"：以原版加速填弹器为基础，增加速度与机动加成，再为它设置持续时间和冷却。随后制作右键使用的抵抗力场。两种系统都由定义文件、CSV 参数和效果类组成，舰船数据决定安装哪个系统。
 
-*本节预期阅读时间：\~20 分钟。*
+_本节预期阅读时间：\~20 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -64,16 +64,16 @@ name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u 
 
 ### 常用系统参数速查表
 
-| 列 | 作用 |
-|---|---|
-| `charge up` | 前摇秒数，效果强度从 0 升至 1 |
-| `active` | 全功率秒数，效果强度保持 1 |
-| `down` | 后摇秒数，效果强度从 1 回到 0 |
-| `cooldown` | 冷却秒数，结束后到下一次可用 |
-| `flux/second` | 激活期间每秒产生的幅能 |
-| `toggle` | `TRUE` 为开关式，再按一次关闭；留空按持续时间结束 |
-| `max uses` | 可用次数，留空表示无限 |
-| `noAccel`、`noFiring`、`noTurning` 等 | 激活期间禁止的对应操作，`TRUE` 表示禁止 |
+| 列                                    | 作用                                              |
+| ------------------------------------- | ------------------------------------------------- |
+| `charge up`                           | 前摇秒数，效果强度从 0 升至 1                     |
+| `active`                              | 全功率秒数，效果强度保持 1                        |
+| `down`                                | 后摇秒数，效果强度从 1 回到 0                     |
+| `cooldown`                            | 冷却秒数，结束后到下一次可用                      |
+| `flux/second`                         | 激活期间每秒产生的幅能                            |
+| `toggle`                              | `TRUE` 为开关式，再按一次关闭；留空按持续时间结束 |
+| `max uses`                            | 可用次数，留空表示无限                            |
+| `noAccel`、`noFiring`、`noTurning` 等 | 激活期间禁止的对应操作，`TRUE` 表示禁止           |
 
 突击填弹器的 `toggle` 留空，按一次后运行前摇、全功率、后摇与冷却周期。开关式系统采用同一组阶段，但关闭动作由再次按键触发。当前这行同时保留加速填弹器的使用参数；`f/s`、`f/u` 和 `cr/u` 等进阶列以后再结合具体系统处理。
 
@@ -202,7 +202,7 @@ stats.getHighExplosiveDamageTakenMult().modifyMult(id,
 
 观察舰船详情中主系统与右键系统的位置：
 
-![工匠详情中的突击填弹器与抵抗力场](./right_show.png "right_show.png")
+![工匠详情中的突击填弹器与抵抗力场](./right_show.png 'right_show.png')
 
 主系统和右键系统分别显示在 System 与 Special 位置，两个名称来自各自的系统数据行。
 
@@ -333,13 +333,13 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
 观察突击填弹器激活后的引擎与四项状态：
 
-![突击填弹器的引擎表现与增益状态](./system_play.png "system_play.png")
+![突击填弹器的引擎表现与增益状态](./system_play.png 'system_play.png')
 
 图中额外的 "Zero Flux Engine Boost" 来自舰船的零幅能加速。核对本系统时，使用以 "突击填弹器" 为标题的四项状态与脚本参数比较。
 
 再观察抵抗力场的橙色扰动：
 
-![抵抗力场激活时的舰船扰动效果](./right_play.png "right_play.png")
+![抵抗力场激活时的舰船扰动效果](./right_play.png 'right_play.png')
 
 主系统与右键系统可以分别验证。视效来自定义文件，减伤则由效果脚本写入。
 

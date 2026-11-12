@@ -2,9 +2,9 @@
 
 酒吧里的邀请可以通向一项离开对话后仍在运行的任务。本节制作码头检查：用 `bar_events.csv` 登记任务类，由 Rules 提供邀请和接受选项，接受后经过一个生涯日完成。我们沿这次交接组织代码，再说明酒吧的出现频率、冷却与任务自身的计时分别由谁处理。
 
-*本节预期阅读时间：\~30 分钟。*
+_本节预期阅读时间：\~30 分钟。_
 
-*本节预期操作时间：\~35 分钟。*
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
@@ -163,17 +163,17 @@ min/max accepted timeout → 交互后 timeout
 
 ## 酒吧任务字段与对象速查表
 
-| 字段或对象 | 读取位置 | 作用 |
-| --- | --- | --- |
-| `bar event id` | `BarEventSpec.id` | `spec` 和 `wrapper` 身份 |
-| `freq` | `getFreq()` | `creator` 抽取权重 |
-| `prob` | `getProb()` | 市场概率筛选 |
-| `min/max dur` | `getMinDur/getMaxDur` | `active` 生命周期 |
-| `min/max timeout` | `getMinTimeout/getMaxTimeout` | 未交互冷却 |
-| `min/max accepted timeout` | `getMinAcceptedTimeout/getMaxAcceptedTimeout` | 交互后冷却 |
-| `plugin` | `getPluginClass()` | 普通事件或 `HubMission` 类型 |
-| `SpecBarEventCreator` | `manager` 自动创建 | 从 `spec` 生成事件入口 |
-| `HubMissionBarEventWrapper` | `isMission() == true` | 在酒吧上下文创建任务 |
+| 字段或对象                  | 读取位置                                      | 作用                         |
+| --------------------------- | --------------------------------------------- | ---------------------------- |
+| `bar event id`              | `BarEventSpec.id`                             | `spec` 和 `wrapper` 身份     |
+| `freq`                      | `getFreq()`                                   | `creator` 抽取权重           |
+| `prob`                      | `getProb()`                                   | 市场概率筛选                 |
+| `min/max dur`               | `getMinDur/getMaxDur`                         | `active` 生命周期            |
+| `min/max timeout`           | `getMinTimeout/getMaxTimeout`                 | 未交互冷却                   |
+| `min/max accepted timeout`  | `getMinAcceptedTimeout/getMaxAcceptedTimeout` | 交互后冷却                   |
+| `plugin`                    | `getPluginClass()`                            | 普通事件或 `HubMission` 类型 |
+| `SpecBarEventCreator`       | `manager` 自动创建                            | 从 `spec` 生成事件入口       |
+| `HubMissionBarEventWrapper` | `isMission() == true`                         | 在酒吧上下文创建任务         |
 
 ## 完整最小例
 

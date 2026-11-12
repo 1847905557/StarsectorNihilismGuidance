@@ -2,9 +2,9 @@
 
 距离相近的对象，未必都适合作为当前 AI 的目标。本节用扫描器分别标记空间候选、可见敌舰与拦截点，沿查询、筛选和选择的过程说明 LazyLib 的入口。对象类型、距离口径和可见性各自影响结果，方法名相近时尤其需要区分。
 
-*本节预期阅读时间：\~30 分钟。*
+_本节预期阅读时间：\~30 分钟。_
 
-*本节预期操作时间：\~35 分钟。*
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
@@ -258,23 +258,23 @@ if (nearest != null && WeaponUtils.isWithinArc(nearest, weapon)) {
 
 ## 常用方法速查表
 
-| 类 | 方法组 | 返回或作用 |
-|---|---|---|
-| `CombatUtils` | `getShipsWithinRange`、`getMissilesWithinRange`、`getProjectilesWithinRange`、`getAsteroidsWithinRange` | 按世界坐标和半径返回指定类型的空间候选 |
-| `CombatUtils` | `getObjectivesWithinRange`、`getEntitiesWithinRange` | 返回目标点或综合战斗实体 |
-| `CombatUtils` | `isVisibleToSide` | 检查一个实体对指定战斗方是否可见 |
-| `CombatUtils` | `getFleetMember` | 取得战斗舰船对应的生涯舰队成员 |
-| `CombatUtils` | `applyForce` | 按方向向量或游戏角度向实体施力 |
-| `CombatUtils` | `toWorldCoordinates`、`toScreenCoordinates`、`centerViewport` | 转换屏幕/世界坐标或移动视口 |
-| `CombatUtils` | `spawnShipOrWingDirectly` | 在当前战斗中直接生成舰船或战机联队 |
-| `AIUtils` | `getNearestEnemy`、`getNearestAlly`、`getNearestShip` | 按关系和可见性取得最近舰船 |
-| `AIUtils` | `getNearestEnemyMissile`、`getNearestMissile` | 取得最近敌方导弹或任意可见导弹 |
-| `AIUtils` | `getNearestObjective` | 取得最近战斗目标点 |
-| `AIUtils` | `getNearbyEnemies`、`getNearbyAllies`、`getNearbyEnemyMissiles` | 按查询实体和半径返回关系集合 |
-| `AIUtils` | `getEnemiesOnMap`、`getAlliesOnMap`、`getEnemyMissilesOnMap` | 返回整张战场上的关系集合 |
-| `AIUtils` | `getBestInterceptPoint` | 解算匀速目标的拦截坐标，无解时返回 `null` |
-| `AIUtils` | `canUseSystemThisFrame` | 判断本帧能否操作 `ship.getSystem()` |
-| `CollectionUtils` | `SortEntitiesByDistance` | 按中心距离或实体边缘距离排序战斗实体 |
+| 类                | 方法组                                                                                                  | 返回或作用                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `CombatUtils`     | `getShipsWithinRange`、`getMissilesWithinRange`、`getProjectilesWithinRange`、`getAsteroidsWithinRange` | 按世界坐标和半径返回指定类型的空间候选    |
+| `CombatUtils`     | `getObjectivesWithinRange`、`getEntitiesWithinRange`                                                    | 返回目标点或综合战斗实体                  |
+| `CombatUtils`     | `isVisibleToSide`                                                                                       | 检查一个实体对指定战斗方是否可见          |
+| `CombatUtils`     | `getFleetMember`                                                                                        | 取得战斗舰船对应的生涯舰队成员            |
+| `CombatUtils`     | `applyForce`                                                                                            | 按方向向量或游戏角度向实体施力            |
+| `CombatUtils`     | `toWorldCoordinates`、`toScreenCoordinates`、`centerViewport`                                           | 转换屏幕/世界坐标或移动视口               |
+| `CombatUtils`     | `spawnShipOrWingDirectly`                                                                               | 在当前战斗中直接生成舰船或战机联队        |
+| `AIUtils`         | `getNearestEnemy`、`getNearestAlly`、`getNearestShip`                                                   | 按关系和可见性取得最近舰船                |
+| `AIUtils`         | `getNearestEnemyMissile`、`getNearestMissile`                                                           | 取得最近敌方导弹或任意可见导弹            |
+| `AIUtils`         | `getNearestObjective`                                                                                   | 取得最近战斗目标点                        |
+| `AIUtils`         | `getNearbyEnemies`、`getNearbyAllies`、`getNearbyEnemyMissiles`                                         | 按查询实体和半径返回关系集合              |
+| `AIUtils`         | `getEnemiesOnMap`、`getAlliesOnMap`、`getEnemyMissilesOnMap`                                            | 返回整张战场上的关系集合                  |
+| `AIUtils`         | `getBestInterceptPoint`                                                                                 | 解算匀速目标的拦截坐标，无解时返回 `null` |
+| `AIUtils`         | `canUseSystemThisFrame`                                                                                 | 判断本帧能否操作 `ship.getSystem()`       |
+| `CollectionUtils` | `SortEntitiesByDistance`                                                                                | 按中心距离或实体边缘距离排序战斗实体      |
 
 ## 完整最小例
 

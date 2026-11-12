@@ -15,6 +15,8 @@ starsectorRoot=<你的 Starsector 安装根目录>
 
 未配置 `starsectorRoot` 时构建会直接报错 (不会回退到任何默认路径)。若本机 JDK 不在 Gradle 自动探测范围内，可同时补充 `org.gradle.java.installations.paths=...`。
 
+契约检查使用主仓库安装的 Node.js 与依赖，先在仓库根目录执行 `pnpm install --frozen-lockfile`。Gradle 可通过 `nodeExecutable` 指定 Node.js 可执行文件。
+
 `starsectorRoot` 提供当前版本的核心 JAR。依赖库默认从该游戏根下的 `mods/` 读取；设置 `starsectorModsRoot` 时，从明确指定的目录读取相同的依赖库。
 
 ```powershell
@@ -26,6 +28,6 @@ gradle verifyTutorialFixtures
 Java 单元按 `build.gradle` 的 `javaUnitIds` 使用独立 source set。shader 单元按 `shaderUnitIds` 在自己的资源目录中保存 `.vert`、`.frag` 和接入代码。执行编译或 shader 校验前会先运行页面与 fixture 契约检查。
 
 ```powershell
-python -B tools/check_fixtures.py
+pnpm check:fixtures
 gradle checkFixtureContracts
 ```

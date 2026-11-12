@@ -2,9 +2,9 @@
 
 本节给 Mira、Rowan 与 Selene 添加各自的技能，分别改变单舰机动、舰队航速与燃料消耗，以及治理市场的稳定度和收入。每条技能由注册数据、效果定义与脚本组成，再通过人物等级和角色绑定进入实际对象。普通与精英等级的选择、说明文字与效果撤销也在这个过程中处理。
 
-*本节预期阅读时间：\~30 分钟。*
+_本节预期阅读时间：\~30 分钟。_
 
-*本节预期操作时间：\~50 分钟。*
+_本节预期操作时间：\~50 分钟。_
 
 ## 学习目标
 
@@ -31,11 +31,11 @@
 
 ### 技能资源速查表
 
-| 文件 | 负责的状态 | 本节关键字段 |
-|---|---|---|
-| `skill_data.csv` | 技能树注册和角色资格 | `id`、`name`、`order`、`tier`、`combat officer`、`admiral`、`admin`、`icon` |
-| `<id>.skill` | 能力树分组和效果作用域 | `id`、`governingAptitude`、`scope`、`elite`、`effectGroups` |
-| Java 效果类 | 运行时数值和描述 | `apply()`、`unapply()`、`getEffectDescription()`、接口对应的方法 |
+| 文件             | 负责的状态             | 本节关键字段                                                                |
+| ---------------- | ---------------------- | --------------------------------------------------------------------------- |
+| `skill_data.csv` | 技能树注册和角色资格   | `id`、`name`、`order`、`tier`、`combat officer`、`admiral`、`admin`、`icon` |
+| `<id>.skill`     | 能力树分组和效果作用域 | `id`、`governingAptitude`、`scope`、`elite`、`effectGroups`                 |
+| Java 效果类      | 运行时数值和描述       | `apply()`、`unapply()`、`getEffectDescription()`、接口对应的方法            |
 
 在 `data/characters/skills/skill_data.csv` 保存以下记录，已有表头时只追加数据行。随后在同目录保存三个对应的 `.skill` 文件：
 
@@ -229,19 +229,19 @@ market.reapplyIndustries();
 
 ### 作用域速查表
 
-| `type` | 接口 | 引擎传入的对象 | 本节用途 |
-|---|---|---|---|
-| `SHIP` | `ShipSkillEffect` | 一艘舰船的 `MutableShipStatsAPI` | 舰长机动训练 |
-| `ALL_SHIPS_IN_FLEET` | `ShipSkillEffect` | 舰队中的每艘非战机舰船 | 需要全舰队逐船应用时使用 |
-| `SHIP_FIGHTERS` | `ShipSkillEffect` | 某艘母舰起飞的战机 | 需要绑定母舰时使用 |
-| `ALL_FIGHTERS_IN_FLEET` | `ShipSkillEffect` | 舰队中的全部战机 | 需要绑定舰队时使用 |
-| `CHARACTER_STATS` | `CharacterStatsSkillEffect` | 角色的 `MutableCharacterStatsAPI` | 修改命令点、经验或动态 stats |
-| `FLEET` | `FleetStatsSkillEffect` | 角色所属舰队的 `MutableFleetStatsAPI` | 舰队协同指挥 |
-| `GOVERNED_OUTPOST` | `MarketSkillEffect` | 角色治理的 `MarketAPI` | 殖民地治理 |
-| `ALL_OUTPOSTS` | `MarketSkillEffect` | 玩家全部治理市场 | 需要全市场效果时使用 |
-| `DESCRIPTION` | `DescriptionSkillEffect` | 技能面板文字 | 描述和高亮，不写数值 |
-| `HULLMOD_UNLOCK` | 定义中的船插解锁列表 | 船插 ID | 提供船插解锁 |
-| `ABILITY_UNLOCK` | 定义中的能力解锁列表 | 能力 ID | 提供能力解锁 |
+| `type`                  | 接口                        | 引擎传入的对象                        | 本节用途                     |
+| ----------------------- | --------------------------- | ------------------------------------- | ---------------------------- |
+| `SHIP`                  | `ShipSkillEffect`           | 一艘舰船的 `MutableShipStatsAPI`      | 舰长机动训练                 |
+| `ALL_SHIPS_IN_FLEET`    | `ShipSkillEffect`           | 舰队中的每艘非战机舰船                | 需要全舰队逐船应用时使用     |
+| `SHIP_FIGHTERS`         | `ShipSkillEffect`           | 某艘母舰起飞的战机                    | 需要绑定母舰时使用           |
+| `ALL_FIGHTERS_IN_FLEET` | `ShipSkillEffect`           | 舰队中的全部战机                      | 需要绑定舰队时使用           |
+| `CHARACTER_STATS`       | `CharacterStatsSkillEffect` | 角色的 `MutableCharacterStatsAPI`     | 修改命令点、经验或动态 stats |
+| `FLEET`                 | `FleetStatsSkillEffect`     | 角色所属舰队的 `MutableFleetStatsAPI` | 舰队协同指挥                 |
+| `GOVERNED_OUTPOST`      | `MarketSkillEffect`         | 角色治理的 `MarketAPI`                | 殖民地治理                   |
+| `ALL_OUTPOSTS`          | `MarketSkillEffect`         | 玩家全部治理市场                      | 需要全市场效果时使用         |
+| `DESCRIPTION`           | `DescriptionSkillEffect`    | 技能面板文字                          | 描述和高亮，不写数值         |
+| `HULLMOD_UNLOCK`        | 定义中的船插解锁列表        | 船插 ID                               | 提供船插解锁                 |
+| `ABILITY_UNLOCK`        | 定义中的能力解锁列表        | 能力 ID                               | 提供能力解锁                 |
 
 数值接口继承 `LevelBasedEffect`，提供效果说明、每级说明和 `ScopeDescription`。`CHARACTER_STATS` 修改人物本身的命令点、经验或动态统计，`FLEET` 使用关联舰队，两者在人物刷新时重新应用。
 

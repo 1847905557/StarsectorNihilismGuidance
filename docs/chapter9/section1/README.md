@@ -2,9 +2,9 @@
 
 一个船插可以同时参与数值重建、战斗与生涯，但这些效果并不在同一个时机执行。本节制作装甲训练和舰队维护，分别处理装甲加成与修复、安装说明，以及单舰燃料和舰队传感范围。两个示例将展示回调怎样取得当前对象，效果又怎样保存到正确位置。
 
-*本节预期阅读时间：\~28 分钟。*
+_本节预期阅读时间：\~28 分钟。_
 
-*本节预期操作时间：\~35 分钟。*
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
@@ -240,22 +240,22 @@ public void onFleetSync(CampaignFleetAPI fleet) {
 
 下面的入口用于进一步调整改装条件和提示外观，两个完整示例沿用未覆写的方法的基类行为。
 
-| 需要调整的内容 | 方法与生效条件 |
-|---|---|
+| 需要调整的内容       | 方法与生效条件                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 当前地点是否允许改装 | `canBeAddedOrRemovedNow(...)` 接收舰船、市场与 `CoreUITradeMode`；`getCanNotBeInstalledNowReason(...)` 提供原因。自动装配时舰船参数可能为 `null` |
-| 提示宽度与颜色 | `getTooltipWidth()` 返回宽度，`getBorderColor()` 与 `getNameColor()` 设置边框与名称颜色 |
-| 装配分类与顺序 | `getDisplayCategoryIndex()` 选择分类，`getDisplaySortOrder()` 控制分类内排序 |
-| 是否出现在当前选择器 | `showInRefitScreenModPickerFor(ShipAPI ship)` 判断当前舰船的显示 |
-| 安装所需物品 | `getRequiredItem()` 返回物品，`addRequiredItemSection(...)` 写入对应提示 |
-| 改变 OP 成本 | `affectsOPCosts()` 声明成本影响；这类效果用于内置船插，普通安装与移除不处理相应成本变化 |
+| 提示宽度与颜色       | `getTooltipWidth()` 返回宽度，`getBorderColor()` 与 `getNameColor()` 设置边框与名称颜色                                                          |
+| 装配分类与顺序       | `getDisplayCategoryIndex()` 选择分类，`getDisplaySortOrder()` 控制分类内排序                                                                     |
+| 是否出现在当前选择器 | `showInRefitScreenModPickerFor(ShipAPI ship)` 判断当前舰船的显示                                                                                 |
+| 安装所需物品         | `getRequiredItem()` 返回物品，`addRequiredItemSection(...)` 写入对应提示                                                                         |
+| 改变 OP 成本         | `affectsOPCosts()` 声明成本影响；这类效果用于内置船插，普通安装与移除不处理相应成本变化                                                          |
 
 ### D 类损伤重排标签速查表
 
 `Derelict Operations` (技能 ID 为 `derelict_contingent`) 通过 `FieldRepairsScript` 重排舰船的 D 类损伤。自制 D 插可以在 `hull_mods.csv` 的 `tags` 列填写下面两个标签，控制它在重排时的处理方式：
 
-| 标签 | 技能重排时的用途 |
-|---|---|
-| `DO_can_not_add` | 从新增 D 插的候选中排除 |
+| 标签                | 技能重排时的用途          |
+| ------------------- | ------------------------- |
+| `DO_can_not_add`    | 从新增 D 插的候选中排除   |
 | `DO_can_not_remove` | 保留舰船上已有的这类 D 插 |
 
 ## 完整最小例

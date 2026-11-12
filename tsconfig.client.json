@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["vite/client"]
+  },
+  "include": ["docs/.vuepress/client/**/*.ts", "docs/.vuepress/client/**/*.vue"],
+  "exclude": ["docs/.vuepress/client/**/*.test.ts"]
+}

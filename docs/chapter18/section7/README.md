@@ -2,9 +2,9 @@
 
 material 与 normal 为光照提供表面颜色和方向，工匠级的装甲起伏由此能够随光源位置变化。本节以原始舰船贴图为基准制作两张附加纹理，用 texture CSV 连接船体，再说明查询、自动生成和预载怎样取得这些资源。
 
-*本节预期阅读时间：\~20 分钟。*
+_本节预期阅读时间：\~20 分钟。_
 
-*本节预期操作时间：\~35 分钟。*
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
@@ -76,14 +76,14 @@ GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
 
 ### texture CSV 字段速查表
 
-| 字段 | 当前值 | 读取结果 | 常见错误 |
-|---|---|---|---|
-| `id` | `GearIn_artizan` | 对象查询键 | 写成装配 ID 后无法匹配船体 |
-| `type` | `ship` | 选择舰船纹理表 | 大小写或拼写错误会跳过该行 |
-| `frame` | 空 | 非动画对象使用第 0 帧 | 舰船填写正数会被丢弃并记录警告 |
-| `magnitude` | 空／`1` | 默认值为 1，normal 行控制起伏强度 | 过大时表面方向显得尖锐 |
-| `map` | `material`／`normal` | 选择三类纹理表之一 | 未使用规定小写值时无法登记 |
-| `path` | `graphics/...` | 指向实际 PNG | 路径存在拼写差异时加载失败 |
+| 字段        | 当前值               | 读取结果                          | 常见错误                       |
+| ----------- | -------------------- | --------------------------------- | ------------------------------ |
+| `id`        | `GearIn_artizan`     | 对象查询键                        | 写成装配 ID 后无法匹配船体     |
+| `type`      | `ship`               | 选择舰船纹理表                    | 大小写或拼写错误会跳过该行     |
+| `frame`     | 空                   | 非动画对象使用第 0 帧             | 舰船填写正数会被丢弃并记录警告 |
+| `magnitude` | 空／`1`              | 默认值为 1，normal 行控制起伏强度 | 过大时表面方向显得尖锐         |
+| `map`       | `material`／`normal` | 选择三类纹理表之一                | 未使用规定小写值时无法登记     |
+| `path`      | `graphics/...`       | 指向实际 PNG                      | 路径存在拼写差异时加载失败     |
 
 `id` 对应对象本身，而不是 CSV 行的任意名称。对于舰船，使用 hull ID；对于武器，使用 weapon ID；对于导弹，使用其 missile hull 或 projectile 关系所使用的 ID。`path` 从 MOD 根目录开始书写，并保留实际文件名大小写。
 
@@ -129,15 +129,15 @@ TextureData.readTextureDataCSVNoOverwrite(
 
 ### 对象类型速查表
 
-| 分组 | `type` 值 | 对应对象 |
-|---|---|---|
-| 舰船 | `ship` | 舰船与战机船体 |
-| 炮塔主体 | `turret`、`turretbarrel`、`turretunder` | 炮塔、炮管与底图 |
-| 炮塔盖板 | `turretcoversmall`、`turretcovermedium`、`turretcoverlarge` | 三种尺寸的炮塔槽盖板 |
-| 硬点主体 | `hardpoint`、`hardpointbarrel`、`hardpointunder` | 硬点、炮管与底图 |
-| 硬点盖板 | `hardpointcoversmall`、`hardpointcovermedium`、`hardpointcoverlarge` | 三种尺寸的硬点槽盖板 |
-| 导弹 | `missile` | 使用舰船式 Sprite 贴图的导弹 |
-| 小行星 | `asteroid` | 战斗中的小行星 |
+| 分组     | `type` 值                                                            | 对应对象                     |
+| -------- | -------------------------------------------------------------------- | ---------------------------- |
+| 舰船     | `ship`                                                               | 舰船与战机船体               |
+| 炮塔主体 | `turret`、`turretbarrel`、`turretunder`                              | 炮塔、炮管与底图             |
+| 炮塔盖板 | `turretcoversmall`、`turretcovermedium`、`turretcoverlarge`          | 三种尺寸的炮塔槽盖板         |
+| 硬点主体 | `hardpoint`、`hardpointbarrel`、`hardpointunder`                     | 硬点、炮管与底图             |
+| 硬点盖板 | `hardpointcoversmall`、`hardpointcovermedium`、`hardpointcoverlarge` | 三种尺寸的硬点槽盖板         |
+| 导弹     | `missile`                                                            | 使用舰船式 Sprite 贴图的导弹 |
+| 小行星   | `asteroid`                                                           | 战斗中的小行星               |
 
 只有 `turret` 与 `hardpoint` 会读取正数 `frame`。这两类对象可以按动画帧登记不同贴图；其他类型即使填写正数，加载器也会记录不兼容警告并把该帧值丢弃。舰船固定使用第 0 帧，因此示例保持空单元格。
 
@@ -175,16 +175,16 @@ TextureEntry normal = TextureData.getTextureData(
 
 下面的字段描述同一条登记从路径到显存的状态：
 
-| 字段 | 含义 | 直接观察 |
-|---|---|---|
-| `sprite` | 已载入的 `SpriteAPI` | 可交给渲染流程使用 |
-| `spriteName` | 原始或缓存纹理路径 | 核对实际资源来源 |
-| `magnitude` | CSV 解析出的强度 | normal 示例为 1 |
-| `autoGen` | 是否属于自动生成 normal | 显式 normal 为 `false` |
-| `validToLoad` | 条目是否允许按路径加载纹理 | 允许加载但尚未驻留时仍可为 `true` |
-| `loaded` | 纹理当前是否已经载入 | 动态加载前后会变化 |
-| `alwaysPreload` | 对象是否要求常驻预载 | 来自 `graphicslib_preload` 标签 |
-| `vramSize` | 估算显存占用 | 单位为字节 |
+| 字段            | 含义                       | 直接观察                          |
+| --------------- | -------------------------- | --------------------------------- |
+| `sprite`        | 已载入的 `SpriteAPI`       | 可交给渲染流程使用                |
+| `spriteName`    | 原始或缓存纹理路径         | 核对实际资源来源                  |
+| `magnitude`     | CSV 解析出的强度           | normal 示例为 1                   |
+| `autoGen`       | 是否属于自动生成 normal    | 显式 normal 为 `false`            |
+| `validToLoad`   | 条目是否允许按路径加载纹理 | 允许加载但尚未驻留时仍可为 `true` |
+| `loaded`        | 纹理当前是否已经载入       | 动态加载前后会变化                |
+| `alwaysPreload` | 对象是否要求常驻预载       | 来自 `graphicslib_preload` 标签   |
+| `vramSize`      | 估算显存占用               | 单位为字节                        |
 
 `loaded` 与 `validToLoad` 描述两个不同阶段：前者表示纹理当前驻留，后者表示它可以在需要时载入。使用 `sprite` 之前应以查询结果为准；文件路径错误时，条目无法提供可用 Sprite 贴图。
 
@@ -266,17 +266,17 @@ if (engine.getCustomData().containsKey(ShaderHook.TEXTURE_PRELOAD_KEY)) {
 
 ## 常用字段与方法速查表
 
-| 入口 | 关键参数 | 返回或结果 |
-|---|---|---|
-| `getTextureData(...)` | ID、map、对象类型、帧 | 查询显式登记并按需加载，缺失时返回 `null` |
-| `getTextureDataWithAutoGen(...)` | 显式查询参数、实际对象、`unloadedOk` | 优先显式条目，必要时生成 normal |
-| `mapSpriteToMNSWithAutoGen(...)` | 对象键、Sprite 贴图路径、类型、帧、生成开关、覆盖开关 | 建立三类纹理映射并处理缺失 normal |
-| `autoGenNormalMap(...)` | Sprite 贴图路径、对象键、类型、帧 | 返回自动生成的 normal Sprite 贴图 |
-| `autoGenMissingNormalMaps()` | 无 | 由 GraphicsLib 初始化流程扫描缺失 normal |
-| `TextureEntry.spriteName` | — | 显式路径或缓存路径 |
-| `TextureEntry.magnitude` | — | normal 起伏强度，默认 1 |
-| `TextureEntry.loaded` | — | 当前是否已经载入 |
-| `TextureEntry.vramSize` | — | 估算显存占用，单位为字节 |
+| 入口                             | 关键参数                                              | 返回或结果                                |
+| -------------------------------- | ----------------------------------------------------- | ----------------------------------------- |
+| `getTextureData(...)`            | ID、map、对象类型、帧                                 | 查询显式登记并按需加载，缺失时返回 `null` |
+| `getTextureDataWithAutoGen(...)` | 显式查询参数、实际对象、`unloadedOk`                  | 优先显式条目，必要时生成 normal           |
+| `mapSpriteToMNSWithAutoGen(...)` | 对象键、Sprite 贴图路径、类型、帧、生成开关、覆盖开关 | 建立三类纹理映射并处理缺失 normal         |
+| `autoGenNormalMap(...)`          | Sprite 贴图路径、对象键、类型、帧                     | 返回自动生成的 normal Sprite 贴图         |
+| `autoGenMissingNormalMaps()`     | 无                                                    | 由 GraphicsLib 初始化流程扫描缺失 normal  |
+| `TextureEntry.spriteName`        | —                                                     | 显式路径或缓存路径                        |
+| `TextureEntry.magnitude`         | —                                                     | normal 起伏强度，默认 1                   |
+| `TextureEntry.loaded`            | —                                                     | 当前是否已经载入                          |
+| `TextureEntry.vramSize`          | —                                                     | 估算显存占用，单位为字节                  |
 
 ## 完整最小例
 

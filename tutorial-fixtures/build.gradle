@@ -73,8 +73,8 @@ tasks.register("checkFixtureContracts", Exec) {
 	group = "verification"
 	description = "Checks the bidirectional contract between tutorial pages, fixtures, and explicit unit lists."
 	workingDir rootDir.parentFile
-	def pythonExecutable = providers.gradleProperty("pythonExecutable").getOrElse("python")
-	commandLine pythonExecutable, "-X", "utf8", "-B", "tools/check_fixtures.py"
+	def nodeExecutable = providers.gradleProperty("nodeExecutable").getOrElse("node")
+	commandLine nodeExecutable, "tools/check-fixtures.mjs"
 }
 
 def compileTasks = javaUnitIds.collect { unitId ->

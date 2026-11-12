@@ -2,9 +2,9 @@
 
 本节为锁定目标绘制近侧圆周标记，并在玩家舰船旁显示接近度。距离转换为线性比例后，再由 MagicAnim 映射为平滑曲线，两种结果交给同一个 HUD 状态条。几何位置与显示进度都来自当前玩家和目标，刷新频率则分别安排。
 
-*本节预期阅读时间：\~20 分钟。*
+_本节预期阅读时间：\~20 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -108,16 +108,16 @@ MagicUI.drawHUDStatusBar(
 
 ### HUD 参数速查表
 
-| 参数 | 本例值 | 作用 |
-| --- | --- | --- |
-| `ship` | `player` | 指定状态条所属舰船 |
-| `fill` | `smoothProximity` | 绘制平滑主填充 |
-| `innerColor` | `MagicUI.GREENCOLOR` | 指定主条颜色 |
-| `borderColor` | `MagicUI.GREENCOLOR` | 指定边框颜色 |
-| `secondfill` | `linearProximity` | 绘制线性副填充 |
-| `bottext` | 整数距离加 `su` | 显示当前中心距离 |
-| `toptext` | `目标接近度` | 标识状态条含义 |
-| `offset` | `false` | 使用默认 HUD 位置 |
+| 参数          | 本例值               | 作用               |
+| ------------- | -------------------- | ------------------ |
+| `ship`        | `player`             | 指定状态条所属舰船 |
+| `fill`        | `smoothProximity`    | 绘制平滑主填充     |
+| `innerColor`  | `MagicUI.GREENCOLOR` | 指定主条颜色       |
+| `borderColor` | `MagicUI.GREENCOLOR` | 指定边框颜色       |
+| `secondfill`  | `linearProximity`    | 绘制线性副填充     |
+| `bottext`     | 整数距离加 `su`      | 显示当前中心距离   |
+| `toptext`     | `目标接近度`         | 标识状态条含义     |
+| `offset`      | `false`              | 使用默认 HUD 位置  |
 
 `drawHUDStatusBar(...)` 内部只为当前玩家舰船绘制，而且要求战斗引擎存在 viewport、HUD 当前可见。传入其他舰船、隐藏 HUD 或离开正常战斗画面时，方法会自行结束。
 
@@ -139,14 +139,14 @@ particleElapsed %= 0.05f;
 
 ## 常用方法速查表
 
-| API | 返回值或结果 | 本节用途 |
-| --- | --- | --- |
-| `ShipAPI.getShipTarget()` | `ShipAPI` 或 `null` | 取得玩家当前锁定目标 |
-| `MathUtils.getDistance(...)` | `float` | 取得玩家与目标的中心距离 |
-| `MagicFakeBeam.getCollisionPointOnCircumference(...)` | `Vector2f` 或 `null` | 取得线段遇到的近侧圆周交点 |
-| `MagicAnim.smooth(float)` | `0–1` 的 `float` | 把线性接近度映射为缓入缓出进度 |
-| `MagicUI.drawHUDStatusBar(...)` | 无返回值 | 绘制主副填充、距离和标题 |
-| `CombatEngineAPI.addSmoothParticle(...)` | 无返回值 | 在交点生成短寿命标记 |
+| API                                                   | 返回值或结果         | 本节用途                       |
+| ----------------------------------------------------- | -------------------- | ------------------------------ |
+| `ShipAPI.getShipTarget()`                             | `ShipAPI` 或 `null`  | 取得玩家当前锁定目标           |
+| `MathUtils.getDistance(...)`                          | `float`              | 取得玩家与目标的中心距离       |
+| `MagicFakeBeam.getCollisionPointOnCircumference(...)` | `Vector2f` 或 `null` | 取得线段遇到的近侧圆周交点     |
+| `MagicAnim.smooth(float)`                             | `0–1` 的 `float`     | 把线性接近度映射为缓入缓出进度 |
+| `MagicUI.drawHUDStatusBar(...)`                       | 无返回值             | 绘制主副填充、距离和标题       |
+| `CombatEngineAPI.addSmoothParticle(...)`              | 无返回值             | 在交点生成短寿命标记           |
 
 ## 完整最小例
 

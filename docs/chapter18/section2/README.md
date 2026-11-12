@@ -2,9 +2,9 @@
 
 导弹追踪横向移动的目标，需要根据距离与速度取得提前点，再把方向转换成转向指令。本节沿用德瓦林弹体制作测试导弹，用 LazyLib 完成这些计算，并绘制预测路径、交点、碰撞圆与椭圆，让计算结果能够在战斗中直接对应到位置。
 
-*本节预期阅读时间：\~28 分钟。*
+_本节预期阅读时间：\~28 分钟。_
 
-*本节预期操作时间：\~35 分钟。*
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
@@ -238,28 +238,28 @@ import data.scripts.gearin.lib.GearInGeometryMissileAI;
 
 ## 常用方法速查表
 
-| 类 | 方法 | 结果或修改对象 |
-|---|---|---|
-| `MathUtils` | `getDistance(...)` | 返回坐标中心距离，实体重载计入碰撞半径 |
-| `MathUtils` | `getDistanceSquared(...)` | 返回距离平方，坐标重载适合热路径比较 |
-| `MathUtils` | `isWithinRange(...)` | 返回是否处于指定范围 |
-| `MathUtils` | `getPoint(...)`、`getPointOnCircumference(...)` | 返回给定圆周角度的新坐标 |
-| `MathUtils` | `getRandomPointInCircle(...)` | 返回圆内均匀面积分布的新坐标 |
-| `MathUtils` | `getRandomPointOnCircumference(...)` | 返回固定半径圆周上的新坐标 |
-| `MathUtils` | `getRandomPointOnLine(...)` | 返回有限线段上的新坐标 |
-| `MathUtils` | `getRandomNumberInRange(...)` | 返回指定区间内的随机数 |
-| `MathUtils` | `clamp(...)`、`clampAngle(...)` | 返回限制后的数值或标准角度 |
-| `MathUtils` | `getShortestRotation(...)` | 返回带方向的最短角差 |
-| `MathUtils` | `getMidpoint(...)`、`isPointWithinCircle(...)` | 返回中点或圆形范围判断 |
-| `VectorUtils` | `getAngle(...)`、`getFacing(...)` | 返回世界角度 |
-| `VectorUtils` | `getDirectionalVector(...)`、`isZeroVector(...)` | 返回单位方向或零向量判断 |
-| `VectorUtils` | `resize(...)`、`rotate(...)` | 修改输入向量，或把结果写入 `dest` |
-| `CollisionUtils` | `getCollisionPoint(...)` | 返回实体或线段交点，没有交点时返回 `null` |
-| `CollisionUtils` | `isPointWithinBounds(...)` | 返回坐标是否处于实体 bounds |
-| `EllipseUtils` | `getPointOnEllipse(...)` | 返回旋转椭圆轮廓上的确定坐标 |
-| `EllipseUtils` | `getRandomPointOnEllipse(...)` | 返回旋转椭圆轮廓上的随机坐标 |
-| `EllipseUtils` | `getRandomPointInEllipse(...)` | 返回旋转椭圆内部的随机坐标 |
-| `EllipseUtils` | `isPointWithinEllipse(...)` | 返回坐标是否处于旋转椭圆内 |
+| 类               | 方法                                             | 结果或修改对象                            |
+| ---------------- | ------------------------------------------------ | ----------------------------------------- |
+| `MathUtils`      | `getDistance(...)`                               | 返回坐标中心距离，实体重载计入碰撞半径    |
+| `MathUtils`      | `getDistanceSquared(...)`                        | 返回距离平方，坐标重载适合热路径比较      |
+| `MathUtils`      | `isWithinRange(...)`                             | 返回是否处于指定范围                      |
+| `MathUtils`      | `getPoint(...)`、`getPointOnCircumference(...)`  | 返回给定圆周角度的新坐标                  |
+| `MathUtils`      | `getRandomPointInCircle(...)`                    | 返回圆内均匀面积分布的新坐标              |
+| `MathUtils`      | `getRandomPointOnCircumference(...)`             | 返回固定半径圆周上的新坐标                |
+| `MathUtils`      | `getRandomPointOnLine(...)`                      | 返回有限线段上的新坐标                    |
+| `MathUtils`      | `getRandomNumberInRange(...)`                    | 返回指定区间内的随机数                    |
+| `MathUtils`      | `clamp(...)`、`clampAngle(...)`                  | 返回限制后的数值或标准角度                |
+| `MathUtils`      | `getShortestRotation(...)`                       | 返回带方向的最短角差                      |
+| `MathUtils`      | `getMidpoint(...)`、`isPointWithinCircle(...)`   | 返回中点或圆形范围判断                    |
+| `VectorUtils`    | `getAngle(...)`、`getFacing(...)`                | 返回世界角度                              |
+| `VectorUtils`    | `getDirectionalVector(...)`、`isZeroVector(...)` | 返回单位方向或零向量判断                  |
+| `VectorUtils`    | `resize(...)`、`rotate(...)`                     | 修改输入向量，或把结果写入 `dest`         |
+| `CollisionUtils` | `getCollisionPoint(...)`                         | 返回实体或线段交点，没有交点时返回 `null` |
+| `CollisionUtils` | `isPointWithinBounds(...)`                       | 返回坐标是否处于实体 bounds               |
+| `EllipseUtils`   | `getPointOnEllipse(...)`                         | 返回旋转椭圆轮廓上的确定坐标              |
+| `EllipseUtils`   | `getRandomPointOnEllipse(...)`                   | 返回旋转椭圆轮廓上的随机坐标              |
+| `EllipseUtils`   | `getRandomPointInEllipse(...)`                   | 返回旋转椭圆内部的随机坐标                |
+| `EllipseUtils`   | `isPointWithinEllipse(...)`                      | 返回坐标是否处于旋转椭圆内                |
 
 ## 完整最小例
 

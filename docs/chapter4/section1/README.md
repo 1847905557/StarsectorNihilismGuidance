@@ -2,9 +2,9 @@
 
 第三章已经为势力准备了最小装配，本节改用游戏内装配界面制作和导出更多配置。测试战役会自动收集齿轮工业的舰船装配，提供武器、船插与战斗测试入口；导出的设计整理为正式装配后，继续用于生涯、模拟战和常规战役。
 
-*本节预期阅读时间：\~12 分钟。*
+_本节预期阅读时间：\~12 分钟。_
 
-*本节预期操作时间：\~15 分钟。*
+_本节预期操作时间：\~15 分钟。_
 
 ## 学习目标
 
@@ -34,7 +34,7 @@
 
 观察当前目录中的四项文件：
 
-![测试战役目录中的描述、图标、文本与源码](./mission_folder.png "mission_folder.png")
+![测试战役目录中的描述、图标、文本与源码](./mission_folder.png 'mission_folder.png')
 
 `descriptor.json` 提供条目名称与图标，`mission_text.txt` 提供详情文本，`MissionDefinition.java` 配置双方舰队和地图。图标在同一目录中，本例沿用 `icon.jpg`。
 
@@ -53,12 +53,12 @@
 
 ### 战役描述字段速查表
 
-| 字段 | 是否必需 | 实际意义 |
-|---|---|---|
-| `title` | 是 | 战役名称，显示在 Missions 列表 |
-| `difficulty` | 是 | 战役难度，可随意填写，只作显示 |
-| `icon` | 是 | 战役图标贴图文件名，位于战役文件夹内 (本例沿用复制的 `icon.jpg`) |
-| `background` | 否 | 战役背景贴图路径 (相对于 MOD 根目录，可指向原版 `graphics/`) |
+| 字段         | 是否必需 | 实际意义                                                         |
+| ------------ | -------- | ---------------------------------------------------------------- |
+| `title`      | 是       | 战役名称，显示在 Missions 列表                                   |
+| `difficulty` | 是       | 战役难度，可随意填写，只作显示                                   |
+| `icon`       | 是       | 战役图标贴图文件名，位于战役文件夹内 (本例沿用复制的 `icon.jpg`) |
+| `background` | 否       | 战役背景贴图路径 (相对于 MOD 根目录，可指向原版 `graphics/`)     |
 
 三个必填键用于读取条目，背景可按实际地图选择。游戏接受原版文件的宽松 JSON，当前成品使用标准 JSON。
 
@@ -205,7 +205,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 启动游戏后，选择 Gear 测试，观察条目、简报与玩家装配入口：
 
-![测试战役的选择页面与玩家舰队装配入口](./mission_test.png "mission_test.png")
+![测试战役的选择页面与玩家舰队装配入口](./mission_test.png 'mission_test.png')
 
 图中 Refit 打开舰船装配，Play Mission 开始战斗。这里先选择需要配置的工匠，再进行修改。
 
@@ -215,7 +215,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 默认存档目录在 `Starsector/saves/`；实际路径由 `vmparams` 的 `-Dcom.fs.starfarer.settings.paths.saves` 决定。下面观察导出的任务装配：
 
-![测试战役保存到存档目录的装配文件](./variant_export.png "variant_export.png")
+![测试战役保存到存档目录的装配文件](./variant_export.png 'variant_export.png')
 
 文件形如 `mission_GearIn_test_ship_0.variant`，序号对应玩家舰队中的成员。当前模板列出多个装配，因此选择导出文件时要核对内部 `hullId`，确认它对应刚才修改的船体。
 
@@ -223,19 +223,19 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 ### 装配字段速查表
 
-| 字段 | 是否必需 | 实际意义 |
-|---|---|---|
-| `variantId` | 是 | 装配 ID，全局唯一，建议与文件名一致 |
-| `hullId` | 是 | 指向已注册船体，必须与 `.ship`、`ship_data.csv` 一致 |
-| `displayName` | 是 | 装配显示名，出现在装配界面与舰队面板 |
-| `fluxVents` / `fluxCapacitors` | 是 | 幅散 / 幅容数量 |
-| `weaponGroups` | 是 | 武器组数组；每组含 `mode`(只能是 `LINKED` 或 `ALTERNATING`，`WeaponGroupType` 枚举仅这两个值)、`autofire`(可选，默认 `false`)、`weapons`(槽位 ID → 武器 ID 的对象) |
-| `hullMods` | 否 | 已安装船插 ID 数组 |
-| `permaMods` / `sMods` | 否 | 永久船插 / S 插数组，常规装配通常留空 |
-| `wings` | 否 | 航母的机库装配，按甲板顺序列出战机 wing ID |
-| `goalVariant` | 否 | 布尔，默认 `false`；为 `true` 时该装配作为自动装配目标出现 |
-| `tags` | 否 | 字符串数组，`hullMods` 之外的自由标记 |
-| `modules` | 否 | 模块舰 (空间站、超体等) 的模块装配，本节不展开 |
+| 字段                           | 是否必需 | 实际意义                                                                                                                                                           |
+| ------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `variantId`                    | 是       | 装配 ID，全局唯一，建议与文件名一致                                                                                                                                |
+| `hullId`                       | 是       | 指向已注册船体，必须与 `.ship`、`ship_data.csv` 一致                                                                                                               |
+| `displayName`                  | 是       | 装配显示名，出现在装配界面与舰队面板                                                                                                                               |
+| `fluxVents` / `fluxCapacitors` | 是       | 幅散 / 幅容数量                                                                                                                                                    |
+| `weaponGroups`                 | 是       | 武器组数组；每组含 `mode`(只能是 `LINKED` 或 `ALTERNATING`，`WeaponGroupType` 枚举仅这两个值)、`autofire`(可选，默认 `false`)、`weapons`(槽位 ID → 武器 ID 的对象) |
+| `hullMods`                     | 否       | 已安装船插 ID 数组                                                                                                                                                 |
+| `permaMods` / `sMods`          | 否       | 永久船插 / S 插数组，常规装配通常留空                                                                                                                              |
+| `wings`                        | 否       | 航母的机库装配，按甲板顺序列出战机 wing ID                                                                                                                         |
+| `goalVariant`                  | 否       | 布尔，默认 `false`；为 `true` 时该装配作为自动装配目标出现                                                                                                         |
+| `tags`                         | 否       | 字符串数组，`hullMods` 之外的自由标记                                                                                                                              |
+| `modules`                      | 否       | 模块舰 (空间站、超体等) 的模块装配，本节不展开                                                                                                                     |
 
 `displayName`、`hullId`、`variantId`、整数幅容幅散和武器组数组都要存在。`LINKED` 与 `ALTERNATING` 是两个可用武器组模式，`autofire` 缺省为 false。
 

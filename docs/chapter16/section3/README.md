@@ -2,9 +2,9 @@
 
 Rules 的语法可以复用，调用场景却决定了当前对象、菜单和返回方式。本节给 Jangala 停靠与酒吧、独立舰队遭遇和通讯，以及开发开局添加规则，沿实际进入与退出过程说明各个 trigger 的职责，联系人任务也结合原版入口展开。
 
-*本节预期阅读时间：\~20 分钟。*
+_本节预期阅读时间：\~20 分钟。_
 
-*本节预期操作时间：\~40 分钟。*
+_本节预期操作时间：\~40 分钟。_
 
 ## 学习目标
 
@@ -32,15 +32,15 @@ Rules 的语法可以复用，调用场景却决定了当前对象、菜单和�
 
 下面按场景定位入口，各段随后说明实际调用与结果。
 
-| 场景 | `trigger` | 主要用途 |
-|---|---|---|
-| 对话 | `OpenInteractionDialog`、`PopulateOptions`、`DialogOptionSelected` | 建立交互对话、填充选项、接收选项回流 |
-| 对话 | `PickGreeting`、`OpenCommLink` | 选择人物问候和舰队通讯开场 |
-| 市场 | `MarketPostOpen`、`MarketPostDock`、`TradePanelFlavorText` | 处理停靠、市场菜单和交易面板文本 |
-| 舰队 | `BeginFleetEncounter`、`BeginFleetEncounter2` | 建立遭遇、`Continue` 和再次匹配 |
-| 酒吧 | `BarShuttleDownPrintDesc`、`BarPrintDesc`、`AddBarEvents`、`ReturnFromBar`、`BarHighRepCrewGain` | 进入酒吧、重建临时选项、返回和奖励 |
-| 任务 | `MHOpenText`、任务前缀 `trigger`、`AddMHCloseOption`、`MHPostMissionListText` | 展示任务列表、任务选项和酒吧任务 |
-| 新游戏 | `BeginNewGameCreation`、`InitNewGameChoices`、`AddNewGameChoices`、`NewGameOptionSelected` | 建立新游戏选项并处理起点回流 |
+| 场景   | `trigger`                                                                                        | 主要用途                             |
+| ------ | ------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| 对话   | `OpenInteractionDialog`、`PopulateOptions`、`DialogOptionSelected`                               | 建立交互对话、填充选项、接收选项回流 |
+| 对话   | `PickGreeting`、`OpenCommLink`                                                                   | 选择人物问候和舰队通讯开场           |
+| 市场   | `MarketPostOpen`、`MarketPostDock`、`TradePanelFlavorText`                                       | 处理停靠、市场菜单和交易面板文本     |
+| 舰队   | `BeginFleetEncounter`、`BeginFleetEncounter2`                                                    | 建立遭遇、`Continue` 和再次匹配      |
+| 酒吧   | `BarShuttleDownPrintDesc`、`BarPrintDesc`、`AddBarEvents`、`ReturnFromBar`、`BarHighRepCrewGain` | 进入酒吧、重建临时选项、返回和奖励   |
+| 任务   | `MHOpenText`、任务前缀 `trigger`、`AddMHCloseOption`、`MHPostMissionListText`                    | 展示任务列表、任务选项和酒吧任务     |
+| 新游戏 | `BeginNewGameCreation`、`InitNewGameChoices`、`AddNewGameChoices`、`NewGameOptionSelected`       | 建立新游戏选项并处理起点回流         |
 
 联系人任务还通过 `ContactPreMissionListText`、`AsebPreMissionListText`、`ContactPostAccept`、`ContactPrintAcceptText` 与 `ContactPrintDeclineText` 提供列表和接受、拒绝时的文字，实际任务仍从对应菜单进入。
 

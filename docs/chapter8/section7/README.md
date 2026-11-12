@@ -2,9 +2,9 @@
 
 本节给玩家舰绘制一个青色标记，让它跟随舰船，并在舰船死亡或离场后结束。贴图由 `SpriteAPI` 绘制，分层插件负责图层、位置和清理。除了画在哪里，还要让视口剔除使用正确的位置，标记才能在镜头移动时正常显示。
 
-*本节预期阅读时间：\~16 分钟。*
+_本节预期阅读时间：\~16 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -149,15 +149,15 @@ sprite.setAlphaMult(1f);
 
 ### `SpriteAPI` 常用属性速查表
 
-| 方法 | 作用 |
-|---|---|
-| `setColor(Color)` | 设置颜色和基础 Alpha |
-| `setAlphaMult(float)` | 乘上透明度倍率 |
-| `setSize(float, float)` | 设置世界单位宽高 |
-| `setCenter(float, float)` | 调整贴图中心 |
-| `setAngle(float)` | 设置旋转角度 |
-| `renderAtCenter(float, float)` | 以中心坐标绘制 |
-| `render(float, float)` | 以角点坐标绘制 |
+| 方法                           | 作用                 |
+| ------------------------------ | -------------------- |
+| `setColor(Color)`              | 设置颜色和基础 Alpha |
+| `setAlphaMult(float)`          | 乘上透明度倍率       |
+| `setSize(float, float)`        | 设置世界单位宽高     |
+| `setCenter(float, float)`      | 调整贴图中心         |
+| `setAngle(float)`              | 设置旋转角度         |
+| `renderAtCenter(float, float)` | 以中心坐标绘制       |
+| `render(float, float)`         | 以角点坐标绘制       |
 
 ## 同步承载实体位置
 

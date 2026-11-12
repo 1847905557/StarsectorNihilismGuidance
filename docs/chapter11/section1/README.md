@@ -2,9 +2,9 @@
 
 本节生成两支巡逻队，并将它们放到来源市场两侧。基础舰队说明市场、预算、工厂与地点怎样共同完成生成，高级舰队再指定质量、旗舰和军官。实际成员与最终装备从返回对象取得，生成参数的完整字段留作按需配置的速查。
 
-*本节预期阅读时间：\~30 分钟。*
+_本节预期阅读时间：\~30 分钟。_
 
-*本节预期操作时间：\~35 分钟。*
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
@@ -87,17 +87,17 @@ FleetParamsV3 params = new FleetParamsV3(
 
 ### 市场构造参数速查表
 
-| 构造参数 | 本例值 | 生成作用 |
-| --- | ---: | --- |
-| `source` | 来源市场 | 提供势力、位置、时间戳与质量来源 |
-| `fleetType` | `PATROL_MEDIUM` | 说明舰队用途并参与生成配置 |
-| `combatPts` | `40f` | 战斗舰目标 FP |
-| `freighterPts` | `12f` | 货船目标 FP |
-| `tankerPts` | `6f` | 油船目标 FP |
-| `transportPts` | `0f` | 运输舰目标 FP |
-| `linerPts` | `0f` | 客轮目标 FP |
-| `utilityPts` | `0f` | 辅助舰目标 FP |
-| `qualityMod` | `0f` | 在来源质量上附加的修正 |
+| 构造参数       |          本例值 | 生成作用                         |
+| -------------- | --------------: | -------------------------------- |
+| `source`       |        来源市场 | 提供势力、位置、时间戳与质量来源 |
+| `fleetType`    | `PATROL_MEDIUM` | 说明舰队用途并参与生成配置       |
+| `combatPts`    |           `40f` | 战斗舰目标 FP                    |
+| `freighterPts` |           `12f` | 货船目标 FP                      |
+| `tankerPts`    |            `6f` | 油船目标 FP                      |
+| `transportPts` |            `0f` | 运输舰目标 FP                    |
+| `linerPts`     |            `0f` | 客轮目标 FP                      |
+| `utilityPts`   |            `0f` | 辅助舰目标 FP                    |
+| `qualityMod`   |            `0f` | 在来源质量上附加的修正           |
 
 **这些点数是各角色的目标 FP，而非成员数量。** 战斗舰形成主体，货船、油船与运输舰分别补充货运、燃料和人员能力，客轮与辅助角色再提供对应成员。候选舰船的 FP 是离散值，实际组合还受市场倍率、学说与生成限制影响。
 
@@ -531,105 +531,105 @@ public class GearInFleetGeneratorAdvanced implements EveryFrameScript {
 
 ### 来源、势力与质量速查表
 
-| 字段 | 类型 | 默认值 | 生成阶段 | 用途与边界 |
-| --- | --- | --- | --- | --- |
-| `source` | `MarketAPI` | `null` | 参数准备 | 来源市场；直接赋值后要自行决定是否重算质量 |
-| `locInHyper` | `Vector2f` | `null` | 参数准备 | 超空间位置；无市场来源时用于建立附近环境 |
-| `quality` | `float` | `0f` | 参数准备 | 当前来源质量；市场构造器会更新 |
-| `factionId` | `String` | `null` | 成员抽选 | 生成势力 ID；工厂需要取得对应势力 |
-| `fleetType` | `String` | `null` | 舰队初始化 | 舰队用途，如巡逻、贸易或袭击 |
-| `factionOverride` | `FactionAPI` | `null` | 成员抽选 | 临时替换势力对象，可携带不同 学说 或候选集合 |
-| `qualityMod` | `float` | `0f` | 质量计算 | 在来源质量上附加修正 |
-| `qualityOverride` | `Float` | `null` | 质量计算 | 直接指定质量；非空时作为明确覆盖 |
-| `averageSMods` | `Integer` | `null` | 装配随机化 | 指定平均内置船插数量 |
-| `timestamp` | `Long` | `null` | 内容可用性判断 | 市场构造器写入当前时间戳；影响按时间判断的已知内容 |
-| `allWeapons` | `Boolean` | `null` | 装配随机化 | 放宽武器选择范围；会改变最终装配候选 |
+| 字段              | 类型         | 默认值 | 生成阶段       | 用途与边界                                         |
+| ----------------- | ------------ | ------ | -------------- | -------------------------------------------------- |
+| `source`          | `MarketAPI`  | `null` | 参数准备       | 来源市场；直接赋值后要自行决定是否重算质量         |
+| `locInHyper`      | `Vector2f`   | `null` | 参数准备       | 超空间位置；无市场来源时用于建立附近环境           |
+| `quality`         | `float`      | `0f`   | 参数准备       | 当前来源质量；市场构造器会更新                     |
+| `factionId`       | `String`     | `null` | 成员抽选       | 生成势力 ID；工厂需要取得对应势力                  |
+| `fleetType`       | `String`     | `null` | 舰队初始化     | 舰队用途，如巡逻、贸易或袭击                       |
+| `factionOverride` | `FactionAPI` | `null` | 成员抽选       | 临时替换势力对象，可携带不同 学说 或候选集合       |
+| `qualityMod`      | `float`      | `0f`   | 质量计算       | 在来源质量上附加修正                               |
+| `qualityOverride` | `Float`      | `null` | 质量计算       | 直接指定质量；非空时作为明确覆盖                   |
+| `averageSMods`    | `Integer`    | `null` | 装配随机化     | 指定平均内置船插数量                               |
+| `timestamp`       | `Long`       | `null` | 内容可用性判断 | 市场构造器写入当前时间戳；影响按时间判断的已知内容 |
+| `allWeapons`      | `Boolean`    | `null` | 装配随机化     | 放宽武器选择范围；会改变最终装配候选               |
 
 ### 六类点数速查表
 
-| 字段 | 类型 | 默认值 | 生成阶段 | 用途与边界 |
-| --- | --- | --- | --- | --- |
-| `combatPts` | `float` | `0f` | 成员抽选 | 战斗舰目标 FP |
-| `freighterPts` | `float` | `0f` | 成员抽选 | 货船目标 FP |
-| `tankerPts` | `float` | `0f` | 成员抽选 | 油船目标 FP |
-| `transportPts` | `float` | `0f` | 成员抽选 | 运输舰目标 FP |
-| `linerPts` | `float` | `0f` | 成员抽选 | 客轮目标 FP |
-| `utilityPts` | `float` | `0f` | 成员抽选 | 辅助舰目标 FP |
+| 字段           | 类型    | 默认值 | 生成阶段 | 用途与边界    |
+| -------------- | ------- | ------ | -------- | ------------- |
+| `combatPts`    | `float` | `0f`   | 成员抽选 | 战斗舰目标 FP |
+| `freighterPts` | `float` | `0f`   | 成员抽选 | 货船目标 FP   |
+| `tankerPts`    | `float` | `0f`   | 成员抽选 | 油船目标 FP   |
+| `transportPts` | `float` | `0f`   | 成员抽选 | 运输舰目标 FP |
+| `linerPts`     | `float` | `0f`   | 成员抽选 | 客轮目标 FP   |
+| `utilityPts`   | `float` | `0f`   | 成员抽选 | 辅助舰目标 FP |
 
 ### 舰体限制、数量和裁剪速查表
 
-| 字段 | 类型 | 默认值 | 生成阶段 | 用途与边界 |
-| --- | --- | --- | --- | --- |
-| `maxShipSize` | `int` | `1000` | 成员抽选 | 最大舰体级别；常用级别为 0 至 4 |
-| `minShipSize` | `int` | `0` | 战斗舰抽选 | 战斗舰最小级别；剩余 FP 仍可能加入更小舰船 |
-| `ignoreMarketFleetSizeMult` | `Boolean` | `null` | 预算调整 | 跳过市场舰队规模倍率 |
-| `onlyApplyFleetSizeToCombatShips` | `Boolean` | `null` | 预算调整 | 只对战斗舰预算应用规模倍率 |
-| `doNotPrune` | `Boolean` | `null` | 结果裁剪 | 跳过常规裁剪，结果可能更大 |
-| `doNotAddShipsBeforePruning` | `Boolean` | `null` | 结果裁剪 | 裁剪前不补充成员 |
-| `maxNumShips` | `Integer` | `null` | 结果裁剪 | 限制本次生成的最终舰船数量 |
-| `onlyRetainFlagship` | `Boolean` | `null` | 结果裁剪 | 最终只保留旗舰 |
-| `treatCombatFreighterSettingAsFraction` | `Boolean` | `null` | 角色预算 | 按比例解释 学说 的战斗货船设置 |
-| `addShips` | `List<String>` | `null` | 成员抽选 | 优先加入指定装配 ID，再消费其他预算 |
+| 字段                                    | 类型           | 默认值 | 生成阶段   | 用途与边界                                 |
+| --------------------------------------- | -------------- | ------ | ---------- | ------------------------------------------ |
+| `maxShipSize`                           | `int`          | `1000` | 成员抽选   | 最大舰体级别；常用级别为 0 至 4            |
+| `minShipSize`                           | `int`          | `0`    | 战斗舰抽选 | 战斗舰最小级别；剩余 FP 仍可能加入更小舰船 |
+| `ignoreMarketFleetSizeMult`             | `Boolean`      | `null` | 预算调整   | 跳过市场舰队规模倍率                       |
+| `onlyApplyFleetSizeToCombatShips`       | `Boolean`      | `null` | 预算调整   | 只对战斗舰预算应用规模倍率                 |
+| `doNotPrune`                            | `Boolean`      | `null` | 结果裁剪   | 跳过常规裁剪，结果可能更大                 |
+| `doNotAddShipsBeforePruning`            | `Boolean`      | `null` | 结果裁剪   | 裁剪前不补充成员                           |
+| `maxNumShips`                           | `Integer`      | `null` | 结果裁剪   | 限制本次生成的最终舰船数量                 |
+| `onlyRetainFlagship`                    | `Boolean`      | `null` | 结果裁剪   | 最终只保留旗舰                             |
+| `treatCombatFreighterSettingAsFraction` | `Boolean`      | `null` | 角色预算   | 按比例解释 学说 的战斗货船设置             |
+| `addShips`                              | `List<String>` | `null` | 成员抽选   | 优先加入指定装配 ID，再消费其他预算        |
 
 ### 抽选模式与学说速查表
 
-| 字段 | 类型 | 默认值 | 生成阶段 | 用途与边界 |
-| --- | --- | --- | --- | --- |
-| `modeOverride` | `ShipPickMode` | `null` | 成员抽选 | 覆盖势力提供的舰船抽选模式 |
-| `forceAllowPhaseShipsEtc` | `Boolean` | `null` | 候选过滤 | 放宽相位舰等特殊候选限制 |
-| `doctrineOverride` | `FactionDoctrineAPI` | `null` | 预算与抽选 | 替换势力 学说；影响舰体比例、军官与候选 |
-| `random` | `Random` | `null` | 整个生成过程 | 提供随机源；固定种子便于在同一数据环境中复验 |
+| 字段                      | 类型                 | 默认值 | 生成阶段     | 用途与边界                                   |
+| ------------------------- | -------------------- | ------ | ------------ | -------------------------------------------- |
+| `modeOverride`            | `ShipPickMode`       | `null` | 成员抽选     | 覆盖势力提供的舰船抽选模式                   |
+| `forceAllowPhaseShipsEtc` | `Boolean`            | `null` | 候选过滤     | 放宽相位舰等特殊候选限制                     |
+| `doctrineOverride`        | `FactionDoctrineAPI` | `null` | 预算与抽选   | 替换势力 学说；影响舰体比例、军官与候选      |
+| `random`                  | `Random`             | `null` | 整个生成过程 | 提供随机源；固定种子便于在同一数据环境中复验 |
 
 ### 军官、指挥官与 AI 核心速查表
 
-| 字段 | 类型 | 默认值 | 生成阶段 | 用途与边界 |
-| --- | --- | --- | --- | --- |
-| `withOfficers` | `boolean` | `true` | 人物生成 | 控制是否生成军官 |
-| `officerLevelBonus` | `int` | `0` | 人物生成 | 增加生成军官的等级 |
-| `officerNumberBonus` | `int` | `0` | 人物生成 | 增加生成军官的数量 |
-| `maxOfficersToAdd` | `Integer` | `null` | 人物生成 | 限制本次新增军官数 |
-| `officerNumberMult` | `float` | `1f` | 人物生成 | 缩放计算出的军官数量 |
-| `officerLevelLimit` | `int` | `0` | 人物生成 | 覆盖军官等级上限；0 表示不覆盖 |
-| `commanderLevelLimit` | `int` | `0` | 人物生成 | 限制新指挥官等级；0 使用生成逻辑 |
-| `commander` | `PersonAPI` | `null` | 人物生成 | 直接提供现有指挥官 |
-| `noCommanderSkills` | `Boolean` | `null` | 人物生成 | 跳过指挥官技能生成 |
-| `aiCores` | `OfficerQuality` | `null` | 人物生成 | 为适用势力指定 AI 核心质量 |
-| `doNotIntegrateAICores` | `boolean` | `false` | 人物生成 | 保持 AI 核心未整合状态 |
+| 字段                    | 类型             | 默认值  | 生成阶段 | 用途与边界                       |
+| ----------------------- | ---------------- | ------- | -------- | -------------------------------- |
+| `withOfficers`          | `boolean`        | `true`  | 人物生成 | 控制是否生成军官                 |
+| `officerLevelBonus`     | `int`            | `0`     | 人物生成 | 增加生成军官的等级               |
+| `officerNumberBonus`    | `int`            | `0`     | 人物生成 | 增加生成军官的数量               |
+| `maxOfficersToAdd`      | `Integer`        | `null`  | 人物生成 | 限制本次新增军官数               |
+| `officerNumberMult`     | `float`          | `1f`    | 人物生成 | 缩放计算出的军官数量             |
+| `officerLevelLimit`     | `int`            | `0`     | 人物生成 | 覆盖军官等级上限；0 表示不覆盖   |
+| `commanderLevelLimit`   | `int`            | `0`     | 人物生成 | 限制新指挥官等级；0 使用生成逻辑 |
+| `commander`             | `PersonAPI`      | `null`  | 人物生成 | 直接提供现有指挥官               |
+| `noCommanderSkills`     | `Boolean`        | `null`  | 人物生成 | 跳过指挥官技能生成               |
+| `aiCores`               | `OfficerQuality` | `null`  | 人物生成 | 为适用势力指定 AI 核心质量       |
+| `doNotIntegrateAICores` | `boolean`        | `false` | 人物生成 | 保持 AI 核心未整合状态           |
 
 ### 旗舰与显式装配速查表
 
-| 字段 | 类型 | 默认值 | 生成阶段 | 用途与边界 |
-| --- | --- | --- | --- | --- |
-| `flagshipVariantId` | `String` | `null` | 旗舰配置 | 用注册表装配 ID 指定旗舰；ID 必须存在 |
-| `flagshipVariant` | `ShipVariantAPI` | `null` | 旗舰配置 | 直接提供旗舰装配对象 |
-| `onlyRetainFlagship` | `Boolean` | `null` | 结果裁剪 | 只保留旗舰；与数量策略共同核对 |
-| `addShips` | `List<String>` | `null` | 成员抽选 | 在常规抽选前加入指定装配 |
+| 字段                 | 类型             | 默认值 | 生成阶段 | 用途与边界                            |
+| -------------------- | ---------------- | ------ | -------- | ------------------------------------- |
+| `flagshipVariantId`  | `String`         | `null` | 旗舰配置 | 用注册表装配 ID 指定旗舰；ID 必须存在 |
+| `flagshipVariant`    | `ShipVariantAPI` | `null` | 旗舰配置 | 直接提供旗舰装配对象                  |
+| `onlyRetainFlagship` | `Boolean`        | `null` | 结果裁剪 | 只保留旗舰；与数量策略共同核对        |
+| `addShips`           | `List<String>`   | `null` | 成员抽选 | 在常规抽选前加入指定装配              |
 
 `flagshipVariantId` 与 `flagshipVariant` 用于配置已生成的旗舰。指定 ID 时，装配必须存在，返回舰队也需要有可用旗舰；它们并不直接在候选预算中购买这艘舰船。`onlyRetainFlagship` 与 `addShips` 在数量表中已经计入，重复列出用于说明相关生成要求。
 
 ### 工厂传递状态速查表
 
-| 字段 | 类型 | 默认值 | 内部职责 |
-| --- | --- | --- | --- |
-| `mode` | `transient ShipPickMode` | `null` | 保存工厂当前采用的抽选模式 |
-| `banPhaseShipsEtc` | `transient boolean` | `false` | 保存特殊舰船过滤状态 |
-| `blockFallback` | `transient Boolean` | `null` | 保存候选回退是否被阻止 |
+| 字段               | 类型                     | 默认值  | 内部职责                   |
+| ------------------ | ------------------------ | ------- | -------------------------- |
+| `mode`             | `transient ShipPickMode` | `null`  | 保存工厂当前采用的抽选模式 |
+| `banPhaseShipsEtc` | `transient boolean`      | `false` | 保存特殊舰船过滤状态       |
+| `blockFallback`    | `transient Boolean`      | `null`  | 保存候选回退是否被阻止     |
 
 `mode`、`banPhaseShipsEtc` 与 `blockFallback` 在工厂方法之间传递状态。调用方通过前面的配置字段表达要求，保留它们的内部用途。
 
 ### 字段数量速查表
 
-| 分组 | 字段数 |
-| --- | ---: |
-| 来源、势力与质量 | 11 |
-| 六类点数 | 6 |
-| 舰体限制、数量和裁剪 | 10 |
-| 抽选模式与 学说 | 4 |
-| 军官、指挥官与 AI 核心 | 11 |
-| 旗舰专属字段 | 2 |
-| **调用方字段合计** | **44** |
-| 工厂内部传递字段 | 3 |
-| **公开字段总计** | **47** |
+| 分组                   | 字段数 |
+| ---------------------- | -----: |
+| 来源、势力与质量       |     11 |
+| 六类点数               |      6 |
+| 舰体限制、数量和裁剪   |     10 |
+| 抽选模式与 学说        |      4 |
+| 军官、指挥官与 AI 核心 |     11 |
+| 旗舰专属字段           |      2 |
+| **调用方字段合计**     | **44** |
+| 工厂内部传递字段       |      3 |
+| **公开字段总计**       | **47** |
 
 旗舰专属字段只计 `flagshipVariantId` 与 `flagshipVariant`，重复展示的 `onlyRetainFlagship` 与 `addShips` 已计入数量组。各表合起来覆盖调用方字段与工厂传递字段。
 

@@ -2,9 +2,9 @@
 
 本节通过战斗监听器给伤害增加 10%，并记录实际结算结果。一个接口参与计算，另一个接口在结算后收到通知；它们还需要登记到适用的引擎或舰船上。完成这个示例后，再将同样的登记方式用于舰船推进、射程与 OP 修改。
 
-*本节预期阅读时间：\~18 分钟。*
+_本节预期阅读时间：\~18 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -30,18 +30,18 @@
 
 ### 监听接口速查表
 
-| 接口 | 作用 | 合法挂载位置 |
-|---|---|---|
-| `FleetMemberDeploymentListener` | 监听舰队成员部署 | `CombatEngineAPI` |
-| `DamageListener` | 读取伤害结算结果 | 引擎或舰船 |
-| `DamageDealtModifier` | 修改造成的伤害 | 引擎或造成伤害的舰船 |
-| `DamageTakenModifier` | 修改承受的伤害 | 引擎或承受伤害的舰船 |
-| `HullDamageAboutToBeTakenListener` | 在结构伤害结算前介入 | 引擎或承受伤害的舰船 |
-| `AdvanceableListener` | 舰船级持续推进 | `ShipAPI` |
-| `WeaponRangeModifier` | 修改武器最终射程 | `ShipAPI` |
-| `WeaponBaseRangeModifier` | 修改武器基础射程 | `ShipAPI` |
-| `WeaponOPCostModifier` | 修改武器 OP 消耗 | `MutableShipStatsAPI` |
-| `FighterOPCostModifier` | 修改战机 OP 消耗 | `MutableShipStatsAPI` |
+| 接口                               | 作用                 | 合法挂载位置          |
+| ---------------------------------- | -------------------- | --------------------- |
+| `FleetMemberDeploymentListener`    | 监听舰队成员部署     | `CombatEngineAPI`     |
+| `DamageListener`                   | 读取伤害结算结果     | 引擎或舰船            |
+| `DamageDealtModifier`              | 修改造成的伤害       | 引擎或造成伤害的舰船  |
+| `DamageTakenModifier`              | 修改承受的伤害       | 引擎或承受伤害的舰船  |
+| `HullDamageAboutToBeTakenListener` | 在结构伤害结算前介入 | 引擎或承受伤害的舰船  |
+| `AdvanceableListener`              | 舰船级持续推进       | `ShipAPI`             |
+| `WeaponRangeModifier`              | 修改武器最终射程     | `ShipAPI`             |
+| `WeaponBaseRangeModifier`          | 修改武器基础射程     | `ShipAPI`             |
+| `WeaponOPCostModifier`             | 修改武器 OP 消耗     | `MutableShipStatsAPI` |
+| `FighterOPCostModifier`            | 修改战机 OP 消耗     | `MutableShipStatsAPI` |
 
 **接口与登记对象共同决定回调。** 实现了接口，还要进入对应对象的监听器管理器。下面的伤害示例作用于整场战斗，所以两类实例都登记到引擎。
 

@@ -251,7 +251,7 @@ const DevCodeBlock = CodeBlock.extend({
         }
         let start = 0
         let fallbackTop = 0
-        buttons.forEach((button, index) => {
+        buttons.forEach((button) => {
           const end = text.indexOf('\n', start)
           const lineEnd = end < 0 ? text.length : end
           const startPosition = resolvePosition(start)

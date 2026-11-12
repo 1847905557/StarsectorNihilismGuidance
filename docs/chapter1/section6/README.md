@@ -2,9 +2,9 @@
 
 本节将进一步讲解定义在 `.ship` 文件里的内置组件，包括武器、船插、战机。它们将随船体而存在。
 
-*本节预期阅读时间：\~12 分钟。*
+_本节预期阅读时间：\~12 分钟。_
 
-*本节预期操作时间：\~15 分钟。*
+_本节预期操作时间：\~15 分钟。_
 
 ## 学习目标
 
@@ -86,7 +86,7 @@
     },
 ```
 
-![工匠级船体文件中的内置武器配置](./built_weapon.png "built_weapon.png")
+![工匠级船体文件中的内置武器配置](./built_weapon.png 'built_weapon.png')
 
 ::: tip 内置武器的其它建议
 
@@ -162,7 +162,7 @@
     ],
 ```
 
-![锻件级船体文件中的内置相位船插配置](./built_hullmod.png "built_hullmod.png")
+![锻件级船体文件中的内置相位船插配置](./built_hullmod.png 'built_hullmod.png')
 
 `builtInMods` 数组里的每个元素是**船插 ID**，取值来自 `hull_mods.csv` 的 `id` 列。本节只涉及 "内置" 这一安装方式；effect 脚本和 S-mod 见 [C9-S1]。
 
@@ -203,7 +203,7 @@
 ],
 ```
 
-![守炉人级船体文件中的内置炉渣联队配置](./built_wing.png "built_wing.png")
+![守炉人级船体文件中的内置炉渣联队配置](./built_wing.png 'built_wing.png')
 
 ::: tip 内置战机的行其它建议
 

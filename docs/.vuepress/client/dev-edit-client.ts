@@ -278,7 +278,7 @@ const DevEditButton = defineComponent({
       )
 
     const tableToolbar = () => {
-      editorVersion.value
+      void editorVersion.value
       if (!editor?.isActive('table')) return null
       return h('div', { class: 'dev-edit-table-tools', role: 'toolbar', 'aria-label': '表格编辑' }, [
         tableButton('在上方插入行', PanelTop, (current) => current.chain().focus().addRowBefore().run()),
@@ -292,7 +292,7 @@ const DevEditButton = defineComponent({
     }
 
     const blockSelect = () => {
-      editorVersion.value
+      void editorVersion.value
       const value = editor?.isActive('heading', { level: 1 })
         ? 'h1'
         : editor?.isActive('heading', { level: 2 })
@@ -348,7 +348,7 @@ const DevEditButton = defineComponent({
       )
 
     return () => {
-      editorVersion.value
+      void editorVersion.value
       const styles = h('style', {}, [
         '.dev-edit-fab{position:fixed;right:18px;bottom:18px;z-index:9999;display:flex;align-items:flex-end;gap:8px;max-width:calc(100vw - 36px)}',
         '.dev-edit-panel{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;background:var(--vp-c-bg);border:1px solid var(--vp-c-border);border-radius:8px;box-shadow:0 4px 16px var(--vp-c-shadow);padding:8px}',

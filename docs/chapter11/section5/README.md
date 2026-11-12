@@ -2,9 +2,9 @@
 
 本节给一艘狼更换武器、调整武器组与幅能，再将改装结果保留到存档中。操作从成员当前装配的副本开始，说明装备写入、分组和 OP 怎样共同决定结果；随后借窑级装配处理模块关系，并用 JSON 观察装配的数据表示。
 
-*本节预期阅读时间：\~30 分钟。*
+_本节预期阅读时间：\~30 分钟。_
 
-*本节预期操作时间：\~40 分钟。*
+_本节预期操作时间：\~40 分钟。_
 
 ## 学习目标
 
@@ -134,14 +134,14 @@ for (int i = 0; i < groups.size(); i++) {
 
 ### 武器组字段速查表
 
-| 要观察的对象 | 读取入口 | 观察含义 |
-| --- | --- | --- |
-| 槽位中的武器 | `getWeaponId(slotId)` | 当前槽位的武器 ID |
-| 已安装槽位 | `getFittedWeaponSlots()` | 包含实际武器的槽位集合 |
-| 武器组 | `getWeaponGroups()` | 当前分组对象集合 |
-| 分组槽位 | `WeaponGroupSpec.getSlots()` | 该组引用的槽位 ID |
-| 分组模式 | `WeaponGroupSpec.getType()` | 联动或交替等组行为 |
-| 默认自动开火 | `isAutofireOnByDefault()` | 进入战斗时的组开火默认值 |
+| 要观察的对象 | 读取入口                     | 观察含义                 |
+| ------------ | ---------------------------- | ------------------------ |
+| 槽位中的武器 | `getWeaponId(slotId)`        | 当前槽位的武器 ID        |
+| 已安装槽位   | `getFittedWeaponSlots()`     | 包含实际武器的槽位集合   |
+| 武器组       | `getWeaponGroups()`          | 当前分组对象集合         |
+| 分组槽位     | `WeaponGroupSpec.getSlots()` | 该组引用的槽位 ID        |
+| 分组模式     | `WeaponGroupSpec.getType()`  | 联动或交替等组行为       |
+| 默认自动开火 | `isAutofireOnByDefault()`    | 进入战斗时的组开火默认值 |
 
 ### 调整船插与幅能，核对 OP
 
@@ -224,13 +224,13 @@ for (String slotId : moduleSlots) {
 
 ### 模块关系速查表
 
-| 模块关系 | 入口 | 返回结果 |
-| --- | --- | --- |
-| 可用模块槽 | `getModuleSlots()` | 父装配定义的槽位 ID |
-| 当前模块 | `getModuleVariant(slotId)` | 模块装配或 `null` |
-| 保存的模块 ID | `getStationModules()` | 槽位到装配 ID 的映射 |
-| 写入模块 | `setModuleVariant(slotId, variant)` | 更新父装配的模块关系 |
-| 模块来源 | `module.getSource()` | 该模块装配自身的来源 |
+| 模块关系      | 入口                                | 返回结果             |
+| ------------- | ----------------------------------- | -------------------- |
+| 可用模块槽    | `getModuleSlots()`                  | 父装配定义的槽位 ID  |
+| 当前模块      | `getModuleVariant(slotId)`          | 模块装配或 `null`    |
+| 保存的模块 ID | `getStationModules()`               | 槽位到装配 ID 的映射 |
+| 写入模块      | `setModuleVariant(slotId, variant)` | 更新父装配的模块关系 |
+| 模块来源      | `module.getSource()`                | 该模块装配自身的来源 |
 
 ## 用 JSON 观察装配数据
 

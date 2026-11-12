@@ -2,9 +2,9 @@
 
 一艘舰船可以同时受到船插、技能和战术系统的修饰。自己的效果写入之后，要与这些来源共同计算；结束时，也应只解除自己的部分。本节以速度和 S-mod 上限为例，讲清来源 ID、数值合并与动态项的读取，再分别实现安装加成、十秒临时效果和战术系统加成。
 
-*本节预期阅读时间：\~25 分钟。*
+_本节预期阅读时间：\~25 分钟。_
 
-*本节预期操作时间：\~35 分钟。*
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
@@ -68,11 +68,11 @@ stats.getMaxSpeed().unmodify("GearIn_speed_example");
 
 ### 数值修饰速查表
 
-| 修饰 | 写入方法 | 汇总与单位 |
-|---|---|---|
-| flat | `modifyFlat(source, value)` | 各来源增量相加，与目标数值同单位 |
-| percent | `modifyPercent(source, value)` | 各来源百分比相加，按基础值计算 |
-| mult | `modifyMult(source, value)` | 各来源倍率连乘，作用于此前合并结果 |
+| 修饰    | 写入方法                       | 汇总与单位                         |
+| ------- | ------------------------------ | ---------------------------------- |
+| flat    | `modifyFlat(source, value)`    | 各来源增量相加，与目标数值同单位   |
+| percent | `modifyPercent(source, value)` | 各来源百分比相加，按基础值计算     |
+| mult    | `modifyMult(source, value)`    | 各来源倍率连乘，作用于此前合并结果 |
 
 `MutableStat` 用 `flatMods`、`percentMods` 和 `multMods` 分别保存三类记录。相同类型的来源先汇总，再按下式计算：
 
@@ -98,16 +98,16 @@ modified = (base + base * percentMod / 100 + flatMod) * mult
 
 ### 修改与读取方法速查表
 
-| 操作 | 方法 | 当前用途 |
-|---|---|---|
-| 写入 | `modifyFlat`、`modifyPercent`、`modifyMult` | 同来源、同类型覆盖已有值 |
-| 保留条目 | `modifyFlatAlways`、`modifyPercentAlways`、`modifyMultAlways` | 即使数值为中性值，也写入条目；按签名提供描述参数 |
-| 全部解除某来源 | `unmodify(source)` | 清除该来源在三张表中的修饰 |
-| 解除某类型 | `unmodifyFlat`、`unmodifyPercent`、`unmodifyMult` | 清除该来源的指定类型修饰 |
-| 读取结果 | `getBaseValue`、`getModifiedValue` | 读取基础值与最终值 |
-| 读取汇总 | `getFlatMod`、`getPercentMod`、`getMult` | 查看三类修饰各自的合计 |
-| 检查状态 | `isUnmodified` | 检查修饰表是否为空 |
-| 修改基础值 | `setBaseValue` | 设置 base，并在读取时重新计算 |
+| 操作           | 方法                                                          | 当前用途                                         |
+| -------------- | ------------------------------------------------------------- | ------------------------------------------------ |
+| 写入           | `modifyFlat`、`modifyPercent`、`modifyMult`                   | 同来源、同类型覆盖已有值                         |
+| 保留条目       | `modifyFlatAlways`、`modifyPercentAlways`、`modifyMultAlways` | 即使数值为中性值，也写入条目；按签名提供描述参数 |
+| 全部解除某来源 | `unmodify(source)`                                            | 清除该来源在三张表中的修饰                       |
+| 解除某类型     | `unmodifyFlat`、`unmodifyPercent`、`unmodifyMult`             | 清除该来源的指定类型修饰                         |
+| 读取结果       | `getBaseValue`、`getModifiedValue`                            | 读取基础值与最终值                               |
+| 读取汇总       | `getFlatMod`、`getPercentMod`、`getMult`                      | 查看三类修饰各自的合计                           |
+| 检查状态       | `isUnmodified`                                                | 检查修饰表是否为空                               |
+| 修改基础值     | `setBaseValue`                                                | 设置 base，并在读取时重新计算                    |
 
 ## 读写动态统计项
 

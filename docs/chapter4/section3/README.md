@@ -2,9 +2,9 @@
 
 本节为工匠配置齿轮工业的黄铜色舰船与引擎风格。护盾、损伤、排散、引擎焰和航迹分别读取各自的字段，声音则通过风格中的声音集 ID 连接。我们先使用原版资源完成配置，再按需要接入自有声音与材质。
 
-*本节预期阅读时间：\~10 分钟。*
+_本节预期阅读时间：\~10 分钟。_
 
-*本节预期操作时间：\~20 分钟。*
+_本节预期操作时间：\~20 分钟。_
 
 ## 学习目标
 
@@ -91,10 +91,10 @@
 
 ### 风格保留键速查表
 
-| 文件 | 保留键与原因 |
-|---|---|
-| hull_styles.json | sounds、DEFAULT、FIGHTER、FRIGATE、DESTROYER、CRUISER、CAPITAL_SHIP，与声音和船体等级键共用结构 |
-| engine_styles.json | CUSTOM，用于引擎槽内联风格 |
+| 文件               | 保留键与原因                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------- |
+| hull_styles.json   | sounds、DEFAULT、FIGHTER、FRIGATE、DESTROYER、CRUISER、CAPITAL_SHIP，与声音和船体等级键共用结构 |
+| engine_styles.json | CUSTOM，用于引擎槽内联风格                                                                      |
 
 自有 ID 必须保持独立，当前沿用 `GEAR_TECH`。使用船体等级名会影响声音档位选择；注册 CUSTOM 会让引擎风格优先查到全局条目，内联分支失去原本的用途。
 
@@ -123,14 +123,14 @@
 
 ### 引擎参数读取速查表
 
-| 范围 | 字段与要求 |
-|---|---|
-| 两种模式共用 | type、contrailMaxSpeedMult、contrailAngularVelocityMult |
-| PARTICLES | contrailParticleSizeMult、contrailParticleDuration |
-| QUAD_STRIP | contrailDuration、contrailWidthMult |
-| mode 缺省 | PARTICLES |
-| 颜色缺省 | engineColor、contrailColor 为白色 |
-| 粒子最终尺寸缺省 | contrailParticleFinalSizeMult 为 0.5 |
+| 范围             | 字段与要求                                              |
+| ---------------- | ------------------------------------------------------- |
+| 两种模式共用     | type、contrailMaxSpeedMult、contrailAngularVelocityMult |
+| PARTICLES        | contrailParticleSizeMult、contrailParticleDuration      |
+| QUAD_STRIP       | contrailDuration、contrailWidthMult                     |
+| mode 缺省        | PARTICLES                                               |
+| 颜色缺省         | engineColor、contrailColor 为白色                       |
+| 粒子最终尺寸缺省 | contrailParticleFinalSizeMult 为 0.5                    |
 
 `type` 使用 GLOW 或 SMOKE，`mode` 则决定按粒子还是光带读取参数。选择模式以后，按上表补齐该模式的字段；缺少必填值或使用无效枚举，游戏在加载阶段报告对应键的错误。
 

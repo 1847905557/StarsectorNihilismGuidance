@@ -2,9 +2,9 @@
 
 本节准备武器开火、系统循环、界面反馈与市场音乐的 Ogg Vorbis 文件。播放用途先决定声道，资源再按路径放进 MOD；下一节登记声音 ID，随后接到既有武器、系统和市场上。
 
-*本节预期阅读时间：\~6 分钟。*
+_本节预期阅读时间：\~6 分钟。_
 
-*本节预期操作时间：\~10 分钟。*
+_本节预期操作时间：\~10 分钟。_
 
 ## 学习目标
 
@@ -29,12 +29,12 @@
 
 ### 音频资源速查表
 
-| 文件 | 用途 | 声道 |
-|---|---|---|
-| `sounds/GearIn_weapon_fire.ogg` | 都林开火位置音效 | mono |
-| `sounds/GearIn_system_loop.ogg` | 突击填弹器持续循环 | mono |
-| `sounds/GearIn_ui_feedback.ogg` | 进入生涯的界面反馈 | stereo |
-| `sounds/GearIn_market_theme.ogg` | 齿轮工业市场音乐 | stereo |
+| 文件                             | 用途               | 声道   |
+| -------------------------------- | ------------------ | ------ |
+| `sounds/GearIn_weapon_fire.ogg`  | 都林开火位置音效   | mono   |
+| `sounds/GearIn_system_loop.ogg`  | 突击填弹器持续循环 | mono   |
+| `sounds/GearIn_ui_feedback.ogg`  | 进入生涯的界面反馈 | stereo |
+| `sounds/GearIn_market_theme.ogg` | 齿轮工业市场音乐   | stereo |
 
 文件名沿用 GearIn_ 前缀，可以继续放进用途子目录。声音 ID 在注册文件中决定，资源路径与 ID 分别填写。例如，市场主题文件名为 GearIn_market_theme.ogg，后面登记的声音 ID 为 GearIn_market_music，两者通过注册条目连接。
 

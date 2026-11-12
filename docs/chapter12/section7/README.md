@@ -2,9 +2,9 @@
 
 市场条件可以把一组环境效果集中到同一个实例。本节实现 Warfront，提高危险度、降低流通性并修饰来源市场的舰队质量，再比较抑制、勘测与移除时的结果。实例 token 管理各项修饰，参数与保存方式决定这份条件怎样延续。
 
-*本节预期阅读时间：\~24 分钟。*
+_本节预期阅读时间：\~24 分钟。_
 
-*本节预期操作时间：\~35 分钟。*
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
@@ -170,12 +170,12 @@ LOG.info(String.format("id=%s name=%s script=%s icon=%s order=%.0f",
 
 ### 原版条件速查表
 
-| 条件 | 插件 | 主要效果 | 本节关系 |
-| --- | --- | --- | --- |
-| `ore_sparse` | `ResourceDepositsCondition` | 资源供给 | 原版 procgen 条件 |
-| `hot` | `BaseHazardCondition` | 危险度 | 基类修饰范式 |
-| `solar_array` | `SolarArray` | 抑制环境条件 | suppression 范式 |
-| `GearIn_warfront` | `GearInWarfrontCondition` | 危险度、流通性、舰队质量 | 参数与 token 示例 |
+| 条件              | 插件                        | 主要效果                 | 本节关系          |
+| ----------------- | --------------------------- | ------------------------ | ----------------- |
+| `ore_sparse`      | `ResourceDepositsCondition` | 资源供给                 | 原版 procgen 条件 |
+| `hot`             | `BaseHazardCondition`       | 危险度                   | 基类修饰范式      |
+| `solar_array`     | `SolarArray`                | 抑制环境条件             | suppression 范式  |
+| `GearIn_warfront` | `GearInWarfrontCondition`   | 危险度、流通性、舰队质量 | 参数与 token 示例 |
 
 ## 完整最小例
 

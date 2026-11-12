@@ -2,9 +2,9 @@
 
 与指定实体交互时，可以选择自己的对话；与指定舰队开战时，也可以改用专用战场。`CampaignPlugin` 在这些请求发生时提供候选，本节用它处理 Foundry 和测试巡逻队，再在市场 Memory 读取时生成当前事实，说明选择规则怎样进入实际生涯功能。
 
-*本节预期阅读时间：\~25 分钟。*
+_本节预期阅读时间：\~25 分钟。_
 
-*本节预期操作时间：\~50 分钟。*
+_本节预期操作时间：\~50 分钟。_
 
 ## 学习目标
 
@@ -111,15 +111,15 @@ return new PluginPick<>(
 
 ### 选择优先级速查表
 
-| 优先级 | 适用范围 | 选择关系 |
-| --- | --- | --- |
-| `CORE_GENERAL` | 原版通用实现 | 枚举序号最低 |
-| `MOD_GENERAL` | MOD 全局替换 | 高于通用原版实现 |
-| `CORE_SET` | 原版对象集合规则 | 高于 general 级 |
-| `MOD_SET` | MOD 对一组对象的规则 | 高于 `CORE_SET` |
-| `CORE_SPECIFIC` | 原版特定遭遇 | 高于 set 级 |
-| `MOD_SPECIFIC` | MOD 特定对象或遭遇 | 高于 `CORE_SPECIFIC` |
-| `HIGHEST` | 有依据的冲突裁决 | 枚举序号最高 |
+| 优先级          | 适用范围             | 选择关系             |
+| --------------- | -------------------- | -------------------- |
+| `CORE_GENERAL`  | 原版通用实现         | 枚举序号最低         |
+| `MOD_GENERAL`   | MOD 全局替换         | 高于通用原版实现     |
+| `CORE_SET`      | 原版对象集合规则     | 高于 general 级      |
+| `MOD_SET`       | MOD 对一组对象的规则 | 高于 `CORE_SET`      |
+| `CORE_SPECIFIC` | 原版特定遭遇         | 高于 set 级          |
+| `MOD_SPECIFIC`  | MOD 特定对象或遭遇   | 高于 `CORE_SPECIFIC` |
+| `HIGHEST`       | 有依据的冲突裁决     | 枚举序号最高         |
 
 本节只处理标记的特定对象，采用 `MOD_SPECIFIC`。下面的局部片段把同一对话包装为 set 与 specific 候选，后者优先：
 
@@ -153,14 +153,14 @@ sector.registerPlugin(new GearInCampaignPlugin());
 
 ### Facts 更新入口速查表
 
-| 更新方法 | 触发对象 | 典型用途 |
-| --- | --- | --- |
-| `updateEntityFacts(entity, memory)` | 生涯实体 | 位置、标签和交互条件 |
-| `updatePersonFacts(person, memory)` | 人物 | 身份、关系与角色状态 |
-| `updateFactionFacts(faction, memory)` | 势力 | 势力关系与全局规则 |
-| `updateGlobalFacts(memory)` | 星区全局 Memory | 全局进度与环境条件 |
-| `updatePlayerFacts(memory)` | 玩家角色数据 | 玩家能力与任务条件 |
-| `updateMarketFacts(market, memory)` | 市场 | 规模、产业、管理与市场交互条件 |
+| 更新方法                              | 触发对象        | 典型用途                       |
+| ------------------------------------- | --------------- | ------------------------------ |
+| `updateEntityFacts(entity, memory)`   | 生涯实体        | 位置、标签和交互条件           |
+| `updatePersonFacts(person, memory)`   | 人物            | 身份、关系与角色状态           |
+| `updateFactionFacts(faction, memory)` | 势力            | 势力关系与全局规则             |
+| `updateGlobalFacts(memory)`           | 星区全局 Memory | 全局进度与环境条件             |
+| `updatePlayerFacts(memory)`           | 玩家角色数据    | 玩家能力与任务条件             |
+| `updateMarketFacts(market, memory)`   | 市场            | 规模、产业、管理与市场交互条件 |
 
 其他对象各有对应事实入口，仍使用当前方法收到的对象与 Memory。动态键采用 MOD 前缀，并用 `memory.set(key, value, 0f)` 写本次事实，下一次推进过期，后续读取时重新计算。
 

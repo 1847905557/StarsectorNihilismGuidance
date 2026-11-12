@@ -2,9 +2,9 @@
 
 舰队生成、到达、跃迁或消失时，生涯引擎会派发相应事件，我们可以在这些时机处理自己的功能。本节用监听器观察一支舰队三十个游戏日，重点说明事件回调与登记方式，以及保存、读档和到期结束的关系。
 
-*本节预期阅读时间：\~20 分钟。*
+_本节预期阅读时间：\~20 分钟。_
 
-*本节预期操作时间：\~40 分钟。*
+_本节预期操作时间：\~40 分钟。_
 
 ## 学习目标
 
@@ -38,11 +38,11 @@
 
 ### 注册容器速查表
 
-| 入口 | 容器状态 | 保存与结束方式 |
-| --- | --- | --- |
-| `addListener(listener)` | 永久列表 | 对象随存档保存，调用 `removeListener(listener)` 后结束 |
-| `addTransientListener(listener)` | transient 列表 | 列表不写入存档，每次读档后重新登记 |
-| `addListenerWithTimeout(listener, days)` | `TimeoutTracker` | 对象与剩余游戏天数随存档保存，期限归零后自动移除 |
+| 入口                                     | 容器状态         | 保存与结束方式                                         |
+| ---------------------------------------- | ---------------- | ------------------------------------------------------ |
+| `addListener(listener)`                  | 永久列表         | 对象随存档保存，调用 `removeListener(listener)` 后结束 |
+| `addTransientListener(listener)`         | transient 列表   | 列表不写入存档，每次读档后重新登记                     |
+| `addListenerWithTimeout(listener, days)` | `TimeoutTracker` | 对象与剩余游戏天数随存档保存，期限归零后自动移除       |
 
 需要结束监听时，`removeListener(listener)` 会从三个容器同时移除这个对象。各容器也有自己的判重：永久和 transient 列表使用 `contains()`，限时容器用集合检查对象是否存在。这里通常按对象身份判断，新建两个字段相同的监听器，仍会得到两个登记项。
 
@@ -103,12 +103,12 @@ location.spawnFleet(anchor, 300f, 0f, generatedFleet);
 
 ### 舰队回调速查表
 
-| 回调 | 触发状态 | 关键参数与观察结果 |
-| --- | --- | --- |
-| `reportFleetSpawned(fleet)` | 舰队首次加入一个地点，并被标记为已经上报生成 | 舰队自身；投放后 `spawnedCount` 增加 |
-| `reportFleetReachedEntity(fleet, entity)` | 舰队 AI 完成以实体为目标的任务 | 舰队与目标实体；日志显示目标 ID 和名称 |
-| `reportFleetJumped(fleet, from, to)` | 舰队完成地点间跃迁 | 起点实体与 `JumpDestination`；任一层都可能为空 |
-| `reportFleetDespawned(fleet, reason, param)` | 舰队进入消失流程 | 原因枚举决定 `param` 的可解释类型 |
+| 回调                                         | 触发状态                                     | 关键参数与观察结果                             |
+| -------------------------------------------- | -------------------------------------------- | ---------------------------------------------- |
+| `reportFleetSpawned(fleet)`                  | 舰队首次加入一个地点，并被标记为已经上报生成 | 舰队自身；投放后 `spawnedCount` 增加           |
+| `reportFleetReachedEntity(fleet, entity)`    | 舰队 AI 完成以实体为目标的任务               | 舰队与目标实体；日志显示目标 ID 和名称         |
+| `reportFleetJumped(fleet, from, to)`         | 舰队完成地点间跃迁                           | 起点实体与 `JumpDestination`；任一层都可能为空 |
+| `reportFleetDespawned(fleet, reason, param)` | 舰队进入消失流程                             | 原因枚举决定 `param` 的可解释类型              |
 
 `reportFleetReachedEntity()` 对应舰队任务系统确认到达目标的时机，不能只凭画面中的距离判断。某些 assignment 在完成时先触发消失或完成回调，记录事件时同时保留当前任务与实际目标，日志顺序也就能对应到这些调用。
 
@@ -116,14 +116,14 @@ location.spawnFleet(anchor, 300f, 0f, generatedFleet);
 
 ### 消失原因速查表
 
-| `FleetDespawnReason` | `param` 的公开约定 | 安全读取方式 |
-| --- | --- | --- |
-| `REACHED_DESTINATION` | `SectorEntityToken` | 先做 `instanceof SectorEntityToken`，再读取 ID 和名称 |
-| `DESTROYED_BY_BATTLE` | 战斗前快照 `BattleAPI` | 先做 `instanceof BattleAPI`，再读取战斗上下文 |
-| `NO_MEMBERS` | 未限定 | 记录空值或实际运行时类型 |
-| `OTHER` | 未限定 | 由调用该舰队 `despawn()` 的代码定义 |
-| `NO_REASON_PROVIDED` | 未限定 | 记录空值或实际运行时类型 |
-| `PLAYER_FAR_AWAY` | 未限定 | 记录空值或实际运行时类型 |
+| `FleetDespawnReason`  | `param` 的公开约定     | 安全读取方式                                          |
+| --------------------- | ---------------------- | ----------------------------------------------------- |
+| `REACHED_DESTINATION` | `SectorEntityToken`    | 先做 `instanceof SectorEntityToken`，再读取 ID 和名称 |
+| `DESTROYED_BY_BATTLE` | 战斗前快照 `BattleAPI` | 先做 `instanceof BattleAPI`，再读取战斗上下文         |
+| `NO_MEMBERS`          | 未限定                 | 记录空值或实际运行时类型                              |
+| `OTHER`               | 未限定                 | 由调用该舰队 `despawn()` 的代码定义                   |
+| `NO_REASON_PROVIDED`  | 未限定                 | 记录空值或实际运行时类型                              |
+| `PLAYER_FAR_AWAY`     | 未限定                 | 记录空值或实际运行时类型                              |
 
 记录消失时，根据原因与参数类型解释上下文。公开约定给出常见输入，通用回调还要记录实际参数类型；下面的局部片段据此选择可以读取的内容：
 
@@ -230,12 +230,12 @@ sector.removeScript(combined);
 
 舰队事件之外，`BaseCampaignEventListener` 还提供市场、战斗、声望与经济等回调。这些方法沿用相同的登记和派发机制，区别在于事件发生的时机与传入的对象：
 
-| 事件类别 | 代表回调 | 适合读取的状态 |
-| --- | --- | --- |
-| 市场与贸易 | `reportPlayerOpenedMarket`、`reportPlayerMarketTransaction` | 市场对象、交易结算和货物变化 |
-| 战斗 | `reportBattleOccurred`、`reportBattleFinished`、`reportPlayerEngagement` | 战斗快照、胜方和玩家结算结果 |
-| 声望与能力 | `reportPlayerReputationChange`、`reportPlayerActivatedAbility` | 势力或人物关系变化、能力参数 |
-| 经济 | `reportEconomyTick`、`reportEconomyMonthEnd` | 经济迭代索引与月末结算边界 |
+| 事件类别   | 代表回调                                                                 | 适合读取的状态               |
+| ---------- | ------------------------------------------------------------------------ | ---------------------------- |
+| 市场与贸易 | `reportPlayerOpenedMarket`、`reportPlayerMarketTransaction`              | 市场对象、交易结算和货物变化 |
+| 战斗       | `reportBattleOccurred`、`reportBattleFinished`、`reportPlayerEngagement` | 战斗快照、胜方和玩家结算结果 |
+| 声望与能力 | `reportPlayerReputationChange`、`reportPlayerActivatedAbility`           | 势力或人物关系变化、能力参数 |
+| 经济       | `reportEconomyTick`、`reportEconomyMonthEnd`                             | 经济迭代索引与月末结算边界   |
 
 ## 完整最小例
 

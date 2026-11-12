@@ -2,9 +2,9 @@
 
 本节把 Foundry 检查连接到长期任务：接受后调查目标，完成检查再提交报告，获得 50000 信用点。对话结束以后任务继续存在，阶段、奖励与终止结果都由任务保存；附属情报读取它的当前阶段，用来比较任务状态与显示对象的职责。
 
-*本节预期阅读时间：\~35 分钟。*
+_本节预期阅读时间：\~35 分钟。_
 
-*本节预期操作时间：\~45 分钟。*
+_本节预期操作时间：\~45 分钟。_
 
 ## 学习目标
 
@@ -211,16 +211,16 @@ Global.getSector().getIntelManager().addIntel(intel);
 
 ### 方法速查表
 
-| 方法 | 责任 | 结果 |
-| --- | --- | --- |
-| `createAndAbortIfFailed` | 创建任务并处理创建失败 | 成功后可接受 |
-| `accept` | 设置起始阶段并登记任务 | Intel 与脚本开始运行 |
-| `connectWithMemoryFlag` / `setStageOnMemoryFlag` | 连接指定起点或不限起点的 Memory 条件 | 标记成立后选择目标阶段 |
-| `setCurrentStage` | 改变当前阶段 | 触发阶段更新或终止逻辑 |
-| `setSuccessStage` / `setFailureStage` | 绑定终止阶段 | 成功或失败入口生效 |
-| `setAbandonStage` | 绑定放弃阶段 | 放弃路径结束任务 |
-| `endSuccessImpl` | 添加任务专属成功结果 | 增加一次 50000 `credits` |
-| `getCurrentStage` | 供 Intel 读取阶段 | 列表文本与任务一致 |
+| 方法                                             | 责任                                 | 结果                     |
+| ------------------------------------------------ | ------------------------------------ | ------------------------ |
+| `createAndAbortIfFailed`                         | 创建任务并处理创建失败               | 成功后可接受             |
+| `accept`                                         | 设置起始阶段并登记任务               | Intel 与脚本开始运行     |
+| `connectWithMemoryFlag` / `setStageOnMemoryFlag` | 连接指定起点或不限起点的 Memory 条件 | 标记成立后选择目标阶段   |
+| `setCurrentStage`                                | 改变当前阶段                         | 触发阶段更新或终止逻辑   |
+| `setSuccessStage` / `setFailureStage`            | 绑定终止阶段                         | 成功或失败入口生效       |
+| `setAbandonStage`                                | 绑定放弃阶段                         | 放弃路径结束任务         |
+| `endSuccessImpl`                                 | 添加任务专属成功结果                 | 增加一次 50000 `credits` |
+| `getCurrentStage`                                | 供 Intel 读取阶段                    | 列表文本与任务一致       |
 
 ## 完整最小例
 

@@ -2,9 +2,9 @@
 
 界面文字外置以后，调用方仍要选择分类、取得模板并填入动态内容。本节沿用 `GearIn_ui`，增加对话分类，用一个简短的 `GearInI18n` 集中这些调用。重点是让文本与用途保持对应，使修改和翻译文字时仍能保留参数的实际含义。
 
-*本节预期阅读时间：\~12 分钟。*
+_本节预期阅读时间：\~12 分钟。_
 
-*本节预期操作时间：\~20 分钟。*
+_本节预期操作时间：\~20 分钟。_
 
 ## 学习目标
 
@@ -106,13 +106,13 @@ public final class GearInI18n {
 
 ## 调用示例速查表
 
-| 调用 | 返回 |
-| --- | --- |
-| `GearInI18n.ui("GearIn_text_hello")` | `你好，工坊。` |
-| `GearInI18n.format("GearIn_ui", "GearIn_text_ship_name", "工坊之锤", "Chicomoztoc")` | `工坊之锤 正在向 Chicomoztoc 靠近。` |
-| `GearInI18n.dialog("GearIn_text_approach")` | `您的舰队正在接近 $planetName。` |
-| `GearInI18n.replaceToken(GearInI18n.dialog("GearIn_text_approach"), "planetName", "Jangala")` | `您的舰队正在接近 Jangala。` |
-| `GearInI18n.ui("GearIn_text_does_not_exist")` | `Missing string: [GearIn_text_does_not_exist]`，日志出现 ERROR |
+| 调用                                                                                          | 返回                                                           |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `GearInI18n.ui("GearIn_text_hello")`                                                          | `你好，工坊。`                                                 |
+| `GearInI18n.format("GearIn_ui", "GearIn_text_ship_name", "工坊之锤", "Chicomoztoc")`          | `工坊之锤 正在向 Chicomoztoc 靠近。`                           |
+| `GearInI18n.dialog("GearIn_text_approach")`                                                   | `您的舰队正在接近 $planetName。`                               |
+| `GearInI18n.replaceToken(GearInI18n.dialog("GearIn_text_approach"), "planetName", "Jangala")` | `您的舰队正在接近 Jangala。`                                   |
+| `GearInI18n.ui("GearIn_text_does_not_exist")`                                                 | `Missing string: [GearIn_text_does_not_exist]`，日志出现 ERROR |
 
 ## 把文本送到使用位置
 

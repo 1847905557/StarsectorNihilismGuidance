@@ -2,9 +2,9 @@
 
 服务配置和界面文字都可以写成 JSON，但游戏取得它们的方式各有约定。本节先主动读取工坊服务的字段，再把一句问候放进自动加载的 strings 表。文件放在哪里、谁读取它、同名内容怎样合并，分别决定这两份数据如何生效。
 
-*本节预期阅读时间：\~24 分钟。*
+_本节预期阅读时间：\~24 分钟。_
 
-*本节预期操作时间：\~45 分钟。*
+_本节预期操作时间：\~45 分钟。_
 
 ## 学习目标
 
@@ -149,12 +149,12 @@ Global.getLogger(GearInModPlugin.class).info("GearIn strings approach: "
 
 原版 `strings.json` 有 4 个顶层分类：
 
-| 分类 | 内容 | 键风格 | 主要使用方 | 键数 |
-| --- | --- | --- | --- | ---: |
-| `fleetInteractionDialog` | 生涯舰队遭遇对话：交战、追击、撤退、接舷、打捞和友军增援 | 大量 `$faction`、`$fleetOrShip` 等令牌 | 舰队遭遇对话 | 160 |
-| `campaignHelp` | 首次生涯提示和低 CR、低补给等提示 | 键后缀使用 `_text`、`_dismiss` 或 `_action` | 生涯帮助弹窗 | 63 |
-| `jumpPointInteractionDialog` | 跳跃点交互：`approach`、`starAnchor`、`noFuel`、`noExits` 等 | `$fleetOrShip` | 跳跃点交互对话 | 5 |
-| `planetInteractionDialog` | 行星接近文本：`approach` | `$fleetOrShip`、`$planetName` | 行星交互对话 | 1 |
+| 分类                         | 内容                                                         | 键风格                                      | 主要使用方     | 键数 |
+| ---------------------------- | ------------------------------------------------------------ | ------------------------------------------- | -------------- | ---: |
+| `fleetInteractionDialog`     | 生涯舰队遭遇对话：交战、追击、撤退、接舷、打捞和友军增援     | 大量 `$faction`、`$fleetOrShip` 等令牌      | 舰队遭遇对话   |  160 |
+| `campaignHelp`               | 首次生涯提示和低 CR、低补给等提示                            | 键后缀使用 `_text`、`_dismiss` 或 `_action` | 生涯帮助弹窗   |   63 |
+| `jumpPointInteractionDialog` | 跳跃点交互：`approach`、`starAnchor`、`noFuel`、`noExits` 等 | `$fleetOrShip`                              | 跳跃点交互对话 |    5 |
+| `planetInteractionDialog`    | 行星接近文本：`approach`                                     | `$fleetOrShip`、`$planetName`               | 行星交互对话   |    1 |
 
 MOD 可以建立自己的分类。对话文本用令牌填入动态内容，帮助文字可以用 `\n` 分段，分类本身只负责组织这些键。
 

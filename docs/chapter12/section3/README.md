@@ -2,9 +2,9 @@
 
 本节注册回火合金，使它能作为货物加入 Cargo，并在悬停时显示描述。随后到 Foundry 市场读取它的库存、供需与买卖报价，再通过势力规则将它列为违禁品。同一种商品在不同市场会有不同结果，规格与市场状态也要分别处理。
 
-*本节预期阅读时间：\~20 分钟。*
+_本节预期阅读时间：\~20 分钟。_
 
-*本节预期操作时间：\~15 分钟。*
+_本节预期操作时间：\~15 分钟。_
 
 ## 学习目标
 
@@ -44,22 +44,22 @@ Tempered Alloy,GearIn_tempered_alloy,heavy_machinery,180,0.5,700,3,1,,"industria
 
 ### 商品字段速查表
 
-| 字段 | 当前职责 |
-|---|---|
-| `name` / `id` | 显示名与代码、规则使用的稳定 ID |
-| `demand class` | 经济需求类别，本例使用已建立的 `heavy_machinery` |
-| `base price` / `export value` | 基础价格与出口价值 |
-| `sell price mult` | 玩家出售时的价格倍率，默认 1，本例为 0.5 |
-| `price variability` / `utility` | 价格波动级别与商品效用 |
-| `origin` / `tags` | 来源标识与逗号分隔的标签集合 |
-| `stack size` / `cargo space` | 规格单栈上限与单件空间 |
-| `icon` / `iconWidthMult` | 图标路径与显示宽度倍率 |
-| `sound id` / `sound id drop` | 物品拾取与放下声音 ID |
-| `order` | 列表显示顺序 |
-| `economyTier` / `econUnit` | 经济规模参数与数量换算基准 |
-| `baseRaidDanger` | 突袭危险度 |
-| `econUnitOrigUnused` / `eU * base value` | 表中的辅助数据列，保留原列位 |
-| `plugin` / `desc` | 保留表头位置；商品插件和货舱长描述不从这两列接入 |
+| 字段                                     | 当前职责                                         |
+| ---------------------------------------- | ------------------------------------------------ |
+| `name` / `id`                            | 显示名与代码、规则使用的稳定 ID                  |
+| `demand class`                           | 经济需求类别，本例使用已建立的 `heavy_machinery` |
+| `base price` / `export value`            | 基础价格与出口价值                               |
+| `sell price mult`                        | 玩家出售时的价格倍率，默认 1，本例为 0.5         |
+| `price variability` / `utility`          | 价格波动级别与商品效用                           |
+| `origin` / `tags`                        | 来源标识与逗号分隔的标签集合                     |
+| `stack size` / `cargo space`             | 规格单栈上限与单件空间                           |
+| `icon` / `iconWidthMult`                 | 图标路径与显示宽度倍率                           |
+| `sound id` / `sound id drop`             | 物品拾取与放下声音 ID                            |
+| `order`                                  | 列表显示顺序                                     |
+| `economyTier` / `econUnit`               | 经济规模参数与数量换算基准                       |
+| `baseRaidDanger`                         | 突袭危险度                                       |
+| `econUnitOrigUnused` / `eU * base value` | 表中的辅助数据列，保留原列位                     |
+| `plugin` / `desc`                        | 保留表头位置；商品插件和货舱长描述不从这两列接入 |
 
 ## 登记货舱描述
 
@@ -87,16 +87,16 @@ LOG.info(String.format("spec id=%s name=%s demand=%s base=%.0f stack=%d space=%.
 
 ### 规格读取入口速查表
 
-| 读取目的 | 入口 |
-|---|---|
-| 身份与名称 | `getId()`、`getName()`、`getLowerCaseName()`、`getOrigin()` |
-| 图标与声音 | `getIconName()`、`getIconLargeName()`、`getIconWidthMult()`、`getSoundId()`、`getSoundIdDrop()` |
-| 经济参数 | `getBasePrice()`、`getExportValue()`、`getPriceVariability()`、`getDemandClass()`、`getUtility()`、`getEconomyTier()`、`getEconUnit()` |
-| 出售价格倍率 | `getSellPriceMult()` |
-| 堆叠与空间 | `getStackSize()`、`getCargoSpace()` |
-| 标签与经济分类 | `getTags()`、`hasTag()`、`isPrimary()`、`isExotic()`、`isMeta()`、`isNonEcon()` |
-| 物流资源身份 | `isPersonnel()`、`isFuel()`、`isSupplies()` |
-| 数据来源 | 来源 MOD 查询，供注册冲突与加载来源定位 |
+| 读取目的       | 入口                                                                                                                                   |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 身份与名称     | `getId()`、`getName()`、`getLowerCaseName()`、`getOrigin()`                                                                            |
+| 图标与声音     | `getIconName()`、`getIconLargeName()`、`getIconWidthMult()`、`getSoundId()`、`getSoundIdDrop()`                                        |
+| 经济参数       | `getBasePrice()`、`getExportValue()`、`getPriceVariability()`、`getDemandClass()`、`getUtility()`、`getEconomyTier()`、`getEconUnit()` |
+| 出售价格倍率   | `getSellPriceMult()`                                                                                                                   |
+| 堆叠与空间     | `getStackSize()`、`getCargoSpace()`                                                                                                    |
+| 标签与经济分类 | `getTags()`、`hasTag()`、`isPrimary()`、`isExotic()`、`isMeta()`、`isNonEcon()`                                                        |
+| 物流资源身份   | `isPersonnel()`、`isFuel()`、`isSupplies()`                                                                                            |
+| 数据来源       | 来源 MOD 查询，供注册冲突与加载来源定位                                                                                                |
 
 `isPrimary()` 判断商品 ID 是否也是它自己的需求类别。本例使用 `heavy_machinery` 类别，因此回火合金不是这个类别的主商品。`exotic`、`meta` 与 `nonecon` 标签分别影响对应经济分类，人员、燃料与补给判断则供物流功能使用。分类、库存与违禁规则各有读取入口，标签本身不会自动建立市场货物或势力限制。
 

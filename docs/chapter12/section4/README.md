@@ -2,9 +2,9 @@
 
 本节给 Foundry 添加 Refinery Depot：出售金属与重型机械，收购矿石和机械，并提供小型舰船交易。这个入口需要同时决定库存怎样刷新、玩家能买卖什么，以及交易怎样影响市场经济；我们继承 `BaseSubmarketPlugin`，把这些规则接到实际交易界面。
 
-*本节预期阅读时间：\~28 分钟。*
+_本节预期阅读时间：\~28 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -189,12 +189,12 @@ public PlayerEconomyImpactMode getPlayerEconomyImpactMode() {
 
 表中列出各子市场的交易定位，以及用于判断具体行为的主要标志。
 
-| spec ID | 典型插件 | 税率/转移 | 主要标志 | 主要用途 |
-| --- | --- | --- | --- | --- |
-| `open_market` | `OpenMarketPlugin` | 普通税率、非免费转移 | 公开市场 | 合法商品与常规舰船交易 |
-| `black_market` | `BlackMarketPlugin` | 通常免税、非免费转移 | 黑市 | 允许更多非法商品 |
-| `storage` | `StoragePlugin` | 免费转移 | 仓储 | 保存货物和舰船 |
-| `GearIn_refinery_depot` | `GearInRefineryDepotPlugin` | 0.30、非免费转移 | 公开工业市场 | 金属库存、矿物出售和小型舰船购买 |
+| spec ID                 | 典型插件                    | 税率/转移            | 主要标志     | 主要用途                         |
+| ----------------------- | --------------------------- | -------------------- | ------------ | -------------------------------- |
+| `open_market`           | `OpenMarketPlugin`          | 普通税率、非免费转移 | 公开市场     | 合法商品与常规舰船交易           |
+| `black_market`          | `BlackMarketPlugin`         | 通常免税、非免费转移 | 黑市         | 允许更多非法商品                 |
+| `storage`               | `StoragePlugin`             | 免费转移             | 仓储         | 保存货物和舰船                   |
+| `GearIn_refinery_depot` | `GearInRefineryDepotPlugin` | 0.30、非免费转移     | 公开工业市场 | 金属库存、矿物出售和小型舰船购买 |
 
 ## 读取子市场运行状态
 

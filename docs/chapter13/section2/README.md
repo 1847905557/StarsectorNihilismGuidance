@@ -2,9 +2,9 @@
 
 本节把 Mira 分配给巡逻队中的一艘狼，让 Rowan 指挥整支舰队，再让 Selene 管理 Foundry。人物写入不同对象后，技能也沿不同范围应用；我们完成这些绑定，再处理军官成长与性格资料，确认人物状态如何影响实际角色。
 
-*本节预期阅读时间：\~18 分钟。*
+_本节预期阅读时间：\~18 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -107,12 +107,12 @@ LOG.info(String.format("admin=%s market=%s",
 
 ### 角色归属速查表
 
-| 角色 | 持有对象 | 写入与读取 | 作用范围 |
-|---|---|---|---|
-| 舰长 | `FleetMemberAPI` | `setCaptain(person)` / `getCaptain()` | 单舰 stats、舰船详情与战斗对象 |
-| 指挥官 | `CampaignFleetAPI` | `setCommander(person)` / `getCommander()` | 舰队效果，成员通过 `getFleetCommander()` 读取 |
-| 管理员 | `MarketAPI` | `setAdmin(person)` / `getAdmin()` | 治理市场与产业，人物用 `getMarket()` 反查 |
-| 军官数据 | `FleetDataAPI` | `addOfficer(...)` / `getOfficerData(person)` | 军官名册与成长状态 |
+| 角色     | 持有对象           | 写入与读取                                   | 作用范围                                      |
+| -------- | ------------------ | -------------------------------------------- | --------------------------------------------- |
+| 舰长     | `FleetMemberAPI`   | `setCaptain(person)` / `getCaptain()`        | 单舰 stats、舰船详情与战斗对象                |
+| 指挥官   | `CampaignFleetAPI` | `setCommander(person)` / `getCommander()`    | 舰队效果，成员通过 `getFleetCommander()` 读取 |
+| 管理员   | `MarketAPI`        | `setAdmin(person)` / `getAdmin()`            | 治理市场与产业，人物用 `getMarket()` 反查     |
+| 军官数据 | `FleetDataAPI`     | `addOfficer(...)` / `getOfficerData(person)` | 军官名册与成长状态                            |
 
 ## 修改人物技能，再更新对应角色
 
@@ -136,14 +136,14 @@ LOG.info(String.format("stats: level=%d->%d xp=%d->%d skill=%s has=%s",
 
 ### 人物 stats 读取与写入速查表
 
-| 方法 | 当前职责 |
-|---|---|
-| `getLevel()` / `getXP()` | 读取等级与累计经验 |
-| `addXP(long)` | 增加人物经验，按成长规则处理等级 |
-| `getSkillLevel(id)` / `hasSkill(id)` | 读取技能等级并确认是否拥有技能 |
-| `setSkillLevel(id, level)` | 写入已注册技能的等级 |
-| `refreshCharacterStatsEffects()` | 刷新人物效果及已关联舰队效果 |
-| `refreshGovernedOutpostEffects(market)` | 刷新指定治理市场的效果 |
+| 方法                                    | 当前职责                         |
+| --------------------------------------- | -------------------------------- |
+| `getLevel()` / `getXP()`                | 读取等级与累计经验               |
+| `addXP(long)`                           | 增加人物经验，按成长规则处理等级 |
+| `getSkillLevel(id)` / `hasSkill(id)`    | 读取技能等级并确认是否拥有技能   |
+| `setSkillLevel(id, level)`              | 写入已注册技能的等级             |
+| `refreshCharacterStatsEffects()`        | 刷新人物效果及已关联舰队效果     |
+| `refreshGovernedOutpostEffects(market)` | 刷新指定治理市场的效果           |
 
 ## 在军官数据中处理成长
 

@@ -2,9 +2,9 @@
 
 自动尾迹按弹体 ID 找到数据，随弹体移动持续提交节点。本节为都林准备窄主体与宽辉光两层记录，从纹理登记、数据绑定到采样与外观，说明它们怎样组成连续色带。两层共用移动路径，尺寸和消失时间则分别配置。
 
-*本节预期阅读时间：\~24 分钟。*
+_本节预期阅读时间：\~24 分钟。_
 
-*本节预期操作时间：\~35 分钟。*
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
@@ -169,38 +169,38 @@ velocityIn,velocityOut,randomVelocity,angle,rotationIn,rotationOut,randomRotatio
 
 ## 30 列字段速查表
 
-| 字段 | 类型 | 示例值 | 直接结果或主要错误 |
-|---|---|---|---|
-| `trail` | 字符串 | `GearIn_durin_trail_body` | 合并行键；master 合并中后处理的同键行替换已有行 |
-| `projectile` | 字符串 | `GearIn_durin_shot` | 与 projectile spec ID 不一致时不会生成尾迹 |
-| `sprite` | 字符串 | `GearIn_trail_clean` | 从 `graphics.fx` 取图；键缺失时无法绘制 |
-| `minLength` | 浮点 | `6` | 正值按距离采样，负值启用慢速模式 |
-| `fadeIn` | 浮点秒 | `0` | 节点淡入时间 |
-| `duration` | 浮点秒 | `0.04` | 节点完整显示时间 |
-| `fadeOut` | 浮点秒 | `0.35` | 节点淡出时间 |
-| `sizeIn` | 浮点 su | `10` | 节点初始宽度 |
-| `sizeOut` | 浮点 su | `3` | 节点结束宽度 |
-| `colorIn` | RGB 字符串 | `[255,90,70]` | 节点初始颜色；整数解析错误会中止本次加载调用 |
-| `colorOut` | RGB 字符串 | `[120,25,20]` | 节点结束颜色 |
-| `opacity` | 浮点 | `0.8` | 最大透明度 |
-| `textLength` | 浮点 su | `256` | 纹理重复长度 |
-| `textScroll` | 浮点 | `600` | 每秒滚动 0.6 个纹理周期，符号决定方向 |
-| `randomTextureOffset` | 布尔 | `TRUE` | 随机选择纹理起点 |
-| `distance` | 浮点 su | `18` | 节点相对弹体位置的偏移 |
-| `dispersion` | 浮点 su/s | `0` | 节点速度的随机散布范围 |
-| `drift` | 浮点比例 | `1` | 继承弹体横向速度的比例 |
-| `frameOffsetMult` | 浮点倍率 | `1` | 帧间偏移补偿；字段缺失时默认 1 |
-| `fadeOnFadeOut` | 布尔 | `TRUE` | 弹体 fading 时同步压低节点透明度 |
-| `angleAdjustment` | 布尔 | `FALSE` | 按速度方向修正弹体朝向 |
-| `additive` | 布尔 | `TRUE` | `TRUE` 使用加色混合 |
-| `velocityIn` | 浮点 su/s | `0` | 节点初始速度 |
-| `velocityOut` | 浮点 su/s | `0` | 节点结束速度 |
-| `randomVelocity` | 浮点比例 | `0` | 为两端速度加入随机倍率 |
-| `angle` | 浮点角度 | `0` | 尾迹相对弹体方向的角度偏移 |
-| `rotationIn` | 浮点角度/秒 | `0` | 节点初始角速度 |
-| `rotationOut` | 浮点角度/秒 | `0` | 节点结束角速度 |
-| `randomRotation` | 布尔 | `FALSE` | 随机化节点旋转方向和倍率 |
-| `renderBelowExplosions` | 布尔 | `FALSE` | `TRUE` 让爆炸和其他效果覆盖尾迹 |
+| 字段                    | 类型        | 示例值                    | 直接结果或主要错误                              |
+| ----------------------- | ----------- | ------------------------- | ----------------------------------------------- |
+| `trail`                 | 字符串      | `GearIn_durin_trail_body` | 合并行键；master 合并中后处理的同键行替换已有行 |
+| `projectile`            | 字符串      | `GearIn_durin_shot`       | 与 projectile spec ID 不一致时不会生成尾迹      |
+| `sprite`                | 字符串      | `GearIn_trail_clean`      | 从 `graphics.fx` 取图；键缺失时无法绘制         |
+| `minLength`             | 浮点        | `6`                       | 正值按距离采样，负值启用慢速模式                |
+| `fadeIn`                | 浮点秒      | `0`                       | 节点淡入时间                                    |
+| `duration`              | 浮点秒      | `0.04`                    | 节点完整显示时间                                |
+| `fadeOut`               | 浮点秒      | `0.35`                    | 节点淡出时间                                    |
+| `sizeIn`                | 浮点 su     | `10`                      | 节点初始宽度                                    |
+| `sizeOut`               | 浮点 su     | `3`                       | 节点结束宽度                                    |
+| `colorIn`               | RGB 字符串  | `[255,90,70]`             | 节点初始颜色；整数解析错误会中止本次加载调用    |
+| `colorOut`              | RGB 字符串  | `[120,25,20]`             | 节点结束颜色                                    |
+| `opacity`               | 浮点        | `0.8`                     | 最大透明度                                      |
+| `textLength`            | 浮点 su     | `256`                     | 纹理重复长度                                    |
+| `textScroll`            | 浮点        | `600`                     | 每秒滚动 0.6 个纹理周期，符号决定方向           |
+| `randomTextureOffset`   | 布尔        | `TRUE`                    | 随机选择纹理起点                                |
+| `distance`              | 浮点 su     | `18`                      | 节点相对弹体位置的偏移                          |
+| `dispersion`            | 浮点 su/s   | `0`                       | 节点速度的随机散布范围                          |
+| `drift`                 | 浮点比例    | `1`                       | 继承弹体横向速度的比例                          |
+| `frameOffsetMult`       | 浮点倍率    | `1`                       | 帧间偏移补偿；字段缺失时默认 1                  |
+| `fadeOnFadeOut`         | 布尔        | `TRUE`                    | 弹体 fading 时同步压低节点透明度                |
+| `angleAdjustment`       | 布尔        | `FALSE`                   | 按速度方向修正弹体朝向                          |
+| `additive`              | 布尔        | `TRUE`                    | `TRUE` 使用加色混合                             |
+| `velocityIn`            | 浮点 su/s   | `0`                       | 节点初始速度                                    |
+| `velocityOut`           | 浮点 su/s   | `0`                       | 节点结束速度                                    |
+| `randomVelocity`        | 浮点比例    | `0`                       | 为两端速度加入随机倍率                          |
+| `angle`                 | 浮点角度    | `0`                       | 尾迹相对弹体方向的角度偏移                      |
+| `rotationIn`            | 浮点角度/秒 | `0`                       | 节点初始角速度                                  |
+| `rotationOut`           | 浮点角度/秒 | `0`                       | 节点结束角速度                                  |
+| `randomRotation`        | 布尔        | `FALSE`                   | 随机化节点旋转方向和倍率                        |
+| `renderBelowExplosions` | 布尔        | `FALSE`                   | `TRUE` 让爆炸和其他效果覆盖尾迹                 |
 
 RGB 字符串采用示例中的紧凑写法，逗号后直接接整数。颜色解析逐项读取整数字符串，额外空格或无法解析的分量也会产生异常；其他字段无法按所需 JSON 类型读取时，加载器跳过该行，并在详细日志开启时记录 `Invalid line, skipping`。
 

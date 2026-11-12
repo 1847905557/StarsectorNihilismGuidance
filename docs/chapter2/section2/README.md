@@ -2,9 +2,9 @@
 
 上一节的加速器只提供固定百分比加成，本节把它扩展为一个实际可用的速度船插：按船体等级设置不同数值，让描述随参数更新，并限制它与原版不稳定推进器同时安装。齿轮工业的 "稳定化推进器" 采用较小的速度收益，保留武器射程和甲板性能。
 
-*本节预期阅读时间：\~15 分钟。*
+_本节预期阅读时间：\~15 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -29,7 +29,7 @@
 
 先给它准备一张 32×32 的 PNG 图标，放入 `graphics/hullmods/GearIn_stable_injector.png`。本例使用的图标如下：
 
-![稳定化推进器的装配图标](./GearIn_stable_injector.png "GearIn_stable_injector.png")
+![稳定化推进器的装配图标](./GearIn_stable_injector.png 'GearIn_stable_injector.png')
 
 包名仍按文件目录填写，类名与文件名一致，CSV 的 `script` 填完整类名。登记方式与上一节相同。
 
@@ -222,7 +222,7 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 
 观察装配列表中的图标、四档参数与不兼容说明：
 
-![稳定化推进器在装配界面中的描述参数](./hullmod_play.png "hullmod_play.png")
+![稳定化推进器在装配界面中的描述参数](./hullmod_play.png 'hullmod_play.png')
 
 四个高亮数字由效果类返回，固定说明保存在 CSV 中。验证时把这两部分分别与参数表和描述行核对。
 

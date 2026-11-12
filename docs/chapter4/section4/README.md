@@ -2,9 +2,9 @@
 
 本节制作窑级模块巡洋舰及其第一个模块。主体和模块分别按舰船登记，再在主体装配中把模块装配连接到指定槽位。船体定义决定挂载位置，装配决定具体使用哪个模块，两者需要对应。
 
-*本节预期阅读时间：\~10 分钟。*
+_本节预期阅读时间：\~10 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -26,21 +26,21 @@
 
 主体与模块本身都是舰船，因此先准备两张贴图。主体采用狮鹫贴图修改，ID 为 `GearIn_kiln`：
 
-![窑级主体舰船贴图](./GearIn_kiln.png "GearIn_kiln.png")
+![窑级主体舰船贴图](./GearIn_kiln.png 'GearIn_kiln.png')
 
 模块采用苍鹭贴图修改，ID 为 `GearIn_kiln_module`：
 
-![窑级舰体模块贴图](./GearIn_kiln_module.png "GearIn_kiln_module.png")
+![窑级舰体模块贴图](./GearIn_kiln_module.png 'GearIn_kiln_module.png')
 
 两张图沿用第一章的尺寸与中心点约定。当前主体先连接一个模块，便于核对位置与朝向。
 
 在舰船编辑器里分别创建主体和模块船体，主体继续设置质量中心、碰撞、护盾、武器槽和引擎：
 
-![编辑器中的窑级主体几何与槽位](./main.png "main.png")
+![编辑器中的窑级主体几何与槽位](./main.png 'main.png')
 
 模块也设置自己的碰撞与武器槽：
 
-![编辑器中的模块船体几何与槽位](./sub.png "sub.png")
+![编辑器中的模块船体几何与槽位](./sub.png 'sub.png')
 
 模块的位置跟随主体，当前可以不配置引擎。**无盾模块同样保留护盾中心与半径字段**，它们属于船体读取所需的几何，实际护盾类型在数据中填 NONE。
 
@@ -50,11 +50,11 @@
 
 在主体添加 STATION_MODULE 类型槽位，编辑器显示为 Station Module：
 
-![主体船体上的模块槽位](./main_slot_1.png "main_slot_1.png")
+![主体船体上的模块槽位](./main_slot_1.png 'main_slot_1.png')
 
 将该槽位命名为 `MODULE_0`，设置位置和朝向：
 
-![MODULE_0的模块槽位参数](./main_slot_2.png "main_slot_2.png")
+![MODULE_0的模块槽位参数](./main_slot_2.png 'main_slot_2.png')
 
 `locations` 是主体坐标系中的挂载位置，`angle` 是基准朝向，`arc` 是允许的朝向范围。位置与朝向由船体定义，后面的装配则通过槽位 ID 指定模块，因此 modules 映射中的大小写也要一致。
 
@@ -74,11 +74,11 @@
 
 观察导出的两个任务文件：
 
-![测试战役导出的主体和模块装配](./variant_make.png "variant_make.png")
+![测试战役导出的主体和模块装配](./variant_make.png 'variant_make.png')
 
 读取 hullId 后分别移入 `data/variants/`，改好文件名和内部 variantId：
 
-![主体与模块的正式装配文件](./variant_rename.png "variant_rename.png")
+![主体与模块的正式装配文件](./variant_rename.png 'variant_rename.png')
 
 主体使用 `GearIn_kiln_combat`，模块使用 `GearIn_kiln_module_combat`。这两个名称都是装配 ID，模块装配结构与普通装配相同，内部的 hullId 再指向模块船体。
 
@@ -109,7 +109,7 @@
 
 观察连接后的装配界面：
 
-![装配界面中连接到主体的模块](./module_done.png "module_done.png")
+![装配界面中连接到主体的模块](./module_done.png 'module_done.png')
 
 模块贴图在主体槽位处显示，当前模块有装配点，可以选择并配置。战斗中是否实际生成，还要核对主体 hints 和部署结果。
 
@@ -234,12 +234,12 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 模块的下列行为 tag 放在模块行的 `tags` 列 (会被加载器复制到船体 tag 上)：
 
-| 英文 | 实际意义 | 使用位置 |
-| --- | --- | --- |
-| `module_unselectable` | 模块无法被选中 | 装配界面的装配面板 (强制不可选)|
-| `module_refit_bright` | 模块在装配界面时不会默认暗下 | 装配界面的装配面板 |
-| `module_no_status_bar` | 模块在战斗中不显示状态属性条 | 战斗瞄准环渲染器 |
-| `module_hull_bar_only` | 模块在战斗中不显示幅能属性条 | 战斗瞄准环渲染器 |
+| 英文                   | 实际意义                     | 使用位置                        |
+| ---------------------- | ---------------------------- | ------------------------------- |
+| `module_unselectable`  | 模块无法被选中               | 装配界面的装配面板 (强制不可选) |
+| `module_refit_bright`  | 模块在装配界面时不会默认暗下 | 装配界面的装配面板              |
+| `module_no_status_bar` | 模块在战斗中不显示状态属性条 | 战斗瞄准环渲染器                |
+| `module_hull_bar_only` | 模块在战斗中不显示幅能属性条 | 战斗瞄准环渲染器                |
 
 ## 验证方案
 

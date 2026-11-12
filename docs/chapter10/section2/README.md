@@ -2,9 +2,9 @@
 
 本节建立一个观测星系，从地点中查询恒星、行星、中继站与坐标标记，再记录玩家进入和离开后的状态。创建方法决定对象怎样加入世界，查询方法决定取得什么范围，访问记录则让同一个地点在不同阶段提供不同信息。
 
-*本节预期阅读时间：\~24 分钟。*
+_本节预期阅读时间：\~24 分钟。_
 
-*本节预期操作时间：\~35 分钟。*
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
@@ -124,12 +124,12 @@ if (system != null) {
 
 ### 地点查询方式速查表
 
-| 需要取得的内容 | 方法 | 结果与适用范围 |
-|---|---|---|
-| 指定 ID 的对象 | `getEntityById(id)` | 从当前地点取得目标，未找到返回 `null` |
-| 具有业务标签的对象 | `getEntitiesWithTag(tag)` | 遍历地点中的标签匹配项 |
-| 指定接口或类型的对象 | `getEntities(Class)` | 按实现类或接口筛选 |
-| 地点全部实体 | `getAllEntities()` | 取得当前地点的完整对象集合 |
+| 需要取得的内容       | 方法                      | 结果与适用范围                        |
+| -------------------- | ------------------------- | ------------------------------------- |
+| 指定 ID 的对象       | `getEntityById(id)`       | 从当前地点取得目标，未找到返回 `null` |
+| 具有业务标签的对象   | `getEntitiesWithTag(tag)` | 遍历地点中的标签匹配项                |
+| 指定接口或类型的对象 | `getEntities(Class)`      | 按实现类或接口筛选                    |
+| 地点全部实体         | `getAllEntities()`        | 取得当前地点的完整对象集合            |
 
 本例首先按 `GearIn_observation_relay` 查询中继站，再查 `GearIn_observation_tag`，最后比较类型集合与全量集合。日志保留中继站所在地点以及各集合数量，就能将唯一对象与筛选范围分别对应。
 
@@ -166,6 +166,7 @@ if (daysSinceVisit == Float.MAX_VALUE) {
 两个类保存到前述路径，保留生成与查询的登记片段。
 
 ::: details 完整成品：GearInLocationBuilder
+
 ```java
 package data.scripts.gearin.campaign;
 
@@ -246,9 +247,11 @@ public class GearInLocationBuilder implements EveryFrameScript {
     }
 }
 ```
+
 :::
 
 ::: details 完整成品：GearInLocationQuery
+
 ```java
 package data.scripts.gearin.campaign;
 
@@ -317,6 +320,7 @@ public class GearInLocationQuery implements EveryFrameScript {
     }
 }
 ```
+
 :::
 
 ## 验证方案

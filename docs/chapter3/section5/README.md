@@ -2,9 +2,9 @@
 
 第一章已经为舰船、战机和武器登记了基础描述。本节继续使用同一个文件，为齿轮工业、两个战术系统和 GearIn Second 补上文本，再展开描述类型、字段与绑定关系。哪些文字属于类型，哪些属于具体实体，分别在哪个界面显示，都要与对象一起考虑。
 
-*本节预期阅读时间：\~20 分钟。*
+_本节预期阅读时间：\~20 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -48,14 +48,14 @@ String firstParagraph = description.getText1FirstPara();
 
 ### 描述字段默认值速查表
 
-| 字段 | 默认值 | 读取方式 |
-|---|---|---|
+| 字段    | 默认值                  | 读取方式                                               |
+| ------- | ----------------------- | ------------------------------------------------------ |
 | `text1` | `No description... yet` | `getText1()`、`getText1FirstPara()`、`getText1Paras()` |
-| `text2` | `No description... yet` | `getText2()`、`getText2Paras()` |
-| `text3` | `No description... yet` | `getText3()`、`getText3Paras()` |
-| `text4` | `null` | `getText4()`、`getText4Paras()` |
-| `text5` | `null` | `getText5()`、`getText5Paras()` |
-| `notes` | 空 | CSV 中的维护备注 |
+| `text2` | `No description... yet` | `getText2()`、`getText2Paras()`                        |
+| `text3` | `No description... yet` | `getText3()`、`getText3Paras()`                        |
+| `text4` | `null`                  | `getText4()`、`getText4Paras()`                        |
+| `text5` | `null`                  | `getText5()`、`getText5Paras()`                        |
+| `notes` | 空                      | CSV 中的维护备注                                       |
 
 `hasText1()`、`hasText2()`、`hasText3()` 用于判断字段是否包含实际内容，占位字符串也会被判为空；`hasText4()`、`hasText5()` 判断对应字段是否为非空字符串。段落读取方法按换行拆分文本，去掉段落首尾空白并跳过空段落。
 
@@ -162,31 +162,31 @@ maneuveringjets,SHIP_SYSTEM,Engages extra thrusters to greatly improve the ship'
 
 ### 其他对象描述来源速查表
 
-| 对象 | 描述来源 | 使用方式 |
-|---|---|---|
-| 战机联队 | 对应战机船体的 `SHIP` 行 | 联队通过装配读取船体说明 |
-| 船插 | `data/hullmods/hull_mods.csv` 的 `desc` | `HullModSpecAPI.getDescription(HullSize)` 按船体等级代换 `%s` |
-| 市场条件 | `data/campaign/market_conditions.csv` 的 `desc` | 市场条件 tooltip 读取说明 |
-| 特殊物品 | `data/campaign/special_items.csv` 的 `desc` | `BaseSpecialItemPlugin.createTooltip` 读取物品规格 |
-| 商品 | `descriptions.csv` 的 `RESOURCE` 行 | 货舱和交易界面读取商品说明 |
+| 对象     | 描述来源                                        | 使用方式                                                      |
+| -------- | ----------------------------------------------- | ------------------------------------------------------------- |
+| 战机联队 | 对应战机船体的 `SHIP` 行                        | 联队通过装配读取船体说明                                      |
+| 船插     | `data/hullmods/hull_mods.csv` 的 `desc`         | `HullModSpecAPI.getDescription(HullSize)` 按船体等级代换 `%s` |
+| 市场条件 | `data/campaign/market_conditions.csv` 的 `desc` | 市场条件 tooltip 读取说明                                     |
+| 特殊物品 | `data/campaign/special_items.csv` 的 `desc`     | `BaseSpecialItemPlugin.createTooltip` 读取物品规格            |
+| 商品     | `descriptions.csv` 的 `RESOURCE` 行             | 货舱和交易界面读取商品说明                                    |
 
 各 CSV 描述列的字段转义采用 [C1-S7] 的写法，显示规则由对应对象决定。
 
 ### Description.Type 完整速查表
 
-| 类型 | 描述键来源 | 主要显示位置 |
-|---|---|---|
-| `SHIP` | 船体 `descriptionId`，基础船体使用 `hullId` | 舰船与战机详情、舰队、装配和蓝图 |
-| `WEAPON` | 武器 ID | 武器 tooltip、装配列表和数据库 |
-| `SHIP_SYSTEM` | 系统 ID | 装配系统行和数据库系统详情 |
-| `RESOURCE` | 商品 ID | 货舱和交易界面 |
-| `PLANET` | 行星类型、类型 `descriptionId` 或运行时覆盖键 | 行星悬停与详情 |
-| `ASTEROID` | `asteroid` | 小行星悬停 |
-| `FACTION` | 势力 ID | 势力信息面板 |
-| `TERRAIN` | 地形插件实际查询的 ID | 地形悬停 |
-| `ACTION_TOOLTIP` | 战斗命令的小写名称 | 战斗指挥命令 |
-| `GALLERY` | `illustrations` 分类的贴图键 | 图库标题、正文和解锁状态 |
-| `CUSTOM` | 实体的 `customDescriptionId` | 实体说明、行星接触与 Rules 文本 |
+| 类型             | 描述键来源                                    | 主要显示位置                     |
+| ---------------- | --------------------------------------------- | -------------------------------- |
+| `SHIP`           | 船体 `descriptionId`，基础船体使用 `hullId`   | 舰船与战机详情、舰队、装配和蓝图 |
+| `WEAPON`         | 武器 ID                                       | 武器 tooltip、装配列表和数据库   |
+| `SHIP_SYSTEM`    | 系统 ID                                       | 装配系统行和数据库系统详情       |
+| `RESOURCE`       | 商品 ID                                       | 货舱和交易界面                   |
+| `PLANET`         | 行星类型、类型 `descriptionId` 或运行时覆盖键 | 行星悬停与详情                   |
+| `ASTEROID`       | `asteroid`                                    | 小行星悬停                       |
+| `FACTION`        | 势力 ID                                       | 势力信息面板                     |
+| `TERRAIN`        | 地形插件实际查询的 ID                         | 地形悬停                         |
+| `ACTION_TOOLTIP` | 战斗命令的小写名称                            | 战斗指挥命令                     |
+| `GALLERY`        | `illustrations` 分类的贴图键                  | 图库标题、正文和解锁状态         |
+| `CUSTOM`         | 实体的 `customDescriptionId`                  | 实体说明、行星接触与 Rules 文本  |
 
 ## 扩展船体描述键与前置文字
 
@@ -241,7 +241,7 @@ second.setCustomDescriptionId("GearIn_description_second");
 
 悬停行星时，观察对象标题、所属势力与正文的排列：
 
-![行星悬停标题与描述正文](./desc_planet.png "desc_planet.png")
+![行星悬停标题与描述正文](./desc_planet.png 'desc_planet.png')
 
 图中使用 Cablim 展示标题与正文区域。验证本节 Second 时，以 GearIn Second 的对象与实际写入内容核对；PLANET 提供类型说明，CUSTOM 为具体行星提供正文，接触文本则显示在交互面板中。
 

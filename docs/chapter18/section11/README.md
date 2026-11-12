@@ -2,9 +2,9 @@
 
 本节用 MagicCampaign 为 GearIn 星系布置一艘工匠级残骸，并清理星系周围的超空间云层。残骸围绕第一颗行星运行，具备发现与回收交互；布置完成后把状态留在星区 Memory，使玩家取走舰船以后，重复调用也能保留这个结果。
 
-*本节预期阅读时间：\~20 分钟。*
+_本节预期阅读时间：\~20 分钟。_
 
-*本节预期操作时间：\~25 分钟。*
+_本节预期操作时间：\~25 分钟。_
 
 ## 学习目标
 
@@ -100,18 +100,18 @@ MagicCampaign.createDerelict(
 
 参数按下面的职责解释：
 
-| 参数 | 本例值 | 作用 |
-| --- | --- | --- |
-| `variantId` | `GearIn_artizan_combat` | 指定残骸使用的舰船装配 |
-| `condition` | `BATTERED` | 让回收结果带有明显损伤 |
-| `discoverable` | `true` | 让残骸进入传感器发现流程 |
-| `discoveryXp` | `null` | 使用默认发现经验 |
-| `recoverable` | `true` | 为实体附加舰船回收交互 |
-| `orbitCenter` | `GearIn_planet1` | 指定圆形轨道焦点 |
-| `orbitStartAngle` | `90f` | 从行星上方的轨道角开始 |
-| `orbitRadius` | 行星半径加 `50 su` | 将残骸放在近地轨道 |
-| `orbitDays` | `100f` 天 | 指定一圈轨道周期 |
-| `isRecoverable` | `true` | 允许玩家实际回收舰船 |
+| 参数              | 本例值                  | 作用                     |
+| ----------------- | ----------------------- | ------------------------ |
+| `variantId`       | `GearIn_artizan_combat` | 指定残骸使用的舰船装配   |
+| `condition`       | `BATTERED`              | 让回收结果带有明显损伤   |
+| `discoverable`    | `true`                  | 让残骸进入传感器发现流程 |
+| `discoveryXp`     | `null`                  | 使用默认发现经验         |
+| `recoverable`     | `true`                  | 为实体附加舰船回收交互   |
+| `orbitCenter`     | `GearIn_planet1`        | 指定圆形轨道焦点         |
+| `orbitStartAngle` | `90f`                   | 从行星上方的轨道角开始   |
+| `orbitRadius`     | 行星半径加 `50 su`      | 将残骸放在近地轨道       |
+| `orbitDays`       | `100f` 天               | 指定一圈轨道周期         |
+| `isRecoverable`   | `true`                  | 允许玩家实际回收舰船     |
 
 两个回收布尔值控制不同层级。第一个 `recoverable` 决定是否创建回收特殊交互，最后的 `isRecoverable` 决定实体是否带有不可回收标签。本例把两者都设为 `true`，交互入口与最终结果因此一致。
 
@@ -143,15 +143,15 @@ sectorMemory.set("$GearIn_campaign_setup_done", true);
 
 ## 常用方法速查表
 
-| API | 返回值或结果 | 本节用途 |
-| --- | --- | --- |
-| `SectorAPI.getStarSystem(String)` | `StarSystemAPI` 或 `null` | 按名称取得 GearIn 星系 |
-| `SectorAPI.getEntityById(String)` | `SectorEntityToken` 或 `null` | 取得残骸轨道焦点 |
-| `SettingsAPI.doesVariantExist(String)` | `boolean` | 在创建前检查装配 ID |
-| `MagicCampaign.createDerelict(...)` | `SectorEntityToken` | 创建带轨道与回收参数的残骸 |
-| `MagicCampaign.hyperspaceCleanup(StarSystemAPI)` | 无返回值 | 清理星系周围的超空间云层 |
-| `MemoryAPI.getBoolean(String)` | `boolean` | 读取布置完成状态 |
-| `MemoryAPI.set(String, Object)` | 无返回值 | 保存布置完成状态 |
+| API                                              | 返回值或结果                  | 本节用途                   |
+| ------------------------------------------------ | ----------------------------- | -------------------------- |
+| `SectorAPI.getStarSystem(String)`                | `StarSystemAPI` 或 `null`     | 按名称取得 GearIn 星系     |
+| `SectorAPI.getEntityById(String)`                | `SectorEntityToken` 或 `null` | 取得残骸轨道焦点           |
+| `SettingsAPI.doesVariantExist(String)`           | `boolean`                     | 在创建前检查装配 ID        |
+| `MagicCampaign.createDerelict(...)`              | `SectorEntityToken`           | 创建带轨道与回收参数的残骸 |
+| `MagicCampaign.hyperspaceCleanup(StarSystemAPI)` | 无返回值                      | 清理星系周围的超空间云层   |
+| `MemoryAPI.getBoolean(String)`                   | `boolean`                     | 读取布置完成状态           |
+| `MemoryAPI.set(String, Object)`                  | 无返回值                      | 保存布置完成状态           |
 
 ## 完整最小例
 

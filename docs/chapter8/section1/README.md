@@ -2,9 +2,9 @@
 
 `CombatEngineAPI` 提供一场战斗的时间、场景、界面与结果。持续效果需要按秒推进，生涯专用逻辑需要识别遭遇战，收尾代码则需要判断战斗是否结束。本节用周期日志记录这些状态，说明各项判断怎样用于实际功能。
 
-*本节预期阅读时间：\~16 分钟。*
+_本节预期阅读时间：\~16 分钟。_
 
-*本节预期操作时间：\~20 分钟。*
+_本节预期操作时间：\~20 分钟。_
 
 ## 学习目标
 
@@ -45,13 +45,13 @@
 
 ### 战斗上下文速查表
 
-| 方法 | 返回语义 | 适用判断 |
-| --- | --- | --- |
-| `isInCampaign()` | 当前是生涯战斗且不是生涯内模拟战 | 只在真实生涯遭遇战运行 |
-| `isInCampaignSim()` | 当前是生涯内模拟战 | 区分生涯模拟战 |
-| `isSimulation()` | 当前是任意模拟战 | 识别模拟战入口 |
-| `isMission()` | 当前是战役 | 识别 `data/missions` 战斗 |
-| `getMissionId()` | 当前战役 ID | 区分 `GearIn_test` 等战役 |
+| 方法                | 返回语义                         | 适用判断                  |
+| ------------------- | -------------------------------- | ------------------------- |
+| `isInCampaign()`    | 当前是生涯战斗且不是生涯内模拟战 | 只在真实生涯遭遇战运行    |
+| `isInCampaignSim()` | 当前是生涯内模拟战               | 区分生涯模拟战            |
+| `isSimulation()`    | 当前是任意模拟战                 | 识别模拟战入口            |
+| `isMission()`       | 当前是战役                       | 识别 `data/missions` 战斗 |
+| `getMissionId()`    | 当前战役 ID                      | 区分 `GearIn_test` 等战役 |
 
 例如本章使用 `GearIn_test`，日志同时记录 `isMission()` 与 `getMissionId()`。前者确认战役场景，后者确认具体战役。生涯内模拟战则用 `isInCampaignSim()` 判断，不能因为它从生涯界面打开，就当作真实遭遇战处理。
 
@@ -61,16 +61,16 @@
 
 ### 战斗时间速查表
 
-| 方法 | 语义 | 暂停时行为 |
-| --- | --- | --- |
-| `getTotalElapsedTime(false)` | 战斗推进时间 | 不累计 |
-| `getTotalElapsedTime(true)` | 实际经历时间 | 继续累计 |
-| `getElapsedInLastFrame()` | 当前帧时间步长 | 返回当前帧值 |
-| `getTimeMult()` | 引擎时间倍率 `stat` | 读取修正后的倍率 |
-| `getElapsedInContactWithEnemy()` | 双方接敌累计时间 | 不累计 |
-| `isFleetsInContact()` | 双方当前是否接敌 | 读取当前状态 |
-| `isPaused()` | 当前是否暂停 | 返回暂停标志 |
-| `setPaused(boolean)` | 修改暂停状态 | 立即改变暂停标志 |
+| 方法                             | 语义                | 暂停时行为       |
+| -------------------------------- | ------------------- | ---------------- |
+| `getTotalElapsedTime(false)`     | 战斗推进时间        | 不累计           |
+| `getTotalElapsedTime(true)`      | 实际经历时间        | 继续累计         |
+| `getElapsedInLastFrame()`        | 当前帧时间步长      | 返回当前帧值     |
+| `getTimeMult()`                  | 引擎时间倍率 `stat` | 读取修正后的倍率 |
+| `getElapsedInContactWithEnemy()` | 双方接敌累计时间    | 不累计           |
+| `isFleetsInContact()`            | 双方当前是否接敌    | 读取当前状态     |
+| `isPaused()`                     | 当前是否暂停        | 返回暂停标志     |
+| `setPaused(boolean)`             | 修改暂停状态        | 立即改变暂停标志 |
 
 **暂停时，插件的 `advance()` 仍然会被调用。** 要让状态随战斗停止，就在 `isPaused()` 判断后累计时间和修改数值。本例也将报告计时放在这个位置，暂停时保留余量，恢复后继续。
 

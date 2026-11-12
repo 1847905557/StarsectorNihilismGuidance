@@ -2,9 +2,9 @@
 
 本节用 MagicBounty 配置 "断齿航路"：玩家满足条件后，从情报告示板领取歼灭委托，前往目标地点消灭海盗舰队并取得奖励。一份 JSON 同时提供人物、舰队、地点与任务文本，我们沿出现、领取和结算展开，说明哪些字段控制生成，哪些字段控制玩家实际收到的信息。
 
-*本节预期阅读时间：\~32 分钟。*
+_本节预期阅读时间：\~32 分钟。_
 
-*本节预期操作时间：\~40 分钟。*
+_本节预期操作时间：\~40 分钟。_
 
 ## 学习目标
 
@@ -183,12 +183,12 @@ MagicBounty 在描述中替换目标与奖励变量。常用变量包括：
 
 ### 任务类型速查表
 
-| `job_type` | 完成要求 | 旗舰回收关系 |
-|---|---|---|
-| `assassination` | 使旗舰失去战斗能力 | 可以回收 |
-| `destruction` | 摧毁旗舰 | 回收旗舰会失败 |
-| `obliteration` | 摧毁或瘫痪整支目标舰队 | 可以回收 |
-| `neutralization` | 将剩余 FP 降至初始 FP 的三分之一或以下 | 可以回收 |
+| `job_type`       | 完成要求                               | 旗舰回收关系   |
+| ---------------- | -------------------------------------- | -------------- |
+| `assassination`  | 使旗舰失去战斗能力                     | 可以回收       |
+| `destruction`    | 摧毁旗舰                               | 回收旗舰会失败 |
+| `obliteration`   | 摧毁或瘫痪整支目标舰队                 | 可以回收       |
+| `neutralization` | 将剩余 FP 降至初始 FP 的三分之一或以下 | 可以回收       |
 
 `neutralisation` 是英式拼写的兼容值，新数据使用 `neutralization`。当前成果采用 `obliteration`，因此只处理旗舰并不足以完成任务。
 
@@ -209,19 +209,19 @@ MagicBounty 在描述中替换目标与奖励变量。常用变量包括：
 
 ### 告示板显示速查表
 
-| 字段 | 值 | 告示板结果 |
-|---|---|---|
-| `job_show_fleet` | `none` | 隐藏舰队规模 |
-| `job_show_fleet` | `text` | 给出粗略数量，达到五艘时另列旗舰 |
-| `job_show_fleet` | `flagship` / `flagshipText` | 显示旗舰，后者附带其余舰船数量 |
-| `job_show_fleet` | `preset` / `presetText` | 显示旗舰与预设舰船，后者附带其余舰船数量 |
-| `job_show_fleet` | `vanilla` | 显示旗舰和另外至多九艘舰船，并说明其余数量 |
-| `job_show_fleet` | `all` | 显示整支舰队 |
-| `job_show_distance` | `none` | 隐藏详情中的位置文字 |
-| `job_show_distance` | `vague` / `distance` | 当前告示板使用环境位置描述 |
-| `job_show_distance` | `system` | 显示目标星系名称 |
-| `job_show_distance` | `vanilla` / `vanillaDistance` | 当前告示板使用原版风格环境描述 |
-| `job_show_distance` | `exact` | 显示目标实体和星系的准确名称 |
+| 字段                | 值                            | 告示板结果                                 |
+| ------------------- | ----------------------------- | ------------------------------------------ |
+| `job_show_fleet`    | `none`                        | 隐藏舰队规模                               |
+| `job_show_fleet`    | `text`                        | 给出粗略数量，达到五艘时另列旗舰           |
+| `job_show_fleet`    | `flagship` / `flagshipText`   | 显示旗舰，后者附带其余舰船数量             |
+| `job_show_fleet`    | `preset` / `presetText`       | 显示旗舰与预设舰船，后者附带其余舰船数量   |
+| `job_show_fleet`    | `vanilla`                     | 显示旗舰和另外至多九艘舰船，并说明其余数量 |
+| `job_show_fleet`    | `all`                         | 显示整支舰队                               |
+| `job_show_distance` | `none`                        | 隐藏详情中的位置文字                       |
+| `job_show_distance` | `vague` / `distance`          | 当前告示板使用环境位置描述                 |
+| `job_show_distance` | `system`                      | 显示目标星系名称                           |
+| `job_show_distance` | `vanilla` / `vanillaDistance` | 当前告示板使用原版风格环境描述             |
+| `job_show_distance` | `exact`                       | 显示目标实体和星系的准确名称               |
 
 表中的距离结果用于领取前的告示板。接受后的 `MagicBountyIntel` 还按各枚举区分模糊距离、光年数、星系和环境描述，并用 `job_show_arrow` 控制主地图箭头。当前领取入口将玩家舰队作为 `bountySource`，箭头便从玩家舰队指向任务位置。
 
@@ -427,13 +427,13 @@ MagicLib 会扫描各星系舰队，寻找自身 Memory 含有该键的对象。
 
 ## 字段兼容速查表
 
-| 字段或值 | 当前含义 | 新数据写法 |
-|---|---|---|
-| `fleet_flagship_recoverable` | 旗舰强制可回收的兼容字段 | `fleet_flagship_alwaysRecoverable` |
-| `fleet_min_DP` | 最低舰队规模的兼容备用值 | `fleet_min_FP` |
-| `location_marketIDs` | 固定 `SectorEntityToken` ID 列表的可识别别名 | `location_entitiesID` |
-| `neutralisation` | `neutralization` 的拼写兼容值 | `neutralization` |
-| `location_defaultToAnySystem` | 当前加载器不会把该值送入 `MagicBountySpec` | 使用 `location_defaultToAnyEntity` 与 theme 黑名单 |
+| 字段或值                      | 当前含义                                     | 新数据写法                                         |
+| ----------------------------- | -------------------------------------------- | -------------------------------------------------- |
+| `fleet_flagship_recoverable`  | 旗舰强制可回收的兼容字段                     | `fleet_flagship_alwaysRecoverable`                 |
+| `fleet_min_DP`                | 最低舰队规模的兼容备用值                     | `fleet_min_FP`                                     |
+| `location_marketIDs`          | 固定 `SectorEntityToken` ID 列表的可识别别名 | `location_entitiesID`                              |
+| `neutralisation`              | `neutralization` 的拼写兼容值                | `neutralization`                                   |
+| `location_defaultToAnySystem` | 当前加载器不会把该值送入 `MagicBountySpec`   | 使用 `location_defaultToAnyEntity` 与 theme 黑名单 |
 
 ## 完整最小例
 

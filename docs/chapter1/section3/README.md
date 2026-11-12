@@ -2,9 +2,9 @@
 
 本节将引导您制作一艘航母，即带有甲板与港口的舰船。既然有航母，自然还需要包括战机。
 
-*本节预期阅读时间：\~12 分钟。*
+_本节预期阅读时间：\~12 分钟。_
 
-*本节预期操作时间：\~15 分钟。*
+_本节预期操作时间：\~15 分钟。_
 
 ## 学习目标
 
@@ -24,9 +24,9 @@
 
 相信获取贴图的部分已经无需赘述了，这些贴图的制作时长共计不到 1 分钟：
 
-![守炉人级航母贴图](./GearIn_furnaceman.png "GearIn_furnaceman.png")
+![守炉人级航母贴图](./GearIn_furnaceman.png 'GearIn_furnaceman.png')
 
-![炉渣级战机贴图](./GearIn_slag.png "GearIn_slag.png")
+![炉渣级战机贴图](./GearIn_slag.png 'GearIn_slag.png')
 
 ## 命名并将贴图放入正确的位置
 
@@ -36,7 +36,7 @@
 
 :::
 
-![航母与战机贴图在 graphics/ships 目录中的位置](./storage.png "storage.png")
+![航母与战机贴图在 graphics/ships 目录中的位置](./storage.png 'storage.png')
 
 `守炉人-级 (Furnaceman)` 航母，ID 为 `GearIn_furnaceman`。
 
@@ -48,7 +48,7 @@
 
 按照与寻常舰船无异的过程，制作 `守炉人-级` 航母的舰船文件，但有额外的 1 步。
 
-![舰船编辑器中的守炉人级航母](./carrier_make.png "carrier_make.png")
+![舰船编辑器中的守炉人级航母](./carrier_make.png 'carrier_make.png')
 
 ### 设置甲板
 
@@ -64,7 +64,7 @@
 
 :::
 
-![舰船编辑器中的航母甲板港口设置](./carrier_port.png "carrier_port.png")
+![舰船编辑器中的航母甲板港口设置](./carrier_port.png 'carrier_port.png')
 
 **每一个图标右下角的数字说明它属于第 x 个甲板**，由于 `守炉人-级` 航母只有 2 个甲板，所以右下角最大数字为 2。而图标的数量则说明这个甲板有多少个港口。
 
@@ -98,7 +98,7 @@ tag 也作了与 `工匠-级` 相似的处理。
 
 战斗中的战机投放与返航表现如下。
 
-![守炉人级航母在战斗中投放战机](./carrier_play.png "carrier_play.png")
+![守炉人级航母在战斗中投放战机](./carrier_play.png 'carrier_play.png')
 
 ## 验证方案
 
@@ -127,7 +127,7 @@ tag 也作了与 `工匠-级` 相似的处理。
 
 :::
 
-![舰船编辑器中的炉渣级战机](./fighter_make.png "fighter_make.png")
+![舰船编辑器中的炉渣级战机](./fighter_make.png 'fighter_make.png')
 
 ## 制作战机舰船的数据
 
@@ -161,7 +161,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 继续复制黏贴。打开原版的 `variants/fighters/` 文件夹，找到 `阔剑-级` 的装配，将其复制到您 MOD 的对应位置。然后将文件名改为 `舰船 ID + 某个后缀`：
 
-![炉渣级战机装配文件的命名与存放位置](./fighter_rename.png "fighter_rename.png")
+![炉渣级战机装配文件的命名与存放位置](./fighter_rename.png 'fighter_rename.png')
 
 然后打开文件，准备修改：
 
@@ -197,13 +197,13 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 **不在本表上的数据均为对于战机而言不必修改的数据或无意义数据。**
 
-| 英文 | 实际意义 |
-|---|---|
-| displayName | 战机本装配的装配名，会在战机的数据页面被展示 |
-| hullId | 战机本装配的舰船 ID，在本例为 `GearIn_slag` |
-| variantId | 战机本装配的装配 ID，建议与文件名相同，在本例为 `GearIn_slag_normal` |
-| hullMods | 战机本装配所安装的插件 |
-| weaponGroups | 战机本装配的武器列表，在 `weapons` 项目里的则是具体武器。注意，图中诸如 `WS 001` 的是槽位 ID，**必须是战机本身确实拥有的槽位**，否则游戏将报错。而槽位 ID 后的则是武器 ID，可以查询 `weapon_data.csv`。|
+| 英文         | 实际意义                                                                                                                                                                                                |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| displayName  | 战机本装配的装配名，会在战机的数据页面被展示                                                                                                                                                            |
+| hullId       | 战机本装配的舰船 ID，在本例为 `GearIn_slag`                                                                                                                                                             |
+| variantId    | 战机本装配的装配 ID，建议与文件名相同，在本例为 `GearIn_slag_normal`                                                                                                                                    |
+| hullMods     | 战机本装配所安装的插件                                                                                                                                                                                  |
+| weaponGroups | 战机本装配的武器列表，在 `weapons` 项目里的则是具体武器。注意，图中诸如 `WS 001` 的是槽位 ID，**必须是战机本身确实拥有的槽位**，否则游戏将报错。而槽位 ID 后的则是武器 ID，可以查询 `weapon_data.csv`。 |
 
 ```json {3-5,15,16}
 {
@@ -270,23 +270,23 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 
 不在本表上的数据均为本教程用不到的数据 (如 fleet pts) 或不重要数据 (如 number)，照抄原版样本即可。
 
-| 英文 | 实际意义 |
-|---|---|
-| id | 战机的战机 ID，如果没有特别要求，应当以 `_wing` 结尾 |
-| variant | 战机所对应的装配文件，在本例中是 `GearIn_slag_normal` |
-| tags | 进阶内容，不可随意编纂 |
-| tier | 科技等级，影响市场、突袭等权重，照抄原版样本即可 |
-| rarity | 稀有度，影响市场、突袭等权重，照抄原版样本即可 |
-| op cost | 装配点数需求 |
-| formation | 战机队形，允许的有 `BOX`、`V`、`CLAW` 和 `DIAMOND`，分别是簇团、正 V 编队、反 V 编队和棱形编队 |
-| range | 最大交战距离 |
-| attackRunRange | 当战机与敌舰交战时，最大允许的可后撤距离 |
-| attackPositionOffset | 战机攻击距离补正 |
-| num | 每联队的战机数 |
-| role | 战机的 AI 种类，允许的有 `FIGHTER`、`INTERCEPTOR`、`BOMBER`、`SUPPORT`、`ASSAULT`。`INTERCEPTOR` 目标选取独走一条路径 (优先锁定范围内最近的敌方战机)；`BOMBER` 是轰炸机，`SUPPORT` 是不会主动离开母舰的支援机。环绕距离不随 role 变化：`attackRunRange` 按联队逐行设置，原版拦截机联队为 200–600，轰炸机反而最大 (2000–2500) |
-| role desc | 战机类型文字描述 |
-| refit | 战机整备所需秒数 |
-| base value | 每联队的成本价 |
+| 英文                 | 实际意义                                                                                                                                                                                                                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| id                   | 战机的战机 ID，如果没有特别要求，应当以 `_wing` 结尾                                                                                                                                                                                                                                                                         |
+| variant              | 战机所对应的装配文件，在本例中是 `GearIn_slag_normal`                                                                                                                                                                                                                                                                        |
+| tags                 | 进阶内容，不可随意编纂                                                                                                                                                                                                                                                                                                       |
+| tier                 | 科技等级，影响市场、突袭等权重，照抄原版样本即可                                                                                                                                                                                                                                                                             |
+| rarity               | 稀有度，影响市场、突袭等权重，照抄原版样本即可                                                                                                                                                                                                                                                                               |
+| op cost              | 装配点数需求                                                                                                                                                                                                                                                                                                                 |
+| formation            | 战机队形，允许的有 `BOX`、`V`、`CLAW` 和 `DIAMOND`，分别是簇团、正 V 编队、反 V 编队和棱形编队                                                                                                                                                                                                                               |
+| range                | 最大交战距离                                                                                                                                                                                                                                                                                                                 |
+| attackRunRange       | 当战机与敌舰交战时，最大允许的可后撤距离                                                                                                                                                                                                                                                                                     |
+| attackPositionOffset | 战机攻击距离补正                                                                                                                                                                                                                                                                                                             |
+| num                  | 每联队的战机数                                                                                                                                                                                                                                                                                                               |
+| role                 | 战机的 AI 种类，允许的有 `FIGHTER`、`INTERCEPTOR`、`BOMBER`、`SUPPORT`、`ASSAULT`。`INTERCEPTOR` 目标选取独走一条路径 (优先锁定范围内最近的敌方战机)；`BOMBER` 是轰炸机，`SUPPORT` 是不会主动离开母舰的支援机。环绕距离不随 role 变化：`attackRunRange` 按联队逐行设置，原版拦截机联队为 200–600，轰炸机反而最大 (2000–2500) |
+| role desc            | 战机类型文字描述                                                                                                                                                                                                                                                                                                             |
+| refit                | 战机整备所需秒数                                                                                                                                                                                                                                                                                                             |
+| base value           | 每联队的成本价                                                                                                                                                                                                                                                                                                               |
 
 原版以常规方式在市场里刷新战机时，只纳入 tier 不大于 3 的联队，所以除非有意不希望让某种战机出现，否则 tier 最好不要大于 3。非常规方式不适用于此限制。
 
@@ -294,30 +294,30 @@ GearIn_slag_wing,GearIn_slag_normal,"fighter4, fighter, low, GearIn_bp",0,,6,8,V
 
 **本表未列出的 tags 与战机性能无关，例如 `rare_bp`，照抄原版样本即可。**
 
-| 英文 | 实际意义 |
-|---|---|
-| fighter\* | 当进行自动装配时，优先使用 \* 所处的位置较高的战机。例如 fighter2 总是会替代 fighter1 |
-| interceptor\* | 当进行自动装配时，优先使用 \* 所处的位置较高的战机。例如 interceptor2 总是会替代 interceptor1 |
-| bomber\* | 当进行自动装配时，优先使用 \* 所处的位置较高的战机。例如 bomber2 总是会替代 bomber1 |
-| support\* | 当进行自动装配时，优先使用 \* 所处的位置较高的战机。例如 support2 总是会替代 support1 |
-|  | **以上 4 条只应当包含 1 条** |
-| fighter | 与 `role` 列 FIGHTER 同义的分类 tag。|
-| interceptor | 与 `role` 列 INTERCEPTOR 同义的分类 tag，同上 |
-| bomber | 与 `role` 列 BOMBER 同义的分类 tag，同上 |
-|  | **以上 3 条只应当包含 1 条** |
-| auto\_fighter | 只有包含此 tag 的战机才能被无人战舰使用 |
-| drone | tag 存在于数据中，引擎侧无消费点、不产生行为 |
-| rapid\_reform | 联队将倾向于保持严格的阵型而非四散而开 |
-| leader\_no\_swarm | 联队中的首机一旦接敌就会拉开距离，而非无脑蜂拥而上 |
-| wingmen\_no\_swarm | 联队中的首机以外的战机一旦接敌就会拉开距离，而非无脑蜂拥而上 |
-| match\_leader\_facing | 联队中的其它所有战机与首机保持朝向完全一致 |
-| attack\_at\_an\_angle | 战机 AI 将倾向于使用最大武器倾角侧舷对敌，而非正面对敌 |
+| 英文                     | 实际意义                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| fighter\*                | 当进行自动装配时，优先使用 \* 所处的位置较高的战机。例如 fighter2 总是会替代 fighter1                                    |
+| interceptor\*            | 当进行自动装配时，优先使用 \* 所处的位置较高的战机。例如 interceptor2 总是会替代 interceptor1                            |
+| bomber\*                 | 当进行自动装配时，优先使用 \* 所处的位置较高的战机。例如 bomber2 总是会替代 bomber1                                      |
+| support\*                | 当进行自动装配时，优先使用 \* 所处的位置较高的战机。例如 support2 总是会替代 support1                                    |
+|                          | **以上 4 条只应当包含 1 条**                                                                                             |
+| fighter                  | 与 `role` 列 FIGHTER 同义的分类 tag。                                                                                    |
+| interceptor              | 与 `role` 列 INTERCEPTOR 同义的分类 tag，同上                                                                            |
+| bomber                   | 与 `role` 列 BOMBER 同义的分类 tag，同上                                                                                 |
+|                          | **以上 3 条只应当包含 1 条**                                                                                             |
+| auto\_fighter            | 只有包含此 tag 的战机才能被无人战舰使用                                                                                  |
+| drone                    | tag 存在于数据中，引擎侧无消费点、不产生行为                                                                             |
+| rapid\_reform            | 联队将倾向于保持严格的阵型而非四散而开                                                                                   |
+| leader\_no\_swarm        | 联队中的首机一旦接敌就会拉开距离，而非无脑蜂拥而上                                                                       |
+| wingmen\_no\_swarm       | 联队中的首机以外的战机一旦接敌就会拉开距离，而非无脑蜂拥而上                                                             |
+| match\_leader\_facing    | 联队中的其它所有战机与首机保持朝向完全一致                                                                               |
+| attack\_at\_an\_angle    | 战机 AI 将倾向于使用最大武器倾角侧舷对敌，而非正面对敌                                                                   |
 | independent\_of\_carrier | 当航母被消灭或无所属航母时，依然正常运作而非四散溃逃。且当场上没有任何同侧舰船时，这些战机不会自动自爆而是需要被手动消灭 |
-| rd\_no\_extra\_craft | `后备部署` 专供，使本战机不响应它的效果 |
+| rd\_no\_extra\_craft     | `后备部署` 专供，使本战机不响应它的效果                                                                                  |
 
 战斗中联队的生成、开火与返航表现如下。
 
-![炉渣级战机联队在战斗中的表现](./fighter_play.png "fighter_play.png")
+![炉渣级战机联队在战斗中的表现](./fighter_play.png 'fighter_play.png')
 
 ## 验证方案
 

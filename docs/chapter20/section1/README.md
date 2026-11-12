@@ -2,9 +2,9 @@
 
 本节在玩家舰周围绘制圆环与朝向线，用一个固定形状说明 Java OpenGL 的完整调用。局部顶点经过平移与旋转成为世界位置，颜色和混合决定画面，绘制结束再恢复共享状态。分层插件提供入口，这些数据与状态由方向标自己安排。
 
-*本节预期阅读时间：\~18 分钟。*
+_本节预期阅读时间：\~18 分钟。_
 
-*本节预期操作时间：\~30 分钟。*
+_本节预期操作时间：\~30 分钟。_
 
 ## 学习目标
 
@@ -151,16 +151,16 @@ GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
 
 ## OpenGL 职责速查表
 
-| 对象或调用 | 当前职责 |
-| --- | --- |
-| `BufferUtils.createFloatBuffer(...)` | 创建 OpenGL 可读取的直接客户端缓冲区 |
-| `glPushMatrix()` / `glPopMatrix()` | 隔离当前模型视图矩阵 |
-| `glTranslatef(...)` / `glRotatef(...)` | 把局部顶点放到舰船世界位置和朝向 |
-| `glVertexPointer(...)` | 描述客户端缓冲区中的顶点布局 |
-| `glDrawArrays(...)` | 按图元类型提交连续顶点 |
-| `glBlendFunc(...)` | 设置源颜色与已有画面的混合比例 |
-| `glPushAttrib(...)` / `glPopAttrib()` | 保存并恢复固定管线状态 |
-| `glPushClientAttrib(...)` / `glPopClientAttrib()` | 保存并恢复客户端数组状态 |
+| 对象或调用                                        | 当前职责                             |
+| ------------------------------------------------- | ------------------------------------ |
+| `BufferUtils.createFloatBuffer(...)`              | 创建 OpenGL 可读取的直接客户端缓冲区 |
+| `glPushMatrix()` / `glPopMatrix()`                | 隔离当前模型视图矩阵                 |
+| `glTranslatef(...)` / `glRotatef(...)`            | 把局部顶点放到舰船世界位置和朝向     |
+| `glVertexPointer(...)`                            | 描述客户端缓冲区中的顶点布局         |
+| `glDrawArrays(...)`                               | 按图元类型提交连续顶点               |
+| `glBlendFunc(...)`                                | 设置源颜色与已有画面的混合比例       |
+| `glPushAttrib(...)` / `glPopAttrib()`             | 保存并恢复固定管线状态               |
+| `glPushClientAttrib(...)` / `glPopClientAttrib()` | 保存并恢复客户端数组状态             |
 
 ## 完整最小例
 

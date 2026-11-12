@@ -2,9 +2,9 @@
 
 同一张 CSV 可以由本 MOD 独立读取，也可以允许其他 MOD 增补或覆盖。本节用工坊服务表比较这些入口：先取得自己的原始行，再加入一份外部表，确认行键怎样决定合并结果。选择读取方法时，我们也就同时决定了谁有权提供这份数据。
 
-*本节预期阅读时间：\~18 分钟。*
+_本节预期阅读时间：\~18 分钟。_
 
-*本节预期操作时间：\~35 分钟。*
+_本节预期操作时间：\~35 分钟。_
 
 ## 学习目标
 
@@ -72,12 +72,12 @@ JSONArray master = Global.getSettings().getMergedSpreadsheetDataForMod(
 
 ### 选择入口速查表
 
-| 任务 | 入口 | 结果 |
-| --- | --- | --- |
-| 读取自己的表 | `loadCSV(path, modId)` | 指定 MOD 的原始对象数组 |
-| 读取所有来源的同路径表 | `getMergedSpreadsheetData` | 按键合并后的对象数组 |
+| 任务                       | 入口                             | 结果                       |
+| -------------------------- | -------------------------------- | -------------------------- |
+| 读取自己的表               | `loadCSV(path, modId)`           | 指定 MOD 的原始对象数组    |
+| 读取所有来源的同路径表     | `getMergedSpreadsheetData`       | 按键合并后的对象数组       |
 | 读取指定 master 并允许覆盖 | `getMergedSpreadsheetDataForMod` | master 行可被其他 MOD 替换 |
-| 读取合并 JSON | `getMergedJSON` | 递归合并对象 |
+| 读取合并 JSON              | `getMergedJSON`                  | 递归合并对象               |
 
 ## 用外部表观察覆盖与新增
 

@@ -18,17 +18,17 @@
 
 ### 页面与 fixture 契约
 
-教程页面负责讲解和展示，fixture 保存相应的可编译类与资源。完整 Java 类和 shader 源码在页面与 fixture 中逐字一致。`tools/check_fixtures.py` 核对页面、fixture 文件和 Gradle 清单之间的对应关系；Gradle 编译与验证任务会运行这项检查。修改完整示例时，同步更新页面与对应 fixture。
+教程页面负责讲解和展示，fixture 保存相应的可编译类与资源。完整 Java 类和 shader 源码在页面与 fixture 中逐字一致。`pnpm check:fixtures` 核对页面、fixture 文件和 Gradle 清单之间的对应关系；Gradle 编译与验证任务会运行这项检查。修改完整示例时，同步更新页面与对应 fixture。
 
 `verifyTutorialFixtures` 汇总 Java 编译与 shader 资源检查；shader 检查确认已登记的资源目录和非空资源。
 
 ### 核验工具
 
-`tools/` 提供 Python 3.10+ 标准库工具，用于检查文本与 Markdown 格式、教程结构和 fixture 契约，也包含将站点编辑结果还原为 Markdown 的恢复器。工具参数和检查范围见[工具说明](tools/README.md)。
+`tools/` 提供 Node.js 维护工具，用于检查文本与 Markdown 格式、教程结构和 fixture 契约，也包含将站点编辑结果还原为 Markdown 的恢复器。工具参数和检查范围见[工具说明](tools/README.md)。
 
 ## 本地开发
 
-文档站使用 Node.js `>=24.21.0` 和 pnpm `12.4.1`。核验工具使用 Python `3.10+`；Java fixture 使用 Java `17`。
+文档站使用 Node.js `>=24.21.0` 和 pnpm `12.4.1`。Java fixture 使用 Java `17`。
 
 在仓库根目录安装依赖并启动文档站：
 
@@ -42,7 +42,9 @@ pnpm docs:dev
 ```powershell
 pnpm docs:build
 pnpm test:dev-edit
-python -X utf8 -B -m unittest discover -s tools/tests -p "test_*.py" -v
+pnpm check
+pnpm lint:full
+pnpm test:tools
 ```
 
 Java fixture 编译需要本机安装 Starsector `0.98.5a-RC3` 和教程涉及的依赖 MOD。在本机 `tutorial-fixtures/gradle.properties` 中设置 `starsectorRoot`，指向包含 `starsector-core/` 的游戏安装目录；依赖库默认从其 `mods/` 读取，也可用 `starsectorModsRoot` 指定现有依赖库目录。

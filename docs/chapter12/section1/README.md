@@ -2,9 +2,9 @@
 
 本节在观测星系创建 Foundry 行星，为它建立规模 3 的市场，并开放公开市场、黑市与仓储。玩家从行星进入交易，经济系统从市场集合读取供需；我们把这两条关系接好，再通过价格、人物目录与经济更新确认市场的运行状态。
 
-*本节预期阅读时间：\~24 分钟。*
+_本节预期阅读时间：\~24 分钟。_
 
-*本节预期操作时间：\~30 分钟。*
+_本节预期操作时间：\~30 分钟。_
 
 ## 学习目标
 
@@ -112,15 +112,15 @@ boolean patrol = memory.getBoolean(MemFlags.MARKET_PATROL);
 
 ### 市场标志速查表
 
-| 键 | 值 | 用途 |
-| --- | --- | --- |
-| `MemFlags.MARKET_MILITARY` | boolean | 标记市场具有军事设施语义 |
-| `MemFlags.MARKET_PATROL` | boolean | 标记市场启用巡逻相关语义 |
-| `MemFlags.MARKET_HAS_CUSTOM_INTERACTION_OPTIONS` | boolean | 使用自定义市场交互入口 |
-| `MemFlags.MARKET_EXTRA_SUSPICION` | float | 为走私检查增加额外怀疑值 |
-| `MemFlags.MEMORY_MARKET_SMUGGLING_SUSPICION_LEVEL` | float | 保存市场当前走私怀疑等级 |
-| `MemFlags.MEMORY_KEY_PLAYER_HOSTILE_ACTIVITY_NEAR_MARKET` | boolean/带期限值 | 标记玩家在市场附近的敌对行为 |
-| `MemFlags.MARKET_DO_NOT_INIT_COMM_LISTINGS` | boolean | 阻止市场自动初始化通信目录条目 |
+| 键                                                        | 值               | 用途                           |
+| --------------------------------------------------------- | ---------------- | ------------------------------ |
+| `MemFlags.MARKET_MILITARY`                                | boolean          | 标记市场具有军事设施语义       |
+| `MemFlags.MARKET_PATROL`                                  | boolean          | 标记市场启用巡逻相关语义       |
+| `MemFlags.MARKET_HAS_CUSTOM_INTERACTION_OPTIONS`          | boolean          | 使用自定义市场交互入口         |
+| `MemFlags.MARKET_EXTRA_SUSPICION`                         | float            | 为走私检查增加额外怀疑值       |
+| `MemFlags.MEMORY_MARKET_SMUGGLING_SUSPICION_LEVEL`        | float            | 保存市场当前走私怀疑等级       |
+| `MemFlags.MEMORY_KEY_PLAYER_HOSTILE_ACTIVITY_NEAR_MARKET` | boolean/带期限值 | 标记玩家在市场附近的敌对行为   |
+| `MemFlags.MARKET_DO_NOT_INIT_COMM_LISTINGS`               | boolean          | 阻止市场自动初始化通信目录条目 |
 
 这些键向读取它们的功能提供市场状态。实际势力、产业与子市场继续通过对应结构方法设置，单独写入巡逻标志并没有创建军事设施或生成巡逻队。
 
@@ -138,39 +138,40 @@ boolean patrol = memory.getBoolean(MemFlags.MARKET_PATROL);
 
 ### 经济集合查询速查表
 
-| 查询入口 | 返回内容与用途 |
-|---|---|
-| `getMarket(id)` | 按市场 ID 取得 Foundry 等指定市场 |
-| `getMarketsCopy()` | 遍历当前市场名单副本 |
-| `getMarkets(location)` | 取得指定地点中的市场 |
-| `getLocationsWithMarkets()` / `getStarSystemsWithMarkets()` | 取得具有市场的地点或星系 |
-| `getMarketsWithSameGroup(market)` / `getMarketsInGroup(group)` | 查询经济组内市场，组由 `econGroup` 区分 |
-| `getNumMarkets()` / `getAllCommodityIds()` | 记录当前市场数量与已注册商品 ID |
-| `getCommoditySpec(id)` | 取得商品全局规格，当前库存从市场商品对象读取 |
+| 查询入口                                                       | 返回内容与用途                               |
+| -------------------------------------------------------------- | -------------------------------------------- |
+| `getMarket(id)`                                                | 按市场 ID 取得 Foundry 等指定市场            |
+| `getMarketsCopy()`                                             | 遍历当前市场名单副本                         |
+| `getMarkets(location)`                                         | 取得指定地点中的市场                         |
+| `getLocationsWithMarkets()` / `getStarSystemsWithMarkets()`    | 取得具有市场的地点或星系                     |
+| `getMarketsWithSameGroup(market)` / `getMarketsInGroup(group)` | 查询经济组内市场，组由 `econGroup` 区分      |
+| `getNumMarkets()` / `getAllCommodityIds()`                     | 记录当前市场数量与已注册商品 ID              |
+| `getCommoditySpec(id)`                                         | 取得商品全局规格，当前库存从市场商品对象读取 |
 
 同一经济组内的市场相互贸易，并按组限制经济可见范围。查询只取得这些关系；要改变所属经济组，设置市场的 `econGroup`。本例使用现有分组，日志记录组内与地点内市场数量。
 
 ### 市场状态速查表
 
-| 入口 | 作用 | 观察重点 |
-| --- | --- | --- |
-| `getId()` / `getName()` / `getSize()` | 读取市场身份和规模 | 与创建参数一致 |
-| `getPrimaryEntity()` / `getConnectedEntities()` | 读取实体绑定 | 主实体是 `GearIn_foundry` |
-| `getFactionId()` / `getFaction()` | 读取市场势力 | 返回 `gear_industry` |
-| `getSurveyLevel()` / `setSurveyLevel(...)` | 读取或设置勘测等级 | 影响市场条件的可见状态 |
-| `getTariff()` | 读取税率 `MutableStat` | `getModifiedValue()` 是当前生效值 |
-| `getCommodityData(id)` | 取得单个商品数据 | 同时检查库存和可得量 |
-| `getDemandPrice(...)` / `getSupplyPrice(...)` | 读取指定数量的市场买入金额和卖出金额 | 价格随库存和经济更新变化 |
-| `getPeopleCopy()` / `getAdmin()` | 读取人物和管理员 | `getAdmin()` 可能创建默认管理员 |
-| `getCommDirectory()` | 取得通信目录 | 条目数量独立于人物列表 |
-| `isFreePort()` / `setFreePort(...)` | 读取或修改自由港状态 | 自由港会改变违禁品判定 |
-| `hasSubmarket(...)` / `addSubmarket(...)` / `removeSubmarket(...)` | 查询、添加和移除子市场 | 以 spec ID 区分入口 |
+| 入口                                                               | 作用                                 | 观察重点                          |
+| ------------------------------------------------------------------ | ------------------------------------ | --------------------------------- |
+| `getId()` / `getName()` / `getSize()`                              | 读取市场身份和规模                   | 与创建参数一致                    |
+| `getPrimaryEntity()` / `getConnectedEntities()`                    | 读取实体绑定                         | 主实体是 `GearIn_foundry`         |
+| `getFactionId()` / `getFaction()`                                  | 读取市场势力                         | 返回 `gear_industry`              |
+| `getSurveyLevel()` / `setSurveyLevel(...)`                         | 读取或设置勘测等级                   | 影响市场条件的可见状态            |
+| `getTariff()`                                                      | 读取税率 `MutableStat`               | `getModifiedValue()` 是当前生效值 |
+| `getCommodityData(id)`                                             | 取得单个商品数据                     | 同时检查库存和可得量              |
+| `getDemandPrice(...)` / `getSupplyPrice(...)`                      | 读取指定数量的市场买入金额和卖出金额 | 价格随库存和经济更新变化          |
+| `getPeopleCopy()` / `getAdmin()`                                   | 读取人物和管理员                     | `getAdmin()` 可能创建默认管理员   |
+| `getCommDirectory()`                                               | 取得通信目录                         | 条目数量独立于人物列表            |
+| `isFreePort()` / `setFreePort(...)`                                | 读取或修改自由港状态                 | 自由港会改变违禁品判定            |
+| `hasSubmarket(...)` / `addSubmarket(...)` / `removeSubmarket(...)` | 查询、添加和移除子市场               | 以 spec ID 区分入口               |
 
 ## 完整最小例
 
 三个类保存到前述路径，保留按顺序追加的生涯登记。
 
 ::: details 完整成品：GearInMarketBuilder
+
 ```java
 package data.scripts.gearin.campaign;
 
@@ -231,9 +232,11 @@ public class GearInMarketBuilder implements EveryFrameScript {
     }
 }
 ```
+
 :::
 
 ::: details 完整成品：GearInMarketInteraction
+
 ```java
 package data.scripts.gearin.campaign;
 
@@ -338,9 +341,11 @@ public class GearInMarketInteraction implements EveryFrameScript {
     }
 }
 ```
+
 :::
 
 ::: details 完整成品：GearInEconomyProbe
+
 ```java
 package data.scripts.gearin.campaign;
 
@@ -443,6 +448,7 @@ public class GearInEconomyProbe implements EveryFrameScript {
     }
 }
 ```
+
 :::
 
 ## 验证方案

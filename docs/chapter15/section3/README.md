@@ -2,9 +2,9 @@
 
 本节把金属交易放进市场酒吧：工人收购 100 金属，支付 5000 信用点，玩家可以接受、拒绝或暂时离开。交易在一次对话中完成，邀请却可能继续留在酒吧中。我们分别处理事件生成、对话结束和活动期限，让暂时离开后的再次交互继续使用原事件。
 
-*本节预期阅读时间：\~32 分钟。*
+_本节预期阅读时间：\~32 分钟。_
 
-*本节预期操作时间：\~40 分钟。*
+_本节预期操作时间：\~40 分钟。_
 
 ## 学习目标
 
@@ -166,14 +166,14 @@ if (OPTION_LEAVE.equals(optionData)) {
 
 ### 酒吧接入速查表
 
-| 对象或方法 | 作用 | 本例中的结果 |
-| --- | --- | --- |
-| `BarEventManager` | 抽取、跟踪和回收事件 | 管理 `active` 与 `timeout` |
-| `BaseBarEventCreator` | 提供事件实例和抽取参数 | 生成 `GearInBarEvent` |
-| `shouldShowAtMarket` | 判断市场是否显示事件 | 仅太空港市场显示 |
-| `addPromptAndOption` | 写酒吧文本和选项 | `optionData` 使用事件实例 |
-| `notifyWasInteractedWith` | 移除已处理事件并设置冷却 | 接受、拒绝调用 |
-| `BarEventDialogPlugin` | 在 `BarCMD` 与事件之间转发回调 | 结束后交还 `BarCMD` |
+| 对象或方法                | 作用                           | 本例中的结果               |
+| ------------------------- | ------------------------------ | -------------------------- |
+| `BarEventManager`         | 抽取、跟踪和回收事件           | 管理 `active` 与 `timeout` |
+| `BaseBarEventCreator`     | 提供事件实例和抽取参数         | 生成 `GearInBarEvent`      |
+| `shouldShowAtMarket`      | 判断市场是否显示事件           | 仅太空港市场显示           |
+| `addPromptAndOption`      | 写酒吧文本和选项               | `optionData` 使用事件实例  |
+| `notifyWasInteractedWith` | 移除已处理事件并设置冷却       | 接受、拒绝调用             |
+| `BarEventDialogPlugin`    | 在 `BarCMD` 与事件之间转发回调 | 结束后交还 `BarCMD`        |
 
 ## 完整最小例
 

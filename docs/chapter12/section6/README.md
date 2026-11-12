@@ -2,9 +2,9 @@
 
 特殊物品可以保存附加数据，并通过插件提供显示与交互。本节制作两件物品：Salvage Token 在玩家货舱右键消耗，换取 10 补给；Refinery Core 在产业实验中提高 3 档稀有金属供给，再解除效果。两种用途分别说明货舱动作与产业数据怎样调用插件。
 
-*本节预期阅读时间：\~22 分钟。*
+_本节预期阅读时间：\~22 分钟。_
 
-*本节预期操作时间：\~30 分钟。*
+_本节预期操作时间：\~30 分钟。_
 
 ## 学习目标
 
@@ -140,17 +140,17 @@ if (spec != null) {
 
 ### 特殊物品规格速查表
 
-| 字段与读取入口 | 用途 |
-|---|---|
-| `name`、`id`；`getName()`、`getId()` | 显示名称与稳定 ID |
-| `tags`；`getTags()`、`hasTag()` | 分类与读取方的筛选 |
-| `tech/manufacturer`；`getManufacturer()` | 设计来源文本 |
-| `rarity`、`base price`；`getRarity()`、`getBasePrice()` | 掉落选择参数与默认价格 |
-| `stack size`、`cargo space`；`getStackSize()`、`getCargoSpace()` | 堆叠上限与单件空间 |
-| `baseRaidDanger`；`getBaseDanger()` | 突袭危险度 |
-| `icon`、两列声音；`getIconName()`、`getSoundId()`、`getSoundIdDrop()` | 图标与已登记声音 |
+| 字段与读取入口                                                        | 用途                       |
+| --------------------------------------------------------------------- | -------------------------- |
+| `name`、`id`；`getName()`、`getId()`                                  | 显示名称与稳定 ID          |
+| `tags`；`getTags()`、`hasTag()`                                       | 分类与读取方的筛选         |
+| `tech/manufacturer`；`getManufacturer()`                              | 设计来源文本               |
+| `rarity`、`base price`；`getRarity()`、`getBasePrice()`               | 掉落选择参数与默认价格     |
+| `stack size`、`cargo space`；`getStackSize()`、`getCargoSpace()`      | 堆叠上限与单件空间         |
+| `baseRaidDanger`；`getBaseDanger()`                                   | 突袭危险度                 |
+| `icon`、两列声音；`getIconName()`、`getSoundId()`、`getSoundIdDrop()` | 图标与已登记声音           |
 | `plugin`、`plugin params`；`getNewPluginInstance(...)`、`getParams()` | 插件创建与规格级参数字符串 |
-| `desc`、`order`；`getDesc()`、`getOrder()` | 描述正文与列表排序 |
+| `desc`、`order`；`getDesc()`、`getOrder()`                            | 描述正文与列表排序         |
 
 规格的 `setDesc()`、`setName()`、`setIconName()`、`setBasePrice()`、`setManufacturer()`、`setParams()` 与 `setOrder()` 修改全局定义，随后读取同一规格的插件也会受影响。临时实例状态保存到 data，插件依当前栈解释它。
 

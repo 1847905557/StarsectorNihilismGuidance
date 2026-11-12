@@ -20,7 +20,7 @@ _本节预期操作时间：\~40 分钟。_
 ## 前置知识
 
 - [C14-S3] 的生涯实体、市场对象和交互对话入口；
-- [C15-S1] 的 `InteractionDialogAPI`、目标对象和关闭语义；
+- [C16-S1] 的 `InteractionDialogAPI`、目标对象和关闭语义；
 - Java 接口实现、继承和布尔状态；
 - `CargoAPI` 的商品数量、移除商品和 `credits` 读写。
 
@@ -84,7 +84,7 @@ public void addPromptAndOption(InteractionDialogAPI dialog,
 }
 ```
 
-显示文字提供交易内容，`this` 把选择对应到当前实例。字符串选项会进入酒吧的另一条规则路径，[C15-S5] 使用那种入口接任务；这里让 Java 事件接收玩家的选择。
+显示文字提供交易内容，`this` 把选择对应到当前实例。字符串选项会进入酒吧的另一条规则路径，[C16-S5] 使用那种入口接任务；这里让 Java 事件接收玩家的选择。
 
 ## 进入事件，重新建立本次选项
 

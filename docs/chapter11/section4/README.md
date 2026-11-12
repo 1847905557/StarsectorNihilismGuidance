@@ -20,7 +20,7 @@ _本节预期操作时间：\~40 分钟。_
 
 - [C4-S4] 的窑级主体、模块与 `GearIn_kiln_combat` 装配；
 - [C11-S3] 的成员 `stats` 更新和派生值读取；
-- [C11-S4] 的 `FleetMemberAPI` 成员归属与可部署状态；
+- [C11-S3] 的 `FleetMemberAPI` 成员归属与可部署状态；
 - Java 对象引用、集合遍历、异常处理和日志输出；
 - 能够打开舰队界面观察装配，并在 `starsector.log` 搜索固定前缀。
 
@@ -438,7 +438,7 @@ public class GearInModuleInspector implements EveryFrameScript {
 2. 新建存档，等待入口执行后搜索 `GearIn variant refitter`，记录成员 ID、槽位武器、幅能、分组、OP 与 `REFIT` 来源。
 3. 打开舰队界面，按成员 ID 定位演示成员，核对武器、武器组、船插、散热和电容；重新取得装配确认应用结果。
 4. 搜索同一轮执行的 `GearIn module inspector`、`GearIn module` 和 `GearIn module JSON`，记录模块槽、模块来源和 JSON 长度。
-5. 与 [C11-S4] 保留的未改装狼比较 `WS 001` 与幅能数量，确认两艘拥有各自装配；保存读档后再查看改装狼。
+5. 与 [C11-S3] 保留的未改装狼比较 `WS 001` 与幅能数量，确认两艘拥有各自装配；保存读档后再查看改装狼。
 6. 核对 MOD 的 `data/variants/`，确认本节 JSON 观察返回数据对象，目录中的正式装配仍是已保存的数据文件。
 
 预期结果：

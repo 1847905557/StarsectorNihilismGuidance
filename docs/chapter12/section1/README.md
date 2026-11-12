@@ -18,7 +18,7 @@ _本节预期操作时间：\~30 分钟。_
 
 ## 前置知识
 
-- [C3-S4] 的星系、行星和生涯对象创建；
+- [C3-S3] 的星系、行星和生涯对象创建；
 - [C7-S1] 的生涯入口和日志读取；
 - [C10-S2] 的 `StarSystemAPI` 与 `SectorEntityToken` 查询；
 - 理解 Java 接口、集合遍历和 `EveryFrameScript` 生命周期。
@@ -66,13 +66,13 @@ planet.setFaction("gear_industry");
 
 当前加入 `trade_center` 条件、`population` 与 `spaceport` 产业，并添加 `open_market`、`black_market`、`storage`。条件提供市场效果，产业参与人口、生产与基础设施，子市场提供实际交易和存储入口。
 
-这些对象都用已注册 ID 创建。`getConditions()`、`getIndustries()` 与 `getSubmarketsCopy()` 读取当前集合，`hasSubmarket(...)`、`addSubmarket(...)` 与 `removeSubmarket(...)` 处理交易入口的存在状态。当前先采用原版内容，[C12-S4]、[C12-S5] 与 [C12-S7] 分别扩展交易规则、产业与条件。
+这些对象都用已注册 ID 创建。`getConditions()`、`getIndustries()` 与 `getSubmarketsCopy()` 读取当前集合，`hasSubmarket(...)`、`addSubmarket(...)` 与 `removeSubmarket(...)` 处理交易入口的存在状态。当前先采用原版内容，[C12-S3]、[C12-S4] 与 [C12-S6] 分别扩展交易规则、产业与条件。
 
 ## 读取补给库存与报价
 
 市场建好后，`GearInEconomyProbe.logMarket(...)` 从经济集合取得 Foundry，读取原版补给 `supplies` 的商品状态。`getCommodityData(id)` 返回 `CommodityOnMarketAPI`，其中 `getStockpile()` 是库存状态，`getAvailable()` 是经济可得量。对象存在时仍可以没有库存，读取结果各自对应当前市场。
 
-价格方向以市场为主体：`getDemandPrice("supplies", 10, true)` 表示市场买入 10 补给，即用户卖出；`getSupplyPrice(...)` 表示市场卖出，即用户买入。**这两个返回值是指定数量的商品金额**，税额由子市场交易流程处理。价格还会随库存、供需和经济刷新改变，[C12-S3] 进一步说明这些商品数据。
+价格方向以市场为主体：`getDemandPrice("supplies", 10, true)` 表示市场买入 10 补给，即用户卖出；`getSupplyPrice(...)` 表示市场卖出，即用户买入。**这两个返回值是指定数量的商品金额**，税额由子市场交易流程处理。价格还会随库存、供需和经济刷新改变，[C12-S2] 进一步说明这些商品数据。
 
 交互脚本另外比较税率、自由港与仓储。税率是 `MutableStat`，通过来源 `GearIn_market_interaction_tariff` 添加 0.05 的平加修饰；自由港切换会影响当前违禁品判断，仓储用子市场 ID 添加。记录临时状态后，脚本移除税率来源、恢复自由港，并在原来没有仓储时移除新入口。这样日志能确认每项写入及恢复，稍后打开的市场采用恢复后的状态。
 

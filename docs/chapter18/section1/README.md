@@ -18,7 +18,7 @@ _本节预期操作时间：\~25 分钟。_
 ## 前置知识
 
 - [C1-S1] 的 MOD 目录与 `mod_info.json`；
-- [C6-S3] 的 Gradle 工程、`compileOnly` 和 JAR 输出；
+- [C6-S1] 的 Gradle 工程、`compileOnly` 和 JAR 输出；
 - [C7-S1] 的 `BaseModPlugin` 与 `onApplicationLoad()`。
 
 ## 声明启动器依赖
@@ -53,7 +53,7 @@ _本节预期操作时间：\~25 分钟。_
 
 ## 建立编译 classpath
 
-打开 [C6-S3] 的 `build.gradle`，沿用 `gradle.properties` 中的 `starsectorRoot`，从游戏根目录找到 `mods`。先补齐下面的目录变量：
+打开 [C6-S1] 的 `build.gradle`，沿用 `gradle.properties` 中的 `starsectorRoot`，从游戏根目录找到 `mods`。先补齐下面的目录变量：
 
 ```groovy
 def gameRoot = file(providers.gradleProperty("starsectorRoot").get())
@@ -78,7 +78,7 @@ dependencies {
 }
 ```
 
-第一条 `compileOnly` 保留 [C6-S3] 的游戏 API，循环再把四个目录中的 JAR 加入编译 classpath。保存后，为实际文件列表补一个查看任务：
+第一条 `compileOnly` 保留 [C6-S1] 的游戏 API，循环再把四个目录中的 JAR 加入编译 classpath。保存后，为实际文件列表补一个查看任务：
 
 ```groovy
 tasks.register("printCompileClasspath") {
@@ -144,7 +144,7 @@ GraphicsLib 用于 shader、动态光照以及 material/normal 贴图管线。�
 }
 ```
 
-`build.gradle` 沿用 [C6-S3] 的 Java 17、源码目录和 JAR 任务，并把依赖目录加入已有的 `dependencies`：
+`build.gradle` 沿用 [C6-S1] 的 Java 17、源码目录和 JAR 任务，并把依赖目录加入已有的 `dependencies`：
 
 ```groovy
 plugins {

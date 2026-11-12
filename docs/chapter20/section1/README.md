@@ -17,8 +17,8 @@ _本节预期操作时间：\~30 分钟。_
 
 ## 前置知识
 
-- [C8-S7] 的分层渲染插件、渲染图层、承载实体和视口剔除；
-- [C8-S3] 的每帧推进、暂停判断和战斗实例边界；
+- [C8-S5] 的分层渲染插件、渲染图层、承载实体和视口剔除；
+- [C8-S1] 的每帧推进、暂停判断和战斗实例边界；
 - 理解 Java 数组、循环、构造器和字段；
 - 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
 
@@ -36,7 +36,7 @@ runcode com.fs.starfarer.api.combat.CombatEngineAPI e = com.fs.starfarer.api.Glo
 
 游戏通过 LWJGL 2 提供 OpenGL 接口。`GL11` 包含矩阵、颜色、混合、线宽、客户端数组和基础绘制命令；`GL15`、`GL20` 用于查询需要保存的缓冲区绑定与 shader program。OpenGL 命令作用于当前线程的渲染上下文，因此本页把绘制放在分层插件的 `render(...)` 中。
 
-[C8-S7] 介绍了分层插件和承载实体。本例在 `init(...)` 准备可复用顶点，在 `advance(...)` 同步承载实体，在 `render(...)` 绘制，再由 `isExpired()` 与 `cleanup()` 结束实例。战斗入口把插件交给引擎：
+[C8-S5] 介绍了分层插件和承载实体。本例在 `init(...)` 准备可复用顶点，在 `advance(...)` 同步承载实体，在 `render(...)` 绘制，再由 `isExpired()` 与 `cleanup()` 结束实例。战斗入口把插件交给引擎：
 
 ```java
 if (ship != null) {

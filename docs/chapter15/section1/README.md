@@ -19,9 +19,9 @@ _本节预期操作时间：\~30 分钟。_
 ## 前置知识
 
 - [C14-S3] 的交互对话框生命周期；
-- [C15-S1] 的 `InteractionDialogAPI` 与选项分支；
+- [C16-S1] 的 `InteractionDialogAPI` 与选项分支；
 - [C1-S7] 的 CSV 表头、单元格与引号；
-- [C15-S5] 的 `trigger`、条件、脚本与选项最小记录。
+- [C16-S5] 的 `trigger`、条件、脚本与选项最小记录。
 
 ## 给独立舰队安排通讯问候
 
@@ -62,7 +62,7 @@ $faction.id == independent
 !$entity.isHostile score:100",,,,独立势力的非敌对问候
 ```
 
-读取时跳过空行与 `#` 子行，其余表达式去掉首尾空白后依次求值。任意一条失败，候选就不成立；`score:100` 改变第二条条件的分值，[C16-S2] 继续说明计分与选择。
+读取时跳过空行与 `#` 子行，其余表达式去掉首尾空白后依次求值。任意一条失败，候选就不成立；`score:100` 改变第二条条件的分值，[C15-S2] 继续说明计分与选择。
 
 ## 命中后恢复通讯菜单
 
@@ -75,7 +75,7 @@ FireAll PopulateOptions",,,独立势力的非敌对问候
 
 两行按顺序执行，后面的菜单规则能取得前面刚写入的 `fleetConvMain`。脚本也按换行跳过空行和 `#` 注释，普通命令从上到下执行。
 
-命令简单名由 `data/config/settings.json` 的 `ruleCommandPackages` 查找，原版基础包为 `com.fs.starfarer.api.impl.campaign.rulecmd`。命令没有对应类时，在加载阶段报告错误，[C16-S4] 再接入自有命令包。
+命令简单名由 `data/config/settings.json` 的 `ruleCommandPackages` 查找，原版基础包为 `com.fs.starfarer.api.impl.campaign.rulecmd`。命令没有对应类时，在加载阶段报告错误，[C15-S4] 再接入自有命令包。
 
 命令参数需要字面双引号时，CSV 使用两个连续双引号转义。例如 `SetShortcut optionId "ESCAPE"` 在单元格中写成 `SetShortcut optionId ""ESCAPE""`。
 
@@ -115,7 +115,7 @@ GearIn_rules_options,PopulateOptions,,,,"GearIn_rules_apply_open:检查通讯记
 
 玩家看到两段显示文字，选项数据分别为 `GearIn_rules_apply_open` 与 `cutCommLink`。两段格式默认顺序为 0，三段格式把首段解析为数值。读取器按半角冒号拆分，显示文字多出半角冒号就会改变这份结构；ID 以 `$` 开头时加载失败。
 
-和条件、脚本一样，`options` 中以 `#` 开头的子行是注释。选项 ID 与 `$option` 的回流关系由 [C16-S2] 负责。
+和条件、脚本一样，`options` 中以 `#` 开头的子行是注释。选项 ID 与 `$option` 的回流关系由 [C15-S2] 负责。
 
 `notes` 保存用途、数据归属与规则关系，不参与运行。局部记录如下：
 

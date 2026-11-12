@@ -14,24 +14,12 @@ export const guidanceFiles = [
   'css-guidelines.md',
   'terminology.md',
 ];
-const fixedLevels = new Map([
-  ['学习目标', [2]],
-  ['前置知识', [2]],
-  ['文件与 API 链路', [2]],
-  ['完整最小例', [2]],
-  ['验证方案', [2, 3]],
-  ['故障分析', [2]],
-  ['总结', [2]],
-  ['建议参考项', [2]],
-]);
-const aliases = new Map([
-  ['梳理文件与 API 链路', '文件与 API 链路'],
-  ['梳理调用关系', '文件与 API 链路'],
-  ['检查完整成品', '完整最小例'],
-  ['组合完整成品', '完整最小例'],
-  ['组装完整成品', '完整最小例'],
-  ['组装完整实现', '完整最小例'],
-]);
+const fixedHeadings = ['前置知识', '常见问题', '建议参考项'];
+const removedHeadings = ['学习目标', '总结'];
+const timeLines = [
+  ['阅读时间', /^_本节预期阅读时间：\\~\d+ 分钟。_$/],
+  ['操作时间', /^_本节预期操作时间：\\~\d+ 分钟。_$/],
+];
 const baseline =
   /^本章技术基线：Starsector `[^`\s]+`(?: 与 Java [1-9]\d*|，Java [1-9]\d*)?(?:；(?:前置知识|依赖基线|可选依赖基线|前置依赖)：\S.+)?。$/;
 const imageName = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:gif|jpe?g|png|svg|webp)$/i;
@@ -130,8 +118,8 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
   if (chapter) {
     const content = lines.map((value, line) => ({ value, line })).filter(({ value, line }) => value.trim() && !hidden.has(line));
     const baselines = content.filter(({ value }) => value.startsWith('本章技术基线'));
-    if (baselines.length !== 1) add(0, 'chapter-baseline', '章页必须包含一个本章技术基线段落；当前 ' + baselines.length + ' 个');
-    else {
+    if (baselines.length > 1) add(0, 'chapter-baseline', '章页最多包含一个本章技术基线段落；当前 ' + baselines.length + ' 个');
+    else if (baselines.length === 1) {
       const item = baselines[0];
       if (!baseline.test(item.value)) add(item.line, 'chapter-baseline', '本章技术基线格式错误');
       if (content[1] !== item) add(item.line, 'chapter-baseline', '本章技术基线必须紧接 H1');
@@ -145,25 +133,23 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
     if (catalogs.length === 1 && markers.length === 1) {
       if (content.at(-1) !== markers[0] || content.at(-2)?.value !== '## 本章各节')
         add(markers[0].line, 'chapter-catalog', '章页必须以本章各节和独立自动列表占位符结束');
-      if (baselines.length === 1 && !content.some((item) => item.line > baselines[0].line && item.line < catalogs[0].line))
-        add(0, 'chapter-introduction', '章页必须提供章介绍');
+      const start = baselines.length === 1 ? baselines[0].line : (h1[0]?.line ?? 0);
+      if (!content.some((item) => item.line > start && item.line < catalogs[0].line)) add(0, 'chapter-introduction', '章页必须提供章介绍');
     }
   }
   if (tutorial) {
     for (const heading of titles) {
       if (orderedHeading.test(heading.title)) add(heading.line, 'heading-number', '标题使用主题描述');
-      if (section && fixedLevels.has(heading.title) && !fixedLevels.get(heading.title).includes(heading.level)) {
-        add(heading.line, 'section-heading', '固定标题层级错误：' + heading.title);
+      if (section && fixedHeadings.includes(heading.title) && heading.level !== 2) {
+        add(heading.line, 'section-heading', '固定标题使用 H2：' + heading.title);
       }
-      if (section && aliases.has(heading.title)) add(heading.line, 'section-heading', '固定标题使用 ' + aliases.get(heading.title));
+      if (section && removedHeadings.includes(heading.title)) add(heading.line, 'section-heading', '节页不再使用该标题：' + heading.title);
     }
-    const tableOwners = new Map();
     for (let index = 0; index < tokens.length; index++) {
       const table = tokens[index];
       if (table.type !== 'table_open') continue;
       const end = tokens.findIndex((item, after) => after > index && item.type === 'table_close');
       const content = tokens.slice(index, end);
-      const owner = titles.filter((heading) => heading.line < table.map[0] && heading.level > 1).at(-1);
       const rows = content.filter((item) => item.type === 'tr_open');
       const columns = content.filter((item) => item.type === 'th_open').length;
       const sourceRows = lines.slice(table.map[0], table.map[1]).filter((line) => line.trim());
@@ -174,16 +160,9 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
             .replace(/^\||\|$/g, '')
             .split(/(?<!\\)\|/).length,
       );
-      if (widths.some((width) => width !== columns)) add(table.map[0], 'tutorial-table', '速查表各行列数必须一致');
-      if (rows.length < 3 || columns < 2) add(table.map[0], 'tutorial-table', '速查表至少两列和两个数据行');
-      if (!owner || !owner.title.includes('速查表')) add(table.map[0], 'tutorial-table', '表格必须由包含速查表的 H2 或 H3 管理');
-      else {
-        tableOwners.set(owner.line, (tableOwners.get(owner.line) || 0) + 1);
-        const between = lines.slice(owner.line + 1, table.map[0]).filter((line) => line.trim());
-        if (between.length > 1) add(table.map[0], 'tutorial-table', '速查表标题后使用零段或一段引言');
-      }
+      if (widths.some((width) => width !== columns)) add(table.map[0], 'tutorial-table', '表格各行列数必须一致');
+      if (rows.length < 3 || columns < 2) add(table.map[0], 'tutorial-table', '表格至少两列和两个数据行');
     }
-    for (const [line, count] of tableOwners) if (count > 1) add(line, 'tutorial-table', '速查表标题只能管理一张表');
   }
   if (section) {
     for (const heading of titles) {
@@ -191,40 +170,14 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
       const content = lines
         .map((value, line) => ({ value, line }))
         .filter((item) => item.line > heading.line && item.line < end && item.value.trim() && !hidden.has(item.line));
-      if (heading.title === '验证方案') {
-        const steps = content.filter(({ value }) => /^\d+\.\s+\S/.test(value.trim()));
-        const labels = content.filter(({ value }) => value.trim() === '预期结果：');
-        const prerequisites = content.filter(({ value }) => /^前置数据：/.test(value));
-        const outcomes = content.filter(({ value, line }) => /^[-*]\s+\S/.test(value.trim()) && (!labels.length || line > labels[0].line));
-        if (!steps.length) add(heading.line, 'validation', '验证方案缺少数字步骤列表');
-        if (labels.length !== 1) add(heading.line, 'validation', '验证方案必须有一个预期结果标签');
-        if (!outcomes.length) add(heading.line, 'validation', '验证方案缺少预期结果列表');
-        if (prerequisites.length > 1 || (prerequisites.length && content[0] !== prerequisites[0]))
-          add(heading.line, 'validation', '前置数据使用一个起始段落');
-        if (steps.length && labels.length && steps.at(-1).line > labels[0].line)
-          add(heading.line, 'validation', '验证动作位于预期结果之前');
-        for (const group of [steps, outcomes])
-          for (let index = 1; index < group.length; index++) {
-            if (lines.slice(group[index - 1].line + 1, group[index].line).some((line) => !line.trim()))
-              add(group[index].line, 'validation', '验证动作和预期结果使用紧凑列表');
-          }
-        for (const item of content)
-          if (/!\[/.test(item.value) && outcomes.length && item.line <= outcomes.at(-1).line)
-            add(item.line, 'validation-image', '验证图片必须位于预期结果列表之后');
-        if (outcomes.length) {
-          const trailing = content.filter((item) => item.line > outcomes.at(-1).line);
-          if (trailing.length && !trailing.some(({ value }) => /!\[/.test(value)))
-            add(trailing[0].line, 'validation-trailing', '预期结果之后只附验证图片与观察说明');
-        }
-      }
-      if (heading.title === '故障分析') {
+      if (heading.title === '常见问题') {
         let previousSolution;
         for (let index = 0; index < content.length; index += 2) {
           const symptom = content[index],
             solution = content[index + 1];
-          if (!/^- \*\*.+?\*\*[：:]\S/.test(symptom.value)) add(symptom.line, 'fault-symptom', '故障条目以加粗症状与原因起句');
+          if (!/^- \*\*.+?\*\*[：:]\S/.test(symptom.value)) add(symptom.line, 'fault-symptom', '常见问题条目以加粗症状与原因起句');
           if (!solution || !/^ {4}- \*\*解决方案\*\*[：:]\S/.test(solution.value))
-            add(symptom.line, 'fault-solution', '故障分析问题后必须紧跟解决方案子项');
+            add(symptom.line, 'fault-solution', '常见问题条目后必须紧跟解决方案子项');
           else if (solution.line !== symptom.line + 1) add(solution.line, 'fault-spacing', '解决方案紧跟症状行');
           if (previousSolution && symptom.line === previousSolution.line + 1) add(symptom.line, 'fault-spacing', '故障条目之间保留空行');
           previousSolution = solution;
@@ -238,13 +191,21 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
             add(item.line, 'references', '参考项采用行内代码对象与冒号说明');
       }
     }
-    if (
-      Number(/chapter(\d+)/.exec(rel)[1]) >= 6 &&
-      titles.some((item) => /^完整最小例/.test(item.title)) &&
-      fences.some((item) => item.info.startsWith('java') && /\bpackage\s/.test(item.content)) &&
-      !lines.some((line) => /^::: details 完整成品：/.test(line))
-    )
-      add(0, 'complete-example', '完整最小例缺少完整成品 details 容器');
+    const content = lines.map((value, line) => ({ value, line })).filter(({ value, line }) => value.trim() && !hidden.has(line));
+    const rule = content.findIndex(({ value }) => value.trim() === '---');
+    if (rule < 2 || content.slice(1, rule).some(({ value }) => /^#{1,6}\s/.test(value)))
+      add(content[1]?.line ?? 0, 'section-lead', '节页 H1 后先写导语，再以独立的分割线 --- 与时间段落分隔');
+    else if (lines[content[rule].line - 1]?.trim()) add(content[rule].line, 'section-lead', '分割线前必须保留空行');
+    const start = rule < 2 ? 0 : rule;
+    timeLines.forEach(([name, pattern], index) => {
+      const item = content[start + index + 1];
+      if (!item || !pattern.test(item.value.trim()))
+        add(item?.line ?? 0, 'section-time', '节页分割线后依次写阅读时间与操作时间：缺少' + name);
+    });
+    const body = content[start + timeLines.length + 1];
+    if (rule >= 2 && body && !/^## \S/.test(body.value)) add(body.line, 'section-time', '时间段落后必须紧跟 H2 标题');
+    if (Number(/chapter(\d+)/.exec(rel)[1]) >= 6 && !titles.some((item) => item.title === '前置知识'))
+      add(0, 'section-heading', '第 6 章起节页必须包含前置知识');
   }
   if (dirname(path) === resolve(root, '.zcode') && basename(path) === 'workflow.md') {
     const visible = lines.filter((_, line) => !hidden.has(line)).join('\n');

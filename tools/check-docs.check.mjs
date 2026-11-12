@@ -16,8 +16,10 @@ test('chapter structure, baseline and automatic list are checked from the actual
   const root = await workspace(t),
     path = join(root, 'docs/chapter1/README.md');
   assert.deepEqual(await inspectDocument(path, chapter, { root }), []);
+  assert.deepEqual(await inspectDocument(path, chapter.replace('本章技术基线：Starsector `0.98.5a-RC3`。\n\n', ''), { root }), []);
   for (const [text, rule] of [
-    [chapter.replace('本章技术基线：Starsector `0.98.5a-RC3`。\n\n', ''), 'chapter-baseline'],
+    [chapter.replace('`0.98.5a-RC3`。', '0.98.5a-RC3'), 'chapter-baseline'],
+    [chapter.replace('章介绍。\n\n', ''), 'chapter-introduction'],
     [chapter.replace('<!-- AUTO:SECTION-LIST -->', ''), 'chapter-catalog'],
     [chapter + '\n尾部。\n', 'chapter-catalog'],
     [chapter.replace('## 本章各节', '### 本章各节'), 'chapter-catalog'],
@@ -43,20 +45,29 @@ test('section references and image identity use parsed Markdown and existing tar
   const diagnostics = await inspectDocument(path, '# 页面\n\n[C01-S1] C2-S1\n\n![](./image.png "other.png")\n', { root });
   for (const rule of ['section-reference', 'image-alt', 'image-title']) assert.ok(diagnostics.some((item) => item.rule === rule));
 });
-test('validation and fault lists retain their compact structure', async (t) => {
+const time = '导语。\n\n---\n\n_本节预期阅读时间：\\~10 分钟。_\n\n_本节预期操作时间：\\~5 分钟。_\n\n';
+test('section pages keep time lines, optional fixed headings and compact problem entries', async (t) => {
   const root = await workspace(t),
     path = join(root, 'docs/chapter1/section1/README.md');
   const valid =
-    '# 页面\n\n## 验证方案\n\n1. 启动。\n2. 观察。\n\n预期结果：\n\n- 显示结果。\n\n## 故障分析\n\n- **症状**：原因。\n    - **解决方案**：修正。\n\n## 总结\n\n完成。\n';
+    '# 页面\n\n' +
+    time +
+    '## 制作贴图\n\n正文。\n\n## 常见问题\n\n- **症状**：原因。\n    - **解决方案**：修正。\n\n## 建议参考项\n\n- `data/hulls`：参考。\n';
   assert.deepEqual(await inspectDocument(path, valid, { root }), []);
-  assert.ok(
-    (await inspectDocument(path, valid.replace('1. 启动。\n2.', '1. 启动。\n\n2.'), { root })).some((item) => item.rule === 'validation'),
-  );
-  assert.ok(
-    (await inspectDocument(path, valid.replace('    - **解决方案**', '- **解决方案**'), { root })).some(
-      (item) => item.rule === 'fault-solution',
-    ),
-  );
+  const rules = async (text) => (await inspectDocument(path, text, { root })).map((item) => item.rule);
+  assert.ok((await rules('# 页面\n\n' + time + '正文。\n')).includes('section-time'));
+  assert.ok((await rules(valid.replace('导语。\n\n---\n\n', ''))).includes('section-lead'));
+  assert.ok((await rules(valid.replace('---\n\n', ''))).includes('section-lead'));
+  assert.ok((await rules(valid.replace('导语。\n\n---', '导语。\n---'))).includes('section-lead'));
+  assert.ok((await rules(valid.replace('_本节预期操作时间：\\~5 分钟。_\n\n', ''))).includes('section-time'));
+  assert.ok((await rules(valid.replace('    - **解决方案**', '- **解决方案**'))).includes('fault-solution'));
+  assert.ok((await rules(valid.replace('## 制作贴图', '## 总结'))).includes('section-heading'));
+  assert.ok((await rules(valid.replace('## 常见问题', '### 常见问题'))).includes('section-heading'));
+  const later = join(root, 'docs/chapter6/section1/README.md');
+  await mkdir(join(root, 'docs/chapter6/section1'), { recursive: true });
+  const missing = await inspectDocument(later, valid, { root });
+  assert.ok(missing.some((item) => item.rule === 'section-heading' && item.message.includes('前置知识')));
+  assert.deepEqual(await inspectDocument(later, valid.replace('## 制作贴图', '## 前置知识\n\n- Java 基础。\n\n## 制作贴图'), { root }), []);
 });
 test('formal document set, reading routes and single-file checks share the same implementation', async (t) => {
   const root = await workspace(t),
@@ -83,10 +94,11 @@ test('formal document set, reading routes and single-file checks share the same 
   assert.ok((await checkDocs([directory], { root })).files.some((file) => file.diagnostics.some((item) => item.rule === 'guidance-route')));
 });
 
-test('table checks use source column counts and a semantic heading', async (t) => {
+test('table checks use source column counts without requiring a dedicated heading', async (t) => {
   const root = await workspace(t),
     path = join(root, 'docs/README.md');
-  const source = '# 页面\n\n## 字段速查表\n\n| 字段 | 说明 |\n| --- | --- |\n| A | 甲 |\n| B | 乙 |\n';
+  const source =
+    '# 页面\n\n## 设置战役\n\n字段含义：\n\n| 字段 | 说明 |\n| --- | --- |\n| A | 甲 |\n| B | 乙 |\n\n另一张：\n\n| 字段 | 说明 |\n| --- | --- |\n| C | 丙 |\n| D | 丁 |\n';
   assert.deepEqual(await inspectDocument(path, source, { root }), []);
   const broken = await inspectDocument(path, source.replace('| A | 甲 |', '| A | 甲 | 多列 |'), { root });
   assert.ok(broken.some((item) => item.rule === 'tutorial-table' && item.message.includes('列数')));

@@ -19,8 +19,8 @@ _本节预期操作时间：\~25 分钟。_
 ## 前置知识
 
 - [C7-S1] 的生涯加载回调；
-- [C16-S5] 的 `MemoryAPI` 与生涯保存；
-- [C17-S4] 的原版 common 文件路径和读写；
+- [C15-S5] 的 `MemoryAPI` 与生涯保存；
+- [C17-S2] 的原版 common 文件路径和读写；
 - [C18-S1] 的 LazyLib 运行时依赖与编译 classpath；
 - 能够读取 JSON 对象中的字符串和整数。
 
@@ -65,7 +65,7 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON(
 }
 ```
 
-`COMMON_FILE_NAME` 交给 common 文件接口，`DEFAULT_JSON_PATH` 交给 MOD 资源加载器。局部片段先取得旧次数和角色名，非空对象此时已保存一次，try-with-resources 结束时还会再次保存。这是读改写入口的实际行为，纯读取继续使用 [C17-S4] 的原版方法。
+`COMMON_FILE_NAME` 交给 common 文件接口，`DEFAULT_JSON_PATH` 交给 MOD 资源加载器。局部片段先取得旧次数和角色名，非空对象此时已保存一次，try-with-resources 结束时还会再次保存。这是读改写入口的实际行为，纯读取继续使用 [C17-S2] 的原版方法。
 
 ::: warning 默认资源也会接管解析失败的文件
 现有公共文件无法读取或解析时，双参 `loadCommonJSON` 会采用默认资源，并将非空默认对象保存到同一个文件。原来的计数因此可能重新从 0 开始。

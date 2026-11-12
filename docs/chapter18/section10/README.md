@@ -20,8 +20,8 @@ _本节预期操作时间：\~40 分钟。_
 ## 前置知识
 
 - [C14-S4] 的情报列表、地图位置与结束延迟；
-- [C16-S2] 理解 Rules trigger、`FireBest` 与 Memory 槽位；
-- [C16-S5] 理解 `MemoryAPI` 的布尔状态与生涯保存；
+- [C15-S2] 理解 Rules trigger、`FireBest` 与 Memory 槽位；
+- [C15-S5] 理解 `MemoryAPI` 的布尔状态与生涯保存；
 - [C18-S1] 已经接入 MagicLib 硬依赖与编译路径；
 - 能够编辑严格 JSON，并能从 `starsector.log` 定位稳定 ID。
 

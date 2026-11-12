@@ -18,9 +18,9 @@ _本节预期操作时间：\~15 分钟。_
 ## 前置知识
 
 - [C3-S3] 的入口与势力关系；
-- [C3-S4] 的 GearInSystemGenerator；
-- [C5-S3] 的 UI 反馈；
-- [C6-S2] 至 [C6-S4] 的源码目录、构建与加载；
+- [C3-S3] 的 GearInSystemGenerator；
+- [C5-S2] 的 UI 反馈；
+- [C6-S2] 至 [C6-S2] 的源码目录、构建与加载；
 - Java 继承、方法覆写、Map 与字符串。
 
 ## 让游戏加载入口类
@@ -117,7 +117,7 @@ public void afterGameSave() {
 
 ## 完整最小例
 
-保存入口类并继续使用 [C3-S4] 的生成器源码。src 中的两个包路径参与同一个 MOD 构建，关系设置与 UI 反馈由当前入口保留。
+保存入口类并继续使用 [C3-S3] 的生成器源码。src 中的两个包路径参与同一个 MOD 构建，关系设置与 UI 反馈由当前入口保留。
 
 ::: details 完整成品：GearInModPlugin
 

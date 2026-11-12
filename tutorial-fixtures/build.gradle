@@ -16,22 +16,22 @@ def gameRoot = file(starsectorRootProp.get())
 def modsRoot = file(providers.gradleProperty("starsectorModsRoot").getOrElse("${gameRoot}/mods"))
 def javaUnitIds = [
 	"C2-S1", "C2-S2", "C2-S3", "C2-S4",
-	"C3-S3", "C3-S4",
+	"C3-S3",
 	"C4-S1",
-	"C5-S3",
-	"C7-S1", "C7-S2", "C7-S4", "C7-S5",
-	"C8-S1", "C8-S3", "C8-S4", "C8-S5", "C8-S6", "C8-S7",
+	"C5-S2",
+	"C7-S1", "C7-S2", "C7-S3", "C7-S4",
+	"C8-S1", "C8-S2", "C8-S3", "C8-S4", "C8-S5",
 	"C9-S1", "C9-S2", "C9-S3",
 	"C10-S1", "C10-S2", "C10-S3", "C10-S4",
-	"C11-S1", "C11-S3", "C11-S4", "C11-S5",
-	"C12-S1", "C12-S2", "C12-S3", "C12-S4", "C12-S5", "C12-S6", "C12-S7",
+	"C11-S1", "C11-S3", "C11-S4",
+	"C12-S1", "C12-S2", "C12-S3", "C12-S4", "C12-S5", "C12-S6",
 	"C13-S1", "C13-S2", "C13-S3",
 	"C14-S1", "C14-S2", "C14-S3", "C14-S4",
-	"C15-S1", "C15-S2", "C15-S3", "C15-S4", "C15-S5",
-	"C16-S4", "C16-S5",
-	"C17-S5",
+	"C15-S4", "C15-S5",
+	"C16-S1", "C16-S2", "C16-S3", "C16-S4", "C16-S5",
+	"C17-S3",
 	"C18-S2", "C18-S3", "C18-S4", "C18-S6", "C18-S9", "C18-S11", "C18-S12",
-	"C19-S1", "C19-S2", "C19-S3", "C19-S4", "C19-S5", "C19-S6", "C19-S7",
+	"C19-S1", "C19-S2", "C19-S3", "C19-S4", "C19-S5",
 	"C20-S1", "C20-S2", "C20-S3", "C20-S4", "C20-S5"
 ]
 def shaderUnitIds = ["C20-S2", "C20-S3", "C20-S4", "C20-S5"]

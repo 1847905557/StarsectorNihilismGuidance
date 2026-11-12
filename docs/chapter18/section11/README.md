@@ -16,9 +16,9 @@ _本节预期操作时间：\~25 分钟。_
 
 ## 前置知识
 
-- [C3-S4] 的 `GearInSystemGenerator`、`GearIn` 星系和 `GearIn_planet1`；
+- [C3-S3] 的 `GearInSystemGenerator`、`GearIn` 星系和 `GearIn_planet1`；
 - [C4-S1] 定义的 `GearIn_artizan_combat` 装配；
-- [C16-S5] 的 Sector Memory 读写；
+- [C15-S5] 的 Sector Memory 读写；
 - [C18-S1] 的 MagicLib 硬依赖与类加载边界。
 
 ## 将布置器接在星系生成之后

@@ -511,7 +511,7 @@ data/world/factions/gear_industry.faction
 
 ![情报界面中的齿轮工业势力条目](./faction.png 'faction.png')
 
-图中展示了齿轮工业在势力列表中的位置与名称。实际配色按当前 `color` 核对，势力描述由 [C3-S5] 补充。
+图中展示了齿轮工业在势力列表中的位置与名称。实际配色按当前 `color` 核对，势力描述由 [C3-S4] 补充。
 
 ## 故障分析
 

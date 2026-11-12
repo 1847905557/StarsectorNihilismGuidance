@@ -19,10 +19,10 @@ _本节预期操作时间：\~25 分钟。_
 ## 前置知识
 
 - [C8-S1] 的战斗状态和结束判断；
-- [C8-S2] 的当前对象；
-- [C8-S3] 的插件登记和实例；
-- [C8-S4] 的数值与来源 ID；
-- [C7-S5] 的日志。
+- [C8-S1] 的当前对象；
+- [C8-S1] 的插件登记和实例；
+- [C8-S2] 的数值与来源 ID；
+- [C7-S4] 的日志。
 
 ## 选择事件与监听范围
 
@@ -113,7 +113,7 @@ public boolean notifyAboutToTakeHullDamage(Object param, ShipAPI ship,
 
 只保护一艘舰船时，将监听器挂到该舰船；接口也支持引擎范围。这个返回值针对本次结构伤害，不是修改舰船的永久减伤属性。
 
-部署事件使用 `FleetMemberDeploymentListener`，它只登记到引擎。`reportFleetMemberDeployed(...)` 提供本次 `DeployedFleetMemberAPI`，从部署成员取得舰体的关系沿用 [C8-S2]。
+部署事件使用 `FleetMemberDeploymentListener`，它只登记到引擎。`reportFleetMemberDeployed(...)` 提供本次 `DeployedFleetMemberAPI`，从部署成员取得舰体的关系沿用 [C8-S1]。
 
 ## 在舰船上推进状态
 
@@ -163,7 +163,7 @@ public int getFighterOPCost(MutableShipStatsAPI stats, FighterWingSpecAPI fighte
 }
 ```
 
-武器成本减 2，战机成本减 1，两者下限都为 0。`currCost` 提供已经计算到当前步骤的值，多个来源在它的基础上继续计算。这里将新成本作为返回值交回调用方，普通 stats 与 Dynamic 的来源记录仍采用 [C8-S4] 的写法。
+武器成本减 2，战机成本减 1，两者下限都为 0。`currCost` 提供已经计算到当前步骤的值，多个来源在它的基础上继续计算。这里将新成本作为返回值交回调用方，普通 stats 与 Dynamic 的来源记录仍采用 [C8-S2] 的写法。
 
 ## 完整最小例
 

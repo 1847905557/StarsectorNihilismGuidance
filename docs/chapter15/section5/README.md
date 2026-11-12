@@ -22,9 +22,9 @@ _本节预期操作时间：\~60 分钟。_
 - [C7-S1] 的 `ModPlugin` 与 `onGameLoad`；
 - [C10-S1] 的 `EveryFrameScript` 注册和推进；
 - [C14-S3] 的交互目标与 `active` `person`；
-- [C16-S2] 的 Rules 变量、条件和选项回流；
-- [C16-S3] 的原版场景如何组装 Rules 上下文；
-- [C16-S4] 的 `Token` 如何从 `memoryMap` 解析变量。
+- [C15-S2] 的 Rules 变量、条件和选项回流；
+- [C15-S3] 的原版场景如何组装 Rules 上下文；
+- [C15-S4] 的 `Token` 如何从 `memoryMap` 解析变量。
 
 ## 为状态选择持有者
 
@@ -281,7 +281,7 @@ $personFaction.GearIn_memory_faction == person-faction-ready",,"全局：$global
 实体：$entity.GearIn_memory_entity
 市场与来源市场：$market.GearIn_memory_market / $sourceMarket.GearIn_memory_market
 当前势力与人物势力：$faction.GearIn_memory_faction / $personFaction.GearIn_memory_faction","GearIn_memory_verify:检查过期状态
-GearIn_memory_leave:结束","C16-S5 Memory 槽位"
+GearIn_memory_leave:结束","C15-S5 Memory 槽位"
 ```
 
 八条条件共同确认状态写入和槽位组装成功，文本再用变量替换读出六类对象上的值。玩家人物是活动人物，裸 `$GearIn_memory_person` 从 `LOCAL` 取得 `person-ready`；`$entity.*` 仍指向 Jangala 主实体。两份 Memory 同时参与对话，但承担不同含义。
@@ -290,20 +290,20 @@ GearIn_memory_leave:结束","C16-S5 Memory 槽位"
 
 ```csv
 GearIn_memory_verify,DialogOptionSelected,$option == GearIn_memory_verify,"$player.GearIn_memory_lastAction = verify 0
-FireBest GearInMemoryResult",,,C16-S5 检查入口
+FireBest GearInMemoryResult",,,C15-S5 检查入口
 ```
 
 对话打开时生涯已经推进过一帧，`Sector` 上的 `probe` 已被移除，因此结果规则读取 `$global.*` 后显示数值和移除结果：
 
 ```csv
 GearIn_memory_result_alive,GearInMemoryResult,"$global.GearIn_memory_number >= 2
-!$global.GearIn_memory_probe",,"全局数值为 $global.GearIn_memory_number；probe 已在生涯恢复推进后移除。","GearIn_memory_leave:结束",C16-S5 推进后结果
+!$global.GearIn_memory_probe",,"全局数值为 $global.GearIn_memory_number；probe 已在生涯恢复推进后移除。","GearIn_memory_leave:结束",C15-S5 推进后结果
 ```
 
 任务槽位由 `active` `mission` 提供。任务对话可以用同样的方法读取任务 Memory：
 
 ```csv
-GearIn_memory_mission,GearInMemoryMission,$mission.GearIn_memory_mission,,当前任务 Memory 已经进入 mission 槽位。,,C16-S5 active mission
+GearIn_memory_mission,GearInMemoryMission,$mission.GearIn_memory_mission,,当前任务 Memory 已经进入 mission 槽位。,,C15-S5 active mission
 ```
 
 这里的实际键仍是 `$GearIn_memory_mission`；`mission.` 只负责从 `memoryMap` 选择任务对象。
@@ -358,14 +358,14 @@ $personFaction.GearIn_memory_faction == person-faction-ready",,"全局：$global
 实体：$entity.GearIn_memory_entity
 市场与来源市场：$market.GearIn_memory_market / $sourceMarket.GearIn_memory_market
 当前势力与人物势力：$faction.GearIn_memory_faction / $personFaction.GearIn_memory_faction","GearIn_memory_verify:检查过期状态
-GearIn_memory_leave:结束","C16-S5 Memory 槽位"
+GearIn_memory_leave:结束","C15-S5 Memory 槽位"
 GearIn_memory_verify,DialogOptionSelected,$option == GearIn_memory_verify,"$player.GearIn_memory_lastAction = verify 0
-FireBest GearInMemoryResult",,,C16-S5 检查入口
-GearIn_memory_result_expired,GearInMemoryResult,$global.GearIn_memory_probe,,过期时间为 0 的键仍然存在。,"GearIn_memory_leave:结束",C16-S5 暂停期结果
+FireBest GearInMemoryResult",,,C15-S5 检查入口
+GearIn_memory_result_expired,GearInMemoryResult,$global.GearIn_memory_probe,,过期时间为 0 的键仍然存在。,"GearIn_memory_leave:结束",C15-S5 暂停期结果
 GearIn_memory_result_alive,GearInMemoryResult,"$global.GearIn_memory_number >= 2
-!$global.GearIn_memory_probe",,"全局数值为 $global.GearIn_memory_number；probe 已在生涯恢复推进后移除。","GearIn_memory_leave:结束",C16-S5 推进后结果
-GearIn_memory_mission,GearInMemoryMission,$mission.GearIn_memory_mission,,当前任务 Memory 已经进入 mission 槽位。,,C16-S5 active mission
-GearIn_memory_leave,DialogOptionSelected,$option == GearIn_memory_leave,DismissDialog,,,C16-S5 结束
+!$global.GearIn_memory_probe",,"全局数值为 $global.GearIn_memory_number；probe 已在生涯恢复推进后移除。","GearIn_memory_leave:结束",C15-S5 推进后结果
+GearIn_memory_mission,GearInMemoryMission,$mission.GearIn_memory_mission,,当前任务 Memory 已经进入 mission 槽位。,,C15-S5 active mission
+GearIn_memory_leave,DialogOptionSelected,$option == GearIn_memory_leave,DismissDialog,,,C15-S5 结束
 ```
 
 ::: details 完整成品：GearInMemoryKeys

@@ -18,9 +18,9 @@ _本节预期操作时间：\~20 分钟。_
 ## 前置知识
 
 - [C4-S1] 的 `GearIn_test` 战役；
-- [C6-S4] 的构建与加载；
+- [C6-S2] 的构建与加载；
 - [C7-S2] 的 `Global` 服务和战斗引用；
-- [C7-S5] 的日志与上下文；
+- [C7-S4] 的日志与上下文；
 - Java 覆写方法、字段与计时。
 
 ## 建立本场战斗的状态观察
@@ -37,7 +37,7 @@ _本节预期操作时间：\~20 分钟。_
 
 登记后，游戏为每场战斗创建一份插件。它在第一次 `advance(...)` 中通过 `Global.getCombatEngine()` 取得当前引擎，每经过两秒非暂停时间记录一次状态；下一场由新实例重新开始。
 
-以下读取都使用这份引擎引用。插件的完整实现放在后面，[C8-S3] 再展开逐帧回调与实例状态；这里先使用这个入口比较战斗中的变化。
+以下读取都使用这份引擎引用。插件的完整实现放在后面，[C8-S1] 再展开逐帧回调与实例状态；这里先使用这个入口比较战斗中的变化。
 
 ## 判断战役、模拟战与生涯遭遇
 
@@ -103,7 +103,7 @@ _本节预期操作时间：\~20 分钟。_
 - `playerHasAllyReserves()`：玩家盟友侧是否还有后备舰船；
 - `isEnemyInFullRetreat()`：敌方是否进入全面撤退。
 
-这些判断描述整场战斗的后备与撤退状态。具体舰船、弹体和光束从对象集合读取，[C8-S2] 将继续处理它们。本例把界面、地图和后备状态一同写入日志，开关自动驾驶、部署后备或进入收尾时可以分别比较。
+这些判断描述整场战斗的后备与撤退状态。具体舰船、弹体和光束从对象集合读取，[C8-S1] 将继续处理它们。本例把界面、地图和后备状态一同写入日志，开关自动驾驶、部署后备或进入收尾时可以分别比较。
 
 ## 判断结束与胜者
 
@@ -257,3 +257,431 @@ public class GearInCombatStatePlugin extends BaseEveryFrameCombatPlugin {
 - `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：`advance` 与其他战斗回调。
 - `com.fs.starfarer.api.combat.CombatEnginePlugin`：`init` 的调用约定。
 - `Starsector/starsector-core/starsector.log`：状态比较。
+
+## 读取战斗对象
+
+战斗引擎中的舰船、弹体与光束，可以从各自的集合取得；舰队成员还通过部署映射对应到场上舰体。本节遍历这些对象，用浮动文字标出位置和状态，重点区分集合包含什么，以及标签该附着到谁。
+
+## 学习目标
+
+完成后，您将能够：
+
+- 从引擎读取四类战斗对象和部署映射；
+- 按存活、部署与当前帧信息选择对象；
+- 设置浮动文字的位置和附着实体；
+- 在当前战斗内按间隔观察集合。
+
+## 前置知识
+
+- [C8-S1] 的状态插件、登记与当前引擎；
+- [C7-S2] 的战斗引用范围；
+- Java 循环、`instanceof` 和对象方法；
+- 能够部署舰船，使用弹体、导弹与光束。
+
+## 给状态插件加入对象观察
+
+沿用 `GearInCombatStatePlugin` 的登记与本场引擎，在类中加入下面的 `import`：
+
+```java
+import java.awt.Color;
+
+import com.fs.starfarer.api.combat.BeamAPI;
+import com.fs.starfarer.api.combat.CombatEntityAPI;
+import com.fs.starfarer.api.combat.DamagingProjectileAPI;
+import com.fs.starfarer.api.combat.DeployedFleetMemberAPI;
+import com.fs.starfarer.api.combat.MissileAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.mission.FleetSide;
+```
+
+对象观察采用 0.25 秒间隔。在字段区添加计时器：
+
+```java
+private final IntervalUtil objectInterval = new IntervalUtil(0.25f, 0.25f);
+```
+
+在 `advance(...)` 的暂停判断之后推进它，初次观察使用 `showShips()`：
+
+```java
+objectInterval.advance(amount);
+if (objectInterval.intervalElapsed()) {
+    showShips();
+}
+```
+
+后面的观察方法都加入这个类，切换时修改计时器内的调用。每次显示一类标签，弹体和光束的文字就不会混在一起遮挡。状态报告继续保留，两个计时器各自工作。
+
+## 标出存活舰船
+
+`engine.getShips()` 返回引擎中的舰船对象，其中也可能包含残骸与等待移除的舰船。要标记当前存活舰体，就在遍历中检查 `isAlive()`。玩家舰还可以通过 `getPlayerShip()` 取得，结合 `isHulk()` 与 `isEntityInPlay()` 判断状态。
+
+将以下局部方法加入插件：
+
+```java
+private void showShips() {
+    for (ShipAPI ship : engine.getShips()) {
+        if (!ship.isAlive()) {
+            continue;
+        }
+        engine.addFloatingText(
+                ship.getLocation(),
+                "ship " + ship.getHullSpec().getHullId(),
+                12f,
+                Color.WHITE,
+                ship,
+                0f,
+                0.5f);
+    }
+}
+```
+
+`addFloatingText(...)` 接收位置、文字、字体尺寸、颜色、附着实体、调整项与显示时间。本例的坐标与附着实体都来自同一 `ship`，白色标签显示 0.5 秒，内容为它的船体 ID。
+
+## 从部署成员找到舰体
+
+读取舰队部署情况时，从玩家侧舰队管理器的 `getDeployedCopyDFM()` 取得部署成员，再通过成员的 `getShip()` 找到场上实体。下面改用这条映射显示绿色标签：
+
+```java
+private void showDeployed() {
+    for (DeployedFleetMemberAPI member : engine
+            .getFleetManager(FleetSide.PLAYER).getDeployedCopyDFM()) {
+        if (member.isFighterWing() || member.isStationModule()) {
+            continue;
+        }
+        ShipAPI ship = member.getShip();
+        if (ship != null && ship.isAlive()) {
+            engine.addFloatingText(
+                    ship.getLocation(),
+                    "deployed " + ship.getHullSpec().getHullId(),
+                    12f,
+                    Color.GREEN,
+                    ship,
+                    0f,
+                    0.5f);
+        }
+    }
+}
+```
+
+本例跳过联队与模块，再取得有效的存活舰体。将计时器调用改为 `showDeployed()` 后，标签来自玩家侧的部署成员；与直接遍历 `getShips()` 相比，读取范围和对象关系都已经不同。
+
+## 读取弹体，再取得导弹专属状态
+
+`getProjectiles()` 包含当前弹体，导弹也在其中。先使用这个集合显示每个弹体的规格 ID：
+
+```java
+private void showProjectiles() {
+    for (DamagingProjectileAPI projectile : engine.getProjectiles()) {
+        engine.addFloatingText(
+                projectile.getLocation(),
+                "projectile " + projectile.getProjectileSpecId(),
+                10f,
+                Color.YELLOW,
+                projectile,
+                0f,
+                0.25f);
+    }
+}
+```
+
+黄色文字来自 `projectileSpecId`，坐标与附着对象来自当前弹体，显示 0.25 秒。需要读取制导状态时，使用导弹集合并调用导弹自己的方法：
+
+```java
+private void showMissiles() {
+    for (MissileAPI missile : engine.getMissiles()) {
+        String text = "missile " + missile.getProjectileSpecId()
+                + " guided=" + missile.isGuided();
+        engine.addFloatingText(
+                missile.getLocation(),
+                text,
+                10f,
+                Color.ORANGE,
+                missile,
+                0f,
+                0.25f);
+    }
+}
+```
+
+导弹标签额外记录 `isGuided()`，导弹对象还提供熄火与飞行时间等状态。**`getMissiles()` 读取的是总弹体集合中的导弹子集。** 统计总数时使用 `getProjectiles()`；若将两个集合的数量相加，导弹就会被计算两次。
+
+## 光束与当前帧目标
+
+光束没有可直接作为浮动文字附着实体的 `CombatEntityAPI` 身份。位置从 `getTo()` 取得，附着对象则使用本帧伤害目标；没有目标时传入 `null`：
+
+```java
+private void showBeams() {
+    for (BeamAPI beam : engine.getBeams()) {
+        CombatEntityAPI target = beam.getDamageTarget();
+        engine.addFloatingText(
+                beam.getTo(),
+                beam.didDamageThisFrame() ? "beam hit" : "beam",
+                12f,
+                Color.CYAN,
+                target,
+                0f,
+                0.5f);
+    }
+}
+```
+
+`didDamageThisFrame()` 与 `getDamageTarget()` 都描述当前帧。光束持续显示时，目标与伤害状态仍可能变化，因此每次观察重新读取。
+
+切换到 `showBeams()` 后，标签的位置对应光束终点，`beam hit` 则表示本帧造成了伤害。**文字坐标和附着实体是两个参数。** 本例分别从光束与目标取得它们，不能把光束对象直接当作附着实体。
+
+## 让标签反映读取时的对象
+
+插件每隔 0.25 秒重新遍历一次，标签使用较短显示时间。舰船存活状态、弹体存在与光束目标都按这次读取判断，旧标签随后消失。
+
+验证时分别部署舰船、发射对应武器，再切换观察方法。标签内容说明读取了哪个对象，坐标与附着关系说明它显示在哪里。下一场战斗由新插件实例读取新集合，已有引用也随本场使用结束。
+
+## 验证方案
+
+1. 将方法与计时器加入上一节插件，选择 `showShips`，构建并进入测试战役。
+2. 部署舰船并击毁一艘，比较存活标签和残骸。
+3. 依次切换 `showDeployed`、`showProjectiles`、`showMissiles`，每次构建重启，用对应对象测试。
+4. 使用 `showBeams`，持续照射目标并比较命中与未命中标签。
+5. 结束战斗后重新进入，确认集合与实体来自当前场景。
+
+预期结果：
+
+- 存活舰船和实际部署成员在对应位置显示 ID。
+- 弹体显示 `spec` ID，导弹增加 `guided` 状态。
+- 导弹同属总弹体集合，读取时各用途分开。
+- 光束文字位于终点，命中标签采用当前帧信息。
+- 每次场景采用新的引擎与对象引用。
+
+## 故障分析
+
+- **残骸仍带 `ship` 标签**：遍历未过滤存活状态。
+    - **解决方案**：在文字创建前检查 `isAlive`。
+
+- **弹体数量重复**：总弹体与导弹集合相加。
+    - **解决方案**：总统计用 `getProjectiles`，导弹专属字段另读。
+
+- **光束文字位置不符**：使用了不同坐标或把光束当成附着实体。
+    - **解决方案**：位置用 `getTo`，附着用 `getDamageTarget`。
+
+- **下一场显示上一场对象**：跨场保存了旧引用。
+    - **解决方案**：在当前战斗实例重新读取集合。
+
+## 总结
+
+舰船表提供场上舰体，部署映射提供成员与实体的关系，弹体集合包含导弹，光束则按帧提供终点与伤害目标。选择集合之后，还要按对象状态过滤，并给浮动文字提供正确的坐标和附着实体。
+
+这些读取已经接到同一个插件。下一节展开它的逐帧与暂停处理，再将观察入口用于持续功能。
+
+## 建议参考项
+
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：对象集合与 `addFloatingText`。
+- `com.fs.starfarer.api.combat.ShipAPI`：舰船位置、存活与部署状态。
+- `com.fs.starfarer.api.combat.DamagingProjectileAPI`：弹体状态。
+- `com.fs.starfarer.api.combat.MissileAPI`：导弹专属状态。
+- `com.fs.starfarer.api.combat.BeamAPI`：位置与当前目标。
+- `com.fs.starfarer.api.combat.CombatFleetManagerAPI`：部署成员映射。
+
+## 制作每帧战斗插件
+
+持续战斗效果需要反复更新，`EveryFrameCombatPlugin` 提供这样的运行入口。本节制作一个计时插件，同时记录回调次数与非暂停时间：暂停后恢复时，两种记录会表现出不同变化，插件状态也随本场战斗保存和结束。
+
+## 学习目标
+
+完成后，您将能够：
+
+- 在 `settings.json` 登记每帧插件；
+- 按 `amount` 和暂停状态推进数据；
+- 管理本场实例与引擎引用；
+- 根据日志确认计时和回调。
+
+## 前置知识
+
+- [C6-S2] 的构建与 JAR；
+- [C7-S2] 的服务和战斗引用；
+- [C8-S1] 的时间、场景与暂停；
+- [C8-S1] 的对象和浮动文字。
+
+## 创建并登记计时插件
+
+创建 `src/data/scripts/gearin/combat/GearInPauseAwarePlugin.java`，继承 `BaseEveryFrameCombatPlugin`。基类提供默认实现，本例覆写 `advance(...)`，接收本帧 `amount` 与输入事件列表。完整类在后面给出。
+
+在 `data/config/settings.json` 的 `plugins` 中加入局部登记：
+
+```json
+{
+    "plugins": {
+        "gearInPauseAwarePlugin": "data.scripts.gearin.combat.GearInPauseAwarePlugin"
+    }
+}
+```
+
+游戏启动时读取这个自有键与完整类名，每场战斗再创建对应实例。`package`、类声明与 JAR 条目共同提供这个名字，因此登记值要与它们一致。需要在已经运行的战斗中动态加入插件时，也可以使用 `engine.addPlugin(...)`。
+
+本例将累计时间与计数器保存在实例字段中。由登记建立新实例之后，这场战斗从初始状态开始，下一场也会重新建立自己的记录。
+
+## 暂停时保留调用记录
+
+玩家按下暂停后，战斗状态应该停止推进，插件却仍会收到 `advance(...)`。本例用 `calls` 记录全部回调，用 `pausedCalls` 记录其中的暂停调用；累计时间另存于 `elapsed` 与 `timeSinceLastReport`。
+
+在 `advance(...)` 开头加入以下局部片段。计数发生在暂停判断前，暂停帧记录完成后返回：
+
+```java
+calls++;
+if (engine == null) {
+    engine = Global.getCombatEngine();
+}
+if (engine.isPaused()) {
+    pausedCalls++;
+    return;
+}
+```
+
+引擎在首次使用时通过 `Global.getCombatEngine()` 取得，之后保存到本场实例。这个绑定发生在战斗回调内，与当前战斗对应。
+
+::: warning init 不保证先执行
+
+`CombatEnginePlugin.init(...)` 不保证先于 `advance(...)`。编者建议将普通初始状态放在字段或构造器中，引擎则在首次使用时取得，避免第一次推进就依赖尚未写入的引用。
+
+:::
+
+## 累计时间并输出报告
+
+**回调次数描述调用频率，`amount` 描述经过的秒数。** 帧率、时间倍率和运行情况都会影响步长，计时使用实际传入的增量。将以下局部片段放在暂停判断之后：
+
+```java
+elapsed += amount;
+timeSinceLastReport += amount;
+if (timeSinceLastReport >= REPORT_INTERVAL) {
+    timeSinceLastReport = 0f;
+    report(engine);
+}
+```
+
+`elapsed` 保存本场累计时间，`timeSinceLastReport` 累计到 `REPORT_INTERVAL` 的 10 秒后执行报告，再从零开始计下一段间隔。暂停帧已经返回，所以暂停期间两者都保持原值，恢复后继续。
+
+报告同时包含时间、全部调用次数和暂停调用次数。在 `report(...)` 中写入日志，并在有效玩家舰位置显示同一文字：
+
+```java
+String text = "GearIn: elapsed " + Math.round(elapsed) + "s, calls " + calls
+        + " (paused " + pausedCalls + ")";
+Global.getLogger(GearInPauseAwarePlugin.class).info(text);
+if (engine.getPlayerShip() != null) {
+    engine.addFloatingText(engine.getPlayerShip().getLocation(), text,
+            14f, Color.WHITE, engine.getPlayerShip(), 0f, 3f);
+}
+```
+
+日志始终记录本次报告。玩家舰存在时，再将白色文字附着到它的位置，显示 3 秒。这样即使还没有可用玩家舰，计时结果仍然能够从日志取得。
+
+## 让下一场从新状态开始
+
+本场计时与引擎引用都属于当前插件。若将实例或字段保存在跨战斗的 `static`、外部对象中，下一场便可能继续使用旧记录。通过本节的 `settings.json` 登记，让游戏每场创建新实例，就能保持当前对象与当前计时对应。
+
+功能需要主动结束时，以 `isCombatOver()` 等实际条件安排收尾。如果还登记了自己的监听器，先解除它们，再移除插件；这些登记各自有结束入口，下一节之后的监听示例会使用这套关系。
+
+## 完整最小例
+
+保存为 `src/data/scripts/gearin/combat/GearInPauseAwarePlugin.java`，登记采用上面的 `plugins` 条目。
+
+::: details 完整成品：`GearInPauseAwarePlugin`
+
+```java
+package data.scripts.gearin.combat;
+
+import java.awt.Color;
+import java.util.List;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.input.InputEventAPI;
+
+/** 比较非暂停时间、总回调次数与暂停回调次数。 */
+public class GearInPauseAwarePlugin extends BaseEveryFrameCombatPlugin {
+
+    /** 非暂停时间每累计多少秒输出一次报告。 */
+    public static final float REPORT_INTERVAL = 10f;
+
+    private CombatEngineAPI engine;
+    private float elapsed;
+    private float timeSinceLastReport;
+    private int calls;
+    private int pausedCalls;
+
+    @Override
+    public void advance(float amount, List<InputEventAPI> events) {
+        calls++;
+        if (engine == null) {
+            engine = Global.getCombatEngine();
+        }
+        if (engine.isPaused()) {
+            pausedCalls++;
+            return;
+        }
+        elapsed += amount;
+        timeSinceLastReport += amount;
+        if (timeSinceLastReport >= REPORT_INTERVAL) {
+            timeSinceLastReport = 0f;
+            report(engine);
+        }
+    }
+
+    private void report(CombatEngineAPI engine) {
+        String text = "GearIn: elapsed " + Math.round(elapsed) + "s, calls " + calls
+                + " (paused " + pausedCalls + ")";
+        Global.getLogger(GearInPauseAwarePlugin.class).info(text);
+        if (engine.getPlayerShip() != null) {
+            engine.addFloatingText(engine.getPlayerShip().getLocation(), text,
+                    14f, Color.WHITE, engine.getPlayerShip(), 0f, 3f);
+        }
+    }
+}
+```
+
+:::
+
+## 验证方案
+
+1. 保存源码与登记，构建 JAR 并重启，进入有玩家舰的模拟战。
+2. 正常运行约 15 秒，查看 `GearIn: elapsed` 报告与白色浮动文字。
+3. 暂停约 20 秒，再恢复，比较 `elapsed`、`calls` 和 `pausedCalls`。
+4. 结束后进入第二场，比较新实例的起始计时。
+5. 在日志核对完整类名与当前回调结果。
+
+预期结果：
+
+- 每累计 10 秒报告一次，文字约 3 秒后消失。
+- 暂停期间报告数量为 0，`calls` 和 `pausedCalls` 仍记录回调。
+- 恢复后 `elapsed` 保持非暂停时间口径。
+- 第二场从新实例状态开始，引用属于当前引擎。
+
+## 故障分析
+
+- **插件没有任何行为**：`settings.json` 缺少条目、文件路径错误，或 `key` 被其他来源覆盖时，游戏不会创建实例，日志和画面都没有 `GearIn:` 信号。
+    - **解决方案**：确认文件位于 `data/config/settings.json`，`key` 全局唯一，值与 `package`、`class` 组成的完整类名一致，重新开战。
+
+- **日志出现 `Problem loading class [...]`**：注册类名与 `package`、`class` 不一致，或源码没有进入 JAR 时，类加载器无法解析插件。
+    - **解决方案**：让注册值、包声明和类名逐字一致，把源码放入 `src/data/scripts/gearin/combat/` 并重新构建 JAR。
+
+- **暂停期间状态照常推进**：`advance` 在暂停检查前累计状态时，恢复后 `elapsed` 会包含暂停时间。
+    - **解决方案**：把状态推进放在 `engine.isPaused()` 守卫之后，仅将 `calls++` 这类观测回调次数的计数放在守卫前。
+
+- **第一次 `advance` 抛出空指针**：在已废弃的 `init(engine)` 中保存引擎并假设它先执行，会让首次 `advance()` 看到 `null`。
+    - **解决方案**：初始状态放入构造器，引擎在使用时通过 `Global.getCombatEngine()` 获取，重新开战。
+
+- **第二场战斗的数值接着上涨**：插件实例被保存到 `static` 字段或战斗外对象时，旧实例会跨战斗存活。
+    - **解决方案**：只通过 `settings.json` 登记，让游戏每场创建新实例。
+
+## 总结
+
+暂停期间仍有回调，计时是否继续则由代码中的暂停判断决定。本例把调用计数放在判断前，把时间累计放在判断后，恢复时就能同时确认两种行为。
+
+引擎与状态由本场实例保存，新的战斗从新的实例开始。后面的监听与绘制会继续使用这个运行入口，在相应对象上增加功能。
+
+## 建议参考项
+
+- `com.fs.starfarer.api.combat.EveryFrameCombatPlugin`：逐帧、输入和绘制方法。
+- `com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin`：默认实现。
+- `com.fs.starfarer.api.combat.CombatEnginePlugin`：`init` 调用约定。
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：暂停、`addPlugin`、`removePlugin` 和文字。
+- `data/config/settings.json`：`plugins` 登记。
+- `Starsector/starsector-core/starsector.log`：回调与计时。

@@ -134,7 +134,7 @@ private void inspectMemberCollection(CampaignFleetAPI fleet) {
 
 ## 让汇总跟随成员变化
 
-成员名单只是舰队状态的一部分。装配、船插、船员、封存状态和人物效果都会参与汇总，[C11-S3] 继续解释数值重算，[C11-S4] 展开单舰状态。本节先在集合操作完成后读取结果：
+成员名单只是舰队状态的一部分。装配、船插、船员、封存状态和人物效果都会参与汇总，[C11-S3] 继续解释数值重算，[C11-S3] 展开单舰状态。本节先在集合操作完成后读取结果：
 
 ```java
 LOG.info("GearIn fleet totals: members=" + data.getNumMembers()

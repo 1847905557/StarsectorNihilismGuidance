@@ -56,7 +56,7 @@ describe('dev edit source binding', () => {
 
 describe('restore function boundary', () => {
   it('restores Tiptap HTML through the shared Node function', async () => {
-    const { docs, page } = fixture();
+    const { docs, page } = fixture('');
     const result = await runMarkdownRestore(
       '<h1>新标题</h1><pre data-language="java"><code class="language-java">int value = 1;</code></pre>',
       page,
@@ -69,7 +69,7 @@ describe('restore function boundary', () => {
   });
 
   it('preserves complex Unicode Tiptap HTML', async () => {
-    const { docs, page } = fixture();
+    const { docs, page } = fixture('');
     const result = await runMarkdownRestore(
       '<h1>虚无主义教程 (Nihilism Guidance)</h1>' +
         '<p>调整“此处”这个字，并保留 "双引号"。</p>' +
@@ -87,7 +87,7 @@ describe('restore function boundary', () => {
   });
 
   it('merges continuous marks split by a Tiptap link boundary', async () => {
-    const { docs, page } = fixture();
+    const { docs, page } = fixture('');
     const result = await runMarkdownRestore(
       '<h1>标题</h1>' +
         '<p><strong>前文</strong><a href="https://example.com/"><strong>链接</strong></a>' +
@@ -131,16 +131,16 @@ describe('restore function boundary', () => {
     );
   });
 
-  it('returns chapter diagnostics when the baseline is missing', async () => {
+  it('returns chapter diagnostics when the baseline is malformed', async () => {
     const { docs, page } = fixture('chapter1');
     const result = await runMarkdownRestore(
-      '<h1>章页</h1><p>章介绍。</p>' + '<h2>本章各节</h2><div data-auto-section-list="true"></div>',
+      '<h1>章页</h1><p>本章技术基线：格式错误</p><p>章介绍。</p>' + '<h2>本章各节</h2><div data-auto-section-list="true"></div>',
       page,
       docs,
     );
 
     expect(result.ok).toBe(false);
-    expect(result.diagnostics).toContain('章页必须包含一个本章技术基线段落；当前 0 个');
+    expect(result.diagnostics).toContain('本章技术基线格式错误');
   });
 });
 

@@ -12,7 +12,7 @@ test('formatting is a fixed point and preserves code fences, containers and tigh
   const input =
     '# 页面\n\n*阅读时间：\\~15 分钟。*\n\n::: details 完整成品：Value\n\n```java\n' +
     code +
-    '```\n\n:::\n\n## 故障分析\n\n- **症状**：原因。\n    - **解决方案**：修正。\n\n- **另一个症状**：原因。\n    - **解决方案**：修正。\n';
+    '```\n\n:::\n\n## 常见问题\n\n- **症状**：原因。\n    - **解决方案**：修正。\n\n- **另一个症状**：原因。\n    - **解决方案**：修正。\n';
   const output = await formatMarkdown(input);
   assert.ok(output.includes(code));
   assert.ok(output.includes('_阅读时间'));
@@ -51,7 +51,7 @@ test('real CLI returns findings and execution errors', async (t) => {
 
 test('fault spacing fixes only the corresponding section and retains fenced examples', async () => {
   const source =
-    '# 页面\n\n## 故障分析\n\n- **症状**：原因。\n\n    - **解决方案**：修正。\n- **其他症状**：原因。\n    - **解决方案**：修正。\n\n## 示例\n\n```text\n- a\n- b\n```\n';
+    '# 页面\n\n## 常见问题\n\n- **症状**：原因。\n\n    - **解决方案**：修正。\n- **其他症状**：原因。\n    - **解决方案**：修正。\n\n## 示例\n\n```text\n- a\n- b\n```\n';
   const output = await formatMarkdown(source);
   assert.ok(output.includes('- **症状**：原因。\n    - **解决方案**：修正。\n\n- **其他症状**'));
   assert.ok(output.includes('```text\n- a\n- b\n```'));

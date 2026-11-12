@@ -22,7 +22,7 @@ _本节预期操作时间：\~35 分钟。_
 
 - [C12-S1] 的 `MarketAPI` 和市场 stat；
 - [C7-S1] 的插件生命周期与持久数据；
-- [C8-S4] 的 `MutableStat`、`StatBonus` 和 modifier ID；
+- [C8-S2] 的 `MutableStat`、`StatBonus` 和 modifier ID；
 - [C12-S1] 的市场推进与经济观察入口。
 
 ## 注册 Warfront 并接到当前市场

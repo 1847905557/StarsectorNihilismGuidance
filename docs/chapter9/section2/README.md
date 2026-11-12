@@ -18,7 +18,7 @@ _本节预期操作时间：\~30 分钟。_
 ## 前置知识
 
 - [C2-S3] 的 `.system`、`ship_systems.csv`、`ship_data.csv` 与 `apply` / `unapply`；
-- [C8-S4] 的 `MutableShipStatsAPI`、来源 ID 与 `modifyPercent`；
+- [C8-S2] 的 `MutableShipStatsAPI`、来源 ID 与 `modifyPercent`；
 - [C8-S1] 的战斗引擎状态和暂停语义；
 - [C7-S2] 的全局服务访问阶段。
 

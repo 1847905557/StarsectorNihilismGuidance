@@ -20,7 +20,7 @@ _本节预期操作时间：\~30 分钟。_
 ## 前置知识
 
 - [C12-S2] 的 `CargoAPI`、`CargoStackAPI` 和特殊物品栈；
-- [C12-S5] 的产业对象、供需数量和修饰器；
+- [C12-S4] 的产业对象、供需数量和修饰器；
 - [C7-S1] 的插件实例化与生命周期；
 - 能够编辑 UTF-8 无 BOM 的 CSV 和 Java 文件。
 
@@ -78,7 +78,7 @@ helper 作用于当前交互中的货物，扣除优先从被右键点击的栈�
 
 ## 给产业临时应用核心效果
 
-核心实验使用 [C12-S5] 的 Element Works。保存 `GearInRefineryCorePlugin.java` 与 `GearInSpecialItemProbe.java` 到同一目录，在 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 中，将以下局部调用放在产业状态日志之后：
+核心实验使用 [C12-S4] 的 Element Works。保存 `GearInRefineryCorePlugin.java` 与 `GearInSpecialItemProbe.java` 到同一目录，在 [C12-S1] 的 `GearInEconomyProbe.ProbeListener.economyUpdated()` 中，将以下局部调用放在产业状态日志之后：
 
 ```java
 new GearInSpecialItemProbe().log(market);

@@ -20,7 +20,7 @@ _本节预期操作时间：\~25 分钟。_
 
 - [C13-S1] 的 `PersonAPI` 创建、人物资料和稳定 ID；
 - [C11-S2] 的 `CampaignFleetAPI`、`FleetDataAPI` 和成员集合；
-- [C11-S4] 的 `FleetMemberAPI`、旗舰和舰长读取；
+- [C11-S3] 的 `FleetMemberAPI`、旗舰和舰长读取；
 - [C12-S1] 创建的 `GearIn_market_foundry`；
 - 能够打开舰队、舰船和殖民地管理界面。
 

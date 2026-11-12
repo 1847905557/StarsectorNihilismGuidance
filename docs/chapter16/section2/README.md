@@ -18,7 +18,7 @@ _本节预期操作时间：\~40 分钟。_
 
 ## 前置知识
 
-- [C15-S1] 的 `InteractionDialogAPI` 会话入口；
+- [C16-S1] 的 `InteractionDialogAPI` 会话入口；
 - [C7-S2] 的 `Global` 生涯服务；
 - Java 接口、字段、重载和枚举；
 - 能够启动测试生涯并观察对话界面。
@@ -251,7 +251,7 @@ public void advance(float amount) {
 
 需要持续更新自己的动画时，再把业务推进写入这个回调。额外调用 `text.advance(amount)` 会让同一面板重复推进。
 
-离开与取消沿 [C15-S1] 的两种关闭方法，先设置 `closed`，后续选项与面板写入按业务结束状态处理。完整类把关闭统一放在 `close(boolean cancel)`，按钮与 ESC 共用对应结果。
+离开与取消沿 [C16-S1] 的两种关闭方法，先设置 `closed`，后续选项与面板写入按业务结束状态处理。完整类把关闭统一放在 `close(boolean cancel)`，按钮与 ESC 共用对应结果。
 
 ## 为结构化面板准备实际上下文
 
@@ -261,7 +261,7 @@ public void advance(float amount) {
 
 `VisualPanelAPI` 的实体展示方法要求传入匹配的对象：`showPlanetInfo` 与 `showLargePlanet` 使用行星，`showFleetMemberInfo` 使用舰队成员，带 `FleetEncounterContextPlugin` 的 `showFleetInfo` 使用遭遇战上下文。`showLoot` 需要货物和交互监听器；`showCore`、`hideCore`、`closeCoreUI` 依赖核心界面；`showCustomPanel` 依赖自定义面板插件；`showMapMarker` 依赖地图标记及 Intel 标签；`showPreBattleJoinInfo` 依赖战斗上下文；`showNewGameOptionsPanel` 依赖角色创建数据。
 
-这些入口延伸到费用、规则、战斗、核心界面、地图与角色创建。先从对应流程取得对象，再调用面板方法，当前会话也就能显示实际结果。[C15-S3] 将对话接到酒吧，后续任务再使用这些上下文。
+这些入口延伸到费用、规则、战斗、核心界面、地图与角色创建。先从对应流程取得对象，再调用面板方法，当前会话也就能显示实际结果。[C16-S3] 将对话接到酒吧，后续任务再使用这些上下文。
 
 ## 完整最小例
 

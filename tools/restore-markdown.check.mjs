@@ -87,7 +87,7 @@ test('data images preserve exact payload and reject identity collisions', async 
 test('empty content, incomplete containers and chapter contracts return structured diagnostics', async () => {
   assert.equal((await restoreMarkdown('', path, docs)).ok, false);
   const chapter = await restoreMarkdown(
-    '<h1>章页</h1><p>介绍。</p><h2>本章各节</h2><div data-auto-section-list="true"></div>',
+    '<h1>章页</h1><p>本章技术基线：格式错误</p><p>介绍。</p><h2>本章各节</h2><div data-auto-section-list="true"></div>',
     join(docs, 'chapter1/README.md'),
     docs,
   );

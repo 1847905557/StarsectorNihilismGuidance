@@ -18,8 +18,8 @@ _本节预期操作时间：\~35 分钟。_
 
 ## 前置知识
 
-- [C16-S1] 的 `rules.csv` 七列、换行单元格与加载结果；
-- [C15-S1] 的选项显示文本与稳定 `optionData`；
+- [C15-S1] 的 `rules.csv` 七列、换行单元格与加载结果；
+- [C16-S1] 的选项显示文本与稳定 `optionData`；
 - 能够在游戏中打开一支非敌对独立舰队的通讯菜单。
 
 ## 在通讯菜单添加入口
@@ -93,7 +93,7 @@ $GearIn_rules_apply_budget--",,,
 
 `$memkey.name` 先从 `memoryMap` 找到 `memkey` 槽位，再读取其中的 `$name`。常见前缀包括 `$global.`、`$player.`、`$market.`、`$faction.` 和 `$entity.`；没有点号的 `$option`、`$menuState` 与自定义 `local` 变量回落到 `local` Memory。
 
-没有对应前缀槽位时，变量解析会把完整变量名交给 LOCAL。因此当前一次性标记在条件与脚本两侧都使用完整 `player` 前缀，[C16-S5] 再展开这些对象的寿命与槽位。
+没有对应前缀槽位时，变量解析会把完整变量名交给 LOCAL。因此当前一次性标记在条件与脚本两侧都使用完整 `player` 前缀，[C15-S5] 再展开这些对象的寿命与槽位。
 
 ## 从通过条件的详情中选一条
 
@@ -201,7 +201,7 @@ GearIn_rules_apply_keep,DialogOptionSelected,$option == GearIn_rules_apply_keep,
 | `AddNewGameChoices`     | 新游戏   | 填充开局选择                 |
 | `NewGameOptionSelected` | 新游戏   | 处理新游戏选项回流           |
 
-表格只用于判断规则应挂在哪类入口。每个 `trigger` 的原版调用类、精确派发顺序、规则记录数和特殊状态由 [C16-S3] 逐场景解释。
+表格只用于判断规则应挂在哪类入口。每个 `trigger` 的原版调用类、精确派发顺序、规则记录数和特殊状态由 [C15-S3] 逐场景解释。
 
 ## 返回菜单，并保留玩家已读状态
 

@@ -16,7 +16,7 @@ _本节预期操作时间：\~25 分钟。_
 
 ## 前置知识
 
-- [C8-S3] 的战斗插件生命周期与暂停处理；
+- [C8-S1] 的战斗插件生命周期与暂停处理；
 - [C18-S1] 的 MagicLib 硬依赖和编译 classpath；
 - [C18-S2] 的位置、距离和 `Vector2f`；
 - [C18-S3] 的 `BaseEveryFrameCombatPlugin` 注册方式。

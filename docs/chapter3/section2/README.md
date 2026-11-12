@@ -349,7 +349,7 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 },
 ```
 
-这里沿用原版已登记的 `music_hegemony_*`；自定义音乐的登记由 [C5-S2] 讲解。
+这里沿用原版已登记的 `music_hegemony_*`；自定义音乐的登记由 [C5-S1] 讲解。
 
 `internalComms` 保留原版的 `hegemony_internal`，指向 channels.json 的原版情报频道。当前原版会解析这个字段，具体游戏行为并不使用它，本节沿用副本值。
 
@@ -504,7 +504,7 @@ LOW 以 soldier 与 spacer 为主，MEDIUM 以 official 与 soldier 为主，HIG
 		"drugs",
 		"organs",
 	],
-	"music":{                 # 各场景音乐，值为 sounds.json 已注册的音乐 ID(注册链见 C5-S2)
+	"music":{                 # 各场景音乐，值为 sounds.json 已注册的音乐 ID(注册链见 C5-S1)
 		"theme":"music_hegemony_market_neutral",
 		"market_neutral":"music_hegemony_market_neutral",
 		"market_hostile":"music_hegemony_market_hostile",

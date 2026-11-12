@@ -21,8 +21,8 @@ _本节预期操作时间：\~40 分钟。_
 - [C7-S1] 的 MOD 生命周期与规则文件加载边界；
 - [C10-S1] 的 `addScript` 与持久数据判断；
 - [C14-S3] 的 `showInteractionDialog` 与 `InteractionDialogPlugin` 生命周期；
-- [C16-S1] 的 `rules.csv` 字段、加载和合并；
-- [C16-S2] 的 `$option`、`score`、`FireBest`、`FireAll` 与组合写法；
+- [C15-S1] 的 `rules.csv` 字段、加载和合并；
+- [C15-S2] 的 `$option`、`score`、`FireBest`、`FireAll` 与组合写法；
 
 ## 让规则取得当前场景的对象
 
@@ -194,7 +194,7 @@ $hailing = true 0",,,
 
 ## 酒吧选项与事件
 
-Jangala 酒吧实例添加一条临时邀请，选择后显示通讯记录说明，再返回吧台。它通过 Rules 字符串选项接入，与 [C15-S3] 的 Java 事件同时由 `BarCMD` 管理。
+Jangala 酒吧实例添加一条临时邀请，选择后显示通讯记录说明，再返回吧台。它通过 Rules 字符串选项接入，与 [C16-S3] 的 Java 事件同时由 `BarCMD` 管理。
 
 ### 进入酒吧并重建选项
 
@@ -253,7 +253,7 @@ GearIn_rules_scene_bar_back,DialogOptionSelected,$option == GearIn_rules_scene_b
 
 ### 在酒吧包装任务
 
-任务 wrapper 有人物时，暂时将 LOCAL 切到任务人物，保存实体并提供人物势力。更新任务交互数据后调用 `_blurbBar` 与 `_optionBar`，再恢复原局部上下文。`hijack_blurbBar` 与 `hijack_optionBar` 使用这条路径，[C15-S5] 展示了对应的自有接入。
+任务 wrapper 有人物时，暂时将 LOCAL 切到任务人物，保存实体并提供人物势力。更新任务交互数据后调用 `_blurbBar` 与 `_optionBar`，再恢复原局部上下文。`hijack_blurbBar` 与 `hijack_optionBar` 使用这条路径，[C16-S5] 展示了对应的自有接入。
 
 玩家选择包装任务后，`BarCMD.optionSelected` 进入任务对话，`abortMissions` 中止没有被选择的其他包装。通讯面板的 `missions` 页签使用 Java `MissionBoardAPI` 与 `CampaignMissionPlugin.playerAccept`，属于另一套任务板流程。
 

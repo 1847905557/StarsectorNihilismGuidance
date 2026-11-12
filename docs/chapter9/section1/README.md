@@ -18,10 +18,10 @@ _本节预期操作时间：\~35 分钟。_
 ## 前置知识
 
 - [C2-S2] 的 `hull_mods.csv`、基础数值修改、描述占位符和安装限制；
-- [C6-S4] 的 JAR 构建与游戏加载；
+- [C6-S2] 的 JAR 构建与游戏加载；
 - [C7-S2] 的 `Global` 服务访问阶段；
 - [C8-S1] 的战斗引擎状态与暂停语义；
-- [C8-S4] 的 `MutableShipStatsAPI`、modifier ID 与 Dynamic。
+- [C8-S2] 的 `MutableShipStatsAPI`、modifier ID 与 Dynamic。
 
 ## 准备两个船插
 
@@ -41,7 +41,7 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 安装装甲训练后，装配面板与战斗中的舰船都应当使用加成。这部分放在 `applyEffectsBeforeShipCreation(...)`：生涯数值重建会调用它，战斗舰船创建前也会调用它。
 
-参数 `hullSize` 提供船体等级，`stats` 提供本次重建的数值对象，`id` 提供船插注册 ID。沿用 [C8-S4] 的来源写法，以这个 ID 记录加成，就能在再次重建时覆盖自己的值。
+参数 `hullSize` 提供船体等级，`stats` 提供本次重建的数值对象，`id` 提供船插注册 ID。沿用 [C8-S2] 的来源写法，以这个 ID 记录加成，就能在再次重建时覆盖自己的值。
 
 在 `GearInArmorTrainingHullMod` 中加入局部方法：
 

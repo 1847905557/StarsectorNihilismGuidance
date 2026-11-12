@@ -21,7 +21,7 @@ export function repairFaultSpacing(text) {
   const output = [];
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    if (!hidden.has(index) && /^##\s+/.test(line)) active = /^## 故障分析\s*$/.test(line);
+    if (!hidden.has(index) && /^##\s+/.test(line)) active = /^## 常见问题\s*$/.test(line);
     if (active && !hidden.has(index) && /^ {4}- \*\*解决方案\*\*/.test(line)) {
       while (output.length && !output.at(-1).trim()) output.pop();
     } else if (active && !hidden.has(index) && /^- \*\*/.test(line) && /^ {4}- \*\*解决方案\*\*/.test(output.at(-1) || '')) output.push('');

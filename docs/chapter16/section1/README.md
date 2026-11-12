@@ -119,7 +119,7 @@ options.addOption("Cancel", "CANCEL");
 dialog.setOptionOnEscape("Cancel", "CANCEL");
 ```
 
-玩家看到 `optionText`，`optionSelected(...)` 则按 `optionData` 选择动作。ESC 提交 `CANCEL`，与取消按钮共用分支；启用、删除与提示由 `OptionPanelAPI` 提供，[C15-S2] 再展开这些操作。
+玩家看到 `optionText`，`optionSelected(...)` 则按 `optionData` 选择动作。ESC 提交 `CANCEL`，与取消按钮共用分支；启用、删除与提示由 `OptionPanelAPI` 提供，[C16-S2] 再展开这些操作。
 
 ## 记录一次检查，再结束会话
 
@@ -167,7 +167,7 @@ if (current == this) {
 }
 ```
 
-随后选项回调交给新插件。需要延续的检查结果或其他字段，由交接方传递，目标和面板并没有代替这些业务数据。[C15-S3] 的酒吧事件会采用当前对话上的插件交接。
+随后选项回调交给新插件。需要延续的检查结果或其他字段，由交接方传递，目标和面板并没有代替这些业务数据。[C16-S3] 的酒吧事件会采用当前对话上的插件交接。
 
 ## 调整会话显示层
 

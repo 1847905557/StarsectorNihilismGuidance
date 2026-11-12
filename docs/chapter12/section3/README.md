@@ -21,7 +21,7 @@ _本节预期操作时间：\~25 分钟。_
 
 - [C12-S1] 的 `MarketAPI`、市场势力和子市场集合；
 - [C12-S2] 的 `CargoAPI`、货舱栈和封存舰船；
-- [C12-S3] 的商品 ID 和市场商品对象；
+- [C12-S2] 的商品 ID 和市场商品对象；
 - 能够进入拥有 `gear_industry` 市场的生涯并查看交易界面。
 
 ## 注册子市场身份
@@ -157,7 +157,7 @@ public String getSellVerb() {
 
 Refinery Depot 是公开子市场，`isOpenMarket()` 为 `true`，黑市与军事市场标志为 `false`，免费转移也为 `false`。这些标志供交易界面、基类规则和舰船生成使用，当前商品许可仍采用本节覆写的集合判断。
 
-成交时，界面把交易交给 `reportPlayerMarketTransaction(...)`。基类根据 `isParticipatesInEconomy()`、影响模式与 `getPlayerTradeImpactMult()` 写入 [C12-S3] 的贸易调节。本例参与经济，数量倍率为 1，模式采用 `PLAYER_SELL_ONLY`：
+成交时，界面把交易交给 `reportPlayerMarketTransaction(...)`。基类根据 `isParticipatesInEconomy()`、影响模式与 `getPlayerTradeImpactMult()` 写入 [C12-S2] 的贸易调节。本例参与经济，数量倍率为 1，模式采用 `PLAYER_SELL_ONLY`：
 
 ```java
 @Override

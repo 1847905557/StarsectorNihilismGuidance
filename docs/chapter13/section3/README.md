@@ -19,8 +19,8 @@ _本节预期操作时间：\~50 分钟。_
 ## 前置知识
 
 - [C1-S7] 的 CSV 列与转义；
-- [C6-S4] 的构建、JAR 与加载；
-- [C8-S4] 的 `MutableStat` modifier ID、`modify` 方法和 `unmodify` 方法；
+- [C6-S2] 的构建、JAR 与加载；
+- [C8-S2] 的 `MutableStat` modifier ID、`modify` 方法和 `unmodify` 方法；
 - [C11-S3] 的成员与舰队数值；
 - [C13-S2] 的角色槽位、技能等级与刷新；
 - 能够在生涯中打开技能树、舰队信息、整备界面和殖民地管理界面。

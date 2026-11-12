@@ -19,7 +19,7 @@ _本节预期操作时间：\~45 分钟。_
 ## 前置知识
 
 - [C14-S4] 的 `BaseIntelPlugin`、Intel 注册和结束延迟；
-- [C15-S1] 的 `SectorEntityToken`、目标 Memory 和生涯入口；
+- [C16-S1] 的 `SectorEntityToken`、目标 Memory 和生涯入口；
 - Java 继承、构造器和布尔状态；
 - `MemoryAPI.getBoolean(...)` 与 `Global.getSector()`。
 
@@ -101,7 +101,7 @@ GearIn_stage_investigate
 
 ## 从检查对话进入报告
 
-在 [C15-S1] 的 `GearInConversationDialog` 检查分支已经设置 `checked=true` 后，加入以下局部写入：
+在 [C16-S1] 的 `GearInConversationDialog` 检查分支已经设置 `checked=true` 后，加入以下局部写入：
 
 ```java
 dialog.getInteractionTarget().getMemoryWithoutUpdate().set(
@@ -207,7 +207,7 @@ Global.getSector().getIntelManager().addIntel(intel);
 
 当前阶段、阶段计时、`rewardGranted`、`missionEnded` 与目标引用都属于任务对象。情报与普通脚本登记保存它，persistent data 还提供后续对话的稳定入口，读档继续使用已保存的状态。
 
-附属条目通过当前引用重新绘制，不另存阶段副本。本节从 Java 市场入口直接接受，酒吧邀请与接受可以改用 `HubMissionWithBarEvent`，由 [C15-S5] 连接发现流程。
+附属条目通过当前引用重新绘制，不另存阶段副本。本节从 Java 市场入口直接接受，酒吧邀请与接受可以改用 `HubMissionWithBarEvent`，由 [C16-S5] 连接发现流程。
 
 ### 方法速查表
 

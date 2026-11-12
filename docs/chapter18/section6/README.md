@@ -21,7 +21,7 @@ _本节预期操作时间：\~25 分钟。_
 - [C18-S1] 已接入 GraphicsLib 与 LazyLib；
 - [C18-S5] 已在 `onApplicationLoad()` 中完成 `ShaderLib.init()`；
 - [C1-S5] 的 projectile 配置；
-- [C8-S5] 的 `OnHitEffectPlugin` 与命中回调；
+- [C8-S3] 的 `OnHitEffectPlugin` 与命中回调；
 - 能够在战斗中分别制造护盾命中与船体命中。
 
 ## 登记命中效果

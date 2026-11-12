@@ -19,7 +19,7 @@ _本节预期操作时间：\~25 分钟。_
 - [C1-S7] 的 CSV 转义、描述注册、`id + type` 与基础对象文本；
 - [C2-S3] 的突击填弹器、抵抗力场与效果参数；
 - [C3-S1] 的 `gear_industry` 势力；
-- [C3-S4] 的 GearIn Prime、Second、生成器与新档入口；
+- [C3-S3] 的 GearIn Prime、Second、生成器与新档入口；
 - 能够使用数据库、货舱、行星交互与战斗指挥界面。
 
 ## 从对象确定描述行
@@ -218,9 +218,9 @@ gear_industry,FACTION,以重型制造、耐用结构和严格工序闻名的工�
 GearIn_description_second,CUSTOM,齿轮工业外围的一颗荒芜行星，表面留有早期勘探设施的遗迹。,GearIn Second,您的舰队接近了 GearIn Second，地表勘探设施的信号仍在重复播放。,,,
 ```
 
-`text1` 是行星正文，`text2` 是供相应 tooltip 使用的标题，`text3` 是接触行星后显示的文本。这里定义描述键 `GearIn_description_second`，实体 ID 继续使用 [C3-S4] 的 `GearIn_planet2`；两者的连接由生成器中的绑定调用完成。
+`text1` 是行星正文，`text2` 是供相应 tooltip 使用的标题，`text3` 是接触行星后显示的文本。这里定义描述键 `GearIn_description_second`，实体 ID 继续使用 [C3-S3] 的 `GearIn_planet2`；两者的连接由生成器中的绑定调用完成。
 
-打开 [C3-S4] 的 `GearInSystemGenerator.generate()`，在创建第二颗行星的语句之后加入绑定调用。局部片段如下，其中 `second` 是生成器刚创建的行星：
+打开 [C3-S3] 的 `GearInSystemGenerator.generate()`，在创建第二颗行星的语句之后加入绑定调用。局部片段如下，其中 `second` 是生成器刚创建的行星：
 
 ```java
 PlanetAPI second = system.addPlanet(
@@ -260,7 +260,7 @@ GearIn_description_second,CUSTOM,齿轮工业外围的一颗荒芜行星，表�
 
 ## 验证方案
 
-前置数据：已启用 Console Commands 和包含 [C1-S7] 基础描述、[C2-S3] 战术系统与 [C3-S4] 星系生成器的 GearIn MOD，生成器已加入 Second 的描述绑定调用。
+前置数据：已启用 Console Commands 和包含 [C1-S7] 基础描述、[C2-S3] 战术系统与 [C3-S3] 星系生成器的 GearIn MOD，生成器已加入 Second 的描述绑定调用。
 
 1. 保存描述文件与生成器，重启游戏，在 `starsector.log` 中观察 `Loading descriptions` 和描述文件加载结果。
 2. 创建新生涯并进入 GearIn 星系，悬停 GearIn Second、打开行星详情，再接触它，分别核对自定义正文和接触文字。

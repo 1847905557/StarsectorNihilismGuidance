@@ -18,8 +18,8 @@ _本节预期操作时间：\~35 分钟。_
 
 ## 前置知识
 
-- [C15-S3] 的 `BarEventManager`、普通 `creator` 和酒吧选项；
-- [C15-S4] 的 `BaseHubMission`、阶段和任务接受；
+- [C16-S3] 的 `BarEventManager`、普通 `creator` 和酒吧选项；
+- [C16-S4] 的 `BaseHubMission`、阶段和任务接受；
 - Java 无参构造器、继承和全类名；
 - CSV 表头、字段顺序和数值类型。
 
@@ -34,11 +34,11 @@ GearIn_bar_hub,,10,1,30,40,30,40,60,90,data.scripts.gearin.campaign.GearInBarHub
 
 `BarEventSpec(JSONObject row)` 将这一行读成规格：抽取权重为 10，市场筛选概率为 1，没有额外标签。活动时长与未交互冷却各取 30 到 40 生涯日，交互后冷却取 60 到 90 日。这些时间属于酒吧事件管理；玩家接受的检查只运行一日，由任务类另行设置。
 
-这次也沿用 [C15-S3] 的事件管理器。不过 CSV 已经提供自动建立 `creator` 的入口，我们直接完成注册、任务与 Rules。
+这次也沿用 [C16-S3] 的事件管理器。不过 CSV 已经提供自动建立 `creator` 的入口，我们直接完成注册、任务与 Rules。
 
 ## 编写 `HubMission` 任务类
 
-保存 `src/data/scripts/gearin/campaign/GearInBarHubMission.java`，继承 `HubMissionWithBarEvent`。它沿用 [C15-S4] 的任务阶段，同时允许酒吧管理器通过无参构造器创建。构造器设置身份、显示名、接受后的起点与成功终点，局部实现如下：
+保存 `src/data/scripts/gearin/campaign/GearInBarHubMission.java`，继承 `HubMissionWithBarEvent`。它沿用 [C16-S4] 的任务阶段，同时允许酒吧管理器通过无参构造器创建。构造器设置身份、显示名、接受后的起点与成功终点，局部实现如下：
 
 ```java
 public GearInBarHubMission() {

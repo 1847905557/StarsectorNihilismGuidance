@@ -12,7 +12,14 @@ test('CLI options preserve multiple scopes, structured output and explicit write
 });
 test('summary counts diagnostics, byte totals and execution errors consistently', () => {
   const files = [
-    { path: 'a.md', bytes: 10, diagnostics: [{ rule: 'one' }, { rule: 'two' }] },
+    {
+      path: 'a.md',
+      bytes: 10,
+      diagnostics: [
+        { line: 1, column: 1, rule: 'one', message: 'one' },
+        { line: 2, column: 1, rule: 'two', message: 'two' },
+      ],
+    },
     { path: 'b.md', bytes: 4, diagnostics: [] },
   ];
   const findings = result(files);

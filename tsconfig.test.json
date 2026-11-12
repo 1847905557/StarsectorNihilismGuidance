@@ -4,7 +4,9 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "types": ["vite/client", "node"]
+    "types": ["vite/client", "node"],
+    "allowJs": true,
+    "checkJs": true
   },
-  "include": ["docs/.vuepress/**/*.test.ts"]
+  "include": ["docs/.vuepress/**/*.test.ts", "*.config.ts", "tests/browser/**/*.ts"]
 }

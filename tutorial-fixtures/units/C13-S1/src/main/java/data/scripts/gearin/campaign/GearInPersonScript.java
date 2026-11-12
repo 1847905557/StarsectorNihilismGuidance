@@ -11,7 +11,7 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Ranks;
 
 /**
- * 创建或读取 Aster Vance，并把人物加入 GearIn Foundry 的通信目录。
+ * 创建或读取 Aster Vance，并把人物加入 Nipher Foundry 的通信目录。
  * 固定人物 ID 与目录查询使重复调用保持同一个人物和目录条目。
  */
 public class GearInPersonScript {

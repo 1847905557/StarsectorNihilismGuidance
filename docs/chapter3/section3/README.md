@@ -1,319 +1,20 @@
-# 制作 MOD 入口类的最基础适配
+# 制作一个生涯星系
 
-势力文件提供身份与舰队配置，初始关系则在创建生涯时设置。本节建立齿轮工业的 MOD 入口，把关系代码放进新档回调。下一节会通过同一个入口生成星系，当前先确认类能加载、回调能执行。
+星区里的每一个星系，都是开局那一刻由代码逐个摆上星图的。恒星、行星、空间站、跳跃点，原版的星系是这样来的，齿轮工业的星系也会是这样来的。
 
-_本节预期阅读时间：\~8 分钟。_
+势力有了名字和舰队，现在给它一个能让玩家驾船抵达的地方。
 
-_本节预期操作时间：\~10 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~20 分钟。_
 
-完成后，您将能够：
+_本节预期操作时间：\~20 分钟。_
 
-- 在 `mod_info.json` 中声明 MOD 入口类；
-- 创建采用 `BaseModPlugin` 的入口文件；
-- 在新档回调中设置自定义势力的初始关系；
-- 根据加载日志与新档结果定位入口问题。
+## 制作 MOD 入口类
 
-## 前置知识
+很不幸的是，您接下来将不可避免地接触更多的代码。船插的代码只在战斗中运行，这一次的代码要在生涯开局时运行。**如果您希望将您的 MOD 做好，那您以后将会接触更多、更难的代码，如果您连这部分都难以处理，那将很难进行日后的开发。**
 
-- [C1-S1] 的 MOD 目录、`mod_info.json` 与类名规则；
-- [C2-S1] 的效果类、参数和游戏回调；
-- [C3-S1] 的 `gear_industry` 势力。
-
-## 创建入口文件
-
-在 MOD 中创建 `data/scripts/gearin/GearInModPlugin.java`。入口类继承 `BaseModPlugin`，写法与此前船插继承基类的结构相似。
-
-本例在创建新生涯时设置关系，因此使用 `onNewGame()` 回调。游戏在这个时机调用它，下面是入口中的局部片段：
-
-```java
-@Override
-public void onNewGame() {
-    seedRelations(Global.getSector());
-}
-```
-
-`Global.getSector()` 取得正在生成的生涯星区；`seedRelations(...)` 是本例定义的关系设置方法。这里将星区作为参数传入，关系设置便作用于这次生成的生涯。
-
-**方法名与调用位置共同决定代码何时生效。** 关系设置放在新档回调，已有存档会继续保留自己的关系。修改代码后，需要创建新档观察初始值。
-
-## 设置齿轮工业的初始关系
-
-在同一个类中加入刚才调用的 `seedRelations(...)` 方法，局部片段如下：
-
-```java
-private void seedRelations(SectorAPI sector) {
-    FactionAPI gear = sector.getFaction("gear_industry");
-    gear.setRelationship("player", 0f);
-    gear.setRelationship("pirates", RepLevel.HOSTILE);
-    gear.setRelationship("hegemony", RepLevel.FRIENDLY);
-    gear.setRelationship("tritachyon", RepLevel.HOSTILE);
-}
-```
-
-`sector.getFaction("gear_industry")` 按本章定义的 ID 取得势力，`gear` 保存这个对象。后面每行都通过它调用 `setRelationship`，第一项填写对方势力 ID，第二项填写关系；这些语句因此都以齿轮工业为设置对象。
-
-`0f` 为中立，`RepLevel.HOSTILE` 为敌对，`RepLevel.FRIENDLY` 为友好。采用关系等级时，游戏选择对应数值，并同步双方的关系。设置的是开局关系，后续生涯事件仍然可以继续改变它们。
-
-本例让齿轮工业与玩家中立、与霸主友好、与海盗和速子科技敌对。关系按势力设定安排：舰队构成、市场归属和外交行为最终都会在同一个星区中发生，关系也应当服务于这个设计。
-
-## 在 mod_info.json 中声明入口
-
-关系方法写好后，还需要声明这个类作为 MOD 入口。在 MOD 的 `mod_info.json` 顶层对象中加入下面的局部字段：
-
-```json
-"modPlugin": "data.scripts.gearin.GearInModPlugin"
-```
-
-按相邻字段补齐逗号，并保留已有的 MOD 信息。**`modPlugin` 的值由入口文件的包名和类名组成**，与声明逐字符一致。游戏加载 MOD 时据此找到入口。
-
-## 完整最小例
-
-将完整文件保存为 `data/scripts/gearin/GearInModPlugin.java`，入口声明采用上面的完整类名。
-
-::: details 完整成品：GearInModPlugin
-
-```java
-package data.scripts.gearin;
-
-import com.fs.starfarer.api.BaseModPlugin;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.FactionAPI;
-import com.fs.starfarer.api.campaign.RepLevel;
-import com.fs.starfarer.api.campaign.SectorAPI;
-
-/** 在新档生成时设置齿轮工业的初始关系。 */
-public class GearInModPlugin extends BaseModPlugin {
-
-    @Override
-    public void onNewGame() {
-        seedRelations(Global.getSector());
-    }
-
-    private void seedRelations(SectorAPI sector) {
-        FactionAPI gear = sector.getFaction("gear_industry");
-        gear.setRelationship("player", 0f);
-        gear.setRelationship("pirates", RepLevel.HOSTILE);
-        gear.setRelationship("hegemony", RepLevel.FRIENDLY);
-        gear.setRelationship("tritachyon", RepLevel.HOSTILE);
-    }
-}
-```
-
-:::
-
-## 验证方案
-
-1. 保存入口源码与 `mod_info.json`，重启游戏，检查主菜单加载和日志中的类加载信息。
-2. 创建新生涯，按 `F` 打开情报并进入势力列表。
-3. 选择齿轮工业，核对玩家、海盗、霸主与速子科技的关系。
-4. 修改其中一项初始关系，保存并重启，再创建测试生涯比较该项结果。
-
-预期结果：
-
-- MOD 入口类加载完成，游戏进入主菜单。
-- 齿轮工业与玩家中立，与霸主友好，与海盗和速子科技敌对。
-- 新建生涯采用保存后的初始关系设置；已有生涯保留当前关系。
-
-## 故障分析
-
-- **启动时报 Error loading [data.scripts.gearin.GearInModPlugin]**：入口值与源码包名、类名或目录不一致。
-    - **解决方案**：按完整类名逐段核对文件路径和声明，保存后重启。
-
-- **新档的初始关系没有设置**：入口尚未登记，或 `onNewGame()` 未调用关系方法。
-    - **解决方案**：核对 `modPlugin` 字段、回调与 `seedRelations` 调用，重新创建生涯。
-
-- **修改后已有存档关系保持原样**：新档回调在创建生涯时执行，当前存档保留自己的状态。
-    - **解决方案**：创建测试生涯核对初始关系。
-
-## 总结
-
-MOD 入口通过 `mod_info.json` 登记，`BaseModPlugin` 提供回调结构，`onNewGame()` 把关系设置放在创建生涯的时机。势力文件定义的 ID 在这里用于取得运行中的势力对象。
-
-下一节继续使用这个入口调用星系生成器。启动、保存、读档与持久化的完整处理，由 [C7-S1] 结合工程化后的代码讲解。
-
-## 建议参考项
-
-- `mod_info.json`：`modPlugin` 入口声明。
-- `com.fs.starfarer.api.BaseModPlugin`：提供默认回调实现的基类。
-- `com.fs.starfarer.api.ModPlugin`：`onNewGame()` 新档回调。
-- `com.fs.starfarer.api.Global`：`getSector()` 取得生涯星区。
-- `com.fs.starfarer.api.campaign.FactionAPI`：`setRelationship` 设置势力关系。
-- `com.fs.starfarer.api.campaign.RepLevel`：关系等级。
-
-## 制作一个生涯星系
-
-势力已经注册，入口类也能在新档中执行代码。本节继续通过这个入口生成 GearIn 星系：放入恒星、两颗行星和通讯中继，给主行星建立基础市场，再生成超空间入口。原版已经提供这些对象的类型，我们主要决定名称、位置与归属。
-
-## 学习目标
-
-完成后，您将能够：
-
-- 从新档回调调用星系生成器；
-- 放置恒星、行星、通讯中继与跳跃点；
-- 区分创建星系、创建实体与加入实体的操作；
-- 给主行星绑定基础市场、产业与子市场；
-- 在星图、轨道、交互和交易界面核对生成结果。
-
-## 前置知识
-
-- [C3-S1] 的 `gear_industry` 势力；
-- [C3-S3] 的 `GearInModPlugin` 与新档回调；
-- [C2-S1] 的 Java 文件、包名与类名对应关系；
-- 能够在生涯星图中定位星系、通过跳跃点移动并与行星交互。
-
-## 创建星系生成器并接入入口
-
-创建 `data/scripts/gearin/campaign/GearInSystemGenerator.java`。这个类采用 `SectorGeneratorPlugin` 的生成器结构，操作都写在 `generate(SectorAPI sector)` 方法中，完整文件在后面给出。
-
-回到上一节的 `GearInModPlugin.java`，在 import 区加入：
-
-```java
-import data.scripts.gearin.campaign.GearInSystemGenerator;
-```
-
-再把新档回调改为下面的局部片段：
-
-```java
-@Override
-public void onNewGame() {
-    new GearInSystemGenerator().generate(Global.getSector());
-    seedRelations(Global.getSector());
-}
-```
-
-第一条语句创建生成器并调用 `generate`，第二条继续设置关系。`mod_info.json` 的入口值仍指向 `GearInModPlugin`。**生成器由入口主动调用**，因此保存生成器类文件后，还要在入口中保留这条调用。
-
-接下来依次向 `generate` 中加入代码。每段创建的对象会供后面的操作使用，因此按当前顺序排列。
-
-## 建立星系、恒星与超空间位置
-
-先创建星系容器：
-
-```java
-StarSystemAPI system = sector.createStarSystem("GearIn");
-system.setBackgroundTextureFilename("graphics/backgrounds/background2.jpg");
-system.setLightColor(new Color(200, 200, 210));
-```
-
-`system` 保存刚创建的星系，背景路径和光照颜色采用原版资源。之后的行星、实体和入口都加入这个 `system`，让它们属于同一个地点。
-
-再初始化恒星并设置超空间位置：
-
-```java
-PlanetAPI star = system.initStar("gearin", "star_yellow", 600f, 550f, 3f, 0.75f, 1f);
-system.getLocation().set(-16000f, -9000f);
-```
-
-`gearin` 是恒星 ID，`star_yellow` 是原版黄色恒星类型。`star` 保存创建得到的恒星，行星和通讯中继随后以它作为轨道焦点，因此这一步放在行星创建之前。
-
-### initStar 参数速查表
-
-| 参数             | 当前填写      |
-| ---------------- | ------------- |
-| 恒星 ID          | `gearin`      |
-| 恒星类型         | `star_yellow` |
-| 恒星半径         | 600           |
-| 日冕范围         | 550           |
-| 恒星风移动影响   | 3             |
-| 耀斑概率         | 0.75          |
-| 日冕 CR 损耗倍率 | 1             |
-
-**星系内部的轨道位置与星系在超空间中的位置分别设置。** `system.getLocation().set(...)` 使用超空间坐标，本例选取 `(-16000,-9000)`。它决定 GearIn 在星图中的位置，调整时可以先以原版核心区作为参照，再留出希望的航程。
-
-恒星初始化也会按恒星 ID 查询 `data/campaign/starmap.json` 中的 `starSystemLocations`。本例直接写超空间坐标；采用数据表定位时，登记 `gearin` 对应的位置即可。
-
-## 放置两颗行星
-
-在恒星之后添加主行星与外侧行星：
-
-```java
-PlanetAPI prime = system.addPlanet(
-        "GearIn_planet1", star, "GearIn Prime",
-        "terran", 55, 150, 3200, 120);
-PlanetAPI second = system.addPlanet(
-        "GearIn_planet2", star, "GearIn Second",
-        "barren", 200, 90, 5200, 200);
-```
-
-`GearIn_planet1`、`GearIn_planet2` 是实体 ID，Prime 与 Second 是显示名。第二个参数 `star` 指定轨道焦点，`terran` 和 `barren` 则选择原版行星类型。
-
-`addPlanet` 后四个数字依次为轨道角、行星半径、轨道半径和轨道周期天数。主行星半径为 150，轨道半径为 3200，周期为 120 天；外侧行星半径 90，轨道半径 5200，周期 200 天。**轨道焦点与轨道参数共同确定行星的位置关系**，可以按代码中的对象与数值核对星图。
-
-`addPlanet` 同时把行星加入当前星系。它返回的对象分别保存在 `prime` 与 `second` 中，后面的市场、描述等配置继续使用这两个引用。
-
-## 加入原版通讯中继
-
-在同一个 `system` 中添加中继：
-
-```java
-SectorEntityToken stable = system.addCustomEntity(
-        "GearIn_stable", "GearIn 通讯中继",
-        "comm_relay", "gear_industry");
-stable.setCircularOrbitPointingDown(star, 90, 2200, 100);
-```
-
-`comm_relay` 是原版实体类型，`gear_industry` 指定所属势力。返回的中继实体保存在 `stable` 中，随后通过它设置围绕恒星的轨道，仍然使用刚才的 `star` 作为焦点。
-
-轨道角为 90，半径为 2200，周期为 100 天，`PointingDown` 采用该类实体常用的朝向方式。原版实体类型可以直接用于本节制作，自定义类型则由 [C4-S6] 展开。
-
-## 给主行星建立基础市场
-
-行星的外观类型与它的市场分别配置，`terran` 类型本身不会完成这里的市场创建。本节给 Prime 创建规模 4 的市场，使用人口、太空港、公开市场和仓储这些原版组件。
-
-先建立市场与行星的归属，局部片段如下：
-
-```java
-MarketAPI market = Global.getFactory().createMarket(prime.getId(), prime.getName(), 4);
-market.setFactionId("gear_industry");
-market.setPrimaryEntity(prime);
-market.setSurveyLevel(MarketAPI.SurveyLevel.FULL);
-```
-
-`createMarket` 使用行星 ID、名称与规模，创建得到的市场保存在 `market` 中。`setPrimaryEntity` 将 Prime 指定为主实体，`FULL` 把勘测状态设为已完成。归属关系设置后，再添加市场内容：
-
-```java
-market.addCondition("population_4");
-market.addIndustry("population");
-market.addIndustry("spaceport");
-market.addSubmarket("open_market");
-market.addSubmarket("storage");
-```
-
-这些字符串都是原版已注册的 ID，分别写入市场的条件、产业与子市场。市场条件描述规模 4 的人口，产业提供人口与太空港，子市场提供公开交易与仓储。
-
-最后把它加入星区经济，并连接回行星：
-
-```java
-sector.getEconomy().addMarket(market, true);
-prime.setMarket(market);
-prime.setFaction("gear_industry");
-```
-
-**创建市场、加入经济与绑定实体都要完成。** 使用行星的 ID 和名称创建市场之后，仍要通过上面的调用建立实际连接。完成后，玩家靠近 Prime 就可以打开对应市场。当前配置用于验证交易与归属，市场的完整行为与自定义商品由 [C12-S1]、[C12-S2] 继续讲解。
-
-## 生成往返星系的入口
-
-创建跳跃点并设置轨道：
-
-```java
-JumpPointAPI jump = Global.getFactory().createJumpPoint("GearIn_jump", "GearIn 跳跃点");
-jump.setCircularOrbit(star, 300, 1800, 100);
-jump.setRelatedPlanet(prime);
-system.addEntity(jump);
-system.autogenerateHyperspaceJumpPoints(true, true);
-```
-
-`createJumpPoint` 先返回跳跃点对象，`system.addEntity(jump)` 再把它加入星系。与前面的 `addPlanet`、`addCustomEntity` 相比，这个创建方法需要单独完成加入操作。
-
-`autogenerateHyperspaceJumpPoints` 根据星系内部的入口生成超空间端，并连接目的地。两个 `true` 分别允许生成气态巨行星入口与边缘跳跃点。**在调整星系时，入口位置也属于设计的一部分**：玩家抵达后还需要从这里驶向行星，轨道间距直接影响这段航程。
-
-## 完整最小例
-
-入口类保存到 `data/scripts/gearin/GearInModPlugin.java`，生成器保存到 `data/scripts/gearin/campaign/GearInSystemGenerator.java`。入口声明继续采用 [C3-S3] 的完整类名。
-
-::: details 完整成品：GearInModPlugin
+游戏启动、读档、开新档时，会调用每个 MOD 的入口类。在 MOD 根目录下创建 `data/scripts/gearin/GearInModPlugin.java`：
 
 ```java
 package data.scripts.gearin;
@@ -345,9 +46,21 @@ public class GearInModPlugin extends BaseModPlugin {
 }
 ```
 
-:::
+`onNewGame()` 在创建新生涯时调用一次。这里先调用星系生成器，再设置齿轮工业与几个原版势力的初始关系。`RepLevel` 是关系等级，从 `VENGEFUL` 到 `COOPERATIVE`；`"player"` 一行直接写数值，`0f` 即中立。原版势力 ID 可以在 `data/world/factions/` 中查到，原版自己的关系设置见 `data/scripts/world/SectorGen.java`。
 
-::: details 完整成品：GearInSystemGenerator
+**`onNewGame()` 只在开新档时运行。** 已有的存档读进来，不会补上星系，也不会改关系。以后凡是写在新档回调里的内容，测试时都要开新档；在旧档里找不到，先确认这个档是不是在改代码之前开的。
+
+然后在 `mod_info.json` 中声明入口类，与已有字段之间用逗号分隔：
+
+```json
+"modPlugin": "data.scripts.gearin.GearInModPlugin"
+```
+
+**`modPlugin` 的值是入口类的完整类名，由包名和类名组成。** 它与 `package` 语句、文件所在目录逐段对应，错一个字母，游戏就会在启动时报错退出。
+
+## 编写星系生成器
+
+在 `data/scripts/gearin/campaign/` 创建 `GearInSystemGenerator.java`。这个类就是上面入口类调用的生成器。**生成器由入口主动调用**，入口类里的那一行删掉，星系就不会生成。字段旁的注释说明了每个参数的含义：
 
 ```java
 package data.scripts.gearin.campaign;
@@ -368,22 +81,28 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 
     @Override
     public void generate(SectorAPI sector) {
-        StarSystemAPI system = sector.createStarSystem("GearIn");
+        // 星系 ID、背景图与星系内的光照颜色
+        StarSystemAPI system = sector.createStarSystem("Nipher");
         system.setBackgroundTextureFilename("graphics/backgrounds/background2.jpg");
         system.setLightColor(new Color(200, 200, 210));
 
-        PlanetAPI star = system.initStar("gearin", "star_yellow", 600f, 550f, 3f, 0.75f, 1f);
+        // 恒星：ID、类型、半径、日冕大小、恒星风强度、耀斑概率、战备值损失倍率
+        PlanetAPI star = system.initStar("nipher", "star_yellow", 600f, 550f, 3f, 0.75f, 1f);
+        // 星系在超空间中的坐标
         system.getLocation().set(-16000f, -9000f);
 
+        // 行星：ID、轨道焦点、名称、类型、轨道角、半径、轨道半径、轨道周期 (天)
         PlanetAPI prime = system.addPlanet(
-                "GearIn_planet1", star, "GearIn Prime", "terran", 55, 150, 3200, 120);
+                "GearIn_planet1", star, "Nipher Prime", "terran", 55, 150, 3200, 120);
         PlanetAPI second = system.addPlanet(
-                "GearIn_planet2", star, "GearIn Second", "barren", 200, 90, 5200, 200);
+                "GearIn_planet2", star, "Nipher Second", "barren", 200, 90, 5200, 200);
 
+        // 原版通讯中继：ID、名称、实体类型、所属势力
         SectorEntityToken stable = system.addCustomEntity(
-                "GearIn_stable", "GearIn 通讯中继", "comm_relay", "gear_industry");
+                "GearIn_stable", "Nipher 通讯中继", "comm_relay", "gear_industry");
         stable.setCircularOrbitPointingDown(star, 90, 2200, 100);
 
+        // 市场：ID 与名称沿用行星，规模 4
         MarketAPI market = Global.getFactory().createMarket(prime.getId(), prime.getName(), 4);
         market.setFactionId("gear_industry");
         market.setPrimaryEntity(prime);
@@ -397,60 +116,76 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
         prime.setMarket(market);
         prime.setFaction("gear_industry");
 
-        JumpPointAPI jump = Global.getFactory().createJumpPoint("GearIn_jump", "GearIn 跳跃点");
+        // 星系内的跳跃点，关联主行星
+        JumpPointAPI jump = Global.getFactory().createJumpPoint("GearIn_jump", "Nipher 跳跃点");
         jump.setCircularOrbit(star, 300, 1800, 100);
         jump.setRelatedPlanet(prime);
         system.addEntity(jump);
+        // 生成超空间一侧的入口：气态巨行星入口、星系边缘跳跃点
         system.autogenerateHyperspaceJumpPoints(true, true);
     }
 }
 ```
 
+星系的名称与 ID 都是 `Nipher`，恒星是一颗黄色恒星。**星系内部的轨道与星系在超空间中的位置是两套坐标。** `addPlanet` 的轨道半径以恒星为中心，`getLocation().set(...)` 则决定 Nipher 在星图上的位置；本例的 `(-16000, -9000)` 位于星区核心以西，原版 Corvus 星系在 `(400, -9400)` 附近，可以以它为参照选择航程。编者把 Nipher 放得离核心区很远，让齿轮工业像一个偏居一隅的工业势力；代价是玩家要专程跑一趟，测试时也一样。
+
+**轨道焦点与轨道参数共同确定行星的位置关系**，两颗行星都绕恒星运行。Nipher Prime 是宜居的类地行星，承载齿轮工业的市场；Nipher Second 是外侧的贫瘠行星，暂时只是一颗行星。
+
+通讯中继直接使用原版的 `comm_relay` 实体类型，归属齿轮工业。它让玩家在星系里能收到情报和联系人消息，原版有人居住的星系几乎都有一座。
+
+### 建立市场
+
+市场与行星是两个对象。**创建市场、加入经济、与行星互相绑定，三步缺一不可。** 只创建不加入经济，市场不参与贸易；只加入经济不绑定行星，玩家靠近行星也打不开它。
+
+`population_4` 是规模条件，与 `createMarket` 的规模保持一致；`population` 与 `spaceport` 是人口与太空港产业，有人居住的市场至少需要这两项。`open_market` 是公开市场，`storage` 是仓储。
+
+这个市场只用于确认星系与势力的归属。行星条件、更多产业与子市场留到 [C12-S1] 讲解。
+
+::: tip 使用 MagicLib 创建市场
+
+MagicLib 的 `MagicCampaign.addSimpleMarket(...)` 可以把上面这一串调用压成一行；MagicLib 的接入与用法见 [C18-S11]。MagicLib 是三前置的一个，可以确定几乎所有玩家都会使用它。使用广为流传的前置 Mod 而非什么不知从何而来的陌生前置 Mod 更利于您 Mod 的流通。
+
 :::
 
-## 验证方案
+### 生成跳跃点
 
-1. 保存入口和生成器，重启游戏，确认 `modPlugin` 指向 `data.scripts.gearin.GearInModPlugin`，创建新生涯。
-2. 在星图定位 GearIn，从超空间入口进入，核对黄色恒星、Prime、Second 和通讯中继。
-3. 查看轨道焦点与相对距离，核对中继归属齿轮工业。
-4. 靠近 Prime，进入公开市场和仓储，观察规模、商品与所属势力。
-5. 返回超空间再进入，确认星系入口与跳跃点连接正常。
+`createJumpPoint` 在星系内创建一个跳跃点，`setRelatedPlanet` 让它在星图上显示为通往 Nipher Prime 的入口。`autogenerateHyperspaceJumpPoints(true, true)` 在超空间一侧生成对应的入口，第一个 `true` 允许在气态巨行星处生成单向入口，第二个 `true` 额外在星系边缘生成一个双向跳跃点。
 
-预期结果：
+**在调整星系时，入口位置也属于设计的一部分**：玩家抵达后还要从跳跃点驶向行星，本例的跳跃点在 1800 的轨道上，离 Nipher Prime 不远。
 
-- GearIn 位于设置的超空间坐标，新档中可以进入。
-- 恒星使用 `star_yellow`，Prime 使用 `terran`，Second 使用 `barren`，轨道分别围绕恒星。
-- 中继采用 `comm_relay`，归属 `gear_industry`。
-- Prime 的规模 4 市场可以打开公开交易与仓储，勘测状态为已完成。
-- 星系内的手动跳跃点与超空间端连接，玩家可以往返。
+**没有调用 `autogenerateHyperspaceJumpPoints`，星系在超空间中就没有入口。** 星图上能看到它，但玩家飞到那里什么也进不去。
 
-## 故障分析
+### 进游戏核对
 
-- **星系位于超空间原点**：位置表缺少恒星 ID，生成器也未写入超空间位置。
-    - **解决方案**：在恒星初始化后设置 `system.getLocation()`，或登记 `starmap.json` 位置，保存后创建新档。
+保存两个类与 `mod_info.json`，启动游戏，创建一个新生涯。打开星图，在核心区以西找到 Nipher：
 
-- **行星或实体没有出现**：创建使用了不同星系容器，或跳跃点尚未加入实体集合。
-    - **解决方案**：核对当前 `system`，为工厂创建的跳跃点调用 `addEntity`，重新创建生涯。
+- 星系内有恒星、Nipher Prime、Nipher Second、通讯中继与跳跃点；
+- Nipher Prime 归属齿轮工业，靠近后可以进入市场交易，也可以使用仓储；
+- 在情报的势力页查看齿轮工业，与海盗、速子科技敌对，与霸主友好。
 
-- **新档没有生成星系**：入口未加载，或回调未调用生成器。
-    - **解决方案**：核对入口声明、import 和 `generate` 调用，重启并创建测试生涯。
+## 继续扩充星系
 
-- **行星没有可交易市场**：市场未加入经济、主实体未指定或子市场 ID 填错。
-    - **解决方案**：核对市场创建、经济登记、实体绑定与 `open_market`、`storage`，创建新档验证。
+Nipher 现在只有两颗行星、一座中继和一个市场，看上去空空如也，但稍后即可为它添加星球与各种各样的东西。
 
-## 总结
+在**原版的 `data/scripts/world/corvus` 文件夹内，是 Corvus 星系的生成文件。而在 `data/scripts/world/systems` 文件夹内则是几乎所有其它星系的生成文件。**
 
-本节从新档回调调用生成器，建立星系与实体，再为 Prime 接入基础市场，并生成超空间入口。对象类型来自原版定义，代码提供位置、轨道与归属，各步骤返回的对象用于后续配置。
+编者认为**一切创作的本质，不过是对现有元素的再次排列组合**，而在代码上则只需要不断复制、粘贴与修改即可。您可以在上述各类星系里找到星球、陨石带、碎片带、极光、空间站、跳跃点、星门等物体的添加方法，只需要将它们任意进行排列组合，复制到 `generate` 中，然后再根据所需进行微调即可。
 
-现在已经有了一个能进入、交互与交易的星系。继续扩充时，沿着同样的对象关系加入内容，再分别核对星图、轨道和交互结果；下一节为势力、系统和行星补上各自的描述。
+如果您需要各类对于参数的注解，那么**您可以查阅 `starsector-core/starfarer.api.zip` 中 `LocationAPI` 与 `StarSystemAPI` 的源码注释**，在这里全部列出会导致篇幅过长。
 
-## 建议参考项
+## 常见问题
 
-- `com.fs.starfarer.api.campaign.SectorGeneratorPlugin`：生成器的 `generate` 方法。
-- `com.fs.starfarer.api.campaign.SectorAPI`：创建星系和取得星区经济。
-- `com.fs.starfarer.api.campaign.StarSystemAPI`：初始化恒星、放置实体、超空间位置与入口生成。
-- `com.fs.starfarer.api.campaign.JumpPointAPI`：跳跃点对象与行星关联。
-- `com.fs.starfarer.api.campaign.econ.MarketAPI`：市场组件、主实体与勘测状态。
-- `data/config/planets.json`：原版恒星与行星类型。
-- `data/config/custom_entities.json`：原版生涯实体类型。
-- `data/campaign/starmap.json`：`starSystemLocations` 超空间位置数据。
+- **启动时报 `Error loading [data.scripts.gearin.GearInModPlugin]`**：`modPlugin` 的值与入口类的包名、类名或所在目录不一致。
+    - **解决方案**：按完整类名逐段核对 `package` 语句与文件路径，保存后重启。
+
+- **启动时报编译错误，指向 `GearInSystemGenerator`**：生成器的包名与目录不一致，或入口类缺少它的 `import`。
+    - **解决方案**：确认生成器位于 `data/scripts/gearin/campaign/`，入口类写有 `import data.scripts.gearin.campaign.GearInSystemGenerator;`，保存后重启。
+
+- **星图上找不到 Nipher**：使用的是改代码之前的存档。
+    - **解决方案**：创建新生涯。
+
+- **Nipher 出现在星图上，但进不去**：没有调用 `autogenerateHyperspaceJumpPoints`。
+    - **解决方案**：在 `generate` 末尾补上这一行，保存后重启并创建新生涯。
+
+- **靠近 Nipher Prime 无法进入市场**：市场没有加入经济，或没有与行星互相绑定。
+    - **解决方案**：核对 `addMarket`、`setPrimaryEntity` 与 `setMarket` 三处调用，保存后重启并创建新生涯。

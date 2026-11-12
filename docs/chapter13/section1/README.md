@@ -213,7 +213,7 @@ import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Ranks;
 
 /**
- * 创建或读取 Aster Vance，并把人物加入 GearIn Foundry 的通信目录。
+ * 创建或读取 Aster Vance，并把人物加入 Nipher Foundry 的通信目录。
  * 固定人物 ID 与目录查询使重复调用保持同一个人物和目录条目。
  */
 public class GearInPersonScript {
@@ -286,7 +286,7 @@ public class GearInPersonScript {
 1. 执行 `gradle jar`，确认 MOD 构建完成。
 2. 载入存档并推进一轮经济更新，触发现有观察器中的 `run()`。
 3. 在 `starsector.log` 查找 `GearIn person:`。
-4. 打开 GearIn Foundry 通信目录，确认姓名、头像和职务。
+4. 打开 Nipher Foundry 通信目录，确认姓名、头像和职务。
 5. 退出并重新载入同一存档，再推进经济更新，比较 `created` 与目录数量。
 6. 保存并重新载入，再次检查固定 ID 和目录条目。
 

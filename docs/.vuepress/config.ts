@@ -1,17 +1,16 @@
-import { viteBundler } from '@vuepress/bundler-vite'
-import { defaultTheme } from '@vuepress/theme-default'
-import { defineUserConfig } from 'vuepress'
+import { viteBundler } from '@vuepress/bundler-vite';
+import { defaultTheme } from '@vuepress/theme-default';
+import { defineUserConfig } from 'vuepress';
 
-import { spLinkPlugin } from './markdown-splink.js'
-import { sectionListPlugin } from './markdown-sectionlist.js'
-import { devEditPlugin, devEditVitePlugin } from './plugin-dev-edit.js'
-import { createSidebar, sidebarDiscoveryPlugin } from './sidebar.js'
+import { spLinkPlugin } from './markdown-splink.js';
+import { sectionListPlugin } from './markdown-sectionlist.js';
+import { devEditPlugin, devEditVitePlugin } from './plugin-dev-edit.js';
+import { createSidebar, sidebarDiscoveryPlugin } from './sidebar.js';
 
-const REPO_URL =
-  'https://github.com/1847905557/StarsectorNihilismGuidance'
-const HOSTNAME = 'https://1847905557.github.io'
-const BASE = '/StarsectorNihilismGuidance/'
-const SITE_URL = `${HOSTNAME}${BASE}`
+const REPO_URL = 'https://github.com/1847905557/StarsectorNihilismGuidance';
+const HOSTNAME = 'https://1847905557.github.io';
+const BASE = '/StarsectorNihilismGuidance/';
+const SITE_URL = `${HOSTNAME}${BASE}`;
 
 export default defineUserConfig({
   bundler: viteBundler({
@@ -26,8 +25,8 @@ export default defineUserConfig({
   description: '虚无主义教程 - Starsector Nihilism Guidance',
   base: BASE,
   extendsMarkdown: (md, app) => {
-    md.use(spLinkPlugin, { base: app.options.base })
-    md.use(sectionListPlugin, { base: app.options.base, docsDir: app.dir.source() })
+    md.use(spLinkPlugin, { base: app.options.base });
+    md.use(sectionListPlugin, { base: app.options.base, docsDir: app.dir.source() });
   },
   theme: defaultTheme({
     hostname: HOSTNAME,
@@ -50,9 +49,6 @@ export default defineUserConfig({
     contributorsText: '贡献者',
     tip: '提示',
     warning: '注意',
-    caution: '警告',
-    important: '重要',
-    note: '注释',
     notFound: ['页面不存在'],
     backToHome: '返回首页',
     openInNewWindow: '在新窗口中打开',
@@ -61,4 +57,4 @@ export default defineUserConfig({
     prev: '上一页',
     next: '下一页',
   }),
-})
+});

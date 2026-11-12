@@ -9,11 +9,6 @@ java {
 }
 
 def starsectorRootProp = providers.gradleProperty("starsectorRoot")
-if (!starsectorRootProp.present) {
-	throw new GradleException("未配置 starsectorRoot：请在 tutorial-fixtures/gradle.properties 中补充 starsectorRoot=<你的 Starsector 游戏安装根目录>（该文件被 .gitignore 忽略，需自行创建）")
-}
-def gameRoot = file(starsectorRootProp.get())
-def modsRoot = file(providers.gradleProperty("starsectorModsRoot").getOrElse("${gameRoot}/mods"))
 def javaUnitIds = [
 	"C2-S1", "C2-S2", "C2-S3", "C2-S4",
 	"C3-S3",
@@ -36,17 +31,25 @@ def javaUnitIds = [
 ]
 def shaderUnitIds = ["C20-S2", "C20-S3", "C20-S4", "C20-S5"]
 
-def fixtureJars = files(
-	fileTree(dir: "${gameRoot}/starsector-core", include: ["*.jar"]),
-	fileTree(dir: "${modsRoot}/LazyLib/jars", include: ["*.jar"]),
-	fileTree(dir: "${modsRoot}/LazyLib/jars/internal", include: ["*.jar"]),
-	fileTree(dir: "${modsRoot}/GraphicsLib/jars", include: ["*.jar"]),
-	fileTree(dir: "${modsRoot}/MagicLib/jars", include: ["*.jar"]),
-	fileTree(dir: "${modsRoot}/Lunalib/jars", include: ["*.jar"]),
-	fileTree(dir: "${modsRoot}/BoxUtil/jars", include: ["*.jar"]),
-	fileTree(dir: "${modsRoot}/BoxUtil/jars/backends", include: ["*.jar"]),
-	fileTree(dir: "${modsRoot}/Nexerelin/jars", include: ["*.jar"])
-)
+def fixtureJars = files({
+	if (!starsectorRootProp.present) {
+		throw new GradleException("未配置 starsectorRoot：请在 tutorial-fixtures/gradle.properties 中补充 starsectorRoot=<你的 Starsector 游戏安装根目录>（该文件被 .gitignore 忽略，需自行创建）")
+	}
+	def gameRoot = file(starsectorRootProp.get())
+	def modsRoot = file(providers.gradleProperty("starsectorModsRoot").getOrElse("${gameRoot}/mods"))
+
+	return files(
+		fileTree(dir: "${gameRoot}/starsector-core", include: ["*.jar"]),
+		fileTree(dir: "${modsRoot}/LazyLib/jars", include: ["*.jar"]),
+		fileTree(dir: "${modsRoot}/LazyLib/jars/internal", include: ["*.jar"]),
+		fileTree(dir: "${modsRoot}/GraphicsLib/jars", include: ["*.jar"]),
+		fileTree(dir: "${modsRoot}/MagicLib/jars", include: ["*.jar"]),
+		fileTree(dir: "${modsRoot}/Lunalib/jars", include: ["*.jar"]),
+		fileTree(dir: "${modsRoot}/BoxUtil/jars", include: ["*.jar"]),
+		fileTree(dir: "${modsRoot}/BoxUtil/jars/backends", include: ["*.jar"]),
+		fileTree(dir: "${modsRoot}/Nexerelin/jars", include: ["*.jar"])
+	)
+})
 
 sourceSets {
 	main {
@@ -110,4 +113,8 @@ tasks.register("verifyTutorialFixtures") {
 	group = "verification"
 	description = "Runs Java and shader fixture verification."
 	dependsOn "compileAllFixtures", "validateShaders"
+}
+
+tasks.named("check") {
+	dependsOn "verifyTutorialFixtures"
 }

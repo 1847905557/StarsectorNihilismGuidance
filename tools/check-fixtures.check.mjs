@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { checkFixtures, parseUnitLists } from './check-fixtures.mjs';
 
+/** @param {import('node:test').TestContext} t */
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'tutorial-fixture-'));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -56,7 +57,7 @@ for (const [name, relative, replacement, rule] of [
 ])
   test(name, async (t) => {
     const root = await fixture(t);
-    await writeFile(join(root, relative), replacement);
+    await writeFile(join(root, /** @type {string} */ (relative)), /** @type {string} */ (replacement));
     const summary = await checkFixtures({ root });
     assert.ok(
       summary.files.some((file) => file.diagnostics.some((item) => item.rule === rule)),
@@ -76,6 +77,6 @@ test('unreadable pages report errors while other content remains checked', async
   await mkdir(join(root, 'docs/chapter2/section1'), { recursive: true });
   await writeFile(join(root, 'docs/chapter2/section1/README.md'), Buffer.from([0xff]));
   const summary = await checkFixtures({ root });
-  assert.equal(summary.statistics.matchedJavaBlocks, 1);
+  assert.equal(/** @type {Record<string, number>} */ (summary.statistics).matchedJavaBlocks, 1);
   assert.equal(summary.errors.length, 1);
 });

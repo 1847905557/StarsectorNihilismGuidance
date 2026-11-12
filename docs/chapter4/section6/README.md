@@ -1,6 +1,6 @@
 # 制作一个自定义实体
 
-本节在 GearIn 星系加入 "导航锚"，沿用原版中继的图标与贴图，设置自己的名称、发现范围和描述。它采用无插件的基础实体配置，生成器负责放置和轨道，当前先完成可显示、可发现的静态对象。
+本节在 Nipher 星系加入 "导航锚"，沿用原版中继的图标与贴图，设置自己的名称、发现范围和描述。它采用无插件的基础实体配置，生成器负责放置和轨道，当前先完成可显示、可发现的静态对象。
 
 _本节预期阅读时间：\~14 分钟。_
 
@@ -58,7 +58,7 @@ _本节预期操作时间：\~12 分钟。_
 在描述文件追加：
 
 ```csv
-GearIn_navigation_anchor,CUSTOM,一座用于校准本地航路的齿轮工业导航锚。,GearIn 导航锚,,,,
+GearIn_navigation_anchor,CUSTOM,一座用于校准本地航路的齿轮工业导航锚。,Nipher 导航锚,,,,
 ```
 
 本节定义这个描述键。text1 为正文，text2 提供相应界面的标题；实体配置中的 customDescriptionId 与这条记录使用同一键，便完成描述绑定。字段和转义继续沿用 [C3-S4] 与 [C1-S7]。
@@ -86,12 +86,12 @@ GearIn_navigation_anchor,CUSTOM,一座用于校准本地航路的齿轮工业导
 
 ```java
 SectorEntityToken anchor = system.addCustomEntity(
-        "GearIn_stable", "GearIn 导航锚",
+        "GearIn_stable", "Nipher 导航锚",
         "GearIn_navigation_anchor", "gear_industry");
 anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 ```
 
-`GearIn_stable` 仍为实体 ID，类型参数改为 GearIn_navigation_anchor，势力为 gear_industry，当前显示名为 "GearIn 导航锚"。这次替换的是原有实体的创建语句，避免额外创建同 ID 实体。
+`GearIn_stable` 仍为实体 ID，类型参数改为 GearIn_navigation_anchor，势力为 gear_industry，当前显示名为 "Nipher 导航锚"。这次替换的是原有实体的创建语句，避免额外创建同 ID 实体。
 
 类型数据负责表现与发现，生成器设置位置和轨道，描述行提供文字。更改分别写在这三处，按字段的读取时机验证结果。
 
@@ -126,7 +126,7 @@ anchor.setCircularOrbitPointingDown(star, 90, 2200, 100);
 ## 验证方案
 
 1. 保存实体配置、描述行与生成器，重启游戏，核对自定义实体加载阶段。
-2. 创建生涯进入 GearIn，沿半径 2200 的轨道寻找导航锚。
+2. 创建生涯进入 Nipher，沿半径 2200 的轨道寻找导航锚。
 3. 在远处查看地图，再靠近到发现范围，观察名字、图标和经验反馈。
 4. 悬停实体并打开详情，核对当前名称和 CUSTOM 正文。
 5. 比较轨道和所属势力与创建参数一致。

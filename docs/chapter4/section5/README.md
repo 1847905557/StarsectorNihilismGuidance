@@ -1,6 +1,6 @@
 # 制作一种星体类型
 
-本节把 GearIn Prime 改为自定义的余烬世界。行星类型在 planets.json 中登记，提供贴图、颜色、大气、云层和旋转参数；星系生成器继续负责位置与轨道，只替换当前行星使用的类型 ID。
+本节把 Nipher Prime 改为自定义的余烬世界。行星类型在 planets.json 中登记，提供贴图、颜色、大气、云层和旋转参数；星系生成器继续负责位置与轨道，只替换当前行星使用的类型 ID。
 
 _本节预期阅读时间：\~12 分钟。_
 
@@ -24,7 +24,7 @@ _本节预期操作时间：\~12 分钟。_
 
 ## 确定余烬世界的外观
 
-GearIn Prime 使用棕红大气、厚云层和较低的旋转参数，表现炼厂世界。纹理先采用原版 terran，云层也采用已登记的原版资源。
+Nipher Prime 使用棕红大气、厚云层和较低的旋转参数，表现炼厂世界。纹理先采用原版 terran，云层也采用已登记的原版资源。
 
 **外观设计可以从组合现有资源开始。** 地表纹理还会受到光照、色调与云层叠加的影响，单独的图片预览与行星渲染未必相同。确定需要自制的贴图时，以这组叠加后的表现为依据。
 
@@ -88,7 +88,7 @@ cloudTexture 使用原版云纹理，cloudColor 给云层着色。rotation 与 c
 
 ```java
 PlanetAPI prime = system.addPlanet(
-        "GearIn_planet1", star, "GearIn Prime",
+        "GearIn_planet1", star, "Nipher Prime",
         "GearIn_ember_world", 55, 150, 3200, 120);
 ```
 
@@ -125,7 +125,7 @@ PlanetAPI prime = system.addPlanet(
 ## 验证方案
 
 1. 保存类型数据、描述行与生成器，重启游戏，检查 planet data 加载记录。
-2. 创建新生涯，进入 GearIn，查看 Prime 与 Second。
+2. 创建新生涯，进入 Nipher，查看 Prime 与 Second。
 3. 悬停 Prime，打开详情和星图，比较地表、大气、云层、图标与描述。
 4. 等待行星画面更新，观察云层和地表的相对旋转。
 

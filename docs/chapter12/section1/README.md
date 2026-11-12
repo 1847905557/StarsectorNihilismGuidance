@@ -37,14 +37,14 @@ sector.addTransientScript(new GearInEconomyProbe());
 
 ## 将市场连接到行星与经济系统
 
-Foundry 行星使用 ID `GearIn_foundry`，市场使用 `GearIn_market_foundry`。两个对象名称同为 `GearIn Foundry`，归属齿轮工业，市场规模为 3。以下局部片段完成创建与绑定：
+Foundry 行星使用 ID `GearIn_foundry`，市场使用 `GearIn_market_foundry`。两个对象名称同为 `Nipher Foundry`，归属齿轮工业，市场规模为 3。以下局部片段完成创建与绑定：
 
 ```java
 StarSystemAPI system = Global.getSector().getStarSystem("GearIn_observation_system");
 PlanetAPI planet = system.addPlanet("GearIn_foundry", system.getStar(),
-        "GearIn Foundry", "barren", 135f, 110f, 3600f, 180f);
+        "Nipher Foundry", "barren", 135f, 110f, 3600f, 180f);
 MarketAPI market = Global.getFactory().createMarket(
-        "GearIn_market_foundry", "GearIn Foundry", 3);
+        "GearIn_market_foundry", "Nipher Foundry", 3);
 market.setFactionId("gear_industry");
 market.setPrimaryEntity(planet);
 market.addCondition("trade_center");
@@ -213,9 +213,9 @@ public class GearInMarketBuilder implements EveryFrameScript {
             return;
         }
         planet = system.addPlanet("GearIn_foundry", system.getStar(),
-                "GearIn Foundry", "barren", 135f, 110f, 3600f, 180f);
+                "Nipher Foundry", "barren", 135f, 110f, 3600f, 180f);
         MarketAPI market = Global.getFactory().createMarket(
-                "GearIn_market_foundry", "GearIn Foundry", 3);
+                "GearIn_market_foundry", "Nipher Foundry", 3);
         market.setFactionId("gear_industry");
         market.setPrimaryEntity(planet);
         market.addCondition("trade_center");
@@ -455,7 +455,7 @@ public class GearInEconomyProbe implements EveryFrameScript {
 
 前置数据：按 [C10-S2] 生成的观测星系；本节三类与生涯登记已保存。
 
-1. 构建 JAR 并重启，进入观测星系存档，推进一帧后在地图找到 `GearIn Foundry`。
+1. 构建 JAR 并重启，进入观测星系存档，推进一帧后在地图找到 `Nipher Foundry`。
 2. 点击行星进入市场，确认市场名称、势力和三个子市场入口。
 3. 搜索 `GearIn directory`、`GearIn market memory` 与 `GearIn market interaction`，核对临时人物移除、Memory 的存在与期限，以及税率、自由港与仓储恢复。
 4. 搜索同一轮脚本的 `GearIn market probe` 与 `GearIn economy probe`，核对市场 ID、实体 ID、规模、经济组、地点市场数和商品规格。
@@ -463,7 +463,7 @@ public class GearInEconomyProbe implements EveryFrameScript {
 
 预期结果：
 
-- 地图存在 `GearIn Foundry`，其市场入口能够打开；
+- 地图存在 `Nipher Foundry`，其市场入口能够打开；
 - `GearIn_market_foundry` 同时出现在实体和 `EconomyAPI` 市场集合中；
 - 市场拥有 `trade_center`、`population`、`spaceport` 和三个子市场；
 - 交互流程结束后税率、自由港和仓储子市场状态与执行前一致；

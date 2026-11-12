@@ -8,5 +8,5 @@
     "allowJs": true,
     "checkJs": true
   },
-  "include": ["tools/**/*.mjs", "eslint*.config.mjs"]
+  "include": ["tools/**/*.mjs", "eslint*.config.mjs", "tests/**/*.mjs"]
 }

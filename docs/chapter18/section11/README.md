@@ -1,6 +1,6 @@
 # 使用 MagicLib 辅助生涯开发
 
-本节用 MagicCampaign 为 GearIn 星系布置一艘工匠级残骸，并清理星系周围的超空间云层。残骸围绕第一颗行星运行，具备发现与回收交互；布置完成后把状态留在星区 Memory，使玩家取走舰船以后，重复调用也能保留这个结果。
+本节用 MagicCampaign 为 Nipher 星系布置一艘工匠级残骸，并清理星系周围的超空间云层。残骸围绕第一颗行星运行，具备发现与回收交互；布置完成后把状态留在星区 Memory，使玩家取走舰船以后，重复调用也能保留这个结果。
 
 _本节预期阅读时间：\~20 分钟。_
 
@@ -16,7 +16,7 @@ _本节预期操作时间：\~25 分钟。_
 
 ## 前置知识
 
-- [C3-S3] 的 `GearInSystemGenerator`、`GearIn` 星系和 `GearIn_planet1`；
+- [C3-S3] 的 `GearInSystemGenerator`、`Nipher` 星系和 `GearIn_planet1`；
 - [C4-S1] 定义的 `GearIn_artizan_combat` 装配；
 - [C15-S5] 的 Sector Memory 读写；
 - [C18-S1] 的 MagicLib 硬依赖与类加载边界。
@@ -48,7 +48,7 @@ public void onNewGame() {
 }
 ```
 
-这个顺序保证 `setup(...)` 运行时，`GearIn` 和 `GearIn_planet1` 已经加入 Sector。代码只从 `onNewGame()` 接入，因此成果属于新档生成阶段。
+这个顺序保证 `setup(...)` 运行时，`Nipher` 和 `GearIn_planet1` 已经加入 Sector。代码只从 `onNewGame()` 接入，因此成果属于新档生成阶段。
 
 ## 保留每个生涯的布置结果
 
@@ -68,7 +68,7 @@ if (sectorMemory.getBoolean("$GearIn_campaign_setup_done")) {
 残骸创建接收轨道实体与装配 ID。布置器在这里取得星系、行星和装配存在性，缺失时记录对应 ID 并结束调用：
 
 ```java
-StarSystemAPI system = sector.getStarSystem("GearIn");
+StarSystemAPI system = sector.getStarSystem("Nipher");
 SectorEntityToken orbitCenter = sector.getEntityById("GearIn_planet1");
 boolean variantExists = Global.getSettings()
         .doesVariantExist("GearIn_artizan_combat");
@@ -76,7 +76,7 @@ boolean variantExists = Global.getSettings()
 
 锚点还要属于目标星系。`sector.getEntityById(...)` 是全局查询；比较 `orbitCenter.getStarSystem()` 与 `system`，可以防止同名或错误来源的实体把残骸送到另一处地点。
 
-前置对象缺失时，本例记录错误并结束本次布置。日志分别包含 `GearIn`、`GearIn_planet1` 或 `GearIn_artizan_combat`，因此可以直接回到星系生成、实体 ID 或装配注册链排查。
+前置对象缺失时，本例记录错误并结束本次布置。日志分别包含 `Nipher`、`GearIn_planet1` 或 `GearIn_artizan_combat`，因此可以直接回到星系生成、实体 ID 或装配注册链排查。
 
 ## 配置可回收残骸
 
@@ -145,7 +145,7 @@ sectorMemory.set("$GearIn_campaign_setup_done", true);
 
 | API                                              | 返回值或结果                  | 本节用途                   |
 | ------------------------------------------------ | ----------------------------- | -------------------------- |
-| `SectorAPI.getStarSystem(String)`                | `StarSystemAPI` 或 `null`     | 按名称取得 GearIn 星系     |
+| `SectorAPI.getStarSystem(String)`                | `StarSystemAPI` 或 `null`     | 按名称取得 Nipher 星系     |
 | `SectorAPI.getEntityById(String)`                | `SectorEntityToken` 或 `null` | 取得残骸轨道焦点           |
 | `SettingsAPI.doesVariantExist(String)`           | `boolean`                     | 在创建前检查装配 ID        |
 | `MagicCampaign.createDerelict(...)`              | `SectorEntityToken`           | 创建带轨道与回收参数的残骸 |
@@ -175,7 +175,7 @@ public final class GearInCampaignSetup {
 
     private static final Logger LOGGER = Global.getLogger(GearInCampaignSetup.class);
 
-    private static final String SYSTEM_ID = "GearIn";
+    private static final String SYSTEM_ID = "Nipher";
     private static final String ORBIT_CENTER_ID = "GearIn_planet1";
     private static final String VARIANT_ID = "GearIn_artizan_combat";
     private static final String SETUP_DONE_KEY = "$GearIn_campaign_setup_done";
@@ -236,13 +236,13 @@ public final class GearInCampaignSetup {
 
 ## 验证方案
 
-前置数据：使用包含 `GearIn`、`GearIn_planet1` 与 `GearIn_artizan_combat` 的开发环境，并在 `onNewGame()` 中按本节顺序接入 `GearInCampaignSetup`。
+前置数据：使用包含 `Nipher`、`GearIn_planet1` 与 `GearIn_artizan_combat` 的开发环境，并在 `onNewGame()` 中按本节顺序接入 `GearInCampaignSetup`。
 
-1. 启动游戏并新建生涯，进入 GearIn 星系。
+1. 启动游戏并新建生涯，进入 Nipher 星系。
 2. 在 `GearIn_planet1` 周围开启传感器观测，接近并发现舰船残骸。
 3. 在残骸尚未回收时再次调用 `new GearInCampaignSetup().setup(Global.getSector())`，确认数量仍为 1。
 4. 打开残骸交互，进入舰船回收界面并回收，检查船体、装配来源、舰况与 D-mod。
-5. 返回星图，从 GearIn 星系跳入超空间，观察边界周围的云层。
+5. 返回星图，从 Nipher 星系跳入超空间，观察边界周围的云层。
 
 预期结果：
 
@@ -250,15 +250,15 @@ public final class GearInCampaignSetup {
 - 残骸围绕 `GearIn_planet1` 运行，轨道高度为行星半径外 `50 su`，周期为 `100 天`；
 - 残骸在传感器发现后显示，并能进入舰船回收界面；
 - 回收操作可以完成，舰船状况对应 `BATTERED`；
-- GearIn 星系边界周围形成可通行的超空间清理区域；
+- Nipher 星系边界周围形成可通行的超空间清理区域；
 - 第二次调用后残骸总数仍为 `1`，Sector Memory 中 `$GearIn_campaign_setup_done` 为 `true`。
 
 ## 故障分析
 
-- **日志出现 `missing star system GearIn`**：生涯布置器运行时尚未生成 GearIn 星系。
+- **日志出现 `missing star system Nipher`**：生涯布置器运行时尚未生成 Nipher 星系。
     - **解决方案**：确认 `GearInSystemGenerator.generate(sector)` 位于 `GearInCampaignSetup.setup(sector)` 之前。
 
-- **日志出现 `missing orbit center GearIn_planet1`**：行星 ID 不存在，或取得的实体不属于 GearIn 星系。
+- **日志出现 `missing orbit center GearIn_planet1`**：行星 ID 不存在，或取得的实体不属于 Nipher 星系。
     - **解决方案**：核对 `addPlanet(...)` 的实体 ID，并确认生成器把行星加入同一个星系。
 
 - **日志出现 `missing ship variant GearIn_artizan_combat`**：装配文件未注册为该 ID。

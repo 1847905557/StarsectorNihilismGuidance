@@ -3,8 +3,9 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, readdir, stat } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { atomicWrite, collectFiles, inside, readUtf8 } from './files.mjs';
+import { atomicWrite, collectFiles, gitIgnoreMatcher, gitIgnored, inside, readUtf8 } from './files.mjs';
 
+/** @param {import('node:test').TestContext} t */
 async function workspace(t) {
   const root = await mkdtemp(join(tmpdir(), 'tutorial-files-'));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -62,4 +63,48 @@ test('atomic writes preserve mode and release temporary files on success and ren
   await mkdir(directory);
   await assert.rejects(atomicWrite(directory, 'data'));
   assert.deepEqual((await readdir(root)).sort(), ['directory', 'page.md']);
+});
+
+test('Git ignore predicates share nested negation and directory rules with collection', async (t) => {
+  const root = await workspace(t);
+  await mkdir(join(root, 'nested'));
+  await writeFile(join(root, '.gitignore'), '*.generated.ts\ncache/\n');
+  await writeFile(join(root, 'nested/.gitignore'), '!kept.generated.ts\n');
+  await writeFile(join(root, 'root.generated.ts'), '');
+  await writeFile(join(root, 'nested/kept.generated.ts'), '');
+  const ignored = await gitIgnored(root);
+  assert.equal(ignored(join(root, 'root.generated.ts')), true);
+  assert.equal(ignored(join(root, 'nested/kept.generated.ts')), false);
+  assert.equal(ignored(join(root, 'cache/')), true);
+  const scope = await collectFiles([], { root });
+  assert.equal(scope.files.includes(join(root, 'root.generated.ts')), false);
+  assert.equal(scope.files.includes(join(root, 'nested/kept.generated.ts')), true);
+});
+
+test('ignore explanations retain the matching file, line and pattern across nested rules', async (t) => {
+  const root = await workspace(t);
+  await mkdir(join(root, 'nested'));
+  await writeFile(join(root, '.gitignore'), '# Root rules\n*.log\ncache/\n');
+  await writeFile(join(root, 'nested/.gitignore'), '!kept.log\nprivate.txt\n');
+  await writeFile(join(root, 'nested/kept.log'), '');
+  await writeFile(join(root, 'nested/private.txt'), '');
+  const match = await gitIgnoreMatcher(root);
+
+  assert.deepEqual(match(join(root, 'root.log')), { ignored: true, source: join(root, '.gitignore'), line: 2, pattern: '*.log' });
+  assert.deepEqual(match(join(root, 'nested/private.txt')), {
+    ignored: true,
+    source: join(root, 'nested/.gitignore'),
+    line: 2,
+    pattern: 'private.txt',
+  });
+  assert.deepEqual(match(join(root, 'nested/kept.log')), { ignored: false });
+  assert.deepEqual(match(join(root, 'cache', 'missing.txt')), {
+    ignored: true,
+    source: join(root, '.gitignore'),
+    line: 3,
+    pattern: 'cache/',
+  });
+  const scope = await collectFiles([], { root });
+  assert.equal(scope.files.includes(join(root, 'nested/kept.log')), true);
+  assert.equal(scope.files.includes(join(root, 'nested/private.txt')), false);
 });

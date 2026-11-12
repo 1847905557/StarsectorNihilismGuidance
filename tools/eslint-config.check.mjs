@@ -8,6 +8,8 @@ import { repositoryRoot } from './shared/files.mjs';
 const fullRules = [
   '@typescript-eslint/no-floating-promises',
   '@typescript-eslint/no-misused-promises',
+  '@typescript-eslint/no-unnecessary-condition',
+  '@typescript-eslint/no-unnecessary-type-assertion',
   '@typescript-eslint/await-thenable',
   '@typescript-eslint/return-await',
   '@typescript-eslint/switch-exhaustiveness-check',
@@ -42,6 +44,12 @@ test('both ESLint tiers cover browser, Node, tools, configuration and tests with
 });
 
 const cases = [
+  ['redundant fallback', 'const value: string = "text";\nconsole.log(value ?? "fallback");', '@typescript-eslint/no-unnecessary-condition'],
+  [
+    'redundant assertion',
+    'const value: string = "text";\nconsole.log(value as string);',
+    '@typescript-eslint/no-unnecessary-type-assertion',
+  ],
   ['unhandled Promise', 'async function load() { return 1; }\nload();', '@typescript-eslint/no-floating-promises'],
   [
     'async callback in a synchronous API',
@@ -74,15 +82,17 @@ for (const [name, source, rule] of cases) {
     const host = ts.createCompilerHost(compilerOptions);
     const original = host.getSourceFile.bind(host);
     host.getSourceFile = (file, ...args) =>
-      resolve(file) === resolve(path) ? ts.createSourceFile(path, source, ts.ScriptTarget.ES2023, true) : original(file, ...args);
+      resolve(file) === resolve(path)
+        ? ts.createSourceFile(path, /** @type {string} */ (source), ts.ScriptTarget.ES2023, true)
+        : original(file, ...args);
     const program = ts.createProgram([path], compilerOptions, host);
     const checker = new ESLint({
       cwd: repositoryRoot,
       overrideConfigFile: join(repositoryRoot, 'eslint.full.config.mjs'),
       overrideConfig: { files: ['**/*.ts'], languageOptions: { parserOptions: { project: false, programs: [program] } } },
     });
-    const ordinary = await fast.lintText(source, { filePath: path });
-    const complete = await checker.lintText(source, { filePath: path });
+    const ordinary = await fast.lintText(/** @type {string} */ (source), { filePath: path });
+    const complete = await checker.lintText(/** @type {string} */ (source), { filePath: path });
     assert.equal(ordinary.flatMap((result) => result.messages).filter((message) => message.ruleId === rule).length, 0);
     assert.equal(
       complete.flatMap((result) => result.messages).filter((message) => message.ruleId === rule).length,

@@ -2,15 +2,28 @@ import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 
+/** @param {string} url */
 export const isMain = (url) => process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === url;
+/** @param {string[]} args @param {import('node:util').ParseArgsOptionsConfig} extra @returns {Options} */
 export function options(args = process.argv.slice(2), extra = {}) {
   const parsed = parseArgs({
     args,
     allowPositionals: true,
     options: { json: { type: 'boolean' }, verbose: { type: 'boolean' }, help: { type: 'boolean' }, ...extra },
   });
-  return { ...parsed.values, paths: parsed.positionals };
+  return /** @type {Options} */ ({ ...parsed.values, paths: parsed.positionals });
 }
+/**
+ * @typedef {{line: number, column: number, rule: string, message: string}} Diagnostic
+ * @typedef {{path: string, bytes: number, diagnostics: Diagnostic[]}} FileResult
+ * @typedef {{path: string, message: string}} ExecutionError
+ * @typedef {{scanned?: number, skipped?: number, changed?: number, written?: number, statistics?: Record<string, number>}} Counts
+ * @typedef {ReturnType<typeof result>} Summary
+ * @typedef {{paths: string[], json?: boolean, verbose?: boolean, help?: boolean, write?: boolean, code?: boolean, 'repo-root'?: string}} Options
+ * @param {FileResult[]} files
+ * @param {ExecutionError[]} errors
+ * @param {Counts} statistics
+ */
 export function result(files = [], errors = [], statistics = {}) {
   const diagnostics = files.flatMap((file) => file.diagnostics);
   const { scanned = files.length, ...counts } = statistics;
@@ -27,7 +40,9 @@ export function result(files = [], errors = [], statistics = {}) {
     errors,
   };
 }
+/** @param {Summary} summary */
 export const exitCode = (summary) => (summary.errors.length ? 2 : summary.problems ? 1 : 0);
+/** @param {Summary} summary @param {{json?: boolean, verbose?: boolean}} config */
 export function emit(summary, { json = false, verbose = false } = {}) {
   if (json) {
     process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
@@ -62,6 +77,7 @@ export function emit(summary, { json = false, verbose = false } = {}) {
   }
   for (const error of summary.errors) console.error(error.path + ': ' + error.message);
 }
+/** @param {string} url @param {string} description @param {(options: Options) => Promise<Summary>} run @param {import('node:util').ParseArgsOptionsConfig} extra */
 export async function command(url, description, run, extra = {}) {
   if (!isMain(url)) return;
   try {
@@ -80,10 +96,11 @@ export async function command(url, description, run, extra = {}) {
     emit(summary, config);
     process.exitCode = exitCode(summary);
   } catch (error) {
-    console.error(error.message);
+    console.error(/** @type {Error} */ (error).message);
     process.exitCode = 2;
   }
 }
+/** @param {string} text @param {number} offset @param {string} rule @param {string} message @returns {Diagnostic} */
 export function diagnostic(text, offset, rule, message) {
   const before = text.slice(0, offset);
   return { line: before.split('\n').length, column: offset - before.lastIndexOf('\n'), rule, message };

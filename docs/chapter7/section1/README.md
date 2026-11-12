@@ -221,21 +221,21 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 
     @Override
     public void generate(SectorAPI sector) {
-        StarSystemAPI system = sector.createStarSystem("GearIn");
+        StarSystemAPI system = sector.createStarSystem("Nipher");
         system.setBackgroundTextureFilename("graphics/backgrounds/background2.jpg");
         system.setLightColor(new Color(200, 200, 210));
 
-        PlanetAPI star = system.initStar("gearin", "star_yellow", 600f, 550f, 3f, 0.75f, 1f);
+        PlanetAPI star = system.initStar("nipher", "star_yellow", 600f, 550f, 3f, 0.75f, 1f);
         system.getLocation().set(-16000f, -9000f);
 
         PlanetAPI prime = system.addPlanet(
-                "GearIn_planet1", star, "GearIn Prime", "GearIn_ember_world", 55, 150, 3200, 120);
+                "GearIn_planet1", star, "Nipher Prime", "GearIn_ember_world", 55, 150, 3200, 120);
         PlanetAPI second = system.addPlanet(
-                "GearIn_planet2", star, "GearIn Second", "barren", 200, 90, 5200, 200);
+                "GearIn_planet2", star, "Nipher Second", "barren", 200, 90, 5200, 200);
         second.setCustomDescriptionId("GearIn_description_second");
 
         SectorEntityToken stable = system.addCustomEntity(
-                "GearIn_stable", "GearIn 导航锚", "GearIn_navigation_anchor", "gear_industry");
+                "GearIn_stable", "Nipher 导航锚", "GearIn_navigation_anchor", "gear_industry");
         stable.setCircularOrbitPointingDown(star, 90, 2200, 100);
 
         MarketAPI market = Global.getFactory().createMarket(prime.getId(), prime.getName(), 4);
@@ -251,7 +251,7 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
         prime.setMarket(market);
         prime.setFaction("gear_industry");
 
-        JumpPointAPI jump = Global.getFactory().createJumpPoint("GearIn_jump", "GearIn 跳跃点");
+        JumpPointAPI jump = Global.getFactory().createJumpPoint("GearIn_jump", "Nipher 跳跃点");
         jump.setCircularOrbit(star, 300, 1800, 100);
         jump.setRelatedPlanet(prime);
         system.addEntity(jump);
@@ -266,7 +266,7 @@ public class GearInSystemGenerator implements SectorGeneratorPlugin {
 
 1. 构建 JAR，核对入口与生成器 class 条目及 mod_info 声明。
 2. 启动游戏，查看 GearIn lifecycle 的应用加载日志和版本。
-3. 创建生涯，核对 GearIn 星系、初始关系、onNewGame、启用、首次初始化与 onGameLoad newGame=true。
+3. 创建生涯，核对 Nipher 星系、初始关系、onNewGame、启用、首次初始化与 onGameLoad newGame=true。
 4. 保存后读取同一存档，核对 onGameLoad newGame=false 与 UI 反馈。
 5. 手动保存，比较 beforeGameSave 和 afterGameSave 记录。
 

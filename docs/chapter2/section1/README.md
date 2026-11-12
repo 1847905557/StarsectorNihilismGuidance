@@ -1,211 +1,189 @@
 # 以船插为例初步熟悉代码
 
-本章开始涉及代码。编者将以一个提高舰船速度的船插为例，介绍 Java 文件中几个会用到的位置。先创建效果文件，再登记船插，最后修改参数并进入游戏观察结果。和此前的数据制作一样，仍然从复制和修改现成内容开始。
+从本节起，我们开始阅读原版代码。您此时不必懂 Java，编者也不打算先教。我们以外行的身份打开原版不稳定喷射器的效果类，逐行推测它在做什么，推测到足以动手的程度，就复制一份，改成齿轮工业自己的船插。
+
+外行的推测当然粗糙，但每一处改动都要进游戏核对。推测错了，游戏会在核对那一步报错或给出不符的数值；在只改几十行短脚本的阶段，这比先系统学习 Java 更省时间。
+
+---
 
 _本节预期阅读时间：\~15 分钟。_
 
 _本节预期操作时间：\~20 分钟。_
 
-## 学习目标
+## 找到原版船插的两部分
 
-完成后，您将能够：
+一个船插由两部分组成：`data/hullmods/hull_mods.csv` 中的一行数据，以及这行数据指向的一个效果类。打开原版的 `hull_mods.csv`，找到不稳定喷射器所在的行：
 
-- 找出示例 Java 文件中照抄的结构与可以修改的参数；
-- 修改一个速度参数，重启后在装配界面和模拟战中确认效果；
-- 解释数据注册与游戏回调在本例中的作用；
-- 根据文件、数据与日志定位加载失败或修改未生效的问题。
+```csv
+name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
+不稳定喷射器,unstable_injector,0,,,"engines, merc, standard",引擎,2500,TRUE,,,5,10,15,25,data.hullmods.UnstableInjector,"根据船体级别，提高 {%s}/{%s}/{%s}/{%s} 的最高航速。
 
-## 前置知识
-
-- [C1-S1] 的 MOD 目录、`mod_info.json` 与 `gear_in` MOD；
-- [C1-S2] 的舰船获取、装配界面与模拟战操作；
-- [C1-S7] 的 CSV 列边界、行首注释与文本编码。
-
-## 准备一个加速船插
-
-本例将制作一个名为 "加速器" 的船插，效果是**提高舰船最大速度 10%**。船插 ID 为 `GearIn_speed_booster`，效果类名为 `GearInSpeedBooster`。
-
-在 MOD 根目录下创建 `data/scripts/gearin/hullmods/GearInSpeedBooster.java`。完整文件见本节的 "完整最小例"，下面先解释修改时会涉及的几处内容。
-
-### 包名、目录与类名
-
-文件开头的包声明如下：
-
-```java
-package data.scripts.gearin.hullmods;
+但干扰了武器定位与机库系统，而导致非导弹类武器射程降低 {%s}，且战机整备时间提高 {%s}。",提高航速，降低武器射程。,,graphics/hullmods/unstable_injector.png
 ```
 
-类声明位于 import 行之后，局部片段如下：
+`desc` 这一列很长，中间还换了行。远行星号的 CSV 里，字段用双引号括起来之后，直接按回车换行即可，换行是描述文字的一部分，不写 `\n` 这类转义符号。
+
+本节用到的列如下：
+
+| 列                                                          | 作用                                                     |
+| ----------------------------------------------------------- | -------------------------------------------------------- |
+| `name`                                                      | 装配界面显示的名称                                       |
+| `id`                                                        | 船插 ID，舰船装配与其他代码通过它找到这个船插            |
+| `tags`                                                      | 标签，`engines` 等决定它在哪些场合出现                   |
+| `uiTags`                                                    | 装配界面的分类，如 `引擎`                                |
+| `unlocked`                                                  | `TRUE` 表示玩家一开始就已解锁                            |
+| `cost_frigate`、`cost_dest`、`cost_cruiser`、`cost_capital` | 护卫舰、驱逐舰、巡洋舰、主力舰四档的装配点消耗，必须填写 |
+| `script`                                                    | 效果类的完整类名                                         |
+| `desc`                                                      | 装配界面的描述，`{%s}` 是留给代码填写的位置              |
+| `short`                                                     | 简短描述                                                 |
+| `sprite`                                                    | 图标路径，留空时使用缺省图标                             |
+
+`script` 列写着 `data.hullmods.UnstableInjector`。这是一个**完整类名**：最后一段 `UnstableInjector` 是类名，前面的 `data.hullmods` 是包名。包名中的点号对应目录层级，因此这个类就是 `starsector-core/data/hullmods/UnstableInjector.java`。
+
+## 以外行身份阅读效果类
+
+打开这个文件，内容简直令人眼花缭乱。
+
+但即使以外行的身份，也能做一些简单的解析。下面在每行末尾的 `//` 之后写出一种推测；`//` 之后的文字是注释，游戏不执行。原文件开头的 `package` 一行和几行以 `//` 开头的旧代码在这里省略。
 
 ```java
-public class GearInSpeedBooster extends BaseHullMod {
-    // 船插参数和效果方法放在这里。
-}
-```
+import java.util.HashMap; // import 引入后面要用的东西，暂时不管
+import java.util.Map;
 
-`package` 说明这个类属于哪个包；在当前的源码目录里，点号对应目录层级。沿包名逐级找到 `data/scripts/gearin/hullmods/`，就是这个文件的保存位置。文件名则与 `class` 后面的 `GearInSpeedBooster` 一致。
-
-`extends BaseHullMod` 表示继承游戏提供的船插基类，它提供了船插效果的标准结构。当前的加速效果也写在这个结构中。`import` 行引入下面用到的游戏类，本例按完整文件复制。
-
-当前阶段先保持最小改动：包名、类名和方法声明按示例填写，效果参数按需要调整。加载失败时，就能沿刚才的目录、文件名和声明对照原文件定位。
-
-### 速度参数
-
-结构按示例保存后，在类里面找到这一行：
-
-```java
-private static final float SPEED_PERCENT = 10f;
-```
-
-`SPEED_PERCENT` 保存速度加成百分比，当前数值就是等号后的 `10f`。数字后的 `f` 表示 Java 的 `float` 类型；`10f` 与 `10.0f` 表示同一个值，`0.5f`、`3.14f` 也按这种方式书写。
-
-把这里的 `10f` 改成 `50f`，速度加成就变成 50%。本次修改只替换这个数字，保留行末分号与声明的其他部分。
-
-### 修改速度与记录回调
-
-效果方法使用上述参数写入速度加成，局部片段如下：
-
-```java
-@Override
-public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAPI stats, String id) {
-    stats.getMaxSpeed().modifyPercent(id, SPEED_PERCENT);
-    Global.getLogger(GearInSpeedBooster.class).info("GearIn_speed_booster applied");
-}
-```
-
-游戏在计算这艘舰船的船插效果时调用这个方法，并把数值对象交给它。第一条语句通过 `stats.getMaxSpeed()` 取得最大速度，再用 `modifyPercent(id, SPEED_PERCENT)` 写入加成。刚才修改的数字，就在这里参与计算。
-
-**游戏在对应时机调用效果方法，这个过程称为回调。** 因此，本例的方法名和参数列表采用船插接口规定的写法；我们要调整的具体效果，写在方法体的大括号内。
-
-第二条语句把 `GearIn_speed_booster applied` 写入 `starsector.log`，用于确认回调执行。引号内的字符串决定日志内容，本节保留这个固定搜索词，稍后用它确认游戏确实调用了刚才的方法。
-
-## 注册船插数据
-
-保存效果文件后，还要让船插数据引用它。打开 MOD 的 `data/hullmods/hull_mods.csv`，为船插添加数据行。文件不存在时，新建文件并写入表头。
-
-**`script` 列负责把数据行接到 Java 类。** 本节填写：
-
-```text
-data.scripts.gearin.hullmods.GearInSpeedBooster
-```
-
-这个完整类名由包名与类名组成，正好对应前面检查的两处声明。它必须与文件中的 `package` 和 `class` 一致，路径按包名对应，大小写也要一致。
-
-**在数据中登记船插 ID 和效果类，这个过程称为注册。** 游戏读取数据后，装配界面使用其中的名称、成本与描述，效果计算则调用 `script` 指向的类。
-
-### 确认数据行中的关键列
-
-填入这条船插记录时，先确认下面几列，其余值按完整示例保存：
-
-- **`id`**：第 2 列，填写船插 ID `GearIn_speed_booster`，沿用 [C1-S1] 的数据前缀规则。
-- **`cost_frigate`、`cost_dest`、`cost_cruiser`、`cost_capital`**：四种船体等级的装配点消耗，分别填写 `3`、`6`、`9`、`12`。
-- **`script`**：填写效果类的完整名字 `data.scripts.gearin.hullmods.GearInSpeedBooster`。
-- **`desc`**：装配界面显示的文字。本节写 "提高舰船最大速度 10%。"。
-
-::: warning 四档装配点消耗都要填写
-
-四个 `cost_*` 字段都需要数字。填 `0` 表示免费；留空会在加载时产生解析错误。修改数据时同时留意 [C1-S7] 的列边界，空列的逗号仍有作用。
-
-:::
-
-## 完整最小例
-
-效果类写入 `data/scripts/gearin/hullmods/GearInSpeedBooster.java`，数据行写入 `data/hullmods/hull_mods.csv`。CSV 已有表头时，只追加这条船插记录。
-
-::: details 完整成品：GearInSpeedBooster
-
-```java
-package data.scripts.gearin.hullmods;
-
-import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseHullMod;
 import com.fs.starfarer.api.combat.MutableShipStatsAPI;
 import com.fs.starfarer.api.combat.ShipAPI.HullSize;
 
-/** 为舰船提供固定百分比的最大速度加成。 */
-public class GearInSpeedBooster extends BaseHullMod {
+public class UnstableInjector extends BaseHullMod { // 类名与文件名相同；extends BaseHullMod 大概表示 "这是一个船插"
 
-    /** 最大速度加成百分比。 */
-    private static final float SPEED_PERCENT = 10f;
+    private static Map mag = new HashMap(); // 这是什么？
+    static {
+        mag.put(HullSize.FRIGATE, 25f); // 似乎是船体级别和数字的对应
+        mag.put(HullSize.DESTROYER, 20f); // 25/20/15/15，刚好是描述里的四档航速
+        mag.put(HullSize.CRUISER, 15f);
+        mag.put(HullSize.CAPITAL_SHIP, 15f);
+    }
 
-    @Override
+    private static final float RANGE_MULT = 0.85f; // 射程乘 0.85，也就是降低 15%？
+    private static final float FIGHTER_RATE = 25f; // 战机整备时间提高 25%？
+
+    // 方法名直译是 "在舰船创建之前应用效果"，效果应该都在这里
     public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAPI stats, String id) {
-        stats.getMaxSpeed().modifyPercent(id, SPEED_PERCENT);
-        Global.getLogger(GearInSpeedBooster.class).info("GearIn_speed_booster applied");
+        stats.getMaxSpeed().modifyFlat(id, (Float) mag.get(hullSize)); // 对最高航速进行加成？数字按船体级别从 mag 里取
+        stats.getBallisticWeaponRangeBonus().modifyMult(id, RANGE_MULT); // 实弹武器射程乘以 0.85
+        stats.getEnergyWeaponRangeBonus().modifyMult(id, RANGE_MULT); // 能量武器射程同上，导弹不受影响
+
+        stats.getFighterRefitTimeMult().modifyPercent(id, FIGHTER_RATE); // 战机整备时间增加 25%
+    }
+
+    // "获取描述参数"，index 似乎是第几个
+    public String getDescriptionParam(int index, HullSize hullSize) {
+        if (index == 0) return "" + ((Float) mag.get(HullSize.FRIGATE)).intValue(); // 第 0 个：护卫舰的 25
+        if (index == 1) return "" + ((Float) mag.get(HullSize.DESTROYER)).intValue(); // 第 1 个：驱逐舰的 20
+        if (index == 2) return "" + ((Float) mag.get(HullSize.CRUISER)).intValue();
+        if (index == 3) return "" + ((Float) mag.get(HullSize.CAPITAL_SHIP)).intValue();
+        if (index == 4) return "" + (int) Math.round((1f - RANGE_MULT) * 100f) + "%"; // (1 - 0.85) × 100 = 15%
+        if (index == 5) return "" + (int) Math.round(FIGHTER_RATE) + "%"; // 25%
+        return null;
     }
 }
 ```
 
+回头对照 CSV 的描述："根据船体级别，提高 {%s}/{%s}/{%s}/{%s} 的最高航速...射程降低 {%s}，且战机整备时间提高 {%s}。" 描述中恰好有六个 `{%s}`，`getDescriptionParam` 恰好返回第 0 到第 5 个参数，依次是 25、20、15、15、15%、25%。
+
+虽然猜测很粗糙，但也八九不离十了：
+
+- `mag` 是一张按船体级别查数字的表；
+- `applyEffectsBeforeShipCreation` 中的每一行修改一项舰船属性，`modifyFlat` 加上固定数值，`modifyMult` 乘以倍率，`modifyPercent` 增加百分比；
+- `getDescriptionParam` 把代码里的数字填进描述的 `{%s}`。
+
+`id` 与 `hullSize` 这类参数由游戏在调用方法时传入，我们照写即可。**游戏在规定时机调用这些名称固定的方法，这种方式称为回调。** 方法名和括号里的参数列表必须与原版一致，能改的是大括号内的内容。
+
+## 复制一份改成稳定化推进器
+
+接下来要做的事情，就是大胆地把需要的部分拼在一起。齿轮工业的 "稳定化推进器" 只保留不稳定喷射器的航速加成，去掉射程与战机的代价。
+
+**去掉代价，收益就必须跟着降低。** 否则它只是不稳定喷射器的无代价版本，任何玩家都没有理由再装原版。编者把四档航速定为 15/10/5/5，装配点消耗沿用 5/10/15/25。这样一来，主力舰要花 25 点装配点换 5 点航速，这个船插在大船上本就不划算，也不该靠它提速。与其另写一条安装限制把它挡在大船外，大船上的低性价比已足以让玩家放弃它。
+
+### 效果类
+
+在 MOD 根目录下创建 `data/scripts/gearin/hullmods/GearInStableInjectorHullMod.java`，内容如下：
+
+```java
+package data.scripts.gearin.hullmods;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import com.fs.starfarer.api.combat.BaseHullMod;
+import com.fs.starfarer.api.combat.MutableShipStatsAPI;
+import com.fs.starfarer.api.combat.ShipAPI.HullSize;
+
+/** 稳定化推进器：按船体级别提高最高航速。 */
+public class GearInStableInjectorHullMod extends BaseHullMod {
+
+    /** 船体级别与航速加成的对应表。 */
+    private static final Map SPEED_BONUS = new HashMap();
+
+    static {
+        SPEED_BONUS.put(HullSize.FRIGATE, 15f);
+        SPEED_BONUS.put(HullSize.DESTROYER, 10f);
+        SPEED_BONUS.put(HullSize.CRUISER, 5f);
+        SPEED_BONUS.put(HullSize.CAPITAL_SHIP, 5f);
+    }
+
+    @Override
+    public void applyEffectsBeforeShipCreation(HullSize hullSize, MutableShipStatsAPI stats, String id) {
+        // 按当前船体级别查表，把结果加到最高航速上。
+        stats.getMaxSpeed().modifyFlat(id, (Float) SPEED_BONUS.get(hullSize));
+    }
+}
+```
+
+与原版相比，改动集中在以下几处：
+
+- **`package`**：原版是 `data.hullmods`，这里改为 `data.scripts.gearin.hullmods`，必须与文件所在目录逐段对应。`data/scripts/` 是 MOD 存放源码的位置，`gearin` 一层把齿轮工业的类与其他 MOD 分开。
+- **类名**：改为 `GearInStableInjectorHullMod`，与文件名一致，大小写也一致。
+- **表名与数值**：`mag` 改为更好认的 `SPEED_BONUS`，四档数字换成 15/10/5/5。
+- **效果**：只保留航速一行，射程与战机两项删除；描述参数方法暂时删除，[C2-S2] 再加回来。
+
+`@Override` 标记这个方法来自船插基类，写错方法名时，它能让加载阶段直接报错，而不是让效果悄悄失效。原版没有写，编者建议写上。
+
+::: warning 照搬原版的 Map 写法
+
+游戏启动时自行编译 MOD 中的 `.java` 源码，它使用的编译器不支持一部分较新的 Java 写法。网上常见的 `new HashMap<>()`、`Map<HullSize, Float>` 等带尖括号的写法，放进这张表会导致加载失败。本章的表一律照原版写成 `new HashMap()`，取值时用 `(Float)` 转换。
+
 :::
+
+### 登记数据
+
+在 MOD 的 `data/hullmods/hull_mods.csv` 中写入下面的内容。文件不存在时连同表头一起新建；已有表头时只追加第 2 行：
 
 ```csv {2}
 name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
-加速器,GearIn_speed_booster,0,,,engines,引擎,1000,TRUE,,,3,6,9,12,data.scripts.gearin.hullmods.GearInSpeedBooster,"提高舰船最大速度 10%。","提高最大速度。",,
+稳定化推进器,GearIn_stable_injector,0,,,"engines, merc",引擎,2500,TRUE,,,5,10,15,25,data.scripts.gearin.hullmods.GearInStableInjectorHullMod,根据船体级别，提高最高航速。,提高航速。,,
 ```
 
-## 修改参数并比较结果
+`script` 列填写刚才的完整类名，`package` 与类名缺一不可。`tags` 去掉了原版的 `standard`，其余数据沿用原版。`desc` 暂时不带数字，`sprite` 暂时留空，两者都在下一节补上。
 
-保存这两个文件，重启游戏，在装配界面给 [C1-S2] 的工匠安装 "加速器"，先观察 `10f` 的效果。然后把 Java 文件中的 `SPEED_PERCENT` 改为 `50f`，再次保存、重启和观察。
+### 进游戏核对
 
-**实际加成已经变成 50%，描述仍然写着 10%。** 为什么改了数值，文字却没变？`desc` 是 CSV 中的固定文字，效果类使用的是 Java 参数，两处分别修改。参数调整后也要同步描述；[C2-S2] 会介绍用代码填充描述参数的做法。
+保存两个文件，重启游戏，进入生涯的装配界面，给工匠安装 "稳定化推进器"。工匠是驱逐舰，原本的最高航速为 80，安装后应显示 90。再找一艘护卫舰安装，最高航速应增加 15。
 
-### 选择百分比或固定增量
+随后把 `DESTROYER` 一行的 `10f` 改成 `30f`，保存并重启，工匠的最高航速应变为 110。这一步确认游戏读取的确实是您刚才编辑的文件。确认之后改回 `10f`。
 
-本例使用 `modifyPercent(id, 10f)`，表示按基础最大速度增加 10%。如果希望直接增加固定速度，可以使用下面这个局部片段：
+**修改 `.java` 文件后必须重启游戏才能生效。** 游戏只在启动时编译一次源码。
 
-```java
-stats.getMaxSpeed().modifyFlat(id, 50f);
-```
+## 常见问题
 
-它表示增加 50 单位/秒。百分比加成随基础速度变化，固定增量则直接加上指定数值。**同一种速度加成，对不同船体的价值也不同。** 例如固定加 50 对慢速主力舰的影响往往比对快速护卫舰更明显，因此选择加成方式时，也要考虑它将用于哪类船体。
+- **装配界面找不到稳定化推进器**：`hull_mods.csv` 不在 MOD 的 `data/hullmods/` 下，或这一行被 `#` 注释。
+    - **解决方案**：核对文件位置，确认行首没有 `#`，保存后重启。
 
-## 验证方案
+- **启动时报错，日志中出现 `Error loading [`**：`script` 列、`package`、文件目录与类名四者没有指向同一个类，或源码中有拼写错误。
+    - **解决方案**：逐段核对 `data.scripts.gearin.hullmods.GearInStableInjectorHullMod`，再按日志给出的行号检查源码。
 
-1. 保存本节的 Java 文件和 CSV，重启游戏，进入已有生涯的装配界面。
-2. 给工匠安装 "加速器"，比较安装前后的最大速度，再进入模拟战观察机动表现。
-3. 查看 `Starsector/starsector-core/starsector.log`，搜索 `GearIn_speed_booster applied`。
-4. 将 `SPEED_PERCENT` 改为 `50f`，保存并重启，给同一艘舰船安装相同船插，再比较数值与机动表现。
-5. 悬停船插，核对 CSV 描述与当前实际加成。
+- **加载时报 `JSONException`**：四档 `cost_*` 有留空，或逗号数量不对导致列错位。
+    - **解决方案**：对照表头补齐四档数字与空列逗号，以 UTF-8 无 BOM 保存后重启。
 
-预期结果：
-
-- 装配界面出现 "加速器"，工匠的装配点消耗为驱逐舰档的 6。
-- `10f` 时，最大速度获得基础值 10% 的加成；`50f` 时，加成变为 50%，模拟战中可观察到变化。
-- CSV 描述仍显示 "提高舰船最大速度 10%。"。
-- 每次测试的效果计算阶段都能在日志中找到 `GearIn_speed_booster applied`，出现次数以实际日志为准。
-
-## 故障分析
-
-- **装配界面找不到加速器**：`hull_mods.csv` 缺少本节数据行，或行首仍带 `#`，游戏没有读到注册信息。
-    - **解决方案**：确认文件位于 MOD 根目录下的 `data/hullmods/hull_mods.csv`，保留表头与唯一的 `GearIn_speed_booster` 行，保存后重启。
-
-- **加载时报 `Error loading [...]`**：`script`、`package`、文件路径或类名没有指向同一个类。
-    - **解决方案**：逐段核对 `data.scripts.gearin.hullmods.GearInSpeedBooster`，确认文件名与类声明一致后重启。
-
-- **Java 加载错误带有行号**：分号缺失或括号不配对导致源码解析失败。
-    - **解决方案**：按日志行号对照完整示例，修正该位置并重启。
-
-- **参数修改后加成不变**：文件尚未保存、编辑了另一份源码，或游戏仍在使用启动时加载的类。
-    - **解决方案**：确认修改的是当前 MOD 的 `GearInSpeedBooster.java`，保存后重启，再为测试舰船安装船插。
-
-- **速度加成生效但搜索不到日志文字**：搜索词与代码中的字符串不同，或日志级别过滤了该输出。
-    - **解决方案**：核对代码中的日志字符串与日志配置，在本次启动记录中搜索 `GearIn_speed_booster`。
-
-- **加载时报 `JSONException`**：必填列缺失、四档 `cost_*` 留空，或 CSV 字段错位。
-    - **解决方案**：按首行列名恢复列边界，补齐四档数字，以 UTF-8 无 BOM 保存并重启。
-
-- **加载时报 `Duplicate key`**：同一 CSV 文件中重复登记了相同 ID。
-    - **解决方案**：为每行保留唯一 ID，保存后重启。
-
-## 总结
-
-船插由数据行与效果类共同构成。CSV 提供身份、成本和描述，Java 方法写入实际加成；注册把两者联系起来，游戏则在数值计算时调用效果方法。
-
-本节采用固定的百分比加成。下一节会加入按船体等级分档的参数、与参数联动的描述和安装限制，让它成为一个适合实际使用的船插。
-
-## 建议参考项
-
-- `data/hullmods/hull_mods.csv`：船插登记表，`id`、四档 `cost_*`、`script` 与 `desc` 的写入位置。
-- `com.fs.starfarer.api.combat.BaseHullMod`：本节效果类使用的船插基类。
-- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：`getMaxSpeed()` 提供最大速度修改入口。
-- `Starsector/starsector-core/starsector.log`：加载错误与效果日志的观察位置。
+- **改了数字但航速不变**：修改的是另一份源码，或改完没有重启。
+    - **解决方案**：确认编辑的是当前 MOD 中的文件，保存后完整重启游戏。

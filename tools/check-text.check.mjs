@@ -1,3 +1,4 @@
+import prettier from 'prettier';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { commentSpans, formatProse, inspectText, transformTypography } from './check-text.mjs';
@@ -9,8 +10,8 @@ for (const [input, expected] of [
   ['文字——说明。', '文字 —— 说明。'],
 ]) {
   test('prose typography: ' + input, () => {
-    assert.equal(formatProse(input), expected);
-    assert.equal(formatProse(expected), expected);
+    assert.equal(formatProse(/** @type {string} */ (input)), expected);
+    assert.equal(formatProse(/** @type {string} */ (expected)), expected);
   });
 }
 test('inline code, destinations, images and API values retain exact characters', () => {
@@ -50,4 +51,14 @@ test('placeholder restoration preserves dollar sequences, tables and apostrophes
   assert.equal(output, source);
   assert.equal(formatProse("Don't change John's value."), "Don't change John's value.");
   assert.equal(inspectText('# 页面\n\n正文 — 说明。\n').filter((item) => item.rule === 'single-dash').length, 1);
+});
+
+test('Prettier owns basic source layout while raw formats retain strict whitespace diagnostics', async () => {
+  const source = 'const value = 1;  \r\n';
+  assert.equal(await prettier.check(source, { filepath: 'sample.mjs', endOfLine: 'lf' }), false);
+  const delegated = inspectText(source, { path: 'sample.mjs', basicFormat: false });
+  assert.equal(delegated.filter((item) => ['line-ending', 'trailing-space', 'terminal-newline'].includes(item.rule)).length, 0);
+  const raw = inspectText(source, { path: 'sample.java' });
+  assert.ok(raw.some((item) => item.rule === 'line-ending'));
+  assert.ok(raw.some((item) => item.rule === 'trailing-space'));
 });

@@ -1,8 +1,9 @@
 import { JSDOM } from 'jsdom';
-import { dirname, extname } from 'node:path';
-import { formatMarkdown } from './format.mjs';
+import { dirname, extname, join } from 'node:path';
+import prettier from 'prettier';
+import { repositoryRoot } from './shared/files.mjs';
 import { inspectDocument } from './check-docs.mjs';
-import { inspectText } from './check-text.mjs';
+import { inspectText, transformTypography } from './check-text.mjs';
 
 const containerTypes = ['info', 'tip', 'warning', 'caution', 'important', 'note', 'details'];
 const imageExtensions = new Map([
@@ -12,7 +13,18 @@ const imageExtensions = new Map([
   ['image/svg+xml', ['.svg']],
   ['image/webp', ['.webp']],
 ]);
-const markType = (node) => ({ STRONG: 'strong', B: 'strong', EM: 'em', I: 'em', S: 's', DEL: 's', STRIKE: 's' })[node.nodeName];
+/** @param {Node} node @returns {string | undefined} */
+const markType = (node) =>
+  new Map([
+    ['STRONG', 'strong'],
+    ['B', 'strong'],
+    ['EM', 'em'],
+    ['I', 'em'],
+    ['S', 's'],
+    ['DEL', 's'],
+    ['STRIKE', 's'],
+  ]).get(node.nodeName);
+/** @param {string} text */
 function escapeText(text) {
   return text
     .replace(/\r\n?/g, '\n')
@@ -21,16 +33,19 @@ function escapeText(text) {
     .replace(/^(\s{0,3})(\d+)([.)])(?=\s)/gm, '$1$2\\$3')
     .replace(/^(\s{0,3})(?=(?:[-+]\s|>|:::|[|=]))/gm, '$1\\');
 }
+/** @param {string} value */
 function destination(value) {
   const text = value.replaceAll('<', '%3C').replaceAll('>', '%3E');
   return /[\s()]/.test(text) ? '<' + text + '>' : text;
 }
+/** @param {string} value */
 function codeSpan(value) {
   const length = Math.max(0, ...[...value.matchAll(/`+/g)].map((match) => match[0].length)) + 1;
   const marker = '`'.repeat(length),
     space = /^`|`$/.test(value) ? ' ' : '';
   return marker + space + value + space + marker;
 }
+/** @param {string} value */
 function highlights(value) {
   const values = new Set();
   for (const match of value.matchAll(/(\d+)(?:\s*-\s*(\d+))?/g))
@@ -49,25 +64,29 @@ function highlights(value) {
 }
 
 /** Merge adjacent marks across link boundaries, matching the editor's continuous selection semantics. */
+/** @param {Element} root */
 function mergeMarks(root) {
   for (const child of [...root.children]) mergeMarks(child);
   const children = [...root.childNodes];
-  const type = (node) => markType(node) || (node.nodeName === 'A' && node.childNodes.length === 1 ? markType(node.firstChild) : undefined);
+  /** @param {Node} node */
+  const type = (node) =>
+    markType(node) || (node.nodeName === 'A' && node.childNodes.length === 1 ? markType(/** @type {Node} */ (node.firstChild)) : undefined);
   for (let index = 0; index < children.length;) {
-    const mark = type(children[index]);
+    const mark = type(/** @type {ChildNode} */ (children[index]));
     if (!mark) {
       index++;
       continue;
     }
     let end = index + 1;
-    while (end < children.length && type(children[end]) === mark) end++;
+    while (end < children.length && type(/** @type {ChildNode} */ (children[end])) === mark) end++;
     if (end > index + 1) {
       const wrapper = root.ownerDocument.createElement(mark);
-      root.insertBefore(wrapper, children[index]);
+      root.insertBefore(wrapper, /** @type {ChildNode} */ (children[index]));
       for (const child of children.slice(index, end)) {
         if (child.nodeName === 'A') {
-          const link = child.cloneNode(false);
-          while (child.firstChild.firstChild) link.append(child.firstChild.firstChild);
+          const link = /** @type {HTMLElement} */ (child.cloneNode(false));
+          while (/** @type {ChildNode} */ (child.firstChild).firstChild)
+            link.append(/** @type {ChildNode} */ (child.firstChild).firstChild);
           wrapper.append(link);
         } else while (child.firstChild) wrapper.append(child.firstChild);
         child.remove();
@@ -77,16 +96,27 @@ function mergeMarks(root) {
   }
 }
 
+/**
+ * @typedef {{name: string, size: number, base64: string}} RestoredAsset
+ * @typedef {{ok: true, markdown: string, assets: RestoredAsset[]} | {ok: false, diagnostics: string[]}} RestoreResult
+ * @param {string} html
+ * @param {string} path
+ * @param {string} docsRoot
+ * @returns {Promise<RestoreResult>}
+ */
 export async function restoreMarkdown(html, path, docsRoot) {
   if (!html.trim()) return { ok: false, diagnostics: ['HTML 正文为空'] };
   const dom = new JSDOM('<main><div id="content">' + html + '</div></main>');
   const assets = new Map();
   try {
-    const root = dom.window.document.querySelector('#content');
+    const root = /** @type {HTMLElement} */ (dom.window.document.querySelector('#content'));
     mergeMarks(root);
-    const inline = (node) => {
-      if (node.nodeType === 3) return escapeText(node.data);
+    /** @param {Node} source @returns {string} */
+    const inline = (source) => {
+      if (source.nodeType === 3) return escapeText(/** @type {Text} */ (source).data);
+      const node = /** @type {HTMLElement} */ (source);
       const tag = node.nodeName;
+      /** @returns {string} */
       const body = () => [...node.childNodes].map(inline).join('');
       if (tag === 'EM' || tag === 'I') return '_' + body() + '_';
       if (tag === 'STRONG' || tag === 'B') return '**' + body() + '**';
@@ -107,18 +137,18 @@ export async function restoreMarkdown(html, path, docsRoot) {
         if (!alt.trim()) throw new Error('图片 alt 必须为非空语义描述');
         const data = /^data:(image\/[\w.+-]+);base64,([\s\S]+)$/.exec(src);
         if (data) {
-          if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data[2]))
+          if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(/** @type {string} */ (data[2])))
             throw new Error('data URI 图片不是有效 Base64');
-          if (!imageExtensions.get(data[1])?.includes(extname(title).toLowerCase()))
+          if (!imageExtensions.get(/** @type {string} */ (data[1]))?.includes(extname(title).toLowerCase()))
             throw new Error('图片 title 扩展名与 data URI 类型不一致');
-          const bytes = Buffer.from(data[2], 'base64');
+          const bytes = Buffer.from(/** @type {string} */ (data[2]), 'base64');
           if (assets.has(title) && !assets.get(title).equals(bytes)) throw new Error('图片文件名冲突：' + title);
           assets.set(title, bytes);
           return '![' + alt + '](./' + title + ' "' + title + '")';
         }
         const url = new URL(src, 'https://local.invalid/');
         const remote = /^https?:/.test(src);
-        const name = decodeURIComponent(url.pathname.split('/').at(-1));
+        const name = decodeURIComponent(/** @type {string} */ (url.pathname.split('/').at(-1)));
         const restored = remote ? name : name.replace(/-[A-Za-z0-9_-]{8}(?=\.[A-Za-z0-9]+$)/, '');
         if (restored !== title) throw new Error('图片 title 与文件名不一致：' + title + ' != ' + restored);
         return '![' + alt + '](' + (remote ? destination(src) : './' + title) + ' "' + title + '")';
@@ -126,7 +156,9 @@ export async function restoreMarkdown(html, path, docsRoot) {
       if (tag === 'BR') return '<br>\n';
       return body();
     };
+    /** @param {Node} node @returns {string} */
     const renderChildren = (node) => [...node.childNodes].flatMap(block).filter(Boolean).join('\n\n');
+    /** @param {HTMLElement} node @param {number} depth @returns {string} */
     function list(node, depth = 0) {
       const items = [...node.children].filter((child) => child.nodeName === 'LI');
       const tight = node.dataset.devListTight
@@ -136,8 +168,10 @@ export async function restoreMarkdown(html, path, docsRoot) {
         .map((item, index) => {
           const marker = node.nodeName === 'OL' ? String(Number(node.getAttribute('start') || 1) + index) + '. ' : '- ';
           const indent = '    '.repeat(depth);
-          const parts = [],
-            pending = [];
+          /** @type {(string | {list: HTMLElement})[]} */
+          const parts = [];
+          /** @type {string[]} */
+          const pending = [];
           const flush = () => {
             const value = pending.splice(0).join('').trim();
             if (value) parts.push(value);
@@ -145,7 +179,7 @@ export async function restoreMarkdown(html, path, docsRoot) {
           for (const child of item.childNodes) {
             if (['UL', 'OL'].includes(child.nodeName)) {
               flush();
-              parts.push({ list: child });
+              parts.push({ list: /** @type {HTMLElement} */ (child) });
             } else if (child.nodeName === 'P') {
               flush();
               parts.push([...child.childNodes].map(inline).join('').trim());
@@ -159,7 +193,7 @@ export async function restoreMarkdown(html, path, docsRoot) {
           return (
             parts
               .map((part) => {
-                if (part.list) {
+                if (typeof part !== 'string') {
                   const prefix = started ? '' : indent + marker.trimEnd() + '\n';
                   started = true;
                   return prefix + (tight ? '' : '\n') + list(part.list, depth + 1);
@@ -184,19 +218,21 @@ export async function restoreMarkdown(html, path, docsRoot) {
         })
         .join(tight ? '\n' : '\n\n');
     }
-    function block(node) {
-      if (node.nodeType !== 1) return '';
+    /** @param {Node} source @returns {string} */
+    function block(source) {
+      if (source.nodeType !== 1) return '';
+      const node = /** @type {HTMLElement} */ (source);
       const tag = node.nodeName;
       if (/^H[1-6]$/.test(tag)) return '#'.repeat(Number(tag[1])) + ' ' + [...node.childNodes].map(inline).join('').trim();
       if (tag === 'P') return [...node.childNodes].map(inline).join('').trim();
       if (node.dataset.autoSectionList === 'true') return '<!-- AUTO:SECTION-LIST -->';
       if (tag === 'PRE') {
-        const code = node.querySelector(':scope > code');
+        const code = node.querySelector('code');
         if (!code) throw new Error('pre 元素缺少 code 子元素');
         const language = code.dataset.language || node.dataset.language || /(?:^|\s)language-([\w-]+)/.exec(code.className)?.[1] || '';
         const spans = [...code.children].filter((child) => child.matches('span.line'));
-        let numbers = spans.flatMap((line, index) => (line.classList.contains('highlighted') ? [index + 1] : []));
-        if (spans.length && !spans.at(-1).textContent) spans.pop();
+        const numbers = spans.flatMap((line, index) => (line.classList.contains('highlighted') ? [index + 1] : []));
+        if (spans.length && !(/** @type {Element} */ (spans.at(-1)).textContent)) spans.pop();
         const value = spans.length
           ? spans.map((line) => line.textContent).join('\n')
           : code.textContent.replace(/\r\n?/g, '\n').replace(/\n$/, '');
@@ -212,11 +248,16 @@ export async function restoreMarkdown(html, path, docsRoot) {
             .map((cell) => [...cell.childNodes].map(inline).join('').trim().replaceAll('|', '\\|')),
         );
         if (!rows.length) throw new Error('表格没有数据行');
-        const aligns = [...node.querySelector('tr').children].map(
-          (cell) => ({ left: ':---', right: '---:', center: ':---:' })[cell.style.textAlign] || '---',
+        const aligns = [.../** @type {HTMLTableRowElement} */ (node.querySelector('tr')).children].map(
+          (cell) =>
+            new Map([
+              ['left', ':---'],
+              ['right', '---:'],
+              ['center', ':---:'],
+            ]).get(/** @type {HTMLElement} */ (cell).style.textAlign) || '---',
         );
         return [
-          '| ' + rows[0].join(' | ') + ' |',
+          '| ' + /** @type {string[]} */ (rows[0]).join(' | ') + ' |',
           '|' + aligns.join('|') + '|',
           ...rows.slice(1).map((row) => '| ' + row.join(' | ') + ' |'),
         ].join('\n');
@@ -246,7 +287,7 @@ export async function restoreMarkdown(html, path, docsRoot) {
     const blocks = [];
     let replaceList = false;
     for (const child of root.children) {
-      if (replaceList && (child.nodeName === 'UL' || child.dataset.autoSectionList === 'true')) {
+      if (replaceList && (child.nodeName === 'UL' || /** @type {HTMLElement} */ (child).dataset.autoSectionList === 'true')) {
         blocks.push('<!-- AUTO:SECTION-LIST -->');
         replaceList = false;
         continue;
@@ -257,8 +298,18 @@ export async function restoreMarkdown(html, path, docsRoot) {
     }
     if (replaceList) throw new Error('本章各节标题后缺少自动生成列表');
     if (!blocks.length) throw new Error('教程正文为空');
-    const markdown = await formatMarkdown(blocks.join('\n\n') + '\n', path);
-    const issues = [...inspectText(markdown, { path }), ...(await inspectDocument(path, markdown, { root: dirname(docsRoot) }))];
+    const options = await prettier.resolveConfig(join(repositoryRoot, '.prettierrc'));
+    const markdown = await prettier.format(transformTypography(blocks.join('\n\n') + '\n', path), {
+      ...options,
+      filepath: path,
+      parser: 'markdown',
+      tabWidth: 4,
+      embeddedLanguageFormatting: 'off',
+    });
+    const issues = [
+      ...inspectText(markdown, { path, basicFormat: false }),
+      ...(await inspectDocument(path, markdown, { root: dirname(docsRoot) })),
+    ];
     if (issues.length) return { ok: false, diagnostics: issues.map((item) => item.message) };
     return {
       ok: true,
@@ -268,7 +319,7 @@ export async function restoreMarkdown(html, path, docsRoot) {
         .map(([name, bytes]) => ({ name, size: bytes.length, base64: bytes.toString('base64') })),
     };
   } catch (error) {
-    return { ok: false, diagnostics: [error.message] };
+    return { ok: false, diagnostics: [/** @type {Error} */ (error).message] };
   } finally {
     dom.window.close();
   }

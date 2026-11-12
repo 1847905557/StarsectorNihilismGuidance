@@ -1,80 +1,81 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
-import type MarkdownIt from 'markdown-it'
-import type Token from 'markdown-it/lib/token.mjs'
+import type { Markdown } from 'vuepress/markdown';
+import type Token from 'markdown-it/lib/token.mjs';
+import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs';
 
 /**
  * Link unpadded section references in text tokens, preserving code and existing link boundaries.
  */
-const CS_RE = /(?<!\[)\[C([1-9]\d*)-S([1-9]\d*)\](?!\])/g
+const CS_RE = /(?<!\[)\[C([1-9]\d*)-S([1-9]\d*)\](?!\])/g;
 
 /** VuePress commands run at the repository root. */
-const DOCS_DIR = join(process.cwd(), 'docs')
+const DOCS_DIR = join(process.cwd(), 'docs');
 
 const targetExists = (chapter: number, section: number): boolean => {
   try {
-    return existsSync(join(DOCS_DIR, `chapter${chapter}`, `section${section}`, 'README.md'))
+    return existsSync(join(DOCS_DIR, `chapter${chapter}`, `section${section}`, 'README.md'));
   } catch {
-    return false
+    return false;
   }
-}
+};
 
-const makeText = (state: { Token: new (type: string, tag: string, nesting: number) => Token }, content: string): Token => {
-  const tok = new state.Token('text', '', 0)
-  tok.content = content
-  return tok
-}
+const makeText = (state: StateCore, content: string): Token => {
+  const tok = new state.Token('text', '', 0);
+  tok.content = content;
+  return tok;
+};
 
-export const spLinkPlugin = (md: MarkdownIt, options?: { base?: string }): void => {
-  const base = options?.base ?? ''
+export const spLinkPlugin = (md: Markdown, options?: { base?: string }): void => {
+  const base = options?.base ?? '';
   md.core.ruler.push('sp-link', (state) => {
     for (const block of state.tokens) {
-      if (block.type !== 'inline' || !block.children) continue
-      const children: Token[] = []
-      let linkDepth = 0
+      if (block.type !== 'inline' || !block.children) continue;
+      const children: Token[] = [];
+      let linkDepth = 0;
       for (const tok of block.children) {
         if (tok.type === 'link_open') {
-          linkDepth += 1
-          children.push(tok)
-          continue
+          linkDepth += 1;
+          children.push(tok);
+          continue;
         }
         if (tok.type === 'link_close') {
-          children.push(tok)
-          linkDepth = Math.max(0, linkDepth - 1)
-          continue
+          children.push(tok);
+          linkDepth = Math.max(0, linkDepth - 1);
+          continue;
         }
         if (tok.type !== 'text' || linkDepth > 0) {
-          children.push(tok)
-          continue
+          children.push(tok);
+          continue;
         }
-        const content = tok.content
-        let pos = 0
-        CS_RE.lastIndex = 0
-        let m: RegExpExecArray | null
-        let matched = false
+        const content = tok.content;
+        let pos = 0;
+        CS_RE.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        let matched = false;
         while ((m = CS_RE.exec(content)) !== null) {
-          matched = true
-          const chapter = Number.parseInt(m[1], 10)
-          const section = Number.parseInt(m[2], 10)
+          matched = true;
+          const chapter = Number.parseInt(m[1]!, 10);
+          const section = Number.parseInt(m[2]!, 10);
           if (pos < m.index) {
-            children.push(makeText(state, content.slice(pos, m.index)))
+            children.push(makeText(state, content.slice(pos, m.index)));
           }
           if (targetExists(chapter, section)) {
-            const open = new state.Token('link_open', 'a', 1)
-            open.attrs = [['href', `${base}chapter${chapter}/section${section}/`]]
-            children.push(open, makeText(state, m[0]), new state.Token('link_close', 'a', -1))
+            const open = new state.Token('link_open', 'a', 1);
+            open.attrs = [['href', `${base}chapter${chapter}/section${section}/`]];
+            children.push(open, makeText(state, m[0]), new state.Token('link_close', 'a', -1));
           } else {
-            children.push(makeText(state, m[0]))
+            children.push(makeText(state, m[0]));
           }
-          pos = m.index + m[0].length
+          pos = m.index + m[0].length;
         }
         if (matched && pos < content.length) {
-          children.push(makeText(state, content.slice(pos)))
+          children.push(makeText(state, content.slice(pos)));
         }
-        if (!matched) children.push(tok)
+        if (!matched) children.push(tok);
       }
-      block.children = children
+      block.children = children;
     }
-  })
-}
+  });
+};

@@ -251,7 +251,7 @@ public class GearInCommodityProbe {
 
 前置数据：启用包含本节 `commodities.csv` 注册行和 `GearInCommodityProbe` 类的 GearIn MOD，并使用拥有 `gear_industry` 市场且势力 `illegalCommodities` 已含 `GearIn_tempered_alloy` 的测试存档，同时已启用 Console Commands 控制台。
 
-1. 启动游戏并进入 GearIn 市场，确认 `commodities.csv` 已经加载。
+1. 启动游戏并进入 Nipher 的市场，确认 `commodities.csv` 已经加载。
 2. 执行 `additem GearIn_tempered_alloy 10`，打开货舱和交易界面。
 3. 查看 `GearIn commodity` 日志，按市场 ID 对应回火合金、补给与毒品，核对规格、经济档位、物品数量和两个价格方向。
 4. 悬停回火合金，查看 RESOURCE 正文与违禁品标记；在同一市场状态下交易 100 件，比较界面的税前出售金额与日志的 `sellBeforeTariff(100)`，另行核对税额。

@@ -12,3 +12,9 @@ sample/
 tutorial-fixtures/gradle.properties
 tutorial-fixtures/build/
 tutorial-fixtures/.gradle/
+
+/docs/.vuepress/config.ts.*.mjs
+/test-results/
+/playwright-report/
+
+/.cache/

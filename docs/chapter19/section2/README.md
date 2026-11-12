@@ -285,7 +285,7 @@ Corvus 的出生登记可以指向固定实体，随机星区的出生位置则�
 
 ## 前置知识
 
-- [C3-S3] 的 GearIn 星系、Prime 行星与 `GearIn_planet1`；
+- [C3-S3] 的 Nipher 星系、Prime 行星与 `GearIn_planet1`；
 - [C4-S1] 的 `GearIn_artizan_combat` 装配；
 - [C19-S2] 的势力登记、模式资格和兼容查询；
 - [C7-S1] 的新档生成与生涯加载时机。
@@ -296,10 +296,10 @@ Corvus 的出生登记可以指向固定实体，随机星区的出生位置则�
 
 ```csv
 faction,system,entityID
-gear_industry,GearIn,GearIn_planet1
+gear_industry,Nipher,GearIn_planet1
 ```
 
-`system` 保存星系名 GearIn，`entityID` 保存 [C3-S3] 创建的 `GearIn_planet1`；Prime 的显示名则是 GearIn Prime。库读取这份登记以后，普通 Corvus 放置分支通过实体 ID 从星区查询对象。**出生入口使用实际实体 ID。**
+`system` 保存星系名 Nipher，`entityID` 保存 [C3-S3] 创建的 `GearIn_planet1`；Prime 的显示名则是 Nipher Prime。库读取这份登记以后，普通 Corvus 放置分支通过实体 ID 从星区查询对象。**出生入口使用实际实体 ID。**
 
 固定模式保留 `GearInSystemGenerator` 的生成调用，让该实体在玩家放置前存在。CSV 本身登记引用，实际对象仍由生成器创建。
 
@@ -452,7 +452,7 @@ public final class GearInNexStartPlanner {
 
 预期结果：
 
-- 固定模式登记解析到 GearIn 星系的 `GearIn_planet1`，玩家位置对应固定出生入口；
+- 固定模式登记解析到 Nipher 星系的 `GearIn_planet1`，玩家位置对应固定出生入口；
 - 随机规划返回当前有效最大市场的主实体，规模并列时采用集合中先遇到者；
 - SOLO 与 COMBAT_SMALL 分别返回工匠单舰、工匠和狼的列表，两种模式的固定配置一致；
 - RANDOM 从已有可随机类型选择；未知类型产生解析异常，未配置合法类型可返回 `null`；
@@ -461,7 +461,7 @@ public final class GearInNexStartPlanner {
 ## 故障分析
 
 - **Corvus 找不到出生实体**：星系名称、实体 ID 或生成时机与 CSV 不一致。
-    - **解决方案**：使用 GearIn 与 `GearIn_planet1`，确认生成器在玩家放置前完成。
+    - **解决方案**：使用 Nipher 与 `GearIn_planet1`，确认生成器在玩家放置前完成。
 
 - **规划器将尚未建立的生涯当作随机模式**：管理器未就绪时就选择地点。
     - **解决方案**：等待 SectorManager 建立，再查询出生点。

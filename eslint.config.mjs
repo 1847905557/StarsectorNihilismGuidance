@@ -2,20 +2,11 @@ import globals from 'globals';
 import js from '@eslint/js';
 import pluginVue from 'eslint-plugin-vue';
 import tseslint from 'typescript-eslint';
+import { gitIgnored } from './tools/shared/files.mjs';
 
 const fastConfig = [
   {
-    ignores: [
-      '.zcode/plans/**',
-      'docs/.vuepress/dist/**',
-      'docs/.vuepress/theme/**',
-      'docs/.vuepress/.tmp/**',
-      'docs/.vuepress/.temp/**',
-      'docs/.vuepress/.cache/**',
-      'docs/.vuepress/config.ts.*.mjs',
-      'sample/**',
-      'tutorial-fixtures/build/**',
-    ],
+    ignores: [await gitIgnored()],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -43,7 +34,7 @@ const fastConfig = [
     languageOptions: { globals: globals.browser },
   },
   {
-    files: ['docs/.vuepress/*.ts', 'tools/**/*.mjs', 'eslint*.config.mjs'],
+    files: ['docs/.vuepress/*.ts', 'tools/**/*.mjs', 'tests/**/*.mjs', 'tests/**/*.ts', '*.config.ts', 'eslint*.config.mjs'],
     languageOptions: { globals: globals.node },
   },
   {
@@ -56,7 +47,7 @@ const fastConfig = [
 export const fullConfig = [
   ...fastConfig,
   {
-    files: ['**/*.ts', '**/*.vue', 'tools/**/*.mjs', 'eslint*.config.mjs'],
+    files: ['**/*.ts', '**/*.vue', '**/*.mjs'],
     languageOptions: {
       parserOptions: {
         project: ['./tsconfig.client.json', './tsconfig.node.json', './tsconfig.tools.json', './tsconfig.test.json'],
@@ -70,6 +61,8 @@ export const fullConfig = [
         { allowForKnownSafeCalls: [{ from: 'package', package: '@types/node', name: 'test' }] },
       ],
       '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/no-unnecessary-condition': ['error', { allowConstantLoopConditions: 'only-allowed-literals' }],
+      '@typescript-eslint/no-unnecessary-type-assertion': 'error',
       '@typescript-eslint/await-thenable': ['error', { allowMixedPromiseArrays: true }],
       '@typescript-eslint/return-await': ['error', 'error-handling-correctness-only'],
       '@typescript-eslint/switch-exhaustiveness-check': ['error', { considerDefaultExhaustiveForUnions: true }],

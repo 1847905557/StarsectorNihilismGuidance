@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkDocs, guidanceFiles, inspectDocument } from './check-docs.mjs';
 
+/** @param {import('node:test').TestContext} t */
 async function workspace(t) {
   const root = await mkdtemp(join(tmpdir(), 'tutorial-docs-'));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -24,7 +25,7 @@ test('chapter structure, baseline and automatic list are checked from the actual
     [chapter + '\n尾部。\n', 'chapter-catalog'],
     [chapter.replace('## 本章各节', '### 本章各节'), 'chapter-catalog'],
   ])
-    assert.ok((await inspectDocument(path, text, { root })).some((item) => item.rule === rule));
+    assert.ok((await inspectDocument(path, /** @type {string} */ (text), { root })).some((item) => item.rule === rule));
   assert.deepEqual(await inspectDocument(join(root, 'docs/README.md'), '# 首页\n\n正文。\n', { root }), []);
 });
 test('generic Markdown checks preserve fenced literals and locate headings, links and containers', async (t) => {
@@ -54,6 +55,8 @@ test('section pages keep time lines, optional fixed headings and compact problem
     time +
     '## 制作贴图\n\n正文。\n\n## 常见问题\n\n- **症状**：原因。\n    - **解决方案**：修正。\n\n## 建议参考项\n\n- `data/hulls`：参考。\n';
   assert.deepEqual(await inspectDocument(path, valid, { root }), []);
+  assert.deepEqual(await inspectDocument(path, valid.replace('原因。\n    - **解决方案**', '原因。\n\n    - **解决方案**'), { root }), []);
+  /** @param {string} text */
   const rules = async (text) => (await inspectDocument(path, text, { root })).map((item) => item.rule);
   assert.ok((await rules('# 页面\n\n' + time + '正文。\n')).includes('section-time'));
   assert.ok((await rules(valid.replace('导语。\n\n---\n\n', ''))).includes('section-lead'));

@@ -13,7 +13,7 @@ public final class GearInCampaignSetup {
 
     private static final Logger LOGGER = Global.getLogger(GearInCampaignSetup.class);
 
-    private static final String SYSTEM_ID = "GearIn";
+    private static final String SYSTEM_ID = "Nipher";
     private static final String ORBIT_CENTER_ID = "GearIn_planet1";
     private static final String VARIANT_ID = "GearIn_artizan_combat";
     private static final String SETUP_DONE_KEY = "$GearIn_campaign_setup_done";

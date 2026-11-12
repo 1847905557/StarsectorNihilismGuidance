@@ -38,9 +38,9 @@ public class GearInMarketBuilder implements EveryFrameScript {
             return;
         }
         planet = system.addPlanet("GearIn_foundry", system.getStar(),
-                "GearIn Foundry", "barren", 135f, 110f, 3600f, 180f);
+                "Nipher Foundry", "barren", 135f, 110f, 3600f, 180f);
         MarketAPI market = Global.getFactory().createMarket(
-                "GearIn_market_foundry", "GearIn Foundry", 3);
+                "GearIn_market_foundry", "Nipher Foundry", 3);
         market.setFactionId("gear_industry");
         market.setPrimaryEntity(planet);
         market.addCondition("trade_center");

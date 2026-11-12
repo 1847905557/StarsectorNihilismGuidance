@@ -154,6 +154,7 @@ describe('page write middleware', () => {
     try {
       process.chdir(join(docs, '..'));
       devEditVitePlugin().configureServer({
+        config: { root: docs },
         middlewares: {
           use: (value) => {
             handler = value;

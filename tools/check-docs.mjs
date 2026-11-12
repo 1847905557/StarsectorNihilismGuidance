@@ -26,41 +26,49 @@ const imageName = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:gif|jpe?g|png|svg|webp)$/i;
 const orderedHeading =
   /^(?:第[一二三四五六七八九十百]+(?:步|部分|阶段|项|段)|链路[一二三四五六七八九十百]+[：:]|(?:片段|步骤)\s*(?:\d+|[一二三四五六七八九十百]+)|\d+[.、)]|[（(]\d+[）)]|[①②③④⑤⑥⑦⑧⑨⑩]|[IVXLCDM]+[.、)])/i;
 const placeholder = '<!-- AUTO:SECTION-LIST -->';
+/** @param {string} path */
 async function exists(path) {
   try {
     await access(path);
     return true;
   } catch (error) {
-    if (error.code === 'ENOENT') return false;
+    if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') return false;
     throw error;
   }
 }
+/** @param {string} path @param {string} value */
 function relativeLink(path, value) {
   if (/^(?:[a-z][\w+.-]*:|\/|#)/i.test(value)) return null;
-  return resolve(dirname(path), decodeURIComponent(value.split(/[?#]/)[0]));
+  return resolve(dirname(path), decodeURIComponent(value.split(/[?#]/)[0] ?? ''));
 }
+/** @param {{line: number, level: number}[]} items @param {{line: number, level: number}} current @param {number} count */
 function sectionEnd(items, current, count) {
   return items.find((heading) => heading.line > current.line && heading.level <= current.level)?.line ?? count;
 }
+/** @param {string} value */
 function stripInlineCode(value) {
   return value.replace(/(`+)[\s\S]*?\1/g, (match) => ' '.repeat(match.length));
 }
 
+/** @param {string} path @param {string} text @param {{root?: string}} config @returns {Promise<import('./shared/cli.mjs').Diagnostic[]>} */
 export async function inspectDocument(path, text, { root = repositoryRoot } = {}) {
   const document = parseMarkdown(text);
   const { lines, tokens, hidden, fences } = document;
   const titles = headings(tokens);
+  /** @type {import('./shared/cli.mjs').Diagnostic[]} */
   const diagnostics = [];
+  /** @param {number} line @param {string} rule @param {string} message @param {number} column */
   const add = (line, rule, message, column = 1) => diagnostics.push({ line: line + 1, column, rule, message });
   const h1 = titles.filter((heading) => heading.level === 1);
   if (h1.length !== 1) add(0, 'document-title', '文档必须包含唯一 H1；当前 ' + h1.length + ' 个');
   const first = lines.findIndex((line) => line.trim());
-  if (h1.length && h1[0].line !== first) add(h1[0].line, 'document-title', '文档首个非空行必须是 H1');
+  if (h1.length && /** @type {{ line: number; level: number; title: string; }} */ (h1[0]).line !== first)
+    add(/** @type {{ line: number; level: number; title: string; }} */ (h1[0]).line, 'document-title', '文档首个非空行必须是 H1');
   for (const heading of titles) if (heading.level > 3) add(heading.line, 'heading-level', '标题只使用 H1、H2 和 H3');
   for (const token of fences.filter((item) => item.type === 'fence')) {
-    const last = lines[token.map[1] - 1];
+    const last = /** @type {string} */ (lines[/** @type {[number, number]} */ (token.map)[1] - 1]);
     if (!new RegExp('^\\s*' + token.markup[0] + '{' + token.markup.length + ',}\\s*$').test(last)) {
-      add(token.map[0], 'fence-close', '代码围栏未闭合');
+      add(/** @type {[number, number]} */ (token.map)[0], 'fence-close', '代码围栏未闭合');
     }
   }
 
@@ -71,12 +79,12 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
   const containers = [];
   for (let line = 0; line < lines.length; line++) {
     if (hidden.has(line)) continue;
-    const value = lines[line].trim();
+    const value = /** @type {string} */ (lines[line]).trim();
     const container = /^(:::+)(.*)$/.exec(value);
     if (container) {
-      if (container[2].trim()) {
+      if (/** @type {string} */ (container[2]).trim()) {
         containers.push(line);
-        if (container[2].trim().split(/\s+/).length < 2) add(line, 'container-title', 'VuePress 容器缺少标题');
+        if (/** @type {string} */ (container[2]).trim().split(/\s+/).length < 2) add(line, 'container-title', 'VuePress 容器缺少标题');
       } else if (containers.length) containers.pop();
       else add(line, 'container-close', 'VuePress 容器结束标记没有对应开始标记');
     }
@@ -88,7 +96,8 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
         if (!before.endsWith('[') || !after.startsWith(']') || before.endsWith('[[') || after.startsWith(']]')) {
           add(line, 'section-reference', 'Section 编号必须使用一层方括号：' + match[0]);
         } else if (after.startsWith('](')) add(line, 'section-reference', 'Section 编号由插件生成目标链接：' + match[0]);
-        else if (/^0/.test(match[1]) || /^0/.test(match[2])) add(line, 'section-reference', 'Section 编号使用无前导零的正整数');
+        else if (/^0/.test(/** @type {string} */ (match[1])) || /^0/.test(/** @type {string} */ (match[2])))
+          add(line, 'section-reference', 'Section 编号使用无前导零的正整数');
         else if (!(await exists(join(root, 'docs', 'chapter' + match[1], 'section' + match[2], 'README.md')))) {
           add(line, 'section-reference', 'Section 编号目标不存在：' + match[0]);
         }
@@ -100,16 +109,21 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
     for (const token of inlineTokens(parent)) {
       const target = token.type === 'image' ? token.attrGet('src') : token.type === 'link_open' ? token.attrGet('href') : null;
       if (!target) continue;
-      const local = relativeLink(path, target);
-      if (local && !(await exists(local))) add(parent.map[0], 'relative-link', '相对目标不存在：' + target);
+      const local = relativeLink(path, String(target));
+      if (local && !(await exists(local)))
+        add(/** @type {[number, number]} */ (parent.map)[0], 'relative-link', '相对目标不存在：' + target);
       if (tutorial && token.type === 'image') {
-        const title = token.attrGet('title') || '';
-        const name = decodeURIComponent(new URL(target, 'https://local.invalid/').pathname.split('/').at(-1));
-        if (!token.content.trim()) add(parent.map[0], 'image-alt', '图片 alt 必须为非空语义描述');
-        if (!imageName.test(title) || title.includes('..')) add(parent.map[0], 'image-title', '图片 title 必须写合法的原始文件名');
+        const title = String(token.attrGet('title') || '');
+        const name = decodeURIComponent(
+          /** @type {string} */ (new URL(String(target), 'https://local.invalid/').pathname.split('/').at(-1)),
+        );
+        if (!token.content.trim()) add(/** @type {[number, number]} */ (parent.map)[0], 'image-alt', '图片 alt 必须为非空语义描述');
+        if (!imageName.test(title) || title.includes('..'))
+          add(/** @type {[number, number]} */ (parent.map)[0], 'image-title', '图片 title 必须写合法的原始文件名');
         else {
-          if (name !== title) add(parent.map[0], 'image-title', '图片 title 与目标文件名不一致');
-          if (local && target !== './' + title) add(parent.map[0], 'image-target', '本地图片目标必须写成 ./' + title);
+          if (name !== title) add(/** @type {[number, number]} */ (parent.map)[0], 'image-title', '图片 title 与目标文件名不一致');
+          if (local && target !== './' + title)
+            add(/** @type {[number, number]} */ (parent.map)[0], 'image-target', '本地图片目标必须写成 ./' + title);
         }
       }
     }
@@ -120,21 +134,31 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
     const baselines = content.filter(({ value }) => value.startsWith('本章技术基线'));
     if (baselines.length > 1) add(0, 'chapter-baseline', '章页最多包含一个本章技术基线段落；当前 ' + baselines.length + ' 个');
     else if (baselines.length === 1) {
-      const item = baselines[0];
+      const item = /** @type {{ value: string; line: number; }} */ (baselines[0]);
       if (!baseline.test(item.value)) add(item.line, 'chapter-baseline', '本章技术基线格式错误');
       if (content[1] !== item) add(item.line, 'chapter-baseline', '本章技术基线必须紧接 H1');
       if (lines[item.line - 1]?.trim() || lines[item.line + 1]?.trim()) add(item.line, 'chapter-baseline', '本章技术基线必须独占普通段落');
     }
     const catalogs = titles.filter((item) => item.title === '本章各节');
     const markers = content.filter(({ value }) => value === placeholder);
-    if (catalogs.length !== 1 || catalogs[0].level !== 2) add(0, 'chapter-catalog', '章页必须包含一个 H2 本章各节标题');
+    if (catalogs.length !== 1 || /** @type {{ line: number; level: number; title: string; }} */ (catalogs[0]).level !== 2)
+      add(0, 'chapter-catalog', '章页必须包含一个 H2 本章各节标题');
     if (titles.some((item) => item.level > 1 && item.title !== '本章各节')) add(0, 'chapter-catalog', '章页正文分区使用本章各节');
     if (markers.length !== 1) add(0, 'chapter-catalog', '章页必须包含一个自动列表占位符');
     if (catalogs.length === 1 && markers.length === 1) {
       if (content.at(-1) !== markers[0] || content.at(-2)?.value !== '## 本章各节')
-        add(markers[0].line, 'chapter-catalog', '章页必须以本章各节和独立自动列表占位符结束');
-      const start = baselines.length === 1 ? baselines[0].line : (h1[0]?.line ?? 0);
-      if (!content.some((item) => item.line > start && item.line < catalogs[0].line)) add(0, 'chapter-introduction', '章页必须提供章介绍');
+        add(
+          /** @type {{ value: string; line: number; }} */ (markers[0]).line,
+          'chapter-catalog',
+          '章页必须以本章各节和独立自动列表占位符结束',
+        );
+      const start = baselines.length === 1 ? /** @type {{ value: string; line: number; }} */ (baselines[0]).line : (h1[0]?.line ?? 0);
+      if (
+        !content.some(
+          (item) => item.line > start && item.line < /** @type {{ line: number; level: number; title: string; }} */ (catalogs[0]).line,
+        )
+      )
+        add(0, 'chapter-introduction', '章页必须提供章介绍');
     }
   }
   if (tutorial) {
@@ -146,13 +170,15 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
       if (section && removedHeadings.includes(heading.title)) add(heading.line, 'section-heading', '节页不再使用该标题：' + heading.title);
     }
     for (let index = 0; index < tokens.length; index++) {
-      const table = tokens[index];
+      const table = /** @type {import('markdown-it').Token} */ (tokens[index]);
       if (table.type !== 'table_open') continue;
       const end = tokens.findIndex((item, after) => after > index && item.type === 'table_close');
       const content = tokens.slice(index, end);
       const rows = content.filter((item) => item.type === 'tr_open');
       const columns = content.filter((item) => item.type === 'th_open').length;
-      const sourceRows = lines.slice(table.map[0], table.map[1]).filter((line) => line.trim());
+      const sourceRows = lines
+        .slice(/** @type {[number, number]} */ (table.map)[0], /** @type {[number, number]} */ (table.map)[1])
+        .filter((line) => line.trim());
       const widths = sourceRows.map(
         (line) =>
           stripInlineCode(line)
@@ -160,8 +186,9 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
             .replace(/^\||\|$/g, '')
             .split(/(?<!\\)\|/).length,
       );
-      if (widths.some((width) => width !== columns)) add(table.map[0], 'tutorial-table', '表格各行列数必须一致');
-      if (rows.length < 3 || columns < 2) add(table.map[0], 'tutorial-table', '表格至少两列和两个数据行');
+      if (widths.some((width) => width !== columns))
+        add(/** @type {[number, number]} */ (table.map)[0], 'tutorial-table', '表格各行列数必须一致');
+      if (rows.length < 3 || columns < 2) add(/** @type {[number, number]} */ (table.map)[0], 'tutorial-table', '表格至少两列和两个数据行');
     }
   }
   if (section) {
@@ -173,12 +200,11 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
       if (heading.title === '常见问题') {
         let previousSolution;
         for (let index = 0; index < content.length; index += 2) {
-          const symptom = content[index],
+          const symptom = /** @type {{ value: string; line: number; }} */ (content[index]),
             solution = content[index + 1];
           if (!/^- \*\*.+?\*\*[：:]\S/.test(symptom.value)) add(symptom.line, 'fault-symptom', '常见问题条目以加粗症状与原因起句');
           if (!solution || !/^ {4}- \*\*解决方案\*\*[：:]\S/.test(solution.value))
-            add(symptom.line, 'fault-solution', '常见问题条目后必须紧跟解决方案子项');
-          else if (solution.line !== symptom.line + 1) add(solution.line, 'fault-spacing', '解决方案紧跟症状行');
+            add(symptom.line, 'fault-solution', '常见问题条目必须包含解决方案子项');
           if (previousSolution && symptom.line === previousSolution.line + 1) add(symptom.line, 'fault-spacing', '故障条目之间保留空行');
           previousSolution = solution;
         }
@@ -195,16 +221,17 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
     const rule = content.findIndex(({ value }) => value.trim() === '---');
     if (rule < 2 || content.slice(1, rule).some(({ value }) => /^#{1,6}\s/.test(value)))
       add(content[1]?.line ?? 0, 'section-lead', '节页 H1 后先写导语，再以独立的分割线 --- 与时间段落分隔');
-    else if (lines[content[rule].line - 1]?.trim()) add(content[rule].line, 'section-lead', '分割线前必须保留空行');
+    else if (lines[/** @type {{ value: string; line: number; }} */ (content[rule]).line - 1]?.trim())
+      add(/** @type {{ value: string; line: number; }} */ (content[rule]).line, 'section-lead', '分割线前必须保留空行');
     const start = rule < 2 ? 0 : rule;
     timeLines.forEach(([name, pattern], index) => {
       const item = content[start + index + 1];
-      if (!item || !pattern.test(item.value.trim()))
+      if (!item || !(/** @type {RegExp} */ (pattern).test(item.value.trim())))
         add(item?.line ?? 0, 'section-time', '节页分割线后依次写阅读时间与操作时间：缺少' + name);
     });
     const body = content[start + timeLines.length + 1];
     if (rule >= 2 && body && !/^## \S/.test(body.value)) add(body.line, 'section-time', '时间段落后必须紧跟 H2 标题');
-    if (Number(/chapter(\d+)/.exec(rel)[1]) >= 6 && !titles.some((item) => item.title === '前置知识'))
+    if (Number(/** @type {RegExpExecArray} */ (/chapter(\d+)/.exec(rel))[1]) >= 6 && !titles.some((item) => item.title === '前置知识'))
       add(0, 'section-heading', '第 6 章起节页必须包含前置知识');
   }
   if (dirname(path) === resolve(root, '.zcode') && basename(path) === 'workflow.md') {
@@ -216,6 +243,7 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
   return diagnostics;
 }
 
+/** @param {string[]} paths @param {{root?: string}} config */
 export async function checkDocs(paths = [], { root = repositoryRoot } = {}) {
   root = resolve(root);
   const scope = await collectFiles(paths, { root, include: (path) => extname(path).toLowerCase() === '.md' });
@@ -229,17 +257,17 @@ export async function checkDocs(paths = [], { root = repositoryRoot } = {}) {
         diagnostics: await inspectDocument(path, source.text, { root }),
       });
     } catch (error) {
-      scope.errors.push({ path: displayPath(path, root), message: error.message });
+      scope.errors.push({ path: displayPath(path, root), message: /** @type {Error} */ (error).message });
     }
   }
   const complete = !paths.length || paths.some((path) => inside(resolve(path), join(root, '.zcode')));
   if (complete) {
     const names = await readdir(join(root, '.zcode')).catch((error) => {
-      scope.errors.push({ path: '.zcode', message: error.message });
+      scope.errors.push({ path: '.zcode', message: /** @type {Error} */ (error).message });
       return [];
     });
     for (const name of guidanceFiles)
-      if (!names.includes(name))
+      if (!(/** @type {string[]} */ (names).includes(name)))
         files.push({
           path: '.zcode/' + name,
           bytes: 0,

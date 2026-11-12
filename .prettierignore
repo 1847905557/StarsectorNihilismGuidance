@@ -1,0 +1,8 @@
+# Generated dependency lockfile.
+pnpm-lock.yaml
+
+# Tutorial prose is maintained by the Markdown content workflow.
+**/*.md
+
+# Game syntax and exact tutorial examples are preserved as authored.
+tutorial-fixtures/units/

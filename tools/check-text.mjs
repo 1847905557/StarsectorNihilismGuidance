@@ -1,5 +1,6 @@
-import { extname } from 'node:path';
-import { collectFiles, displayPath, isText, readUtf8, repositoryRoot } from './shared/files.mjs';
+import { extname, join } from 'node:path';
+import prettier from 'prettier';
+import { collectFiles, displayPath, isCode, isText, readUtf8, repositoryRoot } from './shared/files.mjs';
 import { command, diagnostic, result } from './shared/cli.mjs';
 import { parseMarkdown, lineOffset } from './shared/markdown.mjs';
 
@@ -7,6 +8,7 @@ const cjk = '\\u3400-\\u9fff\\uf900-\\ufaff';
 const chinese = '，。；：？！、';
 
 /** Format prose only; callers select prose and comment spans before invoking this function. */
+/** @param {string} value @param {{wordSpacing?: boolean}} config */
 export function formatProse(value, { wordSpacing = true } = {}) {
   let text = value
     .replace(/[（]/g, '(')
@@ -34,8 +36,11 @@ export function formatProse(value, { wordSpacing = true } = {}) {
   return text;
 }
 
+/** @param {string} value @returns {string} */
 function protectedProse(value) {
+  /** @type {string[]} */
   const protectedValues = [];
+  /** @param {string} text */
   const save = (text) => {
     const index = protectedValues.push(text) - 1;
     return '\ufff0' + index + '\ufff1';
@@ -56,16 +61,18 @@ function protectedProse(value) {
     masked = masked
       .replace(new RegExp('([' + cjk + '])' + marker, 'g'), '$1 ' + marker)
       .replace(new RegExp(marker + '([' + cjk + '])', 'g'), marker + ' $1');
-    masked = masked.replaceAll(marker, () => protectedValues[index]);
+    masked = masked.replaceAll(marker, () => /** @type {string} */ (protectedValues[index]));
   }
   return masked;
 }
 
 /** Locate comments with lexical string handling, including Java text blocks and shell quoting. */
+/** @param {string} text @param {string} language @returns {[number, number][]} */
 export function commentSpans(text, language) {
   const hash = /^(?:bash|sh|shell|powershell|ps1|properties|yaml|yml|python)$/.test(language);
   const slash = /^(?:java|javascript|js|typescript|ts|glsl|vert|frag|c|cpp|jsonc|json5|gradle|css|scss|mjs)$/.test(language);
   if (!hash && !slash) return [];
+  /** @type {[number, number][]} */
   const spans = [];
   let index = 0;
   while (index < text.length) {
@@ -74,7 +81,7 @@ export function commentSpans(text, language) {
       const delimiter = text.slice(index, index + 3);
       const end = text.indexOf(delimiter, index + 3);
       index = end < 0 ? text.length : end + 3;
-    } else if ('"\'`'.includes(text[index])) {
+    } else if ('"\'`'.includes(text[index] ?? '')) {
       const quote = text[index++];
       while (index < text.length) {
         if (text[index] === '\\') index += 2;
@@ -88,7 +95,12 @@ export function commentSpans(text, language) {
       const end = text.indexOf('*/', index + 2);
       spans.push([index + 2, end < 0 ? text.length : end]);
       index = end < 0 ? text.length : end + 2;
-    } else if (hash && text[index] === '#' && !text.startsWith('#version', index) && (index === 0 || /\s/.test(text[index - 1]))) {
+    } else if (
+      hash &&
+      text[index] === '#' &&
+      !text.startsWith('#version', index) &&
+      (index === 0 || /\s/.test(/** @type {string} */ (text[index - 1])))
+    ) {
       const end = text.indexOf('\n', index);
       spans.push([index + 1, end < 0 ? text.length : end]);
       index = end < 0 ? text.length : end;
@@ -97,6 +109,7 @@ export function commentSpans(text, language) {
   return spans;
 }
 
+/** @param {string} text @param {string} path @param {{comments?: boolean}} config */
 export function transformTypography(text, path = 'document.md', { comments = true } = {}) {
   if (extname(path).toLowerCase() !== '.md') {
     const language = extname(path).slice(1).toLowerCase();
@@ -107,18 +120,19 @@ export function transformTypography(text, path = 'document.md', { comments = tru
     return output;
   }
   const { lines, hidden, fences } = parseMarkdown(text);
+  /** @type {[number, number, string][]} */
   const edits = [];
   for (let index = 0; index < lines.length; index++) {
     if (hidden.has(index)) continue;
-    const line = lines[index];
+    const line = /** @type {string} */ (lines[index]);
     if (/^\s*<!--|^\s*:::|^\s*\|?[ :|-]+\|[ :|-]*$/.test(line)) continue;
     const formatted = protectedProse(line);
     if (formatted !== line) edits.push([lineOffset(text, index), lineOffset(text, index) + line.length, formatted]);
   }
   if (comments) {
     for (const fence of fences.filter((token) => token.type === 'fence')) {
-      const start = lineOffset(text, fence.map[0] + 1);
-      for (const [from, to] of commentSpans(fence.content, fence.info.split(/\s/)[0])) {
+      const start = lineOffset(text, /** @type {[number, number]} */ (fence.map)[0] + 1);
+      for (const [from, to] of commentSpans(fence.content, fence.info.split(/\s/)[0] ?? '')) {
         edits.push([start + from, start + to, formatComment(fence.content.slice(from, to))]);
       }
     }
@@ -128,32 +142,39 @@ export function transformTypography(text, path = 'document.md', { comments = tru
   return output;
 }
 
+/** @param {string} text */
 function formatComment(text) {
   return text
     .split('\n')
     .map((line) => {
       if (!line.trim()) return line;
-      const leading = line.match(/^\s*/)[0];
-      const trailing = line.match(/[ \t]*$/)[0];
+      const leading = /** @type {RegExpMatchArray} */ (line.match(/^\s*/))[0];
+      const trailing = /** @type {RegExpMatchArray} */ (line.match(/[ \t]*$/))[0];
       const content = line.slice(leading.length, line.length - trailing.length);
       return leading + formatProse(content, { wordSpacing: false }) + trailing;
     })
     .join('\n');
 }
 
-export function inspectText(text, { bom = false, path = 'document.md' } = {}) {
+/** @param {string} text @param {{bom?: boolean, path?: string, basicFormat?: boolean}} config @returns {import('./shared/cli.mjs').Diagnostic[]} */
+export function inspectText(text, { bom = false, path = 'document.md', basicFormat = true } = {}) {
+  /** @type {import('./shared/cli.mjs').Diagnostic[]} */
   const diagnostics = [];
+  /** @param {number} offset @param {string} rule @param {string} message */
   const add = (offset, rule, message) => diagnostics.push(diagnostic(text, offset, rule, message));
   if (bom) add(0, 'encoding-bom', '文本使用 UTF-8 无 BOM');
-  for (const match of text.matchAll(/\r/g)) add(match.index, 'line-ending', '换行使用 LF');
-  if (!text.endsWith('\n') || text.endsWith('\n\n')) add(text.length, 'terminal-newline', '文件末尾保留一个换行');
-  for (const match of text.matchAll(/[ \t]+(?=\r?$)/gm)) add(match.index, 'trailing-space', '行尾存在空格或 Tab');
+  // Prettier owns basic layout for its supported languages; raw formats retain these checks.
+  if (basicFormat) {
+    for (const match of text.matchAll(/\r/g)) add(match.index, 'line-ending', '换行使用 LF');
+    if (!text.endsWith('\n') || text.endsWith('\n\n')) add(text.length, 'terminal-newline', '文件末尾保留一个换行');
+    for (const match of text.matchAll(/[ \t]+(?=\r?$)/gm)) add(match.index, 'trailing-space', '行尾存在空格或 Tab');
+  }
   const desired = transformTypography(text, path);
   if (extname(path).toLowerCase() === '.md') {
     const { lines, hidden } = parseMarkdown(text);
     for (let index = 0; index < lines.length; index++) {
       if (hidden.has(index)) continue;
-      const line = lines[index].replace(/(`+)[\s\S]*?\1/g, (match) => ' '.repeat(match.length));
+      const line = /** @type {string} */ (lines[index]).replace(/(`+)[\s\S]*?\1/g, (match) => ' '.repeat(match.length));
       for (const match of line.matchAll(/(?<!—)—(?!—)/g)) {
         if (
           /^\s*—\s*$/.test(line.slice(0, match.index).split('|').at(-1) + '—' + line.slice(match.index + 1).split('|')[0]) &&
@@ -169,28 +190,35 @@ export function inspectText(text, { bom = false, path = 'document.md' } = {}) {
   for (let index = 0; index < currentLines.length; index++) {
     if (currentLines[index] !== desiredLines[index]) {
       let column = 0;
-      while (currentLines[index][column] === desiredLines[index][column]) column++;
-      add(lineOffset(text, index) + column, 'typography', '文字格式应为：' + desiredLines[index].trim());
+      while (/** @type {string} */ (currentLines[index])[column] === /** @type {string} */ (desiredLines[index])[column]) column++;
+      add(lineOffset(text, index) + column, 'typography', '文字格式应为：' + /** @type {string} */ (desiredLines[index]).trim());
     }
   }
   return diagnostics;
 }
 
-export async function checkText(paths = [], { root = repositoryRoot } = {}) {
-  const scope = await collectFiles(paths, { root, include: isText });
+/** @param {string[]} paths @param {{root?: string, code?: boolean}} config */
+export async function checkText(paths = [], { root = repositoryRoot, code = false } = {}) {
+  const scope = await collectFiles(paths, { root, include: (path) => (code ? isCode(path, root) : isText(path)) });
   const files = [];
   for (const path of scope.files) {
     try {
       const source = await readUtf8(path);
+      const info =
+        isCode(path, root) || extname(path) === '.md'
+          ? await prettier.getFileInfo(path, { ignorePath: [join(root, '.gitignore'), join(root, '.prettierignore')] })
+          : { inferredParser: null, ignored: false };
       files.push({
         path: displayPath(path, root),
         bytes: source.bytes.length,
-        diagnostics: inspectText(source.text, { bom: source.bom, path }),
+        diagnostics: inspectText(source.text, { bom: source.bom, path, basicFormat: info.ignored || !info.inferredParser }),
       });
     } catch (error) {
-      scope.errors.push({ path: displayPath(path, root), message: error.message });
+      scope.errors.push({ path: displayPath(path, root), message: /** @type {Error} */ (error).message });
     }
   }
   return result(files, scope.errors, { skipped: scope.skipped });
 }
-await command(import.meta.url, '检查文本编码、换行和正文及注释的文字格式。', ({ paths }) => checkText(paths));
+await command(import.meta.url, '检查文本编码、换行和正文及注释的文字格式。', ({ paths, code }) => checkText(paths, { code }), {
+  code: { type: 'boolean' },
+});

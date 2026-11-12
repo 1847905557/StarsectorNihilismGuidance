@@ -73,16 +73,18 @@ test('data images preserve exact payload and reject identity collisions', async 
     imagePath,
     work,
   );
-  assert.match(conflict.diagnostics[0], /文件名冲突/);
+  assert.equal(conflict.ok, false);
+  assert.match(/** @type {string} */ (conflict.diagnostics[0]), /文件名冲突/);
   const mismatch = await restoreMarkdown(
     '<h1>标题</h1><p><img src="data:image/png;base64,' + image + '" alt="图" title="image.jpg"></p>',
     path,
     docs,
   );
   assert.equal(mismatch.ok, false);
-  assert.match(mismatch.diagnostics[0], /扩展名/);
+  assert.match(/** @type {string} */ (mismatch.diagnostics[0]), /扩展名/);
   const invalid = await restoreMarkdown('<h1>标题</h1><p><img src="data:image/png;base64,?" alt="图" title="image.png"></p>', path, docs);
-  assert.match(invalid.diagnostics[0], /Base64/);
+  assert.equal(invalid.ok, false);
+  assert.match(/** @type {string} */ (invalid.diagnostics[0]), /Base64/);
 });
 test('empty content, incomplete containers and chapter contracts return structured diagnostics', async () => {
   assert.equal((await restoreMarkdown('', path, docs)).ok, false);
@@ -93,4 +95,17 @@ test('empty content, incomplete containers and chapter contracts return structur
   );
   assert.equal(chapter.ok, false);
   assert.ok(chapter.diagnostics.some((message) => message.includes('本章技术基线')));
+});
+
+test('restoration formats Chinese prose while preserving loose problem lists and code literals', async () => {
+  const html =
+    '<h1>标题</h1><p>中文（说明）和“引号”……</p><h2>常见问题</h2>' +
+    '<ul data-dev-list-tight="false"><li><p><strong>症状</strong>：原因。</p>' +
+    '<ul><li><p><strong>解决方案</strong>：修正。</p></li></ul></li></ul>' +
+    '<pre data-language="java"><code>String value = "中文（原文）";</code></pre>';
+  const restored = await restoreMarkdown(html, path, docs);
+  assert.equal(restored.ok, true, JSON.stringify(restored));
+  assert.ok(restored.markdown.includes('中文 (说明) 和 "引号"...'));
+  assert.ok(restored.markdown.includes('- **症状**：原因。\n\n    - **解决方案**：修正。'));
+  assert.ok(restored.markdown.includes('String value = "中文（原文）";'));
 });

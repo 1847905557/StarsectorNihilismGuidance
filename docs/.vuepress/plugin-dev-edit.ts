@@ -134,15 +134,16 @@ export const validateRestoredAssets = (target: string, assets: RestoreAsset[]): 
 };
 
 export const devEditVitePlugin = () => {
-  const docsDir = resolve(process.cwd(), 'docs');
-  const backupDir = resolve(docsDir, '..', '.zcode', 'tutorial-work', 'backups', 'edit-writes');
   return {
     name: 'dev-edit-middleware',
     configureServer(server: {
+      config: { root: string };
       middlewares: {
         use: (handler: (request: unknown, response: unknown, next?: () => void) => void) => void;
       };
     }) {
+      const docsDir = resolve(server.config.root);
+      const backupDir = resolve(docsDir, '..', '.zcode', 'tutorial-work', 'backups', 'edit-writes');
       console.log('[dev-edit] full-page middleware registered');
       server.middlewares.use((request, response, next) => {
         const req = request as ReqLike;

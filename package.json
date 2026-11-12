@@ -6,7 +6,7 @@
   "scripts": {
     "docs:dev": "vuepress dev docs",
     "docs:build": "vuepress build docs",
-    "test:dev-edit": "vitest run docs/.vuepress/client/dev-edit-model.test.ts docs/.vuepress/plugin-dev-edit.test.ts --exclude .zcode/**",
+    "test:dev-edit": "vitest run docs/.vuepress --exclude .zcode/**",
     "format": "node tools/format.mjs --write",
     "format:check": "node tools/format.mjs",
     "check:text": "node tools/check-text.mjs",

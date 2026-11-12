@@ -5,13 +5,11 @@ import type MarkdownIt from 'markdown-it'
 import type Token from 'markdown-it/lib/token.mjs'
 
 /**
- * [C1-S1] 单元编号自动跳转插件：
- * 只有一层方括号包围、数字不带前导零的编号会生成 /chapterN/sectionM/ 链接。
- * 代码围栏与行内代码不经过 text token；现有链接内的文本由 linkDepth 保护。
+ * Link unpadded section references in text tokens, preserving code and existing link boundaries.
  */
 const CS_RE = /(?<!\[)\[C([1-9]\d*)-S([1-9]\d*)\](?!\])/g
 
-/** 构建/开发均在项目根运行 vuepress，cwd 即仓库根 */
+/** VuePress commands run at the repository root. */
 const DOCS_DIR = join(process.cwd(), 'docs')
 
 const targetExists = (chapter: number, section: number): boolean => {

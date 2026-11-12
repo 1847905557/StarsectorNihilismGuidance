@@ -5,9 +5,7 @@ import type MarkdownIt from 'markdown-it'
 import type Token from 'markdown-it/lib/token.mjs'
 
 /**
- * 章索引页 section 列表自动生成 (契约见 .zcode/text-guidelines.md)：
- * chapterN/README.md 中放置占位符 `<!-- AUTO:SECTION-LIST -->`，渲染时自动替换为
- * 该章全部 section 的链接列表 (数据源 = 文件系统，H1 与侧边栏同一来源)。
+ * Derive chapter links from section headings and register their files for VuePress dependency updates.
  */
 const PLACEHOLDER = '<!-- AUTO:SECTION-LIST -->'
 const CHAPTER_RE = /^chapter([1-9]\d*)\/README\.md$/u
@@ -15,7 +13,6 @@ const SECTION_RE = /^section([1-9]\d*)$/u
 
 const toPosix = (s: string): string => s.split('\\').join('/')
 
-/** 数字序目录列表 (与 sidebar.ts 同逻辑) */
 const getSectionDirs = (chapterDir: string): { name: string; ordinal: number }[] =>
   readdirSync(chapterDir, { withFileTypes: true })
     .flatMap((entry) => {
@@ -24,7 +21,6 @@ const getSectionDirs = (chapterDir: string): { name: string; ordinal: number }[]
     })
     .sort((a, b) => a.ordinal - b.ordinal)
 
-/** 读取 section README 首个非空行 H1(与 sidebar.ts 同逻辑) */
 const readTitle = (readmePath: string): string | null => {
   try {
     const first = readFileSync(readmePath, 'utf8')
@@ -49,15 +45,16 @@ export const sectionListPlugin = (
     if (!chapterMatch) return
     const chapter = chapterMatch[1]
 
-    // 收集 section 列表
     const items: { ordinal: number; title: string }[] = []
     for (const dir of getSectionDirs(join(docsDir, `chapter${chapter}`))) {
-      const title = readTitle(join(docsDir, `chapter${chapter}`, dir.name, 'README.md'))
+      const readmePath = join(docsDir, `chapter${chapter}`, dir.name, 'README.md')
+      const importedFiles: string[] = state.env.importedFiles ??= []
+      if (!importedFiles.includes(readmePath)) importedFiles.push(readmePath)
+      const title = readTitle(readmePath)
       if (title) items.push({ ordinal: dir.ordinal, title })
     }
     if (items.length === 0) return
 
-    // 找到占位符 token 并替换为列表 token
     const newTokens: Token[] = []
     let replaced = false
     for (const block of state.tokens) {

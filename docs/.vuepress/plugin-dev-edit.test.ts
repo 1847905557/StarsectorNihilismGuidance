@@ -6,7 +6,8 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as restorer from '../../tools/restore-markdown.mjs';
 
 import {
   encode,
@@ -20,6 +21,7 @@ import {
 const temporaryRoots: string[] = [];
 
 afterEach(() => {
+  vi.useRealTimers();
   temporaryRoots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true }));
 });
 
@@ -145,7 +147,7 @@ describe('restore function boundary', () => {
 });
 
 describe('page write middleware', () => {
-  const request = async (payload: Record<string, unknown>) => {
+  const session = () => {
     const { docs, page } = fixture('');
     const previous = process.cwd();
     let handler: (request: unknown, response: unknown) => void = () => {};
@@ -161,22 +163,26 @@ describe('page write middleware', () => {
     } finally {
       process.chdir(previous);
     }
-    const req = new EventEmitter() as EventEmitter & { url: string; method: string };
-    req.url = '/__api/edit-page';
-    req.method = 'POST';
-    const completed = new Promise<{ status: number; body: Record<string, unknown> }>((resolve) => {
-      handler(req, {
-        statusCode: 0,
-        setHeader: () => {},
-        end(this: { statusCode: number }, body: string) {
-          resolve({ status: this.statusCode, body: JSON.parse(body) });
-        },
+    const send = async (payload: Record<string, unknown>) => {
+      const req = new EventEmitter() as EventEmitter & { url: string; method: string };
+      req.url = '/__api/edit-page';
+      req.method = 'POST';
+      const completed = new Promise<{ status: number; body: Record<string, unknown> }>((resolve) => {
+        handler(req, {
+          statusCode: 0,
+          setHeader: () => {},
+          end(this: { statusCode: number }, body: string) {
+            resolve({ status: this.statusCode, body: JSON.parse(body) });
+          },
+        });
       });
-    });
-    req.emit('data', Buffer.from(JSON.stringify({ path: 'README.md', revision: sourceRevision(readFileSync(page)), ...payload })));
-    req.emit('end');
-    return { ...(await completed), page, docs };
+      req.emit('data', Buffer.from(JSON.stringify({ path: 'README.md', revision: sourceRevision(readFileSync(page)), ...payload })));
+      req.emit('end');
+      return { ...(await completed), page, docs };
+    };
+    return { send, page, docs };
   };
+  const request = (payload: Record<string, unknown>) => session().send(payload);
   it('writes restored Markdown and returns the actual new source revision', async () => {
     const result = await request({ html: '<h1>更新标题</h1><p>中文(说明)</p>' });
     expect(result.status).toBe(200);
@@ -196,6 +202,48 @@ describe('page write middleware', () => {
     expect(result.status).toBe(422);
     expect(result.body.code).toBe('validation-failed');
     expect(readFileSync(result.page, 'utf8')).toBe('# 原标题\r\n');
+  });
+  it('accepts exactly one concurrent save from the same source version', async () => {
+    const work = session();
+    const results = await Promise.all([work.send({ html: '<h1>第一份修改</h1>' }), work.send({ html: '<h1>第二份修改</h1>' })]);
+    expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
+    const accepted = results.find((result) => result.status === 200)!;
+    expect(sourceRevision(readFileSync(work.page))).toBe(accepted.body.revision);
+    expect(readdirSync(join(work.docs, '..', '.zcode/tutorial-work/backups/edit-writes'))).toHaveLength(1);
+  });
+  it('preserves external edits that arrive during Markdown restoration', async () => {
+    const work = session();
+    const restore = restorer.restoreMarkdown;
+    const spy = vi.spyOn(restorer, 'restoreMarkdown').mockImplementation(async (...args) => {
+      const result = await restore(...args);
+      writeFileSync(work.page, '# 外部修改\n', 'utf8');
+      return result;
+    });
+    try {
+      const result = await work.send({ html: '<h1>编辑器修改</h1>' });
+      expect(result.status).toBe(409);
+      expect(readFileSync(work.page, 'utf8')).toBe('# 外部修改\n');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it('keeps both source backups for two saves in the same second', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-12T12:00:00Z'));
+    const work = session();
+    const first = await work.send({ html: '<h1>第一次修改</h1>' });
+    const second = await work.send({ html: '<h1>第二次修改</h1>' });
+    expect([first.status, second.status]).toEqual([200, 200]);
+    const directory = join(work.docs, '..', '.zcode/tutorial-work/backups/edit-writes');
+    const names = readdirSync(directory);
+    expect(names).toHaveLength(2);
+    expect(names.map((name) => readFileSync(join(directory, name), 'utf8')).sort()).toEqual(['# 原标题\r\n', '# 第一次修改\n'].sort());
+  });
+  it('processes the next save after a failed restoration', async () => {
+    const work = session();
+    expect((await work.send({ html: '' })).status).toBe(422);
+    expect((await work.send({ html: '<h1>继续保存</h1>' })).status).toBe(200);
+    expect(readFileSync(work.page, 'utf8')).toBe('# 继续保存\n');
   });
 });
 

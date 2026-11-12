@@ -46,7 +46,7 @@ const normalizeCodeBlocks = (root: HTMLElement): void => {
 }
 
 const normalizeContainers = (root: HTMLElement): void => {
-  root.querySelectorAll('details.hint-container, div.hint-container').forEach((container) => {
+  Array.from(root.querySelectorAll('details.hint-container, div.hint-container')).reverse().forEach((container) => {
     const classes = Array.from(container.classList)
     const type = container.tagName === 'DETAILS'
       ? 'details'

@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 
 import { restoreMarkdown } from '../../tools/restore-markdown.mjs';
@@ -74,11 +74,15 @@ const writeSafe = (target: string, content: string, backupDir: string): string =
     String(now.getSeconds()).padStart(2, '0');
   mkdirSync(backupDir, { recursive: true });
   const relativeName = target.split(sep).slice(-3).join('_');
-  const backup = join(backupDir, `${stamp}_${relativeName}.bak`);
-  copyFileSync(target, backup);
-  const temporary = `${target}.tmp-${process.pid}`;
-  writeFileSync(temporary, encoded, { encoding: 'utf-8', flag: 'wx' });
-  renameSync(temporary, target);
+  const backup = join(backupDir, `${stamp}_${relativeName}_${randomUUID()}.bak`);
+  copyFileSync(target, backup, constants.COPYFILE_EXCL);
+  const temporary = `${target}.tmp-${randomUUID()}`;
+  try {
+    writeFileSync(temporary, encoded, { encoding: 'utf-8', flag: 'wx' });
+    renameSync(temporary, target);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
   const revision = sourceRevision(Buffer.from(encoded, 'utf-8'));
   console.log(`[dev-edit] 写回 ${relativeName}（${Buffer.byteLength(encoded, 'utf-8')} 字节），备份 ${backup}`);
   return revision;
@@ -172,16 +176,16 @@ export const devEditVitePlugin = () => {
               writeJson(res, 400, { ok: false, error: 'invalid path, revision, or html' });
               return;
             }
-            const current = readFileSync(target);
-            const currentRevision = sourceRevision(current);
-            if (body.revision !== currentRevision) {
+            const rejectConflict = (): boolean => {
+              if (body.revision === sourceRevision(readFileSync(target))) return false;
               writeJson(res, 409, {
                 ok: false,
                 code: 'revision-conflict',
                 error: '源文件已被其他操作修改，请保留当前编辑内容并刷新后处理',
               });
-              return;
-            }
+              return true;
+            };
+            if (rejectConflict()) return;
 
             let restored: RestoreResult;
             try {
@@ -207,6 +211,8 @@ export const devEditVitePlugin = () => {
               });
               return;
             }
+            // Keep the final version check and synchronous replacement in one event-loop turn.
+            if (rejectConflict()) return;
             try {
               const revision = writeSafe(target, restored.markdown, backupDir);
               writeJson(res, 200, { ok: true, revision });

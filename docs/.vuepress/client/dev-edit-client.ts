@@ -171,8 +171,10 @@ const DevEditButton = defineComponent({
         destroyEditor(true)
         return
       }
+      const savingEditor = editor
+      const isCurrent = () => editor === savingEditor && currentPage().filePathRelative === filePath
       saving.value = true
-      editor.setEditable(false)
+      savingEditor.setEditable(false)
       status.value = '正在恢复并校验整页 Markdown...'
       try {
         const response = await fetch('/__api/edit-page', {
@@ -181,30 +183,37 @@ const DevEditButton = defineComponent({
           body: JSON.stringify({
             path: filePath,
             revision: editingRevision,
-            html: editor.getHTML(),
+            html: savingEditor.getHTML(),
           }),
         })
         const data = (await response.json()) as EditResponse
+        if (!isCurrent()) return
         if (!response.ok || !data.ok || !data.revision) {
           const failure = data.code === 'revision-conflict' ? '版本冲突' : '写回失败'
           const details = data.diagnostics?.join('\n') ?? data.error ?? String(response.status)
           status.value = data.diagnostics?.length ? `${failure}：\n${details}` : `${failure}：${details}`
           saving.value = false
-          editor.setEditable(true)
+          savingEditor.setEditable(true)
           return
         }
         expectedRevision = data.revision
         dirty.value = false
+        if (currentPage().devEditRevision === expectedRevision) {
+          destroyEditor(false)
+          return
+        }
         status.value = '已写回，正在等待页面热更新...'
         hmrTimer = setTimeout(() => {
+          if (!isCurrent()) return
           saving.value = false
           refreshRequired.value = true
           status.value = '文件已写回，页面热更新超时'
         }, 5000)
       } catch (error) {
+        if (!isCurrent()) return
         status.value = `写回失败：${(error as Error).message}`
         saving.value = false
-        editor.setEditable(true)
+        savingEditor.setEditable(true)
       }
     }
 

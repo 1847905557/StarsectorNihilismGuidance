@@ -25,6 +25,25 @@ const createEditor = (content: string): Editor => {
 }
 
 describe('normalizeEditableContent', () => {
+  it('preserves nested container types, titles and content through Tiptap', () => {
+    const content = document.createElement('div');
+    content.innerHTML = '<div class="hint-container tip"><p class="hint-container-title">Outer</p><p>Outer body</p>' +
+      '<details class="hint-container details"><summary>Inner</summary><p>Inner body</p>' +
+      '<div class="hint-container warning"><p class="hint-container-title">Leaf</p><p>Leaf body</p></div>' +
+      '</details></div>';
+    const normalized = normalizeEditableContent(content);
+    const editor = createEditor(normalized);
+    const html = document.createElement('div');
+    html.innerHTML = editor.getHTML();
+    const containers = html.querySelectorAll('[data-vp-container]');
+    expect(Array.from(containers, (node) => [node.getAttribute('data-vp-container'), node.getAttribute('data-vp-title')])).toEqual([
+      ['tip', 'Outer'], ['details', 'Inner'], ['warning', 'Leaf'],
+    ]);
+    expect(html.querySelector('[data-vp-container="details"]')?.parentElement?.getAttribute('data-vp-container')).toBe('tip');
+    expect(html.querySelector('[data-vp-container="warning"]')?.parentElement?.getAttribute('data-vp-container')).toBe('details');
+    expect(html.textContent).toBe('Outer bodyInner bodyLeaf body');
+  })
+
   it('removes presentation nodes and restores editable code metadata', () => {
     const content = document.createElement('div')
     content.innerHTML = `

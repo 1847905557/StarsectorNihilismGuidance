@@ -63,7 +63,7 @@ java.lang.NullPointerException: Cannot invoke "com.fs.starfarer.api.campaign.Fac
 
 日志不只用于读取。在代码的关键位置写入记录，出问题时就能知道代码执行到了哪里、读到了什么值。
 
-`Global.getLogger(Class)` 返回该类对应的 Log4j 日志器，输出写入同一个 `starsector.log`，每行带有类名。在 [C7-S2] 的 `GearInSettings` 上改两处：加一个 `LOG` 字段，读取完成后把四个值记一行。
+`Global.getLogger(Class)` 返回该类对应的 Log4j 日志器，输出写入同一个 `starsector.log`，每行带有类名。在 [C7-S2] 的 `GearInSettings` 上改两处：加一个 `LOG` 字段，读取完成后把读到的参数记一行。
 
 ```java
 package data.scripts.gearin;

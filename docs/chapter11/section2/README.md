@@ -130,7 +130,7 @@ fleet.getFleetData().setFlagship(flagship);
 
 `FLAGSHIP_VARIANT` 是 `"GearIn_artizan_combat"`，[C3-S2] 的工匠战斗装配。
 
-**`setFlagship(...)` 要在给其他成员配军官之前调用。** 它处理舰队级关系时会把其他成员的舰长换成一个新人物，先配好的军官会被换掉。设完旗舰再配人，顺序就不会出问题。
+**`setFlagship(...)` 要在给其他成员配军官之前调用。** 它会遍历全体成员，把玩家本人或舰队指挥官担任舰长的那些换成新的 `Person("steady")`。先配好的军官如果正好在这一类里，会被换掉。设完旗舰再配人，顺序就不会出问题。
 
 ## 巡逻队的指挥官
 
@@ -211,7 +211,7 @@ target.setCaptain(officer);
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.FleetDataAPI`：成员、旗舰与军官名单的方法，`setFlagship(...)` 的注释写明了对其他舰长的影响。
+- `com.fs.starfarer.api.campaign.FleetDataAPI`：成员、旗舰与军官名单的方法，`setFlagship(...)` 对成员舰长的影响不体现在签名上。
 - `com.fs.starfarer.api.impl.campaign.events.OfficerManagerEvent`：`createOfficer(...)` 的各个重载与技能倾向。
 - `com.fs.starfarer.api.impl.campaign.fleets.FleetFactoryV3`：`addCommanderAndOfficersV2(...)` 是原版配置指挥官与军官的完整做法。
 - `com.fs.starfarer.api.impl.campaign.ids.Ranks`：军衔与职务常量。

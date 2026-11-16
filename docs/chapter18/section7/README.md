@@ -125,7 +125,7 @@ TextureData.readTextureDataCSVNoOverwrite(
 
 ## 选择对象类型与动画帧
 
-`type` 的值决定 GraphicsLib 把纹理放入哪个对象注册表。CSV 只接受下面 15 个小写值：
+`type` 的值决定 GraphicsLib 把纹理放入哪个对象注册表。CSV 只接受下面列出的小写值：
 
 ### 对象类型速查表
 

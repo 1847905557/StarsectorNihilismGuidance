@@ -17,7 +17,7 @@ _本节预期操作时间：\~20 分钟。_
 
 ## 监听器接口的分类
 
-`com.fs.starfarer.api.combat.listeners` 下有 14 个接口，按它们在结算里的位置分类：
+`com.fs.starfarer.api.combat.listeners` 下是一组按结算位置分工的接口：
 
 | 用途 | 接口 | 回调时机 |
 | --- | --- | --- |
@@ -126,9 +126,9 @@ float getWeaponRangeFlatMod(ShipAPI ship, WeaponAPI weapon);
 
 percent 与 flat 从 `0f` 起累加，mult 从 `1f` 起累乘。**所以乘数的中性值是 `1`，另外两个是 `0`。** 乘数方法误返回 `0`，这门武器的射程会变成零，而且不会有任何报错。
 
-三个方法都收到 `weapon` 参数，监听器因此可以只改某一类武器。游戏计算射程的频率很高，这些方法里只该做简单判断，不该创建对象或写日志。
+这些方法都收到 `weapon` 参数，监听器因此可以只改某一类武器。游戏计算射程的频率很高，这些方法里只该做简单判断，不该创建对象或写日志。
 
-`WeaponBaseRangeModifier` 的三个方法同名同义，改的是武器的基础射程，原版的高散射增幅器用它按武器原始射程算惩罚。要改最终射程，用 `WeaponRangeModifier`。
+`WeaponBaseRangeModifier` 的方法同名同义，改的是武器的基础射程，原版的高散射增幅器用它按武器原始射程算惩罚。要改最终射程，用 `WeaponRangeModifier`。
 
 ## 注册时机
 

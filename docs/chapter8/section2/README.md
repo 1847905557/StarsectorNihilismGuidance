@@ -218,5 +218,5 @@ public class GearInOverheatForgeHullMod extends BaseHullMod {
 - `com.fs.starfarer.api.combat.MutableStat`：基础值、三类修饰与 `getModifiedValue()`。
 - `com.fs.starfarer.api.combat.StatBonus`：`computeEffective(baseValue)` 的计算公式。
 - `com.fs.starfarer.api.combat.MutableShipStatsAPI`：舰船全部可修改数值的入口。
-- `com.fs.starfarer.api.combat.HullModEffect`：`applyEffectsBeforeShipCreation(...)` 与 `advanceInCombat(...)` 两个方法的调用时机。
+- `com.fs.starfarer.api.combat.HullModEffect`：`applyEffectsBeforeShipCreation(...)` 与 `advanceInCombat(...)` 的调用时机。
 - `com.fs.starfarer.api.impl.hullmods.EscortPackage`：原版护航套件，在 `advanceInCombat(...)` 中按战场状况动态写入加成。

@@ -226,7 +226,7 @@ sector.addScript(new GearInWarfrontCycleScript());
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.EveryFrameScript`：三个方法的注释。
+- `com.fs.starfarer.api.EveryFrameScript`：各方法的注释。
 - `com.fs.starfarer.api.impl.campaign.fleets.SourceBasedFleetManager`：原版的逐帧脚本实现，生成、衰减与结束都在其中。
 - `com.fs.starfarer.api.campaign.SectorAPI`：脚本的登记、查询与移除。
 - `com.fs.starfarer.api.campaign.CampaignClockAPI`：`convertToDays(...)`、`getDay()` 与 `getTimestamp()`。

@@ -216,6 +216,6 @@ public class GearInContactScript implements EveryFrameScript {
 
 - `com.fs.starfarer.api.campaign.rules.MemoryAPI`：读写、限时值与 `expire` 的完整方法。
 - `com.fs.starfarer.api.campaign.rules.MemKeys`：原版规则使用的各层 Memory 名称。
-- `com.fs.starfarer.api.EveryFrameScript`：三个方法的调用语义。
+- `com.fs.starfarer.api.EveryFrameScript`：各方法的调用语义。
 - `com.fs.starfarer.api.campaign.CampaignClockAPI`：`getTimestamp()` 与 `getElapsedDaysSince(...)`。
 - `data/config/sounds.json`：`ui_rep_raise` 的原版登记。

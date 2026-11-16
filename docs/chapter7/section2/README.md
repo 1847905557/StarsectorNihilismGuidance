@@ -141,13 +141,13 @@ boolean optBoolean(String key, boolean defaultValue);
 
 缺键时 `getFloat(...)` 会抛异常，类型是 `RuntimeException`，原始信息里带那个键名。`optFloat(...)` 不会：它走 `optDouble(key, defVal)`，键不存在时直接返回调用方给的默认值，所以两者在同一个设置对象上表现不同。
 
-原版自己的写法是这条判据的最好注脚：`api/impl` 下 452 处 `getFloat(...)` 调用，几乎都不包 `try`/`catch`，只有 `BaseSubmarketPlugin` 一处用 `hasKey(...)` 加 `optFloat(...)` 兜底，而它兜的是允许其他 MOD 覆盖的键。**启动时读不到自己发布的键，就该停下来。**
+原版自己的写法是这条判据的最好注脚：`api/impl` 下到处都是 `getFloat(...)` 调用，几乎都不包 `try`/`catch`，只有 `BaseSubmarketPlugin` 一处用 `hasKey(...)` 加 `optFloat(...)` 兜底，而它兜的是允许其他 MOD 覆盖的键。**启动时读不到自己发布的键，就该停下来。**
 
 本节的做法是让 `GearInSettings.load()` 直接调用 `getFloat(...)`。真有缺键，启动停在那一刻，日志里带键名，比带着默认值跑完整场战斗要容易查。
 
 ## 让战术系统读取参数
 
-修改 `GearInAssaultFeedSystem`，删去四个常量，改为从 `GearInSettings` 读取：
+修改 `GearInAssaultFeedSystem`，删去写死的常量，改为从 `GearInSettings` 读取：
 
 ```java
 package data.scripts.gearin.shipsystems;

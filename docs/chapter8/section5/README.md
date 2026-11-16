@@ -34,7 +34,7 @@ public interface CombatLayeredRenderingPlugin {
 }
 ```
 
-接口文件只有 14 行，方法之间是空行。能依据的只有方法名、签名和基类的默认实现，所以每个方法的实际用法要从原版实现里读。
+接口文件通篇没有一个字的注释，方法之间是空行。能依据的只有方法名、签名和基类的默认实现，所以每个方法的实际用法要从原版实现里读。
 
 `init(...)` 收到的是 `CombatEntityAPI`，不是引擎。引擎为插件造一个**承载实体**，插件靠这个实体的位置在战场上定位。接口里没有 `getEntity()`，取回实体是基类额外提供的：
 
@@ -84,7 +84,7 @@ ABOVE_PARTICLES
 JUST_BELOW_WIDGETS
 ```
 
-24 行里 23 个常量，含义靠名字和它们之间的相对位置判断。`PHASED_SHIPS_LAYER` 要在战机之下，否则相位结束时会留下画面残影。
+枚举里的常量几乎全无注释，含义靠名字和它们之间的相对位置判断。`PHASED_SHIPS_LAYER` 要在战机之下，否则相位结束时会留下画面残影。
 
 `getActiveLayers()` 返回 `EnumSet`，可以一次声明多个层。引擎在每一个声明的层各调一次 `render(...)`，传进来的 `layer` 参数就是当前这一层，插件据此区分自己这次该画什么。
 
@@ -155,7 +155,7 @@ public class ShipExplosionFlareVisual extends BaseCombatLayeredRenderingPlugin {
 
 光环应当衬在舰船下方，不遮挡舰体与武器，所以用 `BELOW_SHIPS_LAYER`；只出现在装有过热冶炉的舰船上，所以由船插自己创建，而不是由一个全局插件遍历所有舰船。
 
-**原版没有任何船插创建分层渲染插件。** `data/hullmods/` 下 58 个文件、整个 `starsector-core/data/` 目录都搜不到 `addLayeredRenderingPlugin`，全部调用点都在武器效果与插件里。这一节的做法没有原版可抄，得自己决定什么时候创建、什么时候退场。
+**原版没有任何船插创建分层渲染插件。** `data/hullmods/` 下的文件、整个 `starsector-core/data/` 目录都搜不到 `addLayeredRenderingPlugin`，全部调用点都在武器效果与插件里。这一节的做法没有原版可抄，得自己决定什么时候创建、什么时候退场。
 
 ## 登记贴图
 
@@ -311,9 +311,9 @@ private static final String GLOW_KEY = "GearIn_overheat_forge_glow";
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.CombatLayeredRenderingPlugin`：接口的七个方法与 `init(...)` 收到的承载实体。
+- `com.fs.starfarer.api.combat.CombatLayeredRenderingPlugin`：接口方法与 `init(...)` 收到的承载实体。
 - `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：默认实现、默认图层与默认半径。
-- `com.fs.starfarer.api.combat.CombatEngineLayers`：23 个图层的声明顺序。
+- `com.fs.starfarer.api.combat.CombatEngineLayers`：各图层的声明顺序。
 - `com.fs.starfarer.api.combat.ViewportAPI`：`getAlphaMult()` 与单值坐标换算。
 - `com.fs.starfarer.api.graphics.SpriteAPI`：尺寸、颜色、透明度与混合方式。
 - `com.fs.starfarer.api.impl.combat.ShipExplosionFlareVisual`：结构最干净的原版实现，位置、亮度与退场三者分工清楚。

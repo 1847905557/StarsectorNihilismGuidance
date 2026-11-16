@@ -1,6 +1,6 @@
 # 制作战术系统与右键战术系统
 
-实际上，战术系统的设计才是决定舰船的最主要部分，战术系统对于舰船角色的影响，甚至远甚于它的属性、槽位等。也许只有在其它地方大量加 0 的 MOD 才可能把战术系统从舰船设计的宝座上拉下来吧。
+实际上，战术系统的设计才是决定舰船的最主要部分，战术系统对于舰船角色的影响，甚至远甚于它的属性、槽位等。很难想象有什么正常的东西能把战术系统从舰船设计的宝座上拉下来吧。
 
 所以这一部分，编者建议您谨慎考虑。但考虑也是之后的事，先做。
 
@@ -9,6 +9,13 @@
 _本节预期阅读时间：\~25 分钟。_
 
 _本节预期操作时间：\~30 分钟。_
+
+## 前置知识
+
+- [C1-S2] 的工匠与 `ship_data.csv`，本节要改工匠那一行的 `system id`、`shield type` 与 `defense id`；
+- [C2-S1] 的外行读代码与复制原版类的做法，以及回调写法；
+- [C2-S1] 的 `script` 列写完整类名，`.system` 的 `statsScript` 沿用同样的写法；
+- JSON 的基本写法与 [C1-S1] 提到的宽松 JSON，`.system` 文件按它手工修改。
 
 ## 读原版加速填弹器
 
@@ -78,7 +85,7 @@ public void apply(MutableShipStatsAPI stats, String id, State state, float effec
 
 ## 把两段效果拼成突击填弹器
 
-新建 `data/scripts/gearin/shipsystems/GearInAssaultFeedSystem.java`。它的骨架和加速填弹器一样，`apply` 里先写射速和幅能，再接上机动几行；`unapply` 把每一项都撤掉：
+新建 `data/scripts/gearin/shipsystems/GearInAssaultFeedSystem.java`。它的结构和加速填弹器一样，`apply` 里先写射速和幅能，再接上机动几行；`unapply` 把每一项都撤掉：
 
 ```java
 package data.scripts.gearin.shipsystems;
@@ -309,3 +316,12 @@ public class GearInResistFieldSystem extends BaseShipSystemScript {
 
 - **部署时报 `Ship system [...] not found`**：工匠的 `system id` 或 `defense id` 拼错，或系统没登记。
     - **解决方案**：核对工匠两列的 id 与两份 `.system`、CSV 一致。
+
+## 建议参考项
+
+- `data/shipsystems/scripts/AmmoFeedStats.java`：本节阅读的原版加速填弹器效果类。
+- `data/shipsystems/scripts/ManeuveringJetsStats.java`：机动部分的借用来源。
+- `data/shipsystems/ammofeed.system`：突击填弹器 `.system` 的复制来源。
+- `data/shipsystems/damper.system`：抵抗力场 `.system` 的复制来源。
+- `data/shipsystems/ship_systems.csv`：原版战术系统注册表，系统数据行的样本。
+- `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：战术系统效果类的基类，`State` 与 `StatusData` 在这里。

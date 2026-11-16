@@ -1,6 +1,6 @@
 # 制作完整船插
 
-玩家装配船插时看不到代码，只看得到描述、图标和能不能装上。藏匿效果描述、数字与实际不符、图标缺失，玩家就会把它当成半成品。
+玩家装配船插时看不到代码，只看得到描述、图标和能不能装上。藏匿效果描述、数字与实际不符、图标缺失，玩家就不会觉得它是个值得多看一眼的东西。
 
 **不要敷衍玩家唯一能看到的部分。**
 
@@ -9,6 +9,11 @@
 _本节预期阅读时间：\~15 分钟。_
 
 _本节预期操作时间：\~20 分钟。_
+
+## 前置知识
+
+- [C2-S1] 的稳定化推进器：效果类 `GearInStableInjectorHullMod` 与 `hull_mods.csv` 中的那一行，本节在它们之上补全；
+- [C2-S1] 的回调写法，方法名与参数列表必须与基类一致。
 
 ## 让描述跟着参数变
 
@@ -174,3 +179,9 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 
 - **互斥没有生效**：检查用的 id 写错，或测试的是先装稳定化推进器的那个方向。
     - **解决方案**：确认常量是原版 id `unstable_injector`，并按 "先装不稳定喷射器" 的方向测试。
+
+## 建议参考项
+
+- `data/hullmods/UnstableInjector.java`：描述占位符 `{%s}` 与 `getDescriptionParam` 的原版写法。
+- `graphics/hullmods/`：原版船插图标，可对照尺寸与风格。
+- `com.fs.starfarer.api.combat.BaseHullMod`：`isApplicableToShip`、`getUnapplicableReason` 与 `getDescriptionParam` 的定义。

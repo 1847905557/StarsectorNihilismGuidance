@@ -1,0 +1,35 @@
+{
+    "displayName": "Combat",
+    "fluxCapacitors": 7,
+    "fluxVents": 20,
+    "hullId": "GearIn_furnaceman",
+    "hullMods": ["expanded_deck_crew"],
+    "permaMods": [],
+    "sMods": [],
+    "variantId": "GearIn_furnaceman_combat",
+    "goalVariant": true,
+    "weaponGroups": [
+        {
+            "autofire": true,
+            "mode": "LINKED",
+            "weapons": {
+                "WS0001": "GearIn_durin",
+                "WS0002": "GearIn_durin"
+            }
+        },
+        {
+            "autofire": true,
+            "mode": "LINKED",
+            "weapons": {
+                "WS0003": "vulcan",
+                "WS0004": "vulcan",
+                "WS0005": "vulcan",
+                "WS0006": "vulcan"
+            }
+        }
+    ],
+    "wings": [
+        "GearIn_slag_wing",
+        "GearIn_slag_wing"
+    ]
+}

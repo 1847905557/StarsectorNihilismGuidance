@@ -1,0 +1,11 @@
+{
+    "combatMedium": {
+        "GearIn_artizan_combat": 5
+    },
+    "carrierMedium": {
+        "GearIn_furnaceman_combat": 5
+    },
+    "phaseSmall": {
+        "GearIn_forging_combat": 5
+    }
+}

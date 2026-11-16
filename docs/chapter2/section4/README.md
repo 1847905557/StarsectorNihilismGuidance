@@ -1,6 +1,6 @@
 # 为武器加入命中与光束特效
 
-数值是有尽头的。你能想到的所有数据大概已经被排列组合地用了个遍。该怎么别在多样性的海洋里被水淹没不知所措呢？只能想办法在特效上入手了。
+数值是有尽头的。您能想到的所有数据大概已经被排列组合地用了个遍。该怎么别在多样性的海洋里被水淹没不知所措呢？只能想办法在特效上入手了。
 
 恰好，特效对于武器的决定性也是相当可观的。原版也有不少面板平平无奇，实战远超同级的例子。一门武器在舰船上扮演什么角色，甚至可能由某些占主导地位的特效而决定。
 
@@ -9,6 +9,13 @@
 _本节预期阅读时间：\~20 分钟。_
 
 _本节预期操作时间：\~20 分钟。_
+
+## 前置知识
+
+- [C1-S5] 的都林自动炮与乌里光束，本节为它们加入特效；
+- [C1-S5] 的 `.wpn` 与 `.proj` 文件，特效类在其中登记；
+- [C2-S1] 的外行读代码与回调写法，特效类的方法由游戏在固定时机调用；
+- [C2-S1] 的 `script` 类名写法，`onHitEffect` 与 `beamEffect` 同样填完整类名。
 
 ## 两种特效的入口
 
@@ -153,7 +160,7 @@ public class GearInUriBeamEffect implements BeamEffectPlugin {
 
 - `beam.getDamageTarget()` 取得光束正在照射的对象，不是舰船就结束；
 - `beam.getBrightness()` 是光束亮度，开火和停火的渐变阶段小于 1，只有满亮度时才往下走；
-- `target.getShield().isWithinArc(point)` 判断光束末端是否落在护盾覆盖的角度内，落在其中就视为照射护盾，不计时。原版离子光束用的也是这个判断。
+- `target.getShield().isWithinArc(point)` 判断光束末端是否位于护盾覆盖的角度内，位于其中就视为照射护盾，不计时。原版离子光束用的也是这个判断。
 
 通过这几道排除之后，`elapsed` 加上这一帧的秒数。累计满 0.5 秒时清零，再调用 `spawnEmpArc` 放电弧。它的参数较多，依次是：伤害记在谁名下、电弧起点、电弧挂靠的对象、电弧命中的对象、伤害类型、伤害量、EMP 量、最大距离、命中音效、粗细、外圈颜色和内芯颜色。最大距离填一个很大的数，表示不限距离；音效沿用原版离子光束的 `tachyon_lance_emp_impact`；颜色直接取这道光束自身的颜色，电弧就和光束同色。
 
@@ -190,3 +197,12 @@ public class GearInUriBeamEffect implements BeamEffectPlugin {
 
 - **命中护盾时也出现爆炸或电弧**：护盾判断被删掉，或条件写反。
     - **解决方案**：都林保留 `shieldHit` 的判断，乌里保留 `isWithinArc` 的判断，对照完整代码修正。
+
+## 建议参考项
+
+- `com.fs.starfarer.api.impl.combat.IonCannonOnHitEffect`：原版离子炮的命中效果，先排除护盾再掷概率的判断写法来自它。
+- `com.fs.starfarer.api.impl.combat.IonBeamEffect`：原版离子光束的效果，累计时间后放电弧的做法来自它。
+- `data/weapons/proj/ioncannon_shot.proj`：`onHitEffect` 字段的登记样本。
+- `data/weapons/ionbeam.wpn`：`beamEffect` 字段的登记样本。
+- `com.fs.starfarer.api.combat.OnHitEffectPlugin`：命中效果的接口。
+- `com.fs.starfarer.api.combat.BeamEffectPlugin`：光束效果的接口。

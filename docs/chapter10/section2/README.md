@@ -1,367 +1,306 @@
 # 构建生涯地点
 
-本节建立一个观测星系，从地点中查询恒星、行星、中继站与坐标标记，再记录玩家进入和离开后的状态。创建方法决定对象怎样加入世界，查询方法决定取得什么范围，访问记录则让同一个地点在不同阶段提供不同信息。
+`LocationAPI` 管的不是某一件东西，是一整个地点里的全部东西：实体、地形、轨道、跳跃点、市场挂点。
 
-_本节预期阅读时间：\~24 分钟。_
+实体与地形在实现上是同一个父类，用法却分两路。实体是一件能被选中的东西，地形是一个半径，对进入其中的舰队起作用。加错类型的后果，玩家比作者先看见。
 
-_本节预期操作时间：\~35 分钟。_
+原版那 89 条自定义实体里，能开交互的只有 27 条。多数条目造出来只是摆在那里，从它身上拿不到任何东西。
 
-## 学习目标
+---
 
-完成后，您将能够：
+_本节预期阅读时间：\~15 分钟。_
 
-- 区分星区地点、超空间和恒星系容器；
-- 创建可查询的恒星、行星、自定义实体和跳跃点；
-- 使用 ID、标签、类型和全量集合查询地点对象；
-- 读取当前地点、玩家访问状态和最近访问天数；
-- 根据容器归属和查询结果定位地点生成故障。
+_本节预期操作时间：\~25 分钟。_
 
 ## 前置知识
 
-- [C10-S1] 的 `SectorAPI` 当前地点和全局实体入口；
-- [C3-S3] 的恒星系生成入口；
-- [C7-S1] 的生涯入口注册和日志读取；
-- 能够区分地点级对象与星区级对象。
+- [C3-S3] 的星系生成器，包括 `createStarSystem(...)` 与 `autogenerateHyperspaceJumpPoints(...)`；
+- [C7-S1] 的 `onNewGame()`，新地点只在新档中生成；
+- [C10-S1] 的 `$GearIn_contacted`，本节的地点不依赖它，后续章节会把二者联系起来。
 
-## 准备一个可以进入的观测星系
+## 没有恒星的星系
 
-地点是生涯实体的容器，超空间与恒星系都提供 `LocationAPI` 的查询方法。本节建立 `GearIn_observation_system`，用恒星、行星和中继站提供可见对象，再用坐标 token 比较引用与集合归属。
+[C3-S3] 的 Nipher 以恒星为中心，行星与中继站都绕着它转。Ashen Verge 没有恒星，创建方式有三处不同：
 
-创建 `src/data/scripts/gearin/campaign/GearInLocationBuilder.java` 和 `GearInLocationQuery.java`，将两类加入 `GearInModPlugin` 的 import。在已有 `onGameLoad(...)` 中依次登记，沿用方法内的 `sector`：
-
-```java
-if (!sector.hasTransientScript(GearInLocationBuilder.class)) {
-    sector.addTransientScript(new GearInLocationBuilder());
-}
-if (!sector.hasTransientScript(GearInLocationQuery.class)) {
-    sector.addTransientScript(new GearInLocationQuery());
-}
-```
-
-生成器先建立地点，查询器随后取得它。生成器完成一轮后结束，读档时已有星系继续保留；查询器首次立即输出，以后每个生涯日记录一次。两者都由本次运行重新登记，世界对象本身则随存档保存。
-
-## 把恒星与实体加入地点
-
-`sector.createStarSystem(...)` 创建恒星系，`initStar(...)` 初始化恒星。随后设置超空间位置，添加行星与中继站：
+- 用 `initNonStarCenter()` 代替 `initStar(...)`，它返回一个空的中心点，实体可以把它当作轨道焦点；
+- 没有恒星就没有光源，而光照设置是**两行配套**的：`setLightColor(...)` 给出颜色，中心点再打上 `Tags.AMBIENT_LS` 标签，见下；
+- 星系在超空间中的位置仍由 `getLocation().set(x, y)` 指定，坐标应当避开已有星系。Nipher 位于 (-16000, -9000)，Ashen Verge 取 (-13500, -4500)，两者相距约 5100。
 
 ```java
-StarSystemAPI system = sector.createStarSystem("GearIn_observation_system");
-PlanetAPI star = system.initStar(
-        "GearIn_observation_star",
-        "star_yellow",
-        500f,
-        250f,
-        100f,
-        3f,
-        2f);
+StarSystemAPI system = sector.createStarSystem(SYSTEM_NAME);
+system.setBackgroundTextureFilename("graphics/backgrounds/background4.jpg");
+system.getLocation().set(-13500f, -4500f);
 
-system.getLocation().set(-12000f, 7000f);
-
-PlanetAPI planet = system.addPlanet(
-        "GearIn_observation_planet",
-        star,
-        "观测行星",
-        "terran",
-        25f,
-        140f,
-        2400f,
-        180f);
-
-CustomCampaignEntityAPI relay = system.addCustomEntity(
-        "GearIn_observation_relay",
-        "观测中继站",
-        "comm_relay",
-        Factions.INDEPENDENT);
-relay.addTag("GearIn_observation_tag");
-relay.setCircularOrbit(star, 70f, 3200f, 240f);
+SectorEntityToken center = system.initNonStarCenter();
+system.setLightColor(new Color(120, 110, 100));
+center.addTag(Tags.AMBIENT_LS);
 ```
 
-星系位于超空间 `(-12000, 7000)`，与此前示例的位置区分。行星绕本系恒星运行，中继站使用原版 `comm_relay` 类型，属于独立势力。`GearIn_observation_tag` 用于查询这组业务对象，名称用于地图显示。
+**`Tags.AMBIENT_LS` 这一行不能省。** `setLightColor(...)` 的接口注释写的是 "只适用于有光源的地点 (即有恒星)"，照字面看，无恒星星系根本没有光照可设。原版所有无恒星星系都绕过这句话：它们先 `initNonStarCenter()`，再设颜色，最后给中心点打上 `AMBIENT_LS`。
 
-`addPlanet(...)` 与 `addCustomEntity(...)` 已经将返回对象加入当前地点。从同一个 `system` 创建它们，后面的地点查询就能在这个星系中取得。
+这个标签的作用在渲染代码里看得见。实体绘制时会判断光源有没有这个标签，没有就按方向计算并绘制阴影遮罩；有就跳过。中心点不是恒星，不打标签，它仍然会被当成光源，实体上会盖上按方向算出来的阴影。原版的 `GateHaulerLocation`、`AbyssalRogueStellarObjectEPEC` 与程序生成器删掉恒星的那条分支，都是这两行连着写。
 
-### 创建坐标 token
+`SYSTEM_NAME` 是 `"Ashen Verge"`。星系名既是玩家在星图上看到的名字，也是 `sector.getStarSystem(...)` 的查询键，改名时两处要一起改。
 
-坐标标记不需要中继站那样的图像与插件。本例用 `createToken(...)` 建立位置，写入 ID 与标签，再明确加入集合。星系对象就位之后，调用自动生成方法建立超空间入口：
+::: info 原版的写法
 
-```java
-system.autogenerateHyperspaceJumpPoints(false, true, true);
-
-SectorEntityToken marker = system.createToken(4200f, -900f);
-marker.setId("GearIn_observation_marker");
-marker.addTag("GearIn_observation_marker");
-system.addEntity(marker);
-```
-
-**创建 token 与加入实体集合是两个动作。** 它可以单独作为坐标锚点使用；本例需要按地点 ID 与标签查询，所以调用 `addEntity(marker)`。在地图上显示的仍是恒星、行星、中继站与跳跃点，标记通过集合与日志确认。
-
-自动生成方法的第二个参数设为 `true`，在星系边缘建立双向跳跃点，玩家能够从超空间进入，也能够经它离开。第一个参数为 `false`，不为气态巨行星生成单向入口；第三个参数为 `true`，同时生成行星条件。
-
-::: warning token 引用不能证明查询已接入
-
-`createToken(...)` 返回坐标对象，并不自动加入地点实体集合。需要让地点查询取得它时，调用 `addEntity(...)`，再从该地点核对 ID 与集合。
+原版的无恒星星系大多出自 `GateHaulerLocation` 与 `AbyssalRogueStellarObjectEPEC`，它们在 `initNonStarCenter()` 之后同样设置光照颜色。本节沿用这一写法，但不放中心天体，焦点只用来定轨道。
 
 :::
 
-## 从星区取得地点，再查询实体
+## 实体与地形
 
-世界对象创建后，查询代码不依赖生成器的局部引用。每次从当前 Sector 取得目标地点，超空间与恒星系分别有对应入口：
+地点里放的东西都挂在 `LocationAPI` 上，取用方法分成两套。
 
-```java
-SectorAPI sector = Global.getSector();
-LocationAPI hyperspace = sector.getHyperspace();
-StarSystemAPI system = sector.getStarSystem("GearIn_observation_system");
+**实体**是 `SectorEntityToken`，有坐标、有轨道、有归属势力，能被选中、能开交互界面。遗迹、信标、行星、跳跃点都是实体。
 
-if (system != null) {
-    int entityCount = system.getAllEntities().size();
-    boolean current = system.isCurrentLocation();
-}
-```
+**地形**是 `CampaignTerrainAPI`，它继承 `SectorEntityToken`，同样有坐标和轨道，但多了一层半径：它是一片圆形区域，`setRadius(...)` 定大小，`containsEntity(...)` 判断某个实体在不在里面。残骸场、小行星带、星云、日冕、磁暴区都是地形。地形对进入其中的舰队起作用，没有实体那样的选中与交互。
 
-`getAllLocations()` 提供星区管理的地点集合，`getHyperspace()` 提供超空间，`getStarSystem(...)` 取得指定恒星系。`StarSystemAPI` 继承 `LocationAPI`，因此查询星系实体时也使用地点方法。
-
-地点还保存自己的 Memory、访问状态与附着脚本。查询时选择哪个地点，决定检索哪个实体集合；实体的 `getContainingLocation()` 则用于回读实际所在地点。
-
-### 地点查询方式速查表
-
-| 需要取得的内容       | 方法                      | 结果与适用范围                        |
-| -------------------- | ------------------------- | ------------------------------------- |
-| 指定 ID 的对象       | `getEntityById(id)`       | 从当前地点取得目标，未找到返回 `null` |
-| 具有业务标签的对象   | `getEntitiesWithTag(tag)` | 遍历地点中的标签匹配项                |
-| 指定接口或类型的对象 | `getEntities(Class)`      | 按实现类或接口筛选                    |
-| 地点全部实体         | `getAllEntities()`        | 取得当前地点的完整对象集合            |
-
-本例首先按 `GearIn_observation_relay` 查询中继站，再查 `GearIn_observation_tag`，最后比较类型集合与全量集合。日志保留中继站所在地点以及各集合数量，就能将唯一对象与筛选范围分别对应。
-
-ID 查询首次使用时建立地点索引，查询仍会检查对象是否属于地点集合。对象移除或未写入相应 ID 时，结果可能为空；标签查询则检查当前集合中的对象。出现空值时，沿创建 ID、集合成员与查询地点核对。
-
-## 记录玩家进入与离开之后的变化
-
-地点已经能够查询，接下来区分当前位置与访问记录。`isCurrentLocation()` 判断玩家现在是否在这里，`isEnteredByPlayer()` 判断是否曾进入恒星系，`getDaysSinceLastPlayerVisit()` 计算最近在该地点之后经过的生涯天数。
-
-读取这些状态的局部片段如下：
+两套各自的加入方法都在 `LocationAPI` 上：
 
 ```java
-boolean current = system.isCurrentLocation();
-boolean entered = system.isEnteredByPlayer();
-float daysSinceVisit = system.getDaysSinceLastPlayerVisit();
+SectorEntityToken createToken(Vector2f loc);
+void addEntity(SectorEntityToken entity);
+CustomCampaignEntityAPI addCustomEntity(String id, String name, String type, String factionId);
 
-if (daysSinceVisit == Float.MAX_VALUE) {
-    LOG.info("GearIn location has never been visited");
-}
+SectorEntityToken addTerrain(String terrainId, Object param);
+SectorEntityToken addAsteroidBelt(SectorEntityToken focus, int numAsteroids,
+        float orbitRadius, float width, float minOrbitDays, float maxOrbitDays);
+SectorEntityToken addCorona(SectorEntityToken star, float extraRadius, float windBurnLevel,
+        float flareProbability, float crLossMult);
 ```
 
-从未访问时，最近访问时间尚未建立，天数返回 `Float.MAX_VALUE`。进入之后，当前地点的访问时间随推进更新；离开后再读取，得到距离最近访问经过的时间。
+`createToken(...)` 造一个空的实体，自己配上轨道再加进去。`addEntity(...)` 收的是已经造好的实体，跳跃点走这条。`addCustomEntity(...)` 按 `custom_entities.json` 里的类型条目造实体，贴图、插件、标签都来自那条条目。
 
-**`current` 描述现在，`entered` 保留曾经进入的事实。** 因此系统内为 `current=true`，离开后变为 `false`，`entered` 却仍为 `true`。分别记录进入前、系统内与离开后的日志，才能解释这几个状态的变化。
+地形用 `addTerrain(...)`，第一个参数是地形类型 ID，第二个是这种地形自己的参数对象。小行星带、日冕、环带另有专门的方法，参数已经拆开，比 `addTerrain(...)` 少一层包装。
 
-## 让生成与查询各自延续
+**这一段的分工决定了后面每一件的写法。** 要能被选中、要有交互、要归属某个势力，就用实体；只对进入其中的舰队起作用，就用地形。残骸场按实体加，玩家点不到它，也看不到说明。
 
-生成器只在目标星系不存在时完整创建，查询器则持续按同一 ID 重新取得它。读档恢复已经生成的世界，新的查询实例再从当前日期开始记录。
+## 放入可打捞的遗迹
 
-这也为后面的生涯功能提供了对象来源：需要地点时，从星区取得它；需要其中的实体时，再按 ID、标签或类型查询。观察日志保留的是当前世界状态，生成器不需要为后续查询保留一组长期字段。
+遗迹不必自己制作。原版 `custom_entities.json` 中，勘测船残骸 `derelict_survey_ship` 的 `tags` 写着 `["has_interaction_dialog", "salvageable", "neutrino"]`，补给箱 `supply_cache` 同样带 `salvageable`。放进地点，玩家靠近就能打捞，不需要另写交互。一处没有恒星的地点，留得住玩家的也就是这点能捡的东西，两样足够，再多就成了垃圾场。
 
-## 完整最小例
+**打捞有两种制作者常见的来源，容易混。** 一种是上面这种在 `custom_entities.json` 里写好标签的成品实体，`addCustomEntity(...)` 时给对 ID 就带打捞功能；另一种是 `salvage_entity_gen_data.csv` 里的打捞规格，原版程序生成星系时按它随机撒遗迹，通过 `BaseThemeGenerator.addSalvageEntity(...)` 创建。本节要的是一处固定的遗迹，用第一种。
 
-两个类保存到前述路径，保留生成与查询的登记片段。
+`addCustomEntity(id, name, type, factionId)` 创建实体，类型取自 `Entities` 中的常量，势力用 `Factions.NEUTRAL`。位置用轨道指定：
 
-::: details 完整成品：GearInLocationBuilder
+```java
+SectorEntityToken ship = system.addCustomEntity(
+        "GearIn_ashen_wreck", "灰烬残骸", Entities.DERELICT_SURVEY_SHIP, Factions.NEUTRAL);
+ship.setCircularOrbitPointingDown(center, 40f, 900f, 80f);
+
+SectorEntityToken cache = system.addCustomEntity(
+        "GearIn_ashen_cache", "封存的补给箱", Entities.SUPPLY_CACHE, Factions.NEUTRAL);
+cache.setCircularOrbit(center, 220f, 1400f, 120f);
+```
+
+`setCircularOrbit(focus, angle, orbitRadius, orbitDays)` 的四个参数依次是焦点、起始角度、轨道半径与公转天数。`PointingDown` 的版本让实体的贴图始终朝向焦点。
+
+这个重载有四种写法。带 `radius, spriteWidth, spriteHeight` 的版本覆盖条目里的尺寸；带 `pluginParams` 的版本把一个对象传给条目上登记的插件，正文用不到，做交互界面时才有用：
+
+```java
+CustomCampaignEntityAPI addCustomEntity(String id, String name, String type, String factionId,
+        Object pluginParams);
+```
+
+**在自己的 `custom_entities.json` 里新增条目时，`baseId` 会让新条目继承父条目的全部字段。** 补给箱那一族都这么写：`weapons_cache`、`equipment_cache`、`technology_cache` 各自只写自己不同的几行，`tags` 一个都不重复，全部从 `supply_cache` 继承。要改其中一条的标签，写一遍 `tags` 就会整体覆盖继承来的那一份，不是追加。
+
+### 信标
+
+生成器里还放了一座信标，用原版的导航浮标 `Entities.NAV_BUOY`，归属齿轮工业。它的创建方式与遗迹相同，细节留给 [C10-S4]：
+
+```java
+SectorEntityToken beacon = system.addCustomEntity(
+        BEACON_ID, "灰烬信标", Entities.NAV_BUOY, GearInModPlugin.FACTION_ID);
+beacon.setCircularOrbitPointingDown(center, 130f, 1100f, 90f);
+beacon.setInteractionImage("illustrations", "comm_relay");
+```
+
+`BEACON_ID` 为 `"GearIn_ashen_beacon"`，是后续脚本查找这座信标的稳定 ID。
+
+### 残骸场
+
+残骸场是地形，不是实体，用 `Misc.addDebrisField(...)` 加入，再把轨道焦点设为勘测船：
+
+```java
+DebrisFieldParams params = new DebrisFieldParams(300f, -1f, 10000000f, 0f);
+params.source = DebrisFieldSource.MIXED;
+SectorEntityToken debris = Misc.addDebrisField(system, params, new Random(20261114L));
+debris.setCircularOrbit(ship, 0f, 0f, 100f);
+```
+
+构造参数依次是场的半径、视觉密度、持续天数与发光天数。密度传 `-1` 由游戏随机取值，持续天数取极大值表示不会消散。半径不要超过 1000，再大就会拖慢性能。
+
+### 进入星系的跳跃点
+
+```java
+system.autogenerateHyperspaceJumpPoints(false, true);
+```
+
+第一个参数控制是否在气态巨行星处生成单向入口，这里没有行星，传 `false`；第二个参数在星系边缘生成一个双向跳跃点，Ashen Verge 靠它进出，传 `true`。
+
+**忘记这一行，星系存在，玩家却进不去。** 星图上看得到它，跳跃点列表里没有。
+
+要自己指定跳跃点的位置、名字与方向，不用这个自动方法，改用工厂造再加进地点。**`LocationAPI` 与 `StarSystemAPI` 上都没有 `addJumpPoint`。** 原版四处做法一致，先 `createJumpPoint(...)`，再 `addEntity(...)`：
+
+```java
+JumpPointAPI point = Global.getFactory().createJumpPoint(null, "Fringe Jump-point");
+point.setStandardWormholeToHyperspaceVisual();
+point.setCircularOrbit(center, 270f, 2600f, 100f);
+system.addEntity(point);
+```
+
+第一个参数是实体 ID，传 `null` 由游戏生成。`setStandardWormholeToHyperspaceVisual()` 给出默认的跳跃点外观，不调用它，跳跃点画出来是空的。
+
+## 实体放进地点之后能改什么
+
+`SectorEntityToken` 上有几组方法，放进地点之后随时可以用。做固定地点的人迟早会碰到它们。
+
+**轨道**有四个写法，选哪个决定了实体怎么动：
+
+```java
+void setFixedLocation(float x, float y);
+void setCircularOrbit(SectorEntityToken focus, float angle, float orbitRadius, float orbitDays);
+void setCircularOrbitPointingDown(SectorEntityToken focus, float angle, float orbitRadius, float orbitDays);
+void setCircularOrbitWithSpin(SectorEntityToken focus, float angle, float orbitRadius, float orbitDays,
+        float minSpin, float maxSpin);
+```
+
+`setFixedLocation(...)` 钉在一个坐标上，并清掉已有轨道。`setCircularOrbit(...)` 绕焦点公转，贴图角度不变。`PointingDown` 让它始终朝向焦点，行星、残骸、信标都用这个。`WithSpin` 额外加自转，范围是 `minSpin` 到 `maxSpin` 之间的随机角速度。
+
+**交互**决定玩家点开它时看到什么。`setInteractionImage(category, key)` 换交互界面的插图；`setCustomDescriptionId(...)` 换成自己的描述文本；`addFloatingText(...)` 在实体上方挂一行提示。**能开交互的前提是条目带 `has_interaction_dialog` 标签**，`custom_entities.json` 里 89 条只有 27 条带它。没有这个标签的实体，调用上面这些方法不会让玩家点开它。
+
+**传感器**决定玩家多久能发现它：
+
+```java
+float getSensorProfile();
+void setSensorProfile(Float sensorProfile);
+void setSensorStrength(Float sensorStrength);
+void setDiscoverable(Boolean discoverable);
+void setDetectionRangeDetailsOverrideMult(Float mult);
+```
+
+`setSensorProfile(...)` 改它有多容易被发现，改小之后玩家要靠近才看得见。`setDiscoverable(false)` 让它完全无法被发现，做隐藏内容时用。`setDetectionRangeDetailsOverrideMult(...)` 乘在计算出的大致探测距离上，只影响提示里那个距离数字，不改变实际探测。
+
+**战利品**挂在实体上，打捞时由游戏读取：
+
+```java
+void addDropValue(String group, int value);
+void addDropRandom(String group, int chances);
+void setDiscoveryXP(Float discoveryXP);
+void setSalvageXP(Float salvageXP);
+```
+
+`group` 取自 `data/campaign/procgen/drop_groups.csv` 里的组名。`addDropValue(...)` 加一份固定量的战利品，`addDropRandom(...)` 按概率加。两个 XP 方法给首次发现和首次打捞的经验。原版成品遗迹大多已经在 `custom_entities.json` 里配好，自己做遗迹时才需要这些。
+
+## 在新档中生成
+
+在 `GearInModPlugin.onNewGame()` 中，于 Nipher 之后调用：
+
+```java
+new GearInSystemGenerator().generate(sector);
+new GearInAshenVergeGenerator().generate(sector);
+seedRelations(sector);
+```
+
+与 Nipher 相同，旧存档不会生成这个星系，见 [C7-S1]。
+
+## 完整的生成器
+
+`src/data/scripts/gearin/campaign/GearInAshenVergeGenerator.java`：
 
 ```java
 package data.scripts.gearin.campaign;
 
-import org.apache.log4j.Logger;
+import java.awt.Color;
+import java.util.Random;
 
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CustomCampaignEntityAPI;
-import com.fs.starfarer.api.campaign.PlanetAPI;
 import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.StarSystemAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Entities;
 import com.fs.starfarer.api.impl.campaign.ids.Factions;
+import com.fs.starfarer.api.impl.campaign.ids.Tags;
+import com.fs.starfarer.api.impl.campaign.terrain.DebrisFieldTerrainPlugin.DebrisFieldParams;
+import com.fs.starfarer.api.impl.campaign.terrain.DebrisFieldTerrainPlugin.DebrisFieldSource;
+import com.fs.starfarer.api.util.Misc;
 
-public class GearInLocationBuilder implements EveryFrameScript {
+import data.scripts.gearin.GearInModPlugin;
 
-    public static final String REGISTER_MARK = "GearIn_LocationBuilder";
+/** 创建没有恒星的 Ashen Verge：一处可以进入并打捞的遗迹地点。 */
+public class GearInAshenVergeGenerator {
 
-    private static final Logger LOG = Global.getLogger(GearInLocationBuilder.class);
+    public static final String SYSTEM_NAME = "Ashen Verge";
 
-    private boolean done;
+    public static final String BEACON_ID = "GearIn_ashen_beacon";
 
-    @Override
-    public boolean isDone() {
-        return done;
-    }
+    public void generate(SectorAPI sector) {
+        StarSystemAPI system = sector.createStarSystem(SYSTEM_NAME);
+        system.setBackgroundTextureFilename("graphics/backgrounds/background4.jpg");
+        system.getLocation().set(-13500f, -4500f);
 
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
+        // 没有恒星时，用空的中心点作为轨道焦点，光照颜色需要手动给定
+        SectorEntityToken center = system.initNonStarCenter();
+        system.setLightColor(new Color(120, 110, 100));
+        center.addTag(Tags.AMBIENT_LS);
 
-    @Override
-    public void advance(float amount) {
-        if (done) {
-            return;
-        }
+        // 遗迹主体：原版的勘测船残骸，自带交互对话与打捞
+        SectorEntityToken ship = system.addCustomEntity(
+                "GearIn_ashen_wreck", "灰烬残骸", Entities.DERELICT_SURVEY_SHIP, Factions.NEUTRAL);
+        ship.setCircularOrbitPointingDown(center, 40f, 900f, 80f);
 
-        SectorAPI sector = Global.getSector();
-        StarSystemAPI system = sector.getStarSystem("GearIn_observation_system");
-        if (system != null) {
-            done = true;
-            return;
-        }
-        system = sector.createStarSystem("GearIn_observation_system");
-        PlanetAPI star = system.initStar(
-                "GearIn_observation_star",
-                "star_yellow",
-                500f,
-                250f,
-                100f,
-                3f,
-                2f);
-        system.getLocation().set(-12000f, 7000f);
-        system.addPlanet(
-                "GearIn_observation_planet",
-                star,
-                "观测行星",
-                "terran",
-                25f,
-                140f,
-                2400f,
-                180f);
-        CustomCampaignEntityAPI relay = system.addCustomEntity(
-                "GearIn_observation_relay",
-                "观测中继站",
-                "comm_relay",
-                Factions.INDEPENDENT);
-        relay.addTag("GearIn_observation_tag");
-        relay.setCircularOrbit(star, 70f, 3200f, 240f);
-        SectorEntityToken marker = system.createToken(4200f, -900f);
-        marker.setId("GearIn_observation_marker");
-        marker.addTag("GearIn_observation_marker");
-        system.addEntity(marker);
-        system.autogenerateHyperspaceJumpPoints(false, true, true);
-        LOG.info("GearIn location built: id=" + system.getId());
-        done = true;
+        SectorEntityToken cache = system.addCustomEntity(
+                "GearIn_ashen_cache", "封存的补给箱", Entities.SUPPLY_CACHE, Factions.NEUTRAL);
+        cache.setCircularOrbit(center, 220f, 1400f, 120f);
+
+        // 信标：原版导航浮标，归属齿轮工业，用稳定 ID 供后续脚本查找
+        SectorEntityToken beacon = system.addCustomEntity(
+                BEACON_ID, "灰烬信标", Entities.NAV_BUOY, GearInModPlugin.FACTION_ID);
+        beacon.setCircularOrbitPointingDown(center, 130f, 1100f, 90f);
+        beacon.setInteractionImage("illustrations", "comm_relay");
+
+        // 残骸场围绕勘测船，提示玩家这里发生过战斗
+        DebrisFieldParams params = new DebrisFieldParams(300f, -1f, 10000000f, 0f);
+        params.source = DebrisFieldSource.MIXED;
+        SectorEntityToken debris = Misc.addDebrisField(system, params, new Random(20261114L));
+        debris.setCircularOrbit(ship, 0f, 0f, 100f);
+
+        // 只生成通往超空间的跳跃点：第一个参数为气态巨行星入口，这里不需要
+        system.autogenerateHyperspaceJumpPoints(false, true);
     }
 }
 ```
 
-:::
+### 进游戏核对
 
-::: details 完整成品：GearInLocationQuery
+执行 `gradle jar`，重启游戏，**新建一份存档**。
 
-```java
-package data.scripts.gearin.campaign;
+- 控制台执行 `jump Ashen Verge`，舰队出现在星系的中心点附近；
+- 在星图上能看到 Ashen Verge，从超空间可以经边缘跳跃点进入；
+- 靠近灰烬残骸与封存的补给箱，弹出打捞对话；
+- 残骸场围绕在勘测船周围。进入其中后，悬停或慢速移动的舰队更不容易被探测到，鼠标悬停在残骸场上可以看到这段说明。
 
-import java.util.List;
+## 常见问题
 
-import org.apache.log4j.Logger;
+- **星图上有 Ashen Verge，却找不到进入的跳跃点**：没有调用 `autogenerateHyperspaceJumpPoints(...)`，或第二个参数为 `false`。
+    - **解决方案**：传 `(false, true)`，让星系边缘生成双向跳跃点。
 
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignClockAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.campaign.SectorEntityToken;
-import com.fs.starfarer.api.campaign.StarSystemAPI;
+- **星系内一片漆黑**：没有恒星，也没有设置光照颜色。
+    - **解决方案**：在 `initNonStarCenter()` 之后调用 `setLightColor(...)`。
 
-public class GearInLocationQuery implements EveryFrameScript {
+- **两个星系在超空间中重叠**：坐标与已有星系过近。
+    - **解决方案**：与 Nipher 的 (-16000, -9000) 拉开距离，本节取 (-13500, -4500)。
 
-    private static final Logger LOG = Global.getLogger(GearInLocationQuery.class);
+- **旧存档中看不到这个星系**：生成放在 `onNewGame()`，旧存档不会再触发。
+    - **解决方案**：使用新档测试。
 
-    private boolean reported;
-    private long lastReportTimestamp;
-
-    @Override
-    public boolean isDone() {
-        return false;
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        SectorAPI sector = Global.getSector();
-        CampaignClockAPI clock = sector.getClock();
-        if (reported && clock.getElapsedDaysSince(lastReportTimestamp) < 1f) {
-            return;
-        }
-        lastReportTimestamp = clock.getTimestamp();
-        reported = true;
-        StarSystemAPI system = sector.getStarSystem("GearIn_observation_system");
-        if (system == null) {
-            LOG.warn("GearIn location query: system missing");
-            return;
-        }
-
-        SectorEntityToken relay = system.getEntityById("GearIn_observation_relay");
-        List<SectorEntityToken> tagMatches = system.getEntitiesWithTag(
-                "GearIn_observation_tag");
-        List<?> tokenMatches = system.getEntities(SectorEntityToken.class);
-        float daysSinceVisit = system.getDaysSinceLastPlayerVisit();
-        String relayLocation = relay == null || relay.getContainingLocation() == null
-                ? "null"
-                : relay.getContainingLocation().getId();
-
-        LOG.info(String.format(
-                "GearIn location query: id=%s all=%d typed=%d tags=%d current=%s entered=%s daysSinceVisit=%s relayLocation=%s",
-                system.getId(),
-                system.getAllEntities().size(),
-                tokenMatches.size(),
-                tagMatches.size(),
-                system.isCurrentLocation(),
-                system.isEnteredByPlayer(),
-                daysSinceVisit,
-                relayLocation));
-    }
-}
-```
-
-:::
-
-## 验证方案
-
-前置数据：包含本节生成器与查询器两个脚本类的 GearIn MOD 已构建并启用，并准备一个新档。
-
-1. 保存两个类与登记，构建、重启并进入新档，核对 `GearIn location built` 与首次 `GearIn location query`。
-2. 前往超空间坐标 `(-12000, 7000)`，通过跳跃点进入观测星系，观察恒星、行星与中继站；位置 token 在地点集合日志中确认。
-3. 推进至少一个生涯日，再搜索 `GearIn location query`，核对 `all`、`typed`、`tags`、`relayLocation` 与访问状态。
-4. 在系统内记录 `current=true`，离开并推进一日后比较 `current=false` 与 `entered=true`。
-5. 比较首次进入前的 `Float.MAX_VALUE` 与离开后的最近访问天数，再保存读档，确认已有星系保留、查询继续记录。
-
-预期结果：
-
-- 恒星、行星、中继站与跳跃点可在地图观察，位置 token 通过 ID 与地点集合取得；
-- 日志出现 `GearIn location built` 与 `GearIn location query`，四种查询数量与创建结果一致；
-- 系统内 `current=true`，离开后 `current=false`、`entered=true`；
-- 从未进入的测试系统 `daysSinceVisit` 返回 `Float.MAX_VALUE`。
-
-## 故障分析
-
-- **ID 查询返回 `null`**：实体没有进入地点集合，或查询 ID 与创建 ID 不一致。
-    - **解决方案**：确认创建方法来自目标 `LocationAPI`，并逐字核对 `GearIn_observation_*` ID。
-
-- **标签数量为零但实体存在**：标签写入发生在另一个 token，或查询发生在生成器执行前。
-    - **解决方案**：确认 `addTag` 作用于实际加入地点的对象，并先完成生成器再运行查询器。
-
-- **跳跃点没有出现在超空间**：自动生成调用发生在恒星系结构完成前，或重复生成覆盖了预期结果。
-    - **解决方案**：先完成恒星和行星，再调用 `autogenerateHyperspaceJumpPoints`，并检查返回的自动跳跃点集合。
-
-- **最近访问天数显示极大值**：玩家尚未进入该地点。
-    - **解决方案**：先进入恒星系，再在离开后读取 `getDaysSinceLastPlayerVisit()`。
-
-## 总结
-
-观测星系中的可见实体由地点创建方法加入，坐标标记则另行登记到集合。查询代码从当前星区重新取得地点，再按 ID、标签、类型或全量集合读取目标。
-
-访问日志继续记录玩家的变化。当前位置、曾经进入与最近访问天数分别表达现在、历史事实和时间间隔，后续功能也根据所需条件选择。
+- **实体靠近后没有打捞对话**：类型字符串写错，或写成了自定义类型而非原版 `Entities` 常量。
+    - **解决方案**：使用 `Entities.DERELICT_SURVEY_SHIP` 与 `Entities.SUPPLY_CACHE`。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.LocationAPI`：地点、实体集合和访问状态入口，注册、ID 索引与标签查询由其承载；
-- `com.fs.starfarer.api.campaign.StarSystemAPI`：恒星系初始化、生成与超空间跳跃点入口；
-- `data/scripts/world/systems/`：原版恒星系生成示例。
+- `com.fs.starfarer.api.campaign.StarSystemAPI`：`initNonStarCenter()` 与 `autogenerateHyperspaceJumpPoints(...)`，本节创建星系用的就是这两个。
+- `com.fs.starfarer.api.impl.campaign.world.GateHaulerLocation`：原版无恒星星系的完整写法。
+- `com.fs.starfarer.api.impl.campaign.ids.Entities`：原版自定义实体类型常量。
+- `com.fs.starfarer.api.impl.campaign.terrain.DebrisFieldTerrainPlugin`：残骸场参数类。
+- `data/config/custom_entities.json`：各实体的标签与交互设置。

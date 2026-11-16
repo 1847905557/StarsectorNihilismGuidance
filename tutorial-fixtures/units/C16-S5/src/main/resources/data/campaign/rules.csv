@@ -1,8 +1,0 @@
-id,trigger,conditions,script,text,options,notes
-GearIn_bar_hub_blurb,GearIn_bar_hub_blurbBar,,,一位码头工作人员正在整理船坞检查记录。,,码头邀请
-GearIn_bar_hub_option,GearIn_bar_hub_optionBar,,,,GearIn_bar_hub_startBar:询问码头检查工作,酒吧选项
-GearIn_bar_hub_offer,DialogOptionSelected,$option == GearIn_bar_hub_startBar,,这份检查将在一个生涯日后完成。是否接受？,"GearIn_bar_hub_acceptBar:接受检查
-GearIn_bar_hub_declineBar:暂时拒绝",任务邀请
-GearIn_bar_hub_accept,DialogOptionSelected,$option == GearIn_bar_hub_acceptBar,"BarCMD accept GearIn_bar_hub
-BarCMD returnFromEvent true",,,接受与返回
-GearIn_bar_hub_decline,DialogOptionSelected,$option == GearIn_bar_hub_declineBar,BarCMD returnFromEvent false,,,拒绝与返回

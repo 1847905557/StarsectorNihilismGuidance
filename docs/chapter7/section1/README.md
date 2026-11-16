@@ -1,128 +1,97 @@
 # 制作 MOD 入口类
 
-MOD 入口接收游戏加载、新档、读档与保存时的回调。代码放在哪个方法里，决定它何时执行，也决定它能使用哪些游戏对象。本节整理 `GearInModPlugin`，保留已有星系、关系和声音，在这些回调中安排一次性初始化与阶段日志。
+游戏认识一个 MOD，是因为 `mod_info.json` 里写了一个类名。那个类会被实例化，然后由游戏按自己的节奏调用上面的一串方法：启动、开新档、读档、存盘。MOD 与游戏之间的全部接口就在这一份回调表上，除此之外没有任何地方是游戏保证会叫到 MOD 的。
 
-_本节预期阅读时间：\~10 分钟。_
+入口类因此有个特殊之处：它是整个 MOD 里唯一不必担心 "没有人调用" 的类。它上面的字段因此属于游戏进程，而玩家随时可能换一份存档。
 
-_本节预期操作时间：\~15 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~12 分钟。_
 
-完成后，您将能够：
-
-- 在 JAR 和 mod_info 中提供有效入口；
-- 按应用、新档、读档、启用与保存阶段选择回调；
-- 用 persistent data 记录每个存档的初始化；
-- 通过日志和保存／读取结果核对调用。
+_本节预期操作时间：\~10 分钟。_
 
 ## 前置知识
 
-- [C3-S3] 的入口与势力关系；
-- [C3-S3] 的 GearInSystemGenerator；
-- [C5-S2] 的 UI 反馈；
-- [C6-S2] 至 [C6-S2] 的源码目录、构建与加载；
-- Java 继承、方法覆写、Map 与字符串。
+- [C3-S3] 的 `GearInModPlugin` 与星系生成器；
+- [C6-S2] 的源码目录与构建流程；
+- Java 的继承与方法覆写。
 
-## 让游戏加载入口类
+## 入口类的实例只有一份
 
-入口仍使用 `GearInModPlugin`，源码保存在 `src/data/scripts/gearin/GearInModPlugin.java`。构建之后，游戏通过 `mod_info.json` 的 `modPlugin` 字段找到它。已有 MOD 信息保留实际内容，加载声明采用下面的关系：
+`mod_info.json` 的 `modPlugin` 指向入口类。它必须实现 `com.fs.starfarer.api.ModPlugin`，接口的全部方法都是游戏会调用的回调。
 
-```json
-{
-    "id": "gear_in",
-    "name": "齿轮工业",
-    "author": "YourName",
-    "version": {"major": 0, "minor": 1, "patch": 0},
-    "description": "Starsector MOD 教程的练习项目。",
-    "gameVersion": "0.98.5a-RC3",
-    "jars": ["jars/GearIndustry.jar"],
-    "modPlugin": "data.scripts.gearin.GearInModPlugin"
-}
-```
+直接实现接口要写全十几个方法，所以一律继承 `BaseModPlugin`，它把每一个回调都实现成空方法，只覆写用得上的。**`pick...` 系列在 `BaseModPlugin` 里返回 `null`，含义是交给原版决定**；[C18-S2] 用 `pickMissileAI(...)` 给杜瓦林指定导弹 AI 时会用到这一点，其余保持默认。
 
-**`jars` 提供包含代码的文件，`modPlugin` 指定其中的入口类。** 填写实际作者、版本等信息，保留已经登记的数据。游戏取得这个类后，将生命周期回调交给它。
+入口类的实例在游戏启动时创建一次。玩家退出到主菜单再读另一份存档，游戏进程没有退出，实例没有重建，字段里仍是上一份存档留下的值。**实例在游戏进程里创建一次；存档是一份一份的，每次进入生涯都对应其中一份。实例与存档的存续期不重合。** 凡是属于某份存档的东西，都不能放在入口类的字段里。
 
-入口继承 `BaseModPlugin`。基类已经实现未使用的方法，我们只覆写本节需要的回调。接下来按游戏实际运行的过程安排代码；完整类在后面集中给出。
+## 每次启动只跑一次的回调
 
-## 应用加载后读取配置
+`onApplicationLoad()` 在全部核心数据加载完、全部脚本编译完之后调用，每次启动游戏一次。
 
-`onApplicationLoad()` 在核心加载与脚本编译完成后执行，这时可以使用设置服务。将下面的局部方法放入入口类，记录这次回调与游戏版本：
+此时还没有生涯。可以读取设置、贴图、CSV 与 JSON，不能访问 `Global.getSector()` —— 那里还是空的，等它被填上要等到新档生成或存档载入。**在 `onApplicationLoad()` 里碰 `Global.getSector()` 得到的是一串空指针**，而这个回调只跑一次，出错的位置看起来离原因很远。
 
-```java
-@Override
-public void onApplicationLoad() throws Exception {
-    log("onApplicationLoad version=" + Global.getSettings().getGameVersion());
-}
-```
+下一节读取 MOD 参数就在这个回调里。
 
-这条日志用于确认回调已经发生。MOD 信息中的 `gameVersion` 与工程编译目标仍按第六章配置；这里读取设置，不改变它们。
+## 开新档与进入生涯
 
-应用加载时还没有当前生涯。星系、势力关系和存档数据要等新档创建或读档完成后处理，因此生成器也不能放在这个方法里。
+这两个词在 MOD 开发里经常被混着说，回调用起来却是分开的。
 
-## 新档生成与读档分别处理
+`onNewGame()` 只在创建新生涯时调用，星区内容在这里生成，取代旧的 `generators.csv`。[C3-S3] 的星系生成与初始关系都在这里。
 
-创建新的生涯时，`onNewGame()` 负责生成本 MOD 的星系并设置初始关系。这里沿用第三章的生成器和关系方法：
+`onGameLoad(boolean newGame)` 每次进入生涯都调用，新档也走一遍，参数说明这一次是不是新开的档。
 
-```java
-@Override
-public void onNewGame() {
-    new GearInSystemGenerator().generate(Global.getSector());
-    seedRelations(Global.getSector());
-    log("onNewGame");
-}
-```
+**由此产生一条算术：`onNewGame()` 里的代码，一份存档只执行一次；`onGameLoad(...)` 里的代码，一份存档每次进入都执行。** 只有在这两个回调之间选错了位置，才会出现 "重复一次" 和 "少一次" 这两类问题，而它们都不会当场报错。
 
-星系与关系随后进入存档，读档时继续使用保存的结果。若把生成调用放在每次读档都会执行的方法里，同一个世界便会反复收到创建请求。
+`onEnabled(boolean wasEnabledBefore)` 在 `onGameLoad(...)` 之前，只在本 MOD 第一次出现在这份存档里时触发。参数为 `true` 表示这份存档此前启用过本 MOD，中途关掉又在恢复 —— 此时并不是第一次。
 
-`onGameLoad(boolean newGame)` 在新档和读档时都会执行，`newGame` 表示本次是否为新档。进入生涯的声音、需要重新取得的对象，以及每次加载都要登记的运行期功能，都可以在这里处理。**新档生成使用 `onNewGame()`，每次进入存档的处理使用 `onGameLoad(...)`。**
+## 中途加入的 MOD 拿不到新档
 
-## 为每个存档记录初始化结果
+用户把齿轮工业加进一份已经玩了几十小时的存档，游戏调用 `onEnabled(false)` 与 `onGameLoad(false)`，不调用 `onNewGame()`。Nipher 星系不会出现，而星系生成器里那一堆市场登记、势力关系、巡逻投放全都跟着没发生。
 
-还有一种操作：它需要在当前存档中执行一次，之后读档继续保留结果。本例让齿轮工业参与人物赏金事件，将以下局部片段放入 `onGameLoad(...)`：
+从技术上讲，可以在 `onEnabled(...)` 里补一次生成。这份存档的经济已经按几十小时的步长跑过，势力关系、舰队编制都定了型，中途插进来的星系要补齐的东西不止一个生成器：市场得进经济系统并重新结算，关系得和既有的局面接上，巡逻队得投到一张已经运转的地图里。**补不全是常态，补坏的地方要在玩家几十小时之后才暴露。**
+
+增加星系的 MOD 应当直接要求开新档，并在 MOD 说明的第一屏写明这一条。想试用的用户因此要重开一档，代价明确，换来的是每一份存档的世界都按同一个过程长出来。
+
+## 更新时补上一次性初始化
+
+要求开新档，不等于旧存档永远停在旧版本。MOD 更新常常加入只需执行一次的设置，而在更新之前开出的存档也应当拿到它。
+
+以人物赏金为例。原版的人物赏金只由名单中的势力发布，`PersonBountyEventData` 在构造时写死了那几个势力 ID。齿轮工业要进这份名单，而名单属于存档数据 —— `onNewGame()` 对旧存档不再调用，所以这段放在每次都会执行的 `onGameLoad(...)` 里，用一个存档标记收口：
 
 ```java
-SectorAPI sector = Global.getSector();
-if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
-    SharedData.getData().getPersonBountyEventData().addParticipatingFaction("gear_industry");
-    sector.getPersistentData().put(CLASS_MARK, true);
-    log("first-entry initialization (CLASS_MARK gate opened)");
+Map<String, Object> data = Global.getSector().getPersistentData();
+if (!data.containsKey(BOUNTY_JOINED_KEY)) {
+    SharedData.getData().getPersonBountyEventData().addParticipatingFaction(FACTION_ID);
+    data.put(BOUNTY_JOINED_KEY, true);
 }
 ```
 
-`CLASS_MARK` 的值为 `GearInModPlugin`。首次进入时，persistent data 中没有这个键，于是加入参与势力，再写入完成标记。标记随存档保存，后续加载同一存档时就会跳过初始化。
+`getPersistentData()` 是当前存档的公共数据表，写入的值随存档保存、随读档恢复。第一次进入这份存档时表里没有这个键，于是加入名单并写下标记；此后读同一份存档，判断直接跳过。新档从空表开始，走的也是同一条路。
 
-这里保存的是某个生涯的完成状态，因此使用 `SectorAPI.getPersistentData()`。类的 `static` 字段跟随游戏进程：同一进程可以先后加载不同存档，重新启动又会重新建立静态状态。**每存档一次的条件，要由该存档保存。**
+**"每份存档执行一次" 这个要求，只能由存档里的东西来满足。** 换成入口类的字段，那字段属于游戏进程，读过 A 档再读 B 档，B 档会被当成已经初始化过；换成 `static` 字段，情况相同且更难看出来。
 
-第五章的 UI 反馈仍在每次 `onGameLoad(...)` 中播放。把它放在标记判断之外，首次进入与后续读档都能听到；初始化则继续只执行一次。两项功能在同一个回调里，却有不同的执行条件。
+标记也不能省。`addParticipatingFaction(...)` 只是往名单末尾追加，不检查重复；去掉判断，每读一次档齿轮工业就在名单里多一条，赏金发布概率随读档次数一起涨。这类错误不会报错，只会在几十小时之后表现为某个势力发布赏金过于频繁。
 
-## 接收启用与保存通知
+::: tip 标记键的命名
 
-`onEnabled(boolean wasEnabledBefore)` 用于新档或首次向当前存档启用 MOD 的处理，参数说明这个存档以前是否曾启用过本 MOD。已有启用状态的正常读档继续使用 `onGameLoad(...)`。完整例在启用回调中记录参数，以便与读档日志对应。
+存档公共数据表由原版与全部 MOD 共用，键名同样要带 `GearIn_` 前缀。希望您还没忘。
 
-保存过程则有自己的通知：写入前执行 `beforeGameSave()`，成功后执行 `afterGameSave()`，失败时执行 `onGameSaveFailed()`。加入以下局部方法，记录保存前后的调用：
+:::
 
-```java
-@Override
-public void beforeGameSave() {
-    log("beforeGameSave");
-}
+## 保存前后的三个回调
 
-@Override
-public void afterGameSave() {
-    log("afterGameSave");
-}
-```
+`beforeGameSave()` 在写盘之前，`afterGameSave()` 在成功之后，失败走 `onGameSaveFailed()`。
 
-失败回调也保留相同的日志写法。日志用于确认实际调用，初始化标记用于控制功能是否执行；保存通知本身不会替代这个标记。后续入口增加内容时，仍按各项操作所需的对象与时机安排。
+它们的用途基本只有一个：把不能写进存档的对象在写盘前摘出去，写完之后放回。齿轮工业没有这类对象，入口类不覆写这三个。
 
-## 完整最小例
+## 完整入口类
 
-保存入口类并继续使用 [C3-S3] 的生成器源码。src 中的两个包路径参与同一个 MOD 构建，关系设置与 UI 反馈由当前入口保留。
-
-::: details 完整成品：GearInModPlugin
+修改 `src/data/scripts/gearin/GearInModPlugin.java`。星系生成器沿用 [C4-S6] 的版本，不需要改动：
 
 ```java
 package data.scripts.gearin;
+
+import java.util.Map;
 
 import com.fs.starfarer.api.BaseModPlugin;
 import com.fs.starfarer.api.Global;
@@ -133,179 +102,77 @@ import com.fs.starfarer.api.impl.campaign.shared.SharedData;
 
 import data.scripts.gearin.campaign.GearInSystemGenerator;
 
-/** 接收MOD生命周期回调，生成新档内容并记录存档初始化与保存。 */
+/** MOD 入口：新档生成星系与关系，进入生涯时为存档补上一次性初始化。 */
 public class GearInModPlugin extends BaseModPlugin {
 
-    public static final String CLASS_MARK = "GearInModPlugin";
+    public static final String FACTION_ID = "gear_industry";
 
-    @Override
-    public void onApplicationLoad() throws Exception {
-        log("onApplicationLoad version=" + Global.getSettings().getGameVersion());
-    }
-
-    @Override
-    public void onEnabled(boolean wasEnabledBefore) {
-        log("onEnabled wasEnabledBefore=" + wasEnabledBefore);
-    }
+    /** 存档公共数据中记录 "已加入人物赏金名单" 的键。 */
+    private static final String BOUNTY_JOINED_KEY = "GearIn_bounty_joined";
 
     @Override
     public void onNewGame() {
-        new GearInSystemGenerator().generate(Global.getSector());
-        seedRelations(Global.getSector());
-        log("onNewGame");
+        SectorAPI sector = Global.getSector();
+        new GearInSystemGenerator().generate(sector);
+        seedRelations(sector);
     }
 
     @Override
     public void onGameLoad(boolean newGame) {
-        SectorAPI sector = Global.getSector();
-        if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
-            SharedData.getData().getPersonBountyEventData().addParticipatingFaction("gear_industry");
-            sector.getPersistentData().put(CLASS_MARK, true);
-            log("first-entry initialization (CLASS_MARK gate opened)");
+        Map<String, Object> data = Global.getSector().getPersistentData();
+        if (!data.containsKey(BOUNTY_JOINED_KEY)) {
+            SharedData.getData().getPersonBountyEventData().addParticipatingFaction(FACTION_ID);
+            data.put(BOUNTY_JOINED_KEY, true);
         }
-        Global.getSoundPlayer().playUISound("GearIn_ui_feedback", 1f, 1f);
-        log("onGameLoad newGame=" + newGame);
-    }
-
-    @Override
-    public void beforeGameSave() {
-        log("beforeGameSave");
-    }
-
-    @Override
-    public void afterGameSave() {
-        log("afterGameSave");
-    }
-
-    @Override
-    public void onGameSaveFailed() {
-        log("onGameSaveFailed");
     }
 
     private void seedRelations(SectorAPI sector) {
-        FactionAPI gear = sector.getFaction("gear_industry");
+        FactionAPI gear = sector.getFaction(FACTION_ID);
         gear.setRelationship("player", 0f);
         gear.setRelationship("pirates", RepLevel.HOSTILE);
         gear.setRelationship("hegemony", RepLevel.FRIENDLY);
         gear.setRelationship("tritachyon", RepLevel.HOSTILE);
     }
-
-    private static void log(String message) {
-        Global.getLogger(GearInModPlugin.class).info("GearIn lifecycle: " + message);
-    }
 }
 ```
 
-:::
+势力 ID 提成 `FACTION_ID` 常量。此后其他类引用齿轮工业时都从这里取，不在各处散写字符串。
 
-下面是当前生成器的完整形态，保存为 `src/data/scripts/gearin/campaign/GearInSystemGenerator.java`。它承接第三章的 Second 描述绑定和第四章的余烬世界、导航锚；对应数据继续使用前文已经登记的内容。
+### 进游戏核对
 
-::: details 完整成品：GearInSystemGenerator
+执行 `gradle jar`，重启游戏。
+
+- 开一个新档，Nipher 星系与初始关系照常出现。
+- 在赏金界面能看到的条目取决于随机发布，短期内未必轮到齿轮工业，这一项留到后续游玩中留意。
+- 保存，退出到主菜单，读回这份存档，重复几次。标记是否真的拦住了重复追加，界面上看不出来，要靠下一条。
+
+在 `onGameLoad(...)` 末尾临时加一行，把名单打进日志：
 
 ```java
-package data.scripts.gearin.campaign;
-
-import java.awt.Color;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.JumpPointAPI;
-import com.fs.starfarer.api.campaign.PlanetAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.campaign.SectorEntityToken;
-import com.fs.starfarer.api.campaign.SectorGeneratorPlugin;
-import com.fs.starfarer.api.campaign.StarSystemAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-
-/** 创建齿轮工业星系，使用自定义行星、导航锚与独立描述。 */
-public class GearInSystemGenerator implements SectorGeneratorPlugin {
-
-    @Override
-    public void generate(SectorAPI sector) {
-        StarSystemAPI system = sector.createStarSystem("Nipher");
-        system.setBackgroundTextureFilename("graphics/backgrounds/background2.jpg");
-        system.setLightColor(new Color(200, 200, 210));
-
-        PlanetAPI star = system.initStar("nipher", "star_yellow", 600f, 550f, 3f, 0.75f, 1f);
-        system.getLocation().set(-16000f, -9000f);
-
-        PlanetAPI prime = system.addPlanet(
-                "GearIn_planet1", star, "Nipher Prime", "GearIn_ember_world", 55, 150, 3200, 120);
-        PlanetAPI second = system.addPlanet(
-                "GearIn_planet2", star, "Nipher Second", "barren", 200, 90, 5200, 200);
-        second.setCustomDescriptionId("GearIn_description_second");
-
-        SectorEntityToken stable = system.addCustomEntity(
-                "GearIn_stable", "Nipher 导航锚", "GearIn_navigation_anchor", "gear_industry");
-        stable.setCircularOrbitPointingDown(star, 90, 2200, 100);
-
-        MarketAPI market = Global.getFactory().createMarket(prime.getId(), prime.getName(), 4);
-        market.setFactionId("gear_industry");
-        market.setPrimaryEntity(prime);
-        market.setSurveyLevel(MarketAPI.SurveyLevel.FULL);
-        market.addCondition("population_4");
-        market.addIndustry("population");
-        market.addIndustry("spaceport");
-        market.addSubmarket("open_market");
-        market.addSubmarket("storage");
-        sector.getEconomy().addMarket(market, true);
-        prime.setMarket(market);
-        prime.setFaction("gear_industry");
-
-        JumpPointAPI jump = Global.getFactory().createJumpPoint("GearIn_jump", "Nipher 跳跃点");
-        jump.setCircularOrbit(star, 300, 1800, 100);
-        jump.setRelatedPlanet(prime);
-        system.addEntity(jump);
-        system.autogenerateHyperspaceJumpPoints(true, true);
-    }
-}
+Global.getLogger(GearInModPlugin.class).info("GearIn bounty factions: "
+        + SharedData.getData().getPersonBountyEventData().getParticipatingFactions());
 ```
 
-:::
+读档几次后打开 `starsector.log` 搜索 `GearIn bounty factions`，每一行里 `gear_industry` 都应当只出现一次。核对完删掉这一行。日志的写法在 [C7-S4] 展开。
 
-## 验证方案
+## 常见问题
 
-1. 构建 JAR，核对入口与生成器 class 条目及 mod_info 声明。
-2. 启动游戏，查看 GearIn lifecycle 的应用加载日志和版本。
-3. 创建生涯，核对 Nipher 星系、初始关系、onNewGame、启用、首次初始化与 onGameLoad newGame=true。
-4. 保存后读取同一存档，核对 onGameLoad newGame=false 与 UI 反馈。
-5. 手动保存，比较 beforeGameSave 和 afterGameSave 记录。
+- **启动时报 `Error loading [data.scripts.gearin.GearInModPlugin]`**：JAR 里没有这个类，或 `modPlugin` 写的类名与 `package` 对不上。
+    - **解决方案**：`jar tf` 看 JAR 内容，核对 `mod_info.json` 里的完整类名。
 
-预期结果：
+- **已有存档里找不到 Nipher 星系**：存档在本 MOD 加入之前创建，`onNewGame()` 没有对它调用过。
+    - **解决方案**：开新档测试。
 
-- 入口类有效，应用加载阶段记录实际版本。
-- 新档创建星系和关系，首次初始化写入持久标记。
-- 保存后的同一存档读取时继续使用标记，一次性初始化日志保持一次。
-- 每次进入生涯播放 UI 反馈并记录当前 newGame 值。
-- 保存成功记录前后回调，失败路径由 onGameSaveFailed 记录。
+- **`onApplicationLoad()` 里抛 `NullPointerException`**：这个回调访问了 `Global.getSector()`，此时生涯还没有建立。
+    - **解决方案**：把访问生涯的代码移到 `onNewGame()` 或 `onGameLoad(...)`。
 
-## 故障分析
-
-- **入口类加载失败**：JAR 条目、package、class 或 modPlugin 不同。
-    - **解决方案**：按完整类名核对产物与加载值，重新构建。
-
-- **入口转换时报 ClassCastException**：登记的类没有实现 MOD 入口接口。
-    - **解决方案**：使用 BaseModPlugin 或正确的 ModPlugin 实现，再构建。
-
-- **应用加载时访问生涯抛空指针**：当前 Sector 尚未建立。
-    - **解决方案**：将生涯操作安排到创建或读档回调。
-
-- **每次读档重复初始化**：标记未写入存档数据，或当前读取的是不同存档。
-    - **解决方案**：核对 CLASS_MARK 键和 getPersistentData，在同一保存档测试。
-
-- **新档缺少原有星系**：替换入口时遗漏生成器调用。
-    - **解决方案**：在 onNewGame 保留 generate 和关系设置，再创建生涯。
-
-## 总结
-
-同一个入口现在接收应用、新档、读档、启用与保存通知。已有星系只在新档生成，UI 反馈随每次进入播放，赏金参与状态则由存档标记控制。回调决定调用时机，功能自己的状态决定本次要不要执行。
-
-后面的生涯功能仍从这个入口接入。生成过程继续交给生成器，入口负责在合适的阶段调用它，日志记录实际发生的过程。
+- **每读一次档，某件事就重复一次**：放在了 `onGameLoad(...)` 里却没有存档标记。
+    - **解决方案**：改用存档公共数据里的键做判断。
 
 ## 建议参考项
 
-- `mod_info.json`：modPlugin 与 jars。
-- `com.fs.starfarer.api.BaseModPlugin`：默认入口实现。
-- `com.fs.starfarer.api.ModPlugin`：生命周期签名与调用约定。
-- `com.fs.starfarer.api.campaign.SectorAPI`：getPersistentData 存档数据。
-- `com.fs.starfarer.api.impl.campaign.shared.SharedData`：人物赏金参与势力。
-- `Starsector/starsector-core/starsector.log`：入口和回调结果。
+- `com.fs.starfarer.api.ModPlugin`：全部回调的签名，入口类实现的就是这个接口。
+- `com.fs.starfarer.api.BaseModPlugin`：各回调的默认实现，`pick...` 系列一律返回 `null`。
+- `com.fs.starfarer.api.campaign.SectorAPI`：`getPersistentData()` 存档公共数据。
+- `com.fs.starfarer.api.impl.campaign.shared.PersonBountyEventData`：人物赏金的参与势力名单。
+- `com.fs.starfarer.api.impl.campaign.CoreLifecyclePluginImpl`：原版自己的生命周期插件，可以对照它在各回调里做了什么。

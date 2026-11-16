@@ -1,2 +1,2 @@
 name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
-数值测试船插,GearIn_stats_hullmod,0,,,engines,引擎,1000,TRUE,,,3,6,9,12,data.scripts.gearin.hullmods.GearInStatsHullMod,"最大速度增加 10，S-mod 上限增加 1。","用于观察数值修饰。",,
+过热冶炉,GearIn_overheat_forge,0,,,"offensive, merc",武器,3000,TRUE,,,5,10,15,25,data.scripts.gearin.hullmods.GearInOverheatForgeHullMod,"实弹武器的幅能消耗提高 {%s}。实弹武器的射速随幅能水平提高，满幅能时最多提高 {%s}。",实弹武器射速随幅能提高。,,graphics/hullmods/safety_overrides.png

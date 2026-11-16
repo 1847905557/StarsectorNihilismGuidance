@@ -1,69 +1,55 @@
 # 为舰船加入外观风格
 
-本节为工匠配置齿轮工业的黄铜色舰船与引擎风格。护盾、损伤、排散、引擎焰和航迹分别读取各自的字段，声音则通过风格中的声音集 ID 连接。我们先使用原版资源完成配置，再按需要接入自有声音与材质。
+舰船风格和引擎风格决定护盾、排散、引擎焰和航迹的颜色。玩家在混战里分辨敌我，很多时候看的就是这几处颜色。
 
-_本节预期阅读时间：\~10 分钟。_
+这一节几乎没有技术含量。但它的回报会体现在齿轮工业的每一艘船上。
 
-_本节预期操作时间：\~20 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~8 分钟。_
 
-完成后，您将能够：
-
-- 在 hull_styles.json 定义舰船风格；
-- 在 engine_styles.json 定义引擎风格；
-- 将两类风格分别写入船体和引擎槽；
-- 说明颜色、材质、声音集与对象的引用关系；
-- 从加载和部署结果定位风格错误。
+_本节预期操作时间：\~10 分钟。_
 
 ## 前置知识
 
-- [C1-S1] 的数据、资源目录与合并；
-- [C1-S2] 的工匠船体、引擎槽与控制台获取；
-- [C4-S2] 的模拟战和装配观察；
-- 能够保存 JSON 并读取游戏日志。
+- [C1-S2] 的舰船风格 `style` 字段，舰船按它取护盾与引擎颜色；
+- JSON 的基本写法与 [C1-S1] 提到的宽松 JSON，风格文件按它手工修改。
 
-## 定义舰船风格
+## 设置舰船风格
 
-在 MOD 的 `data/config/hull_styles.json` 创建 `GEAR_TECH`。船体文件顶层的 `style` 使用这个键读取舰船风格，后续同势力的其他船体也可以引用它。
-
-从原版 `LOW_TECH` 复制后修改颜色和资源。**各船体通过引用同一套风格统一表现**，配置文件中的键还需要写入对应船体。当前以黄铜色系替换护盾、排散与爆炸配色：
+舰船风格文件位于 `data/config` 文件夹内的 `hull_styles.json`，它能控制舰船的护盾颜色、排散颜色、各类音效与贴图材质等。同理，尽可能复制粘贴修改原版的舰船风格，比如 `LOW_TECH`。齿轮工业的船都改自低科蓝图，所以本例在它的基础上改出了 `GEAR_TECH`：
 
 ```json
 {
-	"GEAR_TECH":{ # 舰船风格 ID。不得使用文件头保留 ID
-		"hyperspaceJitterColor":[255,170,60,200], # 建议保留：舰船在超空间航行时的光芒颜色
-		"baseCampaignExplosionColor":[255,150,50,255], # 建议保留：大地图爆炸颜色
-		"baseCombatExplosionColor":[255,150,50,255], # 建议保留：战斗爆炸颜色 (闪光)
-		"combatExplosionNonFlashColorOverride":[255,180,90,255], # 可选：战斗爆炸的非闪光部分 (更蓬松的爆炸)
-		"fighterRepairFlickerColor":[255,170,60,255], # 建议保留：甲板维修战机时冒火花的颜色
-		"fighterChipIconColor":[255,200,120,255], # 可选，默认同 fighterRepairFlickerColor：战机 LPC 颜色
-		"weaponDisabledExplosionColor":[255,170,60,255], # 建议保留：武器下线冒火花的颜色
-		"shieldRingColor":[255,215,140,255], # 建议保留：护盾外圈颜色
-		"shieldInnerColor":[255,140,40,70], # 建议保留：护盾内圈颜色
-		"fluxVentCoreColor":[255,235,200,255], # 建议保留：V 排 (幅能排放) 核心颜色
-		"fluxVentFringeColor":[255,120,0,255], # 建议保留：V 排外圈颜色
-		"fluxVentTextureSheet":"graphics/fx/nebula_colorless.png", # 可选：V 排外圈材质
-		"fluxVentRadialTexture":"graphics/fx/radial_fx.png", # 可选：V 排核心材质
-		"engineLoopSet":"engine_loop", # 引擎循环音效：sounds.json 中的声音集 ID
-		"engineAccelerateSet":"engine_accelerate", # 零幅能加速瞬间音效：sounds.json 中的声音集 ID
-		"empLoopSet":"emp_loop", # EMP 过载相关循环音效
+	"GEAR_TECH":{ # 舰船风格 ID，必改
+		"hyperspaceJitterColor":[255,125,45,200], # 在大地图时的光芒颜色
+		"baseCampaignExplosionColor":[255,125,25,255], # 在大地图爆炸时的颜色
+		"baseCombatExplosionColor":[255,125,25,255], # 在战斗中爆炸时的颜色
+		"fighterRepairFlickerColor":[255,125,25,255], # 甲板维修战机时冒火花的颜色
+		"fighterChipIconColor":[255,200,150,255], # 战机 LPC 的颜色
+		"weaponDisabledExplosionColor":[255,125,25,255], # 武器下线冒火花的颜色
+		"shieldRingColor":[255,255,255,255], # 护盾外圈颜色
+		"shieldInnerColor":[255,155,125,75], # 护盾内圈颜色
+		"fluxVentCoreColor":[255,255,255,255], # V 排内圈颜色
+		"fluxVentFringeColor":[125,0,155,255], # V 排外圈颜色
+		"fluxVentTextureSheet":"graphics/fx/nebula_colorless.png", # V 排外圈材质
+		"fluxVentRadialTexture":"graphics/fx/radial_fx.png", # V 排内圈材质
+		"engineLoopSet":"engine_loop", # 引擎音效
+		"engineAccelerateSet":"engine_accelerate", # 零幅能加速瞬间音效
+		"empLoopSet":"emp_loop", # 过载后的随机音效
 		"fluxLoopSet":"flux_loop", # V 排循环音效
 		"ventFluxSet":"vent_flux", # V 排瞬间音效
-		"shieldBurnoutSet":"shield_burnout", # 护盾过载瞬间音效
+		"shieldBurnoutSet":"shield_burnout", # 过载瞬间音效
 		"shieldLowerSet":"shield_lower", # 护盾关闭音效
-		"shieldRaiseSet":"shield_raise", # 护盾开启音效
+		"shieldRaiseSet":"shield_raise", # 护盾打开音效
 		"explosionShipSet":"explosion_ship", # 舰船爆炸音效
 		"damageDecalSheet":"graphics/damage/damage_decal_sheet_base.png", # 损伤贴图
 		"damageDecalGlowSheet":"graphics/damage/damage_decal_sheet_glow.png", # 带光效的损伤贴图
 
-		# 武器盖板配色：coversColorShiftAmount 为 0~1，越大越接近舰体颜色；
-		# coversMatchShipBrightness 让盖板亮度跟随舰体亮度。
-		# colorShiftCovers 不参与当前盖板配色。
-		"coversColorShiftAmount":0.6,
-		"coversMatchShipBrightness":true,
+		"coversColorShiftAmount":0, # 武器盖板颜色自适应舰体的程度，0~1，越大越接近舰体颜色
+		"coversMatchShipBrightness":true, # 武器盖板亮度是否跟随舰体
 
-		# 武器盖板贴图 (最小例复用原版材质，可换成自己的盖板贴图)
+		# 武器盖板贴图
 		"slotCoverSmallTurret":"graphics/weapons/covers/cover_turret_lowtech_small.png",
 		"slotCoverSmallHardpoint":"graphics/weapons/covers/cover_hardpoint_lowtech_small.png",
 		"slotCoverMediumTurret":"graphics/weapons/covers/cover_turret_lowtech_medium.png",
@@ -71,7 +57,7 @@ _本节预期操作时间：\~20 分钟。_
 		"slotCoverLargeTurret":"graphics/weapons/covers/cover_turret_lowtech_large.png",
 		"slotCoverLargeHardpoint":"graphics/weapons/covers/cover_hardpoint_lowtech_large.png",
 
-		# D 插覆盖贴图 (舰船安装 D 插件后的船体贴花)
+		# D 插覆盖贴图
 		"dHullOverlayLight":"graphics/damage/dmod_overlay_lowtech_light.png",
 		"dHullOverlayMedium":"graphics/damage/dmod_overlay_lowtech_medium.png",
 		"dHullOverlayHeavy":"graphics/damage/dmod_overlay_lowtech_heavy.png",
@@ -79,210 +65,132 @@ _本节预期操作时间：\~20 分钟。_
 }
 ```
 
-颜色采用 RGBA，材质字段填写资源路径，声音字段填写 `sounds.json` 的声音集 ID；三类字段分别引用自己的数据。同路径文件按对象键合并，当前只提交自有 `GEAR_TECH`。
+颜色都是 RGBA 四个数，最后一个是不透明度。改动集中在护盾内圈和几处火花，其余沿用低科。**一个势力的外观靠少数几处颜色就能立住**，护盾、引擎焰和航迹是玩家看得最多的三处，先改这三处，其余等真的看出违和再动。
 
-### 颜色与资源读取规则
+原版的 `colorShiftCovers` 在 0.98.5 已不再参与盖板配色，复制时可以删掉。
 
-九个常用颜色字段分别为：hyperspaceJitterColor、baseCampaignExplosionColor、baseCombatExplosionColor、fighterRepairFlickerColor、weaponDisabledExplosionColor、shieldRingColor、shieldInnerColor、fluxVentCoreColor、fluxVentFringeColor。缺少其中一项时，对应表现采用白色；错误数组格式才会导致加载失败。
+::: warning 保留 ID
 
-**复制完整风格后再调整，比较容易保留已有表现。** 游戏能进入主菜单，只说明加载条件已经满足；护盾、爆炸和排散的配色还需要在对应场景分别确认。当前 `overloadColor` 沿用缺省的蓝紫色 `(150,150,255)`。
+`hull_styles.json` 中的 `sounds`、`DEFAULT`、`FIGHTER`、`FRIGATE`、`DESTROYER`、`CRUISER` 与 `CAPITAL_SHIP` 是保留键，不要用作自己的风格 ID。
 
-`fighterChipIconColor` 缺省采用 fighterRepairFlickerColor，`combatExplosionNonFlashColorOverride` 可单独调整较蓬松的爆炸部分。盖板用 coversColorShiftAmount 与 coversMatchShipBrightness 调整，colorShiftCovers 不参与当前配置。
+:::
 
-### 风格保留键速查表
-
-| 文件               | 保留键与原因                                                                                    |
-| ------------------ | ----------------------------------------------------------------------------------------------- |
-| hull_styles.json   | sounds、DEFAULT、FIGHTER、FRIGATE、DESTROYER、CRUISER、CAPITAL_SHIP，与声音和船体等级键共用结构 |
-| engine_styles.json | CUSTOM，用于引擎槽内联风格                                                                      |
-
-自有 ID 必须保持独立，当前沿用 `GEAR_TECH`。使用船体等级名会影响声音档位选择；注册 CUSTOM 会让引擎风格优先查到全局条目，内联分支失去原本的用途。
-
-## 定义引擎风格
-
-在 `data/config/engine_styles.json` 创建同名 `GEAR_TECH`，配置火焰和烟雾航迹：
+将其简单修改后即可填入您 MOD 中的 `hull_styles.json` 文件，即可开始使用。将您 `.ship` 文件中型如：
 
 ```json
-{
-	"GEAR_TECH":{ # 引擎风格 ID，不得使用保留 ID "CUSTOM"
-		"engineColor":[255,150,40,255], # 建议保留：引擎火焰颜色
-		"engineCampaignColor":[220,110,50,255], # 可选，默认同 engineColor：引擎火焰在大地图的颜色
-		"contrailParticleSizeMult":3, # 必填 (PARTICLES 模式)：引擎航迹粒子大小倍率
-		"contrailParticleDuration":2, # 必填 (PARTICLES 模式)：航迹粒子持续时间
-		"contrailParticleFinalSizeMult":2.5, # 可选，默认 0.5：航迹粒子随延长而放大的倍率
-		"contrailMaxSpeedMult":0.5, # 必填：航迹飘出速率
-		"contrailAngularVelocityMult":0.3, # 必填：航迹角速度飘出速率
-		"contrailColor":[70,60,50,60], # 建议保留：引擎航迹颜色
-		"contrailCampaignColor":[220,110,50,70], # 可选，默认同 contrailColor：航迹在大地图的颜色
-		"type":"SMOKE" # 必填：GLOW(淡光、加法混合) 或 SMOKE(烟雾、常规混合)
-	},
-}
+  "style": "LOW_TECH",
 ```
 
-本例使用 `SMOKE` 的常规混合方式，`GLOW` 使用加法混合。火焰与航迹颜色分别配置，因此橙色火焰与暗色烟雾可以同时使用。大地图颜色不填时，采用对应普通颜色。
-
-### 引擎参数读取速查表
-
-| 范围             | 字段与要求                                              |
-| ---------------- | ------------------------------------------------------- |
-| 两种模式共用     | type、contrailMaxSpeedMult、contrailAngularVelocityMult |
-| PARTICLES        | contrailParticleSizeMult、contrailParticleDuration      |
-| QUAD_STRIP       | contrailDuration、contrailWidthMult                     |
-| mode 缺省        | PARTICLES                                               |
-| 颜色缺省         | engineColor、contrailColor 为白色                       |
-| 粒子最终尺寸缺省 | contrailParticleFinalSizeMult 为 0.5                    |
-
-`type` 使用 GLOW 或 SMOKE，`mode` 则决定按粒子还是光带读取参数。选择模式以后，按上表补齐该模式的字段；缺少必填值或使用无效枚举，游戏在加载阶段报告对应键的错误。
-
-### 使用光带型航迹
-
-需要欧米伽型航迹时，可以在同一文件中增加下列局部条目：
-
-```json
-		"GEAR_TECH_OMEGA":{ # 光带型风格：mode 为 QUAD_STRIP
-			"mode":"QUAD_STRIP", # 粒子模式或光带模式，决定读取哪一组参数
-			"contrailDuration":1.5, # 必填 (QUAD_STRIP 模式)：光带持续时间
-			"contrailWidthMult":0.67, # 必填 (QUAD_STRIP 模式)：光带宽度
-			"contrailWidthAddedFractionAtEnd":-1, # 可选，字段缺失时默认 0.5：显式 0 表示不附加末端宽度，小于 0 末端窄，大于 0 末端宽
-			"contrailMinSeg":5, # 可选，默认 5：光带每一小节的渲染长度
-			"contrailMaxSpeedMult":1, # 必填：航迹飘出速率
-			"contrailAngularVelocityMult":0, # 必填：航迹角速度飘出速率
-			"contrailColor":[50,50,255,75], # 建议保留：引擎航迹颜色
-
-			"glowSprite":"graphics/fx/engineglow32b.png", # 光带材质
-			"glowOutline":"graphics/fx/engineflame32b.png", # 光带外部材质
-			"omegaMode":true, # 建议开启：光带会在停止加速时切断
-			"glowSizeMult":1, # 光带外扩泛光的大小
-			"glowAlternateColor":[50,50,255,255], # 光带外扩泛光的末端颜色
-
-			"engineColor":[150,50,255,255], # 建议保留
-			"type":"GLOW" # 必填
-		},
-```
-
-`QUAD_STRIP` 使用连续光带，duration 与 width 控制持续和宽度。末端附加宽度缺省为 0.5，显式 0 保持原宽，小于 0 收窄，大于 0 加宽；minSeg 缺省为 5。
-
-`glowSprite`、`glowOutline` 提供材质，glowSizeMult 与 glowAlternateColor 调整泛光。`omegaMode` 让停止加速时切断航迹。当前工匠使用普通 GEAR_TECH，此条目作为可选的光带配置。
-
-引擎槽也能用 `style: "CUSTOM"` 与 `styleSpec` 内联完整风格。此时风格内容直接写在引擎槽中，仍需要该模式的完整字段，并依赖 CUSTOM 保持为保留键。普通制作采用文件中的 ID 引用即可。
-
-## 接到工匠船体
-
-在 `GearIn_artizan.ship` 顶层改为：
+的位置替换为您自定义的舰船风格，例如本例中的：
 
 ```json
   "style": "GEAR_TECH",
 ```
 
-再把每个引擎槽的 `style` 改为：
+即可生效。齿轮工业的每一艘船都需要改这一行，战机也不例外。
 
-```json
-  "engineSlots": [
-    {
-      "location": [ 12.0, -30.0 ],
-      "width": 14,
-      "length": 20,
-      "angle": 0,
-      "style": "GEAR_TECH",
-      "contrailSize": 128
-    }
-  ],
-```
+::: danger 自定义舰船风格的问题
 
-**顶层 style 与引擎槽 style 分别查询两份风格文件。** 本例两者虽然同名，登记与引用仍分别进行。保存后，可以通过舰船编辑器的 "导入 MOD" 加载齿轮工业，直接选择自定义风格。
+自定义的舰船风格，若没有为它单独做一套引擎音效，**则将导致引擎音效直接采用欧米伽系列舰船的引擎音效**。这不是恶性 BUG，但会导致观感错乱或品质降低。
 
-## 验证方案
+在后文设置音效的章节中，您可以重新设置一套引擎音效，见 [C5-S1]。
 
-1. 保存两份风格文件和工匠船体，重启游戏，核对 hull style 与 engine style 的加载记录。
-2. 获取工匠并进入模拟战，移动舰船，观察火焰和烟雾航迹。
-3. 开关护盾、排散、过载并击毁测试目标，比较对应配色与声音。
-4. 回到生涯观察舰队在超空间的光芒与爆炸表现。
-5. 在编辑器导入 MOD，核对自定义风格可选项。
+:::
 
-预期结果：
+## 设置引擎风格
 
-- 护盾、排散、战斗爆炸、引擎与航迹采用当前黄铜色配置。
-- 过载电弧使用缺省蓝紫色，超空间光芒与生涯爆炸采用对应字段。
-- 声音使用原版通用声音集，资源由原版提供。
-- 编辑器可以按自定义 ID 选择风格。
-
-## 接入自定义声音与材质
-
-舰船风格中的九个声音字段分别对应引擎、零幅能加速、EMP、幅能、排散、护盾和爆炸声音集。引擎控制器、护盾与幅能对象在各自的运行阶段读取这些 ID。
-
-材质路径包括 damageDecal、slotCover、dHullOverlay、fluxVent，以及光带的 glowSprite 与 glowOutline。资源在加载时登记，随后供对应表现读取。
-
-当前最小例使用原版声音。需要自定义引擎声时，在 `sounds.json` 中加入：
+引擎风格文件位于 `data/config` 文件夹内的 `engine_styles.json`，它能控制引擎的火焰颜色、航迹颜色、各类粒子效果参数与材质等。同理，尽可能复制粘贴修改原版的引擎风格，比如 `LOW_TECH`：
 
 ```json
 {
-	"GearIn_engine_loop":{ # 声音集 ID，供 hull style 的 engineLoopSet 引用
-		"sounds":[
-			{"file":"sounds/sfx_engines/GearIn_engine_fighter.ogg","pitch":1,"volume":1}, # index: 0
-			{"file":"sounds/sfx_engines/GearIn_engine_frigate.ogg","pitch":1,"volume":1}, # index: 1
-			{"file":"sounds/sfx_engines/GearIn_engine_destroyer.ogg","pitch":1,"volume":1}, # index: 2
-			{"file":"sounds/sfx_engines/GearIn_engine_cruiser.ogg","pitch":1,"volume":1}, # index: 3
-			{"file":"sounds/sfx_engines/GearIn_engine_capital.ogg","pitch":1,"volume":1} # index: 4
-		],
-		"FIGHTER":{"sounds":[0], "pitch":1, "volume":0.2},
-		"FRIGATE":{"sounds":[1], "pitch":1, "volume":0.3},
-		"DESTROYER":{"sounds":[2], "pitch":1, "volume":0.4},
-		"CRUISER":{"sounds":[3], "pitch":1, "volume":0.5},
-		"CAPITAL_SHIP":{"sounds":[4], "pitch":1, "volume":0.6}
+	"GEAR_TECH":{ # 引擎风格 ID，必改
+		"engineColor":[255,155,25,255], # 引擎火焰颜色
+		"engineCampaignColor":[200,120,70,255], # 引擎火焰在大地图的颜色
+		"contrailParticleSizeMult":2, # 引擎航迹大小倍率
+		"contrailParticleDuration":3, # 引擎航迹持续时间
+		"contrailParticleFinalSizeMult":2.5, # 引擎航迹随延长而缩放倍率
+		"contrailMaxSpeedMult":0.5, # 引擎航迹飘出速率
+		"contrailAngularVelocityMult":0.5, # 引擎航迹角速度飘出速率
+		"contrailColor":[50,50,50,50], # 引擎航迹颜色
+		"contrailCampaignColor":[200,120,70,75], # 引擎航迹在大地图的颜色
+		"type":"SMOKE" # 引擎航迹的类型，可以是 GLOW 或 SMOKE，前者类似淡光，后者类似烟雾
 	},
 }
 ```
 
-音频放到 MOD 的 `sounds/` 下，路径对应每个 file；声音集再按船体等级选择数组中的资源。把舰船风格的 `engineLoopSet` 改为 `GearIn_engine_loop`，便将这个声音集用于循环引擎声。其余加速、护盾和排散声音沿同一结构处理，音频准备与播放由第五章继续讲解。
+**引擎风格与舰船风格是两份独立的登记**，同名只是为了好记。`engine_styles.json` 中的 `CUSTOM` 同样是保留键。
 
-**声音集 ID 与音频文件都需要存在。** 风格缺省时使用原版通用集；填写了不存在的自定义集，部署时可能在对应声音对象创建处产生空引用；音频资源路径错误则在加载阶段报错。
+但若您希望做欧米伽型航迹，也可以参考 `OMEGA` 型引擎里多出来的几个项目，适当插入即可：
 
-## 验证方案
+```json
+		"mode":"QUAD_STRIP", # 将引擎航迹改为明显光带的样式
+		"contrailDuration":1.5, # 光带持续时间，对于 QUAD_STRIP 来说该项必须存在
+		"contrailWidthMult":0.67, # 光带宽度，对于 QUAD_STRIP 来说该项必须存在
+		"contrailWidthAddedFractionAtEnd":-1, # 光带尾部的宽度，小于 0 为末端窄，大于 0 为末端宽
+		"contrailMinSeg":5, # 光带每一小节的渲染长度，不建议改动
+		"contrailMaxSpeedMult":1, # 见上文
+		"contrailAngularVelocityMult":0, # 见上文
+		"contrailColor":[50,50,255,75], # 见上文
 
-前置数据：已准备声音集中的 OGG 文件，并登记 GearIn_engine_loop、更新 engineLoopSet。
+		"glowSprite":"graphics/fx/engineglow32b.png", # 光带材质
+		"glowOutline":"graphics/fx/engineflame32b.png", # 光带外部材质
+		"omegaMode":true, # 光带会在停止向前时切断，不设为 true 会导致严重视觉错误
+		"glowSizeMult":1, # 光带外扩泛光的大小
+		"glowAlternateColor":[50,50,255,255], # 光带外扩泛光的末端颜色
+```
 
-1. 保存声音配置与资源，重启游戏，核对声音加载阶段。
-2. 在模拟战中移动工匠，比较新的循环引擎声。
-3. 用其他船体等级重复观察分档音量，再检查护盾与排散声音。
+可见制作欧米伽型航迹并没有什么技术力。这也是为什么您总能看到它被滥用。
 
-预期结果：
+将其简单修改后即可填入您 MOD 中的 `engine_styles.json` 文件，即可开始使用。在您 `.ship` 文件中查找 `engineSlots` 项目，然后将其中的型如：
 
-- 引擎循环播放自有音频，等级分档按配置选择音量。
-- 其他声音字段沿用原版值，护盾、排散和过载仍使用原版声音。
-- 舰船可以正常部署，加载和播放过程对应有效资源。
+```json
+  "style": "LOW_TECH",
+```
 
-## 故障分析
+的位置替换为您自定义的引擎风格，例如本例中的：
 
-- **加载进度条阶段出现风格键或颜色数组错误**：`engine_styles.json` 缺少必填键、颜色数组不足 4 个元素，或 `type` 不是 `GLOW`、`SMOKE` 时，日志会出现 `Key [...] is required`、`invalid value` 或颜色数组错误。`hull_styles.json` 缺少颜色字段时会回退为白色，非法值和 JSON 语法才会中断加载。
-    - **解决方案**：补齐字段后重启。
+```json
+  "style": "GEAR_TECH",
+```
 
-- **加载阶段失败且日志指向 `.ship`**：顶层 `style` 缺失会抛出 `JSONObject["style"] not found.`，引用不存在的 hull style 时会在读取护盾颜色处抛 NPE。
-    - **解决方案**：让 `.ship` 的 `style` 与 `hull_styles.json` ID 逐字一致，重启。
+即可生效。每个引擎槽都有自己的 `style`，一艘船有几个引擎槽就要改几处。
 
-- **`Addship` 部署时抛 NPE 且舰船无法入场**：`engineSlots` 的 `style` 指向未注册的 engine style，战斗实体生成时会取得 null。
-    - **解决方案**：改用已注册 ID 或补齐 `engine_styles.json` 条目，再次部署。
+::: tip 搭配舰船编辑器
 
-- **部署时 NPE 堆栈指向引擎控制器构造链或 `Shield`**：hull style 引用了 `sounds.json` 中不存在的声音集 ID。
-    - **解决方案**：注册对应声音集或改用现有 ID，重新部署。
+在设置完舰船风格和引擎风格后，可以使用舰船编辑器的 `导入 MOD` 功能，将您的 MOD 导入到编辑器内。
 
-- **启动时声音资源加载失败**：`sounds.json` 中的 `.ogg` 路径不存在，或大小写与文件不一致。
-    - **解决方案**：核对 `file` 相对 MOD 根目录的路径，重启。
+即可在编辑器内直接选择您自定义的舰船风格和引擎风格。
 
-- **势力舰队生成时出现风格加载错误**：舰队装配引用的 `.ship` 可能带有损坏的风格或声音集关系。
-    - **解决方案**：沿 `.ship`、风格 ID、声音集 ID 逐层核对，重新生成舰队。
+:::
 
-- **护盾和引擎声音仍像原版风格**：未引用自定义声音集时，hull style 会使用原版通用声音。
-    - **解决方案**：核对 sounds.json 的声音集与风格引用，重新部署。
+### 进游戏核对
 
-## 总结
+保存所有文件并重启游戏，在模拟战或测试战役中部署工匠：
 
-舰船风格负责护盾、损伤、排散、声音与相关材质，引擎风格负责火焰和航迹。两者通过船体的不同 style 字段引用，可以复用同一套势力外观，也可以为特殊船体单独配置。
+- 开盾，护盾内圈是偏暖的橙色；
+- 推进时引擎焰为橙色，身后拖出灰色烟雾航迹；
+- 打满幅能再 V 排，排散外圈为紫色；
+- 回到生涯，在超空间中航行时舰队周围的光芒为橙色。
 
-调整表现时，将注册键、字段、资源和运行位置对应起来。本例先使用原版资源确认配色与模式，再替换所需的材质和声音，每次改动就有明确的观察对象。
+## 常见问题
+
+- **加载时报 `JSONObject["style"] not found.`**：`.ship` 文件顶层缺少 `style`。
+    - **解决方案**：补上 `"style": "GEAR_TECH"`，保存后重启。
+
+- **加载时报空指针，日志指向 `.ship`**：`.ship` 的 `style` 与 `hull_styles.json` 中的 ID 不一致。
+    - **解决方案**：让两处 ID 逐字一致，保存后重启。
+
+- **游戏能进主菜单，部署舰船时报空指针**：引擎槽的 `style` 指向了 `engine_styles.json` 中不存在的 ID，或舰船风格的某个音效字段指向了 `sounds.json` 中不存在的声音集。
+    - **解决方案**：核对引擎槽的 `style` 与九个音效字段，保存后重启。
+
+- **加载时报 `Key [...] is required` 或 `invalid value`**：引擎风格缺少必填字段，或 `type` 不是 `GLOW` 或 `SMOKE`。改为 `QUAD_STRIP` 却漏了 `contrailDuration`、`contrailWidthMult` 也是这个错误。
+    - **解决方案**：按报错补齐字段，保存后重启。
+
+- **护盾或爆炸变成了纯白色**：舰船风格漏了对应的颜色字段。这类缺失不会报错。
+    - **解决方案**：从原版风格补回缺失的颜色字段。
 
 ## 建议参考项
 
-- `data/config/hull_styles.json`：舰船风格字段与保留键。
-- `data/config/engine_styles.json`：粒子、光带与 CUSTOM 内联风格。
-- `data/config/sounds.json`：声音集和船体等级分档。
-- `Starsector/starsector-core/starsector.log`：风格加载、部署与播放错误。
+- `data/config/hull_styles.json`：原版舰船风格，护盾与排散颜色的字段写法样本。
+- `data/config/engine_styles.json`：原版引擎风格，`OMEGA` 是光带型航迹的范例。
+- `data/config/sounds.json`：原版声音登记，引擎声音集的写法样本。

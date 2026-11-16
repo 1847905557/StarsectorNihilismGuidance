@@ -1,36 +1,43 @@
 package data.scripts.gearin.campaign;
 
-import org.apache.log4j.Logger;
-
 import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.campaign.econ.MarketAPI;
 import com.fs.starfarer.api.characters.FullName;
 import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Personalities;
+import com.fs.starfarer.api.impl.campaign.ids.Ranks;
 
-public class GearInAdministratorRole {
-    private static final Logger LOG = Global.getLogger(GearInAdministratorRole.class);
+import data.scripts.gearin.GearInModPlugin;
 
-    public void run() {
-        MarketAPI market = Global.getSector().getEconomy().getMarket("GearIn_market_foundry");
-        PersonAPI person = market.getAdmin();
-        if (!"GearIn_admin".equals(person.getId())) {
-            person = createAdministrator();
-        }
-        market.setAdmin(person);
-                person.getStats().refreshGovernedOutpostEffects(market);
-        market.reapplyIndustries();
-        LOG.info(String.format("admin=%s market=%s personality=%s",
-                market.getAdmin().getId(), person.getMarket().getId(),
-                person.getPersonalityAPI().getId()));
+/** Foundry 的管理员 Selene Ward：按固定 ID 创建一次，指派为市场管理员后刷新治理效果与产业。 */
+public final class GearInAdministratorRole {
+
+    public static final String PERSON_ID = "GearIn_admin";
+
+    private GearInAdministratorRole() {
     }
 
-    private PersonAPI createAdministrator() {
-        PersonAPI person = Global.getFactory().createPerson();
-        person.setId("GearIn_admin");
-        person.setName(new FullName("Selene", "Ward", FullName.Gender.FEMALE));
-        person.setFaction("gear_industry");
-        person.setPersonality(Personalities.STEADY);
-        return person;
+    /** Foundry 尚未建立时返回 null。 */
+    public static PersonAPI assign(SectorAPI sector) {
+        MarketAPI market = sector.getEconomy().getMarket(GearInFoundryGenerator.MARKET_ID);
+        if (market == null) {
+            return null;
+        }
+        PersonAPI admin = sector.getImportantPeople().getPerson(PERSON_ID);
+        if (admin == null) {
+            admin = Global.getFactory().createPerson();
+            admin.setId(PERSON_ID);
+            admin.setName(new FullName("Selene", "Ward", FullName.Gender.FEMALE));
+            admin.setFaction(GearInModPlugin.FACTION_ID);
+            admin.setRankId(Ranks.CITIZEN);
+            admin.setPostId(Ranks.POST_ADMINISTRATOR);
+            admin.setPersonality(Personalities.STEADY);
+            sector.getImportantPeople().addPerson(admin);
+        }
+        market.setAdmin(admin);
+        admin.getStats().refreshGovernedOutpostEffects(market);
+        market.reapplyIndustries();
+        return admin;
     }
 }

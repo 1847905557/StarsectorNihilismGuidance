@@ -1,32 +1,68 @@
 # 详解武器动画
 
-本节制作一门带主体动画与独立炮管的测试武器。四帧贴图表现主体动作，炮管在开火时后坐，脚本让动画覆盖充能、开火与冷却，完全闲置后回到第 0 帧。资源准备、数据设置与播放控制共同决定最后的画面。
+如果只依靠 `.wpn` 里写死的数值，大概很难作出什么更为复杂的动画，而一些简单的平移也必须用麻烦的多帧图片处理。这些问题则可以借助 `AnimationAPI` 解决。
 
-_本节预期阅读时间：\~10 分钟。_
+---
+
+_本节预期阅读时间：\~12 分钟。_
 
 _本节预期操作时间：\~15 分钟。_
 
-## 学习目标
-
-完成后，您将能够：
-
-- 配置连续编号的多帧武器贴图；
-- 设置多帧武器的播放条件；
-- 使用 `visualRecoil` 配置炮管后坐；
-- 用 `AnimationAPI` 控制动画并定位故障。
-
 ## 前置知识
 
-- [C1-S5] 的武器 CSV、`.wpn` 和弹体基础字段；
+- [C1-S5] 的武器 CSV、`.wpn` 与弹体基础字段；
 - [C5-S1] 的 `GearIn_weapon_fire` 声音登记；
-- [C6-S2] 的 JAR 构建与游戏加载；
-- [C8-S3] 的武器每帧脚本与实例状态。
+- [C8-S3] 的武器每帧脚本，以及效果实例只属于一把武器这一点。
 
-## 准备帧图与炮管
+## 武器动画的接口
 
-复制都林的 `.wpn` 与 `weapon_data.csv` 行，将新武器 ID 改为 `GearIn_test_rotor`，名称为 "旋转测试炮"。伤害等数值沿用都林，槽位尺寸在 `.wpn` 中改为 `MEDIUM`。本例集中处理动画，弹体与声音继续使用既有登记。
+武器的贴图与帧播放分成三层，各由不同的对象管：
 
-主体动画由连续帧图组成。炮塔与硬点分别准备四帧，放在 `graphics/weapons/` 下：
+| 对象 | 取得方式 | 管什么 |
+| --- | --- | --- |
+| 帧播放 | `weapon.getAnimation()` | 当前第几帧、帧率、播放与暂停 |
+| 贴图 | `weapon.getSprite()` | 当前这一帧的贴图对象，颜色与透明度 |
+| 炮塔朝向 | `weapon.getCurrAngle()` / `setFacing(...)` | 武器整体指向 |
+
+`AnimationAPI` (`com.fs.starfarer.api.AnimationAPI`) 的方法正好覆盖帧播放这一层：
+
+```java
+public interface AnimationAPI {
+	/**
+	 * @return Index of current animation frame, 0-based.
+	 */
+	int getFrame();
+
+	int getNumFrames();
+	void setFrame(int frame);
+
+	void play();
+	void pause();
+
+	/**
+	 * Reset the pause/play state and let the animation behave normally.
+	 */
+	void reset();
+
+	float getAlphaMult();
+	void setAlphaMult(float alphaMult);
+
+	float getFrameRate();
+	void setFrameRate(float frameRate);
+}
+```
+
+**静态贴图的武器，`getAnimation()` 返回 `null`**，这是本节脚本第一件事就判空的原因。
+
+**`weapon.getSprite()` 返回的贴图不能设角度与透明度，渲染之前游戏会把这两项覆盖掉。**
+
+要在每帧脚本里改朝向，用 `weapon.setFacing(...)`，原版 `SensorDishRotationEffect` 就是这么做的。改颜色走 `SpriteAPI.setColor(...)`，透明度用其中的 alpha 通道。全树 `impl/combat/` 下 `setCurrAngle(...)` 一次都没被调用过。
+
+## 准备帧图
+
+本节制作 "旋转测试炮"，ID 为 `GearIn_test_rotor`，中型实弹武器。它复制都林的 CSV 行，伤害与弹体沿用都林，`GearIn_test_rotor` 只在外观上与都林不同。
+
+主体动画由连续编号的帧图组成。贴图不必自己画：原版旋转炮 `graphics/weapons/rotary/` 下已有现成的四帧，炮塔为 44 × 44，硬点为 30 × 42。复制到 `graphics/weapons/` 并改名：
 
 ```text
 GearIn_test_rotor_turret00.png
@@ -39,23 +75,22 @@ GearIn_test_rotor_hardpoint02.png
 GearIn_test_rotor_hardpoint03.png
 ```
 
-各帧画布与对齐点保持一致，图像内容表现旋转或位移。引擎先读取 `00.png` 基帧，再推导后续编号，所以 **路径以 `00.png` 结尾，编号从 00 连续增加至 `numFrames - 1`**。
+::: caution 帧图路径与编号
 
-基帧缺失会导致武器构造失败，后续帧缺失则让相应画面为空白。路径不含 `00` 时，后续编号也会指向错误资源。
+**`.wpn` 中写的路径必须以 `00.png` 结尾，编号从 00 连续增加到 `numFrames - 1`。** 引擎先读取 `00` 基帧，再按编号推导其余各帧。基帧缺失，武器无法加载；中间某一帧缺失，那一帧显示为空白；路径末尾不是 `00`，后续编号会指向不存在的文件。
 
-另准备 `GearIn_test_rotor_gun.png` 作为独立炮管。主体帧图与炮管承担不同动作：前者切换画面，后者在开火时后坐与复位。保持这两种资源独立，调整动作时也能分别处理。
+:::
 
-## 把动画资源接到武器
+各帧的画布大小与对齐点必须一致，图像内容才能表现旋转。另取 `GearIn_test_rotor_gun.png` 作为独立炮管，本例直接复制都林的后坐贴图。主体帧图负责转动，炮管负责后坐，分开之后调整其中一项不会牵动另一项。
 
-保存 `data/weapons/GearIn_test_rotor.wpn`，沿用都林的弹体 `GearIn_durin_shot` 和第五章登记的 `GearIn_weapon_fire`。本例定义如下：
+## 把帧图接到武器
+
+`data/weapons/GearIn_test_rotor.wpn` 复制自都林的 `.wpn`，动画相关的字段如下，其余字段沿用都林：
 
 ```json
 {
     "id": "GearIn_test_rotor",
-    "specClass": "projectile",
-    "type": "BALLISTIC",
     "size": "MEDIUM",
-    "displayArcRadius": 400,
     "turretSprite": "graphics/weapons/GearIn_test_rotor_turret00.png",
     "hardpointSprite": "graphics/weapons/GearIn_test_rotor_hardpoint00.png",
     "numFrames": 4,
@@ -65,233 +100,130 @@ GearIn_test_rotor_hardpoint03.png
     "visualRecoil": 10.0,
     "turretGunSprite": "graphics/weapons/GearIn_test_rotor_gun.png",
     "hardpointGunSprite": "graphics/weapons/GearIn_test_rotor_gun.png",
-    "renderHints": ["RENDER_BARREL_BELOW"],
-    "turretOffsets": [10, 0],
-    "turretAngleOffsets": [0],
-    "hardpointOffsets": [15, 0],
-    "hardpointAngleOffsets": [0],
-    "barrelMode": "ALTERNATING",
-    "animationType": "MUZZLE_FLASH",
-    "muzzleFlashSpec": {
-        "length": 30.0,
-        "spread": 16.0,
-        "particleSizeMin": 8.0,
-        "particleSizeRange": 10.0,
-        "particleDuration": 0.35,
-        "particleCount": 12,
-        "particleColor": [255, 155, 105, 185]
-    },
-    "projectileSpecId": "GearIn_durin_shot",
-    "fireSoundTwo": "GearIn_weapon_fire",
     "everyFrameEffect": "data.scripts.gearin.combat.GearInWeaponFrameEffect"
 }
 ```
 
-主体路径指向两组 `00` 基帧，`numFrames` 指定四帧，`frameRate` 指定每秒 12 帧。炮口、弹体与声音仍按 [C1-S5] 的武器关系工作，`everyFrameEffect` 则接到下面的播放控制类。
+`numFrames` 是帧数，`frameRate` 是每秒播放的帧数。`alwaysAnimate` 为 `false`，武器闲置时不会自行播放；`animateWhileFiring` 为 `true`，开火期间自动播放。
 
-### 默认播放与脚本控制
+非零的 `visualRecoil` 让游戏读取 `turretGunSprite` 与 `hardpointGunSprite`，炮管沿炮口方向后坐再复位，主体仍使用自己的帧图。**视觉后坐与射击散布分别计算**，散布仍由 `minSpread`、`maxSpread` 等列决定。
 
-`alwaysAnimate` 决定是否在闲置时继续自动播放，`animateWhileFiring` 控制开火期间的自动播放；后者为 `false` 时会显著减慢这一阶段的动画。本例使用 `false` 与 `true`，随后再由脚本明确决定充能、开火、冷却和完全闲置时的播放状态。
+## 让转速随开火变化
 
-编者更倾向于让武器动画表现工作状态。充能、开火与冷却都有动作，完全闲置后回到稳定姿态，玩家才容易从画面辨认武器是否仍在工作。本例据此安排播放条件，帧图的动作幅度则按武器外观继续调整。
+旋转炮的转子有惯性：开火后逐渐加速，停火后继续转一阵才慢慢停下。`.wpn` 中的 `frameRate` 是固定值，做不到这一点，需要由 `EveryFrameWeaponEffectPlugin` 每帧改写帧率。
 
-### 独立炮管的后坐
+`weapon.getAnimation()` 返回 `AnimationAPI`。静态贴图的武器没有动画对象，返回 `null`，调用前必须判空。
 
-定义中的 `visualRecoil` 为 10.0，两种槽位都引用同一张炮管贴图。相关局部字段是：
+脚本的核心是一个转速比例 `spin`，取值 0 到 1：
 
-```json
-{
-    "visualRecoil": 10.0,
-    "turretGunSprite": "graphics/weapons/GearIn_test_rotor_gun.png",
-    "hardpointGunSprite": "graphics/weapons/GearIn_test_rotor_gun.png"
-}
-```
+- 武器正在开火，`spin` 每帧增加 `amount / SPIN_UP_TIME`；
+- 否则每帧减少 `amount / SPIN_DOWN_TIME`；
+- `spin` 降到 0，调用 `pause()` 并用 `setFrame(0)` 回到第 0 帧；
+- 否则把帧率设为 `MAX_FRAME_RATE * spin`，并调用 `play()`。
 
-非零 `visualRecoil` 让游戏读取 `turretGunSprite` 或 `hardpointGunSprite`，炮管沿炮口方向后坐再复位，主体仍使用自己的帧图。只有位移数值却没有炮管资源，无法得到完整的后坐表现。
+`spin` 是效果实例的字段。武器脚本的实例只属于一把武器 ([C8-S3])，多门旋转炮各自保存转速，互不影响。
 
-**视觉后坐与射击散布分别计算。** `visualRecoil` 改变炮管画面，散布继续由 `minSpread`、`maxSpread`、`spreadBuildup` 和 `spreadDecayRate` 决定。验证时分别确认主体帧序列和炮管位移，才能判断是哪一部分未生效。
+**暂停时必须直接返回。** 战斗暂停时 `advance(...)` 仍会被调用，不判断 `engine.isPaused()`，暂停期间转速照常变化，恢复后转子的状态与暂停前不符。
 
-## 在武器实例中控制播放
+加速用 1.5 秒，减速用 2 秒，最高 24 帧 / 秒，是 `.wpn` 中基础帧率 12 的两倍。减速比加速慢，是为了让停火后的余转清晰可见：玩家扫一眼转子，就知道这门炮刚刚开过火，不必再去看弹药或幅能。
 
-创建 `src/data/scripts/gearin/combat/GearInWeaponFrameEffect.java`，实现 `WeaponEffectPluginWithInit` 与 `EveryFrameWeaponEffectPlugin`。前者在武器绑定时执行初始化，后者每帧接收当前 `WeaponAPI`。
+这些数值只管外观，与平衡无关，因此直接写成代码常量，不放进 [C7-S2] 的设置。
 
-### 初始化动画对象
+::: warning reset 不会回到第 0 帧
 
-从 `weapon.getAnimation()` 取得 `AnimationAPI`。静态贴图武器返回 `null`，先记录这一结果；动画武器则记录帧数与帧率。局部片段放在 `init(...)` 中：
-
-```java
-AnimationAPI animation = weapon.getAnimation();
-if (animation == null) {
-    LOG.warn("GearIn weapon animation unavailable: " + weapon.getId());
-    return;
-}
-LOG.info("GearIn weapon animation: " + weapon.getId()
-        + " frames=" + animation.getNumFrames()
-        + " rate=" + animation.getFrameRate());
-```
-
-完整类还调用 `setFrameRate(FRAME_RATE)`，将本实例的速度设为 `12f`。这意味着后续比较播放速度时，要修改这个常量并重新构建，单独调整数据文件中的帧率仍会被初始化代码覆盖。
-
-### 用状态决定播放与静止帧
-
-将以下局部逻辑放入 `advance(...)`。充能、开火或剩余冷却大于 0 时播放，三者都结束后暂停并指定第 0 帧：
-
-```java
-AnimationAPI animation = weapon.getAnimation();
-if (animation != null) {
-    boolean active = weapon.isFiring()
-            || weapon.getChargeLevel() > 0f
-            || weapon.getCooldownRemaining() > 0f;
-    if (active) {
-        animation.play();
-    } else {
-        animation.pause();
-        animation.setFrame(0);
-    }
-}
-```
-
-`play()` 与 `pause()` 控制播放状态，`setFrame(0)` 指定静止姿态。完整类使用 `idleFrameApplied`，只在进入完全闲置时重置一次；`lastReportedFrame` 在帧号变化时记录，`wasFiring` 在开火状态变化时记录。
-
-这些字段属于每把武器的效果实例，沿用 [C8-S3] 的对象范围。多门测试炮可以各自保留帧号和开火状态，日志也按武器 ID 对应。
-
-## 进一步调整动画
-
-`getFrame()` 读取当前帧，`getNumFrames()` 读取总帧数。`getFrameRate()` 与 `setFrameRate(...)` 用于比较和修改速度，`getAlphaMult()` 与 `setAlphaMult(...)` 用于动画透明度。
-
-::: warning reset 不会指定第 0 帧
-
-`reset()` 恢复配置驱动的默认播放状态。要回到第 0 帧，调用 `setFrame(0)`；要停止在这个姿态，还要配合 `pause()`。本例的闲置分支分别完成这两项操作。
+`AnimationAPI.reset()` 恢复的是配置驱动的默认播放状态，不会指定帧号。要停在第 0 帧，需要 `setFrame(0)` 配合 `pause()`，本例在 `spin` 降到 0 时完成这两步。
 
 :::
 
-透明度也通过动画对象调整。武器 `getSprite()` 返回的对象会在渲染前被引擎重新设置角度和透明度，直接在那份 Sprite 上设置这些属性，不能作为持续效果的依据。
+## 完整的转子脚本
 
-帧号日志确认播放次序，画面确认动作与对齐。帧序列能够正常循环之后，再比较帧率和动作幅度，这时改变的是动画表现，而非文件读取或播放入口。
-
-## 完整最小例
-
-保存为 `src/data/scripts/gearin/combat/GearInWeaponFrameEffect.java`，`.wpn` 的 `everyFrameEffect` 保留前面的完整类名。
-
-::: details 完整成品：GearInWeaponFrameEffect
+`src/data/scripts/gearin/combat/GearInWeaponFrameEffect.java`：
 
 ```java
 package data.scripts.gearin.combat;
 
-import org.apache.log4j.Logger;
-
 import com.fs.starfarer.api.AnimationAPI;
-import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.EveryFrameWeaponEffectPlugin;
 import com.fs.starfarer.api.combat.WeaponAPI;
-import com.fs.starfarer.api.combat.WeaponEffectPluginWithInit;
 
-public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
-        EveryFrameWeaponEffectPlugin {
-    private static final Logger LOG = Global.getLogger(GearInWeaponFrameEffect.class);
-    private static final float FRAME_RATE = 12f;
+/** 旋转测试炮的转子：连续开火时转速逐渐升高，停火后逐渐降低，完全停下后回到第 0 帧。 */
+public class GearInWeaponFrameEffect implements EveryFrameWeaponEffectPlugin {
 
-    private int lastReportedFrame = -1;
-    private boolean idleFrameApplied = false;
-    private boolean wasFiring = false;
+    /** 转速最高时的帧率。 */
+    private static final float MAX_FRAME_RATE = 24f;
 
-    @Override
-    public void init(WeaponAPI weapon) {
-        AnimationAPI animation = weapon.getAnimation();
-        if (animation == null) {
-            LOG.warn("GearIn weapon animation unavailable: " + weapon.getId());
-            return;
-        }
-        animation.setFrameRate(FRAME_RATE);
-        LOG.info("GearIn weapon animation: " + weapon.getId()
-                + " frames=" + animation.getNumFrames()
-                + " rate=" + animation.getFrameRate());
-    }
+    /** 从静止加速到最高转速所需的开火时间，单位秒。 */
+    private static final float SPIN_UP_TIME = 1.5f;
+
+    /** 从最高转速减速到静止所需的时间，单位秒。 */
+    private static final float SPIN_DOWN_TIME = 2f;
+
+    /** 当前转速比例，0 为静止，1 为最高转速。每把武器各有一个实例。 */
+    private float spin = 0f;
 
     @Override
     public void advance(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
+        if (engine.isPaused()) {
+            return;
+        }
         AnimationAPI animation = weapon.getAnimation();
-        if (animation != null) {
-            boolean active = weapon.isFiring()
-                    || weapon.getChargeLevel() > 0f
-                    || weapon.getCooldownRemaining() > 0f;
-            if (active) {
-                animation.play();
-                idleFrameApplied = false;
-            } else {
-                animation.pause();
-                if (!idleFrameApplied) {
-                    animation.setFrame(0);
-                    idleFrameApplied = true;
-                    LOG.info("GearIn weapon animation idle: " + weapon.getId());
-                }
-            }
-            if (animation.getFrame() != lastReportedFrame) {
-                LOG.info("GearIn weapon animation frame: " + weapon.getId()
-                        + " frame=" + animation.getFrame()
-                        + "/" + animation.getNumFrames());
-                lastReportedFrame = animation.getFrame();
-            }
+        if (animation == null) {
+            return;
         }
-        if (weapon.isFiring() && !wasFiring) {
-            LOG.info("GearIn weapon animation firing: " + weapon.getId());
+        if (weapon.isFiring()) {
+            spin = Math.min(1f, spin + amount / SPIN_UP_TIME);
+        } else {
+            spin = Math.max(0f, spin - amount / SPIN_DOWN_TIME);
         }
-        wasFiring = weapon.isFiring();
+        if (spin <= 0f) {
+            animation.pause();
+            animation.setFrame(0);
+        } else {
+            animation.setFrameRate(MAX_FRAME_RATE * spin);
+            animation.play();
+        }
     }
 }
 ```
 
-:::
+## 登记武器
 
-## 验证方案
+`data/weapons/weapon_data.csv` 复制都林的整行，名称改为 `旋转测试炮`，ID 改为 `GearIn_test_rotor`，其余列不动。伤害、弹体与声音全部沿用都林，`GearIn_weapon_fire` 已在 [C5-S1] 登记。
 
-前置数据：[C4-S1] 的 `GearIn_test` 与可安装中型实弹武器的工匠装配。
+### 进游戏核对
 
-1. 保存数据、贴图与源码，执行 `gradle jar`，确认 JAR 包含 `GearInWeaponFrameEffect.class`，重启游戏。
-2. 检查炮塔和硬点贴图均存在 `00` 至 `03` 帧。
-3. 在装配界面安装旋转测试炮，进入战斗，确认日志记录 `frames=4` 和 `rate=12`。
-4. 武器闲置时确认停在第 0 帧，充能、开火或冷却时确认帧号循环变化。
-5. 把 `FRAME_RATE` 改为 `6f`，构建并重启再测试，比较同一组帧图的播放速度与 `rate=6` 日志；比较完恢复 `12f`。
-6. 设置 `visualRecoil` 和炮管贴图，确认开火时炮管发生视觉位移。
+执行 `gradle jar`，重启游戏，在模拟战的装配界面给工匠的中型实弹槽装上旋转测试炮。
 
-预期结果：
+- 武器闲置时，转子停在第 0 帧，画面不动。
+- 开火后转子逐渐加速，约 1.5 秒后达到最高转速。停火后继续转约 2 秒才停下，并回到第 0 帧。
+- 开火时炮管沿炮口方向后坐再复位，转子转动与炮管后坐互不影响。
+- 暂停战斗，转子保持暂停瞬间的状态；恢复后从该状态继续。
 
-- `jar tf jars/GearIndustry.jar` 的输出包含 `GearInWeaponFrameEffect.class`；
-- 炮塔和硬点贴图均存在 `00` 至 `03` 帧；
-- 进入测试战斗后，日志记录 `frames=4` 和 `rate=12`；
-- 武器闲置时停在第 0 帧，充能、开火或冷却时帧号循环变化；
-- `FRAME_RATE` 为 6 时，帧序列速度为原来的一半，初始化日志同时记录 6；
-- 设置 `visualRecoil` 与炮管贴图后，开火时炮管发生视觉位移。
+## 常见问题
 
-## 故障分析
+- **武器无法加载，日志报找不到贴图**：`turretSprite` 或 `hardpointSprite` 的路径没有以 `00.png` 结尾，或者基帧文件缺失。
+    - **解决方案**：路径改为 `00.png`，并按 `numFrames` 补齐连续编号的帧文件。
 
-- **武器加载时基帧读取失败**：路径没有以 `00.png` 结尾或基帧缺失。
-    - **解决方案**：将 `turretSprite` 和 `hardpointSprite` 改为 `00.png` 基路径，并按连续编号补齐帧文件。
+- **转子某一时刻闪出空白帧**：中间某个编号的帧图缺失。
+    - **解决方案**：核对炮塔与硬点各自的 `00` 至 `03`，两组都要齐全。
 
-- **`getAnimation()` 返回 `null`**：武器按静态贴图创建。
-    - **解决方案**：检查 `numFrames` 是否大于 1，并在调用动画方法前保留判空。
+- **转子完全不动**：`getAnimation()` 返回 `null`，脚本在判空处直接返回了。
+    - **解决方案**：检查 `numFrames` 是否大于 1，以及 `.wpn` 的贴图路径是否指向帧图。
 
-- **完全闲置时动画持续播放**：默认自动播放或脚本未执行闲置分支。
-    - **解决方案**：将 `alwaysAnimate` 设为 `false`，并在闲置分支调用 `pause()` 与 `setFrame(0)`。
+- **停火后转子一直转，不回到第 0 帧**：`alwaysAnimate` 被设为 `true`，或者脚本没有接入。
+    - **解决方案**：把 `alwaysAnimate` 设为 `false`，并确认 `everyFrameEffect` 的类名写的是完整包路径。
 
-- **开火后动画仍停在第 0 帧**：播放开关或脚本分支没有接入。
-    - **解决方案**：在充能或开火分支调用 `play()`，并确认 `animateWhileFiring` 为 `true`。
+- **炮管没有后坐**：`visualRecoil` 为 0，或者炮管贴图缺失。
+    - **解决方案**：同时配置非零的 `visualRecoil` 与 `turretGunSprite`、`hardpointGunSprite`。
 
-- **炮管没有视觉后坐**：位移量或炮管贴图缺失。
-    - **解决方案**：同时配置非零 `visualRecoil` 与 `turretGunSprite` 或 `hardpointGunSprite`。
-
-- **日志每帧刷屏**：每次回调都无条件记录。
-    - **解决方案**：只在帧号变化或开火边沿记录日志，不要在每次 `advance(...)` 中无条件输出。
-
-## 总结
-
-旋转测试炮已经将连续帧图、独立炮管与武器状态接在一起。基帧和编号决定资源怎样加载，后坐字段决定炮管怎样移动，实例脚本决定何时播放、何时返回静止帧。
-
-技术关系成立之后，帧内容、速度与动作幅度仍要共同服务武器的外观。修改帧率时也要对应实际控制位置，本例由初始化中的常量指定速度。
+- **暂停后转子状态与暂停前不符**：`advance(...)` 没有在暂停时返回。
+    - **解决方案**：在方法开头判断 `engine.isPaused()`。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.AnimationAPI`：帧读取、播放控制和帧率设置；
-- `com.fs.starfarer.api.combat.WeaponAPI`：`getAnimation()`、武器状态和贴图访问；
-- `com.fs.starfarer.api.loading.ProjectileWeaponSpecAPI`：`getVisualRecoil()`。
+- `com.fs.starfarer.api.AnimationAPI`：帧读取、播放控制与帧率设置。
+- `com.fs.starfarer.api.combat.WeaponAPI`：`getAnimation()` 与武器的开火状态。
+- `com.fs.starfarer.api.combat.EveryFrameWeaponEffectPlugin`：武器每帧脚本的接口。
+- `data/weapons/chaingun.wpn`：原版旋转炮的 `numFrames` 与 `frameRate` 写法。
+- `graphics/weapons/rotary/`：本节复制的四帧图来源。

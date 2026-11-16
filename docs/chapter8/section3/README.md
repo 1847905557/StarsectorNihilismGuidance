@@ -1,345 +1,311 @@
 # 配置武器脚本
 
-武器持续开火、弹体生成、命中与光束照射，会在不同位置调用脚本。本节将这些入口分别绑定到都林和乌里，用日志记录武器状态、射弹来源与伤害结算，再以光束末端的粒子对应逐帧信息。每段逻辑都使用本次回调提供的对象。
+是，我们之前是讲过武器脚本。但那个太简单了。现在我们 Java-ic 一点。
+
+武器脚本实际上是好几种不同脚本的统称，每帧运行、一次性都有。`OnHitEffectPlugin` 已经是老面孔了，而 `OnFireEffectPlugin` 和它自然也很相似。至于最后那个，您大概也对于武器每帧脚本有些猜测了 —— 它实际上就是一个更为微缩化的战斗每帧脚本。
+
+---
 
 _本节预期阅读时间：\~18 分钟。_
 
-_本节预期操作时间：\~25 分钟。_
-
-## 学习目标
-
-完成后，您将能够：
-
-- 选择 `wpn` 或 `proj` 的对应脚本字段；
-- 读取当前武器、射弹、命中与光束参数；
-- 区分每实例状态和单次事件；
-- 用日志与粒子核对调用。
+_本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C1-S5] 的都林弹体与乌里光束；
-- [C2-S4] 的效果登记；
-- [C6-S2] 的编译与 JAR；
-- [C8-S1] 的对象和帧状态；
-- [C8-S1] 的逐帧与暂停。
+- [C2-S4] 的都林命中效果 `GearInDurinOnHitEffect` 与弹体文件的 `onHitEffect`；
+- [C8-S2] 的来源 ID 与覆盖规则。
 
-## 将脚本绑定到实际使用的数据
+## 武器脚本的挂点
 
-### 武器脚本字段速查表
+数据文件上有三个字段指向脚本类，分别在武器文件和弹体文件里：
 
-| 字段                   | 接口                           | 当前用途               |
-| ---------------------- | ------------------------------ | ---------------------- |
-| `wpn.everyFrameEffect` | `EveryFrameWeaponEffectPlugin` | 读取当前武器的持续状态 |
-| `proj.onFireEffect`    | `OnFireEffectPlugin`           | 弹体生成后的事件       |
-| `proj.onHitEffect`     | `OnHitEffectPlugin`            | 当前命中与结算         |
-| `wpn.beamEffect`       | `BeamEffectPlugin`             | 激活光束的逐帧信息     |
+| 字段 | 所在文件 | 接口 | 调用时机 |
+| --- | --- | --- | --- |
+| `everyFrameEffect` | 武器 `.wpn` | `EveryFrameWeaponEffectPlugin` | 每帧一次，在这门炮本帧的操作之前 |
+| `onFireEffect` | 弹体 `.proj` | `OnFireEffectPlugin` | 每发弹体生成时 |
+| `onHitEffect` | 弹体 `.proj` | `OnHitEffectPlugin` | 每发弹体命中之后 |
 
-**`.wpn` 绑定武器与光束逻辑，`.proj` 绑定弹体事件。** 完整类名指向 JAR 中的实现，但还要由当前武器实际使用这份数据。特别是生成与命中脚本，登记在武器引用的弹体文件里，事件才能到达对应类。
-
-## 记录武器实例的开火过程
-
-在都林的 `.wpn` 中，将每帧效果绑定到 `GearInWeaponFlowEffect`。局部字段如下：
-
-```json
-"everyFrameEffect": "data.scripts.gearin.combat.GearInWeaponFlowEffect"
-```
-
-每把武器拥有自己的效果实例，所以它的计时器与 `wasFiring` 只跟踪当前这把武器。绑定时，`WeaponEffectPluginWithInit.init(...)` 记录武器标识、规格与光束分类。
-
-随后在 `advance(...)` 中比较当前与上次开火状态。由未开火转为开火时，记录一次变化，再保存本帧状态：
+接口本身都很小。`EveryFrameWeaponEffectPlugin` 只有一个方法，它在本帧武器操作之前调用：
 
 ```java
-if (weapon.isFiring() && !wasFiring) {
-    LOG.info("GearIn weapon " + weapon.getId() + " started firing"
-            + " (before-frame callback)");
+public interface EveryFrameWeaponEffectPlugin {
+	/**
+	 * Called before this frame's operations for the weapon - turning, firing, etc.
+	 * @param amount
+	 * @param engine
+	 * @param weapon
+	 */
+	void advance(float amount, CombatEngineAPI engine, WeaponAPI weapon);
 }
-wasFiring = weapon.isFiring();
 ```
 
-这个比较只在开始开火时产生日志。持续射击中的弹药、冷却与蓄力，放到 `EveryFrameWeaponEffectPluginWithAdvanceAfter.advanceAfter(...)` 记录；本例采用 2 秒报告间隔，避免连续输出淹没开火变化。
-
-**同一帧操作前后，读到的武器状态可能不同。** `advanceAfter(...)` 提供武器本帧操作完成后的观察位置，因此两个方法分别记录变化与执行后的结果。
-
-## 在生成回调处理本次弹体
-
-都林引用的是 `GearIn_durin_shot.proj`，将生成脚本登记在这份文件中：
-
-```json
-"onFireEffect": "data.scripts.gearin.combat.GearInShotOnFireEffect"
-```
-
-`onFire(...)` 收到刚生成的 `projectile`、来源 `weapon` 与本场 `engine`。规格、伤害、EMP 与来源都可以在这个时机读取，生成位置也可用于安排单次表现。接口参数为：
+`OnFireEffectPlugin` 与 `OnHitEffectPlugin` 各只有一个方法，参数里没有武器状态，只有这一发弹体：
 
 ```java
-void onFire(DamagingProjectileAPI projectile,
-            WeaponAPI weapon,
-            CombatEngineAPI engine)
+public interface OnFireEffectPlugin {
+	void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon, CombatEngineAPI engine);
+}
+
+public interface OnHitEffectPlugin {
+	void onHit(DamagingProjectileAPI projectile, CombatEntityAPI target, Vector2f point, boolean shieldHit,
+			ApplyDamageResultAPI damageResult, CombatEngineAPI engine);
+}
 ```
 
-完整例将这些信息写入同一条记录。来源武器或舰船可能因创建方式不同而缺席，日志保留相应空值。每次开火事件传入的是本次生成的弹体，下一发继续使用下一次参数。
-
-## 从命中参数读取结算
-
-在同一份弹体文件中登记命中效果：
-
-```json
-"onHitEffect": "data.scripts.gearin.combat.GearInShotOnHitEffect"
-```
-
-弹体命中后，`onHit(...)` 接收目标、命中位置、护盾状态与 `ApplyDamageResultAPI`。`shieldHit` 标记是否命中护盾，`damageResult` 提供本次护盾、装甲、结构与 EMP 结算：
+一门炮把这三个接口全用上，也不奇怪。原版现实干扰器就是一个类同时实现三个：
 
 ```java
-void onHit(DamagingProjectileAPI projectile,
-           CombatEntityAPI target,
-           Vector2f point,
-           boolean shieldHit,
-           ApplyDamageResultAPI damageResult,
-           CombatEngineAPI engine)
+/**
+ * IMPORTANT: will be multiple instances of this, as this doubles as the every frame effect and the on fire effect (same instance)
+ * But also as the visual for each individual shot (created via onFire, using the non-default constructor)
+ */
+public class RealityDisruptorEffect implements OnFireEffectPlugin, OnHitEffectPlugin, EveryFrameWeaponEffectPlugin {
 ```
 
-射弹、导弹与光束脉冲的对应命中都可以沿弹体事件处理。**目标与结果使用本次回调参数。** 它们一起描述当前这笔命中，保留上一次的目标或结算来处理下一次事件，会混淆实际结果。
+本节最要紧的一条规则：**武器的 `everyFrameEffect` 同时实现 `OnFireEffectPlugin` 时，游戏在同一个实例上调用 `onFire(...)`。** 两个接口的方法是同一个对象上的两个方法。
 
-## 在照射期间读取光束
+## 实例归谁所有
 
-乌里光束的逐帧脚本登记在 `.wpn`：
+三个接口的实例来源不一样，这决定了字段能存什么：
 
-```json
-"beamEffect": "data.scripts.gearin.combat.GearInBeamLogger"
-```
+| 接口 | 实例数量 | 存活范围 |
+| --- | --- | --- |
+| `EveryFrameWeaponEffectPlugin` | 每门武器一个 | 从武器创建到被摧毁 |
+| `OnFireEffectPlugin`(登记在 `.proj`) | 每种弹体一个 | 整场战斗，这种弹体的全部弹体共用 |
+| `OnHitEffectPlugin` | 每种弹体一个 | 整场战斗，这种弹体的全部弹体共用 |
 
-光束激活期间，`advance(...)` 接收步长、引擎与 `BeamAPI`。起点、终点、长度、伤害和目标都从这次传入的光束读取：
+**每门武器一个实例，所以每帧效果可以用字段保存这门炮自己的状态。** 工匠的两门都林各有自己的每帧效果对象，从战斗开始到这门炮被打坏，始终是同一个。
+
+**弹体文件上的效果由这种弹体的全部弹体共用。** 两门都林射出的每一发都调用同一个对象，这个对象拿不到单发弹体的信息。原版的命中效果类因此几乎都不保存字段：共用的对象上存不下单发弹体的信息。
+
+这条差别决定了效果的写法。要在某个位置累积状态，状态必须放在每门炮一个的那个实例上；要处理单发弹体，只能在 `onFire(...)` 或 `onHit(...)` 的参数里动手，不留在字段里。
+
+## 命中回调的时序
+
+`onHit(...)` 的 `damageResult` 是本次命中**已经结算**的结果，不是待修改的输入。`ApplyDamageResultAPI` 上的取值方法读的是算完之后的数字。
+
+**要改一发弹体的伤害，必须在它命中之前，也就是开火时。** 命中回调拿到的伤害已经是定局，那里能做的只有追加新的伤害，改不了这一发本身。
+
+`setDamageAmount(...)` 改的是单发弹体上的数值，不涉及 [C8-S2] 的舰船数值表，因此不需要来源 ID，也不会有多个来源叠在一起的问题。弹体一旦生成，它的伤害就固定下来，飞行途中再改其他东西也不影响它。
+
+## 从弹体找回到武器
+
+共用实例上的 `onHit(...)` 拿到的是弹体，而它需要更新某门炮的状态。这条路只有两步：
 
 ```java
-void advance(float amount, CombatEngineAPI engine, BeamAPI beam)
+WeaponAPI weapon = projectile.getWeapon();
+if (weapon != null && weapon.getEffectPlugin() instanceof 效果类) {
+    ((效果类) weapon.getEffectPlugin()).doSomething();
+}
 ```
 
-完整类每累计 1 秒记录目标、`didDamageThisFrame()` 与长度，再在上一帧末端位置创建青色光点。日志对应帧状态，粒子对应读取的末端位置。光束停止激活后更新停止，下一次激活沿实例中的计时继续。
+`projectile.getWeapon()` 返回发射这一发弹体的那门炮，那门炮可能为 `null`，例如通过 API 直接生成的弹体。`weapon.getEffectPlugin()` 返回这门炮的 `everyFrameEffect` 实例，也就是那个每门炮只有一个、能保存状态的对象。
 
-**光束在画面中存在，不代表每一帧都产生伤害。** 比较命中与未命中时，重新读取 `getDamageTarget()` 和 `didDamageThisFrame()`，才能把持续照射与本帧结算区分开。
+转换前用 `instanceof` 判断是必须的：这份弹体可能被别的武器引用，而那门炮上挂的未必是同一个类。少了这一步，遇到别的武器就会抛 `ClassCastException`。
 
-## 完整最小例
+这两步合起来，是 "共用如何回到某一门具体的炮" 的标准解法。任何需要在命中时更新单门武器状态的效果，都走这条路径。
 
-四个类保存到 `src/data/scripts/gearin/combat/`，当前字段写入对应都林和乌里数据，保存后构建并重启。
+## 都林叠层
 
-::: details 完整成品：`GearInWeaponFlowEffect`
+前面讲的是这一套机制的通用规则。现在给一个具体的用场：都林对同一个目标连续命中，伤害一层层叠上去，换一个目标就从头算。这种效果只属于这一门炮，船插那种对整艘船一视同仁的写法用不上。
+
+都林每发弹体造成 35 点伤害。本节为它增加一项叠层效果：同一门都林连续命中同一艘舰船的船体时，每层提高 10% 伤害，最多 5 层。更换目标或超过 2 秒没有命中，层数归零。
+
+按上面的规则分配，三个位置各承担一部分：
+
+- 每帧效果保存这门武器的目标与层数，并负责超时归零；
+- 开火效果在弹体生成时，按当前层数提高这一发的伤害；
+- 命中效果在命中船体之后，通知发射它的那门武器更新层数。
+
+**层数保存在武器的每帧效果中，而不是舰船或目标上。** 两门都林各自叠层，才符合 "一门武器自己的效果" 这一前提。若保存在目标舰船上，两门都林会共用同一个计数，玩家无法判断哪一门在叠加。
+
+## 武器脚本
+
+`src/data/scripts/gearin/combat/GearInDurinStackEffect.java` 同时实现 `EveryFrameWeaponEffectPlugin` 与 `OnFireEffectPlugin`：
 
 ```java
 package data.scripts.gearin.combat;
 
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.EveryFrameWeaponEffectPluginWithAdvanceAfter;
+import com.fs.starfarer.api.combat.DamagingProjectileAPI;
+import com.fs.starfarer.api.combat.EveryFrameWeaponEffectPlugin;
+import com.fs.starfarer.api.combat.OnFireEffectPlugin;
+import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.WeaponAPI;
-import com.fs.starfarer.api.combat.WeaponEffectPluginWithInit;
-import com.fs.starfarer.api.util.IntervalUtil;
 
-/** 记录武器实例的初始化、开火变化和操作后状态。 */
-public class GearInWeaponFlowEffect implements EveryFrameWeaponEffectPluginWithAdvanceAfter,
-        WeaponEffectPluginWithInit {
+/** 都林的叠层：连续命中同一目标时逐层提高伤害，超时或更换目标后归零。 */
+public class GearInDurinStackEffect implements EveryFrameWeaponEffectPlugin, OnFireEffectPlugin {
 
-    private static final Logger LOG = Global.getLogger(GearInWeaponFlowEffect.class);
+    private static final int MAX_STACKS = 5;
+    private static final float DAMAGE_PER_STACK = 0.1f;
+    private static final float RESET_SECONDS = 2f;
 
-    /** 开火状态 (每个武器效果实例各有一份)。 */
-    private boolean wasFiring = false;
-    private final IntervalUtil weaponReportInterval = new IntervalUtil(2f, 2f);
-
-    @Override
-    public void init(WeaponAPI weapon) {
-        LOG.info("GearIn weapon init " + weapon.getId()
-                + " spec=" + weapon.getSpec().getWeaponId()
-                + " beam=" + weapon.isBeam());
-    }
+    private ShipAPI target = null;
+    private int stacks = 0;
+    private float sinceLastHit = 0f;
 
     @Override
     public void advance(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
-        if (weapon.isFiring() && !wasFiring) {
-            LOG.info("GearIn weapon " + weapon.getId() + " started firing"
-                    + " (before-frame callback)");
+        if (engine.isPaused() || stacks == 0) {
+            return;
         }
-        wasFiring = weapon.isFiring();
-    }
-
-    @Override
-    public void advanceAfter(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
-        // 本帧武器操作完成后 (EveryFrameWeaponEffectPluginWithAdvanceAfter)
-        weaponReportInterval.advance(amount);
-        if (weapon.isFiring() && weaponReportInterval.intervalElapsed()) {
-            LOG.info("GearIn weapon " + weapon.getId() + " after-frame:"
-                    + " ammo=" + weapon.getAmmo() + "/" + weapon.getMaxAmmo()
-                    + " cooldown=" + weapon.getCooldownRemaining()
-                    + " charge=" + weapon.getChargeLevel()
-                    + " firing=" + weapon.isFiring());
+        sinceLastHit += amount;
+        if (sinceLastHit > RESET_SECONDS) {
+            target = null;
+            stacks = 0;
         }
     }
-}
-```
-
-:::
-
-::: details 完整成品：`GearInShotOnFireEffect`
-
-```java
-package data.scripts.gearin.combat;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.DamagingProjectileAPI;
-import com.fs.starfarer.api.combat.OnFireEffectPlugin;
-import com.fs.starfarer.api.combat.WeaponAPI;
-
-/** 记录本次生成弹体的规格、来源与伤害。 */
-public class GearInShotOnFireEffect implements OnFireEffectPlugin {
-
-    private static final Logger LOG = Global.getLogger(GearInShotOnFireEffect.class);
 
     @Override
     public void onFire(DamagingProjectileAPI projectile, WeaponAPI weapon, CombatEngineAPI engine) {
-        LOG.info("GearIn onFire " + projectile.getProjectileSpecId()
-                + " weapon=" + (weapon == null ? "null" : weapon.getId())
-                + " source=" + (projectile.getSource() == null ? "null" : projectile.getSource().getHullSpec().getHullId())
-                + " spawnType=" + projectile.getSpawnType()
-                + " damage=" + projectile.getDamageAmount()
-                + " emp=" + projectile.getEmpAmount());
+        if (stacks > 0) {
+            projectile.setDamageAmount(projectile.getDamageAmount() * (1f + stacks * DAMAGE_PER_STACK));
+        }
+    }
+
+    /** 由命中效果在命中船体后调用，更新本武器的层数。 */
+    public void registerHit(ShipAPI hit) {
+        if (hit == target) {
+            stacks = Math.min(MAX_STACKS, stacks + 1);
+        } else {
+            target = hit;
+            stacks = 1;
+        }
+        sinceLastHit = 0f;
     }
 }
 ```
 
-:::
+`advance(...)` 只负责计时。它在每帧的武器操作之前调用。原版的武器效果大多在开头检查 `engine.isPaused()`，这里同样检查，避免暂停期间的时间计入超时。
 
-::: details 完整成品：`GearInShotOnHitEffect`
+`onFire(...)` 读取的是这门武器当前的层数，写入的是刚生成的这一发弹体。同一个实例上的两个方法读同一个 `stacks` 字段，这正是前面那条实例规则带来的便利。
+
+`registerHit(...)` 是本类自己的方法，不是接口要求的。命中效果需要通过它通知武器，所以它必须是 `public`。
+
+## 命中效果通知武器
+
+[C2-S4] 的 `GearInDurinOnHitEffect` 在命中船体时按概率追加爆炸。在它的开头加入通知：
 
 ```java
-package data.scripts.gearin.combat;
-
-import org.apache.log4j.Logger;
-import org.lwjgl.util.vector.Vector2f;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.CombatEntityAPI;
-import com.fs.starfarer.api.combat.DamagingProjectileAPI;
-import com.fs.starfarer.api.combat.OnHitEffectPlugin;
-import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
-
-/** 记录本次命中的目标、护盾与伤害结算结果。 */
-public class GearInShotOnHitEffect implements OnHitEffectPlugin {
-
-    private static final Logger LOG = Global.getLogger(GearInShotOnHitEffect.class);
-
-    @Override
-    public void onHit(DamagingProjectileAPI projectile, CombatEntityAPI target, Vector2f point,
-            boolean shieldHit, ApplyDamageResultAPI damageResult, CombatEngineAPI engine) {
-        LOG.info("GearIn onHit " + projectile.getProjectileSpecId()
-                + " target=" + target.getClass().getSimpleName()
-                + " shieldHit=" + shieldHit
-                + " hull=" + damageResult.getDamageToHull()
-                + " armor=" + damageResult.getTotalDamageToArmor()
-                + " shields=" + damageResult.getDamageToShields()
-                + " emp=" + damageResult.getEmpDamage());
-    }
+WeaponAPI weapon = projectile.getWeapon();
+if (!shieldHit && target instanceof ShipAPI && weapon != null
+        && weapon.getEffectPlugin() instanceof GearInDurinStackEffect) {
+    ((GearInDurinStackEffect) weapon.getEffectPlugin()).registerHit((ShipAPI) target);
 }
 ```
 
-:::
+这四个判断各挡一种情况。`!shieldHit` 挡护盾命中，`target instanceof ShipAPI` 挡命中的不是舰船 (例如命中的是导弹线或导弹)，`weapon != null` 挡没有发射者的弹体，`instanceof` 挡别的武器。
 
-::: details 完整成品：`GearInBeamLogger`
+护盾命中不计入层数。护盾拦截的是弹体，不是船体，若护盾命中也能叠层，玩家对着护盾就能刷满层数，再转向船体。
+
+`src/data/scripts/gearin/combat/GearInDurinOnHitEffect.java`：
 
 ```java
 package data.scripts.gearin.combat;
 
 import java.awt.Color;
 
-import org.apache.log4j.Logger;
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.CombatEntityAPI;
+import com.fs.starfarer.api.combat.DamageType;
+import com.fs.starfarer.api.combat.DamagingProjectileAPI;
+import com.fs.starfarer.api.combat.OnHitEffectPlugin;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.combat.WeaponAPI;
+import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
+
 import org.lwjgl.util.vector.Vector2f;
 
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.BeamAPI;
-import com.fs.starfarer.api.combat.BeamEffectPlugin;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
+/** 都林命中船体时通知武器叠层，并按概率追加一次带音效的高爆爆炸。 */
+public class GearInDurinOnHitEffect implements OnHitEffectPlugin {
 
-public class GearInBeamLogger implements BeamEffectPlugin {
-
-    private static final Logger LOG = Global.getLogger(GearInBeamLogger.class);
-    private static final float REPORT_INTERVAL = 1f;
-
-    private float timeSinceLastReport;
+    private static final float CHANCE = 0.25f;
+    private static final float BONUS_DAMAGE = 20f;
+    private static final Color EXPLOSION_COLOR = new Color(255, 120, 60, 255);
 
     @Override
-    public void advance(float amount, CombatEngineAPI engine, BeamAPI beam) {
-        timeSinceLastReport += amount;
-        if (timeSinceLastReport < REPORT_INTERVAL) {
+    public void onHit(DamagingProjectileAPI projectile, CombatEntityAPI target, Vector2f point,
+            boolean shieldHit, ApplyDamageResultAPI damageResult, CombatEngineAPI engine) {
+        WeaponAPI weapon = projectile.getWeapon();
+        if (!shieldHit && target instanceof ShipAPI && weapon != null
+                && weapon.getEffectPlugin() instanceof GearInDurinStackEffect) {
+            ((GearInDurinStackEffect) weapon.getEffectPlugin()).registerHit((ShipAPI) target);
+        }
+        if (shieldHit || !(target instanceof ShipAPI) || Math.random() > CHANCE) {
             return;
         }
-        timeSinceLastReport = 0f;
-        String target = beam.getDamageTarget() == null
-                ? "null"
-                : beam.getDamageTarget().getClass().getSimpleName();
-        LOG.info("GearIn beam tick target=" + target
-                + " didDamageThisFrame=" + beam.didDamageThisFrame()
-                + " length=" + beam.getLength());
-        engine.addHitParticle(beam.getRayEndPrevFrame(), new Vector2f(),
-                20f, 1f, 0.3f, Color.CYAN);
+        engine.spawnExplosion(point, new Vector2f(), EXPLOSION_COLOR, 40f, 0.3f);
+        Global.getSoundPlayer().playSound("GearIn_durin_burst", 1f, 1f, point, target.getVelocity());
+        engine.applyDamage(target, point, BONUS_DAMAGE, DamageType.HIGH_EXPLOSIVE, 0f, false, false,
+                projectile.getSource());
     }
 }
 ```
 
-:::
+追加爆炸的 20 点伤害不随层数提高。它是 [C2-S4] 的独立效果，与叠层互不干扰，走的是命中回调里 `applyDamage(...)` 那条路，不是 `setDamageAmount(...)`。
 
-## 验证方案
+## 登记脚本
 
-1. 保存四个类与武器／弹体字段，构建并核对 `class` 条目。
-2. 在测试战斗使用都林，查看 `weapon` `init` 和操作前后状态。
-3. 发射并命中目标，比较 `onFire` 的生成参数与 `onHit` 的实际结算。
-4. 使用乌里光束，比较有目标、无目标和当前帧伤害，观察末端青色粒子。
-5. 暂停再恢复，核对实际回调和计时变化。
-6. 搜索四组前缀，按字段、数据文件与完整类名确认调用归属。
+在都林的武器文件 `data/weapons/GearIn_durin.wpn` 中加入 `everyFrameEffect`：
 
-预期结果：
+```json
+"everyFrameEffect": "data.scripts.gearin.combat.GearInDurinStackEffect"
+```
 
-- 每武器实例记录自己的 `init`、开火变化和操作后参数。
-- `onFire` 对应当前生成弹体，`onHit` 对应当前命中与结算。
-- 光束日志按当前帧读取目标和伤害，激活期间按秒记录。
-- 暂停时相关更新保持，恢复后继续当前状态。
-- 日志与视觉可以定位各入口实际使用的对象。
+弹体文件 `GearIn_durin_shot.proj` 只保留 [C2-S4] 的 `onHitEffect`，**不登记 `onFireEffect`**。
 
-## 故障分析
+本节依赖的正是 "同一个实例" 这条规则：`onFire(...)` 与 `advance(...)` 运行在同一个对象上，读的是同一个 `stacks` 字段。若在弹体文件中再登记一次 `onFireEffect`，游戏会为这种弹体另建一个实例，它的 `stacks` 始终为 0，叠层也就永远不会提高伤害。
 
-- **`.wpn` 或 `.proj` 中没有出现任何对应日志**：字段、文件类型或完整类名不正确时，游戏不会调用脚本。
-    - **解决方案**：检查字段名、文件类型和完整类名，确认 JAR 中存在对应的 `.class` 条目。
+原版饥渴裂隙的写法印证了这一点。它的武器文件登记 `everyFrameEffect`，弹体文件里的 `onFireEffect` 被注释掉，文件里写着理由：
 
-- **日志出现 `Problem loading class`**：注册值与 Java 类的实际名称不一致。
-    - **解决方案**：核对 `package`、类名、目录路径和注册字符串，重新构建 JAR。
+```json
+"onHitEffect":"com.fs.starfarer.api.impl.combat.dweller.AssayingRiftEffect",
+#"onFireEffect":"com.fs.starfarer.api.impl.combat.dweller.AssayingRiftEffect", # handled in everyframe in .wpn file
+```
 
-- **`EveryFrame` 只有 `advance` 日志，操作后的状态没有记录**：类没有实现带 `advanceAfter` 的接口，或没有实现对应方法。
-    - **解决方案**：让类实现 `EveryFrameWeaponEffectPluginWithAdvanceAfter`，并实现 `advanceAfter(...)`。
+## 核对叠层
 
-- **`onFire` 或 `onHit` 没有回调**：脚本类没有绑定到测试弹体实际使用的 `.proj`。
-    - **解决方案**：把类名写入 `.proj` 的对应字段，确认测试武器实际使用了该弹体文件。
+层数不显示在界面上，需要一个看得见的标志。临时在 `registerHit(...)` 的末尾加一行浮字，层数变化时显示在目标上方：
 
-- **`BeamEffect` 在非光束武器上没有日志**：`beamEffect` 只对光束武器的激活阶段生效。
-    - **解决方案**：只在光束武器的 `.wpn` 中配置 `beamEffect`，并在光束激活期间观察日志。
+```java
+Global.getCombatEngine().addFloatingText(hit.getLocation(), "stacks " + stacks, 20f, Color.ORANGE,
+        hit, 0f, 0f);
+```
 
-- **光束日志显示上一帧目标或命中状态**：回调中复用了上一帧的对象或状态。
-    - **解决方案**：在每次 `advance(...)` 中重新读取 `didDamageThisFrame()` 和 `getDamageTarget()`，不要跨帧保存对象。
+这行需要导入 `java.awt.Color` 与 `com.fs.starfarer.api.Global`。它只用于核对，确认效果之后删除，浮字不是这项机制的一部分。
 
-- **暂停后恢复时报告时间偏移**：观察计时器在暂停帧继续累计。
-    - **解决方案**：在需要暂停一致性的外层战斗插件中检查 `engine.isPaused()`，只在非暂停帧累计观察时间。
+### 进游戏核对
 
-## 总结
+执行 `gradle jar`，重启游戏，进入测试战役，操控工匠射击敌方舰船的船体。
 
-武器效果保存每把武器的持续状态，开火与命中回调提供本次弹体及结算，光束效果读取激活期间的帧信息。它们分别由武器和弹体数据中的字段接入。
+- 连续命中同一艘舰船时，浮字从 `stacks 1` 逐次增加到 `stacks 5`，此后不再增加。
+- 停火超过 2 秒再开火，浮字回到 `stacks 1`。
+- 转向另一艘舰船，浮字同样回到 `stacks 1`。
+- 命中护盾时不出现浮字，随后命中船体时层数不因护盾命中而增加。
+- 工匠的两门都林各自计数。一门打满 5 层后，另一门的第一次命中仍显示 `stacks 1`。
 
-都林与乌里的日志现在能够对应到这些时机。后续动画和复杂效果沿用同一组入口，在需要的事件中读取对象、计算结果并安排表现。
+确认之后，删除 `registerHit(...)` 中的浮字与对应的 `import`，重新构建。
+
+## 常见问题
+
+- **伤害始终不变**：弹体文件中另外登记了 `onFireEffect`，游戏为它创建了一个层数恒为 0 的新实例。
+    - **解决方案**：删除弹体文件中的 `onFireEffect`，只在武器文件中登记 `everyFrameEffect`。
+
+- **两门都林的层数同步增长**：层数保存在了命中效果的字段里。命中效果由全部都林弹体共用。
+    - **解决方案**：层数只保存在武器的每帧效果中。
+
+- **暂停一段时间后层数归零**：`advance(...)` 没有检查暂停。
+    - **解决方案**：`advance(...)` 开头检查 `engine.isPaused()`。
+
+- **命中时抛出 `ClassCastException`**：直接把 `getEffectPlugin()` 的返回值转换为 `GearInDurinStackEffect`，而命中这一发的不是都林。
+    - **解决方案**：转换前用 `instanceof` 判断。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.EveryFrameWeaponEffectPlugin`：武器级持续回调 (`everyFrameEffect`)；
-- `com.fs.starfarer.api.combat.BeamEffectPlugin`：光束激活期间的逐帧回调 (`beamEffect`)；
-- `com.fs.starfarer.api.combat.OnFireEffectPlugin`：射弹生成回调 (`onFireEffect`)；
-- `com.fs.starfarer.api.combat.OnHitEffectPlugin`：当前命中上下文回调 (`onHitEffect`)；
-- `data/weapons/`：原版武器与弹体定义，`everyFrameEffect`、`beamEffect`、`onFireEffect`、`onHitEffect` 注册字段的原版实例；
-- `Starsector/starsector-core/starsector.log`：核对回调日志的读取位置。
+- `com.fs.starfarer.api.combat.EveryFrameWeaponEffectPlugin`：`advance(...)` 的调用时机。
+- `com.fs.starfarer.api.combat.OnFireEffectPlugin`：弹体生成时的回调参数。
+- `com.fs.starfarer.api.combat.OnHitEffectPlugin`：命中时的回调参数与 `damageResult`。
+- `com.fs.starfarer.api.combat.DamagingProjectileAPI`：`setDamageAmount(...)` 与 `getWeapon()`。
+- `com.fs.starfarer.api.combat.WeaponAPI`：`getEffectPlugin()` 返回武器的 `everyFrameEffect` 实例。
+- `com.fs.starfarer.api.impl.combat.RealityDisruptorEffect`：原版现实干扰器，一个类同时实现三个接口，每帧效果与开火效果是同一个实例。

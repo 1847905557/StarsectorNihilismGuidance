@@ -1,64 +1,45 @@
 package data.scripts.gearin.combat;
 
-import org.apache.log4j.Logger;
-
 import com.fs.starfarer.api.AnimationAPI;
-import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.EveryFrameWeaponEffectPlugin;
 import com.fs.starfarer.api.combat.WeaponAPI;
-import com.fs.starfarer.api.combat.WeaponEffectPluginWithInit;
 
-public class GearInWeaponFrameEffect implements WeaponEffectPluginWithInit,
-        EveryFrameWeaponEffectPlugin {
-    private static final Logger LOG = Global.getLogger(GearInWeaponFrameEffect.class);
-    private static final float FRAME_RATE = 12f;
+/** 旋转测试炮的转子：连续开火时转速逐渐升高，停火后逐渐降低，完全停下后回到第 0 帧。 */
+public class GearInWeaponFrameEffect implements EveryFrameWeaponEffectPlugin {
 
-    private int lastReportedFrame = -1;
-    private boolean idleFrameApplied = false;
-    private boolean wasFiring = false;
+    /** 转速最高时的帧率。 */
+    private static final float MAX_FRAME_RATE = 24f;
 
-    @Override
-    public void init(WeaponAPI weapon) {
-        AnimationAPI animation = weapon.getAnimation();
-        if (animation == null) {
-            LOG.warn("GearIn weapon animation unavailable: " + weapon.getId());
-            return;
-        }
-        animation.setFrameRate(FRAME_RATE);
-        LOG.info("GearIn weapon animation: " + weapon.getId()
-                + " frames=" + animation.getNumFrames()
-                + " rate=" + animation.getFrameRate());
-    }
+    /** 从静止加速到最高转速所需的开火时间，单位秒。 */
+    private static final float SPIN_UP_TIME = 1.5f;
+
+    /** 从最高转速减速到静止所需的时间，单位秒。 */
+    private static final float SPIN_DOWN_TIME = 2f;
+
+    /** 当前转速比例，0 为静止，1 为最高转速。每把武器各有一个实例。 */
+    private float spin = 0f;
 
     @Override
     public void advance(float amount, CombatEngineAPI engine, WeaponAPI weapon) {
+        if (engine.isPaused()) {
+            return;
+        }
         AnimationAPI animation = weapon.getAnimation();
-        if (animation != null) {
-            boolean active = weapon.isFiring()
-                    || weapon.getChargeLevel() > 0f
-                    || weapon.getCooldownRemaining() > 0f;
-            if (active) {
-                animation.play();
-                idleFrameApplied = false;
-            } else {
-                animation.pause();
-                if (!idleFrameApplied) {
-                    animation.setFrame(0);
-                    idleFrameApplied = true;
-                    LOG.info("GearIn weapon animation idle: " + weapon.getId());
-                }
-            }
-            if (animation.getFrame() != lastReportedFrame) {
-                LOG.info("GearIn weapon animation frame: " + weapon.getId()
-                        + " frame=" + animation.getFrame()
-                        + "/" + animation.getNumFrames());
-                lastReportedFrame = animation.getFrame();
-            }
+        if (animation == null) {
+            return;
         }
-        if (weapon.isFiring() && !wasFiring) {
-            LOG.info("GearIn weapon animation firing: " + weapon.getId());
+        if (weapon.isFiring()) {
+            spin = Math.min(1f, spin + amount / SPIN_UP_TIME);
+        } else {
+            spin = Math.max(0f, spin - amount / SPIN_DOWN_TIME);
         }
-        wasFiring = weapon.isFiring();
+        if (spin <= 0f) {
+            animation.pause();
+            animation.setFrame(0);
+        } else {
+            animation.setFrameRate(MAX_FRAME_RATE * spin);
+            animation.play();
+        }
     }
 }

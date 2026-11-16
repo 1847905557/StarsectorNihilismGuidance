@@ -2,13 +2,19 @@
 
 从本节起，我们开始阅读原版代码。您此时不必懂 Java，编者也不打算先教。我们以外行的身份打开原版不稳定喷射器的效果类，逐行推测它在做什么，推测到足以动手的程度，就复制一份，改成齿轮工业自己的船插。
 
-外行的推测当然粗糙，但每一处改动都要进游戏核对。推测错了，游戏会在核对那一步报错或给出不符的数值；在只改几十行短脚本的阶段，这比先系统学习 Java 更省时间。
+外行的推测当然粗糙，但每一处改动都要进游戏核对。推测错了，游戏会在核对那一步报错或给出不符的数值；在只改几十行短脚本的阶段，这比先系统学习 Java 更能为您维持住您的三分钟热情。
 
 ---
 
 _本节预期阅读时间：\~15 分钟。_
 
 _本节预期操作时间：\~20 分钟。_
+
+## 前置知识
+
+- [C1-S1] 的 MOD 文件夹，船插与效果类都放在这个 MOD 里；
+- [C1-S2] 的 Console Commands 与 `Addship`，本节用它们进游戏核对；
+- CSV 的基本写法：列名行、逗号分隔，以及含逗号时用双引号包住字段。
 
 ## 找到原版船插的两部分
 
@@ -187,3 +193,10 @@ name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hid
 
 - **改了数字但航速不变**：修改的是另一份源码，或改完没有重启。
     - **解决方案**：确认编辑的是当前 MOD 中的文件，保存后完整重启游戏。
+
+## 建议参考项
+
+- `data/hullmods/UnstableInjector.java`：本节阅读并复制的原版效果类。
+- `data/hullmods/hull_mods.csv`：原版船插注册表，不稳定喷射器的数据行在其中。
+- `com.fs.starfarer.api.combat.BaseHullMod`：船插效果类的基类，各回调方法的定义在这里。
+- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：`applyEffectsBeforeShipCreation` 等回调修改的舰船数值对象。

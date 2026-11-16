@@ -1,79 +1,62 @@
 # 制作分层渲染插件
 
-本节给玩家舰绘制一个青色标记，让它跟随舰船，并在舰船死亡或离场后结束。贴图由 `SpriteAPI` 绘制，分层插件负责图层、位置和清理。除了画在哪里，还要让视口剔除使用正确的位置，标记才能在镜头移动时正常显示。
+计算机图形学已经超脱了地狱的范畴，升级为了炼狱。
 
-_本节预期阅读时间：\~16 分钟。_
+不过好在我们暂时还不需要进入到那些晦涩难懂的 OpenGL 环节，先用游戏自带的一些方法试试水也是好的。而为了精确地控制渲染的层级，普通的每帧插件是绝对不够的，所以需要一个分层每帧插件。
 
-_本节预期操作时间：\~25 分钟。_
+听上去像绕口令？没关系，当您看到 `CombatEngineLayers` 里的那些层次时，您会感到释然的。
 
-## 学习目标
+---
 
-完成后，您将能够：
+_本节预期阅读时间：\~14 分钟。_
 
-- 继承 `BaseCombatLayeredRenderingPlugin` 并注册分层插件；
-- 在 `settings.json` 注册 Sprite，并使用 `SpriteAPI` 配置和绘制贴图；
-- 根据承载实体、视口和失效状态定位渲染问题。
+_本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C8-S1] 的每帧插件、暂停判断和战斗实例边界；
-- [C8-S1] 的战斗引擎状态；
-- [C8-S1] 的战斗对象与舰船位置；
-- [C4-S1] 的 `GearIn_test` 测试战役；
-- [C6-S2] 的 JAR 构建与游戏加载。
+- [C8-S1] 的 `isEntityInPlay(...)` 与暂停判断；
+- [C8-S2] 的过热冶炉船插与 `advanceInCombat(...)`；
 
-## 准备标记的 Sprite
+## 插件接口
 
-`SpriteAPI` 提供尺寸、颜色与绘制方法，本节直接使用它，OpenGL 的资源与状态在后方专题展开。先把标记贴图登记到 `data/config/settings.json` 的 `graphics` 对象：
+接口叫 `CombatLayeredRenderingPlugin`，注意是 `Combat` 开头，不是 `LayeredRenderingPlugin`：
 
-```json
-{
-  "graphics": {
-    "gearin": {
-      "layered_marker": "graphics/fx/particlealpha32sq.png"
-    }
-  }
+```java
+public interface CombatLayeredRenderingPlugin {
+	public void init(CombatEntityAPI entity);
+	public void cleanup();
+	public boolean isExpired();
+
+	public void advance(float amount);
+	public EnumSet<CombatEngineLayers> getActiveLayers();
+	public float getRenderRadius();
+	public void render(CombatEngineLayers layer, ViewportAPI viewport);
 }
 ```
 
-`gearin` 是分类，`layered_marker` 是代码查找的键，值指向实际图片。本例沿用原版 `graphics/fx/particlealpha32sq.png`。改用自有图片时，填写相对 MOD 根目录的路径，代码中的分类与键可以继续保留。
+接口文件只有 14 行，方法之间是空行。能依据的只有方法名、签名和基类的默认实现，所以每个方法的实际用法要从原版实现里读。
 
-已有 `graphics` 对象时，将 `gearin` 加入其中，避免在同一个 JSON 对象中重复声明 `graphics`。
-
-## 在玩家舰部署后创建标记
-
-创建 `src/data/scripts/gearin/combat/GearInLayeredRenderer.java`，继承 `BaseCombatLayeredRenderingPlugin`。它提供默认实现，我们覆写标记需要的初始化、更新、绘制和结束方法，完整类放在后面。
-
-沿用 [C8-S1] 的 `GearInCombatStatePlugin` 及其登记，增加 `java.awt.Color` 和 `com.fs.starfarer.api.combat.ShipAPI` 的 `import`，字段区加入：
+`init(...)` 收到的是 `CombatEntityAPI`，不是引擎。引擎为插件造一个**承载实体**，插件靠这个实体的位置在战场上定位。接口里没有 `getEntity()`，取回实体是基类额外提供的：
 
 ```java
-private boolean markerCreated;
+protected CombatEntityAPI entity;
+protected CombatEngineLayers layer = CombatEngineLayers.BELOW_INDICATORS_LAYER;
+
+public void init(CombatEntityAPI entity) { this.entity = entity; }
+public CombatEntityAPI getEntity() { return entity; }
+public EnumSet<CombatEngineLayers> getActiveLayers() { return EnumSet.of(layer); }
+public float getRenderRadius() { return 100; }
+public boolean isExpired() { return false; }   // 永不自动消失
+public void render(CombatEngineLayers layer, ViewportAPI viewport) { }   // 空方法
 ```
 
-在 `advance(...)` 绑定引擎之后、暂停判断之前加入局部片段：
+**基类的 `render(...)` 是空的**，子类不重写它，插件什么都不会画。
 
-```java
-if (!markerCreated) {
-    ShipAPI ship = engine.getPlayerShip();
-    if (ship != null) {
-        engine.addLayeredRenderingPlugin(
-                new GearInLayeredRenderer(ship, new Color(0, 255, 255, 180)));
-        markerCreated = true;
-    }
-}
-```
+`isExpired()` 默认返回 `false`，插件不会自己消失。**每加入一个插件就要自己负责让它过期**，否则它会一直留在战斗里。
 
-玩家舰尚未部署时没有可用引用，后续帧继续等待。取得舰船之后创建一份标记，将颜色交给它，并设置 `markerCreated`。**创建成功后停止重复添加。** 若每帧都加一份，重叠标记很快就会把颜色和性能一起改掉。
+## 图层
 
-`addLayeredRenderingPlugin(...)` 让引擎为插件创建承载实体，再将这个实体传给 `init(...)`。它的位置参与绘制和视口剔除，`trackedShip` 则提供舰船位置与存活状态。后面的更新将两者位置同步，完成跟随。
-
-## 决定标记与其他效果的遮挡关系
-
-本例把标记放在 `ABOVE_SHIPS_AND_MISSILES_LAYER`，这样它会显示在舰船和导弹之上。`getActiveLayers()` 返回这个枚举值，`render(...)` 收到的 `layer` 参数就是当前被调用的图层。
-
-### CombatEngineLayers 图层速查表
-
-以下代码块保留完整枚举，便于按照名称查找图层并比较本例的位置：
+`CombatEngineLayers` 是枚举，声明顺序就是绘制顺序，靠后盖住靠前：
 
 ```text
 BELOW_PLANETS
@@ -101,141 +84,99 @@ ABOVE_PARTICLES
 JUST_BELOW_WIDGETS
 ```
 
-枚举声明顺序就是绘制顺序。本例需要盖在舰船与导弹上，因此选取这一层；其他效果则按实际遮挡关系决定位置。
+24 行里 23 个常量，含义靠名字和它们之间的相对位置判断。`PHASED_SHIPS_LAYER` 要在战机之下，否则相位结束时会留下画面残影。
+
+`getActiveLayers()` 返回 `EnumSet`，可以一次声明多个层。引擎在每一个声明的层各调一次 `render(...)`，传进来的 `layer` 参数就是当前这一层，插件据此区分自己这次该画什么。
+
+基类的默认层是 `BELOW_INDICATORS_LAYER`，那是所有舰船之上、指示器之下。要衬在舰体下面，得在构造时传 `BELOW_SHIPS_LAYER`。
+
+## 加入战斗与剔除
+
+`CombatEngineAPI` 上只有一个相关方法：
 
 ```java
-@Override
-public EnumSet<CombatEngineLayers> getActiveLayers() {
-    return EnumSet.of(layer);
-}
+	void removeObject(Object object);
+
+	CombatEntityAPI addLayeredRenderingPlugin(CombatLayeredRenderingPlugin plugin);
 ```
 
-引擎在 `getActiveLayers()` 返回的图层调用 `render(...)`。声明多个层时，每层分别调用一次，方法根据传入的 `layer` 绘制该层内容。
+**它返回的是承载实体，不是插件本身。** 原版的调用点几乎都写成 `CombatEntityAPI e = engine.addLayeredRenderingPlugin(...)`，紧接着 `e.getLocation().set(...)`。返回值丢掉，就没有位置可以设。
 
-## 初始化贴图外观
+移除通道是上面那行 `removeObject(Object)`，把承载实体或者插件传进去。**没有 `removeLayeredRenderingPlugin` 这个方法**，照着名字去找会找不到。
 
-### 取得贴图
+**承载实体的位置决定插件是否被绘制。** 引擎拿这个位置和 `getRenderRadius()` 判断插件在不在镜头内，镜头外的不调用 `render(...)`。默认半径是 `100`，比这更大的图形必须自己给出真实尺寸，否则画面边缘会缺一块。
 
-在 `init(...)` 中使用 `Global.getSettings().getSprite(String category, String key)`，按前面的分类与键取得 `SpriteAPI`：
+承载实体不会自动跟着任何东西走。要让光环贴在舰船上，得在 `advance(...)` 里每帧同步位置。
+
+## 视口透明度
+
+`render(...)` 收到 `ViewportAPI`。上面有一个方法必须用上：
 
 ```java
-private static final String SPRITE_CATEGORY = "gearin";
-private static final String SPRITE_KEY = "layered_marker";
-
-private SpriteAPI sprite;
-
-@Override
-public void init(CombatEntityAPI entity) {
-    super.init(entity);
-    sprite = Global.getSettings().getSprite(SPRITE_CATEGORY, SPRITE_KEY);
-}
+	float getAlphaMult();
 ```
 
-代码查找 `gearin/layered_marker`，设置中的值再指向图片。资源无法取得时，就沿分类、键和实际路径检查。取得后继续设置标记外观。
-
-### 设置尺寸、颜色和透明度
-
-当前标记使用 120 世界单位的正方形，设置初始外观：
+它是视口的整体透明度，战斗开场与结束的淡入淡出就靠它。原版插件一律把它乘进自己的绘制透明度里：
 
 ```java
-sprite.setSize(MARKER_SIZE, MARKER_SIZE);
-sprite.setColor(color);
-sprite.setAlphaMult(1f);
+float alphaMult = viewport.getAlphaMult();
+alphaMult *= b;
+sprite.setAlphaMult(alphaMult);
 ```
 
-`setSize(...)` 设置世界单位的宽高，`setColor(...)` 提供颜色和基础 Alpha，`setAlphaMult(...)` 再乘透明度倍率。标记使用默认中心与角度，需要调整时分别调用 `setCenter(...)` 和 `setAngle(...)`。
+不乘的后果是：别的画面在淡出，这一段绘制稳稳地留在原地，整个转场只有它不跟着走。
 
-绘制时，`renderAtCenter(...)` 将传入坐标作为中心，`render(...)` 则采用 Sprite 角点位置。本例要让标记中心跟随舰船，因此使用前者。
+`ViewportAPI` 上的坐标换算都是单值方法，没有整向量的版本：`convertWorldXtoScreenX(float)`、`convertScreenYToWorldY(float)` 各换一个坐标，要用一个点就调两次。
 
-### `SpriteAPI` 常用属性速查表
+## 原版的实现分工
 
-| 方法                           | 作用                 |
-| ------------------------------ | -------------------- |
-| `setColor(Color)`              | 设置颜色和基础 Alpha |
-| `setAlphaMult(float)`          | 乘上透明度倍率       |
-| `setSize(float, float)`        | 设置世界单位宽高     |
-| `setCenter(float, float)`      | 调整贴图中心         |
-| `setAngle(float)`              | 设置旋转角度         |
-| `renderAtCenter(float, float)` | 以中心坐标绘制       |
-| `render(float, float)`         | 以角点坐标绘制       |
-
-## 同步承载实体位置
-
-**承载实体的位置同时参与绘制和视口剔除。** 在 `init(...)` 中就把它放到舰船位置，开场立即暂停时也能取得正确的初始位置：
+原版 `impl/combat/` 下没有一个类直接实现这个接口，全部继承基类：
 
 ```java
-entity.getLocation().set(trackedShip.getLocation());
+public class ShipExplosionFlareVisual extends BaseCombatLayeredRenderingPlugin {
 ```
 
-随后在非暂停帧同步位置，舰船离场或死亡则令实例失效：
+它是结构最干净的一个，只画一次爆炸闪光：
 
 ```java
-if (engine.isPaused()) {
-    return;
-}
-if (!engine.isEntityInPlay(trackedShip) || !trackedShip.isAlive()) {
-    valid = false;
-    return;
-}
-elapsed += amount;
-entity.getLocation().set(trackedShip.getLocation());
+	@Override
+	public EnumSet<CombatEngineLayers> getActiveLayers() {
+		return EnumSet.of(CombatEngineLayers.ABOVE_PARTICLES_LOWER);
+	}
 ```
 
-`getRenderRadius()` 给出以承载实体为中心的剔除半径。标记使用 120 世界单位的正方形，返回 `MARKER_SIZE` 足以覆盖这块区域。镜头移出范围时，引擎就能据此决定是否绘制：
+它的 `advance(...)` 开头先判暂停，然后把承载实体的位置同步到被附着的对象；`isExpired()` 返回 `fader.isFadedOut()`，闪光淡完自己退场；渲染用 `SpriteAPI.renderAtCenter(x, y)`，不碰 GL11。
 
-```java
-@Override
-public float getRenderRadius() {
-    return MARKER_SIZE;
-}
+这套分工可以照着理解：**位置在 `advance(...)` 里跟，亮度在 `render(...)` 里读，退场看 `isExpired()`。**
+
+## 热量光环
+
+前面讲的是这一类的通用规则。现在给一个具体的用场：过热冶炉让射速跟着幅能往上走，可这个变化只写在状态栏里，混战中没有人会去盯着状态栏看。舰船底下那一圈越烧越亮的光，就是给不看状态栏的人准备的。
+
+光环应当衬在舰船下方，不遮挡舰体与武器，所以用 `BELOW_SHIPS_LAYER`；只出现在装有过热冶炉的舰船上，所以由船插自己创建，而不是由一个全局插件遍历所有舰船。
+
+**原版没有任何船插创建分层渲染插件。** `data/hullmods/` 下 58 个文件、整个 `starsector-core/data/` 目录都搜不到 `addLayeredRenderingPlugin`，全部调用点都在武器效果与插件里。这一节的做法没有原版可抄，得自己决定什么时候创建、什么时候退场。
+
+## 登记贴图
+
+光环使用原版的 `graphics/fx/glow64.png`，一张中心亮、边缘透明的圆形光斑。在 `data/config/settings.json` 的 `graphics` 中，向已有的 `fx` 分类加入一行：
+
+```json
+		"fx":{
+			"GearIn_heat_glow":"graphics/fx/glow64.png",
+		},
 ```
 
-## 在 `render` 中绘制 Sprite
+代码通过 `Global.getSettings().getSprite("fx", "GearIn_heat_glow")` 取得贴图。分类与键由 MOD 自行决定，键带 `GearIn_` 前缀以免与其他 MOD 冲突。将来换成自制图片时，只需修改这一行的路径，代码不变。
 
-轮到本例图层时，`render(...)` 设置实例使用的颜色与透明度，再按承载实体中心绘制：
+## 渲染插件
 
-```java
-@Override
-public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-    sprite.setColor(color);
-    sprite.setAlphaMult(1f);
-    sprite.renderAtCenter(entity.getLocation().x, entity.getLocation().y);
-}
-```
-
-当前倍率为 1，基础 Alpha 仍是构造时的 180。`setAlphaMult(...)` 常用范围为 0 到 1，改为 0.5 就再降低一半透明度。中心坐标来自承载实体，它已经在非暂停更新中跟随舰船。
-
-## 处理失效与清理
-
-舰船离场或死亡后，`isExpired()` 返回 `true`，引擎移除承载实体并调用 `cleanup()`：
-
-```java
-@Override
-public boolean isExpired() {
-    return !valid;
-}
-
-@Override
-public void cleanup() {
-    LOG.info("GearIn layered renderer cleanup: elapsed=" + elapsed);
-}
-```
-
-本例在 `cleanup()` 记录累计时间。若功能还持有额外资源或改变了需要恢复的外观状态，也在这个实例的清理方法中完成释放与恢复。下一场战斗重新创建标记和相关引用。
-
-## 完整最小例
-
-把下面的类保存到前述路径，保留 Sprite 登记与状态插件中的创建片段。
-
-::: details 完整成品：`GearInLayeredRenderer`
+`src/data/scripts/gearin/combat/GearInHeatGlowRenderer.java`：
 
 ```java
 package data.scripts.gearin.combat;
 
 import java.awt.Color;
-import java.util.EnumSet;
-
-import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin;
@@ -246,140 +187,134 @@ import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 import com.fs.starfarer.api.graphics.SpriteAPI;
 
-/** 跟随当前舰船，在指定图层绘制 Sprite 标记。 */
-public class GearInLayeredRenderer extends BaseCombatLayeredRenderingPlugin {
+/** 过热冶炉的热量光环：画在舰船下方，亮度随幅能升高。 */
+public class GearInHeatGlowRenderer extends BaseCombatLayeredRenderingPlugin {
 
-    private static final Logger LOG = Global.getLogger(GearInLayeredRenderer.class);
+    private static final Color GLOW_COLOR = new Color(255, 110, 40);
+    private static final float SIZE_MULT = 3f;
 
-    private static final String SPRITE_CATEGORY = "gearin";
-    private static final String SPRITE_KEY = "layered_marker";
-    private static final float MARKER_SIZE = 120f;
-
-    private final ShipAPI trackedShip;
-    private final Color color;
-
-    private CombatEngineAPI engine;
+    private final ShipAPI ship;
+    private final float size;
     private SpriteAPI sprite;
-    private boolean valid = true;
-    private float elapsed = 0f;
+    private boolean expired;
 
-    public GearInLayeredRenderer(ShipAPI trackedShip, Color color) {
-        this.trackedShip = trackedShip;
-        this.color = color;
-        this.layer = CombatEngineLayers.ABOVE_SHIPS_AND_MISSILES_LAYER;
+    public GearInHeatGlowRenderer(ShipAPI ship) {
+        super(CombatEngineLayers.BELOW_SHIPS_LAYER);
+        this.ship = ship;
+        this.size = ship.getCollisionRadius() * SIZE_MULT;
     }
 
     @Override
     public void init(CombatEntityAPI entity) {
         super.init(entity);
-        entity.getLocation().set(trackedShip.getLocation());
-        engine = Global.getCombatEngine();
-        sprite = Global.getSettings().getSprite(SPRITE_CATEGORY, SPRITE_KEY);
-        sprite.setSize(MARKER_SIZE, MARKER_SIZE);
-        sprite.setColor(color);
-        LOG.info("GearIn layered renderer init: layers=" + getActiveLayers());
-    }
-
-    @Override
-    public EnumSet<CombatEngineLayers> getActiveLayers() {
-        return EnumSet.of(layer);
-    }
-
-    @Override
-    public float getRenderRadius() {
-        return MARKER_SIZE;
+        sprite = Global.getSettings().getSprite("fx", "GearIn_heat_glow");
+        sprite.setSize(size, size);
+        sprite.setColor(GLOW_COLOR);
+        sprite.setAdditiveBlend();
+        entity.getLocation().set(ship.getLocation());
     }
 
     @Override
     public void advance(float amount) {
+        CombatEngineAPI engine = Global.getCombatEngine();
         if (engine.isPaused()) {
             return;
         }
-        if (!engine.isEntityInPlay(trackedShip) || !trackedShip.isAlive()) {
-            valid = false;
+        if (!engine.isEntityInPlay(ship) || !ship.isAlive()) {
+            expired = true;
             return;
         }
-        elapsed += amount;
-        entity.getLocation().set(trackedShip.getLocation());
+        entity.getLocation().set(ship.getLocation());
     }
 
     @Override
-    public boolean isExpired() {
-        return !valid;
-    }
-
-    @Override
-    public void cleanup() {
-        LOG.info("GearIn layered renderer cleanup: elapsed=" + elapsed);
+    public float getRenderRadius() {
+        return size;
     }
 
     @Override
     public void render(CombatEngineLayers layer, ViewportAPI viewport) {
-        sprite.setColor(color);
-        sprite.setAlphaMult(1f);
+        float level = ship.getFluxLevel();
+        if (level <= 0f) {
+            return;
+        }
+        sprite.setAlphaMult(level * viewport.getAlphaMult());
         sprite.renderAtCenter(entity.getLocation().x, entity.getLocation().y);
+    }
+
+    @Override
+    public boolean isExpired() {
+        return expired;
     }
 }
 ```
 
-:::
+**亮度在 `render(...)` 中读取，位置在 `advance(...)` 中更新。** 暂停时 `advance(...)` 直接返回，`render(...)` 仍然逐帧调用。幅能在暂停时不变，光环保持原样；若把亮度的计算也放进 `advance(...)`，结果相同，但读取放在绘制处更容易看出画面由什么决定。
 
-## 验证方案
+`setAdditiveBlend()` 让贴图的颜色叠加到背景上，而不是覆盖背景。光斑的透明边缘因此不会在深色背景上留下灰边，这是原版光效普遍采用的混合方式。
 
-1. 在 MOD 目录执行 `gradle jar`，确认 JAR 中包含 `data/scripts/gearin/combat/GearInLayeredRenderer.class`。
-2. 重启游戏，进入 `GearIn_test` 并部署玩家舰，确认 `gearin/layered_marker` 登记与创建片段已生效。
-3. 进入 `GearIn_test` 战斗，确认日志出现 `GearIn layered renderer init`。
-4. 观察舰船旁的 Sprite 标记，确认颜色、透明度和尺寸符合构造器与 Sprite 设置。
-5. 移动被追踪舰船，确认 Sprite 中心与舰船位置同步。
-6. 暂停战斗，确认标记保持最后位置；恢复后继续跟随。下一场部署后立即暂停，再确认初始化位置。
-7. 平移镜头使标记及其覆盖范围离开视口，再移回观察显示恢复；缩放时比较标记与舰船的相对尺寸。
-8. 摧毁被追踪舰船，确认标记消失并出现 `GearIn layered renderer cleanup`。
-9. 退出并重新进入第二场战斗，确认 Sprite、位置和插件状态重新初始化。
+`isExpired()` 返回 `true` 后，引擎移除承载实体并调用 `cleanup()`。本插件不持有需要释放的资源，沿用基类的空实现。
 
-预期结果：
+## 由船插创建光环
 
-- Sprite 能按注册的分类和键成功取得，并在指定图层显示；
-- `setColor(...)`、`setAlphaMult(...)` 和 `setSize(...)` 的设置能在画面中观察；
-- `renderAtCenter(...)` 使标记中心与舰船位置重合；
-- 暂停时位置不推进，恢复后继续同步；
-- 视口剔除范围与 `getRenderRadius()` 一致；
-- 舰船失效后当前实例完成清理，第二场战斗使用新实例。
+在 `GearInOverheatForgeHullMod` 的 `advanceInCombat(...)` 开头、存活判断之后加入：
 
-## 故障分析
+```java
+if (!ship.getCustomData().containsKey(GLOW_KEY)) {
+    ship.setCustomData(GLOW_KEY, true);
+    Global.getCombatEngine().addLayeredRenderingPlugin(new GearInHeatGlowRenderer(ship));
+}
+```
 
-- **游戏启动时报告 Sprite 不存在**：Java 使用的分类或键与 `settings.json` 注册值不一致。
-    - **解决方案**：核对 `SPRITE_CATEGORY`、`SPRITE_KEY` 与 `gearin/layered_marker`，再检查注册路径 `graphics/fx/particlealpha32sq.png`。
+并在常量区加入：
 
-- **标记颜色或透明度异常**：Sprite 没有在绘制时同步颜色或透明度倍率。
-    - **解决方案**：在 `render(...)` 中重新调用 `setColor(color)` 和 `setAlphaMult(1f)`。
+```java
+private static final String GLOW_KEY = "GearIn_overheat_forge_glow";
+```
 
-- **标记出现在战场原点**：承载实体位置没有跟随舰船更新。
-    - **解决方案**：在 `init(...)` 中设置初始位置，并在非暂停 `advance(...)` 中同步舰船位置。
+还需要在文件开头导入 `data.scripts.gearin.combat.GearInHeatGlowRenderer`。
 
-- **标记进入视口后仍然消失**：`getRenderRadius()` 小于 Sprite 的实际覆盖范围。
-    - **解决方案**：让返回值覆盖 `setSize(...)` 设置的标记尺寸，并再次缩放镜头验证。
+`advanceInCombat(...)` 每帧调用，光环只应创建一次。**这个标记不能放在船插的字段里。** 船插的效果类整个应用只实例化一次，所有装有过热冶炉的舰船共用它，字段记下的 "已创建" 会让第二艘舰船永远得不到光环。舰船的 `setCustomData(...)` 把标记存在这艘舰船自己身上，每艘舰船各记各的。舰船对象只存在于一场战斗中，下一场战斗的舰船没有这个标记，光环会重新创建。
 
-- **暂停后标记继续移动**：暂停判断放在位置同步之后，或被省略。
-    - **解决方案**：在 `advance(...)` 开头检查 `engine.isPaused()`，暂停时直接返回。
+`getCustomData()` 返回的映射只能读取，写入必须通过 `setCustomData(...)`。
 
-- **标记层级错误**：`getActiveLayers()` 返回的图层不符合预期。
-    - **解决方案**：确认返回 `ABOVE_SHIPS_AND_MISSILES_LAYER`，并检查注册后的画面遮挡关系。
+### 进游戏核对
 
-- **舰船销毁后标记仍然存在**：插件没有设置失效状态，或 `isExpired()` 没有返回失效结果。
-    - **解决方案**：舰船不在引擎或不再存活时设置 `valid = false`，让引擎调用 `cleanup()`。
+执行 `gradle jar`，重启游戏，进入测试战役。
 
-- **下一场战斗沿用上一场位置**：插件或舰船引用跨战斗保存。
-    - **解决方案**：每场战斗重新创建 `GearInLayeredRenderer`，只在当前实例中保存 `trackedShip`、`engine` 和 `entity`。
+- 工匠装有过热冶炉。开火使幅能升高，舰船下方出现橙色光环，幅能越高光环越亮；幅能排空后光环消失。
+- 光环在舰体之下，不遮挡武器与舰体。
+- 移动镜头使工匠位于画面边缘，光环不会先于舰船消失。
+- 暂停战斗，光环保持当前亮度。
+- 工匠被摧毁后光环消失。
+- 其他没有过热冶炉的舰船不出现光环。
 
-## 总结
+## 常见问题
 
-标记现在随玩家舰创建、移动与结束。Sprite 提供外观，图层提供遮挡顺序，承载实体的位置与半径共同决定绘制和剔除，失效状态再连接到清理。
+- **光环盖在舰体之上**：构造时没有传入图层，基类使用默认的 `BELOW_INDICATORS_LAYER`。
+    - **解决方案**：调用 `super(CombatEngineLayers.BELOW_SHIPS_LAYER)`。
 
-增加动画时仍然沿用这些关系。颜色和尺寸可以变化，跟随位置、视口覆盖范围与结束条件也要继续对应实际画面。
+- **舰船移到画面边缘时光环先消失**：承载实体没有跟随舰船，或 `getRenderRadius()` 小于光环尺寸。
+    - **解决方案**：在 `advance(...)` 中同步位置，并让半径不小于光环的绘制尺寸。
+
+- **调用 `removeLayeredRenderingPlugin(...)` 找不到方法**：这个方法不存在。
+    - **解决方案**：移除用 `removeObject(...)`，传入承载实体或插件。
+
+- **只有第一艘舰船有光环**：创建标记写在了船插的字段里。
+    - **解决方案**：船插实例由所有舰船共用，标记应通过 `ship.setCustomData(...)` 存在舰船上。
+
+- **光环越来越亮，帧数下降**：每帧都创建了一个新的渲染插件。
+    - **解决方案**：创建前检查 `getCustomData()` 中的标记。
+
+- **启动时报贴图不存在**：`getSprite(...)` 的分类或键与 `settings.json` 不一致，或新的一行写在了 `fx` 以外的分类中。
+    - **解决方案**：核对分类 `fx` 与键 `GearIn_heat_glow`。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：分层插件的默认实现；
-- `com.fs.starfarer.api.graphics.SpriteAPI`：贴图颜色、透明度、尺寸和绘制方法；
-- `com.fs.starfarer.api.SettingsAPI`：`getSprite(String, String)` 按注册的分类和键取得 Sprite；
-- `com.fs.starfarer.api.combat.CombatEngineLayers`：战斗渲染图层枚举。
+- `com.fs.starfarer.api.combat.CombatLayeredRenderingPlugin`：接口的七个方法与 `init(...)` 收到的承载实体。
+- `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：默认实现、默认图层与默认半径。
+- `com.fs.starfarer.api.combat.CombatEngineLayers`：23 个图层的声明顺序。
+- `com.fs.starfarer.api.combat.ViewportAPI`：`getAlphaMult()` 与单值坐标换算。
+- `com.fs.starfarer.api.graphics.SpriteAPI`：尺寸、颜色、透明度与混合方式。
+- `com.fs.starfarer.api.impl.combat.ShipExplosionFlareVisual`：结构最干净的原版实现，位置、亮度与退场三者分工清楚。
+- `com.fs.starfarer.api.impl.combat.CryoblasterEffect`：原版的分层渲染效果，使用叠加混合与视口透明度。

@@ -1,113 +1,69 @@
 # 记录和定位 MOD 日志
 
-日志需要让一次结果能够追溯到实际操作。本节从加载与运行记录出发，说明来源、级别、对象 ID 和异常堆栈怎样配合，再将消息格式整理为工具类。代码能够输出文字之后，还要决定这些文字能否帮助定位问题。
+MOD 在游戏里跑起来之后，除了日志没有任何地方能看到它做了什么。没有断点，没有控制台里的返回值，界面上也看不出来某个方法到底执行过几次。`starsector.log` 是唯一的观察窗口，读它和写它都属于这一节的活。
+
+读的能力决定能不能修好别人报上来的问题；写的能力决定下一次出问题时，日志里剩下的是线索还是空白。
+
+---
 
 _本节预期阅读时间：\~12 分钟。_
 
-_本节预期操作时间：\~15 分钟。_
-
-## 学习目标
-
-完成后，您将能够：
-
-- 取得类对应的日志器；
-- 按事实选择 info、warn 和 error；
-- 用稳定前缀、阶段与对象 ID 组织消息；
-- 保留异常堆栈并定位失败操作；
-- 比较本次启动和运行记录。
+_本节预期操作时间：\~10 分钟。_
 
 ## 前置知识
 
-- [C6-S2] 的构建与加载；
-- [C7-S1] 的生命周期日志；
-- [C7-S2] 的服务与阶段；
-- Java 字符串、异常对象与 try／catch。
+- [C7-S1] 的回调时机；
+- [C7-S2] 的 `GearInSettings`；
+- Java 异常与调用栈的基本概念。
 
-## 从记录定位本次失败
+## 日志在哪里
 
-打开 `Starsector/starsector-core/starsector.log`，搜索 `GearIn` 或当前对象 ID。重新构建并启动之后，将记录对应到本次启动：应用阶段涉及类和资源，生涯阶段涉及存档对象，战斗阶段则涉及实体与参数。
+游戏的日志写入 `Starsector/starsector-core/starsector.log`。**这个文件在多次启动之间持续追加，最新的记录在文件末尾。** 打开后先跳到末尾，再向上查找，而不是从头读起；从头读起，看到的往往是几天前另一次启动留下的错误。
 
-本节采用的消息形如：
+文件变得过大时可以直接删除，游戏下次启动会重新创建。排查一个问题之前删掉它，再复现一次，日志里就只剩这一次的记录。
+
+## 读懂一份报错
+
+崩溃要自己制造一次。打开 `data/config/settings.json`，把 [C7-S2] 中的 `GearIn_assaultFeedSpeedBonus` 改成一个不存在的键，比如把 `Speed` 写成 `Sped`，然后启动游戏。游戏在加载阶段停下，日志末尾出现类似下面的记录：
 
 ```text
-INFO GearIn load: object=GearIn_artizan_combat variant registered
-WARN GearIn combat: object=GearIn_artizan_combat target unavailable
-ERROR GearIn variant-load: object=GearIn_artizan_combat variant could not be loaded
-java.lang.RuntimeException: ...
+java.lang.RuntimeException: org.json.JSONException: JSONObject["GearIn_assaultFeedSpedBonus"] not found.
+	at com.fs.starfarer.settings.StarfarerSettings.findFloatSetting(Unknown Source)
+	at com.fs.starfarer.settings.StarfarerSettings$1.getFloat(Unknown Source)
+	at data.scripts.gearin.GearInSettings.load(GearInSettings.java:22)
+	at data.scripts.gearin.GearInModPlugin.onApplicationLoad(GearInModPlugin.java:28)
+	...
 ```
 
-前缀与对象 ID 用于找到相关记录，阶段说明当时正在做什么。发生异常时还需要完整堆栈，才能追到失败的调用。**定位从首个相关异常开始**，后面的错误可能只是前面的失败继续产生的结果。
+`RuntimeException` 后面那半句是 `JSONException` 的原话，格式固定为 `JSONObject["键名"] not found.`。这条消息本身就把答案给全了：哪个键、不存在。中间两行 `com.fs.starfarer.settings` 属于游戏本体，类名被混淆成单个字母，行号也显示为 `Unknown Source`，它们说明异常是从哪条内部路径抛出来的，不必深究。
 
-下面的写法就为这些信息提供对应位置。
+**从上往下找第一个带自己包名的帧。** 这里是 `GearInSettings.load(GearInSettings.java:22)`，源文件第 22 行，也就是读取那个键的那一行。它上面的一行 `GearInModPlugin.onApplicationLoad(...)` 告诉我们是谁调用了它，两者合在一起就是完整的因果链：应用加载 → 读取设置 → 键不存在 → 抛出。
 
-## 为功能类取得日志器
+**`Caused by:` 段落给的是原始异常。** 上面这条把 `JSONException` 包进了 `RuntimeException`，消息里已经带出原话；有些异常包装得更深，消息只有一句 "invocation failed"，这时候 `Caused by:` 里最后一个才是真正的原因。
 
-在当前类中创建日志器：
+**日志里出现多个异常时，从时间上最早的那个看起。** 第一个错误常常引出后面一连串，其余都是结果。
 
-```java
-private static final Logger LOG = Global.getLogger(GearInLogWriter.class);
+**一份日志中出现多个异常时，从时间上最早的那个看起。** 第一个错误常常引起后续一连串错误，后面的报错只是结果。日志里还可能出现 `Caused by:` 段落，它是被包装起来的原始异常，真正的原因通常在最后一个 `Caused by:` 中。
+
+确认原因后，把代码移回 `onGameLoad(...)`。
+
+### 空指针为什么指错行
+
+`getFaction("gear_industy")` 少一个字母，这一次调用不会报错，它安静地返回 `null`。异常要到下一次拿这个对象取东西时才出现，而那一行往往离写错的那个字符串很远。
+
+Java 17 的说明会指出是哪一次取值遇到了 `null`，格式是 "对 X 调用 Y，而 X 是 null"：
+
+```text
+java.lang.NullPointerException: Cannot invoke "com.fs.starfarer.api.campaign.FactionAPI.getId()" because the return value of "com.fs.starfarer.api.campaign.SectorAPI.getFaction(String)" is null
 ```
 
-`Global.getLogger(...)` 按 Class 取得 Log4j 日志器，输出进入前述日志文件。类名提供代码来源，消息中的 ID 提供本次处理的对象。
+它指明的是取 `getId()` 这一处，而键的错误在更早的 `getFaction(...)` 里。**看到这种消息，往回找那个查询，检查它传进去的字符串。** 本节的示范故意选设置键出错，因为键名与异常消息里出现的名字是同一个，不像 ID 查询那样隔了一层。
 
-**功能类使用自己的日志来源。** 需要统一格式时可以使用工具类，但调用方仍要提供阶段和对象。本节的辅助类会集中输出来源，消息中因此保留这些业务信息。
+## 为 MOD 写入日志
 
-## 用级别说明发生了什么
+日志不只用于读取。在代码的关键位置写入记录，出问题时就能知道代码执行到了哪里、读到了什么值。
 
-### 日志级别速查表
-
-| 级别  | 使用场合                           |
-| ----- | ---------------------------------- |
-| info  | 阶段完成、对象创建和需要观察的结果 |
-| warn  | 流程继续，但存在需要核对的状态     |
-| error | 当前操作失败或捕获异常             |
-
-记录正常加载、需要核对的状态和加载失败时，分别使用：
-
-```java
-LOG.info("GearIn load: variant=GearIn_artizan_combat");
-LOG.warn("GearIn state: sector not ready");
-LOG.error("GearIn load failed: variant=GearIn_artizan_combat", exception);
-```
-
-这里的 `error` 同时传入消息与异常对象。消息说明加载哪个装配，异常堆栈说明加载在哪个调用中失败。只输出 `exception.getMessage()`，会丢失这部分调用信息。
-
-**编者认为警告也应当有分量。** 正常加载阶段缺少 Sector，可以记录为阶段信息；只有操作确实需要它却没有可用对象时，再按失败处理。警告积累过多，真正需要检查的记录反而容易被掩盖。
-
-## 将消息对应到具体操作
-
-日志以 `GearIn` 开头，随后写阶段、对象 ID 与结果。局部格式如下：
-
-```java
-String prefix = "GearIn " + stage + ": object=" + objectId + " ";
-LOG.info(prefix + detail);
-```
-
-**固定格式方便搜索，具体字段解释本次操作。** 装配日志保留 `variantId`，舰船日志保留 `hullId`，生命周期日志保留回调。需要比较数值时，将相关输入与结果写在同一行，就能沿同一个 ID 追踪加载、初始化与运行过程。
-
-消息内容随任务选择。只有一个脱离对象的数字，即使打印得再精确，也无法说明它属于哪次计算。
-
-## 在异常发生处保留上下文
-
-例如装配加载失败时，捕获位置同时知道本次请求的 ID 与实际异常。把两者交给日志工具，再沿原调用链处理失败：
-
-```java
-try {
-    Global.getSettings().getVariant("GearIn_artizan_combat");
-} catch (RuntimeException exception) {
-    GearInLogWriter.error("variant-load", "GearIn_artizan_combat",
-            "variant could not be loaded", exception);
-    throw exception;
-}
-```
-
-这段片段记录后重新抛出原异常，加载失败继续由调用链处理。若某种业务状态允许继续运行，后续动作则由该功能决定。日志保存发生的事实，捕获异常之后是否继续，仍是业务代码的职责。
-
-## 完整最小例
-
-工具类保存为 `src/data/scripts/gearin/GearInLogWriter.java`，调用方传入阶段、对象与信息。
-
-::: details 完整成品：GearInLogWriter
+`Global.getLogger(Class)` 返回该类对应的 Log4j 日志器，输出写入同一个 `starsector.log`，每行带有类名。在 [C7-S2] 的 `GearInSettings` 上改两处：加一个 `LOG` 字段，读取完成后把四个值记一行。
 
 ```java
 package data.scripts.gearin;
@@ -115,73 +71,92 @@ package data.scripts.gearin;
 import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.SettingsAPI;
 
-public class GearInLogWriter {
+/** 齿轮工业的可调参数，在应用加载时从 settings.json 读取一次。 */
+public final class GearInSettings {
 
-    private static final Logger LOG = Global.getLogger(GearInLogWriter.class);
+    private static final Logger LOG = Global.getLogger(GearInSettings.class);
 
-    private GearInLogWriter() {
+    private static float assaultFeedRofBonus;
+    private static float assaultFeedFluxReduction;
+    private static float assaultFeedSpeedBonus;
+    private static float assaultFeedManeuverBonus;
+
+    private GearInSettings() {
     }
 
-    public static void info(String stage, String objectId, String detail) {
-        LOG.info(format(stage, objectId, detail));
+    public static void load() {
+        SettingsAPI settings = Global.getSettings();
+        assaultFeedRofBonus = settings.getFloat("GearIn_assaultFeedRofBonus");
+        assaultFeedFluxReduction = settings.getFloat("GearIn_assaultFeedFluxReduction");
+        assaultFeedSpeedBonus = settings.getFloat("GearIn_assaultFeedSpeedBonus");
+        assaultFeedManeuverBonus = settings.getFloat("GearIn_assaultFeedManeuverBonus");
+        LOG.info("Assault feed: rof +" + assaultFeedRofBonus + ", flux -" + assaultFeedFluxReduction
+                + "%, speed +" + assaultFeedSpeedBonus + ", maneuver +" + assaultFeedManeuverBonus + "%");
     }
 
-    public static void warn(String stage, String objectId, String detail) {
-        LOG.warn(format(stage, objectId, detail));
+    public static float getAssaultFeedRofBonus() {
+        return assaultFeedRofBonus;
     }
 
-    public static void error(String stage, String objectId, String detail, Throwable cause) {
-        LOG.error(format(stage, objectId, detail), cause);
+    public static float getAssaultFeedFluxReduction() {
+        return assaultFeedFluxReduction;
     }
 
-    private static String format(String stage, String objectId, String detail) {
-        return "GearIn " + stage + ": object=" + objectId + " " + detail;
+    public static float getAssaultFeedSpeedBonus() {
+        return assaultFeedSpeedBonus;
+    }
+
+    public static float getAssaultFeedManeuverBonus() {
+        return assaultFeedManeuverBonus;
     }
 }
 ```
 
-:::
+日志器保存在 `static final` 字段中，每个类取得一次。这一行的价值在于：用户反馈 "改了设置没有效果" 时，日志中直接写着游戏实际读到的值，不必再猜是文件没保存、键名写错，还是改错了文件。
 
-工具统一 `info`、`warn` 与 `error` 的消息格式，调用方提供实际阶段、ID 和结果。直接使用功能类的日志器时，也可以沿用这套字段。回到前面的日志例子，来源、对象与堆栈便都有了明确的写入位置。
+### 选择级别
 
-## 验证方案
+| 级别    | 用途                                               |
+| ------- | -------------------------------------------------- |
+| `info`  | 正常流程中值得留下的结果，例如加载完成、读到的参数 |
+| `warn`  | 流程可以继续，但状态不符合预期                     |
+| `error` | 当前操作失败，通常同时传入异常对象                 |
 
-1. 保存工具类，构建 JAR 并核对 class 条目。
-2. 在既有入口的当前操作中调用 info，记录阶段、ID 与一个实际结果。
-3. 在业务可继续的异常状态处调用 warn，明确当前条件。
-4. 在可复现的失败操作捕获处用 error 保留异常，再按实际处理逻辑继续或抛出。
-5. 运行对应场景，搜索前缀和对象 ID，比较消息与堆栈来源。
+记录异常时，把异常对象作为第二个参数传入：
 
-预期结果：
+```java
+LOG.error("Failed to load patrol config", exception);
+```
 
-- 三种级别表达各自实际状态，字段与对象对应。
-- 捕获异常的 error 记录包含原异常和堆栈。
-- 前缀、阶段、ID 和关键参数可以定位实际调用。
-- 本次构建与运行使用当前产物，日志与修改对应。
+这样日志中会保留完整的调用栈。只写 `exception.getMessage()`，得到的是一句缺少位置的说明，前面读报错时用到的 `at` 行全部丢失。
 
-## 故障分析
+**日志写给将来排查问题的人看，每一行都应当能独立说明发生了什么。** 只写一个数字，或者只写 "here"，过几周连作者自己也认不出它来自哪里。同时，每帧执行的代码中不应写入日志：一场战斗每秒数十帧，几分钟就能写出数万行，既拖慢游戏，也淹没了真正有用的记录。
 
-- **找不到 MOD 消息**：前缀、级别过滤或实际调用未对应。
-    - **解决方案**：核对当前日志器、消息和日志配置，运行实际触发点。
+### 进游戏核对
 
-- **消息无法确定对象**：只记录笼统结果，缺少阶段和 ID。
-    - **解决方案**：补齐当前操作的对象与关键参数。
+执行 `gradle jar`，重启游戏。在 `starsector.log` 末尾向上搜索 `Assault feed`，应看到一行：
 
-- **error 消息缺少堆栈**：调用只传入文字，异常对象未记录。
-    - **解决方案**：传入实际 Throwable 作为第二参数。
+```text
+INFO  data.scripts.gearin.GearInSettings  - Assault feed: rof +1.0, flux -50.0%, speed +50.0, maneuver +200.0%
+```
 
-- **仍显示旧结果**：产物或加载路径采用旧代码。
-    - **解决方案**：重新构建并核对 JAR 与 mod_info 路径，再启动场景。
+行首的时间与线程名以实际日志为准。把 `settings.json` 中的某个值改掉再重启，这一行随之变化。
 
-## 总结
+## 常见问题
 
-从消息定位对象，从级别判断状态，再通过异常堆栈追到失败调用。类日志器与稳定格式帮助检索，实际输入和结果解释发生的过程。
+- **日志中找不到自己写入的记录**：游戏使用的仍是旧的 JAR，或者查看的是另一个游戏目录下的日志。
+    - **解决方案**：重新执行 `gradle jar`，确认 `starsector.log` 位于当前启用的游戏的 `starsector-core` 中。
 
-后续验证继续按对象与回调记录。能够把结果对应到输入、调用和文件，日志才提供了排错所需的信息。
+- **调用栈中没有自己包名的帧**：异常发生在游戏本体内部，通常由数据文件引起。
+    - **解决方案**：查看异常说明与 `Caused by:` 中提到的文件名或 ID，检查对应的数据文件。
+
+- **游戏没有弹出错误就直接退出，日志末尾也没有异常**：通常是内存不足或显卡驱动问题，与 MOD 代码无关的可能性较大。
+    - **解决方案**：先在不启用本 MOD 的情况下复现，确认是否为 MOD 引起。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global`：getLogger 取得类日志器。
-- `org.apache.log4j.Logger`：info、warn 与 error。
-- `Starsector/starsector-core/starsector.log`：运行日志与异常堆栈。
+- `Starsector/starsector-core/starsector.log`：游戏日志，按启动追加。
+- `com.fs.starfarer.api.Global`：`getLogger(Class)` 取得日志器。
+- `org.apache.log4j.Logger`：`info`、`warn`、`error` 方法，异常对象作为第二个参数传入。

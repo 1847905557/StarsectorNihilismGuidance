@@ -10,6 +10,13 @@ _本节预期阅读时间：\~15 分钟。_
 
 _本节预期操作时间：\~20 分钟。_
 
+## 前置知识
+
+- [C1-S7] 的 `descriptions.csv`，八列表头、类型与转义规则，本节在同一份文件里继续追加；
+- [C3-S1] 的势力 `gear_industry`，本节为它补上描述；
+- [C2-S3] 的突击填弹器与抵抗力场，本节补全它们的系统说明列；
+- [C3-S3] 的 `GearInSystemGenerator.java`，行星描述要在其中绑定。
+
 ## 为势力写描述
 
 绝大多数前文未介绍过的文本，都和舰船、武器的描述一样写在 `data/strings/descriptions.csv` 中。打开 [C1-S7] 创建的这个文件，**追加前确认首行的八列齐全，没有缺失或多余**，否则下面各列的说明会与您的文件对不上。
@@ -167,3 +174,8 @@ second.setCustomDescriptionId("GearIn_planet2");
 
 - `data/strings/descriptions.csv`：原版全部描述，各类型的写法都能在这里找到样本。
 - `com.fs.starfarer.api.loading.Description`：描述类型与各列的读取方法。
+- `data/shipsystems/ship_systems.csv`：战术系统的数据行，与描述行按 ID 对应。
+- `data/hullmods/hull_mods.csv`：船插描述的来源表。
+- `data/campaign/market_conditions.csv`：市场条件的描述来源表。
+- `data/campaign/special_items.csv`：特殊物品的描述来源表。
+- `com.fs.starfarer.api.campaign.PlanetAPI`：行星对象，绑定自定义描述时使用。

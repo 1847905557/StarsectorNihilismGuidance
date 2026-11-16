@@ -1,338 +1,293 @@
 # 配置战斗监听器
 
-本节通过战斗监听器给伤害增加 10%，并记录实际结算结果。一个接口参与计算，另一个接口在结算后收到通知；它们还需要登记到适用的引擎或舰船上。完成这个示例后，再将同样的登记方式用于舰船推进、射程与 OP 修改。
+编者上一次听到 回调 这两个字的时候，还以为是什么新兴的 AI 语，但实际上它是 Callback 的中文名。真是不常见。
 
-_本节预期阅读时间：\~18 分钟。_
+战斗监听器就是各类回调的总和。虽然严格来说更像是 Hook，甚至还混了些每帧脚本进去，但姑且这么理解也没问题。对于大多数你不希望每帧运行而导致额外性能开销的情况、或者需要某些精确结算时点的情况，那么就该选择战斗监听器。
 
-_本节预期操作时间：\~25 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~15 分钟。_
 
-完成后，您将能够：
-
-- 选择 `Listener` 或 `Modifier`；
-- 挂载到引擎、舰船或 `stats`；
-- 读取部署与伤害事件；
-- 修改射程与 OP 回调结果；
-- 管理注册、重复与收尾。
+_本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C8-S1] 的战斗状态和结束判断；
-- [C8-S1] 的当前对象；
-- [C8-S1] 的插件登记和实例；
-- [C8-S2] 的数值与来源 ID；
-- [C7-S4] 的日志。
+- [C8-S2] 的船插写法、来源 ID 与 `modifyPercent(...)`；
+- [C8-S3] 中 `projectile.getWeapon()` 取得发射武器的写法。
 
-## 选择事件与监听范围
+## 监听器接口的分类
 
-监听器接收特定事件，登记对象决定它监听哪一部分。整场战斗的伤害观察可以挂在引擎上，单舰效果则挂在对应舰船；OP 修饰由 stats 提供入口。先按功能选择接口与对象：
+`com.fs.starfarer.api.combat.listeners` 下有 14 个接口，按它们在结算里的位置分类：
 
-### 监听接口速查表
+| 用途 | 接口 | 回调时机 |
+| --- | --- | --- |
+| 改伤害 | `DamageDealtModifier`、`DamageTakenModifier` | 伤害结算之前 |
+| 收通知 | `DamageListener`、`HullDamageAboutToBeTakenListener` | 伤害结算之后、或船体受损之前 |
+| 改武器属性 | `WeaponRangeModifier`、`WeaponBaseRangeModifier` | 计算射程时 |
+| 改装配点 | `WeaponOPCostModifier`、`FighterOPCostModifier` | 计算装配点数时 |
+| 其它钩子 | `AdvanceableListener`、`ShipRenderListener`、`FleetMemberDeploymentListener` | 各自对应的事件 |
 
-| 接口                               | 作用                 | 合法挂载位置          |
-| ---------------------------------- | -------------------- | --------------------- |
-| `FleetMemberDeploymentListener`    | 监听舰队成员部署     | `CombatEngineAPI`     |
-| `DamageListener`                   | 读取伤害结算结果     | 引擎或舰船            |
-| `DamageDealtModifier`              | 修改造成的伤害       | 引擎或造成伤害的舰船  |
-| `DamageTakenModifier`              | 修改承受的伤害       | 引擎或承受伤害的舰船  |
-| `HullDamageAboutToBeTakenListener` | 在结构伤害结算前介入 | 引擎或承受伤害的舰船  |
-| `AdvanceableListener`              | 舰船级持续推进       | `ShipAPI`             |
-| `WeaponRangeModifier`              | 修改武器最终射程     | `ShipAPI`             |
-| `WeaponBaseRangeModifier`          | 修改武器基础射程     | `ShipAPI`             |
-| `WeaponOPCostModifier`             | 修改武器 OP 消耗     | `MutableShipStatsAPI` |
-| `FighterOPCostModifier`            | 修改战机 OP 消耗     | `MutableShipStatsAPI` |
-
-**接口与登记对象共同决定回调。** 实现了接口，还要进入对应对象的监听器管理器。下面的伤害示例作用于整场战斗，所以两类实例都登记到引擎。
-
-## 增加伤害并记录结算
-
-效果由 `DamageDealtModifier` 在造成方结算前处理。向 `damage.getModifier()` 写入本次修饰，再返回来源 ID。本例使用 `GearIn_dealt` 增加 10%：
+两个改伤害的接口方向相反，区别在于挂到哪一方：
 
 ```java
-damage.getModifier().modifyPercent("GearIn_dealt", 10f);
-return "GearIn_dealt";
+/**
+ * When adding to a ship, add to the ship dealing the damage, NOT the one taking the damage.
+ *
+ * Should add this to a ship where possible instead of the engine as performance will be better.
+ */
+public interface DamageDealtModifier {
 ```
 
-回调的 `param` 可以是弹体、光束、EMP 电弧或自定义事件对象，`target`、`point` 与 `shieldHit` 提供目标、位置和护盾上下文。需要限定这项加成的适用事件时，就从这些参数判断。
+`DamageTakenModifier` 是同一句话的镜像：挂到受到伤害的一方。挂反了，效果就作用在错误的一方，而且不会报错。
 
-结算完成后，`DamageListener` 收到 `ApplyDamageResultAPI`，读取实际护盾、装甲、结构与 EMP 结果。它可以在引擎上记录整场结算，也可以挂到舰船上观察自身伤害。
+## 能挂在哪里
 
-完整例分别用 `GearInDamageDealtModifier` 写入修饰，用 `GearInDamageListener` 记录结果。**输入修饰与最终结算在不同回调中取得**，日志中的伤害仍由整个结算过程决定。
+监听器不是随便挂的，每个接口只认特定的宿主：
 
-## 登记本场监听实例
+| 接口 | 宿主规则 | 宿主 |
+| --- | --- | --- |
+| `AdvanceableListener` | 只能挂在 `ShipAPI` 上，挂到 `CombatEngineAPI` 不生效 | 舰船 |
+| `WeaponOPCostModifier`、`FighterOPCostModifier` | 只有挂在 `MutableShipStatsAPI` 上才算数，挂到 `ShipAPI` 或战斗引擎都不行 | 舰船数值表 |
+| `FleetMemberDeploymentListener` | 只能挂到战斗引擎上，挂到具体舰船什么也不做 | 引擎 |
+| `WeaponRangeModifier`、`WeaponBaseRangeModifier` | 只能挂在舰船上，出于性能考虑不挂引擎 | 舰船 |
+| `DamageDealtModifier`、`DamageTakenModifier`、`HullDamageAboutToBeTakenListener` | 尽量挂在舰船上而不是引擎上，性能更好 | 舰船优先 |
 
-创建负责登记的 `GearInCombatListenerPlugin`，在 `settings.json` 的 `plugins` 中加入：
+**挂在错误的宿主上不会报错，只是不生效。** 射程监听器挂到引擎上，射程一点变化都没有，日志也是干净的。
 
-```json
-{
-    "plugins": {
-        "gearInCombatListenerPlugin": "data.scripts.gearin.combat.GearInCombatListenerPlugin"
-    }
-}
-```
-
-插件在首次 `advance(...)` 取得本场引擎，通过 `getListenerManager()` 登记两个实例。登记前按类查询，当前对象已有同类监听器时继续使用已有登记。插件字段保存自己创建的实例，以便结束时移除。
-
-单独管理监听器时，使用下列局部方法：
+`ShipAPI` 上有一整套管理方法，`addListener(Object)` 是唯一的添加形式，参数是 `Object`，不按接口类型约束：
 
 ```java
-CombatListenerManagerAPI manager = owner.getListenerManager();
-manager.hasListener(listener);
-manager.hasListenerOfClass(MyListener.class);
-manager.addListener(listener);
-manager.getListeners(MyListener.class);
-manager.removeListener(listener);
-manager.removeListenerOfClass(MyListener.class);
+CombatListenerManagerAPI getListenerManager();
+
+void addListener(Object listener);
+void removeListener(Object listener);
+void removeListenerOfClass(Class<?> c);
+boolean hasListener(Object listener);
+boolean hasListenerOfClass(Class<?> c);
+<T> List<T> getListeners(Class<T> c);
 ```
 
-`owner` 是引擎或舰船，`MyListener` 换成实际类。查询、加入和移除都通过登记对象的管理器完成；stats 则提供自己的对应方法。
+一个监听器都没有时，`getListenerManager()` 返回 `null`。
 
-战斗进入 `isCombatOver()` 时，完整例先解除这两个监听器，再移除登记插件。**插件列表与监听器管理器分别保存对象。** 结束插件后，监听器登记仍可能存在，因此收尾也分别完成。
+`CombatEngineAPI` 上**没有** `addListener(...)`，只有 `getListenerManager()`。要往引擎挂监听器，得写 `Global.getCombatEngine().getListenerManager().addListener(...)`。
 
-## 处理承受方与结构伤害
+## 改伤害
 
-需要减少承受的伤害时，使用 `DamageTakenModifier`。它的参数与造成方相似，登记到承受方舰船之后，可采用下面的局部方法乘上 0.9：
+`DamageDealtModifier` 只有一个方法：
 
 ```java
-public String modifyDamageTaken(Object param, CombatEntityAPI target,
-        DamageAPI damage, Vector2f point, boolean shieldHit) {
-    damage.getModifier().modifyMult("GearIn_taken", 0.9f);
-    return "GearIn_taken";
-}
+String modifyDamageDealt(Object param, CombatEntityAPI target, DamageAPI damage,
+        Vector2f point, boolean shieldHit);
 ```
 
-结构伤害结算前还可以使用 `HullDamageAboutToBeTakenListener`。返回 `true` 会抵消当前这一笔伤害，下面的局部方法保护低于 50 点的结构伤害：
+`param` 是造成伤害的对象，有四种可能：`null`、`DamagingProjectileAPI`、`BeamAPI`、`EmpArcEntityAPI`。脚本也可以传入自己造的对象。
+
+要知道是哪门武器造成的伤害，得先判断 `param` 的类型再取武器。`null` 是真实存在的情况，电弧与脚本自定义的对象也各有各的类型，所以转换前必须判断。
+
+`damage.getModifier()` 返回一个 [C8-S2] 介绍过的 `MutableStat`，写法与舰船数值完全相同：同一个来源 ID、同一类修饰覆盖，换一段话就是同一套规则。
+
+**返回值是 `String`，不是伤害数字。** 它返回施加在 `damage.getModifier()` 上的那个修饰的来源 ID，没有改动时返回 `null`。这不是一个随手填的占位符：`CombatListenerUtil` 会把它收集进一个列表，用来说明这一发伤害被哪些来源改过。
+
+伤害走 `damage.getModifier()` 修改，不要直接改数值。原版自己也并不总是这么做：`SquallOnFireEffect` 的 `modifyDamageDealt(...)` 直接用 `damage.setDamage(damage.getBaseDamage() + DAMAGE)`。这是原版的写法，不是建议照抄的做法：走 `getModifier()` 的伤害在装配界面与提示里还能被其它系统看到，直接 `setDamage` 只在这一次结算里成立。
+
+## 改射程
+
+`WeaponRangeModifier` 有三个方法，对应 [C8-S2] 合并规则中的三种修饰：
 
 ```java
-public boolean notifyAboutToTakeHullDamage(Object param, ShipAPI ship,
-        Vector2f point, float damageAmount) {
-    return damageAmount < 50f;
-}
+float getWeaponRangePercentMod(ShipAPI ship, WeaponAPI weapon);
+float getWeaponRangeMultMod(ShipAPI ship, WeaponAPI weapon);
+float getWeaponRangeFlatMod(ShipAPI ship, WeaponAPI weapon);
 ```
 
-只保护一艘舰船时，将监听器挂到该舰船；接口也支持引擎范围。这个返回值针对本次结构伤害，不是修改舰船的永久减伤属性。
-
-部署事件使用 `FleetMemberDeploymentListener`，它只登记到引擎。`reportFleetMemberDeployed(...)` 提供本次 `DeployedFleetMemberAPI`，从部署成员取得舰体的关系沿用 [C8-S1]。
-
-## 在舰船上推进状态
-
-需要随着某艘舰船持续推进的状态，可以使用 `AdvanceableListener` 并挂到 `ShipAPI`。它的 `advance(...)` 接收所属舰船的推进时间，例如局部计时：
+中性值能从游戏的聚合方式反推出来，见 `CombatListenerUtil`：
 
 ```java
-public void advance(float amount) {
-    reportInterval.advance(amount);
-}
+	public static float getWeaponRangePercentMod(ShipAPI ship, WeaponAPI weapon) {
+		float mod = 0f;
+		if (ship != null) {
+			for (WeaponRangeModifier x : new ArrayList<WeaponRangeModifier>(ship.getListeners(WeaponRangeModifier.class))) {
+				mod += x.getWeaponRangePercentMod(ship, weapon);
+			}
+		}
+		return mod;
+	}
+
+	public static float getWeaponRangeMultMod(ShipAPI ship, WeaponAPI weapon) {
+		float mod = 1f;
+		if (ship != null && ship.getListenerManager() != null) {
+			for (WeaponRangeModifier x : new ArrayList<WeaponRangeModifier>(ship.getListeners(WeaponRangeModifier.class))) {
+				mod *= x.getWeaponRangeMultMod(ship, weapon);
+			}
+		}
+		return mod;
+	}
 ```
 
-计时器属于这份监听实例，每艘舰船可以保留独立计数。登记和移除使用 `ship.getListenerManager()`，暂停与销毁也按所属舰船的运行阶段处理。
+percent 与 flat 从 `0f` 起累加，mult 从 `1f` 起累乘。**所以乘数的中性值是 `1`，另外两个是 `0`。** 乘数方法误返回 `0`，这门武器的射程会变成零，而且不会有任何报错。
 
-## 用返回值修改射程与 OP
+三个方法都收到 `weapon` 参数，监听器因此可以只改某一类武器。游戏计算射程的频率很高，这些方法里只该做简单判断，不该创建对象或写日志。
 
-### 武器射程
+`WeaponBaseRangeModifier` 的三个方法同名同义，改的是武器的基础射程，原版的高散射增幅器用它按武器原始射程算惩罚。要改最终射程，用 `WeaponRangeModifier`。
 
-`WeaponRangeModifier` 挂到 `ShipAPI`，用返回值提供最终射程的 percent、mult 与 flat 修饰。下面的大型武器增加 10%，另外两个方法返回中性值：
+## 注册时机
 
-```java
-public float getWeaponRangePercentMod(ShipAPI ship, WeaponAPI weapon) {
-    return weapon.getSize() == WeaponAPI.WeaponSize.LARGE ? 10f : 0f;
-}
+`HullModEffect` 的两个创建期钩子分工不同：`applyEffectsAfterShipCreation(...)` 拿得到 `ShipAPI`，可以挂监听器，但生涯界面不调用它，所以不该在这里改数值。
 
-public float getWeaponRangeMultMod(ShipAPI ship, WeaponAPI weapon) {
-    return 1f;
-}
+[C8-S2] 已经说明 `applyEffectsBeforeShipCreation(...)` 改的是会反映到装配界面上的那一层。
 
-public float getWeaponRangeFlatMod(ShipAPI ship, WeaponAPI weapon) {
-    return 0f;
-}
-```
+**监听器挂在 `applyEffectsAfterShipCreation(...)` 里。** 这是唯一一个既有 `ShipAPI` 又保证被调用的位置。
 
-`WeaponBaseRangeModifier` 影响基础射程，方法名分别为 `getWeaponBaseRangePercentMod`、`getWeaponBaseRangeMultMod` 与 `getWeaponBaseRangeFlatMod`。参数同样可以按武器类型、尺寸或 ID 选择返回值，使用时按实际接口声明填写。
+有一件事关系到所有从这里出发的状态：效果类在整个应用里只实例化一次，字段在所有舰船、所有存档之间共用，要存数据得用 `SectorAPI.getPersistentData()`。监听器实例则是每艘船挂一个新的，那个对象才是保存单船数据的地方。
 
-### 武器与战机 OP
+## 破甲校准
 
-`WeaponOPCostModifier` 和 `FighterOPCostModifier` 挂 `MutableShipStatsAPI`，接收当前计算值并返回新值：
+前面讲的是这一套机制的通用规则。现在给一个具体的用场：破甲校准，它只影响舰船上的小型实弹武器，命中装甲与船体时伤害提高 15%，命中护盾时不变，同时射程降低 15%。
 
-```java
-public int getWeaponOPCost(MutableShipStatsAPI stats, WeaponSpecAPI weapon, int currCost) {
-    return Math.max(0, currCost - 2);
-}
+两项效果分别由两个监听器接口实现，写在同一个类里，由船插在舰船创建后挂上。看炉人装有四门火神炮与两门都林，全部是小型实弹武器，本节把这个船插加到它的战斗装配上。
 
-public int getFighterOPCost(MutableShipStatsAPI stats, FighterWingSpecAPI fighter, int currCost) {
-    return Math.max(0, currCost - 1);
-}
-```
+**这个船插把小型实弹武器推向近距离破甲。** 射程降低迫使舰船贴近目标，而伤害加成只在护盾失效之后生效。它与 [C8-S2] 的过热冶炉方向一致：齿轮工业的舰船以承受压力换取输出，玩家需要判断何时冒险贴近。
 
-武器成本减 2，战机成本减 1，两者下限都为 0。`currCost` 提供已经计算到当前步骤的值，多个来源在它的基础上继续计算。这里将新成本作为返回值交回调用方，普通 stats 与 Dynamic 的来源记录仍采用 [C8-S2] 的写法。
+## 完整船插
 
-## 完整最小例
-
-三个类保存到 `src/data/scripts/gearin/combat/`，插件登记采用上面的条目。当前成品验证伤害结算与造成方修饰，其他局部方法按其接口和挂载对象扩展。
-
-::: details 完整成品：`GearInDamageListener`
+`src/data/scripts/gearin/hullmods/GearInBreachCalibrationHullMod.java`：
 
 ```java
-package data.scripts.gearin.combat;
+package data.scripts.gearin.hullmods;
 
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.BaseHullMod;
+import com.fs.starfarer.api.combat.BeamAPI;
 import com.fs.starfarer.api.combat.CombatEntityAPI;
-import com.fs.starfarer.api.combat.listeners.ApplyDamageResultAPI;
-import com.fs.starfarer.api.combat.listeners.DamageListener;
-
-public class GearInDamageListener implements DamageListener {
-
-    private static final Logger LOG = Global.getLogger(GearInDamageListener.class);
-
-    @Override
-    public void reportDamageApplied(Object source,
-            CombatEntityAPI target,
-            ApplyDamageResultAPI result) {
-        LOG.info("GearIn damage: target=" + target
-                + " hull=" + result.getDamageToHull()
-                + " armor=" + result.getTotalDamageToArmor()
-                + " shields=" + result.getDamageToShields()
-                + " emp=" + result.getEmpDamage());
-    }
-}
-```
-
-:::
-
-::: details 完整成品：`GearInDamageDealtModifier`
-
-```java
-package data.scripts.gearin.combat;
+import com.fs.starfarer.api.combat.DamageAPI;
+import com.fs.starfarer.api.combat.DamagingProjectileAPI;
+import com.fs.starfarer.api.combat.ShipAPI;
+import com.fs.starfarer.api.combat.ShipAPI.HullSize;
+import com.fs.starfarer.api.combat.WeaponAPI;
+import com.fs.starfarer.api.combat.WeaponAPI.WeaponSize;
+import com.fs.starfarer.api.combat.WeaponAPI.WeaponType;
+import com.fs.starfarer.api.combat.listeners.DamageDealtModifier;
+import com.fs.starfarer.api.combat.listeners.WeaponRangeModifier;
 
 import org.lwjgl.util.vector.Vector2f;
 
-import com.fs.starfarer.api.combat.CombatEntityAPI;
-import com.fs.starfarer.api.combat.DamageAPI;
-import com.fs.starfarer.api.combat.listeners.DamageDealtModifier;
+/** 破甲校准：小型实弹武器命中装甲与船体时伤害提高，射程降低。 */
+public class GearInBreachCalibrationHullMod extends BaseHullMod {
 
-public class GearInDamageDealtModifier implements DamageDealtModifier {
+    public static final String HULLMOD_ID = "GearIn_breach_calibration";
+
+    private static final float DAMAGE_BONUS = 15f;
+    private static final float RANGE_PENALTY = 15f;
 
     @Override
-    public String modifyDamageDealt(Object param,
-            CombatEntityAPI target,
-            DamageAPI damage,
-            Vector2f point,
-            boolean shieldHit) {
-        damage.getModifier().modifyPercent("GearIn_dealt", 10f);
-        return "GearIn_dealt";
+    public void applyEffectsAfterShipCreation(ShipAPI ship, String id) {
+        ship.addListener(new BreachCalibrationListener());
+    }
+
+    @Override
+    public String getDescriptionParam(int index, HullSize hullSize) {
+        if (index == 0) {
+            return (int) DAMAGE_BONUS + "%";
+        }
+        if (index == 1) {
+            return (int) RANGE_PENALTY + "%";
+        }
+        return null;
+    }
+
+    private static boolean isAffected(WeaponAPI weapon) {
+        return weapon != null && weapon.getSize() == WeaponSize.SMALL
+                && weapon.getType() == WeaponType.BALLISTIC;
+    }
+
+    /** 同时修改伤害与射程的监听器，每艘舰船一个实例。 */
+    public static class BreachCalibrationListener implements DamageDealtModifier, WeaponRangeModifier {
+
+        @Override
+        public String modifyDamageDealt(Object param, CombatEntityAPI target, DamageAPI damage,
+                Vector2f point, boolean shieldHit) {
+            if (shieldHit) {
+                return null;
+            }
+            WeaponAPI weapon = null;
+            if (param instanceof DamagingProjectileAPI) {
+                weapon = ((DamagingProjectileAPI) param).getWeapon();
+            } else if (param instanceof BeamAPI) {
+                weapon = ((BeamAPI) param).getWeapon();
+            }
+            if (!isAffected(weapon)) {
+                return null;
+            }
+            damage.getModifier().modifyPercent(HULLMOD_ID, DAMAGE_BONUS);
+            return HULLMOD_ID;
+        }
+
+        @Override
+        public float getWeaponRangePercentMod(ShipAPI ship, WeaponAPI weapon) {
+            return 0f;
+        }
+
+        @Override
+        public float getWeaponRangeMultMod(ShipAPI ship, WeaponAPI weapon) {
+            return isAffected(weapon) ? 1f - RANGE_PENALTY / 100f : 1f;
+        }
+
+        @Override
+        public float getWeaponRangeFlatMod(ShipAPI ship, WeaponAPI weapon) {
+            return 0f;
+        }
     }
 }
 ```
 
-:::
+**监听器不保存状态。** 它只根据参数作出判断，所以每艘舰船挂一个新实例即可，不需要检查是否已经挂过。若监听器需要记住某艘舰船的数据，应当在构造时传入这艘舰船，并保存在实例字段里，原版的高散射增幅器就是这样写的。
 
-::: details 完整成品：`GearInCombatListenerPlugin`
+`isAffected(...)` 是两个接口共用的判断，写成静态方法放在船插类里。`modifyDamageDealt(...)` 中的 `MissileAPI` 也继承自 `DamagingProjectileAPI`，导弹因此会走第一个分支，但导弹的武器类型不是实弹，判断会将它排除。
 
-```java
-package data.scripts.gearin.combat;
+## 登记船插
 
-import java.util.List;
+`data/hullmods/hull_mods.csv` 新增一行：
 
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
-import com.fs.starfarer.api.combat.CombatEngineAPI;
-import com.fs.starfarer.api.combat.listeners.CombatListenerManagerAPI;
-import com.fs.starfarer.api.input.InputEventAPI;
-
-/** 在本场战斗登记伤害监听与修饰，并在收尾时解除。 */
-public class GearInCombatListenerPlugin extends BaseEveryFrameCombatPlugin {
-
-    private final GearInDamageListener damageListener = new GearInDamageListener();
-    private final GearInDamageDealtModifier dealtModifier = new GearInDamageDealtModifier();
-    private CombatEngineAPI engine;
-    private boolean registered;
-
-    @Override
-    public void advance(float amount, List<InputEventAPI> events) {
-        if (engine == null) {
-            engine = Global.getCombatEngine();
-        }
-        CombatListenerManagerAPI manager = engine.getListenerManager();
-        if (!registered) {
-            if (!manager.hasListenerOfClass(GearInDamageListener.class)) {
-                manager.addListener(damageListener);
-            }
-            if (!manager.hasListenerOfClass(GearInDamageDealtModifier.class)) {
-                manager.addListener(dealtModifier);
-            }
-            registered = true;
-        }
-        if (engine.isCombatOver()) {
-            manager.removeListener(damageListener);
-            manager.removeListener(dealtModifier);
-            engine.removePlugin(this);
-        }
-    }
-}
+```csv
+破甲校准,GearIn_breach_calibration,0,,,"offensive, merc",武器,3000,TRUE,,,3,6,9,15,data.scripts.gearin.hullmods.GearInBreachCalibrationHullMod,"小型实弹武器命中装甲与船体时伤害提高 {%s}，射程降低 {%s}。",小型实弹武器近距破甲。,,graphics/hullmods/ballistics_integration.png
 ```
 
-:::
+图标暂时借用原版的 `ballistics_integration.png`。在 `data/variants/GearIn_furnaceman_combat.variant` 的 `hullMods` 中加入这个船插：
 
-## 验证方案
+```json
+"hullMods": ["expanded_deck_crew", "GearIn_breach_calibration"],
+```
 
-1. 保存三个类和插件登记，构建并重启，进入 `GearIn_test`。
-2. 用武器命中护盾、装甲和结构，搜索 `GearIn damage` 并比较实际字段。
-3. 在对应局部接口实现中分别测试舰船推进、射程或 OP，核对挂载对象和返回值。
-4. 暂停再恢复，比较所属对象的推进。
-5. 结束战斗，核对引擎级实例解除，再进入下一场检查新注册。
-6. 比较日志中的接口、目标和来源 ID，确认同一功能只登记一次。
+看炉人的装配点数上限为 75，原有装配占用 61 点，加入这个船插的 6 点后为 67 点。
 
-预期结果：
+### 进游戏核对
 
-- 伤害监听记录结算字段，造成方修饰写入 `GearIn_dealt`。
-- 各局部接口在匹配对象上生效，射程与 OP 采用相应返回值。
-- 状态属于当前舰船或战斗实例。
-- 收尾解除本插件登记的监听，下一场重新建立。
+执行 `gradle jar`，重启游戏。
 
-## 故障分析
+- 在装配界面查看看炉人，火神炮与都林的射程比原值短 15%。火神炮原射程 250，此时为 212 左右。
+- 进入测试战役，用看炉人攻击护盾已经崩溃的敌舰，火神炮在船体上显示的伤害数字大于未装此船插时的数字。
+- 攻击护盾时，护盾上显示的伤害数字不变。
 
-- **监听器注册后没有回调**：接口与挂载对象不匹配。
-    - **解决方案**：按接口表确认对象归属；部署监听器注册到引擎，舰船级推进注册到 `ShipAPI`，OP 修饰器注册到 `MutableShipStatsAPI`。
+对比时，可以先去掉变体文件中的船插构建一次，记下数字，再加回来。
 
-- **伤害修饰结果方向相反**：`DamageDealtModifier` 与 `DamageTakenModifier` 挂到了错误的一方。
-    - **解决方案**：造成伤害的一方使用 `DamageDealtModifier`，承受伤害的一方使用 `DamageTakenModifier`，再次进行同一命中实验。
+## 常见问题
 
-- **舰船推进日志始终为空**：`AdvanceableListener` 被注册到引擎或统计对象。
-    - **解决方案**：通过 `ship.getListenerManager()` 注册，并确认监听器实例绑定当前 `ShipAPI`。
+- **所有武器射程变为零**：`getWeaponRangeMultMod(...)` 对不受影响的武器返回了 `0`。
+    - **解决方案**：乘数方法的中性值为 `1f`。
 
-- **射程或 OP 数值没有变化**：修饰器挂载表面正确但实现了错误的接口。
-    - **解决方案**：最终射程使用 `WeaponRangeModifier`，基础射程使用 `WeaponBaseRangeModifier`，武器和战机 OP 使用对应的 `stats` 修饰器。
+- **射程没有变化，也没有报错**：监听器挂在了战斗引擎的 `getListenerManager()` 上。
+    - **解决方案**：射程接口只在挂在舰船上时生效，改用 `ship.addListener(...)`。
 
-- **同一事件每次出现多条日志**：同一对象重复注册了监听器实例。
-    - **解决方案**：注册前调用 `hasListenerOfClass(...)` 或 `hasListener(...)`，保留一个属于当前对象的实例。
+- **伤害加成作用在了受到攻击的一方**：误用了 `DamageTakenModifier`。
+    - **解决方案**：修改己方造成的伤害使用 `DamageDealtModifier`。
 
-- **插件停止后仍出现部署日志**：引擎级监听器仍处于注册状态。
-    - **解决方案**：在 `removePlugin(this)` 前调用 `engine.getListenerManager().removeListener(listener)`。
-
-- **第二场战斗沿用上一场状态**：监听器实例或其字段跨战斗保存。
-    - **解决方案**：把计数器和计时器放在本场战斗创建的监听器中，清除静态字段和旧引擎引用。
-
-- **日志无法定位触发对象**：日志缺少接口、阶段或对象 ID。
-    - **解决方案**：每条日志加入稳定的 `GearIn` 前缀、接口名称和舰船或成员 ID。
-
-## 总结
-
-伤害修饰参与计算，结果监听读取结算；舰船推进、射程和 OP 则分别登记到适用对象。接口决定事件，登记对象决定范围，单独实现接口还不足以收到通知。
-
-本场插件负责创建、登记与解除伤害监听。结束时从管理器移除自己的实例，再结束插件，下一场重新建立这一组对象。
+- **战斗中命中时报 `ClassCastException`**：`param` 没有判断类型就直接转换。
+    - **解决方案**：`param` 可能为 `null` 或电弧等其他对象，转换前用 `instanceof` 判断。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.listeners.CombatListenerManagerAPI`：监听器增删查；
-- `com.fs.starfarer.api.combat.listeners.CombatListenerUtil`：伤害与结构伤害事件派发；
-- `com.fs.starfarer.api.combat.listeners.FleetMemberDeploymentListener`：部署成员回调；
-- `com.fs.starfarer.api.combat.listeners.DamageListener`：伤害事件监听；
-- `com.fs.starfarer.api.combat.listeners.DamageDealtModifier`：造成伤害修正；
-- `com.fs.starfarer.api.combat.listeners.DamageTakenModifier`：承受伤害修正；
-- `com.fs.starfarer.api.combat.listeners.HullDamageAboutToBeTakenListener`：舰体濒损预警；
-- `com.fs.starfarer.api.combat.listeners.AdvanceableListener`：逐帧推进回调；
-- `com.fs.starfarer.api.combat.listeners.WeaponRangeModifier`：武器射程修正；
-- `com.fs.starfarer.api.combat.listeners.WeaponBaseRangeModifier`：武器基础射程修正；
-- `com.fs.starfarer.api.combat.listeners.WeaponOPCostModifier`：武器 OP 消耗修正；
-- `com.fs.starfarer.api.combat.listeners.FighterOPCostModifier`：战机 OP 消耗修正。
+- `com.fs.starfarer.api.combat.listeners.DamageDealtModifier`：`param` 的可能类型、`getModifier()` 的使用要求与返回值含义。
+- `com.fs.starfarer.api.combat.listeners.WeaponRangeModifier`：射程修改，只在挂在舰船上时生效。
+- `com.fs.starfarer.api.combat.listeners.CombatListenerUtil`：游戏如何合并多个射程监听器的返回值。
+- `com.fs.starfarer.api.impl.hullmods.PDIntegration`：从 `param` 取得武器，再按武器判断伤害加成。
+- `com.fs.starfarer.api.impl.hullmods.HighScatterAmp`：原版高散射增幅器，一个船插挂两个监听器。
+- `com.fs.starfarer.api.impl.combat.SquallOnFireEffect`：原版直接用 `setDamage(...)` 改伤害的写法，绕过了 `getModifier()`。

@@ -8,6 +8,11 @@ _本节预期阅读时间：\~8 分钟。_
 
 _本节预期操作时间：\~10 分钟。_
 
+## 前置知识
+
+- [C1-S2] 的 CSV 规则，含逗号与引号的字段按它转义；
+- [C1-S2] 至 [C1-S5] 的工匠、看炉人、炉渣、锻件与三种武器，本节为它们逐一补上描述。
+
 ## 创建描述文件
 
 在 MOD 内创建 `data/strings/descriptions.csv`。列名行与原版 `starsector-core/data/strings/descriptions.csv` 完全相同：
@@ -106,3 +111,5 @@ GearIn_artizan,SHIP,"对锤头-级驱逐舰进行部件替换的尝试。
 ## 建议参考项
 
 - `data/strings/descriptions.csv`：原版全部描述，转义与分段写法的样本。
+- `data/hulls/ship_data.csv`：舰船描述的 `id` 取自这里的船体 ID。
+- `data/weapons/weapon_data.csv`：武器描述的 `id` 取自这里的武器 ID。

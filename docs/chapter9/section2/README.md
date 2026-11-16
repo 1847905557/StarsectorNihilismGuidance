@@ -1,273 +1,289 @@
 # 详解战术系统
 
-本节为工匠实现能量射程增幅，处理加成、实际持续时间、状态显示与激活许可，再让自定义 AI 提出使用请求。另用一个待机观察系统说明 `runScriptWhileIdle` 怎样扩大调用范围，以及它为什么会改变效果的清理方式。
+战术系统的效果反而没有太多要补充的，但它的 `.system` 文件反而会引出几个不太常见但复杂的变化。除此之外，战术系统的 AI 则是另一个大难点，毕竟一方面这是作者最可能接触到 AI 的位置，而另一方面一个表现不好的 AI 总是比表现好的更令人印象深刻。
 
-_本节预期阅读时间：\~24 分钟。_
+扯远了。我们先从基础重新开始。
+
+---
+
+_本节预期阅读时间：\~25 分钟。_
 
 _本节预期操作时间：\~30 分钟。_
 
-## 学习目标
-
-完成后，您将能够：
-
-- 配置战术系统数据和效果脚本；
-- 根据调用时机实现效果脚本方法；
-- 接入独立的自定义系统 AI；
-- 根据日志和战斗结果定位回调问题。
-
 ## 前置知识
 
-- [C2-S3] 的 `.system`、`ship_systems.csv`、`ship_data.csv` 与 `apply` / `unapply`；
-- [C8-S2] 的 `MutableShipStatsAPI`、来源 ID 与 `modifyPercent`；
-- [C8-S1] 的战斗引擎状态和暂停语义；
-- [C7-S2] 的全局服务访问阶段。
+- [C2-S3] 的 `.system` 文件、`ship_systems.csv` 与 `BaseShipSystemScript`；
+- [C8-S2] 的修饰合并规则与来源 ID；
+- [C4-S4] 的窑与模块。
 
-## 建立范围增幅系统
+## 战术系统的接口分工
 
-范围增幅使用 `GearIn_range_system`，满效果时将能量武器射程乘以 1.5。普通运行经过前摇、全功率和后摇，效果也随强度进入与退出。玩家手动操作和 AI 使用同一项效果，激活判断则分别由按键与 AI 提交。
+战术系统在代码侧由三个不同的接口拼起来，名字相近，管的事完全不同：
 
-创建 `src/data/scripts/gearin/shipsystems/GearInRangeSystem.java` 和 `GearInRangeSystemAI.java`。效果类继承 `BaseShipSystemScript`，基类已为 `ShipSystemStatsScriptAdvanced` 提供默认实现，未覆写的方法继续采用默认返回值。
+| 接口 | 所在包 | 管什么 |
+| --- | --- | --- |
+| `ShipSystemStatsScript` | `com.fs.starfarer.api.plugins` | 效果本身：`apply` / `unapply` / `getStatusData`，附带 `State` 枚举与 `StatusData` 类 |
+| `ShipSystemStatsScriptAdvanced` | 同上 | 在上一项基础上加 `isUsable(...)` 与 `getInfoText(...)` |
+| `ShipSystemAIScript` | `com.fs.starfarer.api.combat` | AI 什么时候按这个键 |
 
-在 `data/shipsystems/GearIn_range_system.system` 写入定义：
+**没有名为 `ShipSystemScript` 的接口。** 三个名字都在真源码里，按前两个名字去搜才有结果。`BaseShipSystemScript` 在 `impl.combat` 下，实现了 `ShipSystemStatsScriptAdvanced`，[C2-S3] 继承的就是它。
+
+效果与 AI 是两个独立的类，由 `.system` 的两个字段分别指向：
 
 ```json
-{
-    "id": "GearIn_range_system",
-    "type": "STAT_MOD",
-    "aiType": "CUSTOM",
-    "statsScript": "data.scripts.gearin.shipsystems.GearInRangeSystem",
-    "aiScript": "data.scripts.gearin.shipsystems.GearInRangeSystemAI"
+"statsScript":"data.scripts.gearin.shipsystems.GearInRangeSystem",
+"aiType":"CUSTOM",
+"aiScript":"data.scripts.gearin.shipsystems.GearInRangeSystemAI",
+```
+
+`aiType` 是内置 AI 的类型名，`aiScript` 是自定义 AI 的类名。原版只有 5 个系统用 `aiScript`，其余靠 `aiType` 挑一个内置策略。**原版没有任何类同时继承 `BaseShipSystemScript` 又实现 `ShipAIPlugin`**：`ShipAIPlugin` 是整船 AI，与系统无关。系统脚本与系统 AI 之间要传参数，靠自建的旁路接口。
+
+`ShipSystemAIScript` 只有两个方法：
+
+```java
+public interface ShipSystemAIScript {
+	public void init(ShipAPI ship, ShipSystemAPI system, ShipwideAIFlags flags, CombatEngineAPI engine);
+	public void advance(float amount, Vector2f missileDangerDir, Vector2f collisionDangerDir, ShipAPI target);
 }
 ```
 
-`statsScript` 连接效果类，`aiType: "CUSTOM"` 与 `aiScript` 连接自定义 AI。两个类各自实例化：效果类应用数值，AI 提出激活请求。确需共同使用的数据，通过参数或舰船 custom data 传递，实例字段不会自动共享。
+`init(...)` 里有一个坑：不能在 `init` 里取系统脚本，那会触发类加载顺序依赖，游戏启动时直接崩。原版 `ConstructionSwarmSystemAI` 就栽在这里。要拿脚本参数，等第一次 `advance(...)` 之后再取。
 
-向 `ship_systems.csv` 追加注册行，已有表头时只追加数据：
+## 范围增幅的设计
 
-```csv
-name,id,flux/second,f/s (base rate),f/s (base cap),flux/use,f/u (base rate),f/u (base cap),cr/u,max uses,regen,charge up,active,down,cooldown,toggle,noDissipation,noHardDissipation,hardFlux,noFiring,noTurning,noStrafing,noAccel,noShield,noVent,isPhaseCloak,tags,icon
-范围增幅,GearIn_range_system,1,,,,,,,1,0.1,1,5,1,10,FALSE,,,,,,,,,,,,
-```
+范围增幅的效果是：
 
-这条记录设置使用次数、恢复、前后摇、全功率、冷却与开关方式。将工匠在 `ship_data.csv` 中的 `system id` 改为 `GearIn_range_system`，它才会挂载本系统。文件引用与舰船挂载沿用 [C2-S3]，下面继续完成效果和 AI。
+- 实弹武器射程提高 30%；
+- 最大转向速度与转向加速度降低 50%，作为代价；
+- 效果同时作用于窑的模块；
+- 可使用 2 次，每 25 秒恢复 1 次。
 
-## 让射程随效果强度变化
+窑本体与模块都装有实弹武器。系统脚本只拿到窑本体的数值对象，模块要单独处理，这是本节第一个要解决的问题。
 
-系统进入效果阶段时，`apply(...)` 每帧接收本舰 stats、来源 `id`、当前 `state` 与 `effectLevel`。普通系统在 `IN`、`ACTIVE` 和 `OUT` 中应用效果，强度由 0 升至 1，再随后摇回落。
+AI 的使用时机也有明确的答案：**目标刚好在射程之外，增幅之后能够到。** 目标已经在射程内时使用，只换来转向变慢；目标远在增幅后的射程之外时使用，次数白白耗掉。原版没有按这个条件判断的 `aiType`，需要自己编写。
 
-在 `GearInRangeSystem` 中加入局部方法：
+## 战术系统的状态与效果强度
+
+系统从激活到恢复要经过几个状态，`apply(...)` 的参数 `state` 告诉脚本当前处于哪一个：
+
+| 状态       | 含义                         | 对应 `ship_systems.csv` 的列 |
+| ---------- | ---------------------------- | ---------------------------- |
+| `IN`       | 充能，效果逐渐增强           | `charge up`                  |
+| `ACTIVE`   | 效果保持最强                 | `active`                     |
+| `OUT`      | 效果逐渐减弱                 | `down`                       |
+| `COOLDOWN` | 冷却，不能再次使用           | `cooldown`                   |
+| `IDLE`     | 待机，可以使用               | 无                           |
+
+另一个参数 `effectLevel` 是效果强度，在 `IN` 期间从 0 升到 1，`ACTIVE` 期间为 1，`OUT` 期间从 1 降回 0。
+
+`apply(...)` 的调用条件只有一句：**这个系统的效果值大于 0，或者写了 `runScriptWhileIdle`。** 状态在这里只用来算出效果值。`IN`、`ACTIVE`、`OUT` 期间效果值都大于 0，所以这期间每帧调用；`COOLDOWN` 与 `IDLE` 的效果值为 0，默认不调。
+
+`.system` 里加一句 `"runScriptWhileIdle": true`，这条条件就一直成立，`COOLDOWN` 与 `IDLE` 期间 `apply(...)` 照样每帧调用。系统的状态因此不再等于效果在不在，脚本要在 `apply(...)` 里自己看 `state` 分支：激活的那几段写主动效果，其余状态写被动效果。原版激光雷达阵列这么做，系统没开的时候舰船仍有 35% 的武器射程加成。
+
+这个开关还有两个连带后果。`unapply(...)` 仍会在效果结束时调一次，但舰队撤退、系统正处于活动状态时，引擎会另走一条路径再调一次，所以别把它当成 "只执行一次" 的地方写收尾逻辑。另外 `apply(...)` 现在会在待机期每帧运行，里面那些每帧都做的计算也就跟到了待机期，该省的还得省。
+
+因此**修饰的数值应当乘上 `effectLevel`**。这样效果会随充能和消退平滑变化，而不是在某一帧突然出现或消失。
+
+## 修改本体与模块的数值
+
+`apply(...)` 收到的 `stats` 属于窑本体。要找到模块，先从 `stats.getEntity()` 取得舰船对象，再遍历 `getChildModulesCopy()`：
 
 ```java
 @Override
-public void apply(MutableShipStatsAPI stats, String id,
-        State state, float effectLevel) {
-    stats.getEnergyWeaponRangeBonus().modifyMult(id,
-            1f + RANGE_MULT_BONUS * effectLevel);
+public void apply(MutableShipStatsAPI stats, String id, State state, float effectLevel) {
+    applyTo(stats, id, effectLevel);
+    if (stats.getEntity() instanceof ShipAPI ship) {
+        for (ShipAPI module : ship.getChildModulesCopy()) {
+            applyTo(module.getMutableStats(), id, effectLevel);
+        }
+    }
+}
+
+private static void applyTo(MutableShipStatsAPI stats, String id, float effectLevel) {
+    stats.getBallisticWeaponRangeBonus().modifyMult(id, 1f + RANGE_BONUS * effectLevel);
+    stats.getMaxTurnRate().modifyMult(id, 1f - TURN_PENALTY * effectLevel);
+    stats.getTurnAcceleration().modifyMult(id, 1f - TURN_PENALTY * effectLevel);
 }
 ```
 
-`RANGE_MULT_BONUS` 为 0.5，因此前摇中的倍率逐渐接近 1.5，全功率保持 1.5，后摇回到 1。射程收益取决于本帧强度，不能将前摇开始就当作已经获得全部增幅。
+`RANGE_BONUS` 为 `0.3f`，`TURN_PENALTY` 为 `0.5f`。本体与模块使用同一个来源 ID，`unapply(...)` 以同样的方式遍历，逐个调用 `unmodify(id)`。
 
-来源使用引擎传入的 `id`，结束时在同一属性解除它：
+`stats.getEntity()` 在战斗外可能为 `null`，`instanceof` 的判断同时排除了这种情况。
 
-```java
-@Override
-public void unapply(MutableShipStatsAPI stats, String id) {
-    stats.getEnergyWeaponRangeBonus().unmodify(id);
-}
-```
+::: tip 为什么射程用 `modifyMult`
 
-普通系统用 `unapply(...)` 完成撤销，舰船创建时也会调用这个入口。沿用稳定来源，重复应用只更新本系统的记录，结束后其他射程加成继续保留。
+[C8-S2] 介绍过，percent 相加，mult 相乘。射程加成用乘数，增幅就作用在其他船插与技能的加成之上：窑装了原版目标定位系统之后，增幅仍然在已经提高的射程上再提高 30%。
 
-### 指定实际持续时间
+这是有意为之的取舍。如果希望增幅与其他射程加成相加，改用 `modifyPercent(id, 30f * effectLevel)`。
 
-数据表的全功率时间是 5 秒，本例用 `getActiveOverride(...)` 返回 6，使实际全功率持续 6 秒。其余覆盖方法返回负值，沿用数据中的前后摇、恢复速度与次数：
+:::
 
-```java
-@Override
-public float getActiveOverride(ShipAPI ship) {
-    return 6f;
-}
+模块的转向数值也被修改了，但模块固定在本体上，自身不转向。这两行对模块没有实际作用，保留它们是为了让本体与模块共用 `applyTo(...)`，不必再写一个只改射程的版本。
 
-@Override
-public float getInOverride(ShipAPI ship) {
-    return -1f;
-}
+## 在状态栏显示效果
 
-@Override
-public float getOutOverride(ShipAPI ship) {
-    return -1f;
-}
-
-@Override
-public float getRegenOverride(ShipAPI ship) {
-    return -1f;
-}
-
-@Override
-public int getUsesOverride(ShipAPI ship) {
-    return -1;
-}
-```
-
-**非负覆盖值参与运行参数，负值保留数据设置。** 以后调整持续时间时，先确认效果类是否提供覆盖；数据行改动以后，实际时长仍可能由脚本决定。
-
-## 告诉玩家系统处于什么状态
-
-射程已经按阶段变化，界面还要说明当前效果与冷却。玩家舰的系统状态栏从 `getStatusData(...)` 取得内容，本例只在全功率阶段提供一条说明：
+玩家驾驶的舰船使用系统时，屏幕左下方的状态栏会列出系统效果。条目由 `getStatusData(...)` 提供：
 
 ```java
 @Override
 public StatusData getStatusData(int index, State state, float effectLevel) {
-    if (index == 0 && state == State.ACTIVE) {
-        return new StatusData("range amplified", false);
+    if (index == 0) {
+        int range = Math.round(RANGE_BONUS * effectLevel * 100f);
+        return new StatusData("ballistic range +" + range + "%", false);
+    }
+    if (index == 1) {
+        int turn = Math.round(TURN_PENALTY * effectLevel * 100f);
+        return new StatusData("turn rate -" + turn + "%", true);
     }
     return null;
 }
 ```
 
-`index` 选择状态条目，返回 `null` 表示当前索引没有内容。`StatusData` 的第二个参数决定是否采用减益样式，这里为 `false`。
+游戏从 `index` 为 0 开始依次调用，直到返回 `null` 为止。`StatusData` 的第二个参数表示这一条是否为减益，为 `true` 时以警示色显示。
 
-系统图标下方的信息文字由 `getInfoText(...)` 提供。本例在冷却时显示 `RECHARGING`，其他时候返回 `null`，沿用默认 `READY` 或 `ACTIVE`：
+条目文字用英文，与 [C2-S3] 和原版一致。数值同样乘上 `effectLevel`，充能和消退期间，玩家看到的是当前的实际数值。
 
-```java
-@Override
-public String getInfoText(ShipSystemAPI system, ShipAPI ship) {
-    if (system.isCoolingDown()) {
-        return "RECHARGING";
-    }
-    return null;
-}
-```
+## 判断系统能否使用
 
-系统名称也能随阶段变化。在全功率时显示 `Range Amplified`，其他阶段沿用数据名称：
-
-```java
-@Override
-public String getDisplayNameOverride(State state, float effectLevel) {
-    return state == State.ACTIVE ? "Range Amplified" : null;
-}
-```
-
-名称、图标信息与状态条目有各自的显示位置。这些方法返回文字，实际射程仍由前面的数值修饰提供。
-
-## 在激活之前判断是否可用
-
-玩家按键或 AI 提出激活请求后，`isUsable(...)` 提供额外许可。本例要求舰船有效且存活，系统尚未激活、也未冷却：
+窑的实弹武器全部永久损毁之后，范围增幅已经没有意义，不应再允许使用。`isUsable(...)` 返回 `false` 时，玩家按键无效，AI 调用 `useSystem()` 也不会激活：
 
 ```java
 @Override
 public boolean isUsable(ShipSystemAPI system, ShipAPI ship) {
-    return ship != null && ship.isAlive()
-            && !system.isActive() && !system.isCoolingDown();
+    return hasRangeWeapon(ship);
+}
+
+public static boolean isRangeWeapon(WeaponAPI weapon) {
+    return weapon.getType() == WeaponType.BALLISTIC
+            && !weapon.isDecorative()
+            && !weapon.isPermanentlyDisabled()
+            && !weapon.hasAIHint(AIHints.PD);
 }
 ```
 
-返回 `false` 时，本次请求被丢弃。返回 `true` 则允许继续处理，使用次数与幅能等系统条件仍然参与判断。因此它适合补充本功能的限制，不能将它的返回值当成最终激活结果。
+`isPermanentlyDisabled()` 只对永久损毁的武器返回 `true`。暂时被打瘫、稍后会自行修复的武器仍然算作可用，否则系统会在战斗中频繁地在可用与不可用之间切换。
 
-## 给 AI 提供使用入口
+点防御武器也被排除在外。它们的目标是导弹和战机，射程提高对它们作用很小，不该成为使用系统的理由。
 
-`aiScript` 只有在 `aiType` 为 `CUSTOM` 时才进入自定义分支。`ShipSystemAIScript.init(...)` 在 AI 实例建立时保存当前舰船、系统和引擎，`advance(...)` 再根据当前目标决定是否提出请求。
+`isRangeWeapon(...)` 声明为 `public static`，下文的 AI 会用同一个标准挑选武器。**系统认为哪些武器有用，AI 就按哪些武器判断**，两处标准不一致时，AI 会在系统不可用的时候反复尝试使用它。
 
-在 `GearInRangeSystemAI` 中采用以下局部实现：
+### 说明不能使用的原因
+
+舰船信息中，系统名称旁可以显示一段简短的说明，由 `getInfoText(...)` 提供：
 
 ```java
 @Override
-public void init(ShipAPI ship, ShipSystemAPI system,
-        ShipwideAIFlags flags, CombatEngineAPI engine) {
-    this.ship = ship;
-    this.system = system;
-    this.engine = engine;
-    this.interval.randomize();
-}
-
-@Override
-public void advance(float amount, Vector2f missileDangerDir,
-        Vector2f collisionDangerDir, ShipAPI target) {
-    if (engine.isPaused()) {
-        return;
+public String getInfoText(ShipSystemAPI system, ShipAPI ship) {
+    if (!system.isActive() && !hasRangeWeapon(ship)) {
+        return "NO BALLISTICS";
     }
-    interval.advance(amount);
-    if (!interval.intervalElapsed() || target == null
-            || !target.isAlive() || system.isActive()
-            || system.isCoolingDown()) {
-        return;
-    }
-    if (ship.getFluxTracker().isOverloadedOrVenting()) {
-        return;
-    }
-    ship.useSystem();
+    return null;
 }
 ```
 
-`target` 来自舰船 AI。`IntervalUtil` 将实际判断放到每隔 0.2 至 0.3 秒执行；暂停、无有效目标、系统已激活或冷却、舰船过载或散幅时结束本次判断。满足条件后调用 `ship.useSystem()`，提交与玩家按键相同的激活请求。
+返回 `null` 时，游戏显示默认的状态文字，例如剩余次数或冷却进度。
 
-完整类的 `GearIn range AI activated` 日志记录调用发生，实际系统是否启动仍要结合次数、冷却、幅能与界面状态确认。玩家手动驾驶时不运行舰船 AI，将舰船交给自动驾驶或部署到 AI 一方，才能观察这条使用路径。
+## 为系统编写 AI
 
-::: details 射程系统的使用判断
-
-编者不会将 "有目标" 作为射程系统决策的终点。目标本就在当前武器的有效射程内，或武器尚未能够射击时，额外射程未必带来本次收益；目标距离与武器状态应当参与取舍。本例先验证自定义 AI 能提出请求，进一步的使用策略再根据实际舰船与武器组合设计。
-
-:::
-
-## 让脚本在待机时继续运行
-
-普通效果在激活周期中执行。有些功能还需要处理待机和冷却，这时才采用 `runScriptWhileIdle`。创建 `GearInIdleProbeSystem.java`，先用它记录阶段，避免把观察逻辑与射程效果混在同一系统里。
-
-在 `data/shipsystems/GearIn_idle_probe.system` 写入：
+`.system` 文件的 `aiType` 写成 `CUSTOM`，再用 `aiScript` 指定一个实现 `ShipSystemAIScript` 的类，游戏就会把这个系统的使用决定交给它：
 
 ```json
-{
-    "id": "GearIn_idle_probe",
-    "type": "STAT_MOD",
-    "aiType": "NONE",
-    "statsScript": "data.scripts.gearin.shipsystems.GearInIdleProbeSystem",
-    "runScriptWhileIdle": true
-}
+"aiType": "CUSTOM",
+"aiScript": "data.scripts.gearin.shipsystems.GearInRangeSystemAI",
 ```
 
-注册行使用前面的 CSV 表头，追加以下数据：
+接口只有两个方法：
 
-```csv
-待机观察,GearIn_idle_probe,1,,,,,,,1,0,1,2,1,4,FALSE,,,,,,,,,,,,
-```
+- `init(...)` 在舰船进入战斗时调用一次，传入舰船、系统、AI 标记与战斗引擎；
+- `advance(...)` 在舰船由 AI 控制时每帧调用，最后一个参数 `target` 是 AI 当前选定的目标，可能为 `null`。
 
-测试这项功能时，将工匠的 `system id` 改为 `GearIn_idle_probe`，重启后观察一轮。两个系统依次挂载，每次使用一个。
+与船插不同，**AI 脚本为每艘舰船单独创建一个实例**，字段中可以保存这艘舰船的数据。原版的 `DarkenedGazeSystemAI` 就是这样写的。
 
-探针在字段中保存 `lastState`，只在阶段变化时输出日志：
+### 降低判断频率
+
+AI 不需要每帧都做决定。用 `IntervalUtil` 把判断间隔控制在 0.25 至 0.35 秒之间：
 
 ```java
-@Override
-public void apply(MutableShipStatsAPI stats, String id,
-        State state, float effectLevel) {
-    if (state != lastState) {
-        LOG.info("GearIn idle probe: state=" + state
-                + " effectLevel=" + effectLevel);
-        lastState = state;
-    }
-}
+private final IntervalUtil interval = new IntervalUtil(0.25f, 0.35f);
 
 @Override
-public void unapply(MutableShipStatsAPI stats, String id) {
-    LOG.info("GearIn idle probe: unapply");
+public void init(ShipAPI ship, ShipSystemAPI system, ShipwideAIFlags flags, CombatEngineAPI engine) {
+    this.ship = ship;
+    this.system = system;
+    interval.randomize();
 }
 ```
 
-`apply(...)` 仍然每帧执行，日志则只记录切换那一帧的阶段与强度。开启待机执行后，即使整场没有按系统键，也会收到 `IDLE` 调用；激活之后继续经过 `IN`、`ACTIVE`、`OUT` 与 `COOLDOWN`。
+`IntervalUtil` 每次在给定范围内随机取一个间隔，`randomize()` 再把初始进度打乱。一支舰队里同时开战的十几艘窑，不会在同一帧集中计算。
 
-::: warning 待机执行改变了清理方式
+### 排除不该使用的情况
 
-**`runScriptWhileIdle` 不只是增加调用阶段，也会使普通推进不再调用 `unapply(...)`。** 需要撤销修饰或释放状态时，在 `apply(...)` 的待机与冷却分支处理。本探针保留 `unapply(...)`，用于比较它没有进入普通清理路径。
+每到判断时机，先排除不能使用或不值得使用的情况：
+
+```java
+if (system.isActive() || system.getCooldownRemaining() > 0f || system.isOutOfAmmo()) {
+    return;
+}
+if (ship.getFluxTracker().isOverloadedOrVenting() || ship.getFluxLevel() > MAX_FLUX_LEVEL) {
+    return;
+}
+if (target == null || !target.isAlive() || target.isHulk()) {
+    return;
+}
+```
+
+`MAX_FLUX_LEVEL` 为 `0.85f`。幅能接近上限的舰船很快就要后撤或主动散幅，此时增加射程也打不出几发。
+
+这几项检查都很廉价，放在前面，后面遍历武器的计算就只在必要时执行。
+
+### 判断增幅能否带来收益
+
+核心判断只有一句：**有没有武器现在够不到目标，增幅之后能够到。**
+
+```java
+private int countWeaponsBroughtIntoRange(ShipAPI target) {
+    int count = 0;
+    for (WeaponAPI weapon : ship.getAllWeapons()) {
+        if (!GearInRangeSystem.isRangeWeapon(weapon)) {
+            continue;
+        }
+        float distance = Misc.getDistance(weapon.getLocation(), target.getLocation())
+                - Misc.getTargetingRadius(weapon.getLocation(), target, false);
+        float range = weapon.getRange();
+        if (distance > range && distance <= range * (1f + GearInRangeSystem.RANGE_BONUS)) {
+            count++;
+        }
+    }
+    return count;
+}
+```
+
+距离从武器位置算起，减去目标的瞄准半径。`Misc.getTargetingRadius(...)` 返回从给定方向看过去目标碰撞边界的半径，原版 `DarkenedGazeSystemAI` 判断射程时也这样计算。直接用两船中心的距离，目标越大，判断出的距离就越偏远。
+
+`weapon.getRange()` 是当前的实际射程，已经包含其他船插与技能的加成。系统激活后它会变大，但这时 `system.isActive()` 已经让判断提前返回，不会重复计算。
+
+计数大于 0 就调用 `ship.useSystem()`。
+
+::: tip 阈值是取舍，不是定论
+
+"至少 1 门武器" 是最宽松的条件，窑往往在接近目标的途中就用掉一次，换来比对手更早开火。要求至少 2 门，AI 会更保守，次数更多地留到正面交火时。两种都说得通，取决于这个系统在设计上偏向抢先手还是打持久战。
 
 :::
 
-这项开关扩大了持续工作的范围。全战场扫描或大量日志如果仍放在每帧中，待机期间也会支付相应代价。本例只记录阶段变化，其他高成本工作则按真实需要采用间隔执行。
+## 待机时也运行的脚本
 
-## 完整最小例
+`.system` 文件中加入 `"runScriptWhileIdle": true`，`apply(...)` 在 `COOLDOWN` 与 `IDLE` 期间也会每帧调用。原版激光雷达阵列用它实现被动效果：系统没有激活时，舰船仍有 35% 的武器射程加成。
 
-三个类保存到前述路径，分别接入主系统效果、系统 AI 与待机探针。
+开启后有两点需要注意：
 
-::: details 完整成品：GearInRangeSystem
+- **`unapply(...)` 不再被调用。** 原版的 `.system` 文件里普遍写着这一项不生效。激活结束后的清理，要在 `apply(...)` 中根据 `state` 自己完成；
+- `apply(...)` 中的效果要按 `state` 分支，否则激活期间的效果会一直存在。
+
+范围增幅没有被动效果，不开启这一项。需要被动效果时，参考原版 `LidarArrayStats` 的写法：在 `apply(...)` 中判断 `state` 是否为 `IN`、`ACTIVE` 或 `OUT`，激活时写入主动效果，其余状态写入被动效果。
+
+## 完整的范围增幅
+
+`src/data/scripts/gearin/shipsystems/GearInRangeSystem.java`：
 
 ```java
 package data.scripts.gearin.shipsystems;
@@ -275,232 +291,237 @@ package data.scripts.gearin.shipsystems;
 import com.fs.starfarer.api.combat.MutableShipStatsAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ShipSystemAPI;
+import com.fs.starfarer.api.combat.WeaponAPI;
+import com.fs.starfarer.api.combat.WeaponAPI.AIHints;
+import com.fs.starfarer.api.combat.WeaponAPI.WeaponType;
 import com.fs.starfarer.api.impl.combat.BaseShipSystemScript;
 
+/** 范围增幅：实弹武器射程提高，代价是转向变慢；效果同步到模块。 */
 public class GearInRangeSystem extends BaseShipSystemScript {
 
-    public static final float RANGE_MULT_BONUS = 0.5f;
+    /** 满效果时的实弹射程加成，0.3 即 30%。 */
+    public static final float RANGE_BONUS = 0.3f;
+
+    /** 满效果时的转向减益，0.5 即 50%。 */
+    public static final float TURN_PENALTY = 0.5f;
 
     @Override
-    public void apply(MutableShipStatsAPI stats, String id,
-            State state, float effectLevel) {
-        stats.getEnergyWeaponRangeBonus().modifyMult(id,
-                1f + RANGE_MULT_BONUS * effectLevel);
+    public void apply(MutableShipStatsAPI stats, String id, State state, float effectLevel) {
+        applyTo(stats, id, effectLevel);
+        if (stats.getEntity() instanceof ShipAPI ship) {
+            for (ShipAPI module : ship.getChildModulesCopy()) {
+                applyTo(module.getMutableStats(), id, effectLevel);
+            }
+        }
     }
 
     @Override
     public void unapply(MutableShipStatsAPI stats, String id) {
-        stats.getEnergyWeaponRangeBonus().unmodify(id);
+        unapplyFrom(stats, id);
+        if (stats.getEntity() instanceof ShipAPI ship) {
+            for (ShipAPI module : ship.getChildModulesCopy()) {
+                unapplyFrom(module.getMutableStats(), id);
+            }
+        }
+    }
+
+    private static void applyTo(MutableShipStatsAPI stats, String id, float effectLevel) {
+        stats.getBallisticWeaponRangeBonus().modifyMult(id, 1f + RANGE_BONUS * effectLevel);
+        stats.getMaxTurnRate().modifyMult(id, 1f - TURN_PENALTY * effectLevel);
+        stats.getTurnAcceleration().modifyMult(id, 1f - TURN_PENALTY * effectLevel);
+    }
+
+    private static void unapplyFrom(MutableShipStatsAPI stats, String id) {
+        stats.getBallisticWeaponRangeBonus().unmodify(id);
+        stats.getMaxTurnRate().unmodify(id);
+        stats.getTurnAcceleration().unmodify(id);
     }
 
     @Override
     public StatusData getStatusData(int index, State state, float effectLevel) {
-        if (index == 0 && state == State.ACTIVE) {
-            return new StatusData("range amplified", false);
+        if (index == 0) {
+            int range = Math.round(RANGE_BONUS * effectLevel * 100f);
+            return new StatusData("ballistic range +" + range + "%", false);
+        }
+        if (index == 1) {
+            int turn = Math.round(TURN_PENALTY * effectLevel * 100f);
+            return new StatusData("turn rate -" + turn + "%", true);
         }
         return null;
     }
 
     @Override
     public boolean isUsable(ShipSystemAPI system, ShipAPI ship) {
-        return ship != null && ship.isAlive()
-                && !system.isActive() && !system.isCoolingDown();
+        return hasRangeWeapon(ship);
     }
 
     @Override
     public String getInfoText(ShipSystemAPI system, ShipAPI ship) {
-        if (system.isCoolingDown()) {
-            return "RECHARGING";
+        if (!system.isActive() && !hasRangeWeapon(ship)) {
+            return "NO BALLISTICS";
         }
         return null;
     }
 
-    @Override
-    public float getActiveOverride(ShipAPI ship) {
-        return 6f;
+    /** 能从本系统获益的武器：未永久损毁、不以点防御为主的实弹武器。 */
+    public static boolean isRangeWeapon(WeaponAPI weapon) {
+        return weapon.getType() == WeaponType.BALLISTIC
+                && !weapon.isDecorative()
+                && !weapon.isPermanentlyDisabled()
+                && !weapon.hasAIHint(AIHints.PD);
     }
 
-    @Override
-    public float getInOverride(ShipAPI ship) {
-        return -1f;
-    }
-
-    @Override
-    public float getOutOverride(ShipAPI ship) {
-        return -1f;
-    }
-
-    @Override
-    public float getRegenOverride(ShipAPI ship) {
-        return -1f;
-    }
-
-    @Override
-    public int getUsesOverride(ShipAPI ship) {
-        return -1;
-    }
-
-    @Override
-    public String getDisplayNameOverride(State state, float effectLevel) {
-        return state == State.ACTIVE ? "Range Amplified" : null;
+    private static boolean hasRangeWeapon(ShipAPI ship) {
+        for (WeaponAPI weapon : ship.getAllWeapons()) {
+            if (isRangeWeapon(weapon)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
 ```
 
-:::
-
-::: details 完整成品：GearInRangeSystemAI
+`src/data/scripts/gearin/shipsystems/GearInRangeSystemAI.java`：
 
 ```java
 package data.scripts.gearin.shipsystems;
 
-import org.apache.log4j.Logger;
 import org.lwjgl.util.vector.Vector2f;
 
-import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
-import com.fs.starfarer.api.combat.ShipSystemAPI;
 import com.fs.starfarer.api.combat.ShipSystemAIScript;
+import com.fs.starfarer.api.combat.ShipSystemAPI;
 import com.fs.starfarer.api.combat.ShipwideAIFlags;
+import com.fs.starfarer.api.combat.WeaponAPI;
 import com.fs.starfarer.api.util.IntervalUtil;
+import com.fs.starfarer.api.util.Misc;
 
+/** 范围增幅的 AI：目标刚好在实弹武器射程之外、增幅后能够到时才使用。 */
 public class GearInRangeSystemAI implements ShipSystemAIScript {
 
-    private static final Logger LOG = Global.getLogger(GearInRangeSystemAI.class);
+    /** 幅能高于这个比例时不使用，舰船很快就要后撤或散幅。 */
+    private static final float MAX_FLUX_LEVEL = 0.85f;
+
+    private final IntervalUtil interval = new IntervalUtil(0.25f, 0.35f);
+
     private ShipAPI ship;
     private ShipSystemAPI system;
-    private CombatEngineAPI engine;
-    private final IntervalUtil interval = new IntervalUtil(0.2f, 0.3f);
 
     @Override
-    public void init(ShipAPI ship, ShipSystemAPI system,
-            ShipwideAIFlags flags, CombatEngineAPI engine) {
+    public void init(ShipAPI ship, ShipSystemAPI system, ShipwideAIFlags flags, CombatEngineAPI engine) {
         this.ship = ship;
         this.system = system;
-        this.engine = engine;
         interval.randomize();
-        LOG.info("GearIn range AI init: " + ship.getHullSpec().getHullId());
     }
 
     @Override
-    public void advance(float amount, Vector2f missileDangerDir,
-            Vector2f collisionDangerDir, ShipAPI target) {
-        if (engine.isPaused()) {
-            return;
-        }
+    public void advance(float amount, Vector2f missileDangerDir, Vector2f collisionDangerDir, ShipAPI target) {
         interval.advance(amount);
-        if (!interval.intervalElapsed() || target == null
-                || !target.isAlive() || system.isActive()
-                || system.isCoolingDown()) {
+        if (!interval.intervalElapsed()) {
             return;
         }
-        if (ship.getFluxTracker().isOverloadedOrVenting()) {
+        if (system.isActive() || system.getCooldownRemaining() > 0f || system.isOutOfAmmo()) {
             return;
         }
-        ship.useSystem();
-        LOG.info("GearIn range AI activated");
+        if (ship.getFluxTracker().isOverloadedOrVenting() || ship.getFluxLevel() > MAX_FLUX_LEVEL) {
+            return;
+        }
+        if (target == null || !target.isAlive() || target.isHulk()) {
+            return;
+        }
+        if (countWeaponsBroughtIntoRange(target) > 0) {
+            ship.useSystem();
+        }
+    }
+
+    /** 统计现在够不到目标、增幅后能够到的武器数量。 */
+    private int countWeaponsBroughtIntoRange(ShipAPI target) {
+        int count = 0;
+        for (WeaponAPI weapon : ship.getAllWeapons()) {
+            if (!GearInRangeSystem.isRangeWeapon(weapon)) {
+                continue;
+            }
+            float distance = Misc.getDistance(weapon.getLocation(), target.getLocation())
+                    - Misc.getTargetingRadius(weapon.getLocation(), target, false);
+            float range = weapon.getRange();
+            if (distance > range && distance <= range * (1f + GearInRangeSystem.RANGE_BONUS)) {
+                count++;
+            }
+        }
+        return count;
     }
 }
 ```
 
-:::
+## 登记战术系统
 
-::: details 完整成品：GearInIdleProbeSystem
+`data/shipsystems/GearIn_range_system.system`：
 
-```java
-package data.scripts.gearin.shipsystems;
-
-import org.apache.log4j.Logger;
-
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.combat.MutableShipStatsAPI;
-import com.fs.starfarer.api.impl.combat.BaseShipSystemScript;
-
-public class GearInIdleProbeSystem extends BaseShipSystemScript {
-
-    private static final Logger LOG = Global.getLogger(GearInIdleProbeSystem.class);
-    private State lastState;
-
-    @Override
-    public void apply(MutableShipStatsAPI stats, String id,
-            State state, float effectLevel) {
-        if (state != lastState) {
-            LOG.info("GearIn idle probe: state=" + state
-                    + " effectLevel=" + effectLevel);
-            lastState = state;
-        }
-    }
-
-    @Override
-    public void unapply(MutableShipStatsAPI stats, String id) {
-        LOG.info("GearIn idle probe: unapply");
-    }
-
+```json
+{
+    "id": "GearIn_range_system",
+    "type": "STAT_MOD",
+    "aiType": "CUSTOM",
+    "aiScript": "data.scripts.gearin.shipsystems.GearInRangeSystemAI",
+    "statsScript": "data.scripts.gearin.shipsystems.GearInRangeSystem",
+    "weaponGlowColor": [255, 170, 60, 155],
+    "weaponTypes": ["BALLISTIC"],
+    "useSound": "system_targeting_feed",
+    "loopSound": "system_targeting_feed_loop",
+    "outOfUsesSound": "gun_out_of_ammo"
 }
 ```
 
-:::
+`useSound` 与 `loopSound` 借用原版目标馈送系统的音效。
 
-## 验证方案
+`data/shipsystems/ship_systems.csv` 新增一行：
 
-前置数据：[C4-S1] 的 `GearIn_test` 与工匠装配；已登记两个系统，并将工匠的 `system id` 设为 `GearIn_range_system`。
+```csv
+范围增幅,GearIn_range_system,,,,,,,,2,0.04,1,6,1,4,,,,,,,,,,,,offensive,graphics/icons/hullsys/lidar_barrage.png
+```
 
-1. 执行 `gradle jar`，确认 JAR 包含三个示例类。
-2. 进入模拟战，激活 `GearIn_range_system`，观察前摇、全功率、后摇和冷却阶段。
-3. 核对主系统的武器射程倍率、`range amplified` 状态文字和 `RECHARGING` 信息文字。
-4. 将工匠交给自动驾驶或 AI 一方，有存活目标时观察 `GearIn range AI init` 与 `GearIn range AI activated`；确认每次实际激活仍受次数、冷却与幅能条件影响。
-5. 将工匠的 `system id` 改为 `GearIn_idle_probe`，重启进入战斗；激活并等待冷却结束，搜索 `GearIn idle probe` 比较阶段切换。
-6. 暂停战斗并恢复，比较普通系统和待机演示系统的回调日志。
-7. 结束战斗后开始第二场战斗，确认 stats 与 AI 的实例状态重新建立。
+`max uses` 为 `2`，`regen` 为 `0.04`，即每秒恢复 0.04 次，25 秒恢复 1 次。充能 1 秒、持续 6 秒、消退 1 秒，两次使用之间至少冷却 4 秒。图标借用原版激光雷达阵列的 `lidar_barrage.png`。
 
-预期结果：
+`data/strings/descriptions.csv` 新增系统说明：
 
-- 主系统能量射程倍率由 1 平滑增至 1.5 再回落，结束时解除来源；脚本把全功率时间覆盖为 6 秒。
-- 待机探针每次阶段切换记录一次，`unapply` 的调用数量为 0。
-- 玩家界面出现 `range amplified` 和 `RECHARGING`；
-- AI 舰船按节流间隔调用 `ship.useSystem()`，而不是每帧重复尝试；
-- 待机演示系统在 `IDLE`、`IN`、`ACTIVE`、`OUT` 和 `COOLDOWN` 阶段输出日志；
-- 第二场战斗使用新的脚本实例和新的战斗对象。
+```csv
+GearIn_range_system,SHIP_SYSTEM,"窑的火控增幅系统。将测距与弹道解算功率集中给实弹武器，射程随之延伸，代价是解算期间舰船转向迟缓。效果同样作用于窑的模块。",进攻,"提高实弹武器射程，但降低舰船转向能力。",射程|转向,"实弹武器射程提高 {{30%}}，最大转向速度与转向加速度降低 {{50%}}。",
+```
 
-## 故障分析
+最后在 `data/hulls/ship_data.csv` 中，把窑的 `system id` 从 `GearIn_assaultfeed` 改为 `GearIn_range_system`。工匠仍然使用突击填弹器。
 
-- **系统加载时报 `Problem loading class`**：`.system` 中的 `statsScript`、`aiScript` 或包名与 JAR 中的类不一致。
-    - **解决方案**：逐字核对完整类名、`package` 声明和 JAR 条目后重启。
+### 进游戏核对
 
-- **AI 舰船从不激活系统**：`aiType` 不是 `CUSTOM`，或 `advance(...)` 的目标、冷却和存活检查始终返回。
-    - **解决方案**：将 `aiType` 改为 `CUSTOM`，确认目标有效并用日志检查节流后的决策时机。
+执行 `gradle jar`，重启游戏，在模拟战中驾驶窑。
 
-- **系统结束后射程倍率仍然存在**：`unapply(...)` 没有用与 `apply(...)` 相同的 来源 ID 撤销。
-    - **解决方案**：统一使用引擎传入的 `id`，重新激活并等待系统结束。
+- 使用系统，状态栏出现 "ballistic range +30%" 与 "turn rate -50%" 两条，后者以警示色显示。数值在充能和消退期间逐渐变化。
+- 激活期间，本体与模块上的都林自动炮射程指示圈都变大。
+- 系统的次数显示为 2，用完后约 25 秒恢复 1 次。
+- 切换为 AI 控制，让窑与一艘原版巡洋舰交战。窑在接近途中、目标刚好处于射程之外时使用系统，进入近距离交火后不再使用。
 
-- **仅出现激活阶段日志**：`runScriptWhileIdle` 未写在 `.system` 顶层，或值不是 `true`。
-    - **解决方案**：在待机演示系统的 `.system` 顶层设置 `runScriptWhileIdle: true`，重新加载后搜索 `IDLE` 与 `COOLDOWN`。
+## 常见问题
 
-- **系统每帧反复尝试激活**：自定义 AI 没有使用 `IntervalUtil`，或没有检查 `isActive()` 和 `isCoolingDown()`。
-    - **解决方案**：保留决策间隔，并在调用 `ship.useSystem()` 前检查系统状态。
+- **模块的射程没有变化**：只修改了 `apply(...)` 收到的 `stats`。
+    - **解决方案**：通过 `stats.getEntity()` 取得舰船，遍历 `getChildModulesCopy()`，对每个模块的 `getMutableStats()` 写入同样的修饰。
 
-- **待机脚本造成战斗卡顿**：开启 `runScriptWhileIdle` 后仍在每帧执行全战场扫描或大量日志输出。
-    - **解决方案**：缩短待机脚本逻辑，只读取必要状态，并将高成本工作改为间隔执行。
+- **系统结束后转向仍然很慢**：`unapply(...)` 没有遍历模块，或者开启了 `runScriptWhileIdle`。
+    - **解决方案**：`unapply(...)` 与 `apply(...)` 遍历相同的对象；开启 `runScriptWhileIdle` 时，在 `apply(...)` 中按 `state` 自行清理。
 
-- **自定义 AI 保存的字段在 stats 脚本中为空**：stats 类与 AI 类是独立实例，实例字段不会互相共享。
-    - **解决方案**：通过参数、静态工具方法或舰船 custom data 传递确需共享的信息。
+- **AI 从不使用系统**：`aiType` 不是 `CUSTOM`，或者 `aiScript` 的类名写错。
+    - **解决方案**：两项都检查。类名必须写完整的包路径，与 `statsScript` 的写法相同。
 
-## 总结
+- **AI 一进入战斗就用掉全部次数**：判断时没有排除已在射程内的武器，或者用了两船中心的距离。
+    - **解决方案**：只统计 "现在够不到、增幅后能够到" 的武器，距离减去目标的瞄准半径。
 
-范围增幅从舰船挂载进入系统：效果类按阶段修改射程，覆盖方法决定实际时长，界面方法呈现状态，激活许可与系统条件共同处理请求。AI 的职责是选择何时提出这个请求，它使用独立实例。
-
-待机观察则说明了另一种执行方式。开启 `runScriptWhileIdle` 后，`apply(...)` 继续处理待机和冷却，清理也随之进入阶段分支。采用这个开关时，持续范围与撤销方式需要一同设计。
+- **武器全部损毁后仍能使用**：`isUsable(...)` 没有覆盖，或者检查时包含了装饰武器。
+    - **解决方案**：在 `isUsable(...)` 中调用 `isRangeWeapon(...)` 的判断，排除装饰武器与永久损毁的武器。
 
 ## 建议参考项
 
-- `data/shipsystems/<id>.system`：战术系统数据文件，确定 stats 脚本、AI 脚本和待机调用范围；
-- `data/shipsystems/ship_systems.csv`：战术系统注册表；
-- `data/hulls/ship_data.csv`：舰船数据表，挂载系统的运行参数来源；
-- `com.fs.starfarer.api.combat.MutableShipStatsAPI`：舰船数值修饰入口；
-- `com.fs.starfarer.api.combat.MutableStat`：单条数值的修饰对象；
-- `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：效果脚本基类；
-- `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：状态、效果和状态栏接口；
-- `com.fs.starfarer.api.plugins.ShipSystemStatsScriptAdvanced`：`isUsable` 与 `getInfoText`；
-- `com.fs.starfarer.api.combat.ShipSystemAIScript`：`init` 与 `advance`；
-- `com.fs.starfarer.api.combat.ShipSystemAPI`：状态、冷却和激活访问器。
+- `com.fs.starfarer.api.plugins.ShipSystemStatsScript`：`State`、`StatusData` 与各个覆盖方法的定义。
+- `com.fs.starfarer.api.impl.combat.BaseShipSystemScript`：全部覆盖方法的默认返回值。
+- `com.fs.starfarer.api.combat.ShipSystemAIScript`：自定义系统 AI 的接口。
+- `com.fs.starfarer.api.impl.combat.dweller.DarkenedGazeSystemAI`：原版自定义系统 AI，包含射程判断与 `IntervalUtil` 的用法。
+- `com.fs.starfarer.api.impl.combat.LidarArrayStats`：原版激光雷达阵列，`runScriptWhileIdle` 与被动射程加成的写法。

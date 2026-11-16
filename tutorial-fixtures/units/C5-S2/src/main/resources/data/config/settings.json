@@ -1,5 +1,0 @@
-{
-    "plugins": {
-        "musicPlugin": "data.scripts.gearin.campaign.GearInMusicPlayerPlugin"
-    }
-}

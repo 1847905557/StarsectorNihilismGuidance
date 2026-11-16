@@ -1,130 +1,74 @@
-# 制作测试战役装配
+# 制作测试战役与战役
 
-第三章已经为势力准备了最小装配，本节改用游戏内装配界面制作和导出更多配置。测试战役会自动收集齿轮工业的舰船装配，提供武器、船插与战斗测试入口；导出的设计整理为正式装配后，继续用于生涯、模拟战和常规战役。
+测试战役大概是整个 MOD 里玩家最少打开、编者却最常打开的东西。以后每做一艘船、改一门武器，都要回到这里装一遍、打一遍。
+
+它值得一次做好，之后就不用再管了。
+
+---
 
 _本节预期阅读时间：\~12 分钟。_
 
-_本节预期操作时间：\~15 分钟。_
-
-## 学习目标
-
-完成后，您将能够：
-
-- 注册并配置一个测试战役；
-- 使用自动收集自有舰船装配的战役定义；
-- 从装配界面导出设计，保存为正式 variant；
-- 核对装配字段与自动装配目标；
-- 复制原版战役，替换成自己的舰队与地图。
+_本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C1-S1] 的 MOD 目录与数据合并；
-- [C1-S2] 的舰船登记、槽位与装配界面；
-- [C1-S3] 的战机装配；
-- [C1-S5] 的武器与 [C1-S6] 的内置配置；
-- [C2-S2] 的船插；
-- [C3-S2] 的 `GearIn_artizan_faction` 与舰队角色；
-- [C1-S7] 的 CSV 表头和注释。
+- [C3-S2] 的舰队装配与 `default_ship_roles.json`，本节制作的装配要登记到其中；
+- [C1-S2] 至 [C1-S4] 的工匠、看炉人与锻件，测试战役用它们做靶与测试对象；
+- Java 的基本语法，战役定义 `MissionDefinition.java` 是一个完整的类；
+- JSON 的基本写法与 [C1-S1] 提到的宽松 JSON，`descriptor.json` 与装配文件按它手工修改。
 
-## 建立测试战役目录
+## 制作测试战役
 
-游戏本身就能保存装配界面中的设计。这里先建立固定的测试战役，将自己的舰船列为候选；以后新增内容也能继续通过这个入口装配和测试。
+在制作真正的战役之前，需要有舰船的装配。但是若需要制作舰船的装配，则最好的方法却又往往是从战役里导出。这种先有鸡还是先有蛋的问题可以被**测试战役**解决。
 
-创建 `data/missions/GearIn_test/`。从原版 `data/missions/afistfulofcredits/` 复制全部文件到这里，保留图标，准备修改描述、文本与定义类。
-
-观察当前目录中的四项文件：
-
-![测试战役目录中的描述、图标、文本与源码](./mission_folder.png 'mission_folder.png')
-
-`descriptor.json` 提供条目名称与图标，`mission_text.txt` 提供详情文本，`MissionDefinition.java` 配置双方舰队和地图。图标在同一目录中，本例沿用 `icon.jpg`。
-
-### 填写战役描述与文本
-
-把 `descriptor.json` 写成：
-
-```json
-{
-    "title": "Gear 测试",
-    "difficulty": "简单",
-    "icon": "icon.jpg",
-    "background": "graphics/backgrounds/background4.jpg"
-}
-```
-
-### 战役描述字段速查表
-
-| 字段         | 是否必需 | 实际意义                                                         |
-| ------------ | -------- | ---------------------------------------------------------------- |
-| `title`      | 是       | 战役名称，显示在 Missions 列表                                   |
-| `difficulty` | 是       | 战役难度，可随意填写，只作显示                                   |
-| `icon`       | 是       | 战役图标贴图文件名，位于战役文件夹内 (本例沿用复制的 `icon.jpg`) |
-| `background` | 否       | 战役背景贴图路径 (相对于 MOD 根目录，可指向原版 `graphics/`)     |
-
-三个必填键用于读取条目，背景可按实际地图选择。游戏接受原版文件的宽松 JSON，当前成品使用标准 JSON。
-
-在 `mission_text.txt` 写入：
-
-```text
-地点：未知
-日期：未知
-
-测试齿轮工业的舰船。
-```
-
-这段文字显示在战役详情页，可以按需要修改；`mission_text.txt` 作为战役数据的一部分继续保留。
-
-## 用代码列出自有装配
-
-把目录中的源码改为完整例里的 `MissionDefinition.java`。**战役类的完整名字由目录 ID 决定**：本例是 `data.missions.GearIn_test.MissionDefinition`，包名与类名按这个位置填写。
-
-游戏在选择战役时创建类，并调用 `defineMission(...)`。当前模板已经提供所需结构，舰队与地图的配置都由这个方法完成。下面说明改成其他测试项目时会涉及的位置。
-
-### 收集已加载装配
-
-模板通过 `getAllVariantIds()` 取得装配 ID，再按船体前缀收集，局部片段如下：
-
-```java
-for (String id : Global.getSettings().getAllVariantIds()) {
-    ShipVariantAPI variant = Global.getSettings().getVariant(id);
-    if (variant.getHullSpec().getHullId().startsWith(PREFIX)
-            && variant.getHullSpec().getHullSize() != ShipAPI.HullSize.FIGHTER
-            && !id.startsWith("mission_")) {
-        variants.add(id);
-    }
-}
-```
-
-`PREFIX` 为 `GearIn_`，筛选时检查的是装配所用船体的 ID，符合前缀的装配才加入列表。战机与任务导出项按条件跳过。**这是按船体归属收集装配**，同一个船体有多个正式配置时，它们也会一起出现。
-
-已注册船体还有自动生成的 `<hullId>_Hull` 空装配，因此尚未做正式设计的船也能进入测试。第三章的工匠势力装配则作为已有配置一同列出。
-
-### 设置双方与地图
-
-列表中的装配由 `addToFleet` 加入舰队。在此之前，`initFleet` 初始化玩家和敌方舰队，SIM 是自动命名前缀，5 为初始指挥点。`addToFleet` 按装配 ID 加入成员，第一个玩家成员设为旗舰。
-
-当前模板使用原版 `remnant_station2_Standard` 作为敌方目标，并配置星云、点位和小行星带。舰队说明由 `setFleetTagline` 设置，简报项目由 `addBriefingItem` 设置。
-
-若要制作另一套测试战役，调整包名中的战役 ID 和 `PREFIX`，再选择敌舰与地图。比较某项设计改动时，敌方配置与场地保持稳定，才能区分变化来自设计本身还是测试条件。
-
-## 注册并保存完整战役
-
-在 `data/missions/mission_list.csv` 追加：
+在 `data/missions` 中新建一个文件夹，将其命名为 `前缀名_test`，这是这个战役的文件夹，在本例中为 `GearIn_test`。然后在 `data/missions` 中创建 `mission_list.csv`，将 `GearIn_test` 填入第二行，为这个战役注册：
 
 ```csv
 mission
 GearIn_test
 ```
 
-表头为 `mission`，条目与目录同名。同路径文件按行合并，当前 MOD 只提交自己的战役。行首 `#` 可暂时关闭条目，`_test` 后缀本身不会隐藏战役。
+注册战役后，开始设置这个测试战役的具体内容。首先随机挑选一个原版战役，将它文件夹里的所有东西都复制到 `GearIn_test` 文件夹内。本例复制的是 `afistfulofcredits`：
 
-## 完整最小例
+![测试战役目录中的描述、图标、文本与源码](./mission_folder.png 'mission_folder.png')
 
-描述、文本与图标采用上面的文件，完整类保存为 `data/missions/GearIn_test/MissionDefinition.java`。
+然后逐个文件进行修改。首先是 `descriptor.json`：
 
-::: details 完整成品：MissionDefinition
+```json
+{
+	"title":"Gear 测试",
+	"difficulty":"简单",
+	"icon":"icon.jpg",
+	"background":"graphics/backgrounds/background4.jpg",
+}
+```
+
+| 字段         | 实际意义                     |
+| ------------ | ---------------------------- |
+| `title`      | 战役名称                     |
+| `difficulty` | 战役难度，可随意填写         |
+| `icon`       | 战役图标贴图，在战役文件夹内 |
+| `background` | 战役背景贴图路径             |
+
+`icon.jpg` 是图标贴图，本例不做修改。
+
+然后是 `mission_text.txt`，里面是战役的详细文本，可以随意填写：
+
+```text
+地点: 未知
+日期: 未知
+
+测试 齿轮工业 的舰船。
+```
+
+### 编写战役定义
+
+最后是 `MissionDefinition.java`。本指南将直接分享一份测试战役框架，可以随意使用：
 
 ```java
 package data.missions.GearIn_test;
+
+// shared by Nihilism, modified from AnyIDElse under license
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -139,13 +83,15 @@ import com.fs.starfarer.api.mission.FleetSide;
 import com.fs.starfarer.api.mission.MissionDefinitionAPI;
 import com.fs.starfarer.api.mission.MissionDefinitionPlugin;
 
-/** 自动列出本MOD非战机装配，用于测试与导出。 */
+/** 自动列出本 MOD 的全部非战机装配，用于测试与导出。 */
 public class MissionDefinition implements MissionDefinitionPlugin {
 
+    // 船体 ID 的前缀，换成您自己的前缀名
     public static final String PREFIX = "GearIn_";
 
     @Override
     public void defineMission(MissionDefinitionAPI api) {
+        // 双方舰队：舰船名前缀、作战目标、是否由 AI 控制、初始指挥点
         api.initFleet(FleetSide.PLAYER, "SIM", FleetGoal.ATTACK, false, 5);
         api.initFleet(FleetSide.ENEMY, "SIM", FleetGoal.ATTACK, true, 5);
 
@@ -154,7 +100,8 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
         api.addBriefingItem("TEST");
 
-        List<String> variants = new ArrayList<>();
+        // 找出船体 ID 以前缀开头的全部装配，跳过战机和测试战役自己导出的装配
+        List<String> variants = new ArrayList<String>();
         for (String id : Global.getSettings().getAllVariantIds()) {
             ShipVariantAPI variant = Global.getSettings().getVariant(id);
             if (variant.getHullSpec().getHullId().startsWith(PREFIX)
@@ -165,14 +112,17 @@ public class MissionDefinition implements MissionDefinitionPlugin {
         }
         Collections.sort(variants);
 
+        // 全部加入玩家舰队，第一艘为旗舰
         boolean first = true;
         for (String variant : variants) {
             api.addToFleet(FleetSide.PLAYER, variant, FleetMemberType.SHIP, first);
             first = false;
         }
 
+        // 敌方：原版余辉中枢
         api.addToFleet(FleetSide.ENEMY, "remnant_station2_Standard", FleetMemberType.SHIP, false);
 
+        // 地图：大小、星云、传感干扰器、通讯中继站、导航浮标与小行星带
         float width = 10000f;
         float height = 10000f;
         api.initMap(-width / 2f, width / 2f, -height / 2f, height / 2f);
@@ -201,164 +151,166 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 }
 ```
 
-:::
+**将代码中的两个替换位点替换完毕**后可直接使用：`package` 一行末尾的战役文件夹名，以及 `PREFIX` 的前缀名。它会自动将您 MOD 中的所有舰船列出，无需后期修正。
 
-启动游戏后，选择 Gear 测试，观察条目、简报与玩家装配入口：
+这份代码比前两章的脚本都长，但您不必逐行读懂它。**它是一件工具，照抄、替换两处即可。** 按船体前缀收集装配、往舰队里加船、摆星云与战场目标，这些写法到 [C6-S1] 建立 Java 工程之后再回头看，会容易得多。现在只需要知道下面这些：
+
+- **战役类的完整名字由目录 ID 决定**。包名必须是 `data.missions.GearIn_test`，与文件夹名逐字一致；
+- **这是按船体归属收集装配**。每个船体还有一个游戏自动生成的空装配，所以还没做过装配的船也会出现在列表里；
+- 敌方固定是一座原版余辉中枢。
+
+编者选余辉中枢当靶子，是因为它不会跑、火力全面、足够耐打，任何舰船都能在它面前打满一整轮战术系统与武器循环。**比较某项设计改动时，敌方配置与场地保持不变**，否则您分不清变化来自设计本身还是测试条件。代价是它测不出追击与机动，那部分要交给模拟战，见 [C4-S2]。
+
+### 进游戏核对
+
+保存所有文件，启动游戏，在主菜单进入战役，选择 "Gear 测试"：
 
 ![测试战役的选择页面与玩家舰队装配入口](./mission_test.png 'mission_test.png')
 
-图中 Refit 打开舰船装配，Play Mission 开始战斗。这里先选择需要配置的工匠，再进行修改。
+齿轮工业的全部舰船都在玩家舰队里，敌方是一座余辉中枢。点击舰船旁的装配按钮可以进入装配界面，开始战役则进入战斗。
 
-## 从装配界面导出设计
+## 制作装配
 
-进入测试战役的 Refit，给船体装上武器、船插和幅容幅散。游戏会把修改后的设计写入存档的 `missions/GearIn_test/`。
-
-默认存档目录在 `Starsector/saves/`；实际路径由 `vmparams` 的 `-Dcom.fs.starfarer.settings.paths.saves` 决定。下面观察导出的任务装配：
+[C3-S2] 手写了工匠的装配，看炉人和锻件的装配则留到了这里。您可以在测试战役中为您的舰船安装武器、插件、战机等。被装配过的舰船，会在存档目录的 `missions/GearIn_test/` 下自动生成装配文件：
 
 ![测试战役保存到存档目录的装配文件](./variant_export.png 'variant_export.png')
 
-文件形如 `mission_GearIn_test_ship_0.variant`，序号对应玩家舰队中的成员。当前模板列出多个装配，因此选择导出文件时要核对内部 `hullId`，确认它对应刚才修改的船体。
+文件名形如 `mission_GearIn_test_ship_0.variant`，末尾的序号对应玩家舰队中的成员。列表里的船不止一艘，打开文件看一眼 `hullId`，确认它是刚才装配的那艘。
 
-**正式装配需要自己的 ID。** 把工匠的导出文件移到 MOD 的 `data/variants/`，命名为 `GearIn_artizan_combat.variant`，将内部 `variantId` 同步改为 `GearIn_artizan_combat`，`displayName` 改为 "突击型"。
-
-### 装配字段速查表
-
-| 字段                           | 是否必需 | 实际意义                                                                                                                                                           |
-| ------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `variantId`                    | 是       | 装配 ID，全局唯一，建议与文件名一致                                                                                                                                |
-| `hullId`                       | 是       | 指向已注册船体，必须与 `.ship`、`ship_data.csv` 一致                                                                                                               |
-| `displayName`                  | 是       | 装配显示名，出现在装配界面与舰队面板                                                                                                                               |
-| `fluxVents` / `fluxCapacitors` | 是       | 幅散 / 幅容数量                                                                                                                                                    |
-| `weaponGroups`                 | 是       | 武器组数组；每组含 `mode`(只能是 `LINKED` 或 `ALTERNATING`，`WeaponGroupType` 枚举仅这两个值)、`autofire`(可选，默认 `false`)、`weapons`(槽位 ID → 武器 ID 的对象) |
-| `hullMods`                     | 否       | 已安装船插 ID 数组                                                                                                                                                 |
-| `permaMods` / `sMods`          | 否       | 永久船插 / S 插数组，常规装配通常留空                                                                                                                              |
-| `wings`                        | 否       | 航母的机库装配，按甲板顺序列出战机 wing ID                                                                                                                         |
-| `goalVariant`                  | 否       | 布尔，默认 `false`；为 `true` 时该装配作为自动装配目标出现                                                                                                         |
-| `tags`                         | 否       | 字符串数组，`hullMods` 之外的自由标记                                                                                                                              |
-| `modules`                      | 否       | 模块舰 (空间站、超体等) 的模块装配，本节不展开                                                                                                                     |
-
-`displayName`、`hullId`、`variantId`、整数幅容幅散和武器组数组都要存在。`LINKED` 与 `ALTERNATING` 是两个可用武器组模式，`autofire` 缺省为 false。
-
-本节整理后的工匠装配如下。内置都林继续由船体提供，普通槽位只记录本次装配的武器：
+将它剪贴 (而非复制) 到您 MOD 中 `data/variants` 文件夹内，然后修改文件名为更容易辨识的样子。存档目录里只留下还没整理的设计，下次导出时就不会认错。**正式装配需要自己的 ID。** 文件名改为 `GearIn_furnaceman_combat.variant`，内部的 `variantId` 同步改为 `GearIn_furnaceman_combat`，`displayName` 改为希望显示的装配名：
 
 ```json
 {
-    "displayName": "突击型",
-    "fluxCapacitors": 0,
-    "fluxVents": 0,
-    "hullId": "GearIn_artizan",
-    "hullMods": [],
+    "displayName": "Combat",
+    "fluxCapacitors": 7,
+    "fluxVents": 20,
+    "hullId": "GearIn_furnaceman",
+    "hullMods": ["expanded_deck_crew"],
     "permaMods": [],
     "sMods": [],
-    "variantId": "GearIn_artizan_combat",
+    "variantId": "GearIn_furnaceman_combat",
+    "goalVariant": true,
     "weaponGroups": [
         {
             "autofire": true,
-            "mode": "ALTERNATING",
+            "mode": "LINKED",
             "weapons": {
-                "WS0001": "phasecl",
-                "WS0002": "phasecl"
+                "WS0001": "GearIn_durin",
+                "WS0002": "GearIn_durin"
             }
         },
         {
             "autofire": true,
             "mode": "LINKED",
             "weapons": {
-                "WS0005": "GearIn_durin",
-                "WS0006": "GearIn_durin"
+                "WS0003": "vulcan",
+                "WS0004": "vulcan",
+                "WS0005": "vulcan",
+                "WS0006": "vulcan"
             }
         }
     ],
-    "goalVariant": true
+    "wings": ["GearIn_slag_wing", "GearIn_slag_wing"]
 }
 ```
 
-`goalVariant: true` 把这个装配作为对应船体的自动装配目标。文件名便于管理，`displayName` 提供显示名称，是否进入自动装配候选则由这个字段决定。改完后重启游戏，核对候选列表。
+如果您还记得，那么您在此前制作战机装配，以及 [C3-S2] 手写工匠装配的时候，已经见过类似的文件了。事实上，**舰船装配文件和战机装配文件没有本质区别**。航母多出一个 `wings`，按甲板顺序列出每个甲板搭载的联队。
 
-舰船和战机使用同一套装配结构。编者建议为自己的船体准备 2\~3 个不同定位的配置，例如突击、支援与长程。装配会决定舰船在势力舰队里的实际表现，也方便重复比较。
+看炉人是航母，编者给它两座甲板都配了炉渣，加上扩编飞行甲板人员，让它专心放飞机；六门小型炮里两门都林、四门火神炮，负责清理贴近的战机与导弹。
 
-## 用正式装配制作常规战役
+锻件按同样的方式导出，整理为 `GearIn_forging_combat.variant`：
 
-已有设计可以直接用于新的战役：
+```json
+{
+    "displayName": "Combat",
+    "fluxCapacitors": 7,
+    "fluxVents": 10,
+    "hullId": "GearIn_forging",
+    "hullMods": ["heavyarmor"],
+    "permaMods": [],
+    "sMods": [],
+    "variantId": "GearIn_forging_combat",
+    "goalVariant": true,
+    "weaponGroups": [
+        {
+            "autofire": false,
+            "mode": "LINKED",
+            "weapons": {
+                "WS0001": "chaingun"
+            }
+        }
+    ]
+}
+```
 
-1. 确定战役名称与独立 ID，例如 `GearIn_artizan_demo`，复制原版战役到对应目录。
-2. 修改描述、详情文本与 `MissionDefinition` 的包名。
-3. 在舰队添加位置填写 `GearIn_artizan_combat` 等正式装配，替换敌方对象。
-4. 按实际战役安排舰队说明、简报、地图、星云和点位。
-5. 在 `mission_list.csv` 追加该 ID，重启后查看条目与战斗结果。
+::: tip 自动装配
 
-测试战役可以继续保留在自己的工作 MOD 中。发布时按预期决定哪些战役出现在 Missions 列表，调试条目可以用行首注释关闭。
+如果您希望装配会出现在装配界面左下角的 `自动装配` 里，您需要在 `variantId` 附近为它加上 `"goalVariant": true`，与 [C3-S2] 的工匠装配相同。
 
-## 验证方案
+:::
 
-1. 保存注册表、战役描述、文本、图标与定义类，重启游戏，在 Missions 选择 Gear 测试。
-2. 核对详情文本、TEST 简报与双方舰队，再进入装配界面修改工匠。
-3. 查看实际存档目录的 `missions/GearIn_test/`，读取导出文件并核对 `hullId` 与装备。
-4. 将导出设计整理为 `GearIn_artizan_combat`，保存到 MOD 的 `data/variants/`，重启后查看自动装配列表。
-5. 打开使用该装配的常规战役，核对己方、敌方、文案与地图。
-6. 在 `starsector.log` 中核对 missions 和 variant 的加载记录。
+火神炮与突击链炮都带有原版的低科标签，[C3-S2] 已经让齿轮工业掌握了它们，生涯舰队按这两个装配重新装配时不会换掉它们。
 
-预期结果：
+### 登记到舰船角色
 
-- Missions 显示 Gear 测试，详情包含图标、背景、文本与 TEST 简报。
-- 玩家列表包含自有船体的空装配和正式装配，敌方使用原版余晖空间站。
-- 导出文件与修改后的舰船设计对应，任务 ID 可从文件内部读取。
-- 正式装配登记为 `GearIn_artizan_combat`，自动装配候选使用该 ID。
-- 常规战役采用自己的装配、文案和地图。
-- 地图包含模板设置的星云、传感器阵列、通讯中继、导航信标和小行星带。
+打开 [C3-S2] 创建的 `default_ship_roles.json`，把两个装配登记到各自的角色：
 
-## 故障分析
+```json
+{
+    "combatMedium": {
+        "GearIn_artizan_combat": 5
+    },
+    "carrierMedium": {
+        "GearIn_furnaceman_combat": 5
+    },
+    "phaseSmall": {
+        "GearIn_forging_combat": 5
+    }
+}
+```
 
-- **Missions 列表里没有您的战役**：战役行以 `#` 开头时列表不会出现条目；已注册的战役文件夹缺失不会静默缺条目，而是加载中断。`mission_list.csv` 缺失仅贡献 0 行、列表为空 (不中断加载)；表头不是 `mission` 时 `readCSV` 对每行取 `mission` 键会直接抛异常、中断整个加载。
-    - **解决方案**：确认 CSV 第一行是 `mission`、第二行是战役 ID，且目录为 `data/missions/GearIn_test`，重启。
+编者建议您接下来为您的所有舰船制作 2\~3 个装配，以待稍后使用。装配会决定舰船在势力舰队里的实际表现，同一个角色下登记几个定位不同的装配，例如突击、支援与长程，玩家遇见的齿轮工业舰队就不会千篇一律。
 
-- **游戏加载中断，进不了主菜单**：已注册的战役文件夹、`descriptor.json`、`mission_text.txt` 或图标缺失，JSON 语法错误，或 `title`、`difficulty`、`icon` 任一必填字段缺失时，`Loading missions` 后会出现异常堆栈。
-    - **解决方案**：补齐文件和字段并确认图标真实存在，重启。
+### 进游戏核对
 
-- **战役出现但点击时报错无法进入**：`MissionDefinition` 源文件缺失，或包名、类名不是 `data.missions.<ID>.MissionDefinition` 时，点击会抛出 `Problem loading class [data.missions.<ID>.MissionDefinition]`。
-    - **解决方案**：让包名逐字匹配战役 ID，并把类放入 `data/missions/<ID>/`。
+保存所有文件，重启游戏：
 
-- **战役里没有自己的船**：`PREFIX` 拼写或大小写错误，或过滤条件使用了错误前缀。`getAllVariantIds()` 遍历装配 ID，船体过滤应读取 `variant.getHullSpec().getHullId()`。
-    - **解决方案**：将前缀统一为 `GearIn_`，重新进入战役。
+- 进入测试战役，玩家舰队中出现 `GearIn_furnaceman_combat` 与 `GearIn_forging_combat`，装备与文件一致；
+- 在装配界面打开看炉人，左下角的自动装配列表中出现这个装配；
+- 读取一个生涯存档，用控制台 `SpawnFleet gear_industry 60` 生成舰队，看炉人与锻件带着这两套装配出现。
 
-- **战役里出现没有武器的空船**：每个注册船体都会生成 `<hullId>_Hull` 空装配，模板会在没有正式装配时把它列出。
-    - **解决方案**：用测试战役完成武器装配并导出正式 variant，再重新进入战役。
+## 制作战役
 
-- **导出文件放回 MOD 后仍读到旧内容**：只改文件名却保留 `mission_` 开头的 `variantId`，或新 ID 与其他来源重复时，旧注册项仍会命中，后注册项会被静默跳过。
-    - **解决方案**：剪贴导出文件，将 `variantId` 改为与文件名一致的唯一 ID，例如 `GearIn_artizan_combat`，删除旧同名文件并重启。
+在您已经拥有了装配的情况下，制作通常战役极其简单。
 
-- **装配里的武器不出现**：`weapons` 中的槽位 ID 不属于该船体、武器 ID 未注册，或 `hullId` 不一致时，部署会报告 `slot id not found`，装配构建会报告 `Weapon spec not found`。
-    - **解决方案**：只使用 [C1-S2] 已确认的槽位和 [C1-S5] 注册的武器，不确定时重新在测试战役中导出，再次部署。
+您只需要先想好您战役的名字，编纂一个合理又不会重复的战役 ID，然后像刚才一样随机挑选一个原版战役文件夹，将它复制到您的 `data/missions` 文件夹内，然后修改文件夹名、`MissionDefinition.java` 内的路径名、`MissionDefinition.java` 内对应的文本和装配 ID，最后再在 `mission_list.csv` 中注册即可。
 
-- **装配加载直接失败**：`weaponGroups` 的 `mode` 不是 `LINKED` 或 `ALTERNATING`，或必填字段缺失时，`Loading variant [...]` 后会抛出 `Key [mode] has invalid value [...]`。
-    - **解决方案**：改用有效枚举值并补齐字段，重启。
+原版战役的 `MissionDefinition.java` 比测试战役短得多，大部分是 `addToFleet` 加船与几行地图设置，照着改装配 ID 即可，同样不必深究其余部分。
 
-- **自动装配列表没有目标装配**：`goalVariant` 键名拼错、值不是 `true`，或该 hull 没有其他可装配目标时，列表不会显示该 variant。
-    - **解决方案**：精确写入 `"goalVariant": true` 并核对 `hullId`。
+测试战役可以继续保留在自己的工作 MOD 中。发布时，在 `mission_list.csv` 中的 `GearIn_test` 一行前加上 `#` 即可把它从战役列表中关闭。编者倾向于发布时也留着它：玩家拿它看您的全部舰船，比在数据库里翻快得多。
 
-- **常规战役复制后仍是原版内容**：只改文件夹名而未同步 `MissionDefinition` 的包名、文本和装配 ID，会保留原版舰船与文案；包名不匹配时还会出现 `Problem loading class`。
-    - **解决方案**：按 "制作常规战役" 的清单同步替换并在 `mission_list.csv` 注册，重启。
+## 常见问题
 
-## 总结
+- **战役列表里没有 Gear 测试**：`mission_list.csv` 的第一行不是 `mission`，或战役 ID 与文件夹名不一致。
+    - **解决方案**：确认第一行是 `mission`，第二行与 `data/missions/` 下的文件夹名逐字一致，保存后重启。
 
-测试战役通过注册表与同名目录提供入口，定义类收集装配并配置舰队与地图。装配界面把修改后的设计保存到存档，整理后的文件则用独立 ID 登记到 MOD。
+- **游戏加载中断，进不了主菜单**：已登记的战役文件夹里缺少 `descriptor.json`、`mission_text.txt` 或图标，或 `descriptor.json` 缺少 `title`、`difficulty`、`icon`。
+    - **解决方案**：补齐文件与字段，确认图标真实存在，保存后重启。
 
-第三章的势力角色表可以继续加入这些正式配置，后面的模拟战与标题画面也按装配 ID 使用它们。调试时沿注册条目、定义类和装配文件核对，实际画面与日志分别提供观察结果。
+- **点击战役时报 `Problem loading class [data.missions.GearIn_test.MissionDefinition]`**：`package` 一行与文件夹名不一致，或文件不在战役文件夹内。
+    - **解决方案**：把包名改为 `data.missions.` 加上文件夹名，保存后重启。
+
+- **战役里没有自己的船**：`PREFIX` 与船体 ID 的前缀不一致，大小写也算。
+    - **解决方案**：把 `PREFIX` 改为船体 ID 的前缀，重新进入战役。
+
+- **放回 MOD 的装配没有出现，战役里仍是导出前的设计**：文件改了名，内部的 `variantId` 仍是 `mission_` 开头。模板会跳过 `mission_` 开头的装配。
+    - **解决方案**：把 `variantId` 改为与文件名一致的唯一 ID，保存后重启。
+
+- **加载时报 `Key [mode] has invalid value [...]`**：武器组的 `mode` 写错。它只能是 `LINKED` 或 `ALTERNATING`。
+    - **解决方案**：改为两者之一，保存后重启。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.Global`：全局入口，`getSettings()` 提供 `SettingsAPI`。
-- `com.fs.starfarer.api.mission.MissionDefinitionPlugin`：战役脚本入口；
-- `com.fs.starfarer.api.mission.MissionDefinitionAPI`：战役定义接口；
-- `com.fs.starfarer.api.mission.FleetSide`：舰队侧枚举；
-- `com.fs.starfarer.api.fleet.FleetGoal`：舰队目标枚举；
-- `com.fs.starfarer.api.fleet.FleetMemberType`：成员类型枚举。
-- `com.fs.starfarer.api.combat.ShipVariantAPI`：装配信息读取；
-- `com.fs.starfarer.api.combat.ShipHullSpecAPI`：船体规格读取；
-- `com.fs.starfarer.api.combat.ShipAPI`：战斗实体读取 (`HullSize` 舰体等级)。
-- `com.fs.starfarer.api.SettingsAPI`：按 ID 读装配、枚举全部装配 ID (`getVariant`、`getAllVariantIds`)。
-- `com.fs.starfarer.api.loading.WeaponGroupType`：武器组模式枚举 (`LINKED`、`ALTERNATING`)。
-- `data/missions/mission_list.csv`：原版战役注册表 (列名 `mission`)；
-- `data/missions/afistfulofcredits/`：原版战役样例 (descriptor.json、mission\_text.txt、icon、`MissionDefinition` 类源文件)。
-- `data/variants/fighters/broadsword_Fighter.variant`：原版战机装配样例；
-- `data/variants/stations/remnant_station2_Standard.variant`：模板敌舰使用的原版空间站装配；
+- `data/missions/mission_list.csv`：原版战役注册表，本节的登记方式照它写。
+- `data/missions/ambush/`：本节随机选来复制的原版战役文件夹之一，包含 `descriptor.json`、`MissionDefinition.java` 与装配样本。
+- `data/variants/`：原版装配文件，对照装配字段的写法。

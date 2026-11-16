@@ -1,0 +1,3 @@
+name,id,tier,rarity,tech/manufacturer,tags,uiTags,base value,unlocked,hidden,hiddenEverywhere,cost_frigate,cost_dest,cost_cruiser,cost_capital,script,desc,short,sModDesc,sprite
+稳定化推进器,GearIn_stable_injector,0,,,"engines, merc",引擎,2500,TRUE,,,5,10,15,25,data.scripts.gearin.hullmods.GearInStableInjectorHullMod,"根据船体级别，提高 {%s}/{%s}/{%s}/{%s} 的最高航速。不兼容 不稳定喷射器。",提高航速。,加速度与减速度提高 {%s}。,graphics/hullmods/GearIn_stable_injector.png
+舰队维护,GearIn_fleet_maintenance,0,,,merc,后勤,3000,TRUE,,,3,6,9,15,data.scripts.gearin.hullmods.GearInFleetMaintenanceHullMod,"燃料消耗降低 {%s}。舰队中每有一艘装有本船插的舰船，舰队传感范围提高 {%s}，最多计入 {%s} 艘。",降低燃料消耗，提高舰队传感范围。,,graphics/hullmods/high_res_sensors.png

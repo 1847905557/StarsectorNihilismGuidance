@@ -1,289 +1,137 @@
 # 接入酒吧任务
 
-酒吧里的邀请可以通向一项离开对话后仍在运行的任务。本节制作码头检查：用 `bar_events.csv` 登记任务类，由 Rules 提供邀请和接受选项，接受后经过一个生涯日完成。我们沿这次交接组织代码，再说明酒吧的出现频率、冷却与任务自身的计时分别由谁处理。
+[C16-S4] 的委托已经写好了，可它还缺三样东西才能真正被人接下：一个让它出现的地方，一段说明委托的对话，以及在信标旁、在 Aster 面前推进阶段的几句话。
 
-_本节预期阅读时间：\~30 分钟。_
+这三样都不用再写 Java。登记写进一张表，对话与推进写进规则表。
 
-_本节预期操作时间：\~35 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~12 分钟。_
 
-完成后，您将能够：
-
-- 读懂 `bar_events.csv` 一行如何变成 `BarEventSpec`；
-- 区分普通 `PortsideBarEvent` 与 `HubMissionWithBarEvent` 的自动创建分支；
-- 解释 `SpecBarEventCreator` 和 `HubMissionBarEventWrapper` 的职责；
-- 编写可由 `plugin` 全类名实例化的酒吧任务；
-- 观察 CSV 概率、权重和时长字段对事件生命周期的影响。
+_本节预期操作时间：\~15 分钟。_
 
 ## 前置知识
 
-- [C16-S3] 的 `BarEventManager`、普通 `creator` 和酒吧选项；
-- [C16-S4] 的 `BaseHubMission`、阶段和任务接受；
-- Java 无参构造器、继承和全类名；
-- CSV 表头、字段顺序和数值类型。
+- [C16-S4] 的任务类，任务 ID 为 `GearIn_bsv`；
+- [C15-S1] 与 [C15-S2] 的规则写法，[C15-S5] 的 Memory 前缀；
+- [C16-S3] 中酒吧事件出现与调度的方式，酒吧任务同样由那个管理器调度。
 
-## 登记码头检查任务
+## 登记酒吧任务
 
-将下面注册行写入 `data/campaign/bar_events.csv`，已有表头时只追加数据行。事件 ID 使用 `GearIn_bar_hub`，`plugin` 指向本节的任务类：
+酒吧任务登记在 `data/campaign/bar_events.csv`，表头与原版相同：
 
 ```csv
 bar event id,tags,freq,prob,min dur,max dur,min timeout,max timeout,min accepted timeout,max accepted timeout,plugin
-GearIn_bar_hub,,10,1,30,40,30,40,60,90,data.scripts.gearin.campaign.GearInBarHubMission
+GearIn_bsv,,10,1,30,40,15,20,60,90,data.scripts.gearin.campaign.GearInBeaconSurveyMission
 ```
 
-`BarEventSpec(JSONObject row)` 将这一行读成规格：抽取权重为 10，市场筛选概率为 1，没有额外标签。活动时长与未交互冷却各取 30 到 40 生涯日，交互后冷却取 60 到 90 日。这些时间属于酒吧事件管理；玩家接受的检查只运行一日，由任务类另行设置。
+| 列 | 内容 |
+| -- | ---- |
+| `bar event id` | 任务 ID，规则里的触发名都以它开头 |
+| `freq` | 权重，与 [C16-S3] 创建器的权重同一个意思 |
+| `prob` | 被挑中后真正生成的概率 |
+| `min dur`、`max dur` | 生成后在酒吧里停留的天数 |
+| `min timeout`、`max timeout` | 过期后隔多久才可能再出现 |
+| `min accepted timeout`、`max accepted timeout` | 接下之后隔多久才可能再出现 |
+| `plugin` | 任务类的完整类名 |
 
-这次也沿用 [C16-S3] 的事件管理器。不过 CSV 已经提供自动建立 `creator` 的入口，我们直接完成注册、任务与 Rules。
+数值照抄原版 `SpySatDeployment` 那一行。表里登记过，原版的酒吧事件管理器会自己为它生成包装，不需要像 [C16-S3] 那样写创建器、在入口类里登记。
 
-## 编写 `HubMission` 任务类
+## 在酒吧里露面
 
-保存 `src/data/scripts/gearin/campaign/GearInBarHubMission.java`，继承 `HubMissionWithBarEvent`。它沿用 [C16-S4] 的任务阶段，同时允许酒吧管理器通过无参构造器创建。构造器设置身份、显示名、接受后的起点与成功终点，局部实现如下：
-
-```java
-public GearInBarHubMission() {
-    setMissionId("GearIn_bar_hub");
-    setName("GearIn dockside inspection");
-    setStartingStage(STAGE_ACTIVE);
-    setSuccessStage(STAGE_COMPLETED);
-}
-```
-
-本例的工作是确认酒吧邀请怎样成为已接受的任务，因此采用一日的阶段连接。向 `create(...)` 加入以下局部方法，起点和终点都使用完整类中的枚举常量：
-
-```java
-@Override
-protected boolean create(MarketAPI createdAt, boolean barEvent) {
-    if (createdAt == null || !barEvent) {
-        return false;
-    }
-    connectWithDaysElapsed(STAGE_ACTIVE, STAGE_COMPLETED, 1f);
-    return true;
-}
-```
-
-`createdAt` 来自当前酒吧市场，`barEvent` 为 `true`。符合这条创建路径就返回成功，否则基类中止创建。`connectWithDaysElapsed(...)` 读取 `STAGE_ACTIVE` 的累计时间，接受后进入这个阶段，经过一日再转入成功阶段，由基类收尾。
-
-::: warning 阶段计时需要明确起点
-`connectWithDaysElapsed(...)` 的计时器读取起点阶段的进度。本例明确传入 `STAGE_ACTIVE`；无起点的 `setStageOnDaysElapsed(...)` 无法为这次检查提供有效的阶段计时对象。
-:::
-
-接受时在对话中写入提示，局部回调如下：
-
-```java
-@Override
-public void acceptImpl(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
-    if (dialog != null) {
-        dialog.getTextPanel().addPara("The dockside inspection task is now active.");
-    }
-}
-```
-
-这句话出现在任务被接受之后。邀请和接受按钮由下面的 Rules 提供，当前阶段说明则由完整类的 `getStageDescriptionText()` 提供。三处文字各有实际发生时机。
-
-## 把酒吧文字和接受接到 Rules
-
-将下面五条记录写入 `data/campaign/rules.csv`，已有表头时只追加数据。CSV 基础沿 [C1-S7]，每一行当前使用七列：
+原版在酒吧里放出任务时，依次发起两个规则时机：`<任务 ID>_blurbBar` 写描述，`<任务 ID>_optionBar` 给选项。
 
 ```csv
-id,trigger,conditions,script,text,options,notes
-GearIn_bar_hub_blurb,GearIn_bar_hub_blurbBar,,,一位码头工作人员正在整理船坞检查记录。,,码头邀请
-GearIn_bar_hub_option,GearIn_bar_hub_optionBar,,,,GearIn_bar_hub_startBar:询问码头检查工作,酒吧选项
-GearIn_bar_hub_offer,DialogOptionSelected,$option == GearIn_bar_hub_startBar,,这份检查将在一个生涯日后完成。是否接受？,"GearIn_bar_hub_acceptBar:接受检查
-GearIn_bar_hub_declineBar:暂时拒绝",任务邀请
-GearIn_bar_hub_accept,DialogOptionSelected,$option == GearIn_bar_hub_acceptBar,"BarCMD accept GearIn_bar_hub
-BarCMD returnFromEvent true",,,接受与返回
-GearIn_bar_hub_decline,DialogOptionSelected,$option == GearIn_bar_hub_declineBar,BarCMD returnFromEvent false,,,拒绝与返回
+GearIn_bsvBlurbBar,GearIn_bsv_blurbBar,,,Aster Vance 一个人坐在靠窗的位置，面前摊着一张星图，看见您进来，抬手示意了一下。,,任务：酒吧描述
+GearIn_bsvOptionBar,GearIn_bsv_optionBar,,,,GearIn_bsv_startBar:走到 Aster 那桌,任务：酒吧选项
 ```
 
-`GearIn_bar_hub_blurbBar` 与 `GearIn_bar_hub_optionBar` 分别写描述与邀请选项。玩家选择字符串选项后，酒吧恢复规则对话并触发 `DialogOptionSelected`，`offer` 行显示接受与拒绝。
+这两个时机名就是任务 ID 加上后缀，没有在别处登记。任务 ID 写错一个字母，任务生成了，酒吧里却什么也看不到。
 
-**选项 ID 使用当前任务前缀。** `BarCMD` 按这一前缀保留对应 `wrapper` 的任务，其他候选可以中止。接受行的 `BarCMD accept GearIn_bar_hub` 从当前 `wrapper` 取得任务，通知事件已交互，再执行任务接受；`returnFromEvent` 把控制权交回酒吧。当前不需要额外手工创建 `creator`。
+## 说明委托
 
-任务 ID 连接事件表、wrapper、规则 trigger 与选项前缀。显示文字可以随设计修改，这些调用键则保持对应。后面的规则专题会展开 Rules 字段与表达式，本节使用这组记录完成酒吧任务的入口。
+玩家走过去之后，选中的是 `GearIn_bsv_startBar`：
 
-## 从事件规格到当前任务
+```csv
+GearIn_bsvOfferBar,DialogOptionSelected,$option == GearIn_bsv_startBar,"$missionId = GearIn_bsv
+SetTextHighlights $GearIn_bsv_reward","""Ashen Verge 那座信标，挂的是我们的旗子，记录却一直传不回来。""她把星图推过来，""去读一下它的记录，带回来给我。报酬 $GearIn_bsv_reward 星币。""
 
-注册、任务和 Rules 已经接好，管理器怎样把它们送到玩家面前？`BarEventManager.readResolve()` 读取 `Global.getSettings().getAllBarEventSpecs()`，为缺少 `creator` 的规格建立 `SpecBarEventCreator`。它按 spec ID 识别自动项，读档后也会补齐缺失项，并从规格取得权重与时长。以下局部片段展示规格创建事件的关系，实际登记由管理器完成：
-
-```java
-SpecBarEventCreator creator = new SpecBarEventCreator("GearIn_bar_hub");
-PortsideBarEvent event = creator.createBarEvent();
+""别指望那里风平浪静。要是太平，我就自己派船去了。""","contact_acceptBar:接下委托
+contact_declineBarNoContinue:改天吧",任务：委托说明
 ```
 
-`BarEventSpec.isMission()` 实例化 `plugin`，判断它是否为 `HubMissionWithBarEvent`。`SpecBarEventCreator.createBarEvent()` 据此选择创建方式，局部逻辑如下：
+- `$missionId = GearIn_bsv` 告诉原版接下来的接受与拒绝是针对哪个任务；
+- `$GearIn_bsv_reward` 是 [C16-S4] 在 `updateInteractionDataImpl()` 里写入的奖励金额，`SetTextHighlights` 让它高亮；
+- `contact_acceptBar` 与 `contact_declineBarNoContinue` 是原版的选项，接受、拒绝、回到酒吧的处理都已经写在原版规则里。
 
-```java
-if (spec.isMission()) {
-    return new HubMissionBarEventWrapper(specId);
-}
-return spec.createEvent();
+Aster 那句 "要是太平，我就自己派船去了"，对应的是 [C14-S1] 里 Foundry 周围时起时息的战事。
+
+## 在信标旁推进
+
+调查阶段，信标的 Memory 里有 [C16-S4] 用 `makeImportant(...)` 写下的 `$GearIn_bsv_target`。玩家点开信标时：
+
+```csv
+GearIn_bsvBeacon,OpenInteractionDialog,$GearIn_bsv_target score:1000,"Call $GearIn_bsv_ref updateData
+ShowDefaultVisual",您的舰队靠近了灰烬信标。它还在运转，只是对外的发报全部停了，记录还留在里面。,"GearIn_bsv_scan:读取信标记录
+defaultLeave:离开",任务：抵达信标
+GearIn_bsvBeaconScan,DialogOptionSelected,$option == GearIn_bsv_scan,"$GearIn_bsv_surveyed = true
+Call $GearIn_bsv_ref updateStage",记录不长，大半是巡逻队的航迹。最后几条被人刻意抹掉了，抹得并不干净。,defaultLeave:离开,任务：读取记录
 ```
 
-普通 `PortsideBarEvent` 直接成为酒吧事件。任务则先由 `HubMissionBarEventWrapper` 代管酒吧入口，候选接受之后，任务才进入长期运行。**同样是 CSV 的 `plugin`，继承类型决定它实际接入哪一条流程。**
+- 条件没有前缀，读的是信标自己的 Memory，[C15-S5] 讲过这一点；
+- `score:1000` 盖过导航浮标原本的交互。任务一结束，键被撤掉，信标又恢复成原版的样子；
+- `Call $GearIn_bsv_ref updateStage` 通过引用调用任务对象，让它立刻检查一遍阶段。此时 `$GearIn_bsv_surveyed` 已经写在信标上，任务进入报告阶段；
+- `defaultLeave` 是原版的离开选项。
 
-wrapper 在 `shouldShowAtMarket(market)` 中用市场 ID 与自己的种子建立随机源，按 `prob` 筛选，再创建任务、设置 spec ID 和随机源，并调用任务自己的市场条件。筛选通过后，`addPromptAndOption(...)` 使用当前交互目标的市场创建任务，再触发前面两类 Rules。下面的局部片段保留创建与规则交接：
+## 回去报告
 
-```java
-mission.createAndAbortIfFailed(market, true);
-if (mission.isMissionCreationAborted()) {
-    mission = null;
-    return;
-}
-mission.updateInteractionData(dialog, memoryMap);
-FireBest.fire(null, dialog, memoryMap,
-        mission.getTriggerPrefix() + "_blurbBar true");
-FireBest.fire(null, dialog, memoryMap,
-        mission.getTriggerPrefix() + "_optionBar true");
+报告阶段，Aster 的 Memory 里有 `$GearIn_bsv_report`：
+
+```csv
+GearIn_bsvReport,PickGreeting,"$id == GearIn_aster_vance score:1200
+$GearIn_bsv_report","ShowPersonVisual
+$GearIn_bsv_reported = true
+$global.GearIn_bsv_completed = true
+Call $GearIn_bsv_ref updateStage","Aster 把记录调出来看了很久，最后只说了一句：""被抹掉的那几条，我会去查。""
+
+报酬随后打进了您的账户。",cutCommLink:断开通讯,任务：报告
 ```
 
-`updateInteractionData(...)` 准备任务前缀、人物与市场上下文，Rules 据此写入邀请。玩家接受时，`BarCMD` 从当前 wrapper 取得这份任务，`accept(...)` 设置起始阶段、执行 `acceptImpl(...)`，并登记 Intel 与生涯脚本。现在离开酒吧，计时仍由已接受的任务推进。
+分数 1200 高于 [C15-S2] 的记仇问候。报告阶段里，哪怕刚打过齿轮工业的巡逻队，Aster 也先听完报告再说别的。
 
-::: info 构造器也会用于类型判断
-`isMission()` 会实例化插件来判断类型，筛选时还会另外创建任务。编者建议把依赖市场、会改变世界的创建操作放在 `create(...)`，构造器只设置任务本身；类型判断同样会运行构造器。
-:::
+`$GearIn_bsv_reported` 写在 Aster 身上，推进到成功阶段，父类发放 30000 星币并结束任务。`$global.GearIn_bsv_completed` 让 [C16-S4] 的 `shouldShowAtMarket(...)` 不再发这份委托。
 
-## 读取 CSV 生命周期字段
+那几条被抹掉的记录，这一章不会去追。它们留给以后的章节，也留给您自己去接着写。
 
-`freq` 决定管理器抽取 creator 时的权重，`prob` 决定 wrapper 是否在当前市场建立任务。活动期限限制事件留在候选列表的时间，两组 timeout 分别控制未交互与已交互后的冷却。CSV 的三组时长沿着下面的入口生效：
+### 进游戏核对
 
-```text
-prob → shouldShowAtMarket(market)
-freq → WeightedRandomPicker
-min/max dur → active tracker
-min/max timeout → 未交互 timeout
-min/max accepted timeout → 交互后 timeout
-```
+重启游戏，**新建一份存档**，完成与齿轮工业的接触。委托按权重随机出现，可以多推进几天、反复进出 Foundry 的酒吧。
 
-事件被抽取但没有进入酒吧时，`active` 时长耗尽后 `manager` 移除它并设置普通 `timeout`。玩家接受任务后，管理器收到已交互通知，设置 `accepted` `timeout`。本节拒绝行只返回酒吧，未接受候选继续按活动与普通 `timeout` 管理；两组期限按管理器收到的实际结束通知选择。
+- Foundry 的酒吧里出现 Aster 坐在窗边的描述与 "走到 Aster 那桌"；
+- 走过去后，委托说明中的 30,000 星币高亮显示，选择 "接下委托"，情报栏出现 "灰烬信标的记录"；
+- 星图上灰烬信标被标为任务目标，点开后出现 "读取信标记录"；
+- 读取之后，情报栏的下一步变为向 Aster 报告，Aster 被标为任务人物；
+- 在通信目录中点开 Aster，出现报告的对话，获得 30000 星币，任务完成；
+- 之后 Foundry 的酒吧里不再出现这份委托。
 
-### 任务事件和普通事件的边界
+页面中的现象依据 API 与原版规则推出，编者尚未逐项在游戏内实测。
 
-普通 `plugin` 由 `spec` 直接创建 `PortsideBarEvent`，事件自己实现 `addPromptAndOption(...)` 和 `optionSelected(...)`。`HubMission` `plugin` 先创建 `wrapper`，`wrapper` 再创建任务并通过 Rules 生成酒吧入口；任务接受后，它成为 Intel 和脚本系统中的长期对象。两条分支共享 `manager` 的抽取与 `timeout`，但创建对象和后续生命周期不同。
+## 常见问题
 
-## 酒吧任务字段与对象速查表
+- **酒吧里看不到委托**：`bar_events.csv` 的类名写错，或者 `GearIn_bsv_blurbBar` 的触发名与任务 ID 不一致。
+    - **解决方案**：核对完整类名与触发名的前缀。
 
-| 字段或对象                  | 读取位置                                      | 作用                         |
-| --------------------------- | --------------------------------------------- | ---------------------------- |
-| `bar event id`              | `BarEventSpec.id`                             | `spec` 和 `wrapper` 身份     |
-| `freq`                      | `getFreq()`                                   | `creator` 抽取权重           |
-| `prob`                      | `getProb()`                                   | 市场概率筛选                 |
-| `min/max dur`               | `getMinDur/getMaxDur`                         | `active` 生命周期            |
-| `min/max timeout`           | `getMinTimeout/getMaxTimeout`                 | 未交互冷却                   |
-| `min/max accepted timeout`  | `getMinAcceptedTimeout/getMaxAcceptedTimeout` | 交互后冷却                   |
-| `plugin`                    | `getPluginClass()`                            | 普通事件或 `HubMission` 类型 |
-| `SpecBarEventCreator`       | `manager` 自动创建                            | 从 `spec` 生成事件入口       |
-| `HubMissionBarEventWrapper` | `isMission() == true`                         | 在酒吧上下文创建任务         |
+- **点了 "接下委托" 没有反应**：委托说明的脚本里没有 `$missionId = GearIn_bsv`。
+    - **解决方案**：补上这一行。
 
-## 完整最小例
+- **读完信标，任务没有进入下一阶段**：`$GearIn_bsv_surveyed` 写了前缀，记在了别处。
+    - **解决方案**：不加前缀，写在信标自己的 Memory 上。
 
-保存下列类，事件表与 Rules 采用前述完整记录。
-
-::: details 完整成品：GearInBarHubMission
-
-```java
-package data.scripts.gearin.campaign;
-
-import java.util.Map;
-
-import com.fs.starfarer.api.campaign.InteractionDialogAPI;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.campaign.rules.MemoryAPI;
-import com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithBarEvent;
-
-public class GearInBarHubMission extends HubMissionWithBarEvent {
-
-    public enum Stage {
-        GearIn_bar_stage_active,
-        GearIn_bar_stage_completed
-    }
-
-    public static final Stage STAGE_ACTIVE = Stage.GearIn_bar_stage_active;
-    public static final Stage STAGE_COMPLETED = Stage.GearIn_bar_stage_completed;
-
-    public GearInBarHubMission() {
-        setMissionId("GearIn_bar_hub");
-        setName("GearIn dockside inspection");
-        setStartingStage(STAGE_ACTIVE);
-        setSuccessStage(STAGE_COMPLETED);
-    }
-
-    @Override
-    protected boolean create(MarketAPI createdAt, boolean barEvent) {
-        if (createdAt == null || !barEvent) {
-            return false;
-        }
-        connectWithDaysElapsed(STAGE_ACTIVE, STAGE_COMPLETED, 1f);
-        return true;
-    }
-
-    @Override
-    public String getStageDescriptionText() {
-        return "Current stage: " + getCurrentStage();
-    }
-
-    @Override
-    public void acceptImpl(InteractionDialogAPI dialog, Map<String, MemoryAPI> memoryMap) {
-        if (dialog != null) {
-            dialog.getTextPanel().addPara("The dockside inspection task is now active.");
-        }
-    }
-}
-```
-
-:::
-
-## 验证方案
-
-前置数据：包括任务类、`bar_events` 注册行和本节五条 Rules 的 MOD；使用含太空港和酒吧入口的测试存档。
-
-1. 保存类与两份 CSV，构建重启，进入 `Foundry` 或其他太空港市场。
-2. 观察事件抽取，确认 `GearIn_bar_hub` 通过 `isMission()` 进入 `wrapper` 分支。
-3. 进入酒吧，确认 Rules 显示由 `wrapper` 提供的任务 `blurb` 和 `option`。
-4. 选择码头检查邀请，查看接受与拒绝按钮；选择接受后确认任务进入 Intel 列表。
-5. 接受任务，确认 Intel 列表出现 `GearIn dockside inspection`，当前阶段为 `GearIn_bar_stage_active`。
-6. 推进 1 个游戏天，确认任务进入 `GearIn_bar_stage_completed` 并执行成功结束。
-7. 对照普通 `BarEvent` `plugin`，确认普通分支直接创建事件实例，`HubMission` 分支先创建 `wrapper`。
-8. 观察未交互事件和已交互任务的冷却时间，确认分别使用普通 `timeout` 与 `accepted` `timeout`。
-
-预期结果：
-
-- CSV 行被解析为 `GearIn_bar_hub` `spec`；
-- `manager` 自动生成 `SpecBarEventCreator`；
-- `plugin` 类型识别为 `HubMissionWithBarEvent`；
-- 酒吧入口由 `HubMissionBarEventWrapper` 创建；
-- 任务接受后进入 `active` 阶段；
-- 一个游戏天后进入 `completed` 阶段；
-- 生命周期数值来自 CSV 字段。
-
-## 故障分析
-
-- **事件没有出现**：`plugin` 全类名无法实例化或 `prob` 筛选未命中。
-    - **解决方案**：核对全类名、无参构造器和概率字段。
-
-- **任务被当作普通事件创建**：`plugin` 没有继承 `HubMissionWithBarEvent`。
-    - **解决方案**：让任务类继承正确的 `HubMission` 酒吧基类。
-
-- **酒吧出现选项但接受后没有任务**：任务的 `create(...)` 返回了 `false`。
-    - **解决方案**：确认 `wrapper` 传入 `barEvent=true` 且市场条件满足。
-
-- **接受后阶段计时发生异常**：计时连接没有提供有效的起点阶段。
-    - **解决方案**：在 `create(...)` 使用 `connectWithDaysElapsed(STAGE_ACTIVE, STAGE_COMPLETED, 1f)`，确认构造器也将起始阶段设为 `STAGE_ACTIVE`。
-
-- **事件消失时间不符合预期**：CSV 三组时长列顺序错误。
-    - **解决方案**：按表头重新核对 `dur`、`timeout` 和 `accepted` `timeout`。
-
-## 总结
-
-酒吧任务从事件表取得规格与 `creator`，`wrapper` 使用当前市场创建实例，Rules 提供邀请、选项与接受动作。任务接受后进入情报和脚本，一日连接再推进到完成。
-
-概率、权重和冷却控制玩家何时收到邀请，任务阶段与计时控制接受之后的过程。前者由事件管理器处理，后者由已接受的任务推进，观察时分别对应酒吧入口与情报状态。
+- **报告时还是平常的问候**：分数不高于其他问候，或者任务还停在调查阶段。
+    - **解决方案**：分数用 1200，先确认信标已经读取。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.loading.BarEventSpec`：CSV 行的读取结果，保存概率、权重和时长字段并判断 `plugin` 类型；
-- `com.fs.starfarer.api.impl.campaign.intel.bar.events.SpecBarEventCreator`：`manager` 为每个 `spec` 自动建立的 `creator`，按类型返回 `wrapper` 或普通事件；
-- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionWithBarEvent`：本页 `GearInBarHubMission` 的基类，也是自动创建分支的类型判据；
-- `com.fs.starfarer.api.impl.campaign.missions.hub.HubMissionBarEventWrapper`：在酒吧上下文中创建任务并传递 `spec` ID 和随机源；
-- `com.fs.starfarer.api.impl.campaign.intel.bar.events.BarEventManager`：读取全部 `spec`，并为尚未拥有 `creator` 的 `spec` 建立 `creator`；
-- `data/campaign/bar_events.csv`：原版酒吧事件数据表，本页 MOD 行的格式基准。
+- `data/campaign/bar_events.csv`：原版酒吧任务的登记，`ssat` 那一行是本节的照抄来源。
+- `data/campaign/rules.csv`：以 `ssat` 开头的规则，以及 `contact_acceptBar`、`defaultLeave` 的原版处理。
+- `com.fs.starfarer.api.impl.campaign.missions.hub.BaseHubMission`：`Call` 可调用的 `updateStage`、`updateData` 等动作。

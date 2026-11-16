@@ -1,193 +1,158 @@
 # 编写生涯逐帧脚本
 
-本节制作一个每日记录、持续三十日的生涯脚本：暂停时等待，保存读档后继续计数，到期后由引擎移除。时间累计、登记方式与结束状态共同决定它怎样运行，我们分别处理这些关系，再比较 transient 登记与实体附着的清理职责。
+逐帧脚本，`EveryFrameScript`，几乎一切需要计时的复杂效果都与之相关。
 
-_本节预期阅读时间：\~18 分钟。_
+就这么简单。但考虑到需要计时的效果五花八门，多种多样，一个 MOD 里过半会在生涯里 "运行"(考虑到 运行 某种意义上暗示了时间的流逝) 的脚本都将基于它，说它是最基本最重要的脚本类别都不为过。
 
-_本节预期操作时间：\~35 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~12 分钟。_
 
-完成后，您将能够：
-
-- 解释 `isDone()`、`runWhilePaused()` 和 `advance(float amount)` 在引擎中的调用顺序；
-- 使用 `CampaignClockAPI.convertToDays()` 累计游戏天，并用 `while` 补齐单帧跨越的多个周期；
-- 使用 `hasScript()` 防止重复注册，并区分普通脚本与 transient 脚本的读档结果；
-- 根据暂停、战斗、读档和自动移除后的日志定位脚本生命周期问题。
+_本节预期操作时间：\~15 分钟。_
 
 ## 前置知识
 
-- [C7-S1] 的 MOD 插件生命周期与 `onGameLoad`；
-- [C7-S2] 的 `Global.getSector()` 和生涯引擎建立时机；
-- [C10-S1] 的 `SectorAPI`、生涯时钟、脚本注册和暂停语义；
-- 能够构建 Java MOD，并从 `starsector.log` 搜索稳定日志文本。
+- [C7-S1] 的 `onNewGame()` 与 `onGameLoad()` 分工；
+- [C11-S1] 的巡逻舰队管理器；
+- [C12-S6] 的 Warfront 条件与 [C12-S1] 的市场 ID。
 
-## 先让每日记录按生涯时间运行
-
-创建 `src/data/scripts/gearin/campaign/GearInDayAccumulatorScript.java`，实现 `EveryFrameScript`。引擎每帧调用 `advance(amount)`，我们把传入的秒数转换成生涯日，再累计到下一次每日操作。
-
-**周期按生涯日计算。** `Global.getSector().getClock().convertToDays(amount)` 使用生涯时钟的换算，正常速度下 10 秒对应一日。加速等推进条件由引擎提供的帧时间体现，脚本继续使用同一换算。当前 `runWhilePaused()` 返回 `false`，暂停时没有时间推进回调。
-
-局部累计片段如下，`daysSinceMount` 保存总进度，`daysAccumulator` 保存尚未处理的周期余量：
+## 三个方法的调用频率
 
 ```java
-CampaignClockAPI clock = Global.getSector().getClock();
-float daysThisFrame = clock.convertToDays(amount);
-daysSinceMount += daysThisFrame;
-daysAccumulator += daysThisFrame;
-
-while (daysAccumulator >= tickEveryDays) {
-    daysAccumulator -= tickEveryDays;
-    routineCount++;
+public interface EveryFrameScript {
+    boolean isDone();
+    boolean runWhilePaused();
+    void advance(float amount);
 }
 ```
 
-本次回调可能跨过多个完整周期，`while` 逐次处理并扣除对应天数。余下的小数留给下一帧，每日记录才能在不同帧时间下继续保持周期。
+| 方法 | 调用时机 | 返回值 |
+| ---- | -------- | ------ |
+| `advance(amount)` | 随登记它的对象推进，`amount` 为该次推进经过的现实秒数 | 无 |
+| `isDone()` | 与 `advance(...)` 同一轮，排在它之后 | `true` 时引擎把实例移出脚本表 |
+| `runWhilePaused()` | 原版脚本以它的返回值为常量使用 | 暂停期间是否继续调用 `advance(...)` |
 
-日历变化适合另一个目的：某个动作只需要知道日期是否改变，可以将年、月、日组成日期键。下面的局部片段首帧建立基线，随后记录日期变化：
+**"每帧" 这个说法只在登记于 `SectorAPI` 时成立。** 能收 `EveryFrameScript` 的接口不止一个：`SectorAPI`、`LocationAPI`、`SectorEntityToken`、`FleetOrStubAPI` 上都有 `addScript(...)`。`LocationAPI` 的注释写明了差别：脚本随该地点的 `advance()` 运行，而**不是当前地点时，每秒推进的次数可能更少**。同一个脚本登记在不同对象上，节奏就不同。
+
+`isDone()` 与 `advance(...)` 的先后有据可查：`BaseEventManager.advance(...)` 遍历活动事件时先调 `advance(amount)`，再问 `isDone()`，问出 `true` 的移出列表。树内可见的调度循环基本都是这个次序。
+
+`runWhilePaused()` 的读取点看不到。全树对它的调用表达式为零，只有各处 `EveryFrameScript` 实现的覆写，读它的是引擎核心。原版脚本一律把它当常量：返回 `false` 就一直返回 `false`，不在运行期改变。**它管的是脚本的长期形态，与当前状态无关**；要让脚本按条件启停，只能在 `advance(...)` 里分支，或者换一个实例。
+
+`isDone()` 的结论由脚本自己给出。引擎不做推断，`advance(...)` 没有产生任何副作用也不会被回收，代价要到几十个生涯天之后才看得出来。
+
+## 帧时间换算成生涯天数
+
+`amount` 是这一帧实际过去的时间。玩家开时间加速，同一现实秒对应的游戏时间就变长；把它直接累加，倒计时在加速与不加速时走得不一样长。换算交给时钟，取到的是生涯天数。
 
 ```java
-int dateKey = clock.getCycle() * 10000 + clock.getMonth() * 100 + clock.getDay();
-if (dateKey != lastDateKey) {
-    if (lastDateKey != -1) {
-        LOG.info("GearIn calendar: new day " + clock.getShortDate());
-    }
-    lastDateKey = dateKey;
+float days = Global.getSector().getClock().convertToDays(amount);
+```
+
+`CampaignClockAPI` 另有 `getDay()`、`getTimestamp()`、`getElapsedDaysSince(long)`。脚本里所有跨度判断都取生涯天数，与存档记录、界面日期同一个基准。
+
+## 登记方式与存档
+
+| 方法 | 序列化 | 读档之后 |
+| ---- | ------ | -------- |
+| `SectorAPI.addScript(script)` | 是，字段一并写入 | 原实例，字段保持 |
+| `SectorAPI.addTransientScript(script)` | 否 | 不存在，须由 `onGameLoad(...)` 重新登记 |
+
+配套 `hasScript(Class)`、`hasTransientScript(Class)`、`removeScriptsOfClass(Class)`、`getScripts()`。
+
+选择只看一件事：状态是不是存在字段里。存在字段里就必须进存档，否则读档时连同计数一起丢掉；状态写在 Memory 里的脚本没有可存的东西，临时登记即可，读档时重新挂一份。
+
+随存档保存的代价在发布之后才收。类名与包名一起写入，改名会让旧存档找不到类；玩家卸载 MOD，引用它的存档读不出来。**已发布且随存档保存的脚本类，名字就是它的存档格式。** 字段同理：市场、实体、人物都能按 ID 重新取，入档只会在读档后留下失效引用。
+
+## 原版的舰队管理器
+
+来看一个原版的例子。
+
+`SourceBasedFleetManager` 随存档保存，字段如下：
+
+```java
+protected List<CampaignFleetAPI> fleets = new ArrayList<CampaignFleetAPI>();
+protected SectorEntityToken source;
+protected int minFleets;
+protected int maxFleets;
+protected float respawnDelay;
+protected float destroyed = 0;
+```
+
+没有倒计时字段。补充延迟由 `destroyed` 承担：`reportFleetDespawnedToListener(...)` 里递加，`advance(...)` 里按 `respawnDelay` 递减。**延迟用倒计时表示还是用衰减计数表示，差别在一帧之内击毁多支的时候** —— 计数逐支累加，倒计时只减一轮。原版在这里选计数，因为它要处理的正是舰队成批消失。
+
+`advance(...)` 的顺序：
+
+1. 换算天数，`destroyed` 衰减；
+2. 从 `fleets` 移除已消失的舰队；
+3. 源点被毁则 `source = null`，此后不再生成；
+4. 依玩家与源点的距离定上限：近于 `thresholdLY` 时在 `minFleets` 与 `maxFleets` 之间插值，远于此取 `minFleets`；
+5. 超出上限，对足够远的舰队调用 `despawn(...)`；
+6. 不足，生成一支，每帧至多一支，并 `fleet.addEventListener(this)` 接收它的消失回调。
+
+第 5 步与第 6 步的顺序不能互换。先回收再生成，远端那批先解散；反过来写，同一帧里 `fleets` 既超上限又添了新成员，要等下一轮 `despawn(...)` 才追得回来。
+
+`isDone()` 读字段 `done`，源点消失且 `fleets` 为空时置位；`runWhilePaused()` 返回 `false`。两处都以字段承载，方法里不现算。
+
+## 把战事周期写进 Foundry
+
+然后想想我们该怎么用上它。
+
+Foundry 要的是周期：战事持续一段时间，平息一段时间，交替往复。阶段存在脚本的字段里，因此用 `addScript(...)` 登记。
+
+```java
+daysLeft -= sector.getClock().convertToDays(amount);
+if (daysLeft > 0f) {
+    return;
 }
 ```
 
-跨过几天后，日期键也只产生一次变化；要补齐每个周期，继续使用前面的累计方式。本节完整脚本按周期逐次记录，日历只用于输出日期。
-
-## 登记脚本，并让进度进入存档
-
-在 `GearInModPlugin` 添加该类的 import，向已有的 `onGameLoad(...)` 追加局部登记，沿用 `sector`：
+归零之后切换条件：
 
 ```java
-if (!sector.hasScript(GearInDayAccumulatorScript.class)) {
-    sector.addScript(new GearInDayAccumulatorScript());
+if (market.hasCondition(GearInWarfrontCondition.CONDITION_ID)) {
+    market.removeCondition(GearInWarfrontCondition.CONDITION_ID);
+    daysLeft = CALM_DAYS;
+} else {
+    market.addCondition(GearInWarfrontCondition.CONDITION_ID);
+    daysLeft = WAR_DAYS;
 }
 ```
 
-`addScript(...)` 放入随生涯保存的普通脚本列表，字段也随实例保存。读档后已有实例继续累计，`hasScript(...)` 根据类型判断列表中是否已经存在，入口只补入缺失的脚本。
+阶段用 `hasCondition(...)` 判断，不另存布尔字段。市场持有这个条件就在战时，条件本身就是状态。少一个字段，也少一处读档之后可能与实际条件对不上的地方。
 
-如果登记方法自己取得星区，等价的局部写法如下；同一入口采用一份登记即可：
+条件直接增删，之后不重算，原版 `EstablishedPolityScript` 处理殖民地条件时也是这个写法。
 
-```java
-SectorAPI sector = Global.getSector();
-if (!sector.hasScript(GearInDayAccumulatorScript.class)) {
-    sector.addScript(new GearInDayAccumulatorScript());
-}
-```
+归零即重置，一帧里溢出的那点天数不带进下一段。常规帧率下可以忽略；要严格对齐就把余数并进新的 `daysLeft`。
 
-`addScript(...)` 本身不去重，相同对象重复加入也可以多次推进。当前按类登记，适合整份功能只需要一个周期脚本的情况；本次字段保存进度，登记列表决定它是否在运行。
+战事 60 天、平息 30 天。这个比值让 Foundry 长期处在受损状态，只有三成时间能正常交易，是这组数字唯一的后果，不必另找解释。市场每次按 ID 重新查找，找不到即返回。`isDone()` 恒为 `false`：这个周期没有终点。
 
-## 让脚本累计 30 个游戏日后结束
+## 完整的脚本
 
-完整类采用周期 1 日、总时长 30 日。累计时先将本帧采用的时间限制在剩余时长内，再用总天数减去已执行周期计算余量。跨过终点的一帧也只处理到第 30 日，总例程保持三十次。
-
-达到终点后写完成日志，将 `done` 设为 `true`，`isDone()` 返回这个字段。引擎在回调后再次检查完成状态并移除实例，随后 `hasScript(...)` 返回 `false`。字段都是基础业务数据，UI 与声音播放器等瞬态对象在运行时取得，保存继续累计所需的内容即可。
-
-### 脚本回调速查表
-
-| 方法               | 引擎使用方式                           | 本节实现                           |
-| ------------------ | -------------------------------------- | ---------------------------------- |
-| `isDone()`         | 推进前与回调返回后检查，成立时移除实例 | 返回 `done`                        |
-| `runWhilePaused()` | 暂停时决定是否调用 `advance(...)`      | 返回 `false`                       |
-| `advance(amount)`  | 按帧提供秒数，执行当前逻辑             | 转为生涯日，补齐每日周期并检查终点 |
-
-**本轮结束后，下次读档会按登记策略开始新一轮。** 当前登记只查询列表，已完成实例被移除后，缺失条件又成立。希望每份存档永久只执行一次时，还要保存独立的完成标记；本节采用缺失时重新开始的周期观察。
-
-## 当前回调使用哪一份列表
-
-星区先为普通脚本列表建立快照，遍历时检查完成状态，再按暂停条件推进。当前普通列表结束后，transient 列表另行建立快照并推进。
-
-回调中修改原列表，当前快照保持原有内容。向同一列表新增脚本，它到后续快照才会推进；移除已经取出的对象，也仍可能让该对象完成当前一轮。跨普通与 transient 列表操作时，还要考虑两份快照建立的先后。
-
-`removeScript(...)` 按对象移除，`removeScriptsOfClass(...)` 按精确类移除；`hasScript(Class)` 则使用 `isInstance`，可以匹配该类的子类。登记与清理按当前功能需要的范围选择。
-
-## 改为本次运行中的 transient 脚本
-
-只需要当前运行期观察时，使用 `addTransientScript(...)`。这个列表不保存，读档后重新登记的实例从初始字段开始。以下局部片段替换普通登记，先移除原普通实例，再按 transient 列表查重：
-
-```java
-sector.removeScriptsOfClass(GearInDayAccumulatorScript.class);
-if (!sector.hasTransientScript(GearInDayAccumulatorScript.class)) {
-    sector.addTransientScript(new GearInDayAccumulatorScript());
-}
-```
-
-普通登记用在跨读档的周期功能，transient 登记用在当前运行期的观察或临时动画。本节的时间逻辑相同，保存结果由登记方式决定。
-
-## 实体附着与清理接口
-
-地点、实体和舰队也提供脚本入口，进度随实际登记的持有对象存在。`EveryFrameScriptWithCleanup` 额外声明 `cleanup()`，用于解除脚本持有的资源或外部登记。接口声明了清理方法，具体调用仍取决于持有者的移除流程；自己控制实体寿命时，也应明确安排这一步。
-
-下面是 [C10-S4] 实体放置上下文中的局部实验，需要 `EveryFrameScriptWithCleanup` 的 import，并使用已取得的 `system`。创建一个实际的中继站，附着脚本，再显式清理、解除附着并移除实体：
-
-```java
-SectorEntityToken cleanupTarget = system.addCustomEntity(
-        "GearIn_cleanup_relay", "清理实验中继站", "comm_relay", "independent");
-cleanupTarget.setLocation(1200f, 400f);
-EveryFrameScriptWithCleanup cleanupScript = new EveryFrameScriptWithCleanup() {
-    @Override
-    public boolean isDone() {
-        return false;
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-    }
-
-    @Override
-    public void cleanup() {
-        Global.getLogger(GearInDayAccumulatorScript.class)
-                .info("GearIn entity script cleanup: explicit cleanup");
-    }
-};
-cleanupTarget.addScript(cleanupScript);
-cleanupScript.cleanup();
-cleanupTarget.removeScript(cleanupScript);
-system.removeEntity(cleanupTarget);
-```
-
-这次日志来自显式的 `cleanup()` 调用，随后脚本和实体分别从持有者中移除。坐标 token 只承担位置引用，附着实验使用具有脚本实现的实体；普通星区列表则依据 `isDone()` 移除脚本，两种清理职责分别由各自入口完成。
-
-## 完整最小例
-
-保存下列类，普通登记保留在已有 `onGameLoad(...)` 中。
-
-::: details 完整成品：GearInDayAccumulatorScript
+`src/data/scripts/gearin/campaign/GearInWarfrontCycleScript.java`：
 
 ```java
 package data.scripts.gearin.campaign;
 
-import org.apache.log4j.Logger;
-
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignClockAPI;
 import com.fs.starfarer.api.campaign.SectorAPI;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
 
-/** 每个生涯日记录一次，累计三十日后结束并保留周期余量。 */
-public class GearInDayAccumulatorScript implements EveryFrameScript {
+/** Foundry 周围的战事时起时息：按生涯天数在市场上挂上、撤下 Warfront 条件。脚本随存档保存。 */
+public class GearInWarfrontCycleScript implements EveryFrameScript {
 
-    private static final Logger LOG = Global.getLogger(GearInDayAccumulatorScript.class);
+    /** 战事持续的生涯天数。 */
+    private static final float WAR_DAYS = 60f;
 
-    private double daysSinceMount;
-    private double daysAccumulator;
-    private int routineCount = 0;
-    private final float tickEveryDays = 1.0f;
-    private final float daysToRun = 30.0f;
-    private boolean done = false;
+    /** 战事平息的生涯天数。 */
+    private static final float CALM_DAYS = 30f;
+
+    /** 当前阶段还剩多少生涯天，随存档保存。新档开局时 Foundry 正处于战事中。 */
+    private float daysLeft = WAR_DAYS;
 
     @Override
     public boolean isDone() {
-        return done;
+        return false;
     }
 
     @Override
@@ -198,91 +163,71 @@ public class GearInDayAccumulatorScript implements EveryFrameScript {
     @Override
     public void advance(float amount) {
         SectorAPI sector = Global.getSector();
-        CampaignClockAPI clock = sector.getClock();
-        double daysThisFrame = Math.min(clock.convertToDays(amount), daysToRun - daysSinceMount);
-        daysSinceMount += daysThisFrame;
-        daysAccumulator = daysSinceMount - routineCount * tickEveryDays;
-
-        while (daysAccumulator >= tickEveryDays) {
-            daysAccumulator -= tickEveryDays;
-            routineCount++;
-            LOG.info(String.format(
-                    "GearIn daily: routine #%d at %s | since mount=%.1f game days",
-                    routineCount, clock.getShortDate(), daysSinceMount));
+        daysLeft -= sector.getClock().convertToDays(amount);
+        if (daysLeft > 0f) {
+            return;
         }
-
-        if (daysSinceMount >= daysToRun) {
-            LOG.info(String.format(
-                    "GearIn daily: done, isDone()=true after %.1f game days", daysSinceMount));
-            done = true;
+        MarketAPI market = sector.getEconomy().getMarket(GearInFoundryGenerator.MARKET_ID);
+        if (market == null) {
+            return;
+        }
+        if (market.hasCondition(GearInWarfrontCondition.CONDITION_ID)) {
+            market.removeCondition(GearInWarfrontCondition.CONDITION_ID);
+            daysLeft = CALM_DAYS;
+            sector.getCampaignUI().addMessage("Nipher Foundry 周围的战事暂时平息了。");
+        } else {
+            market.addCondition(GearInWarfrontCondition.CONDITION_ID);
+            daysLeft = WAR_DAYS;
+            sector.getCampaignUI().addMessage("Nipher Foundry 周围再度爆发战事。");
         }
     }
 }
 ```
 
-:::
+## 登记战事脚本
 
-## 验证方案
+在 `GearInModPlugin.onNewGame()` 里，紧跟 Foundry 生成：
 
-前置数据：能够保存、读档并推进三十个生涯日的测试存档。
+```java
+new GearInFoundryGenerator().generate(sector);
+sector.addScript(new GearInWarfrontCycleScript());
+```
 
-1. 保存类和普通登记，构建并重启，进入测试存档，搜索 `GearIn daily`。
-2. 正常推进约一个游戏日，记录 `routine #1` 与 `since mount`，确认普通登记已经开始推进。
-3. 继续推进，比较后续 `routine #` 与累计日数，确认例程按每日周期执行。
-4. 按空格暂停至少 20 个真实秒，观察日志和生涯日期；随后解除暂停。
-5. 继续推进，比较每个完整周期与余量；使用局部时间换算片段理解一次推进跨过多个周期时，`while` 如何逐次扣除。
-6. 保存并重新载入存档，比较读档前后的 `since mount` 与 `routine #`。
-7. 继续推进到累计 30 个游戏日，搜索 `GearIn daily: done`，再检查 `hasScript(GearInDayAccumulatorScript.class)`。
-8. 把登记改为前述 transient 片段，构建重启，再保存读档；比较新的运行期计数，完成后将登记恢复为普通方式。
-9. 运行前述实体清理片段，搜索 `GearIn entity script cleanup: explicit cleanup`，确认显式调用产生日志，并确认实验中继站已移除。
+读档时不登记。脚本随存档保存，读档时实例已经在星区里。
 
-预期结果：
+把这个登记写进 `onGameLoad(...)` 的后果值得记下：那个回调每次读档执行一遍，登记几回就有几份脚本同时推动同一个周期。**症状是消息成对出现、条件在两份脚本之间来回翻转**，没有报错。同类错误在监听器与插件上一样成立：随存档保存的对象，登记点只能有一个，而且只能被执行一次。
 
-- Java 编译完成，且没有加载期类缺失或方法签名错误；
-- 未暂停时每累计 `1.0` 个游戏日增加一次 `routineCount`，日志包含 `GearIn daily: routine #N`；
-- 暂停期间日期、`since mount` 和例程日志均停止；
-- 单帧跨越多个周期时，`while` 为每个完整周期各增加一次次数，余量继续保留；
-- 读档后累计字段从保存值继续，不重新产生 `routine #1`；
-- 三十日后总例程为三十次，完成日志出现，普通列表移除该实例；下一次读档按登记策略开始新一轮；
-- transient 探针读档后不自动存在，重新注册后才继续推进；
-- 实体实验显式调用 `cleanup()` 后记录清理日志，再解除脚本并移除中继站；普通星区脚本按 `isDone()` 结束。
+确需在读档时补登记，参照 [C11-S1]，用存档公共数据里的标记确认只登记一次。
 
-## 故障分析
+### 进游戏核对
 
-- **脚本每次读档后出现两份日志**：注册入口无条件调用 `addScript()`，而普通脚本实例已经随存档恢复。
-    - **解决方案**：在 `onGameLoad()` 使用 `hasScript(GearInDayAccumulatorScript.class)`，只在列表缺少实例时加入新对象。
+执行 `gradle jar`，重启游戏，**新建一份存档**，停靠 Nipher Foundry。
 
-- **脚本没有任何日志**：脚本没有进入星区脚本列表，或注册发生在 `Global.getSector()` 尚未建立的应用加载阶段。
-    - **解决方案**：把注册放在 `onGameLoad()` 或 `onNewGame()`，并在注册后检查 `hasScript()`。
+- 市场条件中存在 Warfront；
+- 推进约 60 个生涯天，界面左侧出现战事平息的消息，Warfront 从条件栏消失；
+- 再推进约 30 天，出现再度开战的消息，Warfront 重新出现；
+- 两次消息之间保存并读档，下一条消息仍按原节奏出现。
 
-- **周期速度约快十倍**：`advance()` 把真实秒 `amount` 直接当成游戏天。
-    - **解决方案**：先调用 `Global.getSector().getClock().convertToDays(amount)`，再把结果加入天数累加器。
+页面中的现象依据 API 与原版代码推出，编者尚未逐项在游戏内实测。
 
-- **单帧跨过三天却只执行一次**：周期判断使用 `if`，一次回调只消耗一个周期。
-    - **解决方案**：使用 `while (daysAccumulator >= tickEveryDays)`，每次循环扣除一个周期并保留余量。
+## 常见问题
 
-- **暂停时仍然累计游戏天**：脚本的 `runWhilePaused()` 返回了 `true`，或逻辑累计的是原始 `amount`。
-    - **解决方案**：暂停敏感的生涯逻辑返回 `false`，并始终通过生涯时钟换算时间。
+- **读档之后脚本不再生效**：登记用的是 `addTransientScript(...)`，脚本没能进存档。
+    - **解决方案**：有状态的脚本改用 `addScript(...)`。
 
-- **脚本一直存在，完成日志却出现了**：`advance()` 设置了完成条件，但 `isDone()` 没有返回同一个 `done` 字段。
-    - **解决方案**：让 `isDone()` 返回 `done`，由引擎在回调返回后自动移除脚本。
+- **同一件事发生两次**：脚本登记了多份，常见于把登记写进 `onGameLoad(...)`。
+    - **解决方案**：只在 `onNewGame()` 登记，或在登记前以 `hasScript(...)` 检查。
 
-- **transient 脚本读档后消失**：脚本注册在 transient 列表，而该列表不写入存档。
-    - **解决方案**：把需要跨档保存的逻辑注册到 `addScript()`；临时逻辑在每次读档回调中重新调用 `addTransientScript()`。
+- **改了类名，旧存档读不出来**：存档里记的是原类名与包名。
+    - **解决方案**：已发布且随存档保存的脚本类保持原名。
 
-- **保存或读档时出现序列化错误**：脚本字段持有 UI、声音播放器或其他瞬态引擎句柄。
-    - **解决方案**：字段只保存可序列化的业务状态，瞬态对象使用 `transient` 字段并在运行时重建。
-
-## 总结
-
-每日脚本将帧时间换成生涯日，保存总进度与周期余量，逐次处理完整周期，到三十日设置完成状态。普通列表保存这份实例，读档后从原进度继续，结束后引擎移除它。
-
-登记也决定下一轮何时开始。当前列表缺失就创建新实例，永久一次性功能另存完成状态；transient 列表则每次载入重新建立。时间、实例字段与登记条件共同形成脚本的实际寿命。
+- **开加速之后节奏跟着变**：把 `amount` 当秒数直接累加，没走 `convertToDays(...)`。
+    - **解决方案**：时间换算统一交给时钟。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.EveryFrameScript`：`isDone()`、`runWhilePaused()`、`advance(float amount)` 的公开契约；
-- `com.fs.starfarer.api.EveryFrameScriptWithCleanup`：声明 `cleanup()`，用于安排附着脚本的资源清理；
-- `com.fs.starfarer.api.campaign.SectorAPI`：`addScript`、`addTransientScript`、`removeScript`、`hasScript` 和脚本列表；
-- `com.fs.starfarer.api.campaign.CampaignClockAPI`：`convertToDays` 与日历读取；
-- `com.fs.starfarer.api.Global`：取得当前生涯 `SectorAPI` 的全局入口；
+- `com.fs.starfarer.api.EveryFrameScript`：三个方法的注释。
+- `com.fs.starfarer.api.impl.campaign.fleets.SourceBasedFleetManager`：原版的逐帧脚本实现，生成、衰减与结束都在其中。
+- `com.fs.starfarer.api.campaign.SectorAPI`：脚本的登记、查询与移除。
+- `com.fs.starfarer.api.campaign.CampaignClockAPI`：`convertToDays(...)`、`getDay()` 与 `getTimestamp()`。
+- `com.fs.starfarer.api.impl.campaign.intel.events.EstablishedPolityScript`：原版周期性增删市场条件。

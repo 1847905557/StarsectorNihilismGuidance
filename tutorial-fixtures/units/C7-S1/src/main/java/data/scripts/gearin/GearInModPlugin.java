@@ -1,5 +1,7 @@
 package data.scripts.gearin;
 
+import java.util.Map;
+
 import com.fs.starfarer.api.BaseModPlugin;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.FactionAPI;
@@ -9,64 +11,35 @@ import com.fs.starfarer.api.impl.campaign.shared.SharedData;
 
 import data.scripts.gearin.campaign.GearInSystemGenerator;
 
-/** 接收MOD生命周期回调，生成新档内容并记录存档初始化与保存。 */
+/** MOD 入口：新档生成星系与关系，进入生涯时为存档补上一次性初始化。 */
 public class GearInModPlugin extends BaseModPlugin {
 
-    public static final String CLASS_MARK = "GearInModPlugin";
+    public static final String FACTION_ID = "gear_industry";
 
-    @Override
-    public void onApplicationLoad() throws Exception {
-        log("onApplicationLoad version=" + Global.getSettings().getGameVersion());
-    }
-
-    @Override
-    public void onEnabled(boolean wasEnabledBefore) {
-        log("onEnabled wasEnabledBefore=" + wasEnabledBefore);
-    }
+    /** 存档公共数据中记录 "已加入人物赏金名单" 的键。 */
+    private static final String BOUNTY_JOINED_KEY = "GearIn_bounty_joined";
 
     @Override
     public void onNewGame() {
-        new GearInSystemGenerator().generate(Global.getSector());
-        seedRelations(Global.getSector());
-        log("onNewGame");
+        SectorAPI sector = Global.getSector();
+        new GearInSystemGenerator().generate(sector);
+        seedRelations(sector);
     }
 
     @Override
     public void onGameLoad(boolean newGame) {
-        SectorAPI sector = Global.getSector();
-        if (!sector.getPersistentData().containsKey(CLASS_MARK)) {
-            SharedData.getData().getPersonBountyEventData().addParticipatingFaction("gear_industry");
-            sector.getPersistentData().put(CLASS_MARK, true);
-            log("first-entry initialization (CLASS_MARK gate opened)");
+        Map<String, Object> data = Global.getSector().getPersistentData();
+        if (!data.containsKey(BOUNTY_JOINED_KEY)) {
+            SharedData.getData().getPersonBountyEventData().addParticipatingFaction(FACTION_ID);
+            data.put(BOUNTY_JOINED_KEY, true);
         }
-        Global.getSoundPlayer().playUISound("GearIn_ui_feedback", 1f, 1f);
-        log("onGameLoad newGame=" + newGame);
-    }
-
-    @Override
-    public void beforeGameSave() {
-        log("beforeGameSave");
-    }
-
-    @Override
-    public void afterGameSave() {
-        log("afterGameSave");
-    }
-
-    @Override
-    public void onGameSaveFailed() {
-        log("onGameSaveFailed");
     }
 
     private void seedRelations(SectorAPI sector) {
-        FactionAPI gear = sector.getFaction("gear_industry");
+        FactionAPI gear = sector.getFaction(FACTION_ID);
         gear.setRelationship("player", 0f);
         gear.setRelationship("pirates", RepLevel.HOSTILE);
         gear.setRelationship("hegemony", RepLevel.FRIENDLY);
         gear.setRelationship("tritachyon", RepLevel.HOSTILE);
-    }
-
-    private static void log(String message) {
-        Global.getLogger(GearInModPlugin.class).info("GearIn lifecycle: " + message);
     }
 }

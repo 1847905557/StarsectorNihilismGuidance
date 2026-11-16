@@ -1,191 +1,152 @@
 # 放置生涯实体
 
-本节在观测星系放置一个信标，配置位置、身份、交互图片与业务状态，再比较它和玩家舰队之间的可见性。放置脚本负责创建与配置，已有采样器继续读取同一实体，让坐标、轨道和检测结果都能对应到实际操作。
+实体放进星系之后，还有一层是玩家怎么发现它。可见等级是算出来的结果，能改这个结果的方法在 `SectorEntityToken` 上有一整组：轮廓、传感器强度、够不够被发现、雷达图标要不要提前亮。
 
-_本节预期阅读时间：\~22 分钟。_
+改的是这一件实体。同一类型的两个实体各改各的，互相不影响。
 
-_本节预期操作时间：\~30 分钟。_
+点开实体时看到什么，是另一组方法：插图、描述文本、说话的人、上方那行浮字。这些都有前提：条目要带能开交互的标签，原版 89 条里 27 条有。
 
-## 学习目标
+---
 
-完成后，您将能够：
+_本节预期阅读时间：\~15 分钟。_
 
-- 从地点创建具有稳定 ID 的实体并确认容器归属；
-- 设置 name、faction、tag、facing、memory 和 custom data；
-- 配置 interaction image 和 custom plugin 入口；
-- 对照固定位置和圆轨道位置；
-- 读取 sensor strength/profile 与玩家可见性。
+_本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C10-S2] 的地点和 `StarSystemAPI` 查询；
-- [C10-S1] 的当前星区和定期采样脚本；
-- [C7-S1] 的生涯入口与日志读取；
-- 理解实体 ID 必须在存档内稳定且唯一。
+- [C10-S2] 的 Ashen Verge 与生成器，信标在其中的 `generate(...)` 里创建；
+- [C10-S1] 的 `EveryFrameScript` 与 Memory 读写；
+- [C7-S1] 的 `onGameLoad(...)`，发现脚本在那里登记。
 
-## 将信标放入已有星系
+## 创建信标
 
-信标沿用 [C10-S2] 的 `GearIn_observation_system`，实体 ID 为 `GearIn_entity_beacon`。创建 `src/data/scripts/gearin/campaign/GearInEntityPlacement.java`，加入 `GearInModPlugin` 的 import，再将局部登记放在地点生成器登记之后：
-
-```java
-sector.addTransientScript(new GearInEntityPlacement());
-```
-
-脚本首次创建信标，后续进入存档时查询同一 ID，对已有对象应用当前配置，完成一轮便结束。因此改变参数后，可以通过构建、重启与读档继续使用同一个信标。
-
-下面的局部片段展示创建与查询关系：
+信标已经在 [C10-S2] 的生成器中放好，这里说明其中每一项选择：
 
 ```java
-StarSystemAPI system = Global.getSector().getStarSystem(
-        "GearIn_observation_system");
-SectorEntityToken entity = system.addCustomEntity(
-        "GearIn_entity_beacon",
-        "观测信标",
-        "comm_relay",
-        Factions.INDEPENDENT);
-
-SectorEntityToken byLocation = system.getEntityById(
-        "GearIn_entity_beacon");
-SectorEntityToken bySector = Global.getSector().getEntityById(
-        "GearIn_entity_beacon");
+SectorEntityToken beacon = system.addCustomEntity(
+        BEACON_ID, "灰烬信标", Entities.NAV_BUOY, GearInModPlugin.FACTION_ID);
+beacon.setCircularOrbitPointingDown(center, 130f, 1100f, 90f);
+beacon.setInteractionImage("illustrations", "comm_relay");
 ```
 
-`addCustomEntity(...)` 将对象加入星系，使用原版 `comm_relay` 类型。地点与星区查询应取得同一个 token，`getContainingLocation()` 回读观测星系。名字可以在后面调整，ID 则用于存档、索引与后续交互查找，重复创建同 ID 会让这些读取失去明确对象。
+`Entities.NAV_BUOY` 是原版的导航浮标，定义在 `custom_entities.json` 中，继承自 `base_campaign_objective`。同势力的舰队进入它所在的地点，会获得 +3 的最大航速等级 (原版 `NAV_BONUS`)，在超空间中不生效；被玩家黑入之后，加成对玩家舰队同样生效。黑入由原版的规则命令完成，不需要自己编写。
 
-## 选择固定坐标或轨道
+势力写 `GearInModPlugin.FACTION_ID`，信标便属于齿轮工业。Ashen Verge 里的齿轮工业舰队因此能吃到这份加成；玩家也想要，就得先把它黑下来。
 
-实体已经属于地点，接下来确定它在哪里。本例的 `USE_FIXED_LOCATION` 选择两种方式，读档时重新应用当前分支。
+`BEACON_ID` 是 `"GearIn_ashen_beacon"`。**实体 ID 必须在存档内唯一且不再改变**，后续脚本靠它查找信标。
 
-固定位置调用会清除现有轨道，并写入坐标：
+### 轨道与交互图
+
+位置用 `setCircularOrbitPointingDown(focus, angle, radius, days)` 指定，焦点是 [C10-S2] 中 `initNonStarCenter()` 返回的中心点。需要固定在某处时，改用 `setFixedLocation(x, y)`，它会清除已有的轨道。
+
+`setInteractionImage(category, key)` 的第一个参数是类别，第二个是键。键 `comm_relay` 已登记在原版 `settings.json` 的 `graphics.illustrations` 中，直接引用即可，不必在自己的 `settings.json` 里重复登记。引用一个没有登记的键，交互界面会缺少插图。
+
+## 玩家看得见它吗
+
+实体与玩家舰队之间的可见性有两个方向：
+
+| 方法 | 含义 |
+| ---- | ---- |
+| `getVisibilityLevelToPlayerFleet()` | 玩家舰队对该实体的观察等级 |
+| `getVisibilityLevelOfPlayerFleet()` | 该实体对玩家舰队的观察等级 |
+
+等级是 `VisibilityLevel` 枚举，从低到高依次为 `NONE`、`SENSOR_CONTACT`、`COMPOSITION_DETAILS`、`COMPOSITION_AND_FACTION_DETAILS`。`isVisibleToPlayerFleet()` 返回布尔值，用于只需要知道看得见与否的场合。
+
+**两个方向用到的传感器强度与轮廓是互换的。** 方向写反，脚本会在玩家毫无察觉时就判定为已经发现。信标的 `getSensorProfile()` 与 `setSensorProfile(...)` 控制它多容易被发现，改小之后，玩家需要靠得更近。
+
+## 发现得早还是晚
+
+可见等级是结果，`SectorEntityToken` 上还有几个方法能改这个结果。
 
 ```java
-entity.setFixedLocation(1600f, -900f);
+void setSensorProfile(Float sensorProfile);
+void setSensorStrength(Float sensorStrength);
+void setDiscoverable(Boolean discoverable);
+void setDetectionRangeDetailsOverrideMult(Float mult);
+void forceSensorFaderBrightness(float brightness);
+void fadeOutIndicator();
+void fadeInIndicator();
 ```
 
-需要绕恒星移动时，改用圆轨道：
+`setSensorProfile(...)` 是这件东西有多显眼。玩家只要进入这个数值对应的距离，就能拿到传感器接触。传 `null` 用回默认值。信标默认的轮廓不大，玩家从超空间跳进来之后往往要走近一点才看得见。
+
+`setDiscoverable(false)` 让它彻底无法被发现。隐藏内容用它，玩家在附近也拿不到接触，雷达上什么都没有。
+
+`setDetectionRangeDetailsOverrideMult(...)` 乘在提示里那个距离数字上，只改数字，不改实际探测：`2f` 会让鼠标悬停时显示的距离翻倍。**两者不一致时，实际探测仍然以 `sensorProfile` 为准。**
+
+`forceSensorFaderBrightness(...)` 与 `fadeInIndicator()`、`fadeOutIndicator()` 管的是雷达上的图标。图标平时由可见性驱动淡入淡出，这三项可以直接把它顶成常亮或淡出。做剧情演出时用它让玩家注意到某处，做完了记得让图标回到正常状态。
+
+**这几个值改的是这一件实体，与势力、与地点无关。** 同一个 `Entities.NAV_BUOY` 类型，原版导航浮标一个轮廓，自己放的信标另一个轮廓，两者互不影响。
+
+## 交互图与描述
+
+玩家点开实体时看到的界面由几项决定：
 
 ```java
-entity.setCircularOrbit(
-        system.getStar(),
-        45f,
-        2600f,
-        160f);
+void setInteractionImage(String category, String key);
+void setCustomDescriptionId(String customDescriptionId);
+void setActivePerson(PersonAPI activePerson);
+void addFloatingText(String text, Color color, float duration);
 ```
 
-锚点为本系恒星，初始角度 45，半径 2600 个生涯地图单位，周期 160 个生涯日。位置随锚点与周期计算，锚点也应属于同一个地点。
+`setInteractionImage(...)` 换插图，键要在 `settings.json` 的 `graphics.illustrations` 里登记过。`setCustomDescriptionId(...)` 换掉描述文本，对应 `strings.json` 里的一组键。`setActivePerson(...)` 指定这次交互里说话的人。
 
-**固定坐标与轨道分别提供位置，采用其中一种。** 仅改坐标却保留原有轨道，后续推进仍可能按轨道更新位置；本例的两个分支分别建立或清除轨道，验证也比较这两种结果。
+`addFloatingText(...)` 在实体上方挂一行提示，只在实体可见时显示。做首次接触的指引时用它比弹窗轻。
 
-## 配置名称、归属与业务状态
+**这些方法只对带 `has_interaction_dialog` 标签的条目有实际效果。** 原版 89 条自定义实体里只有 27 条带这个标签。自己新增条目时忘了这一项，调用上面任何一个方法，玩家都点不开界面。
 
-在同一实体上设置名称、势力、标签与朝向，再写入角色和就绪状态：
+## 发现脚本
+
+玩家的传感器第一次捕捉到信标时，脚本在信标自己的 Memory 里写入 `$GearIn_entity_ready`。后续章节的规则和脚本，读取这个键就知道玩家已经注意到了这座信标。
+
+脚本每 0.5 至 1 秒检查一次，用 `getVisibilityLevelToPlayerFleet()` 取得观察等级，只要不是 `NONE` 就写入：
 
 ```java
-entity.setName("观测信标");
-entity.setFaction(Factions.INDEPENDENT);
-entity.addTag("GearIn_entity_probe");
-entity.setFacing(90f);
-entity.getCustomData().put("GearIn_entity_role", "sensor");
-entity.getMemoryWithoutUpdate().set("$GearIn_entity_ready", true);
-```
-
-名称和势力用于显示，`facing` 提供朝向，`GearIn_entity_probe` 标签用于分类。`hasTag(...)` 查询当前实体，地点的 `getEntitiesWithTag(...)` 查询具有该标签的实体集合。
-
-custom data 是随实体保存的 Map，本例在 `GearIn_entity_role` 下保存字符串 `sensor`。其中对象也参与存档序列化，长期状态按实际所属实体安排。
-
-Memory 则提供规则状态、事实与过期值语义。这里写入 `$GearIn_entity_ready`，纯读取时使用 `getMemoryWithoutUpdate()`；需要更新实体事实时，调用 `getMemory()`。不同的读取入口可能触发不同处理，日志与规则也沿实体自己的 Memory 查询。
-
-## 将交互图片接到信标
-
-`comm_relay` 类型从 `custom_entities.json` 提供地图外观与插件。交互图片另通过设置中的分类与键选择。本例登记原版中继站插图：
-
-```json
-{
-    "graphics": {
-        "illustrations": {
-            "GearIn_entity_interaction": "graphics/illustrations/comm_relay.jpg"
-        }
-    }
+VisibilityLevel level = beacon.getVisibilityLevelToPlayerFleet();
+if (level != VisibilityLevel.NONE) {
+    beacon.getMemoryWithoutUpdate().set(READY_KEY, true);
 }
 ```
 
-把 `GearIn_entity_interaction` 合入已有 `graphics.illustrations`，然后在实体配置中选择这份登记，并取得 custom plugin：
+键写在信标的 Memory 上，因为它描述的只是这一座信标，与 [C10-S1] 里写在市场 Memory 的时间戳同理。写入使用 `getMemoryWithoutUpdate()`，只存值，不触发 Memory 的更新处理。
+
+`isDone()` 读取同一个键，发现之后脚本在下一帧被清除。脚本是 transient 的，读档后由入口类重新登记，是否还需要它，由存档里的标记决定。
+
+### 登记脚本
+
+在 `GearInModPlugin.onGameLoad(...)` 中加入：
 
 ```java
-entity.setInteractionImage("illustrations", "GearIn_entity_interaction");
-CustomCampaignEntityAPI customEntity = (CustomCampaignEntityAPI) entity;
-boolean pluginLoaded = customEntity.getCustomPlugin() != null;
-```
-
-`setInteractionImage(...)` 指定交互时的图片，`getCustomPlugin()` 读取该实体类型创建的插件。地图显示中继站、交互界面显示插图、插件引用存在，分别对应这几处配置。靠近信标打开交互时，再将实际画面与日志对照。
-
-## 从双方的传感器判断可见性
-
-信标的传感器强度与轮廓都设为 1。写入参数后，读取玩家是否能发现它以及观察等级：
-
-```java
-entity.setSensorStrength(1f);
-entity.setSensorProfile(1f);
-float strength = entity.getSensorStrength();
-float profile = entity.getSensorProfile();
-boolean visible = entity.isVisibleToPlayerFleet();
-VisibilityLevel level = entity.getVisibilityLevelToPlayerFleet();
-```
-
-检测还取决于地点、距离、传感器规则与实体的可发现状态，不能只凭两个参数已经写入就判断玩家必然看见它。
-
-**`toPlayer` 与 `ofPlayer` 的检测方向相反。** `getVisibilityLevelToPlayerFleet()` 描述玩家对信标的观察，`getVisibilityLevelOfPlayerFleet()` 描述信标对玩家舰队的观察。每个方向都使用检测方的强度、被检测方的轮廓与双方距离，返回等级也可能不同。
-
-### 沿现有采样器比较变化
-
-信标放置完成后，由 [C10-S1] 的五日采样持续观察。在 `GearInSectorStateSampler` 加入 `SectorEntityToken` 的 import，将以下局部片段放入 `writeStateLog(...)`：
-
-```java
-SectorEntityToken entity = sector.getEntityById("GearIn_entity_beacon");
-if (entity != null) {
-    LOG.info("GearIn entity visibility: location=" + entity.getContainingLocation().getId()
-            + " position=" + entity.getLocation()
-            + " strength=" + entity.getSensorStrength()
-            + " profile=" + entity.getSensorProfile()
-            + " visible=" + entity.isVisibleToPlayerFleet()
-            + " toPlayer=" + entity.getVisibilityLevelToPlayerFleet()
-            + " ofPlayer=" + entity.getVisibilityLevelOfPlayerFleet());
+if (!sector.hasTransientScript(GearInBeaconDiscoveryScript.class)) {
+    sector.addTransientScript(new GearInBeaconDiscoveryScript());
 }
 ```
 
-放置脚本记录初始配置后结束，采样器按稳定 ID 继续取得信标。靠近、远离和切换地点时，日志一起保留坐标、所属地点、检测参数与两种方向的等级。
+## 完整的发现脚本
 
-比较时按当前地点和距离解释可见性，再对应观察等级。固定位置与轨道的实验也采用同一信标，参数变化就能沿这个 ID 找回，而无需重新创建另一份观察对象。
-
-## 完整最小例
-
-保存下列类并保留前面的登记、图片配置与采样片段。
-
-::: details 完整成品：GearInEntityPlacement
+`src/data/scripts/gearin/campaign/GearInBeaconDiscoveryScript.java`：
 
 ```java
 package data.scripts.gearin.campaign;
 
-import org.apache.log4j.Logger;
-
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CustomCampaignEntityAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.campaign.SectorEntityToken;
-import com.fs.starfarer.api.campaign.StarSystemAPI;
-import com.fs.starfarer.api.impl.campaign.ids.Factions;
+import com.fs.starfarer.api.campaign.SectorEntityToken.VisibilityLevel;
+import com.fs.starfarer.api.util.IntervalUtil;
 
-public class GearInEntityPlacement implements EveryFrameScript {
+/** 玩家的传感器第一次捕捉到灰烬信标时，在信标自己的 Memory 中记下。 */
+public class GearInBeaconDiscoveryScript implements EveryFrameScript {
 
-    private static final Logger LOG = Global.getLogger(GearInEntityPlacement.class);
-    private static final boolean USE_FIXED_LOCATION = false;
+    /** 信标 Memory：玩家已经发现这座信标。 */
+    public static final String READY_KEY = "$GearIn_entity_ready";
 
-    private boolean done;
+    private final IntervalUtil interval = new IntervalUtil(0.5f, 1f);
 
     @Override
     public boolean isDone() {
-        return done;
+        SectorEntityToken beacon = findBeacon();
+        return beacon != null && beacon.getMemoryWithoutUpdate().getBoolean(READY_KEY);
     }
 
     @Override
@@ -195,120 +156,52 @@ public class GearInEntityPlacement implements EveryFrameScript {
 
     @Override
     public void advance(float amount) {
-        if (done) {
+        interval.advance(amount);
+        if (!interval.intervalElapsed()) {
             return;
         }
-
-        SectorAPI sector = Global.getSector();
-        StarSystemAPI system = sector.getStarSystem("GearIn_observation_system");
-        if (system == null) {
-            LOG.warn("GearIn entity placement: system missing");
-            done = true;
+        SectorEntityToken beacon = findBeacon();
+        if (beacon == null) {
             return;
         }
-
-        SectorEntityToken entity = system.getEntityById(
-                "GearIn_entity_beacon");
-        if (entity == null) {
-            entity = system.addCustomEntity(
-                    "GearIn_entity_beacon",
-                    "观测信标",
-                    "comm_relay",
-                    Factions.INDEPENDENT);
+        VisibilityLevel level = beacon.getVisibilityLevelToPlayerFleet();
+        if (level != VisibilityLevel.NONE) {
+            beacon.getMemoryWithoutUpdate().set(READY_KEY, true);
         }
+    }
 
-        entity.setName("观测信标");
-        entity.setFaction(Factions.INDEPENDENT);
-        entity.addTag("GearIn_entity_probe");
-        entity.setFacing(90f);
-        entity.getCustomData().put("GearIn_entity_role", "sensor");
-        entity.getMemoryWithoutUpdate().set(
-                "$GearIn_entity_ready",
-                true);
-        entity.setInteractionImage(
-                "illustrations",
-                "GearIn_entity_interaction");
-        if (USE_FIXED_LOCATION) {
-            entity.setFixedLocation(1600f, -900f);
-        } else {
-            entity.setCircularOrbit(
-                    system.getStar(),
-                    45f,
-                    2600f,
-                    160f);
-        }
-        entity.setSensorStrength(1f);
-        entity.setSensorProfile(1f);
-
-        CustomCampaignEntityAPI customEntity =
-                (CustomCampaignEntityAPI) entity;
-        SectorEntityToken globalEntity = sector.getEntityById(
-                "GearIn_entity_beacon");
-        String locationId = entity.getContainingLocation() == null
-                ? "null"
-                : entity.getContainingLocation().getId();
-
-        LOG.info(String.format(
-                "GearIn entity: id=%s location=%s globalSame=%s tag=%s ready=%s plugin=%s strength=%.2f profile=%.2f visible=%s",
-                entity.getId(),
-                locationId,
-                entity == globalEntity,
-                entity.hasTag("GearIn_entity_probe"),
-                entity.getMemoryWithoutUpdate().getBoolean(
-                        "$GearIn_entity_ready"),
-                customEntity.getCustomPlugin() != null,
-                entity.getSensorStrength(),
-                entity.getSensorProfile(),
-                entity.isVisibleToPlayerFleet()));
-        done = true;
+    private SectorEntityToken findBeacon() {
+        return Global.getSector().getEntityById(GearInAshenVergeGenerator.BEACON_ID);
     }
 }
 ```
 
-:::
+### 进游戏核对
 
-## 验证方案
+执行 `gradle jar`，重启游戏，**新建一份存档**。
 
-前置数据：[C10-S2] 的地点生成示例已就绪，包含本节实体配置示例的 GearIn MOD 已构建并启用。
+- 星图上，在 Ashen Verge 中能找到灰烬信标，名称与归属颜色与配置一致；
+- 远离信标时，在控制台执行 `runcode Global.getSector().getEntityById("GearIn_ashen_beacon").getMemoryWithoutUpdate().getBoolean("$GearIn_entity_ready")`，结果为 `false`；
+- 靠近到传感器能够捕捉到它之后再执行同一条语句，结果为 `true`；
+- 保存并重新读档，再执行一次，结果仍为 `true`。
 
-1. 保存放置类、生涯登记、图片配置与采样片段，构建重启，进入已生成 `GearIn_observation_system` 的存档。
-2. 在地图中确认 `GearIn_entity_beacon` 的名称、势力颜色和轨道位置。
-3. 搜索 `GearIn entity`，核对地点 ID、全局查询同一性、tag、memory、plugin 和传感器值。
-4. 靠近与远离信标时各推进五日，比较 `GearIn entity visibility` 的坐标、visible、toPlayer 与 ofPlayer；切换地点后再记录一次。
-5. 将 `USE_FIXED_LOCATION` 改为 `true`，构建并重启读档，确认信标位于 `(1600, -900)` 且 orbit 为空；改回 `false` 后再构建重启读档，确认恢复半径 2600、周期 160 日的轨道。
+## 常见问题
 
-预期结果：
+- **按 ID 查找信标得到 `null`**：实体的创建发生在旧存档，或者查询用的 ID 与创建时不同。
+    - **解决方案**：使用新档测试，并统一引用 `BEACON_ID`。
 
-- 地图中 `GearIn_entity_beacon` 的名称、势力颜色和轨道位置与配置一致；
-- 日志出现 `GearIn entity`，地点 ID、全局查询同一性、tag、memory、plugin 和传感器值与配置一致；
-- 采样同时记录位置、地点与两种检测方向；切换地点后 `visible=false`，距离变化按实际检测范围反映在等级与可见性上；
-- `setFixedLocation` 清除 orbit，轨道调用重新建立 orbit。
+- **信标一直没有被发现**：脚本没有登记，或者传感器轮廓设得过小。
+    - **解决方案**：核对 `onGameLoad(...)` 中的登记，再逐步增大 `setSensorProfile(...)` 的值。
 
-## 故障分析
+- **玩家尚未靠近就已经发现**：把 `getVisibilityLevelOfPlayerFleet()` 与 `getVisibilityLevelToPlayerFleet()` 用反了。
+    - **解决方案**：判断玩家是否看见实体，使用带 `ToPlayerFleet` 的方法。
 
-- **全局查询返回空值**：查询 ID 与创建 ID 不同，或实体尚未加入当前星区管理的地点。
-    - **解决方案**：核对 `GearIn_entity_beacon` 与 containing location，确认先完成 `addCustomEntity(...)`，再从当前星区查询。
-
-- **实体位置保持旧坐标**：固定位置和轨道位置同时被写入。
-    - **解决方案**：把固定位置和轨道位置作为互斥分支，只保留一种位置来源。
-
-- **交互图片或 custom plugin 没有生效**：type 对应的 custom entity spec 或资源路径不存在。
-    - **解决方案**：检查 type 的数据定义、interaction image 的 category/key 和 custom plugin 配置。
-
-- **传感器属性已写入但实体不可见**：可见性还受到当前地点、距离、发现状态和传感器规则影响。
-    - **解决方案**：同时记录 containing location、坐标、sensor strength/profile 和 VisibilityLevel，再逐项排除。
-
-- **memory 读取结果不稳定**：读取使用了会触发更新的 `getMemory()`，或把 entity memory 和地点 memory 混用。
-    - **解决方案**：纯读取使用 `getMemoryWithoutUpdate()`，并为实体和地点使用不同键前缀。
-
-## 总结
-
-信标以稳定 ID 加入地点，固定坐标或轨道提供位置，类型提供外观与插件，设置中的图片键提供交互画面。标签、custom data 与 Memory 则分别保存分类和状态。
-
-创建完成之后，采样器持续读取同一实体。玩家对信标与信标对玩家采用各自检测方向，实际可见性再结合地点和距离判断。
+- **交互界面没有插图**：`setInteractionImage(...)` 的键没有登记。
+    - **解决方案**：使用原版已登记的键，或在自己的 `settings.json` 的 `graphics.illustrations` 中登记。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.SectorEntityToken`：实体身份、位置、memory、tag、传感器和可见性入口；
-- `com.fs.starfarer.api.campaign.CustomCampaignEntityAPI`：custom entity plugin、交互状态与 spec 行为入口；
-- `data/config/custom_entities.json`：custom entity type、图片和 plugin 配置。
+- `com.fs.starfarer.api.campaign.SectorEntityToken`：可见性、传感器、交互图与 Memory 的方法，`VisibilityLevel` 的枚举也在其中。
+- `com.fs.starfarer.api.impl.campaign.NavBuoyEntityPlugin`：原版导航浮标的航速加成。
+- `com.fs.starfarer.api.impl.campaign.BaseCampaignObjectivePlugin`：黑入与重置状态的保存方式。
+- `data/config/custom_entities.json`：`nav_buoy` 与其他实体类型的定义。

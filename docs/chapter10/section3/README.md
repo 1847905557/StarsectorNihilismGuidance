@@ -1,263 +1,237 @@
 # 配置生涯势力
 
-本节通过势力对象调整关系与军备知识。关系实验比较直接写入和玩家声望事件，舰船实验比较已知、优先与学习时间；两项操作都保存原状态并恢复。我们将从这些具体结果说明，界面关系、知识集合与后续舰船挑选怎样使用它们。
+`FactionAPI` 有六组能力，关系是其中最常被提到的一组。做剧情的人迟早要用到其余几组：它认识哪些船、抽舰队时偏爱哪些、学说里的进攻性与军官素质、什么算违禁品、舰队名字从哪儿取。
 
-_本节预期阅读时间：\~22 分钟。_
+已知与优先分成两个集合。加进优先集合而没加进已知集合，抽取时仍然不会出现。
 
-_本节预期操作时间：\~30 分钟。_
+学说可以直接改，`getDoctrine()` 拿到的那份对象上就有 setter。原版黑色市场开张时就这么抬高自己的战舰下限。改的是这一份对象，已经生成的舰队不受影响。
 
-## 学习目标
+---
 
-完成后，您将能够：
+_本节预期阅读时间：\~15 分钟。_
 
-- 取得玩家势力和指定势力并读取显示属性；
-- 同时判断关系数值、关系等级、敌对状态和双向读取；
-- 区分 `FactionAPI` 直接关系写入与 `SectorAPI.adjustPlayerReputation`；
-- 临时修改关系并恢复原值；
-- 修改舰船 known/priority 集合后恢复状态并理解 role cache 清理。
+_本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C10-S1] 的 `SectorAPI.getPlayerFaction()` 和势力入口；
-- [C7-S2] 的全局对象取得方式；
-- [C1-S1] 的日志搜索和稳定前缀定位；
-- 能够保存运行前状态，并在实验结束后恢复它。
+- [C7-S1] 的 `seedRelations(...)`，新档中的初始关系在那里写入；
+- [C10-S1] 的 `$GearIn_contacted`，本节的脚本读取它作为触发条件；
+- [C3-S1] 的 `gear_industry` 势力。
 
-## 取得当前势力对象
+## 关系的三种表示
 
-`FactionAPI` 提供显示资料、关系和军备知识。玩家势力从当前 Sector 取得，指定势力则按稳定 ID 查询。以下局部片段使用玩家与霸主：
+同一份关系，游戏用三种形式表达：
 
-```java
-SectorAPI sector = Global.getSector();
-FactionAPI player = sector.getPlayerFaction();
-FactionAPI hegemony = sector.getFaction(Factions.HEGEMONY);
+- 数值：`float`，范围从 -1 到 1，由 `getRelationship(id)` 读取；
+- 等级：`RepLevel`，由数值按阈值换算，界面上的 "友好"、"敌对" 就是它；
+- 敌对判断：`isHostileTo(id)`，决定舰队见面是否开火。
 
-String playerId = player.getId();
-String displayName = hegemony.getDisplayName();
-Color baseColor = hegemony.getBaseUIColor();
-```
+正值一侧的阈值如下，负值一侧按同样的阈值对称：
 
-`getDisplayName()` 和 `getBaseUIColor()` 用于界面显示，关系查询使用 `getId()` 或 `Factions.HEGEMONY`。显示名称可以本地化，调用键继续按势力 ID 对应。
+| 等级 | 数值范围       |
+| ---- | -------------- |
+| 中立 | 0 至 0.09      |
+| 偏好 | 0.09 至 0.24   |
+| 欢迎 | 0.24 至 0.49   |
+| 友好 | 0.49 至 0.74   |
+| 合作 | 0.74 及以上    |
 
-本节分别做关系与已知舰船两项实验，每次写入之后恢复原状态。创建 `src/data/scripts/gearin/campaign/GearInFactionRelationProbe.java` 和 `GearInFactionKnownShipProbe.java`，将类的 import 加入 `GearInModPlugin`，在已有 `onGameLoad(...)` 中登记：
+**这些边界是源码里的常量，判断时先乘 100 再四舍五入取整。** `RepLevel` 里写着 `T1 = 0.09f`、`T2 = 0.24f`、`T3 = 0.49f`、`T4 = 0.74f`，换算方法只有一句 `(int) Math.round(f * 100f)`。所以 0.094 与 0.09 属同一等级，效果上等价于按百分位取整后比较。区间左开右闭：`0.09` 已经进了下一级，`0.24` 已经进了再下一级。
 
-```java
-sector.addTransientScript(new GearInFactionRelationProbe());
-sector.addTransientScript(new GearInFactionKnownShipProbe());
-```
-
-两个脚本各执行一轮，完成后 `isDone()` 返回 `true`，由生涯引擎移除。读取、修改与恢复都在这一轮中完成，下一次进入存档再建立本次实验。
-
-## 关系数值怎样成为界面状态
-
-当前关系同时可以表示为 float、`RepLevel` 与敌对状态。读取时指定调用势力与目标 ID，反向读取则交换两端：
+`getRelationship(id)` 读取的是调用方对 `id` 的关系。读取玩家与齿轮工业的关系时，从 `sector.getFaction("gear_industry")` 出发，传入玩家势力的 ID：
 
 ```java
-float playerToHegemony = player.getRelationship(hegemony.getId());
-float hegemonyToPlayer = hegemony.getRelationship(player.getId());
-RepLevel level = player.getRelationshipLevel(hegemony.getId());
-boolean hostile = player.isHostileTo(hegemony.getId());
+FactionAPI gear = sector.getFaction(GearInModPlugin.FACTION_ID);
+String playerId = sector.getPlayerFaction().getId();
+float value = gear.getRelationship(playerId);
+RepLevel level = gear.getRelationshipLevel(playerId);
 ```
 
-`playerToHegemony` 与 `hegemonyToPlayer` 来自同一项普通双边关系。日志保留两种方向，是为了确认调用的双方；`RepLevel` 根据数值计算，敌对状态再按等级判定。
+## 写入关系
 
-这几个结果可以一起解释界面：数值记录具体变化，等级提供当前关系档位，敌对状态提供实际行为判断。只是等级相同，并不说明档位内的数值也完全相同。
+`FactionAPI` 提供三个写入方法，语义不同：
 
-## 直接调整关系，或提交玩家声望事件
+| 方法                         | 作用                                   |
+| ---------------------------- | -------------------------------------- |
+| `setRelationship(id, value)` | 直接设为指定数值                       |
+| `adjustRelationship(id, delta)` | 在当前数值上增减                    |
+| `ensureAtWorst(id, level)`   | 关系低于该等级时抬到该等级，否则不变   |
 
-要直接写入两势力的关系，使用 `setRelationship(...)` 或 `adjustRelationship(...)`。前者设值，后者按增量调整。玩家声望事件则从 `SectorAPI.adjustPlayerReputation(...)` 提交，游戏选择对应的响应插件，再由插件处理变化并返回结果。
+`setRelationship` 另有传入 `RepLevel` 的重载，会换算成该等级对应的数值。
 
-本例让两种方式各增加 `0.05f`，在它们之间先恢复关系。局部过程如下：
+本节的奖励只需要 "至少友好"，用 `ensureAtWorst`：
 
 ```java
-float before = player.getRelationship(hegemony.getId());
-player.adjustRelationship(hegemony.getId(), 0.05f);
-float directDuring = player.getRelationship(hegemony.getId());
-player.setRelationship(hegemony.getId(), before);
-
-CustomRepImpact impact = new CustomRepImpact();
-impact.delta = 0.05f;
-RepActionEnvelope envelope = new RepActionEnvelope(RepActions.CUSTOM, impact);
-envelope.withMessage = false;
-ReputationAdjustmentResult result = sector.adjustPlayerReputation(
-        envelope,
-        hegemony.getId());
+gear.ensureAtWorst(playerId, RepLevel.FRIENDLY);
 ```
 
-前半段直接调整并写回 `before`。后半段用 `CustomRepImpact.delta` 提供请求增量，`RepActionEnvelope` 将它包装为 `CUSTOM` 声望事件；`withMessage=false` 让本次记录集中到日志。
+原版在惩罚性行为里写 `ensureAtBest` (把关系压到不高于某级)，在恢复性行为里写 `ensureAtWorst`，方向正好相反。**把方向写反，关系就朝反方向变化。** 对关系已经是合作的玩家，`ensureAtWorst(..., FRIENDLY)` 不会把关系降下来；写成 `ensureAtBest` 则会。
 
-`ReputationAdjustmentResult.delta` 保存事件处理结果，当前关系还要从势力重新读取。接近关系上限时，实际增量受到范围限制，响应插件也参与声望处理，因此比较请求值、返回值与关系实值。
+::: tip 为什么不用 setRelationship
 
-### 精确恢复实验前的关系
-
-完整例分别记录直接调整的 `before`、`during` 与 `after`，以及声望事件的 `delta`、`during` 与 `restored`。每项修改结束后，都用实验前保存的 float 恢复。
-
-::: warning 关系等级不足以恢复具体原值
-
-`setRelationship(String, RepLevel)` 会将等级转换为对应数值。原值可能位于等级中的任意位置，恢复实验时使用 `setRelationship(String, float)`，才能保留原来那一项具体关系。
+`setRelationship(id, RepLevel.FRIENDLY)` 会把关系固定为友好等级的起点数值，已经比这更好的玩家会被降级。想表达 "不低于"，就用 `ensureAtWorst`。
 
 :::
 
-这次恢复针对关系表。声望事件的调用与返回仍按自己的路径记录，后续正式功能选择入口时，也依据需要直接设定关系还是产生声望响应来决定。
+## 势力还记着哪些东西
 
-## 修改势力可以使用的舰船
+`FactionAPI` 上一共有六组能力，关系只是第一组。做剧情的人迟早会用到其余几组，它们决定势力手里有什么、怎么打仗、卖什么。
 
-势力的已知舰船集合与优先集合参与舰船挑选。`getKnownShips()` 读取知识，`knowsShip(...)` 与 `isShipPriority(...)` 分别查询指定船体。局部修改方法为：
+**已知与优先级。** 已知集合决定能不能用，优先级集合决定用得多不多：
 
 ```java
-Set<String> knownShips = faction.getKnownShips();
-boolean wasKnown = faction.knowsShip(hullId);
-boolean wasPriority = faction.isShipPriority(hullId);
+Set<String> getKnownShips();
+void addKnownShip(String hullId, boolean setTimestamp);
+Set<String> getKnownWeapons();
+void addKnownWeapon(String weaponId, boolean setTimestamp);
+Set<String> getKnownFighters();
+void addKnownFighter(String wingId, boolean setTimestamp);
+Set<String> getKnownHullMods();
+void addKnownHullMod(String modId);
 
-faction.addKnownShip(hullId, false);
-faction.addPriorityShip(hullId);
-faction.removePriorityShip(hullId);
-faction.removeKnownShip(hullId);
+Set<String> getPriorityShips();
+void addPriorityShip(String hullId);
+boolean knowsShip(String hullId);
 ```
 
-本例使用原版 `lasher`。加入之前保存是否已知、是否优先和学习时间戳，再写入 known 与 priority，记录之后按原状态恢复。
+武器、战机、船插各有一套同样的增删与判定。优先级只对已经知道的项有效，加进优先级集合而没加进已知集合，生成的舰队里仍然不会出现。
 
-`addKnownShip(hullId, false)` 的第二个参数控制新增时是否记录学习时间。这里传入 `false`，本次新增不写时间戳。若船体原来已经已知，完成实验后仍然保留；优先状态与原时间戳也分别写回。
-
-### 集合变化与挑选缓存
-
-`addKnownShip(...)`、`removeKnownShip(...)` 与 priority 修改方法还会清理舰船角色挑选缓存，后续生成才能依据新集合重新选择。移除已知舰船也涉及优先状态与学习时间，所以恢复不能只记住一个 known 布尔值。
-
-**编者建议通过这些修改方法调整知识集合。** getter 返回的集合可以用于读取，直接改集合却不会替您执行配套的缓存清理与状态处理。集合中的 ID 已经变化而后续挑选仍用旧结果，正是这种差别难以从界面直接辨认的地方。
-
-武器、战机与船插还有各自的知识集合。本节只完整处理舰船，后续使用其他对象时，也核对它对应的修改入口与配套状态。
-
-## 完整最小例
-
-将两类保存到前述源码目录，保留生涯登记，再构建 JAR。关系脚本完成两种写入与恢复，舰船脚本完成 known、priority 与时间戳的比较。
-
-::: details 完整成品：GearInFactionRelationProbe
+**舰队构成。** 势力抽一支舰队时按角色挑船，角色是 `combatSmall`、`combatCapital` 这类分类：
 
 ```java
-package data.scripts.gearin.campaign;
+List<ShipRolePick> pickShip(String role, ShipPickParams params);
+float pickShipAndAddToFleet(String role, ShipPickParams params, CampaignFleetAPI fleet);
+Set<String> getVariantsForRole(String roleId);
+Map<String, Float> getHullFrequency();
+LinkedHashSet<String> getRestrictToVariants();
+int getNumAvailableForRole(String roleId, ShipPickMode mode);
+```
 
-import org.apache.log4j.Logger;
+`ShipPickParams` 里的 `mode` 决定挑哪一批：`ALL` 从全部已知项里挑，`IMPORTED` 只挑通过蓝图获得的，`PRIORITY_THEN_ALL` 先挑优先项。`getHullFrequency()` 给某艘船一个出现权重，原版的 `DelayedBlueprintLearnScript` 就是用它让新学会的船更常见。
 
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.FactionAPI;
-import com.fs.starfarer.api.campaign.RepLevel;
-import com.fs.starfarer.api.campaign.ReputationActionResponsePlugin.ReputationAdjustmentResult;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.impl.campaign.CoreReputationPlugin.CustomRepImpact;
-import com.fs.starfarer.api.impl.campaign.CoreReputationPlugin.RepActionEnvelope;
-import com.fs.starfarer.api.impl.campaign.CoreReputationPlugin.RepActions;
-import com.fs.starfarer.api.impl.campaign.ids.Factions;
+**学说。** 一支舰队有多少战舰、多少航母、平均船体等级、军官素质、进攻性，全部来自学说：
 
-public class GearInFactionRelationProbe implements EveryFrameScript {
+```java
+FactionDoctrineAPI getDoctrine();
 
-    private static final Logger LOG = Global.getLogger(GearInFactionRelationProbe.class);
+int getWarships();      void setWarships(int warships);
+int getAggression();    void setAggression(int aggression);
+int getShipQuality();   void setShipQuality(int shipQuality);
+int getOfficerQuality();void setOfficerQuality(int officerQuality);
+int getNumShips();      void setNumShips(int numShips);
+```
 
-    private boolean done;
+这些 setter 是对着 `FactionDoctrineAPI` 调的，拿到学说对象就能改，原版的黑色市场就这样在自己开张时把战舰与航母的下限抬上去。**`FactionAPI` 上只有 `getDoctrine()`，没有 `setDoctrine(...)`**，所以改的是这一份学说对象本身，不是替换掉它。改完立即生效于此后抽取的舰队，已经生成的舰队不受影响。
 
-    @Override
-    public boolean isDone() {
-        return done;
-    }
+**市场与产业。** 什么是违禁品、关税多少、会造哪些东西：
 
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
+```java
+Set<String> getIllegalCommodities();
+void makeCommodityIllegal(String commodityId);
+void makeCommodityLegal(String commodityId);
+float getTariffFraction();
+float getTollFraction();
+Set<String> getKnownIndustries();
+```
 
-    @Override
-    public void advance(float amount) {
-        if (done) {
-            return;
-        }
+**名称与外观。** 势力自己取船名、给舰队起类型名、选头像：
 
-        SectorAPI sector = Global.getSector();
-        FactionAPI player = sector.getPlayerFaction();
-        FactionAPI target = sector.getFaction(Factions.HEGEMONY);
-        String targetId = target.getId();
+```java
+String pickRandomShipName();
+String pickRandomShipName(Random random);
+String pickRandomShipName(String prefix);
+String getFleetTypeName(String type);
+String getShipNamePrefix();
+Color getColor();
+String getLogo();
+String getCrest();
+```
 
-        float before = player.getRelationship(targetId);
-        logRelation("before", player, target);
+`pickRandomShipName(...)` 用的是 `.faction` 里 `shipNamePrefix` 与 `shipNameSources` 这两项的组合。势力没有配这两项，取回来的名字是空的。给舰队起名、给新船命名都该走它，不要自己拼字符串。
 
-        player.adjustRelationship(targetId, 0.05f);
-        float during = player.getRelationship(targetId);
-        logRelation("direct", player, target);
+**其余。** `getMemory()` 存势力自己的值，`createRandomPerson()` 按势力的头像池造人物，`getCustom(...)` 读 `.faction` 里 `custom` 那一块的自定义键值。`isHostileTo(...)` 与 `getRelToPlayer()` 是关系组里最常用的两个读取入口。
 
-        player.setRelationship(targetId, before);
-        float after = player.getRelationship(targetId);
-        logRelation("after", player, target);
+## 让势力学会一艘船
 
-        CustomRepImpact impact = new CustomRepImpact();
-        impact.delta = 0.05f;
-        RepActionEnvelope envelope = new RepActionEnvelope(RepActions.CUSTOM, impact);
-        envelope.withMessage = false;
-        ReputationAdjustmentResult reputationResult = sector.adjustPlayerReputation(
-                envelope,
-                targetId);
-        float actionDuring = player.getRelationship(targetId);
-        logRelation("action", player, target);
-        player.setRelationship(targetId, before);
-        float actionAfter = player.getRelationship(targetId);
-        logRelation("actionRestored", player, target);
-        LOG.info(String.format(
-                "GearIn faction action: faction=%s delta=%.3f during=%.3f restored=%.3f",
-                targetId,
-                reputationResult.delta,
-                actionDuring,
-                actionAfter));
-        LOG.info(String.format(
-                "GearIn faction values: before=%.3f during=%.3f after=%.3f",
-                before,
-                during,
-                after));
-        done = true;
-    }
+势力能造、能卖、能编入舰队的船体，由它的已知舰船集合决定。初始集合来自 [C3-S1] 的 `.faction` 文件，运行中用方法增加：
 
-    private void logRelation(String stage, FactionAPI source, FactionAPI target) {
-        String targetId = target.getId();
-        float forward = source.getRelationship(targetId);
-        float reverse = target.getRelationship(source.getId());
-        RepLevel level = source.getRelationshipLevel(targetId);
-        boolean hostile = source.isHostileTo(targetId);
-        LOG.info(String.format(
-                "GearIn faction relation: stage=%s source=%s target=%s forward=%.3f reverse=%.3f level=%s hostile=%s",
-                stage,
-                source.getId(),
-                targetId,
-                forward,
-                reverse,
-                level,
-                hostile));
-    }
+```java
+if (!gear.knowsShip(LEARNED_HULL)) {
+    gear.addKnownShip(LEARNED_HULL, true);
 }
 ```
 
+`LEARNED_HULL` 是 `"eagle"`，原版的雄鹰级巡洋舰。第二个参数控制是否记录学会的时间戳，原版的蓝图学习都传 `true`。
+
+`addKnownShip(...)` 与 `removeKnownShip(...)` 会自动清理舰船角色挑选缓存，后续生成的舰队才会按新集合选船。**直接修改 `getKnownShips()` 返回的集合不会触发这一步**，需要手动调用 `clearShipRoleCache()`，所以应当始终使用增删方法。
+
+原版的 `DelayedBlueprintLearnScript` 在学习之后还会调用 `addUseWhenImportingShip(...)`，并在 `getHullFrequency()` 中给新船体设一个出现频率。本节不做这两步：雄鹰只是让势力 "能用"，不要求它频繁出现。需要提高出现频率时，参考那个类。
+
+::: warning 读档后蓝图会被重新加回
+
+`.faction` 文件中的蓝图，每次读档都会重新加入势力。想永久移除一个 `.faction` 里写着的船体，必须自己保存移除清单，并在每次读档时再移除一遍。本节只增不减，不受影响。
+
 :::
 
-::: details 完整成品：GearInFactionKnownShipProbe
+## 奖励脚本
+
+奖励的条件是 "接触满 30 天"。接触由 [C10-S1] 的脚本写入 `$GearIn_contacted`，本节的脚本负责读它、计时、发放，两者只通过这个标记联系：
+
+1. 每隔 0.5 至 1 秒检查一次 `$GearIn_contacted`，未接触则返回；
+2. 第一次发现已接触时，把当前时间戳写入存档公共数据 `GearIn_contact_reward_start`，作为倒计时的起点；
+3. 之后每次检查，用 `getElapsedDaysSince(start)` 取得经过的生涯天数，不足 30 天则返回；
+4. 满 30 天后，抬升关系、学会雄鹰，写入 `GearIn_contact_rewarded`。
+
+**起点保存在存档公共数据里，不放在脚本字段里。** 脚本是 transient 的，读档后重新创建，字段归零，倒计时会重新开始。时间戳随存档保存，读档后脚本读到的仍是原来的起点。
+
+`isDone()` 读取 `GearIn_contact_rewarded`，奖励发放后脚本在下一帧被清除；入口类也只在奖励尚未发放时登记它，两处判断一致。
+
+### 登记脚本
+
+在 `GearInModPlugin.onGameLoad(...)` 中，接触脚本的登记之后加入：
+
+```java
+if (!sector.getPersistentData().containsKey(GearInContactRewardScript.REWARDED_KEY)
+        && !sector.hasTransientScript(GearInContactRewardScript.class)) {
+    sector.addTransientScript(new GearInContactRewardScript());
+}
+```
+
+## 完整的奖励脚本
+
+`src/data/scripts/gearin/campaign/GearInContactRewardScript.java`：
 
 ```java
 package data.scripts.gearin.campaign;
 
 import java.util.Map;
 
-import org.apache.log4j.Logger;
-
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.FactionAPI;
+import com.fs.starfarer.api.campaign.RepLevel;
 import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.impl.campaign.ids.Factions;
+import com.fs.starfarer.api.util.IntervalUtil;
 
-public class GearInFactionKnownShipProbe implements EveryFrameScript {
+import data.scripts.gearin.GearInModPlugin;
 
-    private static final Logger LOG = Global.getLogger(GearInFactionKnownShipProbe.class);
+/** 玩家与齿轮工业接触满 30 天后，关系至少提升到友好，并让势力学会雄鹰的设计图。 */
+public class GearInContactRewardScript implements EveryFrameScript {
 
-    private boolean done;
+    /** 存档公共数据：接触后倒计时的起点时间戳。 */
+    public static final String START_KEY = "GearIn_contact_reward_start";
+
+    /** 存档公共数据：奖励已发放。 */
+    public static final String REWARDED_KEY = "GearIn_contact_rewarded";
+
+    private static final float DELAY_DAYS = 30f;
+    private static final String LEARNED_HULL = "eagle";
+
+    private final IntervalUtil interval = new IntervalUtil(0.5f, 1f);
 
     @Override
     public boolean isDone() {
-        return done;
+        return Global.getSector().getPersistentData().containsKey(REWARDED_KEY);
     }
 
     @Override
@@ -267,97 +241,65 @@ public class GearInFactionKnownShipProbe implements EveryFrameScript {
 
     @Override
     public void advance(float amount) {
-        if (done) {
+        interval.advance(amount);
+        if (!interval.intervalElapsed()) {
+            return;
+        }
+        SectorAPI sector = Global.getSector();
+        if (!sector.getMemory().getBoolean(GearInContactScript.CONTACTED_KEY)) {
+            return;
+        }
+        Map<String, Object> data = sector.getPersistentData();
+        if (!data.containsKey(START_KEY)) {
+            data.put(START_KEY, sector.getClock().getTimestamp());
+            return;
+        }
+        long start = (Long) data.get(START_KEY);
+        if (sector.getClock().getElapsedDaysSince(start) < DELAY_DAYS) {
             return;
         }
 
-        SectorAPI sector = Global.getSector();
-        FactionAPI faction = sector.getFaction(Factions.HEGEMONY);
-        String hullId = "lasher";
-        Map<String, Long> timestamps = faction.getShipTimestamps();
-        boolean wasKnown = faction.knowsShip(hullId);
-        boolean wasPriority = faction.isShipPriority(hullId);
-        Long previousTimestamp = timestamps.get(hullId);
-
-        faction.addKnownShip(hullId, false);
-        faction.addPriorityShip(hullId);
-        LOG.info(String.format(
-                "GearIn faction known: hull=%s known=%s priority=%s timestamp=%s",
-                hullId,
-                faction.knowsShip(hullId),
-                faction.isShipPriority(hullId),
-                faction.getShipTimestamps().get(hullId)));
-
-        if (!wasKnown) {
-            faction.removeKnownShip(hullId);
+        FactionAPI gear = sector.getFaction(GearInModPlugin.FACTION_ID);
+        gear.ensureAtWorst(sector.getPlayerFaction().getId(), RepLevel.FRIENDLY);
+        if (!gear.knowsShip(LEARNED_HULL)) {
+            gear.addKnownShip(LEARNED_HULL, true);
         }
-        if (wasPriority) {
-            faction.addPriorityShip(hullId);
-        } else {
-            faction.removePriorityShip(hullId);
-        }
-        if (previousTimestamp == null) {
-            timestamps.remove(hullId);
-        } else {
-            timestamps.put(hullId, previousTimestamp);
-        }
-
-        LOG.info(String.format(
-                "GearIn faction known restored: hull=%s known=%s priority=%s timestamp=%s",
-                hullId,
-                faction.knowsShip(hullId),
-                faction.isShipPriority(hullId),
-                faction.getShipTimestamps().get(hullId)));
-        done = true;
+        data.put(REWARDED_KEY, true);
     }
 }
 ```
 
-:::
+### 进游戏核对
 
-## 验证方案
+执行 `gradle jar`，重启游戏，**新建一份存档**。
 
-前置数据：包含本节两个示例脚本类的 GearIn MOD 已构建并启用，并准备一个可进入的生涯存档。
+- 用 `jump Nipher` 靠近 Nipher Prime，听到提示音后接触已记录。此时齿轮工业与玩家的关系仍是初始的 0；
+- 在控制台执行 `runcode Global.getSector().getPersistentData().get("GearIn_contact_reward_start")`，返回一个时间戳；
+- 保存并重新读档，再执行同一条语句，返回的时间戳不变，倒计时没有重新开始；
+- 推进 30 个生涯天，齿轮工业对玩家的关系升到友好，并在外交界面中可以看到；
+- 打开齿轮工业市场的舰船交易，雄鹰出现在可能的货源中。
 
-1. 保存两个类与生涯登记，构建并重启，进入存档，记录玩家与霸主原始关系。
-2. 搜索 `GearIn faction relation`，核对 forward、reverse、level 和 hostile。
-3. 比较直接调整的 before/during/after，再查看 `GearIn faction action` 的 delta、during 与 restored，核对两次修改各自恢复。
-4. 检查 `GearIn faction known` 与 `restored`，确认 known、priority 和 timestamp 回到实验前状态。
-5. 保存并重新进入存档，执行第二轮，比较两轮起始关系、known、priority 与时间戳。
+## 常见问题
 
-预期结果：
+- **关系一直没有变化**：奖励脚本没有登记，或者 `$GearIn_contacted` 从未写入。
+    - **解决方案**：核对 `onGameLoad(...)` 中的登记，先确认 [C10-S1] 的接触已经发生。
 
-- 日志出现 `GearIn faction relation`，forward、reverse、level 和 hostile 与目标势力关系一致；
-- 直接调整后 `after` 恢复原值，声望事件后的 `restored` 同样恢复；`delta` 记录实际声望增量；
-- `GearIn faction known` 与 `restored` 显示 known、priority 和 timestamp 回到实验前状态；
-- 重复运行示例不再改变关系或蓝图集合。
+- **每次读档后倒计时都重新开始**：起点时间戳保存在了脚本字段里。
+    - **解决方案**：起点写入 `getPersistentData()`，脚本只负责读取。
 
-## 故障分析
+- **玩家关系反而被降低**：把 `ensureAtWorst` 写成了 `ensureAtBest`。
+    - **解决方案**：要表达 "不低于友好"，用 `ensureAtWorst`。
 
-- **关系变化与预期符号相反**：直接调整或声望事件的变化量符号与设计相反。
-    - **解决方案**：核对 `adjustRelationship(...)` 的增量和 `CustomRepImpact.delta`，正值提高关系，负值降低关系，再比较双方日志。
+- **学会的船体没有出现在舰队中**：直接修改了 `getKnownShips()` 返回的集合，没有清理角色挑选缓存。
+    - **解决方案**：改用 `addKnownShip(...)`，或在直接修改后调用 `clearShipRoleCache()`。
 
-- **关系等级变化但数值恢复不准确**：用 `RepLevel` 枚举恢复而不是保存原始 float。
-    - **解决方案**：保存实验前的具体关系值，恢复时调用 `setRelationship(String, float)`。
-
-- **玩家声望调用没有产生预期变化**：action response plugin 没有返回关系调整，或把它当成直接关系写入。
-    - **解决方案**：单独记录 `ReputationAdjustmentResult`，不要用它替代直接关系实验。
-
-- **known ship 修改后舰队挑选结果仍旧**：priority 或 role cache 没有按同一对象恢复和重建。
-    - **解决方案**：通过 `addKnownShip`、`removeKnownShip` 和 priority 方法修改，让实现负责清理缓存。
-
-- **示例结束后蓝图仍被删除**：没有区分实验前 known 状态和本次新增状态。
-    - **解决方案**：只撤销本次新增的 hull ID，原本已知的对象保持原状态。
-
-## 总结
-
-关系与军备知识都属于当前势力，显示文本则由身份资料提供。直接写入关系表与提交玩家声望事件经过不同处理，已知舰船方法还维护优先、时间戳与挑选缓存。
-
-两个实验都回到保存的原状态。正式功能使用这些方法时，再按当前目的选择写入路径，实际结果从对应势力与返回对象取得。
+- **旧存档中没有任何变化**：脚本依赖 Nipher 市场与接触标记，旧存档没有它们。
+    - **解决方案**：使用新档测试，见 [C7-S1]。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.FactionAPI`：势力身份、关系和 known 集合入口，关系表与等级转换由其承载；
-- `com.fs.starfarer.api.campaign.RepLevel`：关系等级和敌对边界；
-- `com.fs.starfarer.api.campaign.SectorAPI`：`adjustPlayerReputation` 玩家声望 action 入口；
-- `data/world/factions/`：势力配置和已知舰船数据。
+- `com.fs.starfarer.api.campaign.FactionAPI`：关系读写、已知项与学说，本节用到的是关系写入与 `addKnownShip(...)`。
+- `com.fs.starfarer.api.campaign.RepLevel`：各等级的阈值与 `isAtBest(...)`、`isAtWorst(...)`。
+- `com.fs.starfarer.api.impl.campaign.DelayedBlueprintLearnScript`：原版学习蓝图的完整写法，包括频率与导入设置。
+- `com.fs.starfarer.api.impl.campaign.CoreReputationPlugin`：原版声望事件对 `ensureAtBest`、`ensureAtWorst` 的处理。
+- `data/world/factions/`：原版势力文件的已知舰船写法。

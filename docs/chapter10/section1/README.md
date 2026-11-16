@@ -1,160 +1,156 @@
-# 读取生涯世界状态
+# 读取生涯世界与 Memory
 
-本节通过 `SectorAPI` 读取当前生涯，用每五日一次的记录比较地点、玩家舰队、势力与日期。采样器在读档后重新计时，存档标记则继续保留，我们将利用这个区别说明运行进度和生涯数据各自怎样保存。
+生涯里的状态总有一个存放处。跟着星球的、跟着舰队的、跟着存档的，游戏各有一处，取用方式互不相同。挑错一层，值会在不该消失的时候消失，或者在本该消失之后一直留着。
 
-_本节预期阅读时间：\~18 分钟。_
+Memory 的过期以生涯日计。两参数的 `set` 写入的值不会过期，三参数的按给定天数过期，天数给零则在下一 tick 被清掉。同一个键在两种写法之间换一次，行为就完全不同。
 
-_本节预期操作时间：\~25 分钟。_
+脚本的字段不参与存档。要记的东西在读档之后还读得到，就不能放在那里。
 
-## 学习目标
+---
 
-完成后，您将能够：
+_本节预期阅读时间：\~15 分钟。_
 
-- 取得当前星区并定位常用全局服务入口；
-- 读取生涯日期、时间戳和暂停状态；
-- 区分 persistent data、星区 memory 和脚本字段；
-- 按固定生涯天数输出状态采样日志；
-- 根据暂停、读档和对象延迟取得现象定位读取错误。
+_本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C7-S1] 的 MOD 入口和生涯回调；
-- [C7-S2] 的 `Global.getSector()` 对象取得方式；
-- [C7-S4] 的日志位置、前缀与上下文；
-- 能够区分存档数据、运行时对象和当前帧状态。
+- [C7-S1] 的 `onGameLoad(...)` 与存档初始化标记；
+- [C7-S3] 的 `playUISound(...)`，本节会实际使用它；
+- [C3-S3] 的 Nipher Prime 与市场 `GearIn_planet1`。
 
-## 给生涯入口接入采样脚本
+## 三层 Memory
 
-本节每隔五个生涯日记录当前地点、玩家舰队与势力，再比较暂停和读档后的变化。创建 `src/data/scripts/gearin/campaign/GearInSectorStateSampler.java`，在 `GearInModPlugin` 添加类的 import，将下面局部登记加入已有 `onGameLoad(...)`，沿用其中的 `sector`：
+Memory 是挂在不同对象上的多张表，每张表各自的过期与保存规则都一样。本节涉及三层：
+
+| 层级       | 取得方式                          | 保存的内容             |
+| ---------- | --------------------------------- | ---------------------- |
+| 全局       | `sector.getMemory()`              | 与整个存档有关的标记   |
+| 市场       | `market.getMemory()`              | 只属于这个市场的数据   |
+| 实体、舰队 | `entity.getMemory()`              | 只属于这个对象的数据   |
+
+**键必须以 `$` 开头，不写会直接抛异常。** `Memory` 的 `set(...)` 一进去就检查 `key.startsWith("$")`，不满足时抛 `RuntimeException("Key ... should start with $")`。本教程的键统一写成 `$GearIn_<名称>`。
+
+同一个事实只应该存在于一层。"玩家是否已经与齿轮工业接触" 与整个存档有关，放在全局；"接触发生在哪一天" 只与 Nipher Prime 这个市场有关，放在市场。
+
+## 读写与限时值
+
+`MemoryAPI` 的常用方法如下：
+
+| 方法                            | 作用                                   |
+| ------------------------------- | -------------------------------------- |
+| `set(key, value)`               | 写入，永不过期                         |
+| `set(key, value, days)`         | 写入，经过指定生涯天数后自动清除       |
+| `getBoolean(key)`、`getFloat(key)` | 读取，键不存在时返回 `false` 或 `0`  |
+| `contains(key)`                 | 键是否存在                             |
+| `unset(key)`                    | 删除                                   |
+
+限时值适合表达 "最近发生过" 这类会自行失效的状态，不需要另写脚本去清理。过期按生涯天数计算，暂停时不流逝。
+
+## 接触脚本
+
+接触的判定需要持续检查玩家与 Nipher Prime 的距离，这是 `EveryFrameScript` 的工作。它的接口只有三个方法：`isDone()` 返回 `true` 时引擎清除脚本，`runWhilePaused()` 决定暂停时是否调用，`advance(amount)` 随脚本被推进而调用，`amount` 是那一次推进经过的现实秒数。脚本的生命周期留给 [C14-S1] 完整展开，这里只用它读取世界。
+
+判定条件是玩家舰队与 Nipher Prime 位于同一地点，且距行星表面不超过 1500。脚本每 0.5 至 1 秒检查一次，不必逐帧计算距离：
 
 ```java
-if (!sector.hasTransientScript(GearInSectorStateSampler.class)) {
-    sector.addTransientScript(new GearInSectorStateSampler());
+MarketAPI market = sector.getEconomy().getMarket(MARKET_ID);
+if (market == null || market.getPrimaryEntity() == null) {
+    return;
+}
+SectorEntityToken planet = market.getPrimaryEntity();
+CampaignFleetAPI fleet = sector.getPlayerFleet();
+if (fleet == null || fleet.getContainingLocation() != planet.getContainingLocation()) {
+    return;
+}
+if (Misc.getDistance(fleet, planet) > planet.getRadius() + CONTACT_DISTANCE) {
+    return;
 }
 ```
 
-`hasTransientScript(...)` 查询当前列表，缺少实例时才加入。脚本随后持续接收生涯推进，暂停时返回 `false` 的 `runWhilePaused()` 使它停止调用。
+`getMarket("GearIn_planet1")` 取回 [C3-S3] 创建的市场，行星实体从市场的 `getPrimaryEntity()` 得到。**应用加载阶段没有这份世界**，所以这些读取只能放在生涯脚本中，不能放在 `onApplicationLoad()`。
 
-**这份采样器只保存当前运行阶段的进度。** `addTransientScript(...)` 登记的对象不进入存档，每次读档由入口重新建立实例。第十四章会完整展开脚本生命周期，这里先用它定期读取世界。
+## 写入三层 Memory
 
-## 从当前存档取得世界对象
+条件满足后，脚本同时写入三个值：
 
-进入生涯之后，`Global.getSector()` 返回当前存档的 `SectorAPI`。从它取得地点、舰队、势力与时钟，局部读取如下：
+```java
+sector.getMemory().set(CONTACTED_KEY, true);
+sector.getMemory().set(RECENT_KEY, true, RECENT_DAYS);
+market.getMemory().set(TIMESTAMP_KEY, sector.getClock().getTimestamp());
+Global.getSoundPlayer().playUISound("ui_rep_raise", 1f, 1f);
+```
+
+- `$GearIn_contacted` 写在全局，永不过期。后续章节的规则与脚本用它判断玩家是否已经见过齿轮工业；
+- `$GearIn_contact_recent` 同样在全局，但带 30 天期限，30 个生涯天后自行消失；
+- `$GearIn_contact_timestamp` 写在 Nipher Prime 的市场上，记录接触发生的时间戳。它只描述这个市场，换一个市场就没有意义；
+- 最后一行播放 [C7-S3] 预告过的 `ui_rep_raise`，这是原版声望提升时的提示音，玩家听到它就知道发生了一次接触。
+
+::: warning 时间戳是数字，不是天数
+
+`getTimestamp()` 返回的是时钟的绝对时间戳。要得到 "距今多少天"，用 `clock.getElapsedDaysSince(timestamp)`，不要直接拿时间戳做减法。
+
+:::
+
+### 脚本自己结束
+
+`isDone()` 读取 `$GearIn_contacted`：接触一旦发生，脚本在下一帧被引擎清除。`GearInModPlugin.onGameLoad(...)` 只在尚未接触时登记脚本，两处判断一致。
+
+**脚本是 transient 的，不随存档保存，标记是 Memory，随存档保存。** 读档之后脚本由入口类重新建立，是否还需要它，由存档里的标记决定。把 "是否已完成" 放进脚本字段，读档后字段归零，接触会被重复触发。
+
+### 登记脚本
+
+在 `GearInModPlugin` 的 `onGameLoad(...)` 中加入：
 
 ```java
 SectorAPI sector = Global.getSector();
-LocationAPI currentLocation = sector.getCurrentLocation();
-CampaignFleetAPI playerFleet = sector.getPlayerFleet();
-FactionAPI playerFaction = sector.getPlayerFaction();
-CampaignClockAPI clock = sector.getClock();
-```
-
-这些对象都来自当前星区。玩家切换地点后，`getCurrentLocation()` 返回新的地点；读档后，访问当前 Sector 取得恢复的生涯。应用资源加载时还没有这份世界，因此读取放在 `onGameLoad(...)` 和它登记的脚本中。
-
-静态工具方法也可以访问当前 `Global.getSector()`，数据的保存范围仍取决于实际所属对象。需要长期进度时，写入相应存档数据，不能仅凭访问器是静态方法就把对象保存在进程字段中。
-
-### 生涯服务入口速查表
-
-| 服务       | 入口                                                        | 当前用途                         |
-| ---------- | ----------------------------------------------------------- | -------------------------------- |
-| 地点       | `getCurrentLocation()`、`getAllLocations()`                 | 取得玩家当前地点与全星区地点集合 |
-| 势力       | `getPlayerFaction()`、`getFaction(id)`                      | 取得玩家势力与指定势力           |
-| 玩家       | `getPlayerFleet()`、`getPlayerPerson()`、`getPlayerStats()` | 取得玩家舰队、人物与统计对象     |
-| 经济       | `getEconomy()`                                              | 查询市场与经济集合               |
-| 事件与情报 | `getEventManager()`、`getIntelManager()`                    | 访问生涯事件与情报服务           |
-
-本节将地点、舰队和势力的 ID 写入日志。后续专用页面再从相同入口展开各自的对象，读取来源继续保持一致。
-
-## 按生涯日安排记录
-
-采样使用 `CampaignClockAPI` 的时间戳。`getTimestamp()` 保存当前时刻，`getElapsedDaysSince(timestamp)` 计算从指定时刻经过的生涯天数，日期方法则提供可显示文本：
-
-```java
-CampaignClockAPI clock = sector.getClock();
-long sampleTimestamp = clock.getTimestamp();
-float elapsedDays = clock.getElapsedDaysSince(sampleTimestamp);
-String date = clock.getDateString();
-String shortDate = clock.getShortDate();
-```
-
-脚本第一次推进时，把当前时间戳保存为 `lastSampleTimestamp`。以后每次比较距离该时刻的天数，达到 `SAMPLE_INTERVAL_DAYS` 的 5 日后输出，再以当前时刻开始下一段间隔：
-
-```java
-float daysSinceSample = clock.getElapsedDaysSince(lastSampleTimestamp);
-if (daysSinceSample >= SAMPLE_INTERVAL_DAYS) {
-    writeStateLog(sector, clock);
-    lastSampleTimestamp = clock.getTimestamp();
+if (!sector.getMemory().getBoolean(GearInContactScript.CONTACTED_KEY)
+        && !sector.hasTransientScript(GearInContactScript.class)) {
+    sector.addTransientScript(new GearInContactScript());
 }
 ```
 
-这里记录的是生涯经过时间。`advance(float amount)` 提供秒数，不能直接当作生涯日；当前示例采用时钟时间戳比较，需要累计步长的功能则通过生涯时钟换算。
+`hasTransientScript(...)` 防止同一次读档重复登记。
 
-暂停时生涯时钟冻结，采样器也停止推进，因此真实时间经过多久，都不会增加这一段五日间隔。恢复后继续从暂停前的时间戳比较。
+## 完整的接触脚本
 
-## 区分采样进度与存档标记
-
-现在考虑读档：脚本是新实例，`lastSampleTimestamp` 重新建立，五日采样会从加载后的时刻重新计算。但 "这个存档已经采样过" 应当继续保留，所以它写入 Sector 的 persistent data。
-
-同时读取星区 Memory 中的观察键，比较两种数据入口：
-
-```java
-Map<String, Object> persistentData = sector.getPersistentData();
-MemoryAPI sectorMemory = sector.getMemoryWithoutUpdate();
-
-boolean hasSampled = Boolean.TRUE.equals(
-        persistentData.get("GearIn_sector_sampled"));
-Object probeValue = sectorMemory.get("$GearIn_sector_probe");
-```
-
-`GearIn_sector_sampled` 是 persistent data 的键，完成采样后写入 `true`；`$GearIn_sector_probe` 属于星区 Memory，本节只读取，尚未设置时为 `null`。`getMemoryWithoutUpdate()` 返回现有事实，Memory 还提供过期时间等语义。
-
-**脚本字段、persistent data 与 Memory 各自保存所需状态。** 此例中，脚本字段记录本次采样间隔，persistent data 记录该存档是否采样过，星区 Memory 提供规则状态的读取入口。需要跨读档延续计时的功能，则把时间戳保存到普通脚本或持久数据中，再按那份基准继续。
-
-## 将日志对应到实际操作
-
-每次采样重新取得当前对象，记录日期、时间戳、地点数量、玩家所在地点、舰队、势力与两种数据值。切换地点时只改变相关对象与记录，采样仍按原有五日间隔执行。
-
-**标记在输出之后写入。** 因此新档第一次日志为 `persistent=false`，第二次为 `true`。保存第一次采样后的存档再读档，标记恢复为 `true`，而脚本重新计五日。这个差异正好说明了两者的保存范围。
-
-完整类只保存时间戳与初始化状态，所有世界对象在采样时取得。日志中的空值反映当时引用状态，具体读取继续放在已建立生涯的回调内。
-
-## 完整最小例
-
-保存下列类，并保留前面的生涯登记片段，再构建 JAR。
-
-::: details 完整成品：GearInSectorStateSampler
+`src/data/scripts/gearin/campaign/GearInContactScript.java`：
 
 ```java
 package data.scripts.gearin.campaign;
 
-import java.util.Map;
-
-import org.apache.log4j.Logger;
-
 import com.fs.starfarer.api.EveryFrameScript;
 import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignClockAPI;
 import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.FactionAPI;
-import com.fs.starfarer.api.campaign.LocationAPI;
 import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.campaign.rules.MemoryAPI;
+import com.fs.starfarer.api.campaign.SectorEntityToken;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
+import com.fs.starfarer.api.util.IntervalUtil;
+import com.fs.starfarer.api.util.Misc;
 
-public class GearInSectorStateSampler implements EveryFrameScript {
+/** 玩家首次靠近 Nipher Prime 时，记录与齿轮工业的接触。 */
+public class GearInContactScript implements EveryFrameScript {
 
-    public static final String REGISTER_MARK = "GearIn_SectorStateSampler";
+    /** 全局 Memory：玩家是否已与齿轮工业接触，永不过期。 */
+    public static final String CONTACTED_KEY = "$GearIn_contacted";
 
-    private static final String PERSISTENT_SAMPLE_KEY = "GearIn_sector_sampled";
-    private static final String MEMORY_PROBE_KEY = "$GearIn_sector_probe";
-    private static final float SAMPLE_INTERVAL_DAYS = 5f;
-    private static final Logger LOG = Global.getLogger(GearInSectorStateSampler.class);
+    /** 全局 Memory：最近接触过，30 天后自动消失。 */
+    public static final String RECENT_KEY = "$GearIn_contact_recent";
 
-    private long lastSampleTimestamp;
-    private boolean initialized;
+    /** 市场 Memory：接触发生时的时间戳。 */
+    public static final String TIMESTAMP_KEY = "$GearIn_contact_timestamp";
+
+    private static final String MARKET_ID = "GearIn_planet1";
+
+    /** 判定为接触的距离，从行星表面起算。 */
+    private static final float CONTACT_DISTANCE = 1500f;
+
+    private static final float RECENT_DAYS = 30f;
+
+    private final IntervalUtil interval = new IntervalUtil(0.5f, 1f);
 
     @Override
     public boolean isDone() {
-        return false;
+        return Global.getSector().getMemory().getBoolean(CONTACTED_KEY);
     }
 
     @Override
@@ -164,96 +160,62 @@ public class GearInSectorStateSampler implements EveryFrameScript {
 
     @Override
     public void advance(float amount) {
-        SectorAPI sector = Global.getSector();
-        CampaignClockAPI clock = sector.getClock();
-        if (!initialized) {
-            lastSampleTimestamp = clock.getTimestamp();
-            initialized = true;
+        interval.advance(amount);
+        if (!interval.intervalElapsed()) {
+            return;
         }
-
-        float daysSinceSample = clock.getElapsedDaysSince(lastSampleTimestamp);
-        if (daysSinceSample < SAMPLE_INTERVAL_DAYS) {
+        SectorAPI sector = Global.getSector();
+        MarketAPI market = sector.getEconomy().getMarket(MARKET_ID);
+        if (market == null || market.getPrimaryEntity() == null) {
+            return;
+        }
+        SectorEntityToken planet = market.getPrimaryEntity();
+        CampaignFleetAPI fleet = sector.getPlayerFleet();
+        if (fleet == null || fleet.getContainingLocation() != planet.getContainingLocation()) {
+            return;
+        }
+        if (Misc.getDistance(fleet, planet) > planet.getRadius() + CONTACT_DISTANCE) {
             return;
         }
 
-        writeStateLog(sector, clock);
-        lastSampleTimestamp = clock.getTimestamp();
-        sector.getPersistentData().put(PERSISTENT_SAMPLE_KEY, true);
-    }
-
-    private void writeStateLog(SectorAPI sector, CampaignClockAPI clock) {
-        LocationAPI currentLocation = sector.getCurrentLocation();
-        CampaignFleetAPI playerFleet = sector.getPlayerFleet();
-        FactionAPI playerFaction = sector.getPlayerFaction();
-        Map<String, Object> persistentData = sector.getPersistentData();
-        MemoryAPI sectorMemory = sector.getMemoryWithoutUpdate();
-        Object probeValue = sectorMemory.get(MEMORY_PROBE_KEY);
-
-        String locationId = currentLocation == null
-                ? "null"
-                : currentLocation.getId();
-        String fleetId = playerFleet == null
-                ? "null"
-                : playerFleet.getId();
-        String factionId = playerFaction == null
-                ? "null"
-                : playerFaction.getId();
-
-        LOG.info(String.format(
-                "GearIn sector sample: date=%s timestamp=%d paused=%s locations=%d location=%s fleet=%s faction=%s persistent=%s probe=%s",
-                clock.getDateString(),
-                clock.getTimestamp(),
-                sector.isPaused(),
-                sector.getAllLocations().size(),
-                locationId,
-                fleetId,
-                factionId,
-                Boolean.TRUE.equals(persistentData.get(PERSISTENT_SAMPLE_KEY)),
-                probeValue));
+        sector.getMemory().set(CONTACTED_KEY, true);
+        sector.getMemory().set(RECENT_KEY, true, RECENT_DAYS);
+        market.getMemory().set(TIMESTAMP_KEY, sector.getClock().getTimestamp());
+        Global.getSoundPlayer().playUISound("ui_rep_raise", 1f, 1f);
     }
 }
 ```
 
-:::
+## 进游戏核对
 
-## 验证方案
+执行 `gradle jar`，重启游戏，**新建一份存档**。控制台命令 `Jump Nipher` 可以把舰队直接送到 Nipher 星系，不必先找跳跃点。
 
-前置数据：包含本节采样脚本类的 GearIn MOD 已构建并启用，并准备一个新档。
+- 舰队距 Nipher Prime 超过约 1650 时，什么也不发生；
+- 靠近到行星表面 1500 以内，听到一声界面提示音，这是 `ui_rep_raise`；
+- 保存并重新读档，再次靠近同一颗行星，提示音不再响起。标记已经随存档保存，脚本不会再被登记；
+- 在控制台执行 `runcode Global.getSector().getMemory().getBoolean("$GearIn_contacted")` 之类的语句，可以直接读取这个键，接触前后分别为 `false` 与 `true`。
 
-1. 保存类与 `onGameLoad(...)` 登记，构建 JAR，重启游戏并进入新档。
-2. 推进至少 5 个生涯天数，搜索 `GearIn sector sample`。
-3. 暂停游戏并保持一段时间，确认没有新的普通采样日志。
-4. 恢复运行并切换地点，确认 `date`、`timestamp` 和 `location` 发生变化。
-5. 完成一次采样后保存并退出，重新读档，再推进五日，比较 persistent 标记与当前地点、玩家舰队。
+## 常见问题
 
-预期结果：
+- **靠近行星后没有任何反应**：脚本没有登记，或者 `MARKET_ID` 与 [C3-S3] 创建的市场 ID 不一致。
+    - **解决方案**：核对 `onGameLoad(...)` 中的登记片段，以及市场 ID `GearIn_planet1` 的拼写。
 
-- 生涯天数达到采样阈值后，日志出现 `GearIn sector sample`；
-- 暂停游戏期间没有新的普通采样日志；
-- 恢复运行并切换地点后，`date`、`timestamp` 和 `location` 发生变化；
-- 首次采样时 `persistent=false`，之后及读档后的采样为 `true`；`probe` 未设置时为 `null`。
-- 读档后脚本重新计五日，地点与玩家舰队从当前星区取得。
+- **每次读档都会再次听到提示音**："是否已接触" 保存在了脚本字段里，没有写入 Memory。
+    - **解决方案**：标记写在 `sector.getMemory()`，并让入口类与 `isDone()` 都读取它。
 
-## 故障分析
+- **`$GearIn_contact_recent` 在接触后很快消失**：期限的单位是生涯天数，不是秒。
+    - **解决方案**：确认 `RECENT_DAYS` 为 `30f`，并在游戏内观察日期推进，而不是现实时间。
 
-- **日志一直没有采样**：生涯登记缺失、五日阈值尚未达到，或当前处于暂停。
-    - **解决方案**：核对 `onGameLoad(...)` 的 transient 登记，恢复运行并推进五日，再比较时间戳与 `runWhilePaused()`。
+- **读取市场时出现空引用**：读取放在了 `onApplicationLoad()`，此时生涯尚未建立。
+    - **解决方案**：把读取移入生涯脚本，并保留 `market == null` 的判断。
 
-- **读取地点或舰队时发生空引用**：读取代码放在生涯尚未建立的应用回调中。
-    - **解决方案**：将当前世界读取放入 `onGameLoad(...)` 登记的生涯脚本，并在采样时取得当前星区对象。
-
-- **persistent 标记读档后仍为 false**：写入使用了脚本字段或不同的键名。
-    - **解决方案**：统一使用 `getPersistentData()` 和稳定键 `GearIn_sector_sampled`，不要把 memory 值当作持久 Map 值读取。
-
-## 总结
-
-五日采样从当前星区取得对象，用生涯时钟比较间隔，再记录结果。暂停不增加生涯天数，读档重新建立 transient 计时，已经写入的 persistent 标记却继续属于这个存档。
-
-后续的地点、势力与实体同样从当前 Sector 取得。运行进度怎样延续，取决于它保存在哪个对象与容器中。
+- **旧存档中没有 Nipher 星系，脚本永远不触发**：星系只在新档生成，见 [C7-S1]。
+    - **解决方案**：使用新档测试。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.SectorAPI`：生涯世界根对象与全局服务入口，暂停推进、脚本推进和星区 memory 由其承接；
-- `com.fs.starfarer.api.campaign.CampaignClockAPI`：时间戳、日期和生涯天数换算；
-- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：memory 键值和过期状态读取；
-- `com.fs.starfarer.api.EveryFrameScript`：采样器所需的最小调用接口。
+- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：读写、限时值与 `expire` 的完整方法。
+- `com.fs.starfarer.api.campaign.rules.MemKeys`：原版规则使用的各层 Memory 名称。
+- `com.fs.starfarer.api.EveryFrameScript`：三个方法的调用语义。
+- `com.fs.starfarer.api.campaign.CampaignClockAPI`：`getTimestamp()` 与 `getElapsedDaysSince(...)`。
+- `data/config/sounds.json`：`ui_rep_raise` 的原版登记。

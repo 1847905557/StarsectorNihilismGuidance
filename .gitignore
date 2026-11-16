@@ -18,3 +18,7 @@ tutorial-fixtures/.gradle/
 /playwright-report/
 
 /.cache/
+
+# 本地工具与运行时产物
+.claude/
+hs_err_pid*.log

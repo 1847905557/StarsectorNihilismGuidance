@@ -1,26 +1,18 @@
 # 配置 MagicLib 自动尾迹
 
-自动尾迹按弹体 ID 找到数据，随弹体移动持续提交节点。本节为都林准备窄主体与宽辉光两层记录，从纹理登记、数据绑定到采样与外观，说明它们怎样组成连续色带。两层共用移动路径，尺寸和消失时间则分别配置。
+长程导弹背后那条连续不断的发光轨迹，极少靠代码在每帧硬拼粒子来凑 —— 真按那套写法，弹体多了以后光维护生命周期就够您头疼。直接交给 `magicTrail_data.csv` 和 `MagicAutoTrails` 接管静态绑定，只要采样间距与颜色渐变定得克制，不用写一行渲染脚本就能替都林弹体拉出顺滑的双层尾迹。
 
-_本节预期阅读时间：\~24 分钟。_
+---
 
-_本节预期操作时间：\~35 分钟。_
+_本节预期阅读时间：\~18 分钟。_
 
-## 学习目标
-
-完成后，您将能够：
-
-- 说明 `MagicAutoTrails` 如何加载和合并尾迹数据；
-- 在 `settings.json` 中登记自定义 trail sprite；
-- 用 projectile spec ID 把一条或多条尾迹绑定到弹体；
-- 调整节点采样、生命周期、尺寸、颜色、纹理滚动和运动；
-- 区分当前数据路径与兼容路径，并从日志和画面定位错误数据行。
+_本节预期操作时间：\~25 分钟。_
 
 ## 前置知识
 
-- [C18-S1] 已完成 MagicLib 的 manifest 与编译依赖接入；
-- [C1-S5] 已登记 projectile ID 为 `GearIn_durin_shot` 的都林弹体；
-- 能够编辑 `data/config/settings.json` 与 CSV，并从 `starsector.log` 读取加载警告；
+- [C1-S5] 的 `GearIn_durin_shot` 弹体；
+- [C18-S1] 的 MagicLib manifest 依赖；
+- 能够编辑 `data/config/settings.json` 与 CSV，并在 `starsector.log` 定位加载警告；
 - 能够准备一张带透明通道、沿纵向安排延伸图案的 trail PNG。
 
 ## 在 settings 中登记自定义 sprite
@@ -148,7 +140,7 @@ textLength,textScroll,randomTextureOffset
 
 `distance = 18` 让节点生成点沿弹体朝向偏移 18 su。`drift = 1` 完整继承弹体的横向速度；`dispersion = 0` 保持节点速度不随机散开。`frameOffsetMult = 1` 保留默认的帧间速度偏移补偿。
 
-下面八个字段用于制作烟雾、火花或扭曲带状效果：
+以下速度、旋转与帧间偏移字段则用于制作烟雾、火花或扭曲带状效果：
 
 ```csv
 velocityIn,velocityOut,randomVelocity,angle,rotationIn,rotationOut,randomRotation,frameOffsetMult
@@ -163,7 +155,7 @@ velocityIn,velocityOut,randomVelocity,angle,rotationIn,rotationOut,randomRotatio
 
 两层示例都使用 `additive = TRUE`。加色混合会把亮色叠加到战场画面，适合能量辉光和发光弹体；设为 `FALSE` 时使用普通透明混合，更适合烟尘、碎屑和实体色带。
 
-编者更看重主体与辉光是否各自承担了可辨认的表现。主体收窄到 3 su，辉光虽然宽到 32 su，却采用更低透明度和更短淡出时间；宽度、亮度与时长一起取舍，才能让弹体轮廓继续留在画面里。
+主体与辉光需要各自承担清晰的视觉分工：主体收窄到 3 su，辉光虽然宽到 32 su，却采用更低透明度和更短淡出时间；宽度、亮度与时长配合取舍，弹体轮廓才能继续留在画面里。
 
 `renderBelowExplosions = FALSE` 使用默认尾迹渲染层。改为 `TRUE` 后，MagicLib 把节点提交到较低的效果层，使爆炸和其他粒子覆盖在尾迹上方。该字段只改变绘制顺序，不改变节点位置和生命周期。
 
@@ -234,33 +226,17 @@ GearIn_durin_trail_body,GearIn_durin_shot,GearIn_trail_clean,6,0,0.04,0.35,10,3,
 GearIn_durin_trail_glow,GearIn_durin_shot,base_trail_smooth,6,0,0.05,0.2,32,14,"[255,170,120]","[255,70,40]",0.55,-1,0,TRUE,18,0,1,1,TRUE,FALSE,TRUE,0,0,0,0,0,0,FALSE,FALSE
 ```
 
-## 验证方案
+### 进游戏核对
 
-前置数据：MagicLib 已启用，`GearIn_durin_shot` 能由测试武器发射，`GearIn_trail_clean.png` 已按 settings 路径准备。
+启动游戏，确保 MagicLib 已启用且测试武器能够发射 `GearIn_durin_shot`：
 
-1. 启动游戏，确认尾迹 CSV 和自定义 sprite 没有加载错误。
-2. 发射 `GearIn_durin_shot`，观察窄主体和宽辉光同时从弹体后方延伸。
-3. 修改武器显示名称并保持 projectile ID 不变，确认两层尾迹继续出现。
-4. 临时把 CSV 的 `projectile` 改成不存在的 ID，确认同一弹体不再获得自动尾迹。
-5. 在测试表中让两行使用相同 `trail`，重新进入战斗，确认只留下后一行的辉光层；恢复两个唯一行键后再次进入战斗。
-6. 两行同步采用 `minLength = 6`、更大的正数和负数，比较距离采样与共享计时模式，再恢复两行的 6。
-7. 调整主体层的尺寸、颜色、透明度和 `textScroll`，逐项观察带宽、渐变与滚动方向。
-8. 比较 `additive` 两种值，并让弹体进入 fading 状态，观察混合与 `fadeOnFadeOut`。
-9. 切换 `renderBelowExplosions`，在爆炸附近比较尾迹的遮挡顺序。
-10. 在 Dev Mode 修改 CSV 后进入一场新战斗，确认重新读取后的参数生效。
+- 加载阶段无 `magicTrail_data.csv` 或 sprite 错误日志；发射 `GearIn_durin_shot` 后，窄主体与宽辉光两层尾迹同时延伸，修改武器显示名而不改 projectile ID 时两层仍正常出现，改成不存在 ID 则不再生成；
+- 将两行暂改为同一 `trail` 行键可验证后行覆盖前行的合并行为；调正/负 `minLength`、`additive`、`fadeOnFadeOut` 与 `renderBelowExplosions` 均可实时对比距离/定时采样、混合模式与爆炸遮挡顺序 (Dev Mode 下进新战斗会自动重读 CSV)。
 
-预期结果：
-
-- 一枚 `GearIn_durin_shot` 同时获得 2 个独立 trail ID；
-- 主体和辉光共享 projectile 路径，各自使用自己的 sprite、尺寸、颜色和生命周期；
-- projectile ID 不匹配时，`MagicAutoTrails` 跳过该弹体；
-- 正 `minLength` 按移动距离提交节点，负值采用间隔为 0.06–0.07 秒的共享计时器；
-- Dev Mode 在新战斗初始化时重新读取 CSV。
-
-## 故障分析
+## 常见问题
 
 - **弹体完全没有尾迹**：CSV 路径、`projectile` ID 或表头字段与加载器不一致。
-    - **解决方案**：使用当前默认路径，并逐字核对 `GearIn_durin_shot` 与 30 列表头。
+    - **解决方案**：使用当前默认路径，并逐字核对 `GearIn_durin_shot` 与完整表头。
 
 - **主体层不显示，辉光层正常**：`GearIn_trail_clean` 没有进入 `graphics.fx`，或 PNG 路径错误。
     - **解决方案**：核对 settings 键、CSV sprite 和 `graphics/fx/GearIn_trail_clean.png`。
@@ -276,10 +252,6 @@ GearIn_durin_trail_glow,GearIn_durin_shot,base_trail_smooth,6,0,0.05,0.2,32,14,"
 
 - **普通色带亮得像能量辉光**：实体层错误使用加色混合。
     - **解决方案**：烟尘或实体色带使用 `additive = FALSE`，发光层使用 `TRUE`。
-
-## 总结
-
-都林的两层尾迹由独立行键登记到同一个 projectile 分组，库按共用采样条件提交节点，各层再按自己的外观与寿命变化。数据行的合并身份、弹体绑定与纹理方向分别对应这项结果；继续调整时，采样参数与各层参数也要按其实际作用范围处理。
 
 ## 建议参考项
 

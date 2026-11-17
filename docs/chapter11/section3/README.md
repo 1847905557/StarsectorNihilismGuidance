@@ -1,8 +1,8 @@
 # 维护舰队与成员状态
 
-舰队被打残之后不会自己好起来。原版让它回家、停留、修满，靠的是一次战斗回调加一串任务。
+一场遭遇战打下来，几艘护卫舰拖着见底的船体完整度从玩家眼前撤出了战场。如果不给它们安排返航整修，这支受损的巡逻队就会一直带着这点残缺的船体留在星系里，直到在下一场遭遇中被海盗轻易击沉。
 
-修复本身有两条路：一条立刻修满，一条按天推进并消耗补给。给 NPC 用错了后一条，修复进度会停在半路。
+让 NPC 舰队自己回家修船用不着去算什么燃料和补给账本，在战后监听器里改派一趟返航任务就够了。
 
 ---
 
@@ -12,54 +12,46 @@ _本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C11-S1] 的巡逻舰队管理器与任务脚本，本节的监听器由管理器挂到每支舰队上；
-- [C11-S2] 的旗舰与军官，修复时它们随成员一起恢复；
-- [C10-S1] 的 Memory，返航标记写在舰队自己的 Memory 里。
+- [C10-S2] 的舰队级 `MemoryAPI` 与 `getMemoryWithoutUpdate()`；
+- [C11-S1] 的巡逻舰队管理器与任务排程脚本；
+- [C11-S2] 的 `FleetMemberAPI` 子对象结构。
 
-## 状态存在三个地方
+## 成员状态的三个存放位置
 
-成员的状态不集中在一个对象上，读之前要知道去哪找。
+单艘舰队成员的健康与战备数据并没有塞在同一个类里，而是按职责拆在了三个位置上：
 
-| 要读什么 | 从哪里取 |
-| --- | --- |
-| 船体完整度、装甲损伤 | `getStatus()` |
-| CR、封存、修复进度 | `getRepairTracker()` |
-| 是否需要修、能不能部署 | 成员自己 |
+| 状态类别 | 访问入口 | 常用方法与含义 |
+| --- | --- | --- |
+| 船体完整度与装甲损伤 | `member.getStatus()` (`FleetMemberStatusAPI`) | `getHullFraction()` 返回 `0` 至 `1` 的船体完整度比例；`getArmorCellFractions(index)` 按成员或模块状态槽索引 (单船传 `0`) 返回二维装甲格剩余比例 `float[][]` |
+| 战备值 (CR)、封存与维修进度 | `member.getRepairTracker()` (`RepairTrackerAPI`) | `getCR()` 返回当前实际战备值，`getBaseCR()` 返回未乘船员比例的基础战备值，`getMaxCR()` 返回战备值上限 |
+| 综合可战与可修判定 | `member` 自身 (`FleetMemberAPI`) | `needsRepairs()` 只判断船体/装甲损伤与模块拆离，`canBeRepaired()` 才排除已封存、暂停维修和战机联队，`canBeDeployedForCombat()` 判断能否出战 |
 
-船体完整度读 `getStatus().getHullFraction()`，0 到 1。模块船取本体。装甲按格读 `getArmorCellFractions(index)`，每一格一个比例。
+读写战备值时需要注意 `getCR()` 与 `getBaseCR()` 的差异：当舰船上的船员不足最低编制要求时，`getCR()` 返回的是按船员比例折算后的有效值，因此刚调用完 `setCR(maxCR)` 再立刻读 `getCR()`，在缺员的船上读回来的数字仍然可能低于写入值。
 
-CR 在维修跟踪器上。`getCR()` 是已经乘过船员比例的有效值，`getBaseCR()` 是未乘的，`getMaxCR()` 是上限。**写入用 `setCR(...)`，读回来的 `getCR()` 可能比写入值小**，船员不足时就是这样。
+## 两种修复路径：瞬间回满与按天消耗补给
 
-`needsRepairs()` 在成员与状态对象上都有。成员上的那个会连带判断封存与能否修，状态对象上的只看船体。
+让一艘受损的 `FleetMemberAPI` 恢复状态有两条完全不同的 API 路径。
 
-## 修复有两条路
-
-改状态有两种写法，用途不同。
-
-要立刻修满，直接用状态对象上的方法：
+第一条是直接改写底层状态的**瞬间修复**：
 
 ```java
 member.getStatus().repairFully();
 member.getRepairTracker().setCR(member.getRepairTracker().getMaxCR());
 ```
 
-`repairFully()` 把船体与装甲一起补满，不消耗补给、不占用时间。原版在战斗结束后的恢复、修船厂的整修、以及调试命令里都用它。`setCR(...)` 要另写一行，`repairFully()` 不动 CR。
+`repairFully()` 会把船体完整度与所有装甲格一次性补满，既不消耗补给，也不需要等待维修时间；但它不会改动战备值，因此需要再补一行 `setCR(getMaxCR())`。原版在殖民地船坞整修、模拟战结束恢复以及 NPC 舰队回港维修时，走的都是这条路。
 
-要按进度慢慢修，用维修跟踪器：
+第二条是玩家舰队在星图上航行时使用的**渐进式后勤维修**：
 
 ```java
 float done = member.getRepairTracker().computeRepairednessFraction();
 member.getRepairTracker().performRepairsFraction(fraction);
-member.getRepairTracker().getRemainingRepairTime();
+float remainingDays = member.getRepairTracker().getRemainingRepairTime();
 ```
 
-这条路径按天推进、消耗补给，是玩家舰队在生涯里的修法。`computeRepairednessFraction()` 综合船体与装甲给出修复程度。
+这条路径依赖舰队货舱里的补给存量与每日维修速率按天推进。**不要对 NPC 舰队用第二条路径**：NPC 舰队并没有真实的日常补给消耗账户，调用渐进维修只会让它的修复进度停在半路。
 
-**给 NPC 舰队用第一条，不要用第二条。** NPC 舰队没有补给账户，走第二条只会让它停在修复进度上。原版给 NPC 修船时直接调 `repairFully()`。
-
-## 损伤也能直接写
-
-除了修，还能造伤。这几个方法在状态对象上：
+反过来，如果需要在剧情或事件中主动给某艘成员制造战损，`FleetMemberStatusAPI` 也提供了对应的扣减方法：
 
 ```java
 void applyDamage(float hitStrength);
@@ -69,35 +61,18 @@ void repairHullFraction(float fraction);
 void disable();
 ```
 
-`setHullFraction(...)` 直接给一个比例，`applyHullFractionDamage(...)` 在这个比例上扣。`disable()` 让成员进入失效状态，之后要靠 `repairDisabledABit()` 慢慢恢复。
+其中 `setHullFraction(fraction)` 直接将船体设为指定比例，`applyHullFractionDamage(fraction)` 在现有比例上扣减，`disable()` 则让舰船进入战损瘫痪状态 (需调用 `repairDisabledABit()` 才能逐步脱困)。
 
-上面这些是状态层的东西。接下来让巡逻队受伤后返航。
+## 监听战后损伤并改派返航任务
 
-## 在战斗之后检查伤情
+巡逻队的战损只会在战斗结算时发生变化，完全没有必要用每帧脚本去轮询船体血量。将检查逻辑写在 `com.fs.starfarer.api.campaign.listeners.FleetEventListener` 的战后回调里要干净得多：
 
-舰队的状态在战斗结束时才发生变化，所以检查放在战斗结束的回调里，不必每帧轮询。回调来自 `FleetEventListener`：
+- `reportBattleOccurred(CampaignFleetAPI fleet, CampaignFleetAPI primaryWinner, BattleAPI battle)`：当挂载该监听器的舰队结束一场战斗时调用；
+- `reportFleetDespawnedToListener(CampaignFleetAPI fleet, FleetDespawnReason reason, Object param)`：当舰队从星图移除时调用 (本节无需处理，留空即可)。
 
-- `reportBattleOccurred(fleet, primaryWinner, battle)`：舰队参与的战斗结束后调用；
-- `reportFleetDespawnedToListener(fleet, reason, param)`：舰队从世界中移除时调用，本例用不到，方法体留空。
+通过 `fleet.addEventListener(...)` 直接挂在单支舰队身上的监听器，回调收到的第一个参数 `fleet` 就是这支舰队本身 (只有注册到全局 `ListenerManager` 的监听器才会在这里收到 `null`)。
 
-监听器通过 `fleet.addEventListener(...)` 挂到单支舰队上，[C11-S1] 的管理器在 `spawnFleet()` 里完成这一步。**直接挂在舰队上的监听器，回调里的 `fleet` 参数不为空**；只有向全局监听器管理器登记的监听器，才会收到 `null`。
-
-检查的内容是任一成员的船体完整度是否低于 60%：
-
-```java
-for (FleetMemberAPI member : fleet.getFleetData().getMembersListCopy()) {
-    if (member.getStatus().getHullFraction() < RETURN_HULL_FRACTION) {
-        return true;
-    }
-}
-return false;
-```
-
-阈值取 60%：巡逻队是用来守在轨道上的，伤到一半以上还在巡逻，玩家只会当作靶子。需要更谨慎的舰队，把它调高即可。
-
-## 返航与修复
-
-发现伤势过重后，监听器在舰队 Memory 写入返航标记，清空任务，再改派返航任务：
+我们在 `reportBattleOccurred(...)` 中遍历幸存成员，只要发现任意一艘船的 `getHullFraction()` 降到 `0.6f` (60%) 以下，就中断当前巡逻、改派返航维修任务：
 
 ```java
 fleet.getMemoryWithoutUpdate().set(DAMAGED_KEY, true);
@@ -106,28 +81,13 @@ fleet.addAssignment(FleetAssignment.GO_TO_LOCATION, source, 30f, "returning for 
 fleet.addAssignment(FleetAssignment.ORBIT_PASSIVE, source, 3f, "repairing", new RepairScript(fleet));
 ```
 
-标记 `$GearIn_patrol_damaged` 的作用是防止重复处理：一场战斗之后可能连续触发回调，已经在返航的舰队不应再次清空任务。
+这里有三处环环相扣的设计：
 
-`addAssignment(...)` 的最后一个参数是 `Script`，任务完成时执行。本例的 `RepairScript` 在 "repairing" 任务结束时运行，对每个成员调用 `repairFully()`，再把 CR 设为 `getMaxCR()`，最后通知舰队数据重新同步并清除标记：
+1. **用舰队 Memory 标记 `$GearIn_patrol_damaged` 防重入**：一场大规模接战可能连续触发多次战斗结算回调；在首次触发返航时写下 `$GearIn_patrol_damaged = true`，后续回调读到该标记就直接跳过，避免反复清空正在执行的返航任务。
+2. **用任务完成回调 `RepairScript` 兑现修复**：`addAssignment(...)` 的最后一个参数传入了一个实现 `com.fs.starfarer.api.Script` 的内部类。当舰队飞回 Nipher Prime 并在轨道上完成 3 天的 `"repairing"` 环绕后，引擎自动调用 `RepairScript.run()`，对全队成员执行 `repairFully()` 与 `setCR(...)`，随后调用 `fleet.getFleetData().setSyncNeeded()` 刷新舰队状态并清除 `$GearIn_patrol_damaged` 标记。
+3. **自动接回常规巡逻**：当 `"repairing"` 任务走完时，舰队的任务队列正好变空 (`getCurrentAssignment() == null`)。[C11-S1] 挂在舰队上的 `GearInPatrolAssignmentScript` 在下一帧检测到空队列，就会自动为修葺一新的巡逻队排入新一轮巡逻任务，两边无需任何额外通信。
 
-```java
-for (FleetMemberAPI member : fleet.getFleetData().getMembersListCopy()) {
-    member.getStatus().repairFully();
-    member.getRepairTracker().setCR(member.getRepairTracker().getMaxCR());
-}
-fleet.getFleetData().setSyncNeeded();
-fleet.getMemoryWithoutUpdate().unset(DAMAGED_KEY);
-```
-
-**修复之后，任务队列已经走空。** [C11-S1] 的任务脚本在 `getCurrentAssignment() == null` 时重新安排巡逻，所以舰队修好后自动回到巡逻，监听器不必再管。
-
-::: warning 直接写入的状态不等于游戏的维修流程
-
-`repairFully()` 与 `setCR(...)` 直接改写成员状态，不消耗补给，也不经过维修时间。这对 NPC 舰队是合适的，玩家舰队的维修由游戏自己的流程处理，不要用同样的方式改写。
-
-:::
-
-## 完整的伤情监听器
+## 完整的损伤监听器：GearInPatrolDamageListener
 
 `src/data/scripts/gearin/campaign/GearInPatrolDamageListener.java`：
 
@@ -210,44 +170,37 @@ public class GearInPatrolDamageListener implements FleetEventListener {
 }
 ```
 
-在 [C11-S1] 管理器的 `spawnFleet()` 中，紧接在 `addScript(...)` 之前挂上监听器：
+### 接入巡逻队管理器
+
+在 [C11-S1] 的 `GearInPatrolFleetManager.spawnFleet()` 中，于挂载 `GearInPatrolAssignmentScript` 之前为舰队挂上该监听器：
 
 ```java
 fleet.addEventListener(new GearInPatrolDamageListener(source));
+fleet.addScript(new GearInPatrolAssignmentScript(fleet, source));
 ```
 
 ### 进游戏核对
 
-执行 `gradle jar`，重启游戏，**新建一份存档**，用 `jump Nipher` 到巡逻队附近。
+执行 `gradle jar`，重启游戏，**新建一份存档**，执行 `jump Nipher` 找到巡逻队。
 
-- 让巡逻队与其他舰队交战，使其中一艘舰船的船体低于 60%；
-- 战斗结束后，舰队信息中的任务描述变为 `returning for repairs`，随后是 `repairing`；
-- 回到源点停留之后，船体恢复，任务描述回到 `patrolling`；
-- 控制台执行 `runcode` 读取该舰队 Memory 中的 `$GearIn_patrol_damaged`，返航期间为 `true`，修复后为 `false`。
-
-页面中的现象依据 API 与原版代码推出，编者尚未逐项在游戏内实测。
+- 吸引一支敌方舰队与巡逻队交火 (或主动攻击巡逻队后脱离)，使巡逻队中至少一艘舰船的船体完整度低于 60%；
+- 战斗结束返回星图后，巡逻队的行动描述立即变为 `returning for repairs`，飞抵 Nipher Prime 后变为 `repairing`；
+- 环绕 3 天结束后，受损舰船的船体与装甲完全恢复，行动描述重新切回 `patrolling`。
 
 ## 常见问题
 
-- **巡逻队受伤后仍在巡逻**：监听器没有挂到舰队上，或阈值过低。
-    - **解决方案**：确认 `spawnFleet()` 中调用了 `addEventListener(...)`，并核对 `RETURN_HULL_FRACTION`。
+- **巡逻队成员被打成重伤后仍然继续巡逻，不返航**：`spawnFleet()` 中漏挂了 `fleet.addEventListener(...)`，或受损舰船在战斗中已被直接击毁移出了成员列表。
+    - **解决方案**：核对 `addEventListener(...)` 调用位置，并确保测试时舰船是受损幸存而非被击沉。
 
-- **回调里的 `fleet` 为 `null`**：监听器登记到了全局监听器管理器，而不是舰队本身。
-    - **解决方案**：用 `fleet.addEventListener(...)` 直接挂在舰队上。
+- **在 `reportBattleOccurred(...)` 中收到的 `fleet` 参数为 `null`**：将监听器注册到了 `Global.getSector().getListenerManager()`，而非单支舰队的 `fleet.addEventListener(...)`。
+    - **解决方案**：针对特定舰队的战后监听直接挂在 `CampaignFleetAPI` 实例上。
 
-- **修复后舰队停在原地**：任务脚本没有在队列走空后重排任务。
-    - **解决方案**：在 `advance(...)` 中检查 `getCurrentAssignment() == null`。
-
-- **CR 设置之后读回来偏低**：`getCR()` 乘过船员比例，船员不足时低于写入值。
-    - **解决方案**：核对 `getBaseCR()`，并检查成员的船员配置。
-
-- **返航任务被反复清空**：没有用 Memory 标记过滤重复回调。
-    - **解决方案**：处理之前先读 `DAMAGED_KEY`，已为 `true` 就返回。
+- **返航修好之后，巡逻队停在行星轨道上不再恢复巡逻**：舰队上没有挂载检查 `getCurrentAssignment() == null` 的任务重排脚本。
+    - **解决方案**：确认 [C11-S1] 的 `GearInPatrolAssignmentScript` 已正常挂载。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.listeners.FleetEventListener`：舰队监听器，本节只用到 `reportBattleOccurred(...)`。
-- `com.fs.starfarer.api.fleet.FleetMemberStatusAPI`：船体损伤与修复的全部方法。
-- `com.fs.starfarer.api.fleet.RepairTrackerAPI`：CR、封存与修复进度。
-- `com.fs.starfarer.api.campaign.FleetAssignment`：各任务类型的含义。
-- `com.fs.starfarer.api.impl.campaign.fleets.SourceBasedFleetManager`：原版管理器怎样把自己登记为舰队监听器。
+- `com.fs.starfarer.api.campaign.listeners.FleetEventListener`：单支舰队的战后与解散事件监听接口。
+- `com.fs.starfarer.api.fleet.FleetMemberStatusAPI`：船体完整度、装甲格状态与 `repairFully()`。
+- `com.fs.starfarer.api.fleet.RepairTrackerAPI`：战备值 (`CR`)、封存状态与维修进度跟踪器。
+- `com.fs.starfarer.api.impl.campaign.fleets.SourceBasedFleetManager`：原版源点管理器自身对 `FleetEventListener` 的实现。

@@ -18,7 +18,7 @@ _本节预期操作时间：\~10 分钟。_
 
 ## 登记导航锚
 
-自定义实体位于 `data/config` 文件夹内的 `custom_entities.json`。同理，尽可能复制粘贴修改原版的实体。导航锚由原版的 `comm_relay` 改来，在 MOD 中创建 `data/config/custom_entities.json`：
+自定义实体写在 `data/config/custom_entities.json` 里，同样从原版相近实体复制修改即可。导航锚由原版的 `comm_relay` 改来，在 MOD 中创建 `data/config/custom_entities.json`：
 
 ```json
 {
@@ -65,7 +65,7 @@ anchor.setCircularOrbitPointingDown(star, 270, 2200, 100);
 
 参数依次为实体 ID、名称、实体类型与所属势力，与通讯中继站的写法相同，只是类型换成了刚才登记的 `GearIn_navigation_anchor`。导航锚与中继站在同一条轨道上，位于恒星的另一侧。
 
-编者没有用导航锚替换通讯中继站，而是另放一个。中继站是一个真正有用的东西，换掉它，Nipher 就收不到情报了。**新实体应当补充星系，不该挤掉已有的功能。**
+导航锚放在原中继站的对侧，没有直接把它替换掉，免得 Nipher 失去中继站的情报功能。
 
 ### 进游戏核对
 
@@ -95,5 +95,6 @@ anchor.setCircularOrbitPointingDown(star, 270, 2200, 100);
 ## 建议参考项
 
 - `data/config/custom_entities.json`：原版全部自定义实体，中继站、浮标、探测器、残骸都在这里。
+- `data/strings/descriptions.csv`：自定义实体描述的追加位置。
 - `com.fs.starfarer.api.impl.campaign.ids.Entities`：原版自定义实体类型的 ID 常量。
 - `com.fs.starfarer.api.impl.campaign.ids.Tags`：实体标签常量，交互与可打捞等行为由标签决定。

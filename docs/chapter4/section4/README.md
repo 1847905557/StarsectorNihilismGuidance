@@ -2,7 +2,7 @@
 
 模块船的每个模块都有自己的装甲、幅能和武器，被打掉以后主体照样能打。普通舰船做不出这种设计。
 
-游戏对模块船的支持却相当别扭。编者建议您先做一艘只有一个模块的船，摸清楚了再加。
+游戏对模块船的支持却相当别扭。编者建议您先做一艘只有一个模块的船，了解清楚了再加。
 
 ---
 
@@ -18,13 +18,13 @@ _本节预期操作时间：\~20 分钟。_
 
 ## 制作模块部件
 
-一艘模块船往往由至少 2 个模块组成。这些模块本身都是舰船，因此需要先准备好它们的贴图：
+一艘模块船至少包含主体和 1 个模块。这些部件本身都是舰船，因此需要先准备好它们的贴图：
 
 ![窑级主体舰船贴图](./GearIn_kiln.png 'GearIn_kiln.png')![窑级舰体模块贴图](./GearIn_kiln_module.png 'GearIn_kiln_module.png')
 
 这艘 `窑-级 (Kiln)` 巡洋舰的主体和模块分别由 `狮鹫` 与 `苍鹭` 简单修改而来，耗时不超过 20 秒。为它们分别分配 `GearIn_kiln` 和 `GearIn_kiln_module` 的舰船 ID。
 
-然后按照正常舰船制作流程将它们的船体文件制作出：
+然后按正常流程做出它们的船体文件：
 
 ![编辑器中的窑级主体几何与槽位](./main.png 'main.png')
 
@@ -78,7 +78,7 @@ name,id,designation,tech/manufacturer,system id,fleet pts,hitpoints,armor rating
 
 ![主体与模块的正式装配文件](./variant_rename.png 'variant_rename.png')
 
-然后打开原版的 `data/variants/stations` 文件夹，打开 `station_small_Standard.variant`。您应该能发现诸如这样的一段：
+打开原版的 `data/variants/stations/station_small_Standard.variant`，里面有这样一段：
 
 ```json
     "modules": {

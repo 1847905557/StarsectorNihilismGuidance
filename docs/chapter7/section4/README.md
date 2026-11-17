@@ -24,28 +24,26 @@ _本节预期操作时间：\~10 分钟。_
 
 ## 读懂一份报错
 
-崩溃要自己制造一次。打开 `data/config/settings.json`，把 [C7-S2] 中的 `GearIn_assaultFeedSpeedBonus` 改成一个不存在的键，比如把 `Speed` 写成 `Sped`，然后启动游戏。游戏在加载阶段停下，日志末尾出现类似下面的记录：
+我们先故意制造一次崩溃，看看报错在日志里长什么样。打开 [C7-S2] 的 `GearInSettings.java`，把读取原版 `"economyIterPerMonth"` 的字符串故意少写一个字母，改成 `"economyIterPerMoth"`，执行 `gradle jar` 后启动游戏。游戏在加载阶段停下，日志末尾出现类似下面的记录：
 
 ```text
-java.lang.RuntimeException: org.json.JSONException: JSONObject["GearIn_assaultFeedSpedBonus"] not found.
+java.lang.RuntimeException: org.json.JSONException: JSONObject["economyIterPerMoth"] not found.
 	at com.fs.starfarer.settings.StarfarerSettings.findFloatSetting(Unknown Source)
 	at com.fs.starfarer.settings.StarfarerSettings$1.getFloat(Unknown Source)
-	at data.scripts.gearin.GearInSettings.load(GearInSettings.java:22)
+	at data.scripts.gearin.GearInSettings.load(GearInSettings.java:32)
 	at data.scripts.gearin.GearInModPlugin.onApplicationLoad(GearInModPlugin.java:28)
 	...
 ```
 
 `RuntimeException` 后面那半句是 `JSONException` 的原话，格式固定为 `JSONObject["键名"] not found.`。这条消息本身就把答案给全了：哪个键、不存在。中间两行 `com.fs.starfarer.settings` 属于游戏本体，类名被混淆成单个字母，行号也显示为 `Unknown Source`，它们说明异常是从哪条内部路径抛出来的，不必深究。
 
-**从上往下找第一个带自己包名的帧。** 这里是 `GearInSettings.load(GearInSettings.java:22)`，源文件第 22 行，也就是读取那个键的那一行。它上面的一行 `GearInModPlugin.onApplicationLoad(...)` 告诉我们是谁调用了它，两者合在一起就是完整的因果链：应用加载 → 读取设置 → 键不存在 → 抛出。
+**从上往下找第一个带自己包名的帧。** 这里是 `GearInSettings.load(GearInSettings.java:32)`，源文件第 32 行，也就是读取那个键的那一行。它上面的一行 `GearInModPlugin.onApplicationLoad(...)` 告诉我们是谁调用了它，两者合在一起就是完整的因果链：应用加载 → 读取设置 → 键不存在 → 抛出。
 
-**`Caused by:` 段落给的是原始异常。** 上面这条把 `JSONException` 包进了 `RuntimeException`，消息里已经带出原话；有些异常包装得更深，消息只有一句 "invocation failed"，这时候 `Caused by:` 里最后一个才是真正的原因。
+**`Caused by:` 段落给的是被包装的原始异常。** 上面这条把 `JSONException` 包进了 `RuntimeException`，外层消息已经带出了原话；遇到外层只写一句笼统的 "invocation failed" 时，往下翻到最后一个 `Caused by:`，那里才是第一现场。
 
-**日志里出现多个异常时，从时间上最早的那个看起。** 第一个错误常常引出后面一连串，其余都是结果。
+**一份日志里出现多个异常时，从时间上最早的那个看起。** 第一个错误往往会顺着调用链牵出一串后续报错，把第一个修掉，后面的通常一起消失。
 
-**一份日志中出现多个异常时，从时间上最早的那个看起。** 第一个错误常常引起后续一连串错误，后面的报错只是结果。日志里还可能出现 `Caused by:` 段落，它是被包装起来的原始异常，真正的原因通常在最后一个 `Caused by:` 中。
-
-确认原因后，把代码移回 `onGameLoad(...)`。
+看明白之后，把 `GearInSettings.java` 里改错的键名恢复为 `"economyIterPerMonth"`。
 
 ### 空指针为什么指错行
 
@@ -63,58 +61,80 @@ java.lang.NullPointerException: Cannot invoke "com.fs.starfarer.api.campaign.Fac
 
 日志不只用于读取。在代码的关键位置写入记录，出问题时就能知道代码执行到了哪里、读到了什么值。
 
-`Global.getLogger(Class)` 返回该类对应的 Log4j 日志器，输出写入同一个 `starsector.log`，每行带有类名。在 [C7-S2] 的 `GearInSettings` 上改两处：加一个 `LOG` 字段，读取完成后把读到的参数记一行。
+`Global.getLogger(Class)` 返回该类对应的 Log4j 日志器，输出写入同一个 `starsector.log`，每行带有类名。在 [C7-S2] 的 `GearInSettings` 中加上 `LOG` 字段，并在读取结束后把校验到的贴图尺寸与全局配置记一行：
 
 ```java
 package data.scripts.gearin;
+
+import java.awt.Color;
 
 import org.apache.log4j.Logger;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.SettingsAPI;
+import com.fs.starfarer.api.graphics.SpriteAPI;
 
-/** 齿轮工业的可调参数，在应用加载时从 settings.json 读取一次。 */
+/** 齿轮工业的全局设置与预加载资源入口，在应用加载时初始化并记录日志。 */
 public final class GearInSettings {
 
     private static final Logger LOG = Global.getLogger(GearInSettings.class);
 
-    private static float assaultFeedRofBonus;
-    private static float assaultFeedFluxReduction;
-    private static float assaultFeedSpeedBonus;
-    private static float assaultFeedManeuverBonus;
+    public static final String DESIGN_TYPE = "齿轮工业";
+    public static final String FX_CATEGORY = "fx";
+    public static final String HEAT_GLOW_KEY = "GearIn_heat_glow";
+    public static final String INTEL_CATEGORY = "intel";
+    public static final String FLEET_ICON_KEY = "GearIn_fleet_icon";
+    public static final String SALVAGE_BONUS_XP_KEY = "GearIn_salvage";
+
+    private static Color designTypeColor;
+    private static String fleetIconName;
+    private static float salvageBonusXp;
+    private static int economyIterPerMonth;
+    private static int maxShipsInFleet;
 
     private GearInSettings() {
     }
 
     public static void load() {
         SettingsAPI settings = Global.getSettings();
-        assaultFeedRofBonus = settings.getFloat("GearIn_assaultFeedRofBonus");
-        assaultFeedFluxReduction = settings.getFloat("GearIn_assaultFeedFluxReduction");
-        assaultFeedSpeedBonus = settings.getFloat("GearIn_assaultFeedSpeedBonus");
-        assaultFeedManeuverBonus = settings.getFloat("GearIn_assaultFeedManeuverBonus");
-        LOG.info("Assault feed: rof +" + assaultFeedRofBonus + ", flux -" + assaultFeedFluxReduction
-                + "%, speed +" + assaultFeedSpeedBonus + ", maneuver +" + assaultFeedManeuverBonus + "%");
+        designTypeColor = settings.getDesignTypeColor(DESIGN_TYPE);
+        fleetIconName = settings.getSpriteName(INTEL_CATEGORY, FLEET_ICON_KEY);
+        salvageBonusXp = settings.getBonusXP(SALVAGE_BONUS_XP_KEY);
+        economyIterPerMonth = (int) settings.getFloat("economyIterPerMonth");
+        maxShipsInFleet = settings.getInt("maxShipsInFleet");
+        SpriteAPI glow = createHeatGlowSprite();
+        LOG.info("GearIn settings loaded: glow=" + (int) glow.getWidth() + "x" + (int) glow.getHeight()
+                + ", icon=" + fleetIconName + ", salvageBonusXP=" + salvageBonusXp
+                + ", economyIterPerMonth=" + economyIterPerMonth + ", maxShips=" + maxShipsInFleet);
     }
 
-    public static float getAssaultFeedRofBonus() {
-        return assaultFeedRofBonus;
+    public static SpriteAPI createHeatGlowSprite() {
+        return Global.getSettings().getSprite(FX_CATEGORY, HEAT_GLOW_KEY);
     }
 
-    public static float getAssaultFeedFluxReduction() {
-        return assaultFeedFluxReduction;
+    public static Color getDesignTypeColor() {
+        return designTypeColor;
     }
 
-    public static float getAssaultFeedSpeedBonus() {
-        return assaultFeedSpeedBonus;
+    public static String getFleetIconName() {
+        return fleetIconName;
     }
 
-    public static float getAssaultFeedManeuverBonus() {
-        return assaultFeedManeuverBonus;
+    public static float getSalvageBonusXp() {
+        return salvageBonusXp;
+    }
+
+    public static int getEconomyIterPerMonth() {
+        return economyIterPerMonth;
+    }
+
+    public static int getMaxShipsInFleet() {
+        return maxShipsInFleet;
     }
 }
 ```
 
-日志器保存在 `static final` 字段中，每个类取得一次。这一行的价值在于：用户反馈 "改了设置没有效果" 时，日志中直接写着游戏实际读到的值，不必再猜是文件没保存、键名写错，还是改错了文件。
+日志器保存在 `static final` 字段中，每个类取得一次。这一行的价值在于：当启动阶段登记的资源或配置有变动时，日志中直接写着游戏实际读到的贴图尺寸、路径与各项数值，不必再去猜是文件没保存、键名写错，还是改错了目录。
 
 ### 选择级别
 
@@ -136,13 +156,13 @@ LOG.error("Failed to load patrol config", exception);
 
 ### 进游戏核对
 
-执行 `gradle jar`，重启游戏。在 `starsector.log` 末尾向上搜索 `Assault feed`，应看到一行：
+执行 `gradle jar`，重启游戏。在 `starsector.log` 末尾向上搜索 `GearIn settings loaded`，应看到一行：
 
 ```text
-INFO  data.scripts.gearin.GearInSettings  - Assault feed: rof +1.0, flux -50.0%, speed +50.0, maneuver +200.0%
+INFO  data.scripts.gearin.GearInSettings  - GearIn settings loaded: glow=64x64, icon=graphics/factions/crest_gear_industry.png, salvageBonusXP=0.5, economyIterPerMonth=10, maxShips=30
 ```
 
-行首的时间与线程名以实际日志为准。把 `settings.json` 中的某个值改掉再重启，这一行随之变化。
+行首的时间与线程名以实际日志为准。把 `settings.json` 中的 `GearIn_salvage` 改掉再重启，这一行随之变化。
 
 ## 常见问题
 
@@ -157,6 +177,6 @@ INFO  data.scripts.gearin.GearInSettings  - Assault feed: rof +1.0, flux -50.0%,
 
 ## 建议参考项
 
-- `Starsector/starsector-core/starsector.log`：游戏日志，按启动追加。
+- `starsector.log`：游戏日志，按启动追加。
 - `com.fs.starfarer.api.Global`：`getLogger(Class)` 取得日志器。
 - `org.apache.log4j.Logger`：`info`、`warn`、`error` 方法，异常对象作为第二个参数传入。

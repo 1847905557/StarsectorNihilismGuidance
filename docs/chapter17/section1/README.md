@@ -1,6 +1,6 @@
 # 读取 MOD 内数据文件
 
-巡逻队的点数、指挥官的等级，这些数字一直写死在 [C11-S1] 的管理器里，想调一下就得重新构建。[C7-S2] 已经把突击填弹器的参数挪进了设置文件，巡逻队的参数却不适合跟着挤进去：它们只有巡逻管理器一个用户，放在一个自己的文件里更好找，也不会和别人的设置搅在一起。
+并非所有数字都要请出代码：只归单个功能内部使用的算法常数和逻辑阈值，直接留在源码常量里由编译器检查即可，非必要绝不拆成外部文件；只有确实打算留给集中调参或允许后续覆写的配置项，才需要随包放进只读数据文件。`SettingsAPI` 提供了读取包内 JSON、CSV 与纯文本的入口：不带 `modId` 时按模组加载顺序搜索合并，带上 `modId` 则精确锁定自家目录下那一份私有配置，避免被同名文件意外覆盖。
 
 ---
 
@@ -43,7 +43,7 @@ _本节预期操作时间：\~10 分钟。_
 | `loadCSV(path, modId)` | `JSONArray`，每一行是一个以列名为键的 `JSONObject` |
 | `loadText(path, modId)` | 整个文件的文字 |
 
-三个方法都有不带 `modId` 的版本。带上 `modId`，读的就是这个 MOD 自己的那一份文件。路径一律用 `/` 分隔，原版注释特别提醒，用 `\` 在 OS X 与 Linux 上读不到。
+三个方法都有不带 `modId` 的版本：不传 `modId` 时会按加载顺序在基础游戏与各启用 MOD 间查找覆盖，适合允许他人改写的公共配置；带上 `modId`，则固定读取指定 MOD 目录里的那一份文件，防止冲突。路径一律从 `data/` 起写并以 `/` 分隔，不要用 `\`，以免路径校验失败或跨平台不兼容。
 
 配置类在启动时读一次：
 
@@ -56,15 +56,15 @@ officerLevel = json.getInt("officerLevel");
 
 `MOD_ID` 是 `mod_info.json` 里的 `GearIndustry`。`getDouble(...)`、`getInt(...)` 在键不存在时抛出异常，配置文件随 MOD 一起发布，缺了键说明文件被改坏了，这时启动失败比悄悄用一个默认值更容易发现问题，这与 [C7-S2] 对必填设置的处理相同。
 
-在 `GearInModPlugin.onApplicationLoad()` 中，紧接在设置之后加入：
+在 `GearInModPlugin.onApplicationLoad()` 中，紧接在设置之后加入 (`BaseModPlugin.onApplicationLoad()` 本身声明了 `throws Exception`，可以直接向上抛出校验异常)：
 
 ```java
 GearInPatrolConfig.load();
 ```
 
-## 管理器改读配置
+## 管理器与编制改读配置
 
-巡逻管理器把原来写死的常量换成配置类的读取：
+[C11-S1] 的巡逻管理器 `GearInPatrolFleetManager` 把 `COMBAT_POINTS` 常量换成配置类的读取：
 
 ```java
 FleetParamsV3 params = new FleetParamsV3(
@@ -78,9 +78,9 @@ FleetParamsV3 params = new FleetParamsV3(
         0f);
 ```
 
-指挥官与军官的等级同样改读 `getCommanderLevel()` 与 `getOfficerLevel()`。
+[C11-S2] 的 `GearInPatrolRoster` 里的指挥官与军官等级同样改读 `getCommanderLevel()` 与 `getOfficerLevel()`。
 
-这些数都在生成舰队时才读取，改了配置、重启游戏，下一支生成的巡逻队就按新的数值来，旧存档也一样。[C11-S1] 管理器构造时传给父类的舰队数量与重生天数不同：它们在创建管理器时写进对象，随存档保存，改配置管不到已经存在的管理器。**一个参数在什么时候被读取，决定改了它之后什么时候生效。**
+这些参数都在每次生成舰队时读取，因此改完配置重启游戏，下一支新生成的巡逻队就会按新数值出炉，旧存档也生效。而在 [C11-S1] 管理器构造时传给父类的舰队数量与重生天数则不同：它们在创建管理器时写进对象并随存档序列化，改配置管不到已经存在的管理器。**一个参数在什么时候被读取，决定改了它之后什么时候生效。**
 
 ## CSV 与纯文本
 
@@ -150,8 +150,6 @@ public final class GearInPatrolConfig {
 - 把 `commanderLevel` 改为 6，新巡逻队的指挥官等级随之提高；
 - 删掉 `officerLevel` 这一行再启动，游戏在加载阶段报错，日志中指出找不到 `officerLevel` 这个键。
 
-页面中的现象依据 API 推出，编者尚未逐项在游戏内实测。
-
 ## 常见问题
 
 - **启动时报找不到文件**：路径写错，或者用了 `\`。
@@ -165,5 +163,5 @@ public final class GearInPatrolConfig {
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.SettingsAPI`：`loadJSON(...)`、`loadCSV(...)`、`loadText(...)` 的各个重载与路径注释。
+- `com.fs.starfarer.api.SettingsAPI`：`loadJSON(...)`、`loadCSV(...)`、`loadText(...)` 的各个重载与路径格式要求。
 - `org.json.JSONObject`：`getInt(...)`、`getDouble(...)` 与带默认值的 `opt...` 方法。

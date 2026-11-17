@@ -21,7 +21,7 @@ public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
     @Override
     public PluginPick<InteractionDialogPlugin> pickInteractionDialogPlugin(SectorEntityToken interactionTarget) {
-        if (!GearInFoundryGenerator.STATION_ID.equals(interactionTarget.getId())) {
+        if (interactionTarget == null || !GearInFoundryGenerator.STATION_ID.equals(interactionTarget.getId())) {
             return null;
         }
         if (!Global.getSector().getMemoryWithoutUpdate().getBoolean(GearInPatrolGrudgeListener.GRUDGE_KEY)) {

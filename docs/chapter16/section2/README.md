@@ -1,8 +1,6 @@
-# 实现对话插件
+# 在窗口内切换对话插件
 
-[C16-S1] 的检查结束之后，要回到星图再点一次 Foundry 才能停靠。少了这一下，检查与停靠就是一段连贯的经过：检查员盖完章，港口照常开门。
-
-原版自己处理这种事情的办法，是在同一个对话窗口里换一个插件接着往下走。
+Starsector 里的弹窗窗口和驱动它的对话插件并不是死绑在一起的：只要窗口还没关掉，您随时能在当前选项的处理分支里把控制权转交给另一个插件实例。用好了这个转交动作，玩家缴完罚款或走完自定义事件之后就不必尴尬地退回星图再重进一次空间站，直接在同一块界面里顺畅接回原版停靠菜单即可。
 
 ---
 
@@ -30,7 +28,7 @@ private void continueDocking() {
 
 `setPlugin(...)` 让窗口之后的选项、按键都交给新插件处理，`init(dialog)` 让新插件从头开始。原版 `SDSevenSons` 与 `DwellerCMD` 在战斗或剧情结束后接回规则对话，用的都是这两行。
 
-`RuleBasedInteractionDialogPluginImpl` 就是 [C14-S3] 里原版生涯插件为停靠返回的那个插件，一切走规则表的对话都由它驱动。它在 `init(...)` 时按交互目标发起 `OpenInteractionDialog`，接下来 [C15-S3] 的 Foundry 港务、原版的交易菜单，全都按正常停靠的流程出现。
+`RuleBasedInteractionDialogPluginImpl` 就是 [C14-S3] 里原版生涯插件为停靠返回的那个插件，一切走规则表的对话都由它驱动。它在 `init(...)` 时按交互目标发起 `OpenInteractionDialog`，随后触发 `MarketPostOpen` 并组装主选项，接下来 [C15-S3] 的 Foundry 港务播报与原版停靠菜单都会原样接上。
 
 **两行的顺序不能反。** 先 `init(...)` 再 `setPlugin(...)`，新插件初始化时窗口还挂着旧插件，它添加的选项会交给旧插件处理。
 
@@ -201,11 +199,9 @@ public class GearInDockInspectionDialog implements InteractionDialogPlugin {
 
 执行 `gradle jar`，重启游戏，**新建一份存档**，带着回火合金停靠 Nipher Foundry。
 
-- 交罚款或交出合金后选择 "继续"，对话窗口不关闭，下方接着出现 Foundry 港务念泊位号的那段话，随后是原版的交易菜单；
+- 交罚款或交出合金后选择 "继续"，对话窗口不关闭，下方接着出现 Foundry 港务念泊位号的那段话，随后出现原版的停靠菜单；
 - 往上翻，检查的正文仍然在；
 - 选择 "离开"，对话关闭。
-
-页面中的现象依据 API 与原版代码推出，编者尚未逐项在游戏内实测。
 
 ## 常见问题
 

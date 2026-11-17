@@ -1,18 +1,12 @@
 # 使用 MagicLib 辅助生涯开发
 
-本节用 MagicCampaign 为 Nipher 星系布置一艘工匠级残骸，并清理星系周围的超空间云层。残骸围绕第一颗行星运行，具备发现与回收交互；布置完成后把状态留在星区 Memory，使玩家取走舰船以后，重复调用也能保留这个结果。
+用 `MagicCampaign.createDerelict(...)` 往 Nipher Prime 轨道塞一艘工匠级残骸其实只有一句话的事，真正麻烦的是怎么保证它 "只刷这一次"；只要轨道锚点或 Sector Memory 幂等锁没有配齐，读几次档星系里就会多出几艘一模一样的残骸。
 
-_本节预期阅读时间：\~20 分钟。_
+---
 
-_本节预期操作时间：\~25 分钟。_
+_本节预期阅读时间：\~15 分钟。_
 
-## 学习目标
-
-- 使用 `MagicCampaign.createDerelict(...)` 创建可发现、可回收的舰船残骸；
-- 使用 `MagicCampaign.hyperspaceCleanup(...)` 清理星系周围的超空间地形；
-- 在新档生成顺序中接入生涯布置器；
-- 使用 Sector Memory 保证同一存档只完成一次布置；
-- 在调用依赖库前检查星系、锚点和装配 ID。
+_本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
@@ -80,7 +74,7 @@ boolean variantExists = Global.getSettings()
 
 ## 配置可回收残骸
 
-本节使用 `createDerelict(...)` 的十参数重载。前九个参数建立残骸与回收交互，最后一个参数决定舰船本身是否允许回收。
+本节使用 `createDerelict(...)` 的完整十参重载：先按装配、舰况、探索与轨道规则建立残骸与回收交互，最后一个参数再额外控制该船体本身是否允许玩家直接打捞。
 
 ```java
 MagicCampaign.createDerelict(
@@ -234,26 +228,15 @@ public final class GearInCampaignSetup {
 
 :::
 
-## 验证方案
+### 进游戏核对
 
-前置数据：使用包含 `Nipher`、`GearIn_planet1` 与 `GearIn_artizan_combat` 的开发环境，并在 `onNewGame()` 中按本节顺序接入 `GearInCampaignSetup`。
+构建后新建存档，按顺序在 `onNewGame()` 中接入 `GearInCampaignSetup`：
 
-1. 启动游戏并新建生涯，进入 Nipher 星系。
-2. 在 `GearIn_planet1` 周围开启传感器观测，接近并发现舰船残骸。
-3. 在残骸尚未回收时再次调用 `new GearInCampaignSetup().setup(Global.getSector())`，确认数量仍为 1。
-4. 打开残骸交互，进入舰船回收界面并回收，检查船体、装配来源、舰况与 D-mod。
-5. 返回星图，从 Nipher 星系跳入超空间，观察边界周围的云层。
+- 进入 Nipher 星系探测 `GearIn_planet1` 外圈 (`半径 + 50 su`、轨道周期 `100 天`)，只存在 1 艘 `BATTERED` 舰况的 `GearIn_artizan_combat` 残骸且可正常打捞回收；
+- 飞出 Nipher 跳点查看星图，星系周围的超空间云层已清开可通行空域；
+- 即使未回收时再次手动调用 `new GearInCampaignSetup().setup(Global.getSector())`，残骸总数仍保持为 1，`$GearIn_campaign_setup_done` 为 `true`。
 
-预期结果：
-
-- 新档中只生成 `1` 艘 `GearIn_artizan_combat` 残骸；
-- 残骸围绕 `GearIn_planet1` 运行，轨道高度为行星半径外 `50 su`，周期为 `100 天`；
-- 残骸在传感器发现后显示，并能进入舰船回收界面；
-- 回收操作可以完成，舰船状况对应 `BATTERED`；
-- Nipher 星系边界周围形成可通行的超空间清理区域；
-- 第二次调用后残骸总数仍为 `1`，Sector Memory 中 `$GearIn_campaign_setup_done` 为 `true`。
-
-## 故障分析
+## 常见问题
 
 - **日志出现 `missing star system Nipher`**：生涯布置器运行时尚未生成 Nipher 星系。
     - **解决方案**：确认 `GearInSystemGenerator.generate(sector)` 位于 `GearInCampaignSetup.setup(sector)` 之前。
@@ -268,17 +251,13 @@ public final class GearInCampaignSetup {
     - **解决方案**：核对 `mod_info.json` 的 MagicLib 硬依赖、实际安装版本和异常堆栈首个业务帧；本次已创建的残骸会在记录日志前移除。
 
 - **残骸可以发现但没有回收入口**：`recoverable` 没有设为 `true`。
-    - **解决方案**：核对十参数重载中的第五个参数。
+    - **解决方案**：核对 `recoverable` 参数位置。
 
 - **回收界面出现但舰船不可回收**：`isRecoverable` 被设为 `false`，实体带有不可回收标签。
     - **解决方案**：核对十参数重载的最后一个参数。
 
 - **重复调用后出现多艘残骸**：成功标记没有写入 Sector Memory，或读取了不同对象的 Memory。
     - **解决方案**：统一从 `sector.getMemoryWithoutUpdate()` 读写 `$GearIn_campaign_setup_done`，并把写入放在两项 MagicLib 操作之后。
-
-## 总结
-
-残骸通过装配、舰况、发现与回收参数建立，以行星为轨道焦点；云层清理使用星系的位置与范围。两项操作接在星系生成之后，完成标记再保存到 Sector Memory，布置与玩家后续回收各自留下正确的状态。
 
 ## 建议参考项
 

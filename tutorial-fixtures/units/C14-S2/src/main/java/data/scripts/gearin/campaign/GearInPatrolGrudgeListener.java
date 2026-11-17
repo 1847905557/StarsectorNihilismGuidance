@@ -10,7 +10,7 @@ import com.fs.starfarer.api.impl.campaign.ids.MemFlags;
 
 import data.scripts.gearin.GearInModPlugin;
 
-/** 玩家击败齿轮工业的巡逻队后，势力记下这笔账：累计次数、限时记仇标记，并降低关系。 */
+/** 玩家击败齿轮工业的巡逻队后，势力记下这笔账：累计次数、限时敌意标记，并降低关系。 */
 public class GearInPatrolGrudgeListener extends BaseCampaignEventListener {
 
     /** 全局 Memory：玩家累计击败的齿轮工业巡逻队数量。 */

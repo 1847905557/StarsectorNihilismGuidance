@@ -3,7 +3,7 @@ package data.scripts.gearin.lib;
 import java.awt.Color;
 
 public final class GearInLunaSettingsDefs {
-    public static final String MOD_ID = "gear_in";
+    public static final String MOD_ID = "GearIndustry";
     public static final String LUNA_LIB_MOD_ID = "lunalib";
 
     public static final String KEY_TRAILS = "GearIn_trails_enabled";

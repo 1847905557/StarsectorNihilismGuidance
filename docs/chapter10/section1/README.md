@@ -1,221 +1,139 @@
-# 读取生涯世界与 Memory
+# 读取生涯世界
 
-生涯里的状态总有一个存放处。跟着星球的、跟着舰队的、跟着存档的，游戏各有一处，取用方式互不相同。挑错一层，值会在不该消失的时候消失，或者在本该消失之后一直留着。
+刚从战斗脚本切到生涯层时，最容易让人产生错觉的是 `EveryFrameScript` 那几个眼熟的方法名 —— 看起来好像只是把战场的 `advance(amount)` 搬到了星图上。
 
-Memory 的过期以生涯日计。两参数的 `set` 写入的值不会过期，三参数的按给定天数过期，天数给零则在下一 tick 被清掉。同一个键在两种写法之间换一次，行为就完全不同。
-
-脚本的字段不参与存档。要记的东西在读档之后还读得到，就不能放在那里。
+真正棘手的是存档那一刻：生涯对象图会被 XStream 直接序列化进存档。哪类脚本会写进存档、哪类脚本读档即失，外加跨星系坐标的核算边界，这几条底线理清以后，后面的生涯逻辑才不至于一读档就散架。
 
 ---
 
 _本节预期阅读时间：\~15 分钟。_
 
-_本节预期操作时间：\~20 分钟。_
+_本节预期操作时间：\~15 分钟。_
 
 ## 前置知识
 
-- [C7-S1] 的 `onGameLoad(...)` 与存档初始化标记；
-- [C7-S3] 的 `playUISound(...)`，本节会实际使用它；
-- [C3-S3] 的 Nipher Prime 与市场 `GearIn_planet1`。
+- [C3-S3] 的 Nipher 星系与 `GearIn_planet1` 市场；
+- [C7-S1] 的 `onNewGame()`、`onGameLoad(boolean newGame)` 与 `getPersistentData()`；
+- [C7-S2] 的 `Global.getSector()` 访问时机。
 
-## 三层 Memory
+## 星区对象树与核心入口
 
-Memory 是挂在不同对象上的多张表，每张表各自的过期与保存规则都一样。本节涉及三层：
+进入生涯后，`Global.getSector()` 返回代表当前存档世界的 `SectorAPI`。整个星区的对象围绕它分层挂载：
 
-| 层级       | 取得方式                          | 保存的内容             |
-| ---------- | --------------------------------- | ---------------------- |
-| 全局       | `sector.getMemory()`              | 与整个存档有关的标记   |
-| 市场       | `market.getMemory()`              | 只属于这个市场的数据   |
-| 实体、舰队 | `entity.getMemory()`              | 只属于这个对象的数据   |
+| 类别 | `SectorAPI` 入口方法 | 返回对象与用途 |
+| --- | --- | --- |
+| 地点 | `getStarSystem(name)`、`getStarSystems()`、`getHyperspace()`、`getCurrentLocation()` | 取得指定恒星系、超空间或玩家当前所在的 `LocationAPI` |
+| 实体查询 | `getEntityById(id)` | 在全星区范围内按唯一 ID 查找 `SectorEntityToken`，未找到返回 `null` |
+| 经济与市场 | `getEconomy().getMarket(id)`、`getEconomy().getMarketsCopy()` | 按市场 ID 取得 `MarketAPI`，或遍历全星区所有市场 |
+| 玩家状态 | `getPlayerFleet()`、`getPlayerPerson()`、`getPlayerStats()` | 取得玩家舰队实体、玩家人物对象与技能统计 |
+| 势力 | `getFaction(id)`、`getPlayerFaction()`、`getAllFactions()` | 取得指定势力或玩家所属势力的 `FactionAPI` |
+| 时间与管理 | `getClock()`、`getIntelManager()`、`getListenerManager()` | 取得生涯时钟、情报管理器与生涯事件监听器管理器 |
+| 存档键值表 | `getPersistentData()`、`getMemoryWithoutUpdate()` | 取得随存档保存的公共数据 `Map` 与全局 `MemoryAPI` ([C10-S2]) |
 
-**键必须以 `$` 开头，不写会直接抛异常。** `Memory` 的 `set(...)` 一进去就检查 `key.startsWith("$")`，不满足时抛 `RuntimeException("Key ... should start with $")`。本教程的键统一写成 `$GearIn_<名称>`。
+在生涯对象之间导航时，有两条高频链路几乎每写一个脚本都会用到：
 
-同一个事实只应该存在于一层。"玩家是否已经与齿轮工业接触" 与整个存档有关，放在全局；"接触发生在哪一天" 只与 Nipher Prime 这个市场有关，放在市场。
-
-## 读写与限时值
-
-`MemoryAPI` 的常用方法如下：
-
-| 方法                            | 作用                                   |
-| ------------------------------- | -------------------------------------- |
-| `set(key, value)`               | 写入，永不过期                         |
-| `set(key, value, days)`         | 写入，经过指定生涯天数后自动清除       |
-| `getBoolean(key)`、`getFloat(key)` | 读取，键不存在时返回 `false` 或 `0`  |
-| `contains(key)`                 | 键是否存在                             |
-| `unset(key)`                    | 删除                                   |
-
-限时值适合表达 "最近发生过" 这类会自行失效的状态，不需要另写脚本去清理。过期按生涯天数计算，暂停时不流逝。
-
-## 接触脚本
-
-接触的判定需要持续检查玩家与 Nipher Prime 的距离，这是 `EveryFrameScript` 的工作。它的接口只有三个方法：`isDone()` 返回 `true` 时引擎清除脚本，`runWhilePaused()` 决定暂停时是否调用，`advance(amount)` 随脚本被推进而调用，`amount` 是那一次推进经过的现实秒数。脚本的生命周期留给 [C14-S1] 完整展开，这里只用它读取世界。
-
-判定条件是玩家舰队与 Nipher Prime 位于同一地点，且距行星表面不超过 1500。脚本每 0.5 至 1 秒检查一次，不必逐帧计算距离：
+1. **从市场找回天体实体**：[C3-S3] 注册的市场 ID 是 `"GearIn_planet1"`，通过 `sector.getEconomy().getMarket("GearIn_planet1")` 拿到 `MarketAPI` 后，调用 `market.getPrimaryEntity()` 即可取回它附着的那颗 Nipher Prime 行星实体 (`SectorEntityToken`)；反过来，从任何绑定了市场的实体上调用 `entity.getMarket()` 也能取回对应的 `MarketAPI`。
+2. **先判同一地点，再算距离**：每个恒星系 (`StarSystemAPI`) 与超空间 (`Hyperspace`) 都是各自独立的二维平面 (`LocationAPI`)。一艘停在超空间 `(0, 0)` 的舰队与一颗位于 Nipher 星系 `(0, 0)` 的行星，它们的 `getLocation()` 数值完全相同，却根本不在同一个空间里。因此调用 `Misc.getDistance(a, b)` 之前，必须先核对两者的 `getContainingLocation()` 是否指向同一个地点：
 
 ```java
-MarketAPI market = sector.getEconomy().getMarket(MARKET_ID);
-if (market == null || market.getPrimaryEntity() == null) {
-    return;
-}
 SectorEntityToken planet = market.getPrimaryEntity();
-CampaignFleetAPI fleet = sector.getPlayerFleet();
-if (fleet == null || fleet.getContainingLocation() != planet.getContainingLocation()) {
+CampaignFleetAPI playerFleet = sector.getPlayerFleet();
+if (playerFleet == null || playerFleet.getContainingLocation() != planet.getContainingLocation()) {
     return;
 }
-if (Misc.getDistance(fleet, planet) > planet.getRadius() + CONTACT_DISTANCE) {
-    return;
-}
+float distanceFromSurface = Misc.getDistance(playerFleet, planet) - planet.getRadius();
 ```
 
-`getMarket("GearIn_planet1")` 取回 [C3-S3] 创建的市场，行星实体从市场的 `getPrimaryEntity()` 得到。**应用加载阶段没有这份世界**，所以这些读取只能放在生涯脚本中，不能放在 `onApplicationLoad()`。
+`Misc.getDistance(a, b)` 计算的是两个实体中心点之间的距离；若要判断舰队距离行星表面有多远，还需减去 `planet.getRadius()`。但一般不会特意这样。
 
-## 写入三层 Memory
+## 生涯时钟与经过天数
 
-条件满足后，脚本同时写入三个值：
+`sector.getClock()` 返回 `CampaignClockAPI`。生涯里所有与 "过了多少天" 有关的逻辑都必须走生涯时钟，不能用切帧的秒数自己累加，否则一旦玩家加快时间流速或读档，计时就会同游戏日历脱节：
+
+| 方法 | 作用 |
+| --- | --- |
+| `getCycle()`、`getMonth()`、`getDay()` | 当前星历的周期 (年)、月、日整数 |
+| `getDateString()` | 格式化的当前日期字符串 (如 `Mar 15, c206`；若要 `206.3.15` 格式调 `getShortDate()`) |
+| `getTimestamp()` | 返回 `long` 类型的当前绝对时间戳，用于记录某个事件发生的时刻 |
+| `getElapsedDaysSince(long timestamp)` | 计算从给定时间戳至今经过的生涯天数 (`float`) |
+| `convertToDays(float seconds)` | 将 `advance(amount)` 传入的现实秒数换算为当前流速下的生涯天数 |
+
+**不要拿两个 `getTimestamp()` 的差值直接当成天数或秒数使用。** `getTimestamp()` 返回的是引擎内部的原始时钟刻度，记录起点时把 `long start = clock.getTimestamp()` 存起来，后续一律调用 `clock.getElapsedDaysSince(start)` 获取经过的生涯天数。
+
+## 生涯每帧脚本与存档序列化
+
+生涯中的持续逻辑实现 `com.fs.starfarer.api.EveryFrameScript` 接口：
 
 ```java
-sector.getMemory().set(CONTACTED_KEY, true);
-sector.getMemory().set(RECENT_KEY, true, RECENT_DAYS);
-market.getMemory().set(TIMESTAMP_KEY, sector.getClock().getTimestamp());
-Global.getSoundPlayer().playUISound("ui_rep_raise", 1f, 1f);
+public interface EveryFrameScript {
+	boolean isDone();
+	boolean runWhilePaused();
+	void advance(float amount);
+}
 ```
 
-- `$GearIn_contacted` 写在全局，永不过期。后续章节的规则与脚本用它判断玩家是否已经见过齿轮工业；
-- `$GearIn_contact_recent` 同样在全局，但带 30 天期限，30 个生涯天后自行消失；
-- `$GearIn_contact_timestamp` 写在 Nipher Prime 的市场上，记录接触发生的时间戳。它只描述这个市场，换一个市场就没有意义；
-- 最后一行播放 [C7-S3] 预告过的 `ui_rep_raise`，这是原版声望提升时的提示音，玩家听到它就知道发生了一次接触。
+- `isDone()` 返回 `true` 时，引擎在当前帧将该脚本从运行列表中移除；
+- `runWhilePaused()` 返回 `false` 时，玩家在生涯界面暂停时不调用 `advance(...)`；除非脚本专门处理暂停期间的 UI 刷新，否则一律返回 `false`；
+- `advance(float amount)` 每帧调用一次。由于生涯脚本通常不需要按 60 帧的频率轮询全星区对象，实战中普遍配合 `IntervalUtil` (如 `new IntervalUtil(0.5f, 1f)`) 将检查频率降到每半秒至一秒一次。
 
-::: warning 时间戳是数字，不是天数
+把 `EveryFrameScript` 挂进星区时，`SectorAPI` 提供了两个名字相近、存档行为却截然相反的方法：
 
-`getTimestamp()` 返回的是时钟的绝对时间戳。要得到 "距今多少天"，用 `clock.getElapsedDaysSince(timestamp)`，不要直接拿时间戳做减法。
+| 注册方式 | 是否写进存档 XML | 读档后的状态 | 适用场景与代价 |
+| --- | --- | --- | --- |
+| `sector.addScript(script)` | **是** (连同实例字段一起序列化) | 由存档反序列化恢复，无需在 `onGameLoad` 重新注册 | 适合持有复杂运行期状态的长周期管理器 ([C11-S1])；代价是**一旦在后续版本重命名或删除该类，旧存档读档会直接因找不到类而报错** |
+| `sector.addTransientScript(script)` | **否** | 读档后消失，需在 `onGameLoad` 中重新挂载 | 适合轮询检测、全局监听等逻辑本身无须进档的脚本；重构或改名不会破坏旧存档，但**脚本字段在读档后会全部归零** |
 
-:::
+这也解释了为什么在 `addTransientScript(...)` 注册的脚本里，绝对不能用 `private boolean triggered = false;` 这样的实例字段来记录 "某件事已经发生过" —— 玩家只要按一下 `F5` / `F9` 存取档，`onGameLoad(...)` 就会 `new` 出一个全新的脚本实例，`triggered` 重新变回 `false`，一次性逻辑就会再次触发。
 
-### 脚本自己结束
-
-`isDone()` 读取 `$GearIn_contacted`：接触一旦发生，脚本在下一帧被引擎清除。`GearInModPlugin.onGameLoad(...)` 只在尚未接触时登记脚本，两处判断一致。
-
-**脚本是 transient 的，不随存档保存，标记是 Memory，随存档保存。** 读档之后脚本由入口类重新建立，是否还需要它，由存档里的标记决定。把 "是否已完成" 放进脚本字段，读档后字段归零，接触会被重复触发。
-
-### 登记脚本
-
-在 `GearInModPlugin` 的 `onGameLoad(...)` 中加入：
+在 `GearInModPlugin.onGameLoad(...)` 中挂载瞬态脚本时，标准写法是同时检查存档中的完成标记与 `hasTransientScript(...)`：
 
 ```java
 SectorAPI sector = Global.getSector();
-if (!sector.getMemory().getBoolean(GearInContactScript.CONTACTED_KEY)
-        && !sector.hasTransientScript(GearInContactScript.class)) {
-    sector.addTransientScript(new GearInContactScript());
+if (!sector.hasTransientScript(MyCampaignScript.class)) {
+    sector.addTransientScript(new MyCampaignScript());
 }
 ```
 
-`hasTransientScript(...)` 防止同一次读档重复登记。
+## 存档公共数据：getPersistentData()
 
-## 完整的接触脚本
+既然瞬态脚本的字段在读档后会清空，跨读档保留的数据就得放进随存档保存的容器里。Starsector 提供了两套持久化容器：一套是 [C7-S1] 见过的 `sector.getPersistentData()`，另一套是下一节 [C10-S2] 专门展开的 `MemoryAPI`。
 
-`src/data/scripts/gearin/campaign/GearInContactScript.java`：
+`sector.getPersistentData()` 返回一个全局的 `Map<String, Object>`，存进去的键值对会原样写进存档：
 
 ```java
-package data.scripts.gearin.campaign;
-
-import com.fs.starfarer.api.EveryFrameScript;
-import com.fs.starfarer.api.Global;
-import com.fs.starfarer.api.campaign.CampaignFleetAPI;
-import com.fs.starfarer.api.campaign.SectorAPI;
-import com.fs.starfarer.api.campaign.SectorEntityToken;
-import com.fs.starfarer.api.campaign.econ.MarketAPI;
-import com.fs.starfarer.api.util.IntervalUtil;
-import com.fs.starfarer.api.util.Misc;
-
-/** 玩家首次靠近 Nipher Prime 时，记录与齿轮工业的接触。 */
-public class GearInContactScript implements EveryFrameScript {
-
-    /** 全局 Memory：玩家是否已与齿轮工业接触，永不过期。 */
-    public static final String CONTACTED_KEY = "$GearIn_contacted";
-
-    /** 全局 Memory：最近接触过，30 天后自动消失。 */
-    public static final String RECENT_KEY = "$GearIn_contact_recent";
-
-    /** 市场 Memory：接触发生时的时间戳。 */
-    public static final String TIMESTAMP_KEY = "$GearIn_contact_timestamp";
-
-    private static final String MARKET_ID = "GearIn_planet1";
-
-    /** 判定为接触的距离，从行星表面起算。 */
-    private static final float CONTACT_DISTANCE = 1500f;
-
-    private static final float RECENT_DAYS = 30f;
-
-    private final IntervalUtil interval = new IntervalUtil(0.5f, 1f);
-
-    @Override
-    public boolean isDone() {
-        return Global.getSector().getMemory().getBoolean(CONTACTED_KEY);
-    }
-
-    @Override
-    public boolean runWhilePaused() {
-        return false;
-    }
-
-    @Override
-    public void advance(float amount) {
-        interval.advance(amount);
-        if (!interval.intervalElapsed()) {
-            return;
-        }
-        SectorAPI sector = Global.getSector();
-        MarketAPI market = sector.getEconomy().getMarket(MARKET_ID);
-        if (market == null || market.getPrimaryEntity() == null) {
-            return;
-        }
-        SectorEntityToken planet = market.getPrimaryEntity();
-        CampaignFleetAPI fleet = sector.getPlayerFleet();
-        if (fleet == null || fleet.getContainingLocation() != planet.getContainingLocation()) {
-            return;
-        }
-        if (Misc.getDistance(fleet, planet) > planet.getRadius() + CONTACT_DISTANCE) {
-            return;
-        }
-
-        sector.getMemory().set(CONTACTED_KEY, true);
-        sector.getMemory().set(RECENT_KEY, true, RECENT_DAYS);
-        market.getMemory().set(TIMESTAMP_KEY, sector.getClock().getTimestamp());
-        Global.getSoundPlayer().playUISound("ui_rep_raise", 1f, 1f);
-    }
+Map<String, Object> data = sector.getPersistentData();
+if (!data.containsKey("GearIn_reward_start_timestamp")) {
+    data.put("GearIn_reward_start_timestamp", sector.getClock().getTimestamp());
 }
+long start = (Long) data.get("GearIn_reward_start_timestamp");
 ```
 
-## 进游戏核对
+什么时候用 `getPersistentData()`，什么时候用 [C10-S2] 的 `MemoryAPI`？判断标准很简单：
 
-执行 `gradle jar`，重启游戏，**新建一份存档**。控制台命令 `Jump Nipher` 可以把舰队直接送到 Nipher 星系，不必先找跳跃点。
+- **只在您自己的 Java 代码内部读写的长效数据** (如倒计时起点 `Long` 时间戳、已初始化标记、自定义状态表)，放进 `sector.getPersistentData()`，键名带上 `GearIn_` 前缀防止与其他 MOD 冲突；
+- **需要按生涯天数自动过期、需要挂在具体市场/实体/舰队身上、或者后续要被 `rules.csv` 对话规则与任务系统直接读取的标记**，一律放进 [C10-S2] 的 `MemoryAPI`。
 
-- 舰队距 Nipher Prime 超过约 1650 时，什么也不发生；
-- 靠近到行星表面 1500 以内，听到一声界面提示音，这是 `ui_rep_raise`；
-- 保存并重新读档，再次靠近同一颗行星，提示音不再响起。标记已经随存档保存，脚本不会再被登记；
-- 在控制台执行 `runcode Global.getSector().getMemory().getBoolean("$GearIn_contacted")` 之类的语句，可以直接读取这个键，接触前后分别为 `false` 与 `true`。
+::: caution 严禁往存档容器里塞临时 UI 对象或跨生命周期引用
+
+无论是 `sector.getPersistentData()`、`MemoryAPI`，还是通过 `sector.addScript(...)` 进档的持久脚本字段，最终都会在玩家保存时被 XStream 递归写进 XML。如果把战场引擎对象 (`CombatEngineAPI`、`ShipAPI`)、图形贴图 (`SpriteAPI`) 或对话框插件存进这些容器，轻则存档体积暴涨，重则直接触发序列化异常让玩家连档都存不上。
+
+:::
 
 ## 常见问题
 
-- **靠近行星后没有任何反应**：脚本没有登记，或者 `MARKET_ID` 与 [C3-S3] 创建的市场 ID 不一致。
-    - **解决方案**：核对 `onGameLoad(...)` 中的登记片段，以及市场 ID `GearIn_planet1` 的拼写。
+- **在 `onApplicationLoad()` 中调用 `Global.getSector().getEconomy()` 报空指针或拿不到市场**：游戏启动阶段尚未加载任何生涯存档，星区经济与星系还未建立。
+    - **解决方案**：所有针对星系、市场、势力关系与玩家舰队的读取，一律放在 `onNewGame()`、`onGameLoad(...)` 或生涯脚本的 `advance(...)` 中执行。
 
-- **每次读档都会再次听到提示音**："是否已接触" 保存在了脚本字段里，没有写入 Memory。
-    - **解决方案**：标记写在 `sector.getMemory()`，并让入口类与 `isDone()` 都读取它。
+- **`Misc.getDistance(playerFleet, planet)` 在玩家身处超空间时也算出了小于阈值的距离**：没有先判断两个实体是否位于同一个 `LocationAPI`。
+    - **解决方案**：计算距离前先确认 `playerFleet.getContainingLocation() == planet.getContainingLocation()`。
 
-- **`$GearIn_contact_recent` 在接触后很快消失**：期限的单位是生涯天数，不是秒。
-    - **解决方案**：确认 `RECENT_DAYS` 为 `30f`，并在游戏内观察日期推进，而不是现实时间。
-
-- **读取市场时出现空引用**：读取放在了 `onApplicationLoad()`，此时生涯尚未建立。
-    - **解决方案**：把读取移入生涯脚本，并保留 `market == null` 的判断。
-
-- **旧存档中没有 Nipher 星系，脚本永远不触发**：星系只在新档生成，见 [C7-S1]。
-    - **解决方案**：使用新档测试。
+- **删除或重命名某个 `EveryFrameScript` 类后，旧存档无法加载并报 `CannotResolveClassException`**：该脚本此前是通过 `sector.addScript(...)` 注册的，类名已被写入存档 XML。
+    - **解决方案**：开发期可能改名的轮询脚本优先使用 `sector.addTransientScript(...)`；已通过 `addScript(...)` 进档的类如需废弃，应保留空壳类使 `isDone()` 返回 `true` 以兼容旧存档。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.rules.MemoryAPI`：读写、限时值与 `expire` 的完整方法。
-- `com.fs.starfarer.api.campaign.rules.MemKeys`：原版规则使用的各层 Memory 名称。
-- `com.fs.starfarer.api.EveryFrameScript`：各方法的调用语义。
-- `com.fs.starfarer.api.campaign.CampaignClockAPI`：`getTimestamp()` 与 `getElapsedDaysSince(...)`。
-- `data/config/sounds.json`：`ui_rep_raise` 的原版登记。
+- `com.fs.starfarer.api.campaign.SectorAPI`：星区总入口、脚本注册 (`addScript` / `addTransientScript`) 与 `getPersistentData()`。
+- `com.fs.starfarer.api.campaign.LocationAPI`：恒星系与超空间的公共父接口。
+- `com.fs.starfarer.api.campaign.CampaignClockAPI`：生涯时间戳与经过天数换算。
+- `com.fs.starfarer.api.EveryFrameScript`：生涯每帧脚本接口。
+- `com.fs.starfarer.api.util.IntervalUtil`：按随机间隔节流每帧轮询的工具类。

@@ -16,21 +16,18 @@ _本节预期操作时间：\~15 分钟。_
 
 ## 武器动画的接口
 
-武器的贴图与帧播放分成三层，各由不同的对象管：
+武器的贴图与帧播放分成三层，分别由以下对象控制：
 
-| 对象 | 取得方式 | 管什么 |
+| 对象 | 取得方式 | 控制内容 |
 | --- | --- | --- |
 | 帧播放 | `weapon.getAnimation()` | 当前第几帧、帧率、播放与暂停 |
 | 贴图 | `weapon.getSprite()` | 当前这一帧的贴图对象，颜色与透明度 |
 | 炮塔朝向 | `weapon.getCurrAngle()` / `setFacing(...)` | 武器整体指向 |
 
-`AnimationAPI` (`com.fs.starfarer.api.AnimationAPI`) 的方法正好覆盖帧播放这一层：
+`AnimationAPI` (`com.fs.starfarer.api.AnimationAPI`) 的方法正好覆盖帧播放这一层 (`getFrame()` 的帧下标从 `0` 开始)：
 
 ```java
 public interface AnimationAPI {
-	/**
-	 * @return Index of current animation frame, 0-based.
-	 */
 	int getFrame();
 
 	int getNumFrames();
@@ -39,9 +36,6 @@ public interface AnimationAPI {
 	void play();
 	void pause();
 
-	/**
-	 * Reset the pause/play state and let the animation behave normally.
-	 */
 	void reset();
 
 	float getAlphaMult();
@@ -62,7 +56,7 @@ public interface AnimationAPI {
 
 本节制作 "旋转测试炮"，ID 为 `GearIn_test_rotor`，中型实弹武器。它复制都林的 CSV 行，伤害与弹体沿用都林，`GearIn_test_rotor` 只在外观上与都林不同。
 
-主体动画由连续编号的帧图组成。贴图不必自己画：原版旋转炮 `graphics/weapons/rotary/` 下已有现成的四帧，炮塔为 44 × 44，硬点为 30 × 42。复制到 `graphics/weapons/` 并改名：
+主体动画由连续编号的帧图组成。贴图不必自己画：原版突击链炮 (`chaingun`) 对应的 `graphics/weapons/rotary/` 下已有现成的四帧，炮塔为 44 × 44，硬点为 30 × 42。复制到 `graphics/weapons/` 并改名：
 
 ```text
 GearIn_test_rotor_turret00.png
@@ -127,7 +121,7 @@ GearIn_test_rotor_hardpoint03.png
 
 加速用 1.5 秒，减速用 2 秒，最高 24 帧 / 秒，是 `.wpn` 中基础帧率 12 的两倍。减速比加速慢，是为了让停火后的余转清晰可见：玩家扫一眼转子，就知道这门炮刚刚开过火，不必再去看弹药或幅能。
 
-这些数值只管外观，与平衡无关，因此直接写成代码常量，不放进 [C7-S2] 的设置。
+这组加速与减速时长只服务于这门武器自身的转子动画，因此直接作为本类的私有常量留在代码里。
 
 ::: warning reset 不会回到第 0 帧
 
@@ -225,5 +219,5 @@ public class GearInWeaponFrameEffect implements EveryFrameWeaponEffectPlugin {
 - `com.fs.starfarer.api.AnimationAPI`：帧读取、播放控制与帧率设置。
 - `com.fs.starfarer.api.combat.WeaponAPI`：`getAnimation()` 与武器的开火状态。
 - `com.fs.starfarer.api.combat.EveryFrameWeaponEffectPlugin`：武器每帧脚本的接口。
-- `data/weapons/chaingun.wpn`：原版旋转炮的 `numFrames` 与 `frameRate` 写法。
+- `data/weapons/chaingun.wpn`：原版突击链炮的 `numFrames` 与 `frameRate` 写法。
 - `graphics/weapons/rotary/`：本节复制的四帧图来源。

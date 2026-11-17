@@ -4,7 +4,7 @@
 
 ## 构建前置：自行补充 gradle.properties
 
-`tutorial-fixtures/gradle.properties` 是本机配置 (已被 `.gitignore` 忽略，不随仓库分发)。克隆后需自行创建并补充：
+`tutorial-fixtures/gradle.properties` 是本机配置 (已被 `.gitignore` 忽略，不随仓库分发)。复制仓库后需自行创建并补充：
 
 ```properties
 # 你的 Starsector 游戏安装根目录 (含 starsector-core 的目录)，按本机实际路径填写

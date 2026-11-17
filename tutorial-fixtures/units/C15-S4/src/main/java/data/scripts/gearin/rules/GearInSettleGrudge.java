@@ -16,7 +16,7 @@ import data.scripts.gearin.campaign.GearInPatrolGrudgeListener;
 
 /**
  * GearInSettleGrudge &lt;每支巡逻队的价格&gt;
- * 玩家付钱请 Aster 摆平记仇：价格按累计击败的巡逻队数量计算，付得起就清除记仇标记。
+ * 玩家付钱请 Aster 撤掉敌意状态：价格按累计击败的巡逻队数量计算，付得起就清除敌意标记。
  */
 public class GearInSettleGrudge extends BaseCommandPlugin {
 

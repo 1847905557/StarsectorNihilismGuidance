@@ -1,8 +1,8 @@
 # 编写生涯逐帧脚本
 
-逐帧脚本，`EveryFrameScript`，几乎一切需要计时的复杂效果都与之相关。
+逐帧脚本 (`EveryFrameScript`) 几乎牵动着生涯层所有随时间推进的效果。
 
-就这么简单。但考虑到需要计时的效果五花八门，多种多样，一个 MOD 里过半会在生涯里 "运行"(考虑到 运行 某种意义上暗示了时间的流逝) 的脚本都将基于它，说它是最基本最重要的脚本类别都不为过。
+需要持续计时、定期检查或推动阶段演变的生涯逻辑，大多都由它的 `advance(amount)` 驱动。后面还会用一条针对 Nipher Foundry 市场的战事周期脚本，把它的调度粒度与存档取舍一起跑实。
 
 ---
 
@@ -16,7 +16,7 @@ _本节预期操作时间：\~15 分钟。_
 - [C11-S1] 的巡逻舰队管理器；
 - [C12-S6] 的 Warfront 条件与 [C12-S1] 的市场 ID。
 
-## 三个方法的调用频率
+## 三个方法与挂载对象
 
 ```java
 public interface EveryFrameScript {
@@ -26,78 +26,51 @@ public interface EveryFrameScript {
 }
 ```
 
-| 方法 | 调用时机 | 返回值 |
-| ---- | -------- | ------ |
-| `advance(amount)` | 随登记它的对象推进，`amount` 为该次推进经过的现实秒数 | 无 |
-| `isDone()` | 与 `advance(...)` 同一轮，排在它之后 | `true` 时引擎把实例移出脚本表 |
-| `runWhilePaused()` | 原版脚本以它的返回值为常量使用 | 暂停期间是否继续调用 `advance(...)` |
+| 方法 | 调用时机 | 作用 |
+| ---- | -------- | ---- |
+| `advance(amount)` | 随挂载对象每帧推进，`amount` 为距离上一帧经过的现实秒数 | 执行计时、状态判断或调度逻辑 |
+| `isDone()` | 与 `advance(...)` 同一轮判定 | 返回 `true` 后，引擎自动把脚本移出调度列表 |
+| `runWhilePaused()` | 引擎推进脚本前检查 | 玩家在大地图暂停时间时是否仍继续触发 `advance(...)` |
 
-**"每帧" 这个说法只在登记于 `SectorAPI` 时成立。** 能收 `EveryFrameScript` 的接口不止一个：`SectorAPI`、`LocationAPI`、`SectorEntityToken`、`FleetOrStubAPI` 上都有 `addScript(...)`。`LocationAPI` 的注释写明了差别：脚本随该地点的 `advance()` 运行，而**不是当前地点时，每秒推进的次数可能更少**。同一个脚本登记在不同对象上，节奏就不同。
+**"每帧" 这个说法只在登记于 `SectorAPI` 时成立。** 除了 `SectorAPI` 之外，`LocationAPI`、`SectorEntityToken` 与 `FleetOrStubAPI` 上同样提供 `addScript(...)`。在 `LocationAPI` 的设计里，挂在某个特定星系上的脚本只随该地点的推进而触发 —— **当玩家不在该地点时，每秒实际推进的次数可能更低**。需要全星区稳定计时时挂在 `SectorAPI` 上；只在特定地点或某支舰队存活期间才有意义的脚本 (例如 [C11-S1] 的巡逻任务排程脚本)，挂到对应对象上还能随着目标消失自动停止或回收。
 
-`isDone()` 与 `advance(...)` 的先后有据可查：`BaseEventManager.advance(...)` 遍历活动事件时先调 `advance(amount)`，再问 `isDone()`，问出 `true` 的移出列表。树内可见的调度循环基本都是这个次序。
+`runWhilePaused()` 通常返回固定的布尔值：生涯周期、建造、减员倒计时几乎都返回 `false`，只有 UI 监控或必须在暂停期间即时响应的检查才设为 `true`。如果需要在暂停时按条件分支控制，直接在 `advance(...)` 内部判断状态更稳妥。
 
-`runWhilePaused()` 的读取点看不到。全树对它的调用表达式为零，只有各处 `EveryFrameScript` 实现的覆写，读它的是引擎核心。原版脚本一律把它当常量：返回 `false` 就一直返回 `false`，不在运行期改变。**它管的是脚本的长期形态，与当前状态无关**；要让脚本按条件启停，只能在 `advance(...)` 里分支，或者换一个实例。
-
-`isDone()` 的结论由脚本自己给出。引擎不做推断，`advance(...)` 没有产生任何副作用也不会被回收，代价要到几十个生涯天之后才看得出来。
+引擎不会自行推断脚本何时算结束，只要 `isDone()` 一直返回 `false`，脚本就会始终留在调度列表里；反之，对于只需要延时几秒或几天就收工的一次性脚本，让 `isDone()` 在任务完成后返回 `true`，就能免去手动调用 `removeScript(...)` 的麻烦。
 
 ## 帧时间换算成生涯天数
 
-`amount` 是这一帧实际过去的时间。玩家开时间加速，同一现实秒对应的游戏时间就变长；把它直接累加，倒计时在加速与不加速时走得不一样长。换算交给时钟，取到的是生涯天数。
+`amount` 是这一帧经过的现实秒数。玩家在大地图上开启两倍速，或者不同帧率下步长有波动，同一现实秒对应的游戏时间并不相同；若直接累加 `amount`，倒计时会受加速倍率和帧率影响。跨天与周期判断应当统一交给时钟接口换算：
 
 ```java
 float days = Global.getSector().getClock().convertToDays(amount);
 ```
 
-`CampaignClockAPI` 另有 `getDay()`、`getTimestamp()`、`getElapsedDaysSince(long)`。脚本里所有跨度判断都取生涯天数，与存档记录、界面日期同一个基准。
+`CampaignClockAPI` 还提供 `getDay()`、`getTimestamp()` 与 `getElapsedDaysSince(long)` 等方法，适合记录绝对日期或在间隔几周才触发一次的场景下用时间戳比对，与界面左上角的日期口径完全一致。
 
-## 登记方式与存档
+## 登记方式与存档兼容性
 
-| 方法 | 序列化 | 读档之后 |
-| ---- | ------ | -------- |
-| `SectorAPI.addScript(script)` | 是，字段一并写入 | 原实例，字段保持 |
-| `SectorAPI.addTransientScript(script)` | 否 | 不存在，须由 `onGameLoad(...)` 重新登记 |
+| 方法 | 是否写入存档 | 读档后的行为 |
+| ---- | ------------ | ------------ |
+| `SectorAPI.addScript(script)` | 是，脚本实例与字段一并序列化 | 恢复为存档里的原实例，字段值延续 |
+| `SectorAPI.addTransientScript(script)` | 否，只存在于当前运行进程 | 自动消失，须由 `onGameLoad(...)` 按需重新登记 |
 
-配套 `hasScript(Class)`、`hasTransientScript(Class)`、`removeScriptsOfClass(Class)`、`getScripts()`。
+`SectorAPI` 配套提供了 `hasScript(Class)`、`hasTransientScript(Class)`、`removeScriptsOfClass(Class)` 与 `getScripts()` 用于查询或清理。
 
-选择只看一件事：状态是不是存在字段里。存在字段里就必须进存档，否则读档时连同计数一起丢掉；状态写在 Memory 里的脚本没有可存的东西，临时登记即可，读档时重新挂一份。
+选持久还是临时，主要取决于脚本自身字段里有没有不能丢的状态，以及旧存档兼容的包袱有多重。如果脚本完全依靠读写 Memory 或市场标记运转、自身不带字段，优先用 `addTransientScript(...)` 在 `onGameLoad(...)` 中挂上；这样即便玩家日后升级或卸载 MOD，存档 XML 里也不会留下找不到类的幽灵引用。反之，若脚本要在字段里守着倒计时或阶段状态，就必须用 `addScript(...)` 进存档。
 
-随存档保存的代价在发布之后才收。类名与包名一起写入，改名会让旧存档找不到类；玩家卸载 MOD，引用它的存档读不出来。**已发布且随存档保存的脚本类，名字就是它的存档格式。** 字段同理：市场、实体、人物都能按 ID 重新取，入档只会在读档后留下失效引用。
+**一旦选择让脚本随存档保存，类的全限定名与字段结构就是您的存档格式。** 发布后随便改包名、重命名类，或者删掉玩家仍在用的旧脚本类，都会导致旧档在读取反序列化时直接报错；同时也要避免在脚本字段里长期缓存市场、实体、人物的直接引用，按 ID 从 `SectorAPI` 现查总能拿到最新对象，也能减少存档体积与失效引用。
 
-## 原版的舰队管理器
+## 永久循环与自清理脚本
 
-来看一个原版的例子。
+按存活周期来看，逐帧脚本常见的写法有永久轮转与自终止两种：
 
-`SourceBasedFleetManager` 随存档保存，字段如下：
-
-```java
-protected List<CampaignFleetAPI> fleets = new ArrayList<CampaignFleetAPI>();
-protected SectorEntityToken source;
-protected int minFleets;
-protected int maxFleets;
-protected float respawnDelay;
-protected float destroyed = 0;
-```
-
-没有倒计时字段。补充延迟由 `destroyed` 承担：`reportFleetDespawnedToListener(...)` 里递加，`advance(...)` 里按 `respawnDelay` 递减。**延迟用倒计时表示还是用衰减计数表示，差别在一帧之内击毁多支的时候** —— 计数逐支累加，倒计时只减一轮。原版在这里选计数，因为它要处理的正是舰队成批消失。
-
-`advance(...)` 的顺序：
-
-1. 换算天数，`destroyed` 衰减；
-2. 从 `fleets` 移除已消失的舰队；
-3. 源点被毁则 `source = null`，此后不再生成；
-4. 依玩家与源点的距离定上限：近于 `thresholdLY` 时在 `minFleets` 与 `maxFleets` 之间插值，远于此取 `minFleets`；
-5. 超出上限，对足够远的舰队调用 `despawn(...)`；
-6. 不足，生成一支，每帧至多一支，并 `fleet.addEventListener(this)` 接收它的消失回调。
-
-第 5 步与第 6 步的顺序不能互换。先回收再生成，远端那批先解散；反过来写，同一帧里 `fleets` 既超上限又添了新成员，要等下一轮 `despawn(...)` 才追得回来。
-
-`isDone()` 读字段 `done`，源点消失且 `fleets` 为空时置位；`runWhilePaused()` 返回 `false`。两处都以字段承载，方法里不现算。
+1. **永久轮转脚本 (`isDone()` 恒为 `false`)**：例如全局周期调度或持久监控器，通过 `addScript(...)` 在新档初始化时登记一次，之后长期驱动自身状态翻转；
+2. **自终止脚本 (条件达成后 `isDone()` 返回 `true`)**：例如延迟 5 天触发的援军事件、或者某支舰队存活期间才存在的辅助脚本，倒计时归零或目标销毁 (`!fleet.isAlive()`) 后把完成标志置为 `true`，引擎会在下一轮自动将它从脚本表清除，不留多余内存开销。
 
 ## 把战事周期写进 Foundry
 
-然后想想我们该怎么用上它。
-
-Foundry 要的是周期：战事持续一段时间，平息一段时间，交替往复。阶段存在脚本的字段里，因此用 `addScript(...)` 登记。
+以 Nipher Foundry 的战事轮换为例：我们需要让市场条件 `GearIn_warfront` 周期性开启与关闭，分别持续 60 天战事与 30 天平息。因为剩余天数 `daysLeft` 保存在脚本字段里，本节采用 `addScript(...)` 持久登记：
 
 ```java
 daysLeft -= sector.getClock().convertToDays(amount);
@@ -106,7 +79,7 @@ if (daysLeft > 0f) {
 }
 ```
 
-归零之后切换条件：
+归零之后，直接以目标市场当前是否持有 `GearIn_warfront` 条件来判定下一个阶段，不再额外维护冗余布尔字段：
 
 ```java
 if (market.hasCondition(GearInWarfrontCondition.CONDITION_ID)) {
@@ -118,13 +91,9 @@ if (market.hasCondition(GearInWarfrontCondition.CONDITION_ID)) {
 }
 ```
 
-阶段用 `hasCondition(...)` 判断，不另存布尔字段。市场持有这个条件就在战时，条件本身就是状态。少一个字段，也少一处读档之后可能与实际条件对不上的地方。
-
-条件直接增删，之后不重算，原版 `EstablishedPolityScript` 处理殖民地条件时也是这个写法。
-
-归零即重置，一帧里溢出的那点天数不带进下一段。常规帧率下可以忽略；要严格对齐就把余数并进新的 `daysLeft`。
-
-战事 60 天、平息 30 天。这个比值让 Foundry 长期处在受损状态，只有三成时间能正常交易，是这组数字唯一的后果，不必另找解释。市场每次按 ID 重新查找，找不到即返回。`isDone()` 恒为 `false`：这个周期没有终点。
+- 直接复用市场条件本身作状态真值，能避免脚本字段与市场实际状态在意外篡改或异常后出现分歧；
+- 市场每次通过 `sector.getEconomy().getMarket(GearInFoundryGenerator.MARKET_ID)` 按 ID 查找，若市场不存在则直接返回，不在脚本对象里保留 `MarketAPI` 成员引用；
+- 每当阶段切换时顺手在左下角发一条提示消息，玩家不用点开殖民地面板也能知道 Foundry 当前处于战时还是平息期 (`Warfront` 条件会在战时期间提高危险度、压低流通性并抬高巡逻队装配质量，平时则会一并撤销)。
 
 ## 完整的脚本
 
@@ -138,7 +107,7 @@ import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.campaign.econ.MarketAPI;
 
-/** Foundry 周围的战事时起时息：按生涯天数在市场上挂上、撤下 Warfront 条件。脚本随存档保存。 */
+/** Foundry 周围的战事时起时息：按生涯天数在市场上周期性添加或移除 Warfront 条件。脚本随存档保存。 */
 public class GearInWarfrontCycleScript implements EveryFrameScript {
 
     /** 战事持续的生涯天数。 */
@@ -186,48 +155,41 @@ public class GearInWarfrontCycleScript implements EveryFrameScript {
 
 ## 登记战事脚本
 
-在 `GearInModPlugin.onNewGame()` 里，紧跟 Foundry 生成：
+在 `GearInModPlugin.onNewGame()` 中，紧跟在 Foundry 生成器之后执行：
 
 ```java
 new GearInFoundryGenerator().generate(sector);
 sector.addScript(new GearInWarfrontCycleScript());
 ```
 
-读档时不登记。脚本随存档保存，读档时实例已经在星区里。
-
-把这个登记写进 `onGameLoad(...)` 的后果值得记下：那个回调每次读档执行一遍，登记几回就有几份脚本同时推动同一个周期。**症状是消息成对出现、条件在两份脚本之间来回翻转**，没有报错。同类错误在监听器与插件上一样成立：随存档保存的对象，登记点只能有一个，而且只能被执行一次。
-
-确需在读档时补登记，参照 [C11-S1]，用存档公共数据里的标记确认只登记一次。
+持久脚本在开新档时注册一次即可，不要顺手放进 `onGameLoad(...)` —— 后者每次读档都会再跑一遍，若没有去重标记，每次读档都会在星区里多叠出一份周期脚本，**后果就是战事消息连续刷屏、倒计时被成倍消耗，却没有任何异常报错**。如果后续版本更新需要给旧存档补挂持久脚本，应当像 [C11-S1] 那样配合存档公共数据标记或 `sector.hasScript(...)` 做一次性校验。
 
 ### 进游戏核对
 
-执行 `gradle jar`，重启游戏，**新建一份存档**，停靠 Nipher Foundry。
+执行 `gradle jar`，重启游戏，**新建一份存档**，停靠 Nipher Foundry：
 
-- 市场条件中存在 Warfront；
-- 推进约 60 个生涯天，界面左侧出现战事平息的消息，Warfront 从条件栏消失；
-- 再推进约 30 天，出现再度开战的消息，Warfront 重新出现；
-- 两次消息之间保存并读档，下一条消息仍按原节奏出现。
-
-页面中的现象依据 API 与原版代码推出，编者尚未逐项在游戏内实测。
+- 初始状态下市场条件栏中存在 `Warfront`；
+- 推进约 60 个生涯天，左下角弹出战事平息提示，Foundry 市场的 `Warfront` 条件消失；
+- 继续推进约 30 天，弹出再度开战提示，`Warfront` 条件重新挂回；
+- 在周期中途保存并重新读档，剩余阶段天数继续按原先节奏推进。
 
 ## 常见问题
 
-- **读档之后脚本不再生效**：登记用的是 `addTransientScript(...)`，脚本没能进存档。
-    - **解决方案**：有状态的脚本改用 `addScript(...)`。
+- **读档之后脚本不再生效**：登记误用了 `addTransientScript(...)`，脚本未能随存档保存。
+    - **解决方案**：需要保留字段状态的脚本改用 `addScript(...)`，或将状态改存到 Memory 后改为在 `onGameLoad(...)` 重新登记临时脚本。
 
-- **同一件事发生两次**：脚本登记了多份，常见于把登记写进 `onGameLoad(...)`。
-    - **解决方案**：只在 `onNewGame()` 登记，或在登记前以 `hasScript(...)` 检查。
+- **同一件事连续触发两次**：脚本被重复注册了多份，常见于将 `addScript(...)` 直接放进 `onGameLoad(...)`。
+    - **解决方案**：持久脚本只在 `onNewGame()` 登记，或在补登记前先用 `hasScript(...)` / 持久化标记做幂等判断。
 
-- **改了类名，旧存档读不出来**：存档里记的是原类名与包名。
-    - **解决方案**：已发布且随存档保存的脚本类保持原名。
+- **更新 MOD 后旧存档报错读不出来**：随存档保存的脚本类被改了类名、移了包路径或直接删除。
+    - **解决方案**：一旦随存档类发布，保持全限定类名不变；仅在确认不再保存时改用无状态临时脚本。
 
-- **开加速之后节奏跟着变**：把 `amount` 当秒数直接累加，没走 `convertToDays(...)`。
-    - **解决方案**：时间换算统一交给时钟。
+- **时间加速下周期时长飘忽不定**：把 `advance(float amount)` 传入的现实秒数当成了游戏天数或直接按帧固定加减。
+    - **解决方案**：统一调用 `Global.getSector().getClock().convertToDays(amount)` 换算成生涯天数。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.EveryFrameScript`：各方法的注释。
-- `com.fs.starfarer.api.impl.campaign.fleets.SourceBasedFleetManager`：原版的逐帧脚本实现，生成、衰减与结束都在其中。
-- `com.fs.starfarer.api.campaign.SectorAPI`：脚本的登记、查询与移除。
-- `com.fs.starfarer.api.campaign.CampaignClockAPI`：`convertToDays(...)`、`getDay()` 与 `getTimestamp()`。
-- `com.fs.starfarer.api.impl.campaign.intel.events.EstablishedPolityScript`：原版周期性增删市场条件。
+- `com.fs.starfarer.api.EveryFrameScript`：`advance`、`isDone` 与 `runWhilePaused` 的接口契约。
+- `com.fs.starfarer.api.campaign.SectorAPI`：`addScript`、`addTransientScript`、`hasScript` 与清理接口。
+- `com.fs.starfarer.api.campaign.LocationAPI`：星系级局部脚本的挂载与降频说明。
+- `com.fs.starfarer.api.campaign.CampaignClockAPI`：`convertToDays(...)`、`getDay()` 与时间戳计算。

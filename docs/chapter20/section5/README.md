@@ -1,121 +1,77 @@
 # 使用实例化进行绘制
 
-实例化让多份方向标共用几何与 program，每个实例从 SSBO 读取自己的舰船记录。本节收集在场舰船，通过 `gl_InstanceID` 选择位置、朝向和颜色，一次提交完成绘制。集合同时决定容量与剔除范围，这些关系要随实例数据一起更新。
+把方向标从单艘玩家舰放大到满战场的友军与敌军之后，逐船发绘制指令立刻变成性能包袱，换成 `glDrawArraysInstanced` 一次拉取所有记录会干脆得多。
 
-_本节预期阅读时间：\~30 分钟。_
+顺带别忘了跟着更新承载实体的位置与剔除半径 —— 整批实例散开各处时，还拿单舰半径去裁视口，中心刚出屏幕就会让边缘舰船的标记整批熄灭。
 
-_本节预期操作时间：\~45 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~28 分钟。_
 
-完成后，您将能够：
-
-- 使用两个 `vec4` 保存每个实例的中心、朝向、Alpha 和颜色；
-- 解释 SSBO binding `0`、`std430` 和 `gl_InstanceID` 的关系；
-- 使用一次 `glDrawArraysInstanced` 绘制多艘舰船的方向标；
-- 处理容量截断、阵营颜色、暂停、视口变化和资源清理。
+_本节预期操作时间：\~40 分钟。_
 
 ## 前置知识
 
-- [C20-S4] 的单记录 SSBO、shader storage block 和状态恢复；
-- [C20-S3] 的 VBO、VAO 和六顶点矩形；
-- `CombatEngineAPI.getShips()`、舰船位置、朝向、阵营和存活状态。
+- [C20-S3] 的 VBO、VAO 与独立 VAO 的状态保存；
+- [C20-S4] 的 `std430`、SSBO binding `0` 与双重绑定还原；
+- 了解 `CombatEngineAPI.getShips()`、舰船阵营侧 `owner`、坐标与存活状态。
 
-## 保存资源并在战斗登记
+## 收集在场舰船并动态计算包围盒剔除
 
-将完整类保存到 `src/data/scripts/gearin/combat/GearInInstancedMarker.java`，两份 shader 保存到本节列出的 `data/shaders/` 路径。构建 JAR 并重启，进入测试战斗、部署并控制玩家舰后，通过 Console Commands 执行：
-
-```text
-runcode com.fs.starfarer.api.combat.CombatEngineAPI e = com.fs.starfarer.api.Global.getCombatEngine(); com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = new data.scripts.gearin.combat.GearInInstancedMarker(); e.addLayeredRenderingPlugin(marker); e.getCustomData().put("GearIn_marker", marker);
-```
-
-**每场战斗登记一次当前版本。**`init(...)` 取得当前战斗并设置承载实体，GPU 资源在首次 `render(...)` 的有效上下文中创建；能力不足时记录条件并结束实例。命令沿用 [C20-S1] 的 `GearIn_marker` 项保存实例，便于随后验证清理。比较各版本时分别进入新的战斗。
-
-## 确定每艘舰船的参数
-
-先确定哪些舰船进入集合：本例收集当前在场且存活的舰船，玩家舰使用青色，与玩家舰 `owner` 相同的其他舰船使用绿色，其余阵营使用橙红色。这里按战斗所属侧区分颜色，便于直接观察记录是否跟对了对象。VBO 保存一份矩形，SSBO 保存每艘舰船的中心、朝向、Alpha 和颜色；移动和转向只改变对应记录。
-
-## 让一条记录对应一个实例
-
-每个实例占用 `8` 个 `float`、`32` 字节。两个 `vec4` 按 `std430` 的 `16` 字节对齐排列：
+在 `GearInInstancedMarker` 里，每个实例依然占用 `8` 个 `float`(两个 `vec4`)，预分配 `128 * 8` 容量的 `instanceBuffer`。收集数据时顺带记录颜色侧 (玩家青色 `0.1, 0.9, 1.0`、同阵营绿 `0.2, 0.7, 0.2`、其余敌对橙红 `1.0, 0.25, 0.1`) 以及整个集合的 `minX`/`maxX`/`minY`/`maxY`：
 
 ```java
-instanceBuffer.put(x).put(y).put(ship.getFacing()).put(ship.getAlphaMult());
-instanceBuffer.put(red).put(green).put(blue).put(1f);
-```
-
-Java 按遍历顺序写记录，shader 按实例编号读取，`instanceCount` 决定本次使用的条数。缓冲预先容纳 128 条，共 4096 字节；容量固定，实际数量随舰船集合变化。
-
-## 收集实例并处理容量
-
-`init(...)` 调用 `updateInstances()` 准备首帧记录，后续 `advance(...)` 继续更新。暂停时保留已有数量与内容，恢复后重新收集；战斗结束时插件失效。
-
-`advance(...)` 遍历 `engine.getShips()`，过滤不在场或已死亡的舰船，再写入可复用的 CPU 缓冲。达到 `128` 条时保留先取得的记录，并记录一次容量日志：
-
-```java
-for (ShipAPI ship : engine.getShips()) {
+for (ShipAPI ship : ships) {
     if (!engine.isEntityInPlay(ship) || !ship.isAlive()) {
         continue;
     }
     if (instanceCount >= MAX_INSTANCES) {
+        if (!overflowLogged) {
+            overflowLogged = true;
+            LOG.warn("GearIn instanced marker: capacity reached "
+                    + MAX_INSTANCES);
+        }
         break;
     }
-    instanceBuffer.put(ship.getLocation().x).put(ship.getLocation().y)
-            .put(ship.getFacing()).put(ship.getAlphaMult());
+    float x = ship.getLocation().x;
+    float y = ship.getLocation().y;
+    instanceBuffer.put(x).put(y).put(ship.getFacing()).put(ship.getAlphaMult());
+    // 紧接着写入 4 个颜色 float
     instanceCount++;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
 }
 instanceBuffer.flip();
+if (instanceCount > 0) {
+    entity.getLocation().set((minX + maxX) * 0.5f, (minY + maxY) * 0.5f);
+    renderRadius = (float) Math.hypot(maxX - minX, maxY - minY) * 0.5f
+            + DIRECTION_LENGTH;
+}
 ```
 
-完整方法同时保存颜色与舰船 Alpha，达到容量时只报告一次。截断保留遍历中先取得的记录，因此有效舰船过多时，哪些对象显示也取决于当前集合顺序。
+一旦场上存活舰船超过 `128` 艘，循环只打一次容量警告并保留先遍历到的记录。如果当帧 `instanceCount == 0`，`render(...)` 直接早退跳过 OpenGL 调用，避免提交空实例化请求。
 
-### 用整个集合确定剔除范围
+## 用 glDrawArraysInstanced 与 gl_InstanceID 批量画完
 
-引擎只按承载实体的位置和渲染半径判断是否调用插件。这里将承载实体放到已收集舰船包围盒的中心，用半对角线覆盖它们，再加 120 su 的方向标范围与当前 3 px 世界边距。
-
-编者建议批量渲染时把这个范围与实际记录一起计算。单舰插件以一艘船为中心，集合已经扩散到战场各处以后，仍沿用那份半径会使整批方向标在中心离开视口时消失；实例数量正确也无法补救被跳过的 render。
-
-## 一次调用绘制所有实例
-
-render 阶段上传当前缓冲，绑定 SSBO binding `0` 和 VAO，再把实例数量传给一次绘制调用：
+上传与绑定逻辑跟 [C20-S4] 几乎一致，唯一的绘制入口换成带实例数的 `glDrawArraysInstanced`：
 
 ```java
 GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, ssboId);
 GL15.glBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER, 0, instanceBuffer);
 GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, BINDING, ssboId);
-GL30.glBindVertexArray(vaoId);
+GL20.glUseProgram(program);
 GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES, 0, 6, instanceCount);
 ```
 
-VAO 提供 `a_position` 的布局，SSBO 提供逐实例参数。视口缩放改变像素对应的世界宽度时，VBO 中的矩形边界也随之更新，避免裁掉外缘。绘制还会修改 SSBO binding `0`、混合、深度和纹理状态；`finally` 恢复索引绑定和其他共享状态，再把上下文交给后续渲染器。
+顶点着色器只把原本写死的 `markers[0]` 改成 `markers[gl_InstanceID]`，每个实例独立读取自己的中心、朝向、Alpha 和颜色；共享参数如 `u_geometry`、`u_worldPerPixel` 和 `u_viewportAlpha` 则仍通过 uniform 一次送完。
 
-## 用 gl_InstanceID 选择数据
-
-vertex shader 中的 `gl_InstanceID` 从 `0` 开始递增。它索引当前实例的 `MarkerData`，再用该记录的中心和朝向变换同一个矩形：
-
-```glsl
-MarkerData marker = markers[gl_InstanceID];
-float angle = radians(marker.centerFacingAlpha.z);
-vec2 world = marker.centerFacingAlpha.xy + rotated;
-```
-
-fragment shader 继续使用圆周距离和有限线段距离生成方向标，因此实例化改变的是参数来源和绘制次数，形状算法保持一致。
-
-## 释放共享资源
-
-**创建资源也会改变共享状态。**`buildGeometry()` 保存原 VAO、VBO 和 SSBO 通用绑定，在 `finally` 中恢复。绘制阶段另保存 binding `0` 的索引绑定，恢复索引后再恢复通用绑定。
-
-所有实例共用 VAO、VBO、program 和两份 shader，SSBO 保存逐实例数据。资源创建失败或战斗结束时，`cleanup()` 依次删除 VAO、SSBO、VBO、program 和 shader，句柄归零；重复清理直接结束。
-
-实例化减少重复提交几何和切换状态的调用，顶点与片元处理仍按实例实际执行。方向标覆盖矩形中的透明区域也会进入片元计算，批量绘制的取舍因而还包含覆盖面积与数量。
-
-## 让兼容声明与画面淡出对应
-
-两份资源沿用 `#version 430 compatibility` 和游戏的模型视图投影矩阵，Java 在首次 `render(...)` 检查 OpenGL 4.3 能力并创建资源。每条记录的舰船 Alpha 与颜色 Alpha 相乘，片元输出再乘共享的 `u_viewportAlpha`，同一视口中的全部实例一起服从画面淡出。
+注意权衡：实例化能省掉上百次 Java→GPU 状态切换和 draw call 开销，但每个覆盖矩形内未被命中的透明片元仍然会经过片元着色器 `discard`；若标记数量或覆盖面积很大，裁剪覆盖矩形边距同样影响整体片元耗时。
 
 ## 完整最小例
 
-下面的 Java、vertex shader 和 fragment shader 共同完成 SSBO 实例化方向标。
+将 `GearInInstancedMarker` 保存到 `src/data/scripts/gearin/combat/GearInInstancedMarker.java`，并将两份着色器保存到 `data/shaders/`：
 
 ::: details 完整成品：GearInInstancedMarker
 
@@ -186,6 +142,10 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
+        if (engine == null) {
+            valid = false;
+            return;
+        }
         instanceBuffer = BufferUtils.createFloatBuffer(
                 MAX_INSTANCES * FLOATS_PER_INSTANCE);
         updateInstances();
@@ -300,7 +260,7 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
         if (!valid) {
             return;
         }
-        if (engine.isCombatOver()) {
+        if (engine == null || engine.isCombatOver()) {
             valid = false;
             return;
         }
@@ -384,10 +344,8 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
         int previousSsboBase = GL30.glGetInteger(
                 GL43.GL_SHADER_STORAGE_BUFFER_BINDING, BINDING);
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
-        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         GL11.glPushAttrib(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT
                 | GL11.GL_ENABLE_BIT | GL11.GL_DEPTH_BUFFER_BIT);
-        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
         try {
             GL30.glBindVertexArray(vaoId);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
@@ -409,7 +367,6 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
             GL20.glUniform1f(viewportAlphaLocation, viewport.getAlphaMult());
             GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES, 0, 6, instanceCount);
         } finally {
-            GL11.glPopClientAttrib();
             GL11.glPopAttrib();
             GL30.glBindVertexArray(previousVao);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
@@ -417,7 +374,6 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
                     previousSsboBase);
             GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, previousSsbo);
             GL20.glUseProgram(previousProgram);
-            GL11.glMatrixMode(previousMatrixMode);
         }
     }
 
@@ -468,7 +424,9 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return renderRadius + engine.getViewport().convertScreenWidthToWorldWidth(3f);
+        return engine == null || engine.getViewport() == null
+                ? renderRadius
+                : renderRadius + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }
 ```
@@ -544,48 +502,30 @@ void main() {
 
 :::
 
-## 验证方案
+### 进游戏核对
 
-前置数据：显卡和游戏渲染上下文支持 OpenGL 4.3 兼容上下文，Console Commands 已启用。
+1. **一次登记并查看三阵营分色**：在测试战斗用控制台登记 `GearInInstancedMarker`，场上玩家舰显示青色、友军显示绿色、敌舰显示橙红色；把视角拖拽到战场边缘时，远端边缘舰船的圆环仍然留在画面内，不会因中心移出视口就整体消失：
 
-完成本方案中的移动、缩放和生命周期观察后，用下面的 Console Commands 命令连续清理当前实例两次；重新观察时进入新的战斗并登记：
+```text
+runcode com.fs.starfarer.api.combat.CombatEngineAPI e = com.fs.starfarer.api.Global.getCombatEngine(); com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = new data.scripts.gearin.combat.GearInInstancedMarker(); e.addLayeredRenderingPlugin(marker); e.getCustomData().put("GearIn_marker", marker);
+```
+
+2. **检查容量上限与重复清理**：找一场超过 `128` 艘在场舰船的战斗，确认 `starsector.log` 仅记录一条 `capacity reached 128` 且无越界崩溃；执行两次 `cleanup()` 命令确认 GPU 资源幂等销毁：
 
 ```text
 runcode com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = (com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin) com.fs.starfarer.api.Global.getCombatEngine().getCustomData().get("GearIn_marker"); marker.cleanup(); marker.cleanup();
 ```
 
-1. 在 MOD 工程执行 `gradle jar`，确认插件类和两份 shader 资源已进入对应的 MOD 目录。
-2. 启动游戏并进入测试战斗，注册 `GearInInstancedMarker`。
-3. 移动并转向玩家、盟友和敌方舰船，观察各自方向标同步变化。
-4. 缩放和横移视口，观察圆环半径、朝向线长度和屏幕线宽。
-5. 暂停并恢复战斗，再让部分舰船离场或死亡。
-6. 使用超过 `128` 艘有效舰船的战斗，观察容量日志和截断顺序。
-7. 结束战斗并重新进入另一场战斗，对插件重复调用 `cleanup()`。
+## 常见问题
 
-预期结果：
+- **场上所有船加起来只画出中心那一个方向标**：绘制调用写成了 `glDrawArrays`，或者着色器里仍写着 `markers[0]` 而没用 `gl_InstanceID`。
+    - **解决方案**：确认 Java 端使用 `GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES, 0, 6, instanceCount)`，顶点着色器按 `markers[gl_InstanceID]` 索引。
 
-- 一次 `glDrawArraysInstanced` 绘制多个半径 `80 su`、长度 `120 su` 的方向标；
-- 玩家、同侧其他舰船与其余阵营分别显示青色、绿色和橙红色；
-- 移动、转向和 Alpha 变化由对应的 SSBO 记录独立驱动；
-- 超过 `128` 个实例时保留先取得的记录并记录一次容量日志；
-- 暂停、舰船失效和战斗结束后实例数量与生命周期状态一致；
-- 重复清理不会二次删除 VAO、SSBO、VBO、program 或 shader；
-- 其他战场画面的矩阵、混合、深度、纹理和 attribute 状态保持原有表现。
+- **镜头移向部分在场舰船边缘时，场上其余圆环整批突然闪烁消失**：承载实体或 `renderRadius` 还按单舰写死。
+    - **解决方案**：每次更新实例时用有效舰船的包围盒中心与半对角线加 `120 su` 重算承载实体坐标与 `renderRadius`。
 
-## 故障分析
-
-- **只显示一个方向标**：绘制调用使用了 `glDrawArrays`，或实例数量只写为 `1`。
-    - **解决方案**：确认使用 `glDrawArraysInstanced`，并检查 `instanceCount` 与 `FloatBuffer` 的有效记录数量一致。
-
-- **实例方向或颜色错位**：CPU 记录顺序与 `std430` 的两个 `vec4` 顺序不一致。
-    - **解决方案**：按中心/朝向/Alpha、RGBA 的顺序检查写入与 shader 结构体，并确认 binding `0` 一致。
-
-- **超过容量后出现越界**：容量判断发生在写入之后。
-    - **解决方案**：在写入下一条记录前判断 `MAX_INSTANCES`，并在首次截断时记录日志。
-
-## 总结
-
-舰船集合按遍历顺序形成记录，实例编号选择当前数据，共享几何则由一次实例化调用重复绘制。容量控制写入与提交的条数，包围盒控制整批效果的剔除范围；数据、绘制次数和可见范围一起对应，批量结果才完整。
+- **舰船超过 `128` 艘时抛出 `BufferOverflowException`**：先往 `instanceBuffer` 写数据才做容量截断判断。
+    - **解决方案**：在写入当前记录之前判断 `instanceCount >= MAX_INSTANCES`，打一次日志后直接 `break`。
 
 ## 建议参考项
 

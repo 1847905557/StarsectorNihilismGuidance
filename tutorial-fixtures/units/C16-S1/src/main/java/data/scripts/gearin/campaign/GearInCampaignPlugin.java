@@ -7,7 +7,7 @@ import com.fs.starfarer.api.campaign.InteractionDialogPlugin;
 import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.econ.MarketAPI;
 
-/** 齿轮工业的生涯插件：记仇时 Foundry 拒绝停靠；货舱里有回火合金时，先过码头检查。 */
+/** 齿轮工业的生涯插件：敌意标记生效时 Foundry 拒绝停靠；货舱里有回火合金时，先过码头检查。 */
 public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
     @Override
@@ -22,7 +22,7 @@ public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
     @Override
     public PluginPick<InteractionDialogPlugin> pickInteractionDialogPlugin(SectorEntityToken interactionTarget) {
-        if (!GearInFoundryGenerator.STATION_ID.equals(interactionTarget.getId())) {
+        if (interactionTarget == null || !GearInFoundryGenerator.STATION_ID.equals(interactionTarget.getId())) {
             return null;
         }
         if (Global.getSector().getMemoryWithoutUpdate().getBoolean(GearInPatrolGrudgeListener.GRUDGE_KEY)) {

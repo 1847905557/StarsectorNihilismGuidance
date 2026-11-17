@@ -1,8 +1,6 @@
 # 管理舰队中的成员
 
-舰队工厂会一并配好人员，每次配出来的都不一样。要玩家两次遇到的是同一批人，就得把这一步关掉自己来。
-
-麻烦在于旗舰、指挥官、舰长、军官分属不同的对象，设错了不会报错，只会在舰队信息里显示成空着。
+做随机路人舰队时，把旗舰和指挥官一并交给工厂去掷骰子就已经够省事了。真要让玩家每次飞进 Nipher 都能认出领头的那艘工匠级和指挥官 Brann Hale，就得由我们自己去操作 `FleetDataAPI` 的成员名册了 —— 顺带一提，原版关于怎么设旗舰的那行 Javadoc 还是错的。
 
 ---
 
@@ -12,28 +10,23 @@ _本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C11-S1] 的巡逻舰队管理器，本节修改其中的 `spawnFleet()`；
-- [C3-S2] 的工匠装配 `GearIn_artizan_combat`，它将作为旗舰；
-- [C10-S1] 的 Memory 与脚本，用于理解舰队对象的归属。
+- [C3-S2] 的工匠战斗装配 `GearIn_artizan_combat`；
+- [C11-S1] 的 `GearInPatrolFleetManager` 与 `FleetDataAPI` 入口。
 
-## 一个成员是什么
+## 成员对象的结构与创建
 
-`FleetMemberAPI` 是舰队里的一个位置：一艘船、一份装配、一名舰长，加上一套状态。这三样东西不在同一个对象上。
+`FleetMemberAPI` 代表舰队编制中的一个席位。它本身不直接存放损伤或装配的底层字段，而是充当一组子对象的聚合入口：
 
-| 要读什么 | 从哪里取 |
-| --- | --- |
-| 船体与装配 | `getHullSpec()`、`getVariant()` |
-| 状态与损伤 | `getStatus()`、`getRepairTracker()` |
-| 舰长 | `getCaptain()` |
-| 数值 | `getStats()` |
+| 要访问的数据 | `FleetMemberAPI` 方法 | 说明 |
+| --- | --- | --- |
+| 船体规格与当前装配 | `getHullSpec()`、`getVariant()` | 分别见 [C2-S1] 与 [C11-S4] |
+| 船体完整度与装甲格损伤 | `getStatus()` | 返回 `FleetMemberStatusAPI` ([C11-S3]) |
+| 战备值 (CR)、封存与维修进度 | `getRepairTracker()` | 返回 `RepairTrackerAPI` ([C11-S3]) |
+| 当前舰长 | `getCaptain()`、`setCaptain(person)` | 未指派军官时返回一个 `isDefault() == true` 的匿名默认人物 |
+| 单舰可变统计项 | `getStats()` | 返回该成员的 `MutableShipStatsAPI` ([C8-S2]) |
+| 所属舰队数据 | `getFleetData()` | 返回持有该成员的 `FleetDataAPI` |
 
-**`FleetMemberAPI` 上没有 `getCR()` 与 `setCR(...)`，也没有 `setStatus(...)`。** CR 在维修跟踪器上，状态对象只能读不能换。想改成员的状态，改的是 `getStatus()` 拿到的那个对象的内部，或者改 `getRepairTracker()` 上的值。
-
-成员是自己在舰队里的位置，所以 `getFleetData()` 返回它所属的舰队。同一艘船体在两支舰队里是两个成员，各有一份状态。
-
-## 成员从哪里来
-
-先有装配，再有成员：
+往一支已存在的舰队里塞入新舰船，需要先用装配 ID 创建 `FleetMemberAPI`，用势力的命名规则给它起好船名，再加入 `FleetDataAPI`：
 
 ```java
 FleetMemberAPI member = Global.getFactory().createFleetMember(FleetMemberType.SHIP, variantId);
@@ -41,177 +34,199 @@ member.setShipName(fleet.getFleetData().pickShipName(member, random));
 fleet.getFleetData().addFleetMember(member);
 ```
 
-`createFleetMember(...)` 只造对象，不进舰队。`addFleetMember(FleetMemberAPI)` 才把它放进去。
+- `createFleetMember(...)` 只在内存中造出成员对象，必须调用 `addFleetMember(member)` 才会进入舰队编制；
+- **手动创建的成员默认没有船名**，不调 `setShipName(...)` 在舰队面板上就会显示为空白；`fleet.getFleetData().pickShipName(member, random)` 会按该势力的 `.faction` 词库自动抽取带前缀的船名；
+- `FleetDataAPI` 上还有一个快捷重载 `FleetMemberAPI member = fleet.getFleetData().addFleetMember(variantId);`，一步完成创建与入队并返回新成员，但同样需要手动补上 `setShipName(...)`。
 
-还有一个省事的重载：
+## 指挥官、舰长与军官名单的归属
 
-```java
-FleetMemberAPI member = fleet.getFleetData().addFleetMember(variantId);
-```
+在 `CampaignFleetAPI` 与 `FleetDataAPI` 中，人物 (`PersonAPI`) 挂在三个彼此独立的位置上：
 
-**它一步完成创建与加入，返回新建的成员。** 船名与 ID 由游戏生成，拿到返回值再改。原版的 `EconomyFleetAssignmentAI` 建完立刻把成员封存，用的就是这个重载。
+1. **舰队指挥官 (`fleet.getCommander()` / `fleet.setCommander(person)`)**：显示在星图舰队悬停框顶部、决定整支舰队享受哪些指挥官技能 ([C13-S3]) 的总指挥；
+2. **单船舰长 (`member.getCaptain()` / `member.setCaptain(person)`)**：实际坐在某艘具体舰船驾驶席上、为该船提供个人战斗技能加成的舰长；
+3. **舰队军官名单 (`fleet.getFleetData().addOfficer(person)` / `getOfficersCopy()`)**：登记在舰队人事编制里的军官列表。
 
-**成员没有船名，玩家在舰队界面看到的就是空的。** 名字要靠 `setShipName(...)` 给，取名的正规入口是 `getFleetData().pickShipName(member, random)`，它按势力的命名规则生成一个。
+**给其余舰船指派军官时，必须同时调用 `fleet.getFleetData().addOfficer(officer)` 和 `member.setCaptain(officer)`。** 只调后者不加进军官名单，这名军官在战斗结束或舰队同步时可能对不上编制；只加名单不设舰长，这名军官就只是在名册里挂名，没有实际指派到任何舰船上。
 
-`FleetMemberType` 决定这是舰船、战机联队还是别的。战机联队用 `FleetMemberType.FIGHTER_WING`，它不占舰船位置，也不设舰长。
-
-## 舰长与军官
-
-舰长是成员上的一个人物，军官是舰队上的人物名单。两者是分开的：
-
-```java
-member.getCaptain();
-member.setCaptain(person);
-
-fleet.getFleetData().addOfficer(person);
-fleet.getFleetData().getOfficersCopy();
-fleet.getFleetData().removeOfficer(person);
-```
-
-`addOfficer(...)` 把人物登记进舰队名单，`setCaptain(...)` 再把他派到具体成员。**只做其中一步，舰队信息里的军官名单与舰船上的舰长就对不上。**
-
-舰队的指挥官是另一个位置：`getCommander()` 与 `setCommander(...)`。指挥官通常也是旗舰的舰长，但游戏不会把两者绑在一起。
-
-原版的舰队工厂会一并配好人员。要自己指定，用 `OfficerManagerEvent.createOfficer(...)` 抽一个人物，完整签名是：
-
-```java
-PersonAPI createOfficer(FactionAPI faction, int level, SkillPickPreference pref,
-        boolean allowNonDoctrinePersonality, CampaignFleetAPI fleet, boolean allowAnyLevel,
-        boolean withEliteSkills, int eliteSkillsNumOverride, Random random);
-```
-
-原版配指挥官时 `fleet` 传 `null`，配僚舰军官时传舰队本身，其余参数相同。取人的等级与技能倾向由调用方决定，等级越高技能越多。
-
-### 旗舰设在成员上还是舰队上
-
-旗舰有两种设法，作用范围不同：
-
-```java
-fleet.getFleetData().setFlagship(member);   // 舰队数据上的，改舰队级关系
-member.setFlagship(true);                   // 成员上的，改这一个标记
-```
-
-`FleetDataAPI.setFlagship(...)` 处理的是舰队与成员之间的关系，`FleetMemberAPI.setFlagship(boolean)` 只改这个成员自己的标记。原版在批量设定时用的是后者，逐个成员比较 `member == flagship` 再传布尔值。
-
-`FleetDataAPI` 上另有一个 `ensureHasFlagship()`，舰队没有旗舰时用它补一个，比手工挑一艘再设更省事。
-
-上面这些是成员层的东西。接下来给巡逻队配人。
-
-```java
-params.withOfficers = false;
-CampaignFleetAPI fleet = FleetFactoryV3.createFleet(params);
-```
-
-本节关掉它，因为工厂挑旗舰的依据是船体等级与点数，不由我们控制。`FleetParamsV3` 也有 `flagshipVariantId`，但它只是在工厂选定旗舰之后替换其装配，并不指定船体：舰队里没有对应船体时，船体与装配会对不上。直接自己加入旗舰，行为才是确定的。
-
-## 关掉工厂配的人
-
-`FleetFactoryV3.createFleet(...)` 抽完舰船之后还会配人：挑一艘作旗舰，创建指挥官，再按数量给其余舰船配军官。`FleetParamsV3.withOfficers` 为 `false` 时这一整步跳过：
-
-```java
-params.withOfficers = false;
-CampaignFleetAPI fleet = FleetFactoryV3.createFleet(params);
-```
-
-巡逻队要的是每次都一样的旗舰与指挥官，工厂挑人的依据是船体等级与点数，不由我们控制，所以关掉它自己配。
-
-`FleetParamsV3` 上还有 `flagshipVariantId`，但它替换的是工厂已经选定那艘旗舰的装配，不改变选中哪一艘。舰队里没有对应船体时，船体与装配对不上。自己加旗舰，结果才是确定的。
-
-## 巡逻队的旗舰
-
-旗舰用装配 ID 创建，交给舰队，再设为旗舰：
-
-```java
-FleetMemberAPI flagship = Global.getFactory().createFleetMember(FleetMemberType.SHIP, FLAGSHIP_VARIANT);
-flagship.setShipName(fleet.getFleetData().pickShipName(flagship, random));
-fleet.getFleetData().addFleetMember(flagship);
-fleet.getFleetData().setFlagship(flagship);
-```
-
-`FLAGSHIP_VARIANT` 是 `"GearIn_artizan_combat"`，[C3-S2] 的工匠战斗装配。
-
-**`setFlagship(...)` 要在给其他成员配军官之前调用。** 它会遍历全体成员，把玩家本人或舰队指挥官担任舰长的那些换成新的 `Person("steady")`。先配好的军官如果正好在这一类里，会被换掉。设完旗舰再配人，顺序就不会出问题。
-
-## 巡逻队的指挥官
-
-巡逻队要一个固定的指挥官，姓名、性格、职务都写死：
-
-```java
-PersonAPI person = OfficerManagerEvent.createOfficer(
-        Global.getSector().getFaction(GearInModPlugin.FACTION_ID),
-        COMMANDER_LEVEL, SkillPickPreference.ANY, true, null, true, true, -1, random);
-person.setName(new FullName("Brann", "Hale", FullName.Gender.ANY));
-person.setPersonality(Personalities.AGGRESSIVE);
-person.setRankId(Ranks.SPACE_COMMANDER);
-person.setPostId(Ranks.POST_FLEET_COMMANDER);
-fleet.setCommander(person);
-flagship.setCaptain(person);
-```
-
-`COMMANDER_LEVEL` 取 4，技能数量跟着等级走，具体技能由 `SkillPickPreference.ANY` 决定。性格取 `AGGRESSIVE`，与 [C11-S1] 的 "遇强固守" 标记配合：主动靠近较弱的对手，遇到明显更强的就地固守。
-
-`setCommander(...)` 与 `setCaptain(...)` 两个都要写。只写前者，舰队信息里有人，旗舰实际由无名人物驾驶。
-
-## 巡逻队的军官
-
-旗舰以外的成员没有军官，给点数最高的一艘配一名：
+创建军官或指挥官人物使用原版的 `OfficerManagerEvent.createOfficer(...)`：
 
 ```java
 PersonAPI officer = OfficerManagerEvent.createOfficer(
         Global.getSector().getFaction(GearInModPlugin.FACTION_ID),
-        OFFICER_LEVEL, SkillPickPreference.ANY, true, fleet, true, true, -1, random);
-officer.setPostId(Ranks.POST_OFFICER);
-fleet.getFleetData().addOfficer(officer);
-target.setCaptain(officer);
+        level,
+        SkillPickPreference.ANY,
+        random);
 ```
 
-`OFFICER_LEVEL` 取 2，低于指挥官。这一处 `createOfficer(...)` 的 `fleet` 参数传舰队本身，配指挥官时传的是 `null`。
+该方法会按势力倾向与指定等级自动抽取技能、头像与姓名；拿到返回的 `PersonAPI` 后，可以继续用 `setName(...)`、`setPersonality(...)`、`setRankId(...)` 与 `setPostId(...)` 覆盖其姓名、性格与职务。
 
-挑 `target` 时跳过旗舰、战机联队与民用舰船：旗舰已有指挥官，战机联队不设舰长，民用舰船不值得配。剩下的成员里取 `getFleetPointCost()` 最高者，军官跟着最贵的那艘船走。要给更多舰船配，把它改成循环。
+::: tip 何时用 FleetParamsV3 自带参数，何时在生成后手动调整
 
-### 顺序
+如果您只是想调整 `FleetFactoryV3.createFleet(params)` 自动生成的指挥官或军官等级上限，或者想把一个提前造好的 `PersonAPI` 交给工厂去当指挥官，直接设置 `FleetParamsV3` 上的 `params.commander`、`params.commanderLevelLimit` 或 `params.officerLevelLimit` 即可，无需关闭 `params.withOfficers`。
 
-`spawnFleet()` 里的这几步有先后：
+只有像本节这样，需要在工厂抽完常规舰船之后**额外塞入一艘指定型号的旗舰、或对特定舰船增派军官**时，才在 `createFleet(...)` 返回后直接操作 `FleetDataAPI`。
 
-1. 以 `withOfficers = false` 创建舰队；
-2. 加入旗舰并 `setFlagship(...)`；
-3. 设置指挥官与旗舰舰长；
-4. 给僚舰配军官；
-5. 调用 `forceSync()`，再把舰队加入地点。
+:::
 
-完整的 `spawnFleet()` 见 [C11-S1] 的完整类，这里只讲每一步的理由。
+## 更换旗舰与 setFlagship(...) 的注释误导
+
+向舰队加入新旗舰后，需要通知舰队切换旗舰并绑定指挥官：
+
+```java
+PersonAPI commander = createCommander(random);
+fleet.setCommander(commander);
+fleet.getFleetData().setFlagship(flagship);
+```
+
+::: warning FleetDataAPI.setFlagship(...) 的接口注释与实际实现完全相反
+
+`FleetDataAPI.setFlagship(FleetMemberAPI)` 的官方 Javadoc 注释声称：调用该方法 "还会将所有其他舰船的舰长重置为属性全为 0 的新人物" (`Will also set the captains of all the other ships to a new person with all-0 stats`)。**这条注释是错的。**
+
+在引擎的 `FleetData.setFlagship(...)` 实际实现中：
+
+1. 遍历现有成员清除旧旗舰标记时，它**只会在某艘船的舰长恰好是玩家本人 (`playerPerson`) 时**才将该船舰长重置为默认匿名人物，**对 NPC 舰队里其他舰船上已经配好的军官分毫不动**；
+2. 在方法末尾，它会自动执行 `flagship.setFlagship(true)` 与 **`flagship.setCaptain(getCommander())`** —— 即自动将当前舰队的 `getCommander()` 设为新旗舰的舰长。
+
+因此正确的调用顺序与原版 `FleetFactoryV3` 完全一致：**先调用 `fleet.setCommander(commander)` 设好舰队指挥官，再调用 `fleet.getFleetData().setFlagship(flagship)` 指定旗舰**，两步下来指挥官与旗舰舰长就自动绑定妥当了。如果反过来先调 `setFlagship` 再调 `setCommander`，`setFlagship` 执行时读到的还是旧指挥官，您就不得不自己再去多写一行 `flagship.setCaptain(commander)`。
+
+:::
+
+对舰队成员、旗舰与军官名单做完增删后，最后调用一次 `fleet.forceSync()`，让舰队的成员排序、总点数与指挥官技能加成立即同步生效。
+
+## 巡逻队旗舰与军官编组：GearInPatrolRoster
+
+我们把巡逻队的旗舰增补与人物指派封装为独立的工具类 `GearInPatrolRoster`：
+
+- 为每支巡逻队额外加入一艘 `GearIn_artizan_combat` 工匠级驱逐舰作为旗舰；
+- 创建一名 4 级指挥官 `Brann Hale` (性格设为 `Personalities.AGGRESSIVE`，军衔与职务设为 `Ranks.SPACE_COMMANDER` 与 `Ranks.POST_FLEET_COMMANDER`，官方中文分别显示为 `"指挥官"` 与 `"舰队指挥官"`)，先设为舰队指挥官，再将工匠设为旗舰；
+- 遍历其余非民用战斗舰船，若点数最高的那艘舰船还没有配军官 (`member.getCaptain().isDefault()`)，则为它增派一名 2 级军官；
+- 最后调用 `fleet.forceSync()` 同步舰队状态并返回旗舰成员 (供后续 [C11-S4] 继续改装)。
+
+### 完整编组类
+
+`src/data/scripts/gearin/campaign/GearInPatrolRoster.java`：
+
+```java
+package data.scripts.gearin.campaign;
+
+import java.util.Random;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.CampaignFleetAPI;
+import com.fs.starfarer.api.characters.FullName;
+import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.api.fleet.FleetMemberType;
+import com.fs.starfarer.api.impl.campaign.events.OfficerManagerEvent;
+import com.fs.starfarer.api.impl.campaign.events.OfficerManagerEvent.SkillPickPreference;
+import com.fs.starfarer.api.impl.campaign.ids.Personalities;
+import com.fs.starfarer.api.impl.campaign.ids.Ranks;
+
+import data.scripts.gearin.GearInModPlugin;
+
+/** 为巡逻舰队增补工匠旗舰、指派指挥官，并为尚无军官的战斗舰船增派一名军官。 */
+public final class GearInPatrolRoster {
+
+    /** 巡逻队旗舰的装配 ID，沿用 C3-S2 配置的工匠。 */
+    public static final String FLAGSHIP_VARIANT = "GearIn_artizan_combat";
+
+    /** 指挥官等级。 */
+    private static final int COMMANDER_LEVEL = 4;
+
+    /** 增派军官等级。 */
+    private static final int OFFICER_LEVEL = 2;
+
+    private GearInPatrolRoster() {
+    }
+
+    public static FleetMemberAPI configure(CampaignFleetAPI fleet, Random random) {
+        FleetMemberAPI flagship = Global.getFactory().createFleetMember(FleetMemberType.SHIP, FLAGSHIP_VARIANT);
+        flagship.setShipName(fleet.getFleetData().pickShipName(flagship, random));
+        fleet.getFleetData().addFleetMember(flagship);
+
+        PersonAPI commander = createCommander(random);
+        fleet.setCommander(commander);
+        fleet.getFleetData().setFlagship(flagship);
+
+        addWingOfficerIfNeeded(fleet, flagship, random);
+        fleet.forceSync();
+        return flagship;
+    }
+
+    /** 创建巡逻队指挥官：等级与技能由原版抽选，姓名、性格与职务自行指定。 */
+    public static PersonAPI createCommander(Random random) {
+        PersonAPI person = OfficerManagerEvent.createOfficer(
+                Global.getSector().getFaction(GearInModPlugin.FACTION_ID),
+                COMMANDER_LEVEL, SkillPickPreference.ANY, random);
+        person.setName(new FullName("Brann", "Hale", FullName.Gender.ANY));
+        person.setPersonality(Personalities.AGGRESSIVE);
+        person.setRankId(Ranks.SPACE_COMMANDER);
+        person.setPostId(Ranks.POST_FLEET_COMMANDER);
+        return person;
+    }
+
+    /** 给点数最高且尚未配备舰长的非旗舰战斗成员增派一名军官。 */
+    private static void addWingOfficerIfNeeded(CampaignFleetAPI fleet, FleetMemberAPI flagship, Random random) {
+        FleetMemberAPI target = null;
+        for (FleetMemberAPI member : fleet.getFleetData().getMembersListCopy()) {
+            if (member == flagship || member.isFighterWing() || member.isCivilian()) {
+                continue;
+            }
+            if (member.getCaptain() != null && !member.getCaptain().isDefault()) {
+                continue;
+            }
+            if (target == null || member.getFleetPointCost() > target.getFleetPointCost()) {
+                target = member;
+            }
+        }
+        if (target == null) {
+            return;
+        }
+        PersonAPI officer = OfficerManagerEvent.createOfficer(
+                Global.getSector().getFaction(GearInModPlugin.FACTION_ID),
+                OFFICER_LEVEL, SkillPickPreference.ANY, random);
+        officer.setPostId(Ranks.POST_OFFICER);
+        fleet.getFleetData().addOfficer(officer);
+        target.setCaptain(officer);
+    }
+}
+```
+
+### 接入巡逻队管理器
+
+在 [C11-S1] 的 `GearInPatrolFleetManager.spawnFleet()` 中，`createFleet(params)` 判空之后加入一行调用即可：
+
+```java
+CampaignFleetAPI fleet = FleetFactoryV3.createFleet(params);
+if (fleet == null) {
+    return null;
+}
+GearInPatrolRoster.configure(fleet, random);
+```
 
 ### 进游戏核对
 
-执行 `gradle jar`，重启游戏，**新建一份存档**，用控制台命令 `jump Nipher` 到 Nipher Prime 轨道附近，选中巡逻舰队打开舰队信息。
+执行 `gradle jar`，重启游戏，**新建一份存档**，执行 `jump Nipher` 查看轨道上的巡逻队：
 
-- 旗舰是一艘工匠级，舰长与舰队指挥官同为 Brann Hale；
-- 指挥官的性格为进取，职务显示为舰队指挥官；
-- 其余舰船中，点数最高的一艘有一名军官，其余没有；
-- 保存并重新读档，上述人员没有变化。
-
-页面中的现象依据 API 与原版代码推出，编者尚未逐项在游戏内实测。
+- 巡逻队由一艘带有 `GIS` 前缀船名的工匠级驱逐舰领航，旗舰舰长与舰队指挥官同为 4 级的 `Brann Hale`；
+- 舰队中点数最高的那艘非旗舰战斗舰船配有军官；
+- 保存并重新读档，旗舰、船名与指挥官信息保持不变。
 
 ## 常见问题
 
-- **舰队里刚配好的军官消失了**：在给僚舰配军官之后才调用 `setFlagship(...)`。
-    - **解决方案**：`setFlagship(...)` 放在配军官之前。
+- **舰队信息面板顶部显示了新指挥官，但旗舰驾驶席上仍是旧舰长或默认头像**：先调用了 `fleet.getFleetData().setFlagship(flagship)`，后调用了 `fleet.setCommander(commander)`，且没有重新设置旗舰舰长。
+    - **解决方案**：先调用 `fleet.setCommander(commander)`，再调用 `fleet.getFleetData().setFlagship(flagship)`，让 `setFlagship` 自动把新指挥官绑定到旗舰驾驶席上。
 
-- **指挥官的名字出现了，旗舰却由无名人物驾驶**：只调用了 `setCommander(...)`。
-    - **解决方案**：同时对旗舰调用 `setCaptain(...)`。
+- **手动加入的旗舰在界面上船名一栏为空白**：调用 `createFleetMember(...)` 后漏掉了 `setShipName(...)`。
+    - **解决方案**：使用 `flagship.setShipName(fleet.getFleetData().pickShipName(flagship, random))` 按势力词库生成船名。
 
-- **旗舰的船体与预期不符**：依赖 `flagshipVariantId`，它只替换工厂选定旗舰的装配。
-    - **解决方案**：自己创建成员并加入舰队，再设为旗舰。
-
-- **旗舰没有船名**：没有调用 `pickShipName(...)`。
-    - **解决方案**：创建成员后立即设置船名。
-
-- **舰队汇总没有包含新成员**：改动之后没有同步。
-    - **解决方案**：在加入地点之前调用 `forceSync()`。
+- **加入新成员或更换指挥官后，舰队的移动速度与属性没有刷新**：修改成员名册后未触发同步。
+    - **解决方案**：在完成成员与军官调整后调用 `fleet.forceSync()`。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.FleetDataAPI`：成员、旗舰与军官名单的方法，`setFlagship(...)` 对成员舰长的影响不体现在签名上。
-- `com.fs.starfarer.api.impl.campaign.events.OfficerManagerEvent`：`createOfficer(...)` 的各个重载与技能倾向。
-- `com.fs.starfarer.api.impl.campaign.fleets.FleetFactoryV3`：`addCommanderAndOfficersV2(...)` 是原版配置指挥官与军官的完整做法。
-- `com.fs.starfarer.api.impl.campaign.ids.Ranks`：军衔与职务常量。
+- `com.fs.starfarer.api.campaign.FleetDataAPI`：舰队成员增删、`setFlagship(...)`、军官名单与 `forceSync()`。
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：单舰成员状态、舰长与装配入口。
+- `com.fs.starfarer.api.impl.campaign.events.OfficerManagerEvent`：`createOfficer(...)` 军官生成工具方法。
+- `com.fs.starfarer.api.impl.campaign.fleets.FleetFactoryV3`：原版生成舰队、选定旗舰与指派指挥官的实现。
+- `com.fs.starfarer.api.impl.campaign.ids.Ranks`：原版军衔与岗位 ID 常量。

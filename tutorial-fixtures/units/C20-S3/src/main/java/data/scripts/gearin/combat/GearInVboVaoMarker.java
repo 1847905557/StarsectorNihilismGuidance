@@ -61,6 +61,10 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
+        if (trackedShip == null) {
+            valid = false;
+            return;
+        }
 
         entity.getLocation().set(trackedShip.getLocation());
         LOG.info("GearIn VBO/VAO marker init: ship=" + trackedShip.getId()
@@ -172,7 +176,8 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
         if (!valid) {
             return;
         }
-        if (engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
+        if (engine == null || trackedShip == null
+                || engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
                 || !trackedShip.isAlive()) {
             valid = false;
             return;
@@ -216,7 +221,6 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
         boolean matrixPushed = false;
         GL11.glPushAttrib(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT
                 | GL11.GL_ENABLE_BIT | GL11.GL_DEPTH_BUFFER_BIT);
-        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
         try {
             GL30.glBindVertexArray(vaoId);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
@@ -246,7 +250,6 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
                 GL11.glMatrixMode(GL11.GL_MODELVIEW);
                 GL11.glPopMatrix();
             }
-            GL11.glPopClientAttrib();
             GL11.glPopAttrib();
             GL30.glBindVertexArray(previousVao);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
@@ -289,7 +292,7 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
             fragmentShader = 0;
         }
         LOG.info("GearIn VBO/VAO marker cleanup: ship="
-                + trackedShip.getId());
+                + (trackedShip == null ? "null" : trackedShip.getId()));
     }
 
     @Override
@@ -299,6 +302,8 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return DIRECTION_LENGTH + engine.getViewport().convertScreenWidthToWorldWidth(3f);
+        return engine == null || engine.getViewport() == null
+                ? DIRECTION_LENGTH
+                : DIRECTION_LENGTH + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }

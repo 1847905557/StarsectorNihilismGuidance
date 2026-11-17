@@ -11,7 +11,7 @@ import com.fs.starfarer.api.impl.campaign.ids.Ranks;
 
 import data.scripts.gearin.GearInModPlugin;
 
-/** 在 Nipher 星系中建立 Foundry 空间站及其市场，并让一名港务官出现在通信目录。 */
+/** 在 Nipher 星系中建立 Foundry 空间站及其基础市场，并让一名港务官出现在通信目录。 */
 public class GearInFoundryGenerator {
 
     public static final String STATION_ID = "GearIn_foundry";
@@ -28,20 +28,18 @@ public class GearInFoundryGenerator {
                 STATION_ID, "Nipher Foundry", "station_side00", GearInModPlugin.FACTION_ID);
         station.setCircularOrbitPointingDown(system.getStar(), 200f, 4200f, 150f);
 
-        // 市场：创建、设置势力与主实体、加入经济，三步缺一不可
+        // 市场：设置主实体、加入经济系统、再让空间站实体指回市场，三处连接缺一不可
         MarketAPI market = Global.getFactory().createMarket(MARKET_ID, "Nipher Foundry", 3);
         market.setFactionId(GearInModPlugin.FACTION_ID);
+        market.getTariff().modifyFlat("default_tariff", market.getFaction().getTariffFraction());
         market.setPrimaryEntity(station);
         market.setSurveyLevel(MarketAPI.SurveyLevel.FULL);
         market.addCondition("population_3");
-        market.addCondition("GearIn_warfront");
         market.addIndustry("population");
         market.addIndustry("spaceport");
-        market.addIndustry("GearIn_element_works");
         market.addSubmarket("open_market");
         market.addSubmarket("black_market");
         market.addSubmarket("storage");
-        market.addSubmarket("GearIn_alloy_depot");
         sector.getEconomy().addMarket(market, true);
         station.setMarket(market);
 

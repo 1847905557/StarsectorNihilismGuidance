@@ -58,7 +58,7 @@ git diff --check
 
 - 文本、Markdown 和教程结构检查显式传入本次文件或目录范围。
 - `pnpm format` 整理与预览相同范围的文件，`pnpm check` 按包命令顺序执行各类检查。
-- Java 单元编译使用 `gradle -p tutorial-fixtures compileC5s3Java --no-daemon`，任务名按所属单元选择。
+- Java 单元编译使用 `gradle -p tutorial-fixtures compileC7s1Java --no-daemon`，任务名按所属单元选择。
 
 ## 事后要求
 

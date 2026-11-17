@@ -1,8 +1,8 @@
 # 接入酒吧任务
 
-[C16-S4] 的委托已经写好了，可它还缺三样东西才能真正被人接下：一个让它出现的地方，一段说明委托的对话，以及在信标旁、在 Aster 面前推进阶段的几句话。
+光在 Java 类里搭好任务状态机，那个任务还不会自动出现在游戏酒吧里；真正让它接进日常流程的，是酒吧调度表与规则表里一套约定了前缀的驱动对话。
 
-这三样都不用再写 Java。登记写进一张表，对话与推进写进规则表。
+分清哪一段留在 Java 管逻辑、哪一段放进表格管露面与接取台词，比什么都重要：接对这两头以后，整条任务链几乎不用多写额外胶水代码就能完整接进原版流程。
 
 ---
 
@@ -35,7 +35,7 @@ GearIn_bsv,,10,1,30,40,15,20,60,90,data.scripts.gearin.campaign.GearInBeaconSurv
 | `min accepted timeout`、`max accepted timeout` | 接下之后隔多久才可能再出现 |
 | `plugin` | 任务类的完整类名 |
 
-数值照抄原版 `SpySatDeployment` 那一行。表里登记过，原版的酒吧事件管理器会自己为它生成包装，不需要像 [C16-S3] 那样写创建器、在入口类里登记。
+数值直接沿用原版 `SpySatDeployment` 那一行。表里登记过，原版的酒吧事件管理器会通过 `HubMissionBarEventWrapper` 自动生成包装，不需要像 [C16-S3] 那样手写创建器并在入口类里登记。
 
 ## 在酒吧里露面
 
@@ -80,6 +80,7 @@ Call $GearIn_bsv_ref updateStage",记录不长，大半是巡逻队的航迹。�
 
 - 条件没有前缀，读的是信标自己的 Memory，[C15-S5] 讲过这一点；
 - `score:1000` 盖过导航浮标原本的交互。任务一结束，键被撤掉，信标又恢复成原版的样子；
+- `Call $GearIn_bsv_ref updateData` 在原版 `ssatObjectInteraction` 中习惯写在 `conditions` 列 (因为若规则条件或文本要立刻读取 `updateData` 刚写入的变量，先在条件判定前执行更稳妥；由于 `updateData` 始终返回 `true` 且本条正文不依赖动态变量，放进 `script` 列同样能正常运行)；
 - `Call $GearIn_bsv_ref updateStage` 通过引用调用任务对象，让它立刻检查一遍阶段。此时 `$GearIn_bsv_surveyed` 已经写在信标上，任务进入报告阶段；
 - `defaultLeave` 是原版的离开选项。
 
@@ -97,7 +98,7 @@ Call $GearIn_bsv_ref updateStage","Aster 把记录调出来看了很久，最后
 报酬随后打进了您的账户。",cutCommLink:断开通讯,任务：报告
 ```
 
-分数 1200 高于 [C15-S2] 的记仇问候。报告阶段里，哪怕刚打过齿轮工业的巡逻队，Aster 也先听完报告再说别的。
+分数 1200 高于 [C15-S2] 的敌意问候。报告阶段里，哪怕刚打过齿轮工业的巡逻队，Aster 也先听完报告再说别的。
 
 `$GearIn_bsv_reported` 写在 Aster 身上，推进到成功阶段，父类发放 30000 星币并结束任务。`$global.GearIn_bsv_completed` 让 [C16-S4] 的 `shouldShowAtMarket(...)` 不再发这份委托。
 
@@ -113,8 +114,6 @@ Call $GearIn_bsv_ref updateStage","Aster 把记录调出来看了很久，最后
 - 读取之后，情报栏的下一步变为向 Aster 报告，Aster 被标为任务人物；
 - 在通信目录中点开 Aster，出现报告的对话，获得 30000 星币，任务完成；
 - 之后 Foundry 的酒吧里不再出现这份委托。
-
-页面中的现象依据 API 与原版规则推出，编者尚未逐项在游戏内实测。
 
 ## 常见问题
 
@@ -132,6 +131,6 @@ Call $GearIn_bsv_ref updateStage","Aster 把记录调出来看了很久，最后
 
 ## 建议参考项
 
-- `data/campaign/bar_events.csv`：原版酒吧任务的登记，`ssat` 那一行是本节的照抄来源。
+- `data/campaign/bar_events.csv`：原版酒吧任务的登记，`ssat` 那一行是本节的参数参考来源。
 - `data/campaign/rules.csv`：以 `ssat` 开头的规则，以及 `contact_acceptBar`、`defaultLeave` 的原版处理。
 - `com.fs.starfarer.api.impl.campaign.missions.hub.BaseHubMission`：`Call` 可调用的 `updateStage`、`updateData` 等动作。

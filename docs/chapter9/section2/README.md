@@ -18,13 +18,13 @@ _本节预期操作时间：\~30 分钟。_
 
 ## 战术系统的接口分工
 
-战术系统在代码侧由三个不同的接口拼起来，名字相近，管的事完全不同：
+战术系统在代码侧由三个不同的接口拼起来，名字相近，职责完全不同：
 
-| 接口 | 所在包 | 管什么 |
+| 接口 | 所在包 | 职责 |
 | --- | --- | --- |
 | `ShipSystemStatsScript` | `com.fs.starfarer.api.plugins` | 效果本身：`apply` / `unapply` / `getStatusData`，附带 `State` 枚举与 `StatusData` 类 |
 | `ShipSystemStatsScriptAdvanced` | 同上 | 在上一项基础上加 `isUsable(...)` 与 `getInfoText(...)` |
-| `ShipSystemAIScript` | `com.fs.starfarer.api.combat` | AI 什么时候按这个键 |
+| `ShipSystemAIScript` | `com.fs.starfarer.api.combat` | AI 什么时候使用这个系统 |
 
 **没有名为 `ShipSystemScript` 的接口。** 三个名字都在真源码里，按前两个名字去搜才有结果。`BaseShipSystemScript` 在 `impl.combat` 下，实现了 `ShipSystemStatsScriptAdvanced`，[C2-S3] 继承的就是它。
 
@@ -47,7 +47,7 @@ public interface ShipSystemAIScript {
 }
 ```
 
-`init(...)` 里有一个坑：不能在 `init` 里取系统脚本，那会触发类加载顺序依赖，游戏启动时直接崩。原版 `ConstructionSwarmSystemAI` 就栽在这里。要拿脚本参数，等第一次 `advance(...)` 之后再取。
+`init(...)` 在舰船进入战场时调用一次，用来把当前舰船、战术系统实例等状态存进字段；如果 AI 需要读取系统脚本一侧的运行期对象，建议放到 `advance(...)` 执行时再取，不要依赖两者 `init` 的先后顺序。
 
 ## 范围增幅的设计
 
@@ -76,13 +76,9 @@ AI 的使用时机也有明确的答案：**目标刚好在射程之外，增幅
 
 另一个参数 `effectLevel` 是效果强度，在 `IN` 期间从 0 升到 1，`ACTIVE` 期间为 1，`OUT` 期间从 1 降回 0。
 
-`apply(...)` 的调用条件只有一句：**这个系统的效果值大于 0，或者写了 `runScriptWhileIdle`。** 状态在这里只用来算出效果值。`IN`、`ACTIVE`、`OUT` 期间效果值都大于 0，所以这期间每帧调用；`COOLDOWN` 与 `IDLE` 的效果值为 0，默认不调。
+默认情况下，只有当 `effectLevel > 0` (即处于 `IN`、`ACTIVE`、`OUT` 三个阶段) 时，引擎才会每帧调用 `apply(...)`；进入 `COOLDOWN` 或 `IDLE` 后 `effectLevel` 归零，引擎调用一次 `unapply(...)` 撤除修饰，此后不再调用 `apply(...)`。
 
-`.system` 里加一句 `"runScriptWhileIdle": true`，这条条件就一直成立，`COOLDOWN` 与 `IDLE` 期间 `apply(...)` 照样每帧调用。系统的状态因此不再等于效果在不在，脚本要在 `apply(...)` 里自己看 `state` 分支：激活的那几段写主动效果，其余状态写被动效果。原版激光雷达阵列这么做，系统没开的时候舰船仍有 35% 的武器射程加成。
-
-这个开关还有两个连带后果。`unapply(...)` 仍会在效果结束时调一次，但舰队撤退、系统正处于活动状态时，引擎会另走一条路径再调一次，所以别把它当成 "只执行一次" 的地方写收尾逻辑。另外 `apply(...)` 现在会在待机期每帧运行，里面那些每帧都做的计算也就跟到了待机期，该省的还得省。
-
-因此**修饰的数值应当乘上 `effectLevel`**。这样效果会随充能和消退平滑变化，而不是在某一帧突然出现或消失。
+因此**修饰的数值应当乘上 `effectLevel`**。这样效果会随充能和消退平滑过渡，而不是在激活与结束的那一帧生硬跳变。
 
 ## 修改本体与模块的数值
 
@@ -266,20 +262,20 @@ private int countWeaponsBroughtIntoRange(ShipAPI target) {
 
 ::: tip 阈值是取舍，不是定论
 
-"至少 1 门武器" 是最宽松的条件，窑往往在接近目标的途中就用掉一次，换来比对手更早开火。要求至少 2 门，AI 会更保守，次数更多地留到正面交火时。两种都说得通，取决于这个系统在设计上偏向抢先手还是打持久战。
+"至少 1 门武器" 是最宽松的条件，AI 往往在接近目标的途中就用掉一次，换来比对手更早开火。要求至少 2 门，AI 会更保守，次数更多地留到正面交火时。两种都说得通，取决于这个系统在设计上偏向抢先手还是打持久战。
 
 :::
 
 ## 待机时也运行的脚本
 
-`.system` 文件中加入 `"runScriptWhileIdle": true`，`apply(...)` 在 `COOLDOWN` 与 `IDLE` 期间也会每帧调用。原版激光雷达阵列用它实现被动效果：系统没有激活时，舰船仍有 35% 的武器射程加成。
+如果在 `.system` 文件中加入 `"runScriptWhileIdle": true`，即使系统处于 `COOLDOWN` 与 `IDLE` 阶段 (`effectLevel == 0`)，引擎也会每帧继续调用 `apply(...)`。原版激光雷达阵列 (`lidararray`) 就用这个开关来实现常驻被动：系统未激活时，舰船仍带有 35% 的被动武器射程加成。
 
-开启后有两点需要注意：
+开启该项后有两处行为变化需要注意：
 
-- **`unapply(...)` 不再被调用。** 原版的 `.system` 文件里普遍写着这一项不生效。激活结束后的清理，要在 `apply(...)` 中根据 `state` 自己完成；
-- `apply(...)` 中的效果要按 `state` 分支，否则激活期间的效果会一直存在。
+- **原版 `.system` 文件中 `# unapply() is never called if runScriptWhileIdle:true` 的注释并不准确，但主动效果的清理确实不能再依赖 `unapply(...)`。** 当 `runScriptWhileIdle` 为 `true` 时，单次激活结束回到 `COOLDOWN` / `IDLE` 阶段，引擎依然会跳过 `unapply(...)`、直接按 `effectLevel == 0` 继续执行 `apply(...)` (仅当舰船撤退或离开战场时，战斗管理逻辑才会显式调用一次 `unapply(...)`)。因此脚本必须在 `apply(...)` 内部按 `state` 明确分支：处于 `IN`、`ACTIVE`、`OUT` 时写入主动效果，处于 `IDLE`、`COOLDOWN` 时撤掉主动效果并写入被动效果；
+- `apply(...)` 变成了全场战斗每帧都会执行的回调，原本只在激活期间跑几秒的开销会贯穿整场战斗，分支里应避免在待机期做多余的遍历或对象创建。
 
-范围增幅没有被动效果，不开启这一项。需要被动效果时，参考原版 `LidarArrayStats` 的写法：在 `apply(...)` 中判断 `state` 是否为 `IN`、`ACTIVE` 或 `OUT`，激活时写入主动效果，其余状态写入被动效果。
+范围增幅没有常驻被动效果，因此不开启这一项。需要编写带被动效果的战术系统时，可对照原版 `LidarArrayStats` 中按 `state` 分支的写法。
 
 ## 完整的范围增幅
 

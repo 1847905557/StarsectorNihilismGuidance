@@ -64,6 +64,10 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
+        if (engine == null) {
+            valid = false;
+            return;
+        }
         instanceBuffer = BufferUtils.createFloatBuffer(
                 MAX_INSTANCES * FLOATS_PER_INSTANCE);
         updateInstances();
@@ -178,7 +182,7 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
         if (!valid) {
             return;
         }
-        if (engine.isCombatOver()) {
+        if (engine == null || engine.isCombatOver()) {
             valid = false;
             return;
         }
@@ -262,10 +266,8 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
         int previousSsboBase = GL30.glGetInteger(
                 GL43.GL_SHADER_STORAGE_BUFFER_BINDING, BINDING);
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
-        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         GL11.glPushAttrib(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT
                 | GL11.GL_ENABLE_BIT | GL11.GL_DEPTH_BUFFER_BIT);
-        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
         try {
             GL30.glBindVertexArray(vaoId);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
@@ -287,7 +289,6 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
             GL20.glUniform1f(viewportAlphaLocation, viewport.getAlphaMult());
             GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES, 0, 6, instanceCount);
         } finally {
-            GL11.glPopClientAttrib();
             GL11.glPopAttrib();
             GL30.glBindVertexArray(previousVao);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
@@ -295,7 +296,6 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
                     previousSsboBase);
             GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, previousSsbo);
             GL20.glUseProgram(previousProgram);
-            GL11.glMatrixMode(previousMatrixMode);
         }
     }
 
@@ -346,6 +346,8 @@ public class GearInInstancedMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return renderRadius + engine.getViewport().convertScreenWidthToWorldWidth(3f);
+        return engine == null || engine.getViewport() == null
+                ? renderRadius
+                : renderRadius + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }

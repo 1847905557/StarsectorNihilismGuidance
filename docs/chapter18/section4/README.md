@@ -1,25 +1,19 @@
 # 使用 LazyLib 保存公共 JSON
 
-本节用 LazyLib 记录跨生涯共享的加载次数与最近角色名。计数器从默认 JSON 建立初始结构，随后读回公共文件，在原对象上修改并保存；载入另一份存档时，次数和上次角色仍会延续。默认数据何时接管、对象何时写盘，都需要与这个结果对应起来。
+直接调用原版的 `common` 文件接口时，每次读档与写回都得自己守好建档和异常处理；换用 LazyLib 的 `JSONUtils.loadCommonJSON(...)` 后，这一套建档、解析和离开 `try-with-resources` 时的自动写回都交给了工具类接管。
 
-_本节预期阅读时间：\~20 分钟。_
+只是这份省心有个前提必须事先留心：一旦玩家把磁盘上的旧 JSON 改坏了格式，它在回落加载默认模板之后会把原先那份一并覆盖掉。
 
-_本节预期操作时间：\~25 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~15 分钟。_
 
-完成后，您将能够：
-
-- 区分 Memory、Sector PersistentData 与存档公共数据的生命周期；
-- 使用默认 JSON 创建可恢复的公共数据文件；
-- 使用 `CommonDataJSONObject` 读取、修改和保存字段；
-- 在游戏加载入口记录跨生涯共享的次数与角色名；
-- 使用 `clear(...)` 重置公共状态，并用 `toColor(...)` 读取颜色数组。
+_本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C7-S1] 的生涯加载回调；
-- [C15-S5] 的 `MemoryAPI` 与生涯保存；
+- [C7-S1] 的生涯加载回调与 `PersistentData`；
+- [C10-S2] 的 `MemoryAPI` 与生涯作用域；
 - [C17-S2] 的原版 common 文件路径和读写；
 - [C18-S1] 的 LazyLib 运行时依赖与编译 classpath；
 - 能够读取 JSON 对象中的字符串和整数。
@@ -68,10 +62,12 @@ try (CommonDataJSONObject data = JSONUtils.loadCommonJSON(
 `COMMON_FILE_NAME` 交给 common 文件接口，`DEFAULT_JSON_PATH` 交给 MOD 资源加载器。局部片段先取得旧次数和角色名，非空对象此时已保存一次，try-with-resources 结束时还会再次保存。这是读改写入口的实际行为，纯读取继续使用 [C17-S2] 的原版方法。
 
 ::: warning 默认资源也会接管解析失败的文件
+
 现有公共文件无法读取或解析时，双参 `loadCommonJSON` 会采用默认资源，并将非空默认对象保存到同一个文件。原来的计数因此可能重新从 0 开始。
+
 :::
 
-对这个练习计数器，编者接受失败后重新建立初始状态；若保存的是无法重新取得的玩家记录，就应保留读取失败的处理机会，再决定如何处置原内容。默认模板方便建立文件，同时也决定了失败时采用什么数据。
+对练习计数器而言，失败后重建初始状态可以接受；若保存的是无法重新取得的玩家记录，就应保留读取失败的处理机会，再决定如何处置原内容。默认模板方便建立文件，同时也决定了失败时采用什么数据。
 
 单参数 `loadCommonJSON(filename)` 适合已经能够自行补齐字段的数据。读取失败时，它返回与该文件名关联的空 `CommonDataJSONObject`，不会寻找 MOD 内的默认模板。
 
@@ -273,36 +269,19 @@ public final class GearInCommonDataCounter {
 
 :::
 
-## 验证方案
+### 进游戏核对
 
-前置数据：启用 LazyLib 与 Console Commands，并准备两份角色名不同的生涯存档。
+执行 `gradle jar` 确认默认 JSON 位于 `data/config/`，并准备两份角色名不同的生涯存档：
 
-1. 执行 `gradle jar`，将构建产物放入 MOD 的 `jars` 目录，并确认默认 JSON 位于 `data/config`。
-2. 在实际存档公共目录核对计数器。首次实验尚未有该文件时，载入第一份生涯；已有计数器时记录原值，再通过正文重置命令从 0 开始比较。
-3. 再次载入第一份生涯，比较消息中的旧次数、本次次数和角色名。
-4. 载入第二份生涯，确认消息保留累计次数，并把第一份生涯的角色名显示为上次角色名。
-5. 打开实际公共目录中的 `GearIn_common_counter.data`，核对 `load_count` 与 `last_player`。
-6. 执行 `runcode data.scripts.gearin.lib.GearInCommonDataCounter.reset();`，核对文件中的默认字段。
-7. 再次载入任意生涯，确认次数从 0 增加到 1。
-8. 将测试颜色数组分别设为 RGB、RGBA 和少于三个分量，调用 `toColor(...)` 并观察解析结果与异常日志。
+- 首次载入第一份存档时，从默认模板建立公共文件并显示 `0 -> 1`；同一存档再次载入，次数连续递增且上次与本次角色名一致；
+- 切换第二份不同角色名的存档，累计次数继续延续，且 `previous` 展示上一份存档的角色名；
+- 打开 `saves/common/GearIn_common_counter.data` 检查 `load_count` 与 `last_player` 为最新值；执行 `runcode data.scripts.gearin.lib.GearInCommonDataCounter.reset();` 后两字段重置为 `0` 与空串，下次加载从 `0 -> 1` 重新起算；
+- 分别用 RGB、RGBA 与少于 3 分量的数组测试 `JSONUtils.toColor(...)`：前两者分别产出 `alpha = 255` 与指定 alpha，不足 3 分量抛出 `JSONException`。
 
-预期结果：
-
-- 首次加载从默认资源建立公共文件，消息显示 `0 -> 1`；
-- 同一生涯再次加载时次数连续增加，上次与本次角色名相同；
-- 另一份生涯读取相同累计次数，并显示上一份生涯的角色名；
-- 公共文件始终包含最新的 `load_count` 与 `last_player`；
-- 重置后两个字段分别为 `0` 和空字符串，下一次加载显示 `0 -> 1`；
-- RGB 数组得到 alpha 为 255 的颜色，RGBA 数组保留给定 alpha，分量不足时产生 `JSONException`。
-
-## 故障分析
+## 常见问题
 
 - **每次载入都显示 `0 -> 1`**：数据对象没有正常关闭，或每次调用使用了不同的公共文件名。
     - **解决方案**：使用固定的 `GearIn_common_counter`，并让 try-with-resources 完成 `close()` 与保存。
-
-## 总结
-
-计数器在同一个公共对象上读取旧值、更新字段，再由关闭操作保存结果，加载入口只使用返回的快照显示变化。文件跨生涯共享，默认资源负责建立初始结构，也接管读取失败的情况；这项选择与载入、关闭的写入时机一起决定了数据如何延续。
 
 ## 建议参考项
 
@@ -310,4 +289,4 @@ public final class GearInCommonDataCounter {
 - `org.lazywizard.lazylib.JSONUtils.CommonDataJSONObject`：关联公共文件并在关闭时保存对象；
 - `com.fs.starfarer.api.SettingsAPI`：LazyLib 公共 JSON 最终使用的 common 文件读写入口；
 - `Starsector/saves/common`：运行时存档公共数据目录；
-- `data/config/GearIn_common_defaults.json`：公共计数器的首次加载结构。
+- `GearIndustry/data/config/GearIn_common_defaults.json`：公共计数器的首次加载结构。

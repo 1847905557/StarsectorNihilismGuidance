@@ -8,7 +8,7 @@ import com.fs.starfarer.api.combat.ShipVariantAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.loading.VariantSource;
 
-/** 巡逻队旗舰的改装：火神炮换成都林，加装破甲校准，用散热器让出 OP；超出 OP 上限则放弃。 */
+/** 巡逻队旗舰的改装：火神炮换成都林，加装破甲校准，用耗散通道让出 OP；超出 OP 上限则放弃。 */
 public final class GearInPatrolRefitter {
 
     private static final Logger LOG = Global.getLogger(GearInPatrolRefitter.class);

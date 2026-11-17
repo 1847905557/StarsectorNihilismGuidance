@@ -1,8 +1,8 @@
 # 读写 common 数据
 
-存档里的东西只属于那一份存档。可有些记录是玩家这个人的，不是某一局的：比如他到底打掉过齿轮工业多少支巡逻队，这个数字换了存档也该接着往上加。
+无论是 `MemoryAPI` 还是 `PersistentData`，生命边界都锁在单份存档里 —— 玩家一旦开新档，上一局留下的数据就会彻底清零。
 
-这种跨存档的记录，游戏给了一个专门的地方放。
+如果您确实需要留下一份跨存档生效的客户端记录，原版在 `common` 目录下留好了统一读写入口。只是这个入口每次写入都会整份覆盖旧文件，动手前得先想清楚到底什么数据值得放进这里。
 
 ---
 
@@ -12,7 +12,7 @@ _本节预期操作时间：\~10 分钟。_
 
 ## 前置知识
 
-- [C14-S2] 的记仇监听器，本节在它记账的地方顺手写一笔；
+- [C14-S2] 的巡逻队敌意监听器，本节在它记账的地方顺手写一笔；
 - [C14-S4] 的巡逻情报，本节在它的详情里显示这个数字；
 - [C17-S1] 中用 `org.json` 读取 JSON 的写法。
 
@@ -24,10 +24,10 @@ _本节预期操作时间：\~10 分钟。_
 | ---- | ---- |
 | `fileExistsInCommon(name)` | 文件是否存在 |
 | `readTextFileFromCommon(name)` | 读出整个文件的文字 |
-| `writeTextFileToCommon(name, text)` | 整份写入，原版注释写明上限 1MB |
+| `writeTextFileToCommon(name, text)` | 整份写入，上限 `1,048,576` 字符 (先写临时文件再替换) |
 | `deleteTextFileFromCommon(name)` | 删除 |
 
-文件放在游戏目录的 `saves/common/` 下，文件名后面会多一个 `.data`。LunaLib 等 MOD 的设置也放在那里，打开看一眼就知道是什么样子。
+文件放在游戏目录的 `saves/common/` 下，文件名后面会多一个 `.data` (写入时会先落 `.data.inprogress` 再替换目标文件)。LunaLib 等 MOD 的设置也放在那里，打开就能看到对应结构；单次写入长度超过 `1,048,576` 个 Java 字符 (`String.length()`) 会直接抛出运行时异常。
 
 **文件名带上 MOD 的名字。** 这个目录是所有 MOD 共用的，叫 `stats.json`，迟早会和别人的文件撞上。这里用 `GearIndustry_stats.json`。
 
@@ -71,7 +71,7 @@ try {
 
 ## 在哪里写，在哪里读
 
-[C14-S2] 的记仇监听器在记下仇之后加一行：
+[C14-S2] 的监听器在写入敌意标记之后加一行：
 
 ```java
 GearInCommonStats.addPatrolsDefeated(defeated);
@@ -90,7 +90,7 @@ if (total > 0) {
 
 ## LazyLib 的写法
 
-LazyLib 的 `JSONUtils` 把读出、修改、写回包成了一个对象，省掉了自己处理文件不存在与异常的那几行。依赖库的接入与它的用法见 [C18-S4]。
+LazyLib 的 `JSONUtils.loadCommonJSON(...)` 返回一个实现了 `AutoCloseable` 的 `CommonDataJSONObject`，把读出、修改与关闭时自动写回包在了一起，省掉了自己处理文件不存在与异常的那几行。依赖库的接入与它的具体用法见 [C18-S4]。
 
 ## 完整的 common 读写
 
@@ -154,8 +154,6 @@ public final class GearInCommonStats {
 - **新建另一份存档**，接触齿轮工业后打开巡逻情报，累计数仍是 1；
 - 把文件内容改成乱码再打开情报，累计数一行不显示，日志中出现读取失败的警告，游戏照常运行。
 
-页面中的现象依据 API 推出，编者尚未逐项在游戏内实测。
-
 ## 常见问题
 
 - **`saves/common/` 下没有文件**：监听器里没有调用写入，或者写入时抛出了异常。
@@ -169,5 +167,5 @@ public final class GearInCommonStats {
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.SettingsAPI`：common 目录的读写方法与 1MB 上限的注释。
+- `com.fs.starfarer.api.SettingsAPI`：common 目录的读写方法与 `1,048,576` 字符长度上限；`readJSONFromCommon` / `writeJSONToCommon` 也在此接口内。
 - `org.json.JSONObject`：`optInt(...)` 与 `toString(int)`。

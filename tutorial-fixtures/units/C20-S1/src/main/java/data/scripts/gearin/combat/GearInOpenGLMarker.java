@@ -47,6 +47,10 @@ public class GearInOpenGLMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
+        if (trackedShip == null) {
+            valid = false;
+            return;
+        }
 
         ringVertices = BufferUtils.createFloatBuffer(RING_SEGMENTS * 2);
         for (int i = 0; i < RING_SEGMENTS; i++) {
@@ -70,7 +74,8 @@ public class GearInOpenGLMarker extends BaseCombatLayeredRenderingPlugin {
         if (!valid) {
             return;
         }
-        if (engine.isCombatOver()
+        if (engine == null || trackedShip == null
+                || engine.isCombatOver()
                 || !engine.isEntityInPlay(trackedShip)
                 || !trackedShip.isAlive()) {
             valid = false;
@@ -157,7 +162,7 @@ public class GearInOpenGLMarker extends BaseCombatLayeredRenderingPlugin {
         if (!cleanupLogged) {
             cleanupLogged = true;
             LOG.info("GearIn OpenGL marker cleanup: ship="
-                    + trackedShip.getId());
+                    + (trackedShip == null ? "null" : trackedShip.getId()));
         }
     }
 
@@ -168,6 +173,8 @@ public class GearInOpenGLMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return DIRECTION_LENGTH + engine.getViewport().convertScreenWidthToWorldWidth(3f);
+        return engine == null || engine.getViewport() == null
+                ? DIRECTION_LENGTH
+                : DIRECTION_LENGTH + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }

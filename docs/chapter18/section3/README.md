@@ -1,30 +1,21 @@
 # 使用 LazyLib 查询战场
 
-距离相近的对象，未必都适合作为当前 AI 的目标。本节用扫描器分别标记空间候选、可见敌舰与拦截点，沿查询、筛选和选择的过程说明 LazyLib 的入口。对象类型、距离口径和可见性各自影响结果，方法名相近时尤其需要区分。
+离爆炸点最近的那艘船，和武器真正能锁定的目标，本来就不是同一套筛选条件。`CombatUtils` 按纯空间半径找出周边一切实体，`AIUtils` 则会同时滤掉友军、残骸和战争迷雾另一侧的敌舰。
 
-_本节预期阅读时间：\~30 分钟。_
+下面在玩家舰周围同时挂起空间候选、可见敌舰和追击拦截点三组粒子标记，把这几组长相相近的战场查询拆开对照。
 
-_本节预期操作时间：\~35 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~25 分钟。_
 
-完成后，您将能够：
-
-- 区分 `CombatUtils` 的空间查询与 `AIUtils` 的敌我关系查询；
-- 查询指定范围内的舰船、导弹、弹丸、小行星和综合实体；
-- 按实体边缘距离排序候选，并选择可见的敌方目标；
-- 根据目标速度计算拦截点，正确处理无解结果；
-- 判断舰船系统的当前可用性，并识别右键系统的独立边界；
-- 根据粒子颜色验证战场扫描器返回的对象。
+_本节预期操作时间：\~30 分钟。_
 
 ## 前置知识
 
 - [C7-S1] 的入口插件与构建后的加载；
-- [C8-S1] 的战斗引擎与玩家舰船；
-- [C8-S1] 的战斗实体、导弹和弹丸；
-- [C8-S1] 的每帧战斗插件、暂停判断和 `settings.json` 注册；
-- [C18-S2] 的坐标、距离、向量与碰撞点；
-- 能够用 Gradle 构建示例 MOD，并从 `starsector.log` 定位类名。
+- [C8-S1] 的战斗引擎、每帧战斗插件、暂停判断和 `settings.json` 注册；
+- [C8-S3] 的战斗实体 (`CombatEntityAPI`)、导弹与弹丸 (`DamagingProjectileAPI`)；
+- [C18-S2] 的坐标、距离、向量与碰撞点。
 
 ## 注册战斗扫描器
 
@@ -33,7 +24,7 @@ _本节预期操作时间：\~35 分钟。_
 ```json
 {
     "plugins": {
-        "gearInCombatScanner": "data.scripts.gearin.lib.GearInCombatScanner"
+        "GearIn_combatScanner": "data.scripts.gearin.lib.GearInCombatScanner"
     }
 }
 ```
@@ -44,7 +35,7 @@ _本节预期操作时间：\~35 分钟。_
 
 **空间查询按类型与位置取得候选，关系查询进一步使用观察者的所属方。** `CombatUtils` 接收坐标和半径，`AIUtils` 接收一艘舰船、导弹或其他战斗实体，从它的 `owner` 判断关系。敌舰查询还会处理战争迷雾；导弹的集合与 nearest 入口各有筛选条件，后面分别说明。
 
-例如，爆炸效果需要影响半径内的一切舰船，应从 `CombatUtils.getShipsWithinRange(...)` 开始；舰船系统 AI 只关心自己看得见的敌舰，则直接使用 `AIUtils.getNearbyEnemies(...)`。先确定空间候选，再决定是否需要敌我和可见性筛选，可以避免把两层规则混在一次循环中。
+例如，爆炸效果需要影响半径内的一切舰船，应从 `CombatUtils.getShipsWithinRange(...)` 开始；舰船系统 AI 只筛选当前处于可见状态的敌舰，则直接使用 `AIUtils.getNearbyEnemies(...)`。先确定空间候选，再决定是否需要敌我和可见性筛选，可以避免把两层规则混在一次循环中。
 
 本页的扫描器以玩家舰船为中心，同时展示两层结果。蓝色、橙色、黄色和灰色粒子分别标记空间查询取得的最近舰船、导弹、弹丸和小行星；红色粒子标记 `AIUtils` 选出的可见敌舰；紫色粒子标记以 800 su/s 追向该敌舰时的拦截点。
 
@@ -66,7 +57,7 @@ List<CombatEntityAPI> asteroids =
 
 `getShipsWithinRange(...)` 返回舰船并排除 shuttle pod。`getMissilesWithinRange(...)` 只返回导弹，`getProjectilesWithinRange(...)` 则返回导弹以外的 `DamagingProjectileAPI`，两份列表不会把同一枚导弹重复计算。小行星使用更宽泛的 `CombatEntityAPI`，因为它不属于舰船或弹丸接口。
 
-这四个方法只检查实体类型和空间位置。列表中可以同时出现友军、敌军和中立对象，也可以出现当前观察方尚未发现的敌方实体。范围伤害、冲击波和区域视觉通常需要这种原始候选；战术 AI 还要继续检查 `owner` 或交给 `AIUtils` 筛选。
+这些范围入口只检查实体类型和空间位置。列表中可以同时出现友军、敌军和中立对象，也可以出现当前观察方尚未发现的敌方实体。范围伤害、冲击波和区域视觉通常需要这种原始候选；战术 AI 还要继续检查 `owner` 或交给 `AIUtils` 筛选。
 
 ### 查询目标点和综合实体
 
@@ -110,7 +101,7 @@ List<MissileAPI> nearbyEnemyMissiles =
 
 `getEnemyMissilesOnMap(...)` 的实际条件不同：它纳入所属方不同的导弹，也纳入本方已熄火的导弹，查询过程没有检查战争迷雾。`getNearbyEnemyMissiles(...)` 再从这份集合按距离筛选，保留同样的关系条件。
 
-编者建议防御 AI 在这份导弹集合上补齐当前所需的所属方、可见性与熄火状态判断。这里的差异会直接改变是否启动防御系统、是否把一个对象当作威胁，单凭 `Enemy` 这个名称无法决定全部行为。
+防御 AI 拿到这份导弹集合后，仍要按己方威胁口径自行补齐所属方、可见性与熄火状态判断 —— 单靠方法名里的 `Enemy` 并不能替点防武器做完全部取舍。
 
 nearby 方法限定返回集合的半径，后续行为只处理附近候选，但它们仍从全图关系集合开始筛选。敌舰查询启用 LazyLib 缓存时可以取得缓存集合，其余遍历与后续处理仍有各自的工作量。舰船范围查询遍历舰船列表，导弹、小行星的专用空间查询使用相应网格，因此扫描器仍按间隔执行。
 
@@ -135,7 +126,7 @@ Vector2f intercept = enemy == null ? null : AIUtils.getBestInterceptPoint(
         origin, INTERCEPT_SPEED, enemy.getLocation(), enemy.getVelocity());
 ```
 
-大型舰船的中心可能比护卫舰更远，但碰撞圆边缘更接近观察点。计入碰撞半径的排序会优先选择真正更靠近效果边缘的实体。单参数构造器同样计入碰撞半径；只比较中心坐标时必须使用 `new SortEntitiesByDistance(origin, false)`。
+大型舰船的中心可能比护卫舰更远，但碰撞圆边缘更接近观察点。计入碰撞半径的排序会优先选择真正更靠近效果边缘的实体。单参数构造器同样计入碰撞半径；只比较中心坐标时必须使用 `new CollectionUtils.SortEntitiesByDistance(origin, false)`。
 
 排序只决定候选顺序。敌我关系、相位状态、碰撞类别和业务优先级仍应在排序前完成筛选，这样排在首位的对象才符合当前动作的条件。
 
@@ -234,7 +225,7 @@ if (nearest != null && WeaponUtils.isWithinArc(nearest, weapon)) {
 }
 ```
 
-`getEnemiesInArc(...)` 与 `getAlliesInArc(...)` 从相应舰船集合按射程和射界筛选；nearest 入口直接遍历舰船，筛选条件还包括所属方差异，因此仍要按当前 AI 需要处理可见性与舰况。导弹集合入口沿用 `AIUtils.getEnemyMissilesOnMap(...)`，nearest 导弹入口则自行排除同方导弹，并按中心距离与射界选择。
+`getEnemiesInArc(...)` 与 `getAlliesInArc(...)` 从相应舰船集合按射程和射界筛选；nearest 入口直接遍历全场舰船，**但只检查所属方差异、射界与射程**，既不管可见性也不排除残骸和逃生舱，因此仍要按当前 AI 需要补齐筛选。导弹集合入口沿用 `AIUtils.getEnemyMissilesOnMap(...)`，nearest 导弹入口则自行排除同方导弹，并按中心距离与射界选择。
 
 `isWithinArc(...)` 判断射程和射界，还接受碰撞圆与射界边线相交的对象。`getTimeToAim(...)` 用坐标到射界的角差除以转速，坐标已在射界内时返回 0；`aimTowardsPoint(...)` 才按 `amount` 直接推进炮塔当前朝向。两者的计算用途要分别对照。
 
@@ -242,7 +233,7 @@ if (nearest != null && WeaponUtils.isWithinArc(nearest, weapon)) {
 
 ### 使用 DefenseUtils 读取受损位置
 
-`DefenseUtils.getArmorValue(ship, location)` 把世界坐标映射到装甲格并返回当前装甲值；`getArmorDamage(...)` 返回该处累计损失，`getArmorLevel(...)` 返回装甲比例。坐标落在装甲网格之外时，这三个方法返回 `DefenseUtils.NOT_IN_GRID`。
+`DefenseUtils.getArmorValue(ship, location)` 把世界坐标映射到装甲格并返回当前装甲值；`getArmorDamage(...)` 返回该处累计损失，`getArmorLevel(...)` 返回装甲比例。坐标位于装甲网格之外时，这三个方法返回 `DefenseUtils.NOT_IN_GRID`。
 
 `getDefenseAtPoint(...)` 先判断相位斗篷与舰体边界，再判断该坐标是否由开启的护盾覆盖，最后按装甲值区分装甲与船体。`hasArmorDamage(...)` 与 `hasHullDamage(...)` 用于判断维修需要，`getMostDamagedArmorCell(...)` 返回装甲最少的网格坐标；装甲完整时返回 `null`。
 
@@ -294,6 +285,7 @@ import org.lazywizard.lazylib.combat.AIUtils;
 import org.lazywizard.lazylib.combat.CombatUtils;
 import org.lwjgl.util.vector.Vector2f;
 
+import com.fs.starfarer.api.GameState;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
@@ -325,7 +317,7 @@ public final class GearInCombatScanner extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         CombatEngineAPI engine = Global.getCombatEngine();
-        if (engine.isPaused()) {
+        if (engine == null || engine.isPaused() || Global.getCurrentState() == GameState.TITLE) {
             return;
         }
 
@@ -395,34 +387,16 @@ public final class GearInCombatScanner extends BaseEveryFrameCombatPlugin {
 
 :::
 
-## 验证方案
+### 进游戏核对
 
-前置数据：`GearInCombatScanner` 已登记到 `data/config/settings.json`，并准备一场包含玩家舰船、敌舰、导弹、弹丸与小行星的模拟战。
+执行 `gradle jar`，确认 `data/config/settings.json` 已登记 `GearIn_combatScanner`，进入一场包含敌舰、导弹、弹丸与小行星的模拟战：
 
-1. 执行 `gradle jar`，把包含扫描器的 JAR 放入 MOD 并启动游戏。
-2. 进入模拟战，观察玩家舰船周围的蓝色、橙色、黄色和灰色粒子。
-3. 暂停战斗 3 秒，确认粒子停止刷新；恢复战斗后继续观察。
-4. 把两艘碰撞半径不同的舰船放在相近位置，确认蓝色粒子标记边缘距离更近者。
-5. 让一艘可见敌舰进入 1600 su，确认它出现红色粒子，同时在前方出现紫色拦截点。
-6. 让敌舰横向加速和转向，观察紫色粒子随当前速度改变位置。
-7. 让敌舰离开视野，比较红色目标标记与蓝色空间候选标记。
-8. 将导弹和弹丸的中心移到 1600 su 外，将舰船与小行星的近侧边缘移到该范围外；敌舰再与玩家碰撞圆保持超过 1600 su 的边缘间隔。等待下一次扫描与旧粒子结束。
-9. 在独立主系统 AI 中运行 `canUseSystemThisFrame` 片段，分别观察冷却、过载和可用状态。
-10. 在相位舰上读取 `getPhaseCloak()`，确认右键系统状态由该对象提供。
+- 玩家舰船周围出现蓝、橙、黄、灰四色粒子，各自标出对应类型中边缘距离最近的对象 (两艘碰撞半径不同的船靠近时，边缘更近者会被选中)；
+- 暂停战斗期间粒子停止刷新，恢复后重新以 0.20 秒周期更新；
+- 范围内存在当前玩家方可见敌舰时出现红色标记，速度关系有解时前方同步出现随速度变化的紫色拦截点；敌舰退出视野后红色与紫色标记消失，空间查询的蓝色标记仍留在范围内；
+- 将各类对象移至对应距离口径的 1600 su 外，或运行主系统/相位斗篷可用性片段验证 `canUseSystemThisFrame` 与 `getPhaseCloak()` 边界，`starsector.log` 无异常。
 
-预期结果：
-
-- 四类空间候选分别使用蓝色、橙色、黄色和灰色粒子，每类只标记边缘距离最近的对象；
-- 暂停期间扫描计时冻结，恢复后重新按 0.20 秒间隔刷新；
-- 红色粒子只标记玩家一方当前可见的最近敌舰；
-- 蓝色空间候选可以标记仍在范围内但尚未进入关系筛选结果的舰船；
-- 紫色粒子随目标当前位置和速度变化，无拦截解时不生成；
-- 对象按各查询的距离口径离开 1600 su 范围后，新标记停止；最后生成的粒子持续 0.25 秒；
-- 主系统冷却、过载或资源不足时，`canUseSystemThisFrame` 返回 `false`；
-- 相位斗篷状态来自 `getPhaseCloak()`，不由主系统判断代替；
-- `starsector.log` 没有未处理异常。
-
-## 故障分析
+## 常见问题
 
 - **战斗中没有任何标记粒子**：`settings.json` 缺少插件登记、注册 key 被覆盖或完整类名与包声明不一致。
     - **解决方案**：核对 `data/config/settings.json` 的 `plugins` 条目和 JAR 内的 `data.scripts.gearin.lib.GearInCombatScanner`。
@@ -440,19 +414,13 @@ public final class GearInCombatScanner extends BaseEveryFrameCombatPlugin {
     - **解决方案**：按实际半径选择 nearby/range 方法，减少后续处理对象，并用固定间隔限制查询频率。
 
 - **大型舰船看起来更近却没有排在首位**：排序使用了实体中心距离，画面观察使用的是舰体边缘。
-    - **解决方案**：构造 `SortEntitiesByDistance(origin, true)`，让比较包含碰撞半径。
+    - **解决方案**：构造 `CollectionUtils.SortEntitiesByDistance(origin, true)`，让比较包含碰撞半径。
 
 - **拦截点代码产生空引用异常**：当前速度关系没有会合解时，`getBestInterceptPoint(...)` 返回 `null`。
     - **解决方案**：使用拦截坐标前检查返回值，并为无解状态选择直瞄或放弃目标。
 
 - **相位斗篷判断始终与实际状态不一致**：`canUseSystemThisFrame` 读取的是 `ship.getSystem()`。
     - **解决方案**：从 `ship.getPhaseCloak()` 取得右键系统，并检查该对象的状态与规格。
-
-## 总结
-
-扫描器用空间查询取得附近对象，用敌舰关系查询取得可见候选，再按边缘距离选出目标并计算拦截点。每一项查询的对象类型、距离口径与筛选条件都影响这个结果；导弹集合与 nearest 入口的条件尤其需要分别处理。武器、系统与效果角色最后根据自己的动作职责使用这些数据。
-
-扫描器用每秒 5 次的只读查询把这些差异直接显示在战场上。空间候选、可见敌舰和预测坐标使用独立颜色，您可以从画面判断查询链停在了哪一层。
 
 ## 建议参考项
 

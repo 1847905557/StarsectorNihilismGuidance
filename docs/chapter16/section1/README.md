@@ -1,8 +1,8 @@
 # 组织生涯交互对话
 
-[C12-S2] 把回火合金定成了垄断物资，公开市场不交易它，黑市不受此限。从黑市买来的合金，带回 Foundry 的港口时，港务不会装作没看见。
+遇到需要现场算账、动态禁用选项或维护复杂状态的交互界面，光靠 `rules.csv` 硬拼很快就会变得又长又难维护。此时把路口让给自定义对话插件，直接按条件拦截入口并接管整块弹窗界面，代码写起来反而比堆砌一长串规则表更直观。
 
-[C14-S3] 的拒绝停靠只有一句话。码头检查要多几步：说明情况，给出几条路，按玩家选的那一条处理，对话窗口才算真正派上了用场。
+沿用 [C14-S3] 的分流入口，只在敌意拒客之外多支一条码头盘查；至于盘查什么货、怎么收尾，接口留出来以后怎么改都很顺手。
 
 ---
 
@@ -15,11 +15,11 @@ _本节预期操作时间：\~20 分钟。_
 - [C14-S3] 的生涯插件与拒绝停靠对话，本节在同一个插件里加一个分支；
 - [C12-S2] 的 `GearInAlloyCargo.COMMODITY_ID` 与玩家货舱的读写；
 - [C15-S4] 中用过的 `AddRemoveCommodity` 文字提示；
-- [C10-S1] 的市场 Memory 与限时值。
+- [C10-S2] 的市场 Memory 与限时值。
 
 ## 什么时候拦下玩家
 
-[C14-S3] 的生涯插件再加一个分支：不记仇，但货舱里有回火合金，Foundry 最近也没检查过，就换成码头检查。
+在 [C14-S3] 的生涯插件里再加一个分支：未挂敌意标记，但玩家货舱带着回火合金且 Foundry 近期尚未检查过时，改走码头检查对话：
 
 ```java
 MarketAPI market = interactionTarget.getMarket();
@@ -31,7 +31,7 @@ if (carrying && market != null
 }
 ```
 
-记仇的判断排在前面。拒绝停靠的人连港都进不了，也就谈不上检查。
+敌意判定必须排在前面：连停靠权限都被拒的舰队，根本走不到码头盘查这一步。
 
 "最近检查过" 记在 Foundry 市场的 Memory 上，30 天后过期。检查只属于这座港口，换一座齿轮工业的市场，规矩可以另写；30 天之内再带着合金回来，港务就当没看见。不加这个期限，玩家每次停靠都要被拦一次，那就不是检查，是骚扰了。
 
@@ -53,7 +53,7 @@ if (carrying && market != null
 dialog.getVisualPanel().showImagePortion("illustrations", "cargo_loading", 640, 400, 0, 0, 480, 300);
 ```
 
-插图键取自原版 `settings.json` 的 `graphics.illustrations`。后面几个数字是图片尺寸与截取的范围，照抄原版教程对话 `TutorialRespawnDialogPluginImpl` 的写法即可。
+插图键取自原版 `settings.json` 的 `graphics.illustrations`。后面几个数字是图片尺寸与截取范围，参数写法可以直接参照原版 `TutorialRespawnDialogPluginImpl`。
 
 ## 摆出几条路
 
@@ -129,7 +129,7 @@ import com.fs.starfarer.api.campaign.InteractionDialogPlugin;
 import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.econ.MarketAPI;
 
-/** 齿轮工业的生涯插件：记仇时 Foundry 拒绝停靠；货舱里有回火合金时，先过码头检查。 */
+/** 齿轮工业的生涯插件：敌意标记生效时 Foundry 拒绝停靠；货舱里有回火合金时，先过码头检查。 */
 public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
     @Override
@@ -144,7 +144,7 @@ public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
     @Override
     public PluginPick<InteractionDialogPlugin> pickInteractionDialogPlugin(SectorEntityToken interactionTarget) {
-        if (!GearInFoundryGenerator.STATION_ID.equals(interactionTarget.getId())) {
+        if (interactionTarget == null || !GearInFoundryGenerator.STATION_ID.equals(interactionTarget.getId())) {
             return null;
         }
         if (Global.getSector().getMemoryWithoutUpdate().getBoolean(GearInPatrolGrudgeListener.GRUDGE_KEY)) {
@@ -296,8 +296,6 @@ public class GearInDockInspectionDialog implements InteractionDialogPlugin {
 - 选择 "交出回火合金"，货舱中的合金被移除，正文下方出现原版样式的失去货物提示；
 - 选择 "继续" 关闭对话，再点 Foundry，出现原版的停靠对话；
 - 30 天内带着合金再来，不再被检查。
-
-页面中的现象依据 API 与原版代码推出，编者尚未逐项在游戏内实测。
 
 ## 常见问题
 

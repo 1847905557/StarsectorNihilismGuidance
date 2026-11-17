@@ -5,7 +5,7 @@ import com.fs.starfarer.api.Global;
 public final class GearInCompatBridge {
     public static final String NEX_MOD_ID = "nexerelin";
     public static final String LUNA_MOD_ID = "lunalib";
-    public static final String SETTINGS_OWNER_MOD_ID = "gear_in";
+    public static final String SETTINGS_OWNER_MOD_ID = "GearIndustry";
     public static final String FULL_GRAPHIC_FIELD = "GearIn_fullGraphicEffect";
 
     private static boolean nexMissingReported;

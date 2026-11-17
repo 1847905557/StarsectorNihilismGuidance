@@ -32,7 +32,7 @@ public class GearInContactScript implements EveryFrameScript {
 
     @Override
     public boolean isDone() {
-        return Global.getSector().getMemory().getBoolean(CONTACTED_KEY);
+        return Global.getSector().getMemoryWithoutUpdate().getBoolean(CONTACTED_KEY);
     }
 
     @Override
@@ -60,9 +60,9 @@ public class GearInContactScript implements EveryFrameScript {
             return;
         }
 
-        sector.getMemory().set(CONTACTED_KEY, true);
-        sector.getMemory().set(RECENT_KEY, true, RECENT_DAYS);
-        market.getMemory().set(TIMESTAMP_KEY, sector.getClock().getTimestamp());
+        sector.getMemoryWithoutUpdate().set(CONTACTED_KEY, true);
+        sector.getMemoryWithoutUpdate().set(RECENT_KEY, true, RECENT_DAYS);
+        market.getMemoryWithoutUpdate().set(TIMESTAMP_KEY, sector.getClock().getTimestamp());
         Global.getSoundPlayer().playUISound("ui_rep_raise", 1f, 1f);
     }
 }

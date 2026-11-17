@@ -1,19 +1,14 @@
 # 接入常用依赖库
 
-LazyLib、GraphicsLib 和 MagicLib 分别提供计算、图形与其他常用功能。使用它们之前，现有 MOD 要同时接通启动器的依赖关系和 Gradle 的编译路径。本节完成这两份配置，再说明库加载后，哪些服务可以直接调用，哪些数据仍由使用方登记。
+接入第三方前置库时，能过编译并不代表能进游戏运行：Gradle 找到外部 JAR 只保证编得出包，玩家启动器里漏勾一项依赖，游戏启动时照样会因缺类而报错。
 
-_本节预期阅读时间：\~20 分钟。_
+先把 LazyLib、GraphicsLib 和 MagicLib 写进清单与编译路径，再确认各自的初始化时机 —— 后面所有外库功能都要从这套入口往外接。
 
-_本节预期操作时间：\~25 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~15 分钟。_
 
-完成后，您将能够：
-
-- 在 `mod_info.json` 中声明 LazyLib、GraphicsLib 和 MagicLib；
-- 用 Gradle `compileOnly` 把三库 JAR 加入编译 classpath；
-- 区分启动器依赖、编译期依赖和运行时初始化；
-- 判断依赖版本、JAR 路径和初始化阶段分别会产生什么结果。
+_本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
@@ -23,7 +18,7 @@ _本节预期操作时间：\~25 分钟。_
 
 ## 声明启动器依赖
 
-在 GearIn 的 `mod_info.json` 中加入 `dependencies`。启动器按依赖 MOD 的 `id` 查找，下面三个值分别对应三库的 manifest：
+在 GearIn 的 `mod_info.json` 中加入 `dependencies`，启动器按依赖 MOD 的 `id` 检索对应条目：
 
 ```json
 "dependencies": [
@@ -33,27 +28,29 @@ _本节预期操作时间：\~25 分钟。_
 ]
 ```
 
-`id` 决定启动器寻找哪个 MOD，`name` 决定依赖提示中显示什么文字。选中 GearIn 时，启动器沿依赖关系选中已安装的三库；其中一个 ID 不存在或对应 MOD 没有安装时，GearIn 无法被启用。
+`id` 决定启动器去哪个 manifest 匹配目标 MOD，`name` 只管在缺少依赖的提示弹窗里显示给玩家看的名称。玩家勾选 GearIn 时，启动器会联动启用这三项；只要其中一项缺失或未安装，GearIn 就会在列表里被锁死无法启用。
 
-### 理解可选版本字段
+### 谨慎填写 version 字段
 
-依赖项还可以写入 `version`，例如：
+依赖项还可以附带 `version`，例如：
 
 ```json
 {"id":"lw_lazylib","name":"LazyLib","version":"3.0.0"}
 ```
 
-启动器把这个值拆成 major、minor 和 patch，与已安装版本逐级比较。major 不同会阻断加载，minor 或 patch 不同则形成相应的兼容级别，仍允许选择。
+启动器会把版本号拆成 major、minor 和 patch 逐级比对。major 不同会直接阻断勾选，minor 或 patch 不同则按对应兼容级别提示，但仍允许选中。
 
-::: warning version 使用具体版本比较
-`"version":"3.0.0"` 表达与 3.0.0 的版本比较，较高版本也可能发生不匹配。填入该字段时，按 major、minor、patch 的实际结果判断。
+::: warning version 比的是精确段位而非最低兼容下限
+
+`"version":"3.0.0"` 表达的是与 `3.0.0` 做版本段比较，高版本同样可能触发不匹配提示或阻断。哪怕只是多了 0.0.1，您的勾选界面也会出现一抹令人不快的刺目黄色。
+
+由于这很显然根本不是人能设计出来的，编者强烈建议您总是省略 `version`，只靠稳定 ID 确认依赖存在。
+
 :::
-
-本节成品省略三项依赖的 `version`，让启动器只按稳定 ID 确认三库是否存在。需要锁定经过验证的接口版本时，再为对应依赖填入具体版本并按上述兼容级别检查结果。
 
 ## 建立编译 classpath
 
-打开 [C6-S1] 的 `build.gradle`，沿用 `gradle.properties` 中的 `starsectorRoot`，从游戏根目录找到 `mods`。先补齐下面的目录变量：
+打开 [C6-S1] 的 `build.gradle`，沿用 `gradle.properties` 中的 `starsectorRoot`，从游戏根目录定位 `mods` 下的依赖目录：
 
 ```groovy
 def gameRoot = file(providers.gradleProperty("starsectorRoot").get())
@@ -67,7 +64,7 @@ def dependencyJarDirs = [
 ]
 ```
 
-LazyLib 的主目录与 `internal` 目录一起提供其主 JAR 和配套 JAR，GraphicsLib 与 MagicLib 则从各自的 `jars` 目录取得文件。数组先确定位置，下面的 `dependencies` 再把这些文件交给编译器：
+LazyLib 除了主 `jars` 目录之外，还把 Kotlin 运行时与控制台相关包放在 `jars/internal`；GraphicsLib 与 MagicLib 则只需引入各自的 `jars` 目录。路径数组定好后，一起交给 `compileOnly`：
 
 ```groovy
 dependencies {
@@ -78,7 +75,7 @@ dependencies {
 }
 ```
 
-第一条 `compileOnly` 保留 [C6-S1] 的游戏 API，循环再把四个目录中的 JAR 加入编译 classpath。保存后，为实际文件列表补一个查看任务：
+第一条 `compileOnly` 保留原版核心 JAR，循环把依赖库的 JAR 一起放进编译期 classpath。顺手补一个查看任务，构建排错时会很直观：
 
 ```groovy
 tasks.register("printCompileClasspath") {
@@ -88,49 +85,45 @@ tasks.register("printCompileClasspath") {
 }
 ```
 
-执行 `gradle printCompileClasspath` 就能看到编译器使用的文件路径。
+执行 `gradle printCompileClasspath`，就能直接看到编译器实际拿到的完整 JAR 列表。
 
-Gradle 能够据此解析三库的类，但打包 GearIn 时不会把这些外部类复制进 `GearIndustry.jar`。玩家的游戏进程仍从三库各自的 MOD 目录加载对应 JAR。
+`compileOnly` 只在编译期生效，打包 `GearIndustry.jar` 时绝不能把外库类一起打进去 —— 运行时由各前置库自己的 MOD 目录加载。另外，从 `starsectorRoot` 推导 `modsDir` 可以让工程放到任意独立目录编译；如果偷懒写 `rootDir.parentFile`，工程一旦挪出 `Starsector/mods/GearIndustry` 就会当场失灵。依赖数组里的目录名，按本机实际安装的目录名填写即可。
 
-这份配置通过游戏路径属性定位依赖，工程放在其他目录也可以编译。若按目录层级推导路径，只有工程位于 `Starsector/mods/GearIndustry` 时，`rootDir.parentFile` 才是 `mods`；工程移动后，这个条件也跟着变化。依赖数组中的库目录名仍按您实际安装的名称填写。
+## 编译配置与运行时初始化的边界
 
-## 让编译配置与游戏加载对应
+接通这两步之后，代码里就可以正常导入并调用 `org.lazywizard.lazylib.MathUtils`。**编译通过与依赖 MOD 已在游戏里加载，是各自独立的两层配置：**
 
-现在可以在代码中导入 `org.lazywizard.lazylib.MathUtils`。编译器从 classpath 找到这个类，启动器根据 manifest 联动启用 LazyLib，游戏再加载它的 JAR。**编译通过与依赖 MOD 已加载，各自有对应的配置。**
+| 层次           | 配置入口                     | 直接结果                               |
+| -------------- | ---------------------------- | -------------------------------------- |
+| 启动器依赖     | `mod_info.json.dependencies` | 查找并联动启用前置 MOD                 |
+| 编译 classpath | Gradle `compileOnly`         | 编译器能够解析依赖库类型               |
+| 运行时初始化   | 依赖库入口与使用方入口       | 建立库的服务、shader 注册表或数据加载 |
 
-### 依赖配置职责速查表
+`compileOnly` 管不着游戏启动器，`dependencies` 也替不了 Gradle 找 JAR，两份清单各守一边。
 
-| 层次           | 配置入口                     | 直接结果                          |
-| -------------- | ---------------------------- | --------------------------------- |
-| 启动器依赖     | `mod_info.json.dependencies` | 查找并联动启用前置 MOD            |
-| 编译 classpath | Gradle `compileOnly`         | 编译器能够解析依赖库类型          |
-| 运行时初始化   | 依赖库入口与使用方入口       | 建立库的服务、shader 或数据注册表 |
+### 三个库的运行入口分工
 
-`compileOnly` 不会替 GearIn 声明运行时依赖，`dependencies` 也不会替 Gradle 寻找 JAR。两份配置描述的是同一组库，却服务于两个不同阶段。
+启动器校验过依赖之后，游戏会按各自的 `mod_info.json` 先后拉起前置库本身的 JAR 和入口插件；GearIn 只需在自己的时机里调用公开入口或挂载数据文件：
 
-## 接到库已有的运行入口
-
-启动器完成依赖检查后，游戏根据每个前置 MOD 的 `mod_info.json` 加载它自己的 JAR 与入口插件。GearIn 只负责调用公开入口，以及登记只属于 GearIn 的数据文件。
-
-LazyLib 的运行环境由 LazyLib 自身建立。GearIn 编译通过后，可以在战斗或生涯代码中直接调用 `MathUtils`、`AIUtils` 等公开工具，具体方法从下一节开始讲解。
-
-MagicLib 同样通过自己的入口处理库初始化和约定数据文件。Java API 由 GearIn 的调用点使用，MagicTrail、MagicBounty 等数据则放在 MagicLib 规定的路径；两类接入都以 MagicLib MOD 已被加载为前提。
-
-GraphicsLib 的入口也调用 `ShaderLib.init()`。使用方在自己的 `onApplicationLoad()` 中调用它，可以确保检查能力与读取数据之前已经完成初始化；环境已建立时，这个调用直接返回。GearIn 随后检查 shader 与 buffer 能力，再登记自己的 light/texture CSV，具体操作由后续 GraphicsLib 页面展开。
+- **LazyLib**：运行环境由 `org.lazywizard.lazylib.LazyLib` 自行建立，使用方编译通过即可在战斗或生涯代码里直接调 `MathUtils`、`AIUtils` 等工具类；
+- **MagicLib**：由 `org.magiclib.Magic_modPlugin` 接管自身初始化和约定的赏金/尾迹路径，使用方直接调 API 或把数据文件放进规定路径即可；
+- **GraphicsLib**：`org.dark.shaders.ShaderModPlugin` 在加载阶段会调用 `ShaderLib.init()`。`ShaderLib.init()` 开头带有已初始化守卫，重复调用会直接返回；在自己的 `onApplicationLoad()` 里显式调一次 `ShaderLib.init()`，再检查硬件支持与加载光效/贴图 CSV，就能避免受模组插件加载顺序影响。
 
 ## 选择渲染依赖
 
 ::: tip GraphicsLib 与 BoxUtil 的职责
-GraphicsLib 用于 shader、动态光照以及 material/normal 贴图管线。需要创建自定义渲染实体、批量提交 Sprite 贴图或管理渲染队列时，可以参考 [C20-S6] 的 BoxUtil 选型。
+
+GraphicsLib 负责全屏 shader、动态光源以及 material / normal 贴图管线；若需要创建自定义渲染实体、批量提交 Sprite 贴图或自管渲染队列，可结合 [C20-S6] 的 BoxUtil 选型。
+
 :::
 
-## 完整最小例
+## 完整的配置样本
 
-把三项依赖放回 GearIn 的 manifest 后，`mod_info.json` 的相关内容如下：
+将三项依赖补进 [C1-S1] 的 `mod_info.json`：
 
 ```json
 {
-  "id":"gear_in",
+  "id":"GearIndustry",
   "name":"Gear Industry",
   "version":"1.0.0",
   "gameVersion":"0.98.5a-RC3",
@@ -144,7 +137,7 @@ GraphicsLib 用于 shader、动态光照以及 material/normal 贴图管线。�
 }
 ```
 
-`build.gradle` 沿用 [C6-S1] 的 Java 17、源码目录和 JAR 任务，并把依赖目录加入已有的 `dependencies`：
+`build.gradle` 沿用 [C6-S1] 的 Java 17 工具链与产物配置，把依赖库目录并入 `dependencies`：
 
 ```groovy
 plugins {
@@ -199,56 +192,39 @@ tasks.register("printCompileClasspath") {
 }
 ```
 
-完整配置包含 `printCompileClasspath`，继续写代码前可以执行它确认实际依赖。manifest 和 Gradle 准备完成后，GraphicsLib 的初始化接到应用加载入口；光照与纹理的登记在相应功能页完成。
+### 进游戏核对
 
-## 验证方案
+先按上述配置写好 `mod_info.json` 与 `build.gradle` (前提是本机 `Starsector/mods/` 下已安装 LazyLib、GraphicsLib 与 MagicLib)：
 
-前置数据：LazyLib、GraphicsLib 和 MagicLib 位于 `Starsector/mods/`，GearIn 的 manifest 与 Gradle 已采用本节成品配置。
+- 执行 `gradle printCompileClasspath`，输出列表同时包含核心 API 与三库对应目录的 JAR；
+- 执行 `gradle jar`，再用 `jar tf jars/GearIndustry.jar` 检查压缩包，里面只有 GearIn 自己的 `.class`，没有混入三方库包体；
+- 打开游戏启动器并勾选 GearIn，三项依赖同步联动启用；故意取消勾选其中任意一项后再勾 GearIn，会看到对应的缺库提示；
+- 恢复三项依赖启动进入主菜单，查看 `starsector.log` 确认 GearIn 与三库全部正常加载。
 
-1. 执行 `gradle printCompileClasspath`，在文件列表中定位游戏核心、LazyLib、GraphicsLib 和 MagicLib 的 JAR。
-2. 执行 `gradle jar`，再用 `jar tf jars/GearIndustry.jar` 检查产物条目。
-3. 打开启动器并勾选 GearIn，确认三项依赖随之启用。
-4. 取消任一依赖，再次勾选 GearIn，观察启动器给出的依赖提示。
-5. 恢复三项依赖，以正常配置启动游戏并检查 `starsector.log` 中的 MOD 加载记录。
+## 常见问题
 
-预期结果：
+- **启动器找不到依赖**：`mod_info.json` 中声明的 `id` 与对应库 manifest 不一致 (注意 LazyLib 是 `lw_lazylib`，GraphicsLib 是 `shaderLib`)，或对应 MOD 未放进 `Starsector/mods/`。
+    - **解决方案**：按三库 `mod_info.json` 恢复精确 ID 与目录位置。
 
-- `compileClasspath` 同时包含游戏 API 和三库 JAR；
-- `GearIndustry.jar` 只包含 GearIn 自身编译产物，没有复制依赖库的包；
-- 启动器按三个精确 ID 建立依赖关系，缺少其中一项时指出对应名称；
-- 三库完整时，游戏能够加载 GearIn，后续页面可以继续接入库的运行功能。
+- **启动器阻止选择带版本的依赖**：填写的 `version` 与本机已安装版本发生 major 不匹配。
+    - **解决方案**：确认接口兼容后修正具体版本号，或像本节一样省略 `version` 字段。
 
-## 故障分析
+- **Gradle 报错找不到外部库类或目录**：`starsectorRoot` 未指向真实的 Starsector 安装根目录，或本机 MOD 文件夹名与 `dependencyJarDirs` 不符。
+    - **解决方案**：跑一次 `gradle printCompileClasspath` 对照输出路径修正。
 
-- **启动器找不到依赖**：GearIn 声明的 `id` 与依赖库 manifest 中的值不一致，或对应 MOD 没有安装。
-    - **解决方案**：按三库 manifest 恢复精确 ID，并确认目录直接位于 `Starsector/mods/`。
+- **编译通过但进游戏抛出 `NoClassDefFoundError`**：Gradle 已加入 JAR，但 `mod_info.json` 漏掉了运行时 `dependencies`。
+    - **解决方案**：补全 `dependencies` 中的对应 ID 并在启动器勾选启用。
 
-- **启动器阻止选择带版本的依赖**：声明版本与已安装版本发生 major 不匹配，或对方没有可判定的版本。
-    - **解决方案**：核对实际兼容版本；确认接口兼容后更新具体版本值，或按本节成品省略该字段。
+- **`GearIndustry.jar` 体积暴涨并打进了外库类**：打包配置错误地把依赖 JAR 解包合并进了输出。
+    - **解决方案**：保留 `compileOnly`，删掉额外合并依赖的配置后重新执行 `gradle jar`，用 `jar tf` 复查产物。
 
-- **Gradle 报告依赖库的包不存在**：`modsDir` 没有指向真实 `Starsector/mods`，或 JAR 目录名称与安装目录不一致。
-    - **解决方案**：执行 classpath 查询并逐项修正四个目录。
-
-- **编译通过但进入游戏时报 `NoClassDefFoundError`**：Gradle 已看到 JAR，而 manifest 没有声明对应运行时依赖。
-    - **解决方案**：在 `dependencies` 中补回该库的精确 ID，并通过启动器启用它。
-
-- **manifest 已声明但 Java 无法编译**：启动器关系已经存在，而依赖 JAR 没有进入 `compileClasspath`。
-    - **解决方案**：补齐 `dependencyJarDirs` 和 `compileOnly fileTree(...)`。
-
-- **GearIndustry.jar 中出现依赖库包**：额外的归档配置把依赖 JAR 合并进了产物。
-    - **解决方案**：检查归档任务的输入，移除依赖合并配置，保留 `compileOnly`，重新构建并用 `jar tf` 检查产物。
-
-- **GraphicsLib 类可以调用但光照和贴图数据没有生效**：manifest 与 classpath 已接通，使用方尚未完成 `ShaderLib.init()` 和数据登记。
-    - **解决方案**：按后续 GraphicsLib 页面在应用加载阶段建立初始化与 CSV 加载链。
-
-## 总结
-
-三库通过 manifest 参与游戏加载，通过 `compileOnly` 提供编译所需类型，外部类继续由各库自己的 JAR 提供。接下来使用库的服务时，调用点负责自己的参数与资源登记，库入口负责建立运行环境；加载与调用由此能够分别追到实际配置。
+- **GraphicsLib 类可调用，但光效或贴图没有生效**：只接通了包依赖，尚未在 `onApplicationLoad()` 调用 `ShaderLib.init()` 或登记光效/贴图 CSV。
+    - **解决方案**：按 [C18-S5] 至 [C18-S7] 补齐初始化顺序与 CSV 读取。
 
 ## 建议参考项
 
 - `mod_info.json`：`dependencies` 的 ID、名称与可选版本；
 - `Gradle compileOnly`：只进入编译 classpath 的依赖声明；
-- `Starsector/mods/LazyLib/mod_info.json`：`lw_lazylib` ID 与 JAR 目录；
-- `Starsector/mods/GraphicsLib/mod_info.json`：`shaderLib` ID 与 `ShaderLib` 入口；
+- `Starsector/mods/LazyLib/mod_info.json`：`lw_lazylib` ID 与 `jars`、`jars/internal` 目录；
+- `Starsector/mods/GraphicsLib/mod_info.json`：`shaderLib` ID 与 `ShaderModPlugin` / `ShaderLib` 入口；
 - `Starsector/mods/MagicLib/mod_info.json`：`MagicLib` ID 与运行时入口。

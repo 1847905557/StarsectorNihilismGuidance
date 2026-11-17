@@ -1,8 +1,8 @@
 # 配置人物基础
 
-Aster Vance 是齿轮工业在 Foundry 的联系人，往后的对话和事件链都要从她这里开始。
+想让一名 NPC 在存档里长期存续，单靠工厂造出 `PersonAPI` 还不够：必须把它放进 `ImportantPeopleAPI` 建立全局索引，再单独挂进市场名录与通信目录，否则代码里查得到人，玩家靠站却看不见。
 
-给一个人物定下固定的身份，听上去是全书最无聊的工作之一。可之后几章挂在她身上的东西，全都靠这个身份才找得到她。
+这节用 Nipher Foundry 的联系人 Aster Vance 做个示范：按固定 ID 只建一次，再把她送进空间站的通信名录。
 
 ---
 
@@ -12,14 +12,12 @@ _本节预期操作时间：\~15 分钟。_
 
 ## 前置知识
 
-- [C12-S1] 的 Foundry 市场与通信目录，Aster 在那里出现；
-- [C7-S1] 的 `onNewGame()`，联系人只在新档中创建。
+- [C12-S1] 的 Foundry 市场与通信目录，联系人将停驻在那里；
+- [C7-S1] 的 `onNewGame()`，固定人物只在新档中创建。
 
 ## 固定 ID 与重要人物服务
 
-Aster Vance 是 Foundry 的联系人，ID 为 `GearIn_aster_vance`。后续章节的对话、技能与事件链都按这个 ID 找她。
-
-人物用 `Global.getFactory().createPerson()` 创建，资料由调用方逐项填写。创建之后交给重要人物服务登记，此后才能按 ID 取回同一个对象：
+所有需要跨章节引用的重要人物，都会保存在 `sector.getImportantPeople()` 返回的 `ImportantPeopleAPI` 中。创建固定 ID 人物的标准写法是 "先查后建"：
 
 ```java
 ImportantPeopleAPI people = sector.getImportantPeople();
@@ -33,11 +31,12 @@ person.setId(PERSON_ID);
 people.addPerson(person);
 ```
 
-**先查后建。** 已有同 ID 的人物就直接返回，不再创建。这一条在以后所有需要固定身份的对象上都适用，包括实体、市场与任务。
+- **先设 ID 再登记**：`ImportantPeopleAPI` 在调用 `addPerson(person)` 时按 `person.getId()` 建立索引。如果先 `addPerson(...)` 再改 ID，索引表里的键值不会跟着更新；
+- **重要度与独占借用**：除按 ID 查找外，`ImportantPeopleAPI` 还承载两项在任务与剧情系统里常用的能力 —— 一是用 `getPeopleWithPost(...)`、`getMatching(...)` 按职务或过滤条件批量检索人物，二是提供 `checkOutPerson(person, reason)` / `returnPerson(person, reason)` 借还锁，防止多个随机事件在同一时间把同一个联系人征用成失踪目标或双料委托人。
 
-## 写入身份
+## 写入身份与交互字段
 
-姓名、势力、身份层级、职务与头像逐项写入：
+人物基础档案在 `PersonAPI` 上逐项填写：
 
 ```java
 person.setId(PERSON_ID);
@@ -48,13 +47,14 @@ person.setPostId(Ranks.POST_TRADER);
 person.setPortraitSprite("graphics/portraits/portrait_hegemony01.png");
 ```
 
-`rank` 是身份层级，`post` 是职务，两者取自 `Ranks` 的常量。头像借用原版资源，路径从 `graphics/` 起写。**固定 ID 必须在登记之前设好**，登记之后再改，服务里的索引不会跟着变。
+- `FullName(first, last, gender)` 决定姓名文本与代词性别，若需要单名角色可以把 `last` 设为 `""`；
+- `setFaction(...)` 决定人员界面底色、阵营归属与敌对判断，对玩家关系可通过 `getRelToPlayer()` 读取或修改；
+- `rankId` 是身份层级 (军衔或公民头衔)，`postId` 是岗位职务 (决定通信面板中的职业标签)，常用常量集中在 `Ranks` 中；
+- 头像路径从 `graphics/` 起写。若是经常在酒吧或情报页露面的联系人，还可以通过 `setImportanceAndVoice(PersonImportance, random)` 设定人物分量与对话语气，用 `getMemoryWithoutUpdate()` 写入对话条件标志。
 
-Aster 的职务是商人。往后的对话与事件链都从她开始，这样的人物用不着军衔，只需要玩家每次找到的都是同一个她。头像借用原版霸主的一张，没有另画。
+## 接到市场、通信目录与位置索引
 
-## 接到市场与通信目录
-
-人物登记之后，还有三处连接要接：
+身份资料写完并调用 `people.addPerson(person)` 之后，人物与空间站之间还有三处引用需要一并接通：
 
 ```java
 people.addPerson(person);
@@ -63,24 +63,27 @@ market.getCommDirectory().addPerson(person);
 people.getData(person).getLocation().setMarket(market);
 ```
 
-- `market.addPerson(...)` 把人物加入市场的人物集合，并设置人物所属的市场；
-- `getCommDirectory().addPerson(...)` 才建立通信条目，玩家在通信界面里看到的就是它；
-- `getLocation().setMarket(...)` 告诉重要人物服务她在哪里，后续脚本按位置查找时用得到。
+- `market.addPerson(...)` 将人物加入该市场的人员集合，并设置人物记录上的所属市场；
+- `market.getCommDirectory().addPerson(...)` 负责在停靠界面的通信目录里生成可点击条目；
+- `people.getData(person).getLocation().setMarket(...)` 更新 `ImportantPeopleAPI` 内部 `PersonLocationAPI` 的位置标记，方便外部脚本在不遍历全部市场的情况下直接判断她现在待在哪座站 (同理也有 `setEntity(...)` 用于驻留在舰队或特定星图实体上的角色)。
 
-**只做 `market.addPerson`，人物属于市场，却不会出现在通信目录里。** 漏掉目录登记，玩家就找不到这个人。
+::: warning 漏掉通信目录与调用顺序的两个陷阱
 
-Foundry 是 [C12-S1] 建立的 `GearIn_market_foundry`，市场取不到时，`create(...)` 返回 `null`，不创建人物。
+1. **只做 `market.addPerson(...)` 不加进 `CommDirectoryAPI`**：人物在数据上属于市场，玩家停靠空间站后却无法在通信列表里发起对话。管理员等幕后角色可以不进通信目录，但联系人必须加上这一步；
+2. **先调 `people.getData(person)` 再 `people.addPerson(person)`**：人物尚未纳入服务时 `getData(person)` 返回 `null`，直接链式调用 `.getLocation()` 会立刻抛出空指针异常。
+
+:::
 
 ## 在新档中创建
 
-在 `GearInModPlugin.onNewGame()` 中，Foundry 生成之后调用：
+Foundry 市场建立之后，在 `GearInModPlugin.onNewGame()` 中调用联系人创建方法：
 
 ```java
 new GearInFoundryGenerator().generate(sector);
 GearInAsterContact.create(sector);
 ```
 
-顺序不能颠倒：Foundry 先存在，联系人才有地方可去。
+Foundry 市场尚未生成时，`sector.getEconomy().getMarket(GearInFoundryGenerator.MARKET_ID)` 返回 `null`，`create(...)` 直接放弃创建并返回 `null`，因此两者顺序不可颠倒。
 
 ## 完整的联系人类
 
@@ -138,34 +141,32 @@ public final class GearInAsterContact {
 
 ### 进游戏核对
 
-执行 `gradle jar`，重启游戏，**新建一份存档**，停靠 Nipher Foundry。
+执行 `gradle jar`，重启游戏，**新建一份存档**，停靠 Nipher Foundry：
 
-- 通信目录中出现 Aster Vance，职务为商人，头像为所借用的原版头像；
-- 控制台执行 `runcode Global.getSector().getImportantPeople().getPerson("GearIn_aster_vance")`，返回非空；
+- 通信目录中出现 Aster Vance，职务显示为商人，立绘加载正常；
+- 控制台执行 `runcode Global.getSector().getImportantPeople().getPerson("GearIn_aster_vance")` 返回非空，且 `getData("GearIn_aster_vance").getLocation().getMarket().getId()` 为 `"GearIn_market_foundry"`；
 - 保存并重新读档，通信目录中仍然只有一个 Aster。
-
-页面中的现象依据 API 与原版代码推出，编者尚未逐项在游戏内实测。
 
 ## 常见问题
 
 - **通信目录里没有 Aster**：只调用了 `market.addPerson(...)`，没有登记目录。
-    - **解决方案**：再调用 `getCommDirectory().addPerson(...)`。
+    - **解决方案**：补全 `market.getCommDirectory().addPerson(person)`。
 
-- **按 ID 查不到人物**：没有调用 `people.addPerson(...)`，或 ID 在登记之后才设置。
-    - **解决方案**：先 `setId(...)`，再登记。
+- **按 ID 查不到人物**：没有调用 `people.addPerson(...)`，或者 ID 是在登记之后才设置的。
+    - **解决方案**：务必先 `person.setId(...)`，再 `people.addPerson(person)`。
 
-- **读档后出现两个 Aster**：创建放在了每次读档都会执行的位置，且没有先查后建。
-    - **解决方案**：放在 `onNewGame()`，并保留 `getPerson(PERSON_ID)` 的存在性检查。
+- **读档后出现两个 Aster**：创建代码放进了 `onGameLoad(...)` 这类每次读档都会执行的回调，又缺少 `getPerson(PERSON_ID)` 的幂等检查。
+    - **解决方案**：放在 `onNewGame()`，并保留先查后建判断。
 
-- **`create(...)` 返回 `null`**：Foundry 尚未生成。
-    - **解决方案**：调整调用顺序，使 Foundry 生成器先于联系人执行。
+- **`create(...)` 返回 `null`**：Foundry 市场尚未生成，或者 `getData(person)` 被放在了 `addPerson(person)` 之前触发了空指针。
+    - **解决方案**：确保 `GearInFoundryGenerator` 先执行，且 `addPerson` 先于 `getData`。
 
-- **旧存档中没有 Aster**：联系人只在新档中创建。
-    - **解决方案**：使用新档测试，见 [C7-S1]。
+- **旧存档中没有 Aster**：固定联系人仅在新档初始化时生成。
+    - **解决方案**：使用新档验证，见 [C7-S1]。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.characters.ImportantPeopleAPI`：登记、查询、位置与占用的方法。
-- `com.fs.starfarer.api.characters.PersonAPI`：身份资料与 Memory 的读写。
-- `com.fs.starfarer.api.campaign.CommDirectoryAPI`：通信目录条目的增删与查询。
-- `com.fs.starfarer.api.impl.campaign.ids.Ranks`：身份层级与职务常量。
+- `com.fs.starfarer.api.characters.ImportantPeopleAPI`：固定人物注册、过滤检索、位置追踪与 `checkOutPerson` 借用管理。
+- `com.fs.starfarer.api.characters.PersonAPI`：身份资料、关系、`PersonImportance` 与个人 Memory 读写。
+- `com.fs.starfarer.api.campaign.CommDirectoryAPI`：殖民地通信目录条目的增删、排序与可见性。
+- `com.fs.starfarer.api.impl.campaign.ids.Ranks`：身份层级与岗位职务常量表。

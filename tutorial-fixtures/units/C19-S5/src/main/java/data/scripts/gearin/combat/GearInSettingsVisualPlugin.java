@@ -3,6 +3,8 @@ package data.scripts.gearin.combat;
 import java.awt.Color;
 import java.util.List;
 
+import com.fs.starfarer.api.GameState;
+import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
@@ -23,7 +25,7 @@ public final class GearInSettingsVisualPlugin extends BaseEveryFrameCombatPlugin
 
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
-        if (engine.isPaused()) {
+        if (engine == null || engine.isPaused() || Global.getCurrentState() == GameState.TITLE) {
             return;
         }
         ShipAPI player = engine.getPlayerShip();

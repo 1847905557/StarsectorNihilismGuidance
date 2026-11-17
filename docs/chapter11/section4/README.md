@@ -1,8 +1,8 @@
 # 读取并修改舰船装配
 
-装配是一份被共享的数据。同一个装配 ID 被几艘船用着，改一处，它们全变。
+`member.getVariant()` 拿回来的往往是整片星域共用一份的 `.variant` 原型，直接对着它改武器、加船插，就会惊喜地发现全星域所有用着同一个预设 ID 的同型船全都跟着换了装备。
 
-所以改装配永远从一个副本开始，改完再写回去。漏了写回那一步，改动不会报错，也永远不会生效。
+动手前先复制一份 `REFIT` 副本，改完核对过 OP 再 `setVariant(...)` 写回，这才是只改眼前一艘船的做法。
 
 ---
 
@@ -12,105 +12,57 @@ _本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C11-S1] 的巡逻舰队管理器，改装在 `spawnFleet()` 中调用；
-- [C11-S2] 的旗舰与指挥官，改装需要指挥官的技能参与 OP 计算；
-- [C8-S2] 的过热冶炉与 [C8-S4] 的破甲校准，本节的改装把它们配合起来。
+- [C8-S2] 的过热冶炉与 [C8-S4] 的破甲校准船插；
+- [C11-S1] 的巡逻舰队管理器；
+- [C11-S2] 的 `GearInPatrolRoster` 旗舰与指挥官配置。
 
-## 装配保存了什么
+## ShipVariantAPI 保存了哪些数据
 
-成员的 `getVariant()` 返回 `ShipVariantAPI`。这上面是这艘船的装配：武器装在哪个槽、装了哪些船插、幅能散热器与电容各几个、机库放哪个联队、模块挂什么。
-
-船体本身不在装配里。槽位有哪些、OP 上限多少，来自 `getHullSpec()`。
+调用 `member.getVariant()` 会返回这艘舰船当前的 `ShipVariantAPI`。一艘船的船体底子 (有哪些武器槽、基础装甲多少、最大装配点数 OP 是多少) 固定在 `ShipHullSpecAPI` 里，而所有允许在装配界面改动的内容都保存在 `ShipVariantAPI` 上：
 
 ```java
 ShipVariantAPI variant = member.getVariant();
 ShipHullSpecAPI hull = variant.getHullSpec();
 
-variant.getFittedWeaponSlots();     // 已装武器的槽
-variant.getWeaponId(slotId);        // 某个槽上装的是什么
-variant.getNumFluxVents();          // 幅能散热器数量
-variant.getNumFluxCapacitors();     // 幅能电容数量
-variant.getHullMods();              // 船插
-variant.getFittedWings();           // 机库里的联队
-variant.getModuleSlots();           // 模块槽
+Collection<String> fittedSlots = variant.getFittedWeaponSlots();
+String weaponId = variant.getWeaponId(slotId);
+int vents = variant.getNumFluxVents();
+int capacitors = variant.getNumFluxCapacitors();
+Collection<String> hullMods = variant.getHullMods();
+List<String> wings = variant.getFittedWings();
 ```
 
-改装配的方法与之对应：`addWeapon(slotId, weaponId)`、`clearSlot(slotId)`、`addMod(modId)`、`removeMod(modId)`、`setNumFluxVents(n)`、`setNumFluxCapacitors(n)`、`setWingId(index, wingId)`。
+与之对应的修改方法同样直观：
 
-**`clearSlot(...)` 要先于 `addWeapon(...)`。** 槽位上已有武器时，`addWeapon(...)` 不会替换。
+- **替换武器**：`variant.addWeapon(slotId, weaponId)` 会直接覆写非内置槽位上的武器；如果需要把某门武器彻底拆空，调 `variant.clearSlot(slotId)` 移除即可 (但内置 `BUILT_IN` 武器槽无论是否先清槽都无法通过 `addWeapon` 改写)；
+- **增删船插**：`variant.addMod(hullModId)` 与 `variant.removeMod(hullModId)`；
+- **调整幅能耗散通道与幅能寄存器**：`variant.setNumFluxVents(n)` 与 `variant.setNumFluxCapacitors(n)`；
+- **更换战机联队**：`variant.setWingId(index, wingId)`。
 
-装配只有一份。同一个装配 ID 被几艘船共用时，改一处，它们全变。
+## 修改原则：先做副本，改完再写回
 
-## 改之前先复制
+刚刚由工厂或 `createFleetMember(...)` 创建出来的舰队成员，它的 `getVariant()` 指向的往往是 `Global.getSettings().getVariant(id)` 里的那份全局预设原型。如果直接在这份对象上删武器、加船插，相当于把游戏内存里的 `.variant` 预设文件给改了 —— 此后全星域任何势力刷出使用该预设的舰船，都会带着您的改动出场。
 
-`getVariant()` 返回的可能是一份共享的预设。改它，所有用同一预设的成员一起变。正确的顺序是先复制成自己的，改副本，再写回：
+因此在运行期修改单艘舰船的装配，要按 "复制副本 → 标记来源 → 修改 → 写回" 四步来写：
 
 ```java
 ShipVariantAPI variant = member.getVariant().clone();
 variant.setSource(VariantSource.REFIT);
-// 改 variant
+// 在此修改 variant 副本...
 member.setVariant(variant, false, true);
 ```
 
-`setVariant(...)` 的 `withRefit` 决定是否走一遍整备流程，`withStatsUpdate` 决定是否立刻重算成员数值。**改完之后要马上读到新数值，第二个参数传 `true`。**
+1. `member.getVariant().clone()` 复制出一份只属于当前这艘船的独立装配对象；
+2. `variant.setSource(VariantSource.REFIT)` 将装配来源标记为独立改装 (`REFIT`)，通知引擎在保存存档时把这份装配的具体内容序列化进存档，而不是只存一个预设 ID；
+3. **修改完成后必须调用 `member.setVariant(variant, false, true)` 写回成员** (第一个布尔参数 `withRefit` 传 `false`，第二个布尔参数 `withStatsUpdate` 传 `true` 以立即重算该船属性)。如果只 `clone()` 改完却忘了调用 `setVariant(...)`，改过的副本在方法结束时就会被垃圾回收，船上挂着的依然是原来的旧装配。
 
-`setSource(VariantSource.REFIT)` 把这份装配标成玩家改装产生的，与直接读来的预设区分开。原版有的地方先调 `setSource(...)` 再 `setVariant(...)`，有的地方先 `setVariant(...)` 再对新装配调 `setSource(...)`，两种都在用。不做这一步也不会出错，但装配的来源会被当成原来的预设。
+对于 [C4-S4] 窑级那样带有子模块的舰船，每个模块槽位 (`variant.getStationModules()`) 上挂载的也是一份独立的 `ShipVariantAPI`。若要修改子模块的装配，同样需要先取出 `variant.getModuleVariant(slotId)`、调用 `.clone()` 并设好 `VariantSource.REFIT`，改完后再通过 `variant.setModuleVariant(slotId, moduleVariant)` 写回主装配。
 
-**只 `clone()` 不 `setVariant(...)`，改动不会生效。** 副本是独立对象，成员身上挂的还是原来那一份。
+## 结合舰长技能核对装配点数 (OP)
 
-## OP 怎么算
+用代码直接往 `ShipVariantAPI` 里塞武器和船插时，引擎**不会**替您检查总装配点数是否超限 —— 哪怕塞进去的装备超了 50 点 OP，代码照样能跑通、舰船照样能进战场，只是玩家一旦在星图或战后点开舰队面板，就会看到刺眼的红字超限。
 
-装配点数是装得下装不下的唯一标准，由装配自己算：
-
-```java
-int cost = variant.computeOPCost(stats);
-int limit = variant.getHullSpec().getOrdnancePoints(stats);
-```
-
-`computeOPCost(...)` 与 `getOrdnancePoints(...)` 都要传人物属性 `stats`，因为指挥官的技能会改变 OP 上限与船插开销。**同一个装配，换一个舰长算出来的数不一样。**
-
-想只知道船插占了多少，用 `computeHullModOPCost(stats)`。还剩多少，用 `getUnusedOP(stats)`。
-
-**超限的装配能写进去，也能进战斗。** 装配界面会显示成红字超限，玩家一眼就能看见。程序里自己算一遍再决定写不写，比让玩家发现问题早。
-
-## 模块船的装配
-
-模块船的每个模块是一份独立的装配，挂在主装配的模块槽上：
-
-```java
-Map<String, String> modules = variant.getStationModules();
-ShipVariantAPI module = variant.getModuleVariant(slotId);
-variant.setModuleVariant(slotId, moduleVariant);
-```
-
-改模块的装配，等于改另一份 `ShipVariantAPI`。它同样受 "共享预设" 那条规则约束：`clone()` 之后写回，否则所有同型模块一起变。
-
-上面这些是装配层的东西。接下来改装巡逻队的旗舰。
-
-## 改装旗舰
-
-巡逻队的旗舰是 [C11-S2] 加入的工匠，装配为 `GearIn_artizan_combat`。改装做三处修改：
-
-```java
-for (String slot : BALLISTIC_SLOTS) {
-    variant.clearSlot(slot);
-    variant.addWeapon(slot, NEW_WEAPON);
-}
-variant.addMod(NEW_MOD);
-variant.setNumFluxVents(NEW_VENTS);
-```
-
-- 小型实弹槽 `WS0005`、`WS0006` 的火神炮换成都林自动炮。两者都是小型实弹武器，OP 同为 4，替换不改变总量；
-- 加装破甲校准 `GearIn_breach_calibration`，驱逐舰上占 6 OP；
-- 幅能散热器从 14 减到 12，让出 2 OP。
-
-`clearSlot(...)` 必须先于 `addWeapon(...)`：槽位上已有武器时直接添加，不会替换。
-
-这套改装让旗舰成为一艘典型的齿轮工业舰船：它已装有过热冶炉，再配上都林与破甲校准，靠承受压力换取输出。代价是散热器少了两个，幅能耗散下降，更容易被打到过载。
-
-## 核对 OP
-
-工匠的 OP 上限是 95，原装配占用 91。改装后的总量由装配自己计算：
+因此在调用 `member.setVariant(...)` 写回之前，应当先结合该船舰长的 `MutableCharacterStatsAPI` 核算一次 OP：
 
 ```java
 int cost = variant.computeOPCost(captain.getStats());
@@ -121,17 +73,17 @@ if (cost > limit) {
 }
 ```
 
-`computeOPCost(...)` 与 `getOrdnancePoints(...)` 都要传入人物的属性，因为指挥官的技能可以改变 OP 上限与船插开销。**超出上限时放弃改装并记录警告，不要强行写回。** 超限的装配照样能进入战斗，玩家在舰队界面看到的却是一艘红字超限的舰船。
+之所以要把 `captain.getStats()` 传给 `computeOPCost(...)` 与 `getOrdnancePoints(...)`，是因为 `MutableCharacterStatsAPI` 上挂着舰体 OP 加成 (`getShipOrdnancePointBonus()`) 与各规格武器 OP 修饰等入口 (供 MOD 自定义技能或早期遗留技能修改)，传入实际执掌该船的舰长属性才不会漏算这类加成 (无人物修饰时传 `null` 亦可)；此外 [C8-S4] 提到的 `WeaponOPCostModifier` 等监听器也会在装配计算时一并参与。
 
-最后用 `member.setVariant(variant, false, true)` 写回：`withRefit` 传 `false`，不触发整备流程；`withStatsUpdate` 传 `true`，立即更新成员属性。
+## 定制巡逻队旗舰装配：GearInPatrolRefitter
 
-::: warning 先改装，再配军官
+[C11-S2] 的 `GearInPatrolRoster` 为巡逻队配好了工匠级旗舰 (预设装配 `GearIn_artizan_combat`，占用 `91 / 95` 点 OP，已装有 [C8-S2] 的过热冶炉) 与指挥官 `Brann Hale`。本节我们编写 `GearInPatrolRefitter`，将这艘旗舰改装为齿轮工业特色的近战破甲配置：
 
-改装发生在 `setFlagship(...)` 之后、`setCaptain(...)` 之前，所以这里传入的是创建好的指挥官人物，而不是已经派驻的舰长。顺序见 [C11-S1] 的完整类。
+- 将两个小型实弹槽 (`WS0005`、`WS0006`) 上的原版火神炮替换为齿轮工业的都林自动炮 (`GearIn_durin`，同为 4 点 OP，点数不变)；
+- 加装 [C8-S4] 制作的 "破甲校准" 船插 (`GearIn_breach_calibration`，驱逐舰消耗 6 点 OP)，使都林对船体与装甲伤害提高 15%；
+- 将幅能耗散通道从 `14` 个减为 `12` 个，腾出 2 点 OP，使总 OP 刚好卡在 `95 / 95` 上限以内。
 
-:::
-
-## 完整的改装类
+### 完整改装类
 
 `src/data/scripts/gearin/campaign/GearInPatrolRefitter.java`：
 
@@ -146,7 +98,7 @@ import com.fs.starfarer.api.combat.ShipVariantAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.loading.VariantSource;
 
-/** 巡逻队旗舰的改装：火神炮换成都林，加装破甲校准，用散热器让出 OP；超出 OP 上限则放弃。 */
+/** 巡逻队旗舰的改装：火神炮换成都林，加装破甲校准，用耗散通道让出 OP；超出 OP 上限则放弃。 */
 public final class GearInPatrolRefitter {
 
     private static final Logger LOG = Global.getLogger(GearInPatrolRefitter.class);
@@ -182,44 +134,37 @@ public final class GearInPatrolRefitter {
 }
 ```
 
-在 [C11-S1] 管理器的 `spawnFleet()` 中，紧接在创建指挥官之后调用改装：
+### 接入巡逻队管理器
+
+在 [C11-S1] 管理器的 `spawnFleet()` 中，紧接在 [C11-S2] 的 `GearInPatrolRoster.configure(...)` 之后调用改装：
 
 ```java
-PersonAPI commander = createCommander(random);
-GearInPatrolRefitter.refit(flagship, commander);
+FleetMemberAPI flagship = GearInPatrolRoster.configure(fleet, random);
+GearInPatrolRefitter.refit(flagship, fleet.getCommander());
 ```
 
 ### 进游戏核对
 
-执行 `gradle jar`，重启游戏，**新建一份存档**，用控制台命令 `jump Nipher` 到巡逻队附近，选中舰队查看旗舰。
+执行 `gradle jar`，重启游戏，**新建一份存档**，执行 `jump Nipher` 查看轨道上的巡逻队旗舰：
 
-- 旗舰是一艘工匠，小型实弹槽上装的是都林自动炮，不再是火神炮；
-- 旗舰带有破甲校准，幅能散热器为 12；
-- 旗舰的 OP 不超过 95；
-- 保存并重新读档，改装结果没有变化。
-
-页面中的现象依据 API 与原版代码推出，编者尚未逐项在游戏内实测。
+- 巡逻队旗舰工匠级的两个小型实弹槽已换装都林自动炮，船插栏中同时装有过热冶炉与破甲校准，幅能耗散通道为 12；
+- 在模拟战或生涯市场的舰船列表中查看其它未改装的 `GearIn_artizan_combat` 工匠级，它们的小型槽依然是原版的火神炮，未受旗舰改装波及；
+- 保存并重新读档，巡逻队旗舰的改装内容完整保留，不会退回初始预设。
 
 ## 常见问题
 
-- **改装之后所有同款舰船都变了**：直接修改了成员的原装配，没有先 `clone()`。
-    - **解决方案**：先复制副本，再改副本，最后用 `setVariant(...)` 写回。
+- **改装巡逻队旗舰后，全星域所有同型号工匠级舰船全都变成了改装后的配置**：直接修改了 `member.getVariant()` 返回的共享预设，漏掉了 `.clone()`。
+    - **解决方案**：任何针对单船装配的运行期修改，都必须先调用 `member.getVariant().clone()` 复制副本，改完再通过 `member.setVariant(variant, false, true)` 写回。
 
-- **槽位上的武器没有被替换**：没有先调用 `clearSlot(...)`。
-    - **解决方案**：先清空槽位，再 `addWeapon(...)`。
+- **保存并重新读档后，改装过的武器和船插全部还原成了初始预设**：复制修改后漏掉了 `variant.setSource(VariantSource.REFIT)`。
+    - **解决方案**：生成副本后将其来源设为 `VariantSource.REFIT`，使存档保存完整的改装数据而非仅记录预设 ID。
 
-- **改装没有生效，旗舰仍是原装配**：OP 超出上限，改装被放弃。
-    - **解决方案**：查看日志中的 `GearIn patrol refit skipped`，减少散热器或换用更便宜的船插。
-
-- **舰队界面里旗舰显示红字超限**：强行写回了超出 OP 上限的装配。
-    - **解决方案**：写回之前用 `computeOPCost(...)` 与 `getOrdnancePoints(...)` 核对。
-
-- **OP 核对结果与装配界面不一致**：传入的人物属性不同，指挥官的技能改变了 OP 上限或船插开销。
-    - **解决方案**：核对时传入最终派驻的指挥官的属性。
+- **调用 `addWeapon(slotId, weaponId)` 后武器没有变化**：目标槽位属于船体自带的 `BUILT_IN` 内置槽位 (如工匠级上的 `WS0003`、`WS0004`)，引擎默认拒绝通过普通 `addWeapon(...)` 覆写内置武器。
+    - **解决方案**：只对普通可拆装槽位 (`WS0005`、`WS0006`) 调用 `addWeapon(...)`。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.ShipVariantAPI`：装配的全部读写方法，包括 `clone()`、`computeOPCost(...)` 与模块映射。
-- `com.fs.starfarer.api.loading.VariantSource`：装配来源的枚举。
-- `com.fs.starfarer.api.fleet.FleetMemberAPI`：`setVariant(...)` 的两个开关与成员的装配读写。
-- `com.fs.starfarer.api.impl.campaign.econ.impl.LionsGuardHQ`：原版对成员装配做副本再写回的写法。
+- `com.fs.starfarer.api.combat.ShipVariantAPI`：装配复制 (`clone()`)、槽位武器读写、船插增删与 `computeOPCost(...)`。
+- `com.fs.starfarer.api.loading.VariantSource`：装配来源枚举 (`STOCK`、`REFIT` 等)。
+- `com.fs.starfarer.api.fleet.FleetMemberAPI`：`getVariant()` 与 `setVariant(variant, withRefit, withStatsUpdate)`。
+- `com.fs.starfarer.api.impl.campaign.econ.impl.LionsGuardHQ`：原版狮卫总部复制并定制舰船装配的参考实现。

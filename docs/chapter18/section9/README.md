@@ -1,27 +1,21 @@
 # 创建 MagicLib 运行时尾迹
 
-运行时尾迹由 Java 决定节点何时出现、放在哪里，以及接入哪一段轨迹。本节为测试导弹保存主体与辉光的独立 ID，再以 `SimpleEntity` 产生沿初始方向前进的残影。弹体转向、跳变与命中时，采样、切段和结束各自对应到跟踪器中的状态。
+弹体半路折向切段，或者本体早已炸毁却还想留下一截脱手消散的残影，靠弹体表静态绑定就难以实现了。
 
-_本节预期阅读时间：\~32 分钟。_
+这时候得直接向 `MagicTrailPlugin` 申请稳定 ID 并逐帧补点 —— 什么时候断段、脱离载体后由谁保底清理，都需要开火脚本自己写清楚。
 
-_本节预期操作时间：\~50 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~25 分钟。_
 
-完成后，您将能够：
-
-- 为每枚发射物分配并跨帧复用稳定 trail ID；
-- 使用 `addTrailMemberSimple(...)` 配置一条基础尾迹；
-- 使用 `addTrailMemberAdvanced(...)` 配置渐变、滚动和尺寸脉冲；
-- 使用 `SimpleEntity` 为计算位置建立独立尾迹锚点；
-- 在位置跳变和实体结束时切断关联并停止跟踪。
+_本节预期操作时间：\~35 分钟。_
 
 ## 前置知识
 
-- [C8-S1] 理解战斗实体有效性与对象结束边界；
-- [C8-S1] 理解战斗插件、暂停判断与每帧时间；
-- [C18-S8] 的 trail sprite、节点生命周期和自动尾迹字段；
-- [C18-S2] 的 `GearIn_geometry_missile` 弹体与德瓦林测试引用；
+- [C8-S1] 的每帧战斗插件与暂停判断；
+- [C8-S3] 的战斗实体有效性与结束边界；
+- [C18-S2] 的 `GearIn_geometry_missile` 弹体；
+- [C18-S8] 的 trail sprite、节点状态与自动尾迹字段；
 - 能够在 `.proj` 中为弹体注册 `OnFireEffectPlugin`。
 
 ## 区分自动尾迹与运行时节点
@@ -100,11 +94,11 @@ MagicTrailPlugin.addTrailMemberSimple(
         0.8f, 0.05f, 0.2f, 0.8f, true);
 ```
 
-前三个参数确定关联实体、稳定 ID 和 sprite。`projectile` 让 `cutTrailsOnEntity(projectile)` 能找到这条尾迹；它不会让节点自动追随弹体。节点仍从第四个参数 `location` 取得本次世界坐标，因此每次采样都要重新读取当前位置。
+前几个位置依次指定关联实体、稳定 ID、sprite 与世界采样点。`projectile` 让 `cutTrailsOnEntity(projectile)` 能找到这条尾迹；它不会让节点自动追随弹体，每次采样仍需主动传入当前的 `location` 世界坐标。
 
 `speed = 0f` 让节点生成后留在原地，`facing` 同时决定节点的运动方向和宽度方向。`startSize = 14f`、`endSize = 3f` 让单个节点随生命周期收窄；颜色的 alpha 分量不会进入尾迹计算，透明度由后面的 `0.8f` 单独控制。
 
-最后四个时间与混合参数依次表示淡入 0.05 秒、完整显示 0.2 秒、淡出 0.8 秒，以及使用加色混合。节点的总寿命是三段时间之和。sprite 的宽和高都使用偶数尺寸，纹理才能稳定落在尾迹四边形上。
+末尾的淡入 `0.05` 秒、完整显示 `0.2` 秒、淡出 `0.8` 秒与加色混合参数共同决定单节存续时间。节点的总存活时长是这三段时间之和；`sprite` 的宽和高都使用偶数尺寸，纹理才能对齐尾迹四边形不发生偏移。
 
 ## 使用 Advanced 提交辉光节点
 
@@ -124,7 +118,7 @@ MagicTrailPlugin.addTrailMemberAdvanced(
 
 `textureLoopLength = 192f` 表示纹理每 192 su 重复一次；`textureScrollSpeed = 600f` 表示每秒滚动 0.6 个完整纹理周期。`textureOffset = -1f` 为同一个 tracker 选择固定随机起点，后续节点共享这份相位，零向量 `offsetVelocity` 则不增加额外世界速度。
 
-`CONTRAILS_LAYER` 明确渲染层，传入 `null` 也会采用这一层。`frameOffsetMult = 1f` 保留弹体节点的位置修正：Advanced 用发射舰速度与本帧时间计算位移，再从传入位置扣除它；Simple 没有这项修正。倍率传入 0 仍按 1 处理。自定义 OpenGL 混合重载则用源与目标混合常量替换 `boolean additive`，节点寿命的含义相同。
+`CONTRAILS_LAYER` 明确渲染层，传入 `null` 也会采用这一层。`frameOffsetMult = 1f` 保留弹体节点的位置修正：25 参 `addTrailMemberAdvanced` 重载会取 `proj.getSource().getVelocity()` 乘以帧长和该倍率来修正位置 (因此若 `linkedEntity` 是没有 `getSource()` 来源舰的弹体会直接空指针；而无 `frameOffsetMult` 的 24 参重载与 `Simple` 均不含此逻辑，并非省略时等同于传 1f)。传 `0` 给该参数仍按 `1f` 处理；自定义 OpenGL 混合重载则用源与目标混合常量替换 `boolean additive`，节点存活时长的含义不变。
 
 高级选项使用准确的包装类型：
 
@@ -137,7 +131,7 @@ private TrailTracker(DamagingProjectileAPI projectile) {
 }
 ```
 
-`SIZE_PULSE_WIDTH` 是 `Float`，让宽度每次最多增加 3 su；`SIZE_PULSE_COUNT` 是 `Integer`，让节点寿命内完成两次脉冲。`FORWARD_PROPAGATION` 是 `Boolean`，本例保持当前传播方式。键名正确而值类型错误时，对应选项不会进入 tracker。
+`SIZE_PULSE_WIDTH` 是 `Float`，让宽度每次最多增加 3 su；`SIZE_PULSE_COUNT` 是 `Integer`，让节点存活时间内完成两次脉冲。`FORWARD_PROPAGATION` 是 `Boolean`，本例保持当前传播方式。键名正确而值类型错误时，对应选项不会进入 tracker。
 
 `addTrailMemberAnimated(...)` 是兼容既有动态换图代码的弃用入口。当前静态 sprite 使用 `addTrailMemberAdvanced(...)`，避免让整条尾迹随最后一次提交反复切换纹理。
 
@@ -183,7 +177,7 @@ private DetachedTrailTracker(Vector2f location, Vector2f velocity) {
 }
 ```
 
-每帧先按初始速度的 0.65 倍移动锚点，再从新位置生成洋红色节点。导弹后续转向不会改变这份速度，所以残影继续沿开火瞬间的方向前进。0.75 秒后，跟踪器按 `anchor` 切断关联并退出；它与导弹尾迹拥有不同 ID 和结束条件。
+每帧先按初始速度的 0.65 倍移动锚点，再从新位置生成洋红色节点。导弹后续转向不会改变这份速度，所以残影继续沿开火瞬间的方向前进。0.75 秒后，跟踪器调用 `cutTrailsOnEntity(anchor)` 并从战斗引擎移除自身。注意独立构造的 `SimpleEntity` 并未加入 `engine` (`engine.isEntityInPlay(anchor)` 始终为 `false`)，而 `MagicTrailPlugin` 每 1 秒会自动清理不在场实体的切断映射，因此真正保证残影按时收尾的是停提交节点并卸载插件本身。
 
 ## 控制采样、切段和收尾
 
@@ -228,7 +222,7 @@ runcode com.fs.starfarer.api.Global.getCombatEngine().getMissiles().get(0).getLo
 | `addTrailMemberSimple(...)`   | 单一速度、颜色和加色选择               | 在 `CONTRAILS_LAYER` 提交基础节点                  |
 | `addTrailMemberAdvanced(...)` | 起止状态、纹理、额外速度、选项与渲染层 | 提交完整可调节点                                   |
 | `cutTrailsOnEntity(...)`      | 建立节点时使用的关联实体               | 当前关联 tracker 改用内部切断 ID，后续节点形成新段 |
-| `spawnDetachedTrail(...)`     | 世界坐标与速度副本                     | 创建由 `SimpleEntity` 驱动的短寿命残影             |
+| `spawnDetachedTrail(...)`     | 世界坐标与速度副本                     | 创建由 `SimpleEntity` 驱动的短时残影               |
 
 ## 完整最小例
 
@@ -421,40 +415,18 @@ public class GearInMagicTrail implements OnFireEffectPlugin {
 
 :::
 
-## 验证方案
+### 进游戏核对
 
-前置数据：Console Commands 已启用，测试敌舰使用不发射导弹的装配，便于按正文命令选择玩家弹体。
+构建包含 `GearInMagicTrail` 与 `.proj` 挂载的 MOD，进入有不发射导弹敌舰的模拟战：
 
-1. 构建 MOD，启动游戏并进入能够连续发射测试导弹的战斗。
-2. 连续发射两枚导弹，观察每枚弹体后方的青色主体、蓝色辉光和洋红色残影。
-3. 让第一枚导弹转向，比较弹体关联尾迹与保持初始方向的独立残影。
-4. 观察蓝色辉光的首尾颜色、纹理滚动和两次尺寸脉冲。
-5. 暂停战斗 2 秒，确认节点提交和独立锚点移动同时停止，再恢复战斗。
-6. 场上只保留一枚飞行中的测试导弹，执行正文位置跳变命令，观察旧段留在原处淡出，新段从新位置开始。
-7. 让导弹命中目标或进入淡出，观察关联尾迹停止增加，已有节点继续完成自身生命周期。
-8. 等待发射后的 0.75 秒，确认洋红色残影停止增加；再次连续发射，比较各枚弹体的尾迹关联。
+- 连续发射测试导弹，观察青色主体、蓝色渐变滚动脉冲辉光，以及转向后依然保持发射初速 0.65 倍直飞的洋红色残影；
+- 暂停战斗确认采样与锚点移动全部冻结，恢复后继续推进；并在仅剩一枚飞行中导弹时执行上文 `translate(600f, 0f)` 命令，验证超过 250 su 跳变后旧段留在原处淡出、新段从新坐标起笔而不会拉出一根 600 su 飞线；
+- 导弹命中或消失后 0.75 秒内独立残影也停止延长，已有节点各自淡出，`starsector.log` 无异常。
 
-预期结果：
-
-- 每枚弹体拥有互不串联的主体、辉光与发射残影；
-- 主体层按单一颜色收窄，辉光层呈现颜色渐变、纹理滚动和尺寸脉冲；
-- 导弹转向后，`SimpleEntity` 残影仍按发射瞬间速度的 0.65 倍直线移动；
-- 非暂停状态下，跟踪器每 0.05 秒最多追加一组节点；
-- 位置跳变超过 250 su 时，两条弹体尾迹同时切段，新节点不会横跨 600 su；
-- 命中、淡出或离场后，导弹跟踪器停止提交节点；
-- 独立残影在 0.75 秒后停止提交节点；
-- `starsector.log` 没有未处理异常。
-
-## 故障分析
+## 常见问题
 
 - **节点持续提交却没有连续尾迹**：每次调用 `getUniqueID()`，各 tracker 只有一个节点，达不到连接所需的两个节点。
     - **解决方案**：在跟踪器初始化时保存 ID，提交节点时反复使用该字段，只在明确切段后更新。
-
-## 总结
-
-尾迹跟踪器随弹体开始和结束，固定 ID 把相邻节点接成一段轨迹。节点坐标每次由代码提交，关联实体则用于切断；独立锚点沿自己的速度前进，两种关系因此可以分别控制。Simple 提供基础节点，Advanced 增加首尾状态、纹理与渲染属性。
-
-导弹跟踪器让尾迹服从实体生命周期，`SimpleEntity` 则让纯计算位置也能拥有相同的切断关系。只要为每段轨迹保存自己的 ID，并在空间或生命周期不连续时主动切段，运行时生成的效果就能保持连续而不跨越不该连接的位置。
 
 ## 建议参考项
 

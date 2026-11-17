@@ -75,7 +75,7 @@ _本节预期操作时间：\~10 分钟。_
 
 保存所有文件，重启游戏：
 
-- 在模拟战中让工匠用都林开火，开火声比原版自动炮沉；
+- 在模拟战中让工匠用都林开火，开火声比原版轻型自动炮沉；
 - 激活突击填弹器，先听到上膛声，持续期间有嘶声，结束时淡出；
 - 驾驶工匠移动，引擎声为低科引擎声；
 - 读取存档，进入 Nipher Prime 的市场，播放市场音乐。
@@ -96,6 +96,8 @@ _本节预期操作时间：\~10 分钟。_
 
 ## 建议参考项
 
+- `data/config/sounds.json`：原版声音集与音乐定义，本节填入的 ID 来源。
+- `data/config/hull_styles.json`：原版舰船风格，对照 `engineLoopSet` 等声音字段写法。
 - `data/weapons/`：原版武器的 `fireSoundOne` 与 `fireSoundTwo` 写法。
 - `data/shipsystems/`：原版战术系统的四种声音字段。
 - `data/world/factions/`：原版势力的 `music` 段。

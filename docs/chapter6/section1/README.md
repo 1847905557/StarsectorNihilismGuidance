@@ -126,8 +126,6 @@ tasks.named("jar") {
 | `JavaCompile`         | 源码按 UTF-8 读取，产物目标为 Java 17                           |
 | `jar`                 | 产物输出到 `jars/GearIndustry.jar`                              |
 
-其中有三处需要说明。
-
 **游戏核心 JAR 用 `compileOnly`，不打进产物。** 编译时需要知道 `ShipAPI` 的方法签名，运行时这些类由游戏提供。改用 `implementation` 并配合合并依赖的打包方式，游戏类会被复制进 MOD 的 JAR，与游戏本体的同名类冲突。
 
 **toolchain 选择编译器，`release` 选择产物版本，两者都写 17。** 只写 toolchain，换一台装着更高版本 JDK 的电脑，产物照样是 17；只写 `release`，Gradle 会用它找到的任意 JDK。产物版本高于游戏的运行时，构建能成功，游戏启动时才报 `UnsupportedClassVersionError`。
@@ -159,7 +157,9 @@ gradle compileJava
 
 ::: tip 阅读 API 源码
 
-在 IDEA 中跳转到游戏类时，默认看到的是反编译结果，没有注释。给 `starfarer.api.jar` 附加 `starsector-core/starfarer.api.zip` 作为源码，就能看到原版 API 的注释，这比任何教程都准确。
+在 IDEA 中跳转到游戏类时，默认看到的是反编译结果。给 `starfarer.api.jar` 附加 `starsector-core/starfarer.api.zip` 作为源码，就能直接看到真实参数名与 `impl/` 下的原版实现。
+
+看原版实现怎么写。方法上面的注释一定程度上可以参考，但不总是准确。编者也无法解释到底哪里出了问题，因为特例、特例的特例、特例的特例的特例多到这里写不下。
 
 :::
 
@@ -180,4 +180,4 @@ gradle compileJava
 ## 建议参考项
 
 - `starsector-core/*.jar`：编译依赖。
-- `starsector-core/starfarer.api.zip`：原版 API 源码与注释。
+- `starsector-core/starfarer.api.zip`：原版 API 与 `impl` 实现源码。

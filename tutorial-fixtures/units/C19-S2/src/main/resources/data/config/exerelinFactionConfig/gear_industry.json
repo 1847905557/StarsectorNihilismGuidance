@@ -2,6 +2,13 @@
     "playableFaction": true,
     "startingFaction": true,
     "corvusCompatible": true,
+    "marketSpawnWeight": 1,
+    "startShipsSolo": [
+        ["GearIn_artizan_combat"]
+    ],
+    "startShipsCombatSmall": [
+        ["GearIn_artizan_combat", "wolf_Starting"]
+    ],
     "useConfigRelationshipsInNonRandomSector": true,
     "disableDiplomacy": false,
     "startRelationships": {

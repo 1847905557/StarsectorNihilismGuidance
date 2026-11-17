@@ -1,30 +1,26 @@
 # 制作即时生效的 LunaLib 设置面板
 
-本节让 LunaLib 的开关、数量、间隔、颜色和标签进入实际战斗显示。控件负责保存，读取器取得当前值，战斗插件在自己的调用时机使用它们；变更监听另外记录通知。设置保存后无需重新构建代码，库缺席时同一个插件采用代码缺省。
+只在代码里留一个布尔开关还不够顺手，真正调手感时还是想把开关、整数滑条、间隔小数、颜色和文字全写进 `LunaSettings.csv`，在游戏内改完保存、下一有效帧即可更新画面。
+
+读取器和监听继续隔离在嵌套适配层之后，即使玩家后续移除 LunaLib，整套战斗标记照常稳定运行。
+
+---
 
 _本节预期阅读时间：\~18 分钟。_
 
 _本节预期操作时间：\~30 分钟。_
 
-## 学习目标
-
-完成后，您将能够：
-
-- 按九列 CSV 定义开关、整数、浮点数、颜色和文本；
-- 用包装类型读取字段，并处理库缺席和缺失值；
-- 登记一次变更监听，按 MOD ID 过滤通知；
-- 将设置接到战斗标记与标签，观察保存后的实际结果。
-
 ## 前置知识
 
-- [C19-S1] 的 LunaLib 编译依赖、拥有者 ID 和可选适配；
-- [C8-S1] 的战斗插件、暂停和 settings 登记；
+- [C1-S1] 的 MOD ID(`GearIndustry`)；
+- [C1-S7] 的 CSV 空列与转义规则；
+- [C8-S1] 的战斗插件、暂停判断与 `settings.json` 登记；
 - [C18-S3] 的附近敌舰查询；
-- [C1-S7] 的 CSV 空列与转义规则。
+- [C19-S1] 的 LunaLib 依赖、拥有者 MOD ID 与 `LunaAdapter` 隔离模式。
 
-## 在现有设置表追加字段
+## 按九列表头扩展设置字段
 
-打开 `data/config/LunaSettings.csv`，保留 [C19-S1] 的 `GearIn_fullGraphicEffect`，追加本节五行。完整输入为：
+打开 [C19-S1] 建好的 `data/config/LunaSettings.csv`，保留原有 `GearIn_fullGraphicEffect`，紧接着追加本节新字段：
 
 ```csv
 fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab
@@ -36,43 +32,35 @@ GearIn_marker_color,Marker color,Color,#f22e6e,,,,,GearIn
 GearIn_label_text,Label text,String,GearIn,,,,,GearIn
 ```
 
-**字段 ID、控件类型和读取方法对应同一份设置。**CSV 按来源 MOD 记录拥有者，Java 再以 `gear_in` 和字段 ID 读取；空列保留位置，文本中含英文逗号时按 CSV 转义。
+填表时记得保留中间空逗号占位，描述或默认值含英文逗号时按标准 CSV 用双引号包起来。对于 `Int` 与 `Double` 类型，`minValue` 和 `maxValue` 会同时交给滑条与文本框失焦钳制使用 —— 另外再次确认：[C1-S1] 定下的 `mod_info.json` `"id"` 是 `"GearIndustry"`，LunaLib 读取 `LunaSettings.csv` 后正是把数据存到 `"GearIndustry"` 名下。
 
-`fieldID`、`fieldName`、`fieldType` 与 `defaultValue` 参与控件创建，描述、次值、范围和 tab 各自按用途读取。类型为 Int 或 Double 时，面板使用范围组织输入；getter 取得已保存值，当前代码的缺省只处理缺席或缺失。
-
-### 设置与画面速查表
-
-| 字段 ID                 | 类型与缺省          | 当前使用方             |
+| 字段 ID                 | 类型与默认          | 战斗插件用途           |
 | ----------------------- | ------------------- | ---------------------- |
 | `GearIn_trails_enabled` | Boolean，true       | 控制附近敌舰标记生成   |
-| `GearIn_max_entries`    | Int，12，1–64       | 限制一次标记的目标数   |
-| `GearIn_pulse_delay`    | Double，1.5，0.1–10 | 控制两次标记的间隔秒数 |
-| `GearIn_marker_color`   | Color，`#f22e6e`    | 标记颜色               |
-| `GearIn_label_text`     | String，GearIn      | 玩家状态标签文字       |
+| `GearIn_max_entries`    | Int，12，1–64       | 限制每次标记的目标上限 |
+| `GearIn_pulse_delay`    | Double，1.5，0.1–10 | 控制两次标记间隔秒数   |
+| `GearIn_marker_color`   | Color，`#f22e6e`    | 标记粒子颜色           |
+| `GearIn_label_text`     | String，GearIn      | 玩家状态标签标题       |
 
-本节定义 `GearIn_trails_enabled`，当前插件用短寿命粒子提供观察结果。需要接到尾迹效果时，同一个布尔值也可以决定是否追加节点，实际使用由效果类安排。
+## 用包装类型与嵌套适配器读配置
 
-## 保存定义和读取器
-
-将 Defs、Reader、Listener 完整类保存到 `src/data/scripts/gearin/lib/`。Defs 保存键和代码默认，Reader 各方法先查询启用状态，再用对应包装类型取值。局部调用如下：
+将 `GearInLunaSettingsDefs` 与 `GearInLunaSettingsReader` 保存到 `src/data/scripts/gearin/lib/`。读取器对外只暴露原版与 JDK 返回类型，真正的 `LunaSettings.get*` 调用全部收在私有静态类 `LunaAdapter` 里 (只有 `isLunaLibEnabled()` 返回 `true` 才会进入)：
 
 ```java
-Boolean enabled = LunaSettings.getBoolean("gear_in", "GearIn_trails_enabled");
-Integer entries = LunaSettings.getInt("gear_in", "GearIn_max_entries");
-Float delay = LunaSettings.getFloat("gear_in", "GearIn_pulse_delay");
-Color color = LunaSettings.getColor("gear_in", "GearIn_marker_color");
-String label = LunaSettings.getString("gear_in", "GearIn_label_text");
+Boolean enabled = lunalib.lunaSettings.LunaSettings.getBoolean(GearInLunaSettingsDefs.MOD_ID, fieldId);
+Integer entries = lunalib.lunaSettings.LunaSettings.getInt(GearInLunaSettingsDefs.MOD_ID, fieldId);
+Float delay = lunalib.lunaSettings.LunaSettings.getFloat(GearInLunaSettingsDefs.MOD_ID, fieldId);
+Color color = lunalib.lunaSettings.LunaSettings.getColor(GearInLunaSettingsDefs.MOD_ID, fieldId);
+String label = lunalib.lunaSettings.LunaSettings.getString(GearInLunaSettingsDefs.MOD_ID, fieldId);
 ```
 
-LunaLib 缺少 MOD、字段或不能取得所需类型时，getter 记录错误并返回 `null`，Reader 返回 Defs 缺省。Double 配置通过 `getFloat` 转成浮点秒数，Color 从十六进制文本取得 RGB，String 保留保存的文字。
+注意几个小细节：JSON 里没有专门的 `float`，`Double` 选项取出来时调 `LunaSettings.getFloat(...)` 转成单精度浮点数；`getColor(...)` 兼容带或不带 `#` 前缀的十六进制字符串；无论缺少 MOD、字段还是类型解析异常，LunaLib 都会记一条错误日志并返回 `null`，由 `GearInLunaSettingsReader` 回退到 `GearInLunaSettingsDefs` 里的常量。
 
-首次 getter 可以触发库加载设置，后续从已加载数据取值。**值更新以后，使用方的下一次读取才能改变行为。** 保存通知可以处理缓存更新或其他工作，本例的监听器用于记录字段值。
+由于本例每帧标签更新与周期粒子发射都非常轻量，直接按帧读取即可让修改即刻反映在下一次绘制；只有涉及纹理预加载等昂贵重建时，才需要改由下面的变更监听器触发重载。
 
-编者在这个示例选择直接读取：这些参数改变下一次标签显示与粒子生成，无需重新建立战斗插件。若设置改变涉及纹理预载等较重操作，再把对应重建安排到通知中，职责和代价会更明确。
+## 在生涯加载时挂上变更监听
 
-## 将监听器接到生涯加载
-
-在既有 `GearInModPlugin.onGameLoad(...)` 追加下面的局部调用，导入 Reader 与 Listener，原有初始化继续保留：
+将 `GearInLunaSettingsListener` 保存到同一 `lib` 包。`GearInModPlugin.onGameLoad(...)` 在原有初始化之外追加：
 
 ```java
 if (GearInLunaSettingsReader.isLunaLibEnabled()) {
@@ -81,29 +69,32 @@ if (GearInLunaSettingsReader.isLunaLibEnabled()) {
 }
 ```
 
-Listener 的外层只使用 Java 和自有类型，第三方接口字段与实例留在嵌套 `LunaAdapter`。启用分支通过后才调用适配器；同类监听已经存在时结束登记，读档继续使用应用级注册。
+监听器同样通过内部 `LunaAdapter` 才实现 `LunaSettingsListener`：由于 `LunaSettings` 的监听器列表是静态保存的应用级容器，读档重调 `registerListener()` 时必须先用 `hasSettingsListenerOfClass(...)` 去重；需要退订则调用 `unregisterListener()`。
 
-面板保存实际修改的字段后，按拥有者分别更新值并发送通知。`settingsChanged(modId)` 只处理 `gear_in`，输出 `reloaded` 和当前字段；`unregisterListener()` 移除本例实例，之后再注册会重新建立。
+玩家在游戏内设置界面保存改动后，LunaLib 会把当前页的更改写入 `LunaSettings/GearIndustry.json` 并按受影响 MOD 派发 `settingsChanged(modId)`，我们的实现按 `"GearIndustry".equals(modId)` 过滤并打印当前生效参数。
 
-::: warning 新档设置面板不会发送这项通知
-新档创建过程中的面板保存会更新数据，但跳过 `settingsChanged`。本节在进入生涯后登记监听，并通过正常生涯的保存操作观察回调。
+::: warning 开新档时的设置界面不会触发变更回调
+
+在 "新建游戏" 流程中打开的 LunaLib 设置弹窗会更新并保存 JSON，但在源代码里带了 `if (!newGame)` 守卫，特意**跳过** `reportSettingsChanged(...)`。测试监听日志务必在进入生涯后再打开设置面板修改并保存。
+
 :::
 
-## 让五个字段进入战斗
+## 把面板参数接进战斗渲染循环
 
-保存完整 `GearInSettingsVisualPlugin` 到 `src/data/scripts/gearin/combat/`，在已有 `data/config/settings.json` 的 plugins 对象追加：
+最后把 `GearInSettingsVisualPlugin` 保存到 `src/data/scripts/gearin/combat/`，并在 `data/config/settings.json` 的 `plugins` 对象补充登记：
 
 ```json
 "GearIn_settings_visual": "data.scripts.gearin.combat.GearInSettingsVisualPlugin"
 ```
 
-插件在每个有效帧读取五项设置，状态标签显示文字、开关、上限与间隔。开关开启时累积非暂停时间，到达阈值后查询与玩家碰撞圆间隔不超过 1600 su 的可见敌舰，再按集合顺序标记前若干目标。数量采用配置上限与候选数中的较小者，24 su 粒子持续 0.4 秒。
+插件按 [C8-S1] 惯例先过 `engine == null || engine.isPaused() || Global.getCurrentState() == GameState.TITLE` 与玩家舰存活检查，随后读取面板设置并维护左下角玩家状态标签：
 
-关闭开关会清零计时，新标记停止；已经生成的粒子继续结束自己的寿命。保存颜色后，下一组粒子采用新颜色；保存文字后，下一有效帧更新标签。改变间隔时，当前已经累计的时间与新阈值继续比较。
+- 关闭标记开关时清零计时并早退，已发出去的粒子自然走到自身 `0.4` 秒持续时间结束；
+- 开启时按 `elapsed += amount` 累积非暂停时间，达到配置的秒数间隔后用 `AIUtils.getNearbyEnemies(player, 1600f)` 扫描碰撞圆间隔在 `1600` su 以内的可见敌舰，按上限截取前几个目标并各自生成一个 `24` su、持续 `0.4` 秒的平滑粒子。
 
 ## 完整最小例
 
-配置采用前面的 CSV 与战斗登记，四个类分别承担常量、读取、通知与实际效果：
+完整代码由常量表、读取器、监听器和战斗插件组成 (CSV 配置见前文六行表)：
 
 ::: details 完整成品：GearInLunaSettingsDefs
 
@@ -113,7 +104,7 @@ package data.scripts.gearin.lib;
 import java.awt.Color;
 
 public final class GearInLunaSettingsDefs {
-    public static final String MOD_ID = "gear_in";
+    public static final String MOD_ID = "GearIndustry";
     public static final String LUNA_LIB_MOD_ID = "lunalib";
 
     public static final String KEY_TRAILS = "GearIn_trails_enabled";
@@ -144,8 +135,6 @@ import java.awt.Color;
 
 import com.fs.starfarer.api.Global;
 
-import lunalib.lunaSettings.LunaSettings;
-
 /** 按启用状态读取设置，缺失值使用已定义的缺省。 */
 public class GearInLunaSettingsReader {
 
@@ -162,7 +151,7 @@ public class GearInLunaSettingsReader {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_TRAILS;
         }
-        Boolean value = LunaSettings.getBoolean(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_TRAILS);
+        Boolean value = LunaAdapter.getBoolean(GearInLunaSettingsDefs.KEY_TRAILS);
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_TRAILS;
     }
 
@@ -171,7 +160,7 @@ public class GearInLunaSettingsReader {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
         }
-        Integer value = LunaSettings.getInt(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_MAX_ENTRIES);
+        Integer value = LunaAdapter.getInt(GearInLunaSettingsDefs.KEY_MAX_ENTRIES);
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
     }
 
@@ -180,7 +169,7 @@ public class GearInLunaSettingsReader {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
         }
-        Float value = LunaSettings.getFloat(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_PULSE_DELAY);
+        Float value = LunaAdapter.getFloat(GearInLunaSettingsDefs.KEY_PULSE_DELAY);
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
     }
 
@@ -189,7 +178,7 @@ public class GearInLunaSettingsReader {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_MARKER_COLOR;
         }
-        Color value = LunaSettings.getColor(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_MARKER_COLOR);
+        Color value = LunaAdapter.getColor(GearInLunaSettingsDefs.KEY_MARKER_COLOR);
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MARKER_COLOR;
     }
 
@@ -198,8 +187,30 @@ public class GearInLunaSettingsReader {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_LABEL_TEXT;
         }
-        String value = LunaSettings.getString(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_LABEL_TEXT);
+        String value = LunaAdapter.getString(GearInLunaSettingsDefs.KEY_LABEL_TEXT);
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_LABEL_TEXT;
+    }
+
+    private static final class LunaAdapter {
+        private static Boolean getBoolean(String fieldId) {
+            return lunalib.lunaSettings.LunaSettings.getBoolean(GearInLunaSettingsDefs.MOD_ID, fieldId);
+        }
+
+        private static Integer getInt(String fieldId) {
+            return lunalib.lunaSettings.LunaSettings.getInt(GearInLunaSettingsDefs.MOD_ID, fieldId);
+        }
+
+        private static Float getFloat(String fieldId) {
+            return lunalib.lunaSettings.LunaSettings.getFloat(GearInLunaSettingsDefs.MOD_ID, fieldId);
+        }
+
+        private static Color getColor(String fieldId) {
+            return lunalib.lunaSettings.LunaSettings.getColor(GearInLunaSettingsDefs.MOD_ID, fieldId);
+        }
+
+        private static String getString(String fieldId) {
+            return lunalib.lunaSettings.LunaSettings.getString(GearInLunaSettingsDefs.MOD_ID, fieldId);
+        }
     }
 }
 ```
@@ -294,6 +305,8 @@ package data.scripts.gearin.combat;
 import java.awt.Color;
 import java.util.List;
 
+import com.fs.starfarer.api.GameState;
+import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
@@ -314,7 +327,7 @@ public final class GearInSettingsVisualPlugin extends BaseEveryFrameCombatPlugin
 
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
-        if (engine.isPaused()) {
+        if (engine == null || engine.isPaused() || Global.getCurrentState() == GameState.TITLE) {
             return;
         }
         ShipAPI player = engine.getPlayerShip();
@@ -351,53 +364,30 @@ public final class GearInSettingsVisualPlugin extends BaseEveryFrameCombatPlugin
 
 :::
 
-## 验证方案
+### 进游戏核对
 
-前置数据：准备包含至少两艘可见敌舰的测试战斗，LunaLib 可在启动器启用与禁用。
+1. **面板即时生效与范围钳制**：启用 LunaLib 启动并载入生涯，进战斗核对默认 `GearIn` 标签和 `#f22e6e` 粉色标记；退回大地图打开 LunaLib 设置面板，将上限改为 `1`、间隔改 `0.5`、颜色改绿、标签改新文本 (也可故意输一次超出 `0.1–10` 的间隔看文本框失焦钳制，最后记得恢复 `1.5`)，保存后再进同一场战斗，标签文字、单目标标记、间隔和颜色应立即切换；关闭开关后停发新标记，已在场的粒子会在 `0.4` 秒内自然消失。
+2. **核对监听去重与 MOD 过滤**：在生涯里重复读档后修改并保存齿轮工业设置，日志每次只多出一组 `GearIn luna settings: reloaded`；修改保存其他 MOD 的设置，本监听不应刷出多余日志。
+3. **验证脱库回退**：在启动器关闭 LunaLib 重启，进同一测试战斗与生涯，整个工程无 `NoClassDefFoundError`，标签和标记直接采用代码默认值 (`true`、`12`、`1.5`、粉色、`GearIn`)。
 
-1. 保存 CSV、四个类、生涯调用与战斗插件登记，构建并重启，载入生涯确认注册和字段日志。
-2. 进入测试战斗，查看 GearIn 标签与默认粉色标记。返回生涯，在 LunaLib 面板把上限改为 1、间隔改为 0.5、颜色改为绿色、标签改为新文字，保存后再次进入测试战斗。
-3. 比较下一有效帧的标签、下一组粒子的颜色、每次目标数与间隔。关闭开关后观察新标记停止，再开启比较。
-4. 在面板尝试范围外的间隔，通过控件观察输入结果并保存，确认界面和实际读取对应；恢复 1.5。
-5. 重复读档，再实际修改并保存本 MOD 设置，核对每次变更通知只产生一组 reloaded 日志；修改并保存其他 MOD 时比较本 MOD 日志。
-6. 禁用 LunaLib 后重启，进入同一基础内容和测试战斗，核对 Defs 默认及类加载。
+## 常见问题
 
-预期结果：
+- **停用 LunaLib 时报错 `NoClassDefFoundError`**：外层类的字段、签名或静态初始化块里意外留了 `LunaSettings` 或 `LunaSettingsListener` 的引用。
+    - **解决方案**：把所有第三方调用与接口实现严格留在启用判断之后的嵌套 `LunaAdapter` 里。
 
-- 本节五个字段与前文图形开关共同出现，拥有者为 gear_in；
-- 保存后标签采用当前文字，粒子采用新颜色、数量与间隔；
-- 关闭时停止新增，已有粒子在 0.4 秒内结束；
-- 本 MOD 保存只通知当前登记的一份监听，读档保持注册状态；
-- 库缺席时四个自有角色按默认运行，当前默认为 true、12、1.5、粉色和 GearIn。
+- **改完面板保存却总是退回默认数值**：拥有者 MOD ID、字段名或类型与当前配置不匹配。
+    - **解决方案**：确认 `GearInLunaSettingsDefs.MOD_ID` 为 `"GearIndustry"`，再对照 `LunaSettings.csv` 检查 `fieldID` 与九列结构。
 
-## 故障分析
+- **面板压根没显示新增控件**：路径、表头或字段类型无法被 LunaSettings 解析。
+    - **解决方案**：核对 `data/config/LunaSettings.csv` 的九列表头、空列逗号和 `fieldType`，保存后重启。
 
-- **库缺席时调用监听器出现类加载异常**：外层字段或接口直接引用 LunaLib 类型。
-    - **解决方案**：采用本节嵌套适配器，把接口实例留在启用分支后的类中。
-
-- **字段读取回到默认**：拥有者、字段名或保存类型不匹配。
-    - **解决方案**：核对 gear_in、Defs 的键和 LunaLib 取值日志，恢复 CSV 中的定义。
-
-- **面板没有本节控件**：路径、必需列或字段类型无法建立控件。
-    - **解决方案**：核对九列表头与实际空列，保存后重启。
-
-- **日志更新但画面保持此前参数**：效果仍保存旧副本或没有调用当前读取器。
-    - **解决方案**：核对战斗插件登记和五个 getter 的使用位置。
-
-- **保存后回调次数增加**：同类监听器被重复登记。
-    - **解决方案**：按 registered 类查询已存在实例，再加入监听。
-
-- **关闭后仍短暂看到此前粒子**：已生成粒子继续按自身寿命显示。
-    - **解决方案**：观察新生成停止，并等待本节 0.4 秒粒子结束。
-
-## 总结
-
-面板更新已加载设置，读取器按拥有者和字段取得值，战斗插件再将它们用于当前显示与粒子生成。通知在旁记录保存结果；即时生效来自实际读取，已有粒子与累计计时仍遵循自己的状态。库缺席时采用同一组缺省，使用方的工作继续成立。
+- **保存一次设置打出多条 `reloaded` 日志**：监听器在读档或重复初始化时被多次加入列表。
+    - **解决方案**：登记前用 `LunaSettings.hasSettingsListenerOfClass(...)` 去重。
 
 ## 建议参考项
 
-- `data/config/LunaSettings.csv`：控件与范围定义；
-- `lunalib.lunaSettings.LunaSettings`：包装值读取与监听器登记；
-- `lunalib.lunaSettings.LunaSettingsListener`：保存通知；
-- `com.fs.starfarer.api.combat.CombatEngineAPI`：玩家状态标签和粒子；
-- `org.lazywizard.lazylib.combat.AIUtils`：可见敌舰候选。
+- `data/config/LunaSettings.csv`：控件、范围与分页标签定义；
+- `lunalib.lunaSettings.LunaSettings`：包装类型读取与监听管理；
+- `lunalib.lunaSettings.LunaSettingsListener`：面板保存变更回调；
+- `com.fs.starfarer.api.combat.CombatEngineAPI`：状态标签与平滑粒子绘制；
+- `org.lazywizard.lazylib.combat.AIUtils`：附近可见敌舰查询。

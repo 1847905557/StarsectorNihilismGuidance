@@ -4,8 +4,6 @@ import java.awt.Color;
 
 import com.fs.starfarer.api.Global;
 
-import lunalib.lunaSettings.LunaSettings;
-
 /** 按启用状态读取设置，缺失值使用已定义的缺省。 */
 public class GearInLunaSettingsReader {
 
@@ -22,7 +20,7 @@ public class GearInLunaSettingsReader {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_TRAILS;
         }
-        Boolean value = LunaSettings.getBoolean(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_TRAILS);
+        Boolean value = LunaAdapter.getBoolean(GearInLunaSettingsDefs.KEY_TRAILS);
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_TRAILS;
     }
 
@@ -31,7 +29,7 @@ public class GearInLunaSettingsReader {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
         }
-        Integer value = LunaSettings.getInt(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_MAX_ENTRIES);
+        Integer value = LunaAdapter.getInt(GearInLunaSettingsDefs.KEY_MAX_ENTRIES);
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MAX_ENTRIES;
     }
 
@@ -40,7 +38,7 @@ public class GearInLunaSettingsReader {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
         }
-        Float value = LunaSettings.getFloat(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_PULSE_DELAY);
+        Float value = LunaAdapter.getFloat(GearInLunaSettingsDefs.KEY_PULSE_DELAY);
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_PULSE_DELAY;
     }
 
@@ -49,7 +47,7 @@ public class GearInLunaSettingsReader {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_MARKER_COLOR;
         }
-        Color value = LunaSettings.getColor(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_MARKER_COLOR);
+        Color value = LunaAdapter.getColor(GearInLunaSettingsDefs.KEY_MARKER_COLOR);
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_MARKER_COLOR;
     }
 
@@ -58,7 +56,29 @@ public class GearInLunaSettingsReader {
         if (!isLunaLibEnabled()) {
             return GearInLunaSettingsDefs.DEFAULT_LABEL_TEXT;
         }
-        String value = LunaSettings.getString(GearInLunaSettingsDefs.MOD_ID, GearInLunaSettingsDefs.KEY_LABEL_TEXT);
+        String value = LunaAdapter.getString(GearInLunaSettingsDefs.KEY_LABEL_TEXT);
         return value != null ? value : GearInLunaSettingsDefs.DEFAULT_LABEL_TEXT;
+    }
+
+    private static final class LunaAdapter {
+        private static Boolean getBoolean(String fieldId) {
+            return lunalib.lunaSettings.LunaSettings.getBoolean(GearInLunaSettingsDefs.MOD_ID, fieldId);
+        }
+
+        private static Integer getInt(String fieldId) {
+            return lunalib.lunaSettings.LunaSettings.getInt(GearInLunaSettingsDefs.MOD_ID, fieldId);
+        }
+
+        private static Float getFloat(String fieldId) {
+            return lunalib.lunaSettings.LunaSettings.getFloat(GearInLunaSettingsDefs.MOD_ID, fieldId);
+        }
+
+        private static Color getColor(String fieldId) {
+            return lunalib.lunaSettings.LunaSettings.getColor(GearInLunaSettingsDefs.MOD_ID, fieldId);
+        }
+
+        private static String getString(String fieldId) {
+            return lunalib.lunaSettings.LunaSettings.getString(GearInLunaSettingsDefs.MOD_ID, fieldId);
+        }
     }
 }

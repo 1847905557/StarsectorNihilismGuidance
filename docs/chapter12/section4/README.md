@@ -1,6 +1,8 @@
 # 制作专用产业
 
-Element Works 是 Foundry 真正产出回火合金的地方，它的设计偏保守：缺了原料就老老实实减产，装上核心，换来的也是一座更安稳的站点，而不是更多的合金。
+殖民地产业远不只是往市场清单里硬塞几行产出数字。一套像样的 `BaseIndustry` 插件得消耗上游原料、在断供或封锁时按比例减产、在未建成或被破坏时清空出货，还要管好 AI 核心塞进来时给什么加成。
+
+照着这条生命周期写一座名为 `Element Works` 的精炼车间：它消耗金属与重型机械生产回火合金，缺料时按最大缺口一比一减产；哪怕塞进 Alpha 核心，也只按常规规则降低维护与需求、小幅增产并额外提高殖民地稳定度，而不直接给产能翻倍。
 
 ---
 
@@ -10,26 +12,29 @@ _本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C12-S1] 的 Foundry 市场与 `addIndustry(...)`，产业在那里加入；
-- [C12-S2] 的回火合金，本节的产业以它为产出；
-- [C1-S7] 的 CSV 表头与转义。
+- [C1-S7] 的 CSV 表头与双引号转义；
+- [C12-S1] 的 `GearInFoundryGenerator`，新产业将加入那里的 Foundry 市场；
+- [C12-S2] 的回火合金 (`GearInAlloyCargo.COMMODITY_ID`) 与经济档位概念。
 
-## 注册产业
+## 在 industries.csv 注册产业
 
-产业的身份登记在 `data/campaign/industries.csv`，表头沿用原版的十五列：
+产业的静态面板数据登记在 `data/campaign/industries.csv`，表头沿用原版的 15 列：
 
 ```csv
 id,name,cost mult,build time,income,upkeep,downgrade,upgrade,tags,data,image,plugin,desc,order,disruptDanger
 GearIn_element_works,Element Works,45,90,,3,,,"industry, industrial",,graphics/icons/industry/refining.png,data.scripts.gearin.campaign.GearInElementWorksIndustry,"Consumes metals and heavy machinery to produce tempered alloy.",510,MEDIUM
 ```
 
-成本倍率、建设时间与维护倍率沿用原版 `refining`，图像也借用精炼产业的图标。`income` 留空，产业没有独立的收入基础值，贡献都走供需。`order` 取 510，排在原版精炼的 500 之后。
+- 建造成本系数 `45`、工期 `90` 天、维护系数 `3` 以及图标直接参照原版的冶炼厂 (`refining`)；`order` 设为 `510`，排在原版冶炼厂 (`500`) 之后；
+- **`tags` 中的 `"industry"` 极其重要**：Starsector 统计一颗殖民地是否达到上限的 "产业 (Industry)" 数量 (而非不占槽位的建筑 Structure)，看的正是这条标签；如果去掉 `"industry"`，这座设施就会变成不占产业名额的普通建筑；
+- `income` 留空，表示该产业没有固定的底座现金收益，市场进账全部由产出物资的出口供需结算；
+- `plugin` 指向实现 `Industry` 接口的行为类，必须保留无参构造方法。如果类名拼错，启动游戏不会报异常，但市场添加产业的瞬间会抛出找不到类错误。
 
-`industry` 标签让它计入产业数量，`plugin` 是行为类的完整类名，必须有无参构造。**类名写错时，游戏不会在启动时报错**，症状出现在市场添加产业的那一刻。
+## BaseIndustry 的生命周期与缺口削减
 
-## 声明生产
+自定义的产业插件一般直接继承 `com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry`。市场每次触发经济刷新或调用 `reapplyIndustries()` 时，引擎都会重新执行一遍产业插件的 `apply()`。
 
-插件继承 `BaseIndustry`，由基类保存供需、收入、维护与核心状态。`apply()` 先调用 `super.apply(true)`，再声明自己的供需：
+`apply()` 开头必须先调用 `super.apply(true)`：它会把基础收入与维护费写入市场经济统计、读取并应用玩家在产业上使用的 "改进 (Improve)" 加成以及 Alpha/Beta/Gamma 核心的对应修饰钩子。随后再声明本产业的输入需求与输出供给：
 
 ```java
 int size = market.getSize();
@@ -42,26 +47,23 @@ demand(Commodities.HEAVY_MACHINERY, machinery, "Foundry equipment");
 supply(GearInAlloyCargo.COMMODITY_ID, output, "Tempered alloy output");
 ```
 
-Foundry 规模为 3：需求 3 档金属、1 档重型机械，产出 2 档回火合金。这些数字是经济档位，不是货舱里的件数，换算见 [C12-S2]。
+以规模为 `3` 的 Nipher Foundry 为例：需求 `3` 档金属与 `1` 档重型机械，基础产出 `2` 档回火合金。这里的 `demand(...)` 与 `supply(...)` 写进的是 [C12-S2] 提到的**经济档位**，按来源键写入 `MutableCommodityQuantity` 中，重复执行 `apply()` 会自动覆盖更新，不会把数量越叠越大。
 
-`demand(...)` 与 `supply(...)` 按修饰来源写入，重复调用不会累加。市场添加、经济重算或 `reapply()` 都会再次执行 `apply()`，所以每次都完整声明，不要依赖上一次的结果。
-
-## 计算输入短缺
-
-声明需求之后，把它与市场当前的可得量比较。`getMaxDeficit(...)` 在给定的输入里取最大的正缺口，返回最缺的商品 ID 与缺口档数：
+声明完供需之后，立即调用 `getMaxDeficit(...)` 与 `applyDeficitToProduction(...)` 处理输入短缺惩罚：
 
 ```java
 Pair<String, Integer> deficit = getMaxDeficit(Commodities.METALS, Commodities.HEAVY_MACHINERY);
 applyDeficitToProduction(1, deficit, GearInAlloyCargo.COMMODITY_ID);
 ```
 
-最大缺口每增加 1 档，回火合金的产出减少 1 档；只取最严重的一项，其他输入的缺口不叠加。第一个参数 1 用来区分缺货修饰与基础供给来源。**目标必须先用 `supply(...)` 声明**，否则没有可削减的对象，缺口算出来也不起作用。
+- `getMaxDeficit(...)` 会逐个检查指定输入物在当前市场的可得量，找出缺口最大的一项，返回 `(商品 ID, 缺口档数)`；
+- `applyDeficitToProduction(...)` 按这个最大缺口一对一削减 `GearIn_tempered_alloy` 的产出 (如果金属缺 2 档、重型机械缺 1 档，产出只扣减最严重的 `2` 档，而不叠加扣成 3 档)。**注意 `supply(...)` 必须先于 `applyDeficitToProduction(...)` 调用**，先有基础供给条目，削减修饰才有对象可减。
 
-本节的输入只有金属与重型机械，两者都不由回火合金生产，所以不会形成原料与产品互相依赖的循环。原版重工业消耗金属，产出重型机械，Foundry 恰好站在这条链的下游。
+这里的原材料选用金属 (`Commodities.METALS`) 与重型机械 (`Commodities.HEAVY_MACHINERY`)，两者的上游分别是矿石冶炼与重工业，都不依赖回火合金，从而避免上游反过来依赖下游产品、在经济网络里形成闭合死锁。
 
-## 功能状态与核心
+## 停产清空与 AI 核心修饰
 
-声明与削减之后，`apply()` 检查功能状态：
+`apply()` 末尾还要加上一道很容易遗漏的收尾检查：
 
 ```java
 if (!isFunctional()) {
@@ -69,19 +71,39 @@ if (!isFunctional()) {
 }
 ```
 
-首次建设与中断期间 `isFunctional()` 为 `false`，产出清空。**界面上显示停产，经济里也必须真的停产**，这一步把两者接在一起；漏掉它，建设中的产业照样出货。
+当产业尚在建造队列中、或者刚遭特工破坏陷入瘫痪时，`isFunctional()` 返回 `false`。`super.apply(true)` 只管算维护和界面状态，**如果不手工执行 `supply.clear()`，还在施工或已中断的产业依然会往市场经济表里源源不断地写入虚构供给**。
 
-Alpha 核心的效果在 `applyAlphaCoreModifiers()` 里写入：功能正常时市场稳定度 +1，否则按无核心处理，撤销修饰。一座靠垄断物资立足的站点，稳定度比产量更值钱。
-
-## 加入 Foundry
-
-[C12-S1] 的生成器在加入停靠设施之后添加这一行：
+`super.apply(true)` 在 `BaseIndustry` 中会先执行标准的 Alpha 核心供需加成 (`applyAlphaCoreSupplyAndDemandModifiers()` 提供 `+1` 产出、`-1` 需求，若不想给 `+1` 产出需像原版 `Spaceport` 那样另行覆写该方法) 与 `-25%` 维护费折减 (`applyAICoreToIncomeAndUpkeep()`)，随后才派发到 `applyAlphaCoreModifiers()`，拆下核心或产业瘫痪时则交由 `applyNoAICoreModifiers()` 撤回自定义修饰：
 
 ```java
+@Override
+protected void applyAlphaCoreModifiers() {
+    if (isFunctional()) {
+        market.getStability().modifyFlat(getModId(2), 1, "Alpha core (" + getNameForModifier() + ")");
+    } else {
+        applyNoAICoreModifiers();
+    }
+}
+
+@Override
+protected void applyNoAICoreModifiers() {
+    market.getStability().unmodifyFlat(getModId(2));
+}
+```
+
+`getModId(2)` 是 `BaseIndustry` 为第 2 类修饰预留的来源键生成方法，两处传入相同的来源键，才能保证拔下 Alpha 核心时稳定度加成被干净撤掉。
+
+## 将产业接入 Foundry
+
+在 [C12-S1] 的 `GearInFoundryGenerator.generate(...)` 中，于太空港 `"spaceport"` 之后追加产业挂载：
+
+```java
+market.addIndustry("population");
+market.addIndustry("spaceport");
 market.addIndustry("GearIn_element_works");
 ```
 
-`addIndustry(...)` 按 ID 找到注册规格，创建插件实例并执行 `apply()`。
+`addIndustry(...)` 会按 `industries.csv` 中的配置实例化 `GearInElementWorksIndustry` 并立即执行一次 `apply()`，紧随其后的 [C12-S3] Alloy Depot 仓库也就终于能从市场供给里读到回火合金了。
 
 ## 完整的产业类
 
@@ -141,34 +163,27 @@ public class GearInElementWorksIndustry extends BaseIndustry {
 
 ### 进游戏核对
 
-执行 `gradle jar`，重启游戏，**新建一份存档**，打开 Nipher Foundry 的产业界面。
+执行 `gradle jar`，重启游戏，**新建一份存档**，停靠 Nipher Foundry 并打开殖民地管理界面。
 
-- 产业列表里有 Element Works，供需一栏为金属、重型机械需求与回火合金产出；
-- 金属或重型机械短缺时，回火合金的产出相应下降；
-- 安装 Alpha 核心后，稳定度提高 1。
-
-页面中的现象依据 API 与原版代码推出，编者尚未逐项在游戏内实测。
+- 产业列表中出现 `Element Works`，消耗金属 (`3`) 与重型机械 (`1`)，产出回火合金 (`2`)；
+- 推进数个生涯天后打开 [C12-S3] 的 `Alloy Depot`，货架上已补出可供购买的回火合金库存；
+- 当金属或重型机械输入短缺时，产出栏会如实减去对应的缺口档数并标出红字缺货来源；
+- 给该产业装入 Alpha 核心，维护费用下降、供需按常规核芯规则微调，且殖民地稳定度明细中出现 `+1` 来源，拆下后全部恢复。
 
 ## 常见问题
 
-- **产业列表里没有 Element Works**：`industries.csv` 没有加载，或 `plugin` 的类名写错。
-    - **解决方案**：核对 ID 与完整类名，并确认生成器已调用 `addIndustry(...)`。
+- **产业列表中没有出现 `Element Works`**：`GearInFoundryGenerator` 尚未调用 `market.addIndustry("GearIn_element_works")`，或 `industries.csv` 的 15 列格式错位、`plugin` 类名拼写有误。
+    - **解决方案**：核对 `industries.csv` 列数与完整类名，确认类已打进 JAR 并已加入市场。
 
-- **产出始终为 0**：`supply(...)` 的商品 ID 拼错，或产业尚未建成。
-    - **解决方案**：核对 `GearInAlloyCargo.COMMODITY_ID`，并检查 `isFunctional()`。
+- **输入物已经短缺，但回火合金产出档位纹丝不动**：将 `applyDeficitToProduction(...)` 写在了 `supply(...)` 之前。
+    - **解决方案**：确保先调用 `supply(...)` 声明基础产出，再调用 `applyDeficitToProduction(...)`。
 
-- **短缺没有削减产出**：先调用了 `applyDeficitToProduction(...)`，后声明 `supply(...)`。
-    - **解决方案**：先声明供给，再应用缺口。
-
-- **建设中的产业仍在出货**：没有在不可用时清空供给。
-    - **解决方案**：在 `apply()` 末尾检查 `isFunctional()`。
-
-- **旧存档中没有这个产业**：Foundry 只在新档中生成。
-    - **解决方案**：使用新档测试，见 [C7-S1]。
+- **产业正在建造中或被打瘫时市场依然能买到产出物资**：`apply()` 结尾漏掉了 `if (!isFunctional()) { supply.clear(); }`。
+    - **解决方案**：在确认产业未就绪时清空 `supply` 映射。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry`：供需、缺口与核对状态的全部方法。
-- `com.fs.starfarer.api.impl.campaign.econ.impl.HeavyIndustry`：原版重工业，缺货削减与最低产出的写法。
-- `com.fs.starfarer.api.impl.campaign.ids.Commodities`：原版商品 ID 常量。
-- `data/campaign/industries.csv`：原版产业的登记。
+- `com.fs.starfarer.api.impl.campaign.econ.impl.BaseIndustry`：`apply(boolean)`、`demand(...)`、`supply(...)`、`getMaxDeficit(...)` 与 `getModId(int)`。
+- `com.fs.starfarer.api.impl.campaign.econ.impl.Refining`：原版冶炼厂供需、短缺与核心效果写法 (`HeavyIndustry` 同包)。
+- `com.fs.starfarer.api.impl.campaign.ids.Commodities`：原版大宗商品 ID 常量 (`METALS`、`HEAVY_MACHINERY` 等)。
+- `data/campaign/industries.csv`：原版产业登记表头与标签写法。

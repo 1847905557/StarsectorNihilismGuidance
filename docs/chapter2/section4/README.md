@@ -1,6 +1,6 @@
 # 为武器加入命中与光束特效
 
-数值是有尽头的。您能想到的所有数据大概已经被排列组合地用了个遍。该怎么别在多样性的海洋里被水淹没不知所措呢？只能想办法在特效上入手了。
+数值是有尽头的。您能想到的所有数据大概已经被排列组合地用了个遍。怎样才不至于在多样性的海洋里被水淹没不知所措呢？只能想办法从特效入手了。
 
 恰好，特效对于武器的决定性也是相当可观的。原版也有不少面板平平无奇，实战远超同级的例子。一门武器在舰船上扮演什么角色，甚至可能由某些占主导地位的特效而决定。
 
@@ -106,7 +106,7 @@ public class GearInDurinOnHitEffect implements OnHitEffectPlugin {
 
 乌里是能量光束，每秒 175 点能量伤害，射程 1000。光束的特点是持续照射，所以编者给它的效果也按照射时间结算：光束以满亮度照射舰船船体时，每 0.5 秒从光束末端向目标放一道电弧，带 40 点能量伤害和 200 点 EMP。EMP 会让被照射部位的武器和引擎暂时失灵，乌里因此从单纯的伤害光束变成一件能压制对手火力的武器。
 
-光束效果每帧调用一次，不能每次调用都放一道电弧。参照原版离子光束的做法，在类里用一个字段累计时间，累计满 0.5 秒再放一次。新建 `data/scripts/gearin/combat/GearInUriBeamEffect.java`：
+光束效果每帧调用一次，不能每次调用都放一道电弧。参照原版离子束的做法，在类里用一个字段累计时间，累计满 0.5 秒再放一次。新建 `data/scripts/gearin/combat/GearInUriBeamEffect.java`：
 
 ```java
 package data.scripts.gearin.combat;
@@ -160,9 +160,9 @@ public class GearInUriBeamEffect implements BeamEffectPlugin {
 
 - `beam.getDamageTarget()` 取得光束正在照射的对象，不是舰船就结束；
 - `beam.getBrightness()` 是光束亮度，开火和停火的渐变阶段小于 1，只有满亮度时才往下走；
-- `target.getShield().isWithinArc(point)` 判断光束末端是否位于护盾覆盖的角度内，位于其中就视为照射护盾，不计时。原版离子光束用的也是这个判断。
+- `target.getShield().isWithinArc(point)` 判断光束末端是否位于护盾覆盖的角度内，位于其中就视为照射护盾，不计时。原版离子束用的也是这个判断。
 
-通过这几道排除之后，`elapsed` 加上这一帧的秒数。累计满 0.5 秒时清零，再调用 `spawnEmpArc` 放电弧。它的参数较多，依次是：伤害记在谁名下、电弧起点、电弧挂靠的对象、电弧命中的对象、伤害类型、伤害量、EMP 量、最大距离、命中音效、粗细、外圈颜色和内芯颜色。最大距离填一个很大的数，表示不限距离；音效沿用原版离子光束的 `tachyon_lance_emp_impact`；颜色直接取这道光束自身的颜色，电弧就和光束同色。
+通过这几道排除之后，`elapsed` 加上这一帧的秒数。累计满 0.5 秒时清零，再调用 `spawnEmpArc` 放电弧。它的参数较多，依次是：伤害记在谁名下、电弧起点、电弧挂靠的对象、电弧命中的对象、伤害类型、伤害量、EMP 量、最大距离、命中音效、粗细、外圈颜色和内芯颜色。最大距离填一个很大的数，表示不限距离；音效沿用原版离子束的 `tachyon_lance_emp_impact`；颜色直接取这道光束自身的颜色，电弧就和光束同色。
 
 `elapsed` 写在方法外面，作为类的字段。写在方法里面的变量每次调用都会重新开始，写在外面的字段则在多次调用之间保留，所以能一帧一帧地累计下去。
 
@@ -201,7 +201,7 @@ public class GearInUriBeamEffect implements BeamEffectPlugin {
 ## 建议参考项
 
 - `com.fs.starfarer.api.impl.combat.IonCannonOnHitEffect`：原版离子炮的命中效果，先排除护盾再掷概率的判断写法来自它。
-- `com.fs.starfarer.api.impl.combat.IonBeamEffect`：原版离子光束的效果，累计时间后放电弧的做法来自它。
+- `com.fs.starfarer.api.impl.combat.IonBeamEffect`：原版离子束的效果，累计时间后放电弧的做法来自它。
 - `data/weapons/proj/ioncannon_shot.proj`：`onHitEffect` 字段的登记样本。
 - `data/weapons/ionbeam.wpn`：`beamEffect` 字段的登记样本。
 - `com.fs.starfarer.api.combat.OnHitEffectPlugin`：命中效果的接口。

@@ -1,30 +1,25 @@
 # 接入可选依赖
 
-可选依赖要同时处理库存在与缺席时的行为。本节为 Nexerelin 和 LunaLib 加入编译路径，用桥接类检测启用状态，再把 LunaLib 的直接调用留在适配器里。库缺席时图形开关采用调用方缺省，已有基础内容继续运行；同一份 JAR 用四种组合验证这个约定。
+把 Nexerelin 或 LunaLib 直接写进 `mod_info.json` 依赖表，会让未安装这两个扩展的玩家在启动器里无法勾选启用。
 
-_本节预期阅读时间：\~18 分钟。_
+可选兼容走的是另一条路：编译时靠 `compileOnly` 让代码认识外库，打包不带进任何三方类，运行时再由启用检测与嵌套适配器决定到底读面板还是退回默认值。
 
-_本节预期操作时间：\~30 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~15 分钟。_
 
-完成后，您将能够：
-
-- 用精确 MOD ID 分别检测 Nexerelin 与 LunaLib；
-- 让基础入口加载不含第三方类型的外层桥接类；
-- 在检测通过后进入持有 LunaLib 类型的嵌套适配器；
-- 为缺库和缺键定义明确的默认返回值；
-- 让每项缺库日志在一次应用运行中最多出现 1 次。
+_本节预期操作时间：\~25 分钟。_
 
 ## 前置知识
 
+- [C1-S1] 的 MOD ID(`GearIndustry`) 与 `mod_info.json` 规范；
 - [C7-S1] 的应用与生涯加载回调；
-- [C7-S2] 的 Global 服务与日志；
-- [C18-S1] 的运行时依赖、编译 classpath 和 JAR 输出。
+- [C7-S2] 的 `Global` 服务与日志输出；
+- [C18-S1] 的 `compileOnly`、`dependencyJarDirs` 与 JAR 输出。
 
-## 为开发工程提供两库 JAR
+## 把两库加入编译 classpath
 
-开发环境安装 Nexerelin 与 LunaLib，按实际目录名把 JAR 加入 [C18-S1] 的 `dependencyJarDirs`。下面的局部代码放在该数组定义后、`dependencies` 块之前：
+先确认本地已安装 Nexerelin(`0.12.1e`) 与 LunaLib(`2.0.5`)，随后打开 [C18-S1] 的 `build.gradle`，按真实文件夹名在 `dependencyJarDirs` 定义之后、`dependencies` 块之前追加：
 
 ```groovy
 dependencyJarDirs += [
@@ -33,22 +28,22 @@ dependencyJarDirs += [
 ]
 ```
 
-继续使用 `compileOnly`，保存后执行 `gradle printCompileClasspath`，确认包含 `ExerelinCore.jar` 与 `LunaLib.jar`。编译器需要这些类型，玩家运行时则可以选择是否启用两库。前文章节的三库硬依赖继续保留，本节的可选状态由 Java 查询。
+注意这里同样使用 `compileOnly`。写完运行一次 `gradle printCompileClasspath`，确认输出里包含 `ExerelinCore.jar` 与 `LunaLib.jar`。由于这只是可选兼容，[C18-S1] 里原本写进 `mod_info.json` 的三库强依赖保持不变，**不要**把 `nexerelin` 或 `lunalib` 加进 `dependencies` —— 运行时是否启用，交给 Java 代码自己查。
 
-## 用 MOD ID 检测启用状态
+## 用精确 MOD ID 区分两个概念
 
-把本节完整的 `GearInCompatBridge` 保存到 `src/data/scripts/gearin/modcompat/GearInCompatBridge.java`。外层查询使用原版 `ModManagerAPI`：
+把后文的完整 `GearInCompatBridge` 保存到 `src/data/scripts/gearin/modcompat/GearInCompatBridge.java`。判断可选库是否启用时，直接询问原版管理器：
 
 ```java
 boolean nex = Global.getSettings().getModManager().isModEnabled("nexerelin");
 boolean luna = Global.getSettings().getModManager().isModEnabled("lunalib");
 ```
 
-这两个 ID 来自依赖 MOD 的 `mod_info.json`。LunaLib 设置的拥有者则是 `gear_in`，读取时由自己的 MOD ID 与字段名共同定位值。启用检测决定能否调用库，拥有者决定调用后读取哪份设置。
+这里的 `"nexerelin"` 和 `"lunalib"` 来自两库各自 `mod_info.json` 里的 `"id"`(大小写严格匹配)。另外要注意区分另一组常见混淆：LunaSettings 按来源 MOD 存放数据时，同样只认各自 `mod_info.json` 里的 `"id"`。本教程齿轮工业的 MOD ID 在 [C1-S1] 定为 `"GearIndustry"`(而 `"gear_industry"` 是 [C3-S1] 注册的势力 ID)，因此后面向 LunaSettings 取值时，拥有者 ID 必须传 `"GearIndustry"`，否则会在日志里收到 `Could not find mod` 报错并返回 `null`。
 
-## 把库类型留在启用分支后面
+## 把第三方类型挡在启用分支后面
 
-**外层负责检测，适配器负责直接调用库。**桥接类的公共签名和字段使用原版或 Java 类型，直接引用 LunaLib 的代码放在独立嵌套类中。局部调用为：
+**外层负责开关检测与默认回退，嵌套适配器才直接碰第三方库。**只要桥接类的公共签名、字段和早返回路径都不暴露 LunaLib 类型，在 HotSpot 延迟解析下，JVM 就不会在 LunaLib 缺席时提前尝试加载 `LunaSettings`。局部转发写法如下：
 
 ```java
 if (isLunaLibEnabled()) {
@@ -56,33 +51,34 @@ if (isLunaLibEnabled()) {
 }
 ```
 
-分支通过后才进入 `LunaAdapter`，库缺席时直接返回缺省。适配器的 class 文件与外层分开，基础入口可以取得检测结果，而无需先建立 LunaLib 的直接类型关系。
+`isLunaLibEnabled()` 返回 `false` 时，代码根本不会触发 `GearInCompatBridge$LunaAdapter` 的类加载与常数池解析，而是直接返回调用方给的 `fallback`。
 
-::: warning 父类依赖发生在方法判断之前
-基础入口若继承依赖库的类，缺库时可能在加载父类阶段就失败，方法里的启用判断尚未执行。接口、公用签名与字段类型也要按实际使用位置核对；外层桥接保留 Java、原版和自有类型。
+::: warning 继承与字段类型会在分支之前触发类加载
+
+千万不要为了省事让外层类或 `BaseModPlugin` 直接继承、实现某个可选库的父类/接口，也不要把第三方类写进外层字段或方法签名。只要外层类本身在加载或校验阶段需要解析这些类型，缺库时不等进 `if` 分支就会当场抛 `NoClassDefFoundError`。
+
 :::
 
-## 定义字段与缺省值
+## 定义图形开关与包装类型读取
 
-在 MOD 的 `data/config/LunaSettings.csv` 保存：
+在 MOD 下新建 `data/config/LunaSettings.csv`，写入九列表头与一个布尔示例项：
 
 ```csv
 fieldID,fieldName,fieldType,defaultValue,secondaryValue,fieldDescription,minValue,maxValue,tab
 GearIn_fullGraphicEffect,Full graphic effect,Boolean,true,,,,,GearIn
 ```
 
-LunaLib 按文件来源记录设置拥有者，读取时再传入 `gear_in`。适配器中使用包装类型 `Boolean`，字段不存在或无法取值时采用调用方缺省：
+LunaLib 启动时会遍历已启用的 MOD，以 `mod.getId()` 作为键加载各自包里的 `data/config/LunaSettings.csv`，并把默认配置写入 `LunaSettings/GearIndustry.json`。适配器里统一用包装类型 `Boolean` 接返回值，方便把 "玩家特意选了 `false`" 和 "缺库/缺键返回的 `null`" 区分开：
 
 ```java
-Boolean value = LunaSettings.getBoolean(SETTINGS_OWNER_MOD_ID, "GearIn_fullGraphicEffect");
+Boolean value = lunalib.lunaSettings.LunaSettings.getBoolean(
+        SETTINGS_OWNER_MOD_ID, FULL_GRAPHIC_FIELD);
 return value == null ? fallback : value;
 ```
 
-已有值为 `false` 时，返回的就是 `false`。默认值服务缺席或缺键，字段本身的值继续由 LunaLib 管理。
+## 每次运行只报告一次缺席
 
-## 按应用运行记录一次缺席
-
-桥接类用静态字段记录已经报告的状态。同一应用中从多个入口读取，缺库日志也只产生一次。以下为局部报告片段：
+如果多个插件每帧或每次进档都调 `GearInCompatBridge`，缺库提示很容易把 `starsector.log` 刷满。利用静态布尔标记，可以让每次应用启动后最多输出一条信息：
 
 ```java
 if (!lunaMissingReported) {
@@ -92,11 +88,9 @@ if (!lunaMissingReported) {
 }
 ```
 
-读另一份存档时静态标记继续保留，退出并重启应用后再初始化。这个记录范围与依赖的启用状态一致：库在本次应用中缺席，重复调用仍采用相同缺省；日志因此按应用报告一次。
+这类状态挂在桥接类的静态字段上，跨读档保留，直到玩家重启游戏进程才重新初始化。
 
-## 接到生涯入口比较结果
-
-向既有 `GearInModPlugin.onGameLoad(...)` 追加局部调用，导入桥接类并保留此前初始化：
+在既有 `GearInModPlugin.onGameLoad(...)` 里补上一组探针日志 (保留原有初始化)：
 
 ```java
 boolean nex = GearInCompatBridge.isNexerelinEnabled();
@@ -107,10 +101,6 @@ Global.getLogger(GearInModPlugin.class).info(
         "GearIn optional: nex=" + nex + " luna=" + luna + " fullGraphic=" + fullGraphic);
 ```
 
-构建、重启并载入生涯后，搜索 `GearIn optional`。调用方给图形开关选择缺省 `true`，库缺席时返回这个值；已有设置为 `false` 时读取它本身。具体效果由后面的使用方处理，Nexerelin 功能也在启用分支接入。
-
-## 启用组合速查表
-
 | 启用组合     | Nexerelin 检测 | LunaLib 检测 |
 | ------------ | -------------- | ------------ |
 | 两库都缺席   | false          | false        |
@@ -118,19 +108,9 @@ Global.getLogger(GearInModPlugin.class).info(
 | 仅 LunaLib   | false          | true         |
 | 两库都启用   | true           | true         |
 
-## 连续查询接入状态
-
-Console Commands 可以在同一生涯中重复读取，核对返回值与报告状态：
-
-```text
-runcode for (int i = 0; i < 100; i++) { data.scripts.gearin.modcompat.GearInCompatBridge.getFullGraphicEffect(true); data.scripts.gearin.modcompat.GearInCompatBridge.reportNexerelinFallback(); }
-```
-
-同一次应用运行的静态报告标记继续保留，重复读取按当前启用状态取值。
-
 ## 完整最小例
 
-桥接类统一检测并报告缺席，LunaLib 取值通过嵌套适配器调用：
+完整桥接代码同时涵盖启用检测、一次一报日志以及嵌套 `LunaAdapter` 读取：
 
 ::: details 完整成品：GearInCompatBridge
 
@@ -142,7 +122,7 @@ import com.fs.starfarer.api.Global;
 public final class GearInCompatBridge {
     public static final String NEX_MOD_ID = "nexerelin";
     public static final String LUNA_MOD_ID = "lunalib";
-    public static final String SETTINGS_OWNER_MOD_ID = "gear_in";
+    public static final String SETTINGS_OWNER_MOD_ID = "GearIndustry";
     public static final String FULL_GRAPHIC_FIELD = "GearIn_fullGraphicEffect";
 
     private static boolean nexMissingReported;
@@ -191,45 +171,31 @@ public final class GearInCompatBridge {
 
 :::
 
-## 验证方案
+### 进游戏核对
 
-前置数据：Nexerelin、LunaLib 与 Console Commands 在开发环境中可用，启动器能够分别选择四种组合。
+1. **构建并测试四种启停组合**：编译打一次 JAR，在启动器里依次以 "双关 / 仅 Nexerelin / 仅 LunaLib / 双开" 四组配置启动游戏并载入存档，在 `starsector.log` 搜索 `GearIn optional`，确认布尔输出与上表一一对应且未出现 `NoClassDefFoundError`。
+2. **确认缺库不刷屏**：在两库都关闭时用 Console Commands 连续调用 100 次，核对日志里 `LunaLib unavailable` 与 `strategic integration disabled` 各自只出现 1 条，重复读档也不再新增：
 
-1. 保存桥接类、设置 CSV 与生涯调用，构建一次 JAR；依次选择表中的四种组合，重启并载入测试生涯，搜索 `GearIn optional`。
-2. 在每种组合的生涯中执行正文连续查询命令，重复两项调用 100 次，核对缺席日志条数。
-3. LunaLib 启用时，在面板中分别保存 `true` 与 `false`，重新调用 getter。缺键实验将桥接类的 `FULL_GRAPHIC_FIELD` 暂时改为 `GearIn_missing_graphic_field`，构建重启并观察缺省；实验后恢复 `GearIn_fullGraphicEffect`，构建重启。
-4. 在另一测试 MOD 中定义同名字段并修改它，确认拥有者为 `gear_in` 的读取仍使用自己的值。
-5. 两库都缺席时进入已有战斗和生涯内容，再在同一次运行中重复载入存档，比较缺席日志。
+```text
+runcode for (int i = 0; i < 100; i++) { data.scripts.gearin.modcompat.GearInCompatBridge.getFullGraphicEffect(true); data.scripts.gearin.modcompat.GearInCompatBridge.reportNexerelinFallback(); }
+```
 
-预期结果：
+3. **核对设置取值与字段隔离**：启用 LunaLib 后在设置面板把 `Full graphic effect` 改为 `false` 并保存，重新读取应拿到 `false` 而非默认值 `true`；在另一测试 MOD 中定义同名的 `GearIn_fullGraphicEffect`，因为 `LunaSettings` 以 `(modID, fieldID)` 分别入表与存盘，各自值互不覆盖。
 
-- 四组检测分别对应表中的布尔值，同一 JAR 能完成启动与载入；
-- LunaLib 缺席时 100 次读取返回 `true`，两项缺席报告各自最多一条；
-- 已有字段返回实际值，缺键时采用调用方缺省；
-- 另一个 MOD 的同名字段按自己的拥有者保存；
-- 基础内容可用，一次应用运行中的重复读档保持同一缺席报告状态。
+## 常见问题
 
-## 故障分析
+- **缺席 LunaLib 时启动或读档直接报 `NoClassDefFoundError`**：外层类的字段、签名、父类/接口直接引用了第三方类，或者跳过 `isLunaLibEnabled()` 提前调到了适配器。
+    - **解决方案**：把外层类型严格限定在原版与 JDK 类型以内，直接调用统一放进嵌套适配器。
 
-- **缺少 LunaLib 时出现 NoClassDefFoundError**：基础类的父类、接口、字段或无条件路径包含第三方类型。
-    - **解决方案**：将直接库关系放入启用分支后调用的独立适配器，再用缺库组合重启验证。
+- **LunaLib 已启用，开关改了却一直退回代码默认值**：`SETTINGS_OWNER_MOD_ID` 被误写成势力 ID 或简称，或者 `LunaSettings.csv` 的字段名与九列逗号数量不对。
+    - **解决方案**：核对 `SETTINGS_OWNER_MOD_ID` 是否与 `mod_info.json` 的 `"id"`(`"GearIndustry"`) 一致，并检查 CSV 表头和 `fieldID`。
 
-- **启用检测与启动器状态不符**：查询 ID 与依赖 manifest 不一致。
-    - **解决方案**：核对 `nexerelin`、`lunalib` 的实际拼写与启用状态。
-
-- **库已启用但设置读成缺省**：拥有者或字段 ID 不匹配，或当前值不能按所需类型取得。
-    - **解决方案**：核对 `gear_in`、`GearIn_fullGraphicEffect` 和 LunaLib 的字段读取日志。
-
-- **同一次运行反复输出缺席消息**：各调用点各自打印，或标记没有存放在共享静态状态中。
-    - **解决方案**：统一调用桥接报告入口，按本节静态字段保存报告状态。
-
-## 总结
-
-桥接把启用检测、直接库调用与缺席行为接成明确的分支：基础入口取得状态，适配器读取第三方设置，调用方决定缺省。四种组合使用同一份产物，分别确认类加载与运行结果；后续兼容角色继续沿用这些检测入口。
+- **检测结果和启动器勾选状态不一致**：传给 `isModEnabled(...)` 的字符串与依赖 MOD 的 manifest 不符。
+    - **解决方案**：核对 `"nexerelin"`、`"lunalib"` 是否与对方 `mod_info.json` 中的 `"id"` 大小写完全一致。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.ModManagerAPI`：`isModEnabled` 查询依赖的启用状态；
-- `lunalib.lunaSettings.LunaSettings`：`getBoolean` 按 MOD 与字段取值；
-- `data/config/LunaSettings.csv`：图形开关定义；
-- `Starsector/starsector-core/starsector.log`：接入状态与字段读取日志。
+- `com.fs.starfarer.api.ModManagerAPI`：`isModEnabled` 查询依赖 MOD 启用状态；
+- `lunalib.lunaSettings.LunaSettings`：`getBoolean` 按 MOD ID 与字段名读取设置；
+- `data/config/LunaSettings.csv`：图形开关定义入口；
+- `Starsector/starsector-core/starsector.log`：查看 `GearIn optional` 与缺失提示。

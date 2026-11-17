@@ -1,28 +1,21 @@
 # 制作 GraphicsLib 纹理映射
 
-material 与 normal 为光照提供表面颜色和方向，工匠级的装甲起伏由此能够随光源位置变化。本节以原始舰船贴图为基准制作两张附加纹理，用 texture CSV 连接船体，再说明查询、自动生成和预载怎样取得这些资源。
+没有法线和材质贴图时，再亮的光源照射舰船表面也像只映在一张平面立绘上，能看出明暗变化却拉不开立体层次。
 
-_本节预期阅读时间：\~20 分钟。_
+GraphicsLib 通过纹理映射表替舰体与武器接出漫反射、法线和高光表面三层通道。不过比起手工画全三张图，更值得先弄清的是它在什么条件下会自动补全缺失法线、以及按标签预载入显存的时机，否则很容易出现贴图生效了、帧率却被无端拖垮的窘境。
 
-_本节预期操作时间：\~35 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~18 分钟。_
 
-完成后，您将能够：
-
-- 区分原始 Sprite 贴图、material、normal 与 surface 贴图的职责；
-- 在 `onApplicationLoad()` 中登记 texture CSV 并选择覆盖策略；
-- 制作与舰船 Sprite 贴图画布、位置、透明区和朝向一致的 material／normal 贴图；
-- 用 texture CSV 的 6 个字段把两张贴图登记给 `GearIn_artizan`；
-- 按对象 ID、类型、纹理类型和动画帧查询 `TextureEntry`；
-- 在显式 normal 缺失时使用自动生成，并判断缓存与预载状态。
+_本节预期操作时间：\~25 分钟。_
 
 ## 前置知识
 
-- [C1-S2] 已完成 `GearIn_artizan` 的舰船 Sprite 贴图与船体登记；
-- [C18-S5] 已在 `onApplicationLoad()` 中初始化 GraphicsLib 并完成 shader／buffer 能力判断；
-- [C18-S6] 已建立能够照亮舰船表面的动态点光源；
-- 能够使用图像编辑器保存带透明通道的 PNG，并读取 `starsector.log`。
+- [C1-S2] 的 `GearIn_artizan` 舰船贴图与船体登记；
+- [C18-S5] 在 `onApplicationLoad()` 中完成 GraphicsLib 初始化与能力判断；
+- [C18-S6] 能够在战斗中照亮舰船表面的动态点光源；
+- 能够导出带透明通道的 RGBA PNG 贴图并查看 `starsector.log`。
 
 ## 以原始贴图确定坐标基准
 
@@ -30,7 +23,7 @@ _本节预期操作时间：\~35 分钟。_
 
 material 贴图提供光照计算使用的表面颜色与反射差异。normal 贴图保存每个像素朝向哪个方向，让位于舰船左侧、右侧或上方的光源照出不同明暗。surface 贴图进一步控制镜面高光的强度和硬度；缺少它时，material 与 normal 仍然可以参与光照，只是没有该船专用的 surface 变化。
 
-**三类附加纹理在原始贴图的同一像素位置采样。**本节先制作 material 与 normal，再按美术需要决定是否加 surface。每类图表达的信息各有用途，画布和船体位置则一起保持一致。
+**三类附加纹理在原始贴图的同一像素位置采样。** 实际制作常先补齐 material 与 normal，再按美术需要决定是否加 surface。每类图表达的信息各有用途，画布和船体位置则一起保持一致。
 
 ## 制作同坐标的附加纹理
 
@@ -226,9 +219,9 @@ TextureData.mapSpriteToMNSWithAutoGen(
         false);
 ```
 
-前四个参数确定映射键，第五个参数允许生成缺失的 normal；最后一个参数为 `true` 时，生成结果不带自动生成标记，普通兼容路径保持为 `false`。自动查询识别 `graphicslib_no_autogen` 以限制生成，`graphicslib_autogen_override` 则影响结果标记；已有显式 normal 继续优先使用。
+这组位置参数依次确定映射键 (对象 ID、贴图类别、对象类型与动画帧)；后两个布尔参数则控制是否在缺失时自动生成 normal，以及是否以覆盖模式跳过打上自动生成标记 (常规兼容路径保持为 `false`)。自动查询会识别 `graphicslib_no_autogen` 阻止自动生成，而 `graphicslib_autogen_override` 决定结果标记；已有显式 normal 时始终优先使用。
 
-**编者更愿意为需要突出装甲结构的舰船制作显式 normal。** 自动生成根据原始 Sprite 贴图的亮度推算高度，再生成表面方向，涂装和原图阴影也会进入这份推算。它能提供通用受光效果，具体凹槽和装甲隆起则由自己的高度关系控制。
+需要清晰表现指定装甲凹槽与隆起时，手绘或烘焙显式 normal 远比自动生成靠谱。自动生成只依据原始 Sprite 贴图的亮度推算高度，原图上的涂装花纹和暗部阴影也会被当成凹凸变化。
 
 `autoGenNormalMap(...)` 直接从一张 Sprite 贴图生成 normal，并返回生成后的 `SpriteAPI`：
 
@@ -240,7 +233,7 @@ SpriteAPI generated = TextureData.autoGenNormalMap(
         0);
 ```
 
-这个入口适合已经掌握对象键和缓存规则的专用工具。常规战斗代码使用 `getTextureDataWithAutoGen(...)` 即可；全局扫描入口 `autoGenMissingNormalMaps()` 由 GraphicsLib 的初始化流程负责。
+这个入口适合已经掌握对象键和缓存规则的专用工具。常规战斗代码使用 `getTextureDataWithAutoGen(...)` 即可；`autoGenMissingNormalMaps()` 只在 GraphicsLib 自己的 `ShaderModPlugin.onApplicationLoad()` 末尾扫一遍已加载表，由于各 MOD 的 `onApplicationLoad()` 执行顺位不固定，测试时删掉某船显式 normal 后，稳定触发点是在战斗中经由 `LightShader` -> `getTextureDataWithAutoGen(..., ship, false)` 按需生成并写盘。
 
 ## 理解缓存、按需加载与预载
 
@@ -311,30 +304,15 @@ GearIn_artizan,ship,,,material,graphics/material/ships/GearIn_artizan.png
 GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
 ```
 
-## 验证方案
+### 进游戏核对
 
-前置数据：[C18-S5] 的入口已经初始化 GraphicsLib，三张 `GearIn_artizan` PNG 已按正文目录准备，[C18-S6] 的动态光源能够在战斗中照射测试舰船。
+准备对齐画布导出的 `GearIn_artizan` material 与 normal PNG，确认 `[C18-S5]` 已初始化 GraphicsLib，进入含动态光源的模拟战：
 
-1. 用相同画布导出 material 与 normal PNG，核对三张图片的像素尺寸、舰船中心、不透明像素包围盒和舰首方向。
-2. 启动游戏，确认 `onApplicationLoad()` 读取 `GearIn_texture_data.csv`，日志中没有路径、type、map 或 frame 警告。
-3. 用同一查询键分别测试覆盖与不覆盖入口，确认最终 `TextureEntry` 来自预期数据行。
-4. 查询 `GearIn_artizan` 的 material 与 normal，核对 `spriteName`、`magnitude`、`autoGen`、`validToLoad` 和 `loaded`。
-5. 使用 [C18-S6] 的动态光源照射工匠级，转动舰船并观察 material 颜色、normal 明暗方向与船体同步旋转。
-6. 临时移除 normal 数据行并启用 `autoGenNormals`，确认查询返回 `autoGen == true`，同时在 `Starsector/mods/GraphicsLib/cache` 产生缓存。
-7. 分别给测试船体加入 `graphicslib_no_autogen`、`graphicslib_autogen_override` 与 `graphicslib_preload`，核对生成来源和预载状态。
-8. 分别启用和关闭 `preloadAllMaps`，比较加载日志、第一次进入战斗的停顿和全部 `TextureEntry.vramSize` 之和。
-9. 依次制造错误 ID、错误 type、错误 map、缺失路径、错位画布和错误 frame，核对下面列出的症状与修正结果。
+- 启动阶段正常读入 `GearIn_texture_data.csv` 且 `starsector.log` 无路径或字段警告，material 与 normal 查询命中 `GearIn_artizan` (`SHIP`、帧 `0`、`magnitude == 1`)；
+- 在 [C18-S6] 的动态点光源下旋转工匠级，受光颜色随 material 变化，装甲明暗斜率随船体朝向同步旋转，透明区无溢出像素；
+- 临时移除显式 normal 行并在开启 `autoGenNormals` 时让该船上场受光，可在 `Starsector/mods/GraphicsLib/cache` 看到 `GearIn_artizan___SHIP_normal.png` 且 `autoGen == true`；再对照 `graphicslib_no_autogen` / `graphicslib_preload` 与 `preloadAllMaps` 观察按需/预载显存差异。
 
-预期结果：
-
-- texture CSV 在应用加载阶段进入注册表，覆盖策略与同一查询键的预期一致；
-- 两条显式登记都以 `GearIn_artizan`、`SHIP` 和第 0 帧命中，normal 的 `magnitude` 为 1；
-- 动态光下的颜色与表面方向贴合原始舰船轮廓，透明区没有额外受光像素；
-- 移除显式 normal 后，自动生成结果来自缓存路径并标记 `autoGen`；
-- 动态加载只让当前战斗需要的条目驻留，全量预载则提前增加相应显存占用；
-- 三个标签分别改变自动生成许可、生成结果选择与常驻预载范围。
-
-## 故障分析
+## 常见问题
 
 - **查询结果为 `null`**：ID、对象类型、map、适用的动画帧、加载开关或资源路径没有对应到可用条目。
     - **解决方案**：核对登记与加载开关；turret 和 hardpoint 另核对帧号，并确认 PNG 能够加载。
@@ -346,14 +324,10 @@ GearIn_artizan,ship,,1,normal,graphics/normal/ships/GearIn_artizan.png
     - **解决方案**：修正法线通道，并从 `magnitude = 1` 开始校准。
 
 - **缺失 normal 后没有自动生成**：全局开关、对象标签、实际对象参数或原始 Sprite 贴图路径阻止了生成。
-    - **解决方案**：确认 `autoGenNormals` 已启用、对象未带禁止标签，并把实际 `ShipAPI` 传入查询。
+    - **解决方案**：确认 `autoGenNormals` 已启用、对象未带禁止标签，并让舰船进入战斗渲染或把实际 `ShipAPI` 传入查询。
 
 - **第一次进入战斗出现明显停顿**：大量纹理在首次使用时同时按需载入。
     - **解决方案**：只给关键对象添加 `graphicslib_preload`，再以显存统计决定是否启用 `preloadAllMaps`。
-
-## 总结
-
-工匠级通过船体 ID 与 SHIP 类型取得两种 map：画布对齐决定采样位置，material 和 normal 分别提供颜色与表面方向。查询再按加载状态取得资源；自动生成、显式制作和预载范围，则分别依据表面结构的控制需要与显存占用选择。
 
 ## 建议参考项
 

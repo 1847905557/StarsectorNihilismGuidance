@@ -1,8 +1,10 @@
-# 制作测试战役与战役
+# 制作测试战役与普通战役
 
-测试战役大概是整个 MOD 里玩家最少打开、编者却最常打开的东西。以后每做一艘船、改一门武器，都要回到这里装一遍、打一遍。
+测试战役大概编者最常打开的的战役。或许比生涯还常打开。毕竟所有要测试的东西都触手可及。
 
 它值得一次做好，之后就不用再管了。
+
+当然，讲解了测试战役这个特例却反而不解释 "普通的" 战役是很奇怪的，所以我们不妨一次讲全。
 
 ---
 
@@ -177,7 +179,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 文件名形如 `mission_GearIn_test_ship_0.variant`，末尾的序号对应玩家舰队中的成员。列表里的船不止一艘，打开文件看一眼 `hullId`，确认它是刚才装配的那艘。
 
-将它剪贴 (而非复制) 到您 MOD 中 `data/variants` 文件夹内，然后修改文件名为更容易辨识的样子。存档目录里只留下还没整理的设计，下次导出时就不会认错。**正式装配需要自己的 ID。** 文件名改为 `GearIn_furnaceman_combat.variant`，内部的 `variantId` 同步改为 `GearIn_furnaceman_combat`，`displayName` 改为希望显示的装配名：
+将它剪切 (而非复制) 到您 MOD 中 `data/variants` 文件夹内，然后修改文件名为更容易辨识的样子。存档目录里只留下还没整理的设计，下次导出时就不会认错。**正式装配需要自己的 ID。** 文件名改为 `GearIn_furnaceman_combat.variant`，内部的 `variantId` 同步改为 `GearIn_furnaceman_combat`，`displayName` 改为希望显示的装配名：
 
 ```json
 {
@@ -281,9 +283,9 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
 ## 制作战役
 
-在您已经拥有了装配的情况下，制作通常战役极其简单。
+在您已经拥有装配的情况下，制作普通战役就很直接了。
 
-您只需要先想好您战役的名字，编纂一个合理又不会重复的战役 ID，然后像刚才一样随机挑选一个原版战役文件夹，将它复制到您的 `data/missions` 文件夹内，然后修改文件夹名、`MissionDefinition.java` 内的路径名、`MissionDefinition.java` 内对应的文本和装配 ID，最后再在 `mission_list.csv` 中注册即可。
+先定下战役名字和一个不重复的战役 ID，再像前面那样挑一个原版战役文件夹复制到 `data/missions/` 下，改掉文件夹名、`MissionDefinition.java` 里的 `package` 声明、显示文本和装配 ID，最后在 `mission_list.csv` 里登记即可。
 
 原版战役的 `MissionDefinition.java` 比测试战役短得多，大部分是 `addToFleet` 加船与几行地图设置，照着改装配 ID 即可，同样不必深究其余部分。
 

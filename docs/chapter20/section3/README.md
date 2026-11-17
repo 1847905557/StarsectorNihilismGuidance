@@ -1,88 +1,48 @@
 # 使用 VBO 和 VAO 保存顶点
 
-VBO 保存 GPU 使用的顶点数据，VAO 保存 shader 怎样读取这份数据。本节把方向标的六个矩形顶点迁入 VBO，建立一次布局，再在视口比例变化时更新边界。舰船位置、朝向与颜色继续通过 uniform 提交，形状计算沿用 GLSL 版本。
+上一节每到渲染帧，都得把矩形顶点重新从内存递给显卡、顺带重设一遍属性格式；只画几十个简单图元时您可能感觉得不出来，一旦同屏对象多了，这套每帧现搬现算的开销很快就会变成拖累。把静态顶点与读取布局提前封进 VBO 和 VAO 里，真正留在每帧里更新的，就只剩随镜头缩放变化的那一点边界数据了。
+
+---
 
 _本节预期阅读时间：\~25 分钟。_
 
 _本节预期操作时间：\~35 分钟。_
 
-## 学习目标
-
-完成后，您将能够：
-
-- 区分客户端顶点数组、VBO 和 VAO 保存的数据与状态；
-- 使用 `GL15` 创建、上传、绑定和释放 VBO；
-- 使用 `GL30` 缓存 attribute 指针并在绘制时复用 VAO；
-- 保持程序化方向标的移动、转向、透明度和生命周期行为。
-
 ## 前置知识
 
-- [C20-S2] 的 `attribute`、`uniform`、`varying` 和程序化片元形状；
-- [C20-S1] 的分层渲染插件、模型坐标和 OpenGL 状态恢复；
-- 能够用 Java 17 编译示例，并从 `starsector.log` 定位资源路径和 program 错误。
+- [C20-S1] 的分层渲染插件与 OpenGL 状态保存；
+- [C20-S2] 的 `#version 120` 方向标着色器、覆盖矩形与 `u_worldPerPixel`；
+- 熟悉 `starsector.log` 报错排查。
 
-## 保存资源并在战斗登记
+## 把顶点搬入 VBO 并用 VAO 缓存布局
 
-将完整类保存到 `src/data/scripts/gearin/combat/GearInVboVaoMarker.java`，两份 shader 保存到本节列出的 `data/shaders/` 路径。构建 JAR 并重启，进入测试战斗、部署并控制玩家舰后，通过 Console Commands 执行：
-
-```text
-runcode com.fs.starfarer.api.combat.CombatEngineAPI e = com.fs.starfarer.api.Global.getCombatEngine(); com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = new data.scripts.gearin.combat.GearInVboVaoMarker(e.getPlayerShip()); e.addLayeredRenderingPlugin(marker); e.getCustomData().put("GearIn_marker", marker);
-```
-
-**每场战斗登记一次当前版本。**`init(...)` 取得当前战斗并设置承载实体，GPU 资源在首次 `render(...)` 的有效上下文中创建；能力不足时记录条件并结束实例。命令沿用 [C20-S1] 的 `GearIn_marker` 项保存实例，便于随后验证清理。比较各版本时分别进入新的战斗。
-
-## 区分顶点数据与布局
-
-方向标仍显示半径 `80 su` 的圆环和长度 `120 su` 的朝向线。vertex shader 负责把局部坐标放到舰船位置，fragment shader 负责生成线条。本节改变的是顶点来源：六个矩形顶点进入 VBO，VAO 记录 `a_position` 如何读取它们。客户端缓冲只在视口比例变化时更新 VBO，绘制指针始终读取 VBO。
-
-## 从链接后的 program 取得输入位置
-
-VBO 和 VAO 沿用原来的 shader 接口。Java 加载两份 `#version 120` 源码，完成编译、链接并记录 InfoLog，再查询一个 attribute 和六个 uniform：
-
-```java
-positionLocation = GL20.glGetAttribLocation(program, "a_position");
-centerLocation = GL20.glGetUniformLocation(program, "u_center");
-facingLocation = GL20.glGetUniformLocation(program, "u_facing");
-colorLocation = GL20.glGetUniformLocation(program, "u_color");
-geometryLocation = GL20.glGetUniformLocation(program, "u_geometry");
-widthsLocation = GL20.glGetUniformLocation(program, "u_widthPixels");
-worldPerPixelLocation = GL20.glGetUniformLocation(program, "u_worldPerPixel");
-```
-
-查询得到的 `a_position` location 用于建立布局。任何位置缺失时，本实例清理已创建资源；成功以后才继续创建几何。
-
-## 在 VBO 中保存六个局部顶点
-
-首次 `render(...)` 创建 program 后，`buildGeometry()` 准备一个可容纳 `12` 个浮点数的客户端缓冲，再把矩形上传到 VBO。`glBufferData` 分配并填入数据；视口比例变化时，`glBufferSubData` 更新含有像素边距的顶点。以下是 VBO 创建与上传的局部片段：
-
-```java
-vboId = GL15.glGenBuffers();
-GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
-```
-
-`GL_DYNAMIC_DRAW` 对应可能更新的矩形顶点。边界在圆环和朝向线之外留出 `3 px` 换算得到的世界单位，片元 shader 仍决定哪些片元可见。
-
-## 用 VAO 缓存 attribute 布局
-
-VAO 保存 attribute 的启用状态、分量数和指向的 VBO。配置时先绑定 VAO 和 VBO，再指定 `a_position` 的读取方式；绘制时绑定 VAO，即可取回这套布局：
+在首次进入 `render(...)` 并检查 `GLContext.getCapabilities().OpenGL30` 通过、链接好 program 后，`buildGeometry()` 创建 VBO 与 VAO 并配置布局：
 
 ```java
 vaoId = GL30.glGenVertexArrays();
+vboId = GL15.glGenBuffers();
+if (vaoId == 0 || vboId == 0) {
+    LOG.error("GearIn VBO/VAO marker: could not create VAO or VBO");
+    return false;
+}
 GL30.glBindVertexArray(vaoId);
 GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+GL15.glBufferData(GL15.GL_ARRAY_BUFFER, coverageVertices, GL15.GL_DYNAMIC_DRAW);
 GL20.glEnableVertexAttribArray(positionLocation);
-GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT,
-        false, 0, 0L);
+GL20.glVertexAttribPointer(positionLocation, 2, GL11.GL_FLOAT, false, 0, 0L);
+GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+GL30.glBindVertexArray(0);
 ```
 
-位置由两个连续 `float` 组成，stride 为 `0` 表示紧密排列。这里的 `0L` 是当前 VBO 内的字节偏移。`glVertexAttribPointer` 把当时绑定的 VBO 记入 attribute 关系，随后解除 `GL_ARRAY_BUFFER` 绑定，VAO 中的关系仍然保留。
+注意三个关键点：
 
-**VAO 记录顶点从哪里读、怎样读，uniform 继续传递舰船状态。** 位置、朝向与颜色各有自己的参数，尚未因建立 VAO 而保存到顶点布局中。
+1. 因为镜头缩放时需要更新 `3 px` 边距，这里使用 `GL15.GL_DYNAMIC_DRAW` 上传，且 `glVertexAttribPointer` 末尾的 `0L` 代表 "从当前绑定的 `vboId` 第 0 个字节开始读"；
+2. 一旦配置好 `glVertexAttribPointer`，`vaoId` 就已经记住了 "去哪块 VBO、按什么格式读 `a_position`"，所以紧接着解绑 `GL_ARRAY_BUFFER`(设为 `0`) 并不会破坏 VAO 内的布局；
+3. 相反，**VAO 并不会保存上下文的通用 `GL_ARRAY_BUFFER` 绑定** —— 因此创建和绘制前仍要先记下 `previousVao` 与 `previousVbo`，并在 `finally` 里恢复它们。
 
-## 绘制时更新 uniform
+## 绘制阶段只更新缩放边框与 uniform
 
-绘制阶段保存进入方法时的 VAO、VBO、program 和矩阵模式。若当前视口的像素换算值改变，先用 `3 px` 边距更新矩形；随后提交舰船位置、朝向、颜色、几何尺寸和像素换算值，再发起一次 `GL_TRIANGLES`：
+每次 `render(...)` 绑定 `vaoId` 后，用 `Float.compare(worldPerPixel, lastWorldPerPixel) != 0` 判断镜头比例是否变化，只有变了才 `glBufferSubData(...)` 重传 12 个浮点数，随后照常提交舰船与视口 uniform 并发起一次绘制：
 
 ```java
 GL30.glBindVertexArray(vaoId);
@@ -92,34 +52,37 @@ if (Float.compare(worldPerPixel, lastWorldPerPixel) != 0) {
     GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, 0, coverageVertices);
     lastWorldPerPixel = worldPerPixel;
 }
+GL11.glMatrixMode(GL11.GL_MODELVIEW);
+GL11.glPushMatrix();
+matrixPushed = true;
 GL20.glUseProgram(program);
+GL11.glDisable(GL11.GL_TEXTURE_2D);
+GL11.glEnable(GL11.GL_BLEND);
+GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+GL11.glDepthMask(false);
 GL20.glUniform2f(centerLocation, entity.getLocation().x, entity.getLocation().y);
 GL20.glUniform1f(facingLocation, trackedShip.getFacing());
+GL20.glUniform4f(colorLocation, 0.1f, 0.9f, 1f,
+        0.75f * viewport.getAlphaMult());
 GL20.glUniform2f(geometryLocation, RING_RADIUS, DIRECTION_LENGTH);
 GL20.glUniform2f(widthsLocation, RING_LINE_WIDTH, DIRECTION_LINE_WIDTH);
 GL20.glUniform1f(worldPerPixelLocation, worldPerPixel);
 GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
 ```
 
-`u_center` 和 `u_facing` 让方向标跟随舰船，`u_worldPerPixel` 让片元线宽在缩放时保持 `2 px` 和 `3 px`。更新矩形只发生在换算值变化时；混合、矩阵、深度写入、纹理启用和 attribute 状态在 `finally` 中恢复。
+::: warning 使用自有 VAO 时不要夹杂 glPushClientAttrib
 
-## 释放 VBO 与 VAO
+由于本例全程只修改 `vaoId` 自身绑定的属性布局、并未改动外部 VAO 或默认 VAO 上的客户端数组状态，绘制时**不要**在 `previousVao` 下调用 `glPushClientAttrib(GL_CLIENT_VERTEX_ARRAY_BIT)` 再在 `vaoId` 绑定期间调用 `glPopClientAttrib()` —— 否则 `glPopClientAttrib()` 会把外部 `previousVao` 的顶点数组状态直接写回我们的 `vaoId`，造成第 2 帧起 `a_position` 指针失效。
 
-`buildGeometry()` 首次创建对象时，也会修改当前 VAO 和 VBO 绑定。它在配置之前保存原值，结束时通过 `finally` 恢复；每次绘制则另外恢复本次使用的 program、混合、矩阵与缓冲绑定。
-
-::: warning VAO 不保存普通 ARRAY_BUFFER 绑定
-attribute 指针记录自己的 VBO 关系，普通 `GL_ARRAY_BUFFER` 绑定仍是另一项上下文状态。创建和绘制结束后，各自恢复原 VAO 与原 ARRAY_BUFFER。
 :::
 
-VAO 记录 VBO 的 attribute 关系。`cleanup()` 先删除 VAO，再删除 VBO、program 和两个 shader；资源创建失败也进入这条路径，已创建的句柄删除后归零。重复清理时，这些句柄已经是 `0`。
+## 按依赖逆序释放 GPU 句柄
 
-## shader 与其他状态
-
-vertex shader 通过 `varying v_local` 把局部坐标传给 fragment shader。fragment shader 使用 `length`、`clamp` 和 `smoothstep` 计算圆环与有限线段的覆盖率；VBO/VAO 只改变顶点数据的存放位置，不改变这段形状算法。当前方向标使用颜色 uniform，不依赖纹理；如果使用 `sampler2D`，Java 仍需绑定纹理单元并提交单元编号。Alpha 混合属于绘制状态，也不由 VAO 保存。
+资源创建半途失败或插件失效时，`cleanup()` 依次删除 `vaoId`、`vboId`、`program` 以及两个 shader 对象并把各自句柄清零，重复调用直接早退。
 
 ## 完整最小例
 
-以下资源共同完成 VBO/VAO 版本的方向标。
+将 `GearInVboVaoMarker` 保存到 `src/data/scripts/gearin/combat/GearInVboVaoMarker.java`，并将配套着色器保存到 `data/shaders/`：
 
 ::: details 完整成品：GearInVboVaoMarker
 
@@ -187,6 +150,10 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
+        if (trackedShip == null) {
+            valid = false;
+            return;
+        }
 
         entity.getLocation().set(trackedShip.getLocation());
         LOG.info("GearIn VBO/VAO marker init: ship=" + trackedShip.getId()
@@ -298,7 +265,8 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
         if (!valid) {
             return;
         }
-        if (engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
+        if (engine == null || trackedShip == null
+                || engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
                 || !trackedShip.isAlive()) {
             valid = false;
             return;
@@ -342,7 +310,6 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
         boolean matrixPushed = false;
         GL11.glPushAttrib(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT
                 | GL11.GL_ENABLE_BIT | GL11.GL_DEPTH_BUFFER_BIT);
-        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
         try {
             GL30.glBindVertexArray(vaoId);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
@@ -372,7 +339,6 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
                 GL11.glMatrixMode(GL11.GL_MODELVIEW);
                 GL11.glPopMatrix();
             }
-            GL11.glPopClientAttrib();
             GL11.glPopAttrib();
             GL30.glBindVertexArray(previousVao);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
@@ -415,7 +381,7 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
             fragmentShader = 0;
         }
         LOG.info("GearIn VBO/VAO marker cleanup: ship="
-                + trackedShip.getId());
+                + (trackedShip == null ? "null" : trackedShip.getId()));
     }
 
     @Override
@@ -425,7 +391,9 @@ public class GearInVboVaoMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return DIRECTION_LENGTH + engine.getViewport().convertScreenWidthToWorldWidth(3f);
+        return engine == null || engine.getViewport() == null
+                ? DIRECTION_LENGTH
+                : DIRECTION_LENGTH + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }
 ```
@@ -491,53 +459,33 @@ void main() {
 
 :::
 
-## 验证方案
+### 进游戏核对
 
-前置数据：显卡和游戏渲染上下文支持 OpenGL 3.0 兼容上下文，Console Commands 已启用。
+1. **在 OpenGL 3.0 兼容上下文运行**：执行 `gradle jar` 确认类与着色器到位后进入测试战斗，通过 Console Commands 登记并在日志确认 `GearInVboVaoMarker GPU resources ready: vao=... vbo=...`：
 
-完成本方案中的移动、缩放和生命周期观察后，用下面的 Console Commands 命令连续清理当前实例两次；重新观察时进入新的战斗并登记：
+```text
+runcode com.fs.starfarer.api.combat.CombatEngineAPI e = com.fs.starfarer.api.Global.getCombatEngine(); com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = new data.scripts.gearin.combat.GearInVboVaoMarker(e.getPlayerShip()); e.addLayeredRenderingPlugin(marker); e.getCustomData().put("GearIn_marker", marker);
+```
+
+2. **核对多帧、缩放与清理**：保持第 2 帧之后方向标持续稳定绘制 (验证 VAO 状态未被外部覆写)、缩放视口时 `2 px`/`3 px` 边缘不截断、重复调用两次 `cleanup()` 只释放一次 VAO/VBO/program/shader：
 
 ```text
 runcode com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin marker = (com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin) com.fs.starfarer.api.Global.getCombatEngine().getCustomData().get("GearIn_marker"); marker.cleanup(); marker.cleanup();
 ```
 
-1. 执行 `gradle jar`，启动游戏并进入 `GearIn_test` 战斗，注册 `GearInVboVaoMarker`。
-2. 移动并转向玩家舰，观察圆环中心、朝向线和屏幕线宽。
-3. 缩放并横移视口，观察方向标是否仍固定在世界坐标，边缘是否完整。
-4. 暂停并恢复战斗，记录方向标位置变化；再使舰船离场或死亡。
-5. 结束战斗并重新进入另一场战斗，对同一测试实例重复调用 `cleanup()`，观察资源清理日志。
+## 常见问题
 
-预期结果：
+- **第一帧看得见，第二帧起突然消失或报错**：`render(...)` 在 `vaoId` 绑定期间误调用了 `glPopClientAttrib()`，把外部 VAO 的顶点数组状态覆盖进了 `vaoId`。
+    - **解决方案**：使用独立 VAO 时直接绑定 `vaoId` 并还原 `previousVao`，移除 `glPushClientAttrib`/`glPopClientAttrib`。
 
-- 玩家舰中心出现半径 `80 su` 的程序化圆环和长度 `120 su` 的朝向线；
-- 视口缩放后圆环线宽保持 `2 px`，朝向线保持 `3 px`，边缘没有被矩形裁掉；
-- 移动和转向时方向标同步，暂停期间保持最后位置；
-- VAO 和 VBO 在首次渲染创建，视口比例变化时 VBO 中的矩形边界随之更新；
-- 舰船离场、死亡或战斗结束后方向标失效，重复 `cleanup()` 不产生二次删除；
-- 舰船 Sprite、HUD 和其他战场画面的颜色、纹理、混合与位置保持原有表现。
+- **方向标完全不显示或顶点偏移**：VAO 绑定时指向的 `vboId` 已被删除，或者 `glVertexAttribPointer` 的步幅、偏移量和分量数对不上。
+    - **解决方案**：确认先 `glBindVertexArray(vaoId)` 再绑定 `vboId` 配置 `2` 个 `GL_FLOAT`、stride `0`、偏移 `0L`，且绘制期间不改动该 VAO。
 
-## 故障分析
+- **缩放镜头时线宽变化或边缘被裁切**：`u_worldPerPixel` 没跟随当前视口，或 `glBufferSubData` 没在 `worldPerPixel` 改变时刷新矩形顶点。
+    - **解决方案**：对比 `worldPerPixel` 与 `lastWorldPerPixel`，变化时重新 `updateCoverageVertices` 并上传 VBO。
 
-- **方向标不可见**：绘制阶段没有绑定正确的 VAO，或 VAO 记录的 VBO 已被删除。
-    - **解决方案**：核对 `buildGeometry()` 中的 VAO、VBO 绑定顺序和绘制阶段的 `glBindVertexArray(vaoId)`。
-
-- **顶点位置异常**：`glVertexAttribPointer` 的分量数、stride 或偏移与 VBO 数据布局不一致。
-    - **解决方案**：确认每个顶点由两个 `GL_FLOAT` 组成，stride 为 `0`，偏移为 `0L`。
-
-- **视口缩放后线宽变化**：`u_worldPerPixel` 没有使用当前视口的世界单位换算值。
-    - **解决方案**：核对 `convertScreenWidthToWorldWidth(1f)` 的提交和 fragment shader 的半线宽计算。
-
-- **其他画面状态异常**：VAO、VBO、program、矩阵或混合状态没有在 `finally` 中恢复。
-    - **解决方案**：按进入顺序保存状态，并在绘制结束后恢复之前的 VAO、VBO、program 和矩阵模式。
-
-- **战斗结束后资源仍存在**：插件没有失效，或 `cleanup()` 没有按顺序删除 VAO、VBO、program 和 shader。
-    - **解决方案**：检查 `advance(...)` 的战斗状态判断与 `cleanup()` 的句柄归零逻辑。
-
-## 总结
-
-VBO 保存可复用的局部顶点，VAO 保存 attribute 与 VBO 的布局关系，uniform 继续承载每帧变化的舰船和视口参数。绘制阶段绑定 VAO，按视口比例更新矩形边界，再提交图元；[C20-S2] 的程序化片元形状保持一致。
-
-共享 OpenGL 上下文要求 VAO、VBO、program、矩阵、混合和深度状态都有明确边界。资源创建失败和战斗结束都进入同一个清理方法；创建与绘制分别恢复调用前的绑定，方向标才能与其他战场画面共存。
+- **其他画面出现错位或资源泄漏**：`finally` 漏了恢复原 VAO、原 `GL_ARRAY_BUFFER`、program 或矩阵模式，或者 `cleanup()` 漏了删除句柄并归零。
+    - **解决方案**：按 `buildGeometry()` 和 `render()` 的 `finally` 检查恢复顺序，在 `cleanup()` 统一释放全部 GPU 对象。
 
 ## 建议参考项
 

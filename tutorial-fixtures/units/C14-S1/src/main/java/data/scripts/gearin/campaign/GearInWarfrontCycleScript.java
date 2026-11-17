@@ -5,7 +5,7 @@ import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.campaign.econ.MarketAPI;
 
-/** Foundry 周围的战事时起时息：按生涯天数在市场上挂上、撤下 Warfront 条件。脚本随存档保存。 */
+/** Foundry 周围的战事时起时息：按生涯天数在市场上周期性添加或移除 Warfront 条件。脚本随存档保存。 */
 public class GearInWarfrontCycleScript implements EveryFrameScript {
 
     /** 战事持续的生涯天数。 */

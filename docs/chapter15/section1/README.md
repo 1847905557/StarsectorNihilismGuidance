@@ -1,8 +1,8 @@
 # 组织 Rules 规则表
 
-原版里几乎所有能点开的对话，开口说的第一句话都写在同一张规则表里。表里每一行是一条规则，游戏在某个时机把所有规则翻一遍，挑出条件成立、分数最高的那一条来用。
+写惯了 Java 回调之后，刚接触 `rules.csv` 时往往会有点不习惯：游戏里绝大多数人物对话与设施交互并不靠弹窗类硬撑，而是统统写进同一张扁平表格，在触发时机上整表筛选、让权重最高的那一行胜出。
 
-Aster 已经在 Foundry 的通信目录里待了好几章，接通之后说的却还是原版的套话。她的第一句话，该由齿轮工业自己来写了。
+Aster Vance 已经在 Foundry 的通信目录里待了好几章，接通后却还在念原版的通用客套话。先从她的第一句开场白动笔，替这位联络人写进自己的语气。
 
 ---
 
@@ -13,32 +13,32 @@ _本节预期操作时间：\~15 分钟。_
 ## 前置知识
 
 - [C13-S1] 的 Aster Vance，人物 ID 为 `GearIn_aster_vance`；
-- [C1-S7] 的 CSV 引号与转义，规则表的多行单元格离不开它；
-- [C10-S1] 的 Memory 与 `$` 开头的键。
+- [C1-S7] 的 CSV 引号与转义规则；
+- [C10-S2] 的 Memory 与 `$` 前缀键值习惯。
 
-## 表头与每一列
+## 表头与合并规则
 
-在 MOD 中新建 `data/campaign/rules.csv`，表头与原版相同：
+在 MOD 目录下新建 `data/campaign/rules.csv`，7 列表头必须与原版保持一致：
 
 ```csv
 id,trigger,conditions,script,text,options,notes
 ```
 
-| 列 | 内容 |
+| 列 | 作用 |
 | -- | ---- |
-| `id` | 规则的唯一 ID，带 `GearIn_` 前缀 |
-| `trigger` | 在什么时机参与挑选 |
-| `conditions` | 条件，每行一条，全部成立才算命中 |
-| `script` | 命中后执行的命令，每行一条 |
-| `text` | 命中后显示的文字 |
-| `options` | 命中后给出的选项，每行一个 |
-| `notes` | 注释，游戏不读 |
+| `id` | 规则唯一标识，建议统一带上 `GearIn_` 前缀 |
+| `trigger` | 触发时机名称，决定何时参与挑选 |
+| `conditions` | 匹配条件，支持多行，全部成立才算命中 |
+| `script` | 命中后依次执行的赋值或命令，支持多行 |
+| `text` | 对话窗口显示的文本段落 |
+| `options` | 供玩家点击的选项列表，支持多行 |
+| `notes` | 注释列，游戏不读取 |
 
-MOD 的 `rules.csv` 与原版合并，只写自己的规则。规则 ID 与原版或别的 MOD 重复时，后加载的会顶掉前面的，所以前缀不能省。
+MOD 的 `rules.csv` 会与原版以及其余 MOD 合并加载。若规则 `id` 与已加载的条目同名，后加载的一条会覆盖前者，因此固定带 `GearIn_` 前缀是最省心的防撞方式。
 
-## Aster 的问候
+## 编写 Aster 的问候
 
-玩家在通信目录里点开一个人物时，原版会在 `PickGreeting` 这个时机挑一条问候。Aster 的第一句话写成：
+玩家在通信目录中点开人物时，原版会在 `PickGreeting` 时机挑选一条问候语。先写首次见面时触发的那一条：
 
 ```csv
 GearIn_asterGreetingFirst,PickGreeting,"$id == GearIn_aster_vance score:1000
@@ -49,12 +49,12 @@ $GearIn_asterMet = true","屏幕那头的女人把一摞货单推到一边，打
 cutCommLink:断开通讯",Aster 首次问候
 ```
 
-- **条件**：`$id == GearIn_aster_vance` 只在对方是 Aster 时成立。`!$GearIn_asterMet` 要求还没见过面，见面的标记由下一列写入；
-- **分数**：条件末尾的 `score:1000` 给这条规则加分。原版的通用问候没有分数，命中的规则里分数高的胜出，Aster 的问候因此总能盖过原版那句 "Hello. What do you want?"；
-- **脚本**：`ShowPersonVisual` 在画面上显示人物肖像，原版的人物问候都先调用它。`$GearIn_asterMet = true` 写下见过面的标记；
-- **选项**：每行一个，冒号前是选项 ID，冒号后是按钮文字。`cutCommLink` 是原版的选项，选中后断开通讯，用不着自己写处理。
+- **条件筛选**：`$id == GearIn_aster_vance` 限定只对 Aster 生效；`!$GearIn_asterMet` 要求还没见过面；
+- **分数控制**：条件末尾的 `score:1000` 为这条规则加上基础权重。原版常规人物问候通常不写 `score` (只按成立条件数计分)，而拒接通讯的保护规则 `defaultGreetingIgnore` 设在 `score:10000` —— 因此 `score:1000` 刚好能可靠压过默认问候，又不会顶掉拉黑拒听等高优先保护规则；
+- **脚本与视觉**：无参数调用 `ShowPersonVisual` 会自动展示当前对话目标人物 (`target.getActivePerson()`) 的肖像；紧接着 `$GearIn_asterMet = true` 写下已见面标记；
+- **选项格式**：每行一个选项，冒号前是选项 ID，冒号后是按钮文本。`cutCommLink` 对应原版现成的 `convEnd` 结束规则，选中后直接挂断通讯。
 
-第二次再接通，标记已经在了，这条规则不再命中。见过面之后的问候是另一条规则，条件写成 `$GearIn_asterMet`，口气也不一样：
+第二次再点开 Aster 时，`$GearIn_asterMet` 已经存在，上一条不再命中，改由这条规则接替：
 
 ```csv
 GearIn_asterGreeting,PickGreeting,"$id == GearIn_aster_vance score:1000
@@ -62,44 +62,35 @@ $GearIn_asterMet",ShowPersonVisual,"""又是您。""Aster 头也没抬，""说�
 cutCommLink:断开通讯",Aster 再次问候
 ```
 
-**同一时机下的规则，按条件分开，不要让它们同时命中。** 两条分数相同的规则都成立时，选中哪一条是不确定的。
+**同一时机下的同分规则必须用互斥条件隔开。** 如果两条分数相同的规则同时成立，挑选结果是不确定的。此处 `GearIn_asterAlloy` 选项尚未挂上处理规则，将在 [C15-S2] 补全。
 
-`GearIn_asterAlloy` 这个选项现在点下去还没有反应，处理选项的规则放在 [C15-S2]。
+## 规则表的书写细节
 
-## 多行单元格
+因为 `conditions`、`script`、`text` 与 `options` 经常包含换行与多段台词，书写 `rules.csv` 时只需顺带留意两条格式习惯：
 
-规则表里几乎每一格都有换行。按 [C1-S7] 的规则：
-
-- 单元格里有换行、逗号或双引号时，整格用双引号包住；
-- 单元格里的双引号写成两个，`""Aster Vance""` 显示为 `"Aster Vance"`；
-- 正文里的空行就是对话中的分段。
-
-一处引号没有配对，从这一格往后的整张表都会错位，后面的规则跟着全部失效。用支持 CSV 的编辑器打开，比在纯文本里数引号可靠得多，首页推荐的 `Rainbow CSV` 插件能把每一列染成不同的颜色。
-
-行首写 `#` 的行整行被忽略，用来暂时停用一条规则很方便。
+- `text` 单元格内部的空白换行会直接在对话框里切成两段文字；
+- 在某一行最开头加上 `#` 可以让整行被规则解析器跳过，调试时用来临时屏蔽某条规则非常顺手。
 
 ### 进游戏核对
 
-重启游戏，**新建一份存档**，停靠 Nipher Foundry，在通信目录中点开 Aster Vance。
+重启游戏，**新建一份存档**，停靠 Nipher Foundry 并在通信目录中点开 Aster Vance：
 
-- 第一次接通，出现 "Aster Vance，齿轮工业在 Foundry 的联络人" 这段话，画面显示她的肖像；
-- 选择 "断开通讯"，再次点开，问候变成 "又是您"；
-- 选择 "回火合金卖得怎么样？"，暂时没有反应。
-
-页面中的现象依据原版规则与 API 推出，编者尚未逐项在游戏内实测。
+- 首次接通时显示 `"Aster Vance，齿轮工业在 Foundry 的联络人..."` 段落，且左侧画面切出她的立绘；
+- 点击 `"断开通讯"` 后再次接通，问候切换为 `"又是您。"`；
+- 点击 `"回火合金卖得怎么样？"` 暂未触发后续台词 (将在 [C15-S2] 处理)。
 
 ## 常见问题
 
-- **点开 Aster，仍然是原版的问候**：分数不够，或者 `$id` 写错。
-    - **解决方案**：核对人物 ID `GearIn_aster_vance`，并保留 `score:1000`。
+- **点开 Aster 后仍是原版问候**：`$id` 拼写与人物 ID 不一致，或者分数低于原版命中的规则。
+    - **解决方案**：核对 `GearIn_aster_vance` 与 `score:1000`。
 
-- **启动时报 `rules.csv` 解析错误，或者后面的规则全部失效**：某一格的引号没有配对。
-    - **解决方案**：从报错指出的行往前找，核对每一格的引号。
+- **规则文件加载报错或后续规则集体失效**：某一行内的换行文本或双引号配对错位，导致整张表从该处偏移。
+    - **解决方案**：顺着报错行号向上排查最近编辑过的多行单元格引号是否闭合。
 
-- **第二次接通还是第一次的问候**：脚本里没有写入见面标记，或者两条规则的条件写反了。
-    - **解决方案**：确认首次问候的脚本有 `$GearIn_asterMet = true`，两条规则的条件互为相反。
+- **每次接通都重复第一句开场白**：脚本里漏了 `$GearIn_asterMet = true`，或者第二条规则的条件依然写了 `!$GearIn_asterMet`。
+    - **解决方案**：确认首次规则写入标记，且两条规则的条件互为反面。
 
 ## 建议参考项
 
-- `data/campaign/rules.csv`：原版全部规则，`PickGreeting` 下的人物问候都可以对照。
-- `com.fs.starfarer.api.impl.campaign.rulecmd.ShowPersonVisual`：显示人物肖像的命令。
+- `data/campaign/rules.csv`：原版全套规则，`PickGreeting` 下各类问候与 `convEnd` 均在此表内。
+- `com.fs.starfarer.api.impl.campaign.rulecmd.ShowPersonVisual`：对话左侧肖像展示命令的源码与参数说明。

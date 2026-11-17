@@ -35,6 +35,9 @@ public class GearInBeaconDiscoveryScript implements EveryFrameScript {
         if (beacon == null) {
             return;
         }
+        if (!beacon.hasSensorProfile()) {
+            beacon.setSensorProfile(1f);
+        }
         VisibilityLevel level = beacon.getVisibilityLevelToPlayerFleet();
         if (level != VisibilityLevel.NONE) {
             beacon.getMemoryWithoutUpdate().set(READY_KEY, true);

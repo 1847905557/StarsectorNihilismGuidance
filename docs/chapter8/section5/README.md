@@ -14,8 +14,9 @@ _本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
+- [C7-S2] 在 `settings.json` 的 `graphics` 段登记贴图并用 `getSprite(...)` 获取 `SpriteAPI`；
 - [C8-S1] 的 `isEntityInPlay(...)` 与暂停判断；
-- [C8-S2] 的过热冶炉船插与 `advanceInCombat(...)`；
+- [C8-S2] 的过热冶炉船插与 `advanceInCombat(...)`。
 
 ## 插件接口
 
@@ -34,7 +35,7 @@ public interface CombatLayeredRenderingPlugin {
 }
 ```
 
-接口文件通篇没有一个字的注释，方法之间是空行。能依据的只有方法名、签名和基类的默认实现，所以每个方法的实际用法要从原版实现里读。
+接口本身只声明了生命周期与绘制回调，实际编写时通常继承 `BaseCombatLayeredRenderingPlugin` 基类，按需覆写其中的方法。
 
 `init(...)` 收到的是 `CombatEntityAPI`，不是引擎。引擎为插件造一个**承载实体**，插件靠这个实体的位置在战场上定位。接口里没有 `getEntity()`，取回实体是基类额外提供的：
 
@@ -84,7 +85,7 @@ ABOVE_PARTICLES
 JUST_BELOW_WIDGETS
 ```
 
-枚举里的常量几乎全无注释，含义靠名字和它们之间的相对位置判断。`PHASED_SHIPS_LAYER` 要在战机之下，否则相位结束时会留下画面残影。
+各个图层的具体含义可以直接从枚举名和它们之间的相对上下关系看出来；例如 `PHASED_SHIPS_LAYER` 排在战机层之下，这样相位舰船退出相位时才不会在战机上方留下画面残影。
 
 `getActiveLayers()` 返回 `EnumSet`，可以一次声明多个层。引擎在每一个声明的层各调一次 `render(...)`，传进来的 `layer` 参数就是当前这一层，插件据此区分自己这次该画什么。
 
@@ -124,7 +125,7 @@ alphaMult *= b;
 sprite.setAlphaMult(alphaMult);
 ```
 
-不乘的后果是：别的画面在淡出，这一段绘制稳稳地留在原地，整个转场只有它不跟着走。
+不乘的后果是：别的画面在淡出，这一段绘制依然静止留在原地，整个转场只有它不跟着走。
 
 `ViewportAPI` 上的坐标换算都是单值方法，没有整向量的版本：`convertWorldXtoScreenX(float)`、`convertScreenYToWorldY(float)` 各换一个坐标，要用一个点就调两次。
 
@@ -149,17 +150,15 @@ public class ShipExplosionFlareVisual extends BaseCombatLayeredRenderingPlugin {
 
 这套分工可以照着理解：**位置在 `advance(...)` 里跟，亮度在 `render(...)` 里读，退场看 `isExpired()`。**
 
-## 热量光环
+## 为过热冶炉加上舰底热量光环
 
-前面讲的是这一类的通用规则。现在给一个具体的用场：过热冶炉让射速跟着幅能往上走，可这个变化只写在状态栏里，混战中没有人会去盯着状态栏看。舰船底下那一圈越烧越亮的光，就是给不看状态栏的人准备的。
+[C8-S2] 的过热冶炉让实弹射速随着幅能一路攀升，但这项变化目前只体现在左下角的状态栏数字里，混战中很少有人顾得上低头看字。如果在装有过热冶炉的舰船底下画一圈随幅能越烧越亮的橙色光环，不需要看状态栏也能一眼掌握舰船的过热程度。
 
-光环应当衬在舰船下方，不遮挡舰体与武器，所以用 `BELOW_SHIPS_LAYER`；只出现在装有过热冶炉的舰船上，所以由船插自己创建，而不是由一个全局插件遍历所有舰船。
+光环应当衬在舰船下方、不遮挡舰体与武器，因此图层选 `BELOW_SHIPS_LAYER`；同时它只出现在装有过热冶炉的舰船上，由船插自己在战斗中按船挂载比用全局插件遍历全场舰船更直接。原版的 `addLayeredRenderingPlugin(...)` 调用点大多写在武器效果或战术系统里，船插里直接挂载分层渲染插件时，需要由我们自己管理 "每艘船只创建一次" 与 "舰船退场时同步过期"。
 
-**原版没有任何船插创建分层渲染插件。** `data/hullmods/` 下的文件、整个 `starsector-core/data/` 目录都搜不到 `addLayeredRenderingPlugin`，全部调用点都在武器效果与插件里。这一节的做法没有原版可抄，得自己决定什么时候创建、什么时候退场。
+## 复用已登记的光斑贴图
 
-## 登记贴图
-
-光环使用原版的 `graphics/fx/glow64.png`，一张中心亮、边缘透明的圆形光斑。在 `data/config/settings.json` 的 `graphics` 中，向已有的 `fx` 分类加入一行：
+光环使用原版的圆形光斑 `graphics/fx/glow64.png`。我们在 [C7-S2] 已经在 `data/config/settings.json` 的 `graphics` 段下登记过这个键，这里直接确认该条目存在即可：
 
 ```json
 		"fx":{
@@ -167,7 +166,7 @@ public class ShipExplosionFlareVisual extends BaseCombatLayeredRenderingPlugin {
 		},
 ```
 
-代码通过 `Global.getSettings().getSprite("fx", "GearIn_heat_glow")` 取得贴图。分类与键由 MOD 自行决定，键带 `GearIn_` 前缀以免与其他 MOD 冲突。将来换成自制图片时，只需修改这一行的路径，代码不变。
+渲染插件通过 `Global.getSettings().getSprite("fx", "GearIn_heat_glow")` 取得 `SpriteAPI` 实例。将来换成自制光效贴图时，只需修改 `settings.json` 里这一行的路径，Java 代码不用改动。
 
 ## 渲染插件
 
@@ -311,9 +310,9 @@ private static final String GLOW_KEY = "GearIn_overheat_forge_glow";
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.combat.CombatLayeredRenderingPlugin`：接口方法与 `init(...)` 收到的承载实体。
+- `com.fs.starfarer.api.combat.CombatLayeredRenderingPlugin`：分层渲染插件接口与 `init(...)` 收到的承载实体。
 - `com.fs.starfarer.api.combat.BaseCombatLayeredRenderingPlugin`：默认实现、默认图层与默认半径。
-- `com.fs.starfarer.api.combat.CombatEngineLayers`：各图层的声明顺序。
+- `com.fs.starfarer.api.combat.CombatEngineLayers`：战场各个渲染图层的声明顺序。
 - `com.fs.starfarer.api.combat.ViewportAPI`：`getAlphaMult()` 与单值坐标换算。
 - `com.fs.starfarer.api.graphics.SpriteAPI`：尺寸、颜色、透明度与混合方式。
 - `com.fs.starfarer.api.impl.combat.ShipExplosionFlareVisual`：结构最干净的原版实现，位置、亮度与退场三者分工清楚。

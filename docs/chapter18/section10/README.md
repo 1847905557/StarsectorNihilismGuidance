@@ -1,21 +1,14 @@
 # 配置 MagicLib 数据赏金
 
-本节用 MagicBounty 配置 "断齿航路"：玩家满足条件后，从情报告示板领取歼灭委托，前往目标地点消灭海盗舰队并取得奖励。一份 JSON 同时提供人物、舰队、地点与任务文本，我们沿出现、领取和结算展开，说明哪些字段控制生成，哪些字段控制玩家实际收到的信息。
+要从头写一个带舰队预览、情报告示和期限结算的悬赏委托，通常得先写好几个 Java 类再配一堆对话规则。MagicLib 干脆把整套委托流程收进了 `magicBounty_data.json`。
 
-_本节预期阅读时间：\~32 分钟。_
+下面挂上一条针对海盗舰队的歼灭赏金，看看触发门槛、目标舰队和位置筛选是怎样靠几组 JSON 字段限制范围、避免卡死的。
 
-_本节预期操作时间：\~40 分钟。_
+---
 
-## 学习目标
+_本节预期阅读时间：\~28 分钟。_
 
-完成后，您将能够：
-
-- 说明 MagicBounty 如何读取、校验并登记赏金记录；
-- 用市场、玩家、Memory 与势力关系限制告示板中的可用任务；
-- 配置任务文本、奖励、目标人物、舰队和程序化地点；
-- 区分不同任务类型、展示精度和目标舰队行为；
-- 根据 `ActiveBounty` 阶段和 Memory 键检查任务结果；
-- 从日志定位 JSON、势力、装配与地点配置错误。
+_本节预期操作时间：\~35 分钟。_
 
 ## 前置知识
 
@@ -38,7 +31,7 @@ data/config/modFiles/magicBounty_data.json
 ```json
 {
     "GearIn_magic_bounty": {
-        "required_mods_id": ["gear_in"]
+        "required_mods_id": ["GearIndustry"]
     }
 }
 ```
@@ -124,7 +117,7 @@ data/config/modFiles/magicBounty_data.json
 
 ```json
 "job_name": "断齿航路",
-"job_description": "一支海盗舰队正在袭扰独立航运。发布方要求你歼灭 ==整支舰队==，并确认其旗舰不再构成威胁。目标位于 $system 的 $location 附近，旗舰名为 $shipName。\n完成任务后将支付 $reward 信用点。",
+"job_description": "一支海盗舰队正在袭扰独立航运。发布方要求您歼灭 ==整支舰队==，并确认其旗舰不再构成威胁。目标位于 $system 的 $location 附近，旗舰名为 $shipName。\n完成任务后将支付 $reward 信用点。",
 "job_pick_option": "接受歼灭委托"
 ```
 
@@ -443,7 +436,7 @@ MagicLib 会扫描各星系舰队，寻找自身 Memory 含有该键的对象。
 {
     "GearIn_magic_bounty": {
         "required_mods_id": [
-            "gear_in"
+            "GearIndustry"
         ],
         "trigger_market_id": [],
         "trigger_marketFaction_any": [
@@ -465,8 +458,8 @@ MagicLib 会扫描各星系舰队，寻找自身 Memory 含有该键的对象。
         },
         "trigger_playerRelationship_atMost": {},
         "job_name": "断齿航路",
-        "job_description": "一支海盗舰队正在袭扰独立航运。发布方要求你歼灭 ==整支舰队==，并确认其旗舰不再构成威胁。目标位于 $system 的 $location 附近，旗舰名为 $shipName。\n完成任务后将支付 $reward 信用点。",
-        "job_comm_reply": "你来得正好。我们正缺一艘可以挂在战利品清单上的船。",
+        "job_description": "一支海盗舰队正在袭扰独立航运。发布方要求您歼灭 ==整支舰队==，并确认其旗舰不再构成威胁。目标位于 $system 的 $location 附近，旗舰名为 $shipName。\n完成任务后将支付 $reward 信用点。",
+        "job_comm_reply": "您来得正好。我们正缺一艘可以挂在战利品清单上的船。",
         "job_intel_success": "目标舰队已被歼灭，独立航运恢复了安全。",
         "job_intel_failure": "旗舰以不符合委托要求的方式脱离了处置，任务失败。",
         "job_intel_expired": "目标舰队已经离开已知活动区域，委托失效。",
@@ -547,35 +540,14 @@ MagicLib 会扫描各星系舰队，寻找自身 Memory 含有该键的对象。
 }
 ```
 
-## 验证方案
+### 进游戏核对
 
-前置数据：启用 Console Commands 和 LunaLib，在 LunaLib 的 MagicLib 设置中开启 "启用赏金期限"；准备接受前的测试存档，能够推进至少 90 个生涯日。MagicLib 的 `bounty_board_enabled` 为 `true`。
+确认已启用 MagicLib (`bounty_board_enabled == true`) 与测试用 Console Commands，并在需要测过期时于 LunaLib 打开 "启用赏金期限"：
 
-1. 保存赏金文件，开启 Dev Mode，重启游戏并检查 `starsector.log` 中 `GearIn_magic_bounty : VALID`；在控制台执行 `MagicLib_ListBounties GearIn_magic_bounty` 确认已载入记录。
-2. 在玩家低于 5 级、开局不足 30 日或舰队不足 30 FP 时，打开情报界面赏金分类中的告示板，确认该任务尚未出现。
-3. 满足等级、日期、舰队和关系条件，前往规模至少为 3 的独立势力市场周围 10 光年内，再打开情报告示板。
-4. 选择 "断齿航路"，核对 Mara Vane、任务类型、舰队预览、位置文字、内嵌地图、奖励与接受按钮。
-5. 接受委托，打开新增的任务 Intel，确认 90 日剩余期限与地图箭头；在控制台执行 `runcode org.lazywizard.console.Console.showMessage(String.valueOf(com.fs.starfarer.api.Global.getSector().getMemoryWithoutUpdate().get("$GearIn_magic_bounty")));`，确认值为 `false`。
-6. 前往 Intel 标记地点，核对旗舰、两艘鞭挞者、一艘秃鹫号、补充舰船和敌对行为。
-7. 歼灭整支舰队，检查信用点、独立势力关系、50 单位补给、成功文本和 `_succeeded` Memory 键。
-8. 载入接受前的测试存档，再次领取任务并等待超过 90 日，检查过期文本和 `_expired` Memory 键。
-9. 载入接受前的测试存档，打开告示板并选中任务，保持尚未接受；在控制台执行 `runcode org.magiclib.bounty.MagicBountyCoordinator.getInstance().getActiveBounty("GearIn_magic_bounty").endBounty(new org.magiclib.bounty.ActiveBounty.BountyResult.DismissedPermanently());`，重新打开告示板，确认该任务退出候选。
-10. 载入接受前的测试存档，打开告示板让任务生成，保持尚未接受，推进超过默认的 90 日，再打开告示板，确认旧活动对象过期清理后可以重新生成。
-11. 分别把 `fleet_faction` 与旗舰装配改成不存在的 ID，重启游戏并记录对应校验日志，然后恢复有效值。
-12. 破坏 JSON 逗号或引号，重启游戏并记录加载错误，然后恢复严格 JSON。
+- 开启 Dev Mode 启动可在日志看到 `GearIn_magic_bounty : VALID`，执行 `MagicLib_ListBounties GearIn_magic_bounty` 可查到记录；在满足 5 级 / 30 天 / 30 FP / 独立势力关系条件且身处规模 `>= 3` 独立市场 10 光年内前，告示板不会显示；
+- 接取 "断齿航路" 后核对 Mara Vane、目标舰队、奖励缩放与 Intel 箭头 (此时 `$GearIn_magic_bounty` 为 `false`)；歼灭整支海盗舰队结算信用点、关系、50 补给与 `_succeeded`；超时 (> 90 天) 或手动 `DismissedPermanently` 后，分别写入 `_expired` 或退出候选列表。
 
-预期结果：
-
-- 有效数据在日志中完成读取与校验，告示板只在全部市场和玩家条件成立时提供任务；
-- 告示板显示 Mara Vane、舰队歼灭目标、原版风格舰队预览、环境位置文字与目标星系地图；
-- 接受后生成目标舰队和 Intel，基础 Memory 键为 `false`；
-- 目标舰队包含指定旗舰与三艘预设舰船，并按 80 FP 基础规模与玩家舰队缩放请求补充舰船；
-- 成功后基础 Memory 键与 `_succeeded` 为 `true`，玩家获得信用点、关系与补给奖励；
-- 开启期限后，接受超过 90 日进入过期状态并写入 `_expired`；
-- 显式永久忽略后任务退出候选，未接受而自然过期的活动对象可以再次生成；
-- 无效势力或装配会使记录退出可用赏金集合，损坏 JSON 会产生明确的加载错误。
-
-## 故障分析
+## 常见问题
 
 - **无对话结算时附加规则没有命中**：调用只提供 LOCAL Memory，`$global` 条件没有对应的 GLOBAL 槽位。
     - **解决方案**：在 Rules 命令中从 `Global.getSector().getMemoryWithoutUpdate()` 读取结果，并让该命令处理无 dialog 的结算动作。
@@ -598,15 +570,9 @@ MagicLib 会扫描各星系舰队，寻找自身 Memory 含有该键的对象。
 - **信用点奖励没有随舰队规模变化**：`job_reward_scaling` 或 `fleet_min_FP` 没有正值，缩放计算保持基础奖励。
     - **解决方案**：同时设置正数缩放倍率与最低 FP，并用不同规模的玩家舰队比较接受界面中的最终奖励。
 
-## 总结
-
-"断齿航路" 按玩家和附近发布市场的条件出现在情报告示板，活动对象准备人物、舰队与地点，接受后投放目标并建立任务 Intel。战斗监听器按任务类型结算，Memory 保存结果，后续剧情就能据此继续。
-
-排错时应沿相同顺序检查：先确认 JSON 被读取并通过 ID 校验，再确认市场与玩家条件，最后检查地点和结算状态。告示板没有出现通常发生在前两处，接受后找不到目标则应从舰队或地点配置继续追查。
-
 ## 建议参考项
 
-- `data/config/modFiles/magicBounty_data_example.json`：MagicBounty 字段说明与文本变量示例；
+- `Starsector/mods/MagicLib/data/config/modFiles/magicBounty_data_example.json`：MagicBounty 字段说明与文本变量示例；
 - `org.magiclib.bounty.MagicBountyLoader`：读取、解析和校验赏金记录；
 - `org.magiclib.bounty.MagicBountySpec`：赏金字段在运行时的数据对象；
 - `org.magiclib.bounty.intel.BountyBoardIntelPlugin`：情报告示板与可用任务通知；

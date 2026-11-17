@@ -1,8 +1,8 @@
 # 制作完整船插
 
-玩家装配船插时看不到代码，只看得到描述、图标和能不能装上。藏匿效果描述、数字与实际不符、图标缺失，玩家就不会觉得它是个值得多看一眼的东西。
+玩家装配船插时看不到代码，但除了图标与视觉呈现之外，直接核对数值和规则还得靠文字描述。数字与实际不符、藏匿触发条件，或者干脆一笔带过，玩家装上去试两把就会发现账面和实际对不上。
 
-**不要敷衍玩家唯一能看到的部分。**
+**文字必须如实反映全部实际情况**：即便说明太长不得不简化，也绝不允许把关键前提或副作用漏掉；在不长的情况下，更应该把每项数值与限制一次写明白。
 
 ---
 
@@ -182,6 +182,7 @@ public class GearInStableInjectorHullMod extends BaseHullMod {
 
 ## 建议参考项
 
+- `data/hullmods/hull_mods.csv`：原版船插注册表，本节修改的 `desc` 占位符与 `sprite` 路径都写在这里。
 - `data/hullmods/UnstableInjector.java`：描述占位符 `{%s}` 与 `getDescriptionParam` 的原版写法。
 - `graphics/hullmods/`：原版船插图标，可对照尺寸与风格。
 - `com.fs.starfarer.api.combat.BaseHullMod`：`isApplicableToShip`、`getUnapplicableReason` 与 `getDescriptionParam` 的定义。

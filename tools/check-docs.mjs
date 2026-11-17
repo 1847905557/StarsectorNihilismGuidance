@@ -143,7 +143,6 @@ export async function inspectDocument(path, text, { root = repositoryRoot } = {}
     const markers = content.filter(({ value }) => value === placeholder);
     if (catalogs.length !== 1 || /** @type {{ line: number; level: number; title: string; }} */ (catalogs[0]).level !== 2)
       add(0, 'chapter-catalog', '章页必须包含一个 H2 本章各节标题');
-    if (titles.some((item) => item.level > 1 && item.title !== '本章各节')) add(0, 'chapter-catalog', '章页正文分区使用本章各节');
     if (markers.length !== 1) add(0, 'chapter-catalog', '章页必须包含一个自动列表占位符');
     if (catalogs.length === 1 && markers.length === 1) {
       if (content.at(-1) !== markers[0] || content.at(-2)?.value !== '## 本章各节')

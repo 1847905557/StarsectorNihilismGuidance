@@ -1,45 +1,39 @@
 # 生成生涯舰队
 
-把一支舰队造出来只要一次调用。造完之后它还不存在：不在任何地点里，没有任务，数量也没人维持。
+`FleetFactoryV3` 把战斗点数换成一堆船体以后，工作就算结束了。至于这支舰队待在哪个星系、挂在谁的轨道上、队列走空了去干什么、全灭之后什么时候再凑出一批船来，得由管理器和任务脚本各自接过去。
 
-`FleetFactoryV3` 把点数换成一堆船就结束了。投放、排任务、维持数量，各是另一套东西，哪一步漏了都不会报错，只会在游戏里表现成舰队不见了或者站着不动。
+想让巡逻队在 Nipher 轨道上长期巡逻下去，投放、排任务和维持数量这三步一个也不能少。
 
 ---
 
-_本节预期阅读时间：\~14 分钟。_
+_本节预期阅读时间：\~15 分钟。_
 
 _本节预期操作时间：\~20 分钟。_
 
 ## 前置知识
 
-- [C7-S1] 的 `onGameLoad(...)` 与存档公共数据标记，管理器在那里登记；
-- [C10-S1] 的 `EveryFrameScript`，管理器与任务脚本都是它的实现；
-- [C3-S2] 的势力舰队配置，舰队的舰船从该势力的已知舰船中抽选。
+- [C3-S2] 的势力舰队角色与选船权重配置；
+- [C7-S1] 的 `onGameLoad(...)` 与存档公共数据标记；
+- [C10-S1] 的 `EveryFrameScript` 与 `sector.addScript(...)` 持久脚本注册；
+- [C10-S2] 的 `MemoryAPI` 与 `getMemoryWithoutUpdate()`。
 
-## 舰队由哪些对象组成
+## 舰队对象与成员列表入口
 
-生涯里的一支舰队是 `CampaignFleetAPI`。它同时是 `SectorEntityToken`，所以 [C10-S2] 讲过的轨道、位置、归属、传感器、Memory，在舰队上一并可用。
+生涯里的一支舰队是 `CampaignFleetAPI`。它继承自 `SectorEntityToken`，因此 [C10-S2] 的 Memory 与 [C10-S5] 的位置、朝向、归属势力、传感器轮廓等方法在舰队上一并可用。
 
-舰队自己不持有成员。成员列表在 `getFleetData()` 返回的 `FleetDataAPI` 上，那是一门完整的增删查改接口：
+舰队对象自身并不直接提供增删单艘舰船的方法；整支舰队的舰船与军官名册挂在 `fleet.getFleetData()` 返回的 `FleetDataAPI` 上 ([C11-S2] 将专门展开成员与军官管理)：
 
 ```java
-FleetMemberAPI addFleetMember(FleetMemberAPI member);
-FleetMemberAPI addFleetMember(String variantId);
-void removeFleetMember(FleetMemberAPI member);
-List<FleetMemberAPI> getMembersListCopy();
-List<FleetMemberAPI> getCombatReadyMembersListCopy();
-int getNumMembers();
+FleetDataAPI data = fleet.getFleetData();
+List<FleetMemberAPI> members = data.getMembersListCopy();
+int count = data.getNumMembers();
 ```
 
-**`addFleetMember(String variantId)` 返回新建的成员。** 只要装配 ID 就够，船名、ID 由游戏生成，拿到返回值再改。原版的 `EconomyFleetAssignmentAI` 建完立刻把成员封存，就是这么写的。
+同样，`CampaignFleetAPI` 上也没有直接取燃料或货舱的入口，货舱走 `fleet.getCargo()`，后勤相关数据则走 `fleet.getFleetData()` 与 `fleet.getLogistics()`。
 
-`CampaignFleetAPI` 上还有 `getFlagship()` 与 `setCommander(...)`，前者直接返回旗舰成员，后者指定舰队指挥官。**设了指挥官，旗舰仍是原来那艘，它的舰长也不会因此变成指挥官。**
+## 任务队列与行为中断
 
-`CampaignFleetAPI` 上没有 `getCargo()` 与 `getFuel()`。货物与燃料从 `getFleetData()` 与 `getLogistics()` 走。
-
-## 任务队列
-
-舰队做什么，由任务队列决定。队列挂在 `CampaignFleetAPI` 上，从只给任务与目标，到同时指定文字与开始、结束时的回调，参数逐层加：
+舰队在星图上的航向与行动目标，由挂在 `CampaignFleetAPI` 上的任务队列 (`FleetAssignment`) 决定。`addAssignment(...)` 提供了从极简到带起止回调的多个重载：
 
 ```java
 void addAssignment(FleetAssignment assignment, SectorEntityToken target, float maxDurationInDays);
@@ -53,37 +47,33 @@ void addAssignment(FleetAssignment assignment, SectorEntityToken target, float m
         String actionText, boolean addTimeToNext, Script onStart, Script onCompletion);
 ```
 
-参数各不相同：`maxDurationInDays` 是任务的最长持续天数，`actionText` 是玩家在舰队信息里看到的任务描述；两个 `Script` 分别在任务开始与结束时执行。
+其中 `maxDurationInDays` 是该项任务的最长持续生涯天数，`actionText` 是玩家把鼠标悬停在舰队上时看到的行动描述文本，`onStart` 与 `onCompletion` 则是在该条任务开始和完成瞬间执行的 `Script` 回调。
 
-`FleetAssignment` 的常量按作用分几类：
+常用 `FleetAssignment` 枚举如下：
 
-| 用途 | 常量 | 玩家看到的前缀 | 是否附目标名 |
+| 类别 | 枚举常量 | 默认提示前缀 | 是否自动拼接目标名 |
 | --- | --- | --- | --- |
-| 送货 | `DELIVER_RESOURCES`、`DELIVER_SUPPLIES`、`DELIVER_FUEL`、`DELIVER_PERSONNEL`、`DELIVER_CREW`、`DELIVER_MARINES` | Delivering ... to | 是 |
-| 补给 | `RESUPPLY` | Resupplying at | 是 |
 | 移动 | `GO_TO_LOCATION` | Travelling | 否 |
-| 驻守 | `PATROL_SYSTEM` | Patrolling system | 否 |
-| 防守 | `DEFEND_LOCATION` | Defending | 否 |
-| 环绕 | `ORBIT_PASSIVE`、`ORBIT_AGGRESSIVE` | Orbiting | 是 |
-| 进攻 | `ATTACK_LOCATION` | Attacking | 是 |
-| 袭击 | `RAID_SYSTEM` | Raiding | 否 |
-| 撤离 | `GO_TO_LOCATION_AND_DESPAWN` | Returning to | 是 |
-| 拦截 | `INTERCEPT` | Intercepting | 是 |
-| 跟随 | `FOLLOW` | Following | 是 |
-| 待命 | `HOLD` | Holding | 否 |
-| 收队 | `STANDING_DOWN` | Standing down | 否 |
+| 撤离解散 | `GO_TO_LOCATION_AND_DESPAWN` | Returning to | 是 |
+| 星系巡逻 | `PATROL_SYSTEM` | Patrolling system | 否 |
+| 定点防守 | `DEFEND_LOCATION` | Defending | 否 |
+| 轨道环绕 | `ORBIT_PASSIVE`、`ORBIT_AGGRESSIVE` | Orbiting | 是 |
+| 进攻与劫掠 | `ATTACK_LOCATION`、`RAID_SYSTEM` | Attacking / Raiding | 是 / 否 |
+| 拦截与跟随 | `INTERCEPT`、`FOLLOW` | Intercepting / Following | 是 |
+| 原地待命 | `HOLD`、`STANDING_DOWN` | Holding / Standing down | 否 |
+| 货运投递 | `DELIVER_RESOURCES`、`DELIVER_PERSONNEL`、`DELIVER_CREW` | Delivering ... to | 是 |
 
-前缀与目标名决定了 `actionText` 为空时玩家看到什么。给了 `actionText`，那行字就整个换成它，前缀不出现。
+注：`FleetAssignment` 中还有 `DELIVER_SUPPLIES`、`DELIVER_FUEL`、`DELIVER_MARINES` 与 `RESUPPLY` 等常量，但在原版 `impl/` 源码中没有任何调用点向 `addAssignment(...)` 传入过它们 (仅在 `SustainedBurnAbilityAI` 中被拿来做过条件判断)，编写自定义舰队任务时使用上表列出的常规枚举即可。
 
-**有一批常量在原版没有调用点。** `DELIVER_SUPPLIES`、`DELIVER_FUEL`、`DELIVER_MARINES`、`RESUPPLY`、`ATTACK_LOCATION` 在原版 `impl/` 下一个 `addAssignment(...)` 都没有，前四个只在 `SustainedBurnAbilityAI` 里被当作判断条件比较过。写给 NPC 用的任务，能参照的原版写法集中在 `GO_TO_LOCATION`、`ORBIT_PASSIVE`、`ORBIT_AGGRESSIVE`、`PATROL_SYSTEM`、`DEFEND_LOCATION`、`INTERCEPT`、`RAID_SYSTEM`、`FOLLOW`、`HOLD`、`GO_TO_LOCATION_AND_DESPAWN` 与 `STANDING_DOWN` 上。
+**任务队列不仅会在按天走完时变空，还可能在遭遇玩家或触发原版战术模块后提前出队而归零。** 因此任何需要长期维持行动的舰队，都不能只在生成时塞一次任务了事，必须挂一个 `EveryFrameScript` 在 `advance(...)` 中检查 `fleet.getCurrentAssignment() == null` —— 一旦发现当前没有任务，就重新排入下一轮巡逻队列。
 
-**队列走完，舰队就没有任务了。** 被打断也会走完：与玩家交战之后，原版会清空任务队列。所以任务脚本要在 `advance(...)` 里检查 `getCurrentAssignment() == null`，为空时重排一轮。
+## 单次生成与源点数量管理器
 
-## 两支舰队怎么造出来
+造舰队有两条路线，取决于您希望生成一支一次性事件舰队，还是维持一批会死而复生的常驻舰队。
 
-造舰队有两条路，选哪条看出这支舰队该不该由游戏来管数量。
+### 用 FleetFactoryV3.createFleet(...) 单次生成
 
-要自己决定这支舰队什么时候出现，用 `FleetFactoryV3.createFleet(...)`。参数是一份 `FleetParamsV3`，填势力、坐标、舰队类型与点数，工厂按该势力的已知舰船与学说抽选：
+无论是哪种路线，把战斗点数变成一支实际编制的底层入口都是 `FleetFactoryV3.createFleet(FleetParamsV3)`：
 
 ```java
 FleetParamsV3 params = new FleetParamsV3(
@@ -99,36 +89,40 @@ params.random = random;
 CampaignFleetAPI fleet = FleetFactoryV3.createFleet(params);
 ```
 
-**它可能返回 `null`。** 势力没有可用舰船、点数不够凑出一艘，都会如此。判空之后再往下走。
+构造参数依次指定市场 (无市场源点时传 `null`)、超空间坐标、势力 ID、装配质量系数 (`1f` 为标准质量)、舰队类型 (`FleetTypes.PATROL_SMALL`)，以及战舰、货船、油船、运兵船、客船、功能船六类点数与额外质量加成。工厂会按 [C3-S2] 在 `.faction` 文件中配置的选船权重与学说自动抽船、分配指挥官与军官。
 
-要让游戏替你管数量，继承 `SourceBasedFleetManager`。它是一个 `EveryFrameScript`，构造时给定源点、距离阈值、最少与最多舰队数、补充间隔，自己维护数量：
+**调用 `FleetFactoryV3.createFleet(...)` 后必须检查 `fleet == null || fleet.isEmpty()`。** 当势力没有可用船体蓝图，或给定点数凑不出最小舰船时，工厂在 `0.98.5a` 中返回的是一支**成员数为 0 的空舰队**而不是 `null` (`null` 只在自定义 `CreateFleetPlugin` 拦截返回空时出现)，两者都要一并拦截。
 
-- 玩家离源点越近，允许存在的舰队数越接近最大值，离得远则降到最小值；
-- 舰队被击毁后，按补充间隔逐步恢复；
-- 数量超出允许值时，在玩家看不见的地方移除多余的舰队。
+### 用 SourceBasedFleetManager 维持常驻数量
 
-子类只需实现 `spawnFleet()`：造一支舰队，加入地点，返回它。
-
-**原版继承它的只有 `RemnantStationFleetManager` 与 `RogueMinerMiscFleetManager`。** 前者的构造参数实际传的是 `(station, 1f, 0, maxFleets, 25f, 6, 12)`，后者的父类调用是 `super(source, 3f, 0, 5, 5f)`。想照着抄，只有这两份可看。
-
-## 舰队怎么进世界
-
-造出来的舰队还不在任何地点里，两种投放方式对应上面两条路。
+如果希望围绕某个据点 (如行星或空间站) 长期维持一定数量的巡逻队，直接继承原版的 `SourceBasedFleetManager`：
 
 ```java
-location.addEntity(fleet);
-fleet.setLocation(source.getLocation().x, source.getLocation().y);
+public GearInPatrolFleetManager(SectorEntityToken source) {
+    super(source, THRESHOLD_LY, MIN_FLEETS, MAX_FLEETS, RESPAWN_DAYS);
+}
 ```
 
-`addEntity(...)` 是加入地点，`setLocation(...)` 是给坐标。**缺一不可**：只调前者，舰队出现在原点；只调后者，舰队不属于任何地点，游戏不会处理它。
+`SourceBasedFleetManager` 本身实现了 `EveryFrameScript` 与 `FleetEventListener`，替您包揽了所有繁琐的数量调度：
 
-`spawnFleet(...)` 是另一回事。它属于 `LocationAPI` 与各类管理器，不是 `CampaignFleetAPI` 的方法，作用是在地点里按生成规则产出一支舰队。原版真正把舰队放进世界的地方，用的都是 `addEntity(...)`。
+- 当玩家舰队距离源点 `source` 不超过 `THRESHOLD_LY` (光年) 时，管理器将活跃舰队数补充到 `MAX_FLEETS`；当玩家远离源点超过阈值后，在视野外悄然撤走多余舰队，只保留 `MIN_FLEETS` 支以节省全局开销；
+- 某支下属舰队在战斗中被击毁 (`DESTROYED_BY_BATTLE`) 后，会按 `RESPAWN_DAYS` 个生涯日逐步恢复补充名额；若只是按任务返港解散 (`REACHED_DESTINATION`)，则只从活跃列表中移除，在后续帧按目标上限直接补回。
 
-上面这些是舰队层的东西。下面用它们做一支巡逻队。
+原版余辉空间站的 `RemnantStationFleetManager` 与流亡矿工的 `RogueMinerMiscFleetManager` 均直接继承自该基类。
 
-### 巡逻行为的标记
+## 投放进地点与巡逻行为标记
 
-舰队的 AI 读取舰队自己的 Memory 来决定行为，这四个标记都来自 `MemFlags`：
+`FleetFactoryV3.createFleet(...)` 返回的舰队还没有放入任何地点。在 `spawnFleet()` 中必须成对调用 `addEntity(...)` 与 `setLocation(...)`：
+
+```java
+source.getContainingLocation().addEntity(fleet);
+fleet.setLocation(source.getLocation().x, source.getLocation().y);
+fleet.setFacing(random.nextFloat() * 360f);
+```
+
+**两行缺一不可：** 只调 `addEntity(...)` 不设坐标，舰队会直接刷在星系中心的 `(0, 0)` 原点 (要是有恒星就直接泡进日冕里了)；只调 `setLocation(...)` 不调 `addEntity(...)`，舰队根本不在星图场景中，玩家永远看不见它。
+
+接着向舰队自身的 Memory 写入原版 `MemFlags` 行为标记，约束巡逻 AI 的行为模式：
 
 ```java
 fleet.getMemoryWithoutUpdate().set(MemFlags.MEMORY_KEY_PATROL_FLEET, true);
@@ -137,56 +131,16 @@ fleet.getMemoryWithoutUpdate().set(MemFlags.MEMORY_KEY_NO_JUMP, true);
 fleet.getMemoryWithoutUpdate().set(MemFlags.MEMORY_KEY_MAKE_HOLD_VS_STRONGER, true);
 ```
 
-- `$isPatrol`：标明这是巡逻队，原版的拦截与盘查逻辑据此判断；
-- `$cfai_longPursuit` 为 `false`：不做长距离追击，追出巡逻范围就放弃；
-- `$cfai_noJump` 为 `true`：不跳出所在星系，巡逻队不该跟着玩家进超空间；
-- `$cfai_holdVsStronger` 为 `true`：遇到明显更强的对手时原地固守，不去送死。
+- `MEMORY_KEY_PATROL_FLEET` (`$isPatrol`)：标明这是一支正规巡逻队，使原版的应答机盘查与走私搜查逻辑生效，后续章节 ([C14-S2]、[C14-S4]) 也靠这个标记识别齿轮工业巡逻队；
+- `MEMORY_KEY_ALLOW_LONG_PURSUIT` 设为 `false`：禁止死追不放，目标逃出巡逻防区后即放弃追击；
+- `MEMORY_KEY_NO_JUMP` 设为 `true`：禁止跳入超空间，确保巡逻队始终留在 Nipher 星系内；
+- `MEMORY_KEY_MAKE_HOLD_VS_STRONGER` 设为 `true`：遭遇明显强于自身的敌方舰队时就地固守，而不是莽撞冲上去白给。
 
-这几项让一支小巡逻队守在自己的轨道上，不去追杀玩家。要做成追击型的舰队，把前两项改回默认即可。
+## 完整的巡逻队管理器与任务脚本
 
-## 安排巡逻任务
+本节包含两个配套类：`GearInPatrolFleetManager` 负责围绕 Nipher Prime (`GearIn_planet1`) 维持 1 至 2 支 30 点的巡逻队；`GearInPatrolAssignmentScript` 挂在每支生成的舰队上，负责按 "出港准备 2 天 → 星系巡逻 8 天 → 返港休整 2 天 → 进港解散" 的顺序循环排程。
 
-管理器只负责数量，舰队做什么由任务脚本决定。脚本构造时就给出一串任务，舰队依次执行：
-
-```java
-fleet.addAssignment(FleetAssignment.ORBIT_AGGRESSIVE, source, 2f, "preparing for patrol");
-fleet.addAssignment(FleetAssignment.PATROL_SYSTEM, null, PATROL_DAYS, "patrolling");
-fleet.addAssignment(FleetAssignment.ORBIT_PASSIVE, source, 2f, "standing down");
-fleet.addAssignment(FleetAssignment.GO_TO_LOCATION_AND_DESPAWN, source, 5f);
-```
-
-- 先在源点轨道上停留 2 天，玩家靠近时能看到它出港前的样子；
-- 在所在星系巡逻 `PATROL_DAYS` 即 8 天，目标为 `null` 表示不指定地点；
-- 回到源点轨道停留 2 天；
-- 最后飞向源点并解散，舰队从世界中移除。
-
-`maxDurationInDays` 是任务的最长持续天数，`actionText` 是玩家在舰队信息里看到的任务描述。
-
-**任务队列走完，舰队就没有任务了。** 脚本的 `advance(...)` 检查 `getCurrentAssignment() == null`，为空时重新安排一轮。这是原版 `RemnantAssignmentAI` 的做法。没有这一步，舰队在被打断 (例如与玩家交战后)、任务被清空时会停在原地不动。
-
-`isDone()` 在舰队不再存活时返回 `true`，脚本随之被引擎清除，不会留下指向已移除舰队的引用。
-
-### 源点与 Foundry
-
-本例的源点是 Nipher Prime 的行星实体，登记时按 ID `GearIn_planet1` 取得。[C12-S1] 建立 Foundry 之后，把登记处的实体换成 Foundry 即可，管理器和任务脚本都不必修改。
-
-## 登记管理器
-
-管理器是随存档保存的脚本，用 `sector.addScript(...)` 登记，**只登记一次**。重复登记会让每次读档都多出一个管理器，舰队数量成倍增加：
-
-```java
-if (!sector.getPersistentData().containsKey(PATROL_ADDED_KEY)) {
-    SectorEntityToken prime = sector.getEntityById("GearIn_planet1");
-    if (prime != null) {
-        sector.addScript(new GearInPatrolFleetManager(prime));
-        sector.getPersistentData().put(PATROL_ADDED_KEY, true);
-    }
-}
-```
-
-这里不能用 [C10-S1] 的 `addTransientScript(...)`：管理器记着当前有哪些舰队，这份状态必须随存档保存。标记 `GearIn_patrol_manager_added` 写在存档公共数据里，保证登记只发生一次。
-
-## 完整的巡逻队
+### 巡逻队管理器
 
 `src/data/scripts/gearin/campaign/GearInPatrolFleetManager.java`：
 
@@ -195,26 +149,17 @@ package data.scripts.gearin.campaign;
 
 import java.util.Random;
 
-import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.CampaignFleetAPI;
 import com.fs.starfarer.api.campaign.SectorEntityToken;
-import com.fs.starfarer.api.characters.FullName;
-import com.fs.starfarer.api.characters.PersonAPI;
-import com.fs.starfarer.api.fleet.FleetMemberAPI;
-import com.fs.starfarer.api.fleet.FleetMemberType;
 import com.fs.starfarer.api.impl.campaign.fleets.FleetFactoryV3;
 import com.fs.starfarer.api.impl.campaign.fleets.FleetParamsV3;
-import com.fs.starfarer.api.impl.campaign.events.OfficerManagerEvent;
-import com.fs.starfarer.api.impl.campaign.events.OfficerManagerEvent.SkillPickPreference;
 import com.fs.starfarer.api.impl.campaign.fleets.SourceBasedFleetManager;
 import com.fs.starfarer.api.impl.campaign.ids.FleetTypes;
 import com.fs.starfarer.api.impl.campaign.ids.MemFlags;
-import com.fs.starfarer.api.impl.campaign.ids.Personalities;
-import com.fs.starfarer.api.impl.campaign.ids.Ranks;
 
 import data.scripts.gearin.GearInModPlugin;
 
-/** 齿轮工业巡逻舰队管理器：从源点出动，在所在星系巡逻，被击毁后按间隔补充。 */
+/** 齿轮工业巡逻舰队管理器：从源点派出，在所在星系巡逻，被击毁后按间隔补充。 */
 public class GearInPatrolFleetManager extends SourceBasedFleetManager {
 
     /** 玩家离源点超过这个距离 (光年) 时，数量降到最小值。 */
@@ -227,15 +172,6 @@ public class GearInPatrolFleetManager extends SourceBasedFleetManager {
     private static final float RESPAWN_DAYS = 20f;
 
     private static final float COMBAT_POINTS = 30f;
-
-    /** 巡逻队旗舰的装配 ID，沿用 C3-S2 配置的工匠。 */
-    private static final String FLAGSHIP_VARIANT = "GearIn_artizan_combat";
-
-    /** 指挥官等级。 */
-    private static final int COMMANDER_LEVEL = 4;
-
-    /** 僚舰军官等级。 */
-    private static final int OFFICER_LEVEL = 2;
 
     public GearInPatrolFleetManager(SectorEntityToken source) {
         super(source, THRESHOLD_LY, MIN_FLEETS, MAX_FLEETS, RESPAWN_DAYS);
@@ -257,22 +193,10 @@ public class GearInPatrolFleetManager extends SourceBasedFleetManager {
                 0f, 0f, 0f, 0f, 0f,
                 0f);
         params.random = random;
-        params.withOfficers = false;
         CampaignFleetAPI fleet = FleetFactoryV3.createFleet(params);
-        if (fleet == null) {
+        if (fleet == null || fleet.isEmpty()) {
             return null;
         }
-
-        // 旗舰与指挥官由我们自己指定。setFlagship 会重置其他成员的舰长，所以放在最前面
-        FleetMemberAPI flagship = Global.getFactory().createFleetMember(FleetMemberType.SHIP, FLAGSHIP_VARIANT);
-        flagship.setShipName(fleet.getFleetData().pickShipName(flagship, random));
-        fleet.getFleetData().addFleetMember(flagship);
-        fleet.getFleetData().setFlagship(flagship);
-        PersonAPI commander = createCommander(random);
-        fleet.setCommander(commander);
-        flagship.setCaptain(commander);
-        addWingOfficer(fleet, flagship, random);
-        fleet.forceSync();
 
         source.getContainingLocation().addEntity(fleet);
         fleet.setLocation(source.getLocation().x, source.getLocation().y);
@@ -286,39 +210,71 @@ public class GearInPatrolFleetManager extends SourceBasedFleetManager {
         fleet.addScript(new GearInPatrolAssignmentScript(fleet, source));
         return fleet;
     }
+}
+```
 
-    /** 创建巡逻队指挥官：等级与技能由原版抽选，姓名、性格与职务自行指定。 */
-    private PersonAPI createCommander(Random random) {
-        PersonAPI person = OfficerManagerEvent.createOfficer(
-                Global.getSector().getFaction(GearInModPlugin.FACTION_ID),
-                COMMANDER_LEVEL, SkillPickPreference.ANY, random);
-        person.setName(new FullName("Brann", "Hale", FullName.Gender.ANY));
-        person.setPersonality(Personalities.AGGRESSIVE);
-        person.setRankId(Ranks.SPACE_COMMANDER);
-        person.setPostId(Ranks.POST_FLEET_COMMANDER);
-        return person;
+### 巡逻任务排程脚本
+
+`src/data/scripts/gearin/campaign/GearInPatrolAssignmentScript.java`：
+
+```java
+package data.scripts.gearin.campaign;
+
+import com.fs.starfarer.api.EveryFrameScript;
+import com.fs.starfarer.api.campaign.CampaignFleetAPI;
+import com.fs.starfarer.api.campaign.FleetAssignment;
+import com.fs.starfarer.api.campaign.SectorEntityToken;
+
+/** 巡逻舰队的任务安排：出港后巡逻，随后返回源点并解散。 */
+public class GearInPatrolAssignmentScript implements EveryFrameScript {
+
+    private static final float PATROL_DAYS = 8f;
+
+    private final CampaignFleetAPI fleet;
+    private final SectorEntityToken source;
+
+    public GearInPatrolAssignmentScript(CampaignFleetAPI fleet, SectorEntityToken source) {
+        this.fleet = fleet;
+        this.source = source;
+        assign();
     }
 
-    /** 给点数最高的非旗舰成员配一名军官：先登记进舰队的军官名单，再派到这艘舰船上。 */
-    private void addWingOfficer(CampaignFleetAPI fleet, FleetMemberAPI flagship, Random random) {
-        FleetMemberAPI target = null;
-        for (FleetMemberAPI member : fleet.getFleetData().getMembersListCopy()) {
-            if (member == flagship || member.isFighterWing() || member.isCivilian()) {
-                continue;
-            }
-            if (target == null || member.getFleetPointCost() > target.getFleetPointCost()) {
-                target = member;
-            }
+    private void assign() {
+        fleet.addAssignment(FleetAssignment.ORBIT_AGGRESSIVE, source, 2f, "preparing for patrol");
+        fleet.addAssignment(FleetAssignment.PATROL_SYSTEM, null, PATROL_DAYS, "patrolling");
+        fleet.addAssignment(FleetAssignment.ORBIT_PASSIVE, source, 2f, "standing down");
+        fleet.addAssignment(FleetAssignment.GO_TO_LOCATION_AND_DESPAWN, source, 5f);
+    }
+
+    @Override
+    public boolean isDone() {
+        return !fleet.isAlive();
+    }
+
+    @Override
+    public boolean runWhilePaused() {
+        return false;
+    }
+
+    @Override
+    public void advance(float amount) {
+        if (fleet.getCurrentAssignment() == null) {
+            assign();
         }
-        if (target == null) {
-            return;
-        }
-        PersonAPI officer = OfficerManagerEvent.createOfficer(
-                Global.getSector().getFaction(GearInModPlugin.FACTION_ID),
-                OFFICER_LEVEL, SkillPickPreference.ANY, random);
-        officer.setPostId(Ranks.POST_OFFICER);
-        fleet.getFleetData().addOfficer(officer);
-        target.setCaptain(officer);
+    }
+}
+```
+
+### 在入口类中登记管理器
+
+`SourceBasedFleetManager` 内部维护着已派出舰队的列表与重生倒计时，这份状态必须随存档持久化保存。因此在 `GearInModPlugin.onGameLoad(...)` 中必须使用 [C10-S1] 讲过的 `sector.addScript(...)` 持久注册，并配合 `sector.getPersistentData()` 中的标记确保整个存档只注册一次：
+
+```java
+if (!sector.getPersistentData().containsKey("GearIn_patrol_manager_added")) {
+    SectorEntityToken prime = sector.getEntityById("GearIn_planet1");
+    if (prime != null) {
+        sector.addScript(new GearInPatrolFleetManager(prime));
+        sector.getPersistentData().put("GearIn_patrol_manager_added", true);
     }
 }
 ```
@@ -327,32 +283,26 @@ public class GearInPatrolFleetManager extends SourceBasedFleetManager {
 
 执行 `gradle jar`，重启游戏，**新建一份存档**。
 
-- 控制台执行 `jump Nipher`，在 Nipher Prime 轨道附近可以看到齿轮工业的巡逻舰队，数量为 1 至 2 支；
-- 舰队信息中的任务描述依次为 `preparing for patrol`、`patrolling`，之后是 `standing down` 与 `Returning to`；
-- 将这支舰队击毁，约 20 个生涯天之后补充出新的舰队；
-- 保存并重新读档，舰队数量没有成倍增加，管理器只有一个。
+- 在控制台执行 `jump Nipher`，飞近 Nipher Prime，可以看到轨道附近生成了 1 至 2 支齿轮工业巡逻队；
+- 悬停查看舰队信息，行动描述依次从 `preparing for patrol` 切换到 `patrolling`、`standing down` 与 `返回 Nipher Prime`；
+- 保存并重新读档，巡逻队数量保持不变，不会因读档而翻倍。
 
 ## 常见问题
 
-- **轨道上始终没有舰队**：管理器没有登记，或者 `createFleet(...)` 返回了 `null`。
-    - **解决方案**：核对 `onGameLoad(...)` 中的登记与标记；确认势力有可用舰船，并适当提高战斗点数。
+- **进入 Nipher 星系后始终看不到巡逻队**：`onGameLoad(...)` 中未登记管理器，或 `.faction` 文件中没有配置可用的战斗舰船角色导致 `FleetFactoryV3.createFleet(...)` 返回了空舰队。
+    - **解决方案**：核对 `onGameLoad(...)` 注册逻辑与 [C3-S2] 的势力选船配置。
 
-- **舰队出现在星系中心而不是行星轨道**：只调用了 `addEntity(...)`，没有设置位置。
-    - **解决方案**：在 `addEntity(...)` 之后调用 `setLocation(...)`。
+- **巡逻队生成在了恒星正中央而非 Nipher Prime 轨道**：只调用了 `addEntity(fleet)`，漏掉了 `fleet.setLocation(...)`。
+    - **解决方案**：`addEntity(...)` 后紧接着将舰队坐标设为源点的 `getLocation()`。
 
-- **每次读档舰队数量都增加**：管理器被重复登记，或者用 `addTransientScript(...)` 登记。
-    - **解决方案**：用 `addScript(...)` 登记，并以存档公共数据中的标记保证只登记一次。
-
-- **舰队停在原地不动**：任务队列走完或被清空后，没有重新安排任务。
-    - **解决方案**：在 `advance(...)` 中检查 `getCurrentAssignment() == null` 并重新安排。
-
-- **旧存档中没有巡逻队**：旧存档没有 Nipher Prime 的实体，登记处取到 `null`。
-    - **解决方案**：使用新档测试，见 [C7-S1]。
+- **每次保存读档，星系里的巡逻队数量就翻一倍**：在 `onGameLoad(...)` 中调用 `sector.addScript(new GearInPatrolFleetManager(...))` 时没有用 `getPersistentData()` 标记防重。
+    - **解决方案**：持久脚本会随存档自动恢复，必须通过 `getPersistentData()` 标记保证只在首次加载时添加一次。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.impl.campaign.fleets.SourceBasedFleetManager`：数量、补充与移除的完整逻辑。
-- `com.fs.starfarer.api.impl.campaign.fleets.FleetParamsV3`：全部生成字段，本节只用了其中的点数与类型。
-- `com.fs.starfarer.api.impl.campaign.procgen.themes.RemnantAssignmentAI`：原版的任务重排写法。
-- `com.fs.starfarer.api.impl.campaign.ids.MemFlags`：舰队行为标记的全部取值。
-- `com.fs.starfarer.api.campaign.FleetAssignment`：各任务类型的含义。
+- `com.fs.starfarer.api.campaign.CampaignFleetAPI`：生涯舰队实体、任务队列与 `getFleetData()` 入口。
+- `com.fs.starfarer.api.impl.campaign.fleets.SourceBasedFleetManager`：基于源点距离与重生间隔的舰队数量管理器基类。
+- `com.fs.starfarer.api.impl.campaign.fleets.FleetParamsV3`：舰队工厂参数结构。
+- `com.fs.starfarer.api.impl.campaign.fleets.FleetFactoryV3`：`createFleet(...)` 抽选舰船与自动配置军官的实现。
+- `com.fs.starfarer.api.impl.campaign.ids.MemFlags`：控制舰队 AI 行为的常用 Memory 键名常量。
+- `com.fs.starfarer.api.campaign.FleetAssignment`：舰队任务类型枚举。

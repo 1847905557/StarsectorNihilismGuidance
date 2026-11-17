@@ -1,8 +1,8 @@
 # 监听生涯事件
 
-游戏里凡是 "某件事发生了，我要跟着做点什么" 的需求，都归生涯事件。舰队被击毁、市场完成交易、玩家打开某个界面，星区会把这些通知给登记过的监听器。
+舰队交战、市场成交、打开对话乃至经济月结，星区会在这些节点发生时把事件广播给所有已注册的 `CampaignEventListener`。和 [C14-S1] 按帧推进的逐帧脚本不同，监听器平时完全静止，只在特定事件触发的那一刻执行一次回调。
 
-它和 [C14-S1] 的脚本不同：脚本是自己数着时间推进，监听器什么都不做，只在被叫到的时候响应。需要记录 "谁做了什么" 以及 "做了多少次" 时，用监听器；需要连续推进的节奏，才用脚本。
+用这套事件机制给齿轮工业挂上一份巡逻队战损统计：玩家击毁巡逻队时，立即记下累计战损、写入限时敌意标记并扣减势力关系。
 
 ---
 
@@ -12,17 +12,17 @@ _本节预期操作时间：\~15 分钟。_
 
 ## 前置知识
 
-- [C11-S3] 挂在单支舰队上的监听器，本节换成全局的监听器；
+- [C11-S3] 挂在单支舰队上的监听器，本节换成全局监听器；
 - [C11-S1] 给巡逻队设置的 `$isPatrol` 标记，本节按它识别巡逻队；
-- [C10-S1] 的全局 Memory 与限时值；
-- [C10-S3] 的关系读写；
+- [C10-S2] 的全局 Memory 与限时值；
+- [C10-S4] 的关系读写；
 - [C14-S1] 中随存档保存与临时登记的区别，监听器同样适用。
 
-## 监听器挂在哪里
+## 全局监听与事件家族
 
-[C11-S3] 的伤情监听器挂在巡逻队自己身上，只收到这一支舰队的事件。这次要记的是齿轮工业的所有巡逻队：除了 [C11-S1] 管理器生成的那支，Nipher Prime 的市场也会按原版规则派出自己的巡逻队。一支一支去挂监听器既麻烦，也挂不全。
+[C11-S3] 的损伤监听器直接挂在单支舰队上，只能收到那一支舰队的消息。真要追踪全星区里所有属于某个势力的舰队 —— 包括 [C11-S1] 管理器生成的巡逻队，以及 Nipher Prime 按原版市场规则自发派出的巡逻队 —— 逐支去挂既麻烦也容易挂漏，这时应当把监听器直接登记到 `SectorAPI` 上。
 
-全局的生涯监听器登记在星区上，所有战斗、舰队消失、市场交易等事件都会通知它。继承原版的 `BaseCampaignEventListener`，它为每个回调都提供了空实现，只覆写需要的那一个：
+全局监听器通常继承 `BaseCampaignEventListener`，它替 `CampaignEventListener` 的全部回调准备了空实现，您只需覆写关心的那一两个入口：
 
 ```java
 public class GearInPatrolGrudgeListener extends BaseCampaignEventListener {
@@ -33,29 +33,39 @@ public class GearInPatrolGrudgeListener extends BaseCampaignEventListener {
 }
 ```
 
-构造参数为 `true` 时，父类会在构造时直接把自己登记为随存档保存的监听器。这里传 `false`，登记方式由入口类自己决定。
+构造参数传 `true` 时，父类会在构造瞬间自动把自己作为持久监听器登记进星区；这里显式传 `false`，把登记方式与时机全权交给入口类掌控。
+
+除战斗事件外，`BaseCampaignEventListener` 还覆盖了生涯里最常用的几类广播节点：
+
+| 回调方法 | 触发时机 | 常见用途 |
+| -------- | -------- | -------- |
+| `reportBattleOccurred(...)` / `reportBattleFinished(...)` | 战斗产生结果或结束时 | 统计战果、触发势力仇恨或任务进度推进 |
+| `reportPlayerMarketTransaction(...)` | 玩家在市场完成买卖交易后 | 追踪走私量、特定商品成交额或关税回扣 |
+| `reportShownInteractionDialog(...)` | 玩家打开实体或市场对话时 | 检查特定遭遇或补充额外记忆键 |
+| `reportFleetSpawned(...)` / `reportFleetDespawned(...)` | 舰队生成或离开星区消失时 | 监听事件舰队存活与回收 |
+| `reportEconomyTick(...)` / `reportEconomyMonthEnd()` | 每个经济周期或月结算节点 | 挂载周期性财政或市场联动账目 |
 
 ## 选择登记方式
 
-星区提供三种登记：
+星区针对监听器同样提供了持久、临时与限时三种登记入口：
 
-| 方法 | 是否随存档保存 |
-| ---- | -------------- |
-| `addListener(listener)` | 是 |
-| `addTransientListener(listener)` | 否，读档后需要重新登记 |
-| `addListenerWithTimeout(listener, days)` | 是，经过指定生涯天数后移除 |
+| 方法 | 是否随存档保存 | 适用场景 |
+| ---- | -------------- | -------- |
+| `addListener(listener)` | 是 | 监听器自身字段存有未入 Memory 的运行状态 |
+| `addTransientListener(listener)` | 否，读档时丢弃 | 无字段或只读写 Memory 的事件记账器，由 `onGameLoad(...)` 重挂 |
+| `addListenerWithTimeout(listener, days)` | 是 | 只想监听未来几十个生涯天的临时事件窗口 |
 
-这个监听器只负责记账，账本写在全局 Memory 里，它自己一个字段也没有，随存档保存没有任何好处。所以用临时登记，在 `GearInModPlugin.onGameLoad(...)` 中每次读档登记一份：
+下面的巡逻队敌意监听器完全依靠全局 Memory 存账，自身没有任何可变字段，因此放在 `GearInModPlugin.onGameLoad(...)` 中做临时登记是最干净的选择：
 
 ```java
 sector.addTransientListener(new GearInPatrolGrudgeListener());
 ```
 
-一次读档只会调用一次 `onGameLoad(...)`，临时监听器在读档时随旧的生涯一起丢弃，所以这里不需要检查重复。
+注意 `GearInModPlugin.onGameLoad(boolean newGame)` 在玩家**开新档之后也会自动调用一次**，因此临时监听器只需要写在 `onGameLoad(...)` 里一处即可 —— 切忌在 `onNewGame()` 里也挂一遍，否则开新档的第一局里每次战斗都会记双倍战损。
 
-## 判断被击败的是不是巡逻队
+## 筛选目标巡逻队与结算战果
 
-战斗回调是 `reportBattleOccurred(primaryWinner, battle)`。原版注释写明，AI 之间的自动结算每一轮都会调用它，玩家参与的战斗则每次遭遇只调用一次。先排除与玩家无关的战斗：
+战斗结束的回调之一是 `reportBattleOccurred(primaryWinner, battle)`。需要注意：AI 与 AI 之间的自动结算每一轮都会触发该方法，而玩家参与的战斗每次遭遇只会调用一次。如果只想追究玩家的手笔，开头第一件事就应当拦截非玩家战斗：
 
 ```java
 if (!battle.isPlayerInvolved()) {
@@ -63,9 +73,7 @@ if (!battle.isPlayerInvolved()) {
 }
 ```
 
-不排除的话，星区里每一场 AI 之间的小冲突都会进来走一遍。
-
-敌方舰队从 `getNonPlayerSideSnapshot()` 取。快照记录的是战斗开始前的阵容，战斗中被全歼、已经从地图上消失的舰队也在里面：
+随后遍历 `battle.getNonPlayerSideSnapshot()`。引擎把交战前敌方阵营的所有舰队都记在这份快照里 —— 哪怕某支巡逻队已经在战斗中被打散并从地图上移除，依然能在这里查到它：
 
 ```java
 for (CampaignFleetAPI fleet : battle.getNonPlayerSideSnapshot()) {
@@ -81,11 +89,11 @@ for (CampaignFleetAPI fleet : battle.getNonPlayerSideSnapshot()) {
 }
 ```
 
-势力与 `$isPatrol` 两项都要核对。只看势力，商船队和运输队被打也会算进来；只看标记，别的势力的巡逻队也会算进来。`wasFleetDefeated(...)` 是原版任务判断某支舰队是否战败的写法。
+这里的筛选条件一个也不能少：**只检查势力会把齿轮工业的商船和补给船算成巡逻队，只检查 `MemFlags.MEMORY_KEY_PATROL_FLEET` (`$isPatrol`) 则会把其他势力的巡逻队混进来**。`battle.wasFleetDefeated(fleet, primaryWinner)` 用于核实 `fleet` 在本次交火中处于战败一方 (即与 `primaryWinner` 属于对立阵营；只要玩家方获胜而未撤退，即便敌方仍有余舰脱战也会返回 `true`)。
 
-## 记账
+## 写入累计次数、限时敌意标记与声望惩罚
 
-一场战斗里打掉了几支巡逻队，就记几笔：
+只要本次战斗至少击溃了一支齿轮工业巡逻队，就一并完成后续状态写入：
 
 ```java
 memory.set(LOST_KEY, memory.getFloat(LOST_KEY) + defeated);
@@ -94,11 +102,9 @@ sector.getFaction(GearInModPlugin.FACTION_ID)
         .adjustRelationship(sector.getPlayerFaction().getId(), -RELATION_PENALTY * defeated);
 ```
 
-- `$GearIn_patrols_lost` 是累计数，永不过期，键不存在时 `getFloat(...)` 读到 0；
-- `$GearIn_patrol_grudge` 是 60 天的限时标记，每被打一次就重新计时，后面 Rules 章节的对话会用它判断玩家最近有没有动过手；
-- 关系每支扣 0.05。一支巡逻队算不上什么大事，每次只扣一点；可要是一直打下去，关系照样会一路掉到底。
-
-最后在界面左侧留一条消息，让玩家知道齿轮工业已经记了一笔。
+- `$GearIn_patrols_lost` 写入永久累计数量，键尚不存在时 `getFloat(...)` 默认返回 `0`；
+- `$GearIn_patrol_grudge` 设为 `60` 天自动过期的限时标记，每再打掉一次巡逻队就重新刷新倒计时，后续 [C14-S3] 的拒绝停靠与 `C15` 的 Rules 对话都要读它判断齿轮工业最近有没有被惹火；
+- 每击溃一支额外扣减 `0.05` 势力关系，并通过左下角消息提醒玩家齿轮工业已经把这笔账记下。
 
 ## 完整的监听器
 
@@ -117,7 +123,7 @@ import com.fs.starfarer.api.impl.campaign.ids.MemFlags;
 
 import data.scripts.gearin.GearInModPlugin;
 
-/** 玩家击败齿轮工业的巡逻队后，势力记下这笔账：累计次数、限时记仇标记，并降低关系。 */
+/** 玩家击败齿轮工业的巡逻队后，势力记下这笔账：累计次数、限时敌意标记，并降低关系。 */
 public class GearInPatrolGrudgeListener extends BaseCampaignEventListener {
 
     /** 全局 Memory：玩家累计击败的齿轮工业巡逻队数量。 */
@@ -169,33 +175,31 @@ public class GearInPatrolGrudgeListener extends BaseCampaignEventListener {
 
 ### 进游戏核对
 
-执行 `gradle jar`，重启游戏，**新建一份存档**，到 Nipher 星系找一支齿轮工业的巡逻队，主动攻击并取胜。
+执行 `gradle jar`，重启游戏，**新建一份存档**，在 Nipher 星系找一支齿轮工业巡逻队交战并取胜：
 
-- 战斗结束后，界面左侧出现 "齿轮工业记下了被击败的巡逻队"；
-- 在控制台执行 `runcode Global.getSector().getMemoryWithoutUpdate().getFloat("$GearIn_patrols_lost")`，结果为 `1.0`；
-- 外交界面中，齿轮工业对玩家的关系比战前更低；
-- 保存并重新读档，再击败一支巡逻队，计数变为 `2.0`。
-
-页面中的现象依据 API 与原版代码推出，编者尚未逐项在游戏内实测。
+- 战斗结束后，界面左下角出现 `"齿轮工业记下了被击败的巡逻队。"`；
+- 控制台执行 `runcode Global.getSector().getMemoryWithoutUpdate().getFloat("$GearIn_patrols_lost")` 返回 `1.0`；
+- 外交界面中齿轮工业对玩家的关系进一步下降；
+- 保存并重新读档后再次击败一支巡逻队，计数递增为 `2.0`。
 
 ## 常见问题
 
-- **击败巡逻队之后计数没有变化**：监听器没有登记，或者被击败的舰队没有 `$isPatrol` 标记。
-    - **解决方案**：核对 `onGameLoad(...)` 中的登记，再确认 [C11-S1] 的巡逻行为标记已经写入。
+- **击败巡逻队后计数没有增加**：监听器未注册，或者目标舰队没有 `$isPatrol` 标记。
+    - **解决方案**：核对 `onGameLoad(...)` 中的 `addTransientListener(...)`，并确认巡逻队已写入 `MemFlags.MEMORY_KEY_PATROL_FLEET`。
 
-- **读档之后不再记账**：临时监听器只在 `onNewGame()` 中登记了一次。
-    - **解决方案**：登记放进 `onGameLoad(...)`，每次读档都执行。
+- **读档之后监听器突然失效**：把临时监听器写进了 `onNewGame()` 而没有写进 `onGameLoad(...)`。
+    - **解决方案**：临时监听器统一放在 `onGameLoad(...)` 中注册。
 
-- **一场战斗记了两笔**：监听器被登记了两份，常见于构造时传了 `true`，入口类又登记了一次。
-    - **解决方案**：构造参数传 `false`，只保留入口类的登记。
+- **同一场战斗被重复计入两次**：父类构造 `super(...)` 传了 `true` 自我登记一次，同时入口类又额外注册了一次；或者在 `onNewGame()` 与 `onGameLoad(...)` 两处同时调用了注册。
+    - **解决方案**：确认 `super(false)` 且只在 `onGameLoad(...)` 中注册一遍。
 
-- **玩家没参战，计数也在涨**：没有检查 `isPlayerInvolved()`，AI 之间的战斗也被算了进来。
-    - **解决方案**：回调开头先排除与玩家无关的战斗。
+- **玩家未参战，AI 之间的战斗也增加了计数**：忘记检查 `battle.isPlayerInvolved()`。
+    - **解决方案**：在回调开头过滤掉玩家未参与的战斗。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.BaseCampaignEventListener`：全部生涯事件回调的空实现与 `permaRegister` 参数。
-- `com.fs.starfarer.api.campaign.CampaignEventListener`：`reportBattleOccurred(...)` 的调用次数说明。
-- `com.fs.starfarer.api.campaign.BattleAPI`：战前快照与 `wasFleetDefeated(...)`。
-- `com.fs.starfarer.api.impl.campaign.missions.askonia.SDSevenSons`：原版任务判断舰队战败的写法。
-- `com.fs.starfarer.api.impl.campaign.ids.MemFlags`：`MEMORY_KEY_PATROL_FLEET` 等舰队标记。
+- `com.fs.starfarer.api.campaign.BaseCampaignEventListener`：全部生涯事件回调的空实现与 `permaRegister` 构造参数。
+- `com.fs.starfarer.api.campaign.CampaignEventListener`：`reportBattleOccurred(...)` 等事件接口定义与调用频次说明。
+- `com.fs.starfarer.api.campaign.BattleAPI`：`getNonPlayerSideSnapshot()` 与 `wasFleetDefeated(...)`。
+- `com.fs.starfarer.api.impl.campaign.ids.MemFlags`：`MEMORY_KEY_PATROL_FLEET` 等舰队标准标记。
+- `com.fs.starfarer.api.impl.campaign.missions.askonia.SDSevenSons`：原版任务判断特定舰队战败的用法。

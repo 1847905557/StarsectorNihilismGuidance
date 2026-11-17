@@ -47,7 +47,6 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
     private int worldPerPixelLocation = -1;
     private int geometryLocation = -1;
     private int viewportAlphaLocation = -1;
-    private float renderRadius = DIRECTION_LENGTH;
     private boolean programAttempted;
     private boolean valid = true;
     private boolean cleaned;
@@ -61,6 +60,10 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
     public void init(CombatEntityAPI entity) {
         super.init(entity);
         engine = Global.getCombatEngine();
+        if (trackedShip == null) {
+            valid = false;
+            return;
+        }
         markerBuffer = BufferUtils.createFloatBuffer(FLOATS_PER_MARKER);
 
         updateMarkerData();
@@ -186,7 +189,8 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
         if (!valid) {
             return;
         }
-        if (engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
+        if (engine == null || trackedShip == null
+                || engine.isCombatOver() || !engine.isEntityInPlay(trackedShip)
                 || !trackedShip.isAlive()) {
             valid = false;
             return;
@@ -228,10 +232,8 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
         int previousSsboBase = GL30.glGetInteger(
                 GL43.GL_SHADER_STORAGE_BUFFER_BINDING, BINDING);
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
-        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         GL11.glPushAttrib(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT
                 | GL11.GL_ENABLE_BIT | GL11.GL_DEPTH_BUFFER_BIT);
-        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
         try {
             GL30.glBindVertexArray(vaoId);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
@@ -253,7 +255,6 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
             GL20.glUniform1f(viewportAlphaLocation, viewport.getAlphaMult());
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
         } finally {
-            GL11.glPopClientAttrib();
             GL11.glPopAttrib();
             GL30.glBindVertexArray(previousVao);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, previousVbo);
@@ -261,7 +262,6 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
                     previousSsboBase);
             GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, previousSsbo);
             GL20.glUseProgram(previousProgram);
-            GL11.glMatrixMode(previousMatrixMode);
         }
     }
 
@@ -312,6 +312,8 @@ public class GearInSsboMarker extends BaseCombatLayeredRenderingPlugin {
 
     @Override
     public float getRenderRadius() {
-        return renderRadius + engine.getViewport().convertScreenWidthToWorldWidth(3f);
+        return engine == null || engine.getViewport() == null
+                ? DIRECTION_LENGTH
+                : DIRECTION_LENGTH + engine.getViewport().convertScreenWidthToWorldWidth(3f);
     }
 }

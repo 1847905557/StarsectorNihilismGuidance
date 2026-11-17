@@ -36,6 +36,9 @@ public class GearInHitLightEffect implements OnHitEffectPlugin {
             light.setIntensity(0.8f);
             light.fadeOut(0.3f);
         } else {
+            if (target == null) {
+                return;
+            }
             Vector2f localOffset = Vector2f.sub(point, target.getLocation(), null);
             VectorUtils.rotate(localOffset, -target.getFacing());
 

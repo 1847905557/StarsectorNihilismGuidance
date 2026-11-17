@@ -42,7 +42,7 @@ public class GearInContactRewardScript implements EveryFrameScript {
             return;
         }
         SectorAPI sector = Global.getSector();
-        if (!sector.getMemory().getBoolean(GearInContactScript.CONTACTED_KEY)) {
+        if (!sector.getMemoryWithoutUpdate().getBoolean(GearInContactScript.CONTACTED_KEY)) {
             return;
         }
         Map<String, Object> data = sector.getPersistentData();

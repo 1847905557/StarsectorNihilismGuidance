@@ -25,16 +25,10 @@ _本节预期操作时间：\~20 分钟。_
 | `onFireEffect` | 弹体 `.proj` | `OnFireEffectPlugin` | 每发弹体生成时 |
 | `onHitEffect` | 弹体 `.proj` | `OnHitEffectPlugin` | 每发弹体命中之后 |
 
-接口本身都很小。`EveryFrameWeaponEffectPlugin` 只有一个方法，它在本帧武器操作之前调用：
+接口本身都很小。`EveryFrameWeaponEffectPlugin` 只有一个方法，它在本帧武器转向、开火等操作之前调用：
 
 ```java
 public interface EveryFrameWeaponEffectPlugin {
-	/**
-	 * Called before this frame's operations for the weapon - turning, firing, etc.
-	 * @param amount
-	 * @param engine
-	 * @param weapon
-	 */
 	void advance(float amount, CombatEngineAPI engine, WeaponAPI weapon);
 }
 ```
@@ -52,13 +46,9 @@ public interface OnHitEffectPlugin {
 }
 ```
 
-一门炮把这三个接口全用上，也不奇怪。原版现实干扰器就是一个类同时实现三个：
+一门炮把这三个接口全用上也不奇怪。原版现实干扰器的脚本类就同时实现了这三个接口：
 
 ```java
-/**
- * IMPORTANT: will be multiple instances of this, as this doubles as the every frame effect and the on fire effect (same instance)
- * But also as the visual for each individual shot (created via onFire, using the non-default constructor)
- */
 public class RealityDisruptorEffect implements OnFireEffectPlugin, OnHitEffectPlugin, EveryFrameWeaponEffectPlugin {
 ```
 
@@ -105,11 +95,11 @@ if (weapon != null && weapon.getEffectPlugin() instanceof 效果类) {
 
 这两步合起来，是 "共用如何回到某一门具体的炮" 的标准解法。任何需要在命中时更新单门武器状态的效果，都走这条路径。
 
-## 都林叠层
+## 为都林加入单门武器的命中叠层
 
-前面讲的是这一套机制的通用规则。现在给一个具体的用场：都林对同一个目标连续命中，伤害一层层叠上去，换一个目标就从头算。这种效果只属于这一门炮，船插那种对整艘船一视同仁的写法用不上。
+像 "同一门炮连续命中同一个目标时伤害逐层递增、转火或停火超时则归零" 这样的机制，状态只归属于单门武器自身，[C8-S2] 那种挂在船插上对全舰一视同仁的改法就派不上用场了。
 
-都林每发弹体造成 35 点伤害。本节为它增加一项叠层效果：同一门都林连续命中同一艘舰船的船体时，每层提高 10% 伤害，最多 5 层。更换目标或超过 2 秒没有命中，层数归零。
+都林的基础单发伤害是 35 点。本节为它补上这套叠层机制：同一门都林连续命中同一艘敌舰的船体时，每层使后续弹体伤害提高 10%，最高叠到 5 层；一旦切换目标或超过 2 秒没有再次命中船体，层数立即归零。
 
 按上面的规则分配，三个位置各承担一部分：
 
@@ -257,12 +247,7 @@ public class GearInDurinOnHitEffect implements OnHitEffectPlugin {
 
 本节依赖的正是 "同一个实例" 这条规则：`onFire(...)` 与 `advance(...)` 运行在同一个对象上，读的是同一个 `stacks` 字段。若在弹体文件中再登记一次 `onFireEffect`，游戏会为这种弹体另建一个实例，它的 `stacks` 始终为 0，叠层也就永远不会提高伤害。
 
-原版饥渴裂隙的写法印证了这一点。它的武器文件登记 `everyFrameEffect`，弹体文件里的 `onFireEffect` 被注释掉，文件里写着理由：
-
-```json
-"onHitEffect":"com.fs.starfarer.api.impl.combat.dweller.AssayingRiftEffect",
-#"onFireEffect":"com.fs.starfarer.api.impl.combat.dweller.AssayingRiftEffect", # handled in everyframe in .wpn file
-```
+原版饥渴裂隙 (`assaying_rift`) 也是同样的配置方式：它的武器文件登记了同时实现 `EveryFrameWeaponEffectPlugin` 与 `OnFireEffectPlugin` 的 `AssayingRiftEffect`，而弹体文件里只保留 `onHitEffect`，把 `onFireEffect` 留给武器上的同一个实例处理。
 
 ## 核对叠层
 

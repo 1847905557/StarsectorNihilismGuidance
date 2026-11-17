@@ -1,8 +1,6 @@
 # 构建阶段任务
 
-Ashen Verge 那座信标挂着齿轮工业的旗子，记录却一直传不回来。Aster 想知道里面写了什么，又不打算自己派船去。这就是一份委托：去一个地方，做一件事，回来报告，拿钱。
-
-原版的任务框架把这种先做一件、再做一件的事情拆成一个个阶段，每个阶段由某个标记推进。写任务，大半是在把阶段与标记对上。
+跨星系跑腿、中途更新情报再回港交差的委托，如果每做一次都要自己手写一遍追踪、清理和防重入逻辑，迟早会在各种边界情况里翻车。原版把这一整套阶段状态机收进了 `HubMissionWithBarEvent`：您只需拿枚举划好阶段、靠键值标记关键对象，接取、推进、发奖与退场清理全都能顺着这套框架统一管理。
 
 ---
 
@@ -13,7 +11,7 @@ _本节预期操作时间：\~20 分钟。_
 ## 前置知识
 
 - [C13-S1] 的 Aster Vance，她是委托人；
-- [C10-S2] 与 [C10-S4] 的灰烬信标，ID 为 `GearIn_ashen_beacon`；
+- [C10-S3] 与 [C10-S5] 的灰烬信标，ID 为 `GearIn_ashen_beacon`；
 - [C15-S5] 中规则读写各块 Memory 的前缀；
 - [C14-S4] 的情报，任务会以情报的形式出现在情报栏里。
 
@@ -36,7 +34,7 @@ return GearInFoundryGenerator.MARKET_ID.equals(market.getId())
 
 ## 委托人与引用
 
-委托人不是随机生成的路人，而是 Aster 本人：
+本例不随机生成路人委托人，直接指定 Aster 本人：
 
 ```java
 setPersonOverride(aster);
@@ -111,7 +109,7 @@ setCreditReward(REWARD);
 
 原版的委托大多用 `CreditReward` 按市场规模随机定价，这份委托只有一份，给个整数就好。
 
-`updateInteractionDataImpl()` 把规则需要的数据写进任务的 Memory，这里只有奖励金额。`addDescriptionForNonEndStage(...)` 与 `addNextStepText(...)` 是情报栏里的说明与 "下一步" 提示，按当前阶段分别写；`getBaseName()` 是任务名。
+`updateInteractionDataImpl()` 通过 `set(...)` 把规则要读取的变量写入 `interactionMemory` (即当前对话目标的 `MemKeys.LOCAL` Memory：酒吧接取时写入 Aster 身上，抵达信标调 `updateData` 时再写到信标上，因此跨实体复用前需要先刷新)，这里只写入奖励金额。`addDescriptionForNonEndStage(...)` 与 `addNextStepText(...)` 则是情报栏里的说明与 "下一步" 提示，按当前阶段分别分支展示；`getBaseName()` 返回任务标题。
 
 ## 完整的任务类
 

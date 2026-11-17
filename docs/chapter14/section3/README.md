@@ -1,6 +1,8 @@
 # 选择生涯插件
 
-被齿轮工业记了仇，Foundry 就不该再像平常那样让人随便停靠。可停靠时弹出的对话是原版的，MOD 想换掉它，得先让游戏在打开对话的那一刻来问一声。
+空间站对话、战斗创建、自动结算乃至 AI 核心插件的调度，都由星区向注册过的 `CampaignPlugin` 逐个问询后按 `PickPriority` 裁决。只要守住优先级的让位规矩，就能在不改动原版规则的前提下精准接管某一类或某一座实体。
+
+这节从最常用的对话入口切入：齿轮工业对玩家挂着敌意标记期间，把 Nipher Foundry 的默认停靠菜单换成拒客的闭门羹。
 
 ---
 
@@ -10,43 +12,44 @@ _本节预期操作时间：\~15 分钟。_
 
 ## 前置知识
 
-- [C14-S2] 的 `$GearIn_patrol_grudge` 记仇标记，本节按它决定是否拒绝停靠；
-- [C12-S1] 的 Foundry 空间站，ID 为 `GearIn_foundry`；
-- [C14-S1] 中临时登记与随存档保存的区别，生涯插件同样适用。
+- [C14-S2] 的 `$GearIn_patrol_grudge` 敌意标记，本节按它决定是否拦截停靠；
+- [C12-S1] 的 Foundry 空间站，实体 ID 为 `GearIn_foundry`；
+- [C14-S1] 中持久登记与临时登记的选择原则。
 
-## 游戏在哪些时刻来问
+## CampaignPlugin 的仲裁体系与扩展点
 
-玩家点击一个实体、准备开打一场战斗、需要给舰队装配时，游戏会向所有登记过的生涯插件逐个询问：这一次由谁来处理。插件实现 `CampaignPlugin` 接口，每一种询问对应一个 `pick...` 方法，常用的几个：
+当需要决定某项核心玩法交由哪个插件处理时，星区会依次询问所有注册过的 `CampaignPlugin`。原版提供了基类 `BaseCampaignPlugin`，默认将 `isTransient()` 设为 `true`、把 `getId()` 和各路 `pick...` 方法默认返回 `null`，MOD 继承它之后，只覆写自己关心的 `pick...` 方法即可 —— **不想插手的情况必须返回 `null`，把控制权留给其他 MOD 和原版**。
 
-| 方法 | 询问的内容 |
+除了最常用的对话入口，`CampaignPlugin` 还覆盖了一整套系统级扩展接口：
+
+| 方法 | 接管的能力 |
 | ---- | ---------- |
-| `pickInteractionDialogPlugin(...)` | 与某个实体交互时用哪个对话 |
-| `pickBattleCreationPlugin(...)` | 一场战斗的战场如何生成 |
-| `pickBattleAutoresolverPlugin(...)` | 自动结算如何计算 |
-| `pickFleetInflater(...)` | 舰队的装配如何随机化 |
+| `pickInteractionDialogPlugin(...)` | 与星图实体交互时弹出的对话框 |
+| `pickBattleCreationPlugin(...)` | 进入战术战斗时如何铺设战场 |
+| `pickBattleAutoresolverPlugin(...)` | 双方不见面时的自动战斗结算算法 |
+| `pickFleetInflater(...)` / `pickAutofitPlugin(...)` | 舰队自动配装生成与改装界面的自动配船策略 |
+| `pickAICoreAdminPlugin(...)` / `pickAICoreOfficerPlugin(...)` | AI 核心作为殖民地管理员或舰队军官时的插件行为 |
+| `pickImmigrationPlugin(...)` | 市场人口增长与移民计算模型 |
 
-**不处理的情况返回 `null`，交给别的插件和原版。** 原版的 `BaseCampaignPlugin` 对每个方法都返回 `null`，继承它，只覆写需要的那一个。
+## PickPriority 优先级规矩
 
-## 优先级
+多个插件都对同一件事返回了非 `null` 的 `PluginPick`，就靠 `PickPriority` 分胜负。从低到高常用的几档分别为：
 
-多个插件都想处理同一件事时，按返回的 `PickPriority` 决定。接口注释对每一级都有说明，MOD 常用的是这三级：
+| 优先级 | 定位 | 适用场景 |
+| ------ | ---- | -------- |
+| `CORE_GENERAL` | 原版回退 | `CoreCampaignPluginImpl` 默认走 Rules 对话时使用的最低级别 |
+| `MOD_GENERAL` | MOD 全局替换 | 打算整体改写原版所有行星或所有战斗流程时使用 |
+| `MOD_SET` | MOD 分类替换 | 接管符合同一条件的集合，例如 "所有特定气候行星" |
+| `MOD_SPECIFIC` | MOD 单点接管 | 针对某座具体空间站、某支事件舰队或特定前置条件接手 |
 
-| 优先级 | 适用 |
-| ------ | ---- |
-| `MOD_GENERAL` | 整体替换某一类功能，例如所有行星的交互 |
-| `MOD_SET` | 某一类对象，例如所有丛林世界 |
-| `MOD_SPECIFIC` | 某个具体对象，例如这一座空间站 |
+原版的 Rules 系统靠最低的 `CORE_GENERAL` 接住绝大多数常规停靠与对话，因此您的 MOD 返回任何 `MOD_*` 级别都能明确盖过它。**不要图省事一律写 `HIGHEST`**：同优先级之间选中谁是未定义的，按实际作用范围老实填等级，`HIGHEST` 留给玩家自制整合包消解冲突用。
 
-原版自己的 `CoreCampaignPluginImpl` 用最低的 `CORE_GENERAL` 返回基于 Rules 的对话，几乎所有停靠、交谈都走这一条，MOD 的任何一级都能盖过它。
+## 按条件接管停靠对话
 
-Foundry 是一个具体的空间站，用 `MOD_SPECIFIC`。注释中特别写明，同一优先级有多个插件时，选中哪一个是不确定的，所以优先级要按实际范围选，不要为了保险一律往高处填。`HIGHEST` 留给整合包解决冲突用。
-
-## 只在记仇时接手
-
-`pickInteractionDialogPlugin(...)` 收到的是玩家正在交互的实体。不是 Foundry，或者齿轮工业最近没有记仇，就返回 `null`：
+Foundry 是一座固定 ID 的空间站，且只在玩家最近击败过齿轮工业巡逻队 (`$GearIn_patrol_grudge` 为 `true`) 时拒客，因此范围属于精确单点，返回 `PickPriority.MOD_SPECIFIC`：
 
 ```java
-if (!GearInFoundryGenerator.STATION_ID.equals(interactionTarget.getId())) {
+if (interactionTarget == null || !GearInFoundryGenerator.STATION_ID.equals(interactionTarget.getId())) {
     return null;
 }
 if (!Global.getSector().getMemoryWithoutUpdate().getBoolean(GearInPatrolGrudgeListener.GRUDGE_KEY)) {
@@ -55,13 +58,21 @@ if (!Global.getSector().getMemoryWithoutUpdate().getBoolean(GearInPatrolGrudgeLi
 return new PluginPick<InteractionDialogPlugin>(new GearInDockRefusalDialog(), PickPriority.MOD_SPECIFIC);
 ```
 
-记仇标记是 60 天的限时值。60 天之后标记自行消失，插件不再接手，Foundry 又恢复成原版的停靠对话，不需要另外写解除的逻辑。
+这段逻辑还有几处运行细节需要注意：
 
-每次都返回一个新的对话对象。对话插件会在 `init(...)` 里记下这一次的对话窗口，复用旧对象，下一次交互就会拿到上一次的残留状态。
+- 敌意标记是 60 天自动过期的限时键。期限一到 `GRUDGE_KEY` 变回 `false`，插件立刻自动返回 `null`，停靠对话无需额外写回切逻辑就会恢复为原版 Rules 菜单；
+- **每次都应当 `new` 一个全新的对话插件实例**，不要把对话插件缓存成成员变量复用 —— `InteractionDialogPlugin` 内部通常会持有当次弹出的 `dialog` 窗口和选项上下文，复用旧实例会把上一轮的面板引用带进下一场交互。
 
-## 拒绝停靠的对话
+## 对话界面插件：InteractionDialogPlugin
 
-对话插件实现 `InteractionDialogPlugin`。游戏打开对话时调用 `init(...)`，玩家点击选项时调用 `optionSelected(...)`：
+`InteractionDialogPlugin` 掌控着一个弹窗的完整交互生命周期，而 `InteractionDialogAPI` 把界面拆成了几块可直接操控的面板：
+
+- `dialog.getTextPanel()`：主文本流区域，用 `addPara(...)` 逐段输出港务广播或剧情文字；
+- `dialog.getOptionPanel()`：下方选项列表，用 `addOption(text, data)` 添加按钮，其中第二个参数 `data` 推荐传自定义枚举，在 `optionSelected(text, data)` 里用 `==` 比对，比拼字符串可靠得多；
+- `dialog.getVisualPanel()`：左侧视觉框，可按需展示星球预览、人物立绘或舰船模型 (如 `showPersonInfo(...)`、`showPlanetInfo(...)`)；
+- `optionMousedOver(...)`、`advance(...)` 与 `backFromEngagement(...)`：分别响应鼠标悬停预览、逐帧动画以及在对话里触发战斗后返回弹窗续接剧情。
+
+本节只先演示最极简的一句拒绝与关闭窗口 (`dialog.dismiss()`)；需要多分支配置、文本动态拼装的 Rules 对话表和完整酒吧多轮流程，将在第 15、16 章展开。
 
 ```java
 @Override
@@ -79,21 +90,15 @@ public void optionSelected(String optionText, Object optionData) {
 }
 ```
 
-`addOption(text, data)` 的第二个参数是选项的数据，玩家选中时原样传回 `optionSelected(...)`。原版的对话插件习惯用一个枚举作选项数据，比对字符串更不容易写错。`dismiss()` 关闭对话，玩家回到星图。
+## 登记插件与幂等规则
 
-接口里的其余方法这里用不上，空着即可。这段对话只有一句话和一个选项，港务频道本来就没打算多说什么；完整的多轮对话放在后面的对话插件章节。
-
-## 登记插件
-
-在 `GearInModPlugin.onGameLoad(...)` 中加入：
+在 `GearInModPlugin.onGameLoad(...)` 中注册插件：
 
 ```java
 sector.registerPlugin(new GearInCampaignPlugin());
 ```
 
-插件本身没有需要保存的数据，`isTransient()` 返回 `true`，每次读档登记一份。接口注释也是这样建议的：不需要存数据的插件都应当是临时的，用户中途加入或移除 MOD 时更不容易出问题。
-
-`getId()` 返回一个固定的 ID。ID 相同的插件只会保留一份，新的登记会替换旧的，重复登记不会叠出两个插件。
+插件本身不存任何跨存档状态，`isTransient()` 返回 `true` 后每次读档重新注册即可，对玩家热插拔 MOD 更友好；同时 `getId()` 返回的 `"GearIn_campaign_plugin"` 充当唯一去重键 —— 同 ID 插件再次注册时新实例直接覆盖旧实例，不会在列表里叠出两份。
 
 ## 完整的生涯插件与对话
 
@@ -123,7 +128,7 @@ public class GearInCampaignPlugin extends BaseCampaignPlugin {
 
     @Override
     public PluginPick<InteractionDialogPlugin> pickInteractionDialogPlugin(SectorEntityToken interactionTarget) {
-        if (!GearInFoundryGenerator.STATION_ID.equals(interactionTarget.getId())) {
+        if (interactionTarget == null || !GearInFoundryGenerator.STATION_ID.equals(interactionTarget.getId())) {
             return null;
         }
         if (!Global.getSector().getMemoryWithoutUpdate().getBoolean(GearInPatrolGrudgeListener.GRUDGE_KEY)) {
@@ -195,33 +200,31 @@ public class GearInDockRefusalDialog implements InteractionDialogPlugin {
 
 ### 进游戏核对
 
-执行 `gradle jar`，重启游戏，**新建一份存档**。
+执行 `gradle jar`，重启游戏，**新建一份存档**：
 
-- 正常停靠 Nipher Foundry，出现的是原版的停靠对话；
-- 按 [C14-S2] 的方法击败一支齿轮工业的巡逻队，再停靠 Foundry，对话只剩港务频道的那句话和 "离开"；
-- 点击 "离开"，对话关闭，回到星图；
-- 在控制台执行 `runcode Global.getSector().getMemoryWithoutUpdate().unset("$GearIn_patrol_grudge")` 清除标记，再次停靠，恢复为原版对话。
-
-页面中的现象依据 API 与原版代码推出，编者尚未逐项在游戏内实测。
+- 正常停靠 Nipher Foundry，弹出原版 Rules 停靠菜单；
+- 按 [C14-S2] 击败一支齿轮工业巡逻队后再次靠近 Foundry，弹窗直接变为拒绝停靠提示与 `"离开"` 选项；
+- 点击 `"离开"` 后回到大地图；
+- 控制台执行 `runcode Global.getSector().getMemoryWithoutUpdate().unset("$GearIn_patrol_grudge")` 清掉标记后再停靠，恢复为原版对话。
 
 ## 常见问题
 
-- **记仇期间停靠，仍然是原版对话**：插件没有登记，或者优先级低于原版处理这次交互所用的级别。
-    - **解决方案**：核对 `onGameLoad(...)` 中的 `registerPlugin(...)`，并使用 `MOD_SPECIFIC`。
+- **敌意标记生效期间停靠依然打开了原版界面**：插件未在 `onGameLoad(...)` 登记，或者 `PickPriority` 低于处理该交互的原版/他方插件。
+    - **解决方案**：核对 `sector.registerPlugin(...)` 调用，并将返回优先级设为 `PickPriority.MOD_SPECIFIC`。
 
-- **所有空间站都变成了拒绝停靠**：没有比对交互目标的 ID。
-    - **解决方案**：先确认 `interactionTarget.getId()` 等于 `GearIn_foundry`，其余情况返回 `null`。
+- **所有空间站或行星全都变成了拒绝停靠**：`pickInteractionDialogPlugin(...)` 里忘了过滤 `interactionTarget.getId()`。
+    - **解决方案**：确认仅在目标 ID 等于 `GearInFoundryGenerator.STATION_ID` 且满足敌意条件时返回对话插件，其余情况返回 `null`。
 
-- **点击 "离开" 没有反应**：`init(...)` 中没有保存对话窗口，或者 `optionSelected(...)` 比对的选项数据与添加时不同。
-    - **解决方案**：在 `init(...)` 中保存 `dialog`，比对时使用同一个枚举值。
+- **点击 `"离开"` 毫无反应**：`init(...)` 漏存 `this.dialog = dialog`，或 `optionSelected(...)` 比对的对象与 `addOption(...)` 传入的数据不一致。
+    - **解决方案**：在 `init(...)` 保存 `dialog` 引用，统一用枚举比较选项。
 
-- **读档之后插件失效**：临时插件只在 `onNewGame()` 中登记了一次。
-    - **解决方案**：登记放进 `onGameLoad(...)`。
+- **读档后接管失效**：在 `isTransient()` 为 `true` 的前提下把注册放进了 `onNewGame()`。
+    - **解决方案**：临时插件统一在 `onGameLoad(...)` 注册。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.campaign.CampaignPlugin`：全部 `pick...` 方法，以及 `PickPriority` 每一级的注释。
-- `com.fs.starfarer.api.campaign.BaseCampaignPlugin`：全部方法返回 `null` 的基类。
-- `com.fs.starfarer.api.campaign.InteractionDialogPlugin`：对话插件的接口。
-- `com.fs.starfarer.api.impl.campaign.tutorial.TutorialRespawnDialogPluginImpl`：原版最短的对话插件之一，枚举选项与 `dismiss()` 的写法。
-- `com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`：原版自己的生涯插件。
+- `com.fs.starfarer.api.campaign.CampaignPlugin`：全套 `pick...` 扩展方法与 `PickPriority` 枚举等级定义。
+- `com.fs.starfarer.api.campaign.BaseCampaignPlugin`：各方法默认返回 `null` 的标准基类。
+- `com.fs.starfarer.api.campaign.InteractionDialogPlugin`：弹窗生命周期与战斗返回流回调定义。
+- `com.fs.starfarer.api.impl.campaign.tutorial.TutorialRespawnDialogPluginImpl`：原版最精简的对话插件实现，可直接对照枚举选项与 `dismiss()` 用法。
+- `com.fs.starfarer.api.impl.campaign.CoreCampaignPluginImpl`：原版核心生涯插件，Rules 对话的起点。

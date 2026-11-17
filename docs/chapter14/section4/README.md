@@ -1,6 +1,8 @@
 # 管理舰队活动情报
 
-玩家还没见过齿轮工业，自然也不该知道它的巡逻队在哪里。见过之后，情报栏里就多了一页 Nipher 的巡逻活动：哪几支巡逻队在外面，谁在带队，正在做什么。
+情报栏里的态势提醒与势力动态，底层都由 `BaseIntelPlugin` 交给 `IntelManagerAPI` 托管。它把摘要、详情、定位与分类标签拆成独立覆写点，还自带推进与过期归档状态机，无论状态实时查询还是限时通告都能胜任。
+
+这节写一条轻量的常驻巡逻情报：接触前隐藏，照面后在每次点开时现场列出 Nipher 星系的巡逻队动向。
 
 ---
 
@@ -10,29 +12,34 @@ _本节预期操作时间：\~15 分钟。_
 
 ## 前置知识
 
-- [C10-S1] 的 `$GearIn_contacted`，本节按它决定情报是否显示；
-- [C11-S1] 的巡逻队与它的任务文字；
-- [C14-S2] 按势力与 `$isPatrol` 识别巡逻队的写法，本节照用；
-- [C14-S1] 的逐帧脚本，情报的生命周期与它有关。
+- [C10-S2] 的 `$GearIn_contacted`，本节按它控制情报何时显形；
+- [C11-S1] 的巡逻队及其英文任务文字；
+- [C11-S2] 分配给巡逻队的指挥官，详情页会展示他的军衔与姓名；
+- [C14-S2] 按势力与 `$isPatrol` 识别巡逻队的写法；
+- [C14-S1] 的逐帧脚本登记与存档机制，限时情报会用到它。
 
-## 情报由哪几部分组成
+## BaseIntelPlugin 的界面结构
 
-情报继承原版的 `BaseIntelPlugin`，界面上的每一处都对应一个方法：
+自定义情报一般继承 `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`，UI 界面上的每个位置各对应一个覆写点：
 
-| 方法 | 显示在哪里 |
-| ---- | ---------- |
-| `getName()` | 情报列表中的标题 |
-| `getIcon()` | 标题旁的图标 |
-| `createSmallDescription(...)` | 选中后右侧的详情 |
-| `getMapLocation(...)` | 地图上定位到的实体 |
-| `getIntelTags(...)` | 情报栏左侧的分类筛选 |
-| `getFactionForUIColors()` | 标题与边框使用的势力颜色 |
+| 方法 | 控制 UI 哪一块 |
+| ---- | -------------- |
+| `getName()` | 左侧情报条目与右侧详情的标题 |
+| `getIcon()` | 标题左侧图标，一般从 `settings.json` 的 `graphics.intel` 读取 |
+| `createIntelInfo(info, mode)` | 左侧列表条目下的简要副标题或摘要说明 |
+| `createSmallDescription(info, width, height)` | 选中条目后右侧弹出的默认详情栏 |
+| `hasLargeDescription()` / `createLargeDescription(...)` | 需要更宽大的自定义面板、报表或交互按钮时启用大详情页 |
+| `getMapLocation(map)` | 点击定位图标时星图镜头飞往的实体 |
+| `getIntelTags(map)` / `getSortTier()` | 左侧分类筛选标签与排序权重 (例如叠加齿轮工业的势力 ID) |
+| `getFactionForUIColors()` | 右侧详情区标题、分隔线与底部操作按钮采用的势力主色调 (列表左侧标题与正文高亮色不自动沿用此色) |
 
-图标从 `settings.json` 的 `graphics.intel` 中取，`fleet_log` 是原版舰队日志用的那一个，直接借用。分类标签在父类的基础上加入齿轮工业的势力 ID，玩家按势力筛选情报时能找到它。
+如果某条情报只需要简明列出当下状态或几行文本，`createSmallDescription(...)` 加上这几个基础元信息方法就已经够用；需要给玩家呈现图表或可点击管理按钮时，才开启 `hasLargeDescription()`。
 
-## 打开时现场读取
+## 现场查询型与推进型情报
 
-这条情报不保存任何数据。玩家每次选中它，`createSmallDescription(...)` 都去 Nipher 星系里现场找一遍巡逻队：
+在情报的数据来源与存续时长上，Starsector 通常分成两种做法：
+
+1. **实时查询型 (不登记为脚本)**：例如本节的 Nipher 巡逻情报，随新档加入 `IntelManagerAPI` 后长期存在，自身不缓存舰队列表；每当玩家选中它触发 `createSmallDescription(...)`，现场遍历 Nipher 星系的舰队再拼接文本：
 
 ```java
 for (CampaignFleetAPI fleet : system.getFleets()) {
@@ -47,15 +54,13 @@ for (CampaignFleetAPI fleet : system.getFleets()) {
 }
 ```
 
-识别方式与 [C14-S2] 相同：齿轮工业的势力，加上 `$isPatrol` 标记。[C11-S1] 管理器生成的巡逻队和 Nipher Prime 按原版规则派出的巡逻队都会列出来。
+识别口径与 [C14-S2] 保持一致：**同时检查所属势力与 `MemFlags.MEMORY_KEY_PATROL_FLEET` (`$isPatrol`)**，既把 [C11-S1] 管理器生成的巡逻队收进来，也把 Nipher Prime 按原版规则自发派出的巡逻队一并列出。读取 `fleet.getCommander()` 与 `fleet.getCurrentAssignment()` 前要先判空，否则刚生成或刚刚清空任务队列的舰队会抛出空指针。
 
-每支巡逻队写一行：指挥官的名字，加上 `getCurrentAssignment()` 的任务文字。任务文字就是 [C11-S1] 用 `addAssignment(...)` 安排任务时填的那一句，原版舰队的任务文字同样是英文。指挥官或任务可能为空，读取前都要判断。
+2. **定时推进 / 自动结束型 (`addScript` 联动 `endAfterDelay()`)**：如果做的是一条有明确起止期限的动态情报 (如原版 `PirateActivityIntel` 或某次限时入侵)，除了加入 `IntelManagerAPI`，还要把同一对象传给 `Global.getSector().addScript(this)` —— 因为 **`BaseIntelPlugin` 本身已经实现了 `EveryFrameScript` 并内置 `endingTimeRemaining` 状态机**：条件结束后在 `advanceImpl(...)` 调一次 `endAfterDelay()`，插件会在界面上标为已结束并在倒计时归零后触发 `notifyEnded()`，届时在 `notifyEnded()` 中调用 `removeScript(this)` 即可干净退出。
 
-情报里的内容都是现场查出来的，舰队来来去去，它不需要跟着更新任何东西。
+## 接触之前隐藏与静默入栏
 
-## 接触之前隐藏
-
-`isHidden()` 返回 `true` 时，情报不出现在列表中：
+只要覆写 `isHidden()`，就能让情报在特定条件达成前彻底从列表隐身：
 
 ```java
 @Override
@@ -65,29 +70,15 @@ public boolean isHidden() {
 }
 ```
 
-父类的 `isHidden()` 还处理着教程进行中与 `setHidden(...)` 的情况，所以先保留父类的判断，再加上接触标记。玩家靠近 Nipher Prime、[C10-S1] 的接触脚本写下标记之后，情报就出现了。
+先保留 `super.isHidden()` 以免在新手教程期间或外部主动隐藏时穿帮，再叠加 `$GearIn_contacted` 判断 —— 一旦玩家在 [C10-S2] 靠近 Nipher 星系完成首次接触，情报便会立即亮出。
 
-## 一条不会结束的情报
-
-这条情报从新档开始就一直在，Nipher 的巡逻也一直在。它不需要逐帧推进，也就没有登记成脚本。
-
-需要结束的情报，原版的写法以 `PirateActivityIntel` 为例：
-
-- 构造时 `Global.getSector().addScript(this)`，让它像 [C14-S1] 的脚本一样逐帧推进；
-- 条件不再成立时，在 `advanceImpl(...)` 里调用 `endAfterDelay()`，情报标为结束，几天后从列表中移除；
-- 在 `notifyEnded()` 里 `removeScript(this)`，不再推进。
-
-如果想让每一次出动都单独发一条情报，就得在 [C11-S1] 管理器生成舰队的地方创建它，再按上面的方式在舰队消失时结束。本节只做一条汇总的情报，管理器保持不动。
-
-## 加入情报管理器
-
-在 `GearInModPlugin.onNewGame()` 中，紧接在 [C14-S1] 的循环脚本之后加入：
+在 `GearInModPlugin.onNewGame()` 中，紧接在 [C14-S1] 的循环脚本之后注册：
 
 ```java
 sector.getIntelManager().addIntel(new GearInPatrolIntel(), true);
 ```
 
-第二个参数为 `true` 时，加入情报时不弹出消息。开局时玩家还没接触齿轮工业，情报是隐藏的，这时弹消息没有意义。情报管理器随存档保存，所以只在新档里加入一次。
+第二个参数 `forceNoMessage` 设为 `true` 时，入栏瞬间**不会**在左下角弹窗通知 —— 开局时玩家连齿轮工业还没见过，弹出新情报提示既突兀也毫无意义；而对于玩家打完战斗或接下任务后需要当场提醒的新情报，再改传 `false` 即可。`IntelManagerAPI` 本身随存档保存，因此只需在新档初始化时加入一次。
 
 ## 完整的巡逻情报
 
@@ -184,34 +175,31 @@ public class GearInPatrolIntel extends BaseIntelPlugin {
 
 ### 进游戏核对
 
-执行 `gradle jar`，重启游戏，**新建一份存档**。
+执行 `gradle jar`，重启游戏，**新建一份存档**：
 
-- 打开情报界面，找不到 "Nipher 的巡逻活动"；
-- 靠近 Nipher Prime 完成接触之后再打开，情报出现，图标为舰队日志；
-- 选中它，右侧列出 Nipher 中每一支齿轮工业巡逻队的指挥官与任务，其中一支由 Brann Hale 指挥；
-- 点击地图定位，镜头移到 Nipher Prime；
-- 在左侧按势力筛选齿轮工业，情报仍在列表中。
-
-页面中的现象依据 API 与原版代码推出，编者尚未逐项在游戏内实测。
+- 刚开局在星图里直接打开情报界面，列表中不会出现 `"Nipher 的巡逻活动"`；
+- 靠近 Nipher Prime 触发接触脚本后再次查看，情报显现并带舰队日志图标；
+- 选中该情报，右侧会现场列出 Nipher 星系内各支齿轮工业巡逻队的指挥官姓名 (包括 Brann Hale) 与当前任务文字；
+- 点击地图定位按钮，镜头居中定位到 Nipher Prime，且左侧勾选齿轮工业分类能筛出该条目。
 
 ## 常见问题
 
-- **接触之后仍然看不到情报**：情报没有加入管理器，或者只在旧存档中测试。
-    - **解决方案**：核对 `onNewGame()` 中的 `addIntel(...)`，使用新档测试。
+- **完成接触后依然看不到情报**：`onNewGame()` 漏调 `addIntel(...)`，或者是在未包含该情报实例的旧存档中测试。
+    - **解决方案**：确认 `addIntel(new GearInPatrolIntel(), true)` 已写进 `onNewGame()`，并用新档测试。
 
-- **教程期间也能看到这条情报**：覆写 `isHidden()` 时没有保留父类的判断。
-    - **解决方案**：先调用 `super.isHidden()`，再加上自己的条件。
+- **开局新手教程阶段提前露出了情报**：覆写 `isHidden()` 时漏掉了 `super.isHidden()`。
+    - **解决方案**：始终先保留 `super.isHidden() || ...` 判定。
 
-- **详情里没有任何巡逻队**：巡逻队尚未生成，或者筛选条件与 [C14-S2] 不一致。
-    - **解决方案**：确认星系名为 `Nipher`，筛选同时检查势力与 `$isPatrol`。
+- **详情面板显示暂时没有巡逻队**：星系名称写错、巡逻队还未生成，或巡逻队缺少 `$isPatrol` 标记。
+    - **解决方案**：确认星系名 `"Nipher"` 与 `MemFlags.MEMORY_KEY_PATROL_FLEET` 一致。
 
-- **打开详情时报空引用**：舰队没有指挥官，或者当前没有任务。
-    - **解决方案**：读取指挥官与任务文字之前判断是否为 `null`。
+- **点击情报条目瞬间抛出空指针**：某个巡逻队没有指挥官，或当前任务队列恰好为空。
+    - **解决方案**：读取 `fleet.getCommander()` 与 `fleet.getCurrentAssignment()` 前做好空值检查。
 
 ## 建议参考项
 
-- `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`：各个显示方法的默认实现、`isHidden()` 与结束流程。
-- `com.fs.starfarer.api.impl.campaign.intel.bases.PirateActivityIntel`：原版会结束的情报，登记脚本与 `endAfterDelay()` 的写法。
-- `com.fs.starfarer.api.campaign.comm.IntelManagerAPI`：`addIntel(...)` 的各个重载。
-- `com.fs.starfarer.api.campaign.ai.FleetAssignmentDataAPI`：舰队当前任务与任务文字。
-- `data/config/settings.json`：`graphics.intel` 中的原版情报图标。
+- `com.fs.starfarer.api.impl.campaign.intel.BaseIntelPlugin`：默认 UI 回调、`EveryFrameScript` 内置生命周期与 `endAfterDelay()` 状态机。
+- `com.fs.starfarer.api.impl.campaign.intel.bases.PirateActivityIntel`：需要主动推进和延迟结束的情报实现。
+- `com.fs.starfarer.api.campaign.comm.IntelManagerAPI`：`addIntel(...)`、`forceNoMessage` 与全局情报查询方法。
+- `com.fs.starfarer.api.campaign.ai.FleetAssignmentDataAPI`：读取舰队当前任务类型与行动文本。
+- `data/config/settings.json`：`graphics.intel` 下预置的原版情报图标键值。

@@ -60,7 +60,7 @@ MOD ID 写在下文的 `mod_info.json` 中。游戏并不要求文件夹名与�
         "patch": 0
     },
     "description": "Starsector MOD 教程的示例 MOD。",
-    "gameVersion": "0.98.5a-RC3"
+    "gameVersion": "0.98.5a-RC7"
 }
 ```
 

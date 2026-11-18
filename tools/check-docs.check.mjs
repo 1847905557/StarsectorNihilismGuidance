@@ -12,18 +12,18 @@ async function workspace(t) {
   await mkdir(join(root, 'docs/chapter1/section1'), { recursive: true });
   return root;
 }
-const chapter = '# 章页\n\n本章技术基线：Starsector `0.98.5a-RC3`。\n\n章介绍。\n\n## 本章各节\n\n<!-- AUTO:SECTION-LIST -->\n';
+const chapter = '# 章页\n\n本章技术基线：Starsector `0.98.5a-RC7`。\n\n章介绍。\n\n## 本章各节\n\n<!-- AUTO:SECTION-LIST -->\n';
 test('chapter structure, baseline and automatic list are checked from the actual page role', async (t) => {
   const root = await workspace(t),
     path = join(root, 'docs/chapter1/README.md');
   assert.deepEqual(await inspectDocument(path, chapter, { root }), []);
-  assert.deepEqual(await inspectDocument(path, chapter.replace('本章技术基线：Starsector `0.98.5a-RC3`。\n\n', ''), { root }), []);
+  assert.deepEqual(await inspectDocument(path, chapter.replace('本章技术基线：Starsector `0.98.5a-RC7`。\n\n', ''), { root }), []);
   assert.deepEqual(
     await inspectDocument(path, chapter.replace('章介绍。', '## 设计前提\n\n介绍段落。\n\n### 细节展开\n\n补充说明。'), { root }),
     [],
   );
   for (const [text, rule] of [
-    [chapter.replace('`0.98.5a-RC3`。', '0.98.5a-RC3'), 'chapter-baseline'],
+    [chapter.replace('`0.98.5a-RC7`。', '0.98.5a-RC7'), 'chapter-baseline'],
     [chapter.replace('章介绍。\n\n', ''), 'chapter-introduction'],
     [chapter.replace('<!-- AUTO:SECTION-LIST -->', ''), 'chapter-catalog'],
     [chapter + '\n尾部。\n', 'chapter-catalog'],

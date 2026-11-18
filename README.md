@@ -1,6 +1,6 @@
 # Starsector Nihilism Guidance
 
-本仓库维护面向 Starsector `0.98.5a-RC3` 的中文 MOD 制作教程，以及配套示例和核验工程。教程覆盖游戏数据与资源制作、Java 实现和依赖 MOD 集成；页面中的完整示例与 Gradle fixtures 通过核验工具保持一致。
+本仓库维护面向 Starsector `0.98.5a-RC7` 的中文 MOD 制作教程，以及配套示例和核验工程。教程覆盖游戏数据与资源制作、Java 实现和依赖 MOD 集成；页面中的完整示例与 Gradle fixtures 通过核验工具保持一致。
 
 [在线阅读教程](https://1847905557.github.io/StarsectorNihilismGuidance/)
 
@@ -47,7 +47,7 @@ pnpm lint:full
 pnpm test:tools
 ```
 
-Java fixture 编译需要本机安装 Starsector `0.98.5a-RC3` 和教程涉及的依赖 MOD。在本机 `tutorial-fixtures/gradle.properties` 中设置 `starsectorRoot`，指向包含 `starsector-core/` 的游戏安装目录；依赖库默认从其 `mods/` 读取，也可用 `starsectorModsRoot` 指定现有依赖库目录。
+Java fixture 编译需要本机安装 Starsector `0.98.5a-RC7` 和教程涉及的依赖 MOD。在本机 `tutorial-fixtures/gradle.properties` 中设置 `starsectorRoot`，指向包含 `starsector-core/` 的游戏安装目录；依赖库默认从其 `mods/` 读取，也可用 `starsectorModsRoot` 指定现有依赖库目录。
 
 ```powershell
 cd tutorial-fixtures

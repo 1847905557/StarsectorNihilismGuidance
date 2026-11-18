@@ -1,6 +1,6 @@
 # 可选兼容与设置集成
 
-本章技术基线：Starsector `0.98.5a-RC3` 与 Java 17；可选依赖基线：LunaLib `2.0.5`、Nexerelin `0.12.1e`。
+本章技术基线：Starsector `0.98.5a-RC7` 与 Java 17；可选依赖基线：LunaLib `2.0.5`、Nexerelin `0.12.1e`。
 
 ---
 

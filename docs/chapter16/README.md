@@ -1,6 +1,6 @@
 # 酒吧事件与任务
 
-本章技术基线：Starsector `0.98.5a-RC3`，Java 17。
+本章技术基线：Starsector `0.98.5a-RC7`，Java 17。
 
 ---
 

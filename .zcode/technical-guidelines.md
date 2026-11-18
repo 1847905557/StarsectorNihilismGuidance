@@ -4,7 +4,7 @@
 
 ## 版本与事实
 
-- 教程使用 Starsector `0.98.5a-RC3` 与 Java 17。
+- 教程使用 Starsector `0.98.5a-RC7` 与 Java 17。
 - 依赖库版本：LazyLib 3.0.0、MagicLib 1.5.6、GraphicsLib 1.12.1、LunaLib 2.0.5。升级时以各库 `mod_info.json` 重新核对。
 - 技术事实依据该版本游戏核对：`starsector-core/starfarer.api.zip` 中的公开 API 源码、`starsector-core/data` 中的原版数据，或游戏内直接观察。反混淆产物仅作辅助核对，严禁在教程中直接说明或暗示反混淆产物的参与。
 - **事实以调用方为准，严禁参考原版注释或 javadoc。** 判断一个方法何时被调用、参数取什么值、返回什么有意义，唯一依据是原版 `impl/` 下的调用点与游戏内实测，不是方法上方的文字。原版注释普遍模糊甚至具有误导性，整段略过；注释与实现不一致时，实现是唯一事实。

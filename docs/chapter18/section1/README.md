@@ -126,7 +126,7 @@ GraphicsLib 负责全屏 shader、动态光源以及 material / normal 贴图管
   "id":"GearIndustry",
   "name":"Gear Industry",
   "version":"1.0.0",
-  "gameVersion":"0.98.5a-RC3",
+  "gameVersion":"0.98.5a-RC7",
   "dependencies":[
     {"id":"lw_lazylib","name":"LazyLib"},
     {"id":"shaderLib","name":"GraphicsLib"},

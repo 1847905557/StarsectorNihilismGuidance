@@ -1,6 +1,6 @@
 # 着色器与渲染
 
-本章技术基线：Starsector `0.98.5a-RC3` 与 Java 17；前置依赖：BoxUtil `1.5.5`。
+本章技术基线：Starsector `0.98.5a-RC7` 与 Java 17；前置依赖：BoxUtil `1.5.5`。
 
 ---
 

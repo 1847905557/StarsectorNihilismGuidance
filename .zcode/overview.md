@@ -1,6 +1,6 @@
 # Overview
 
-本仓库维护 Starsector `0.98.5a-RC3` 的中文 MOD 制作教程、可编译示例与维护工具，面向游戏数据、资源和 Java 扩展制作，通过 VuePress 文档站交付。
+本仓库维护 Starsector `0.98.5a-RC7` 的中文 MOD 制作教程、可编译示例与维护工具，面向游戏数据、资源和 Java 扩展制作，通过 VuePress 文档站交付。
 
 ## 项目目标
 

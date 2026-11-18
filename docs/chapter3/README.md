@@ -1,6 +1,6 @@
 # 势力与生涯星系
 
-本章技术基线：Starsector `0.98.5a-RC3` 与 Java 17。
+本章技术基线：Starsector `0.98.5a-RC7` 与 Java 17。
 
 ---
 

@@ -1,6 +1,6 @@
 # 教程验证工程
 
-本工程以 Java 17 与本地 Starsector 安装的 0.98.5a-RC3 API 编译教程完整示例。每个工作单元只拥有 `units/Cxx-Syy/**`，编号使用不带前导零的正整数。
+本工程以 Java 17 与本地 Starsector 安装的 0.98.5a-RC7 API 编译教程完整示例。每个工作单元只拥有 `units/Cxx-Syy/**`，编号使用不带前导零的正整数。
 
 ## 构建前置：自行补充 gradle.properties
 

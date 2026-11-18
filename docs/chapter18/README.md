@@ -1,6 +1,6 @@
 # 常用依赖库
 
-本章技术基线：Starsector `0.98.5a-RC3` 与 Java 17；依赖基线：LazyLib `3.0.0`、GraphicsLib `1.12.1`、MagicLib `1.5.6`。
+本章技术基线：Starsector `0.98.5a-RC7` 与 Java 17；依赖基线：LazyLib `3.0.0`、GraphicsLib `1.12.1`、MagicLib `1.5.6`。
 
 ---
 
